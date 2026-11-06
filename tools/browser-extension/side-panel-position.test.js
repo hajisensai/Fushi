@@ -51,7 +51,7 @@ function loadPanel(initialState) {
       storage: { local: { get(_key, cb) { cb({}); } }, onChanged: listeners },
       tabs: {
         query(_query, cb) { cb([{ id: 1 }]); },
-        sendMessage(_id, msg, cb) { cb({ ...state, cues: msg.includeCues ? state.cues : undefined }); },
+        sendMessage(_id, msg, opts, cb) { if (typeof opts === 'function') cb = opts; cb({ ...state, cues: msg.includeCues ? state.cues : undefined }); },
         onActivated: listeners, onUpdated: listeners,
       },
     },

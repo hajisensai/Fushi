@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
@@ -8,7 +9,9 @@ import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/pages/implementations/discovery_source_settings_section.dart';
 import 'package:fushi/src/pages/implementations/alist_site_settings_section.dart';
+import 'package:fushi/src/pages/implementations/bt_site_settings_section.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf_server_settings_section.dart';
+import 'package:fushi/src/pages/implementations/kavita/kavita_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/opds_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -16,6 +19,7 @@ import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_page_reset.dart'
     show settingsSectionModifiedSummary;
@@ -26,7 +30,8 @@ import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart'
     show jimakuLanguageLabel, kJimakuLanguageCodes;
@@ -190,21 +195,29 @@ SettingsDestination buildServicesDestination() {
       SettingsSection(
         id: 'services.resources',
         title: t.section_services_resources,
-        // iOS 上整节不渲染：内置索引器、Torznab、发现来源、OPDS 服务器四项配置的
-        // 全部消费端（发现页与下载中心）都已按 App Store 合规移除
+        // iOS 上整节不渲染：BT 站、Torznab、内置发现来源这些配置的全部消费端
+        // （内置发现源与下载中心）都已按 App Store 合规移除
         // （[StoreRestrictedCapability.externalDiscovery]），留着就是一组配了也
-        // 不会生效的字段。用 section 级 `visible` 而不是逐项加判据：三条渲染路径
+        // 不会生效的字段。用户自己的 OPDS / AList 服务器不在此节，住「媒体服务器」
+        // 节、iOS 也保留（2026-10-27 用户拍板，`userConfiguredServersAvailable`）。用 section 级 `visible` 而不是逐项加判据：三条渲染路径
         // （分类正文 / 主从详情 / 设置搜索索引）共用它，逐项写会漏掉搜索索引。
         visible: (_) => StoreRestrictedCapability.externalDiscovery.isAvailable,
         presentation: SettingsSectionPresentation.collapsed,
         summaryBuilder: (SettingsContext c) =>
             _servicesSectionSummary('services.resources', c),
         items: <SettingsItem>[
-          _externalServicePage(
-            id: 'services.builtin_sources',
-            title: t.video_builtin_sources_title,
-            scope: VideoExternalProviderScope.builtinSources,
-            status: (SettingsContext c) => t.settings_service_builtin,
+          // 用户自己添加的 BT 站（Fushi 不内置任何 BT 站）。
+          _servicePage(
+            id: 'services.bt_sites',
+            title: t.bt_site_section_title,
+            status: (SettingsContext c) {
+              final List<BtSiteConfig> sites = c.appModel.btSites;
+              if (sites.isEmpty) return t.settings_service_not_configured;
+              return sites.any((BtSiteConfig site) => site.enabled)
+                  ? t.settings_service_configured
+                  : t.settings_service_disabled;
+            },
+            body: (SettingsContext c) => const BtSiteSettingsSection(),
           ),
           _externalServicePage(
             id: 'services.torznab',
@@ -224,34 +237,6 @@ SettingsDestination buildServicesDestination() {
             title: t.discovery_sources_settings_title,
             status: (SettingsContext c) => t.settings_service_builtin,
             body: (SettingsContext c) => const DiscoverySourceSettingsSection(),
-          ),
-          _servicePage(
-            id: 'services.opds_servers',
-            title: t.discovery_opds_settings_title,
-            status: (SettingsContext c) =>
-                c.appModel.prefsRepo.discoveryOpdsServers.isEmpty
-                ? t.settings_service_not_configured
-                : t.settings_service_configured,
-            body: (SettingsContext c) => const OpdsServerSettingsSection(),
-          ),
-          _servicePage(
-            id: 'services.alist_sites',
-            title: t.discovery_alist_settings_title,
-            status: (SettingsContext c) =>
-                c.appModel.prefsRepo.discoveryAListSites.isEmpty
-                ? t.settings_service_not_configured
-                : t.settings_service_configured,
-            body: (SettingsContext c) => const AListSiteSettingsSection(),
-          ),
-          _servicePage(
-            id: 'services.audiobookshelf_servers',
-            title: t.discovery_audiobookshelf_settings_title,
-            status: (SettingsContext c) =>
-                c.appModel.prefsRepo.discoveryAudiobookshelfServers.isEmpty
-                ? t.settings_service_not_configured
-                : t.settings_service_configured,
-            body: (SettingsContext c) =>
-                const AudiobookshelfServerSettingsSection(),
           ),
         ],
       ),
@@ -514,6 +499,66 @@ SettingsDestination buildServicesDestination() {
             builder: (SettingsContext c) =>
                 _PlexSettingsLink(settingsContext: c),
           ),
+          // 以下四项都是用户自己填地址的服务器（同 Jellyfin / Plex）：浏览、阅读 /
+          // 串流与下载到本机都不属于 App Store 受限能力，iOS 也保留（2026-10-27 用户
+          // 拍板，判据 `userConfiguredServersAvailable`，见 store_compliance.dart）。
+          // 所以放在常显的这一节，而不是 iOS 上整节隐藏的「资源」里。
+          _servicePage(
+            id: 'services.opds_servers',
+            title: t.discovery_opds_settings_title,
+            status: (SettingsContext c) =>
+                c.appModel.prefsRepo.discoveryOpdsServers.isEmpty
+                ? t.settings_service_not_configured
+                : t.settings_service_configured,
+            body: (SettingsContext c) => const OpdsServerSettingsSection(),
+          ),
+          _servicePage(
+            id: 'services.alist_sites',
+            title: t.discovery_alist_settings_title,
+            status: (SettingsContext c) =>
+                c.appModel.prefsRepo.discoveryAListSites.isEmpty
+                ? t.settings_service_not_configured
+                : t.settings_service_configured,
+            body: (SettingsContext c) => const AListSiteSettingsSection(),
+          ),
+          _servicePage(
+            id: 'services.kavita_servers',
+            title: t.kavita_settings_title,
+            status: (SettingsContext c) =>
+                c.appModel.prefsRepo.kavitaServers.isEmpty
+                ? t.settings_service_not_configured
+                : t.settings_service_configured,
+            body: (SettingsContext c) => const KavitaServerSettingsSection(),
+          ),
+          _servicePage(
+            id: 'services.audiobookshelf_servers',
+            title: t.discovery_audiobookshelf_settings_title,
+            status: (SettingsContext c) =>
+                c.appModel.prefsRepo.discoveryAudiobookshelfServers.isEmpty
+                ? t.settings_service_not_configured
+                : t.settings_service_configured,
+            body: (SettingsContext c) =>
+                const AudiobookshelfServerSettingsSection(),
+            // 首页「继续」混排是显式 opt-in（默认关，与 Jellyfin 的「在视频库中混排
+            // 显示」同原则）。schema 原生开关：设置搜索 / 控制通道 / 覆盖测试都认得。
+            sections: <SettingsSection>[
+              SettingsSection(
+                id: 'services.audiobookshelf.home',
+                items: <SettingsItem>[
+                  SettingsSwitchItem(
+                    id: 'services.audiobookshelf.show_in_home',
+                    title: t.discovery_audiobookshelf_home_continue_title,
+                    subtitle: t.discovery_audiobookshelf_home_continue_hint,
+                    value: (SettingsContext c) =>
+                        c.appModel.prefsRepo.audiobookshelfShowInHome,
+                    onChanged: (SettingsContext c, bool value) =>
+                        c.appModel.prefsRepo.setAudiobookshelfShowInHome(value),
+                    defaultValue: false,
+                  ),
+                ],
+              ),
+            ],
+          ),
           SettingsNavigationItem(
             id: 'services.danmaku.configure',
             title: 'Dandanplay',
@@ -613,6 +658,7 @@ SettingsNavigationItem _servicePage({
   required SettingsSubtitleBuilder status,
   required SettingsItemBuilder body,
   List<SettingsBodySearchEntry> entries = const <SettingsBodySearchEntry>[],
+  List<SettingsSection> sections = const <SettingsSection>[],
 }) => SettingsNavigationItem(
   id: id,
   title: title,
@@ -621,7 +667,7 @@ SettingsNavigationItem _servicePage({
     id: SettingsDestinationId.services,
     title: title,
     icon: FushiIcons.cloud,
-    sections: const <SettingsSection>[],
+    sections: sections,
     body: body,
     bodySearchEntries: entries,
   ),

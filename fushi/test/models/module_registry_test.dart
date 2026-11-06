@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
-import 'package:fushi/src/settings/settings_destination.dart'
+import 'package:fushi/src/settings/settings_destination_id.dart'
     show SettingsDestinationId;
 import 'package:fushi/src/shortcuts/shortcut_action.dart' show ShortcutScope;
 import 'package:fushi_core/fushi_core.dart' show MediaKind;
@@ -41,13 +41,20 @@ void main() {
       expect(ModuleId.games.prefKey, 'module_games_enabled');
       expect(ModuleId.browse.prefKey, 'module_downloads_enabled');
       expect(ModuleId.lookup.prefKey, 'module_dictionaries_enabled');
+    });
+
+    test('「浏览器」模块刻意换了新键：旧扩展模块的开关不再生效', () {
+      // 2026-10-19 用户拍板：「浏览器扩展」模块升级为「浏览器」并「重置一下这个
+      // 开关」。旧键 module_browser_extension_enabled 不得再解析成任何模块，
+      // 否则关过扩展的老用户升级后看不到新模块。
+      expect(ModuleId.web.prefKey, 'module_web_enabled');
       expect(
-        ModuleId.browserExtension.prefKey,
-        'module_browser_extension_enabled',
+        ModuleId.tryParsePrefKey('module_browser_extension_enabled'),
+        isNull,
       );
     });
 
-    test('平台判据只有 browserExtension / downloads 两条', () {
+    test('平台判据只有 downloads 一条（浏览器 2026-10-19 起五端都有）', () {
       for (final ModuleId id in ModuleId.values) {
         final bool onWindowsDesktop = id.availableOn(
           isWindows: true,
@@ -64,15 +71,7 @@ void main() {
           isAndroid: true,
         );
         expect(onWindowsDesktop, isTrue, reason: 'Windows 桌面上全部模块都可用');
-        if (id == ModuleId.browserExtension) {
-          expect(onAndroid, isFalse, reason: '$id 是桌面限定');
-        } else {
-          expect(
-            onAndroid,
-            isTrue,
-            reason: '$id 在 Android 上可用（games 是串流接收端形态）',
-          );
-        }
+        expect(onAndroid, isTrue, reason: '$id 在 Android 上可用（games 是串流接收端形态）');
       }
       // games 处处可用，只是形态不同：Windows 本机库，其余平台串流接收端
       // （形态断言见下面「games 的两种形态」）。
@@ -94,16 +93,19 @@ void main() {
         ),
         isTrue,
       );
-      // 浏览器扩展是「电脑才有」，非 Windows 桌面照样有。
+      // 浏览器模块五端都有（通用 app 内浏览不属于 App Store 受限能力）；其中的
+      // 浏览器扩展子页仍是「电脑才有」。
       expect(
-        ModuleId.browserExtension.availableOn(
+        ModuleId.web.availableOn(
           isWindows: false,
-          isDesktop: true,
-          isIOS: false,
+          isDesktop: false,
+          isIOS: true,
           isAndroid: false,
         ),
         isTrue,
       );
+      expect(browserExtensionSupportedOn(isDesktop: true), isTrue);
+      expect(browserExtensionSupportedOn(isDesktop: false), isFalse);
       // 下载中心：唯一一条不是「这个平台做不做得到」的判据。完整边界与它的
       // 兄弟能力（发现源 / 在线漫画源）见 test/build/ios_store_compliance_guard_test.dart。
       expect(
@@ -115,6 +117,23 @@ void main() {
         ),
         isFalse,
       );
+    });
+
+    test('hook 能力与外部 texthooker 台词页按平台元组取值', () {
+      for (final (bool windows, bool desktop, bool hook, bool lines)
+          in <(bool, bool, bool, bool)>[
+            (true, true, true, false), // Windows：捕获工作台本来就承载台词
+            (false, true, false, true), // Linux / macOS
+            (false, false, false, false), // Android / iOS
+          ]) {
+        final GamesModuleForm form = GamesModuleForm.on(isWindows: windows);
+        expect(form.supportsHookCapture, hook, reason: 'win=$windows');
+        expect(
+          form.offersExternalTexthooker(isDesktop: desktop),
+          lines,
+          reason: 'win=$windows desktop=$desktop',
+        );
+      }
     });
 
     test('games 的两种形态：Windows 本机库，其余平台都是串流接收端', () {
@@ -150,8 +169,9 @@ void main() {
         isIOS: true,
         isAndroid: false,
       );
-      expect(ios.isEnabled(ModuleId.browserExtension), isFalse);
+      expect(ios.isEnabled(ModuleId.browse), isFalse);
       expect(ios.isEnabled(ModuleId.books), isTrue);
+      expect(ios.isEnabled(ModuleId.web), isTrue);
 
       final ModuleVisibility android = ModuleVisibility.resolve(
         prefOf: (ModuleId _) => true,
@@ -161,7 +181,7 @@ void main() {
         isAndroid: true,
       );
       expect(android.isEnabled(ModuleId.games), isTrue);
-      expect(android.isEnabled(ModuleId.browserExtension), isFalse);
+      expect(android.isEnabled(ModuleId.web), isTrue);
     });
 
     test('resolve 尊重 pref：平台可用但用户关掉的不出现', () {
@@ -361,6 +381,10 @@ void main() {
       // 用户拍板：关掉「查词」只关页面入口，阅读器/视频里的划词弹窗要照常能用，
       // 弹窗里的「上/下一个词条」自然也得留着。
       expect(moduleOfShortcutScope(ShortcutScope.dictionaryPopup), isNull);
+    });
+
+    test('app 内浏览器恒在——视频站点入口也会打开它，不只属于 web 模块', () {
+      expect(moduleOfShortcutScope(ShortcutScope.webBrowser), isNull);
     });
 
     test('app 外系统级取词热键跟着 lookup 关——关掉模块不该还能装系统钩子', () {

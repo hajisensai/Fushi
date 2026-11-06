@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// 悬停查词（hover）路径的连续化守卫（「按住 Shift 一路滑，弹窗跟着光标走」）。
@@ -63,49 +63,55 @@ void main() {
       // 检测门控**语句** `if (isDictionaryShown) return;`，而非这个词——注释里会提到
       // 「不再门控 isDictionaryShown」，用 contains(词) 会误命中散文。
       expect(
-        RegExp(r'if\s*\(\s*isDictionaryShown\s*\)\s*return')
-            .hasMatch(m!.group(0)!),
+        RegExp(
+          r'if\s*\(\s*isDictionaryShown\s*\)\s*return',
+        ).hasMatch(m!.group(0)!),
         isFalse,
         reason: 'onShiftHover 不应再有 if (isDictionaryShown) return 门控（连续查词已放开）。',
       );
     });
 
     test(
-        'onDismissBarrierHover no longer gates lookup behind isDictionaryShown',
-        () {
-      final Match? m = RegExp(
-        r'void onDismissBarrierHover\(PointerHoverEvent event\)[\s\S]*?'
-        r'_selectTextAt\(',
-      ).firstMatch(src);
-      expect(m, isNotNull, reason: 'onDismissBarrierHover 结构变了，守卫需同步更新。');
-      expect(
-        RegExp(r'if\s*\(\s*isDictionaryShown\s*\)\s*return')
-            .hasMatch(m!.group(0)!),
-        isFalse,
-        reason:
-            'onDismissBarrierHover 不应再有 if (isDictionaryShown) return 门控（连续查词已放开）。',
-      );
-    });
+      'onDismissBarrierHover no longer gates lookup behind isDictionaryShown',
+      () {
+        final Match? m = RegExp(
+          r'void onDismissBarrierHover\(PointerHoverEvent event\)[\s\S]*?'
+          r'_selectTextAt\(',
+        ).firstMatch(src);
+        expect(m, isNotNull, reason: 'onDismissBarrierHover 结构变了，守卫需同步更新。');
+        expect(
+          RegExp(
+            r'if\s*\(\s*isDictionaryShown\s*\)\s*return',
+          ).hasMatch(m!.group(0)!),
+          isFalse,
+          reason:
+              'onDismissBarrierHover 不应再有 if (isDictionaryShown) return 门控（连续查词已放开）。',
+        );
+      },
+    );
 
     test(
-        'JS selectText same-word short-circuit keeps selection under fromHover',
-        () {
-      final String js = File(
-        'lib/src/reader/reader_selection_scripts.dart',
-      ).readAsStringSync().replaceAll('\r\n', '\n');
-      // 同词分支：命中的还是当前选区起点 → fromHover 时必须先 return null，且这个
-      // return 出现在 clearSelection() 之前（保留高亮）。
-      final RegExp re = RegExp(
-        r'hit\.offset === this\.selection\.startOffset\)\s*\{'
-        r'[\s\S]*?if\s*\(\s*fromHover\s*\)\s*\{\s*return null;\s*\}'
-        r'[\s\S]*?this\.clearSelection\(\);',
-      );
-      expect(
-        re.hasMatch(js),
-        isTrue,
-        reason: 'selectText 同词分支必须在 fromHover 下先 return null（保留选区），'
-            '再对真点击走 clearSelection——否则连续 hover 会把当前词高亮抹掉/闪。',
-      );
-    });
+      'JS selectText same-word short-circuit keeps selection under fromHover',
+      () {
+        final String js = File(
+          'lib/src/reader/reader_selection_scripts.dart',
+        ).readAsStringSync().replaceAll('\r\n', '\n');
+        // 同词分支：命中的还是当前选区起点 → fromHover 时必须先 return null，且这个
+        // return 出现在 clearSelection() 之前（保留高亮）。BUG-3978 起同词判据比的是
+        // selectionStartFor 归一后的起点（tapStart），不再是原始 hit。
+        final RegExp re = RegExp(
+          r'tapStart\.offset === this\.selection\.startOffset\)\s*\{'
+          r'[\s\S]*?if\s*\(\s*fromHover\s*\)\s*\{\s*return null;\s*\}'
+          r'[\s\S]*?this\.clearSelection\(\);',
+        );
+        expect(
+          re.hasMatch(js),
+          isTrue,
+          reason:
+              'selectText 同词分支必须在 fromHover 下先 return null（保留选区），'
+              '再对真点击走 clearSelection——否则连续 hover 会把当前词高亮抹掉/闪。',
+        );
+      },
+    );
   });
 }

@@ -10,6 +10,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 
@@ -33,20 +34,21 @@ LocalLibraryHostService _appWiredHost(FushiDatabase db) =>
     );
 
 AggregateSnapshot _readingSnapshot(int chars) => AggregateSnapshot(
-      readingStats: <ReadingStatRecord>[
-        ReadingStatRecord(
-          title: 'Book A',
-          dateKey: '2026-09-26',
-          charactersRead: chars,
-          readingTimeMs: chars * 10,
-          lastStatisticModified: chars,
-        ),
-      ],
-    );
+  readingStats: <ReadingStatRecord>[
+    ReadingStatRecord(
+      title: 'Book A',
+      dateKey: '2026-09-26',
+      charactersRead: chars,
+      readingTimeMs: chars * 10,
+      lastStatisticModified: chars,
+    ),
+  ],
+);
 
 Future<int> _localChars(FushiDatabase db) async {
-  final AggregateSnapshot snap =
-      await AggregateSyncService(db).materializeLocalSnapshot();
+  final AggregateSnapshot snap = await AggregateSyncService(
+    db,
+  ).materializeLocalSnapshot();
   return snap.readingStats
       .where((ReadingStatRecord r) => r.title == 'Book A')
       .map((ReadingStatRecord r) => r.charactersRead)
@@ -60,7 +62,10 @@ const CollectionManifest _pushedManifest = CollectionManifest(
       collectionType: 'collection',
       members: <CollectionManifestMember>[
         CollectionManifestMember(
-            mediaType: 'epub', entryKey: 't1', sortIndex: 0),
+          mediaType: 'epub',
+          entryKey: 't1',
+          sortIndex: 0,
+        ),
       ],
     ),
   ],
@@ -72,11 +77,78 @@ Future<void> _holdLock(
   Completer<void> release,
 ) {
   final Completer<void> acquired = Completer<void>();
-  unawaited(lock(() async {
-    acquired.complete();
-    await release.future;
-  }));
+  unawaited(
+    lock(() async {
+      acquired.complete();
+      await release.future;
+    }),
+  );
   return acquired.future;
+}
+
+/// 进度 / 位置 PUT 的存在性闸门要求 host 已有该条目：书、视频、有声书各一行。
+Future<void> _seedProgressTargets(FushiDatabase db) async {
+  await db.insertEpubBook(
+    EpubBooksCompanion.insert(
+      bookKey: 'book-a',
+      title: 'book-a',
+      epubPath: '/tmp/book-a.epub',
+      extractDir: '/tmp/book-a',
+      chapterCount: 3,
+      chaptersJson: '["ch1","ch2","ch3"]',
+      importedAt: 1700000000000,
+    ),
+  );
+  await db.upsertVideoBook(
+    VideoBooksCompanion.insert(
+      bookUid: 'video/a',
+      title: 'Video A',
+      videoPath: '/tmp/video-a.mp4',
+    ),
+  );
+  await db.upsertAudiobook(
+    AudiobooksCompanion.insert(
+      bookKey: 'book-a',
+      alignmentFormat: 'srt',
+      alignmentPath: '/tmp/book-a.srt',
+    ),
+  );
+}
+
+/// 三条对端进度 / 位置写（时间戳取当前时刻之前，避开 BUG-3367 的未来戳截断）。
+Map<String, Future<void> Function(LocalLibraryHostService host)> _progressPuts(
+  int at,
+) => <String, Future<void> Function(LocalLibraryHostService host)>{
+  'book progress': (LocalLibraryHostService host) => host.putBookProgress(
+    'book-a',
+    RemoteBookProgress(
+      sectionIndex: 2,
+      normCharOffset: 8700,
+      charOffset: 87,
+      updatedAtMs: at,
+    ),
+  ),
+  'video position': (LocalLibraryHostService host) =>
+      host.putVideoPosition('video/a', 125000, at),
+  'audiobook position': (LocalLibraryHostService host) =>
+      host.putAudiobookPosition('book-a', 64000, at),
+};
+
+Future<bool> _progressLanded(
+  LocalLibraryHostService host,
+  String name,
+  int at,
+) async {
+  switch (name) {
+    case 'book progress':
+      final RemoteBookProgress p = await host.getBookProgress('book-a');
+      return p.normCharOffset == 8700 && p.updatedAtMs == at;
+    case 'video position':
+      return (await host.getVideoPosition('video/a')).positionMs == 125000;
+    case 'audiobook position':
+      return (await host.getAudiobookPosition('book-a')).positionMs == 64000;
+  }
+  throw ArgumentError(name);
 }
 
 void main() {
@@ -95,9 +167,9 @@ void main() {
       final Completer<void> release = Completer<void>();
       await _holdLock(runExclusiveWithSync, release);
       try {
-        await _appWiredHost(db)
-            .applyAggregateSnapshot(_readingSnapshot(300))
-            .timeout(_prompt);
+        await _appWiredHost(
+          db,
+        ).applyAggregateSnapshot(_readingSnapshot(300)).timeout(_prompt);
         expect(await _localChars(db), 300);
       } finally {
         release.complete();
@@ -108,9 +180,9 @@ void main() {
       final Completer<void> release = Completer<void>();
       await _holdLock(runExclusiveWithSync, release);
       try {
-        final CollectionManifest merged = await _appWiredHost(db)
-            .mergeCollectionManifest(_pushedManifest)
-            .timeout(_prompt);
+        final CollectionManifest merged = await _appWiredHost(
+          db,
+        ).mergeCollectionManifest(_pushedManifest).timeout(_prompt);
         expect(
           merged.collections.map((CollectionManifestEntry e) => e.name),
           contains('T'),
@@ -138,9 +210,9 @@ void main() {
       });
       await fetchStarted.future;
       try {
-        await _appWiredHost(db)
-            .applyAggregateSnapshot(_readingSnapshot(300))
-            .timeout(_prompt);
+        await _appWiredHost(
+          db,
+        ).applyAggregateSnapshot(_readingSnapshot(300)).timeout(_prompt);
       } finally {
         network.complete(null);
         await outbound;
@@ -149,14 +221,54 @@ void main() {
     });
   });
 
+  group('对端进度 / 位置 PUT 不等 host 自己的整轮同步', () {
+    // 手机推进度 → 电脑正跑一轮自动同步（含云备份）→ PUT 排在整轮锁后面，手机
+    // 15s 判超时；电脑放锁后照样落库，手机却没记下「已对齐」，下一轮误报冲突。
+    final int at = DateTime.now().millisecondsSinceEpoch - 60000;
+    for (final MapEntry<String, Future<void> Function(LocalLibraryHostService)>
+        put
+        in _progressPuts(at).entries) {
+      test('整轮同步锁被占住时，${put.key} PUT 立即落库', () async {
+        await _seedProgressTargets(db);
+        final LocalLibraryHostService host = _appWiredHost(db);
+        final Completer<void> release = Completer<void>();
+        await _holdLock(runExclusiveWithSync, release);
+        try {
+          await put.value(host).timeout(_prompt);
+          expect(await _progressLanded(host, put.key, at), isTrue);
+        } finally {
+          release.complete();
+        }
+      });
+
+      test('窄锁被本地落库占住时，${put.key} PUT 等它放锁再写', () async {
+        await _seedProgressTargets(db);
+        final LocalLibraryHostService host = _appWiredHost(db);
+        final Completer<void> release = Completer<void>();
+        await _holdLock(runExclusiveWithSyncStateApply, release);
+        bool done = false;
+        final Future<void> write = put.value(host).then((_) => done = true);
+        try {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          expect(done, isFalse, reason: '读-比较-写必须整段在窄锁内');
+        } finally {
+          // 窄锁是进程级单例：断言失败也得放锁，否则后续用例全被连带卡死。
+          release.complete();
+        }
+        await write.timeout(_prompt);
+        expect(await _progressLanded(host, put.key, at), isTrue);
+      });
+    }
+  });
+
   group('对端写与本机落库仍互斥、不丢更新', () {
     test('窄锁被本地落库占住时，对端聚合 PUT 等它放锁再写', () async {
       final Completer<void> release = Completer<void>();
       await _holdLock(runExclusiveWithSyncStateApply, release);
       bool done = false;
-      final Future<void> put = _appWiredHost(db)
-          .applyAggregateSnapshot(_readingSnapshot(300))
-          .then((_) => done = true);
+      final Future<void> put = _appWiredHost(
+        db,
+      ).applyAggregateSnapshot(_readingSnapshot(300)).then((_) => done = true);
       await Future<void>.delayed(const Duration(milliseconds: 100));
       expect(done, isFalse, reason: '窄锁未放，对端折叠不得与本地落库交错');
       release.complete();
@@ -168,9 +280,9 @@ void main() {
       final Completer<void> release = Completer<void>();
       await _holdLock(runExclusiveWithSyncStateApply, release);
       bool done = false;
-      final Future<void> post = _appWiredHost(db)
-          .mergeCollectionManifest(_pushedManifest)
-          .then((_) => done = true);
+      final Future<void> post = _appWiredHost(
+        db,
+      ).mergeCollectionManifest(_pushedManifest).then((_) => done = true);
       await Future<void>.delayed(const Duration(milliseconds: 100));
       expect(done, isFalse);
       release.complete();
@@ -178,8 +290,9 @@ void main() {
     });
 
     test('出站同步网络往返期间对端折进更大值 → 落库不被陈旧 merged 覆盖', () async {
-      await AggregateSyncService(db)
-          .applySnapshotToLocal(_readingSnapshot(100));
+      await AggregateSyncService(
+        db,
+      ).applySnapshotToLocal(_readingSnapshot(100));
       // 本机另有一条 host 没有的挖矿计数：保证合并结果与 host 不同、上行照常
       // 发生（内容相同会跳过 PUT），下面才能确认出站同步走完了上行这一步。
       await db.setMiningCount(
@@ -191,16 +304,17 @@ void main() {
       final Completer<Object?> network = Completer<Object?>();
       final Completer<void> fetchStarted = Completer<void>();
       Object? pushed;
-      final Future<void> outbound = AggregateSyncService(
-        db,
-        localApplyLock: runExclusiveWithSyncStateApply,
-      ).syncOverClient(
-        fetchRemote: () {
-          fetchStarted.complete();
-          return network.future;
-        },
-        pushMerged: (Object json) async => pushed = json,
-      );
+      final Future<void> outbound =
+          AggregateSyncService(
+            db,
+            localApplyLock: runExclusiveWithSyncStateApply,
+          ).syncOverClient(
+            fetchRemote: () {
+              fetchStarted.complete();
+              return network.future;
+            },
+            pushMerged: (Object json) async => pushed = json,
+          );
       // 出站同步已 materialize 本地（100），卡在拉远端。
       await fetchStarted.future;
       // 这期间对端经 host PUT 折进 500。
@@ -214,9 +328,9 @@ void main() {
       expect(await _localChars(db), 500, reason: '统计只增不减：对端折进的值不得丢失');
       expect(pushed, isNotNull);
       expect(
-        AggregateSnapshot.fromJson(pushed)
-            .miningStats
-            .map((MiningRecord r) => r.dateKey),
+        AggregateSnapshot.fromJson(
+          pushed,
+        ).miningStats.map((MiningRecord r) => r.dateKey),
         contains('2026-06-02'),
       );
     });
@@ -235,8 +349,9 @@ void main() {
 
   group('源码守卫', () {
     test('app 的 host 库服务把同步状态域接到窄锁上', () {
-      final String src =
-          File('lib/src/models/app_model.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
       expect(
         src,
         contains('runSyncStateExclusive: runExclusiveWithSyncStateApply'),
@@ -245,9 +360,9 @@ void main() {
     });
 
     test('出站同步的聚合 / 合集落库都持窄锁', () {
-      final String aggregate =
-          File('lib/src/sync/sync_orchestrator/aggregate.part.dart')
-              .readAsStringSync();
+      final String aggregate = File(
+        'lib/src/sync/sync_orchestrator/aggregate.part.dart',
+      ).readAsStringSync();
       expect(
         'localApplyLock: runExclusiveWithSyncStateApply'
             .allMatches(aggregate)
@@ -260,10 +375,17 @@ void main() {
         'lib/src/sync/sync_orchestrator/collections.part.dart',
       ]) {
         final String src = File(path).readAsStringSync();
-        final int applyAt = src.indexOf('applyCollectionLocalChanges(_db');
+        // 容忍 dart format 把实参拆到下一行（`applyCollectionLocalChanges(\n  _db,`）。
+        final int applyAt =
+            RegExp(
+              r'applyCollectionLocalChanges\(\s*_db',
+            ).firstMatch(src)?.start ??
+            -1;
         expect(applyAt, greaterThan(0), reason: path);
-        final int lockAt =
-            src.lastIndexOf('runExclusiveWithSyncStateApply(', applyAt);
+        final int lockAt = src.lastIndexOf(
+          'runExclusiveWithSyncStateApply(',
+          applyAt,
+        );
         expect(lockAt, greaterThan(0), reason: '$path 的合集落库未持窄锁');
         expect(
           src.substring(lockAt, applyAt),

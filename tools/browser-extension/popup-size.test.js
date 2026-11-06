@@ -28,8 +28,8 @@ test('无覆盖、无视口时原样采用 app 下发的 theme 尺寸', () => {
 
 test('theme 缺失时回落到内置默认，不产生 NaN/0 尺寸', () => {
   const box = fushiResolvePopupBox(null, null);
-  assert.strictEqual(box.width, 400);
-  assert.strictEqual(box.maxHeight, 360);
+  assert.strictEqual(box.width, 480);
+  assert.strictEqual(box.maxHeight, 480);
   assert.strictEqual(box.zoom, 1);
 });
 

@@ -129,11 +129,10 @@ void main() {
         audioPaths: null,
         audioRoot: music.path,
       );
-      expect(
-        playback.map((File f) => p.basename(f.path)).toList(),
-        <String>['A-01.mp3', 'B-01.mp3'],
-        reason: '播放侧照旧枚举目录（多认一个文件顶多多一条轨）',
-      );
+      expect(playback.map((File f) => p.basename(f.path)).toList(), <String>[
+        'A-01.mp3',
+        'B-01.mp3',
+      ], reason: '播放侧照旧枚举目录（多认一个文件顶多多一条轨）');
       expect(
         audiobookLocalFilePaths(audioPaths: null, persistRoot: persistRoot),
         isEmpty,

@@ -6,12 +6,24 @@
   排行榜账户文件 <support>/leaderboard/profile_<id>.json 里是设备私钥（等同密码），
   既不上云备份也不随设备迁移。<support> = getApplicationSupportDirectory() =
   Context.getFilesDir()，即 domain="file" 的根。见 fushi/lib/src/leaderboard/leaderboard_store.dart。
+  音乐插件凭据保险库 <support>/music_plugins/.credentials/（各插件的 AES-GCM 密文；旧版还有明文
+  数据密钥 key，首次启动迁进系统安全存储后删除）：凭据不随备份上云 / 迁到新设备，同样排除。
+  见 native/fushi_music/src/plugin/vault.rs 与 AppModel 的 music_plugins 根目录。
+  flutter_secure_storage 的两份 SharedPreferences（FlutterSecureStorage.xml 存密文、
+  FlutterSecureKeyStorage.xml 存被 Keystore 包裹的密钥）：Keystore 密钥不随备份走，恢复到新设备
+  只会得到解不开的密文（插件文档要求排除），而且里面就是上面保险库的数据密钥。
 -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="file" path="leaderboard/" />
+        <exclude domain="file" path="music_plugins/.credentials/" />
+        <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureKeyStorage.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="leaderboard/" />
+        <exclude domain="file" path="music_plugins/.credentials/" />
+        <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureKeyStorage.xml" />
     </device-transfer>
 </data-extraction-rules>

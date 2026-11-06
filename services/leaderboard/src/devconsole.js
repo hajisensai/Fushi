@@ -7,13 +7,16 @@
 //   GET  /dev/f/:id               详情：正文、设备信息、截图、日志、时间线、修复 commit 与各通道发布版本（只读）、处理表单
 //   GET  /dev/f/:id/a/:slot       附件（日志 ?view=text 解压成文本；视频 v0 支持 Range，?download=1 下载）
 //   POST /dev/f/:id  {status,reply}
+//   GET  /dev/project             项目数据：GitHub star / fork / Release 下载与官网访问量的每日快照（project_stats.js）
+//   POST /dev/project/refresh     立即重新取一遍外部数据（不等定时任务的节流间隔）
 //   GET  /dev/stats               安装统计：日活 / 周活 / 月活、近 30 天每日活跃与新增、平台 / 通道 / 版本分布（installs.js）
+//   GET  /dev/stats.json          同一份数据的 JSON（installStats），给维护者自己的看板（Fushi Pulse）取数；没有会话 → 401 JSON
 //
 // 安全：页面无脚本（CSP script-src 为 none）；会话 Cookie HttpOnly + Secure + SameSite=Strict，
 // 只发往 /dev；所有 POST 另验 Origin 与本站一致（双保险防 CSRF）。会话 7 天，库里只存 token 哈希。
 // 业务一律复用 feedback.js 的函数，与 App 端开发者接口同一份逻辑。
 
-import { HttpError, hex, sha256 } from './util.js';
+import { HttpError, hex, json, sha256 } from './util.js';
 import { consumeCode, requestCode, resolveEmailAccount } from './email.js';
 import { esc } from './pages.js';
 import {
@@ -28,6 +31,7 @@ import {
   newSessionToken,
 } from './feedback.js';
 import { PING_PLATFORMS, installStats, versionIncludes } from './installs.js';
+import { RELEASE_PLATFORMS, projectStats, refreshProjectStats } from './project_stats.js';
 
 export const SESSION_COOKIE = 'fushi_dev';
 export const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
@@ -106,7 +110,7 @@ function fmtBytes(n) {
 
 function layout(title, body, { signedIn = false } = {}) {
   const logout = signedIn
-    ? '<nav class="top"><a href="/dev">反馈</a><a href="/dev/stats">统计</a>'
+    ? '<nav class="top"><a href="/dev">反馈</a><a href="/dev/stats">统计</a><a href="/dev/project">项目</a>'
       + '<form method="post" action="/dev/logout" class="inline"><button class="link">退出</button></form></nav>'
     : '';
   return `<!doctype html>
@@ -129,8 +133,8 @@ ${body}
 }
 
 const STYLE = `
-:root{--bg:#f7f6f3;--fg:#1d1c1a;--muted:#6b6862;--card:#fff;--line:#e4e1db;--accent:#b4532a;--ok:#2f7d4f}
-@media (prefers-color-scheme:dark){:root{--bg:#161514;--fg:#ecebe8;--muted:#a19d96;--card:#201f1d;--line:#34322f;--accent:#e58a5f;--ok:#6cc08f}}
+:root{--bg:#f7f6f3;--fg:#1d1c1a;--muted:#6b6862;--card:#fff;--line:#e4e1db;--accent:#b4532a;--ok:#2f7d4f;--c2:#3b6fb0}
+@media (prefers-color-scheme:dark){:root{--bg:#161514;--fg:#ecebe8;--muted:#a19d96;--card:#201f1d;--line:#34322f;--accent:#e58a5f;--ok:#6cc08f;--c2:#7eaee6}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI","Noto Sans CJK SC","PingFang SC",sans-serif}
 a{color:inherit}
@@ -155,6 +159,8 @@ h2{font-size:15px;margin:20px 0 8px}
 .badge.s-resolved{border-color:var(--ok);color:var(--ok)}
 .badge.warn{border-color:#c98a00;color:#c98a00}
 .badge.ok{border-color:var(--ok);color:var(--ok)}
+.badge.insider{background:#d0216e;border-color:#d0216e;color:#fff;font-weight:700}
+.row.insider{background:rgba(208,33,110,.08);border-left:4px solid #d0216e;padding-left:8px}
 .card.ai{border-left:3px solid var(--ok)}
 .note{border-left:3px solid #c98a00;padding:6px 10px;margin:12px 0;font-size:14px}
 pre,.body{white-space:pre-wrap;word-break:break-word;margin:0}
@@ -182,6 +188,32 @@ nav.top{display:flex;gap:14px;align-items:baseline}
 .grid th:first-child{text-align:left}
 .bar{display:inline-block;height:8px;border-radius:4px;background:var(--accent);vertical-align:middle;margin-right:6px}
 .err{color:var(--accent)}
+.up{color:var(--ok)}
+.title{display:flex;align-items:center;justify-content:space-between;gap:12px}
+button.small{margin:0;padding:4px 12px;font-size:14px}
+details.card summary{cursor:pointer;color:var(--muted);font-size:14px}
+details.card[open] summary{margin-bottom:8px}
+.foot{font-size:12px;margin-top:24px}
+h2 .more{font-weight:400;font-size:13px;color:var(--muted);margin-left:8px}
+.scroll{overflow-x:auto}
+.scroll td,.scroll th{white-space:nowrap;word-break:normal}
+.scroll td:first-child{width:auto}
+.chart{margin:4px 0 18px}
+.chart:last-child{margin-bottom:4px}
+.chart figcaption{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 14px;font-size:13px;color:var(--muted)}
+.chart figcaption>b{color:var(--fg);font-size:14px;margin-right:auto}
+.chart figcaption span b{color:var(--fg);font-variant-numeric:tabular-nums}
+.chart i{display:inline-block;width:12px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px}
+.plot{display:grid;grid-template-columns:auto 1fr;column-gap:8px;margin-top:8px}
+.yax{display:flex;flex-direction:column;justify-content:space-between;height:150px;font-size:11px;line-height:1;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.xax{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px}
+svg.line{display:block;width:100%;height:150px;overflow:visible}
+svg.line polyline{fill:none;stroke-width:2;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+svg.line line.g{stroke:var(--line);stroke-width:1;vector-effect:non-scaling-stroke}
+svg.line rect.hit{fill:transparent}
+svg.line rect.hit:hover{fill:var(--line);opacity:.6}
+.l0{stroke:var(--accent);background:var(--accent)}
+.l1{stroke:var(--c2);background:var(--c2)}
 `;
 
 function readCookie(request, name) {
@@ -236,6 +268,24 @@ async function readForm(request, maxBytes = 32 * 1024) {
   return new URLSearchParams(text);
 }
 
+/** 登录页错误码 → 中文说明（未列出的原样显示错误码，便于排查）。 */
+const AUTH_ERROR_TEXT = {
+  rate_limited: '请求太频繁（同一网络每小时最多发 5 次验证码），请稍后再试。已发出的验证码 10 分钟内仍然有效。',
+  bad_email: '邮箱格式不对。',
+  bad_code: '验证码不对。',
+  code_expired: '验证码已过期，请重新发送。',
+  too_many_attempts: '尝试次数过多，请重新发送验证码（同一邮箱每天猜错 10 次后当天不能再登录）。',
+  email_not_configured: '服务端没有配置发信。',
+};
+
+/**
+ * @param {string} code
+ * @returns {string}
+ */
+function authErrorText(code) {
+  return AUTH_ERROR_TEXT[code] || code;
+}
+
 function loginPage({ email = '', step = 'email', error = '' } = {}) {
   const err = error ? `<p class="err">${esc(error)}</p>` : '';
   const form = step === 'email'
@@ -246,10 +296,14 @@ function loginPage({ email = '', step = 'email', error = '' } = {}) {
 </form>`
     : `<form method="post" action="/dev/login">
 <input type="hidden" name="email" value="${esc(email)}">
-<p class="muted">如果该邮箱是已注册的 Fushi 账户，验证码已发出（10 分钟内有效）。</p>
+<p class="muted">如果该邮箱是已注册的 Fushi 账户，验证码已发出（10 分钟内有效）。邮件有时会迟到几分钟，也请看看垃圾邮件；有效期内重发收到的是同一个验证码，先到的那封就能用。</p>
 <label for="code">验证码</label>
 <input id="code" name="code" inputmode="numeric" pattern="\\d{6}" autocomplete="one-time-code" required>
 <button>登录</button>
+</form>
+<form method="post" action="/dev/code">
+<input type="hidden" name="email" value="${esc(email)}">
+<button class="link">重新发送</button>
 </form>`;
   return html(layout('登录', `<h1>登录</h1>
 <div class="card">
@@ -260,6 +314,18 @@ ${form}
 }
 
 const TABS = [['active', '未结案'], ...STATUSES.map((s) => [s, STATUS_LABEL[s]]), ['flagged', '可疑'], ['all', '全部']];
+
+/**
+ * 开发者账户提的反馈：醒目徽标（自己提的写「我提的」，其他开发者写昵称）。外部用户提的返回空串。
+ * @param {{id: string, nickname: string} | null} reporter
+ * @param {{id: string}} viewer 当前登录的开发者
+ * @returns {string}
+ */
+export function devReporterBadge(reporter, viewer) {
+  if (!reporter) return '';
+  const label = reporter.id === viewer.id ? '★ 我提的' : `★ 开发者 ${reporter.nickname}`;
+  return `<span class="badge insider">${esc(label)}</span>`;
+}
 
 async function listPage(env, url, dev) {
   const status = url.searchParams.get('status') || 'active';
@@ -277,7 +343,8 @@ async function listPage(env, url, dev) {
 <input type="search" name="q" value="${esc(q)}" maxlength="100" placeholder="编号 / 标题 / 正文">
 <button>搜索</button>${q ? ` <a href="/dev?status=${esc(status)}">清除</a>` : ''}
 </form>`;
-  const rows = res.items.map((f) => `<a class="row" href="/dev/f/${esc(f.id)}">
+  const rows = res.items.map((f) => `<a class="row${f.devReporter ? ' insider' : ''}" href="/dev/f/${esc(f.id)}">
+${devReporterBadge(f.devReporter, dev)}
 <span class="badge s-${esc(f.status)}">${esc(STATUS_LABEL[f.status] || f.status)}</span>
 <span class="badge">${esc(CATEGORY_LABEL[f.category] || f.category)}</span>
 <span class="muted">#${esc(f.id)}</span>
@@ -302,6 +369,118 @@ ${more}`, { signedIn: true }));
 }
 
 const CHANNEL_LABEL = { debug: '调试版', beta: '测试版', stable: '正式版' };
+
+/** Intl.DisplayNames 的中文名；运行时不支持或码不认识 → null（调用方退回原码）。 */
+function displayName(type, code) {
+  try {
+    const name = new Intl.DisplayNames(['zh-CN'], { type, fallback: 'none' }).of(code);
+    return name && name !== code ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 两位国家 / 地区码 → 「中文名（码）」；T1 / XX 是 Cloudflare 的特殊值；null = 0017 之前或没有 cf。 */
+export function countryLabel(code) {
+  if (code === null || code === undefined) return '未记录';
+  if (code === 'T1') return 'Tor 出口（T1）';
+  if (code === 'XX') return '无法判断（XX）';
+  const name = displayName('region', code);
+  return name ? `${name}（${code}）` : code;
+}
+
+/** 界面语言标签 → 「中文名（标签）」；null = 旧客户端没上报。 */
+export function localeLabel(tag) {
+  if (tag === null || tag === undefined) return '未上报（旧客户端）';
+  const name = displayName('language', tag);
+  return name ? `${name}（${tag}）` : tag;
+}
+
+const PLATFORM_LABEL = { android: 'Android', windows: 'Windows', macos: 'macOS', linux: 'Linux' };
+const NOT_REPORTED = '未上报';
+
+/** Android API 级别 → 系统版本号（只列 minSdk 24 起）。 */
+const ANDROID_API_RELEASE = {
+  24: '7.0', 25: '7.1', 26: '8.0', 27: '8.1', 28: '9', 29: '10', 30: '11', 31: '12', 32: '12L',
+  33: '13', 34: '14', 35: '15', 36: '16',
+};
+
+/** 心跳 osVersion（按平台的大版本记号）→ 可读名。 */
+export function osVersionLabel(platform, v) {
+  if (v === null || v === undefined) return `${PLATFORM_LABEL[platform] || platform} · ${NOT_REPORTED}`;
+  if (platform === 'android') {
+    const release = ANDROID_API_RELEASE[v];
+    return release ? `Android ${release}（API ${v}）` : `Android API ${v}`;
+  }
+  return `${PLATFORM_LABEL[platform] || platform} ${v}`;
+}
+
+const SOURCE_LABEL = {
+  play: 'Google Play',
+  fdroid: 'F-Droid 系客户端',
+  obtainium: 'Obtainium',
+  self_update: 'App 内更新',
+  manual: '手动安装 APK（文件管理器 / 浏览器）',
+  adb: 'adb / 开发安装',
+  installer: '安装包',
+  portable: '便携 / 解压版',
+  direct: '直接下载',
+  source: '源码构建',
+};
+
+/** 安装来源类别 → 「平台 · 中文说明」。 */
+export function sourceLabel(platform, v) {
+  const p = PLATFORM_LABEL[platform] || platform;
+  if (v === null || v === undefined) return `${p} · ${NOT_REPORTED}`;
+  return `${p} · ${SOURCE_LABEL[v] || v}`;
+}
+
+/** 架构 → 「平台 · 架构」。 */
+export function archLabel(platform, v) {
+  return `${PLATFORM_LABEL[platform] || platform} · ${v ?? NOT_REPORTED}`;
+}
+
+/** 按平台分组的分布行 → distTable 的 {key, n}（key 已是展示文案）。 */
+function byPlatform(rows, label) {
+  return rows.map((r) => ({ key: label(r.platform, r.value), n: r.n }));
+}
+
+const pctText = (n, d) => (d ? `${((n * 100) / d).toFixed(1)}%` : '—');
+
+/** 留存表：新增日 × 次日 / 第 7–13 天 / 第 30–59 天。 */
+function retentionTable(rows) {
+  if (!rows.length) return '<p class="muted">还没有数据。</p>';
+  const cell = (r, k) => (r[k] === null ? '<td class="muted">—</td>' : `<td>${pctText(r[k], r.n)} <span class="muted">${r[k]}</span></td>`);
+  const mature = (k) => rows.filter((r) => r[k] !== null && !r.seeded);
+  const avg = (k) => {
+    const m = mature(k);
+    const n = m.reduce((a, r) => a + r.n, 0);
+    return n ? `<td><b>${pctText(m.reduce((a, r) => a + r[k], 0), n)}</b></td>` : '<td class="muted">—</td>';
+  };
+  return `<table class="grid"><tr><th>新增日（UTC）</th><th>新增</th><th>次日</th><th>第 7–13 天</th><th>第 30–59 天</th></tr>
+<tr><td>合计（已完整的窗口，不含起始日）</td><td></td>${avg('d1')}${avg('d7')}${avg('d30')}</tr>
+${rows.map((r) => `<tr><td>${esc(r.day)}${r.seeded ? ' <span class="muted">起始日，含存量安装</span>' : ''}</td><td>${r.n}</td>`
+    + `${cell(r, 'd1')}${cell(r, 'd7')}${cell(r, 'd30')}</tr>`).join('')}</table>`;
+}
+
+const TRACK_LABEL = { '': '正式', beta: '测试', debug: '调试' };
+
+/** 版本升级进度：该版本在同轨道 7 日活跃里的覆盖率。 */
+function adoptionTable(rows) {
+  if (!rows.length) return '<p class="muted">还没有数据。</p>';
+  return `<table class="grid"><tr><th>版本</th><th>轨道</th><th>首次出现</th><th>已装到该版本或更新</th><th>正好在该版本</th></tr>
+${rows.map((r) => `<tr><td>${esc(r.version)}</td><td>${esc(r.track === null ? '?' : TRACK_LABEL[r.track] ?? r.track)}</td>`
+    + `<td>${esc(r.firstDay)}</td><td>${pctText(r.reached, r.peers)} <span class="muted">${r.reached}/${r.peers}</span></td>`
+    + `<td>${pctText(r.exact, r.peers)} <span class="muted">${r.exact}</span></td></tr>`).join('')}</table>`;
+}
+
+/** 分国家日活趋势：日期 × 前几个国家 + 其它。 */
+function countryTrendTable(trend) {
+  if (!trend.days.length) return '<p class="muted">还没有数据。</p>';
+  const head = trend.countries.map((c) => `<th>${esc(c === null ? '未记录' : c)}</th>`).join('');
+  return `<table class="grid"><tr><th>日期（UTC）</th>${head}<th>其它</th></tr>
+${trend.days.map((d) => `<tr><td>${esc(d.day)}</td>${d.counts.map((n) => `<td>${n}</td>`).join('')}<td class="muted">${d.other}</td></tr>`).join('')}</table>`;
+}
 
 /** 修复追踪（只读）：修复 commit + 各通道 / 平台最早包含它的版本。未标记修复 → 空串。 */
 function fixSection(fix) {
@@ -346,7 +525,166 @@ async function statsPage(env, now) {
 <div class="card">${daily ? `<table class="grid">${head}${daily}</table>` : '<p class="muted">还没有心跳。</p>'}</div>
 <h2>平台</h2><div class="card">${distTable(st.platforms)}</div>
 <h2>通道</h2><div class="card">${distTable(st.channels, (k) => CHANNEL_LABEL[k] || k)}</div>
-<h2>版本（前 20）</h2><div class="card">${distTable(st.versions)}</div>`, { signedIn: true }));
+<h2>版本（前 20）</h2><div class="card">${distTable(st.versions)}</div>
+<h2>国家 / 地区</h2>
+<p class="muted">Cloudflare 按心跳连接 IP 判出的国家 / 地区（只存两位码，不存 IP）；走代理 / VPN 的安装记到出口所在地。</p>
+<div class="card">${distTable(st.countries, countryLabel)}</div>
+<h2>界面语言</h2><div class="card">${distTable(st.locales, localeLabel)}</div>
+<h2>分国家日活趋势</h2><div class="card">${countryTrendTable(st.countryTrend)}</div>
+<h2>留存</h2>
+<p class="muted">按首次心跳日分组：之后那段时间里任何一天有心跳即算留存。窗口还没走完的格子显示「—」。
+心跳只在 App 打开时发，留存反映的是「还在打开」，不是「还装着」。</p>
+<div class="card">${retentionTable(st.retention)}</div>
+<h2>版本升级进度</h2>
+<p class="muted">分母是同一发布轨道（正式 / 测试 / 调试）近 7 日活跃的已验证安装；「已装到该版本或更新」按与修复追踪相同的版本判据。</p>
+<div class="card">${adoptionTable(st.adoption)}</div>
+<h2>CPU 架构</h2><div class="card">${distTable(byPlatform(st.archs, archLabel))}</div>
+<h2>系统版本</h2><div class="card">${distTable(byPlatform(st.osVersions, osVersionLabel))}</div>
+<h2>安装来源</h2><div class="card">${distTable(byPlatform(st.sources, sourceLabel))}</div>`, { signedIn: true }));
+}
+
+const fmtInt = (n) => (n === null || n === undefined ? '—' : Number(n).toLocaleString('en-US'));
+
+/** 带符号的增量；null → —。 */
+function fmtDelta(n) {
+  if (n === null || n === undefined) return '<span class="muted">—</span>';
+  return n > 0 ? `<span class="up">+${fmtInt(n)}</span>` : fmtInt(n);
+}
+
+function fmtVolume(n) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  return `${v.toFixed(i >= 3 ? 1 : 0)} ${units[i]}`;
+}
+
+/** 外部数据源只在出错时占一行；正常时什么都不显示。 */
+function sourceError(name, status) {
+  if (!status?.error) return '';
+  return `<p class="err">${esc(name)} 最近一次取数失败（${esc(fmtTime(status.at))}）：${esc(status.error)}</p>`;
+}
+
+/**
+ * 按天的折线图（内联 SVG，无脚本）。days 升序；series = [{label, values}]，values 与 days 对齐，null = 缺数据（断线）。
+ * zero = y 轴从 0 起（每日计数）；否则从最小值起（累计量）。悬停某天显示当天各线数值。
+ */
+export function lineChart(title, days, series, { zero = true, empty = '数据还不够画图（至少要两天）。' } = {}) {
+  const all = series.flatMap((s) => s.values).filter((v) => v !== null && v !== undefined);
+  const latest = series.map((s, k) => {
+    const v = fmtInt([...s.values].reverse().find((x) => x !== null && x !== undefined) ?? null);
+    // 只有一条线时标题就是图例，只留最新值。
+    return series.length === 1 ? `<span><b>${v}</b></span>` : `<span><i class="l${k}"></i>${esc(s.label)} <b>${v}</b></span>`;
+  }).join('');
+  const head = `<figcaption><b>${esc(title)}</b>${latest}</figcaption>`;
+  if (days.length < 2 || !all.length) return `<figure class="chart">${head}<p class="muted">${esc(empty)}</p></figure>`;
+  // 两格刻度，格宽取 {1, 1.5, 2, 2.5, 3, 4, 5, 6, 8} × 10ⁿ 里够用的最小整数，轴上标整数、顶部不留大片空白。
+  const rawLo = zero ? Math.min(0, ...all) : Math.min(...all);
+  const want = Math.max(1, (Math.max(...all) - rawLo) / 2);
+  const mag = 10 ** Math.floor(Math.log10(want));
+  const tick = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map((m) => m * mag).find((t) => t >= want && Number.isInteger(t));
+  const lo = Math.floor(rawLo / tick) * tick;
+  const hi = Math.max(lo + 2 * tick, Math.ceil(Math.max(...all) / tick) * tick);
+  const x = (i) => ((i * 100) / (days.length - 1)).toFixed(2);
+  const y = (v) => (98 - ((v - lo) * 96) / (hi - lo)).toFixed(2);
+  const lines = series.map((s, k) => {
+    // 遇到 null 断开成几段，不把缺数据画成 0。
+    const segs = [[]];
+    s.values.forEach((v, i) => {
+      if (v === null || v === undefined) segs.push([]);
+      else segs.at(-1).push(`${x(i)},${y(v)}`);
+    });
+    return segs.filter((p) => p.length > 1).map((p) => `<polyline class="l${k}" points="${p.join(' ')}"/>`).join('');
+  }).join('');
+  const step = 100 / (days.length - 1);
+  const hits = days.map((d, i) => `<rect class="hit" x="${(i * step - step / 2).toFixed(2)}" y="0" width="${step.toFixed(2)}" height="100">`
+    + `<title>${esc(d)}${series.map((s) => ` · ${esc(s.label)} ${fmtInt(s.values[i] ?? null)}`).join('')}</title></rect>`).join('');
+  const grid = [2, 50, 98].map((g) => `<line class="g" x1="0" x2="100" y1="${g}" y2="${g}"/>`).join('');
+  return `<figure class="chart">${head}
+<div class="plot"><div class="yax"><span>${fmtInt(hi)}</span><span>${fmtInt(Math.round((hi + lo) / 2))}</span><span>${fmtInt(lo)}</span></div>
+<svg class="line" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="${esc(title)}">${grid}${lines}${hits}</svg>
+<span></span><div class="xax"><span>${esc(days[0].slice(5))}</span><span>${esc(days.at(-1).slice(5))}</span></div></div></figure>`;
+}
+
+const RELEASE_PLATFORM_LABEL = {
+  android: 'Android', windows: 'Windows', macos: 'macOS', ios: 'iOS', linux: 'Linux', other: '其它',
+};
+
+function repoSection(r, today) {
+  const l = r.latest;
+  if (!l) return `<h2>${esc(r.repo)}</h2><div class="card"><p class="muted">还没有数据。</p></div>`;
+  const kpi = (label, n, extra = '') => `<div class="kpi"><span class="muted">${esc(label)}</span><b>${fmtInt(n)}</b>${extra}</div>`;
+  const kpis = `<div class="kpis">${kpi('Star', l.stars, `<span class="muted">7 天 ${fmtDelta(r.stars7)}</span>`)}`
+    + `${kpi('App 下载（累计）', l.downloads, `<span class="muted">7 天 ${fmtDelta(r.downloads7)}</span>`)}`
+    + `${kpi('Fork', l.forks)}${kpi('开放 Issue + PR', l.open_issues)}</div>`;
+  const trend = [...r.trend].reverse();
+  // 当天的快照还会再涨，每日下载只画到昨天，免得末尾凭空掉一截。
+  const done = trend.filter((d) => d.day < today);
+  // GitHub 只给累计下载数，每日下载只能从每天的快照相减，历史补不回来。
+  const since = trend.length ? `从 ${trend[0].day.slice(5)} 开始每天记录，攒满两天后出图。` : undefined;
+  const charts = `${lineChart('Star', r.starTrend.map((d) => d.day), [{ label: 'Star', values: r.starTrend.map((d) => d.stars) }], { zero: false })}`
+    + `${lineChart('每日下载', done.map((d) => d.day), [{ label: '下载', values: done.map((d) => d.downloadsDelta) }], { empty: since })}`;
+  const used = RELEASE_PLATFORMS.filter((p) => r.releases.some((x) => x.platforms[p] > 0));
+  const releases = r.releases.length
+    ? `<div class="scroll"><table class="grid"><tr><th>版本</th><th>发布（UTC）</th><th>合计</th>${used.map((p) => `<th>${esc(RELEASE_PLATFORM_LABEL[p])}</th>`).join('')}</tr>
+${r.releases.map((x) => `<tr><td>${esc(x.tag)}${x.prerelease ? ' <span class="muted">预发布</span>' : ''}</td>`
+    + `<td>${esc((x.publishedAt || '').slice(0, 10))}</td><td>${fmtInt(x.total)}</td>`
+    + `${used.map((p) => `<td>${fmtInt(x.platforms[p])}</td>`).join('')}</tr>`).join('')}</table></div>`
+    : '<p class="muted">没有 App Release。</p>';
+  let traffic = '';
+  if (r.traffic) {
+    const clones = new Map((r.traffic.clones?.clones || []).map((c) => [c.timestamp.slice(0, 10), c.count]));
+    const views = r.traffic.views?.views || [];
+    const days = views.map((v) => v.timestamp.slice(0, 10));
+    traffic = lineChart('GitHub 访问（近 14 天）', days, [
+      { label: '浏览', values: views.map((v) => v.count) },
+      { label: 'clone', values: days.map((d) => clones.get(d) ?? 0) },
+    ]);
+  }
+  return `<h2><a href="https://github.com/${esc(r.repo)}">${esc(r.repo)}</a></h2>
+${kpis}
+<div class="card">${charts}${traffic}</div>
+<details class="card"><summary>近期 App Release 下载</summary>${releases}</details>`;
+}
+
+async function projectPage(env, now) {
+  const st = await projectStats(env, now);
+  const today = new Date(now).toISOString().slice(0, 10);
+  const kpi = (label, v) => `<div class="kpi"><span class="muted">${esc(label)}</span><b>${v}</b></div>`;
+  // App 用户：与 /dev/stats 同口径（只数已验证安装），这里只放总数和每日走势。
+  const users = await installStats(env, now);
+  const ud = [...users.daily].reverse().filter((d) => d.day < today);
+  const usersSection = `<h2>App 用户 <a class="more" href="/dev/stats">详细统计 →</a></h2>
+<div class="kpis">${kpi('今日活跃', fmtInt(users.dau))}${kpi('7 日活跃', fmtInt(users.wau))}`
+    + `${kpi('30 日活跃', fmtInt(users.mau))}${kpi('累计安装', fmtInt(users.total))}</div>
+<div class="card">${lineChart('每日活跃 / 新增', ud.map((d) => d.day), [
+      { label: '活跃', values: ud.map((d) => d.n) },
+      { label: '新增', values: ud.map((d) => d.fresh) },
+    ])}</div>`;
+  const s = st.site;
+  let site = '<p class="muted">官网访问量未配置（CF_ANALYTICS_TOKEN / CF_ZONE_ID）。</p>';
+  if (s.configured) {
+    const days = [...s.days].reverse().filter((d) => d.day < today);
+    site = `${sourceError('官网', s.status)}
+<div class="kpis">${kpi('昨日浏览', fmtInt(s.yesterday?.page_views ?? null))}${kpi('昨日访客', fmtInt(s.yesterday?.visitors ?? null))}`
+      + `${kpi('近 30 天浏览', fmtInt(s.totals.pageViews))}${kpi('近 30 天流量', esc(fmtVolume(s.totals.bytes)))}</div>
+<div class="card">${lineChart('官网每日访问', days.map((d) => d.day), [
+        { label: '浏览', values: days.map((d) => d.pageViews) },
+        { label: '访客', values: days.map((d) => d.visitors) },
+      ])}</div>
+${s.countries.length ? `<details class="card"><summary>请求来源国家 / 地区（近 30 天）</summary>${distTable(s.countries, countryLabel)}</details>` : ''}`;
+  }
+  return html(layout('项目', `<div class="title"><h1>项目数据</h1>
+<form method="post" action="/dev/project/refresh" class="inline"><button class="small">刷新</button></form></div>
+${usersSection}
+${sourceError('GitHub', st.githubStatus)}
+${st.repos.map((r) => repoSection(r, today)).join('')}
+<h2>官网 fushi.moe</h2>
+${site}
+<p class="muted foot">日期按 UTC，当天未完结的不画进每日图。下载只算 App Release 安装包；官网数字含同 zone 的 rank.fushi.moe。</p>`, { signedIn: true }));
 }
 
 /** 修复是否已装到报告人那台（按该安装最近一次心跳的通道 / 平台 / 版本）。没有可比的发布 → 空串。 */
@@ -369,6 +707,8 @@ function installSection(trail, fix) {
     ? `<table>
 <tr><td>当前版本</td><td>${esc(i.version)}</td></tr>
 <tr><td>平台 / 通道</td><td>${esc(i.platform)} · ${esc(CHANNEL_LABEL[i.channel] || i.channel)}</td></tr>
+<tr><td>地区 / 界面语言</td><td>${esc(countryLabel(i.country))} · ${esc(localeLabel(i.locale))}</td></tr>
+<tr><td>系统 / 架构 / 来源</td><td>${esc(osVersionLabel(i.platform, i.osVersion))} · ${esc(i.arch ?? NOT_REPORTED)} · ${esc(sourceLabel(i.platform, i.source))}</td></tr>
 <tr><td>首次心跳</td><td>${esc(fmtTime(i.firstSeen))}</td></tr>
 <tr><td>最近心跳</td><td>${esc(fmtTime(i.lastSeen))}</td></tr>
 </table>${fixOnInstall(fix, i)}`
@@ -395,7 +735,7 @@ function installSection(trail, fix) {
 <div class="card"><p>${badge}</p><p class="muted"><code>${esc(trail.installId)}</code></p>${summary}</div>${versions}${related}`;
 }
 
-async function detailPage(env, id) {
+async function detailPage(env, id, dev) {
   const f = await devView(env, await feedbackById(env, id));
   const meta = Object.entries(f.meta || {})
     .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
@@ -433,6 +773,7 @@ async function detailPage(env, id) {
     : '匿名';
   return html(layout(f.title, `<p><a href="/dev">← 返回列表</a></p>
 <h1>${esc(f.title)}</h1>
+${f.reporter && f.reporter.isDev ? `<p>${devReporterBadge(f.reporter, dev)}</p>` : ''}
 <p class="muted"><span class="badge s-${esc(f.status)}">${esc(STATUS_LABEL[f.status] || f.status)}</span>
 ${esc(CATEGORY_LABEL[f.category] || f.category)} · #${esc(f.id)} · ${esc(fmtTime(f.createdAt))} · ${reporter}
 ${f.contact ? ` · 联系方式：${esc(f.contact)}` : ''}</p>
@@ -485,7 +826,7 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
     try {
       await requestCode(env, ip, { email, purpose: 'login', lang: 'zh' }, now, ctx);
     } catch (e) {
-      if (e instanceof HttpError) return loginPage({ email, error: `发送失败：${e.code}` });
+      if (e instanceof HttpError) return loginPage({ email, error: `发送失败：${authErrorText(e.code)}` });
       throw e;
     }
     return loginPage({ email, step: 'code' });
@@ -497,7 +838,7 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
     try {
       ids = await consumeCode(env, email, 'login', form.get('code') || '', now);
     } catch (e) {
-      if (e instanceof HttpError) return loginPage({ email, step: 'code', error: `验证失败：${e.code}` });
+      if (e instanceof HttpError) return loginPage({ email, step: 'code', error: `验证失败：${authErrorText(e.code)}` });
       throw e;
     }
     const acc = await resolveEmailAccount(env, ids, now);
@@ -516,13 +857,32 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   const dev = await sessionAccount(env, request, now);
   if (!dev) {
     if (method === 'GET' && path === '/dev') return loginPage();
-    if (method === 'GET') return redirect('/dev');
+    if (method === 'GET' && !path.endsWith('.json')) return redirect('/dev');
     throw new HttpError(401, 'dev_session_required');
   }
 
   if (method === 'GET' && path === '/dev') return listPage(env, url, dev);
   if (method === 'GET' && path === '/dev/stats') return statsPage(env, now);
-  if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})$/.exec(path))) return detailPage(env, m[1]);
+  if (method === 'GET' && path === '/dev/stats.json') return json(await installStats(env, now));
+  if (method === 'GET' && path === '/dev/feedback.json') {
+    // 与 /dev 列表同一份数据（devList），给 Fushi Pulse 之类的本机面板用；status 缺省 = 未结案，all = 全部。
+    const status = url.searchParams.get('status') || 'active';
+    return json(await devList(env, {
+      status: status === 'all' ? null : status,
+      cursor: url.searchParams.get('cursor'),
+      limit: url.searchParams.get('limit') || 50,
+      q: (url.searchParams.get('q') || '').trim(),
+    }));
+  }
+  if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\.json$/.exec(path))) {
+    return json(await devView(env, await feedbackById(env, m[1])));
+  }
+  if (method === 'GET' && path === '/dev/project') return projectPage(env, now);
+  if (method === 'POST' && path === '/dev/project/refresh') {
+    await refreshProjectStats(env, now, { force: true });
+    return redirect('/dev/project');
+  }
+  if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})$/.exec(path))) return detailPage(env, m[1], dev);
   if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\/a\/(log|s[0-2]|v0)$/.exec(path))) {
     return attachmentResponse(env, await feedbackById(env, m[1]), m[2], url.searchParams.get('view') === 'text', {
       range: request.headers.get('Range'),

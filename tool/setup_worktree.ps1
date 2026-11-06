@@ -32,6 +32,11 @@
   只搬运密钥，不跑 pub get / bootstrap。WorktreeCreate 钩子用此开关，避免在
   worktree 创建时同步阻塞数分钟；需要 flutter test 前再手动 tool/bootstrap.ps1。
 
+.PARAMETER SkipNativeCompute
+  透传给 tool/bootstrap.ps1：不备 Rust 原生库（fushi_compute / fushi_fsrs / fushi_web_core / fushi_rwkv，
+  app 与 flutter test 的硬依赖；兄弟 worktree 有同源码产物时直接拷，否则需要 cargo 编）。跳过后
+  flutter build / test 之前必须手动跑 tool/native_libs.ps1。
+
 .PARAMETER SkipCacheSeed
   不从兄弟 worktree 复制 flutter test 的增量编译缓存(见下方「预热 flutter test
   编译缓存」一节)。默认会在 bootstrap 之后做这一步。
@@ -42,7 +47,7 @@
   pwsh -File tool/setup_worktree.ps1 -SkipBootstrap # 只搬密钥(秒级)
 #>
 [CmdletBinding()]
-param([switch]$SkipBootstrap, [switch]$SkipCacheSeed)
+param([switch]$SkipBootstrap, [switch]$SkipCacheSeed, [switch]$SkipNativeCompute)
 
 $ErrorActionPreference = "Stop"
 
@@ -119,9 +124,54 @@ else {
 & git -C $here config merge.fushi-i18n-json.driver "dart fushi/tool/i18n_merge_driver.dart %O %A %B"
 Write-Host "OK i18n json 合并驱动已注册(merge.fushi-i18n-json)" -ForegroundColor Green
 
+# --- strings.g.dart 不入库：git 钩子 + 生成 -----------------------------------------
+# fushi/lib/i18n/strings.g.dart 由 fushi/tool/gen_i18n.dart 生成、不入库：切分支 / 合并会删掉
+# 或让它过期。tool/git_hooks/install.sh 往仓库级 hooks 目录(git rev-parse --git-path hooks，
+# 主 checkout 与所有 worktree 共用；设了 core.hooksPath 就是那里)的 post-checkout / post-merge
+# 写一段带标记的块(只改标记之间，用户自己的钩子行保留)，切换后调 tool/git_hooks/gen_i18n.sh
+# 重新生成(戳记没变秒退)。硬门在 fushi/tool/heavy.dart：本机每次 analyze / test / build 前都生成。
+function Resolve-SetupBash {
+    [OutputType([string])]
+    param()
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return 'bash' }
+    # git --exec-path = <Git>/mingw64/libexec/git-core；git 钩子本身就由这份 Git 的 sh 执行。
+    $execPath = (& git --exec-path | Out-String).Trim()
+    if ($execPath) {
+        $gitRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $execPath))
+        foreach ($rel in @('bin/bash.exe', 'usr/bin/bash.exe')) {
+            $candidate = Join-Path $gitRoot $rel
+            if (Test-Path -LiteralPath $candidate) { return $candidate }
+        }
+    }
+    throw "找不到 Git for Windows 的 bash(git --exec-path=$execPath)，装不了 i18n git 钩子。"
+}
+$setupBash = Resolve-SetupBash
+Push-Location $here
+try {
+    & $setupBash tool/git_hooks/install.sh
+    $hookExit = $LASTEXITCODE
+}
+finally {
+    Pop-Location
+}
+if ($hookExit -ne 0) { throw "tool/git_hooks/install.sh failed (exit $hookExit)." }
+
 # --- bootstrap(pub get + 打补丁) ------------------------------------------
 if ($SkipBootstrap) {
-    Write-Host "`n已跳过 bootstrap。跑 flutter test 前请先: pwsh -File tool/bootstrap.ps1" -ForegroundColor Cyan
+    # bootstrap 会在 pub get 之后生成；跳过它时也要生成(依赖已解析过的 worktree 约 1~15 秒、
+    # 不联网)。还没 pub get 过的 worktree 由 gen_i18n.sh 说明原因后跳过，失败则让本脚本失败。
+    Push-Location $here
+    try {
+        & $setupBash tool/git_hooks/gen_i18n.sh setup
+        $genExit = $LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+    if ($genExit -ne 0) { throw "tool/git_hooks/gen_i18n.sh setup failed (exit $genExit)." }
+    # 不入库的预编译二进制（tool/vendored_binaries.json）也由 bootstrap 取回；跳过 bootstrap
+    # 时它们缺席，读 libmpv / FFmpegKit / LunaHook 的构建和测试会报文件不存在。
+    Write-Host "`n已跳过 bootstrap。跑 flutter test / build 前请先: pwsh -File tool/bootstrap.ps1（含取回不入库的预编译二进制；只要二进制: pwsh -File tool/vendored_binaries.ps1）" -ForegroundColor Cyan
     return
 }
 
@@ -131,7 +181,7 @@ if (-not (Test-Path $bootstrap)) { throw "找不到 $bootstrap" }
 $bootstrapError = $null
 Push-Location $here
 try {
-    & $bootstrap
+    & $bootstrap -SkipNativeCompute:$SkipNativeCompute
 }
 catch {
     # 先记下，预热照做再抛：bootstrap 若死在 apply-patches，那时 pub get 已经成功，

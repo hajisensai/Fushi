@@ -47,8 +47,8 @@ void main() {
       ]) {
         expect(
           ShortcutDefaults.forPlatform(
-                  platform)[ShortcutAction.globalContextMenu]!
-              .mouseBindings,
+            platform,
+          )[ShortcutAction.globalContextMenu]!.mouseBindings,
           contains(const MouseBinding(2)),
           reason: '$platform 默认表丢了右键 → 该平台右键菜单会整个消失',
         );
@@ -122,7 +122,8 @@ void main() {
       registry.updateBinding(
         ShortcutAction.videoScreenshot,
         const ShortcutBindingSet(
-            mouseBindings: <MouseBinding>[MouseBinding(2)]),
+          mouseBindings: <MouseBinding>[MouseBinding(2)],
+        ),
       );
 
       // 视频页阶梯：video scope 先命中 videoScreenshot → 菜单让位，一次按下只做一件事。
@@ -155,7 +156,8 @@ void main() {
       registry.updateBinding(
         ShortcutAction.globalContextMenu,
         const ShortcutBindingSet(
-            mouseBindings: <MouseBinding>[MouseBinding(1)]),
+          mouseBindings: <MouseBinding>[MouseBinding(1)],
+        ),
       );
       expect(
         contextMenuButtonMatches(
@@ -193,7 +195,8 @@ void main() {
       registry.updateBinding(
         ShortcutAction.mangaPageForward,
         const ShortcutBindingSet(
-            mouseBindings: <MouseBinding>[MouseBinding(2)]),
+          mouseBindings: <MouseBinding>[MouseBinding(2)],
+        ),
       );
       expect(
         contextMenuButtonNumberMatches(
@@ -250,11 +253,7 @@ void main() {
     }) async {
       final Widget trigger = ContextMenuTrigger(
         onInvoke: nullInvoke ? null : hits.add,
-        child: const SizedBox(
-          key: Key('target'),
-          width: 200,
-          height: 100,
-        ),
+        child: const SizedBox(key: Key('target'), width: 200, height: 100),
       );
       await tester.pumpWidget(
         MaterialApp(
@@ -291,7 +290,8 @@ void main() {
       registry.updateBinding(
         ShortcutAction.homeFocusSearch,
         const ShortcutBindingSet(
-            mouseBindings: <MouseBinding>[MouseBinding(2)]),
+          mouseBindings: <MouseBinding>[MouseBinding(2)],
+        ),
       );
       final List<Offset> hits = <Offset>[];
       await pumpTrigger(tester, hits: hits, scopeRegistry: registry);
@@ -299,8 +299,9 @@ void main() {
       expect(hits, isEmpty);
     });
 
-    testWidgets('onInvoke 为 null 时整层让路，不挂 Listener',
-        (WidgetTester tester) async {
+    testWidgets('onInvoke 为 null 时整层让路，不挂 Listener', (
+      WidgetTester tester,
+    ) async {
       await pumpTrigger(
         tester,
         hits: <Offset>[],
@@ -320,8 +321,9 @@ void main() {
       );
     });
 
-    testWidgets('没有 ShortcutBindingScope 时回退硬绑右键（旧行为免费）',
-        (WidgetTester tester) async {
+    testWidgets('没有 ShortcutBindingScope 时回退硬绑右键（旧行为免费）', (
+      WidgetTester tester,
+    ) async {
       final List<Offset> hits = <Offset>[];
       await pumpTrigger(tester, hits: hits);
       await pressButton(tester, kSecondaryMouseButton);
@@ -339,9 +341,9 @@ void main() {
               behavior: HitTestBehavior.translucent,
               onPointerDown: (PointerDownEvent event) =>
                   dispatchClaimedMouseAction(event, () {
-                outerRuns += 1;
-                return true;
-              }),
+                    outerRuns += 1;
+                    return true;
+                  }),
               child: Scaffold(
                 body: Center(
                   child: ContextMenuTrigger(
@@ -369,26 +371,32 @@ void main() {
     // 把那一层删掉 / 挪到 Navigator 之外，16 处 ContextMenuTrigger 会全部落进
     // `registry == null` 回退分支 = 逐字退回硬绑右键 = BUG-2111 原样复发，而此前
     // **没有任何测试会红**：新测试全都是自己 pumpWidget 手搭一棵带 scope 的树。
-    testWidgets('wrapWithGlobalNavigation 把 registry 装进 ShortcutBindingScope',
-        (WidgetTester tester) async {
+    testWidgets('wrapWithGlobalNavigation 把 registry 装进 ShortcutBindingScope', (
+      WidgetTester tester,
+    ) async {
       FushiShortcutRegistry? seen;
       bool built = false;
-      await tester.pumpWidget(MaterialApp(
-        home: wrapWithGlobalNavigation(
-          navigatorKey: GlobalKey<NavigatorState>(),
-          registry: registry,
-          child: Builder(builder: (BuildContext ctx) {
-            built = true;
-            seen = ShortcutBindingScope.maybeOf(ctx);
-            return const SizedBox.shrink();
-          }),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: wrapWithGlobalNavigation(
+            navigatorKey: GlobalKey<NavigatorState>(),
+            registry: registry,
+            child: Builder(
+              builder: (BuildContext ctx) {
+                built = true;
+                seen = ShortcutBindingScope.maybeOf(ctx);
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
         ),
-      ));
+      );
       expect(built, isTrue, reason: '子树没建起来，下面的断言会空过');
       expect(
         identical(seen, registry),
         isTrue,
-        reason: 'wrapWithGlobalNavigation 没把注册表装进 ShortcutBindingScope：'
+        reason:
+            'wrapWithGlobalNavigation 没把注册表装进 ShortcutBindingScope：'
             '全部 ContextMenuTrigger 会退回硬绑右键（BUG-2111 复发）',
       );
     });
@@ -402,8 +410,9 @@ void main() {
     // 注释替换成等长空白，偏移原样保留。
     test('lib/ 里不再有 onSecondaryTapDown / onSecondaryTapUp 的手势入口', () {
       final List<String> offenders = <String>[];
-      for (final FileSystemEntity entity
-          in Directory('lib').listSync(recursive: true)) {
+      for (final FileSystemEntity entity in Directory(
+        'lib',
+      ).listSync(recursive: true)) {
         if (entity is! File || !entity.path.endsWith('.dart')) continue;
         final String source = maskComments(entity.readAsStringSync());
         if (source.contains('onSecondaryTapDown') ||
@@ -414,14 +423,16 @@ void main() {
       expect(
         offenders,
         isEmpty,
-        reason: '这两个回调写死鼠标次按钮，绕过绑定表 → 右键被别的动作占用时会双触发。'
+        reason:
+            '这两个回调写死鼠标次按钮，绕过绑定表 → 右键被别的动作占用时会双触发。'
             '请改用 ContextMenuTrigger：${offenders.join(', ')}',
       );
     });
 
     test('漫画页 WebView 那一路也过归属判据（JS 侧仍硬判 e.button === 2）', () {
-      final File file =
-          File('lib/src/media/manga/reader/manga_fushi_page.dart');
+      final File file = File(
+        'lib/src/media/manga/reader/manga_fushi_page.dart',
+      );
       expect(file.existsSync(), isTrue, reason: '路径过期请更新守卫');
       final String source = maskComments(file.readAsStringSync());
       final int handler = source.indexOf("handlerName: 'onMangaContextMenu'");
@@ -432,8 +443,11 @@ void main() {
         isTrue,
         reason: '漫画页右键被别的动作占用时菜单必须让位，否则一次右键做两件事',
       );
-      expect(body.contains('_kMangaMouseLadder'), isTrue,
-          reason: '必须用漫画页那条阶梯，页面动作才排在菜单之前');
+      expect(
+        body.contains('_kMangaMouseLadder'),
+        isTrue,
+        reason: '必须用漫画页那条阶梯，页面动作才排在菜单之前',
+      );
     });
 
     /// 取 `构造名(` 之后**深度 1** 的具名实参名字集合。
@@ -483,15 +497,18 @@ void main() {
         'GestureDetector(',
       ];
       final List<String> offenders = <String>[];
-      for (final FileSystemEntity entity
-          in Directory('lib').listSync(recursive: true)) {
+      for (final FileSystemEntity entity in Directory(
+        'lib',
+      ).listSync(recursive: true)) {
         if (entity is! File || !entity.path.endsWith('.dart')) continue;
         final String source = maskComments(entity.readAsStringSync());
         for (final String widget in rawGestureWidgets) {
           int at = source.indexOf(widget);
           while (at >= 0) {
-            final Set<String> args =
-                topLevelArgNames(source, at + widget.length - 1);
+            final Set<String> args = topLevelArgNames(
+              source,
+              at + widget.length - 1,
+            );
             if (args.any((String a) => a.startsWith('onSecondaryTap'))) {
               offenders.add('${entity.path} -> $widget');
             }
@@ -502,7 +519,8 @@ void main() {
       expect(
         offenders,
         isEmpty,
-        reason: '这些地方把鼠标次按钮硬绑死、绕过绑定表 → 右键被别的动作占用时会双触发。'
+        reason:
+            '这些地方把鼠标次按钮硬绑死、绕过绑定表 → 右键被别的动作占用时会双触发。'
             '请改用 ContextMenuTrigger + contextMenuInvoker：${offenders.join(', ')}',
       );
     });
@@ -516,15 +534,15 @@ void main() {
       ];
       const List<({String path, String delegate})> delegators =
           <({String path, String delegate})>[
-        (
-          path: 'lib/src/utils/components/galgame_poster_card.dart',
-          delegate: 'shelfCoverCard(',
-        ),
-        (
-          path: 'lib/src/utils/components/shelf_card_widgets.dart',
-          delegate: 'FushiCard(',
-        ),
-      ];
+            (
+              path: 'lib/src/utils/components/galgame_poster_card.dart',
+              delegate: 'shelfCoverCard(',
+            ),
+            (
+              path: 'lib/src/utils/components/shelf_card_widgets.dart',
+              delegate: 'FushiCard(',
+            ),
+          ];
       for (final ({String path, String delegate}) d in delegators) {
         final File file = File(d.path);
         expect(file.existsSync(), isTrue, reason: '路径过期请更新守卫：${d.path}');
@@ -536,8 +554,9 @@ void main() {
         );
         // 委托壳自己不得挂手势识别器接次按钮。
         expect(
-          RegExp(r'GestureDetector\(|InkWell\(|onSecondaryTapDown|onSecondaryTapUp')
-              .hasMatch(source),
+          RegExp(
+            r'GestureDetector\(|InkWell\(|onSecondaryTapDown|onSecondaryTapUp',
+          ).hasMatch(source),
           isFalse,
           reason: '${d.path} 自己挂了手势识别器，可能绕过 ContextMenuTrigger 硬绑右键',
         );
@@ -553,8 +572,9 @@ void main() {
         );
         // InkWell / GestureDetector 上不得再直接接次按钮回调。
         expect(
-          RegExp(r'onSecondaryTap:\s*(widget\.)?onSecondaryTap')
-              .hasMatch(source),
+          RegExp(
+            r'onSecondaryTap:\s*(widget\.)?onSecondaryTap',
+          ).hasMatch(source),
           isFalse,
           reason: '$path 仍把 onSecondaryTap 直接转给手势识别器（硬绑右键）',
         );

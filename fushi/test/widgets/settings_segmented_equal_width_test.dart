@@ -78,16 +78,24 @@ void main() {
       await tester.pump();
       expect(tester.takeException(), isNull);
 
-      final Rect shortRow =
-          tester.getRect(find.byKey(const ValueKey<String>('short')));
-      final Rect longRow =
-          tester.getRect(find.byKey(const ValueKey<String>('long')));
+      final Rect shortRow = tester.getRect(
+        find.byKey(const ValueKey<String>('short')),
+      );
+      final Rect longRow = tester.getRect(
+        find.byKey(const ValueKey<String>('long')),
+      );
 
       // Both rows span the same full section width: EQUAL.
-      expect((shortRow.width - longRow.width).abs(), lessThan(0.5),
-          reason: 'both rows occupy the same full row width');
-      expect(shortRow.width, greaterThan(pane - 1),
-          reason: 'rows fill the section, not an intrinsic narrow width');
+      expect(
+        (shortRow.width - longRow.width).abs(),
+        lessThan(0.5),
+        reason: 'both rows occupy the same full row width',
+      );
+      expect(
+        shortRow.width,
+        greaterThan(pane - 1),
+        reason: 'rows fill the section, not an intrinsic narrow width',
+      );
 
       // The short strip is a compact control right-aligned to the row content
       // edge (no stray narrow box floating on the left).
@@ -99,8 +107,11 @@ void main() {
           ),
         ),
       );
-      expect(shortRow.right - shortStrip.right, lessThan(40),
-          reason: 'the short strip is right-aligned to the row edge');
+      expect(
+        shortRow.right - shortStrip.right,
+        lessThan(40),
+        reason: 'the short strip is right-aligned to the row edge',
+      );
 
       // The long strip does not fit → the whole row is a choice-menu row, not a
       // narrower intrinsic-width box; every option stays reachable (BUG-008).
@@ -119,8 +130,11 @@ void main() {
         matching: find.byType(SettingsChoiceMenuRow),
       );
       expect(longMenu, findsOneWidget);
-      expect(find.textContaining('自動判定で表示'), findsOneWidget,
-          reason: 'the selected long option is shown on the row');
+      expect(
+        find.textContaining('自動判定で表示'),
+        findsOneWidget,
+        reason: 'the selected long option is shown on the row',
+      );
       await tester.tap(longMenu);
       await tester.pumpAndSettle();
       for (final String label in <String>[
@@ -128,8 +142,11 @@ void main() {
         '振り仮名を一切表示しない',
         '読了済みの語だけ隠す',
       ]) {
-        expect(find.text(label), findsOneWidget,
-            reason: 'every long option stays reachable: $label');
+        expect(
+          find.text(label),
+          findsOneWidget,
+          reason: 'every long option stays reachable: $label',
+        );
       }
       expect(tester.takeException(), isNull);
     },

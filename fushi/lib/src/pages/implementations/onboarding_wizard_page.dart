@@ -1,10 +1,18 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show ByteData, rootBundle;
-import 'package:fushi/pages.dart';
-import 'package:fushi/models.dart' show AppModel;
+import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/pages/implementations/browser_extension_page.dart';
+import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankiconnect_addon_installer.dart';
@@ -15,6 +23,7 @@ import 'package:fushi/src/models/module_registry.dart'
     show hasAnyNavigationModule;
 import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
+import 'package:fushi/src/onboarding/onboarding_system_permissions.dart';
 import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
@@ -31,6 +40,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart'
     show InputBinding, ShortcutBindingSet;
 import 'package:fushi/src/shortcuts/shortcut_action.dart' show ShortcutAction;
 import 'package:fushi/src/shortcuts/visual/key_cap_widget.dart';
+import 'package:fushi/src/srs/srs_providers.dart' show srsStoreProvider;
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show
@@ -42,12 +52,34 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_color_roles.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/web_browser/web_module_capabilities.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    hide FushiSpringCurve;
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/official_links.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_anki/fushi_anki.dart'
     show AnkiDeck, AnkiNoteType, AnkiSettings;
 import 'package:fushi_audio/fushi_audio.dart'
     show AudiobookRepository, SrtBookRepository;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show Dictionary;
+import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
 import 'package:url_launcher/url_launcher.dart';
 
 /// Anki 生态外链（Anki 步骤「先把 Anki 装起来」的出口；AnkiConnect 插件不走
@@ -128,6 +160,9 @@ List<OnboardingTutorialItem> fushiReviewFinishNextSteps() =>
 /// 步骤内容区最大宽度：桌面宽窗口下正文行长过长会难读，卡片也会被拉成长条。
 const double _kOnboardingContentMaxWidth = 720;
 
+/// 「跳过新手引导」确认键的强制等待（用户 2026-10-21：跳过前二次确认并强制三秒）。
+const Duration kOnboardingSkipConfirmDelay = Duration(seconds: 3);
+
 /// 功能选择页在多宽以上排两列。
 const double _kOnboardingTwoColumnMinWidth = 560;
 
@@ -148,9 +183,18 @@ const double _kOnboardingTwoColumnMinWidth = 560;
 /// [OnboardingStepHero]（图标 + 标题 + 一句话）开头；动作走 [OnboardingActionList]
 /// ——必做/推荐的动作直接摊开，可选动作收进「其他方式」折叠组，避免一屏五个入口。
 class OnboardingWizardPage extends BasePage {
-  const OnboardingWizardPage({this.tutorialOnly = false, super.key});
+  const OnboardingWizardPage({
+    this.tutorialOnly = false,
+    this.systemPermissions,
+    super.key,
+  });
 
   final bool tutorialOnly;
+
+  /// 「系统权限」一步的查询 / 申请端口。null = 按平台取（Android 用
+  /// [AppOnboardingSystemPermissions]，其它平台没有这一步）；测试注入假实现时
+  /// 任何平台都出这一步。
+  final OnboardingSystemPermissions? systemPermissions;
 
   @override
   BasePageState<OnboardingWizardPage> createState() =>
@@ -168,9 +212,14 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
 
   int _stepIndex = 0;
 
+  /// 欢迎步「用 Fushi 做什么」的当前选择（初值见 initState）。只改写 [_selected] 里
+  /// 学外语那几项，作为功能方格的预设；模块开关仍在离开功能选择步骤时统一写入。
+  OnboardingUsagePurpose _usagePurpose =
+      OnboardingUsagePurpose.languageLearning;
+
   /// 「复习方式」的当前选择（初值见 initState：用户此刻的真实状态，全新安装 = Fushi
   /// 复习）。点选即写偏好（[applyOnboardingReviewMethod]），跳过向导也不丢。
-  OnboardingReviewMethod _reviewMethod = OnboardingReviewMethod.fushi;
+  OnboardingReviewMethod _reviewMethod = kOnboardingDefaultReviewMethod;
 
   /// 「改用 Anki…」折叠的展开态。当前已是 Anki（老用户从设置重开向导）时初始展开，
   /// 否则用户看不到自己现在选中的是哪一项。
@@ -178,6 +227,14 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
 
   /// 最近一次换步的方向：决定共享轴转场往哪边滑（[OnboardingStepSwitcher]）。
   bool _navigatingForward = true;
+
+  /// 当前步骤正文下方是否还有没滚到的内容（反馈 VtbEJzUEYL：功能步「接下来
+  /// 配置」一节在视口外，用户看不到就直接按了下一步）。为真时底栏主按钮变成
+  /// 「往下看」，按一下先把正文往下翻一屏，滚到底才恢复「下一步」。
+  bool _stepHasMoreBelow = false;
+
+  /// 当前步骤正文的滚动体（随滚动通知更新，换步清空）。
+  ScrollableState? _stepScrollable;
   final OnboardingTutorialProgress _tutorialProgress =
       OnboardingTutorialProgress();
   bool _completing = false;
@@ -205,10 +262,11 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// （BUG-2107），套那个模板会把「没拿到路径」说成「下载失败」。
   String? _packPickError;
 
-  // 平台判据只有 [ModuleId.availableOn] 一份（见 [_moduleAvailable]），这里不再
-  // 单独写第二遍 `DesktopLookupService.isDesktop`。
+  // 扩展安装引导要「浏览器」模块在本平台存在（[ModuleId.availableOn]）且本平台能装
+  // 扩展（[browserExtensionSupportedOn]）——模块 2026-10-19 起五端都有，扩展仍只在桌面。
   bool get _browserExtensionAvailable =>
-      _moduleAvailable(ModuleId.browserExtension);
+      _moduleAvailable(ModuleId.web) &&
+      browserExtensionSupportedOn(isDesktop: DesktopLookupService.isDesktop);
 
   /// 当前真正有应用外查词入口的平台。Windows / macOS 用系统级热键；Android 用
   /// 系统文本选择菜单 / 分享入口。其它平台不能因为都叫 desktop/mobile 就展示
@@ -243,10 +301,70 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           ankiReady: _ankiReadyForFirstCard,
           reviewMethod: _reviewMethod,
           // 只在没有「复习方式」一步（制卡没勾）时用得上：模块开着就出介绍步骤。
-          srsEnabled: appModelNoUpdate.moduleVisibility.isEnabled(ModuleId.srs),
-          // 正式版构建里复习不存在：不出「复习方式」与复习介绍，制卡直接配 Anki。
-          srsAvailable: _moduleAvailable(ModuleId.srs),
+          // 只看媒体时复习模块会在离开功能步时被关掉，介绍步骤也不该出。
+          srsEnabled:
+              onboardingSrsModuleOverride(
+                purpose: _usagePurpose,
+                selected: _selected,
+              ) ??
+              appModelNoUpdate.moduleVisibility.isEnabled(ModuleId.srs),
+          systemPermissionsAvailable: _systemPermissions != null,
         );
+
+  // ── 系统权限（仅 Android） ─────────────────────────────────────────
+  late final OnboardingSystemPermissions? _systemPermissions =
+      widget.systemPermissions ??
+      (Platform.isAndroid
+          ? AppOnboardingSystemPermissions(
+              updateFeed: appModelNoUpdate.updateFeedService,
+              permissionService: appModelNoUpdate.platformServices.permission,
+            )
+          : null);
+
+  /// 各权限的最近一次查询结果；没查过的不在表里（行显示为未开启、可点）。
+  final Map<OnboardingSystemPermission, bool> _permissionGranted =
+      <OnboardingSystemPermission, bool>{};
+
+  /// 悬浮窗 / 所有文件访问是跳系统设置页授权的：申请调用早于用户做完决定返回，
+  /// 只能等回到应用时再查一遍。
+  AppLifecycleListener? _permissionResumeListener;
+
+  Future<void> _refreshPermissions() async {
+    final OnboardingSystemPermissions? ops = _systemPermissions;
+    if (ops == null) return;
+    for (final OnboardingSystemPermission p
+        in OnboardingSystemPermission.values) {
+      final bool granted = await ops.isGranted(p);
+      if (!mounted) return;
+      setState(() => _permissionGranted[p] = granted);
+    }
+  }
+
+  /// 正在申请（系统弹窗 / 设置页还没返回）的权限：这些行置灰不可点。
+  /// permission_handler 同一时刻只允许一个在途申请，连点会抛 PlatformException。
+  final Set<OnboardingSystemPermission> _permissionRequesting =
+      <OnboardingSystemPermission>{};
+
+  Future<void> _requestPermission(OnboardingSystemPermission permission) async {
+    final OnboardingSystemPermissions? ops = _systemPermissions;
+    if (ops == null) return;
+    if (!_permissionRequesting.add(permission)) return;
+    if (mounted) setState(() {});
+    try {
+      await ops.request(permission);
+    } catch (e, stack) {
+      // 申请失败（平台拒绝 / 已有在途申请等）不打断向导，留痕后按真实状态刷新。
+      ErrorLogService.instance.log('onboarding.requestPermission', e, stack);
+    } finally {
+      _permissionRequesting.remove(permission);
+      if (mounted) setState(() {});
+    }
+    try {
+      await _refreshPermissions();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('onboarding.refreshPermissions', e, stack);
+    }
+  }
 
   /// 本平台上这个模块**是否存在**（与用户意愿无关）。平台判据只认
   /// [ModuleId.availableOn] 这一处，向导不再自己写 `Platform.isWindows`。
@@ -261,6 +379,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   void initState() {
     super.initState();
     if (widget.tutorialOnly) return;
+    if (_systemPermissions != null) {
+      _permissionResumeListener = AppLifecycleListener(
+        onResume: () => unawaited(_refreshPermissions()),
+      );
+      unawaited(_refreshPermissions());
+    }
     // 模块方格的初值 = 用户此刻的意愿（pref 真值，缺省全开）。遍历
     // [ModuleId.values] 而不是逐个 if：此前这里只覆盖 5 个模块，下载/查词等根本
     // 没被读也没被写，用户在引导里「只留阅读」压根做不到。
@@ -270,17 +394,27 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       if (feature == null) continue;
       if (appModelNoUpdate.moduleEnabled(module)) _selected.add(feature);
     }
-    _reviewMethod = onboardingReviewMethodOf(
-      // 经模块可见性（含正式版判据）：正式版里复习不存在，复习方式按 Anki 起步。
-      srsModuleEnabled: appModelNoUpdate.moduleVisibility.isEnabled(
-        ModuleId.srs,
+    _usagePurpose = onboardingUsagePurposeOf(
+      lookupModuleEnabled: appModelNoUpdate.moduleEnabled(ModuleId.lookup),
+      cardCreationModuleEnabled: appModelNoUpdate.moduleEnabled(
+        ModuleId.cardCreation,
       ),
-      miningTarget: appModelNoUpdate.srsMiningTarget,
     );
-    _ankiOptionExpanded = _reviewMethod == OnboardingReviewMethod.anki;
+    // 重开向导时上次选的是只看媒体：默认勾上的推荐包 / 制卡与复习也一并取消。
+    if (_usagePurpose == OnboardingUsagePurpose.mediaOnly) {
+      _replaceSelection(
+        onboardingSelectionForPurpose(_usagePurpose, _selected),
+      );
+    }
     // 包目录进场收尾（删已导入的残包、搬旧命名的半截文件、按磁盘对齐阶段）。
     // 下载正在跑时 controller 整体跳过——那些都是在动同一批文件。
     unawaited(_packController.prepareDiskState());
+  }
+
+  @override
+  void dispose() {
+    _permissionResumeListener?.dispose();
+    super.dispose();
   }
 
   // dispose 里**没有**取消下载：BUG-2097 的根因就是这里曾经有一句
@@ -310,12 +444,47 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       }
       if (!widget.tutorialOnly) {
         await appModelNoUpdate.setOnboardingCompleted(value: true);
+        // 只有走完才收首页的引导卡；跳过照旧留着它当回来的入口。
+        if (finished) {
+          await appModelNoUpdate.setOnboardingFinished(value: true);
+        }
       }
     } finally {
       _completing = false;
     }
     if (!mounted) return;
-    await Navigator.of(context).maybePop();
+    // 直接 pop：本页的 PopScope 拦的是「没确认就离开」，这里已经确认过了。
+    final NavigatorState navigator = Navigator.of(context);
+    if (navigator.canPop()) navigator.pop();
+  }
+
+  /// 跳过之前的二次确认（用户反馈：手滑点了「暂时跳过」就再也找不到引导）。
+  /// 确认键强制倒计时 [kOnboardingSkipConfirmDelay]，倒计时内只能取消。
+  bool _confirmingSkip = false;
+
+  ///
+  /// 只看查词教程（[OnboardingWizardPage.tutorialOnly]，导入推荐包后打开）时
+  /// 不弹：那不是「新手引导」，跳过它也丢不了任何配置入口，原本就是直接退出。
+  Future<void> _confirmSkip() async {
+    if (_confirmingSkip || _completing) return;
+    if (widget.tutorialOnly) {
+      await _complete();
+      return;
+    }
+    _confirmingSkip = true;
+    try {
+      final bool skip = await showFushiConfirmDialog(
+        context: context,
+        title: t.onboarding_skip_confirm_title,
+        message: t.onboarding_skip_confirm_desc,
+        confirmLabel: t.onboarding_skip_confirm_action,
+        icon: FushiIcons.flag,
+        confirmDelay: kOnboardingSkipConfirmDelay,
+      );
+      if (skip && mounted) await _complete();
+    } finally {
+      _confirmingSkip = false;
+    }
   }
 
   /// 离开功能选择步骤时，把模块勾选写进 `module_*_enabled` 偏好（只写有变化的）。
@@ -331,6 +500,16 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       final bool wanted = _selected.contains(feature);
       if (appModel.moduleEnabled(module) == wanted) continue;
       await appModel.setModuleEnabled(module, wanted);
+    }
+    // 复习模块没有方格：只看媒体（且没手动勾回制卡）时在这里关掉；其余情况交给
+    // 「复习方式」一步。
+    final bool? srsWanted = onboardingSrsModuleOverride(
+      purpose: _usagePurpose,
+      selected: _selected,
+    );
+    if (srsWanted != null &&
+        appModel.moduleEnabled(ModuleId.srs) != srsWanted) {
+      await appModel.setModuleEnabled(ModuleId.srs, srsWanted);
     }
     // 「至少保留一个导航模块」：用户之前在设置里关了首页、这里又把库页全取消，
     // 打开 app 就只剩设置。此时把首页开回来兜底（见 [isLastNavigationModule]）。
@@ -349,6 +528,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// 变成硬门）。但建成了的话 `_steps` 会因为 Anki 变 ready 而多出一步，所以 await
   /// 之后必须重新取一次序列，不能沿用进函数时那份。
   Future<void> _goNextAsync() async {
+    if (_revealMoreOfStep()) return;
     if (_steps[_stepIndex] == OnboardingStepId.anki) {
       await promptCreateLapisIfCannotMine(
         context: context,
@@ -360,7 +540,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       // 不能是升级送的）。
       await ref
           .read(ankiViewModelProvider.notifier)
-          .setAutoRepositionEnabled(_ankiAutoReposition);
+          .setAutoRepositionEnabled(_autoReposition);
+      if (!mounted) return;
+    }
+    if (_steps[_stepIndex] == OnboardingStepId.reviewMethod) {
+      // 照着默认（Fushi 复习）直接按下一步也是显式选择：初值进页时不写，这里补写。
+      await _applyReviewMethod(_reviewMethod);
       if (!mounted) return;
     }
     final List<OnboardingStepId> steps = _steps;
@@ -377,6 +562,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     setState(() {
       _navigatingForward = true;
       _stepIndex += 1;
+      _resetStepScroll();
     });
   }
 
@@ -385,7 +571,77 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     setState(() {
       _navigatingForward = false;
       _stepIndex -= 1;
+      _resetStepScroll();
     });
+  }
+
+  void _resetStepScroll() {
+    _stepHasMoreBelow = false;
+    _stepScrollable = null;
+  }
+
+  /// 正文下方还有没看到的内容时，把它往下翻约一屏并返回 true（这一下不换步）。
+  bool _revealMoreOfStep() {
+    final ScrollableState? scrollable = _stepScrollable;
+    if (!_stepHasMoreBelow || scrollable == null || !scrollable.mounted) {
+      return false;
+    }
+    final ScrollPosition position = scrollable.position;
+    if (!position.hasContentDimensions || !position.hasViewportDimension) {
+      return false;
+    }
+    final double target = math.min(
+      position.maxScrollExtent,
+      position.pixels + position.viewportDimension * 0.8,
+    );
+    if (target <= position.pixels) return false;
+    // 与步骤切换同一条 spatial 弹簧；墨水屏 / 减弱动态效果下时长归零，直接跳。
+    final FushiSpringSpec spatial = context.fushiMotion.spatialDefault;
+    if (spatial.duration == Duration.zero) {
+      position.jumpTo(target);
+    } else {
+      unawaited(
+        position.animateTo(
+          target,
+          duration: spatial.duration,
+          curve: spatial.curve,
+        ),
+      );
+    }
+    return true;
+  }
+
+  /// 收当前步骤正文（深度 0 的竖向滚动体）的滚动 / 尺寸通知，维护
+  /// [_stepHasMoreBelow]。[owner] 是发出通知的那一步：换步转场期间旧步骤还在树
+  /// 里，它的通知不能改写新步骤的状态。
+  bool _onStepScrollNotification(
+    OnboardingStepId owner,
+    Notification notification,
+  ) {
+    final ScrollMetrics metrics;
+    final BuildContext? source;
+    final int depth;
+    if (notification is ScrollNotification) {
+      metrics = notification.metrics;
+      source = notification.context;
+      depth = notification.depth;
+    } else if (notification is ScrollMetricsNotification) {
+      metrics = notification.metrics;
+      source = notification.context;
+      depth = notification.depth;
+    } else {
+      return false;
+    }
+    if (depth != 0 || metrics.axis != Axis.vertical) return false;
+    if (owner != _steps[_stepIndex]) return false;
+    _stepScrollable = source?.findAncestorStateOfType<ScrollableState>();
+    final bool more =
+        metrics.hasContentDimensions &&
+        metrics.extentAfter > kOnboardingMoreBelowSlop;
+    if (more != _stepHasMoreBelow && mounted) {
+      setState(() => _stepHasMoreBelow = more);
+    }
+    return false;
   }
 
   /// 「复习方式」点选：立即写偏好（模块开关 + 挖词目标），步骤序列随之重算（选 Fushi
@@ -394,13 +650,51 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   void _selectReviewMethod(OnboardingReviewMethod method) {
     if (_reviewMethod == method) return;
     setState(() => _reviewMethod = method);
-    unawaited(
+    unawaited(_applyReviewMethod(method));
+  }
+
+  Future<void> _applyReviewMethod(OnboardingReviewMethod method) =>
       applyOnboardingReviewMethod(
         method,
         setModuleEnabled: appModelNoUpdate.setModuleEnabled,
         setMiningTarget: appModelNoUpdate.setSrsMiningTarget,
-      ),
-    );
+        // 换笔记类型要先打开复习库（首次会建表、播种内置项），不让「下一步」等它。
+        adoptFushiCard: () async => unawaited(_adoptFushiCard()),
+      );
+
+  /// 选了 Fushi 复习：制卡笔记类型落到内置 Fushi 卡片（所有者 2026-10-20「用户默认
+  /// 制卡到 fushi card」）。只把旧默认 Lapis 换回「没选过」（空 id = Fushi 卡片，见
+  /// `resolveSrsMiningDestination`）；用户自建的笔记类型不替他改。打开 store 这一步
+  /// 同时播种内置默认牌组与笔记类型（`SrsDbStore.ensureBuiltins`）。
+  Future<void> _adoptFushiCard() async {
+    try {
+      final SrsDbStore? store = await ref.read(srsStoreProvider.future);
+      if (store == null) return;
+      if (appModelNoUpdate.srsMiningDestination.noteTypeId ==
+          store.lapisNoteTypeId) {
+        await appModelNoUpdate.setSrsMiningNoteTypeId('');
+      }
+    } catch (e, stack) {
+      // 复习库打不开时制卡照样回落默认（见 resolveSrsMiningDestination），只留痕。
+      ErrorLogService.instance.log('onboarding.adoptFushiCard', e, stack);
+    }
+  }
+
+  /// `_selected` 是 final 集合（多处持有引用），整体替换走原地清空再填。
+  void _replaceSelection(Set<OnboardingFeature> next) {
+    _selected
+      ..clear()
+      ..addAll(next);
+  }
+
+  /// 欢迎步的用途点选：按用途改写功能方格的预设（[onboardingSelectionForPurpose]）。
+  /// 不写偏好——模块开关仍在离开功能选择步骤时统一落盘。
+  void _selectUsagePurpose(OnboardingUsagePurpose purpose) {
+    if (_usagePurpose == purpose) return;
+    setState(() {
+      _usagePurpose = purpose;
+      _replaceSelection(onboardingSelectionForPurpose(purpose, _selected));
+    });
   }
 
   void _toggleFeature(OnboardingFeature feature) {
@@ -564,9 +858,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// 「第一张卡」教程。重开向导不会拿旧缓存冒充本次连接成功。
   bool _ankiConnectionVerified = false;
 
-  /// 「制卡后自动按词频重排」的向导内选择，初值 [kOnboardingAnkiAutoRepositionDefault]；
+  /// 「制卡后自动按词频重排」的向导内选择（只在 Anki 步），初值
+  /// [kOnboardingAutoRepositionDefault]；
   /// 离开 Anki 步时写进 `AnkiSettings.autoRepositionEnabled`（见 [_goNextAsync]）。
-  bool _ankiAutoReposition = kOnboardingAnkiAutoRepositionDefault;
+  bool _autoReposition = kOnboardingAutoRepositionDefault;
 
   /// 移动端「本机改用 AnkiConnect」次级说明的展开态（默认收起）。
   bool _mobileAnkiConnectExpanded = false;
@@ -633,8 +928,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   String _ankiBackendLabel(AnkiSettings settings) {
     final bool mobile = Platform.isAndroid || Platform.isIOS;
     if (!mobile || settings.ankiConnectUsableOnMobile) {
-      return 'AnkiConnect'
-          '（${settings.ankiConnectHost}:${settings.ankiConnectPort}）';
+      // 括号是排版（中日用全角、其余语言半角），归 i18n 管，不在代码里写死。
+      return t.onboarding_anki_backend_ankiconnect(
+        address: '${settings.ankiConnectHost}:${settings.ankiConnectPort}',
+      );
     }
     return Platform.isAndroid ? 'AnkiDroid' : 'AnkiMobile';
   }
@@ -869,8 +1166,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
             title: t.anki_reposition_auto_title,
             subtitle: t.onboarding_anki_auto_reposition_hint,
             subtitleMaxLines: 4,
-            value: _ankiAutoReposition,
-            onChanged: (bool v) => setState(() => _ankiAutoReposition = v),
+            value: _autoReposition,
+            onChanged: (bool v) => setState(() => _autoReposition = v),
           ),
         ),
         if (_ankiAddonNotice != null) ...<Widget>[
@@ -955,25 +1252,104 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     // 流程与 Apple 的引导页都只保留一组前进 / 后退 / 跳过控件；系统返回手势 / 键
     // 照旧可离开。关闭自动推导，避免本页在可返回 route 中被脚手架补回返回按钮。
     // 脚手架的 PrimaryScrollController / PageScrollRegistry（手柄 LB/RB 翻页）照旧保留。
-    return FushiPageScaffold(
-      automaticallyImplyLeading: false,
-      headerCompact: true,
-      title: t.onboarding_title,
-      headerBottom: OnboardingProgressBar(
-        current: _stepIndex,
-        total: steps.length,
-      ),
-      body: OnboardingWizardBody(
-        stepKey: step,
-        forward: _navigatingForward,
-        step: _buildStep(step),
-        navigationBar: OnboardingNavigationBar(
-          onSkip: isLast ? null : () => unawaited(_complete()),
-          onBack: _stepIndex > 0 ? _goBack : null,
-          onNext: _goNext,
-          isLast: isLast,
+    // 系统返回手势 / 返回键与「暂时跳过」同义（都是没走完就离开），走同一个确认。
+    return PopScope<Object?>(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (!didPop) unawaited(_confirmSkip());
+      },
+      child: FushiPageScaffold(
+        automaticallyImplyLeading: false,
+        headerCompact: true,
+        title: t.onboarding_title,
+        headerBottom: OnboardingProgressBar(
+          current: _stepIndex,
+          total: steps.length,
+        ),
+        body: OnboardingWizardBody(
+          stepKey: step,
+          forward: _navigatingForward,
+          step: NotificationListener<Notification>(
+            onNotification: (Notification n) =>
+                _onStepScrollNotification(step, n),
+            child: _buildStep(step),
+          ),
+          navigationBar: OnboardingNavigationBar(
+            onSkip: isLast ? null : () => unawaited(_confirmSkip()),
+            onBack: _stepIndex > 0 ? _goBack : null,
+            onNext: _goNext,
+            isLast: isLast,
+            moreBelow: _stepHasMoreBelow,
+          ),
         ),
       ),
+    );
+  }
+
+  /// 「系统权限」：每项一行，未开启的可点去开，已开启的置灰并挂勾。三项都标
+  /// 「推荐」而不是「可选」：可选项会被 [OnboardingActionList] 收进「其他方式」
+  /// 折叠，而这一步的全部意义就是让人看见哪几项还关着。
+  Widget _buildPermissionsStep() {
+    final Color grantedColor = Theme.of(context).colorScheme.primary;
+    OnboardingAction row(
+      OnboardingSystemPermission permission, {
+      required IconData icon,
+      required String label,
+      required String description,
+      required OnboardingActionNecessity necessity,
+    }) {
+      final bool granted = _permissionGranted[permission] ?? false;
+      final bool requesting = _permissionRequesting.contains(permission);
+      return OnboardingAction(
+        icon: icon,
+        label: label,
+        description: granted
+            ? '${t.onboarding_permission_granted} · $description'
+            : description,
+        necessity: necessity,
+        onPressed: granted || requesting
+            ? null
+            : () => unawaited(_requestPermission(permission)),
+        trailing: granted
+            ? FushiIcon(
+                FushiIcons.check,
+                key: ValueKey<String>(
+                  'onboarding-permission-granted-'
+                  '${permission.name}',
+                ),
+                color: grantedColor,
+              )
+            : null,
+      );
+    }
+
+    return OnboardingStepView(
+      icon: FushiIcons.shield,
+      title: t.onboarding_step_permissions_title,
+      body: t.onboarding_step_permissions_body,
+      actions: <OnboardingAction>[
+        row(
+          OnboardingSystemPermission.notifications,
+          icon: FushiIcons.notifications,
+          label: t.onboarding_permission_notifications_label,
+          description: t.onboarding_permission_notifications_desc,
+          necessity: OnboardingActionNecessity.recommended,
+        ),
+        row(
+          OnboardingSystemPermission.overlay,
+          icon: FushiIcons.floatingBall,
+          label: t.onboarding_permission_overlay_label,
+          description: t.onboarding_permission_overlay_desc,
+          necessity: OnboardingActionNecessity.recommended,
+        ),
+        row(
+          OnboardingSystemPermission.storage,
+          icon: FushiIcons.folder,
+          label: t.onboarding_permission_storage_label,
+          description: t.onboarding_permission_storage_desc,
+          necessity: OnboardingActionNecessity.recommended,
+        ),
+      ],
     );
   }
 
@@ -983,6 +1359,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return _buildWelcomeStep();
       case OnboardingStepId.features:
         return _buildFeaturesStep();
+      case OnboardingStepId.permissions:
+        return _buildPermissionsStep();
       case OnboardingStepId.recommendedPack:
         return _buildPackStep();
       case OnboardingStepId.manualResources:
@@ -1003,6 +1381,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
               onToggleAnki: () =>
                   setState(() => _ankiOptionExpanded = !_ankiOptionExpanded),
             ),
+            // Fushi 复习路径没有「制卡后自动重排」：复习出卡直接按卡上的词频名次排。
           ],
         );
       case OnboardingStepId.anki:
@@ -1344,6 +1723,17 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
             ],
           ),
         ),
+        // 语言之后再问用途：先让用户换成看得懂的界面语言。
+        SizedBox(height: tokens.spacing.section),
+        OnboardingSectionLabel(
+          title: t.onboarding_purpose_title,
+          hint: t.onboarding_purpose_hint,
+        ),
+        SizedBox(height: tokens.spacing.gap),
+        OnboardingUsagePurposeChooser(
+          purpose: _usagePurpose,
+          onSelect: _selectUsagePurpose,
+        ),
       ],
     );
   }
@@ -1605,8 +1995,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     switch (feature) {
       case OnboardingFeature.books:
         return FushiIcons.books;
-      case OnboardingFeature.browserExtension:
-        return FushiIcons.browserExtension;
+      case OnboardingFeature.web:
+        return FushiIcons.globe;
       case OnboardingFeature.manga:
         return FushiIcons.manga;
       case OnboardingFeature.video:
@@ -1647,8 +2037,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     switch (feature) {
       case OnboardingFeature.books:
         return t.onboarding_feature_books;
-      case OnboardingFeature.browserExtension:
-        return t.module_extension_label;
+      case OnboardingFeature.web:
+        return t.nav_web;
       case OnboardingFeature.manga:
         return t.onboarding_feature_manga;
       case OnboardingFeature.video:
@@ -1690,8 +2080,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     switch (feature) {
       case OnboardingFeature.books:
         return t.onboarding_feature_books_hint;
-      case OnboardingFeature.browserExtension:
-        return t.onboarding_feature_extension_hint;
+      case OnboardingFeature.web:
+        // 浏览器模块五端都有，但视频站点 / 网页阅读 / 浏览器扩展各有平台判据：只介绍
+        // 本平台真有的能力。
+        return webModuleOnboardingHint(WebModuleCapabilities.current());
       case OnboardingFeature.manga:
         return t.onboarding_feature_manga_hint;
       case OnboardingFeature.video:
@@ -1876,17 +2268,25 @@ class _OnboardingSharedAxisX extends StatelessWidget {
 ///
 /// M3E 按钮尺寸随宽度换档：宽屏（≥ 480）用 M（56 高），窄屏用 S（40 高），手机上
 /// 三颗按钮 + 中文 / 英文标签都放得下。
+/// 正文离底还剩多少逻辑像素以内算「已看到底」（吸收亚像素与回弹误差）。
+const double kOnboardingMoreBelowSlop = 8;
+
 class OnboardingNavigationBar extends StatelessWidget {
   const OnboardingNavigationBar({
     required this.onNext,
     required this.isLast,
     this.onSkip,
     this.onBack,
+    this.moreBelow = false,
     super.key,
   });
 
   final VoidCallback onNext;
   final bool isLast;
+
+  /// 当前步骤正文下方还有没看到的内容：主按钮显示「往下看」（向下箭头），
+  /// [onNext] 此时先翻正文而不换步（反馈 VtbEJzUEYL）。
+  final bool moreBelow;
 
   /// null = 不显示「跳过」（最后一步）。
   final VoidCallback? onSkip;
@@ -1936,10 +2336,16 @@ class OnboardingNavigationBar extends StatelessWidget {
                   onPressed: onNext,
                   iconAlignment: IconAlignment.end,
                   icon: FushiIcon(
-                    isLast ? FushiIcons.check : FushiIcons.forward,
+                    moreBelow
+                        ? FushiIcons.arrowDown
+                        : isLast
+                        ? FushiIcons.check
+                        : FushiIcons.forward,
                   ),
                   label: Text(
-                    isLast
+                    moreBelow
+                        ? t.onboarding_action_scroll_more
+                        : isLast
                         ? t.onboarding_action_start
                         : t.onboarding_action_next,
                   ),
@@ -2229,7 +2635,10 @@ class OnboardingHeroIllustration extends StatelessWidget {
               top: 0,
               child: accent(
                 size: 40,
-                border: FushiCookieBorder(lobes: 4, side: side),
+                border: MaterialShapeBorder(
+                  shape: MaterialShapes.cookie4Sided,
+                  side: side,
+                ),
                 color: colors.tertiaryContainer,
               ),
             ),
@@ -2450,6 +2859,47 @@ class OnboardingReviewMethodChooser extends StatelessWidget {
                   )
                 : const SizedBox(width: double.infinity),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 欢迎步的「用 Fushi 做什么」二选一：学外语 / 只看书、看番、听书。互斥单选，复用
+/// 功能选择页的 [OnboardingFeatureTile]（几何不随选中变化、选中走色块 + 勾选标记弹出），
+/// 与 [OnboardingReviewMethodChooser] 同款。纯展示：状态与预设在向导页里。
+class OnboardingUsagePurposeChooser extends StatelessWidget {
+  const OnboardingUsagePurposeChooser({
+    required this.purpose,
+    required this.onSelect,
+    super.key,
+  });
+
+  final OnboardingUsagePurpose purpose;
+  final ValueChanged<OnboardingUsagePurpose> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        OnboardingFeatureTile(
+          key: const ValueKey<String>('onboarding_purpose_learning'),
+          icon: FushiIcons.language,
+          title: t.onboarding_purpose_learning_title,
+          subtitle: t.onboarding_purpose_learning_desc,
+          selected: purpose == OnboardingUsagePurpose.languageLearning,
+          onToggle: () => onSelect(OnboardingUsagePurpose.languageLearning),
+        ),
+        SizedBox(height: tokens.spacing.gap),
+        OnboardingFeatureTile(
+          key: const ValueKey<String>('onboarding_purpose_media'),
+          icon: FushiIcons.books,
+          title: t.onboarding_purpose_media_title,
+          subtitle: t.onboarding_purpose_media_desc,
+          selected: purpose == OnboardingUsagePurpose.mediaOnly,
+          onToggle: () => onSelect(OnboardingUsagePurpose.mediaOnly),
         ),
       ],
     );

@@ -53,8 +53,7 @@ class _FakeRemoteRunner implements MangaOcrRemoteRunner {
     required MangaOcrRemoteTarget target,
     required String imageDirPath,
     String? volumeTitle,
-  }) =>
-      const Stream<MangaOcrRemoteEvent>.empty();
+  }) => const Stream<MangaOcrRemoteEvent>.empty();
 }
 
 const MangaOcrRemoteTarget _capableTarget = MangaOcrRemoteTarget(
@@ -96,28 +95,34 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('desktop: OCR entry always visible, no probe needed',
-      (WidgetTester tester) async {
+  testWidgets('desktop: OCR entry always visible, no probe needed', (
+    WidgetTester tester,
+  ) async {
     final _FakeRemoteRunner runner = _FakeRemoteRunner(target: null);
     await pumpDialog(tester, desktop: true, runner: runner);
     expect(find.text(t.manga_ocr_wizard_title), findsOneWidget);
     expect(runner.probeCalls, 0, reason: '桌面入口不依赖探测');
   });
 
-  testWidgets('mobile: entry is visible because Lens works on every platform',
-      (WidgetTester tester) async {
+  testWidgets('mobile: entry is visible because Lens works on every platform', (
+    WidgetTester tester,
+  ) async {
     final _FakeRemoteRunner runner = _FakeRemoteRunner(target: _capableTarget);
     await pumpDialog(tester, desktop: false, runner: runner);
     expect(find.text(t.manga_ocr_wizard_title), findsOneWidget);
     expect(runner.probeCalls, 0, reason: '入口不再依赖探测，渲染决策不得产生网络副作用');
   });
 
-  testWidgets('mobile: entry stays visible without any paired host',
-      (WidgetTester tester) async {
+  testWidgets('mobile: entry stays visible without any paired host', (
+    WidgetTester tester,
+  ) async {
     final _FakeRemoteRunner runner = _FakeRemoteRunner(target: null);
     await pumpDialog(tester, desktop: false, runner: runner);
-    expect(find.text(t.manga_ocr_wizard_title), findsOneWidget,
-        reason: '没有已配对 host 也有 Google Lens 可用，不能藏起入口');
+    expect(
+      find.text(t.manga_ocr_wizard_title),
+      findsOneWidget,
+      reason: '没有已配对 host 也有 Google Lens 可用，不能藏起入口',
+    );
     expect(runner.probeCalls, 0);
   });
 }

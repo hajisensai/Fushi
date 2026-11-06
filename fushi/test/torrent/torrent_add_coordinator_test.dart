@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi_engine/media/torrent/torrent_add_coordinator.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
@@ -32,19 +32,16 @@ void main() {
     );
 
     expect(
-      await TorrentAddCoordinator(_FakeBackend()).add(
-        payload,
-        category: 'anime',
-      ),
+      await TorrentAddCoordinator(
+        _FakeBackend(),
+      ).add(payload, category: 'anime'),
       isFalse,
     );
     final _FakeMetainfoBackend capable = _FakeMetainfoBackend();
     expect(
-      await TorrentAddCoordinator(capable).add(
-        payload,
-        category: 'anime',
-        firstLastPiecePrio: true,
-      ),
+      await TorrentAddCoordinator(
+        capable,
+      ).add(payload, category: 'anime', firstLastPiecePrio: true),
       isTrue,
     );
     expect(capable.received, same(payload));

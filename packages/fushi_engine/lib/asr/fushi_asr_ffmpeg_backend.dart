@@ -26,8 +26,7 @@ class FushiAsrFfmpegBackend implements asr.FfmpegBackend {
   Future<asr.FfmpegRunResult> runProbe(
     List<String> args,
     Duration timeout,
-  ) async =>
-      _convert(await _backend.runProbe(args, timeout));
+  ) async => _convert(await _backend.runProbe(args, timeout));
 
   /// 逐字段转，不做任何解释。
   ///

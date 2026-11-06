@@ -40,10 +40,16 @@ class CtlCall {
     this.params = const <String, String>{},
     this.query = const <String, String>{},
     this.body = const <String, Object?>{},
+    this.fromModel = false,
   });
 
   final String method;
   final String path;
+
+  /// 这次调用是模型发起的（AI 助手经 [OpInvoker] 以 `OpCaller.model` 调用）。HTTP /
+  /// CLI / 设置页 / 撤销都是 false。由调用器设置，**不是参数**——模型填不出来，路由
+  /// 拿它拦「只许用户亲手做」的写入（带凭据服务的地址、授权开关、凭据本身）。
+  final bool fromModel;
 
   /// 路由模式里 `:name` 段匹配到的值（已 URI 解码）。
   final Map<String, String> params;

@@ -1,4 +1,3 @@
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
@@ -19,26 +18,25 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 ///    「保证过渡一定触发」的惯用法）—— 不关过渡，打开任何 RTL 书都会先看到整卷从
 ///    最后一页扫回第一页；resize 重投影带过渡则是拖窗口边框时的无意义滑动。
 MokuroImage _page(String url) => MokuroImage(
-      url: url,
-      size: const MokuroSize(1000, 1400),
-      blocks: const <MokuroBlock>[],
-    );
+  url: url,
+  size: const MokuroSize(1000, 1400),
+  blocks: const <MokuroBlock>[],
+);
 
 String _doc({
   MangaReadingMode mode = MangaReadingMode.spread,
   String direction = 'rtl',
   MangaPageAnimation animation = MangaPageAnimation.slide,
   int zoomPercent = 100,
-}) =>
-    mangaWindowDocument(
-      <MokuroImage>[_page('p1.jpg'), _page('p2.jpg'), _page('p3.jpg')],
-      <String>['p1.jpg', 'p2.jpg', 'p3.jpg'],
-      mode: mode,
-      spreadDirection: direction,
-      inlineSelectionJs: '',
-      pageAnimation: animation,
-      zoomPercent: zoomPercent,
-    );
+}) => mangaWindowDocument(
+  <MokuroImage>[_page('p1.jpg'), _page('p2.jpg'), _page('p3.jpg')],
+  <String>['p1.jpg', 'p2.jpg', 'p3.jpg'],
+  mode: mode,
+  spreadDirection: direction,
+  inlineSelectionJs: '',
+  pageAnimation: animation,
+  zoomPercent: zoomPercent,
+);
 
 /// 截出右键拖动那一支（起止锚点都是全文档唯一字面量）。
 String _rightDragBranch(String doc) {
@@ -66,16 +64,30 @@ void main() {
     test('右键拖动走 _panBy，分支里不许自己写 PAN_X / PAN_Y / _applyCanvas', () {
       final String branch = _rightDragBranch(_doc());
       // 断言字面量：'_panBy(dx, dy);'
-      expect(branch.contains('_panBy(dx, dy);'), isTrue,
-          reason: '右键拖动必须复用 _panBy（含 _clampPan 与 webtoon 纵向分流），'
-              '不能手抄一份平移公式');
-      expect(branch.contains('PAN_X +='), isFalse,
-          reason: '手抄 PAN_X += dx 就绕过了 _clampPan：右键能把页面推出视口且回不来');
-      expect(branch.contains('PAN_Y +='), isFalse,
-          reason: '手抄 PAN_Y += dy 会在 webtoon 下把 PAN_Y 写成非 0，'
-              '进度落库与恢复按 PAN_Y=0 换算 offsetTop -> 错页');
-      expect(branch.contains('_applyCanvas()'), isFalse,
-          reason: '直接 _applyCanvas 等于跳过钳制后再提交，钳制形同虚设');
+      expect(
+        branch.contains('_panBy(dx, dy);'),
+        isTrue,
+        reason:
+            '右键拖动必须复用 _panBy（含 _clampPan 与 webtoon 纵向分流），'
+            '不能手抄一份平移公式',
+      );
+      expect(
+        branch.contains('PAN_X +='),
+        isFalse,
+        reason: '手抄 PAN_X += dx 就绕过了 _clampPan：右键能把页面推出视口且回不来',
+      );
+      expect(
+        branch.contains('PAN_Y +='),
+        isFalse,
+        reason:
+            '手抄 PAN_Y += dy 会在 webtoon 下把 PAN_Y 写成非 0，'
+            '进度落库与恢复按 PAN_Y=0 换算 offsetTop -> 错页',
+      );
+      expect(
+        branch.contains('_applyCanvas()'),
+        isFalse,
+        reason: '直接 _applyCanvas 等于跳过钳制后再提交，钳制形同虚设',
+      );
     });
 
     test('整份文档里 PAN_X / PAN_Y 的增量写入只出现在 _panBy 内', () {
@@ -83,14 +95,21 @@ void main() {
         final String doc = _doc(mode: mode, zoomPercent: 150);
         // 断言字面量：'PAN_X += dx;' 恰好 2 次（_panBy 的 webtoon 支与 spread 支），
         // 'PAN_Y += dy;' 恰好 1 次（只有 _panBy 的 spread 支；webtoon 纵向归 scrollY）。
-        expect('PAN_X += dx;'.allMatches(doc).length, 2,
-            reason: '$mode：PAN_X 的增量写入只许在 _panBy 里出现两支');
-        expect('PAN_Y += dy;'.allMatches(doc).length, 1,
-            reason: '$mode：PAN_Y 的增量写入只许在 _panBy 的 spread 支里出现一次');
         expect(
-            doc.contains('if (canvasMoved) { _clampPan(); _applyCanvas(); }'),
-            isTrue,
-            reason: '$mode：唯一的平移提交口必须带钳制');
+          'PAN_X += dx;'.allMatches(doc).length,
+          2,
+          reason: '$mode：PAN_X 的增量写入只许在 _panBy 里出现两支',
+        );
+        expect(
+          'PAN_Y += dy;'.allMatches(doc).length,
+          1,
+          reason: '$mode：PAN_Y 的增量写入只许在 _panBy 的 spread 支里出现一次',
+        );
+        expect(
+          doc.contains('if (canvasMoved) { _clampPan(); _applyCanvas(); }'),
+          isTrue,
+          reason: '$mode：唯一的平移提交口必须带钳制',
+        );
       }
     });
   });
@@ -103,16 +122,28 @@ void main() {
       final int off = body.indexOf("root.style.transition = 'none';");
       final int apply = body.indexOf('_translateToSpread(CURRENT);');
       final int reflow = body.indexOf('void root.offsetHeight;');
-      final int restore =
-          body.indexOf('root.style.transition = prevTransition;');
-      expect(off, isNot(-1),
-          reason: 'RTL 倒序后首帧要把 root 推过整卷长度，带着 transition 就是一次'
-              '从最后一页扫回第一页的动画');
-      expect(apply, isNot(-1),
-          reason: '摆位必须走纯投影 _translateToSpread：__mangaApplyTranslate 是'
-              '翻页动画入口，fade 模式下会先淡出再位移，resize 风暴里就是连环闪烁');
-      expect(reflow, isNot(-1),
-          reason: '必须读一次布局属性强制同步 reflow，新 transform 才会成为后续过渡的起点');
+      final int restore = body.indexOf(
+        'root.style.transition = prevTransition;',
+      );
+      expect(
+        off,
+        isNot(-1),
+        reason:
+            'RTL 倒序后首帧要把 root 推过整卷长度，带着 transition 就是一次'
+            '从最后一页扫回第一页的动画',
+      );
+      expect(
+        apply,
+        isNot(-1),
+        reason:
+            '摆位必须走纯投影 _translateToSpread：__mangaApplyTranslate 是'
+            '翻页动画入口，fade 模式下会先淡出再位移，resize 风暴里就是连环闪烁',
+      );
+      expect(
+        reflow,
+        isNot(-1),
+        reason: '必须读一次布局属性强制同步 reflow，新 transform 才会成为后续过渡的起点',
+      );
       expect(restore, isNot(-1), reason: '还原原过渡值，不能把翻页动画永久关掉');
       expect(off < apply, isTrue, reason: '过渡必须在写 transform 之前关掉');
       expect(apply < reflow, isTrue);
@@ -120,22 +151,31 @@ void main() {
     });
 
     test('翻页动画本身不受影响：slide 仍声明 transition:transform', () {
-      expect(_doc().contains('transition:transform '), isTrue,
-          reason: '只是首次定位不走过渡，翻页动画偏好照旧生效');
       expect(
-          _doc(animation: MangaPageAnimation.none)
-              .contains('transition:transform '),
-          isFalse);
+        _doc().contains('transition:transform '),
+        isTrue,
+        reason: '只是首次定位不走过渡，翻页动画偏好照旧生效',
+      );
+      expect(
+        _doc(
+          animation: MangaPageAnimation.none,
+        ).contains('transition:transform '),
+        isFalse,
+      );
     });
 
     test('webtoon 分支直接返回，不碰 root 的过渡', () {
       final String body = _reanchorBody(_doc(mode: MangaReadingMode.webtoon));
-      final int scroll = body
-          .indexOf('window.__mangaScrollToSpread(CURRENT, RESTORE_FRACTION);');
+      final int scroll = body.indexOf(
+        'window.__mangaScrollToSpread(CURRENT, RESTORE_FRACTION);',
+      );
       final int ret = body.indexOf('return;');
       expect(scroll, isNot(-1));
-      expect(ret > scroll, isTrue,
-          reason: 'webtoon 定位后必须直接返回，别再往下跑 spread 的 transform 逻辑');
+      expect(
+        ret > scroll,
+        isTrue,
+        reason: 'webtoon 定位后必须直接返回，别再往下跑 spread 的 transform 逻辑',
+      );
     });
   });
 }

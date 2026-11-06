@@ -13,23 +13,22 @@ Future<({ui.Image image, ByteData bytes})> _captureGridImage(
   double pixelRatio = 1,
 }) async {
   final Finder repaint = find
-      .descendant(
-        of: grid,
-        matching: find.byType(RepaintBoundary),
-      )
+      .descendant(of: grid, matching: find.byType(RepaintBoundary))
       .first;
-  final RenderRepaintBoundary boundary =
-      tester.renderObject<RenderRepaintBoundary>(repaint);
+  final RenderRepaintBoundary boundary = tester
+      .renderObject<RenderRepaintBoundary>(repaint);
   expect(boundary.debugNeedsPaint, isFalse);
 
-  final ({ui.Image image, ByteData bytes})? raster =
-      await tester.runAsync(() async {
-    final ui.Image image = boundary.toImageSync(pixelRatio: pixelRatio);
-    final ByteData? bytes =
-        await image.toByteData(format: ui.ImageByteFormat.rawRgba);
-    expect(bytes, isNotNull);
-    return (image: image, bytes: bytes!);
-  });
+  final ({ui.Image image, ByteData bytes})? raster = await tester.runAsync(
+    () async {
+      final ui.Image image = boundary.toImageSync(pixelRatio: pixelRatio);
+      final ByteData? bytes = await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
+      expect(bytes, isNotNull);
+      return (image: image, bytes: bytes!);
+    },
+  );
   expect(raster, isNotNull);
   return raster!;
 }
@@ -137,12 +136,13 @@ void main() {
 
   /// 网格（热力图内唯一 GestureDetector）。
   Finder gridFinder() => find.descendant(
-        of: find.byType(StatContributionHeatmap),
-        matching: find.byType(GestureDetector),
-      );
+    of: find.byType(StatContributionHeatmap),
+    matching: find.byType(GestureDetector),
+  );
 
-  testWidgets('超宽（2000）：列数封顶 53 周，富余宽度分摊给格子（不再左侧死黑 + 右侧留白）',
-      (WidgetTester tester) async {
+  testWidgets('超宽（2000）：列数封顶 53 周，富余宽度分摊给格子（不再左侧死黑 + 右侧留白）', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(2400, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -179,10 +179,13 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final List<(String, int)> calls = <(String, int)>[];
-    await tester.pumpWidget(buildHeatmap(
-      width: 2000,
-      onDaySelected: (String dateKey, int value) => calls.add((dateKey, value)),
-    ));
+    await tester.pumpWidget(
+      buildHeatmap(
+        width: 2000,
+        onDaySelected: (String dateKey, int value) =>
+            calls.add((dateKey, value)),
+      ),
+    );
     await tester.pump();
 
     // 放大后的步长 = maxCell + spacing；今天在末列（索引 52）、周三（行索引 2）。
@@ -199,24 +202,29 @@ void main() {
     expect(calls, <(String, int)>[(todayKey, 123)]);
   });
 
-  testWidgets('BUG-1276：空格四边内描边可见、中心仍黑且 spacing 不受污染',
-      (WidgetTester tester) async {
+  testWidgets('BUG-1276：空格四边内描边可见、中心仍黑且 spacing 不受污染', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(buildHeatmap(
-      width: maxWeeks * (cell + spacing) - spacing,
-      valueByDateKey: <String, int>{todayKey: 4},
-      backgroundColor: Colors.black,
-      emptyColor: Colors.black,
-      emptyBorderColor: Colors.white,
-    ));
+    await tester.pumpWidget(
+      buildHeatmap(
+        width: maxWeeks * (cell + spacing) - spacing,
+        valueByDateKey: <String, int>{todayKey: 4},
+        backgroundColor: Colors.black,
+        emptyColor: Colors.black,
+        emptyBorderColor: Colors.white,
+      ),
+    );
     await tester.pump();
 
-    final ({ui.Image image, ByteData bytes}) raster =
-        await _captureGridImage(tester, gridFinder());
+    final ({ui.Image image, ByteData bytes}) raster = await _captureGridImage(
+      tester,
+      gridFinder(),
+    );
     addTearDown(raster.image.dispose);
     for (final (int x, int y) in <(int, int)>[
       (6, 0),
@@ -236,29 +244,34 @@ void main() {
     expect(_alpha(_pixelAt(raster, 14, 6)), 0);
   });
 
-  testWidgets('BUG-1276：active levels 1..4 不得收到 level-0 outline',
-      (WidgetTester tester) async {
+  testWidgets('BUG-1276：active levels 1..4 不得收到 level-0 outline', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final DateTime previousMonday = DateTime(2026, 7, 6);
-    await tester.pumpWidget(buildHeatmap(
-      width: maxWeeks * (cell + spacing) - spacing,
-      valueByDateKey: <String, int>{
-        for (int row = 0; row < 4; row++)
-          statDateKey(previousMonday.add(Duration(days: row))): row + 1,
-      },
-      backgroundColor: Colors.black,
-      emptyColor: Colors.black,
-      baseColor: Colors.green,
-      emptyBorderColor: Colors.white,
-    ));
+    await tester.pumpWidget(
+      buildHeatmap(
+        width: maxWeeks * (cell + spacing) - spacing,
+        valueByDateKey: <String, int>{
+          for (int row = 0; row < 4; row++)
+            statDateKey(previousMonday.add(Duration(days: row))): row + 1,
+        },
+        backgroundColor: Colors.black,
+        emptyColor: Colors.black,
+        baseColor: Colors.green,
+        emptyBorderColor: Colors.white,
+      ),
+    );
     await tester.pump();
 
-    final ({ui.Image image, ByteData bytes}) raster =
-        await _captureGridImage(tester, gridFinder());
+    final ({ui.Image image, ByteData bytes}) raster = await _captureGridImage(
+      tester,
+      gridFinder(),
+    );
     addTearDown(raster.image.dispose);
     const int activeColumnCenter = 51 * 15 + 6;
     for (int row = 0; row < 4; row++) {
@@ -278,70 +291,71 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     const Color legacyEmpty = Color(0xff242424);
-    await tester.pumpWidget(buildHeatmap(
-      width: maxWeeks * (cell + spacing) - spacing,
-      valueByDateKey: <String, int>{todayKey: 4},
-      backgroundColor: legacyEmpty,
-      emptyColor: legacyEmpty,
-    ));
+    await tester.pumpWidget(
+      buildHeatmap(
+        width: maxWeeks * (cell + spacing) - spacing,
+        valueByDateKey: <String, int>{todayKey: 4},
+        backgroundColor: legacyEmpty,
+        emptyColor: legacyEmpty,
+      ),
+    );
     await tester.pump();
 
-    final ({ui.Image image, ByteData bytes}) raster =
-        await _captureGridImage(tester, gridFinder());
+    final ({ui.Image image, ByteData bytes}) raster = await _captureGridImage(
+      tester,
+      gridFinder(),
+    );
     addTearDown(raster.image.dispose);
     _expectNearColor(_pixelAt(raster, 6, 0), legacyEmpty);
     _expectNearColor(_pixelAt(raster, 6, 6), legacyEmpty);
     _expectNearColor(_pixelAt(raster, 0, 6), legacyEmpty);
   });
 
-  testWidgets('BUG-1276：dark、light 与 e-ink 调色板保持 fill/outline 角色',
-      (WidgetTester tester) async {
+  testWidgets('BUG-1276：dark、light 与 e-ink 调色板保持 fill/outline 角色', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    for (final ({
-      String label,
-      Color background,
-      Color empty,
-      Color border,
-    }) palette in <({
-      String label,
-      Color background,
-      Color empty,
-      Color border,
-    })>[
-      (
-        label: 'dark',
-        background: const Color(0xff000000),
-        empty: const Color(0xff000000),
-        border: const Color(0xff777777),
-      ),
-      (
-        label: 'light',
-        background: const Color(0xfffafafa),
-        empty: const Color(0xfffafafa),
-        border: const Color(0xff666666),
-      ),
-      (
-        label: 'e-ink',
-        background: const Color(0xffffffff),
-        empty: const Color(0xffffffff),
-        border: const Color(0xff000000),
-      ),
-    ]) {
-      await tester.pumpWidget(buildHeatmap(
-        width: maxWeeks * (cell + spacing) - spacing,
-        valueByDateKey: <String, int>{todayKey: 4},
-        backgroundColor: palette.background,
-        emptyColor: palette.empty,
-        emptyBorderColor: palette.border,
-      ));
+    for (final ({String label, Color background, Color empty, Color border})
+        palette
+        in <({String label, Color background, Color empty, Color border})>[
+          (
+            label: 'dark',
+            background: const Color(0xff000000),
+            empty: const Color(0xff000000),
+            border: const Color(0xff777777),
+          ),
+          (
+            label: 'light',
+            background: const Color(0xfffafafa),
+            empty: const Color(0xfffafafa),
+            border: const Color(0xff666666),
+          ),
+          (
+            label: 'e-ink',
+            background: const Color(0xffffffff),
+            empty: const Color(0xffffffff),
+            border: const Color(0xff000000),
+          ),
+        ]) {
+      await tester.pumpWidget(
+        buildHeatmap(
+          width: maxWeeks * (cell + spacing) - spacing,
+          valueByDateKey: <String, int>{todayKey: 4},
+          backgroundColor: palette.background,
+          emptyColor: palette.empty,
+          emptyBorderColor: palette.border,
+        ),
+      );
       await tester.pump();
 
-      final ({ui.Image image, ByteData bytes}) raster =
-          await _captureGridImage(tester, gridFinder());
+      final ({ui.Image image, ByteData bytes}) raster = await _captureGridImage(
+        tester,
+        gridFinder(),
+      );
       addTearDown(raster.image.dispose);
       _expectNearColor(
         _pixelAt(raster, 6, 6),
@@ -357,20 +371,23 @@ void main() {
     }
   });
 
-  testWidgets('BUG-1276：常见 raster DPR 下 outline 保持可见且中心不变亮',
-      (WidgetTester tester) async {
+  testWidgets('BUG-1276：常见 raster DPR 下 outline 保持可见且中心不变亮', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(buildHeatmap(
-      width: maxWeeks * (cell + spacing) - spacing,
-      valueByDateKey: <String, int>{todayKey: 4},
-      backgroundColor: Colors.black,
-      emptyColor: Colors.black,
-      emptyBorderColor: Colors.white,
-    ));
+    await tester.pumpWidget(
+      buildHeatmap(
+        width: maxWeeks * (cell + spacing) - spacing,
+        valueByDateKey: <String, int>{todayKey: 4},
+        backgroundColor: Colors.black,
+        emptyColor: Colors.black,
+        emptyBorderColor: Colors.white,
+      ),
+    );
     await tester.pump();
 
     for (final double dpr in <double>[1, 1.25, 2, 3]) {
@@ -399,13 +416,15 @@ void main() {
 
     const double natural = maxWeeks * (cell + spacing) - spacing;
     for (final double width in <double>[120, natural, 2000]) {
-      await tester.pumpWidget(buildHeatmap(
-        width: width,
-        valueByDateKey: <String, int>{todayKey: 4},
-        backgroundColor: Colors.black,
-        emptyColor: Colors.black,
-        emptyBorderColor: Colors.white,
-      ));
+      await tester.pumpWidget(
+        buildHeatmap(
+          width: width,
+          valueByDateKey: <String, int>{todayKey: 4},
+          backgroundColor: Colors.black,
+          emptyColor: Colors.black,
+          emptyBorderColor: Colors.white,
+        ),
+      );
       await tester.pump();
 
       expect(tester.takeException(), isNull, reason: 'width=$width');

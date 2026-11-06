@@ -8,7 +8,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/reader/popup_swipe_close_script.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
-import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
+import 'package:fushi/src/lookup/swipe_dismiss_wrapper.dart';
 
 import '../widgets/widget_test_helpers.dart';
 
@@ -58,7 +58,8 @@ void main() {
               child: SizedBox(key: bodyAnchorKey, height: 120, width: 200),
             ),
             onDismiss: onDismiss,
-            onTextSelected: (String text, Rect rect) {},
+            onTextSelected:
+                (String text, Rect rect, List<Object?> _, String __) {},
             onLinkClick: (String query, Rect rect) {},
             onMineEntry: (Map<String, String> fields) async =>
                 const MinePopupResult(),

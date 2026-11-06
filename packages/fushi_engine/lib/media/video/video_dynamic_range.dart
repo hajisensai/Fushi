@@ -15,7 +15,6 @@ library;
 
 import 'package:meta/meta.dart';
 
-
 /// 片源动态范围。
 ///
 /// [unknown] 与 [sdr] **是两回事，不可互相顶替**：容器里没写色彩标签时，ffprobe 会
@@ -40,19 +39,19 @@ enum VideoDynamicRange {
 
   /// 给 UI 的短标签；[unknown] 无标签（UI 不应为「不知道」占一个角标位）。
   String? get badgeLabel => switch (this) {
-        VideoDynamicRange.hdr10 => 'HDR10',
-        VideoDynamicRange.hlg => 'HLG',
-        VideoDynamicRange.sdr => 'SDR',
-        VideoDynamicRange.unknown => null,
-      };
+    VideoDynamicRange.hdr10 => 'HDR10',
+    VideoDynamicRange.hlg => 'HLG',
+    VideoDynamicRange.sdr => 'SDR',
+    VideoDynamicRange.unknown => null,
+  };
 
   /// 持久化 / 比较用的稳定字符串（不用 [name] 以免日后改枚举名时静默改变存储值）。
   String get storageValue => switch (this) {
-        VideoDynamicRange.sdr => 'sdr',
-        VideoDynamicRange.hdr10 => 'hdr10',
-        VideoDynamicRange.hlg => 'hlg',
-        VideoDynamicRange.unknown => 'unknown',
-      };
+    VideoDynamicRange.sdr => 'sdr',
+    VideoDynamicRange.hdr10 => 'hdr10',
+    VideoDynamicRange.hlg => 'hlg',
+    VideoDynamicRange.unknown => 'unknown',
+  };
 
   static VideoDynamicRange fromStorage(String? value) {
     for (final VideoDynamicRange r in values) {
@@ -117,23 +116,23 @@ VideoDynamicRange resolveDynamicRange(VideoColorTags tags) {
 VideoDynamicRange dynamicRangeFromFfprobe({
   String? colorPrimaries,
   String? colorTransfer,
-}) =>
-    resolveDynamicRange(VideoColorTags(
-      primaries: _bt2020FromFfprobe(colorPrimaries),
-      transfer: _transferFromFfprobe(colorTransfer),
-    ));
+}) => resolveDynamicRange(
+  VideoColorTags(
+    primaries: _bt2020FromFfprobe(colorPrimaries),
+    transfer: _transferFromFfprobe(colorTransfer),
+  ),
+);
 
 /// libmpv `video-params/primaries` / `video-params/gamma` → [VideoDynamicRange]。
 ///
 /// mpv 的拼写与 ffprobe 不同：色域是 `bt.2020`（**带点**），曲线是 `pq` / `hlg`。
-VideoDynamicRange dynamicRangeFromMpv({
-  String? primaries,
-  String? gamma,
-}) =>
-    resolveDynamicRange(VideoColorTags(
-      primaries: _bt2020FromMpv(primaries),
-      transfer: _transferFromMpv(gamma),
-    ));
+VideoDynamicRange dynamicRangeFromMpv({String? primaries, String? gamma}) =>
+    resolveDynamicRange(
+      VideoColorTags(
+        primaries: _bt2020FromMpv(primaries),
+        transfer: _transferFromMpv(gamma),
+      ),
+    );
 
 bool? _bt2020FromFfprobe(String? value) {
   final String? v = _normalized(value);
@@ -147,10 +146,10 @@ VideoTransferFunction? _transferFromFfprobe(String? value) {
   final String? v = _normalized(value);
   if (v == null) return null;
   return switch (v) {
-        'smpte2084' => VideoTransferFunction.pq,
-        'arib-std-b67' => VideoTransferFunction.hlg,
-        _ => VideoTransferFunction.sdr,
-      };
+    'smpte2084' => VideoTransferFunction.pq,
+    'arib-std-b67' => VideoTransferFunction.hlg,
+    _ => VideoTransferFunction.sdr,
+  };
 }
 
 bool? _bt2020FromMpv(String? value) {
@@ -163,10 +162,10 @@ VideoTransferFunction? _transferFromMpv(String? value) {
   final String? v = _normalized(value);
   if (v == null) return null;
   return switch (v) {
-        'pq' => VideoTransferFunction.pq,
-        'hlg' => VideoTransferFunction.hlg,
-        _ => VideoTransferFunction.sdr,
-      };
+    'pq' => VideoTransferFunction.pq,
+    'hlg' => VideoTransferFunction.hlg,
+    _ => VideoTransferFunction.sdr,
+  };
 }
 
 /// 空串按「没写」处理：mpv 在属性未就绪时给空串，与 ffprobe 的「省略键」同义。

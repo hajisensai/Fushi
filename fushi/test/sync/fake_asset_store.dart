@@ -6,11 +6,19 @@ import 'package:fushi_engine/sync/sync_asset_store.dart';
 /// 内存资产库：命名空间用 `/` 分隔的路径作为 id；文件夹是已知路径集合，
 /// 资产是 path->bytes 映射。仅供测试（契约测试 + Plan B 编排器测试）。
 class FakeAssetStore implements SyncAssetStore {
-  FakeAssetStore({this.reportNullSizes = false});
+  FakeAssetStore({this.reportNullSizes = false, this.reportRevisions = false});
 
   /// 模拟 Dropbox/WebDAV/FTP 那类**不报 sizeBytes** 的后端：listChildren/findAsset
   /// 返回 sizeBytes=null。用于验证「同尺寸跳过」判据不依赖远端物理尺寸。
   final bool reportNullSizes;
+
+  /// 模拟 Drive / Dropbox / OneDrive / WebDAV 那类在列目录时给出**内容指纹**
+  /// （[AssetEntry.revision]）的后端：内容一变指纹就变。默认关（FTP / SFTP 口径）。
+  final bool reportRevisions;
+
+  String? _revisionOf(List<int> bytes) => reportRevisions
+      ? '${bytes.length}-${Object.hashAll(bytes).toRadixString(16)}'
+      : null;
 
   final Set<String> _folders = <String>{''};
   final Map<String, List<int>> _files = <String, List<int>>{};
@@ -38,18 +46,22 @@ class FakeAssetStore implements SyncAssetStore {
     for (final String f in _folders) {
       if (f.isEmpty || f == namespaceId) continue;
       if (f.startsWith(prefix) && !f.substring(prefix.length).contains('/')) {
-        out.add(AssetEntry(
-            id: f, name: f.substring(prefix.length), isFolder: true));
+        out.add(
+          AssetEntry(id: f, name: f.substring(prefix.length), isFolder: true),
+        );
       }
     }
     for (final MapEntry<String, List<int>> e in _files.entries) {
       if (e.key.startsWith(prefix) &&
           !e.key.substring(prefix.length).contains('/')) {
-        out.add(AssetEntry(
-          id: e.key,
-          name: e.key.substring(prefix.length),
-          sizeBytes: reportNullSizes ? null : e.value.length,
-        ));
+        out.add(
+          AssetEntry(
+            id: e.key,
+            name: e.key.substring(prefix.length),
+            sizeBytes: reportNullSizes ? null : e.value.length,
+            revision: _revisionOf(e.value),
+          ),
+        );
       }
     }
     return out;
@@ -60,21 +72,29 @@ class FakeAssetStore implements SyncAssetStore {
     final String path = _join(namespaceId, name);
     if (!_files.containsKey(path)) return null;
     return AssetEntry(
-        id: path,
-        name: name,
-        sizeBytes: reportNullSizes ? null : _files[path]!.length);
+      id: path,
+      name: name,
+      sizeBytes: reportNullSizes ? null : _files[path]!.length,
+    );
   }
 
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-      {void Function(double progress)? onProgress}) async {
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async {
     _files[_join(namespaceId, name)] = await file.readAsBytes();
     onProgress?.call(1.0);
   }
 
   @override
-  Future<void> getAsset(String assetId, File destination,
-      {void Function(double progress)? onProgress}) async {
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async {
     final List<int>? bytes = _files[assetId];
     if (bytes == null) throw StateError('asset not found: $assetId');
     await destination.writeAsBytes(bytes, flush: true);
@@ -90,7 +110,10 @@ class FakeAssetStore implements SyncAssetStore {
 
   @override
   Future<void> putJsonAsset(
-      String namespaceId, String name, Object? json) async {
+    String namespaceId,
+    String name,
+    Object? json,
+  ) async {
     _files[_join(namespaceId, name)] = utf8.encode(jsonEncode(json));
   }
 

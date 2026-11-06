@@ -65,9 +65,6 @@ class _FakeVideoController extends Fake implements VideoController {
       ValueNotifier<PlatformVideoController?>(null);
 
   @override
-  final ValueNotifier<bool> hidden = ValueNotifier<bool>(false);
-
-  @override
   final ValueNotifier<int?> id = ValueNotifier<int?>(null);
 
   @override

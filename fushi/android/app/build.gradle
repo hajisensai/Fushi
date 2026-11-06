@@ -2,6 +2,7 @@ plugins {
     id "com.android.application"
     id "kotlin-android"
     id "org.jetbrains.kotlin.plugin.serialization"
+    id "org.jetbrains.kotlin.plugin.compose"
     id "dev.flutter.flutter-gradle-plugin"
 }
 
@@ -64,15 +65,21 @@ def prepareMihonSourceApi = tasks.register("prepareMihonSourceApi") {
 // are vendored with the desktop sidecar (third_party/m_extension_server);
 // compiling the same files here keeps Android and the desktop sidecar on one
 // ABI. The sidecar build layers `overlay/` over `upstream_src/` (overlay wins),
-// and so does this task: the overlay holds Fushi's lib 14 + lib 16 union of
-// the ABI (data-class `Video`, hoster API, `SEpisode.fillermark`, ...) plus the
-// shared host loader `animesource/host/AnimeVideoLoader.kt`. It is a plain
-// copy of files already in the repository: no download, no hash.
+// and so does this task: the overlay holds Fushi's lib 14 + 16 + 17 union of
+// the ABI (`Video` with and without `memo`, hoster API, `SEpisode.fillermark`,
+// combined `getAnimeEpisodeUpdate`, ...) plus the shared host loader
+// `animesource/host/AnimeVideoLoader.kt` and the `torrentutils` helper that
+// extensions link against. It is a plain copy of files already in the
+// repository: no download, no hash. The one file not shared is the lib-17
+// `animesource/model/HttpServer.kt`: the sidecar's extends NanoHTTPD, which
+// the app does not ship, so the app compiles its own (same FQCN) from
+// src/main/kotlin and the loader reports local-server videos as unplayable.
 // `util/lang/CoroutinesExtensions.kt` comes along because the anime sources
 // import `eu.kanade.tachiyomi.util.lang.awaitSingle`, which Mihon's source-api
 // does not provide (its awaitSingle lives in `eu.kanade.tachiyomi.util`).
 def aniyomiSourceRoot = rootProject.file("../../third_party/m_extension_server/upstream_src/server/src/main/kotlin")
 def aniyomiOverlayRoot = rootProject.file("../../third_party/m_extension_server/overlay/server/src/main/kotlin")
+def aniyomiOverlayJavaRoot = rootProject.file("../../third_party/m_extension_server/overlay/server/src/main/java")
 def aniyomiSourceOutput = layout.buildDirectory.dir("generated/aniyomiSourceApi")
 def prepareAniyomiSourceApi = tasks.register("prepareAniyomiSourceApi", Sync) {
     File upstreamAnime = new File(aniyomiSourceRoot, "eu/kanade/tachiyomi/animesource")
@@ -87,11 +94,18 @@ def prepareAniyomiSourceApi = tasks.register("prepareAniyomiSourceApi", Sync) {
     }
     from(overlayAnime) {
         into "eu/kanade/tachiyomi/animesource"
+        exclude "model/HttpServer.kt"
+    }
+    from(new File(aniyomiOverlayRoot, "eu/kanade/tachiyomi/torrentutils")) {
+        into "eu/kanade/tachiyomi/torrentutils"
+    }
+    from(new File(aniyomiOverlayJavaRoot, "eu/kanade/tachiyomi/torrentutils")) {
+        into "eu/kanade/tachiyomi/torrentutils"
     }
     from(new File(aniyomiSourceRoot, "eu/kanade/tachiyomi/util/lang")) {
         into "eu/kanade/tachiyomi/util/lang"
     }
-    include "**/*.kt"
+    include "**/*.kt", "**/*.java"
     into aniyomiSourceOutput
 }
 
@@ -148,9 +162,28 @@ def requireReleaseKeystore = {
     }
 }
 
+// 网页内容核心（native/fushi_web_core：广告拦截 + 漫画章末广告页识别）是硬依赖：Dart 侧没有
+// 「缺库判不可用」的分支，Release 包缺 .so 在运行时就是 FushiWebCoreLibraryMissing。按 Flutter
+// 传进来的 target-platform 逐 ABI 核对 prebuilt 在不在（build_android_so.* 产出），缺就拒绝出包。
+def requireWebCoreSo = {
+    def abiOf = ['android-arm': 'armeabi-v7a', 'android-arm64': 'arm64-v8a', 'android-x64': 'x86_64']
+    def platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString().split(',')
+    platforms.each { platform ->
+        def abi = abiOf[platform.trim()]
+        if (abi == null) {
+            return
+        }
+        def so = file("../../../native/fushi_web_core/prebuilt/android/${abi}/libfushi_web_core.so")
+        if (!so.exists()) {
+            throw new GradleException("Missing required native library ${so}. Run native/fushi_web_core/build_android_so.{sh,ps1} for ${abi} before building a release APK.")
+        }
+    }
+}
+
 gradle.taskGraph.whenReady { taskGraph ->
     if (taskGraph.allTasks.any { it.name.toLowerCase().contains("release") }) {
         requireReleaseKeystore()
+        requireWebCoreSo()
     }
 }
 
@@ -191,6 +224,23 @@ android {
         // 产出 prebuilt/android/<abi>/libfushi_fsrs.so 则随包；缺失时 SRS 原生内核
         // 判不可用，构建照常。
         main.jniLibs.srcDirs += '../../../native/fushi_fsrs/prebuilt/android'
+        // 网页内容核心（fushi_web_core，硬依赖）：native/fushi_web_core/build_android_so.*
+        // 产出 prebuilt/android/<abi>/libfushi_web_core.so；Release 构建缺它直接失败
+        // （见上面的 requireWebCoreSo），Debug 构建不挡、运行时用到时如实报错。
+        main.jniLibs.srcDirs += '../../../native/fushi_web_core/prebuilt/android'
+        // 计算内核（哈希 / 图像 / 文本，**硬依赖**）：native/fushi_compute/build_android_so.*
+        // 产出 prebuilt/android/<abi>/libfushi_compute.so 随包；本次要出的任一 ABI 缺库时
+        // 下面的 checkFushiComputeNative 让构建失败（不像上面几个 copy-if-present 静默跳过）。
+        main.jniLibs.srcDirs += '../../../native/fushi_compute/prebuilt/android'
+        // RWKV-Instant 排程推理（**硬依赖**，AGPL-3.0-or-later）：native/fushi_rwkv/build_android_so.*
+        // 产出 prebuilt/android/<abi>/libfushi_rwkv.so 随包；缺任一 ABI 时 checkFushiRwkvNative 让构建失败。
+        main.jniLibs.srcDirs += '../../../native/fushi_rwkv/prebuilt/android'
+        // 音乐胖核心（曲库扫描 / 标签 / CUE，**硬依赖**）：native/fushi_music/build_android_so.*
+        // 产出 prebuilt/android/<abi>/libfushi_music.so 随包；缺任一 ABI 时 checkFushiMusicNative 让构建失败。
+        main.jniLibs.srcDirs += '../../../native/fushi_music/prebuilt/android'
+        // 语料胖核心（「我库里的例句」倒排索引，**硬依赖**）：native/fushi_corpus/build_android_so.*
+        // 产出 prebuilt/android/<abi>/libfushi_corpus.so 随包；缺任一 ABI 时 checkFushiCorpusNative 让构建失败。
+        main.jniLibs.srcDirs += '../../../native/fushi_corpus/prebuilt/android'
     }
 
     defaultConfig {
@@ -207,8 +257,22 @@ android {
             }
         }
         ndk {
-            // abiFilters omitted: --split-per-abi in CI controls ABI splits;
-            // fat APK includes all ABIs by default
+            // Flutter 插件不分包时会把 abiFilters 清空后**固定**写回 arm / arm64 / x64 三个，
+            // 不看 `--target-platform`；而 target-platform 只管 libflutter/libapp，插件与本仓
+            // jniLibs（onnxruntime、ffmpeg、libmpv、各 Rust 内核）于是三 ABI 全进包：调试通道
+            // 的 arm64 包曾带着 ~228 MB 起不来的 armeabi-v7a / x86_64 死重（459 MB，BUG-3874）。
+            // gradle.properties 用官方开关 `disable-abi-filtering=true` 关掉它那份，这里按
+            // target-platform 收（没传时同 Flutter 默认三个，照旧排除第三方带的 32 位 x86）；
+            // --split-per-abi 时由 Flutter 设的 splits.abi 管，AGP 不许两者同时设。
+            def abiOfPlatform = ['android-arm': 'armeabi-v7a', 'android-arm64': 'arm64-v8a',
+                                 'android-x64': 'x86_64', 'android-x86': 'x86']
+            def targetPlatform = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString()
+            def splitPerAbi = project.findProperty('split-per-abi')?.toString()?.toBoolean() ?: false
+            if (!splitPerAbi) {
+                abiFilters.clear()
+                abiFilters.addAll(targetPlatform.split(',')
+                    .collect { abiOfPlatform[it.trim()] }.findAll { it != null })
+            }
         }
     }
 
@@ -231,6 +295,15 @@ android {
                 storeFile file("${rootProject.projectDir}/${keystoreProperties['storeFile']}")
                 storePassword keystoreProperties['storePassword']
             }
+            // minSdk 24 时 AGP 默认只签 v2（3.0.0 的 APK 实测 v1=false）。华为 HarmonyOS 4.x
+            // 安装器 / 安全检测会因没有 JAR（v1）签名报「无证书」并拒装或标可疑（反馈 j3ChbSpKgJ），
+            // 显式补上 v1，并同时签 v3 便于日后密钥轮换。
+            // 注意：AGP 在 minSdk ≥ 24 时**无视** enableV1Signing（tools/base 84863c5
+            // 「Disable v1 signing for minSdk 24+」；develop CI apksigner 实测 v1=false），
+            // 真正补 v1 的是下面 packageRelease 之后的 apksigner 重签。
+            enableV1Signing true
+            enableV2Signing true
+            enableV3Signing true
         }
     }
 
@@ -314,6 +387,9 @@ dependencies {
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
     implementation "androidx.webkit:webkit:1.12.0"
     testImplementation "org.jetbrains.kotlin:kotlin-test-junit:2.2.20"
+    // JVM 单测里 android.jar 的 org.json 只是抛 "not mocked" 的桩（HostProxyPolicyTest 等读 JSON 的
+    // 用例因此必红）；测试类路径上放真实现，生产仍用平台自带的 org.json。
+    testImplementation "org.json:json:20240303"
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.20"
     implementation 'androidx.multidex:multidex:2.0.1'
     implementation 'com.github.ankidroid:Anki-Android:2.17alpha14'
@@ -354,11 +430,163 @@ dependencies {
     implementation 'androidx.preference:preference-ktx:1.2.1'
     implementation platform('androidx.compose:compose-bom:2026.05.00')
     implementation 'androidx.compose.runtime:runtime'
+    // Home-screen widgets (app.fushi.reader.widgets): Glance rendering + Material You colors.
+    implementation 'androidx.glance:glance-appwidget:1.1.1'
+    implementation 'androidx.glance:glance-material3:1.1.1'
+    // ColorScheme builders for the per-widget light / dark override (widgets/WidgetCommon.kt).
+    implementation 'androidx.compose.material3:material3'
+    // NowPlayingControl reads audio_service's MediaBrowserServiceCompat session token through
+    // typed calls (a by-name reflective call does not survive R8). The plugin only has this as
+    // `implementation`, so declare it here at the plugin's version (audio_service 0.18.18).
+    implementation 'androidx.media:media:1.7.0'
+}
+
+// 计算内核 fushi_compute 是硬依赖：本次构建要出的每个 ABI 都必须已有
+// native/fushi_compute/prebuilt/android/<abi>/libfushi_compute.so，否则失败并说明要跑哪个脚本。
+// ABI 取 Flutter 传的 target-platform（flutter build / run 总会传；裸 gradle 时 Flutter 插件
+// 默认出 arm / arm64 / x64 三个，这里同样按三个查）。
+def fushiComputeAndroidDir = file('../../../native/fushi_compute/prebuilt/android')
+def fushiComputeAbiOfPlatform = [
+    'android-arm'  : 'armeabi-v7a',
+    'android-arm64': 'arm64-v8a',
+    'android-x64'  : 'x86_64',
+    'android-x86'  : 'x86',
+]
+def checkFushiComputeNative = tasks.register("checkFushiComputeNative") {
+    doLast {
+        String platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString()
+        List<String> abis = platforms.split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+            .collect { fushiComputeAbiOfPlatform[it] ?: it }
+        List<String> missing = abis.findAll { abi ->
+            !new File(fushiComputeAndroidDir, "${abi}/libfushi_compute.so").isFile()
+        }
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                "fushi_compute is a required native dependency, but libfushi_compute.so is missing for ABI(s) " +
+                "${missing.join(', ')} under ${fushiComputeAndroidDir}. Build it first: " +
+                "native/fushi_compute/build_android_so.ps1 -Abis ${abis.join(',')} (Windows) or " +
+                "bash native/fushi_compute/build_android_so.sh <ndk-root> ${abis.join(' ')} " +
+                "(needs Rust + cargo-ndk; see docs/agent/build.md).")
+        }
+    }
+}
+
+// RWKV-Instant 排程推理 fushi_rwkv 与 fushi_compute 同为硬依赖、同一判据（ABI 取法见上）：
+// 本次构建要出的每个 ABI 都必须已有 native/fushi_rwkv/prebuilt/android/<abi>/libfushi_rwkv.so。
+def fushiRwkvAndroidDir = file('../../../native/fushi_rwkv/prebuilt/android')
+def checkFushiRwkvNative = tasks.register("checkFushiRwkvNative") {
+    doLast {
+        String platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString()
+        List<String> abis = platforms.split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+            .collect { fushiComputeAbiOfPlatform[it] ?: it }
+        List<String> missing = abis.findAll { abi ->
+            !new File(fushiRwkvAndroidDir, "${abi}/libfushi_rwkv.so").isFile()
+        }
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                "fushi_rwkv is a required native dependency, but libfushi_rwkv.so is missing for ABI(s) " +
+                "${missing.join(', ')} under ${fushiRwkvAndroidDir}. Build it first: " +
+                "native/fushi_rwkv/build_android_so.ps1 -Abis ${abis.join(',')} (Windows) or " +
+                "bash native/fushi_rwkv/build_android_so.sh <ndk-root> ${abis.join(' ')} " +
+                "(needs Rust + cargo-ndk; see docs/agent/build.md).")
+        }
+    }
+}
+
+// 音乐胖核心 fushi_music：与 fushi_rwkv 同为硬依赖、同一判据。
+def fushiMusicAndroidDir = file('../../../native/fushi_music/prebuilt/android')
+def checkFushiMusicNative = tasks.register("checkFushiMusicNative") {
+    doLast {
+        String platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString()
+        List<String> abis = platforms.split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+            .collect { fushiComputeAbiOfPlatform[it] ?: it }
+        List<String> missing = abis.findAll { abi ->
+            !new File(fushiMusicAndroidDir, "${abi}/libfushi_music.so").isFile()
+        }
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                "fushi_music is a required native dependency, but libfushi_music.so is missing for ABI(s) " +
+                "${missing.join(', ')} under ${fushiMusicAndroidDir}. Build it first: " +
+                "native/fushi_music/build_android_so.ps1 -Abis ${abis.join(',')} (Windows) or " +
+                "bash native/fushi_music/build_android_so.sh <ndk-root> ${abis.join(' ')} " +
+                "(needs Rust + cargo-ndk; see docs/agent/build.md).")
+        }
+    }
+}
+
+// 语料胖核心 fushi_corpus：与 fushi_music 同为硬依赖、同一判据。
+def fushiCorpusAndroidDir = file('../../../native/fushi_corpus/prebuilt/android')
+def checkFushiCorpusNative = tasks.register("checkFushiCorpusNative") {
+    doLast {
+        String platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString()
+        List<String> abis = platforms.split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+            .collect { fushiComputeAbiOfPlatform[it] ?: it }
+        List<String> missing = abis.findAll { abi ->
+            !new File(fushiCorpusAndroidDir, "${abi}/libfushi_corpus.so").isFile()
+        }
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                "fushi_corpus is a required native dependency, but libfushi_corpus.so is missing for ABI(s) " +
+                "${missing.join(', ')} under ${fushiCorpusAndroidDir}. Build it first: " +
+                "native/fushi_corpus/build_android_so.ps1 -Abis ${abis.join(',')} (Windows) or " +
+                "bash native/fushi_corpus/build_android_so.sh <ndk-root> ${abis.join(' ')} " +
+                "(needs Rust + cargo-ndk; see docs/agent/build.md).")
+        }
+    }
+}
+
+// AGP 对 minSdk ≥ 24 的包不签 v1（见 signingConfigs.release 注释），而 HarmonyOS 4.x 安装器
+// 要 JAR 签名。packageRelease 产出已签 v2+v3 的 APK 后，用 build-tools 的 apksigner 显式
+// `--v1-signing-enabled true` 原地重签（apksigner 显式开关不按 minSdk 推断），Flutter 随后才把
+// 它拷到 flutter-apk/。口令走环境变量，不进进程参数。CI 的 apksigner v1/v2/v3 门禁验结果。
+def resignReleaseApksWithV1 = { File apkDir ->
+    requireReleaseKeystore()
+    String apksignerName = System.getProperty('os.name').toLowerCase().contains('windows') ? 'apksigner.bat' : 'apksigner'
+    File apksigner = new File(android.sdkDirectory, "build-tools/${android.buildToolsVersion}/${apksignerName}")
+    if (!apksigner.isFile()) {
+        throw new GradleException("apksigner not found at ${apksigner}; cannot add the v1 (JAR) signature to release APKs.")
+    }
+    File storeFile = file("${rootProject.projectDir}/${keystoreProperties['storeFile']}")
+    List<File> apks = (apkDir.listFiles() ?: new File[0]).findAll { it.name.endsWith('.apk') }
+    if (apks.isEmpty()) {
+        throw new GradleException("No APK under ${apkDir} to re-sign with v1.")
+    }
+    apks.each { File apk ->
+        ProcessBuilder pb = new ProcessBuilder(
+            apksigner.absolutePath, 'sign',
+            '--ks', storeFile.absolutePath,
+            '--ks-key-alias', keystoreProperties['keyAlias'].toString(),
+            '--ks-pass', 'env:FUSHI_APK_KS_PASS',
+            '--key-pass', 'env:FUSHI_APK_KEY_PASS',
+            '--v1-signing-enabled', 'true',
+            '--v2-signing-enabled', 'true',
+            '--v3-signing-enabled', 'true',
+            apk.absolutePath)
+        pb.environment().put('FUSHI_APK_KS_PASS', keystoreProperties['storePassword'].toString())
+        pb.environment().put('FUSHI_APK_KEY_PASS', keystoreProperties['keyPassword'].toString())
+        pb.redirectErrorStream(true)
+        Process p = pb.start()
+        String out = p.inputStream.getText('UTF-8')
+        if (p.waitFor() != 0) {
+            throw new GradleException("apksigner failed to re-sign ${apk.name} with v1+v2+v3:\n${out}")
+        }
+    }
 }
 
 tasks.configureEach { task ->
+    if (task.name == "packageRelease") {
+        task.doLast {
+            resignReleaseApksWithV1(task.outputDirectory.get().asFile)
+        }
+    }
     if (task.name.startsWith("compile") && task.name.endsWith("Kotlin")) {
         task.dependsOn(prepareMihonSourceApi)
         task.dependsOn(prepareAniyomiSourceApi)
+    }
+    if (task.name == "preBuild") {
+        task.dependsOn(checkFushiComputeNative)
+        task.dependsOn(checkFushiRwkvNative)
+        task.dependsOn(checkFushiMusicNative)
+        task.dependsOn(checkFushiCorpusNative)
     }
 }

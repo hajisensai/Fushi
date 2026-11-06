@@ -1,0 +1,6 @@
+## BUG-3662 · popup-dictionary-metadata-stale
+- **报告**：2026-10-23（用户反馈 xQzaYBqbPW，Android 3.0.0：「词典显示界面调整不生效，在设置界面调整后要退出软件才生效」，截图为词典管理页 + AnkiDroid 上的 app 外查词窗，查词窗里的词典顺序与管理页不一致）
+- **真实性**：✅ 真 bug。Android app 外查词跑在 `:popup` 进程的常驻热引擎里（`fushi/lib/popup_main.dart`），词典元数据（顺序 / 启用 / 折叠 / 改名 / 增删）只在冷启动 `initialiseForDictionaryPopup` 里 `dictRepo.loadFromDb()` 读一次（`fushi/lib/src/models/app_model.dart`）。热复用路径只做 `refreshPrefCacheIfChanged`（TODO-855，`prefs_version` 门控），而词典元数据住在 `dictionary_metadata` 表、写入不抬 `prefs_version`（`packages/fushi_core/lib/src/database/database_prefs_media.part.dart` 只在 setPref 时 bump），于是主进程「词典管理」的任何改动都到不了常驻的 popup 进程，直到进程被杀。
+- **[x] ① 已修复** — `DictionaryRepository.reloadMetadataIfChangedInDb`：读一遍这张小表与上次装载的行快照（drift 行值相等）比较，变了才换缓存；`AppModel.refreshForWarmDictionaryPopup` 在热复用每次查词前串起偏好对账 + 词典元数据对账（变了照 `reloadDictionariesFromDb` 重载引擎、清查词缓存）+ 偏好变了才重推本地音频库；`popup_main.dart` 热路径与 `initialiseForDictionaryPopup` 已初始化分支都改调它。
+- **[x] ② 已加自动化测试** — `fushi/test/models/dictionary_repository_test.dart` 组 `reloadMetadataIfChangedInDb (BUG-3662)`：两个 repo 共用一个 DB 模拟主进程 / popup 进程，主进程改顺序 + 折叠、删词典后 popup 侧必须对上，未变时返回 false。
+- **备注**：真机未复测（Android :popup 进程）。热复用多一次几十行的 SELECT；引擎重载只在真的变了时发生。

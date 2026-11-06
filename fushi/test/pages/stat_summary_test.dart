@@ -141,7 +141,11 @@ void main() {
 
   group('trendMetricValue', () {
     final StatTrendPoint p = StatTrendPoint(
-        bucketKey: '2026-06-01', label: '06-01', chars: 3600, ms: 3600000);
+      bucketKey: '2026-06-01',
+      label: '06-01',
+      chars: 3600,
+      ms: 3600000,
+    );
     test('chars is raw count', () {
       expect(trendMetricValue(p, StatTrendMetric.chars), 3600);
     });
@@ -199,8 +203,11 @@ void main() {
     test('recent active days counts non-zero in last window', () {
       final List<StatDayData> daily = <StatDayData>[
         for (int i = 0; i < 10; i++)
-          _day('2026-06-${(i + 1).toString().padLeft(2, '0')}',
-              i >= 7 ? 100 : 0, i >= 7 ? 60000 : 0),
+          _day(
+            '2026-06-${(i + 1).toString().padLeft(2, '0')}',
+            i >= 7 ? 100 : 0,
+            i >= 7 ? 60000 : 0,
+          ),
       ];
       // last 7 = indices 3..9; non-zero at 7,8,9 -> 3
       final SpeedSummary s = computeSpeedSummary(daily, recentWindow: 7);
@@ -209,20 +216,22 @@ void main() {
 
     // BUG-1107：几秒钟的脏行（幻象字数 + 近零时长）不得进入极值/典型日样本。
     // 用户实况：「最快日 1619597 字/时 · 07-25」= 1.1 万字 ÷ 几十秒外推。
-    test('sub-minute dirty day is excluded from fastest/typical (BUG-1107)',
-        () {
-      final List<StatDayData> daily = <StatDayData>[
-        _day('2026-07-23', 3600, 3600000), // 3600 cph，正常日
-        _day('2026-07-24', 1800, 1800000), // 3600 cph，正常日
-        _day('2026-07-25', 11000, 25000), // 脏行：25 秒 → 旧口径 158 万 cph
-      ];
-      final SpeedSummary s = computeSpeedSummary(daily);
-      // 脏日不进极值：最快日是正常日之一，而不是 07-25。
-      expect(s.fastestDay!.dateKey, isNot('2026-07-25'));
-      expect(s.fastestDay!.cph, lessThan(10000));
-      // 脏日不进典型日中位数样本（只剩两个 3600 cph 样本）。
-      expect(s.typicalDayCph, closeTo(3600, 1e-6));
-    });
+    test(
+      'sub-minute dirty day is excluded from fastest/typical (BUG-1107)',
+      () {
+        final List<StatDayData> daily = <StatDayData>[
+          _day('2026-07-23', 3600, 3600000), // 3600 cph，正常日
+          _day('2026-07-24', 1800, 1800000), // 3600 cph，正常日
+          _day('2026-07-25', 11000, 25000), // 脏行：25 秒 → 旧口径 158 万 cph
+        ];
+        final SpeedSummary s = computeSpeedSummary(daily);
+        // 脏日不进极值：最快日是正常日之一，而不是 07-25。
+        expect(s.fastestDay!.dateKey, isNot('2026-07-25'));
+        expect(s.fastestDay!.cph, lessThan(10000));
+        // 脏日不进典型日中位数样本（只剩两个 3600 cph 样本）。
+        expect(s.typicalDayCph, closeTo(3600, 1e-6));
+      },
+    );
 
     test('a day with >= 1 minute still qualifies for extremes', () {
       final List<StatDayData> daily = <StatDayData>[

@@ -45,11 +45,56 @@ const Set<String> videoRemoteOperations = <String>{
   'openFavorite',
   // Read-only lists behind the episode / subtitle-track pickers:
   // `{sessionId, subtitleVersion}` -> `{episodes: [{index, title,
-  // current}], subtitleTracks: [{id, label, kind, selected, selectable}],
-  // subtitleOff: bool}`. Only hosts that advertise
+  // current, hasCover?}], subtitleTracks: [{id, label, kind, selected,
+  // selectable}], subtitleOff: bool}`. Only hosts that advertise
   // [videoRemoteCapabilityEpisodes] / [videoRemoteCapabilitySubtitleTracks]
   // answer it; older hosts reject the path as an unknown operation.
   'playbackOptions',
+  // Cover preview of one episode in the phone's episode picker, read only:
+  // `{sessionId, subtitleVersion, episodeIndex}` -> `{mime, data}` (base64
+  // image, large covers scaled down to a preview on the computer). Phones
+  // only ask for episodes whose `playbackOptions` entry says `hasCover`, so
+  // hosts that predate the field never receive it. Covers the episode list
+  // of any source (local files and media-server episodes alike), unlike the
+  // library cover endpoint that only knows library rows. Errors:
+  // `404 cover_missing`, `502 cover_unavailable` (fetching a media-server
+  // episode's cover failed).
+  'episodeCover',
+  // On-demand playback ([videoRemoteCapabilityOpenVideo]): pick a video from
+  // the computer's library on the phone and have the computer play it, with
+  // or without a video page already open.
+  //
+  // * `library` — `{query?, offset?, limit?}` -> `{total, offset, items:
+  //   [{bookUid, title, collection?, positionMs, lastPlayedAt?,
+  //   coverVersion?}], currentBookUid}`. Read only; `query` filters by title
+  //   / collection. `coverVersion` (cover file mtime) is present only when
+  //   the video has a cover, served by the interconnect library's
+  //   `GET /api/library/videos/<bookUid>/cover`.
+  // * `openVideo` — `{bookUid, requestId}`: closes the open video page (its
+  //   normal exit, position saved) and opens [bookUid]. Answers before the
+  //   new page is playing; its session reaches the phone through the state
+  //   journal. Errors: `404 video_missing`, `409 host_busy` (the computer is
+  //   showing something that cannot be closed from the phone, e.g. a dialog).
+  'library',
+  'openVideo',
+  // Online subtitle search for the playing video
+  // ([videoRemoteCapabilitySubtitleSearch]), read only:
+  // `{sessionId, subtitleVersion, query?, episode?}` -> `{query, episode?,
+  // candidates: [{id, fileName, provider, language?, episode?, aiTranslated,
+  // hearingImpaired}]}`. Without `query` the computer searches with what it
+  // derives from the video (title / scraped identity, episode) and reports it
+  // back so the phone can prefill. `id` is opaque and only valid until the
+  // next search; the `subtitleDownload` command fetches and applies one.
+  // Errors: `409 subtitle_source_missing` (no source configured),
+  // `502 subtitle_search_failed` (no result and a source failed).
+  'subtitleSearch',
+  // `closeVideo` — `{sessionId, requestId}` ([videoRemoteCapabilityCloseVideo]):
+  // closes the open video page through its normal exit (position saved),
+  // leaving the computer on whatever is underneath. Errors: `409 no_video`,
+  // `409 session_changed` (the phone still shows an earlier video), `409
+  // host_busy` (the page cannot be closed from the phone, e.g. another media
+  // page or a dialog is on top of it).
+  'closeVideo',
   'disconnect',
 };
 
@@ -62,8 +107,19 @@ const Set<String> videoRemoteOperations = <String>{
 /// * `episode` — `{episodeIndex: int}` ([videoRemoteCapabilityEpisodes]).
 /// * `subtitleTrack` — `{trackId: String?}`, null turns the primary subtitle
 ///   off ([videoRemoteCapabilitySubtitleTracks]).
+/// * `subtitleDownload` — `{candidateId}` from the last `subtitleSearch`:
+///   the computer downloads it into its subtitle folder and applies it as
+///   the primary subtitle ([videoRemoteCapabilitySubtitleSearch]). Errors:
+///   `404 subtitle_candidate_missing`, `502 subtitle_download_failed`.
+/// * `caret` — `{caret: String, count?: int}` from [videoRemoteCaretActions]
+///   (`count`, 1..[videoRemoteCaretMaxCount], repeats one of
+///   [videoRemoteCaretMoves] so a quick drag is one request): drives the
+///   computer's own subtitle word cursor (the keyboard / gamepad one) so the
+///   lookup card opens on the computer screen ([videoRemoteCapabilityCaret]).
+///   Answers `{ok, caret}` with the cursor's surface afterwards (see
+///   [videoRemoteCaretSurfaces]); the snapshot carries the same `caret`.
 ///
-/// The last three are newer than the protocol itself: a host that predates
+/// The last five are newer than the protocol itself: a host that predates
 /// them answers `400 invalid_action`, a host whose player cannot do one
 /// answers `409 action_unsupported`. Phones only offer an action when the
 /// snapshot's `capabilities` list names it, so neither reaches a user.
@@ -75,13 +131,64 @@ const Set<String> videoRemoteCommandActions = <String>{
   'volume',
   'episode',
   'subtitleTrack',
+  'subtitleDownload',
+  'caret',
 };
+
+/// Steps of the `caret` command. The computer routes each by where its cursor
+/// is: on the subtitle `enter` starts it (pausing playback) on the first
+/// visible character, `left` / `right` step one character back / forward in
+/// reading order, `up` / `down` move a line, `activate` looks the character
+/// up (the card opens and the cursor moves into it); inside the card the same
+/// steps move through it, `activate` presses what the cursor is on (the ＋
+/// button mines) and `longPress` is the card's long press. `back` closes the
+/// top card, or leaves the cursor (resuming playback it paused).
+const Set<String> videoRemoteCaretActions = <String>{
+  'enter',
+  'left',
+  'right',
+  'up',
+  'down',
+  'activate',
+  'longPress',
+  'back',
+};
+
+/// The `caret` steps that take a `count`.
+const Set<String> videoRemoteCaretMoves = <String>{
+  'left',
+  'right',
+  'up',
+  'down',
+};
+
+/// Upper bound of the `caret` command's `count`.
+const int videoRemoteCaretMaxCount = 20;
+
+/// Where the computer's word cursor is (`caret` in the snapshot and in the
+/// `caret` command's answer): `none` (off), `video` (on the subtitle) or
+/// `popup` (inside a lookup card).
+const Set<String> videoRemoteCaretSurfaces = <String>{'none', 'video', 'popup'};
 
 /// Snapshot `capabilities` entries: optional controls this host's player
 /// supports. A snapshot without the list (older hosts) supports none of them.
 const String videoRemoteCapabilityVolume = 'volume';
 const String videoRemoteCapabilityEpisodes = 'episodes';
 const String videoRemoteCapabilitySubtitleTracks = 'subtitleTracks';
+const String videoRemoteCapabilitySubtitleSearch = 'subtitleSearch';
+const String videoRemoteCapabilityCaret = 'caret';
+
+/// The open video can be closed from the phone (`closeVideo`).
+const String videoRemoteCapabilityCloseVideo = 'closeVideo';
+
+/// Host-level capability (present with or without an open video): the host
+/// answers `library` / `openVideo`.
+const String videoRemoteCapabilityOpenVideo = 'openVideo';
+
+/// Host-level capability: `openVideo` accepts `discMenu: true` and opens the
+/// title's disc in its authored menu (remote discs, phase 2). Older hosts
+/// would silently play the title instead, so the phone checks this first.
+const String videoRemoteCapabilityOpenDiscMenu = 'openDiscMenu';
 
 /// Error code for a known action the current player cannot perform.
 const String videoRemoteActionUnsupported = 'action_unsupported';

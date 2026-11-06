@@ -13,7 +13,9 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart';
 Future<void> _pump(WidgetTester tester, Widget child) async {
   await tester.pumpWidget(
     TranslationProvider(
-      child: MaterialApp(home: Scaffold(body: SingleChildScrollView(child: child))),
+      child: MaterialApp(
+        home: Scaffold(body: SingleChildScrollView(child: child)),
+      ),
     ),
   );
   await tester.pumpAndSettle();
@@ -45,7 +47,13 @@ void main() {
         ),
       ),
     );
-    for (final String s in <String>['TITLE', 'COLL', 'META1', 'META2', '1h 2m']) {
+    for (final String s in <String>[
+      'TITLE',
+      'COLL',
+      'META1',
+      'META2',
+      '1h 2m',
+    ]) {
       expect(find.text(s), findsOneWidget, reason: s);
     }
     expect(find.byIcon(Icons.chevron_right), findsOneWidget);
@@ -84,12 +92,73 @@ void main() {
     // 1×1 透明 PNG。
     final MemoryImage cover = MemoryImage(
       Uint8List.fromList(<int>[
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
-        0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
-        0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
-        0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
-        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+        0x89,
+        0x50,
+        0x4E,
+        0x47,
+        0x0D,
+        0x0A,
+        0x1A,
+        0x0A,
+        0x00,
+        0x00,
+        0x00,
+        0x0D,
+        0x49,
+        0x48,
+        0x44,
+        0x52,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x08,
+        0x06,
+        0x00,
+        0x00,
+        0x00,
+        0x1F,
+        0x15,
+        0xC4,
+        0x89,
+        0x00,
+        0x00,
+        0x00,
+        0x0D,
+        0x49,
+        0x44,
+        0x41,
+        0x54,
+        0x78,
+        0x9C,
+        0x63,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0x05,
+        0x00,
+        0x01,
+        0x0D,
+        0x0A,
+        0x2D,
+        0xB4,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x49,
+        0x45,
+        0x4E,
+        0x44,
+        0xAE,
+        0x42,
+        0x60,
+        0x82,
       ]),
     );
     await _pump(
@@ -140,9 +209,8 @@ void main() {
     expect(find.text('INSIDE'), findsNothing, reason: '默认收起');
     // 2026-10 重设计：chevron 恒为 expand_more，展开时经 AnimatedRotation 转半圈。
     expect(find.byIcon(Icons.expand_more), findsOneWidget);
-    double turns() => tester
-        .widget<AnimatedRotation>(find.byType(AnimatedRotation))
-        .turns;
+    double turns() =>
+        tester.widget<AnimatedRotation>(find.byType(AnimatedRotation)).turns;
     expect(turns(), 0);
     await tester.tap(find.text(t.stat_analysis));
     await tester.pumpAndSettle();

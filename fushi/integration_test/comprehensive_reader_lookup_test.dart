@@ -16,8 +16,9 @@ void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('comprehensive reader page turn and dictionary lookup',
-      (WidgetTester tester) async {
+  testWidgets('comprehensive reader page turn and dictionary lookup', (
+    WidgetTester tester,
+  ) async {
     final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
     FlutterError.onError = (FlutterErrorDetails details) {
@@ -37,8 +38,11 @@ void main() {
       await showBooksTab(tester);
 
       final String bookKey = await seedReaderBook(tester);
-      expect(findBookEntries(), findsWidgets,
-          reason: 'seeded book card must appear on the books shelf');
+      expect(
+        findBookEntries(),
+        findsWidgets,
+        reason: 'seeded book card must appear on the books shelf',
+      );
 
       const Key webViewKey = ValueKey<String>('fushi_webview');
       // 书卡的 Enter→activate 未挂在 FushiFocusRoot 下（TODO-783），且已入库
@@ -56,16 +60,20 @@ void main() {
       expect(eval, isNotNull);
       await eval!(paginationHarnessJs);
       final PaginationState before = PaginationState.fromJson(
-        jsonDecode(await eval(
-          'window.fushiTestHarness.getPaginationState();',
-        ) as String) as Map<String, dynamic>,
+        jsonDecode(
+              await eval('window.fushiTestHarness.getPaginationState();')
+                  as String,
+            )
+            as Map<String, dynamic>,
       );
       await eval('window.fushiReader.paginate("forward");');
       await tester.pump(const Duration(seconds: 1));
       final PaginationState after = PaginationState.fromJson(
-        jsonDecode(await eval(
-          'window.fushiTestHarness.getPaginationState();',
-        ) as String) as Map<String, dynamic>,
+        jsonDecode(
+              await eval('window.fushiTestHarness.getPaginationState();')
+                  as String,
+            )
+            as Map<String, dynamic>,
       );
       expect(after.scroll, greaterThanOrEqualTo(before.scroll));
 
@@ -81,8 +89,11 @@ void main() {
         allowRemoteLookup: false,
         useCache: false,
       );
-      expect(lookup.entries, isNotEmpty,
-          reason: 'Generated test dictionary must resolve "testword"');
+      expect(
+        lookup.entries,
+        isNotEmpty,
+        reason: 'Generated test dictionary must resolve "testword"',
+      );
 
       await takeScreenshot(binding, 'comprehensive_reader_lookup');
       assertStrictErrors(errors);

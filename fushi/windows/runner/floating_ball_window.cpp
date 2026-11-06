@@ -37,8 +37,13 @@ constexpr UINT kAnimationTimerMs = 10;
 // 尚未显现的进场按钮不能提前截获桌面点击；绘制命中垫与 ButtonAt 同门控。
 constexpr double kMenuMinHitOpacity = 0.05;
 
-constexpr char kActionOpenApp[] = "open_app";
-constexpr char kActionClose[] = "close";
+// 「切换配置」菜单请求的球窗私有消息：把 TrackPopupMenu 挪出通道回调栈再弹。
+// 菜单是模态循环，直接在 MethodChannel 回调里跑会把引擎的派发挂在半截（同
+// global_lookup_window 的 kShowContextMenuMessage）。
+constexpr UINT kShowProfileMenuMessage = WM_APP + 0x71;
+
+using fb::kActionClose;
+using fb::kActionOpenApp;
 
 double NowMs() {
   static const double frequency = [] {
@@ -88,6 +93,8 @@ FloatingBallWindow::FloatingBallWindow() = default;
 
 FloatingBallWindow::~FloatingBallWindow() {
   Stop();
+  // 配置菜单的模态循环若还在栈上，它返回后看到这个就不再碰本对象。
+  *alive_ = false;
   if (classes_registered_) {
     UnregisterClassW(kBallClassName, GetModuleHandle(nullptr));
     UnregisterClassW(kMenuClassName, GetModuleHandle(nullptr));
@@ -156,18 +163,7 @@ void FloatingBallWindow::DiscardDeviceResources() {
 void FloatingBallWindow::ClearBitmapCache() { bitmaps_.clear(); }
 
 std::vector<std::string> FloatingBallWindow::ButtonIds() const {
-  // 固定的关闭 / 打开 Fushi 在最上（离球最远，防误触），用户勾选的动作在下、
-  // 末颗紧贴球顶——与应用内「列表末颗离球最近」同序。
-  std::vector<std::string> ids;
-  ids.emplace_back(kActionClose);
-  ids.emplace_back(kActionOpenApp);
-  for (const std::string& id : config_.actions) {
-    if (id != kActionClose && id != kActionOpenApp &&
-        std::find(ids.begin(), ids.end(), id) == ids.end()) {
-      ids.push_back(id);
-    }
-  }
-  return ids;
+  return fb::ButtonIds(config_.show_open_app, config_.actions);
 }
 
 std::wstring FloatingBallWindow::LabelFor(const std::string& id) const {
@@ -180,6 +176,7 @@ std::wstring FloatingBallWindow::LabelFor(const std::string& id) const {
   if (id == "popup_lookup") return L"App-external lookup";
   if (id == "clipboard") return L"Clipboard";
   if (id == "sync") return L"Sync now";
+  if (id == "switch_profile") return L"Switch profile";
   if (id == kActionOpenApp) return L"Open Fushi";
   if (id == kActionClose) return L"Close";
   if (id == "ball") return L"Floating ball";
@@ -316,6 +313,12 @@ bool FloatingBallWindow::Start(const Config& config, bool dock_left,
 }
 
 void FloatingBallWindow::Stop() {
+  // 配置菜单先收尾：正弹着就让模态循环退出（它返回后见已收尾，不再回第二次），
+  // 已投递未弹的那条消息会随球窗一起丢掉——两种都在这里以空结果回 Dart。
+  if (profile_menu_tracking_) {
+    EndMenu();
+  }
+  FinishProfileMenu(std::nullopt);
   CancelAnimations();
   // 先落状态再拆窗：DestroyWindow 会同步发 WM_CAPTURECHANGED，拖动中的状态若还在
   // 就会走 EndDrag，给一个正在消失的球起吸附动画、报位置。
@@ -393,6 +396,145 @@ void FloatingBallWindow::ShowBallWindows() {
   }
 }
 
+// ── 切换配置菜单 ────────────────────────────────────────────────────────────
+
+void FloatingBallWindow::ShowProfileMenu(std::vector<ProfileMenuItem> items,
+                                         std::optional<RECT> anchor,
+                                         ProfileMenuCallback done) {
+  if (!done) {
+    return;
+  }
+  // 一次只一个：旧的还在等（含模态循环里又来一次）就拒绝新的，旧的照常收尾。
+  // 截屏冻结 / 让位中球不可见，菜单没有可贴的球，也拒绝。
+  if (profile_menu_done_ || items.empty() || !IsRunning() || Suppressed()) {
+    done(std::nullopt);
+    return;
+  }
+  profile_menu_items_ = std::move(items);
+  profile_menu_anchor_ = anchor;
+  profile_menu_done_ = std::move(done);
+  profile_menu_tracking_ = false;
+  if (!PostMessage(ball_hwnd_, kShowProfileMenuMessage, 0, 0)) {
+    FinishProfileMenu(std::nullopt);
+  }
+}
+
+void FloatingBallWindow::FinishProfileMenu(std::optional<int64_t> selected) {
+  if (!profile_menu_done_) {
+    return;
+  }
+  // 先摘再回：回调里可能紧接着又来一次 ShowProfileMenu。
+  ProfileMenuCallback done = std::move(profile_menu_done_);
+  profile_menu_done_ = nullptr;
+  profile_menu_items_.clear();
+  profile_menu_anchor_.reset();
+  profile_menu_tracking_ = false;
+  done(selected);
+}
+
+void FloatingBallWindow::RunProfileMenu(HWND hwnd) {
+  if (!profile_menu_done_ || profile_menu_tracking_) {
+    return;
+  }
+  if (hwnd != ball_hwnd_ || Suppressed()) {
+    FinishProfileMenu(std::nullopt);
+    return;
+  }
+  // 拷一份：模态循环里 Stop() 会清掉成员。
+  const std::vector<ProfileMenuItem> items = profile_menu_items_;
+  const std::optional<RECT> anchor = profile_menu_anchor_;
+  HMENU menu = CreatePopupMenu();
+  if (menu == nullptr) {
+    FinishProfileMenu(std::nullopt);
+    return;
+  }
+  // 命令 id = 下标 + 1：0 是 TPM_RETURNCMD 的「什么都没选」。
+  int checked = -1;
+  for (size_t i = 0; i < items.size(); ++i) {
+    // & 是菜单助记符前缀：配置名里的 & 要写成 && 才原样显示。
+    std::wstring label;
+    label.reserve(items[i].label.size());
+    for (const wchar_t ch : items[i].label) {
+      if (ch == L'&') label += L'&';
+      label += ch;
+    }
+    AppendMenuW(menu, MF_STRING, static_cast<UINT_PTR>(i + 1), label.c_str());
+    if (items[i].checked && checked < 0) {
+      checked = static_cast<int>(i);
+    }
+  }
+  if (checked >= 0) {
+    // 单选语义：当前配置画圆点（MFT_RADIOCHECK）而不是对勾，其余显式不勾。
+    CheckMenuRadioItem(menu, 1, static_cast<UINT>(items.size()),
+                       static_cast<UINT>(checked + 1), MF_BYCOMMAND);
+  }
+
+  // 贴球弹：球在屏幕左半边就往右弹（菜单左上角对齐球右缘），右半边往左弹；
+  // rcExclude = 球，放不下时系统先保横向不盖球（没设 TPM_VERTICAL）。
+  // 坐标都是物理像素：runner 是 Per-Monitor V2，TrackPopupMenuEx 收的也是物理像素。
+  UINT align = TPM_TOPALIGN;
+  int x = 0;
+  int y = 0;
+  TPMPARAMS params = {};
+  params.cbSize = sizeof(params);
+  TPMPARAMS* exclude = nullptr;
+  if (anchor.has_value()) {
+    const RECT a = *anchor;
+    bool open_right = dock_left_;
+    MONITORINFO mi = {};
+    mi.cbSize = sizeof(mi);
+    if (GetMonitorInfo(MonitorFromRect(&a, MONITOR_DEFAULTTONEAREST), &mi)) {
+      open_right =
+          (a.left + a.right) / 2 < (mi.rcWork.left + mi.rcWork.right) / 2;
+    }
+    x = open_right ? a.right : a.left;
+    y = a.top;
+    align |= open_right ? TPM_LEFTALIGN : TPM_RIGHTALIGN;
+    params.rcExclude = a;
+    exclude = &params;
+  } else {
+    POINT cursor = {};
+    GetCursorPos(&cursor);
+    x = cursor.x;
+    y = cursor.y;
+    align |= dock_left_ ? TPM_LEFTALIGN : TPM_RIGHTALIGN;
+  }
+
+  // TrackPopupMenu 的已知契约：宿主窗口不是前台时，点菜单外不会收起菜单、Esc 也
+  // 到不了菜单。球窗是 WS_EX_NOACTIVATE，所以弹菜单期间临时把前台拿过来（刚点了
+  // 球上的按钮，本进程收到了最后一次输入，有资格这么做）；菜单结束后若前台还在
+  // 我们手里就还给用户原来的程序——用户正在别的程序里，不能落到 Fushi 主窗。
+  // 球窗的 WM_MOUSEACTIVATE / WM_POINTERACTIVATE 照旧回「不激活」：点球不抢前台
+  // 不变，这里只是菜单这一窗口期的显式自激活。
+  const HWND previous_foreground = GetForegroundWindow();
+  const bool took_foreground = previous_foreground != hwnd &&
+                               SetForegroundWindow(hwnd) != FALSE;
+  profile_menu_tracking_ = true;
+  const std::shared_ptr<bool> alive = alive_;
+  const UINT command = static_cast<UINT>(TrackPopupMenuEx(
+      menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY | align, x, y, hwnd,
+      exclude));
+  // 同一契约的后半截：让菜单循环确实退出后再继续。
+  PostMessage(hwnd, WM_NULL, 0, 0);
+  DestroyMenu(menu);
+  // 点了菜单外的别的程序时前台已经是它，不动；还在球窗上（选了一项 / Esc / 点了
+  // 桌面空白）才交还。
+  if (took_foreground && previous_foreground != nullptr &&
+      IsWindow(previous_foreground) && GetForegroundWindow() == hwnd) {
+    SetForegroundWindow(previous_foreground);
+  }
+  // 模态循环里本对象被析构 / Stop() 已经以空结果收尾（或已换成新的一次请求）：
+  // 不再回第二次。
+  if (!*alive || !profile_menu_tracking_) {
+    return;
+  }
+  std::optional<int64_t> selected;
+  if (command >= 1 && command <= items.size()) {
+    selected = items[command - 1].id;
+  }
+  FinishProfileMenu(selected);
+}
+
 // ── 展开 / 收起 ─────────────────────────────────────────────────────────────
 
 void FloatingBallWindow::SetExpanded(bool expand) {
@@ -414,12 +556,7 @@ void FloatingBallWindow::AnimateProgress(double target, int full_ms) {
     if (target <= 0.0) DestroyMenuWindow();
     return;
   }
-  progress_anim_.active = true;
-  progress_anim_.from = progress_;
-  progress_anim_.to = target;
-  progress_anim_.start_ms = NowMs();
-  progress_anim_.duration_ms =
-      fb::ProgressDurationMs(full_ms, progress_, target);
+  progress_anim_.Start(progress_, target, full_ms, NowMs());
   EnsureAnimationTimer();
 }
 
@@ -458,38 +595,18 @@ void FloatingBallWindow::EnsureAnimationTimer() {
 
 void FloatingBallWindow::OnAnimationTick() {
   const double now = NowMs();
-  bool more = false;
   if (progress_anim_.active) {
-    const double f = std::clamp(
-        (now - progress_anim_.start_ms) / progress_anim_.duration_ms, 0.0, 1.0);
-    const double target = progress_anim_.to;
-    if (f >= 1.0) {
-      progress_anim_.active = false;
-      SetProgress(target);
-      // 收起动画结束才拆按钮窗（Android 同）。
-      if (target <= 0.0) {
-        DestroyMenuWindow();
-      }
-    } else {
-      SetProgress(fb::Lerp(progress_anim_.from, target, f));
-      more = true;
+    SetProgress(progress_anim_.Sample(now));
+    // 收起动画结束才拆按钮窗（Android 同）。
+    if (!progress_anim_.active && progress_anim_.to <= 0.0) {
+      DestroyMenuWindow();
     }
   }
   if (snap_anim_.active) {
-    const double f = std::clamp(
-        (now - snap_anim_.start_ms) / static_cast<double>(fb::kSnapMs), 0.0,
-        1.0);
-    const double e = fb::EaseOutCubic(f);
-    ball_left_ = fb::Lerp(snap_anim_.from_left, snap_anim_.to_left, e);
-    ball_top_ = fb::Lerp(snap_anim_.from_top, snap_anim_.to_top, e);
+    snap_anim_.Sample(now, &ball_left_, &ball_top_);
     RenderBall();
-    if (f >= 1.0) {
-      snap_anim_.active = false;
-    } else {
-      more = true;
-    }
   }
-  if (!more && timer_running_) {
+  if (!progress_anim_.active && !snap_anim_.active && timer_running_) {
     if (ball_hwnd_ != nullptr) {
       KillTimer(ball_hwnd_, kAnimationTimerId);
     }
@@ -509,55 +626,14 @@ void FloatingBallWindow::EnsureMenuWindow() {
   const fb::Geometry g = CurrentGeometry();
   menu_ids_ = ButtonIds();
   menu_scale_ = scale_;
-  const double ball_cx = g.ExpandedBallLeft() + g.ball() / 2;
-  const double ball_cy = g.ExpandedBallTop() + g.ball() / 2;
-  const double peak = EaseOutBackPeakCached();
-  const double reach_radius = g.button() / 2 * fb::ButtonScale(peak) +
-                              fb::kMenuShadowPadDip * menu_scale_ +
-                              2.0 * menu_scale_;
-  double min_x = ball_cx - reach_radius;
-  double max_x = ball_cx + reach_radius;
-  double min_y = ball_cy - reach_radius;
-  double max_y = ball_cy + reach_radius;
-  std::vector<fb::Offset> offsets;
   PrepareMenuLabels(g);
-  // 标签胶囊贴在按钮朝屏幕中央的一侧（左停靠在右、右停靠在左），随按钮圆心走：
-  // 两个端点各把胶囊（含阴影边）并进包围盒。
-  const double label_near = g.button() / 2 + fb::kLabelGapDip * menu_scale_;
-  const double label_pad = fb::kMenuShadowPadDip * menu_scale_;
-  const double label_half_h = fb::kLabelHeightDip * menu_scale_ / 2 + label_pad;
-  auto include_label = [&](size_t index, double cx, double cy) {
-    if (index >= menu_label_widths_.size()) return;
-    const double w = menu_label_widths_[index];
-    const double a = dock_left_ ? cx + label_near : cx - label_near - w;
-    min_x = std::min(min_x, a - label_pad);
-    max_x = std::max(max_x, a + w + label_pad);
-    min_y = std::min(min_y, cy - label_half_h);
-    max_y = std::max(max_y, cy + label_half_h);
-  };
-  for (size_t i = 0; i < menu_ids_.size(); ++i) {
-    const fb::Offset off = g.ButtonOffset(static_cast<int>(i));
-    offsets.push_back(off);
-    const double far_x = ball_cx + off.dx * peak;
-    const double far_y = ball_cy + off.dy * peak;
-    min_x = std::min(min_x, far_x - reach_radius);
-    max_x = std::max(max_x, far_x + reach_radius);
-    min_y = std::min(min_y, far_y - reach_radius);
-    max_y = std::max(max_y, far_y + reach_radius);
-    include_label(i, ball_cx, ball_cy);
-    include_label(i, far_x, far_y);
-  }
-  menu_origin_ = POINT{static_cast<LONG>(std::floor(min_x)),
-                       static_cast<LONG>(std::floor(min_y))};
-  menu_size_ = SIZE{static_cast<LONG>(std::ceil(max_x)) - menu_origin_.x,
-                    static_cast<LONG>(std::ceil(max_y)) - menu_origin_.y};
-  menu_ball_cx_ = ball_cx - menu_origin_.x;
-  menu_ball_cy_ = ball_cy - menu_origin_.y;
-  menu_centers_.clear();
-  for (const fb::Offset& off : offsets) {
-    menu_centers_.push_back(
-        fb::Offset{menu_ball_cx_ + off.dx, menu_ball_cy_ + off.dy});
-  }
+  const fb::MenuLayout layout = fb::LayoutMenu(
+      g, menu_scale_, EaseOutBackPeakCached(), menu_label_widths_);
+  menu_origin_ = POINT{layout.x, layout.y};
+  menu_size_ = SIZE{layout.width, layout.height};
+  menu_ball_cx_ = layout.ball_cx;
+  menu_ball_cy_ = layout.ball_cy;
+  menu_centers_ = layout.centers;
   hovered_ = -1;
   pressed_ = -1;
   tracking_leave_ = false;
@@ -843,12 +919,9 @@ void FloatingBallWindow::DragTo(POINT cursor) {
   scale_ = screen.scale;
   const fb::Geometry as_left = GeometryFor(screen, true, fraction_);
   const fb::Geometry as_right = GeometryFor(screen, false, fraction_);
-  left = std::clamp(left, as_left.CollapsedBallLeft(),
-                    std::max(as_left.CollapsedBallLeft(),
-                             as_right.CollapsedBallLeft()));
-  top = std::clamp(top, as_left.MinTop(), as_left.MaxTop());
-  ball_left_ = left;
-  ball_top_ = top;
+  const fb::Offset clamped = fb::ClampDrag(as_left, as_right, left, top);
+  ball_left_ = clamped.dx;
+  ball_top_ = clamped.dy;
   RenderBall();
 }
 
@@ -860,16 +933,13 @@ void FloatingBallWindow::EndDrag() {
   dock_left_ = g.DockLeftForBallLeft(ball_left_);
   fraction_ = g.FractionForTop(ball_top_);
   const fb::Geometry settled = CurrentGeometry();
-  snap_anim_.active = config_.animate;
-  snap_anim_.from_left = ball_left_;
-  snap_anim_.from_top = ball_top_;
-  snap_anim_.to_left = settled.CollapsedBallLeft();
-  snap_anim_.to_top = settled.BallTop();
-  snap_anim_.start_ms = NowMs();
-  if (!config_.animate) {
+  if (config_.animate) {
+    snap_anim_.Start(ball_left_, ball_top_, settled.CollapsedBallLeft(),
+                     settled.BallTop(), NowMs());
+  } else {
     CancelAnimations();
-    ball_left_ = snap_anim_.to_left;
-    ball_top_ = snap_anim_.to_top;
+    ball_left_ = settled.CollapsedBallLeft();
+    ball_top_ = settled.BallTop();
   }
   RenderBall();
   if (config_.animate) EnsureAnimationTimer();
@@ -1427,6 +1497,10 @@ LRESULT FloatingBallWindow::HandleBallMessage(HWND hwnd, UINT message,
         return 0;
       }
       break;
+    case kShowProfileMenuMessage:
+      // ShowProfileMenu 投递来的：此刻已不在通道回调栈里，可以跑模态菜单循环。
+      RunProfileMenu(hwnd);
+      return 0;
     case WM_DPICHANGED:
       // 拖动跨屏时的 DPI 变化由 DragTo 接管（按新屏重算尺寸）；其余情形（用户改
       // 缩放）收起并按停靠边 + 比例重摆。不采用系统建议矩形：几何由本类自己算。
@@ -1455,6 +1529,11 @@ LRESULT FloatingBallWindow::HandleBallMessage(HWND hwnd, UINT message,
         expand_target_ = false;
         progress_ = 0;
         DestroyMenuWindow();
+        // 已投递未弹的配置菜单请求随窗口一起丢了：以空结果收尾。正弹着的由模态
+        // 循环返回后自己收尾。
+        if (!profile_menu_tracking_) {
+          FinishProfileMenu(std::nullopt);
+        }
       }
       break;
     default:

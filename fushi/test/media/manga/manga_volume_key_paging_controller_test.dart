@@ -22,47 +22,51 @@ void main() {
     await replied.future;
   }
 
-  test('Android ownership, repeat throttling and release use the real channel',
-      () async {
-    final List<MethodCall> outbound = <MethodCall>[];
-    messenger.setMockMethodCallHandler(FushiChannels.volumeKeys, (call) async {
-      outbound.add(call);
-      return null;
-    });
-    addTearDown(() {
-      messenger.setMockMethodCallHandler(FushiChannels.volumeKeys, null);
-    });
+  test(
+    'Android ownership, repeat throttling and release use the real channel',
+    () async {
+      final List<MethodCall> outbound = <MethodCall>[];
+      messenger.setMockMethodCallHandler(FushiChannels.volumeKeys, (
+        call,
+      ) async {
+        outbound.add(call);
+        return null;
+      });
+      addTearDown(() {
+        messenger.setMockMethodCallHandler(FushiChannels.volumeKeys, null);
+      });
 
-    DateTime now = DateTime(2026);
-    final List<String> turns = <String>[];
-    final MangaVolumeKeyPagingController controller =
-        MangaVolumeKeyPagingController(
-      onPrevious: () => turns.add('previous'),
-      onNext: () => turns.add('next'),
-      now: () => now,
-    );
+      DateTime now = DateTime(2026);
+      final List<String> turns = <String>[];
+      final MangaVolumeKeyPagingController controller =
+          MangaVolumeKeyPagingController(
+            onPrevious: () => turns.add('previous'),
+            onNext: () => turns.add('next'),
+            now: () => now,
+          );
 
-    controller.apply(enabled: true, platformSupported: true);
-    await Future<void>.delayed(Duration.zero);
-    expect(outbound, hasLength(1));
-    expect(outbound.single.method, 'setInterceptEnabled');
-    expect(outbound.single.arguments, isTrue);
+      controller.apply(enabled: true, platformSupported: true);
+      await Future<void>.delayed(Duration.zero);
+      expect(outbound, hasLength(1));
+      expect(outbound.single.method, 'setInterceptEnabled');
+      expect(outbound.single.arguments, isTrue);
 
-    await sendNative('onVolumeDown');
-    await sendNative('onVolumeDown');
-    expect(turns, <String>['next'], reason: '同一 ACTION_DOWN repeat 不得堆满队列');
+      await sendNative('onVolumeDown');
+      await sendNative('onVolumeDown');
+      expect(turns, <String>['next'], reason: '同一 ACTION_DOWN repeat 不得堆满队列');
 
-    now = now.add(const Duration(milliseconds: 180));
-    await sendNative('onVolumeUp');
-    expect(turns, <String>['next', 'previous']);
+      now = now.add(const Duration(milliseconds: 180));
+      await sendNative('onVolumeUp');
+      expect(turns, <String>['next', 'previous']);
 
-    controller.dispose();
-    await Future<void>.delayed(Duration.zero);
-    expect(outbound.last.method, 'setInterceptEnabled');
-    expect(outbound.last.arguments, isFalse);
-    await sendNative('onVolumeDown');
-    expect(turns, <String>['next', 'previous'], reason: '销毁后 handler 必须已清空');
-  });
+      controller.dispose();
+      await Future<void>.delayed(Duration.zero);
+      expect(outbound.last.method, 'setInterceptEnabled');
+      expect(outbound.last.arguments, isFalse);
+      await sendNative('onVolumeDown');
+      expect(turns, <String>['next', 'previous'], reason: '销毁后 handler 必须已清空');
+    },
+  );
 
   test('unsupported platform never takes native ownership', () async {
     final List<MethodCall> outbound = <MethodCall>[];

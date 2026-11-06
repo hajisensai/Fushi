@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
@@ -8,17 +8,13 @@ void main() {
   group('transcodeAvailable', () {
     tearDown(() => setFfmpegBackendForTesting(null));
 
-    test(
-      '桌面默认后端套了蓝光输入适配器后仍判可转码（PR #1853 回归）',
-      () {
-        setTranscodeAvailableForTesting(null);
-        setTranscodeSegmentRunnerForTesting(null);
-        setFfmpegBackendForTesting(null);
-        expect(resolveFfmpegBackend(), isA<BlurayFfmpegBackend>());
-        expect(transcodeAvailable(), isTrue);
-      },
-      skip: Platform.isAndroid || Platform.isIOS,
-    );
+    test('桌面默认后端套了蓝光输入适配器后仍判可转码（PR #1853 回归）', () {
+      setTranscodeAvailableForTesting(null);
+      setTranscodeSegmentRunnerForTesting(null);
+      setFfmpegBackendForTesting(null);
+      expect(resolveFfmpegBackend(), isA<BlurayFfmpegBackend>());
+      expect(transcodeAvailable(), isTrue);
+    }, skip: Platform.isAndroid || Platform.isIOS);
   });
 
   group('VideoTranscodeProfile', () {

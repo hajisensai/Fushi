@@ -101,11 +101,7 @@ void main() {
     ]) {
       expect(
         collectionDetail,
-        isNot(
-          matches(
-            RegExp('${RegExp.escape(retired)}(?![A-Za-z0-9_])'),
-          ),
-        ),
+        isNot(matches(RegExp('${RegExp.escape(retired)}(?![A-Za-z0-9_])'))),
         reason: retired,
       );
     }
@@ -155,9 +151,6 @@ void main() {
     expect(productionFilesContaining('CoverDownloader('), isEmpty);
     expect(productionFilesContaining('AliasCache('), isEmpty);
     expect(productionFilesContaining('MatchScorer('), isEmpty);
-    expect(
-      productionFilesMatching(RegExp(r'\bScrapeCandidate\s*\(')),
-      isEmpty,
-    );
+    expect(productionFilesMatching(RegExp(r'\bScrapeCandidate\s*\(')), isEmpty);
   });
 }

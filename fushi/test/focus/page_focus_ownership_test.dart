@@ -31,8 +31,9 @@ void main() {
     return (ownership, asked);
   }
 
-  testWidgets('reclaim honours the page predicate',
-      (WidgetTester tester) async {
+  testWidgets('reclaim honours the page predicate', (
+    WidgetTester tester,
+  ) async {
     final (PageFocusOwnership ownership, _) = await mount(
       tester,
       canOwn: (FocusReclaimCause c) => c == FocusReclaimCause.gesture,
@@ -47,8 +48,9 @@ void main() {
     expect(ownership.node.hasFocus, isTrue);
   });
 
-  testWidgets('the cause is passed through to the predicate',
-      (WidgetTester tester) async {
+  testWidgets('the cause is passed through to the predicate', (
+    WidgetTester tester,
+  ) async {
     final (PageFocusOwnership ownership, List<FocusReclaimCause> asked) =
         await mount(tester, canOwn: (FocusReclaimCause _) => false);
 
@@ -59,8 +61,9 @@ void main() {
     expect(asked, FocusReclaimCause.values);
   });
 
-  testWidgets('reclaimAfterFrame defers to the next frame',
-      (WidgetTester tester) async {
+  testWidgets('reclaimAfterFrame defers to the next frame', (
+    WidgetTester tester,
+  ) async {
     final (PageFocusOwnership ownership, List<FocusReclaimCause> asked) =
         await mount(tester, canOwn: (FocusReclaimCause _) => true);
 
@@ -90,10 +93,13 @@ void main() {
   // 任一条被破坏，高频调用方就必须改成去抖——所以这两条测试红了不要放宽，
   // 要么改回来，要么同时收敛 `onWheelPaginate` 的频次。
   group('TODO-2617 high-frequency reclaim stays cheap', () {
-    testWidgets('reclaiming again while already focused notifies nobody',
-        (WidgetTester tester) async {
-      final (PageFocusOwnership ownership, _) =
-          await mount(tester, canOwn: (FocusReclaimCause _) => true);
+    testWidgets('reclaiming again while already focused notifies nobody', (
+      WidgetTester tester,
+    ) async {
+      final (PageFocusOwnership ownership, _) = await mount(
+        tester,
+        canOwn: (FocusReclaimCause _) => true,
+      );
 
       expect(ownership.reclaim(FocusReclaimCause.gesture), isTrue);
       await tester.pumpAndSettle();
@@ -114,22 +120,33 @@ void main() {
       // 请求合并掉，连「reclaim 改成先 unfocus 再 requestFocus」这种写法都测不红。
       // 只有跨帧调用才让「每次都真的动一下焦点」暴露成可数的通知。
       for (int i = 0; i < 20; i++) {
-        expect(ownership.reclaim(FocusReclaimCause.gesture), isTrue,
-            reason: '判据通过时 reclaim 仍然「发起了请求」，返回值不因幂等而改变');
+        expect(
+          ownership.reclaim(FocusReclaimCause.gesture),
+          isTrue,
+          reason: '判据通过时 reclaim 仍然「发起了请求」，返回值不因幂等而改变',
+        );
         await tester.pump(const Duration(milliseconds: 16));
       }
       await tester.pumpAndSettle();
 
-      expect(nodeNotifications, 0,
-          reason: '已持焦的节点被反复 reclaim 不得产生任何焦点变更通知——'
-              '有通知就意味着每个 wheel tick 都在真的动焦点树（Focus widget 逐 tick rebuild）');
+      expect(
+        nodeNotifications,
+        0,
+        reason:
+            '已持焦的节点被反复 reclaim 不得产生任何焦点变更通知——'
+            '有通知就意味着每个 wheel tick 都在真的动焦点树（Focus widget 逐 tick rebuild）',
+      );
       expect(managerNotifications, 0, reason: 'FocusManager 不得因重复请求而广播焦点变更');
-      expect(ownership.node.hasPrimaryFocus, isTrue,
-          reason: '50 次之后焦点仍稳稳在正文，不存在抖动/让位');
+      expect(
+        ownership.node.hasPrimaryFocus,
+        isTrue,
+        reason: '50 次之后焦点仍稳稳在正文，不存在抖动/让位',
+      );
     });
 
-    testWidgets('repeated reclaim never scrolls the surrounding viewport',
-        (WidgetTester tester) async {
+    testWidgets('repeated reclaim never scrolls the surrounding viewport', (
+      WidgetTester tester,
+    ) async {
       final ScrollController controller = ScrollController();
       final FocusNode node = FocusNode(debugLabel: 'body');
       final PageFocusOwnership ownership = PageFocusOwnership(
@@ -175,21 +192,27 @@ void main() {
       }
       await tester.pumpAndSettle();
 
-      expect(controller.offset, offsetBefore,
-          reason: '焦点回收不得把视口滚动到节点上——用户正在滑动时这就是「滚一半被拉回去」，'
-              '与 FushiFocusController 那次触屏回归同一形态');
+      expect(
+        controller.offset,
+        offsetBefore,
+        reason:
+            '焦点回收不得把视口滚动到节点上——用户正在滑动时这就是「滚一半被拉回去」，'
+            '与 FushiFocusController 那次触屏回归同一形态',
+      );
       expect(node.hasPrimaryFocus, isTrue);
     });
   });
 
   group('guardOverlay', () {
-    testWidgets('returns focus after the overlay resolves normally',
-        (WidgetTester tester) async {
+    testWidgets('returns focus after the overlay resolves normally', (
+      WidgetTester tester,
+    ) async {
       final (PageFocusOwnership ownership, List<FocusReclaimCause> asked) =
           await mount(tester, canOwn: (FocusReclaimCause _) => true);
 
-      final String result =
-          await ownership.guardOverlay(() async => 'picked-file');
+      final String result = await ownership.guardOverlay(
+        () async => 'picked-file',
+      );
 
       expect(result, 'picked-file');
       expect(asked, <FocusReclaimCause>[FocusReclaimCause.overlayClosed]);
@@ -197,8 +220,9 @@ void main() {
       expect(ownership.node.hasFocus, isTrue);
     });
 
-    testWidgets('returns focus even when the overlay throws',
-        (WidgetTester tester) async {
+    testWidgets('returns focus even when the overlay throws', (
+      WidgetTester tester,
+    ) async {
       final (PageFocusOwnership ownership, List<FocusReclaimCause> asked) =
           await mount(tester, canOwn: (FocusReclaimCause _) => true);
 
@@ -207,17 +231,14 @@ void main() {
         throwsStateError,
       );
 
-      expect(
-        asked,
-        <FocusReclaimCause>[FocusReclaimCause.overlayClosed],
-        reason: 'a failed picker/dialog must not strand the keyboard',
-      );
+      expect(asked, <FocusReclaimCause>[
+        FocusReclaimCause.overlayClosed,
+      ], reason: 'a failed picker/dialog must not strand the keyboard');
       await tester.pump();
       expect(ownership.node.hasFocus, isTrue);
     });
 
-    testWidgets(
-        'still consults the predicate, so it cannot steal focus '
+    testWidgets('still consults the predicate, so it cannot steal focus '
         'from a dialog that is still up', (WidgetTester tester) async {
       final (PageFocusOwnership ownership, List<FocusReclaimCause> asked) =
           await mount(tester, canOwn: (FocusReclaimCause _) => false);

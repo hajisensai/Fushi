@@ -18,8 +18,9 @@ void main() {
         htmlUrl: 'https://github.com/owner/repo/releases/tag/v1.2.3',
         channel: UpdateChannel.stable,
       );
-      final UpdateCheckCacheEntry? back =
-          UpdateCheckCacheEntry.decode(entry.encode());
+      final UpdateCheckCacheEntry? back = UpdateCheckCacheEntry.decode(
+        entry.encode(),
+      );
       expect(back, isNotNull);
       expect(back!.lastCheckEpochMs, entry.lastCheckEpochMs);
       expect(back.latestTag, entry.latestTag);
@@ -71,21 +72,20 @@ void main() {
         UpdateCheckCacheEntry.decode('{"channel":"stable","latestTag":""}'),
         isNull,
       );
-      expect(
-        UpdateCheckCacheEntry.decode('{"channel":"stable"}'),
-        isNull,
-      );
+      expect(UpdateCheckCacheEntry.decode('{"channel":"stable"}'), isNull);
     });
 
     test('通道名不识别 → null', () {
       expect(
         UpdateCheckCacheEntry.decode(
-            '{"channel":"nightly","latestTag":"v1.0.0"}'),
+          '{"channel":"nightly","latestTag":"v1.0.0"}',
+        ),
         isNull,
       );
       expect(
         UpdateCheckCacheEntry.decode(
-            '{"latestTag":"v1.0.0","lastCheckEpochMs":1}'),
+          '{"latestTag":"v1.0.0","lastCheckEpochMs":1}',
+        ),
         isNull,
         reason: '缺 channel 字段也视作无缓存',
       );
@@ -93,19 +93,22 @@ void main() {
 
     test('epoch 缺失 → 0；epoch 为 num → 截断为 int', () {
       final UpdateCheckCacheEntry? a = UpdateCheckCacheEntry.decode(
-          '{"channel":"stable","latestTag":"v1.0.0"}');
+        '{"channel":"stable","latestTag":"v1.0.0"}',
+      );
       expect(a, isNotNull);
       expect(a!.lastCheckEpochMs, 0);
 
       final UpdateCheckCacheEntry? b = UpdateCheckCacheEntry.decode(
-          '{"channel":"stable","latestTag":"v1.0.0","lastCheckEpochMs":12.0}');
+        '{"channel":"stable","latestTag":"v1.0.0","lastCheckEpochMs":12.0}',
+      );
       expect(b, isNotNull);
       expect(b!.lastCheckEpochMs, 12);
     });
 
     test('htmlUrl 缺失 → 空串', () {
       final UpdateCheckCacheEntry? e = UpdateCheckCacheEntry.decode(
-          '{"channel":"beta","latestTag":"1.0.0-beta.1"}');
+        '{"channel":"beta","latestTag":"1.0.0-beta.1"}',
+      );
       expect(e, isNotNull);
       expect(e!.htmlUrl, '');
     });

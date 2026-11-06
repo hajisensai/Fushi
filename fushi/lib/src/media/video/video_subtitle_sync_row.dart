@@ -2,11 +2,22 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/media/video/subtitle_delay_input_debounce.dart';
+import 'package:fushi/src/media/video/subtitle_delay_slider_range.dart';
 import 'package:fushi/src/media/video/subtitle_waveform_align_panel.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_focusable.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 /// TODO-413：「自动对轴」按钮的功能开关。音频能量互相关自动对轴（TODO-701 阶段1）算法
 /// 管线已完整落地（抽包络 + 互相关 + 置信门控 + 写穿 delayMs），TODO-742 曾因「真机未验、
@@ -43,10 +54,9 @@ class VideoSubtitleSyncRow extends StatefulWidget {
 }
 
 class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
-  /// 字幕调轴滑条范围（±10 秒，覆盖绝大多数外挂字幕偏移；更大偏移仍可经输入框键入到
-  /// ±600000，与 VideoPlayerController 的 clamp 一致）。
-  static const int _subtitleSyncSliderRangeMs = 10000;
-  static const int _subtitleSyncClampMs = 600000;
+  /// 调轴 clamp 上界（±600 s，与 VideoPlayerController 一致）。滑条可拖范围不再钉死
+  /// ±10 s，而是按已落盘值扩展（[subtitleDelaySliderRangeMs]，反馈 pHsnXu5YSg）。
+  static const int _subtitleSyncClampMs = kSubtitleDelayClampMs;
 
   // 本地权威镜像（与旧面板同语义）：打开时取页面当前延迟，之后由本行内五个入口经
   // [_commitDelay] 统一提交（页面侧对同值早退，不重复 OSD）。本行**之外**的入口
@@ -55,8 +65,9 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
   late int _delayMs = widget.host.delayMs();
 
   /// 字幕调轴数值输入（读数胶囊的编辑态）控制器（与滑条/± 按钮共享同一权威 [_delayMs]）。
-  late final TextEditingController _delayController =
-      TextEditingController(text: '$_delayMs');
+  late final TextEditingController _delayController = TextEditingController(
+    text: '$_delayMs',
+  );
 
   /// 拖动字幕调轴滑条时的临时预览值（仅本地回显，松手才 [_commitDelay] 落盘+实时生效），
   /// 避免每个拖动 tick 都写 DB。null = 未在拖动。
@@ -67,11 +78,11 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
   /// 视图共享 [SubtitleDelayInputDebounce]（原两处逐行拷贝已抽出）。
   late final SubtitleDelayInputDebounce _delayInput =
       SubtitleDelayInputDebounce(
-    controller: _delayController,
-    isMounted: () => mounted,
-    currentDelayMs: () => _delayMs,
-    commit: _commitDelay,
-  );
+        controller: _delayController,
+        isMounted: () => mounted,
+        currentDelayMs: () => _delayMs,
+        commit: _commitDelay,
+      );
 
   /// 一键自动对轴进行中（TODO-701）：按钮显示 spinner 并禁用，防重入。
   bool _autoAligning = false;
@@ -91,12 +102,12 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
   /// 副轨数值输入框「边键入边生效」去抖（与主轨同款，BUG-918 范式）。
   late final SubtitleDelayInputDebounce _secondaryDelayInput =
       SubtitleDelayInputDebounce(
-    controller: _secondaryDelayController,
-    isMounted: () => mounted,
-    currentDelayMs: () => _secondaryDelayMs ?? _delayMs,
-    commit: (int delayMs, {bool syncField = true}) =>
-        _commitSecondaryDelay(delayMs, syncField: syncField),
-  );
+        controller: _secondaryDelayController,
+        isMounted: () => mounted,
+        currentDelayMs: () => _secondaryDelayMs ?? _delayMs,
+        commit: (int delayMs, {bool syncField = true}) =>
+            _commitSecondaryDelay(delayMs, syncField: syncField),
+      );
 
   @override
   void initState() {
@@ -171,8 +182,10 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
     final Future<void> Function(int? delayMs)? onSet =
         widget.host.onSetSecondaryDelay;
     if (onSet == null) return;
-    final int? clamped =
-        next?.clamp(-_subtitleSyncClampMs, _subtitleSyncClampMs);
+    final int? clamped = next?.clamp(
+      -_subtitleSyncClampMs,
+      _subtitleSyncClampMs,
+    );
     if (syncField) _secondaryDelayInput.cancelPending();
     setState(() => _secondaryDelayMs = clamped);
     final String fieldText = '${clamped ?? _delayMs}';
@@ -226,10 +239,11 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
     final int shownMs = _delayDragMs ?? _delayMs;
     final String label = _delayLabel(shownMs);
 
-    // 滑条只在 ±[_subtitleSyncSliderRangeMs] 内拖（细调常见偏移）；超出范围的当前值
-    // 仍能点读数直接输入，滑条把手 clamp 到端点显示。
+    // 滑条范围跟随**已落盘**值扩展（拖动中不变，免得把手在手指下跳）：基础 ±30 s，
+    // 拖到端点松手就扩一档，片尾曲插入这类十几秒以上的偏移也能一路拖过去。
+    final int sliderRangeMs = subtitleDelaySliderRangeMs(_delayMs);
     final double sliderValue = shownMs
-        .clamp(-_subtitleSyncSliderRangeMs, _subtitleSyncSliderRangeMs)
+        .clamp(-sliderRangeMs, sliderRangeMs)
         .toDouble();
 
     // M3E：±50 / ±1000ms 是一组 tonal 圆钮，中间夹一枚等宽数字读数胶囊（非零时
@@ -257,7 +271,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
       trailing: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          // 可拉滑条（细调 ±10s）：拖动只本地预览，松手才落盘+实时生效（避免每 tick 写 DB）。
+          // 可拉滑条（范围随当前值扩展，见 subtitleDelaySliderRangeMs）：拖动只本地预览，松手才落盘+实时生效（避免每 tick 写 DB）。
           // TODO-742：必须走 [adaptiveSlider] 而非裸 [Slider]——本面板可能处在全局
           // [FushiAppUiScale] 的 Transform.scale 子树里，裸 Slider 的值指示器水平钳制在两
           // 空间差 s² 下会把气泡甩到拇指反方向（根因与守卫见 adaptive_widgets.dart /
@@ -268,9 +282,9 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
             adaptiveSlider(
               context: context,
               value: sliderValue,
-              min: -_subtitleSyncSliderRangeMs.toDouble(),
-              max: _subtitleSyncSliderRangeMs.toDouble(),
-              divisions: _subtitleSyncSliderRangeMs ~/ 50, // 50ms 一档
+              min: -sliderRangeMs.toDouble(),
+              max: sliderRangeMs.toDouble(),
+              divisions: subtitleDelaySliderDivisions(sliderRangeMs),
               label: label,
               onChanged: (double v) => setState(() => _delayDragMs = v.round()),
               onChangeEnd: (double v) {
@@ -358,7 +372,8 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
             active: shownMs != 0,
             maxWidth: 140,
             semanticsLabel: t.video_setting_subtitle_sync_input,
-            tooltip: '${t.video_setting_av_delay_tap_to_type}\n'
+            tooltip:
+                '${t.video_setting_av_delay_tap_to_type}\n'
                 '${t.video_setting_av_delay_hint}',
             controller: _delayController,
             onChanged: _delayInput.onChanged,
@@ -398,7 +413,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
               ? const SizedBox.shrink()
               : FushiIconButtonControl(
                   key: const ValueKey<String>('video-subtitle-delay-reset'),
-                  size: FushiIconButtonSize.s,
+                  size: ButtonSizeVariant.small,
                   tooltip: t.video_setting_av_delay_reset,
                   icon: const FushiIcon(FushiIcons.undo),
                   onPressed: () => _commitDelay(0),
@@ -425,7 +440,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
                   ),
                 )
               : FushiIconButtonControl(
-                  size: FushiIconButtonSize.s,
+                  size: ButtonSizeVariant.small,
                   tooltip: t.video_subtitle_auto_align,
                   icon: const FushiIcon(FushiIcons.ai),
                   onPressed: _runAutoAlign,
@@ -436,14 +451,14 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
         if (host.onSnapDelayToCue != null) ...<Widget>[
           FushiIconButtonControl(
             key: const ValueKey<String>('video-subtitle-delay-snap-prev'),
-            size: FushiIconButtonSize.s,
+            size: ButtonSizeVariant.small,
             tooltip: t.video_subtitle_prev_cue_align,
             icon: const FushiIcon(FushiIcons.skipPrevious),
             onPressed: () => _snapDelayToCue(next: false),
           ),
           FushiIconButtonControl(
             key: const ValueKey<String>('video-subtitle-delay-snap-next'),
-            size: FushiIconButtonSize.s,
+            size: ButtonSizeVariant.small,
             tooltip: t.video_subtitle_next_cue_align,
             icon: const FushiIcon(FushiIcons.skipNext),
             onPressed: () => _snapDelayToCue(next: true),
@@ -454,7 +469,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
         if (includeFloatBar && host.onEnterSubtitleDelayBar != null)
           FushiIconButtonControl.filledTonal(
             key: const ValueKey<String>('video-subtitle-delay-float'),
-            size: FushiIconButtonSize.s,
+            size: ButtonSizeVariant.small,
             tooltip: t.video_setting_av_delay_float,
             icon: const FushiIcon(FushiIcons.pictureInPicture),
             onPressed: host.onEnterSubtitleDelayBar,
@@ -510,8 +525,11 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
     final String label = following
         ? t.video_setting_secondary_delay_follow
         : _delayLabel(shownMs);
+    final int sliderRangeMs = subtitleDelaySliderRangeMs(
+      _secondaryDelayMs ?? _delayMs,
+    );
     final double sliderValue = shownMs
-        .clamp(-_subtitleSyncSliderRangeMs, _subtitleSyncSliderRangeMs)
+        .clamp(-sliderRangeMs, sliderRangeMs)
         .toDouble();
 
     return Column(
@@ -543,9 +561,9 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
         adaptiveSlider(
           context: context,
           value: sliderValue,
-          min: -_subtitleSyncSliderRangeMs.toDouble(),
-          max: _subtitleSyncSliderRangeMs.toDouble(),
-          divisions: _subtitleSyncSliderRangeMs ~/ 50, // 50ms 一档
+          min: -sliderRangeMs.toDouble(),
+          max: sliderRangeMs.toDouble(),
+          divisions: subtitleDelaySliderDivisions(sliderRangeMs),
           label: label,
           onChanged: (double v) => setState(() => _secondaryDragMs = v.round()),
           onChangeEnd: (double v) {
@@ -622,7 +640,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: FushiIconButtonControl.filledTonal(
-        size: FushiIconButtonSize.s,
+        size: ButtonSizeVariant.small,
         tooltip: tooltip,
         icon: FushiIcon(icon),
         onPressed: onPressed,
@@ -714,8 +732,9 @@ class _DelayReadoutFieldState extends State<_DelayReadoutField> {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final FushiSpringSpec spring = context.fushiMotion.effectsFast;
     final TextStyle digits = context.fushiType.titleMediumEmphasized.tabular;
-    final Color fill =
-        _editing || widget.active ? cs.secondaryContainer : cs.surfaceContainer;
+    final Color fill = _editing || widget.active
+        ? cs.secondaryContainer
+        : cs.surfaceContainer;
     final Color foreground = _editing || widget.active
         ? cs.onSecondaryContainer
         : cs.onSurfaceVariant;

@@ -217,8 +217,10 @@ void main() {
   group('SelectionSlot 值语义', () {
     test('同值相等、可作 Set 键；两分区互不相等', () {
       expect(const SelectionSlot.loose('a'), const SelectionSlot.loose('a'));
-      expect(const SelectionSlot.collection(1),
-          isNot(const SelectionSlot.loose('1')));
+      expect(
+        const SelectionSlot.collection(1),
+        isNot(const SelectionSlot.loose('1')),
+      );
       // 逐个 add 而非 set 字面量：字面量里的重复元素会被
       // `equal_elements_in_set` 判为 warning（CI 视 warning 为致命），而 `.toSet()`
       // 又撞 `prefer_collection_literals`。这里的重复正是被测行为。
@@ -275,10 +277,7 @@ void main() {
     test('剔除后锚点失效——它可能正指着被剔掉的那一格', () {
       final MediaSelectionController c = seeded();
       expect(c.anchor, isNotNull);
-      c.retainExisting(
-        loose: <String>{'a', 'b'},
-        collections: <int>{10, 20},
-      );
+      c.retainExisting(loose: <String>{'a', 'b'}, collections: <int>{10, 20});
       expect(c.anchor, isNull);
     });
 
@@ -361,11 +360,10 @@ void main() {
 
       seedVisible();
 
-      expect(
-        controller.looseKeys,
-        <String>{'a', 'd'},
-        reason: '用户没取消过 d，系统就不该替他取消',
-      );
+      expect(controller.looseKeys, <String>{
+        'a',
+        'd',
+      }, reason: '用户没取消过 d，系统就不该替他取消');
       expect(controller.length, 2);
     });
 
@@ -391,9 +389,9 @@ void main() {
     /// 这条把每种 mutation 走一遍，每步都拿「现算的交集」对账。
     test('每种 mutation 之后派生视图都不陈旧（缓存失效无遗漏）', () {
       Set<String> expectedLoose() => <String>{
-            for (final String key in controller.retainedLooseKeys)
-              if (controller.visibleLooseKeys.contains(key)) key,
-          };
+        for (final String key in controller.retainedLooseKeys)
+          if (controller.visibleLooseKeys.contains(key)) key,
+      };
       void check(String step) {
         expect(controller.looseKeys, expectedLoose(), reason: '$step 后缓存陈旧');
         expect(
@@ -451,7 +449,8 @@ void main() {
           collections: const <int>[10, 20, 30],
         ),
         isFalse,
-        reason: '内容等值的新列表必须判为未变——两个库页据此决定要不要补一帧，'
+        reason:
+            '内容等值的新列表必须判为未变——两个库页据此决定要不要补一帧，'
             '恒 true 就是每帧 setState 的死循环',
       );
       expect(
@@ -481,16 +480,11 @@ void main() {
       );
 
       expect(dropped, 0, reason: 'M 是给用户看的数字，只数他看得见的那部分');
-      expect(
-        controller.retainedLooseKeys,
-        <String>{'a', 'b'},
-        reason: '不可见的幽灵键同样要被剔干净，否则批量操作撞外键',
-      );
-      expect(
-        controller.anchor,
-        isNull,
-        reason: '内部集真的变了就得清锚点——它可能正指着被剔掉的那一格',
-      );
+      expect(controller.retainedLooseKeys, <String>{
+        'a',
+        'b',
+      }, reason: '不可见的幽灵键同样要被剔干净，否则批量操作撞外键');
+      expect(controller.anchor, isNull, reason: '内部集真的变了就得清锚点——它可能正指着被剔掉的那一格');
     });
 
     test('反选只翻候选集内的格，候选集外（不可见）的选中项不受影响', () {
@@ -510,11 +504,10 @@ void main() {
       expect(controller.looseKeys, <String>{'b'}, reason: '可见集内取补集');
 
       seedVisible();
-      expect(
-        controller.looseKeys,
-        <String>{'b', 'd'},
-        reason: '反选是「翻当前这一屏」，不该顺手抹掉别的档位下选的东西',
-      );
+      expect(controller.looseKeys, <String>{
+        'b',
+        'd',
+      }, reason: '反选是「翻当前这一屏」，不该顺手抹掉别的档位下选的东西');
     });
 
     test('hiddenSelectedCount = 勾过但被筛走看不见的条数（确认框据此提示）', () {
@@ -545,8 +538,11 @@ void main() {
         collections: const <int>[],
       );
 
-      expect(controller.hiddenSelectedCount, 3,
-          reason: '全量口径：d、remote_x、合集 10');
+      expect(
+        controller.hiddenSelectedCount,
+        3,
+        reason: '全量口径：d、remote_x、合集 10',
+      );
       expect(
         controller.hiddenSelectedCountWhere(
           (String key) => !key.startsWith('remote_'),

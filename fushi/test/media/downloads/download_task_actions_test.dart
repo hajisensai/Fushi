@@ -11,52 +11,53 @@ void main() {
   VideoDownloadJobRow job(
     String lifecycle, {
     String resourceProvider = 'nyaa:default',
-  }) =>
-      VideoDownloadJobRow(
-        jobId: 'job-$lifecycle',
-        resourceProvider: resourceProvider,
-        selectedResourceId: 'resource',
-        magnetUri: null,
-        resourceTitle: null,
-        torrentHash: null,
-        metadataProvider: null,
-        externalId: null,
-        mediaKind: 'tv',
-        discoveryCategory: null,
-        title: 'title',
-        year: null,
-        season: null,
-        coverUrl: null,
-        backendKind: 'embedded',
-        backendTaskId: null,
-        backendProfileId: 'default',
-        fingerprint: 'embedded-test',
-        category: 'fushi-video',
-        targetSourceId: null,
-        collectionId: null,
-        organizationPolicy: 'library',
-        subtitlePolicy: 'bestEffort',
-        observedSavePath: null,
-        targetRelativeRoot: null,
-        lifecycle: lifecycle,
-        stage: VideoDownloadJobStage.download,
-        stageProgress: 0.4,
-        priority: 0,
-        attemptCount: 0,
-        maxAttempts: 3,
-        nextAttemptAt: null,
-        claimedBy: null,
-        claimExpiresAt: null,
-        lastError: null,
-        createdAt: 1,
-        updatedAt: 2,
-        completedAt: null,
-      );
+  }) => VideoDownloadJobRow(
+    jobId: 'job-$lifecycle',
+    resourceProvider: resourceProvider,
+    selectedResourceId: 'resource',
+    magnetUri: null,
+    resourceTitle: null,
+    torrentHash: null,
+    metadataProvider: null,
+    externalId: null,
+    mediaKind: 'tv',
+    discoveryCategory: null,
+    title: 'title',
+    year: null,
+    season: null,
+    coverUrl: null,
+    backendKind: 'embedded',
+    backendTaskId: null,
+    backendProfileId: 'default',
+    fingerprint: 'embedded-test',
+    category: 'fushi-video',
+    targetSourceId: null,
+    collectionId: null,
+    organizationPolicy: 'library',
+    subtitlePolicy: 'bestEffort',
+    observedSavePath: null,
+    targetRelativeRoot: null,
+    lifecycle: lifecycle,
+    stage: VideoDownloadJobStage.download,
+    stageProgress: 0.4,
+    priority: 0,
+    attemptCount: 0,
+    maxAttempts: 3,
+    nextAttemptAt: null,
+    claimedBy: null,
+    claimExpiresAt: null,
+    lastError: null,
+    createdAt: 1,
+    updatedAt: 2,
+    completedAt: null,
+  );
 
   group('video job 动作判据', () {
     test('重试只对 failed / needsAttention 开放', () {
-      expect(videoDownloadJobCanRetry(job(VideoDownloadJobLifecycle.failed)),
-          isTrue);
+      expect(
+        videoDownloadJobCanRetry(job(VideoDownloadJobLifecycle.failed)),
+        isTrue,
+      );
       expect(
         videoDownloadJobCanRetry(job(VideoDownloadJobLifecycle.needsAttention)),
         isTrue,
@@ -84,8 +85,9 @@ void main() {
     });
 
     test('cancelled 是「用户已暂停」：能恢复、不能再暂停', () {
-      final VideoDownloadJobRow paused =
-          job(VideoDownloadJobLifecycle.cancelled);
+      final VideoDownloadJobRow paused = job(
+        VideoDownloadJobLifecycle.cancelled,
+      );
       expect(videoDownloadJobCanResume(paused), isTrue);
       expect(videoDownloadJobCanPause(paused), isFalse);
     });

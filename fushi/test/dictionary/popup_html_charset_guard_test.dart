@@ -26,8 +26,10 @@ void main() {
     'assets/popup/global_lookup_host.html',
   ];
 
-  final RegExp charsetMeta =
-      RegExp(r'<meta\s+charset\s*=\s*"utf-8"', caseSensitive: false);
+  final RegExp charsetMeta = RegExp(
+    r'<meta\s+charset\s*=\s*"utf-8"',
+    caseSensitive: false,
+  );
   final RegExp firstScript = RegExp(r'<script\b', caseSensitive: false);
 
   for (final String host in popupHosts) {
@@ -36,9 +38,13 @@ void main() {
       setUpAll(() => html = File(host).readAsStringSync());
 
       test('含 <meta charset="utf-8">', () {
-        expect(charsetMeta.hasMatch(html), isTrue,
-            reason: '$host 缺 <meta charset="utf-8">；file:// 加载时外链脚本会按 '
-                'windows-1252 解码，popup.js 的 ✓ 变乱码 âœ"（BUG-738）');
+        expect(
+          charsetMeta.hasMatch(html),
+          isTrue,
+          reason:
+              '$host 缺 <meta charset="utf-8">；file:// 加载时外链脚本会按 '
+              'windows-1252 解码，popup.js 的 ✓ 变乱码 âœ"（BUG-738）',
+        );
       });
 
       test('<meta charset> 出现在第一个 <script> 之前（否则对外链脚本无效）', () {
@@ -51,21 +57,31 @@ void main() {
         // 无外链脚本的宿主天然不受影响，跳过顺序断言。
         if (scriptAt < 0) return;
         expect(metaAt, greaterThanOrEqualTo(0));
-        expect(metaAt, lessThan(scriptAt),
-            reason: 'charset 声明必须在外链 <script> 之前，才能决定其解码编码');
+        expect(
+          metaAt,
+          lessThan(scriptAt),
+          reason: 'charset 声明必须在外链 <script> 之前，才能决定其解码编码',
+        );
       });
 
       test('每个外链 <script src> 直接带 charset="utf-8"（第二层钉死）', () {
-        final RegExp externalScript =
-            RegExp(r'<script\b[^>]*\bsrc\s*=', caseSensitive: false);
+        final RegExp externalScript = RegExp(
+          r'<script\b[^>]*\bsrc\s*=',
+          caseSensitive: false,
+        );
         for (final RegExpMatch m in externalScript.allMatches(html)) {
-          final String tag =
-              html.substring(m.start, html.indexOf('>', m.start) + 1);
+          final String tag = html.substring(
+            m.start,
+            html.indexOf('>', m.start) + 1,
+          );
           expect(
-              RegExp(r'charset\s*=\s*"utf-8"', caseSensitive: false)
-                  .hasMatch(tag),
-              isTrue,
-              reason: '$host 的外链脚本标签缺 charset="utf-8"：$tag');
+            RegExp(
+              r'charset\s*=\s*"utf-8"',
+              caseSensitive: false,
+            ).hasMatch(tag),
+            isTrue,
+            reason: '$host 的外链脚本标签缺 charset="utf-8"：$tag',
+          );
         }
       });
     });

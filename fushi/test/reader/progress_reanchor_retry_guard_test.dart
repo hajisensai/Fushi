@@ -22,14 +22,21 @@ void main() {
 
   test('JS 侧 _reanchorPending 写入单点化（唯一赋值在 _setReanchorPending 内）', () {
     final String js = read('lib/src/reader/reader_pagination_scripts.dart');
-    expect(js, contains('_setReanchorPending: function(value)'),
-        reason: '_sharedJs 必须定义清旗单点 setter（两 shell 共用）');
+    expect(
+      js,
+      contains('_setReanchorPending: function(value)'),
+      reason: '_sharedJs 必须定义清旗单点 setter（两 shell 共用）',
+    );
     // 赋值（非 ===/!== 比较）只允许 setter 内那一处：`this._reanchorPending = value === true;`。
     final RegExp assignment = RegExp(r'\._reanchorPending\s*=(?![=])');
     final int assignments = assignment.allMatches(js).length;
-    expect(assignments, 1,
-        reason: '除 _setReanchorPending 内部外不得有任何 _reanchorPending 直接赋值——'
-            '直接赋值会绕过 true→false 的 settle 通知，进度重新锁死等 10s 轮询');
+    expect(
+      assignments,
+      1,
+      reason:
+          '除 _setReanchorPending 内部外不得有任何 _reanchorPending 直接赋值——'
+          '直接赋值会绕过 true→false 的 settle 通知，进度重新锁死等 10s 轮询',
+    );
   });
 
   test('JS 侧 true→false 转换必须 callHandler(onReanchorSettled) 通知 Dart', () {
@@ -39,39 +46,61 @@ void main() {
     final int end = js.indexOf('\n  },', start);
     expect(end, greaterThan(start));
     final String body = js.substring(start, end);
-    expect(body, contains("callHandler('onReanchorSettled')"),
-        reason: 'settle（true→false）必须经 bridge 通知 Dart 补刷进度');
+    expect(
+      body,
+      contains("callHandler('onReanchorSettled')"),
+      reason: 'settle（true→false）必须经 bridge 通知 Dart 补刷进度',
+    );
     // 只在真的发生 true→false 转换时通知（置 true / false→false 不得刷屏）。
-    expect(body, contains('this._reanchorPending === true'),
-        reason: '通知必须以「旧值为 true」为前提（true→false 转换判定）');
+    expect(
+      body,
+      contains('this._reanchorPending === true'),
+      reason: '通知必须以「旧值为 true」为前提（true→false 转换判定）',
+    );
   });
 
   test('Dart 侧注册 onReanchorSettled handler 并补刷进度', () {
-    final String webview =
-        read('lib/src/pages/implementations/reader_fushi/webview.part.dart');
-    expect(webview, contains("handlerName: 'onReanchorSettled'"),
-        reason: 'webview.part.dart 必须注册 settle 通知 handler');
+    final String webview = read(
+      'lib/src/pages/implementations/reader_fushi/webview.part.dart',
+    );
+    expect(
+      webview,
+      contains("handlerName: 'onReanchorSettled'"),
+      reason: 'webview.part.dart 必须注册 settle 通知 handler',
+    );
     final int start = webview.indexOf("handlerName: 'onReanchorSettled'");
     final String body = webview.substring(start, start + 400);
-    expect(body, contains('_refreshProgress()'),
-        reason: '收到 settle 通知必须补刷一次进度（替代轮询重试的职责）');
+    expect(
+      body,
+      contains('_refreshProgress()'),
+      reason: '收到 settle 通知必须补刷一次进度（替代轮询重试的职责）',
+    );
   });
 
   test('旧的轮询重试机制不得复活（120ms×8 兜底已被事件驱动替代）', () {
     final String nav = read(
-        'lib/src/pages/implementations/reader_fushi/navigation.part.dart');
-    final String page =
-        read('lib/src/pages/implementations/reader_fushi_page.dart');
-    expect(nav, isNot(contains('_maybeArmProgressReanchorRetry')),
-        reason: '轮询重试武装点已删（根因已在 JS 侧事件化）');
-    expect(page, isNot(contains('Timer? _progressReanchorRetryTimer')),
-        reason: '重试定时器字段已删');
+      'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
+    );
+    final String page = read(
+      'lib/src/pages/implementations/reader_fushi_page.dart',
+    );
+    expect(
+      nav,
+      isNot(contains('_maybeArmProgressReanchorRetry')),
+      reason: '轮询重试武装点已删（根因已在 JS 侧事件化）',
+    );
+    expect(
+      page,
+      isNot(contains('Timer? _progressReanchorRetryTimer')),
+      reason: '重试定时器字段已删',
+    );
     expect(page, isNot(contains('_kProgressRetryMax')), reason: '重试上限常量已删');
   });
 
   test('onAfterCommit 补刷仍在（重锚 commit 成功路径不回归）', () {
-    final String chrome =
-        read('lib/src/pages/implementations/reader_fushi/chrome.part.dart');
+    final String chrome = read(
+      'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
+    );
     // TODO-1309：连续模式恢复的 onAfterCommit 从单行箭头改为 async 块——commit 清
     // `_reanchorPending` + 打 B-3 settle 窗之后，先应用排队的章内精确定位
     // （_applyPendingPreciseLocate，跨章搜索跳转的 scrollToSearchMatch），再
@@ -80,15 +109,20 @@ void main() {
     // locate 之前，二者互补）；剥行注释 + 空白归一后比对逻辑内容（dart format 折行）。
     // BUG-2961：精确定位之后、补刷之前把视口归属交还给跟随音频（resyncReaderToAudio），
     // 补刷因此反映最终落位。
-    final String chromeFlat =
-        maskComments(chrome).replaceAll(RegExp(r'\s+'), ' ');
+    final String chromeFlat = maskComments(
+      chrome,
+    ).replaceAll(RegExp(r'\s+'), ' ');
     expect(
-        chromeFlat,
-        contains('onAfterCommit: () async { '
-            'await _applyPendingPreciseLocate(); '
-            '_audiobookController?.resyncReaderToAudio(); '
-            'await _refreshProgress(); },'),
-        reason: 'TODO-933 的 commit 成功补刷路径保留（TODO-1309 后先应用精确定位再补刷；'
-            'BUG-2961 在两者之间交还跟随音频）');
+      chromeFlat,
+      contains(
+        'onAfterCommit: () async { '
+        'await _applyPendingPreciseLocate(); '
+        '_audiobookController?.resyncReaderToAudio(); '
+        'await _refreshProgress(); },',
+      ),
+      reason:
+          'TODO-933 的 commit 成功补刷路径保留（TODO-1309 后先应用精确定位再补刷；'
+          'BUG-2961 在两者之间交还跟随音频）',
+    );
   });
 }

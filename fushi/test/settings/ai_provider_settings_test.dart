@@ -28,16 +28,73 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_key_rotation.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_relay.dart';
+import 'package:fushi/src/ai/ai_interconnect_relay.dart' show aiRelayFailureFor;
+import 'package:fushi/src/sync/interconnect_host_client.dart'
+    show InterconnectHostError;
+import 'package:fushi/src/sync/sync_backend.dart' show SyncAuthError;
+import 'package:fushi/src/sync/sync_repository.dart' show FushiClientUrl;
+import 'package:fushi/src/sync/video_remote_targets.dart'
+    show InterconnectHostTarget;
+import 'package:fushi_engine/media/torrent/torznab_client.dart'
+    show isPrivateNetworkProviderHost;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show FushiGlassMaterial, FushiGlassTheme;
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show AdaptiveSettingsRow;
 import 'package:fushi/src/settings/settings_destination.dart'
     show debugSettingsForceExpandAllSections;
-import 'package:fushi/src/settings/settings_kit.dart' show SettingsModifiedRow;
-import 'package:fushi/utils.dart' show t;
+import 'package:fushi/src/settings/settings_kit_core.dart'
+    show SettingsModifiedRow;
+import 'package:fushi/i18n/strings.g.dart';
 
 import '../helpers/test_platform_services.dart';
 import '../helpers/glass_unwrap.dart';
+
+/// 互联主机提供商的假出口：按路径回固定应答，记下每次请求。
+class _FakeRelayTransport implements AiRelayTransport {
+  _FakeRelayTransport({this.providersReply});
+
+  Map<String, Object?>? providersReply;
+  final List<(String host, String path, Map<String, Object?> body)> calls =
+      <(String, String, Map<String, Object?>)>[];
+
+  @override
+  Future<Map<String, Object?>> post(
+    String hostId,
+    String path,
+    Map<String, Object?> body,
+  ) async {
+    calls.add((hostId, path, body));
+    if (path == kAiRelayProvidersPath) {
+      return providersReply ??
+          <String, Object?>{
+            'ok': true,
+            'providers': <Object?>[
+              const AiRelayProviderInfo(
+                id: 'h1',
+                name: 'Host GPT',
+                model: 'gpt-x',
+                supportsTools: true,
+                acceptsImages: true,
+              ).toJson(),
+              const AiRelayProviderInfo(
+                id: 'h2',
+                name: 'Host Claude',
+                model: 'claude-y',
+                supportsTools: false,
+                acceptsImages: false,
+              ).toJson(),
+            ],
+            'defaultProvider': 'h1',
+          };
+    }
+    return <String, Object?>{'ok': true, 'text': '', 'toolCalls': <Object?>[]};
+  }
+}
 
 AiProviderConfig _config({
   String id = 'p1',
@@ -131,6 +188,34 @@ void main() {
       expect(back.single.allowInsecureHttp, isTrue);
       // ollama 预设不要求 key，所以没填 key 也算「配全了」。
       expect(back.single.isUsable, isTrue);
+    });
+
+    test('明文 HTTP：局域网地址与 localhost 同等放行（反馈 9_vP-OLetJ）', () {
+      // 局域网里另一台电脑上的 Ollama / LM Studio 用户填的是 http://192.168.x.x，
+      // 不需要也不应要求勾「允许明文 HTTP」；公网明文 HTTP 仍要显式勾选。
+      for (final String url in <String>[
+        'http://192.168.0.178:1234/v1',
+        'http://10.0.0.5:11434/v1',
+        'http://172.20.1.2:8000/v1',
+        'http://169.254.10.10/v1',
+        'http://nas.local:1234/v1',
+        'http://[fd12:3456::1]:1234/v1',
+        'http://[fe80::1]:1234/v1',
+      ]) {
+        expect(_config(baseUrl: url).baseUrl.scheme, 'http', reason: url);
+      }
+      for (final String url in <String>[
+        'http://172.32.0.1/v1',
+        'http://100.64.1.2/v1',
+        'http://8.8.8.8/v1',
+        'http://192.169.0.1/v1',
+        'http://[2001:db8::1]/v1',
+      ]) {
+        expect(() => _config(baseUrl: url), throwsArgumentError, reason: url);
+      }
+      expect(isPrivateNetworkProviderHost('192.168.1.1'), isTrue);
+      expect(isPrivateNetworkProviderHost('192.168.1'), isFalse);
+      expect(isPrivateNetworkProviderHost('example.com'), isFalse);
     });
 
     test('坏一条只丢一条，不让整份清单消失', () {
@@ -326,15 +411,37 @@ void main() {
     /// 区块从树上摘掉时 **ProviderScope 原位保留**：整棵树换掉会连 AppModel 与
     /// PreferencesRepository 一起 dispose，dispose-flush 的异步写就会撞上一个已
     /// 释放的 repo——那是 harness 假象，不是生产行为。
-    Widget harness({AiChatClientFactory? clientFactory}) => ProviderScope(
+    Widget harness({
+      AiChatClientFactory? clientFactory,
+      AiRelayHostProbe? relayHostProbe,
+      AiRelayTransport? relayTransport,
+      double width = 640,
+      double textScale = 1,
+      bool apple = false,
+    }) => ProviderScope(
       overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
       child: MaterialApp(
-        theme: ThemeData(useMaterial3: true),
+        theme: ThemeData(
+          useMaterial3: true,
+          extensions: <ThemeExtension<dynamic>>[
+            FushiGlassTheme(FushiGlassMaterial.off, glassDesign: apple),
+          ],
+        ),
+        builder: (BuildContext context, Widget? child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child!,
+        ),
         home: Scaffold(
           body: SizedBox(
-            width: 640,
+            width: width,
             child: SingleChildScrollView(
-              child: AiProviderSettingsSection(clientFactory: clientFactory),
+              child: AiProviderSettingsSection(
+                clientFactory: clientFactory,
+                relayHostProbe: relayHostProbe,
+                relayTransport: relayTransport,
+              ),
             ),
           ),
         ),
@@ -344,11 +451,25 @@ void main() {
     Future<void> pumpSection(
       WidgetTester tester, {
       AiChatClientFactory? clientFactory,
+      AiRelayHostProbe? relayHostProbe,
+      AiRelayTransport? relayTransport,
+      double width = 640,
+      double textScale = 1,
+      bool apple = false,
     }) async {
       tester.view.physicalSize = const Size(900, 4000);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(harness(clientFactory: clientFactory));
+      await tester.pumpWidget(
+        harness(
+          clientFactory: clientFactory,
+          relayHostProbe: relayHostProbe,
+          relayTransport: relayTransport,
+          width: width,
+          textScale: textScale,
+          apple: apple,
+        ),
+      );
       await tester.pumpAndSettle();
     }
 
@@ -406,6 +527,140 @@ void main() {
       expect(saved.model, 'deepseek-reasoner');
       expect(saved.protocol, AiWireProtocol.openAiCompatible);
       expect(saved.isUsable, isTrue);
+    });
+
+    const InterconnectHostTarget desk = InterconnectHostTarget(
+      hostId: 'host-1',
+      displayName: 'Desk',
+      peer: FushiClientUrl(url: 'https://192.168.1.5:8765', hostId: 'host-1'),
+    );
+
+    testWidgets('添加互联主机提供商：选主机 → 主机默认那家的能力快照写穿；改选另一家；测试连接经主机', (
+      WidgetTester tester,
+    ) async {
+      final _FakeRelayTransport relay = _FakeRelayTransport();
+      await pumpSection(
+        tester,
+        relayHostProbe: () async => const <InterconnectHostTarget>[desk],
+        relayTransport: relay,
+      );
+      await tapKey(tester, 'ai-provider-add');
+      await tapKey(tester, 'ai-provider-preset-$kAiInterconnectPresetId');
+      await tapKey(tester, 'ai-relay-host-host-1');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+
+      AiProviderConfig saved = prefs.aiProviders.single;
+      expect(saved.relay, const AiRelayTarget(hostId: 'host-1'));
+      expect(saved.name, 'Desk');
+      expect(saved.isUsable, isTrue);
+      expect(saved.activeApiKeys, isEmpty);
+      // 快照取自主机的默认提供商 h1。
+      expect(saved.model, 'gpt-x');
+      expect(saved.supportsToolCalling, isTrue);
+      expect(saved.acceptsImages, isTrue);
+      expect(relay.calls.first.$1, 'host-1');
+      expect(relay.calls.first.$2, kAiRelayProvidersPath);
+      // 编辑页没有 key / 地址 / 模型输入框。
+      expect(
+        find.byKey(const ValueKey<String>('ai-provider-0-api-key')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('ai-provider-0-base-url')),
+        findsNothing,
+      );
+
+      await tapKey(tester, 'ai-provider-0-relay-provider');
+      await tapKey(tester, 'ai-relay-provider-h2');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      saved = prefs.aiProviders.single;
+      expect(
+        saved.relay,
+        const AiRelayTarget(hostId: 'host-1', providerId: 'h2'),
+      );
+      expect(saved.model, 'claude-y');
+      expect(saved.supportsToolCalling, isFalse);
+      expect(saved.acceptsImages, isFalse);
+
+      await tapKey(tester, 'ai-provider-0-test');
+      final (String, String, Map<String, Object?>) ping = relay.calls.last;
+      expect(ping.$2, kAiRelayChatPath);
+      expect(ping.$3['mode'], 'ping');
+      expect(ping.$3['provider'], 'h2');
+      expect(find.text(t.ai_provider_test_ok), findsOneWidget);
+
+      // 统一提供商层：功能指派里照常能选到它（不在各功能入口写特例）。
+      await closeEditor(tester);
+      expect(
+        AiFeatureAssignments(
+          defaultProviderId: saved.id,
+        ).resolve(AiFeature.srsTemplate, prefs.aiProviders)?.id,
+        saved.id,
+      );
+    });
+
+    testWidgets('添加互联主机提供商：一台可用主机都没有 → 说明要检查什么，不新增', (
+      WidgetTester tester,
+    ) async {
+      await pumpSection(
+        tester,
+        relayHostProbe: () async => const <InterconnectHostTarget>[],
+        relayTransport: _FakeRelayTransport(),
+      );
+      await tapKey(tester, 'ai-provider-add');
+      await tapKey(tester, 'ai-provider-preset-$kAiInterconnectPresetId');
+      expect(
+        find.byKey(const ValueKey<String>('ai-relay-hosts-empty')),
+        findsOneWidget,
+      );
+      expect(find.text(t.ai_relay_hosts_empty), findsOneWidget);
+      expect(prefs.aiProviders, isEmpty);
+    });
+
+    testWidgets('主机关了共享：拉提供商清单的失败原样说清楚，不吞', (WidgetTester tester) async {
+      await pumpSection(
+        tester,
+        relayHostProbe: () async => const <InterconnectHostTarget>[desk],
+        relayTransport: _FakeRelayTransport(
+          providersReply: const <String, Object?>{
+            'ok': false,
+            'error': kAiRelayDisabled,
+          },
+        ),
+      );
+      await tapKey(tester, 'ai-provider-add');
+      await tapKey(tester, 'ai-provider-preset-$kAiInterconnectPresetId');
+      await tapKey(tester, 'ai-relay-host-host-1');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(find.text(t.ai_error_relay_disabled), findsOneWidget);
+    });
+
+    testWidgets('云端语音转录的指派里不列互联主机提供商（它只转发对话补全）', (WidgetTester tester) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        AiProviderConfig.interconnectHost(
+          id: 'relay',
+          name: 'Desk relay',
+          relay: const AiRelayTarget(hostId: 'host-1'),
+        ),
+      ]);
+      await pumpSection(tester);
+      final int closed = find.text('Desk relay').evaluate().length;
+      await tapKey(
+        tester,
+        'ai-feature-${AiFeature.cloudTranscription.storageKey}-provider',
+      );
+      // 菜单展开后没有多出这家。
+      expect(find.text('Desk relay').evaluate().length, closed);
+      await tester.tap(find.text(t.ai_feature_unset).last);
+      await tester.pumpAndSettle();
+      await tapKey(
+        tester,
+        'ai-feature-${AiFeature.dictStyle.storageKey}-provider',
+      );
+      expect(find.text('Desk relay').evaluate().length, greaterThan(closed));
     });
 
     testWidgets('多 key：添加 / 停用 / 删除写穿偏好，冷却状态显示在框下', (
@@ -523,10 +778,7 @@ void main() {
 
       expect(sent, <String>['sk-first-1111', 'sk-second-2222']);
       expect(prefs.aiKeyHealth, isEmpty);
-      expect(
-        find.text(t.ai_provider_api_key_ok(tail: '1111')),
-        findsOneWidget,
-      );
+      expect(find.text(t.ai_provider_api_key_ok(tail: '1111')), findsOneWidget);
       expect(find.textContaining(t.ai_error_quota_exhausted), findsNothing);
     });
 
@@ -645,7 +897,10 @@ void main() {
         const AiFeatureAssignments().withDefault('p3'),
       );
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey<String>('ai-provider-p3')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('ai-provider-p3')),
+        findsOneWidget,
+      );
 
       // 本页：只改 p1 的模型。
       await openEditor(tester, 'p1');
@@ -663,9 +918,7 @@ void main() {
       expect(prefs.storedAiFeatureAssignments.defaultProviderId, 'p3');
     });
 
-    testWidgets('外层只放总配置：功能指派默认折叠，摘要报单独指定了几项', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('外层只放总配置：功能指派默认折叠，摘要报单独指定了几项', (WidgetTester tester) async {
       debugSettingsForceExpandAllSections = false;
       await prefs.setAiProviders(<AiProviderConfig>[
         _config(id: 'p1', name: 'Alpha'),
@@ -696,9 +949,102 @@ void main() {
       expect(featureRow, findsOneWidget, reason: '点分组头展开后功能行出现');
     });
 
-    testWidgets('折叠头摘要：单独指定（含「不使用 AI」）几项就报几项', (
+    testWidgets('手机宽度：功能行的说明不被下拉按钮挤成一字一行，按钮落到说明下一行', (
       WidgetTester tester,
     ) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'LM Studio (local, long provider name)'),
+      ]);
+      await prefs.setAiFeatureAssignments(
+        const AiFeatureAssignments(defaultProviderId: 'p1'),
+      );
+      // 测试字体（Ahem）的字形远宽于真字体：缩到 0.5 倍让折叠头等无关部件不溢出，
+      // 本测试只量设置行的堆叠判据。
+      await pumpSection(tester, width: 360, textScale: 0.5);
+
+      final Finder summary = find.text(
+        t.ai_feature_galgame_text_process_summary,
+      );
+      final Finder button = find.byKey(
+        ValueKey<String>(
+          'ai-feature-${AiFeature.galgameTextProcess.storageKey}-provider',
+        ),
+      );
+      await tester.ensureVisible(summary);
+      await tester.pumpAndSettle();
+
+      // 堆叠前标题 / 说明只剩十几 dp（BUG-2550 同款挤压）；堆叠后拿到整行宽。
+      expect(tester.getSize(summary).width, greaterThan(200));
+      expect(
+        tester.getTopLeft(button).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(summary).dy),
+        reason: '窄行里下拉按钮应在说明下面，而不是挤在它右边',
+      );
+    });
+
+    for (final bool apple in <bool>[false, true]) {
+      testWidgets(
+        '[${apple ? 'Apple' : 'MD3'}] 功能行声明的 trailingWidth 就是下拉按钮的真实最大宽',
+        (WidgetTester tester) async {
+          // 名字远超当前值文字上限：按钮顶到最大宽。
+          await prefs.setAiProviders(<AiProviderConfig>[
+            _config(
+              id: 'p1',
+              name: 'An extremely long provider name that never fits the cap',
+            ),
+          ]);
+          await prefs.setAiFeatureAssignments(
+            const AiFeatureAssignments(defaultProviderId: 'p1'),
+          );
+          await pumpSection(tester, width: 900, apple: apple);
+
+          final Finder button = find.byKey(
+            ValueKey<String>(
+              'ai-feature-${AiFeature.galgameTextProcess.storageKey}-provider',
+            ),
+          );
+          await tester.ensureVisible(button);
+          await tester.pumpAndSettle();
+          final AdaptiveSettingsRow row = tester.widget<AdaptiveSettingsRow>(
+            find.ancestor(
+              of: button,
+              matching: find.byType(AdaptiveSettingsRow),
+            ),
+          );
+          final double declared = row.trailingWidth!;
+          // 堆叠判据按 declared 算：它与按钮实宽对不上，窄屏就会误判行内 / 堆叠。
+          expect(tester.getSize(button).width, closeTo(declared, 0.5));
+        },
+      );
+    }
+
+    testWidgets('[Apple] 手机宽度：功能行的下拉按钮落到说明下一行', (WidgetTester tester) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'LM Studio (local, long provider name)'),
+      ]);
+      await prefs.setAiFeatureAssignments(
+        const AiFeatureAssignments(defaultProviderId: 'p1'),
+      );
+      await pumpSection(tester, width: 360, textScale: 0.5, apple: true);
+
+      final Finder summary = find.text(
+        t.ai_feature_galgame_text_process_summary,
+      );
+      final Finder button = find.byKey(
+        ValueKey<String>(
+          'ai-feature-${AiFeature.galgameTextProcess.storageKey}-provider',
+        ),
+      );
+      await tester.ensureVisible(summary);
+      await tester.pumpAndSettle();
+      expect(
+        tester.getTopLeft(button).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(summary).dy),
+        reason: '窄行里下拉按钮应在说明下面，而不是挤在它右边',
+      );
+    });
+
+    testWidgets('折叠头摘要：单独指定（含「不使用 AI」）几项就报几项', (WidgetTester tester) async {
       debugSettingsForceExpandAllSections = false;
       await prefs.setAiProviders(<AiProviderConfig>[
         _config(id: 'p1', name: 'Alpha'),
@@ -712,9 +1058,7 @@ void main() {
       expect(find.text(t.ai_feature_overrides_count(n: 2)), findsOneWidget);
     });
 
-    testWidgets('单独指定过的功能行带「改过默认值」标记，恢复默认即跟随默认', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('单独指定过的功能行带「改过默认值」标记，恢复默认即跟随默认', (WidgetTester tester) async {
       await prefs.setAiProviders(<AiProviderConfig>[
         _config(id: 'p1', name: 'Alpha'),
       ]);
@@ -791,9 +1135,10 @@ void main() {
       final AiFeatureAssignments saved = prefs.aiFeatureAssignments;
       expect(saved.defaultProviderId, 'p1');
       for (final AiFeature feature in AiFeature.values) {
+        // 云端语音转录上传音频、按量计费：只认显式指派，不跟随默认。
         expect(
           saved.resolve(feature, prefs.aiProviders)?.id,
-          'p1',
+          feature.followsDefaultProvider ? 'p1' : isNull,
           reason: feature.name,
         );
       }
@@ -895,8 +1240,9 @@ void main() {
       await prefs.setAiProviders(<AiProviderConfig>[
         _config(
           id: 'p1',
-          name: 'LAN',
-          baseUrl: 'http://192.168.1.20:8000/v1',
+          // 公网明文 HTTP 才靠这个开关（局域网地址不需要，见 9_vP-OLetJ）。
+          name: 'Plain',
+          baseUrl: 'http://ai.example.com:8000/v1',
           allowInsecureHttp: true,
         ),
       ]);
@@ -1156,10 +1502,14 @@ void main() {
       // 候选只是辅助输入；写不进去就等于升级后把人家的自定义模型名吞了）。
       expect(
         tester
-            .widget<TextField>(glassUnwrap<TextField>(find.descendant(
-                of: find.byKey(const ValueKey<String>('ai-provider-0-model')),
-                matching: find.byType(TextField),
-              )),)
+            .widget<TextField>(
+              glassUnwrap<TextField>(
+                find.descendant(
+                  of: find.byKey(const ValueKey<String>('ai-provider-0-model')),
+                  matching: find.byType(TextField),
+                ),
+              ),
+            )
             .controller!
             .text,
         'gpt-4o-mini',
@@ -1189,10 +1539,14 @@ void main() {
       // 显示着不同的模型名，而落盘的偏偏是用户没在看的那一个。
       expect(
         tester
-            .widget<TextField>(glassUnwrap<TextField>(find.descendant(
-                of: find.byKey(const ValueKey<String>('ai-provider-0-model')),
-                matching: find.byType(TextField),
-              )),)
+            .widget<TextField>(
+              glassUnwrap<TextField>(
+                find.descendant(
+                  of: find.byKey(const ValueKey<String>('ai-provider-0-model')),
+                  matching: find.byType(TextField),
+                ),
+              ),
+            )
             .controller!
             .text,
         'o4-mini',
@@ -1536,10 +1890,18 @@ void main() {
 
     test('ping：应答不是该协议的形状 → bad_response；HTTP 错误照常映射', () async {
       final AiChatClient wrongShape = clientReturning(<String, Object?>{
-        'error': 'gateway says hi',
+        'hello': 'gateway says hi',
       });
       addTearDown(wrongShape.close);
       await expectLater(wrongShape.ping(_config()), failsWith('bad_response'));
+
+      // 2xx 却只有 error（LM Studio 对不认识的路径「Returning 200 anyway」）：
+      // 单独报 endpoint_error，提示检查地址（反馈 GewyVIt5oo）。
+      final AiChatClient errorBody = clientReturning(<String, Object?>{
+        'error': 'Unexpected endpoint or method. (POST /chat/completions)',
+      });
+      addTearDown(errorBody.close);
+      await expectLater(errorBody.ping(_config()), failsWith('endpoint_error'));
 
       final AiChatClient notFound = clientReturning(<String, Object?>{
         'error': 'no such model',
@@ -1570,6 +1932,58 @@ void main() {
         expect(text, isNot(code), reason: '$code 必须映射到真实文案而不是原样透出');
       }
       expect(aiFailureText('http_503'), contains('503'));
+    });
+  });
+
+  group('互联主机提供商：连接层失败 → 短码', () {
+    test('鉴权被拒 / 证书不符 / 不可达 / 老主机 / 其它状态码各有其码', () {
+      expect(
+        aiRelayFailureFor(SyncAuthError('x')).message,
+        kAiRelayAuthRejected,
+      );
+      expect(
+        aiRelayFailureFor(
+          const InterconnectHostError(
+            InterconnectHostError.certificateMismatchCode,
+          ),
+        ).message,
+        kAiRelayCertificateMismatch,
+      );
+      expect(
+        aiRelayFailureFor(
+          const InterconnectHostError(InterconnectHostError.unreachableCode),
+        ).message,
+        kAiRelayHostUnreachable,
+      );
+      expect(
+        aiRelayFailureFor(
+          const InterconnectHostError('HTTP 404', statusCode: 404),
+        ).message,
+        kAiRelayHostUnsupported,
+      );
+      expect(
+        aiRelayFailureFor(
+          const InterconnectHostError('HTTP 503', statusCode: 503),
+        ).message,
+        'http_503',
+      );
+    });
+
+    test('每个 relay 短码都有自己的界面文案（不原样把码给用户看）', () {
+      for (final String code in <String>[
+        kAiRelayUnavailable,
+        kAiRelayHostNotPaired,
+        kAiRelayHostUnreachable,
+        kAiRelayCertificateMismatch,
+        kAiRelayAuthRejected,
+        kAiRelayHostUnsupported,
+        kAiRelayDisabled,
+        kAiRelayNoProvider,
+        kAiRelayBadRequest,
+        kAiRelayOperationUnsupported,
+      ]) {
+        expect(aiFailureText(code), isNot(code), reason: code);
+      }
     });
   });
 }

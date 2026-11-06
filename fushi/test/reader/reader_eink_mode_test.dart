@@ -40,14 +40,29 @@ void main() {
       // 关过渡：书籍自带动画一并压掉。
       expect(css, contains('transition: none !important'));
       expect(css, contains('animation: none !important'));
-      // 线式高亮：查词=粗实线、sasayaki=细实线、搜索=双线。
-      expect(css, contains('text-decoration-style: solid'));
-      expect(css, contains('text-decoration-style: double'));
-      expect(css, contains('text-decoration-line: underline'));
+      // 线式高亮：四类一律画「下划线」笔触样式（用户 2026-11-04「墨水屏就是复用这个的」），
+      // 默认查词=粗实线、sasayaki=细实线、搜索=双线、收藏=实线。线由窄条层画成 SVG，
+      // 不经 text-decoration——Blink 上 CSS Highlight 会裁字形、在注音 / 着重号处断线
+      // （BUG-3886，真 Chrome 测试见 reader_eink_highlight_line_bug3874_test）。
+      for (final String kind in <String>[
+        'audio',
+        'lookup',
+        'favorite',
+        'search',
+      ]) {
+        expect(css, contains('--fushi-mark-$kind-style: underline;'));
+        expect(css, contains('--fushi-mark-$kind-ink: #000;'));
+      }
+      expect(css, contains('--fushi-mark-lookup-form: solid;'));
+      expect(css, contains('--fushi-mark-search-form: double;'));
       // sasayaki 跟读线必须是直线条，不得回退成虚线：上游 HSA 的墨水屏跟读高亮
       // 是 overlay 画的 1.5px 实心线，虚线的每段短划在慢刷新屏上都是独立黑白
       // 跳变，既更脏也更难一眼定位当前句。
-      expect(css, isNot(contains('text-decoration-style: dashed')));
+      expect(css, contains('--fushi-mark-audio-form: solid;'));
+      expect(css, contains('--fushi-mark-audio-roughness: 0;'));
+      expect(css, isNot(contains('dashed')));
+      // 收藏句的线也是下划线笔触，原 text-decoration 下划线去掉（不叠两道）。
+      expect(css, contains('收藏笔触样式：形状本身就是标记'));
     });
 
     test('einkMode=true honours einkDark (white-on-black)', () async {
@@ -60,20 +75,24 @@ void main() {
       expect(css, contains('background: #000 !important'));
       expect(css, contains('color: #fff !important'));
       expect(css, contains('--fushi-reader-eink-mode: 1'));
+      // 下划线笔触的线色跟正文色走（白字黑底时是白线）。
+      expect(css, contains('--fushi-mark-audio-ink: #fff;'));
     });
 
-    test('einkMode=true overrides themed colors even for preset themes',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      final String css = ReaderContentStyles.css(
-        settings: settings,
-        themeOverride: 'ecru-theme',
-        einkMode: true,
-      );
-      // ecru 的手调底色被 eink 压掉。
-      expect(css, isNot(contains('#f7f6eb')));
-      expect(css, contains('background: #fff !important'));
-    });
+    test(
+      'einkMode=true overrides themed colors even for preset themes',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        final String css = ReaderContentStyles.css(
+          settings: settings,
+          themeOverride: 'ecru-theme',
+          einkMode: true,
+        );
+        // ecru 的手调底色被 eink 压掉。
+        expect(css, isNot(contains('#f7f6eb')));
+        expect(css, contains('background: #fff !important'));
+      },
+    );
 
     test('einkMode=false (default) leaves normal output untouched', () async {
       final ReaderSettings settings = await _defaultSettings();
@@ -119,27 +138,39 @@ void main() {
       // 注释掩掉再切：注释里提到调用名不算数；切片以「本项 id → 下一项 id」为界，
       // 不钉相邻项的类型，schema 重排 / 中间插项都不会让断言漂到别的 handler 上。
       final String schema = maskComments(
-        File('lib/src/settings/settings_schema_appearance.dart')
-            .readAsStringSync(),
+        File(
+          'lib/src/settings/settings_schema_appearance.dart',
+        ).readAsStringSync(),
       );
       final int id = schema.indexOf("id: 'appearance.eink_mode'");
       expect(id, isNonNegative);
       final int next = schema.indexOf("id: '", id + 5);
-      final String item =
-          next == -1 ? schema.substring(id) : schema.substring(id, next);
+      final String item = next == -1
+          ? schema.substring(id)
+          : schema.substring(id, next);
       expect(item, contains('setEinkMode(value)'));
-      expect(item, contains('notifyReaderSettingsChanged(settingsContext)'),
-          reason: 'eink toggle must re-inject reader CSS live, not only '
-              'refresh the settings sheet');
-      expect(item, isNot(contains('settingsContext.refresh()')),
-          reason: 'notifyReaderSettingsChanged already refreshes the sheet');
+      expect(
+        item,
+        contains('notifyReaderSettingsChanged(settingsContext)'),
+        reason:
+            'eink toggle must re-inject reader CSS live, not only '
+            'refresh the settings sheet',
+      );
+      expect(
+        item,
+        isNot(contains('settingsContext.refresh()')),
+        reason: 'notifyReaderSettingsChanged already refreshes the sheet',
+      );
     });
   });
 
   group('profile snapshot exclusion', () {
     test('eink_mode is app-global (excluded from per-profile snapshot)', () {
-      expect(ProfileKeys.isExcludedPref('eink_mode'), isTrue,
-          reason: 'eink_mode 描述物理屏幕，切 Profile 不得把整个 app 颜色翻转回去');
+      expect(
+        ProfileKeys.isExcludedPref('eink_mode'),
+        isTrue,
+        reason: 'eink_mode 描述物理屏幕，切 Profile 不得把整个 app 颜色翻转回去',
+      );
     });
   });
 }

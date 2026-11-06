@@ -194,6 +194,11 @@ struct VoiceHookLookupHit {
   int32_t client_w = 0;
   int32_t client_h = 0;
   bool submit = false;  // true=点击提交，false=悬停预览
+  // 查词耗时链的两个跨进程时刻，单位都是 QPC 微秒（与 Dart Timeline.now 同一时钟）：
+  // hook 发布这条 hit 的时刻（IPC v26 槽字段），和 runner 把它投给 Dart 的时刻。
+  // 0 = 没量到。只用于诊断，不参与任何判定。
+  uint64_t publish_qpc_us = 0;
+  uint64_t dispatch_qpc_us = 0;
 };
 
 // 一条落在卡片矩形内、要喂回离屏 WebView2 的输入事件。坐标已是**卡片局部**坐标。
@@ -390,8 +395,8 @@ class VoiceHookReader {
                                std::vector<uint8_t>& out);
 
   // **按句取「整句」语音**（[GrabClipNear] 的整句版，替代 ~125ms 碎片）：游戏多条 source voice
-  // 并行流式，一次 SubmitSourceBuffer 只 ~60-136ms。本方法把同一 [source_ptr] 源在 [ts_ms-200,
-  // ts_ms+6000] 的所有段逐段从环形拼接、去首尾静音，产出整句 PCM 到 [out]。
+  // 并行流式，一次 SubmitSourceBuffer 只 ~60-136ms。本方法把同一 [source_ptr] 源在 [下界,
+  // ts_ms+kUtteranceMaxForwardMs（30s）；有 end_ts_ms 时收到下一句] 的所有段逐段从环形拼接、去首尾静音，产出整句 PCM 到 [out]。
   //   - [target_source] 非 0：**直接用该源**（用户手动选定的语音轨），跳过能量自动选源。
   //   - [target_source] 为 0：按能量自动选语音源（说话前静音、文本时刻突然有能量者），并排除
   //     [exclude_sources] 里的源（用户标记的 BGM）。自动选源在真机上可能误选 BGM，故提供手动。

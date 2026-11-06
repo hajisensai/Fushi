@@ -9,6 +9,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.util.Log;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -34,6 +35,14 @@ public class ScreenCaptureRequestActivity extends Activity {
 
     static final String EXTRA_LANGUAGE = "language";
     static final String EXTRA_LABELS = "labels";
+    /** 发起被系统静默丢弃时的提示文案（labels 里的键，缺省回退英文）。 */
+    static final String LABEL_LAUNCH_BLOCKED = "ocr_launch_blocked";
+
+    /**
+     * 发起 / 宿主 Activity 真起来 / 欠 Dart 回调这几件欠账（见 {@link ScreenOcrFlowLatch}）。
+     * 只在主线程读写，与 {@link #flowActive} 同一线程纪律。
+     */
+    static final ScreenOcrFlowLatch LATCH = new ScreenOcrFlowLatch();
 
     /** 本实例是否仍负责收尾（交给 ScreenOcrService 后即为 false）。 */
     private boolean ownsFlow = false;
@@ -51,14 +60,57 @@ public class ScreenCaptureRequestActivity extends Activity {
             @Nullable Map<String, String> labels) {
         if (!Settings.canDrawOverlays(context)) return false;
         if (flowActive) return false;
+        // 保持着截屏会话（「保持截屏会话」开着、之前同意过且系统没停掉）：直接取帧，不弹
+        // 确认框、不从后台起本 Activity——也就不会被 ROM 的后台弹窗管控拦下。
+        if (ScreenOcrService.hasKeptSession()) {
+            flowActive = true;
+            if (ScreenOcrService.captureWithKeptSession(language, labels)) {
+                // 挂上取帧之后再藏球：藏球那次合成必然再出一帧，取到的是不带球的画面。
+                FloatingBallService.setCaptureHidden(true);
+                return true;
+            }
+            // 会话复用失败（已被收掉）：照常走确认框。
+            flowActive = false;
+        }
+        // 上一次发起交给了系统、宿主 Activity 却一直没起来：被 ROM 静默丢了（BUG-3603，
+        // vivo「后台弹出界面」没开时后台 startActivity 无声无息地失败）。这次照发，但先
+        // 告诉用户原因——否则在同一台机器上每点一次都是「没反应」。
+        if (LATCH.takeDroppedLaunch(flowActive)) {
+            Log.w(TAG, "previous screen-capture launch was dropped by the system "
+                    + "(background activity start blocked)");
+            String hint = labels == null ? null : labels.get(LABEL_LAUNCH_BLOCKED);
+            Toast.makeText(context.getApplicationContext(),
+                    hint == null || hint.isEmpty()
+                            ? "Fushi could not open the screen capture prompt. Allow Fushi to "
+                                    + "show pop-up windows while running in the background in "
+                                    + "system settings, then try again."
+                            : hint,
+                    Toast.LENGTH_LONG).show();
+        }
         // 「进行中」与藏球放在 onCreate 里做，而不是这里：后台启动 Activity 可能被系统
         // 静默丢弃（BackgroundActivityLauncher 无法得知），在这里先上锁就会把球永久藏掉。
+        // 丢没丢只能事后知道：登记一笔发起，onCreate 销账；没销账就是被丢了
+        // （见 ScreenOcrFlowLatch），由下一次发起或主界面回到前台时收尾。
         Intent intent = new Intent(context, ScreenCaptureRequestActivity.class);
         intent.putExtra(EXTRA_LANGUAGE, language == null ? "" : language);
         intent.putExtra(EXTRA_LABELS, toBundle(labels));
         intent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
+        LATCH.onLaunchRequested();
         BackgroundActivityLauncher.start(context, intent);
         return true;
+    }
+
+    /**
+     * Fushi 主界面回到前台（{@code MainActivity.onResume}）：上一次发起若被系统丢了，
+     * 按「流程没截到帧就结束」收尾——放回悬浮球、把欠 Dart 的回调还上，否则应用内球
+     * 会一直藏着（BUG-3602）。发起若真起来了，宿主 Activity 的 onCreate 必然先于本次
+     * resume（它盖上来时主界面先被 pause），不会误判。主线程。
+     */
+    static void onHostAppResumed() {
+        if (LATCH.takeDroppedLaunch(flowActive)) {
+            Log.w(TAG, "screen-capture launch never reached onCreate; releasing the flow");
+            onFlowFinished();
+        }
     }
 
     /** 流程结束（任何出口）时调用：解锁并把悬浮球放回来。主线程。 */
@@ -73,6 +125,8 @@ public class ScreenCaptureRequestActivity extends Activity {
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // 宿主真的起来了（任何分支）：这次发起没被系统丢。
+        LATCH.onHostCreated();
         if (savedInstanceState != null && savedInstanceState.getBoolean(STATE_REQUESTED)) {
             // 进程内重建（例如旋转）：确认框已经弹过，等 onActivityResult 即可。
             ownsFlow = flowActive;

@@ -54,8 +54,9 @@ bool isBenignStartupNetworkError(FlutterErrorDetails details) {
 /// 暴露为独立函数，便于 itest 主体跑完后显式收口（也可由 [runFushiItest]
 /// 自动调用）。
 void assertNoFatalStartupErrors(List<FlutterErrorDetails> errors) {
-  final List<FlutterErrorDetails> fatal =
-      errors.where((e) => !isBenignStartupNetworkError(e)).toList();
+  final List<FlutterErrorDetails> fatal = errors
+      .where((e) => !isBenignStartupNetworkError(e))
+      .toList();
   expect(
     fatal,
     isEmpty,
@@ -85,9 +86,11 @@ Future<void> runFushiItest({
   FlutterError.onError = (FlutterErrorDetails details) {
     errors.add(details);
     final bool benign = isBenignStartupNetworkError(details);
-    debugPrint('[$label] FlutterError'
-        '${benign ? ' (benign startup-network, ignored)' : ''}: '
-        '${details.exceptionAsString()}');
+    debugPrint(
+      '[$label] FlutterError'
+      '${benign ? ' (benign startup-network, ignored)' : ''}: '
+      '${details.exceptionAsString()}',
+    );
   };
 
   bool bodyThrew = false;

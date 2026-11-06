@@ -22,8 +22,11 @@ AudioCue _cue(int i, int s, int e, String text) => AudioCue()
   ..audioFileIndex = 0;
 
 AudioCue _posCue(String raw, {required int startMs, required int endMs}) {
-  final SubtitleMarkup m =
-      parseSubtitleMarkup(raw, playResX: 1280, playResY: 720);
+  final SubtitleMarkup m = parseSubtitleMarkup(
+    raw,
+    playResX: 1280,
+    playResY: 720,
+  );
   return AudioCue()
     ..bookKey = 'video/1'
     ..chapterHref = 'video://default'
@@ -38,17 +41,17 @@ AudioCue _posCue(String raw, {required int startMs, required int endMs}) {
 
 /// 每 10 秒一条、每条只亮 2 秒 —— 相邻两条之间有 8 秒静默 gap（用户报的形态）。
 List<AudioCue> _spacedCues(int count) => <AudioCue>[
-      for (int i = 0; i < count; i++)
-        _cue(i, i * 10000, i * 10000 + 2000, 'line $i'),
-    ];
+  for (int i = 0; i < count; i++)
+    _cue(i, i * 10000, i * 10000 + 2000, 'line $i'),
+];
 
 Widget _wrap(Widget child) => MaterialApp(
-      home: Scaffold(body: Stack(children: <Widget>[child])),
-    );
+  home: Scaffold(body: Stack(children: <Widget>[child])),
+);
 
 Widget _panel(VideoPlayerController controller, {required bool autoScroll}) =>
     VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
+      layout: VideoSubtitleListLayout.classic,
       controller: controller,
       onTapCue: (_) {},
       onClose: () {},
@@ -113,8 +116,11 @@ void main() {
         _cue(2, 4000, 5000, '中'),
       ];
       expect(nearestCueIndexAtOrBefore(cues, 6000), 2);
-      expect(nearestCueIndexAtOrBefore(cues, 500), 1,
-          reason: '早于全部时取 startMs 最小的那条，不是下标 0');
+      expect(
+        nearestCueIndexAtOrBefore(cues, 500),
+        1,
+        reason: '早于全部时取 startMs 最小的那条，不是下标 0',
+      );
     });
 
     test('时间轴重叠时取 startMs 更大的那条（与 findCueIndex 的代表口径一致）', () {
@@ -240,8 +246,9 @@ void main() {
       expect(find.text('line 100'), findsNothing);
     });
 
-    testWidgets('跟随开启：静默段里 seek 到另一段静默也跟着滚（两处 currentCueIndex 都是 -1）',
-        (WidgetTester tester) async {
+    testWidgets('跟随开启：静默段里 seek 到另一段静默也跟着滚（两处 currentCueIndex 都是 -1）', (
+      WidgetTester tester,
+    ) async {
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);
       controller.setCues(_spacedCues(200));

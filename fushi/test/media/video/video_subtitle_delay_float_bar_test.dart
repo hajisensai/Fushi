@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
 import 'package:fushi/src/media/video/video_subtitle_sync_row.dart';
+import 'package:fushi/src/media/video/video_top_float_bar_layer.dart';
 import 'package:fushi/src/utils/components/fushi_focusable.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 
@@ -210,4 +211,45 @@ void main() {
     final Border border = deco.border! as Border;
     expect(border.top.color, isNot(Colors.transparent));
   });
+
+  // 视频页界面缩放 ≠ 1 时，缩放层曾包在 Align 里面：它把整片画面当画布铺满并传紧
+  // 约束，浮条表面被撑成盖住大半个画面的空白大板（maxWidth 也失效），挡住字幕上方
+  // 的画面。浮条必须按内容收缩、贴在顶部。
+  for (final double scale in <double>[1.0, 1.4, 0.8]) {
+    testWidgets('浮条层 scale=$scale：表面按内容收缩、不铺满画面', (WidgetTester tester) async {
+      const Size view = Size(1600, 900);
+      await tester.binding.setSurfaceSize(view);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      const Key surface = ValueKey<String>('bar-surface');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: <Widget>[
+                const Positioned.fill(child: ColoredBox(color: Colors.black)),
+                VideoTopFloatBarLayer(
+                  scale: scale,
+                  surfaceKey: surface,
+                  child: VideoSubtitleSyncRow(
+                    host: buildTestVideoHost(
+                      state: TestVideoHostState(delayMs: -1700),
+                    ),
+                    floatBar: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final Rect rect = tester.getRect(find.byKey(surface));
+      // 一行控件的高度（缩放后），远小于画面高度的四分之一。
+      expect(rect.height, lessThan(view.height / 4), reason: '$rect');
+      expect(rect.width, lessThanOrEqualTo(720 * scale + 1), reason: '$rect');
+      expect(rect.top, lessThan(40 * scale), reason: '$rect');
+      expect(rect.center.dx, closeTo(view.width / 2, 1), reason: '$rect');
+    });
+  }
 }

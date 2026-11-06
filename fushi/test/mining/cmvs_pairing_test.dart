@@ -1,15 +1,17 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('cmvs fixture pairs the selected thread with DirectSound PCM', () async {
-    final Map<String, dynamic> data = jsonDecode(
-      await File(
-        'test/fixtures/galhook/cmvs_replay.json',
-      ).readAsString(),
-    ) as Map<String, dynamic>;
+    final Map<String, dynamic> data =
+        jsonDecode(
+              await File(
+                'test/fixtures/galhook/cmvs_replay.json',
+              ).readAsString(),
+            )
+            as Map<String, dynamic>;
     expect(data['status'], 'implemented_unverified');
 
     final Map<String, dynamic> config = data['config'] as Map<String, dynamic>;

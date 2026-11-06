@@ -245,6 +245,8 @@ class IrodoriLocalEngine extends EngineChangeNotifier {
     required String installDir,
     required IrodoriTorchBackend backend,
   }) async {
+    // 已有安装在跑：不停服务、不改记录（它会把在途安装的目录记录覆盖掉）。
+    if (installer.isBusy) return false;
     _autoStartBlocked = false;
     // 换后端要重建 .venv：服务在用它，先停。
     if (server.phase != LocalServicePhase.stopped) await server.stop();
@@ -263,20 +265,15 @@ class IrodoriLocalEngine extends EngineChangeNotifier {
   /// 停服务并忘掉安装；[deleteFiles] 且是 app 装的才真删——整个专属子目录（uv、
   /// Python、缓存、环境、模型、上传的声音）一起删。
   Future<void> remove({required bool deleteFiles}) async {
-    installer.cancel();
+    await installer.cancelAndWait();
     await server.stop();
     _autoStartBlocked = false;
     final IrodoriLocalSettings current = settings;
-    final bool deletable = canDeleteFiles;
-    await _save(current.copyWith(clearDir: true, owned: false));
     final String? dir = current.dir;
-    if (deleteFiles && deletable && dir != null) {
-      try {
-        await Directory(dir).delete(recursive: true);
-      } on FileSystemException {
-        // 文件被占用（杀软扫描中之类）：已经忘掉了，剩下的让用户自己删。
-      }
+    if (deleteFiles && canDeleteFiles && dir != null) {
+      await deleteLocalInstallDir(dir);
     }
+    await _save(current.copyWith(clearDir: true, owned: false));
   }
 
   /// 服务的启动参数（与官方 `uv run --no-sync python -m irodori_openai_tts --host

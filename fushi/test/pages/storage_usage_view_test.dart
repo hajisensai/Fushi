@@ -8,20 +8,24 @@ import 'package:fushi_core/fushi_core.dart'
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/pages/implementations/storage_usage_view.dart';
-import 'package:fushi/src/storage/storage_usage_actions.dart';
+import 'package:fushi/src/settings/storage_usage_actions.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 void main() {
   late Directory tempRoot;
   late Directory docs;
   late Directory support;
+  late Directory cache;
 
   setUp(() {
     tempRoot = Directory.systemTemp.createTempSync('storage_view_test');
     docs = Directory(p.join(tempRoot.path, 'docs'))..createSync();
     support = Directory(p.join(tempRoot.path, 'support'))..createSync();
+    cache = Directory(p.join(tempRoot.path, 'cache'))..createSync();
   });
 
   tearDown(() {
@@ -39,9 +43,17 @@ void main() {
   }
 
   /// FakeAsync 区里真 isolate 永不完成：注同步执行版 runner。
+  ///
+  /// 所有根都注成本用例的临时目录，不落到 `AppPaths`：默认的缓存根在 macOS / 移动端
+  /// 会去调 path_provider 的 `getTemporaryDirectory()`，widget 测试里那条平台通道的
+  /// 回复永远送不进 FakeAsync 区（扫描卡住 → pumpAndSettle 超时，只在 macOS 宿主上
+  /// 红）；`documentsRootIsFushiOwned` 的默认实现读宿主真实的 SharedPreferences。
+  /// 临时 docs 根本就归测试所有，按「专属根」统计。
   StorageUsageService service() => StorageUsageService(
     documentsRoot: () async => docs,
     supportRoot: () async => support,
+    cacheRoots: () async => <Directory>[cache],
+    documentsRootIsFushiOwned: () async => true,
     isolateRunner: <R>(R Function() computation) async => computation(),
   );
 

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 
 /// TODO-1237 ①：播放列表封面遍历取首个可用集。用注入的抽取器替身脱离 ffmpeg 测
@@ -77,8 +77,11 @@ void main() {
       final String src = File(
         'lib/src/media/video/video_import_dialog.dart',
       ).readAsStringSync();
-      expect(src.contains('extractPlaylistCover('), isTrue,
-          reason: '播放列表封面必须走遍历各集的 extractPlaylistCover');
+      expect(
+        src.contains('extractPlaylistCover('),
+        isTrue,
+        reason: '播放列表封面必须走遍历各集的 extractPlaylistCover',
+      );
     });
 
     test('空路径跳过且不计入尝试次数', () async {

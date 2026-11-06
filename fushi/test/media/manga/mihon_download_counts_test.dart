@@ -139,7 +139,7 @@ void main() {
                   <String, Object?>{
                     'browser_download_url':
                         'https://github.com/keiyoushi/extensions/releases/'
-                            'download/tag/a.apk',
+                        'download/tag/a.apk',
                     'download_count': 42,
                   },
                 ],

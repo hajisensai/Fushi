@@ -40,8 +40,10 @@ void main() {
     );
     final int railStart = src.indexOf('Widget _buildVideoSideActionRail(');
     expect(railStart, greaterThanOrEqualTo(0));
-    final int mergeStart =
-        src.indexOf('Listenable.merge(<Listenable>[', railStart);
+    final int mergeStart = src.indexOf(
+      'Listenable.merge(<Listenable>[',
+      railStart,
+    );
     expect(mergeStart, greaterThanOrEqualTo(0));
     final int mergeEnd = src.indexOf('])', mergeStart);
     expect(mergeEnd, greaterThan(mergeStart));
@@ -56,14 +58,26 @@ void main() {
     final int end = src.indexOf('Widget _buildVideoSideActionRail(', start);
     expect(end, greaterThan(start));
     final String body = src.substring(start, end);
-    expect(body.contains('opaque: false'), isTrue,
-        reason: 'keep-alive 不阻断指针下探（按钮点击 / 画面 hover 不受影响，沿 BUG-198 纪律）');
-    expect(body.contains('_railHovered.value = true'), isTrue,
-        reason: '进 rail 置 _railHovered=true，顶住 rail 显示');
-    expect(body.contains('_pokeControlsVisible()'), isTrue,
-        reason: '进 rail 续命 media_kit 控制条（其自身设计的续命路径）');
-    expect(body.contains('_railHovered.value = false'), isTrue,
-        reason: '出 rail 置 false，可见性回落到 _videoControlsVisible');
+    expect(
+      body.contains('opaque: false'),
+      isTrue,
+      reason: 'keep-alive 不阻断指针下探（按钮点击 / 画面 hover 不受影响，沿 BUG-198 纪律）',
+    );
+    expect(
+      body.contains('_railHovered.value = true'),
+      isTrue,
+      reason: '进 rail 置 _railHovered=true，顶住 rail 显示',
+    );
+    expect(
+      body.contains('_pokeControlsVisible()'),
+      isTrue,
+      reason: '进 rail 续命 media_kit 控制条（其自身设计的续命路径）',
+    );
+    expect(
+      body.contains('_railHovered.value = false'),
+      isTrue,
+      reason: '出 rail 置 false，可见性回落到 _videoControlsVisible',
+    );
   });
 
   test('hover keep-alive 真正包住按钮列（不是整片 Positioned.fill）', () {
@@ -72,21 +86,36 @@ void main() {
     final int next = src.indexOf('Widget _videoWithSubtitlePanel(', railForIdx);
     expect(next, greaterThan(railForIdx));
     final String railFor = src.substring(railForIdx, next);
-    expect(railFor.contains('_railHoverKeepAlive('), isTrue,
-        reason: 'keep-alive 应包在单条 rail 的按钮列上（非整片 fill）');
+    expect(
+      railFor.contains('_railHoverKeepAlive('),
+      isTrue,
+      reason: 'keep-alive 应包在单条 rail 的按钮列上（非整片 fill）',
+    );
   });
 
   test('字幕盒 hover 唤回光标 + 续命控制条（_handleSubtitleHover，BUG-284）', () {
-    expect(src.contains('void _handleSubtitleHover(bool hovering)'), isTrue,
-        reason: '应有字幕盒 hover 处理 _handleSubtitleHover');
+    expect(
+      src.contains('void _handleSubtitleHover(bool hovering)'),
+      isTrue,
+      reason: '应有字幕盒 hover 处理 _handleSubtitleHover',
+    );
     final int start = src.indexOf('void _handleSubtitleHover(bool hovering)');
     final int end = src.indexOf('\n  }', start);
     final String body = src.substring(start, end);
-    expect(body.contains('_setCursorHidden(false)'), isTrue,
-        reason: 'hover 字幕盒应唤回光标（顶层 _cursorHidden 胜出层让位）');
-    expect(body.contains('_pokeControlsVisible()'), isTrue,
-        reason: 'hover 字幕盒应续命控制条（避免 media_kit mount=false 自隐光标）');
-    expect(src.contains('onHoverChanged: _handleSubtitleHover'), isTrue,
-        reason: 'VideoSubtitleOverlay 应接 onHoverChanged: _handleSubtitleHover');
+    expect(
+      body.contains('_setCursorHidden(false)'),
+      isTrue,
+      reason: 'hover 字幕盒应唤回光标（顶层 _cursorHidden 胜出层让位）',
+    );
+    expect(
+      body.contains('_pokeControlsVisible()'),
+      isTrue,
+      reason: 'hover 字幕盒应续命控制条（避免 media_kit mount=false 自隐光标）',
+    );
+    expect(
+      src.contains('onHoverChanged: _handleSubtitleHover'),
+      isTrue,
+      reason: 'VideoSubtitleOverlay 应接 onHoverChanged: _handleSubtitleHover',
+    );
   });
 }

@@ -14,22 +14,38 @@ import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_engine.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_package.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_server.dart';
+import 'package:fushi_engine/tts/local/local_service_support.dart'
+    show LocalInstallRemoveException;
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart'
+    show localInstallRemoveFailureText;
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
     show GlassSettingsRenderer;
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 打开本页。返回在本页新建的声音预设 id（没新建返回 null）。
 Future<String?> openGptSovitsLocalPage(
@@ -180,7 +196,14 @@ class _GptSovitsLocalPageState extends State<GptSovitsLocalPage> {
       destructive: deleteFiles,
     );
     if (!confirmed) return;
-    await _engine.remove(deleteFiles: deleteFiles);
+    try {
+      await _engine.remove(deleteFiles: deleteFiles);
+    } on LocalInstallRemoveException catch (error) {
+      FushiToast.show(
+        msg: localInstallRemoveFailureText(error),
+        severity: ToastSeverity.error,
+      );
+    }
   }
 
   Future<void> _showLog() async {

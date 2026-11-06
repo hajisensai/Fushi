@@ -1,0 +1,227 @@
+/// 「流式播放这一本 / 这一集」的编排：书库标签页只调这里，不碰导入细节。
+///
+/// 流程：同一条目（播客再加单集）已经建过书就直接复用，不重复导入；否则取字幕（本机
+/// 文件，或服务器条目里的文件）、取封面、按服务器音轨偏移切好时间轴、生成正文并落库。
+/// 复用时顺手比对服务器现在的音轨表——服务器重扫过就按新偏移重切字幕。
+library;
+
+import 'dart:io';
+
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart'
+    show kLearningLanguageCode;
+import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
+import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
+import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subtitle_book.dart';
+import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subtitle_match.dart';
+import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
+
+/// 字幕从哪来。
+sealed class AudiobookshelfSubtitleChoice {
+  const AudiobookshelfSubtitleChoice();
+}
+
+/// 用户选的本机文件。
+class LocalSubtitleChoice extends AudiobookshelfSubtitleChoice {
+  const LocalSubtitleChoice(this.path);
+  final String path;
+}
+
+/// 不挂字幕：当普通有声书 / 播客听，之后可在阅读器里补字幕。
+class NoSubtitleChoice extends AudiobookshelfSubtitleChoice {
+  const NoSubtitleChoice();
+}
+
+/// 服务器条目文件夹里的字幕文件。
+class ServerSubtitleChoice extends AudiobookshelfSubtitleChoice {
+  const ServerSubtitleChoice(this.file);
+  final AudiobookshelfLibraryFile file;
+}
+
+/// app 侧的服务器字幕推荐：规则见 [matchAudiobookshelfSubtitle]；学习语言取
+/// [kLearningLanguageCode]。`autoAttach` = 流式建书时直接挂上；否则只是选择框里的
+/// 第一项；null = 没有推荐。
+AudiobookshelfSubtitleMatch? suggestServerSubtitle(
+  AudiobookshelfItemDetail detail, {
+  AudiobookshelfEpisode? episode,
+}) => matchAudiobookshelfSubtitle(
+  detail,
+  episode: episode,
+  langCode: kLearningLanguageCode,
+);
+
+/// 流式建书用哪份字幕：推荐**足够确定**时直接挂上服务器那份（不弹框），否则交给
+/// [ask]（选择框，推荐的排第一）。条目页的唯一入口，抽成纯函数供行为测试。
+Future<AudiobookshelfSubtitleChoice?> resolveStreamSubtitleChoice({
+  required AudiobookshelfSubtitleMatch? match,
+  required Future<AudiobookshelfSubtitleChoice?> Function() ask,
+}) async {
+  if (match != null && match.autoAttach) {
+    return ServerSubtitleChoice(match.file);
+  }
+  return ask();
+}
+
+class AudiobookshelfStreamService {
+  AudiobookshelfStreamService({
+    required this.db,
+    required this.api,
+    required this.serverConfigId,
+    http.Client Function()? httpClient,
+    Directory? tempDir,
+  }) : _httpClient = httpClient ?? createAppHttpIoClient,
+       _tempDir = tempDir;
+
+  final FushiDatabase db;
+  final AudiobookshelfApi api;
+  final String serverConfigId;
+  final http.Client Function() _httpClient;
+  final Directory? _tempDir;
+
+  SrtBookRepository get _books => SrtBookRepository(db);
+  RemoteAudioBindingRepository get _bindings =>
+      RemoteAudioBindingRepository(db);
+
+  /// 这个条目（单集）已经建好的书；没有为 null。
+  Future<SrtBook?> findExisting({
+    required String itemId,
+    String? episodeId,
+  }) async {
+    final RemoteAudioBinding? binding = await _bindings.findForItem(
+      serverConfigId: serverConfigId,
+      itemId: itemId,
+      episodeId: episodeId,
+    );
+    return binding == null ? null : _books.findByUid(binding.srtBookUid);
+  }
+
+  /// 音轨表：播客取这一集的唯一音频，书取全部音轨。
+  static List<RemoteAudioTrack> tracksFor(
+    AudiobookshelfItemDetail detail,
+    AudiobookshelfEpisode? episode,
+  ) => episode != null
+      ? remoteTracksOf(<AudiobookshelfTrack>[episode.track])
+      : remoteTracksOf(detail.tracks);
+
+  /// 已建好的书：服务器重扫后音轨表变了就按新偏移重切字幕。返回是否重切过。
+  Future<bool> refreshExisting({
+    required SrtBook book,
+    required AudiobookshelfItemDetail detail,
+    AudiobookshelfEpisode? episode,
+  }) => resplitAudiobookshelfSubtitleBook(
+    repo: _books,
+    bindings: _bindings,
+    srtBookUid: book.uid,
+    currentTracks: tracksFor(detail, episode),
+  );
+
+  /// 新建一本流式字幕书。书名：书取条目标题；播客单集取「节目 – 单集」，既好认也不
+  /// 会和同节目别的单集撞名（正文 EPUB 按书名去重）。
+  Future<SrtBook> create({
+    required AudiobookshelfItem item,
+    required AudiobookshelfItemDetail detail,
+    AudiobookshelfEpisode? episode,
+    required AudiobookshelfSubtitleChoice subtitle,
+    DuplicatePolicy policy = const DuplicatePolicy.suffix(),
+    StandaloneSubtitleBookProgress? onProgress,
+  }) async {
+    final List<RemoteAudioTrack> tracks = tracksFor(detail, episode);
+    if (tracks.isEmpty) {
+      throw StateError('Audiobookshelf item ${item.id} has no audio tracks');
+    }
+
+    final String? subtitlePath;
+    final String origin;
+    // 从服务器取下来的字幕下载到持久根下的暂存目录（AudiobookStorage.stagingDir，
+    // 与书的持久目录同卷），导入的持久化步骤把它 rename 进这本书的持久目录
+    // （adoptSubtitleFile）。成功路径这里不删——删除失败会盖掉已成功落库的建书
+    // 结果；导入失败时（已回滚）才删掉还留在暂存目录里的那份。
+    File? staged;
+    switch (subtitle) {
+      case LocalSubtitleChoice(:final String path):
+        subtitlePath = path;
+        origin = RemoteAudioBinding.subtitleOriginLocal;
+      case NoSubtitleChoice():
+        subtitlePath = null;
+        origin = RemoteAudioBinding.subtitleOriginNone;
+      case ServerSubtitleChoice(:final AudiobookshelfLibraryFile file):
+        staged = await downloadAudiobookshelfSubtitle(
+          api: api,
+          itemId: item.id,
+          file: file,
+          tempDir: await AudiobookStorage.stagingDir(),
+        );
+        subtitlePath = staged.path;
+        origin = RemoteAudioBinding.subtitleOriginServer(file.ino);
+    }
+
+    final String title = episode == null
+        ? item.title
+        : '${item.title} – ${episode.title}';
+    try {
+      return await importAudiobookshelfSubtitleBook(
+        db: db,
+        repo: _books,
+        bindings: _bindings,
+        serverConfigId: serverConfigId,
+        itemId: item.id,
+        episodeId: episode?.id,
+        tracks: tracks,
+        title: title,
+        author: item.authorName,
+        subtitlePath: subtitlePath,
+        adoptSubtitleFile: staged != null,
+        subtitleOrigin: origin,
+        policy: policy,
+        tempDir: _tempDir,
+        persistCover: (Directory persistDir) =>
+            _persistCover(persistDir, item.id),
+        onProgress: onProgress,
+      );
+    } catch (_) {
+      await _discardStagedSubtitle(staged);
+      rethrow;
+    }
+  }
+
+  /// 建书失败后删掉还留在暂存目录里的服务器字幕（导入已回滚；已被接管的不在原处）。
+  /// 只在失败路径上跑，删不掉记日志——不能盖掉导入失败的真实原因。
+  Future<void> _discardStagedSubtitle(File? staged) async {
+    if (staged == null) return;
+    try {
+      if (staged.existsSync()) await staged.delete();
+    } catch (e, stack) {
+      engineLog.log('AudiobookshelfStreamService.discardStaged', e, stack);
+    }
+  }
+
+  /// 封面是免鉴权路由（`/api/items/:id/cover`）。取不到不算失败——书没封面照样能用。
+  Future<String?> _persistCover(Directory persistDir, String itemId) async {
+    final http.Client client = _httpClient();
+    try {
+      final http.Response response = await client
+          .get(api.coverUri(itemId, width: 600))
+          .timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200 || response.bodyBytes.isEmpty) return null;
+      final String type = response.headers['content-type'] ?? '';
+      final String ext = type.contains('png')
+          ? '.png'
+          : type.contains('webp')
+          ? '.webp'
+          : '.jpg';
+      final File file = File(p.join(persistDir.path, 'cover$ext'));
+      await file.writeAsBytes(response.bodyBytes, flush: true);
+      return file.path;
+    } catch (_) {
+      return null;
+    } finally {
+      client.close();
+    }
+  }
+}

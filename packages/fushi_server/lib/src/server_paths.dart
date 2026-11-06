@@ -23,7 +23,8 @@ class ServerPaths extends EnginePaths {
   Directory get syncData => Directory(p.join(dataDir, 'interconnect'));
 
   /// 远程 OCR 作业的上传页图（TTL 自清理）。
-  Directory get mangaOcrJobs => Directory(p.join(syncData.path, 'manga_ocr_jobs'));
+  Directory get mangaOcrJobs =>
+      Directory(p.join(syncData.path, 'manga_ocr_jobs'));
 
   /// 通用任务（ASR 等）的输入/产物。
   Directory get hostJobs => Directory(p.join(support.path, 'host_jobs'));
@@ -39,7 +40,8 @@ class ServerPaths extends EnginePaths {
       Directory(p.join(support.path, 'interconnect_profiles'));
 
   /// 内置 torrent 引擎的 fastResume 目录（与 app 的 `<support>/torrent/resume` 同义）。
-  Directory get torrentResume => Directory(p.join(support.path, 'torrent', 'resume'));
+  Directory get torrentResume =>
+      Directory(p.join(support.path, 'torrent', 'resume'));
 
   Future<void> ensureLayout() async {
     for (final Directory d in <Directory>[

@@ -5,7 +5,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:fushi/src/mining/galgame_cover_resolver.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 「添加游戏」共用动作：文件选择器选一个 `.exe` → 查重 → 落库 → 后台补封面。
 ///
@@ -36,10 +37,7 @@ Future<void> addGameViaFilePicker(
     return; // 用户取消
   }
   if (filterOutDuplicateGameExes(repo.games, <String>[exe]).isEmpty) {
-    FushiToast.show(
-      msg: t.game_already_added,
-      severity: ToastSeverity.warning,
-    );
+    FushiToast.show(msg: t.game_already_added, severity: ToastSeverity.warning);
     return; // 已在库里：不重复添加
   }
   final GalgameEntry entry = newGalgameEntryFromExe(exe);
@@ -65,10 +63,7 @@ Future<void> addGamesFromPaths(
   await repo.load();
   final List<String> exes = filterOutDuplicateGameExes(repo.games, paths);
   if (exes.isEmpty) {
-    FushiToast.show(
-      msg: t.game_drop_no_exe,
-      severity: ToastSeverity.warning,
-    );
+    FushiToast.show(msg: t.game_drop_no_exe, severity: ToastSeverity.warning);
     return;
   }
   // 批内 id 用「基准时刻 + 序号微秒」错开，避免同微秒撞 id。

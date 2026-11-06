@@ -17,28 +17,33 @@ void main() {
     String? country,
     String? script,
     TargetPlatform platform = TargetPlatform.windows,
-  }) =>
-      appUiFontChain(
-        customFamilies: custom,
-        locale: Locale.fromSubtags(
-          languageCode: locale,
-          scriptCode: script,
-          countryCode: country,
-        ),
-        platform: platform,
-      );
+  }) => appUiFontChain(
+    customFamilies: custom,
+    locale: Locale.fromSubtags(
+      languageCode: locale,
+      scriptCode: script,
+      countryCode: country,
+    ),
+    platform: platform,
+  );
 
   group('显示语言决定链首（BUG-068：界面字形跟 appLocale，不跟日语阅读语言）', () {
     test('zh-CN 界面 → 简中字体打头，而不是日文字体', () {
       final List<String> windows = chain(locale: 'zh', country: 'CN');
       expect(windows.first, 'Microsoft YaHei UI');
 
-      final List<String> android =
-          chain(locale: 'zh', country: 'CN', platform: TargetPlatform.android);
+      final List<String> android = chain(
+        locale: 'zh',
+        country: 'CN',
+        platform: TargetPlatform.android,
+      );
       expect(android.first, 'Noto Sans CJK SC');
 
-      final List<String> mac =
-          chain(locale: 'zh', country: 'CN', platform: TargetPlatform.macOS);
+      final List<String> mac = chain(
+        locale: 'zh',
+        country: 'CN',
+        platform: TargetPlatform.macOS,
+      );
       expect(mac.first, 'PingFang SC');
     });
 
@@ -46,8 +51,11 @@ void main() {
       // Han 统一码位下繁简字形对读者可见（门/門），共用一条链等于放弃字形正确性。
       expect(chain(locale: 'zh', country: 'HK').first, 'Microsoft JhengHei UI');
       expect(
-        chain(locale: 'zh', country: 'TW', platform: TargetPlatform.macOS)
-            .first,
+        chain(
+          locale: 'zh',
+          country: 'TW',
+          platform: TargetPlatform.macOS,
+        ).first,
         'PingFang TC',
       );
       // 显式 script 子标签优先于地区推断。
@@ -80,8 +88,10 @@ void main() {
     });
 
     test('en 界面 + 有自定义字体 → 自定义打头，CJK 只做缺字兜底', () {
-      final List<String> result =
-          chain(custom: <String>['Inter'], locale: 'en');
+      final List<String> result = chain(
+        custom: <String>['Inter'],
+        locale: 'en',
+      );
       expect(result.first, 'Inter');
       // 主字体存在 → 链只在缺字时生效，不影响拉丁，可以放心追加 CJK。
       expect(result, contains('Yu Gothic UI'));
@@ -113,15 +123,20 @@ void main() {
         1,
         reason: '重复家族名只会拖慢解析，且让「第几个生效」无法推理',
       );
-      expect(result.where((String f) => f == 'Microsoft YaHei UI').length, 1,
-          reason: '用户手动加的系统字体名不该在语言链里再出现一次');
+      expect(
+        result.where((String f) => f == 'Microsoft YaHei UI').length,
+        1,
+        reason: '用户手动加的系统字体名不该在语言链里再出现一次',
+      );
       expect(result, isNot(contains('   ')));
       expect(result, isNot(contains('')));
     });
 
     test('自定义字体名两端空白被裁掉（否则引擎按原样比对家族名，永远解析不到）', () {
-      expect(chain(custom: <String>['  My Gothic  '], locale: 'en').first,
-          'My Gothic');
+      expect(
+        chain(custom: <String>['  My Gothic  '], locale: 'en').first,
+        'My Gothic',
+      );
     });
   });
 
@@ -135,10 +150,16 @@ void main() {
       // 弱断言「日文在显示语言之后」是废话——显示语言本来就在最前。真正要钉住的是
       // 日文在**兜底段内部**排第一：假名与日文专用汉字在中文字体里缺字率最高，把它
       // 挪到繁中/韩文之后，最常见的缺字就会先撞上两套不相干的 face。
-      expect(yuGothic, lessThan(result.indexOf('Microsoft JhengHei UI')),
-          reason: '日文兜底必须排在繁中之前');
-      expect(yuGothic, lessThan(result.indexOf('Malgun Gothic')),
-          reason: '日文兜底必须排在韩文之前');
+      expect(
+        yuGothic,
+        lessThan(result.indexOf('Microsoft JhengHei UI')),
+        reason: '日文兜底必须排在繁中之前',
+      );
+      expect(
+        yuGothic,
+        lessThan(result.indexOf('Malgun Gothic')),
+        reason: '日文兜底必须排在韩文之前',
+      );
     });
 
     test('日文界面链尾含简中字体（中文书名/界面文案的缺字兜底）', () {
@@ -152,8 +173,11 @@ void main() {
         final List<String> result = chain(locale: lang);
         expect(result, contains('Yu Gothic UI'), reason: '$lang 缺日文兜底');
         expect(result, contains('Microsoft YaHei UI'), reason: '$lang 缺简中兜底');
-        expect(result, contains('Microsoft JhengHei UI'),
-            reason: '$lang 缺繁中兜底');
+        expect(
+          result,
+          contains('Microsoft JhengHei UI'),
+          reason: '$lang 缺繁中兜底',
+        );
         expect(result, contains('Malgun Gothic'), reason: '$lang 缺韩文兜底');
       }
     });
@@ -163,13 +187,19 @@ void main() {
       expect(windows, isNot(contains('PingFang SC')));
       expect(windows, isNot(contains('Noto Sans CJK SC')));
 
-      final List<String> apple =
-          chain(locale: 'zh', country: 'CN', platform: TargetPlatform.macOS);
+      final List<String> apple = chain(
+        locale: 'zh',
+        country: 'CN',
+        platform: TargetPlatform.macOS,
+      );
       expect(apple, isNot(contains('Microsoft YaHei UI')));
       expect(apple, contains('Hiragino Sans'));
 
-      final List<String> linux =
-          chain(locale: 'zh', country: 'CN', platform: TargetPlatform.linux);
+      final List<String> linux = chain(
+        locale: 'zh',
+        country: 'CN',
+        platform: TargetPlatform.linux,
+      );
       expect(linux, isNot(contains('Microsoft YaHei UI')));
       expect(linux, contains('Noto Sans CJK JP'));
     });

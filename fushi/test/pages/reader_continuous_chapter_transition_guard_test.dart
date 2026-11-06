@@ -68,12 +68,17 @@ void main() {
     final int navigate = body.indexOf("_handlePageTurnLimit('");
     expect(navigate, isNonNegative);
     const String discard = '_discardIdleChapterTransitionSnapshot()';
-    expect(body.indexOf(discard), isNonNegative,
-        reason: '早退路径（分页在飞 / 无目标章）必须丢弃已拿到的快照');
-    expect(body.indexOf(discard), lessThan(navigate),
-        reason: '早退丢弃要排在跨章调用之前');
-    expect(body.lastIndexOf(discard), greaterThan(navigate),
-        reason: '跨章被 _handlePageTurnLimit 内部守卫吃掉时同样要丢弃');
+    expect(
+      body.indexOf(discard),
+      isNonNegative,
+      reason: '早退路径（分页在飞 / 无目标章）必须丢弃已拿到的快照',
+    );
+    expect(body.indexOf(discard), lessThan(navigate), reason: '早退丢弃要排在跨章调用之前');
+    expect(
+      body.lastIndexOf(discard),
+      greaterThan(navigate),
+      reason: '跨章被 _handlePageTurnLimit 内部守卫吃掉时同样要丢弃',
+    );
 
     // 丢弃器本身必须只在「导航没开始」时动手——否则会把正在用的那帧删掉，
     // 加载期又退回纯黑屏。
@@ -81,9 +86,11 @@ void main() {
       source,
       'void _discardIdleChapterTransitionSnapshot()',
     );
-    expect(containsCodeLine(discardBody, 'if (!_readerContentReady) return;'),
-        isTrue,
-        reason: '_readerContentReady==false 说明导航已开始，那帧还在用，不能丢');
+    expect(
+      containsCodeLine(discardBody, 'if (!_readerContentReady) return;'),
+      isTrue,
+      reason: '_readerContentReady==false 说明导航已开始，那帧还在用，不能丢',
+    );
   });
 
   test('加载遮罩优先显示旧帧，目标章 ready 后淡出并释放缓存', () {

@@ -12,7 +12,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 ///
 /// 根因修复：按指针类型消除这条特殊情况——粗指针（触屏，`@media (pointer: coarse)`）
 /// 禁用原生 user-select，长按拖选只留我们的查词高亮；细指针（鼠标，桌面）不受影响，
-/// 保住桌面 Ctrl+C 复制（caret.part.dart readerShouldHandleDesktopCopy）与右键导出
+/// 保住桌面 Ctrl+C 复制（caret.part.dart desktopShouldHandleCopyGesture）与右键导出
 /// （chrome.part.dart _showReaderTextContextMenu）所依赖的 window.getSelection() 原生选区。
 ///
 /// 复现只在真触屏 WebView 渲染时可见，widget 测试照不到 WebView 原生选区，故这里用
@@ -45,27 +45,37 @@ void main() {
   }
 
   test('触屏（pointer: coarse）禁用原生 user-select，消除长按拖选的原生蓝选区', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = await defaultSettings(db);
 
     final String css = ReaderContentStyles.css(settings: settings);
 
     final String? block = coarsePointerBlock(css);
-    expect(block, isNotNull,
-        reason: '缺 @media (pointer: coarse) 触屏门控——长按拖选会复活原生蓝选区');
-    expect(block, contains('user-select: none'),
-        reason: '触屏块必须禁用 user-select，压掉原生长按拖选选区');
-    expect(block, contains('-webkit-user-select: none'),
-        reason: '需带 -webkit- 前缀覆盖 WebKit/Blink 系 WebView');
-    expect(block, contains('-webkit-touch-callout: none'),
-        reason: '触屏块必须禁用 iOS 长按 callout（原生选区/放大镜 UI 的一部分）');
+    expect(
+      block,
+      isNotNull,
+      reason: '缺 @media (pointer: coarse) 触屏门控——长按拖选会复活原生蓝选区',
+    );
+    expect(
+      block,
+      contains('user-select: none'),
+      reason: '触屏块必须禁用 user-select，压掉原生长按拖选选区',
+    );
+    expect(
+      block,
+      contains('-webkit-user-select: none'),
+      reason: '需带 -webkit- 前缀覆盖 WebKit/Blink 系 WebView',
+    );
+    expect(
+      block,
+      contains('-webkit-touch-callout: none'),
+      reason: '触屏块必须禁用 iOS 长按 callout（原生选区/放大镜 UI 的一部分）',
+    );
   });
 
   test('禁用被触屏门控包住，不是无条件全局 user-select:none（保桌面复制/导出）', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = await defaultSettings(db);
 
@@ -77,10 +87,16 @@ void main() {
     final String? block = coarsePointerBlock(css);
     expect(block, isNotNull);
     final String withoutCoarse = css.replaceFirst(block!, '');
-    expect(withoutCoarse, isNot(contains('body * {')),
-        reason: '触屏门控外不得有 body * 无条件 user-select:none（会杀桌面复制）');
+    expect(
+      withoutCoarse,
+      isNot(contains('body * {')),
+      reason: '触屏门控外不得有 body * 无条件 user-select:none（会杀桌面复制）',
+    );
     // 剩下的 user-select:none 应只服务振假名列（rt/rp），细指针桌面正文可拖选。
-    expect(withoutCoarse, contains('ruby rt, ruby rp {'),
-        reason: '振假名 rt/rp 的 user-select:none 历史规则应保留');
+    expect(
+      withoutCoarse,
+      contains('ruby rt, ruby rp {'),
+      reason: '振假名 rt/rp 的 user-select:none 历史规则应保留',
+    );
   });
 }

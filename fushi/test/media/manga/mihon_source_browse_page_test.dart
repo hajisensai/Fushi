@@ -130,7 +130,9 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text('Chapter 1'), findsOneWidget);
-      expect(find.text('Add to manga shelf'), findsOneWidget);
+      // 2048 宽走两栏（≥ kMediaDetailTwoPaneMinWidth）：左栏紧凑 hero 的次按钮
+      // 是图标钮，文案进 tooltip。
+      expect(find.byTooltip('Add to manga shelf'), findsOneWidget);
     },
   );
 
@@ -375,11 +377,88 @@ void main() {
         find.byKey(const ValueKey<String>('manga_series_open_website')),
       );
       await tester.pumpAndSettle();
-      expect(launched, <Uri>[Uri.parse('https://fixture.invalid/manga/fixture')]);
+      expect(launched, <Uri>[
+        Uri.parse('https://fixture.invalid/manga/fixture'),
+      ]);
       expect(tester.takeException(), isNull);
     },
   );
+
+  // 审查（PR #2986）：漫画 / 视频源浏览页错误区的登录入口原先没有测试。
+  group('浏览页错误区的登录入口', () {
+    const ValueKey<String> loginKey = ValueKey<String>(
+      'mihon_source_login_action',
+    );
+
+    Future<void> pumpFailingBrowse(
+      WidgetTester tester,
+      _BrowseRuntime browseRuntime,
+    ) async {
+      browseRuntime.popularFailure = const MihonRuntimeException(
+        'HTTP_401',
+        'login required',
+      );
+      late MihonManager browseManager;
+      await tester.runAsync(() async {
+        await database.replaceMangaOnlineSources(
+          'org.example.fixture',
+          <MangaOnlineSourcesCompanion>[
+            MangaOnlineSourcesCompanion.insert(
+              extensionPackage: 'org.example.fixture',
+              sourceId: '9223372036854775807',
+              name: 'Raw Otaku',
+              language: 'en',
+              baseUrl: const Value('https://raw.example'),
+            ),
+          ],
+        );
+        browseManager = MihonManager(
+          database: database,
+          rootDirectory: root,
+          runtime: browseRuntime,
+        );
+        await browseManager.initialise();
+      });
+      addTearDown(browseManager.dispose);
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.light(useMaterial3: true),
+          home: MihonSourceBrowsePage(
+            manager: browseManager,
+            target: MihonInstalledTarget(browseManager.sources.single),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('能登录的源：加载失败时错误旁给「登录」，不被隐形的验证按钮挤偏', (WidgetTester tester) async {
+      await pumpFailingBrowse(tester, _LoginBrowseRuntime());
+      expect(find.byKey(loginKey), findsOneWidget);
+      final Finder wrap = find
+          .ancestor(of: find.byKey(loginKey), matching: find.byType(Wrap))
+          .first;
+      expect(
+        tester.getSize(wrap).width,
+        tester.getSize(find.byKey(loginKey)).width,
+        reason: '零尺寸的 Cloudflare 按钮仍占 spacing 时 Wrap 会比登录按钮宽 8',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('运行时不接受 app 内登录：不给入口', (WidgetTester tester) async {
+      await pumpFailingBrowse(tester, _BrowseRuntime());
+      expect(find.byKey(loginKey), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  });
 }
+
+/// 接受 app 内登录（扩展直接读平台浏览器 cookie，与 Android 运行时同一能力）。
+class _LoginBrowseRuntime extends _BrowseRuntime
+    implements BrowserCookieMihonRuntime {}
 
 class _BrowseRuntime extends Fake
     implements MihonRuntime, ChallengeMihonRuntime {
@@ -399,6 +478,9 @@ class _BrowseRuntime extends Fake
     title: 'Raw Otaku fixture',
   );
   Completer<MihonMangaPage>? popularGate;
+
+  /// 非空时 [getPopular] 抛它（源站要登录 / 拒绝访问）。
+  Exception? popularFailure;
   Completer<MihonMangaPage>? searchGate;
   Map<int, MihonMangaPage>? popularPages;
 
@@ -419,13 +501,17 @@ class _BrowseRuntime extends Fake
     MihonSource source, {
     required int page,
     List<MihonPreference> preferences = const <MihonPreference>[],
-  }) async => popularGate != null
-      ? popularGate!.future
-      : popularPages?[page] ??
-            const MihonMangaPage(
-              items: <MihonManga>[manga],
-              hasNextPage: false,
-            );
+  }) async {
+    final Exception? failure = popularFailure;
+    if (failure != null) throw failure;
+    return popularGate != null
+        ? popularGate!.future
+        : popularPages?[page] ??
+              const MihonMangaPage(
+                items: <MihonManga>[manga],
+                hasNextPage: false,
+              );
+  }
 
   @override
   Future<MihonMangaPage> search(

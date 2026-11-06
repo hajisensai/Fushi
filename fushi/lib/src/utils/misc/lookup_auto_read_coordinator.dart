@@ -8,8 +8,8 @@ class LookupAutoReadCoordinator {
   LookupAutoReadCoordinator({
     Duration dedupeWindow = const Duration(milliseconds: 800),
     DateTime Function()? now,
-  })  : _dedupeWindow = dedupeWindow,
-        _now = now ?? DateTime.now;
+  }) : _dedupeWindow = dedupeWindow,
+       _now = now ?? DateTime.now;
 
   static const String defaultSource = 'lookup';
 

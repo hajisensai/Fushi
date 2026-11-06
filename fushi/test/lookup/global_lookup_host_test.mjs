@@ -615,6 +615,84 @@ function commitLatestGeometry(host) {
   assert.strictEqual(host.topPopupId(), null, 'topPopupId null when empty');
 }
 
+// 游戏内嵌查词冷启动预热：会话启用时 prewarmStatic 把静态段装进备用 realm，首次查词
+// 的根卡直接接管它——根卡只注入词条与渲染体，不再携带、也不再索要静态段。
+{
+  const { host, document } = freshHost();
+  const warmIframe = standbyShellsOf(document)[0].children.find(
+    (c) => c.tagName === 'IFRAME',
+  );
+  hostPostLog = [];
+  assert.strictEqual(
+    host.prewarmStatic(revisionDescriptor(
+      '__prewarm__', 0, 71, '', '', '/* STATIC-HEAD-71 */', '/* STATIC-TAIL-71 */',
+    )),
+    true,
+    'prewarm accepts a self-contained static descriptor',
+  );
+  while (pendingAnimationFrames.length) {
+    pendingAnimationFrames.shift()();
+  }
+  flushTimers();
+  assert.ok(evalLog.some((e) =>
+    e.frameId.startsWith('__global-lookup-standby-') &&
+      /STATIC-HEAD-71/.test(e.code)),
+    'prewarm installs the static head into the standby realm before any lookup');
+  assert.strictEqual(shellsOf(document).length, 0,
+    'prewarm creates no visible card shell');
+  assert.ok(!hostPostLog.some((m) => m.handler === 'overlaySize'),
+    'prewarm is not a lookup: no geometry is reported');
+
+  evalLog = [];
+  host.renderStack({
+    popups: [revisionDescriptor(
+      'global-lookup-root', -1, 71,
+      '/* ROOT-ENTRIES-71 */', '/* ROOT-RENDER-71 */',
+    )],
+  });
+  const rootShell = shellsOf(document).find(
+    (s) => s.getAttribute('data-frame-id') === 'global-lookup-root',
+  );
+  assert.ok(rootShell, 'root shell exists');
+  assert.strictEqual(
+    rootShell.children.find((c) => c.tagName === 'IFRAME'),
+    warmIframe,
+    'first root takes over the prewarmed realm instead of navigating a new iframe',
+  );
+  assert.ok(rootShell.children.some(
+    (c) => c.className === 'global-lookup-resize-grip'),
+    'an adopted root still gets its resize grip');
+  const rootEval = evalLog.find((e) =>
+    e.frameId === 'global-lookup-root' && /ROOT-ENTRIES-71/.test(e.code));
+  assert.ok(rootEval && !/STATIC-HEAD-71|STATIC-TAIL-71/.test(rootEval.code),
+    'adopted root injects only the dynamic entries/render JS');
+  assert.ok(!hostPostLog.some((m) => m.handler === 'staticSettingsRequired'),
+    'adopted root never asks Dart for the static head');
+}
+
+// 根卡不接管未装好静态段的备用 realm（桌面首查与预热前的行为不变）。
+{
+  const { host, document } = freshHost();
+  const coldIframe = standbyShellsOf(document)[0].children.find(
+    (c) => c.tagName === 'IFRAME',
+  );
+  host.renderStack({
+    popups: [revisionDescriptor(
+      'global-lookup-root', -1, 72,
+      '/* ROOT-ENTRIES-72 */', '/* ROOT-RENDER-72 */',
+      '/* STATIC-HEAD-72 */', '/* STATIC-TAIL-72 */',
+    )],
+  });
+  const rootShell = shellsOf(document).find(
+    (s) => s.getAttribute('data-frame-id') === 'global-lookup-root',
+  );
+  assert.notStrictEqual(
+    rootShell.children.find((c) => c.tagName === 'IFRAME'),
+    coldIframe,
+    'an unprimed standby stays reserved for children',
+  );
+}
+
 // BUG-1833 — the first nested card must consume an already-loaded standby
 // popup realm, and closing/reopening that depth must park/rebind the SAME realm
 // instead of navigating a fresh iframe. Frame ids still rotate so a late message
@@ -1472,6 +1550,37 @@ function flushTimers() {
     'popupRendered flips content-ready (authoritative reveal signal)');
   assert.strictEqual(host.frameGateState('frame-0').visible, true,
     'shell reveals once popupRendered + geometry are both in');
+}
+
+// 25b. 大结果词条异步取回（descriptor.entriesAsync）：根卡渲染完之前不向原生报尺寸，
+//      否则窗口 / 游戏卡片会先以透明外框亮出来；popupRendered 一到立即补报。
+{
+  const { host, document } = freshHost();
+  const root = revisionDescriptor(
+    'async-root', -1, 91,
+    '/* ASYNC-ENTRIES */', '',
+    '/* ASYNC-HEAD */', '/* ASYNC-TAIL */',
+  );
+  root.entriesAsync = true;
+  hostPostLog = [];
+  host.renderStack({ popups: [root] });
+  const shell = shellsOf(document)[0];
+  const iframe = shell.children.find((c) => c.tagName === 'IFRAME');
+  iframe._listeners.load[0]();
+  host.measureAndReport();
+  assert.ok(!hostPostLog.some((m) => m.handler === 'overlaySize'),
+    'async root reports no geometry before its entries render');
+  iframe.contentWindow.chrome.webview.postMessage({
+    handler: 'popupRendered',
+    args: [200],
+  });
+  flushTimers();
+  while (pendingAnimationFrames.length) {
+    pendingAnimationFrames.shift()();
+  }
+  host.measureAndReport();
+  assert.ok(hostPostLog.some((m) => m.handler === 'overlaySize'),
+    'popupRendered releases the deferred geometry report');
 }
 
 // 26. TODO-1067 (SUB1): the close-X posts dismissPopupAt for ITS layer. (The
@@ -2441,9 +2550,15 @@ function flushTimers() {
   const ready = hostPostLog.find((m) => m.handler === 'captureReady');
   assert.ok(ready, 'matching B epoch publishes captureReady');
   assert.deepStrictEqual(
-    Array.from(ready.args), [500, 400, boxB.geometryEpoch],
+    Array.from(ready.args).slice(0, 3), [500, 400, boxB.geometryEpoch],
     'captureReady carries the exact committed epoch',
   );
+  // args[3] is the latency-trace detail (GalLookupLatencyTrace); Dart only
+  // reads it for the log line, never for the handshake decision.
+  assert.strictEqual(ready.args[3].by, 'raf',
+    'captureReady reports which path released it');
+  assert.ok(typeof ready.args[3].ready === 'number' && ready.args[3].ready >= 0,
+    'captureReady reports arm → release milliseconds');
 
   host.beginLookup('global-lookup-root', {
     source: 'galCard', routeEpoch: 9, lookupEpoch: 5,
@@ -2488,9 +2603,12 @@ function flushTimers() {
   assert.strictEqual(readyAfterTimer.length, 1,
     'bounded fallback publishes captureReady exactly once');
   assert.deepStrictEqual(
-    Array.from(readyAfterTimer[0].args), [500, 400, box.geometryEpoch],
+    Array.from(readyAfterTimer[0].args).slice(0, 3),
+    [500, 400, box.geometryEpoch],
     'timer path preserves physical bounds and committed epoch',
   );
+  assert.strictEqual(readyAfterTimer[0].args[3].by, 'timer',
+    'suspended rAF is reported as a timer release');
   while (pendingAnimationFrames.length) {
     pendingAnimationFrames.shift()();
   }
@@ -2789,6 +2907,53 @@ function flushTimers() {
   host.measureAndReport();
   assert.strictEqual(lastBox().height, 200,
     'BUG-1139 ③: 非法 zoom 回落 1（绝不产生 0/NaN 几何）');
+}
+
+// Z2 — the root scrollHeight's viewport floor is the iframe's own height, and
+// its unit under a zoomed documentElement differs per engine: Chromium reports
+// it unzoomed (H / z), WebKitGTK (Linux card helper) already zoomed (H).
+// Multiplying WebKit's H by z again shrank the shell by z on every measure (a
+// feedback loop seen on the Steam Deck: 437 -> 423 -> 410 ... -> ~30 px). Both
+// engines must measure the shell at its own height and stay there.
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  const shell = shellsOf(document)[0];
+  const iframe = shell.children.find((c) => c.tagName === 'IFRAME');
+  const docEl = iframe.contentDocument.documentElement;
+  const lastBox = () =>
+    hostPostLog.filter((m) => m.handler === 'overlaySize').pop().args[1];
+  iframe.clientHeight = 480;
+  iframe.contentDocument.body.scrollHeight = 200;
+  iframe.contentDocument.body.offsetHeight = 200;
+  docEl.style.zoom = '0.9678';
+
+  // WebKitGTK: viewport floor already in host px.
+  docEl.scrollHeight = 480;
+  docEl.clientHeight = 480;
+  for (let i = 0; i < 3; i++) {
+    iframe.contentDocument.body._observers.forEach((cb) => cb([{ type: 'attributes' }]));
+    host.measureAndReport();
+    assert.strictEqual(lastBox().height, 480,
+      'WebKit viewport floor must not be zoomed again (measure ' + i + ')');
+  }
+
+  // Chromium: the same floor reported unzoomed gives the same result.
+  docEl.scrollHeight = 496;
+  docEl.clientHeight = 496;
+  host.measureAndReport();
+  assert.strictEqual(lastBox().height, 480,
+    'Chromium viewport floor measures the same shell height');
+
+  // Overflowing content is still content: measured with z, capped by the plan.
+  docEl.scrollHeight = 900;
+  host.measureAndReport();
+  assert.strictEqual(lastBox().height, 480,
+    'overflowing root scrollHeight stays capped by the planned frame');
 }
 
 // W1 (BUG-1166) — handleGlobalWheel 把 Ctrl/Alt 作为**显式 flag** 派发进命中的那张

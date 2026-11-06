@@ -5,33 +5,39 @@ import 'package:flutter_test/flutter_test.dart';
 import 'video_fushi_page_source_corpus.dart';
 
 void main() {
-  test('video page locks desktop window aspect ratio from decoded video size',
-      () {
-    final String source =
-        File('lib/src/pages/implementations/video_fushi_page.dart')
-            .readAsStringSync();
+  test(
+    'video page locks desktop window aspect ratio from decoded video size',
+    () {
+      final String source = File(
+        'lib/src/pages/implementations/video_fushi_page.dart',
+      ).readAsStringSync();
 
-    expect(
-      source,
-      contains("import 'package:window_manager/window_manager.dart';"),
-    );
-    expect(
-      source,
-      contains('_lockWindowAspectRatio = appModel.videoLockWindowAspectRatio'),
-    );
-    expect(source, contains('_syncWindowAspectRatioLock'));
-    expect(source, contains('windowManager.setAspectRatio(aspectRatio)'));
-    expect(source, contains('windowManager.setAspectRatio(0)'));
-    expect(source, contains('isDesktopPlatform'));
-    expect(source, contains('controller.videoWidth'));
-    expect(source, contains('controller.videoHeight'));
-  });
+      expect(
+        source,
+        contains("import 'package:window_manager/window_manager.dart';"),
+      );
+      expect(
+        source,
+        contains(
+          '_lockWindowAspectRatio = appModel.videoLockWindowAspectRatio',
+        ),
+      );
+      expect(source, contains('_syncWindowAspectRatioLock'));
+      expect(source, contains('windowManager.setAspectRatio(aspectRatio)'));
+      expect(source, contains('windowManager.setAspectRatio(0)'));
+      expect(source, contains('isDesktopPlatform'));
+      expect(source, contains('controller.videoWidth'));
+      expect(source, contains('controller.videoHeight'));
+    },
+  );
 
   test('video aspect-ratio lock preference defaults off (regression)', () {
-    final String appModel =
-        File('lib/src/models/app_model.dart').readAsStringSync();
-    final String prefs =
-        File('lib/src/models/preferences_repository.dart').readAsStringSync();
+    final String appModel = File(
+      'lib/src/models/app_model.dart',
+    ).readAsStringSync();
+    final String prefs = File(
+      'lib/src/models/preferences_repository.dart',
+    ).readAsStringSync();
 
     expect(appModel, contains('bool get videoLockWindowAspectRatio'));
     expect(appModel, contains('setVideoLockWindowAspectRatio'));
@@ -49,8 +55,7 @@ void main() {
   // 画面缩放/比例偏好（VideoFitMode）。旧实现硬编码窗口 BoxFit.cover、全屏 params.fit；
   // 子B 把窗口 + 全屏两处统一改成 fit: videoFitModeToBoxFit(_videoFitMode)，TODO-257
   // 将新安装默认改为 contain（适应），同时保留用户已有 cover（裁切）/ fill（拉伸）偏好。
-  test('TODO-122/152/257 窗口+全屏 Video 经 videoFitModeToBoxFit 跟随偏好（默认 contain）',
-      () {
+  test('TODO-122/152/257 窗口+全屏 Video 经 videoFitModeToBoxFit 跟随偏好（默认 contain）', () {
     // TODO-590 batch15：全屏路由侧 Video（含 fit: videoFitModeToBoxFit(_videoFitMode)）
     // 随 fullscreen 域搬到 fullscreen.part.dart，故改读合并语料；窗口侧 _buildVideoBody
     // 仍在主壳（语料最前段），其内的窗口侧 fit 锚点不受影响。
@@ -59,15 +64,25 @@ void main() {
     // 窗口模式本体 Video 经偏好换算 fit——锚到 _buildVideoBody 方法之后。
     final int bodyIdx = source.indexOf('Widget _buildVideoBody(');
     expect(bodyIdx, greaterThanOrEqualTo(0));
-    final int fitIdx =
-        source.indexOf('fit: videoFitModeToBoxFit(_videoFitMode)', bodyIdx);
-    final int controlsIdx =
-        source.indexOf('controls: (VideoState state)', bodyIdx);
-    expect(fitIdx, greaterThanOrEqualTo(0),
-        reason: '窗口模式 _buildVideoBody 的 Video 必须经 videoFitModeToBoxFit 跟随偏好');
-    expect(fitIdx, lessThan(controlsIdx),
-        reason:
-            'videoFitModeToBoxFit(_videoFitMode) 必须在 _buildVideoBody 的 Video 参数内');
+    final int fitIdx = source.indexOf(
+      'fit: videoFitModeToBoxFit(_videoFitMode)',
+      bodyIdx,
+    );
+    final int controlsIdx = source.indexOf(
+      'controls: (VideoState state)',
+      bodyIdx,
+    );
+    expect(
+      fitIdx,
+      greaterThanOrEqualTo(0),
+      reason: '窗口模式 _buildVideoBody 的 Video 必须经 videoFitModeToBoxFit 跟随偏好',
+    );
+    expect(
+      fitIdx,
+      lessThan(controlsIdx),
+      reason:
+          'videoFitModeToBoxFit(_videoFitMode) 必须在 _buildVideoBody 的 Video 参数内',
+    );
 
     // 窗口 + 全屏两处都经同一偏好换算（不再窗口硬编码 cover、全屏 params.fit）。
     expect(

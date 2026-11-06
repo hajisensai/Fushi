@@ -1,0 +1,290 @@
+diff --git a/engine/src/flutter/shell/platform/windows/egl/manager.cc b/engine/src/flutter/shell/platform/windows/egl/manager.cc
+index 486f4914..fc8eb561 100644
+--- a/engine/src/flutter/shell/platform/windows/egl/manager.cc
++++ b/engine/src/flutter/shell/platform/windows/egl/manager.cc
+@@ -354,11 +354,20 @@ std::unique_ptr<WindowSurface> Manager::CreateHdrWindowSurface(HWND hwnd,
+   return CreateWindowSurfaceWithConfig(hwnd, width, height, /*hdr=*/true);
+ }
+ 
++std::unique_ptr<WindowSurface> Manager::CreateCompositionWindowSurface(
++    HWND hwnd,
++    size_t width,
++    size_t height) {
++  return CreateWindowSurfaceWithConfig(hwnd, width, height, /*hdr=*/false,
++                                       /*composition=*/true);
++}
++
+ std::unique_ptr<WindowSurface> Manager::CreateWindowSurfaceWithConfig(
+     HWND hwnd,
+     size_t width,
+     size_t height,
+-    bool hdr) {
++    bool hdr,
++    bool composition) {
+   if (!hwnd || !is_valid_) {
+     return nullptr;
+   }
+@@ -391,10 +400,28 @@ std::unique_ptr<WindowSurface> Manager::CreateWindowSurfaceWithConfig(
+                                            EGL_GL_COLORSPACE_SCRGB_LINEAR_EXT,
+                                            EGL_NONE};
+ 
++  // Fushi patch (underlay composition): ANGLE creates the swap chain for a
++  // DComp visual on a topmost target of |hwnd| (CreateTargetForHwnd(hwnd,
++  // TRUE)), premultiplied alpha because |config_| has an alpha channel.
++  const EGLint composition_surface_attributes[] = {EGL_FIXED_SIZE_ANGLE,
++                                                   EGL_TRUE,
++                                                   EGL_WIDTH,
++                                                   static_cast<EGLint>(width),
++                                                   EGL_HEIGHT,
++                                                   static_cast<EGLint>(height),
++                                                   EGL_DIRECT_COMPOSITION_ANGLE,
++                                                   EGL_TRUE,
++                                                   EGL_NONE};
++
++  const EGLint* attributes = surface_attributes;
++  if (hdr) {
++    attributes = hdr_surface_attributes;
++  } else if (composition) {
++    attributes = composition_surface_attributes;
++  }
+   auto const surface = ::eglCreateWindowSurface(
+       display_, hdr ? hdr_config_ : config_,
+-      static_cast<EGLNativeWindowType>(hwnd),
+-      hdr ? hdr_surface_attributes : surface_attributes);
++      static_cast<EGLNativeWindowType>(hwnd), attributes);
+   if (surface == EGL_NO_SURFACE) {
+     LogEGLError("Surface creation failed.");
+     return nullptr;
+@@ -403,6 +430,7 @@ std::unique_ptr<WindowSurface> Manager::CreateWindowSurfaceWithConfig(
+   auto window_surface = std::make_unique<WindowSurface>(
+       display_, render_context_->GetHandle(), surface, width, height);
+   window_surface->set_hdr(hdr);
++  window_surface->set_composition(!hdr && composition);
+   return window_surface;
+ }
+ 
+diff --git a/engine/src/flutter/shell/platform/windows/egl/manager.h b/engine/src/flutter/shell/platform/windows/egl/manager.h
+index 9327530c..89ad31d4 100644
+--- a/engine/src/flutter/shell/platform/windows/egl/manager.h
++++ b/engine/src/flutter/shell/platform/windows/egl/manager.h
+@@ -66,6 +66,16 @@ class Manager {
+                                                                 size_t width,
+                                                                 size_t height);
+ 
++  // Fushi patch (underlay composition): like |CreateWindowSurface| but
++  // presenting through ANGLE's DirectComposition path
++  // (EGL_DIRECT_COMPOSITION_ANGLE): a premultiplied-alpha swap chain on a
++  // topmost DComp visual of |hwnd|, so it is drawn above |hwnd|'s child
++  // windows and transparent pixels show them. 8-bit only.
++  virtual std::unique_ptr<WindowSurface> CreateCompositionWindowSurface(
++      HWND hwnd,
++      size_t width,
++      size_t height);
++
+   // Check if the current thread has a context bound.
+   bool HasContextCurrent();
+ 
+@@ -127,10 +137,12 @@ class Manager {
+   void InitializeHdrConfig();
+ 
+   // Shared implementation of |CreateWindowSurface| / |CreateHdrWindowSurface|.
+-  std::unique_ptr<WindowSurface> CreateWindowSurfaceWithConfig(HWND hwnd,
+-                                                               size_t width,
+-                                                               size_t height,
+-                                                               bool hdr);
++  std::unique_ptr<WindowSurface> CreateWindowSurfaceWithConfig(
++      HWND hwnd,
++      size_t width,
++      size_t height,
++      bool hdr,
++      bool composition = false);
+ 
+   // Initialize the EGL render and resource contexts.
+   bool InitializeContexts();
+diff --git a/engine/src/flutter/shell/platform/windows/egl/window_surface.h b/engine/src/flutter/shell/platform/windows/egl/window_surface.h
+index e5c1c5ae..6ea6eca2 100644
+--- a/engine/src/flutter/shell/platform/windows/egl/window_surface.h
++++ b/engine/src/flutter/shell/platform/windows/egl/window_surface.h
+@@ -45,11 +45,18 @@ class WindowSurface : public Surface {
+   bool is_hdr() const { return is_hdr_; }
+   void set_hdr(bool hdr) { is_hdr_ = hdr; }
+ 
++  // Fushi patch (underlay composition): whether this surface presents through
++  // a DirectComposition topmost visual (premultiplied alpha) instead of an
++  // HWND swap chain.
++  bool is_composition() const { return is_composition_; }
++  void set_composition(bool composition) { is_composition_ = composition; }
++
+  private:
+   size_t width_ = 0;
+   size_t height_ = 0;
+   bool vsync_enabled_ = true;
+   bool is_hdr_ = false;
++  bool is_composition_ = false;
+ 
+   FML_DISALLOW_COPY_AND_ASSIGN(WindowSurface);
+ };
+diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows.cc b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
+index afd18f68..2c05e8f4 100644
+--- a/engine/src/flutter/shell/platform/windows/flutter_windows.cc
++++ b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
+@@ -293,6 +293,14 @@ bool FlutterDesktopViewSetHdrOutput(FlutterDesktopViewRef view,
+   return ViewFromHandle(view)->SetHdrOutput(enabled, sdr_white_nits);
+ }
+ 
++void FlutterDesktopViewSetUnderlayComposition(FlutterDesktopViewRef view,
++                                              bool enabled) {
++  if (view == nullptr) {
++    return;
++  }
++  ViewFromHandle(view)->SetUnderlayComposition(enabled);
++}
++
+ IDXGIAdapter* FlutterDesktopViewGetGraphicsAdapter(FlutterDesktopViewRef view) {
+   auto engine = ViewFromHandle(view)->GetEngine();
+   IDXGIAdapter* adapter;
+diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc b/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
+index 9d6fff0b..1995d725 100644
+--- a/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
++++ b/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
+@@ -867,6 +867,19 @@ FlutterWindowsView::CreateWindowSurfaceForOutput(size_t width,
+   if (manager == nullptr) {
+     return nullptr;
+   }
++  if (underlay_composition_requested()) {
++    std::unique_ptr<egl::WindowSurface> composition_surface =
++        manager->CreateCompositionWindowSurface(GetWindowHandle(), width,
++                                                height);
++    if (composition_surface) {
++      composition_surface_failed_.store(false, std::memory_order_release);
++      return composition_surface;
++    }
++    composition_surface_failed_.store(true, std::memory_order_release);
++    // Child windows then cover the view as with the stock engine.
++    FML_LOG(ERROR) << "Composition window surface creation failed; using the "
++                      "HWND swap chain.";
++  }
+   if (hdr_output_requested() && manager->SupportsHdrSurfaces()) {
+     std::unique_ptr<egl::WindowSurface> hdr_surface =
+         manager->CreateHdrWindowSurface(GetWindowHandle(), width, height);
+@@ -906,6 +919,23 @@ bool FlutterWindowsView::SetHdrOutput(bool enabled, float sdr_white_nits) {
+   return enabled;
+ }
+ 
++void FlutterWindowsView::SetUnderlayComposition(bool enabled) {
++  const bool had_hdr = hdr_output_requested();
++  const bool was_enabled =
++      underlay_composition_requested_.exchange(enabled,
++                                               std::memory_order_acq_rel);
++  if (was_enabled == enabled) {
++    return;
++  }
++  composition_surface_failed_.store(false, std::memory_order_release);
++  if (had_hdr != hdr_output_requested()) {
++    // The effective backing store format follows |hdr_output_requested|.
++    BumpEmbedderRenderTargetFormatGeneration();
++  }
++  FML_LOG(IMPORTANT) << "Underlay composition " << (enabled ? "on" : "off");
++  engine_->ScheduleFrame();
++}
++
+ bool FlutterWindowsView::EnsureSurfaceFormat() {
+   if (surface_ == nullptr || !surface_->IsValid()) {
+     return true;
+@@ -913,7 +943,15 @@ bool FlutterWindowsView::EnsureSurfaceFormat() {
+   egl::Manager* manager = engine_->egl_manager();
+   const bool want_hdr = hdr_output_requested() && manager != nullptr &&
+                         manager->SupportsHdrSurfaces();
+-  if (surface_->is_hdr() == want_hdr) {
++  const bool want_composition = underlay_composition_requested();
++  if (surface_->is_hdr() == want_hdr &&
++      surface_->is_composition() == want_composition) {
++    return true;
++  }
++  // A composition surface that could not be created falls back to the HWND
++  // swap chain; do not retry it every frame.
++  if (!want_hdr && !surface_->is_hdr() && want_composition &&
++      composition_surface_failed_.load(std::memory_order_acquire)) {
+     return true;
+   }
+ 
+@@ -937,7 +975,8 @@ bool FlutterWindowsView::EnsureSurfaceFormat() {
+   }
+   surface_ = std::move(new_surface);
+   FML_LOG(IMPORTANT) << "HDR output: window surface "
+-                     << (surface_->is_hdr() ? "RGBA16F scRGB" : "8-bit");
++                     << (surface_->is_hdr() ? "RGBA16F scRGB" : "8-bit")
++                     << (surface_->is_composition() ? " (composition)" : "");
+   return true;
+ }
+ 
+diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_view.h b/engine/src/flutter/shell/platform/windows/flutter_windows_view.h
+index 641f5fe0..7ae9eec7 100644
+--- a/engine/src/flutter/shell/platform/windows/flutter_windows_view.h
++++ b/engine/src/flutter/shell/platform/windows/flutter_windows_view.h
+@@ -104,8 +104,21 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate {
+   bool SetHdrOutput(bool enabled, float sdr_white_nits);
+ 
+   // Fushi patch (HDR output): the requested output, read on the raster thread.
++  // Fushi patch (underlay composition): HDR output is suspended while the
++  // underlay composition is on (the composition surface is 8-bit).
+   bool hdr_output_requested() const {
+-    return hdr_output_requested_.load(std::memory_order_acquire);
++    return hdr_output_requested_.load(std::memory_order_acquire) &&
++           !underlay_composition_requested();
++  }
++
++  // Fushi patch (underlay composition): see
++  // |FlutterDesktopViewSetUnderlayComposition|. Called on the platform thread.
++  void SetUnderlayComposition(bool enabled);
++
++  // Fushi patch (underlay composition): the requested presentation, read on
++  // the raster thread.
++  bool underlay_composition_requested() const {
++    return underlay_composition_requested_.load(std::memory_order_acquire);
+   }
+   float sdr_white_nits() const {
+     return sdr_white_nits_.load(std::memory_order_acquire);
+@@ -513,6 +526,13 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate {
+   std::atomic<bool> hdr_output_requested_{false};
+   std::atomic<float> sdr_white_nits_{80.0f};
+ 
++  // Fushi patch (underlay composition): requested presentation, written on
++  // the platform thread, read on the raster thread.
++  std::atomic<bool> underlay_composition_requested_{false};
++  // Set (raster thread) when the composition surface could not be created, so
++  // the fallback is not retried every frame; cleared by a new request.
++  mutable std::atomic<bool> composition_surface_failed_{false};
++
+   // Keeps track of pointer states in relation to the window.
+   std::unordered_map<int32_t, std::unique_ptr<PointerState>> pointer_states_;
+ 
+diff --git a/engine/src/flutter/shell/platform/windows/public/flutter_windows.h b/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
+index c5d0cdfe..248a1dcb 100644
+--- a/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
++++ b/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
+@@ -326,6 +326,24 @@ FLUTTER_EXPORT bool FlutterDesktopViewSetHdrOutput(FlutterDesktopViewRef view,
+                                                    bool enabled,
+                                                    float sdr_white_nits);
+ 
++// Fushi patch (underlay composition): presents |view| through a
++// DirectComposition topmost visual with premultiplied alpha instead of an HWND
++// swap chain, so child windows of the view's HWND (e.g. a WebView2 playing
++// hardware-protected video) show through wherever Flutter draws transparent
++// pixels, while Flutter content is drawn above them. Input still goes to
++// whichever window is under the pointer; disable a child window to let the
++// view receive input over it.
++//
++// HDR output (|FlutterDesktopViewSetHdrOutput|) is suspended while this is on;
++// the surface is 8-bit. Takes effect from the next frame. If the composition
++// surface cannot be created the view keeps the HWND swap chain (logged).
++//
++// Engines without this patch do not export the symbol; resolve it with
++// GetProcAddress.
++FLUTTER_EXPORT void FlutterDesktopViewSetUnderlayComposition(
++    FlutterDesktopViewRef view,
++    bool enabled);
++
+ // Retrieves the DXGI adapter used for rendering. Returns true if the adapter
+ // was successfully retrieved, or false if an error occured.
+ // The caller must provide a valid pointer to an IDXGIAdapter* and is

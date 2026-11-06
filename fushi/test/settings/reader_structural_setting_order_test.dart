@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2616：**结构性**阅读设置（改完要重建 WebView 的那些）的 `onChanged` 必须
 /// `await` 异步 setter，再调 `notifyReaderLayoutChanged`。
@@ -35,7 +35,7 @@ void main() {
     ('reading_display.page_columns', 'setReaderPageColumns'),
     (
       'reading_display.prioritize_reader_styles',
-      'setReaderPrioritizeReaderStyles'
+      'setReaderPrioritizeReaderStyles',
     ),
     ('reading_display.blur_images', 'setReaderBlurImages'),
     ('reading_display.merge_image_pages', 'setReaderMergeImagePages'),

@@ -101,57 +101,65 @@ void main() {
   }
 
   testWidgets(
-      'compact two-row layout gives the dictionary name nearly the full row '
-      'width (TODO-749/751)', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(360, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
+    'compact two-row layout gives the dictionary name nearly the full row '
+    'width (TODO-749/751)',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
 
-    const double rowWidth = 328; // 360 − scaffold/page padding，模拟手机内容宽。
-    await tester.pumpWidget(buildCompactTwoRow(width: rowWidth));
-    await tester.pump();
+      const double rowWidth = 328; // 360 − scaffold/page padding，模拟手机内容宽。
+      await tester.pumpWidget(buildCompactTwoRow(width: rowWidth));
+      await tester.pump();
 
-    expect(tester.takeException(), isNull);
+      expect(tester.takeException(), isNull);
 
-    final double nameWidth =
-        tester.getSize(find.byKey(const Key('dict-name'))).width;
+      final double nameWidth = tester
+          .getSize(find.byKey(const Key('dict-name')))
+          .width;
 
-    // 名字在第一行只让出折叠按钮（20px）+ 间距（8px）后拿满剩余宽。阈值取 0.8×行宽，
-    // 远高于旧单行布局给它的约 80px（≈0.24×行宽）。
-    expect(
-      nameWidth,
-      greaterThan(rowWidth * 0.8),
-      reason: 'compact name must take nearly the full row width, not be '
-          'squeezed by the trailing control cluster',
-    );
-  });
+      // 名字在第一行只让出折叠按钮（20px）+ 间距（8px）后拿满剩余宽。阈值取 0.8×行宽，
+      // 远高于旧单行布局给它的约 80px（≈0.24×行宽）。
+      expect(
+        nameWidth,
+        greaterThan(rowWidth * 0.8),
+        reason:
+            'compact name must take nearly the full row width, not be '
+            'squeezed by the trailing control cluster',
+      );
+    },
+  );
 
   testWidgets(
-      'old single-row layout squeezed the name far below the two-row width '
-      '(regression contrast)', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(360, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
+    'old single-row layout squeezed the name far below the two-row width '
+    '(regression contrast)',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
 
-    const double rowWidth = 328;
-    await tester.pumpWidget(buildOldSingleRow(width: rowWidth));
-    await tester.pump();
+      const double rowWidth = 328;
+      await tester.pumpWidget(buildOldSingleRow(width: rowWidth));
+      await tester.pump();
 
-    final double oldNameWidth =
-        tester.getSize(find.byKey(const Key('dict-name'))).width;
+      final double oldNameWidth = tester
+          .getSize(find.byKey(const Key('dict-name')))
+          .width;
 
-    await tester.pumpWidget(buildCompactTwoRow(width: rowWidth));
-    await tester.pump();
-    final double newNameWidth =
-        tester.getSize(find.byKey(const Key('dict-name'))).width;
+      await tester.pumpWidget(buildCompactTwoRow(width: rowWidth));
+      await tester.pump();
+      final double newNameWidth = tester
+          .getSize(find.byKey(const Key('dict-name')))
+          .width;
 
-    // 两行布局给名字的宽度显著大于旧单行布局——证明修复确实把名字从控件串手里拿回了宽度。
-    expect(
-      newNameWidth,
-      greaterThan(oldNameWidth + 100),
-      reason:
-          'two-row layout must reclaim a large chunk of name width that the '
-          'old single-row trailing cluster had stolen',
-    );
-  });
+      // 两行布局给名字的宽度显著大于旧单行布局——证明修复确实把名字从控件串手里拿回了宽度。
+      expect(
+        newNameWidth,
+        greaterThan(oldNameWidth + 100),
+        reason:
+            'two-row layout must reclaim a large chunk of name width that the '
+            'old single-row trailing cluster had stolen',
+      );
+    },
+  );
 }

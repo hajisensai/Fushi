@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 
 /// BUG-2117：快捷键设置页的卡片顺序就是 [ShortcutScope.values] 的声明顺序
@@ -15,12 +15,15 @@ void main() {
         ShortcutScope.global,
         ShortcutScope.universal,
         ShortcutScope.globalExternal,
-        // 各页面（首页 → 阅读器及其有声书 → 漫画 → 视频）
+        // 各页面（首页 → 阅读器及其有声书 → 漫画 → 视频 → 浏览器 → 音乐 → SRS 复习）
         ShortcutScope.home,
         ShortcutScope.reader,
         ShortcutScope.audiobook,
         ShortcutScope.manga,
         ShortcutScope.video,
+        ShortcutScope.webBrowser,
+        ShortcutScope.music,
+        ShortcutScope.srsReview,
         // 输入设备
         ShortcutScope.gamepad,
         // 查词弹窗

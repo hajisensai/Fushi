@@ -13,7 +13,14 @@ import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_common.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_user_page.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 class LeaderboardWorkPage extends ConsumerStatefulWidget {
   const LeaderboardWorkPage({required this.workId, super.key});

@@ -114,6 +114,13 @@ extension _VideoEpisode on _VideoFushiPageState {
     // 倒计时 overlay，避免它停在旧目标上。
     _cancelAutoAdvanceCountdown();
 
+    // 网页档（站点视频）：剧集来自站点（Netflix metadata），换集 = 同一个 WebView 导航到那一集
+    // 的播放页；落书 / 进度 / 字幕身份由 [_onWebState] 按新地址接上。
+    if (_webMode) {
+      _switchWebEpisode(index);
+      return;
+    }
+
     // TODO-885: 远端播放列表换集——本端无 VideoBooks 行，先把当前集精确位置落按集
     // prefs（_persistRemotePosition 用 _currentEpisode），再按 episodeIndex 向 host
     // 重新建流（_loadRemoteEpisode 内 ++_episodeLoadSeq 取代慢路径旧集）。
@@ -225,6 +232,8 @@ extension _VideoEpisode on _VideoFushiPageState {
           // BUG-2043：字幕列表随集常驻——换集前开着就带到新页，不再随旧页一起丢。
           initialSubtitleListVisible: _subtitleListVisible.value,
           initialFullscreen: plan.handOverNativeFullscreen,
+          // cehHSgF04K：沉浸锁定随集常驻（手动换集与自动连播同一条路径）。
+          initialImmersiveLocked: _immersiveLocked.value,
           sourceReviewSession: _sourceReviewSession,
         ),
       );
@@ -317,9 +326,7 @@ extension _VideoEpisode on _VideoFushiPageState {
   /// 结果按输入身份 memo（见 [_episodePanelEntriesMemo]）：面板常驻在树里、页面
   /// 每次 setState 都重建它，不 memo 就是每帧对全部 N 集重跑正则 + 重建 provider。
   List<VideoEpisodeEntry> _episodePanelEntries() {
-    final RemoteCoverFetcher? fetcher = remoteCoverFetcherFor(
-      widget.remoteClient ?? _resolvedStreamClient,
-    );
+    final RemoteCoverFetcher? fetcher = _episodeCoverFetcher;
     final List<VideoEpisodeEntry>? memo = _episodePanelEntriesMemo;
     if (memo != null &&
         identical(_episodePanelEntriesEpisodes, _episodes) &&
@@ -371,6 +378,13 @@ extension _VideoEpisode on _VideoFushiPageState {
     return _episodePanelEntriesMemo = entries;
   }
 
+  /// 远端集封面（[_PlaylistEpisodeRef.coverUrl]）的取图器：网页档的剧集剧照来自
+  /// 站点公开 CDN（Netflix metadata），用站点取图器；其余按来源客户端。剧集面板与
+  /// 手机遥控选集（`_remoteEpisodeCover`）共用。
+  RemoteCoverFetcher? get _episodeCoverFetcher => _webMode
+      ? const WebVideoCoverFetcher()
+      : remoteCoverFetcherFor(widget.remoteClient ?? _resolvedStreamClient);
+
   /// 季 chip 文案：`s<N>` → 「第 N 季」；extras → 「PV·特典」（与合集详情页
   /// `_groupLabel` 同一套 i18n）。
   String _episodeSeasonLabel(String groupKey) {
@@ -380,10 +394,11 @@ extension _VideoEpisode on _VideoFushiPageState {
         : t.collection_group_season(n: season);
   }
 
-  /// 剧集卡封面回退链的合集段（v68）：合集带字横图 → 无字背景；全缺 → null
-  /// （面板占位图标）。整组只解析一次，面板 N 张卡共享同一 provider。
+  /// 剧集卡封面回退链的合集段（v68）：原盘盘面图 → 合集带字横图 → 无字背景；
+  /// 全缺 → null（面板占位图标）。整组只解析一次，面板 N 张卡共享同一 provider。
   ImageProvider? _playlistSeriesFallbackCover() {
     for (final MediaImageKind kind in const <MediaImageKind>[
+      MediaImageKind.discArt,
       MediaImageKind.titleCard,
       MediaImageKind.backdrop,
     ]) {

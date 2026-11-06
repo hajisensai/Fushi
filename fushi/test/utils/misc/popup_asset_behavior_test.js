@@ -108,9 +108,26 @@ class FakeElement {
   }
 
   set innerHTML(value) {
+    // 真 DOM 里清空内容会把旧子节点摘出文档（renderPopup 换词时的 `container.innerHTML
+    // = ''`）；BUG-3652 续的 reportMineFailure 靠 isConnected 识别这一刻。
+    for (const child of this.children) {
+      child._detached = true;
+      child.parentElement = null;
+      child.parentNode = null;
+    }
     this.children = [];
     this._extraNodes = [];
     this.textContent = String(value);
+  }
+
+  // BUG-3652 续：真 DOM 的 Node.isConnected。本桩里没挂进 document 的独立元素（测试
+  // 直接 createEntryHeader 出来的那棵）按「已渲染在页面上」算——那正是这些测试要模拟的
+  // 状态；只有被 remove() / 祖先 innerHTML 清空摘掉的节点才是 false。
+  get isConnected() {
+    for (let node = this; node; node = node.parentNode) {
+      if (node._detached) return false;
+    }
+    return true;
   }
 
   /// 真 DOM 里 `<a>言語</a>` 的 childNodes 是**一个文本节点**；本桩的 textContent
@@ -134,6 +151,13 @@ class FakeElement {
 
   append(...children) {
     for (const child of children) {
+      // 真 DOM 的 append 接受字符串（建文本节点）；注音 <ruby> 的读音片段就是这么塞的。
+      if (typeof child === 'string') {
+        const text = new FakeElement('#text');
+        text.textContent = child;
+        this.appendChild(text);
+        continue;
+      }
       this.appendChild(child);
     }
   }
@@ -145,6 +169,7 @@ class FakeElement {
     if (!parent) return;
     const at = parent.children.indexOf(this);
     if (at >= 0) parent.children.splice(at, 1);
+    this._detached = true;
     this.parentElement = null;
     this.parentNode = null;
   }
@@ -206,6 +231,7 @@ class FakeElement {
     if (index >= 0) {
       siblings.splice(index, 1);
     }
+    this._detached = true;
     this.parentElement = null;
     this.parentNode = null;
   }
@@ -330,6 +356,9 @@ function createPopupContext() {
     },
     toString() {
       return this.text;
+    },
+    get isCollapsed() {
+      return this.text === '';
     },
   };
 
@@ -2678,10 +2707,66 @@ async function testAppExternalMinedClickShowsInPagePanelAndCanAddDuplicate() {
   await flush();
 
   assert.equal(calls.mineEntry.length, 1, '「新增为重复卡」 mines a new card');
+  // 反馈 _3tWQR6J2G / BUG-2605 同口径：用户明确选了「新增为重复卡」，请求必须带单次放行标记，
+  // 否则后端按全局 allowDupes（默认关）判重复拒掉。
+  assert.equal(calls.mineEntry[0].allowDuplicate, 'true',
+    'an explicit duplicate add carries allowDuplicate');
   assert.equal(context.document.querySelector('.mined-action-panel'), null,
     'the panel closes after the action');
   assert.equal(mineButton.disabled, false, 'the button is never left disabled');
 }
+
+// 反馈 _3tWQR6J2G：浏览器扩展里「卡片已在 Anki 中」面板底板透明，下面词条的字与面板上
+// 的字叠在一起。扩展的主题变量与 data-theme 落在 shadow root 内的 #entries-container 上，
+// 面板挂在 shadow root 本身时继承不到，background 的 var() 落空成透明。面板必须挂进容器。
+async function testExtensionMinedPanelMountsInsideThemedContainer() {
+  const context = loadPopup();
+  context.window.allowDupes = true;
+  const calls = newCalls();
+  stubAppExternalHost(context, {
+    matches: [{ noteId: 9001, preview: '刀 — 既存カード' }],
+    calls,
+  });
+  const shadow = context.document.createElement('div');
+  const container = context.document.createElement('div');
+  container.id = 'entries-container';
+  shadow.appendChild(container);
+  shadow.getElementById = (id) => (id === 'entries-container' ? container : null);
+  context.window.__fushiRoot = shadow;
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  const click = mineButton.onclick();
+  await flush();
+
+  const isBackdrop = (node) => !!node.classList?.contains('mined-action-backdrop');
+  const backdrop = container.children.find(isBackdrop);
+  assert.ok(backdrop,
+    'the mined-card panel must mount inside #entries-container so it inherits the popup theme');
+  assert.equal(shadow.children.filter(isBackdrop).length, 0,
+    'never as a bare shadow-root child (no theme variables there → transparent panel)');
+
+  const findButton = (node, label) => {
+    if (node.tagName === 'BUTTON' && node.textContent === label) return node;
+    for (const child of node.children ?? []) {
+      const found = findButton(child, label);
+      if (found) return found;
+    }
+    return null;
+  };
+  const add = findButton(backdrop, '新增为重复卡');
+  assert.ok(add, 'panel button not found');
+  add.onclick();
+  await click;
+  await flush();
+  assert.equal(calls.mineEntry.length, 1);
+  assert.equal(container.children.filter(isBackdrop).length, 0, 'the panel closes');
+}
+
+testExtensionMinedPanelMountsInsideThemedContainer().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
 
 async function testAppExternalPanelOverwriteUsesUpdateEntry() {
   const context = loadPopup();
@@ -2749,6 +2834,88 @@ async function testAppExternalMinedClickReminesWhenCardIsGone() {
   assert.equal(calls.mineEntry.length, 1, 'a vanished card is re-mined, not silently ignored');
 }
 
+// 反馈 _3tWQR6J2G：浏览器扩展的 shim 列不出命中卡（findMinedMatches 回 null）。此前 null
+// 被当成「卡已不在」直接重制 → 后端判重复拒掉，用户只看到「已存在」、没有任何选择。现在：
+// 卡仍在（duplicateCheck 真）就照样弹面板问（只剩「新增为重复卡 / 取消」），选了新增带
+// allowDuplicate；卡真不在了才重制。
+async function testExtensionHostWithoutMatchListStillAsksBeforeDuplicate() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  const calls = newCalls();
+  stubAppExternalHost(context, { matches: null, calls });
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.equal(mineButton.dataset.mined, '1');
+  const click = mineButton.onclick();
+  // 多一次 duplicateCheck 再核：多排几轮微任务。
+  await flush();
+  await flush();
+
+  assert.ok(context.document.querySelector('.mined-action-panel'),
+    'a host that cannot list matches must still ask instead of silently re-mining');
+  assert.equal(calls.mineEntry.length, 0, 'nothing is mined before the user decides');
+  findPanelButton(context, '新增为重复卡').onclick();
+  await click;
+  await flush();
+  assert.equal(calls.mineEntry.length, 1);
+  assert.equal(calls.mineEntry[0].allowDuplicate, 'true');
+}
+
+async function testExtensionHostWithoutMatchListCancelWritesNothing() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  const calls = newCalls();
+  stubAppExternalHost(context, { matches: null, calls });
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  const click = mineButton.onclick();
+  // 多一次 duplicateCheck 再核：多排几轮微任务。
+  await flush();
+  await flush();
+  findPanelButton(context, '取消').onclick();
+  await click;
+  await flush();
+  assert.equal(calls.mineEntry.length, 0, 'cancel must not create a card');
+  assert.equal(mineButton.dataset.mined, '1');
+}
+
+async function testExtensionHostWithoutMatchListReminesWhenCardIsGone() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  const calls = newCalls();
+  stubAppExternalHost(context, { matches: null, calls });
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.equal(mineButton.dataset.mined, '1');
+  // 查词后卡在 Anki 里被删了：点 ✓ 时再核为假 → 不弹面板，按新卡重制（不带重复标记）。
+  const original = context.window.flutter_inappwebview.callHandler;
+  context.window.flutter_inappwebview.callHandler = (name, payload) =>
+    (name === 'duplicateCheck' ? Promise.resolve(false) : original(name, payload));
+  await mineButton.onclick();
+  await flush();
+  assert.equal(context.document.querySelector('.mined-action-panel'), null);
+  assert.equal(calls.mineEntry.length, 1);
+  assert.equal(calls.mineEntry[0].allowDuplicate, undefined,
+    'a plain re-mine must not carry the duplicate override');
+}
+
+testExtensionHostWithoutMatchListStillAsksBeforeDuplicate().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testExtensionHostWithoutMatchListCancelWritesNothing().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testExtensionHostWithoutMatchListReminesWhenCardIsGone().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
 testAppExternalMinedClickShowsInPagePanelAndCanAddDuplicate().catch((error) => {
   console.error(error);
   process.exitCode = 1;
@@ -2768,6 +2935,165 @@ testAppExternalMinedClickReminesWhenCardIsGone().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+
+// 反馈 E0sdqm4h-F / PR #2980 审查：「允许重复」开着时单击已制卡 ✓ 直接再制一张——判据在
+// 宿主（app 内 runAnkiMinedCardAction / app 外 findMinedMatches 回 {mineNew:true} / 扩展经
+// /api/duplicate 的 allowDuplicates），popup.js 不读任何本地 allowDupes。右键 / 长按（「管理」
+// 手势）带 openChooser:true，永远弹选择单，覆写指定旧卡 / 查看不因允许重复而消失。
+function stubDupesAwareExternalHost(context, calls, allowDupes) {
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(true);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    if (name === 'openInAnki') return Promise.resolve('opened');
+    if (name === 'findMinedMatches') {
+      calls.findMinedMatches.push(payload);
+      if (allowDupes && payload.openChooser !== true) {
+        return Promise.resolve({ mineNew: true });
+      }
+      return Promise.resolve([{ noteId: 9001, preview: '刀 — 既存カード' }]);
+    }
+    if (name === 'mineEntry') {
+      calls.mineEntry.push(payload);
+      return Promise.resolve({ ankiConnect: true, noteId: 222 });
+    }
+    if (name === 'updateEntry') {
+      calls.updateEntry.push(payload);
+      return Promise.resolve({ ankiConnect: true, noteId: payload.noteId });
+    }
+    return Promise.resolve(true);
+  };
+}
+
+async function testAppExternalAllowDupesTapMinesDirectlyWithoutPanel() {
+  const context = loadPopup();
+  const calls = newCalls();
+  stubDupesAwareExternalHost(context, calls, true);
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.equal(mineButton.dataset.mined, '1');
+
+  await mineButton.onclick();
+  await flush();
+
+  assert.equal(calls.findMinedMatches.length, 1);
+  assert.equal(calls.findMinedMatches[0].openChooser, false,
+    'a plain tap tells the host it is NOT the manage gesture');
+  assert.equal(context.document.querySelector('.mined-action-panel'), null,
+    'allow-duplicates on: a tap must not open the overwrite / add chooser');
+  assert.equal(calls.mineEntry.length, 1, 'the tap mines a new card directly');
+  assert.equal(calls.mineEntry[0].allowDuplicate, 'true',
+    'the direct add carries the duplicate override, same as the in-app mineNew');
+}
+
+async function testAppExternalManageGestureAlwaysOpensChooser() {
+  const context = loadPopup();
+  const calls = newCalls();
+  stubDupesAwareExternalHost(context, calls, true);
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.ok(mineButton.title, 'a mined ✓ advertises the manage gesture in its tooltip');
+
+  let prevented = false;
+  mineButton.dispatchEvent({
+    type: 'contextmenu',
+    pointerType: 'mouse',
+    preventDefault() { prevented = true; },
+    stopPropagation() {},
+  });
+  await flush();
+  await flush();
+
+  assert.equal(prevented, true, 'right-click on a mined ✓ replaces the native menu');
+  assert.equal(calls.findMinedMatches.length, 1);
+  assert.equal(calls.findMinedMatches[0].openChooser, true);
+  assert.ok(context.document.querySelector('.mined-action-panel'),
+    'even with allow-duplicates on, the manage gesture opens the chooser');
+  assert.equal(calls.mineEntry.length, 0, 'nothing is mined before the user decides');
+
+  findPanelButton(context, '覆写这张卡').onclick();
+  await flush();
+  await flush();
+  assert.equal(calls.updateEntry.length, 1, 'overwrite of a specific old card stays reachable');
+  assert.equal(calls.updateEntry[0].noteId, 9001);
+}
+
+async function testManageGestureIgnoredOnUnminedButton() {
+  const context = loadPopup();
+  const calls = newCalls();
+  stubDupesAwareExternalHost(context, calls, true);
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'findMinedMatches') calls.findMinedMatches.push(payload);
+    return Promise.resolve(null);
+  };
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.equal(mineButton.dataset.mined, '');
+  let prevented = false;
+  mineButton.dispatchEvent({
+    type: 'contextmenu',
+    pointerType: 'mouse',
+    preventDefault() { prevented = true; },
+    stopPropagation() {},
+  });
+  await flush();
+  assert.equal(prevented, false, 'a "+" keeps the native context menu');
+  assert.equal(calls.findMinedMatches.length, 0);
+}
+
+async function testNativeLanePassesOpenChooserIntent() {
+  const context = loadPopup();
+  context.window.__fushiMinedCardActionNative = true;
+  const intents = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload, extra) => {
+    if (name === 'duplicateCheck') return Promise.resolve(true);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    if (name === 'minedCardAction') {
+      intents.push(extra);
+      return Promise.resolve({ ankiConnect: false, noteId: null });
+    }
+    return Promise.resolve(true);
+  };
+  const mineButton = buildMineHeader(context);
+  await flush();
+  await mineButton.onclick();
+  await flush();
+  mineButton.dispatchEvent({
+    type: 'keydown',
+    key: 'ContextMenu',
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  await flush();
+  await flush();
+  assert.equal(intents.length, 2);
+  assert.deepEqual(JSON.parse(JSON.stringify(intents[0])), { openChooser: false },
+    'a tap hands the host openChooser:false (allow-duplicates may add directly)');
+  assert.deepEqual(JSON.parse(JSON.stringify(intents[1])), { openChooser: true },
+    'the menu key hands the host openChooser:true (always the chooser)');
+}
+
+// 这几条在旧实现上会卡在「等用户在面板里选」——一个永不 settle 的 promise 不会报错，
+// 进程照样 0 退出。所以记账：退出时还没跑完的一律判红（不让挂起冒充通过）。
+const pendingAllowDupesTests = new Set();
+process.on('exit', () => {
+  if (pendingAllowDupesTests.size === 0) return;
+  console.error('allow-duplicates tests never finished:', [...pendingAllowDupesTests]);
+  process.exitCode = 1;
+});
+for (const t of [
+  testAppExternalAllowDupesTapMinesDirectlyWithoutPanel,
+  testAppExternalManageGestureAlwaysOpensChooser,
+  testManageGestureIgnoredOnUnminedButton,
+  testNativeLanePassesOpenChooserIntent,
+]) {
+  pendingAllowDupesTests.add(t.name);
+  t().then(() => pendingAllowDupesTests.delete(t.name)).catch((error) => {
+    pendingAllowDupesTests.delete(t.name);
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
 
 // BUG-2051 ↗「在 Anki 中打开卡片」——app 内外**同一根桥、同一条判据**。
 //
@@ -3069,6 +3395,143 @@ testBridgeRejectionIsNeverSilent().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+
+// BUG-3652：弹窗发起的制卡失败，宿主不再另弹 Flutter toast，按钮旁这条提示是唯一的
+// 说法，而原因可能是一整句（「所有字段都是空的……」）。短提示仍是 1.8s，长句按字数
+// 延长、封顶 6s——停 1.8s 的长句根本读不完。
+async function testLongMineFailureReasonStaysLongEnoughToRead() {
+  const context = loadPopup();
+  const reason = '这张卡的所有字段都是空的，通常是所选笔记类型还没有配置字段映射。'
+    + '请在 Anki 设置里给它的字段配置映射。';
+  const delays = [];
+  const realSetTimeout = context.setTimeout;
+  context.setTimeout = (fn, ms) => {
+    delays.push(ms);
+    return realSetTimeout(() => {}, 0);
+  };
+  context.window.allowDupes = false;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'mineEntry') {
+      return Promise.resolve({ ankiConnect: false, noteId: null, message: reason });
+    }
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  await mineButton.onclick();
+  await flush();
+
+  assert.equal(inlineHintText(context), reason, '原因原样显示在按钮旁');
+  assert.ok(delays.includes(context.inlineHintDurationMs(reason)),
+    '提示的停留时长取自 inlineHintDurationMs');
+  assert.ok(context.inlineHintDurationMs(reason) >= 4000,
+    `长句至少停 4s，实际 ${context.inlineHintDurationMs(reason)}ms`);
+  assert.equal(context.inlineHintDurationMs('制卡失败'), 1800, '短提示时长不变');
+  assert.equal(context.inlineHintDurationMs('x'.repeat(500)), 6000, '封顶 6s');
+}
+
+testLongMineFailureReasonStaysLongEnoughToRead().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+// ---------------------------------------------------------------------------
+// BUG-3652 续：制卡失败的原因恰好说一次（reportMineFailure）。
+//
+// 宿主（MineFailureNotice）负责「弹窗还在不在屏上」；popup.js 负责「还是不是发起的那一次」
+// ——发起制卡的按钮在回包到达前被重渲染摘掉（换词 / 原地跳转 / 热槽复用），提示无处
+// 可画，交回宿主 toast。宿主已 toast（hostReported）时弹窗闭嘴。
+// ---------------------------------------------------------------------------
+
+// 记下 mineFailureUnseen 的调用；mineEntry 的回包由 [settle] 控制何时到达。
+function mineFailureHarness(context, reply) {
+  const unseen = [];
+  let settle = null;
+  context.window.allowDupes = false;
+  context.window.flutter_inappwebview.callHandler = (name, args) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'mineFailureUnseen') {
+      unseen.push(JSON.parse(JSON.stringify(args)));
+      return Promise.resolve(null);
+    }
+    if (name === 'mineEntry') {
+      return new Promise((resolve) => { settle = () => resolve(reply); });
+    }
+    return Promise.resolve(null);
+  };
+  return { unseen, release: () => settle() };
+}
+
+function mountedMineButton(context) {
+  const mineButton = buildMineHeader(context);
+  let root = mineButton;
+  while (root.parentNode) root = root.parentNode;
+  const container = context.document.createElement('div');
+  container.appendChild(root);
+  return { mineButton, container };
+}
+
+async function testMineFailureSaidInlineWhileButtonStillOnPage() {
+  const context = loadPopup();
+  const reason = '没有选择卡组。';
+  const h = mineFailureHarness(context, { ankiConnect: false, noteId: null, message: reason });
+  const { mineButton } = mountedMineButton(context);
+  await flush();
+  const click = mineButton.onclick();
+  await flush();
+  h.release();
+  await click;
+  await flush();
+  assert.equal(inlineHintText(context), reason, '弹窗还是那一次：原因就地说');
+  assert.equal(h.unseen.length, 0, '就地说了就不许再交回宿主 toast（双报）');
+}
+
+async function testMineFailureHandedBackWhenButtonReplaced() {
+  const context = loadPopup();
+  const reason = '这张卡的所有字段都是空的。';
+  const h = mineFailureHarness(context,
+    { ankiConnect: false, noteId: null, message: reason, duplicate: true });
+  const { mineButton, container } = mountedMineButton(context);
+  await flush();
+  const click = mineButton.onclick();
+  await flush();
+  // 回包到达前同一个弹窗换了词：renderPopup 清空 #entries-container。
+  container.innerHTML = '';
+  assert.equal(mineButton.isConnected, false, '桩必须如实报告按钮已离开页面');
+  h.release();
+  await click;
+  await flush();
+  assert.equal(inlineHintText(context), null, '不能把提示锚到已不在页面上的按钮');
+  assert.equal(h.unseen.length, 1, '必须交回宿主 toast，且恰好一次');
+  assert.equal(h.unseen[0].message, reason);
+  assert.equal(h.unseen[0].duplicate, true, '重复卡的语义随回执带回（宿主据此选 toast 状态）');
+}
+
+async function testMineFailureSilentWhenHostAlreadyReported() {
+  const context = loadPopup();
+  const h = mineFailureHarness(context,
+    { ankiConnect: false, noteId: null, hostReported: true });
+  const { mineButton } = mountedMineButton(context);
+  await flush();
+  const click = mineButton.onclick();
+  await flush();
+  h.release();
+  await click;
+  await flush();
+  assert.equal(inlineHintText(context), null,
+    '宿主已 toast（弹窗当时不在屏上）：弹窗不得再说通用的「制卡失败」');
+  assert.equal(h.unseen.length, 0, '也不得再让宿主 toast 第二次');
+  assert.equal(mineButton.textContent, '+', '按钮态仍按失败处理');
+}
+
+Promise.all([
+  testMineFailureSaidInlineWhileButtonStillOnPage(),
+  testMineFailureHandedBackWhenButtonReplaced(),
+  testMineFailureSilentWhenHostAlreadyReported(),
+]).then(() => console.log('mine failure exactly-once tests passed'))
+  .catch((error) => { console.error(error); process.exitCode = 1; });
 
 async function testQueuedMineStateTracksQueueWithoutAnkiRefresh() {
   const context = loadPopup();
@@ -3683,7 +4146,7 @@ async function testAdvancedMiningButtonOpensHostDialog() {
   assert.equal(typeof opened[0][1], 'object', 'payload is an object, never a JSON string');
   assert.deepEqual(
     JSON.parse(JSON.stringify(opened[0][1])),
-    { entryIndex: 1, matched: '事典', expression: '事典' });
+    { entryIndex: 1, matched: '事典', expression: '事典', reading: '事典' });
   assert.equal(calls.some(([name]) => name === 'openSentenceContextModal'), false,
     'the in-app surface has a single entry point');
 }
@@ -3853,6 +4316,12 @@ Promise.all([
   testFavoriteBatchPayloadWithoutEntriesIsNull(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
 
+// 状态标记只画 ↗ 图标（用户 10-28：不要「新卡」文字），宿主下发的状态文案记在
+// data-srs-label 上（同时进提示 / aria-label）。
+function srsLabelOf(badge) {
+  return badge.dataset?.srsLabel || '';
+}
+
 // ── Fushi 复习（SRS）词状态标记：createSrsStatusBadge ─────────────────────────────
 // 宿主注入 __fushiSrsEnabled=false（复习模块关）时既不渲染标记、也不发 srsTermStatus
 // 桥（零开销）；开着时按宿主回包（文案由宿主本地化）画标记，点它把 cardId/noteId 交给
@@ -3915,7 +4384,10 @@ async function testSrsBadgeShowsHostLabelAndOpensCard() {
   assert.ok(badge, 'module on: SRS badge exists');
   assert.ok(!badge.classList.contains('srs-status-hidden'), 'status known -> visible');
   assert.ok(badge.classList.contains('srs-status-review'), 'queue drives the color class');
-  assert.equal(badge.textContent, '复习中 · 3天后', 'host-localized label is shown verbatim');
+  assert.equal(srsLabelOf(badge), '复习中 · 3天后', 'host-localized label is kept verbatim');
+  assert.equal(badge.dataset.icon, 'openInAnki', 'badge paints the ↗ icon, not text');
+  assert.ok(!String(badge.innerHTML).includes('复习中'), 'status text is not painted on the button');
+  assert.equal(badge.dataset.fushiTip, '复习中 · 3天后 · Open', 'status + action go to the tip');
   const mine = findByClassDeep(header, 'mine-button');
   assert.equal(mine.textContent, '✓', 'Anki ✓ still painted independently');
   await badge.onclick({ stopPropagation() {} });
@@ -3933,12 +4405,351 @@ async function testSrsBadgeHiddenWhenWordNotInSrs() {
   const badge = findByClassDeep(header, 'srs-status-badge');
   assert.ok(badge.classList.contains('srs-status-hidden'),
     'no SRS card -> badge stays hidden');
-  assert.equal(badge.textContent, '');
+  assert.equal(srsLabelOf(badge), '');
+}
+
+// 制卡目标 = Fushi 复习（宿主注入 __fushiSrsMiningTarget=true）：「在 Anki 中打开」↗
+// 此时经 SrsMiningAnkiRepository.openWordInAnki 打开的就是复习状态标记打开的同一张笔记，
+// 两颗按钮去同一个地方 → 只留状态标记。制卡目标 = Anki 时两者去处不同，↗ 照旧渲染。
+async function testOpenAnkiButtonMergedIntoSrsBadgeWhenTargetIsSrs() {
+  for (const [target, expectOpenAnki] of [[true, false], [false, true], [undefined, true]]) {
+    const context = loadPopup();
+    context.window.__fushiSrsEnabled = true;
+    context.window.__fushiSrsMiningTarget = target;
+    context.window.flutter_inappwebview.callHandler = (name) => {
+      if (name === 'duplicateCheck') return Promise.resolve(true);
+      if (name === 'srsTermStatus') {
+        return Promise.resolve({
+          queue: 'new', dueLabel: '新卡', suspended: false,
+          cardId: 'c1', noteId: 'n1', cardCount: 1, tooltip: 'Open',
+        });
+      }
+      return Promise.resolve(null);
+    };
+    const header = context.createEntryHeader(srsEntry(), 0);
+    await flush();
+    assert.ok(findByClassDeep(header, 'srs-status-badge'),
+      `target=${target}: SRS badge is the open-card entry`);
+    // 10-29：↗ 永远在 DOM 里（徽标没状态时兜底）；目标 = 复习时带 open-anki-srs-owned，
+    // 由 CSS 在徽标可见时藏掉，避免两颗 ↗ 并排。
+    const openAnki = findByClassDeep(header, 'open-anki-button');
+    assert.ok(openAnki, `target=${target}: open-in-Anki button always rendered`);
+    assert.equal(openAnki.classList.contains('open-anki-srs-owned'), !expectOpenAnki,
+      `target=${target}: srs-owned marker iff the badge owns the entry`);
+  }
+  // 复习模块关着（没有状态标记）时，即使宿主说目标是复习，↗ 也不能跟着消失。
+  const context = loadPopup();
+  context.window.__fushiSrsEnabled = false;
+  context.window.__fushiSrsMiningTarget = true;
+  context.window.flutter_inappwebview.callHandler = (name) =>
+    Promise.resolve(name === 'duplicateCheck' ? true : null);
+  const header = context.createEntryHeader(srsEntry(), 0);
+  await flush();
+  assert.ok(findByClassDeep(header, 'open-anki-button'),
+    'no SRS badge -> open-in-Anki button stays');
 }
 
 Promise.all([
   testSrsBadgeAbsentAndSilentWhenModuleOff(),
   testSrsBadgeShowsHostLabelAndOpensCard(),
   testSrsBadgeHiddenWhenWordNotInSrs(),
+  testOpenAnkiButtonMergedIntoSrsBadgeWhenTargetIsSrs(),
 ]).then(() => console.log('SRS badge tests passed'))
   .catch((error) => { console.error(error); process.exitCode = 1; });
+
+// ── srs_followup K：复习词状态按可见批次合并成一次 srsTermStatusBatch ────────────
+// 约束（HBK-AUDIT-016）：只合并本轮进入可见 / 预取范围的词条，隐藏词条不发；同 key
+// 在途去重、epoch / 元素版本检查、单条刷新与老宿主（没有批量桥）逐条回退都保留。
+function makeSrsObserverPopup() {
+  const observers = [];
+  class FakeIntersectionObserver {
+    constructor(callback, options) {
+      this.callback = callback;
+      this.options = options;
+      this.targets = new Set();
+      observers.push(this);
+    }
+    observe(target) { this.targets.add(target); }
+    unobserve(target) { this.targets.delete(target); }
+    disconnect() { this.targets.clear(); }
+    // 一次回调交付多个目标 = 真实浏览器里一屏词条同时进入视口。
+    revealAll(targets) {
+      this.callback(targets.map((target) => ({ target, isIntersecting: true })));
+    }
+  }
+  const context = loadPopup((value) => {
+    value.IntersectionObserver = FakeIntersectionObserver;
+  });
+  context.window.__fushiSrsEnabled = true;
+  return { context, observers };
+}
+
+function srsWord(expression, reading) {
+  return { expression, reading, matched: expression, frequencies: [], pitches: [], rules: [] };
+}
+
+function srsStatusFor(term) {
+  return {
+    queue: 'review', dueLabel: `${term.expression}/${term.reading}`, suspended: false,
+    cardId: `c-${term.expression}-${term.reading}`, noteId: 'n', cardCount: 1, tooltip: 't',
+  };
+}
+
+async function testSrsVisibleBatchIsOneRoundTripAndSkipsHiddenEntries() {
+  const { context, observers } = makeSrsObserverPopup();
+  const calls = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    calls.push({ name, payload: JSON.parse(JSON.stringify(payload ?? null)) });
+    if (name === 'srsTermStatusBatch') {
+      return Promise.resolve({
+        // 「雨」不在复习库 → null。
+        statuses: payload.terms.map((t) => (t.expression === '雨' ? null : srsStatusFor(t))),
+      });
+    }
+    if (name === 'srsTermStatus') return Promise.resolve(srsStatusFor(payload));
+    return Promise.resolve(name === 'duplicateCheck' ? false : null);
+  };
+  // 6 个可见词条（含同词形异读「上手」两条、重复的「雪」一条）+ 3 个从未进入视口的。
+  const visibleWords = [
+    srsWord('雪', 'ゆき'), srsWord('上手', 'じょうず'), srsWord('上手', 'うわて'),
+    srsWord('雨', 'あめ'), srsWord('雪', 'ゆき'), srsWord('猫', 'ねこ'),
+  ];
+  const hiddenWords = [srsWord('犬', 'いぬ'), srsWord('鳥', 'とり'), srsWord('魚', 'さかな')];
+  const visible = visibleWords.map((w, i) => context.createEntryHeader(w, i));
+  const hidden = hiddenWords.map((w, i) => context.createEntryHeader(w, 10 + i));
+  await flush();
+  assert.equal(calls.filter((c) => c.name.startsWith('srsTermStatus')).length, 0,
+    'nothing is fetched before the observer reports visibility');
+
+  const badges = visible.map((h) => findByClassDeep(h, 'srs-status-badge'));
+  observers[0].revealAll(badges);
+  await flush();
+
+  const srsCalls = calls.filter((c) => c.name.startsWith('srsTermStatus'));
+  assert.equal(srsCalls.length, 1, 'one visible batch = exactly one bridge round trip');
+  assert.equal(srsCalls[0].name, 'srsTermStatusBatch');
+  assert.deepEqual(srsCalls[0].payload.terms, [
+    { expression: '雪', reading: 'ゆき' },
+    { expression: '上手', reading: 'じょうず' },
+    { expression: '上手', reading: 'うわて' },
+    { expression: '雨', reading: 'あめ' },
+    { expression: '猫', reading: 'ねこ' },
+  ], 'deduped by expression+reading; same-form/different-reading kept apart');
+  for (const w of hiddenWords) {
+    assert.ok(!srsCalls[0].payload.terms.some((t) => t.expression === w.expression),
+      `hidden entry ${w.expression} is not pulled into the batch`);
+  }
+  assert.equal(srsLabelOf(badges[0]), '雪/ゆき');
+  assert.equal(srsLabelOf(badges[1]), '上手/じょうず');
+  assert.equal(srsLabelOf(badges[2]), '上手/うわて', 'reading-keyed reply lands on its own header');
+  assert.ok(badges[3].classList.contains('srs-status-hidden'), 'null status stays hidden');
+  assert.equal(srsLabelOf(badges[4]), '雪/ゆき', 'duplicate header joins the in-flight request');
+  assert.equal(srsLabelOf(badges[5]), '猫/ねこ');
+  for (const h of hidden) {
+    assert.ok(findByClassDeep(h, 'srs-status-badge').classList.contains('srs-status-hidden'));
+  }
+  console.log(`SRS visible batch: ${visibleWords.length} headers -> ` +
+    `${srsCalls.length} round trip (was ${srsCalls[0].payload.terms.length} single calls)`);
+
+  // 之后滚进视口的词条是下一批，照样一次。
+  observers[0].revealAll(hidden.map((h) => findByClassDeep(h, 'srs-status-badge')));
+  await flush();
+  const after = calls.filter((c) => c.name.startsWith('srsTermStatus'));
+  assert.equal(after.length, 2);
+  assert.equal(after[1].payload.terms.length, 3);
+}
+
+async function testSrsBatchStaleReplyCannotRepaint() {
+  const { context, observers } = makeSrsObserverPopup();
+  const pending = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'srsTermStatusBatch') {
+      return new Promise((resolve) => pending.push(() => resolve({
+        statuses: payload.terms.map(srsStatusFor),
+      })));
+    }
+    if (name === 'srsTermStatus') {
+      return Promise.resolve({ ...srsStatusFor(payload), dueLabel: 'fresh' });
+    }
+    return Promise.resolve(name === 'duplicateCheck' ? false : null);
+  };
+  const headers = [srsWord('雪', 'ゆき'), srsWord('猫', 'ねこ')].map((w, i) =>
+    context.createEntryHeader(w, i));
+  const badges = headers.map((h) => findByClassDeep(h, 'srs-status-badge'));
+  observers[0].revealAll(badges);
+  await flush();
+  assert.equal(pending.length, 1);
+  // 元素版本：批次在途时单条刷新了第一个标记 → 旧批次结果不得覆盖它。
+  await badges[0].__fushiRefreshSrsStatus();
+  assert.equal(srsLabelOf(badges[0]), 'fresh', 'single refresh goes out immediately');
+  pending[0]();
+  await flush();
+  assert.equal(srsLabelOf(badges[0]), 'fresh', 'stale batch reply cannot overwrite a refreshed badge');
+  assert.equal(srsLabelOf(badges[1]), '猫/ねこ');
+
+  // epoch：重新渲染后上一轮在途批次的回包不再落地。
+  const next = [srsWord('犬', 'いぬ'), srsWord('鳥', 'とり')].map((w, i) =>
+    context.createEntryHeader(w, i));
+  const nextBadges = next.map((h) => findByClassDeep(h, 'srs-status-badge'));
+  observers[0].revealAll(nextBadges);
+  await flush();
+  context.resetEntryStateChecks();
+  pending[1]();
+  await flush();
+  assert.ok(nextBadges.every((b) => srsLabelOf(b) === ''),
+    'a batch from the previous render cannot paint');
+}
+
+async function testSrsBatchFallsBackToSinglesOnOldHost() {
+  const { context, observers } = makeSrsObserverPopup();
+  const names = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    names.push(name);
+    // 老宿主：没有批量桥（回 null）。
+    if (name === 'srsTermStatus') return Promise.resolve(srsStatusFor(payload));
+    return Promise.resolve(name === 'duplicateCheck' ? false : null);
+  };
+  const words = [srsWord('雪', 'ゆき'), srsWord('猫', 'ねこ'), srsWord('犬', 'いぬ')];
+  const badges = words.map((w, i) =>
+    findByClassDeep(context.createEntryHeader(w, i), 'srs-status-badge'));
+  observers[0].revealAll(badges);
+  await flush();
+  await flush();
+  assert.deepEqual(badges.map((b) => srsLabelOf(b)), ['雪/ゆき', '猫/ねこ', '犬/いぬ']);
+  assert.equal(names.filter((n) => n === 'srsTermStatusBatch').length, 1);
+  assert.equal(names.filter((n) => n === 'srsTermStatus').length, 3);
+  // 同一轮渲染里不再试批量。
+  const more = [srsWord('鳥', 'とり'), srsWord('魚', 'さかな')].map((w, i) =>
+    findByClassDeep(context.createEntryHeader(w, 5 + i), 'srs-status-badge'));
+  observers[0].revealAll(more);
+  await flush();
+  await flush();
+  assert.equal(names.filter((n) => n === 'srsTermStatusBatch').length, 1,
+    'after a failed batch the render keeps using single calls');
+  assert.deepEqual(more.map((b) => srsLabelOf(b)), ['鳥/とり', '魚/さかな']);
+}
+
+async function testSrsSingleVisibleEntryUsesSingleCallAndBatchesAreCapped() {
+  const { context, observers } = makeSrsObserverPopup();
+  const calls = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    calls.push({ name, n: payload && payload.terms ? payload.terms.length : 1 });
+    if (name === 'srsTermStatusBatch') {
+      return Promise.resolve({ statuses: payload.terms.map(srsStatusFor) });
+    }
+    if (name === 'srsTermStatus') return Promise.resolve(srsStatusFor(payload));
+    return Promise.resolve(name === 'duplicateCheck' ? false : null);
+  };
+  const one = findByClassDeep(context.createEntryHeader(srsWord('雪', 'ゆき'), 0), 'srs-status-badge');
+  observers[0].revealAll([one]);
+  await flush();
+  assert.deepEqual(calls.filter((c) => c.name.startsWith('srs')).map((c) => c.name),
+    ['srsTermStatus'], 'a lone visible entry needs no batch envelope');
+  calls.length = 0;
+  const many = [];
+  for (let i = 0; i < 40; i++) {
+    many.push(findByClassDeep(
+      context.createEntryHeader(srsWord(`語${i}`, `ご${i}`), 1 + i), 'srs-status-badge'));
+  }
+  observers[0].revealAll(many);
+  await flush();
+  const batches = calls.filter((c) => c.name === 'srsTermStatusBatch');
+  assert.deepEqual(batches.map((c) => c.n), [32, 8], 'batches are capped at 32 terms');
+  assert.ok(many.every((b) => srsLabelOf(b) !== ''));
+}
+
+(async () => {
+  await testSrsVisibleBatchIsOneRoundTripAndSkipsHiddenEntries();
+  await testSrsBatchStaleReplyCannotRepaint();
+  await testSrsBatchFallsBackToSinglesOnOldHost();
+  await testSrsSingleVisibleEntryUsesSingleCallAndBatchesAreCapped();
+  console.log('SRS visible-batch tests passed');
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+
+// BUG-3889：拖选词头文字时，松手补发的 click 落在 .expression 上。词头点击处理器原先
+// 不看选区，直接 onLinkClick 原地重查同一个词 → renderPopup 重建 DOM → 选区丢失，
+// Ctrl+C / 右键复制读到空串。结束一次拖选的 click 不是「点词头」。
+function testHeadwordClickEndingDragSelectionKeepsSelection() {
+  const context = loadPopup((ctx) => {
+    ctx.Element = FakeElement;
+  });
+  const bridgeCalls = [];
+  context.window.flutter_inappwebview.callHandler = (...args) => {
+    bridgeCalls.push(args);
+    return Promise.resolve(true);
+  };
+  const header = context.createEntryHeader({
+    expression: 'you',
+    reading: 'you',
+    matched: 'you',
+    frequencies: [],
+    pitches: [],
+    rules: [],
+  }, 0);
+  const expression = findByClassDeep(header, 'expression');
+  assert.ok(expression, 'headword .expression was not created');
+  const click = () => expression.dispatchEvent({
+    type: 'click',
+    target: expression,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+
+  context.window.getSelection().text = 'you';
+  click();
+  assert.equal(bridgeCalls.filter(([name]) => name === 'onLinkClick').length, 0,
+    'a click that ends a drag selection must not re-look-up the headword');
+  assert.equal(context.window.getSelection().toString(), 'you',
+    'the dragged selection must survive for Ctrl+C');
+
+  context.window.getSelection().removeAllRanges();
+  click();
+  const links = bridgeCalls.filter(([name]) => name === 'onLinkClick');
+  assert.equal(links.length, 1, 'a plain headword tap still looks the word up');
+  assert.equal(links[0][1], 'you');
+
+  // 键盘 / 焦点导航激活（click.detail === 0）不是拖选收尾：别处残留的选区不能吞掉它。
+  const selection = context.window.getSelection();
+  selection.text = 'leftover';
+  expression.dispatchEvent({
+    type: 'click',
+    target: expression,
+    currentTarget: expression,
+    detail: 0,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  assert.equal(bridgeCalls.filter(([name]) => name === 'onLinkClick').length, 2,
+    'a keyboard activation must look the headword up despite a leftover selection');
+
+  // 指针点击，但选区在弹窗别处、没碰到词头：照常查词。
+  selection.containsNode = (node) => node !== expression;
+  expression.dispatchEvent({
+    type: 'click',
+    target: expression,
+    currentTarget: expression,
+    detail: 1,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  assert.equal(bridgeCalls.filter(([name]) => name === 'onLinkClick').length, 3,
+    'a selection elsewhere in the popup must not swallow a headword click');
+
+  // 选区碰到词头的指针点击仍是拖选收尾。
+  selection.containsNode = (node) => node === expression;
+  expression.dispatchEvent({
+    type: 'click',
+    target: expression,
+    currentTarget: expression,
+    detail: 1,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  assert.equal(bridgeCalls.filter(([name]) => name === 'onLinkClick').length, 3,
+    'a drag selection over the headword still survives its closing click');
+  delete selection.containsNode;
+  selection.removeAllRanges();
+}
+
+testHeadwordClickEndingDragSelectionKeepsSelection();
+console.log('headword drag-selection tests passed');

@@ -14,8 +14,9 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
@@ -25,8 +26,8 @@ import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/video/subtitle/library_video_subtitle_backfill.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/library_video_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_backfill.dart';
 
 const String _srt = '1\n00:00:01,000 --> 00:00:02,000\nまちがい\n';
 
@@ -478,6 +479,7 @@ void main() {
       final SubtitleBackfillTarget target = (await libraryVideoSubtitleTarget(
         db,
         book,
+        confirmedIdentities: DownloadConfirmedIdentityResolver(db),
       )).target!;
       expect(target.media.tmdbId, 12345, reason: '主身份优先，旧的非主行不能覆盖它');
       expect(
@@ -494,13 +496,22 @@ void main() {
         'video/movie',
       ))!;
       final ({SubtitleBackfillTarget? target, String? reason}) unscraped =
-          await libraryVideoSubtitleTarget(db, book);
+          await libraryVideoSubtitleTarget(
+            db,
+            book,
+            confirmedIdentities: DownloadConfirmedIdentityResolver(db),
+          );
       expect(unscraped.target, isNull);
       expect(unscraped.reason, contains('not been scraped'));
 
       await scrape('video/movie', provider: 'tmdb');
       final ({SubtitleBackfillTarget? target, String? reason}) built =
-          await libraryVideoSubtitleTarget(db, book, explicitLanguage: 'ja');
+          await libraryVideoSubtitleTarget(
+            db,
+            book,
+            explicitLanguage: 'ja',
+            confirmedIdentities: DownloadConfirmedIdentityResolver(db),
+          );
       final SubtitleBackfillTarget target = built.target!;
       expect(target.media.tmdbId, 12345);
       expect(target.media.mediaKind, VideoMetadataMediaKind.movie);
@@ -521,6 +532,7 @@ void main() {
           database: db,
           service: empty,
           videoId: 'video/ghost',
+          confirmedIdentities: DownloadConfirmedIdentityResolver(db),
         ),
         isNull,
       );
@@ -529,6 +541,7 @@ void main() {
           database: db,
           service: empty,
           videoId: 'video/movie',
+          confirmedIdentities: DownloadConfirmedIdentityResolver(db),
         ))!.outcome,
         'unavailable',
       );
@@ -537,6 +550,7 @@ void main() {
           database: db,
           service: null,
           videoId: 'video/movie',
+          confirmedIdentities: DownloadConfirmedIdentityResolver(db),
         ))!.outcome,
         'unavailable',
       );

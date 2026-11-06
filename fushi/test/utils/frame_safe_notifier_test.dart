@@ -18,15 +18,14 @@ class _NotifyOnPaint extends CustomPainter {
 }
 
 void main() {
-  testWidgets(
-    'notifyListenersFrameSafe during paint does not throw '
-    '"Build scheduled during frame"',
-    (WidgetTester tester) async {
-      final _TestNotifier notifier = _TestNotifier();
-      addTearDown(notifier.dispose);
-      int builds = 0;
+  testWidgets('notifyListenersFrameSafe during paint does not throw '
+      '"Build scheduled during frame"', (WidgetTester tester) async {
+    final _TestNotifier notifier = _TestNotifier();
+    addTearDown(notifier.dispose);
+    int builds = 0;
 
-      await tester.pumpWidget(MaterialApp(
+    await tester.pumpWidget(
+      MaterialApp(
         home: Column(
           children: <Widget>[
             // A listener that rebuilds on notify (mirrors SettingsHomePage's
@@ -47,21 +46,28 @@ void main() {
             ),
           ],
         ),
-      ));
+      ),
+    );
 
-      final int buildsAfterMount = builds;
-      expect(tester.takeException(), isNull,
-          reason: 'a mid-paint notify must not raise a framework error');
+    final int buildsAfterMount = builds;
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: 'a mid-paint notify must not raise a framework error',
+    );
 
-      // The deferred notify still reaches listeners, just after the frame.
-      await tester.pump();
-      expect(builds, greaterThan(buildsAfterMount),
-          reason: 'the listener still rebuilds, on the next frame');
-    },
-  );
+    // The deferred notify still reaches listeners, just after the frame.
+    await tester.pump();
+    expect(
+      builds,
+      greaterThan(buildsAfterMount),
+      reason: 'the listener still rebuilds, on the next frame',
+    );
+  });
 
-  testWidgets('notifyListenersFrameSafe notifies synchronously when idle',
-      (WidgetTester tester) async {
+  testWidgets('notifyListenersFrameSafe notifies synchronously when idle', (
+    WidgetTester tester,
+  ) async {
     final _TestNotifier notifier = _TestNotifier();
     addTearDown(notifier.dispose);
     int notifications = 0;

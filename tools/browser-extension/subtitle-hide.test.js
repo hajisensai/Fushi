@@ -16,6 +16,7 @@ const vm = require('node:vm');
 const CONTENT = path.join(__dirname, 'content.js');
 const PANEL = path.join(__dirname, 'subtitle-panel.js');
 const SHORTCUTS = path.join(__dirname, 'video-shortcuts.js');
+const VIDEO_TARGET = path.join(__dirname, 'video-target.js');
 
 // BUG-1718：真实运行时（manifest content_scripts / side-panel.html）里 vendor/dict-media.js
 // 恒在 content.js / side-panel.js 之前加载，后者依赖它导出的 applyFushiPopupCss 与
@@ -139,9 +140,14 @@ function loadContent(storedHidden) {
     flutter_inappwebview: { callHandler() {} },
   };
   sandbox.window.window = sandbox.window;
+  // 浏览器里 self === window；UMD 头（video-target.js 等）按 self 挂导出。
+  sandbox.self = sandbox.window;
 
   vm.createContext(sandbox);
   loadFushiDictMedia(sandbox);
+  // manifest：video-target.js 排在 content.js 之前，提供 fushiControlledVideo——视频快捷键
+  // （含 Shift+H 隐藏字幕）只认这个受 Fushi 控制的目标视频，缺了它快捷键一律放行。
+  vm.runInContext(fs.readFileSync(VIDEO_TARGET, 'utf8'), sandbox, { filename: 'video-target.js' });
   vm.runInContext(src, sandbox, { filename: 'content.js' });
   return { sandbox, head, stored, changeListeners, windowListeners };
 }
@@ -201,19 +207,39 @@ test('隐藏字幕：options 页改开关经 storage.onChanged 实时生效', ()
   assert.strictEqual(findById(head, STYLE_ID), null);
 });
 
+test('BUG-4053 隐藏状态只读查询：fushiSubtitleManuallyHidden 跟随 Shift+H / 存量 / onChanged', () => {
+  const { sandbox, changeListeners } = loadContent(false);
+  const hidden = sandbox.window.fushiSubtitleManuallyHidden;
+  assert.strictEqual(typeof hidden, 'function', 'video-shortcuts.js 判「字幕已关」要读它');
+  assert.strictEqual(hidden(), false);
+  sandbox.window.fushiToggleSubtitleHiding();
+  assert.strictEqual(hidden(), true);
+  sandbox.window.fushiToggleSubtitleHiding();
+  assert.strictEqual(hidden(), false);
+  for (const fn of changeListeners) fn({ subtitleHidden: { newValue: true } }, 'local');
+  assert.strictEqual(hidden(), true, 'options 页改开关也要反映');
+  assert.strictEqual(loadContent(true).sandbox.window.fushiSubtitleManuallyHidden(), true, '刷新后读存量');
+});
+
 test('Shift+H 真链：keydown 经 subtitle-panel 转发到 content 并持久化隐藏状态', () => {
   const h = loadContent(false);
-  const video = { currentTime: 0, paused: false, playbackRate: 1 };
+  // 受 Fushi 控制的目标视频：视口内可见、在播、有声的正片（video-target.js controlledVideo 的判据）。
+  const video = {
+    tagName: 'VIDEO', currentTime: 0, paused: false, ended: false, readyState: 4,
+    playbackRate: 1, muted: false, volume: 1,
+    getBoundingClientRect: () => ({ left: 0, top: 0, right: 1200, bottom: 675, width: 1200, height: 675 }),
+  };
   h.sandbox.document.querySelector = (selector) => selector === 'video' ? video : null;
+  h.sandbox.document.querySelectorAll = (selector) => selector === 'video' ? [video] : [];
   h.sandbox.setInterval = () => 0;
   h.sandbox.clearInterval = () => {};
   h.sandbox.navigator = {
     clipboard: { writeText: () => Promise.resolve() },
   };
-  h.sandbox.self = h.sandbox.window;
   h.sandbox.window.fushiEpisodeCues = {};
   h.sandbox.window.fushiVideoKey = () => 'episode';
 
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'subtitle-adapters.js'), 'utf8'), h.sandbox, { filename: 'subtitle-adapters.js' }); // manifest：先于 subtitle-panel.js（共享轨判据）
   vm.runInContext(
     fs.readFileSync(PANEL, 'utf8'),
     h.sandbox,

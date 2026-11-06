@@ -16,7 +16,7 @@ import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 /// 过快捷键设置的用户，其快照里该 action 仍是「旧版本的完整默认」（仅 F），覆盖后新键
 /// （F12）永久丢失 —— 表现为「按 F12 没反应」。迁移只对「用户从未动过该 action（键集
 /// 恰等于旧默认全集）」的快照补回新键，绝不碰用户主动改/删过的绑定。
-const int kShortcutSchemaVersion = 14;
+const int kShortcutSchemaVersion = 15;
 
 /// 持久化 JSON 里记录写入时 schema 版本的保留 key（不是某个 action 的绑定，故单独
 /// 处理，不进 _unknownEntries，也不会被 [ShortcutAction.fromKey] 误解析）。
@@ -112,13 +112,21 @@ class FushiShortcutRegistry extends ChangeNotifier {
     if (from < 2) {
       // 全部「仅手柄改动」：键盘默认未变，用平台无关的 keyboard-untouched 判据。
       _restoreGamepadDefaultIfKeyboardUntouched(
-          ShortcutAction.globalBack, defaults);
+        ShortcutAction.globalBack,
+        defaults,
+      );
       _restoreGamepadDefaultIfKeyboardUntouched(
-          ShortcutAction.audiobookPrevSentence, defaults);
+        ShortcutAction.audiobookPrevSentence,
+        defaults,
+      );
       _restoreGamepadDefaultIfKeyboardUntouched(
-          ShortcutAction.audiobookNextSentence, defaults);
+        ShortcutAction.audiobookNextSentence,
+        defaults,
+      );
       _restoreGamepadDefaultIfKeyboardUntouched(
-          ShortcutAction.readerDismissDict, defaults);
+        ShortcutAction.readerDismissDict,
+        defaults,
+      );
     }
     // v2 -> v3（TODO-700 T6/T7）：新增 dpadUp/Down/Left/Right（gamepad scope）+
     // readerEnterCaret（reader scope）。这些是**全新 action**，老快照里根本没有它们的
@@ -240,9 +248,13 @@ class FushiShortcutRegistry extends ChangeNotifier {
     // 判据。B 不在此列——退出/关弹窗归 universal globalBack 的手柄 B（v1→v2 已补）。
     if (from < 9) {
       _restoreGamepadDefaultIfKeyboardUntouched(
-          ShortcutAction.mangaPageForward, defaults);
+        ShortcutAction.mangaPageForward,
+        defaults,
+      );
       _restoreGamepadDefaultIfKeyboardUntouched(
-          ShortcutAction.mangaPageBackward, defaults);
+        ShortcutAction.mangaPageBackward,
+        defaults,
+      );
     }
     // v9 -> v10（手柄全功能重设计 P2，查词弹窗接手柄）：给三个**已存在**的
     // dictionaryPopup 动作新增手柄默认（dpad下/上=词条导航、X=制卡）。不能用
@@ -331,6 +343,26 @@ class FushiShortcutRegistry extends ChangeNotifier {
         defaults: defaults,
       );
     }
+    // v14 -> v15（反馈 bjPjRHsaUy：焦点导航进快捷键体系）：焦点四向（动作名 dpad*，
+    // gamepad scope）开放键盘通道，默认键盘 = 对应裸方向键。此前该 scope 的键盘
+    // 通道**按构造不可录**，快照里的键盘集必为空——空集不可能是用户自定义，补上零
+    // 误伤；只换键盘，用户改过的手柄 dpad 绑定原样保留。focusActivate 是全新 action，
+    // loadDefaults 已播种。即便不迁移，未绑到焦点动作的裸方向键也按物理方向回退
+    // （`_handleGlobalFocusNavigation`），这里只是让设置页显示与实际一致。
+    if (from < 15) {
+      for (final ShortcutAction action in const <ShortcutAction>[
+        ShortcutAction.dpadUp,
+        ShortcutAction.dpadDown,
+        ShortcutAction.dpadLeft,
+        ShortcutAction.dpadRight,
+      ]) {
+        _replaceKeyboardIfUntouched(
+          action,
+          oldDefaultKeyboard: const <InputBinding>[],
+          defaults: defaults,
+        );
+      }
+    }
   }
 
   /// v13：[action] 的键盘绑定恰等于 [oldDefaultKeyboard]（用户没动过）时，只把
@@ -406,16 +438,22 @@ class FushiShortcutRegistry extends ChangeNotifier {
       return; // 损坏的条目：丢弃即可，绝不因此打断整段迁移。
     }
     final bool keyboardUntouched = _sameBindings<InputBinding>(
-        legacy.keyboardBindings, oldDefaultKeyboard);
+      legacy.keyboardBindings,
+      oldDefaultKeyboard,
+    );
     final bool gamepadUntouched = _sameBindings<GamepadBinding>(
-        legacy.gamepadBindings, oldDefaultGamepad);
+      legacy.gamepadBindings,
+      oldDefaultGamepad,
+    );
     if (keyboardUntouched && gamepadUntouched) return;
 
     final ShortcutBindingSet back = bindingsFor(ShortcutAction.globalBack);
-    final List<InputBinding> keyboard =
-        List<InputBinding>.of(back.keyboardBindings);
-    final List<GamepadBinding> gamepad =
-        List<GamepadBinding>.of(back.gamepadBindings);
+    final List<InputBinding> keyboard = List<InputBinding>.of(
+      back.keyboardBindings,
+    );
+    final List<GamepadBinding> gamepad = List<GamepadBinding>.of(
+      back.gamepadBindings,
+    );
     if (!keyboardUntouched) {
       for (final InputBinding b in legacy.keyboardBindings) {
         if (!keyboard.contains(b)) keyboard.add(b);
@@ -511,22 +549,27 @@ class FushiShortcutRegistry extends ChangeNotifier {
     Iterable<MouseBinding> removeMouseConflicts = const <MouseBinding>[],
     Iterable<WheelBinding> removeWheelConflicts = const <WheelBinding>[],
   }) {
-    final Set<InputBinding> keyboardToRemove =
-        Set<InputBinding>.of(removeKeyboardConflicts);
-    final Set<GamepadBinding> gamepadToRemove =
-        Set<GamepadBinding>.of(removeGamepadConflicts);
-    final Set<MouseBinding> mouseToRemove =
-        Set<MouseBinding>.of(removeMouseConflicts);
-    final Set<WheelBinding> wheelToRemove =
-        Set<WheelBinding>.of(removeWheelConflicts);
+    final Set<InputBinding> keyboardToRemove = Set<InputBinding>.of(
+      removeKeyboardConflicts,
+    );
+    final Set<GamepadBinding> gamepadToRemove = Set<GamepadBinding>.of(
+      removeGamepadConflicts,
+    );
+    final Set<MouseBinding> mouseToRemove = Set<MouseBinding>.of(
+      removeMouseConflicts,
+    );
+    final Set<WheelBinding> wheelToRemove = Set<WheelBinding>.of(
+      removeWheelConflicts,
+    );
 
     if (keyboardToRemove.isNotEmpty ||
         gamepadToRemove.isNotEmpty ||
         mouseToRemove.isNotEmpty ||
         wheelToRemove.isNotEmpty) {
       for (final ShortcutScope scope in action.scope.coactiveScopes) {
-        for (final ShortcutAction oldAction
-            in ShortcutAction.actionsForScope(scope)) {
+        for (final ShortcutAction oldAction in ShortcutAction.actionsForScope(
+          scope,
+        )) {
           if (oldAction == action) continue;
           final ShortcutBindingSet oldBindings = bindingsFor(oldAction);
           final List<InputBinding> keyboard = oldBindings.keyboardBindings
@@ -576,14 +619,12 @@ class FushiShortcutRegistry extends ChangeNotifier {
   /// 解析按下的键到 scope 内绑定的动作。正常路径走 [InputBinding.==] 精确相等
   /// （logicalKey + modifiers）。
   ///
-  /// TODO-847：Windows 微软 IME 激活时，Flutter 引擎把 KeyDownEvent 的 logicalKey
-  /// 改写成 [LogicalKeyboardKey.process]，精确相等永远失败、全表面快捷键失效。
-  /// physicalKey（USB HID 扫描码）不受 IME 改写，故仅当 `key == process &&
-  /// physicalKey != null` 时启用物理键回退分支：在 modifiers 完全相同的前提下按
-  /// binding 的 [InputBinding.physicalKey] 比对。调用方在文本框 composing 时应传
-  /// `physicalKey: null` 关闭回退，避免 IME 打字误触快捷键。
+  /// 精确匹配落空时，传入的 [physicalKey] 经 [InputBinding.normalizeCapturedKey]
+  /// 把表外逻辑键（BUG-2948：macOS 上 Shift+/ 报 `question`）收拢回表内键再比一次；
+  /// 调用方在文本框持焦时传 null 关闭回退。
   ///
-  /// 已知限制：物理回退仅对 US-QWERTY 物理布局正确（见 [InputBinding._logicalToPhysical]）。
+  /// 这里**没有** IME 特例：Windows 输入法吞键时引擎根本不发 KeyEvent，修在平台
+  /// 边界（`WindowsImeGuard`，BUG-430/1450）。物理回退仅对 US-QWERTY 物理布局正确。
   ShortcutAction? resolveKeyboard(
     LogicalKeyboardKey key, {
     required Set<ModifierKey> modifiers,
@@ -598,9 +639,8 @@ class FushiShortcutRegistry extends ChangeNotifier {
         if (kb == target) return action;
       }
     }
-    // 物理键回退：与录入侧同一契约 [InputBinding.normalizeCapturedKey]——IME 的
-    // `process`（TODO-847）与表外逻辑键（BUG-2948：macOS 上 Shift+/ 报 `question`）
-    // 都按物理键收拢回表内键再比一次。正常路径（上面精确相等）已先尝试，存量的
+    // 物理键回退：与录入侧同一契约 [InputBinding.normalizeCapturedKey]——表外逻辑键
+    // （BUG-2948：macOS 上 Shift+/ 报 `question`）按物理键收拢回表内键再比一次。正常路径（上面精确相等）已先尝试，存量的
     // `#<keyId>` 绑定不受影响。调用方在文本框 composing 时传 null 关闭回退。
     if (physicalKey != null) {
       final LogicalKeyboardKey normalized = InputBinding.normalizeCapturedKey(
@@ -639,10 +679,7 @@ class FushiShortcutRegistry extends ChangeNotifier {
     return null;
   }
 
-  ShortcutAction? resolveMouse(
-    int button, {
-    required ShortcutScope scope,
-  }) {
+  ShortcutAction? resolveMouse(int button, {required ShortcutScope scope}) {
     final target = MouseBinding(button);
     for (final action in ShortcutAction.actionsForScope(scope)) {
       final bindings = _bindings[action];
@@ -664,7 +701,7 @@ class FushiShortcutRegistry extends ChangeNotifier {
   /// 同样只改**检测**不改 `coactiveScopes`：后者同时喂运行时解析
   /// （`resolveKeyboard` / `reverse_binding_index`），动它就是改派发。
   static const List<ShortcutScope> _keyboardPreemptingScopes = <ShortcutScope>[
-    ShortcutScope.globalExternal
+    ShortcutScope.globalExternal,
   ];
 
   ShortcutAction? hasKeyboardConflict(
@@ -678,7 +715,7 @@ class FushiShortcutRegistry extends ChangeNotifier {
         ? scope.coactiveScopes
         : <ShortcutScope>[
             ...scope.coactiveScopes,
-            ..._keyboardPreemptingScopes
+            ..._keyboardPreemptingScopes,
           ];
     for (final coactive in scopes) {
       for (final action in ShortcutAction.actionsForScope(coactive)) {
@@ -704,7 +741,7 @@ class FushiShortcutRegistry extends ChangeNotifier {
   /// 只改**检测**不改 `coactiveScopes`：后者同时喂运行时解析
   /// （`resolveMouse` / `reverse_binding_index`），动它就是改派发。
   static const List<ShortcutScope> _gamepadPreemptingScopes = <ShortcutScope>[
-    ShortcutScope.globalExternal
+    ShortcutScope.globalExternal,
   ];
 
   ShortcutAction? hasGamepadConflict(

@@ -1,18 +1,18 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/field.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 
 /// Returns information about the current context in human-readable format
 class ContextField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   ContextField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Context',
-          description: 'Name of current source media.',
-          icon: Icons.perm_media_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Context',
+        description: 'Name of current source media.',
+        icon: Icons.perm_media_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static ContextField get instance => _instance;

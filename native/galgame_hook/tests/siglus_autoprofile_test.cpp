@@ -30,7 +30,10 @@ struct Image {
   exact_lookup::LoadedPeImage view;
   Layout layout;
 
-  explicit Image(Layout positions = {}) : layout(positions) {
+  bool plain = false;
+
+  explicit Image(Layout positions = {}, bool plain_frame = false)
+      : layout(positions), plain(plain_frame) {
     assert(bytes != nullptr);
     std::memset(bytes, 0xcc, 0x9000u);
     view.base = bytes;
@@ -54,24 +57,29 @@ struct Image {
     Put(layout.glyph + 0x200u, kGlyphCoordinates.pattern());
     Put(layout.glyph + 0xd00u, kGlyphReturn.pattern());
     Put(layout.dialogue, kDialogueCall.pattern());
-    Put(layout.scenario + 5u, kScenarioEntryTail.pattern());
+    const ScenarioInputCodegen shape = Shape();
+    Put(layout.scenario + 5u, shape.scenario_tail);
     std::memcpy(bytes + layout.scenario, "\x55\x8b\xec\x6a\xff", 5u);
-    Put(layout.scenario + 0x100u, kScenarioStringAbi.pattern());
+    Put(layout.scenario + 0x100u, shape.scenario_string_abi);
     Put(layout.scenario + 0x800u, kScenarioReturn.pattern());
-    Put(layout.input, siglus_exact::kSprbInputMessageEntryPattern);
-    Put(layout.input + 0x41u, kInputReturn.pattern());
-    Put(layout.main_call, kMainInputCall.pattern());
-    Put(layout.keyboard, kKeyboardLoop.pattern());
-    Put(layout.keyboard + 0x6bu, kLeftButtonConsumer.pattern());
+    Put(layout.input, *shape.input_entry);
+    Put(layout.input + (plain ? 0x40u : 0x41u), kInputReturn.pattern());
+    Put(layout.main_call, shape.main_call);
+    Put(layout.keyboard, shape.keyboard);
+    // Plain-frame code places the consumer past the aligned window (0x100).
+    Put(layout.keyboard + (plain ? 0x12cu : 0x6bu), shape.consumer);
     Put(layout.writer, kCoordinateWriter.pattern());
     Call(layout.dialogue + kDialogueCallOffset, layout.glyph);
-    Call(layout.main_call + kMainInputCallOffset, layout.input);
+    Call(layout.main_call + shape.main_call_offset, layout.input);
     Call(layout.glyph + 0x200u + kCoordinateCallOffset, layout.writer);
     const uint32_t absolute_iat =
         static_cast<uint32_t>(view.absolute_base + layout.iat);
     std::memcpy(bytes + layout.keyboard + 2u, &absolute_iat, 4u);
   }
   ~Image() { VirtualFree(bytes, 0u, MEM_RELEASE); }
+  ScenarioInputCodegen Shape() const {
+    return plain ? PlainFrameCodegen() : AlignedFrameCodegen();
+  }
   Image(const Image&) = delete;
   Image& operator=(const Image&) = delete;
 
@@ -98,7 +106,11 @@ struct Image {
     assert(result.exact_text_return_rva == 0u);
     assert(result.input_message_rva == layout.input);
     assert(result.main_input_message_return_rva ==
-           layout.main_call + kMainInputCallOffset + 5u);
+           layout.main_call + Shape().main_call_offset + 5u);
+    assert(result.input_entry_abi == (plain ? SiglusInputEntryAbi::kPlainFrame
+                                            : SiglusInputEntryAbi::kAlignedFrame));
+    // A named import is hooked at its export; no slot is ever redirected.
+    assert(result.get_key_state_slot_rva == 0u);
     assert(result.get_key_state_return_rva == layout.keyboard + 15u);
     assert(result.viewport_width == 0 && result.viewport_height == 0);
     assert((result.executable_sha256 == std::array<uint8_t, 32>{}));
@@ -225,6 +237,48 @@ int main() {
     assert(VirtualProtect(image.bytes + 0x6000u, 0x1000u, PAGE_NOACCESS, &old));
     image.Reject();
     assert(VirtualProtect(image.bytes + 0x6000u, 0x1000u, old, &old));
+  }
+  {
+    // Plain-frame code generation (Enigma-protected Rewrite+ build shape).
+    Image{{}, true}.Check();
+    Image{moved, true}.Check();
+    Image image{{}, true};
+    image.Put(image.layout.keyboard + 0x6bu, image.Shape().consumer);
+    image.Reject();  // A second consumer inside the window is ambiguous.
+  }
+  {
+    // Protector-rebuilt imports name no GetKeyState: the unnamed resolver
+    // reports the loop's slot for live proof; the named one still refuses.
+    for (const bool plain : {false, true}) {
+      Image image{{}, plain};
+      SiglusLookupProfile result;
+      assert(ResolveSiglusFamilyProfileWithUnnamedKeySlot(image.view, &result));
+      assert(result.get_key_state_slot_rva == image.layout.iat);
+      assert(result.glyph_layout_rva == image.layout.glyph);
+      assert(!ResolveSiglusFamilyProfile(image.view, 0u, &result));
+    }
+    Image image{{}, true};
+    image.view.sections[2].characteristics = 0u;  // Slot not readable.
+    SiglusLookupProfile result;
+    assert(!ResolveSiglusFamilyProfileWithUnnamedKeySlot(image.view, &result));
+  }
+  {
+    // Both code generations complete at once: no shape wins by scan order.
+    Image image;
+    const auto plain = PlainFrameCodegen();
+    image.Put(0x4a00u, *plain.input_entry);
+    image.Put(0x4a40u, kInputReturn.pattern());
+    image.Put(0x4c00u, plain.main_call);
+    image.Call(0x4c00u + plain.main_call_offset, 0x4a00u);
+    image.Put(0x4e00u, plain.keyboard);
+    std::memcpy(image.bytes + 0x4e02u, image.bytes + image.layout.keyboard + 2u, 4u);
+    image.Put(0x4e00u + 0x12cu, plain.consumer);
+    image.Put(0x6405u, plain.scenario_tail);
+    std::memcpy(image.bytes + 0x6400u, "\x55\x8b\xec\x6a\xff", 5u);
+    image.Put(0x6c00u, kScenarioReturn.pattern());
+    image.Check();  // Plain shape still lacks its string ABI: aligned only.
+    image.Put(0x6500u, plain.scenario_string_abi);
+    image.Reject();
   }
   assert(!ResolveSiglusFamilyProfile({}, 0u, nullptr));
   return 0;

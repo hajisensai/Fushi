@@ -5,7 +5,7 @@ import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：远端 host **默认字幕下载失败不得把整集判成播放失败**。
 ///
-/// `_loadRemoteEpisode` 的 `else if (urls.subtitleUrl != null)` 分支此前没有局部
+/// `_loadRemoteEpisode` 的后端默认字幕 apply 分支（原 `else if (urls.subtitleUrl != null)`）此前没有局部
 /// try/catch，`getRemoteVideoSubtitle` 任何非 2xx（飞牛返回 HTML 登录页、Emby 图形轨
 /// 抽取 500、旧 host 无该端点）都冒到方法外层 catch → `_failed = true`，而视频流本身
 /// 明明能放。同方法里 `embedded:<n>` 重放分支早就是「抽取失败静默落回、不阻断起播」，
@@ -22,7 +22,9 @@ void main() {
     // 注释掩成空白：分支上方的说明注释本身就写着 `_failed = true` 这段历史，
     // 只有代码层的断言才算数（等长掩码，下标可直接回原串切片）。
     src = maskComments(readVideoFushiSource());
-    final int start = src.indexOf('} else if (urls.subtitleUrl != null) {');
+    final int start = src.indexOf(
+      '} else if (backendDefaultPlan == RemoteBackendDefaultSubtitlePlan.apply) {',
+    );
     expect(start, greaterThan(-1), reason: '应保留 host 默认字幕分支');
     // 分支之后紧跟换集守卫 + _applyLoad；切到守卫为止即整个分支体。
     final int end = src.indexOf(
@@ -36,12 +38,12 @@ void main() {
   test('默认字幕下载包在局部 try/catch 里，失败只 debugPrint', () {
     expect(branch.contains('try {'), isTrue, reason: '默认字幕分支应有局部 try');
     expect(
-      branch.contains('client.getRemoteVideoSubtitle('),
+      branch.contains('_downloadRemoteBackendDefaultSubtitle('),
       isTrue,
       reason: '下载调用应在该分支内',
     );
     expect(
-      branch.indexOf('client.getRemoteVideoSubtitle('),
+      branch.indexOf('_downloadRemoteBackendDefaultSubtitle('),
       greaterThan(branch.indexOf('try {')),
       reason: '下载调用必须落在 try 块内',
     );
@@ -82,13 +84,22 @@ void main() {
   test('分支之后仍走换集守卫 → _applyLoad 起播（字幕失败视频照放）', () {
     final int guardAt = src.indexOf(
       'if (seq != _episodeLoadSeq || !mounted) return;',
-      src.indexOf('} else if (urls.subtitleUrl != null) {'),
+      src.indexOf(
+        '} else if (backendDefaultPlan == RemoteBackendDefaultSubtitlePlan.apply) {',
+      ),
     );
-    final int applyAt = src.indexOf('await _applyLoad(', guardAt);
+    // 起播可能包在 `_separatedAudio.runLoad(() => _applyLoad(...))` 里（TODO-1280
+    // 分离音轨按 token 归属），所以只找 `_applyLoad(`，但必须紧跟守卫。
+    final int applyAt = src.indexOf('_applyLoad(', guardAt);
     expect(
       applyAt,
       greaterThan(guardAt),
       reason: '守卫之后应紧接 _applyLoad，字幕失败不阻断起播',
+    );
+    expect(
+      applyAt - guardAt,
+      lessThan(400),
+      reason: '_applyLoad 应紧跟换集守卫，中间不得插入可失败的字幕步骤',
     );
     // 流 URL 协商失败仍是真正的播放失败：方法外层 catch 保留 _failed = true。
     final int outerCatch = src.indexOf(

@@ -14,22 +14,24 @@ class VideoNfoBuilder {
 
   /// 按作品类型生成 `<movie>` 或 `<tvshow>` NFO。
   static Uint8List buildWork(VideoMetadataWork work) => switch (work.kind) {
-        VideoMetadataMediaKind.movie => buildMovie(work),
-        VideoMetadataMediaKind.tv => buildTvShow(work),
-      };
+    VideoMetadataMediaKind.movie => buildMovie(work),
+    VideoMetadataMediaKind.tv => buildTvShow(work),
+  };
 
   /// 生成 `<movie>` NFO。
   static Uint8List buildMovie(VideoMetadataWork work) {
     if (work.kind != VideoMetadataMediaKind.movie) {
       throw ArgumentError.value(work.kind, 'work.kind', '必须是 movie');
     }
-    return _encode(_buildDocument('movie', (XmlBuilder builder) {
-      _writeWorkCommon(builder, work);
-      _text(builder, 'title', work.title);
-      _text(builder, 'originaltitle', work.originalTitle);
-      _text(builder, 'premiered', work.premiered);
-      _number(builder, 'year', work.year ?? _yearFromDate(work.premiered));
-    }));
+    return _encode(
+      _buildDocument('movie', (XmlBuilder builder) {
+        _writeWorkCommon(builder, work);
+        _text(builder, 'title', work.title);
+        _text(builder, 'originaltitle', work.originalTitle);
+        _text(builder, 'premiered', work.premiered);
+        _number(builder, 'year', work.year ?? _yearFromDate(work.premiered));
+      }),
+    );
   }
 
   /// 生成 `<tvshow>` NFO。
@@ -37,53 +39,53 @@ class VideoNfoBuilder {
     if (work.kind != VideoMetadataMediaKind.tv) {
       throw ArgumentError.value(work.kind, 'work.kind', '必须是 tv');
     }
-    return _encode(_buildDocument('tvshow', (XmlBuilder builder) {
-      _writeWorkCommon(builder, work);
-      _text(builder, 'title', work.title);
-      _text(builder, 'originaltitle', work.originalTitle);
-      _text(builder, 'premiered', work.premiered);
-      _number(builder, 'year', work.year ?? _yearFromDate(work.premiered));
-      _number(builder, 'season', -1);
-      _number(builder, 'episode', -1);
-    }));
+    return _encode(
+      _buildDocument('tvshow', (XmlBuilder builder) {
+        _writeWorkCommon(builder, work);
+        _text(builder, 'title', work.title);
+        _text(builder, 'originaltitle', work.originalTitle);
+        _text(builder, 'premiered', work.premiered);
+        _number(builder, 'year', work.year ?? _yearFromDate(work.premiered));
+        _number(builder, 'season', -1);
+        _number(builder, 'episode', -1);
+      }),
+    );
   }
 
   /// 生成 `<season>` NFO。
   static Uint8List buildSeason(
     VideoMetadataSeason season, {
     VideoMetadataProviderKind? primaryProvider,
-  }) =>
-      _encode(_buildDocument('season', (XmlBuilder builder) {
-        _writeIds(builder, season.ids, primaryProvider: primaryProvider);
-        _plot(builder, season.plot);
-        _text(builder, 'title', season.title);
-        _text(builder, 'premiered', season.airDate);
-        _text(builder, 'releasedate', season.airDate);
-        _number(builder, 'year', season.year ?? _yearFromDate(season.airDate));
-        _number(builder, 'seasonnumber', season.seasonNumber);
-      }));
+  }) => _encode(
+    _buildDocument('season', (XmlBuilder builder) {
+      _writeIds(builder, season.ids, primaryProvider: primaryProvider);
+      _plot(builder, season.plot);
+      _text(builder, 'title', season.title);
+      _text(builder, 'premiered', season.airDate);
+      _text(builder, 'releasedate', season.airDate);
+      _number(builder, 'year', season.year ?? _yearFromDate(season.airDate));
+      _number(builder, 'seasonnumber', season.seasonNumber);
+    }),
+  );
 
   /// 生成 `<episodedetails>` NFO。
   static Uint8List buildEpisode(
     VideoMetadataEpisode episode, {
     VideoMetadataProviderKind? primaryProvider,
-  }) =>
-      _encode(_buildDocument('episodedetails', (XmlBuilder builder) {
-        _writeIds(builder, episode.ids, primaryProvider: primaryProvider);
-        _text(builder, 'title', episode.title);
-        _plot(builder, episode.plot);
-        _text(builder, 'aired', episode.airDate);
-        _number(
-          builder,
-          'year',
-          episode.year ?? _yearFromDate(episode.airDate),
-        );
-        _number(builder, 'season', episode.seasonNumber);
-        _number(builder, 'episode', episode.episodeNumber);
-        _number(builder, 'rating', episode.rating);
-        _number(builder, 'runtime', episode.runtimeMinutes);
-        _writeCredits(builder, episode.credits);
-      }));
+  }) => _encode(
+    _buildDocument('episodedetails', (XmlBuilder builder) {
+      _writeIds(builder, episode.ids, primaryProvider: primaryProvider);
+      _text(builder, 'title', episode.title);
+      _plot(builder, episode.plot);
+      _text(builder, 'aired', episode.airDate);
+      _number(builder, 'year', episode.year ?? _yearFromDate(episode.airDate));
+      _number(builder, 'season', episode.seasonNumber);
+      _number(builder, 'episode', episode.episodeNumber);
+      _number(builder, 'rating', episode.rating);
+      _number(builder, 'runtime', episode.runtimeMinutes);
+      _writeCredits(builder, episode.credits);
+    }),
+  );
 
   static XmlDocument _buildDocument(
     String rootName,
@@ -96,15 +98,12 @@ class VideoNfoBuilder {
   }
 
   static Uint8List _encode(XmlDocument document) => Uint8List.fromList(
-        utf8.encode(
-          '${document.toXmlString(pretty: true, indent: '  ', newLine: '\n')}\n',
-        ),
-      );
+    utf8.encode(
+      '${document.toXmlString(pretty: true, indent: '  ', newLine: '\n')}\n',
+    ),
+  );
 
-  static void _writeWorkCommon(
-    XmlBuilder builder,
-    VideoMetadataWork work,
-  ) {
+  static void _writeWorkCommon(XmlBuilder builder, VideoMetadataWork work) {
     _writeIds(builder, work.ids, primaryProvider: work.provider);
     _plot(builder, work.plot);
     _writeCredits(builder, work.credits);
@@ -152,8 +151,9 @@ class VideoNfoBuilder {
 
     for (final String type in const <String>['anidb', 'tmdb', 'tvdb', 'imdb']) {
       final VideoMetadataId? id = ids
-          .where((VideoMetadataId value) =>
-              value.type.trim().toLowerCase() == type)
+          .where(
+            (VideoMetadataId value) => value.type.trim().toLowerCase() == type,
+          )
           .firstOrNull;
       if (id != null) {
         _text(builder, '${type}id', id.value);
@@ -189,9 +189,7 @@ class VideoNfoBuilder {
     return 0;
   }
 
-  static List<VideoMetadataId> _deduplicateIds(
-    List<VideoMetadataId> ids,
-  ) {
+  static List<VideoMetadataId> _deduplicateIds(List<VideoMetadataId> ids) {
     final Set<String> seen = <String>{};
     final List<VideoMetadataId> result = <VideoMetadataId>[];
     for (final VideoMetadataId id in ids) {
@@ -200,11 +198,9 @@ class VideoNfoBuilder {
       if (type.isEmpty || value.isEmpty || !seen.add('$type\u0000$value')) {
         continue;
       }
-      result.add(VideoMetadataId(
-        type: type,
-        value: value,
-        isDefault: id.isDefault,
-      ));
+      result.add(
+        VideoMetadataId(type: type, value: value, isDefault: id.isDefault),
+      );
     }
     return result;
   }
@@ -215,14 +211,17 @@ class VideoNfoBuilder {
       return;
     }
     for (final String name in const <String>['plot', 'outline']) {
-      builder.element(name, nest: () {
-        // XML 不允许 CDATA 内出现 `]]>`；这类罕见文本回落到普通转义文本。
-        if (plot.contains(']]>')) {
-          builder.text(plot);
-        } else {
-          builder.cdata(plot);
-        }
-      });
+      builder.element(
+        name,
+        nest: () {
+          // XML 不允许 CDATA 内出现 `]]>`；这类罕见文本回落到普通转义文本。
+          if (plot.contains(']]>')) {
+            builder.text(plot);
+          } else {
+            builder.cdata(plot);
+          }
+        },
+      );
     }
   }
 
@@ -260,30 +259,30 @@ class VideoNfoBuilder {
         case VideoMetadataCreditKind.actor:
         case VideoMetadataCreditKind.guest:
         case VideoMetadataCreditKind.voiceActor:
-          builder.element('actor', nest: () {
-            _text(builder, 'name', name);
-            _text(
-                builder,
-                'type',
-                switch (credit.kind) {
-                  VideoMetadataCreditKind.guest => 'GuestStar',
-                  VideoMetadataCreditKind.voiceActor => 'VoiceActor',
-                  _ => 'Actor',
-                });
-            _text(builder, 'role', credit.character?.name);
-            _text(builder, 'language', credit.language);
-            _number(builder, 'order', credit.order);
-            final String? tmdbId = _personId(credit.person, 'tmdb');
-            _text(builder, 'tmdbid', tmdbId);
-            _text(builder, 'thumb', credit.person.profileUrl);
-            if (tmdbId != null) {
-              _text(
-                builder,
-                'profile',
-                'https://www.themoviedb.org/person/$tmdbId',
-              );
-            }
-          });
+          builder.element(
+            'actor',
+            nest: () {
+              _text(builder, 'name', name);
+              _text(builder, 'type', switch (credit.kind) {
+                VideoMetadataCreditKind.guest => 'GuestStar',
+                VideoMetadataCreditKind.voiceActor => 'VoiceActor',
+                _ => 'Actor',
+              });
+              _text(builder, 'role', credit.character?.name);
+              _text(builder, 'language', credit.language);
+              _number(builder, 'order', credit.order);
+              final String? tmdbId = _personId(credit.person, 'tmdb');
+              _text(builder, 'tmdbid', tmdbId);
+              _text(builder, 'thumb', credit.person.profileUrl);
+              if (tmdbId != null) {
+                _text(
+                  builder,
+                  'profile',
+                  'https://www.themoviedb.org/person/$tmdbId',
+                );
+              }
+            },
+          );
       }
     }
   }

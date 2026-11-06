@@ -7,9 +7,19 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_tag.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 
-/// 「查看更新日志」页（TODO-1310）：应用内在线拉取本仓库全部 GitHub releases，
+/// 「查看更新日志」页（TODO-1310）：应用内在线拉取本仓库的 app 版本 GitHub releases
+/// （[isAppVersionRelease]：只挂资产的 `vendored-binaries` / `flutter-engine-*` 等不算），
 /// 用 Markdown 渲染每个版本的发布说明（版本号 / 发布日期 / 预发布标记 / 正文）。
 ///
 /// 数据经 [fetchAllGitHubReleases] 拉取，复用「检查更新」同一套镜像回退 + 代理注入
@@ -18,11 +28,7 @@ import 'package:fushi/utils.dart';
 ///
 /// [customProxy] 由设置页透传（`appModel.updateCustomProxy`），与检查更新同源。
 class ChangelogPage extends StatefulWidget {
-  const ChangelogPage({
-    super.key,
-    this.customProxy = '',
-    this.initialReleases,
-  });
+  const ChangelogPage({super.key, this.customProxy = '', this.initialReleases});
 
   final String customProxy;
 
@@ -56,8 +62,9 @@ class _ChangelogPageState extends State<ChangelogPage>
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final List<Map<String, dynamic>> releases =
-        await fetchAllGitHubReleases(customProxy: widget.customProxy);
+    final List<Map<String, dynamic>> releases = await fetchAllGitHubReleases(
+      customProxy: widget.customProxy,
+    );
     if (!mounted) return;
     setState(() {
       _releases = releases;
@@ -124,14 +131,13 @@ class _ChangelogPageState extends State<ChangelogPage>
           ),
         ),
         itemCount: _releases.length,
-        itemBuilder:
-            fushiStaggeredItemBuilder((BuildContext context, int index) {
+        itemBuilder: fushiStaggeredItemBuilder((
+          BuildContext context,
+          int index,
+        ) {
           return Padding(
             padding: EdgeInsets.only(bottom: tokens.spacing.card),
-            child: _ReleaseCard(
-              release: _releases[index],
-              latest: index == 0,
-            ),
+            child: _ReleaseCard(release: _releases[index], latest: index == 0),
           );
         }),
       ),
@@ -203,8 +209,9 @@ class _ReleaseCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Object? tagName = release['tag_name'];
-    final String title =
-        tagName is String && tagName.isNotEmpty ? tagName : '—';
+    final String title = tagName is String && tagName.isNotEmpty
+        ? tagName
+        : '—';
     final Object? bodyRaw = release['body'];
     final String body = bodyRaw is String ? bodyRaw.trim() : '';
     final String date = _publishedDate;
@@ -249,8 +256,12 @@ class _ReleaseCard extends StatelessWidget {
               // TODO-966: flutter_markdown 0.6.23 在 selectable 时会无条件解引用
               // onSelectionChanged!，不传则选中文本即崩；补空回调保留可选能力
               // （与 UpdateAvailableDialog 同一约定）。
-              onSelectionChanged: (String? text, TextSelection selection,
-                  SelectionChangedCause? cause) {},
+              onSelectionChanged:
+                  (
+                    String? text,
+                    TextSelection selection,
+                    SelectionChangedCause? cause,
+                  ) {},
               onTapLink: (_, String? href, __) {
                 if (href == null) return;
                 launchUrl(
@@ -262,9 +273,7 @@ class _ReleaseCard extends StatelessWidget {
               // LegacyDesignCompatibility 桥出来的旧主题（与 app 主题同色同字）。
               styleSheet: MarkdownStyleSheet.fromTheme(
                 legacy.Theme.of(context),
-              ).copyWith(
-                p: tokens.type.listSubtitle,
-              ),
+              ).copyWith(p: tokens.type.listSubtitle),
             ),
           ],
         ],

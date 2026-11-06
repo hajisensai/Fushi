@@ -1,0 +1,18 @@
+## BUG-3729 · 旧 Lapis 迁到 Fushi 卡片（或换笔记类型）后，牌组统计里复习记录全空
+- **报告**：2026-10-23（来源：用户反馈「我 lapis 的复习数据似乎没导进去，复习日历和复习量怎么一片空白」；srs_followup_tasks A）
+- **现象**：从 Anki 迁移后，原 Lapis 牌组（迁移后改名为 Fushi Card）的卡片已带着复习次数和记忆状态，但统计页筛到这个牌组时，复习日历、复习量、时长都是空的。
+- **真实性**：✅ 真 bug。用用户本机 Anki 集合（14715 笔记、51334 条 revlog）的副本走真实迁移路径复现：
+  - 复习日志全部导入：50188 条评分日志，另有 1068 条 manual。
+  - 但「正在背::Fushi Card」2181 张卡、992 张有复习次数，统计里 0 条复习；Anki 里这个牌组有 17636 条。
+- **根因**：
+  - 旧 Lapis 迁到 Fushi 卡片走的是「换笔记类型」：新卡用 `historyFrom/<旧卡>` 继承旧卡的历史，旧卡隐藏，日志仍记在旧卡 ID 下。
+  - 复习与排程用 `SrsDbStore.history` 沿血统合并日志；`packages/fushi_engine/lib/srs/srs_stats_loader.dart` 却按日志自己的 `card_id` 分组，`srsStatsFromHistory`（`srs_stats.dart`）也把每条记录记到日志上的卡 ID。
+  - 结果复习记录全挂在隐藏的旧卡上，按牌组 / 卡片筛选时整段丢失。
+- **[x] ① 已修复**：
+  - 新增 `SrsDbStore.historyOwnerIndex()`：前身卡 → 继承它历史的可见卡，与 `history` 同一条血统规则；前身本身仍可见的不挪；一张前身被多张继承时归 ID 最小的那张，不重复计数。
+  - 统计装载按它把前身日志并到可见卡。
+  - `srsStatsFromHistory` 加 `cardId` 参数，记录与成熟变化记在所属卡上。
+  - 已迁移用户无需重迁：统计是读时计算，打开即生效。
+  - 用户集合实测：该牌组 0 → 17636 条，与 Anki 逐条一致；总数 50188 不变。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/srs/apkg/srs_apkg_import_test.dart`「从 Anki 迁移的复习数据与新卡顺序」组：换笔记类型后复习记在可见新卡上、总数不变。
+- **备注**：用户集合实测用的是只读副本，没有改动 `%APPDATA%/Anki2` 下的原文件。

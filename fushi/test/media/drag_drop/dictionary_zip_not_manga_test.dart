@@ -47,16 +47,16 @@ void main() {
 
   /// 最小 PNG（1x1，真字节）——词典自带插图就长这样。
   List<int> onePixelPng() => <int>[
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
-        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
-        0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
-        0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
-        0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
-        0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
-        0x42, 0x60, 0x82,
-      ];
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
+    0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+    0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
+    0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+    0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+    0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+    0x42, 0x60, 0x82,
+  ];
 
   List<int> utf8Bytes(String text) => utf8.encode(text);
 
@@ -74,16 +74,11 @@ void main() {
         'img/neko.png': onePixelPng(),
       });
 
-      final DroppedFiles files = classifyDroppedFiles(
-        <String>[dictZip],
-        isImageArchive: MangaModule.isImageArchive,
-      );
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        dictZip,
+      ], isImageArchive: MangaModule.isImageArchive);
 
-      expect(
-        files.mangas,
-        isEmpty,
-        reason: '词典包被当漫画导 = 用户拖词典进书架，导出一本乱码「漫画」',
-      );
+      expect(files.mangas, isEmpty, reason: '词典包被当漫画导 = 用户拖词典进书架，导出一本乱码「漫画」');
       expect(files.dictionaries, <String>[dictZip]);
       expect(
         decideDropIntent(
@@ -101,10 +96,9 @@ void main() {
         'term_bank_1.json': utf8Bytes('[["犬","いぬ","n","",0,["dog"],1,""]]'),
       });
 
-      final DroppedFiles files = classifyDroppedFiles(
-        <String>[dictZip],
-        isImageArchive: MangaModule.isImageArchive,
-      );
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        dictZip,
+      ], isImageArchive: MangaModule.isImageArchive);
 
       expect(files.mangas, isEmpty);
       expect(files.dictionaries, <String>[dictZip]);
@@ -117,10 +111,9 @@ void main() {
         'stroke/neko.png': onePixelPng(),
       });
 
-      final DroppedFiles files = classifyDroppedFiles(
-        <String>[dictZip],
-        isImageArchive: MangaModule.isImageArchive,
-      );
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        dictZip,
+      ], isImageArchive: MangaModule.isImageArchive);
 
       expect(files.mangas, isEmpty, reason: 'term_bank 不是唯一的 bank 形态');
       expect(files.dictionaries, <String>[dictZip]);
@@ -136,10 +129,9 @@ void main() {
         '002.png': onePixelPng(),
       });
 
-      final DroppedFiles files = classifyDroppedFiles(
-        <String>[mangaZip],
-        isImageArchive: MangaModule.isImageArchive,
-      );
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        mangaZip,
+      ], isImageArchive: MangaModule.isImageArchive);
 
       expect(files.mangas, <String>[mangaZip]);
       expect(files.dictionaries, isEmpty);
@@ -152,10 +144,9 @@ void main() {
         '003.png': onePixelPng(),
       });
 
-      final DroppedFiles files = classifyDroppedFiles(
-        <String>[mangaZip],
-        isImageArchive: MangaModule.isImageArchive,
-      );
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        mangaZip,
+      ], isImageArchive: MangaModule.isImageArchive);
 
       expect(files.mangas, <String>[mangaZip]);
       expect(files.dictionaries, isEmpty);

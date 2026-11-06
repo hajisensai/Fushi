@@ -1,17 +1,29 @@
 import 'dart:convert';
 
 import 'package:fushi_anki/fushi_anki.dart';
-import 'package:fushi_core/fushi_core.dart' show kStatLegacyProfileIdPrefKey;
+import 'package:fushi_core/fushi_core.dart'
+    show kStatLegacyProfileIdPrefKey, kStudyProfileNameAliasesPrefKey;
 
 import 'package:fushi_engine/media/media_pref_keys.dart'
     show kLyricsModeBookPrefDbPrefix;
 import 'package:fushi_engine/media/override_title_key.dart';
+import 'package:fushi_engine/media/source_library/book_library_prune.dart'
+    show kBookSourceScanIndexPrefKeyPrefix;
 import 'package:fushi_engine/profile/profile_document.dart'
     show kObsoleteGalgameUpscalingModePrefKey, kProfileSettingCategoryPref;
 import 'package:fushi/src/media/video/video_online_services_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart'
     show kVideoScreenshotDirectoryPref;
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
+    show kPageBackdropDeviceLocalPrefKeys;
+import 'package:fushi/src/models/preference_keys.dart'
+    show
+        kAnkiSettingsPrefKey,
+        kLibraryManualOrderPrefKeyPrefix,
+        kSectionTabOrderPrefKeyPrefix,
+        kSrsLapisMigrationReminderPrefKey,
+        kWorkProfileSessionPrefKey;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
 
@@ -52,16 +64,24 @@ class ProfileKeys {
     //
     // 键名从 [ModuleId.devicePrefKeys] 生成（开关 + 底栏顺序），不手抄——加模块时这里自动跟上。
     ...ModuleId.devicePrefKeys,
+    // 页面背景图片的本机文件路径与取色缓存：换 Profile 不该换掉这台设备上的文件。
+    ...kPageBackdropDeviceLocalPrefKeys,
     'active_profile_id',
     // 绑定临时切换前用户自己选的配置 id：与 active_profile_id 同族。
     'profile_fallback_id',
+    // 主进程此刻打开的作品会话（发给弹窗进程镜像）：与 active_profile_id 同族。
+    kWorkProfileSessionPrefKey,
     // v105 统计按 Profile 隔离：legacy 统计家族归属哪个 Profile 是**本库**的
     // 事实（值是本库自增 id），与 active_profile_id 同族。进快照就会被别的
     // Profile 的 applyProfile 剪掉，legacy 历史随即对所有 Profile 可见。
     kStatLegacyProfileIdPrefKey,
+    // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同族。
+    kStudyProfileNameAliasesPrefKey,
     'first_time_setup',
     // 新手引导完成标志与 first_time_setup 同族：描述本安装的状态，不随 Profile 切换。
     'onboarding_completed',
+    'onboarding_finished',
+    'onboarding_home_card_dismissed',
     // 「下载 → 浏览」一次性搬迁提示的已处理标记：同族。进快照的话，切到一个
     // 标记落地前建的老 Profile 会把它删掉，关着浏览的用户又被提示一遍。
     'browse_moved_notice_handled',
@@ -69,12 +89,19 @@ class ProfileKeys {
     // Profile 切换重新弹出）。
     'p2p_download_notice_dismissed',
     'game_resource_notice_dismissed',
+    // 复习页旧 Lapis 迁移横幅的「不再提醒」：同族。进快照的话，切到这个键落地前建的
+    // 老 Profile（含媒体绑定的临时切换）会把它删掉，横幅下次启动又弹出来。
+    kSrsLapisMigrationReminderPrefKey,
     // 封面模式迁到片段默认的一次性标记：同族。进快照的话，切 Profile 会把旧值 gif
     // 带回来，下次启动迁移重跑，把用户此后自己选的 GIF 又改成片段。
     'mining_image_mode_install_default',
     // 「工具栏样式强制悬浮」一次性迁移标记：同族（迁移本身会改写各 Profile 快照
     // 里的 reader_toolbar_style，标记只描述本安装）。
     PreferencesRepository.readerToolbarStyleFloatingMigratedKey,
+    // Android 桌面小组件的默认隐私：描述这台设备的桌面，不随 Profile 走。
+    PreferencesRepository.widgetPrivacyHideTitlesKey,
+    PreferencesRepository.widgetPrivacyHideDefinitionsKey,
+    PreferencesRepository.widgetPrivacyHideProfileKey,
     kVideoOnlineServicesSetupDismissedPref,
     'current_home_tab_index',
     // 宽屏导航 rail 的展开 / 收起记的是本机窗口布局，与 current_home_tab_index
@@ -130,6 +157,11 @@ class ProfileKeys {
     // into a profile (and restoring/wiping it on profile switch) would make
     // the counter non-monotonic and break change detection.
     PreferencesRepository.prefsVersionKey,
+    // Anki 制卡设置整份 JSON（含 AnkiConnect apiKey）：牌组 / 笔记类型 / 映射等
+    // 字段已由 [ankiSettingsToMap] 按字段随 Profile 走；整行进快照的话，切到迁 Drift
+    // 之前建的老 Profile 会因「快照里没有这个键」把它删掉，Anki 设置整份清空。
+    // （它同时在设备本地名单里，[isExcludedPref] 第一道判定已拦；这里点名防名单漂移。）
+    kAnkiSettingsPrefKey,
   };
 
   static const List<String> _excludedPrefPrefixes = [
@@ -156,10 +188,18 @@ class ProfileKeys {
     // 合集详情页每合集排序偏好：键里是本机合集自增 id（设备本地状态），换
     // Profile 不该剪掉或串到别的合集上。
     'collection_detail_sort_',
+    // 书 / 漫画来源的扫描索引（后缀 = 本机来源 id，JSON：源相对路径 → 书 uid +
+    // 「不是本类媒体」负向表）。是扫描器的设备本地状态，不是阅读偏好：进快照的话
+    // 切 Profile 会把它剪掉或换回旧值，下一次扫描就把已导入的卷当成新卷重判。
+    kBookSourceScanIndexPrefKeyPrefix,
     // 每本书独立记忆的歌词模式与 audiobook_follow_ 同族：按书的阅读状态，不是
     // 阅读偏好。进快照的话切 Profile（进出歌词模式本身就会切到 lyrics 媒体类型
     // 的 Profile）会把这本书刚写下的模式剪掉或换回旧值。
     kLyricsModeBookPrefDbPrefix,
+    // 库页顶部页签的用户顺序与底栏模块顺序同族：描述这台设备的入口布局。进快照
+    // 的话切 Profile 会把刚排好的顺序剪掉或换回旧值。
+    kSectionTabOrderPrefKeyPrefix,
+    kLibraryManualOrderPrefKeyPrefix,
   ];
 
   /// BUG-1018 (A4): per-item display-name overrides are CONTENT tied to a
@@ -214,6 +254,7 @@ class ProfileKeys {
     'tags': s.tags,
     'tagIncludeHibiki': s.tagIncludeHibiki.toString(),
     'tagIncludeCategory': s.tagIncludeCategory.toString(),
+    'tagNestTitleUnderCategory': s.tagNestTitleUnderCategory.toString(),
     'allowDupes': s.allowDupes.toString(),
     'compactGlossaries': s.compactGlossaries.toString(),
     'embedMedia': s.embedMedia.toString(),
@@ -253,6 +294,7 @@ class ProfileKeys {
       'tagIncludeCategory': m.containsKey('tagIncludeCategory')
           ? m['tagIncludeCategory'] == 'true'
           : true,
+      'tagNestTitleUnderCategory': m['tagNestTitleUnderCategory'] == 'true',
       'allowDupes': m['allowDupes'] == 'true',
       'compactGlossaries': m['compactGlossaries'] == 'true',
       'embedMedia': m.containsKey('embedMedia')

@@ -1,5 +1,5 @@
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kFavoriteSentenceTombstoneType;
 import 'package:fushi_core/fushi_core.dart';
@@ -15,8 +15,10 @@ void main() {
         ActivityMediaKind.values
             .map((ActivityMediaKind k) => k.dbValue)
             .toSet(),
-        <String>{'book', 'video', 'game'},
+        <String>{'book', 'video', 'game', 'music'},
       );
+      expect(ActivityMediaKind.music.dbValue, kActivityMediaMusic);
+      expect(kActivityMediaMusic, 'music');
       expect(ActivityMediaKind.book.dbValue, kActivityMediaBook);
       expect(ActivityMediaKind.video.dbValue, kActivityMediaVideo);
       expect(ActivityMediaKind.game.dbValue, kActivityMediaGame);
@@ -37,8 +39,9 @@ void main() {
     });
 
     test('typed 写入落库串不变：addActivityEvent → DB 读回裸 book 串', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       await db.addActivityEvent(
         eventType: kActivityRead,
@@ -56,8 +59,10 @@ void main() {
     test('dbValue 集合守卫：恰为 {book, video, game}，与移入 core 的常量一致', () {
       expect(
         StatSourceKind.values.map((StatSourceKind k) => k.dbValue).toSet(),
-        <String>{'book', 'video', 'game'},
+        <String>{'book', 'video', 'game', 'music'},
       );
+      expect(StatSourceKind.music.dbValue, kStatSourceMusic);
+      expect(kStatSourceMusic, 'music');
       expect(StatSourceKind.book.dbValue, kStatSourceBook);
       expect(StatSourceKind.video.dbValue, kStatSourceVideo);
       expect(StatSourceKind.game.dbValue, kStatSourceGame);
@@ -69,8 +74,11 @@ void main() {
     test('tryParse：三个已知值命中，null/未知/它域串返 null 不抛', () {
       expect(StatSourceKind.tryParse('book'), StatSourceKind.book);
       expect(StatSourceKind.tryParse('video'), StatSourceKind.video);
-      expect(StatSourceKind.tryParse('game'), StatSourceKind.game,
-          reason: 'galgame hook 会话期间的查词/制卡/收藏进游戏统计域');
+      expect(
+        StatSourceKind.tryParse('game'),
+        StatSourceKind.game,
+        reason: 'galgame hook 会话期间的查词/制卡/收藏进游戏统计域',
+      );
       expect(StatSourceKind.tryParse(null), isNull);
       expect(StatSourceKind.tryParse('epub'), isNull);
       expect(StatSourceKind.tryParse('Game'), isNull, reason: '严格解析不做大小写归一');
@@ -78,8 +86,7 @@ void main() {
   });
 
   group('ProfileMediaKind（media_type_profiles.media_type）', () {
-    test(
-        'dbValue 集合守卫：恰为 {epub, srtbook, audiobook, lyrics, video, '
+    test('dbValue 集合守卫：恰为 {epub, srtbook, audiobook, lyrics, video, '
         'manga, game, browser}', () {
       expect(
         ProfileMediaKind.values.map((ProfileMediaKind k) => k.dbValue).toSet(),
@@ -110,7 +117,9 @@ void main() {
       expect(ProfileMediaKind.tryParse('epub'), ProfileMediaKind.epub);
       expect(ProfileMediaKind.tryParse('srtbook'), ProfileMediaKind.srtbook);
       expect(
-          ProfileMediaKind.tryParse('audiobook'), ProfileMediaKind.audiobook);
+        ProfileMediaKind.tryParse('audiobook'),
+        ProfileMediaKind.audiobook,
+      );
       expect(ProfileMediaKind.tryParse('lyrics'), ProfileMediaKind.lyrics);
       expect(ProfileMediaKind.tryParse('video'), ProfileMediaKind.video);
       expect(ProfileMediaKind.tryParse('manga'), ProfileMediaKind.manga);
@@ -124,7 +133,7 @@ void main() {
   });
 
   group('SyncTombstoneKind（sync_deletion_tombstones.media_type）', () {
-    test('dbValue 集合守卫：5 资产 + 2 收藏集合，恰为 7 值', () {
+    test('dbValue 集合守卫：6 资产 + 2 收藏集合 + 2 浏览器，恰为 10 值', () {
       expect(
         SyncTombstoneKind.values
             .map((SyncTombstoneKind k) => k.dbValue)
@@ -140,8 +149,14 @@ void main() {
           'localaudio',
           'favoriteword',
           'favoritesentence',
+          // v128 内置浏览器历史 / 书签（只经聚合快照传播）。
+          'webhistory',
+          'webbookmark',
+          // v130 音乐模块：曲目墓碑（itemKey = 内容派生 track_uid）。
+          'music',
         },
       );
+      expect(SyncTombstoneKind.music.dbValue, 'music');
       expect(SyncTombstoneKind.book.dbValue, 'book');
       expect(SyncTombstoneKind.audiobook.dbValue, 'audiobook');
       expect(SyncTombstoneKind.srtbook.dbValue, 'srtbook');
@@ -149,23 +164,55 @@ void main() {
       expect(SyncTombstoneKind.localaudio.dbValue, 'localaudio');
       expect(SyncTombstoneKind.favoriteword.dbValue, 'favoriteword');
       expect(SyncTombstoneKind.favoritesentence.dbValue, 'favoritesentence');
+      expect(SyncTombstoneKind.webhistory.dbValue, 'webhistory');
+      expect(SyncTombstoneKind.webbookmark.dbValue, 'webbookmark');
+      // 只有浏览器两种走「仅聚合快照」通道，既有种类行为不变。
+      expect(
+        SyncTombstoneKind.values
+            .where(
+              (SyncTombstoneKind k) => k.propagatesViaAggregateSnapshotOnly,
+            )
+            .toSet(),
+        <SyncTombstoneKind>{
+          SyncTombstoneKind.webhistory,
+          SyncTombstoneKind.webbookmark,
+        },
+      );
       // fushi_audio 的墓碑常量与本枚举同串（两处真相一致性钉死）。
-      expect(kFavoriteSentenceTombstoneType,
-          SyncTombstoneKind.favoritesentence.dbValue);
+      expect(
+        kFavoriteSentenceTombstoneType,
+        SyncTombstoneKind.favoritesentence.dbValue,
+      );
     });
 
-    test('tryParse：七个已知值命中，null/未知/它域串返 null 不抛', () {
+    test('tryParse：九个已知值命中，null/未知/它域串返 null 不抛', () {
       expect(SyncTombstoneKind.tryParse('book'), SyncTombstoneKind.book);
       expect(
-          SyncTombstoneKind.tryParse('audiobook'), SyncTombstoneKind.audiobook);
+        SyncTombstoneKind.tryParse('audiobook'),
+        SyncTombstoneKind.audiobook,
+      );
       expect(SyncTombstoneKind.tryParse('srtbook'), SyncTombstoneKind.srtbook);
       expect(SyncTombstoneKind.tryParse('video'), SyncTombstoneKind.video);
-      expect(SyncTombstoneKind.tryParse('localaudio'),
-          SyncTombstoneKind.localaudio);
-      expect(SyncTombstoneKind.tryParse('favoriteword'),
-          SyncTombstoneKind.favoriteword);
-      expect(SyncTombstoneKind.tryParse('favoritesentence'),
-          SyncTombstoneKind.favoritesentence);
+      expect(
+        SyncTombstoneKind.tryParse('localaudio'),
+        SyncTombstoneKind.localaudio,
+      );
+      expect(
+        SyncTombstoneKind.tryParse('favoriteword'),
+        SyncTombstoneKind.favoriteword,
+      );
+      expect(
+        SyncTombstoneKind.tryParse('favoritesentence'),
+        SyncTombstoneKind.favoritesentence,
+      );
+      expect(
+        SyncTombstoneKind.tryParse('webhistory'),
+        SyncTombstoneKind.webhistory,
+      );
+      expect(
+        SyncTombstoneKind.tryParse('webbookmark'),
+        SyncTombstoneKind.webbookmark,
+      );
       expect(SyncTombstoneKind.tryParse(null), isNull);
       // 'epub' 是合集/书架域的串（book ≠ epub）。
       expect(SyncTombstoneKind.tryParse('epub'), isNull);
@@ -173,11 +220,15 @@ void main() {
     });
 
     test('typed 写入落库串不变：writeSyncDeletionTombstone → DB 读回裸串', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       await db.writeSyncDeletionTombstone(
-          SyncTombstoneKind.localaudio.dbValue, 'Lib', 100);
+        SyncTombstoneKind.localaudio.dbValue,
+        'Lib',
+        100,
+      );
       final rows = await db.getSyncDeletionTombstonesOfType('localaudio');
       expect(rows.single.mediaType, 'localaudio');
       expect(rows.single.itemKey, 'Lib');
@@ -192,18 +243,26 @@ void main() {
       expect(activityMediaKindOf(MediaKind.srt), ActivityMediaKind.book);
       expect(activityMediaKindOf(MediaKind.video), ActivityMediaKind.video);
       expect(activityMediaKindOf(MediaKind.game), ActivityMediaKind.game);
-      expect(MediaKind.values.map(activityMediaKindOf).toSet(),
-          ActivityMediaKind.values.toSet(),
-          reason: '每个活动种类都至少有一个书架种类来源');
+      // 音乐曲目（v130）不在合集 / 书架域里（曲库有自己的专辑 / 歌单），是唯一
+      // 没有书架种类来源的活动种类。
+      expect(
+        MediaKind.values.map(activityMediaKindOf).toSet(),
+        ActivityMediaKind.values.toSet()..remove(ActivityMediaKind.music),
+        reason: '除音乐外每个活动种类都至少有一个书架种类来源',
+      );
     });
 
     test('shelfKindsOfActivityMedia 穷尽、有序（epub 优先 srt 回退）且与正向映射互逆', () {
-      expect(shelfKindsOfActivityMedia(ActivityMediaKind.book),
-          <MediaKind>[MediaKind.epub, MediaKind.srt]);
-      expect(shelfKindsOfActivityMedia(ActivityMediaKind.video),
-          <MediaKind>[MediaKind.video]);
-      expect(shelfKindsOfActivityMedia(ActivityMediaKind.game),
-          <MediaKind>[MediaKind.game]);
+      expect(shelfKindsOfActivityMedia(ActivityMediaKind.book), <MediaKind>[
+        MediaKind.epub,
+        MediaKind.srt,
+      ]);
+      expect(shelfKindsOfActivityMedia(ActivityMediaKind.video), <MediaKind>[
+        MediaKind.video,
+      ]);
+      expect(shelfKindsOfActivityMedia(ActivityMediaKind.game), <MediaKind>[
+        MediaKind.game,
+      ]);
       // 互逆：反向映射列出的每个书架种类，正向映射必须折回同一活动种类。
       for (final ActivityMediaKind a in ActivityMediaKind.values) {
         for (final MediaKind k in shelfKindsOfActivityMedia(a)) {
@@ -223,8 +282,11 @@ void main() {
       expect(statSourceKindOf(MediaKind.epub), StatSourceKind.book);
       expect(statSourceKindOf(MediaKind.srt), StatSourceKind.book);
       expect(statSourceKindOf(MediaKind.video), StatSourceKind.video);
-      expect(statSourceKindOf(MediaKind.game), StatSourceKind.game,
-          reason: '游戏自 kStatSourceGame 起有独立统计桶（此前返 null）');
+      expect(
+        statSourceKindOf(MediaKind.game),
+        StatSourceKind.game,
+        reason: '游戏自 kStatSourceGame 起有独立统计桶（此前返 null）',
+      );
     });
   });
 }

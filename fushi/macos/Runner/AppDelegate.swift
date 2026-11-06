@@ -12,6 +12,7 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
   private var sourceUrlEventSink: FlutterEventSink?
   private var globalLookupOverlay: GlobalLookupOverlayController?
   private var desktopFloatingBall: DesktopFloatingBallController?
+  private var floatingLyric: FloatingLyricController?
   /// Dart 最后一次表达的查词输入法语言。app 重新回到前台时按它再切回去——否则
   /// 用户 Cmd-Tab 出去一趟回来，查词页面还开着但输入法已经不是他选的那个了。
   private var desiredLookupImeTag: String?
@@ -20,14 +21,24 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
   private var systemTransparencyChannel: FlutterMethodChannel?
   private var systemTransparencyObserver: NSObjectProtocol?
 
+  /// ⚠️ 这些 override 里**不许调 `super.`**：`FlutterAppDelegate` 是纯 ObjC 的
+  /// `NSObject <NSApplicationDelegate, FlutterAppLifecycleProvider>`，它只实现了
+  /// `applicationWillFinishLaunching:` / `application:openURLs:` /
+  /// `applicationShouldTerminate:` 三个（见 FlutterAppDelegate.mm，方法表里就这 16 条）。
+  /// 其余 `NSApplicationDelegate` 方法它是**协议声明**、没有实现——`super.applicationDidBecomeActive(_:)`
+  /// 走 `objc_msgSendSuper2` 在父类找不到方法，就落到转发 → `-[AppDelegate
+  /// applicationDidBecomeActive:]: unrecognized selector` 的 NSInvalidArgumentException。
+  /// 插件生命周期事件也不需要我们转发：`FlutterAppLifecycleRegistrar` 自己就是
+  /// `NSApplicationDidBecomeActiveNotification` 等通知的观察者（FlutterAppLifecycleDelegate.mm），
+  /// 注册到它的插件照常收到事件。
   override func applicationDidResignActive(_ notification: Notification) {
     // 离开前台就把用户的输入法放回去：切的是系统全局输入源，留着会漏到别的 app。
     LookupImeLanguage.restore()
-    super.applicationDidResignActive(notification)
   }
 
   override func applicationDidBecomeActive(_ notification: Notification) {
-    super.applicationDidBecomeActive(notification)
+    // 上面那条 super 抛异常时这一行永远执行不到（异常在 super 就抛了），所以
+    // 「切回前台恢复查词输入法」此前从来没生效过——BUG-3856 的连带症状。
     if let tag = desiredLookupImeTag {
       LookupImeLanguage.setLanguage(tag)
     }
@@ -47,6 +58,13 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
       // 方法名与入参逐字对齐 Windows 那份 CF_DIB 实现。
       FushiClipboardImage.register(
         binaryMessenger: controller.engine.binaryMessenger)
+      // Apple Music 官方集成（MusicKit，macOS 14+ 才能整曲播放）。与 iOS 同一份实现。
+      FushiAppleMusic.register(
+        binaryMessenger: controller.engine.binaryMessenger)
+      // 桌面 / 通知中心小组件快照 + 菜单栏播放条（Live Activity 的 macOS 对应物）。
+      // 与 iOS 同一份实现（apple/HomeWidgets/FushiHomeWidgets.swift）。
+      FushiHomeWidgets.shared.install(
+        binaryMessenger: controller.engine.binaryMessenger)
       // 查词浮层的真模糊背衬：WebView 下方的 NSVisualEffectView 平台视图
       // （apple/FushiNativeMaterialView.swift，Dart 侧 fushi_native_material.dart）。
       FushiNativeMaterial.register(
@@ -55,6 +73,24 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
         name: "app.fushi/window",
         binaryMessenger: controller.engine.binaryMessenger)
       startupWindowChannel.setMethodCallHandler { [weak self] call, result in
+        // App-owned borderless fullscreen (disc sessions); see
+        // MainFlutterWindow.setBorderlessFullscreen.
+        if call.method == "setBorderlessFullscreen"
+          || call.method == "isBorderlessFullscreen"
+        {
+          guard let window = self?.mainFlutterWindow as? MainFlutterWindow else {
+            result(FlutterError(code: "window_unavailable", message: nil, details: nil))
+            return
+          }
+          if call.method == "isBorderlessFullscreen" {
+            result(window.isBorderlessFullscreen)
+            return
+          }
+          let args = call.arguments as? [String: Any]
+          let enabled = args?["fullscreen"] as? Bool ?? false
+          result(window.setBorderlessFullscreen(enabled))
+          return
+        }
         guard call.method == "showStartupWindow" else {
           result(FlutterMethodNotImplemented)
           return
@@ -131,6 +167,12 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
       desktopFloatingBall = DesktopFloatingBallController(
         binaryMessenger: controller.engine.binaryMessenger)
 
+      // 有声书悬浮字幕 / 音乐桌面歌词（与 Android FloatingLyricService、Windows
+      // floating_lyric_window.cpp 同名通道 app.fushi.reader/floating_lyric）：置顶、
+      // 不抢前台的 NSPanel。见 FushiFloatingLyric.swift。
+      floatingLyric = FloatingLyricController(
+        binaryMessenger: controller.engine.binaryMessenger)
+
       // 查词输入框的输入法语言。macOS 的输入源是系统全局状态，所以除了「切过去」
       // 还必须「切回来」——页面走掉时 Dart 发 null，app 失去前台时我们自己还原
       // （见 applicationDidResignActive）。
@@ -170,7 +212,8 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
     } else {
       NSLog("[Fushi] macOS Flutter controller unavailable; custom channels were not registered")
     }
-    super.applicationDidFinishLaunching(notification)
+    // 不调 super：FlutterAppDelegate 没实现 applicationDidFinishLaunching:（见本类
+    // applicationDidBecomeActive 上的说明）。
   }
 
   /// 系统设置「辅助功能 → 显示 → 降低透明度」：Dart 侧 `SystemTransparency`
@@ -408,24 +451,35 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
     }
   }
 
+  /// 交给 Dart（`source_urls` 事件流 → `handleIncomingUrl`）的 `fushi://` host：卡片出处
+  /// 回跳 + 主屏小组件 / 菜单栏播放条的链接。与 Dart `SourceUrlChannel.routedHosts` 同步。
+  /// OAuth / AnkiMobile 回调不在此列，照旧交给各自的插件（super）。
+  static let fushiRoutedUrlHosts: Set<String> = ["source", "widget", "shortcut", "lookup"]
+
   override func application(_ application: NSApplication, open urls: [URL]) {
-    // Launch Services may deliver before the engine/channel exists. Keep source
+    // Launch Services may deliver before the engine/channel exists. Keep routed
     // links until Dart subscribes; other schemes/hosts still reach plugins.
     var remainingUrls: [URL] = []
     for url in urls {
       guard url.scheme?.lowercased() == "fushi",
-        url.host?.lowercased() == "source" else {
+        let host = url.host?.lowercased(),
+        Self.fushiRoutedUrlHosts.contains(host) else {
         remainingUrls.append(url)
         continue
       }
-      if let sink = sourceUrlEventSink {
-        sink(url.absoluteString)
-      } else {
-        pendingSourceUrls.append(url.absoluteString)
-      }
+      deliverUrl(url.absoluteString)
     }
     if !remainingUrls.isEmpty {
       super.application(application, open: remainingUrls)
+    }
+  }
+
+  /// 把一条 Fushi 链接交给 Dart（小组件按钮 / 菜单栏条目也走这里）。
+  func deliverUrl(_ url: String) {
+    if let sink = sourceUrlEventSink {
+      sink(url)
+    } else {
+      pendingSourceUrls.append(url)
     }
   }
 
@@ -463,7 +517,10 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
     // 应用外悬浮球的面板随进程收掉。
     desktopFloatingBall?.destroy()
     desktopFloatingBall = nil
-    super.applicationWillTerminate(notification)
+    floatingLyric?.destroy()
+    floatingLyric = nil
+    // 不调 super：FlutterAppDelegate 没实现 applicationWillTerminate:（见
+    // applicationDidBecomeActive 上的说明）。
   }
 
   private func handleDataRootAccess(_ call: FlutterMethodCall, result: @escaping FlutterResult) {

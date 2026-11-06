@@ -16,7 +16,19 @@ import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_store.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_common.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_sync_panel.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 可见性线上值。
 const String kLeaderboardVisibilityPublic = 'public';
@@ -283,15 +295,15 @@ class _LeaderboardAccountPageState
           ),
         ];
       }
-      return <Widget>[if (_devicesLoading) const FushiLinearProgressIndicator()];
+      return <Widget>[
+        if (_devicesLoading) const FushiLinearProgressIndicator(),
+      ];
     }
     return <Widget>[
       for (final LeaderboardDevice d in devices)
         FushiListItem(
           key: ValueKey<String>('leaderboard-device-${d.keyId}'),
-          leading: FushiIcon(
-            d.current ? FushiIcons.phone : FushiIcons.devices,
-          ),
+          leading: FushiIcon(d.current ? FushiIcons.phone : FushiIcons.devices),
           title: Text(
             d.current
                 ? '${d.keyId} · ${t.leaderboard_account_device_current}'
@@ -368,7 +380,9 @@ class _LeaderboardAccountPageState
                         ),
                       ),
                       FushiOutlinedButton.icon(
-                        onPressed: _busy ? null : () => unawaited(_pickAvatar()),
+                        onPressed: _busy
+                            ? null
+                            : () => unawaited(_pickAvatar()),
                         icon: const FushiIcon(FushiIcons.image),
                         label: Text(t.leaderboard_account_avatar),
                       ),
@@ -384,7 +398,9 @@ class _LeaderboardAccountPageState
                   Align(
                     alignment: Alignment.centerLeft,
                     child: FushiFilledButton.tonal(
-                      onPressed: _busy ? null : () => unawaited(_saveNickname()),
+                      onPressed: _busy
+                          ? null
+                          : () => unawaited(_saveNickname()),
                       child: Text(t.leaderboard_account_save_nickname),
                     ),
                   ),

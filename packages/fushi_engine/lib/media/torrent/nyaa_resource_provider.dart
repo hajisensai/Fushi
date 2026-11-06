@@ -5,46 +5,71 @@ import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 
-/// Nyaa 内置索引器的 provider id（停用清单偏好、设置页开关行、去重键共用）。
+/// Nyaa 式站点的格式名 = provider id 前缀（`nyaa:<siteId>`）。旧内置源的持久化
+/// id（`nyaa` / `nyaa:nyaa.si`）也是这个前缀——存量订阅据此解析到用户的 Nyaa 式
+/// 站点（`VideoResourceRegistry.resolveProvider`）。
 const String kNyaaResourceProviderId = 'nyaa';
 
-class NyaaVideoResourceProvider implements VideoResourceProvider {
+/// 一个用户 Nyaa 式 BT 站的资源 provider。
+class NyaaVideoResourceProvider implements LabeledVideoResourceProvider {
   NyaaVideoResourceProvider({
     required NyaaClient client,
-    this.category = '1_0',
+    required this.siteId,
+    required Map<VideoDiscoveryCategory, String> categoryByDomain,
+    String? displayName,
     this.filter = '0',
     this.priority = 100,
     bool closesClient = false,
-  })  : _client = client,
-        _closesClient = closesClient;
+  }) : _client = client,
+       _closesClient = closesClient,
+       categoryByDomain = Map<VideoDiscoveryCategory, String>.unmodifiable(
+         categoryByDomain,
+       ),
+       displayName = displayName ?? Uri.parse(client.baseUrl).host;
 
   final NyaaClient _client;
   final bool _closesClient;
-  final String category;
+
+  /// 站点 id（`BtSiteConfig.id`），也是候选的 providerInstanceId。
+  final String siteId;
+
+  /// 视频域 → 该站分类号（探测时从站点分类下拉映射出来的）。
+  final Map<VideoDiscoveryCategory, String> categoryByDomain;
   final String filter;
+
+  @override
+  final String displayName;
 
   @override
   final int priority;
 
   @override
-  String get id => kNyaaResourceProviderId;
+  String get id => '$kNyaaResourceProviderId:$siteId';
 
-  /// 只进动漫域。nyaa.si 的 `1_0` 分类本身就是 Anime，拿它去搜电影/剧集只会
-  /// 返回噪声——所以这不是策略，是这家索引器的内容边界。
+  /// 只进站点确有分类的视频域（用户勾选 ∩ 站点分类，组装点已求好交集）。
+  /// 拿动画分类去搜电影只会返回噪声，所以这是站点的内容边界，不是策略。
   @override
-  Set<VideoDiscoveryCategory> get categories => const <VideoDiscoveryCategory>{
-        VideoDiscoveryCategory.anime,
-      };
+  Set<VideoDiscoveryCategory> get categories => categoryByDomain.keys.toSet();
 
   @override
   Future<ProviderBatchResult<VideoResourceCandidate>> search(
     VideoResourceSearchRequest request,
   ) async {
     final List<String> queries = nyaaSearchQueries(request);
+    final VideoDiscoveryCategory? domain = request.media?.discoveryCategory;
+    final String? category = domain == null
+        ? (categoryByDomain.length == 1 ? categoryByDomain.values.first : null)
+        : categoryByDomain[domain];
+    if (category == null) {
+      // 这个域在本站没有分类：未参与，不是失败（同 apibay 遇纯 CJK 词）。
+      return ProviderBatchResult<VideoResourceCandidate>(
+        items: const <VideoResourceCandidate>[],
+      );
+    }
     if (queries.isEmpty) {
       return ProviderBatchResult<VideoResourceCandidate>.failure(
-        const ExternalProviderFailure(
-          providerId: 'nyaa',
+        ExternalProviderFailure(
+          providerId: id,
           operation: 'search',
           kind: ExternalProviderFailureKind.unsupported,
           message: 'a search query is required',
@@ -53,8 +78,7 @@ class NyaaVideoResourceProvider implements VideoResourceProvider {
     }
     final List<VideoResourceCandidate> candidates = <VideoResourceCandidate>[];
     final List<ExternalProviderFailure> failures = <ExternalProviderFailure>[];
-    final List<VideoResourceQueryReport> reports =
-        <VideoResourceQueryReport>[];
+    final List<VideoResourceQueryReport> reports = <VideoResourceQueryReport>[];
     for (final String query in queries) {
       try {
         final List<NyaaTorrent> torrents = await _client.search(
@@ -68,30 +92,33 @@ class NyaaVideoResourceProvider implements VideoResourceProvider {
         );
         candidates.addAll(
           torrents.map(
-            (NyaaTorrent torrent) => _NyaaResourceCandidate(torrent, priority),
+            (NyaaTorrent torrent) =>
+                _NyaaResourceCandidate(torrent, siteId, priority),
           ),
         );
       } on Object catch (error) {
         final ExternalProviderFailure failure =
             ExternalProviderFailure.fromException(
-          providerId: id,
-          operation: 'search',
-          error: error,
-        );
+              providerId: id,
+              operation: 'search',
+              error: error,
+            );
         failures.add(failure);
         reports.add(VideoResourceQueryReport(query: query, failure: failure));
       }
     }
-    final bool succeeded =
-        reports.any((VideoResourceQueryReport r) => r.failure == null);
+    final bool succeeded = reports.any(
+      (VideoResourceQueryReport r) => r.failure == null,
+    );
     // 多个拼写各查一次，同一个种子（infohash）只留一条。
     final List<VideoResourceCandidate> items = succeeded
         ? deduplicateVideoResources(candidates).take(request.limit).toList()
         : const <VideoResourceCandidate>[];
     return VideoResourceSearchResult(
       items: items,
-      failures:
-          succeeded ? failures : <ExternalProviderFailure>[failures.first],
+      failures: succeeded
+          ? failures
+          : <ExternalProviderFailure>[failures.first],
       successfulProviderCount: succeeded ? 1 : 0,
       sources: <VideoResourceSourceReport>[
         VideoResourceSourceReport(
@@ -108,8 +135,8 @@ class NyaaVideoResourceProvider implements VideoResourceProvider {
   @override
   Future<TorrentAddPayload> resolve(VideoResourceCandidate candidate) async {
     if (candidate is! _NyaaResourceCandidate) {
-      throw const ExternalProviderFailure(
-        providerId: 'nyaa',
+      throw ExternalProviderFailure(
+        providerId: id,
         operation: 'resolve',
         kind: ExternalProviderFailureKind.unsupported,
         message: 'candidate belongs to another provider',
@@ -228,32 +255,31 @@ List<String> nyaaSearchQueries(VideoResourceSearchRequest request) {
   ];
 }
 
-String _nyaaTitleKey(String value) => foldFullWidthAscii(value)
-    .trim()
-    .replaceAll(RegExp(r'\s+'), ' ')
-    .toLowerCase();
+String _nyaaTitleKey(String value) => foldFullWidthAscii(
+  value,
+).trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
 
 class _NyaaResourceCandidate extends VideoResourceCandidate {
-  _NyaaResourceCandidate(this.torrent, int providerPriority)
-      : super(
-          providerId: 'nyaa',
-          providerInstanceId: 'nyaa.si',
-          remoteId: torrent.infoHash.toLowerCase(),
-          title: torrent.title,
-          providerPriority: providerPriority,
-          infoHash: torrent.infoHash.toLowerCase(),
-          sizeBytes: torrent.sizeBytes,
-          seeders: torrent.seeders,
-          leechers: torrent.leechers,
-          completed: torrent.downloads,
-          publishedAt: torrent.pubDate,
-          category: torrent.categoryId,
-          resolution: torrent.resolution,
-          releaseGroup: torrent.releaseGroup,
-          trusted: torrent.trusted,
-          detailsUrl: torrent.pageUrl,
-          magnetUri: torrent.magnet,
-        );
+  _NyaaResourceCandidate(this.torrent, String siteId, int providerPriority)
+    : super(
+        providerId: kNyaaResourceProviderId,
+        providerInstanceId: siteId,
+        remoteId: torrent.infoHash.toLowerCase(),
+        title: torrent.title,
+        providerPriority: providerPriority,
+        infoHash: torrent.infoHash.toLowerCase(),
+        sizeBytes: torrent.sizeBytes,
+        seeders: torrent.seeders,
+        leechers: torrent.leechers,
+        completed: torrent.downloads,
+        publishedAt: torrent.pubDate,
+        category: torrent.categoryId,
+        resolution: torrent.resolution,
+        releaseGroup: torrent.releaseGroup,
+        trusted: torrent.trusted,
+        detailsUrl: torrent.pageUrl,
+        magnetUri: torrent.magnet,
+      );
 
   final NyaaTorrent torrent;
 }

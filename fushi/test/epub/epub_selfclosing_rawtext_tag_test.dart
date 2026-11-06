@@ -85,7 +85,8 @@ void main() {
     });
 
     test('注释 / CDATA / DOCTYPE / XML 声明整段原样透传', () {
-      const String s = '<?xml version="1.0"?><!DOCTYPE html>'
+      const String s =
+          '<?xml version="1.0"?><!DOCTYPE html>'
           '<!-- <script src="x"/> --><![CDATA[ <script/> ]]>';
       expect(normalizeSelfClosingRawTextTags(s), s);
     });
@@ -99,8 +100,10 @@ void main() {
   group('kobo 化 EPUB 章节（BUG-2017 原始失败路径）', () {
     test('chapterPlainText 拿到正文而不是空串', () {
       final EpubBook book = _bookWith(
-        _koboChapter('<div class="main"><p><span class="koboSpan" '
-            'id="kobo.2.1">一月二十二日、午後七時二十分頃、</span></p></div>'),
+        _koboChapter(
+          '<div class="main"><p><span class="koboSpan" '
+          'id="kobo.2.1">一月二十二日、午後七時二十分頃、</span></p></div>',
+        ),
       );
       expect(book.chapterPlainText(0), '一月二十二日、午後七時二十分頃、');
     });
@@ -113,16 +116,16 @@ void main() {
     });
 
     test('每章字数不再恒为 0', () {
-      final EpubBook book = _bookWith(
-        _koboChapter('<p>一月二十二日、午後七時二十分頃、</p>'),
-      );
+      final EpubBook book = _bookWith(_koboChapter('<p>一月二十二日、午後七時二十分頃、</p>'));
       expect(book.chapterCharacterCount(0), greaterThan(0));
     });
 
     test('正文章不再被误判成纯图片章', () {
       final EpubBook book = _bookWith(
-        _koboChapter('<p><img src="i.png"/></p>'
-            '<p>${'あ' * 200}</p>'),
+        _koboChapter(
+          '<p><img src="i.png"/></p>'
+          '<p>${'あ' * 200}</p>',
+        ),
       );
       expect(book.isImageOnlyChapter(0), isFalse);
     });
@@ -137,14 +140,18 @@ void main() {
 
   group('全书搜索走同一解析入口（BUG-2017 第二条失败路径）', () {
     test('kobo 化章节仍能被 searchBook 命中', () async {
-      final EpubBook book = _bookWith(
-        _koboChapter('<p>一月二十二日、午後七時二十分頃、</p>'),
+      final EpubBook book = _bookWith(_koboChapter('<p>一月二十二日、午後七時二十分頃、</p>'));
+      final List<BookSearchResult> hits = await AudiobookBridge.searchBook(
+        book,
+        '午後七時',
       );
-      final List<BookSearchResult> hits =
-          await AudiobookBridge.searchBook(book, '午後七時');
-      expect(hits, isNotEmpty,
-          reason: '搜索与 chapterPlainText 必须共用 EpubBook.parseChapterHtml，'
-              '否则这类书全书搜索恒零结果');
+      expect(
+        hits,
+        isNotEmpty,
+        reason:
+            '搜索与 chapterPlainText 必须共用 EpubBook.parseChapterHtml，'
+            '否则这类书全书搜索恒零结果',
+      );
       expect(hits.first.sectionIndex, 0);
     });
   });

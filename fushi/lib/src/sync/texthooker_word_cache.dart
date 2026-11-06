@@ -10,8 +10,8 @@ class TexthookerWordCache {
   TexthookerWordCache({
     required List<String> Function(String text) tokenize,
     int maxEntries = 800,
-  })  : _tokenize = tokenize,
-        _maxEntries = maxEntries;
+  }) : _tokenize = tokenize,
+       _maxEntries = maxEntries;
 
   final List<String> Function(String text) _tokenize;
   final int _maxEntries;

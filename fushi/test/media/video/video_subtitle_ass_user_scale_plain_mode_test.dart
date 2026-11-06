@@ -41,15 +41,17 @@ Future<VideoPlayerController> _pump(
   c.setCues(cues);
   c.debugSetPositionForTesting(500);
   c.debugUpdateCueForPosition(500);
-  await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      body: VideoSubtitleOverlay(
-        controller: c,
-        respectAssStyle: respect,
-        fontSize: fontSize,
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(
+          controller: c,
+          respectAssStyle: respect,
+          fontSize: fontSize,
+        ),
       ),
     ),
-  ));
+  );
   await tester.pump();
   return c;
 }
@@ -62,18 +64,24 @@ void main() {
   group('① 尊重 .ass = 尊重字号（完全按作者字号，滑块不参与）', () {
     testWidgets('ASS 字号按显示几何缩放，完全按作者字号（mpv 平价基线）', (WidgetTester tester) async {
       await _pump(
-          tester, _parse(r'Dialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,あ'),
-          respect: true);
+        tester,
+        _parse(r'Dialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,あ'),
+        respect: true,
+      );
       // 视频内容矩形高 = 800×(720/1280)=450 → 48×450/720 = 30（测试环境无真字体表，
       // cell 系数 1.0）。
       expect(_fill(tester, 'あ').style?.fontSize, closeTo(30, 0.01));
     });
 
-    testWidgets('用户字号滑块（fontSize）不影响 ASS 字号（尊重即尊重字号）',
-        (WidgetTester tester) async {
+    testWidgets('用户字号滑块（fontSize）不影响 ASS 字号（尊重即尊重字号）', (
+      WidgetTester tester,
+    ) async {
       await _pump(
-          tester, _parse(r'Dialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,あ'),
-          respect: true, fontSize: 60);
+        tester,
+        _parse(r'Dialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,あ'),
+        respect: true,
+        fontSize: 60,
+      );
       // fontSize 60（滑块调大）不得放大 ASS 字幕：仍是作者字号换算的 30。
       expect(_fill(tester, 'あ').style?.fontSize, closeTo(30, 0.01));
       // 描边同理不受滑块影响：Outline=2 → 半径 2×450/720=1.25 → strokeWidth ×2 = 2.5。
@@ -87,24 +95,31 @@ void main() {
   group('② respectAssStyle 关 = 纯字幕模式（asbplayer 语义）', () {
     testWidgets('同文本多层拷贝（KFX 特效层）去重：只渲染一条', (WidgetTester tester) async {
       await _pump(
-          tester,
-          _parse('Dialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,'
-              r'{\pos(400,300)}重'
-              '\nDialogue: 1,0:00:00.00,0:00:02.00,D,,0,0,0,,'
-              r'{\pos(400,300)\1a&HFF&}重'),
-          respect: false);
+        tester,
+        _parse(
+          'Dialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,'
+          r'{\pos(400,300)}重'
+          '\nDialogue: 1,0:00:00.00,0:00:02.00,D,,0,0,0,,'
+          r'{\pos(400,300)\1a&HFF&}重',
+        ),
+        respect: false,
+      );
       // 纯字幕模式：同文本两层只渲染一条（respect 开时两层各 stroke+fill 同位叠画）。
       expect(find.text('重'), findsOneWidget);
     });
 
-    testWidgets(r'\pos 顶部招牌 + 底部对白：位置语义归零，都落底部堆叠、不叠印',
-        (WidgetTester tester) async {
+    testWidgets(r'\pos 顶部招牌 + 底部对白：位置语义归零，都落底部堆叠、不叠印', (
+      WidgetTester tester,
+    ) async {
       await _pump(
-          tester,
-          _parse('Dialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,'
-              r'{\pos(200,50)}甲'
-              '\nDialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,乙'),
-          respect: false);
+        tester,
+        _parse(
+          'Dialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,'
+          r'{\pos(200,50)}甲'
+          '\nDialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,乙',
+        ),
+        respect: false,
+      );
       final Rect a = tester.getRect(find.text('甲'));
       final Rect b = tester.getRect(find.text('乙'));
       // \pos(200,50)（顶部）被忽略：两条都在测试面下半部（600 高 → dy>300）。
@@ -114,14 +129,18 @@ void main() {
       expect(a.intersect(b).isEmpty, isTrue, reason: '文本互异的同时字幕必须分行堆叠，不得同位叠印');
     });
 
-    testWidgets('respect 开：\\pos 招牌仍按自带位置（本修复不回归 ON 路径）',
-        (WidgetTester tester) async {
+    testWidgets('respect 开：\\pos 招牌仍按自带位置（本修复不回归 ON 路径）', (
+      WidgetTester tester,
+    ) async {
       await _pump(
-          tester,
-          _parse('Dialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,'
-              r'{\pos(200,50)}甲'
-              '\nDialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,乙'),
-          respect: true);
+        tester,
+        _parse(
+          'Dialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,'
+          r'{\pos(200,50)}甲'
+          '\nDialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,乙',
+        ),
+        respect: true,
+      );
       // respect 开时每字符渲染 stroke+fill 两层 Text（同位），取 first 即可。
       final Rect a = tester.getRect(find.text('甲').first);
       final Rect b = tester.getRect(find.text('乙').first);

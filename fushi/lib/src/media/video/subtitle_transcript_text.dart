@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/lookup/latin_word_lookup.dart';
+import 'package:fushi/src/lookup/lookup_edge_punctuation.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -277,6 +278,7 @@ class SubtitleTranscriptText extends StatefulWidget {
     this.onBackgroundTap,
     this.keyboardLookup = false,
     this.lookupHighlight,
+    this.caret,
     super.key,
   });
 
@@ -290,6 +292,14 @@ class SubtitleTranscriptText extends StatefulWidget {
   /// 正在查的词：在字形**之下**画主题色底色带（不改排版几何、不影响逐字命中）。
   /// null = 不高亮，组件树与之前完全一致。
   final SubtitleTranscriptHighlightRange? lookupHighlight;
+
+  /// Grapheme cursor driven by the owner (e.g. a game controller's lookup
+  /// mode); null keeps the widget's own keyboard cursor.
+  ///
+  /// Non-null makes the cursor fully controlled: it shows even without focus,
+  /// Enter / Space look up at it, and the movement keys (arrows, Home, End)
+  /// are left to bubble up to the owner, which is the only one that moves it.
+  final int? caret;
 
   @override
   State<SubtitleTranscriptText> createState() => _SubtitleTranscriptTextState();
@@ -319,9 +329,14 @@ class _SubtitleTranscriptTextState extends State<SubtitleTranscriptText> {
         key == LogicalKeyboardKey.home ||
         key == LogicalKeyboardKey.end;
     if (!activate && !move) return KeyEventResult.ignored;
+    final int? controlled = widget.caret;
+    // A controlled cursor has one owner: moving it is the owner's job.
+    if (move && controlled != null) return KeyEventResult.ignored;
     if (event is KeyUpEvent) return KeyEventResult.handled;
     if (activate) {
-      if (event is KeyDownEvent) widget.onLookup(_caret, Rect.zero);
+      if (event is KeyDownEvent) {
+        widget.onLookup((controlled ?? _caret).clamp(0, count - 1), Rect.zero);
+      }
     } else {
       setState(() {
         if (key == LogicalKeyboardKey.home) {
@@ -351,23 +366,27 @@ class _SubtitleTranscriptTextState extends State<SubtitleTranscriptText> {
   Widget _buildParagraph(BuildContext context) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final List<String> graphemes = _focused
+        final bool showCaret = widget.caret != null || _focused;
+        final List<String> graphemes = showCaret
             ? widget.text.characters.toList()
             : const <String>[];
-        final TextSpan textSpan = _focused && graphemes.isNotEmpty
+        final int caret = graphemes.isEmpty
+            ? 0
+            : (widget.caret ?? _caret).clamp(0, graphemes.length - 1);
+        final TextSpan textSpan = showCaret && graphemes.isNotEmpty
             ? TextSpan(
                 style: widget.style,
                 children: <TextSpan>[
-                  TextSpan(text: graphemes.take(_caret).join()),
+                  TextSpan(text: graphemes.take(caret).join()),
                   TextSpan(
-                    text: graphemes[_caret],
+                    text: graphemes[caret],
                     style: TextStyle(
                       backgroundColor: Theme.of(
                         context,
                       ).colorScheme.primary.withValues(alpha: 0.25),
                     ),
                   ),
-                  TextSpan(text: graphemes.skip(_caret + 1).join()),
+                  TextSpan(text: graphemes.skip(caret + 1).join()),
                 ],
               )
             : TextSpan(text: widget.text, style: widget.style);
@@ -745,8 +764,10 @@ class SubtitleTranscriptAction extends StatelessWidget {
 /// （`FushiDicts.defaultScanLength` = 16 码点）自然丢弃。
 ///
 /// 起点按脚本分：
-/// - CJK / 标点 / 空白：就是被点字位本身（逐字查词，点「永」命中「永遠」、
+/// - CJK：就是被点字位本身（逐字查词，点「永」命中「永遠」、
 ///   点「遠」能单独查「遠」）。
+/// - 空白 / 标点 / 符号：向后跳到第一个可查字位（引擎查词前本就 trim 并剥掉句首
+///   标点，起点停在它们上会让高亮锚点与匹配长度错位，反馈 jjurI3uaT0）。
 /// - 拉丁单词字符：回退到该单词的**词首**，这样点 "hello" 的任意字母（含
 ///   'e' / 'o'）都从 "hello" 起查，而不是旧 `skip(index)` 的 "ello" 查不到
 ///   （TODO-916 症状③）。空格 / 标点 / 连字号 / CJK 都是词首边界。
@@ -790,11 +811,36 @@ String subtitleTranscriptLookupTerm(String sentence, int graphemeIndex) =>
   // `String.trim()` 连 U+3000 全角空格一起吃。
   //
   // 弹窗查的词一字不变（引擎拿到的本来就是 trim 后的串），变的只有高亮锚点。
-  while (start < graphemes.length && graphemes[start].trim().isEmpty) {
-    start++;
+  //
+  // **起点还必须跳过前导标点 / 符号**（反馈 jjurI3uaT0）：`searchDictionary` 的
+  // `normalizeSearchTerm` 用同一条 [lookupEdgePunctuationRegex] 剥掉句首标点，引擎回报
+  // 的 matchedRunes 以剥离串为坐标。点在「（茜）記事」的「（」上时起点若停在「（」，
+  // 高亮就从括号起画、长度却按「茜」算——盖住「（」、漏掉真正查到的词。剪贴板面板
+  // 同病已按 BUG-773 修过。被剥前缀按 code unit 回报，只数完整落在其内的字位。
+  //
+  // 空白与标点交替出现（「、 b」「（ 茜」）时反复跳到不动为止：`trim()` 在剥标点
+  // **之前**，只剥一轮会让起点停在标点后的空格上，而送进引擎的串又被 trim 掉它。
+  // 弹窗收到的查询串因此与引擎实际匹配的串逐字相同，变的只有高亮锚点。
+  while (start < graphemes.length) {
+    final int before = start;
+    while (start < graphemes.length && graphemes[start].trim().isEmpty) {
+      start++;
+    }
+    if (start >= graphemes.length) break;
+    final int stripUnits = leadingPunctuationStripUnits(
+      graphemes.skip(start).join(),
+      lookupEdgePunctuationRegex,
+    );
+    int consumedUnits = 0;
+    while (start < graphemes.length &&
+        consumedUnits + graphemes[start].length <= stripUnits) {
+      consumedUnits += graphemes[start].length;
+      start++;
+    }
+    if (start == before) break;
   }
-  // 整段都是空白：没有可查的词。此前会带着一串空格去查（引擎 trim 成空、返回 0），
-  // 副作用是白暂停一次视频、弹一个空浮层。
+  // 整段都是空白 / 标点（如点句尾「！」）：没有可查的词。此前会带着这串去查（引擎
+  // 清洗成空、返回 0），副作用是白暂停一次视频、弹一个空浮层。
   if (start >= graphemes.length) return (start: -1, term: '');
   return (start: start, term: graphemes.skip(start).join());
 }

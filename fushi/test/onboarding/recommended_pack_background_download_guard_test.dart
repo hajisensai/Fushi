@@ -149,7 +149,9 @@ void main() {
       reason: '宽屏内联详情必须走共享渲染器（经 SettingsSchemaSection 订阅）',
     );
     expect(
-      settingsHome.contains('recommendedPackDownloadController.stage.addListener'),
+      settingsHome.contains(
+        'recommendedPackDownloadController.stage.addListener',
+      ),
       isFalse,
       reason: '宿主页整页订阅会把每次阶段变化放大成整页重建；订阅归分组组件',
     );

@@ -33,21 +33,20 @@ void main() {
   OnlineMangaLibraryEntry entryFor({
     List<OnlineMangaChapter> chapters = const <OnlineMangaChapter>[],
     int? currentChapterIndex,
-  }) =>
-      OnlineMangaLibraryEntry(
-        runtime: OnlineMangaRuntimeKind.mihon,
-        extensionPackage: 'org.example.fixture',
-        sourceId: '9223372036854775807',
-        series: const OnlineMangaSeries(
-          key: '/series/fixture',
-          title: 'Fixture series',
-          author: 'Fixture author',
-          coverUrl: 'https://example.test/cover',
-          raw: <String, Object?>{'url': '/series/fixture'},
-        ),
-        chapters: chapters,
-        currentChapterIndex: currentChapterIndex,
-      );
+  }) => OnlineMangaLibraryEntry(
+    runtime: OnlineMangaRuntimeKind.mihon,
+    extensionPackage: 'org.example.fixture',
+    sourceId: '9223372036854775807',
+    series: const OnlineMangaSeries(
+      key: '/series/fixture',
+      title: 'Fixture series',
+      author: 'Fixture author',
+      coverUrl: 'https://example.test/cover',
+      raw: <String, Object?>{'url': '/series/fixture'},
+    ),
+    chapters: chapters,
+    currentChapterIndex: currentChapterIndex,
+  );
 
   const List<OnlineMangaChapter> chapters = <OnlineMangaChapter>[
     OnlineMangaChapter(
@@ -99,13 +98,17 @@ void main() {
       reason: '封面必须落盘，否则作品页首屏就得依赖网络',
     );
 
-    final OnlineMangaLibraryEntry parsed =
-        OnlineMangaLibraryEntry.tryParse(row.sourceMetadata)!;
+    final OnlineMangaLibraryEntry parsed = OnlineMangaLibraryEntry.tryParse(
+      row.sourceMetadata,
+    )!;
     expect(parsed.runtime, OnlineMangaRuntimeKind.mihon);
     expect(parsed.sourceId, '9223372036854775807');
     expect(parsed.chapters, hasLength(2));
-    expect(OnlineMangaLibraryService.initialChapterIndex(parsed), 1,
-        reason: '源按新→旧返回，新读者从列表末尾（最旧那话）开始');
+    expect(
+      OnlineMangaLibraryService.initialChapterIndex(parsed),
+      1,
+      reason: '源按新→旧返回，新读者从列表末尾（最旧那话）开始',
+    );
 
     final EpubBookRow again = await service.add(entryFor(chapters: chapters));
     expect(again.bookKey, row.bookKey);
@@ -123,9 +126,13 @@ void main() {
         .map((FileSystemEntity e) => p.basename(e.path))
         .where((String name) => name.startsWith('cover'))
         .toList();
-    expect(coverFiles, isEmpty,
-        reason: 'HTML 不得再以 cover.jpg 落盘——渲染层只判 existsSync，'
-            '坏文件每次重建都报 Invalid image data');
+    expect(
+      coverFiles,
+      isEmpty,
+      reason:
+          'HTML 不得再以 cover.jpg 落盘——渲染层只判 existsSync，'
+          '坏文件每次重建都报 Invalid image data',
+    );
     expect(row.format, 'manga', reason: '封面坏了不能挡住「追这部作品」');
   });
 
@@ -155,16 +162,18 @@ void main() {
     );
     final EpubBookRow row = await service.add(entry);
     expect(row.bookKey, isNot('host-manga-key'));
-    final List<MediaCollectionRow> collections =
-        await database.getAllMediaCollections();
+    final List<MediaCollectionRow> collections = await database
+        .getAllMediaCollections();
     expect(collections, hasLength(1));
-    final List<MediaCollectionItemRow> members =
-        await database.getCollectionItems(collections.single.id);
+    final List<MediaCollectionItemRow> members = await database
+        .getCollectionItems(collections.single.id);
     expect(members.single.entryKey, row.uid);
     expect(members.single.sortIndex, 7);
     await service.add(entry);
     expect(
-      await database.getCollectionItems(collections.single.id), hasLength(1));
+      await database.getCollectionItems(collections.single.id),
+      hasLength(1),
+    );
   });
 
   test('BUG-3443：重新收下经互联来的漫画撤销此前写的对端键删除墓碑，'
@@ -181,9 +190,15 @@ void main() {
     // 上一次「从所有设备删除」写的是对端键（本机 interconnect- 键对端认不出），
     // 还没推出去就又收下了：留着它，下一轮会把 host 上的书删掉。
     await database.writeSyncDeletionTombstone(
-        SyncTombstoneKind.book.dbValue, 'host-manga-key', 100);
+      SyncTombstoneKind.book.dbValue,
+      'host-manga-key',
+      100,
+    );
     await database.writeSyncDeletionTombstone(
-        SyncTombstoneKind.book.dbValue, 'unrelated', 100);
+      SyncTombstoneKind.book.dbValue,
+      'unrelated',
+      100,
+    );
 
     await service.add(entry);
 
@@ -191,7 +206,8 @@ void main() {
       <String>{
         for (final SyncDeletionTombstoneRow r
             in await database.getSyncDeletionTombstonesOfType(
-                SyncTombstoneKind.book.dbValue))
+              SyncTombstoneKind.book.dbValue,
+            ))
           r.itemKey,
       },
       <String>{'unrelated'},
@@ -200,8 +216,9 @@ void main() {
 
   test('刷出空章节列表不得覆盖书架：抛失败、库里旧描述符原样保留', () async {
     final EpubBookRow row = await service.add(entryFor(chapters: chapters));
-    final OnlineMangaLibraryEntry stored =
-        OnlineMangaLibraryEntry.tryParse(row.sourceMetadata)!;
+    final OnlineMangaLibraryEntry stored = OnlineMangaLibraryEntry.tryParse(
+      row.sourceMetadata,
+    )!;
     expect(stored.chapters, hasLength(2));
 
     // Mihon 的 chapterListParse 撞 Cloudflare 拦截页时**返回空列表而不抛**。
@@ -216,17 +233,18 @@ void main() {
     );
 
     final EpubBookRow? after = await database.getEpubBook(row.bookKey);
-    final OnlineMangaLibraryEntry kept =
-        OnlineMangaLibraryEntry.tryParse(after!.sourceMetadata)!;
-    expect(kept.chapters, hasLength(2),
-        reason: '一次没抛异常的失败刷新不得把书架里的章节清空');
+    final OnlineMangaLibraryEntry kept = OnlineMangaLibraryEntry.tryParse(
+      after!.sourceMetadata,
+    )!;
+    expect(kept.chapters, hasLength(2), reason: '一次没抛异常的失败刷新不得把书架里的章节清空');
     expect(after.chapterCount, 2);
   });
 
   test('刷新本来就空的条目仍照常落库（守卫只挡「有变没有」）', () async {
     final EpubBookRow row = await service.add(entryFor());
-    final OnlineMangaLibraryEntry stored =
-        OnlineMangaLibraryEntry.tryParse(row.sourceMetadata)!;
+    final OnlineMangaLibraryEntry stored = OnlineMangaLibraryEntry.tryParse(
+      row.sourceMetadata,
+    )!;
     expect(stored.chapters, isEmpty);
 
     final OnlineMangaLibraryEntry? updated = await service.refresh(
@@ -253,7 +271,8 @@ void main() {
     expect(
       OnlineMangaLibraryService.bookKeyOf(entryFor()),
       expected,
-      reason: 'bookKey 既是 epub_books 主键也是磁盘目录名；改一个字符就等于把'
+      reason:
+          'bookKey 既是 epub_books 主键也是磁盘目录名；改一个字符就等于把'
           '所有已入库的在线漫画变成找不到的孤儿',
     );
   });
@@ -287,13 +306,16 @@ void main() {
       'currentChapterIndex': 1,
     });
 
-    final OnlineMangaLibraryEntry parsed =
-        OnlineMangaLibraryEntry.tryParse(legacy)!;
+    final OnlineMangaLibraryEntry parsed = OnlineMangaLibraryEntry.tryParse(
+      legacy,
+    )!;
     expect(parsed.runtime, OnlineMangaRuntimeKind.mihon);
     expect(parsed.series.key, '/series/fixture');
     expect(parsed.series.coverUrl, 'https://example.test/cover');
-    expect(parsed.chapters.map((OnlineMangaChapter c) => c.key),
-        <String>['/chapter/2', '/chapter/1']);
+    expect(parsed.chapters.map((OnlineMangaChapter c) => c.key), <String>[
+      '/chapter/2',
+      '/chapter/1',
+    ]);
     expect(parsed.currentChapter?.name, 'Chapter 1');
     expect(
       parsed.chapters.first.raw['url'],
@@ -309,29 +331,40 @@ void main() {
       'runtime': 'mihon',
       'extensionPackage': 'org.example.fixture',
       'sourceId': '1',
-      'series': <String, Object?>{'key': '/s', 'title': 'S', 'raw': <String, Object?>{}},
+      'series': <String, Object?>{
+        'key': '/s',
+        'title': 'S',
+        'raw': <String, Object?>{},
+      },
       'chapters': <Map<String, Object?>>[
-        <String, Object?>{'key': '', 'name': 'broken', 'raw': <String, Object?>{}},
-        <String, Object?>{'key': '/c/1', 'name': 'ok', 'raw': <String, Object?>{}},
+        <String, Object?>{
+          'key': '',
+          'name': 'broken',
+          'raw': <String, Object?>{},
+        },
+        <String, Object?>{
+          'key': '/c/1',
+          'name': 'ok',
+          'raw': <String, Object?>{},
+        },
       ],
     });
-    final OnlineMangaLibraryEntry parsed =
-        OnlineMangaLibraryEntry.tryParse(payload)!;
+    final OnlineMangaLibraryEntry parsed = OnlineMangaLibraryEntry.tryParse(
+      payload,
+    )!;
     expect(parsed.chapters, hasLength(1));
     expect(parsed.chapters.single.key, '/c/1');
   });
 
   test('选章不再清零 reader_positions（换章不丢上一章进度）', () async {
     final EpubBookRow row = await service.add(entryFor(chapters: chapters));
-    await ReaderPositionRepository(database).save(
-      bookUid: row.uid,
-      sectionIndex: 7,
-      normCharOffset: 0,
-      charOffset: 0,
-    );
+    await ReaderPositionRepository(
+      database,
+    ).save(bookUid: row.uid, sectionIndex: 7, normCharOffset: 0, charOffset: 0);
 
-    final OnlineMangaLibraryEntry parsed =
-        OnlineMangaLibraryEntry.tryParse(row.sourceMetadata)!;
+    final OnlineMangaLibraryEntry parsed = OnlineMangaLibraryEntry.tryParse(
+      row.sourceMetadata,
+    )!;
     final OnlineMangaLibraryEntry selected = await service.selectChapter(
       bookKey: row.bookKey,
       entry: parsed,
@@ -339,20 +372,23 @@ void main() {
     );
     expect(selected.currentChapter?.name, 'Chapter 2');
 
-    final ReaderPosition? position =
-        await ReaderPositionRepository(database).findByBookUid(row.uid);
+    final ReaderPosition? position = await ReaderPositionRepository(
+      database,
+    ).findByBookUid(row.uid);
     expect(
       position?.sectionIndex,
       7,
-      reason: 'v88 前 selectChapter 会把这一行清零，于是换章即永久丢掉上一章'
+      reason:
+          'v88 前 selectChapter 会把这一行清零，于是换章即永久丢掉上一章'
           '的位置；每章进度归 manga_chapter_states 之后，选章不该再破坏它',
     );
   });
 
   test('刷新按 chapterKey 重定位当前章，而不是沿用下标', () async {
     final EpubBookRow row = await service.add(entryFor(chapters: chapters));
-    final OnlineMangaLibraryEntry parsed =
-        OnlineMangaLibraryEntry.tryParse(row.sourceMetadata)!;
+    final OnlineMangaLibraryEntry parsed = OnlineMangaLibraryEntry.tryParse(
+      row.sourceMetadata,
+    )!;
     // 当前停在最旧那话（下标 1）。
     final OnlineMangaLibraryEntry selected = await service.selectChapter(
       bookKey: row.bookKey,
@@ -394,44 +430,55 @@ void main() {
     expect(await service.ensureBookDirectory(row), row, reason: '已在标准位置：零改动');
   });
 
-  test('ensureBookDirectory 把旧 <runtimeRoot>/library 目录整个搬进 fushi_books', () async {
-    final EpubBookRow added = await service.add(entryFor(chapters: chapters));
-    // 造一条 2026-09-12 前的旧行：目录住在 <runtimeRoot>/library/<bookKey>。
-    final Directory legacy = Directory(
-      p.join(root.path, 'library', added.bookKey),
-    );
-    await legacy.parent.create(recursive: true);
-    await Directory(added.extractDir).rename(legacy.path);
-    File(p.join(legacy.path, 'note.txt')).writeAsStringSync('keep me');
-    await database.updateEpubBookContentPaths(
-      added.bookKey,
-      extractDir: legacy.path,
-    );
-    final Directory staleCache = Directory(
-      p.join(root.path, 'reader-cache', 'chapters', added.bookKey, 'x'),
-    )..createSync(recursive: true);
+  test(
+    'ensureBookDirectory 把旧 <runtimeRoot>/library 目录整个搬进 fushi_books',
+    () async {
+      final EpubBookRow added = await service.add(entryFor(chapters: chapters));
+      // 造一条 2026-09-12 前的旧行：目录住在 <runtimeRoot>/library/<bookKey>。
+      final Directory legacy = Directory(
+        p.join(root.path, 'library', added.bookKey),
+      );
+      await legacy.parent.create(recursive: true);
+      await Directory(added.extractDir).rename(legacy.path);
+      File(p.join(legacy.path, 'note.txt')).writeAsStringSync('keep me');
+      await database.updateEpubBookContentPaths(
+        added.bookKey,
+        extractDir: legacy.path,
+      );
+      final Directory staleCache = Directory(
+        p.join(root.path, 'reader-cache', 'chapters', added.bookKey, 'x'),
+      )..createSync(recursive: true);
 
-    final EpubBookRow migrated = await service.ensureBookDirectory(
-      (await database.getEpubBook(added.bookKey))!,
-    );
+      final EpubBookRow migrated = await service.ensureBookDirectory(
+        (await database.getEpubBook(added.bookKey))!,
+      );
 
-    expect(migrated.extractDir, p.join(root.path, 'fushi_books', added.bookKey));
-    expect(migrated.uid, added.uid, reason: '身份不变，进度零迁移');
-    expect(legacy.existsSync(), isFalse, reason: '旧目录搬走，不是复制一份');
-    expect(File(p.join(migrated.extractDir, 'cover.png')).existsSync(), isTrue);
-    expect(
-      File(p.join(migrated.extractDir, 'note.txt')).readAsStringSync(),
-      'keep me',
-    );
-    expect(Directory(p.join(migrated.extractDir, 'chapters')).existsSync(),
-        isTrue);
-    expect(
-      (await database.getEpubBook(added.bookKey))!.extractDir,
-      migrated.extractDir,
-      reason: '行必须真的改了 extractDir',
-    );
-    expect(staleCache.existsSync(), isFalse, reason: '旧阅读期页缓存顺手清掉');
-  });
+      expect(
+        migrated.extractDir,
+        p.join(root.path, 'fushi_books', added.bookKey),
+      );
+      expect(migrated.uid, added.uid, reason: '身份不变，进度零迁移');
+      expect(legacy.existsSync(), isFalse, reason: '旧目录搬走，不是复制一份');
+      expect(
+        File(p.join(migrated.extractDir, 'cover.png')).existsSync(),
+        isTrue,
+      );
+      expect(
+        File(p.join(migrated.extractDir, 'note.txt')).readAsStringSync(),
+        'keep me',
+      );
+      expect(
+        Directory(p.join(migrated.extractDir, 'chapters')).existsSync(),
+        isTrue,
+      );
+      expect(
+        (await database.getEpubBook(added.bookKey))!.extractDir,
+        migrated.extractDir,
+        reason: '行必须真的改了 extractDir',
+      );
+      expect(staleCache.existsSync(), isFalse, reason: '旧阅读期页缓存顺手清掉');
+    },
+  );
 
   group('resumeChapterIndex', () {
     test('一次没读过 → 回退到最旧那话', () {
@@ -464,8 +511,11 @@ void main() {
         OnlineMangaLibraryService.resumeChapterIndex(
           entry,
           <String, MangaChapterStateRow>{
-            '/chapter/1':
-                _state(chapterKey: '/chapter/1', updatedAt: 10, readAt: 11),
+            '/chapter/1': _state(
+              chapterKey: '/chapter/1',
+              updatedAt: 10,
+              readAt: 11,
+            ),
           },
         ),
         0,
@@ -478,8 +528,11 @@ void main() {
         OnlineMangaLibraryService.resumeChapterIndex(
           entry,
           <String, MangaChapterStateRow>{
-            '/chapter/2':
-                _state(chapterKey: '/chapter/2', updatedAt: 20, readAt: 21),
+            '/chapter/2': _state(
+              chapterKey: '/chapter/2',
+              updatedAt: 20,
+              readAt: 21,
+            ),
           },
         ),
         0,
@@ -496,8 +549,9 @@ void main() {
         number: 9,
         scanlator: 'Fixture scans',
       );
-      final OnlineMangaChapter normalized =
-          MihonLibraryAdapter.chapterOf(native);
+      final OnlineMangaChapter normalized = MihonLibraryAdapter.chapterOf(
+        native,
+      );
       expect(normalized.key, '/chapter/9');
       expect(normalized.scanlator, 'Fixture scans');
       expect(normalized.number, 9);
@@ -541,15 +595,14 @@ MangaChapterStateRow _state({
   required int updatedAt,
   int? readAt,
   int lastPage = 3,
-}) =>
-    MangaChapterStateRow(
-      bookUid: 'uid',
-      chapterKey: chapterKey,
-      lastPage: lastPage,
-      lastFraction: -1,
-      readAt: readAt,
-      updatedAt: updatedAt,
-    );
+}) => MangaChapterStateRow(
+  bookUid: 'uid',
+  chapterKey: chapterKey,
+  lastPage: lastPage,
+  lastFraction: -1,
+  readAt: readAt,
+  updatedAt: updatedAt,
+);
 
 /// 只做「取封面」这一件事的适配器。
 ///
@@ -566,15 +619,16 @@ class _FixtureAdapter implements OnlineMangaRuntimeAdapter {
   Future<String?> sourceLabel(OnlineMangaLibraryEntry entry) async => 'Fixture';
 
   @override
-  Future<OnlineMangaRefreshResult> refresh(OnlineMangaLibraryEntry entry) async =>
+  Future<OnlineMangaRefreshResult> refresh(
+    OnlineMangaLibraryEntry entry,
+  ) async =>
       OnlineMangaRefreshResult(series: entry.series, chapters: entry.chapters);
 
   @override
   Future<List<OnlineMangaPageRef>> resolveChapterPages({
     required OnlineMangaLibraryEntry entry,
     required OnlineMangaChapter chapter,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) =>
@@ -584,8 +638,7 @@ class _FixtureAdapter implements OnlineMangaRuntimeAdapter {
   Future<List<int>> fetchCover(
     OnlineMangaLibraryEntry entry,
     String url,
-  ) async =>
-      coverBytes;
+  ) async => coverBytes;
 
   /// 默认是完整 1×1 PNG（BUG-2496 起写侧收口拒收只有魔数的截断 PNG）；用例可换成
   /// HTML / 截断字节验证「不落盘、coverPath 为空」。

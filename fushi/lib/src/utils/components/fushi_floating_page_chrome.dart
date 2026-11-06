@@ -85,8 +85,12 @@ class FushiPageChromeCircle extends StatelessWidget {
 
   final Widget child;
 
+  // 顶部浮动胶囊统一按 [kFushiFloatingCapsuleScale] 缩（外层已缩过时不叠加）。
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      FushiCapsuleScale(child: _buildChrome(context));
+
+  Widget _buildChrome(BuildContext context) {
     return SizedBox.square(
       dimension: kFushiPageChromeExtent,
       child: FushiFloatingPill(
@@ -146,8 +150,12 @@ class FushiPageChromeCapsule extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
 
+  // 顶部浮动胶囊统一按 [kFushiFloatingCapsuleScale] 缩（外层已缩过时不叠加）。
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      FushiCapsuleScale(child: _buildChrome(context));
+
+  Widget _buildChrome(BuildContext context) {
     final EdgeInsets resolved = padding.resolve(Directionality.of(context));
     return SizedBox(
       height: kFushiPageChromeExtent,
@@ -261,8 +269,12 @@ class FushiPageChromeTitle extends StatelessWidget {
     );
   }
 
+  // 顶部浮动胶囊统一按 [kFushiFloatingCapsuleScale] 缩（外层已缩过时不叠加）。
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      FushiCapsuleScale(child: _buildChrome(context));
+
+  Widget _buildChrome(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool apple = isGlassDesign(context);
     final TextStyle subtitleStyle = apple
@@ -385,8 +397,49 @@ class _StrutScope extends StatelessWidget {
   }
 }
 
+/// 驱动页头的「主滚动区」深度：见过的最浅竖向 [ScrollUpdateNotification] 所在的
+/// [Notification] 深度（同首页浮动栏 [FushiFloatingChromeController] 的 `_ownerDepth`）。
+///
+/// 只拿来过滤 [ScrollMetricsNotification]：嵌套的竖向小列表（shrinkWrap + 禁止滚动）
+/// 第一次布局也发它，且自身位置恒为 0。不按深度过滤，用户往下滚、懒加载出这样一个
+/// 嵌套列表的那一帧就被当成「主列表回到了顶部」，页头 / 遮罩 / 标题跟着弹回。
+class FushiScrollOwnerDepth {
+  int? _depth;
+
+  /// 记下一条竖向滚动更新的深度（只往浅处改）。
+  void claim(ScrollUpdateNotification notification) {
+    if (notification.metrics.axis != Axis.vertical) return;
+    final int? depth = _depth;
+    if (depth == null || notification.depth < depth) {
+      _depth = notification.depth;
+    }
+  }
+
+  /// 这条版面修正通知来自主滚动区（或更外层）。还没见过滚动时只认最外层。
+  bool owns(ScrollMetricsNotification notification) =>
+      notification.depth <= (_depth ?? 0);
+}
+
+/// 子树里的滚动区不驱动页头收起：并排各自滚动的多栏正文（宽窗表单两栏）用。
+///
+/// 页头只有一条，却有两个互不相干的滚动位置：长的那栏滚下去把页头收掉，短的
+/// 那栏停在顶部、没有「往回滚」可做，页头（含返回键）就再也叫不回来。
+/// 遮罩 / 标题淡入等其它滚动监听不受影响。
+class FushiPinnedPageChromeScope extends InheritedWidget {
+  const FushiPinnedPageChromeScope({super.key, required super.child});
+
+  /// [context] 是否在钉住页头的作用域里（不建立依赖，滚动通知路径上调用）。
+  static bool pins(BuildContext? context) =>
+      context?.getInheritedWidgetOfExactType<FushiPinnedPageChromeScope>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(FushiPinnedPageChromeScope oldWidget) => false;
+}
+
 /// 页头「随滚动收起」的状态：内容被用户往下滚（看后面的内容）时收起，往回滚或
 /// 回到顶部时出现。焦点进入页头时由 [FushiScrollAwayChrome] 主动叫出。
+/// [FushiPinnedPageChromeScope] 里的滚动区不参与。
 class FushiScrollAwayController extends ChangeNotifier {
   /// 内容至少滚过这么多（逻辑 px）才允许收起：刚开始滚的一小段不收，避免
   /// 短页面一碰就把页头收掉。
@@ -400,6 +453,7 @@ class FushiScrollAwayController extends ChangeNotifier {
 
   bool _hidden = false;
   ScrollDirection _userDirection = ScrollDirection.idle;
+  final FushiScrollOwnerDepth _owner = FushiScrollOwnerDepth();
 
   /// 当前方向上累计的用户滚动位移：正 = 往下看（内容上移），负 = 往回。
   /// 方向一反就清零重新攒。
@@ -426,8 +480,24 @@ class FushiScrollAwayController extends ChangeNotifier {
   bool handleNotification(Notification notification) {
     // 平滑滚轮补间的「拉回起点」不是用户滚动（[SmoothWheelScrollScope.isRewinding]）。
     if (SmoothWheelScrollScope.isRewinding) return false;
+    // 版面修正（列表缩短 / 视口变高把位置夹回顶部）只发 ScrollMetricsNotification、
+    // 不发 ScrollUpdate：不在这里叫出页头，它会停在收起态而正文已滚不动，用户
+    // 再也唤不回来（同库页 BUG-3133）。
+    if (notification is ScrollMetricsNotification) {
+      final ScrollMetrics metrics = notification.metrics;
+      if (metrics.axis == Axis.vertical &&
+          _owner.owns(notification) &&
+          metrics.extentBefore <= 0) {
+        hidden = false;
+      }
+      return false;
+    }
     if (notification is! ScrollNotification) return false;
     if (notification.metrics.axis != Axis.vertical) return false;
+    if (FushiPinnedPageChromeScope.pins(notification.context)) {
+      hidden = false;
+      return false;
+    }
     if (notification is UserScrollNotification) {
       if (notification.direction != _userDirection) _travel = 0;
       _userDirection = notification.direction;
@@ -438,6 +508,7 @@ class FushiScrollAwayController extends ChangeNotifier {
       return false;
     }
     if (notification is! ScrollUpdateNotification) return false;
+    _owner.claim(notification);
     final ScrollMetrics metrics = notification.metrics;
     if (metrics.extentBefore <= 0) {
       hidden = false;
@@ -549,7 +620,7 @@ class _FushiScrollAwayChromeState extends State<FushiScrollAwayChrome>
           _shown.animation,
           _fade.animation,
         ]),
-        child: widget.child,
+        child: FushiCapsuleScale(child: widget.child),
         builder: (BuildContext context, Widget? child) {
           final double v = widget.enabled ? _shown.value : 1;
           final double factor = v.clamp(0.0, 1.0);

@@ -22,6 +22,7 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/pages/implementations/discovery/discovery_layout.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
@@ -31,7 +32,14 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiTopFadeScrim;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 首屏 Hero 轮播。只有一页时不画任何切页控件，外观与单张横幅一致。
 class DiscoveryHeroCarousel extends StatefulWidget {
@@ -630,7 +638,7 @@ class _DiscoveryScrollTopFadeState extends State<DiscoveryScrollTopFade> {
   @override
   Widget build(BuildContext context) {
     final bool eink = isEinkTheme(context);
-    final Color background = Theme.of(context).scaffoldBackgroundColor;
+    final Color background = fushiOpaquePageColor(context);
     return NotificationListener<ScrollMetricsNotification>(
       onNotification: (ScrollMetricsNotification notification) {
         _track(notification.metrics, notification.depth);

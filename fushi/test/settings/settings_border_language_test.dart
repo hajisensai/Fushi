@@ -75,9 +75,7 @@ void main() {
       );
     });
 
-    testWidgets('eink：仍自动补 1px 描边（填充塌缩，线是唯一边界）', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('eink：仍自动补 1px 描边（填充塌缩，线是唯一边界）', (WidgetTester tester) async {
       await tester.pumpWidget(_app(eink: true, child: _section()));
       final BorderSide side = _cardSide(tester);
       expect(side.style, BorderStyle.solid);
@@ -147,11 +145,7 @@ void main() {
       final String home = File(
         'lib/src/settings/settings_home_page.dart',
       ).readAsStringSync();
-      expect(
-        home,
-        contains('filled: !eink'),
-        reason: '搜索框与分组卡走同一套语言：填充分层，不描边',
-      );
+      expect(home, contains('filled: !eink'), reason: '搜索框与分组卡走同一套语言：填充分层，不描边');
       expect(
         home,
         contains('borderSide: BorderSide.none'),

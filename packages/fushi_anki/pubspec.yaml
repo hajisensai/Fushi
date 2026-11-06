@@ -16,6 +16,10 @@ dependencies:
   # foundation.debugPrint，让无头服务端不拖进 dart:ui。
   fushi_core:
     path: ../fushi_core
+  # Rust 计算内核（native/fushi_compute，纯 Dart FFI，硬依赖）：媒体文件名与媒体去重的
+  # SHA-256 / 逐字节复核、媒体引用扫描（MediaNameMatcher）走它，本包不再自带 Dart 实现。
+  fushi_compute:
+    path: ../fushi_compute
   meta: ^1.9.0
   # Windows 前台激活（AnkiDesktopForeground）要用 calloc/Utf16 做 Win32 FFI。
   ffi: ^2.1.3

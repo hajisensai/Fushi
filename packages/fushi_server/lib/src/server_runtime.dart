@@ -7,6 +7,8 @@ library;
 import 'dart:io';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/media/torrent/bt_site_legacy_migration.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi_server/src/commands/command_io.dart' show kExitConflict;
@@ -82,13 +84,23 @@ Future<int> withServerRuntime(
   // 一份库没有任何协调，迁移撞上 serve 的写事务就是损坏 / SQLITE_BUSY。
   final ServerDataLock dataLock;
   try {
-    dataLock = await ServerDataLock.acquire(config.dataDir, mode: serve ? 'serve' : 'offline', command: command);
+    dataLock = await ServerDataLock.acquire(
+      config.dataDir,
+      mode: serve ? 'serve' : 'offline',
+      command: command,
+    );
   } on ServerDataLockedException catch (e) {
     stderr.writeln(serve ? 'serve 拒绝启动：${e.describe()}' : e.describe());
     return kExitConflict;
   }
   try {
-    return await _withLockedRuntime(configFile, config, verbose, dataLock, body);
+    return await _withLockedRuntime(
+      configFile,
+      config,
+      verbose,
+      dataLock,
+      body,
+    );
   } catch (_) {
     // 运行时还没建起来（dispose 管不到锁）时出错：这里放锁；建起来之后 dispose 放，
     // release 幂等。
@@ -110,7 +122,10 @@ Future<int> _withLockedRuntime(
   }
   final ServerPaths paths = ServerPaths(config.dataDir);
   await paths.ensureLayout();
-  final ServerLog log = ServerLog(file: File(p.join(paths.logs.path, 'fushi_server.log')), verbose: verbose);
+  final ServerLog log = ServerLog(
+    file: File(p.join(paths.logs.path, 'fushi_server.log')),
+    verbose: verbose,
+  );
   await log.open();
   installServerHostBindings(config: config, paths: paths, log: log);
   // 与 app 侧 `AppModel.initialise()` 对偶：`createAppHttpClient()` 的 auto 模式
@@ -124,6 +139,7 @@ Future<int> _withLockedRuntime(
   final FushiDatabase db = FushiDatabase(paths.support.path);
   final ServerPrefs prefs = ServerPrefs(db);
   await prefs.warmUp();
+  await settleServerLegacyBuiltinBtSites(db, prefs);
   final ServerIdentity identity = await ServerIdentity.loadOrCreate(prefs);
   final ServerRuntime rt = ServerRuntime(
     config: config,
@@ -139,5 +155,38 @@ Future<int> _withLockedRuntime(
     return await body(rt);
   } finally {
     await rt.dispose();
+  }
+}
+
+/// 旧内置 BT 站（#2563 删除；服务端旧版只有 Nyaa / apibay / Knaben 三个资源索引器，
+/// 没有发现源）→ 用户 BT 站的一次性升级迁移，与 app 同一个引擎函数。
+///
+/// 老服务端的判据：设备身份（`sync_device_id`）已经存在——首次启动由
+/// [ServerIdentity.loadOrCreate] 写下，所以必须在它之前调；外加旧启停偏好与订阅 /
+/// 任务里引用旧内置 provider id 的数据（见 `runLegacyBuiltinBtSitesMigration`）。
+/// 失败只记日志、不挡启动（标记没写，下次启动重试）。
+Future<void> settleServerLegacyBuiltinBtSites(
+  FushiDatabase db,
+  ServerPrefs prefs,
+) async {
+  try {
+    final String? deviceId = await prefs.getRaw(ServerIdentity.kDeviceIdKey);
+    final BtSitesLegacyMigrationOutcome outcome =
+        await runLegacyBuiltinBtSitesMigration(
+          prefs,
+          existingInstall: deviceId != null && deviceId.isNotEmpty,
+          usage: await scanLegacyBtSourceUsage(db),
+          hostHadDiscoverySources: false,
+          onDecodeError: (Object e, StackTrace st) =>
+              engineLog.log('ServerRuntime.legacyBtSites.decode', e, st),
+        );
+    if (outcome == BtSitesLegacyMigrationOutcome.migrated) {
+      engineLog.logDiagnostic(
+        'ServerRuntime',
+        'migrated the former built-in BT sites into resource_bt_sites',
+      );
+    }
+  } on Object catch (e, st) {
+    engineLog.log('ServerRuntime.legacyBtSites', e, st);
   }
 }

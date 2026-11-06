@@ -2,10 +2,10 @@ import 'dart:convert';
 
 import 'package:fushi_core/fushi_core.dart';
 
-/// 用户明确勾选「记住这些选择」后，删除确认框下次采用的两个默认值。
+/// 上次确认删除时两个勾选框的状态，删除确认框下次直接沿用。
 ///
 /// 这是一个整体偏好：两个破坏性选择必须在同一行里原子读写，不能出现只记住一半的
-/// 中间状态。记录不存在就表示「不记住」，两项都回到安全默认值 false。
+/// 中间状态。记录不存在（从没确认删除过）就两项都用安全默认值 false。
 class DeletePromptRememberedChoices {
   const DeletePromptRememberedChoices({
     required this.syncEverywhere,
@@ -16,11 +16,11 @@ class DeletePromptRememberedChoices {
   final bool deleteLocalFiles;
 }
 
-/// 删除确认框「记住这些选择」的设备偏好存储。
+/// 删除确认框「沿用上次勾选」的设备偏好存储。
 ///
-/// 单 JSON key 同时承载开关存在性与两个值：存在 = 记住，删除 = 忘记。某次弹窗因为
-/// 没有同步通道或没有可删原件而隐藏其中一项时，UI 仍保留已加载的对应值，因此确认
-/// 不会把暂时不可用的选择意外覆盖掉。
+/// 单 JSON key 承载两个值，每次确认删除都整体覆盖。某次弹窗因为没有同步通道或没有
+/// 可删原件而隐藏其中一项时，UI 仍保留已加载的对应值，因此确认不会把暂时不可用的
+/// 选择意外覆盖掉。
 class DeletePromptPreferenceStore {
   const DeletePromptPreferenceStore(this._db);
 
@@ -49,11 +49,7 @@ class DeletePromptPreferenceStore {
     }
   }
 
-  Future<void> write(DeletePromptRememberedChoices? choices) async {
-    if (choices == null) {
-      await _db.deletePref(prefKey);
-      return;
-    }
+  Future<void> write(DeletePromptRememberedChoices choices) async {
     await _db.setPref(
       prefKey,
       jsonEncode(<String, Object>{

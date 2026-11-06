@@ -17,6 +17,7 @@ class _FakeHost implements WebMineReplayHost {
   bool playWorks = true;
   int screenshots = 0;
   int? screenshotAtPos;
+  final List<int> framePositions = <int>[];
   final List<String> log = <String>[];
 
   @override
@@ -48,6 +49,12 @@ class _FakeHost implements WebMineReplayHost {
     screenshots++;
     screenshotAtPos ??= pos;
     return Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47]);
+  }
+
+  @override
+  Future<Uint8List?> frame() async {
+    framePositions.add(pos);
+    return Uint8List.fromList(<int>[0xFF, 0xD8, 0xFF]);
   }
 }
 
@@ -98,10 +105,12 @@ WebMineReplayRunner _runner(
   _FakeClock clock, {
   GalAudioSource? audio,
   Future<Uint8List?> Function(GalAudioSlice)? encode,
+  bool captureFrames = false,
 }) {
   return WebMineReplayRunner(
     host: host,
     audioSource: audio,
+    captureFrames: captureFrames,
     encodeAudio:
         encode ?? (GalAudioSlice s) async => Uint8List.fromList(<int>[1, 2, 3]),
     sleep: clock.sleep,
@@ -134,6 +143,40 @@ void main() {
     expect(audio.lastBackMs, inInclusiveRange(3600, 3900));
     expect(cap.audio, isNotNull);
     expect(host.playing, isFalse);
+    expect(cap.frames, isEmpty, reason: '静图模式不采帧');
+    expect(host.framePositions, isEmpty);
+  });
+
+  test('动图 / 片段模式：播放全程按 125 ms 采帧，时间轴与音频回取窗对齐', () async {
+    final _FakeClock clock = _FakeClock();
+    final _FakeHost host = _FakeHost(clock);
+    clock.host = host;
+    final _FakeAudio audio = _FakeAudio();
+    final WebMineReplayRunner r = _runner(
+      host,
+      clock,
+      audio: audio,
+      captureFrames: true,
+    );
+
+    final WebMineReplayCapture cap = await r.capture(
+      cueStartMs: 10000,
+      cueEndMs: 13000,
+    );
+
+    expect(cap.warnings, isEmpty, reason: cap.warnings.join(','));
+    // 9700 → 13250 ≈ 3550 ms，125 ms 一帧 ≈ 28 帧（不再是只有一张封面）。
+    expect(cap.frames.length, inInclusiveRange(26, 30));
+    expect(cap.frames.first.atMs, 0);
+    for (int i = 1; i < cap.frames.length; i++) {
+      expect(cap.frames[i].atMs - cap.frames[i - 1].atMs, 125);
+    }
+    expect(host.framePositions.first, inInclusiveRange(9700, 9800));
+    expect(host.framePositions.last, greaterThanOrEqualTo(13000));
+    // 音频回取窗 = 播放时长 + 150 ms，起点比 t0 早 lead = 150 ms。
+    expect(cap.audioLeadMs, 150);
+    expect(cap.clipDurationMs, audio.lastBackMs);
+    expect(cap.cover, isNotNull, reason: '中点封面照截，合片段失败时兜底');
   });
 
   test('无 loopback（非 Windows / 插件缺失）：只截帧、audio null、warning 说明', () async {

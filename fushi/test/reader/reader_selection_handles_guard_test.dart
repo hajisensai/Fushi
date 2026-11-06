@@ -351,19 +351,29 @@ void main() {
       },
     );
 
-    test('rollback preserves endpoint anchors and only fits viewport edges', () {
-      final String body = _between(js, 'positionSelectionHandles: function', 'selectionHandlesRect: function');
-      expect(body, contains('var GAP = 8;'));
-      expect(body, contains('sy = sRect.top - GAP;'));
-      expect(body, contains('ey = eRect.bottom + GAP;'));
-      expect(body, contains('sx = sRect.left;'));
-      expect(body, contains('ex = eRect.right;'));
-      expect(body, contains('edgeClamped && Math.abs(sx - ex) < SIZE'));
-      expect(body, contains('return Math.max(half, Math.min(extent - half, value));'));
-      expect(body, contains('this.visibleContentBox()'));
-      expect(body, isNot(contains('selectedRects')));
-      expect(body, isNot(contains('bestStart')));
-      expect(body, isNot(contains('this.selection =')));
-    });
+    test(
+      'rollback preserves endpoint anchors and only fits viewport edges',
+      () {
+        final String body = _between(
+          js,
+          'positionSelectionHandles: function',
+          'selectionHandlesRect: function',
+        );
+        expect(body, contains('var GAP = 8;'));
+        expect(body, contains('sy = sRect.top - GAP;'));
+        expect(body, contains('ey = eRect.bottom + GAP;'));
+        expect(body, contains('sx = sRect.left;'));
+        expect(body, contains('ex = eRect.right;'));
+        expect(body, contains('edgeClamped && Math.abs(sx - ex) < SIZE'));
+        expect(
+          body,
+          contains('return Math.max(half, Math.min(extent - half, value));'),
+        );
+        expect(body, contains('this.visibleContentBox()'));
+        expect(body, isNot(contains('selectedRects')));
+        expect(body, isNot(contains('bestStart')));
+        expect(body, isNot(contains('this.selection =')));
+      },
+    );
   });
 }

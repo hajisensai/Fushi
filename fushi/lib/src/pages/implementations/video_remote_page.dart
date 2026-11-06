@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -11,9 +12,17 @@ import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.da
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show PreferencesRepository;
+import 'package:fushi/src/pages/implementations/video_remote/video_remote_cover_image.dart';
+import 'package:fushi/src/pages/implementations/video_remote/video_remote_episode_sheet.dart';
+import 'package:fushi/src/pages/implementations/video_remote/video_remote_library_sheet.dart';
+import 'package:fushi/src/pages/implementations/video_remote/video_remote_subtitle_search_sheet.dart';
+import 'package:fushi/src/pages/implementations/video_remote/video_remote_touchpad.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
+    show fushiMotionDuration;
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_control_editor.dart'
     show showVideoRemoteControlEditor;
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_models.dart';
@@ -30,6 +39,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebViewState, MinePopupResult, QueuedOverwriteReply;
 import 'package:fushi/src/sync/sync_backend.dart' show SyncAuthError;
+import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/video_remote_client.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -37,7 +47,7 @@ import 'package:fushi/src/utils/app_ui_scale.dart'
     show FushiAppUiScaleNeutralizer;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
-import 'package:fushi/src/utils/misc/lookup_audio_playback.dart'
+import 'package:fushi/src/lookup/lookup_audio_playback.dart'
     show playResolvedLookupAudio;
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
@@ -45,12 +55,19 @@ import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:fushi_core/fushi_core.dart'
     show kStatSourceVideo, mimeTypeForFilePath;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/sync/video_remote_service.dart'
     show
+        videoRemoteCapabilityCloseVideo,
         videoRemoteActionUnsupported,
+        videoRemoteCapabilityCaret,
         videoRemoteCapabilityEpisodes,
+        videoRemoteCaretMaxCount,
+        videoRemoteCaretMoves,
+        videoRemoteCapabilityOpenVideo,
+        videoRemoteCapabilitySubtitleSearch,
         videoRemoteCapabilitySubtitleTracks,
         videoRemoteCapabilityVolume;
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
@@ -111,6 +128,9 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   bool _favoritesLoading = false;
   int _active = -1, _revision = 0, _generation = 0;
   VideoRemoteTab _tab = VideoRemoteTab.transcript;
+
+  /// 触控板模式（整屏手势遥控）是否打开。
+  bool _touchpad = false;
 
   /// 脚手架行号 → [_cues] 里的主轨行（每次 build 由 [_projectTranscript] 重算）。
   List<Map<String, dynamic>> _lineRows = <Map<String, dynamic>>[];
@@ -422,6 +442,7 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
         _active = -1;
       }
     });
+    _syncNowPlayingCover();
     if (changed) {
       final Map<String, dynamic> session = Map<String, dynamic>.from(_session);
       final String key =
@@ -462,6 +483,37 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     if (favoritesChanged || changed) await _loadFavorites();
     _highlight();
     _checkFavoriteReady();
+  }
+
+  /// 「正在播放」封面对应的电脑视频（快照 `identity` = bookUid）；换视频才重拉。
+  String? _coverIdentity;
+
+  /// 「正在播放」封面（背景取色 + 控制卡缩略图）；没有 / 还没拉到为 null。
+  ImageProvider? _nowPlayingCover;
+
+  /// 每部视频只拉一次封面：失败（没有封面 / 旧版电脑）也记住，不在每次快照
+  /// 刷新时重试。
+  void _syncNowPlayingCover() {
+    final String identity = _state['identity']?.toString() ?? '';
+    if (identity == _coverIdentity) return;
+    _coverIdentity = identity;
+    if (_nowPlayingCover != null) setState(() => _nowPlayingCover = null);
+    if (identity.isEmpty) return;
+    unawaited(
+      _client
+          .fetchRemoteCover(videoRemoteCoverPath(identity))
+          .then(
+            (Uint8List bytes) {
+              if (!mounted || _coverIdentity != identity || bytes.isEmpty) {
+                return;
+              }
+              setState(() => _nowPlayingCover = MemoryImage(bytes));
+            },
+            onError: (Object _) {
+              // 没有封面：保留应用主题与图标占位，不是错误。
+            },
+          ),
+    );
   }
 
   Future<List<Map<String, dynamic>>> _loadCues(
@@ -711,6 +763,51 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
       item.toString(),
   };
 
+  /// 电脑能否点播（从它的视频库里选片让它播放）；不需要电脑上已开着视频。
+  bool get canPickVideo =>
+      capabilities.contains(videoRemoteCapabilityOpenVideo);
+
+  /// 点播：列出电脑的视频库，选中后让电脑关掉正在放的（照常落进度）、打开这一部。
+  /// 新视频的会话经事件流推过来，本页照常换到它的字幕。
+  Future<void> pickVideo() => _guard(() async {
+    if (!canPickVideo || !context.mounted) return;
+    // 正在查的词属于要被关掉的视频：先收起弹框、结束电脑上的查词上下文。
+    closeLookup();
+    final String? picked = await showVideoRemoteLibrarySheet(
+      context: context,
+      load: (String query, int offset) async => VideoRemoteLibraryPage.fromJson(
+        await _client.call('library', <String, dynamic>{
+          'query': query,
+          'offset': offset,
+          'limit': 100,
+        }),
+      ),
+      coverFor: _libraryCover,
+    );
+    if (picked == null || !mounted) return;
+    if (available && picked == _state['identity']) return;
+    await _client.call('openVideo', <String, dynamic>{
+      'bookUid': picked,
+      'requestId': _client.requestId(),
+    });
+  });
+
+  /// 点播行的封面：只拉电脑声明有封面的条目（`coverVersion`），磁盘缓存按
+  /// 版本键控（重新刮削换了封面就重拉）。
+  ImageProvider? _libraryCover(VideoRemoteLibraryEntry entry) {
+    final int? version = entry.coverVersion;
+    if (version == null) return null;
+    return ResizeImage(
+      RemoteCoverImage(
+        videoRemoteCoverPath(entry.bookUid),
+        _client,
+        cacheKey: '${entry.bookUid}@$version',
+      ),
+      width: 192,
+      allowUpscaling: false,
+    );
+  }
+
   /// 电脑当前作品的集数（单视频 / 旧版电脑为 0）。
   int get episodeCount => (_state['episodeCount'] as num?)?.toInt() ?? 0;
 
@@ -721,36 +818,71 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   Future<Map<String, dynamic>> _playbackOptions() =>
       _client.call('playbackOptions', <String, dynamic>{..._session});
 
-  /// 选集：列出电脑上这部作品的各集，点选后电脑与剧集列表点选同一入口换集。
+  /// 选集：列出电脑上这部作品的各集（带封面、打开即在当前集），点选后电脑与剧集
+  /// 列表点选同一入口换集。
   Future<void> pickEpisode() => _guard(() async {
+    final Map<String, dynamic> session = _session;
     final Map<String, dynamic> options = await _playbackOptions();
     if (!context.mounted) return;
-    final List<Map<String, dynamic>> episodes = <Map<String, dynamic>>[
+    final List<VideoRemoteEpisodeEntry> episodes = <VideoRemoteEpisodeEntry>[
       for (final Object? item in options['episodes'] as List? ?? <Object?>[])
-        if (item is Map) Map<String, dynamic>.from(item),
+        if (item is Map)
+          VideoRemoteEpisodeEntry.fromJson(Map<String, dynamic>.from(item)),
     ];
-    int? current;
-    for (final Map<String, dynamic> episode in episodes) {
-      if (episode['current'] == true) {
-        current = (episode['index'] as num?)?.toInt();
-      }
-    }
-    final int? picked = await showFushiChoiceDialog<int>(
+    final int? current = episodes
+        .where((VideoRemoteEpisodeEntry e) => e.current)
+        .map((VideoRemoteEpisodeEntry e) => e.index)
+        .firstOrNull;
+    final int? picked = await showVideoRemoteEpisodeSheet(
       context: context,
-      title: t.video_episode_list,
-      icon: FushiIcons.playlist,
-      selected: current,
-      message: episodes.isEmpty ? t.video_episode_list_empty : null,
-      options: <FushiChoiceOption<int>>[
-        for (final Map<String, dynamic> episode in episodes)
-          FushiChoiceOption<int>(
-            value: (episode['index'] as num).toInt(),
-            label: episode['title']?.toString() ?? '',
-          ),
-      ],
+      episodes: episodes,
+      coverFor: (VideoRemoteEpisodeEntry entry) =>
+          _episodeCover(session, entry.index),
     );
     if (picked == null || picked == current || !mounted) return;
     await _command('episode', extra: <String, dynamic>{'episodeIndex': picked});
+  });
+
+  /// 选集第 [index] 集的封面（电脑 `episodeCover`）。缓存键带电脑身份与这次会话：
+  /// 换一台电脑、或同一部作品换了集（新会话、同一下标是另一份列表）都不串图。
+  ImageProvider _episodeCover(Map<String, dynamic> session, int index) =>
+      VideoRemoteCoverImage(
+        cacheKey:
+            'video-remote-episode-cover|${_client.coverCacheNamespace}|'
+            '${session['sessionId']}|$index',
+        load: () async {
+          final Map<String, dynamic> result = await _client.call(
+            'episodeCover',
+            <String, dynamic>{...session, 'episodeIndex': index},
+          );
+          final Object? data = result['data'];
+          return data is String ? base64Decode(data) : null;
+        },
+      );
+
+  /// 电脑能否从手机关掉正在放的视频。
+  bool get canCloseVideo =>
+      available && capabilities.contains(videoRemoteCapabilityCloseVideo);
+
+  /// 关闭电脑上正在放的视频（电脑走视频页自己的退出流程，进度照常保存）。
+  Future<void> closeVideo() => _guard(() async {
+    if (!canCloseVideo || !context.mounted) return;
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: t.video_remote_close_video,
+      message: t.video_remote_close_video_confirm,
+      confirmLabel: t.video_remote_close_video,
+      icon: FushiIcons.stop,
+    );
+    if (!confirmed || !mounted) return;
+    // 正在查的词属于要被关掉的视频：先收起弹框、结束电脑上的查词上下文。
+    closeLookup();
+    await _client.call('closeVideo', <String, dynamic>{
+      'sessionId': _session['sessionId'],
+      'requestId': _client.requestId(),
+    });
+    if (context.mounted) fushiRemoteActionHaptic(context);
+    await _apply(await _client.snapshot());
   });
 
   /// 切换电脑上的主字幕轨（含「关闭字幕」）。
@@ -762,8 +894,10 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
           in options['subtitleTracks'] as List? ?? <Object?>[])
         if (item is Map) Map<String, dynamic>.from(item),
     ];
-    // 「关闭字幕」用空串占位（轨 id 永不为空）。
+    // 「关闭字幕」用空串占位（轨 id 永不为空）；「在线搜索字幕」用一个不可能是
+    // 轨 id 的值（轨 id 是十六进制摘要）。
     const String off = '';
+    const String searchOnline = '\u0000search';
     String? current = options['subtitleOff'] == true ? off : null;
     for (final Map<String, dynamic> track in tracks) {
       if (track['selected'] == true) current = track['id'].toString();
@@ -781,14 +915,82 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
             label: track['label']?.toString() ?? '',
             enabled: track['selectable'] != false,
           ),
+        if (canSearchSubtitles)
+          FushiChoiceOption<String>(
+            value: searchOnline,
+            label: t.video_subtitle_search_open,
+            icon: FushiIcons.search,
+          ),
       ],
     );
+    if (picked == searchOnline) {
+      await searchSubtitlesOnline();
+      return;
+    }
     if (picked == null || picked == current || !mounted) return;
     await _command(
       'subtitleTrack',
       extra: <String, dynamic>{'trackId': picked == off ? null : picked},
     );
   });
+
+  /// 电脑能否在线搜字幕（快照 `capabilities`）。
+  bool get canSearchSubtitles =>
+      available && capabilities.contains(videoRemoteCapabilitySubtitleSearch);
+
+  /// 在线搜字幕：电脑按当前视频检索、手机挑一条、电脑下载并应用为主字幕。新字幕
+  /// 经事件流（字幕版本变化）推回本页。
+  Future<void> searchSubtitlesOnline() async {
+    if (!canSearchSubtitles || !context.mounted) return;
+    closeLookup();
+    final Map<String, Map<String, dynamic>> downloads =
+        <String, Map<String, dynamic>>{};
+    final bool applied = await showVideoRemoteSubtitleSearchSheet(
+      context: context,
+      search: (String? query, int? episode) async =>
+          VideoRemoteSubtitleSearchResult.fromJson(
+            await _client.call('subtitleSearch', <String, dynamic>{
+              ..._session,
+              if (query != null) 'query': query,
+              if (episode != null) 'episode': episode,
+            }),
+          ),
+      // 不走 [_command]：它把错误收进页面错误条，这里要让弹层就地显示原因。
+      // 同一条候选重试时原样重发第一次的请求（同 requestId、同会话）：电脑那边
+      // 下载若还在跑（超过手机的请求超时）就并进去，不会再下一份、再应用一次。
+      // 电脑明确回了错误（有状态码）就丢掉：那个结果会按 requestId 重放，重试
+      // 要发新请求。
+      download: (String candidateId) async {
+        try {
+          await _client.call(
+            'command',
+            downloads.putIfAbsent(
+              candidateId,
+              () => <String, dynamic>{
+                ..._session,
+                'requestId': _client.requestId(),
+                'action': 'subtitleDownload',
+                'candidateId': candidateId,
+              },
+            ),
+          );
+        } on VideoRemoteError catch (error) {
+          if (error.statusCode != null) downloads.remove(candidateId);
+          rethrow;
+        }
+        downloads.remove(candidateId);
+        await _apply(await _client.snapshot());
+      },
+      errorText: videoRemoteErrorText,
+    );
+    if (applied && mounted) {
+      if (context.mounted) fushiRemoteActionHaptic(context);
+      FushiToast.show(
+        msg: t.video_remote_subtitle_search_applied,
+        severity: ToastSeverity.success,
+      );
+    }
+  }
 
   /// 把电脑音量设成 [value]（0..100）。
   Future<void> setVolume(int value) => _command(
@@ -893,7 +1095,11 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
       charOffset,
     );
     final String span = lookupSpan.term;
-    final String term = span.isNotEmpty ? span : text.trim();
+    // 整行入口（charOffset 0：控制卡「制卡」/ 键盘查词）才回落整行；点在句尾标点 /
+    // 空白上（取词层判为「无可查的词」）不查，免得点「！」弹出整行句首的词。
+    final String term = span.isNotEmpty
+        ? span
+        : (charOffset == 0 ? text.trim() : '');
     if (term.isEmpty) return;
     // 换词：旧词的高亮先撤掉，新词查完再按匹配长度画。
     if (_lookupHighlight != null) setState(() => _lookupHighlight = null);
@@ -1065,6 +1271,7 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   Future<DictionarySearchResult> searchPopupDictionary({
     required String term,
     required int maximumTerms,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     final DictionarySearchResult? found;
     try {
@@ -1072,6 +1279,10 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
         term: term,
         wildcards: true,
         maximumTerms: maximumTerms,
+        // 字幕原文自带的振假名（以 term 为坐标系）一并交给电脑，电脑按读音排同长度候选。
+        rubySpans: rubySpans,
+        // 不带 `language`：被查的字幕在电脑上播放，查词语言归电脑（电脑视频页按字幕
+        // 语言登记查词来源语言）。遥控端本机的查词语言与这次查词无关。
       );
     } catch (e) {
       // 电脑不可达 / 配对被拒：横幅报原因，弹框按「没查到」收尾（不留半截搜索态）。
@@ -1390,8 +1601,10 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   ) async => const MinePopupResult();
 
   @override
-  Future<MinePopupResult> onMinedCardAction(Map<String, String> fields) async =>
-      const MinePopupResult();
+  Future<MinePopupResult> onMinedCardAction(
+    Map<String, String> fields, {
+    bool openChooser = false,
+  }) async => const MinePopupResult();
 
   /// BUG-3492：卡在电脑那边制，手机既查不了那边的重、也不做远程覆盖（所有者
   /// 2026-10-17 拍板）——只如实说一声。
@@ -1407,7 +1620,10 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   ) async => AnkiOpenWordOutcome.failed;
 
   @override
-  Future<bool> onFavoriteEntry(Map<String, String> fields) async => false;
+  Future<bool> onFavoriteEntry(
+    Map<String, String> fields, {
+    FavoriteLookupContext? lookupContext,
+  }) async => false;
 
   @override
   Future<bool> onFavoriteCheck(String expression, String reading) async =>
@@ -1499,11 +1715,14 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
         screen: screen,
         controller: _popup,
         // 嵌套查词共用同一个电脑端上下文：只压子层，不再 lookupBegin。
-        onPush: (String text, Rect rect) => pushNestedPopup(
-          query: text,
-          selectionRect: rect,
-          controller: _popup,
-        ),
+        onPush:
+            (String text, Rect rect, List<FushiRubySpan> rubySpans, String _) =>
+                pushNestedPopup(
+                  query: text,
+                  selectionRect: rect,
+                  controller: _popup,
+                  rubySpans: rubySpans,
+                ),
         onPop: _popAt,
         autoReadOnNavigate: true,
       );
@@ -1624,101 +1843,284 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     final _TranscriptProjection projection = _projectTranscript();
     _lineRows = projection.rows;
     return PopScope(
-      // 弹框开着时返回键先关弹框（逐层），不退出遥控页。
-      canPop: !lookupOpen,
+      // 弹框开着时返回键先关弹框（逐层），触控板开着时先退回遥控器，不退出遥控页。
+      canPop: !lookupOpen && !_touchpad,
       onPopInvokedWithResult: (bool didPop, Object? _) {
         if (didPop) return;
+        if (_touchpad) {
+          setTouchpad(false);
+          return;
+        }
         final int top = _popup.lastVisibleIndex;
         _popAt(top >= 0 ? top : 0);
       },
       child: Scaffold(
-        body: VideoRemoteScaffold(
-          nowPlaying: _nowPlaying(),
-          lines: projection.lines,
-          activeIndex: projection.activeLine,
-          favorites: _favoriteEntries(),
-          favoritesScope: _all
-              ? VideoRemoteFavoritesScope.allVideos
-              : VideoRemoteFavoritesScope.currentVideo,
-          favoritesLoading: _favoritesLoading,
-          controlLayout: _controlLayout(),
-          clock: _playbackClock,
-          notice: _notice(),
-          initialTab: _tab,
-          onTabChanged: (VideoRemoteTab tab) {
-            _tab = tab;
-            if (tab == VideoRemoteTab.favorites) {
-              unawaited(_guard(_loadFavorites));
-            }
-          },
-          isControlEnabled: controlEnabled,
-          transcriptReplayKey:
-              '${_state['sessionId']}|${_state['subtitleVersion']}',
-          lookupHighlight: lookupHighlight,
-          // 弹框开着时列表区不响应横滑切页（不和弹框的横滑关闭 / 逐字点击抢手势）。
-          pageSwipeEnabled: !lookupOpen,
-          callbacks: VideoRemoteCallbacks(
-            onBack: () => unawaited(Navigator.of(context).maybePop()),
-            onControl: (VideoRemoteControlItem item) =>
-                unawaited(_onControl(item)),
-            // 锚点是字幕组件回传的被点词矩形（与视频页字幕侧栏同口径）：弹框
-            // 贴着词的正上方 / 正下方，不盖住它。
-            onLookup: (int line, int charOffset, Rect anchor) {
-              if (line < 0 || line >= _lineRows.length) return;
-              unawaited(
-                openLookup(_lineRows[line], charOffset, anchor: anchor),
-              );
-            },
-            onLineTap: (int line) => _withLine(line, seekToRow),
-            onReplayLine: (int line) => _withLine(line, seekToRow),
-            onToggleFavoriteLine: (int line) =>
-                _withLine(line, toggleRowFavorite),
-            // 制卡要先选词：打开这一句的查词弹框，在弹框里点 ＋。
-            onMineLine: (int line) => _withLine(
-              line,
-              (Map<String, dynamic> row) => openLookup(row, 0),
-            ),
-            onFavoritesScopeChanged: (VideoRemoteFavoritesScope scope) =>
-                unawaited(
-                  setFavoritesAllVideos(
-                    scope == VideoRemoteFavoritesScope.allVideos,
-                  ),
-                ),
-            onOpenFavorite: (VideoRemoteFavoriteEntry entry) {
-              final Map<String, dynamic>? favorite = _favoriteById(entry.id);
-              if (favorite != null) unawaited(openFavorite(favorite));
-            },
-            onLookupFavorite:
-                (VideoRemoteFavoriteEntry entry, int offset, Rect anchor) {
-                  final Map<String, dynamic>? favorite = _favoriteById(
-                    entry.id,
-                  );
-                  if (favorite == null) return;
-                  unawaited(
-                    _openFavorite(
-                      favorite,
-                      lookup: true,
-                      charOffset: offset,
-                      anchor: anchor,
-                    ),
-                  );
-                },
-            onRemoveFavorites: (Set<String> ids) =>
-                unawaited(removeFavorites(ids)),
-            onRefresh: () => unawaited(reconnect()),
-            onSeek: available ? (Duration to) => unawaited(seekTo(to)) : null,
-            onCustomizeControls: _prefs == null
-                ? null
-                : () => unawaited(
-                    runWithLookupPopupHidden<void>(
-                      () =>
-                          showVideoRemoteControlEditor(context, prefs: _prefs),
-                    ),
-                  ),
+        body: AnimatedSwitcher(
+          duration: fushiMotionDuration(
+            context,
+            const Duration(milliseconds: 220),
           ),
+          child: _touchpad ? _touchpadView() : _scaffold(projection),
         ),
       ),
     );
+  }
+
+  /// 触控板：整屏手势遥控（不看手机也能按），见 [VideoRemoteTouchpad]。
+  Widget _touchpadView() {
+    final Map<String, dynamic>? current = _active >= 0 && _active < _cues.length
+        ? _cues[_active]
+        : null;
+    return VideoRemoteTouchpad(
+      key: const ValueKey<String>('video-remote-touchpad-view'),
+      line: current?['text']?.toString() ?? '',
+      playing: playing,
+      caretActive: caretActive,
+      caretAvailable: canDriveCaret,
+      onAction: _onTouchpadAction,
+      onExit: () => setTouchpad(false),
+    );
+  }
+
+  /// 电脑上字幕选词光标在哪（快照 `caret`：`none` / `video` / `popup`）；旧版
+  /// 电脑不上报 = `none`。
+  String get caretSurface => _state['caret']?.toString() ?? 'none';
+
+  /// 电脑上的选词光标开着（触控板据此切到选词手势）。
+  bool get caretActive => caretSurface != 'none';
+
+  /// 电脑支持从手机驱动选词光标（查词卡弹在电脑屏幕上）。
+  bool get canDriveCaret =>
+      available && capabilities.contains(videoRemoteCapabilityCaret);
+
+  /// 还没发出的选词光标步（步名, 步数）。按顺序一条接一条发；连拖时排着的同向
+  /// 挪动并成一条（`count`），慢网络下手指停了光标也不会继续往前跑很远。
+  final List<(String, int)> _caretPending = <(String, int)>[];
+  bool _caretSending = false;
+
+  /// 排一步选词光标命令。
+  void _sendCaret(String step) {
+    final (String, int)? last = _caretPending.isEmpty
+        ? null
+        : _caretPending.last;
+    if (last != null &&
+        last.$1 == step &&
+        videoRemoteCaretMoves.contains(step) &&
+        last.$2 < videoRemoteCaretMaxCount) {
+      _caretPending.last = (step, last.$2 + 1);
+    } else {
+      _caretPending.add((step, 1));
+    }
+    if (!_caretSending) unawaited(_drainCaret());
+  }
+
+  /// 依次发出排着的光标步。电脑回报光标落在哪，本页据此切换触控板手势；回报
+  /// `none`（光标已退出，或电脑上有人用键盘退了它）时余下的步作废。
+  Future<void> _drainCaret() async {
+    _caretSending = true;
+    try {
+      while (_caretPending.isNotEmpty) {
+        final (String step, int count) = _caretPending.removeAt(0);
+        if (!mounted || !available) {
+          _caretPending.clear();
+          return;
+        }
+        try {
+          final Map<String, dynamic> result = await _client
+              .call('command', <String, dynamic>{
+                ..._session,
+                'requestId': _client.requestId(),
+                'action': 'caret',
+                'caret': step,
+                if (count > 1) 'count': count,
+              });
+          if (!mounted) return;
+          final String surface = result['caret']?.toString() ?? 'none';
+          setState(
+            () => _state = <String, dynamic>{..._state, 'caret': surface},
+          );
+          if (surface == 'none') {
+            _caretPending.clear();
+            if (step == 'enter') {
+              FushiToast.show(
+                msg: t.video_remote_touchpad_caret_unavailable,
+                severity: ToastSeverity.warning,
+              );
+            }
+          }
+        } catch (error) {
+          _caretPending.clear();
+          if (!mounted) return;
+          final String text = videoRemoteErrorText(error);
+          if (text.isNotEmpty) setState(() => _error = text);
+        }
+      }
+    } finally {
+      _caretSending = false;
+    }
+  }
+
+  Widget _scaffold(_TranscriptProjection projection) {
+    return KeyedSubtree(
+      key: const ValueKey<String>('video-remote-scaffold-view'),
+      child: VideoRemoteScaffold(
+        nowPlaying: _nowPlaying(),
+        lines: projection.lines,
+        activeIndex: projection.activeLine,
+        favorites: _favoriteEntries(),
+        favoritesScope: _all
+            ? VideoRemoteFavoritesScope.allVideos
+            : VideoRemoteFavoritesScope.currentVideo,
+        favoritesLoading: _favoritesLoading,
+        controlLayout: _controlLayout(),
+        clock: _playbackClock,
+        notice: _notice(),
+        initialTab: _tab,
+        onTabChanged: (VideoRemoteTab tab) {
+          _tab = tab;
+          if (tab == VideoRemoteTab.favorites) {
+            unawaited(_guard(_loadFavorites));
+          }
+        },
+        isControlEnabled: controlEnabled,
+        transcriptReplayKey:
+            '${_state['sessionId']}|${_state['subtitleVersion']}',
+        lookupHighlight: lookupHighlight,
+        // 弹框开着时列表区不响应横滑切页（不和弹框的横滑关闭 / 逐字点击抢手势）。
+        pageSwipeEnabled: !lookupOpen,
+        callbacks: VideoRemoteCallbacks(
+          onBack: () => unawaited(Navigator.of(context).maybePop()),
+          onControl: (VideoRemoteControlItem item) =>
+              unawaited(_onControl(item)),
+          // 锚点是字幕组件回传的被点词矩形（与视频页字幕侧栏同口径）：弹框
+          // 贴着词的正上方 / 正下方，不盖住它。
+          onLookup: (int line, int charOffset, Rect anchor) {
+            if (line < 0 || line >= _lineRows.length) return;
+            unawaited(openLookup(_lineRows[line], charOffset, anchor: anchor));
+          },
+          onLineTap: (int line) => _withLine(line, seekToRow),
+          onReplayLine: (int line) => _withLine(line, seekToRow),
+          onToggleFavoriteLine: (int line) =>
+              _withLine(line, toggleRowFavorite),
+          // 制卡要先选词：打开这一句的查词弹框，在弹框里点 ＋。
+          onMineLine: (int line) =>
+              _withLine(line, (Map<String, dynamic> row) => openLookup(row, 0)),
+          onFavoritesScopeChanged: (VideoRemoteFavoritesScope scope) =>
+              unawaited(
+                setFavoritesAllVideos(
+                  scope == VideoRemoteFavoritesScope.allVideos,
+                ),
+              ),
+          onOpenFavorite: (VideoRemoteFavoriteEntry entry) {
+            final Map<String, dynamic>? favorite = _favoriteById(entry.id);
+            if (favorite != null) unawaited(openFavorite(favorite));
+          },
+          onLookupFavorite:
+              (VideoRemoteFavoriteEntry entry, int offset, Rect anchor) {
+                final Map<String, dynamic>? favorite = _favoriteById(entry.id);
+                if (favorite == null) return;
+                unawaited(
+                  _openFavorite(
+                    favorite,
+                    lookup: true,
+                    charOffset: offset,
+                    anchor: anchor,
+                  ),
+                );
+              },
+          onRemoveFavorites: (Set<String> ids) =>
+              unawaited(removeFavorites(ids)),
+          onRefresh: () => unawaited(reconnect()),
+          onPickVideo: canPickVideo ? () => unawaited(pickVideo()) : null,
+          onCloseVideo: canCloseVideo ? () => unawaited(closeVideo()) : null,
+          onOpenTouchpad: available ? () => setTouchpad(true) : null,
+          onSeek: available ? (Duration to) => unawaited(seekTo(to)) : null,
+          onCustomizeControls: _prefs == null
+              ? null
+              : () => unawaited(
+                  runWithLookupPopupHidden<void>(
+                    () => showVideoRemoteControlEditor(context, prefs: _prefs),
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+
+  /// 是否在触控板模式（[setTouchpad]）。
+  bool get touchpadOpen => _touchpad;
+
+  /// 进 / 出触控板。进入时收起查词弹框（触控板盖住了它所属的字幕行）。
+  void setTouchpad(bool open) {
+    if (open == _touchpad) return;
+    if (open) closeLookup();
+    // 离开触控板时把电脑上的选词光标收掉（逐层关卡、最后退出光标并恢复它暂停
+    // 的播放）：回到遥控器后再没有手段操作它。回报 `none` 后余下的后退作废。
+    if (!open && canDriveCaret && caretActive) {
+      for (int i = 0; i < 6; i++) {
+        _sendCaret('back');
+      }
+    }
+    setState(() => _touchpad = open);
+  }
+
+  /// 触控板操作 → 遥控命令；返回 false = 这一下做不了（不震、不闪图标）。
+  bool _onTouchpadAction(VideoRemotePadAction action) {
+    if (!available) return false;
+    final Map<String, dynamic>? current = _active >= 0 && _active < _cues.length
+        ? _cues[_active]
+        : null;
+    switch (action) {
+      case VideoRemotePadAction.playPause:
+        unawaited(togglePlay());
+      case VideoRemotePadAction.replayLine:
+        if (current == null) return false;
+        unawaited(seekToRow(current));
+      case VideoRemotePadAction.previousLine:
+        if (previousRowIndex < 0) return false;
+        unawaited(previousRow());
+      case VideoRemotePadAction.nextLine:
+        if (nextRowIndex < 0) return false;
+        unawaited(nextRow());
+      case VideoRemotePadAction.volumeUp:
+      case VideoRemotePadAction.volumeDown:
+        final int? current = volume;
+        if (!capabilities.contains(videoRemoteCapabilityVolume) ||
+            current == null) {
+          return false;
+        }
+        final int step = action == VideoRemotePadAction.volumeUp ? 10 : -10;
+        final int next = (current + step).clamp(0, 100);
+        // 已到头：不发、不震。
+        if (next == current) return false;
+        // 先记下本地值：连着快滑时下一档在这一档上加，不等电脑的快照回来。
+        setState(() => _state = <String, dynamic>{..._state, 'volume': next});
+        unawaited(setVolume(next));
+      case VideoRemotePadAction.caretEnter:
+        if (!canDriveCaret) return false;
+        // 先当它已进入：长按的手指还按着，接着拖就该挪字，不等这一来回；电脑
+        // 回报 `none`（屏上没有可选字幕）时 [_drainCaret] 改回来。
+        setState(() => _state = <String, dynamic>{..._state, 'caret': 'video'});
+        _sendCaret('enter');
+      case VideoRemotePadAction.caretLeft:
+      case VideoRemotePadAction.caretRight:
+      case VideoRemotePadAction.caretUp:
+      case VideoRemotePadAction.caretDown:
+      case VideoRemotePadAction.caretActivate:
+      case VideoRemotePadAction.caretLongPress:
+      case VideoRemotePadAction.caretBack:
+        if (!canDriveCaret || !caretActive) return false;
+        _sendCaret(switch (action) {
+          VideoRemotePadAction.caretLeft => 'left',
+          VideoRemotePadAction.caretRight => 'right',
+          VideoRemotePadAction.caretUp => 'up',
+          VideoRemotePadAction.caretDown => 'down',
+          VideoRemotePadAction.caretActivate => 'activate',
+          VideoRemotePadAction.caretLongPress => 'longPress',
+          _ => 'back',
+        });
+    }
+    return true;
   }
 
   // ── 展示投影：协议快照 → `video_remote/` 的不可变数据 ─────────────────────
@@ -1772,6 +2174,7 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     return VideoRemoteNowPlaying(
       title: _state['title']?.toString() ?? '',
       hostName: widget.peer.deviceName,
+      cover: _nowPlayingCover,
       isPlaying: playing,
       speed: (_state['speed'] as num?)?.toDouble() ?? 1,
       currentFavorited:
@@ -1819,6 +2222,8 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
       return VideoRemoteNotice(
         kind: VideoRemoteNoticeKind.waiting,
         message: t.video_remote_waiting,
+        actionLabel: canPickVideo ? t.video_remote_library_pick : null,
+        onAction: canPickVideo ? () => unawaited(pickVideo()) : null,
       );
     }
     return null;
@@ -1965,6 +2370,10 @@ String videoRemoteErrorText(Object error) {
       return t.video_remote_error_requests_busy;
     case 'no_video':
       return t.video_remote_error_no_video;
+    case 'video_missing':
+      return t.video_remote_error_video_missing;
+    case 'host_busy':
+      return t.video_remote_error_host_busy;
     case 'remote_closed':
       return t.video_remote_error_remote_closed;
     case 'task_missing':
@@ -1982,6 +2391,14 @@ String videoRemoteErrorText(Object error) {
     case 'subtitle_track_missing':
     case 'subtitle_track_unavailable':
       return t.video_remote_error_subtitle_track_unavailable;
+    case 'subtitle_source_missing':
+      return t.video_remote_error_subtitle_source_missing;
+    case 'subtitle_search_failed':
+      return t.video_remote_error_subtitle_search_failed;
+    case 'subtitle_candidate_missing':
+      return t.video_remote_error_subtitle_candidate_missing;
+    case 'subtitle_download_failed':
+      return t.video_jimaku_download_failed;
     case VideoRemoteError.unreachableCode:
       return t.video_remote_error_unreachable;
     case VideoRemoteError.certificateMismatchCode:

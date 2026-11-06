@@ -37,8 +37,7 @@ class _FetchErrorRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      MineOutcome.failure('test stub');
+  }) async => MineOutcome.failure('test stub');
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
 }
@@ -48,8 +47,7 @@ void main() {
   LocaleSettings.setLocaleRaw('en');
 
   group('AnkiViewModel.localizeAnkiFetchError', () {
-    test(
-        'collection-unavailable code maps to the localized actionable hint, '
+    test('collection-unavailable code maps to the localized actionable hint, '
         'not the raw English message', () {
       final String localized = AnkiViewModel.localizeAnkiFetchError(
         'collection is not available',
@@ -71,8 +69,7 @@ void main() {
   });
 
   group('AnkiViewModel.fetchConfiguration error surfacing', () {
-    test(
-        'collection-unavailable fetch error shows the friendly localized '
+    test('collection-unavailable fetch error shows the friendly localized '
         'message in state', () async {
       final repo = _FetchErrorRepo(
         const AnkiFetchResult.error(
@@ -91,48 +88,64 @@ void main() {
       expect(vm.state.errorMessage, isNot('collection is not available'));
     });
 
-    test('non-classified fetch error is shown verbatim (no regression)',
-        () async {
-      final repo = _FetchErrorRepo(
-        const AnkiFetchResult.error('AnkiDroid is not available.'),
-      );
-      final vm = AnkiViewModel(repo);
-      await Future<void>.delayed(Duration.zero);
+    test(
+      'non-classified fetch error is shown verbatim (no regression)',
+      () async {
+        final repo = _FetchErrorRepo(
+          const AnkiFetchResult.error('AnkiDroid is not available.'),
+        );
+        final vm = AnkiViewModel(repo);
+        await Future<void>.delayed(Duration.zero);
 
-      await vm.fetchConfiguration();
+        await vm.fetchConfiguration();
 
-      expect(vm.state.errorMessage, 'AnkiDroid is not available.');
-    });
+        expect(vm.state.errorMessage, 'AnkiDroid is not available.');
+      },
+    );
   });
 
   group('AnkiChannelHandler source guard', () {
     // The Java ContentProvider client cannot be host-tested; guard at the
     // source that the catch blocks classify the collection-unavailable failure
     // with a dedicated error code instead of the generic provider error.
-    test('classifies collection-unavailable with ANKI_COLLECTION_UNAVAILABLE',
-        () {
-      final File f = File(
-        '../fushi/android/app/src/main/java/app/fushi/reader/'
-        'AnkiChannelHandler.java',
-      );
-      // Run from either repo root or the fushi package directory.
-      final File java = f.existsSync()
-          ? f
-          : File(
-              'android/app/src/main/java/app/fushi/reader/'
-              'AnkiChannelHandler.java',
-            );
-      expect(java.existsSync(), isTrue,
-          reason: 'AnkiChannelHandler.java not found at ${java.path}');
-      final String src = java.readAsStringSync();
+    test(
+      'classifies collection-unavailable with ANKI_COLLECTION_UNAVAILABLE',
+      () {
+        final File f = File(
+          '../fushi/android/app/src/main/java/app/fushi/reader/'
+          'AnkiChannelHandler.java',
+        );
+        // Run from either repo root or the fushi package directory.
+        final File java = f.existsSync()
+            ? f
+            : File(
+                'android/app/src/main/java/app/fushi/reader/'
+                'AnkiChannelHandler.java',
+              );
+        expect(
+          java.existsSync(),
+          isTrue,
+          reason: 'AnkiChannelHandler.java not found at ${java.path}',
+        );
+        final String src = java.readAsStringSync();
 
-      expect(src.contains('ANKI_COLLECTION_UNAVAILABLE'), isTrue,
-          reason: 'must emit the dedicated collection-unavailable error code');
-      expect(src.toLowerCase().contains('collection is not available'), isTrue,
-          reason: 'must match AnkiDroid\'s collection-unavailable message');
-      // getDecks/getModelList/getFieldList route through the classifier.
-      expect(src.contains('providerErrorCode('), isTrue,
-          reason: 'fetch catch blocks must classify via providerErrorCode()');
-    });
+        expect(
+          src.contains('ANKI_COLLECTION_UNAVAILABLE'),
+          isTrue,
+          reason: 'must emit the dedicated collection-unavailable error code',
+        );
+        expect(
+          src.toLowerCase().contains('collection is not available'),
+          isTrue,
+          reason: 'must match AnkiDroid\'s collection-unavailable message',
+        );
+        // getDecks/getModelList/getFieldList route through the classifier.
+        expect(
+          src.contains('providerErrorCode('),
+          isTrue,
+          reason: 'fetch catch blocks must classify via providerErrorCode()',
+        );
+      },
+    );
   });
 }

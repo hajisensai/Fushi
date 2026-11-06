@@ -12,11 +12,7 @@ class VideoSeekIndicatorLabel {
 
   /// 目标绝对时间标签：`位置 + 增量` clamp 到 `[0, duration]` 后格式化。
   /// [delta] 可负（向后拖）。
-  static String target(
-    Duration position,
-    Duration delta,
-    Duration duration,
-  ) {
+  static String target(Duration position, Duration delta, Duration duration) {
     Duration result = position + delta;
     if (result < Duration.zero) {
       result = Duration.zero;

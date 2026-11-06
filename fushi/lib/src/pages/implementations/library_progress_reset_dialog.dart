@@ -3,7 +3,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/library_progress_reset.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart'
     show DeleteConfirmCheckboxRow;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 「重置阅读状态 / 清除观看进度」确认框（书架、漫画库、视频库共用，单卡与批量同一份）。
 ///

@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
@@ -119,15 +120,13 @@ class _FakeBackend implements TorrentBackend {
     String torrentId,
     int fileIndex,
     String newPath,
-  ) async =>
-      const TorrentStorageResult.failure('not supported by fake');
+  ) async => const TorrentStorageResult.failure('not supported by fake');
 
   @override
   Future<TorrentStorageResult> moveStorage(
     String torrentId,
     String newSavePath,
-  ) async =>
-      const TorrentStorageResult.failure('not supported by fake');
+  ) async => const TorrentStorageResult.failure('not supported by fake');
 }
 
 class _FakeAppModel extends AppModel {
@@ -141,6 +140,18 @@ class _FakeAppModel extends AppModel {
     );
   }
 
+  // Fushi 不内置 BT 站：番剧选种走用户添加的 Nyaa 式站点。
+  @override
+  List<BtSiteConfig> get btSites => <BtSiteConfig>[
+    BtSiteConfig(
+      id: 'test-anime-site',
+      baseUrl: Uri.parse('https://nyaa.si'),
+      format: BtSiteFormat.nyaa,
+      domains: const <BtSiteDomain>{BtSiteDomain.anime},
+      nyaaCategories: const <BtSiteDomain, String>{BtSiteDomain.anime: '1_0'},
+    ),
+  ];
+
   final _MemPlanStore store = _MemPlanStore();
   final _FakeBackend backend = _FakeBackend();
   late final AnimeDownloadService service;
@@ -150,9 +161,9 @@ class _FakeAppModel extends AppModel {
 
   @override
   QbConnectionConfig? get qbConnectionConfig => const QbConnectionConfig(
-        backend: QbConnectionConfig.backendQbittorrent,
-        baseUrl: 'http://127.0.0.1:1',
-      );
+    backend: QbConnectionConfig.backendQbittorrent,
+    baseUrl: 'http://127.0.0.1:1',
+  );
 
   @override
   bool get torrentUploadIntroShown => true;

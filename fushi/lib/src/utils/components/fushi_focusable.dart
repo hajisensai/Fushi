@@ -98,23 +98,25 @@ class _FushiFocusableState extends State<FushiFocusable> {
           },
         ),
       },
-      child: Builder(builder: (BuildContext context) {
-        final bool focused = Focus.of(context).hasPrimaryFocus;
-        return GestureDetector(
-          behavior: widget.behavior,
-          onTap: widget.onTap,
-          child: DecoratedBox(
-            position: widget.ringPosition,
-            decoration: BoxDecoration(
-              borderRadius: widget.borderRadius,
-              border: focused
-                  ? Border.all(color: focusColor, width: 2)
-                  : Border.all(color: Colors.transparent, width: 2),
+      child: Builder(
+        builder: (BuildContext context) {
+          final bool focused = Focus.of(context).hasPrimaryFocus;
+          return GestureDetector(
+            behavior: widget.behavior,
+            onTap: widget.onTap,
+            child: DecoratedBox(
+              position: widget.ringPosition,
+              decoration: BoxDecoration(
+                borderRadius: widget.borderRadius,
+                border: focused
+                    ? Border.all(color: focusColor, width: 2)
+                    : Border.all(color: Colors.transparent, width: 2),
+              ),
+              child: widget.child,
             ),
-            child: widget.child,
-          ),
-        );
-      }),
+          );
+        },
+      ),
     );
   }
 }

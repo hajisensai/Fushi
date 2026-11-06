@@ -201,6 +201,17 @@ abstract interface class MediaServerLibraryItems {
   });
 }
 
+/// 可选能力：按条目取它的全部版本（BUG-3329 / mxYhpVcwOX）。
+///
+/// 清单不带 MediaSources（BUG-1891），所以详情页点某一集时要单独问这一集有几个
+/// 版本，多于一个才先让用户选版本再播。能力判据 `browser is MediaServerItemVersions`：
+/// 不实现它的服务器（Plex v1 只 direct play 服务器默认那一条）点集直接播。
+abstract interface class MediaServerItemVersions {
+  /// [item]（可播叶子）的全部版本，服务器默认那条在前；单版本返回一条或空表。
+  /// 失败抛出（调用方记日志后按服务器默认版本播放，播放页画质菜单里照样能换）。
+  Future<List<MediaServerVersion>> listItemVersions(MediaServerItem item);
+}
+
 /// 服务器上的一个媒体库（Jellyfin「视图」）。
 class MediaServerLibrary {
   const MediaServerLibrary({
@@ -271,11 +282,13 @@ class MediaServerItem {
     this.hasLogo = false,
     this.parentThumbItemId,
     this.parentBackdropItemId,
+    this.seriesCoverItemId,
     this.overview,
     this.communityRating,
     this.genres = const <String>[],
     this.hasSubtitle = false,
     this.versions = const <MediaServerVersion>[],
+    this.versionCount,
   });
 
   final String id;
@@ -321,6 +334,7 @@ class MediaServerItem {
   /// 容器的未看子项数（`UserData.UnplayedItemCount`）。
   final int? unplayedChildCount;
   final bool hasCover;
+
   final bool hasBackdrop;
 
   /// 横版缩略图 / logo 有无（Jellyfin `ImageTags.Thumb` / `ImageTags.Logo`）；
@@ -334,6 +348,12 @@ class MediaServerItem {
   /// `hasThumb` / `hasBackdrop` 的条目交给 [MediaServerBrowser.coverUrl] 即可。
   final String? parentThumbItemId;
   final String? parentBackdropItemId;
+
+  /// 集所属剧的竖版海报所在条目 id（Jellyfin / Emby `SeriesId` +
+  /// `SeriesPrimaryImageTag`，Plex `grandparentThumb`）；只在服务器确实报了剧海报时
+  /// 非 null。集自己的 Primary 是 16:9 截图，列表 / 继续观看 / 首页要「剧封面」时用
+  /// [coverItem]，不要直接拿集去取图。
+  final String? seriesCoverItemId;
   final String? overview;
   final double? communityRating;
   final List<String> genres;
@@ -347,6 +367,32 @@ class MediaServerItem {
   /// 选择，选中的经 [rememberMediaServerVersion] 记住、播放取流时按它带
   /// `MediaSourceId`。
   final List<MediaServerVersion> versions;
+
+  /// 清单条目上服务器报的版本数（Jellyfin / Emby `MediaSourceCount`：只在点名该
+  /// 字段且版本数不为 1 时给出）。null = 清单没说（单版本或服务器不报），要准数得
+  /// 走 [MediaServerItemVersions.listItemVersions]。只用来在集卡上提示「N 个版本」。
+  final int? versionCount;
+
+  /// 已知的版本数：详情带了 [versions] 以它为准，否则用清单的 [versionCount]；
+  /// 都没有为 null。
+  int? get knownVersionCount =>
+      versions.isNotEmpty ? versions.length : versionCount;
+
+  /// 展示用「封面条目」：集在服务器报了剧海报时返回一个只带主图旗子的剧条目
+  /// （交给 [MediaServerBrowser.coverUrl] 即得剧海报）；其余（电影 / 剧 / 季 / 无剧
+  /// 海报信息的集）就是自己，调用方对「没有剧图」自然回落到集自身的图。
+  MediaServerItem get coverItem {
+    final String? cover = seriesCoverItemId;
+    if (type != MediaServerItemType.episode || cover == null || cover.isEmpty) {
+      return this;
+    }
+    return MediaServerItem(
+      id: cover,
+      name: seriesName ?? '',
+      type: MediaServerItemType.series,
+      hasCover: true,
+    );
+  }
 
   bool get isPlayable =>
       type == MediaServerItemType.movie || type == MediaServerItemType.episode;
@@ -598,6 +644,26 @@ int resolveMediaServerVersionIndex({
 }) {
   if (versions.isEmpty) return -1;
   if (versions.length == 1) return 0;
+  return matchRememberedMediaServerVersion(
+        serverId: serverId,
+        itemId: itemId,
+        seriesId: seriesId,
+        versions: versions,
+      ) ??
+      0;
+}
+
+/// 记住的选择能不能在 [versions] 里对上：本条目记住的 > 同剧记住的同名 > 同剧
+/// 记住的同规格（分辨率 + 编码 + 动态范围，[MediaServerVersion.signature]）。
+/// 对不上（没选过 / 这一集没有那种版本）返回 null——详情页点集时据此决定要不要
+/// 先问用户（mxYhpVcwOX：同剧其它集默认同一版本规格，匹配不到再问）。
+int? matchRememberedMediaServerVersion({
+  required String serverId,
+  required String itemId,
+  required String? seriesId,
+  required List<MediaServerVersion> versions,
+}) {
+  if (versions.isEmpty) return null;
   final String? pinned = mediaServerVersionMemory.read(
     _versionItemKey(serverId, itemId),
   );
@@ -627,5 +693,5 @@ int resolveMediaServerVersionIndex({
       if (bySignature >= 0) return bySignature;
     }
   }
-  return 0;
+  return null;
 }

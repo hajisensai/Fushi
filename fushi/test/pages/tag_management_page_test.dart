@@ -9,9 +9,7 @@ void main() {
   });
 
   Widget buildApp(Widget child) {
-    return TranslationProvider(
-      child: MaterialApp(home: child),
-    );
+    return TranslationProvider(child: MaterialApp(home: child));
   }
 
   testWidgets('tag edit dialog fits a compact desktop window', (

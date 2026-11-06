@@ -23,24 +23,25 @@ void main() {
     launchedUrls.clear();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/url_launcher'),
-      (MethodCall call) async {
-        if (call.method == 'launch') {
-          final Map<Object?, Object?> args =
-              Map<Object?, Object?>.from(call.arguments as Map);
-          launchedUrls.add(args['url'] as String);
-        }
-        return true;
-      },
-    );
+          const MethodChannel('plugins.flutter.io/url_launcher'),
+          (MethodCall call) async {
+            if (call.method == 'launch') {
+              final Map<Object?, Object?> args = Map<Object?, Object?>.from(
+                call.arguments as Map,
+              );
+              launchedUrls.add(args['url'] as String);
+            }
+            return true;
+          },
+        );
   });
 
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/url_launcher'),
-      null,
-    );
+          const MethodChannel('plugins.flutter.io/url_launcher'),
+          null,
+        );
   });
 
   Future<void> pumpBrandButton(WidgetTester tester) async {
@@ -109,8 +110,10 @@ void main() {
       ),
     );
     expect(
-      semantics.any((Semantics node) =>
-          node.properties.button == true && node.properties.label == 'Fushi'),
+      semantics.any(
+        (Semantics node) =>
+            node.properties.button == true && node.properties.label == 'Fushi',
+      ),
       isTrue,
       reason: '退回成 Semantics(image: true) 的纯装饰图标时必须红',
     );

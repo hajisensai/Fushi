@@ -24,8 +24,9 @@ import '../../helpers/source_guard.dart';
 /// ② **只作用于表里已有的键**。未绑定的键压根不进表，不存在「误吞导航键」的形态，
 ///    所以这里断言的是「键集合不增不减」而不是「未绑定的键放行」。
 void main() {
-  const ShortcutActivator seekForward =
-      SingleActivator(LogicalKeyboardKey.keyD);
+  const ShortcutActivator seekForward = SingleActivator(
+    LogicalKeyboardKey.keyD,
+  );
   const ShortcutActivator escape = SingleActivator(LogicalKeyboardKey.escape);
   const ShortcutActivator space = SingleActivator(LogicalKeyboardKey.space);
 
@@ -44,19 +45,25 @@ void main() {
     final List<String> dismisses = <String>[];
     final Map<ShortcutActivator, VoidCallback> guarded =
         guardVideoShortcutsWithPopupDismiss(
-      baseMap(actions),
-      isPopupVisible: () => true,
-      dismissPopup: () => dismisses.add('dismiss'),
-    );
+          baseMap(actions),
+          isPopupVisible: () => true,
+          dismissPopup: () => dismisses.add('dismiss'),
+        );
 
     guarded[seekForward]!();
     guarded[escape]!();
     guarded[space]!();
 
-    expect(actions, isEmpty,
-        reason: '浮层开着按 d 竟然快进 / 按空格竟然暂停后台视频，正是 BUG-924 的症状');
-    expect(dismisses, <String>['dismiss', 'dismiss', 'dismiss'],
-        reason: '每次按键关一层浮层');
+    expect(
+      actions,
+      isEmpty,
+      reason: '浮层开着按 d 竟然快进 / 按空格竟然暂停后台视频，正是 BUG-924 的症状',
+    );
+    expect(dismisses, <String>[
+      'dismiss',
+      'dismiss',
+      'dismiss',
+    ], reason: '每次按键关一层浮层');
   });
 
   test('浮层不可见：原动作照跑一次、不关浮层', () {
@@ -64,18 +71,22 @@ void main() {
     final List<String> dismisses = <String>[];
     final Map<ShortcutActivator, VoidCallback> guarded =
         guardVideoShortcutsWithPopupDismiss(
-      baseMap(actions),
-      isPopupVisible: () => false,
-      dismissPopup: () => dismisses.add('dismiss'),
-    );
+          baseMap(actions),
+          isPopupVisible: () => false,
+          dismissPopup: () => dismisses.add('dismiss'),
+        );
 
     guarded[seekForward]!();
     guarded[escape]!();
     guarded[space]!();
 
-    expect(actions, <String>['seekForward', 'escape', 'togglePlayPause'],
-        reason: '没有浮层时快捷键必须保持原行为——把它们无条件吞掉等于把网页视频页的'
-            '快捷键整表删了');
+    expect(
+      actions,
+      <String>['seekForward', 'escape', 'togglePlayPause'],
+      reason:
+          '没有浮层时快捷键必须保持原行为——把它们无条件吞掉等于把网页视频页的'
+          '快捷键整表删了',
+    );
     expect(dismisses, isEmpty, reason: '没有浮层就不该调关闭');
   });
 
@@ -84,32 +95,40 @@ void main() {
     bool visible = true;
     final Map<ShortcutActivator, VoidCallback> guarded =
         guardVideoShortcutsWithPopupDismiss(
-      baseMap(actions),
-      isPopupVisible: () => visible,
-      dismissPopup: () {},
-    );
+          baseMap(actions),
+          isPopupVisible: () => visible,
+          dismissPopup: () {},
+        );
 
     guarded[seekForward]!();
     expect(actions, isEmpty, reason: '第一次按 d：浮层还开着 → 关浮层');
 
     visible = false;
     guarded[seekForward]!();
-    expect(actions, <String>['seekForward'],
-        reason: '浮层关掉后同一个键必须恢复原动作。谓词若在建表时求过一次值就冻住，'
-            '网页视频页的表是随 build 重建的短生命周期表，症状会退化成随机时灵时不灵');
+    expect(
+      actions,
+      <String>['seekForward'],
+      reason:
+          '浮层关掉后同一个键必须恢复原动作。谓词若在建表时求过一次值就冻住，'
+          '网页视频页的表是随 build 重建的短生命周期表，症状会退化成随机时灵时不灵',
+    );
   });
 
   test('键集合不增不减：包装器只换执行体，不动 activator', () {
     final Map<ShortcutActivator, VoidCallback> base = baseMap(<String>[]);
     final Map<ShortcutActivator, VoidCallback> guarded =
         guardVideoShortcutsWithPopupDismiss(
-      base,
-      isPopupVisible: () => false,
-      dismissPopup: () {},
+          base,
+          isPopupVisible: () => false,
+          dismissPopup: () {},
+        );
+    expect(
+      guarded.keys.toSet(),
+      base.keys.toSet(),
+      reason:
+          '少一个键 = 那个快捷键在网页视频页失效；多一个键 = 凭空吞掉一个'
+          '本该冒泡的按键',
     );
-    expect(guarded.keys.toSet(), base.keys.toSet(),
-        reason: '少一个键 = 那个快捷键在网页视频页失效；多一个键 = 凭空吞掉一个'
-            '本该冒泡的按键');
   });
 
   test('网页视频页确实还在用这个包装器（否则上面四条守的是死代码）', () {
@@ -122,13 +141,17 @@ void main() {
     const String signature =
         'Map<ShortcutActivator, VoidCallback> _keyboardShortcuts()';
     final String body = methodBody(page, signature);
-    expect(containsIdentifierCall(body, 'guardVideoShortcutsWithPopupDismiss'),
-        isTrue,
-        reason: '网页视频页的快捷键表必须仍经 guardVideoShortcutsWithPopupDismiss 包一层，'
-            '否则浮层开着按键会穿透去控制后面的视频（BUG-924 在网页页复发）');
     expect(
-        containsIdentifierCall(body, 'buildVideoPlayerShortcutsFromRegistry'),
-        isTrue,
-        reason: '被包的必须是注册表产物，改键才生效');
+      containsIdentifierCall(body, 'guardVideoShortcutsWithPopupDismiss'),
+      isTrue,
+      reason:
+          '网页视频页的快捷键表必须仍经 guardVideoShortcutsWithPopupDismiss 包一层，'
+          '否则浮层开着按键会穿透去控制后面的视频（BUG-924 在网页页复发）',
+    );
+    expect(
+      containsIdentifierCall(body, 'buildVideoPlayerShortcutsFromRegistry'),
+      isTrue,
+      reason: '被包的必须是注册表产物，改键才生效',
+    );
   });
 }

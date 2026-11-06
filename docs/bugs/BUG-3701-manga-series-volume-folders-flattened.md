@@ -1,0 +1,18 @@
+## BUG-3701 · manga-series-volume-folders-flattened
+- **报告**：2026-10-23（用户：反馈 n4KC1azJvw，Android：漫画按「库根/系列/卷N/页图」放，来源扫描后每个系列被导成一本 ~2000 页的漫画）
+- **真实性**：✅ 真 bug。卷归组规则 `packages/fushi_engine/lib/media/manga/manga_folder_plan.dart`（app 来源扫描与无头服务端 `LibraryScanner` 共用的唯一口径）在根目录没有页图时，只把**直接**子目录当卷候选（旧 `:118` `childFolders.add(ctx.join(root, segments.first))`，旧 `:148` `candidates = childFolders`），更深的目录一律并进直接子目录。`库根/系列/Vol01/*.jpg` 里 `系列` 就是那个直接子目录，于是整套系列成了一卷，标题 = 系列目录名（app `source_library_scanner.dart` 旧 `:1314` / `:1592`，服务端 `library_scanner.dart` 同口径）。
+- **[x] ① 已修复** — `8b13e8cfa5`（`fix(manga): split series folders into volume folders`）。
+  - 规则：直接子目录**自己没有直接页图**、它下面**每一个**含页图的子目录名都像卷号、且这样的卷目录 ≥2 个时，再下探一层：每个卷目录各是一卷，直接子目录是它们的系列。卷号判据是新抽出的 `parseBookVolumeFolderName`（`packages/fushi_engine/lib/media/collections/book_series_key.dart`），与 `parseBookSeriesKey` 共用同一条卷号正则（抽成 `_splitVolumeSuffix`，不另写一套）；目录语境只多两点：纯数字目录名（`01`）算卷号；卷号前的部分必须为空（`Vol01`、`Volume 2`、`第3巻`、`3巻`、`第3卷`、`第3册`、`v02`、`#4`、`（5）`）或与系列目录名归一化后相同（`ONE PIECE/ONE PIECE 01`）。`Chapter 01` / `Extra 2` 带尾数但前缀不是空也不是系列名，不算；`ch01`、`第1話`、`extra`、`images` 解析不出卷号。顺带让卷号正则认 `Volume 2` / `Vol-2` / `vol_2`（以前 `Foo Volume 2` 的系列名被读成 `Foo Volume`）。
+  - 混合布局（`Vol01` + `extra` / `ch01`）、系列目录自己有直接页图（封面 / 散页）、像卷号的只有一个：一律维持旧行为（整个系列目录一卷，不拆）。理由：拆一半会让不像卷号的那批页成孤儿，或把附录当成一卷；宁可少拆。只下探这一层。规则写在 `manga_folder_plan.dart` 库文档与 `_seriesVolumes` 注释里。
+  - 规划结果新增 `MangaFolderPlan.seriesVolumes`（卷目录 → `MangaSeriesVolume{seriesDir, seriesTitle, title, volume}`）、`seriesVolumeDirs`、`imageFolderTitle()`。卷标题：卷目录名是裸卷号时拼成「系列名 卷目录名」（`ONE PIECE Vol01`），已带系列名时原样用。理由：裸 `Vol01` 当书名会让各系列的第 1 卷同名（来源扫描的重复判据只能换名成 `Vol01 (2)`，书架上也认不出是哪部）；拼好的标题经 `parseBookSeriesKey` 解析回的系列名正是系列目录名、卷号正是卷号，扫描后本来就会跑的 `BookSeriesGrouper.groupAll()` 据此把几卷收进同一个 playlist 合集（`origin = rule`，合集名 = 系列目录名，卷序按卷号）。扫描器**不另建合集**，所以不会与归组器各建一个；合集墓碑、成员墓碑、用户手动整理的优先级都沿用归组器已有的处理。
+  - app（本地 + 网络来源）与无头服务端（`LibraryScanner._scanManga`、CLI `import manga`）都改为用这个标题。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/media/manga/manga_folder_plan_test.dart`「系列目录下探一层」组：`库/系列/Vol01..03` → 3 卷 + 系列名与标题；`第N巻` / `v01` / 纯数字 / `（N）` / `Volume N` / `第N卷` / `第N册` / `#N` / 已带系列名；拼出的标题经 `parseBookSeriesKey` 解析回同一系列与卷号；反例 `ch01..ch03` / `Chapter 01` / `第1話` / `Extra N` → 1 卷；混合 → 维持现状；系列目录有直接页图 / 只有一个卷目录 → 维持现状；多系列并存；卷目录被 `.mokuro` 认领时让位；网络来源（`p.url`）。`parseBookVolumeFolderName` 正反例。旧用例（含原 141 行「深层归属直接子目录」）无需改动：它们的子目录名是 `images` / `ch1` 这类非卷号或只有一个，新规则下行为不变。
+  - `fushi/test/media/source_library/source_library_scanner_test.dart`「系列目录/卷目录」组：真实临时目录端到端 → 入库 3 本、每本只含自己的页、同在合集「ONE PIECE」且按卷序、重扫幂等；旧合订本迁移（有索引 / 无索引两种）；同名手动导入不被删。
+  - `packages/fushi_server/test/library_scanner_manga_test.dart`：服务端同样拆 3 卷入同一合集；旧合订本被取代并计入 `mangaPruned`。
+- **备注**：**已入库旧数据的重扫行为**。旧版把系列目录登记在来源扫描索引里（键 = `系列`，指向那本合订本）。重扫时新规划只列出 `系列/Vol01…` 这些卷：
+  - 新卷标题（`系列 Vol01`）不与合订本（`系列`）撞名，照常各自入库；
+  - 合订本**不会**被当成「源已消失」回收：对账的 `relGone`（`book_library_prune.dart` `:525` 起）在规划里找不到键时还会现场看路径在不在，`系列` 目录仍在，所以永远判「在」——服务端对账不删，app 漫画来源本来就不跑对账。不处理的话重扫后就是「合订本 + 各分卷」同一批页两份。
+  - 因此新增引擎 `retireFlattenedMangaSeries`（`book_library_prune.dart`，app `_importManga` 与服务端 `_scanManga` 共用）：某个系列的**每一卷**都已被索引认领（本轮导入成功或早已在库）后，回收本来源的那本合订本——按索引里 `系列` 键指向的书认；索引里没有这条时（升级前没写索引）退到「`sourceId` = 本来源、格式漫画、bookKey = 系列目录名」，正是旧扫描器的落库方式。有一卷失败 / 因同名书被跳过就保留合订本；手动导入或别的来源的同名书不碰；那本书还被本来源别的源认领着就只撤掉过期的索引条目。回收方式与对账删失效书一致：`deleteEpubBook`（不写墓碑）+ 回收 `fushi_books/` 正文副本，不碰用户源文件。
+  - 代价：合订本的阅读进度 / 书签 / 合集归属随它一起删除——2000 页里的页码对不上任何一卷，没有可迁移的落点。新分卷从头开始。
+  - 未覆盖：来源根本身就是系列目录（用户把 `系列` 选作来源根，下面直接是 `Vol01…`）时，旧规则本来就逐卷导入（标题 = `Vol01`），这次不改；`系列/cover.jpg + 系列/Vol01/…` 这种系列目录里有封面散图的布局按约定维持整本，未下探。手动「选择漫画文件夹」导入走另一条分派（`classifyImportCarrier`），这次没动。未在 Android 真机上复测用户原路径。

@@ -1,19 +1,21 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/creator.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/creator/enhancement.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// An enhancement used to pop the latest element of the Stash onto a field.
 class PopFromStashEnhancement extends Enhancement {
   /// Initialise this enhancement with the hardset parameters.
   PopFromStashEnhancement({required super.field})
-      : super(
-          uniqueKey: key,
-          label: 'Pop From Stash',
-          description: 'Quickly pop the latest item in the Stash.',
-          icon: Icons.bookmark_remove_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Pop From Stash',
+        description: 'Quickly pop the latest item in the Stash.',
+        icon: Icons.bookmark_remove_outlined,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].

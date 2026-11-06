@@ -38,11 +38,10 @@ add_executable(${BINARY_NAME} WIN32
   "global_mouse_trigger.cpp"
   "hang_watchdog.cpp"
   "hdr_desktop_capture.cpp"
-  "hdr_video_host_window.cpp"
+  "hdr_display_info.cpp"
   "hook_toolbar_window.cpp"
   "ime_association_guard.cpp"
   "ime_language_switch.cpp"
-  "ime_space_dispatch.cpp"
   "low_level_mouse_hook.cpp"
   "main.cpp"
   "screen_ocr_overlay.cpp"
@@ -101,7 +100,8 @@ target_link_libraries(${BINARY_NAME} PRIVATE d3d11 dxgi runtimeobject windowscod
 # galgame 一键制卡 A 阶段：audio_loopback_capture.cpp（WASAPI loopback 抓系统混音）。
 # IMMDeviceEnumerator / IAudioClient / IAudioCaptureClient 的 CLSID/IID 由 uuid.lib（MSVC
 # 默认链接）提供，CoCreateInstance 走已链接的 ole32；avrt 供将来 pro-audio 线程优先级用。
-target_link_libraries(${BINARY_NAME} PRIVATE avrt)
+# mmdevapi 提供 ActivateAudioInterfaceAsync（网页视频制卡的 process loopback）。
+target_link_libraries(${BINARY_NAME} PRIVATE avrt mmdevapi)
 # 剪切板面板背景逐像素透明（global_lookup_window composition 模式）：DirectComposition
 # 视觉树承载 WebView2 composition controller 的透明像素，dxguid 提供 DComp/DXGI IID。
 target_link_libraries(${BINARY_NAME} PRIVATE dcomp dxguid)
@@ -117,22 +117,6 @@ add_dependencies(${BINARY_NAME} flutter_assemble)
 # HBK-AUDIT-052: timeout/failed installer waits must not restart an app into a
 # bundle still being copied or rolled back. Uses live native function bodies.
 include("tests/update_launcher_completion_test.cmake")
-
-# BUG-1239: compile and execute the production IME Space predicate/dispatch
-# seam as part of every Windows runner build. Source-string tests could not
-# detect WM_KEYDOWN -> WM_KEYUP or removed Alt/Win guards.
-add_executable(fushi_windows_ime_space_test
-  "ime_space_dispatch.cpp"
-  "tests/ime_space_dispatch_test.cpp"
-)
-apply_standard_settings(fushi_windows_ime_space_test)
-target_compile_definitions(fushi_windows_ime_space_test PRIVATE "NOMINMAX")
-add_custom_target(fushi_windows_ime_space_gate
-  COMMAND "$<TARGET_FILE:fushi_windows_ime_space_test>"
-  DEPENDS fushi_windows_ime_space_test
-  VERBATIM
-)
-add_dependencies(${BINARY_NAME} fushi_windows_ime_space_gate)
 
 # 反馈「粘贴截图」：截图工具的 32bpp DIB（alpha 常全 0）→ 不透明 PNG、掩码偏移、
 # CF_HDROP → UTF-8 路径。只测纯转换、不碰真剪贴板，所以能随每次构建跑。
@@ -204,6 +188,22 @@ add_custom_target(fushi_windows_activation_policy_gate
 )
 add_dependencies(${BINARY_NAME} fushi_windows_activation_policy_gate)
 
+# BUG-3768: the FUSHI_TEST_HIDDEN window must stay where the runner parked it;
+# Dart startup placement (setBounds / maximize) otherwise pulls it onto the
+# user's desktop. Keep the pin policy executable on every Windows runner build.
+add_executable(fushi_windows_test_window_origin_pin_test
+  "tests/test_window_origin_pin_test.cpp"
+)
+apply_standard_settings(fushi_windows_test_window_origin_pin_test)
+target_compile_definitions(fushi_windows_test_window_origin_pin_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_test_window_origin_pin_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_test_window_origin_pin_test>"
+  DEPENDS fushi_windows_test_window_origin_pin_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_test_window_origin_pin_gate)
+
 # BUG-2462: the Flutter child resize gate (child_resize_gate.h) closes the
 # engine's resize-synchroniser hazard (A -> B -> A while Dart is busy pins the
 # resize target and drops every frame = frozen window when entering fullscreen
@@ -271,6 +271,22 @@ add_custom_target(fushi_windows_attached_glyph_latch_gate
   VERBATIM
 )
 add_dependencies(${BINARY_NAME} fushi_windows_attached_glyph_latch_gate)
+
+# 反馈 4c0IeCpSjb — 游戏内查词卡在屏时 WH_KEYBOARD_LL 吞键盘的判据：只吞新按下、
+# down/up 成对、系统修饰键放行、Ctrl+C 由宿主复制。卡键（游戏只见 down 不见 up）
+# 是这条规则最危险的回归，必须可执行地钉住。
+add_executable(fushi_windows_lookup_keyboard_shield_test
+  "tests/lookup_keyboard_shield_test.cpp"
+)
+apply_standard_settings(fushi_windows_lookup_keyboard_shield_test)
+target_compile_definitions(fushi_windows_lookup_keyboard_shield_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_lookup_keyboard_shield_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_lookup_keyboard_shield_test>"
+  DEPENDS fushi_windows_lookup_keyboard_shield_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_lookup_keyboard_shield_gate)
 
 # v19 lookup hits are untrusted shared-memory payloads. Compile and run strict
 # UTF-8/UTF-16 span, production provider-pair and bounded geometry validation
@@ -617,7 +633,7 @@ add_executable(fushi_update_launcher WIN32
 )
 apply_standard_settings(fushi_update_launcher)
 target_compile_definitions(fushi_update_launcher PRIVATE "NOMINMAX")
-target_link_libraries(fushi_update_launcher PRIVATE shell32)
+target_link_libraries(fushi_update_launcher PRIVATE shell32 bcrypt)
 
 # BUG-2726: game-stream input regression (window-targeted input, SGRE native
 # gamepad channel, release-without-visibility). Unlike the gates above it is
@@ -644,3 +660,18 @@ add_custom_target(fushi_windows_game_stream_input_gate
   DEPENDS fushi_windows_game_stream_input_test
   VERBATIM
 )
+
+# 原生测试 exe 只是构建期门禁（上面各 *_gate 经 $<TARGET_FILE:> 调用），不是产品。
+# 它们与 fushi.exe 同在一个 CMakeLists 里，默认输出到同一个 runner/<Config>/——
+# 而那个目录就是 Flutter 的 bundle，fushi.iss 用 `Source: "{#SourceDir}\*"` 整目录
+# 收包，于是 29 个 *_test.exe 曾随安装包装进用户的 {app}（全局鼠标钩子 / PrintWindow
+# 截屏 / 读剪贴板之类的测试程序，徒增安装体积与杀软启发式命中面）。
+# 统一改输出到 bundle 之外；放在文件末尾，按命名约定兜住上面及 include 进来的全部测试目标，
+# 新增测试不必逐个记得设置。
+get_property(_fushi_runner_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_fushi_target IN LISTS _fushi_runner_targets)
+  if(_fushi_target MATCHES "^fushi_windows_.+_test$")
+    set_target_properties(${_fushi_target} PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/native_tests")
+  endif()
+endforeach()

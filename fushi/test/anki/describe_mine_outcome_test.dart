@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/toast_severity.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 import '../pages/reader_fushi_page_source_corpus.dart';
@@ -20,8 +21,11 @@ void main() {
         const MineOutcome.success(deckName: 'Deck1'),
       );
       expect(r.message, t.card_exported(deck: 'Deck1'));
-      expect(r.message, contains('Deck1'),
-          reason: 'BUG-1549：成功 toast 必须包含真实牌组名');
+      expect(
+        r.message,
+        contains('Deck1'),
+        reason: 'BUG-1549：成功 toast 必须包含真实牌组名',
+      );
       expect(r.success, isTrue);
       expect(r.record, isTrue);
     });
@@ -65,9 +69,37 @@ void main() {
       expect(r.record, isFalse);
     });
 
+    test('queued: Anki 待发卡片与 Fushi 复习后台制卡各说各的（反馈 Rl00Di264R）', () {
+      final pending = describeMineOutcome(const MineOutcome.queued());
+      expect(pending.message, t.anki_pending_mine_queued);
+      expect(pending.success, isTrue);
+      expect(pending.record, isTrue);
+      expect(pending.status, MineToastStatus.queued);
+
+      final background = describeMineOutcome(
+        const MineOutcome.queued(deckName: '日语::挖词'),
+      );
+      expect(
+        background.message,
+        t.srs_mining_background_queued(deck: '日语::挖词'),
+        reason: '本机后台写入不能说成「稍后发送到 Anki」',
+      );
+      expect(background.success, isTrue);
+      expect(background.record, isTrue);
+
+      final unnamed = describeMineOutcome(
+        const MineOutcome.queued(deckName: ''),
+      );
+      expect(
+        unnamed.message,
+        t.srs_mining_background_queued(deck: t.srs_mining_target_srs),
+      );
+    });
+
     test('notConfigured: 未配置文案 + 不成功不记账', () {
-      final r =
-          describeMineOutcome(const MineOutcome(MineResult.notConfigured));
+      final r = describeMineOutcome(
+        const MineOutcome(MineResult.notConfigured),
+      );
       expect(r.message, t.card_export_not_configured);
       expect(r.success, isFalse);
       expect(r.record, isFalse);
@@ -109,10 +141,16 @@ void main() {
     for (final site in sites) {
       test('$site 转调 describeMineOutcome', () {
         final src = read(site);
-        expect(src, contains('describeMineOutcome('),
-            reason: '$site 应转调 describeMineOutcome');
-        expect(src.contains('case MineResult.duplicate:'), isFalse,
-            reason: '$site 不应再保留本地 MineResult switch');
+        expect(
+          src,
+          contains('describeMineOutcome('),
+          reason: '$site 应转调 describeMineOutcome',
+        );
+        expect(
+          src.contains('case MineResult.duplicate:'),
+          isFalse,
+          reason: '$site 不应再保留本地 MineResult switch',
+        );
       });
     }
   });

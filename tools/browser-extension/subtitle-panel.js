@@ -153,34 +153,17 @@
 
   // DOM 采样 live 轨的伪语言码（content.js FUSHI_LIVE_LANG）：排序垫底 + 显示中文标签。
   var LIVE_LANG = 'live';
+  // 列表次序与活动轨判据是共享纯函数（subtitle-adapters.js，manifest 里先于本文件装入；
+  // app 内浏览器的 YouTube 页内字幕也调同一份）。
   function tracksForVideo() {
-    var store = window.fushiEpisodeCues || null;
-    var vid = videoKey();
-    var out = [];
-    if (!store || !vid) return out;
-    for (var key in store) {
-      var sep = key.indexOf('|');
-      if (sep < 0) continue;
-      if (key.slice(0, sep) !== String(vid)) continue;
-      var cues = store[key];
-      if (cues && cues.length) out.push({ lang: key.slice(sep + 1), key: key, cues: cues });
-      // BUG-2194：按需加载的占位轨（清单已到、cue 未取）也列出来，让用户能选中触发加载。
-      else if (window.fushiLazyTracks && window.fushiLazyTracks[key]) {
-        out.push({ lang: key.slice(sep + 1), key: key, cues: [], pending: true });
-      }
-    }
-    out.sort(function (a, b) {
-      // 已加载整集轨在前，占位轨其次，实时采集轨垫底。
-      var al = a.lang === LIVE_LANG ? 2 : (a.pending ? 1 : 0);
-      var bl = b.lang === LIVE_LANG ? 2 : (b.pending ? 1 : 0);
-      if (al !== bl) return al - bl;
-      return a.lang < b.lang ? -1 : (a.lang > b.lang ? 1 : 0);
-    });
-    return out;
+    return fushiListSubtitleTracks(window.fushiEpisodeCues || null, videoKey(),
+      window.fushiLazyTracks || null, LIVE_LANG);
   }
   // 占位轨被选为活动轨 → 请桥真取（同一 key 5 秒内不重复请求；取失败用户重选即可再试）。
   function requestLazyIfPending(track) {
     if (!track || !track.pending || typeof window.fushiRequestLazyTrack !== 'function') return;
+    // 手机遥控的被动轮询只读状态，不替用户去取占位轨（Netflix 取轨会临时切站点字幕）。
+    if (remote && remote.passive) return;
     var now = Date.now();
     st.lazyRequestedAt = st.lazyRequestedAt || {};
     if (now - (st.lazyRequestedAt[track.key] || 0) < 5000) return;
@@ -1037,17 +1020,10 @@
   // 覆盖字幕逻辑，但不创建列表节点、不修改宿主页面布局。
   function refreshHeadless() {
     st.videoId = videoKey();
+    if (st.externalRestoredFor !== st.videoId) restoreExternalTracks(st.videoId);
     var tracks = tracksForVideo();
-    var active = null;
-    for (var i = 0; i < tracks.length; i++) {
-      if (tracks[i].lang === st.activeLang) active = tracks[i];
-    }
-    var fullTrackArrived = st.activeLang === LIVE_LANG &&
-      tracks.length && tracks[0].lang !== LIVE_LANG;
-    if (!active || fullTrackArrived) {
-      active = tracks.length ? tracks[0] : null;
-      st.activeLang = active ? active.lang : null;
-    }
+    var active = fushiResolveActiveSubtitleTrack(tracks, st.activeLang, LIVE_LANG);
+    st.activeLang = active ? active.lang : null;
     requestLazyIfPending(active);
     var off = trackOffset(active ? active.key : null);
     st.cues = active ? shiftedCues(active.cues, off) : [];
@@ -1062,6 +1038,113 @@
   }
   function isExternalLang(lang) {
     return typeof lang === 'string' && lang.indexOf(EXT_PREFIX) === 0;
+  }
+
+  // ── 外挂字幕持久化（反馈 HlBC5BcpED：「查字幕」/ 拖入 / 选文件装上的外挂轨刷新后消失）──
+  // 根因：外挂轨只写进页面内存 window.fushiEpisodeCues（applyExternalSubtitle），页面一刷新
+  // content script 重建、store 归空。现按视频身份（videoKey()，与轨 key 同一把）存进
+  // chrome.storage.local：账本 EXTERNAL_INDEX_KEY（LRU，规则见 subtitle-adapters.js
+  // fushiPlanExternalSubtitleSave）+ 每轨一条正文键；偏移随轨一起记。
+  var EXTERNAL_INDEX_KEY = 'externalSubtitleIndex';
+  var EXTERNAL_DATA_PREFIX = 'externalSubtitle:';
+  var EXTERNAL_LIMITS = { maxEntries: 40, maxBytes: 4 * 1024 * 1024, maxEntryBytes: 1536 * 1024 };
+  function storageGet(keys, cb) {
+    try {
+      var p = chrome.storage.local.get(keys);
+      if (p && typeof p.then === 'function') {
+        p.then(function (v) { cb(v || {}); }, function () { cb({}); });
+      } else {
+        chrome.storage.local.get(keys, function (v) { cb(v || {}); });
+      }
+    } catch (_) { cb({}); }
+  }
+  function utf8Bytes(text) {
+    if (typeof TextEncoder === 'function') return new TextEncoder().encode(text).length;
+    return text.length * 3;
+  }
+  function persistExternalTrack(video, label, cues) {
+    if (typeof fushiPlanExternalSubtitleSave !== 'function') return;
+    var id = EXTERNAL_DATA_PREFIX + video + '|' + label;
+    var json;
+    try { json = JSON.stringify(cues); } catch (_) { return; }
+    var entry = { id: id, video: video, label: label, bytes: utf8Bytes(json), at: Date.now(), offsetMs: 0 };
+    storageGet(EXTERNAL_INDEX_KEY, function (got) {
+      var plan = fushiPlanExternalSubtitleSave(got[EXTERNAL_INDEX_KEY], entry, EXTERNAL_LIMITS);
+      var patch = {};
+      patch[EXTERNAL_INDEX_KEY] = plan.index;
+      if (plan.stored) patch[id] = { video: video, label: label, cues: cues };
+      try {
+        if (plan.evicted.length) chrome.storage.local.remove(plan.evicted);
+        chrome.storage.local.set(patch);
+      } catch (_) {}
+    });
+  }
+  // 轨 key 的偏移变了：若是已落盘的外挂轨，把偏移写回账本（刷新后连同偏移一起恢复）。
+  function persistExternalOffset(key) {
+    if (typeof key !== 'string' || key.indexOf('|' + EXT_PREFIX) < 0) return;
+    var id = EXTERNAL_DATA_PREFIX + key;
+    var value = st.trackOffsets[key] || 0;
+    storageGet(EXTERNAL_INDEX_KEY, function (got) {
+      var index = got[EXTERNAL_INDEX_KEY];
+      if (!Array.isArray(index)) return;
+      var hit = false;
+      for (var i = 0; i < index.length; i++) {
+        if (index[i] && index[i].id === id) { index[i].offsetMs = value; hit = true; }
+      }
+      if (!hit) return;
+      var patch = {};
+      patch[EXTERNAL_INDEX_KEY] = index;
+      try { chrome.storage.local.set(patch); } catch (_) {}
+    });
+  }
+  // 当前视频的外挂轨从 storage 装回 store；每个视频身份只装一次（refreshHeadless 入口调用）。
+  // 装回后若用户还没选外挂轨，切到最近装的那条——刷新前看的就是它。
+  function restoreExternalTracks(video) {
+    st.externalRestoredFor = video;
+    storageGet(EXTERNAL_INDEX_KEY, function (got) {
+      var index = Array.isArray(got[EXTERNAL_INDEX_KEY]) ? got[EXTERNAL_INDEX_KEY] : [];
+      var mine = [];
+      for (var i = 0; i < index.length; i++) {
+        var e = index[i];
+        if (e && e.video === video && typeof e.id === 'string' && typeof e.label === 'string') mine.push(e);
+      }
+      if (!mine.length) return;
+      storageGet(mine.map(function (e) { return e.id; }), function (data) {
+        if (videoKey() !== video) return; // 读盘期间已切走（SPA 换集）
+        var store = window.fushiEpisodeCues || (window.fushiEpisodeCues = Object.create(null));
+        var restored = null;
+        var missing = [];
+        var now = Date.now();
+        for (var j = 0; j < mine.length; j++) {
+          var entry = mine[j];
+          var saved = data[entry.id];
+          if (!saved || !Array.isArray(saved.cues) || !saved.cues.length) { missing.push(entry.id); continue; }
+          var key = video + '|' + entry.label;
+          if (!store[key]) store[key] = saved.cues;
+          if (typeof entry.offsetMs === 'number' && entry.offsetMs && st.trackOffsets[key] == null) {
+            st.trackOffsets[key] = entry.offsetMs;
+          }
+          entry.at = now;
+          restored = entry; // 账本从旧到新：最后一条 = 最近装的
+        }
+        // 账本自愈 + LRU 续命：正文缺失（写盘失败 / 被外部清掉）的条目剔除，本视频的条目挪到最新端。
+        var next = [];
+        for (var k = 0; k < index.length; k++) {
+          var item = index[k];
+          if (!item || item.video === video) continue;
+          next.push(item);
+        }
+        for (var m = 0; m < mine.length; m++) {
+          if (missing.indexOf(mine[m].id) < 0) next.push(mine[m]);
+        }
+        var patch = {};
+        patch[EXTERNAL_INDEX_KEY] = next;
+        try { chrome.storage.local.set(patch); } catch (_) {}
+        if (!restored) return;
+        if (!isExternalLang(st.activeLang)) st.activeLang = restored.label;
+        if (st.enabled) refreshHeadless();
+      });
+    });
   }
   function loadSubtitleFile(file) {
     if (file && typeof file.size === 'number' && file.size > 8 * 1024 * 1024) {
@@ -1099,11 +1182,14 @@
     }
     if (!base.length) { toast(tr('subtitle_empty')); return; }
     var label = EXT_PREFIX + String(filename).replace(/\|/g, '_');
-    var key = videoKey() + '|' + label;
+    var video = videoKey();
+    var key = video + '|' + label;
     // 外挂轨与检测轨同构：store 存原始 cue，偏移走统一的读取侧 trackOffsets（重新加载即归零）。
     var store = window.fushiEpisodeCues || (window.fushiEpisodeCues = Object.create(null));
     store[key] = base;
     delete st.trackOffsets[key];
+    // 反馈 HlBC5BcpED：store 只是页面内存，刷新即丢——按视频身份落盘，刷新后 refreshHeadless 自动装回。
+    persistExternalTrack(video, label, base);
     st.activeLang = label;
     // BUG-3145：装外挂轨 = 用户明确要在这个视频上看 Fushi 字幕。字幕能力总门（SETTING_KEY，
     // 缺省关）没开时 tick() 直接返回、覆盖层一个字都不画——从 Chrome 自己的侧边栏入口或
@@ -1122,6 +1208,7 @@
     if (!c) return fallback;
     if (c.state === 'yomitan-conflict') return tr('conn_yomitan_conflict', { port: c.port || 19633 });
     if (c.state === 'unauthorized') return tr('conn_unauthorized');
+    if (c.state === 'forbidden') return tr('conn_forbidden');
     if (c.state === 'offline') return tr('conn_api_off');
     if (c.state === 'no-response') return tr('conn_no_response');
     return fallback;
@@ -1207,21 +1294,51 @@
     if (!active && tracks.length) { st.activeLang = tracks[0].lang; active = tracks[0]; }
     st.cues = active ? shiftedCues(active.cues, trackOffset(active.key)) : [];
   }
+  // 上一句 / 下一句的 seek 锚点（对齐 App 视频页的 _seekTargetCueIndex）：Netflix 的 player.seek /
+  // HTML5 的 currentTime 常落在目标句 startMs 前几毫秒；相邻两句首尾相接时，按位置会认成「还在
+  // 前一句」，再按上一句就一次跨两句。锚点只在「当前位置紧贴锚句句首之前」时生效，换轨（st.cues
+  // 换了数组）即失效。
+  var SHORTCUT_SEEK_ANCHOR_SLACK_MS = 200;
+  var shortcutSeekAnchor = null;
+  function shortcutSeekToCue(i) {
+    shortcutSeekAnchor = { cues: st.cues, index: i };
+    seekTo(st.cues[i].startMs);
+  }
+  // 当前所在句：锚点优先，其次按位置；落在句间空隙返回 -1。
+  function shortcutCurrentCueIndex(now) {
+    var a = shortcutSeekAnchor;
+    if (a && a.cues === st.cues && a.index < st.cues.length) {
+      var c = st.cues[a.index];
+      if (now >= c.startMs - SHORTCUT_SEEK_ANCHOR_SLACK_MS && now < c.endMs) return a.index;
+    }
+    return cueIndexAt(st.cues, now);
+  }
+  // 上一句（DudosCydv0）：严格的「当前句的前一条」，与 App 视频页 prevCueIndexFor / 有声书
+  // _prevCueIndex 同口径（BUG-3791 撤掉了「已播超过阈值先回句首」的音乐播放器语义）。旧实现
+  // lastCueStartBefore(now - 600) 在进句超过 600ms 时命中的是本句自己，回到句首后时间继续走，
+  // 两次按键间隔一过 600ms 又只回本句，永远到不了上一句。重播本句走独立的 replay-cue。
+  // - 在句 k 内 → k-1；首句内 → 不动作，返回 false 放行给站点；
+  // - 句间空隙 → 刚播完的那句（起点早于当前时刻的最后一句）。
   function shortcutSeekPrev() {
     if (!st.cues.length) return false;
-    // 上一句：开播 >600ms 时先回本句句首（与播放器「上一曲」惯例一致），再按一次才到上一句。
-    var i = lastCueStartBefore(videoTimeMs() - 600);
+    var now = videoTimeMs();
+    var cur = shortcutCurrentCueIndex(now);
+    var i = cur >= 0 ? cur - 1 : lastCueStartBefore(now);
     if (i < 0) return false;
-    seekTo(st.cues[i].startMs);
+    shortcutSeekToCue(i);
     return true;
   }
   function shortcutSeekNext() {
     if (!st.cues.length) return false;
-    var i = firstCueAfter(videoTimeMs());
-    if (i < 0) return false;
-    seekTo(st.cues[i].startMs);
+    var now = videoTimeMs();
+    var cur = shortcutCurrentCueIndex(now);
+    var i = cur >= 0 ? cur + 1 : firstCueAfter(now);
+    if (i < 0 || i >= st.cues.length) return false;
+    shortcutSeekToCue(i);
     return true;
   }
+  // 重播本句：回句首**并起播**（Dbd86l4kA-，与 App 视频页同口径：重播类动作一律起播，
+  // 只跳不播的是上一句 / 下一句）。
   function shortcutReplay() {
     if (!st.cues.length) return false;
     var now = videoTimeMs();
@@ -1229,6 +1346,13 @@
     if (idx < 0) idx = lastCueStartBefore(now);
     if (idx < 0) return false;
     seekTo(st.cues[idx].startMs);
+    var v = videoEl();
+    if (v && v.paused) {
+      try {
+        var played = v.play();
+        if (played && typeof played.catch === 'function') played.catch(function () {});
+      } catch (_) {}
+    }
     return true;
   }
   function shortcutOffset(deltaMs) {
@@ -1236,6 +1360,7 @@
     if (!key || !st.cues.length) return false;
     if (deltaMs === 0) delete st.trackOffsets[key];
     else st.trackOffsets[key] = (st.trackOffsets[key] || 0) + deltaMs;
+    persistExternalOffset(key);
     recomputeShortcutCues();
     toast(tr('subtitle_offset_toast', { offset: fmtOffset(trackOffset(key)) }));
     return true;
@@ -1253,6 +1378,27 @@
     toast(tr('subtitle_copied', { text: text.length > 30 ? text.slice(0, 30) + '…' : text }));
     return true;
   }
+  // 当前句（复制 / 收藏共用的取句口径）：正在显示的那句，字幕间隙里取刚过去的上一句。
+  // 已应用用户设的时轴偏移（st.cues 是 shiftedCues），所以 startMs 就是画面上的时间点。
+  function currentShortcutCue() {
+    if (!st.cues.length) recomputeShortcutCues();
+    if (!st.cues.length) return null;
+    var now = videoTimeMs();
+    var idx = cueIndexAt(st.cues, now);
+    if (idx < 0) idx = lastCueStartBefore(now);
+    if (idx < 0) return null;
+    var c = st.cues[idx];
+    return { text: c.text, startMs: c.startMs, endMs: c.endMs };
+  }
+  // 反馈 KGC1ifR1a3：收藏当前句进 Fushi 收藏夹（执行端在 video-favorite.js）。
+  function shortcutFavoriteCue() {
+    if (!window.fushiVideoFavorite || typeof window.fushiVideoFavorite.toggleCurrentCue !== 'function') return false;
+    return window.fushiVideoFavorite.toggleCurrentCue() === true;
+  }
+  window.fushiSubtitleCurrentCue = function () {
+    if (!videoEl()) return null;
+    return currentShortcutCue();
+  };
   function shortcutTogglePanel() {
     if (!st.enabled) {
       try { chrome.storage.local.set({ netflixSubtitlePanel: true }); } catch (_) {}
@@ -1274,6 +1420,7 @@
       case 'offset-plus': return shortcutOffset(100);
       case 'offset-reset': return shortcutOffset(0);
       case 'copy-cue': return shortcutCopyCue();
+      case 'favorite-cue': return shortcutFavoriteCue();
       case 'toggle-panel': return shortcutTogglePanel();
       // 隐藏字幕：状态与 style 注入由 content.js 独占（见那里的「所有权」注释）——侧边栏能力
       // 受 netflixSubtitlePanel 门控且默认关，状态放这里会导致「没开侧边栏就不能隐藏字幕」。
@@ -1284,6 +1431,19 @@
           : false;
     }
     return false;
+  };
+
+  // 按秒快退 / 快进（video-shortcuts.js 的 seek-back / seek-forward）：与字幕跳转共用 seekTo，
+  // Netflix 因此同样走官方 player.seek。与字幕轨无关——没有 Fushi 字幕也能用。
+  // 目标夹在 [0, 时长]（时长未知 / 直播只夹下界）。
+  window.fushiSubtitleSeekBy = function (deltaMs) {
+    var v = videoEl();
+    if (!v || typeof deltaMs !== 'number' || !isFinite(deltaMs)) return false;
+    var target = videoTimeMs() + deltaMs;
+    var d = Number(v.duration);
+    if (isFinite(d) && d > 0) target = Math.min(target, Math.floor(d * 1000));
+    seekTo(target);
+    return true;
   };
 
   // 兼容旧 content.js 的批量录制钩子。原生 Side Panel 不属于标签页画面，不再需要改网页宽度。
@@ -1328,6 +1488,20 @@
     };
   };
 
+  // 学习统计的字幕字数（反馈 jk4rTLHPZ_）：study-tracker.js 每条样本带上 [posMs] 这一刻
+  // Fushi 正在出的那一句（st.cues 已套过时轴偏移，是视频轴），app 侧 VideoWatchTracker
+  // 按与视频页同一道停留门计字。判据与 fushiSubtitleStudyState.showing 相同：只有 Fushi
+  // 自己在出字幕时才给；落在句间空隙 / 没有活动轨返回 null。
+  window.fushiSubtitleStudyCue = function (posMs) {
+    var lang = st.enabled ? st.activeLang : null;
+    if (!lang || lang === LIVE_LANG || !st.cues || !st.cues.length) return null;
+    if (typeof posMs !== 'number' || !isFinite(posMs)) return null;
+    var idx = cueIndexAt(st.cues, posMs);
+    if (idx < 0) return null;
+    var c = st.cues[idx];
+    return { index: idx, startMs: c.startMs, endMs: c.endMs, text: String(c.text || '') };
+  };
+
   window.fushiSubtitlePanelOnCues = function (_key) {
     if (!st.enabled) return;
     refreshHeadless();
@@ -1358,13 +1532,17 @@
       tracks: tracks.map(function (track) {
         return {
           lang: track.lang,
-          label: track.lang === LIVE_LANG ? tr('track_live_label') : track.lang,
+          label: track.lang === LIVE_LANG ? tr('track_live_label')
+            : ((window.fushiTrackLabels && window.fushiTrackLabels[track.key]) || track.lang),
           length: track.cues.length,
           pending: !!track.pending,
           signature: trackSignature(track),
         };
       }),
       cues: includeCues ? st.cues : null,
+      // 反馈 KGC1ifR1a3：这个视频在 Fushi 收藏夹里的状态（侧边栏画 ☆/★）。
+      favorites: (window.fushiVideoFavorite && typeof window.fushiVideoFavorite.snapshot === 'function')
+        ? window.fushiVideoFavorite.snapshot() : null,
     };
   }
 
@@ -1407,16 +1585,278 @@
     if (!key || !isFinite(value)) return false;
     if (value === 0) delete st.trackOffsets[key];
     else st.trackOffsets[key] = value;
+    persistExternalOffset(key);
     refreshHeadless();
     toast(tr('subtitle_offset_toast', { offset: fmtOffset(trackOffset(key)) }));
     return true;
   };
+
+  // ── 手机视频遥控（Fushi app 内浏览器宿主专用）──────────────────────────────
+  // app 内浏览器把「前台标签页的正片」登记成手机遥控的播放器（`fushiRemote*` 消息，app 侧
+  // web_browser_video_remote.dart）。浏览器扩展本身从不发这三条消息，所以扩展里这一节不会
+  // 被触发、零开销：视频事件监听只在第一次收到遥控消息时才挂。
+  //
+  // controlRevision 的语义与 app 原生播放器同（`VideoPlayerController.remoteControlRevision`）：
+  // 「有人在电脑前做了一次显式播放控制」（播放 / 暂停 / 拖动）就 +1，手机据此判断「查词暂停后
+  // 电脑前有没有人动过」、决定关弹窗时还续不续播。这里只计**不是遥控自己下发**的那部分
+  // （遥控下发的那次由 app 侧自己计，见 expectPlaying / expectSeek）；试听播到句尾的自动停下
+  // 也不计。
+  var remote = {
+    // remoteState 读状态期间为 true：见 requestLazyIfPending。
+    passive: false,
+    revision: 0,
+    boundVideo: null,
+    handlers: null,
+    // 遥控刚下发、尚未在视频事件上兑现的目标播放态 / seek（兑现的那一下不计数）。
+    expectPlaying: null,
+    expectSeek: false,
+    // 正在试听的区间（null = 没在试听）。
+    range: null,
+  };
+  function remotePlaying(v) {
+    return !!v && !v.paused && !v.ended;
+  }
+  function remoteStopRange(pause) {
+    var r = remote.range;
+    if (!r) return;
+    remote.range = null;
+    try { clearInterval(r.timer); } catch (_) {}
+    if (pause) remoteSetPlaying(videoEl(), false);
+  }
+  function remoteOnPlayState(playing) {
+    if (remote.expectPlaying === playing) { remote.expectPlaying = null; return; }
+    remote.expectPlaying = null;
+    remote.revision++;
+    // 电脑前有人按了播放 / 暂停：试听作废（与原生 playRangeMs「中途控制即放弃」同）。
+    remoteStopRange(false);
+  }
+  function remoteOnSeeking() {
+    if (remote.expectSeek) { remote.expectSeek = false; return; }
+    remote.revision++;
+    remoteStopRange(false);
+  }
+  function remoteHandlers() {
+    if (!remote.handlers) {
+      remote.handlers = {
+        play: function () { remoteOnPlayState(true); },
+        pause: function () { remoteOnPlayState(false); },
+        seeking: function () { remoteOnSeeking(); },
+      };
+    }
+    return remote.handlers;
+  }
+  // 换了正片元素（单页应用换集 / 换清晰度重建 <video>）就把监听挪过去。
+  function remoteWatch(v) {
+    if (remote.boundVideo === (v || null)) return;
+    var h = remoteHandlers();
+    var old = remote.boundVideo;
+    if (old && typeof old.removeEventListener === 'function') {
+      for (var k in h) { try { old.removeEventListener(k, h[k]); } catch (_) {} }
+    }
+    remote.boundVideo = v || null;
+    remote.expectPlaying = null;
+    remote.expectSeek = false;
+    if (v && typeof v.addEventListener === 'function') {
+      for (var t in h) { try { v.addEventListener(t, h[t]); } catch (_) {} }
+    }
+  }
+  function remoteSetPlaying(v, playing) {
+    if (!v) return;
+    // 只有真要翻转时才登记期望：已经是目标态时事件不会来，留着期望会吞掉下一次真手动操作。
+    if (remotePlaying(v) !== playing) remote.expectPlaying = playing;
+    try {
+      if (playing) {
+        var p = v.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(function () { if (remote.expectPlaying === true) remote.expectPlaying = null; });
+        }
+      } else {
+        v.pause();
+      }
+    } catch (_) {
+      remote.expectPlaying = null;
+    }
+  }
+  function remoteSeek(ms) {
+    // 只有真会触发 seeking 的那次才登记期望：没有正片元素时 seekTo 什么都不做，留着期望会
+    // 吞掉下一次电脑前的真手动拖动（与 remoteSetPlaying 同理）。
+    if (!videoEl()) return;
+    remote.expectSeek = true;
+    seekTo(ms);
+  }
+  // 试听：从 startMs 播到 endMs 自动停（与原生 playRangeMs 同语义）。到点的那次暂停是
+  // 试听自己的收尾，不计入 controlRevision。
+  function remotePlayRange(startMs, endMs) {
+    remoteStopRange(false);
+    var v = videoEl();
+    if (!v || !(endMs > startMs)) return false;
+    remoteSeek(startMs);
+    remoteSetPlaying(v, true);
+    var r = { start: startMs, end: endMs, landed: false, timer: null };
+    r.timer = setInterval(function () {
+      if (remote.range !== r) return;
+      var now = videoTimeMs();
+      // seek 落地前读到的还是旧位置：落进 [start-1s, end) 之后才开始判终点。
+      if (!r.landed) {
+        if (now >= r.start - 1000 && now < r.end) r.landed = true;
+        else return;
+      }
+      if (now < r.end) return;
+      remote.range = null;
+      try { clearInterval(r.timer); } catch (_) {}
+      var cur = videoEl();
+      if (cur && remotePlaying(cur)) {
+        remote.expectPlaying = false;
+        try { cur.pause(); } catch (_) { remote.expectPlaying = null; }
+      }
+    }, 40);
+    remote.range = r;
+    return true;
+  }
+  function remotePlayback() {
+    var v = videoEl();
+    remoteWatch(v);
+    var duration = v && typeof v.duration === 'number' && isFinite(v.duration) ? v.duration : 0;
+    var volume = v && typeof v.volume === 'number' ? (v.muted ? 0 : v.volume) : 0;
+    return {
+      positionMs: videoTimeMs(),
+      durationMs: Math.max(0, Math.round(duration * 1000)),
+      playing: remotePlaying(v),
+      rate: v && typeof v.playbackRate === 'number' ? v.playbackRate : 1,
+      volume: Math.max(0, Math.min(100, Math.round(volume * 100))),
+      controlRevision: remote.revision,
+      site: typeof fushiSite === 'function' ? fushiSite() : 'other',
+      title: (typeof document !== 'undefined' && document.title) || '',
+    };
+  }
+  function remoteState(includeCues) {
+    var state;
+    remote.passive = true;
+    try { state = sidePanelState(includeCues); } finally { remote.passive = false; }
+    state.remote = remotePlayback();
+    return state;
+  }
+  function remoteControl(msg) {
+    var v = videoEl();
+    remoteWatch(v);
+    if (!v) return { ok: false, error: 'no-video' };
+    var action = String(msg.action || '');
+    if (action === 'play') {
+      remoteStopRange(false);
+      remoteSetPlaying(v, true);
+    } else if (action === 'pause') {
+      remoteStopRange(false);
+      remoteSetPlaying(v, false);
+    } else if (action === 'seek') {
+      remoteStopRange(false);
+      remoteSeek(Math.max(0, Number(msg.ms) || 0));
+    } else if (action === 'volume') {
+      var n = Math.max(0, Math.min(100, Number(msg.volume) || 0));
+      try {
+        v.volume = n / 100;
+        if (n > 0 && v.muted) v.muted = false;
+      } catch (_) {}
+    } else if (action === 'playRange') {
+      if (!remotePlayRange(Number(msg.startMs) || 0, Number(msg.endMs) || 0)) {
+        return { ok: false, error: 'empty-range' };
+      }
+    } else if (action === 'stopRange') {
+      remoteStopRange(true);
+    } else if (action === 'selectTrack') {
+      // 与侧栏选轨（fushiSubtitleSidePanelSelectTrack）同一语义：只换活动轨，不动总开关。
+      var wanted = String(msg.lang || '');
+      var found = false;
+      var available = tracksForVideo();
+      for (var i = 0; i < available.length; i++) {
+        if (available[i].lang === wanted) { found = true; break; }
+      }
+      if (!found) return { ok: false, error: 'track-missing' };
+      st.activeLang = wanted;
+      // 手机明确选了这条：占位轨此刻去真取（与侧栏选轨后的下一次刷新同一条路）。
+      refreshHeadless();
+    } else {
+      return { ok: false, error: 'unknown-action' };
+    }
+    return remoteState(false);
+  }
+  // B 站可裁源的音轨直链（与 background.js 的 fushiResolveBilibili*Playurl 同两条请求）：
+  // app 宿主里本文件跑在页面主世界，带用户自己的会话取、只回传响应体。取不到 → null，
+  // app 侧按 background.js 同一规则降级（稿件让服务端自己解析、番剧不带可裁源）。
+  function remoteBilibiliPlayurl(clip) {
+    if (!clip || typeof fetch !== 'function') return Promise.resolve(null);
+    var base = 'https://api.bilibili.com';
+    var job;
+    if (clip.kind === 'bilibili-pgc') {
+      job = fetch(base + '/pgc/player/web/playurl?ep_id=' + encodeURIComponent(String(clip.id)) +
+        '&fnval=4048&fourk=1', { credentials: 'include' })
+        .then(function (r) { return r.ok ? r.text() : null; });
+    } else if (clip.kind === 'bilibili') {
+      var page = typeof clip.part === 'number' && clip.part >= 1 ? clip.part : 1;
+      job = fetch(base + '/x/web-interface/view?bvid=' + encodeURIComponent(String(clip.id)),
+        { credentials: 'include' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (view) {
+          if (!view || view.code !== 0 || !view.data) return null;
+          var pages = Array.isArray(view.data.pages) ? view.data.pages : [];
+          var entry = page <= pages.length ? pages[page - 1] : pages[0];
+          var cid = (entry && entry.cid) || view.data.cid;
+          if (!cid) return null;
+          return fetch(base + '/x/player/playurl?bvid=' + encodeURIComponent(String(clip.id)) +
+            '&cid=' + encodeURIComponent(String(cid)) + '&fnval=4048&fourk=1',
+          { credentials: 'include' })
+            .then(function (r) { return r.ok ? r.text() : null; });
+        });
+    } else {
+      return Promise.resolve(null);
+    }
+    var timeout = new Promise(function (resolve) { setTimeout(function () { resolve(null); }, 8000); });
+    return Promise.race([job.catch(function () { return null; }), timeout]).then(function (body) {
+      return typeof body === 'string' && body ? body : null;
+    });
+  }
+  // 遥控制卡要的页面侧素材：可裁原始流的身份（subtitle-providers.js fushiClipSource）、页面标题、
+  // 当前解码帧（YouTube / Netflix 不取：前者服务端从流里裁画面，后者 DRM 取不到）、B 站 playurl。
+  function remoteMineContext() {
+    var clip = typeof fushiClipSource === 'function' ? fushiClipSource() : null;
+    var out = {
+      ok: true,
+      site: typeof fushiSite === 'function' ? fushiSite() : 'other',
+      clip: clip,
+      title: (typeof document !== 'undefined' && document.title) || '',
+    };
+    var kind = clip && clip.kind;
+    if (kind !== 'youtube' && kind !== 'netflix' && typeof fushiCaptureVideoFrame === 'function') {
+      var frame = null;
+      try { frame = fushiCaptureVideoFrame(videoEl()); } catch (_) { frame = null; }
+      if (frame && frame.base64) out.screenshotBase64 = frame.base64;
+    }
+    if (kind === 'bilibili' || kind === 'bilibili-pgc') {
+      return remoteBilibiliPlayurl(clip).then(function (body) {
+        if (body) out.playurlBody = body;
+        return out;
+      });
+    }
+    return Promise.resolve(out);
+  }
 
   // 浏览器 Side Panel 与当前标签之间的唯一契约。列表 DOM 完全位于扩展页面；这里仅做
   // 序列化、seek、偏移、外挂轨安装和查词命令，不向宿主网页挂字幕列表节点。
   try {
     chrome.runtime.onMessage.addListener(function (msg, _sender, sendResponse) {
       if (!msg || typeof msg.type !== 'string') return false;
+      // app 内浏览器的手机视频遥控（见上方「手机视频遥控」一节；扩展里没人发这三条）。
+      if (msg.type === 'fushiRemoteState') {
+        sendResponse(remoteState(msg.includeCues === true));
+        return false;
+      }
+      if (msg.type === 'fushiRemoteControl') {
+        sendResponse(remoteControl(msg));
+        return false;
+      }
+      if (msg.type === 'fushiRemoteMineContext') {
+        remoteMineContext().then(sendResponse, function () { sendResponse({ ok: false }); });
+        return true;
+      }
       if (msg.type === 'fushiSubtitleSidePanelState') {
         sendResponse(sidePanelState(msg.includeCues === true));
         return false;
@@ -1447,6 +1887,7 @@
             if (abs === 0) delete st.trackOffsets[key];
             else st.trackOffsets[key] = abs;
           } else st.trackOffsets[key] = (st.trackOffsets[key] || 0) + (Number(msg.deltaMs) || 0);
+          persistExternalOffset(key);
         }
         sendResponse(sidePanelState(true));
         return false;
@@ -1473,7 +1914,8 @@
         var showCue = msg.cue && typeof msg.cue === 'object' ? msg.cue : null;
         var shown = typeof window.fushiShowLookupFromSidePanel === 'function' &&
           window.fushiShowLookupFromSidePanel(
-            String(msg.term || ''), showCue, msg.anchorRatio) === true;
+            String(msg.term || ''), showCue, msg.anchorRatio,
+            Array.isArray(msg.ruby) ? msg.ruby : null) === true;
         sendResponse({ ok: shown });
         return false;
       }

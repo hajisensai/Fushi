@@ -14,116 +14,135 @@ Future<Directory> _tempDir(String prefix) =>
     Directory.systemTemp.createTemp(prefix);
 
 void main() {
-  test('import preserves this device sync config, takes content from backup',
-      () async {
-    // ── This device: a configured WebDAV account + behavior flag + cache ──
-    final currentDir = await _tempDir('fushi_cur_');
-    addTearDown(() => cleanupTempDir(currentDir));
-    final curDb = FushiDatabase(currentDir.path);
-    final curRepo = SyncRepository(curDb);
-    await curRepo.setBackendType(SyncBackendType.webDav);
-    await curRepo.setWebDavUrl('https://local.example/dav');
-    await curRepo.setWebDavPassword('localpw'); // base64-stored secret
-    await curRepo.setAutoSyncEnabled(true); // behavior flag (local)
-    await curRepo.setRootFolderId(
+  test(
+    'import preserves this device sync config, takes content from backup',
+    () async {
+      // ── This device: a configured WebDAV account + behavior flag + cache ──
+      final currentDir = await _tempDir('fushi_cur_');
+      addTearDown(() => cleanupTempDir(currentDir));
+      final curDb = FushiDatabase(currentDir.path);
+      final curRepo = SyncRepository(curDb);
+      await curRepo.setBackendType(SyncBackendType.webDav);
+      await curRepo.setWebDavUrl('https://local.example/dav');
+      await curRepo.setWebDavPassword('localpw'); // base64-stored secret
+      await curRepo.setAutoSyncEnabled(true); // behavior flag (local)
+      await curRepo.setRootFolderId(
         SyncChannelScope.forBackendType(SyncBackendType.webDav),
-        'local-root'); // folder cache (local)
-    await curDb.close();
+        'local-root',
+      ); // folder cache (local)
+      await curDb.close();
 
-    // ── A backup from ANOTHER device with different config + a book ──
-    final srcDir = await _tempDir('fushi_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final srcDb = FushiDatabase(srcDir.path);
-    final srcRepo = SyncRepository(srcDb);
-    await srcRepo.setBackendType(SyncBackendType.ftp);
-    await srcRepo.setWebDavUrl('https://backup.example/dav');
-    await srcRepo.setWebDavPassword('backuppw');
-    await srcRepo.setAutoSyncEnabled(false); // backup's behavior flag
-    await srcRepo.setRootFolderId(
-        SyncChannelScope.forBackendType(SyncBackendType.webDav), 'backup-root');
-    await srcDb.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: 'かがみの孤城',
-      title: 'かがみの孤城',
-      epubPath: '/fake/kagami.epub',
-      extractDir: '/fake/extract',
-      chapterCount: 12,
-      chaptersJson: '[]',
-      importedAt: DateTime.now().millisecondsSinceEpoch,
-    ));
-    final zipDir = await _tempDir('fushi_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zipPath = '${zipDir.path}/backup.zip';
-    await BackupService(
-      db: srcDb,
-      dbDirectory: srcDir.path,
-      appVersion: '2.0.0',
-    ).createBackup(zipPath); // strips secrets from the copy
-    await srcDb.close();
+      // ── A backup from ANOTHER device with different config + a book ──
+      final srcDir = await _tempDir('fushi_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final srcDb = FushiDatabase(srcDir.path);
+      final srcRepo = SyncRepository(srcDb);
+      await srcRepo.setBackendType(SyncBackendType.ftp);
+      await srcRepo.setWebDavUrl('https://backup.example/dav');
+      await srcRepo.setWebDavPassword('backuppw');
+      await srcRepo.setAutoSyncEnabled(false); // backup's behavior flag
+      await srcRepo.setRootFolderId(
+        SyncChannelScope.forBackendType(SyncBackendType.webDav),
+        'backup-root',
+      );
+      await srcDb.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'かがみの孤城',
+          title: 'かがみの孤城',
+          epubPath: '/fake/kagami.epub',
+          extractDir: '/fake/extract',
+          chapterCount: 12,
+          chaptersJson: '[]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      final zipDir = await _tempDir('fushi_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zipPath = '${zipDir.path}/backup.zip';
+      await BackupService(
+        db: srcDb,
+        dbDirectory: srcDir.path,
+        appVersion: '2.0.0',
+      ).createBackup(zipPath); // strips secrets from the copy
+      await srcDb.close();
 
-    // ── Import the backup into this device (DB already closed) ──
-    await BackupRestoreService.restoreBackup(
-      dbDirectory: currentDir.path,
-      zipPath: zipPath,
-    );
+      // ── Import the backup into this device (DB already closed) ──
+      await BackupRestoreService.restoreBackup(
+        dbDirectory: currentDir.path,
+        zipPath: zipPath,
+      );
 
-    final afterDb = FushiDatabase(currentDir.path);
-    addTearDown(afterDb.close);
-    final afterRepo = SyncRepository(afterDb);
+      final afterDb = FushiDatabase(currentDir.path);
+      addTearDown(afterDb.close);
+      final afterRepo = SyncRepository(afterDb);
 
-    // Device-local config preserved (NOT the backup's):
-    expect(await afterRepo.getBackendType(), SyncBackendType.webDav);
-    expect(await afterRepo.getWebDavUrl(), 'https://local.example/dav');
-    expect(await afterRepo.getWebDavPassword(), 'localpw'); // secret survived
+      // Device-local config preserved (NOT the backup's):
+      expect(await afterRepo.getBackendType(), SyncBackendType.webDav);
+      expect(await afterRepo.getWebDavUrl(), 'https://local.example/dav');
+      expect(await afterRepo.getWebDavPassword(), 'localpw'); // secret survived
 
-    // Behavior flag + content come FROM the backup:
-    expect(await afterRepo.isAutoSyncEnabled(), isFalse);
-    final books = await afterDb.getAllEpubBooks();
-    expect(books, hasLength(1));
-    expect(books.single.title, 'かがみの孤城');
+      // Behavior flag + content come FROM the backup:
+      expect(await afterRepo.isAutoSyncEnabled(), isFalse);
+      final books = await afterDb.getAllEpubBooks();
+      expect(books, hasLength(1));
+      expect(books.single.title, 'かがみの孤城');
 
-    // Folder cache cleared (stale, belonged to backup account) → rebuild later:
-    expect(await afterDb.getPref('sync_root_folder_id__webDav'), isNull);
+      // Folder cache cleared (stale, belonged to backup account) → rebuild later:
+      expect(await afterDb.getPref('sync_root_folder_id__webDav'), isNull);
 
-    // Sidecar + pre-restore copy cleaned up (no disk leak):
-    expect(File('${currentDir.path}/fushi.db.sync-preserve.json').existsSync(),
-        isFalse);
-    expect(File('${currentDir.path}/fushi.db.pre-restore.bak').existsSync(),
-        isFalse);
-  });
-
-  test('recoverPendingRestore re-applies a leftover sidecar then clears it',
-      () async {
-    final dir = await _tempDir('fushi_recover_');
-    addTearDown(() => cleanupTempDir(dir));
-
-    // Simulate a DB whose sync config was wiped by a crashed import.
-    final db = FushiDatabase(dir.path);
-    await SyncRepository(db).setRootFolderId(
-        SyncChannelScope.forBackendType(SyncBackendType.webDav), 'stale-root');
-    await db.close();
-
-    // Sidecar left behind by the crashed import (raw stored values).
-    await File('${dir.path}/fushi.db.sync-preserve.json').writeAsString(
-      jsonEncode(<String, String>{
-        'sync_backend_type': 'dropbox',
-        'sync_webdav_password': _b64('recovered'),
-      }),
-    );
-
-    await BackupRestoreService.recoverPendingRestore(dir.path);
-
-    final db2 = FushiDatabase(dir.path);
-    addTearDown(db2.close);
-    final repo = SyncRepository(db2);
-    expect(await repo.getBackendType(), SyncBackendType.dropbox);
-    expect(await repo.getWebDavPassword(), 'recovered');
-    expect(await db2.getPref('sync_root_folder_id__webDav'), isNull); // cleared
-    expect(
-        File('${dir.path}/fushi.db.sync-preserve.json').existsSync(), isFalse);
-  });
+      // Sidecar + pre-restore copy cleaned up (no disk leak):
+      expect(
+        File('${currentDir.path}/fushi.db.sync-preserve.json').existsSync(),
+        isFalse,
+      );
+      expect(
+        File('${currentDir.path}/fushi.db.pre-restore.bak').existsSync(),
+        isFalse,
+      );
+    },
+  );
 
   test(
-      'BUG-454: overwrite import of a backup WITHOUT dictionaries keeps this '
+    'recoverPendingRestore re-applies a leftover sidecar then clears it',
+    () async {
+      final dir = await _tempDir('fushi_recover_');
+      addTearDown(() => cleanupTempDir(dir));
+
+      // Simulate a DB whose sync config was wiped by a crashed import.
+      final db = FushiDatabase(dir.path);
+      await SyncRepository(db).setRootFolderId(
+        SyncChannelScope.forBackendType(SyncBackendType.webDav),
+        'stale-root',
+      );
+      await db.close();
+
+      // Sidecar left behind by the crashed import (raw stored values).
+      await File('${dir.path}/fushi.db.sync-preserve.json').writeAsString(
+        jsonEncode(<String, String>{
+          'sync_backend_type': 'dropbox',
+          'sync_webdav_password': _b64('recovered'),
+        }),
+      );
+
+      await BackupRestoreService.recoverPendingRestore(dir.path);
+
+      final db2 = FushiDatabase(dir.path);
+      addTearDown(db2.close);
+      final repo = SyncRepository(db2);
+      expect(await repo.getBackendType(), SyncBackendType.dropbox);
+      expect(await repo.getWebDavPassword(), 'recovered');
+      expect(
+        await db2.getPref('sync_root_folder_id__webDav'),
+        isNull,
+      ); // cleared
+      expect(
+        File('${dir.path}/fushi.db.sync-preserve.json').existsSync(),
+        isFalse,
+      );
+    },
+  );
+
+  test('BUG-454: overwrite import of a backup WITHOUT dictionaries keeps this '
       "device's dictionaries (rows + resource files)", () async {
     // ── This device: an imported dictionary (metadata row + history + a
     //    resource file on disk) ──
@@ -133,11 +152,13 @@ void main() {
     addTearDown(() => cleanupTempDir(dictResDir));
 
     final curDb = FushiDatabase(currentDir.path);
-    await curDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
-      name: '大辞泉',
-      formatKey: 'yomitan',
-      order: 0,
-    ));
+    await curDb.upsertDictionaryMeta(
+      DictionaryMetadataCompanion.insert(
+        name: '大辞泉',
+        formatKey: 'yomitan',
+        order: 0,
+      ),
+    );
     await curDb.replaceAllDictionaryHistory(<DictionaryHistoryCompanion>[
       DictionaryHistoryCompanion.insert(position: 0, resultJson: '{"x":1}'),
     ]);
@@ -157,20 +178,24 @@ void main() {
     final srcDb = FushiDatabase(srcDir.path);
     // Source HAS a dictionary, but we export with categories that EXCLUDE it,
     // so the export strips its rows + packs no resource files.
-    await srcDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
-      name: 'source-dict',
-      formatKey: 'yomitan',
-      order: 0,
-    ));
-    await srcDb.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: 'book-from-backup',
-      title: 'book-from-backup',
-      epubPath: '/fake/b.epub',
-      extractDir: '/fake/extract',
-      chapterCount: 1,
-      chaptersJson: '[]',
-      importedAt: DateTime.now().millisecondsSinceEpoch,
-    ));
+    await srcDb.upsertDictionaryMeta(
+      DictionaryMetadataCompanion.insert(
+        name: 'source-dict',
+        formatKey: 'yomitan',
+        order: 0,
+      ),
+    );
+    await srcDb.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'book-from-backup',
+        title: 'book-from-backup',
+        epubPath: '/fake/b.epub',
+        extractDir: '/fake/extract',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
     final zipDir = await _tempDir('fushi_zip_nodict_');
     addTearDown(() => cleanupTempDir(zipDir));
     final zipPath = '${zipDir.path}/backup.zip';
@@ -194,12 +219,12 @@ void main() {
 
     // Dictionary metadata + history PRESERVED (this device's, not the backup's
     // — the backup carried none).
-    final List<DictionaryMetaRow> dicts =
-        await afterDb.getAllDictionaryMetadata();
+    final List<DictionaryMetaRow> dicts = await afterDb
+        .getAllDictionaryMetadata();
     expect(dicts, hasLength(1));
     expect(dicts.single.name, '大辞泉');
-    final List<DictionaryHistoryRow> history =
-        await afterDb.getAllDictionaryHistory();
+    final List<DictionaryHistoryRow> history = await afterDb
+        .getAllDictionaryHistory();
     expect(history, hasLength(1));
 
     // Resource files on disk PRESERVED (the directory was never wiped).
@@ -212,8 +237,7 @@ void main() {
     expect(books.single.title, 'book-from-backup');
   });
 
-  test(
-      'BUG-454 guard: a backup WITH dictionaries still REPLACES this '
+  test('BUG-454 guard: a backup WITH dictionaries still REPLACES this '
       "device's dictionaries (replace semantics preserved)", () async {
     final currentDir = await _tempDir('fushi_cur_repl_');
     addTearDown(() => cleanupTempDir(currentDir));
@@ -222,11 +246,13 @@ void main() {
 
     // This device has a local-only dictionary.
     final curDb = FushiDatabase(currentDir.path);
-    await curDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
-      name: 'local-only',
-      formatKey: 'yomitan',
-      order: 0,
-    ));
+    await curDb.upsertDictionaryMeta(
+      DictionaryMetadataCompanion.insert(
+        name: 'local-only',
+        formatKey: 'yomitan',
+        order: 0,
+      ),
+    );
     await curDb.close();
     Directory('${dictResDir.path}/local-only').createSync(recursive: true);
 
@@ -236,17 +262,20 @@ void main() {
     final srcDictResDir = await _tempDir('fushi_src_dictres_with_');
     addTearDown(() => cleanupTempDir(srcDictResDir));
     final srcDb = FushiDatabase(srcDir.path);
-    await srcDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
-      name: 'backup-dict',
-      formatKey: 'yomitan',
-      order: 0,
-    ));
+    await srcDb.upsertDictionaryMeta(
+      DictionaryMetadataCompanion.insert(
+        name: 'backup-dict',
+        formatKey: 'yomitan',
+        order: 0,
+      ),
+    );
     await srcDb.close();
     // The export's includeDictionary gate requires resource files on disk for
     // every metadata row, so write one for 'backup-dict'.
     Directory('${srcDictResDir.path}/backup-dict').createSync(recursive: true);
-    File('${srcDictResDir.path}/backup-dict/index.json')
-        .writeAsStringSync('{"backup":true}');
+    File(
+      '${srcDictResDir.path}/backup-dict/index.json',
+    ).writeAsStringSync('{"backup":true}');
     final srcDb2 = FushiDatabase(srcDir.path);
     final zipDir = await _tempDir('fushi_zip_withdict_');
     addTearDown(() => cleanupTempDir(zipDir));
@@ -267,14 +296,16 @@ void main() {
 
     final afterDb = FushiDatabase(currentDir.path);
     addTearDown(afterDb.close);
-    final List<DictionaryMetaRow> dicts =
-        await afterDb.getAllDictionaryMetadata();
+    final List<DictionaryMetaRow> dicts = await afterDb
+        .getAllDictionaryMetadata();
     // The backup's dictionary replaced the device's local-only one.
     expect(dicts, hasLength(1));
     expect(dicts.single.name, 'backup-dict');
     // And the resource files were swapped to the backup's.
     expect(
-        File('${dictResDir.path}/backup-dict/index.json').existsSync(), isTrue);
+      File('${dictResDir.path}/backup-dict/index.json').existsSync(),
+      isTrue,
+    );
     expect(Directory('${dictResDir.path}/local-only').existsSync(), isFalse);
   });
 }

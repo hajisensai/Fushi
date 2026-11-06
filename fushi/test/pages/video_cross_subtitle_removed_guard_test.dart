@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-154 防回归源码守卫：跨字幕录制特性（TODO-102，参考 asbplayer 的多句拼接制卡）
 /// 已整特性下线（用户决策档 B，字幕列表可替代）。本守卫钉死该特性的所有 symbol /
@@ -54,8 +54,11 @@ void main() {
     for (final String path in sources) {
       final String src = File(path).readAsStringSync();
       for (final String symbol in bannedSymbols) {
-        expect(src.contains(symbol), isFalse,
-            reason: '$path 仍含已下线的跨字幕录制 symbol「$symbol」');
+        expect(
+          src.contains(symbol),
+          isFalse,
+          reason: '$path 仍含已下线的跨字幕录制 symbol「$symbol」',
+        );
       }
     }
   });
@@ -67,8 +70,11 @@ void main() {
       if (!entity.path.endsWith('.i18n.json')) continue;
       final String content = entity.readAsStringSync();
       for (final String key in bannedI18nKeys) {
-        expect(content.contains(key), isFalse,
-            reason: '${entity.path} 仍含已下线的跨字幕录制 i18n key「$key」');
+        expect(
+          content.contains(key),
+          isFalse,
+          reason: '${entity.path} 仍含已下线的跨字幕录制 i18n key「$key」',
+        );
       }
     }
   });

@@ -1,8 +1,9 @@
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/implementations/profile_management_page.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 SettingsDestination buildProfilesDestination() {
   return SettingsDestination(

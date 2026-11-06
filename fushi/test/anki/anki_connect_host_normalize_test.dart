@@ -81,8 +81,10 @@ void main() {
       });
 
       test('"http://localhost" 完整键入 → "localhost"', () {
-        expect(normalizeAnkiConnectHostInput('http://localhost').host,
-            'localhost');
+        expect(
+          normalizeAnkiConnectHostInput('http://localhost').host,
+          'localhost',
+        );
       });
     });
 

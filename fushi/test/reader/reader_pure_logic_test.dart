@@ -25,8 +25,12 @@ void main() {
     });
 
     test('小数 alpha 用 toStringAsFixed(2)', () {
-      const Color semi =
-          Color.from(alpha: 0.5, red: 0.0, green: 0.0, blue: 0.0);
+      const Color semi = Color.from(
+        alpha: 0.5,
+        red: 0.0,
+        green: 0.0,
+        blue: 0.0,
+      );
       expect(readerColorToCssRgba(semi), 'rgba(0,0,0,0.50)');
     });
 
@@ -38,8 +42,12 @@ void main() {
 
     test('alphaOverride 钉死 0.98（caret 焦点环契约），忽略 c.a', () {
       // c.a=0.3 必须被 override 0.98 顶掉。
-      const Color accent =
-          Color.from(alpha: 0.3, red: 1.0, green: 1.0, blue: 0.0);
+      const Color accent = Color.from(
+        alpha: 0.3,
+        red: 1.0,
+        green: 1.0,
+        blue: 0.0,
+      );
       expect(
         readerColorToCssRgba(accent, alphaOverride: 0.98),
         'rgba(255,255,0,0.98)',
@@ -47,8 +55,12 @@ void main() {
     });
 
     test('alphaOverride 钉死 0.34（custom 高亮契约），忽略 c.a', () {
-      const Color primary =
-          Color.from(alpha: 1.0, red: 0.0, green: 0.0, blue: 1.0);
+      const Color primary = Color.from(
+        alpha: 1.0,
+        red: 0.0,
+        green: 0.0,
+        blue: 1.0,
+      );
       expect(
         readerColorToCssRgba(primary, alphaOverride: 0.34),
         'rgba(0,0,255,0.34)',
@@ -57,16 +69,24 @@ void main() {
 
     test('通道 clamp 上界：>1.0 的越界通道夹到 255（安全网）', () {
       // 越界值理论不出现，但 clamp 是统一契约：保证不产出 >255 的脏值。
-      const Color over =
-          Color.from(alpha: 1.0, red: 2.0, green: -1.0, blue: 0.5);
+      const Color over = Color.from(
+        alpha: 1.0,
+        red: 2.0,
+        green: -1.0,
+        blue: 0.5,
+      );
       expect(readerColorToCssRgba(over), 'rgba(255,0,128,1.00)');
     });
 
     test('旧 caret 内联与新 override 等价（合法 0-1 通道下 clamp 不改变结果）', () {
       // 旧 caret 不 clamp：rgba(round(r*255),...,0.98)。合法 [0,1] 通道下，
       // clamp(0,255) 是恒等操作 → 与新 override 版逐字符一致。
-      const Color accent =
-          Color.from(alpha: 1.0, red: 0.2, green: 0.4, blue: 0.6);
+      const Color accent = Color.from(
+        alpha: 1.0,
+        red: 0.2,
+        green: 0.4,
+        blue: 0.6,
+      );
       final String legacy =
           'rgba(${(accent.r * 255).round()},${(accent.g * 255).round()},'
           '${(accent.b * 255).round()},0.98)';
@@ -83,9 +103,13 @@ void main() {
   });
 
   group('isValidFontData', () {
-    Uint8List sig(int b0, int b1, int b2, int b3,
-            [List<int> rest = const []]) =>
-        Uint8List.fromList(<int>[b0, b1, b2, b3, ...rest]);
+    Uint8List sig(
+      int b0,
+      int b1,
+      int b2,
+      int b3, [
+      List<int> rest = const [],
+    ]) => Uint8List.fromList(<int>[b0, b1, b2, b3, ...rest]);
 
     test('TrueType 0x00010000 通过', () {
       expect(isValidFontData(sig(0x00, 0x01, 0x00, 0x00)), isTrue);
@@ -138,54 +162,75 @@ void main() {
     const List<int> cumulative = <int>[0, 100, 300];
 
     test('空表 → (0, 0)', () {
-      final ChapterProgressTarget t =
-          resolveChapterProgressForGlobalOffset(<int>[], <int>[], 42);
+      final ChapterProgressTarget t = resolveChapterProgressForGlobalOffset(
+        <int>[],
+        <int>[],
+        42,
+      );
       expect(t.chapter, 0);
       expect(t.progress, 0.0);
     });
 
     test('章首 offset → 该章 progress 0', () {
-      final ChapterProgressTarget t =
-          resolveChapterProgressForGlobalOffset(cumulative, charCounts, 100);
+      final ChapterProgressTarget t = resolveChapterProgressForGlobalOffset(
+        cumulative,
+        charCounts,
+        100,
+      );
       expect(t.chapter, 1);
       expect(t.progress, 0.0);
     });
 
     test('章中 offset → 比例进度', () {
       // 第 1 章起始 100、长 200，offset 200 → (200-100)/200 = 0.5。
-      final ChapterProgressTarget t =
-          resolveChapterProgressForGlobalOffset(cumulative, charCounts, 200);
+      final ChapterProgressTarget t = resolveChapterProgressForGlobalOffset(
+        cumulative,
+        charCounts,
+        200,
+      );
       expect(t.chapter, 1);
       expect(t.progress, closeTo(0.5, 1e-9));
     });
 
     test('第一章内', () {
-      final ChapterProgressTarget t =
-          resolveChapterProgressForGlobalOffset(cumulative, charCounts, 25);
+      final ChapterProgressTarget t = resolveChapterProgressForGlobalOffset(
+        cumulative,
+        charCounts,
+        25,
+      );
       expect(t.chapter, 0);
       expect(t.progress, closeTo(0.25, 1e-9));
     });
 
     test('落在最后一章', () {
       // 第 2 章起始 300、长 50，offset 325 → (325-300)/50 = 0.5。
-      final ChapterProgressTarget t =
-          resolveChapterProgressForGlobalOffset(cumulative, charCounts, 325);
+      final ChapterProgressTarget t = resolveChapterProgressForGlobalOffset(
+        cumulative,
+        charCounts,
+        325,
+      );
       expect(t.chapter, 2);
       expect(t.progress, closeTo(0.5, 1e-9));
     });
 
     test('offset 超过总字数 → 钳在最后一章、progress clamp 到 1', () {
       // offset 9999 → 最后一章 (9999-300)/50 = 193.98 → clamp 1.0。
-      final ChapterProgressTarget t =
-          resolveChapterProgressForGlobalOffset(cumulative, charCounts, 9999);
+      final ChapterProgressTarget t = resolveChapterProgressForGlobalOffset(
+        cumulative,
+        charCounts,
+        9999,
+      );
       expect(t.chapter, 2);
       expect(t.progress, 1.0);
     });
 
     test('负 offset → 第 0 章、progress clamp 到 0', () {
       // 0 章起始 0、长 100，offset -5 → (-5)/100 = -0.05 → clamp 0.0。
-      final ChapterProgressTarget t =
-          resolveChapterProgressForGlobalOffset(cumulative, charCounts, -5);
+      final ChapterProgressTarget t = resolveChapterProgressForGlobalOffset(
+        cumulative,
+        charCounts,
+        -5,
+      );
       expect(t.chapter, 0);
       expect(t.progress, 0.0);
     });
@@ -194,8 +239,11 @@ void main() {
       const List<int> counts = <int>[0, 100];
       const List<int> cum = <int>[0, 0];
       // 两章累积都从 0 起：offset 0 命中最后一个 <=0 的章（索引 1），长 100。
-      final ChapterProgressTarget t =
-          resolveChapterProgressForGlobalOffset(cum, counts, 0);
+      final ChapterProgressTarget t = resolveChapterProgressForGlobalOffset(
+        cum,
+        counts,
+        0,
+      );
       expect(t.chapter, 1);
       expect(t.progress, 0.0);
     });
@@ -205,11 +253,15 @@ void main() {
       // absolutePos = cumulative[1] + round(0.5 * charCounts[1]) = 100 + 100 = 200。
       const int currentChapter = 1;
       const double savedProgress = 0.5;
-      final int absolutePos = cumulative[currentChapter] +
+      final int absolutePos =
+          cumulative[currentChapter] +
           (savedProgress * charCounts[currentChapter]).round();
       // 重新进入：resolve(absolutePos) 必须回到同一章、同一进度（不动点）。
       final ChapterProgressTarget t = resolveChapterProgressForGlobalOffset(
-          cumulative, charCounts, absolutePos);
+        cumulative,
+        charCounts,
+        absolutePos,
+      );
       expect(t.chapter, currentChapter);
       expect(t.progress, closeTo(savedProgress, 1e-9));
     });
@@ -222,7 +274,10 @@ void main() {
         final int absolutePos =
             cumulative[ch] + (prog * charCounts[ch]).round();
         final ChapterProgressTarget t = resolveChapterProgressForGlobalOffset(
-            cumulative, charCounts, absolutePos);
+          cumulative,
+          charCounts,
+          absolutePos,
+        );
         expect(t.chapter, ch);
         expect(t.progress, closeTo(prog, 0.02), reason: '章 $ch 进度 $prog 往返失真');
       }

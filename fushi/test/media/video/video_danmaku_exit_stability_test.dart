@@ -6,11 +6,11 @@ import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_danmaku_text_metrics.dart';
 
 VideoDanmakuItem _item(int startMs, String text) => VideoDanmakuItem(
-      startMs: startMs,
-      text: text,
-      mode: VideoDanmakuMode.scroll,
-      colorArgb: 0xFFFFFFFF,
-    );
+  startMs: startMs,
+  text: text,
+  mode: VideoDanmakuMode.scroll,
+  colorArgb: 0xFFFFFFFF,
+);
 
 /// 一条弹幕在某一帧的落位（用于跨帧比对）。
 class _Placement {
@@ -144,8 +144,10 @@ void main() {
             .entries
             .single;
         // 基准用独立测得的宽度 + 独立的阴影溢出常量，不用 entry 自己的字段。
-        final double renderedWidth =
-            VideoDanmakuTextMetrics.shared.widthOf(text, 1.0);
+        final double renderedWidth = VideoDanmakuTextMetrics.shared.widthOf(
+          text,
+          1.0,
+        );
         expect(
           entry.position.dx + renderedWidth + kVideoDanmakuShadowOverflow,
           lessThanOrEqualTo(0.0),
@@ -176,19 +178,22 @@ void main() {
         final Map<int, List<VideoDanmakuLayoutEntry>> byLane =
             <int, List<VideoDanmakuLayoutEntry>>{};
         for (final VideoDanmakuLayoutEntry entry in snapshot.entries) {
-          byLane.putIfAbsent(entry.lane, () => <VideoDanmakuLayoutEntry>[]).add(
-                entry,
-              );
+          byLane
+              .putIfAbsent(entry.lane, () => <VideoDanmakuLayoutEntry>[])
+              .add(entry);
         }
         for (final MapEntry<int, List<VideoDanmakuLayoutEntry>> lane
             in byLane.entries) {
           final List<VideoDanmakuLayoutEntry> row = lane.value
-            ..sort((VideoDanmakuLayoutEntry a, VideoDanmakuLayoutEntry b) =>
-                a.position.dx.compareTo(b.position.dx));
+            ..sort(
+              (VideoDanmakuLayoutEntry a, VideoDanmakuLayoutEntry b) =>
+                  a.position.dx.compareTo(b.position.dx),
+            );
           if (row.length > 1) sawSharedLane = true;
           for (int i = 1; i < row.length; i++) {
             // 阴影框：文本框左右各多出 kVideoDanmakuShadowOverflow。
-            final double leftBoxRight = row[i - 1].position.dx +
+            final double leftBoxRight =
+                row[i - 1].position.dx +
                 row[i - 1].width +
                 kVideoDanmakuShadowOverflow;
             final double rightBoxLeft =

@@ -110,33 +110,33 @@ class VideoDanmakuStyle {
 
   /// 已 clamp 到合法区间的规范化实例（读盘 / UI 滑块输入统一走此）。
   VideoDanmakuStyle normalized() => VideoDanmakuStyle(
-        fontScale: fontScale.clamp(minFontScale, maxFontScale).toDouble(),
-        opacity: opacity.clamp(minOpacity, maxOpacity).toDouble(),
-        speedScale: speedScale.clamp(minSpeedScale, maxSpeedScale).toDouble(),
-        areaFraction:
-            areaFraction.clamp(minAreaFraction, maxAreaFraction).toDouble(),
-      );
+    fontScale: fontScale.clamp(minFontScale, maxFontScale).toDouble(),
+    opacity: opacity.clamp(minOpacity, maxOpacity).toDouble(),
+    speedScale: speedScale.clamp(minSpeedScale, maxSpeedScale).toDouble(),
+    areaFraction: areaFraction
+        .clamp(minAreaFraction, maxAreaFraction)
+        .toDouble(),
+  );
 
   /// 滚动弹幕在屏时长（速度越大越短）。
   Duration get scrollDuration => Duration(
-        milliseconds:
-            (kDefaultVideoDanmakuScrollDuration.inMilliseconds / speedScale)
-                .round(),
-      );
+    milliseconds:
+        (kDefaultVideoDanmakuScrollDuration.inMilliseconds / speedScale)
+            .round(),
+  );
 
   /// 顶部/底部固定弹幕停留时长（速度越大越短）。
   Duration get fixedDuration => Duration(
-        milliseconds:
-            (kDefaultVideoDanmakuFixedDuration.inMilliseconds / speedScale)
-                .round(),
-      );
+    milliseconds:
+        (kDefaultVideoDanmakuFixedDuration.inMilliseconds / speedScale).round(),
+  );
 
   static String encode(VideoDanmakuStyle style) => jsonEncode(<String, dynamic>{
-        'fontScale': style.fontScale,
-        'opacity': style.opacity,
-        'speedScale': style.speedScale,
-        'areaFraction': style.areaFraction,
-      });
+    'fontScale': style.fontScale,
+    'opacity': style.opacity,
+    'speedScale': style.speedScale,
+    'areaFraction': style.areaFraction,
+  });
 
   static VideoDanmakuStyle decode(String? json) {
     if (json == null || json.isEmpty) return defaults;

@@ -44,6 +44,8 @@
 
 **为何能离屏后台跑**：合成按键走 Flutter 框架（不走 OS），与窗口是否在前台无关。桌面 runner 认环境变量 `FUSHI_TEST_HIDDEN` 把窗口停到屏外 + 不抢前台（`windows/runner/win32_window.cpp` / `macos/Runner/MainFlutterWindow.swift`），不挡你用电脑。
 
+> 帧时 / 性能探针要在**固定像素数**下比各轮时（BUG-3888），Windows 另加 `FUSHI_TEST_ONSCREEN=1 FUSHI_TEST_WINDOW_RECT=x,y,w,h`（外框物理像素）：runner 把位置和尺寸整轮钉住、Dart 启动时的工作区居中 / 恢复几何让位，**不置顶、不借前台线程输入、仍 `WS_EX_NOACTIVATE`**，被你的窗口盖住也照跑。与 `FUSHI_TEST_TOPMOST` 同时给时后者优先（那个会置顶，用户在用电脑时别用）。每轮核对探针打印的实际 size，对不上的那轮作废。
+
 > 离屏抓**真实像素**（观察功能是否渲染出来）走 Dart 抓图，不是 OS PrintWindow（后者对
 > Flutter/WebView 离屏全白）。见 [computer-use-testing.md](computer-use-testing.md) 的
 > 「离屏观察」与 `integration_test/helpers/observe_capture.dart`。
@@ -65,7 +67,14 @@ flutter test integration_test/<t>_test.dart -d emulator-<port>     # 或 ci/inte
 #   （2026-09-12 探针多次 raf=0，非每次）。重锚落定已改经 _reanchorFrame（隐藏页走
 #   setTimeout），位置 / 进度 / 账本在 Mac runner 上照常落地；若某测试仍卡 pending，
 #   给它加 WebView 探针（见 audiobook_resume_align_itest）打 raf/hidden 再判。
+# iOS 模拟器里「平台视图（WKWebView）能不能收到真实触摸」：
+#   TEST=integration_test/ios_popup_real_touch_itest.dart \
+#     bash integration_test/support/run_sim_touch_itest.sh <udid>     # Mac，fushi/ 下
+#   XCUITest 投真实触摸；测试侧必须先 IosRealTouchSession.start(binding)——集成测试绑定的
+#   TestPlatformDispatcher 吞掉 onHitTest，不装它 WKWebView 一次触摸都收不到（BUG-1692 iOS 节）。
 ```
+
+**本机 Windows + 自己的 Mac 一起跑桌面集成测试**：在 `fushi/` 下 `dart tool/dist_test.dart --itest`（只跑 `tool/test_flow/dist_itests.json` 清单里的文件，每台机器每轮只编一次 app、每个文件一次 `flutter drive --use-application-binary` 启动——`flutter test -d` 每个文件都从临时入口整编一遍，单文件 45–130 s 全耗在编译上；每个文件在清单列出的每个平台各启动一次；Windows 走上面的 `run_windows_itest.ps1` 隔离，Mac 经 ssh 离屏 + `FUSHI_TEST_ROOT` 隔离数据根）。worker 要在 `workers.local.json` 里声明 `itest` 能力才会接，朋友机器（`ssh-shim`）永远不接。设计与实测见 [docs/specs/2026-10-24-distributed-unit-tests.md](../specs/2026-10-24-distributed-unit-tests.md)「集成测试分流」。
 
 `reader_computer_use_flow` 在 Windows runner 下还会把可见验收证据（function-matrix、flutter-ui-tree、截图）写进 `.codex-test/windows-itest/<run-id>/computer-use/...`——产物清单、判读规则、「截图缺失≠功能失败」见 [computer-use-testing.md](computer-use-testing.md)。
 

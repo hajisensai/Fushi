@@ -95,16 +95,16 @@ class _FakeSyncBackend implements SyncBackend {
   Future<List<AssetEntry>> listChildren(String id) async {
     if (id == _dictNs) return const <AssetEntry>[];
     if (id == folderId) {
-      return const <AssetEntry>[
-        AssetEntry(id: epubAssetId, name: 'book.epub'),
-      ];
+      return const <AssetEntry>[AssetEntry(id: epubAssetId, name: 'book.epub')];
     }
     return const <AssetEntry>[];
   }
 
   @override
-  void restoreCache(
-      {String? rootFolderId, Map<String, String>? titleToFolderId}) {}
+  void restoreCache({
+    String? rootFolderId,
+    Map<String, String>? titleToFolderId,
+  }) {}
   @override
   String? get cachedRootFolderId => null;
   @override
@@ -114,8 +114,11 @@ class _FakeSyncBackend implements SyncBackend {
 
   // ── 下载：写一个真实可解析的 EPUB 到目标 ─────────────────────────
   @override
-  Future<void> getAsset(String assetId, File destination,
-      {void Function(double progress)? onProgress}) async {
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async {
     fetchedAssetIds.add(assetId);
     await destination.writeAsBytes(_buildMinimalEpub(bookTitle));
   }
@@ -139,8 +142,7 @@ class _FakeSyncBackend implements SyncBackend {
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<TtuProgress> getProgressFile(String fileId) async =>
       throw UnimplementedError();
@@ -155,41 +157,37 @@ class _FakeSyncBackend implements SyncBackend {
     required String folderId,
     required String? fileId,
     required TtuProgress progress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> updateStatsFile({
     required String folderId,
     required String? fileId,
     required List<TtuStatistics> stats,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> updateAudioBookFile({
     required String folderId,
     required String? fileId,
     required TtuAudioBook audioBook,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> uploadContentFile({
     required String folderId,
     required String fileName,
     required File file,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<SyncFileRef?> findContentFile(
-          String folderId, String fileName) async =>
-      throw UnimplementedError();
+    String folderId,
+    String fileName,
+  ) async => throw UnimplementedError();
   @override
   Future<AssetEntry?> findAsset(String namespaceId, String name) async =>
       throw UnimplementedError();
@@ -197,9 +195,12 @@ class _FakeSyncBackend implements SyncBackend {
   Future<String> ensureFolder(String parentId, String name) async =>
       throw UnimplementedError();
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
   Future<Object?> getJsonAsset(String assetId) async =>
       throw UnimplementedError();
@@ -221,8 +222,9 @@ void main() {
   // mock 成一个临时目录即可，导入的书才真正落盘 + 入库。
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_compare_download_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_compare_download_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -246,66 +248,74 @@ void main() {
   });
 
   testWidgets(
-      'remote-only book renders a direct download action and tapping it '
-      'imports it', (WidgetTester tester) async {
-    final FushiDatabase db = _memDb();
-    addTearDown(db.close);
-    final Directory tempDir =
-        Directory.systemTemp.createTempSync('fushi_compare_download_tmp');
-    addTearDown(() {
-      try {
-        if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
-      } catch (_) {}
-    });
+    'remote-only book renders a direct download action and tapping it '
+    'imports it',
+    (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Directory tempDir = Directory.systemTemp.createTempSync(
+        'fushi_compare_download_tmp',
+      );
+      addTearDown(() {
+        try {
+          if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+        } catch (_) {}
+      });
 
-    tester.view.physicalSize = const Size(1200, 1600);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
+      tester.view.physicalSize = const Size(1200, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
 
-    final _FakeSyncBackend fake =
-        _FakeSyncBackend(bookTitle: 'RemoteOnlyBook', folderId: 'folderX');
+      final _FakeSyncBackend fake = _FakeSyncBackend(
+        bookTitle: 'RemoteOnlyBook',
+        folderId: 'folderX',
+      );
 
-    // 前置：本机没有任何书。
-    expect(await db.getAllEpubBooks(), isEmpty);
+      // 前置：本机没有任何书。
+      expect(await db.getAllEpubBooks(), isEmpty);
 
-    await tester.pumpWidget(
-      TranslationProvider(
-        child: MaterialApp(
-          home: Scaffold(
-            body: SyncCompareDialog(db: db, backend: fake, tempDir: tempDir),
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: SyncCompareDialog(db: db, backend: fake, tempDir: tempDir),
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    // remote-only 条目渲染出「下载」动作，但不再默认纳入 Apply 批量对账。
-    expect(find.text('RemoteOnlyBook'), findsOneWidget);
-    expect(find.text(t.sync_compare_download), findsOneWidget);
-    expect(find.byType(Checkbox), findsNothing,
-        reason: '远端独有书应像 Fushi 互联列表一样点行内动作下载，不再用勾选框');
+      // remote-only 条目渲染出「下载」动作，但不再默认纳入 Apply 批量对账。
+      expect(find.text('RemoteOnlyBook'), findsOneWidget);
+      expect(find.text(t.sync_compare_download), findsOneWidget);
+      expect(
+        find.byType(Checkbox),
+        findsNothing,
+        reason: '远端独有书应像 Fushi 互联列表一样点行内动作下载，不再用勾选框',
+      );
 
-    // Apply 按钮计数为 0（remote-only 下载是行内瞬时动作）。
-    expect(find.text(t.sync_compare_apply(count: 0)), findsOneWidget);
+      // Apply 按钮计数为 0（remote-only 下载是行内瞬时动作）。
+      expect(find.text(t.sync_compare_apply(count: 0)), findsOneWidget);
 
-    // 点行内下载（widget 测试可用 tap）→ 真走 importRemoteBookFolder。
-    // 导入经真实后台 isolate（EpubImporter.compute）+ 真实文件 IO；这些真实
-    // 异步只在 runAsync 提供的真实事件循环里推进，fake 时钟的 pump 推不动它，
-    // 所以整个「触发 + 等落库」必须在 runAsync 内完成。
-    List<EpubBookRow> books = const <EpubBookRow>[];
-    await tester.runAsync(() async {
-      await tester.tap(find.text(t.sync_compare_download));
-      for (int i = 0; i < 120; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-        books = await db.getAllEpubBooks();
-        if (books.isNotEmpty) break;
-      }
-    });
-    await tester.pump();
+      // 点行内下载（widget 测试可用 tap）→ 真走 importRemoteBookFolder。
+      // 导入经真实后台 isolate（EpubImporter.compute）+ 真实文件 IO；这些真实
+      // 异步只在 runAsync 提供的真实事件循环里推进，fake 时钟的 pump 推不动它，
+      // 所以整个「触发 + 等落库」必须在 runAsync 内完成。
+      List<EpubBookRow> books = const <EpubBookRow>[];
+      await tester.runAsync(() async {
+        await tester.tap(find.text(t.sync_compare_download));
+        for (int i = 0; i < 120; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          books = await db.getAllEpubBooks();
+          if (books.isNotEmpty) break;
+        }
+      });
+      await tester.pump();
 
-    // 下载确实发生，且远端书被导入本机。
-    expect(fake.fetchedAssetIds, contains(_FakeSyncBackend.epubAssetId));
-    expect(books, isNotEmpty, reason: '点 Apply 必须把远端独有书真正下载导入本机');
-    expect(books.any((EpubBookRow b) => b.title == 'RemoteOnlyBook'), isTrue);
-  });
+      // 下载确实发生，且远端书被导入本机。
+      expect(fake.fetchedAssetIds, contains(_FakeSyncBackend.epubAssetId));
+      expect(books, isNotEmpty, reason: '点 Apply 必须把远端独有书真正下载导入本机');
+      expect(books.any((EpubBookRow b) => b.title == 'RemoteOnlyBook'), isTrue);
+    },
+  );
 }

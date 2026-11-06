@@ -11,7 +11,10 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/mining/magpie_upscaling.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 让用户为某个游戏挑一档。返回 null = 用户取消（**不写任何东西**，保持原档）。
 ///
@@ -20,14 +23,11 @@ Future<MagpieUpscalingMode?> pickMagpieUpscalingMode(
   BuildContext context, {
   required MagpieUpscalingMode current,
   required String gameName,
-}) =>
-    showAppDialog<MagpieUpscalingMode>(
-      context: context,
-      builder: (BuildContext dialogContext) => MagpieUpscalingModeDialog(
-        current: current,
-        gameName: gameName,
-      ),
-    );
+}) => showAppDialog<MagpieUpscalingMode>(
+  context: context,
+  builder: (BuildContext dialogContext) =>
+      MagpieUpscalingModeDialog(current: current, gameName: gameName),
+);
 
 /// 三档单选对话框。每档都写清代价，范式同工作台的「音频降级策略」——这不是「高级
 /// 选项」，是用户按自己机器和这个游戏的分辨率来定的判断。
@@ -73,33 +73,31 @@ class MagpieUpscalingModeDialog extends StatelessWidget {
       title: Text(t.game_upscaling_pick_title(name: gameName)),
       content: SizedBox(
         width: 460,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  t.game_upscaling_pick_body,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                t.game_upscaling_pick_body,
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
-              for (final MagpieUpscalingMode mode in MagpieUpscalingMode.values)
-                FushiRadioListTile<MagpieUpscalingMode>(
-                  key: ValueKey<String>(
-                    'magpie-upscaling-mode-${magpieUpscalingModeToKey(mode)}',
-                  ),
-                  value: mode,
-                  groupValue: current,
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(modeLabel(mode)),
-                  subtitle: Text(_modeHint(mode)),
-                  onChanged: (MagpieUpscalingMode? picked) =>
-                      Navigator.of(context).pop(picked),
+            ),
+            for (final MagpieUpscalingMode mode in MagpieUpscalingMode.values)
+              FushiRadioListTile<MagpieUpscalingMode>(
+                key: ValueKey<String>(
+                  'magpie-upscaling-mode-${magpieUpscalingModeToKey(mode)}',
                 ),
-            ],
-          ),
+                value: mode,
+                groupValue: current,
+                contentPadding: EdgeInsets.zero,
+                title: Text(modeLabel(mode)),
+                subtitle: Text(_modeHint(mode)),
+                onChanged: (MagpieUpscalingMode? picked) =>
+                    Navigator.of(context).pop(picked),
+              ),
+          ],
         ),
       ),
     );

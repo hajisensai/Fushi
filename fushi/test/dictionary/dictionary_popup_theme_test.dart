@@ -15,9 +15,10 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
 /// 两条不变式都在 [resolveDictionaryPopupTheme] 里，故直接断言它的返回值，而不是
 /// 扫源码——扫源码只能证明「写了这行字」，证明不了颜色真的没被覆盖。
 void main() {
-  ColorScheme plainScheme(Brightness brightness) =>
-      ColorScheme.fromSeed(seedColor: const Color(0xFF1F4959),
-          brightness: brightness);
+  ColorScheme plainScheme(Brightness brightness) => ColorScheme.fromSeed(
+    seedColor: const Color(0xFF1F4959),
+    brightness: brightness,
+  );
 
   group('墨水屏：覆盖主题必须带 FushiEinkTheme 且不叠纸色', () {
     test('浅色墨水屏 = 纯白底，扩展为 true，纸色一点都渗不进来', () {
@@ -119,23 +120,22 @@ void main() {
       seedColor: const Color(0xFF00838F),
       brightness: Brightness.dark,
     );
-    ColorScheme purple(Brightness b) => ColorScheme.fromSeed(
-        seedColor: const Color(0xFF6750A4), brightness: b);
+    ColorScheme purple(Brightness b) =>
+        ColorScheme.fromSeed(seedColor: const Color(0xFF6750A4), brightness: b);
 
     DictionaryPopupTheme resolve({
       ColorScheme? cover,
       bool eink = false,
       bool glassDesign = false,
-    }) =>
-        resolveDictionaryPopupTheme(
-          eink: eink,
-          einkDark: false,
-          readerDark: false,
-          buildColorScheme: eink ? buildEinkColorScheme : purple,
-          textTheme: const TextTheme(),
-          glassDesign: glassDesign,
-          lyricsCoverScheme: cover,
-        );
+    }) => resolveDictionaryPopupTheme(
+      eink: eink,
+      einkDark: false,
+      readerDark: false,
+      buildColorScheme: eink ? buildEinkColorScheme : purple,
+      textTheme: const TextTheme(),
+      glassDesign: glassDesign,
+      lyricsCoverScheme: cover,
+    );
 
     test('传入封面 scheme：弹窗主题就是这份 scheme，外壳填充取它的 surface', () {
       final DictionaryPopupTheme resolved = resolve(cover: coverLight);
@@ -144,11 +144,17 @@ void main() {
       expect(cs.surface, coverLight.surface);
       expect(cs.onSurface, coverLight.onSurface);
       expect(cs.surfaceContainerHigh, coverLight.surfaceContainerHigh);
-      expect(cs.primary, isNot(purple(Brightness.light).primary),
-          reason: '歌词模式下不得再用 app 主色');
+      expect(
+        cs.primary,
+        isNot(purple(Brightness.light).primary),
+        reason: '歌词模式下不得再用 app 主色',
+      );
       expect(resolved.fillColor, coverLight.surface);
-      expect(resolved.fillColor, isNot(purple(Brightness.light).surface),
-          reason: '歌词页铺的是封面色，弹窗外壳不能再是 app 主题的 surface');
+      expect(
+        resolved.fillColor,
+        isNot(purple(Brightness.light).surface),
+        reason: '歌词页铺的是封面色，弹窗外壳不能再是 app 主题的 surface',
+      );
     });
 
     test('明暗跟封面 scheme（与歌词页一致），不读阅读器纸色明暗', () {
@@ -170,8 +176,10 @@ void main() {
       );
       expect(normal.fillColor, purple(Brightness.light).surface);
       expect(normal.theme.colorScheme, baseline.theme.colorScheme);
-      expect(normal.theme.colorScheme.primary,
-          purple(Brightness.light).primary);
+      expect(
+        normal.theme.colorScheme.primary,
+        purple(Brightness.light).primary,
+      );
     });
 
     test('墨水屏与 Apple 设计系统下忽略封面 scheme', () {
@@ -180,8 +188,10 @@ void main() {
       expect(eink.theme.colorScheme.surface, Colors.white);
       expect(eink.theme.extension<FushiEinkTheme>()?.einkMode, isTrue);
 
-      final DictionaryPopupTheme apple =
-          resolve(cover: coverLight, glassDesign: true);
+      final DictionaryPopupTheme apple = resolve(
+        cover: coverLight,
+        glassDesign: true,
+      );
       final DictionaryPopupTheme appleBaseline = resolve(glassDesign: true);
       expect(apple.theme.colorScheme, appleBaseline.theme.colorScheme);
       expect(apple.fillColor, appleBaseline.fillColor);
@@ -192,25 +202,24 @@ void main() {
   // （app 明暗的 Apple 主题 → FushiAppleDarkTier.darkTierOf），不再用阅读器纸色；
   // 退出（lyricsMode: false）回到原 Apple 主题；墨水屏下不生效。
   group('歌词模式 · Apple：弹窗跟歌词页深色档', () {
-    ColorScheme blue(Brightness b) => ColorScheme.fromSeed(
-        seedColor: const Color(0xFF0A84FF), brightness: b);
+    ColorScheme blue(Brightness b) =>
+        ColorScheme.fromSeed(seedColor: const Color(0xFF0A84FF), brightness: b);
 
     DictionaryPopupTheme resolve({
       required bool lyricsMode,
       bool appDark = false,
       bool readerDark = false,
       bool eink = false,
-    }) =>
-        resolveDictionaryPopupTheme(
-          eink: eink,
-          einkDark: appDark,
-          readerDark: readerDark,
-          buildColorScheme: eink ? buildEinkColorScheme : blue,
-          textTheme: const TextTheme(),
-          glassDesign: true,
-          glass: FushiGlassMaterial.frosted,
-          lyricsMode: lyricsMode,
-        );
+    }) => resolveDictionaryPopupTheme(
+      eink: eink,
+      einkDark: appDark,
+      readerDark: readerDark,
+      buildColorScheme: eink ? buildEinkColorScheme : blue,
+      textTheme: const TextTheme(),
+      glassDesign: true,
+      glass: FushiGlassMaterial.frosted,
+      lyricsMode: lyricsMode,
+    );
 
     ThemeData lyricsPage(Brightness appBrightness) =>
         FushiAppleDarkTier.darkTierOf(
@@ -234,8 +243,10 @@ void main() {
 
     test('阅读器明暗不影响：浅色纸 / 深色纸都跟 app 明暗出的深色档', () {
       final DictionaryPopupTheme a = resolve(lyricsMode: true);
-      final DictionaryPopupTheme b =
-          resolve(lyricsMode: true, readerDark: true);
+      final DictionaryPopupTheme b = resolve(
+        lyricsMode: true,
+        readerDark: true,
+      );
       expect(a.theme.colorScheme, b.theme.colorScheme);
       expect(a.fillColor, b.fillColor);
     });

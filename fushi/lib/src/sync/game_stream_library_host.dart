@@ -227,6 +227,23 @@ class FushiGameStreamLibraryHost implements GameStreamLibraryHost {
     }
   }
 
+  /// 这场串流的游戏在库里声明的内容语言（`GalgameEntry.language`），供 host 登记
+  /// 查词来源语言——串流里被查的台词来自 host 上运行的这款游戏，查词语言归 host，
+  /// 接收端无权声明。
+  ///
+  /// [gameId] 非空（从库里远程启动）按 id 找条目；为空（host 本机对正在运行的游戏
+  /// 开串流）按 Hook 会话的 exe 找。找不到或卡上没指定语言都返回 null，由调用方落到
+  /// 全局默认——绝不沿用上一个媒体页留下的语言。
+  Future<String?> streamGameLanguage({String? gameId}) async {
+    for (final GalgameEntry game in await _loadGames()) {
+      final bool matches = gameId != null && gameId.isNotEmpty
+          ? game.id == gameId
+          : _isRunning(game);
+      if (matches) return game.language;
+    }
+    return null;
+  }
+
   Future<GalgameEntry?> _find(String gameId) async {
     for (final GalgameEntry game in await _loadGames()) {
       if (game.id == gameId) return game;

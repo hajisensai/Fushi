@@ -23,11 +23,16 @@
 | 级别 | 判据 | 谁干 | 分支上的验证 |
 |---|---|---|---|
 | **S 琐碎** | 文档、注释、单行改动、纯重命名 | 主代理直接干，**不派子代理**（派发开销 > 收益） | `git diff --cached --check`；涉及 Dart 再加定向 analyze |
-| **A 小修** | 单文件或单模块，根因明确 | 主代理修核心；测试可拆一个子代理并行写 | `flutter analyze` 全量 + 定向 `flutter test <目标> --no-pub` |
+| **A 小修** | 单文件或单模块，根因明确 | 主代理修核心；测试可拆一个子代理并行写 | 定向 `flutter test <目标...> --no-pub`（一次调用）+ push 前一次 `flutter analyze` 全量 |
 | **B 功能 / 复杂 bug** | 跨模块、多文件、时序/状态/平台边界问题 | 主代理定根因和数据结构；机械面（样板、i18n、多文件同构、测试）拆子代理并行 | 定向 + 相邻功能测试；全量交 PR CI |
 | **C 大型 / 长周期** | 多阶段、需分批审查 | 按 claim 拆多 agent；integration owner 统一收口 | 定向 + 目录枚举型守卫整批；全量交 PR CI |
 
 **子代理纪律**（既有规则，重申）：后台派发，主代理不空等回传；每个子代理给明确文件清单，避免撞同一脏文件；强顺序依赖的步骤别硬拆；子代理回传必须核关键证据（`git diff --stat` / `test -f` / grep），不可全信叙述。审查 / 根因类子任务**不用 `fork`**（fork 继承整段对话连同已有倾向与猜测，失去独立性），用新开的子代理；派工 prompt **只给事实**（现象、复现步骤、文件路径、要回答的问题），不写「我怀疑是 X」「应该只要改 Y」，确有线索时标成「待证伪的线索」。
+
+**子代理的额度账**（2026-10-29 额度审计）：每个新开子代理首轮就要装载规则文件与工具定义，固定开销约 8 万 token（主会话约 10 万），所以：
+- 几次工具调用能做完的查找 / 读取主代理自己做；只有需要横扫多个文件、而主代理只要结论时才派只读定位子代理。
+- **跑测试按模型分工**：定向测试的执行与报告（按退出码 + 实际执行数判绿 / 红，原样贴失败摘要）是机械活，交低成本模型子代理；**只有红了**才交强模型子代理按「并发伪红判别」分型、定根因。绿的结果不必再经强模型复核。
+- 派工 prompt 给精确路径与行号范围，让子代理按需读片段，不整份读大文件；需要通读的大文件交给只读子代理读，主代理只收结论。
 
 ## 标准时间线（B 级功能，目标 ~12 min）
 
@@ -36,7 +41,7 @@ t=0   EnterWorktree → setup_worktree -SkipBootstrap（秒级，只搬密钥）
 t=0   ↳ 后台: powershell -File tool/bootstrap.ps1
 t=0   ↳ 并行: 主代理读代码定根因；≥2 个独立疑点 → 子代理并行定位
 t=3   根因确定 → 主代理写核心修改；同时子代理并行写测试/机械面
-t=8   bootstrap 已就绪 → dart format 改动文件 + flutter analyze + 定向 test --no-pub
+t=8   bootstrap 已就绪 → dart format 改动文件 + 定向 test --no-pub（几个文件一次调用）；全量 analyze 留到 push 前
 t=8   ↳ 测试跑的同时: 子代理建 bug 文档 (dart run tool/bug.dart new)，
       主代理写 commit message / PR 描述
 t=12  测试绿 → commit → push → draft PR（CI 跑全量兜底）
@@ -54,9 +59,9 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
     而**点名单个生产文件的守卫既不在那 51 条里、也不按功能域取名**，正好落在两道门的缝里。
     实测漏网：PR#764 收口弹窗复制入口，`test/dictionary/popup_touch_copy_actionmode_guard_test.dart`
     只被 `test/lookup` 的定向测试擦肩而过，红直接进了 develop（TODO-2745）。
-- **`flutter analyze` 全量在 push 前必跑**（含 test 目录）——它本身只要秒级~1 分钟，而 CI 把 warning 当致命，省这一步只会在 CI 上浪费一轮。
+- **`flutter analyze` 全量在 push 前必跑一次，且只在最后跑一次**（含 test 目录）——CI 把 warning 当致命，省这一步只会在 CI 上浪费一轮；但它每次要 2–3 分钟（实测 125–171 s，不含排队）、一个 3.4–4 GB 的 analysis server，开发中改一处就全量跑一遍、批量合并时逐分支各跑一遍都是白烧（2026-10-25 用户拍板：开发中用 `dart analyze <改动文件>`，全量留到 push 前 / 集成结果上一次）。租约上 analyze 是轻量任务：不占测试槽位、不排队，只记 4.5 GB 内存预算（[heavy-lease.md](heavy-lease.md)）。
 - **分支 draft PR**：全量 analyze 绿即可 push（2026-10-02 起推送门只有 analyze；定向测试在开发中按需跑，不是推送前置条件）；守卫与全量 test 由 CI 兜底（真单测门是 **Build Release APK 的 Run unit tests**，不是 Build and Test）。声明「修好了」的真机复测门槛**不变**（[integration-testing.md](integration-testing.md)）。
-- **合入 `develop`**：integration owner 本地全量 analyze + 定向 test + 「目录枚举型守卫」整批；**不再本地跑全量 test**（用户 2026-09-06 拍板：`dart run tool/flutter_test_failures.dart` 全量 / 裸 `flutter test` 全量一律不跑，全量只由 PR CI 兜底）。别 `| tail` 吞退出码；重叠跑会互抢 `sqlite3.dll`，见下节。
+- **合入 `develop`**：integration owner 本地全量 analyze + 定向 test + 「目录枚举型守卫」整批；**不再本地跑全量 test**（用户 2026-09-06 拍板：`dart run tool/flutter_test_failures.dart` 全量 / 裸 `flutter test` 全量一律不跑，全量只由 PR CI 兜底）。真要跑全量 / 成片目录时走跨机分流 `dart tool/dist_test.dart --config=D:/fushi-dist/workers.local.json`（2026-10-27 用户拍板，见根 `CLAUDE.md`「验证」），不单机裸跑。别 `| tail` 吞退出码；重叠跑会互抢 `sqlite3.dll`，见下节。
 
 ## 并发伪红判别
 
@@ -127,7 +132,7 @@ Get-CimInstance Win32_Process |
 
 **只枚举某个子树**的同样不进（`lib/src/sync` 的空 catch / PIN / TLS 三条、`lib/src/settings` 的旧 pref key、5 个媒体页根的焦点所有权……）：改动落在那个子树时，定向测试本来就会挑到它。
 
-### 清单（52 条，2026-08-02 反向枚举全量得出；TODO-2707 补入三份新语料守卫；BUG-1498 补入出站装配守卫；BUG-2064 补入分享入口守卫；2026-09-03 反向枚举复核补入 14 条；2026-10-16 补入正式版复习构建通道守卫）
+### 清单（51 条，2026-08-02 反向枚举全量得出；TODO-2707 补入三份新语料守卫；BUG-1498 补入出站装配守卫；BUG-2064 补入分享入口守卫；2026-09-03 反向枚举复核补入 14 条）
 
 | 测试 | 扫描根 | 守什么 |
 |---|---|---|
@@ -172,6 +177,7 @@ Get-CimInstance Win32_Process |
 | `test/lookup/popup_static_revision_dedup_guard_test.dart` | `lib` 全树 | 每个 `buildStackRenderScript` 调用方必须 commit 版本并接 `staticSettingsRequired` 回补 |
 | `test/models/preference_keys_guard_test.dart` | `lib` + `../packages/*/lib` | `getPref*`/`setPref*` 的字面量键必须在 `kKnownPreferenceKeys` 里 |
 | `test/pages/legacy_video_scrape_surface_guard_test.dart` | `lib` 全树 | legacy 在线刮削（TMDB 直连 / 候选链 / 弹窗）不得复活 |
+| `test/build/pure_dart_test_import_guard_test.dart` | `test/` 全树（沿 import 闭包） | 闭包碰不到 `dart:ui` 的测试必须用 `package:test`、不 import flutter_test（本机 `heavy.dart` 据此改走 `dart test`；自带 `>1000` 规模下界） |
 | `test/pages/library_view_labels_unique_test.dart` | `lib` 全树 | 库页壳的视图标签全仓唯一（新壳自动入网） |
 | `test/pages/open_in_anki_wiring_static_test.dart` | `lib` 全树 + `packages/fushi_anki/lib` | 「按词打开 Anki」只有登记的三条车道，禁第二处自制反查拼装（BUG-2051） |
 | `test/shortcuts/video_pointer_channel_reachability_test.dart` | `lib` 全树 | 视频指针通道的每条腿都得有真宿主接住（两处 `expectScanScale`） |
@@ -183,7 +189,6 @@ Get-CimInstance Win32_Process |
 | `test/tools/tests_for_changes_guard_test.dart` | `test/` 全树 + 全仓路径索引 | 「按触发条件加跑」的推导规则本身：索引规模 + 逐树下界 + 声明 glob 有效 |
 | `test/torrent/download_http_client_proxy_test.dart` | `lib` + 4 个 `packages/*/lib` | 下载链路的 HttpClient 必须走统一代理装配 |
 | `test/utils/net/network_image_proxy_guard_test.dart` | `lib` 全树 | 远端图片必须走 `AppHttpImage`/`AppCachedHttpImage`，裸 provider 会绕过全应用代理装配（自带 `expectScanScale` 哨兵） |
-| `test/build/prerelease_only_capability_guard_test.dart` | `lib` 全树 | 正式版屏蔽复习：构建通道判据只在 `PrereleaseOnlyCapability` 写一次，复习消费端不得自己读 `FUSHI_BUILD_VERSION` / 推通道（2026-10-16 补入，自带两处 `expectScanScale` + 合成语料自校验） |
 
 一条命令跑完，**当前基线 362 tests**（2026-09-03 反向枚举复核后实测，51 条 ~62 秒；上一基线 256 / 37 条）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
 
@@ -233,6 +238,7 @@ cd fushi && dart run tool/flutter_test_failures.dart --no-pub \
   test/tools/outbound_http_discipline_guard_test.dart \
   test/utils/share_entry_point_guard_test.dart \
   test/dictionary/parked_realm_host_registration_guard_test.dart \
+  test/build/pure_dart_test_import_guard_test.dart \
   test/lookup/popup_static_revision_dedup_guard_test.dart \
   test/models/preference_keys_guard_test.dart \
   test/pages/legacy_video_scrape_surface_guard_test.dart \

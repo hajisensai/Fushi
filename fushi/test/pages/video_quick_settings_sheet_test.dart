@@ -20,7 +20,12 @@ import 'package:fushi/src/pages/implementations/video_shader_dialog.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_video.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 import '../helpers/video_quick_settings_harness.dart';
@@ -61,7 +66,6 @@ Future<VideoSheetHarness> _pumpSheet(
   Widget? audioTrackSection,
   Widget? subtitleTrackSection,
   VoidCallback? onSubtitleCategoryShown,
-  VoidCallback? onSwitchToSkiaRenderer,
   Widget Function(Widget sheet)? wrap,
   List<VideoGroup> groups = VideoGroup.values,
 }) async {
@@ -96,7 +100,6 @@ Future<VideoSheetHarness> _pumpSheet(
       onVideoFitModeChanged: onVideoFitModeChanged,
       onImmersiveModeChanged: onImmersiveModeChanged,
       onControlLayoutChanged: onControlLayoutChanged,
-      onSwitchToSkiaRenderer: onSwitchToSkiaRenderer,
       audioTrackSection: audioTrackSection,
       subtitleTrackSection: subtitleTrackSection,
       onSubtitleCategoryShown: onSubtitleCategoryShown,
@@ -996,52 +999,6 @@ void main() {
     expect(delay, 50);
   });
 
-  // ── TODO-1232 / BUG-597：视频黑屏（有声无画）降级行 ─────────────────────────
-  // Android 默认已保持 Impeller；受影响机型（Impeller 合成不了 media_kit 外部纹理，见
-  // BUG-597）经「播放」分类的一键「切 Skia 并重启」行显式降级。该行仅在页面判定本次跑
-  // Impeller + 渲染 channel 已接线（Android）时接线 onSwitchToSkiaRenderer；此处锁死
-  // 「有回调 → 行在 playback 详情渲染且可点触发」「无回调 → 不渲染该行」。
-  testWidgets('TODO-1232：提供 onSwitchToSkiaRenderer 时渲染「切 Skia」降级行并可触发', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1000, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    int switched = 0;
-    await _pumpSheet(tester, onSwitchToSkiaRenderer: () => switched++);
-
-    // 宽窗默认选中 playback 分类，降级行随之渲染。
-    final Finder row = find.widgetWithText(
-      ListTile,
-      t.video_render_skia_fix_title,
-    );
-    await tester.ensureVisible(row);
-    await tester.pumpAndSettle();
-    expect(
-      row,
-      findsOneWidget,
-      reason: 'onSwitchToSkiaRenderer 非空时「切 Skia」降级行须在 playback 详情渲染',
-    );
-    await tester.tap(row);
-    await tester.pump();
-    expect(switched, 1, reason: '点降级行须触发 onSwitchToSkiaRenderer 回调');
-  });
-
-  testWidgets('TODO-1232：onSwitchToSkiaRenderer 为 null 时不渲染「切 Skia」降级行', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1000, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pumpSheet(tester);
-
-    // 默认 playback 详情里倍速行在（证明确在 playback 分类），但降级行不渲染。
-    expect(find.text(t.video_setting_speed), findsOneWidget);
-    expect(
-      find.text(t.video_render_skia_fix_title),
-      findsNothing,
-      reason: '无 onSwitchToSkiaRenderer 回调时不应渲染「切 Skia」降级行',
-    );
-  });
-
   // ── TODO-060：字幕调轴（正名 + 滑条 + 数值输入） ───────────────────────────
 
   test('字幕调轴行用「字幕调轴」名（让用户找得到），不再叫旧的音画延迟', () {
@@ -1101,8 +1058,8 @@ void main() {
       ),
     );
     expect(slider.value, 1200);
-    expect(slider.min, -10000);
-    expect(slider.max, 10000);
+    expect(slider.min, -30000);
+    expect(slider.max, 30000);
 
     // 「当前延迟」与「手动输入」合成一行（反馈 nGxUGtYot9）：不再有单独的输入框，
     // 读数胶囊本身点按即原地变成数字输入，初值回显当前延迟。
@@ -1890,10 +1847,15 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pumpSheet(tester);
 
-    // 顶部分类页签：页签轨道与下方内容同一左缘（28），首段文字再进轨道内衬 4 +
-    // 页签内边距 16。
+    // 顶部分类页签：整排页签与下方内容同一左右缘（28），铺满面板宽度
+    // （2026-10-30「顶部栏改为全宽」）；首段文字落在左缘之内。
+    final Rect tabsRect = tester.getRect(
+      find.byKey(const ValueKey<String>('video-settings-tabs')),
+    );
+    expect(tabsRect.left, closeTo(28, 1.5));
+    expect(tabsRect.right, closeTo(1000 - 28, 1.5));
     final double tabTextLeft = tester.getTopLeft(_categoryChip('playback')).dx;
-    expect(tabTextLeft, closeTo(28 + 4 + 16, 1.5));
+    expect(tabTextLeft, greaterThan(28));
 
     // 下方详情（纵向 SingleChildScrollView，KeyedSubtree 内）：水平 inset 同 28、独占整宽。
     // picker 离屏 dropdown 测量树里也有无 padding 的 scroll，按「padding.left==28 的纵向
@@ -1981,12 +1943,16 @@ void main() {
       await tester.ensureVisible(chip);
       await tester.pumpAndSettle();
       final Offset start = tester.getCenter(chip);
-      final Offset end = tester.getCenter(target);
       final TestGesture gesture = await tester.startGesture(start);
+      // 终点每步按目标**当前**位置重算：拖进面板滚动视口的边缘带时页面会自动滚
+      // （BUG-4129），目标跟着移动，开拖前算好的坐标会落空。
       for (int step = 1; step <= 8; step++) {
-        await gesture.moveTo(Offset.lerp(start, end, step / 8)!);
+        await gesture.moveTo(
+          Offset.lerp(start, tester.getCenter(target), step / 8)!,
+        );
         await tester.pump(const Duration(milliseconds: 40));
       }
+      await gesture.moveTo(tester.getCenter(target));
       await gesture.up();
       await tester.pumpAndSettle();
     }
@@ -2941,9 +2907,11 @@ void main() {
       );
       // 主题切换行已移除：主题归全局「外观」设置，视频画面继承 app 主题，不在此重复暴露。
       for (final String src in <String>[sheet, schema, actions]) {
+        // 精确到键名：`video_setting_theme_song_*`（OP/ED 跳过等）是另一组设置，
+        // 裸子串会把它们误判成主题行。
         expect(
-          src,
-          isNot(contains('video_setting_theme')),
+          RegExp(r'video_setting_theme(?![A-Za-z0-9_])').hasMatch(src),
+          isFalse,
           reason: '视频设置不应再有独立主题切换行（主题归全局外观）',
         );
         expect(

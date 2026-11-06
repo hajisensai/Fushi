@@ -25,7 +25,17 @@ import 'package:fushi/src/media/video/video_subtitle_sync_row.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/video_shader_dialog.dart';
 import 'package:fushi/src/settings/settings_context.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
@@ -89,11 +99,11 @@ Future<({bool ok, String message})> verifyAniDbLogin(
 }) async {
   final VideoSourceScrapeGlobalConfig config =
       VideoSourceScrapeGlobalConfig.fromPreferences(
-    prefs,
-    resolvedTmdbApiKey: '',
-    // 只查凭据是否配齐，不拉资料；界面语言与登录无关。
-    uiLocaleTag: kFallbackVideoMetadataLocale,
-  );
+        prefs,
+        resolvedTmdbApiKey: '',
+        // 只查凭据是否配齐，不拉资料；界面语言与登录无关。
+        uiLocaleTag: kFallbackVideoMetadataLocale,
+      );
   final AnidbUdpConfig udp = config.anidbUdpConfig;
   if (!udp.isAvailable) {
     throw ArgumentError(t.video_anidb_login_test_incomplete);
@@ -124,20 +134,17 @@ String aniDbLoginFailureMessage(AnidbUdpException error) =>
       AnidbUdpFailure.authentication => t.video_anidb_login_test_failed_auth,
       AnidbUdpFailure.unavailable ||
       AnidbUdpFailure.clientOutdated ||
-      AnidbUdpFailure.clientBanned =>
-        t.video_anidb_login_test_failed_client,
+      AnidbUdpFailure.clientBanned => t.video_anidb_login_test_failed_client,
       AnidbUdpFailure.network ||
-      AnidbUdpFailure.timeout =>
-        t.video_anidb_login_test_failed_network,
+      AnidbUdpFailure.timeout => t.video_anidb_login_test_failed_network,
       AnidbUdpFailure.backoff => t.video_anidb_login_test_failed_backoff,
       AnidbUdpFailure.banned ||
-      AnidbUdpFailure.maintenance =>
-        t.video_anidb_login_test_failed_blocked,
+      AnidbUdpFailure.maintenance => t.video_anidb_login_test_failed_blocked,
       _ => t.video_anidb_login_test_failed_other(
-          reason: error.code == null
-              ? error.reason.name
-              : '${error.reason.name} ${error.code}',
-        ),
+        reason: error.code == null
+            ? error.reason.name
+            : '${error.reason.name} ${error.code}',
+      ),
     };
 
 void _showVideoSettingsSnackBar(SettingsContext settingsContext, String text) {
@@ -219,9 +226,11 @@ void previewVideoSubtitleStyle(
 ) {
   final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(context);
   // 播放中以页面权威值为基（与旧行为一致）；全局设置页叠在上一次拖动预览上。
-  final VideoSubtitleStyle next = mutate(host?.subtitleStyle() ??
-      videoSubtitleStyleDraft.value ??
-      currentVideoSubtitleStyle(context));
+  final VideoSubtitleStyle next = mutate(
+    host?.subtitleStyle() ??
+        videoSubtitleStyleDraft.value ??
+        currentVideoSubtitleStyle(context),
+  );
   videoSubtitleStyleDraft.value = next;
   if (host == null) return;
   host.onSubtitleStylePreview(next);
@@ -270,8 +279,9 @@ Future<void> commitVideoDanmakuStyle(
   SettingsContext context,
   VideoDanmakuStyle Function(VideoDanmakuStyle style) mutate,
 ) async {
-  final VideoDanmakuStyle next =
-      mutate(currentVideoDanmakuStyle(context)).normalized();
+  final VideoDanmakuStyle next = mutate(
+    currentVideoDanmakuStyle(context),
+  ).normalized();
   final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(context);
   if (host?.onDanmakuStyleCommit != null) {
     await host!.onDanmakuStyleCommit!(next);
@@ -373,6 +383,19 @@ Future<void> setVideoSubtitleObscureRevealDual(
   }
 }
 
+/// 副字幕「临时显形」开关的双通道写入，同构于 [setVideoSubtitleObscureRevealDual]。
+Future<void> setVideoSecondarySubtitleObscureRevealDual(
+  SettingsContext context,
+  bool value,
+) async {
+  final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(context);
+  if (host?.onSecondarySubtitleObscureRevealChanged != null) {
+    await host!.onSecondarySubtitleObscureRevealChanged!(value);
+  } else {
+    await context.appModel.setVideoSecondarySubtitleObscureReveal(value);
+  }
+}
+
 Future<void> setVideoRespectAssStyleDual(
   SettingsContext context,
   bool value,
@@ -382,6 +405,18 @@ Future<void> setVideoRespectAssStyleDual(
     await host!.onRespectAssStyleChanged!(value);
   } else {
     await context.appModel.setVideoRespectAssStyle(value);
+  }
+}
+
+Future<void> setYoutubeQualityTargetHeightDual(
+  SettingsContext context,
+  int height,
+) async {
+  final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(context);
+  if (host?.onYoutubeQualityChanged != null) {
+    await host!.onYoutubeQualityChanged!(height);
+  } else {
+    await context.appModel.setYoutubeQualityTargetHeight(height);
   }
 }
 
@@ -445,6 +480,19 @@ Future<void> resetVideoControlLayoutDual(SettingsContext context) async {
   context.refresh();
 }
 
+/// 「恢复默认沉浸模式按钮」：清掉沉浸布局存值，回到按普通布局派生（只剩锁按钮）。
+Future<void> resetVideoImmersiveControlLayoutDual(
+  SettingsContext context,
+) async {
+  final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(context);
+  if (host?.onImmersiveControlLayoutChanged != null) {
+    await host!.onImmersiveControlLayoutChanged!(null);
+  } else {
+    await context.appModel.setVideoImmersiveControlLayout(null);
+  }
+  context.refresh();
+}
+
 // ── 倍速吸附 ─────────────────────────────────────────────────────────────────
 
 /// 把滑条浮点值吸附到 0.1 档并夹进 0.5–2.0（消除二进制浮点尾差如 0.7000000000000001，
@@ -469,21 +517,6 @@ Widget buildVideoQualityEntryRow(SettingsContext context) {
         : null,
     trailing: const FushiIcon(FushiIcons.chevronRight),
     onTap: host.onOpenQuality,
-  );
-}
-
-/// TODO-1232 / BUG-597：视频黑屏（有声无画）降级入口——仅当页面判定本次跑
-/// Impeller 且渲染 channel 已接线（Android）时接线。点按 → 确认弹窗 → 关
-/// Impeller 走 Skia + 重启。
-Widget buildVideoSkiaFallbackRow(SettingsContext context) {
-  final VideoQuickSettingsHost host = videoQuickSettingsHostOf(context)!;
-  return FushiListTileControl(
-    dense: true,
-    leading: const FushiIcon(FushiIcons.animation),
-    title: Text(t.video_render_skia_fix_title),
-    subtitle: Text(t.video_render_skia_fix_hint),
-    trailing: const FushiIcon(FushiIcons.restart),
-    onTap: host.onSwitchToSkiaRenderer,
   );
 }
 
@@ -627,23 +660,22 @@ Widget buildVideoSubtitleTextColorRow(SettingsContext context) {
     context,
     title: t.video_setting_subtitle_text_color,
     icon: FushiIcons.textFields,
-    current: style.textColor ?? const Color(0xFFFFFFFF),
+    current: style.resolveTextColor(),
     onPreview: (Color c) => previewVideoSubtitleStyle(
       context,
       (VideoSubtitleStyle s) => applyVideoSubtitleTextColor(s, c),
     ),
-    onCommit: (Color c) => unawaited(commitVideoSubtitleStyle(
-      context,
-      (VideoSubtitleStyle s) => applyVideoSubtitleTextColor(s, c),
-    )),
+    onCommit: (Color c) => unawaited(
+      commitVideoSubtitleStyle(
+        context,
+        (VideoSubtitleStyle s) => applyVideoSubtitleTextColor(s, c),
+      ),
+    ),
   );
 }
 
 /// 字幕文字色（取色行与控制通道共用）。
-VideoSubtitleStyle applyVideoSubtitleTextColor(
-  VideoSubtitleStyle s,
-  Color c,
-) =>
+VideoSubtitleStyle applyVideoSubtitleTextColor(VideoSubtitleStyle s, Color c) =>
     s.copyWith(textColor: c);
 
 /// 字幕阴影色：保留当前阴影色的 alpha，只换 RGB（取色行与控制通道共用）。
@@ -663,21 +695,19 @@ VideoSubtitleStyle applyVideoSubtitleShadowColor(
 VideoSubtitleStyle applyVideoSubtitleOutlineColor(
   VideoSubtitleStyle s,
   Color c,
-) =>
-    s.copyWith(
-      outlineColor: c,
-      outlineThickness: s.outlineThickness <= 0 ? 2 : s.outlineThickness,
-    );
+) => s.copyWith(
+  outlineColor: c,
+  outlineThickness: s.outlineThickness <= 0 ? 2 : s.outlineThickness,
+);
 
 /// 字幕背景色：透明度为 0 时顶到可见基线 0.6（取色行与控制通道共用）。
 VideoSubtitleStyle applyVideoSubtitleBackgroundColor(
   VideoSubtitleStyle s,
   Color c,
-) =>
-    s.copyWith(
-      backgroundColor: c,
-      backgroundOpacity: s.backgroundOpacity <= 0 ? 0.6 : s.backgroundOpacity,
-    );
+) => s.copyWith(
+  backgroundColor: c,
+  backgroundOpacity: s.backgroundOpacity <= 0 ? 0.6 : s.backgroundOpacity,
+);
 
 /// 字幕**阴影**颜色取色行（#xif6-gtSz7）。取色器只给不透明色，这里保留当前阴影色的
 /// alpha（默认 0.9），只换 RGB——默认柔和投影的「半透明黑」观感不因换色变成实心硬影。
@@ -697,10 +727,12 @@ Widget buildVideoSubtitleShadowColorRow(SettingsContext context) {
       context,
       (VideoSubtitleStyle s) => applyColor(s, c),
     ),
-    onCommit: (Color c) => unawaited(commitVideoSubtitleStyle(
-      context,
-      (VideoSubtitleStyle s) => applyColor(s, c),
-    )),
+    onCommit: (Color c) => unawaited(
+      commitVideoSubtitleStyle(
+        context,
+        (VideoSubtitleStyle s) => applyColor(s, c),
+      ),
+    ),
   );
 }
 
@@ -754,10 +786,12 @@ Widget buildVideoSubtitleBgColorRow(SettingsContext context) {
       context,
       (VideoSubtitleStyle s) => applyColor(s, c),
     ),
-    onCommit: (Color c) => unawaited(commitVideoSubtitleStyle(
-      context,
-      (VideoSubtitleStyle s) => applyColor(s, c),
-    )),
+    onCommit: (Color c) => unawaited(
+      commitVideoSubtitleStyle(
+        context,
+        (VideoSubtitleStyle s) => applyColor(s, c),
+      ),
+    ),
   );
 }
 
@@ -772,22 +806,25 @@ Widget buildVideoShaderManager(SettingsContext context) {
   return VideoShaderManagerView(
     initialEnabled: decodeEnabledShaders(context.appModel.videoShadersEnabled),
     qualityEnhancementEnabled: currentVideoMpvConfig(context).highQuality,
-    onQualityEnhancementChanged: (bool value) => unawaited(commitVideoMpvConfig(
-      context,
-      (VideoMpvConfig c) => c.copyWith(highQuality: value),
-    )),
+    onQualityEnhancementChanged: (bool value) => unawaited(
+      commitVideoMpvConfig(
+        context,
+        (VideoMpvConfig c) => c.copyWith(highQuality: value),
+      ),
+    ),
     onApply: (List<String> names) async {
       await host.onApplyShaders(names);
       context.refresh();
     },
-    onSelectTier: (
-      VideoShaderTier tier,
-      bool highQuality,
-      List<String> enabledNames,
-    ) async {
-      await host.onSelectShaderTier(tier, highQuality, enabledNames);
-      context.refresh();
-    },
+    onSelectTier:
+        (
+          VideoShaderTier tier,
+          bool highQuality,
+          List<String> enabledNames,
+        ) async {
+          await host.onSelectShaderTier(tier, highQuality, enabledNames);
+          context.refresh();
+        },
     initialMpvDir: context.appModel.videoMpvShaderDir,
     onMpvDirChanged: (String dir) async {
       await host.onMpvShaderDirChanged?.call(dir);
@@ -860,8 +897,9 @@ class _VideoLuaScriptListState extends State<_VideoLuaScriptList> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Text(
               t.video_setting_mpv_lua_scripts_empty,
-              style: context.fushiType.bodyMedium
-                  .copyWith(color: theme.colorScheme.onSurfaceVariant),
+              style: context.fushiType.bodyMedium.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
           note,
@@ -900,20 +938,20 @@ class _VideoLuaScriptListState extends State<_VideoLuaScriptList> {
     final String? status = !live
         ? null
         : !loaded
-            ? t.video_setting_mpv_lua_scripts_status_pending
-            : error == null
-                ? t.video_setting_mpv_lua_scripts_status_loaded
-                : '${t.video_setting_mpv_lua_scripts_status_error}: $error';
+        ? t.video_setting_mpv_lua_scripts_status_pending
+        : error == null
+        ? t.video_setting_mpv_lua_scripts_status_loaded
+        : '${t.video_setting_mpv_lua_scripts_status_error}: $error';
     final IconData icon = error != null
         ? FushiIcons.error
         : loaded
-            ? FushiIcons.success
-            : FushiIcons.file;
+        ? FushiIcons.success
+        : FushiIcons.file;
     final Color? tint = error != null
         ? scheme.error
         : loaded
-            ? scheme.primary
-            : null;
+        ? scheme.primary
+        : null;
     return FushiListItem(
       density: FushiListDensity.compact,
       leading: FushiIcon(icon, color: tint),
@@ -958,8 +996,9 @@ class _VideoMpvRawConfFieldState extends State<_VideoMpvRawConfField> {
     // 契约依赖：页面 onMpvConfigChanged 在其第一个 await 前同步落 pref 缓存
     // （currentVideoMpvConfig 立即读到刚键入的值）——否则键入后的 rebuild 会在
     // 这里读到旧值并回写输入框、打断光标。改动持久化时序前先看这里。
-    final String external =
-        currentVideoMpvConfig(widget.settingsContext).rawConf;
+    final String external = currentVideoMpvConfig(
+      widget.settingsContext,
+    ).rawConf;
     if (external != _controller.text) _controller.text = external;
   }
 
@@ -999,10 +1038,12 @@ class _VideoMpvRawConfFieldState extends State<_VideoMpvRawConfField> {
               helperMaxLines: 4,
               border: const OutlineInputBorder(),
             ),
-            onChanged: (String v) => unawaited(commitVideoMpvConfig(
-              widget.settingsContext,
-              (VideoMpvConfig c) => c.copyWith(rawConf: v),
-            )),
+            onChanged: (String v) => unawaited(
+              commitVideoMpvConfig(
+                widget.settingsContext,
+                (VideoMpvConfig c) => c.copyWith(rawConf: v),
+              ),
+            ),
           ),
         ],
       ),
@@ -1070,8 +1111,8 @@ class _VideoDanmakuBlockRulesFieldState
           Text(
             t.video_setting_danmaku_block_rules_hint,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
           SizedBox(height: tokens.spacing.gap / 2),
           FushiTextFieldControl(
@@ -1104,5 +1145,14 @@ Widget buildVideoControlLayoutEditor(SettingsContext context) {
     customActionBindings:
         host.customActionBindings?.call() ?? VideoCustomActionBindings.empty,
     onCustomActionBindingsChanged: host.onCustomActionBindingsChanged,
+  );
+}
+
+/// 沉浸布局编辑器（锁定后屏幕左右侧栏的按钮）。只在宿主提供沉浸布局时可见。
+Widget buildVideoImmersiveControlLayoutEditor(SettingsContext context) {
+  final VideoQuickSettingsHost host = videoQuickSettingsHostOf(context)!;
+  return VideoImmersiveControlLayoutEditor(
+    layout: host.immersiveControlLayout!(),
+    onLayoutChanged: host.onImmersiveControlLayoutChanged,
   );
 }

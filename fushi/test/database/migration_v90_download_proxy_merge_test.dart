@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' show QueryRow;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v90（统一代理）：下载域独立的代理三态（`download_network_proxy_mode` +
@@ -92,11 +92,13 @@ Future<List<(String, String, String)>> _profileRows(FushiDatabase db) async {
       )
       .get();
   return rows
-      .map((QueryRow row) => (
-            row.read<String>('category'),
-            row.read<String>('key'),
-            row.read<String>('value'),
-          ))
+      .map(
+        (QueryRow row) => (
+          row.read<String>('category'),
+          row.read<String>('key'),
+          row.read<String>('value'),
+        ),
+      )
       .toList();
 }
 
@@ -127,10 +129,11 @@ void main() {
       globalProxy: '',
     );
 
-    final QueryRow version =
-        await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 118);
-    expect(db.schemaVersion, 118);
+    final QueryRow version = await db
+        .customSelect('PRAGMA user_version')
+        .getSingle();
+    expect(version.read<int>('user_version'), 146);
+    expect(db.schemaVersion, 146);
 
     expect(await _prefs(db), <String, String>{
       'theme': 's:dark',

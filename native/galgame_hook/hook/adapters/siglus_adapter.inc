@@ -29,11 +29,18 @@ struct SiglusVoiceTask {
   uint32_t source_length = 0;
   bool proved_source = false;
   bool exported = false;
+  // Silent message lane only: the lane and text_write_count sampled at the
+  // read, and the line it committed next (filename marker, not voice proof).
+  uint64_t following_lane_id = 0;
+  uint64_t following_baseline_seq = 0;
+  uint64_t following_text_event_id = 0;
   wchar_t path[kSiglusPathChars] = {0};
 };
 
 bool IsSiglusMessageVoiceMappingProved();
 bool IsSiglusMessageTextInstalled();
+bool IsSiglusMessageVoiceOwned();
+uint64_t SiglusMessageLaneThreadId();
 bool SameSiglusArchiveFile(const BY_HANDLE_FILE_INFORMATION& a,
                            const BY_HANDLE_FILE_INFORMATION& b);
 uint64_t ObserveSiglusMessageResource(HANDLE file, const uint8_t* index,
@@ -99,6 +106,10 @@ void RememberRealliveNwk(HANDLE handle, const wchar_t* path);
 void ObserveRealliveNwkRead(HANDLE file, const void* buffer, DWORD done,
                             LPOVERLAPPED overlapped);
 void ForgetRealliveNwk(HANDLE handle);
+// knife owns its voice-path filter, pairing and Nintendo Opus remux
+// (knife_adapter.inc). Open-time only: the engine reads each loose voice file
+// whole, so the path is the identity and no read/close tracking is needed.
+void RememberKnifeVoice(HANDLE handle, const wchar_t* path);
 
 bool HasOvkSuffix(const wchar_t* path) {
   if (path == nullptr) return false;
@@ -185,6 +196,7 @@ HANDLE WINAPI Detour_CreateFileW(LPCWSTR file_name, DWORD desired_access,
   }
   if (result != INVALID_HANDLE_VALUE) RememberHunexVoiceHfa(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberRealliveNwk(result, file_name);
+  if (result != INVALID_HANDLE_VALUE) RememberKnifeVoice(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberUnityVoiceBundle(file_name);
   return result;
 }
@@ -217,6 +229,7 @@ HANDLE WINAPI Detour_CreateFileA(LPCSTR file_name, DWORD desired_access,
       RememberLeafAquaplusVoicePak(result, wide);
       RememberHunexVoiceHfa(result, wide);
       RememberRealliveNwk(result, wide);
+      RememberKnifeVoice(result, wide);
       RememberUnityVoiceBundle(wide);
     }
   }
@@ -248,7 +261,7 @@ LPVOID WINAPI Detour_MapViewOfFile(HANDLE mapping, DWORD desired_access,
 }
 
 void QueueSiglusVoice(const wchar_t* path, uint64_t offset) {
-  if (path == nullptr || IsSiglusMessageTextInstalled()) return;
+  if (path == nullptr || IsSiglusMessageVoiceOwned()) return;
   const uint64_t now = GetTickCount64();
   for (int i = 0; i < kSiglusTaskSlots; ++i) {
     if (InterlockedCompareExchange(&g_siglus_tasks[i].state, 1, 0) != 0) {
@@ -262,6 +275,16 @@ void QueueSiglusVoice(const wchar_t* path, uint64_t offset) {
     g_siglus_tasks[i].source_length = 0;
     g_siglus_tasks[i].proved_source = false;
     g_siglus_tasks[i].exported = false;
+    // The owner check above already rules out a voice-owning lane, so an
+    // installed lane here is silent and its next line names this resource.
+    const uint64_t lane =
+        IsSiglusMessageTextInstalled() ? SiglusMessageLaneThreadId() : 0;
+    g_siglus_tasks[i].following_lane_id = lane;
+    g_siglus_tasks[i].following_baseline_seq =
+        lane != 0 && g_header != nullptr
+            ? fushi_voice_hook::AtomicLoadPreview64(&g_header->text_write_count)
+            : 0;
+    g_siglus_tasks[i].following_text_event_id = 0;
     wcsncpy_s(g_siglus_tasks[i].path, path, _TRUNCATE);
     InterlockedExchange(&g_siglus_tasks[i].state, 2);
     if (g_header != nullptr) g_header->reserved_luna |= kDiagSiglusVoiceQueued;
@@ -350,9 +373,33 @@ bool ReadExact(HANDLE file, void* buffer, uint32_t bytes) {
 
 #include "siglus_voice_export.inc"
 
+// Returns false while the silent lane's line may still follow the read; the
+// task then stays queued.  Expiry exports the resource unmarked.
+bool ResolveSiglusFollowingText(SiglusVoiceTask* task) {
+  if (task->following_lane_id == 0) return true;
+  fushi_voice_hook::VoiceTextCandidate
+      candidates[fushi_voice_hook::kTextLaneSlotCount] = {};
+  const size_t candidate_count =
+      CollectLaneCandidates(task->following_lane_id, candidates);
+  const auto decision = fushi_voice_hook::ResolveFollowingSelectedText(
+      task->tick_ms,
+      task->tick_ms + fushi_voice_hook::kSiglusFollowingTextWindowMs,
+      GetTickCount64(), task->following_lane_id, task->following_baseline_seq,
+      candidates, candidate_count);
+  if (decision.state == fushi_voice_hook::VoiceResourcePairState::kWait) {
+    return false;
+  }
+  task->following_text_event_id = decision.text_event_id;
+  return true;
+}
+
 void ProcessSiglusVoiceTasks() {
   for (int i = 0; i < kSiglusTaskSlots; ++i) {
     if (InterlockedCompareExchange(&g_siglus_tasks[i].state, 3, 2) == 2) {
+      if (!ResolveSiglusFollowingText(&g_siglus_tasks[i])) {
+        InterlockedExchange(&g_siglus_tasks[i].state, 2);
+        continue;
+      }
       ProcessSiglusVoiceTask(&g_siglus_tasks[i]);
       InterlockedExchange(&g_siglus_tasks[i].state, 0);
     }

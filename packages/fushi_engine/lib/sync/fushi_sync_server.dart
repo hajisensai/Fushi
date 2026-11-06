@@ -4,12 +4,19 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_relay.dart';
+import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/live_transcode.dart';
+import 'package:fushi_engine/sync/ai_relay_routes.dart';
 import 'package:fushi_engine/sync/bluray_clip_relay_pool.dart';
+import 'package:fushi_engine/sync/disc_share_routes.dart';
+import 'package:fushi_engine/media/video/disc/disc_share_manifest.dart'
+    show buildDiscShareManifest, DiscShareManifest;
 import 'package:fushi_engine/media/video/video_duration_probe.dart'
     show probeVideoDurationMs;
 import 'package:fushi_engine/media/video/video_subtitle_source.dart'
@@ -21,6 +28,8 @@ import 'package:fushi_engine/media/video/video_subtitle_source.dart'
         subtitleFormatForCodec;
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/repr_digest.dart';
+import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataWork;
@@ -29,6 +38,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
 import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
+    show DandanplayFileKey;
 import 'package:fushi_engine/sync/graphic_subtitle_track_export.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_device_link.dart';
 import 'package:fushi_engine/sync/interconnect_leaderboard_link.dart';
@@ -36,6 +47,7 @@ import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
+import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant_routes.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
@@ -44,6 +56,7 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_routes.dart';
+import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
@@ -55,9 +68,13 @@ import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart';
+import 'package:fushi_engine/srs/srs_remote_store.dart';
+import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
+import 'package:fushi_engine/sync/srs_change_feed.dart';
 import 'package:fushi_engine/sync/video_remote_service.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show fushiDebugPrint, mimeTypeForFilePath;
+    show SyncTombstoneKind, fushiDebugPrint, mimeTypeForFilePath;
+import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
 import 'package:meta/meta.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
@@ -229,6 +246,20 @@ bool _constantTimeEquals(Uint8List a, Uint8List b) {
   return result == 0;
 }
 
+/// 把 [file] 的字节流式交给响应体，流结束（传完 / 对端断开取消订阅）后删它所在的
+/// 临时目录。用 `async*` 的 `finally`：订阅被取消时同样执行。
+Stream<List<int>> _streamThenDeleteDir(File file) async* {
+  try {
+    yield* file.openRead();
+  } finally {
+    try {
+      await file.parent.delete(recursive: true);
+    } catch (_) {
+      // best-effort：临时目录清理失败不影响已发出的响应。
+    }
+  }
+}
+
 String? _extractVideoId(String reqPath, String suffix) {
   const String prefix = '/api/library/videos/';
   final String fullSuffix = '/$suffix';
@@ -266,10 +297,28 @@ String? _interconnectHeaderValue(shelf.Request request, String name) {
   return null;
 }
 
-File? _coverFile(String? path) {
+/// [file] 是普通文件（跟随链接）则返回其长度，否则 / stat 失败返回 null。一次 async
+/// stat 同时代替 `existsSync` + `lengthSync`（BUG-3756：host 路径上不留同步 stat）。
+Future<int?> _regularFileLength(File file) async {
+  try {
+    final FileStat stat = await file.stat();
+    return stat.type == FileSystemEntityType.file ? stat.size : null;
+  } on FileSystemException {
+    return null;
+  }
+}
+
+/// [path] 指向的封面文件存在则返回，否则 null。async：视频 / 合集封面常和视频一起
+/// 落在网络盘上，host 跑在 app 主 isolate 上，同步 existsSync 冷目录时会冻结全部
+/// 端点与 UI（BUG-3756）。
+Future<File?> _coverFile(String? path) async {
   if (path == null || path.isEmpty) return null;
   final File file = File(path);
-  return file.existsSync() ? file : null;
+  try {
+    return await file.exists() ? file : null;
+  } on FileSystemException {
+    return null;
+  }
 }
 
 /// MIME 推断收敛到 fushi_core 单一映射表 [mimeTypeForFilePath]（命名统一轮 G8）。
@@ -289,6 +338,7 @@ class FushiSyncServer {
     FushiRemoteHistoryService? historyService,
     FushiLibraryHostService? libraryService,
     MangaOcrHostJobManager? mangaOcrJobs,
+    ScreenOcrHost? screenOcr,
     HostJobManager? hostJobs,
     HostSubscriptionHost? subscriptions,
     HostDownloadHost? downloads,
@@ -299,35 +349,35 @@ class FushiSyncServer {
     DateTime Function()? now,
     PrefStore? prefs,
     Uint8List? Function(String dictionary, String path)?
-        dictionaryMediaProvider,
+    dictionaryMediaProvider,
     Map<String, String> Function()? dictionaryStylesProvider,
     FushiRemoteGameStreamService? gameStreamService,
     VideoRemoteService? videoRemoteService,
     @visibleForTesting BlurayClipRelayPool? blurayClipRelays,
-  })  : syncDataDir = p.join(syncDataDir, 'sync-data'),
-        _blurayClipRelays = blurayClipRelays ?? BlurayClipRelayPool(),
-        _requestedPort = port,
-        _token = token,
-        _allowLan = allowLan,
-        _securityContext = securityContext,
-        _hostFingerprint = hostFingerprint,
-        _deviceName = deviceName,
-        _remoteLookupService = remoteLookupService,
-        _miningService = miningService,
-        _historyService = historyService,
-        _libraryService = libraryService,
-        _mangaOcrJobs = mangaOcrJobs,
-        _hostJobs = hostJobs,
-        _downloads = downloads,
-        _assistant =
-            assistant == null ? null : HostAssistantSessions(assistant),
-        _subscriptions = subscriptions,
-        _dictionaryMediaProvider = dictionaryMediaProvider,
-        _dictionaryStylesProvider = dictionaryStylesProvider,
-        _gameStreamService = gameStreamService,
-        _videoRemoteService = videoRemoteService,
-        _prefs = prefs,
-        _now = now ?? DateTime.now;
+  }) : syncDataDir = p.join(syncDataDir, 'sync-data'),
+       _blurayClipRelays = blurayClipRelays ?? BlurayClipRelayPool(),
+       _requestedPort = port,
+       _token = token,
+       _allowLan = allowLan,
+       _securityContext = securityContext,
+       _hostFingerprint = hostFingerprint,
+       _deviceName = deviceName,
+       _remoteLookupService = remoteLookupService,
+       _miningService = miningService,
+       _historyService = historyService,
+       _libraryService = libraryService,
+       _mangaOcrJobs = mangaOcrJobs,
+       _screenOcr = screenOcr,
+       _hostJobs = hostJobs,
+       _downloads = downloads,
+       _assistant = assistant == null ? null : HostAssistantSessions(assistant),
+       _subscriptions = subscriptions,
+       _dictionaryMediaProvider = dictionaryMediaProvider,
+       _dictionaryStylesProvider = dictionaryStylesProvider,
+       _gameStreamService = gameStreamService,
+       _videoRemoteService = videoRemoteService,
+       _prefs = prefs,
+       _now = now ?? DateTime.now;
 
   final String syncDataDir;
   final int _requestedPort;
@@ -355,6 +405,9 @@ class FushiSyncServer {
   /// capabilities 不带该字段——老 client / 老 host 双向兼容。
   final MangaOcrHostJobManager? _mangaOcrJobs;
 
+  /// 截屏识字（`/api/ocr/screen` + capabilities `screenOcrV1`）。null = host 不提供，端点 404。
+  final ScreenOcrHost? _screenOcr;
+
   /// 通用任务（ASR 等，设计 §3.4）。null = host 不提供，`/api/jobs` 404、能力位无 `jobs`。
   final HostJobManager? _hostJobs;
 
@@ -373,7 +426,7 @@ class FushiSyncServer {
   /// the server has no compile-time coupling to the dictionary engine and
   /// stays unit-testable. Returns null -> the media endpoint answers 404.
   final Uint8List? Function(String dictionary, String path)?
-      _dictionaryMediaProvider;
+  _dictionaryMediaProvider;
 
   /// 词典名 → 该词典自带的 CSS（与 app 内弹窗 `window.dictionaryStyles` 同源）。查词
   /// 结果来自本机时，对端弹窗也必须用本机的词典样式渲染——对端未必装了同名词典，
@@ -404,6 +457,13 @@ class FushiSyncServer {
 
   final Map<String, _VideoStreamToken> _videoStreamTokens =
       <String, _VideoStreamToken>{};
+
+  /// 源文件平均码率（bps）的探测缓存，键 = 路径 + 大小 + 修改时间（文件被替换即
+  /// 失效）。`/streamurl` 下发给 client 的「自动」档判据用，ffprobe 每个文件只跑一次。
+  final Map<String, int?> _sourceBitrateCache = <String, int?>{};
+
+  /// 远端原盘的共享会话（`disc_share_routes.dart`）：token 在路径里，按空闲续期。
+  late final DiscShareTokenStore _discShares = DiscShareTokenStore(now: _now);
 
   /// 蓝光标题分段的解密会话（按流 token 复用，空闲回收；见 [BlurayClipRelayPool]）。
   final BlurayClipRelayPool _blurayClipRelays;
@@ -459,6 +519,23 @@ class FushiSyncServer {
   /// ——既有 pair_v2 行为零变化（Never break userspace）。
   Future<void> Function(FushiPairedPeerRegistration registration)? onPeerPaired;
 
+  /// 已鉴权的对端经 WebDAV 成功写入（PUT）或删除（DELETE）了同步目录里的一个文件后回调，
+  /// 参数是相对 [syncDataDir] 的路径（`/` 分隔，如 `fushi-data/fushi-srs/<profile>/v2/devices/<id>/head-…json`）。
+  /// host 自己也参与同一套资产协议时（复习同步：app 作为 host 直接读写这块目录）据此去抖触发
+  /// 一轮本机同步。host 经本机文件系统写，不走这里，所以不会自己触发自己。
+  void Function(String relativePath)? onClientWrite;
+
+  /// 同 [onClientWrite]，只在写入（PUT）成功时回调，并带上这次请求鉴权用的口令（per-peer token；共享 token / 没有
+  /// 时为 null）。host 据此认出是哪个已配对对端写的（复习同步：没自报名字的设备用对端名补全，devices.rs）。
+  void Function(String relativePath, String? peerToken)? onClientUpload;
+
+  /// 复习同步的「有新段」通知（`GET /api/srs/changes` 长轮询，srs_change_feed.dart）。对端写进 `fushi-srs/`
+  /// 时这里自己 bump；host 自己的复习数据发布到本机目录后由 app 调 [notifySrsChanged]。
+  final SrsChangeFeed srsChanges = SrsChangeFeed();
+
+  /// host 自己的复习数据刚发布到本机同步目录（app 侧在本机目录一轮上传了段之后调）。
+  void notifySrsChanged() => srsChanges.bump();
+
   /// TODO-961 M1b: 供给当前全部未吊销的 per-peer token（auth 校验入站请求时，除共享
   /// [_token] 外接受任一 peer token）。注入而非直连 DB。首次 auth 时惰性加载并缓存；
   /// [invalidatePeerTokenCache] 在配对/吊销后清缓存促其下次重载。null 时只认共享 token。
@@ -469,6 +546,34 @@ class FushiSyncServer {
   /// 端点 404、`/api/capabilities` 不声明，行为同升级前。
   InterconnectLeaderboardLinkHost? leaderboardLinkHost;
 
+  /// 远程复习库（docs/specs/2026-11-01-srs-remote-review-design.md）：每个请求现取，复习模块关着时回 null →
+  /// `/api/srs/remote/*` 404、`/api/capabilities` 不声明 [kSrsRemoteStoreCapability]。
+  SrsRemoteStoreService? Function()? srsRemoteStoreProvider;
+
+  /// 「互联主机」AI 提供商的主机侧（反馈 M8KvhMTHVS，`ai/ai_relay.dart`）：已配对设备把
+  /// 补全交给本机，用本机的提供商执行，key 不出本机。每个请求现取本机的 AI 设置；开关
+  /// 每个请求现读 [_prefs]（[readInterconnectAiRelayEnabled]）。null（旧调用方 / 单测）
+  /// → `/api/ai/relay/*` 404、能力位不声明 [kAiRelayCapability]，客户端据 404 报「主机
+  /// 版本太旧」。
+  AiSettingsSource Function()? aiRelaySettings;
+
+  /// 主机执行补全用的客户端（测试注入假上游）；null = 默认 [AiChatClient]。
+  AiChatClient Function()? aiRelayClientFactory;
+
+  AiRelayHostService? _aiRelayService;
+
+  AiRelayHostService? get _aiRelay {
+    final AiSettingsSource Function()? settings = aiRelaySettings;
+    if (settings == null) return null;
+    return _aiRelayService ??= AiRelayHostService(
+      settings: settings,
+      clientFactory: aiRelayClientFactory,
+    );
+  }
+
+  bool get _aiRelayAdvertised =>
+      aiRelaySettings != null && readInterconnectAiRelayEnabled(_prefs);
+
   /// 本 host 的稳定设备 id（与 LAN 广播 TXT `id=` 同值）。非 null 时
   /// `/api/capabilities` 公布 `hostId` + `addresses`，client 据此把同一台 host 的
   /// 多条地址归为一组、自动学习新地址（docs/specs/2026-09-28-interconnect-remote-reach.md
@@ -476,8 +581,9 @@ class FushiSyncServer {
   String? hostId;
 
   /// 「立即给这个视频补字幕」（`POST /api/library/videos/<id>/subtitle/backfill`）。
-  /// 补字幕服务住在 app（字幕来源 / 刮削身份 / AI 重排都在那边装配），无头服务端
-  /// 不接——null 时该端点回 501，能力位 `videoSubtitleBackfill=false`。
+  /// 服务本体是引擎的 `VideoSubtitleBackfillService`（media/video/subtitle/），app 与
+  /// 无头服务端各自装配字幕来源后注入。null（单测 / 旧调用方）时该端点回 501，
+  /// 能力位 `videoSubtitleBackfill=false`。
   VideoSubtitleBackfillRunner? videoSubtitleBackfill;
 
   /// 图形字幕整轨回传（`GET /api/library/videos/<id>/graphicsubtitle`）用的抽取实现。
@@ -491,8 +597,9 @@ class FushiSyncServer {
   HostSelfUpdater? hostSelfUpdater;
 
   /// 触发远程更新的一次性 nonce（GET 签发、POST 核销）。
-  late final HostUpdateNonceStore _hostUpdateNonces =
-      HostUpdateNonceStore(now: _now);
+  late final HostUpdateNonceStore _hostUpdateNonces = HostUpdateNonceStore(
+    now: _now,
+  );
 
   /// 用户在 host 上填的公网 / 反代 / DDNS 地址（每次 capabilities 实时读）。
   Future<List<String>> Function()? publicUrlsProvider;
@@ -550,10 +657,10 @@ class FushiSyncServer {
       port: port,
       tls: _securityContext != null,
       publicUrls:
-          await (publicUrlsProvider?.call() ?? Future<List<String>>.value(
-              const <String>[])),
-      extra: extraAddressesProvider?.call() ??
-          const <InterconnectHostAddress>[],
+          await (publicUrlsProvider?.call() ??
+              Future<List<String>>.value(const <String>[])),
+      extra:
+          extraAddressesProvider?.call() ?? const <InterconnectHostAddress>[],
       interfaceLister: interfaceLister,
     );
   }
@@ -617,7 +724,11 @@ class FushiSyncServer {
   Future<shelf.Response> handleInProcess(shelf.Request request) async {
     final shelf.Handler handler = _inProcessHandler ??= _buildHandler();
     final String basic = base64Encode(utf8.encode('admin:$_token'));
-    return handler(request.change(headers: <String, String>{'authorization': 'Basic $basic'}));
+    return handler(
+      request.change(
+        headers: <String, String>{'authorization': 'Basic $basic'},
+      ),
+    );
   }
 
   /// P2P 隧道的信任区监听口（docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
@@ -631,8 +742,9 @@ class FushiSyncServer {
   Future<int> startP2pListener() {
     final HttpServer? existing = _p2pServer;
     if (existing != null) return Future<int>.value(existing.port);
-    return _p2pStarting ??=
-        _bindP2pListener().whenComplete(() => _p2pStarting = null);
+    return _p2pStarting ??= _bindP2pListener().whenComplete(
+      () => _p2pStarting = null,
+    );
   }
 
   Future<int>? _p2pStarting;
@@ -660,10 +772,12 @@ class FushiSyncServer {
       (shelf.Request request) {
         final String? peer = _resolveTunnelPeer(request);
         return inner(
-          request.change(context: <String, Object>{
-            kFushiRequestZone: 'p2p',
-            if (peer != null) kFushiP2pPeer: peer,
-          }),
+          request.change(
+            context: <String, Object>{
+              kFushiRequestZone: 'p2p',
+              if (peer != null) kFushiP2pPeer: peer,
+            },
+          ),
         );
       },
       InternetAddress.loopbackIPv4,
@@ -710,11 +824,7 @@ class FushiSyncServer {
     // 直接对公网可达，token 与数据明文跑在公网上，用户却没有任何开关。开了 TLS
     // 才双栈——此时公网上的对端也只能经指纹钉扎的 TLS 进来。
     if (_securityContext == null) {
-      return shelf_io.serve(
-        handler,
-        InternetAddress.anyIPv4,
-        _requestedPort,
-      );
+      return shelf_io.serve(handler, InternetAddress.anyIPv4, _requestedPort);
     }
     try {
       return await shelf_io.serve(
@@ -748,9 +858,11 @@ class FushiSyncServer {
     await stopP2pListener();
     await main?.close(force: true);
     await _blurayClipRelays.closeAll();
+    _discShares.clear();
     _exportCache.dispose();
     // 漫画 P3：host 停机时中止在跑的 OCR 任务（页边界停，断点缓存保留）。
     await _mangaOcrJobs?.disposeAll();
+    await _screenOcr?.dispose();
     await _hostJobs?.disposeAll();
     await _assistant?.dispose();
   }
@@ -777,11 +889,11 @@ class FushiSyncServer {
             type.contains('application/json') || type.contains('xml');
         if (!compressible) return response;
         if (response.headers['content-encoding'] != null) return response;
-        final List<int> body = <int>[
-          for (final List<int> chunk in await response.read().toList())
-            ...chunk,
-        ];
-        final List<int> gzipped = gzip.encode(body);
+        // 按块攒进 BytesBuilder：展开成 List<int> 会把每字节装箱成 8 字节槽，几百 KB
+        // 的清单要多拷一份、多占 8 倍内存（同 game_stream.part.dart 的上传体）。
+        final BytesBuilder body = BytesBuilder(copy: false);
+        await response.read().forEach(body.add);
+        final List<int> gzipped = gzip.encode(body.takeBytes());
         return response.change(
           headers: <String, String>{
             'Content-Encoding': 'gzip',
@@ -870,10 +982,42 @@ class FushiSyncServer {
       if (method != 'GET') return shelf.Response(405);
       return _handlePing();
     }
+    // 复习同步快速通道（设计 §6.3）：令牌变了立刻回，没变挂到下一次写入或超时。鉴权走上方 middleware。
+    if (reqPath == '/api/srs/changes') {
+      if (method != 'GET') return shelf.Response(405);
+      final int token = await srsChanges.waitAfter(
+        int.tryParse(request.url.queryParameters['after'] ?? ''),
+      );
+      return jsonResponse(<String, dynamic>{'token': token});
+    }
+    // 远程复习库：已配对设备不下载卡组，直接在本机的复习库上复习。鉴权走上方 middleware。
+    if (reqPath.startsWith(kSrsRemoteStorePathPrefix)) {
+      final SrsRemoteStoreService? review = srsRemoteStoreProvider?.call();
+      if (review == null) return shelf.Response.notFound('SRS review off');
+      return handleSrsRemoteStoreRequest(review, request, method, reqPath);
+    }
+    if (reqPath.startsWith(kAiRelayPathPrefix)) {
+      final AiRelayHostService? relay = _aiRelay;
+      if (relay == null) return shelf.Response.notFound('AI relay off');
+      return handleAiRelayRequest(
+        relay,
+        request,
+        method,
+        reqPath,
+        enabled: readInterconnectAiRelayEnabled(_prefs),
+      );
+    }
     if (reqPath == '/api/capabilities') {
       if (method != 'GET') return shelf.Response(405);
       final shelf.Response response = await _handleCapabilities();
-      if (_videoRemoteService == null && !_leaderboardLinkAvailable) {
+      final bool srsRemoteStore = srsRemoteStoreProvider?.call() != null;
+      final bool screenOcr = await _screenOcr?.isAvailable() ?? false;
+      final bool aiRelay = _aiRelayAdvertised;
+      if (_videoRemoteService == null &&
+          !_leaderboardLinkAvailable &&
+          !srsRemoteStore &&
+          !screenOcr &&
+          !aiRelay) {
         return response;
       }
       final Map<String, dynamic> capabilities =
@@ -884,6 +1028,9 @@ class FushiSyncServer {
       if (_leaderboardLinkAvailable) {
         capabilities[kInterconnectLeaderboardLinkCapability] = true;
       }
+      if (srsRemoteStore) capabilities[kSrsRemoteStoreCapability] = true;
+      if (screenOcr) capabilities[kScreenOcrCapability] = true;
+      if (aiRelay) capabilities[kAiRelayCapability] = true;
       return jsonResponse(capabilities);
     }
     if (reqPath == '/api/host/addresses') {
@@ -895,6 +1042,12 @@ class FushiSyncServer {
     }
     // 漫画 P3：互联 host 代跑 OCR。鉴权走上方 middleware（无豁免），处理逻辑在
     // fushi_manga_ocr_host.dart（本文件是共享热点，只留最小分发）。
+    // 截屏识字（Steam Deck 游戏内识字等）：处理逻辑在 fushi_screen_ocr_host.dart。
+    if (reqPath == kScreenOcrPath) {
+      final ScreenOcrHost? screenOcr = _screenOcr;
+      if (screenOcr == null) return shelf.Response.notFound('Screen OCR off');
+      return screenOcr.handle(request);
+    }
     if (reqPath == '/api/ocr/job' || reqPath.startsWith('/api/ocr/job/')) {
       final MangaOcrHostJobManager? mangaOcr = _mangaOcrJobs;
       if (mangaOcr == null) return shelf.Response.notFound('Manga OCR off');
@@ -918,7 +1071,19 @@ class FushiSyncServer {
       if (assistant == null) {
         return shelf.Response.notFound('Host assistant off');
       }
-      return handleHostAssistantRequest(assistant, request, method, reqPath);
+      // 会话归属（BUG-4067）：认得出的 per-peer 口令才算「哪台设备」；共享口令 /
+      // 老 client 是匿名调用方——能开会话，但看不到任何会话历史。
+      final String? authorization = request.headers['authorization'];
+      final HostAssistantCaller caller = await _validatePeerAuth(authorization)
+          ? HostAssistantCaller(peerToken: _basicPassword(authorization!))
+          : HostAssistantCaller.anonymous;
+      return handleHostAssistantRequest(
+        assistant,
+        request,
+        method,
+        reqPath,
+        caller: caller,
+      );
     }
     if (reqPath == '/api/subscriptions' ||
         reqPath.startsWith('/api/subscriptions/')) {
@@ -962,6 +1127,13 @@ class FushiSyncServer {
         reqPath.startsWith('/api/library/videos/')) {
       return _handleLibraryVideos(request, method, reqPath);
     }
+    // 远端原盘的只读盘目录（会话 token 鉴权，豁免 Basic 见 auth 中间件）。
+    if (reqPath.startsWith(kDiscShareRoutePrefix)) {
+      if (_libraryService is! VideoDiscShareHost) {
+        return shelf.Response.notFound('Disc share off');
+      }
+      return handleDiscShareRequest(_discShares, request, method, reqPath);
+    }
     if (reqPath == '/api/library/aggregate') {
       return _handleLibraryAggregate(request, method, reqPath);
     }
@@ -973,6 +1145,9 @@ class FushiSyncServer {
     }
     if (reqPath == '/api/library/tags') {
       return _handleLibraryTags(request, method);
+    }
+    if (reqPath == '/api/library/media-links') {
+      return _handleLibraryMediaLinks(request, method);
     }
     if (reqPath == '/api/interconnect/service-config') {
       return _handleInterconnectServiceConfig(request, method);
@@ -1009,11 +1184,19 @@ class FushiSyncServer {
       // BUG-908(d)：改动文件系统的写操作按目标路径串行化，避免并发 PUT/DELETE/MKCOL
       // 同一路径互相踩（截断/半写/删了又建的竞态）。读操作（PROPFIND/GET/HEAD）不入闸。
       case 'PUT':
-        return _serializeDavWrite(fsPath, () => _handlePut(request, fsPath));
+        return _reportClientWrite(
+          reqPath,
+          await _serializeDavWrite(fsPath, () => _handlePut(request, fsPath)),
+          published: true,
+          authHeader: request.headers['authorization'],
+        );
       case 'MKCOL':
         return _serializeDavWrite(fsPath, () => _handleMkcol(fsPath));
       case 'DELETE':
-        return _serializeDavWrite(fsPath, () => _handleDelete(fsPath));
+        return _reportClientWrite(
+          reqPath,
+          await _serializeDavWrite(fsPath, () => _handleDelete(fsPath)),
+        );
       case 'HEAD':
         return _handleHead(fsPath);
       case 'OPTIONS':
@@ -1027,6 +1210,52 @@ class FushiSyncServer {
       default:
         return shelf.Response(405);
     }
+  }
+
+  /// 写成功（2xx）才回调 [onClientWrite]；回调异常不影响响应。[published] = 这次写带来了新内容（PUT）：
+  /// 只有它推进复习同步的长轮询令牌。删旧 head（客户端每发一个新 head 就清两代前的）没有任何新数据，
+  /// 以前也推进令牌，等于每轮多唤醒一次全部设备。
+  shelf.Response _reportClientWrite(
+    String reqPath,
+    shelf.Response response, {
+    bool published = false,
+    String? authHeader,
+  }) {
+    if (published &&
+        response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        // 复习同步的命名空间（srs/sync2/srs_location_store.dart kSrsSync2Namespace）下的 head：段先于 head
+        // 写，head 落地才说明这一轮的段齐了，只在这时唤醒长轮询。
+        reqPath.contains('/fushi-srs/') &&
+        p.posix.basename(reqPath).startsWith('head-')) {
+      srsChanges.bump();
+    }
+    final void Function(String relativePath)? cb = onClientWrite;
+    if (cb != null && response.statusCode >= 200 && response.statusCode < 300) {
+      try {
+        cb(reqPath.startsWith('/') ? reqPath.substring(1) : reqPath);
+      } catch (e, stack) {
+        engineLog.log('FushiSyncServer.onClientWrite', e, stack);
+      }
+    }
+    final void Function(String, String?)? upload = onClientUpload;
+    if (published &&
+        upload != null &&
+        response.statusCode >= 200 &&
+        response.statusCode < 300) {
+      final String? password = authHeader == null
+          ? null
+          : _basicPassword(authHeader);
+      try {
+        upload(
+          reqPath.startsWith('/') ? reqPath.substring(1) : reqPath,
+          password == null || password == _token ? null : password,
+        );
+      } catch (e, stack) {
+        engineLog.log('FushiSyncServer.onClientUpload', e, stack);
+      }
+    }
+    return response;
   }
 
   Future<shelf.Response> _handleVideoRemote(
@@ -1046,12 +1275,15 @@ class FushiSyncServer {
     // neither a body peerId nor the Basic username is an authenticated identity.
     final String? authorization = request.headers['authorization'];
     if (!await _validatePeerAuth(authorization)) {
-      return shelf.Response(403, body: '{"error":"paired_peer_required"}',
-          headers: <String, String>{'content-type': 'application/json'});
+      return shelf.Response(
+        403,
+        body: '{"error":"paired_peer_required"}',
+        headers: <String, String>{'content-type': 'application/json'},
+      );
     }
-    final String peerId = sha256.convert(
-      utf8.encode(_basicPassword(authorization!)!),
-    ).toString();
+    final String peerId = sha256
+        .convert(utf8.encode(_basicPassword(authorization!)!))
+        .toString();
     final BytesBuilder bytes = BytesBuilder(copy: false);
     await for (final List<int> chunk in request.read()) {
       bytes.add(chunk);
@@ -1065,22 +1297,29 @@ class FushiSyncServer {
       if (decoded is! Map<String, dynamic>) throw const FormatException();
       body = decoded;
     } on FormatException {
-      return shelf.Response(400, body: '{"error":"invalid_json"}',
-          headers: <String, String>{'content-type': 'application/json'});
+      return shelf.Response(
+        400,
+        body: '{"error":"invalid_json"}',
+        headers: <String, String>{'content-type': 'application/json'},
+      );
     }
     try {
       return jsonResponse(await service.handle(operation, body, peerId));
     } on VideoRemoteException catch (error) {
-      return shelf.Response(error.status,
-          body: jsonEncode(<String, String>{'error': error.code}),
-          headers: <String, String>{'content-type': 'application/json'});
+      return shelf.Response(
+        error.status,
+        body: jsonEncode(<String, String>{'error': error.code}),
+        headers: <String, String>{'content-type': 'application/json'},
+      );
     } catch (error, stack) {
       // 适配层把可预期失败都翻成 [VideoRemoteException]；走到这里的是真缺陷。
       // 记日志并回稳定机器码，手机按码本地化，不把内部异常文本发给对端。
       engineLog.log('FushiSyncServer.videoRemote.$operation', error, stack);
-      return shelf.Response(500,
-          body: jsonEncode(<String, String>{'error': videoRemoteInternalError}),
-          headers: <String, String>{'content-type': 'application/json'});
+      return shelf.Response(
+        500,
+        body: jsonEncode(<String, String>{'error': videoRemoteInternalError}),
+        headers: <String, String>{'content-type': 'application/json'},
+      );
     }
   }
 
@@ -1212,18 +1451,31 @@ ByteRange? parseByteRange(String? rangeHeader, int fileLength) {
 /// `If-Range`，必须照常 206；而带了 `If-Range` 的下载续传仍按验证器精确匹配，
 /// 不匹配（host 上文件已被替换）照样 200 全量（RFC 7233 §3.2 的原本语义）。
 ///
+/// [reprDigest]：整份表示（不是本次 Range 片段）的 RFC 9530 `Repr-Digest` 头值
+/// （`sha-256=:<base64>:`）。200 / 206 都带：续传的 client 把各段拼完后据它做整体
+/// 校验，判定「拼出来的就是 host 那份字节」（Sn4fYseBt4）。
+///
 /// 函数名无下划线前缀（公开），便于测试文件直接导入使用。
 Future<shelf.Response> serveFileWithRange(
   File file,
   shelf.Request request, {
   String? etag,
   bool ifRangeRequired = true,
+  String? reprDigest,
 }) async {
-  if (!file.existsSync()) {
+  // 一次 async stat 同时拿存在性与长度：视频流 / 漫画页 / 导出包都经这里，源文件
+  // 可能在网络盘上，同步 existsSync + lengthSync 会冻结 host 所在 isolate（BUG-3756）。
+  final FileStat stat;
+  try {
+    stat = await file.stat();
+  } on FileSystemException {
+    return shelf.Response.notFound('File not found');
+  }
+  if (stat.type != FileSystemEntityType.file) {
     return shelf.Response.notFound('File not found');
   }
 
-  final int fileLength = file.lengthSync();
+  final int fileLength = stat.size;
   final String contentType = _guessContentType(file.path);
   String? rangeHeader = request.headers['range'];
   if (etag != null && rangeHeader != null) {
@@ -1249,6 +1501,7 @@ Future<shelf.Response> serveFileWithRange(
         'Content-Length': '$fileLength',
         'Accept-Ranges': 'bytes',
         if (etag != null) 'ETag': etag,
+        if (reprDigest != null) kReprDigestHeader: reprDigest,
       },
     );
   }
@@ -1276,6 +1529,7 @@ Future<shelf.Response> serveFileWithRange(
       'Content-Range': 'bytes ${range.start}-${range.end}/$fileLength',
       'Accept-Ranges': 'bytes',
       if (etag != null) 'ETag': etag,
+      if (reprDigest != null) kReprDigestHeader: reprDigest,
     },
   );
 }
@@ -1285,9 +1539,15 @@ Future<shelf.Response> serveFileWithRange(
 /// 必变，client 手里的 `.part` 续传因验证器不匹配降级 200 全量，不会把两份文件
 /// 拼成坏片。与导出包的 `pkg-` 验证器（[ExportPackageCache.etagFor]）刻意分开：
 /// 那边钉的是进程内缓存的代数，这里钉的是用户库里的原文件。纯 ASCII。
-String videoFileEtag(File file) {
-  final int mtime = file.lastModifiedSync().millisecondsSinceEpoch;
-  return '"vid-${file.lengthSync()}-$mtime"';
+///
+/// async（一次 stat 取 size + mtime）：源文件常在网络盘上（BUG-3756）。文件不存在 /
+/// stat 失败抛 [FileSystemException]，与旧 `lengthSync` 同一契约。
+Future<String> videoFileEtag(File file) async {
+  final FileStat stat = await file.stat();
+  if (stat.type == FileSystemEntityType.notFound) {
+    throw FileSystemException('Cannot stat video file', file.path);
+  }
+  return '"vid-${stat.size}-${stat.modified.millisecondsSinceEpoch}"';
 }
 
 /// 导出包进程级缓存：包端点（epub/词典/有声书/本地音频）Range 续传的字节稳定性
@@ -1303,6 +1563,15 @@ String videoFileEtag(File file) {
 /// best-effort（Windows 上被正在流式的请求占用则删不掉，留给 [dispose] 整目录
 /// 清理——缓存目录是 `createTempSync` 的进程私有目录，进程退出后 OS 临时目录
 /// 策略兜底）。
+///
+/// **TTL 从最后一次使用起算**（Sn4fYseBt4）：旧实现按缓存文件 mtime（= 导出时刻）
+/// 判过期，一个大包（如几 GB 的本地音频库）传了 15 分钟以上再断，续传请求必然
+/// 撞上重导出 → ETag 换代 → 200 从 0 重下，断点续传对恰恰最需要它的大文件失效。
+/// 现在每次 [obtain] 命中、以及正在流式发送这份字节（[markUsed]）都把它续期，
+/// 只有「闲置满 [ttl]」才换代。
+///
+/// 每份导出同时算一次整包 SHA-256（[reprDigestFor]，后台 isolate 跑，不占 host
+/// 所在 isolate），随响应发 `Repr-Digest`，供 client 续传拼完后做整体校验。
 class ExportPackageCache {
   ExportPackageCache({this.ttl = const Duration(minutes: 15)});
 
@@ -1310,22 +1579,53 @@ class ExportPackageCache {
   Directory? _root;
   final Map<String, File> _latest = <String, File>{};
   final Map<String, Future<File>> _inFlight = <String, Future<File>>{};
+
+  /// key → 最后一次使用（命中 / 生产 / 流式发送）时刻；滑动 TTL 的依据。
+  final Map<String, DateTime> _lastUsed = <String, DateTime>{};
+
+  /// 缓存文件路径 → `Repr-Digest` 头值（`sha-256=:<base64>:`）。
+  final Map<String, String> _reprDigests = <String, String>{};
   int _seq = 0;
+
+  /// 把 (kind,id) 的当前缓存标记为「刚被用过」，滑动 TTL 续期。流式发送这份字节的
+  /// 响应体每出一块就调一次（O(1) 的 map 写），长传输期间缓存不会被判闲置换代。
+  void markUsed(String kind, String id) {
+    final String key = '$kind|$id';
+    if (_latest.containsKey(key)) _lastUsed[key] = DateTime.now();
+  }
+
+  /// [file]（必须是本缓存 [obtain] 交出的文件）的 `Repr-Digest` 头值；没算出来
+  /// （哈希失败）时 null，响应就不带该头，client 退回只做长度校验。
+  String? reprDigestFor(File file) => _reprDigests[file.path];
 
   Directory get _dir =>
       _root ??= Directory.systemTemp.createTempSync('fushi_export_cache');
 
   /// 取 (kind,id) 的缓存导出文件；TTL 内直接命中，否则经 [export] 重新打包。
   /// [export] 返回的临时文件（连同其父临时目录）所有权移交本缓存。
-  Future<File> obtain(String kind, String id, Future<File> Function() export) {
+  ///
+  /// 命中判据走 async stat（包下载端点在 host 所在 isolate 上跑，同步 stat 会和别的
+  /// 请求抢 isolate，BUG-3756）。await 之后再读 [_inFlight] / [_latest]：两段之间别的
+  /// 请求可能已换代，命中判据只认 await 后仍是「当前代」的那份。
+  Future<File> obtain(
+    String kind,
+    String id,
+    Future<File> Function() export,
+  ) async {
     final String key = '$kind|$id';
     final File? hit = _latest[key];
-    if (hit != null && hit.existsSync()) {
+    if (hit != null) {
       try {
-        if (DateTime.now().difference(hit.lastModifiedSync()) < ttl) {
-          return Future<File>.value(hit);
+        final FileStat stat = await hit.stat();
+        final DateTime? lastUsed = _lastUsed[key];
+        if (identical(_latest[key], hit) &&
+            stat.type == FileSystemEntityType.file &&
+            lastUsed != null &&
+            DateTime.now().difference(lastUsed) < ttl) {
+          _lastUsed[key] = DateTime.now();
+          return hit;
         }
-      } catch (_) {
+      } on FileSystemException {
         // stat 失败：当 miss 处理，走重导出。
       }
     }
@@ -1339,11 +1639,13 @@ class ExportPackageCache {
 
   /// 让 (kind,id) 的缓存导出作废，下一次 [obtain] 必定重新打包。旧文件 best-effort
   /// 删除（Windows 上被正在流式的请求占用则删不掉，留给 [dispose]）。
-  void invalidate(String kind, String id) {
+  Future<void> invalidate(String kind, String id) async {
+    _lastUsed.remove('$kind|$id');
     final File? old = _latest.remove('$kind|$id');
     if (old == null) return;
+    _reprDigests.remove(old.path);
     try {
-      old.deleteSync();
+      await old.delete();
     } catch (_) {
       // 占用中：留给 dispose 整目录清理。
     }
@@ -1353,14 +1655,19 @@ class ExportPackageCache {
   /// 代数取自缓存文件名前缀 `e<seq>_`（进程内单调，快速换代时 size+mtime 粒度
   /// 不够也不撞车）；mtime 兜底跨进程重启的唯一性。纯 ASCII（CJK 词典名不进
   /// ETag——header 值必须 ASCII 安全）。
-  static String etagFor(File file) {
+  ///
+  /// async（一次 stat 取 size + mtime），理由同 [videoFileEtag]。
+  static Future<String> etagFor(File file) async {
     final String base = p.basename(file.path);
     final int us = base.indexOf('_');
     final String seq = (base.startsWith('e') && us > 1)
         ? base.substring(1, us)
         : '0';
-    final int mtime = file.lastModifiedSync().millisecondsSinceEpoch;
-    return '"pkg-$seq-${file.lengthSync()}-$mtime"';
+    final FileStat stat = await file.stat();
+    if (stat.type == FileSystemEntityType.notFound) {
+      throw FileSystemException('Cannot stat export package', file.path);
+    }
+    return '"pkg-$seq-${stat.size}-${stat.modified.millisecondsSinceEpoch}"';
   }
 
   Future<File> _produce(String key, Future<File> Function() export) async {
@@ -1371,21 +1678,31 @@ class ExportPackageCache {
       p.join(_dir.path, 'e${_seq++}_${p.basename(exported.path)}'),
     );
     try {
-      exported.renameSync(target.path);
+      await exported.rename(target.path);
     } on FileSystemException {
       // 跨盘 rename 失败：复制兜底。
-      exported.copySync(target.path);
+      await exported.copy(target.path);
     }
     try {
-      exported.parent.deleteSync(recursive: true);
+      await exported.parent.delete(recursive: true);
     } catch (_) {
       // best-effort：导出方的临时父目录
     }
+    // 整包摘要只算这一次（同一份字节在 TTL 内被反复续传），放后台 isolate：
+    // 几 GB 的包同步哈希会冻住 host 所在 isolate（BUG-3756 同理）。
+    try {
+      _reprDigests[target.path] = await computeReprDigestSha256(target);
+    } catch (e, stack) {
+      // 只损失整体校验（client 退回长度校验），不影响下载本身。
+      engineLog.log('ExportPackageCache.reprDigest', e, stack);
+    }
     final File? old = _latest[key];
     _latest[key] = target;
+    _lastUsed[key] = DateTime.now();
     if (old != null) {
+      _reprDigests.remove(old.path);
       try {
-        old.deleteSync();
+        await old.delete();
       } catch (_) {
         // Windows 占用中：留给 dispose 整目录清理。
       }
@@ -1397,6 +1714,8 @@ class ExportPackageCache {
   void dispose() {
     _latest.clear();
     _inFlight.clear();
+    _lastUsed.clear();
+    _reprDigests.clear();
     final Directory? root = _root;
     _root = null;
     if (root == null) return;

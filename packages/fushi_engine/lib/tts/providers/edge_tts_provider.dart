@@ -191,9 +191,10 @@ class EdgeTtsProvider extends TtsProvider {
     } on WebSocketException catch (e) {
       client.close(force: true);
       if (e.httpStatusCode == 403) throw const _EdgeHandshakeRejected();
-      if (e.httpStatusCode == 429) {
-        throw const TtsFailure(TtsFailureCode.rateLimited, 'HTTP 429');
-      }
+      final int? status = e.httpStatusCode;
+      // 握手被 HTTP 拒绝：按状态码归类（429 / 5xx 临时、4xx 不重试）；没有状态码
+      // 是升级途中连接断开，属网络失败。
+      if (status != null && status >= 400) throw ttsFailureForStatus(status);
       throw const TtsFailure(TtsFailureCode.network, 'websocket');
     } on TimeoutException {
       client.close(force: true);
@@ -204,57 +205,16 @@ class EdgeTtsProvider extends TtsProvider {
     } on HttpException {
       client.close(force: true);
       throw const TtsFailure(TtsFailureCode.network);
+    } on TlsException {
+      // TLS 握手中途被重置（代理 / 网络切换）：此前漏接，会被调度器当成未知错误。
+      client.close(force: true);
+      throw const TtsFailure(TtsFailureCode.network, 'tls');
     }
 
-    final BytesBuilder audio = BytesBuilder(copy: false);
-    final List<({String text, int offsetMs, int durationMs})> words =
-        <({String text, int offsetMs, int durationMs})>[];
-    final Completer<void> done = Completer<void>();
-    final void Function() unregister = cancel.onCancel(() {
-      if (!done.isCompleted) {
-        done.completeError(const TtsFailure(TtsFailureCode.cancelled));
-      }
-      unawaited(socket.close());
-    });
-    late final StreamSubscription<Object?> sub;
-    sub = socket.listen(
-      (Object? message) {
-        if (message is String) {
-          final int split = message.indexOf('\r\n\r\n');
-          final String head = split < 0 ? message : message.substring(0, split);
-          final String body = split < 0 ? '' : message.substring(split + 4);
-          if (head.contains('Path:turn.end')) {
-            if (!done.isCompleted) done.complete();
-          } else if (head.contains('Path:audio.metadata')) {
-            words.addAll(_parseWordBoundaries(body));
-          }
-        } else if (message is List<int>) {
-          final Uint8List bytes = message is Uint8List
-              ? message
-              : Uint8List.fromList(message);
-          if (bytes.length < 2) return;
-          final int headerLength = (bytes[0] << 8) | bytes[1];
-          if (bytes.length < 2 + headerLength) return;
-          final String header = ascii.decode(
-            bytes.sublist(2, 2 + headerLength),
-            allowInvalid: true,
-          );
-          if (!header.contains('Path:audio')) return;
-          audio.add(bytes.sublist(2 + headerLength));
-        }
-      },
-      onError: (Object _) {
-        if (!done.isCompleted) {
-          done.completeError(const TtsFailure(TtsFailureCode.network));
-        }
-      },
-      onDone: () {
-        if (!done.isCompleted) {
-          done.completeError(
-            const TtsFailure(TtsFailureCode.badResponse, 'closed early'),
-          );
-        }
-      },
+    final Future<EdgeTurnResult> turn = collectEdgeTurn(
+      socket,
+      cancel: cancel,
+      onAbort: () => unawaited(socket.close()),
     );
     try {
       final String timestamp = _jsDateString(_now);
@@ -276,25 +236,21 @@ class EdgeTtsProvider extends TtsProvider {
         "<prosody pitch='+0Hz' rate='+0%' volume='+0%'>"
         '${ttsEscapeXml(text)}</prosody></voice></speak>',
       );
-      await done.future.timeout(kTtsRequestTimeout);
-    } on TimeoutException {
-      throw const TtsFailure(TtsFailureCode.timeout);
+    } on Object catch (_) {
+      // 发送失败（连接刚建好就断）：收帧那边会以 onError / onDone 结束，结果以它为准。
+    }
+    final EdgeTurnResult result;
+    try {
+      result = await turn;
     } finally {
-      // 提前离开（发送失败等）时收口，避免之后无人等待的 completeError。
-      if (!done.isCompleted) done.complete();
-      unregister();
-      await sub.cancel();
       unawaited(socket.close());
       client.close(force: true);
     }
-    final Uint8List bytes = audio.takeBytes();
-    if (bytes.isEmpty) {
-      throw const TtsFailure(TtsFailureCode.badResponse, 'no audio');
-    }
+    final Uint8List bytes = result.audio;
     await File(outputPath).writeAsBytes(bytes, flush: true);
     return TtsResult(
       format: TtsAudioFormat.mp3,
-      boundaries: locateTtsWordBoundaries(text, words),
+      boundaries: locateTtsWordBoundaries(text, result.words),
     );
   }
 
@@ -350,6 +306,115 @@ class EdgeTtsProvider extends TtsProvider {
       client.close(force: true);
     }
   }
+}
+
+/// 一轮合成收到的音频与词边界。
+typedef EdgeTurnResult = ({
+  Uint8List audio,
+  List<({String text, int offsetMs, int durationMs})> words,
+});
+
+/// 相邻两帧之间允许的最长静默。
+///
+/// Edge 的节奏：发出 SSML 后几百毫秒内回 `turn.start`，随后音频帧以远快于实时的
+/// 速度连续推送（一句几秒的音频在一两秒内推完），最后 `turn.end`。正常情况下任意
+/// 两帧之间的间隔在秒级以内；服务端排队偶尔让首帧晚到数秒。30 秒没有任何帧只可能
+/// 是连接半开（NAT 超时、代理吞掉 FIN、Wi-Fi 切换），此时判网络失败交给重试层
+/// 重新建连，而不是等满 [kTtsRequestTimeout]（3 分钟）让播放器一直缓冲。
+const Duration kEdgeIdleTimeout = Duration(seconds: 30);
+
+/// 从 Edge websocket 收完一轮合成（到 `turn.end`）。
+///
+/// - 连续 [idleTimeout] 收不到任何帧 → [TtsFailureCode.network] `idle`（临时失败）；
+/// - 总时长超过 [overallTimeout] → [TtsFailureCode.timeout]；
+/// - 连接出错 → network；`turn.end` 前被服务端关闭 → network `closed early`；
+/// - `turn.end` 但没有音频 → badResponse `no audio`（标记为临时失败）；
+/// - [cancel] → cancelled。
+///
+/// 超时 / 取消时调用 [onAbort]（调用方关 socket）。
+Future<EdgeTurnResult> collectEdgeTurn(
+  Stream<Object?> frames, {
+  required TtsCancelToken cancel,
+  Duration idleTimeout = kEdgeIdleTimeout,
+  Duration overallTimeout = kTtsRequestTimeout,
+  void Function()? onAbort,
+}) async {
+  final BytesBuilder audio = BytesBuilder(copy: false);
+  final List<({String text, int offsetMs, int durationMs})> words =
+      <({String text, int offsetMs, int durationMs})>[];
+  final Completer<void> done = Completer<void>();
+  void fail(TtsFailure failure) {
+    if (!done.isCompleted) done.completeError(failure);
+  }
+
+  Timer? idle;
+  void armIdle() {
+    idle?.cancel();
+    idle = Timer(idleTimeout, () {
+      fail(const TtsFailure(TtsFailureCode.network, 'idle'));
+      onAbort?.call();
+    });
+  }
+
+  final Timer overall = Timer(overallTimeout, () {
+    fail(const TtsFailure(TtsFailureCode.timeout));
+    onAbort?.call();
+  });
+  final void Function() unregister = cancel.onCancel(() {
+    fail(const TtsFailure(TtsFailureCode.cancelled));
+    onAbort?.call();
+  });
+  armIdle();
+  final StreamSubscription<Object?> sub = frames.listen(
+    (Object? message) {
+      armIdle();
+      if (message is String) {
+        final int split = message.indexOf('\r\n\r\n');
+        final String head = split < 0 ? message : message.substring(0, split);
+        final String body = split < 0 ? '' : message.substring(split + 4);
+        if (head.contains('Path:turn.end')) {
+          if (!done.isCompleted) done.complete();
+        } else if (head.contains('Path:audio.metadata')) {
+          words.addAll(EdgeTtsProvider._parseWordBoundaries(body));
+        }
+      } else if (message is List<int>) {
+        final Uint8List bytes = message is Uint8List
+            ? message
+            : Uint8List.fromList(message);
+        if (bytes.length < 2) return;
+        final int headerLength = (bytes[0] << 8) | bytes[1];
+        if (bytes.length < 2 + headerLength) return;
+        final String header = ascii.decode(
+          bytes.sublist(2, 2 + headerLength),
+          allowInvalid: true,
+        );
+        if (!header.contains('Path:audio')) return;
+        audio.add(bytes.sublist(2 + headerLength));
+      }
+    },
+    onError: (Object _) =>
+        fail(const TtsFailure(TtsFailureCode.network, 'websocket error')),
+    onDone: () =>
+        fail(const TtsFailure(TtsFailureCode.network, 'closed early')),
+  );
+  try {
+    await done.future;
+  } finally {
+    idle?.cancel();
+    overall.cancel();
+    unregister();
+    await sub.cancel();
+  }
+  final Uint8List bytes = audio.takeBytes();
+  if (bytes.isEmpty) {
+    // turn.end 却没有音频：服务端偶发（edge-tts 上游同样按可重试处理）。
+    throw const TtsFailure.withRetry(
+      TtsFailureCode.badResponse,
+      detail: 'no audio',
+      transient: true,
+    );
+  }
+  return (audio: bytes, words: words);
 }
 
 class _EdgeHandshakeRejected implements Exception {

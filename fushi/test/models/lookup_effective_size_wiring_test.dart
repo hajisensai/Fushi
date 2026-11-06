@@ -29,8 +29,9 @@ void main() {
   // AppModel 构造时 DefaultCacheManager 会经 path_provider 平台通道，单测 mock 掉。
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_path_provider');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_path_provider',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -51,9 +52,7 @@ void main() {
   late AppModel appModel;
 
   setUp(() async {
-    db = FushiDatabase.forTesting(
-      DatabaseConnection(NativeDatabase.memory()),
-    );
+    db = FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     appModel = AppModel(testPlatformServices());
@@ -69,8 +68,10 @@ void main() {
   });
 
   test('默认未解锁：overlay/extension 有效尺寸严格跟随 app 内共享值', () {
-    final LookupSize shared =
-        LookupSize(appModel.popupMaxWidth, appModel.popupMaxHeight);
+    final LookupSize shared = LookupSize(
+      appModel.popupMaxWidth,
+      appModel.popupMaxHeight,
+    );
     expect(appModel.overlayLookupIndependentSize, isFalse);
     expect(appModel.extensionPopupIndependentSize, isFalse);
     expect(appModel.overlayLookupEffectiveSize, shared);
@@ -87,8 +88,10 @@ void main() {
     expect(appModel.overlayLookupEffectiveSize, const LookupSize(700.0, 900.0));
 
     // 场景隔离：extension 仍未解锁，继续跟随 app 内共享值。
-    final LookupSize shared =
-        LookupSize(appModel.popupMaxWidth, appModel.popupMaxHeight);
+    final LookupSize shared = LookupSize(
+      appModel.popupMaxWidth,
+      appModel.popupMaxHeight,
+    );
     expect(appModel.extensionPopupEffectiveSize, shared);
   });
 
@@ -99,11 +102,15 @@ void main() {
 
     expect(appModel.extensionPopupIndependentSize, isTrue);
     expect(
-        appModel.extensionPopupEffectiveSize, const LookupSize(500.0, 650.0));
+      appModel.extensionPopupEffectiveSize,
+      const LookupSize(500.0, 650.0),
+    );
 
     // overlay 仍跟随共享值。
-    final LookupSize shared =
-        LookupSize(appModel.popupMaxWidth, appModel.popupMaxHeight);
+    final LookupSize shared = LookupSize(
+      appModel.popupMaxWidth,
+      appModel.popupMaxHeight,
+    );
     expect(appModel.overlayLookupEffectiveSize, shared);
   });
 
@@ -113,9 +120,14 @@ void main() {
     await prefs.setPref('overlay_lookup_max_height', 1500.0);
     expect(appModel.overlayLookupIndependentSize, isFalse);
 
-    final LookupSize shared =
-        LookupSize(appModel.popupMaxWidth, appModel.popupMaxHeight);
-    expect(appModel.overlayLookupEffectiveSize, shared,
-        reason: '关闭独立开关时必须跟随 app 内，忽略已存在的独立宽高');
+    final LookupSize shared = LookupSize(
+      appModel.popupMaxWidth,
+      appModel.popupMaxHeight,
+    );
+    expect(
+      appModel.overlayLookupEffectiveSize,
+      shared,
+      reason: '关闭独立开关时必须跟随 app 内，忽略已存在的独立宽高',
+    );
   });
 }

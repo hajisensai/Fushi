@@ -18,3 +18,5 @@
     consider(fvp_);
     consider(kogado_hy_);
     consider(luca_);
+    consider(knife_);
+    consider(softpal_);

@@ -1,0 +1,8 @@
+format=kar quality=syllable_pitch effects=false lang=- title=Yoru ni Kakeru artist=- agents=[]
+L 510-1510 agent=- role=Main style=-
+  S 510-760 Sweep "Shi"
+  S 760-1010 Sweep "zu"
+  S 1010-1510 Sweep "mu"
+L 1510-2760 agent=- role=Main style=-
+  S 1510-1760 Sweep "yo"
+  S 1760-2760 Sweep "ru"

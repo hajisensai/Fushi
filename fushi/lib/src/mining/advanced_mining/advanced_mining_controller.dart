@@ -4,11 +4,14 @@ import 'dart:ui' show Rect;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show TextEditingController, TextSelection;
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
+import 'package:fushi_engine/mining/sentence_audio_source.dart'
+    show SentenceAudioSourcePick;
 
 /// 漫画卡图的取景方式。
 enum MangaCropChoice { wholePage, panel, textArea, custom, none }
@@ -32,11 +35,19 @@ class AdvancedMiningController extends ChangeNotifier {
 
   AdvancedMiningSections get sections => capabilities.sections;
   AdvancedMiningDeckSection? get deckSection => capabilities.deck;
+  AdvancedMiningWordAudioSection? get wordAudioSection =>
+      capabilities.wordAudio;
   AdvancedMiningSentenceSection? get sentenceSection => sections.sentence;
   AdvancedMiningAudioSection? get audioSection => sections.audio;
   AdvancedMiningVideoImageSection? get videoSection => sections.videoImage;
   AdvancedMiningMangaImageSection? get mangaSection => sections.mangaImage;
   AdvancedMiningStillImageSection? get stillSection => sections.stillImage;
+
+  /// 卡片字段分区；没配字段映射（字段为空）时当作没有这项能力。
+  AdvancedMiningFieldsSection? get fieldsSection {
+    final AdvancedMiningFieldsSection? section = capabilities.fields;
+    return section == null || section.fields.isEmpty ? null : section;
+  }
 
   bool _disposed = false;
 
@@ -44,6 +55,9 @@ class AdvancedMiningController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _editController?.dispose();
+    for (final TextEditingController c in _fieldControllers.values) {
+      c.dispose();
+    }
     _downloadSub?.cancel();
     super.dispose();
   }
@@ -54,8 +68,11 @@ class AdvancedMiningController extends ChangeNotifier {
 
   /// 打开后拉一遍所有异步数据（句子预览 → 音频区间；漫画原图与建议框并行）。
   Future<void> load() async {
+    // 有句子分区时预填跟着句子走（refreshSentences 末尾触发）；没有就现在取。
+    if (sentenceSection == null) unawaited(refreshFieldPreview());
     await Future.wait(<Future<void>>[
       _loadSentenceThenAudio(),
+      if (wordAudioSection != null) _loadWordAudio(),
       if (mangaSection != null) _loadManga(),
       if (stillSection != null) _loadStill(),
     ]);
@@ -151,6 +168,8 @@ class AdvancedMiningController extends ChangeNotifier {
     }
     sentenceLoading = false;
     _notify();
+    // 句子变了（加减句 / 改句 / 移除），句子类字段的预填跟着刷新；用户改过的不动。
+    unawaited(refreshFieldPreview());
   }
 
   /// 前文 / 后文整体加一句或减一句（宿主 `setContext` 是整体替换语义）。
@@ -324,18 +343,174 @@ class AdvancedMiningController extends ChangeNotifier {
   /// 主按钮上显示的目标卡组；null = 不知道（没有卡组分区，或尚未选择任何卡组）。
   String? get targetDeckName => deckSection == null ? null : deckName;
 
+  // ───────────────────────────── 卡片字段 ─────────────────────────────
+
+  /// 在对话框里显示（可编辑）的字段名（初值来自 [AdvancedMiningFieldsSection.visibleFields]，
+  /// 只认映射里真有的字段）。
+  Set<String> visibleFields = <String>{};
+
+  /// 「选择字段」胶囊行是否展开。
+  bool choosingFields = false;
+
+  final Map<String, TextEditingController> _fieldControllers =
+      <String, TextEditingController>{};
+
+  /// 某个字段的输入框控制器（懒建，初值是预填；跟着控制器一起释放，隐藏再显示时
+  /// 内容还在）。
+  TextEditingController fieldController(String name) =>
+      _fieldControllers.putIfAbsent(
+        name,
+        () => TextEditingController(text: _prefill[name] ?? ''),
+      );
+
+  /// 预填值：与落卡同一条管线渲染出的「这张卡此刻会自动生成的值」。改没改都拿它比。
+  Map<String, String> _prefill = const <String, String>{};
+
+  /// 某字段的预填值（没有 = 空串）。
+  String prefillOf(String name) => _prefill[name] ?? '';
+
+  /// 预填正在生成。
+  bool previewLoading = false;
+
+  /// 最近一次预填生成失败（输入框保持空 / 上一次的值，对话框提示留空即自动生成）。
+  bool previewFailed = false;
+
+  int _previewSeq = 0;
+
+  /// 对话框句子分区合成的句子：与宿主落卡时 `MiningSentenceDraft.composeText` 同口径
+  /// （保留的前文 + 当前句 + 保留的后文，[joinMinedSentences]）。没有句子分区为 null。
+  String? get composedSentence {
+    if (sentenceSection == null) return null;
+    return joinMinedSentences(<String>[
+      for (int i = 0; i < prev.length; i++)
+        if (!(i < prevRemoved.length && prevRemoved[i])) prev[i],
+      current,
+      for (int i = 0; i < next.length; i++)
+        if (!(i < nextRemoved.length && nextRemoved[i])) next[i],
+    ]);
+  }
+
+  /// 重新生成预填（反馈 -K86qlwBg6）。只覆盖**还停在旧预填值上**的输入框——用户改过的
+  /// 字段一个字都不动；失败时保留现有内容并标记 [previewFailed]，不卡对话框。
+  Future<void> refreshFieldPreview() async {
+    final AdvancedMiningFieldPreview? load = fieldsSection?.loadPreview;
+    if (load == null) return;
+    final int seq = ++_previewSeq;
+    previewLoading = true;
+    _notify();
+    Map<String, String>? values;
+    try {
+      values = await load(composedSentence);
+    } catch (e, stack) {
+      fushiDebugPrint('AdvancedMining.refreshFieldPreview: $e\n$stack');
+      values = null;
+    }
+    // 晚到的旧结果不许盖掉新结果。
+    if (_disposed || seq != _previewSeq) return;
+    previewLoading = false;
+    previewFailed = values == null;
+    if (values != null) {
+      for (final MapEntry<String, TextEditingController> e
+          in _fieldControllers.entries) {
+        if (e.value.text == prefillOf(e.key)) {
+          e.value.text = values[e.key] ?? '';
+        }
+      }
+      _prefill = Map<String, String>.unmodifiable(values);
+    }
+    _notify();
+  }
+
+  /// 展开成大编辑框的字段（释义 HTML 很长时用）。
+  final Set<String> expandedFields = <String>{};
+
+  void toggleFieldExpanded(String name) {
+    if (!expandedFields.remove(name)) expandedFields.add(name);
+    _notify();
+  }
+
+  /// 映射顺序下当前显示的字段。
+  List<AdvancedMiningField> get shownFields => <AdvancedMiningField>[
+    for (final AdvancedMiningField f
+        in fieldsSection?.fields ?? const <AdvancedMiningField>[])
+      if (visibleFields.contains(f.name)) f,
+  ];
+
+  void toggleChoosingFields() {
+    if (_busy) return;
+    choosingFields = !choosingFields;
+    _notify();
+  }
+
+  /// 显示 / 隐藏一个字段，并记住选择（持久化失败不挡本次对话框）。
+  Future<void> toggleFieldVisible(String name) async {
+    final AdvancedMiningFieldsSection? section = fieldsSection;
+    if (_busy || section == null) return;
+    final Set<String> nextVisible = <String>{...visibleFields};
+    if (!nextVisible.remove(name)) nextVisible.add(name);
+    visibleFields = nextVisible;
+    _notify();
+    final Future<void> Function(Set<String>)? persist =
+        section.setVisibleFields;
+    if (persist == null) return;
+    try {
+      await persist(nextVisible);
+    } catch (e, stack) {
+      fushiDebugPrint('AdvancedMining.setVisibleFields: $e\n$stack');
+    }
+  }
+
+  /// 确认时带走的手改字段：只取**显示中、可编辑、且与预填值不同**的字段。没改的字段
+  /// 不发——照常由落卡管线生成，延迟生成的内容（媒体占位、刷新后的句子）不会被冻结成
+  /// 预览时的样子；清空 = 回到自动生成；隐藏的字段即使改过也不发（所见即所得）。
+  Map<String, String> get editedFieldValues => <String, String>{
+    for (final AdvancedMiningField f in shownFields)
+      if (!f.generatedAtMining)
+        if (_fieldControllers[f.name]?.text case final String v
+            when v.trim().isNotEmpty && v.trim() != prefillOf(f.name).trim())
+          f.name: v,
+  };
+
   // ───────────────────────────── 音频 ─────────────────────────────
 
   bool omitAudio = false;
   int audioStartDeltaMs = 0;
   int audioEndDeltaMs = 0;
 
+  /// 起止微调当前步长（毫秒），初值取宿主给的 [AdvancedMiningAudioSection.nudgeStepMs]。
+  late int audioNudgeStepMs = normalizeAdvancedMiningAudioNudgeStepMs(
+    audioSection?.nudgeStepMs,
+  );
+
+  /// 换微调步长（反馈 3_VB7kAeHj）：只换步长，不动已调好的偏移；宿主记住选择。
+  void setAudioNudgeStep(int stepMs) {
+    final int next = normalizeAdvancedMiningAudioNudgeStepMs(stepMs);
+    if (next == audioNudgeStepMs) return;
+    audioNudgeStepMs = next;
+    audioSection?.onNudgeStepChanged?.call(next);
+    _notify();
+  }
+
+  /// 这一张卡的句子音频来源；null = 页面不给选（[AdvancedMiningAudioSection.sources]）。
+  SentenceAudioSourcePick? audioSource;
+
+  void setAudioSource(SentenceAudioSourcePick pick) {
+    if (locked || audioSource == pick) return;
+    audioSource = pick;
+    _notify();
+  }
+
   /// 最近一次 describe 的结果；null 且 [audioLoaded] = 这几句没有音频。
   AdvancedMiningAudioWindow? audioWindow;
   bool audioLoaded = false;
 
-  /// 试听是否正在播。只驱动按钮外观；真正的播放状态在宿主控制器里。
+  /// 试听是否正在播。只驱动按钮外观；真正的播放状态在宿主控制器里，这里跟着宿主交回
+  /// 的 [RangePlayback] 走：那段播完 / 被打断就复位（FDN66-xurt）。
   bool previewing = false;
+
+  /// 每次起播 / 停止都 +1：只认最新一次试听的结局，停掉的旧一段晚到的「结束」不能把
+  /// 新一段的按钮复位。
+  int _previewGen = 0;
 
   int _describeGen = 0;
 
@@ -407,6 +582,9 @@ class AdvancedMiningController extends ChangeNotifier {
   ///
   /// 每次都把**当前**偏移交给宿主重新算区间，而不是复用打开时的那一段：用户在这里
   /// 加减句子、微调起止的目的就是改变那段区间（BUG-2196 ②）。
+  ///
+  /// 起播后按宿主交回的句柄收尾：那段播完 / 被打断时 [previewing] 自动复位，下一次点击
+  /// 就是重新试听，而不是去停一段早已结束的播放（FDN66-xurt）。
   Future<bool> togglePreview() async {
     final AdvancedMiningAudioSection? section = audioSection;
     if (section == null) return false;
@@ -414,34 +592,219 @@ class AdvancedMiningController extends ChangeNotifier {
       await stopPreview();
       return true;
     }
+    final int gen = ++_previewGen;
     previewing = true;
+    _notify();
+    // 两段试听不叠着响：句子音频起播前先掐掉单词发音。
+    await stopWordAudioPreview();
+    RangePlayback? playback;
+    try {
+      playback = await section.preview(audioStartDeltaMs, audioEndDeltaMs);
+    } catch (e, stack) {
+      fushiDebugPrint('AdvancedMining.preview: $e\n$stack');
+      playback = null;
+    }
+    if (_disposed) return playback != null;
+    if (gen != _previewGen) {
+      // 起播途中用户已点了停止（stopPreview 已复位按钮）：那次停止早于这次起播落地，
+      // 宿主随后才把这段放出来，补停一次，不留一段按钮显示「没在放」却在响的声音。
+      if (playback != null && !playback.isEnded) {
+        await _stopHostPreview(section);
+      }
+      return true;
+    }
+    if (playback == null) {
+      previewing = false;
+      _notify();
+      return false;
+    }
+    unawaited(_resetWhenPreviewEnds(playback, gen));
+    return true;
+  }
+
+  Future<void> _resetWhenPreviewEnds(RangePlayback playback, int gen) async {
+    await playback.ended;
+    if (_disposed || gen != _previewGen || !previewing) return;
+    previewing = false;
+    _notify();
+  }
+
+  Future<void> _stopHostPreview(AdvancedMiningAudioSection section) async {
+    try {
+      await section.stopPreview();
+    } catch (e, stack) {
+      fushiDebugPrint('AdvancedMining.stopPreview: $e\n$stack');
+    }
+  }
+
+  Future<void> stopPreview() async {
+    if (!previewing) return;
+    _previewGen++;
+    final AdvancedMiningAudioSection? section = audioSection;
+    if (section != null) await _stopHostPreview(section);
+    previewing = false;
+    _notify();
+  }
+
+  // ───────────────────────────── 单词音频 ─────────────────────────────
+
+  /// 当前词的全部候选（按音频源配置顺序；第一项 = 一键「+」会用的那条）。
+  List<AdvancedMiningWordAudioChoice> wordAudioChoices =
+      const <AdvancedMiningWordAudioChoice>[];
+  bool wordAudioLoaded = false;
+
+  /// 选中的候选下标；[kWordAudioOmitted] = 「不要」。默认 0：与一键「+」一致。
+  int wordAudioIndex = 0;
+
+  /// [wordAudioIndex] 取这个值表示「不要单词音频」。
+  static const int kWordAudioOmitted = -1;
+
+  /// 正在试听的候选下标；null = 没在试听。只驱动按钮外观（单词发音只有一两秒，
+  /// 宿主不交播放句柄，起播后按「已开始」显示，再点一次就是重播）。
+  int? wordAudioPreviewing;
+
+  /// 自上次停止以来是否**可能**在响单词发音（起播请求一发出就算，不等它落地）。
+  /// 没发过就不去叫宿主停止：宿主的停止是全局的单词音频播放器，白停一次可能掐掉
+  /// 别处的声音。
+  bool _wordAudioPlayed = false;
+
+  /// 单词试听的代次：每次起播、每次停止都 +1。起播落地时代次已变 = 途中被停止 /
+  /// 被新的试听取代（同 [_previewGen] 之于句子试听）。
+  int _wordPreviewGen = 0;
+
+  /// 最近一次起播拿到的代次；落地时代次已变但仍等于它 = 被**停止**而不是被新试听取代。
+  int _wordPreviewLatestStart = 0;
+
+  bool get omitWordAudio => wordAudioIndex == kWordAudioOmitted;
+
+  /// 选中的候选；「不要」/ 还没加载 / 没有候选时为 null。
+  AdvancedMiningWordAudioChoice? get selectedWordAudio =>
+      wordAudioIndex >= 0 && wordAudioIndex < wordAudioChoices.length
+      ? wordAudioChoices[wordAudioIndex]
+      : null;
+
+  Future<void> _loadWordAudio() async {
+    final AdvancedMiningWordAudioSection? section = wordAudioSection;
+    if (section == null) return;
+    List<AdvancedMiningWordAudioChoice> choices;
+    try {
+      choices = await section.listChoices();
+    } catch (e, stack) {
+      fushiDebugPrint('AdvancedMining.listWordAudio: $e\n$stack');
+      choices = const <AdvancedMiningWordAudioChoice>[];
+    }
+    if (_disposed) return;
+    wordAudioChoices = List<AdvancedMiningWordAudioChoice>.unmodifiable(
+      choices,
+    );
+    wordAudioLoaded = true;
+    // 加载途中用户已点了「不要」：保留那个选择。
+    if (!omitWordAudio) wordAudioIndex = 0;
+    _notify();
+  }
+
+  void selectWordAudio(int index) {
+    if (locked || index == wordAudioIndex) return;
+    if (index != kWordAudioOmitted &&
+        (index < 0 || index >= wordAudioChoices.length)) {
+      return;
+    }
+    wordAudioIndex = index;
+    if (index == kWordAudioOmitted) unawaited(stopWordAudioPreview());
+    _notify();
+  }
+
+  /// 试听第 [index] 个候选（同时选中它）。返回是否真的开始播放。
+  Future<bool> previewWordAudio(int index) async {
+    final AdvancedMiningWordAudioSection? section = wordAudioSection;
+    if (section == null || locked) return false;
+    if (index < 0 || index >= wordAudioChoices.length) return false;
+    selectWordAudio(index);
+    // 两段试听不叠着响：单词发音起播前先停句子音频。
+    await stopPreview();
+    final int gen = ++_wordPreviewGen;
+    _wordPreviewLatestStart = gen;
+    // 发起即视为可能在响：起播还在 await（远端要缓冲、data: 要先落盘）时到来的停止
+    // （句子试听起播、取消 / 确认）必须真的叫宿主停，不能因「还没落地」而跳过。
+    _wordAudioPlayed = true;
+    wordAudioPreviewing = index;
     _notify();
     bool ok;
     try {
-      ok = await section.preview(audioStartDeltaMs, audioEndDeltaMs);
+      ok = await section.preview(wordAudioChoices[index].url);
     } catch (e, stack) {
-      fushiDebugPrint('AdvancedMining.preview: $e\n$stack');
+      fushiDebugPrint('AdvancedMining.previewWordAudio: $e\n$stack');
       ok = false;
     }
-    if (!ok) {
-      previewing = false;
+    if (_disposed || gen != _wordPreviewGen) {
+      // 起播途中已被停止 / 对话框已关：那次停止早于这段落地，宿主随后才把它放出来，
+      // 补停一次。被更新的试听取代时不停——新的那段起播前宿主自己会打断旧的。
+      if (ok && (_disposed || gen == _wordPreviewLatestStart)) {
+        await _stopHostWordPreview(section);
+      }
+      return ok;
+    }
+    _wordAudioPlayed = ok;
+    if (wordAudioPreviewing == index) {
+      wordAudioPreviewing = null;
       _notify();
     }
     return ok;
   }
 
-  Future<void> stopPreview() async {
-    if (!previewing) return;
-    final AdvancedMiningAudioSection? section = audioSection;
-    if (section != null) {
-      try {
-        await section.stopPreview();
-      } catch (e, stack) {
-        fushiDebugPrint('AdvancedMining.stopPreview: $e\n$stack');
-      }
+  Future<void> stopWordAudioPreview() async {
+    final AdvancedMiningWordAudioSection? section = wordAudioSection;
+    if (section == null) return;
+    if (wordAudioPreviewing != null) {
+      wordAudioPreviewing = null;
+      _notify();
     }
-    previewing = false;
-    _notify();
+    _wordPreviewGen++;
+    if (!_wordAudioPlayed) return;
+    _wordAudioPlayed = false;
+    await _stopHostWordPreview(section);
+  }
+
+  Future<void> _stopHostWordPreview(
+    AdvancedMiningWordAudioSection section,
+  ) async {
+    try {
+      await section.stopPreview();
+    } catch (e, stack) {
+      fushiDebugPrint('AdvancedMining.stopWordAudioPreview: $e\n$stack');
+    }
+  }
+
+  /// 确认时交给 [AdvancedMiningConfirm] 的 `wordAudioUrl`（语义见该 typedef）：
+  /// 没动 / 选的就是第一项 → null（一键「+」本来就用它）；「不要」→ 空串；
+  /// 其余 → 那一条的 URL。
+  ///
+  /// 只有 URL 带短时令牌的候选（[AdvancedMiningWordAudioChoice.refreshAtConfirm]：
+  /// 互联源，5 分钟令牌，对话框开着的时间可能比它长，拿旧 URL 制卡会得到一个空
+  /// `[sound:]`，popup.js TODO-766 同一个坑）才在确认时**只重新解析它那一个源**，
+  /// 按 [AdvancedMiningWordAudioChoice.sameSourceAs] 找回；本地 `data:` 与普通模板
+  /// URL 不会过期，直接用打开时那条，不再把全部源跑一遍。重新解析失败 / 找不到
+  /// 同一候选时退回打开时那条。
+  Future<String?> resolveWordAudioUrl() async {
+    final AdvancedMiningWordAudioSection? section = wordAudioSection;
+    if (section == null) return null;
+    if (omitWordAudio) return '';
+    final AdvancedMiningWordAudioChoice? chosen = selectedWordAudio;
+    if (chosen == null || wordAudioIndex == 0) return null;
+    final Future<List<AdvancedMiningWordAudioChoice>> Function(int)? refresh =
+        section.refreshSource;
+    if (!chosen.refreshAtConfirm || refresh == null) return chosen.url;
+    try {
+      final List<AdvancedMiningWordAudioChoice> fresh = await refresh(
+        chosen.sourceIndex,
+      );
+      for (final AdvancedMiningWordAudioChoice c in fresh) {
+        if (c.sameSourceAs(chosen)) return c.url;
+      }
+    } catch (e, stack) {
+      fushiDebugPrint('AdvancedMining.resolveWordAudio: $e\n$stack');
+    }
+    return chosen.url;
   }
 
   // ───────────────────────────── 视频图片 ─────────────────────────────
@@ -793,6 +1156,7 @@ class AdvancedMiningController extends ChangeNotifier {
     omitAudio = false;
     audioStartDeltaMs = 0;
     audioEndDeltaMs = 0;
+    audioSource = audioSection?.sources?.defaultPick;
     _stillDeltaMs.clear();
     final AdvancedMiningVideoImageSection? video = videoSection;
     if (video != null) {
@@ -803,20 +1167,35 @@ class AdvancedMiningController extends ChangeNotifier {
       videoImageMode = _initialVideoImageMode;
     }
     panelModelAvailable = mangaSection?.panelModelAvailable ?? false;
+    final AdvancedMiningFieldsSection? fields = fieldsSection;
+    visibleFields = fields == null
+        ? <String>{}
+        : <String>{
+            for (final AdvancedMiningField f in fields.fields)
+              if (fields.visibleFields.contains(f.name)) f.name,
+          };
   }
 
   /// 「恢复为一键制卡的默认」：所有选择回到打开时的值，句子上下文回到打开时的快照。
   Future<void> resetToDefaults() async {
     if (locked) return;
     unawaited(stopPreview());
+    unawaited(stopWordAudioPreview());
     deckName = _initialDeckName;
     setDeckAsDefault = false;
+    wordAudioIndex = 0;
     omitAudio = false;
     audioStartDeltaMs = 0;
     audioEndDeltaMs = 0;
+    audioSource = audioSection?.sources?.defaultPick;
     _stillDeltaMs.clear();
     videoImageMode = _initialVideoImageMode;
     mosaicRegions = const <MiningMosaicRegion>[];
+    // 手改的字段回到预填值 = 回到按映射自动生成（显示哪些字段是用户的长期偏好，不还原）。
+    for (final MapEntry<String, TextEditingController> e
+        in _fieldControllers.entries) {
+      e.value.text = prefillOf(e.key);
+    }
     if (mangaSection != null && !mangaLoading) {
       cropChoice = isCropChoiceAvailable(_initialCropChoice)
           ? _initialCropChoice
@@ -894,6 +1273,8 @@ class AdvancedMiningController extends ChangeNotifier {
         : const <MiningMosaicRegion>[];
 
     final bool audio = audioSection != null;
+    final SentenceAudioSourcePick? sourceDefault =
+        audioSection?.sources?.defaultPick;
     return MiningRequestOverrides(
       deckName: chosenDeck != null && chosenDeck != deck?.defaultDeckName
           ? chosenDeck
@@ -901,11 +1282,16 @@ class AdvancedMiningController extends ChangeNotifier {
       omitAudio: audio && omitAudio,
       audioStartDeltaMs: audio ? audioStartDeltaMs : 0,
       audioEndDeltaMs: audio ? audioEndDeltaMs : 0,
+      // 与设置里的来源相同就不写：没动 = 一键「+」。
+      audioSource: !omitAudio && audioSource != sourceDefault
+          ? audioSource?.wireName
+          : null,
       omitImage: omitImage,
       videoImageMode: modeWire,
       coverFrameAtMs: coverFrame,
       crop: crop,
       mosaic: mosaic,
+      fieldValues: editedFieldValues,
     );
   }
 }

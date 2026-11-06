@@ -1,6 +1,7 @@
 import 'dart:io';
 
-import 'package:drift/drift.dart' show QueryRow, Value;
+import 'package:drift/drift.dart'
+    show BooleanExpressionOperators, QueryRow, Value;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_audio/fushi_audio_core.dart';
@@ -20,6 +21,8 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show
         videoRemoteAudioTrackAtPrefKey,
         videoRemoteAudioTrackPrefKey,
+        videoRemoteCompletedAtPrefKey,
+        videoRemoteCompletedPrefKey,
         videoRemoteDelayAtPrefKey,
         videoRemoteDelayPrefKey,
         videoRemotePositionAtPrefKey,
@@ -82,7 +85,8 @@ class VideoBooksDeleteException implements Exception {
   final List<VideoBookDeleteFailure> failures;
 
   @override
-  String toString() => 'VideoBooksDeleteException(deleted: $deletedCount, '
+  String toString() =>
+      'VideoBooksDeleteException(deleted: $deletedCount, '
       'failed: ${failures.length}, first: ${failures.first})';
 }
 
@@ -109,8 +113,9 @@ class VideoBookRepository {
   /// 默认 null = 手动导入无来源（向后兼容，现有手动导入调用点一字不改）。只在
   /// [book] 自身没显式设过 sourceId 时才合并进 companion，避免覆盖调用方意图。
   Future<void> saveVideoBook(VideoBooksCompanion book, {int? sourceId}) {
-    final VideoBooksCompanion withSource =
-        sourceId == null ? book : book.copyWith(sourceId: Value(sourceId));
+    final VideoBooksCompanion withSource = sourceId == null
+        ? book
+        : book.copyWith(sourceId: Value(sourceId));
     return _db.upsertVideoBook(withSource);
   }
 
@@ -188,12 +193,11 @@ class VideoBookRepository {
     String bookUid, {
     required Map<String, int> remoteAddedAt,
     Map<String, int> remoteTombstones = const <String, int>{},
-  }) =>
-      _db.mergeRemoteVideoTags(
-        bookUid,
-        remoteAddedAt: remoteAddedAt,
-        remoteTombstones: remoteTombstones,
-      );
+  }) => _db.mergeRemoteVideoTags(
+    bookUid,
+    remoteAddedAt: remoteAddedAt,
+    remoteTombstones: remoteTombstones,
+  );
 
   /// 统一合集 Phase 2：把一个多集播放列表拆成 N 条独立 VideoBooks 行 + 一个 playlist
   /// [MediaCollections]（成员按序）。是「导入时拆集」的单一真相源，落库形状沿用已
@@ -216,8 +220,9 @@ class VideoBookRepository {
     int collectionId = 0;
     await _db.transaction(() async {
       final List<VideoBookRow> existingBooks = await listAll();
-      final Set<String> taken =
-          existingBooks.map((VideoBookRow r) => r.bookUid).toSet();
+      final Set<String> taken = existingBooks
+          .map((VideoBookRow r) => r.bookUid)
+          .toSet();
       // 归一路径 → 行，只建一次（与 [reconcileSplitPlaylist] 的 existingByPath
       // 同形）。旧实现对每一集线性扫全库并逐行重算 normalizeVideoPath，几千集的
       // 频道列表 × 几千行视频库是 O(N·M) 次路径归一。同一路径多行时保留**第一行**，
@@ -277,7 +282,12 @@ class VideoBookRepository {
         collectionType: 'playlist',
       );
       for (final String uid in epUids) {
-        await _db.addToCollection(collectionId, MediaKind.video, uid);
+        await _db.addToCollection(
+          collectionId,
+          MediaKind.video,
+          uid,
+          userIntent: false,
+        );
       }
     });
     return (
@@ -291,8 +301,9 @@ class VideoBookRepository {
   /// independent automatic download jobs. Manual playlist imports deliberately
   /// keep their authored order; only the download pipeline calls this method.
   Future<void> reorderDownloadedCollectionEpisodes(int collectionId) async {
-    final List<MediaCollectionItemRow> items =
-        await _db.getCollectionItems(collectionId);
+    final List<MediaCollectionItemRow> items = await _db.getCollectionItems(
+      collectionId,
+    );
     if (items.length < 2) return;
     final Map<String, String> videoPathByUid = <String, String>{};
     for (final MediaCollectionItemRow item in items) {
@@ -304,13 +315,10 @@ class VideoBookRepository {
     // 不同，同步就会每轮判「本地与合并结果不一致」来回改写。
     await _db.reorderCollectionItemsAutomatically(
       collectionId,
-      orderDownloadedCollectionMembers(
-        <CollectionMemberKey>[
-          for (final MediaCollectionItemRow item in items)
-            (mediaType: item.mediaType, entryKey: item.entryKey),
-        ],
-        videoPathByUid: videoPathByUid,
-      ),
+      orderDownloadedCollectionMembers(<CollectionMemberKey>[
+        for (final MediaCollectionItemRow item in items)
+          (mediaType: item.mediaType, entryKey: item.entryKey),
+      ], videoPathByUid: videoPathByUid),
     );
   }
 
@@ -360,8 +368,9 @@ class VideoBookRepository {
     int added = 0;
     int removed = 0;
     final List<VideoBookRow> existingBooks = await listAll();
-    final Set<String> taken =
-        existingBooks.map((VideoBookRow r) => r.bookUid).toSet();
+    final Set<String> taken = existingBooks
+        .map((VideoBookRow r) => r.bookUid)
+        .toSet();
     final Map<String, VideoBookRow> existingByPath = <String, VideoBookRow>{
       for (final VideoBookRow row in existingBooks)
         normalizeVideoPath(row.videoPath): row,
@@ -381,6 +390,7 @@ class VideoBookRepository {
             collectionId,
             MediaKind.video,
             existing.bookUid,
+            userIntent: false,
           );
           memberBases.add(base);
           added++;
@@ -401,14 +411,24 @@ class VideoBookRepository {
           ),
           sourceId: sourceId,
         );
-        await _db.addToCollection(collectionId, MediaKind.video, uid);
+        await _db.addToCollection(
+          collectionId,
+          MediaKind.video,
+          uid,
+          userIntent: false,
+        );
         memberBases.add(base);
         added++;
       }
       // 后删：成员有、清单已删的基身份（只解绑，保留 VideoBook 本体）。
       for (final MapEntry<String, String> m in memberBaseByUid.entries) {
         if (manifestBases.contains(m.value)) continue;
-        await _db.removeFromCollection(collectionId, MediaKind.video, m.key);
+        await _db.removeFromCollection(
+          collectionId,
+          MediaKind.video,
+          m.key,
+          userIntent: false,
+        );
         removed++;
       }
     });
@@ -430,6 +450,15 @@ class VideoBookRepository {
   Future<List<MediaCollectionRow>> getAllMediaCollections() =>
       _db.getAllMediaCollections();
 
+  /// 统一合集：全部合集成员行（按 collectionId、sortIndex 有序）。打开播放页时解析
+  /// 「这一集属于哪个系列」用（与视频库折叠归属同一份输入）。
+  Future<List<MediaCollectionItemRow>> getAllCollectionItems() =>
+      _db.getAllCollectionItems();
+
+  /// 按 id 取来源库（视频来源的分组模式决定目录合集是否算系列归属）。
+  Future<MediaSourceRow?> getMediaSourceById(int id) =>
+      _db.getMediaSourceById(id);
+
   /// 合集子篇 → 所属多成员合集 id：属于任一**成员数 ≥2** 合集的视频条目。自动
   /// 刮削据此对子篇**不落作品级海报**、并把海报改落到这个 collectionId 上（判据
   /// 与理由见 [multiMemberCollectionIdByVideoUid]）。
@@ -448,6 +477,12 @@ class VideoBookRepository {
   /// 监听视频库行集合（uid）变化，供库页在任意导入路径（页内 / 拖拽 / 外部
   /// 「用 Fushi 打开」/ 远端下载）落库后自动刷新（BUG-793）。
   Stream<List<String>> watchVideoBookUids() => _db.watchVideoBookUids();
+
+  /// 监听视频库观看进度（断点 / 时刻 / 看完标记 / 集指针 / 逐集进度）变化，供库页
+  /// 在任何入口播放、同步回灌写下进度后自动重读（BUG-3610，见
+  /// [FushiDatabase.watchVideoWatchProgressChanged]）。
+  Stream<void> watchVideoWatchProgressChanged() =>
+      _db.watchVideoWatchProgressChanged();
 
   /// 视频库书架展示用列表：在 [listAll] 基础上自愈被数据根迁移遗弃的封面绝对路径
   /// （[_repairMovedCoverPaths]）。**只给展示层用**——删除 GC（[collectReferencedAssetPaths]）
@@ -512,16 +547,17 @@ class VideoBookRepository {
         // 覆盖等于把手选结果抹掉（正是 gate 当初要防的那个竞态）。
         final bool repaired = await VideoCoverMutationGate.runExclusive(
           () async {
-            final VideoBookRow? current =
-                await _db.getVideoBookByBookUid(row.bookUid);
+            final VideoBookRow? current = await _db.getVideoBookByBookUid(
+              row.bookUid,
+            );
             if (current == null || current.coverPath != cover) return false;
             await _db.updateVideoBookCover(row.bookUid, candidate);
             return true;
           },
         );
-        out.add(repaired
-            ? row.copyWith(coverPath: Value<String?>(candidate))
-            : row);
+        out.add(
+          repaired ? row.copyWith(coverPath: Value<String?>(candidate)) : row,
+        );
       } else {
         out.add(row);
       }
@@ -536,12 +572,11 @@ class VideoBookRepository {
     String bookUid,
     int positionMs, {
     int? playedAt,
-  }) =>
-      _db.updateVideoBookPosition(
-        bookUid,
-        positionMs,
-        playedAt: playedAt ?? DateTime.now().millisecondsSinceEpoch,
-      );
+  }) => _db.updateVideoBookPosition(
+    bookUid,
+    positionMs,
+    playedAt: playedAt ?? DateTime.now().millisecondsSinceEpoch,
+  );
 
   /// 清除观看进度（卡菜单「清除观看进度」）：行级四列归零走
   /// [FushiDatabase.clearVideoBookWatchProgress]，再把互联 LWW 镜像键
@@ -553,15 +588,105 @@ class VideoBookRepository {
   /// 对端后来看过就直接更新——下一次同步把刚清掉的进度原样灌回来，用户清了等于
   /// 没清。盖成 now 后本地严格更新，把「清除」当成一次进度写入推给 host。
   ///
+  /// 看完标记同理：行上的 completedAt 一起清，镜像键 `video_remote_completed_` 盖成
+  /// 「未看完 @ 现在」，对端的旧「已看」不会被同步回来（[setWatched] 同一纪律）。
+  ///
   /// 已知边界：进度 wire 只有 (positionMs, updatedAtMs) 两个字段，host 收到后镜像
   /// 行会写 `lastPlayedAt = now`（BUG-1731 纪律），所以 host 侧这一集会剩「位置 0
   /// 但有时刻」的痕迹——不显示「已看到」徽标，但合集续播锚点仍停在这一集而不是回退。
   /// 要消掉得给 wire 加「清除」语义，超出本方法范围。
-  Future<void> clearWatchProgress(String bookUid) async {
+  Future<void> clearWatchProgress(String bookUid) => _db.transaction(() async {
     await _db.clearVideoBookWatchProgress(bookUid);
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
-    await _db.setPrefTyped<int>(videoRemotePositionPrefKey(bookUid), 0);
+    await _stampWatchState(
+      bookUid,
+      positionMs: 0,
+      completedAt: null,
+      nowMs: nowMs,
+    );
+  });
+
+  /// 手动「标记已看 / 未看」（视频库卡菜单、合集详情页、CLI / AI 操作共用的唯一
+  /// 写入口）：行级 completedAt + 断点归零走
+  /// [FushiDatabase.setVideoBooksWatched]，同一事务里给每条存在的行盖互联 LWW 镜像
+  /// ——位置 `video_remote_position_` = 「0 @ 现在」、看完标记
+  /// `video_remote_completed_` = 「行上的 completedAt @ 现在」。
+  ///
+  /// 为什么必须盖戳（与 [clearWatchProgress] 同理）：全量同步读本地进度的时间戳取
+  /// `_at_` prefs。只清行不盖戳，本地仍是「0 @ 上次播放时刻」，host 上的旧断点至少
+  /// 打平——下一次同步把中途断点灌回来，刚标的已看立刻变成「重看到一半」。看完标记
+  /// 本身也经播放偏好通道（`VideoPlaybackSyncState.completedAt`）逐字段 LWW，两台
+  /// 设备收敛到同一份真相，而不是各留各的。
+  ///
+  /// [watched] = true 时已看过的行保留原完成时刻。返回 completedAt 真变了的条数与
+  /// 写后的行（调用方据此做服务器回写等后续）。
+  Future<({int changed, List<VideoBookRow> rows})> setWatched(
+    List<String> bookUids, {
+    required bool watched,
+    DateTime? now,
+  }) {
+    if (bookUids.isEmpty) {
+      return Future<({int changed, List<VideoBookRow> rows})>.value((
+        changed: 0,
+        rows: const <VideoBookRow>[],
+      ));
+    }
+    final DateTime at = now ?? DateTime.now();
+    return _db.transaction(() async {
+      final ({int changed, List<VideoBookRow> rows}) result = await _db
+          .setVideoBooksWatched(bookUids, watched ? at : null);
+      for (final VideoBookRow row in result.rows) {
+        await _stampWatchState(
+          row.bookUid,
+          positionMs: 0,
+          completedAt: row.completedAt,
+          nowMs: at.millisecondsSinceEpoch,
+        );
+      }
+      return result;
+    });
+  }
+
+  /// 原样恢复一行的「看完标记 + 断点」（撤销 [setWatched] 用：AI / CLI 写操作必须
+  /// 可撤销，取消已看清掉的断点要能还回去）。恢复本身是一次新的本地写入，镜像键
+  /// 按「现在」盖戳，对端随下一次同步跟上，而不是被对端旧值盖回去。行不存在时
+  /// no-op。
+  Future<void> restoreWatchState(
+    String bookUid, {
+    required DateTime? completedAt,
+    required int positionMs,
+  }) => _db.transaction(() async {
+    if (await _db.getVideoBookByBookUid(bookUid) == null) return;
+    await _db.restoreVideoBookWatchState(
+      bookUid,
+      completedAt: completedAt,
+      positionMs: positionMs,
+    );
+    await _stampWatchState(
+      bookUid,
+      positionMs: positionMs,
+      completedAt: completedAt,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+    );
+  });
+
+  /// 给一行的断点与看完标记盖互联 LWW 镜像（值 + `_at_` 戳）。
+  Future<void> _stampWatchState(
+    String bookUid, {
+    required int positionMs,
+    required DateTime? completedAt,
+    required int nowMs,
+  }) async {
+    await _db.setPrefTyped<int>(
+      videoRemotePositionPrefKey(bookUid),
+      positionMs,
+    );
     await _db.setPrefTyped<int>(videoRemotePositionAtPrefKey(bookUid), nowMs);
+    await _db.setPrefTyped<int>(
+      videoRemoteCompletedPrefKey(bookUid),
+      completedAt?.millisecondsSinceEpoch ?? 0,
+    );
+    await _db.setPrefTyped<int>(videoRemoteCompletedAtPrefKey(bookUid), nowMs);
   }
 
   /// Updates local file paths after app-owned media is relocated.
@@ -578,11 +703,11 @@ class VideoBookRepository {
     }
     return (_db.update(
       _db.videoBooks,
-    )..where((tbl) => tbl.bookUid.equals(bookUid)))
-        .write(
+    )..where((tbl) => tbl.bookUid.equals(bookUid))).write(
       VideoBooksCompanion(
-        videoPath:
-            videoPath == null ? const Value.absent() : Value<String>(videoPath),
+        videoPath: videoPath == null
+            ? const Value.absent()
+            : Value<String>(videoPath),
         subtitleSource: subtitleSource == null
             ? const Value.absent()
             : Value<String?>(subtitleSource),
@@ -590,41 +715,102 @@ class VideoBookRepository {
     );
   }
 
-  /// TODO-1961-d：把库里落在 [fromPath] 下的路径整体重映射到 [toPath]，
-  /// 返回实际改动的行数。
+  /// TODO-1961-d：引擎侧改名 / 移动成功之后，把 [relocation] 落进库与下载任务表，
+  /// 返回实际改动的**库行**数（UI 提示「迁移了几个条目」）。
   ///
   /// 引擎侧改名 / 移动（TODO-1961-c）之后必须**立刻**调这个 —— 两件事成对完成，
   /// 缺一即断：只改引擎 = 做种保住了但库里全是死路径；只改库 = 库对了但引擎按
   /// 旧路径读盘，做种当场断。
   ///
-  /// 三列（videoPath / subtitleSource / secondarySubtitleSource）各自判断，
-  /// 哨兵值（`embedded:<n>` / `off:`）与流媒体 URL 一律不动，规则见
-  /// [remapVideoBookPaths]。整批在一个事务里写，中途失败不会留下改了一半的库。
-  Future<int> migrateMediaPaths({
-    required String fromPath,
-    required String toPath,
-  }) async {
-    if (fromPath.trim().isEmpty || toPath.trim().isEmpty) return 0;
-    final List<VideoBookRow> rows = await _db.allVideoBooks();
+  /// 判据是「文件是否真的被引擎搬走」（[DownloadRelocation.movedFiles] 逐文件
+  /// 全等），不是目录前缀：引擎只搬种子自己的文件，旁边的字幕 sidecar 原地不动，
+  /// 按前缀改会把字幕列指到一个没有文件的位置（BUG-3538）。三列各自判断，哨兵值
+  /// （`embedded:<n>` / `off:`）与流媒体 URL 一律不动，规则见 [remapVideoBookPaths]。
+  ///
+  /// 同一事务里还改下载任务表（BUG-3540）——任务与库行之间没有 id 级外键，
+  /// 纽带全靠路径：
+  /// - `video_download_job_files.final_absolute_path`：被搬走的文件跟着改（下载后
+  ///   补抓字幕、库侧删除反查任务都按它与 `videoPath` 相等）；
+  /// - 该种子任务行的 `observed_save_path`（后端坐标）：移动后换成新保存位置；
+  /// - 改名文件的 `current_relative_path`：换成新的种子内相对路径。
+  /// 后两者不跟，任务删除 / 打开位置会把新相对路径拼回旧目录，指向不存在的文件。
+  Future<int> applyDownloadRelocation(DownloadRelocation relocation) async {
+    final MovedMediaFiles moved = relocation.movedFiles;
     final Map<String, VideoPathRemap> pending = <String, VideoPathRemap>{};
-    for (final VideoBookRow row in rows) {
-      final VideoPathRemap remap = remapVideoBookPaths(
-        videoPath: row.videoPath,
-        subtitleSource: row.subtitleSource,
-        secondarySubtitleSource: row.secondarySubtitleSource,
-        fromPath: fromPath,
-        toPath: toPath,
-      );
-      if (!remap.isEmpty) pending[row.bookUid] = remap;
+    if (!moved.isEmpty) {
+      for (final VideoBookRow row in await _db.allVideoBooks()) {
+        final VideoPathRemap remap = remapVideoBookPaths(
+          videoPath: row.videoPath,
+          subtitleSource: row.subtitleSource,
+          secondarySubtitleSource: row.secondarySubtitleSource,
+          moved: moved,
+        );
+        if (!remap.isEmpty) pending[row.bookUid] = remap;
+      }
     }
-    if (pending.isEmpty) return 0;
+    final Map<int, String> pendingJobFiles = <int, String>{};
+    if (!moved.isEmpty) {
+      for (final VideoDownloadJobFileRow file
+          in await _db.select(_db.videoDownloadJobFiles).get()) {
+        final String? remapped = moved.newPathFor(file.finalAbsolutePath);
+        if (remapped != null) pendingJobFiles[file.id] = remapped;
+      }
+    }
+    final String hash = relocation.infoHash.trim().toLowerCase();
+    final List<String> torrentJobIds = <String>[
+      if (hash.isNotEmpty)
+        for (final VideoDownloadJobRow job in await _db.getVideoDownloadJobs())
+          if (job.backendTaskId?.trim().toLowerCase() == hash ||
+              job.torrentHash?.trim().toLowerCase() == hash)
+            job.jobId,
+    ];
+    final String? newSavePath = relocation.newBackendSavePath?.trim();
+    final int? renamedIndex = relocation.renamedFileIndex;
+    final String? renamedPath = relocation.renamedRelativePath?.trim();
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
     await _db.transaction(() async {
+      for (final MapEntry<int, String> entry in pendingJobFiles.entries) {
+        await (_db.update(
+          _db.videoDownloadJobFiles,
+        )..where((tbl) => tbl.id.equals(entry.key))).write(
+          VideoDownloadJobFilesCompanion(
+            finalAbsolutePath: Value<String?>(entry.value),
+            updatedAt: Value<int>(nowMs),
+          ),
+        );
+      }
+      for (final String jobId in torrentJobIds) {
+        if (newSavePath != null && newSavePath.isNotEmpty) {
+          await (_db.update(
+            _db.videoDownloadJobs,
+          )..where((tbl) => tbl.jobId.equals(jobId))).write(
+            VideoDownloadJobsCompanion(
+              observedSavePath: Value<String?>(newSavePath),
+              updatedAt: Value<int>(nowMs),
+            ),
+          );
+        }
+        if (renamedIndex != null &&
+            renamedPath != null &&
+            renamedPath.isNotEmpty) {
+          await (_db.update(_db.videoDownloadJobFiles)..where(
+                (tbl) =>
+                    tbl.jobId.equals(jobId) &
+                    tbl.backendFileIndex.equals(renamedIndex),
+              ))
+              .write(
+                VideoDownloadJobFilesCompanion(
+                  currentRelativePath: Value<String>(renamedPath),
+                  updatedAt: Value<int>(nowMs),
+                ),
+              );
+        }
+      }
       for (final MapEntry<String, VideoPathRemap> entry in pending.entries) {
         final VideoPathRemap remap = entry.value;
         await (_db.update(
           _db.videoBooks,
-        )..where((tbl) => tbl.bookUid.equals(entry.key)))
-            .write(
+        )..where((tbl) => tbl.bookUid.equals(entry.key))).write(
           VideoBooksCompanion(
             videoPath: remap.videoPath == null
                 ? const Value.absent()
@@ -671,11 +857,10 @@ class VideoBookRepository {
   Future<void> updateSecondarySubtitleSource(
     String bookUid,
     String? secondarySubtitleSource,
-  ) =>
-      _db.updateVideoBookSecondarySubtitleSource(
-        bookUid,
-        secondarySubtitleSource,
-      );
+  ) => _db.updateVideoBookSecondarySubtitleSource(
+    bookUid,
+    secondarySubtitleSource,
+  );
 
   /// 更新用户选中的音轨 id（libmpv `AudioTrack.id`；清除存 null）。
   Future<void> updateAudioTrackId(String bookUid, String? audioTrackId) =>
@@ -709,8 +894,9 @@ class VideoBookRepository {
     required String value,
   }) async {
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
-    for (final MediaCollectionItemRow item
-        in await _db.getCollectionItems(collectionId)) {
+    for (final MediaCollectionItemRow item in await _db.getCollectionItems(
+      collectionId,
+    )) {
       if (item.mediaType != MediaKind.video.dbValue) continue;
       await _db.setPrefTyped<String>(valueKeyOf(item.entryKey), value);
       await _db.setPrefTyped<int>(atKeyOf(item.entryKey), nowMs);
@@ -733,13 +919,18 @@ class VideoBookRepository {
     await _db.updateMediaCollectionSubtitleDelayMs(collectionId, delayMs);
     if (delayMs == null) return;
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
-    for (final MediaCollectionItemRow item
-        in await _db.getCollectionItems(collectionId)) {
+    for (final MediaCollectionItemRow item in await _db.getCollectionItems(
+      collectionId,
+    )) {
       if (item.mediaType != MediaKind.video.dbValue) continue;
       await _db.setPrefTyped<int>(
-          videoRemoteDelayPrefKey(item.entryKey), delayMs);
+        videoRemoteDelayPrefKey(item.entryKey),
+        delayMs,
+      );
       await _db.setPrefTyped<int>(
-          videoRemoteDelayAtPrefKey(item.entryKey), nowMs);
+        videoRemoteDelayAtPrefKey(item.entryKey),
+        nowMs,
+      );
     }
   }
 
@@ -753,7 +944,9 @@ class VideoBookRepository {
     int? delayMs,
   ) async {
     await _db.updateMediaCollectionSecondarySubtitleDelayMs(
-        collectionId, delayMs);
+      collectionId,
+      delayMs,
+    );
     await _stampCollectionMemberPrefs(
       collectionId,
       valueKeyOf: videoRemoteSecondaryDelayPrefKey,
@@ -811,13 +1004,21 @@ class VideoBookRepository {
   /// 一个事务 = 全有或全无：任何一条违反约束都会让整批回滚。需要「某条失败不拖累
   /// 其余条」的调用方（批量删除 UI）走 [deleteVideoBooksAndReclaimAssets]，那里
   /// 整批失败时退回逐条重试并汇总失败。
+  ///
+  /// [removeFromCollections] = false 只给「删掉从配对设备下载来的本机副本」用：
+  /// 那一集仍在对端、合集成员行的 entryKey 就是对端 id，成员行留着，合集详情页
+  /// 下次解析时它退回成远端集（可再流播 / 再下载），合集也不会因此被清空自删。
   Future<List<VideoBookRow>> deleteVideoBooks(
     Iterable<String> bookUids, {
     DeleteScope scope = DeleteScope.keepLocalOnly,
+    bool removeFromCollections = true,
   }) async {
     final List<String> uids = bookUids.toSet().toList(growable: false);
     if (uids.isEmpty) return const <VideoBookRow>[];
-    final List<VideoBookRow> deleted = await _db.deleteVideoBooks(uids);
+    final List<VideoBookRow> deleted = await _db.deleteVideoBooks(
+      uids,
+      removeFromCollections: removeFromCollections,
+    );
     // keepLocalOnly 不记墓碑，避免删本地→回写墓碑循环。
     if (scope == DeleteScope.syncEverywhere) {
       await _writeVideoDeletionTombstones(uids);
@@ -881,13 +1082,18 @@ class VideoBookRepository {
   /// [localFileHooks] 是这条尾活的前后挂钩：删之前先让引用方放手（下载后端把该
   /// 文件标 skip），删之后才做记录对账。本仓库层不认识下载管线（管线依赖仓库，
   /// 反过来会成环），所以这两步都由 `video_library_delete.dart` 在上层接线。
+  ///
+  /// [keepLocalFiles]：调用方确认已转交给别的库的原始文件，与幸存行引用的文件同等
+  /// 进删除护栏（含 iOS 选择器副本的强制回收）。
   Future<int> deleteVideoBooksAndReclaimAssets(
     Iterable<String> bookUids, {
     DeleteScope scope = DeleteScope.keepLocalOnly,
     bool compactDatabase = true,
     bool deleteLocalFiles = false,
+    bool removeFromCollections = true,
     LocalVideoFileDeleteHooks? localFileHooks,
     Future<void> Function()? afterDeleteBeforeReclaim,
+    Iterable<String> keepLocalFiles = const <String>[],
   }) {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
@@ -900,8 +1106,10 @@ class VideoBookRepository {
         scope: scope,
         compactDatabase: compactDatabase,
         deleteLocalFiles: deleteLocalFiles,
+        removeFromCollections: removeFromCollections,
         localFileHooks: localFileHooks,
         afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
+        keepLocalFiles: keepLocalFiles,
       ),
     ).whenComplete(lease.release);
   }
@@ -911,8 +1119,10 @@ class VideoBookRepository {
     required DeleteScope scope,
     required bool compactDatabase,
     required bool deleteLocalFiles,
+    required bool removeFromCollections,
     required LocalVideoFileDeleteHooks? localFileHooks,
     required Future<void> Function()? afterDeleteBeforeReclaim,
+    required Iterable<String> keepLocalFiles,
   }) async {
     final List<String> uids = bookUids.toSet().toList(growable: false);
     // v68：附加图行随删行 FK cascade 消失，路径必须删行**前**快照（与 coverPath
@@ -931,7 +1141,10 @@ class VideoBookRepository {
     List<VideoBookRow> deletedRows;
     try {
       // 快路径：整批一个事务（BUG-2754：原来每条 2~3 个独立事务）。
-      deletedRows = await deleteVideoBooks(uids);
+      deletedRows = await deleteVideoBooks(
+        uids,
+        removeFromCollections: removeFromCollections,
+      );
     } catch (batchError, batchStack) {
       // 一个事务全有或全无：任一条违反约束整批回滚。退回逐条删，让坏的那条只
       // 拖累它自己，其余照删；失败条目逐条记下并在尾活跑完后汇总抛出。
@@ -943,11 +1156,19 @@ class VideoBookRepository {
       deletedRows = <VideoBookRow>[];
       for (final String bookUid in uids) {
         try {
-          deletedRows.addAll(await deleteVideoBooks(<String>[bookUid]));
+          deletedRows.addAll(
+            await deleteVideoBooks(<String>[
+              bookUid,
+            ], removeFromCollections: removeFromCollections),
+          );
         } catch (e, stack) {
           engineLog.log('VideoBookRepository.deleteVideoBooks.row', e, stack);
           failures.add(
-            VideoBookDeleteFailure(bookUid: bookUid, error: e, stackTrace: stack),
+            VideoBookDeleteFailure(
+              bookUid: bookUid,
+              error: e,
+              stackTrace: stack,
+            ),
           );
         }
       }
@@ -999,6 +1220,9 @@ class VideoBookRepository {
           // 幸存行手动挂着的外挂字幕也进护栏：它可能正躺在被删视频旁边、名字还
           // 对得上（用户给 B.mkv 挂了 A.ja.srt），那也不能删。
           ...referencedLocalSubtitlePaths(survivors),
+          // 调用方声明「这些文件已归别处所有」（纯音频搬进音乐库后曲目还指着它，
+          // BUG-4175）：iOS 选择器副本也不回收。
+          for (final String path in keepLocalFiles) platformPathKey(path),
         };
         final List<String> videoCandidates = <String>[
           for (final snapshot in deleted)
@@ -1094,11 +1318,7 @@ class VideoBookRepository {
     try {
       await run();
     } catch (e, stack) {
-      engineLog.log(
-        'VideoBookRepository.localFileHook.$name',
-        e,
-        stack,
-      );
+      engineLog.log('VideoBookRepository.localFileHook.$name', e, stack);
     }
   }
 
@@ -1139,10 +1359,9 @@ class VideoBookRepository {
         );
         return;
       }
-      await _reclaimDeletedVideoBooksAssetsUnlocked(
-        <_DeletedVideoSnapshot>[snapshot],
-        survivors,
-      );
+      await _reclaimDeletedVideoBooksAssetsUnlocked(<_DeletedVideoSnapshot>[
+        snapshot,
+      ], survivors);
     }).whenComplete(lease.release);
   }
 
@@ -1268,8 +1487,7 @@ class VideoBookRepository {
   }
 
   Future<int> _readPragmaInt(String pragma) async {
-    final QueryRow row =
-        await _db.customSelect('PRAGMA $pragma').getSingle();
+    final QueryRow row = await _db.customSelect('PRAGMA $pragma').getSingle();
     return row.read<int>(pragma);
   }
 
@@ -1299,7 +1517,7 @@ class VideoBookRepository {
   /// [excludeBookUid] 非 null 时跳过该 book 自己的引用（删除时取「全库其余 book」的
   /// 引用集，避免被删 book 自己的路径反而把自己的资产护住不删）。
   Future<({Set<String> covers, Set<String> subtitles})>
-      collectReferencedAssetPaths({String? excludeBookUid}) async {
+  collectReferencedAssetPaths({String? excludeBookUid}) async {
     final List<VideoBookRow> all = await listAll();
     return referencedAssetPathsOf(<VideoBookRow>[
       for (final VideoBookRow row in all)
@@ -1373,8 +1591,7 @@ class VideoBookRepository {
   Future<void> saveCues({
     required String bookUid,
     required List<AudioCue> cues,
-  }) =>
-      _db.replaceCuesForBook(bookUid, _persistableCues(cues));
+  }) => _db.replaceCuesForBook(bookUid, _persistableCues(cues));
 
   Future<List<AudioCue>> loadCues(String bookUid) async {
     final List<AudioCueRow> rows = await _db.getCuesForBook(bookUid);
@@ -1388,11 +1605,10 @@ class VideoBookRepository {
     required String bookUid,
     required String? subtitleSource,
     required List<AudioCue> cues,
-  }) =>
-      _db.transaction(() async {
-        await _db.replaceCuesForBook(bookUid, _persistableCues(cues));
-        await _db.updateVideoBookSubtitleSource(bookUid, subtitleSource);
-      });
+  }) => _db.transaction(() async {
+    await _db.replaceCuesForBook(bookUid, _persistableCues(cues));
+    await _db.updateVideoBookSubtitleSource(bookUid, subtitleSource);
+  });
 }
 
 /// [VideoStorage.coversDir] 的一次性快照：目录下的文件名集合。
@@ -1423,7 +1639,9 @@ class _CoverDirSnapshot {
         // 的 5 条用例就是这么红的）。
         // 省掉「每行一次 existsSync」这个收益与同步/异步无关：一次目录列举 vs
         // N 次 stat，listSync 照样是一次。
-        for (final FileSystemEntity entity in dir.listSync(followLinks: false)) {
+        for (final FileSystemEntity entity in dir.listSync(
+          followLinks: false,
+        )) {
           if (entity is File) names.add(p.basename(entity.path));
         }
       }

@@ -14,11 +14,19 @@ void main() {
       expect(isYoutubeUrl('https://www.netflix.com/watch/1'), false);
       expect(isYoutubeUrl('/local/file.mp4'), false);
     });
+    test('matches on domain boundaries, not bare suffixes', () {
+      expect(isYoutubeUrl('https://youtube.com/watch?v=abc123'), true);
+      expect(isYoutubeUrl('https://m.youtube.com/watch?v=abc123'), true);
+      expect(isYoutubeUrl('https://www.youtube-nocookie.com/embed/x'), true);
+      expect(isYoutubeUrl('https://notyoutube.com/watch?v=abc123'), false);
+      expect(isYoutubeUrl('https://evil-youtube-nocookie.com/embed/x'), false);
+    });
   });
 
   group('parseYoutubeTimedTextToCues', () {
     test('converts timedtext XML to cues with ms bounds', () {
-      const xml = '<transcript>'
+      const xml =
+          '<transcript>'
           '<text start="1.5" dur="2.0">走り出した</text>'
           '<text start="4.0" dur="1.5">こんにちは</text>'
           '</transcript>';
@@ -44,7 +52,8 @@ void main() {
   // fixtures 用探测抓下来的真实结构（人工轨 <p>text</p>、ASR 轨 <p><s>词</s></p>）。
   group('parseYoutubeTimedTextToCues format 3 (BUG-783)', () {
     test('manual track: <p t d>text</p> 毫秒直用', () {
-      const xml = '<?xml version="1.0" encoding="utf-8" ?>'
+      const xml =
+          '<?xml version="1.0" encoding="utf-8" ?>'
           '<timedtext format="3">\n<body>\n'
           '<p t="1360" d="1680">[♪♪♪]</p>\n'
           '<p t="18640" d="3240">♪ We&#39;re no strangers to love ♪</p>\n'
@@ -60,7 +69,8 @@ void main() {
     });
 
     test('ASR track: 拼接 <s> 词级片段、跳空白滚动占位与 <w> 元素', () {
-      const xml = '<?xml version="1.0" encoding="utf-8" ?>'
+      const xml =
+          '<?xml version="1.0" encoding="utf-8" ?>'
           '<timedtext format="3">\n'
           '<head>\n<ws id="0"/>\n<wp id="0"/>\n</head>\n<body>\n'
           '<w t="0" id="1" wp="1" ws="1"/>\n'
@@ -81,7 +91,8 @@ void main() {
     });
 
     test('format 3 无 d 属性时 endMs 退回 startMs（不崩）', () {
-      const xml = '<timedtext format="3"><body>'
+      const xml =
+          '<timedtext format="3"><body>'
           '<p t="5000">末尾无时长</p>'
           '</body></timedtext>';
       final cues = parseYoutubeTimedTextToCues(content: xml, bookKey: 'yt:z');
@@ -174,35 +185,40 @@ void main() {
   // ios 之前（android 成功 ~3s，ios 取流失败要等满首流 HEAD 403 探测 ~16s）。
   group('A1 多 client 兜底顺序 (TODO-1307)', () {
     test(
-        'kYoutubeManifestClientFallback = visionos -> androidVr -> android -> ios -> tv',
-        () {
-      expect(kYoutubeManifestClientFallback.length, 5);
-      expect(
-        identical(kYoutubeManifestClientFallback[0], kYoutubeVisionOsClient),
-        isTrue,
-        reason: 'BUG-2526：visionos 必须首选——android 的 DASH 流无 PO token 只放前 60 秒',
-      );
-      expect(
-        identical(
-            kYoutubeManifestClientFallback[1], yt.YoutubeApiClient.androidVr),
-        isTrue,
-        reason: 'androidVr 保留作兜底（其直链无需签名解密、libmpv 普通 UA 可拉取）',
-      );
-      expect(
-        identical(
-            kYoutubeManifestClientFallback[2], yt.YoutubeApiClient.android),
-        isTrue,
-        reason: 'BUG-1832：android 缺席会让只有它能出流的视频彻底打不开',
-      );
-      expect(
-        identical(kYoutubeManifestClientFallback[3], yt.YoutubeApiClient.ios),
-        isTrue,
-      );
-      expect(
-        identical(kYoutubeManifestClientFallback[4], yt.YoutubeApiClient.tv),
-        isTrue,
-      );
-    });
+      'kYoutubeManifestClientFallback = visionos -> androidVr -> android -> ios -> tv',
+      () {
+        expect(kYoutubeManifestClientFallback.length, 5);
+        expect(
+          identical(kYoutubeManifestClientFallback[0], kYoutubeVisionOsClient),
+          isTrue,
+          reason: 'BUG-2526：visionos 必须首选——android 的 DASH 流无 PO token 只放前 60 秒',
+        );
+        expect(
+          identical(
+            kYoutubeManifestClientFallback[1],
+            yt.YoutubeApiClient.androidVr,
+          ),
+          isTrue,
+          reason: 'androidVr 保留作兜底（其直链无需签名解密、libmpv 普通 UA 可拉取）',
+        );
+        expect(
+          identical(
+            kYoutubeManifestClientFallback[2],
+            yt.YoutubeApiClient.android,
+          ),
+          isTrue,
+          reason: 'BUG-1832：android 缺席会让只有它能出流的视频彻底打不开',
+        );
+        expect(
+          identical(kYoutubeManifestClientFallback[3], yt.YoutubeApiClient.ios),
+          isTrue,
+        );
+        expect(
+          identical(kYoutubeManifestClientFallback[4], yt.YoutubeApiClient.tv),
+          isTrue,
+        );
+      },
+    );
   });
 
   // TODO-1307 字幕后置入口：best-effort，无法解析出 videoId 时返回空 cue，绝不抛/阻断播放。

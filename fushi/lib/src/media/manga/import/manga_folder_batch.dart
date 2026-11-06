@@ -8,6 +8,8 @@ import 'package:fushi/src/media/import/import_carrier.dart';
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
 import 'package:fushi/src/media/manga/import/manga_pdf_importer.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
+import 'package:fushi_engine/media/manga/mokuro_legacy_html.dart'
+    show isLegacyMokuroHtmlVolume, isMokuroLegacyHtmlPath;
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show enumerateMangaPages, naturalCompare;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -21,6 +23,10 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 /// 只按扩展名过滤（[kMangaCarrierFileExtensions]），不开包：真定性由
 /// [classifyImportCarrier] 在逐卷导入时完成，那时反正要解压。判定阶段开 20 个包
 /// 只为把按钮点亮是纯浪费。
+///
+/// mokuro 0.1 旧版产物的 `<卷名>.html`（同级有 `<卷名>/` 与 `_ocr/<卷名>/`）也是一卷
+/// 的 manifest，一并列出；同级已有 `<卷名>.mokuro` 时让位给它（新版 mokuro 加
+/// `--legacy_html` 两样都写，同一卷不能导两次）。
 List<File> mangaCarrierFilesIn(Directory dir) {
   final List<FileSystemEntity> entries;
   try {
@@ -29,26 +35,42 @@ List<File> mangaCarrierFilesIn(Directory dir) {
     // 无权限 / 瞬时 IO：当作「这里没有整卷文件」，让上游落回页图目录那条解释。
     return const <File>[];
   }
+  final Set<String> mokuroStems = <String>{
+    for (final FileSystemEntity entity in entries)
+      if (entity is File && p.extension(entity.path).toLowerCase() == '.mokuro')
+        p.withoutExtension(entity.path).toLowerCase(),
+  };
   final List<File> files = <File>[
     for (final FileSystemEntity entity in entries)
       if (entity is File &&
-          kMangaCarrierFileExtensions
-              .contains(p.extension(entity.path).toLowerCase()))
+          (kMangaCarrierFileExtensions.contains(
+                p.extension(entity.path).toLowerCase(),
+              ) ||
+              (isLegacyMokuroHtmlVolume(entity.path) &&
+                  !mokuroStems.contains(
+                    p.withoutExtension(entity.path).toLowerCase(),
+                  ))))
         entity,
   ];
-  files.sort((File a, File b) =>
-      naturalCompare(p.basename(a.path), p.basename(b.path)));
+  files.sort(
+    (File a, File b) => naturalCompare(p.basename(a.path), p.basename(b.path)),
+  );
   return files;
 }
 
-/// [mangaCarrierFilesIn] 里的 `.mokuro`（同样只看直接子层）。
+/// [mangaCarrierFilesIn] 里的 mokuro manifest：`.mokuro`，以及 mokuro 0.1 旧版
+/// 产物的 `<卷名>.html`（同样只看直接子层）。
 ///
 /// 目录载体判定要单独数它（BUG-2785）：`卷.mokuro` + 同名页图子目录是 mokuro 的
-/// 标准产物，`.mokuro` 在场时它比页图更能说明这个目录是什么。
+/// 标准产物，`.mokuro` 在场时它比页图更能说明这个目录是什么。旧版产物同理：
+/// `卷.html` + `卷/` + `_ocr/卷/` 的目录不认 manifest 的话，页图判据会把它压平成
+/// 一卷没字的纯页图，文字层丢掉、读的时候又在设备上跑一遍本地 OCR。
 List<File> mangaMokuroFilesIn(Directory dir) => <File>[
-      for (final File file in mangaCarrierFilesIn(dir))
-        if (p.extension(file.path).toLowerCase() == '.mokuro') file,
-    ];
+  for (final File file in mangaCarrierFilesIn(dir))
+    if (p.extension(file.path).toLowerCase() == '.mokuro' ||
+        isMokuroLegacyHtmlPath(file.path))
+      file,
+];
 
 /// 目录里有没有页图。判据与真正执行导入的枚举同源，不另写一套。
 bool mangaDirectoryHasPageImages(String path) {
@@ -123,15 +145,14 @@ Future<MangaBatchImportReport> importMangaBatchFolder({
   required String path,
   void Function(int done, int total)? onVolumeProgress,
   ImportCarrier Function(String path)? classify,
-}) =>
-    importMangaBatchPaths(
-      db: db,
-      paths: <String>[
-        for (final File file in mangaCarrierFilesIn(Directory(path))) file.path,
-      ],
-      onVolumeProgress: onVolumeProgress,
-      classify: classify ?? _classifyCarrierFile,
-    );
+}) => importMangaBatchPaths(
+  db: db,
+  paths: <String>[
+    for (final File file in mangaCarrierFilesIn(Directory(path))) file.path,
+  ],
+  onVolumeProgress: onVolumeProgress,
+  classify: classify ?? _classifyCarrierFile,
+);
 
 /// 一组用户**同时选中 / 拖入**的漫画载体逐卷导入：每个路径各成一本。
 ///
@@ -179,11 +200,9 @@ Future<MangaBatchImportReport> importMangaBatchPaths({
   onVolumeProgress?.call(0, volumes.length);
   for (int index = 0; index < volumes.length; index++) {
     final (String volumePath, ImportCarrier carrier) = volumes[index];
-    results.add(await _importOneVolume(
-      db: db,
-      volumePath: volumePath,
-      carrier: carrier,
-    ));
+    results.add(
+      await _importOneVolume(db: db, volumePath: volumePath, carrier: carrier),
+    );
     onVolumeProgress?.call(index + 1, volumes.length);
   }
   return MangaBatchImportReport(results);
@@ -272,23 +291,23 @@ Future<MangaBatchVolumeResult> _importOneVolume({
 /// 批量里单个候选**文件**的真定性。目录判据在这里恒为 false / 0——候选集本身
 /// 就只有文件（[mangaCarrierFilesIn] 只收 `entity is File`）。
 ImportCarrier _classifyCarrierFile(String path) => classifyImportCarrier(
-      path,
-      isDirectory: (String _) => false,
-      isImageArchive: MangaArchiveImporter.looksLikeImageArchive,
-      directoryHasPageImages: (String _) => false,
-      directoryCarrierFileCount: (String _) => 0,
-      directoryMokuroFileCount: (String _) => 0,
-    );
+  path,
+  isDirectory: (String _) => false,
+  isImageArchive: MangaArchiveImporter.looksLikeImageArchive,
+  directoryHasPageImages: (String _) => false,
+  directoryCarrierFileCount: (String _) => 0,
+  directoryMokuroFileCount: (String _) => 0,
+);
 
 /// [importMangaBatchPaths] 的生产判据：路径可能是文件也可能是目录（拖入 / 多选），
 /// 目录判据与漫画导入框同源（[mangaDirectoryHasPageImages] / [mangaCarrierFilesIn]）。
 ImportCarrier _classifyCarrierPath(String path) => classifyImportCarrier(
-      path,
-      isDirectory: (String pth) => Directory(pth).existsSync(),
-      isImageArchive: MangaArchiveImporter.looksLikeImageArchive,
-      directoryHasPageImages: mangaDirectoryHasPageImages,
-      directoryCarrierFileCount: (String pth) =>
-          mangaCarrierFilesIn(Directory(pth)).length,
-      directoryMokuroFileCount: (String pth) =>
-          mangaMokuroFilesIn(Directory(pth)).length,
-    );
+  path,
+  isDirectory: (String pth) => Directory(pth).existsSync(),
+  isImageArchive: MangaArchiveImporter.looksLikeImageArchive,
+  directoryHasPageImages: mangaDirectoryHasPageImages,
+  directoryCarrierFileCount: (String pth) =>
+      mangaCarrierFilesIn(Directory(pth)).length,
+  directoryMokuroFileCount: (String pth) =>
+      mangaMokuroFilesIn(Directory(pth)).length,
+);

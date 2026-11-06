@@ -9,17 +9,17 @@ part of '../sync_settings_schema.dart';
 /// 不在 Apple 实色分组卡里冒出一行 MD3 标题字。
 TextStyle? _interconnectSubheadStyle(BuildContext context) =>
     isGlassDesign(context)
-        ? FushiAppleMetrics.of(context)
-            .footnoteStyle(context)
-            .copyWith(fontWeight: FontWeight.w600)
-        : Theme.of(context).textTheme.titleSmall;
+    ? FushiAppleMetrics.of(
+        context,
+      ).footnoteStyle(context).copyWith(fontWeight: FontWeight.w600)
+    : Theme.of(context).textTheme.titleSmall;
 
 /// 互联自绘块里字段上方的小标签（「令牌」「已配对设备」）：MD3 = labelSmall；
 /// Apple = footnote secondaryLabel。
 TextStyle? _interconnectFieldLabelStyle(BuildContext context) =>
     isGlassDesign(context)
-        ? FushiAppleMetrics.of(context).footnoteStyle(context)
-        : Theme.of(context).textTheme.labelSmall;
+    ? FushiAppleMetrics.of(context).footnoteStyle(context)
+    : Theme.of(context).textTheme.labelSmall;
 
 /// 互联状态色块（M3E tonal 胶囊）：成功 = tertiary、进行中 = primary、错误 =
 /// error、中性 = secondary。Apple 设计系统走 [fushiCardToneColors] 的淡染底；
@@ -45,7 +45,9 @@ class _InterconnectStatusPill extends StatelessWidget {
           container: cs.secondaryContainer,
           onContainer: cs.onSecondaryContainer,
         );
-    final Color fg = eink ? cs.onSurface : (colors.onContainer ?? cs.onSecondaryContainer);
+    final Color fg = eink
+        ? cs.onSurface
+        : (colors.onContainer ?? cs.onSecondaryContainer);
     final FushiSpringSpec effects = context.fushiMotion.effectsDefault;
     return Align(
       alignment: AlignmentDirectional.centerStart,
@@ -167,6 +169,11 @@ class _FushiServerConfigWidget extends StatefulWidget {
       _FushiServerConfigWidgetState();
 }
 
+/// 53NT7G_tSO：已配对地址行把全部动作平铺在行尾所需的最小宽度。更窄时（手机竖屏）
+/// 次要动作挪到地址下方，免得标题被挤成 0 宽。行尾五个控件约 260dp，再给地址
+/// 留出能认出主机的宽度。
+const double _kInterconnectPeerRowWideMinWidth = 520;
+
 class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     with _PairingV2FlowMixin<_FushiServerConfigWidget> {
   @override
@@ -182,6 +189,9 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   List<FushiClientUrl> _urls = <FushiClientUrl>[];
   // url -> last test-connection result (null = not tested this session).
   final Map<String, bool> _reachable = <String, bool>{};
+  // 53NT7G_tSO：url -> 上一次测试失败的**原因**（凭据被拒 / 证书未记录 / 超时 / 连不上）。
+  // 只给 ✗ 不给原因时，用户分不出「token 不对」和「地址不通」，只能瞎试。
+  final Map<String, String> _failureReason = <String, String>{};
   bool _isTesting = false;
   bool _loaded = false;
   // BUG-1562：「已连接 ✓」那一行的判据是 token 非空，而 token 活在
@@ -203,28 +213,28 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     _tokenController.addListener(_onTokenTextChanged);
     _tokenFocus = FocusNode();
     _load();
-    _syncSettings(widget.settingsContext)
-        .clientConfigRevision
-        .addListener(_onClientConfigRevision);
+    _syncSettings(
+      widget.settingsContext,
+    ).clientConfigRevision.addListener(_onClientConfigRevision);
     // 后台地址学习也会写候选列表：跟着真值重载，免得下次编辑把学到的地址整份覆盖。
-    SyncRepository.fushiClientUrlsRevision
-        .addListener(_onClientConfigRevision);
+    SyncRepository.fushiClientUrlsRevision.addListener(_onClientConfigRevision);
     // Rebuild when the server-enabled flag flips so "add connection" re-gates.
-    _syncSettings(widget.settingsContext)
-        .roleRevision
-        .addListener(_onRoleRevision);
+    _syncSettings(
+      widget.settingsContext,
+    ).roleRevision.addListener(_onRoleRevision);
   }
 
   @override
   void dispose() {
-    _syncSettings(widget.settingsContext)
-        .clientConfigRevision
-        .removeListener(_onClientConfigRevision);
-    SyncRepository.fushiClientUrlsRevision
-        .removeListener(_onClientConfigRevision);
-    _syncSettings(widget.settingsContext)
-        .roleRevision
-        .removeListener(_onRoleRevision);
+    _syncSettings(
+      widget.settingsContext,
+    ).clientConfigRevision.removeListener(_onClientConfigRevision);
+    SyncRepository.fushiClientUrlsRevision.removeListener(
+      _onClientConfigRevision,
+    );
+    _syncSettings(
+      widget.settingsContext,
+    ).roleRevision.removeListener(_onRoleRevision);
     _tokenFocus.dispose();
     _tokenController.removeListener(_onTokenTextChanged);
     _tokenController.dispose();
@@ -254,8 +264,9 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       _tokenPresent = _tokenController.text.trim().isNotEmpty;
       _loaded = true;
     });
-    _syncSettings(widget.settingsContext)
-        .setHasClientConnection(urls.isNotEmpty);
+    _syncSettings(
+      widget.settingsContext,
+    ).setHasClientConnection(urls.isNotEmpty);
   }
 
   void _onClientConfigRevision() {
@@ -303,9 +314,9 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
 
   /// 把某台已配对 host 的地址（不含票据）写进 NFC 贴纸。多台时让用户挑。
   Future<void> _writeNfcSticker() async {
-    final List<FushiClientUrl> hosts = interconnectPeerRepresentatives(_urls)
-        .where((FushiClientUrl u) => u.hostId != null)
-        .toList(growable: false);
+    final List<FushiClientUrl> hosts = interconnectPeerRepresentatives(
+      _urls,
+    ).where((FushiClientUrl u) => u.hostId != null).toList(growable: false);
     if (hosts.isEmpty) return;
     FushiClientUrl? host = hosts.length == 1 ? hosts.single : null;
     host ??= await showAppDialog<FushiClientUrl>(
@@ -340,11 +351,28 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
               tone: ok ? FushiCardTone.tertiary : FushiCardTone.error,
             ),
           );
-    if (parseInterconnectP2pUrl(url) == null) return reach;
+    final String? reason = ok == false ? _failureReason[url] : null;
+    final Widget? why = reason == null
+        ? null
+        : Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              reason,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          );
+    final bool p2p = parseInterconnectP2pUrl(url) != null;
+    if (!p2p && why == null) return reach;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
-      children: <Widget>[?reach, InterconnectP2pPathBadge(url: url)],
+      children: <Widget>[
+        ?reach,
+        ?why,
+        if (p2p) InterconnectP2pPathBadge(url: url),
+      ],
     );
   }
 
@@ -365,7 +393,12 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       // 列表行的结果清掉——否则删掉再重加同一地址会立刻显示上一轮的 ✓/✗（陈旧结果
       // 冒充新测）。收在这里：所有 URL 变更都必经本方法。
       _reachable.removeWhere(
-          (String url, bool _) => !stored.any((FushiClientUrl u) => u.url == url));
+        (String url, bool _) => !stored.any((FushiClientUrl u) => u.url == url),
+      );
+      _failureReason.removeWhere(
+        (String url, String _) =>
+            !stored.any((FushiClientUrl u) => u.url == url),
+      );
     });
     // Keep the role lock honest: deleting the last URL must release the server
     // toggle; adding one must lock it. Every URL mutation routes through here.
@@ -486,11 +519,13 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
         }
         return copy;
       }
-      final int index =
-          copy.indexWhere((FushiClientUrl u) => u.url == editingUrl);
+      final int index = copy.indexWhere(
+        (FushiClientUrl u) => u.url == editingUrl,
+      );
       final bool dupElsewhere = copy.asMap().entries.any(
-          (MapEntry<int, FushiClientUrl> e) =>
-              e.key != index && e.value.url == normalizedResult);
+        (MapEntry<int, FushiClientUrl> e) =>
+            e.key != index && e.value.url == normalizedResult,
+      );
       if (index < 0 || dupElsewhere) return current;
       final FushiClientUrl edited = copy[index];
       // BUG-1557：只有「还是同一个端点」（scheme+host+port 未变，只是补斜杠/改
@@ -540,8 +575,10 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       // https 首连：先用一次性 TOFU 探测捕获 host 证书指纹（仅取指纹，不传数据）。
       String? capturedFingerprint;
       if (isHttps) {
-        final FushiTofuOutcome tofu =
-            await FushiTofuProbe.probeFingerprint(parsed.host, port);
+        final FushiTofuOutcome tofu = await FushiTofuProbe.probeFingerprint(
+          parsed.host,
+          port,
+        );
         if (!mounted) return;
         if (!tofu.speaksTls) {
           // BUG-1741：握手都没成，后面的 ping 必然也失败。此前这里不作分辨地
@@ -565,8 +602,10 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
         // 设备」，是「地址的 scheme 写错了」——两句话指向完全相反的排查方向，而旧
         // 实现把它们说成同一句。
         if (!isHttps && outcome.failure == FushiPingFailure.unreachable) {
-          final FushiTofuOutcome tofu =
-              await FushiTofuProbe.probeFingerprint(parsed.host, port);
+          final FushiTofuOutcome tofu = await FushiTofuProbe.probeFingerprint(
+            parsed.host,
+            port,
+          );
           if (!mounted) return;
           if (tofu.speaksTls) {
             _showSnackBar(context, t.sync_pair_peer_requires_https);
@@ -587,8 +626,9 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
         return;
       }
       // https host 的钉扎指纹以 ping 回传为准（与捕获一致），明文 http 无指纹。
-      final String? fingerprint =
-          isHttps ? (ping.fingerprint ?? capturedFingerprint) : null;
+      final String? fingerprint = isHttps
+          ? (ping.fingerprint ?? capturedFingerprint)
+          : null;
       // https 必须有指纹才能继续（否则无法钉扎，拒绝裸 https）。
       if (isHttps && (fingerprint == null || fingerprint.isEmpty)) {
         // 语义就是「拿不到可钉扎的证书」，不是笼统的「配对失败」。
@@ -602,6 +642,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
         baseUrl: baseUrl,
         fingerprint: fingerprint,
         deviceName: ping.deviceName,
+        hostId: ping.hostId,
       );
     } finally {
       _setPairV2Busy(false);
@@ -610,12 +651,14 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
 
   Future<void> _toggleUrl(int index) async {
     final String url = _urls[index].url;
-    await _mutateUrls((List<FushiClientUrl> current) => <FushiClientUrl>[
-          for (final FushiClientUrl u in current)
-            // TODO-961 gap②：copyWith 保留指纹/展示名（对齐编辑路径）；裸构造会把已
-            // TOFU 钉扎的 fingerprintSha256 静默清掉，回明文降级。
-            u.url == url ? u.copyWith(enabled: !u.enabled) : u,
-        ]);
+    await _mutateUrls(
+      (List<FushiClientUrl> current) => <FushiClientUrl>[
+        for (final FushiClientUrl u in current)
+          // TODO-961 gap②：copyWith 保留指纹/展示名（对齐编辑路径）；裸构造会把已
+          // TOFU 钉扎的 fingerprintSha256 静默清掉，回明文降级。
+          u.url == url ? u.copyWith(enabled: !u.enabled) : u,
+      ],
+    );
   }
 
   /// 带 hostId 的条目删的是**那台 host**：同组其余地址都带着它的 token，只删一行
@@ -627,7 +670,8 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   Future<void> _deleteUrl(int index) async {
     final String url = _urls[index].url;
     final String? hostId = _urls[index].hostId;
-    final int removed = _urls.length -
+    final int removed =
+        _urls.length -
         withoutInterconnectHost(_urls, url: url, hostId: hostId).length;
     if (removed > 1) {
       final bool confirmed = await showFushiConfirmDialog(
@@ -641,8 +685,10 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       );
       if (!confirmed) return;
     }
-    await _mutateUrls((List<FushiClientUrl> current) =>
-        withoutInterconnectHost(current, url: url, hostId: hostId));
+    await _mutateUrls(
+      (List<FushiClientUrl> current) =>
+          withoutInterconnectHost(current, url: url, hostId: hostId),
+    );
   }
 
   /// [newIndex] 是**最终下标**（FushiReorderableColumn 语义），不是 SDK
@@ -656,11 +702,14 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     final List<FushiClientUrl> view = <FushiClientUrl>[..._urls];
     final FushiClientUrl moved = view.removeAt(oldIndex);
     view.insert(newIndex, moved);
-    final String? beforeUrl =
-        newIndex + 1 < view.length ? view[newIndex + 1].url : null;
+    final String? beforeUrl = newIndex + 1 < view.length
+        ? view[newIndex + 1].url
+        : null;
     setState(() => _urls = view); // 拖动手感：先按本页顺序显示，再以库为准。
-    await _mutateUrls((List<FushiClientUrl> current) =>
-        moveInterconnectUrlBefore(current, moved.url, beforeUrl));
+    await _mutateUrls(
+      (List<FushiClientUrl> current) =>
+          moveInterconnectUrlBefore(current, moved.url, beforeUrl),
+    );
   }
 
   Future<void> _testAll() async {
@@ -680,6 +729,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       // 地址行都带着自己的有效凭据。
       final String? token = interconnectTokenFor(u, globalToken);
       bool ok = false;
+      String? reason = token == null ? t.sync_err_not_paired : null;
       if (token != null) {
         try {
           // 必须带上该地址钉扎的证书指纹：新版 host 默认走 https 自签证书，漏传指纹会
@@ -696,11 +746,22 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
           // Record why an address probe failed (auth vs network vs timeout)
           // instead of only showing a generic ✗ (HBK-AUDIT-165).
           ErrorLogService.instance.log('SyncTestAll:${u.url}', e, stack);
+          reason = interconnectTestFailureReason(
+            e,
+            hasPinnedCertificate: (u.fingerprintSha256 ?? '').isNotEmpty,
+          );
         }
       }
       // token == null：两头都拿不出凭据，不发必然 401 的请求，直接标失败。
       if (!mounted) return;
-      setState(() => _reachable[u.url] = ok);
+      setState(() {
+        _reachable[u.url] = ok;
+        if (ok || reason == null) {
+          _failureReason.remove(u.url);
+        } else {
+          _failureReason[u.url] = reason;
+        }
+      });
     }
     if (mounted) setState(() => _isTesting = false);
   }
@@ -712,8 +773,9 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     // Mutual exclusion: while this device serves peers, it can't also connect
     // out as a client. Block adding/editing connections; deleting stays allowed
     // so the user can clear them and switch roles.
-    final bool lockedByServer =
-        _syncSettings(widget.settingsContext).serverEnabled;
+    final bool lockedByServer = _syncSettings(
+      widget.settingsContext,
+    ).serverEnabled;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
@@ -722,8 +784,10 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
           // 列表标题与下方 _LanDiscoveryWidget 的「局域网设备」同级对齐：section 标题
           // 「连接到其他设备」罩着两个 widget，此前本列表裸露无题，空列表时更是只剩一个
           // 孤零零的「添加」按钮，用户不知道这块是什么、该怎么连。
-          Text(t.interconnect_peer_list_title,
-              style: _interconnectSubheadStyle(context)),
+          Text(
+            t.interconnect_peer_list_title,
+            style: _interconnectSubheadStyle(context),
+          ),
           const SizedBox(height: 8),
           if (_urls.isEmpty)
             _InterconnectInlineNotice(
@@ -749,6 +813,48 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
               itemBuilder: (BuildContext context, int index) {
                 final FushiClientUrl u = _urls[index];
                 final bool? ok = _reachable[u.url];
+                // 53NT7G_tSO：窄屏（手机竖屏 ~360dp）上一排五个控件把标题挤到 0 宽，
+                // 地址整行看不见、认不出是哪台。放不下时把次要动作挪到地址下方一行，
+                // 只有开关留在行尾；宽屏照旧平铺在行尾。
+                final List<Widget> actions = <Widget>[
+                  // Gamepad/keyboard reorder equivalent for the drag handle.
+                  FushiIconButton(
+                    icon: FushiIcons.expandLess,
+                    size: 18,
+                    tooltip: t.move_up,
+                    enabled: index > 0,
+                    onTap: () => _reorderUrls(index, index - 1),
+                  ),
+                  FushiIconButton(
+                    icon: FushiIcons.expandMore,
+                    size: 18,
+                    tooltip: t.move_down,
+                    enabled: index < _urls.length - 1,
+                    onTap: () => _reorderUrls(index, index + 1),
+                  ),
+                  // TODO-1330：失败后「重新配对」入口——复用 _attemptManualPair
+                  // 的 v2 编排（探测 → 确认身份 → 按需输 PIN → 落 token+指纹），
+                  // 不必删地址再手动重加。LAN 免 PIN 会话重配对无需任何输入；公网
+                  // 会话仍需按对方 PIN（安全设计使然，host 屏此时会常驻显示 PIN）。
+                  FushiIconButton(
+                    icon: FushiIcons.sync,
+                    size: 18,
+                    tooltip: t.sync_pair_repair,
+                    enabled: !lockedByServer && !_pairingManual,
+                    onTap: () => _attemptManualPair(u.url),
+                  ),
+                  FushiIconButton(
+                    icon: FushiIcons.delete,
+                    size: 18,
+                    tooltip: t.dialog_delete,
+                    onTap: () => _deleteUrl(index),
+                  ),
+                ];
+                final Widget toggle = adaptiveSwitch(
+                  context: context,
+                  value: u.enabled,
+                  onChanged: (_) => _toggleUrl(index),
+                );
                 return FushiReorderDragListener(
                   key: ValueKey<String>(u.url),
                   index: index,
@@ -756,73 +862,63 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                     index: index,
                     count: _urls.length,
                     includeGap: false,
-                    child: FushiListItem(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      leading: FushiListLeadingIcon(
-                        FushiIcons.server,
-                        tone: ok == null
-                            ? FushiCardTone.secondary
-                            : (ok ? FushiCardTone.tertiary : FushiCardTone.error),
-                      ),
-                      // BUG-1184：标题是对端 URL，右侧还有一排控件；单行 ellipsis 在窄屏
-                      // 上只显示得到 `http…`，等于认不出是哪台设备。行高自由，放宽两行。
-                      titleMaxLines: 2,
-                      title: Text(
-                        u.url,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: u.enabled
-                              ? theme.colorScheme.onSurface
-                              : theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      subtitle: _urlRowSubtitle(theme, u.url, ok),
-                      onTap: lockedByServer
-                          ? null
-                          : () => _addOrEditUrl(index: index),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          // Gamepad/keyboard reorder equivalent for the drag handle.
-                          FushiIconButton(
-                            icon: FushiIcons.expandLess,
-                            size: 18,
-                            tooltip: t.move_up,
-                            enabled: index > 0,
-                            onTap: () => _reorderUrls(index, index - 1),
+                    child: LayoutBuilder(
+                      builder: (BuildContext context, BoxConstraints box) {
+                        final bool compact =
+                            box.maxWidth < _kInterconnectPeerRowWideMinWidth;
+                        final Widget? status = _urlRowSubtitle(
+                          theme,
+                          u.url,
+                          ok,
+                        );
+                        return FushiListItem(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          leading: FushiListLeadingIcon(
+                            FushiIcons.server,
+                            tone: ok == null
+                                ? FushiCardTone.secondary
+                                : (ok
+                                      ? FushiCardTone.tertiary
+                                      : FushiCardTone.error),
                           ),
-                          FushiIconButton(
-                            icon: FushiIcons.expandMore,
-                            size: 18,
-                            tooltip: t.move_down,
-                            enabled: index < _urls.length - 1,
-                            onTap: () => _reorderUrls(index, index + 1),
+                          // BUG-1184：标题是对端 URL，右侧还有一排控件；单行 ellipsis
+                          // 在窄屏上只显示得到 `http…`，等于认不出是哪台设备。放宽两行。
+                          titleMaxLines: 2,
+                          title: Text(
+                            u.url,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: u.enabled
+                                  ? theme.colorScheme.onSurface
+                                  : theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
-                          adaptiveSwitch(
-                            context: context,
-                            value: u.enabled,
-                            onChanged: (_) => _toggleUrl(index),
-                          ),
-                          // TODO-1330：失败后「重新配对」入口——复用 _attemptManualPair
-                          // 的 v2 编排（探测 → 确认身份 → 按需输 PIN → 落 token+指纹），
-                          // 不必删地址再手动重加。LAN 免 PIN 会话重配对无需任何输入；公网
-                          // 会话仍需按对方 PIN（安全设计使然，host 屏此时会常驻显示 PIN）。
-                          FushiIconButton(
-                            icon: FushiIcons.sync,
-                            size: 18,
-                            tooltip: t.sync_pair_repair,
-                            enabled: !lockedByServer && !_pairingManual,
-                            onTap: () => _attemptManualPair(u.url),
-                          ),
-                          FushiIconButton(
-                            icon: FushiIcons.delete,
-                            size: 18,
-                            tooltip: t.dialog_delete,
-                            onTap: () => _deleteUrl(index),
-                          ),
-                        ],
-                      ),
+                          subtitle: compact
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    ?status,
+                                    Wrap(children: actions),
+                                  ],
+                                )
+                              : status,
+                          onTap: lockedByServer
+                              ? null
+                              : () => _addOrEditUrl(index: index),
+                          trailing: compact
+                              ? toggle
+                              : Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    ...actions.take(2),
+                                    toggle,
+                                    ...actions.skip(2),
+                                  ],
+                                ),
+                        );
+                      },
                     ),
                   ),
                 );
@@ -847,11 +943,14 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                         width: 18,
                         height: 18,
                         child: adaptiveIndicator(
-                            context: context, strokeWidth: 2),
+                          context: context,
+                          strokeWidth: 2,
+                        ),
                       )
                     : const FushiIcon(FushiIcons.add, size: 18),
-                label:
-                    Text(_pairingManual ? t.sync_pair_pairing : t.dialog_add),
+                label: Text(
+                  _pairingManual ? t.sync_pair_pairing : t.dialog_add,
+                ),
               ),
               // 扫码 / 粘贴链接：地址 + 证书指纹 + 一次性票据一次到手，不必同网段、
               // 不必手输（docs/specs/2026-09-28-interconnect-remote-reach.md §4）。
@@ -907,8 +1006,9 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
             childrenPadding: const EdgeInsets.only(top: 10),
             title: Text(
               t.sync_client_token_manual,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
             children: <Widget>[
               FushiTextField(
@@ -931,8 +1031,10 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                   ? SizedBox(
                       width: 24,
                       height: 24,
-                      child:
-                          adaptiveIndicator(context: context, strokeWidth: 2),
+                      child: adaptiveIndicator(
+                        context: context,
+                        strokeWidth: 2,
+                      ),
                     )
                   : FushiFilledButton.tonal(
                       onPressed: _testAll,
@@ -966,10 +1068,14 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
   /// 第一步弹窗确认 host 身份（展示名 + 指纹），第二步收 6 位 PIN（host pinRequired
   /// 时），随后跑 [FushiPairV2Client.pair]，成功后经 TOFU 记录器落 url+指纹+token。
   /// [fingerprint] 为 null 表示明文 http（无钉扎，pinned 探测退化为普通连接）。
+  ///
+  /// [hostId] 是 `/api/ping` 回报的 host 身份（老 host 为 null）：新 token 要同步到
+  /// 这台 host 的全部地址（53NT7G_tSO，见 [SyncRepository.setFushiClientTokenForUrl]）。
   Future<void> _runPairingV2({
     required String baseUrl,
     required String? fingerprint,
     String? deviceName,
+    String? hostId,
   }) async {
     // BUG-1557：**最先**拿已存指纹比。旧顺序是先用新指纹把整套跑完（确认身份 →
     // 输 PIN → pair/v2 把本机设备名/deviceId 送给对方 → host 都把 peer 行落了库），
@@ -1011,11 +1117,17 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
       if (!mounted) return;
       switch (outcome) {
         case FushiPairV2Success(:final String token):
-          message = await _onPairSuccess(baseUrl, token, fingerprint);
+          message = await _onPairSuccess(
+            baseUrl,
+            token,
+            fingerprint,
+            hostId: hostId,
+          );
         case FushiPairV2Failure(:final String reason):
           // 'cancelled' = 用户在 PIN 输入框点了取消，静默收场不弹提示。
-          message =
-              reason == 'cancelled' ? null : _pairV2FailureMessage(reason);
+          message = reason == 'cancelled'
+              ? null
+              : _pairV2FailureMessage(reason);
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('PairV2:$baseUrl', e, stack);
@@ -1094,13 +1206,17 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
               children: <Widget>[
                 Text(t.sync_pair_fingerprint_changed_body),
                 SizedBox(height: tokens.spacing.gap),
-                Text(t.sync_pair_fingerprint_stored_label,
-                    style: Theme.of(ctx).textTheme.labelSmall),
+                Text(
+                  t.sync_pair_fingerprint_stored_label,
+                  style: Theme.of(ctx).textTheme.labelSmall,
+                ),
                 const SizedBox(height: 4),
                 _InterconnectSecretCard(text: stored),
                 SizedBox(height: tokens.spacing.gap),
-                Text(t.sync_pair_fingerprint_new_label,
-                    style: Theme.of(ctx).textTheme.labelSmall),
+                Text(
+                  t.sync_pair_fingerprint_new_label,
+                  style: Theme.of(ctx).textTheme.labelSmall,
+                ),
                 const SizedBox(height: 4),
                 _InterconnectSecretCard(
                   text: incoming,
@@ -1139,8 +1255,9 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
   Future<String> _onPairSuccess(
     String baseUrl,
     String token,
-    String? fingerprint,
-  ) async {
+    String? fingerprint, {
+    String? hostId,
+  }) async {
     try {
       await _pairRepo.addFushiClientUrl(
         baseUrl,
@@ -1154,7 +1271,9 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     // BUG-1550：per-peer token 落在**这条地址**上（同时写全局键作老配置回落）。
     // 只写全局键会让「配对第二台对端」把第一台的凭据覆盖掉，而第一台地址仍排在
     // 候选前列且可达 → 拿着别人的 token 撞 401 → 整个互联瘫痪。
-    await _pairRepo.setFushiClientTokenForUrl(baseUrl, token);
+    // 53NT7G_tSO：重新配对会作废本机在这台 host 上的旧 token，新 token 要落到这台
+    // host 的全部地址（内网 / 外网 / IPv6 …），否则其余地址一律 401。
+    await _pairRepo.setFushiClientTokenForUrl(baseUrl, token, hostId: hostId);
     // 配对成功立即学一次 host 的地址集（IPv6 / 组网 / 公网 / P2P）：出了这个
     // 局域网也连得回来。失败只留痕，不影响配对结果。
     for (final FushiClientUrl u in await _pairRepo.getFushiClientUrls()) {
@@ -1221,12 +1340,11 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
   Future<bool> _confirmPairIdentity({
     String? deviceName,
     String? fingerprint,
-  }) =>
-      confirmInterconnectPairIdentity(
-        context,
-        deviceName: deviceName,
-        fingerprint: fingerprint,
-      );
+  }) => confirmInterconnectPairIdentity(
+    context,
+    deviceName: deviceName,
+    fingerprint: fingerprint,
+  );
 
   Future<String?> _promptPairPinInput() => promptInterconnectPairPin(context);
 
@@ -1236,8 +1354,8 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
   /// hardware model instead of Android's meaningless "localhost" hostname
   /// (TODO-1356), never advertising "localhost" as the device name.
   Future<String> _localDeviceName() => resolveInterconnectDeviceName(
-        _pairSettingsContext.appModel.platformServices.deviceInfo,
-      );
+    _pairSettingsContext.appModel.platformServices.deviceInfo,
+  );
 }
 
 // ── Server mode widget ──────────────────────────────────────────────
@@ -1291,18 +1409,18 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     _p2pRelayController = TextEditingController();
     _serverController.addListener(_onServerChanged);
     // Rebuild when the client-connection flag flips so the toggle re-gates.
-    _syncSettings(widget.settingsContext)
-        .roleRevision
-        .addListener(_onRoleRevision);
+    _syncSettings(
+      widget.settingsContext,
+    ).roleRevision.addListener(_onRoleRevision);
     _loadSettings();
   }
 
   @override
   void dispose() {
     _serverController.removeListener(_onServerChanged);
-    _syncSettings(widget.settingsContext)
-        .roleRevision
-        .removeListener(_onRoleRevision);
+    _syncSettings(
+      widget.settingsContext,
+    ).roleRevision.removeListener(_onRoleRevision);
     _portController.dispose();
     _publicUrlsController.dispose();
     _p2pRelayController.dispose();
@@ -1335,11 +1453,11 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
       await repo.setServerPassword(token);
     }
     // TODO-961 M1b: 预取已配对设备（server 开启时才展示列表，但不阻塞开关加载）。
-    final List<FushiPairedPeerRow> peers =
-        await _serverController.pairedPeers();
+    final List<FushiPairedPeerRow> peers = await _serverController
+        .pairedPeers();
     final Set<String> owners = await _serverController.ownerDevicePeerIds();
-    final Set<String> keyVerified =
-        await _serverController.deviceKeyVerifiedPeerIds();
+    final Set<String> keyVerified = await _serverController
+        .deviceKeyVerifiedPeerIds();
     final List<String> publicUrls = await repo.getInterconnectPublicUrls();
     final bool p2pEnabled = await repo.isInterconnectP2pEnabled();
     final List<String> relayUrls = await repo.getInterconnectP2pRelayUrls();
@@ -1372,8 +1490,9 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
 
   /// 公网地址每次 capabilities / 地址集请求实时读，改完不必重启互联服务。
   Future<void> _setPublicUrls(String raw) async {
-    await SyncRepository(widget.settingsContext.appModel.database)
-        .setInterconnectPublicUrls(raw.split(RegExp(r'[\r\n]+')));
+    await SyncRepository(
+      widget.settingsContext.appModel.database,
+    ).setInterconnectPublicUrls(raw.split(RegExp(r'[\r\n]+')));
   }
 
   /// Persist an edited port (no live restart — the new port applies next time
@@ -1384,8 +1503,9 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
       return;
     }
     setState(() => _port = parsed);
-    await SyncRepository(widget.settingsContext.appModel.database)
-        .setServerPort(parsed);
+    await SyncRepository(
+      widget.settingsContext.appModel.database,
+    ).setServerPort(parsed);
     // 主页「主机服务」入口行的端口摘要跟着走（C2）。
     _syncSettings(widget.settingsContext).serverPort = parsed;
   }
@@ -1444,8 +1564,9 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   /// 存量 URL/指纹不再匹配，提示需重新配对。
   Future<void> _setTlsEnabled(bool v) async {
     setState(() => _tlsEnabled = v);
-    await SyncRepository(widget.settingsContext.appModel.database)
-        .setServerTlsEnabled(v);
+    await SyncRepository(
+      widget.settingsContext.appModel.database,
+    ).setServerTlsEnabled(v);
     if (_serverController.isRunning) {
       // BUG-1563：开 TLS 要生成/加载自签证书再重新绑端口，是最容易失败的一次重启；
       // 失败时旧代码照样弹「已配对设备需重新配对」，等于对着一台已经不存在的 host
@@ -1462,11 +1583,11 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
 
   /// TODO-961 M1b: 重新拉取已配对设备列表（吊销 / 页面重进后刷新）。
   Future<void> _reloadPairedPeers() async {
-    final List<FushiPairedPeerRow> peers =
-        await _serverController.pairedPeers();
+    final List<FushiPairedPeerRow> peers = await _serverController
+        .pairedPeers();
     final Set<String> owners = await _serverController.ownerDevicePeerIds();
-    final Set<String> keyVerified =
-        await _serverController.deviceKeyVerifiedPeerIds();
+    final Set<String> keyVerified = await _serverController
+        .deviceKeyVerifiedPeerIds();
     if (mounted) {
       setState(() {
         _pairedPeers = peers;
@@ -1523,8 +1644,8 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                       // TLS 与 serverEnabled 两个偏好 key 都从未写入过；存量用户
                       // 保持现状不动，见 applyFirstHostingTlsDefault 文档）。
                       final bool tlsDefaulted = await SyncRepository(
-                              widget.settingsContext.appModel.database)
-                          .applyFirstHostingTlsDefault();
+                        widget.settingsContext.appModel.database,
+                      ).applyFirstHostingTlsDefault();
                       if (!mounted) return;
                       if (tlsDefaulted) setState(() => _tlsEnabled = true);
                       // Reflect the toggle while starting; the controller
@@ -1536,8 +1657,9 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                       _applyStartOutcome(await _serverController.start());
                     } else {
                       setState(() => _enabled = false);
-                      _syncSettings(widget.settingsContext)
-                          .setServerEnabled(false);
+                      _syncSettings(
+                        widget.settingsContext,
+                      ).setServerEnabled(false);
                       await _serverController.stop(persistDisabled: true);
                     }
                   },
@@ -1627,8 +1749,10 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
               ],
             ],
             const SizedBox(height: 12),
-            Text(t.sync_server_token,
-                style: _interconnectFieldLabelStyle(context)),
+            Text(
+              t.sync_server_token,
+              style: _interconnectFieldLabelStyle(context),
+            ),
             const SizedBox(height: 4),
             // BUG-1184：令牌是等宽长串，原先硬钳 2 行且无 ellipsis —— 窄屏上尾部被
             // 直接切掉且毫无提示。令牌必须整串可见（用户要照着输/核对），去掉行数上限。
@@ -1665,8 +1789,10 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
             ),
             // TODO-961 M1b: 已配对设备列表 + 逐台移除（吊销 per-peer token）。
             const SizedBox(height: 16),
-            Text(t.sync_paired_peers_title,
-                style: _interconnectFieldLabelStyle(context)),
+            Text(
+              t.sync_paired_peers_title,
+              style: _interconnectFieldLabelStyle(context),
+            ),
             const SizedBox(height: 4),
             if (_pairedPeers.isEmpty)
               _InterconnectInlineNotice(
@@ -1715,18 +1841,14 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
         // BUG-1184：设备名由用户自定义，可以很长；行高自由，放宽两行。
         titleMaxLines: 2,
         title: Text(
-          (peer.deviceName != null &&
-                  peer.deviceName!.trim().isNotEmpty)
+          (peer.deviceName != null && peer.deviceName!.trim().isNotEmpty)
               ? peer.deviceName!
               : t.sync_paired_peer_unknown,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: subtitle != null
-            ? Text(
-                subtitle,
-                style: Theme.of(context).textTheme.bodySmall,
-              )
+            ? Text(subtitle, style: Theme.of(context).textTheme.bodySmall)
             : null,
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1789,9 +1911,9 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
   void initState() {
     super.initState();
     // Rebuild when the server-enabled flag flips so device taps re-gate.
-    _syncSettings(widget.settingsContext)
-        .roleRevision
-        .addListener(_onRoleRevision);
+    _syncSettings(
+      widget.settingsContext,
+    ).roleRevision.addListener(_onRoleRevision);
     _init();
   }
 
@@ -1801,18 +1923,20 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
 
   Future<void> _init() async {
     try {
-      final String deviceId =
-          await SyncRepository(widget.settingsContext.appModel.database)
-              .getOrCreateDeviceId();
+      final String deviceId = await SyncRepository(
+        widget.settingsContext.appModel.database,
+      ).getOrCreateDeviceId();
       if (!mounted) return;
-      final LanDiscoveryService discovery =
-          LanDiscoveryService(deviceId: deviceId);
+      final LanDiscoveryService discovery = LanDiscoveryService(
+        deviceId: deviceId,
+      );
       _discovery = discovery;
       // Register with the app-level controller so the app-exit hook can stop
       // this Bonsoir browser before the engine is torn down (TODO-036). The
       // widget still owns dispose()/unregister for the normal page-close path.
-      widget.settingsContext.appModel.syncServerController
-          .registerDiscovery(discovery);
+      widget.settingsContext.appModel.syncServerController.registerDiscovery(
+        discovery,
+      );
       await _startScan();
     } catch (e, stack) {
       // Loading the device id (a DB read) can throw; surface it as a scan
@@ -1824,16 +1948,17 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
 
   @override
   void dispose() {
-    _syncSettings(widget.settingsContext)
-        .roleRevision
-        .removeListener(_onRoleRevision);
+    _syncSettings(
+      widget.settingsContext,
+    ).roleRevision.removeListener(_onRoleRevision);
     _devicesSub?.cancel();
     final LanDiscoveryService? discovery = _discovery;
     if (discovery != null) {
       // Drop it from the exit-teardown set first (idempotent) so the controller
       // never double-disposes an already-disposed browser.
-      widget.settingsContext.appModel.syncServerController
-          .unregisterDiscovery(discovery);
+      widget.settingsContext.appModel.syncServerController.unregisterDiscovery(
+        discovery,
+      );
       discovery.dispose();
     }
     super.dispose();
@@ -1883,10 +2008,10 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
     try {
       final DiscoveredPairingProbeOutcome outcome =
           await probeDiscoveredPairingEndpointDetailed(
-        host: device.host,
-        port: device.port,
-        tlsAdvertised: device.tlsEnabled,
-      );
+            host: device.host,
+            port: device.port,
+            tlsAdvertised: device.tlsEnabled,
+          );
       if (!mounted) return;
       final DiscoveredPairingProbeResult? probe = outcome.result;
       if (probe != null && probe.ping.supportsPairV2) {
@@ -1901,6 +2026,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
           deviceName: (probe.ping.deviceName?.trim().isNotEmpty ?? false)
               ? probe.ping.deviceName
               : device.name,
+          hostId: probe.ping.hostId,
         );
         return;
       }
@@ -1966,16 +2092,18 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
           .post(
             Uri.parse('$baseUrl/api/pair'),
             headers: <String, String>{'Content-Type': 'application/json'},
-            body:
-                jsonEncode(<String, String>{'name': await _localDeviceName()}),
+            body: jsonEncode(<String, String>{
+              'name': await _localDeviceName(),
+            }),
           )
           // Outlast the host's 60s approval window so its auto-deny 403 reaches
           // us instead of us timing out first.
           .timeout(const Duration(seconds: 65));
       if (resp.statusCode == 200) {
         final dynamic body = jsonDecode(resp.body);
-        final String? token =
-            body is Map<String, dynamic> ? body['token'] as String? : null;
+        final String? token = body is Map<String, dynamic>
+            ? body['token'] as String?
+            : null;
         if (token != null && token.isNotEmpty) {
           // BUG-1550：v1 老路径同样把凭据落在这条地址上（理由见 _onPairSuccess）。
           await repo.setFushiClientTokenForUrl(baseUrl, token);
@@ -2014,7 +2142,9 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
       if (decoded is Map && decoded['reason'] == 'upgrade_required') {
         return t.sync_pair_upgrade_required;
       }
-    } catch (_) {/* older peers reply with a plain-text 403 body */}
+    } catch (_) {
+      /* older peers reply with a plain-text 403 body */
+    }
     return t.sync_pair_unavailable;
   }
 
@@ -2022,8 +2152,9 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
   Widget build(BuildContext context) {
     // Mutual exclusion: while this device serves peers, it can't connect out as
     // a client, so device taps are inert and a note explains why.
-    final bool lockedByServer =
-        _syncSettings(widget.settingsContext).serverEnabled;
+    final bool lockedByServer = _syncSettings(
+      widget.settingsContext,
+    ).serverEnabled;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
@@ -2031,8 +2162,10 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
         children: <Widget>[
           Row(
             children: <Widget>[
-              Text(t.sync_lan_discovery,
-                  style: _interconnectSubheadStyle(context)),
+              Text(
+                t.sync_lan_discovery,
+                style: _interconnectSubheadStyle(context),
+              ),
               const Spacer(),
               if (_scanning)
                 SizedBox(
@@ -2096,8 +2229,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
             ? SizedBox(
                 width: 18,
                 height: 18,
-                child:
-                    adaptiveIndicator(context: context, strokeWidth: 2),
+                child: adaptiveIndicator(context: context, strokeWidth: 2),
               )
             : null,
         minHeight: 52,
@@ -2156,8 +2288,7 @@ class _InterconnectProfileTransferWidgetState
     extends State<_InterconnectProfileTransferWidget> {
   bool _busy = false;
 
-  bool get _isUpload =>
-      widget.direction == _ProfileTransferDirection.upload;
+  bool get _isUpload => widget.direction == _ProfileTransferDirection.upload;
 
   Future<void> _run() async {
     if (_busy) return;
@@ -2218,14 +2349,15 @@ class _InterconnectProfileTransferWidgetState
     // 所有者 2026-10-09 拍板（issue #1997）：下载完直接切到这份配置。导入仍是
     // createNew（本机既有配置一份都不覆盖），切换走配置选择器同一条 switchProfile：
     // 先把当前配置的实时设置快照回它自己、作废在飞草稿，再应用新配置并刷新各缓存。
-    final ProfileViewModel profiles =
-        widget.settingsContext.ref.read(profileViewModelProvider.notifier);
+    final ProfileViewModel profiles = widget.settingsContext.ref.read(
+      profileViewModelProvider.notifier,
+    );
     final int id = await profiles.importAndSwitchProfile(json);
-    final ProfileRow? row =
-        await appModel.interconnectProfileRepository().getProfileById(id);
+    final ProfileRow? row = await appModel
+        .interconnectProfileRepository()
+        .getProfileById(id);
     return row?.name ?? '';
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -2343,8 +2475,8 @@ class _InterconnectBackupBackendWidgetState
             subtitle: active
                 ? t.interconnect_backup_backend_active
                 : (paired
-                    ? t.interconnect_backup_backend_hint
-                    : t.interconnect_backup_backend_needs_pairing),
+                      ? t.interconnect_backup_backend_hint
+                      : t.interconnect_backup_backend_needs_pairing),
             icon: FushiIcons.backup,
           ),
           Text(
@@ -2361,8 +2493,9 @@ class _InterconnectBackupBackendWidgetState
               mainAxisAlignment: MainAxisAlignment.end,
               children: <Widget>[
                 FushiFilledButton.tonal(
-                  onPressed:
-                      (paired && !_busy) ? _useInterconnectAsBackend : null,
+                  onPressed: (paired && !_busy)
+                      ? _useInterconnectAsBackend
+                      : null,
                   child: Text(t.interconnect_backup_backend_apply),
                 ),
               ],
@@ -2446,19 +2579,23 @@ Future<bool> confirmInterconnectPairIdentity(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Text(t.sync_pair_confirm_identity_body(
-                device: (deviceName != null && deviceName.trim().isNotEmpty)
-                    ? deviceName
-                    : t.sync_pair_unknown_device,
-              )),
+              Text(
+                t.sync_pair_confirm_identity_body(
+                  device: (deviceName != null && deviceName.trim().isNotEmpty)
+                      ? deviceName
+                      : t.sync_pair_unknown_device,
+                ),
+              ),
               if (address != null && address.isNotEmpty) ...<Widget>[
                 SizedBox(height: tokens.spacing.gap),
                 _InterconnectSecretCard(text: address),
               ],
               if (fingerprint != null && fingerprint.isNotEmpty) ...<Widget>[
                 SizedBox(height: tokens.spacing.gap),
-                Text(t.sync_pair_fingerprint_label,
-                    style: Theme.of(ctx).textTheme.labelSmall),
+                Text(
+                  t.sync_pair_fingerprint_label,
+                  style: Theme.of(ctx).textTheme.labelSmall,
+                ),
                 const SizedBox(height: 4),
                 _InterconnectSecretCard(
                   text: fingerprint,
@@ -2551,8 +2688,7 @@ Future<String?> promptInterconnectPairPin(BuildContext context) async {
               adaptiveDialogAction(
                 context: ctx,
                 isDefaultAction: true,
-                onPressed: () =>
-                    Navigator.pop(ctx, pinController.text.trim()),
+                onPressed: () => Navigator.pop(ctx, pinController.text.trim()),
                 child: Text(t.sync_pair_continue),
               ),
             ],

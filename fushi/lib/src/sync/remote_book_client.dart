@@ -12,6 +12,19 @@ import 'package:fushi/src/sync/remote_library_source.dart';
 ///   「云端书」。WebDAV-only 用户从没配过互联，绝不能给他们看「互联/对端设备」。
 enum RemoteBookSourceKind { interconnect, cloud }
 
+/// 远端书来源**此刻**能不能连上（[RemoteBookSourceKind] 两类都用）：远端删除只在来源
+/// 在线、可达时提供（反馈 R8duEiqRuy，所有者 2026-10-31 拍板）。
+enum RemoteSourceReachability {
+  /// 连得上，且接受本机凭据。
+  reachable,
+
+  /// 连不上（互联 host 没运行 Fushi / 睡眠 / 不在同一网络；云盘网络不通或服务出错）。
+  unreachable,
+
+  /// 连得上但拒绝了本机凭据：互联是配对被移除 / token 被吊销，云盘是登录失效。
+  credentialRejected,
+}
+
 abstract class RemoteBookClient implements RemoteLibrarySource {
   /// 本客户端代表的远端书来源类型（驱动书架分区的标题/副标题文案；这是「展示」
   /// 归类，不是能力门控——删除/有声书等能力仍按具体后端类型判断）。

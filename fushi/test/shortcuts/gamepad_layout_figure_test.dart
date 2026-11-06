@@ -19,28 +19,42 @@ void main() {
     for (final GamepadBrand brand in GamepadBrand.values) {
       test('$brand: all 17 GamepadButton values appear exactly once', () {
         final List<GamepadPadSpec> specs = buildGamepadFigure(brand);
-        final List<GamepadButton> buttons =
-            specs.map((GamepadPadSpec s) => s.button).toList();
-        expect(buttons.length, GamepadButton.values.length,
-            reason: 'figure must place every button exactly once');
-        expect(buttons.toSet(), GamepadButton.values.toSet(),
-            reason: 'figure must cover the full enum, no dupes/misses');
+        final List<GamepadButton> buttons = specs
+            .map((GamepadPadSpec s) => s.button)
+            .toList();
+        expect(
+          buttons.length,
+          GamepadButton.values.length,
+          reason: 'figure must place every button exactly once',
+        );
+        expect(
+          buttons.toSet(),
+          GamepadButton.values.toSet(),
+          reason: 'figure must cover the full enum, no dupes/misses',
+        );
       });
 
       test('$brand: all centers are normalized within 0..1', () {
         for (final GamepadPadSpec spec in buildGamepadFigure(brand)) {
-          expect(spec.center.dx, inInclusiveRange(0, 1),
-              reason: '${spec.button} dx out of range');
-          expect(spec.center.dy, inInclusiveRange(0, 1),
-              reason: '${spec.button} dy out of range');
+          expect(
+            spec.center.dx,
+            inInclusiveRange(0, 1),
+            reason: '${spec.button} dx out of range',
+          );
+          expect(
+            spec.center.dy,
+            inInclusiveRange(0, 1),
+            reason: '${spec.button} dy out of range',
+          );
           expect(spec.size, greaterThan(0));
         }
       });
     }
 
     GamepadPadSpec specOf(GamepadBrand brand, GamepadButton button) =>
-        buildGamepadFigure(brand)
-            .firstWhere((GamepadPadSpec s) => s.button == button);
+        buildGamepadFigure(
+          brand,
+        ).firstWhere((GamepadPadSpec s) => s.button == button);
 
     test('Xbox/Switch place the dpad lower-left, BELOW the left stick', () {
       for (final GamepadBrand brand in <GamepadBrand>[
@@ -49,47 +63,75 @@ void main() {
       ]) {
         final GamepadPadSpec dpadUp = specOf(brand, GamepadButton.dpadUp);
         final GamepadPadSpec stick = specOf(brand, GamepadButton.thumbLeft);
-        expect(dpadUp.center.dy, greaterThan(stick.center.dy),
-            reason: '$brand: dpad must sit below the left stick');
-        expect(dpadUp.center.dx, lessThan(0.5),
-            reason: '$brand: dpad cluster stays on the left half');
+        expect(
+          dpadUp.center.dy,
+          greaterThan(stick.center.dy),
+          reason: '$brand: dpad must sit below the left stick',
+        );
+        expect(
+          dpadUp.center.dx,
+          lessThan(0.5),
+          reason: '$brand: dpad cluster stays on the left half',
+        );
       }
     });
 
     test('PlayStation places the dpad upper-left, ABOVE both sticks', () {
-      final GamepadPadSpec dpadUp =
-          specOf(GamepadBrand.playstation, GamepadButton.dpadUp);
-      final GamepadPadSpec left =
-          specOf(GamepadBrand.playstation, GamepadButton.thumbLeft);
-      final GamepadPadSpec right =
-          specOf(GamepadBrand.playstation, GamepadButton.thumbRight);
-      expect(dpadUp.center.dy, lessThan(left.center.dy),
-          reason: 'PS: dpad sits above the symmetric dual sticks');
-      expect(dpadUp.center.dx, lessThan(0.5),
-          reason: 'PS: dpad cluster stays on the left half');
+      final GamepadPadSpec dpadUp = specOf(
+        GamepadBrand.playstation,
+        GamepadButton.dpadUp,
+      );
+      final GamepadPadSpec left = specOf(
+        GamepadBrand.playstation,
+        GamepadButton.thumbLeft,
+      );
+      final GamepadPadSpec right = specOf(
+        GamepadBrand.playstation,
+        GamepadButton.thumbRight,
+      );
+      expect(
+        dpadUp.center.dy,
+        lessThan(left.center.dy),
+        reason: 'PS: dpad sits above the symmetric dual sticks',
+      );
+      expect(
+        dpadUp.center.dx,
+        lessThan(0.5),
+        reason: 'PS: dpad cluster stays on the left half',
+      );
       // PS 双摇杆对称居下（Xbox 左摇杆在左上，这里必须不同）。
-      expect(left.center.dy, right.center.dy,
-          reason: 'PS: dual sticks are symmetric at the same height');
-      final GamepadPadSpec xboxStick =
-          specOf(GamepadBrand.xbox, GamepadButton.thumbLeft);
-      expect(left.center.dy, greaterThan(xboxStick.center.dy),
-          reason: 'PS left stick sits lower than the Xbox left stick');
+      expect(
+        left.center.dy,
+        right.center.dy,
+        reason: 'PS: dual sticks are symmetric at the same height',
+      );
+      final GamepadPadSpec xboxStick = specOf(
+        GamepadBrand.xbox,
+        GamepadButton.thumbLeft,
+      );
+      expect(
+        left.center.dy,
+        greaterThan(xboxStick.center.dy),
+        reason: 'PS left stick sits lower than the Xbox left stick',
+      );
     });
 
-    test('face diamond keeps y top / x left / b right / a bottom on all brands',
-        () {
-      for (final GamepadBrand brand in GamepadBrand.values) {
-        final GamepadPadSpec y = specOf(brand, GamepadButton.y);
-        final GamepadPadSpec x = specOf(brand, GamepadButton.x);
-        final GamepadPadSpec b = specOf(brand, GamepadButton.b);
-        final GamepadPadSpec a = specOf(brand, GamepadButton.a);
-        expect(y.center.dy, lessThan(x.center.dy));
-        expect(a.center.dy, greaterThan(b.center.dy));
-        expect(x.center.dx, lessThan(b.center.dx));
-        // 菱形在右半侧（真实手柄面键位置）。
-        expect(a.center.dx, greaterThan(0.5));
-      }
-    });
+    test(
+      'face diamond keeps y top / x left / b right / a bottom on all brands',
+      () {
+        for (final GamepadBrand brand in GamepadBrand.values) {
+          final GamepadPadSpec y = specOf(brand, GamepadButton.y);
+          final GamepadPadSpec x = specOf(brand, GamepadButton.x);
+          final GamepadPadSpec b = specOf(brand, GamepadButton.b);
+          final GamepadPadSpec a = specOf(brand, GamepadButton.a);
+          expect(y.center.dy, lessThan(x.center.dy));
+          expect(a.center.dy, greaterThan(b.center.dy));
+          expect(x.center.dx, lessThan(b.center.dx));
+          // 菱形在右半侧（真实手柄面键位置）。
+          expect(a.center.dx, greaterThan(0.5));
+        }
+      },
+    );
 
     test('shoulders/triggers are pills on the top edge', () {
       for (final GamepadBrand brand in GamepadBrand.values) {
@@ -100,16 +142,21 @@ void main() {
           GamepadButton.rt,
         ]) {
           final GamepadPadSpec spec = specOf(brand, button);
-          expect(spec.shape, GamepadPadShape.pill,
-              reason: '$button must render as a pill');
-          expect(spec.center.dy, lessThan(0.3),
-              reason: '$button belongs to the top edge');
+          expect(
+            spec.shape,
+            GamepadPadShape.pill,
+            reason: '$button must render as a pill',
+          );
+          expect(
+            spec.center.dy,
+            lessThan(0.3),
+            reason: '$button belongs to the top edge',
+          );
         }
       }
     });
 
-    test(
-        'buttons sit at distinct physical spots: no overlap, all inside the '
+    test('buttons sit at distinct physical spots: no overlap, all inside the '
         'figure (TODO-942 v3)', () {
       // 用户截图回归：Y 压在 RB 上、B 飘出机身、十字键散块。按渲染层同一套
       // footprint 规则（圆钮=圆、肩键=胶囊矩形、十字四臂=一个整体簇）在 640 宽
@@ -133,33 +180,49 @@ void main() {
           final double d = base * s.size;
           final bool isPill = s.shape == GamepadPadShape.pill;
           final double w = isPill ? d * GamepadButtonWidget.pillWidthFactor : d;
-          final double h =
-              isPill ? d * GamepadButtonWidget.pillHeightFactor : d;
-          prints.add(_Footprint(
-            s.button.label,
-            Rect.fromCenter(center: px(s.center), width: w, height: h),
-            !isPill,
-          ));
+          final double h = isPill
+              ? d * GamepadButtonWidget.pillHeightFactor
+              : d;
+          prints.add(
+            _Footprint(
+              s.button.label,
+              Rect.fromCenter(center: px(s.center), width: w, height: h),
+              !isPill,
+            ),
+          );
         }
         clusterCenter = clusterCenter / dpadCount.toDouble();
         const double clusterSize =
             base * GamepadLayoutView.dpadClusterSizeFactor;
-        prints.add(_Footprint(
-          'DpadCluster',
-          Rect.fromCenter(
-              center: clusterCenter, width: clusterSize, height: clusterSize),
-          false,
-        ));
+        prints.add(
+          _Footprint(
+            'DpadCluster',
+            Rect.fromCenter(
+              center: clusterCenter,
+              width: clusterSize,
+              height: clusterSize,
+            ),
+            false,
+          ),
+        );
 
         for (int i = 0; i < prints.length; i++) {
           for (int j = i + 1; j < prints.length; j++) {
-            expect(_collides(prints[i], prints[j]), isFalse,
-                reason: '$brand: ${prints[i].name} overlaps ${prints[j].name} '
-                    '— every control must own a distinct physical spot');
+            expect(
+              _collides(prints[i], prints[j]),
+              isFalse,
+              reason:
+                  '$brand: ${prints[i].name} overlaps ${prints[j].name} '
+                  '— every control must own a distinct physical spot',
+            );
           }
         }
-        final Rect figure =
-            const Rect.fromLTWH(0, 0, width, height).inflate(0.5);
+        final Rect figure = const Rect.fromLTWH(
+          0,
+          0,
+          width,
+          height,
+        ).inflate(0.5);
         for (final _Footprint f in prints) {
           expect(
             figure.contains(f.rect.topLeft) &&
@@ -213,51 +276,65 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('renders all 17 keyed buttons in one figure',
-        (WidgetTester tester) async {
+    testWidgets('renders all 17 keyed buttons in one figure', (
+      WidgetTester tester,
+    ) async {
       final FushiShortcutRegistry registry = buildRegistry();
       await pumpView(tester, registry, ShortcutScope.reader);
       for (final GamepadButton button in GamepadButton.values) {
-        expect(find.byKey(Key('gamepad_btn_${button.label}')), findsOneWidget,
-            reason: '${button.label} must appear exactly once on the figure');
+        expect(
+          find.byKey(Key('gamepad_btn_${button.label}')),
+          findsOneWidget,
+          reason: '${button.label} must appear exactly once on the figure',
+        );
       }
     });
 
     testWidgets(
-        'the controller chassis silhouette is painted behind the buttons '
-        '(TODO-942 v2)', (WidgetTester tester) async {
-      final FushiShortcutRegistry registry = buildRegistry();
-      await pumpView(tester, registry, ShortcutScope.reader);
-      // The "后面的手柄图案" the user demanded: a controller-body silhouette
-      // drawn behind the button icons. Pin its CustomPainter presence so a
-      // refactor cannot silently drop the chassis and regress to bare buttons
-      // floating on a rectangle again.
-      final Iterable<CustomPaint> paints = tester.widgetList<CustomPaint>(
-        find.descendant(
-          of: find.byType(GamepadLayoutView),
-          matching: find.byType(CustomPaint),
-        ),
-      );
-      expect(
-        paints.any((CustomPaint cp) =>
-            cp.painter?.runtimeType.toString().contains('GamepadChassis') ??
-            false),
-        isTrue,
-        reason: 'the gamepad figure must render a controller body silhouette '
-            'behind the button icons, not leave them on an empty rectangle',
-      );
-    });
+      'the controller chassis silhouette is painted behind the buttons '
+      '(TODO-942 v2)',
+      (WidgetTester tester) async {
+        final FushiShortcutRegistry registry = buildRegistry();
+        await pumpView(tester, registry, ShortcutScope.reader);
+        // The "后面的手柄图案" the user demanded: a controller-body silhouette
+        // drawn behind the button icons. Pin its CustomPainter presence so a
+        // refactor cannot silently drop the chassis and regress to bare buttons
+        // floating on a rectangle again.
+        final Iterable<CustomPaint> paints = tester.widgetList<CustomPaint>(
+          find.descendant(
+            of: find.byType(GamepadLayoutView),
+            matching: find.byType(CustomPaint),
+          ),
+        );
+        expect(
+          paints.any(
+            (CustomPaint cp) =>
+                cp.painter?.runtimeType.toString().contains('GamepadChassis') ??
+                false,
+          ),
+          isTrue,
+          reason:
+              'the gamepad figure must render a controller body silhouette '
+              'behind the button icons, not leave them on an empty rectangle',
+        );
+      },
+    );
 
-    testWidgets('the dpad renders as ONE unified cross cluster (TODO-942 v3)',
-        (WidgetTester tester) async {
+    testWidgets('the dpad renders as ONE unified cross cluster (TODO-942 v3)', (
+      WidgetTester tester,
+    ) async {
       final FushiShortcutRegistry registry = buildRegistry();
       await pumpView(tester, registry, ShortcutScope.reader);
       // 用户截图回归：十字键不许再裂成四颗散装钮——四臂必须都住在同一个
       // GamepadDpadCluster 里（视觉聚合），但每臂保留独立 Key/绑定/高亮。
-      expect(find.byType(GamepadDpadCluster), findsOneWidget,
-          reason: 'the four dpad arms must merge into one cross cluster');
-      for (final GamepadButton button
-          in GamepadButton.values.where((GamepadButton b) => b.isDpad)) {
+      expect(
+        find.byType(GamepadDpadCluster),
+        findsOneWidget,
+        reason: 'the four dpad arms must merge into one cross cluster',
+      );
+      for (final GamepadButton button in GamepadButton.values.where(
+        (GamepadButton b) => b.isDpad,
+      )) {
         expect(
           find.descendant(
             of: find.byType(GamepadDpadCluster),
@@ -270,37 +347,43 @@ void main() {
     });
 
     testWidgets(
-        'a dpad arm stays independently bindable and taps route with its '
-        'actions', (WidgetTester tester) async {
-      final FushiShortcutRegistry registry = buildRegistry();
-      registry.updateBinding(
-        ShortcutAction.readerToggleFurigana,
-        const ShortcutBindingSet(
-          gamepadBindings: <GamepadBinding>[
-            GamepadBinding(GamepadButton.dpadUp),
-          ],
-        ),
-      );
-      GamepadButton? tapped;
-      List<ShortcutAction>? tappedActions;
-      await pumpView(
-        tester,
-        registry,
-        ShortcutScope.reader,
-        onGamepadTap: (GamepadButton b, List<ShortcutAction> actions) {
-          tapped = b;
-          tappedActions = actions;
-        },
-      );
-      await tester.tap(find.byKey(const Key('gamepad_btn_DpadUp')));
-      await tester.pumpAndSettle();
-      expect(tapped, GamepadButton.dpadUp,
-          reason: 'the up arm must route its own button identity');
-      expect(tappedActions, contains(ShortcutAction.readerToggleFurigana));
-    });
+      'a dpad arm stays independently bindable and taps route with its '
+      'actions',
+      (WidgetTester tester) async {
+        final FushiShortcutRegistry registry = buildRegistry();
+        registry.updateBinding(
+          ShortcutAction.readerToggleFurigana,
+          const ShortcutBindingSet(
+            gamepadBindings: <GamepadBinding>[
+              GamepadBinding(GamepadButton.dpadUp),
+            ],
+          ),
+        );
+        GamepadButton? tapped;
+        List<ShortcutAction>? tappedActions;
+        await pumpView(
+          tester,
+          registry,
+          ShortcutScope.reader,
+          onGamepadTap: (GamepadButton b, List<ShortcutAction> actions) {
+            tapped = b;
+            tappedActions = actions;
+          },
+        );
+        await tester.tap(find.byKey(const Key('gamepad_btn_DpadUp')));
+        await tester.pumpAndSettle();
+        expect(
+          tapped,
+          GamepadButton.dpadUp,
+          reason: 'the up arm must route its own button identity',
+        );
+        expect(tappedActions, contains(ShortcutAction.readerToggleFurigana));
+      },
+    );
 
-    testWidgets('a bound button renders highlighted (bound=true)',
-        (WidgetTester tester) async {
+    testWidgets('a bound button renders highlighted (bound=true)', (
+      WidgetTester tester,
+    ) async {
       final FushiShortcutRegistry registry = buildRegistry();
       registry.updateBinding(
         ShortcutAction.readerToggleFurigana,
@@ -320,8 +403,9 @@ void main() {
       expect(modeWidget.bound, isFalse);
     });
 
-    testWidgets('bound tap routes onGamepadTap with the bound actions',
-        (WidgetTester tester) async {
+    testWidgets('bound tap routes onGamepadTap with the bound actions', (
+      WidgetTester tester,
+    ) async {
       final FushiShortcutRegistry registry = buildRegistry();
       registry.updateBinding(
         ShortcutAction.readerToggleFurigana,
@@ -346,8 +430,9 @@ void main() {
       expect(tappedActions, contains(ShortcutAction.readerToggleFurigana));
     });
 
-    testWidgets('unbound tap routes onEmptyGamepadTap (key-first assignment)',
-        (WidgetTester tester) async {
+    testWidgets('unbound tap routes onEmptyGamepadTap (key-first assignment)', (
+      WidgetTester tester,
+    ) async {
       final FushiShortcutRegistry registry = buildRegistry();
       GamepadButton? emptyTapped;
       await pumpView(
@@ -361,23 +446,31 @@ void main() {
       expect(emptyTapped, GamepadButton.mode);
     });
 
-    testWidgets(
-        'narrow screen falls back to a horizontal scroll, no overflow '
+    testWidgets('narrow screen falls back to a horizontal scroll, no overflow '
         '(TODO-942 P1)', (WidgetTester tester) async {
       final FushiShortcutRegistry registry = buildRegistry();
       // 320 logical px is below minFigureWidth: the figure must keep its ideal
       // width inside a horizontal scroll instead of squashing/overflowing.
-      await pumpView(tester, registry, ShortcutScope.reader,
-          surfaceSize: const Size(320, 900));
+      await pumpView(
+        tester,
+        registry,
+        ShortcutScope.reader,
+        surfaceSize: const Size(320, 900),
+      );
 
-      expect(tester.takeException(), isNull,
-          reason: 'narrow layout must not overflow');
-      final Iterable<SingleChildScrollView> scrolls =
-          tester.widgetList<SingleChildScrollView>(
-              find.byType(SingleChildScrollView));
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'narrow layout must not overflow',
+      );
+      final Iterable<SingleChildScrollView> scrolls = tester
+          .widgetList<SingleChildScrollView>(
+            find.byType(SingleChildScrollView),
+          );
       expect(
         scrolls.any(
-            (SingleChildScrollView s) => s.scrollDirection == Axis.horizontal),
+          (SingleChildScrollView s) => s.scrollDirection == Axis.horizontal,
+        ),
         isTrue,
         reason: 'narrow gamepad figure must add a horizontal scroll fallback',
       );
@@ -387,11 +480,16 @@ void main() {
       }
     });
 
-    testWidgets('brand switch re-skins icons without touching keys',
-        (WidgetTester tester) async {
+    testWidgets('brand switch re-skins icons without touching keys', (
+      WidgetTester tester,
+    ) async {
       final FushiShortcutRegistry registry = buildRegistry();
-      await pumpView(tester, registry, ShortcutScope.reader,
-          brand: GamepadBrand.playstation);
+      await pumpView(
+        tester,
+        registry,
+        ShortcutScope.reader,
+        brand: GamepadBrand.playstation,
+      );
       // TODO-942: face buttons render the PlayStation Kenney icon (✕ cross),
       // and the Key stays enum-labelled regardless of brand.
       final Image aImage = tester.widget<Image>(
@@ -428,10 +526,14 @@ bool _collides(_Footprint a, _Footprint b) {
   if (a.isCircle || b.isCircle) {
     final _Footprint circle = a.isCircle ? a : b;
     final _Footprint box = a.isCircle ? b : a;
-    final double nearestX =
-        circle.center.dx.clamp(box.rect.left, box.rect.right);
-    final double nearestY =
-        circle.center.dy.clamp(box.rect.top, box.rect.bottom);
+    final double nearestX = circle.center.dx.clamp(
+      box.rect.left,
+      box.rect.right,
+    );
+    final double nearestY = circle.center.dy.clamp(
+      box.rect.top,
+      box.rect.bottom,
+    );
     return (circle.center - Offset(nearestX, nearestY)).distance <
         circle.radius;
   }

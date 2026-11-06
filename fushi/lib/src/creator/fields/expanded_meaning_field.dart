@@ -1,19 +1,21 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/field.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 
 /// Used to return a formatted text from multiple dictionary entries from
 /// expanded dictionaries only.
 class ExpandedMeaningField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   ExpandedMeaningField._privateConstructor()
-      : super(
-            uniqueKey: key,
-            label: 'Expanded Meaning',
-            description: 'Dictionary definitions only from expanded'
-                ' dictionaries.',
-            icon: Icons.open_in_full_outlined);
+    : super(
+        uniqueKey: key,
+        label: 'Expanded Meaning',
+        description:
+            'Dictionary definitions only from expanded'
+            ' dictionaries.',
+        icon: Icons.open_in_full_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static ExpandedMeaningField get instance => _instance;

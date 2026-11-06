@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
+import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
@@ -122,6 +123,82 @@ void main() {
         }))['error'],
         'model was not found: Nope',
       );
+    });
+  });
+
+  group('Fushi 卡片字段改名后的旧名兼容（2026-10-29）', () {
+    test(
+      'Yomitan 还按旧字段名（Expression / Picture / MiscInfo）加卡 → 落到新名字段',
+      () async {
+        final int nid =
+            (await h.ok('addNote', <String, Object?>{
+                  'note': <String, Object?>{
+                    ...yomitanNote('食べる', model: 'Fushi Card'),
+                    'fields': <String, Object?>{
+                      'Expression': '食べる',
+                      'expressionreading': 'たべる',
+                      'Picture': '<img src="a.webp">',
+                      'MiscInfo': '出典',
+                    },
+                  },
+                }))!
+                as int;
+        final Map<String, Object?> n =
+            (((await h.ok('notesInfo', <String, Object?>{
+                              'notes': <int>[nid],
+                            }))!
+                            as List)
+                        .first!
+                    as Map)
+                .cast<String, Object?>();
+        final Map<String, Object?> fields = (n['fields']! as Map)
+            .cast<String, Object?>();
+        String value(String name) =>
+            ((fields[name]! as Map)['value'] as String?) ?? '';
+        expect(value('Term'), '食べる');
+        expect(value('TermReading'), 'たべる');
+        expect(value('Media'), '<img src="a.webp">');
+        expect(value('Source'), '出典');
+      },
+    );
+
+    test('findNotes 按旧字段名查（Yomitan 查重 "Expression:…"）仍查到 Fushi 卡片', () async {
+      final int fushi =
+          (await h.ok('addNote', <String, Object?>{
+                'note': <String, Object?>{
+                  ...yomitanNote('食べる', model: 'Fushi Card'),
+                  'fields': <String, Object?>{
+                    'Term': '食べる',
+                    'Media': '<img src="m.webp">',
+                  },
+                },
+              }))!
+              as int;
+      final int lapis =
+          (await h.ok('addNote', <String, Object?>{
+                'note': yomitanNote('食べる'),
+              }))!
+              as int;
+      Future<List<Object?>> find(String q) async =>
+          (await h.ok('findNotes', <String, Object?>{'query': q}))! as List;
+      expect(
+        await find('"Expression:食べる"'),
+        unorderedEquals(<int>[fushi, lapis]),
+      );
+      expect(await find('"note:Fushi Card" "expression:食べる"'), <int>[fushi]);
+      expect(await find('Picture:*m.webp*'), <int>[fushi]);
+      // 新名只命中 Fushi 卡片：Lapis 的 Expression 不认 Term。
+      expect(await find('"Term:食べる"'), <int>[fushi]);
+    });
+
+    test('别名只对 Fushi 卡片生效：Lapis 收到新名 Term 不会写进 Expression', () async {
+      final Map<String, Object?> r = await h.call('addNote', <String, Object?>{
+        'note': <String, Object?>{
+          ...yomitanNote('食べる'),
+          'fields': <String, Object?>{'Term': '食べる'},
+        },
+      });
+      expect(r['error'], isNotNull);
     });
   });
 
@@ -312,6 +389,85 @@ void main() {
       expect(await find('猫'), hasLength(1));
     });
 
+    test('canAddNotes(WithErrorDetail)：候选首字段整批一次规范化，结果与逐条请求一致', () async {
+      final List<List<String>> calls = <List<String>>[];
+      final AcHarness hc = await AcHarness.create(
+        dupeNormBatch: (List<String> fields) {
+          calls.add(List<String>.of(fields));
+          return srsDupeNormBatch(fields);
+        },
+      );
+      await hc.ok('createDeck', <String, Object?>{'deck': 'JP::Vocab'});
+      await hc.ok('addNote', <String, Object?>{
+        'note': yomitanNote('<b>猫</b>', deck: 'JP::Vocab'),
+      });
+      await hc.ok('addNote', <String, Object?>{'note': yomitanNote('犬')});
+      final List<Object?> notes = <Object?>[
+        yomitanStripped(yomitanNote('猫')), // 去 HTML 后重复
+        yomitanStripped(yomitanNote('  犬 ')), // trim 后重复
+        yomitanStripped(yomitanNote('鳥')), // 能加
+        yomitanStripped(yomitanNote('')), // 空
+        yomitanStripped(yomitanNote('<i></i>')), // 去 HTML 后空
+        yomitanStripped(yomitanNote('猫', deck: 'Other')), // 牌组不存在（不进规范化）
+        yomitanStripped(
+          yomitanNote('猫', deck: 'JP::Vocab', duplicateScope: 'deck'),
+        ), // 牌组范围内重复
+        yomitanStripped(
+          yomitanNote('犬', deck: 'JP::Vocab', duplicateScope: 'deck'),
+        ), // 重复的那条在别的牌组 → 能加
+        yomitanStripped(yomitanNote('猫', model: 'Nope')), // 模型不存在
+        'not a note', // 不是对象
+        yomitanStripped(yomitanNote('鳥')), // 同批里再来一条也能加（不和同批互判）
+      ];
+      // 逐条：每个候选单独一个请求（旧实现的口径：每条各自规范化一次）。
+      final List<Object?> single = <Object?>[
+        for (final Object? n in notes)
+          ((await hc.ok('canAddNotesWithErrorDetail', <String, Object?>{
+                    'notes': <Object?>[n],
+                  }))!
+                  as List)
+              .single,
+      ];
+      expect(single, <Object?>[
+        <String, Object?>{'canAdd': false, 'error': kSrsAnkiDuplicateError},
+        <String, Object?>{'canAdd': false, 'error': kSrsAnkiDuplicateError},
+        <String, Object?>{'canAdd': true},
+        <String, Object?>{'canAdd': false, 'error': kSrsAnkiEmptyError},
+        <String, Object?>{'canAdd': false, 'error': kSrsAnkiEmptyError},
+        <String, Object?>{
+          'canAdd': false,
+          'error': 'deck was not found: Other',
+        },
+        <String, Object?>{'canAdd': false, 'error': kSrsAnkiDuplicateError},
+        <String, Object?>{'canAdd': true},
+        <String, Object?>{
+          'canAdd': false,
+          'error': 'model was not found: Nope',
+        },
+        <String, Object?>{'canAdd': false, 'error': 'note must be an object'},
+        <String, Object?>{'canAdd': true},
+      ]);
+
+      calls.clear();
+      final List<Object?> batch =
+          (await hc.ok('canAddNotesWithErrorDetail', <String, Object?>{
+                'notes': notes,
+              }))!
+              as List;
+      expect(batch, single);
+      // 整个请求只跨一次 FFI：解析通过的 8 个候选首字段一批（库内旧笔记的规范形已缓存，不再算）。
+      expect(calls, <List<String>>[
+        <String>['猫', '  犬 ', '鳥', '', '<i></i>', '猫', '犬', '鳥'],
+      ]);
+
+      calls.clear();
+      expect(
+        await hc.ok('canAddNotes', <String, Object?>{'notes': notes}),
+        <bool>[for (final Object? d in single) (d! as Map)['canAdd']! as bool],
+      );
+      expect(calls, hasLength(1));
+    });
+
     test('查重范围：deck / deck-root / checkChildren / checkAllModels', () async {
       await h.ok('createDeck', <String, Object?>{'deck': 'JP::Vocab'});
       await h.ok('createDeck', <String, Object?>{'deck': 'JP::Grammar'});
@@ -438,7 +594,7 @@ void main() {
       await h.ok('addNote', <String, Object?>{'note': yomitanNote('猫')});
       for (final String q in <String>[
         'prop:ease>2',
-        'rated:1',
+        'resched:1',
         'is:buried-sibling',
       ]) {
         final Map<String, Object?> r = await h.call(
@@ -448,7 +604,7 @@ void main() {
         expect(r['result'], isNull, reason: q);
         expect(r['error'], startsWith('unsupported search syntax'), reason: q);
       }
-      // 浏览页补上的语法与浏览页同一份求值（SrsCardSearchSubject）。
+      // 浏览页补上的语法与浏览页同一份求值（原生浏览会话 store/browse.rs）。
       expect(
         await h.ok('findNotes', <String, Object?>{'query': 'prop:ivl=0'}),
         hasLength(1),
@@ -559,6 +715,80 @@ void main() {
         }))['error'],
         'Note was not found: 1',
       );
+    });
+
+    test('setSpecificValueOfCard：只认新卡的 due（队列位置），形状照插件', () async {
+      // 直接经 store 建笔记：本用例只测位置读写，不依赖查重用的原生搜索内核。
+      final String noteId = await h.store.createNote(
+        noteTypeId: h.store.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(kAcProfile, 'Expression'): '猫',
+        },
+      );
+      final int card = SrsIds.ankiNumericId(
+        (await h.store.cardsOfNote(noteId)).single.id,
+      );
+      Future<Map<String, Object?>> info() async =>
+          (((await h.ok('cardsInfo', <String, Object?>{
+                            'cards': <int>[card],
+                          }))!
+                          as List)
+                      .single!
+                  as Map)
+              .cast<String, Object?>();
+      expect((await info())['due'], 0, reason: '没排过的新卡 due 报 0');
+
+      expect(
+        await h.ok('setSpecificValueOfCard', <String, Object?>{
+          'card': card,
+          'keys': <String>['due', 'ivl'],
+          'newValues': <Object?>[7, 3],
+          'warning_check': true,
+        }),
+        <Object?>[
+          true,
+          <Object?>[false, 'Fushi review cannot set "ivl" on a card'],
+        ],
+      );
+      expect((await info())['due'], 7);
+      final String? cardId = await h.store.cardIdForAnkiNumericId(card);
+      expect((await h.store.cardRow(cardId!))!.newPosition, 7);
+
+      // 长度不一致：裸 false；卡不存在：[[false, 原因]]。
+      expect(
+        await h.ok('setSpecificValueOfCard', <String, Object?>{
+          'card': card,
+          'keys': <String>['due'],
+          'newValues': <Object?>[],
+        }),
+        isFalse,
+      );
+      final List<Object?> missing =
+          (await h.ok('setSpecificValueOfCard', <String, Object?>{
+                'card': 1,
+                'keys': <String>['due'],
+                'newValues': <Object?>[1],
+              }))!
+              as List;
+      expect((missing.single! as List).first, isFalse);
+
+      // 空卡（生成门隐藏）按不存在处理。「学过的卡不接受」在 store 层
+      // （srs_new_card_position_test）测：本 harness 没装排程内核，答不了题。
+      await h.store.updateNote(
+        noteId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(kAcProfile, 'Expression'): '',
+        },
+      );
+      final List<Object?> learned =
+          (await h.ok('setSpecificValueOfCard', <String, Object?>{
+                'card': card,
+                'keys': <String>['due'],
+                'newValues': <Object?>[1],
+              }))!
+              as List;
+      expect((learned.single! as List).first, isFalse);
+      expect((await h.store.cardRow(cardId))!.newPosition, 7);
     });
 
     test('guiBrowse / guiEditNote 交给宿主回调', () async {

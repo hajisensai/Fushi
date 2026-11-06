@@ -13,12 +13,59 @@ import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/settings/settings_kit.dart' show SettingsCountBadge;
+import 'package:fushi/src/settings/settings_kit_core.dart'
+    show SettingsCountBadge;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+
+/// 「全部发送」结束后的 toast 文案：停下 / 失败时说清**为什么**。
+///
+/// 此前停下时一律报「连不上 Anki」——实际原因可能是连不上 Fushi 互联服务端、Anki
+/// 未配置、同步客户端未登录……用户无从下手。原因走与单张制卡同一套本地化
+/// （[localizeAnkiMineError]），未分类的失败退回后端原文。
+@visibleForTesting
+String pendingFlushMessage(PendingFlushReport report) {
+  final MineOutcome? stop = report.stopOutcome;
+  if (report.unreachable) {
+    return stop == null
+        ? t.anki_pending_mines_unreachable
+        : t.anki_pending_mines_stopped(reason: _pendingFailureReason(stop));
+  }
+  final String summary = t.anki_pending_mines_flush_result(
+    delivered: report.delivered,
+    failed: report.failed,
+    remaining: report.remaining,
+  );
+  final MineOutcome? failure = report.failureOutcome;
+  return failure == null
+      ? summary
+      : '$summary\n${_pendingFailureReason(failure)}';
+}
+
+String _pendingFailureReason(MineOutcome outcome) {
+  if (outcome.result == MineResult.notConfigured) {
+    return t.card_export_not_configured;
+  }
+  return mineFailureMessage(outcome);
+}
 
 /// 订阅待发队列：表一变就重读一次（行数 / 行列表）。
 mixin _PendingMineQueueListener<W extends ConsumerStatefulWidget>
@@ -46,41 +93,20 @@ mixin _PendingMineQueueListener<W extends ConsumerStatefulWidget>
 }
 
 /// Anki 设置页里的「待发卡片」入口行：显示张数，点进列表页。
-class PendingMinesEntryRow extends ConsumerStatefulWidget {
-  const PendingMinesEntryRow({super.key, this.hideWhenEmpty = false});
-
-  /// 队列为空时整行不显示（挖词目标 = Fushi 复习时：新卡不再进这个 Anki 队列，
-  /// 只剩切换前攒下的卡要处理）。
-  final bool hideWhenEmpty;
-
-  @override
-  ConsumerState<PendingMinesEntryRow> createState() =>
-      _PendingMinesEntryRowState();
-}
-
-class _PendingMinesEntryRowState extends ConsumerState<PendingMinesEntryRow>
-    with _PendingMineQueueListener<PendingMinesEntryRow> {
-  int _count = 0;
+///
+/// 恒画一整行：空队列时要不要露出由放它的分组决定（[pendingMineCountProvider]），
+/// 行自己不缩成零尺寸——那样分段分组会把一个看不见的空行当组尾（#ZWr6B6u_RM）。
+class PendingMinesEntryRow extends ConsumerWidget {
+  const PendingMinesEntryRow({super.key});
 
   @override
-  Future<void> reload() async {
-    try {
-      final int n = await store.count();
-      if (mounted) setState(() => _count = n);
-    } catch (_) {
-      // 未初始化的最小宿主（widget 测试）没有库：当 0。
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (widget.hideWhenEmpty && _count == 0) return const SizedBox.shrink();
+  Widget build(BuildContext context, WidgetRef ref) {
     return AdaptiveSettingsRow(
       icon: FushiIcons.cloudUpload,
       showIcon: true,
       title: t.anki_pending_mines_title,
       subtitle: t.anki_pending_mines_hint,
-      trailing: SettingsCountBadge(count: _count),
+      trailing: SettingsCountBadge(count: pendingMineCountOf(ref)),
       onTap: () => Navigator.of(context).push<void>(
         adaptivePageRoute<void>(
           context: context,
@@ -224,13 +250,7 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
       final PendingFlushReport report = await repo.flush(interactive: true);
       if (!mounted || repo.switchesAppPerNote) return;
       FushiToast.show(
-        msg: report.unreachable
-            ? t.anki_pending_mines_unreachable
-            : t.anki_pending_mines_flush_result(
-                delivered: report.delivered,
-                failed: report.failed,
-                remaining: report.remaining,
-              ),
+        msg: pendingFlushMessage(report),
         severity: report.unreachable || report.failed > 0
             ? ToastSeverity.warning
             : ToastSeverity.success,

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// TODO-097 / BUG-181 + BUG-2925 守卫：首页外壳的系统 UI 模式。
 ///

@@ -6,6 +6,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show collectionDetailSortPrefKey, kCollectionDetailManualSortValue;
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
+import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
+    show MediaItemDialogFrame;
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -14,8 +16,7 @@ import 'package:fushi_core/fushi_core.dart';
 ///
 /// 生产拓扑：全局 [FushiAppUiScale]（FittedBox 整体缩放）挂在 MaterialApp.builder，
 /// 根 Navigator 的 Overlay 落在其缩放画布坐标系内；而网格右键回调报的是真实视口坐标。
-/// 修复前 `_showMemberMenu` 把真实视口坐标直接当 Overlay 本地坐标喂给 showMenu 的
-/// RelativeRect → 菜单渲染位置约落在「点击坐标 ×scale」（scale=0.5 时约点击坐标的一半，
+/// 修复前 `_showMemberMenu` 把真实视口坐标直接当 Overlay 本地坐标喂给菜单锚点 → 菜单渲染位置约落在「点击坐标 ×scale」（scale=0.5 时约点击坐标的一半，
 /// 偏移随点击点离屏幕原点越远越大，屏幕中部点可达数百逻辑像素）。修复后经
 /// `overlay.globalToLocal` 沿真实渲染变换链换算，菜单贴住点击点。
 ///
@@ -28,8 +29,7 @@ void main() {
   /// 播种 [count] 个 epub 成员（keys k1..k{count}），返回 db + 合集行。多成员填满
   /// 网格多行，便于挑一张靠近屏幕中心的卡片放大缩放偏移。
   Future<({FushiDatabase db, MediaCollectionRow col})> seed(int count) async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final int cid = await db.createMediaCollection('C');
     for (int i = 1; i <= count; i++) {
@@ -37,38 +37,44 @@ void main() {
     }
     // 右键菜单走手动序拖排网格的 onContextMenu（默认卷号序不挂拖排网格）。
     await db.setPref(
-        collectionDetailSortPrefKey(cid), kCollectionDetailManualSortValue);
+      collectionDetailSortPrefKey(cid),
+      kCollectionDetailManualSortValue,
+    );
     final MediaCollectionRow col = (await db.getMediaCollectionById(cid))!;
     return (db: db, col: col);
   }
 
   /// 成员卡：纯视觉带 Key 的方块（详情页会把它包进 IgnorePointer，手势由网格接管）。
-  Widget? cardBuilder(String mediaType, String entryKey,
-          {VoidCallback? onRemoveFromCollection}) =>
-      Container(
-        key: ValueKey<String>('member-$entryKey'),
-        color: Colors.blue,
-        alignment: Alignment.center,
-        child: Text(entryKey),
-      );
+  Widget? cardBuilder(
+    String mediaType,
+    String entryKey, {
+    VoidCallback? onRemoveFromCollection,
+  }) => Container(
+    key: ValueKey<String>('member-$entryKey'),
+    color: Colors.blue,
+    alignment: Alignment.center,
+    child: Text(entryKey),
+  );
 
   /// 复刻生产拓扑：MaterialApp.builder 注入 [FushiAppUiScale]（整体缩放），页面
   /// 与根 Navigator/Overlay 都落在缩放画布坐标系内。onOpenMember 不注入 → 菜单只含
   /// 「移出合集」一项，第一项即该项（定位确定）。
-  Widget wrapPage(MediaCollectionRow col, FushiDatabase db,
-          {required double scale}) =>
-      TranslationProvider(
-        child: MaterialApp(
-          builder: (BuildContext context, Widget? child) =>
-              FushiAppUiScale(scale: scale, child: child!),
-          home: MediaCollectionGridDetailPage(
-            database: db,
-            collection: col,
-            memberCardBuilder: cardBuilder,
-            onChanged: () {},
-          ),
-        ),
-      );
+  Widget wrapPage(
+    MediaCollectionRow col,
+    FushiDatabase db, {
+    required double scale,
+  }) => TranslationProvider(
+    child: MaterialApp(
+      builder: (BuildContext context, Widget? child) =>
+          FushiAppUiScale(scale: scale, child: child!),
+      home: MediaCollectionGridDetailPage(
+        database: db,
+        collection: col,
+        memberCardBuilder: cardBuilder,
+        onChanged: () {},
+      ),
+    ),
+  );
 
   testWidgets('界面缩放 0.5 下成员卡右键菜单贴住点击点（BUG-781）', (WidgetTester tester) async {
     // 固定视口，几何可复现；缩放 0.5 时缩放画布为视口 2 倍。
@@ -98,8 +104,11 @@ void main() {
     expect(clickGlobal, isNotNull, reason: '应有成员卡渲染');
     // 该卡确实离屏幕原点足够远：修复前偏移≈clickGlobal.distance/2，需 >48 才能被阈值
     // 抓住回归（这里数百像素量级）。
-    expect(clickGlobal!.distance, greaterThan(200.0),
-        reason: '目标卡应靠近屏幕中心，放大缩放偏移量');
+    expect(
+      clickGlobal!.distance,
+      greaterThan(200.0),
+      reason: '目标卡应靠近屏幕中心，放大缩放偏移量',
+    );
 
     // 真鼠标右键：secondary button 按下→原地松手（未移动）→ 网格 onContextMenu。
     final TestGesture gesture = await tester.startGesture(
@@ -112,18 +121,27 @@ void main() {
     await tester.pumpAndSettle();
 
     // 菜单已弹出（「移出合集」项存在）。
-    expect(find.text(t.collection_remove_member), findsOneWidget,
-        reason: '右键应弹出成员上下文菜单（含「移出合集」）');
+    expect(
+      find.text(t.collection_remove_member),
+      findsOneWidget,
+      reason: '右键应弹出成员上下文菜单（含「移出合集」）',
+    );
 
-    // 菜单第一项（唯一项）容器的渲染左上角（真实屏幕坐标）应贴近点击点。
-    final Finder menuItem =
-        find.byWidgetPredicate((Widget w) => w is PopupMenuItem);
-    expect(menuItem, findsOneWidget);
-    final Offset menuTopLeft = tester.getTopLeft(menuItem.first);
+    // 成员菜单已统一走条目菜单入口 showMediaItemActions：右键在指针处弹的是
+    // 条目右键菜单路由（不再是 showFushiMenu 的 PopupMenuItem），其内容即
+    // [MediaItemDialogFrame]，由布局委托以换算后的锚点为左上角摆放。取它的渲染
+    // 左上角（真实屏幕坐标）应贴近点击点。
+    final Finder menuPanel = find.byType(MediaItemDialogFrame);
+    expect(menuPanel, findsOneWidget);
+    final Offset menuTopLeft = tester.getTopLeft(menuPanel);
 
     final double dist = (menuTopLeft - clickGlobal).distance;
-    expect(dist, lessThan(48.0),
-        reason: '缩放 0.5 下菜单应贴住点击点（globalToLocal 修复）；'
-            '修复前会偏离约点击坐标的一半（数百像素），实测偏移=$dist');
+    expect(
+      dist,
+      lessThan(48.0),
+      reason:
+          '缩放 0.5 下菜单应贴住点击点（globalToLocal 修复）；'
+          '修复前会偏离约点击坐标的一半（数百像素），实测偏移=$dist',
+    );
   });
 }

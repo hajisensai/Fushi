@@ -3,8 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 
 Widget _app(Widget Function(BuildContext) body) => MaterialApp(
-      home: Scaffold(body: Builder(builder: body)),
-    );
+  home: Scaffold(body: Builder(builder: body)),
+);
 
 void main() {
   for (final double width in <double>[320, 360]) {
@@ -16,18 +16,18 @@ void main() {
       addTearDown(tester.view.reset);
 
       late BuildContext context;
-      await tester.pumpWidget(_app((BuildContext ctx) {
-        context = ctx;
-        return const SizedBox.expand();
-      }));
+      await tester.pumpWidget(
+        _app((BuildContext ctx) {
+          context = ctx;
+          return const SizedBox.expand();
+        }),
+      );
       showReaderSideSheet<void>(
         context: context,
         builder: (BuildContext ctx) => ReaderSideSheet(
           title: '导航',
           onClose: () => Navigator.of(ctx).pop(),
-          child: const TextField(
-            key: ValueKey<String>('mobile_search'),
-          ),
+          child: const TextField(key: ValueKey<String>('mobile_search')),
         ),
       );
       await tester.pumpAndSettle();
@@ -65,18 +65,21 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
 
     late BuildContext ctx;
-    await tester.pumpWidget(_app((BuildContext c) {
-      ctx = c;
-      return const SizedBox.expand();
-    }));
+    await tester.pumpWidget(
+      _app((BuildContext c) {
+        ctx = c;
+        return const SizedBox.expand();
+      }),
+    );
 
     showReaderSideSheet<void>(
       context: ctx,
       builder: (_) => const ReaderSideSheetProbe(),
     );
     await tester.pumpAndSettle();
-    final Finder sheet =
-        find.byKey(const ValueKey<String>('fushi_reader_side_sheet'));
+    final Finder sheet = find.byKey(
+      const ValueKey<String>('fushi_reader_side_sheet'),
+    );
     expect(sheet, findsOneWidget);
     final Rect right = tester.getRect(sheet);
     expect(right.right, 1600);
@@ -100,45 +103,50 @@ void main() {
 
   testWidgets('ReaderSideSheet 外壳：标题 + 关闭键触发 onClose', (tester) async {
     int closed = 0;
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: ReaderSideSheet(
-          title: '导航',
-          onClose: () => closed++,
-          child: const Text('BODY'),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ReaderSideSheet(
+            title: '导航',
+            onClose: () => closed++,
+            child: const Text('BODY'),
+          ),
         ),
       ),
-    ));
+    );
     expect(find.text('导航'), findsOneWidget);
     expect(find.text('BODY'), findsOneWidget);
-    await tester
-        .tap(find.byKey(const ValueKey<String>('fushi_side_sheet_close')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('fushi_side_sheet_close')),
+    );
     expect(closed, 1);
   });
 
   testWidgets('ReaderSideSheet 外壳：bottom 固定在标题下、不随内容滚动', (tester) async {
     final ScrollController scroll = ScrollController();
     addTearDown(scroll.dispose);
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: SizedBox(
-          height: 400,
-          child: ReaderSideSheet(
-            title: '设置',
-            onClose: () {},
-            scrollable: false,
-            bottom: const SizedBox(height: 48, child: Text('TABS')),
-            child: ListView(
-              controller: scroll,
-              children: <Widget>[
-                for (int i = 0; i < 40; i++)
-                  SizedBox(height: 40, child: Text('$i')),
-              ],
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 400,
+            child: ReaderSideSheet(
+              title: '设置',
+              onClose: () {},
+              scrollable: false,
+              bottom: const SizedBox(height: 48, child: Text('TABS')),
+              child: ListView(
+                controller: scroll,
+                children: <Widget>[
+                  for (int i = 0; i < 40; i++)
+                    SizedBox(height: 40, child: Text('$i')),
+                ],
+              ),
             ),
           ),
         ),
       ),
-    ));
+    );
     final double tabsTop = tester.getTopLeft(find.text('TABS')).dy;
     expect(tabsTop, greaterThan(tester.getTopLeft(find.text('设置')).dy));
     // 内容区由调用方自管滚动：外壳不再套一层 SingleChildScrollView。

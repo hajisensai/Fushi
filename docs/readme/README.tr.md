@@ -14,6 +14,8 @@
 
 [![En son sürümü indir](https://img.shields.io/badge/%E2%AC%87%20En%20son%20s%C3%BCr%C3%BCm%C3%BC%20indir-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Discord'a katıl](https://img.shields.io/badge/Discord%27a%20kat%C4%B1l-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor%20on%20GitHub-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/hajisensai)
+[![Support on Ko-fi](https://img.shields.io/badge/Support%20on%20Ko-fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/hajisensai)
 
 </div>
 
@@ -136,9 +138,9 @@ Fushi, içe aktarılan kitapları, sözlükleri, yazı tiplerini, sesli kitap ve
 
 - **Eşitleme** — Google Drive / OneDrive / Dropbox OAuth ile oturum açmayı kullanır; WebDAV / FTP / SFTP / Fushi Server, sizin verdiğiniz sunucu adresini ve kimlik bilgilerini kullanır. Fushi Interconnect eşleştirilmiş cihazları doğrudan bağlar (LAN, IPv6, bindirme ağları veya genel adresler); doğrudan yol çalışmazsa uçtan uca bir iroh P2P tüneline geçer; eşleştirme bağlantıları her zaman onay ister.
 - **Anki** — kart oluşturma, AnkiDroid ile veya yapılandırdığınız AnkiConnect adresiyle iletişim kurar.
-- **Kullanım istatistikleri** — masaüstü ve Android sürümleri günde bir kez, etkin kullanıcıları saymak için fushi.moe'ye rastgele bir kurulum kimliği, uygulama sürümü, platform ve güncelleme kanalını gönderir; hesap, kitaplık veya okuma verisi dahil değildir ve IP adresleri saklanmaz. Güncelleme ayarlarındaki *Kullanım istatistiklerini paylaş* ile kapatabilirsiniz. iOS sürümleri bunu göndermez.
+- **Kullanım istatistikleri** — masaüstü ve Android sürümleri günde bir kez, etkin kullanıcıları saymak için fushi.moe'ye cihazdan türetilen bir kurulum kimliği (yeniden yüklemede değişmez), uygulama sürümü, platform ve güncelleme kanalını gönderir; hesap, kitaplık veya okuma verisi dahil değildir ve IP adresleri saklanmaz. Güncelleme ayarlarındaki *Kullanım istatistiklerini paylaş* ile kapatabilirsiniz. iOS sürümleri bunu göndermez.
 - **Yalnızca siz istediğinizde** — günlük yükleme (tek seferlik bir onay isteminden sonra), uygulama içi geri bildirim ve leaderboard (varsayılan olarak kapalı; kitaplık başlıklarınızı ve ilerlemenizi yalnızca siz katıldıktan sonra yükler).
-- **Manga OCR** — varsayılan motor, sayfa görüntüsünü Google'a gönderen Google Lens'tir; görüntüleri yerel tutmak için ayarlardan cihaz üstü modele veya sistem OCR'ına geçin.
+- **Manga OCR** — varsayılan motor cihaz üstü CTC modelidir, böylece sayfa görüntüleri yerelde kalır (ayarlardan bir kez indirin); Google Lens isteğe bağlıdır ve sayfa görüntüsünü Google'a gönderir.
 - **Yapay zekâ özellikleri** — istekler yalnızca sizin yapılandırdığınız ve bir özelliğe atadığınız LLM sağlayıcısına gider; atanmış sağlayıcı yoksa hiçbir şey gönderilmez.
 - **Üçüncü taraf hizmetler** — meta veri, altyazı ve çevrimiçi kaynak özellikleri, [İçerik kaynakları ve entegrasyonlar](#i̇çerik-kaynakları-ve-entegrasyonlar) altında listelenen hizmetlere yalnızca onları kullandığınızda bağlanır.
 

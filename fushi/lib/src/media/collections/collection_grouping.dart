@@ -47,10 +47,7 @@ class CollectionOrderingItem<T> {
 
 /// 散条目或一个合集折叠后的展示单元。
 class CollectionGroup<T> {
-  const CollectionGroup({
-    required this.collection,
-    required this.items,
-  });
+  const CollectionGroup({required this.collection, required this.items});
 
   /// null = 散条目（单卡，[items] 长度恒 1）；非 null = 折叠合集卡（[items] 为该合集在本
   /// surface 的全部成员，已按组内序排好）。
@@ -168,9 +165,7 @@ List<CollectionGroup<T>> groupByCollections<T>({
       else
         CollectionGroup<T>(
           collection: null,
-          items: <CollectionOrderingItem<T>>[
-            unit as CollectionOrderingItem<T>,
-          ],
+          items: <CollectionOrderingItem<T>>[unit as CollectionOrderingItem<T>],
         ),
   ];
 }

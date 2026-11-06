@@ -14,34 +14,36 @@ void main() {
   const Color osAccent = Color(0xFFE67E22); // distinctly non-teal orange
 
   group('buildSystemThemeColorScheme', () {
-    test('accent seeds the scheme when the core palette is null (Windows path)',
-        () {
-      final ColorScheme accentScheme = buildSystemThemeColorScheme(
-        brightness: Brightness.light,
-        fallbackSeed: fallbackTeal,
-        palette: null,
-        accent: osAccent,
-      );
-      final ColorScheme fallbackScheme = buildSystemThemeColorScheme(
-        brightness: Brightness.light,
-        fallbackSeed: fallbackTeal,
-        palette: null,
-        accent: null,
-      );
+    test(
+      'accent seeds the scheme when the core palette is null (Windows path)',
+      () {
+        final ColorScheme accentScheme = buildSystemThemeColorScheme(
+          brightness: Brightness.light,
+          fallbackSeed: fallbackTeal,
+          palette: null,
+          accent: osAccent,
+        );
+        final ColorScheme fallbackScheme = buildSystemThemeColorScheme(
+          brightness: Brightness.light,
+          fallbackSeed: fallbackTeal,
+          palette: null,
+          accent: null,
+        );
 
-      // The accent must actually drive the colors, not the teal fallback.
-      expect(accentScheme.primary, isNot(equals(fallbackScheme.primary)));
-      expect(
-        accentScheme.primary,
-        equals(
-          ColorScheme.fromSeed(
-            seedColor: osAccent,
-            brightness: Brightness.light,
-            dynamicSchemeVariant: kFushiDefaultSchemeVariant,
-          ).primary,
-        ),
-      );
-    });
+        // The accent must actually drive the colors, not the teal fallback.
+        expect(accentScheme.primary, isNot(equals(fallbackScheme.primary)));
+        expect(
+          accentScheme.primary,
+          equals(
+            ColorScheme.fromSeed(
+              seedColor: osAccent,
+              brightness: Brightness.light,
+              dynamicSchemeVariant: kFushiDefaultSchemeVariant,
+            ).primary,
+          ),
+        );
+      },
+    );
 
     test('falls back to the seed only when the OS exposes nothing', () {
       final ColorScheme scheme = buildSystemThemeColorScheme(
@@ -98,7 +100,8 @@ void main() {
       expect(
         body.contains('getAccentColor'),
         isTrue,
-        reason: 'Windows/macOS/Linux expose the system color only via '
+        reason:
+            'Windows/macOS/Linux expose the system color only via '
             'getAccentColor; dropping it reintroduces BUG-090.',
       );
     });

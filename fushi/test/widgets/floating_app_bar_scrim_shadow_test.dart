@@ -13,6 +13,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show kFushiFloatingCapsuleScale;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -27,6 +29,10 @@ Widget _harness({required GlobalKey boundaryKey, required bool bodyBehindBar}) {
       home: Scaffold(
         extendBodyBehindAppBar: bodyBehindBar,
         appBar: FushiAppBar(
+          // Material 下返回圆整体按 [kFushiFloatingCapsuleScale] 缩（56 → 48），
+          // 在默认 56 高的栏里上下各空 4。工具栏取缩后的胶囊高，让返回圆照旧
+          // 贴着栏下沿、投影越过栏下沿——这才是本测试要守的场景。
+          toolbarHeight: kFushiPageChromeExtent * kFushiFloatingCapsuleScale,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () {},
@@ -104,7 +110,12 @@ void main() {
 
         final Rect bar = tester.getRect(find.byType(AppBar));
         final Rect circle = tester.getRect(find.byType(FushiPageChromeCircle));
-        expect(circle.bottom, lessThanOrEqualTo(bar.bottom));
+        expect(circle.bottom, lessThanOrEqualTo(bar.bottom + 1e-6));
+        expect(
+          circle.bottom,
+          moreOrLessEquals(bar.bottom),
+          reason: '返回圆贴着栏下沿，投影才会越过栏下沿',
+        );
 
         final ByteData bytes = (await tester.runAsync(() async {
           final RenderRepaintBoundary boundary =

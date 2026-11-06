@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -117,7 +117,7 @@ class _HarnessState extends State<_Harness> {
             keepWebViewWarm: true,
             webViewKey: widget.webViewKey,
             onDismiss: () {},
-            onTextSelected: (String _, Rect __) {},
+            onTextSelected: (_, __, ___, ____) {},
             onLinkClick: (String _, Rect __) {},
             onMineEntry: (Map<String, String> _) async =>
                 const MinePopupResult(),

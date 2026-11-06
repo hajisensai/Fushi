@@ -17,7 +17,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -146,8 +146,9 @@ void main() {
       final String? coverageBefore = await db.getPref(
         videoWatchCoveragePrefKey(_bookUid),
       );
-      final WidgetRef ref = tester.element(find.byType(FushiReaderApp))
-          as ConsumerStatefulElement;
+      final WidgetRef ref =
+          tester.element(find.byType(FushiReaderApp))
+              as ConsumerStatefulElement;
       final CardSourceLink link = CardSourceLink(
         kind: CardSourceKind.video,
         uid: _bookUid,
@@ -272,8 +273,8 @@ void main() {
       await _finish(
         tester,
         ExternalMediaNavigation.instance.closeActive().then(
-              (bool result) => closed = result,
-            ),
+          (bool result) => closed = result,
+        ),
       );
       expect(closed, isTrue);
       expect(find.byType(VideoFushiPage), findsNothing);

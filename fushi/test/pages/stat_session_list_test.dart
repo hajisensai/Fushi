@@ -45,6 +45,7 @@ Future<void> _pump(
   StatSessionClearAll? onClearAll,
   StatSessionCollectionOf? collectionOf,
   StatSessionCoverOf? coverOf,
+  StatSessionTitleOf? titleOf,
   int limit = 8,
 }) async {
   await tester.pumpWidget(
@@ -56,7 +57,7 @@ Future<void> _pump(
               builder: (BuildContext context) => buildStatSessionSection(
                 context,
                 sessions: sessions,
-                titleOf: (StudySession s) => s.title,
+                titleOf: titleOf ?? (StudySession s) => s.title,
                 collectionOf: collectionOf,
                 coverOf: coverOf,
                 onDelete: onDelete,
@@ -91,14 +92,14 @@ void main() {
     expect(find.text('k-b'), findsOneWidget, reason: '空标题回退 mediaKey');
     expect(find.text(t.stat_sessions_recent), findsOneWidget);
     expect(find.byIcon(Icons.delete_outline), findsNWidgets(2));
-    expect(find.textContaining(formatStatSessionMeta(_session('a', chars: 1200))),
-        findsOneWidget);
+    expect(
+      find.textContaining(formatStatSessionMeta(_session('a', chars: 1200))),
+      findsOneWidget,
+    );
     expect(find.text(t.stat_sessions_empty), findsNothing);
   });
 
-  testWidgets('BUG-2417：命中合集的行带合集名，未命中只有条目名', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('BUG-2417：命中合集的行带合集名，未命中只有条目名', (WidgetTester tester) async {
     await _pump(
       tester,
       sessions: <StudySession>[
@@ -155,11 +156,7 @@ void main() {
     final RenderParagraph title = tester.renderObject<RenderParagraph>(
       find.text(long),
     );
-    expect(
-      title.didExceedMaxLines,
-      isFalse,
-      reason: '两行装得下这个长度的媒体名',
-    );
+    expect(title.didExceedMaxLines, isFalse, reason: '两行装得下这个长度的媒体名');
     expect(
       title.size.height,
       greaterThan(title.preferredLineHeight * 1.5),
@@ -167,18 +164,77 @@ void main() {
     );
   });
 
-  testWidgets('封面：有封面画 2:3 封面槽，无封面画域图标占位，两行左缘对齐', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('封面：有封面画 2:3 封面槽，无封面画域图标占位，两行左缘对齐', (WidgetTester tester) async {
     // 1×1 透明 PNG。
     final MemoryImage cover = MemoryImage(
       Uint8List.fromList(<int>[
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
-        0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
-        0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
-        0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
-        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+        0x89,
+        0x50,
+        0x4E,
+        0x47,
+        0x0D,
+        0x0A,
+        0x1A,
+        0x0A,
+        0x00,
+        0x00,
+        0x00,
+        0x0D,
+        0x49,
+        0x48,
+        0x44,
+        0x52,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x08,
+        0x06,
+        0x00,
+        0x00,
+        0x00,
+        0x1F,
+        0x15,
+        0xC4,
+        0x89,
+        0x00,
+        0x00,
+        0x00,
+        0x0D,
+        0x49,
+        0x44,
+        0x41,
+        0x54,
+        0x78,
+        0x9C,
+        0x63,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0x05,
+        0x00,
+        0x01,
+        0x0D,
+        0x0A,
+        0x2D,
+        0xB4,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x49,
+        0x45,
+        0x4E,
+        0x44,
+        0xAE,
+        0x42,
+        0x60,
+        0x82,
       ]),
     );
     await _pump(
@@ -218,9 +274,7 @@ void main() {
     expect(tester.getSize(find.byIcon(Icons.menu_book)), const Size(18, 18));
   });
 
-  testWidgets('BUG-2417：带封面槽时长标题放宽一行、仍不截断', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('BUG-2417：带封面槽时长标题放宽一行、仍不截断', (WidgetTester tester) async {
     const String long = 'Re：从零开始的异世界生活 第三期 第七话 暗中行动する者たち';
     tester.view.physicalSize = const Size(400, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -244,7 +298,11 @@ void main() {
   });
 
   testWidgets('空列表显示空态', (WidgetTester tester) async {
-    await _pump(tester, sessions: const <StudySession>[], onDelete: (_) async {});
+    await _pump(
+      tester,
+      sessions: const <StudySession>[],
+      onDelete: (_) async {},
+    );
     expect(find.text(t.stat_sessions_empty), findsOneWidget);
     expect(find.byIcon(Icons.delete_outline), findsNothing);
   });
@@ -273,9 +331,7 @@ void main() {
   // PDF 图 3（2026-10-09）：手机宽下卡头「全部会话 (N)」+ 清除图标挤进一个 Wrap，
   // 各占一行、标题被顶到中间。现在卡头只有标题 + 清除图标同一行，「全部会话」
   // 在列表下方。
-  testWidgets('手机宽：卡头标题与清除钮同一行，「全部会话」在列表下方', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('手机宽：卡头标题与清除钮同一行，「全部会话」在列表下方', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(360, 1600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -300,14 +356,15 @@ void main() {
     final Rect showAll = tester.getRect(
       find.byKey(const ValueKey<String>('stat-sessions-show-all')),
     );
-    expect(showAll.top, greaterThan(tester.getRect(find.text('S2')).bottom),
-        reason: '「全部会话」在最后一行之下');
+    expect(
+      showAll.top,
+      greaterThan(tester.getRect(find.text('S2')).bottom),
+      reason: '「全部会话」在最后一行之下',
+    );
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('垃圾桶 → 会话专用确认文案 → 删除回调 + 行移除；取消不动', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('垃圾桶 → 会话专用确认文案 → 删除回调 + 行移除；取消不动', (WidgetTester tester) async {
     final List<String> deleted = <String>[];
     await _pump(
       tester,
@@ -432,8 +489,10 @@ void main() {
       find.byKey(const ValueKey<String>('stat-sessions-clear-all')),
     );
     await tester.pumpAndSettle();
-    final Finder confirm =
-        find.widgetWithText(FilledButton, t.stat_clear_all_confirm);
+    final Finder confirm = find.widgetWithText(
+      FilledButton,
+      t.stat_clear_all_confirm,
+    );
     expect(
       tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirm)).onPressed,
       isNull,
@@ -474,9 +533,7 @@ void main() {
     expect(find.text('A'), findsOneWidget);
   });
 
-  testWidgets('空列表：不显示「清除全部会话」按钮（没有东西可清）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('空列表：不显示「清除全部会话」按钮（没有东西可清）', (WidgetTester tester) async {
     await _pump(
       tester,
       sessions: const <StudySession>[],
@@ -522,5 +579,71 @@ void main() {
           .first,
     );
     expect(find.text('S39'), findsOneWidget);
+  });
+
+  // 反馈 bXmmmN1vLZ（Android，约 600 条会话）：「全部会话」里点开一条记录，编辑弹窗
+  // 一打开就卡。sheet 曾经是 SingleChildScrollView + Column，600 行（带封面槽）全量
+  // 建出来；编辑框日期栏 autofocus 拉起软键盘，键盘动画每帧改 MediaQuery.viewInsets，
+  // 底部 sheet 路由的 buildPage 依赖整份 MediaQuery，于是 sheet builder 每帧重跑、
+  // 600 行每帧整批重建。sheet 改成懒加载列表后，任何一次重建只碰视口里那几行。
+  testWidgets('反馈 bXmmmN1vLZ：600 条会话的 sheet 懒加载，开编辑框 + 键盘弹出不整批重建', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    int titleCalls = 0;
+    await _pump(
+      tester,
+      sessions: <StudySession>[
+        for (int i = 0; i < 600; i++) _session('s$i', title: 'S$i'),
+      ],
+      onDelete: (_) async {},
+      titleOf: (StudySession s) {
+        titleCalls++;
+        return s.title;
+      },
+      limit: 2,
+    );
+    titleCalls = 0;
+    await tester.tap(find.text('${t.stat_sessions_show_all} (600)'));
+    await tester.pumpAndSettle();
+    expect(
+      titleCalls,
+      lessThan(100),
+      reason: '打开 sheet 只建视口内（含缓存区）的行，不建全部 600 行',
+    );
+
+    final Finder sheet = find.byType(BottomSheet);
+    titleCalls = 0;
+    await tester.tap(find.descendant(of: sheet, matching: find.text('S0')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('stat-session-edit-date')),
+      findsOneWidget,
+    );
+    // 模拟软键盘逐帧升起（Android 上 viewInsets 每帧一变）。
+    for (final double inset in <double>[60, 120, 180, 240, 300]) {
+      tester.view.viewInsets = FakeViewPadding(bottom: inset);
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+    expect(
+      titleCalls,
+      lessThan(150),
+      reason: '开编辑框 + 键盘 5 帧动画：每帧只重建视口内的行（未修前每帧 600 行）',
+    );
+    // 懒加载不丢功能：最后一条照样滚得到。
+    tester.view.resetViewInsets();
+    await tester.tap(find.text(t.dialog_cancel));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('S599'),
+      2000,
+      scrollable: find
+          .descendant(of: sheet, matching: find.byType(Scrollable))
+          .first,
+    );
+    expect(find.text('S599'), findsOneWidget);
   });
 }

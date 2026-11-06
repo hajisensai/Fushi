@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fushi_compute/fushi_compute.dart';
+
 /// Shared EPUB 3 assembly infrastructure.
 ///
 /// Single source of truth for the EPUB container pieces that are identical
@@ -34,12 +36,14 @@ class EpubBuilder {
     zip.addDeflated('META-INF/container.xml', utf8.encode(containerXml()));
     zip.addDeflated(
       'OEBPS/content.opf',
-      utf8.encode(contentOpf(
-        title: title,
-        author: author,
-        chapterCount: chapterCount,
-        uidPrefix: uidPrefix,
-      )),
+      utf8.encode(
+        contentOpf(
+          title: title,
+          author: author,
+          chapterCount: chapterCount,
+          uidPrefix: uidPrefix,
+        ),
+      ),
     );
     zip.addDeflated(
       'OEBPS/toc.ncx',
@@ -62,7 +66,8 @@ class EpubBuilder {
 
   // ── XML / XHTML generators ────────────────────────────────────────────────
 
-  static String containerXml() => '<?xml version="1.0" encoding="UTF-8"?>\n'
+  static String containerXml() =>
+      '<?xml version="1.0" encoding="UTF-8"?>\n'
       '<container version="1.0"'
       ' xmlns="urn:oasis:names:tc:opendocument:xmlns:container">\n'
       '  <rootfiles>\n'
@@ -80,16 +85,18 @@ class EpubBuilder {
     final String authorTag = (author != null && author.isNotEmpty)
         ? '\n    <dc:creator>${escXml(author)}</dc:creator>'
         : '';
-    final String now = DateTime.now()
-        .toUtc()
-        .toIso8601String()
-        .replaceFirst(RegExp(r'\.\d+Z$'), 'Z');
+    final String now = DateTime.now().toUtc().toIso8601String().replaceFirst(
+      RegExp(r'\.\d+Z$'),
+      'Z',
+    );
 
     final StringBuffer manifest = StringBuffer();
     final StringBuffer spine = StringBuffer();
     for (int i = 1; i <= chapterCount; i++) {
-      manifest.write('    <item id="chapter-$i" href="chapter-$i.xhtml"'
-          ' media-type="application/xhtml+xml"/>\n');
+      manifest.write(
+        '    <item id="chapter-$i" href="chapter-$i.xhtml"'
+        ' media-type="application/xhtml+xml"/>\n',
+      );
       spine.write('    <itemref idref="chapter-$i"/>\n');
     }
 
@@ -116,10 +123,7 @@ class EpubBuilder {
         '</package>\n';
   }
 
-  static String tocNcx({
-    required String title,
-    required int chapterCount,
-  }) {
+  static String tocNcx({required String title, required int chapterCount}) {
     final StringBuffer navPoints = StringBuffer();
     for (int i = 1; i <= chapterCount; i++) {
       navPoints.write(
@@ -145,10 +149,7 @@ class EpubBuilder {
         '</ncx>\n';
   }
 
-  static String navXhtml({
-    required String title,
-    required int chapterCount,
-  }) {
+  static String navXhtml({required String title, required int chapterCount}) {
     final StringBuffer items = StringBuffer();
     for (int i = 1; i <= chapterCount; i++) {
       items.write('      <li><a href="chapter-$i.xhtml">Chapter $i</a></li>\n');
@@ -189,11 +190,13 @@ class EpubBuilder {
 class EpubZip {
   final List<_ZipEntry> _entries = [];
 
-  void addStored(String name, List<int> data) => _entries
-      .add(_ZipEntry(name: name, data: Uint8List.fromList(data), store: true));
+  void addStored(String name, List<int> data) => _entries.add(
+    _ZipEntry(name: name, data: Uint8List.fromList(data), store: true),
+  );
 
-  void addDeflated(String name, List<int> data) => _entries
-      .add(_ZipEntry(name: name, data: Uint8List.fromList(data), store: false));
+  void addDeflated(String name, List<int> data) => _entries.add(
+    _ZipEntry(name: name, data: Uint8List.fromList(data), store: false),
+  );
 
   Uint8List build() {
     final buf = BytesBuilder(copy: false);
@@ -203,7 +206,7 @@ class EpubZip {
       final int localOffset = buf.length;
 
       final Uint8List nameBytes = Uint8List.fromList(utf8.encode(entry.name));
-      final int crc = _crc32(entry.data);
+      final int crc = ffcCrc32(entry.data);
 
       Uint8List compressed;
       int method;
@@ -233,14 +236,16 @@ class EpubZip {
       buf.add(nameBytes);
       buf.add(compressed);
 
-      locals.add(_LocalRecord(
-        nameBytes: nameBytes,
-        method: method,
-        crc: crc,
-        compressedSize: compressed.length,
-        uncompressedSize: entry.data.length,
-        localOffset: localOffset,
-      ));
+      locals.add(
+        _LocalRecord(
+          nameBytes: nameBytes,
+          method: method,
+          crc: crc,
+          compressedSize: compressed.length,
+          uncompressedSize: entry.data.length,
+          localOffset: localOffset,
+        ),
+      );
     }
 
     // Central directory
@@ -278,30 +283,6 @@ class EpubZip {
     buf.add(_le16(0)); // comment length
 
     return buf.toBytes();
-  }
-
-  // ── CRC-32 (ISO 3309) ────────────────────────────────────────────────────
-
-  static final Uint32List _table = _buildCrcTable();
-
-  static Uint32List _buildCrcTable() {
-    final t = Uint32List(256);
-    for (int n = 0; n < 256; n++) {
-      int c = n;
-      for (int k = 0; k < 8; k++) {
-        c = (c & 1) != 0 ? 0xEDB88320 ^ (c >> 1) : c >> 1;
-      }
-      t[n] = c;
-    }
-    return t;
-  }
-
-  static int _crc32(Uint8List data) {
-    int crc = 0xFFFFFFFF;
-    for (final byte in data) {
-      crc = _table[(crc ^ byte) & 0xFF] ^ (crc >> 8);
-    }
-    return crc ^ 0xFFFFFFFF;
   }
 
   // ── Little-endian helpers ─────────────────────────────────────────────────

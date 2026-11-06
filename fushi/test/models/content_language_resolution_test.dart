@@ -14,10 +14,7 @@ void main() {
         ),
         'zh-Hant',
       );
-      expect(
-        resolveContentLanguage(metadata: 'ja', globalDefault: 'ko'),
-        'ja',
-      );
+      expect(resolveContentLanguage(metadata: 'ja', globalDefault: 'ko'), 'ja');
       expect(resolveContentLanguage(globalDefault: 'ko'), 'ko');
       expect(resolveContentLanguage(), isNull);
     });
@@ -25,14 +22,8 @@ void main() {
     test('空串与纯空白视同「没设」——偏好默认值是空串，DB 列也可能存进空串', () {
       // 这条如果错了，症状是「设置里清空了默认语言，却还按空串去建链」，
       // 或者「资源上存了个空串，把真正有值的下一档挡住」。
-      expect(
-        resolveContentLanguage(explicit: '', metadata: 'ja'),
-        'ja',
-      );
-      expect(
-        resolveContentLanguage(explicit: '   ', metadata: 'ja'),
-        'ja',
-      );
+      expect(resolveContentLanguage(explicit: '', metadata: 'ja'), 'ja');
+      expect(resolveContentLanguage(explicit: '   ', metadata: 'ja'), 'ja');
       expect(resolveContentLanguage(explicit: '', globalDefault: ''), isNull);
     });
 
@@ -47,8 +38,9 @@ void main() {
       // 不能让它们跟着变）。断言它「确实以中文字体打头」有两个作用：一是记录这个
       // 反直觉事实，二是万一有人「顺手把它改成日文优先」，这里会红——那种改法会
       // 同时改掉 BUG-929 的字号度量基准，必须连带重新校准，不能顺手改。
-      final List<String> legacy =
-          subtitleCjkFontFallbacks(TargetPlatform.windows);
+      final List<String> legacy = subtitleCjkFontFallbacks(
+        TargetPlatform.windows,
+      );
       expect(legacy.first, 'Microsoft YaHei UI');
     });
 

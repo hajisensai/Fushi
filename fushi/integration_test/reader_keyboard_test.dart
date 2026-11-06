@@ -27,8 +27,9 @@ void main() {
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   Future<String?> readProgress(WidgetTester tester) async {
-    final Finder progress =
-        find.byKey(const ValueKey<String>('fushi_progress'));
+    final Finder progress = find.byKey(
+      const ValueKey<String>('fushi_progress'),
+    );
     if (progress.evaluate().isEmpty) return null;
     final Text widget = tester.widget(progress) as Text;
     return widget.data;
@@ -42,8 +43,9 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
   }
 
-  testWidgets('reader page-turn shortcut works before and after WebView tap',
-      (WidgetTester tester) async {
+  testWidgets('reader page-turn shortcut works before and after WebView tap', (
+    WidgetTester tester,
+  ) async {
     int screenshots = 0;
     await launchFushiTestApp();
 
@@ -63,8 +65,11 @@ void main() {
       await seedReaderBook(tester);
       books = findBookEntries();
     }
-    expect(books, findsWidgets,
-        reason: 'A book must be on the shelf after seeding the fixture');
+    expect(
+      books,
+      findsWidgets,
+      reason: 'A book must be on the shelf after seeding the fixture',
+    );
     final bool focusedBook = await driver.focusWidget(books.first);
     expect(focusedBook, isTrue, reason: 'Book card must be reachable by focus');
     await driver.activate();
@@ -104,13 +109,18 @@ void main() {
     screenshots += await takeScreenshot(binding, 'kbd_after_pretap');
 
     final bool movedBeforeTap = p0 != null && p1 != null && p0 != p1;
-    expect(movedBeforeTap, isTrue,
-        reason: 'Keyboard page-forward must move the reader position '
-            '(baseline). p0=$p0 p1=$p1');
+    expect(
+      movedBeforeTap,
+      isTrue,
+      reason:
+          'Keyboard page-forward must move the reader position '
+          '(baseline). p0=$p0 p1=$p1',
+    );
 
     // ── Phase B: tap into the WebView content, then page forward again ──
-    await tester.tap(find.byKey(
-        webViewKey)); // itest-tap-allow: taps the platform WebView on purpose to prove it does not steal keyboard focus (HBK #1)
+    await tester.tap(
+      find.byKey(webViewKey),
+    ); // itest-tap-allow: taps the platform WebView on purpose to prove it does not steal keyboard focus (HBK #1)
     await tester.pump(const Duration(seconds: 1));
     screenshots += await takeScreenshot(binding, 'kbd_after_webview_tap');
 
@@ -120,9 +130,13 @@ void main() {
     screenshots += await takeScreenshot(binding, 'kbd_after_posttap');
 
     final bool movedAfterTap = p1 != null && p2 != null && p1 != p2;
-    expect(movedAfterTap, isTrue,
-        reason: 'HBK #1: keyboard page-forward must STILL work after tapping '
-            'into the WebView content. p1=$p1 p2=$p2');
+    expect(
+      movedAfterTap,
+      isTrue,
+      reason:
+          'HBK #1: keyboard page-forward must STILL work after tapping '
+          'into the WebView content. p1=$p1 p2=$p2',
+    );
 
     if (screenshotsAreRequired) {
       expect(screenshots, greaterThan(0));

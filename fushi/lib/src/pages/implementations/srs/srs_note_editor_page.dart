@@ -16,20 +16,52 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki_core.dart'
-    show FushiCardBlock, kFushiCardBackBlocks, kFushiCardSwitchFields;
+    show
+        FushiCardBlock,
+        FushiCardFields,
+        kFushiCardBackBlocks,
+        kFushiCardSwitchFields;
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_feature.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_edit_history_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_editors.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_field_label.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_fushi_block_layout_panel.dart'
+    show srsFushiBlockLabel;
+import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
+import 'package:fushi/src/srs/srs_field_catalog.dart' as catalog;
+import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 class SrsNoteEditorPage extends ConsumerStatefulWidget {
   const SrsNoteEditorPage({super.key, this.noteId, this.initialDeckId});
@@ -51,7 +83,7 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
   Object? _error;
 
   List<SrsNoteTypeView> _types = const <SrsNoteTypeView>[];
-  List<SrsDeckSummary> _decks = const <SrsDeckSummary>[];
+  List<SrsDeckChoice> _decks = const <SrsDeckChoice>[];
   SrsNoteTypeView? _type;
   String? _deckId;
   SrsNoteView? _note;
@@ -61,6 +93,13 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
   final TextEditingController _tags = TextEditingController();
 
   bool get _editing => widget.noteId != null;
+
+  /// fieldId → 制卡映射（ⓘ 里的「制卡时自动填入」）；按笔记类型缓存，换类型清空。
+  Map<String, String>? _miningSlots;
+
+  /// 预览常驻在宽窗右栏、且一屏看得到（不是横屏手机那种矮窗）；否则顶栏多一个「预览」
+  /// 打开底部抽屉。
+  bool _inlinePreview = false;
 
   @override
   void initState() {
@@ -82,7 +121,8 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       final SrsDbStore? store = await readSrsStore(ref);
       if (store == null) throw StateError('srs store unavailable');
       final List<SrsNoteTypeView> types = await store.noteTypes();
-      final List<SrsDeckSummary> decks = await store.deckSummaries();
+      // 只取牌组名：deckSummaries 会对 RWKV 牌组全量推理，编辑页打开会很慢。
+      final List<SrsDeckChoice> decks = await srsDeckChoices(store);
       SrsNoteView? note;
       SrsNoteTypeView? type;
       String deckId = widget.initialDeckId ?? store.defaultDeckId;
@@ -136,6 +176,7 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
     });
     _fields.clear();
     _type = type;
+    _miningSlots = null;
     if (type == null) return;
     for (final SrsFieldDef f in type.fields) {
       _fields[f.id] = SrsFieldModel(from?.field(f.id) ?? byName[f.name] ?? '');
@@ -152,9 +193,12 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
     if (type.builtinKey == kSrsBuiltinFushiCardKey) {
       final List<_FieldGroup> groups = <_FieldGroup>[];
       final Set<String> placed = <String>{};
+      // 按改名后的字段键分组：字段定义修改记录（调序 / 改名）里存的还是旧名（Expression /
+      // Picture …）时也落到同一组，不被甩进「更多字段」。
+      String key(SrsFieldDef f) => FushiCardFields.canonical(f.name);
       List<SrsFieldDef> named(Iterable<String> names) => <SrsFieldDef>[
         for (final String name in names)
-          ...type.fields.where((SrsFieldDef f) => f.name == name),
+          ...type.fields.where((SrsFieldDef f) => key(f) == name),
       ];
       for (final FushiCardBlock b in kFushiCardBackBlocks) {
         final List<SrsFieldDef> fields = named(b.fields);
@@ -164,19 +208,19 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       final List<SrsFieldDef> switches = named(kFushiCardSwitchFields);
       placed.addAll(kFushiCardSwitchFields);
       final List<SrsFieldDef> others = type.fields
-          .where((SrsFieldDef f) => !placed.contains(f.name))
+          .where((SrsFieldDef f) => !placed.contains(key(f)))
           .toList();
       final List<_FieldGroup> primary = <_FieldGroup>[];
       final List<_FieldGroup> rest = <_FieldGroup>[];
       for (final _FieldGroup g in groups) {
         final List<SrsFieldDef> head = g.$2
             .where(
-              (SrsFieldDef f) => kSrsFushiCardPrimaryFields.contains(f.name),
+              (SrsFieldDef f) => kSrsFushiCardPrimaryFields.contains(key(f)),
             )
             .toList();
         final List<SrsFieldDef> tail = g.$2
             .where(
-              (SrsFieldDef f) => !kSrsFushiCardPrimaryFields.contains(f.name),
+              (SrsFieldDef f) => !kSrsFushiCardPrimaryFields.contains(key(f)),
             )
             .toList();
         if (head.isNotEmpty) primary.add((g.$1, head));
@@ -204,15 +248,7 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
     );
   }
 
-  static String _blockLabel(FushiCardBlock b) => switch (b) {
-    FushiCardBlock.term => t.srs_note_block_term,
-    FushiCardBlock.reading => t.srs_note_block_reading,
-    FushiCardBlock.picture => t.srs_note_block_picture,
-    FushiCardBlock.sentence => t.srs_note_block_sentence,
-    FushiCardBlock.definitions => t.srs_note_block_definitions,
-    FushiCardBlock.frequency => t.srs_note_block_frequency,
-    FushiCardBlock.source => t.srs_note_block_source,
-  };
+  static String _blockLabel(FushiCardBlock b) => srsFushiBlockLabel(b);
 
   /// 一列分组字段：组标题（有的话）+ 字段，组与组之间多空一点。
   List<Widget> _groupedFields(
@@ -391,7 +427,7 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
   }
 
   Future<void> _pickDeck() async {
-    final String? id = await pickSrsDeck(
+    final String? id = await pickSrsDeckChoice(
       context,
       decks: _decks,
       selected: _deckId,
@@ -402,6 +438,74 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
   }
 
   String get _title => _editing ? t.srs_note_edit : t.srs_note_add;
+
+  Future<Map<String, String>> _expandForPreview(
+    Map<String, String> values,
+  ) async {
+    final SrsDbStore? store = _store;
+    if (store == null) return values;
+    return store.expandFields(values, dropMissing: true);
+  }
+
+  Future<void> _openPreview() async {
+    final SrsNoteTypeView? type = _type;
+    if (type == null) return;
+    await showSrsNotePreviewSheet(
+      context,
+      type: type,
+      fields: Map<String, SrsFieldModel>.of(_fields),
+      expand: _expandForPreview,
+      tags: _parseTags(),
+    );
+  }
+
+  /// 窄窗 / 矮窗顶栏的「预览」（宽窗预览常驻右栏，不需要）。
+  FushiToolbarItem? get _previewItem => _inlinePreview || _type == null
+      ? null
+      : FushiToolbarItem(
+          key: const ValueKey<String>('srs_note_preview'),
+          icon: FushiIcons.visibility,
+          label: t.srs_note_types_preview,
+          onPressed: () => srsRunLogged('SrsNoteEditor.preview', _openPreview),
+        );
+
+  /// 已有的笔记：顶栏「修改历史」（每个字段的每次修改，哪台设备、何时）。
+  FushiToolbarItem? get _historyItem => !_editing || _note == null
+      ? null
+      : FushiToolbarItem(
+          key: const ValueKey<String>('srs_note_history'),
+          icon: FushiIcons.history,
+          label: t.srs_note_history,
+          onPressed: () => srsRunLogged(
+            'SrsNoteEditor.history',
+            () => srsPushPage<void>(
+              context,
+              (_) => SrsEditHistoryPage(noteId: _note!.id),
+            ),
+          ),
+        );
+
+  /// 已有、且没在待删除状态的笔记可以从顶栏删除。
+  bool get _canDelete => _editing && _note != null && _note!.deletedAt == null;
+
+  Future<void> _deleteWithConfirm() async {
+    if (!await confirmSrsNoteDelete(context)) return;
+    await _confirmDelete();
+  }
+
+  FushiToolbarItem? get _deleteItem => !_canDelete
+      ? null
+      : FushiToolbarItem(
+          key: const ValueKey<String>('srs_note_delete'),
+          icon: FushiIcons.delete,
+          label: t.srs_note_delete,
+          onPressed: _saving || _store == null
+              ? null
+              : () => srsRunLogged(
+                  'SrsNoteEditor.deleteFromTopBar',
+                  _deleteWithConfirm,
+                ),
+        );
 
   FushiToolbarItem get _saveItem => FushiToolbarItem(
     key: const ValueKey<String>('srs_note_save'),
@@ -418,13 +522,19 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       header: apple ? null : _buildTopBar(context),
       actions: apple
           ? <Widget>[
-              FushiIconButton(
-                key: _saveItem.key,
-                icon: _saveItem.icon,
-                tooltip: _saveItem.label,
-                enabled: _saveItem.onPressed != null,
-                onTap: _saveItem.onPressed,
-              ),
+              for (final FushiToolbarItem item in <FushiToolbarItem>[
+                ?_previewItem,
+                ?_historyItem,
+                ?_deleteItem,
+                _saveItem,
+              ])
+                FushiIconButton(
+                  key: item.key,
+                  icon: item.icon,
+                  tooltip: item.label,
+                  enabled: item.onPressed != null,
+                  onTap: item.onPressed,
+                ),
             ]
           : const <Widget>[],
       body: Builder(builder: _buildBody),
@@ -452,7 +562,12 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
             ),
         ],
         actions: <List<FushiToolbarItem>>[
-          <FushiToolbarItem>[_saveItem],
+          <FushiToolbarItem>[
+            ?_previewItem,
+            ?_historyItem,
+            ?_deleteItem,
+            _saveItem,
+          ],
         ],
       ),
     );
@@ -477,7 +592,6 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
         ),
       );
     }
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final (List<_FieldGroup> primary, List<_FieldGroup> rest) = _splitFields(
       type,
     );
@@ -486,8 +600,43 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       (int n, _FieldGroup g) => n + g.$2.length,
     );
     final SrsNoteView? note = _note;
-    // 宽窗（手机横屏 / 桌面）：左栏字段（正文），右栏删除提示、类型 / 牌组与标签；
-    // 窄窗仍按 删除提示 → 类型 / 牌组 → 字段 → 更多字段 → 标签 单列。
+    // 宽窗（手机横屏 / 桌面）：左栏字段（正文），右栏实时预览、删除提示、类型 / 牌组与标签；
+    // 窄窗仍按 删除提示 → 类型 / 牌组 → 字段 → 更多字段 → 标签 单列，预览走顶栏抽屉。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool wide = srsUsesTwoPane(constraints);
+        final bool inline = wide && !srsIsShortLandscape(constraints);
+        if (inline != _inlinePreview) {
+          // 顶栏的「预览」按钮跟着变：下一帧再改，不在 build 里 setState。
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _inlinePreview != inline) {
+              setState(() => _inlinePreview = inline);
+            }
+          });
+        }
+        return _buildSections(
+          context,
+          type,
+          note,
+          primary,
+          rest,
+          restCount,
+          wide,
+        );
+      },
+    );
+  }
+
+  Widget _buildSections(
+    BuildContext context,
+    SrsNoteTypeView type,
+    SrsNoteView? note,
+    List<_FieldGroup> primary,
+    List<_FieldGroup> rest,
+    int restCount,
+    bool wide,
+  ) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<SrsSection> sections = <SrsSection>[
       if (note != null && note.deletedAt != null)
         SrsSection(pane: SrsPane.secondary, _buildDeletedBanner(note)),
@@ -538,6 +687,26 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
           ),
         ),
       ),
+      // 宽窗：右栏末尾常驻实时预览（类型 / 牌组 / 标签在上，横屏手机一屏仍看得到），
+      // 左栏改字段右栏立即反映。
+      if (wide)
+        SrsSection(
+          pane: SrsPane.secondary,
+          FushiCard(
+            child: SrsNotePreview(
+              key: ValueKey<String>('srs-note-preview-${type.id}'),
+              type: type,
+              fields: _fields,
+              expand: _expandForPreview,
+              tags: _parseTags(),
+              // 背面常含词典释义，固定 360 只露出头一段；随窗口高度放长。
+              height: (MediaQuery.sizeOf(context).height * 0.72).clamp(
+                360.0,
+                780.0,
+              ),
+            ),
+          ),
+        ),
     ];
     return SrsAdaptiveSections(
       sections: sections,
@@ -590,7 +759,7 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
   Widget _buildPickers(BuildContext context, SrsNoteTypeView type) {
     final String deckName =
         _decks
-            .where((SrsDeckSummary d) => d.deck.id == _deckId)
+            .where((SrsDeckChoice d) => d.id == _deckId)
             .firstOrNull
             ?.fullName ??
         '';
@@ -619,6 +788,85 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
           ),
         ],
       ),
+    );
+  }
+
+  /// 字段「AI 改写 / 补全」：先确认有指派的提供商（没有就一个请求都不发），结果只回草稿。
+  Future<void> _fieldAi(SrsNoteTypeView type, SrsFieldDef field) async {
+    final SrsFieldModel? model = _fields[field.id];
+    if (model == null) return;
+    final AiProviderConfig? provider = ref
+        .read(appProvider)
+        .prefsRepo
+        .resolveAiFeatureProvider(AiFeature.srsNoteField);
+    if (provider == null) {
+      FushiToast.show(msg: t.ai_assist_no_provider);
+      return;
+    }
+    final String? value = await showSrsFieldAiSheet(
+      context,
+      fieldLabel: catalog.srsFieldDisplayName(field),
+      fieldName: field.name,
+      current: model.value,
+      run: (AiSrsFieldTask task, String instruction) async {
+        final AiChatClient client = AiChatClient();
+        try {
+          return await requestAiSrsField(
+            client: client,
+            provider: provider,
+            noteType: type,
+            valuesById: <String, String>{
+              for (final MapEntry<String, SrsFieldModel> e in _fields.entries)
+                e.key: e.value.value,
+            },
+            targetFieldId: field.id,
+            task: task,
+            instruction: instruction,
+            outputLanguage: LocaleSettings.currentLocale.languageTag,
+          );
+        } finally {
+          client.close();
+        }
+      },
+    );
+    if (value == null || !mounted) return;
+    // 整体换值：编辑器按新内容重新判类型（AI 可能写出列表等结构化内容）。
+    _fields[field.id]?.reset(value);
+  }
+
+  /// 字段标题行的「AI」按钮：AI 模块开着、且字段装的是文字（不是图片 / 音频 / 开关 / 数据）。
+  List<Widget> _fieldActions(SrsNoteTypeView type, SrsFieldDef field) {
+    if (!isAiModuleEnabled(ref.watch(appProvider).moduleVisibility)) {
+      return const <Widget>[];
+    }
+    final catalog.SrsFieldKind kind = catalog.srsFieldKind(field);
+    if (kind != catalog.SrsFieldKind.text &&
+        kind != catalog.SrsFieldKind.rich) {
+      return const <Widget>[];
+    }
+    return <Widget>[
+      FushiIconButton(
+        key: ValueKey<String>('srs-field-ai-${field.name}'),
+        icon: FushiIcons.aiAssistant,
+        size: 20,
+        tooltip: t.srs_note_field_ai,
+        onTap: () =>
+            srsRunLogged('SrsNoteEditor.fieldAi', () => _fieldAi(type, field)),
+      ),
+    ];
+  }
+
+  Map<String, String> _miningSlotsOf(SrsNoteTypeView type) {
+    final SrsDbStore? store = _store;
+    if (store == null) return const <String, String>{};
+    return _miningSlots ??= srsMiningFieldMappingsFor(
+      type: type,
+      builtinKey: type.builtinKey,
+      profileUid: store.profileUid,
+      stored: ref
+          .read(appProvider)
+          .srsMiningDestination
+          .fieldMappingsByType[type.id],
     );
   }
 
@@ -673,6 +921,8 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
     return SrsFieldEditor(
       key: ValueKey<String>('srs-field-${field.name}'),
       name: field.name,
+      help: SrsFieldHelp.of(field, miningSlot: _miningSlotsOf(type)[field.id]),
+      headerActions: _fieldActions(type, field),
       model: _fields[field.id]!,
       toggle: builtin && kFushiCardSwitchFields.contains(field.name),
       css: type.css,

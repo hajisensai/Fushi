@@ -27,8 +27,10 @@ class VideoPanelAutoScroller {
     _lastScrolledIndex = index;
     final double viewport = controller.position.viewportDimension;
     final double target = (index * _rowExtent) - (viewport / 2) + _rowExtent;
-    final double clamped =
-        target.clamp(0.0, controller.position.maxScrollExtent);
+    final double clamped = target.clamp(
+      0.0,
+      controller.position.maxScrollExtent,
+    );
     controller.animateTo(
       clamped,
       duration: FushiMotion.medium,

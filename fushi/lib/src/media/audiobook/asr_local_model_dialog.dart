@@ -22,7 +22,18 @@ import 'package:fushi/src/asr_host/asr_model_catalog.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 打开「手动指定模型」弹层。返回认好的包；取消返回 null。
 ///
@@ -35,10 +46,8 @@ Future<AsrModelPack?> showAsrLocalModelDialog({
   required AsrLanguage language,
   Future<String?> Function()? directoryPicker,
 }) {
-  Widget build(BuildContext ctx) => AsrLocalModelDialog(
-        language: language,
-        directoryPicker: directoryPicker,
-      );
+  Widget build(BuildContext ctx) =>
+      AsrLocalModelDialog(language: language, directoryPicker: directoryPicker);
   if (isDesktopPlatform) {
     return showAppDialog<AsrModelPack>(
       context: context,
@@ -108,8 +117,10 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
     final String? dir = picker == null
         ? await pickRealDirectoryPath(
             context: context,
-            appModel: ProviderScope.containerOf(context, listen: false)
-                .read(appProvider),
+            appModel: ProviderScope.containerOf(
+              context,
+              listen: false,
+            ).read(appProvider),
             dialogTitle: t.audiobook_transcribe_model_custom_pick,
           )
         : await picker();
@@ -349,13 +360,13 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
     final FushiCardTone tone = failed
         ? FushiCardTone.error
         : pack != null
-            ? FushiCardTone.tertiary
-            : FushiCardTone.neutral;
+        ? FushiCardTone.tertiary
+        : FushiCardTone.neutral;
     final IconData icon = failed
         ? FushiIcons.error
         : pack != null
-            ? FushiIcons.success
-            : FushiIcons.info;
+        ? FushiIcons.success
+        : FushiIcons.info;
     return AnimatedSwitcher(
       duration: context.fushiMotion.effectsDefault.duration,
       child: FushiCard(

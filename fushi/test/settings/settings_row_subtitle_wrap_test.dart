@@ -17,7 +17,8 @@ import '../widgets/widget_test_helpers.dart';
 //
 // 关键：这个 bug **抓不到属性层**——`Text.maxLines` 属性本身就是 null（"正确"），
 // 坏的是渲染结果。所以守卫必须断言 RenderParagraph 的真实行数。
-const String _longSubtitle = '选择听力练习时如何遮蔽字幕：关闭、模糊（悬停或点击显形）或隐藏。'
+const String _longSubtitle =
+    '选择听力练习时如何遮蔽字幕：关闭、模糊（悬停或点击显形）或隐藏。'
     '关闭则完全按播放器默认行为显示字幕，不做任何遮挡处理。';
 
 /// 取说明文字那一段的 RenderParagraph（内容即 [_longSubtitle]）。
@@ -33,10 +34,7 @@ int _renderedLineCount(RenderParagraph paragraph) {
   return (paragraph.size.height / lineHeight).round();
 }
 
-Future<void> _pumpRow(
-  WidgetTester tester, {
-  int? subtitleMaxLines,
-}) async {
+Future<void> _pumpRow(WidgetTester tester, {int? subtitleMaxLines}) async {
   await tester.pumpWidget(
     buildTestApp(
       MediaQuery(
@@ -68,13 +66,15 @@ void main() {
       expect(
         paragraph.didExceedMaxLines,
         isFalse,
-        reason: '说明文字的唯一职责就是解释配置项，截断即失效：默认必须整段显示。'
+        reason:
+            '说明文字的唯一职责就是解释配置项，截断即失效：默认必须整段显示。'
             '恒传 TextOverflow.ellipsis 会让 maxLines:null 退化成单行截断。',
       );
       expect(
         _renderedLineCount(paragraph),
         greaterThan(1),
-        reason: '360dp 窄行里这段说明放不下一行，必须换行而不是被省略号吃掉；'
+        reason:
+            '360dp 窄行里这段说明放不下一行，必须换行而不是被省略号吃掉；'
             '渲染成 1 行即说明 ellipsis 又在 maxLines:null 下生效了',
       );
     },

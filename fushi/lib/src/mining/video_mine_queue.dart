@@ -2,8 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart'
-    show BooleanExpressionOperators, OrderingTerm;
+import 'package:drift/drift.dart' show BooleanExpressionOperators, OrderingTerm;
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -265,8 +264,8 @@ class VideoMineQueue {
         documentTitle: meta.historyDocumentTitle,
         bookKey: meta.historyBookKey,
         sectionIndex: meta.historySectionIndex,
-        normCharOffset: meta.historyCueStartMs,
-        normCharLength: meta.historyCueLengthMs,
+        positionMs: meta.historyCueStartMs,
+        durationMs: meta.historyCueLengthMs,
         noteId: noteId,
       );
     } catch (_) {}

@@ -93,35 +93,20 @@ bool RequestLookupOverlayOutsideDismiss() {
 //
 // 线程模型与卡片呈现器一致：任意线程只写请求（下面几个原子量），UI 线程在
 // kOverlayTimerId 定时器里应用；窗口只在 UI 线程上创建/移动/隐藏。
-volatile LONG g_hover_highlight_visible = 0;
-volatile LONG g_hover_highlight_x = 0;
-volatile LONG g_hover_highlight_y = 0;
-volatile LONG g_hover_highlight_w = 0;
-volatile LONG g_hover_highlight_h = 0;
-// 每次请求变化 +1；UI 线程按它去重，静止的光标不会每 16ms 重复 SetWindowPos。
-volatile LONG g_hover_highlight_generation = 0;
+// 请求侧带所有者（lookup_hover_highlight_state.h）：高亮窗每进程一个，而每个引擎
+// 适配器的查词 tick 在所有游戏里都跑、每轮没出帧就清——清除只对自己挂上的帧生效，
+// 别的引擎的帧不受影响。owner 是适配器的查词几何 provider id。
+fushi_voice_hook::HoverHighlightRequest g_hover_highlight_request;
 
-void RequestLookupHoverHighlight(int32_t screen_x, int32_t screen_y,
-                                 int32_t width, int32_t height) {
-  const bool same =
-      InterlockedCompareExchange(&g_hover_highlight_visible, 0, 0) != 0 &&
-      InterlockedCompareExchange(&g_hover_highlight_x, 0, 0) == screen_x &&
-      InterlockedCompareExchange(&g_hover_highlight_y, 0, 0) == screen_y &&
-      InterlockedCompareExchange(&g_hover_highlight_w, 0, 0) == width &&
-      InterlockedCompareExchange(&g_hover_highlight_h, 0, 0) == height;
-  if (same) return;
-  InterlockedExchange(&g_hover_highlight_x, screen_x);
-  InterlockedExchange(&g_hover_highlight_y, screen_y);
-  InterlockedExchange(&g_hover_highlight_w, width);
-  InterlockedExchange(&g_hover_highlight_h, height);
-  InterlockedExchange(&g_hover_highlight_visible, 1);
-  InterlockedIncrement(&g_hover_highlight_generation);
+void RequestLookupHoverHighlight(uint32_t owner, int32_t screen_x,
+                                 int32_t screen_y, int32_t width,
+                                 int32_t height) {
+  fushi_voice_hook::RequestHoverHighlight(&g_hover_highlight_request, owner,
+                                          screen_x, screen_y, width, height);
 }
 
-void ClearLookupHoverHighlight() {
-  if (InterlockedExchange(&g_hover_highlight_visible, 0) != 0) {
-    InterlockedIncrement(&g_hover_highlight_generation);
-  }
+void ClearLookupHoverHighlight(uint32_t owner) {
+  fushi_voice_hook::ClearHoverHighlight(&g_hover_highlight_request, owner);
 }
 
 // ══ 被查词高亮区间（BUG-2087）══
@@ -514,16 +499,15 @@ LRESULT CALLBACK LookupHoverHighlightProc(HWND window, UINT message,
 
 // UI 线程：把最新的高亮请求落到窗口上。只在请求代数变化时动窗口。
 void ApplyLookupHoverHighlight() {
-  const LONG generation =
-      InterlockedCompareExchange(&g_hover_highlight_generation, 0, 0);
+  auto& request = g_hover_highlight_request;
+  const LONG generation = fushi_voice_hook::LoadHoverField(&request.generation);
   if (generation == g_hover_highlight.applied_generation) return;
   g_hover_highlight.applied_generation = generation;
-  const bool visible =
-      InterlockedCompareExchange(&g_hover_highlight_visible, 0, 0) != 0;
-  const int32_t x = InterlockedCompareExchange(&g_hover_highlight_x, 0, 0);
-  const int32_t y = InterlockedCompareExchange(&g_hover_highlight_y, 0, 0);
-  const int32_t w = InterlockedCompareExchange(&g_hover_highlight_w, 0, 0);
-  const int32_t h = InterlockedCompareExchange(&g_hover_highlight_h, 0, 0);
+  const bool visible = fushi_voice_hook::LoadHoverField(&request.visible) != 0;
+  const int32_t x = fushi_voice_hook::LoadHoverField(&request.x);
+  const int32_t y = fushi_voice_hook::LoadHoverField(&request.y);
+  const int32_t w = fushi_voice_hook::LoadHoverField(&request.w);
+  const int32_t h = fushi_voice_hook::LoadHoverField(&request.h);
   if (!visible || w <= 0 || h <= 0) {
     if (g_hover_highlight.shown && g_hover_highlight.window != nullptr) {
       ShowWindow(g_hover_highlight.window, SW_HIDE);

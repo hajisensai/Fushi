@@ -49,6 +49,87 @@ inline uintptr_t ResolveConfigSlot(const exact_lookup::LoadedPeImage& image) {
       IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE,IMAGE_SCN_MEM_EXECUTE) ? rva : 0;
 }
 
+// Plain-frame code generation (Rewrite+, SiglusEngine 1.1.101.0): the Gameexe
+// object keeps the design size at +0x64/+0x68. The render-state initializer
+// copies both fields into the renderer, and an independent save-image capture
+// sizes its width*height*4 pixel buffer from the same two fields.
+inline constexpr uint8_t kPlainRenderSizeBytes[] = {
+    0x8b,0x0d,0,0,0,0,0x8b,0x15,0,0,0,0,0x89,0x87,0,0,0,0,
+    0xc7,0x87,0,0,0,0,0,0,0,0,0xc7,0x87,0,0,0,0,0,0,0,0,
+    0xc7,0x87,0,0,0,0,0,0,0,0,0x66,0xc7,0x87,0,0,0,0,0,0,
+    0x8a,0x82,0x95,0,0,0,0x88,0x87,0,0,0,0,0xc6,0x87,0,0,0,0,0,
+    0xc7,0x87,0,0,0,0,0xff,0xff,0xff,0xff,
+    0x8b,0x41,0x64,0x89,0x87,0,0,0,0,0x8b,0x41,0x68,0x89,0x87};
+// 0 marks the config slot, the sibling global and every renderer field
+// displacement; immediates and the +0x64/+0x68 reads stay exact.
+inline constexpr uint8_t kPlainRenderSizeMask[] = {
+    1,1,0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0,
+    1,1,0,0,0,0,1,1,1,1,1,1,0,0,0,0,1,1,1,1,
+    1,1,0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,1,1,
+    1,1,1,1,1,1,1,1,0,0,0,0,1,1,0,0,0,0,1,
+    1,1,0,0,0,0,1,1,1,1,
+    1,1,1,1,1,0,0,0,0,1,1,1,1,1};
+static_assert(sizeof(kPlainRenderSizeMask) == sizeof(kPlainRenderSizeBytes));
+inline constexpr exact_lookup::MaskedPattern kPlainRenderSizePattern = {
+    kPlainRenderSizeBytes,kPlainRenderSizeMask,sizeof(kPlainRenderSizeBytes)};
+inline constexpr uint8_t kPlainCaptureSizeBytes[] = {
+    0x8b,0x15,0,0,0,0,0x8d,0x45,0,0x6a,0x00,0x50,0x8d,0x4d,0,
+    0xff,0x72,0x68,0x8b,0x52,0x64,0xe8,0,0,0,0};
+inline constexpr auto kPlainCaptureSizeMask =
+    exact_lookup::MaskExceptRanges<sizeof(kPlainCaptureSizeBytes)>(
+        2,6,8,9,14,15,22,26);
+inline constexpr exact_lookup::MaskedPattern kPlainCaptureSizePattern = {
+    kPlainCaptureSizeBytes,kPlainCaptureSizeMask.data(),
+    sizeof(kPlainCaptureSizeBytes)};
+inline constexpr size_t kPlainCaptureCallOffset = 21;
+// The capture callee multiplies width (EDX) by height (arg 1) and by four.
+inline constexpr uint8_t kPlainCaptureAllocBytes[] = {
+    0x8b,0xc3,0x89,0x9d,0,0,0,0,0x0f,0xaf,0xc2,0xc1,0xe0,0x02};
+inline constexpr auto kPlainCaptureAllocMask =
+    exact_lookup::MaskExceptRanges<sizeof(kPlainCaptureAllocBytes)>(4,8);
+inline constexpr exact_lookup::MaskedPattern kPlainCaptureAllocPattern = {
+    kPlainCaptureAllocBytes,kPlainCaptureAllocMask.data(),
+    sizeof(kPlainCaptureAllocBytes)};
+inline constexpr size_t kPlainCaptureAllocWindow = 0x60;
+
+inline uintptr_t DataSlotRva(const exact_lookup::LoadedPeImage& image,
+                             const uint8_t* operand) {
+  uintptr_t address = 0, rva = 0;
+  if (!exact_lookup::DecodeAbsolute32ImageAddress(image,operand,&address,&rva) ||
+      (rva & 3u) != 0) return 0;
+  // Protector builds merge every section into one CODE|EXECUTE|READ header, so
+  // the section role cannot prove "data". The two independent references and
+  // the live design-size read are the proof; the header only bounds the read.
+  return exact_lookup::SectionHasRole(
+      exact_lookup::FindSectionForRva(image,rva,sizeof(uint32_t)),
+      IMAGE_SCN_MEM_READ) ? rva : 0;
+}
+
+inline uintptr_t ResolvePlainFrameConfigSlot(
+    const exact_lookup::LoadedPeImage& image) {
+  if (image.machine != IMAGE_FILE_MACHINE_I386 || image.pointer_bits != 32u)
+    return 0;
+  const auto render = exact_lookup::FindUniquePatternInExecutableSections(
+      image,kPlainRenderSizePattern);
+  const auto capture = exact_lookup::FindUniquePatternInExecutableSections(
+      image,kPlainCaptureSizePattern);
+  if (render.count != 1 || capture.count != 1) return 0;
+  uintptr_t callee = 0, callee_rva = 0;
+  if (!exact_lookup::DecodeRel32CallTarget(
+          capture.address + kPlainCaptureCallOffset,&callee) ||
+      !exact_lookup::AddressToRva(image,callee,&callee_rva) ||
+      !exact_lookup::SectionHasRole(
+          exact_lookup::FindSectionForRva(image,callee_rva,
+                                          kPlainCaptureAllocWindow),
+          IMAGE_SCN_MEM_EXECUTE)) return 0;
+  if (exact_lookup::FindUniqueMaskedPattern(
+          image.base + callee_rva,kPlainCaptureAllocWindow,
+          kPlainCaptureAllocPattern).count != 1) return 0;
+  const uintptr_t first = DataSlotRva(image,render.address + 2);
+  const uintptr_t second = DataSlotRva(image,capture.address + 2);
+  return first != 0 && first == second ? first : 0;
+}
+
 inline bool ValidDesignSize(int32_t width,int32_t height) {
   return width >= 256 && width <= 16384 && height >= 256 && height <= 16384;
 }

@@ -66,48 +66,64 @@ void main() {
 
     final FushiDatabase db = FushiDatabase(oldSupportPath);
     try {
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'Bk',
-        title: 'Bk',
-        epubPath: p.join(oldDocsPath, 'fushi_books', 'Bk', 'original.epub'),
-        extractDir: p.join(oldDocsPath, 'fushi_books', 'Bk'),
-        chapterCount: 1,
-        chaptersJson: '["c"]',
-        importedAt: 0,
-        coverPath: Value(p.join(oldDocsPath, 'fushi_books', 'Bk', 'cover.jpg')),
-      ));
-      await db.upsertAudiobook(AudiobooksCompanion.insert(
-        bookKey: 'Bk',
-        alignmentFormat: 'srt',
-        alignmentPath: p.join(oldDocsPath, 'audiobooks', 'Bk', 'align.srt'),
-        audioRoot: Value(p.join(oldDocsPath, 'audiobooks', 'Bk')),
-        audioPathsJson: Value(jsonEncode(<String>[
-          p.join(oldDocsPath, 'audiobooks', 'Bk', 'a.mp3'),
-        ])),
-      ));
-      await db.upsertSrtBook(SrtBooksCompanion.insert(
-        uid: 'srtbook_1',
-        title: 'SRT Only',
-        author: const Value('tester'),
-        audioRoot: Value(p.join(oldDocsPath, 'audiobooks', 'SrtOnly')),
-        audioPathsJson: Value(jsonEncode(<String>[
-          p.join(oldDocsPath, 'audiobooks', 'SrtOnly', 'line.mp3'),
-        ])),
-        srtPath: p.join(oldDocsPath, 'audiobooks', 'SrtOnly', 'line.srt'),
-        coverPath: Value(p.join(oldDocsPath, 'audiobooks', 'SrtOnly', 'c.jpg')),
-        importedAt: 1234,
-        bookKey: const Value(''),
-      ));
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'Bk',
+          title: 'Bk',
+          epubPath: p.join(oldDocsPath, 'fushi_books', 'Bk', 'original.epub'),
+          extractDir: p.join(oldDocsPath, 'fushi_books', 'Bk'),
+          chapterCount: 1,
+          chaptersJson: '["c"]',
+          importedAt: 0,
+          coverPath: Value(
+            p.join(oldDocsPath, 'fushi_books', 'Bk', 'cover.jpg'),
+          ),
+        ),
+      );
+      await db.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: 'Bk',
+          alignmentFormat: 'srt',
+          alignmentPath: p.join(oldDocsPath, 'audiobooks', 'Bk', 'align.srt'),
+          audioRoot: Value(p.join(oldDocsPath, 'audiobooks', 'Bk')),
+          audioPathsJson: Value(
+            jsonEncode(<String>[
+              p.join(oldDocsPath, 'audiobooks', 'Bk', 'a.mp3'),
+            ]),
+          ),
+        ),
+      );
+      await db.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: 'srtbook_1',
+          title: 'SRT Only',
+          author: const Value('tester'),
+          audioRoot: Value(p.join(oldDocsPath, 'audiobooks', 'SrtOnly')),
+          audioPathsJson: Value(
+            jsonEncode(<String>[
+              p.join(oldDocsPath, 'audiobooks', 'SrtOnly', 'line.mp3'),
+            ]),
+          ),
+          srtPath: p.join(oldDocsPath, 'audiobooks', 'SrtOnly', 'line.srt'),
+          coverPath: Value(
+            p.join(oldDocsPath, 'audiobooks', 'SrtOnly', 'c.jpg'),
+          ),
+          importedAt: 1234,
+          bookKey: const Value(''),
+        ),
+      );
       // TODO-1255：视频书。videoPath 是用户原位外部视频（不以旧根开头 → rebasePath
       // 天然跳过），coverPath 是应用自有封面（落 <documents>/video_covers，必须 rebase）。
       // 旧 bug：video_books 只 rebase video_path/playlist_json，videoPath 未变时整行被
       // 跳过，cover_path 永远留在旧根 → 迁移搬走封面文件后书架全占位。
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/Bk',
-        title: 'Video Bk',
-        videoPath: p.join('E:', 'anime', 'Bk.mkv'),
-        coverPath: Value(p.join(oldDocsPath, 'video_covers', 'video_Bk.jpg')),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/Bk',
+          title: 'Video Bk',
+          videoPath: p.join('E:', 'anime', 'Bk.mkv'),
+          coverPath: Value(p.join(oldDocsPath, 'video_covers', 'video_Bk.jpg')),
+        ),
+      );
       // local_audio_dbs pref points at the internal copy under support root.
       await db.setPref(
         'local_audio_dbs',
@@ -116,7 +132,7 @@ void main() {
             'path': p.join(oldSupportPath, 'local_audio_1.db'),
             'displayName': 'L1',
             'enabled': true,
-          }
+          },
         ]),
       );
       // Font catalog pref points under documents root.
@@ -129,7 +145,7 @@ void main() {
               'id': 'f1',
               'name': 'F1',
               'path': p.join(oldDocsPath, 'custom_fonts', 'f1.ttf'),
-            }
+            },
           ],
         }),
       );
@@ -139,94 +155,107 @@ void main() {
   }
 
   group('TODO-935 E1 块2：迁移引擎', () {
-    test('成功迁移：文件搬齐 + DB 绝对路径 rebase + prefs rebase + data_root 写入 + 旧根删',
-        () async {
-      await seedDb();
-      final String newDataRoot = p.join(tmp.path, 'new');
-      String? wroteDataRoot;
-      bool closed = false;
+    test(
+      '成功迁移：文件搬齐 + DB 绝对路径 rebase + prefs rebase + data_root 写入 + 旧根删',
+      () async {
+        await seedDb();
+        final String newDataRoot = p.join(tmp.path, 'new');
+        String? wroteDataRoot;
+        bool closed = false;
 
-      final (Directory newDocs, Directory newSupport) =
-          await const DataRootMigrator().migrate(DataRootMigrationRequest(
-        oldDocumentsRoot: oldDocs,
-        oldSupportRoot: oldSupport,
-        target: DataRootMigrationTarget.customRoot(newDataRoot),
-        // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
-        documentsTopLevelIncludeNames: null,
-        closeResources: () async => closed = true,
-        commitLocation: (DataRootMigrationTarget t) async =>
-            wroteDataRoot = t.dataRootPrefValue,
-      ));
+        final (
+          Directory newDocs,
+          Directory newSupport,
+        ) = await const DataRootMigrator().migrate(
+          DataRootMigrationRequest(
+            oldDocumentsRoot: oldDocs,
+            oldSupportRoot: oldSupport,
+            target: DataRootMigrationTarget.customRoot(newDataRoot),
+            // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+            documentsTopLevelIncludeNames: null,
+            closeResources: () async => closed = true,
+            commitLocation: (DataRootMigrationTarget t) async =>
+                wroteDataRoot = t.dataRootPrefValue,
+          ),
+        );
 
-      // 关闭回调被调用。
-      expect(closed, isTrue);
-      // 新根文件齐全。
-      expect(
-          File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'))
-              .existsSync(),
-          isTrue);
-      expect(
-          File(p.join(newDocs.path, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
-          isTrue);
-      expect(File(p.join(newSupport.path, 'fushi.db')).existsSync(), isTrue);
-      expect(File(p.join(newSupport.path, 'local_audio_1.db')).existsSync(),
-          isTrue);
-      // 旧根已删。
-      expect(oldDocs.existsSync(), isFalse);
-      expect(oldSupport.existsSync(), isFalse);
-      // data_root pref 写了新值。
-      expect(wroteDataRoot, equals(newDataRoot));
-
-      // DB 内绝对路径已 rebase 到新根。
-      final FushiDatabase db = FushiDatabase(newSupport.path);
-      try {
-        final EpubBookRow b = (await db.getAllEpubBooks()).single;
-        expect(b.epubPath, startsWith(newDocs.path));
-        expect(b.extractDir, startsWith(newDocs.path));
-        expect(b.coverPath, startsWith(newDocs.path));
-
-        final AudiobookRow a = (await db.getAllAudiobooks()).single;
-        expect(a.audioRoot, startsWith(newDocs.path));
-        expect(a.alignmentPath, startsWith(newDocs.path));
-        final List<dynamic> paths =
-            jsonDecode(a.audioPathsJson!) as List<dynamic>;
-        expect(paths.single as String, startsWith(newDocs.path));
-
-        final SrtBookRow s = (await db.getAllSrtBooks()).single;
-        expect(s.uid, equals('srtbook_1'));
-        expect(s.audioRoot, startsWith(newDocs.path));
-        expect(s.srtPath, startsWith(newDocs.path));
-        expect(s.coverPath, startsWith(newDocs.path));
-        final List<dynamic> srtAudioPaths =
-            jsonDecode(s.audioPathsJson!) as List<dynamic>;
-        expect(srtAudioPaths.single as String, startsWith(newDocs.path));
-
-        // TODO-1255：video_books.cover_path 已 rebase 到新根（即便 video_path 是外部
-        // 路径未变），且封面文件随迁移搬到新根。videoPath 是外部路径，仍留原位不变。
-        final VideoBookRow vb = (await db.allVideoBooks()).single;
-        expect(vb.coverPath, startsWith(newDocs.path));
-        expect(File(vb.coverPath!).existsSync(), isTrue);
-        expect(vb.videoPath, equals(p.join('E:', 'anime', 'Bk.mkv')));
-
-        final Map<String, String> prefs = await db.getAllPrefs();
-        // local_audio_dbs rebased onto new support root.
-        expect(prefs['local_audio_dbs'], contains('local_audio_1.db'));
-        expect(prefs['local_audio_dbs'], startsWith('[{"path":'));
-        final List<dynamic> la =
-            jsonDecode(prefs['local_audio_dbs']!) as List<dynamic>;
+        // 关闭回调被调用。
+        expect(closed, isTrue);
+        // 新根文件齐全。
         expect(
-            (la.single as Map)['path'] as String, startsWith(newSupport.path));
-        // font catalog rebased onto new documents root.
-        final Map<String, dynamic> cat =
-            jsonDecode(prefs['src:reader_fushi:font_catalog']!)
-                as Map<String, dynamic>;
-        final String fpath =
-            ((cat['fonts'] as List).single as Map)['path'] as String;
-        expect(fpath, startsWith(newDocs.path));
-      } finally {
-        await db.close();
-      }
-    });
+          File(
+            p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'),
+          ).existsSync(),
+          isTrue,
+        );
+        expect(
+          File(p.join(newDocs.path, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
+          isTrue,
+        );
+        expect(File(p.join(newSupport.path, 'fushi.db')).existsSync(), isTrue);
+        expect(
+          File(p.join(newSupport.path, 'local_audio_1.db')).existsSync(),
+          isTrue,
+        );
+        // 旧根已删。
+        expect(oldDocs.existsSync(), isFalse);
+        expect(oldSupport.existsSync(), isFalse);
+        // data_root pref 写了新值。
+        expect(wroteDataRoot, equals(newDataRoot));
+
+        // DB 内绝对路径已 rebase 到新根。
+        final FushiDatabase db = FushiDatabase(newSupport.path);
+        try {
+          final EpubBookRow b = (await db.getAllEpubBooks()).single;
+          expect(b.epubPath, startsWith(newDocs.path));
+          expect(b.extractDir, startsWith(newDocs.path));
+          expect(b.coverPath, startsWith(newDocs.path));
+
+          final AudiobookRow a = (await db.getAllAudiobooks()).single;
+          expect(a.audioRoot, startsWith(newDocs.path));
+          expect(a.alignmentPath, startsWith(newDocs.path));
+          final List<dynamic> paths =
+              jsonDecode(a.audioPathsJson!) as List<dynamic>;
+          expect(paths.single as String, startsWith(newDocs.path));
+
+          final SrtBookRow s = (await db.getAllSrtBooks()).single;
+          expect(s.uid, equals('srtbook_1'));
+          expect(s.audioRoot, startsWith(newDocs.path));
+          expect(s.srtPath, startsWith(newDocs.path));
+          expect(s.coverPath, startsWith(newDocs.path));
+          final List<dynamic> srtAudioPaths =
+              jsonDecode(s.audioPathsJson!) as List<dynamic>;
+          expect(srtAudioPaths.single as String, startsWith(newDocs.path));
+
+          // TODO-1255：video_books.cover_path 已 rebase 到新根（即便 video_path 是外部
+          // 路径未变），且封面文件随迁移搬到新根。videoPath 是外部路径，仍留原位不变。
+          final VideoBookRow vb = (await db.allVideoBooks()).single;
+          expect(vb.coverPath, startsWith(newDocs.path));
+          expect(File(vb.coverPath!).existsSync(), isTrue);
+          expect(vb.videoPath, equals(p.join('E:', 'anime', 'Bk.mkv')));
+
+          final Map<String, String> prefs = await db.getAllPrefs();
+          // local_audio_dbs rebased onto new support root.
+          expect(prefs['local_audio_dbs'], contains('local_audio_1.db'));
+          expect(prefs['local_audio_dbs'], startsWith('[{"path":'));
+          final List<dynamic> la =
+              jsonDecode(prefs['local_audio_dbs']!) as List<dynamic>;
+          expect(
+            (la.single as Map)['path'] as String,
+            startsWith(newSupport.path),
+          );
+          // font catalog rebased onto new documents root.
+          final Map<String, dynamic> cat =
+              jsonDecode(prefs['src:reader_fushi:font_catalog']!)
+                  as Map<String, dynamic>;
+          final String fpath =
+              ((cat['fonts'] as List).single as Map)['path'] as String;
+          expect(fpath, startsWith(newDocs.path));
+        } finally {
+          await db.close();
+        }
+      },
+    );
 
     test('失败回滚：DB rebase 阶段失败 → 旧根保留、未切换、新根清、未写 data_root', () async {
       await seedDb();
@@ -238,23 +267,25 @@ void main() {
 
       bool wrote = false;
       await expectLater(
-        const DataRootMigrator().migrate(DataRootMigrationRequest(
-          oldDocumentsRoot: oldDocs,
-          oldSupportRoot: oldSupport,
-          target: DataRootMigrationTarget.customRoot(newDataRoot),
-          // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
-          documentsTopLevelIncludeNames: null,
-          closeResources: () async {},
-          commitLocation: (DataRootMigrationTarget t) async => wrote = true,
-        )),
+        const DataRootMigrator().migrate(
+          DataRootMigrationRequest(
+            oldDocumentsRoot: oldDocs,
+            oldSupportRoot: oldSupport,
+            target: DataRootMigrationTarget.customRoot(newDataRoot),
+            // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+            documentsTopLevelIncludeNames: null,
+            closeResources: () async {},
+            commitLocation: (DataRootMigrationTarget t) async => wrote = true,
+          ),
+        ),
         throwsA(isA<DataRootMigrationException>()),
       );
 
       // 旧根完整保留（数据没丢）。
       expect(
-          File(p.join(oldDocs.path, 'fushi_books', 'Bk', 'a.html'))
-              .existsSync(),
-          isTrue);
+        File(p.join(oldDocs.path, 'fushi_books', 'Bk', 'a.html')).existsSync(),
+        isTrue,
+      );
       expect(File(p.join(oldSupport.path, 'fushi.db')).existsSync(), isTrue);
       // 未写 data_root。
       expect(wrote, isFalse);
@@ -266,23 +297,27 @@ void main() {
       int writeAttempts = 0;
 
       await expectLater(
-        const DataRootMigrator().migrate(DataRootMigrationRequest(
-          oldDocumentsRoot: oldDocs,
-          oldSupportRoot: oldSupport,
-          target: DataRootMigrationTarget.customRoot(newDataRoot),
-          // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
-          documentsTopLevelIncludeNames: null,
-          closeResources: () async {},
-          commitLocation: (DataRootMigrationTarget t) async {
-            writeAttempts++;
-            throw StateError('prefs unavailable');
-          },
-        )),
-        throwsA(isA<DataRootMigrationException>().having(
-          (DataRootMigrationException e) => e.message,
-          'message',
-          contains('写入新数据根设置失败'),
-        )),
+        const DataRootMigrator().migrate(
+          DataRootMigrationRequest(
+            oldDocumentsRoot: oldDocs,
+            oldSupportRoot: oldSupport,
+            target: DataRootMigrationTarget.customRoot(newDataRoot),
+            // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+            documentsTopLevelIncludeNames: null,
+            closeResources: () async {},
+            commitLocation: (DataRootMigrationTarget t) async {
+              writeAttempts++;
+              throw StateError('prefs unavailable');
+            },
+          ),
+        ),
+        throwsA(
+          isA<DataRootMigrationException>().having(
+            (DataRootMigrationException e) => e.message,
+            'message',
+            contains('写入新数据根设置失败'),
+          ),
+        ),
       );
 
       expect(writeAttempts, equals(1));
@@ -292,8 +327,9 @@ void main() {
       expect(Directory(p.join(newDataRoot, 'support')).existsSync(), isFalse);
       expect(_hasAnyFileUnder(newDataRoot), isFalse);
       expect(
-          File(p.join(oldDocsPath, 'fushi_books', 'Bk', 'a.html')).existsSync(),
-          isTrue);
+        File(p.join(oldDocsPath, 'fushi_books', 'Bk', 'a.html')).existsSync(),
+        isTrue,
+      );
       expect(File(p.join(oldSupportPath, 'fushi.db')).existsSync(), isTrue);
 
       final FushiDatabase db = FushiDatabase(oldSupportPath);
@@ -318,8 +354,10 @@ void main() {
         final Map<String, String> prefs = await db.getAllPrefs();
         final List<dynamic> localAudio =
             jsonDecode(prefs['local_audio_dbs']!) as List<dynamic>;
-        expect((localAudio.single as Map)['path'] as String,
-            startsWith(oldSupportPath));
+        expect(
+          (localAudio.single as Map)['path'] as String,
+          startsWith(oldSupportPath),
+        );
         final Map<String, dynamic> fontCatalog =
             jsonDecode(prefs['src:reader_fushi:font_catalog']!)
                 as Map<String, dynamic>;
@@ -357,7 +395,9 @@ void main() {
       expect(File(p.join(dst.path, 'a.txt')).existsSync(), isTrue);
       expect(File(p.join(dst.path, 'sub', 'b.txt')).existsSync(), isTrue);
       expect(
-          File(p.join(dst.path, 'sub', 'deep', 'c.txt')).existsSync(), isTrue);
+        File(p.join(dst.path, 'sub', 'deep', 'c.txt')).existsSync(),
+        isTrue,
+      );
 
       // 至少回报一次；总数恒为 3（目录不计）。
       expect(reports, isNotEmpty);
@@ -370,90 +410,111 @@ void main() {
       expect(copied.last, equals(3));
     });
 
-    test('prefs 保护：默认根迁移时 shared_preferences.json 留在旧 support 原地，DB+数据搬到新根',
-        () async {
-      // 模拟「默认根迁移」：oldSupport 即平台固定落点，顶层放真实
-      // shared_preferences.json（含真实 data_root 值），以及 fushi.db、local_audio。
-      await seedDb();
-      final File prefsFile =
-          File(p.join(oldSupportPath, 'shared_preferences.json'))
-            ..writeAsStringSync(jsonEncode(<String, dynamic>{
-              'flutter.data_root': p.join(tmp.path, 'new'),
-              'flutter.some_other': 42,
-            }));
-      final String prefsContentBefore = prefsFile.readAsStringSync();
-      // sidecar：确保 .lock 之类前缀同族也被保护。
-      final File prefsLock =
-          File(p.join(oldSupportPath, 'shared_preferences.json.lock'))
-            ..writeAsStringSync('lock');
+    test(
+      'prefs 保护：默认根迁移时 shared_preferences.json 留在旧 support 原地，DB+数据搬到新根',
+      () async {
+        // 模拟「默认根迁移」：oldSupport 即平台固定落点，顶层放真实
+        // shared_preferences.json（含真实 data_root 值），以及 fushi.db、local_audio。
+        await seedDb();
+        final File prefsFile =
+            File(p.join(oldSupportPath, 'shared_preferences.json'))
+              ..writeAsStringSync(
+                jsonEncode(<String, dynamic>{
+                  'flutter.data_root': p.join(tmp.path, 'new'),
+                  'flutter.some_other': 42,
+                }),
+              );
+        final String prefsContentBefore = prefsFile.readAsStringSync();
+        // sidecar：确保 .lock 之类前缀同族也被保护。
+        final File prefsLock = File(
+          p.join(oldSupportPath, 'shared_preferences.json.lock'),
+        )..writeAsStringSync('lock');
 
-      final String newDataRoot = p.join(tmp.path, 'new');
-      String? wroteDataRoot;
+        final String newDataRoot = p.join(tmp.path, 'new');
+        String? wroteDataRoot;
 
-      final (Directory newDocs, Directory newSupport) =
-          await const DataRootMigrator().migrate(DataRootMigrationRequest(
-        oldDocumentsRoot: oldDocs,
-        oldSupportRoot: oldSupport,
-        target: DataRootMigrationTarget.customRoot(newDataRoot),
-        // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
-        documentsTopLevelIncludeNames: null,
-        closeResources: () async {},
-        commitLocation: (DataRootMigrationTarget t) async =>
-            wroteDataRoot = t.dataRootPrefValue,
-      ));
+        final (
+          Directory newDocs,
+          Directory newSupport,
+        ) = await const DataRootMigrator().migrate(
+          DataRootMigrationRequest(
+            oldDocumentsRoot: oldDocs,
+            oldSupportRoot: oldSupport,
+            target: DataRootMigrationTarget.customRoot(newDataRoot),
+            // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+            documentsTopLevelIncludeNames: null,
+            closeResources: () async {},
+            commitLocation: (DataRootMigrationTarget t) async =>
+                wroteDataRoot = t.dataRootPrefValue,
+          ),
+        );
 
-      // (a) prefs 仍在原 oldSupportRoot，内容不变；sidecar 也留下。
-      expect(prefsFile.existsSync(), isTrue,
-          reason: 'shared_preferences.json 必须留在固定平台落点');
-      expect(prefsFile.readAsStringSync(), equals(prefsContentBefore));
-      expect(prefsLock.existsSync(), isTrue);
-      // prefs 不该被复制进新 support。
-      expect(
+        // (a) prefs 仍在原 oldSupportRoot，内容不变；sidecar 也留下。
+        expect(
+          prefsFile.existsSync(),
+          isTrue,
+          reason: 'shared_preferences.json 必须留在固定平台落点',
+        );
+        expect(prefsFile.readAsStringSync(), equals(prefsContentBefore));
+        expect(prefsLock.existsSync(), isTrue);
+        // prefs 不该被复制进新 support。
+        expect(
           File(p.join(newSupport.path, 'shared_preferences.json')).existsSync(),
-          isFalse);
-      // (b) fushi.db 已到新 support。
-      expect(File(p.join(newSupport.path, 'fushi.db')).existsSync(), isTrue);
-      expect(File(p.join(newSupport.path, 'local_audio_1.db')).existsSync(),
-          isTrue);
-      // fushi.db 已从旧 support 移走（只剩 prefs 族）。
-      expect(File(p.join(oldSupportPath, 'fushi.db')).existsSync(), isFalse);
-      expect(File(p.join(oldSupportPath, 'local_audio_1.db')).existsSync(),
-          isFalse);
-      // (c) documents 数据到了新根。
-      expect(
-          File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'))
-              .existsSync(),
-          isTrue);
-      expect(
+          isFalse,
+        );
+        // (b) fushi.db 已到新 support。
+        expect(File(p.join(newSupport.path, 'fushi.db')).existsSync(), isTrue);
+        expect(
+          File(p.join(newSupport.path, 'local_audio_1.db')).existsSync(),
+          isTrue,
+        );
+        // fushi.db 已从旧 support 移走（只剩 prefs 族）。
+        expect(File(p.join(oldSupportPath, 'fushi.db')).existsSync(), isFalse);
+        expect(
+          File(p.join(oldSupportPath, 'local_audio_1.db')).existsSync(),
+          isFalse,
+        );
+        // (c) documents 数据到了新根。
+        expect(
+          File(
+            p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'),
+          ).existsSync(),
+          isTrue,
+        );
+        expect(
           File(p.join(newDocs.path, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
-          isTrue);
-      expect(oldDocs.existsSync(), isFalse);
-      // (d) writeDataRootPref 收到新根值。
-      expect(wroteDataRoot, equals(newDataRoot));
+          isTrue,
+        );
+        expect(oldDocs.existsSync(), isFalse);
+        // (d) writeDataRootPref 收到新根值。
+        expect(wroteDataRoot, equals(newDataRoot));
 
-      // 旧 support 目录仍在（承载 prefs），且顶层只剩 prefs 族文件。
-      expect(oldSupport.existsSync(), isTrue);
-      final List<String> leftover = oldSupport
-          .listSync()
-          .map((FileSystemEntity e) => p.basename(e.path))
-          .toList()
-        ..sort();
-      expect(
+        // 旧 support 目录仍在（承载 prefs），且顶层只剩 prefs 族文件。
+        expect(oldSupport.existsSync(), isTrue);
+        final List<String> leftover =
+            oldSupport
+                .listSync()
+                .map((FileSystemEntity e) => p.basename(e.path))
+                .toList()
+              ..sort();
+        expect(
           leftover,
           equals(<String>[
             'shared_preferences.json',
-            'shared_preferences.json.lock'
-          ]));
+            'shared_preferences.json.lock',
+          ]),
+        );
 
-      // DB 内绝对路径仍正确 rebase 到新根（选择性搬移不破坏 rebase）。
-      final FushiDatabase db = FushiDatabase(newSupport.path);
-      try {
-        final EpubBookRow b = (await db.getAllEpubBooks()).single;
-        expect(b.epubPath, startsWith(newDocs.path));
-      } finally {
-        await db.close();
-      }
-    });
+        // DB 内绝对路径仍正确 rebase 到新根（选择性搬移不破坏 rebase）。
+        final FushiDatabase db = FushiDatabase(newSupport.path);
+        try {
+          final EpubBookRow b = (await db.getAllEpubBooks()).single;
+          expect(b.epubPath, startsWith(newDocs.path));
+        } finally {
+          await db.close();
+        }
+      },
+    );
 
     test('自定义根迁移（源 support 无 prefs）→ 整树照搬不受 prefs 保护影响', () async {
       // 自定义根：oldSupport = <oldRoot>/support，顶层无 shared_preferences.json。
@@ -461,26 +522,32 @@ void main() {
       final String newDataRoot = p.join(tmp.path, 'new2');
       String? wroteDataRoot;
 
-      final (Directory newDocs, Directory newSupport) =
-          await const DataRootMigrator().migrate(DataRootMigrationRequest(
-        oldDocumentsRoot: oldDocs,
-        oldSupportRoot: oldSupport,
-        target: DataRootMigrationTarget.customRoot(newDataRoot),
-        // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
-        documentsTopLevelIncludeNames: null,
-        closeResources: () async {},
-        commitLocation: (DataRootMigrationTarget t) async =>
-            wroteDataRoot = t.dataRootPrefValue,
-      ));
+      final (
+        Directory newDocs,
+        Directory newSupport,
+      ) = await const DataRootMigrator().migrate(
+        DataRootMigrationRequest(
+          oldDocumentsRoot: oldDocs,
+          oldSupportRoot: oldSupport,
+          target: DataRootMigrationTarget.customRoot(newDataRoot),
+          // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+          documentsTopLevelIncludeNames: null,
+          closeResources: () async {},
+          commitLocation: (DataRootMigrationTarget t) async =>
+              wroteDataRoot = t.dataRootPrefValue,
+        ),
+      );
 
       // 整树搬齐：DB + local_audio + documents。
       expect(File(p.join(newSupport.path, 'fushi.db')).existsSync(), isTrue);
-      expect(File(p.join(newSupport.path, 'local_audio_1.db')).existsSync(),
-          isTrue);
       expect(
-          File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'))
-              .existsSync(),
-          isTrue);
+        File(p.join(newSupport.path, 'local_audio_1.db')).existsSync(),
+        isTrue,
+      );
+      expect(
+        File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html')).existsSync(),
+        isTrue,
+      );
       // 无 prefs 需保 → 旧根整目录删除（原行为）。
       expect(oldSupport.existsSync(), isFalse);
       expect(oldDocs.existsSync(), isFalse);
@@ -491,68 +558,90 @@ void main() {
       // POSIX EPERM / EACCES：macOS sandbox 下把容器目录 rename 到用户选择目录时
       // 可能被拒绝，但逐文件 copy/delete 仍可用，不能直接宣告迁移失败。
       expect(
-          DataRootMigrator.shouldCopyAfterRenameFailureForTesting(1), isTrue);
+        DataRootMigrator.shouldCopyAfterRenameFailureForTesting(1),
+        isTrue,
+      );
       expect(
-          DataRootMigrator.shouldCopyAfterRenameFailureForTesting(13), isTrue);
+        DataRootMigrator.shouldCopyAfterRenameFailureForTesting(13),
+        isTrue,
+      );
       // macOS iCloud File Provider：从 Documents 域 rename 到本地目录可返回
       // ETIMEDOUT=60；逐文件复制仍是安全回退。其它平台的 errno 60 含义不同。
       expect(
-          DataRootMigrator.shouldCopyAfterRenameFailureForTesting(
-            60,
-            isMacOS: true,
-          ),
-          isTrue);
+        DataRootMigrator.shouldCopyAfterRenameFailureForTesting(
+          60,
+          isMacOS: true,
+        ),
+        isTrue,
+      );
       expect(
-          DataRootMigrator.shouldCopyAfterRenameFailureForTesting(60), isFalse);
+        DataRootMigrator.shouldCopyAfterRenameFailureForTesting(60),
+        isFalse,
+      );
       // 既有跨盘 fallback 仍保留。
       expect(
-          DataRootMigrator.shouldCopyAfterRenameFailureForTesting(18), isTrue);
+        DataRootMigrator.shouldCopyAfterRenameFailureForTesting(18),
+        isTrue,
+      );
       expect(
-          DataRootMigrator.shouldCopyAfterRenameFailureForTesting(17), isTrue);
+        DataRootMigrator.shouldCopyAfterRenameFailureForTesting(17),
+        isTrue,
+      );
       // 普通不存在/路径错误不应伪装成可复制 fallback。
       expect(
-          DataRootMigrator.shouldCopyAfterRenameFailureForTesting(2), isFalse);
+        DataRootMigrator.shouldCopyAfterRenameFailureForTesting(2),
+        isFalse,
+      );
     });
 
-    test('生产入口 _shouldCopyAfterRenameFailure 把真实 Platform.isMacOS 喂给 errno 判据',
-        () {
-      // 上面那条只打纯函数 _shouldCopyAfterRenameErrorCode；把它接进生产入口
-      // _shouldCopyAfterRenameFailure 的那根线（`isMacOS: Platform.isMacOS`）在行为层
-      // 无法在非 macOS 宿主上被观测：Windows/Linux 上 Platform.isMacOS 本就是
-      // false，把实参写死成字面量 false 不会改变任何可观测行为（变异实测：
-      // 本文件 33 例全绿），而 CI 单测门跑在 Linux 上，宏层平台分支也救不了。
-      // 因此这根线只能用源码守卫钉住。
-      final String src = File(
-        p.join(
-          Directory.current.path,
-          'lib',
-          'src',
-          'storage',
-          'data_root_migrator.dart',
-        ),
-      ).readAsStringSync();
-      final String body = methodBody(
-        src,
-        'static bool _shouldCopyAfterRenameFailure(FileSystemException e)',
-      );
-      // namedArgumentValues 先掩掉注释与字符串：注释里写着同样的实参不算实现。
-      // 用 equals(单元素列表) 而不是 contains：既杀「改成 false / 其它常量」，
-      // 也杀「把 isMacOS 降成可选参数再把实参整个删掉」（后者返回空列表）。
-      expect(
-        namedArgumentValues(body, 'isMacOS'),
-        equals(<String>['Platform.isMacOS']),
-        reason: '_shouldCopyAfterRenameFailure 必须把实际平台传给 '
-            '_shouldCopyAfterRenameErrorCode；写死成 false 会让 macOS 上的 '
-            'ETIMEDOUT=60 重新变成“直接回滚”，而上面那条纯函数用例一条都不会红',
-      );
-      // 判据自校验：先确认 namedArgumentValues 真能区分「实现」和「注释」。
-      expect(namedArgumentValues('f(a, isMacOS: Platform.isMacOS);', 'isMacOS'),
-          equals(<String>['Platform.isMacOS']));
-      expect(namedArgumentValues('f(a, isMacOS: false);', 'isMacOS'),
-          equals(<String>['false']));
-      expect(namedArgumentValues('// isMacOS: Platform.isMacOS', 'isMacOS'),
-          isEmpty);
-    });
+    test(
+      '生产入口 _shouldCopyAfterRenameFailure 把真实 Platform.isMacOS 喂给 errno 判据',
+      () {
+        // 上面那条只打纯函数 _shouldCopyAfterRenameErrorCode；把它接进生产入口
+        // _shouldCopyAfterRenameFailure 的那根线（`isMacOS: Platform.isMacOS`）在行为层
+        // 无法在非 macOS 宿主上被观测：Windows/Linux 上 Platform.isMacOS 本就是
+        // false，把实参写死成字面量 false 不会改变任何可观测行为（变异实测：
+        // 本文件 33 例全绿），而 CI 单测门跑在 Linux 上，宏层平台分支也救不了。
+        // 因此这根线只能用源码守卫钉住。
+        final String src = File(
+          p.join(
+            Directory.current.path,
+            'lib',
+            'src',
+            'storage',
+            'data_root_migrator.dart',
+          ),
+        ).readAsStringSync();
+        final String body = methodBody(
+          src,
+          'static bool _shouldCopyAfterRenameFailure(FileSystemException e)',
+        );
+        // namedArgumentValues 先掩掉注释与字符串：注释里写着同样的实参不算实现。
+        // 用 equals(单元素列表) 而不是 contains：既杀「改成 false / 其它常量」，
+        // 也杀「把 isMacOS 降成可选参数再把实参整个删掉」（后者返回空列表）。
+        expect(
+          namedArgumentValues(body, 'isMacOS'),
+          equals(<String>['Platform.isMacOS']),
+          reason:
+              '_shouldCopyAfterRenameFailure 必须把实际平台传给 '
+              '_shouldCopyAfterRenameErrorCode；写死成 false 会让 macOS 上的 '
+              'ETIMEDOUT=60 重新变成“直接回滚”，而上面那条纯函数用例一条都不会红',
+        );
+        // 判据自校验：先确认 namedArgumentValues 真能区分「实现」和「注释」。
+        expect(
+          namedArgumentValues('f(a, isMacOS: Platform.isMacOS);', 'isMacOS'),
+          equals(<String>['Platform.isMacOS']),
+        );
+        expect(
+          namedArgumentValues('f(a, isMacOS: false);', 'isMacOS'),
+          equals(<String>['false']),
+        );
+        expect(
+          namedArgumentValues('// isMacOS: Platform.isMacOS', 'isMacOS'),
+          isEmpty,
+        );
+      },
+    );
 
     test('目标 dataRoot 已存在数据 → 抛错，旧根不动', () async {
       await seedDb();
@@ -563,15 +652,17 @@ void main() {
         ..writeAsStringSync('existing');
 
       await expectLater(
-        const DataRootMigrator().migrate(DataRootMigrationRequest(
-          oldDocumentsRoot: oldDocs,
-          oldSupportRoot: oldSupport,
-          target: DataRootMigrationTarget.customRoot(newDataRoot),
-          // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
-          documentsTopLevelIncludeNames: null,
-          closeResources: () async {},
-          commitLocation: (DataRootMigrationTarget t) async {},
-        )),
+        const DataRootMigrator().migrate(
+          DataRootMigrationRequest(
+            oldDocumentsRoot: oldDocs,
+            oldSupportRoot: oldSupport,
+            target: DataRootMigrationTarget.customRoot(newDataRoot),
+            // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+            documentsTopLevelIncludeNames: null,
+            closeResources: () async {},
+            commitLocation: (DataRootMigrationTarget t) async {},
+          ),
+        ),
         throwsA(isA<DataRootMigrationException>()),
       );
 
@@ -601,36 +692,47 @@ void main() {
 
       final String newDataRoot = p.join(tmp.path, 'new_whitelist');
       String? wrote;
-      final (Directory newDocs, Directory newSupport) =
-          await const DataRootMigrator().migrate(DataRootMigrationRequest(
-        oldDocumentsRoot: oldDocs,
-        oldSupportRoot: oldSupport,
-        target: DataRootMigrationTarget.customRoot(newDataRoot),
-        closeResources: () async {},
-        commitLocation: (DataRootMigrationTarget t) async =>
-            wrote = t.dataRootPrefValue,
-        documentsTopLevelIncludeNames: const <String>{
-          'fushi_books',
-          'audiobooks',
-          'custom_fonts',
-        },
-      ));
+      final (
+        Directory newDocs,
+        Directory newSupport,
+      ) = await const DataRootMigrator().migrate(
+        DataRootMigrationRequest(
+          oldDocumentsRoot: oldDocs,
+          oldSupportRoot: oldSupport,
+          target: DataRootMigrationTarget.customRoot(newDataRoot),
+          closeResources: () async {},
+          commitLocation: (DataRootMigrationTarget t) async =>
+              wrote = t.dataRootPrefValue,
+          documentsTopLevelIncludeNames: const <String>{
+            'fushi_books',
+            'audiobooks',
+            'custom_fonts',
+          },
+        ),
+      );
 
       // 白名单项已到新根。
       expect(
-          File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'))
-              .existsSync(),
-          isTrue);
+        File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html')).existsSync(),
+        isTrue,
+      );
       expect(
-          File(p.join(newDocs.path, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
-          isTrue);
-      expect(File(p.join(newDocs.path, 'custom_fonts', 'f1.ttf')).existsSync(),
-          isTrue);
+        File(p.join(newDocs.path, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
+        isTrue,
+      );
+      expect(
+        File(p.join(newDocs.path, 'custom_fonts', 'f1.ttf')).existsSync(),
+        isTrue,
+      );
       // 白名单项已离开源根（搬移即移除，不靠删整目录）。
       expect(
-          Directory(p.join(oldDocsPath, 'fushi_books')).existsSync(), isFalse);
+        Directory(p.join(oldDocsPath, 'fushi_books')).existsSync(),
+        isFalse,
+      );
       expect(
-          Directory(p.join(oldDocsPath, 'audiobooks')).existsSync(), isFalse);
+        Directory(p.join(oldDocsPath, 'audiobooks')).existsSync(),
+        isFalse,
+      );
       // Documents 本体 + 用户文件 + junction 原样保留（P0：绝不删用户 Documents）。
       expect(oldDocs.existsSync(), isTrue);
       expect(userDoc.existsSync(), isTrue);
@@ -641,7 +743,9 @@ void main() {
       // 用户文件/junction 不被复制/搬移到新根。
       expect(File(p.join(newDocs.path, 'my_essay.docx')).existsSync(), isFalse);
       expect(
-          Directory(p.join(newDocs.path, 'My Projects')).existsSync(), isFalse);
+        Directory(p.join(newDocs.path, 'My Projects')).existsSync(),
+        isFalse,
+      );
       expect(Link(p.join(newDocs.path, 'My Music')).existsSync(), isFalse);
       // pref 已写、DB 绝对路径已 rebase 到新根。
       expect(wrote, equals(newDataRoot));
@@ -664,37 +768,48 @@ void main() {
 
       final String newDataRoot = p.join(oldDocsPath, 'Hibiki');
       String? wrote;
-      final (Directory newDocs, Directory newSupport) =
-          await const DataRootMigrator().migrate(DataRootMigrationRequest(
-        oldDocumentsRoot: oldDocs,
-        oldSupportRoot: oldSupport,
-        target: DataRootMigrationTarget.customRoot(newDataRoot),
-        closeResources: () async {},
-        commitLocation: (DataRootMigrationTarget t) async =>
-            wrote = t.dataRootPrefValue,
-        documentsTopLevelIncludeNames: const <String>{
-          'fushi_books',
-          'audiobooks',
-          'video_covers',
-        },
-      ));
+      final (
+        Directory newDocs,
+        Directory newSupport,
+      ) = await const DataRootMigrator().migrate(
+        DataRootMigrationRequest(
+          oldDocumentsRoot: oldDocs,
+          oldSupportRoot: oldSupport,
+          target: DataRootMigrationTarget.customRoot(newDataRoot),
+          closeResources: () async {},
+          commitLocation: (DataRootMigrationTarget t) async =>
+              wrote = t.dataRootPrefValue,
+          documentsTopLevelIncludeNames: const <String>{
+            'fushi_books',
+            'audiobooks',
+            'video_covers',
+          },
+        ),
+      );
 
       // 新根就在旧共享根内部，数据齐全。
       expect(p.isWithin(oldDocsPath, newDocs.path), isTrue);
       expect(
-          File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'))
-              .existsSync(),
-          isTrue);
+        File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html')).existsSync(),
+        isTrue,
+      );
       expect(
-          File(p.join(newDocs.path, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
-          isTrue);
+        File(p.join(newDocs.path, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
+        isTrue,
+      );
       // 白名单项已离开共享根顶层——文档根不再摊着 Fushi 的目录。
       expect(
-          Directory(p.join(oldDocsPath, 'fushi_books')).existsSync(), isFalse);
+        Directory(p.join(oldDocsPath, 'fushi_books')).existsSync(),
+        isFalse,
+      );
       expect(
-          Directory(p.join(oldDocsPath, 'audiobooks')).existsSync(), isFalse);
+        Directory(p.join(oldDocsPath, 'audiobooks')).existsSync(),
+        isFalse,
+      );
       expect(
-          Directory(p.join(oldDocsPath, 'video_covers')).existsSync(), isFalse);
+        Directory(p.join(oldDocsPath, 'video_covers')).existsSync(),
+        isFalse,
+      );
       // 共享根本体与用户文件原样保留。
       expect(oldDocs.existsSync(), isTrue);
       expect(userDoc.readAsStringSync(), equals('user data, do not touch'));
@@ -712,44 +827,52 @@ void main() {
     test('BUG-1115：白名单项本身当目标仍被拒（会被搬走 → 目标边搬边消失）', () async {
       await seedDb();
       await expectLater(
-        const DataRootMigrator().migrate(DataRootMigrationRequest(
-          oldDocumentsRoot: oldDocs,
-          oldSupportRoot: oldSupport,
-          target: DataRootMigrationTarget.customRoot(
-              p.join(oldDocsPath, 'audiobooks')),
-          closeResources: () async {},
-          commitLocation: (DataRootMigrationTarget t) async {},
-          documentsTopLevelIncludeNames: const <String>{
-            'fushi_books',
-            'audiobooks',
-          },
-        )),
+        const DataRootMigrator().migrate(
+          DataRootMigrationRequest(
+            oldDocumentsRoot: oldDocs,
+            oldSupportRoot: oldSupport,
+            target: DataRootMigrationTarget.customRoot(
+              p.join(oldDocsPath, 'audiobooks'),
+            ),
+            closeResources: () async {},
+            commitLocation: (DataRootMigrationTarget t) async {},
+            documentsTopLevelIncludeNames: const <String>{
+              'fushi_books',
+              'audiobooks',
+            },
+          ),
+        ),
         throwsA(isA<DataRootMigrationException>()),
       );
       // 旧根一字未动。
       expect(
-          File(p.join(oldDocsPath, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
-          isTrue);
+        File(p.join(oldDocsPath, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
+        isTrue,
+      );
     });
 
     test('BUG-1115：专属根（整树语义）下嵌套目标仍被拒——整树搬移会把目标一起搬走', () async {
       await seedDb();
       await expectLater(
-        const DataRootMigrator().migrate(DataRootMigrationRequest(
-          oldDocumentsRoot: oldDocs,
-          oldSupportRoot: oldSupport,
-          target:
-              DataRootMigrationTarget.customRoot(p.join(oldDocsPath, 'Hibiki')),
-          closeResources: () async {},
-          commitLocation: (DataRootMigrationTarget t) async {},
-          // null = Fushi 专属根、整树搬移语义。
-          documentsTopLevelIncludeNames: null,
-        )),
+        const DataRootMigrator().migrate(
+          DataRootMigrationRequest(
+            oldDocumentsRoot: oldDocs,
+            oldSupportRoot: oldSupport,
+            target: DataRootMigrationTarget.customRoot(
+              p.join(oldDocsPath, 'Hibiki'),
+            ),
+            closeResources: () async {},
+            commitLocation: (DataRootMigrationTarget t) async {},
+            // null = Fushi 专属根、整树搬移语义。
+            documentsTopLevelIncludeNames: null,
+          ),
+        ),
         throwsA(isA<DataRootMigrationException>()),
       );
       expect(
-          File(p.join(oldDocsPath, 'fushi_books', 'Bk', 'a.html')).existsSync(),
-          isTrue);
+        File(p.join(oldDocsPath, 'fushi_books', 'Bk', 'a.html')).existsSync(),
+        isTrue,
+      );
     });
 
     test('白名单模式回滚：pref 写失败 → 白名单项搬回 Documents，用户文件不动、新根子树清理', () async {
@@ -759,28 +882,32 @@ void main() {
       final String newDataRoot = p.join(tmp.path, 'wl_rollback');
 
       await expectLater(
-        const DataRootMigrator().migrate(DataRootMigrationRequest(
-          oldDocumentsRoot: oldDocs,
-          oldSupportRoot: oldSupport,
-          target: DataRootMigrationTarget.customRoot(newDataRoot),
-          closeResources: () async {},
-          commitLocation: (DataRootMigrationTarget t) async =>
-              throw StateError('prefs unavailable'),
-          documentsTopLevelIncludeNames: const <String>{
-            'fushi_books',
-            'audiobooks',
-          },
-        )),
+        const DataRootMigrator().migrate(
+          DataRootMigrationRequest(
+            oldDocumentsRoot: oldDocs,
+            oldSupportRoot: oldSupport,
+            target: DataRootMigrationTarget.customRoot(newDataRoot),
+            closeResources: () async {},
+            commitLocation: (DataRootMigrationTarget t) async =>
+                throw StateError('prefs unavailable'),
+            documentsTopLevelIncludeNames: const <String>{
+              'fushi_books',
+              'audiobooks',
+            },
+          ),
+        ),
         throwsA(isA<DataRootMigrationException>()),
       );
 
       // 白名单项已合并搬回 Documents，用户文件毫发无损。
       expect(
-          File(p.join(oldDocsPath, 'fushi_books', 'Bk', 'a.html')).existsSync(),
-          isTrue);
+        File(p.join(oldDocsPath, 'fushi_books', 'Bk', 'a.html')).existsSync(),
+        isTrue,
+      );
       expect(
-          File(p.join(oldDocsPath, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
-          isTrue);
+        File(p.join(oldDocsPath, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
+        isTrue,
+      );
       expect(userDoc.existsSync(), isTrue);
       expect(oldDocs.existsSync(), isTrue);
       // 新根迁移自建子树已清理。
@@ -827,21 +954,25 @@ void main() {
 
       bool wrote = false;
       await expectLater(
-        const DataRootMigrator().migrate(DataRootMigrationRequest(
-          oldDocumentsRoot: oldDocs,
-          oldSupportRoot: oldSupport,
-          target: DataRootMigrationTarget.customRoot(newDataRoot),
-          // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
-          documentsTopLevelIncludeNames: null,
-          closeResources: () async {},
-          commitLocation: (DataRootMigrationTarget t) async => wrote = true,
-          resolvedExecutablePath: exe,
-        )),
-        throwsA(isA<DataRootMigrationException>().having(
-          (DataRootMigrationException e) => e.message,
-          'message',
-          contains('安装目录'),
-        )),
+        const DataRootMigrator().migrate(
+          DataRootMigrationRequest(
+            oldDocumentsRoot: oldDocs,
+            oldSupportRoot: oldSupport,
+            target: DataRootMigrationTarget.customRoot(newDataRoot),
+            // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+            documentsTopLevelIncludeNames: null,
+            closeResources: () async {},
+            commitLocation: (DataRootMigrationTarget t) async => wrote = true,
+            resolvedExecutablePath: exe,
+          ),
+        ),
+        throwsA(
+          isA<DataRootMigrationException>().having(
+            (DataRootMigrationException e) => e.message,
+            'message',
+            contains('安装目录'),
+          ),
+        ),
       );
 
       // exe 未被删、旧根完整、未写 pref。
@@ -860,16 +991,18 @@ void main() {
         ..writeAsBytesSync(<int>[0x4d, 0x5a]);
 
       await expectLater(
-        const DataRootMigrator().migrate(DataRootMigrationRequest(
-          oldDocumentsRoot: oldDocs,
-          oldSupportRoot: oldSupport,
-          target: DataRootMigrationTarget.customRoot(newDataRoot),
-          // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
-          documentsTopLevelIncludeNames: null,
-          closeResources: () async {},
-          commitLocation: (DataRootMigrationTarget t) async {},
-          resolvedExecutablePath: exe,
-        )),
+        const DataRootMigrator().migrate(
+          DataRootMigrationRequest(
+            oldDocumentsRoot: oldDocs,
+            oldSupportRoot: oldSupport,
+            target: DataRootMigrationTarget.customRoot(newDataRoot),
+            // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+            documentsTopLevelIncludeNames: null,
+            closeResources: () async {},
+            commitLocation: (DataRootMigrationTarget t) async {},
+            resolvedExecutablePath: exe,
+          ),
+        ),
         throwsA(isA<DataRootMigrationException>()),
       );
       expect(File(exe).existsSync(), isTrue);
@@ -885,23 +1018,27 @@ void main() {
         ..writeAsBytesSync(<int>[0x4d, 0x5a]);
       String? wrote;
 
-      final (Directory newDocs, Directory newSupport) =
-          await const DataRootMigrator().migrate(DataRootMigrationRequest(
-        oldDocumentsRoot: oldDocs,
-        oldSupportRoot: oldSupport,
-        target: DataRootMigrationTarget.customRoot(newDataRoot),
-        // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
-        documentsTopLevelIncludeNames: null,
-        closeResources: () async {},
-        commitLocation: (DataRootMigrationTarget t) async =>
-            wrote = t.dataRootPrefValue,
-        resolvedExecutablePath: exe,
-      ));
+      final (
+        Directory newDocs,
+        Directory newSupport,
+      ) = await const DataRootMigrator().migrate(
+        DataRootMigrationRequest(
+          oldDocumentsRoot: oldDocs,
+          oldSupportRoot: oldSupport,
+          target: DataRootMigrationTarget.customRoot(newDataRoot),
+          // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+          documentsTopLevelIncludeNames: null,
+          closeResources: () async {},
+          commitLocation: (DataRootMigrationTarget t) async =>
+              wrote = t.dataRootPrefValue,
+          resolvedExecutablePath: exe,
+        ),
+      );
       expect(File(p.join(newSupport.path, 'fushi.db')).existsSync(), isTrue);
       expect(
-          File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'))
-              .existsSync(),
-          isTrue);
+        File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html')).existsSync(),
+        isTrue,
+      );
       expect(wrote, equals(newDataRoot));
     });
 
@@ -915,16 +1052,18 @@ void main() {
 
       // 让 pref 写入失败，强制迁移在搬移成功后回滚。
       await expectLater(
-        const DataRootMigrator().migrate(DataRootMigrationRequest(
-          oldDocumentsRoot: oldDocs,
-          oldSupportRoot: oldSupport,
-          target: DataRootMigrationTarget.customRoot(newDataRoot),
-          // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
-          documentsTopLevelIncludeNames: null,
-          closeResources: () async {},
-          commitLocation: (DataRootMigrationTarget t) async =>
-              throw StateError('prefs unavailable'),
-        )),
+        const DataRootMigrator().migrate(
+          DataRootMigrationRequest(
+            oldDocumentsRoot: oldDocs,
+            oldSupportRoot: oldSupport,
+            target: DataRootMigrationTarget.customRoot(newDataRoot),
+            // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
+            documentsTopLevelIncludeNames: null,
+            closeResources: () async {},
+            commitLocation: (DataRootMigrationTarget t) async =>
+                throw StateError('prefs unavailable'),
+          ),
+        ),
         throwsA(isA<DataRootMigrationException>()),
       );
 
@@ -938,8 +1077,9 @@ void main() {
       // 旧根完整、数据回滚保留。
       expect(File(p.join(oldSupportPath, 'fushi.db')).existsSync(), isTrue);
       expect(
-          File(p.join(oldDocsPath, 'fushi_books', 'Bk', 'a.html')).existsSync(),
-          isTrue);
+        File(p.join(oldDocsPath, 'fushi_books', 'Bk', 'a.html')).existsSync(),
+        isTrue,
+      );
     });
 
     test('Windows 文件锁错误码分类：5/32/33 判为「被占用」，普通错误不误判', () {
@@ -959,7 +1099,10 @@ void main() {
           calls++;
           if (calls < 3) {
             throw FileSystemException(
-                'locked', '', const OSError('sharing violation', 32));
+              'locked',
+              '',
+              const OSError('sharing violation', 32),
+            );
           }
         },
         maxAttempts: 5,
@@ -976,7 +1119,10 @@ void main() {
           () async {
             calls++;
             throw FileSystemException(
-                'locked', '', const OSError('access denied', 5));
+              'locked',
+              '',
+              const OSError('access denied', 5),
+            );
           },
           maxAttempts: 3,
           backoff: Duration.zero,
@@ -994,7 +1140,10 @@ void main() {
           () async {
             calls++;
             throw FileSystemException(
-                'not found', '', const OSError('no such file', 2));
+              'not found',
+              '',
+              const OSError('no such file', 2),
+            );
           },
           maxAttempts: 5,
           backoff: Duration.zero,
@@ -1017,16 +1166,18 @@ void main() {
           true; // 强制走跨盘 copy 分支（单卷临时目录可测）。
       try {
         await expectLater(
-          const DataRootMigrator().migrate(DataRootMigrationRequest(
-            oldDocumentsRoot: oldDocs,
-            oldSupportRoot: oldSupport,
-            target: DataRootMigrationTarget.customRoot(newDataRoot),
-            documentsTopLevelIncludeNames: null,
-            closeResources: () async {},
-            // pref 提交失败 = 任意提交时点中断的代理。
-            commitLocation: (DataRootMigrationTarget t) async =>
-                throw StateError('interrupted before commit'),
-          )),
+          const DataRootMigrator().migrate(
+            DataRootMigrationRequest(
+              oldDocumentsRoot: oldDocs,
+              oldSupportRoot: oldSupport,
+              target: DataRootMigrationTarget.customRoot(newDataRoot),
+              documentsTopLevelIncludeNames: null,
+              closeResources: () async {},
+              // pref 提交失败 = 任意提交时点中断的代理。
+              commitLocation: (DataRootMigrationTarget t) async =>
+                  throw StateError('interrupted before commit'),
+            ),
+          ),
           throwsA(isA<DataRootMigrationException>()),
         );
       } finally {
@@ -1035,14 +1186,18 @@ void main() {
 
       // 旧根**逐字节完整**：所有源文件仍在（跨盘 copy 阶段绝不删源）。
       expect(
-          File(p.join(oldDocsPath, 'fushi_books', 'Bk', 'a.html')).existsSync(),
-          isTrue);
+        File(p.join(oldDocsPath, 'fushi_books', 'Bk', 'a.html')).existsSync(),
+        isTrue,
+      );
       expect(
-          File(p.join(oldDocsPath, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
-          isTrue);
+        File(p.join(oldDocsPath, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
+        isTrue,
+      );
       expect(File(p.join(oldSupportPath, 'fushi.db')).existsSync(), isTrue);
-      expect(File(p.join(oldSupportPath, 'local_audio_1.db')).existsSync(),
-          isTrue);
+      expect(
+        File(p.join(oldSupportPath, 'local_audio_1.db')).existsSync(),
+        isTrue,
+      );
       // 新根半成品（documents/support 子树）已清理，用户选定的目标本体保留（此处为空目录）。
       expect(Directory(p.join(newDataRoot, 'documents')).existsSync(), isFalse);
       expect(Directory(p.join(newDataRoot, 'support')).existsSync(), isFalse);
@@ -1072,29 +1227,35 @@ void main() {
           .whereType<File>()
           .length;
       final int sourceFiles = countFiles(oldDocs) + countFiles(oldSupport);
-      File(p.join(oldSupport.path, 'shared_preferences.json'))
-          .writeAsStringSync('{}');
+      File(
+        p.join(oldSupport.path, 'shared_preferences.json'),
+      ).writeAsStringSync('{}');
       final List<({int copied, int total})> reports =
           <({int copied, int total})>[];
       DataRootMigrator.debugForceCopyFallback = true;
       try {
-        await const DataRootMigrator().migrate(DataRootMigrationRequest(
-          oldDocumentsRoot: oldDocs,
-          oldSupportRoot: oldSupport,
-          target: DataRootMigrationTarget.customRoot(newDataRoot),
-          documentsTopLevelIncludeNames: null,
-          closeResources: () async {},
-          commitLocation: (DataRootMigrationTarget t) async {},
-          onProgress: (int copied, int total) =>
-              reports.add((copied: copied, total: total)),
-        ));
+        await const DataRootMigrator().migrate(
+          DataRootMigrationRequest(
+            oldDocumentsRoot: oldDocs,
+            oldSupportRoot: oldSupport,
+            target: DataRootMigrationTarget.customRoot(newDataRoot),
+            documentsTopLevelIncludeNames: null,
+            closeResources: () async {},
+            commitLocation: (DataRootMigrationTarget t) async {},
+            onProgress: (int copied, int total) =>
+                reports.add((copied: copied, total: total)),
+          ),
+        );
       } finally {
         DataRootMigrator.debugForceCopyFallback = false;
       }
       expect(reports, isNotEmpty);
       for (final ({int copied, int total}) r in reports) {
-        expect(r.copied, lessThanOrEqualTo(r.total),
-            reason: '进度 ${r.copied} / ${r.total} 分子越过分母');
+        expect(
+          r.copied,
+          lessThanOrEqualTo(r.total),
+          reason: '进度 ${r.copied} / ${r.total} 分子越过分母',
+        );
       }
       final ({int copied, int total}) last = reports.last;
       expect(last.total, greaterThan(0));
@@ -1110,24 +1271,32 @@ void main() {
       String? wrote;
       DataRootMigrator.debugForceCopyFallback = true;
       try {
-        final (Directory newDocs, Directory newSupport) =
-            await const DataRootMigrator().migrate(DataRootMigrationRequest(
-          oldDocumentsRoot: oldDocs,
-          oldSupportRoot: oldSupport,
-          target: DataRootMigrationTarget.customRoot(newDataRoot),
-          documentsTopLevelIncludeNames: null,
-          closeResources: () async {},
-          commitLocation: (DataRootMigrationTarget t) async =>
-              wrote = t.dataRootPrefValue,
-        ));
+        final (
+          Directory newDocs,
+          Directory newSupport,
+        ) = await const DataRootMigrator().migrate(
+          DataRootMigrationRequest(
+            oldDocumentsRoot: oldDocs,
+            oldSupportRoot: oldSupport,
+            target: DataRootMigrationTarget.customRoot(newDataRoot),
+            documentsTopLevelIncludeNames: null,
+            closeResources: () async {},
+            commitLocation: (DataRootMigrationTarget t) async =>
+                wrote = t.dataRootPrefValue,
+          ),
+        );
         // 新根齐全。
         expect(
-            File(p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'))
-                .existsSync(),
-            isTrue);
+          File(
+            p.join(newDocs.path, 'fushi_books', 'Bk', 'a.html'),
+          ).existsSync(),
+          isTrue,
+        );
         expect(File(p.join(newSupport.path, 'fushi.db')).existsSync(), isTrue);
-        expect(File(p.join(newSupport.path, 'local_audio_1.db')).existsSync(),
-            isTrue);
+        expect(
+          File(p.join(newSupport.path, 'local_audio_1.db')).existsSync(),
+          isTrue,
+        );
         // 提交后才删源 → 旧根已删。
         expect(oldDocs.existsSync(), isFalse);
         expect(oldSupport.existsSync(), isFalse);
@@ -1162,55 +1331,69 @@ void main() {
       // `dart format` 会把它折成 `listSync(\n  recursive: true,\n)`，字面量当场
       // 失配、守卫静默变绿（这个坑在 docs/agent/fast-workflow.md 里被点名，
       // 但被守的这一侧一直没改）。同时先剥注释：注释里写着这个调用不算实现。
-      final RegExp syncRecursiveList =
-          RegExp(r'(?<![A-Za-z0-9_$])listSync\s*\(\s*recursive:\s*true');
-      expect(syncRecursiveList.hasMatch(maskComments(src)), isFalse,
-          reason: '迁移引擎不得在主 isolate 上同步递归列目录（会冻结 UI）');
+      final RegExp syncRecursiveList = RegExp(
+        r'(?<![A-Za-z0-9_$])listSync\s*\(\s*recursive:\s*true',
+      );
+      expect(
+        syncRecursiveList.hasMatch(maskComments(src)),
+        isFalse,
+        reason: '迁移引擎不得在主 isolate 上同步递归列目录（会冻结 UI）',
+      );
       // 判据自校验：正则本身还认不认得这两种写法（禁止型断言长期零命中，
       // 扫盘那条路检验不到它）。
       expect(
-          syncRecursiveList.hasMatch('dir.listSync(recursive: true)'), isTrue);
-      expect(syncRecursiveList.hasMatch('dir.listSync(\n  recursive: true,\n)'),
-          isTrue,
-          reason: 'dart format 折行形态必须同样被抓到');
-      expect(syncRecursiveList.hasMatch('dir.listSync(recursive: false)'),
-          isFalse);
+        syncRecursiveList.hasMatch('dir.listSync(recursive: true)'),
+        isTrue,
+      );
+      expect(
+        syncRecursiveList.hasMatch('dir.listSync(\n  recursive: true,\n)'),
+        isTrue,
+        reason: 'dart format 折行形态必须同样被抓到',
+      );
+      expect(
+        syncRecursiveList.hasMatch('dir.listSync(recursive: false)'),
+        isFalse,
+      );
     });
 
     test('幂等/防重入：对已含迁移数据的目标再次迁移 → 拒绝覆盖，源与目标均完整', () async {
       await seedDb();
       final String newDataRoot = p.join(tmp.path, 'idem');
       // 第一次成功迁移到 newDataRoot（同盘 rename 路径）。
-      await const DataRootMigrator().migrate(DataRootMigrationRequest(
-        oldDocumentsRoot: oldDocs,
-        oldSupportRoot: oldSupport,
-        target: DataRootMigrationTarget.customRoot(newDataRoot),
-        documentsTopLevelIncludeNames: null,
-        closeResources: () async {},
-        commitLocation: (DataRootMigrationTarget t) async {},
-      ));
+      await const DataRootMigrator().migrate(
+        DataRootMigrationRequest(
+          oldDocumentsRoot: oldDocs,
+          oldSupportRoot: oldSupport,
+          target: DataRootMigrationTarget.customRoot(newDataRoot),
+          documentsTopLevelIncludeNames: null,
+          closeResources: () async {},
+          commitLocation: (DataRootMigrationTarget t) async {},
+        ),
+      );
       final String newSupportPath = p.join(newDataRoot, 'support');
       expect(File(p.join(newSupportPath, 'fushi.db')).existsSync(), isTrue);
 
       // 第二次：另一个源迁到**已含数据**的同一目标 → 目标非空拒绝，不覆盖不动源。
       final Directory otherDocs = Directory(p.join(tmp.path, 'o2', 'documents'))
         ..createSync(recursive: true);
-      final Directory otherSupport =
-          Directory(p.join(tmp.path, 'o2', 'support'))
-            ..createSync(recursive: true);
+      final Directory otherSupport = Directory(
+        p.join(tmp.path, 'o2', 'support'),
+      )..createSync(recursive: true);
       File(p.join(otherSupport.path, 'fushi.db'))
         ..createSync(recursive: true)
         ..writeAsBytesSync(<int>[7, 7, 7]);
       bool wrote = false;
       await expectLater(
-        const DataRootMigrator().migrate(DataRootMigrationRequest(
-          oldDocumentsRoot: otherDocs,
-          oldSupportRoot: otherSupport,
-          target: DataRootMigrationTarget.customRoot(newDataRoot),
-          documentsTopLevelIncludeNames: null,
-          closeResources: () async {},
-          commitLocation: (DataRootMigrationTarget t) async => wrote = true,
-        )),
+        const DataRootMigrator().migrate(
+          DataRootMigrationRequest(
+            oldDocumentsRoot: otherDocs,
+            oldSupportRoot: otherSupport,
+            target: DataRootMigrationTarget.customRoot(newDataRoot),
+            documentsTopLevelIncludeNames: null,
+            closeResources: () async {},
+            commitLocation: (DataRootMigrationTarget t) async => wrote = true,
+          ),
+        ),
         throwsA(isA<DataRootMigrationException>()),
       );
       expect(wrote, isFalse);

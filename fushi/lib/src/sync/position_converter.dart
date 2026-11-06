@@ -62,9 +62,10 @@ int toExploredCharCount({
     final int chapterChars = chapters[i].characters;
     if (remaining <= chapterChars || i == chapters.length - 1) {
       final int normOffset = chapterChars > 0
-          ? (remaining / chapterChars * _kMaxNormOffset)
-              .round()
-              .clamp(0, _kMaxNormOffset)
+          ? (remaining / chapterChars * _kMaxNormOffset).round().clamp(
+              0,
+              _kMaxNormOffset,
+            )
           : 0;
       return (sectionIndex: i, normCharOffset: normOffset);
     }

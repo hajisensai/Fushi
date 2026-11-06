@@ -78,10 +78,16 @@ void main() {
         isTrue,
         reason: '顶栏必须能切模式，这是歌词模式里唯一看得见的回正文入口',
       );
-      expect(header, contains('pinned: lyrics'),
-          reason: '折进 ⋮ 溢出菜单的入口对「顶栏上找不到回去的路」这个症状等于不存在');
-      expect(header, contains("'fushi_reader_lyrics_mode_button'"),
-          reason: '集成测试按 key 找这颗键');
+      expect(
+        header,
+        contains('pinned: lyrics'),
+        reason: '折进 ⋮ 溢出菜单的入口对「顶栏上找不到回去的路」这个症状等于不存在',
+      );
+      expect(
+        header,
+        contains("'fushi_reader_lyrics_mode_button'"),
+        reason: '集成测试按 key 找这颗键',
+      );
     });
 
     test('插图只在正文模式挂；章节导航在歌词模式也在（BUG-2596，跳章走音频定位）', () {
@@ -93,11 +99,17 @@ void main() {
       expect(gallery, greaterThan(0));
       // navigation 自己那段先于 gallery，且不再被 !_lyricsMode 藏掉。
       final String navOnly = navGroup.substring(0, gallery);
-      expect(navOnly, contains('return true;'),
-          reason: '用户报「歌词模式没有跳章节按钮」——导航键在歌词模式必须在场');
+      expect(
+        navOnly,
+        contains('return true;'),
+        reason: '用户报「歌词模式没有跳章节按钮」——导航键在歌词模式必须在场',
+      );
       expect(navOnly, isNot(contains('_lyricsMode')));
-      expect(navGroup.substring(gallery), contains('return !_lyricsMode;'),
-          reason: '图集仍是正文文档的东西，歌词模式不挂');
+      expect(
+        navGroup.substring(gallery),
+        contains('return !_lyricsMode;'),
+        reason: '图集仍是正文文档的东西，歌词模式不挂',
+      );
     });
   });
 
@@ -110,12 +122,24 @@ void main() {
     test('_lyricsTopReserve 不含顶部进度预留（歌词模式不画那颗 pill）', () {
       final int start = src.indexOf('double get _lyricsTopReserve =>');
       expect(start, greaterThanOrEqualTo(0));
-      final String expr =
-          src.substring(start, maskComments(src).indexOf(';', start));
-      expect(expr, contains('_stableTopInset'));
+      final String expr = src.substring(
+        start,
+        maskComments(src).indexOf(';', start),
+      );
+      // 系统顶 inset 经 _contentTopInset（沉浸页扣掉悬停浮出的桌面顶栏那一条）。
+      expect(expr, contains('_contentTopInset'));
       expect(expr, contains('_desktopHeaderReserve'));
-      expect(expr, isNot(contains('_topProgressReserve')),
-          reason: '算进来就是在歌词首行上方留一条谁也不占的空带');
+      final int inset = src.indexOf('double get _contentTopInset =>');
+      expect(inset, greaterThanOrEqualTo(0));
+      expect(
+        src.substring(inset, maskComments(src).indexOf(';', inset)),
+        contains('_stableTopInset'),
+      );
+      expect(
+        expr,
+        isNot(contains('_topProgressReserve')),
+        reason: '算进来就是在歌词首行上方留一条谁也不占的空带',
+      );
     });
   });
 }

@@ -118,9 +118,9 @@ class VideoSidecarLayout {
     List<VideoSidecarTarget> seasons = const <VideoSidecarTarget>[],
     List<VideoSidecarTarget> episodes = const <VideoSidecarTarget>[],
     List<String> warnings = const <String>[],
-  })  : seasons = List<VideoSidecarTarget>.unmodifiable(seasons),
-        episodes = List<VideoSidecarTarget>.unmodifiable(episodes),
-        warnings = List<String>.unmodifiable(warnings);
+  }) : seasons = List<VideoSidecarTarget>.unmodifiable(seasons),
+       episodes = List<VideoSidecarTarget>.unmodifiable(episodes),
+       warnings = List<String>.unmodifiable(warnings);
 
   final VideoSidecarTarget? work;
   final List<VideoSidecarTarget> seasons;
@@ -146,7 +146,8 @@ class VideoSidecarTargetResolver {
       );
     }
     final String directory = p.dirname(video);
-    final bool shared = _samePath(directory, root) ||
+    final bool shared =
+        _samePath(directory, root) ||
         knownSourceVideoPaths.any((String candidate) {
           final String normalized = _absolute(candidate);
           return !_samePath(normalized, video) &&
@@ -183,11 +184,13 @@ class VideoSidecarTargetResolver {
         warnings.add('分集路径越过来源根目录，仅跳过该分集 sidecar：${member.path}');
         continue;
       }
-      safeMembers.add(VideoEpisodePath(
-        path: absolute,
-        seasonNumber: member.seasonNumber,
-        episodeNumber: member.episodeNumber,
-      ));
+      safeMembers.add(
+        VideoEpisodePath(
+          path: absolute,
+          seasonNumber: member.seasonNumber,
+          episodeNumber: member.episodeNumber,
+        ),
+      );
     }
     safeMembers.sort((VideoEpisodePath a, VideoEpisodePath b) {
       int result = a.seasonNumber.compareTo(b.seasonNumber);
@@ -229,8 +232,9 @@ class VideoSidecarTargetResolver {
     final Set<String> memberPaths = safeMembers
         .map((VideoEpisodePath member) => _pathKey(member.path))
         .toSet();
-    final List<String> knownPaths =
-        knownSourceVideoPaths.map(_absolute).toList(growable: false);
+    final List<String> knownPaths = knownSourceVideoPaths
+        .map(_absolute)
+        .toList(growable: false);
     final Set<String> knownPathKeys = knownPaths.map(_pathKey).toSet();
     final List<String> knownInCandidate = knownPaths
         .where((String path) => _isWithinOrEqual(candidateRoot, path))
@@ -239,15 +243,14 @@ class VideoSidecarTargetResolver {
       for (final VideoEpisodePath member in safeMembers)
         if (!_samePath(p.dirname(member.path), candidateRoot))
           p
-              .split(p.relative(
-                p.dirname(member.path),
-                from: candidateRoot,
-              ))
+              .split(p.relative(p.dirname(member.path), from: candidateRoot))
               .first,
     };
-    final bool branchesDescribeSeasons = immediateBranches.length <= 1 ||
+    final bool branchesDescribeSeasons =
+        immediateBranches.length <= 1 ||
         immediateBranches.every(_looksLikeSeasonDirectory);
-    final bool hasDedicatedRoot = !_samePath(candidateRoot, root) &&
+    final bool hasDedicatedRoot =
+        !_samePath(candidateRoot, root) &&
         _isWithinOrEqual(root, candidateRoot) &&
         memberPaths.every(knownPathKeys.contains) &&
         knownInCandidate.every(
@@ -261,10 +264,7 @@ class VideoSidecarTargetResolver {
             ? '无法证明电视剧具有来源根目录下的专属作品目录；仅生成逐集 sidecar。'
             : '成员跨越多个非季度目录，无法确定唯一作品根；仅生成逐集 sidecar。',
       );
-      return VideoSidecarLayout(
-        episodes: episodeTargets,
-        warnings: warnings,
-      );
+      return VideoSidecarLayout(episodes: episodeTargets, warnings: warnings);
     }
 
     final VideoSidecarTarget workTarget = VideoSidecarTarget._(
@@ -300,13 +300,15 @@ class VideoSidecarTargetResolver {
         warnings.add('第 $seasonNumber 季目录混有其它季度，跳过 season.nfo。');
         continue;
       }
-      seasonTargets.add(VideoSidecarTarget._(
-        kind: VideoSidecarTargetKind.season,
-        nfoPath: p.join(seasonDirectory, 'season.nfo'),
-        directoryPath: seasonDirectory,
-        tvRootPath: candidateRoot,
-        seasonNumber: seasonNumber,
-      ));
+      seasonTargets.add(
+        VideoSidecarTarget._(
+          kind: VideoSidecarTargetKind.season,
+          nfoPath: p.join(seasonDirectory, 'season.nfo'),
+          directoryPath: seasonDirectory,
+          tvRootPath: candidateRoot,
+          seasonNumber: seasonNumber,
+        ),
+      );
     }
 
     return VideoSidecarLayout(
@@ -339,8 +341,9 @@ class VideoSidecarTargetResolver {
 
   static bool _looksLikeSeasonDirectory(String name) {
     final String normalized = name.trim().toLowerCase();
-    return RegExp(r'^(?:season[ ._-]*\d+|s\d{1,3}|specials?|第\s*\d+\s*季)$')
-        .hasMatch(normalized);
+    return RegExp(
+      r'^(?:season[ ._-]*\d+|s\d{1,3}|specials?|第\s*\d+\s*季)$',
+    ).hasMatch(normalized);
   }
 
   static String _absolute(String value) => p.normalize(p.absolute(value));

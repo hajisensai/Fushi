@@ -16,8 +16,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -128,6 +129,19 @@ Future<_Harness> _pumpHome(
   return _Harness(appModel, prefsRepo);
 }
 
+/// 首页导航里「复习」入口：按名字找。默认底栏是相机模式条（#2462，纯图标）、收起
+/// 侧栏纯图标（#2476），名字只保证进 tooltip 与无障碍语义；收起侧栏里带速览卡的
+/// 目的地（#2543 起每个目的地都有）连 tooltip 都不叠——悬停弹的是速览卡，名称只在
+/// Semantics label 与卡片标题里。所以文字 / tooltip / 语义名三处都认；漏认任一处，
+/// 入口在而名字不画时会误判「没有入口」，「看不到」的断言也会恒真。material_ui 的
+/// Tooltip 不是 SDK 旧 Tooltip，`find.byTooltip` 认不到。
+Finder _srsNavEntry() => find.byWidgetPredicate(
+  (Widget w) =>
+      (w is Text && w.data == t.nav_srs) ||
+      (w is Tooltip && w.message == t.nav_srs) ||
+      (w is Semantics && w.properties.label == t.nav_srs),
+);
+
 Future<void> _settle(WidgetTester tester) async {
   for (int i = 0; i < 15; i++) {
     await tester.pump(const Duration(milliseconds: 50));
@@ -236,7 +250,7 @@ void main() {
           await prefs.setOnboardingCompleted(value: true);
         },
       );
-      expect(find.text(t.nav_srs), findsNothing, reason: '老用户：不该冒出复习入口');
+      expect(_srsNavEntry(), findsNothing, reason: '老用户：不该冒出复习入口');
       // 「老用户不提醒」：判定不弹引导、不弹对话框 / 底部弹层 / 横幅，也不把引导重新
       // 标回待完成。
       expect(find.byType(OnboardingWizardPage), findsNothing);
@@ -250,7 +264,7 @@ void main() {
 
       await tester.runAsync(() => h.app.setModuleEnabled(ModuleId.srs, true));
       await _settle(tester);
-      expect(find.text(t.nav_srs), findsWidgets, reason: '打开模块后底栏 / 侧栏出现「复习」');
+      expect(_srsNavEntry(), findsWidgets, reason: '打开模块后底栏 / 侧栏出现「复习」');
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 10));
@@ -265,7 +279,7 @@ void main() {
           await prefs.setOnboardingCompleted(value: true);
         },
       );
-      expect(find.text(t.nav_srs), findsWidgets, reason: '新装默认开');
+      expect(_srsNavEntry(), findsWidgets, reason: '新装默认开');
       expect(h.app.srsMiningTarget, SrsMiningTarget.srs);
 
       await tester.pumpWidget(const SizedBox.shrink());

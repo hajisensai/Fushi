@@ -27,6 +27,11 @@ extension _FushiSyncServerAuth on FushiSyncServer {
         // Only the /stream sub-path is exempted; /streamurl, /subtitle, and the
         // video list still require Basic auth.
         if (_isVideoStreamPath(request.url.path)) return innerHandler(request);
+        // 远端原盘的盘目录：libbluray / libdvdnav 在 libmpv 里直接取文件，带不了
+        // Authorization；门是路径里的会话 token（handler 内校验、按空闲过期）。
+        if (isDiscShareSessionPath(request.url.path)) {
+          return innerHandler(request);
+        }
         // Remote lookup audio file URLs are handed to platform audio players,
         // which issue a bare GET without Authorization. The lookup endpoint
         // stays authenticated; the file endpoint is guarded by an opaque,
@@ -46,8 +51,10 @@ extension _FushiSyncServerAuth on FushiSyncServer {
         }
         final auth = request.headers['authorization'];
         if (auth == null || !await _validateAuth(auth)) {
-          return shelf.Response(401,
-              headers: {'WWW-Authenticate': 'Basic realm="Fushi Sync"'});
+          return shelf.Response(
+            401,
+            headers: {'WWW-Authenticate': 'Basic realm="Fushi Sync"'},
+          );
         }
         return innerHandler(request);
       };
@@ -72,7 +79,9 @@ extension _FushiSyncServerAuth on FushiSyncServer {
       final Uint8List pw = Uint8List.fromList(utf8.encode(password));
       for (final String peerToken in peerTokens) {
         if (_constantTimeEquals(
-            pw, Uint8List.fromList(utf8.encode(peerToken)))) {
+          pw,
+          Uint8List.fromList(utf8.encode(peerToken)),
+        )) {
           return true;
         }
       }
@@ -127,8 +136,10 @@ bool _isVideoStreamPath(String urlPath) {
   if (!urlPath.startsWith(prefix)) return false;
   for (final String suffix in _kVideoStreamSuffixes) {
     if (!urlPath.endsWith(suffix)) continue;
-    final String idPart =
-        urlPath.substring(prefix.length, urlPath.length - suffix.length);
+    final String idPart = urlPath.substring(
+      prefix.length,
+      urlPath.length - suffix.length,
+    );
     if (idPart.isNotEmpty) return true;
   }
   return false;
@@ -149,8 +160,9 @@ bool _isLookupAudioFilePath(String urlPath) =>
 String? _basicPassword(String header) {
   if (!header.startsWith('Basic ')) return null;
   try {
-    final String decoded =
-        utf8.decode(base64Decode(header.substring('Basic '.length)));
+    final String decoded = utf8.decode(
+      base64Decode(header.substring('Basic '.length)),
+    );
     final int colonIdx = decoded.indexOf(':');
     return colonIdx < 0 ? null : decoded.substring(colonIdx + 1);
   } catch (_) {

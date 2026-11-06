@@ -3,7 +3,7 @@ import 'package:args/args.dart';
 import '../ctl_commands.dart';
 import 'settings_ops_commands.dart' show ankiSyncClientCommands;
 
-/// dictionary 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_dictionary_routes.dart`）。
+/// dictionary 域命令（app 侧路由见 `fushi/lib/src/ops/ctl_dictionary_routes.dart`）。
 ///
 /// - `fushi_cli dict …`：词典仓库（列出 / 开关 / 排序 / 删除 / 导入 / 在线更新）与结构化查词。
 /// - `fushi_cli anki …`：Anki 状态、牌组 / 笔记类型、制卡、查重、同步。
@@ -38,6 +38,27 @@ const List<CtlCommandGroup> dictionaryCommandGroups = <CtlCommandGroup>[
         summary: '把词典移到同类型分区里的第 N 位（1 起算）',
         usage: '<name> <position>',
         build: _buildDictOrder,
+        render: _renderDictOne,
+      ),
+      CtlCommandSpec(
+        name: 'kanji-enable',
+        summary: '启用混合词典的汉字部分（「汉字」分区里的开关，不影响术语部分）',
+        usage: '<name>',
+        build: _buildDictKanjiEnable,
+        render: _renderDictOne,
+      ),
+      CtlCommandSpec(
+        name: 'kanji-disable',
+        summary: '停用混合词典的汉字部分（不再出汉字卡，术语部分照常）',
+        usage: '<name>',
+        build: _buildDictKanjiDisable,
+        render: _renderDictOne,
+      ),
+      CtlCommandSpec(
+        name: 'kanji-order',
+        summary: '把词典（或混合词典的汉字部分）移到「汉字」分区的第 N 位（1 起算）',
+        usage: '<name> <position>',
+        build: _buildDictKanjiOrder,
         render: _renderDictOne,
       ),
       CtlCommandSpec(
@@ -256,6 +277,7 @@ void _configureDictSearch(ArgParser parser) {
   parser
     ..addOption('limit', abbr: 'n', help: '最多返回多少个词头（缺省 10）')
     ..addOption('max-meaning', help: '单条释义最多多少字（缺省不截断）')
+    ..addOption('lang', help: '查词语言（BCP-47，如 zh-CN；中文会补查繁体变体；缺省按 app 当前查词语言）')
     ..addFlag('wildcards', negatable: false, help: '启用通配符（* ?）');
 }
 
@@ -330,6 +352,7 @@ void _configureAnkiMine(ArgParser parser) {
     ..addOption('sentence', abbr: 's', help: '例句')
     ..addOption('glossary', help: '释义（HTML；缺省从词典拼）')
     ..addOption('source', help: '来源（URL / 标题，写进卡片的文档标题）')
+    ..addOption('lang', help: '查词语言（BCP-47，如 zh-CN；中文会补查繁体变体；缺省按 app 当前查词语言）')
     ..addMultiOption('field', help: '额外制卡字段 key=value（可重复）')
     ..addFlag('allow-duplicate', negatable: false, help: '已有同词卡片时仍新增')
     ..addFlag(
@@ -359,7 +382,26 @@ CtlRequestSpec _buildDictDisable(CtlCommandContext c) => CtlRequestSpec.put(
   body: const <String, Object?>{'enabled': false},
 );
 
-CtlRequestSpec _buildDictOrder(CtlCommandContext c) {
+CtlRequestSpec _buildDictKanjiEnable(CtlCommandContext c) => CtlRequestSpec.put(
+  _dictPath(c.joinedRest(0, 'name')),
+  body: const <String, Object?>{'kanjiEnabled': true},
+);
+
+CtlRequestSpec _buildDictKanjiDisable(CtlCommandContext c) =>
+    CtlRequestSpec.put(
+      _dictPath(c.joinedRest(0, 'name')),
+      body: const <String, Object?>{'kanjiEnabled': false},
+    );
+
+CtlRequestSpec _buildDictOrder(CtlCommandContext c) =>
+    _buildDictPositionPut(c, 'position');
+
+CtlRequestSpec _buildDictKanjiOrder(CtlCommandContext c) =>
+    _buildDictPositionPut(c, 'kanjiPosition');
+
+/// `<name> <position>` 两参的移动命令：[field] 是写进请求体的位置字段
+/// （`position` = 本类型分区，`kanjiPosition` = 「汉字」分区）。
+CtlRequestSpec _buildDictPositionPut(CtlCommandContext c, String field) {
   if (c.rest.length < 2) throw const CtlUsageError('需要 <name> 和 <position>');
   final String rawPosition = c.rest.last.trim();
   final int? position = int.tryParse(rawPosition);
@@ -371,7 +413,7 @@ CtlRequestSpec _buildDictOrder(CtlCommandContext c) {
   if (name.isEmpty) throw const CtlUsageError('缺少参数 <name>');
   return CtlRequestSpec.put(
     _dictPath(name),
-    body: <String, Object?>{'position': position},
+    body: <String, Object?>{field: position},
   );
 }
 
@@ -530,10 +572,12 @@ CtlRequestSpec _buildDictSearch(CtlCommandContext c) {
   final int? limit = c.intOption('limit');
   if (limit != null && limit < 1) throw const CtlUsageError('--limit 必须 ≥ 1');
   final int? maxMeaning = c.intOption('max-meaning');
+  final String? lang = c.option('lang');
   return CtlRequestSpec.get(
     '$_dictionaries/search',
     query: <String, String>{
       'term': term,
+      if (lang != null) 'language': lang,
       if (limit != null) 'limit': '$limit',
       if (maxMeaning != null) 'maxMeaningChars': '$maxMeaning',
       if (c.flag('wildcards')) 'wildcards': 'true',
@@ -557,8 +601,12 @@ String _renderDictLs(Object? data) => renderCtlTable(
 
 String _renderDictOne(Object? data) {
   if (data is! Map) return renderCtlJson(data);
-  return '${data['displayName']}：${data['enabled'] == true ? '启用' : '停用'}，'
+  final String base =
+      '${data['displayName']}：${data['enabled'] == true ? '启用' : '停用'}，'
       '${data['type']} 分区第 ${(data['order'] as num? ?? 0).toInt() + 1} 位';
+  if (!data.containsKey('kanjiEnabled')) return base;
+  // 混合词典：汉字部分的开关独立；kanjiOrder 是排序键（不是名次），只报开关。
+  return '$base；汉字部分${data['kanjiEnabled'] == true ? '启用' : '停用'}';
 }
 
 String _renderDictRm(Object? data) =>
@@ -790,10 +838,12 @@ CtlRequestSpec _buildAnkiMine(CtlCommandContext c) {
   final String? sentence = c.option('sentence');
   final String? glossary = c.option('glossary');
   final String? source = c.option('source');
+  final String? lang = c.option('lang');
   return CtlRequestSpec.post(
     '$_anki/mine',
     body: <String, Object?>{
       'word': word,
+      if (lang != null) 'language': lang,
       if (reading != null) 'reading': reading,
       if (sentence != null) 'sentence': sentence,
       if (glossary != null) 'glossary': glossary,

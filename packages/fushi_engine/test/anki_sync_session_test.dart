@@ -129,6 +129,12 @@ class _FakeHelper implements FushiAnkiSyncClient {
     switch (mode) {
       case 'fail':
         throw const FushiAnkiSyncException('network down');
+      case 'rateLimited':
+        // helper 原样回 rslib 的 Debug 输出（反馈 PT6NCk7Pbo 的原文）。
+        throw const FushiAnkiSyncException(
+          'NetworkError { source: NetworkError { info: "HTTP status client '
+          'error (429 Too Many Requests) for url ()", kind: Other } }',
+        );
       case 'blocked':
         return const AnkiSyncResult(status: AnkiSyncStatus.fullSyncBlocked);
       case 'fullDownload':
@@ -242,6 +248,174 @@ void main() {
     );
     expect(session.state.phase, AnkiSyncPhase.failed);
     expect(await unsynced(), 1);
+  });
+
+  group('反馈 PT6NCk7Pbo：同步服务器限流（429）', () {
+    test('冷却期按次翻倍、封顶', () {
+      expect(ankiSyncRateLimitCooldown(1), const Duration(minutes: 10));
+      expect(ankiSyncRateLimitCooldown(2), const Duration(minutes: 20));
+      expect(ankiSyncRateLimitCooldown(3), const Duration(minutes: 40));
+      expect(ankiSyncRateLimitCooldown(30), const Duration(hours: 4));
+    });
+
+    test('只认 429 状态行，不把别的网络错当限流', () {
+      expect(
+        const FushiAnkiSyncException(
+          'HTTP status client error (429 Too Many Requests) for url ()',
+        ).isRateLimited,
+        isTrue,
+      );
+      expect(
+        const FushiAnkiSyncException('network down').isRateLimited,
+        isFalse,
+      );
+      expect(
+        const FushiAnkiSyncException('cannot add 429').isRateLimited,
+        isFalse,
+      );
+    });
+
+    /// 等后台自动同步（Timer + 文件 IO）跑到 [done] 成立。
+    Future<void> until(bool Function() done) async {
+      for (int i = 0; i < 500 && !done(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(done(), isTrue);
+    }
+
+    int syncCalls() =>
+        helper.calls.where((String c) => c.startsWith('sync')).length;
+
+    test('制卡后的自动同步撞 429：进入冷却，冷却期内自动同步不发请求，到点才发', () async {
+      int now = 1000000;
+      final AnkiSyncSession s = AnkiSyncSession(
+        root: () async => root,
+        startClient: () async => helper,
+        syncDelay: Duration.zero,
+        clock: () => now,
+      );
+      addTearDown(s.close);
+      await s.signIn(username: 'u', password: 'pw');
+      server.nextSync = 'rateLimited';
+      await s.addNote(_note('猫'));
+      await until(() => s.state.phase == AnkiSyncPhase.failed);
+      expect(s.state.rateLimitedUntil, now + 10 * 60 * 1000);
+      expect(await unsynced(), 1, reason: '卡留在日志里不丢');
+
+      // 冷却期内：再制卡 / 启动时的自动同步一律不发请求。
+      helper.calls.clear();
+      s.scheduleSync();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(syncCalls(), 0);
+
+      // 冷却过了：自动同步照常，成功后冷却清零。
+      now += 10 * 60 * 1000 + 1;
+      s.scheduleSync();
+      await until(() => s.state.phase == AnkiSyncPhase.idle);
+      expect(syncCalls(), 1);
+      expect(await unsynced(), 0);
+      expect(s.state.rateLimitedUntil, isNull);
+      expect(File(p.join(root.path, 'rate_limit.json')).existsSync(), isFalse);
+    });
+
+    test('冷却跨重启保留；手动同步不受冷却限制；冷却过后再撞才翻倍', () async {
+      int now = 5000000;
+      AnkiSyncSession open() => AnkiSyncSession(
+        root: () async => root,
+        startClient: () async => helper,
+        syncDelay: const Duration(days: 1),
+        clock: () => now,
+      );
+      final AnkiSyncSession first = open();
+      await first.signIn(username: 'u', password: 'pw');
+      await first.addNote(_note('猫'));
+      server.nextSync = 'rateLimited';
+      await expectLater(
+        first.syncNow(),
+        throwsA(isA<FushiAnkiSyncException>()),
+      );
+      expect(first.state.rateLimitedUntil, now + 10 * 60 * 1000);
+      await first.close();
+
+      // 「重启」：新会话读回冷却，启动时的自动同步不发请求。
+      final AnkiSyncSession second = AnkiSyncSession(
+        root: () async => root,
+        startClient: () async => helper,
+        syncDelay: Duration.zero,
+        clock: () => now,
+      );
+      addTearDown(second.close);
+      helper.calls.clear();
+      second.scheduleSync();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(syncCalls(), 0);
+
+      // 手动同步照常发；冷却期内再撞不翻倍（窗口还没过，只是试早了）。
+      now += 60 * 1000;
+      server.nextSync = 'rateLimited';
+      await expectLater(
+        second.syncNow(),
+        throwsA(isA<FushiAnkiSyncException>()),
+      );
+      expect(syncCalls(), 1);
+      expect(second.state.rateLimitedUntil, now + 10 * 60 * 1000);
+
+      // 冷却过了还被限流：窗口比估的长，翻倍。
+      now += 11 * 60 * 1000;
+      server.nextSync = 'rateLimited';
+      await expectLater(
+        second.syncNow(),
+        throwsA(isA<FushiAnkiSyncException>()),
+      );
+      expect(second.state.rateLimitedUntil, now + 20 * 60 * 1000);
+    });
+
+    test('重启后第一次 refresh 就带出落盘的冷却（阶段 idle），同步成功后清掉', () async {
+      int now = 7000000;
+      final AnkiSyncSession first = AnkiSyncSession(
+        root: () async => root,
+        startClient: () async => helper,
+        syncDelay: const Duration(days: 1),
+        clock: () => now,
+      );
+      await first.signIn(username: 'u', password: 'pw');
+      await first.addNote(_note('猫'));
+      server.nextSync = 'rateLimited';
+      await expectLater(first.syncNow(), throwsA(anything));
+      final int until = now + 10 * 60 * 1000;
+      await first.close();
+
+      final AnkiSyncSession second = AnkiSyncSession(
+        root: () async => root,
+        startClient: () async => helper,
+        syncDelay: const Duration(days: 1),
+        clock: () => now,
+      );
+      addTearDown(second.close);
+      final AnkiSyncState s = await second.refresh();
+      expect(s.phase, AnkiSyncPhase.idle);
+      expect(s.rateLimitedUntil, until);
+
+      // 冷却过期了照样带出（界面据此改说「冷却已结束」）；同步成功才清掉。
+      now += 11 * 60 * 1000;
+      expect((await second.refresh()).rateLimitedUntil, until);
+      await second.syncNow();
+      expect(second.state.rateLimitedUntil, isNull);
+      expect((await second.refresh()).rateLimitedUntil, isNull);
+    });
+
+    test('别的失败不显示成限流', () async {
+      await session.signIn(username: 'u', password: 'pw');
+      await session.addNote(_note('猫'));
+      server.nextSync = 'rateLimited';
+      await expectLater(session.syncNow(), throwsA(anything));
+      expect(session.state.rateLimitedUntil, isNotNull);
+      server.nextSync = 'fail';
+      await expectLater(session.syncNow(), throwsA(anything));
+      expect(session.state.phase, AnkiSyncPhase.failed);
+      expect(session.state.rateLimitedUntil, isNull);
+      expect(session.state.message, contains('network down'));
+    });
   });
 
   test('服务器要整库上传：绝不上传，停在 blocked，卡留在日志', () async {

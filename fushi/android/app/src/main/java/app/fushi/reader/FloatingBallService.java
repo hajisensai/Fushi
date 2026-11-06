@@ -36,16 +36,23 @@ import android.util.Log;
 import android.util.TypedValue;
 import android.view.Display;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
+import android.view.ContextThemeWrapper;
 import android.view.ViewOutlineProvider;
 import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.WindowMetrics;
 import android.view.animation.LinearInterpolator;
 import android.view.animation.PathInterpolator;
+import android.widget.ArrayAdapter;
 import android.widget.FrameLayout;
+import android.widget.ListPopupWindow;
+import android.widget.ListView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -78,8 +85,8 @@ import io.flutter.FlutterInjector;
  * 几何全部在 {@link FloatingBallGeometry}（与 Dart 同一套公式）。
  *
  * <p>按钮：Dart 下发的动作（{@code lookup} / {@code popup_lookup} / {@code clipboard} /
- * {@code screen_ocr} / {@code camera_ocr} / {@code sync}）+ 固定的 {@code open_app} /
- * {@code close}。
+ * {@code screen_ocr} / {@code camera_ocr} / {@code sync} / {@code switch_profile}）+ 可由用户关掉的 {@code open_app}
+ * （{@link #showOpenApp}）+ 固定的 {@code close}。
  * 图标是 Dart 下发的 Material Icons 码位（与应用内同一颗 IconData，字体取 app 自带的
  * Flutter 资源），颜色是 Dart 下发的主题色。契约见 docs/specs/2026-09-28-floating-ball.md。
  *
@@ -121,17 +128,25 @@ public class FloatingBallService extends BaseFloatingService {
     static final String ACTION_SCREEN_OCR = "screen_ocr";
     static final String ACTION_CAMERA_OCR = "camera_ocr";
     static final String ACTION_SYNC = "sync";
+    static final String ACTION_SWITCH_PROFILE = "switch_profile";
+    static final String ACTION_AI = "ai";
     static final String ACTION_OPEN_APP = "open_app";
     static final String ACTION_CLOSE = "close";
 
-    /** Dart 可下发的动作；{@code open_app} / {@code close} 恒在，不受配置控制。 */
+    /** Dart 可下发的动作；{@code close} 恒在，{@code open_app} 由 {@link #PREF_SHOW_OPEN_APP} 控制。 */
     private static final List<String> CONFIGURABLE_ACTIONS =
             Arrays.asList(
                     ACTION_LOOKUP, ACTION_POPUP_LOOKUP, ACTION_CLIPBOARD, ACTION_SCREEN_OCR,
-                    ACTION_CAMERA_OCR, ACTION_SYNC);
+                    ACTION_CAMERA_OCR, ACTION_SYNC, ACTION_SWITCH_PROFILE, ACTION_AI);
+
+    /** 收起态点球可以直接执行的动作（Dart FloatingBallTapAction 同一组 id）。 */
+    static final List<String> TAP_ACTIONS = Arrays.asList(ACTION_CLIPBOARD, ACTION_SCREEN_OCR, ACTION_AI);
 
     /** labels 里可选的通知标题键（原生不维护 17 种语言，缺省回退英文）。 */
     static final String LABEL_NOTIFICATION = "notification";
+    /** 通知上各 PendingIntent 的 requestCode：同类型 Intent 必须不同，否则互相覆盖。 */
+    private static final int REQUEST_NOTIFICATION_CLIPBOARD = 1;
+    private static final int REQUEST_NOTIFICATION_OPEN_APP = 2;
     /** labels 里球本身的无障碍名。 */
     static final String LABEL_BALL = "ball";
 
@@ -155,6 +170,20 @@ public class FloatingBallService extends BaseFloatingService {
     private static final String PREF_ICONS = "ball_icons";
     private static final String PREF_COLORS = "ball_colors";
     private static final String PREF_OCR_LANGUAGE = "ball_ocr_language";
+    /**
+     * 旧版 bool：点球 = 直接查剪贴板。只在还没写过 {@link #PREF_TAP_ACTION} 时读一次作迁移，
+     * Dart 下次起球即写入新键。
+     */
+    private static final String PREF_TAP_CLIPBOARD = "ball_tap_clipboard";
+    /**
+     * 收起态点球直接执行的动作 id（{@link #TAP_ACTIONS} 之一；空 = 点球展开按钮），此时长按
+     * 才展开——给只用一个功能的人一步直达（反馈 9bdhVTgq3A：只用截屏识字）。
+     */
+    private static final String PREF_TAP_ACTION = "ball_tap_action";
+    /** 展开时按钮旁显示文字（Dart「显示按钮文字」，BUG-3678：旧实现原生恒显示）。 */
+    private static final String PREF_SHOW_LABELS = "ball_show_labels";
+    /** 菜单里有没有「打开 Fushi」（Dart 应用外按钮组里的开关，默认有）。 */
+    private static final String PREF_SHOW_OPEN_APP = "ball_show_open_app";
     private static final String PREF_DOCK = "ball_dock";
     private static final String PREF_FRACTION = "ball_fraction";
     /** 用户在球 / 通知上点了关闭、Dart 还没来得及把「应用外」开关关掉。 */
@@ -244,7 +273,10 @@ public class FloatingBallService extends BaseFloatingService {
             @Nullable Map<String, String> labels,
             @Nullable Map<String, Integer> icons,
             @Nullable Map<String, Integer> colors,
-            @Nullable String ocrLanguage) {
+            @Nullable String ocrLanguage,
+            @Nullable String tapAction,
+            @Nullable Boolean showLabels,
+            @Nullable Boolean showOpenApp) {
         List<String> sanitized = new ArrayList<>();
         if (actions == null) {
             sanitized.addAll(CONFIGURABLE_ACTIONS);
@@ -272,9 +304,20 @@ public class FloatingBallService extends BaseFloatingService {
         if (ocrLanguage != null && !ocrLanguage.isEmpty()) {
             editor.putString(PREF_OCR_LANGUAGE, ocrLanguage);
         }
+        // 不传 / 不认识的值 = 点球展开按钮。
+        editor.putString(PREF_TAP_ACTION, sanitizeTapAction(tapAction));
+        editor.remove(PREF_TAP_CLIPBOARD);
+        // 不传 = 出厂值（显示文字、有「打开 Fushi」）。
+        editor.putBoolean(PREF_SHOW_LABELS, showLabels == null || showLabels);
+        editor.putBoolean(PREF_SHOW_OPEN_APP, showOpenApp == null || showOpenApp);
         editor.apply();
         FloatingBallService svc = getInstance();
         if (svc != null) svc.reloadConfig();
+    }
+
+    /** 点球动作只认 {@link #TAP_ACTIONS}；其余（含空）= 点球展开。 */
+    static String sanitizeTapAction(@Nullable String id) {
+        return id != null && TAP_ACTIONS.contains(id) ? id : "";
     }
 
     private static JSONObject toJson(@Nullable Map<String, ?> map) {
@@ -327,6 +370,12 @@ public class FloatingBallService extends BaseFloatingService {
     private int colorBallOpen = DEFAULT_PRIMARY;
     private int colorOnBallOpen = Color.WHITE;
     private String ocrLanguage = DEFAULT_OCR_LANGUAGE;
+    /** 收起态点球直接执行的动作（{@link #PREF_TAP_ACTION}）；空 = 点球展开、没有长按。 */
+    private String tapAction = "";
+    /** 展开时带标签胶囊（{@link #PREF_SHOW_LABELS}）。 */
+    private boolean showLabels = true;
+    /** 菜单里有「打开 Fushi」（{@link #PREF_SHOW_OPEN_APP}）。 */
+    private boolean showOpenApp = true;
 
     /** 停靠边 + 球在活动范围里的纵向比例（持久化值，不存 px）。 */
     private boolean dockLeft = false;
@@ -357,6 +406,16 @@ public class FloatingBallService extends BaseFloatingService {
     @Nullable private ValueAnimator snapAnimator;
 
     private boolean dragging = false;
+    /** 这次按下已经触发过长按展开：抬手不再当点击。 */
+    private boolean longPressFired = false;
+    private final Runnable longPressExpand = () -> {
+        if (dragging || expandTarget) return;
+        longPressFired = true;
+        if (ballView != null) {
+            ballView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        }
+        setExpanded(true);
+    };
     private float downRawX;
     private float downRawY;
     private int dragStartBallLeft;
@@ -599,12 +658,12 @@ public class FloatingBallService extends BaseFloatingService {
         return root;
     }
 
-    /** 按钮自上而下的顺序：固定的关闭 / 打开 Fushi 在最上（离球最远，防误触），
+    /** 按钮自上而下的顺序：固定的关闭 / （没被关掉的）打开 Fushi 在最上（离球最远，防误触），
      *  用户勾选的动作在下、末颗紧贴球顶——与应用内「列表末颗离球最近」同序。 */
     private List<String> menuIds() {
         List<String> ids = new ArrayList<>();
         ids.add(ACTION_CLOSE);
-        ids.add(ACTION_OPEN_APP);
+        if (showOpenApp) ids.add(ACTION_OPEN_APP);
         ids.addAll(actions);
         return ids;
     }
@@ -718,7 +777,8 @@ public class FloatingBallService extends BaseFloatingService {
         int available = g.viewport.width() - 2 * g.margin - g.button - dp(LABEL_GAP_DP);
         int cap = Math.min(dp(LABEL_MAX_WIDTH_DP), available);
         int padding = dp(LABEL_PADDING_DP);
-        boolean show = !ids.isEmpty() && g.columnCount() == 1 && cap >= 2 * padding + dp(24);
+        boolean show = showLabels && !ids.isEmpty() && g.columnCount() == 1
+                && cap >= 2 * padding + dp(24);
         for (String id : ids) {
             out.add(show ? buildLabel(id, cap, padding) : null);
         }
@@ -981,6 +1041,9 @@ public class FloatingBallService extends BaseFloatingService {
      * 自己的手势：点一下 = 展开 / 收起；越过系统 tap/drag 边界（{@link #dragSlopPx}）就
      * 是拖动——先收起（按钮跟着球飞没有意义），球跟手，纵向夹在活动范围内；松手按球心
      * 落在哪一半决定停靠边，动画吸附过去并落盘（应用内 _onPan* 同一语义）。
+     *
+     * <p>设了「点按悬浮球」动作时（{@link #tapAction}，剪贴板查词 / 截屏识字）：收起态点一下
+     * = 直接执行它，长按（系统长按时长、没越过拖动边界）= 展开按钮；展开态点球照旧收起。
      */
     @Override
     protected void setupDragListener() {
@@ -990,6 +1053,12 @@ public class FloatingBallService extends BaseFloatingService {
                     downRawX = event.getRawX();
                     downRawY = event.getRawY();
                     dragging = false;
+                    longPressFired = false;
+                    mainHandler.removeCallbacks(longPressExpand);
+                    if (!tapAction.isEmpty() && !expandTarget) {
+                        mainHandler.postDelayed(longPressExpand,
+                                ViewConfiguration.getLongPressTimeout());
+                    }
                     return true;
                 case MotionEvent.ACTION_MOVE: {
                     float dx = event.getRawX() - downRawX;
@@ -997,6 +1066,7 @@ public class FloatingBallService extends BaseFloatingService {
                     if (!dragging) {
                         int slop = dragSlopPx();
                         if (Math.abs(dx) <= slop && Math.abs(dy) <= slop) return true;
+                        mainHandler.removeCallbacks(longPressExpand);
                         beginDrag();
                     }
                     FloatingBallGeometry g = geometry();
@@ -1009,14 +1079,20 @@ public class FloatingBallService extends BaseFloatingService {
                     return true;
                 }
                 case MotionEvent.ACTION_UP:
+                    mainHandler.removeCallbacks(longPressExpand);
                     if (dragging) {
                         endDrag();
-                    } else {
+                    } else if (!longPressFired) {
                         v.performClick();
-                        toggle();
+                        if (!tapAction.isEmpty() && !expandTarget) {
+                            runAction(tapAction);
+                        } else {
+                            toggle();
+                        }
                     }
                     return true;
                 case MotionEvent.ACTION_CANCEL:
+                    mainHandler.removeCallbacks(longPressExpand);
                     if (dragging) endDrag();
                     return true;
                 default:
@@ -1104,6 +1180,15 @@ public class FloatingBallService extends BaseFloatingService {
                 FloatingBallChannel.requestSync();
                 BackgroundActivityLauncher.bringAppToFront(this);
                 break;
+            case ACTION_SWITCH_PROFILE:
+                showProfileMenu();
+                break;
+            case ACTION_AI:
+                // AI 助手要用主进程的完整 AppModel（操作目录、数据库、导航）：与同步
+                // 同样先排请求再把 Fushi 拉到前台，由 Dart 打开 AI 浮层。
+                FloatingBallChannel.requestOpenAi();
+                BackgroundActivityLauncher.bringAppToFront(this);
+                break;
             case ACTION_OPEN_APP:
                 BackgroundActivityLauncher.bringAppToFront(this);
                 break;
@@ -1135,6 +1220,90 @@ public class FloatingBallService extends BaseFloatingService {
         stopSelf();
     }
 
+    /**
+     * 系统球「切换配置」：用户正在别的 App 里，不拉起 Fushi——向主引擎的 Dart 要配置
+     * 列表，在球旁弹原生菜单（当前项打勾），选一项就由 Dart 原地切，结果用 Toast 告知。
+     * 主引擎不在（MainActivity 已销毁）时没人能切，退回「拉起 Fushi 再在主窗里选」。
+     */
+    private void showProfileMenu() {
+        FloatingBallChannel.requestProfileMenu(
+                new FloatingBallChannel.ProfileMenuCallback() {
+                    @Override
+                    public void onItems(List<FloatingBallChannel.ProfileMenuItem> items) {
+                        if (items.isEmpty() || ballView == null || !isOverlayAdded() || isHidden()) return;
+                        popUpProfileMenu(items);
+                    }
+
+                    @Override
+                    public void onUnavailable() {
+                        FloatingBallChannel.requestSwitchProfile();
+                        BackgroundActivityLauncher.bringAppToFront(FloatingBallService.this);
+                    }
+                });
+    }
+
+    private void popUpProfileMenu(List<FloatingBallChannel.ProfileMenuItem> items) {
+        boolean night = (getResources().getConfiguration().uiMode
+                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        Context themed = new ContextThemeWrapper(this, night
+                ? android.R.style.Theme_DeviceDefault
+                : android.R.style.Theme_DeviceDefault_Light);
+        List<String> names = new ArrayList<>();
+        int checked = -1;
+        for (int i = 0; i < items.size(); i++) {
+            names.add(items.get(i).label);
+            if (items.get(i).checked) checked = i;
+        }
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                themed, android.R.layout.simple_list_item_single_choice, names);
+        ListPopupWindow popup = new ListPopupWindow(themed);
+        popup.setAdapter(adapter);
+        popup.setAnchorView(ballView);
+        popup.setModal(true);
+        // 球收起时外缩一截在屏幕外，锚它的边会把菜单推出屏幕（PopupMenu 就是这样
+        // 被截掉的）：按球在屏幕上的可见部分与显示区算宽度和偏移，菜单整块留在屏内、
+        // 往屏幕中央那边展开。
+        Rect area = viewport();
+        int margin = Math.round(8 * getResources().getDisplayMetrics().density);
+        int width = Math.min(measureMenuWidth(adapter, themed), area.width() - 2 * margin);
+        popup.setContentWidth(width);
+        int[] ball = new int[2];
+        ballView.getLocationOnScreen(ball);
+        int left = dockLeft
+                ? Math.max(ball[0] + ballView.getWidth(), area.left + margin)
+                : Math.min(ball[0], area.right - margin) - width;
+        left = Math.max(area.left + margin, Math.min(left, area.right - margin - width));
+        popup.setDropDownGravity(Gravity.START);
+        popup.setHorizontalOffset(left - ball[0]);
+        final int activeIndex = checked;
+        popup.setOnItemClickListener((parent, view, position, id) -> {
+            popup.dismiss();
+            if (position == activeIndex) return;
+            FloatingBallChannel.switchProfileTo(items.get(position).id, message ->
+                    Toast.makeText(getApplicationContext(), message, Toast.LENGTH_SHORT).show());
+        });
+        popup.show();
+        ListView list = popup.getListView();
+        if (list != null && activeIndex >= 0) {
+            list.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
+            list.setItemChecked(activeIndex, true);
+        }
+    }
+
+    /** 菜单项里最宽那一行的宽度（ListPopupWindow 不像 PopupMenu 会自己量）。 */
+    private static int measureMenuWidth(ArrayAdapter<String> adapter, Context context) {
+        FrameLayout parent = new FrameLayout(context);
+        int spec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
+        int max = 0;
+        View convert = null;
+        for (int i = 0; i < adapter.getCount(); i++) {
+            convert = adapter.getView(i, convert, parent);
+            convert.measure(spec, spec);
+            max = Math.max(max, convert.getMeasuredWidth());
+        }
+        return max;
+    }
+
     private String labelFor(String id) {
         String label = labels.get(id);
         if (label != null && !label.isEmpty()) return label;
@@ -1145,6 +1314,8 @@ public class FloatingBallService extends BaseFloatingService {
             case ACTION_SCREEN_OCR: return "Screen OCR";
             case ACTION_CAMERA_OCR: return "Photo lookup";
             case ACTION_SYNC: return "Sync now";
+            case ACTION_SWITCH_PROFILE: return "Switch profile";
+            case ACTION_AI: return "AI";
             case ACTION_OPEN_APP: return "Open Fushi";
             case ACTION_CLOSE: return "Close";
             case LABEL_BALL: return "Floating ball";
@@ -1212,6 +1383,12 @@ public class FloatingBallService extends BaseFloatingService {
         colorBallOpen = colorOr(colors, COLOR_BALL_OPEN, colorPrimary);
         colorOnBallOpen = colorOr(colors, COLOR_ON_BALL_OPEN, Color.WHITE);
         ocrLanguage = prefs.getString(PREF_OCR_LANGUAGE, DEFAULT_OCR_LANGUAGE);
+        // 新键没写过（升级后 Dart 还没重新起球）：沿用旧版「点球查剪贴板」。
+        tapAction = prefs.contains(PREF_TAP_ACTION)
+                ? sanitizeTapAction(prefs.getString(PREF_TAP_ACTION, ""))
+                : (prefs.getBoolean(PREF_TAP_CLIPBOARD, false) ? ACTION_CLIPBOARD : "");
+        showLabels = prefs.getBoolean(PREF_SHOW_LABELS, true);
+        showOpenApp = prefs.getBoolean(PREF_SHOW_OPEN_APP, true);
     }
 
     private static int colorOr(Map<String, Integer> colors, String key, int fallback) {
@@ -1497,12 +1674,27 @@ public class FloatingBallService extends BaseFloatingService {
                 ? new Notification.Builder(this, getNotificationChannelId())
                 : new Notification.Builder(this);
 
+        // 点通知本身 = 打开 Fushi（用户 2026-10-21 拍板回退 BUG-3656 里「点按 = 查剪贴板」）。
         Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
         if (launch != null) {
             launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            builder.setContentIntent(PendingIntent.getActivity(this, 0, launch,
+            builder.setContentIntent(PendingIntent.getActivity(this,
+                    REQUEST_NOTIFICATION_OPEN_APP, launch,
                     PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
         }
+
+        // 「查剪贴板」是通知按钮（同 Google「点按翻译」：复制 → 下拉点按钮）。必须
+        // getActivity 直达查词窗：Android 12+ 禁止「通知 → Service → 启动 Activity」
+        // 的蹦床，绕道 runAction 会被系统静默拦下。剪贴板要等窗口拿到焦点才读得到，
+        // PopupDictFlutterActivity 自己处理（onWindowFocusChanged）。
+        Intent clipboard = new Intent(this, PopupDictFlutterActivity.class);
+        clipboard.putExtra(PopupDictFlutterActivity.EXTRA_READ_CLIPBOARD, true);
+        clipboard.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        PendingIntent clipboardPending = PendingIntent.getActivity(this,
+                REQUEST_NOTIFICATION_CLIPBOARD, clipboard,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        builder.addAction(new Notification.Action.Builder(
+                null, labelFor(ACTION_CLIPBOARD), clipboardPending).build());
 
         Intent closeIntent = new Intent(this, FloatingBallService.class);
         closeIntent.putExtra(EXTRA_COMMAND, COMMAND_CLOSE);

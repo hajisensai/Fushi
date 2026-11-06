@@ -146,9 +146,12 @@ void main() {
       await prefs.loadFromDb();
       await manager.migrateTemporaryReferences(temporary);
       expect(manager.entries.last.path, migrated.last.path);
-      expect(store.listSync().whereType<File>().where(
-          (File file) => LocalAudioManager.isInternalCopyName(file.path)),
-          hasLength(1));
+      expect(
+        store.listSync().whereType<File>().where(
+          (File file) => LocalAudioManager.isInternalCopyName(file.path),
+        ),
+        hasLength(1),
+      );
     },
   );
 
@@ -170,8 +173,12 @@ void main() {
       final Map<String, String> before = prefs.prefsSnapshot;
       await manager.migrateTemporaryReferences(temporary);
       expect(prefs.prefsSnapshot, before);
-      expect(store.listSync().whereType<File>().where(
-          (File file) => LocalAudioManager.isInternalCopyName(file.path)), isEmpty);
+      expect(
+        store.listSync().whereType<File>().where(
+          (File file) => LocalAudioManager.isInternalCopyName(file.path),
+        ),
+        isEmpty,
+      );
       expect(File(invalid).readAsStringSync(), 'not sqlite');
     },
   );
@@ -216,133 +223,148 @@ void main() {
     },
   );
 
-  test('CAS rejects stale persisted values and refreshes the losing cache',
-      () async {
-    await prefs.setPref('local_audio_dbs', 'old');
-    final Map<String, String> before = prefs.prefsSnapshot;
-    final PreferencesRepository otherProcess = PreferencesRepository(db);
-    addTearDown(otherProcess.dispose);
-    await otherProcess.loadFromDb();
-    await otherProcess.setPrefs(<String, dynamic>{
-      'local_audio_dbs': 'user replacement',
-      'audio_source_configs': <String>['new priority'],
-    });
+  test(
+    'CAS rejects stale persisted values and refreshes the losing cache',
+    () async {
+      await prefs.setPref('local_audio_dbs', 'old');
+      final Map<String, String> before = prefs.prefsSnapshot;
+      final PreferencesRepository otherProcess = PreferencesRepository(db);
+      addTearDown(otherProcess.dispose);
+      await otherProcess.loadFromDb();
+      await otherProcess.setPrefs(<String, dynamic>{
+        'local_audio_dbs': 'user replacement',
+        'audio_source_configs': <String>['new priority'],
+      });
 
-    final bool applied = await prefs.compareAndSetPrefs(
-      expectedRaw: <String, String?>{
-        'local_audio_dbs': before['local_audio_dbs'],
-        'audio_source_configs': before['audio_source_configs'],
-      },
-      updates: <String, dynamic>{
-        'local_audio_dbs': 'migration replacement',
-        'audio_source_configs': <String>['old priority'],
-      },
-    );
-    expect(applied, isFalse);
-    expect(prefs.getPref('local_audio_dbs'), 'user replacement');
-    expect(prefs.getPref('audio_source_configs'), <String>['new priority']);
-    await otherProcess.loadFromDb();
-    expect(otherProcess.getPref('local_audio_dbs'), 'user replacement');
-  });
+      final bool applied = await prefs.compareAndSetPrefs(
+        expectedRaw: <String, String?>{
+          'local_audio_dbs': before['local_audio_dbs'],
+          'audio_source_configs': before['audio_source_configs'],
+        },
+        updates: <String, dynamic>{
+          'local_audio_dbs': 'migration replacement',
+          'audio_source_configs': <String>['old priority'],
+        },
+      );
+      expect(applied, isFalse);
+      expect(prefs.getPref('local_audio_dbs'), 'user replacement');
+      expect(prefs.getPref('audio_source_configs'), <String>['new priority']);
+      await otherProcess.loadFromDb();
+      expect(otherProcess.getPref('local_audio_dbs'), 'user replacement');
+    },
+  );
 
-  test('configuration edited during copying wins over migration snapshot',
-      () async {
-    final String cached = path.join(temporary.path, 'saf_pick', 'english.db');
-    _writeAudioDb(cached);
-    await saveEntries(<LocalAudioDbEntry>[
-      LocalAudioDbEntry(path: cached, displayName: 'English', enabled: true),
-    ]);
-    final PreferencesRepository otherProcess = PreferencesRepository(db);
-    addTearDown(otherProcess.dispose);
-    await otherProcess.loadFromDb();
-    String? copiedPath;
-    final String latestEntries = jsonEncode(<Map<String, dynamic>>[
-      LocalAudioDbEntry(path: cached, displayName: 'User renamed').toJson(),
-    ]);
-    final List<Map<String, dynamic>> latestSources = <Map<String, dynamic>>[
-      <String, dynamic>{
-        'kind': 'localAudio',
-        'path': cached,
-        'label': 'User renamed',
-        'enabled': false,
-      },
-    ];
-    final LocalAudioManager concurrentManager = _ConcurrentEditAudioManager(
-      prefsRepo: prefs,
-      databaseDirectory: store,
-      onCopied: (String copied) async {
-        copiedPath = copied;
-        await otherProcess.setPrefs(<String, dynamic>{
-          'local_audio_dbs': latestEntries,
-          'audio_source_configs': latestSources,
-        });
-      },
-    );
-    await concurrentManager.migrateTemporaryReferences(temporary);
+  test(
+    'configuration edited during copying wins over migration snapshot',
+    () async {
+      final String cached = path.join(temporary.path, 'saf_pick', 'english.db');
+      _writeAudioDb(cached);
+      await saveEntries(<LocalAudioDbEntry>[
+        LocalAudioDbEntry(path: cached, displayName: 'English', enabled: true),
+      ]);
+      final PreferencesRepository otherProcess = PreferencesRepository(db);
+      addTearDown(otherProcess.dispose);
+      await otherProcess.loadFromDb();
+      String? copiedPath;
+      final String latestEntries = jsonEncode(<Map<String, dynamic>>[
+        LocalAudioDbEntry(path: cached, displayName: 'User renamed').toJson(),
+      ]);
+      final List<Map<String, dynamic>> latestSources = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 'localAudio',
+          'path': cached,
+          'label': 'User renamed',
+          'enabled': false,
+        },
+      ];
+      final LocalAudioManager concurrentManager = _ConcurrentEditAudioManager(
+        prefsRepo: prefs,
+        databaseDirectory: store,
+        onCopied: (String copied) async {
+          copiedPath = copied;
+          await otherProcess.setPrefs(<String, dynamic>{
+            'local_audio_dbs': latestEntries,
+            'audio_source_configs': latestSources,
+          });
+        },
+      );
+      await concurrentManager.migrateTemporaryReferences(temporary);
 
-    expect(prefs.getPref('local_audio_dbs'), latestEntries);
-    expect(prefs.getPref('audio_source_configs'), latestSources);
-    expect(concurrentManager.entries.single.path, cached);
-    expect(concurrentManager.entries.single.enabled, isFalse);
-    expect(File(cached).existsSync(), isTrue);
-    expect(copiedPath, isNotNull);
-    expect(File(copiedPath!).existsSync(), isTrue);
-    // CAS 失败只留下可回收副本，不重试并覆盖用户刚保存的配置。
-    expect(store.listSync().whereType<File>().where(
-        (File file) => LocalAudioManager.isInternalCopyName(file.path)),
-        hasLength(1));
-    await manager.pruneOrphans(concurrentManager.entries.map(
-      (LocalAudioDbEntry entry) => entry.path,
-    ));
-    expect(File(copiedPath!).existsSync(), isFalse);
-    expect(File(cached).existsSync(), isTrue);
-    await prefs.loadFromDb();
-    expect(prefs.getPref('local_audio_dbs'), latestEntries);
-    expect(prefs.getPref('audio_source_configs'), latestSources);
-  });
+      expect(prefs.getPref('local_audio_dbs'), latestEntries);
+      expect(prefs.getPref('audio_source_configs'), latestSources);
+      expect(concurrentManager.entries.single.path, cached);
+      expect(concurrentManager.entries.single.enabled, isFalse);
+      expect(File(cached).existsSync(), isTrue);
+      expect(copiedPath, isNotNull);
+      expect(File(copiedPath!).existsSync(), isTrue);
+      // CAS 失败只留下可回收副本，不重试并覆盖用户刚保存的配置。
+      expect(
+        store.listSync().whereType<File>().where(
+          (File file) => LocalAudioManager.isInternalCopyName(file.path),
+        ),
+        hasLength(1),
+      );
+      await manager.pruneOrphans(
+        concurrentManager.entries.map((LocalAudioDbEntry entry) => entry.path),
+      );
+      expect(File(copiedPath!).existsSync(), isFalse);
+      expect(File(cached).existsSync(), isTrue);
+      await prefs.loadFromDb();
+      expect(prefs.getPref('local_audio_dbs'), latestEntries);
+      expect(prefs.getPref('audio_source_configs'), latestSources);
+    },
+  );
 
-  test('prune waits for migration and protects its newly committed copy',
-      () async {
-    final String cached = path.join(temporary.path, 'saf_pick', 'english.db');
-    _writeAudioDb(cached);
-    await saveEntries(<LocalAudioDbEntry>[
-      LocalAudioDbEntry(path: cached, displayName: 'English', enabled: true),
-    ]);
-    final Completer<String> copied = Completer<String>();
-    final Completer<void> resumeMigration = Completer<void>();
-    final LocalAudioManager migrating = _ConcurrentEditAudioManager(
-      prefsRepo: prefs,
-      databaseDirectory: store,
-      onCopied: (String copiedPath) async {
-        copied.complete(copiedPath);
-        await resumeMigration.future;
-      },
-    );
-    final PreferencesRepository pruningPrefs = PreferencesRepository(db);
-    addTearDown(pruningPrefs.dispose);
-    await pruningPrefs.loadFromDb();
-    final LocalAudioManager pruning = LocalAudioManager(
-      prefsRepo: pruningPrefs,
-      databaseDirectory: store,
-    );
-    final Future<void> migration = migrating.migrateTemporaryReferences(temporary);
-    final String newPath = await copied.future;
-    bool pruneFinished = false;
-    // 模拟另一个管理器以迁移前的旧列表请求清理。
-    final Future<void> prune = pruning.pruneOrphans(<String>[cached]).then((_) {
-      pruneFinished = true;
-    });
-    await Future<void>.delayed(Duration.zero);
-    expect(pruneFinished, isFalse);
-    expect(File(newPath).existsSync(), isTrue);
-    resumeMigration.complete();
-    await Future.wait(<Future<void>>[migration, prune]);
+  test(
+    'prune waits for migration and protects its newly committed copy',
+    () async {
+      final String cached = path.join(temporary.path, 'saf_pick', 'english.db');
+      _writeAudioDb(cached);
+      await saveEntries(<LocalAudioDbEntry>[
+        LocalAudioDbEntry(path: cached, displayName: 'English', enabled: true),
+      ]);
+      final Completer<String> copied = Completer<String>();
+      final Completer<void> resumeMigration = Completer<void>();
+      final LocalAudioManager migrating = _ConcurrentEditAudioManager(
+        prefsRepo: prefs,
+        databaseDirectory: store,
+        onCopied: (String copiedPath) async {
+          copied.complete(copiedPath);
+          await resumeMigration.future;
+        },
+      );
+      final PreferencesRepository pruningPrefs = PreferencesRepository(db);
+      addTearDown(pruningPrefs.dispose);
+      await pruningPrefs.loadFromDb();
+      final LocalAudioManager pruning = LocalAudioManager(
+        prefsRepo: pruningPrefs,
+        databaseDirectory: store,
+      );
+      final Future<void> migration = migrating.migrateTemporaryReferences(
+        temporary,
+      );
+      final String newPath = await copied.future;
+      bool pruneFinished = false;
+      // 模拟另一个管理器以迁移前的旧列表请求清理。
+      final Future<void> prune = pruning.pruneOrphans(<String>[cached]).then((
+        _,
+      ) {
+        pruneFinished = true;
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(pruneFinished, isFalse);
+      expect(File(newPath).existsSync(), isTrue);
+      resumeMigration.complete();
+      await Future.wait(<Future<void>>[migration, prune]);
 
-    expect(pruneFinished, isTrue);
-    expect(pruning.entries.single.path, newPath);
-    expect(File(newPath).existsSync(), isTrue);
-    expect(File(newPath).readAsBytesSync(), File(cached).readAsBytesSync());
-    expect(File(path.join(store.path, 'local_audio_migration.lock')).existsSync(),
-        isTrue);
-  });
+      expect(pruneFinished, isTrue);
+      expect(pruning.entries.single.path, newPath);
+      expect(File(newPath).existsSync(), isTrue);
+      expect(File(newPath).readAsBytesSync(), File(cached).readAsBytesSync());
+      expect(
+        File(path.join(store.path, 'local_audio_migration.lock')).existsSync(),
+        isTrue,
+      );
+    },
+  );
 }

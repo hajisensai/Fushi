@@ -9,20 +9,40 @@ import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/pages/implementations/gal_attached_lookup_workbench.dart';
 import 'package:fushi/src/pages/implementations/gal_workbench_chrome.dart';
+import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_platform_services.dart';
 
 /// 健康卡 Anki 行接真实配置状态（BUG-1007）后，页面 watch AnkiViewModel →
 /// ankiRepositoryProvider → platformServicesProvider，测试需注入 fake 平台服务。
+///
+/// 这里的用例讲的都是 Windows 的 hook 捕获工作台：hook 控件受
+/// `GamesModuleForm.supportsHookCapture` 门控，不钉平台就会随宿主机变
+/// （Linux CI 上隐藏、Windows 开发机上显示）。非 Windows 形态用 [_wrapPageOn]。
 Widget _wrapPage(Widget home) {
   return ProviderScope(
     overrides: <Override>[
-      platformServicesProvider.overrideWithValue(testPlatformServices()),
+      platformServicesProvider.overrideWithValue(
+        testPlatformServices(isWindows: true),
+      ),
+    ],
+    child: MaterialApp(home: home),
+  );
+}
+
+Widget _wrapPageOn(Widget home, {required bool isWindows}) {
+  return ProviderScope(
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(
+        testPlatformServices(isWindows: isWindows, isDesktop: true),
+      ),
     ],
     child: MaterialApp(home: home),
   );
@@ -126,6 +146,74 @@ void main() {
     TexthookerService.instance.clear();
   });
   tearDown(() => TexthookerService.instance.clear());
+
+  group('hook controls by platform', () {
+    const List<String> hookOnlyKeys = <String>[
+      'game-toolbar-audio-fallback',
+      'game-toolbar-health',
+      'game-toolbar-hook-overlay',
+      'game-toolbar-external-window',
+      'game-action-launch',
+      'game-action-attach',
+    ];
+
+    testWidgets('non-Windows hides hook controls but keeps lines + clear', (
+      WidgetTester tester,
+    ) async {
+      TexthookerService.instance.appendLine('第一行');
+      await tester.pumpWidget(
+        _wrapPageOn(
+          const Scaffold(body: TexthookerPage(embedded: true)),
+          isWindows: false,
+        ),
+      );
+      await tester.pump();
+      for (final String key in hookOnlyKeys) {
+        expect(find.byKey(ValueKey<String>(key)), findsNothing, reason: key);
+      }
+      expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+      expect(find.textContaining('第'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('non-Windows empty state uses the external texthooker copy', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrapPageOn(
+          const Scaffold(body: TexthookerPage(embedded: true)),
+          isWindows: false,
+        ),
+      );
+      await tester.pump();
+      expect(find.text(t.texthooker_empty_external_body), findsOneWidget);
+      expect(find.text(t.game_capture_empty_body), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('game-empty-launch')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('Windows still shows hook controls', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrapPageOn(
+          const Scaffold(body: TexthookerPage(embedded: true)),
+          isWindows: true,
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('game-toolbar-health')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('game-action-launch')),
+        findsOneWidget,
+      );
+    });
+  });
 
   testWidgets('renders incoming lines reactively', (WidgetTester tester) async {
     await tester.pumpWidget(_wrapPage(const TexthookerPage()));
@@ -330,7 +418,12 @@ void main() {
   testWidgets(
     'inactive workbench exposes low-frequency actions without a menu',
     (WidgetTester tester) async {
-      await tester.pumpWidget(_wrapPage(const TexthookerPage()));
+      // 健康 / 音频降级是 Hook 捕获会话的入口，只在 Windows 出现（非 Windows 的
+      // 反向断言见上面「non-Windows hides hook controls」）；钉死平台，免得结果
+      // 跟着宿主（CI 是 Linux）走。
+      await tester.pumpWidget(
+        _wrapPageOn(const TexthookerPage(), isWindows: true),
+      );
       await tester.pump();
 
       // 三点「更多」菜单已删：低频入口直接摊在工具栏上，不再需要先展开菜单。
@@ -428,7 +521,10 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(520, 760));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
-        _wrapPage(const Scaffold(body: TexthookerPage(embedded: true))),
+        _wrapPageOn(
+          const Scaffold(body: TexthookerPage(embedded: true)),
+          isWindows: true,
+        ),
       );
       await tester.pump();
 
@@ -437,8 +533,9 @@ void main() {
         isNull,
         reason: '摊平后的页头在窄窗不得 RenderFlex overflow',
       );
-      // 平台无关的两个入口在任何桌面/移动平台都必须在（Windows 专属的浮窗 / 外部窗口
-      // 挖矿按钮受 Platform.isWindows 门控，不在此断言，免得 CI（Linux）假红）。
+      // 页头动作最多的是 Windows（Hook 捕获入口全在），所以钉死 Windows 测最挤的
+      // 形态；健康 / 音频降级只在 Hook 捕获平台出现，非 Windows 的反向断言见
+      // 「non-Windows hides hook controls」。
       expect(
         find.byKey(const ValueKey<String>('game-toolbar-audio-fallback')),
         findsOneWidget,
@@ -530,6 +627,208 @@ void main() {
       }
     });
   }
+
+  // BUG-4206（反馈 3drXfc4GFk）：还在「匹配中」的行没有任何资源字节。即使它带着
+  // backend=game_resource（修复前的待配对写法 / 折叠进来的旧事件），「本句音轨」面板
+  // 也必须报状态「Matching」，不能报 game_resource；资源弹窗（带播放键）只给真配上
+  // 原件的行。
+  test('BUG-4206 only a paired game resource counts as resource audio', () {
+    final TexthookerService service = TexthookerService.test();
+    final TexthookerLineEntry line = service.appendLine('配対待ち')!;
+    service.updateLineAudio(
+      line.id,
+      status: TexthookerLineAudioStatus.pending,
+      backend: 'game_resource',
+    );
+    TexthookerLineEntry row = service.entries.single;
+    expect(row.hasResourceAudio, isFalse);
+    expect(texthookerLineAudioSummary(row), 'Matching');
+
+    service.updateLineAudio(
+      line.id,
+      status: TexthookerLineAudioStatus.missing,
+      backend: 'game_resource',
+    );
+    row = service.entries.single;
+    expect(row.hasResourceAudio, isFalse);
+    expect(texthookerLineAudioSummary(row), isNot('game_resource'));
+
+    service.updateLineAudio(
+      line.id,
+      status: TexthookerLineAudioStatus.matched,
+      backend: 'game_resource',
+      resourceId: '50000_fushi_textseq42_sgre-voicebody-1-2-3-4.xwma',
+    );
+    row = service.entries.single;
+    expect(row.hasResourceAudio, isTrue);
+    expect(texthookerLineAudioSummary(row), 'game_resource');
+  });
+
+  testWidgets('BUG-4206 pending line panel shows Matching, not game_resource', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1440, 850));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final TexthookerLineEntry line = TexthookerService.instance.appendLine(
+      'まだ配対されていない台詞',
+    )!;
+    TexthookerService.instance.updateLineAudio(
+      line.id,
+      status: TexthookerLineAudioStatus.pending,
+      backend: 'game_resource',
+    );
+    await tester.pumpWidget(_wrapPage(const TexthookerPage()));
+    await tester.pump();
+    await _selectFirstLine(tester);
+
+    final Finder pane = find.byKey(
+      const ValueKey<String>('game-line-detail-pane'),
+    );
+    expect(pane, findsOneWidget);
+    expect(
+      find.descendant(of: pane, matching: find.text('Matching')),
+      findsWidgets,
+    );
+    expect(find.text('game_resource'), findsNothing);
+    // 没有音频的行不给行内试听键。
+    expect(find.byTooltip("Play this line's audio"), findsNothing);
+  });
+
+  // BUG-4206 审查：资源模式下越过配对容差仍没原件的行（多半是无配音旁白）是中性
+  // 「无原件」标，不是红色「未匹配 / 无音频」故障标。
+  // BUG-4206 审查：资源模式下「匹配中 / 无原件」的行点「本句音轨」不能落进 PCM 轨
+  // 列表（PCM 轨与资源模式无关，选了还会把这行算成用户裁决、资源晚到不再升格），
+  // 也不能给播放键；只有真配上原件的行走资源弹窗，非资源模式才列 PCM 轨。
+  test('BUG-4206 line track view follows resource pairing and backend', () {
+    final TexthookerService service = TexthookerService.test();
+    final TexthookerLineEntry line = service.appendLine('資源モード')!;
+    TexthookerLineEntry row() => service.entries.single;
+
+    service.updateLineAudio(line.id, status: TexthookerLineAudioStatus.pending);
+    expect(
+      galLineTrackViewFor(row(), GalHookAudioBackend.gameResource),
+      GalLineTrackView.resourceUnpaired,
+    );
+    expect(
+      galLineTrackViewFor(row(), GalHookAudioBackend.enginePcm),
+      GalLineTrackView.pcmTracks,
+    );
+
+    service.updateLineAudio(
+      line.id,
+      status: TexthookerLineAudioStatus.missing,
+      fallbackReason: kGalResourceNotPairedReason,
+    );
+    expect(
+      galLineTrackViewFor(row(), GalHookAudioBackend.gameResource),
+      GalLineTrackView.resourceUnpaired,
+    );
+    // 面板 / 选中句条与行内标签同一句「无原件」，不是红色「未匹配」。
+    expect(texthookerLineAudioSummary(row()), 'No original voice');
+
+    service.updateLineAudio(
+      line.id,
+      status: TexthookerLineAudioStatus.matched,
+      backend: 'game_resource',
+      resourceId: '50000_fushi_textseq42_sgre-voicebody-1-2-3-4.xwma',
+    );
+    for (final GalHookAudioBackend backend in GalHookAudioBackend.values) {
+      expect(
+        galLineTrackViewFor(row(), backend),
+        GalLineTrackView.resourceAudio,
+        reason: backend.name,
+      );
+    }
+  });
+
+  for (final ({
+        String label,
+        TexthookerLineAudioStatus status,
+        String? reason,
+        String summary,
+      })
+      c
+      in <
+        ({
+          String label,
+          TexthookerLineAudioStatus status,
+          String? reason,
+          String summary,
+        })
+      >[
+        (
+          label: 'pending',
+          status: TexthookerLineAudioStatus.pending,
+          reason: null,
+          summary: 'Matching',
+        ),
+        (
+          label: 'not paired',
+          status: TexthookerLineAudioStatus.missing,
+          reason: kGalResourceNotPairedReason,
+          summary: 'No original voice',
+        ),
+      ]) {
+    testWidgets(
+      'BUG-4206 unpaired resource-mode line track dialog (${c.label}) has no '
+      'play key and no PCM tracks',
+      (WidgetTester tester) async {
+        final TexthookerService service = TexthookerService.test();
+        final TexthookerLineEntry line = service.appendLine('配音待ち')!;
+        service.updateLineAudio(
+          line.id,
+          status: c.status,
+          fallbackReason: c.reason,
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: GalResourceUnpairedLineTrackDialog(
+                line: service.entries.single,
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text(t.game_line_track_dialog_title), findsOneWidget);
+        expect(find.text(t.game_tracks_resource_mode_hint), findsOneWidget);
+        expect(find.text(c.summary), findsOneWidget);
+        expect(
+          find.text(t.game_line_audio_not_paired_hint),
+          c.reason == null ? findsNothing : findsOneWidget,
+        );
+        expect(find.byIcon(Icons.play_circle_outline), findsNothing);
+        expect(find.byIcon(Icons.graphic_eq), findsNothing);
+        expect(find.byType(FushiIconButton), findsNothing);
+      },
+    );
+  }
+
+  testWidgets('BUG-4206 resource-not-paired line shows a neutral tag', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1440, 850));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final TexthookerLineEntry line = TexthookerService.instance.appendLine(
+      '配音のない地の文',
+    )!;
+    TexthookerService.instance.updateLineAudio(
+      line.id,
+      status: TexthookerLineAudioStatus.missing,
+      fallbackReason: kGalResourceNotPairedReason,
+    );
+    await tester.pumpWidget(_wrapPage(const TexthookerPage()));
+    await tester.pump();
+
+    final Finder chip = find.text('No original voice');
+    expect(chip, findsWidgets);
+    expect(find.text('No audio'), findsNothing);
+    final FushiTag tag = tester.widget<FushiTag>(
+      find.ancestor(of: chip.first, matching: find.byType(FushiTag)).first,
+    );
+    expect(tag.tone, FushiTagTone.neutral);
+  });
 
   testWidgets('empty workbench offers the next step instead of a dead end', (
     WidgetTester tester,

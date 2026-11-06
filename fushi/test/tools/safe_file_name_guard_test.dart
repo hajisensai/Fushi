@@ -32,7 +32,8 @@ const List<String> kBlacklistFingerprints = <String>[
 ];
 
 /// 唯一允许持有该字符类的真相源。
-const String _allowedFile = '../packages/fushi_engine/lib/utils/misc/safe_file_name.dart';
+const String _allowedFile =
+    '../packages/fushi_engine/lib/utils/misc/safe_file_name.dart';
 
 /// 以独立标识符身份出现的 `RegExp(` 构造（`MyRegExp(` 不算）。
 final RegExp _regExpConstruction = RegExp(r'(?<![A-Za-z0-9_$])RegExp\s*\(');
@@ -65,8 +66,11 @@ List<String> findWindowsFileNameBlacklistRegExps(String source) {
 void main() {
   test('lib/ 下除唯一真相源外不得手写 Windows 文件名黑名单 RegExp', () {
     final Directory libDir = Directory('lib');
-    expect(libDir.existsSync(), isTrue,
-        reason: '需在 fushi/ 包根下运行（flutter test 默认即是）');
+    expect(
+      libDir.existsSync(),
+      isTrue,
+      reason: '需在 fushi/ 包根下运行（flutter test 默认即是）',
+    );
 
     // 唯一允许的实现本身就住在引擎里（safe_file_name.dart），扫描面却不含引擎——
     // 那等于「例外在场内、规矩只管场外」。
@@ -85,8 +89,12 @@ void main() {
               .whereType<File>()
               .where((File f) => f.path.endsWith('.dart')),
     ];
-    expectScanScale(files.length,
-        what: 'lib/ 下的 .dart', atLeast: 1120, measured: 1401);
+    expectScanScale(
+      files.length,
+      what: 'lib/ 下的 .dart',
+      atLeast: 1120,
+      measured: 1401,
+    );
     for (final File f in files) {
       final String rel = f.path.replaceAll(r'\', '/');
       if (rel == _allowedFile || rel.endsWith('/$_allowedFile')) continue;
@@ -100,7 +108,8 @@ void main() {
     expect(
       violations,
       isEmpty,
-      reason: 'Windows 文件名黑名单字符集已收敛到 $_allowedFile 的 '
+      reason:
+          'Windows 文件名黑名单字符集已收敛到 $_allowedFile 的 '
           'safeWindowsFileName / windowsUnsafeFileNameChars——直接复用，'
           '勿再复制字符集（BUG-1125 正是复制时漏了反斜杠）：\n${violations.join('\n')}',
     );
@@ -110,10 +119,13 @@ void main() {
   test('唯一真相源仍持有该字符类', () {
     final File truth = File(_allowedFile);
     expect(truth.existsSync(), isTrue, reason: '真相源文件不见了：$_allowedFile');
-    expect(findWindowsFileNameBlacklistRegExps(truth.readAsStringSync()),
-        isNotEmpty,
-        reason: '$_allowedFile 里已经找不到黑名单字符类了——要么它被改坏，'
-            '要么指纹表过期；两种都会让主守卫退化成永远绿');
+    expect(
+      findWindowsFileNameBlacklistRegExps(truth.readAsStringSync()),
+      isNotEmpty,
+      reason:
+          '$_allowedFile 里已经找不到黑名单字符类了——要么它被改坏，'
+          '要么指纹表过期；两种都会让主守卫退化成永远绿',
+    );
   });
 
   group('判据自校验（手写语料，与磁盘扫描互不依赖）', () {
@@ -142,7 +154,8 @@ final RegExp bad = RegExp(
       for (final String cls in <String>[r'[<>:"/\|?*]', r'[<>:"|?*]']) {
         expect(
           findWindowsFileNameBlacklistRegExps(
-              'final r = RegExp(\n  r\'$cls\',\n);'),
+            'final r = RegExp(\n  r\'$cls\',\n);',
+          ),
           isNotEmpty,
           reason: '排列变体 $cls 折行后漏判',
         );

@@ -12,6 +12,7 @@ class _VideoPagePlaybackRemote
     implements
         VideoPlaybackRemote,
         VideoPlayerRemoteControl,
+        VideoDiscRemoteControl,
         VideoQuickSettingsHostProvider {
   _VideoPagePlaybackRemote(this._state);
 
@@ -62,8 +63,13 @@ class _VideoPagePlaybackRemote
   }
 
   @override
-  Future<void> seekToMs(int positionMs) async =>
-      _controller?.seekMs(positionMs);
+  Future<void> seekToMs(int positionMs) async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    // 绝对 seek 是一次跳转（进「跳转回退」历史，跨度不够自动不算）；seekByMs 是步进。
+    _state._recordVideoJumpDeparture(positionMs, source: JumpSource.remote);
+    await controller.seekMs(positionMs);
+  }
 
   @override
   Future<void> seekByMs(int deltaMs) async =>
@@ -235,7 +241,6 @@ class _VideoPagePlaybackRemote
   List<_RemoteSubtitleRow> _remoteRows(VideoPlayerController controller) {
     final String? primary = _state._currentSubtitleSource;
     final String? secondary = _state._currentSecondarySubtitleSource;
-    final String? hostSub = _state._remoteSubtitlePath;
     final List<_RemoteSubtitleRow> rows = <_RemoteSubtitleRow>[];
     for (final YoutubeCaptionTrack track in _state._youtubeCaptionTracks) {
       rows.add(
@@ -256,20 +261,36 @@ class _VideoPagePlaybackRemote
         ),
       );
     }
-    if (hostSub != null) {
+    // Xt3RCTPKhX：后端默认字幕 + 本机字幕档，与主 / 副字幕菜单同一份行模型
+    // （[_VideoSubtitle._remoteSubtitleFileRows]）。
+    for (final RemoteSubtitleFileEntry entry
+        in _state._remoteSubtitleFileRows) {
+      final SubtitleSource? local = entry.local;
+      final String path = entry.path;
+      final String? label = local == null ? null : entry.label;
       rows.add(
         _RemoteSubtitleRow(
           track: VideoRemoteSubtitleTrack(
-            source: hostSub,
-            label: p.basename(hostSub),
-            kind: VideoRemoteSubtitleKind.host,
-            primary: primary == hostSub,
-            secondary: secondary == hostSub,
+            source: path,
+            label: entry.label,
+            kind: local == null
+                ? VideoRemoteSubtitleKind.host
+                : VideoRemoteSubtitleKind.external,
+            primary: local == null
+                ? primary == path
+                : subtitleSourceMatchesPersistedForMenu(local, primary),
+            secondary: local == null
+                ? secondary == path
+                : subtitleSourceMatchesPersistedForMenu(local, secondary),
             ocrAvailable: false,
           ),
-          applyPrimary: () => _state._applyRemoteSubtitle(controller, hostSub),
-          applySecondary: () =>
-              _state._applyRemoteSecondarySubtitle(controller, hostSub),
+          applyPrimary: () =>
+              _state._applyRemoteSubtitle(controller, path, label: label),
+          applySecondary: () => _state._applyRemoteSecondarySubtitle(
+            controller,
+            path,
+            label: label,
+          ),
         ),
       );
     }
@@ -306,34 +327,6 @@ class _VideoPagePlaybackRemote
                 )
               : null,
           remoteTrack: track,
-        ),
-      );
-    }
-    for (final SubtitleSource source in _state._importedSubtitleSources) {
-      if (hostSub != null && sameExternalSubtitlePathForMenu(source, hostSub)) {
-        continue;
-      }
-      final String path = source.externalPath!;
-      rows.add(
-        _RemoteSubtitleRow(
-          track: VideoRemoteSubtitleTrack(
-            source: path,
-            label: source.label,
-            kind: VideoRemoteSubtitleKind.external,
-            primary: subtitleSourceMatchesPersistedForMenu(source, primary),
-            secondary: subtitleSourceMatchesPersistedForMenu(source, secondary),
-            ocrAvailable: false,
-          ),
-          applyPrimary: () => _state._applyRemoteSubtitle(
-            controller,
-            path,
-            label: source.label,
-          ),
-          applySecondary: () => _state._applyRemoteSecondarySubtitle(
-            controller,
-            path,
-            label: source.label,
-          ),
         ),
       );
     }
@@ -441,7 +434,7 @@ class _VideoPagePlaybackRemote
   @override
   Future<String> importSubtitle(String path, {bool secondary = false}) async {
     final VideoPlayerController controller = _requireController();
-    if (!File(path).existsSync()) {
+    if (!await File(path).exists()) {
       throw VideoRemoteFailure('not_found', '字幕文件不存在：$path');
     }
     if (subtitleFormatForPath(path) == null) {
@@ -755,7 +748,9 @@ class _VideoPagePlaybackRemote
     if (_state._referenceSyncRunning) {
       throw const VideoRemoteFailure('busy', '已有对轴在进行');
     }
-    if (_state._currentExternalSubtitlePath() == null) {
+    // 同步入口只做零 IO 的选择预检；文件是否还在放进任务里 async 判（BUG-3756：
+    // 字幕可能在网络盘上，同步 stat 会冻结 UI isolate）。
+    if (_state._currentExternalSubtitleSelection() == null) {
       throw const VideoRemoteFailure(
         'failed',
         '对轴需要当前选中一份外挂字幕文件（内封轨 / 关闭时不能对）',
@@ -778,6 +773,9 @@ class _VideoPagePlaybackRemote
         return false;
       }
 
+      if (await _state._currentExternalSubtitlePath() == null) {
+        throw const VideoRemoteFailure('failed', '当前选中的外挂字幕文件已不在磁盘上');
+      }
       job.update(phase: 'aligning');
       await _state._alignSubtitleToEmbeddedTracks(controller, confirm: answer);
       final String? needs = declined;
@@ -920,6 +918,67 @@ class _VideoPagePlaybackRemote
   Future<void> refreshMineQueue() async {
     if (!_state.mounted) return;
     await _state._refreshStagedMineCount();
+  }
+
+  // ── 原盘会话（`fushi_cli disc …`，见 [VideoDiscRemoteControl]） ─────────────
+
+  @override
+  VideoDiscSessionSnapshot? discSession() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null || !controller.isBlurayNavigationSession) {
+      return null;
+    }
+    return VideoDiscSessionSnapshot(
+      bookUid: _state.widget.bookUid,
+      title: _state._title,
+      discType: controller.discType,
+      remote: controller.isRemoteDiscSession,
+      navigationSupported: controller.discNavigationSupported,
+      menuStarting: controller.discMenuEntryPending,
+      menuActive: controller.discMenuActive,
+      titleReady: controller.discTitleReady,
+      discTitle: controller.discNavigationState?.title,
+      playlistPath: controller.selectedDiscPlaylistPath,
+      error: controller.discMenuError,
+    );
+  }
+
+  /// 与盘菜单键位 / 遥控器同一条路径（[_VideoFushiPageState._runDiscNavigation] 里的
+  /// `controller.discMenuKey`），只是失败不弹 OSD、带回给调用方；同样不唤起控制栏。
+  @override
+  Future<void> discMenuKey(VideoDiscMenuKey key) async {
+    final VideoPlayerController controller = _requireController();
+    if (!controller.isBlurayNavigationSession) {
+      throw const VideoRemoteFailure('unsupported', '当前播放页不是原盘会话');
+    }
+    if (controller.discMenuEntryPending) {
+      throw const VideoRemoteFailure('busy', '原盘菜单还在启动，稍后再试');
+    }
+    try {
+      await controller.discMenuKey(key);
+    } on VideoDiscMenuException catch (e) {
+      throw switch (e.code) {
+        'navigation-initializing' => const VideoRemoteFailure(
+          'busy',
+          '原盘菜单还在启动，稍后再试',
+        ),
+        'navigation-not-active' => const VideoRemoteFailure(
+          'unsupported',
+          '这张盘当前不能导航菜单（播放组件不支持或菜单没打开）',
+        ),
+        _ => VideoRemoteFailure('failed', '原盘菜单操作失败：${e.code}'),
+      };
+    }
+  }
+
+  /// 「退出原盘」/ 按住 Esc 背后的同一个退出汇聚点。
+  @override
+  Future<void> exitDiscSession() async {
+    final VideoPlayerController controller = _requireController();
+    if (!controller.isBlurayNavigationSession) {
+      throw const VideoRemoteFailure('unsupported', '当前播放页不是原盘会话');
+    }
+    await _state._exitDiscSession();
   }
 }
 

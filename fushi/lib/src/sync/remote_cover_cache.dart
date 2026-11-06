@@ -108,8 +108,10 @@ class RemoteCoverCache {
           if (e is File) e,
       ];
       if (files.length <= maxEntries) return;
-      files.sort((File a, File b) =>
-          a.statSync().modified.compareTo(b.statSync().modified));
+      files.sort(
+        (File a, File b) =>
+            a.statSync().modified.compareTo(b.statSync().modified),
+      );
       for (final File f in files.take(files.length - maxEntries)) {
         try {
           f.deleteSync();

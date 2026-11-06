@@ -21,8 +21,10 @@ void main() {
       _textFile('META-INF/container.xml', _containerXml),
       _textFile('OEBPS/content.opf', _contentOpf),
       _textFile('OEBPS/chapter1.xhtml', _chapter('First chapter body text.')),
-      _textFile('OEBPS/chapter2.xhtml',
-          _chapter('Second chapter has a different length of body text here.')),
+      _textFile(
+        'OEBPS/chapter2.xhtml',
+        _chapter('Second chapter has a different length of body text here.'),
+      ),
     ]);
     EpubParser.parseSync(bytes, extractDir.path);
   });
@@ -69,7 +71,8 @@ ArchiveFile _textFile(String name, String content) {
   return ArchiveFile(name, bytes.length, bytes);
 }
 
-String _chapter(String body) => '''
+String _chapter(String body) =>
+    '''
 <?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml">
   <head><title>Chapter</title></head>

@@ -60,10 +60,10 @@ void main() {
         )[ShortcutAction.globalExternalOpenLookupPage]!;
         expect(set.keyboardBindings, hasLength(1));
         expect(set.keyboardBindings.first.key, LogicalKeyboardKey.keyF);
-        expect(
-          set.keyboardBindings.first.modifiers,
-          <ModifierKey>{ModifierKey.ctrl, ModifierKey.alt},
-        );
+        expect(set.keyboardBindings.first.modifiers, <ModifierKey>{
+          ModifierKey.ctrl,
+          ModifierKey.alt,
+        });
         expect(set.gamepadBindings, isEmpty);
         expect(set.mouseBindings, isEmpty);
         expect(set.wheelBindings, isEmpty);
@@ -76,10 +76,10 @@ void main() {
       )[ShortcutAction.globalExternalOpenLookupPage]!;
       expect(set.keyboardBindings, hasLength(1));
       expect(set.keyboardBindings.first.key, LogicalKeyboardKey.keyF);
-      expect(
-        set.keyboardBindings.first.modifiers,
-        <ModifierKey>{ModifierKey.meta, ModifierKey.alt},
-      );
+      expect(set.keyboardBindings.first.modifiers, <ModifierKey>{
+        ModifierKey.meta,
+        ModifierKey.alt,
+      });
     });
 
     for (final TargetPlatform platform in <TargetPlatform>[
@@ -161,7 +161,8 @@ void main() {
           exclude: ShortcutAction.globalExternalOpenLookupPage,
         ),
         isNull,
-        reason: 'OS 热键抢的是页面的键，不是反过来；报成双向会让 globalExternal '
+        reason:
+            'OS 热键抢的是页面的键，不是反过来；报成双向会让 globalExternal '
             '几乎绑什么都提示冲突',
       );
     });
@@ -191,14 +192,16 @@ void main() {
       registry.loadFromJsonString(json, TargetPlatform.windows);
 
       // 新 action 缺席快照 ⇒ 保留默认。
-      final ShortcutBindingSet added =
-          registry.bindingsFor(ShortcutAction.globalExternalOpenLookupPage);
+      final ShortcutBindingSet added = registry.bindingsFor(
+        ShortcutAction.globalExternalOpenLookupPage,
+      );
       expect(added.keyboardBindings, hasLength(1));
       expect(added.keyboardBindings.first.key, LogicalKeyboardKey.keyF);
 
       // 用户改过的旧绑定原样保留（never break userspace）。
-      final ShortcutBindingSet old =
-          registry.bindingsFor(ShortcutAction.globalExternalLookup);
+      final ShortcutBindingSet old = registry.bindingsFor(
+        ShortcutAction.globalExternalLookup,
+      );
       expect(old.keyboardBindings, hasLength(1));
       expect(old.keyboardBindings.first.key, LogicalKeyboardKey.keyJ);
     });
@@ -241,8 +244,11 @@ void main() {
       final int body = src.indexOf(
         'Future<void> openLookupPageInMainWindow() async {',
       );
-      expect(body, greaterThan(0),
-          reason: '执行体必须收口在 openLookupPageInMainWindow 这一个地方');
+      expect(
+        body,
+        greaterThan(0),
+        reason: '执行体必须收口在 openLookupPageInMainWindow 这一个地方',
+      );
       final int end = src.indexOf('\n  }', body);
       expect(end, greaterThan(body));
       final String fn = src.substring(body, end);
@@ -255,7 +261,8 @@ void main() {
       expect(
         fn.contains('requestHomeDictionaryTab(focusSearch: true)'),
         isTrue,
-        reason: '落地面必须走 AppModel.requestHomeDictionaryTab，且带 focusSearch: '
+        reason:
+            '落地面必须走 AppModel.requestHomeDictionaryTab，且带 focusSearch: '
             'true——用户按这个键就是为了打字，页面弹出来还得先点一下搜索框等于'
             '热键只做了一半（Flow Launcher 式用法）',
       );

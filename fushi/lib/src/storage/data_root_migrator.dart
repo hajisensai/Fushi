@@ -7,7 +7,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:drift/drift.dart' show QueryRow, Variable;
 
-import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
+import 'package:fushi_engine/media/media_pref_keys.dart' show dbSourcePrefKey;
 import 'package:fushi_engine/media/video/video_subtitle_source.dart'
     show SubtitleSource;
 import 'package:fushi/src/models/local_audio_manager.dart'
@@ -15,7 +15,8 @@ import 'package:fushi/src/models/local_audio_manager.dart'
 import 'package:fushi/src/profile/profile_keys.dart' show ProfileKeys;
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/path_rebase_coverage.dart';
-import 'package:fushi/src/sync/backup_service.dart'
+import 'package:fushi_engine/media/torrent/torrent_fast_resume.dart';
+import 'package:fushi/src/sync/backup_path_rebase.dart'
     show
         joinPrefTag,
         normalizeAudioSourceConfigsJson,
@@ -62,8 +63,9 @@ class DataRootMigrationTarget {
 
   /// 普通自定义数据根：两个根都落在 [dataRootPath] 下（TODO-935 的原语义）。
   factory DataRootMigrationTarget.customRoot(String dataRootPath) {
-    final (Directory documents, Directory support) =
-        AppPaths.rootsForDataRoot(dataRootPath);
+    final (Directory documents, Directory support) = AppPaths.rootsForDataRoot(
+      dataRootPath,
+    );
     return DataRootMigrationTarget._(
       pickedPath: dataRootPath,
       documentsRoot: documents,
@@ -79,13 +81,12 @@ class DataRootMigrationTarget {
     required String pickedPath,
     required String defaultDocumentsRoot,
     required String platformSupportRoot,
-  }) =>
-      DataRootMigrationTarget._(
-        pickedPath: pickedPath,
-        documentsRoot: Directory(defaultDocumentsRoot),
-        supportRoot: Directory(platformSupportRoot),
-        dataRootPrefValue: null,
-      );
+  }) => DataRootMigrationTarget._(
+    pickedPath: pickedPath,
+    documentsRoot: Directory(defaultDocumentsRoot),
+    supportRoot: Directory(platformSupportRoot),
+    dataRootPrefValue: null,
+  );
 
   /// 用户在目录选择器里真正挑中的路径。校验（自我迁移 / 安装目录）按它判定，与用户看到的
   /// 那个目录一致。
@@ -105,7 +106,8 @@ class DataRootMigrationTarget {
   bool get isDefaultLocation => dataRootPrefValue == null;
 
   @override
-  String toString() => 'DataRootMigrationTarget(picked: $pickedPath, '
+  String toString() =>
+      'DataRootMigrationTarget(picked: $pickedPath, '
       'documents: ${documentsRoot.path}, support: ${supportRoot.path}, '
       'dataRootPref: $dataRootPrefValue)';
 }
@@ -256,8 +258,10 @@ class DataRootMigrator {
     // 根根本不需要搬。这一条必须在建搬移计划**之前**判定：源=目标时既不能建搬移计划
     // （rename 到自己），也绝不能跑迁移末尾的 `_deleteOldSupportPreservingPrefs`
     // （那会把活着的 support 根里除 prefs 外的一切删光，包括刚"搬"过去的 fushi.db）。
-    final bool supportUnchanged =
-        p.equals(req.oldSupportRoot.path, newSupport.path);
+    final bool supportUnchanged = p.equals(
+      req.oldSupportRoot.path,
+      newSupport.path,
+    );
     // 目标 support 根已有内容（回到默认位置时 = 平台固定落点里的 `shared_preferences.json`）
     // → 逐顶层项**合并**搬入，不能整目录 rename（Windows 上 dst 非空必失败）。
     final bool mergeSupport =
@@ -281,15 +285,21 @@ class DataRootMigrator {
         : _prefsFileNamesToPreserveAt(req.oldSupportRoot);
     final List<_MovePlan> moves = <_MovePlan>[
       // documents：共享默认根（白名单非 null）只搬 Fushi 自有顶层项；自定义根整树搬。
-      _MovePlan(req.oldDocumentsRoot, newDocs,
-          includeTopLevelNames: req.documentsTopLevelIncludeNames,
-          excludeTopLevelNames: const <String>{}),
+      _MovePlan(
+        req.oldDocumentsRoot,
+        newDocs,
+        includeTopLevelNames: req.documentsTopLevelIncludeNames,
+        excludeTopLevelNames: const <String>{},
+      ),
       // BUG-1188：support 根未变（默认位置归一化）⇒ 一个搬移计划都不建。
       if (!supportUnchanged)
-        _MovePlan(req.oldSupportRoot, newSupport,
-            includeTopLevelNames: null,
-            excludeTopLevelNames: supportExclude,
-            mergeIntoDestination: mergeSupport),
+        _MovePlan(
+          req.oldSupportRoot,
+          newSupport,
+          includeTopLevelNames: null,
+          excludeTopLevelNames: supportExclude,
+          mergeIntoDestination: mergeSupport,
+        ),
     ];
     // BUG-1188：回滚时可以**整目录清掉**的「本次迁移自建子树」。support 根在两种情况下
     // 绝不能进这个列表：① 未变（它就是活着的平台固定落点，里面还躺着刚 rebase 完的
@@ -321,14 +331,25 @@ class DataRootMigrator {
       await _cleanupCreatedSubtrees(createdSubtrees);
       if (_isFileInUseError(e)) {
         throw DataRootMigrationException(
-            '有文件被占用，无法迁移数据（请关闭正在使用书库/音频的功能后重试），已回滚到旧根',
-            cause: e);
+          '有文件被占用，无法迁移数据（请关闭正在使用书库/音频的功能后重试），已回滚到旧根',
+          cause: e,
+        );
       }
       throw DataRootMigrationException('搬动数据目录失败，已回滚到旧根', cause: e);
     }
 
-    // ③ 在新 support 根的 fushi.db 上把绝对路径从旧根 rebase 到新根。
+    // ③ 在新根上把绝对路径从旧根 rebase 到新根：先内置引擎 fast-resume 文件
+    //    （BUG-3541，失败可逐文件写回），再新 support 根的 fushi.db（单事务）。
+    FastResumeRebase? fastResumeRebase;
     try {
+      fastResumeRebase = await rebaseEmbeddedTorrentFastResume(
+        documentsRoot: newDocs.path,
+        docs: DocumentsPathRebaser(
+          oldRoot: req.oldDocumentsRoot.path,
+          newRoot: newDocs.path,
+          scopeTopLevelNames: req.documentsTopLevelIncludeNames,
+        ),
+      );
       await _rebaseDatabasePaths(
         dbDirectory: newSupport.path,
         oldDocumentsRoot: req.oldDocumentsRoot.path,
@@ -337,7 +358,9 @@ class DataRootMigrator {
         documentsScopeEntries: req.documentsTopLevelIncludeNames,
       );
     } catch (e) {
-      // DB 改写失败：把已搬目录搬回旧根、只清迁移自建子树（不删用户选定的 newRoot 本体）。
+      // DB 改写失败：resume 先写回原字节（文件此刻还在新根），再把已搬目录搬回旧根、
+      // 只清迁移自建子树（不删用户选定的 newRoot 本体）。
+      await fastResumeRebase?.revert();
       await _rollbackMoves(done);
       await _cleanupCreatedSubtrees(createdSubtrees);
       throw DataRootMigrationException('改写数据库内绝对路径失败，已回滚到旧根', cause: e);
@@ -358,9 +381,10 @@ class DataRootMigrator {
       // 空操作）；同盘 rename 时 DB 随目录回到旧根；搬回失败时 DB 仍在新根，就地改写，
       // 绝不在没有主库的旧根上打开 [FushiDatabase]（那会新建一个空库）。
       await _rollbackMoves(done);
-      final String dbHome = File(
-        p.join(req.oldSupportRoot.path, fushiDatabaseFileName),
-      ).existsSync()
+      final String dbHome =
+          File(
+            p.join(req.oldSupportRoot.path, fushiDatabaseFileName),
+          ).existsSync()
           ? req.oldSupportRoot.path
           : newSupport.path;
       try {
@@ -374,6 +398,29 @@ class DataRootMigrator {
       } catch (rollbackError) {
         debugPrint(
           'DataRootMigrator: 写入 pref 失败后的 DB 路径回滚失败: '
+          '$rollbackError',
+        );
+      }
+      // fast-resume 同理：在文件**此刻所在**的根上反向改写（跨盘复制时旧根从未改写，
+      // 反向改写是空操作；同盘 rename 时文件已随目录回到旧根）。
+      final String resumeHome =
+          Directory(
+            embeddedTorrentFastResumeDirectory(req.oldDocumentsRoot.path),
+          ).existsSync()
+          ? req.oldDocumentsRoot.path
+          : newDocs.path;
+      try {
+        await rebaseEmbeddedTorrentFastResume(
+          documentsRoot: resumeHome,
+          docs: DocumentsPathRebaser(
+            oldRoot: newDocs.path,
+            newRoot: req.oldDocumentsRoot.path,
+            scopeTopLevelNames: req.documentsTopLevelIncludeNames,
+          ),
+        );
+      } catch (rollbackError) {
+        debugPrint(
+          'DataRootMigrator: 写入 pref 失败后的 fast-resume 回滚失败: '
           '$rollbackError',
         );
       }
@@ -401,7 +448,9 @@ class DataRootMigrator {
     // 而此时源根就是目标根（刚 rebase 好的 fushi.db 正躺在里面）。
     if (!supportUnchanged) {
       await _deleteOldSupportPreservingPrefs(
-          req.oldSupportRoot, supportExclude);
+        req.oldSupportRoot,
+        supportExclude,
+      );
     }
 
     return (newDocs, newSupport);
@@ -419,7 +468,8 @@ class DataRootMigrator {
     // `Documents` 根下的 16 个 Fushi 目录一键收进 `Documents\Fushi`。白名单为 null
     // （Fushi 专属根、整树搬移语义）时不适用：那时新根真会被连同整棵树搬走。
     final Set<String>? whitelist = req.documentsTopLevelIncludeNames;
-    final bool nestedInSharedDocuments = whitelist != null &&
+    final bool nestedInSharedDocuments =
+        whitelist != null &&
         AppPaths.isSafeNestedTargetInSharedDocuments(
           sharedDocumentsRoot: req.oldDocumentsRoot.path,
           newDataRoot: req.target.pickedPath,
@@ -439,7 +489,8 @@ class DataRootMigrator {
       final String canonExe = p.canonicalize(exe);
       if (p.isWithin(canonNew, canonExe)) {
         throw const DataRootMigrationException(
-            '新数据根不能是应用安装目录（含正在运行的程序），请另选一个空目录');
+          '新数据根不能是应用安装目录（含正在运行的程序），请另选一个空目录',
+        );
       }
     }
     // 目标的 documents/support 根若已存在且非空 → 拒绝（不覆盖已有数据）。
@@ -521,8 +572,10 @@ class DataRootMigrator {
     await dst.create(recursive: true);
     // 顶层项列举（非递归）：仅一层、成本低，保持同步无碍主 isolate。递归大树的开销在
     // _copyTreeVerified 的 _countFilesAsync（已异步化）里，不在此。
-    for (final FileSystemEntity entity
-        in src.listSync(recursive: false, followLinks: false)) {
+    for (final FileSystemEntity entity in src.listSync(
+      recursive: false,
+      followLinks: false,
+    )) {
       final String name = p.basename(entity.path);
       if (!plan.shouldMoveTopLevel(name)) continue; // 白名单外 / prefs 留原地。
       final String target = p.join(dst.path, name);
@@ -588,8 +641,7 @@ class DataRootMigrator {
   static bool shouldCopyAfterRenameFailureForTesting(
     int errorCode, {
     bool isMacOS = false,
-  }) =>
-      _shouldCopyAfterRenameErrorCode(errorCode, isMacOS: isMacOS);
+  }) => _shouldCopyAfterRenameErrorCode(errorCode, isMacOS: isMacOS);
 
   /// 仅供单测：直接驱动跨盘复制 + 进度回报，不依赖伪造 EXDEV/EXDEV-17 错误。复制 [src]
   /// 整树到 [dst] 并按真实文件数回报 (copied, total)，与生产跨盘路径走同一份逻辑。
@@ -616,8 +668,10 @@ class DataRootMigrator {
     if (progress != null) {
       progress.addToTotal(await _countFilesAsync(src));
     }
-    await for (final FileSystemEntity entity
-        in src.list(recursive: true, followLinks: false)) {
+    await for (final FileSystemEntity entity in src.list(
+      recursive: true,
+      followLinks: false,
+    )) {
       final String rel = p.relative(entity.path, from: src.path);
       final String target = p.join(dst.path, rel);
       if (entity is Directory) {
@@ -642,7 +696,8 @@ class DataRootMigrator {
     final int dstLen = await dst.length();
     if (srcLen != dstLen) {
       throw DataRootMigrationException(
-          '跨盘复制校验失败：$label 字节数不一致（$srcLen != $dstLen）');
+        '跨盘复制校验失败：$label 字节数不一致（$srcLen != $dstLen）',
+      );
     }
   }
 
@@ -652,8 +707,10 @@ class DataRootMigrator {
     int count = 0;
     // followLinks: false —— 绝不追 symlink/junction：用户 Documents 里的 shell
     // junction（My Music 等）ACL 全拒，追进去 list 直接 errno 5 硬炸（TODO-1226）。
-    await for (final FileSystemEntity e
-        in dir.list(recursive: true, followLinks: false)) {
+    await for (final FileSystemEntity e in dir.list(
+      recursive: true,
+      followLinks: false,
+    )) {
       if (e is File) count++;
     }
     return count;
@@ -746,9 +803,7 @@ class DataRootMigrator {
   ///
   /// BUG-1188：[subtrees] 由 `migrate` 计算——support 根未变 / 合并搬入时它**不在列表里**
   /// （那是活着的平台固定落点，删掉等于抹掉用户全部设置）。
-  static Future<void> _cleanupCreatedSubtrees(
-    List<Directory> subtrees,
-  ) async {
+  static Future<void> _cleanupCreatedSubtrees(List<Directory> subtrees) async {
     for (final Directory sub in subtrees) {
       try {
         await _deleteIfPresent(sub);
@@ -796,7 +851,7 @@ class DataRootMigrator {
     int maxAttempts = _lockRetryAttempts,
     Duration backoff = _lockRetryBackoff,
   }) async {
-    for (int attempt = 0;; attempt++) {
+    for (int attempt = 0; ; attempt++) {
       try {
         await op();
         return;
@@ -813,8 +868,7 @@ class DataRootMigrator {
     Future<void> Function() op, {
     int maxAttempts = 3,
     Duration backoff = Duration.zero,
-  }) =>
-      _withLockRetry(op, maxAttempts: maxAttempts, backoff: backoff);
+  }) => _withLockRetry(op, maxAttempts: maxAttempts, backoff: backoff);
 
   /// 跨盘 copy+verify **已成功**后删源。删源属清理、不属迁移关键路径：源被顽固锁住
   /// （删不掉）时**不判迁移失败**——校验过的完整数据已在新根、pref 随后照写、重启读
@@ -845,8 +899,10 @@ class DataRootMigrator {
   static Set<String> _prefsFileNamesToPreserveAt(Directory root) {
     if (!root.existsSync()) return const <String>{};
     final Set<String> names = <String>{};
-    for (final FileSystemEntity e
-        in root.listSync(recursive: false, followLinks: false)) {
+    for (final FileSystemEntity e in root.listSync(
+      recursive: false,
+      followLinks: false,
+    )) {
       if (e is! File) continue;
       final String name = p.basename(e.path);
       if (_isPrefsFileName(name)) names.add(name);
@@ -876,8 +932,10 @@ class DataRootMigrator {
       return;
     }
     if (!await oldSupportRoot.exists()) return;
-    for (final FileSystemEntity e
-        in oldSupportRoot.listSync(recursive: false, followLinks: false)) {
+    for (final FileSystemEntity e in oldSupportRoot.listSync(
+      recursive: false,
+      followLinks: false,
+    )) {
       final String name = p.basename(e.path);
       if (preservedNames.contains(name)) continue; // 保住 prefs 本体。
       try {
@@ -913,8 +971,10 @@ class DataRootMigrator {
     Set<String> ignoreTopLevelNames = const <String>{},
   }) async {
     // followLinks: false —— 同 [_countFilesAsync]：不追 junction/symlink（TODO-1226）。
-    await for (final FileSystemEntity e
-        in dir.list(recursive: false, followLinks: false)) {
+    await for (final FileSystemEntity e in dir.list(
+      recursive: false,
+      followLinks: false,
+    )) {
       if (ignoreTopLevelNames.contains(p.basename(e.path))) continue;
       if (e is File) return true;
       if (e is Directory && await _hasAnyFileAsync(e)) return true;
@@ -926,8 +986,10 @@ class DataRootMigrator {
   /// 根需不需要走「合并搬入」——目标已有内容时整目录 rename 在 Windows 上必失败。
   static Future<bool> _hasAnyEntryAsync(Directory dir) async {
     if (!await dir.exists()) return false;
-    await for (final FileSystemEntity _
-        in dir.list(recursive: false, followLinks: false)) {
+    await for (final FileSystemEntity _ in dir.list(
+      recursive: false,
+      followLinks: false,
+    )) {
       return true;
     }
     return false;
@@ -1000,11 +1062,16 @@ class DataRootMigrator {
       await _rebaseVideoFileSpecs(db, docs);
       await _rebaseAnidbFileIdentities(db, docs);
       await _rebaseGalgames(db, docs);
+      await _rebaseMusicAlbums(db, docs);
+      await _rebaseMusicTracks(db, docs);
       await _rebaseMediaCollections(db, docs);
       await _rebaseCollectionScrapeMeta(db, docs);
       await _rebaseCollectionRelations(db, docs);
       await _rebaseMediaImages(db, docs);
       await _rebaseVideoMetadataExtras(db, docs);
+      await _rebaseVideoDownloadJobs(db, docs);
+      await _rebaseVideoDownloadJobFiles(db, docs);
+      await _rebaseVideoDownloadJobSubtitles(db, docs);
       await _rebaseMediaOpenHistory(db, docs);
       await _rebasePreferences(db, docs, newSupportRoot);
       await _rebaseProfileSettings(db, docs, newSupportRoot);
@@ -1080,8 +1147,10 @@ class DataRootMigrator {
       final String? newPlaylist = _rebasePlaylistJson(v.playlistJson, docs);
       final String? newCover = docs.rebaseNullable(v.coverPath);
       final String? newSubtitle = rebaseSubtitleSource(v.subtitleSource, docs);
-      final String? newSecondary =
-          rebaseSubtitleSource(v.secondarySubtitleSource, docs);
+      final String? newSecondary = rebaseSubtitleSource(
+        v.secondarySubtitleSource,
+        docs,
+      );
       if (newVideoPath == v.videoPath &&
           newPlaylist == v.playlistJson &&
           newCover == v.coverPath &&
@@ -1118,8 +1187,9 @@ class DataRootMigrator {
     FushiDatabase db,
     DocumentsPathRebaser docs,
   ) async {
-    final List<QueryRow> rows =
-        await db.customSelect('SELECT file_path FROM video_file_specs').get();
+    final List<QueryRow> rows = await db
+        .customSelect('SELECT file_path FROM video_file_specs')
+        .get();
     for (final QueryRow row in rows) {
       final String oldPath = row.read<String>('file_path');
       final String newPath = docs.rebase(oldPath);
@@ -1143,8 +1213,9 @@ class DataRootMigrator {
   ) async {
     final List<QueryRow> rows = await db
         .customSelect(
-            'SELECT ed2k, file_size, file_path FROM anidb_file_identities '
-            'WHERE file_path IS NOT NULL')
+          'SELECT ed2k, file_size, file_path FROM anidb_file_identities '
+          'WHERE file_path IS NOT NULL',
+        )
         .get();
     for (final QueryRow row in rows) {
       final String oldPath = row.read<String>('file_path');
@@ -1156,7 +1227,7 @@ class DataRootMigrator {
         <Object?>[
           newPath,
           row.read<String>('ed2k'),
-          row.read<int>('file_size')
+          row.read<int>('file_size'),
         ],
       );
     }
@@ -1175,6 +1246,44 @@ class DataRootMigrator {
       await db.customStatement(
         'UPDATE galgames SET cover_path = ? WHERE id = ?',
         <Object?>[newCover, g.id],
+      );
+    }
+  }
+
+  /// music_albums：cover_path。这一列混放两种路径：扫描到的目录封面（用户曲库里的
+  /// `cover.jpg`，外部路径、**绝不**改写）与刮削下载的 Cover Art Archive 封面
+  /// （`<documents>/music_covers/<发行 MBID>.jpg`，应用自有资产、必须随根改写）。
+  /// [DocumentsPathRebaser.rebaseNullable] 只改写落在旧 documents 根内的值，外部路径原样。
+  static Future<void> _rebaseMusicAlbums(
+    FushiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    for (final MusicAlbumRow a in await db.listAllMusicAlbumsForPathRebase()) {
+      final String? newCover = docs.rebaseNullable(a.coverPath);
+      if (newCover == a.coverPath) continue;
+      await db.customStatement(
+        'UPDATE music_albums SET cover_path = ? WHERE album_uid = ?',
+        <Object?>[newCover, a.albumUid],
+      );
+    }
+  }
+
+  /// music_tracks：path。曲目几乎都在用户自己的曲库目录（外部路径、**绝不**改写）；
+  /// 落在数据根内的只有音频 CD 抓轨（`<documents>/audio_cd/`，登记在搬移白名单里）——
+  /// 它们以前按「无画面视频」进 video_books、由 [_rebaseVideoBooks] 改写，纯音频改归
+  /// 音乐库（反馈 QAondMh4M5）后改由这里改写，否则换数据根后抓好的 CD 全部失联。
+  /// `track_uid` 是身份不是位置，不跟着改（歌单 / 歌词 / 播放记录都挂在它上面）。
+  static Future<void> _rebaseMusicTracks(
+    FushiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    for (final MusicTrackRow t in await db.select(db.musicTracks).get()) {
+      final String newPath = docs.rebase(t.path);
+      if (newPath == t.path) continue;
+      // 路径键跟着改（v145）：扫描落库按它认出「库里已有的同一个文件」。
+      await db.customStatement(
+        'UPDATE music_tracks SET path = ?, path_key = ? WHERE track_uid = ?',
+        <Object?>[newPath, musicTrackPathKey(newPath), t.trackUid],
       );
     }
   }
@@ -1207,8 +1316,9 @@ class DataRootMigrator {
     DocumentsPathRebaser docs,
   ) async {
     for (final MediaCollectionRow c in await db.getAllMediaCollections()) {
-      final CollectionScrapeMetaRow? meta =
-          await db.getCollectionScrapeMeta(c.id);
+      final CollectionScrapeMetaRow? meta = await db.getCollectionScrapeMeta(
+        c.id,
+      );
       if (meta == null) continue;
       final String? newBackdrop = docs.rebaseNullable(meta.backdropPath);
       if (newBackdrop == meta.backdropPath) continue;
@@ -1264,6 +1374,90 @@ class DataRootMigrator {
     }
   }
 
+  /// video_download_jobs：observed_save_path（BUG-3542）。
+  ///
+  /// 后端坐标的保存根。内置引擎用默认下载根 `<documents>/anime_downloads/content`
+  /// 时它是数据根内的本机路径：文件随根搬走、引擎 resume 也被改写（BUG-3541），
+  /// 这列不改写就停在旧根——已完成任务不再刷新它，任务删除 / 打开位置的兜底与
+  /// 持久化详情都会拿着一个不存在的目录。外接远端 qBittorrent 的远端坐标与用户
+  /// 自选的外部下载根不在旧根下，[DocumentsPathRebaser] 按搬移作用域原样跳过。
+  static Future<void> _rebaseVideoDownloadJobs(
+    FushiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT job_id, observed_save_path FROM video_download_jobs '
+          'WHERE observed_save_path IS NOT NULL',
+        )
+        .get();
+    for (final QueryRow row in rows) {
+      final String current = row.read<String>('observed_save_path');
+      final String rebased = docs.rebase(current);
+      if (rebased == current) continue;
+      await db.customStatement(
+        'UPDATE video_download_jobs SET observed_save_path = ? '
+        'WHERE job_id = ?',
+        <Object?>[rebased, row.read<String>('job_id')],
+      );
+    }
+  }
+
+  /// video_download_job_files：final_absolute_path（下载任务与库行的唯一纽带）。
+  ///
+  /// 默认下载根是 `<documents>/anime_downloads/content`，`anime_downloads` 在搬移
+  /// 白名单里：文件随根搬走、`video_books.video_path` 也被改写，这列不改写就与库行
+  /// 对不上（下载后补抓字幕、库侧删除反查任务全部失配）。用户自选的外部下载根不在
+  /// 作用域内，[DocumentsPathRebaser] 天然跳过。
+  static Future<void> _rebaseVideoDownloadJobFiles(
+    FushiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT id, final_absolute_path FROM video_download_job_files '
+          'WHERE final_absolute_path IS NOT NULL',
+        )
+        .get();
+    for (final QueryRow row in rows) {
+      final String current = row.read<String>('final_absolute_path');
+      final String rebased = docs.rebase(current);
+      if (rebased == current) continue;
+      await db.customStatement(
+        'UPDATE video_download_job_files SET final_absolute_path = ? '
+        'WHERE id = ?',
+        <Object?>[rebased, row.read<int>('id')],
+      );
+    }
+  }
+
+  /// video_download_job_subtitles：staged_path / final_path。两者都与视频同目录
+  /// （sidecar），视频随数据根搬走时它们一起搬；作用域外的外部下载根原样保留。
+  static Future<void> _rebaseVideoDownloadJobSubtitles(
+    FushiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT subtitle_id, staged_path, final_path '
+          'FROM video_download_job_subtitles '
+          'WHERE staged_path IS NOT NULL OR final_path IS NOT NULL',
+        )
+        .get();
+    for (final QueryRow row in rows) {
+      final String? staged = row.read<String?>('staged_path');
+      final String? finalPath = row.read<String?>('final_path');
+      final String? newStaged = docs.rebaseNullable(staged);
+      final String? newFinal = docs.rebaseNullable(finalPath);
+      if (newStaged == staged && newFinal == finalPath) continue;
+      await db.customStatement(
+        'UPDATE video_download_job_subtitles SET staged_path = ?, '
+        'final_path = ? WHERE subtitle_id = ?',
+        <Object?>[newStaged, newFinal, row.read<String>('subtitle_id')],
+      );
+    }
+  }
+
   /// collection_relations：cover_path（关联条目封面的本地落盘位，
   /// `<documents>/video_covers/` 目录族，与合集封面同型；schema v66 /
   /// TODO-2484）。当前尚无写入方（封面下载归 UI 接力线程），本改写是
@@ -1274,8 +1468,9 @@ class DataRootMigrator {
     DocumentsPathRebaser docs,
   ) async {
     for (final MediaCollectionRow c in await db.getAllMediaCollections()) {
-      for (final CollectionRelationRow r
-          in await db.getCollectionRelations(c.id)) {
+      for (final CollectionRelationRow r in await db.getCollectionRelations(
+        c.id,
+      )) {
         final String? newCover = docs.rebaseNullable(r.coverPath);
         if (newCover == r.coverPath) continue;
         await db.customStatement(
@@ -1348,12 +1543,14 @@ class DataRootMigrator {
     DocumentsPathRebaser docs,
     String newSupportRoot,
   ) async {
-    final List<QueryRow> rows = await db.customSelect(
-      'SELECT id, key, value FROM profile_settings WHERE category = ?',
-      variables: <Variable<Object>>[
-        Variable<String>(ProfileKeys.categoryPref),
-      ],
-    ).get();
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT id, key, value FROM profile_settings WHERE category = ?',
+          variables: <Variable<Object>>[
+            Variable<String>(ProfileKeys.categoryPref),
+          ],
+        )
+        .get();
     for (final QueryRow row in rows) {
       final String key = row.read<String>('key');
       final String value = row.read<String>('value');
@@ -1371,6 +1568,78 @@ class DataRootMigrator {
     }
   }
 
+  /// 内置 torrent 引擎的 fast-resume 目录 `<documents>/anime_downloads/resume`。
+  /// 派生点与 `AppModel.startAnimeDownloadService`（`documentsSubdirectory(
+  /// 'anime_downloads')` + [kEmbeddedTorrentFastResumeDirName]）一致。
+  static String embeddedTorrentFastResumeDirectory(String documentsRoot) =>
+      p.join(
+        documentsRoot,
+        'anime_downloads',
+        kEmbeddedTorrentFastResumeDirName,
+      );
+
+  /// BUG-3541：把 [documentsRoot] 下内置引擎 fast-resume 文件里的绝对 `save_path`
+  /// 按 [docs] 改写。
+  ///
+  /// `ht_load_resume_dir` 原样读回 resume 里记的 save_path；默认下载根
+  /// `<documents>/anime_downloads/content` 随数据根搬走后不改写，种子就指向已搬空的
+  /// 旧目录。作用域判据与 DB 路径改写是同一个 [DocumentsPathRebaser]：用户自选的
+  /// 外部下载根不在搬移作用域内，原样保留；已改写过的路径首段不在白名单里，天然
+  /// 幂等。
+  ///
+  /// 先在内存里算好全部新字节，再逐个「写临时文件 → 原子替换」；中途写失败就把
+  /// 已替换的文件写回原字节再抛出——要么全改、要么全不改。不是合法 resume 的文件
+  /// （libtorrent 本来也加载不了）原样跳过。返回值可在后续步骤失败时 [FastResumeRebase.revert]。
+  ///
+  /// 调用方必须保证引擎已经停下（`AppModel.releaseEmbeddedTorrentForDataRootMove`
+  /// 先强制落一次 resume 再关 session）：否则引擎之后的落盘会把旧路径写回来。
+  static Future<FastResumeRebase> rebaseEmbeddedTorrentFastResume({
+    required String documentsRoot,
+    required DocumentsPathRebaser docs,
+  }) async {
+    final Directory dir = Directory(
+      embeddedTorrentFastResumeDirectory(documentsRoot),
+    );
+    if (!dir.existsSync()) return const FastResumeRebase._(<_FastResumeFile>[]);
+    final List<_FastResumeFile> pending = <_FastResumeFile>[];
+    for (final FileSystemEntity entity in dir.listSync(followLinks: false)) {
+      if (entity is! File ||
+          p.extension(entity.path) != kEmbeddedTorrentFastResumeExtension) {
+        continue;
+      }
+      final Uint8List original = entity.readAsBytesSync();
+      final Uint8List? rebased = rebaseFastResumeSavePath(
+        original,
+        docs.rebase,
+      );
+      if (rebased == null) continue;
+      pending.add(_FastResumeFile(entity, original, rebased));
+    }
+    final List<_FastResumeFile> written = <_FastResumeFile>[];
+    try {
+      for (final _FastResumeFile file in pending) {
+        _replaceFileBytes(file.file, file.rebased);
+        written.add(file);
+      }
+    } catch (_) {
+      await FastResumeRebase._(written).revert();
+      rethrow;
+    }
+    return FastResumeRebase._(written);
+  }
+
+  /// 写临时文件再原子替换（同目录 rename），不留半截 resume。
+  static void _replaceFileBytes(File file, Uint8List bytes) {
+    final File temp = File('${file.path}.rebase-tmp');
+    try {
+      temp.writeAsBytesSync(bytes, flush: true);
+      temp.renameSync(file.path);
+    } catch (_) {
+      if (temp.existsSync()) temp.deleteSync();
+      rethrow;
+    }
+  }
+
   /// 仅供单测（BUG-1174 ③）：直接驱动 DB 路径改写，用来验证**幂等性**（同一改写连跑
   /// 两次，第二次必须是 no-op）。生产走 [migrate]，不经此入口。
   @visibleForTesting
@@ -1380,14 +1649,13 @@ class DataRootMigrator {
     required String newDocumentsRoot,
     required String newSupportRoot,
     required Set<String>? documentsScopeEntries,
-  }) =>
-      _rebaseDatabasePaths(
-        dbDirectory: dbDirectory,
-        oldDocumentsRoot: oldDocumentsRoot,
-        newDocumentsRoot: newDocumentsRoot,
-        newSupportRoot: newSupportRoot,
-        documentsScopeEntries: documentsScopeEntries,
-      );
+  }) => _rebaseDatabasePaths(
+    dbDirectory: dbDirectory,
+    oldDocumentsRoot: oldDocumentsRoot,
+    newDocumentsRoot: newDocumentsRoot,
+    newSupportRoot: newSupportRoot,
+    documentsScopeEntries: documentsScopeEntries,
+  );
 
   /// rebase 一个「JSON 字符串数组」里每个绝对路径（如 audioPathsJson）。非 JSON 列表
   /// 原样返回（一个坏行不该中断整次迁移）。
@@ -1514,6 +1782,35 @@ class _CopyProgress {
 /// 「路径改了但文件还在旧位置」。`null`（Fushi 专属根的整树搬移语义）= 无首段限制；
 /// 那条路径上 `_validateTarget` 已禁止新根落在旧根内部，故同样幂等。
 @immutable
+/// 一次 fast-resume 改写落盘的文件清单（BUG-3541），供后续步骤失败时写回原字节。
+class FastResumeRebase {
+  const FastResumeRebase._(this._files);
+
+  final List<_FastResumeFile> _files;
+
+  /// 本次真正改写了的 resume 文件数。
+  int get rewrittenCount => _files.length;
+
+  /// 把改写过的文件写回原字节（尽力而为：单个文件写不回不影响其它，记日志）。
+  Future<void> revert() async {
+    for (final _FastResumeFile file in _files) {
+      try {
+        DataRootMigrator._replaceFileBytes(file.file, file.original);
+      } catch (e) {
+        debugPrint('DataRootMigrator: fast-resume 回滚失败 ${file.file.path}: $e');
+      }
+    }
+  }
+}
+
+class _FastResumeFile {
+  const _FastResumeFile(this.file, this.original, this.rebased);
+
+  final File file;
+  final Uint8List original;
+  final Uint8List rebased;
+}
+
 class DocumentsPathRebaser {
   const DocumentsPathRebaser({
     required this.oldRoot,
@@ -1529,8 +1826,8 @@ class DocumentsPathRebaser {
 
   static String _stripTrailingSeparator(String value) =>
       (value.endsWith('/') || value.endsWith('\\'))
-          ? value.substring(0, value.length - 1)
-          : value;
+      ? value.substring(0, value.length - 1)
+      : value;
 
   /// [path] 是否落在本次改写的作用域内。分隔符归一与边界判据与
   /// `backup_service.dart` 的 `rebasePath` 逐字节一致（`/a/books_extra` 不算在
@@ -1544,8 +1841,11 @@ class DocumentsPathRebaser {
     if (!normalized.startsWith('$root/')) return false;
     final Set<String>? scope = scopeTopLevelNames;
     if (scope == null) return true;
-    final String first =
-        normalized.substring(root.length + 1).split('/').first.toLowerCase();
+    final String first = normalized
+        .substring(root.length + 1)
+        .split('/')
+        .first
+        .toLowerCase();
     return scope.any((String owned) => owned.toLowerCase() == first);
   }
 
@@ -1602,9 +1902,38 @@ String rebaseSubtitleSourceMapJson(String json, DocumentsPathRebaser docs) {
   try {
     final dynamic decoded = jsonDecode(json);
     if (decoded is! Map) return json;
-    return jsonEncode(decoded.map<String, String>((dynamic k, dynamic v) =>
-        MapEntry<String, String>(
-            k.toString(), rebaseSubtitleSource(v.toString(), docs)!)));
+    return jsonEncode(
+      decoded.map<String, String>(
+        (dynamic k, dynamic v) => MapEntry<String, String>(
+          k.toString(),
+          rebaseSubtitleSource(v.toString(), docs)!,
+        ),
+      ),
+    );
+  } catch (_) {
+    return json;
+  }
+}
+
+/// 改写一个 `{key: [绝对路径...]}` JSON map（`video_remote_subtitle_files`）里每个
+/// 路径。非 map / 非列表的 value 原样保留；整体不是 JSON map 时原样返回（一个坏值不该
+/// 中断整次迁移）。
+String rebaseStringListMapJson(String json, DocumentsPathRebaser docs) {
+  try {
+    final dynamic decoded = jsonDecode(json);
+    if (decoded is! Map) return json;
+    return jsonEncode(
+      decoded.map<String, dynamic>(
+        (dynamic k, dynamic v) => MapEntry<String, dynamic>(
+          k.toString(),
+          v is List
+              ? <dynamic>[
+                  for (final dynamic e in v) e is String ? docs.rebase(e) : e,
+                ]
+              : v,
+        ),
+      ),
+    );
   } catch (_) {
     return json;
   }
@@ -1675,14 +2004,25 @@ String rebaseMigratedPrefValue(
     case PathValueShape.audioSourceConfigsJson:
       return normalizeAudioSourceConfigsJson(value, newSupportRoot);
     case PathValueShape.legacyGalgameLibraryJson:
-      return _withPrefTag(value,
-          (String body) => rebaseLegacyGalgameLibraryJson(body, documents));
+      return _withPrefTag(
+        value,
+        (String body) => rebaseLegacyGalgameLibraryJson(body, documents),
+      );
     case PathValueShape.subtitleSourceMapJson:
       return _withPrefTag(
-          value, (String body) => rebaseSubtitleSourceMapJson(body, documents));
+        value,
+        (String body) => rebaseSubtitleSourceMapJson(body, documents),
+      );
     case PathValueShape.jsonStringList:
       return _withPrefTag(
-          value, (String body) => rebaseJsonStringListWith(body, documents));
+        value,
+        (String body) => rebaseJsonStringListWith(body, documents),
+      );
+    case PathValueShape.stringListMapJson:
+      return _withPrefTag(
+        value,
+        (String body) => rebaseStringListMapJson(body, documents),
+      );
     case PathValueShape.bare:
       // support 根下的旧单库路径按**文件名**重挂（与 local_audio_dbs 同款、天然幂等）；
       // documents 根下的裸路径走作用域改写器。

@@ -59,14 +59,11 @@ void main() {
       final File file = File(
         'lib/src/pages/implementations/texthooker_page.dart',
       );
-      expect(
-        file.existsSync(),
-        isTrue,
-        reason: '会话卡源文件不在了？守卫失去锚点，先修路径再谈断言',
-      );
+      expect(file.existsSync(), isTrue, reason: '会话卡源文件不在了？守卫失去锚点，先修路径再谈断言');
       final String src = file.readAsStringSync();
-      final int start =
-          maskCommentsAndStrings(src).indexOf('class _SessionOverviewCard');
+      final int start = maskCommentsAndStrings(
+        src,
+      ).indexOf('class _SessionOverviewCard');
       expect(
         start,
         greaterThanOrEqualTo(0),
@@ -87,8 +84,10 @@ void main() {
       // 处置那行有 maxLines（compact 只有 2 行）+ ellipsis。把证据拼进同一个 Text
       // 会被省略号整段吃掉——改了跟没改一样，所以这条必须钉死。
       expect(
-        namedArgumentValues(card, 'maxLines')
-            .any((String v) => v.trim() == '1'),
+        namedArgumentValues(
+          card,
+          'maxLines',
+        ).any((String v) => v.trim() == '1'),
         isTrue,
         reason: '证据行应自己占一行（maxLines: 1），与处置文案的 2/3 行分开',
       );

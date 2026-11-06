@@ -13,19 +13,14 @@ void main() {
   });
 
   Future<void> invokeFromNative(String method, [Object? arguments]) async {
-    final ByteData data = codec.encodeMethodCall(
-      MethodCall(method, arguments),
-    );
+    final ByteData data = codec.encodeMethodCall(MethodCall(method, arguments));
     await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .handlePlatformMessage(channelName, data, (_) {});
   }
 
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(
-      const MethodChannel(channelName),
-      null,
-    );
+        .setMockMethodCallHandler(const MethodChannel(channelName), null);
     FloatingLyricChannel.clearEventHandlers();
     FloatingLyricChannel.platformOverride = null;
   });
@@ -78,13 +73,12 @@ void main() {
     test('sends highlight range to the overlay', () async {
       MethodCall? capturedCall;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-        const MethodChannel(channelName),
-        (call) async {
-          capturedCall = call;
-          return null;
-        },
-      );
+          .setMockMethodCallHandler(const MethodChannel(channelName), (
+            call,
+          ) async {
+            capturedCall = call;
+            return null;
+          });
 
       await FloatingLyricChannel.highlight(start: 2, length: 3);
 
@@ -98,13 +92,12 @@ void main() {
     test('sends localized labels to the overlay', () async {
       MethodCall? capturedCall;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-        const MethodChannel(channelName),
-        (call) async {
-          capturedCall = call;
-          return null;
-        },
-      );
+          .setMockMethodCallHandler(const MethodChannel(channelName), (
+            call,
+          ) async {
+            capturedCall = call;
+            return null;
+          });
 
       await FloatingLyricChannel.updateLabels(
         previous: 'Previous',
@@ -129,32 +122,28 @@ void main() {
     test('sends playback state to the overlay', () async {
       MethodCall? capturedCall;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-        const MethodChannel(channelName),
-        (call) async {
-          capturedCall = call;
-          return null;
-        },
-      );
+          .setMockMethodCallHandler(const MethodChannel(channelName), (
+            call,
+          ) async {
+            capturedCall = call;
+            return null;
+          });
 
       await FloatingLyricChannel.setPlaybackState(playing: true);
 
       expect(capturedCall?.method, 'setPlaybackState');
-      expect(capturedCall?.arguments, <String, Object?>{
-        'playing': true,
-      });
+      expect(capturedCall?.arguments, <String, Object?>{'playing': true});
     });
 
     test('sends themed style colors to the overlay', () async {
       MethodCall? capturedCall;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-        const MethodChannel(channelName),
-        (call) async {
-          capturedCall = call;
-          return null;
-        },
-      );
+          .setMockMethodCallHandler(const MethodChannel(channelName), (
+            call,
+          ) async {
+            capturedCall = call;
+            return null;
+          });
 
       await FloatingLyricChannel.updateStyle(
         fontSize: 18,
@@ -184,13 +173,12 @@ void main() {
     test('starts overlay with themed style and click lookup state', () async {
       MethodCall? capturedCall;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-        const MethodChannel(channelName),
-        (call) async {
-          capturedCall = call;
-          return true;
-        },
-      );
+          .setMockMethodCallHandler(const MethodChannel(channelName), (
+            call,
+          ) async {
+            capturedCall = call;
+            return true;
+          });
 
       final bool result = await FloatingLyricChannel.show(
         fontSize: 19,
@@ -231,13 +219,12 @@ void main() {
     test('show does not reset native lock state by default', () async {
       MethodCall? capturedCall;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-        const MethodChannel(channelName),
-        (call) async {
-          capturedCall = call;
-          return true;
-        },
-      );
+          .setMockMethodCallHandler(const MethodChannel(channelName), (
+            call,
+          ) async {
+            capturedCall = call;
+            return true;
+          });
 
       final bool result = await FloatingLyricChannel.show();
 
@@ -251,43 +238,43 @@ void main() {
     });
 
     // TODO-708 P4: updateText 携带当前行块内区间（多行上下文）。
-    test('updateText carries current-line range for multi-line context',
-        () async {
-      MethodCall? capturedCall;
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-        const MethodChannel(channelName),
-        (call) async {
-          capturedCall = call;
-          return null;
-        },
-      );
+    test(
+      'updateText carries current-line range for multi-line context',
+      () async {
+        MethodCall? capturedCall;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(const MethodChannel(channelName), (
+              call,
+            ) async {
+              capturedCall = call;
+              return null;
+            });
 
-      await FloatingLyricChannel.updateText(
-        '前行\n当前行\n后行',
-        currentLineStart: 3,
-        currentLineLength: 3,
-      );
+        await FloatingLyricChannel.updateText(
+          '前行\n当前行\n后行',
+          currentLineStart: 3,
+          currentLineLength: 3,
+        );
 
-      expect(capturedCall?.method, 'updateText');
-      expect(capturedCall?.arguments, <String, Object?>{
-        'text': '前行\n当前行\n后行',
-        'currentLineStart': 3,
-        'currentLineLength': 3,
-      });
-    });
+        expect(capturedCall?.method, 'updateText');
+        expect(capturedCall?.arguments, <String, Object?>{
+          'text': '前行\n当前行\n后行',
+          'currentLineStart': 3,
+          'currentLineLength': 3,
+        });
+      },
+    );
 
     // TODO-708 P4: 缺省参数 = 无行标记 (-1, 0)，与 N=0（今天单行）语义一致。
     test('updateText defaults to no-line-marker range (-1, 0)', () async {
       MethodCall? capturedCall;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-        const MethodChannel(channelName),
-        (call) async {
-          capturedCall = call;
-          return null;
-        },
-      );
+          .setMockMethodCallHandler(const MethodChannel(channelName), (
+            call,
+          ) async {
+            capturedCall = call;
+            return null;
+          });
 
       await FloatingLyricChannel.updateText('単行');
 
@@ -302,20 +289,57 @@ void main() {
     test('sends click lookup state to the overlay', () async {
       MethodCall? capturedCall;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-        const MethodChannel(channelName),
-        (call) async {
-          capturedCall = call;
-          return null;
-        },
-      );
+          .setMockMethodCallHandler(const MethodChannel(channelName), (
+            call,
+          ) async {
+            capturedCall = call;
+            return null;
+          });
 
       await FloatingLyricChannel.setClickLookupEnabled(false);
 
       expect(capturedCall?.method, 'setClickLookupEnabled');
-      expect(capturedCall?.arguments, <String, Object?>{
-        'enabled': false,
-      });
+      expect(capturedCall?.arguments, <String, Object?>{'enabled': false});
+    });
+  });
+
+  group('floating-lyric platform predicates', () {
+    // 平台判据的唯一真相源：isSupported 与所有入口都经它（源码守卫在
+    // test/reader/reader_quick_settings_floating_lyric_test.dart）。
+    test('native back-end exists on Android, Windows and macOS only', () {
+      expect(floatingLyricBackendAvailableOn('android'), isTrue);
+      expect(floatingLyricBackendAvailableOn('windows'), isTrue);
+      expect(floatingLyricBackendAvailableOn('macos'), isTrue);
+      expect(floatingLyricBackendAvailableOn('linux'), isFalse);
+      expect(floatingLyricBackendAvailableOn('ios'), isFalse);
+      expect(floatingLyricBackendAvailableOn('fuchsia'), isFalse);
+    });
+
+    test(
+      'desktop rich window (extended style + auto line count) is Windows and '
+      'macOS',
+      () {
+        expect(floatingLyricDesktopWindowOn('windows'), isTrue);
+        expect(floatingLyricDesktopWindowOn('macos'), isTrue);
+        expect(floatingLyricDesktopWindowOn('android'), isFalse);
+        expect(floatingLyricDesktopWindowOn('linux'), isFalse);
+      },
+    );
+
+    test(
+      'vertical text stays Windows-only (macOS back-end has no vertical layout)',
+      () {
+        expect(floatingLyricVerticalTextOn('windows'), isTrue);
+        expect(floatingLyricVerticalTextOn('macos'), isFalse);
+        expect(floatingLyricVerticalTextOn('android'), isFalse);
+      },
+    );
+
+    test('platformOverride still wins over the host OS', () {
+      FloatingLyricChannel.platformOverride = false;
+      expect(FloatingLyricChannel.supported, isFalse);
+      FloatingLyricChannel.platformOverride = true;
+      expect(FloatingLyricChannel.supported, isTrue);
     });
   });
 }

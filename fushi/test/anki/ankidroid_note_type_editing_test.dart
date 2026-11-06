@@ -30,9 +30,9 @@ void main() {
     responses = <String, Object?>{};
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_channel, (MethodCall call) async {
-      calls.add(call);
-      return responses[call.method];
-    });
+          calls.add(call);
+          return responses[call.method];
+        });
   });
 
   tearDown(() {
@@ -60,8 +60,8 @@ void main() {
         ],
       };
 
-      final AnkiNoteTypeDefinition? def =
-          await AnkiRepository().readNoteTypeDefinition('Lapis');
+      final AnkiNoteTypeDefinition? def = await AnkiRepository()
+          .readNoteTypeDefinition('Lapis');
 
       expect(def, isNotNull);
       expect(def!.name, 'Lapis');
@@ -73,13 +73,12 @@ void main() {
       expect(def.templates.single.back, '{{Sentence}}');
       expect(
         calls.map((MethodCall c) => c.method),
-        containsAllInOrder(
-            <String>['requestAnkidroidPermissions', 'readNoteType']),
+        containsAllInOrder(<String>[
+          'requestAnkidroidPermissions',
+          'readNoteType',
+        ]),
       );
-      expect(
-        calls.last.arguments,
-        containsPair('noteTypeName', 'Lapis'),
-      );
+      expect(calls.last.arguments, containsPair('noteTypeName', 'Lapis'));
     });
 
     test('readNoteTypeDefinition：note type 不存在返回 null（不是错误）', () async {
@@ -89,11 +88,14 @@ void main() {
 
     test('updateNoteTypeStyling 把 CSS 发过去并透传结果', () async {
       responses['updateNoteTypeStyling'] = true;
-      final bool ok =
-          await AnkiRepository().updateNoteTypeStyling('Lapis', 'body{}');
+      final bool ok = await AnkiRepository().updateNoteTypeStyling(
+        'Lapis',
+        'body{}',
+      );
       expect(ok, isTrue);
-      final MethodCall call = calls
-          .firstWhere((MethodCall c) => c.method == 'updateNoteTypeStyling');
+      final MethodCall call = calls.firstWhere(
+        (MethodCall c) => c.method == 'updateNoteTypeStyling',
+      );
       expect(call.arguments, containsPair('noteTypeName', 'Lapis'));
       expect(call.arguments, containsPair('css', 'body{}'));
     });
@@ -115,8 +117,9 @@ void main() {
         ],
       );
       expect(ok, isTrue);
-      final MethodCall call = calls
-          .firstWhere((MethodCall c) => c.method == 'updateNoteTypeTemplates');
+      final MethodCall call = calls.firstWhere(
+        (MethodCall c) => c.method == 'updateNoteTypeTemplates',
+      );
       final List<Object?> sent =
           (call.arguments as Map)['templates'] as List<Object?>;
       expect(sent, hasLength(1));
@@ -168,7 +171,9 @@ void main() {
       // 是合法的（readNoteType 就在读），写不是——判据只能是「有没有 put 进
       // ContentValues」，不能是「文件里出没出现过这个常量」。
       expect(
-          java, isNot(contains('.put(FlashCardsContract.Model.FIELD_NAMES')));
+        java,
+        isNot(contains('.put(FlashCardsContract.Model.FIELD_NAMES')),
+      );
     });
   });
 }

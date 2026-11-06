@@ -11,7 +11,11 @@ enum GalgameMetadataSource {
   bgm(key: 'bgm', label: 'Bangumi'),
 
   /// The Visual Novel Database，`https://vndb.org`。
-  vndb(key: 'vndb', label: 'VNDB');
+  vndb(key: 'vndb', label: 'VNDB'),
+
+  /// DLsite（同人 / 商业游戏商店），`https://www.dlsite.com`。外部 ID 是作品编号
+  /// （`RJ01014447` / `VJ01000001`）。
+  dlsite(key: 'dlsite', label: 'DLsite');
 
   const GalgameMetadataSource({required this.key, required this.label});
 

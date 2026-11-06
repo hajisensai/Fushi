@@ -9,8 +9,12 @@
 /// 本文件只做字符串判定，不碰文件系统 / 网络，app 与服务端共用。
 library;
 
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show isDvdTitlePath;
 import 'package:fushi_engine/media/video/anime_source_video_path.dart'
     show isAnimeSourceVideoPath;
+import 'package:fushi_engine/media/video/media_server_video_path.dart'
+    show isMediaServerVideoPath;
 
 /// `.strm` 扩展名（小写，不带点）。
 const String kStrmExtension = 'strm';
@@ -70,29 +74,34 @@ bool isNetworkStreamUrl(String url) {
 /// 判据的用途是「别把它当本地路径去碰文件系统」，宁可多认。
 ///
 /// 在线视频源入库集（[isAnimeSourceVideoPath]，`anime-source://`，起播时向扩展
-/// 取流）与来源库 SFTP 条目（[isSourceLibrarySftpVideoPath]，起播时经回环中继
-/// 取字节）同样没有本地文件，一并算在内——全仓唯一一份判据，
+/// 取流）、媒体服务器入库条目（[isMediaServerVideoPath]，`media-server://`，起播时
+/// 按服务器配置现建客户端取流）与来源库 SFTP 条目（[isSourceLibrarySftpVideoPath]，
+/// 起播时经回环中继取字节）同样没有本地文件，一并算在内——全仓唯一一份判据，
 /// `anime_source_video_path.dart` 只是转出它。`.strm` 不在其内：本地 `.strm` 是
 /// 磁盘上真实存在的文件（同目录 NFO / 海报 sidecar 照常可用），只是**没有媒体
 /// 字节**——需要媒体字节的门用 [lacksLocalMediaFile]。
 bool isNetworkOnlyVideoPath(String? path) {
   if (path == null) return false;
   if (isAnimeSourceVideoPath(path)) return true;
+  if (isMediaServerVideoPath(path)) return true;
   if (isSourceLibrarySftpVideoPath(path)) return true;
   final String trimmed = path.trim();
   final int sep = trimmed.indexOf('://');
   if (sep <= 0) return false;
-  return kNetworkStreamSchemes
-      .contains(trimmed.substring(0, sep).toLowerCase());
+  return kNetworkStreamSchemes.contains(
+    trimmed.substring(0, sep).toLowerCase(),
+  );
 }
 
 /// 纯函数：这一行视频在本机**没有可读的媒体字节**——网络流
-/// （[isNetworkOnlyVideoPath]）或 `.strm` 流指针（[isStrmPath]，本地那份只是一行
-/// 地址）。ED2K 哈希、抽帧、规格探测、互联上传 / 下发视频文件这类要读媒体本体的
+/// （[isNetworkOnlyVideoPath]）、`.strm` 流指针（[isStrmPath]，本地那份只是一行
+/// 地址），或 DVD title（[isDvdTitlePath]：虚拟路径，媒体要经原生 libdvdnav 按 title
+/// 读，盘上没有「这一条」的媒体文件）。ED2K 哈希、抽帧、规格探测、互联上传 / 下发视频文件这类要读媒体本体的
 /// 门用它；只需要「本地目录里找 sidecar」的门（封面 / NFO）用
 /// [isNetworkOnlyVideoPath]。
 bool lacksLocalMediaFile(String? path) =>
-    path != null && (isNetworkOnlyVideoPath(path) || isStrmPath(path));
+    path != null &&
+    (isNetworkOnlyVideoPath(path) || isStrmPath(path) || isDvdTitlePath(path));
 
 /// Apple 平台（iOS / macOS）不放行的流协议：随包 libmpv 在 Apple 上的 TLS 走
 /// Mbed TLS，https 由应用内中继终结 TLS 规避了握手段错误，但 rtsps / rtmps / rtmpe
@@ -108,8 +117,9 @@ bool isAppleUnsupportedStreamUrl(String url) {
   final String trimmed = url.trim();
   final int sep = trimmed.indexOf('://');
   if (sep <= 0) return false;
-  return kAppleUnsupportedStreamSchemes
-      .contains(trimmed.substring(0, sep).toLowerCase());
+  return kAppleUnsupportedStreamSchemes.contains(
+    trimmed.substring(0, sep).toLowerCase(),
+  );
 }
 
 /// 纯函数：[path] 是否指向一个 `.strm` 文件。本地路径与来源库网络条目（WebDAV /

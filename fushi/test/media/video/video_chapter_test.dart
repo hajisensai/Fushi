@@ -28,9 +28,9 @@ void main() {
       );
       expect(chapters.length, 5);
       expect(
-          chapters[0],
-          const VideoChapter(
-              index: 0, title: 'Chapter 01', start: Duration.zero));
+        chapters[0],
+        const VideoChapter(index: 0, title: 'Chapter 01', start: Duration.zero),
+      );
       expect(chapters[1].title, 'Chapter 02');
       expect(chapters[1].start, const Duration(milliseconds: 300500));
       expect(chapters[2].start, const Duration(seconds: 600));
@@ -47,18 +47,20 @@ void main() {
       expect(parseChapterList(count: '-3', titleAt: t, timeAt: s), isEmpty);
     });
 
-    test('blank title kept as empty string; negative/invalid time clamps to 0',
-        () {
-      final List<VideoChapter> chapters = parseChapterList(
-        count: '2',
-        titleAt: (int i) => i == 0 ? '' : 'Named',
-        timeAt: (int i) => i == 0 ? '-5' : 'oops',
-      );
-      expect(chapters[0].title, '');
-      expect(chapters[0].start, Duration.zero); // -5s clamp 到 0
-      expect(chapters[1].title, 'Named');
-      expect(chapters[1].start, Duration.zero); // 非法 time => 0
-    });
+    test(
+      'blank title kept as empty string; negative/invalid time clamps to 0',
+      () {
+        final List<VideoChapter> chapters = parseChapterList(
+          count: '2',
+          titleAt: (int i) => i == 0 ? '' : 'Named',
+          timeAt: (int i) => i == 0 ? '-5' : 'oops',
+        );
+        expect(chapters[0].title, '');
+        expect(chapters[0].start, Duration.zero); // -5s clamp 到 0
+        expect(chapters[1].title, 'Named');
+        expect(chapters[1].start, Duration.zero); // 非法 time => 0
+      },
+    );
   });
 
   group('adjacentChapterIndex (TODO-424)', () {
@@ -145,83 +147,125 @@ void main() {
   });
 
   group('VideoPlayerController chapter API without libmpv (TODO-424)', () {
-    test('chapters getter empty by default; debug inject + position highlight',
-        () {
-      final VideoPlayerController c = VideoPlayerController();
-      addTearDown(c.dispose);
-      expect(c.chapters, isEmpty);
-      expect(c.chapterIndexForPosition(123), -1);
+    test(
+      'chapters getter empty by default; debug inject + position highlight',
+      () {
+        final VideoPlayerController c = VideoPlayerController();
+        addTearDown(c.dispose);
+        expect(c.chapters, isEmpty);
+        expect(c.chapterIndexForPosition(123), -1);
 
-      c.debugSetChaptersForTesting(<VideoChapter>[
-        const VideoChapter(index: 0, title: 'Chapter 01', start: Duration.zero),
-        const VideoChapter(
-            index: 1, title: 'Chapter 02', start: Duration(seconds: 300)),
-      ]);
-      expect(c.chapters.length, 2);
-      expect(c.chapterIndexForPosition(0), 0);
-      expect(c.chapterIndexForPosition(300000), 1);
-      expect(c.chapterIndexForPosition(450000), 1);
-    });
+        c.debugSetChaptersForTesting(<VideoChapter>[
+          const VideoChapter(
+            index: 0,
+            title: 'Chapter 01',
+            start: Duration.zero,
+          ),
+          const VideoChapter(
+            index: 1,
+            title: 'Chapter 02',
+            start: Duration(seconds: 300),
+          ),
+        ]);
+        expect(c.chapters.length, 2);
+        expect(c.chapterIndexForPosition(0), 0);
+        expect(c.chapterIndexForPosition(300000), 1);
+        expect(c.chapterIndexForPosition(450000), 1);
+      },
+    );
 
-    test('seekToChapter / next / previous are no-op-safe without a Player',
-        () async {
-      final VideoPlayerController c = VideoPlayerController();
-      addTearDown(c.dispose);
-      c.debugSetChaptersForTesting(<VideoChapter>[
-        const VideoChapter(index: 0, title: 'A', start: Duration.zero),
-        const VideoChapter(index: 1, title: 'B', start: Duration(seconds: 300)),
-      ]);
-      // 无 Player：这些只是不抛（seekMs / getProperty 都 no-op 安全）。
-      await c.seekToChapter(0);
-      await c.seekToChapter(5); // 越界 no-op
-      await c.seekToChapter(-1); // 负 no-op
-      await c.nextChapter();
-      await c.previousChapter();
-    });
+    test(
+      'seekToChapter / next / previous are no-op-safe without a Player',
+      () async {
+        final VideoPlayerController c = VideoPlayerController();
+        addTearDown(c.dispose);
+        c.debugSetChaptersForTesting(<VideoChapter>[
+          const VideoChapter(index: 0, title: 'A', start: Duration.zero),
+          const VideoChapter(
+            index: 1,
+            title: 'B',
+            start: Duration(seconds: 300),
+          ),
+        ]);
+        // 无 Player：这些只是不抛（seekMs / getProperty 都 no-op 安全）。
+        await c.seekToChapter(0);
+        await c.seekToChapter(5); // 越界 no-op
+        await c.seekToChapter(-1); // 负 no-op
+        await c.nextChapter();
+        await c.previousChapter();
+      },
+    );
   });
 
   group('chapter first-load readiness guards (TODO-521)', () {
-    final String src = File('lib/src/media/video/video_player_controller.dart')
-        .readAsStringSync();
+    final String src = File(
+      'lib/src/media/video/video_player_controller.dart',
+    ).readAsStringSync();
 
     test('load waits for real duration readiness instead of fixed delay', () {
       final int loadStart = src.indexOf('Future<void> load({');
       expect(loadStart, greaterThanOrEqualTo(0));
-      final int loadEnd =
-          src.indexOf('void _handleCompletedChanged', loadStart);
+      final int loadEnd = src.indexOf(
+        'void _handleCompletedChanged',
+        loadStart,
+      );
       expect(loadEnd, greaterThan(loadStart));
       final String loadBody = src.substring(loadStart, loadEnd);
 
-      expect(loadBody,
-          contains('_refreshChaptersWhenDurationReady(player, loadToken)'));
-      expect(loadBody, isNot(contains('unawaited(refreshChapters())')),
-          reason: 'open() 后立刻读 chapter-list 会复现首次读空竞态');
-      expect(loadBody, isNot(contains('Future.delayed')),
-          reason: '章节就绪必须由 duration 信号驱动，不能靠固定延迟掩盖竞态');
-    });
-
-    test(
-        'duration subscription has initial-state path and lifecycle cancellation',
-        () {
-      expect(src, contains('StreamSubscription<Duration>? _durationReadySub'));
-      expect(src, contains('player.state.duration'));
-      expect(src, contains('player.stream.duration.listen'));
-      expect(src, contains('await _durationReadySub?.cancel()'),
-          reason: '换片 load 前必须取消上一片 duration 订阅');
-      expect(src, contains('unawaited(_durationReadySub?.cancel())'),
-          reason: 'dispose 必须取消 duration 订阅');
-    });
-
-    test(
-        'chapter refresh results are guarded by player identity and load token',
-        () {
-      expect(src, contains('int _loadToken = 0'));
-      expect(src, contains('final int loadToken = ++_loadToken'));
       expect(
-          src, contains('bool _isCurrentLoad(Player player, int loadToken)'));
-      expect(src, contains('_refreshChaptersForLoad(player, loadToken)'));
-      expect(src, contains('if (!_isCurrentLoad(player, loadToken)) return;'));
+        loadBody,
+        contains('_refreshChaptersWhenDurationReady(player, loadToken)'),
+      );
+      expect(
+        loadBody,
+        isNot(contains('unawaited(refreshChapters())')),
+        reason: 'open() 后立刻读 chapter-list 会复现首次读空竞态',
+      );
+      expect(
+        loadBody,
+        isNot(contains('Future.delayed')),
+        reason: '章节就绪必须由 duration 信号驱动，不能靠固定延迟掩盖竞态',
+      );
     });
+
+    test(
+      'duration subscription has initial-state path and lifecycle cancellation',
+      () {
+        expect(
+          src,
+          contains('StreamSubscription<Duration>? _durationReadySub'),
+        );
+        expect(src, contains('player.state.duration'));
+        expect(src, contains('player.stream.duration.listen'));
+        expect(
+          src,
+          contains('await _durationReadySub?.cancel()'),
+          reason: '换片 load 前必须取消上一片 duration 订阅',
+        );
+        expect(
+          src,
+          contains('unawaited(_durationReadySub?.cancel())'),
+          reason: 'dispose 必须取消 duration 订阅',
+        );
+      },
+    );
+
+    test(
+      'chapter refresh results are guarded by player identity and load token',
+      () {
+        expect(src, contains('int _loadToken = 0'));
+        expect(src, contains('final int loadToken = ++_loadToken'));
+        expect(
+          src,
+          contains('bool _isCurrentLoad(Player player, int loadToken)'),
+        );
+        expect(src, contains('_refreshChaptersForLoad(player, loadToken)'));
+        expect(
+          src,
+          contains('if (!_isCurrentLoad(player, loadToken)) return;'),
+        );
+      },
+    );
 
     test('new loads clear stale chapters before opening the next media', () {
       expect(src, contains('_clearChaptersForNewLoad();'));

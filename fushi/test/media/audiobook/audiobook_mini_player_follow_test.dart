@@ -63,4 +63,50 @@ void main() {
       },
     );
   }
+
+  testWidgets(
+    'mini player scrub band stays below the button row (taps on a button '
+    'bottom edge must not seek)',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(720, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final AudiobookPlayerController controller = AudiobookPlayerController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: Scaffold(
+            body: Center(
+              child: AudiobookMiniPlayer(
+                controller: controller,
+                showPlayButton: true,
+                chapterLabel: 'Chapter',
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final Rect scrub = tester.getRect(
+        find.byKey(const ValueKey<String>('audiobook_mini_player_scrub')),
+      );
+      final Iterable<Element> targets = find
+          .byType(FushiFocusTarget)
+          .evaluate();
+      expect(targets, isNotEmpty);
+      for (final Element target in targets) {
+        final Rect button = tester.getRect(
+          find.byElementPredicate((Element e) => e == target),
+        );
+        expect(
+          scrub.top,
+          greaterThanOrEqualTo(button.bottom),
+          reason:
+              '${(target.widget as FushiFocusTarget).id.value} overlaps the scrub band',
+        );
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 }

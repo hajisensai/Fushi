@@ -196,7 +196,10 @@ void main() {
     final Size content = tester.getSize(
       find.byKey(const ValueKey<String>('content')),
     );
-    expect(insets.last, 56);
+    // 顶层工具行整体按 [kFushiFloatingCapsuleScale] 缩：56 高的工具行在屏幕上
+    // 占 56 × scale，让位（inset）也按缩后的高度算。
+    const double scaledChrome = 56 * kFushiFloatingCapsuleScale;
+    expect(insets.last, moreOrLessEquals(scaledChrome));
 
     controller.hide();
     await tester.pumpAndSettle();
@@ -204,7 +207,7 @@ void main() {
       tester.getSize(find.byKey(const ValueKey<String>('content'))),
       content,
     );
-    expect(insets.last, 56, reason: 'inset 不随显隐变');
+    expect(insets.last, moreOrLessEquals(scaledChrome), reason: 'inset 不随显隐变');
     expect(
       tester.getRect(find.byKey(const ValueKey<String>('chrome'))).bottom,
       lessThanOrEqualTo(

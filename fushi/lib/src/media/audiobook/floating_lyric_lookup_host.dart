@@ -1,7 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/latin_word_lookup.dart';
+import 'package:fushi/src/lookup/source_line_sentence.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -12,10 +15,20 @@ class FloatingLyricLookupRequest {
     required this.text,
     required this.index,
     this.selectionRect,
+    this.cardImage,
+    this.sentence = '',
   });
 
   final String text;
   final int index;
+
+  /// 这次查词出自的那一句原文，制卡时补进基础层的 `{sentence}`（反馈 1Mwaro8UTC）。
+  /// 截屏识字 / 拍照查词给被点字所在的那一句，悬浮字幕点字给整行；手动输入 / 剪贴板
+  /// 查词没有出处，为空（不补）。
+  final String sentence;
+
+  /// 截屏识字 / 拍照查词这次点字的卡图来源（反馈 Gz7z6Y6Mbr）；悬浮字幕点词为 null。
+  final ScreenOcrCardImage? cardImage;
 
   /// 被点文字在屏幕上的矩形（逻辑像素）；null = 没有可定位的选区，弹窗落在
   /// 屏幕中央。悬浮球的截屏识字会带上被点字符的框。
@@ -44,12 +57,20 @@ class FloatingLyricLookupNotifier extends ChangeNotifier {
   FloatingLyricLookupRequest? get pending => _pending;
 
   /// 推一次点词请求（app 级默认 handler 调）。空白文本忽略。
-  void requestLookup(String text, int index, {Rect? selectionRect}) {
+  void requestLookup(
+    String text,
+    int index, {
+    Rect? selectionRect,
+    ScreenOcrCardImage? cardImage,
+    String sentence = '',
+  }) {
     if (text.trim().isEmpty) return;
     _pending = FloatingLyricLookupRequest(
       text: text,
       index: index,
       selectionRect: selectionRect,
+      cardImage: cardImage,
+      sentence: sentence.trim(),
     );
     notifyListeners();
   }
@@ -61,10 +82,23 @@ class FloatingLyricLookupNotifier extends ChangeNotifier {
     return req;
   }
 
+  final _LookupClosedSignal _closed = _LookupClosedSignal();
+
+  /// 用户把 [FloatingLyricLookupHost] 的查词卡整栈关掉（关到一层不剩）时通知。
+  /// 只由显式关闭触发，查词中途换词 / 热槽复用不算（音乐桌面歌词据此恢复播放）。
+  Listenable get lookupClosed => _closed;
+
+  /// host 在用户关掉最后一层弹窗后调用。
+  void notifyLookupClosed() => _closed.fire();
+
   @visibleForTesting
   void debugReset() {
     _pending = null;
   }
+}
+
+class _LookupClosedSignal extends ChangeNotifier {
+  void fire() => notifyListeners();
 }
 
 /// 常驻主窗口的悬浮字幕查词弹窗宿主（TODO-354 ①）。
@@ -104,7 +138,8 @@ class FloatingLyricLookupHost extends ConsumerStatefulWidget {
 }
 
 class _FloatingLyricLookupHostState
-    extends ConsumerState<FloatingLyricLookupHost> with DictionaryPageMixin {
+    extends ConsumerState<FloatingLyricLookupHost>
+    with DictionaryPageMixin {
   final DictionaryPopupController _popup = DictionaryPopupController(
     lowMemory: false,
     onLookupStackDepthChanged: recordLookupStackDepth,
@@ -120,6 +155,33 @@ class _FloatingLyricLookupHostState
 
   @override
   AppModel get mixinAppModel => _appModel;
+
+  /// 最近一次顶层查词带来的卡图来源（截屏识字 / 拍照查词），制卡时裁成卡图；悬浮字幕
+  /// 点词的请求不带，会把它清掉。
+  ScreenOcrCardImage? _cardImage;
+
+  @override
+  ScreenOcrCardImage? get miningCardImage => _cardImage;
+
+  /// 最近一次顶层查词出自的那一句原文与当时的查询串（反馈 1Mwaro8UTC）。基础层制卡
+  /// 时据此补 `{sentence}`，判据见 [withSourceLineSentence]。
+  String _sourceSentence = '';
+  String _sourceQuery = '';
+
+  @override
+  Map<String, String> miningFieldsForLayer(
+    int index,
+    DictionaryPopupController controller,
+    Map<String, String> fields,
+  ) => withSourceLineSentence(
+    fields,
+    layerIndex: index,
+    baseTerm: controller.entries.isEmpty
+        ? ''
+        : controller.entries.first.searchTerm,
+    sourceQuery: _sourceQuery,
+    sentence: _sourceSentence,
+  );
 
   @override
   ThemeData get mixinTheme => Theme.of(context);
@@ -163,13 +225,17 @@ class _FloatingLyricLookupHostState
   void _lookup(FloatingLyricLookupRequest req) {
     final String trimmed = req.text.trim();
     if (trimmed.isEmpty) return;
+    _cardImage = req.cardImage;
     _ensureWarmPopup();
     final String word = lookupWordAtIndex(req.text, req.index).trim();
     final String searchTerm = word.isNotEmpty ? word : trimmed;
+    _sourceSentence = req.sentence;
+    _sourceQuery = searchTerm;
     // 无 WebView 选区可定位，用屏幕中心 1×1 选区兜底（与 reader 的
     // _lookupFromFloatingLyric / 歌词模式同款）；底部固定模式时 mixin 自走 dock。
     final Size screen = MediaQuery.sizeOf(context);
-    final Rect selectionRect = req.selectionRect ??
+    final Rect selectionRect =
+        req.selectionRect ??
         Rect.fromCenter(
           center: Offset(screen.width / 2, screen.height / 2),
           width: 1,
@@ -185,6 +251,13 @@ class _FloatingLyricLookupHostState
       reuseWarmSlot: true,
       autoRead: true,
     );
+  }
+
+  void _onPop(int index) {
+    popNestedPopupAt(index, _popup);
+    if (!FloatingLyricLookupHost.shouldBlockHitTest(_popup)) {
+      _notifier.notifyLookupClosed();
+    }
   }
 
   @override
@@ -212,12 +285,19 @@ class _FloatingLyricLookupHostState
               index: i,
               screen: screen,
               controller: _popup,
-              onPush: (String text, Rect rect) => pushNestedPopup(
-                query: text,
-                selectionRect: rect,
-                controller: _popup,
-              ),
-              onPop: (int index) => popNestedPopupAt(index, _popup),
+              onPush:
+                  (
+                    String text,
+                    Rect rect,
+                    List<FushiRubySpan> rubySpans,
+                    String _,
+                  ) => pushNestedPopup(
+                    query: text,
+                    selectionRect: rect,
+                    controller: _popup,
+                    rubySpans: rubySpans,
+                  ),
+              onPop: _onPop,
             ),
           ...buildParkedRealmLayers(screen: screen, controller: _popup),
         ],

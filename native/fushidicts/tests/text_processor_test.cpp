@@ -134,6 +134,19 @@ int main() {
   //   撇号归一不得改动无撇号文本（负向：don 不得凭空长出撇号变体）。
   expect_absent("apos-no-phantom", "don", "don'");
 
+  // HBK-AUDIT-007：内嵌 U+0000 是正文，NFKC 不得把它当串尾把候选截成前半段
+  // （日本語\0日本語 -> 日本語 会让查词命中「日本語」却报 matched = 整条候选）。
+  const std::string nul_mid("\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E\0\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E", 19);
+  expect_absent("nfkc-keeps-embedded-nul", nul_mid, "\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E");
+  {
+    bool identity = false;
+    for (const auto& v : text_processor::process(nul_mid)) identity = identity || v.text == nul_mid;
+    if (!identity) {
+      std::fprintf(stderr, "FAIL nfkc-keeps-embedded-nul: identity variant missing\n");
+      ++g_fail;
+    }
+  }
+
   if (g_fail) {
     std::fprintf(stderr, "%d FAIL\n", g_fail);
     return 1;

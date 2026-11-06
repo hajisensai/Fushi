@@ -21,8 +21,9 @@ class _FakeFloatingLyricWindow {
   Future<Object?> handle(MethodCall call) async {
     methodLog.add(call.method);
     final Object? args = call.arguments;
-    final Map<Object?, Object?> map =
-        args is Map ? args : const <Object?, Object?>{};
+    final Map<Object?, Object?> map = args is Map
+        ? args
+        : const <Object?, Object?>{};
     switch (call.method) {
       case 'canDrawOverlays':
         return true;
@@ -96,34 +97,36 @@ void main() {
   }
 
   group('desktop floating lyric state machine', () {
-    test('show -> update -> highlight -> hide lifecycle drives the window',
-        () async {
-      expect(await FloatingLyricChannel.isShowing(), isFalse);
+    test(
+      'show -> update -> highlight -> hide lifecycle drives the window',
+      () async {
+        expect(await FloatingLyricChannel.isShowing(), isFalse);
 
-      final bool shown = await FloatingLyricChannel.show(
-        fontSize: 22,
-        clickLookupEnabled: false,
-      );
-      expect(shown, isTrue);
-      expect(native.visible, isTrue);
-      expect(native.clickLookupEnabled, isFalse);
-      expect(await FloatingLyricChannel.isShowing(), isTrue);
+        final bool shown = await FloatingLyricChannel.show(
+          fontSize: 22,
+          clickLookupEnabled: false,
+        );
+        expect(shown, isTrue);
+        expect(native.visible, isTrue);
+        expect(native.clickLookupEnabled, isFalse);
+        expect(await FloatingLyricChannel.isShowing(), isTrue);
 
-      await FloatingLyricChannel.updateText('テスト文章');
-      expect(native.text, 'テスト文章');
+        await FloatingLyricChannel.updateText('テスト文章');
+        expect(native.text, 'テスト文章');
 
-      await FloatingLyricChannel.highlight(start: 1, length: 2);
-      expect(native.highlight, isNotNull);
-      expect(native.highlight!.start, 1);
-      expect(native.highlight!.length, 2);
+        await FloatingLyricChannel.highlight(start: 1, length: 2);
+        expect(native.highlight, isNotNull);
+        expect(native.highlight!.start, 1);
+        expect(native.highlight!.length, 2);
 
-      await FloatingLyricChannel.setPlaybackState(playing: true);
-      expect(native.playing, isTrue);
+        await FloatingLyricChannel.setPlaybackState(playing: true);
+        expect(native.playing, isTrue);
 
-      await FloatingLyricChannel.hide();
-      expect(native.visible, isFalse);
-      expect(await FloatingLyricChannel.isShowing(), isFalse);
-    });
+        await FloatingLyricChannel.hide();
+        expect(native.visible, isFalse);
+        expect(await FloatingLyricChannel.isShowing(), isFalse);
+      },
+    );
 
     test('updateText clears any prior highlight (cue advanced)', () async {
       await FloatingLyricChannel.show();

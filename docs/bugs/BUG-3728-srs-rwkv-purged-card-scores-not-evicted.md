@@ -1,0 +1,12 @@
+## BUG-3728 · 永久清除的卡仍留在 RWKV 常驻分数表里
+- **报告**：2026-10-23（来源：审查记录 HBK-AUDIT-020，`2026-10-23-rwkv-score-refresh-review.md`）
+- **现象**：卡被墓碑清除后，它在原生常驻分数表里的项不删：一直占内存，每次整表重查都白算一遍，直到服务重建。
+- **真实性**：✅ 真 bug（代码路径确认，测试复现）。根因：
+  - `native/fushi_rwkv/src/lib.rs` 的 `scores_requery` 遍历全部常驻项，表只有 `scores_clear` 一个删除入口。
+  - `packages/fushi_engine/lib/srs/srs_db_store.dart` 的 `purgeDeletedNotes` 清除卡后不通知 RWKV。复习日志保留，所以日志指纹不变，也不会触发重建。
+- **[x] ① 已修复** — `70c8ad022c`：
+  - 原生侧新增 `RwkvRuntime::scores_remove` / C ABI `frwkv_runtime_scores_remove`。
+  - Dart 侧链路：`RwkvNativeRuntime.removeScores` → `RwkvWorker.removeScores` → `SrsRwkvBackend.removeScores`。
+  - `SrsRwkvScheduling` 新增 `onCardsPurged`；`purgeDeletedNotes` 在事务提交后把清掉的卡 ID 交给它，`SrsPurgeChunk` 带回 `cardIds`。
+- **[x] ② 已加自动化测试** — `native/fushi_rwkv/tests/journal.rs`（删项后表长与整表重查行数各减 2，删不存在的不算）、`packages/fushi_rwkv/test/fushi_rwkv_test.dart`（跨 isolate 往返）、`packages/fushi_engine/test/srs/srs_rwkv_service_test.dart`（清除笔记后分数表项删掉）。
+- **备注**：无。

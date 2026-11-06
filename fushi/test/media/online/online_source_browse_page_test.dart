@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/online/online_source_browse_page.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import '../../helpers/glass_unwrap.dart';
 
 /// 三域共用源浏览页（2026-09-27「浏览」阶段 2）的行为契约，用假适配器驱动：
@@ -85,14 +86,24 @@ void main() {
     expect(query.listingId, 'popular');
     expect(query.isSearch, isFalse);
     expect(query.filtered, isTrue);
-    expect(tester.widget<TextField>(glassUnwrap<TextField>(field())).controller!.text, isEmpty);
+    expect(
+      tester
+          .widget<TextField>(glassUnwrap<TextField>(field()))
+          .controller!
+          .text,
+      isEmpty,
+    );
   });
 
   // PR #1707 审查：合并成共用页后小说筛选按钮的提示变成了 Mihon 的「来源偏好」。
   testWidgets('筛选按钮的提示由适配器给出', (WidgetTester tester) async {
     final _FakeCatalog catalog = _FakeCatalog();
     await pumpPage(tester, catalog);
-    final IconButton button = tester.widget<IconButton>(glassUnwrap<IconButton>(find.byKey(const ValueKey<String>('fake_filters'))),);
+    final IconButton button = tester.widget<IconButton>(
+      glassUnwrap<IconButton>(
+        find.byKey(const ValueKey<String>('fake_filters')),
+      ),
+    );
     expect(button.tooltip, 'Fake filters');
     expect(
       File(
@@ -187,11 +198,10 @@ void main() {
       touchSlopY: 0,
     );
     await tester.pumpAndSettle();
-    expect(
-      catalog.calls.map(((OnlineBrowseQuery, int) c) => c.$2),
-      <int>[1, 2],
-      reason: '第 2 页排进网格后离底又远了，不能因为旧度量再翻第 3 页。',
-    );
+    expect(catalog.calls.map(((OnlineBrowseQuery, int) c) => c.$2), <int>[
+      1,
+      2,
+    ], reason: '第 2 页排进网格后离底又远了，不能因为旧度量再翻第 3 页。');
   });
 
   testWidgets('下一页全是重复条目时停止翻页，「加载更多」消失', (WidgetTester tester) async {
@@ -326,6 +336,9 @@ class _FakeCatalog extends OnlineSourceCatalog<String> {
 
   @override
   String titleOf(String item) => item;
+
+  @override
+  ShelfCoverMaterial get coverMaterial => ShelfCoverMaterial.glossyBook;
 
   @override
   Widget buildCover(BuildContext context, String item) =>

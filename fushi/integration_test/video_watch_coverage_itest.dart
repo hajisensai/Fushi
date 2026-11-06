@@ -50,29 +50,37 @@ void main() {
     final FushiDatabase db = appModel.database;
     final VideoBookRepository repo = VideoBookRepository(db);
 
-    final Directory dir =
-        await Directory.systemTemp.createTemp('fushi_watch_coverage_');
+    final Directory dir = await Directory.systemTemp.createTemp(
+      'fushi_watch_coverage_',
+    );
     final File videoFile = await generateTestVideo(
       outPath: '${dir.path}${Platform.pathSeparator}coverage_probe.mp4',
       duration: const Duration(seconds: 30),
     );
-    await repo.saveVideoBook(VideoBooksCompanion(
-      bookUid: const Value(_kBookUid),
-      title: const Value('watch coverage probe'),
-      videoPath: Value(videoFile.absolute.path),
-      lastPositionMs: const Value(0),
-    ));
+    await repo.saveVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value(_kBookUid),
+        title: const Value('watch coverage probe'),
+        videoPath: Value(videoFile.absolute.path),
+        lastPositionMs: const Value(0),
+      ),
+    );
     // 干净起点：上一轮残留的覆盖 / 段会让「首次覆盖」失真。
     await db.deleteVideoStatisticsForIdentity(
       title: 'watch coverage probe',
       bookUid: _kBookUid,
     );
 
-    final NavigatorState navigator =
-        tester.state<NavigatorState>(find.byType(Navigator).first);
-    unawaited(navigator.push<void>(MaterialPageRoute<void>(
-      builder: (_) => VideoFushiPage(bookUid: _kBookUid, repo: repo),
-    )));
+    final NavigatorState navigator = tester.state<NavigatorState>(
+      find.byType(Navigator).first,
+    );
+    unawaited(
+      navigator.push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => VideoFushiPage(bookUid: _kBookUid, repo: repo),
+        ),
+      ),
+    );
 
     VideoFushiTestHooks? readHooks() {
       if (find.byType(VideoFushiPage).evaluate().isEmpty) return null;
@@ -114,8 +122,9 @@ void main() {
     await readHooks()!.debugSeekMs(_kRewindToMs);
     await tester.pump(const Duration(milliseconds: 500));
     await playUntil(_kSecondPassMs);
-    final int wallPlayedMs =
-        DateTime.now().difference(playStart!).inMilliseconds;
+    final int wallPlayedMs = DateTime.now()
+        .difference(playStart!)
+        .inMilliseconds;
     await readHooks()!.debugPause();
     await tester.pump(const Duration(milliseconds: 300));
 
@@ -146,12 +155,21 @@ void main() {
     );
 
     // 首次覆盖 ≈ 9s：下限放宽给起播 / 采样节奏，上限卡在「重听那 3s 不计」之内。
-    expect(credited, greaterThanOrEqualTo(_kSecondPassMs - 2500),
-        reason: '首次覆盖的 ~9s 内容应计入');
-    expect(credited, lessThanOrEqualTo(_kSecondPassMs + 1500),
-        reason: '重听的 3s 不该计（旧口径会记 ≥ 12s）');
-    expect(credited, lessThan(wallPlayedMs - 2000),
-        reason: '计时必须明显小于播放态墙钟 ${wallPlayedMs}ms（差 = 重听时长）');
+    expect(
+      credited,
+      greaterThanOrEqualTo(_kSecondPassMs - 2500),
+      reason: '首次覆盖的 ~9s 内容应计入',
+    );
+    expect(
+      credited,
+      lessThanOrEqualTo(_kSecondPassMs + 1500),
+      reason: '重听的 3s 不该计（旧口径会记 ≥ 12s）',
+    );
+    expect(
+      credited,
+      lessThan(wallPlayedMs - 2000),
+      reason: '计时必须明显小于播放态墙钟 ${wallPlayedMs}ms（差 = 重听时长）',
+    );
     expect(coverageJson, isNotNull, reason: '覆盖并集须落偏好表');
     expect(coverage.ranges, hasLength(1), reason: '0..9s 连续一段');
     expect(coverage.total, greaterThanOrEqualTo(_kSecondPassMs - 1500));

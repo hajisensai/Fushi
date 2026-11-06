@@ -9,7 +9,9 @@ import 'package:fushi/src/focus/fushi_focus_target.dart';
 Widget _shell({required GlobalKey rootKey}) {
   Widget t(String id, {required double w, required double h}) =>
       FushiFocusTarget(
-          id: FushiFocusId(id), child: SizedBox(width: w, height: h));
+        id: FushiFocusId(id),
+        child: SizedBox(width: w, height: h),
+      );
   return MaterialApp(
     theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
     home: Scaffold(
@@ -63,14 +65,14 @@ Widget _shell({required GlobalKey rootKey}) {
 }
 
 void main() {
-  testWidgets(
-      'Down from a header button stays in the body pane, never enters '
+  testWidgets('Down from a header button stays in the body pane, never enters '
       'the rail group', (WidgetTester tester) async {
     final GlobalKey rootKey = GlobalKey();
     await tester.pumpWidget(_shell(rootKey: rootKey));
     await tester.pump();
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(rootKey.currentContext!);
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
+      rootKey.currentContext!,
+    );
 
     expect(controller.requestById(const FushiFocusId('header-btn')), isTrue);
     await tester.pump();
@@ -84,13 +86,15 @@ void main() {
     );
   });
 
-  testWidgets('Left from body content still escapes into the rail group',
-      (WidgetTester tester) async {
+  testWidgets('Left from body content still escapes into the rail group', (
+    WidgetTester tester,
+  ) async {
     final GlobalKey rootKey = GlobalKey();
     await tester.pumpWidget(_shell(rootKey: rootKey));
     await tester.pump();
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(rootKey.currentContext!);
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
+      rootKey.currentContext!,
+    );
 
     expect(controller.requestById(const FushiFocusId('content-0')), isTrue);
     await tester.pump();

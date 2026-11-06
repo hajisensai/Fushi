@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-900 守卫：副字幕（视频双字幕副层）必须与主字幕轨行**共用同一份可用字幕列表**
 /// [_subtitleMenuSources]（内嵌轨 + 同目录外挂文件），而不是只取内嵌轨。
@@ -33,14 +33,18 @@ void main() {
 
   test('副字幕行遍历完整可用列表（不得过滤成 isEmbedded）', () {
     final String src = source.readAsStringSync();
-    final String body =
-        methodBody(src, 'List<Widget> _buildSecondarySubtitleRows(');
+    final String body = methodBody(
+      src,
+      'List<Widget> _buildSecondarySubtitleRows(',
+    );
 
     // BUG-1861 起「同一份可用列表」是 `_menuSubtitleSources`（枚举结果 ∪ 本会话导入 /
     // 下载的档案），不再是裸 `_subtitleMenuSources`（只有枚举结果）。BUG-900 的不变量
     // 没变——副字幕要与主字幕轨行读同一份——只是那份列表的名字换了。
     expect(
-      body.contains('for (final SubtitleSource source in _menuSubtitleSources)'),
+      body.contains(
+        'for (final SubtitleSource source in _menuSubtitleSources)',
+      ),
       isTrue,
       reason: '副字幕行必须遍历完整 _menuSubtitleSources（与主字幕同一份可用列表）',
     );
@@ -53,8 +57,10 @@ void main() {
 
   test('副字幕恢复对称支持外挂绝对路径（SubtitleSource.external + 文件存在）', () {
     final String src = source.readAsStringSync();
-    final String body =
-        methodBody(src, 'Future<void> _restoreSecondarySubtitle(');
+    final String body = methodBody(
+      src,
+      'Future<void> _restoreSecondarySubtitle(',
+    );
 
     expect(
       body.contains('SubtitleSource.external('),
@@ -62,14 +68,39 @@ void main() {
       reason: '副字幕恢复必须支持外挂源（否则重开视频外挂副字幕丢失）',
     );
     expect(
-      body.contains('File(persisted).existsSync()'),
+      body.contains('await File(persisted).exists()'),
       isTrue,
-      reason: '外挂恢复须校验文件仍在（与主字幕 _restorePersistedSubtitle 同判据）',
+      reason:
+          '外挂恢复须校验文件仍在（与主字幕 _restorePersistedSubtitle 同判据）；'
+          'async 判（BUG-3756：sidecar 常在网络盘上，同步 stat 冻结 UI isolate）',
     );
+    expect(body.contains('existsSync('), isFalse, reason: 'BUG-3756');
     expect(
       body.contains('SubtitleSource.embeddedPrefix'),
       isTrue,
       reason: '内嵌轨恢复路径仍须保留',
+    );
+  });
+
+  test('副字幕内嵌轨恢复从真实枚举取源（带 codec），不凭持久化串自拼', () {
+    final String src = source.readAsStringSync();
+    final String body = methodBody(
+      src,
+      'Future<void> _restoreSecondarySubtitle(',
+    );
+
+    // 回归（反馈 XcV2TsgvMz / 666SKnuUTb）：自拼的 SubtitleSource.embedded 没有 codec，
+    // loadCuesForSource 判「格式不支持」返回空 → 重开视频副字幕静默不显示。
+    expect(
+      body.contains('SubtitleSource.embedded('),
+      isFalse,
+      reason: '不得凭 embedded:<n> 自拼内嵌源（缺 codec，抽不出 cue）',
+    );
+    expect(
+      body.contains('listAllSubtitleSources(') &&
+          body.contains('_firstMatching('),
+      isTrue,
+      reason: '内嵌副字幕恢复须与主字幕同走真实枚举 + 精确匹配',
     );
   });
 }

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-614 静态守卫：把「覆写范围（latest/all）」两点改动的关键接线锁住，防止
 /// 静默回退。覆盖：
@@ -14,24 +14,47 @@ void main() {
 
   test('point1: tags input lives in the default-tags section, not the '
       'allow-duplicates group', () {
+    // 2026-10-31 起分组由 schema 组装（settings_schema_card_creation.dart 的
+    // _rowsSection），页面只按 AnkiSectionRow 渲染单行。
     final src = read('lib/src/pages/implementations/anki_settings_page.dart');
-    final int defaultSectionIdx = src.indexOf('t.anki_tag_default_section');
-    final int dupSwitchIdx = src.indexOf('title: t.anki_allow_duplicates,');
-    final int tagsInputIdx = src.indexOf('_buildTagsInput(settings, vm)');
-    expect(defaultSectionIdx, greaterThanOrEqualTo(0));
-    expect(dupSwitchIdx, greaterThanOrEqualTo(0));
     expect(
-      tagsInputIdx,
-      greaterThanOrEqualTo(0),
-      reason: 'the tags input must still be rendered',
+      src.contains('title: t.anki_allow_duplicates,'),
+      isTrue,
+      reason: 'the allow-duplicates switch must still be rendered',
     );
-    // The tags input must appear AFTER the default-tags section title (i.e. it
-    // moved into that section), not back up in the allow-duplicates group.
     expect(
-      tagsInputIdx,
-      greaterThan(defaultSectionIdx),
+      RegExp(
+        r'AnkiSectionRow\.tags => SettingsSearchTarget\([\s\S]{0,120}'
+        r'_buildTagsInput\(settings, vm\)',
+      ).hasMatch(src),
+      isTrue,
+      reason: 'the tags row must render the tags input',
+    );
+    final schema = read('lib/src/settings/settings_schema_card_creation.dart');
+    String sectionBlock(String id) {
+      final int start = schema.indexOf("id: '$id',");
+      expect(start, greaterThanOrEqualTo(0), reason: 'section $id missing');
+      final int end = schema.indexOf('_rowsSection(', start);
+      return schema.substring(start, end < 0 ? schema.length : end);
+    }
+
+    final String tagsSection = sectionBlock('card_creation.tags');
+    expect(tagsSection, contains('title: t.anki_tag_default_section,'));
+    expect(
+      tagsSection,
+      contains('AnkiSectionRow.tags,'),
       reason: 'tags input must be inside the default-tags section',
     );
+    final String contentSection = sectionBlock('card_creation.content');
+    expect(contentSection, contains('AnkiSectionRow.allowDuplicates,'));
+    expect(
+      contentSection,
+      isNot(contains('AnkiSectionRow.tags,')),
+      reason: 'tags input must not sit in the allow-duplicates group',
+    );
+    // 反馈 MhQHXQI-sB：制卡位置写进 MiscInfo（卡片内容），不再是标签。
+    expect(contentSection, contains('AnkiSectionRow.tagCharPosition,'));
+    expect(tagsSection, isNot(contains('AnkiSectionRow.tagCharPosition,')));
   });
 
   test(
@@ -60,8 +83,10 @@ void main() {
     // 用正则而不是带精确缩进的字面量：制卡模块关掉时这段被包进
     // `if (miningEnabled) { ... }`，缩进从 8 格变 12 格，调用本身没变。
     final int scheduledCheckIdx =
-        RegExp(r'scheduleEntryStateCheck\(\s*mineButton,').firstMatch(js)?.start ??
-            -1;
+        RegExp(
+          r'scheduleEntryStateCheck\(\s*mineButton,',
+        ).firstMatch(js)?.start ??
+        -1;
     expect(scheduledCheckIdx, greaterThanOrEqualTo(0));
     final int duplicateBridgeIdx = js.indexOf(
       "'duplicateCheck', { expression, reading }",

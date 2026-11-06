@@ -28,16 +28,19 @@ void main() {
 
   /// 截出 `[Section]` 头之后、下一个 `[Xxx]` 头之前的正文。
   String sectionBody(String iss, String section) {
-    final int start =
-        iss.indexOf(RegExp(r'^\[' + section + r'\]$', multiLine: true));
+    final int start = iss.indexOf(
+      RegExp(r'^\[' + section + r'\]$', multiLine: true),
+    );
     expect(
       start,
       greaterThanOrEqualTo(0),
       reason: 'installer script must contain a [$section] section',
     );
     final String after = iss.substring(start + section.length + 2);
-    final RegExpMatch? next =
-        RegExp(r'^\[[A-Za-z]', multiLine: true).firstMatch(after);
+    final RegExpMatch? next = RegExp(
+      r'^\[[A-Za-z]',
+      multiLine: true,
+    ).firstMatch(after);
     return next == null ? after : after.substring(0, next.start);
   }
 
@@ -60,7 +63,8 @@ void main() {
     expect(
       match,
       isNotNull,
-      reason: '必须存在 procedure CurStepChanged(CurStep: TSetupStep); '
+      reason:
+          '必须存在 procedure CurStepChanged(CurStep: TSetupStep); '
           '旧名清理只能在它的 ssPostInstall 分支里做。',
     );
     // 只掩这一段 Pascal 过程体，**不掩整份 .iss**：`[Setup]` 段的
@@ -72,8 +76,9 @@ void main() {
 
   test('[InstallDelete] no longer deletes legacy binaries or shortcuts', () {
     final String iss = readInstallerScript();
-    final List<String> lines =
-        directiveLines(sectionBody(iss, 'InstallDelete'));
+    final List<String> lines = directiveLines(
+      sectionBody(iss, 'InstallDelete'),
+    );
 
     expect(
       lines,
@@ -84,7 +89,8 @@ void main() {
       expect(
         line.toLowerCase().contains('hibiki'),
         isFalse,
-        reason: '[InstallDelete] 在复制新文件前执行且不可回滚：任何旧名二进制/'
+        reason:
+            '[InstallDelete] 在复制新文件前执行且不可回滚：任何旧名二进制/'
             '快捷方式的删除都必须挪到 ssPostInstall，否则一次失败的升级会让用户'
             '连一个可执行文件都不剩。命中行：$line',
       );
@@ -92,7 +98,8 @@ void main() {
     expect(
       lines.any((String line) => line.contains(r'{app}\galgame_helper')),
       isTrue,
-      reason: 'galgame_helper 归属 [InstallDelete]（新包同样往 {app} 写 helper '
+      reason:
+          'galgame_helper 归属 [InstallDelete]（新包同样往 {app} 写 helper '
           '组件，必须复制前删；且它不是可执行入口，删早了不影响可运行性）',
     );
   });
@@ -128,43 +135,48 @@ void main() {
       '开始菜单程序组': r"DeleteFile(ExpandConstant('{group}\Hibiki.lnk'));",
       // Windows 不提供程序化「固定到任务栏」的接口，所以只能删死链接、
       // 无法自动重新固定；但**不删**就是用户点任务栏图标毫无反应。
-      '任务栏固定项': r"DeleteFile(ExpandConstant('{userappdata}\Microsoft"
+      '任务栏固定项':
+          r"DeleteFile(ExpandConstant('{userappdata}\Microsoft"
           r"\Internet Explorer\Quick Launch\User Pinned\TaskBar\Hibiki.lnk'));",
     };
     shortcuts.forEach((String where, String call) {
       expect(
         code.contains(call),
         isTrue,
-        reason: '旧名快捷方式三处位置必须都在 ssPostInstall 清理，缺「$where」：'
+        reason:
+            '旧名快捷方式三处位置必须都在 ssPostInstall 清理，缺「$where」：'
             '$call',
       );
     });
   });
 
-  test('start menu group is forced back to Fushi and the legacy one cleaned',
-      () {
-    final String iss = readInstallerScript();
+  test(
+    'start menu group is forced back to Fushi and the legacy one cleaned',
+    () {
+      final String iss = readInstallerScript();
 
-    expect(
-      RegExp(r'^UsePreviousGroup=no\s*$', multiLine: true).hasMatch(iss),
-      isTrue,
-      reason: 'Inno 默认 UsePreviousGroup=yes 会从卸载键读回旧组名 Hibiki，'
-          '使 {group} 指向 ...\\Programs\\Hibiki，新建的 Fushi 快捷方式落进一个'
-          '叫 Hibiki 的文件夹。必须显式 UsePreviousGroup=no。',
-    );
-
-    final String code = curStepChangedCode(iss);
-    const List<String> legacyGroup = <String>[
-      r"DeleteFile(ExpandConstant('{userprograms}\Hibiki\Hibiki.lnk'));",
-      r"DeleteFile(ExpandConstant('{userprograms}\Hibiki\Fushi.lnk'));",
-      r"RemoveDir(ExpandConstant('{userprograms}\Hibiki'));",
-    ];
-    for (final String call in legacyGroup) {
       expect(
-        code.contains(call),
+        RegExp(r'^UsePreviousGroup=no\s*$', multiLine: true).hasMatch(iss),
         isTrue,
-        reason: '遗留的 Programs\\Hibiki 程序组必须清空后移除，缺失：$call',
+        reason:
+            'Inno 默认 UsePreviousGroup=yes 会从卸载键读回旧组名 Hibiki，'
+            '使 {group} 指向 ...\\Programs\\Hibiki，新建的 Fushi 快捷方式落进一个'
+            '叫 Hibiki 的文件夹。必须显式 UsePreviousGroup=no。',
       );
-    }
-  });
+
+      final String code = curStepChangedCode(iss);
+      const List<String> legacyGroup = <String>[
+        r"DeleteFile(ExpandConstant('{userprograms}\Hibiki\Hibiki.lnk'));",
+        r"DeleteFile(ExpandConstant('{userprograms}\Hibiki\Fushi.lnk'));",
+        r"RemoveDir(ExpandConstant('{userprograms}\Hibiki'));",
+      ];
+      for (final String call in legacyGroup) {
+        expect(
+          code.contains(call),
+          isTrue,
+          reason: '遗留的 Programs\\Hibiki 程序组必须清空后移除，缺失：$call',
+        );
+      }
+    },
+  );
 }

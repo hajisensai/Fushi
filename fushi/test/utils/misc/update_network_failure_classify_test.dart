@@ -38,10 +38,14 @@ void main() {
     });
 
     test('非网络异常（解析/逻辑错误）应连堆栈记入错误日志', () {
-      expect(isExpectedUpdateNetworkFailure(const FormatException('bad json')),
-          isFalse);
-      expect(isExpectedUpdateNetworkFailure(Exception('All sources failed')),
-          isFalse);
+      expect(
+        isExpectedUpdateNetworkFailure(const FormatException('bad json')),
+        isFalse,
+      );
+      expect(
+        isExpectedUpdateNetworkFailure(Exception('All sources failed')),
+        isFalse,
+      );
       expect(isExpectedUpdateNetworkFailure(ArgumentError('nope')), isFalse);
     });
   });
@@ -85,7 +89,8 @@ void main() {
 
     test('TLS 握手失败报握手而非超时', () {
       final String reason = describeUpdateNetworkFailureReason(
-          const HandshakeException('bad cert'));
+        const HandshakeException('bad cert'),
+      );
       expect(reason, contains('TLS handshake failed'));
       expect(reason.toLowerCase(), isNot(contains('timed out')));
     });
@@ -104,8 +109,9 @@ void main() {
     });
 
     test('未知异常回退 toString，不再无条件谎称超时', () {
-      final String reason =
-          describeUpdateNetworkFailureReason(const FormatException('weird'));
+      final String reason = describeUpdateNetworkFailureReason(
+        const FormatException('weird'),
+      );
       expect(reason, contains('weird'));
       expect(reason.toLowerCase(), isNot(contains('timed out')));
     });
@@ -115,7 +121,8 @@ void main() {
     test('直连 GitHub 取 api.github.com', () {
       expect(
         hostLabelForUpdateUrl(
-            'https://api.github.com/repos/x/y/releases/latest'),
+          'https://api.github.com/repos/x/y/releases/latest',
+        ),
         'api.github.com',
       );
     });
@@ -124,12 +131,14 @@ void main() {
       // ghfast.top / gh-proxy.com 等前缀拼接的 URL，host 是代理本身。
       expect(
         hostLabelForUpdateUrl(
-            'https://ghfast.top/https://api.github.com/repos/x/y'),
+          'https://ghfast.top/https://api.github.com/repos/x/y',
+        ),
         'ghfast.top',
       );
       expect(
         hostLabelForUpdateUrl(
-            'https://gh-proxy.com/https://api.github.com/repos/x/y'),
+          'https://gh-proxy.com/https://api.github.com/repos/x/y',
+        ),
         'gh-proxy.com',
       );
     });

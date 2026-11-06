@@ -15,7 +15,8 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   final Uri authUrl = Uri.parse(
-      'https://accounts.example.test/o/oauth2/auth?client_id=x&scope=a+b');
+    'https://accounts.example.test/o/oauth2/auth?client_id=x&scope=a+b',
+  );
   final List<MethodCall> platformCalls = <MethodCall>[];
   bool clipboardThrows = false;
 
@@ -24,15 +25,18 @@ void main() {
     platformCalls.clear();
     clipboardThrows = false;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(SystemChannels.platform,
-            (MethodCall call) async {
-      platformCalls.add(call);
-      if (clipboardThrows && call.method == 'Clipboard.setData') {
-        throw PlatformException(
-            code: 'Clipboard error', message: 'Unable to open clipboard');
-      }
-      return null;
-    });
+        .setMockMethodCallHandler(SystemChannels.platform, (
+          MethodCall call,
+        ) async {
+          platformCalls.add(call);
+          if (clipboardThrows && call.method == 'Clipboard.setData') {
+            throw PlatformException(
+              code: 'Clipboard error',
+              message: 'Unable to open clipboard',
+            );
+          }
+          return null;
+        });
   });
 
   tearDown(() {
@@ -46,14 +50,13 @@ void main() {
     Future<void>? finished,
     Future<bool> Function()? reopen,
     void Function()? cancel,
-  }) =>
-      DesktopOAuthLaunch(
-        authUrl: authUrl,
-        browserOpened: browserOpened ?? Future<bool>.value(true),
-        finished: finished ?? Completer<void>().future,
-        reopenBrowser: reopen ?? () async => true,
-        cancel: cancel ?? () {},
-      );
+  }) => DesktopOAuthLaunch(
+    authUrl: authUrl,
+    browserOpened: browserOpened ?? Future<bool>.value(true),
+    finished: finished ?? Completer<void>().future,
+    reopenBrowser: reopen ?? () async => true,
+    cancel: cancel ?? () {},
+  );
 
   Future<void> pumpDialog(
     WidgetTester tester, {
@@ -92,15 +95,17 @@ void main() {
     expect(find.text(t.sync_desktop_oauth_waiting_title), findsOneWidget);
     // 全文露出：截断的 URL 贴进浏览器得到的正是 400 页。
     final SelectableText urlText = tester.widget<SelectableText>(
-        find.widgetWithText(SelectableText, authUrl.toString()));
+      find.widgetWithText(SelectableText, authUrl.toString()),
+    );
     expect(urlText.maxLines, isNull);
     expect(find.text(t.sync_desktop_oauth_browser_open_failed), findsNothing);
 
     await tester.tap(find.text(t.sync_desktop_oauth_link_copy));
     await tester.pump();
 
-    final MethodCall setData = platformCalls
-        .firstWhere((MethodCall c) => c.method == 'Clipboard.setData');
+    final MethodCall setData = platformCalls.firstWhere(
+      (MethodCall c) => c.method == 'Clipboard.setData',
+    );
     expect((setData.arguments as Map)['text'], authUrl.toString());
     expect(dialog(), findsOneWidget, reason: '复制不结束流程');
 
@@ -108,8 +113,9 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('剪贴板抛 PlatformException：不崩、对话框留着让用户手动选中',
-      (WidgetTester tester) async {
+  testWidgets('剪贴板抛 PlatformException：不崩、对话框留着让用户手动选中', (
+    WidgetTester tester,
+  ) async {
     clipboardThrows = true;
     final Completer<void> done = Completer<void>();
     await pumpDialog(tester, launch: fakeLaunch(), done: done.future);
@@ -123,17 +129,20 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('「重新打开浏览器」落到 reopenBrowser；拉不起来时露出提示',
-      (WidgetTester tester) async {
+  testWidgets('「重新打开浏览器」落到 reopenBrowser；拉不起来时露出提示', (
+    WidgetTester tester,
+  ) async {
     final Completer<void> done = Completer<void>();
     int reopened = 0;
     bool reopenResult = true;
     await pumpDialog(
       tester,
-      launch: fakeLaunch(reopen: () async {
-        reopened++;
-        return reopenResult;
-      }),
+      launch: fakeLaunch(
+        reopen: () async {
+          reopened++;
+          return reopenResult;
+        },
+      ),
       done: done.future,
     );
 
@@ -154,8 +163,9 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('首次拉起浏览器失败（browserOpened=false）：对话框照常出现并提示复制链接',
-      (WidgetTester tester) async {
+  testWidgets('首次拉起浏览器失败（browserOpened=false）：对话框照常出现并提示复制链接', (
+    WidgetTester tester,
+  ) async {
     final Completer<void> done = Completer<void>();
     final Completer<bool> opened = Completer<bool>();
     await pumpDialog(
@@ -193,8 +203,9 @@ void main() {
     expect(dialog(), findsNothing);
   });
 
-  testWidgets('Esc 真的取消（barrierDismissible=false 下框架的 DismissIntent 不会替我们做）',
-      (WidgetTester tester) async {
+  testWidgets('Esc 真的取消（barrierDismissible=false 下框架的 DismissIntent 不会替我们做）', (
+    WidgetTester tester,
+  ) async {
     final Completer<void> done = Completer<void>();
     int cancelled = 0;
     await pumpDialog(
@@ -237,8 +248,9 @@ void main() {
     expect(dialog(), findsNothing);
   });
 
-  testWidgets('回环等待一结束（finished）就关闭，不等整个登录流程 done',
-      (WidgetTester tester) async {
+  testWidgets('回环等待一结束（finished）就关闭，不等整个登录流程 done', (
+    WidgetTester tester,
+  ) async {
     final Completer<void> done = Completer<void>();
     final Completer<void> finished = Completer<void>();
     await pumpDialog(
@@ -250,8 +262,11 @@ void main() {
 
     finished.complete();
     await tester.pumpAndSettle();
-    expect(dialog(), findsNothing,
-        reason: '授权码已到，之后是 token 交换；「等浏览器」已经过去，重开/取消都没意义');
+    expect(
+      dialog(),
+      findsNothing,
+      reason: '授权码已到，之后是 token 交换；「等浏览器」已经过去，重开/取消都没意义',
+    );
 
     // done 之后到来不会二次 pop 掉别的东西。
     done.complete();
@@ -266,22 +281,27 @@ void main() {
 
     // 模拟等待期间后台压上来的弹窗（互联配对审批 / 同步冲突都是 barrierDismissible=false）。
     final BuildContext ctx = tester.element(dialog());
-    unawaited(showDialog<void>(
-      context: ctx,
-      barrierDismissible: false,
-      builder: (BuildContext _) => const AlertDialog(
-        key: Key('overlay-dialog'),
-        title: Text('pairing approval'),
+    unawaited(
+      showDialog<void>(
+        context: ctx,
+        barrierDismissible: false,
+        builder: (BuildContext _) => const AlertDialog(
+          key: Key('overlay-dialog'),
+          title: Text('pairing approval'),
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('overlay-dialog')), findsOneWidget);
 
     done.complete();
     await tester.pumpAndSettle();
     expect(dialog(), findsNothing, reason: '等待框自己必须走');
-    expect(find.byKey(const Key('overlay-dialog')), findsOneWidget,
-        reason: '后台弹窗不能被吞掉');
+    expect(
+      find.byKey(const Key('overlay-dialog')),
+      findsOneWidget,
+      reason: '后台弹窗不能被吞掉',
+    );
   });
 
   testWidgets('done 完成即关闭，即使用户什么都没点', (WidgetTester tester) async {

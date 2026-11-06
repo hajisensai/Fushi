@@ -2,8 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart'
-    show FushiListItem, FushiListItemSelectedShape;
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 Widget _host(Widget child) => MaterialApp(home: Scaffold(body: child));
 
@@ -50,10 +49,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('词典查词'), findsOneWidget);
-    expect(
-      find.byIcon(FushiIcons.filled(FushiIcons.success)),
-      findsOneWidget,
-    );
+    expect(find.byIcon(FushiIcons.filled(FushiIcons.success)), findsOneWidget);
 
     await tester.tap(find.text('词典查词'));
     expect(toggled, isTrue);
@@ -79,10 +75,7 @@ void main() {
       find.byKey(const ValueKey<String>('onboarding_feature_unchecked')),
       findsOneWidget,
     );
-    expect(
-      find.byIcon(FushiIcons.filled(FushiIcons.success)),
-      findsNothing,
-    );
+    expect(find.byIcon(FushiIcons.filled(FushiIcons.success)), findsNothing);
   });
 
   testWidgets('OnboardingFeatureTile keeps equal height under loose bounds', (

@@ -51,6 +51,13 @@ class SrsAnswerPreview {
 
   final SrsAnswerPlan plan;
   final SrsMemory? memoryBefore;
+
+  /// 这次作答的排程方式，写进日志的 `alg`：宿主上由 RWKV-Instant 排队的 RWKV 牌组是 [SrsAlgorithm.rwkv]
+  /// （RWKV 没准备好时它的复习卡根本不出，不存在「RWKV 牌组按 FSRS-7 排」），否则是牌组算法的
+  /// [SrsAlgorithm.memoryAlgorithm]——包括没有 RWKV 运行时的宿主（无头服务端 / CLI）上的 RWKV 牌组：那里它按
+  /// 存下的 FSRS-7 到期日排队，日志记实际排它的算法。间隔与
+  /// 记忆状态一律由记忆算法算（RWKV 牌组是 FSRS-7）：RWKV-Instant 不给间隔，存下的到期日只在导出给 Anki
+  /// 时用；统计据日志的 `alg` 区分按 R 排的复习。
   final SrsAlgorithm algorithm;
   final List<double> params;
   final int nowMs;
@@ -64,19 +71,24 @@ class SrsCardOps {
   final FsrsEngine engine;
 
   /// 算四个评分的结果（显示间隔预览，也是 [answer] 的第一步）。
+  ///
+  /// [rwkvQueued]：宿主有 RWKV 运行时、这张卡所在的牌组由 RWKV-Instant 排队（决定日志的 `alg`，见
+  /// [SrsAnswerPreview.algorithm]）。本类不持有 RWKV 运行时，由调用方说明；算法是 RWKV 而这里是 false 时日志记
+  /// FSRS-7。
   SrsAnswerPreview preview({
     required String cardId,
     required SrsCardHistory history,
     required SrsSchedulingConfig config,
     required SrsLogContext ctx,
+    required bool rwkvQueued,
   }) {
     final (int nowMs, SrsTimeSource source) = ctx.now();
-    final SrsAlgorithm algorithm = config.algorithm;
+    final SrsAlgorithm algorithm = config.algorithm.memoryAlgorithm;
     final List<double> params = config.params;
     final SrsMemoryInput input = srsCollectMemoryInput(
       history,
       algorithm: algorithm,
-      dayIndexOf: ctx.day.dayIndexOf,
+      day: ctx.day,
     );
     final SrsMemory? memory = srsComputeMemory(
       input,
@@ -102,20 +114,23 @@ class SrsCardOps {
     return SrsAnswerPreview(
       plan: srsPlanAnswer(answerCtx, next),
       memoryBefore: memory,
-      algorithm: algorithm,
+      algorithm: rwkvQueued && config.algorithm.usesRwkv
+          ? SrsAlgorithm.rwkv
+          : algorithm,
       params: params,
       nowMs: nowMs,
       timeSource: source,
     );
   }
 
-  /// 评分：写一条 review 日志。
+  /// 评分：写一条 review 日志（[rwkvQueued] 同 [preview]）。
   SrsReviewLog answer({
     required String cardId,
     required SrsCardHistory history,
     required int rating,
     required SrsSchedulingConfig config,
     required SrsLogContext ctx,
+    required bool rwkvQueued,
     int durationMs = 0,
   }) {
     if (rating < 1 || rating > 4) {
@@ -128,6 +143,7 @@ class SrsCardOps {
       history: history,
       config: config,
       ctx: ctx,
+      rwkvQueued: rwkvQueued,
     );
     final SrsScheduleResult before = history.state;
     final Hlc hlc = ctx.clock.tick(p.nowMs);
@@ -211,20 +227,23 @@ class SrsCardOps {
   }) {
     final SrsScheduleResult cur = history.state;
     if (cur.queue != SrsQueue.review || cur.lastReviewedAt == null) return null;
+    final SrsAlgorithm algorithm = config.algorithm.memoryAlgorithm;
     final SrsMemoryInput input = srsCollectMemoryInput(
       history,
-      algorithm: config.algorithm,
-      dayIndexOf: ctx.day.dayIndexOf,
+      algorithm: algorithm,
+      day: ctx.day,
     );
     final SrsMemory? memory = srsComputeMemory(
       input,
       engine: engine,
-      algorithm: config.algorithm,
+      algorithm: algorithm,
       params: config.params,
     );
     if (memory == null) return null;
+    // 「立即重排」只重算 FSRS 间隔：RWKV 的间隔取决于作答当下整个 collection 的状态，
+    // 对已经过去的复习回推没有意义（RWKV 牌组的卡在下次作答时按 RWKV 排）。
     final SrsNextStates next = engine.nextStates(
-      algorithm: config.algorithm,
+      algorithm: algorithm,
       params: config.params,
       desiredRetention: config.desiredRetention,
       memory: memory,

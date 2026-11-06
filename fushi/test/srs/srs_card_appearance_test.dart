@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart';
@@ -75,7 +75,7 @@ void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
   group('设置 → 注入', () {
-    test('默认外观：配色变量齐全、倍率为 1、只有统一词典样式类', () {
+    test('默认外观：配色变量齐全、倍率为 1、统一词典样式 + 全部释义默认展开', () {
       const SrsCardAppearance a = SrsCardAppearance();
       final String css = _css(a);
       for (final String v in <String>[
@@ -96,7 +96,11 @@ void main() {
       }
       expect(css, isNot(contains('--fushi-srs-font-')));
       expect(css, isNot(contains('@font-face')));
-      expect(srsCardAppearanceClasses(a), 'fushi-srs-dict-unified');
+      expect(srsCardAppearanceClasses(a).split(' ').toSet(), <String>{
+        'fushi-srs-dict-unified',
+        'fushi-srs-gloss-expanded',
+        'fushi-srs-freq-aggregate',
+      });
     });
 
     test('跟随 app 主题 = ColorScheme 原样；自定义强调色 = 以它为种子', () {
@@ -184,6 +188,7 @@ void main() {
       final String c = srsCardAppearanceClasses(
         const SrsCardAppearance(
           dictUnified: false,
+          aggregateFrequency: false,
           showPicture: false,
           showTranslation: false,
           showFrequency: false,
@@ -191,14 +196,12 @@ void main() {
           glossaryExpanded: true,
           frontReading: true,
           frontFrequency: true,
-          sentenceFurigana: true,
           density: SrsCardDensity.comfortable,
         ),
       );
       expect(c.split(' ').toSet(), <String>{
         'fushi-srs-front-reading',
         'fushi-srs-front-freq',
-        'fushi-srs-sentence-furigana',
         'fushi-srs-gloss-expanded',
         'fushi-srs-hide-picture',
         'fushi-srs-hide-translation',
@@ -206,6 +209,58 @@ void main() {
         'fushi-srs-hide-source',
         'fushi-srs-density-comfortable',
       });
+    });
+
+    test('翻译模糊：默认关、旧数据无此键读作关、JSON 往返、参与 ==', () {
+      expect(const SrsCardAppearance().blurTranslation, isFalse);
+      expect(
+        SrsCardAppearance.fromJson(const <String, Object?>{}).blurTranslation,
+        isFalse,
+      );
+      const SrsCardAppearance on = SrsCardAppearance(blurTranslation: true);
+      expect(on.toJson()['blurTranslation'], isTrue);
+      final SrsCardAppearance back = SrsCardAppearance.fromJson(on.toJson());
+      expect(back.blurTranslation, isTrue);
+      expect(back, on);
+      expect(on == const SrsCardAppearance(), isFalse);
+      // 模板卡面同一套规则：开着（且显示翻译）才挂宿主类名，翻译关掉时不挂。
+      expect(
+        srsCardAppearanceClasses(on).split(' '),
+        contains('fushi-srs-blur-translation'),
+      );
+      expect(
+        srsCardAppearanceClasses(const SrsCardAppearance()),
+        isNot(contains('fushi-srs-blur-translation')),
+      );
+      expect(
+        srsCardAppearanceClasses(
+          const SrsCardAppearance(
+            showTranslation: false,
+            blurTranslation: true,
+          ),
+        ),
+        isNot(contains('fushi-srs-blur-translation')),
+      );
+    });
+
+    test('词频聚合：运行时字段，不进 JSON、解码默认 true、参与 ==、决定类名', () {
+      const SrsCardAppearance off = SrsCardAppearance(
+        aggregateFrequency: false,
+      );
+      expect(off.toJson().containsKey('aggregateFrequency'), isFalse);
+      expect(off.encode(), isNot(contains('aggregate')));
+      expect(SrsCardAppearance.decode(off.encode()).aggregateFrequency, isTrue);
+      expect(const SrsCardAppearance().aggregateFrequency, isTrue);
+      expect(off == const SrsCardAppearance(), isFalse);
+      expect(off.hashCode == const SrsCardAppearance().hashCode, isFalse);
+      expect(
+        srsCardAppearanceClasses(const SrsCardAppearance()).split(' '),
+        contains('fushi-srs-freq-aggregate'),
+      );
+      expect(
+        srsCardAppearanceClasses(off).split(' '),
+        isNot(contains('fushi-srs-freq-aggregate')),
+      );
     });
 
     test('偏好 JSON：往返一致；坏值 / 越界夹取；坏 JSON = 默认', () {
@@ -230,6 +285,74 @@ void main() {
       expect(clamped.textScale, SrsCardAppearance.maxTextScale);
       expect(clamped.lineSpacing, 1);
       expect(clamped.density, SrsCardDensity.standard);
+    });
+
+    test('新字段（前 N 本词典 / 对齐 / 缩进 / 正面单独字号）：JSON 往返、参与 ==', () {
+      const SrsCardAppearance a = SrsCardAppearance(
+        textScale: 1.1,
+        termScale: 0.9,
+        glossaryDictLimit: 2,
+        sentenceAlign: SrsCardTextAlign.start,
+        sentenceIndent: 2,
+        glossaryAlign: SrsCardTextAlign.center,
+        glossaryIndent: 1,
+        separateFrontSize: true,
+        frontTextScale: 1.3,
+        frontTermScale: 0.8,
+      );
+      final SrsCardAppearance back = SrsCardAppearance.decode(a.encode());
+      expect(back, a);
+      expect(back.glossaryDictLimit, 2);
+      expect(back.sentenceAlign, SrsCardTextAlign.start);
+      expect(back.sentenceIndent, 2);
+      expect(back.glossaryAlign, SrsCardTextAlign.center);
+      expect(back.glossaryIndent, 1);
+      expect(back.separateFrontSize, isTrue);
+      expect(back.effectiveFrontTextScale, 1.3);
+      expect(back.effectiveFrontTermScale, 0.8);
+      expect(a == a.copyWith(glossaryDictLimit: 3), isFalse);
+      expect(a == a.copyWith(sentenceAlign: SrsCardTextAlign.auto), isFalse);
+      // 关掉单独字号：正面跟背面共用（存着的正面值不生效）。
+      final SrsCardAppearance shared = a.copyWith(separateFrontSize: false);
+      expect(shared.effectiveFrontTextScale, 1.1);
+      expect(shared.effectiveFrontTermScale, 0.9);
+    });
+
+    test('旧数据缺新字段：取原默认行为（全部词典、模板对齐、不缩进、正反面共用字号）', () {
+      // 新字段加入前写下的偏好（只有旧键）。
+      const String legacy =
+          '{"textScale":1.2,"termScale":1.1,"lineSpacing":1,"colorSource":"app",'
+          '"customAccent":4281887320,"density":"standard","dictUnified":true,'
+          '"showPicture":true,"showTranslation":true,"blurTranslation":false,'
+          '"showFrequency":true,"showSource":true,"glossaryExpanded":true,'
+          '"frontReading":false,"frontFrequency":false,"compactPhone":true,'
+          '"designSkin":true}';
+      final SrsCardAppearance old = SrsCardAppearance.decode(legacy);
+      expect(old.glossaryDictLimit, 0);
+      expect(old.sentenceAlign, SrsCardTextAlign.auto);
+      expect(old.sentenceIndent, 0);
+      expect(old.glossaryAlign, SrsCardTextAlign.auto);
+      expect(old.glossaryIndent, 0);
+      expect(old.separateFrontSize, isFalse);
+      expect(old.effectiveFrontTextScale, 1.2);
+      expect(old.effectiveFrontTermScale, 1.1);
+      expect(old, const SrsCardAppearance(textScale: 1.2, termScale: 1.1));
+      // 坏值 / 越界：退回默认，不抛。
+      final SrsCardAppearance bad =
+          SrsCardAppearance.fromJson(const <String, Object?>{
+            'glossaryDictLimit': -1,
+            'sentenceIndent': 99,
+            'glossaryIndent': 'x',
+            'sentenceAlign': 'justify',
+            'separateFrontSize': 'yes',
+            'frontTextScale': 9,
+          });
+      expect(bad.glossaryDictLimit, 0);
+      expect(bad.sentenceIndent, 0);
+      expect(bad.glossaryIndent, 0);
+      expect(bad.sentenceAlign, SrsCardTextAlign.auto);
+      expect(bad.separateFrontSize, isFalse);
+      expect(bad.frontTextScale, SrsCardAppearance.maxTextScale);
     });
 
     test('只换外观走换主题、不重放卡片', () async {
@@ -274,33 +397,38 @@ void main() {
   });
 
   group('外观只作用于 Fushi 卡片', () {
-    SrsCardFaceDocument docFor({required bool fushiCard}) =>
-        srsCardFaceDocumentFor(
-          SrsCardFace(
-            cardId: 'c',
-            showingAnswer: true,
-            bodyHtml: '<b>x</b>',
-            css: '.card{}',
-            languageCode: 'ja',
-            onBridgeKey: (_) {},
-            fushiCard: fushiCard,
-          ),
-          theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-          ),
-          appearance: const SrsCardAppearance(
-            colorSource: SrsCardColorSource.custom,
-            customAccent: 0xFFB3261E,
-            showPicture: false,
-          ),
-          labels: _labels,
-          mediaUrlPrefix: 'https://srs.local/media/',
-          themedScrollbar: false,
-          fontUrl: (String path) => path,
-          fonts: const <Map<String, dynamic>>[
-            <String, dynamic>{'name': 'Klee One'},
-          ],
-        );
+    SrsCardFaceDocument docFor({
+      required bool fushiCard,
+      SrsCardColorSource colorSource = SrsCardColorSource.custom,
+    }) => srsCardFaceDocumentFor(
+      SrsCardFace(
+        cardId: 'c',
+        showingAnswer: true,
+        bodyHtml: '<b>x</b>',
+        css: '.card{}',
+        languageCode: 'ja',
+        onBridgeKey: (_) {},
+        fushiCard: fushiCard,
+      ),
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+      ),
+      appearance: SrsCardAppearance(
+        colorSource: colorSource,
+        customAccent: 0xFFB3261E,
+        showPicture: false,
+        // 设计系统样式覆盖另有专门测试（srs_card_design_skin_test.dart）；这里只看
+        // Fushi 卡片专属的外观不外漏。
+        designSkin: false,
+      ),
+      labels: _labels,
+      mediaUrlPrefix: 'https://srs.local/media/',
+      themedScrollbar: false,
+      fontUrl: (String path) => path,
+      fonts: const <Map<String, dynamic>>[
+        <String, dynamic>{'name': 'Klee One'},
+      ],
+    );
 
     test('Fushi 卡片：变量 / 类名 / 字体 / 自定义配色都注入', () {
       final SrsCardFaceDocument d = docFor(fushiCard: true);
@@ -323,6 +451,29 @@ void main() {
         contains(
           '--fushi-srs-accent:#${(app.primary.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}',
         ),
+      );
+    });
+
+    test('底色：只有 Fushi 卡片的自定义配色由宿主铺，其它情况宿主不铺、透出复习页背景', () {
+      String hex(Color c) =>
+          '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
+      final ColorScheme custom = ColorScheme.fromSeed(
+        seedColor: const Color(0xFFB3261E),
+      );
+      expect(
+        docFor(fushiCard: true).themeCss,
+        contains('html,body{background:${hex(custom.surface)};'),
+      );
+      // 模板 `.card` 写透明时要透出复习页背景（WebView 本身也是透明的），宿主不能
+      // 再垫一层主题 surface。
+      expect(
+        docFor(fushiCard: false).themeCss,
+        contains('html,body{background:transparent;'),
+      );
+      // Fushi 卡跟随 app 主题配色：与页面背景同色，宿主也不铺，透出路由层的形状背景。
+      expect(
+        docFor(fushiCard: true, colorSource: SrsCardColorSource.app).themeCss,
+        contains('html,body{background:transparent;'),
       );
     });
   });
@@ -516,7 +667,11 @@ void main() {
               .widget<Text>(find.byKey(const ValueKey<String>('preview-face')))
               .data!;
           final String layout = size.width >= 840 ? 'wide' : 'narrow';
-          expect(faceText(), 'face:$layout:back:fushi-srs-dict-unified');
+          expect(
+            faceText(),
+            'face:$layout:back:fushi-srs-gloss-expanded '
+            'fushi-srs-dict-unified fushi-srs-freq-aggregate',
+          );
           expect(
             find.byKey(const ValueKey<String>('srs-card-preview-frame')),
             findsOneWidget,
@@ -562,7 +717,10 @@ void main() {
           tester.widget<AdaptiveSettingsSwitchRow>(unify).onChanged!(false);
           await tester.pump(const Duration(milliseconds: 300));
           expect(app.value.dictUnified, isFalse);
-          expect(faceText(), 'face:$layout:back:');
+          expect(
+            faceText(),
+            'face:$layout:back:fushi-srs-gloss-expanded fushi-srs-freq-aggregate',
+          );
 
           // 预览与复习页一样走 Fushi 卡片的混合渲染：上面的卡面是释义区 WebView。
           expect(

@@ -13,45 +13,49 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  testWidgets('shared download session shows the overlay and cancels for real', (
-    WidgetTester tester,
-  ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(420, 640);
-    addTearDown(tester.view.reset);
+  testWidgets(
+    'shared download session shows the overlay and cancels for real',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(420, 640);
+      addTearDown(tester.view.reset);
 
-    final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-    await tester.pumpWidget(
-      TranslationProvider(
-        child: MaterialApp(
-          navigatorKey: navigatorKey,
-          builder: (BuildContext context, Widget? navigator) =>
-              LegacyDesignCompatibility(child: navigator!),
-          home: const Scaffold(body: SizedBox.expand()),
+      final GlobalKey<NavigatorState> navigatorKey =
+          GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            navigatorKey: navigatorKey,
+            builder: (BuildContext context, Widget? navigator) =>
+                LegacyDesignCompatibility(child: navigator!),
+            home: const Scaffold(body: SizedBox.expand()),
+          ),
         ),
-      ),
-    );
+      );
 
-    // 与生产装配同一个取法：根 Navigator 的 Overlay。
-    final OverlayState overlay = navigatorKey.currentState!.overlay!;
-    final ({UpdateDownloadCancellation cancellation, void Function() dispose})
-        session = showUpdateDownloadSessionForTest(overlay);
-    await tester.pump();
+      // 与生产装配同一个取法：根 Navigator 的 Overlay。
+      final OverlayState overlay = navigatorKey.currentState!.overlay!;
+      final ({UpdateDownloadCancellation cancellation, void Function() dispose})
+      session = showUpdateDownloadSessionForTest(overlay);
+      await tester.pump();
 
-    expect(tester.takeException(), isNull);
-    expect(find.text(t.update_connecting), findsOneWidget);
-    expect(find.text(t.update_cancel), findsOneWidget);
-    expect(session.cancellation.isCancelled, isFalse);
+      expect(tester.takeException(), isNull);
+      expect(find.text(t.update_connecting), findsOneWidget);
+      expect(find.text(t.update_cancel), findsOneWidget);
+      expect(session.cancellation.isCancelled, isFalse);
 
-    await tester.tap(find.text(t.update_cancel));
-    await tester.pump();
-    expect(session.cancellation.isCancelled, isTrue,
-        reason: '「取消」必须置位下载引擎看的那个令牌');
-    expect(find.text(t.update_cancelling), findsOneWidget);
+      await tester.tap(find.text(t.update_cancel));
+      await tester.pump();
+      expect(
+        session.cancellation.isCancelled,
+        isTrue,
+        reason: '「取消」必须置位下载引擎看的那个令牌',
+      );
+      expect(find.text(t.update_cancelling), findsOneWidget);
 
-    session.dispose();
-    await tester.pump();
-    expect(find.text(t.update_cancel), findsNothing,
-        reason: '会话收尾即撤掉浮层');
-  });
+      session.dispose();
+      await tester.pump();
+      expect(find.text(t.update_cancel), findsNothing, reason: '会话收尾即撤掉浮层');
+    },
+  );
 }

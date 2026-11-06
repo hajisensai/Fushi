@@ -21,19 +21,19 @@ void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
   VideoDiscoveryItem item() => VideoDiscoveryItem(
-        reference: VideoMediaReference(
-          providerId: 'tmdb',
-          mediaId: '100',
-          mediaKind: VideoMetadataMediaKind.tv,
-          discoveryCategory: VideoDiscoveryCategory.tv,
-          title: '薬屋のひとりごと 第2期',
-          originalTitle: 'The Apothecary Diaries Season 2',
-          year: 2025,
-        ),
-        overview: '这是一段在线作品简介。',
-        score: 8.8,
-        genres: const <String>['Drama', 'Mystery'],
-      );
+    reference: VideoMediaReference(
+      providerId: 'tmdb',
+      mediaId: '100',
+      mediaKind: VideoMetadataMediaKind.tv,
+      discoveryCategory: VideoDiscoveryCategory.tv,
+      title: '薬屋のひとりごと 第2期',
+      originalTitle: 'The Apothecary Diaries Season 2',
+      year: 2025,
+    ),
+    overview: '这是一段在线作品简介。',
+    score: 8.8,
+    genres: const <String>['Drama', 'Mystery'],
+  );
 
   VideoDiscoveryActions actions(VideoDiscoveryItem value) =>
       VideoDiscoveryActions(
@@ -42,7 +42,9 @@ void main() {
           facts: const <VideoDiscoveryFact>[
             VideoDiscoveryFact(label: '话数', value: '24'),
             VideoDiscoveryFact(
-                label: '工作室', value: 'TOHO animation STUDIO · OLM'),
+              label: '工作室',
+              value: 'TOHO animation STUDIO · OLM',
+            ),
           ],
           people: const <VideoDiscoveryPerson>[
             VideoDiscoveryPerson(name: '演员甲', role: '主角'),
@@ -85,13 +87,17 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('标题、原标题、简介、元数据全部落在同一个 SelectionArea 子树内（BUG-1901）',
-      (WidgetTester tester) async {
+  testWidgets('标题、原标题、简介、元数据全部落在同一个 SelectionArea 子树内（BUG-1901）', (
+    WidgetTester tester,
+  ) async {
     await pumpPage(tester);
 
     final Finder area = find.byType(SelectionArea);
-    expect(area, findsOneWidget,
-        reason: '整页必须有且只有一个 SelectionArea —— 多个会把选区切碎');
+    expect(
+      area,
+      findsOneWidget,
+      reason: '整页必须有且只有一个 SelectionArea —— 多个会把选区切碎',
+    );
 
     // 用户点名的那一条：标题。改前它是裸 Text 且没有任何 SelectionArea 祖先。
     //
@@ -129,46 +135,50 @@ void main() {
   // 它认的是语义（有没有可用的 registrar），不受写法、缩进、CRLF 影响，也自动覆盖
   // 以后新增的懒加载区块。
   testWidgets(
-      '懒加载列表不得裸露在页级 SelectionArea 内（flutter#119355 / BUG-694 / BUG-1582）',
-      (WidgetTester tester) async {
-    await pumpPage(tester);
+    '懒加载列表不得裸露在页级 SelectionArea 内（flutter#119355 / BUG-694 / BUG-1582）',
+    (WidgetTester tester) async {
+      await pumpPage(tester);
 
-    final Element areaElement = tester.element(find.byType(SelectionArea));
-    final List<Element> lazyLists = <Element>[];
-    void visit(Element element) {
-      final Widget widget = element.widget;
-      if (widget is SliverMultiBoxAdaptorWidget &&
-          widget.delegate is SliverChildBuilderDelegate) {
-        lazyLists.add(element);
+      final Element areaElement = tester.element(find.byType(SelectionArea));
+      final List<Element> lazyLists = <Element>[];
+      void visit(Element element) {
+        final Widget widget = element.widget;
+        if (widget is SliverMultiBoxAdaptorWidget &&
+            widget.delegate is SliverChildBuilderDelegate) {
+          lazyLists.add(element);
+        }
+        element.visitChildren(visit);
       }
-      element.visitChildren(visit);
-    }
 
-    areaElement.visitChildren(visit);
+      areaElement.visitChildren(visit);
 
-    // 防「零断言空转」：本页确实有懒加载列表（人物条 + 相关作品条），守卫若一条都
-    // 没扫到，说明遍历写错了或页面结构变了，必须失败而不是静默通过。
-    expect(
-      lazyLists.length,
-      greaterThanOrEqualTo(2),
-      reason: '本页应当至少有人物条与相关作品条两条懒加载横向列表；'
-          '一条都没扫到说明守卫已经空转，先修守卫',
-    );
-
-    for (final Element element in lazyLists) {
+      // 防「零断言空转」：本页确实有懒加载列表（人物条 + 相关作品条），守卫若一条都
+      // 没扫到，说明遍历写错了或页面结构变了，必须失败而不是静默通过。
       expect(
-        SelectionContainer.maybeOf(element),
-        isNull,
-        reason: '懒加载列表 ${element.widget.runtimeType} 仍能拿到 SelectionRegistrar：'
-            '它的 item 被 itemBuilder 回收后会把选区端点一起回收掉，'
-            'release 下「选中→滚走→再长按」必崩（flutter#119355）。'
-            '用 SelectionContainer.disabled 把整条排除在页级选区之外。',
+        lazyLists.length,
+        greaterThanOrEqualTo(2),
+        reason:
+            '本页应当至少有人物条与相关作品条两条懒加载横向列表；'
+            '一条都没扫到说明守卫已经空转，先修守卫',
       );
-    }
-  });
 
-  testWidgets('横向卡片条内的文字不参与页级选区（flutter#119355 的正面表述）',
-      (WidgetTester tester) async {
+      for (final Element element in lazyLists) {
+        expect(
+          SelectionContainer.maybeOf(element),
+          isNull,
+          reason:
+              '懒加载列表 ${element.widget.runtimeType} 仍能拿到 SelectionRegistrar：'
+              '它的 item 被 itemBuilder 回收后会把选区端点一起回收掉，'
+              'release 下「选中→滚走→再长按」必崩（flutter#119355）。'
+              '用 SelectionContainer.disabled 把整条排除在页级选区之外。',
+        );
+      }
+    },
+  );
+
+  testWidgets('横向卡片条内的文字不参与页级选区（flutter#119355 的正面表述）', (
+    WidgetTester tester,
+  ) async {
     await pumpPage(tester);
 
     // 人物条的文字仍然渲染在页面上……
@@ -181,14 +191,16 @@ void main() {
     );
   });
 
-  testWidgets('页内不再有自建选区的 SelectableText（否则切断跨元素拖选）',
-      (WidgetTester tester) async {
+  testWidgets('页内不再有自建选区的 SelectableText（否则切断跨元素拖选）', (
+    WidgetTester tester,
+  ) async {
     await pumpPage(tester);
 
     expect(
       find.byType(SelectableText),
       findsNothing,
-      reason: '嵌套在 SelectionArea 里的 SelectableText 会自成独立选区，'
+      reason:
+          '嵌套在 SelectionArea 里的 SelectableText 会自成独立选区，'
           '让「标题连着简介一起拖选」失效；统一交给页级 SelectionArea',
     );
   });

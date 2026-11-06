@@ -77,38 +77,68 @@ void main() {
     final String source = readReaderPageSource();
 
     test(
-        '_refreshProgressFromScroll 内经 readerScrollCaretFollowAllowed 门控调 _caretRefresh',
-        () {
-      // 限定在 _refreshProgressFromScroll 方法体内取门控调用点（语料首处
-      // readerScrollCaretFollowAllowed( 是纯函数定义，须从方法起点之后再找）。
-      final int methodIdx = source.indexOf('void _refreshProgressFromScroll()');
-      expect(methodIdx, greaterThanOrEqualTo(0));
-      final int gateIdx =
-          source.indexOf('readerScrollCaretFollowAllowed(', methodIdx);
-      expect(gateIdx, greaterThanOrEqualTo(0), reason: '滚动支必须经纯函数门控决定是否跟随焦点环');
-      final int refreshIdx = source.indexOf('_caretRefresh()', gateIdx);
-      expect(refreshIdx, greaterThanOrEqualTo(0),
-          reason: '门控通过后必须实际调 _caretRefresh() 重定位焦点环');
-      // 门控与 _caretRefresh 必须靠得很近（同一 if 块内），不是文件别处巧合命中。
-      expect(refreshIdx - gateIdx, lessThan(220),
-          reason: 'readerScrollCaretFollowAllowed 与 _caretRefresh 必须在同一 if 块');
-    });
+      '_refreshProgressFromScroll 内经 readerScrollCaretFollowAllowed 门控调 _caretRefresh',
+      () {
+        // 限定在 _refreshProgressFromScroll 方法体内取门控调用点（语料首处
+        // readerScrollCaretFollowAllowed( 是纯函数定义，须从方法起点之后再找）。
+        final int methodIdx = source.indexOf(
+          'void _refreshProgressFromScroll()',
+        );
+        expect(methodIdx, greaterThanOrEqualTo(0));
+        final int gateIdx = source.indexOf(
+          'readerScrollCaretFollowAllowed(',
+          methodIdx,
+        );
+        expect(
+          gateIdx,
+          greaterThanOrEqualTo(0),
+          reason: '滚动支必须经纯函数门控决定是否跟随焦点环',
+        );
+        final int refreshIdx = source.indexOf('_caretRefresh()', gateIdx);
+        expect(
+          refreshIdx,
+          greaterThanOrEqualTo(0),
+          reason: '门控通过后必须实际调 _caretRefresh() 重定位焦点环',
+        );
+        // 门控与 _caretRefresh 必须靠得很近（同一 if 块内），不是文件别处巧合命中。
+        expect(
+          refreshIdx - gateIdx,
+          lessThan(220),
+          reason: 'readerScrollCaretFollowAllowed 与 _caretRefresh 必须在同一 if 块',
+        );
+      },
+    );
 
-    test('该 _caretRefresh 调用挂在 _refreshProgressFromScroll 的节流相位（与进度刷新同相去抖）',
-        () {
-      final int methodIdx = source.indexOf('void _refreshProgressFromScroll()');
-      expect(methodIdx, greaterThanOrEqualTo(0));
-      final int gateIdx =
-          source.indexOf('readerScrollCaretFollowAllowed(', methodIdx);
-      expect(gateIdx, greaterThanOrEqualTo(0),
-          reason: '焦点环跟随必须落在 _refreshProgressFromScroll 内，复用其 50ms 节流/尾沿去抖，'
-              '不得另起 Future.delayed 轮询或逐 scroll 回传重测');
-      // 节流相位锚点：跟随门控必须在 _lastScrollProgressAt 更新（穿过节流闸门）之后。
-      final int throttlePassIdx =
-          source.indexOf('_lastScrollProgressAt = now;', methodIdx);
-      expect(throttlePassIdx, greaterThanOrEqualTo(0));
-      expect(gateIdx, greaterThan(throttlePassIdx),
-          reason: '焦点环跟随必须在穿过 50ms 节流闸门之后，与进度刷新同相，不在节流早退分支');
-    });
+    test(
+      '该 _caretRefresh 调用挂在 _refreshProgressFromScroll 的节流相位（与进度刷新同相去抖）',
+      () {
+        final int methodIdx = source.indexOf(
+          'void _refreshProgressFromScroll()',
+        );
+        expect(methodIdx, greaterThanOrEqualTo(0));
+        final int gateIdx = source.indexOf(
+          'readerScrollCaretFollowAllowed(',
+          methodIdx,
+        );
+        expect(
+          gateIdx,
+          greaterThanOrEqualTo(0),
+          reason:
+              '焦点环跟随必须落在 _refreshProgressFromScroll 内，复用其 50ms 节流/尾沿去抖，'
+              '不得另起 Future.delayed 轮询或逐 scroll 回传重测',
+        );
+        // 节流相位锚点：跟随门控必须在 _lastScrollProgressAt 更新（穿过节流闸门）之后。
+        final int throttlePassIdx = source.indexOf(
+          '_lastScrollProgressAt = now;',
+          methodIdx,
+        );
+        expect(throttlePassIdx, greaterThanOrEqualTo(0));
+        expect(
+          gateIdx,
+          greaterThan(throttlePassIdx),
+          reason: '焦点环跟随必须在穿过 50ms 节流闸门之后，与进度刷新同相，不在节流早退分支',
+        );
+      },
+    );
   });
 }

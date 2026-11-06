@@ -36,7 +36,7 @@ baseline="$(sed -n 's/.*"builtin-baseline"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\
 if [[ "$(git -C "$VCPKG_ROOT" cat-file -t "$baseline" 2>/dev/null)" != commit ]]; then
   echo "==> fetch vcpkg baseline $baseline"
   git -C "$VCPKG_ROOT" fetch --no-tags --quiet origin "$baseline" \
-    || { echo "取不到 vcpkg baseline $baseline（$VCPKG_ROOT 无法 fetch）" >&2; exit 1; }
+    || { echo "取不到 vcpkg baseline ${baseline}（$VCPKG_ROOT 无法 fetch）" >&2; exit 1; }
 fi
 if ! git -C "$VCPKG_ROOT" merge-base --is-ancestor "$baseline" HEAD; then
   echo "vcpkg 太旧：$VCPKG_ROOT 的 HEAD 不是 baseline $baseline 的后代。" >&2

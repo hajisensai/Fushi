@@ -28,17 +28,19 @@ void main() {
   );
 
   test('release-desktop.yml 在 ISCC 之前硬校验核心运行时', () {
-    expect(workflowFile.existsSync(), isTrue,
-        reason: '找不到 ${workflowFile.path}；守卫的扫描面失效了');
+    expect(
+      workflowFile.existsSync(),
+      isTrue,
+      reason: '找不到 ${workflowFile.path}；守卫的扫描面失效了',
+    );
     final String workflow = workflowFile.readAsStringSync();
 
-    final int gate =
-        workflow.indexOf('Verify Windows installer payload has the core runtime');
+    final int gate = workflow.indexOf(
+      'Verify Windows installer payload has the core runtime',
+    );
     final int iscc = workflow.indexOf('Compile installer (Inno Setup)');
-    expect(gate, greaterThanOrEqualTo(0),
-        reason: '打包前的核心运行时校验步骤不见了');
-    expect(iscc, greaterThan(gate),
-        reason: '校验必须在 ISCC 打包之前——之后再查，包已经出去了');
+    expect(gate, greaterThanOrEqualTo(0), reason: '打包前的核心运行时校验步骤不见了');
+    expect(iscc, greaterThan(gate), reason: '校验必须在 ISCC 打包之前——之后再查，包已经出去了');
 
     final String gateBody = workflow.substring(gate, iscc);
     // 断言必须钉住**缺文件那一条**在 throw，不能只查 gateBody 里有没有 `throw `：
@@ -50,14 +52,18 @@ void main() {
         'throw ("Windows installer payload is missing core runtime file(s): "',
       ),
       isTrue,
-      reason: '缺核心文件必须硬失败。warning 会被无人值守的发布流程直接跑过去，'
+      reason:
+          '缺核心文件必须硬失败。warning 会被无人值守的发布流程直接跑过去，'
           '等于没有这道门',
     );
   });
 
   test('CI 门禁里的 DLL 名与 Dart 侧 DynamicLibrary.open 实参逐字一致', () {
-    expect(bindingsFile.existsSync(), isTrue,
-        reason: '找不到 ${bindingsFile.path}；守卫的扫描面失效了');
+    expect(
+      bindingsFile.existsSync(),
+      isTrue,
+      reason: '找不到 ${bindingsFile.path}；守卫的扫描面失效了',
+    );
 
     // 从生产代码里把 Windows 分支真正传给 DynamicLibrary.open 的字面量抠出来，
     // 不在测试里硬编码它——否则改名时测试会跟着一起「对」，两边一起漂。
@@ -66,16 +72,24 @@ void main() {
       r"Platform\.isWindows\)\s*return\s+DynamicLibrary\.open\('([^']+)'\)",
     );
     final RegExpMatch? match = windowsOpen.firstMatch(bindings);
-    expect(match, isNotNull,
-        reason: 'Windows 分支的 DynamicLibrary.open 调用形态变了，'
-            '这条守卫读不到真相源了');
+    expect(
+      match,
+      isNotNull,
+      reason:
+          'Windows 分支的 DynamicLibrary.open 调用形态变了，'
+          '这条守卫读不到真相源了',
+    );
     final String dllName = match!.group(1)!;
-    expect(dllName.endsWith('.dll'), isTrue,
-        reason: 'Windows 侧应当加载 .dll，取到的是 $dllName');
+    expect(
+      dllName.endsWith('.dll'),
+      isTrue,
+      reason: 'Windows 侧应当加载 .dll，取到的是 $dllName',
+    );
 
     final String workflow = workflowFile.readAsStringSync();
-    final int gate =
-        workflow.indexOf('Verify Windows installer payload has the core runtime');
+    final int gate = workflow.indexOf(
+      'Verify Windows installer payload has the core runtime',
+    );
     final int iscc = workflow.indexOf('Compile installer (Inno Setup)');
     expect(gate, greaterThanOrEqualTo(0));
     expect(iscc, greaterThan(gate));
@@ -84,7 +98,8 @@ void main() {
     expect(
       gateBody.contains("'$dllName'"),
       isTrue,
-      reason: '打包门禁没有校验 $dllName。两处各自硬编码这个名字，'
+      reason:
+          '打包门禁没有校验 $dllName。两处各自硬编码这个名字，'
           '改了一处不改另一处就会静默发出一个起不来的包'
           '（hoshidicts_ffi.dll → fushidicts_ffi.dll 那次就是这个形状）',
     );

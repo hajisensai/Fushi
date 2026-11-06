@@ -10,13 +10,15 @@ import 'golden_test_helpers.dart';
 void main() {
   group('FushiTag overflow golden', () {
     testWidgets('very long text truncates with ellipsis', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiTag(
-          text: 'This is an extremely long tag label that should overflow',
-          backgroundColor: Colors.indigo,
+      await tester.pumpWidget(
+        buildGoldenApp(
+          const FushiTag(
+            text: 'This is an extremely long tag label that should overflow',
+            backgroundColor: Colors.indigo,
+          ),
+          size: const Size(150, 60),
         ),
-        size: const Size(150, 60),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(
@@ -26,15 +28,17 @@ void main() {
     });
 
     testWidgets('icon + long text + trailing in tight space', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiTag(
-          text: 'Very long tag content here',
-          backgroundColor: Colors.deepPurple,
-          icon: Icons.star,
-          trailingText: '★★★★★',
+      await tester.pumpWidget(
+        buildGoldenApp(
+          const FushiTag(
+            text: 'Very long tag content here',
+            backgroundColor: Colors.deepPurple,
+            icon: Icons.star,
+            trailingText: '★★★★★',
+          ),
+          size: const Size(200, 60),
         ),
-        size: const Size(200, 60),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(
@@ -44,13 +48,12 @@ void main() {
     });
 
     testWidgets('minimal width still renders', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiTag(
-          text: 'noun',
-          backgroundColor: Colors.orange,
+      await tester.pumpWidget(
+        buildGoldenApp(
+          const FushiTag(text: 'noun', backgroundColor: Colors.orange),
+          size: const Size(60, 40),
         ),
-        size: const Size(60, 40),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(
@@ -60,15 +63,17 @@ void main() {
     });
 
     testWidgets('large size renders cleanly', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiTag(
-          text: 'adjective',
-          backgroundColor: Colors.teal,
-          icon: Icons.label,
-          trailingText: '42',
+      await tester.pumpWidget(
+        buildGoldenApp(
+          const FushiTag(
+            text: 'adjective',
+            backgroundColor: Colors.teal,
+            icon: Icons.label,
+            trailingText: '42',
+          ),
+          size: const Size(600, 100),
         ),
-        size: const Size(600, 100),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(
@@ -78,14 +83,16 @@ void main() {
     });
 
     testWidgets('Japanese text renders correctly', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiTag(
-          text: '名詞・形容動詞',
-          backgroundColor: Color(0xFF1B5E20),
-          foregroundColor: Colors.white,
+      await tester.pumpWidget(
+        buildGoldenApp(
+          const FushiTag(
+            text: '名詞・形容動詞',
+            backgroundColor: Color(0xFF1B5E20),
+            foregroundColor: Colors.white,
+          ),
+          size: const Size(250, 60),
         ),
-        size: const Size(250, 60),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(
@@ -95,18 +102,20 @@ void main() {
     });
 
     testWidgets('custom seed color theme', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiTag(
-          text: 'seeded',
-          backgroundColor: Colors.blue,
-          icon: Icons.palette,
+      await tester.pumpWidget(
+        buildGoldenApp(
+          const FushiTag(
+            text: 'seeded',
+            backgroundColor: Colors.blue,
+            icon: Icons.palette,
+          ),
+          theme: ThemeData(
+            useMaterial3: true,
+            colorSchemeSeed: Colors.deepOrange,
+          ),
+          size: const Size(200, 60),
         ),
-        theme: ThemeData(
-          useMaterial3: true,
-          colorSchemeSeed: Colors.deepOrange,
-        ),
-        size: const Size(200, 60),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(

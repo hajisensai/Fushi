@@ -21,7 +21,7 @@ String? resolveContentLanguage({
   for (final String? candidate in <String?>[
     explicit,
     metadata,
-    globalDefault
+    globalDefault,
   ]) {
     final String trimmed = candidate?.trim() ?? '';
     if (trimmed.isNotEmpty) return trimmed;

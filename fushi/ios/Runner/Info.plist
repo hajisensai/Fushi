@@ -3,13 +3,15 @@
 <plist version="1.0">
 <dict>
 		<key>NSMicrophoneUsageDescription</key>
-		<string>Fushi needs the microphone to record audio for your Anki cards.</string>
+		<string>Fushi needs the microphone to record audio for your Anki cards, and to let websites you open in the built-in browser use it when you allow them.</string>
 		<key>NSAppleMusicUsageDescription</key>
-		<string>Fushi accesses your media library to import audio files for audiobooks and Anki cards.</string>
+		<string>Fushi accesses your media library to import audio files for audiobooks and Anki cards, and to play Apple Music when you connect your account.</string>
 		<key>NSCameraUsageDescription</key>
-		<string>Fushi uses the camera to capture images to add to your Anki cards and to scan pairing QR codes from your other devices.</string>
+		<string>Fushi uses the camera to capture images to add to your Anki cards, to scan pairing QR codes from your other devices, and to let websites you open in the built-in browser use it when you allow them.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>Fushi accesses your photo library to pick images to add to your Anki cards.</string>
+		<key>NSPhotoLibraryAddUsageDescription</key>
+		<string>Fushi saves images you choose to keep (for example illustrations from your books) to your photo library.</string>
 		<key>NSLocalNetworkUsageDescription</key>
 		<string>Fushi connects to your other Fushi devices on your local network to sync your library and to stream games from your computer.</string>
 		<key>NSBonjourServices</key>
@@ -92,6 +94,14 @@
 		     pushNamed('/') 在当前页面上面再压一个 HomePage（「跳回主页」）。 -->
 		<key>FlutterDeepLinkingEnabled</key>
 		<false/>
+		<!-- 主屏小组件与 App 共用的 App Group（FushiShared/FushiWidgetSnapshot.swift）。
+		     值来自 xcconfig 的 FUSHI_APP_GROUP；没签 App Group 时取不到容器目录，
+		     小组件显示「打开 Fushi 一次」占位、Dart 不写快照。 -->
+		<key>FushiAppGroup</key>
+		<string>$(FUSHI_APP_GROUP)</string>
+		<!-- 有声书 / 音乐播放、设备端转录进度的 Live Activity（灵动岛 + 锁屏）。 -->
+		<key>NSSupportsLiveActivities</key>
+		<true/>
 			<key>CFBundleURLTypes</key>
 		<array>
 			<dict>

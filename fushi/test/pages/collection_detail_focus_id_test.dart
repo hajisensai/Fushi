@@ -6,8 +6,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -31,8 +32,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_collection_focus_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_collection_focus_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -81,54 +83,59 @@ void main() {
   });
 
   Future<void> seedEpub(String bookKey, String title) async {
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: bookKey,
-      title: title,
-      epubPath: '${pathProviderDir.path}/$bookKey.epub',
-      extractDir: pathProviderDir.path,
-      chapterCount: 1,
-      chaptersJson: '["a"]',
-      importedAt: 0,
-    ));
-    epubItems.add(MediaItem(
-      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(bookKey),
-      title: title,
-      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
-      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
-      position: 0,
-      duration: 1,
-      canDelete: false,
-      canEdit: true,
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: title,
+        epubPath: '${pathProviderDir.path}/$bookKey.epub',
+        extractDir: pathProviderDir.path,
+        chapterCount: 1,
+        chaptersJson: '["a"]',
+        importedAt: 0,
+      ),
+    );
+    epubItems.add(
+      MediaItem(
+        mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(bookKey),
+        title: title,
+        mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+        mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
+        position: 0,
+        duration: 1,
+        canDelete: false,
+        canEdit: true,
+      ),
+    );
   }
 
   Widget buildApp() => ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-          fushiBooksProvider.overrideWith(
-            (ref, language) => Future<List<MediaItem>>.value(epubItems),
-          ),
-          srtBooksProvider.overrideWith(
-            (ref) => Future<List<SrtBook>>.value(srtItems),
-          ),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            // 焦点根置于 Navigator 之上：书架与 push 出的详情页共用同一注册表，
-            // 复刻生产的「两条路由同时注册」环境。
-            builder: (BuildContext context, Widget? child) =>
-                FushiFocusRoot(child: child ?? const SizedBox.shrink()),
-            home: Scaffold(
-              body: ReaderFushiHistoryPage(
-                remoteBookClientLoader: () async => null,
-              ),
-            ),
+    overrides: <Override>[
+      appProvider.overrideWith((ref) => appModel),
+      fushiBooksProvider.overrideWith(
+        (ref, language) => Future<List<MediaItem>>.value(epubItems),
+      ),
+      srtBooksProvider.overrideWith(
+        (ref) => Future<List<SrtBook>>.value(srtItems),
+      ),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        // 焦点根置于 Navigator 之上：书架与 push 出的详情页共用同一注册表，
+        // 复刻生产的「两条路由同时注册」环境。
+        builder: (BuildContext context, Widget? child) =>
+            FushiFocusRoot(child: child ?? const SizedBox.shrink()),
+        home: Scaffold(
+          body: ReaderFushiHistoryPage(
+            remoteBookClientLoader: () async => null,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
-  testWidgets('BUG-1009：详情页成员卡 focusId 带 collection-detail- 前缀，与书架不撞号',
-      (WidgetTester tester) async {
+  testWidgets('BUG-1009：详情页成员卡 focusId 带 collection-detail- 前缀，与书架不撞号', (
+    WidgetTester tester,
+  ) async {
     await seedEpub('memberKey', '成员书');
     final int cid = await db.createMediaCollection('系列甲');
     // v83（P3 Stage 2，2ceccf8bda）：本地 epub 合集成员行的 entryKey 是**稳定 uid**，
@@ -153,29 +160,43 @@ void main() {
         .widgetList<FushiFocusTarget>(find.byType(FushiFocusTarget))
         .map((FushiFocusTarget w) => w.id.value)
         .toList();
-    expect(onstageIds(), contains('reader-shelf-collection-$cid'),
-        reason: '书架合集格子保持既有无前缀 focusId');
-    expect(onstageIds(), isNot(contains('reader-shelf-book-$mediaId')),
-        reason: '合集成员折进格子，书架上没有它自己的卡');
+    expect(
+      onstageIds(),
+      contains('reader-shelf-collection-$cid'),
+      reason: '书架合集格子保持既有无前缀 focusId',
+    );
+    expect(
+      onstageIds(),
+      isNot(contains('reader-shelf-book-$mediaId')),
+      reason: '合集成员折进格子，书架上没有它自己的卡',
+    );
 
     // 进详情页（点合集格子）。
-    await tester.tap(find.byKey(
-        ValueKey<String>('reader_shelf_collection_card_$cid')));
+    await tester.tap(
+      find.byKey(ValueKey<String>('reader_shelf_collection_card_$cid')),
+    );
     await tester.pumpAndSettle();
     expect(find.byType(MediaCollectionGridDetailPage), findsOneWidget);
 
     // 详情页成员卡：带路由前缀，且不再出现与书架同名的 id。
     final List<String> detailIds = onstageIds();
-    expect(detailIds, contains('collection-detail-reader-shelf-book-$mediaId'),
-        reason: '详情页成员卡必须带 collection-detail- 前缀（BUG-1009）');
-    expect(detailIds, isNot(contains('reader-shelf-book-$mediaId')),
-        reason: '详情页（onstage）不得复用书架同名 focusId');
+    expect(
+      detailIds,
+      contains('collection-detail-reader-shelf-book-$mediaId'),
+      reason: '详情页成员卡必须带 collection-detail- 前缀（BUG-1009）',
+    );
+    expect(
+      detailIds,
+      isNot(contains('reader-shelf-book-$mediaId')),
+      reason: '详情页（onstage）不得复用书架同名 focusId',
+    );
 
     // 书架路由仍在其下存活（offstage），其合集格子的 id 未被改动——两条路由并存时
     // 注册表里是两个不同 id，不再互相覆盖。
     final List<String> allIds = tester
         .widgetList<FushiFocusTarget>(
-            find.byType(FushiFocusTarget, skipOffstage: false))
+          find.byType(FushiFocusTarget, skipOffstage: false),
+        )
         .map((FushiFocusTarget w) => w.id.value)
         .toList();
     expect(allIds, contains('reader-shelf-collection-$cid'));

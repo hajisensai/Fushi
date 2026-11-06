@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-477 守卫（BUG-468 同根，弹窗 WebView 漏修）：查词弹窗在 Windows 上右键曾同时弹两个
 /// 菜单——WebView2 原生菜单（返回/刷新/另存为/打印/更多工具）和 Fushi 自定义的 Flutter 选区
@@ -24,13 +24,15 @@ void main() {
     return source.substring(startIndex, endIndex);
   }
 
-  test('popup WebView disables the native WebView2 context menu on Windows',
-      () {
+  test('popup WebView disables the native WebView2 context menu on Windows', () {
     final File file = File(
       'lib/src/pages/implementations/dictionary_popup_webview.dart',
     );
-    expect(file.existsSync(), isTrue,
-        reason: 'popup webview source not found at ${file.path}');
+    expect(
+      file.existsSync(),
+      isTrue,
+      reason: 'popup webview source not found at ${file.path}',
+    );
     final String source = file.readAsStringSync();
 
     // Scope to the popup WebView's InAppWebViewSettings block (between the
@@ -42,8 +44,9 @@ void main() {
     );
 
     expect(
-      RegExp(r'disableContextMenu:\s*isWindowsPlatform')
-          .hasMatch(settingsBlock),
+      RegExp(
+        r'disableContextMenu:\s*isWindowsPlatform',
+      ).hasMatch(settingsBlock),
       isTrue,
       reason:
           'disableContextMenu must be isWindowsPlatform — the cross-platform '

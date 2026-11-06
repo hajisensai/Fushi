@@ -15,39 +15,49 @@ import 'package:fushi/src/sync/sync_repository.dart';
 ///      backend hiccup never wipes the session.
 void main() {
   group('TODO-836 backend error mapping → SyncAuthError', () {
-    test('403 insufficient_scope maps to SyncAuthError, not SyncBackendError',
-        () {
-      final Object mapped = GoogleDriveSyncBackend.mapDriveError(
-        GoogleDriveError('insufficient_scope: re-consent required',
-            statusCode: 403),
-      );
-      expect(mapped, isA<SyncAuthError>());
-      expect(mapped, isNot(isA<SyncBackendError>()));
-    });
+    test(
+      '403 insufficient_scope maps to SyncAuthError, not SyncBackendError',
+      () {
+        final Object mapped = GoogleDriveSyncBackend.mapDriveError(
+          GoogleDriveError(
+            'insufficient_scope: re-consent required',
+            statusCode: 403,
+          ),
+        );
+        expect(mapped, isA<SyncAuthError>());
+        expect(mapped, isNot(isA<SyncBackendError>()));
+      },
+    );
 
     test(
-        'a non-scope GoogleDriveError stays a (retryable-aware) SyncBackendError',
-        () {
-      final Object mapped404 = GoogleDriveSyncBackend.mapDriveError(
-        GoogleDriveError('not found', statusCode: 404),
-      );
-      expect(mapped404, isA<SyncBackendError>());
-      expect((mapped404 as SyncBackendError).isRetryable, isTrue); // 404 stale
+      'a non-scope GoogleDriveError stays a (retryable-aware) SyncBackendError',
+      () {
+        final Object mapped404 = GoogleDriveSyncBackend.mapDriveError(
+          GoogleDriveError('not found', statusCode: 404),
+        );
+        expect(mapped404, isA<SyncBackendError>());
+        expect(
+          (mapped404 as SyncBackendError).isRetryable,
+          isTrue,
+        ); // 404 stale
 
-      final Object mapped507 = GoogleDriveSyncBackend.mapDriveError(
-        GoogleDriveError('507 quota exceeded', statusCode: 507),
-      );
-      expect(mapped507, isA<SyncBackendError>());
-      expect((mapped507 as SyncBackendError).isRetryable, isFalse);
-    });
+        final Object mapped507 = GoogleDriveSyncBackend.mapDriveError(
+          GoogleDriveError('507 quota exceeded', statusCode: 507),
+        );
+        expect(mapped507, isA<SyncBackendError>());
+        expect((mapped507 as SyncBackendError).isRetryable, isFalse);
+      },
+    );
 
-    test('a 403 WITHOUT insufficient_scope is a SyncBackendError (not auth)',
-        () {
-      final Object mapped = GoogleDriveSyncBackend.mapDriveError(
-        GoogleDriveError('rate limit exceeded', statusCode: 403),
-      );
-      expect(mapped, isA<SyncBackendError>());
-    });
+    test(
+      'a 403 WITHOUT insufficient_scope is a SyncBackendError (not auth)',
+      () {
+        final Object mapped = GoogleDriveSyncBackend.mapDriveError(
+          GoogleDriveError('rate limit exceeded', statusCode: 403),
+        );
+        expect(mapped, isA<SyncBackendError>());
+      },
+    );
   });
 
   group('BUG-1023 transient Drive failures are retryable (in-round retry)', () {
@@ -60,20 +70,28 @@ void main() {
           GoogleDriveError('transient $code', statusCode: code),
         );
         expect(mapped, isA<SyncBackendError>());
-        expect((mapped as SyncBackendError).isRetryable, isTrue,
-            reason: '$code is a transient failure and must retry in-round');
+        expect(
+          (mapped as SyncBackendError).isRetryable,
+          isTrue,
+          reason: '$code is a transient failure and must retry in-round',
+        );
       });
     }
 
-    test('507 Insufficient Storage stays NON-retryable (quota, not transient)',
-        () {
-      final Object mapped = GoogleDriveSyncBackend.mapDriveError(
-        GoogleDriveError('507 quota exceeded', statusCode: 507),
-      );
-      expect(mapped, isA<SyncBackendError>());
-      expect((mapped as SyncBackendError).isRetryable, isFalse,
-          reason: 'retrying a quota-exceeded write cannot succeed');
-    });
+    test(
+      '507 Insufficient Storage stays NON-retryable (quota, not transient)',
+      () {
+        final Object mapped = GoogleDriveSyncBackend.mapDriveError(
+          GoogleDriveError('507 quota exceeded', statusCode: 507),
+        );
+        expect(mapped, isA<SyncBackendError>());
+        expect(
+          (mapped as SyncBackendError).isRetryable,
+          isFalse,
+          reason: 'retrying a quota-exceeded write cannot succeed',
+        );
+      },
+    );
 
     test('an unclassified 4xx (e.g. 400) stays NON-retryable', () {
       final Object mapped = GoogleDriveSyncBackend.mapDriveError(
@@ -88,7 +106,9 @@ void main() {
     // the thrown error is a SyncAuthError. Pure so it stays a fast unit test;
     // the widget wiring is exercised by analyze + the source corpus.
     Future<int> simulateSyncCatch(
-        Exception error, _CountingBackend backend) async {
+      Exception error,
+      _CountingBackend backend,
+    ) async {
       int signOuts = 0;
       try {
         throw error;
@@ -103,8 +123,10 @@ void main() {
 
     test('SyncAuthError triggers signOut exactly once', () async {
       final _CountingBackend backend = _CountingBackend();
-      final int count =
-          await simulateSyncCatch(SyncAuthError('insufficient_scope'), backend);
+      final int count = await simulateSyncCatch(
+        SyncAuthError('insufficient_scope'),
+        backend,
+      );
       expect(count, 1);
       expect(backend.signOutCalls, 1);
     });
@@ -112,7 +134,9 @@ void main() {
     test('ordinary SyncBackendError does NOT trigger signOut', () async {
       final _CountingBackend backend = _CountingBackend();
       final int count = await simulateSyncCatch(
-          SyncBackendError('507 quota', isRetryable: false), backend);
+        SyncBackendError('507 quota', isRetryable: false),
+        backend,
+      );
       expect(count, 0);
       expect(backend.signOutCalls, 0);
     });

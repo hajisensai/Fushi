@@ -1,0 +1,89 @@
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
+
+/// 按提示词作答的假 completer：记下每次提示词，[answer] 返回正文（或抛错）。
+///
+/// [prompts] 记的是**拼回去的完整提示词**（`joinAiTextPrompt(前缀, 本批)`，与拆分
+/// 之前逐字相同），[prefixes] / [bodies] 分别记两段，供提示缓存相关的断言用。
+class FakeAiCompleter implements AiTextCompleter {
+  FakeAiCompleter(this.answer, {this.usage, this.stopReason = normalAiStop});
+
+  final String Function(String prompt, int call) answer;
+  final AiChatUsage? usage;
+
+  /// 第 call 次应答的停止原因（`max_tokens` = 被截断）。默认每次都是
+  /// [normalAiStop]（`end_turn`），与生产 completer 一致——生产路径每次都带停止原因；
+  /// 要模拟「应答里没有停止原因」就显式返回 null。
+  final String? Function(int call) stopReason;
+  final List<String> prompts = <String>[];
+  final List<String> prefixes = <String>[];
+  final List<String> bodies = <String>[];
+
+  int get calls => prompts.length;
+
+  @override
+  Future<AiChatCompletion> complete(
+    String prompt, {
+    String stablePrefix = '',
+  }) async {
+    final String full = joinAiTextPrompt(stablePrefix, prompt);
+    prompts.add(full);
+    prefixes.add(stablePrefix);
+    bodies.add(prompt);
+    final int call = prompts.length - 1;
+    return AiChatCompletion(
+      text: answer(full, call),
+      usage: usage,
+      stopReason: stopReason(call),
+    );
+  }
+}
+
+/// [FakeAiCompleter] 默认的停止原因：正常写完（Anthropic `end_turn`）。
+String? normalAiStop(int call) => 'end_turn';
+
+/// 一调用就失败（用来断言「走了缓存、没发请求」）。
+class ExplodingAiCompleter implements AiTextCompleter {
+  ExplodingAiCompleter([this.reason = 'should_not_be_called']);
+
+  final String reason;
+  int calls = 0;
+
+  @override
+  Future<AiChatCompletion> complete(
+    String prompt, {
+    String stablePrefix = '',
+  }) async {
+    calls++;
+    throw SubtitleAiRequestFailure(reason);
+  }
+}
+
+final RegExp _kTargetId = RegExp(r'^id=(\d+) ', multiLine: true);
+
+/// 提示词里的目标 id（`id=N ` 开头的行）。
+List<int> targetIdsOf(String prompt) => <int>[
+  for (final RegExpMatch m in _kTargetId.allMatches(prompt))
+    int.parse(m.group(1)!),
+];
+
+/// 把提示词里每个目标 id 映射成 [fix] 给的正文的行协议回复（`<id><TAB><正文>` 每行
+/// 一条 + `END`；包一层 ``` 围栏，顺便覆盖围栏被跳过）。
+String replyForIds(String prompt, String Function(int id) fix) => <String>[
+  '```',
+  for (final int id in targetIdsOf(prompt)) '$id\t${fix(id)}',
+  kAiLineReplyEnd,
+  '```',
+].join('\n');
+
+/// 专名表的行协议回复（[rows] 用 JSON 字段名：ja / reading / kind / misrecognitions）。
+String glossaryReply(List<Map<String, Object?>> rows) => <String>[
+  for (final Map<String, Object?> r in rows)
+    <String>[
+      '${r['ja'] ?? ''}',
+      '${r['reading'] ?? ''}',
+      '${r['kind'] ?? ''}',
+      ((r['misrecognitions'] as List<Object?>?) ?? const <Object?>[]).join('、'),
+    ].join('\t'),
+  kAiLineReplyEnd,
+].join('\n');

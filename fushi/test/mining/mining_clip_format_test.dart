@@ -61,10 +61,10 @@ void main() {
       );
     });
 
-    test('设置页文案：五端都编得出 VP9（标推荐），AV1 写明仅桌面端', () {
-      // 所有者 #1717 b94ecd1a1ed 起 iOS xcframework 也带 libvpx-vp9 + libopus，两档 WebM
-      // 不再有「本机编不出、退回 MP4」的平台分支；AV1 在移动端（无 SVT-AV1）降级 VP9，
-      // 仍内嵌播放，文案里的「desktop only」就是它的全部平台差异。
+    test('设置页文案：五端都编得出 VP9（标推荐）与 AV1，AV1 不再标平台限制', () {
+      // 统一 FFmpeg（tool/ffmpeg-unified）五端都带 libvpx-vp9 + SVT-AV1 + libopus，
+      // 三档都没有平台分支；AV1 文案只剩体积 / 耗时取舍，曾经的「desktop only」已不成立
+      // （移动端产物字节由 ffmpeg_unified_mobile_guard_test 钉住）。
       LocaleSettings.setLocale(AppLocale.en);
       expect(
         miningClipFormatLabel(MiningClipFormat.webmVp9),
@@ -72,7 +72,7 @@ void main() {
       );
       expect(
         miningClipFormatLabel(MiningClipFormat.webmAv1),
-        contains('desktop only'),
+        allOf(contains('AV1'), isNot(contains('desktop only'))),
       );
       expect(miningClipFormatLabel(MiningClipFormat.mp4H264), contains('MP4'));
     });
@@ -327,7 +327,8 @@ void main() {
     test('全新安装：模式默认 videoClip，格式取平台默认，不写模式键', () async {
       await repo.settleMiningImageModeInstallDefault();
       expect(repo.videoMiningImageMode, VideoMiningImageMode.videoClip);
-      expect(repo.galMiningImageMode, VideoMiningImageMode.videoClip);
+      // 按来源给默认（2026-10-29）：galgame 没设过时出动图。
+      expect(repo.galMiningImageMode, VideoMiningImageMode.gif);
       expect(repo.videoMiningClipFormat, platformDefault);
       expect(repo.galMiningClipFormat, platformDefault);
       final PreferencesRepository restored = PreferencesRepository(db);
@@ -350,9 +351,22 @@ void main() {
       restored.dispose();
     });
 
-    test('还没跑迁移（弹窗入口）：没设过的模式取 videoClip', () {
+    test('还没跑迁移（弹窗入口）：没设过的模式按来源取默认（视频片段 / galgame 动图）', () {
       expect(repo.videoMiningImageMode, VideoMiningImageMode.videoClip);
-      expect(repo.galMiningImageMode, VideoMiningImageMode.videoClip);
+      expect(repo.galMiningImageMode, VideoMiningImageMode.gif);
+    });
+
+    test('galgame 显式选过的模式压过来源默认（含显式 videoClip）', () async {
+      final PreferencesRepository explicit = await seeded(<String, String>{
+        'gal_mining_image_mode': VideoMiningImageMode.videoClip.wireName,
+      });
+      expect(explicit.galMiningImageMode, VideoMiningImageMode.videoClip);
+      explicit.dispose();
+      final PreferencesRepository still = await seeded(<String, String>{
+        'gal_mining_image_mode': VideoMiningImageMode.currentFrame.wireName,
+      });
+      expect(still.galMiningImageMode, VideoMiningImageMode.currentFrame);
+      still.dispose();
     });
 
     test('被 09-28 钉成 gif 的存量安装：迁到片段，格式钉平台默认（不推成 MP4）', () async {
@@ -420,7 +434,7 @@ void main() {
       });
       await legacy.settleMiningImageModeInstallDefault();
       expect(legacy.videoMiningImageMode, VideoMiningImageMode.gif);
-      expect(legacy.galMiningImageMode, VideoMiningImageMode.videoClip);
+      expect(legacy.galMiningImageMode, VideoMiningImageMode.gif);
       expect(
         legacy.prefsSnapshot[markerKey],
         PrefCodec.encode(VideoMiningImageMode.videoClip.wireName),

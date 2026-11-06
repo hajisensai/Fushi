@@ -35,33 +35,41 @@ void main() {
     WidgetTester tester, {
     required VideoPlayerController controller,
     required void Function(
-            String sentence, int graphemeIndex, Rect rect, AudioCue cue)
-        onCharTap,
+      String sentence,
+      int graphemeIndex,
+      Rect rect,
+      AudioCue cue,
+    )
+    onCharTap,
     required VoidCallback onSeekPointerUp,
   }) async {
-    await tester.pumpWidget(buildTestApp(Stack(
-      children: <Widget>[
-        // 下层：铺满的裸 [Listener]（模拟 media_kit `MaterialSeekBar` 的 seek 命中层）。
-        // 关键：用 Listener（不进手势竞技场）而非 GestureDetector —— onPointerUp 无条件
-        // 触发，只要指针在命中路径上就 seek。
-        Positioned.fill(
-          child: Listener(
-            behavior: HitTestBehavior.opaque,
-            onPointerUp: (_) => onSeekPointerUp(),
-            child: const SizedBox.expand(),
-          ),
+    await tester.pumpWidget(
+      buildTestApp(
+        Stack(
+          children: <Widget>[
+            // 下层：铺满的裸 [Listener]（模拟 media_kit `MaterialSeekBar` 的 seek 命中层）。
+            // 关键：用 Listener（不进手势竞技场）而非 GestureDetector —— onPointerUp 无条件
+            // 触发，只要指针在命中路径上就 seek。
+            Positioned.fill(
+              child: Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerUp: (_) => onSeekPointerUp(),
+                child: const SizedBox.expand(),
+              ),
+            ),
+            // 上层：字幕 overlay（Positioned.fill，几何与视频页一致）。
+            Positioned.fill(
+              child: VideoSubtitleOverlay(
+                controller: controller,
+                // 与 fallthrough 测试同款小字号：命中容差落在下限 10px，空白点稳落空白区。
+                fontSize: 20,
+                onCharTap: onCharTap,
+              ),
+            ),
+          ],
         ),
-        // 上层：字幕 overlay（Positioned.fill，几何与视频页一致）。
-        Positioned.fill(
-          child: VideoSubtitleOverlay(
-            controller: controller,
-            // 与 fallthrough 测试同款小字号：命中容差落在下限 10px，空白点稳落空白区。
-            fontSize: 20,
-            onCharTap: onCharTap,
-          ),
-        ),
-      ],
-    )));
+      ),
+    );
   }
 
   testWidgets('点字符 → 查词触发且指针不下探到进度条 Listener（seek 被截断）', (tester) async {
@@ -87,8 +95,11 @@ void main() {
     await tester.pump();
 
     expect(tappedSentence, 'l', reason: '命中字符必须触发查词');
-    expect(seekPointerUps, 0,
-        reason: '命中字符时字幕层吸收命中，指针不下探到进度条 Listener —— seek 不得发生');
+    expect(
+      seekPointerUps,
+      0,
+      reason: '命中字符时字幕层吸收命中，指针不下探到进度条 Listener —— seek 不得发生',
+    );
   });
 
   testWidgets('点字幕盒内空白 → 不查词且指针穿透到进度条 Listener（seek 照常）', (tester) async {
@@ -117,7 +128,10 @@ void main() {
     await tester.pump();
 
     expect(tappedSentence, isNull, reason: '字符间空白不应查词');
-    expect(seekPointerUps, 1,
-        reason: '字幕盒空白 tap 必须穿透到进度条 Listener —— 进度条 seek 不被吞');
+    expect(
+      seekPointerUps,
+      1,
+      reason: '字幕盒空白 tap 必须穿透到进度条 Listener —— 进度条 seek 不被吞',
+    );
   });
 }

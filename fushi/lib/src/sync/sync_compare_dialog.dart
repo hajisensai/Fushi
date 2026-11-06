@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -8,6 +9,7 @@ import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
+import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -25,7 +27,25 @@ import 'package:fushi/src/sync/sync_progress_resolver.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_tag.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/sync/manga_sync_package.dart'
@@ -66,7 +86,7 @@ class SyncCompareEntry {
   /// `/api/library/books/<title>`，不能交给 [importRemoteBookFolder]。
   final String? remoteLiveTitle;
 
-  /// 该远端文件夹是否含可下载的 `.epub` 内容。仅对「远端独有」书有意义：为 false
+  /// 该远端文件夹是否含可下载的书内容（`.epub` / `.manga.zip`）。仅对「远端独有」书有意义：为 false
   /// 时是只剩同步元数据的孤儿，不能当可下载书（避免 BUG-049 幽灵下载），但条目保留
   /// 以便删除。本端已有书 / 本端独有书恒为 true（不参与远端下载判定）。
   final bool remoteHasContent;
@@ -163,9 +183,8 @@ class SyncDictEntry {
   /// 远端独有的条目本地没有元数据行 → null → 显示 [name]。
   final String? displayName;
 
-  String get shownName => (displayName?.trim().isNotEmpty ?? false)
-      ? displayName!.trim()
-      : name;
+  String get shownName =>
+      (displayName?.trim().isNotEmpty ?? false) ? displayName!.trim() : name;
 
   /// 远端词典资产（`<name>.fushidict`）定位符；远端没有则 null。
   final String? remoteAssetId;
@@ -176,12 +195,13 @@ class SyncDictEntry {
   /// "Remote" for a dictionary that is also installed locally made it look
   /// identical to a cloud-only one (#1473).
   String get presenceLabel => <String>[
-        if (hasLocal) t.sync_compare_local,
-        if (hasRemote) t.sync_compare_remote,
-      ].join(' · ');
+    if (hasLocal) t.sync_compare_local,
+    if (hasRemote) t.sync_compare_remote,
+  ].join(' · ');
 }
 
-/// True if a remote book folder holds a downloadable EPUB content asset.
+/// True if a remote book folder holds a downloadable book content asset
+/// (`.epub`, or a manga package `.manga.zip` — [isRemoteBookContentName]).
 /// Mirrors [importRemoteBookFolder]'s content lookup so the compare list never
 /// offers a download it can't fulfil (BUG-049). Errs toward *showing* the entry
 /// when the listing fails, so a transient error never hides a real remote book.
@@ -191,8 +211,9 @@ Future<bool> _remoteFolderHasContent(
 ) async {
   try {
     final List<AssetEntry> children = await backend.listChildren(folderId);
-    return children.any((AssetEntry e) =>
-        !e.isFolder && e.name.toLowerCase().endsWith('.epub'));
+    return children.any(
+      (AssetEntry e) => !e.isFolder && isRemoteBookContentName(e.name),
+    );
   } catch (e) {
     developer.log(
       'Failed to check remote content for "$folderId"',
@@ -208,8 +229,7 @@ Future<bool> _remoteFolderHasContent(
 Future<List<SyncCompareEntry>> fetchCompareDataForTest(
   FushiDatabase db,
   SyncBackend backend,
-) =>
-    _fetchCompareData(db, backend);
+) => _fetchCompareData(db, backend);
 
 Future<List<SyncCompareEntry>> _fetchCompareData(
   FushiDatabase db,
@@ -221,12 +241,13 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
   // Reserved asset namespaces (e.g. __dictionaries__) live alongside book
   // folders under the root; they are not books and must not appear as phantom
   // compare entries.
-  final remoteBooks = (await backend.listBooks(rootId))
-      .where((SyncFileRef f) => !isReservedSyncFolderName(f.name))
-      .toList();
+  final remoteBooks = (await backend.listBooks(
+    rootId,
+  )).where((SyncFileRef f) => !isReservedSyncFolderName(f.name)).toList();
   backend.cacheBookFolderIds(remoteBooks);
-  final List<RemoteBookInfo> liveBooks =
-      backend is InterconnectSyncBackend ? await backend.listRemoteBooks() : [];
+  final List<RemoteBookInfo> liveBooks = backend is InterconnectSyncBackend
+      ? await backend.listRemoteBooks()
+      : [];
   final localBooks = await db.getAllEpubBooks();
 
   final allTitles = <String>{};
@@ -283,8 +304,10 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
   final Map<String, _LiveProgressRow> liveProgressByTitle =
       <String, _LiveProgressRow>{};
   if (backend is InterconnectSyncBackend) {
-    final InterconnectBookProgressSync liveSync =
-        InterconnectBookProgressSync(db: db, backend: backend);
+    final InterconnectBookProgressSync liveSync = InterconnectBookProgressSync(
+      db: db,
+      backend: backend,
+    );
     final List<EpubBookRow> liveJobs = <EpubBookRow>[
       for (final EpubBookRow b in localBooks)
         if (liveByTitle.containsKey(b.title)) b,
@@ -360,13 +383,13 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     // that never clears (BUG-049). The row is still kept so it can be deleted.
     final bool remoteHasContent = local == null
         ? (remote != null
-            ? await _remoteFolderHasContent(backend, remote.id)
-            // 互联 live 条目：host 对漫画恒 hasContent=false（那是 EPUB 内容树
-            // 判据），漫画内容走 hasMangaContent —— 只看 hasContent 会让互联漫画
-            // 在对比弹窗里连下载入口都不出现。与 _syncBooksContentLive 同判据取并。
-            : (live == null
-                ? true
-                : (live.hasContent || live.hasMangaContent)))
+              ? await _remoteFolderHasContent(backend, remote.id)
+              // 互联 live 条目：host 对漫画恒 hasContent=false（那是 EPUB 内容树
+              // 判据），漫画内容走 hasMangaContent —— 只看 hasContent 会让互联漫画
+              // 在对比弹窗里连下载入口都不出现。与 _syncBooksContentLive 同判据取并。
+              : (live == null
+                    ? true
+                    : (live.hasContent || live.hasMangaContent)))
         : true;
 
     // 跨设备资产身份与 SyncManager 一致：sanitizeTtuFilename(title)。读共同祖先
@@ -387,47 +410,50 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     final int? remotePage = !paged
         ? null
         : liveRow != null
-            ? (liveRow.remote.updatedAtMs > 0
-                ? clampPagedSyncPageIndex(
-                    liveRow.remote.sectionIndex, pageCount)
-                : null)
-            : (remoteData?.exploredCharCount == null
-                ? null
-                : clampPagedSyncPageIndex(
-                    remoteData!.exploredCharCount!, pageCount));
+        ? (liveRow.remote.updatedAtMs > 0
+              ? clampPagedSyncPageIndex(liveRow.remote.sectionIndex, pageCount)
+              : null)
+        : (remoteData?.exploredCharCount == null
+              ? null
+              : clampPagedSyncPageIndex(
+                  remoteData!.exploredCharCount!,
+                  pageCount,
+                ));
     final double? remoteProg = liveRow != null
         ? (liveRow.remote.updatedAtMs > 0 && local != null
-            ? _fractionOf(liveRow.remote, local)
-            : null)
+              ? _fractionOf(liveRow.remote, local)
+              : null)
         : paged && remotePage != null
-            // 按本机总页数重算：修复前导出的旧文件 progress 恒 0。
-            ? pagedProgressFraction(pageIndex: remotePage, pageCount: pageCount)
-            : remoteData?.progress;
+        // 按本机总页数重算：修复前导出的旧文件 progress 恒 0。
+        ? pagedProgressFraction(pageIndex: remotePage, pageCount: pageCount)
+        : remoteData?.progress;
     final int? remoteUpdatedAt = liveRow != null
         ? (liveRow.remote.updatedAtMs > 0 ? liveRow.remote.updatedAtMs : null)
         : remoteData?.updatedAt;
 
-    entries.add(SyncCompareEntry(
-      title: title,
-      bookKey: local?.bookKey,
-      remoteFolderId: remote?.id,
-      remoteLiveTitle: live?.title,
-      remoteHasContent: remoteHasContent,
-      remoteAudioBookId: remoteData?.audioBookId,
-      localProgress: localProg,
-      localUpdatedAt: localUpdatedAt,
-      remoteProgress: remoteProg,
-      remoteUpdatedAt: remoteUpdatedAt,
-      localStatsCount: localStatsCount,
-      remoteStatsCount: remoteData?.statsCount,
-      localAudioPosMs: localAudioMs,
-      remoteAudioPosSec: remoteData?.audioPosSec,
-      base: base,
-      liveAction: liveRow?.action,
-      localPage: localPage,
-      remotePage: remotePage,
-      pageCount: pageCount,
-    ));
+    entries.add(
+      SyncCompareEntry(
+        title: title,
+        bookKey: local?.bookKey,
+        remoteFolderId: remote?.id,
+        remoteLiveTitle: live?.title,
+        remoteHasContent: remoteHasContent,
+        remoteAudioBookId: remoteData?.audioBookId,
+        localProgress: localProg,
+        localUpdatedAt: localUpdatedAt,
+        remoteProgress: remoteProg,
+        remoteUpdatedAt: remoteUpdatedAt,
+        localStatsCount: localStatsCount,
+        remoteStatsCount: remoteData?.statsCount,
+        localAudioPosMs: localAudioMs,
+        remoteAudioPosSec: remoteData?.audioPosSec,
+        base: base,
+        liveAction: liveRow?.action,
+        localPage: localPage,
+        remotePage: remotePage,
+        pageCount: pageCount,
+      ),
+    );
   }
 
   // BUG-1576：folder 缓存按通道分槽落盘。对比对话框拿的是**某一条**已解析通道的
@@ -488,8 +514,10 @@ Future<List<SyncDictEntry>> _fetchDictEntries(
   // 纯本地项（远端没有、这里没得删）曾被「词典同步开关关着」过滤掉，理由是别用
   // 无关本地词典刷屏。开关没了之后这个过滤反而有害：本地独有 = 「还没上传的那些」，
   // 正是用户点设置页那个上传按钮之前要看的清单。远端项本来就始终保留（要删它）。
-  out.sort((SyncDictEntry a, SyncDictEntry b) =>
-      a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  out.sort(
+    (SyncDictEntry a, SyncDictEntry b) =>
+        a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+  );
   return out;
 }
 
@@ -537,15 +565,10 @@ Future<_LiveProgressRow?> _fetchLiveProgress(
   try {
     final RemoteBookProgress remote = await sync.remoteProgress(book);
     final RemoteBookProgress local = await sync.localProgress(book);
-    final BookProgressBaseline? base = await sync.baseline(book);
     return _LiveProgressRow(
       local: local,
       remote: remote,
-      action: resolveBookProgressThreeWay(
-        local: local,
-        remote: remote,
-        base: base,
-      ),
+      action: await sync.decide(book, local: local, remote: remote),
     );
   } catch (e) {
     developer.log(
@@ -593,22 +616,28 @@ Future<_RemoteBookData> _fetchRemoteBookData(
     final futures = <Future<void>>[];
 
     if (syncFiles.progress != null) {
-      futures.add(backend.getProgressFile(syncFiles.progress!.id).then((p) {
-        progress = p.progress;
-        exploredCharCount = p.exploredCharCount;
-        updatedAt = p.lastBookmarkModified;
-      }));
+      futures.add(
+        backend.getProgressFile(syncFiles.progress!.id).then((p) {
+          progress = p.progress;
+          exploredCharCount = p.exploredCharCount;
+          updatedAt = p.lastBookmarkModified;
+        }),
+      );
     }
     if (syncFiles.statistics != null) {
-      futures.add(backend.getStatsFile(syncFiles.statistics!.id).then((s) {
-        statsCount = s.length;
-      }));
+      futures.add(
+        backend.getStatsFile(syncFiles.statistics!.id).then((s) {
+          statsCount = s.length;
+        }),
+      );
     }
     if (syncFiles.audioBook != null) {
       audioBookId = syncFiles.audioBook!.id;
-      futures.add(backend.getAudioBookFile(syncFiles.audioBook!.id).then((a) {
-        audioPosSec = a.playbackPositionSec;
-      }));
+      futures.add(
+        backend.getAudioBookFile(syncFiles.audioBook!.id).then((a) {
+          audioPosSec = a.playbackPositionSec;
+        }),
+      );
     }
 
     await Future.wait(futures);
@@ -631,10 +660,7 @@ Future<_RemoteBookData> _fetchRemoteBookData(
   }
 }
 
-Future<String> _ensureRoot(
-  SyncBackend backend,
-  SyncRepository repo,
-) async {
+Future<String> _ensureRoot(SyncBackend backend, SyncRepository repo) async {
   if (backend.cachedRootFolderId != null) return backend.cachedRootFolderId!;
   // BUG-1576：只读**本通道**那格。读全局键时，互联通道上一轮写下的绝对 URL 会被
   // 云后端当成 fileId / 被 WebDAV 当成自己的路径直接请求出去。
@@ -648,32 +674,35 @@ Future<String> _ensureRoot(
 /// 比较用的后端：同步真正会跑的通道里第一条认证通过的（云通道在前、互联在后）；
 /// 一条都没有 = 没配过同步。设置页对话框与控制通道（`fushi_cli sync compare`）共用。
 /// 理由见 [showSyncCompareDialog] 里的 BUG-1566 / BUG-047 / BUG-083 注释。
-Future<SyncBackend?> resolveSyncCompareBackend(SyncRepository repo) =>
-    runExclusiveWithSync<SyncBackend?>(() async {
-    for (final SyncChannel channel in await enabledSyncChannelBackends(repo)) {
-      try {
-        await channel.backend.restoreAuth(repo);
-        if (await channel.backend.isAuthenticated) return channel.backend;
-      } catch (e) {
-        // 单条通道鉴权炸了只算它自己没通过：云盘令牌失效不得挡住互联通道被选中。
-        developer.log(
-          'Compare channel auth failed (interconnect=${channel.isInterconnect})',
-          error: e,
-          name: 'SyncCompare',
-        );
-      }
+Future<SyncBackend?> resolveSyncCompareBackend(
+  SyncRepository repo,
+) => runExclusiveWithSync<SyncBackend?>(() async {
+  for (final SyncChannel channel in await enabledSyncChannelBackends(repo)) {
+    try {
+      await channel.backend.restoreAuth(repo);
+      if (await channel.backend.isAuthenticated) return channel.backend;
+    } catch (e) {
+      // 单条通道鉴权炸了只算它自己没通过：云盘令牌失效不得挡住互联通道被选中。
+      developer.log(
+        'Compare channel auth failed (interconnect=${channel.isInterconnect})',
+        error: e,
+        name: 'SyncCompare',
+      );
     }
-    return null;
-  });
+  }
+  return null;
+});
 
 /// 拉一次对比数据（书 + 词典）。在同步互斥锁下跑：它会重新列远端并改写单例后端的
 /// 文件夹缓存，与在途同步并发会搅乱同步的视图（BUG-083）。
 Future<({List<SyncCompareEntry> books, List<SyncDictEntry> dicts})>
-    loadSyncCompareData(FushiDatabase db, SyncBackend backend) async {
-  final results = await runExclusiveWithSync(() => Future.wait(<Future<Object>>[
-        _fetchCompareData(db, backend),
-        _fetchDictEntries(db, backend),
-      ]));
+loadSyncCompareData(FushiDatabase db, SyncBackend backend) async {
+  final results = await runExclusiveWithSync(
+    () => Future.wait(<Future<Object>>[
+      _fetchCompareData(db, backend),
+      _fetchDictEntries(db, backend),
+    ]),
+  );
   return (
     books: results[0] as List<SyncCompareEntry>,
     dicts: results[1] as List<SyncDictEntry>,
@@ -702,6 +731,48 @@ Map<String, SyncChoice> defaultSyncCompareChoices(
     }
   }
   return choices;
+}
+
+/// 按跨通道裁决簿 [decided]（见 [SyncCompareDialog.decisions]）定本通道的选择：先取
+/// [defaultSyncCompareChoices]，再用簿上前一条通道已裁决过的书覆盖。返回调整后的选择与
+/// **仍要裁决的冲突书名**（[decided] 为 null 时 = 全部冲突书）。冲突弹窗与非交互裁决器
+/// （`sync_conflict_decider.dart`）共用这一份规则。
+({Map<String, SyncChoice> choices, Set<String> undecided})
+seedSyncCompareChoices(
+  List<SyncCompareEntry> entries,
+  Map<String, SyncChoice>? decided,
+) {
+  final Map<String, SyncChoice> choices = defaultSyncCompareChoices(entries);
+  final Set<String> undecided = <String>{};
+  for (final SyncCompareEntry e in entries) {
+    final SyncChoice? prior = e.bookKey == null ? null : decided?[e.bookKey!];
+    if (prior == null) {
+      if (e.hasConflict) undecided.add(e.title);
+      continue;
+    }
+    switch (prior) {
+      case SyncChoice.skip:
+      case SyncChoice.useLocal:
+        // 「跳过」两端都不动；「用本地」是用户点名要本机这份，对哪条通道
+        // 都成立——推过去就是。
+        choices[e.title] = prior;
+      case SyncChoice.useRemote:
+        // 用户采纳的是**前一条通道**的远端，本机现在就是那个值。本通道
+        // 的远端若自己也动过（只远端动 / 双方都动），那是用户从没见过的第
+        // 三个值——按簿把本机推过去等于把它盖掉，正是本轮要消灭的倒灌
+        // （PC 既是互联 host 又往云盘导出：选了云盘的旧值，host 自己更新
+        // 的进度就这么没了）。只有本通道判「远端没动」时才沿用；真分叉照
+        // 旧弹给用户看。
+        final bool remoteMoved =
+            e.hasConflict || e.autoDirection == SyncDirection.importFromTtu;
+        if (!remoteMoved) {
+          choices[e.title] = SyncChoice.useLocal;
+        } else if (e.hasConflict) {
+          undecided.add(e.title);
+        }
+    }
+  }
+  return (choices: choices, undecided: undecided);
 }
 
 /// [applySyncCompareChoices] 的结果。
@@ -744,6 +815,7 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
     final bool syncStats = flags.syncStats;
     final bool syncAudioBook = flags.syncAudioBookPosition;
     final bool syncContent = flags.syncContent;
+    final bool syncMangaContent = flags.syncMangaContent;
 
     var done = 0;
     // Blend per-file transfer fraction into the overall book progress so the
@@ -814,6 +886,7 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
           statsSyncMode: StatisticsSyncMode.merge,
           syncAudioBook: syncAudioBook,
           syncContent: syncContent,
+          syncMangaContent: syncMangaContent,
         );
         outcome = classifySyncApply(result);
       } catch (e) {
@@ -894,8 +967,7 @@ Future<bool> _applyLiveProgressChoice({
     return true;
   }
   if (remote.updatedAtMs <= 0) return false;
-  await sync.applyRemote(book, remote);
-  return true;
+  return sync.applyRemote(book, remote, local: local);
 }
 
 /// 750a：互联下载远端独有书时补下其有声书包（若有）。
@@ -917,8 +989,7 @@ Future<void> _downloadLiveAudiobookFor(
 }) async {
   if (audioRoot == null) return;
 
-  final List<RemoteAudiobookInfo> remote =
-      await backend.listRemoteAudiobooks();
+  final List<RemoteAudiobookInfo> remote = await backend.listRemoteAudiobooks();
   // host 清单条目带真实 bookKey（= Audiobooks.bookKey）+ title（= srt.title）。
   // 按 title 找到该书，用其真实 bookKey 下载——不要按书名重算 ttu 文件名（BUG-414）。
   String? remoteBookKey;
@@ -1156,42 +1227,13 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       final data = await loadSyncCompareData(widget.db, widget.backend);
       final entries = data.books;
       final dicts = data.dicts;
-      final choices = defaultSyncCompareChoices(entries);
       // 跨通道裁决簿：前一条通道已裁决过的书直接沿用（见 [SyncCompareDialog
-      // .decisions]）。
+      // .decisions] 与 [seedSyncCompareChoices]）。
       final Map<String, SyncChoice>? decided = widget.decisions;
-      bool allDecided = decided != null;
-      if (decided != null) {
-        for (final e in entries) {
-          final SyncChoice? prior =
-              e.bookKey == null ? null : decided[e.bookKey!];
-          if (prior == null) {
-            if (e.hasConflict) allDecided = false;
-            continue;
-          }
-          switch (prior) {
-            case SyncChoice.skip:
-            case SyncChoice.useLocal:
-              // 「跳过」两端都不动；「用本地」是用户点名要本机这份，对哪条通道
-              // 都成立——推过去就是。
-              choices[e.title] = prior;
-            case SyncChoice.useRemote:
-              // 用户采纳的是**前一条通道**的远端，本机现在就是那个值。本通道
-              // 的远端若自己也动过（只远端动 / 双方都动），那是用户从没见过的第
-              // 三个值——按簿把本机推过去等于把它盖掉，正是本轮要消灭的倒灌
-              // （PC 既是互联 host 又往云盘导出：选了云盘的旧值，host 自己更新
-              // 的进度就这么没了）。只有本通道判「远端没动」时才沿用；真分叉照
-              // 旧弹给用户看。
-              final bool remoteMoved = e.hasConflict ||
-                  e.autoDirection == SyncDirection.importFromTtu;
-              if (!remoteMoved) {
-                choices[e.title] = SyncChoice.useLocal;
-              } else if (e.hasConflict) {
-                allDecided = false;
-              }
-          }
-        }
-      }
+      final ({Map<String, SyncChoice> choices, Set<String> undecided}) seeded =
+          seedSyncCompareChoices(entries, decided);
+      final choices = seeded.choices;
+      final bool allDecided = decided != null && seeded.undecided.isEmpty;
       if (mounted) {
         setState(() {
           _entries = entries;
@@ -1388,7 +1430,9 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         // （BUG-202）。DB 写不依赖 UI，放在 mounted 检查前以保证一定落盘。
         widget.backend.evictFolderId(id);
         await SyncRepository(widget.db).setFolderCache(
-            syncChannelScopeOf(widget.backend), widget.backend.cachedFolderIds);
+          syncChannelScopeOf(widget.backend),
+          widget.backend.cachedFolderIds,
+        );
       }
       if (!mounted) return;
       setState(onSuccess);
@@ -1472,8 +1516,9 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
           ? const <SyncCompareEntry>[]
           : _entries!.where((e) => !e.hasConflict).toList();
       final bool showDicts = !_showOnlyConflicts;
-      final List<SyncDictEntry> dicts =
-          showDicts ? (_dicts ?? const <SyncDictEntry>[]) : const [];
+      final List<SyncDictEntry> dicts = showDicts
+          ? (_dicts ?? const <SyncDictEntry>[])
+          : const [];
 
       // M3E 错峰进场：三段共用一条递增序号，首屏内的卡片依次弹入（窗口外滚出来
       // 的瞬间出现，见 FushiEntranceScope）；墨水屏 / 减弱动态效果下静止。
@@ -1500,34 +1545,52 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                 children: <Widget>[
                   for (int i = 0; i < conflicts.length; i++)
                     staggered(
-                      _buildEntry(conflicts[i], theme,
-                          index: i, count: conflicts.length),
+                      _buildEntry(
+                        conflicts[i],
+                        theme,
+                        index: i,
+                        count: conflicts.length,
+                      ),
                     ),
                 ],
               ),
             ],
             if (others.isNotEmpty) ...<Widget>[
-              _stickyHeader(t.sync_compare_all_books, theme,
-                  count: others.length),
+              _stickyHeader(
+                t.sync_compare_all_books,
+                theme,
+                count: others.length,
+              ),
               SliverList.list(
                 children: <Widget>[
                   for (int i = 0; i < others.length; i++)
                     staggered(
-                      _buildEntry(others[i], theme,
-                          index: i, count: others.length),
+                      _buildEntry(
+                        others[i],
+                        theme,
+                        index: i,
+                        count: others.length,
+                      ),
                     ),
                 ],
               ),
             ],
             if (dicts.isNotEmpty) ...<Widget>[
-              _stickyHeader(t.sync_compare_dictionaries, theme,
-                  count: dicts.length),
+              _stickyHeader(
+                t.sync_compare_dictionaries,
+                theme,
+                count: dicts.length,
+              ),
               SliverList.list(
                 children: <Widget>[
                   for (int i = 0; i < dicts.length; i++)
                     staggered(
-                      _buildDictEntry(dicts[i], theme,
-                          index: i, count: dicts.length),
+                      _buildDictEntry(
+                        dicts[i],
+                        theme,
+                        index: i,
+                        count: dicts.length,
+                      ),
                     ),
                 ],
               ),
@@ -1766,17 +1829,20 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                   text,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: context.fushiType.titleSmallEmphasized
-                      .copyWith(color: accent),
+                  style: context.fushiType.titleSmallEmphasized.copyWith(
+                    color: accent,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
               FushiTag(
                 text: '$count',
-                backgroundColor:
-                    isConflict ? cs.errorContainer : cs.secondaryContainer,
-                foregroundColor:
-                    isConflict ? cs.onErrorContainer : cs.onSecondaryContainer,
+                backgroundColor: isConflict
+                    ? cs.errorContainer
+                    : cs.secondaryContainer,
+                foregroundColor: isConflict
+                    ? cs.onErrorContainer
+                    : cs.onSecondaryContainer,
               ),
               const Spacer(),
               if (trailing != null) trailing,
@@ -1815,8 +1881,9 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     // Apple：iOS 不铺粉色错误底块——冲突条目只用 destructive 细描边 + 标题旁
     // 单色警示图标区分。M3E：分段卡片（组内首尾大圆角、行间 2px），冲突行
     // errorContainer 描边 + 警示徽标。
-    final FushiAppleColors? apple =
-        isGlassDesign(context) ? appleColorsOf(context) : null;
+    final FushiAppleColors? apple = isGlassDesign(context)
+        ? appleColorsOf(context)
+        : null;
     final bool? winnerLocal = _winnerIsLocal(entry);
     return FushiCard(
       grouped: true,
@@ -1850,8 +1917,11 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
               if (isConflict)
                 Padding(
                   padding: const EdgeInsetsDirectional.only(start: 4),
-                  child: FushiIcon(FushiIcons.warning,
-                      size: 18, color: apple?.destructive ?? cs.error),
+                  child: FushiIcon(
+                    FushiIcons.warning,
+                    size: 18,
+                    color: apple?.destructive ?? cs.error,
+                  ),
                 ),
               if (entry.remoteFolderId != null ||
                   entry.remoteAudioBookId != null)
@@ -1902,45 +1972,17 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             ],
           ),
           const SizedBox(height: 8),
-          // 本地 / 远端两栏对比：宽时并排（相邻内角收小成一对分段块），窄时上下
-          // 堆叠。将被应用的那一侧铺 primaryContainer 色块 + 勾选徽标，差异一眼
-          // 可见；另一侧保持中性 surfaceContainerHigh。
-          LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final bool stacked = constraints.maxWidth < 360;
-              final Widget local = _dataColumn(
-                entry,
-                isLocal: true,
-                highlighted: winnerLocal == true,
-                stacked: stacked,
-              );
-              final Widget remote = _dataColumn(
-                entry,
-                isLocal: false,
-                highlighted: winnerLocal == false,
-                stacked: stacked,
-              );
-              if (stacked) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[local, const SizedBox(height: 2), remote],
-                );
-              }
-              return IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Expanded(child: local),
-                    const SizedBox(width: 2),
-                    Expanded(child: remote),
-                  ],
-                ),
-              );
-            },
-          ),
+          // 本地 / 远端两栏对比：宽时并排，窄时上下堆叠。将被应用的那一侧铺
+          // primaryContainer 色块，差异一眼可见；另一侧保持中性 surfaceContainerHigh。
+          // 需要人工裁决的条目里这两张卡本身就是选择控件（点哪张用哪侧），见
+          // [_choicePair]；其余条目只做展示。
+          if (entry.bookKey != null && entry.needsManualChoice)
+            _choicePair(entry, choice)
+          else
+            _comparePair(entry, winnerLocal: winnerLocal),
           if (entry.bookKey != null && entry.needsManualChoice) ...[
-            const SizedBox(height: 10),
-            _choiceRow(entry.title, choice, theme),
+            const SizedBox(height: 4),
+            _skipRow(entry.title, choice),
           ] else if (entry.isDownloadableRemoteOnly) ...[
             const SizedBox(height: 10),
             _downloadRow(entry, theme),
@@ -1953,14 +1995,18 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             const SizedBox(height: 8),
             Row(
               children: <Widget>[
-                FushiIcon(FushiIcons.info,
-                    size: 16, color: cs.onSurfaceVariant),
+                FushiIcon(
+                  FushiIcons.info,
+                  size: 16,
+                  color: cs.onSurfaceVariant,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     t.sync_compare_no_content,
-                    style: type.labelMedium
-                        .copyWith(color: cs.onSurfaceVariant),
+                    style: type.labelMedium.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ],
@@ -2019,8 +2065,9 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                 const SizedBox(height: 2),
                 Text(
                   d.presenceLabel,
-                  style: context.fushiType.bodySmall
-                      .copyWith(color: cs.onSurfaceVariant),
+                  style: context.fushiType.bodySmall.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -2054,7 +2101,9 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     final bool apple = isGlassDesign(context);
     // Apple：tertiary 映射成系统橙（警示色），上传不是警示——两个方向都用强调色，
     // 靠图标形状区分；MD3 保持 primary / tertiary 两色。
-    final Color uploadColor = apple ? appleColorsOf(context).accent : cs.tertiary;
+    final Color uploadColor = apple
+        ? appleColorsOf(context).accent
+        : cs.tertiary;
     final choice = _choices[entry.title] ?? SyncChoice.skip;
     final IconData icon;
     final Color color;
@@ -2097,13 +2146,63 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     );
   }
 
-  Widget _choiceRow(String title, SyncChoice choice, ThemeData theme) {
-    // Wrap as a single gamepad/keyboard focus stop (D-pad Left/Right cycles the
-    // conflict resolution). A bare per-entry segmented button is an unregistered
-    // native cluster; with only the header overflow menu registered, directional
-    // nav would never land here and the user could not pick a choice or reach
-    // Apply.
-    // M3E：连接式按钮组（FushiSegmentedButton，Apple 下为 iOS 分段控件）。
+  /// 本地 / 远端两张卡的排布：宽时并排，窄时上下堆叠。
+  Widget _comparePair(
+    SyncCompareEntry entry, {
+    required bool? winnerLocal,
+    ValueChanged<SyncChoice>? onSelected,
+  }) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool stacked = constraints.maxWidth < 360;
+        final Widget local = _dataColumn(
+          entry,
+          isLocal: true,
+          highlighted: winnerLocal == true,
+          stacked: stacked,
+          onSelected: onSelected == null
+              ? null
+              : () => onSelected(SyncChoice.useLocal),
+        );
+        final Widget remote = _dataColumn(
+          entry,
+          isLocal: false,
+          highlighted: winnerLocal == false,
+          stacked: stacked,
+          onSelected: onSelected == null
+              ? null
+              : () => onSelected(SyncChoice.useRemote),
+        );
+        if (stacked) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[local, const SizedBox(height: 2), remote],
+          );
+        }
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Expanded(child: local),
+              const SizedBox(width: 2),
+              Expanded(child: remote),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 人工裁决条目的选择控件：本地 / 远端两张卡就是「用这一侧」的按钮（一对分段块 + 勾选徽标），
+  /// 不再另画一条同义的三段按钮（以前卡片只能看、下面的三段条才能点，同一个状态画了两遍）。
+  ///
+  /// 手柄 / 键盘：整对卡片仍是一个焦点站（[FushiAdjustableSegmented]），左右键按
+  /// 本地 / 跳过 / 远端循环；每张卡本身也可聚焦，Enter 选中。
+  Widget _choicePair(SyncCompareEntry entry, SyncChoice choice) {
+    void select(SyncChoice value) {
+      setState(() => _choices[entry.title] = value);
+    }
+
     return FushiAdjustableSegmented<SyncChoice>(
       focusIdPrefix: 'sync-choice',
       values: const <SyncChoice>[
@@ -2112,59 +2211,63 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         SyncChoice.useRemote,
       ],
       selected: choice,
-      onChanged: (SyncChoice value) {
-        setState(() => _choices[title] = value);
-      },
-      child: FushiSegmentedButton<SyncChoice>(
-        expandedInsets: EdgeInsets.zero,
-        showSelectedIcon: false,
-        style: FushiSegmentedButton.styleFrom(
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          textStyle: context.fushiType.labelMedium,
-        ),
-        segments: [
-          ButtonSegment(
-            value: SyncChoice.useLocal,
-            icon: const FushiIcon(FushiIcons.devices, size: 16),
-            label: Text(t.sync_compare_use_local),
-            tooltip: t.sync_compare_use_local,
-          ),
-          ButtonSegment(
-            value: SyncChoice.skip,
-            icon: const FushiIcon(FushiIcons.block, size: 16),
-            label: Text(t.sync_compare_skip),
-            tooltip: t.sync_compare_skip,
-          ),
-          ButtonSegment(
-            value: SyncChoice.useRemote,
-            icon: const FushiIcon(FushiIcons.cloud, size: 16),
-            label: Text(t.sync_compare_use_remote),
-            tooltip: t.sync_compare_use_remote,
-          ),
-        ],
-        selected: {choice},
-        onSelectionChanged: (Set<SyncChoice> sel) {
-          setState(() => _choices[title] = sel.first);
+      onChanged: select,
+      child: _comparePair(
+        entry,
+        winnerLocal: switch (choice) {
+          SyncChoice.useLocal => true,
+          SyncChoice.useRemote => false,
+          SyncChoice.skip => null,
         },
+        onSelected: select,
+      ),
+    );
+  }
+
+  /// 卡片下方的「跳过」：撤销已选的一侧（这一条不同步）；还没选时不可点。
+  Widget _skipRow(String title, SyncChoice choice) {
+    final bool skipped = choice == SyncChoice.skip;
+    return Align(
+      alignment: AlignmentDirectional.centerEnd,
+      child: FushiTextButton(
+        key: ValueKey<String>('sync-choice-skip-$title'),
+        onPressed: skipped
+            ? null
+            : () => setState(() => _choices[title] = SyncChoice.skip),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const FushiIcon(FushiIcons.block, size: 16),
+            const SizedBox(width: 6),
+            Text(t.sync_compare_skip),
+          ],
+        ),
       ),
     );
   }
 
   /// 两栏对比卡的一侧：标题行（设备 / 云图标 + 本地 / 远端）、进度大号等宽数字、
   /// 时间与统计 / 有声书位置。[highlighted] = 这一侧将被应用：M3E 铺
-  /// primaryContainer + 勾选徽标（颜色弹簧过渡），Apple 用强调色淡染。
+  /// primaryContainer（颜色弹簧过渡），Apple 用强调色淡染。
+  ///
+  /// [onSelected] 非 null = 这张卡是选择控件（人工裁决条目）：可点、可聚焦、button 语义，
+  /// 与另一张收成一对分段块（相邻内角收小）并在选中时弹出勾选徽标。为 null 时只做展示：
+  /// 四角同圆角、没有勾选徽标，不装成可选的样子。
   Widget _dataColumn(
     SyncCompareEntry e, {
     required bool isLocal,
     bool highlighted = false,
     bool stacked = false,
+    VoidCallback? onSelected,
   }) {
+    final bool selectable = onSelected != null;
     final progress = isLocal ? e.localProgress : e.remoteProgress;
     final int? page = isLocal ? e.localPage : e.remotePage;
     final updatedAt = isLocal ? e.localUpdatedAt : e.remoteUpdatedAt;
     final statsCount = isLocal ? e.localStatsCount : e.remoteStatsCount;
-    final hasAudio =
-        isLocal ? e.localAudioPosMs != null : e.remoteAudioPosSec != null;
+    final hasAudio = isLocal
+        ? e.localAudioPosMs != null
+        : e.remoteAudioPosSec != null;
 
     final ColorScheme cs = Theme.of(context).colorScheme;
     final FushiTypography type = context.fushiType;
@@ -2177,69 +2280,62 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       container = eink
           ? cs.surface
           : apple
-              ? appleColorsOf(context).accent.withValues(alpha: 0.15)
-              : cs.primaryContainer;
+          ? appleColorsOf(context).accent.withValues(alpha: 0.15)
+          : cs.primaryContainer;
       onContainer = eink
           ? cs.onSurface
           : apple
-              ? appleColorsOf(context).accent
-              : cs.onPrimaryContainer;
+          ? appleColorsOf(context).accent
+          : cs.onPrimaryContainer;
     } else {
       container = eink ? cs.surface : cs.surfaceContainerHigh;
       onContainer = cs.onSurfaceVariant;
     }
-    // 一对分段块：外侧 16、相邻内侧 4（宽时左右相邻，窄时上下相邻）。
+    // 一对分段块：外侧 16、相邻内侧 4（宽时左右相邻，窄时上下相邻）；只展示的卡四角同圆角。
     const Radius outer = Radius.circular(16);
     const Radius inner = Radius.circular(4);
-    final BorderRadius radius = stacked
+    final BorderRadius radius = !selectable
+        ? const BorderRadius.all(Radius.circular(12))
+        : stacked
         ? (isLocal
-            ? const BorderRadius.vertical(top: outer, bottom: inner)
-            : const BorderRadius.vertical(top: inner, bottom: outer))
+              ? const BorderRadius.vertical(top: outer, bottom: inner)
+              : const BorderRadius.vertical(top: inner, bottom: outer))
         : (isLocal
-            ? const BorderRadiusDirectional.horizontal(
-                start: outer, end: inner)
-                .resolve(Directionality.of(context))
-            : const BorderRadiusDirectional.horizontal(
-                start: inner, end: outer)
-                .resolve(Directionality.of(context)));
+              ? const BorderRadiusDirectional.horizontal(
+                  start: outer,
+                  end: inner,
+                ).resolve(Directionality.of(context))
+              : const BorderRadiusDirectional.horizontal(
+                  start: inner,
+                  end: outer,
+                ).resolve(Directionality.of(context)));
 
     final TextStyle detail = type.bodySmall.copyWith(color: onContainer);
-    return AnimatedContainer(
-      duration: motion.effectsDefault.duration,
-      curve: motion.effectsDefault.curve,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: container,
-        borderRadius: radius,
-        border: eink
-            ? Border.all(color: highlighted ? cs.onSurface : cs.outline)
-            : null,
-      ),
-      child: DefaultTextStyle(
-        style: detail,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: <Widget>[
-                FushiIcon(
-                  isLocal ? FushiIcons.devices : FushiIcons.cloud,
-                  size: 16,
-                  color: onContainer,
+    final Widget content = DefaultTextStyle(
+      style: detail,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: <Widget>[
+              FushiIcon(
+                isLocal ? FushiIcons.devices : FushiIcons.cloud,
+                size: 16,
+                color: onContainer,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  isLocal ? t.sync_compare_local : t.sync_compare_remote,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: type.labelLargeEmphasized.copyWith(color: onContainer),
                 ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    isLocal ? t.sync_compare_local : t.sync_compare_remote,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: type.labelLargeEmphasized
-                        .copyWith(color: onContainer),
-                  ),
-                ),
-                // 出现走 spatial 弹簧（轻回弹），收起走 effects（不过冲，避免
-                // 缩放越过 0 翻面）。
+              ),
+              // 出现走 spatial 弹簧（轻回弹），收起走 effects（不过冲，避免
+              // 缩放越过 0 翻面）。只展示的卡没有勾选徽标。
+              if (selectable)
                 AnimatedScale(
                   scale: highlighted ? 1 : 0,
                   duration: highlighted
@@ -2254,42 +2350,76 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                     color: onContainer,
                   ),
                 ),
-              ],
+            ],
+          ),
+          const SizedBox(height: 4),
+          if (progress != null)
+            Text(
+              '${(progress * 100).toStringAsFixed(1)}%',
+              style: type.titleLargeEmphasized.tabular.copyWith(
+                color: highlighted ? onContainer : cs.onSurface,
+              ),
+            )
+          else if (page == null)
+            Text(t.sync_compare_no_data),
+          // 页式书（漫画 / PDF）：百分比之外给出具体页码；在线漫画没有总页数时
+          // 只有页码，这时它就是主数字。
+          if (page != null)
+            Text(
+              e.pageCount != null
+                  ? t.sync_compare_page_of_total(
+                      page: page + 1,
+                      total: e.pageCount!,
+                    )
+                  : t.sync_compare_page(page: page + 1),
+              style: progress == null
+                  ? type.titleLargeEmphasized.tabular.copyWith(
+                      color: highlighted ? onContainer : cs.onSurface,
+                    )
+                  : null,
             ),
-            const SizedBox(height: 4),
-            if (progress != null)
-              Text(
-                '${(progress * 100).toStringAsFixed(1)}%',
-                style: type.titleLargeEmphasized.tabular.copyWith(
-                  color: highlighted ? onContainer : cs.onSurface,
-                ),
-              )
-            else if (page == null)
-              Text(t.sync_compare_no_data),
-            // 页式书（漫画 / PDF）：百分比之外给出具体页码；在线漫画没有总页数时
-            // 只有页码，这时它就是主数字。
-            if (page != null)
-              Text(
-                e.pageCount != null
-                    ? t.sync_compare_page_of_total(
-                        page: page + 1, total: e.pageCount!)
-                    : t.sync_compare_page(page: page + 1),
-                style: progress == null
-                    ? type.titleLargeEmphasized.tabular.copyWith(
-                        color: highlighted ? onContainer : cs.onSurface,
-                      )
-                    : null,
-              ),
-            if (updatedAt != null) Text(_formatTime(updatedAt)),
-            if (statsCount != null && statsCount > 0)
-              Text('${t.sync_statistics}: $statsCount ${t.sync_compare_days}'),
-            if (hasAudio)
-              Text(
-                '${t.sync_audiobook}: ${isLocal ? _formatDuration(e.localAudioPosMs! ~/ 1000) : _formatDuration(e.remoteAudioPosSec!.round())}',
-              ),
-          ],
-        ),
+          if (updatedAt != null) Text(_formatTime(updatedAt)),
+          if (statsCount != null && statsCount > 0)
+            Text('${t.sync_statistics}: $statsCount ${t.sync_compare_days}'),
+          if (hasAudio)
+            Text(
+              '${t.sync_audiobook}: ${isLocal ? _formatDuration(e.localAudioPosMs! ~/ 1000) : _formatDuration(e.remoteAudioPosSec!.round())}',
+            ),
+        ],
       ),
+    );
+    const EdgeInsets padding = EdgeInsets.fromLTRB(12, 10, 12, 10);
+    final Widget card = AnimatedContainer(
+      duration: motion.effectsDefault.duration,
+      curve: motion.effectsDefault.curve,
+      padding: selectable ? EdgeInsets.zero : padding,
+      decoration: BoxDecoration(
+        color: container,
+        borderRadius: radius,
+        border: eink
+            ? Border.all(color: highlighted ? cs.onSurface : cs.outline)
+            : null,
+      ),
+      child: !selectable
+          ? content
+          : Material(
+              type: MaterialType.transparency,
+              child: InkWell(
+                key: ValueKey<String>(
+                  'sync-choice-${isLocal ? 'local' : 'remote'}-${e.title}',
+                ),
+                borderRadius: radius,
+                onTap: onSelected,
+                child: Padding(padding: padding, child: content),
+              ),
+            ),
+    );
+    if (!selectable) return card;
+    return Semantics(
+      button: true,
+      selected: highlighted,
+      label: isLocal ? t.sync_compare_use_local : t.sync_compare_use_remote,
+      child: FushiPressScale(child: card),
     );
   }
 
@@ -2328,8 +2458,7 @@ class _CompareSectionHeaderDelegate extends SliverPersistentHeaderDelegate {
     BuildContext context,
     double shrinkOffset,
     bool overlapsContent,
-  ) =>
-      child;
+  ) => child;
 
   @override
   bool shouldRebuild(_CompareSectionHeaderDelegate oldDelegate) =>

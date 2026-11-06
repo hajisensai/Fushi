@@ -53,6 +53,12 @@ const double kLookupPopupMaxWidth = 2000;
 const double kLookupPopupMinHeight = 200;
 const double kLookupPopupMaxHeight = 1600;
 
+/// 查词弹窗「最大宽/高」的出厂默认（基准逻辑像素）。偏好默认、各滑杆 defaultValue、
+/// 场景独立尺寸的回落值、浏览器扩展兜底（`popup-size.js`）都取这一份。
+/// 用户 2026-10-19：默认弹窗大一点，一屏能多显示些释义（旧值 400×360）。
+const double kLookupPopupDefaultWidth = 480;
+const double kLookupPopupDefaultHeight = 480;
+
 /// 查完为空（「未找到」M3E 空态）的弹窗外壳高度（基准逻辑像素，宿主再乘界面大小、
 /// 夹在用户最大高度内）：顶栏 + 72 色块 + 标题 + 一行建议刚好放下，不再按最大高度
 /// 铺一整块空面板。空结果没有 WebView 内容测量可依，只能由宿主直接给定。
@@ -78,10 +84,14 @@ LookupSize resolveDraggedLookupSize({
   double maxHeight = kLookupPopupMaxHeight,
 }) {
   final double scale = uiScale > 0 ? uiScale : 1.0;
-  final double width =
-      (currentBaseWidth + deltaWidthPx / scale).clamp(minWidth, maxWidth);
-  final double height =
-      (currentBaseHeight + deltaHeightPx / scale).clamp(minHeight, maxHeight);
+  final double width = (currentBaseWidth + deltaWidthPx / scale).clamp(
+    minWidth,
+    maxWidth,
+  );
+  final double height = (currentBaseHeight + deltaHeightPx / scale).clamp(
+    minHeight,
+    maxHeight,
+  );
   return LookupSize(width, height);
 }
 
@@ -114,10 +124,14 @@ LookupSize resolveOverlayResizeFromDelta({
 }) {
   final double d = dpr > 0 ? dpr : 1.0;
   final double s = uiScale > 0 ? uiScale : 1.0;
-  final double width =
-      (currentWidth + deltaPhysWidth / d / s).clamp(minWidth, maxWidth);
-  final double height =
-      (currentHeight + deltaPhysHeight / d / s).clamp(minHeight, maxHeight);
+  final double width = (currentWidth + deltaPhysWidth / d / s).clamp(
+    minWidth,
+    maxWidth,
+  );
+  final double height = (currentHeight + deltaPhysHeight / d / s).clamp(
+    minHeight,
+    maxHeight,
+  );
   return LookupSize(width, height);
 }
 

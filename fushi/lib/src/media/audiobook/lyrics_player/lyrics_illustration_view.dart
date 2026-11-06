@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
@@ -6,10 +8,18 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
     show illustrationZoomRoute;
+import 'package:fushi/src/reader/image_actions_sheet.dart'
+    show showImageActionsSheet;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 // 歌词模式插图的画法（两套设计系统共用；逻辑见 lyrics_illustrations.dart）。
 //
@@ -18,6 +28,8 @@ import 'package:fushi/utils.dart';
 //    点左 / 右三分之一 = 上 / 下一张，点中间 = 看大图，右上角 ✕ = 回封面。
 //  * [LyricsIllustrationCompactArtwork]：窄屏控制条里的小封面方块。有新插图时换成
 //    插图缩略图并带一个提示点；点它进插图大图浏览，看完回到封面。
+//  * [LyricsIllustrationPopupCard]：窄屏播放卡标题上方的插图卡。与宽屏封面位同一
+//    套弹出逻辑（播放走过插图时弹出并停住，✕ 收起），只是没有封面可换。
 //  * [showLyricsIllustrationViewer]：插图大图浏览（左右翻页 + 双指 / 滚轮缩放）。
 
 /// 插图卡上左右「翻页热区」各占的宽度比例；中间那段是「看大图」。
@@ -217,6 +229,7 @@ class _IllustrationCard extends StatefulWidget {
     required this.height,
     required this.borderRadius,
     required this.onOpen,
+    this.alignment = Alignment.center,
   });
 
   final LyricsIllustrationController controller;
@@ -225,6 +238,9 @@ class _IllustrationCard extends StatefulWidget {
   final double height;
   final BorderRadius borderRadius;
   final ValueChanged<int>? onOpen;
+
+  /// 插图按原比例缩进 [width]×[height] 后在框里的位置。
+  final AlignmentGeometry alignment;
 
   @override
   State<_IllustrationCard> createState() => _IllustrationCardState();
@@ -301,12 +317,17 @@ class _IllustrationCardState extends State<_IllustrationCard> {
     super.dispose();
   }
 
+  /// 点左 / 右 30% 翻页、中间看大图。竖排从右往左的书（[LyricsIllustrationController.rightToLeft]）
+  /// 方向对调：点左 = 下一张、点右 = 上一张（反馈 KhrrCkFteH）。
   void _onTapUp(TapUpDetails details, double width) {
     final LyricsIllustrationController c = widget.controller;
     final double x = details.localPosition.dx;
-    if (x < width * _kNavZoneFraction && c.canShowPrevious) {
+    final bool rtl = c.rightToLeft;
+    final bool left = x < width * _kNavZoneFraction;
+    final bool right = x > width * (1 - _kNavZoneFraction);
+    if ((rtl ? right : left) && c.canShowPrevious) {
       c.showPrevious();
-    } else if (x > width * (1 - _kNavZoneFraction) && c.canShowNext) {
+    } else if ((rtl ? left : right) && c.canShowNext) {
       c.showNext();
     } else {
       widget.onOpen?.call(widget.index);
@@ -343,7 +364,8 @@ class _IllustrationCardState extends State<_IllustrationCard> {
       );
     }
 
-    return Center(
+    return Align(
+      alignment: widget.alignment,
       child: SizedBox(
         width: w,
         height: h,
@@ -372,6 +394,7 @@ class _IllustrationCardState extends State<_IllustrationCard> {
                     key: const ValueKey<String>('lyrics_illustration_card'),
                     behavior: HitTestBehavior.opaque,
                     onTapUp: (TapUpDetails d) => _onTapUp(d, w),
+                    onLongPress: _longPressFor(context, c.items[widget.index]),
                     child: MouseRegion(
                       cursor: SystemMouseCursors.zoomIn,
                       child: Image(
@@ -404,15 +427,20 @@ class _IllustrationCardState extends State<_IllustrationCard> {
                     onTap: c.dismiss,
                   ),
                 ),
+                // 上一张 / 下一张箭头：横排书上一张在左；竖排从右往左的书镜像，
+                // 下一张在左（与点按热区同一方向）。
                 if (c.canShowPrevious)
                   Positioned(
-                    left: 6,
+                    left: c.rightToLeft ? null : 6,
+                    right: c.rightToLeft ? 6 : null,
                     top: 0,
                     bottom: 0,
                     child: Center(
                       child: control(
                         key: const ValueKey<String>('lyrics_illustration_prev'),
-                        icon: FushiIcons.chevronLeft,
+                        icon: c.rightToLeft
+                            ? FushiIcons.chevronRight
+                            : FushiIcons.chevronLeft,
                         tooltip: t.lyrics_illustration_previous,
                         onTap: c.showPrevious,
                       ),
@@ -420,13 +448,16 @@ class _IllustrationCardState extends State<_IllustrationCard> {
                   ),
                 if (c.canShowNext)
                   Positioned(
-                    right: 6,
+                    left: c.rightToLeft ? 6 : null,
+                    right: c.rightToLeft ? null : 6,
                     top: 0,
                     bottom: 0,
                     child: Center(
                       child: control(
                         key: const ValueKey<String>('lyrics_illustration_next'),
-                        icon: FushiIcons.chevronRight,
+                        icon: c.rightToLeft
+                            ? FushiIcons.chevronLeft
+                            : FushiIcons.chevronRight,
                         tooltip: t.lyrics_illustration_next,
                         onTap: c.showNext,
                       ),
@@ -464,6 +495,131 @@ class _IllustrationCardState extends State<_IllustrationCard> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 窄屏：标题上方的插图卡
+// ---------------------------------------------------------------------------
+
+/// 窄屏播放卡标题上方的插图卡：插图位有图（播放走过插图 / 点小封面或章名）时以
+/// 与宽屏封面位相同的 M3E spatial 弹簧弹出，按原比例贴 [alignment] 放进
+/// [width]×[height]；点左 / 右三分之一翻页，点中间看大图，✕ 收起。插图位为空时
+/// 不占任何东西（不挡歌词的点按）。
+class LyricsIllustrationPopupCard extends StatelessWidget {
+  const LyricsIllustrationPopupCard({
+    super.key,
+    required this.controller,
+    required this.width,
+    required this.height,
+    required this.borderRadius,
+    this.alignment = AlignmentDirectional.bottomStart,
+    this.onOpen,
+  });
+
+  final LyricsIllustrationController? controller;
+  final double width;
+  final double height;
+  final BorderRadius borderRadius;
+  final AlignmentGeometry alignment;
+
+  /// 点插图卡中间：看大图（参数是插图下标）。
+  final ValueChanged<int>? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final LyricsIllustrationController? c = controller;
+    if (c == null || width <= 0 || height <= 0) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: c,
+      builder: (BuildContext context, Widget? _) {
+        // 插图位有图且卡没被收起才弹（「红点」提示方式 / 停留到点自动收起时，
+        // 插图位留着缩略图，卡不弹）。
+        final int? shown = c.cardVisible ? c.shown : null;
+        final FushiMotionScheme motion = context.fushiMotion;
+        return AnimatedSwitcher(
+          duration: motion.spatialDefault.duration,
+          reverseDuration: motion.effectsDefault.duration,
+          switchInCurve: motion.spatialDefault.curve,
+          switchOutCurve: motion.effectsDefault.curve,
+          layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+            fit: StackFit.passthrough,
+            children: <Widget>[...previous, if (current != null) current],
+          ),
+          transitionBuilder: (Widget child, Animation<double> animation) =>
+              FadeTransition(
+                opacity: fushiUnitClamped(animation),
+                child: ScaleTransition(
+                  alignment: alignment.resolve(Directionality.of(context)),
+                  scale: Tween<double>(begin: 0.9, end: 1).animate(animation),
+                  child: child,
+                ),
+              ),
+          child: shown == null
+              ? const SizedBox.shrink(
+                  key: ValueKey<String>('lyrics_popup_illustration_none'),
+                )
+              : SizedBox(
+                  key: ValueKey<String>(
+                    'lyrics_popup_illustration_${c.items[shown].key}',
+                  ),
+                  width: width,
+                  height: height,
+                  child: _IllustrationCard(
+                    controller: c,
+                    index: shown,
+                    width: width,
+                    height: height,
+                    borderRadius: borderRadius,
+                    onOpen: onOpen,
+                    alignment: alignment,
+                  ),
+                ),
+        );
+      },
+    );
+  }
+}
+
+/// 把 [child]（窄屏播放卡的章名）变成插图入口：已听到插图时点它与点小封面一样
+/// 进插图大图浏览；还没有可看的插图时原样返回 [child]、不吃点按。
+class LyricsIllustrationTapTarget extends StatelessWidget {
+  const LyricsIllustrationTapTarget({
+    super.key,
+    required this.controller,
+    required this.onOpen,
+    required this.child,
+  });
+
+  final LyricsIllustrationController? controller;
+
+  /// 从第几张看起（参数是插图下标）。
+  final ValueChanged<int>? onOpen;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final LyricsIllustrationController? c = controller;
+    final ValueChanged<int>? open = onOpen;
+    if (c == null || open == null) return child;
+    return ListenableBuilder(
+      listenable: c,
+      child: child,
+      builder: (BuildContext context, Widget? child) {
+        final int? start = c.browseStart;
+        if (start == null) return child!;
+        return Semantics(
+          button: true,
+          label: t.lyrics_illustration_open,
+          child: GestureDetector(
+            key: const ValueKey<String>('lyrics_title_illustration_entry'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => open(start),
+            child: MouseRegion(cursor: SystemMouseCursors.click, child: child),
+          ),
+        );
+      },
     );
   }
 }
@@ -656,12 +812,14 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
       return KeyEventResult.ignored;
     }
     final LogicalKeyboardKey key = event.logicalKey;
+    // 竖排从右往左的书：← = 下一张、→ = 上一张（与翻页方向一致）。
+    final int step = widget.controller.rightToLeft ? -1 : 1;
     if (key == LogicalKeyboardKey.arrowLeft) {
-      _goTo(_index - 1);
+      _goTo(_index - step);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowRight) {
-      _goTo(_index + 1);
+      _goTo(_index + step);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.escape) {
@@ -677,6 +835,7 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
     final Color controlBg = _illustrationControlBg(context);
     final Color controlFg = _illustrationControlFg(context);
     final List<LyricsIllustration> items = widget.controller.items;
+    final bool rtl = widget.controller.rightToLeft;
     // 路由是透明叠层，没有 Material 祖先：按钮的墨水反馈要一层透明 Material 托着。
     return Material(
       type: MaterialType.transparency,
@@ -689,6 +848,8 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
             PageView.builder(
               key: const ValueKey<String>('lyrics_illustration_viewer_pages'),
               controller: _pages,
+              // 竖排从右往左的书：下一张从左边滑进来（向右滑 = 下一张）。
+              reverse: rtl,
               itemCount: _count,
               physics: _zoomed
                   ? const NeverScrollableScrollPhysics()
@@ -701,6 +862,7 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
                   onDoubleTapDown: (TapDownDetails d) =>
                       focal = d.localPosition,
                   onDoubleTap: () => _toggleZoom(index, focal),
+                  onLongPress: _longPressFor(context, item),
                   child: InteractiveViewer(
                     transformationController: _zoomFor(index),
                     minScale: 1,
@@ -751,7 +913,8 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
             ),
             if (_index > 0)
               Positioned(
-                left: 12,
+                left: rtl ? null : 12,
+                right: rtl ? 12 : null,
                 top: 0,
                 bottom: 0,
                 child: Center(
@@ -759,7 +922,9 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
                     key: const ValueKey<String>(
                       'lyrics_illustration_viewer_prev',
                     ),
-                    icon: FushiIcons.chevronLeft,
+                    icon: rtl
+                        ? FushiIcons.chevronRight
+                        : FushiIcons.chevronLeft,
                     tooltip: t.lyrics_illustration_previous,
                     backgroundColor: controlBg,
                     enabledColor: controlFg,
@@ -769,7 +934,8 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
               ),
             if (_index < _count - 1)
               Positioned(
-                right: 12,
+                left: rtl ? 12 : null,
+                right: rtl ? null : 12,
                 top: 0,
                 bottom: 0,
                 child: Center(
@@ -777,7 +943,9 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
                     key: const ValueKey<String>(
                       'lyrics_illustration_viewer_next',
                     ),
-                    icon: FushiIcons.chevronRight,
+                    icon: rtl
+                        ? FushiIcons.chevronLeft
+                        : FushiIcons.chevronRight,
                     tooltip: t.lyrics_illustration_next,
                     backgroundColor: controlBg,
                     enabledColor: controlFg,
@@ -821,6 +989,14 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
       ),
     );
   }
+}
+
+/// 长按插图 = 全局图片动作面板（保存 / 分享，与阅读器正文同一个）；没有磁盘
+/// 文件（测试里的内存图源）时不挂长按。
+VoidCallback? _longPressFor(BuildContext context, LyricsIllustration item) {
+  final File? file = item.file;
+  if (file == null) return null;
+  return () => unawaited(showImageActionsSheet(context, file: file));
 }
 
 /// 插图工具按钮的悬浮面底色：悬浮面实色，不再半透明（Apple 2026-10-13 拍板：

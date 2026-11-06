@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:fushi/src/sync/sync_file_ref.dart' show SyncFileRef;
+import 'package:fushi/src/sync/sync_file_ref.dart'
+    show SyncFileRef, SyncFileTrio;
 import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 import 'package:fushi_engine/sync/sync_asset_store.dart'
     show SyncTransferProgress;
@@ -44,8 +45,9 @@ const String kLegacySyncRootFolderName = 'hibiki-data';
 /// （如 `hibiki-database`）；Google Drive 的不透明 ID 无斜杠也不可能整串等于
 /// 旧根名，天然不受影响。
 bool syncFolderIdEmbedsLegacyRoot(String folderId) {
-  final RegExp segment =
-      RegExp('(^|/)${RegExp.escape(kLegacySyncRootFolderName)}(/|\$)');
+  final RegExp segment = RegExp(
+    '(^|/)${RegExp.escape(kLegacySyncRootFolderName)}(/|\$)',
+  );
   return segment.hasMatch(folderId);
 }
 
@@ -68,11 +70,49 @@ class AsyncMutex {
   }
 }
 
+/// 文件夹里以 [prefix] 开头的同步文件；有多份时取文件名时间戳最新的那份。
+///
+/// 三件套文件名都是 `<类型>_1_6_<时间戳毫秒>_…`。正常只有一份（写入按 fileId
+/// 原地改名），但列举最终一致 / 快照过期时写入方看不到旧文件就会新建，留下多份。
+/// 旧实现取「列表第一个」，后端返回顺序不定，同一文件夹会时而读到旧进度——
+/// 读到旧的那份时自动同步会把本机进度倒退回去（BUG-3528）。解析不出时间戳的
+/// 视为最旧；时间戳相同保留列表中先出现的。
 SyncFileRef? findSyncFileByPrefix(List<SyncFileRef> files, String prefix) {
-  for (final f in files) {
-    if (f.name.startsWith(prefix)) return f;
+  SyncFileRef? best;
+  int bestTs = -1;
+  for (final SyncFileRef f in files) {
+    if (!f.name.startsWith(prefix)) continue;
+    final int ts = _syncFileTimestamp(f.name) ?? -1;
+    if (best == null || ts > bestTs) {
+      best = f;
+      bestTs = ts;
+    }
   }
-  return null;
+  return best;
+}
+
+/// 由一次书文件夹列举得到的文件（不含文件夹）装配 [SyncFileTrio]——各后端
+/// `listSyncFiles` 与快照 `trioFor` 的唯一装配点，三件套一律走 canonical matcher
+/// [findSyncFileByPrefix]（HBK-AUDIT-085）。
+///
+/// [complete] = [files] 是该文件夹的**完整**清单（没有被分页截断）；只有这时才把
+/// 文件名清单交出去（[SyncFileTrio.fileNames]），否则交 null 让调用方自己再列。
+SyncFileTrio syncFileTrioFromFiles(
+  List<SyncFileRef> files, {
+  bool complete = true,
+}) => SyncFileTrio(
+  progress: findSyncFileByPrefix(files, 'progress_'),
+  statistics: findSyncFileByPrefix(files, 'statistics_'),
+  audioBook: findSyncFileByPrefix(files, 'audioBook_'),
+  fileNames: complete
+      ? <String>{for (final SyncFileRef f in files) f.name}
+      : null,
+);
+
+int? _syncFileTimestamp(String fileName) {
+  final List<String> parts = fileName.split('_');
+  if (parts.length < 4) return null;
+  return int.tryParse(parts[3]);
 }
 
 /// 按文件扩展名猜测同步上传的 Content-Type（各云端后端共用的薄 shim）。
@@ -118,8 +158,8 @@ mixin SyncFolderCache {
   }) {
     rootFolderIdCache =
         (rootFolderId == null || syncFolderIdEmbedsLegacyRoot(rootFolderId))
-            ? null
-            : normalizeFolderId(rootFolderId);
+        ? null
+        : normalizeFolderId(rootFolderId);
     if (titleToFolderId != null) {
       titleToFolderId.forEach((String title, String id) {
         if (syncFolderIdEmbedsLegacyRoot(id)) return;

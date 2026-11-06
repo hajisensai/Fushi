@@ -6,7 +6,16 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    hide FushiSpringCurve;
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 
 // 库页「筛选」面板（游戏库 / 视频库共用，2026-10-14 用户定案）。
 //
@@ -481,6 +490,51 @@ class LibraryFilterChoiceSection<T> extends StatelessWidget {
             selected: value == selected,
             onSelected: (_) {
               if (value != selected) onSelected(value);
+            },
+          ),
+      ],
+    );
+  }
+}
+
+/// 多选维度：每个档位一枚 filter chip，可同时勾多个；一个都不勾 = 不按这一维筛
+/// （所以不需要单独的「全部」档）。点已勾的档位取消勾选。
+class LibraryFilterMultiChoiceSection<T> extends StatelessWidget {
+  const LibraryFilterMultiChoiceSection({
+    required this.title,
+    required this.values,
+    required this.selected,
+    required this.labelOf,
+    required this.onChanged,
+    super.key,
+  });
+
+  final String title;
+  final List<T> values;
+  final Set<T> selected;
+  final String Function(T value) labelOf;
+
+  /// 勾选集变化后的新集合（不可变副本）。
+  final ValueChanged<Set<T>> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return LibraryFilterSection(
+      title: title,
+      children: <Widget>[
+        for (final T value in values)
+          FushiFilterChip(
+            key: ValueKey<String>('library-filter-multi-$value'),
+            label: Text(labelOf(value)),
+            selected: selected.contains(value),
+            onSelected: (bool on) {
+              final Set<T> next = <T>{...selected};
+              if (on) {
+                next.add(value);
+              } else {
+                next.remove(value);
+              }
+              onChanged(Set<T>.unmodifiable(next));
             },
           ),
       ],

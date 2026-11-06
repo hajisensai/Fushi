@@ -2,42 +2,57 @@ import 'dart:convert';
 
 import 'package:fushi_core/fushi_core.dart';
 
-/// 收藏句子的来源标识。与制卡/收藏单词统计的 `kStatSourceBook`/`kStatSourceVideo`/
-/// `kStatSourceGame` 口径对齐：统计分桶分「书籍 / 视频 / 游戏」三桶——
-/// [kFavoriteSentenceSourceVideo] 归视频统计、[kFavoriteSentenceSourceGame] 归游戏
-/// 统计，其余（书内 / 有声书 / 歌词）都归阅读（书籍）统计。收藏夹页展示时仍可按这
-/// 五个细分值各自标注来源。
+/// 收藏句子 / 制卡句（`mined_sentences.source`）的来源标识。与制卡/收藏单词统计的
+/// `kStatSource*` 口径对齐：统计分桶分「书籍 / 视频 / 游戏 / 音乐」四桶——
+/// [kFavoriteSentenceSourceVideo] 归视频、[kFavoriteSentenceSourceGame] 归游戏、
+/// [kFavoriteSentenceSourceMusic] 归音乐，其余（书内 / 有声书 / 歌词模式 / 漫画）都归
+/// 阅读（书籍）。收藏夹页展示时仍按细分值各自标注来源。
 const String kFavoriteSentenceSourceBook = 'book';
 const String kFavoriteSentenceSourceVideo = 'video';
 const String kFavoriteSentenceSourceAudiobook = 'audiobook';
+
+/// 有声书阅读器的「歌词模式」（书域，身份是 bookKey）。与音乐模块的
+/// [kFavoriteSentenceSourceMusic] 是两回事：后者身份是 track uid、跳回音乐播放器。
 const String kFavoriteSentenceSourceLyrics = 'lyrics';
 
-/// galgame hook 会话期间的收藏句 / 制卡句（`mined_sentences.source` 也用本值域）。
-/// 与 `kStatSourceGame` 逐字节同值，故统计分桶可直接对照。
-///
-/// ⚠️ 刻意**没有**加进 [SentenceSourceKind]：那个枚举被 collections_page 的四处穷尽
-/// switch 消费，加值会让它们编译不过；在这些展示分支补齐 game（图标 / 标签 / 跳转
-/// 模块）之前，`'game'` 经 [sentenceSourceKindOf] 宽松解析回退 [SentenceSourceKind.book]，
-/// 收藏夹里按书来源展示（这些行本来就无定位锚点、不可跳转，行为无退化）。统计分桶
-/// **不**经这个枚举（走 `StatSourceKind` + 本常量的字符串比较），故不受影响。
+/// galgame hook 会话期间的收藏句 / 制卡句。与 `kStatSourceGame` 逐字节同值，故统计
+/// 分桶可直接对照。出处身份 = `galgames.id`。
 const String kFavoriteSentenceSourceGame = 'game';
 
+/// 漫画阅读器（本地卷 / 在线下载）的制卡句。出处身份 = bookKey + 页码。
+const String kFavoriteSentenceSourceManga = 'manga';
+
+/// 音乐模块歌词（v130 起）的制卡句。与 `kStatSourceMusic` 逐字节同值；出处身份 =
+/// `music_tracks.track_uid` + 时间轴位置。
+const String kFavoriteSentenceSourceMusic = 'music';
+
+/// 浏览器扩展看网页视频（YouTube / niconico / Netflix / 任意 `<video>` 站）时收藏的句子
+/// 或视频本身（反馈 KGC1ifR1a3）。出处身份 [FavoriteSentence.bookKey] = 规范化后的网页
+/// 地址（去掉时间参数），[FavoriteSentence.chapterLabel] = 站点名，锚点同视频口径
+/// （[FavoriteSentence.normCharOffset] / [FavoriteSentence.normCharLength] = cue 起点 /
+/// 时长毫秒）；[FavoriteSentence.text] 为空串 = 收藏的是视频本身（无锚点）。统计归视频桶。
+const String kFavoriteSentenceSourceWeb = 'web';
+
 /// 收藏句来源的**内存态**枚举（BUG-1120）。持久化 JSON 的 `source` 字段仍存
-/// 上面四个原字符串常量（wire 契约字节不变），本枚举只在读取后解析使用，
+/// 上面的原字符串常量（wire 契约字节不变），本枚举只在读取后解析使用，
 /// 供 UI 层穷尽 switch——消除「video vs 其它」的 bool 降维把 audiobook/lyrics
 /// 静默展示成书的问题。
 enum SentenceSourceKind {
   book(kFavoriteSentenceSourceBook),
   video(kFavoriteSentenceSourceVideo),
   audiobook(kFavoriteSentenceSourceAudiobook),
-  lyrics(kFavoriteSentenceSourceLyrics);
+  lyrics(kFavoriteSentenceSourceLyrics),
+  game(kFavoriteSentenceSourceGame),
+  manga(kFavoriteSentenceSourceManga),
+  music(kFavoriteSentenceSourceMusic),
+  web(kFavoriteSentenceSourceWeb);
 
   const SentenceSourceKind(this.dbValue);
 
   /// 落库字符串（与 `kFavoriteSentenceSource*` 常量逐字节一致）。
   final String dbValue;
 
-  /// 严格解析：精确匹配四个落库值之一，未知/null → null（由调用方决定回退）。
+  /// 严格解析：精确匹配任一落库值，未知/null → null（由调用方决定回退）。
   static SentenceSourceKind? tryParse(String? raw) {
     for (final SentenceSourceKind kind in SentenceSourceKind.values) {
       if (kind.dbValue == raw) return kind;
@@ -90,8 +105,8 @@ class FavoriteSentence {
     this.dateKey,
     this.expression,
     this.reading,
-  })  : id = id ?? _generateFavoriteId(),
-        source = source ?? kFavoriteSentenceSourceBook;
+  }) : id = id ?? _generateFavoriteId(),
+       source = source ?? kFavoriteSentenceSourceBook;
 
   final String id;
   final String text;
@@ -126,21 +141,21 @@ class FavoriteSentence {
       'hl_${DateTime.now().microsecondsSinceEpoch}_${_idCounter++}';
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'text': text,
-        'bookTitle': bookTitle,
-        if (chapterLabel != null) 'chapterLabel': chapterLabel,
-        'createdAt': createdAt.toIso8601String(),
-        if (bookKey != null) 'bookKey': bookKey,
-        if (sectionIndex != null) 'sectionIndex': sectionIndex,
-        if (normCharOffset != null) 'normCharOffset': normCharOffset,
-        if (normCharLength != null) 'normCharLength': normCharLength,
-        if (color != null) 'color': color,
-        'source': source,
-        if (dateKey != null) 'dateKey': dateKey,
-        if (expression != null) 'expression': expression,
-        if (reading != null) 'reading': reading,
-      };
+    'id': id,
+    'text': text,
+    'bookTitle': bookTitle,
+    if (chapterLabel != null) 'chapterLabel': chapterLabel,
+    'createdAt': createdAt.toIso8601String(),
+    if (bookKey != null) 'bookKey': bookKey,
+    if (sectionIndex != null) 'sectionIndex': sectionIndex,
+    if (normCharOffset != null) 'normCharOffset': normCharOffset,
+    if (normCharLength != null) 'normCharLength': normCharLength,
+    if (color != null) 'color': color,
+    'source': source,
+    if (dateKey != null) 'dateKey': dateKey,
+    if (expression != null) 'expression': expression,
+    if (reading != null) 'reading': reading,
+  };
 }
 
 class FavoriteSentenceRepository {
@@ -163,23 +178,27 @@ class FavoriteSentenceRepository {
     const String nul = '<null>';
     final String bk = bookKey ?? nul;
     final String section = sectionIndex == null ? nul : sectionIndex.toString();
-    final String offset =
-        normCharOffset == null ? nul : normCharOffset.toString();
+    final String offset = normCharOffset == null
+        ? nul
+        : normCharOffset.toString();
     return '${text.length}:$text|$bk|$section|$offset';
   }
 
   /// [itemKey] 的便捷重载：直接从一条收藏句取内容键。
   static String itemKeyOf(FavoriteSentence s) => itemKey(
-        text: s.text,
-        bookKey: s.bookKey,
-        sectionIndex: s.sectionIndex,
-        normCharOffset: s.normCharOffset,
-      );
+    text: s.text,
+    bookKey: s.bookKey,
+    sectionIndex: s.sectionIndex,
+    normCharOffset: s.normCharOffset,
+  );
 
   /// 写删除墓碑（取消收藏 → 传播删除）。
   Future<void> _writeTombstone(FavoriteSentence s) =>
-      _db.writeSyncDeletionTombstone(kFavoriteSentenceTombstoneType,
-          itemKeyOf(s), DateTime.now().millisecondsSinceEpoch);
+      _db.writeSyncDeletionTombstone(
+        kFavoriteSentenceTombstoneType,
+        itemKeyOf(s),
+        DateTime.now().millisecondsSinceEpoch,
+      );
 
   Future<List<FavoriteSentence>> getAll() async {
     final raw = await _db.getPref(_key);
@@ -208,7 +227,9 @@ class FavoriteSentenceRepository {
     // 重新收藏 → 清除该内容键的删除墓碑；否则墓碑会在 aggregate 并集里把这条刚收藏的句
     // 再次抑制掉（与收藏词 addFavoriteWord 清墓碑同律）。
     await _db.clearSyncDeletionTombstone(
-        kFavoriteSentenceTombstoneType, itemKeyOf(sentence));
+      kFavoriteSentenceTombstoneType,
+      itemKeyOf(sentence),
+    );
   }
 
   /// 查已收藏项：返回**匹配到的条目 id**（未收藏 → null）。id-first——先按内容键（含
@@ -258,11 +279,13 @@ class FavoriteSentenceRepository {
     final sentences = await getAll();
     // BUG-494：只删**第一条**匹配内容键的记录（非 removeWhere 全删），避免同章重复短句
     // （offset 均 null → 内容键相同）取消收藏时把另一条同内容记录连坐删掉。
-    final int idx = sentences.indexWhere((s) =>
-        s.text == text &&
-        s.bookKey == bookKey &&
-        s.sectionIndex == sectionIndex &&
-        s.normCharOffset == normCharOffset);
+    final int idx = sentences.indexWhere(
+      (s) =>
+          s.text == text &&
+          s.bookKey == bookKey &&
+          s.sectionIndex == sectionIndex &&
+          s.normCharOffset == normCharOffset,
+    );
     if (idx < 0) return;
     final FavoriteSentence removed = sentences[idx];
     sentences.removeAt(idx);
@@ -289,8 +312,9 @@ class FavoriteSentenceRepository {
     final sentences = await getAll();
     // id 理论唯一，但 BUG-494 前的旧数据可能撞 id；捕获全部被删条目各写一次墓碑（同内容
     // 键幂等）。
-    final List<FavoriteSentence> removed =
-        sentences.where((s) => s.id == id).toList();
+    final List<FavoriteSentence> removed = sentences
+        .where((s) => s.id == id)
+        .toList();
     if (removed.isEmpty) return;
     sentences.removeWhere((s) => s.id == id);
     await _db.setPref(
@@ -307,14 +331,19 @@ class FavoriteSentenceRepository {
   /// 按内容键取消收藏（删除传播**接收端**确认后调用）。默认写墓碑：本设备也需墓碑抑制
   /// 第三设备 aggregate 快照的并集复活（与收藏词 `_applyConfirmedDeletions` 同律）。本地
   /// 已无此句时仍写墓碑（幂等，防复活）。
-  Future<void> removeByItemKey(String key,
-      {bool propagateDeletion = true}) async {
+  Future<void> removeByItemKey(
+    String key, {
+    bool propagateDeletion = true,
+  }) async {
     final sentences = await getAll();
     final int idx = sentences.indexWhere((s) => itemKeyOf(s) == key);
     if (idx < 0) {
       if (propagateDeletion) {
-        await _db.writeSyncDeletionTombstone(kFavoriteSentenceTombstoneType,
-            key, DateTime.now().millisecondsSinceEpoch);
+        await _db.writeSyncDeletionTombstone(
+          kFavoriteSentenceTombstoneType,
+          key,
+          DateTime.now().millisecondsSinceEpoch,
+        );
       }
       return;
     }

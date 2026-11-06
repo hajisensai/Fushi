@@ -20,8 +20,12 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 export 'package:fushi/src/media/detail/media_detail_kit.dart';
 
@@ -67,7 +71,12 @@ class OnlineWorkHeader extends StatelessWidget {
     this.backdrop,
     this.overline,
     this.extra,
+    this.coverMaterial,
   });
+
+  /// 封面卡的条目材质（与该域库页一致：小说 / 漫画 = 光面书皮、视频 = 光面
+  /// 海报），由各域作品页传；null = 不套材质。
+  final ShelfCoverMaterial? coverMaterial;
 
   /// 封面内容（各域自己的取图组件）；外面统一套 2:3 封面卡。
   final Widget cover;
@@ -147,6 +156,7 @@ class OnlineWorkHeader extends StatelessWidget {
     return MediaDetailHero(
       title: title,
       cover: cover,
+      coverMaterial: coverMaterial,
       backdrop: backdrop,
       overline: overline,
       chips: allChips,
@@ -182,27 +192,58 @@ class _OnlineWorkFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     final String? summary = this.summary;
     final Widget? extra = this.extra;
+    // 紧凑 hero（窄屏单列 / 两栏左栏）：简介在前（折叠成两行）、标签在后；
+    // 窄屏标签收成一行横滑，不让一长串类型把章节挤出首屏。
+    final bool compact = MediaDetailHero.isCompact(context);
+    final bool singleLineTags =
+        compact && !MediaDetailLayout.isSidePane(context);
+    final Widget? tagsView = tags.isEmpty
+        ? null
+        : singleLineTags
+        ? HorizontalDragScrollable(
+            child: SingleChildScrollView(
+              key: const ValueKey<String>('online_work_tags'),
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: <Widget>[
+                  for (int i = 0; i < tags.length; i++) ...<Widget>[
+                    if (i > 0) const SizedBox(width: 6),
+                    FushiTagChip(label: tags[i]),
+                  ],
+                ],
+              ),
+            ),
+          )
+        : Wrap(
+            key: const ValueKey<String>('online_work_tags'),
+            spacing: 6,
+            runSpacing: 6,
+            children: <Widget>[
+              for (final String genre in tags) FushiTagChip(label: genre),
+            ],
+          );
+    final Widget? summaryView = summary == null || summary.isEmpty
+        ? null
+        : MediaDetailSynopsis(
+            key: const ValueKey<String>('online_work_description'),
+            text: summary,
+            selectable: selectable,
+          );
+    final List<Widget> ordered = <Widget>[
+      if (compact) ...<Widget>[?summaryView, ?tagsView] else ...<Widget>[
+        ?tagsView,
+        ?summaryView,
+      ],
+    ];
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 760),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          if (tags.isNotEmpty)
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: <Widget>[
-                for (final String genre in tags) FushiTagChip(label: genre),
-              ],
-            ),
-          if (summary != null && summary.isNotEmpty) ...<Widget>[
-            if (tags.isNotEmpty) const SizedBox(height: 16),
-            MediaDetailSynopsis(
-              key: const ValueKey<String>('online_work_description'),
-              text: summary,
-              selectable: selectable,
-            ),
+          for (int i = 0; i < ordered.length; i++) ...<Widget>[
+            if (i > 0) SizedBox(height: compact ? 10 : 16),
+            ordered[i],
           ],
           if (extra != null) ...<Widget>[const SizedBox(height: 12), extra],
         ],

@@ -58,7 +58,7 @@ class MangaSourceSearchRun {
 /// 逐源扇出执行器（无 UI 依赖，宿主/运行时注入，可纯 fake 测试）。
 class MangaGlobalSearchRunner {
   MangaGlobalSearchRunner({required MihonManager? mihonManager})
-      : _mihonManager = mihonManager;
+    : _mihonManager = mihonManager;
 
   final MihonManager? _mihonManager;
 
@@ -94,8 +94,9 @@ class MangaGlobalSearchRunner {
       switch (run.source) {
         case MihonGlobalSource(:final MangaOnlineSourceRow row):
           final MihonManager manager = _mihonManager!;
-          final MihonSourceContext context =
-              await manager.contextForSource(row);
+          final MihonSourceContext context = await manager.contextForSource(
+            row,
+          );
           final MihonMangaPage page = await manager.runtime.search(
             context.extension,
             context.source,

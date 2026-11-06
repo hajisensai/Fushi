@@ -74,13 +74,12 @@ void main() {
       await tester.pumpAndSettle();
 
       // Offset of the OUTER SingleChildScrollView (the parent scroller).
-      return Scrollable.of(
-        tester.element(find.text('header')),
-      ).position.pixels;
+      return Scrollable.of(tester.element(find.text('header'))).position.pixels;
     }
 
-    testWidgets('default physics → inner list eats the drag (the bug)',
-        (WidgetTester tester) async {
+    testWidgets('default physics → inner list eats the drag (the bug)', (
+      WidgetTester tester,
+    ) async {
       // Demonstrates the failure mode: with the inner list owning a live
       // gesture recognizer, a drag over its rows scrolls nothing.
       tester.view.physicalSize = const Size(400, 800);
@@ -133,19 +132,27 @@ void main() {
       expect(outer.position.maxScrollExtent, greaterThan(0));
       await tester.drag(find.text('row-2'), const Offset(0, -300));
       await tester.pumpAndSettle();
-      expect(outer.offset, 0,
-          reason: 'reproduces BUG-042: drag over rows scrolls nothing');
+      expect(
+        outer.offset,
+        0,
+        reason: 'reproduces BUG-042: drag over rows scrolls nothing',
+      );
     });
 
-    testWidgets('NeverScrollableScrollPhysics → drag scrolls the parent (fix)',
-        (WidgetTester tester) async {
-      final double offset = await dragOverRow(
-        tester,
-        innerPhysics: const NeverScrollableScrollPhysics(),
-      );
-      expect(offset, greaterThan(0),
-          reason: 'the fix lets drags over rows reach the parent scroller');
-    });
+    testWidgets(
+      'NeverScrollableScrollPhysics → drag scrolls the parent (fix)',
+      (WidgetTester tester) async {
+        final double offset = await dragOverRow(
+          tester,
+          innerPhysics: const NeverScrollableScrollPhysics(),
+        );
+        expect(
+          offset,
+          greaterThan(0),
+          reason: 'the fix lets drags over rows reach the parent scroller',
+        );
+      },
+    );
   });
 
   group('BUG-042 source-scan: renderers disable embedded inner scroll', () {
@@ -154,36 +161,52 @@ void main() {
       expect(file.existsSync(), isTrue, reason: 'missing $relativePath');
       final String src = file.readAsStringSync();
       final int start = src.indexOf('if (shrinkWrap) {');
-      expect(start, greaterThanOrEqualTo(0),
-          reason: 'no shrinkWrap branch in $relativePath');
+      expect(
+        start,
+        greaterThanOrEqualTo(0),
+        reason: 'no shrinkWrap branch in $relativePath',
+      );
       final int end = src.indexOf(endMarker, start);
-      expect(end, greaterThan(start),
-          reason: 'no end marker "$endMarker" after shrinkWrap branch');
+      expect(
+        end,
+        greaterThan(start),
+        reason: 'no end marker "$endMarker" after shrinkWrap branch',
+      );
       return src.substring(start, end);
     }
 
     test(
-        'material renderer: NeverScrollableScrollPhysics gated on no controller',
-        () {
-      final String branch = shrinkWrapBranch(
-        'lib/src/settings/material_settings_renderer.dart',
-        'Own-scrolling detail page',
-      );
-      expect(branch.contains('NeverScrollableScrollPhysics'), isTrue,
+      'material renderer: NeverScrollableScrollPhysics gated on no controller',
+      () {
+        final String branch = shrinkWrapBranch(
+          'lib/src/settings/material_settings_renderer.dart',
+          'Own-scrolling detail page',
+        );
+        expect(
+          branch.contains('NeverScrollableScrollPhysics'),
+          isTrue,
           reason:
-              'embedded shrinkWrap list must disable its own scroll (BUG-042)');
-      expect(branch.contains('scrollController == null'), isTrue,
+              'embedded shrinkWrap list must disable its own scroll (BUG-042)',
+        );
+        expect(
+          branch.contains('scrollController == null'),
+          isTrue,
           reason:
-              'self-scrolling caller (passes a controller) must keep real physics');
-    });
+              'self-scrolling caller (passes a controller) must keep real physics',
+        );
+      },
+    );
 
     test('cupertino renderer: shrinkWrap branch is NeverScrollable', () {
       final String branch = shrinkWrapBranch(
         'lib/src/settings/cupertino_settings_renderer.dart',
         '自滚动',
       );
-      expect(branch.contains('NeverScrollableScrollPhysics'), isTrue,
-          reason: 'cupertino embedded shrinkWrap list must not own the scroll');
+      expect(
+        branch.contains('NeverScrollableScrollPhysics'),
+        isTrue,
+        reason: 'cupertino embedded shrinkWrap list must not own the scroll',
+      );
     });
   });
 }

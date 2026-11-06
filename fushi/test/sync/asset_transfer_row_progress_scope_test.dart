@@ -70,8 +70,12 @@ void main() {
 
   group('互联页「词典 · 传输」行', () {
     late SettingsCustomItem row;
-    setUp(() => row = customItem(
-        buildInterconnectDestination(), 'interconnect.dictionary_transfer'));
+    setUp(
+      () => row = customItem(
+        buildInterconnectDestination(),
+        'interconnect.dictionary_transfer',
+      ),
+    );
 
     testWidgets('全量同步在飞时不转圈、不显示别人的进度', (WidgetTester tester) async {
       simulateFullSweep();
@@ -80,14 +84,19 @@ void main() {
       expect(find.byType(FushiCircularProgressIndicator), findsNothing);
       expect(find.byType(FushiLinearProgressIndicator), findsNothing);
       expect(find.text(t.sync_asset_transfer_hint), findsOneWidget);
-      expect(find.text(t.sync_asset_transfer_menu), findsOneWidget,
-          reason: '别的同步在飞时菜单照常可见，点了由 busy guard 提示');
+      expect(
+        find.text(t.sync_asset_transfer_menu),
+        findsOneWidget,
+        reason: '别的同步在飞时菜单照常可见，点了由 busy guard 提示',
+      );
     });
 
     testWidgets('云备份通道的词典传输在飞时也不转圈（通道不同）', (WidgetTester tester) async {
       simulateFullSweep();
       activeAssetTransfer.value = const SyncAssetTransferTarget(
-          SyncAssetKind.dictionary, SyncAssetChannelScope.cloud);
+        SyncAssetKind.dictionary,
+        SyncAssetChannelScope.cloud,
+      );
       await pumpRow(tester, row);
 
       expect(find.byType(FushiCircularProgressIndicator), findsNothing);
@@ -97,9 +106,14 @@ void main() {
       syncInProgress.value = true;
       syncActivity.value = const SyncActivity(SyncActivityKind.assetTransfer);
       syncProgress.value = const SyncProgress(
-          phase: SyncPhase.dictionaries, itemIndex: 1, itemTotal: 2);
+        phase: SyncPhase.dictionaries,
+        itemIndex: 1,
+        itemTotal: 2,
+      );
       activeAssetTransfer.value = const SyncAssetTransferTarget(
-          SyncAssetKind.dictionary, SyncAssetChannelScope.interconnect);
+        SyncAssetKind.dictionary,
+        SyncAssetChannelScope.interconnect,
+      );
       await pumpRow(tester, row);
 
       expect(find.byType(FushiCircularProgressIndicator), findsOneWidget);
@@ -114,7 +128,9 @@ void main() {
       syncInProgress.value = true;
       syncActivity.value = const SyncActivity(SyncActivityKind.assetTransfer);
       activeAssetTransfer.value = const SyncAssetTransferTarget(
-          SyncAssetKind.localAudio, SyncAssetChannelScope.cloud);
+        SyncAssetKind.localAudio,
+        SyncAssetChannelScope.cloud,
+      );
 
       await pumpRow(tester, customItem(dest, 'sync.dictionary_transfer'));
       expect(find.byType(FushiCircularProgressIndicator), findsNothing);
@@ -152,7 +168,9 @@ void main() {
     expect(
       seenInFlight,
       const SyncAssetTransferTarget(
-          SyncAssetKind.dictionary, SyncAssetChannelScope.interconnect),
+        SyncAssetKind.dictionary,
+        SyncAssetChannelScope.interconnect,
+      ),
     );
     expect(activeAssetTransfer.value, isNull);
   });

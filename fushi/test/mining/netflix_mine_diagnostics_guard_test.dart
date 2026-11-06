@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1303 源码扫描守卫（不依赖真浏览器）：浏览器扩展 content.js 的
 /// `fushiClassifyMineResp` 必须读取服务端回带的诊断（`message`/`detail`）并在末尾弹
@@ -19,55 +19,104 @@ void main() {
       // YouTube 批量共用一份）；content.js 只把判据给出的 notice 弹成 toast。行为本身由
       // tools/browser-extension/mine-outcome.test.js 在 node 里真跑，这里守接线与文案。
       test('[$name] 制卡结果分类读诊断 + 弹原因 toast', () {
-        final String outcome =
-            File('$root/mine-outcome.js').readAsStringSync();
+        final String outcome = File('$root/mine-outcome.js').readAsStringSync();
         // 读服务端诊断字段（message 优先，detail 兜底）。
-        expect(outcome.contains('d.message || d.detail'), isTrue,
-            reason: '$root 分类器未读取 message/detail 诊断');
+        expect(
+          outcome.contains('d.message || d.detail'),
+          isTrue,
+          reason: '$root 分类器未读取 message/detail 诊断',
+        );
         // 部分成功：success + message（音频落空）给 ⚠ 警告但仍算 done。
-        expect(outcome.contains("r === 'success' && reason"), isTrue,
-            reason: '$root 未把 success+message 的部分成功与真成功区分');
-        expect(outcome.contains("'⚠ ' + reason"), isTrue,
-            reason: '$root success+音频警告未给 ⚠ 提示');
+        expect(
+          outcome.contains("r === 'success' && reason"),
+          isTrue,
+          reason: '$root 未把 success+message 的部分成功与真成功区分',
+        );
+        expect(
+          outcome.contains("'⚠ ' + reason"),
+          isTrue,
+          reason: '$root success+音频警告未给 ⚠ 提示',
+        );
         // TODO-1331：HTTP/网络层失败（401/连接拒绝/404/4xx/5xx）不再静默 retry——
         // 经 fushiMineHttpFailureReason 区分鉴权/连不上/服务端后给 ✗ 原因，终结
         // 「你看日志却查不到条目」（BUG-603 只覆盖 server 回带诊断，未覆盖 HTTP 层）。
+        // 判据：HTTP/网络失败分支（`!resp || !resp.ok || !resp.data` 到读 resp.data 之间）里
+        // 原因取自 fushiMineHttpFailureReason，且 notice 是 '✗ ' + 该原因。不钉内联写法——
+        // EMI05fe8RJ 把原因先存进局部变量，同时记进 reason（失败分组显示）。
+        final int httpIdx = outcome.indexOf(
+          'if (!resp || !resp.ok || !resp.data)',
+        );
+        final int dataIdx = outcome.indexOf('const d = resp.data;', httpIdx);
+        expect(httpIdx, greaterThanOrEqualTo(0), reason: '$root 缺 HTTP 失败分支');
+        expect(dataIdx, greaterThan(httpIdx), reason: '$root 缺 HTTP 失败分支终点');
+        final String httpBranch = outcome.substring(httpIdx, dataIdx);
+        final RegExpMatch? whyDecl = RegExp(
+          r'const (\w+) = fushiMineHttpFailureReason\(resp, t\);',
+        ).firstMatch(httpBranch);
         expect(
-            outcome.contains(
-                "notice: '✗ ' + fushiMineHttpFailureReason(resp, t)"),
-            isTrue,
-            reason: '$root HTTP 失败分支未给 ✗ 原因');
-        expect(outcome.contains("t('mine_err_401')"), isTrue,
-            reason: '$root 未区分 401 鉴权失败原因');
-        // 三态契约不变。
+          whyDecl != null &&
+              httpBranch.contains("notice: '✗ ' + ${whyDecl.group(1)},"),
+          isTrue,
+          reason: '$root HTTP 失败分支未给 ✗ 原因',
+        );
+        expect(
+          outcome.contains("t('mine_err_401')"),
+          isTrue,
+          reason: '$root 未区分 401 鉴权失败原因',
+        );
+        // 分类契约：done / unconfigured / retry，外加 EMI05fe8RJ 的 failed（永久失败进失败
+        // 分组）。retry / failed 由 errorKind / HTTP 状态三元式给出，不钉字面写法。
         expect(outcome.contains("cls: 'done'"), isTrue);
         expect(outcome.contains("cls: 'unconfigured'"), isTrue);
-        expect(outcome.contains("cls: 'retry'"), isTrue);
+        expect(
+          RegExp(r"cls: [^,\n]*'retry'").hasMatch(outcome),
+          isTrue,
+          reason: '$root 分类器缺 retry 类',
+        );
+        expect(
+          RegExp(r"cls: [^,\n]*'failed'").hasMatch(outcome),
+          isTrue,
+          reason: '$root 分类器缺 failed 类',
+        );
         // content.js 用这份判据，并把原因弹出来（401/4xx 可点直达设置）。
         final String src = File('$root/content.js').readAsStringSync();
-        expect(src.contains('window.fushiMineOutcome(resp, fushiTr)'), isTrue,
-            reason: '$root content.js 未走共享分类器');
         expect(
-            src.contains(
-                'window.fushiToast(o.notice, false, o.settingsFixable)'),
-            isTrue,
-            reason: '$root content.js 未把分类原因弹成 toast');
+          src.contains('window.fushiMineOutcome(resp, fushiTr)'),
+          isTrue,
+          reason: '$root content.js 未走共享分类器',
+        );
+        expect(
+          src.contains('window.fushiToast(o.notice, false, o.settingsFixable)'),
+          isTrue,
+          reason: '$root content.js 未把分类原因弹成 toast',
+        );
         // 文案已进 i18n 字典（locales/en.js 为源，各语言 json 同键集）。
         final String en = File('$root/locales/en.js').readAsStringSync();
-        expect(en.contains('Authentication failed (401)'), isTrue,
-            reason: '$root 字典缺 401 鉴权失败原因文案');
-        expect(en.contains('Fushi API server'), isTrue,
-            reason: '$root 未提示连不上/端点错时去开 Fushi API server');
+        expect(
+          en.contains('Authentication failed (401)'),
+          isTrue,
+          reason: '$root 字典缺 401 鉴权失败原因文案',
+        );
+        expect(
+          en.contains('Fushi API server'),
+          isTrue,
+          reason: '$root 未提示连不上/端点错时去开 Fushi API server',
+        );
       });
     });
 
     test('两镜像 content.js 逐字节一致', () {
-      final List<int> assets =
-          File('assets/browser_extension/content.js').readAsBytesSync();
-      final List<int> tools =
-          File('../tools/browser-extension/content.js').readAsBytesSync();
-      expect(assets, tools,
-          reason: 'assets/ 与 tools/ content.js 漂移，两镜像必须逐字节一致');
+      final List<int> assets = File(
+        'assets/browser_extension/content.js',
+      ).readAsBytesSync();
+      final List<int> tools = File(
+        '../tools/browser-extension/content.js',
+      ).readAsBytesSync();
+      expect(
+        assets,
+        tools,
+        reason: 'assets/ 与 tools/ content.js 漂移，两镜像必须逐字节一致',
+      );
     });
   });
 }

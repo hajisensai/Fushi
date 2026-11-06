@@ -12,6 +12,7 @@ library;
 import 'dart:isolate';
 
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
 
@@ -113,34 +114,47 @@ TtsBookPlan buildTtsBookPlanSync(
     if (input.text.trim().isEmpty) continue;
     final ReaderAudioPositionIndex index =
         ReaderAudioPositionIndex.fromChapterHtml(book.chapters[section].html);
-    int rawCursor = 0;
-    int normCursor = 0;
     final int chapterFirst = out.length;
     final List<({int start, int end})> raw = <({int start, int end})>[];
-    for (final TtsTextSegment seg in splitTtsText(
-      input,
-      maxLength: maxLength,
-    )) {
-      normCursor += AudioTextNormalizer.normalize(
-        input.text.substring(rawCursor, seg.start),
-      ).length;
-      final int matchStart = normCursor;
-      normCursor += AudioTextNormalizer.normalize(seg.text).length;
+    final ({List<TtsTextSegment> segments, List<String> spoken}) fitted =
+        splitTtsTextWithPronunciation(
+          input,
+          maxLength: maxLength,
+          pronunciation: pronunciation,
+        );
+    final List<TtsTextSegment> segments = fitted.segments;
+    // 每句之前的间隙与句子本身各占一段，整章一次归一化（一次 FFI）：第 j 段的起点就是
+    // 前 j 段归一化长度之和，即逐段累加出来的归一化偏移。
+    final List<String> pieces = <String>[];
+    int rawCursor = 0;
+    for (final TtsTextSegment seg in segments) {
+      pieces
+        ..add(input.text.substring(rawCursor, seg.start))
+        ..add(seg.text);
       rawCursor = seg.end;
+    }
+    final ({String text, List<int> starts}) norm =
+        AudioTextNormalizer.normalizeConcat(pieces);
+    for (int i = 0; i < segments.length; i++) {
+      final TtsTextSegment seg = segments[i];
+      final int matchStart = norm.starts[2 * i + 1];
+      final int matchEnd = 2 * i + 2 < pieces.length
+          ? norm.starts[2 * i + 2]
+          : norm.text.length;
       // 整句没有可匹配字符（纯标点 / 符号）：阅读器高亮不到，也不值得读。
-      if (normCursor == matchStart) continue;
+      if (matchEnd == matchStart) continue;
       final ({int offset, int length})? study = index.studyRangeForFragment(
         matchableStart: matchStart,
-        matchableEnd: normCursor,
+        matchableEnd: matchEnd,
       );
       out.add(
         TtsPlanSentence(
           section: section,
           href: book.chapters[section].href,
           text: seg.text,
-          spokenText: applyTtsPronunciation(seg.spokenText, pronunciation),
+          spokenText: fitted.spoken[i],
           matchStart: matchStart,
-          matchEnd: normCursor,
+          matchEnd: matchEnd,
           studyStart: study?.offset ?? 0,
           studyEnd: (study?.offset ?? 0) + (study?.length ?? 0),
         ),
@@ -149,10 +163,10 @@ TtsBookPlan buildTtsBookPlanSync(
     }
     final List<({bool endsParagraph, bool sceneBreakAfter})> marks =
         ttsSentenceBoundaryMarks(
-      sentences: raw,
-      blockEnds: input.blockEnds,
-      sceneBreaks: input.sceneBreaks,
-    );
+          sentences: raw,
+          blockEnds: input.blockEnds,
+          sceneBreaks: input.sceneBreaks,
+        );
     for (int k = 0; k < marks.length; k++) {
       final TtsPlanSentence s = out[chapterFirst + k];
       out[chapterFirst + k] = TtsPlanSentence(
@@ -185,8 +199,13 @@ List<({bool endsParagraph, bool sceneBreakAfter})> ttsSentenceBoundaryMarks({
   // 各句区间升序、边界列表升序：两个游标单调前移，整章线性。
   int b = 0;
   int s = 0;
-  bool advance(List<int> sorted, int cursor, int from, int to,
-      void Function(int) save) {
+  bool advance(
+    List<int> sorted,
+    int cursor,
+    int from,
+    int to,
+    void Function(int) save,
+  ) {
     while (cursor < sorted.length && sorted[cursor] < from) {
       cursor++;
     }
@@ -200,179 +219,112 @@ List<({bool endsParagraph, bool sceneBreakAfter})> ttsSentenceBoundaryMarks({
     final int from = sentences[k].end;
     final bool last = k + 1 == sentences.length;
     final int to = last ? 1 << 40 : sentences[k + 1].start;
-    final bool paragraph =
-        advance(blockEnds, b, from, to, (int c) => b = c);
-    final bool scene =
-        advance(sceneBreaks, s, from, to, (int c) => s = c);
+    final bool paragraph = advance(blockEnds, b, from, to, (int c) => b = c);
+    final bool scene = advance(sceneBreaks, s, from, to, (int c) => s = c);
     out.add((endsParagraph: paragraph, sceneBreakAfter: !last && scene));
   }
   return out;
 }
 
-class TtsTextSegment {
-  const TtsTextSegment({
-    required this.start,
-    required this.end,
-    required this.text,
-    required this.spokenText,
-  });
-
-  /// 章内原文 UTF-16 区间。
-  final int start;
-  final int end;
-  final String text;
-  final String spokenText;
-}
-
-const String _sentenceEnders = '。！？!?…\n';
-const String _closers = '」』”’）)]】〉》»';
-
-/// 台词引号的收尾（同时也在 [_closers] 里，紧跟句末标点时照常并入上一句）。
-const String _quoteEnders = '」』';
-
-/// 软切点：句子超长时优先在这些字后断开（读起来仍自然）。
-const String _softBreaks = '、，,；;：:';
+/// 一句的原文区间（章内 UTF-16）、显示原文与合成文本。
+typedef TtsTextSegment = TtsSplitSegment;
 
 /// 按句末标点切句；块级元素边界与场景分隔（[EpubPlainTextWithRuby.blockEnds] /
 /// `sceneBreaks`）也是句界；ruby 底本是不可拆的整体（合成用读音，显示用底本）；
 /// 单句合成文本不超过 [maxLength]（超长句先在逗号类软切点断，再硬断）。
+///
+/// 整章一次交给原生内核（`native/fushi_compute/src/parse/tts_split.rs`，规则细节见
+/// 那里的模块注释）；这是唯一实现，没有 Dart 回退。
 List<TtsTextSegment> splitTtsText(
   EpubPlainTextWithRuby input, {
   required int maxLength,
 }) {
-  if (maxLength < 8) throw ArgumentError.value(maxLength, 'maxLength');
-  final String text = input.text;
-  final Map<int, EpubRubyAnnotation> rubyAt = <int, EpubRubyAnnotation>{};
-  int lastEnd = 0;
-  for (final EpubRubyAnnotation ruby in input.rubies) {
-    if (ruby.start < lastEnd ||
-        ruby.start < 0 ||
-        ruby.end > text.length ||
-        ruby.end <= ruby.start ||
-        ruby.reading.trim().isEmpty ||
-        ruby.reading.length > maxLength ~/ 2) {
-      continue;
-    }
-    rubyAt[ruby.start] = ruby;
-    lastEnd = ruby.end;
-  }
-
-  // 原子：一个码点或一整个 ruby。
-  final List<({int start, int end, String spoken})> atoms =
-      <({int start, int end, String spoken})>[];
-  int cursor = 0;
-  while (cursor < text.length) {
-    final EpubRubyAnnotation? ruby = rubyAt[cursor];
-    if (ruby != null) {
-      atoms.add((start: cursor, end: ruby.end, spoken: ruby.reading));
-      cursor = ruby.end;
-      continue;
-    }
-    final int unit = text.codeUnitAt(cursor);
-    final bool pair =
-        unit >= 0xD800 &&
-        unit <= 0xDBFF &&
-        cursor + 1 < text.length &&
-        (text.codeUnitAt(cursor + 1) & 0xFC00) == 0xDC00;
-    final int end = cursor + (pair ? 2 : 1);
-    atoms.add((start: cursor, end: end, spoken: text.substring(cursor, end)));
-    cursor = end;
-  }
-
-  final List<TtsTextSegment> result = <TtsTextSegment>[];
-  void emit(int from, int to) {
-    while (from < to && atoms[from].spoken.trim().isEmpty) {
-      from++;
-    }
-    while (to > from && atoms[to - 1].spoken.trim().isEmpty) {
-      to--;
-    }
-    if (to <= from) return;
-    final int start = atoms[from].start;
-    final int end = atoms[to - 1].end;
-    result.add(
-      TtsTextSegment(
-        start: start,
-        end: end,
-        text: text.substring(start, end),
-        spokenText: <String>[
-          for (int i = from; i < to; i++) atoms[i].spoken,
-        ].join(),
-      ),
-    );
-  }
-
-  // 块边界 / 场景分隔是硬句界：不带句末标点的标题、`◇◇◇` 这类分隔行不能和下一
-  // 段并成一句（否则分隔符被读出来，段落停顿也落不到正确位置）。
-  final List<int> hardBreaks = <int>{
-    ...input.blockEnds,
-    ...input.sceneBreaks,
-  }.toList()
-    ..sort();
-  int hb = 0;
-
-  int first = 0;
-  while (first < atoms.length) {
-    int i = first;
-    int spoken = 0;
-    int lastSoft = -1;
-    bool ended = false;
-    bool hardStop = false;
-    while (hb < hardBreaks.length && hardBreaks[hb] <= atoms[first].start) {
-      hb++;
-    }
-    final int nextBreak = hb < hardBreaks.length ? hardBreaks[hb] : 1 << 40;
-    while (i < atoms.length) {
-      if (i > first && atoms[i].start >= nextBreak) {
-        hardStop = true;
-        break;
-      }
-      final String original = text.substring(atoms[i].start, atoms[i].end);
-      if (ended &&
-          !_closers.contains(original) &&
-          !_sentenceEnders.contains(original)) {
-        break;
-      }
-      if (spoken + atoms[i].spoken.length > maxLength) break;
-      spoken += atoms[i].spoken.length;
-      i++;
-      // 引号收尾也是句界：台词末尾常不带句号（「……ないわー」「うるせ……」），
-      // 不在这里断就会把两个人的台词并成一句读。
-      if (_sentenceEnders.contains(original) ||
-          _quoteEnders.contains(original)) {
-        ended = true;
-      }
-      if (_softBreaks.contains(original)) lastSoft = i;
-    }
-    if (i == first) i = first + 1; // 单个原子就超长（畸形 ruby 已在上面过滤）。
-    final bool overflowed = !ended && !hardStop && i < atoms.length;
-    final int cut = overflowed && lastSoft > first ? lastSoft : i;
-    emit(first, cut);
-    first = cut;
-  }
-  return result;
+  return TtsSplitNative.instance.split(
+    input.text,
+    rubies: <TtsSplitRuby>[
+      for (final EpubRubyAnnotation ruby in input.rubies)
+        (start: ruby.start, end: ruby.end, reading: ruby.reading),
+    ],
+    blockEnds: input.blockEnds,
+    sceneBreaks: input.sceneBreaks,
+    maxLength: maxLength,
+  );
 }
+
+/// 切句并套用发音词典，保证每句**套用后**的合成文本不超过 [maxLength]。
+///
+/// 发音词典在切句之后才替换，替换可能把文本撑长（「AI」→「エーアイ」、人名换成
+/// 长读音）：按引擎上限刚好切满的句子替换后会超长，引擎直接拒收（谷歌翻译朗读上限
+/// 180 字，超了回 400），朗读停在那句。这里按超出量收紧切句上限重切本章，直到全部
+/// 放得下；收紧到原上限的 1/4（且不低于切句内核允许的最小值 8）仍放不下（规则把
+/// 文本放大了 4 倍以上），超长句退回不套用词典的读法（不超过上限）——宁可读原写法，
+/// 也不让整句被引擎拒掉。
+({List<TtsTextSegment> segments, List<String> spoken})
+splitTtsTextWithPronunciation(
+  EpubPlainTextWithRuby input, {
+  required int maxLength,
+  List<TtsPronunciationRule> pronunciation = const <TtsPronunciationRule>[],
+}) {
+  // 切句内核要求上限至少 8（`TtsSplitNative.split`）。
+  final int quarter = maxLength ~/ 4 < 8 ? 8 : maxLength ~/ 4;
+  final int floor = quarter > maxLength ? maxLength : quarter;
+  int limit = maxLength;
+  while (true) {
+    final List<TtsTextSegment> segments = splitTtsText(input, maxLength: limit);
+    final List<String> spoken = <String>[
+      for (final TtsTextSegment seg in segments)
+        applyTtsPronunciation(seg.spokenText, pronunciation),
+    ];
+    int overflow = 0;
+    for (final String text in spoken) {
+      if (text.length - maxLength > overflow) {
+        overflow = text.length - maxLength;
+      }
+    }
+    if (overflow == 0) return (segments: segments, spoken: spoken);
+    if (limit <= floor) {
+      return (
+        segments: segments,
+        spoken: <String>[
+          for (int i = 0; i < segments.length; i++)
+            spoken[i].length > maxLength ? segments[i].spokenText : spoken[i],
+        ],
+      );
+    }
+    limit = limit - overflow < floor ? floor : limit - overflow;
+  }
+}
+
 /// 朗读用：把同一段落里相邻的过短句子并成一次合成。
 ///
 /// 自建引擎每次请求有约 2 秒的固定开销（实测 GPT-SoVITS v5：7 字的句子 2.2 秒出声、
 /// 实时率 2 以上），倍速朗读时短句一多就跟不上。并句只发生在同一章、同一段落内，
 /// 不跨段 / 场景分隔，合并后合成文本不超过 [maxLength]；高亮覆盖合并后的整段。
 ///
-/// **制作有声书不用它**：选角表按单句记说话人，并句会让两个角色的台词共用一个声音。
+/// 多声优朗读传 [voiceSlotOf]（每句归哪个声音槽：配了声音的角色 / 默认声音）：只有
+/// 同一个槽的相邻句才并，否则两个角色的台词会共用一个声音。槽按「角色」而不是按
+/// 预设 id 分：播放中换默认声音后，原来与某角色同预设而并在一起的句子不会读串。
+/// 合并句沿用首句的句首坐标，按坐标再查槽仍落在同一个槽。
+///
+/// **制作有声书不用它**：制作台按单句生成、逐句校对，不需要摊薄请求开销。
 TtsBookPlan mergeShortTtsSentences(
   TtsBookPlan plan, {
   required int maxLength,
   int minLength = 16,
+  String Function(TtsPlanSentence sentence)? voiceSlotOf,
 }) {
   final List<TtsPlanSentence> out = <TtsPlanSentence>[];
   for (final TtsPlanSentence s in plan.sentences) {
     final TtsPlanSentence? last = out.isEmpty ? null : out.last;
-    final bool canMerge = last != null &&
+    final bool canMerge =
+        last != null &&
         last.section == s.section &&
         !last.endsParagraph &&
         !last.sceneBreakAfter &&
-        (last.spokenText.length < minLength || s.spokenText.length < minLength) &&
-        last.spokenText.length + s.spokenText.length <= maxLength;
+        (last.spokenText.length < minLength ||
+            s.spokenText.length < minLength) &&
+        last.spokenText.length + s.spokenText.length <= maxLength &&
+        (voiceSlotOf == null || voiceSlotOf(last) == voiceSlotOf(s));
     if (!canMerge) {
       out.add(s);
       continue;

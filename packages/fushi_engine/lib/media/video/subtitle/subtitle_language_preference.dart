@@ -25,6 +25,7 @@
 /// 字幕却下了中文」。
 library;
 
+import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:fushi_engine/models/content_language.dart';
 
 /// BCP-47 / ISO 639 语言标签 → 字幕域比较用的基础语言码（小写两字母为主）。
@@ -176,3 +177,104 @@ List<T> rankByPreferredLanguage<T>(
   if (matching.isEmpty) return items;
   return <T>[...matching, ...others];
 }
+
+// ───────────── 主 / 副字幕轨的默认语言偏好（反馈 Fz9HXThdSW） ─────────────
+//
+// 参考 PotPlayer「首选语言 / 次字幕语言」：用户填一串条目（逗号 / 分号 / 空白分隔），
+// 按顺序找**第一条能命中的**字幕轨。一个条目可用 `&` 连接多个须同时满足的部分，如
+// `forced&english`。每个部分：是语言写法（`en` / `eng` / `english` / `日本語` / `chs`）
+// 时与轨语言码或标签里任一词同语言即命中；否则长度 ≥ 3 的部分按不区分大小写子串
+// 匹配轨标签（内封轨标签含语言与标题；外挂是文件名）。与上面「下载哪种语言」是两件
+// 事：那条管搜索排序，这条管已有轨里挑哪条播。
+
+/// 把用户填的偏好串拆成条目（保持顺序、去空、小写）。
+List<String> parseSubtitleLanguagePreferences(String? raw) {
+  if (raw == null) return const <String>[];
+  return raw
+      .split(RegExp(r'[,;，；、\s]+'))
+      .map((String s) => s.trim().toLowerCase())
+      .where((String s) => s.isNotEmpty)
+      .toList(growable: false);
+}
+
+/// 偏好条目 / 轨标签里出现的**语言全名与母语写法**（代码形式交给
+/// [normalizeSubtitleLanguageCode] 的别名表，不另抄一份）。
+const Map<String, String> _trackLanguageNames = <String, String>{
+  'japanese': 'ja', '日本語': 'ja', '日语': 'ja', '日文': 'ja', //
+  'english': 'en', '英语': 'en', '英文': 'en', '英語': 'en', //
+  'chinese': 'zh', '中文': 'zh', '简体': 'zh', '簡体': 'zh', '繁體': 'zh',
+  '繁体': 'zh', '简中': 'zh', '繁中': 'zh', 'sc': 'zh', 'tc': 'zh', //
+  'korean': 'ko', '한국어': 'ko', 'french': 'fr', 'german': 'de',
+  'spanish': 'es', 'portuguese': 'pt', 'italian': 'it', 'russian': 'ru',
+  'arabic': 'ar', 'thai': 'th', 'vietnamese': 'vi', 'indonesian': 'id',
+  'dutch': 'nl', 'turkish': 'tr',
+};
+
+/// 偏好条目 / 轨语言 / 标签词 → 两字母语言码；不是语言写法返回 null。只把 2–3 个
+/// 字母的代码交给 [normalizeSubtitleLanguageCode]（它对任意单词都会原样返回主标签，
+/// `forced` / `full` 这类词不能被当成语言）。
+String? trackPreferenceLanguageCode(String? token) {
+  final String key = (token ?? '').trim().toLowerCase();
+  if (key.isEmpty) return null;
+  final String? named = _trackLanguageNames[key];
+  if (named != null) return named;
+  final String head = key.split(RegExp(r'[-_]')).first;
+  if (!RegExp(r'^[a-z]{2,3}$').hasMatch(head)) return null;
+  final String? code = normalizeSubtitleLanguageCode(head);
+  return code != null && code.length == 2 ? code : null;
+}
+
+Iterable<String> _labelWords(String label) => label
+    .toLowerCase()
+    .split(RegExp(r'[^\p{L}\p{N}]+', unicode: true))
+    .where((String w) => w.isNotEmpty);
+
+bool _partMatches(SubtitleSource source, String part) {
+  final String label = source.label.toLowerCase();
+  final String? want = trackPreferenceLanguageCode(part);
+  if (want != null) {
+    if (trackPreferenceLanguageCode(source.language) == want) return true;
+    if (_labelWords(
+      label,
+    ).any((String w) => trackPreferenceLanguageCode(w) == want)) {
+      return true;
+    }
+  }
+  return part.length >= 3 && label.contains(part);
+}
+
+/// [source] 是否命中单个偏好条目（`&` 连接的部分须全部命中）。
+bool subtitleSourceMatchesPreference(SubtitleSource source, String entry) {
+  final List<String> parts = entry
+      .split('&')
+      .map((String s) => s.trim().toLowerCase())
+      .where((String s) => s.isNotEmpty)
+      .toList();
+  if (parts.isEmpty) return false;
+  return parts.every((String part) => _partMatches(source, part));
+}
+
+/// 按 [preferences] 顺序挑第一条命中的源：对每个条目依次扫 [sources]（保持原轨序），
+/// 首个命中即返回。[accept] 过滤不可用的源（如只要能转文本的内封轨、排除主字幕那条）。
+/// 偏好为空或全不命中返回 null，由调用方回退旧的默认选择。
+SubtitleSource? pickSubtitleSourceByPreference(
+  Iterable<SubtitleSource> sources,
+  List<String> preferences, {
+  bool Function(SubtitleSource source)? accept,
+}) {
+  if (preferences.isEmpty) return null;
+  final List<SubtitleSource> candidates = <SubtitleSource>[
+    for (final SubtitleSource s in sources)
+      if (accept == null || accept(s)) s,
+  ];
+  for (final String entry in preferences) {
+    for (final SubtitleSource s in candidates) {
+      if (subtitleSourceMatchesPreference(s, entry)) return s;
+    }
+  }
+  return null;
+}
+
+/// 能转成文本 cue 的内封轨（图形轨 PGS / VobSub 等排除）。
+bool isTextEmbeddedSubtitleSource(SubtitleSource source) =>
+    source.isEmbedded && subtitleFormatForCodec(source.codec ?? '') != null;

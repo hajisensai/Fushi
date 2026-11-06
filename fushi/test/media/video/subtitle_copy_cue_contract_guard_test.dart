@@ -128,7 +128,8 @@ void main() {
       expect(
         containsIdentifierCall(body, '_appModel.copyToClipboard'),
         isTrue,
-        reason: '必须走 AppModel（按平台决定要不要弹「已复制」toast）；'
+        reason:
+            '必须走 AppModel（按平台决定要不要弹「已复制」toast）；'
             '网页视频页没有原生页那套 OSD，裸 Clipboard.setData 等于零反馈',
       );
       expect(

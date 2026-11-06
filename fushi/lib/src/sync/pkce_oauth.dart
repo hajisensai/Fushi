@@ -69,7 +69,8 @@ class PkceOAuthFlow {
 
     if (response.statusCode != 200) {
       throw SyncAuthError(
-          'Token exchange failed: ${response.statusCode} ${response.body}');
+        'Token exchange failed: ${response.statusCode} ${response.body}',
+      );
     }
 
     final json = jsonDecode(response.body) as Map<String, dynamic>;

@@ -36,9 +36,16 @@ import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
 import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
@@ -88,6 +95,62 @@ SettingsDestination buildVideoDestination() {
             },
             defaultValue: true,
           ),
+          // 原盘会话三项（2026-10-24 BD/DVD 原盘交互改造）：纯 pref，默认都开。播放页
+          // 面板不单列（无 VideoPlacement）——它们决定的是「怎么进原盘会话」，进了会话
+          // 再改没有意义，下一次进入生效。
+          SettingsSwitchItem(
+            id: 'video.playback.disc_auto_fullscreen',
+            title: t.video_setting_disc_auto_fullscreen,
+            subtitle: t.video_setting_disc_auto_fullscreen_hint,
+            icon: FushiIcons.fullscreen,
+            // 移动端视频页全程横屏沉浸，没有窗口全屏这回事。
+            visible: (_) => isDesktopPlatform,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoDiscAutoFullscreen,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoDiscAutoFullscreen(value);
+            },
+            defaultValue: true,
+          ),
+          SettingsSwitchItem(
+            id: 'video.playback.disc_launch_animation',
+            title: t.video_setting_disc_launch_animation,
+            icon: FushiIcons.animation,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoDiscLaunchAnimation,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoDiscLaunchAnimation(value);
+            },
+            defaultValue: true,
+          ),
+          SettingsSwitchItem(
+            id: 'video.playback.disc_open_menu_by_default',
+            title: t.video_setting_disc_open_menu_by_default,
+            subtitle: t.video_setting_disc_open_menu_by_default_hint,
+            icon: FushiIcons.menuOpen,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoDiscOpenMenuByDefault,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoDiscOpenMenuByDefault(
+                value,
+              );
+            },
+            defaultValue: true,
+          ),
+          // 作品图谱 L2：音乐库里的 OP / ED 经声纹识别出每集起止后自动跳过。纯 pref，
+          // 播放页面板不单列（与原盘会话三项同理：它们决定的是进入 OP 时怎么办）。
+          SettingsSwitchItem(
+            id: 'video.playback.theme_song_auto_skip',
+            title: t.video_setting_theme_song_auto_skip,
+            subtitle: t.video_setting_theme_song_auto_skip_hint,
+            icon: FushiIcons.skipNext,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoThemeSongAutoSkip,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoThemeSongAutoSkip(value);
+            },
+            defaultValue: false,
+          ),
           // 「单文件循环」从「画质」分区移到「播放」分区（语义归属播放行为，紧随自动
           // 连播）。VideoPlacement（mpv/playback order 200）不变——面板投影位置照旧，
           // 仅调全局设置页所属 SettingsSection。
@@ -120,10 +183,9 @@ SettingsDestination buildVideoDestination() {
             ],
             selected: (SettingsContext settingsContext) =>
                 settingsContext.appModel.youtubeQualityTargetHeight,
+            // 播放中经页面回调：网页档（Windows 上 YouTube 走站点播放器）当场重选画质。
             onChanged: (SettingsContext settingsContext, int height) async {
-              await settingsContext.appModel.setYoutubeQualityTargetHeight(
-                height,
-              );
+              await setYoutubeQualityTargetHeightDual(settingsContext, height);
             },
             defaultValue: 0,
           ),
@@ -153,6 +215,21 @@ SettingsDestination buildVideoDestination() {
                   await setVideoImmersiveModeDual(settingsContext, mode);
                 },
             defaultValue: VideoImmersiveMode.fallback,
+          ),
+          // 沉浸锁定 + 字幕遮蔽中点画面任意处显示当前句（默认开）。判据见
+          // `videoImmersiveTapRevealsSubtitle`；点击时现读偏好，不需要宿主双写。
+          SettingsSwitchItem(
+            id: 'video.playback.immersive_tap_reveal',
+            title: t.video_setting_immersive_tap_reveal,
+            subtitle: t.video_setting_immersive_tap_reveal_hint,
+            icon: FushiIcons.touch,
+            video: VideoPlacement(group: VideoGroup.playback, order: 72),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoImmersiveTapReveal,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoImmersiveTapReveal(value);
+            },
+            defaultValue: true,
           ),
           // 底部细进度条：控制条淡出后在视频最下方留一条主题色细线（B 站 / YouTube
           // 同款）。纯 pref、**默认关**——控制条淡出本身就是「把画面让干净」，常亮的
@@ -226,7 +303,7 @@ SettingsDestination buildVideoDestination() {
           SettingsSegmentedItem<VideoHdrOutputMode>(
             id: 'video.playback.hdr_output',
             title: t.video_setting_hdr_output,
-            subtitle: t.video_setting_hdr_output_hint,
+            subtitle: t.video_setting_hdr_output_mode_hint,
             icon: Icons.hdr_on_outlined,
             dropdown: true,
             visible: (_) => isWindowsPlatform,
@@ -361,7 +438,7 @@ SettingsDestination buildVideoDestination() {
           _videoMpvSwitchItem(
             id: 'video.quality.interpolation',
             title: t.video_setting_mpv_interpolation,
-            icon: Icons.animation_outlined,
+            icon: FushiIcons.animation,
             video: VideoPlacement(
               group: VideoGroup.mpv,
               order: 40,
@@ -1090,6 +1167,40 @@ SettingsDestination buildVideoDestination() {
             },
             defaultValue: true,
           ),
+          // 主 / 副字幕轨默认语言（反馈 Fz9HXThdSW，参考 PotPlayer）：按顺序挑第一条
+          // 命中的轨，见 parseSubtitleLanguagePreferences。schema 项 → MD3 与 Apple
+          // 两套渲染器同一份。下次打开视频生效。
+          SettingsTextItem(
+            id: 'video.subtitle.preferred_languages',
+            title: t.video_setting_subtitle_preferred_languages,
+            subtitle: t.video_setting_subtitle_preferred_languages_hint,
+            icon: FushiIcons.language,
+            placeholder: 'jpn, ja, japanese',
+            value: (SettingsContext c) =>
+                c.appModel.videoSubtitlePreferredLanguages,
+            resetValue: (SettingsContext c) => '',
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setVideoSubtitlePreferredLanguages(value);
+              c.refresh();
+            },
+          ),
+          SettingsTextItem(
+            id: 'video.subtitle.secondary_preferred_languages',
+            title: t.video_setting_secondary_subtitle_preferred_languages,
+            subtitle:
+                t.video_setting_secondary_subtitle_preferred_languages_hint,
+            icon: FushiIcons.subtitles,
+            placeholder: 'chs, chi, zh, eng',
+            value: (SettingsContext c) =>
+                c.appModel.videoSecondarySubtitlePreferredLanguages,
+            resetValue: (SettingsContext c) => '',
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setVideoSecondarySubtitlePreferredLanguages(
+                value,
+              );
+              c.refresh();
+            },
+          ),
         ],
       ),
       SettingsSection(
@@ -1165,8 +1276,8 @@ SettingsDestination buildVideoDestination() {
           ),
           // 从遮蔽模式里拆出来的独立开关（默认开 = 历史行为）：遮蔽模式管「遮什么」
           // （模糊 / 隐藏），本开关管「能不能临时看一眼」。关掉后遮蔽在整句期间恒定
-          // 生效，不被路过的鼠标或误触揭开。主 / 副字幕共用一个开关（是「显形这个
-          // 行为」的总闸，不是逐层设置）。
+          // 生效，不被路过的鼠标或误触揭开。主 / 副字幕分开配置（用户 2026-10-19：
+          // 常见用法是主字幕暂停时显形、副字幕翻译始终遮住），副字幕那条紧随其后。
           SettingsSwitchItem(
             id: 'video.subtitle.obscure_reveal',
             title: t.video_setting_subtitle_obscure_reveal,
@@ -1181,6 +1292,27 @@ SettingsDestination buildVideoDestination() {
                 settingsContext.appModel.videoSubtitleObscureReveal,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await setVideoSubtitleObscureRevealDual(settingsContext, value);
+              settingsContext.refresh();
+            },
+            defaultValue: true,
+          ),
+          SettingsSwitchItem(
+            id: 'video.secondary_subtitle.obscure_reveal',
+            title: t.video_setting_secondary_subtitle_obscure_reveal,
+            subtitle: t.video_setting_secondary_subtitle_obscure_reveal_hint,
+            icon: Icons.visibility_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 56,
+              section: t.section_video_subtitle_behavior,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSecondarySubtitleObscureReveal,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await setVideoSecondarySubtitleObscureRevealDual(
+                settingsContext,
+                value,
+              );
               settingsContext.refresh();
             },
             defaultValue: true,
@@ -1341,6 +1473,33 @@ SettingsDestination buildVideoDestination() {
               );
             },
             defaultValue: VideoMpvConfig.defaults.audioChannels,
+          ),
+          // 音量上限（用户反馈 W-qZRr3lwK：片源响度不够，要 200%）。默认 100 = 不放大，
+          // 与以往一致；调高后音量滑条 / 滚轮 / 音量键 / 竖滑手势都能推过 100%，由
+          // mpv `volume-max` + 软件增益放大。见 [VideoMpvConfig.volumeMax]。
+          SettingsSegmentedItem<int>(
+            id: 'video.audio.volume_max',
+            title: t.video_setting_mpv_volume_max,
+            subtitle: t.video_setting_mpv_volume_max_hint,
+            icon: Icons.volume_up_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 185,
+              section: t.video_setting_mpv_group_audio,
+            ),
+            options: <SettingsSegmentOption<int>>[
+              for (final int max in kVideoVolumeMaxValues)
+                SettingsSegmentOption<int>(value: max, label: '$max%'),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                currentVideoMpvConfig(settingsContext).volumeMax,
+            onChanged: (SettingsContext settingsContext, int value) async {
+              await commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(volumeMax: value),
+              );
+            },
+            defaultValue: VideoMpvConfig.defaults.volumeMax,
           ),
           _videoMpvSwitchItem(
             id: 'video.audio.normalize_downmix',
@@ -1585,6 +1744,38 @@ SettingsDestination buildVideoDestination() {
             cli: const SettingsCliAction.tap(),
             onTap: (SettingsContext settingsContext) async {
               await resetVideoControlLayoutDual(settingsContext);
+            },
+          ),
+          // 沉浸布局（锁定后屏幕左右侧栏的按钮）：编辑器只在播放中出现，重置走
+          // 同一小节。
+          SettingsCustomItem(
+            id: 'video.player.immersive_controls_editor',
+            visible: (SettingsContext settingsContext) =>
+                videoHostVisible(settingsContext) &&
+                videoQuickSettingsHostOf(
+                      settingsContext,
+                    )?.immersiveControlLayout !=
+                    null,
+            video: VideoPlacement(
+              group: VideoGroup.controls,
+              order: 22,
+              section: t.video_control_immersive_layout_title,
+            ),
+            cliValue: videoImmersiveControlLayoutCli,
+            builder: buildVideoImmersiveControlLayoutEditor,
+          ),
+          SettingsActionItem(
+            id: 'video.controls.reset_immersive_layout',
+            title: t.video_control_reset_immersive_layout,
+            icon: FushiIcons.restart,
+            video: VideoPlacement(
+              group: VideoGroup.controls,
+              order: 24,
+              section: t.video_control_immersive_layout_title,
+            ),
+            cli: const SettingsCliAction.tap(),
+            onTap: (SettingsContext settingsContext) async {
+              await resetVideoImmersiveControlLayoutDual(settingsContext);
             },
           ),
           // 播放器里直达快捷键设置并定位到「视频」分域：播放快捷键（F 全屏 / M 静音……）
@@ -1842,13 +2033,15 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
-          // 资料语言默认**跟随界面语言**，不是写死的某一种语言（BUG-2454）。
+          // 资料语言留空 = 每部作品按**它自己的原语言**刮（BUG-4056：日本动画拿日文
+          // 资料，不因界面是中文就变中文）；界面语言只在原语言推不出时兜底。更早
+          // 的 BUG-2454 定的是「留空跟随界面语言」，已被 BUG-4056 覆盖。
           //
           // 这里曾经硬编码 'zh-CN'（默认值与 placeholder 各一份），于是每个德语、
           // 韩语、阿拉伯语用户装上就默认拉中文简介和中文海报。app 出 17 种语言，
           // 没有哪种配当隐含默认值。
           //
-          // 输入框显示的是**存的值**：空 = 跟随界面语言，占位文案说明这一点。不把
+          // 输入框显示的是**存的值**：空 = 按作品原语言，占位文案说明这一点。不把
           // 界面语言的具体串预填进去——预填后用户在没动过的框上按回车就会把
           // `en-US` 这种具体串写进偏好，「跟随」从此变成「钉死」，而界面上看不出
           // 区别。resetValue 写空串 = 一键回到跟随。
@@ -1857,7 +2050,7 @@ SettingsDestination buildVideoDestination() {
             title: t.video_source_scrape_locale,
             subtitle: t.video_source_scrape_locale_hint,
             icon: Icons.language_outlined,
-            placeholder: t.video_source_scrape_locale_follow_ui,
+            placeholder: t.video_source_scrape_locale_follow_original,
             value: (SettingsContext settingsContext) =>
                 (settingsContext.appModel.prefsRepo.getPref(
                           kVideoMetadataLocalePref,
@@ -2187,14 +2380,6 @@ SettingsDestination buildVideoDestination() {
                 videoQuickSettingsHostOf(c)?.onOpenQuality != null,
             video: VideoPlacement(group: VideoGroup.playback, order: 10),
             builder: buildVideoQualityEntryRow,
-          ),
-          // TODO-1232 / BUG-597：「切 Skia 渲染器并重启」黑屏降级入口。
-          SettingsCustomItem(
-            id: 'video.player.skia_fallback',
-            visible: (SettingsContext c) =>
-                videoQuickSettingsHostOf(c)?.onSwitchToSkiaRenderer != null,
-            video: VideoPlacement(group: VideoGroup.playback, order: 20),
-            builder: buildVideoSkiaFallbackRow,
           ),
           // 倍速：MD3 全长滑条（0.5–2.0，0.1 步）；拖动实时预览（下发真实播放倍速，
           // 不落盘），松手提交并持久化。
@@ -2744,43 +2929,41 @@ class _IdentifierWordsDialogState extends State<_IdentifierWordsDialog> {
       title: Text(t.video_metadata_identifier_words),
       content: SizedBox(
         width: 520,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              t.video_metadata_identifier_words_syntax,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            FushiTextFieldControl(
+              key: const ValueKey<String>(
+                'video.library.metadata_identifier_words.field',
+              ),
+              controller: _controller,
+              minLines: 6,
+              maxLines: 12,
+              autofocus: true,
+              keyboardType: TextInputType.multiline,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: (String _) => setState(() {}),
+            ),
+            if (parsed.errors.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 8),
               Text(
-                t.video_metadata_identifier_words_syntax,
-                style: Theme.of(context).textTheme.bodySmall,
+                '${t.video_metadata_identifier_words_invalid}: '
+                '${parsed.errors.length}',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
-              const SizedBox(height: 12),
-              FushiTextFieldControl(
-                key: const ValueKey<String>(
-                  'video.library.metadata_identifier_words.field',
-                ),
-                controller: _controller,
-                minLines: 6,
-                maxLines: 12,
-                autofocus: true,
-                keyboardType: TextInputType.multiline,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onChanged: (String _) => setState(() {}),
-              ),
-              if (parsed.errors.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 8),
-                Text(
-                  '${t.video_metadata_identifier_words_invalid}: '
-                  '${parsed.errors.length}',
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-                for (final String error in parsed.errors)
-                  Text(error, style: Theme.of(context).textTheme.bodySmall),
-              ],
+              for (final String error in parsed.errors)
+                Text(error, style: Theme.of(context).textTheme.bodySmall),
             ],
-          ),
+          ],
         ),
       ),
       actions: <Widget>[

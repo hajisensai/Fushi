@@ -121,11 +121,16 @@ void main() {
     test('warmup 的 HeadlessInAppWebView 接齐四条终点并装了兜底表', () {
       final String source = File('lib/main.dart').readAsStringSync();
       final String code = maskComments(source);
-      final EnclosingCall warmup =
-          enclosingCallOf(source, 'initialUrlRequest:');
+      final EnclosingCall warmup = enclosingCallOf(
+        source,
+        'initialUrlRequest:',
+      );
 
-      expect(warmup.name, 'HeadlessInAppWebView',
-          reason: 'initialUrlRequest 锚点应落在预热的 HeadlessInAppWebView 构造里');
+      expect(
+        warmup.name,
+        'HeadlessInAppWebView',
+        reason: 'initialUrlRequest 锚点应落在预热的 HeadlessInAppWebView 构造里',
+      );
 
       final String body = maskComments(warmup.text);
       for (final String callback in <String>[
@@ -135,14 +140,24 @@ void main() {
         // BUG-2759：iOS/macOS 的 WebContent 进程终止同样是终点。
         'onWebContentProcessDidTerminate:',
       ]) {
-        expect(body, contains(callback),
-            reason: '预热必须接管 $callback，否则该终点缺席：载入失败或 renderer '
-                '被 OOM kill 时 headless WebView 永不销毁，且 Android 会连坐杀 app');
+        expect(
+          body,
+          contains(callback),
+          reason:
+              '预热必须接管 $callback，否则该终点缺席：载入失败或 renderer '
+              '被 OOM kill 时 headless WebView 永不销毁，且 Android 会连坐杀 app',
+        );
       }
-      expect(body.split('session.finish(').length - 1, 4,
-          reason: '四条回调终点都必须落到同一个 session.finish（幂等收口）');
-      expect(code, contains('session.armTimeout()'),
-          reason: 'run() 之后必须装兜底表，否则回调全不来时仍然永久泄漏');
+      expect(
+        body.split('session.finish(').length - 1,
+        4,
+        reason: '四条回调终点都必须落到同一个 session.finish（幂等收口）',
+      );
+      expect(
+        code,
+        contains('session.armTimeout()'),
+        reason: 'run() 之后必须装兜底表，否则回调全不来时仍然永久泄漏',
+      );
     });
   });
 }

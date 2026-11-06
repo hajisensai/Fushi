@@ -45,8 +45,8 @@ class _FakeFilePicker extends FilePicker {
 
 /// 正常结果：一张有真实 path 的图。
 FilePickerResult _okResult() => FilePickerResult(<PlatformFile>[
-      PlatformFile(name: 'cover.png', size: 0, path: 'C:/tmp/cover.png'),
-    ]);
+  PlatformFile(name: 'cover.png', size: 0, path: 'C:/tmp/cover.png'),
+]);
 
 void main() {
   final TestWidgetsFlutterBinding binding =
@@ -80,41 +80,48 @@ void main() {
     });
   });
 
-  test('Windows 平台 pickGalleryImageFile 走 file_picker，不触碰 image_picker 通道',
-      () async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+  test(
+    'Windows 平台 pickGalleryImageFile 走 file_picker，不触碰 image_picker 通道',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
 
-    // 哨兵：一旦有人把 image_picker 的默认 MethodChannel 路径带回桌面分支，
-    // 这里立即暴露（而不是靠真机上的 MissingPluginException 静默失败）。
-    const MethodChannel imagePickerChannel =
-        MethodChannel('plugins.flutter.io/image_picker');
-    bool imagePickerChannelCalled = false;
-    binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      imagePickerChannel,
-      (MethodCall call) async {
-        imagePickerChannelCalled = true;
-        return null;
-      },
-    );
-    addTearDown(() => binding.defaultBinaryMessenger
-        .setMockMethodCallHandler(imagePickerChannel, null));
+      // 哨兵：一旦有人把 image_picker 的默认 MethodChannel 路径带回桌面分支，
+      // 这里立即暴露（而不是靠真机上的 MissingPluginException 静默失败）。
+      const MethodChannel imagePickerChannel = MethodChannel(
+        'plugins.flutter.io/image_picker',
+      );
+      bool imagePickerChannelCalled = false;
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        imagePickerChannel,
+        (MethodCall call) async {
+          imagePickerChannelCalled = true;
+          return null;
+        },
+      );
+      addTearDown(
+        () => binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          imagePickerChannel,
+          null,
+        ),
+      );
 
-    final _FakeFilePicker fakePicker = _FakeFilePicker(_okResult());
-    FilePicker.platform = fakePicker;
+      final _FakeFilePicker fakePicker = _FakeFilePicker(_okResult());
+      FilePicker.platform = fakePicker;
 
-    final File? picked = await pickGalleryImageFile();
+      final File? picked = await pickGalleryImageFile();
 
-    expect(picked, isNotNull);
-    expect(picked!.path, 'C:/tmp/cover.png');
-    expect(fakePicker.lastType, FileType.image, reason: '桌面端必须限定图片类型');
-    expect(fakePicker.lastAllowMultiple, isFalse);
-    expect(
-      imagePickerChannelCalled,
-      isFalse,
-      reason: '桌面分支不得触碰 image_picker MethodChannel（BUG-1074 根因）',
-    );
-  });
+      expect(picked, isNotNull);
+      expect(picked!.path, 'C:/tmp/cover.png');
+      expect(fakePicker.lastType, FileType.image, reason: '桌面端必须限定图片类型');
+      expect(fakePicker.lastAllowMultiple, isFalse);
+      expect(
+        imagePickerChannelCalled,
+        isFalse,
+        reason: '桌面分支不得触碰 image_picker MethodChannel（BUG-1074 根因）',
+      );
+    },
+  );
 
   // 「没选到图」的病态结果必须一律收敛成 null，不得抛异常。
   //
@@ -135,22 +142,27 @@ void main() {
     });
 
     test('结果集为空 list（.first 会抛 StateError 的形态）', () async {
-      FilePicker.platform =
-          _FakeFilePicker(FilePickerResult(const <PlatformFile>[]));
+      FilePicker.platform = _FakeFilePicker(
+        FilePickerResult(const <PlatformFile>[]),
+      );
       await expectLater(pickGalleryImageFile(), completion(isNull));
     });
 
     test('条目无 path（path == null）', () async {
-      FilePicker.platform = _FakeFilePicker(FilePickerResult(<PlatformFile>[
-        PlatformFile(name: 'cover.png', size: 0),
-      ]));
+      FilePicker.platform = _FakeFilePicker(
+        FilePickerResult(<PlatformFile>[
+          PlatformFile(name: 'cover.png', size: 0),
+        ]),
+      );
       expect(await pickGalleryImageFile(), isNull);
     });
 
     test('条目 path 是空串', () async {
-      FilePicker.platform = _FakeFilePicker(FilePickerResult(<PlatformFile>[
-        PlatformFile(name: 'cover.png', size: 0, path: ''),
-      ]));
+      FilePicker.platform = _FakeFilePicker(
+        FilePickerResult(<PlatformFile>[
+          PlatformFile(name: 'cover.png', size: 0, path: ''),
+        ]),
+      );
       expect(await pickGalleryImageFile(), isNull);
     });
   });

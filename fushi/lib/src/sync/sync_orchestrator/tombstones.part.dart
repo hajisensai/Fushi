@@ -52,19 +52,97 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
       SyncTombstoneKind.favoriteword.dbValue: <String, int?>{
         for (final FavoriteWordRow r in await _db.getAllFavoriteWords())
           FushiDatabase.favoriteWordItemKey(
-              r.expression, r.reading, r.sourceType): r.createdAt,
+            r.expression,
+            r.reading,
+            r.sourceType,
+          ): r.createdAt,
       },
       // 收藏句无稳定 id，用内容键（[FavoriteSentenceRepository.itemKeyOf]）；与写墓碑点、
       // aggregate 去重键同源。时刻取 createdAt——重新收藏会生成新的 createdAt，正是
       // BUG-2044 仲裁所依据的那个时刻。
       SyncTombstoneKind.favoritesentence.dbValue: <String, int?>{
-        for (final FavoriteSentence s
-            in await FavoriteSentenceRepository(_db).getAll())
+        for (final FavoriteSentence s in await FavoriteSentenceRepository(
+          _db,
+        ).getAll())
           FavoriteSentenceRepository.itemKeyOf(s):
               s.createdAt.millisecondsSinceEpoch,
       },
     };
   }
+
+  /// 读 host 的删除墓碑，供本轮自动内容推送（书 / 有声书 / 视频）先过一遍删除意图
+  /// （反馈 Et3pmRzo0k）。
+  ///
+  /// 内容推送是「本端有 ∧ host 无 → 推」，而 host「无」可能正是某台设备「从所有设备
+  /// 删除」的结果。删除候选的消费（[_syncDeletionTombstonesLive]）排在整轮最后、还要等
+  /// 用户逐条确认，推送时本机那份旧副本一定还在——不先看墓碑就推，host 导入会顺手清掉
+  /// 自己的墓碑，删除意图在 host 与第三台设备上一起蒸发，本机也永远等不到那条确认。
+  /// 所以每个推送阶段开推之前都先读一次 host 墓碑，用 [_hostVetoesPush] 把「删除之前就
+  /// 在本机的那份」挡在推送清单外；删除之后才在本机重新加入的照推（时刻仲裁同删除
+  /// 候选，[peerTombstoneVetoesPush]）。
+  ///
+  /// 返回值三态：
+  /// * 墓碑表（可能为空）——正常；对端书键与本机不同的书已按别名换算到本机键
+  ///   （[aliasPeerBookTombstones]，与删除候选同一套）。
+  /// * 空表——老 host 没有 `/api/tombstones`（404）：它也就没有可守护的墓碑。
+  /// * `null`——读失败（异常已记进 [report]）。调用方**跳过本阶段推送**：不知道删除
+  ///   意图就推，正是本 bug；下一轮读到了再推，什么都不会丢。
+  Future<DeletionTombstoneEntries?> _loadHostPushVetoTombstones(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+    String phase,
+  ) async {
+    try {
+      final List<({String mediaType, String itemKey, int deletedAt})>? remote =
+          await backend.getRemoteDeletionTombstones();
+      final DeletionTombstoneEntries out = <String, Map<String, int>>{};
+      if (remote == null) return out;
+      for (final r in remote) {
+        final Map<String, int> byKey = out.putIfAbsent(
+          r.mediaType,
+          () => <String, int>{},
+        );
+        final int? prev = byKey[r.itemKey];
+        if (prev == null || r.deletedAt > prev) byKey[r.itemKey] = r.deletedAt;
+      }
+      // 别名换算只看「本机有哪些键」，时刻在这里用不到（裁决在 _hostVetoesPush）。
+      final DeletionPresentEntries present = <String, Map<String, int?>>{
+        SyncTombstoneKind.book.dbValue: <String, int?>{
+          for (final EpubBookRow r in await _db.getAllEpubBooks())
+            r.bookKey: null,
+        },
+        SyncTombstoneKind.audiobook.dbValue: <String, int?>{
+          for (final AudiobookRow r in await _db.getAllAudiobooks())
+            r.bookKey: null,
+        },
+      };
+      aliasPeerBookTombstones(
+        out,
+        present,
+        peerToLocalBookKey: await _db.getPeerToLocalBookKeys(),
+      );
+      return out;
+    } catch (e) {
+      report.noteError(
+        '$phase: host deletion tombstones unreadable, push skipped',
+        e,
+      );
+      return null;
+    }
+  }
+
+  /// host 墓碑是否否决把本机这条推上去（见 [_loadHostPushVetoTombstones]）。
+  bool _hostVetoesPush(
+    DeletionTombstoneEntries hostTombstones, {
+    required List<SyncTombstoneKind> kinds,
+    required Iterable<String> itemKeys,
+    required int? presentSinceAt,
+  }) => peerTombstoneVetoesPush(
+    peerTombstones: hostTombstones,
+    mediaTypes: <String>[for (final SyncTombstoneKind k in kinds) k.dbValue],
+    itemKeys: itemKeys,
+    presentSinceAt: presentSinceAt,
+  );
 
   /// 删除墓碑同步（互联 host API 通道），**双向**：
   ///
@@ -98,8 +176,10 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
       final DeletionTombstoneEntries remoteTombstones =
           <String, Map<String, int>>{};
       for (final r in remote) {
-        final Map<String, int> byKey =
-            remoteTombstones.putIfAbsent(r.mediaType, () => <String, int>{});
+        final Map<String, int> byKey = remoteTombstones.putIfAbsent(
+          r.mediaType,
+          () => <String, int>{},
+        );
         final int? prev = byKey[r.itemKey];
         if (prev == null || r.deletedAt > prev) {
           byKey[r.itemKey] = r.deletedAt;
@@ -110,8 +190,11 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
       final DeletionPresentEntries present =
           await _collectPresentDeletionKeys();
       // 同一本书两端键不同（互联收下的在线漫画 / 落地键不同的下载书），对端墓碑先换算。
-      aliasPeerBookTombstones(remoteTombstones, present,
-          peerToLocalBookKey: await _db.getPeerToLocalBookKeys());
+      aliasPeerBookTombstones(
+        remoteTombstones,
+        present,
+        peerToLocalBookKey: await _db.getPeerToLocalBookKeys(),
+      );
       int baseline = await repo.getDeletionTombstonesBaselineMs(_scope);
       if (baseline > nextBaseline) baseline = nextBaseline;
 
@@ -161,21 +244,25 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
       // 时钟回拨钳制：基线晚于本轮取的 now 时按 now 算，否则一次回拨会把窗口永久关死。
       if (baseline > nextBaseline) baseline = nextBaseline;
 
-      final List<SyncDeletionTombstoneRow> rows =
-          await _db.getSyncDeletionTombstones();
+      final List<SyncDeletionTombstoneRow> rows = await _db
+          .getSyncDeletionTombstones();
       bool retryable = false;
       for (final SyncDeletionTombstoneRow row in rows) {
         // 窗口两端都要卡：晚于 nextBaseline 的（本地时钟超前写出的未来戳）留到下轮，
         // 否则推进基线会把它一并盖掉、这条删除就此蒸发。
         if (row.deletedAt <= baseline || row.deletedAt > nextBaseline) continue;
-        final SyncTombstoneKind? kind =
-            SyncTombstoneKind.tryParse(row.mediaType);
+        final SyncTombstoneKind? kind = SyncTombstoneKind.tryParse(
+          row.mediaType,
+        );
         // 未知 kind = 比本端新的版本写的墓碑，本端不认识就别猜着删（前向兼容）。
         if (kind == null) continue;
         if (!_hasInterconnectDeletionChannel(kind)) continue;
         try {
-          final bool supported =
-              await _pushOneDeletionLive(backend, kind, row.itemKey);
+          final bool supported = await _pushOneDeletionLive(
+            backend,
+            kind,
+            row.itemKey,
+          );
           if (!supported) {
             report.errors.add(
               'host does not support deleting ${row.mediaType} '
@@ -184,10 +271,7 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
           }
         } catch (e) {
           retryable = true;
-          report.noteError(
-            'deletion push ${row.mediaType}/${row.itemKey}',
-            e,
-          );
+          report.noteError('deletion push ${row.mediaType}/${row.itemKey}', e);
         }
       }
       if (!retryable) {
@@ -213,6 +297,11 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
         return true;
       case SyncTombstoneKind.favoriteword:
       case SyncTombstoneKind.favoritesentence:
+      // v128 浏览器历史 / 书签同理：只经聚合快照传播。
+      case SyncTombstoneKind.webhistory:
+      case SyncTombstoneKind.webbookmark:
+      // 音乐曲库（v130）还没有互联删除端点：曲库目录是本机重扫出来的，P0 不跨端传播删除。
+      case SyncTombstoneKind.music:
         return false;
     }
   }
@@ -243,6 +332,9 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
         return backend.deleteRemoteVideo(itemKey);
       case SyncTombstoneKind.favoriteword:
       case SyncTombstoneKind.favoritesentence:
+      case SyncTombstoneKind.webhistory:
+      case SyncTombstoneKind.webbookmark:
+      case SyncTombstoneKind.music:
         // [_hasInterconnectDeletionChannel] 已挡在前面，走不到这里。
         return true;
     }

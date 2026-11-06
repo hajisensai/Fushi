@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 import '../../helpers/epub_zip_reader.dart';
@@ -86,8 +86,10 @@ void main() {
         tmpDir,
         cues: [_cue(idx: 0, startMs: 0, endMs: 1000, text: 'テスト')],
       );
-      expect(zip['META-INF/container.xml'],
-          contains('full-path="OEBPS/content.opf"'));
+      expect(
+        zip['META-INF/container.xml'],
+        contains('full-path="OEBPS/content.opf"'),
+      );
     });
 
     test('出力ファイルが実際に作成される', () async {
@@ -114,7 +116,9 @@ void main() {
       );
       expect(zip['OEBPS/content.opf'], contains('<dc:title>猫の本</dc:title>'));
       expect(
-          zip['OEBPS/content.opf'], contains('<dc:creator>夏目漱石</dc:creator>'));
+        zip['OEBPS/content.opf'],
+        contains('<dc:creator>夏目漱石</dc:creator>'),
+      );
     });
 
     test('著者省略時は dc:creator タグがない', () async {
@@ -245,10 +249,11 @@ void main() {
       final cues = [
         _cue(idx: 0, startMs: 0, endMs: tenMinMs - 1000, text: 'A'),
         _cue(
-            idx: 1,
-            startMs: tenMinMs + 1000,
-            endMs: tenMinMs + 2000,
-            text: 'B'),
+          idx: 1,
+          startMs: tenMinMs + 1000,
+          endMs: tenMinMs + 2000,
+          text: 'B',
+        ),
       ];
       final zip = await _generateAndRead(tmpDir, cues: cues);
       expect(zip['OEBPS/chapter-2.xhtml'], isNotNull);
@@ -290,7 +295,9 @@ void main() {
         title: 'A & B',
       );
       expect(
-          zip['OEBPS/content.opf'], contains('<dc:title>A &amp; B</dc:title>'));
+        zip['OEBPS/content.opf'],
+        contains('<dc:title>A &amp; B</dc:title>'),
+      );
     });
   });
 
@@ -315,6 +322,48 @@ void main() {
       final xhtml = zip['OEBPS/chapter-1.xhtml']!;
       expect(xhtml, contains('data-start="1.000"'));
       expect(xhtml, contains('data-end="2.000"'));
+    });
+  });
+
+  // #I2PeHK2ztE：转录书竖排时半角 ! ? 横躺。日文后的 1–2 个半角 ! ? 包成縦中横 span，
+  // 文本本身不改（不转全角）。
+  group('半角 ! ? の縦中横', () {
+    test('日本語の直後の ! ? / !? は tcy span、文字は変えない', () {
+      expect(CuesToEpub.typesetCueText('断る!'), '断る<span class="tcy">!</span>');
+      expect(
+        CuesToEpub.typesetCueText('何を? 知るかよ!'),
+        '何を<span class="tcy">?</span> 知るかよ<span class="tcy">!</span>',
+      );
+      expect(
+        CuesToEpub.typesetCueText('マジで!?」'),
+        'マジで<span class="tcy">!?</span>」',
+      );
+      expect(
+        CuesToEpub.typesetCueText('「えっ」!'),
+        '「えっ」<span class="tcy">!</span>',
+      );
+    });
+
+    test('英文・3 連以上・全角はそのまま（エスケープだけ）', () {
+      expect(CuesToEpub.typesetCueText('Hello! OK?'), 'Hello! OK?');
+      expect(CuesToEpub.typesetCueText('やった!!!'), 'やった!!!');
+      expect(CuesToEpub.typesetCueText('断る！'), '断る！');
+      expect(CuesToEpub.typesetCueText('A&B<!>'), 'A&amp;B&lt;!&gt;');
+    });
+
+    test('生成 XHTML に tcy の CSS と span が入る', () async {
+      final zip = await _generateAndRead(
+        tmpDir,
+        cues: [_cue(idx: 0, startMs: 0, endMs: 1000, text: '断る!')],
+      );
+      final xhtml = zip['OEBPS/chapter-1.xhtml']!;
+      expect(
+        xhtml,
+        contains(
+          '.tcy{-webkit-text-combine:horizontal;text-combine-upright:all;}',
+        ),
+      );
+      expect(xhtml, contains('>断る<span class="tcy">!</span></span>'));
     });
   });
 }

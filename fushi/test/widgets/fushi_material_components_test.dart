@@ -39,8 +39,9 @@ void main() {
     expect(editorPanel, isNot(contains('fontSize: 12')));
   });
 
-  testWidgets('FushiSelectableChip uses MD3 pill, tonal fill and checkmark',
-      (WidgetTester tester) async {
+  testWidgets('FushiSelectableChip uses MD3 pill, tonal fill and checkmark', (
+    WidgetTester tester,
+  ) async {
     bool selected = true;
     await tester.pumpWidget(
       buildSubject(
@@ -52,9 +53,12 @@ void main() {
       ),
     );
 
-    final ChoiceChip chip = tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(find.byType(ChoiceChip)));
-    final ColorScheme scheme =
-        Theme.of(tester.element(find.byType(ChoiceChip))).colorScheme;
+    final ChoiceChip chip = tester.widget<ChoiceChip>(
+      glassUnwrap<ChoiceChip>(find.byType(ChoiceChip)),
+    );
+    final ColorScheme scheme = Theme.of(
+      tester.element(find.byType(ChoiceChip)),
+    ).colorScheme;
 
     expect(chip.selected, isTrue);
     expect(chip.showCheckmark, isTrue);
@@ -67,19 +71,22 @@ void main() {
     expect(selected, isFalse);
   });
 
-  testWidgets('FushiSelectableChip registers with the focus root',
-      (WidgetTester tester) async {
+  testWidgets('FushiSelectableChip registers with the focus root', (
+    WidgetTester tester,
+  ) async {
     bool selected = false;
-    await tester.pumpWidget(buildSubject(
-      FushiFocusRoot(
-        child: FushiSelectableChip(
-          focusId: const FushiFocusId('theme-chip'),
-          label: 'Theme',
-          selected: selected,
-          onSelected: (bool value) => selected = value,
+    await tester.pumpWidget(
+      buildSubject(
+        FushiFocusRoot(
+          child: FushiSelectableChip(
+            focusId: const FushiFocusId('theme-chip'),
+            label: 'Theme',
+            selected: selected,
+            onSelected: (bool value) => selected = value,
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     final FushiFocusController root = FushiFocusRoot.controllerOf(
@@ -96,8 +103,9 @@ void main() {
     expect(selected, isTrue);
   });
 
-  testWidgets('FushiActionChip uses a tonal pill without outline',
-      (WidgetTester tester) async {
+  testWidgets('FushiActionChip uses a tonal pill without outline', (
+    WidgetTester tester,
+  ) async {
     bool tapped = false;
     await tester.pumpWidget(
       buildSubject(
@@ -109,12 +117,10 @@ void main() {
       ),
     );
 
-    final OutlinedButton button =
-        tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(find.byType(OutlinedButton)));
-    expect(
-      button.style!.shape!.resolve(<WidgetState>{}),
-      isA<StadiumBorder>(),
+    final OutlinedButton button = tester.widget<OutlinedButton>(
+      glassUnwrap<OutlinedButton>(find.byType(OutlinedButton)),
     );
+    expect(button.style!.shape!.resolve(<WidgetState>{}), isA<StadiumBorder>());
     expect(button.style!.side!.resolve(<WidgetState>{}), BorderSide.none);
     expect(find.byIcon(Icons.open_in_new), findsOneWidget);
 
@@ -122,8 +128,9 @@ void main() {
     expect(tapped, isTrue);
   });
 
-  testWidgets('FushiListItem resolves standard and compact density heights',
-      (WidgetTester tester) async {
+  testWidgets('FushiListItem resolves standard and compact density heights', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       buildSubject(
         const Column(
@@ -160,19 +167,22 @@ void main() {
     expect(compact.size.height, 48);
   });
 
-  testWidgets('FushiActionChip registers with the focus root',
-      (WidgetTester tester) async {
+  testWidgets('FushiActionChip registers with the focus root', (
+    WidgetTester tester,
+  ) async {
     bool tapped = false;
-    await tester.pumpWidget(buildSubject(
-      FushiFocusRoot(
-        child: FushiActionChip(
-          focusId: const FushiFocusId('open-chip'),
-          label: 'Open',
-          icon: Icons.open_in_new,
-          onPressed: () => tapped = true,
+    await tester.pumpWidget(
+      buildSubject(
+        FushiFocusRoot(
+          child: FushiActionChip(
+            focusId: const FushiFocusId('open-chip'),
+            label: 'Open',
+            icon: Icons.open_in_new,
+            onPressed: () => tapped = true,
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     final FushiFocusController root = FushiFocusRoot.controllerOf(
@@ -188,8 +198,9 @@ void main() {
     expect(tapped, isTrue);
   });
 
-  testWidgets('FushiTagChip derives readable text color from tag color',
-      (WidgetTester tester) async {
+  testWidgets('FushiTagChip derives readable text color from tag color', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       buildSubject(
         const Wrap(
@@ -203,13 +214,14 @@ void main() {
 
     final Text darkText = tester.widget<Text>(find.text('Dark'));
     final Text lightText = tester.widget<Text>(find.text('Light'));
-    final AnimatedContainer darkContainer =
-        tester.widget<AnimatedContainer>(find
-            .ancestor(
-              of: find.text('Dark'),
-              matching: find.byType(AnimatedContainer),
-            )
-            .first);
+    final AnimatedContainer darkContainer = tester.widget<AnimatedContainer>(
+      find
+          .ancestor(
+            of: find.text('Dark'),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
 
     expect(darkText.style?.color, Colors.white);
     expect(lightText.style?.color, Colors.black);
@@ -219,8 +231,9 @@ void main() {
     );
   });
 
-  testWidgets('FushiTagChip surface tone keeps a tag color swatch',
-      (WidgetTester tester) async {
+  testWidgets('FushiTagChip surface tone keeps a tag color swatch', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       buildSubject(
         const FushiTagChip(
@@ -232,21 +245,22 @@ void main() {
       ),
     );
 
-    final Iterable<AnimatedContainer> containers =
-        tester.widgetList<AnimatedContainer>(find.byType(AnimatedContainer));
-    final AnimatedContainer chip =
-        containers.firstWhere((AnimatedContainer widget) {
+    final Iterable<AnimatedContainer> containers = tester
+        .widgetList<AnimatedContainer>(find.byType(AnimatedContainer));
+    final AnimatedContainer chip = containers.firstWhere((
+      AnimatedContainer widget,
+    ) {
       final Decoration? decoration = widget.decoration;
       return decoration is BoxDecoration && decoration.border != null;
     });
     final DecoratedBox swatch = tester
         .widgetList<DecoratedBox>(find.byType(DecoratedBox))
         .firstWhere((DecoratedBox widget) {
-      final Decoration decoration = widget.decoration;
-      return decoration is BoxDecoration &&
-          decoration.color == Colors.red &&
-          decoration.shape == BoxShape.circle;
-    });
+          final Decoration decoration = widget.decoration;
+          return decoration is BoxDecoration &&
+              decoration.color == Colors.red &&
+              decoration.shape == BoxShape.circle;
+        });
     final BoxDecoration chipDecoration = chip.decoration! as BoxDecoration;
     final BoxDecoration swatchDecoration = swatch.decoration as BoxDecoration;
 
@@ -256,8 +270,9 @@ void main() {
     expect(swatchDecoration.shape, BoxShape.circle);
   });
 
-  testWidgets('FushiTagChip exposes a compact delete affordance',
-      (WidgetTester tester) async {
+  testWidgets('FushiTagChip exposes a compact delete affordance', (
+    WidgetTester tester,
+  ) async {
     bool deleted = false;
     await tester.pumpWidget(
       buildSubject(
@@ -275,8 +290,9 @@ void main() {
     expect(deleted, isTrue);
   });
 
-  testWidgets('FushiOverflowMenu registers with the focus root and opens',
-      (WidgetTester tester) async {
+  testWidgets('FushiOverflowMenu registers with the focus root and opens', (
+    WidgetTester tester,
+  ) async {
     int? selected;
     await tester.pumpWidget(
       buildSubject(
@@ -302,9 +318,11 @@ void main() {
     controller.ensureFocus();
     await tester.pump();
 
-    expect(controller.activeId, isNotNull,
-        reason:
-            'overflow menus are real command surfaces, not mouse-only dots');
+    expect(
+      controller.activeId,
+      isNotNull,
+      reason: 'overflow menus are real command surfaces, not mouse-only dots',
+    );
     Actions.maybeInvoke<ActivateIntent>(
       controller.activeContext!,
       const ActivateIntent(),
@@ -317,8 +335,9 @@ void main() {
     expect(selected, 1);
   });
 
-  testWidgets('FushiPageHeader keeps actions on one row when content fits',
-      (WidgetTester tester) async {
+  testWidgets('FushiPageHeader keeps actions on one row when content fits', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       buildSubject(
         SizedBox(
@@ -351,54 +370,58 @@ void main() {
       ),
     );
 
-    final double importTop =
-        tester.getTopLeft(find.byIcon(Icons.library_add_outlined)).dy;
-    final double collectionsTop =
-        tester.getTopLeft(find.byIcon(Icons.collections_bookmark_outlined)).dy;
-    final double statisticsTop =
-        tester.getTopLeft(find.byIcon(Icons.bar_chart_outlined)).dy;
+    final double importTop = tester
+        .getTopLeft(find.byIcon(Icons.library_add_outlined))
+        .dy;
+    final double collectionsTop = tester
+        .getTopLeft(find.byIcon(Icons.collections_bookmark_outlined))
+        .dy;
+    final double statisticsTop = tester
+        .getTopLeft(find.byIcon(Icons.bar_chart_outlined))
+        .dy;
 
     expect(collectionsTop, importTop);
     expect(statisticsTop, importTop);
   });
 
   testWidgets(
-      'FushiPageHeader custom title aligns segmented navigation with actions',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(
-      buildSubject(
-        SizedBox(
-          width: 520,
-          child: FushiPageHeader.customTitle(
-            padding: EdgeInsets.zero,
-            title: SegmentedButton<String>(
-              showSelectedIcon: false,
-              segments: const <ButtonSegment<String>>[
-                ButtonSegment<String>(value: 'library', label: Text('书架')),
-                ButtonSegment<String>(value: 'sources', label: Text('来源')),
-              ],
-              selected: const <String>{'library'},
-              onSelectionChanged: (_) {},
-            ),
-            actions: <Widget>[
-              FushiIconButton(
-                tooltip: 'Import',
-                icon: Icons.library_add_outlined,
-                onTap: () {},
+    'FushiPageHeader custom title aligns segmented navigation with actions',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(
+        buildSubject(
+          SizedBox(
+            width: 520,
+            child: FushiPageHeader.customTitle(
+              padding: EdgeInsets.zero,
+              title: SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: const <ButtonSegment<String>>[
+                  ButtonSegment<String>(value: 'library', label: Text('书架')),
+                  ButtonSegment<String>(value: 'sources', label: Text('来源')),
+                ],
+                selected: const <String>{'library'},
+                onSelectionChanged: (_) {},
               ),
-            ],
+              actions: <Widget>[
+                FushiIconButton(
+                  tooltip: 'Import',
+                  icon: Icons.library_add_outlined,
+                  onTap: () {},
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.text('书架'), findsOneWidget);
-    expect(find.text('来源'), findsOneWidget);
-    expect(
-      tester.getCenter(find.byType(SegmentedButton<String>)).dy,
-      tester.getCenter(find.byIcon(Icons.library_add_outlined)).dy,
-    );
-  });
+      expect(find.text('书架'), findsOneWidget);
+      expect(find.text('来源'), findsOneWidget);
+      expect(
+        tester.getCenter(find.byType(SegmentedButton<String>)).dy,
+        tester.getCenter(find.byIcon(Icons.library_add_outlined)).dy,
+      );
+    },
+  );
 
   // BUG（页头药丸挤标题）：带 label 的动作是否展开成「图标+文字」药丸，必须按
   // **页头本地可用宽**（而非整窗宽）判定。桌面带导航栏 / 分栏时整窗 expanded（≥840）
@@ -407,124 +430,128 @@ void main() {
   // 守卫：整窗放宽到 1200(expanded)、页头本地宽压到 720(medium) 时，带 label 动作回落
   // 纯图标（无文字），标题不再被挤。
   testWidgets(
-      'FushiPageHeader collapses labeled actions to icons by local width '
-      'even when the window is wide', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1200, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    'FushiPageHeader collapses labeled actions to icons by local width '
+    'even when the window is wide',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      buildSubject(
-        Align(
-          alignment: Alignment.topLeft,
-          child: SizedBox(
-            width: 720, // 页头本地宽 = medium（600–840），整窗 1200 = expanded
-            child: FushiPageHeader(
-              title: '书架',
-              padding: EdgeInsets.zero,
-              actions: <Widget>[
-                FushiIconButton(
-                  tooltip: 'Import',
-                  label: 'Import',
-                  icon: Icons.library_add_outlined,
-                  onTap: () {},
-                ),
-                FushiIconButton(
-                  tooltip: 'Manage',
-                  label: 'Manage sources',
-                  icon: Icons.folder_copy_outlined,
-                  onTap: () {},
-                ),
-                FushiIconButton(
-                  tooltip: 'Collections',
-                  label: 'Collections',
-                  icon: Icons.collections_bookmark_outlined,
-                  onTap: () {},
-                ),
-                FushiIconButton(
-                  tooltip: 'Statistics',
-                  label: 'Statistics',
-                  icon: Icons.bar_chart_outlined,
-                  onTap: () {},
-                ),
-              ],
+      await tester.pumpWidget(
+        buildSubject(
+          Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 720, // 页头本地宽 = medium（600–840），整窗 1200 = expanded
+              child: FushiPageHeader(
+                title: '书架',
+                padding: EdgeInsets.zero,
+                actions: <Widget>[
+                  FushiIconButton(
+                    tooltip: 'Import',
+                    label: 'Import',
+                    icon: Icons.library_add_outlined,
+                    onTap: () {},
+                  ),
+                  FushiIconButton(
+                    tooltip: 'Manage',
+                    label: 'Manage sources',
+                    icon: Icons.folder_copy_outlined,
+                    onTap: () {},
+                  ),
+                  FushiIconButton(
+                    tooltip: 'Collections',
+                    label: 'Collections',
+                    icon: Icons.collections_bookmark_outlined,
+                    onTap: () {},
+                  ),
+                  FushiIconButton(
+                    tooltip: 'Statistics',
+                    label: 'Statistics',
+                    icon: Icons.bar_chart_outlined,
+                    onTap: () {},
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(tester.takeException(), isNull);
-    // 本地 medium → 回落纯图标（无 label 文字），标题不再被药丸挤压。
-    for (final String label in <String>[
-      'Import',
-      'Manage sources',
-      'Collections',
-      'Statistics',
-    ]) {
-      expect(find.text(label), findsNothing, reason: '$label 应折叠为纯图标');
-    }
-    for (final IconData icon in <IconData>[
-      Icons.library_add_outlined,
-      Icons.folder_copy_outlined,
-      Icons.collections_bookmark_outlined,
-      Icons.bar_chart_outlined,
-    ]) {
-      expect(find.byIcon(icon), findsOneWidget, reason: '$icon 应仍可见');
-    }
-    expect(find.text('书架'), findsOneWidget);
-  });
+      expect(tester.takeException(), isNull);
+      // 本地 medium → 回落纯图标（无 label 文字），标题不再被药丸挤压。
+      for (final String label in <String>[
+        'Import',
+        'Manage sources',
+        'Collections',
+        'Statistics',
+      ]) {
+        expect(find.text(label), findsNothing, reason: '$label 应折叠为纯图标');
+      }
+      for (final IconData icon in <IconData>[
+        Icons.library_add_outlined,
+        Icons.folder_copy_outlined,
+        Icons.collections_bookmark_outlined,
+        Icons.bar_chart_outlined,
+      ]) {
+        expect(find.byIcon(icon), findsOneWidget, reason: '$icon 应仍可见');
+      }
+      expect(find.text('书架'), findsOneWidget);
+    },
+  );
 
   // 反向守卫：页头本地宽达到 expanded（≥840）时，带 label 动作展开成图标+文字药丸
   // （宽窗零行为变化）。
   testWidgets(
-      'FushiPageHeader expands labeled actions when local width is expanded',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1200, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    'FushiPageHeader expands labeled actions when local width is expanded',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      buildSubject(
-        Align(
-          alignment: Alignment.topLeft,
-          child: SizedBox(
-            width: 1000, // 页头本地宽 = expanded（≥840）
-            child: FushiPageHeader(
-              title: '书架',
-              padding: EdgeInsets.zero,
-              actions: <Widget>[
-                FushiIconButton(
-                  tooltip: 'Import',
-                  label: 'Import',
-                  icon: Icons.library_add_outlined,
-                  onTap: () {},
-                ),
-                FushiIconButton(
-                  tooltip: 'Statistics',
-                  label: 'Statistics',
-                  icon: Icons.bar_chart_outlined,
-                  onTap: () {},
-                ),
-              ],
+      await tester.pumpWidget(
+        buildSubject(
+          Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 1000, // 页头本地宽 = expanded（≥840）
+              child: FushiPageHeader(
+                title: '书架',
+                padding: EdgeInsets.zero,
+                actions: <Widget>[
+                  FushiIconButton(
+                    tooltip: 'Import',
+                    label: 'Import',
+                    icon: Icons.library_add_outlined,
+                    onTap: () {},
+                  ),
+                  FushiIconButton(
+                    tooltip: 'Statistics',
+                    label: 'Statistics',
+                    icon: Icons.bar_chart_outlined,
+                    onTap: () {},
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(tester.takeException(), isNull);
-    expect(find.text('Import'), findsOneWidget);
-    expect(find.text('Statistics'), findsOneWidget);
-  });
+      expect(tester.takeException(), isNull);
+      expect(find.text('Import'), findsOneWidget);
+      expect(find.text('Statistics'), findsOneWidget);
+    },
+  );
 
   // TODO-955: 内容放得下时，4 个动作 icon 必须贴页头最右侧（回归前被 7ce19740c 的
   // Flexible+反向 ScrollView 平分宽度推到了页头中间）。断言最右动作的右缘 ~= 页头右
   // 内边界，而非停在中部。
-  testWidgets('FushiPageHeader right-aligns actions when content fits',
-      (WidgetTester tester) async {
+  testWidgets('FushiPageHeader right-aligns actions when content fits', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       buildSubject(
         SizedBox(
@@ -557,13 +584,16 @@ void main() {
       ),
     );
 
-    final double headerRight =
-        tester.getTopRight(find.byType(FushiPageHeader)).dx;
+    final double headerRight = tester
+        .getTopRight(find.byType(FushiPageHeader))
+        .dx;
     // bar_chart 是 _buildActionRow 里最后一个动作，视觉上最靠右。
-    final double lastActionRight =
-        tester.getTopRight(find.byIcon(Icons.bar_chart_outlined)).dx;
-    final double headerLeft =
-        tester.getTopLeft(find.byType(FushiPageHeader)).dx;
+    final double lastActionRight = tester
+        .getTopRight(find.byIcon(Icons.bar_chart_outlined))
+        .dx;
+    final double headerLeft = tester
+        .getTopLeft(find.byType(FushiPageHeader))
+        .dx;
     final double headerMid = headerLeft + (headerRight - headerLeft) / 2;
 
     // 必须贴右（48px 按钮内 icon 居中，icon 右缘距按钮右缘约 12px，留 40px 余量）。
@@ -575,43 +605,44 @@ void main() {
   // TODO-955 / TODO-616: 窄窗动作总宽超过可用宽时仍不得抛 RenderFlex overflow（动作区
   // 收缩 + 横向可滚），守住 616 修的溢出场景不被 955 的靠右修复带回归。
   testWidgets(
-      'FushiPageHeader scrolls actions without overflow on narrow width',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(
-      buildSubject(
-        SizedBox(
-          width: 160,
-          child: FushiPageHeader(
-            title: '一本标题很长很长很长很长很长很长的书',
-            padding: EdgeInsets.zero,
-            actions: <Widget>[
-              FushiIconButton(
-                tooltip: 'Import',
-                icon: Icons.library_add_outlined,
-                size: 48,
-                onTap: () {},
-              ),
-              FushiIconButton(
-                tooltip: 'Collections',
-                icon: Icons.collections_bookmark_outlined,
-                size: 48,
-                onTap: () {},
-              ),
-              FushiIconButton(
-                tooltip: 'Statistics',
-                icon: Icons.bar_chart_outlined,
-                size: 48,
-                onTap: () {},
-              ),
-            ],
+    'FushiPageHeader scrolls actions without overflow on narrow width',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(
+        buildSubject(
+          SizedBox(
+            width: 160,
+            child: FushiPageHeader(
+              title: '一本标题很长很长很长很长很长很长的书',
+              padding: EdgeInsets.zero,
+              actions: <Widget>[
+                FushiIconButton(
+                  tooltip: 'Import',
+                  icon: Icons.library_add_outlined,
+                  size: 48,
+                  onTap: () {},
+                ),
+                FushiIconButton(
+                  tooltip: 'Collections',
+                  icon: Icons.collections_bookmark_outlined,
+                  size: 48,
+                  onTap: () {},
+                ),
+                FushiIconButton(
+                  tooltip: 'Statistics',
+                  icon: Icons.bar_chart_outlined,
+                  size: 48,
+                  onTap: () {},
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(tester.takeException(), isNull);
-    expect(find.byType(SingleChildScrollView), findsWidgets);
-  });
+      expect(tester.takeException(), isNull);
+      expect(find.byType(SingleChildScrollView), findsWidgets);
+    },
+  );
 
   // TODO-1126 / BUG-541: 窄窗下动作区按内容自然宽（不再与标题等 flex 五五均分右半
   // 幅）。旧实现动作视口恒占页头右半幅，窄窗时 4 个图标自然宽超右半幅 →
@@ -704,8 +735,11 @@ void main() {
           await tester.tap(find.byKey(kFushiHeaderOverflowMenuKey));
           await tester.pumpAndSettle();
           for (final String tooltip in collapsed) {
-            expect(find.text(tooltip), findsOneWidget,
-                reason: '被收的 $tooltip 必须在 ⋯ 菜单里');
+            expect(
+              find.text(tooltip),
+              findsOneWidget,
+              reason: '被收的 $tooltip 必须在 ⋯ 菜单里',
+            );
           }
         }
       },
@@ -733,18 +767,14 @@ void main() {
               alignment: Alignment.topLeft,
               child: SizedBox(
                 width: width,
-                child: FushiPageHeader(
-                  title: '书架',
-                  compact: compact,
-                ),
+                child: FushiPageHeader(title: '书架', compact: compact),
               ),
             ),
           ),
         ),
       ),
     );
-    final double headerTop =
-        tester.getTopLeft(find.byType(FushiPageHeader)).dy;
+    final double headerTop = tester.getTopLeft(find.byType(FushiPageHeader)).dy;
     // M3E 悬浮页头：标题装在悬浮标题胶囊里，顶距量的是胶囊上沿（胶囊就是
     // 页头标题带本身）；Apple / 无胶囊时仍量文字。
     final Finder capsule = find.ancestor(
@@ -759,42 +789,48 @@ void main() {
     return titleTop - headerTop;
   }
 
-  testWidgets('FushiPageHeader trims top gap to page on compact (phone) width',
-      (WidgetTester tester) async {
-    final double phoneTop = await measureHeaderTop(tester, width: 360);
-    // page = 20；不再是 page + 8 = 28。
-    expect(phoneTop, moreOrLessEquals(20, epsilon: 0.5));
-  });
-
-  testWidgets('FushiPageHeader keeps page + 8 top gap on desktop/tablet width',
-      (WidgetTester tester) async {
-    final double tabletTop = await measureHeaderTop(tester, width: 700);
-    final double desktopTop = await measureHeaderTop(tester, width: 1000);
-    // page + 8 = 28，桌面 / 平板不变。
-    expect(tabletTop, moreOrLessEquals(28, epsilon: 0.5));
-    expect(desktopTop, moreOrLessEquals(28, epsilon: 0.5));
-  });
+  testWidgets(
+    'FushiPageHeader trims top gap to page on compact (phone) width',
+    (WidgetTester tester) async {
+      final double phoneTop = await measureHeaderTop(tester, width: 360);
+      // page = 20；不再是 page + 8 = 28。
+      expect(phoneTop, moreOrLessEquals(20, epsilon: 0.5));
+    },
+  );
 
   testWidgets(
-      'FushiPageHeader compact mode uses the smallest gap regardless '
+    'FushiPageHeader keeps page + 8 top gap on desktop/tablet width',
+    (WidgetTester tester) async {
+      final double tabletTop = await measureHeaderTop(tester, width: 700);
+      final double desktopTop = await measureHeaderTop(tester, width: 1000);
+      // page + 8 = 28，桌面 / 平板不变。
+      expect(tabletTop, moreOrLessEquals(28, epsilon: 0.5));
+      expect(desktopTop, moreOrLessEquals(28, epsilon: 0.5));
+    },
+  );
+
+  testWidgets('FushiPageHeader compact mode uses the smallest gap regardless '
       'of window width', (WidgetTester tester) async {
-    final double phoneCompact =
-        await measureHeaderTop(tester, width: 360, compact: true);
-    final double desktopCompact =
-        await measureHeaderTop(tester, width: 1000, compact: true);
+    final double phoneCompact = await measureHeaderTop(
+      tester,
+      width: 360,
+      compact: true,
+    );
+    final double desktopCompact = await measureHeaderTop(
+      tester,
+      width: 1000,
+      compact: true,
+    );
     // gap = 8，compact（上方有 AppBar）顶距最小，且不受窗口尺寸类影响。
     expect(phoneCompact, moreOrLessEquals(8, epsilon: 0.5));
     expect(desktopCompact, moreOrLessEquals(8, epsilon: 0.5));
   });
 
-  testWidgets('FushiBadge uses the shared compact radius',
-      (WidgetTester tester) async {
+  testWidgets('FushiBadge uses the shared compact radius', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
-      buildSubject(
-        const FushiBadge(
-          icon: Icons.headphones_outlined,
-        ),
-      ),
+      buildSubject(const FushiBadge(icon: Icons.headphones_outlined)),
     );
 
     final Container badge = tester.widget<Container>(find.byType(Container));
@@ -806,8 +842,9 @@ void main() {
     expect(find.byIcon(Icons.headphones_outlined), findsOneWidget);
   });
 
-  testWidgets('FushiColorSwatch uses token radius and selected border',
-      (WidgetTester tester) async {
+  testWidgets('FushiColorSwatch uses token radius and selected border', (
+    WidgetTester tester,
+  ) async {
     bool tapped = false;
     await tester.pumpWidget(
       buildSubject(
@@ -822,9 +859,10 @@ void main() {
     final AnimatedContainer swatch = tester
         .widgetList<AnimatedContainer>(find.byType(AnimatedContainer))
         .firstWhere((AnimatedContainer widget) {
-      final Decoration decoration = widget.decoration!;
-      return decoration is BoxDecoration && decoration.color == Colors.green;
-    });
+          final Decoration decoration = widget.decoration!;
+          return decoration is BoxDecoration &&
+              decoration.color == Colors.green;
+        });
     final BoxDecoration decoration = swatch.decoration as BoxDecoration;
 
     expect(decoration.color, Colors.green);
@@ -835,8 +873,9 @@ void main() {
     expect(tapped, isTrue);
   });
 
-  testWidgets('FushiPreviewSwitch renders a real disabled MD3 switch',
-      (WidgetTester tester) async {
+  testWidgets('FushiPreviewSwitch renders a real disabled MD3 switch', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       buildSubject(
         const FushiPreviewSwitch(
@@ -846,13 +885,17 @@ void main() {
       ),
     );
 
-    final Switch previewSwitch = tester.widget<Switch>(glassUnwrap<Switch>(find.byType(Switch)));
-    final Color trackColor = previewSwitch.trackColor!.resolve(
-      <WidgetState>{WidgetState.disabled, WidgetState.selected},
-    )!;
-    final Color thumbColor = previewSwitch.thumbColor!.resolve(
-      <WidgetState>{WidgetState.disabled, WidgetState.selected},
-    )!;
+    final Switch previewSwitch = tester.widget<Switch>(
+      glassUnwrap<Switch>(find.byType(Switch)),
+    );
+    final Color trackColor = previewSwitch.trackColor!.resolve(<WidgetState>{
+      WidgetState.disabled,
+      WidgetState.selected,
+    })!;
+    final Color thumbColor = previewSwitch.thumbColor!.resolve(<WidgetState>{
+      WidgetState.disabled,
+      WidgetState.selected,
+    })!;
 
     expect(previewSwitch.value, isTrue);
     expect(previewSwitch.onChanged, isNull);
@@ -860,14 +903,11 @@ void main() {
     expect(thumbColor, Colors.white);
   });
 
-  testWidgets('FushiTransientScaffold uses the page surface',
-      (WidgetTester tester) async {
+  testWidgets('FushiTransientScaffold uses the page surface', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: FushiTransientScaffold(
-          body: Text('loading'),
-        ),
-      ),
+      const MaterialApp(home: FushiTransientScaffold(body: Text('loading'))),
     );
 
     final Scaffold scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
@@ -876,14 +916,11 @@ void main() {
     expect(find.text('loading'), findsOneWidget);
   });
 
-  testWidgets('FushiOverlayScaffold preserves transparent overlay chrome',
-      (WidgetTester tester) async {
+  testWidgets('FushiOverlayScaffold preserves transparent overlay chrome', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: FushiOverlayScaffold(
-          body: Text('popup'),
-        ),
-      ),
+      const MaterialApp(home: FushiOverlayScaffold(body: Text('popup'))),
     );
 
     final Scaffold scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
@@ -892,8 +929,9 @@ void main() {
     expect(find.text('popup'), findsOneWidget);
   });
 
-  testWidgets('FushiModalSheetFrame owns sheet header and footer chrome',
-      (WidgetTester tester) async {
+  testWidgets('FushiModalSheetFrame owns sheet header and footer chrome', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       buildSubject(
         const FushiModalSheetFrame(
@@ -916,8 +954,9 @@ void main() {
     expect(find.byType(Divider), findsNothing);
   });
 
-  testWidgets('FushiModalSheetFrame makes long sheet bodies scrollable',
-      (WidgetTester tester) async {
+  testWidgets('FushiModalSheetFrame makes long sheet bodies scrollable', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       buildSubject(
         FushiModalSheetFrame(
@@ -951,10 +990,9 @@ void main() {
       ),
     );
 
-    final bool hasFrameConstraint =
-        tester.widgetList<ConstrainedBox>(find.byType(ConstrainedBox)).any(
-              (ConstrainedBox box) => box.constraints.maxHeight == 300,
-            );
+    final bool hasFrameConstraint = tester
+        .widgetList<ConstrainedBox>(find.byType(ConstrainedBox))
+        .any((ConstrainedBox box) => box.constraints.maxHeight == 300);
     expect(hasFrameConstraint, isTrue);
     expect(find.byType(SingleChildScrollView), findsOneWidget);
     expect(find.text('Tall body'), findsOneWidget);
@@ -964,14 +1002,12 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
-      buildSubject(
-        const FushiDialogFrame(
-          child: Text('Dialog body'),
-        ),
-      ),
+      buildSubject(const FushiDialogFrame(child: Text('Dialog body'))),
     );
 
-    final Dialog dialog = tester.widget<Dialog>(glassUnwrap<Dialog>(find.byType(Dialog)));
+    final Dialog dialog = tester.widget<Dialog>(
+      glassUnwrap<Dialog>(find.byType(Dialog)),
+    );
     final RoundedRectangleBorder shape =
         dialog.shape! as RoundedRectangleBorder;
 
@@ -982,8 +1018,9 @@ void main() {
     expect(find.byType(SingleChildScrollView), findsOneWidget);
   });
 
-  testWidgets('FushiPopupSurface can render a borderless popup shell',
-      (WidgetTester tester) async {
+  testWidgets('FushiPopupSurface can render a borderless popup shell', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       buildSubject(
         const FushiPopupSurface(
@@ -1008,50 +1045,54 @@ void main() {
   });
 
   testWidgets(
-      'FushiToolScaffold default back button registers with focus root',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: ThemeData(
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+    'FushiToolScaffold default back button registers with focus root',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(
+            useMaterial3: true,
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+          ),
+          home: const Scaffold(body: Text('home')),
+          routes: <String, WidgetBuilder>{
+            '/tool': (BuildContext context) => const FushiFocusRoot(
+              child: FushiToolScaffold(title: 'Tool', body: Text('tool')),
+            ),
+          },
         ),
-        home: const Scaffold(body: Text('home')),
-        routes: <String, WidgetBuilder>{
-          '/tool': (BuildContext context) => const FushiFocusRoot(
-                child: FushiToolScaffold(
-                  title: 'Tool',
-                  body: Text('tool'),
-                ),
-              ),
-        },
-      ),
+      );
+      Navigator.of(tester.element(find.text('home'))).pushNamed('/tool');
+      await tester.pumpAndSettle();
+
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
+        tester.element(find.text('Tool')),
+      );
+      controller.ensureFocus();
+      await tester.pump();
+
+      expect(
+        controller.activeId,
+        isNotNull,
+        reason:
+            'the default tool-page back button must be reachable by '
+            'custom gamepad focus, not only by touch or system back',
+      );
+      Actions.maybeInvoke<ActivateIntent>(
+        controller.activeContext!,
+        const ActivateIntent(),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('home'), findsOneWidget);
+    },
+  );
+
+  testWidgets('FushiCompactSearchRow icon buttons register with focus root', (
+    WidgetTester tester,
+  ) async {
+    final TextEditingController textController = TextEditingController(
+      text: 'term',
     );
-    Navigator.of(tester.element(find.text('home'))).pushNamed('/tool');
-    await tester.pumpAndSettle();
-
-    final FushiFocusController controller = FushiFocusRoot.controllerOf(
-      tester.element(find.text('Tool')),
-    );
-    controller.ensureFocus();
-    await tester.pump();
-
-    expect(controller.activeId, isNotNull,
-        reason: 'the default tool-page back button must be reachable by '
-            'custom gamepad focus, not only by touch or system back');
-    Actions.maybeInvoke<ActivateIntent>(
-      controller.activeContext!,
-      const ActivateIntent(),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('home'), findsOneWidget);
-  });
-
-  testWidgets('FushiCompactSearchRow icon buttons register with focus root',
-      (WidgetTester tester) async {
-    final TextEditingController textController =
-        TextEditingController(text: 'term');
     final FocusNode fieldFocus = FocusNode();
     int closes = 0;
     String? submitted;
@@ -1079,8 +1120,11 @@ void main() {
     controller.ensureFocus();
     await tester.pump();
 
-    expect(controller.activeId, isNotNull,
-        reason: 'compact search close/search buttons must not be pointer-only');
+    expect(
+      controller.activeId,
+      isNotNull,
+      reason: 'compact search close/search buttons must not be pointer-only',
+    );
     Actions.maybeInvoke<ActivateIntent>(
       controller.activeContext!,
       const ActivateIntent(),
@@ -1095,8 +1139,11 @@ void main() {
     // registered targets, so a controller could never reach the search field.
     expect(controller.move(FushiFocusDirection.right), isTrue);
     await tester.pump();
-    expect(fieldFocus.hasPrimaryFocus, isTrue,
-        reason: 'D-pad must be able to land on the search field');
+    expect(
+      fieldFocus.hasPrimaryFocus,
+      isTrue,
+      reason: 'D-pad must be able to land on the search field',
+    );
     expect(controller.move(FushiFocusDirection.right), isTrue);
     await tester.pump();
     expect(controller.move(FushiFocusDirection.right), isTrue);

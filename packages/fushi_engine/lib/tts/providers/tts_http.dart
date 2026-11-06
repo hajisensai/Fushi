@@ -32,15 +32,43 @@ Future<Object?> _readJsonBody(
 /// 单次合成整体时限（自建 GPU 服务长句可能要几十秒）。
 const Duration kTtsRequestTimeout = Duration(minutes: 3);
 
-TtsFailure ttsFailureForStatus(int status) => switch (status) {
-  401 || 403 => TtsFailure(TtsFailureCode.unauthorized, 'HTTP $status'),
-  429 => TtsFailure(TtsFailureCode.rateLimited, 'HTTP $status'),
-  >= 500 => TtsFailure(TtsFailureCode.serverError, 'HTTP $status'),
-  409 => TtsFailure(TtsFailureCode.busy, 'HTTP $status'),
-  400 || 404 || 422 =>
-    TtsFailure(TtsFailureCode.rejected, 'HTTP $status'),
-  _ => TtsFailure(TtsFailureCode.badResponse, 'HTTP $status'),
-};
+/// HTTP `Retry-After`：秒数或 HTTP 日期。解析不了返回 null（按默认退避）。
+Duration? ttsParseRetryAfter(String? raw, {DateTime? now}) {
+  if (raw == null) return null;
+  final String value = raw.trim();
+  if (value.isEmpty) return null;
+  final int? seconds = int.tryParse(value);
+  if (seconds != null) return seconds < 0 ? null : Duration(seconds: seconds);
+  try {
+    final Duration d = HttpDate.parse(
+      value,
+    ).difference((now ?? DateTime.now()).toUtc());
+    return d.isNegative ? Duration.zero : d;
+  } on HttpException {
+    return null;
+  } on FormatException {
+    return null;
+  }
+}
+
+/// 非 2xx 状态 → 稳定错误码。[retryAfter] 只对 429 / 5xx 有意义（重试层据此等待）。
+TtsFailure ttsFailureForStatus(int status, {Duration? retryAfter}) =>
+    switch (status) {
+      401 || 403 => TtsFailure(TtsFailureCode.unauthorized, 'HTTP $status'),
+      429 => TtsFailure.withRetry(
+        TtsFailureCode.rateLimited,
+        detail: 'HTTP $status',
+        retryAfter: retryAfter,
+      ),
+      >= 500 => TtsFailure.withRetry(
+        TtsFailureCode.serverError,
+        detail: 'HTTP $status',
+        retryAfter: retryAfter,
+      ),
+      409 => TtsFailure(TtsFailureCode.busy, 'HTTP $status'),
+      400 || 404 || 422 => TtsFailure(TtsFailureCode.rejected, 'HTTP $status'),
+      _ => TtsFailure(TtsFailureCode.badResponse, 'HTTP $status'),
+    };
 
 /// 发一个请求，把 2xx 响应体写进 [outputPath]；非 2xx 抛 [TtsFailure]（不读正文）。
 /// 返回写入的字节数。
@@ -73,7 +101,12 @@ Future<int> ttsSendToFile({
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       await response.drain<void>().catchError((Object _) {});
-      throw ttsFailureForStatus(response.statusCode);
+      throw ttsFailureForStatus(
+        response.statusCode,
+        retryAfter: ttsParseRetryAfter(
+          response.headers.value(HttpHeaders.retryAfterHeader),
+        ),
+      );
     }
     final IOSink sink = File(outputPath).openWrite();
     int written = 0;
@@ -92,7 +125,12 @@ Future<int> ttsSendToFile({
     }
     cancel.throwIfCancelled();
     if (written == 0) {
-      throw const TtsFailure(TtsFailureCode.badResponse, 'empty');
+      // 200 却没有音频：在线服务偶发（限流前兆 / 后端抖动），按临时失败交给重试层。
+      throw const TtsFailure.withRetry(
+        TtsFailureCode.badResponse,
+        detail: 'empty',
+        transient: true,
+      );
     }
     return written;
   } on TtsFailure {
@@ -129,7 +167,12 @@ Future<Object?> ttsGetJson({
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       await response.drain<void>().catchError((Object _) {});
-      throw ttsFailureForStatus(response.statusCode);
+      throw ttsFailureForStatus(
+        response.statusCode,
+        retryAfter: ttsParseRetryAfter(
+          response.headers.value(HttpHeaders.retryAfterHeader),
+        ),
+      );
     }
     token.throwIfCancelled();
     return await _readJsonBody(
@@ -153,6 +196,8 @@ Future<Object?> ttsGetJson({
 }
 
 /// POST 一个 JSON 并解析 JSON 响应（Google 这类把音频 base64 包在 JSON 里的引擎）。
+/// [sendBody] 为 false 时发空请求体（参数全在 query 里的接口，如 VOICEVOX
+/// `/audio_query`），[body] 被忽略。
 Future<Object?> ttsPostJson({
   required HttpClient client,
   required Uri uri,
@@ -160,6 +205,7 @@ Future<Object?> ttsPostJson({
   required TtsCancelToken cancel,
   Map<String, String> headers = const <String, String>{},
   int maxResponseBytes = kTtsMaxResponseBytes,
+  bool sendBody = true,
 }) async {
   cancel.throwIfCancelled();
   HttpClientRequest? request;
@@ -171,20 +217,29 @@ Future<Object?> ttsPostJson({
     request = req;
     cancel.throwIfCancelled();
     req.followRedirects = false;
-    req.headers.set(
-      HttpHeaders.contentTypeHeader,
-      'application/json; charset=utf-8',
-    );
+    if (sendBody) {
+      req.headers.set(
+        HttpHeaders.contentTypeHeader,
+        'application/json; charset=utf-8',
+      );
+    }
     headers.forEach(req.headers.set);
-    final List<int> bytes = utf8.encode(jsonEncode(body));
+    final List<int> bytes = sendBody
+        ? utf8.encode(jsonEncode(body))
+        : const <int>[];
     req.contentLength = bytes.length;
-    req.add(bytes);
+    if (bytes.isNotEmpty) req.add(bytes);
     final HttpClientResponse response = await req.close().timeout(
       kTtsRequestTimeout,
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       await response.drain<void>().catchError((Object _) {});
-      throw ttsFailureForStatus(response.statusCode);
+      throw ttsFailureForStatus(
+        response.statusCode,
+        retryAfter: ttsParseRetryAfter(
+          response.headers.value(HttpHeaders.retryAfterHeader),
+        ),
+      );
     }
     final Object? decoded = await _readJsonBody(
       response,

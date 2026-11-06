@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
+import 'dart:typed_data';
 
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 
@@ -9,7 +11,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart'
 /// deliberately does not infer episode/season equivalence across services.
 class AnimeIdentityMappingResult {
   AnimeIdentityMappingResult({required this.anidbId, required Set<int> malIds})
-      : malIds = Set<int>.unmodifiable(malIds);
+    : malIds = Set<int>.unmodifiable(malIds);
 
   final int anidbId;
   final Set<int> malIds;
@@ -62,8 +64,8 @@ class AnimeIdentityEntry {
   VideoMetadataMediaKind? get tmdbMediaKind => tmdbId == null
       ? null
       : tmdbIsMovieNamespace
-          ? VideoMetadataMediaKind.movie
-          : VideoMetadataMediaKind.tv;
+      ? VideoMetadataMediaKind.movie
+      : VideoMetadataMediaKind.tv;
 
   /// 按请求的形态给 TMDB id：命名空间对不上（剧场版挂在剧的特典季下）时为
   /// null，调用方据此回退标题补充，而不是把 tv id 当 movie id 用。
@@ -80,9 +82,9 @@ class AnimeIdentityMapping {
     this.cacheTtl = const Duration(hours: 24),
     this.maxResponseBytes = 16 * 1024 * 1024,
     DateTime Function()? now,
-  })  : _http = httpClient ?? VideoMetadataHttpClient(),
-        _ownsHttp = httpClient == null,
-        _now = now ?? DateTime.now;
+  }) : _http = httpClient ?? VideoMetadataHttpClient(),
+       _ownsHttp = httpClient == null,
+       _now = now ?? DateTime.now;
 
   static final Uri sourceUri = Uri.parse(
     'https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json',
@@ -147,10 +149,10 @@ class AnimeIdentityMapping {
     if (response.body.length > maxResponseBytes) {
       throw const FormatException('Anime identity mapping exceeds size limit');
     }
-    // Fribb 全表是十几 MB JSON、近四万行：字节数复核、jsonDecode 与建三张
-    // 索引整段进后台 isolate（结果经 Isolate.exit 零拷贝交回）。之前这段在 UI
-    // isolate 同步跑，是「按作品归类」导入时整机卡住的一节。闭包只捕获局部
-    // 变量，不能碰 `this`（HTTP client 跨不了 isolate）。
+    // Fribb 全表是十几 MB JSON、近四万行：字节数复核、原生解析（fushi_compute，
+    // 后台 isolate 自己加载库）与建三张索引整段进后台 isolate（结果经 Isolate.exit
+    // 零拷贝交回）。之前这段在 UI isolate 同步跑，是「按作品归类」导入时整机卡住的
+    // 一节。闭包只捕获局部变量，不能碰 `this`（HTTP client 跨不了 isolate）。
     final String body = response.body;
     final int statusCode = response.statusCode;
     final int limit = maxResponseBytes;
@@ -172,29 +174,49 @@ _AnimeIdentityCatalog _decodeIdentityCatalog(
   required int statusCode,
   required int limit,
 }) {
-  if (utf8.encode(body).length > limit) {
+  final Uint8List bytes = utf8.encode(body);
+  if (bytes.length > limit) {
     throw const FormatException('Anime identity mapping exceeds size limit');
   }
-  final Object? decoded;
+  final List<AnimeIdentityEntry> entries;
   try {
-    decoded = jsonDecode(body);
-  } catch (error) {
+    entries = animeIdentityEntriesFromJsonUtf8(bytes);
+  } on FfcFribbInvalidJson catch (error) {
     throw VideoMetadataNetworkException(
       'Anime identity mapping returned invalid JSON: $error',
       statusCode: statusCode,
     );
-  }
-  if (decoded is! List) {
+  } on FfcFribbNotAList {
     throw const FormatException('Anime identity mapping must be a list');
   }
-  return _AnimeIdentityCatalog.fromRows(decoded);
+  return _AnimeIdentityCatalog.fromEntries(entries);
 }
 
-/// Fribb `anime-list-full.json` 的行 → 按 AniDB 条目归并后的身份条目，与
-/// [AnimeIdentityMapping] 同一套解析规则（发现页的紧凑交叉索引复用它，不另写
-/// 一份字段解析）。
-List<AnimeIdentityEntry> animeIdentityEntriesFromRows(List<Object?> rows) =>
-    _AnimeIdentityCatalog.fromRows(rows).byAnidb.values.toList();
+/// Fribb `anime-list-full.json`（UTF-8 字节）→ 按 AniDB 条目归并后的身份条目，按
+/// anidb_id 首次出现的顺序。与 [AnimeIdentityMapping] 同一套解析规则（发现页的紧凑
+/// 交叉索引复用它，不另写一份字段解析）。
+///
+/// JSON 解析与逐行归并在 Rust（`native/fushi_compute/src/parse/fribb.rs`，原
+/// `jsonDecode` + `fromRows` 的逐条照搬：同一 anidb_id 多行时 `mal_id` 取并集、其余字段
+/// 首个合法值生效，非法值——非正数、小数、乱字符串——静默跳过）。不是合法 JSON 抛
+/// [FfcFribbInvalidJson]，顶层不是数组抛 [FfcFribbNotAList]。
+List<AnimeIdentityEntry> animeIdentityEntriesFromJsonUtf8(Uint8List utf8Json) =>
+    <AnimeIdentityEntry>[
+      for (final FfcFribbEntry e in FribbNative.instance.parseEntries(utf8Json))
+        AnimeIdentityEntry(
+          anidbId: e.anidbId,
+          malIds: e.malIds.toSet(),
+          anilistId: e.anilistId,
+          tvdbId: e.tvdbId,
+          tmdbId: e.tmdbId,
+          tmdbSeason: e.tmdbSeason,
+          tmdbEpisodeOffset: e.tmdbEpisodeOffset,
+          tvdbSeason: e.tvdbSeason,
+          tvdbEpisodeOffset: e.tvdbEpisodeOffset,
+          type: e.type,
+          tmdbIsMovieNamespace: e.tmdbIsMovieNamespace,
+        ),
+    ];
 
 class _AnimeIdentityCatalog {
   const _AnimeIdentityCatalog({
@@ -207,49 +229,14 @@ class _AnimeIdentityCatalog {
   final Map<int, List<AnimeIdentityEntry>> byMal;
   final Map<int, List<AnimeIdentityEntry>> byTmdbTv;
 
-  /// 同一 anidb_id 出现多行时合并：`mal_id` 取并集，其余字段首个合法值生效；
-  /// 非法值（非正数、小数、乱字符串）静默跳过。
-  static _AnimeIdentityCatalog fromRows(List<Object?> rows) {
-    final Map<int, _EntryBuilder> builders = <int, _EntryBuilder>{};
-    for (final Object? row in rows) {
-      if (row is! Map) continue;
-      final int? aid = _positiveId(row['anidb_id']);
-      if (aid == null) continue;
-      final _EntryBuilder builder = builders[aid] ??= _EntryBuilder(aid);
-      final int? mal = _positiveId(row['mal_id']);
-      if (mal != null) builder.malIds.add(mal);
-      builder.anilistId ??= _positiveId(row['anilist_id']);
-      builder.tvdbId ??= _positiveId(row['tvdb_id']);
-      // 实测 Fribb `anime-list-full.json`（39304 行）：`themoviedb_id` **恒为
-      // 对象**，`{"tv": 209867}`（7092 行）或 `{"movie": [128]}`（1363 行，
-      // movie 侧的值还是数组），从不出现裸数字；`tvdb_id` 才是 TVDB 键
-      // （`thetvdb_id` 零命中）。按裸数字 / 错键名解析会让 tmdbId 与 tvdbId
-      // 恒为 null，多季对齐与 TMDB id 接力全部静默失效。
-      final Object? tmdb = row['themoviedb_id'];
-      builder.tmdbId ??= _firstPositiveId(_field(tmdb, 'tv'));
-      final int? tmdbMovie = _firstPositiveId(_field(tmdb, 'movie'));
-      if (builder.tmdbId == null && tmdbMovie != null) {
-        builder.tmdbId = tmdbMovie;
-        builder.tmdbIsMovieNamespace = true;
-      }
-      final Object? season = row['season'];
-      final Object? offset = row['episode_offset'];
-      builder.tmdbSeason ??= _nonNegativeInt(_field(season, 'tmdb'));
-      builder.tvdbSeason ??= _nonNegativeInt(_field(season, 'tvdb'));
-      builder.tmdbEpisodeOffset ??= _nonNegativeInt(_field(offset, 'tmdb'));
-      builder.tvdbEpisodeOffset ??= _nonNegativeInt(_field(offset, 'tvdb'));
-      final Object? type = row['type'];
-      if (type is String && type.trim().isNotEmpty) {
-        builder.type ??= type.trim();
-      }
-    }
+  /// [entries] 已按 anidb_id 归并（[animeIdentityEntriesFromJsonUtf8]）。
+  static _AnimeIdentityCatalog fromEntries(List<AnimeIdentityEntry> entries) {
     final Map<int, AnimeIdentityEntry> byAnidb = <int, AnimeIdentityEntry>{};
     final Map<int, List<AnimeIdentityEntry>> byMal =
         <int, List<AnimeIdentityEntry>>{};
     final Map<int, List<AnimeIdentityEntry>> byTmdbTv =
         <int, List<AnimeIdentityEntry>>{};
-    for (final _EntryBuilder builder in builders.values) {
-      final AnimeIdentityEntry entry = builder.build();
+    for (final AnimeIdentityEntry entry in entries) {
       byAnidb[entry.anidbId] = entry;
       for (final int mal in entry.malIds) {
         (byMal[mal] ??= <AnimeIdentityEntry>[]).add(entry);
@@ -276,77 +263,12 @@ class _AnimeIdentityCatalog {
       a.anidbId.compareTo(b.anidbId);
 
   static int _byTmdbOrder(AnimeIdentityEntry a, AnimeIdentityEntry b) {
-    final int offset =
-        (a.tmdbEpisodeOffset ?? 0).compareTo(b.tmdbEpisodeOffset ?? 0);
+    final int offset = (a.tmdbEpisodeOffset ?? 0).compareTo(
+      b.tmdbEpisodeOffset ?? 0,
+    );
     if (offset != 0) return offset;
     final int season = (a.tmdbSeason ?? 0).compareTo(b.tmdbSeason ?? 0);
     if (season != 0) return season;
     return a.anidbId.compareTo(b.anidbId);
   }
-
-  static Object? _field(Object? container, String key) =>
-      container is Map ? container[key] : null;
-}
-
-class _EntryBuilder {
-  _EntryBuilder(this.anidbId);
-
-  final int anidbId;
-  final Set<int> malIds = <int>{};
-  int? anilistId;
-  int? tvdbId;
-  int? tmdbId;
-  int? tmdbSeason;
-  int? tmdbEpisodeOffset;
-  int? tvdbSeason;
-  int? tvdbEpisodeOffset;
-  String? type;
-
-  /// [tmdbId] 取自 `themoviedb_id.movie` 而非 `.tv`：该 id 属于 TMDB 的电影
-  /// 命名空间，即便 `type` 字段缺失也不能按剧集去 `/tv/{id}` 拉。
-  bool tmdbIsMovieNamespace = false;
-
-  AnimeIdentityEntry build() => AnimeIdentityEntry(
-        anidbId: anidbId,
-        malIds: malIds,
-        anilistId: anilistId,
-        tvdbId: tvdbId,
-        tmdbId: tmdbId,
-        tmdbSeason: tmdbSeason,
-        tmdbEpisodeOffset: tmdbEpisodeOffset,
-        tvdbSeason: tvdbSeason,
-        tvdbEpisodeOffset: tvdbEpisodeOffset,
-        type: type,
-        tmdbIsMovieNamespace: tmdbIsMovieNamespace,
-      );
-}
-
-int? _positiveId(Object? value) {
-  final int? id = _intOf(value);
-  return id != null && id > 0 ? id : null;
-}
-
-/// Fribb 的 id 值可能是标量，也可能是数组（`themoviedb_id.movie` 实测就是
-/// `[128]`）。数组取第一个合法正整数；多值时后面的丢弃——一个 anidb 条目
-/// 指向多个 TMDB 电影不构成可自动采用的唯一映射。
-int? _firstPositiveId(Object? value) {
-  if (value is List) {
-    for (final Object? item in value) {
-      final int? id = _positiveId(item);
-      if (id != null) return id;
-    }
-    return null;
-  }
-  return _positiveId(value);
-}
-
-int? _nonNegativeInt(Object? value) {
-  final int? number = _intOf(value);
-  return number != null && number >= 0 ? number : null;
-}
-
-int? _intOf(Object? value) {
-  if (value is int) return value;
-  if (value is String) return int.tryParse(value.trim());
-  return null;
 }

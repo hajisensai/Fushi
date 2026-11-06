@@ -1,21 +1,22 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/quick_action.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// An enhancement that is useful for copying the headword term.
 class CopyToClipboardAction extends QuickAction {
   /// Initialise this enhancement with the hardset parameters.
   CopyToClipboardAction()
-      : super(
-          uniqueKey: key,
-          label: 'Copy To Clipboard',
-          description:
-              'Copy the headword of a dictionary entry to the clipboard.',
-          icon: Icons.copy_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Copy To Clipboard',
+        description:
+            'Copy the headword of a dictionary entry to the clipboard.',
+        icon: Icons.copy_outlined,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].

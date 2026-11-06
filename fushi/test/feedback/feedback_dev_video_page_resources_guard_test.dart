@@ -20,33 +20,52 @@ void main() {
   final String src = File(
     kDevVideoPagePath,
   ).readAsStringSync().replaceAll('\r\n', '\n');
-  final String load = maskComments(methodBody(src, 'Future<void> _load() async'));
+  final String load = maskComments(
+    methodBody(src, 'Future<void> _load() async'),
+  );
 
   test('临时目录与 Player 在交给 State 之前由 _load 持有，失败 / 已卸载都在 finally 释放', () {
     final int finallyAt = load.indexOf('} finally {');
-    expect(finallyAt, greaterThanOrEqualTo(0),
-        reason: '_load 必须用 finally 兜住临时目录与 Player 的释放');
+    expect(
+      finallyAt,
+      greaterThanOrEqualTo(0),
+      reason: '_load 必须用 finally 兜住临时目录与 Player 的释放',
+    );
     final String tail = load.substring(finallyAt);
-    expect(tail.contains('if (!adopted)'), isTrue,
-        reason: '只有没交接给 State 时才在 finally 里释放，交接后归 dispose');
-    expect(tail.contains('player?.dispose()'), isTrue,
-        reason: 'open 抛错 / 已卸载时 Player 要 dispose');
-    expect(tail.contains('_deleteTempDir(dir)'), isTrue,
-        reason: 'open 抛错 / 已卸载时临时目录（≤ 50 MB）要删');
+    expect(
+      tail.contains('if (!adopted)'),
+      isTrue,
+      reason: '只有没交接给 State 时才在 finally 里释放，交接后归 dispose',
+    );
+    expect(
+      tail.contains('player?.dispose()'),
+      isTrue,
+      reason: 'open 抛错 / 已卸载时 Player 要 dispose',
+    );
+    expect(
+      tail.contains('_deleteTempDir(dir)'),
+      isTrue,
+      reason: 'open 抛错 / 已卸载时临时目录（≤ 50 MB）要删',
+    );
   });
 
   test('交接标记只在 setState 把文件和 Player 记进 State 之后才置位', () {
     final int handOff = load.indexOf('_player = player;');
     final int adopted = load.indexOf('adopted = true;');
     expect(handOff, greaterThanOrEqualTo(0));
-    expect(adopted, greaterThan(handOff),
-        reason: '先置位再交接，中间一抛就两头都不释放');
+    expect(adopted, greaterThan(handOff), reason: '先置位再交接，中间一抛就两头都不释放');
     // 交接之前的每个 return 都落在 finally 的释放分支里：不许再出现「return 前手动只删
     // 一半」的旧写法。
-    expect(load.contains('await player.dispose();'), isFalse,
-        reason: 'Player 的释放统一走 finally，别在分支里各写一份');
-    expect(load.contains('await dir.delete('), isFalse,
-        reason: '临时目录的释放统一走 finally，别在分支里各写一份');
+    expect(
+      load.contains('await player.dispose();'),
+      isFalse,
+      reason: 'Player 的释放统一走 finally，别在分支里各写一份',
+    );
+    expect(
+      load.contains('await dir.delete('),
+      isFalse,
+      reason: '临时目录的释放统一走 finally，别在分支里各写一份',
+    );
   });
 
   test('dispose 释放交接过来的 Player 与临时目录', () {

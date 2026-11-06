@@ -35,12 +35,12 @@ enum UpdateFeedKind {
 
   /// 每个域一个「要不要提醒」的开关，落 `preferences`。
   String get enabledPrefKey => switch (this) {
-        UpdateFeedKind.videoEpisode => 'updates_notify_video_episode',
-        UpdateFeedKind.mangaChapter => 'updates_notify_manga_chapter',
-        UpdateFeedKind.mangaExtension => 'updates_notify_manga_extension',
-        UpdateFeedKind.animeExtension => 'updates_notify_anime_extension',
-        UpdateFeedKind.appRelease => 'updates_notify_app_release',
-      };
+    UpdateFeedKind.videoEpisode => 'updates_notify_video_episode',
+    UpdateFeedKind.mangaChapter => 'updates_notify_manga_chapter',
+    UpdateFeedKind.mangaExtension => 'updates_notify_manga_extension',
+    UpdateFeedKind.animeExtension => 'updates_notify_anime_extension',
+    UpdateFeedKind.appRelease => 'updates_notify_app_release',
+  };
 
   /// 未登记的 [dbValue] 返回 null（旧版本写下的、本版本已删的域，读回来不该崩）。
   static UpdateFeedKind? fromDbValue(String value) {
@@ -67,8 +67,7 @@ String updateFeedEntryId(UpdateFeedKind kind, String targetKey) =>
 String videoEpisodeTargetKey({
   required int collectionId,
   required String episodeKey,
-}) =>
-    '$collectionId|$episodeKey';
+}) => '$collectionId|$episodeKey';
 
 /// 漫画新章的域内身份。
 ///
@@ -80,16 +79,14 @@ String videoEpisodeTargetKey({
 String mangaChapterTargetKey({
   required String bookKey,
   required String chapterKey,
-}) =>
-    '$bookKey|$chapterKey';
+}) => '$bookKey|$chapterKey';
 
 /// 扩展新版的域内身份（漫画与视频扩展两个域共用）。带 versionCode：同一扩展的
 /// 下一个版本是另一条事件。
 String mangaExtensionTargetKey({
   required String packageName,
   required int versionCode,
-}) =>
-    '$packageName|$versionCode';
+}) => '$packageName|$versionCode';
 
 /// 后台自动更新扩展的结果（[ExtensionAutoUpdateOutcome]）在更新中心的身份：
 /// 在「有新版」那条身份后缀结果名。与「有新版」**不是同一条**事件——那条可能

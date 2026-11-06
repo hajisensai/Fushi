@@ -22,11 +22,11 @@ void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
   Widget wrap(Widget child) => TranslationProvider(
-        child: MaterialApp(
-          theme: theme,
-          home: Scaffold(body: SingleChildScrollView(child: child)),
-        ),
-      );
+    child: MaterialApp(
+      theme: theme,
+      home: Scaffold(body: SingleChildScrollView(child: child)),
+    ),
+  );
 
   /// 从渲染树里取出真正喂给画笔的分带数据。断言「画了什么」而不是「传了什么」。
   StatHourlyChartPainter painterOf(WidgetTester tester) => tester
@@ -36,36 +36,43 @@ void main() {
       .single;
 
   StatHourlyBreakdown breakdownOf(
-      List<(String format, int hour, int ms)> rows) {
+    List<(String format, int hour, int ms)> rows,
+  ) {
     final StatHourlyBreakdown b = StatHourlyBreakdown();
     for (final (String format, int hour, int ms) in rows) {
-      b.addMs(
-        band: StatHourlyFormatBand.ofDbValue(format),
-        hour: hour,
-        ms: ms,
-      );
+      b.addMs(band: StatHourlyFormatBand.ofDbValue(format), hour: hour, ms: ms);
     }
     return b;
   }
 
   group('StatHourlyFormatBand.ofDbValue', () {
     test('三个真实写入面各归各带', () {
-      expect(StatHourlyFormatBand.ofDbValue(BookFormat.epub.dbValue),
-          StatHourlyFormatBand.epub);
-      expect(StatHourlyFormatBand.ofDbValue(BookFormat.pdf.dbValue),
-          StatHourlyFormatBand.pdf);
-      expect(StatHourlyFormatBand.ofDbValue(BookFormat.manga.dbValue),
-          StatHourlyFormatBand.manga);
+      expect(
+        StatHourlyFormatBand.ofDbValue(BookFormat.epub.dbValue),
+        StatHourlyFormatBand.epub,
+      );
+      expect(
+        StatHourlyFormatBand.ofDbValue(BookFormat.pdf.dbValue),
+        StatHourlyFormatBand.pdf,
+      );
+      expect(
+        StatHourlyFormatBand.ofDbValue(BookFormat.manga.dbValue),
+        StatHourlyFormatBand.manga,
+      );
     });
 
     test('空 format（v67 前的历史行 / 旧端同步差额）归未区分带，不归 EPUB', () {
-      expect(StatHourlyFormatBand.ofDbValue(''),
-          StatHourlyFormatBand.unattributed);
+      expect(
+        StatHourlyFormatBand.ofDbValue(''),
+        StatHourlyFormatBand.unattributed,
+      );
     });
 
     test('未知 format 串也归未区分带（不走 parseOrEpub 的宽松回退）', () {
-      expect(StatHourlyFormatBand.ofDbValue('srtbook'),
-          StatHourlyFormatBand.unattributed);
+      expect(
+        StatHourlyFormatBand.ofDbValue('srtbook'),
+        StatHourlyFormatBand.unattributed,
+      );
     });
   });
 
@@ -109,10 +116,14 @@ void main() {
         (BookFormat.pdf.dbValue, 9, 300000),
         (BookFormat.manga.dbValue, 20, 120000),
       ]);
-      await tester.pumpWidget(wrap(Builder(
-        builder: (BuildContext context) =>
-            buildStatHourlyFormatChartSection(context, b),
-      )));
+      await tester.pumpWidget(
+        wrap(
+          Builder(
+            builder: (BuildContext context) =>
+                buildStatHourlyFormatChartSection(context, b),
+          ),
+        ),
+      );
 
       final StatHourlyChartPainter painter = painterOf(tester);
       expect(painter.bands.length, 3);
@@ -138,10 +149,14 @@ void main() {
         (BookFormat.epub.dbValue, 9, 600000),
         ('', 9, 300000),
       ]);
-      await tester.pumpWidget(wrap(Builder(
-        builder: (BuildContext context) =>
-            buildStatHourlyFormatChartSection(context, b),
-      )));
+      await tester.pumpWidget(
+        wrap(
+          Builder(
+            builder: (BuildContext context) =>
+                buildStatHourlyFormatChartSection(context, b),
+          ),
+        ),
+      );
 
       final StatHourlyChartPainter painter = painterOf(tester);
       expect(painter.bands.length, 2);
@@ -164,10 +179,14 @@ void main() {
       final StatHourlyBreakdown b = breakdownOf(<(String, int, int)>[
         ('', 14, 450000),
       ]);
-      await tester.pumpWidget(wrap(Builder(
-        builder: (BuildContext context) =>
-            buildStatHourlyFormatChartSection(context, b),
-      )));
+      await tester.pumpWidget(
+        wrap(
+          Builder(
+            builder: (BuildContext context) =>
+                buildStatHourlyFormatChartSection(context, b),
+          ),
+        ),
+      );
 
       final StatHourlyChartPainter painter = painterOf(tester);
       expect(painter.bands.length, 1);
@@ -182,10 +201,14 @@ void main() {
         (BookFormat.epub.dbValue, 8, 60000),
         (BookFormat.epub.dbValue, 9, 120000),
       ]);
-      await tester.pumpWidget(wrap(Builder(
-        builder: (BuildContext context) =>
-            buildStatHourlyFormatChartSection(context, b),
-      )));
+      await tester.pumpWidget(
+        wrap(
+          Builder(
+            builder: (BuildContext context) =>
+                buildStatHourlyFormatChartSection(context, b),
+          ),
+        ),
+      );
 
       final StatHourlyChartPainter painter = painterOf(tester);
       expect(painter.bands.length, 1);
@@ -197,10 +220,17 @@ void main() {
     });
 
     testWidgets('空数据不炸：无带、无图例、无说明', (WidgetTester tester) async {
-      await tester.pumpWidget(wrap(Builder(
-        builder: (BuildContext context) =>
-            buildStatHourlyFormatChartSection(context, StatHourlyBreakdown()),
-      )));
+      await tester.pumpWidget(
+        wrap(
+          Builder(
+            builder: (BuildContext context) =>
+                buildStatHourlyFormatChartSection(
+                  context,
+                  StatHourlyBreakdown(),
+                ),
+          ),
+        ),
+      );
 
       expect(tester.takeException(), isNull);
       expect(painterOf(tester).bands, isEmpty);
@@ -210,12 +240,16 @@ void main() {
     });
 
     testWidgets('视频统计的单色入口仍是一带（观看时长没有阅读面之分）', (WidgetTester tester) async {
-      await tester.pumpWidget(wrap(Builder(
-        builder: (BuildContext context) => buildStatHourlyChartSection(
-          context,
-          List<int>.filled(kStatHourlyBuckets, 0)..[5] = 90000,
+      await tester.pumpWidget(
+        wrap(
+          Builder(
+            builder: (BuildContext context) => buildStatHourlyChartSection(
+              context,
+              List<int>.filled(kStatHourlyBuckets, 0)..[5] = 90000,
+            ),
+          ),
         ),
-      )));
+      );
 
       final StatHourlyChartPainter painter = painterOf(tester);
       expect(painter.bands.length, 1);
@@ -245,10 +279,13 @@ void main() {
     Future<ByteData> renderPixels(StatHourlyChartPainter painter) async {
       final ui.PictureRecorder recorder = ui.PictureRecorder();
       painter.paint(Canvas(recorder), const Size(width, height));
-      final ui.Image image =
-          await recorder.endRecording().toImage(width.toInt(), height.toInt());
-      final ByteData? data =
-          await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      final ui.Image image = await recorder.endRecording().toImage(
+        width.toInt(),
+        height.toInt(),
+      );
+      final ByteData? data = await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
       return data!;
     }
 
@@ -281,8 +318,9 @@ void main() {
       );
       // dart:ui 的 toImage / toByteData 靠真实事件循环推进，testWidgets 默认的
       // FakeAsync 时钟里它们永远不完成（表现为 10 分钟超时而不是断言失败）。
-      final ByteData pixels =
-          (await tester.runAsync(() => renderPixels(painter)))!;
+      final ByteData pixels = (await tester.runAsync(
+        () => renderPixels(painter),
+      ))!;
       final double leftPadding = statAxisLeftPadding(
         statDurationAxisScale(900000).labels,
         const TextStyle(),
@@ -302,8 +340,10 @@ void main() {
       // 底部到 600000 是 EPUB 色；600000 到 900000 是未区分的中性色。
       expect(pixelAt(pixels, x, yOfMs(epubMs ~/ 4)), scheme.tertiary);
       expect(pixelAt(pixels, x, yOfMs(epubMs * 3 ~/ 4)), scheme.tertiary);
-      expect(pixelAt(pixels, x, yOfMs(epubMs + neutralMs ~/ 2)),
-          scheme.outlineVariant);
+      expect(
+        pixelAt(pixels, x, yOfMs(epubMs + neutralMs ~/ 2)),
+        scheme.outlineVariant,
+      );
     });
   });
 }

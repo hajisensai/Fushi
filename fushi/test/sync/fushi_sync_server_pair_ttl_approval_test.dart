@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:http/http.dart' as http;
@@ -24,20 +24,21 @@ void main() {
     Duration approvalDelay = Duration.zero,
   }) async {
     tempDir = Directory.systemTemp.createTempSync('fushi_pair_ttl_test');
-    server = FushiSyncServer(
-      syncDataDir: tempDir.path,
-      port: 0,
-      token: 'tok',
-      allowLan: true,
-      now: () => fakeNow,
-    )
-      // host 审批「慢」= 审批期间墙上时钟推进（真实世界里就是用户去够手机的那段时间）。
-      ..onPairRequest = ((FushiPairRequest _) async {
-        fakeNow = fakeNow.add(approvalDelay);
-        return true;
-      })
-      ..onPairPinGenerated = ((FushiPairSession _) => kPin)
-      ..lanRequiresPinProvider = (() async => lanRequiresPin);
+    server =
+        FushiSyncServer(
+            syncDataDir: tempDir.path,
+            port: 0,
+            token: 'tok',
+            allowLan: true,
+            now: () => fakeNow,
+          )
+          // host 审批「慢」= 审批期间墙上时钟推进（真实世界里就是用户去够手机的那段时间）。
+          ..onPairRequest = ((FushiPairRequest _) async {
+            fakeNow = fakeNow.add(approvalDelay);
+            return true;
+          })
+          ..onPairPinGenerated = ((FushiPairSession _) => kPin)
+          ..lanRequiresPinProvider = (() async => lanRequiresPin);
     await server.start();
   }
 
@@ -93,8 +94,11 @@ void main() {
       ),
     );
 
-    expect(resp.statusCode, 200,
-        reason: 'BUG-1556：host 审批慢不该让配对必然失败——TTL 该从审批通过那一刻起算');
+    expect(
+      resp.statusCode,
+      200,
+      reason: 'BUG-1556：host 审批慢不该让配对必然失败——TTL 该从审批通过那一刻起算',
+    );
     expect((jsonDecode(resp.body) as Map<String, dynamic>)['token'], 'tok');
   });
 

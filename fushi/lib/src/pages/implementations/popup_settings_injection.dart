@@ -14,13 +14,16 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
+import 'package:fushi/src/corpus/library_corpus_settings.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/profile/profile_settings_view.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -28,7 +31,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_native_material.dart';
 import 'package:fushi/src/utils/popup_theme_css.dart';
-import 'package:fushi/src/utils/misc/lookup_audio_playback.dart'
+import 'package:fushi/src/lookup/lookup_audio_playback.dart'
     show lookupWordAudioPlaysNatively;
 import 'package:fushi/src/reader/dictionary_font_css.dart';
 import 'package:fushi/src/reader/dictionary_language_css.dart';
@@ -73,6 +76,22 @@ class PopupSettingsOptions {
   final bool sentenceDraftEnabled;
 }
 
+/// app 内弹窗口径的主题注入段（设计系统 class + `data-theme` + 全部 CSS 变量）。
+///
+/// 给不走 [buildPopupStaticSettingsJs] 整套设置、却要与真弹窗**同一外观**的表面用
+/// ——词典样式编辑器的实时预览（`DictStylePreview`）。只注 `data-theme` 的话预览
+/// 拿不到 `html.fushi-m3e` / `html.fushi-glass-host.fushi-apple` 与 `--md-*` 令牌，
+/// 画的是早已不用的基础层样式，用户照着它调完、真弹窗是另一个样子。
+String buildInAppPopupThemeVariablesJs({
+  required AppModel appModel,
+  required ThemeData theme,
+}) => _themeVariablesJs(
+  appModel: appModel,
+  theme: theme,
+  globalLookup: false,
+  mobileExternal: false,
+);
+
 /// Builds the theme-derived CSS custom properties + `data-theme` (+ the
 /// `global-lookup` document class when [globalLookup]). Shared by both paths so
 /// the WebView surfaces follow the app ColorScheme identically.
@@ -104,8 +123,8 @@ String _themeVariablesJs({
   final String classLine = globalLookup
       ? "document.documentElement.classList.add('global-lookup');\n"
       : (mobileExternal
-          ? "document.documentElement.classList.add('mobile-external');\n"
-          : '');
+            ? "document.documentElement.classList.add('mobile-external');\n"
+            : '');
   // 墨水屏模式：给 <html> 挂 eink class（popup.css 末尾的 html.eink 覆盖块吃它，
   // 纯黑白/方角/实线边框/关过渡）。用 toggle 而非 add——in-app 热槽 WebView 跨渲染
   // 持久，开关关掉后重注入必须能把 class 摘掉。标志从传入的 ThemeData 扩展读
@@ -128,14 +147,18 @@ String _themeVariablesJs({
   // 菜单模糊的是同一文档里的词条，在 Chromium 自己的合成器里完成，与 Flutter 无关。
   // 宿主在 WebView 下方垫了原生系统材质（NSVisualEffectView / UIVisualEffectView，
   // [fushiNativePopupMaterialAvailable]）时，背后是真模糊，走与其它平台同一档。
-  final bool solidBackdrop = (theme.platform == TargetPlatform.iOS ||
+  final bool solidBackdrop =
+      (theme.platform == TargetPlatform.iOS ||
           theme.platform == TargetPlatform.macOS) &&
       !(glassHost &&
           !mobileExternal &&
           fushiNativePopupMaterialAvailable(
             theme: theme,
             highContrast: WidgetsBinding
-                .instance.platformDispatcher.accessibilityFeatures.highContrast,
+                .instance
+                .platformDispatcher
+                .accessibilityFeatures
+                .highContrast,
           ));
   // Apple 设计系统（色板扩展 [FushiAppleColors] 只挂在 Apple 主题上）：popup.css 的
   // `html.fushi-glass-host.fushi-apple` 把顶栏 tonal 按钮（「调整上下文」）换成 Apple
@@ -150,7 +173,10 @@ String _themeVariablesJs({
   // fushi-reduced-motion，CSS 侧归零按压位移与过渡（CSS 不能写 @media，见生成器）。
   final bool m3e = !eink && theme.extension<FushiAppleColors>() == null;
   final bool reducedMotion = WidgetsBinding
-      .instance.platformDispatcher.accessibilityFeatures.disableAnimations;
+      .instance
+      .platformDispatcher
+      .accessibilityFeatures
+      .disableAnimations;
   final String glassLine =
       "document.documentElement.classList.toggle('fushi-glass-host', $glassHost);\n"
       "document.documentElement.classList.toggle('fushi-solid-backdrop', $solidBackdrop);\n"
@@ -202,8 +228,7 @@ String _themeVariablesJs({
 String dictionaryFontStyleJs(
   AppModel appModel, {
   String Function(String safePath)? fontUrlBuilder,
-}) =>
-    _dictionaryFontStyleJsMemo(appModel, fontUrlBuilder: fontUrlBuilder).js;
+}) => _dictionaryFontStyleJsMemo(appModel, fontUrlBuilder: fontUrlBuilder).js;
 
 /// BUG-717 ③：[dictionaryFontStyleJs] 最终产物的进程内 memo。
 ///
@@ -255,34 +280,44 @@ typedef _DictionaryFontInputs = ({
   String fingerprint,
 });
 
+/// [view] 非 null 时（反馈 biLEesNqWb：浏览器扩展所选的非激活配置）默认内容语言与词典
+/// 语言都取它，而不是 App 当前生效的设置。
 _DictionaryFontInputs _resolveDictionaryFontInputs(
   AppModel appModel,
-  ReaderSettings settings,
-) {
+  ReaderSettings settings, {
+  ProfileSettingsView? view,
+}) {
   final List<Map<String, dynamic>> fonts = settings.dictionaryFonts;
   final List<String> allowedDirectories = <String>[
     p.join(appModel.appDirectory.path, 'custom_fonts'),
   ];
   // 全局默认内容语言（设置 · 外观 · 排版）。前两档真值都缺时的兜底语言。
   // 与词典语言一样必须进 memo 键。
-  final String defaultContentLanguage =
-      appModel.isDatabaseReady ? appModel.prefsRepo.defaultContentLanguage : '';
+  final String defaultContentLanguage = view != null
+      ? view.prefs.defaultContentLanguage
+      : appModel.isDatabaseReady
+      ? appModel.prefsRepo.defaultContentLanguage
+      : '';
   // 内容语言字体链：词典名 -> 释义语言。memo 键必须带上它，否则用户在词典设置里
   // 改了语言、字体列表没变 -> 命中旧 memo -> 改了不生效。
   // `dictRepo` 是 late 字段，且 `_databaseOpened` 先于它置位，所以这里不能只看
   // settings 判空——初始化早期 / 测试 seam 会命中「DB 就绪但词典仓库还
   // 没建」的窗口，直接读会抛 LateInitializationError。
   // 未就绪时退化成空列表：只出兜底链，不做 per-dictionary 分流，不崩。
-  final List<DictionaryLanguageEntry> dictionaryLanguages =
-      appModel.isDictionaryRepoReady
-          ? <DictionaryLanguageEntry>[
-              for (final Dictionary d in appModel.dictionaries)
-                DictionaryLanguageEntry(
-                  name: d.name,
-                  glossaryLanguage: d.effectiveTargetLanguage,
-                ),
-            ]
-          : const <DictionaryLanguageEntry>[];
+  final List<Dictionary>? dictionaries = view != null
+      ? view.dictionaries
+      : appModel.isDictionaryRepoReady
+      ? appModel.dictionaries
+      : null;
+  final List<DictionaryLanguageEntry> dictionaryLanguages = dictionaries != null
+      ? <DictionaryLanguageEntry>[
+          for (final Dictionary d in dictionaries)
+            DictionaryLanguageEntry(
+              name: d.name,
+              glossaryLanguage: d.effectiveTargetLanguage,
+            ),
+        ]
+      : const <DictionaryLanguageEntry>[];
   final String languageFingerprint = dictionaryLanguages
       .map((DictionaryLanguageEntry e) => '${e.name}=${e.glossaryLanguage}')
       .join('|');
@@ -323,8 +358,33 @@ ExtensionDictionaryFont browserExtensionDictionaryFont(AppModel appModel) {
     // 早期 / 测试 seam 里 AppModel 的 late 字段可能还没赋值：与「没配字体」同义。
   }
   if (settings == null) return _kNoExtensionDictionaryFont;
-  final _DictionaryFontInputs inputs =
-      _resolveDictionaryFontInputs(appModel, settings);
+  return _extensionDictionaryFontFrom(
+    _resolveDictionaryFontInputs(appModel, settings),
+  );
+}
+
+/// 反馈 biLEesNqWb：[browserExtensionDictionaryFont] 按浏览器扩展所选的**非激活**配置
+/// 算——词典字体列表取 [view] 合成的阅读器设置，语言分流取 [view] 的词典与默认内容
+/// 语言。该配置用到的字体路径登记进 [AppModel.extensionProfileViewDictionaryFontPaths]，
+/// 扩展随后按路径取字体字节时（`/api/extension/fonts/dictionary`）白名单认得它们。
+ExtensionDictionaryFont browserExtensionDictionaryFontForView(
+  AppModel appModel,
+  ProfileSettingsView view,
+) {
+  if (!appModel.isDatabaseReady) return _kNoExtensionDictionaryFont;
+  final ReaderSettings settings = ReaderSettings(appModel.database)
+    ..applyPrefsSnapshot(view.prefsMap);
+  appModel.extensionProfileViewDictionaryFontPaths.addAll(
+    enabledDictionaryFontPaths(settings.dictionaryFonts),
+  );
+  return _extensionDictionaryFontFrom(
+    _resolveDictionaryFontInputs(appModel, settings, view: view),
+  );
+}
+
+ExtensionDictionaryFont _extensionDictionaryFontFrom(
+  _DictionaryFontInputs inputs,
+) {
   final String cacheKey = '${inputs.fingerprint}|${defaultTargetPlatform.name}';
   final _ExtensionDictionaryFont? cached = _extensionDictionaryFontMemo;
   if (cached != null && cached.key == cacheKey) return cached.value;
@@ -333,15 +393,15 @@ ExtensionDictionaryFont browserExtensionDictionaryFont(AppModel appModel) {
     String fontFaces,
     List<String> families,
     List<DictionaryFontFaceSource> faceSources,
-  }) css = DictionaryFontCss.build(
+  })
+  css = DictionaryFontCss.build(
     inputs.fonts,
     allowedDirectories: inputs.allowedDirectories,
     fontUrlBuilder: extensionDictionaryFontUrl,
   );
   final ExtensionDictionaryFont value = (
     faces: <Map<String, String>>[
-      for (final DictionaryFontFaceSource face
-          in css.faceSources)
+      for (final DictionaryFontFaceSource face in css.faceSources)
         <String, String>{
           'family': face.family,
           'src': face.src,
@@ -400,8 +460,9 @@ const ExtensionDictionaryFont _kNoExtensionDictionaryFont = (
   AppModel appModel, {
   String Function(String safePath)? fontUrlBuilder,
 }) {
-  final _FontStyleMemoSlot slot =
-      fontUrlBuilder == null ? _fontStyleMemoInline : _fontStyleMemoUrl;
+  final _FontStyleMemoSlot slot = fontUrlBuilder == null
+      ? _fontStyleMemoInline
+      : _fontStyleMemoUrl;
   // BUG: `ReaderFushiSource.readerSettings` is only populated while a book /
   // reader is open. In the app-external clipboard-lookup flow (VN / game, no
   // book), it is null, so the user's configured dictionary font was never
@@ -424,8 +485,10 @@ const ExtensionDictionaryFont _kNoExtensionDictionaryFont = (
       js: '',
     );
   }
-  final _DictionaryFontInputs inputs =
-      _resolveDictionaryFontInputs(appModel, settings);
+  final _DictionaryFontInputs inputs = _resolveDictionaryFontInputs(
+    appModel,
+    settings,
+  );
   final List<Map<String, dynamic>> fonts = inputs.fonts;
   final List<String> allowedDirectories = inputs.allowedDirectories;
   final String defaultContentLanguage = inputs.defaultContentLanguage;
@@ -433,7 +496,8 @@ const ExtensionDictionaryFont _kNoExtensionDictionaryFont = (
       inputs.dictionaryLanguages;
   // 词头语言 = 查词来源的语言（正在读的书/视频/游戏）> 全局默认。它与释义区的
   // 词典语言是两条独立的轴，不能混用同一个值。
-  final String lookupLanguage = resolveContentLanguage(
+  final String lookupLanguage =
+      resolveContentLanguage(
         explicit: appModel.currentLookupLanguage,
         globalDefault: defaultContentLanguage,
       ) ??
@@ -449,7 +513,8 @@ const ExtensionDictionaryFont _kNoExtensionDictionaryFont = (
     String fontFaces,
     List<String> families,
     List<DictionaryFontFaceSource> faceSources,
-  }) css = DictionaryFontCss.build(
+  })
+  css = DictionaryFontCss.build(
     fonts,
     allowedDirectories: allowedDirectories,
     fontUrlBuilder: fontUrlBuilder,
@@ -476,7 +541,8 @@ const ExtensionDictionaryFont _kNoExtensionDictionaryFont = (
       for (final DictionaryLanguageEntry e in dictionaryLanguages)
         if ((e.glossaryLanguage ?? '').isNotEmpty) e.name: e.glossaryLanguage!,
     });
-    js = '''
+    js =
+        '''
       (function(){
         window.__fushiDictionaryLanguages = $languageMapJson;
         window.__fushiLookupLanguage = ${jsonEncode(lookupLanguage)};
@@ -678,20 +744,92 @@ String buildPopupEntriesJs(
   bool pending = false,
   bool idle = false,
 }) {
-  final String entriesJson = result.popupJson ??
-      DictionaryPopupWebViewState.buildLookupEntriesJson(result);
-  final String kanjiResultsJson = jsonEncode(
-    result.kanjiResults.map((FushiKanjiResult k) => k.toMap()).toList(),
-  );
+  final String entriesJson = popupEntriesJsonOf(result);
   // BUG-3274：词条 JSON 以字符串字面量交给 JSON.parse，而不是当 JS 对象字面量 eval。
   // 结果多时这一段有 MB 级（38 本词典查 トランクルーム 是 2 MB）；V8 解析 JSON 文本比
   // 解析同等体量的对象字面量快（4 倍降速实测 347 → 236 ms），且每次查词的源码都不同，
   // 吃不到脚本编译缓存。jsonEncode 产出的是合法 JS 字符串字面量。
+  //
+  // P1-B：in-app 弹窗在能拦截子资源的平台上大结果不走这条（见
+  // [buildPopupFetchedEntriesJs]）；这条留给小结果、Linux、app 外裸 WebView2 两个
+  // 表面，以及拦截投递失败后的回退。
   final String entriesJsonLiteral = jsonEncode(entriesJson);
   return '''    try { window.lookupEntries = JSON.parse($entriesJsonLiteral); } catch(e) { console.warn('[popup] lookupEntries JSON.parse failed', e); window.lookupEntries = []; }
-    try { window.kanjiResults = $kanjiResultsJson; } catch(e) { window.kanjiResults = []; }
+${_popupEntriesMetaJs(result, pending: pending, idle: idle)}''';
+}
+
+/// 词条段的 JSON 文本（`window.lookupEntries` 的唯一来源）：引擎随结果带回的
+/// [DictionarySearchResult.popupJson]，缺省时现场序列化。
+String popupEntriesJsonOf(DictionarySearchResult result) =>
+    result.popupJson ??
+    DictionaryPopupWebViewState.buildLookupEntriesJson(result);
+
+/// 词条段里除词条本体以外的三项：汉字卡、`lookupPending`、`lookupIdle`。两种投递
+/// 方式共用，保证「同一份结果两条路渲染出同一个页面」。
+String _popupEntriesMetaJs(
+  DictionarySearchResult result, {
+  required bool pending,
+  required bool idle,
+}) {
+  final String kanjiResultsJson = jsonEncode(
+    result.kanjiResults.map((FushiKanjiResult k) => k.toMap()).toList(),
+  );
+  return '''    try { window.kanjiResults = $kanjiResultsJson; } catch(e) { window.kanjiResults = []; }
     window.lookupPending = $pending;
     window.lookupIdle = $idle;
+''';
+}
+
+/// P1-B：词条 JSON 达到这个长度（UTF-16 码元）才改走拦截器投递。
+///
+/// 拦截投递多一次「WebView → 原生拦截器 → Dart」往返（Android 是后台线程到主线程
+/// 的一跳，量级是毫秒），换掉的是 UI isolate 上对整串的 `jsonEncode` 转义扫描、平台
+/// 通道上的超长脚本字符串、以及 V8 对它的整段脚本编译。几 KB 的常见结果后三项加起来
+/// 远不到一毫秒，走字面量更快；MB 级（多词典大结果）时后三项是百毫秒级（见
+/// [buildPopupEntriesJs] 的 BUG-3274 实测）。32K 码元落在两者之间。
+const int kPopupEntriesFetchMinChars = 32 * 1024;
+
+/// P1-B：词条 JSON **不进脚本**，由页面经宿主的资源拦截器 `fetch([url])` 取回 UTF-8
+/// 字节后 `JSON.parse`，再执行 [afterEntriesJs]（全量渲染 / 增量追加及其收尾）。
+///
+/// 时序与令牌：本段在 `window.__fushiRenderToken = [renderToken]` **之后**执行；取回
+/// 时若令牌已被更新的一次推送取代就整段作废（旧结果绝不覆盖新结果）。取回失败（拦截器
+/// 不认 / 平台不放行）经 `popupEntriesFetchFailed` 告诉宿主，宿主改用字面量重推同一份
+/// 结果并在本 WebView 上停用拦截投递——失败是可见的（错误日志），不会静默空白。
+String buildPopupFetchedEntriesJs({
+  required DictionarySearchResult result,
+  required String url,
+  required int renderToken,
+  required bool pending,
+  required bool idle,
+  required String afterEntriesJs,
+}) {
+  return '''
+    (function(){
+      var token = $renderToken;
+      function apply(entries){
+        if (window.__fushiRenderToken !== token) return;
+        window.lookupEntries = entries;
+${_popupEntriesMetaJs(result, pending: pending, idle: idle)}
+        $afterEntriesJs
+      }
+      fetch(${jsonEncode(url)}, { cache: 'no-store', credentials: 'omit' })
+        .then(function(r){
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text();
+        })
+        .then(function(text){
+          var entries;
+          try { entries = JSON.parse(text); } catch(e) { console.warn('[popup] lookupEntries JSON.parse failed', e); entries = []; }
+          apply(entries);
+        })
+        .catch(function(e){
+          if (window.__fushiRenderToken !== token) return;
+          try {
+            window.flutter_inappwebview.callHandler('popupEntriesFetchFailed', token, String((e && e.message) || e));
+          } catch (_) {}
+        });
+    })();
 ''';
 }
 
@@ -715,8 +853,9 @@ String popupEntryWheelBindingsJson(
   // 注册表还没装载时（弹窗进程的精简初始化早于 loadShortcutRegistry，或测试里的
   // 裸 registry）每个动作都读到空绑定 —— 而空表在 popup.js 那边的语义是「用户关掉
   // 了这个方向」，直接下发会让 Alt+滚轮静默失效。这种情况下回落到平台默认表。
-  final Map<ShortcutAction, ShortcutBindingSet>? fallback =
-      registry.isLoaded ? null : ShortcutDefaults.forPlatform(platform);
+  final Map<ShortcutAction, ShortcutBindingSet>? fallback = registry.isLoaded
+      ? null
+      : ShortcutDefaults.forPlatform(platform);
   List<WheelBinding> bindingsOf(ShortcutAction action) => fallback == null
       ? registry.bindingsFor(action).wheelBindings
       : (fallback[action]?.wheelBindings ?? const <WheelBinding>[]);
@@ -725,10 +864,11 @@ String popupEntryWheelBindingsJson(
         for (final WheelBinding b in bindingsOf(action))
           <String, Object>{
             'dir': b.direction == WheelDirection.up ? 'up' : 'down',
-            'mods': b.modifiers
-                .map((ModifierKey m) => m.label.toLowerCase())
-                .toList(growable: false)
-              ..sort(),
+            'mods':
+                b.modifiers
+                    .map((ModifierKey m) => m.label.toLowerCase())
+                    .toList(growable: false)
+                  ..sort(),
           },
       ];
   return jsonEncode(<String, Object>{
@@ -770,8 +910,9 @@ String popupKeyBindingsJson(
   FushiShortcutRegistry registry,
   TargetPlatform platform,
 ) {
-  final Map<ShortcutAction, ShortcutBindingSet>? fallback =
-      registry.isLoaded ? null : ShortcutDefaults.forPlatform(platform);
+  final Map<ShortcutAction, ShortcutBindingSet>? fallback = registry.isLoaded
+      ? null
+      : ShortcutDefaults.forPlatform(platform);
   List<InputBinding> bindingsOf(ShortcutAction action) => fallback == null
       ? registry.bindingsFor(action).keyboardBindings
       : (fallback[action]?.keyboardBindings ?? const <InputBinding>[]);
@@ -780,10 +921,11 @@ String popupKeyBindingsJson(
         for (final InputBinding b in bindingsOf(action))
           <String, Object>{
             'key': _webKeyName(b.key),
-            'mods': b.modifiers
-                .map((ModifierKey m) => m.label.toLowerCase())
-                .toList(growable: false)
-              ..sort(),
+            'mods':
+                b.modifiers
+                    .map((ModifierKey m) => m.label.toLowerCase())
+                    .toList(growable: false)
+                  ..sort(),
           },
       ];
   return jsonEncode(<String, Object>{
@@ -814,7 +956,7 @@ class _PopupStaticSettingsMemo {
     required this.themeVarsJs,
     required this.fontCacheKey,
     required this.fontArtifactToken,
-    required this.appUiScale,
+    required this.popupUiScale,
     required this.dictionaryFontSize,
     required this.popupWheelSpeed,
     required this.popupInstantScroll,
@@ -827,6 +969,8 @@ class _PopupStaticSettingsMemo {
     required this.localeTag,
     required this.miningEnabled,
     required this.srsEnabled,
+    required this.srsMiningToReview,
+    required this.librarySentencesEnabled,
     required this.deduplicatePitchAccents,
     required this.harmonicFrequency,
     required this.showExpressionTags,
@@ -847,7 +991,7 @@ class _PopupStaticSettingsMemo {
   final String themeVarsJs;
   final String fontCacheKey;
   final Object fontArtifactToken;
-  final double appUiScale;
+  final double popupUiScale;
   final double dictionaryFontSize;
   final double popupWheelSpeed;
   final bool popupInstantScroll;
@@ -860,6 +1004,8 @@ class _PopupStaticSettingsMemo {
   final String localeTag;
   final bool miningEnabled;
   final bool srsEnabled;
+  final bool srsMiningToReview;
+  final bool librarySentencesEnabled;
   final bool deduplicatePitchAccents;
   final bool harmonicFrequency;
   final bool showExpressionTags;
@@ -879,6 +1025,20 @@ class _PopupStaticSettingsMemo {
 
 final Map<String, _PopupStaticSettingsMemo> _staticSettingsMemo =
     <String, _PopupStaticSettingsMemo>{};
+
+/// P2-E：[AppModel.effectiveCustomDictCSS] 在规则与手写 CSS 都没变时返回同一个不可变
+/// Map 实例；按实例身份 memo 它的 JSON，命中判据每次查词不再整表 jsonEncode。
+({Map<String, String> source, String json})? _customDictCssJsonMemo;
+
+String _customDictCssJsonOf(Map<String, String> css) {
+  final ({Map<String, String> source, String json})? cached =
+      _customDictCssJsonMemo;
+  if (cached != null && identical(cached.source, css)) return cached.json;
+  final String json = jsonEncode(css);
+  _customDictCssJsonMemo = (source: css, json: json);
+  return json;
+}
+
 int _staticSettingsRevision = 0;
 
 /// 测试专用：清空本文件的进程内 memo（字体注入串 + 静态设置产物），避免用例间
@@ -887,6 +1047,7 @@ int _staticSettingsRevision = 0;
 void debugResetPopupSettingsInjectionCaches() {
   debugResetDictionaryFontStyleMemo();
   _staticSettingsMemo.clear();
+  _customDictCssJsonMemo = null;
 }
 
 /// 静态设置负载（主题变量/词典字体/图标字体覆盖/zoom/开关/名单/词典样式/自定义
@@ -933,25 +1094,20 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       : 'null';
   final String audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
   final String lookupAudioVolume = ReaderFushiSource
-      .instance.lookupAudioVolumeGain
+      .instance
+      .lookupAudioVolumeGain
       .clamp(0.0, 1.0)
       .toStringAsFixed(4);
   final String localeTag = LocaleSettings.currentLocale.languageTag;
 
   final String stylesJson = DictionaryPopupWebViewState.dictionaryStylesJson();
   final String collapsedNames = jsonEncode(
-    appModel.dictionaries
-        .where((d) => d.isCollapsed(JapaneseLanguage.instance))
-        .map((d) => d.name)
-        .toList(),
+    popupCollapsedDictionaryNames(appModel),
   );
   // BUG-2158：与 collapsedNames 成对的第二个名单。缺了它，popup.js 就只能在
   // 「显式折叠」和「没表态」之间二选一，用户点的「展开」无处可去。
   final String expandedNames = jsonEncode(
-    appModel.dictionaries
-        .where((d) => d.isExplicitlyExpanded(JapaneseLanguage.instance))
-        .map((d) => d.name)
-        .toList(),
+    popupExpandedDictionaryNames(appModel),
   );
   // 与 popupJson 生成期共用同一个真相源，别再抄第二份表达式。
   final String hiddenNames = jsonEncode(
@@ -961,12 +1117,15 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   // 恒为真名（它同时是 CSS 作用域 key、媒体 URL 参数、隐藏/折叠/排序 key 和
   // Anki `{single-glossary-<名>}` token 的 key，替换它会静默打断上述全部），
   // popup.js 只在**渲染词典名文本**的那几处查这张表。只装真正改过名的条目。
-  final String dictionaryDisplayNames =
-      jsonEncode(appModel.dictionaryDisplayNameOverrides);
+  final String dictionaryDisplayNames = jsonEncode(
+    appModel.dictionaryDisplayNameOverrides,
+  );
   // effective* = 可视化规则的编译产物 + 用户手写（产物在前、手写在后）。这里
   // 绝不能用裸 globalDictCSS / customDictCSS——那是编辑器回填用的原文。
   final String globalDictCSS = appModel.effectiveGlobalDictCSS;
-  final String customDictCSSJson = jsonEncode(appModel.effectiveCustomDictCSS);
+  final String customDictCSSJson = _customDictCssJsonOf(
+    appModel.effectiveCustomDictCSS,
+  );
 
   // 「制卡」功能模块（[ModuleId.cardCreation]）总开关。关掉时 popup.js 不渲染词条头
   // 上的「+」制卡按钮与「在 Anki 中打开」↗ 按钮，也不再每次查词去问 Anki 查重——
@@ -982,6 +1141,15 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   // 「复习」功能模块（[ModuleId.srs]，默认关）。关着时 popup.js 不渲染复习词状态标记、
   // 也不发 srsTermStatus 桥（零开销）；与制卡模块互不牵连（只想看复习状态也行）。
   final bool srsEnabled = appModel.moduleVisibility.isEnabled(ModuleId.srs);
+  // 制卡此刻发往 Fushi 复习（与 `srsMiningToReviewProvider` 同一判据）：这时词条头上
+  // 「在 Anki 中打开」↗ 经 SrsMiningAnkiRepository.openWordInAnki 打开的正是复习状态
+  // 标记（「新卡」/「复习中」）打开的同一张笔记编辑页——两颗按钮去同一个地方，popup.js
+  // 据此只留状态标记一颗。
+  final bool srsMiningToReview =
+      srsEnabled && appModel.srsMiningTarget == SrsMiningTarget.srs;
+  // 「我库里的例句」（作品图谱 L4，D-L2 默认开）。false ⇒ popup.js 不渲染区块、不发
+  // librarySentences 桥。
+  final bool librarySentencesEnabled = librarySentencesEnabledOf(appModel);
 
   final String slotKey =
       '${options.globalLookup}|${options.mobileExternal}'
@@ -991,7 +1159,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       cached.themeVarsJs == themeVarsJs &&
       cached.fontCacheKey == fontStyle.cacheKey &&
       identical(cached.fontArtifactToken, fontStyle.cacheToken) &&
-      cached.appUiScale == appModel.appUiScale &&
+      cached.popupUiScale == appModel.popupUiScale &&
       cached.dictionaryFontSize == appModel.dictionaryFontSize &&
       cached.popupWheelSpeed == appModel.popupWheelSpeed &&
       cached.popupInstantScroll == appModel.popupInstantScroll &&
@@ -1006,6 +1174,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       cached.localeTag == localeTag &&
       cached.miningEnabled == miningEnabled &&
       cached.srsEnabled == srsEnabled &&
+      cached.srsMiningToReview == srsMiningToReview &&
+      cached.librarySentencesEnabled == librarySentencesEnabled &&
       cached.deduplicatePitchAccents == appModel.deduplicatePitchAccents &&
       cached.harmonicFrequency == appModel.harmonicFrequency &&
       cached.showExpressionTags == appModel.showExpressionTags &&
@@ -1029,8 +1199,10 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   }
 
   final String fontStyleJs = fontStyle.js;
+  // 反馈 2jGkpD-iD6：内容 zoom 走弹窗生效缩放（界面大小 × 弹窗缩放系数），单一取值点
+  // AppModel.popupUiScale；盒子尺寸仍按界面大小。
   final double zoom = DictionaryPopupWebViewState.popupContentZoom(
-    appUiScale: appModel.appUiScale,
+    appUiScale: appModel.popupUiScale,
     dictionaryFontSize: appModel.dictionaryFontSize,
   );
 
@@ -1038,10 +1210,12 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   // BUG-1139：Ctrl+滚轮内容缩放只装给 app 外裸 WebView2 表面。in-app 三个表面由
   // dictionary_popup_webview 的 _zoomWheelJs 在 onLoadStop 装同名 guard 的另一套
   // （就地 zoom + 即时反馈），两边永不同装。
-  final String zoomWheelJs =
-      options.globalLookup ? _globalLookupZoomWheelJs : '';
+  final String zoomWheelJs = options.globalLookup
+      ? _globalLookupZoomWheelJs
+      : '';
 
-  final String head = '''
+  final String head =
+      '''
     $themeVarsJs
     $fontStyleJs
     // popupRendered is the host reveal gate. Let popup.js wait for the injected
@@ -1056,7 +1230,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 当前「界面大小」系数与「词典字号」暴露给弹窗（与上面 zoom 同源，每次注入刷新为
     // 最新真值）。滚轮监听器（dictionary_popup_webview 的 _zoomWheelJs，onLoadStop 装一次）
     // 读这两个全局算新字号 → 立即 documentElement.style.zoom，再回调 Dart 持久化。
-    window.__fushiPopupUiScale = ${appModel.appUiScale};
+    window.__fushiPopupUiScale = ${appModel.popupUiScale};
     window.__fushiPopupFontSize = ${appModel.dictionaryFontSize};
     // BUG-1026: 查词弹窗滚轮速度倍率。popup.js 的 wheel 监听器把 factor 乘以它
     // （缺省 1.0）。三种 in-app 弹窗都经此 head 注入；浏览器扩展走 theme 通道另发。
@@ -1116,6 +1290,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.i18nMinedActionOverwrite = ${jsonEncode(t.anki_mined_action_overwrite)};
     window.i18nMinedActionView = ${jsonEncode(t.anki_mined_action_view)};
     window.i18nMinedActionAddDuplicate = ${jsonEncode(t.anki_mined_action_add_duplicate)};
+    // 反馈 E0sdqm4h-F：已制卡 ✓ 的提示——右键 / 长按是覆写 / 查看已有卡的入口。
+    window.i18nMinedManageHint = ${jsonEncode(t.anki_mined_manage_hint)};
     window.i18nMinedActionCancel = ${jsonEncode(t.dialog_cancel)};
     window.i18nMinedOpenFailed = ${jsonEncode(t.anki_note_open_failed)};
     window.i18nMinedOpenNoCard = ${jsonEncode(t.anki_open_no_card)};
@@ -1127,12 +1303,20 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 复习模块开关：false ⇒ popup.js 不渲染复习词状态标记、不发 srsTermStatus 桥。
     // 浏览器扩展没有本注入通道 → undefined ⇒ 照问桥，由扩展 shim 按服务端 404 退避。
     window.__fushiSrsEnabled = $srsEnabled;
+    // 制卡目标 = Fushi 复习：↗ 与复习状态标记打开同一张笔记，popup.js 不再渲染 ↗。
+    window.__fushiSrsMiningTarget = $srsMiningToReview;
+    // 「我库里的例句」开关：false ⇒ popup.js 不渲染该区块、不发 librarySentences 桥。
+    // 浏览器扩展没有本注入通道 → undefined ⇒ 照问桥，扩展 shim 对未知桥回 null（不显示）。
+    window.__fushiLibrarySentencesEnabled = $librarySentencesEnabled;
     window.sentenceDraftEnabled = ${options.sentenceDraftEnabled};
     window._noResultsMessage = ${jsonEncode(t.no_search_results)};
     window._noResultsHint = ${jsonEncode(t.settings_search_empty_hint)};
     window.embedMedia = true;
     window.deduplicatePitchAccents = ${appModel.deduplicatePitchAccents};
     window.i18nPitchSourceCount = ${jsonEncode(t.dictionary_pitch_source_count(count: '{count}'))};
+    // 界面文案节点（popup.js uiText）挂的 lang：界面串按界面语言选字体，不吃词典内容的
+    // 兜底链（反馈 9GSrEkVLai：日文链下「音调」的「调」掉字形）。
+    window.__fushiUiLanguage = ${jsonEncode(localeTag)};
     window.harmonicFrequency = ${appModel.harmonicFrequency};
     window.showExpressionTags = ${appModel.showExpressionTags};
     window.collapseDictionaries = ${appModel.collapseDictionaries};
@@ -1154,7 +1338,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.hiddenDictionaryNames = $hiddenNames;
     window.dictionaryDisplayNames = $dictionaryDisplayNames;
 ''';
-  final String tail = '''    window.dictionaryStyles = $stylesJson;
+  final String tail =
+      '''    window.dictionaryStyles = $stylesJson;
     window.globalDictCSS = ${jsonEncode(globalDictCSS)};
     window.customDictCSS = $customDictCSSJson;
 ''';
@@ -1168,7 +1353,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     themeVarsJs: themeVarsJs,
     fontCacheKey: fontStyle.cacheKey,
     fontArtifactToken: fontStyle.cacheToken,
-    appUiScale: appModel.appUiScale,
+    popupUiScale: appModel.popupUiScale,
     dictionaryFontSize: appModel.dictionaryFontSize,
     popupWheelSpeed: appModel.popupWheelSpeed,
     popupInstantScroll: appModel.popupInstantScroll,
@@ -1181,6 +1366,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     localeTag: localeTag,
     miningEnabled: miningEnabled,
     srsEnabled: srsEnabled,
+    srsMiningToReview: srsMiningToReview,
+    librarySentencesEnabled: librarySentencesEnabled,
     deduplicatePitchAccents: appModel.deduplicatePitchAccents,
     harmonicFrequency: appModel.harmonicFrequency,
     showExpressionTags: appModel.showExpressionTags,
@@ -1199,3 +1386,19 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   );
   return product;
 }
+
+/// 词典管理里逐本设成「折叠」的词典名：查词弹窗（`collapsedDictionaryNames`）与复习卡面
+/// 释义页共用这一个真相源。
+List<String> popupCollapsedDictionaryNames(AppModel appModel) => appModel
+    .dictionaries
+    .where((d) => d.isCollapsed(JapaneseLanguage.instance))
+    .map((d) => d.name)
+    .toList();
+
+/// 词典管理里逐本设成「展开」的词典名（BUG-2158 三态里优先级最高的一档）：查词弹窗
+/// （`expandedDictionaryNames`）与复习卡面释义页共用这一个真相源。
+List<String> popupExpandedDictionaryNames(AppModel appModel) => appModel
+    .dictionaries
+    .where((d) => d.isExplicitlyExpanded(JapaneseLanguage.instance))
+    .map((d) => d.name)
+    .toList();

@@ -25,35 +25,42 @@ void main() {
   tearDown(() => tmp.deleteSync(recursive: true));
 
   group('videoFileEtag', () {
-    test('强验证器，随文件体积 / 修改时间变化', () {
-      final String first = videoFileEtag(file);
+    test('强验证器，随文件体积 / 修改时间变化', () async {
+      final String first = await videoFileEtag(file);
       expect(first, startsWith('"vid-'));
       expect(first, endsWith('"'));
-      expect(videoFileEtag(file), first);
+      expect(await videoFileEtag(file), first);
 
       file.setLastModifiedSync(DateTime.utc(2026, 1, 2));
-      final String touched = videoFileEtag(file);
+      final String touched = await videoFileEtag(file);
       expect(touched, isNot(first));
 
       file.writeAsBytesSync(List<int>.filled(2000, 1));
       file.setLastModifiedSync(DateTime.utc(2026, 1, 2));
-      expect(videoFileEtag(file), isNot(touched));
+      expect(await videoFileEtag(file), isNot(touched));
+    });
+
+    test('文件不存在抛 FileSystemException（与旧 lengthSync 契约一致）', () async {
+      await expectLater(
+        videoFileEtag(File('${tmp.path}/missing.mp4')),
+        throwsA(isA<FileSystemException>()),
+      );
     });
   });
 
   group('serveFileWithRange(ifRangeRequired: false)', () {
-    Future<shelf.Response> serve(Map<String, String> headers) =>
+    Future<shelf.Response> serve(Map<String, String> headers) async =>
         serveFileWithRange(
           file,
           _get(headers),
-          etag: videoFileEtag(file),
+          etag: await videoFileEtag(file),
           ifRangeRequired: false,
         );
 
     test('无 Range：200 带 ETag', () async {
       final shelf.Response res = await serve(const <String, String>{});
       expect(res.statusCode, 200);
-      expect(res.headers['etag'], videoFileEtag(file));
+      expect(res.headers['etag'], await videoFileEtag(file));
     });
 
     test('盲 Range（播放器 seek，无 If-Range）照常 206', () async {
@@ -67,7 +74,7 @@ void main() {
     test('If-Range 匹配：206', () async {
       final shelf.Response res = await serve(<String, String>{
         'range': 'bytes=10-',
-        'if-range': videoFileEtag(file),
+        'if-range': await videoFileEtag(file),
       });
       expect(res.statusCode, 206);
     });

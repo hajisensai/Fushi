@@ -1,0 +1,163 @@
+{
+  "generator": "pre-native: SyncObfuscator (Dart XOR), LeaderboardIdentity (pointycastle 3.9.1), basic_utils 5.7.0 X509Utils/CryptoUtils",
+  "sync_obfuscator": {
+    "input_sha256": "edc66bde30ceab029831abde5a16130303f423cc6388d35e1768c7d3fd9ee9da",
+    "obfuscated_sha256": "a186084d188edb1a279674a6e474804d7c6c7a91401b336cf5f0397ca716f8f7",
+    "body_at_offset_1000000_plus": {
+      "0": "3299cf5eb78da74ca5047e9db0b132dd87e61abf2fc402e947f6e543684ce458",
+      "1": "7c7d8751442c89c260a13a06fe7e82ff3ce651e1f80fb1068aaae3ac8a7bfc87",
+      "7": "6bf10afff4eee2d897204bb5c22d6c34d76a70c76b9eb1e8adf4562abcf14e4f",
+      "8": "c2a7f45a68cf59f644160368c2c0ff3f72670503c3e6c34ff118745b7da4723e",
+      "31": "c02b5d000b43f03774f1b5f41524edcfb28bfd8f75f02be12ef467571b971866",
+      "33": "1c46ff293aeece629279ed500d199085a9fc9dfe6198d61b46aa32cb4f74f1c6",
+      "99999": "fd56c1dc3b4ba846891169dc5210f8d07b1bf164c2776c1d4efe02c28f204a3c"
+    }
+  },
+  "ecdsa_p256": {
+    "k0": {
+      "d": "ca015a856121f47fd47ec9573c1bd0d1e5e78606621bfd82a181f7cdf34f3c4d",
+      "spki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEx_beEaKSdg3paOj4mdkcyDWcxFC4o5ji-LlM_B2Qls092za_gC6Qcfa1Hi7ZYMsrBquf0G_TbEXLFoC6WIe4MQ",
+      "accountId": "l2RXXPLjplyPooQB",
+      "signatures": [
+        "MWGWfVZzj5GaltwRjXUSWymV5wh_wiYn7Y4NQixY2S9E3UgUPe5elDQx9qKzeh7bJN6Q-hiRAIBx4qEhv5iNyw",
+        "FmDPY1u0WzaR4iE3tL48NWAmkTONNNQ73cuPiBX9iVqG308vKkc0CzbCP1XpqO6uSTcgWxWQ0FZlEZvZxKMMwA",
+        "NQEb4OB2aiCQXQfqLa6AcwayJdggoulES8reVYm16jKXWJ9ktXjWMp1qH2IuiJqmLxJO7Y3uFEaW6U4ro2YdGA",
+        "W9hCY2uEQqIIohQ4Bb4AhguCVH1UFWkwDGa0xv3GYQWOwMdHEOAjTSdMi8OC0D6qExLGoDM1-M9hnrZ_B9LZOQ"
+      ],
+      "verify": {
+        "valid": true,
+        "other_message": false,
+        "high_s": true,
+        "flipped": false,
+        "r_zero": false,
+        "s_n": false,
+        "short_sig": false,
+        "bad_base64": false,
+        "hybrid_point": true,
+        "hybrid_wrong_parity": true,
+        "off_curve": false,
+        "short_spki": false
+      }
+    },
+    "k1": {
+      "d": "feb0e90ff565b812de794cdd8badd9274b91521ed496827877afba2be7d91822",
+      "spki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEkZGGvJOaWOuh0D5u0MVxcUH_OcHe8zrUmXY_wPwEMPloX1pCICXR3-g_iETlBeOEmUTeukN_OfoX6FLJAuVkQA",
+      "accountId": "pF3cfM-i1frbasx0",
+      "signatures": [
+        "hIs50Tnl7_RXcoC5jrpwE3GkB9IdxnelVAtawEoVKT6Oo8eliPfMrPK4MFGwv4j-0SBmgw8xXUGTHL7kNivXyA",
+        "JXN7CdREB6CbQpqX4nG_8Qd2JyIEV9GAuIYCmftHvab8N6woLdqN3SJ0ApL7ld3NUsbrXNhdD_4XtFoR_0oAmw",
+        "8jLq5UVTM06DpEI4piNLyipjd_SJTtCjpmcwreCsTkplpUiyfGazq_W37kZrsLHOOR2faqID7_sJ0r3XQUpGXg",
+        "m8APriFaAP80wb90k6wztGL_RSx-X6b06tvmCsoqx4NCvo9cXxRy1QMzTfoo41CP2oxu5g1s3HAxqmz-7eDbRQ"
+      ],
+      "verify": {
+        "valid": true,
+        "other_message": false,
+        "high_s": true,
+        "flipped": false,
+        "r_zero": false,
+        "s_n": false,
+        "short_sig": false,
+        "bad_base64": false,
+        "hybrid_point": true,
+        "hybrid_wrong_parity": true,
+        "off_curve": false,
+        "short_spki": false
+      }
+    },
+    "k2": {
+      "d": "9992f4cda21c8c44665bbf4096374b050de659a5c769845c60cf85428b94a132",
+      "spki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEigeF02UJcJOTbjcudIoXDHUKpNHcvzd20cX7mUlMLqjZupU3WIHnpEAyK-5WsNbdkJCETxgY6gCwuOc0zebcgg",
+      "accountId": "WR5wnAO3nNX6BjyB",
+      "signatures": [
+        "8qkoK0C62ZQp0JKMWpAZuBFbRzFtlLBqM5btxaLM3iSGOMiEKnyWneKjNjXJDfBe9yTXVPajJUd_RWt3qqO4Ag",
+        "-VFhLZszv05B3jsK6Q7JVA8flB5xeC6eFsi2SaP_T7TLZJd3eTMK6T49jV8nSnLNHUnwhgVxvqajKXY0-z2vtQ",
+        "Cx42ymgq1c794oURR-Zda2lR9Jz0_504U5lIxQ8dQfw2oEh57ycq1NaRhr2yQlB4ubxZv9CF24Kch-xNmX8slw",
+        "avRCGdaqykCJQA6-OY-9QjgxkmNX-LAKgvZBGsdmqwdiLl5WnrsMH26fQL6agFdjr6qs3SIJU4Ytods3Halo6w"
+      ],
+      "verify": {
+        "valid": true,
+        "other_message": false,
+        "high_s": true,
+        "flipped": false,
+        "r_zero": false,
+        "s_n": false,
+        "short_sig": false,
+        "bad_base64": false,
+        "hybrid_point": true,
+        "hybrid_wrong_parity": true,
+        "off_curve": false,
+        "short_spki": false
+      }
+    },
+    "one": {
+      "d": "0000000000000000000000000000000000000000000000000000000000000001",
+      "spki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+      "accountId": "XNJS-wzokyQ2-vjM",
+      "signatures": [
+        "DmnLEXZkzt1nNOgBUeq9OI3iZlM-Fj--jqRjBlwP1xrChOZ-C68s-OB4lqXF8iLK0R41yZfBjFnXm9utaIF4PA",
+        "Mi2bDRJ9ziUt6BE2qiPR6Cpwsk5kUYSdoJgdi3BSmM1jgvrluAU-D_mLgyaAhBbuWOmk1U8QKn2E0O-8QX-UWw",
+        "2UkZdeurlZsNBmS93yb1P-ckX1YBq7UnQ6PoydVUGGV6ZhSXP5Puczncw41_yCsNvui1We3OTsNpB3-9mCl65g",
+        "sy0MyPDPR53iCb5WDgvclhIjmvbhuwPUiadZj9fEm2ziVs64PKO_Vh7PQko4FE3aiMkubJAmhfc-K95gTZyluQ"
+      ],
+      "verify": {
+        "valid": true,
+        "other_message": false,
+        "high_s": true,
+        "flipped": false,
+        "r_zero": false,
+        "s_n": false,
+        "short_sig": false,
+        "bad_base64": false,
+        "hybrid_point": true,
+        "hybrid_wrong_parity": true,
+        "off_curve": false,
+        "short_spki": false
+      }
+    },
+    "n_minus_1": {
+      "d": "ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632550",
+      "spki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpawHL0cAeWAZXEYFLWD8GHp1DHMqZTOoTE0Sb-XyECuCg",
+      "accountId": "P9p2IWIn_2h0IvtV",
+      "signatures": [
+        "mkRg7FqUhMGU1hmHwtm92yraDnCP31GuD-WXTYWAAS3D8tvtxAqW71Ia_RFa1FwwQ-MNYS_N1BHsODOr1nFbTQ",
+        "ANRjcfNRRR0p2Mriyt0IZSgtW6kFbj8SghkXY-vAGaGT_ePsSqpsSwUzzeGK4db5loSG1h6ETDgzcyBQKAsPcQ",
+        "B-KWu9zFzDbL8N8NZRsvTdgaV1sgQ2laSF7Se2Xv1gK7rffrN7IyGXYWEncTG5NJvjFeBUOAtLCvPU7NyJRaHw",
+        "3D9Dvp0A6B277yXgxlkCtPrMmCvSmdCv0LjNbSp1SCSUP8XeTLron0nsBvoMGBhVcaC0-jjpiPtYsop9DsNbOA"
+      ],
+      "verify": {
+        "valid": true,
+        "other_message": false,
+        "high_s": true,
+        "flipped": false,
+        "r_zero": false,
+        "s_n": false,
+        "short_sig": false,
+        "bad_base64": false,
+        "hybrid_point": true,
+        "hybrid_wrong_parity": true,
+        "off_curve": false,
+        "short_spki": false
+      }
+    },
+    "invalid_private_keys": {
+      "zero": "ArgumentError",
+      "n": "ArgumentError",
+      "len31": "ArgumentError"
+    }
+  },
+  "tls_self_signed": {
+    "d": "87a021adf20c7df2be4ec811db2c3de5d6cdb9a362af4913e493df65bdfb8cbf",
+    "not_before_utc": "2026-10-18T08:30:15.000Z",
+    "days": 8475,
+    "cn": "fushi-host",
+    "sans": [
+      "fushi-host",
+      "127.0.0.1",
+      "192.168.1.5"
+    ],
+    "tbs_der_hex": "3081f2a003020102020101300c06082a8648ce3d04030205003015311330110603550403130a66757368692d686f7374301e170d3236313031383038333031355a170d3439313233313038333031355a3015311330110603550403130a66757368692d686f73743059301306072a8648ce3d020106082a8648ce3d03010703420004a8ee57c2cc8fd4414ff78914765fb9f25ede991a3eb47d5f2375433370c1c7ff682504b8699d3c888aea777d42adfcef5459b7603b0390988258eae23dee6f06a331302f302d0603551d1104263024820a66757368692d686f737482093132372e302e302e31820b3139322e3136382e312e35",
+    "sig_alg_der_hex": "300c06082a8648ce3d0403020500",
+    "certificate_pem_example": "-----BEGIN CERTIFICATE-----\nMIIBTjCB8qADAgECAgEBMAwGCCqGSM49BAMCBQAwFTETMBEGA1UEAxMKZnVzaGkt\r\naG9zdDAeFw0yNjEwMTgwODMwMTVaFw00OTEyMzEwODMwMTVaMBUxEzARBgNVBAMT\r\nCmZ1c2hpLWhvc3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAASo7lfCzI/UQU/3\r\niRR2X7nyXt6ZGj60fV8jdUMzcMHH/2glBLhpnTyIiup3fUKt/O9UWbdgOwOQmIJY\r\n6uI97m8GozEwLzAtBgNVHREEJjAkggpmdXNoaS1ob3N0ggkxMjcuMC4wLjGCCzE5\r\nMi4xNjguMS41MAwGCCqGSM49BAMCBQADSQAwRgIhALpN81XIoavDLAp+6cSUsrHy\r\nfZoekB8TEJYCkY+VusDoAiEA9LXrMom2ihcDoTlKZOB4Ne33ruhSKFr+GU5bUm53\r\nFUg=\n-----END CERTIFICATE-----",
+    "private_key_pkcs8_pem": "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgh6AhrfIMffK+TsgR\n2yw95dbNuaNir0kT5JPfZb37jL+hRANCAASo7lfCzI/UQU/3iRR2X7nyXt6ZGj60\nfV8jdUMzcMHH/2glBLhpnTyIiup3fUKt/O9UWbdgOwOQmIJY6uI97m8G\n-----END PRIVATE KEY-----"
+  }
+}

@@ -51,8 +51,11 @@ void main() {
 
       expect(next.progress, 0.62);
       expect(next.charOffset, 1500);
-      expect(next.isChapterStart, isFalse,
-          reason: '恢复锚必须跟着用户读到的位置走，否则重建就是回退到章首');
+      expect(
+        next.isChapterStart,
+        isFalse,
+        reason: '恢复锚必须跟着用户读到的位置走，否则重建就是回退到章首',
+      );
     });
 
     test('一次性字段（句尾锚 / 内链 fragment）在接管时清空', () {
@@ -68,10 +71,16 @@ void main() {
         liveCharOffset: 1500,
       );
 
-      expect(next.charOffsetEnd, -1,
-          reason: '收藏句整句对齐只对发起它的那次导航有效，不得带进下一次 WebView 创建');
-      expect(next.fragment, isNull,
-          reason: '内链 fragment 同理，一次性；否则重建会跳回内链锚点而不是当前位置');
+      expect(
+        next.charOffsetEnd,
+        -1,
+        reason: '收藏句整句对齐只对发起它的那次导航有效，不得带进下一次 WebView 创建',
+      );
+      expect(
+        next.fragment,
+        isNull,
+        reason: '内链 fragment 同理，一次性；否则重建会跳回内链锚点而不是当前位置',
+      );
     });
   });
 
@@ -81,7 +90,9 @@ void main() {
 
       // ① 跨章翻进第 3 章：导航目标就是章首（_beginNavigation 恒写 0.0 / -1）。
       reader.beginNavigation(
-          chapter: 3, target: ReaderRestoreAnchor.chapterStart);
+        chapter: 3,
+        target: ReaderRestoreAnchor.chapterStart,
+      );
       reader.restoreLands();
       expect(reader.restoredTo, ReaderRestoreAnchor.chapterStart);
 
@@ -97,18 +108,27 @@ void main() {
       //    restore → 恢复完成后照常刷新进度并落库。
       reader.rendererGoneAndRebuild();
 
-      expect(reader.restoredTo.isChapterStart, isFalse,
-          reason: '重建 restore 必须回到用户读到的位置，回章首就是丢进度');
+      expect(
+        reader.restoredTo.isChapterStart,
+        isFalse,
+        reason: '重建 restore 必须回到用户读到的位置，回章首就是丢进度',
+      );
       expect(reader.restoredTo.charOffset, 1500);
-      expect(reader.lastPersisted, beforeCrash,
-          reason: '重建后落库的位置必须与重建前逐字相同——'
-              '这一条红 = 重建把 DB 里更靠后的真实进度覆盖回退了');
+      expect(
+        reader.lastPersisted,
+        beforeCrash,
+        reason:
+            '重建后落库的位置必须与重建前逐字相同——'
+            '这一条红 = 重建把 DB 里更靠后的真实进度覆盖回退了',
+      );
     });
 
     test('崩溃发生在恢复尚未落定时：落库仍是导航目标，不被旧页面采样污染', () {
       final _ReaderProgressLoop reader = _ReaderProgressLoop();
       reader.beginNavigation(
-          chapter: 3, target: ReaderRestoreAnchor.chapterStart);
+        chapter: 3,
+        target: ReaderRestoreAnchor.chapterStart,
+      );
       reader.restoreLands();
       reader.refreshProgress(progress: 0.62, charOffset: 1500);
 
@@ -119,8 +139,11 @@ void main() {
       );
       reader.rendererGoneAndRebuild();
 
-      expect(reader.restoredTo.charOffset, 610,
-          reason: '恢复在飞期间恢复锚仍是导航目标，重建后接着去目标章位置');
+      expect(
+        reader.restoredTo.charOffset,
+        610,
+        reason: '恢复在飞期间恢复锚仍是导航目标，重建后接着去目标章位置',
+      );
       expect(reader.lastPersisted!.charOffset, 610);
     });
   });
@@ -197,7 +220,9 @@ class _ReaderProgressLoop {
   }
 
   void _persist(double progress, int charOffset) {
-    lastPersisted =
-        readerPositionSaveArgs(progress: progress, charOffset: charOffset);
+    lastPersisted = readerPositionSaveArgs(
+      progress: progress,
+      charOffset: charOffset,
+    );
   }
 }

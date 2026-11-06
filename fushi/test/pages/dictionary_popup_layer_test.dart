@@ -1,9 +1,11 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/lookup/effective_lookup_size.dart'
+    show kLookupPopupMinHeight;
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
+import 'package:fushi/src/lookup/swipe_dismiss_wrapper.dart';
 
 import '../widgets/widget_test_helpers.dart';
 
@@ -187,39 +189,41 @@ void main() {
     });
 
     test(
-        'larger maxWidth yields a wider popup, still bounded by available width',
-        () {
-      final Rect narrow = calcPopupPosition(
-        selectionRect: selectionRect,
-        screen: screen,
-        maxWidth: 250,
-      );
-      final Rect wide = calcPopupPosition(
-        selectionRect: selectionRect,
-        screen: screen,
-        maxWidth: 1000,
-      );
+      'larger maxWidth yields a wider popup, still bounded by available width',
+      () {
+        final Rect narrow = calcPopupPosition(
+          selectionRect: selectionRect,
+          screen: screen,
+          maxWidth: 250,
+        );
+        final Rect wide = calcPopupPosition(
+          selectionRect: selectionRect,
+          screen: screen,
+          maxWidth: 1000,
+        );
 
-      expect(wide.width, greaterThan(narrow.width));
-      expect(wide.width, 1000);
-      expect(wide.width, lessThanOrEqualTo(screen.width));
-      expect(wide.right, lessThanOrEqualTo(screen.width));
-    });
+        expect(wide.width, greaterThan(narrow.width));
+        expect(wide.width, 1000);
+        expect(wide.width, lessThanOrEqualTo(screen.width));
+        expect(wide.right, lessThanOrEqualTo(screen.width));
+      },
+    );
 
     test(
-        'TODO-846: new 1400 max is reachable on a wide screen, still in bounds',
-        () {
-      // 大屏（1920 宽）足以容纳新的 1400 上限：弹窗宽应到达 1400 且不越界。
-      final Rect popupRect = calcPopupPosition(
-        selectionRect: selectionRect,
-        screen: screen,
-        maxWidth: 1400,
-      );
+      'TODO-846: new 1400 max is reachable on a wide screen, still in bounds',
+      () {
+        // 大屏（1920 宽）足以容纳新的 1400 上限：弹窗宽应到达 1400 且不越界。
+        final Rect popupRect = calcPopupPosition(
+          selectionRect: selectionRect,
+          screen: screen,
+          maxWidth: 1400,
+        );
 
-      expect(popupRect.width, 1400);
-      expect(popupRect.left, greaterThanOrEqualTo(0));
-      expect(popupRect.right, lessThanOrEqualTo(screen.width));
-    });
+        expect(popupRect.width, 1400);
+        expect(popupRect.left, greaterThanOrEqualTo(0));
+        expect(popupRect.right, lessThanOrEqualTo(screen.width));
+      },
+    );
 
     test('TODO-846: 1400 max still clamped down by a small screen', () {
       // 小屏：即使设置 maxWidth=1400，弹窗也被屏幕可用宽度夹住，不得越界。
@@ -230,8 +234,11 @@ void main() {
         maxWidth: 1400,
       );
 
-      expect(popupRect.width, lessThan(1400),
-          reason: '小屏可用宽度远小于 1400，弹窗须被屏幕夹住');
+      expect(
+        popupRect.width,
+        lessThan(1400),
+        reason: '小屏可用宽度远小于 1400，弹窗须被屏幕夹住',
+      );
       expect(popupRect.left, greaterThanOrEqualTo(0));
       expect(popupRect.right, lessThanOrEqualTo(smallScreen.width));
     });
@@ -331,7 +338,7 @@ void main() {
             isSearching: false,
             webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
             onDismiss: () {},
-            onTextSelected: (text, rect) {},
+            onTextSelected: (text, rect, _, __) {},
             onLinkClick: (query, rect) {},
             onMineEntry: (fields) async => const MinePopupResult(),
             onDuplicateCheck: (expression, reading) async => false,
@@ -359,7 +366,7 @@ void main() {
             showBorder: false,
             swipeDismissible: false,
             onDismiss: () {},
-            onTextSelected: (text, rect) {},
+            onTextSelected: (text, rect, _, __) {},
             onLinkClick: (query, rect) {},
             onMineEntry: (fields) async => const MinePopupResult(),
             onDuplicateCheck: (expression, reading) async => false,
@@ -385,8 +392,11 @@ void main() {
         maxHeight: 360,
         verticalWriting: true,
       );
-      expect(popup.left, greaterThanOrEqualTo(sel.right),
-          reason: '竖排弹窗须在当前列右侧，不压列');
+      expect(
+        popup.left,
+        greaterThanOrEqualTo(sel.right),
+        reason: '竖排弹窗须在当前列右侧，不压列',
+      );
       expect(popup.right, lessThanOrEqualTo(screen.width));
     });
 
@@ -399,8 +409,11 @@ void main() {
         maxHeight: 360,
         verticalWriting: true,
       );
-      expect(popup.right, lessThanOrEqualTo(sel.left),
-          reason: '右侧无空间时弹窗须落在当前列左侧');
+      expect(
+        popup.right,
+        lessThanOrEqualTo(sel.left),
+        reason: '右侧无空间时弹窗须落在当前列左侧',
+      );
       expect(popup.left, greaterThanOrEqualTo(0));
     });
 
@@ -430,8 +443,11 @@ void main() {
         verticalWriting: true,
       );
       expect(popup.top, greaterThanOrEqualTo(100), reason: '竖直方向仍须避让顶部预留');
-      expect(popup.bottom, lessThanOrEqualTo(screen.height - 120),
-          reason: '竖直方向仍须避让底部预留');
+      expect(
+        popup.bottom,
+        lessThanOrEqualTo(screen.height - 120),
+        reason: '竖直方向仍须避让底部预留',
+      );
     });
 
     test('horizontal mode unchanged: still placed above/below selection', () {
@@ -449,55 +465,58 @@ void main() {
     });
   });
 
-  group(
-      'TODO-107: vertical writing falls back to above/below when neither '
+  group('TODO-107: vertical writing falls back to above/below when neither '
       'side fits', () {
     // 窄屏 + 选区横向居中：左右两侧可用宽都 < minPopupWidth(200)，整宽弹窗两侧都放不下。
     // 左右避让只会把弹窗压成一根挡视线的窄竖条 → 应回退横排上/下避让，把整宽留给弹窗。
-    test('narrow screen, centered selection: falls back to placeAboveBelow',
-        () {
-      // 屏宽 300、选区 x∈[140,160]：roomRight=roomLeft=130(<200)，竖向有充足空间。
-      const Size screen = Size(300, 600);
-      const Rect sel = Rect.fromLTWH(140, 50, 20, 20);
-      final Rect popup = calcPopupPosition(
-        selectionRect: sel,
-        screen: screen,
-        maxWidth: 360,
-        maxHeight: 360,
-        verticalWriting: true,
-      );
+    test(
+      'narrow screen, centered selection: falls back to placeAboveBelow',
+      () {
+        // 屏宽 300、选区 x∈[140,160]：roomRight=roomLeft=130(<200)，竖向有充足空间。
+        const Size screen = Size(300, 600);
+        const Rect sel = Rect.fromLTWH(140, 50, 20, 20);
+        final Rect popup = calcPopupPosition(
+          selectionRect: sel,
+          screen: screen,
+          maxWidth: 360,
+          maxHeight: 360,
+          verticalWriting: true,
+        );
 
-      // 回退后走横排：弹窗放在选区下方（顶边不越选区底边），不被压成窄条。
-      final bool below = popup.top >= sel.bottom;
-      final bool above = popup.bottom <= sel.top;
-      expect(below || above, isTrue, reason: '两侧都放不下时应回退上/下避让');
-      // 横排回退把整宽给弹窗——比任一侧的窄竖条(<=130)宽得多，故水平上与当前列重叠。
-      final bool overlapsColumn =
-          popup.left < sel.right && popup.right > sel.left;
-      expect(overlapsColumn, isTrue, reason: '回退后弹窗占整宽（不再贴列侧），证明确实回退而非竖排窄条');
-      expect(popup.width, greaterThan(130), reason: '回退后宽度远超任一侧可用窄宽(130)');
-    });
+        // 回退后走横排：弹窗放在选区下方（顶边不越选区底边），不被压成窄条。
+        final bool below = popup.top >= sel.bottom;
+        final bool above = popup.bottom <= sel.top;
+        expect(below || above, isTrue, reason: '两侧都放不下时应回退上/下避让');
+        // 横排回退把整宽给弹窗——比任一侧的窄竖条(<=130)宽得多，故水平上与当前列重叠。
+        final bool overlapsColumn =
+            popup.left < sel.right && popup.right > sel.left;
+        expect(overlapsColumn, isTrue, reason: '回退后弹窗占整宽（不再贴列侧），证明确实回退而非竖排窄条');
+        expect(popup.width, greaterThan(130), reason: '回退后宽度远超任一侧可用窄宽(130)');
+      },
+    );
 
-    test('min-height protection: no fallback when vertical room is too small',
-        () {
-      // 同样两侧都放不下，但选区几乎占满竖向高度 → 上下都没有 >=minPopupHeight 的空间，
-      // 不应回退（回退后弹窗反而被压成更矮的横带），保留原竖排逻辑落在某一侧。
-      const Size screen = Size(300, 200);
-      // 选区高 180：roomBelow=200-6-(186+4)<0、roomAbove=(6-4)-6<0，均 < minPopupHeight。
-      const Rect sel = Rect.fromLTWH(140, 6, 20, 180);
-      final Rect popup = calcPopupPosition(
-        selectionRect: sel,
-        screen: screen,
-        maxWidth: 360,
-        maxHeight: 360,
-        verticalWriting: true,
-      );
+    test(
+      'min-height protection: no fallback when vertical room is too small',
+      () {
+        // 同样两侧都放不下，但选区几乎占满竖向高度 → 上下都没有 >=minPopupHeight 的空间，
+        // 不应回退（回退后弹窗反而被压成更矮的横带），保留原竖排逻辑落在某一侧。
+        const Size screen = Size(300, 200);
+        // 选区高 180：roomBelow=200-6-(186+4)<0、roomAbove=(6-4)-6<0，均 < minPopupHeight。
+        const Rect sel = Rect.fromLTWH(140, 6, 20, 180);
+        final Rect popup = calcPopupPosition(
+          selectionRect: sel,
+          screen: screen,
+          maxWidth: 360,
+          maxHeight: 360,
+          verticalWriting: true,
+        );
 
-      // 未回退：仍走竖排侧放——弹窗与当前列不水平重叠（在列左/右侧）。
-      final bool onRight = popup.left >= sel.right;
-      final bool onLeft = popup.right <= sel.left;
-      expect(onRight || onLeft, isTrue, reason: '竖向空间不足时不回退，保留竖排侧放（与列不水平重叠）');
-    });
+        // 未回退：仍走竖排侧放——弹窗与当前列不水平重叠（在列左/右侧）。
+        final bool onRight = popup.left >= sel.right;
+        final bool onLeft = popup.right <= sel.left;
+        expect(onRight || onLeft, isTrue, reason: '竖向空间不足时不回退，保留竖排侧放（与列不水平重叠）');
+      },
+    );
 
     test('reverting the fallback turns the narrow-screen case red', () {
       // 守卫：撤掉 TODO-107 回退增强（即把判据当作恒不触发），narrow-screen 用例会落到
@@ -517,14 +536,96 @@ void main() {
     });
   });
 
+  group(
+    'BUG-3604: choosePopupAnchorRect falls back when avoidance collapses',
+    () {
+      const Size screen = Size(363, 792);
+      const Rect glyph = Rect.fromLTWH(300, 396, 15, 16);
+
+      Rect choose(
+        Rect preferred, {
+        Rect? fallback = glyph,
+        bool docked = false,
+      }) => choosePopupAnchorRect(
+        preferred: preferred,
+        fallback: fallback,
+        screen: screen,
+        bottomDocked: docked,
+        maxWidth: 480,
+        maxHeight: 480,
+      );
+
+      test('preferred rect taller than the screen -> fallback glyph', () {
+        expect(choose(const Rect.fromLTRB(0, -320, 363, 1180)), glyph);
+      });
+
+      test(
+        'preferred rect leaving only a sliver (< min height) -> fallback',
+        () {
+          // 上方 40、下方 40：按它避让弹窗只剩 ~36 高。
+          expect(choose(const Rect.fromLTRB(0, 50, 363, 742)), glyph);
+        },
+      );
+
+      test('roomy preferred rect is kept (bubble avoidance unchanged)', () {
+        const Rect bubble = Rect.fromLTWH(40, 520, 200, 120);
+        expect(choose(bubble), bubble);
+      });
+
+      test('tight but usable room keeps the preferred rect', () {
+        // 上方约 250：弹窗被压矮但仍不小于弹窗系统自己的最小高度（200），
+        // 不放弃气泡避让。
+        const Rect bubble = Rect.fromLTRB(0, 260, 363, 700);
+        expect(choose(bubble), bubble);
+      });
+
+      test(
+        '9VPd0p5d0V: room below the popup minimum height (~130) -> fallback',
+        () {
+          // 反馈未放大截图：资料表并集上方只剩约 130 高。旧阈值 120 判它「放得下」，
+          // 弹窗被推到屏顶、只露顶栏与词头、离被点的词半屏远（「避开过头」）。
+          const Rect table = Rect.fromLTRB(0, 140, 363, 780);
+          final Rect placed = calcPopupPosition(
+            selectionRect: table,
+            screen: screen,
+            maxWidth: 480,
+            maxHeight: 480,
+          );
+          expect(placed.height, lessThan(kLookupPopupMinHeight));
+          expect(placed.height, greaterThan(120), reason: '旧阈值下会被判成功');
+          expect(choose(table), glyph);
+        },
+      );
+
+      test('no fallback / docked mode -> preferred untouched', () {
+        const Rect huge = Rect.fromLTRB(0, -320, 363, 1180);
+        expect(choose(huge, fallback: null), huge);
+        expect(choose(huge, docked: true), huge);
+      });
+
+      test('small max height setting does not count as collapse', () {
+        // 用户把最大高度设成 80：避让后高度 80 是「放得下」，不是被挤压。
+        const Rect bubble = Rect.fromLTWH(40, 520, 200, 120);
+        expect(
+          choosePopupAnchorRect(
+            preferred: bubble,
+            fallback: glyph,
+            screen: screen,
+            bottomDocked: false,
+            maxWidth: 480,
+            maxHeight: 80,
+          ),
+          bubble,
+        );
+      });
+    },
+  );
+
   group('TODO-108: dockedPopupRect pins a full-width bottom panel', () {
     const Size screen = Size(800, 600);
 
     test('ignores selection: full-width panel pinned to the bottom', () {
-      final Rect docked = dockedPopupRect(
-        screen: screen,
-        dockedHeight: 360,
-      );
+      final Rect docked = dockedPopupRect(screen: screen, dockedHeight: 360);
 
       // BUG-2439：横向真·铺满（左缘 0、右缘 = 屏宽），纵向仍留 inset 贴屏底。
       expect(docked.left, 0, reason: '整宽面板从屏幕最左开始');
@@ -570,20 +671,22 @@ void main() {
       expect(a, b, reason: 'dock 矩形是选区无关的纯函数');
     });
 
-    test('clamps docked height to the available space and respects reserves',
-        () {
-      final Rect docked = dockedPopupRect(
-        screen: screen,
-        dockedHeight: 5000, // 远超屏高
-        bottomReserve: 80,
-        topReserve: 40,
-      );
+    test(
+      'clamps docked height to the available space and respects reserves',
+      () {
+        final Rect docked = dockedPopupRect(
+          screen: screen,
+          dockedHeight: 5000, // 远超屏高
+          bottomReserve: 80,
+          topReserve: 40,
+        );
 
-      expect(docked.top, greaterThanOrEqualTo(40), reason: '不越过顶部预留');
-      expect(docked.bottom, lessThanOrEqualTo(600 - 80), reason: '不越过底部预留');
-      expect(docked.left, greaterThanOrEqualTo(0));
-      expect(docked.right, lessThanOrEqualTo(800));
-    });
+        expect(docked.top, greaterThanOrEqualTo(40), reason: '不越过顶部预留');
+        expect(docked.bottom, lessThanOrEqualTo(600 - 80), reason: '不越过底部预留');
+        expect(docked.left, greaterThanOrEqualTo(0));
+        expect(docked.right, lessThanOrEqualTo(800));
+      },
+    );
 
     test('survives a reserve larger than the surface without throwing', () {
       final Rect docked = dockedPopupRect(
@@ -606,11 +709,20 @@ void main() {
 
     test('bug 复现：词靠右缘时 maxWidth 变大 → 贴词定位左上角左移', () {
       final Rect small = calcPopupPosition(
-          selectionRect: selRight, screen: screen, maxWidth: 300);
+        selectionRect: selRight,
+        screen: screen,
+        maxWidth: 300,
+      );
       final Rect big = calcPopupPosition(
-          selectionRect: selRight, screen: screen, maxWidth: 600);
-      expect(big.left, lessThan(small.left),
-          reason: '宽度变大时左上角左移——用户报「从右下拖却从左上动」的根源');
+        selectionRect: selRight,
+        screen: screen,
+        maxWidth: 600,
+      );
+      expect(
+        big.left,
+        lessThan(small.left),
+        reason: '宽度变大时左上角左移——用户报「从右下拖却从左上动」的根源',
+      );
     });
 
     test('anchorPopupTopLeft 钉死左上角、保留 anchored 尺寸', () {
@@ -629,14 +741,20 @@ void main() {
       const Offset frozen = Offset(600, 200); // 拖拽起始左上角
       final Rect small = anchorPopupTopLeft(
         anchored: calcPopupPosition(
-            selectionRect: selRight, screen: screen, maxWidth: 300),
+          selectionRect: selRight,
+          screen: screen,
+          maxWidth: 300,
+        ),
         topLeft: frozen,
         screen: screen,
         inset: 6,
       );
       final Rect big = anchorPopupTopLeft(
         anchored: calcPopupPosition(
-            selectionRect: selRight, screen: screen, maxWidth: 600),
+          selectionRect: selRight,
+          screen: screen,
+          maxWidth: 600,
+        ),
         topLeft: frozen,
         screen: screen,
         inset: 6,

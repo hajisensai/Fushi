@@ -8,6 +8,8 @@ import 'package:fushi/src/asr_host/asr_host.dart'
 import 'package:fushi/src/asr_host/gpu_acceleration.dart'
     show gpuRuntimeToDownloadForUi, withGpuRuntimeDownload;
 import 'package:fushi/src/asr_host/gpu_runtime_pack.dart' show GpuRuntimeStore;
+import 'package:fushi/src/asr_host/shared_model_downloads.dart'
+    show SharedModelDownloads, asrPackDownloadKey, sharedModelDownloads;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 一个语音转录模型包当前的下载进度快照。
@@ -60,7 +62,9 @@ class AsrModelDownloads extends ChangeNotifier {
     this.gpuRuntimeToDownload = gpuRuntimeToDownloadForUi,
     AsrTranscriptionService Function(AsrAudioProfile profile)?
     serviceForProfile,
-  }) : serviceForProfile =
+    SharedModelDownloads? shared,
+  }) : shared = shared ?? sharedModelDownloads,
+       serviceForProfile =
            serviceForProfile ??
            ((AsrAudioProfile profile) =>
                createAsrTranscriptionService(audioProfile: profile));
@@ -73,6 +77,10 @@ class AsrModelDownloads extends ChangeNotifier {
 
   /// 按包开模型目录（手动接入的本地包认用户自己的文件夹）。
   final Future<AsrModelStore> Function(AsrModelPack pack) openPackStore;
+
+  /// 模型文件下载的单飞登记表：转录弹层 / 视频字幕弹层 / 自动转录也经它下同一个
+  /// 包，同一份目录同一时刻只有一条写者（kZZmXQBv7E）。
+  final SharedModelDownloads shared;
 
   /// 下模型阶段该一起下的 GPU 环境；null = 不需要 / 本平台没有。
   final Future<GpuRuntimeStore?> Function() gpuRuntimeToDownload;
@@ -122,23 +130,39 @@ class AsrModelDownloads extends ChangeNotifier {
     );
   }
 
-  /// [pack] 的下载计划：变体与 EP 推荐按「语言 + 这个包服务的素材」取（与转录
-  /// 弹层同一个 `plan(auto)`），模型状态换成**这个包自己目录**的。设置页每一行
-  /// 与 CLI 都走这里。
+  /// [pack] 的下载计划：变体**推荐**与 EP 探测按「语言 + 这个包服务的素材」取
+  /// （与转录弹层同一个 `plan(auto)`），实际变体与模型状态换成**这个包自己目录**
+  /// 的：在这个目录里按上游同一条 [planAsrEncoderVariant] 挑已在盘的可用变体，
+  /// 没有时才是推荐的那个（= 要下载的）。「已下载」因此看任一可用变体，不随显存
+  /// 预算翻转（BUG-4128）。设置页每一行与 CLI 都走这里。
   Future<AsrTranscribePlan> planFor(
     AsrTranscriptionService service,
     AsrModelPack pack,
   ) async {
+    const AsrAccelerationPreference preference = AsrAccelerationPreference.auto;
     final AsrTranscribePlan byLanguage = await serviceFor(
       service,
       pack,
-    ).plan(language: pack.language, preference: AsrAccelerationPreference.auto);
+    ).plan(language: pack.language, preference: preference);
     final AsrModelStore store = await openPackStore(pack);
+    final AsrEncoderVariant variant = planAsrEncoderVariant(
+      recommended: byLanguage.recommendedVariant,
+      preference: preference,
+      isReady: store.isReady,
+    );
     return AsrTranscribePlan(
       language: byLanguage.language,
-      variant: byLanguage.variant,
-      expectedProvider: byLanguage.expectedProvider,
-      modelStatus: await store.status(byLanguage.variant),
+      variant: variant,
+      recommendedVariant: byLanguage.recommendedVariant,
+      expectedProvider: variant == byLanguage.variant
+          ? byLanguage.expectedProvider
+          : selectAsrEncoderProviders(
+              platform: currentAsrPlatform(),
+              available: byLanguage.availableProviders,
+              preference: preference,
+              variant: variant,
+            ).first,
+      modelStatus: await store.status(variant),
       probeError: byLanguage.probeError,
       availableProviders: byLanguage.availableProviders,
     );
@@ -183,7 +207,10 @@ class AsrModelDownloads extends ChangeNotifier {
     slot.total += gpu?.pendingDownloadBytes ?? 0;
     slot.subscription =
         withGpuRuntimeDownload(
-          store.download(plan.variant),
+          shared.join(
+            asrPackDownloadKey(pack.id),
+            () => store.download(plan.variant),
+          ),
           gpu,
           onGpuRuntimeError: (Object error) {
             _lastGpuErrors[pack.id] = '$error';
@@ -225,6 +252,8 @@ class AsrModelDownloads extends ChangeNotifier {
     _notify();
     try {
       await slot.cancel();
+      // 模型文件那条归单飞登记表持有，摘掉本槽的监听不会停它。
+      await shared.cancel(asrPackDownloadKey(packId));
     } finally {
       if (identical(_slots[packId], slot)) {
         _slots.remove(packId);

@@ -92,7 +92,7 @@ class VideoMetadataLanguages {
     for (final String tag in <String>[
       primarySubtag,
       'en',
-      kNoLanguageImageTag
+      kNoLanguageImageTag,
     ]) {
       if (!order.contains(tag)) order.add(tag);
     }
@@ -114,8 +114,9 @@ class VideoMetadataLanguages {
       // 与别名表里的 `ja-JP` 整串不等，按整串去重会对同一种语言发两次请求——
       // 正是本文件声讨的那种浪费。
       final String subtag = VideoMetadataLanguages(tag).primarySubtag;
-      if (order.every((String value) =>
-          VideoMetadataLanguages(value).primarySubtag != subtag)) {
+      if (order.every(
+        (String value) => VideoMetadataLanguages(value).primarySubtag != subtag,
+      )) {
         order.add(tag);
       }
     }

@@ -97,7 +97,14 @@ void main() {
         snapshot.expandedLanguages.add('zh');
         expect(repo.termDictionaries.single.displayName, 'committed');
         expect(repo.displayNameOverrides.values.single, 'committed');
-        repo.cacheFfiLookup('fixture', <FushiLookupResult>[]);
+        repo.cacheSearchResult(
+          'fixture',
+          DictionarySearchResult(
+            searchTerm: 'fixture',
+            entries: <DictionaryEntry>[DictionaryEntry(word: 'fixture')],
+          ),
+        );
+        final int epoch = repo.resultsCacheEpoch;
         final int before = rebuilds;
         fault.fail = true;
         await expectLater(repo.persistDictionary(snapshot), throwsStateError);
@@ -108,7 +115,8 @@ void main() {
         expect(unchanged.collapsedLanguages, isEmpty);
         expect(unchanged.expandedLanguages, isEmpty);
         expect(rebuilds, before);
-        expect(repo.getCachedFfiLookup('fixture'), isNotNull);
+        expect(repo.getCachedSearch('fixture'), isNotNull);
+        expect(repo.resultsCacheEpoch, epoch);
         expect(
           (await db.getAllDictionaryMetadata()).single.displayName,
           'committed',
@@ -122,7 +130,8 @@ void main() {
         expect(repo.dictionaries.single.collapsedLanguages, <String>['ja']);
         expect(repo.dictionaries.single.expandedLanguages, <String>['zh']);
         expect(rebuilds, before + 1);
-        expect(repo.getCachedFfiLookup('fixture'), isNull);
+        expect(repo.getCachedSearch('fixture'), isNull);
+        expect(repo.resultsCacheEpoch, isNot(epoch));
         await repo.loadFromDb();
         expect(repo.dictionaries.single.displayName, 'edited');
         expect(repo.dictionaries.single.metadata['revision'], 'r2');

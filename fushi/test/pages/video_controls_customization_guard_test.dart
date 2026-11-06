@@ -427,16 +427,27 @@ void main() {
 
     // TODO-378（BUG-287）：恢复「重播上一句」(videoReplayPreviousSubtitle / Shift+R)。
     // TODO-328 曾误当它与「上一句字幕」(videoPreviousSubtitle / Ctrl+←) 重复而删除，
-    // 但两者语义不同：「重播上一句」走纯 skipToPrevCue（跳到上一条 cue 起点、不退化），
-    // 「上一句字幕」gap 太远时按 BUG-185/TODO-085 退化时间 seek。守卫两个动作的全链路
+    // 但两者语义不同：「重播上一句」跳到上一条 cue 起点并起播，「上一句字幕」只跳不改
+    // 播放态（无字幕时当回退键）。守卫两个动作的全链路
     // 接线都在，且「重播上一句」用纯 skipToPrevCue（不退化），防止再次被合并/删除。
     expect(actions, contains('videoReplayPreviousSubtitle'));
     expect(defaults, contains('videoReplayPreviousSubtitle'));
     expect(shortcuts, contains('replayPreviousSubtitle'));
     expect(settings, contains('videoReplayPreviousSubtitle'));
     expect(page, contains('_replayPreviousCueAndKeepControls'));
-    // 「重播上一句」必须是纯句子跳转（skipToPrevCue），不得退化成时间回退。
-    expect(page, contains('skipToPrevCue();'));
+    // 「重播上一句」必须是纯句子跳转，不得退化成时间回退；Dbd86l4kA- 起它走起播版本
+    // playFromPreviousCue（定位判据与 skipToPrevCue 同为 prevCueIndexFor）。
+    expect(page, contains('playFromPreviousCue();'));
+    final String controllerSrc = read(
+      'lib/src/media/video/video_player_controller.dart',
+    );
+    final int prevAt = controllerSrc.indexOf(
+      'Future<void> playFromPreviousCue() async {',
+    );
+    expect(prevAt, greaterThan(0));
+    final String prevBody = controllerSrc.substring(prevAt, prevAt + 400);
+    expect(prevBody, contains('prevCueIndexFor('));
+    expect(prevBody, isNot(contains('skipToPrevCueOrSeekBack')));
 
     expect(page, contains('_toggleFavoriteCurrentCue'));
     expect(page, contains('_replayCurrentCueAndKeepControls'));

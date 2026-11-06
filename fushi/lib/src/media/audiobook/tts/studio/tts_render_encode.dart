@@ -400,8 +400,8 @@ bool ffmpegFiltersListHas(String filtersOutput, String filter) => RegExp(
   multiLine: true,
 ).hasMatch(filtersOutput);
 
-/// 一章编码的 ffmpeg 参数。桌面 ffmpeg-min 没有 ipod 封装器，`.m4a` 必须显式
-/// `-f mp4`。
+/// 一章编码的 ffmpeg 参数。旧桌面 ffmpeg-min 没有 ipod 封装器，`.m4a` 显式
+/// `-f mp4`（统一 FFmpeg 已含 ipod；该写法也兼容 Linux 系统 ffmpeg / 用户指定的外部 ffmpeg，保留）。
 List<String> buildTtsChapterEncodeArgs({
   required String listPath,
   required String outputPath,

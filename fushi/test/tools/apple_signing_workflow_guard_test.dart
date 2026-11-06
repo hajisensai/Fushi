@@ -1,10 +1,10 @@
 // 守卫：release-desktop.yml 的 Apple 签名 / TestFlight 链路不变式。
 //
 // 这条链路的失败模式全是「构建照样绿，但产物错了」，靠人肉 review 挡不住：
-//   1. TestFlight 上传如果退化成每次 push 都传，一天 5~13 次上传会让 App Store Connect
-//      的处理排队压后真正想发的 beta、TestFlight 列表被 debug 构建淹掉。push 的 debug
-//      通道只在每第三次 run 上传（2026-09-16 用户拍板「发三次调试版触发一次」），
-//      手动 dispatch 只放行 beta / formal 与 testflight_only 的 debug。
+//   1. TestFlight 上传门：develop 的 push debug 通道每次都传（2026-11-02 用户拍板「每次 CI
+//      自动推 TF」，取代 09-16 的「发布序列 % 3 == 0 才传」），但必须密钥齐全，缺密钥
+//      时 fork 照常绿；手动 dispatch 只放行 beta / formal 与 testflight_only 的 debug，
+//      普通 debug 重发不得顺手上传。
 //   2. GitHub Release 的 iOS 资产必须继续是 no-codesign 包 —— 老用户用 AltStore /
 //      Sideloadly 自签侧载的就是它，换成 App Store 签名包会直接打断他们。
 //   3. macOS 公证要求每个可执行体都带强化运行时 + 安全时间戳。少了任一个，
@@ -16,7 +16,7 @@
 
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 Directory _repoRoot() {
   var dir = Directory.current;
@@ -46,41 +46,78 @@ void main() {
     content = workflow.readAsStringSync();
   });
 
-  test('TestFlight 上传门：手动 dispatch 判事件与通道，push 只在序列能被 3 整除时', () {
+  test('TestFlight 上传门：手动 dispatch 判事件与通道，push 的 debug 每次都传', () {
     // 手动那条门必须同时含事件判断和通道判断；少任何一半普通 debug 重发就会顺手上传。
     expect(
       content.contains(r'[ "$GITHUB_EVENT_NAME" = workflow_dispatch ]'),
       isTrue,
       reason: 'TestFlight 门必须显式要求 workflow_dispatch 事件',
     );
-    // push 那条门：必须同时钉住密钥齐全、push 事件、debug 通道、发布序列 % 3 == 0，
-    // 少任何一项就是「每次 push 都传」或「fork 上红」。序列来自 channel 步骤的
-    // release_sequence（共享的 commit 计数），不是 run 号——run 号在本仓是禁用词。
+    // push 那条门：必须同时钉住密钥齐全、push 事件、develop 分支、debug 通道，少一项就是
+    // 「fork 上红」、「beta/formal 之外的通道也被 push 带着传」或「main 的 push 也传」。
+    // 不再按序列限频（2026-11-02），但只认 develop：workflow 的 push 也覆盖 main，main 的
+    // commit 数远低于 develop，序列落在 develop 已传号段下面，快进到已传过的 sha 时序列
+    // 相同、必撞 App Store Connect 的 409 DUPLICATE。
     expect(
       RegExp(
-        r'if \[ "\$CREDS" = true \] && \[ "\$GITHUB_EVENT_NAME" = push \] \\\n\s+&& \[ "\$RELEASE_CHANNEL" = debug \] \\\n\s+&& \[ \$\(\(RELEASE_SEQUENCE % 3\)\) -eq 0 \]; then\n\s+TESTFLIGHT=true',
+        r'if \[ "\$CREDS" = true \] && \[ "\$GITHUB_EVENT_NAME" = push \] \\\n\s+&& \[ "\$GITHUB_REF" = refs/heads/develop \] \\\n\s+&& \[ "\$RELEASE_CHANNEL" = debug \]; then\n\s+TESTFLIGHT=true',
       ).hasMatch(content),
       isTrue,
-      reason:
-          'push 门必须是 CREDS && push && debug && RELEASE_SEQUENCE % 3 == 0 四件套',
+      reason: 'push 门必须是 CREDS && push && refs/heads/develop && debug 四件套',
+    );
+    // 门禁日志 `debug push, build $RELEASE_SEQUENCE: ...` 是排查「这次 push 传没传、
+    // 构建号是几」的入口（apple-signing.md 指向它）；env 映射一丢，日志变成 `build :`。
+    // 只在 signing 步骤（step 名到门禁日志之间）里找，别被其它 job 的同名映射蒙过去。
+    final int signingStepAt = content.indexOf(
+      '- name: Resolve Apple signing mode',
+    );
+    expect(signingStepAt, greaterThan(-1), reason: '找不到 signing 步骤');
+    final int gateLogAt = content.indexOf(
+      r'echo "debug push, build $RELEASE_SEQUENCE: TestFlight upload $TESTFLIGHT_NOTE"',
+      signingStepAt,
     );
     expect(
-      content.contains(
-        r'RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}',
-      ),
+      gateLogAt,
+      greaterThan(signingStepAt),
+      reason: 'push 门必须打印构建号与上传结论，排查入口不能丢',
+    );
+    expect(
+      content
+          .substring(signingStepAt, gateLogAt)
+          .contains(
+            r'RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}',
+          ),
       isTrue,
-      reason: 'signing 步骤必须把共享发布序列喂进 env，否则 % 3 算的是空串',
+      reason: 'signing 步骤必须把共享发布序列喂进 env，门禁日志的构建号要靠它',
+    );
+    expect(
+      content.contains('RELEASE_SEQUENCE % 3'),
+      isFalse,
+      reason: '「% 3 才传」已撤（2026-11-02 改为每次 debug push 都传），不得回潮',
     );
     expect(
       content.contains(r'[ "$RELEASE_CHANNEL" = beta ]'),
       isTrue,
       reason: 'TestFlight 门必须限定 beta/formal 通道',
     );
-    // 上传步骤本身必须挂在门的输出上，不能是 always() 或无条件。
+    // 上传步骤本身必须挂在门的输出上，不能是 always() 或无条件。签名 IPA 的构建走
+    // `signed`（build_only 也签、不传），上传只认 `testflight`。
     expect(
-      content.contains("if: steps.signing.outputs.testflight == 'true'"),
+      RegExp(
+        r"- name: Upload to TestFlight\n\s+if: needs\.ios\.outputs\.testflight == 'true'",
+      ).hasMatch(content),
       isTrue,
-      reason: '上传步骤必须由 signing 步骤的 testflight 输出把关',
+      reason: 'TestFlight 上传步骤必须由 ios job 的 testflight 输出把关',
+    );
+    expect(
+      content.contains('testflight: \${{ steps.signing.outputs.testflight }}'),
+      isTrue,
+      reason: 'ios job 的 testflight 输出必须直接取 signing 步骤的上传门',
+    );
+    expect(
+      content.contains(r'SIGNED="$TESTFLIGHT"'),
+      isTrue,
+      reason: '要传 TestFlight 就一定要先签：signed 以上传门为底',
     );
     expect(
       RegExp(
@@ -91,9 +128,9 @@ void main() {
     );
   });
 
-  test('debug 通道：手动 dispatch 要 testflight_only，push 只走序列 % 3', () {
+  test('debug 通道：手动 dispatch 要 testflight_only，push 走自己那条门', () {
     // 手动 dispatch 一个普通 debug 重发（不带 testflight_only）不得顺手传 TestFlight；
-    // 两次自动上传之间想补传一份就显式给 testflight_only=true。
+    // push run 被顶掉等情况想补传一份就显式给 testflight_only=true。
     expect(
       content.contains(
         r'elif [ "$RELEASE_CHANNEL" = debug ] && [ "${INPUT_TESTFLIGHT_ONLY:-}" = true ]; then',
@@ -108,7 +145,7 @@ void main() {
       isTrue,
       reason: 'signing 步骤必须把 testflight_only 输入喂进 env，否则门里读到的永远是空',
     );
-    // push 事件只能以「序列 % 3」的形态出现在门里：手动 dispatch 那条 if 里不得混进
+    // push 事件只能出现在它自己那条门里：手动 dispatch 那条 if 里不得混进
     // push，否则 upload_testflight / build_only 的判断会被 push 绕开。
     final int gateAt = content.indexOf('TESTFLIGHT=false');
     expect(gateAt, greaterThan(-1));
@@ -176,12 +213,12 @@ void main() {
 
   test('定时 TestFlight 通道已撤，不得回潮', () {
     // 2026-09-14 ~ 09-16 曾有 testflight-debug.yml 每 8 小时查 App Store Connect 补传
-    // debug 包；用户改为「每三次 debug push 传一次」后撤掉。两条节律并存会重复上传，
-    // 也会让「三次一次」的语义失真。
+    // debug 包；改由 push 门直接传（现为每次 debug push 都传）后撤掉。两条节律并存会
+    // 重复上传。
     expect(
       File('${root.path}/.github/workflows/testflight-debug.yml').existsSync(),
       isFalse,
-      reason: '定时通道已撤，debug 上 TestFlight 只走 push 门的每第三次',
+      reason: '定时通道已撤，debug 上 TestFlight 只走 push 门',
     );
     expect(
       File('${root.path}/tool/asc_latest_build_number.sh').existsSync(),
@@ -230,11 +267,9 @@ void main() {
     final List<RegExpMatch> signedUploads = RegExp(
       r'\n(\s+)name: ([^\n]+)\n\s+path: fushi/build/ios/ipa/\*\.ipa\n',
     ).allMatches(content).toList();
-    expect(
-      signedUploads.map((RegExpMatch m) => m.group(2)).toList(),
-      <String>['ios-testflight-signed-ipa'],
-      reason: '签名 IPA 只能上传成 ios-testflight-signed-ipa 这一个 artifact',
-    );
+    expect(signedUploads.map((RegExpMatch m) => m.group(2)).toList(), <String>[
+      'ios-testflight-signed-ipa',
+    ], reason: '签名 IPA 只能上传成 ios-testflight-signed-ipa 这一个 artifact');
     expect(
       'ios-testflight-signed-ipa'.startsWith('desktop-artifacts-'),
       isFalse,

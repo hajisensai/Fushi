@@ -70,14 +70,14 @@ final class DictionaryRemoteIndexResult {
     String value, {
     this.downloadUrl,
     this.indexUrl,
-  })  : succeeded = true,
-        revision = value;
+  }) : succeeded = true,
+       revision = value;
 
   const DictionaryRemoteIndexResult.failure()
-      : succeeded = false,
-        revision = null,
-        downloadUrl = null,
-        indexUrl = null;
+    : succeeded = false,
+      revision = null,
+      downloadUrl = null,
+      indexUrl = null;
 
   final bool succeeded;
   final String? revision;
@@ -195,11 +195,7 @@ Map<String, String> mergeBackfilledSourceMetadata(
   Map<String, String> existing,
   Map<String, String> fromIndex,
 ) {
-  return <String, String>{
-    ...fromIndex,
-    ...existing,
-    kDictSourceProbeKey: '1',
-  };
+  return <String, String>{...fromIndex, ...existing, kDictSourceProbeKey: '1'};
 }
 
 /// TODO-609：在线更新检查——拉远端 index.json 比 revision。

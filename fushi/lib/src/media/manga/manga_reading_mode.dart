@@ -87,8 +87,9 @@ MangaReadingMode detectReadingMode(MokuroPayload payload) {
 
   ratios.sort();
   final int mid = ratios.length ~/ 2;
-  final double median =
-      ratios.length.isOdd ? ratios[mid] : (ratios[mid - 1] + ratios[mid]) / 2.0;
+  final double median = ratios.length.isOdd
+      ? ratios[mid]
+      : (ratios[mid - 1] + ratios[mid]) / 2.0;
 
   return median > kWebtoonAspectThreshold
       ? MangaReadingMode.webtoon

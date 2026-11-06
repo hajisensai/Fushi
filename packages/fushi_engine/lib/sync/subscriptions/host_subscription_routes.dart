@@ -17,10 +17,10 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:shelf/shelf.dart' as shelf;
 
 shelf.Response _json(Object body, {int status = 200}) => shelf.Response(
-      status,
-      body: jsonEncode(body),
-      headers: const <String, String>{'Content-Type': 'application/json'},
-    );
+  status,
+  body: jsonEncode(body),
+  headers: const <String, String>{'Content-Type': 'application/json'},
+);
 
 Future<shelf.Response> handleHostSubscriptionRequest(
   HostSubscriptionHost host,
@@ -42,8 +42,10 @@ Future<shelf.Response> handleHostSubscriptionRequest(
         return _json(<String, Object?>{
           'subscriptions': <Object?>[
             for (final VideoDownloadSubscriptionRow r in rows)
-              videoDownloadSubscriptionToWire(r,
-                  itemCounts: counts[r.subscriptionId]),
+              videoDownloadSubscriptionToWire(
+                r,
+                itemCounts: counts[r.subscriptionId],
+              ),
           ],
         });
       }
@@ -54,10 +56,11 @@ Future<shelf.Response> handleHostSubscriptionRequest(
         }
         final VideoDownloadSubscriptionRow row = await host.create(
           HostSubscriptionCreateRequest.fromJson(
-              Map<String, dynamic>.from(decoded)),
+            Map<String, dynamic>.from(decoded),
+          ),
         );
         return _json(<String, Object?>{
-          'subscription': videoDownloadSubscriptionToWire(row)
+          'subscription': videoDownloadSubscriptionToWire(row),
         });
       }
       return shelf.Response(405);
@@ -90,8 +93,10 @@ Future<shelf.Response> handleHostSubscriptionRequest(
     }
     return shelf.Response.notFound('Unknown subscriptions route');
   } on HostSubscriptionRejected catch (e) {
-    return _json(<String, Object?>{'reason': e.reason, 'message': e.message},
-        status: e.status);
+    return _json(<String, Object?>{
+      'reason': e.reason,
+      'message': e.message,
+    }, status: e.status);
   } on ArgumentError catch (e) {
     return shelf.Response(400, body: '${e.message}');
   } on FormatException catch (e) {

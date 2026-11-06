@@ -22,9 +22,9 @@ Widget _syncLikeTwoPane({
   required VoidCallback onSync,
 }) {
   Widget navTarget(String id) => FushiFocusTarget(
-        id: FushiFocusId(id),
-        child: const SizedBox(width: 200, height: 56),
-      );
+    id: FushiFocusId(id),
+    child: const SizedBox(width: 200, height: 56),
+  );
   return buildTestApp(
     FushiFocusRoot(
       child: Row(
@@ -80,22 +80,24 @@ Widget _syncLikeTwoPane({
 }
 
 void main() {
-  testWidgets(
-      'directional Down walks Compare → Sync row without skipping the '
+  testWidgets('directional Down walks Compare → Sync row without skipping the '
       'trailing-button action row (BUG-016)', (WidgetTester tester) async {
     final GlobalKey rootKey = GlobalKey();
     bool compareActivated = false;
     bool syncActivated = false;
 
-    await tester.pumpWidget(_syncLikeTwoPane(
-      rootKey: rootKey,
-      onCompare: () => compareActivated = true,
-      onSync: () => syncActivated = true,
-    ));
+    await tester.pumpWidget(
+      _syncLikeTwoPane(
+        rootKey: rootKey,
+        onCompare: () => compareActivated = true,
+        onSync: () => syncActivated = true,
+      ),
+    );
     await tester.pump();
 
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(rootKey.currentContext!);
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
+      rootKey.currentContext!,
+    );
 
     expect(controller.requestById(const FushiFocusId('detail-top')), isTrue);
     await tester.pump();
@@ -122,7 +124,8 @@ void main() {
     expect(
       syncActivated,
       isTrue,
-      reason: 'the trailing-button Sync row is now a reachable focus stop; '
+      reason:
+          'the trailing-button Sync row is now a reachable focus stop; '
           'Down must land on it (same pane), not jump to the nav rail',
     );
   });

@@ -34,6 +34,11 @@ const String customIconKey = 'custom';
 /// 8K/相机原图整帧解码进 Flutter ImageCache。
 const int appIconDecodePixelWidth = 256;
 
+/// 用户自选图标在裁剪阶段的长边上限（像素）。各端实际用到的最大尺寸是
+/// Android 快捷方式 512px、Windows 窗口图标 256px，1024 留足余量；不再把整张
+/// 相机原图按全分辨率解码、裁剪、编码再交给原生（BUG-3601）。
+const int appIconSourceMaxPixels = 1024;
+
 /// 当前真正生效的应用图标。
 ///
 /// [revision] 不持久化，只用于区分连续两次选择了同一个自定义文件路径的情况。
@@ -54,18 +59,18 @@ class AppIconSelection {
   bool get usesCustomFile => presetKey == customIconKey && customPath != null;
 
   AppIconSelection withRevision(int value) => AppIconSelection(
-        presetKey: presetKey,
-        customPath: customPath,
-        revision: value,
-      );
+    presetKey: presetKey,
+    customPath: customPath,
+    revision: value,
+  );
 }
 
 /// 主窗口侧栏与设置页共享的运行时真值。启动恢复和每次成功切换都只发布到这里，
 /// 避免窗口图标、偏好和 Flutter 品牌位各维护一份互不通知的状态（BUG-1920）。
 final ValueNotifier<AppIconSelection> currentAppIconSelection =
     ValueNotifier<AppIconSelection>(
-  const AppIconSelection(presetKey: 'default'),
-);
+      const AppIconSelection(presetKey: 'default'),
+    );
 
 /// 是否为内置预设 key（custom / 未知都返回 false）。
 bool isPresetKey(String key) => presetIconAssets.containsKey(key);

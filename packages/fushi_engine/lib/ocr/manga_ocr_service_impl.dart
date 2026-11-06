@@ -81,6 +81,7 @@ class MangaOcrModelPaths {
     this.ppRecPath = '',
     this.ppRecDictPath = '',
     this.ctcRecPath = '',
+    this.ignoreFurigana = false,
   });
 
   final String detectorPath;
@@ -92,7 +93,19 @@ class MangaOcrModelPaths {
   final String ppDetPath;
   final String ppRecPath;
   final String ppRecDictPath;
+
+  /// 「OCR 忽略振假名」（反馈 ZBJTgLuPIb）：逐列 CTC 识别前把贴在正文旁的注音带
+  /// 从列框里裁掉（[trimOcrRubyBands]）。不是模型路径，但它和路径一样决定 isolate
+  /// 里怎么组装识别器，跟着同一个对象跨 isolate 传；缓存签名另带后缀
+  /// （[mangaOcrEngineSignatureFor]），开关前后的结果不混在同一个缓存目录。
+  final bool ignoreFurigana;
 }
+
+/// 缓存签名的识别选项后缀：开了「忽略振假名」的结果单独成目录。
+String mangaOcrEngineSignatureFor(
+  String base, {
+  required bool ignoreFurigana,
+}) => ignoreFurigana ? '${base}_noruby' : base;
 
 /// 整卷任务请求。
 class MangaOcrVolumeJobRequest {
@@ -537,6 +550,7 @@ Future<void> _openIsolateOcrEngine(
   final OcrRecognizer primary = CtcColumnOcrRecognizer(
     lineDetector: await openLineDetector(),
     lineRecognizer: columns,
+    ignoreFurigana: modelPaths.ignoreFurigana,
   );
   // 横排行路径：PP-OCRv6 small det/rec 与块识别器同一组 provider（都是识别侧）；
   // 建会话时的降级同样经 record 留痕。
@@ -578,7 +592,14 @@ Future<void> _openIsolateOcrEngine(
   onAcceleration(acceleration);
 }
 
-/// isolate 入口：建推理会话 → 跑目录任务 → 回发事件。
+/// isolate 入口：建推理会话 → 跑目录任务 → 关会话 → 带着终局消息
+/// [Isolate.exit]。
+///
+/// 必须显式 [Isolate.exit]，不能靠「返回即退出」：宿主 bootstrap 挂的
+/// `BackgroundIsolateBinaryMessenger` 持有一个没有关闭入口的 `ReceivePort`，
+/// isolate 永远等不到自然退出，每跑一卷就漏一个（BUG-3997 同根因）。终局消息
+/// （完成 / 取消 / 出错）随 [Isolate.exit] 一起发出：主 isolate 收到时推理会话
+/// 已经关闭、isolate 正在退出。
 Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
   final ReceivePort control = ReceivePort();
   final OcrCancelToken cancelToken = OcrCancelToken();
@@ -593,6 +614,7 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
   });
   args.events.send(_JobControlPortMessage(control.sendPort));
 
+  Object outcome;
   try {
     await _openIsolateOcrEngine(
       engine,
@@ -611,10 +633,13 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
     const MangaOcrLocalModel jobModel = MangaOcrLocalModel.mangaCtc;
     final String engineSignature =
         args.engineSignature ??
-        await model_fp.resolveLocalMangaOcrEngineSignature(
-          Directory(p.dirname(args.modelPaths.detectorPath)),
-          manifest: jobModel.manifest,
-          baseSignature: jobModel.cacheSignature,
+        mangaOcrEngineSignatureFor(
+          await model_fp.resolveLocalMangaOcrEngineSignature(
+            Directory(p.dirname(args.modelPaths.detectorPath)),
+            manifest: jobModel.manifest,
+            baseSignature: jobModel.cacheSignature,
+          ),
+          ignoreFurigana: args.modelPaths.ignoreFurigana,
         );
     final String mangaJsonPath = await runMangaOcrFolderJob(
       imageDirPath: args.imageDirPath,
@@ -633,19 +658,18 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
         return focus;
       },
     );
-    args.events.send(_JobDoneMessage(mangaJsonPath));
+    outcome = _JobDoneMessage(mangaJsonPath);
   } on OcrCancelledException {
-    args.events.send(const _JobCancelledMessage());
+    outcome = const _JobCancelledMessage();
   } catch (e, stack) {
-    args.events.send(
-      cancelToken.isCancelled
-          ? const _JobCancelledMessage()
-          : _JobErrorMessage('$e', '$stack'),
-    );
+    outcome = cancelToken.isCancelled
+        ? const _JobCancelledMessage()
+        : _JobErrorMessage('$e', '$stack');
   } finally {
     control.close();
     await engine.close();
   }
+  Isolate.exit(args.events, outcome);
 }
 
 // ── 页级会话 isolate 消息协议 ─────────────────────────────────────────────
@@ -710,6 +734,12 @@ class _PageSessionFailedMessage {
 /// 关闭会话的控制消息：置位取消令牌 → 关 ORT 会话 → isolate 退出。
 const String _kPageSessionCloseMessage = 'close';
 
+/// 会话 isolate → 主 isolate 的最后一条消息：推理会话已关闭，随 [Isolate.exit]
+/// 发出。这是会话结束的正常信号；`onExit` 只给崩溃（未走到 [Isolate.exit]）兜底。
+class _PageSessionExitedMessage {
+  const _PageSessionExitedMessage();
+}
+
 class _PageSessionIsolateArgs {
   const _PageSessionIsolateArgs({
     required this.events,
@@ -769,7 +799,11 @@ Future<OcrRecognition> _recognizeIsolateTextImage(
 }
 
 /// 页级会话 isolate 入口：推理会话只建一次，之后串行处理请求（页 / 文字图）
-/// 直到收到关闭。
+/// 直到收到关闭，再带 [_PageSessionExitedMessage] 显式 [Isolate.exit]。
+///
+/// 不能靠「返回即退出」：宿主 bootstrap 挂的 `BackgroundIsolateBinaryMessenger`
+/// 持有一个关不掉的 `ReceivePort`，isolate 永远不会自然退出（BUG-3997 同根因），
+/// 主 isolate 的 close() 也就永远等不到。
 Future<void> _pageSessionIsolateMain(_PageSessionIsolateArgs args) async {
   final ReceivePort control = ReceivePort();
   final OcrCancelToken cancelToken = OcrCancelToken();
@@ -846,7 +880,7 @@ Future<void> _pageSessionIsolateMain(_PageSessionIsolateArgs args) async {
     control.close();
     await engine.close();
   }
-  // 返回即 isolate 退出；主 isolate 经 onExit 得知资源已释放。
+  Isolate.exit(args.events, const _PageSessionExitedMessage());
 }
 
 /// 生产页级会话 runner：常驻 [Isolate.spawn] 后台 isolate。
@@ -919,7 +953,8 @@ class _IsolatePageSession
             textImagesOnly: request.textImagesOnly,
           ),
           onError: _events.sendPort,
-          // 退出时向事件端口发 null：挂起请求失败、close() 完成。
+          // 崩溃兜底：没走到 Isolate.exit 就退出时向事件端口发 null。正常收尾的
+          // 信号是 _PageSessionExitedMessage。
           onExit: _events.sendPort,
           debugName: 'manga_ocr_page_session',
         );
@@ -1083,8 +1118,9 @@ class _IsolatePageSession
       );
       return;
     }
-    if (message == null) {
-      // onExit：isolate 已退出，推理会话已释放（或随 isolate 一起销毁）。
+    if (message is _PageSessionExitedMessage || message == null) {
+      // 正常收尾（Isolate.exit 带来的终局消息，推理会话已关闭）或 onExit 兜底
+      // （isolate 崩溃退出，会话随 isolate 一起销毁）。
       _fail(
         StateError('manga OCR page session isolate exited'),
         StackTrace.current,
@@ -1276,8 +1312,10 @@ class MangaOcrServiceImpl
     MangaOcrVolumeJobRunner? jobRunner,
     MangaOcrPageSessionRunner? pageSessionRunner,
     bool Function()? platformSupport,
+    bool Function()? ignoreFurigana,
     this.localModel = kDefaultMangaOcrLocalModel,
-  }) : _modelsDirProvider = modelsDirProvider ?? localModel.modelsDirectory,
+  }) : _ignoreFurigana = ignoreFurigana ?? _never,
+       _modelsDirProvider = modelsDirProvider ?? localModel.modelsDirectory,
        _downloader = downloader ?? MangaOcrModelDownloader(),
        _manifest = manifest ?? localModel.manifest,
        _jobRunner = jobRunner ?? const IsolateMangaOcrVolumeJobRunner(),
@@ -1292,6 +1330,10 @@ class MangaOcrServiceImpl
   final MangaOcrPageSessionRunner _pageSessionRunner;
   final bool Function() _platformSupport;
   final MangaOcrLocalModel localModel;
+
+  /// 「OCR 忽略振假名」开关，每次开跑现读（设置页改了下一次识别就生效）。
+  final bool Function() _ignoreFurigana;
+  static bool _never() => false;
 
   /// 默认模型目录：`<appSupport>/ocr_models/manga`（经 [AppPaths] 数据根
   /// 单一入口，不硬编码平台路径）。指纹层与本类共用同一个解析函数。
@@ -1410,7 +1452,9 @@ class MangaOcrServiceImpl
     return freed;
   }
 
-  Future<MangaOcrModelPaths> _resolveModelPaths() async {
+  Future<MangaOcrModelPaths> _resolveModelPaths({
+    required bool ignoreFurigana,
+  }) async {
     final Directory dir = await _modelsDirProvider();
     String pathOf(MangaOcrModelRole role, String suffix) {
       final MangaOcrModelFile model = _manifest.firstWhere(
@@ -1436,12 +1480,19 @@ class MangaOcrServiceImpl
             kPpOcrRecDictFileName,
           ),
           ctcRecPath: ctcRecPath,
+          ignoreFurigana: ignoreFurigana,
         );
     }
   }
 
   /// 跑本地 OCR 前的共同闸门：平台支持 + 模型齐全，返回各模型文件的绝对路径。
-  Future<MangaOcrModelPaths> _checkedModelPaths() async {
+  ///
+  /// [ignoreFurigana] 由调用方在开跑时**只读一次**，同一个值同时交给模型路径与
+  /// [_pageEngineSignature]：两处各读一次的话，中间隔着 await，用户恰好切换开关就会
+  /// 「按裁注音识别、写进不带 `_noruby` 的缓存目录」，两种结果串目录。
+  Future<MangaOcrModelPaths> _checkedModelPaths({
+    required bool ignoreFurigana,
+  }) async {
     if (!isSupportedPlatform) {
       throw StateError(
         'manga OCR is not supported on ${Platform.operatingSystem}',
@@ -1452,18 +1503,21 @@ class MangaOcrServiceImpl
     if (!await _manifestComplete()) {
       throw StateError('manga OCR models are not downloaded');
     }
-    return _resolveModelPaths();
+    return _resolveModelPaths(ignoreFurigana: ignoreFurigana);
   }
 
   /// 页级缓存签名的**唯一**来源：按本服务的模型目录与清单解析已安装模型指纹
   /// （BUG-1173）。[resolvePageCacheDirPath] 与 [openPageSession] 都经这里，
   /// 会话 isolate 直接用传进去的签名，不再按 detectorPath 重算——注入自定义
   /// 模型目录时读写缓存也不会分叉到两个目录。
-  Future<String> _pageEngineSignature() async =>
-      model_fp.resolveLocalMangaOcrEngineSignature(
-        await _modelsDirProvider(),
-        manifest: _manifest,
-        baseSignature: localModel.cacheSignature,
+  Future<String> _pageEngineSignature({required bool ignoreFurigana}) async =>
+      mangaOcrEngineSignatureFor(
+        await model_fp.resolveLocalMangaOcrEngineSignature(
+          await _modelsDirProvider(),
+          manifest: _manifest,
+          baseSignature: localModel.cacheSignature,
+        ),
+        ignoreFurigana: ignoreFurigana,
       );
 
   static String _pageCacheDirPath(String imageDirPath, String signature) =>
@@ -1477,7 +1531,10 @@ class MangaOcrServiceImpl
   @override
   Future<String> resolvePageCacheDirPath({
     required String imageDirPath,
-  }) async => _pageCacheDirPath(imageDirPath, await _pageEngineSignature());
+  }) async => _pageCacheDirPath(
+    imageDirPath,
+    await _pageEngineSignature(ignoreFurigana: _ignoreFurigana()),
+  );
 
   @override
   Future<MangaOcrPageSession> openPageSession({
@@ -1485,8 +1542,13 @@ class MangaOcrServiceImpl
     void Function(MangaOcrAcceleration acceleration)? onAcceleration,
     bool textImagesOnly = false,
   }) async {
-    final MangaOcrModelPaths modelPaths = await _checkedModelPaths();
-    final String signature = await _pageEngineSignature();
+    final bool ignoreFurigana = _ignoreFurigana();
+    final MangaOcrModelPaths modelPaths = await _checkedModelPaths(
+      ignoreFurigana: ignoreFurigana,
+    );
+    final String signature = await _pageEngineSignature(
+      ignoreFurigana: ignoreFurigana,
+    );
     return _pageSessionRunner.open(
       MangaOcrPageSessionRequest(
         imageDirPath: imageDirPath,
@@ -1516,8 +1578,13 @@ class MangaOcrServiceImpl
     controller.onListen = () {
       unawaited(() async {
         try {
-          final MangaOcrModelPaths modelPaths = await _checkedModelPaths();
-          final String engineSignature = await _pageEngineSignature();
+          final bool ignoreFurigana = _ignoreFurigana();
+          final MangaOcrModelPaths modelPaths = await _checkedModelPaths(
+            ignoreFurigana: ignoreFurigana,
+          );
+          final String engineSignature = await _pageEngineSignature(
+            ignoreFurigana: ignoreFurigana,
+          );
           if (cancelled) {
             // 订阅在模型检查期间已被取消：任务根本不启动。
             return;

@@ -100,27 +100,22 @@ void installWindowsHwdecCapability({bool? isWindows}) {
 // DXGI FFI（裸 COM vtable 调用，与本仓其它 Win32 FFI 一样不引 win32 包）。
 // ---------------------------------------------------------------------------
 
-typedef _CreateFactoryNative = Int32 Function(
-  Pointer<Uint8> riid,
-  Pointer<Pointer<Void>> factory,
-);
-typedef _CreateFactoryDart = int Function(
-  Pointer<Uint8> riid,
-  Pointer<Pointer<Void>> factory,
-);
+typedef _CreateFactoryNative =
+    Int32 Function(Pointer<Uint8> riid, Pointer<Pointer<Void>> factory);
+typedef _CreateFactoryDart =
+    int Function(Pointer<Uint8> riid, Pointer<Pointer<Void>> factory);
 typedef _ReleaseNative = Uint32 Function(Pointer<Void> self);
 typedef _ReleaseDart = int Function(Pointer<Void> self);
-typedef _EnumAdapters1Native = Int32 Function(
-  Pointer<Void> self,
-  Uint32 index,
-  Pointer<Pointer<Void>> adapter,
-);
-typedef _EnumAdapters1Dart = int Function(
-  Pointer<Void> self,
-  int index,
-  Pointer<Pointer<Void>> adapter,
-);
-typedef _GetDesc1Native = Int32 Function(Pointer<Void> self, Pointer<Uint8> desc);
+typedef _EnumAdapters1Native =
+    Int32 Function(
+      Pointer<Void> self,
+      Uint32 index,
+      Pointer<Pointer<Void>> adapter,
+    );
+typedef _EnumAdapters1Dart =
+    int Function(Pointer<Void> self, int index, Pointer<Pointer<Void>> adapter);
+typedef _GetDesc1Native =
+    Int32 Function(Pointer<Void> self, Pointer<Uint8> desc);
 typedef _GetDesc1Dart = int Function(Pointer<Void> self, Pointer<Uint8> desc);
 
 /// `IID_IDXGIFactory1` = {770aae78-f26f-4dba-a829-253c83d1b387}，按 GUID 内存布局。
@@ -152,9 +147,10 @@ int _vtableEntry(Pointer<Void> self, int slot) =>
     self.cast<Pointer<IntPtr>>().value[slot];
 
 void _release(Pointer<Void> self) {
-  final _ReleaseDart release = Pointer<NativeFunction<_ReleaseNative>>.fromAddress(
-    _vtableEntry(self, _kReleaseSlot),
-  ).asFunction<_ReleaseDart>();
+  final _ReleaseDart release =
+      Pointer<NativeFunction<_ReleaseNative>>.fromAddress(
+        _vtableEntry(self, _kReleaseSlot),
+      ).asFunction<_ReleaseDart>();
   release(self);
 }
 

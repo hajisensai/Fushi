@@ -4,7 +4,7 @@
 // 与 JP 区风格化别名 `FX Senshi KURUMICHAN`，两个在 Nyaa 都是 0 条；详情里的
 // 英文名 `FX Fighter Kurumi-chan` 有 9 条。修前 AI 流程只拿搜索项身份去搜，
 // 报「这部作品没搜到任何资源」，而资源搜索页（经别名补齐端口）能搜到。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';

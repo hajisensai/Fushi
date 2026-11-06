@@ -27,20 +27,33 @@ void main() {
 
     // 签名带可选的「高级制卡」覆盖项参数（#2150），按声明前缀定位，不钉参数表。
     prepareStart = source.indexOf('_prepareMiningContext({');
-    expect(prepareStart, greaterThanOrEqualTo(0),
-        reason: '必须能定位 _prepareMiningContext。');
+    expect(
+      prepareStart,
+      greaterThanOrEqualTo(0),
+      reason: '必须能定位 _prepareMiningContext。',
+    );
 
     // _prepareMiningContext 之后第一个出现的方法签名作为函数体的结束边界。
     prepareEnd = source.indexOf(
-        'Future<MinePopupResult> _onMineFromPopupInner', prepareStart);
-    expect(prepareEnd, greaterThan(prepareStart),
-        reason: '必须能定位 _prepareMiningContext 的函数体结束边界。');
+      'Future<MinePopupResult> _onMineFromPopupInner',
+      prepareStart,
+    );
+    expect(
+      prepareEnd,
+      greaterThan(prepareStart),
+      reason: '必须能定位 _prepareMiningContext 的函数体结束边界。',
+    );
 
     extractAwaitIndex = source.indexOf(
-        'await TtsChannel.instance.extractAudioSegment', prepareStart);
+      'await TtsChannel.instance.extractAudioSegment',
+      prepareStart,
+    );
     expect(extractAwaitIndex, greaterThan(prepareStart));
-    expect(extractAwaitIndex, lessThan(prepareEnd),
-        reason: 'extractAudioSegment await 必须在 _prepareMiningContext 函数体内。');
+    expect(
+      extractAwaitIndex,
+      lessThan(prepareEnd),
+      reason: 'extractAudioSegment await 必须在 _prepareMiningContext 函数体内。',
+    );
   });
 
   group('TODO-644 制卡并发 race 守卫', () {
@@ -61,28 +74,35 @@ void main() {
     test('await 之后不再读会被并发查词改写的共享可变成员', () {
       // 只扫真实代码（剥掉 // 注释），避免「不再读 currentCueSentence」这类说明性
       // 注释误命中。
-      final String postAwaitCode =
-          _stripLineComments(source.substring(extractAwaitIndex, prepareEnd));
+      final String postAwaitCode = _stripLineComments(
+        source.substring(extractAwaitIndex, prepareEnd),
+      );
       expect(
         postAwaitCode,
         isNot(contains('currentCueSentence')),
-        reason: 'extractAudioSegment await 之后读 currentCueSentence 会拿到并发查词改写后的'
+        reason:
+            'extractAudioSegment await 之后读 currentCueSentence 会拿到并发查词改写后的'
             '第二个词的值；必须用 await 前的 snapshotCueSentence。',
       );
       expect(
         postAwaitCode,
         isNot(contains('_cachedSentenceOffset')),
-        reason: 'extractAudioSegment await 之后读 _cachedSentenceOffset 会拿到并发查词改写后'
+        reason:
+            'extractAudioSegment await 之后读 _cachedSentenceOffset 会拿到并发查词改写后'
             '的值；必须用 await 前的 snapshotSentenceOffset。',
       );
     });
 
     test('AnkiMiningContext 用快照值构造，不读共享可变成员', () {
       final int ctxIndex = source.indexOf(
-          'final AnkiMiningContext miningContext = AnkiMiningContext(',
-          prepareStart);
-      expect(ctxIndex, greaterThan(extractAwaitIndex),
-          reason: 'AnkiMiningContext 在 await 之后构造。');
+        'final AnkiMiningContext miningContext = AnkiMiningContext(',
+        prepareStart,
+      );
+      expect(
+        ctxIndex,
+        greaterThan(extractAwaitIndex),
+        reason: 'AnkiMiningContext 在 await 之后构造。',
+      );
       final int ctxEnd = source.indexOf(');', ctxIndex);
       final String ctxBlock = source.substring(ctxIndex, ctxEnd);
       expect(
@@ -106,13 +126,15 @@ void main() {
       expect(
         source,
         contains(
-            'return _miningQueue.enqueue(() => _onMineFromPopupInner(fields));'),
+          'return _miningQueue.enqueue(() => _onMineFromPopupInner(fields));',
+        ),
         reason: 'onMineFromPopup 必须经串行队列 enqueue。',
       );
       expect(
         source,
         contains(
-            'return _miningQueue.enqueue(() => _onUpdateFromPopupInner(noteId, fields));'),
+          'return _miningQueue.enqueue(() => _onUpdateFromPopupInner(noteId, fields));',
+        ),
         reason: 'onUpdateFromPopup 必须经串行队列 enqueue。',
       );
     });

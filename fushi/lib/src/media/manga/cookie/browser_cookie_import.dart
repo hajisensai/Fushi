@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 
@@ -18,6 +19,7 @@ class BrowserSiteCookie {
     required this.hostOnly,
     this.httpOnly = false,
     this.expiresAt,
+    this.sameSite,
   });
 
   final String name;
@@ -34,6 +36,38 @@ class BrowserSiteCookie {
 
   /// 毫秒；会话 cookie 为 null。
   final int? expiresAt;
+
+  /// 回灌进 WebView 时原样带上的 SameSite（null = 不指定，WebView 按默认）。扩展线格式不带它；
+  /// 从另一个 WebView 环境读出来的 cookie（[BrowserSiteCookie.fromWebViewCookie]）带。
+  final HTTPCookieSameSitePolicy? sameSite;
+
+  /// 从一个 WebView 环境读出来的 cookie（`CookieManager.getAllCookies`，Windows fork 走 CDP
+  /// `Storage.getCookies`）。Chromium 的约定：域 cookie 的 domain 带前导 `.`，host-only cookie
+  /// 不带——所以 host-only 由前导点判定，与扩展线格式（[fromJson]）同一条规则。`__Host-` 前缀的
+  /// cookie 按规范没有 Domain 属性，必然落在 host-only 一侧。无名 / 无域 → null。
+  static BrowserSiteCookie? fromWebViewCookie(Cookie cookie) {
+    final String name = cookie.name.trim();
+    final String rawDomain = (cookie.domain ?? '').trim();
+    final bool hostOnly = !rawDomain.startsWith('.');
+    final String domain = (hostOnly ? rawDomain : rawDomain.substring(1))
+        .toLowerCase();
+    if (name.isEmpty || domain.isEmpty) return null;
+    final String path = (cookie.path ?? '').trim();
+    final Object? expires = cookie.expiresDate;
+    return BrowserSiteCookie(
+      name: name,
+      value: cookie.value?.toString() ?? '',
+      domain: domain,
+      path: path.isEmpty ? '/' : path,
+      secure: cookie.isSecure == true,
+      hostOnly: hostOnly,
+      httpOnly: cookie.isHttpOnly == true,
+      expiresAt: cookie.isSessionOnly == true || expires is! int || expires <= 0
+          ? null
+          : expires,
+      sameSite: cookie.sameSite,
+    );
+  }
 
   /// 扩展线格式：`{name, value, domain, path, secure, httpOnly, hostOnly,
   /// expirationDate(秒)}`。字段缺失 / 形状不对 → null（丢弃该条，不整批失败）。
@@ -178,19 +212,30 @@ class BrowserCookieImportRequestHandle {
   final StreamController<BrowserCookieDelivery> _controller =
       StreamController<BrowserCookieDelivery>.broadcast(sync: true);
   bool _ended = false;
+  bool _dispatching = false;
 
   Stream<BrowserCookieDelivery> get deliveries => _controller.stream;
 
   void _push(BrowserCookieDelivery delivery) {
     if (_ended) return;
-    _controller.add(delivery);
+    _dispatching = true;
+    try {
+      _controller.add(delivery);
+    } finally {
+      _dispatching = false;
+    }
+    // 监听者在收这一批时 end() 了（「导入一次就结束」）：同步派发中途不能 close
+    // （broadcast 控制器派发中关闭会抛 StateError），派发一返回就在这里关。
+    if (_ended) unawaited(_controller.close());
   }
 
+  /// 撤销登记：之后 [BrowserCookieImportGate.deliver] 对这个 nonce 回 false。可以在
+  /// [deliveries] 的监听者里调（收到第一批就结束），登记立刻失效，流在本批派发完后关闭。
   void end() {
     if (_ended) return;
     _ended = true;
     BrowserCookieImportGate._endedBy(this);
-    unawaited(_controller.close());
+    if (!_dispatching) unawaited(_controller.close());
   }
 }
 
@@ -234,3 +279,34 @@ List<MangaCookie> browserCookiesForSite(
       ),
     )
     .toList(growable: false);
+
+/// 把扩展送来的站点 cookie 写进一个 WebView 的 cookie 存储（视频站点的 WebView2 环境、
+/// app 内浏览器的环境共用这一份写法）。逐条写、单条失败不中断（WebView2 会拒个别属性
+/// 组合）；返回写成功的条数。
+Future<int> writeBrowserSiteCookies(
+  CookieManager manager,
+  Iterable<BrowserSiteCookie> cookies,
+) async {
+  int written = 0;
+  for (final BrowserSiteCookie cookie in cookies) {
+    try {
+      final bool ok = await manager.setCookie(
+        url: WebUri.uri(cookie.originUrl),
+        name: cookie.name,
+        value: cookie.value,
+        path: cookie.path,
+        // host-only cookie 不能带 domain：带了就变成覆盖全部子域的域 cookie（`__Host-`
+        // 前缀的还会被 WebView2 直接拒写）。
+        domain: cookie.hostOnly ? null : cookie.canonicalDomain,
+        expiresDate: cookie.expiresAt,
+        isSecure: cookie.secure,
+        isHttpOnly: cookie.httpOnly,
+        sameSite: cookie.sameSite,
+      );
+      if (ok) written++;
+    } catch (_) {
+      // 单条写不进去：见方法注释。
+    }
+  }
+  return written;
+}

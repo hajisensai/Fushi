@@ -72,8 +72,9 @@ Future<AnkiConnectAddonInstallResult> installAnkiConnectAddon({
       AnkiConnectAddonInstallStatus.ankiDataDirNotFound,
     );
   }
-  final Directory addonDir =
-      Directory(p.join(base.path, 'addons21', kAnkiConnectAddonId));
+  final Directory addonDir = Directory(
+    p.join(base.path, 'addons21', kAnkiConnectAddonId),
+  );
   addonDir.createSync(recursive: true);
 
   final Archive archive = ZipDecoder().decodeBytes(addonZipBytes);

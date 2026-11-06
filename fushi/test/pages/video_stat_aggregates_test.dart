@@ -80,8 +80,11 @@ void main() {
   });
 
   test('empty inputs yield zeroed aggregate with 30 empty daily bars', () {
-    final agg =
-        computeVideoStats(stats: const [], completed: const [], now: now);
+    final agg = computeVideoStats(
+      stats: const [],
+      completed: const [],
+      now: now,
+    );
     expect(agg.allChars, 0);
     expect(agg.allCompleted, 0);
     expect(agg.byVideo, isEmpty);
@@ -91,8 +94,12 @@ void main() {
 
   group('v76 身份分组（v39 展示层收尾）', () {
     StatFact rowU(
-            String title, String? uid, String dateKey, int chars, int ms) =>
-        _fact(title, uid, dateKey, chars, ms);
+      String title,
+      String? uid,
+      String dateKey,
+      int chars,
+      int ms,
+    ) => _fact(title, uid, dateKey, chars, ms);
 
     test('同名双视频各自一张 tile，不再合并（互串的另一半根治）', () {
       final agg = computeVideoStats(
@@ -138,37 +145,41 @@ void main() {
       final orphan = agg.byVideo.singleWhere((v) => v.bookUid == null);
       expect(orphan.ms, 500);
       expect(
-          agg.byVideo
-              .where((v) => v.bookUid != null)
-              .every((v) => !v.absorbedUnattributed),
-          isTrue,
-          reason: '歧义时谁也不吸收，删除不连带');
+        agg.byVideo
+            .where((v) => v.bookUid != null)
+            .every((v) => !v.absorbedUnattributed),
+        isTrue,
+        reason: '歧义时谁也不吸收，删除不连带',
+      );
     });
 
     LookupMiningCounterRow counterU(
-            String title, String key, int lookups, int mines) =>
-        LookupMiningCounterRow(
-          id: 0,
-          bookKey: key,
-          title: title,
-          sourceType: 'video',
-          dateKey: '2026-06-06',
-          lookupCount: lookups,
-          mineCount: mines,
-        );
+      String title,
+      String key,
+      int lookups,
+      int mines,
+    ) => LookupMiningCounterRow(
+      id: 0,
+      bookKey: key,
+      title: title,
+      sourceType: 'video',
+      dateKey: '2026-06-06',
+      lookupCount: lookups,
+      mineCount: mines,
+    );
 
     FavoriteWordRow favU(String title, String? key, int i) => FavoriteWordRow(
-          id: i,
-          expression: 'e$i',
-          reading: 'r$i',
-          glossary: '',
-          sourceType: 'video',
-          sentence: '',
-          bookKey: key,
-          title: title,
-          dateKey: '2026-06-06',
-          createdAt: 0,
-        );
+      id: i,
+      expression: 'e$i',
+      reading: 'r$i',
+      glossary: '',
+      sourceType: 'video',
+      sentence: '',
+      bookKey: key,
+      title: title,
+      dateKey: '2026-06-06',
+      createdAt: 0,
+    );
 
     test('review-2 回归：sync 塌 空 的 watch 行经并集分组仍解析回 uid tile，计数不丢显', () {
       // sync applySnapshotToLocal 把 watch 行塌成 NULL-uid 权威行，但 counter
@@ -206,8 +217,11 @@ void main() {
       final b = agg.byVideo.singleWhere((v) => v.bookUid == 'uid-2');
       expect(a.lookups, 5, reason: '只算自己身份桶，不吸混合遗留');
       expect(b.lookups, 0);
-      expect(a.absorbedUnattributed || b.absorbedUnattributed, isFalse,
-          reason: '谁也没吸收 → 删除不连带，计数不会在 tile 间游走');
+      expect(
+        a.absorbedUnattributed || b.absorbedUnattributed,
+        isFalse,
+        reason: '谁也没吸收 → 删除不连带，计数不会在 tile 间游走',
+      );
     });
 
     test('review-4 回归：收藏按身份挂 tile，同名双 tile 不再各显全量', () {
@@ -237,8 +251,11 @@ void main() {
         completed: const [],
         now: now,
       );
-      expect(agg.byVideo.single.bookUid, 'uid-1',
-          reason: 'uid-9 只有计数 → 不出 tile，数字只进汇总面板');
+      expect(
+        agg.byVideo.single.bookUid,
+        'uid-1',
+        reason: 'uid-9 只有计数 → 不出 tile，数字只进汇总面板',
+      );
     });
 
     test('review2-2 回归：库表判同名歧义时，行宇宙唯一身份也不许吸收混合遗留', () {
@@ -256,8 +273,11 @@ void main() {
       );
       expect(agg.byVideo, hasLength(1));
       final orphan = agg.byVideo.single;
-      expect(orphan.bookUid, isNull,
-          reason: '库表说同名有两个视频 → 遗留行保持无身份 tile，不归 uid-a');
+      expect(
+        orphan.bookUid,
+        isNull,
+        reason: '库表说同名有两个视频 → 遗留行保持无身份 tile，不归 uid-a',
+      );
       expect(orphan.ms, 1200);
       expect(orphan.lookups, 0, reason: 'uid-a 的查词不混进遗留 tile');
     });
@@ -272,8 +292,11 @@ void main() {
         completed: const [],
         now: now,
       );
-      expect(agg.byVideo, hasLength(1),
-          reason: '组按全部 title 快照注册 owner，新 title 遗留不落孤儿 tile');
+      expect(
+        agg.byVideo,
+        hasLength(1),
+        reason: '组按全部 title 快照注册 owner，新 title 遗留不落孤儿 tile',
+      );
       expect(agg.byVideo.single.bookUid, 'uid-x');
       expect(agg.byVideo.single.ms, 3500);
     });

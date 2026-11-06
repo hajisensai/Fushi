@@ -34,7 +34,8 @@ void main() {
     expect(
       prefs.containsKey('src:reader_fushi:wheel_page_turn_interval'),
       isFalse,
-      reason: 'a synchronous getter must not start an unawaitable DB write; '
+      reason:
+          'a synchronous getter must not start an unawaitable DB write; '
           'tests and app shutdown can close the DB before that write finishes',
     );
   });

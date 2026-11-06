@@ -7,6 +7,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi/src/anki/anki_auto_reposition.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
+import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
@@ -18,13 +19,17 @@ import 'package:fushi/src/mining/mining_image_mode_target.dart'
     show probeSynchronizedClipSupport;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/profile/work_profile_anki_settings_store.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 class AnkiUiState {
   const AnkiUiState({
@@ -32,6 +37,7 @@ class AnkiUiState {
     this.isFetching = false,
     this.errorMessage,
     this.mediaMaintenanceAvailable,
+    this.deckRepositionAvailable,
     this.settingsLoaded = false,
   });
   final AnkiSettings settings;
@@ -41,6 +47,11 @@ class AnkiUiState {
   /// 媒体去重此刻真能不能用；null = 还没探测出结论（没探过 / 后端不可达）。
   /// 设置页用它做区块门控，未知时回落到后端静态能力。
   final bool? mediaMaintenanceAvailable;
+
+  /// 新卡重排此刻真能不能用（[BaseAnkiRepository.probeDeckReposition]）；null =
+  /// 还没探测出结论（没探过 / 后端不可达）。只有明确 false 才置灰入口——未知时
+  /// 入口照常可点，真跑时 runner 会当场再探一次。
+  final bool? deckRepositionAvailable;
 
   /// [settings] 是否已从仓库装载过一次。视图模型构造时 state 是空的
   /// [AnkiSettings]，真值由异步的 `_loadSettings` 填进来；空列表在装载前后语义不同
@@ -60,17 +71,21 @@ class AnkiUiState {
     bool clearError = false,
     bool? mediaMaintenanceAvailable,
     bool clearMediaMaintenanceAvailable = false,
+    bool? deckRepositionAvailable,
+    bool clearDeckRepositionAvailable = false,
     bool? settingsLoaded,
-  }) =>
-      AnkiUiState(
-        settings: settings ?? this.settings,
-        isFetching: isFetching ?? this.isFetching,
-        errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
-        mediaMaintenanceAvailable: clearMediaMaintenanceAvailable
-            ? null
-            : (mediaMaintenanceAvailable ?? this.mediaMaintenanceAvailable),
-        settingsLoaded: settingsLoaded ?? this.settingsLoaded,
-      );
+  }) => AnkiUiState(
+    settings: settings ?? this.settings,
+    isFetching: isFetching ?? this.isFetching,
+    errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+    mediaMaintenanceAvailable: clearMediaMaintenanceAvailable
+        ? null
+        : (mediaMaintenanceAvailable ?? this.mediaMaintenanceAvailable),
+    deckRepositionAvailable: clearDeckRepositionAvailable
+        ? null
+        : (deckRepositionAvailable ?? this.deckRepositionAvailable),
+    settingsLoaded: settingsLoaded ?? this.settingsLoaded,
+  );
 }
 
 class AnkiViewModel extends StateNotifier<AnkiUiState> {
@@ -169,19 +184,20 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   }
 
   Future<void> selectDeck(AnkiDeck deck) async {
-    final updated = await _repository.updateSettings((s) => s.copyWith(
-          selectedDeckId: deck.id,
-          selectedDeckName: deck.name,
-        ));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(selectedDeckId: deck.id, selectedDeckName: deck.name),
+    );
     state = state.copyWith(settings: updated);
   }
 
   Future<void> selectNoteType(AnkiNoteType noteType) async {
-    final updated = await _repository.updateSettings((s) => s.copyWith(
-          selectedNoteTypeId: noteType.id,
-          selectedNoteTypeName: noteType.name,
-          fieldMappings: LapisPreset.applyDefaults(noteType, {}),
-        ));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(
+        selectedNoteTypeId: noteType.id,
+        selectedNoteTypeName: noteType.name,
+        fieldMappings: NoteTypePresets.applyDefaults(noteType, {}),
+      ),
+    );
     state = state.copyWith(settings: updated);
   }
 
@@ -199,40 +215,61 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     state = state.copyWith(settings: updated);
   }
 
+  /// 所有 Profile 共用的标签（反馈 ORHr4_WDOy），见 [AnkiSettings.globalTags]。
+  Future<void> updateGlobalTags(String tags) async {
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(globalTags: tags),
+    );
+    state = state.copyWith(settings: updated);
+  }
+
   Future<void> updateTags(String tags) async {
-    final updated =
-        await _repository.updateSettings((s) => s.copyWith(tags: tags));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(tags: tags),
+    );
     state = state.copyWith(settings: updated);
   }
 
   Future<void> updateTagIncludeHibiki(bool value) async {
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(tagIncludeHibiki: value));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(tagIncludeHibiki: value),
+    );
     state = state.copyWith(settings: updated);
   }
 
   Future<void> updateTagIncludeCategory(bool value) async {
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(tagIncludeCategory: value));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(tagIncludeCategory: value),
+    );
+    state = state.copyWith(settings: updated);
+  }
+
+  Future<void> updateTagNestTitleUnderCategory(bool value) async {
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(tagNestTitleUnderCategory: value),
+    );
     state = state.copyWith(settings: updated);
   }
 
   Future<void> updateAllowDupes(bool value) async {
-    final updated =
-        await _repository.updateSettings((s) => s.copyWith(allowDupes: value));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(allowDupes: value),
+    );
     state = state.copyWith(settings: updated);
   }
 
   Future<void> updateCompactGlossaries(bool value) async {
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(compactGlossaries: value));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(compactGlossaries: value),
+    );
     state = state.copyWith(settings: updated);
   }
 
   /// TODO-614：切换「覆写已制卡片」范围（latest=仅最近一张 / all=全部已存在卡）。
   Future<void> updateOverwriteScope(AnkiOverwriteScope value) async {
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(overwriteScope: value));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(overwriteScope: value),
+    );
     state = state.copyWith(settings: updated);
   }
 
@@ -240,8 +277,9 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   /// 见 [AnkiDuplicateScope]：Anki 的 `deck:X` 不含父卡组与兄弟子卡组，所以把目标
   /// 选成子卡组时同一个词制在别的子卡组里就查不出来。
   Future<void> updateDuplicateScope(AnkiDuplicateScope value) async {
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(duplicateScope: value));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(duplicateScope: value),
+    );
     state = state.copyWith(settings: updated);
   }
 
@@ -268,14 +306,16 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   Future<void> updateAnkiConnectPort(String portStr) async {
     final port = int.tryParse(portStr.trim());
     if (port == null || port <= 0 || port > 65535) return;
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(ankiConnectPort: port));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(ankiConnectPort: port),
+    );
     state = state.copyWith(settings: updated);
   }
 
   Future<void> updateAnkiConnectApiKey(String apiKey) async {
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(ankiConnectApiKey: apiKey.trim()));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(ankiConnectApiKey: apiKey.trim()),
+    );
     state = state.copyWith(settings: updated);
   }
 
@@ -298,10 +338,12 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     try {
       // BUG-2380：牌组的返回值此前被丢掉，于是「笔记类型早就有、这次只补了牌组」
       // 会报成「已存在」。两者任一是新建的就算这次创建过。
-      final bool noteTypeCreated =
-          await _repository.createNoteType(LapisNoteType.template);
-      final bool deckCreated =
-          await _repository.createDeck(LapisNoteType.deckName);
+      final bool noteTypeCreated = await _repository.createNoteType(
+        LapisNoteType.template,
+      );
+      final bool deckCreated = await _repository.createDeck(
+        LapisNoteType.deckName,
+      );
       final bool created = noteTypeCreated || deckCreated;
 
       final fetch = await _repository.fetchConfiguration();
@@ -309,14 +351,12 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
         // BUG-2098：这里此前直接用 `fetch.message`（后端英文原文），漏了
         // [localizeAnkiFetchError]——同一个 fetch 失败，走 fetchConfiguration() 是
         // 中文提示，走建 Lapis 就变英文。两条路径统一过同一个本地化入口。
-        final String message =
-            localizeAnkiFetchError(fetch.message, fetch.code);
-        state = state.copyWith(isFetching: false, errorMessage: message);
-        return LapisSetupResult(
-          LapisSetupOutcome.failed,
-          message,
+        final String message = localizeAnkiFetchError(
+          fetch.message,
           fetch.code,
         );
+        state = state.copyWith(isFetching: false, errorMessage: message);
+        return LapisSetupResult(LapisSetupOutcome.failed, message, fetch.code);
       }
 
       final settings = await _repository.loadSettings();
@@ -328,10 +368,12 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
       // 顺手套上 Lapis 的字段映射，最后还返回 `created` ——「创建成功」的 toast +
       // 选中的却是用户自己的『日语』牌组，字段映射还全是按 Lapis 排的。
       // 找不到就必须失败，绝不能拿别的牌组顶替。
-      final noteType = settings.availableNoteTypes
-          .firstWhereOrNull((t) => t.name == LapisNoteType.modelName);
-      final deck = settings.availableDecks
-          .firstWhereOrNull((d) => d.name == LapisNoteType.deckName);
+      final noteType = settings.availableNoteTypes.firstWhereOrNull(
+        (t) => t.name == LapisNoteType.modelName,
+      );
+      final deck = settings.availableDecks.firstWhereOrNull(
+        (d) => d.name == LapisNoteType.deckName,
+      );
       if (noteType == null || deck == null) {
         final String message = t.anki_create_lapis_not_found;
         state = state.copyWith(isFetching: false, errorMessage: message);
@@ -342,17 +384,19 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
         );
       }
 
-      final updated = await _repository.updateSettings((s) => s.copyWith(
-            selectedDeckId: deck.id,
-            selectedDeckName: deck.name,
-            selectedNoteTypeId: noteType.id,
-            selectedNoteTypeName: noteType.name,
-            fieldMappings: LapisPreset.applyDefaults(noteType, {}),
-          ));
+      final updated = await _repository.updateSettings(
+        (s) => s.copyWith(
+          selectedDeckId: deck.id,
+          selectedDeckName: deck.name,
+          selectedNoteTypeId: noteType.id,
+          selectedNoteTypeName: noteType.name,
+          fieldMappings: NoteTypePresets.applyDefaults(noteType, {}),
+        ),
+      );
       state = state.copyWith(settings: updated, isFetching: false);
-      return LapisSetupResult(created
-          ? LapisSetupOutcome.created
-          : LapisSetupOutcome.alreadyExisted);
+      return LapisSetupResult(
+        created ? LapisSetupOutcome.created : LapisSetupOutcome.alreadyExisted,
+      );
     } catch (e, stack) {
       debugPrint('AnkiViewModel.createLapisSetup: $e\n$stack');
       final failure = _lapisSetupFailure(e);
@@ -416,14 +460,16 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
       probeSynchronizedClipSupport(_repository);
 
   Future<void> setLapisFontScalePercent(int percent) async {
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(lapisFontScalePercent: percent));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(lapisFontScalePercent: percent),
+    );
     state = state.copyWith(settings: updated);
   }
 
   Future<void> setLapisCustomCss(String css) async {
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(lapisCustomCss: css));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(lapisCustomCss: css),
+    );
     state = state.copyWith(settings: updated);
   }
 
@@ -433,8 +479,9 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   /// 「应用样式到 Anki」——那是模板写入的唯一闸门（模板写坏是卡片内容不显示，
   /// 不该由一条用户没点过的路径承担）。
   Future<void> setLapisCustomBlocks(List<LapisCustomBlock> blocks) async {
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(lapisCustomBlocks: blocks));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(lapisCustomBlocks: blocks),
+    );
     state = state.copyWith(settings: updated);
   }
 
@@ -480,9 +527,53 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   /// 本后端能不能读卡组新卡并改写位置（只有 AnkiConnect 能）。
   bool get supportsDeckReposition => _repository.supportsDeckReposition;
 
+  /// 本后端要不要「制卡后自动重排」（Fushi 复习不要：出卡直接按词频名次排）。
+  bool get supportsAutoReposition => _repository.supportsAutoReposition;
+
+  /// 后端类型支持重排、但探测明确说此刻不能（新版 AnkiConnect 没有原生
+  /// `scheduling.repositionNewCards`）。UI 据此置灰入口并给出版本提示。
+  bool get deckRepositionBlockedByBackend =>
+      _repository.supportsDeckReposition &&
+      state.deckRepositionAvailable == false;
+
+  /// 「按词频重排新卡」入口此刻可用：后端类型支持，且探测没有明确说不能。
+  bool get canRepositionDeck =>
+      _repository.supportsDeckReposition && !deckRepositionBlockedByBackend;
+
+  /// 「制卡后自动重排」开关此刻可用（同 [canRepositionDeck] 的探测判据）。
+  bool get canAutoReposition =>
+      _repository.supportsAutoReposition && !deckRepositionBlockedByBackend;
+
+  Future<void>? _deckRepositionProbe;
+
+  /// 探测新卡重排此刻真能不能用，结论落进 [AnkiUiState.deckRepositionAvailable]。
+  ///
+  /// 与 [probeMediaMaintenance] 同一套语义：后端不可达时保持「未知」，不记成
+  /// 「不支持」。同一时刻多行同时要结论（重排行 + 自动重排开关）只发一次探测。
+  Future<void> probeDeckReposition() => _deckRepositionProbe ??=
+      _probeDeckReposition().whenComplete(() => _deckRepositionProbe = null);
+
+  Future<void> _probeDeckReposition() async {
+    if (!_repository.supportsDeckReposition) {
+      state = state.copyWith(deckRepositionAvailable: false);
+      return;
+    }
+    try {
+      final bool available = await _repository.probeDeckReposition();
+      if (!mounted) return;
+      state = state.copyWith(deckRepositionAvailable: available);
+    } catch (e, stack) {
+      debugPrint('AnkiViewModel.probeDeckReposition: $e\n$stack');
+      if (!mounted) return;
+      state = state.copyWith(clearDeckRepositionAvailable: true);
+    }
+  }
+
   /// 与当前仓库绑定的重排编排器（无状态，随用随建）。
-  AnkiDeckRepositionRunner get deckRepositionRunner =>
-      AnkiDeckRepositionRunner(_repository);
+  AnkiDeckRepositionRunner get deckRepositionRunner => AnkiDeckRepositionRunner(
+    _repository,
+    snapshotFolder: repositionSnapshotFolderFor(_repository),
+  );
 
   /// 记住用户上次选的词频来源 / 词典 / 复合方式，下次打开弹窗直接复用。
   Future<void> setRepositionOptions({
@@ -491,12 +582,14 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     required String aggregate,
     required bool rareFirst,
   }) async {
-    final updated = await _repository.updateSettings((s) => s.copyWith(
-          repositionSource: source,
-          repositionDictionaries: dictionaries,
-          repositionAggregate: aggregate,
-          repositionRareFirst: rareFirst,
-        ));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(
+        repositionSource: source,
+        repositionDictionaries: dictionaries,
+        repositionAggregate: aggregate,
+        repositionRareFirst: rareFirst,
+      ),
+    );
     state = state.copyWith(settings: updated);
   }
 
@@ -505,8 +598,9 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   /// 只写设置，不碰调度器：调度器每轮跑之前重新读这个值，所以关掉是立即生效的
   /// （连正在等防抖的那一批也会在到期时被挡下），不需要在这里去把它叫醒。
   Future<void> setAutoRepositionEnabled(bool enabled) async {
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(autoRepositionEnabled: enabled));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(autoRepositionEnabled: enabled),
+    );
     state = state.copyWith(settings: updated);
   }
 
@@ -525,36 +619,48 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
 
   /// 打开/关闭「启动 Fushi 时自动启动 Anki」（issue #1949）。只在下次启动时生效。
   Future<void> setAutoLaunchAnkiDesktop(bool enabled) async {
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(autoLaunchAnkiDesktop: enabled));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(autoLaunchAnkiDesktop: enabled),
+    );
     state = state.copyWith(settings: updated);
   }
 
   /// 写入 Anki 桌面版入口程序路径；空串 = 清除（回到平台默认入口）。
   Future<void> setAnkiDesktopExecutable(String path) async {
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(ankiDesktopExecutable: path.trim()));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(ankiDesktopExecutable: path.trim()),
+    );
     state = state.copyWith(settings: updated);
   }
 
   Future<void> setBatchMiningEnabled(bool enabled) async {
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(batchMiningEnabled: enabled));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(batchMiningEnabled: enabled),
+    );
+    state = state.copyWith(settings: updated);
+  }
+
+  Future<void> setQueueUndeliveredMinesEnabled(bool enabled) async {
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(queueUndeliveredMinesEnabled: enabled),
+    );
     state = state.copyWith(settings: updated);
   }
 
   /// 打开/关闭去重的自动处理。默认关；打开后自动路径**仍然只做干跑并提示**，
   /// 要真删得由用户在确认弹窗里点，或另外打开 [setMediaDedupAutoDelete]。
   Future<void> setMediaDedupAutoEnabled(bool enabled) async {
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(mediaDedupAutoEnabled: enabled));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(mediaDedupAutoEnabled: enabled),
+    );
     state = state.copyWith(settings: updated);
   }
 
   /// 打开/关闭「自动直接删除」（跳过确认弹窗）。只在自动处理已打开时有意义。
   Future<void> setMediaDedupAutoDelete(bool enabled) async {
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(mediaDedupAutoDelete: enabled));
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(mediaDedupAutoDelete: enabled),
+    );
     state = state.copyWith(settings: updated);
   }
 }
@@ -631,14 +737,21 @@ class LapisSetupResult {
 /// 本地仓库——设置页据此照常配置本地 Anki（供开关关闭时使用）。零调用点改动：查词/阅读器/
 /// 视频所有制卡入口都读本 provider，故一处切换即全量改道。
 final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
-  final BaseAnkiRepository local =
-      ref.watch(platformServicesProvider).createAnkiRepository();
-  final bool mineToServer =
-      ref.watch(appProvider.select((AppModel m) => m.mineToServerEnabled));
+  // 反馈 kEFPY4cuKZ：本机制卡的牌组 / 笔记类型 / 字段映射跟着打开作品的作品级配置走
+  // （[WorkScopedAnkiSettingsStore]）。替对端 / 浏览器扩展制卡（[hostMiningAnkiRepositoryProvider]
+  // 等）走自己的设置来源，不叠本机作品会话。
+  final BaseAnkiRepository local = ref
+      .watch(platformServicesProvider)
+      .createAnkiRepository(settingsStore: WorkScopedAnkiSettingsStore());
+  final bool mineToServer = ref.watch(
+    appProvider.select((AppModel m) => m.mineToServerEnabled),
+  );
   if (!mineToServer) {
     return _withSrsMining(
       ref,
       _withPendingQueue(ref, _withAutoReposition(ref, local)),
+      followWorkSession: true,
+      background: true,
     );
   }
   final AppModel appModel = ref.read(appProvider);
@@ -647,49 +760,178 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
     client: appModel.createRemoteMiningClient(),
     // BUG-1185：主机拒绝互联 token 时查重根本没跑成。bool 契约表达不了「不知道」，
     // 所以在这里把它变成用户可见的失败提示，而不是让用户收到一个静默的「不重复」。
-    onAuthRejected: (String message) => FushiToast.showMine(
-      msg: message,
-      status: MineToastStatus.failed,
-    ),
+    onAuthRejected: (String message) =>
+        FushiToast.showMine(msg: message, status: MineToastStatus.failed),
   );
-  // 远端制卡的仓库 `supportsDeckReposition` 为 false，装饰器里的判据会跳过——
+  // 远端制卡的仓库 `supportsAutoReposition` 为 false，装饰器里的判据会跳过——
   // 包上只是让两条返回路径形状一致，将来主机端支持了不必再改这里。
   return _withSrsMining(
     ref,
     _withPendingQueue(ref, _withAutoReposition(ref, remote)),
+    followWorkSession: true,
+    background: true,
   );
 });
+
+/// 互联主机**替别的设备**制卡（收转发、浏览器扩展、读写出处笔记）用的仓库：裸本机后端，
+/// 不套待发队列 / 制卡到主机（对端有自己的队列，主机再排一次会让「送没送到」不确定），
+/// 但必须遵守本机的挖词目标——主机已迁到 Fushi 复习时，替对端制的卡也落复习，
+/// 再经复习同步回到各设备；否则会继续写进主机已弃用的 Anki。
+///
+/// 整条链读**激活配置**的设置、不叠主机本机的作品会话（反馈 kEFPY4cuKZ）：Anki 侧是裸 live
+/// 存储，复习侧的挖词目标 / 落点 / 复习副本同样按激活配置（`followWorkSession: false`）——
+/// 主机此刻打开着哪本书与对端无关，两侧必须读同一份配置。
+final hostMiningAnkiRepositoryProvider = Provider<BaseAnkiRepository>(
+  (Ref ref) => _withSrsMining(
+    ref,
+    ref.watch(platformServicesProvider).createAnkiRepository(),
+    followWorkSession: false,
+  ),
+);
 
 /// 最外层套上「挖词目标 = Fushi 复习」（[SrsMiningAnkiRepository]）。
 ///
 /// **只有复习模块开着、且目标是 Fushi 复习时才包**：模块关着时链上根本没有这一层，
 /// 制卡行为与没有复习模块时逐字节一致（用户硬要求：关闭时零行为变化、零额外开销）。
 /// 包在待发队列**外面**：SRS 是本机写入，不该因为 Anki 连不上被冻进队列。
-BaseAnkiRepository _withSrsMining(Ref ref, BaseAnkiRepository repo) {
-  if (!ref.watch(srsMiningToReviewProvider)) return repo;
+///
+/// SRS 层外面**不**套「制卡后自动重排」：复习出卡时直接按卡上的词频名次排（牌组「新卡顺序
+/// = 按词频」，见 `SrsDbStore.nextCard`），刚挖的卡立刻就在对的位置，不需要事后改写新卡位置——
+/// 那样每挖一个词都会产生要同步的位置修改记录，而且各设备用各自的词典现查，排出来的顺序未必一致。
+/// 里层那份（绑 Anki）只看得到经待发队列补发给 Anki 的卡，复习制卡不经过它。
+///
+/// [followWorkSession]：true = 本机制卡链，挖词目标 / 落点 / 复习副本跟着本机作品会话走；
+/// false = 替对端制卡链，一律按激活配置（[hostSrsMiningToReviewProvider]）。
+///
+/// [background]：本机制卡链路（[ankiRepositoryProvider]）接上「后台制卡」开关（反馈
+/// Rl00Di264R，每次制卡现读 [AppModel.srsMiningBackground]）。替别的设备制卡的
+/// [hostMiningAnkiRepositoryProvider] 不接：对端要确定的结果，不能回「已入队」。
+BaseAnkiRepository _withSrsMining(
+  Ref ref,
+  BaseAnkiRepository repo, {
+  required bool followWorkSession,
+  bool background = false,
+}) {
+  final bool toReview = followWorkSession
+      ? ref.watch(srsMiningToReviewProvider)
+      : ref.watch(hostSrsMiningToReviewProvider);
+  if (!toReview) return repo;
   // 制卡写进复习后递增刷新信号：牌组列表与首页复习条的计数随之重读。
   final StateController<int> revision = ref.read(srsRevisionProvider.notifier);
+  final AppModel appModel = ref.read(appProvider);
   return SrsMiningAnkiRepository(
     inner: repo,
-    miner: () => _readSrsMiner(ref),
+    miner: () => _readSrsMiner(ref, followWorkSession: followWorkSession),
     onCardsAdded: () => revision.state++,
-    // 「打开笔记」= 复习的笔记编辑页（复习模块开着时 SrsAppHost 已装上）。
-    openNote: (String noteId) async =>
-        await SrsAppHost.current?.openNote(noteId) ?? false,
+    backgroundMining: background ? () => appModel.srsMiningBackground : null,
+    onBackgroundOutcome: background ? showSrsBackgroundMineOutcome : null,
+    // 「打开笔记」= 复习的笔记编辑页（复习模块开着时 SrsAppHost 已装上）。作品会话期间
+    // 卡在作品配置的复习副本里，编辑页套那份副本打开。
+    openNote: (String noteId) =>
+        _openSrsNote(ref, noteId, followWorkSession: followWorkSession),
   );
 }
 
+Future<bool> _openSrsNote(
+  Ref ref,
+  String noteId, {
+  required bool followWorkSession,
+}) async {
+  if (followWorkSession && WorkProfileScope.instance.active != null) {
+    final AppModel app = ref.read(appProvider);
+    final Future<bool> Function(SrsMiner, String)? open =
+        app.srsProfileNoteOpener;
+    final SrsMiner? miner = await _readSrsMiner(ref, followWorkSession: true);
+    return open != null && miner != null && await open(miner, noteId);
+  }
+  return await SrsAppHost.current?.openNote(noteId) ?? false;
+}
+
+/// 后台制卡（[SrsMiningAnkiRepository] 的后台队列）写完一张后的提示：入队时已经提示过
+/// 「已加入后台制卡」，成功且无音频警告时不再打扰；失败 / 重复 / 音频缺失必须让用户看见
+/// （失败原因经 [describeMineOutcome] 同时进错误日志）。
+void showSrsBackgroundMineOutcome(String expression, MineOutcome outcome) {
+  final described = describeMineOutcome(outcome);
+  if (outcome.result == MineResult.success &&
+      described.status != MineToastStatus.addedWithWarning) {
+    return;
+  }
+  FushiToast.showMine(
+    msg: described.success
+        ? described.message
+        : t.srs_mining_background_failed(
+            word: expression,
+            reason: described.message,
+          ),
+    status: described.success || outcome.result == MineResult.duplicate
+        ? described.status
+        : MineToastStatus.failed,
+  );
+}
+
+/// [repo] 的重排快照目录名：装饰链里有 SRS 层（挖词目标 = Fushi 复习）时用复习的
+/// 目录，否则用 Anki 的（见 [AnkiDeckRepositionRunner.kSrsSnapshotFolder]）。
+/// 诊断日志用：装饰链从外到内的类型名（`SrsMining… > PendingMining… > AnkiRepository`），
+/// 只看最外层的 runtimeType 分不出实际落卡的是哪个后端。
+String ankiRepositoryChainLabel(BaseAnkiRepository repo) {
+  final List<String> names = <String>[];
+  BaseAnkiRepository cur = repo;
+  while (cur is DelegatingAnkiRepository) {
+    names.add('${cur.runtimeType}');
+    cur = cur.inner;
+  }
+  names.add('${cur.runtimeType}');
+  return names.join(' > ');
+}
+
+String repositionSnapshotFolderFor(BaseAnkiRepository repo) {
+  BaseAnkiRepository cur = repo;
+  while (true) {
+    if (cur is SrsMiningAnkiRepository) {
+      return AnkiDeckRepositionRunner.kSrsSnapshotFolder;
+    }
+    if (cur is! DelegatingAnkiRepository) {
+      return AnkiDeckRepositionRunner.kAnkiSnapshotFolder;
+    }
+    cur = cur.inner;
+  }
+}
+
 /// 当前 profile 的 SRS 制卡器（store / 媒体目录打不开时为 null，并留痕）。
-Future<SrsMiner?> _readSrsMiner(Ref ref) async {
+/// [followWorkSession] 见 [_withSrsMining]。
+Future<SrsMiner?> _readSrsMiner(
+  Ref ref, {
+  required bool followWorkSession,
+}) async {
   try {
+    // 反馈 kEFPY4cuKZ：打开的作品带着作品级配置时，卡落进**那份配置**的复习副本（牌组 /
+    // 笔记类型 id 带它的 uid）；落点（[AppModel.srsMiningDestination]）读的就是作品会话。
+    // 绑定的就是激活配置时没有会话，走下面的激活副本。
+    final WorkProfileSession? session = followWorkSession
+        ? WorkProfileScope.instance.active
+        : null;
+    if (session != null) {
+      final AppModel app = ref.read(appProvider);
+      return await ref
+          .read(srsProfileStoresProvider)
+          .minerFor(
+            profileUid: await app.database.profileUidOf(session.profileId),
+            destination: app.srsMiningDestination,
+            fallbackRolloverHour: () => app.statDayResetHour,
+          );
+    }
     final SrsDbStore? store = await ref.read(srsStoreProvider.future);
     final SrsMediaStore? media = await ref.read(srsMediaStoreProvider.future);
     if (store == null || media == null) return null;
-    // 落地位置每次制卡现读：改牌组 / 笔记类型 / 映射不必重建整条装饰链。
+    // 落地位置每次制卡现读：改牌组 / 笔记类型 / 映射不必重建整条装饰链。替对端制卡读激活
+    // 配置的落点（不叠本机作品会话）。
+    final AppModel app = ref.read(appProvider);
     return SrsMiner(
       store: store,
       media: media,
-      destination: ref.read(appProvider).srsMiningDestination,
+      destination: followWorkSession
+          ? app.srsMiningDestination
+          : app.hostSrsMiningDestination,
     );
   } catch (e, stack) {
     ErrorLogService.instance.log('ankiRepositoryProvider.srsMiner', e, stack);
@@ -704,14 +946,31 @@ BaseAnkiRepository _withPendingQueue(Ref ref, BaseAnkiRepository repo) {
   return PendingMiningAnkiRepository(
     inner: repo,
     store: pendingMineStoreFor(ref.read(appProvider)),
-    openUrl: (Uri uri) =>
-        launchUrl(uri, mode: LaunchMode.externalApplication),
+    openUrl: (Uri uri) => launchUrl(uri, mode: LaunchMode.externalApplication),
   );
 }
 
 /// 本机的待发制卡队列存储（`<support>/pending_mine_queue`）。
 PendingMineStore pendingMineStoreFor(AppModel appModel) =>
     pendingMineStoreAtSupportRoot(() => appModel.database);
+
+/// 待发制卡队列此刻的张数：首帧读一次，队列表每变一次重读一次。
+///
+/// 「待发卡片」入口行露不露出由**排版它的分组**按这个值决定（#ZWr6B6u_RM）：行自己
+/// 在空队列时缩成零尺寸的话，分段分组仍把它算作组尾，真正的末行拿不到组尾大圆角。
+final StreamProvider<int> pendingMineCountProvider = StreamProvider<int>((
+  Ref ref,
+) async* {
+  final PendingMineStore store = pendingMineStoreFor(ref.watch(appProvider));
+  yield await store.count();
+  await for (final void _ in store.changes()) {
+    yield await store.count();
+  }
+});
+
+/// 待发张数的同步读数；还没读到 / 读失败（没有库的最小宿主）按 0。
+int pendingMineCountOf(WidgetRef ref) =>
+    ref.watch(pendingMineCountProvider).valueOrNull ?? 0;
 
 /// 给 [repo] 套上「制卡后自动重排新卡」。
 ///
@@ -723,15 +982,13 @@ PendingMineStore pendingMineStoreFor(AppModel appModel) =>
 /// 卡片位置、不制卡，绑自己不会递归，但多绕一层没有意义。
 ///
 /// 这里**不**看 `autoRepositionEnabled`：开关由调度器每轮重新读。若在此处按开关
-/// 决定包不包，provider 就得 watch 它，而它存在 Anki 仓库的 SharedPreferences 里
+/// 决定包不包，provider 就得 watch 它，而它存在 Anki 仓库的设置存储（Drift `anki_settings` 行）里
 /// （不是 Riverpod 状态）watch 不到，那样改开关得重启 app 才生效。
 BaseAnkiRepository _withAutoReposition(Ref ref, BaseAnkiRepository repo) {
   final AnkiAutoRepositionWiring wiring = withAnkiAutoReposition(
     repo,
-    showFailure: (String message) => FushiToast.showMine(
-      msg: message,
-      status: MineToastStatus.failed,
-    ),
+    showFailure: (String message) =>
+        FushiToast.showMine(msg: message, status: MineToastStatus.failed),
   );
   ref.onDispose(wiring.scheduler.dispose);
   return wiring.repository;
@@ -750,15 +1007,21 @@ AnkiAutoRepositionWiring withAnkiAutoReposition(
   required void Function(String message) showFailure,
 }) {
   final AnkiAutoRepositionScheduler scheduler = AnkiAutoRepositionScheduler(
-    runner: AnkiDeckRepositionRunner(repo),
+    runner: AnkiDeckRepositionRunner(
+      repo,
+      snapshotFolder: repositionSnapshotFolderFor(repo),
+    ),
     loadSettings: repo.loadSettings,
     // 文案在这一层渲染：调度器本身够不到 `t.*`（它要保持无 Flutter 依赖），
     // 在那边拼字面量等于让 17 种语言的用户都看英文。
     onFailure: (String deckName, Object error, StackTrace? stack) {
       // 原因进错误日志（用户上传的就是这份）：自动重排无人值守，toast 只有
       // 牌组名，日志是唯一能定位「一直失败」的证据（BUG-3272）。
-      ErrorLogService.instance
-          .log('AnkiAutoReposition[$deckName]', error, stack);
+      ErrorLogService.instance.log(
+        'AnkiAutoReposition[$deckName]',
+        error,
+        stack,
+      );
       showFailure(t.anki_reposition_auto_failed(deck: deckName));
     },
   );
@@ -768,7 +1031,15 @@ AnkiAutoRepositionWiring withAnkiAutoReposition(
   );
 }
 
-final ankiViewModelProvider =
-    StateNotifierProvider<AnkiViewModel, AnkiUiState>((ref) {
-  return AnkiViewModel(ref.watch(ankiRepositoryProvider));
-});
+final ankiViewModelProvider = StateNotifierProvider<AnkiViewModel, AnkiUiState>(
+  (ref) {
+    // 反馈 kEFPY4cuKZ：作品级配置会话装上 / 撤下后 Anki 设置的生效值换了一份（见
+    // [WorkScopedAnkiSettingsStore]），丢掉缓存的设置快照重读。
+    void onWorkScopeChanged() => ref.invalidateSelf();
+    WorkProfileScope.instance.addListener(onWorkScopeChanged);
+    ref.onDispose(
+      () => WorkProfileScope.instance.removeListener(onWorkScopeChanged),
+    );
+    return AnkiViewModel(ref.watch(ankiRepositoryProvider));
+  },
+);

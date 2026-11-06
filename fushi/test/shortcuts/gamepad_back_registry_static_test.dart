@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-700 T1 source-scan guard: 全局「返回」必须经快捷键注册表 (globalBack) 解析，
 /// 不得再有任何把手柄 B 硬编码成 maybePop / FushiPopIntent 的旁路。删硬绑后 B 才能
@@ -25,16 +25,14 @@ void main() {
     final String src = read('lib/src/shortcuts/gamepad_service.dart');
     // 旧硬绑：case GamepadButton.b: navigatorKey.currentState?.maybePop();
     expect(
-      RegExp(r'case GamepadButton\.b:\s*\n\s*navigatorKey\.currentState\?\.maybePop\(\);')
-          .hasMatch(src),
+      RegExp(
+        r'case GamepadButton\.b:\s*\n\s*navigatorKey\.currentState\?\.maybePop\(\);',
+      ).hasMatch(src),
       isFalse,
       reason:
           '裸 case b maybePop 仍在 —— B 应经 registry.resolveGamepad(globalBack)',
     );
-    expect(
-      src.contains('dispatchNativeGamepadButtonIntent'),
-      isTrue,
-    );
+    expect(src.contains('dispatchNativeGamepadButtonIntent'), isTrue);
     // B 不再被 dispatchNativeGamepadButtonIntent 特殊 ignore。
     expect(
       src.contains('button == GamepadButton.b'),

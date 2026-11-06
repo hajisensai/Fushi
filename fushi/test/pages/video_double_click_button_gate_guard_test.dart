@@ -62,8 +62,11 @@ void main() {
       final int start = source.indexOf(namePrefix);
       expect(start, greaterThanOrEqualTo(0), reason: '找不到方法: $namePrefix');
       final int braceStart = source.indexOf('{', start);
-      expect(braceStart, greaterThanOrEqualTo(0),
-          reason: '找不到方法体: $namePrefix');
+      expect(
+        braceStart,
+        greaterThanOrEqualTo(0),
+        reason: '找不到方法体: $namePrefix',
+      );
       int depth = 0;
       for (int i = braceStart; i < source.length; i++) {
         if (source[i] == '{') depth++;
@@ -76,24 +79,39 @@ void main() {
     }
 
     test('记账与双击判定挂在同一个 Listener 上', () {
-      final int downAt =
-          layoutSrc.indexOf('onPointerDown: _recordVideoPointerButton');
+      final int downAt = layoutSrc.indexOf(
+        'onPointerDown: _recordVideoPointerButton',
+      );
       final int upAt = layoutSrc.indexOf('onPointerUp: _handleVideoPointerUp');
-      expect(downAt, greaterThanOrEqualTo(0),
-          reason: '按下侧记账没挂上：抬起侧的按钮门永远拿不到账，右键双击会重新切全屏');
-      expect(upAt, greaterThan(downAt),
-          reason: '记账应排在同一个 Listener 的 onPointerUp 之前');
+      expect(
+        downAt,
+        greaterThanOrEqualTo(0),
+        reason: '按下侧记账没挂上：抬起侧的按钮门永远拿不到账，右键双击会重新切全屏',
+      );
+      expect(
+        upAt,
+        greaterThan(downAt),
+        reason: '记账应排在同一个 Listener 的 onPointerUp 之前',
+      );
       // 两者之间不允许另起一层 Listener / 进入 child 子树——换挂载点两者的命中集合
       // 就不再一致（记了账收不到抬起，或收到抬起却没有账），门会时灵时不灵。
       final String between = layoutSrc.substring(downAt, upAt);
-      expect(between.contains('Listener('), isFalse,
-          reason: '记账与判定之间不能夹另一个 Listener');
-      expect(between.contains('child:'), isFalse,
-          reason: '记账与判定必须是同一个 Listener 的参数，不能跨 child 子树');
+      expect(
+        between.contains('Listener('),
+        isFalse,
+        reason: '记账与判定之间不能夹另一个 Listener',
+      );
+      expect(
+        between.contains('child:'),
+        isFalse,
+        reason: '记账与判定必须是同一个 Listener 的参数，不能跨 child 子树',
+      );
       // 指针被取消时销账，否则该 pointer 的记录永远留在集合里（抬起不会再来）。
-      expect(layoutSrc.contains('onPointerCancel: _forgetVideoPointerButton'),
-          isTrue,
-          reason: '缺 onPointerCancel 销账 → 非主键记录泄漏');
+      expect(
+        layoutSrc.contains('onPointerCancel: _forgetVideoPointerButton'),
+        isTrue,
+        reason: '缺 onPointerCancel 销账 → 非主键记录泄漏',
+      );
     });
 
     /// 返回「按钮账被用作早返回条件」那条语句在方法体里的结束位置。
@@ -116,15 +134,21 @@ void main() {
         multiLine: true,
       );
       final RegExpMatch? assignHit = assign.firstMatch(body);
-      expect(assignHit, isNotNull,
-          reason: '_handleVideoPointerUp 不再读按钮账 = 双击判定又变成不看按钮号');
+      expect(
+        assignHit,
+        isNotNull,
+        reason: '_handleVideoPointerUp 不再读按钮账 = 双击判定又变成不看按钮号',
+      );
       final String variable = assignHit!.group(1)!;
       final RegExp gate = RegExp(
         r'if\s*\(\s*' + variable + r'\s*\)\s*(\{\s*)?return',
       );
       final RegExpMatch? gateHit = gate.firstMatch(body);
-      expect(gateHit, isNotNull,
-          reason: '按钮账（$variable）读了却没用作早返回条件 → 非主键照样触发双击');
+      expect(
+        gateHit,
+        isNotNull,
+        reason: '按钮账（$variable）读了却没用作早返回条件 → 非主键照样触发双击',
+      );
       return gateHit!.end;
     }
 
@@ -137,15 +161,21 @@ void main() {
       ]) {
         final int execAt = body.indexOf(executor);
         expect(execAt, greaterThanOrEqualTo(0), reason: '找不到执行体: $executor');
-        expect(execAt, greaterThan(gateEnd),
-            reason: '$executor 排在了按钮门之前 → 非主键仍能触发双击行为');
+        expect(
+          execAt,
+          greaterThan(gateEnd),
+          reason: '$executor 排在了按钮门之前 → 非主键仍能触发双击行为',
+        );
       }
     });
 
     test('按钮折叠只走全仓唯一的那个函数', () {
       final String body = methodBody(corpus, 'void _recordVideoPointerButton(');
-      expect(body.contains('domMouseButtonFromPointerButtons('), isTrue,
-          reason: '记账必须复用全仓统一的按钮折叠（设置页录制 / 鼠标绑定 / 右键菜单同源）');
+      expect(
+        body.contains('domMouseButtonFromPointerButtons('),
+        isTrue,
+        reason: '记账必须复用全仓统一的按钮折叠（设置页录制 / 鼠标绑定 / 右键菜单同源）',
+      );
       // 手写按钮比较会与录制侧错位（本仓 BUG-1269 的老账），这里直接禁掉。
       for (final String raw in <String>[
         'kSecondaryMouseButton',
@@ -153,8 +183,11 @@ void main() {
         'kBackMouseButton',
         'kForwardMouseButton',
       ]) {
-        expect(body.contains(raw), isFalse,
-            reason: '不要在这里手写按钮比较（$raw），会与设置页的录制判据错位');
+        expect(
+          body.contains(raw),
+          isFalse,
+          reason: '不要在这里手写按钮比较（$raw），会与设置页的录制判据错位',
+        );
       }
     });
   });

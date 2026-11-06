@@ -5,8 +5,7 @@ import 'package:flutter/services.dart'
         KeyEvent,
         KeyRepeatEvent,
         KeyUpEvent,
-        LogicalKeyboardKey,
-        PhysicalKeyboardKey;
+        LogicalKeyboardKey;
 import 'package:flutter/widgets.dart';
 
 import 'package:fushi/src/shortcuts/input_binding.dart'
@@ -46,23 +45,6 @@ class VideoGamepadSecondaryTapDeduper {
   }
 }
 
-/// 一次视频动作是从哪类输入来的。同一张动作表（[videoActionCallbacks]）服务所有输入
-/// 通道，但「上一句字幕」在两类输入上的语义是用户分别拍板过的，不同：
-///
-/// - [keyboard]：Ctrl+← 是**方向键**心智（TODO-085）——上一句起点离得太远时退化成回退
-///   seekSeconds 秒。字幕对轴弹窗那张 activator 表也是键盘。
-/// - [button]：手柄 / 鼠标侧键 / 屏幕自定义按钮——**按钮**心智（BUG-942），恒跳到相邻
-///   上一句，与底栏按钮、屏幕双击同一语义。
-///
-/// BUG-3339：手柄通道曾直接复用键盘那份执行体，于是手柄「上一句」在上一句离得远时只退
-/// 3 秒（用户：「连跳一两下才到句首」），而屏幕双击一直正常。输入种类必须作为构造动作表
-/// 的参数显式给出，不能由「谁先写了这份闭包」隐式决定。
-enum VideoActionInput { keyboard, button }
-
-/// 「上一句字幕」在 [input] 下是否把太远的上一句退化成时间回退（见 [VideoActionInput]）。
-bool videoPrevSubtitleDegradesFarCue(VideoActionInput input) =>
-    input == VideoActionInput.keyboard;
-
 class VideoPlayerShortcutActions {
   const VideoPlayerShortcutActions({
     required this.togglePlayPause,
@@ -84,6 +66,7 @@ class VideoPlayerShortcutActions {
     required this.nextFrame,
     required this.screenshot,
     required this.screenshotSubtitled,
+    required this.ocrFrame,
     required this.toggleFullscreen,
     required this.toggleMiniWindow,
     required this.toggleMiniChrome,
@@ -98,6 +81,9 @@ class VideoPlayerShortcutActions {
     required this.toggleFavoriteSentence,
     required this.replayCurrentSubtitle,
     required this.replayPreviousSubtitle,
+    required this.copyCurrentSubtitle,
+    required this.copyCurrentSecondarySubtitle,
+    required this.toggleLoopCurrentSubtitle,
     required this.previousChapter,
     required this.nextChapter,
     required this.openSubtitleAlign,
@@ -137,6 +123,9 @@ class VideoPlayerShortcutActions {
   /// 带字幕截图：与 [screenshot] 同一条取帧路径，区别只在把屏幕上那条字幕
   /// 合成回画面（字幕是 Flutter overlay 画的，不在解码帧里）。
   final VoidCallback screenshotSubtitled;
+
+  /// 识别一次当前画面（OCR 点字查词，默认裸 O）：正在播放先暂停，再对当前帧识别。
+  final VoidCallback ocrFrame;
   final VoidCallback toggleFullscreen;
 
   /// 进/出小窗模式（默认裸 W 键）：桌面把主窗缩成无边框置顶小窗，Android 进系统
@@ -180,6 +169,13 @@ class VideoPlayerShortcutActions {
 
   /// 重播上一句（TODO-378，BUG-287）：纯句子跳转到上一条 cue 起点并播放，不退化回退。
   final VoidCallback replayPreviousSubtitle;
+
+  /// 复制当前台词（_Eb0txdN4H）：主字幕 / 副字幕正在显示的那句写进剪贴板。
+  final VoidCallback copyCurrentSubtitle;
+  final VoidCallback copyCurrentSecondarySubtitle;
+
+  /// 循环当前句开关（Ix4j5SKUth）：开着时自然播过句尾就回到句首，再按关闭。
+  final VoidCallback toggleLoopCurrentSubtitle;
 
   /// 内封章节上/下一章（TODO-424）：seek 到相邻章起点，无章节时 no-op。
   final VoidCallback previousChapter;
@@ -243,6 +239,9 @@ const List<ShortcutAction> kVideoAssignableActions = <ShortcutAction>[
   ShortcutAction.videoNextSubtitle,
   ShortcutAction.videoReplayCurrentSubtitle,
   ShortcutAction.videoReplayPreviousSubtitle,
+  ShortcutAction.videoCopyCurrentSubtitle,
+  ShortcutAction.videoCopyCurrentSecondarySubtitle,
+  ShortcutAction.videoToggleLoopCurrentSubtitle,
   // 章节
   ShortcutAction.videoPreviousChapter,
   ShortcutAction.videoNextChapter,
@@ -270,6 +269,7 @@ const List<ShortcutAction> kVideoAssignableActions = <ShortcutAction>[
   ShortcutAction.videoToggleMiniChrome,
   ShortcutAction.videoScreenshot,
   ShortcutAction.videoScreenshotSubtitled,
+  ShortcutAction.videoOcrFrame,
   ShortcutAction.videoToggleShaderCompare,
   ShortcutAction.videoToggleImmersiveLock,
   // 学习
@@ -306,6 +306,7 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoNextFrame: actions.nextFrame,
     ShortcutAction.videoScreenshot: actions.screenshot,
     ShortcutAction.videoScreenshotSubtitled: actions.screenshotSubtitled,
+    ShortcutAction.videoOcrFrame: actions.ocrFrame,
     ShortcutAction.videoToggleFullscreen: actions.toggleFullscreen,
     ShortcutAction.videoToggleMiniWindow: actions.toggleMiniWindow,
     ShortcutAction.videoToggleMiniChrome: actions.toggleMiniChrome,
@@ -322,6 +323,11 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoToggleFavoriteSentence: actions.toggleFavoriteSentence,
     ShortcutAction.videoReplayCurrentSubtitle: actions.replayCurrentSubtitle,
     ShortcutAction.videoReplayPreviousSubtitle: actions.replayPreviousSubtitle,
+    ShortcutAction.videoCopyCurrentSubtitle: actions.copyCurrentSubtitle,
+    ShortcutAction.videoCopyCurrentSecondarySubtitle:
+        actions.copyCurrentSecondarySubtitle,
+    ShortcutAction.videoToggleLoopCurrentSubtitle:
+        actions.toggleLoopCurrentSubtitle,
     ShortcutAction.videoPreviousChapter: actions.previousChapter,
     ShortcutAction.videoNextChapter: actions.nextChapter,
     ShortcutAction.videoOpenSubtitleAlign: actions.openSubtitleAlign,
@@ -458,40 +464,6 @@ class SubtitleCaretPauseTracker {
     }
     return _sawPaused;
   }
-}
-
-/// BUG-853 / BUG-936 / TODO-847 对齐（视频版）：Windows 微软 IME 激活时裸 Space 的
-/// [logicalKey] 会被引擎改写，视频页两条空格「播放/暂停」路径（media_kit controls 的
-/// 旧 media_kit `keyboardShortcuts` 与页级空格兜底都用
-/// `SingleActivator(LogicalKeyboardKey.space)` 匹配 [logicalKey]，故 IME 下按空格暂停
-/// 失效。本谓词在 KeyEvent 层按**物理键**还原 Space 语义，命中后由调用方触发
-/// togglePlayPause。
-///
-/// BUG-936 根因修正：旧实现只认 `logicalKey == process` 这一种 IME 改写值，但 Windows
-/// 日文 IME 在不同输入模式 / 引擎下把物理空格改写成的 [logicalKey] **未必是**
-/// [LogicalKeyboardKey.process]（可能是别的非 space 逻辑键），故 BUG-853 修复真机仍失效。
-/// 唯一稳定信号是**物理键** [PhysicalKeyboardKey.space]（USB HID 扫描码，IME 绝不改写）：
-/// 只要「物理键是 Space + 逻辑键**不是**裸 [LogicalKeyboardKey.space]（即被 IME 改写过）
-/// + 无修饰键 + 无文本框 composing」即命中，覆盖 `process` 及任意其它 IME 改写值。
-///
-/// 与 [resolveReaderSpaceOverride] 同范式：纯谓词、无平台/时序副作用，可单测。**不**识别
-/// 裸 `space`（`logicalKey == space` → 返回 false）——裸 Space 走既有 media_kit
-/// SingleActivator 路径、在冒泡到本回退前就被消费，故本谓词只处理它覆盖不到的 IME 死角，
-/// 绝不与裸空格双触发（Never break userspace）。[hasEditableFocus] 为 true（文本框正在
-/// composing）时返回 false，避免 IME 变换候选词时按空格误触暂停。Space 物理键在所有常见
-/// 键盘布局上物理位一致，回退稳定。
-bool isVideoImeSpacePlayPause({
-  required LogicalKeyboardKey logicalKey,
-  required PhysicalKeyboardKey physicalKey,
-  required bool hasModifier,
-  required bool hasEditableFocus,
-}) {
-  if (hasModifier) return false;
-  if (hasEditableFocus) return false;
-  // 物理空格 + 逻辑键被 IME 改写（非裸 space）= IME 场景的空格。裸空格（logicalKey==space）
-  // 走既有 SingleActivator 路径，不进本回退。
-  return physicalKey == PhysicalKeyboardKey.space &&
-      logicalKey != LogicalKeyboardKey.space;
 }
 
 /// 按住临时倍速键盘状态机的单步结论（[resolveHoldSpeedKeyTransition]）。

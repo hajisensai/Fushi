@@ -27,7 +27,7 @@ import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
-import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
+import 'package:fushi/src/lookup/lookup_audio_playback.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:integration_test/integration_test.dart';

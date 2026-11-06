@@ -110,16 +110,25 @@ void main() {
         r'if \(chapterIdx == _currentCueIndex\) \{[\s\S]*?'
         r'_player\.playing[\s\S]*?_maybeEmitCrossChapter\([\s\S]*?\}',
       );
-      expect(recovery.hasMatch(src), isTrue,
-          reason: 'cue-未变短路必须在 playing 时补跨章检查（quiet），否则点两次复发');
+      expect(
+        recovery.hasMatch(src),
+        isTrue,
+        reason: 'cue-未变短路必须在 playing 时补跨章检查（quiet），否则点两次复发',
+      );
       // 补检查不得带 playCueOnce 单句试听语义（_stopAtPositionMs 守卫）。
-      expect(src.contains('_stopAtPositionMs == null'), isTrue,
-          reason: '补检查应 gate 在非 playCueOnce（_stopAtPositionMs==null）');
+      expect(
+        src.contains('_stopAtPositionMs == null'),
+        isTrue,
+        reason: '补检查应 gate 在非 playCueOnce（_stopAtPositionMs==null）',
+      );
     });
 
     test('跨章 emit 经纯谓词 shouldCrossChapterForTesting 决策', () {
-      expect(src.contains('shouldCrossChapterForTesting('), isTrue,
-          reason: '_maybeEmitCrossChapter 与恢复路径共用同一纯判据');
+      expect(
+        src.contains('shouldCrossChapterForTesting('),
+        isTrue,
+        reason: '_maybeEmitCrossChapter 与恢复路径共用同一纯判据',
+      );
     });
   });
 }

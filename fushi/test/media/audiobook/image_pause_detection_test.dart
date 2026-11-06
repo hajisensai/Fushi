@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 
 /// BUG-007 回归守卫（源码扫描）：有声书「遇到图片暂停播放几秒」的图片检测必须用
 /// **cue 推进锚点间 DOM 判定**，不得退回 `IntersectionObserver` 视口可见性。
@@ -19,48 +20,84 @@ void main() {
   ).readAsStringSync();
 
   test('image-pause detection uses cue-advance anchor-span DOM check', () {
-    expect(src, contains('window.__fushiPrevHighlight'),
-        reason: 'cue 推进检测须追踪上一句锚点 __fushiPrevHighlight');
-    expect(src, contains('compareDocumentPosition'),
-        reason: '须用 compareDocumentPosition 判定锚点间 img/svg（绕开视口可见性）');
-    expect(src, contains("querySelectorAll('img, svg')"),
-        reason: '须扫描 img/svg 节点');
-    expect(src, contains("callHandler('onImageDetected')"),
-        reason: '检测到锚点间插图须通知 Dart 暂停');
+    expect(
+      src,
+      contains('window.__fushiPrevHighlight'),
+      reason: 'cue 推进检测须追踪上一句锚点 __fushiPrevHighlight',
+    );
+    expect(
+      src,
+      contains('compareDocumentPosition'),
+      reason: '须用 compareDocumentPosition 判定锚点间 img/svg（绕开视口可见性）',
+    );
+    expect(
+      src,
+      contains("querySelectorAll('img, svg')"),
+      reason: '须扫描 img/svg 节点',
+    );
+    expect(
+      src,
+      contains("callHandler('onImageDetected')"),
+      reason: '检测到锚点间插图须通知 Dart 暂停',
+    );
   });
 
   test('old IntersectionObserver viewport image detection is removed', () {
     // 断言「实例化」而非单词本身——本文件注释里仍会解释为何弃用 IntersectionObserver。
-    expect(src, isNot(contains('new IntersectionObserver(')),
-        reason: 'IntersectionObserver 视口检测在离散翻页下永不触发，不得退回');
-    expect(src, isNot(contains('__fushiImageObserver')),
-        reason: '旧 IO 图片观察器须移除');
-  });
-
-  test('shared cue-advance helper reveals the crossed image (BUG-007 gap2)',
-      () {
-    expect(src, contains('window.__fushiImagePauseAdvance'),
-        reason: 'cue 推进检测抽成共享 helper，selector/sentenceAudioHighlight 两路径复用');
-    expect(src, contains('window.__fushiRevealTarget'),
-        reason: '命中插图、reveal 时须把视口滚到插图（否则暂停看不到图）');
+    expect(
+      src,
+      isNot(contains('new IntersectionObserver(')),
+      reason: 'IntersectionObserver 视口检测在离散翻页下永不触发，不得退回',
+    );
+    expect(
+      src,
+      isNot(contains('__fushiImageObserver')),
+      reason: '旧 IO 图片观察器须移除',
+    );
   });
 
   test(
-      'sentenceAudioHighlight cue path is wired to image-pause detection (BUG-007 gap1)',
-      () {
-    expect(src, contains('window.__fushiSentenceAudioAnchorEl'),
+    'shared cue-advance helper reveals the crossed image (BUG-007 gap2)',
+    () {
+      expect(
+        src,
+        contains('window.__fushiImagePauseAdvance'),
+        reason: 'cue 推进检测抽成共享 helper，selector/sentenceAudioHighlight 两路径复用',
+      );
+      expect(
+        src,
+        contains('window.__fushiRevealTarget'),
+        reason: '命中插图、reveal 时须把视口滚到插图（否则暂停看不到图）',
+      );
+    },
+  );
+
+  test(
+    'sentenceAudioHighlight cue path is wired to image-pause detection (BUG-007 gap1)',
+    () {
+      expect(
+        src,
+        contains('window.__fushiSentenceAudioAnchorEl'),
+        reason: 'sentenceAudioHighlight cue 须能解析锚点元素（cueRangesMap/cueWrappers）',
+      );
+      expect(
+        src,
+        contains('cueRangesMap'),
         reason:
-            'sentenceAudioHighlight cue 须能解析锚点元素（cueRangesMap/cueWrappers）');
-    expect(src, contains('cueRangesMap'),
-        reason:
-            'CSS-highlights 路径从 cueRangesMap 取 sentenceAudioHighlight cue 的 range 锚点');
-    final int sasIdx =
-        src.indexOf('__fushiHighlightSentenceAudioCueById = function');
-    expect(sasIdx, greaterThan(-1));
-    final String sasFn = src.substring(sasIdx, sasIdx + 600);
-    expect(sasFn, contains('__fushiImagePauseAdvance'),
-        reason: 'sentenceAudioHighlight 高亮路径须复用共享跨图检测核心');
-  });
+            'CSS-highlights 路径从 cueRangesMap 取 sentenceAudioHighlight cue 的 range 锚点',
+      );
+      final int sasIdx = src.indexOf(
+        '__fushiHighlightSentenceAudioCueById = function',
+      );
+      expect(sasIdx, greaterThan(-1));
+      final String sasFn = src.substring(sasIdx, sasIdx + 600);
+      expect(
+        sasFn,
+        contains('__fushiImagePauseAdvance'),
+        reason: 'sentenceAudioHighlight 高亮路径须复用共享跨图检测核心',
+      );
+    },
+  );
 
   // TODO-724：竖排滚动模式有声书自动播放跳到图片。两个根因守卫。
   test('image-reveal scroll is gated by pauseEnabled (TODO-724 defect a)', () {
@@ -71,60 +108,100 @@ void main() {
     // TODO-1178：函数体前增了揭遮罩注释/调用，门控右移，窗口从 400 放宽到 800。
     final String fn = src.substring(fnIdx, fnIdx + 800);
     // BUG-2536 起多一个 fromChapterStart（章首锚点）参数，pauseEnabled 门控不变。
-    expect(fn, contains('function(el, reveal, pauseEnabled, fromChapterStart)'),
-        reason: 'cue 推进核心须新增 pauseEnabled 参数门控滚图');
-    expect(fn, contains('if (reveal && pauseEnabled)'),
-        reason:
-            '仅 reveal 且 pauseEnabled(imagePauseSec>0) 才 __fushiRevealTarget 滚到插图');
+    expect(
+      fn,
+      contains('function(el, reveal, pauseEnabled, fromChapterStart)'),
+      reason: 'cue 推进核心须新增 pauseEnabled 参数门控滚图',
+    );
+    expect(
+      fn,
+      contains('if (reveal && pauseEnabled)'),
+      reason:
+          '仅 reveal 且 pauseEnabled(imagePauseSec>0) 才 __fushiRevealTarget 滚到插图',
+    );
 
     // Dart highlight() 须把 imagePauseSec>0 经 pauseEnabled 传进两条 JS 高亮路径。
     final String pageSrc = File(
       'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
     ).readAsStringSync();
-    expect(pageSrc, contains('controller.imagePauseSec.value > 0'),
-        reason: 'reader 须按 imagePauseSec>0 算出 pauseEnabled 传给 bridge');
-    expect(pageSrc, contains('pauseEnabled: pauseEnabled'),
-        reason: 'highlight 调用须传 pauseEnabled');
-    expect(src, contains('window.__fushiHighlightSentenceAudioCueById('),
-        reason: 'sentenceAudioHighlight 路径仍是图片暂停检测入口');
-    final int callIdx =
-        src.indexOf('window.__fushiHighlightSentenceAudioCueById(');
+    expect(
+      pageSrc,
+      contains(
+        'audiobookTextImagePauseEnabled(\n'
+        '      imagePauseSec: controller.imagePauseSec.value,',
+      ),
+      reason:
+          'reader 须按 imagePauseSec 经 audiobookTextImagePauseEnabled '
+          '算出 pauseEnabled 传给 bridge',
+    );
+    expect(
+      pageSrc,
+      contains('pauseEnabled: pauseEnabled'),
+      reason: 'highlight 调用须传 pauseEnabled',
+    );
+    expect(
+      src,
+      contains('window.__fushiHighlightSentenceAudioCueById('),
+      reason: 'sentenceAudioHighlight 路径仍是图片暂停检测入口',
+    );
+    final int callIdx = src.indexOf(
+      'window.__fushiHighlightSentenceAudioCueById(',
+    );
     final String call = src.substring(callIdx, callIdx + 120);
-    expect(call, contains(r'$reveal, $pauseEnabled'),
-        reason: 'sentenceAudioHighlight 高亮 JS 调用须把 pauseEnabled 透传');
+    expect(
+      call,
+      contains(r'$reveal, $pauseEnabled'),
+      reason: 'sentenceAudioHighlight 高亮 JS 调用须把 pauseEnabled 透传',
+    );
   });
 
   test(
-      'prev-highlight anchor is reset on restore / chapter nav (TODO-724 defect b)',
-      () {
-    // bridge 须暴露重置 cue 推进锚点的入口。
-    expect(src, contains('window.__fushiResetPrevHighlight'),
-        reason: '须有重置 __fushiPrevHighlight 的 JS 入口');
-    expect(src, contains('resetImagePauseAnchor'),
-        reason: 'bridge 须暴露 Dart 端 resetImagePauseAnchor API');
+    'prev-highlight anchor is reset on restore / chapter nav (TODO-724 defect b)',
+    () {
+      // bridge 须暴露重置 cue 推进锚点的入口。
+      expect(
+        src,
+        contains('window.__fushiResetPrevHighlight'),
+        reason: '须有重置 __fushiPrevHighlight 的 JS 入口',
+      );
+      expect(
+        src,
+        contains('resetImagePauseAnchor'),
+        reason: 'bridge 须暴露 Dart 端 resetImagePauseAnchor API',
+      );
 
-    // _onRestoreComplete（初次开书 + 跨章推进完成的汇聚点）须调用重置，
-    // 避免恢复到中段后首次 cue 推进跨越中间所有插图 reveal 到远处图。
-    final String navSrc = File(
-      'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
-    ).readAsStringSync();
-    final int restoreIdx = navSrc.indexOf('void _onRestoreComplete()');
-    expect(restoreIdx, greaterThan(-1));
-    // 截到下一个方法 _startProgressPoll 之前，确保重置在恢复完成方法体内。
-    final int endIdx = navSrc.indexOf('void _startProgressPoll()', restoreIdx);
-    expect(endIdx, greaterThan(restoreIdx));
-    final String restoreBody = navSrc.substring(restoreIdx, endIdx);
-    expect(restoreBody, contains('AudiobookBridge.resetImagePauseAnchor'),
-        reason: '_onRestoreComplete 须在恢复完成时重置 cue 推进锚点');
-  });
+      // _onRestoreComplete（初次开书 + 跨章推进完成的汇聚点）须调用重置，
+      // 避免恢复到中段后首次 cue 推进跨越中间所有插图 reveal 到远处图。
+      final String navSrc = File(
+        'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
+      ).readAsStringSync();
+      final int restoreIdx = navSrc.indexOf('void _onRestoreComplete()');
+      expect(restoreIdx, greaterThan(-1));
+      // 截到下一个方法 _startProgressPoll 之前，确保重置在恢复完成方法体内。
+      final int endIdx = navSrc.indexOf(
+        'void _startProgressPoll()',
+        restoreIdx,
+      );
+      expect(endIdx, greaterThan(restoreIdx));
+      final String restoreBody = navSrc.substring(restoreIdx, endIdx);
+      expect(
+        restoreBody,
+        contains('AudiobookBridge.resetImagePauseAnchor'),
+        reason: '_onRestoreComplete 须在恢复完成时重置 cue 推进锚点',
+      );
+    },
+  );
 
   // TODO-1178：有声书音频跟随到某张图片时，自动去掉该图的防剧透模糊遮罩
   // （blurred 类）。cue 推进核心 __fushiImagePauseAdvance 须在 pause 门控前
   // 揭「上一句→当前句」区间内所有 blurred 图；未读到的图保持模糊。
   test('audio follow reveals crossed blurred images (TODO-1178)', () {
     // 存在独立揭遮罩 helper，不改动 __fushiImageBetween 暂停判据。
-    expect(src, contains('window.__fushiRevealBlurredBetween = function'),
-        reason: '须有独立揭防剧透模糊的 helper，与暂停判据平行、不改暂停逻辑');
+    expect(
+      src,
+      contains('window.__fushiRevealBlurredBetween = function'),
+      reason: '须有独立揭防剧透模糊的 helper，与暂停判据平行、不改暂停逻辑',
+    );
 
     // helper 只针对带 blurred 类的 img/svg，并 remove('blurred')。
     final int rbIdx = src.indexOf('__fushiRevealBlurredBetween = function');
@@ -135,12 +212,21 @@ void main() {
     // TODO-1367：改为扫描区间内全部 img/svg（含尚未 load、此刻还没 blurred 类的懒图），
     // 对每张登记 reveal key + 去 blurred；未开图片模糊由前置 __fushiImageRevealKey 守卫早退
     // 保证 no-op。
-    expect(rbFn, contains("querySelectorAll('img, svg')"),
-        reason: 'TODO-1367：须扫描区间全部 img/svg（含未 load 懒图）而非仅 img.blurred');
-    expect(rbFn, contains("classList.remove('blurred')"),
-        reason: '跨过（读到）的图须去掉 blurred 类揭开防剧透遮罩');
-    expect(rbFn, contains('compareDocumentPosition'),
-        reason: '按 DOM 顺序判定「上一句→当前句」区间，只揭已读到的图');
+    expect(
+      rbFn,
+      contains("querySelectorAll('img, svg')"),
+      reason: 'TODO-1367：须扫描区间全部 img/svg（含未 load 懒图）而非仅 img.blurred',
+    );
+    expect(
+      rbFn,
+      contains("classList.remove('blurred')"),
+      reason: '跨过（读到）的图须去掉 blurred 类揭开防剧透遮罩',
+    );
+    expect(
+      rbFn,
+      contains('compareDocumentPosition'),
+      reason: '按 DOM 顺序判定「上一句→当前句」区间，只揭已读到的图',
+    );
 
     // __fushiImagePauseAdvance 在 pause 门控（if (!crossed) return false）之前
     // 调用揭遮罩：与图片暂停解耦，无论是否跨图/是否开暂停都揭已读区间的图。
@@ -148,12 +234,34 @@ void main() {
     expect(adv, greaterThan(-1));
     // 窗口要盖住 BUG-2536 加的章首锚点行（fromChapterStart → document.body）。
     final String advFn = src.substring(adv, adv + 700);
-    final int revealCall =
-        advFn.indexOf('__fushiRevealBlurredBetween(prev, el)');
+    final int revealCall = advFn.indexOf(
+      '__fushiRevealBlurredBetween(prev, el)',
+    );
     final int crossedGate = advFn.indexOf('if (!crossed) return false');
     expect(revealCall, greaterThan(-1), reason: 'cue 推进核心须调用揭遮罩 helper');
     expect(crossedGate, greaterThan(-1));
-    expect(revealCall, lessThan(crossedGate),
-        reason: '揭遮罩须在 crossed/pause 门控之前，与图片暂停功能解耦');
+    expect(
+      revealCall,
+      lessThan(crossedGate),
+      reason: '揭遮罩须在 crossed/pause 门控之前，与图片暂停功能解耦',
+    );
+  });
+
+  test('歌词模式下正文 WebView 不放开插图停留（插图停留归歌词插图状态机）', () {
+    expect(
+      audiobookTextImagePauseEnabled(imagePauseSec: 3, lyricsMode: false),
+      isTrue,
+    );
+    expect(
+      audiobookTextImagePauseEnabled(imagePauseSec: 0, lyricsMode: false),
+      isFalse,
+      reason: 'TODO-724：图片暂停关着绝不滚图',
+    );
+    // 「弹出停留」开着也一样：隐藏的正文视口若跟着滚到插图，退出歌词模式时
+    // 正文会停在那张图上，而 onImageDetected 在歌词模式下没有消费者。
+    expect(
+      audiobookTextImagePauseEnabled(imagePauseSec: 3, lyricsMode: true),
+      isFalse,
+    );
   });
 }

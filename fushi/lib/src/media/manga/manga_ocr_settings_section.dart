@@ -27,7 +27,22 @@ import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// [MangaOcrSettingsSection] 的版式：设置页（M3E 分组：识别引擎选择行、性能、
 /// 大模型增强、本地模型状态卡、外部工具）或阅读器设置侧板（引擎单选卡片组平铺）。
@@ -55,6 +70,8 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
     this.enginePreferenceSetter,
     this.parallelTasksGetter,
     this.parallelTasksSetter,
+    this.ignoreFuriganaGetter,
+    this.ignoreFuriganaSetter,
     this.localModelGetter,
     this.localModelSetter,
     this.lensLanguageGetter,
@@ -97,6 +114,10 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
   /// 桌面跨书任务并发：0 自动，1～4 手动。
   final int Function()? parallelTasksGetter;
   final Future<void> Function(int value)? parallelTasksSetter;
+
+  /// 「OCR 忽略振假名」（本机 Manga CTC 识别前裁掉正文旁的注音带）；宿主不接时不显示。
+  final bool Function()? ignoreFuriganaGetter;
+  final Future<void> Function(bool value)? ignoreFuriganaSetter;
 
   final String Function()? localModelGetter;
   final Future<void> Function(String value)? localModelSetter;
@@ -148,6 +169,7 @@ class _MangaOcrSettingsSectionState
   late final TextEditingController _pathCtrl;
   late MangaOcrEnginePreference _enginePreference;
   late int _parallelTasks;
+  late bool _ignoreFurigana;
 
   /// 本机手动档上限（逻辑核 / 每任务线程数，见 `mangaOcrMaxParallelTasks`）。
   late int _maxParallelTasks;
@@ -218,11 +240,14 @@ class _MangaOcrSettingsSectionState
         ? MangaAiOcrMode.fromStorageKey(storedAiMode)
         : MangaAiOcrMode.lowConfidence;
     _maxParallelTasks = hostMangaOcrMaxParallelTasks();
-    _parallelTasks =
-        (widget.parallelTasksGetter?.call() ?? 0).clamp(0, _maxParallelTasks);
+    _parallelTasks = (widget.parallelTasksGetter?.call() ?? 0).clamp(
+      0,
+      _maxParallelTasks,
+    );
     _localModel = MangaOcrLocalModel.forPlatform(
       widget.localModelGetter?.call() ?? kDefaultMangaOcrLocalModel.key,
     );
+    _ignoreFurigana = widget.ignoreFuriganaGetter?.call() ?? false;
     _downloads = ref.read(mangaOcrModelDownloadsProvider);
     _wasDownloading = _downloading;
     _downloads.addListener(_onDownloadsChanged);
@@ -303,7 +328,7 @@ class _MangaOcrSettingsSectionState
     final String Function()? getter = widget.enginePreferenceGetter;
     if (getter != null) return getter();
     // 回退值必须与偏好仓库的出厂默认同源（BUG-1780）：这里曾经硬写 `auto`，
-    // 而生产默认是 `google_lens`，两者分叉让 UI 守卫恒绿——测试永远在跑一条
+    // 而当时生产默认是 `google_lens`，两者分叉让 UI 守卫恒绿——测试永远在跑一条
     // 用户碰不到的分支。
     return kDefaultMangaOcrEnginePreference.key;
   }
@@ -420,32 +445,30 @@ class _MangaOcrSettingsSectionState
         final ThemeData dialogTheme = Theme.of(ctx);
         return FushiAlertDialog(
           title: Text(t.manga_ocr_import_title),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(t.manga_ocr_import_intro),
-                const SizedBox(height: 12),
-                for (final MangaOcrModelFile model in _localModel.manifest)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      '${model.fileName} · ${_formatBytes(model.expectedBytes)}',
-                      style: dialogTheme.textTheme.bodySmall,
-                    ),
-                  ),
-                const SizedBox(height: 4),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: FushiTextButton.icon(
-                    onPressed: () => unawaited(_copyModelUrls()),
-                    icon: const FushiIcon(FushiIcons.link, size: 18),
-                    label: Text(t.manga_ocr_import_copy_urls),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(t.manga_ocr_import_intro),
+              const SizedBox(height: 12),
+              for (final MangaOcrModelFile model in _localModel.manifest)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '${model.fileName} · ${_formatBytes(model.expectedBytes)}',
+                    style: dialogTheme.textTheme.bodySmall,
                   ),
                 ),
-              ],
-            ),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FushiTextButton.icon(
+                  onPressed: () => unawaited(_copyModelUrls()),
+                  icon: const FushiIcon(FushiIcons.link, size: 18),
+                  label: Text(t.manga_ocr_import_copy_urls),
+                ),
+              ),
+            ],
           ),
           actions: <Widget>[
             FushiTextButton(
@@ -600,8 +623,9 @@ class _MangaOcrSettingsSectionState
             child: FushiCircularProgressIndicator(strokeWidth: 2),
           )
         : const FushiIcon(FushiIcons.importFile, size: 18);
-    final Widget label =
-        Text(_importing ? t.manga_ocr_import_running : t.manga_ocr_import);
+    final Widget label = Text(
+      _importing ? t.manga_ocr_import_running : t.manga_ocr_import,
+    );
     return FushiOutlinedButton.icon(
       key: const ValueKey<String>('manga_ocr_import_button'),
       onPressed: onPressed,
@@ -647,10 +671,9 @@ class _MangaOcrSettingsSectionState
     // 与文本编辑依赖，不改视觉。
     return Material(
       type: MaterialType.transparency,
-      child:
-          widget.presentation == MangaOcrSettingsPresentation.readerPanel
-              ? _buildPanelBody(theme)
-              : _buildBody(theme),
+      child: widget.presentation == MangaOcrSettingsPresentation.readerPanel
+          ? _buildPanelBody(theme)
+          : _buildBody(theme),
     );
   }
 
@@ -667,6 +690,7 @@ class _MangaOcrSettingsSectionState
       children: <Widget>[
         _buildEngineRow(theme),
         if (widget.lensLanguageGetter != null) _buildPanelLensLanguage(),
+        if (widget.ignoreFuriganaGetter != null) _buildIgnoreFurigana(),
       ],
     );
     final Widget performance = MangaPanelGroup(
@@ -915,25 +939,26 @@ class _MangaOcrSettingsSectionState
     List<_EngineOption> options,
     _EngineChoice selected,
   ) async {
-    final _EngineChoice? picked = await showMangaPanelOptionSheet<_EngineChoice>(
-      context: context,
-      title: t.manga_ocr_default_engine,
-      options: <MangaPanelOption<_EngineChoice>>[
-        for (final _EngineOption option in options)
-          MangaPanelOption<_EngineChoice>(
-            value: option.choice,
-            label: option.label,
-            description: option.description,
-            icon: _engineIcon(option.preference),
-            enabled: option.enabled,
-            key: ValueKey<String>(
-              'manga_ocr_engine_${option.preference.name}'
-              '_${option.localModel?.key ?? ''}_${option.hostModel ?? ''}',
-            ),
-          ),
-      ],
-      selected: selected,
-    );
+    final _EngineChoice? picked =
+        await showMangaPanelOptionSheet<_EngineChoice>(
+          context: context,
+          title: t.manga_ocr_default_engine,
+          options: <MangaPanelOption<_EngineChoice>>[
+            for (final _EngineOption option in options)
+              MangaPanelOption<_EngineChoice>(
+                value: option.choice,
+                label: option.label,
+                description: option.description,
+                icon: _engineIcon(option.preference),
+                enabled: option.enabled,
+                key: ValueKey<String>(
+                  'manga_ocr_engine_${option.preference.name}'
+                  '_${option.localModel?.key ?? ''}_${option.hostModel ?? ''}',
+                ),
+              ),
+          ],
+          selected: selected,
+        );
     if (!mounted || picked == null || picked == _currentChoice) return;
     await _selectEngine(picked);
   }
@@ -951,7 +976,7 @@ class _MangaOcrSettingsSectionState
   ///
   /// 当前引擎用不到本机模型时**收起成一行摘要**（模型名 +「用不到」+ 体积 /
   /// 占用），点开才露出完整的卡——修的是「我选的是 Google Lens，这儿怎么还让我
-  /// 下模型」；但不藏（BUG-1780：出厂默认就是 Lens，想预先备好离线模型的人仍要
+  /// 下模型」；但不藏（BUG-1780：选了 Lens 但想预先备好离线模型的人仍要
   /// 找得到下载入口，磁盘上的残留也得删得掉）。下载中、加载中一律展开。
   Widget _buildSettingsModelGroup(ThemeData theme) {
     final bool collapsible =
@@ -1151,6 +1176,7 @@ class _MangaOcrSettingsSectionState
       if (isDesktopPlatform && widget.parallelTasksGetter != null)
         _buildPanelParallelTasks(),
       if (widget.lensLanguageGetter != null) _buildPanelLensLanguage(),
+      if (widget.ignoreFuriganaGetter != null) _buildIgnoreFurigana(),
       if (widget.aiModeGetter != null) _buildPanelAiMode(theme),
     ];
     return Column(
@@ -1211,6 +1237,24 @@ class _MangaOcrSettingsSectionState
                 unawaited(_selectEngine(value));
               },
       ),
+    );
+  }
+
+  /// 「OCR 忽略振假名」开关（反馈 ZBJTgLuPIb）：只裁来源自带的注音，不生成读音。
+  Widget _buildIgnoreFurigana() {
+    return AdaptiveSettingsSwitchRow(
+      key: const ValueKey<String>('manga_ocr_ignore_furigana'),
+      title: t.manga_ocr_ignore_furigana,
+      subtitle: t.manga_ocr_ignore_furigana_desc,
+      icon: FushiIcons.ocr,
+      showIcon: true,
+      value: _ignoreFurigana,
+      onChanged: widget.ignoreFuriganaSetter == null
+          ? null
+          : (bool value) async {
+              setState(() => _ignoreFurigana = value);
+              await widget.ignoreFuriganaSetter!(value);
+            },
     );
   }
 
@@ -1552,7 +1596,9 @@ class _MangaOcrSettingsSectionState
                   shape: emphasis
                       ? FushiLeadingShape.cookie
                       : FushiLeadingShape.circle,
-                  tone: emphasis ? FushiCardTone.primary : FushiCardTone.secondary,
+                  tone: emphasis
+                      ? FushiCardTone.primary
+                      : FushiCardTone.secondary,
                 ),
                 const SizedBox(width: 16),
                 Expanded(

@@ -70,7 +70,9 @@ void main() {
     final String page = File(
       'lib/src/pages/implementations/reader_fushi_page.dart',
     ).readAsStringSync();
-    final int start = page.indexOf('bool _canOwnReaderFocus(');
+    // 判据已抽成顶层纯函数 readerCanOwnFocus（页面的 _canOwnReaderFocus 只做委托）；
+    // 其 switch 以两格缩进的 `}` 收尾，切片仍覆盖全部 case。
+    final int start = page.indexOf('bool readerCanOwnFocus(');
     expect(start, isNonNegative);
     final int end = page.indexOf('\n  }', start);
     expect(end, greaterThan(start));

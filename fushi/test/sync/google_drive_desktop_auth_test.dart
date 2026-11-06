@@ -10,8 +10,9 @@ import 'package:fushi/src/sync/google_drive_auth.dart';
 /// network failure on restore additionally wiped the saved session.
 void main() {
   group('desktop auth URL requests a durable refresh token (BUG-034)', () {
-    final url =
-        GoogleDriveAuth.debugBuildDesktopAuthUrl('http://localhost:1234');
+    final url = GoogleDriveAuth.debugBuildDesktopAuthUrl(
+      'http://localhost:1234',
+    );
 
     test('hits Google authorization endpoint', () {
       expect(url.scheme, 'https');
@@ -48,8 +49,11 @@ void main() {
       // invalid_grant → 400; the saved session is genuinely dead.
       expect(
         GoogleDriveAuth.debugIsCredentialsRejected(
-          auth.ServerRequestFailedException('invalid_grant',
-              statusCode: 400, responseContent: null),
+          auth.ServerRequestFailedException(
+            'invalid_grant',
+            statusCode: 400,
+            responseContent: null,
+          ),
         ),
         isTrue,
       );
@@ -58,8 +62,11 @@ void main() {
     test('HTTP 401 is fatal', () {
       expect(
         GoogleDriveAuth.debugIsCredentialsRejected(
-          auth.ServerRequestFailedException('unauthorized',
-              statusCode: 401, responseContent: null),
+          auth.ServerRequestFailedException(
+            'unauthorized',
+            statusCode: 401,
+            responseContent: null,
+          ),
         ),
         isTrue,
       );
@@ -68,8 +75,11 @@ void main() {
     test('HTTP 403 (revoked / project disabled) is fatal', () {
       expect(
         GoogleDriveAuth.debugIsCredentialsRejected(
-          auth.ServerRequestFailedException('forbidden',
-              statusCode: 403, responseContent: null),
+          auth.ServerRequestFailedException(
+            'forbidden',
+            statusCode: 403,
+            responseContent: null,
+          ),
         ),
         isTrue,
       );
@@ -98,31 +108,45 @@ void main() {
     test('a 5xx server error is treated as transient, not a rejection', () {
       expect(
         GoogleDriveAuth.debugIsCredentialsRejected(
-          auth.ServerRequestFailedException('server error',
-              statusCode: 503, responseContent: null),
+          auth.ServerRequestFailedException(
+            'server error',
+            statusCode: 503,
+            responseContent: null,
+          ),
         ),
         isFalse,
       );
     });
   });
 
-  test('source guard: no regression to the offline-less consent flow (BUG-034)',
-      () {
-    final source =
-        File('lib/src/sync/google_drive_auth.dart').readAsStringSync();
-    // The offline-less googleapis_auth flow must stay gone. Match the call
-    // form (with paren) so the prose mention in the fix comment doesn't count.
-    expect(source.contains('clientViaUserConsent('), isFalse,
-        reason: 'clientViaUserConsent never sends access_type=offline → no '
-            'refresh token → session dies on restart (BUG-034).');
-    // The durable-refresh-token wiring must stay in place.
-    expect(source.contains("'access_type': 'offline'"), isTrue);
-    expect(source.contains("'prompt': 'consent"), isTrue);
-    expect(source.contains('obtainAccessCredentialsViaCodeExchange'), isTrue);
-    expect(source.contains('runDesktopOAuthLoopback'), isTrue);
-    // The restore path must gate the wipe behind a real rejection.
-    expect(source.contains('if (_isCredentialsRejected(e)) {'), isTrue,
-        reason: 'restoreDesktopAuth must not clear the session on transient '
-            'network errors (BUG-034).');
-  });
+  test(
+    'source guard: no regression to the offline-less consent flow (BUG-034)',
+    () {
+      final source = File(
+        'lib/src/sync/google_drive_auth.dart',
+      ).readAsStringSync();
+      // The offline-less googleapis_auth flow must stay gone. Match the call
+      // form (with paren) so the prose mention in the fix comment doesn't count.
+      expect(
+        source.contains('clientViaUserConsent('),
+        isFalse,
+        reason:
+            'clientViaUserConsent never sends access_type=offline → no '
+            'refresh token → session dies on restart (BUG-034).',
+      );
+      // The durable-refresh-token wiring must stay in place.
+      expect(source.contains("'access_type': 'offline'"), isTrue);
+      expect(source.contains("'prompt': 'consent"), isTrue);
+      expect(source.contains('obtainAccessCredentialsViaCodeExchange'), isTrue);
+      expect(source.contains('runDesktopOAuthLoopback'), isTrue);
+      // The restore path must gate the wipe behind a real rejection.
+      expect(
+        source.contains('if (_isCredentialsRejected(e)) {'),
+        isTrue,
+        reason:
+            'restoreDesktopAuth must not clear the session on transient '
+            'network errors (BUG-034).',
+      );
+    },
+  );
 }

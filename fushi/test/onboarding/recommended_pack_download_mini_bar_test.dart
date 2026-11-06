@@ -6,7 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_mini_bar.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/misc/toast_severity.dart';
 
 /// BUG-2165：推荐包 9.5 GB 的下载在 BUG-2097 之后确实活过了新手引导，但可见入口
 /// 只剩「设置 → 系统 → 通用第 5 项」——而新用户走完引导正好落在首页，屏幕上一个

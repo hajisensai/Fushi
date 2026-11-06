@@ -40,11 +40,11 @@ class SyncChannelScope {
 
   /// 全部可能的槽位（键目录展开用，见 [SyncRepository.deviceLocalPrefKeys]）。
   static List<SyncChannelScope> get all => <SyncChannelScope>[
-        for (final SyncBackendType t in SyncBackendType.values)
-          SyncChannelScope.forBackendType(t),
-        host,
-        unscoped,
-      ];
+    for (final SyncBackendType t in SyncBackendType.values)
+      SyncChannelScope.forBackendType(t),
+    host,
+    unscoped,
+  ];
 
   final String id;
 

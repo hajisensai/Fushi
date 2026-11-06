@@ -4,20 +4,22 @@ import 'package:fushi/src/pages/implementations/stat_ring.dart';
 
 void main() {
   Widget host(Widget child) => MaterialApp(
-        home: Scaffold(body: Center(child: child)),
-      );
+    home: Scaffold(body: Center(child: child)),
+  );
 
   testWidgets('StatRing renders value, detail and caption', (tester) async {
-    await tester.pumpWidget(host(
-      const StatRing(
-        fraction: 0.62,
-        color: Colors.blue,
-        trackColor: Colors.grey,
-        value: '62%',
-        detail: '3100/5000',
-        caption: '字数',
+    await tester.pumpWidget(
+      host(
+        const StatRing(
+          fraction: 0.62,
+          color: Colors.blue,
+          trackColor: Colors.grey,
+          value: '62%',
+          detail: '3100/5000',
+          caption: '字数',
+        ),
       ),
-    ));
+    );
     expect(find.text('62%'), findsOneWidget);
     expect(find.text('3100/5000'), findsOneWidget);
     expect(find.text('字数'), findsOneWidget);
@@ -26,15 +28,17 @@ void main() {
   });
 
   testWidgets('StatRing omits detail when null', (tester) async {
-    await tester.pumpWidget(host(
-      const StatRing(
-        fraction: 0.0,
-        color: Colors.blue,
-        trackColor: Colors.grey,
-        value: '0%',
-        caption: '时长',
+    await tester.pumpWidget(
+      host(
+        const StatRing(
+          fraction: 0.0,
+          color: Colors.blue,
+          trackColor: Colors.grey,
+          value: '0%',
+          caption: '时长',
+        ),
       ),
-    ));
+    );
     expect(find.text('0%'), findsOneWidget);
     expect(find.text('时长'), findsOneWidget);
   });

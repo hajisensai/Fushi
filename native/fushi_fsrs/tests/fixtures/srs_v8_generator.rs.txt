@@ -1,0 +1,121 @@
+//! 生成 v8 夹具（只在 develop@6486c650c5（schema v8）的副本里跑，不入库）：两台设备、两个位置，UUID 与非 UUID ID
+//! 混合，含并发修改、反复改标签（v14 摘要桶重建要覆盖的写法）与跨设备同步。
+use serde_json::{json, Value};
+
+use super::tests::{deck_entity, edit, review, Bucket, Device, P};
+const DAY: i64 = 86_400_000;
+
+fn u(tag: u32, i: u32) -> String {
+    format!("0193a1b2-{tag:04x}-7000-8000-{i:012x}")
+}
+
+fn note_entity(id: &str, nt: &str, deck: &str) -> Value {
+    json!({"t": "entity", "x": {"id": id, "p": P, "k": "note", "d": {"createdAt": 5, "notetype": nt, "deck": deck}}})
+}
+
+fn notetype_entity(id: &str) -> Value {
+    json!({"t": "entity", "x": {"id": id, "p": P, "k": "notetype", "d": {"createdAt": 3}}})
+}
+
+pub(crate) fn dump(d: &Device) -> Value {
+    let tables = d.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name");
+    let mut out = serde_json::Map::new();
+    for t in tables.iter().skip(1) {
+        let name = &t[0];
+        let cols = d.rows(&format!("SELECT name FROM pragma_table_info('{name}') ORDER BY cid"));
+        let cols: Vec<String> = cols.iter().skip(1).map(|r| r[0].clone()).collect();
+        let sel: Vec<String> = cols
+            .iter()
+            .map(|c| format!("CASE typeof(\"{c}\") WHEN 'blob' THEN 'b:' || hex(\"{c}\") WHEN 'null' THEN 'n' ELSE substr(typeof(\"{c}\"), 1, 1) || ':' || \"{c}\" END"))
+            .collect();
+        let rows = d.rows(&format!("SELECT {} FROM \"{name}\"", sel.join(", ")));
+        let mut rows: Vec<Vec<String>> = rows.into_iter().skip(1).collect();
+        rows.sort();
+        out.insert(name.clone(), json!({"cols": cols, "rows": rows}));
+    }
+    Value::Object(out)
+}
+
+#[test]
+#[ignore]
+fn generate_v8_fixture() {
+    let Ok(dir) = std::env::var("FUSHI_GEN_OUT") else { return };
+    let dir = std::path::PathBuf::from(dir);
+    const T0: i64 = 1_700_000_000_000;
+    let a = Device::new("gen8-a");
+    let b = Device::new("gen8-b");
+    let mut bucket = Bucket::default();
+    let mut second = Bucket::default();
+    let deck = super::config::default_deck_id(P);
+    let deck2 = u(1, 2);
+    let nt = u(2, 1);
+    let mut first = vec![
+        deck_entity(&deck),
+        deck_entity(&deck2),
+        notetype_entity(&nt),
+        edit("deck", &deck2, "name", json!("Sub")),
+        edit("deck", &deck, "retention", json!(0.85)),
+    ];
+    for i in 0..24u32 {
+        let n = if i % 6 == 5 { format!("legacy-note-{i}") } else { u(3, i) };
+        first.push(note_entity(&n, &nt, if i % 2 == 0 { &deck } else { &deck2 }));
+        first.push(edit("note", &n, "f/Front", json!(format!("語{i}"))));
+        first.push(edit("note", &n, "f/Back", json!(format!("例文その{i}"))));
+        first.push(edit("note", &n, "tags", json!([format!("t{}", i % 3)])));
+    }
+    a.apply(T0, first);
+    for day in 0..12i64 {
+        let mut evs = Vec::new();
+        for c in 0..24u32 {
+            if (c as i64 + day) % 3 != 0 {
+                continue;
+            }
+            let card = if c % 6 == 5 { format!("legacy-card-{c}") } else { u(4, c) };
+            let id = if c % 8 == 7 { format!("log-{day}-{c}") } else { u(5, (day as u32) * 100 + c) };
+            let at = T0 + day * DAY + c as i64 * 1000;
+            evs.push(review(&id, &card, at, 1 + ((c as i64 + day) % 4), if day == 0 { "learn" } else { "review" }));
+        }
+        a.apply(T0 + day * DAY + 50_000, evs);
+        if day % 4 == 1 {
+            a.sync(&mut bucket, "loc", T0 + day * DAY + 60_000);
+            b.sync(&mut bucket, "loc", T0 + day * DAY + 60_000);
+            b.apply(T0 + day * DAY + 70_000, vec![edit("note", &u(3, 0), "f/Back", json!(format!("b側{day}")))]);
+            a.apply(T0 + day * DAY + 70_500, vec![edit("note", &u(3, 0), "f/Back", json!(format!("a側{day}")))]);
+            // 同一条笔记的标签反复改（v12 的 INSERT OR REPLACE 写法下摘要桶只加不减，v14 全量重建）。
+            a.apply(T0 + day * DAY + 71_000, vec![edit("note", &u(3, 2), "tags", json!([format!("d{day}"), "keep"]))]);
+        }
+    }
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T0 + 13 * DAY);
+        b.sync(&mut bucket, "loc", T0 + 13 * DAY);
+    }
+    a.sync(&mut second, "loc2", T0 + 13 * DAY + 1);
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = dir.join("v8.db");
+    let _ = std::fs::remove_file(&db);
+    // 先算摘要（它会动 srs_meta 的摘要时刻），再拍快照、导出：三者是同一时刻的库。
+    let digest = a.core.sync2_digest(P).unwrap();
+    a.core.snapshot_into(&db, false).unwrap();
+    let tables = dump(&a);
+    assert_eq!(a.rows("SELECT value FROM srs_meta WHERE key = 'schema'")[1][0], "8");
+    // 升级前的行为基线：快照库开起来与一台新设备在一个新位置同步，新设备收到哪些复习日志。
+    let fresh_logs = {
+        let d = super::tests::tempdir::new("gen8-fresh");
+        std::fs::copy(&db, d.0.join("srs.db")).unwrap();
+        let x = Device { core: crate::store::SrsCore::open(&d.0.join("srs.db")).unwrap(), _dir: super::tests::tempdir::new("gen8-u") };
+        let c = Device::new("gen8-c");
+        let mut fresh = Bucket::default();
+        for _ in 0..2 {
+            x.sync(&mut fresh, "fresh", T0 + 20 * DAY);
+            c.sync(&mut fresh, "fresh", T0 + 20 * DAY);
+        }
+        c.rows("SELECT id, json FROM srs_review_logs ORDER BY id")
+    };
+    let vectors = json!({"digest": digest, "tables": tables, "peer_tables": dump(&b), "fresh_logs": fresh_logs});
+    std::fs::write(dir.join("v8_vectors.json"), serde_json::to_string_pretty(&vectors).unwrap()).unwrap();
+    for (src, dst) in [("v8.db", "srs_v8.db.zst"), ("v8_vectors.json", "srs_v8_vectors.json.zst")] {
+        let bytes = std::fs::read(dir.join(src)).unwrap();
+        std::fs::write(dir.join(dst), ruzstd::encoding::compress_to_vec(&bytes[..], ruzstd::encoding::CompressionLevel::Fastest)).unwrap();
+    }
+    println!("GEN wrote {} bytes db", std::fs::metadata(&db).unwrap().len());
+}

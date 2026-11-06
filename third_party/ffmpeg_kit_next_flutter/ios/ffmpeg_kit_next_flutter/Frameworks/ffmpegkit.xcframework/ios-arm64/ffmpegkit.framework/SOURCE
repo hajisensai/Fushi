@@ -1,0 +1,31 @@
+Corresponding source of this FFmpeg build (Fushi unified FFmpeg)
+===============================================================
+
+This binary is FFmpeg built with --enable-gpl --enable-version3 and is
+distributed under the GNU General Public License version 3 or later.
+Its complete corresponding source is:
+
+1. FFmpeg 9.0.1: https://github.com/FFmpeg/FFmpeg.git
+   tag n9.0.1, commit bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa
+2. FFmpegKitNext (Android / iOS command runner): https://github.com/arthenica/ffmpeg-kit-next.git
+   tag v9.0.0, commit a724ed99583dcfe2af497c794fdd6b24ddd54a4e
+   Its build scripts pin the external libraries (x264, libvpx, Opus,
+   dav1d, SVT-AV1, libwebp, OpenSSL, libxml2, ...); their versions and
+   download locations are listed in scripts/source.sh at that commit and
+   on https://github.com/arthenica/ffmpeg-kit-next/wiki/Source.
+3. Fushi's modifications and build recipe, applied on top of the above:
+   https://github.com/hajisensai/Fushi/tree/3c77822a2f33ffc20da207fdc5239b196cf81c54/tool/ffmpeg-unified
+   (repository https://github.com/hajisensai/Fushi, commit 3c77822a2f33ffc20da207fdc5239b196cf81c54)
+   - recipe.env                      version pins
+   - patches/ffmpeg/0001-avformat-tls-add-tls_pin_sha256-certificate-pinning-.patch
+   - patches/ffmpeg/0002-avutil-log-primary-secondary-log-callback-for-in-pro.patch
+   - patches/ffmpeg/0003-avcodec-videotoolbox-decode-10-bit-to-BGRA-on-iOS-fo.patch
+   - patches/ffmpeg/0004-avformat-tls_openssl-verify-peers-with-the-Apple-sys.patch
+   - patches/ffmpeg-kit-next/0001-ffmpegkit-lock-primary-log-callback-forward-foreign-.patch
+   - patches/ffmpeg-kit-next/0002-apple-build-ffmpeg-ffprobe-programs-on-the-framework.patch
+   - patches/ffmpeg-kit-next/0003-fushi-dvd-link-the-shared-tool-dvd-libraries.patch
+   - prepare_ffmpeg_src.sh, mobile/, windows/   build scripts
+
+To rebuild: check out the Fushi commit above and run
+tool/ffmpeg-unified/mobile/build_{android,ios,macos}.sh or
+tool/ffmpeg-unified/windows/build_ffmpeg_msys2.sh.

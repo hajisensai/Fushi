@@ -4,12 +4,12 @@ import 'dart:io';
 import 'package:fushi/src/mining/gal_voice_resource_name.dart';
 export 'package:fushi/src/mining/gal_voice_resource_name.dart';
 
-typedef GalVoiceDumpLoader = Future<List<GalVoiceDumpEntry>> Function(
-    Directory directory);
-typedef GalVoiceDumpEntryLoader = Future<GalVoiceDumpEntry?> Function(
-    String path);
-typedef GalVoiceDumpWatcher = Stream<FileSystemEvent> Function(
-    Directory directory);
+typedef GalVoiceDumpLoader =
+    Future<List<GalVoiceDumpEntry>> Function(Directory directory);
+typedef GalVoiceDumpEntryLoader =
+    Future<GalVoiceDumpEntry?> Function(String path);
+typedef GalVoiceDumpWatcher =
+    Stream<FileSystemEvent> Function(Directory directory);
 
 enum GalVoiceDumpKind { oggLike, wav }
 
@@ -57,8 +57,8 @@ final class GalVoiceDumpSnapshot {
         List<GalVoiceDumpEntry>.unmodifiable(byName.values);
     final List<GalVoiceDumpEntry> voiceEntries =
         List<GalVoiceDumpEntry>.unmodifiable(
-      stableEntries.where((GalVoiceDumpEntry entry) => entry.kind != null),
-    );
+          stableEntries.where((GalVoiceDumpEntry entry) => entry.kind != null),
+        );
     return GalVoiceDumpSnapshot._(
       revision: revision,
       entries: stableEntries,
@@ -111,11 +111,11 @@ final class GalVoiceDumpIndex {
     this.eventDebounce = const Duration(milliseconds: 40),
     this.watchRecoveryInterval = const Duration(milliseconds: 250),
     this.watchRecoveryMaxInterval = const Duration(seconds: 30),
-  })  : _loader = loader ?? _loadDirectory,
-        _entryLoader = entryLoader ?? _loadFile,
-        _watcher = watcher ?? _watchDirectory,
-        _now = now ?? DateTime.now,
-        _currentWatchRecoveryInterval = watchRecoveryInterval;
+  }) : _loader = loader ?? _loadDirectory,
+       _entryLoader = entryLoader ?? _loadFile,
+       _watcher = watcher ?? _watchDirectory,
+       _now = now ?? DateTime.now,
+       _currentWatchRecoveryInterval = watchRecoveryInterval;
 
   final Directory directory;
   final GalVoiceDumpLoader _loader;
@@ -159,16 +159,9 @@ final class GalVoiceDumpIndex {
       <int, List<_IndexedVoice>>{};
   final Map<int, List<_IndexedVoice>> _oggByEvent =
       <int, List<_IndexedVoice>>{};
-  final Map<
-      String,
-      ({
-        String path,
-        _GalVoiceDumpMutation mutation,
-      })> _pendingMutations = <String,
-      ({
-    String path,
-    _GalVoiceDumpMutation mutation,
-  })>{};
+  final Map<String, ({String path, _GalVoiceDumpMutation mutation})>
+  _pendingMutations =
+      <String, ({String path, _GalVoiceDumpMutation mutation})>{};
   bool _fullRescanRequired = false;
   int _nextOrdinal = 0;
 
@@ -350,11 +343,7 @@ final class GalVoiceDumpIndex {
     }
   }
 
-  void _onFileSystemChange(
-    int epoch,
-    Object token,
-    FileSystemEvent event,
-  ) {
+  void _onFileSystemChange(int epoch, Object token, FileSystemEvent event) {
     if (!_isCurrent(epoch) || !identical(_watchToken, token)) return;
     if (event is FileSystemMoveEvent) {
       _queueMutation(event.path, _GalVoiceDumpMutation.delete);
@@ -454,15 +443,10 @@ final class GalVoiceDumpIndex {
       _dirty = false;
       final int scannedGeneration = _changeGeneration;
       final bool fullRescan = _fullRescanRequired;
-      final List<
-          ({
-            String path,
-            _GalVoiceDumpMutation mutation,
-          })> mutations = List<
-          ({
-            String path,
-            _GalVoiceDumpMutation mutation,
-          })>.of(_pendingMutations.values);
+      final List<({String path, _GalVoiceDumpMutation mutation})> mutations =
+          List<({String path, _GalVoiceDumpMutation mutation})>.of(
+            _pendingMutations.values,
+          );
       _fullRescanRequired = false;
       _pendingMutations.clear();
       final bool loaded = fullRescan
@@ -482,21 +466,14 @@ final class GalVoiceDumpIndex {
 
   Future<bool> _applyMutations(
     int epoch,
-    List<
-            ({
-              String path,
-              _GalVoiceDumpMutation mutation,
-            })>
-        mutations,
+    List<({String path, _GalVoiceDumpMutation mutation})> mutations,
   ) async {
     if (mutations.isEmpty) return true;
     final Map<String, GalVoiceDumpEntry?> loaded =
         <String, GalVoiceDumpEntry?>{};
     try {
-      for (final ({
-        String path,
-        _GalVoiceDumpMutation mutation,
-      }) mutation in mutations) {
+      for (final ({String path, _GalVoiceDumpMutation mutation}) mutation
+          in mutations) {
         if (mutation.mutation == _GalVoiceDumpMutation.upsert) {
           loaded[_pathKey(mutation.path)] = await _entryLoader(mutation.path);
         }
@@ -515,10 +492,8 @@ final class GalVoiceDumpIndex {
       return false;
     }
     if (!_isCurrent(epoch)) return false;
-    for (final ({
-      String path,
-      _GalVoiceDumpMutation mutation,
-    }) mutation in mutations) {
+    for (final ({String path, _GalVoiceDumpMutation mutation}) mutation
+        in mutations) {
       final String key = _pathKey(mutation.path);
       if (mutation.mutation == _GalVoiceDumpMutation.delete) {
         _removeEntry(key);
@@ -645,23 +620,21 @@ final class GalVoiceDumpIndex {
     return latest.entry.modified.isBefore(notBefore) ? null : latest.entry;
   }
 
-  List<String> _rankedEventHits(
-    List<_IndexedVoice>? candidates,
-    int textTsMs,
-  ) {
+  List<String> _rankedEventHits(List<_IndexedVoice>? candidates, int textTsMs) {
     if (candidates == null) return const <String>[];
-    final List<_IndexedVoice> hits = <_IndexedVoice>[
-      for (final _IndexedVoice candidate in candidates)
-        if ((candidate.parsed.tick - textTsMs).abs() <=
-            kGalVoiceResourcePairingWindowMs)
-          candidate,
-    ]..sort((_IndexedVoice a, _IndexedVoice b) {
-        final int aDistance = (a.parsed.tick - textTsMs).abs();
-        final int bDistance = (b.parsed.tick - textTsMs).abs();
-        return aDistance != bDistance
-            ? aDistance.compareTo(bDistance)
-            : a.entry.name.compareTo(b.entry.name);
-      });
+    final List<_IndexedVoice> hits =
+        <_IndexedVoice>[
+          for (final _IndexedVoice candidate in candidates)
+            if ((candidate.parsed.tick - textTsMs).abs() <=
+                kGalVoiceResourcePairingWindowMs)
+              candidate,
+        ]..sort((_IndexedVoice a, _IndexedVoice b) {
+          final int aDistance = (a.parsed.tick - textTsMs).abs();
+          final int bDistance = (b.parsed.tick - textTsMs).abs();
+          return aDistance != bDistance
+              ? aDistance.compareTo(bDistance)
+              : a.entry.name.compareTo(b.entry.name);
+        });
     return <String>[
       for (final _IndexedVoice candidate in hits) candidate.entry.name,
     ];
@@ -734,18 +707,12 @@ final class GalVoiceDumpIndex {
       if (parsed.textEventId == null) _addToTickIndex(_wavByTick, voice);
       if (parsed.textEventId != null) {
         _wavByEvent
-            .putIfAbsent(
-              parsed.textEventId!,
-              () => <_IndexedVoice>[],
-            )
+            .putIfAbsent(parsed.textEventId!, () => <_IndexedVoice>[])
             .add(voice);
       }
     } else if (parsed.textEventId != null) {
       _oggByEvent
-          .putIfAbsent(
-            parsed.textEventId!,
-            () => <_IndexedVoice>[],
-          )
+          .putIfAbsent(parsed.textEventId!, () => <_IndexedVoice>[])
           .add(voice);
     } else {
       _addToTickIndex(_oggUnmarkedByTick, voice);
@@ -781,12 +748,7 @@ final class GalVoiceDumpIndex {
     SplayTreeMap<int, List<_IndexedVoice>> index,
     _IndexedVoice voice,
   ) {
-    index
-        .putIfAbsent(
-          voice.parsed.tick,
-          () => <_IndexedVoice>[],
-        )
-        .add(voice);
+    index.putIfAbsent(voice.parsed.tick, () => <_IndexedVoice>[]).add(voice);
   }
 
   void _removeFromTickIndex(
@@ -852,11 +814,12 @@ final class GalVoiceDumpIndex {
     final String lower = name.toLowerCase();
     final GalVoiceDumpKind? kind =
         lower.endsWith('.ogg') ||
-        lower.endsWith('.opus') || lower.endsWith('.xwma')
-            ? GalVoiceDumpKind.oggLike
-            : lower.endsWith('.wav')
-                ? GalVoiceDumpKind.wav
-                : null;
+            lower.endsWith('.opus') ||
+            lower.endsWith('.xwma')
+        ? GalVoiceDumpKind.oggLike
+        : lower.endsWith('.wav')
+        ? GalVoiceDumpKind.wav
+        : null;
     return GalVoiceDumpEntry(
       name: name,
       path: file.path,

@@ -45,70 +45,115 @@ void main() {
   });
 
   test('controls Stack 最顶层有 cursor:none 统一胜出层（_buildCursorOverlay）', () {
-    expect(src.contains('Widget _buildCursorOverlay()'), isTrue,
-        reason: '应有光标隐藏统一胜出层构造器');
+    expect(
+      src.contains('Widget _buildCursorOverlay()'),
+      isTrue,
+      reason: '应有光标隐藏统一胜出层构造器',
+    );
     final int start = src.indexOf('Widget _buildCursorOverlay()');
     final int end = src.indexOf('Widget _buildVideoSideActionRail(', start);
     expect(end, greaterThan(start));
     final String body = src.substring(start, end);
-    expect(body.contains('valueListenable: _cursorHidden'), isTrue,
-        reason: '胜出层由 _cursorHidden 驱动');
-    expect(body.contains('SystemMouseCursors.none'), isTrue,
-        reason: '隐藏时用 cursor: none');
-    expect(body.contains('opaque: false'), isTrue,
-        reason: 'opaque:false 不阻断指针下探（防 BUG-198 hover 穿透）');
+    expect(
+      body.contains('valueListenable: _cursorHidden'),
+      isTrue,
+      reason: '胜出层由 _cursorHidden 驱动',
+    );
+    expect(
+      body.contains('SystemMouseCursors.none'),
+      isTrue,
+      reason: '隐藏时用 cursor: none',
+    );
+    expect(
+      body.contains('opaque: false'),
+      isTrue,
+      reason: 'opaque:false 不阻断指针下探（防 BUG-198 hover 穿透）',
+    );
 
     // 胜出层挂在 controls Stack 内，且排在右侧 rail / 侧栏 overlay 之后（front-most）。
     // 注意 _buildCursorOverlay 定义在文件靠前，这里专门匹配 Stack 子节点挂载形态
     // （`if (_isDesktopVideoControls) _buildCursorOverlay()`）以测真实绘制顺序。
     final int railIdx = src.indexOf('_buildVideoSideActionRail(controller),');
-    final int panelIdx =
-        src.indexOf('_buildVideoSidePanelOverlay(controller),');
-    final int overlayIdx =
-        src.indexOf('if (_isDesktopVideoControls) _buildCursorOverlay()');
-    expect(overlayIdx, greaterThan(railIdx),
-        reason: '光标胜出层应在 action rail 之后（更靠 Stack 顶）');
-    expect(overlayIdx, greaterThan(panelIdx),
-        reason: '光标胜出层应在侧栏 overlay 之后（最顶层，cursor 解析才胜出）');
+    final int panelIdx = src.indexOf(
+      '_buildVideoSidePanelOverlay(controller),',
+    );
+    final int overlayIdx = src.indexOf(
+      'if (_isDesktopVideoControls) _buildCursorOverlay()',
+    );
+    expect(
+      overlayIdx,
+      greaterThan(railIdx),
+      reason: '光标胜出层应在 action rail 之后（更靠 Stack 顶）',
+    );
+    expect(
+      overlayIdx,
+      greaterThan(panelIdx),
+      reason: '光标胜出层应在侧栏 overlay 之后（最顶层，cursor 解析才胜出）',
+    );
   });
 
   test('沉浸锁 / 控制条淡出隐藏光标；真实鼠标移动唤回；解锁立即唤回', () {
     // TODO-364：光标隐藏逻辑从 _markControlsVisible 收敛进唯一派生函数
     // _applyControlsVisibilityFromMediaKit（控制条不可见且无 overlay 即隐藏光标，
     // 镜像 media_kit 的 hideMouseOnControlsRemoval，2s 由 media_kit 自己的 Timer 触发并推送）。
-    final int markIdx =
-        src.indexOf('void _applyControlsVisibilityFromMediaKit() {');
-    final int markEnd =
-        src.indexOf('void _markControlsVisible(bool visible) {', markIdx);
+    final int markIdx = src.indexOf(
+      'void _applyControlsVisibilityFromMediaKit() {',
+    );
+    final int markEnd = src.indexOf(
+      'void _markControlsVisible(bool visible) {',
+      markIdx,
+    );
     final String mark = src.substring(markIdx, markEnd);
-    expect(mark.contains('_setCursorHidden(!visible && !_hasVideoOverlay)'),
-        isTrue,
-        reason: '控制条不可见且无 overlay（纯沉浸 / 自动淡出）时隐藏光标');
+    expect(
+      mark.contains('_setCursorHidden(!visible && !_hasVideoOverlay)'),
+      isTrue,
+      reason: '控制条不可见且无 overlay（纯沉浸 / 自动淡出）时隐藏光标',
+    );
 
     // 真实鼠标移动唤回光标；键盘 / seek 的续命信号不唤回。
     // BUG-2453 之前这两条靠同一处「按设备号滤掉合成 hover」实现；现在页面不再合成指针事件，
     // 到 _handleVideoControlsHover 的只可能是真实鼠标 → 它无条件唤回；键盘 / seek 走
     // _pokeControlsVisible 的信号路径，不经它、也不碰 _setCursorHidden。
-    final String hover =
-        methodBody(src, 'void _handleVideoControlsHover(PointerEvent event) {');
-    expect(containsCodeLine(hover, '_setCursorHidden(false);'), isTrue,
-        reason: '真实鼠标移动应唤回光标');
-    expect(containsIdentifier(hover, '_isSyntheticControlsHover'), isFalse,
-        reason: '按设备号过滤不得回来：它存在的唯一理由是页面自己在造合成指针事件，'
-            '而那正是 BUG-2453 幽灵悬停的来源');
+    final String hover = methodBody(
+      src,
+      'void _handleVideoControlsHover(PointerEvent event) {',
+    );
+    expect(
+      containsCodeLine(hover, '_setCursorHidden(false);'),
+      isTrue,
+      reason: '真实鼠标移动应唤回光标',
+    );
+    expect(
+      containsIdentifier(hover, '_isSyntheticControlsHover'),
+      isFalse,
+      reason:
+          '按设备号过滤不得回来：它存在的唯一理由是页面自己在造合成指针事件，'
+          '而那正是 BUG-2453 幽灵悬停的来源',
+    );
     final String poke = methodBody(src, 'void _pokeControlsVisible()');
-    expect(containsIdentifierCall(poke, '_setCursorHidden'), isFalse,
-        reason: '键盘 / seek 续命只发信号，不得顺手唤回光标（否则本该隐藏的光标常驻）');
-    expect(containsIdentifierCall(poke, '_handleVideoControlsHover'), isFalse,
-        reason: '信号路径不得借道真实鼠标的 hover 处理器唤回光标');
+    expect(
+      containsIdentifierCall(poke, '_setCursorHidden'),
+      isFalse,
+      reason: '键盘 / seek 续命只发信号，不得顺手唤回光标（否则本该隐藏的光标常驻）',
+    );
+    expect(
+      containsIdentifierCall(poke, '_handleVideoControlsHover'),
+      isFalse,
+      reason: '信号路径不得借道真实鼠标的 hover 处理器唤回光标',
+    );
 
     // 解锁沉浸时立即唤回光标。
     final int lockIdx = src.indexOf('void _toggleImmersiveLock() {');
-    final int lockEnd =
-        src.indexOf('VideoImmersiveMode get _videoImmersiveMode', lockIdx);
+    final int lockEnd = src.indexOf(
+      'VideoImmersiveMode get _videoImmersiveMode',
+      lockIdx,
+    );
     final String lock = src.substring(lockIdx, lockEnd);
-    expect(lock.contains('_setCursorHidden(false)'), isTrue,
-        reason: '解锁沉浸应立即唤回光标（即时反馈）');
+    expect(
+      lock.contains('_setCursorHidden(false)'),
+      isTrue,
+      reason: '解锁沉浸应立即唤回光标（即时反馈）',
+    );
   });
 
   test('字幕列表打开时光标纳入「有 overlay 即可见」门控（光标语义，BUG-371）', () {
@@ -116,21 +161,27 @@ void main() {
     // BUG-371：字幕列表是 push-aside 侧栏，不再纳入控制条可见性派生门控 gated
     // （控制条在被挤窄的画面上仍可用），但**光标**仍要在字幕列表打开时保持可见——靠
     // _hasVideoOverlay（含 _subtitleListVisible）+ 前置胜出层光标覆盖，而非靠 gated。
-    final int markIdx =
-        src.indexOf('void _applyControlsVisibilityFromMediaKit() {');
-    final int markEnd =
-        src.indexOf('void _markControlsVisible(bool visible) {', markIdx);
+    final int markIdx = src.indexOf(
+      'void _applyControlsVisibilityFromMediaKit() {',
+    );
+    final int markEnd = src.indexOf(
+      'void _markControlsVisible(bool visible) {',
+      markIdx,
+    );
     final String mark = src.substring(markIdx, markEnd);
-    expect(mark.contains('_setCursorHidden(!visible && !_hasVideoOverlay)'),
-        isTrue,
-        reason: '有 overlay（侧栏 / 字幕列表）时光标可见，纯沉浸锁才隐藏（保 BUG-258）');
+    expect(
+      mark.contains('_setCursorHidden(!visible && !_hasVideoOverlay)'),
+      isTrue,
+      reason: '有 overlay（侧栏 / 字幕列表）时光标可见，纯沉浸锁才隐藏（保 BUG-258）',
+    );
 
     // _hasVideoOverlay getter 把侧栏与字幕列表统一为「有 overlay」单一判据——
     // 字幕列表打开时光标仍由它保活（即使控制条门控 gated 已不含字幕列表，BUG-371）。
     expect(
-      RegExp(r'bool get _hasVideoOverlay =>[\s\S]*?_videoSidePanel\.value '
-              r'!= null \|\|[\s\S]*?_subtitleListVisible\.value')
-          .hasMatch(src),
+      RegExp(
+        r'bool get _hasVideoOverlay =>[\s\S]*?_videoSidePanel\.value '
+        r'!= null \|\|[\s\S]*?_subtitleListVisible\.value',
+      ).hasMatch(src),
       isTrue,
       reason: '_hasVideoOverlay 应同时覆盖侧栏与字幕列表（光标保活，BUG-371 保留）',
     );
@@ -149,15 +200,24 @@ void main() {
     // (AdaptiveVideoControls)，再向前找**最近**的 `return ListenableBuilder(`，
     // 精确锚定 IgnorePointer 自己那层 ListenableBuilder。
     final int end = src.indexOf('child: AdaptiveVideoControls(state),');
-    expect(end, greaterThanOrEqualTo(0),
-        reason: 'IgnorePointer 块应闭合到 AdaptiveVideoControls');
+    expect(
+      end,
+      greaterThanOrEqualTo(0),
+      reason: 'IgnorePointer 块应闭合到 AdaptiveVideoControls',
+    );
     final int start = src.lastIndexOf('return ListenableBuilder(', end);
-    expect(start, greaterThanOrEqualTo(0),
-        reason: '需有 media_kit controls 的 IgnorePointer ListenableBuilder');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: '需有 media_kit controls 的 IgnorePointer ListenableBuilder',
+    );
     final String block = src.substring(start, end);
-    expect(block.contains('_subtitleListVisible'), isFalse,
-        reason:
-            'BUG-371：IgnorePointer 不应再绑 _subtitleListVisible（字幕列表 push-aside 不遮控制条）');
+    expect(
+      block.contains('_subtitleListVisible'),
+      isFalse,
+      reason:
+          'BUG-371：IgnorePointer 不应再绑 _subtitleListVisible（字幕列表 push-aside 不遮控制条）',
+    );
   });
 
   test('不 per-overlay 加 opaque MouseRegion（防 BUG-198 hover 穿透）', () {

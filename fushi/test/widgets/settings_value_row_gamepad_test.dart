@@ -12,85 +12,97 @@ import 'widget_test_helpers.dart';
 void main() {
   group('Stepper row gamepad adjust', () {
     testWidgets(
-        'D-pad right/left adjusts the value in place and does NOT move focus',
-        (WidgetTester tester) async {
-      double value = 10;
-      await tester.pumpWidget(buildTestApp(
-        FushiFocusRoot(
-          child: StatefulBuilder(
-            builder: (BuildContext c, StateSetter setState) =>
-                AdaptiveSettingsStepperRow(
-              title: 'Font',
-              value: value,
-              step: 1,
-              min: 0,
-              max: 64,
-              format: (double v) => '${v.round()}',
-              onChanged: (double v) => setState(() => value = v),
-            ),
-          ),
-        ),
-      ));
-      await tester.pump();
-
-      final FushiFocusController controller = FushiFocusRoot.controllerOf(
-        tester.element(find.text('Font')),
-      );
-      controller.ensureFocus();
-      await tester.pump();
-      expect(controller.activeId, isNotNull,
-          reason: 'the stepper row registers as a focus target');
-      final FushiFocusId? activeBefore = controller.activeId;
-      final BuildContext ctx = controller.activeContext!;
-
-      expect(
-        Actions.maybeInvoke<GamepadButtonIntent>(
-          ctx,
-          const GamepadButtonIntent(GamepadButton.dpadRight),
-        ),
-        isTrue,
-        reason:
-            'D-pad right is consumed by the value row (does not move focus)',
-      );
-      await tester.pump();
-      expect(value, 11);
-      expect(controller.activeId, activeBefore,
-          reason: 'adjusting value must not move focus to another row');
-
-      Actions.maybeInvoke<GamepadButtonIntent>(
-        ctx,
-        const GamepadButtonIntent(GamepadButton.dpadLeft),
-      );
-      await tester.pump();
-      expect(value, 10);
-    });
-
-    testWidgets('native D-pad right reaches the same value-row action',
-        (WidgetTester tester) async {
-      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-      double value = 10;
-      await tester.pumpWidget(MaterialApp(
-        navigatorKey: navKey,
-        theme: ThemeData.light(useMaterial3: true),
-        home: Scaffold(
-          body: FushiFocusRoot(
-            child: StatefulBuilder(
-              builder: (BuildContext c, StateSetter setState) =>
-                  AdaptiveSettingsStepperRow(
-                title: 'Font',
-                value: value,
-                step: 1,
-                min: 0,
-                max: 64,
-                format: (double v) => '${v.round()}',
-                onChanged: (double v) => setState(() => value = v),
+      'D-pad right/left adjusts the value in place and does NOT move focus',
+      (WidgetTester tester) async {
+        double value = 10;
+        await tester.pumpWidget(
+          buildTestApp(
+            FushiFocusRoot(
+              child: StatefulBuilder(
+                builder: (BuildContext c, StateSetter setState) =>
+                    AdaptiveSettingsStepperRow(
+                      title: 'Font',
+                      value: value,
+                      step: 1,
+                      min: 0,
+                      max: 64,
+                      format: (double v) => '${v.round()}',
+                      onChanged: (double v) => setState(() => value = v),
+                    ),
               ),
             ),
           ),
+        );
+        await tester.pump();
+
+        final FushiFocusController controller = FushiFocusRoot.controllerOf(
+          tester.element(find.text('Font')),
+        );
+        controller.ensureFocus();
+        await tester.pump();
+        expect(
+          controller.activeId,
+          isNotNull,
+          reason: 'the stepper row registers as a focus target',
+        );
+        final FushiFocusId? activeBefore = controller.activeId;
+        final BuildContext ctx = controller.activeContext!;
+
+        expect(
+          Actions.maybeInvoke<GamepadButtonIntent>(
+            ctx,
+            const GamepadButtonIntent(GamepadButton.dpadRight),
+          ),
+          isTrue,
+          reason:
+              'D-pad right is consumed by the value row (does not move focus)',
+        );
+        await tester.pump();
+        expect(value, 11);
+        expect(
+          controller.activeId,
+          activeBefore,
+          reason: 'adjusting value must not move focus to another row',
+        );
+
+        Actions.maybeInvoke<GamepadButtonIntent>(
+          ctx,
+          const GamepadButtonIntent(GamepadButton.dpadLeft),
+        );
+        await tester.pump();
+        expect(value, 10);
+      },
+    );
+
+    testWidgets('native D-pad right reaches the same value-row action', (
+      WidgetTester tester,
+    ) async {
+      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+      double value = 10;
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navKey,
+          theme: ThemeData.light(useMaterial3: true),
+          home: Scaffold(
+            body: FushiFocusRoot(
+              child: StatefulBuilder(
+                builder: (BuildContext c, StateSetter setState) =>
+                    AdaptiveSettingsStepperRow(
+                      title: 'Font',
+                      value: value,
+                      step: 1,
+                      min: 0,
+                      max: 64,
+                      format: (double v) => '${v.round()}',
+                      onChanged: (double v) => setState(() => value = v),
+                    ),
+              ),
+            ),
+          ),
+          builder: (BuildContext context, Widget? child) =>
+              wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
         ),
-        builder: (BuildContext context, Widget? child) =>
-            wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
-      ));
+      );
       await tester.pump();
 
       final FushiFocusController controller = FushiFocusRoot.controllerOf(
@@ -107,68 +119,80 @@ void main() {
     });
 
     testWidgets(
-        'arrow up/down KEY does NOT adjust the value '
-        '(Android D-pad arrives as arrow keys → must move focus, not change value)',
-        (WidgetTester tester) async {
-      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-      double value = 10;
-      await tester.pumpWidget(MaterialApp(
-        navigatorKey: navKey,
-        theme: ThemeData.light(useMaterial3: true),
-        home: Scaffold(
-          body: FushiFocusRoot(
-            child: StatefulBuilder(
-              builder: (BuildContext c, StateSetter setState) =>
-                  AdaptiveSettingsStepperRow(
-                title: 'Font',
-                value: value,
-                step: 1,
-                min: 0,
-                max: 64,
-                format: (double v) => '${v.round()}',
-                onChanged: (double v) => setState(() => value = v),
+      'arrow up/down KEY does NOT adjust the value '
+      '(Android D-pad arrives as arrow keys → must move focus, not change value)',
+      (WidgetTester tester) async {
+        final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+        double value = 10;
+        await tester.pumpWidget(
+          MaterialApp(
+            navigatorKey: navKey,
+            theme: ThemeData.light(useMaterial3: true),
+            home: Scaffold(
+              body: FushiFocusRoot(
+                child: StatefulBuilder(
+                  builder: (BuildContext c, StateSetter setState) =>
+                      AdaptiveSettingsStepperRow(
+                        title: 'Font',
+                        value: value,
+                        step: 1,
+                        min: 0,
+                        max: 64,
+                        format: (double v) => '${v.round()}',
+                        onChanged: (double v) => setState(() => value = v),
+                      ),
+                ),
               ),
+            ),
+            builder: (BuildContext context, Widget? child) =>
+                wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
+          ),
+        );
+        await tester.pump();
+
+        final FushiFocusController controller = FushiFocusRoot.controllerOf(
+          tester.element(find.text('Font')),
+        );
+        controller.ensureFocus();
+        await tester.pump();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+        expect(
+          value,
+          10,
+          reason: 'arrow down navigates rows, must NOT decrement the value',
+        );
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pump();
+        expect(
+          value,
+          10,
+          reason: 'arrow up navigates rows, must NOT increment the value',
+        );
+      },
+    );
+
+    testWidgets('D-pad up/down is NOT consumed (lets focus move between rows)', (
+      WidgetTester tester,
+    ) async {
+      double value = 10;
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiFocusRoot(
+            child: AdaptiveSettingsStepperRow(
+              title: 'Font',
+              value: value,
+              step: 1,
+              min: 0,
+              max: 64,
+              format: (double v) => '${v.round()}',
+              onChanged: (double v) => value = v,
             ),
           ),
         ),
-        builder: (BuildContext context, Widget? child) =>
-            wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
-      ));
-      await tester.pump();
-
-      final FushiFocusController controller = FushiFocusRoot.controllerOf(
-        tester.element(find.text('Font')),
       );
-      controller.ensureFocus();
-      await tester.pump();
-
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-      await tester.pump();
-      expect(value, 10,
-          reason: 'arrow down navigates rows, must NOT decrement the value');
-
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-      await tester.pump();
-      expect(value, 10,
-          reason: 'arrow up navigates rows, must NOT increment the value');
-    });
-
-    testWidgets('D-pad up/down is NOT consumed (lets focus move between rows)',
-        (WidgetTester tester) async {
-      double value = 10;
-      await tester.pumpWidget(buildTestApp(
-        FushiFocusRoot(
-          child: AdaptiveSettingsStepperRow(
-            title: 'Font',
-            value: value,
-            step: 1,
-            min: 0,
-            max: 64,
-            format: (double v) => '${v.round()}',
-            onChanged: (double v) => value = v,
-          ),
-        ),
-      ));
       await tester.pump();
       final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.text('Font')),
@@ -182,75 +206,88 @@ void main() {
         controller.activeContext!,
         const GamepadButtonIntent(GamepadButton.dpadUp),
       );
-      expect(upResult, isNot(true),
-          reason: 'up/down must not be consumed by the value row');
+      expect(
+        upResult,
+        isNot(true),
+        reason: 'up/down must not be consumed by the value row',
+      );
       expect(value, 10, reason: 'up/down does not change the value');
     });
 
-    testWidgets('D-pad right at max stays consumed and clamped (no overshoot)',
-        (WidgetTester tester) async {
-      double value = 64;
-      await tester.pumpWidget(buildTestApp(
-        FushiFocusRoot(
-          child: StatefulBuilder(
-            builder: (BuildContext c, StateSetter setState) =>
-                AdaptiveSettingsStepperRow(
-              title: 'Font',
-              value: value,
-              step: 1,
-              min: 0,
-              max: 64,
-              format: (double v) => '${v.round()}',
-              onChanged: (double v) => setState(() => value = v),
+    testWidgets(
+      'D-pad right at max stays consumed and clamped (no overshoot)',
+      (WidgetTester tester) async {
+        double value = 64;
+        await tester.pumpWidget(
+          buildTestApp(
+            FushiFocusRoot(
+              child: StatefulBuilder(
+                builder: (BuildContext c, StateSetter setState) =>
+                    AdaptiveSettingsStepperRow(
+                      title: 'Font',
+                      value: value,
+                      step: 1,
+                      min: 0,
+                      max: 64,
+                      format: (double v) => '${v.round()}',
+                      onChanged: (double v) => setState(() => value = v),
+                    ),
+              ),
             ),
           ),
-        ),
-      ));
-      await tester.pump();
-      final FushiFocusController controller = FushiFocusRoot.controllerOf(
-        tester.element(find.text('Font')),
-      );
-      controller.ensureFocus();
-      await tester.pump();
+        );
+        await tester.pump();
+        final FushiFocusController controller = FushiFocusRoot.controllerOf(
+          tester.element(find.text('Font')),
+        );
+        controller.ensureFocus();
+        await tester.pump();
 
-      expect(
-        Actions.maybeInvoke<GamepadButtonIntent>(
-          controller.activeContext!,
-          const GamepadButtonIntent(GamepadButton.dpadRight),
-        ),
-        isTrue,
-        reason: 'at max the press is still consumed (stays on the row)',
-      );
-      await tester.pump();
-      expect(value, 64, reason: 'clamped at max, no overshoot');
-    });
+        expect(
+          Actions.maybeInvoke<GamepadButtonIntent>(
+            controller.activeContext!,
+            const GamepadButtonIntent(GamepadButton.dpadRight),
+          ),
+          isTrue,
+          reason: 'at max the press is still consumed (stays on the row)',
+        );
+        await tester.pump();
+        expect(value, 64, reason: 'clamped at max, no overshoot');
+      },
+    );
   });
 
   group('Slider row gamepad adjust', () {
-    testWidgets('D-pad right/left adjusts a slider row by one division step',
-        (WidgetTester tester) async {
+    testWidgets('D-pad right/left adjusts a slider row by one division step', (
+      WidgetTester tester,
+    ) async {
       double value = 0.5;
-      await tester.pumpWidget(buildTestApp(
-        FushiFocusRoot(
-          child: StatefulBuilder(
-            builder: (BuildContext c, StateSetter setState) =>
-                AdaptiveSettingsSliderRow(
-              title: 'Volume',
-              value: value,
-              divisions: 10,
-              onChanged: (double v) => setState(() => value = v),
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiFocusRoot(
+            child: StatefulBuilder(
+              builder: (BuildContext c, StateSetter setState) =>
+                  AdaptiveSettingsSliderRow(
+                    title: 'Volume',
+                    value: value,
+                    divisions: 10,
+                    onChanged: (double v) => setState(() => value = v),
+                  ),
             ),
           ),
         ),
-      ));
+      );
       await tester.pump();
       final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.text('Volume')),
       );
       controller.ensureFocus();
       await tester.pump();
-      expect(controller.activeId, isNotNull,
-          reason: 'the slider row registers as a focus target');
+      expect(
+        controller.activeId,
+        isNotNull,
+        reason: 'the slider row registers as a focus target',
+      );
       final BuildContext ctx = controller.activeContext!;
 
       expect(
@@ -261,8 +298,11 @@ void main() {
         isTrue,
       );
       await tester.pump();
-      expect(value, closeTo(0.6, 0.0001),
-          reason: 'one division step of (max-min)/divisions = 0.1');
+      expect(
+        value,
+        closeTo(0.6, 0.0001),
+        reason: 'one division step of (max-min)/divisions = 0.1',
+      );
 
       Actions.maybeInvoke<GamepadButtonIntent>(
         ctx,
@@ -272,31 +312,33 @@ void main() {
       expect(value, closeTo(0.5, 0.0001));
     });
 
-    testWidgets(
-        'arrow up/down KEY does NOT move a slider row '
-        '(the actual repro: "音量键翻页速度" slider changed while scrolling rows)',
-        (WidgetTester tester) async {
+    testWidgets('arrow up/down KEY does NOT move a slider row '
+        '(the actual repro: "音量键翻页速度" slider changed while scrolling rows)', (
+      WidgetTester tester,
+    ) async {
       final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
       double value = 0.5;
-      await tester.pumpWidget(MaterialApp(
-        navigatorKey: navKey,
-        theme: ThemeData.light(useMaterial3: true),
-        home: Scaffold(
-          body: FushiFocusRoot(
-            child: StatefulBuilder(
-              builder: (BuildContext c, StateSetter setState) =>
-                  AdaptiveSettingsSliderRow(
-                title: 'Volume',
-                value: value,
-                divisions: 10,
-                onChanged: (double v) => setState(() => value = v),
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navKey,
+          theme: ThemeData.light(useMaterial3: true),
+          home: Scaffold(
+            body: FushiFocusRoot(
+              child: StatefulBuilder(
+                builder: (BuildContext c, StateSetter setState) =>
+                    AdaptiveSettingsSliderRow(
+                      title: 'Volume',
+                      value: value,
+                      divisions: 10,
+                      onChanged: (double v) => setState(() => value = v),
+                    ),
               ),
             ),
           ),
+          builder: (BuildContext context, Widget? child) =>
+              wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
         ),
-        builder: (BuildContext context, Widget? child) =>
-            wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
-      ));
+      );
       await tester.pump();
       final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.text('Volume')),
@@ -306,33 +348,42 @@ void main() {
 
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pump();
-      expect(value, closeTo(0.5, 0.0001),
-          reason: 'arrow down navigates rows, must NOT move the slider');
+      expect(
+        value,
+        closeTo(0.5, 0.0001),
+        reason: 'arrow down navigates rows, must NOT move the slider',
+      );
 
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
       await tester.pump();
-      expect(value, closeTo(0.5, 0.0001),
-          reason: 'arrow up navigates rows, must NOT move the slider');
+      expect(
+        value,
+        closeTo(0.5, 0.0001),
+        reason: 'arrow up navigates rows, must NOT move the slider',
+      );
     });
   });
 
   group('gamepadSeekableSlider (bare seek bar)', () {
-    testWidgets('D-pad right/left seeks by the explicit step (±5s)',
-        (WidgetTester tester) async {
+    testWidgets('D-pad right/left seeks by the explicit step (±5s)', (
+      WidgetTester tester,
+    ) async {
       double value = 30000; // 30s into a 2-min clip
-      await tester.pumpWidget(buildTestApp(
-        FushiFocusRoot(
-          child: StatefulBuilder(
-            builder: (BuildContext c, StateSetter setState) =>
-                gamepadSeekableSlider(
-              value: value,
-              max: 120000,
-              step: 5000,
-              onChanged: (double v) => setState(() => value = v),
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiFocusRoot(
+            child: StatefulBuilder(
+              builder: (BuildContext c, StateSetter setState) =>
+                  gamepadSeekableSlider(
+                    value: value,
+                    max: 120000,
+                    step: 5000,
+                    onChanged: (double v) => setState(() => value = v),
+                  ),
             ),
           ),
         ),
-      ));
+      );
       await tester.pump();
 
       final FushiFocusController controller = FushiFocusRoot.controllerOf(
@@ -340,8 +391,11 @@ void main() {
       );
       controller.ensureFocus();
       await tester.pump();
-      expect(controller.activeId, isNotNull,
-          reason: 'a bare seek bar is a focus target too');
+      expect(
+        controller.activeId,
+        isNotNull,
+        reason: 'a bare seek bar is a focus target too',
+      );
       final BuildContext ctx = controller.activeContext!;
 
       Actions.maybeInvoke<GamepadButtonIntent>(
@@ -361,23 +415,25 @@ void main() {
   });
 
   group('value row does not swallow page buttons (review W2)', () {
-    testWidgets(
-        'Y / LT / RT / dpadUp are NOT consumed by a focused value row '
-        '(they bubble to the page so tab-switch / focus-search still work)',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(buildTestApp(
-        FushiFocusRoot(
-          child: AdaptiveSettingsStepperRow(
-            title: 'Font',
-            value: 10,
-            step: 1,
-            min: 0,
-            max: 64,
-            format: (double v) => '${v.round()}',
-            onChanged: (_) {},
+    testWidgets('Y / LT / RT / dpadUp are NOT consumed by a focused value row '
+        '(they bubble to the page so tab-switch / focus-search still work)', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiFocusRoot(
+            child: AdaptiveSettingsStepperRow(
+              title: 'Font',
+              value: 10,
+              step: 1,
+              min: 0,
+              max: 64,
+              format: (double v) => '${v.round()}',
+              onChanged: (_) {},
+            ),
           ),
         ),
-      ));
+      );
       await tester.pump();
       final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.text('Font')),

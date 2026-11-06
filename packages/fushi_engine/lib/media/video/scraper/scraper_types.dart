@@ -61,7 +61,7 @@ enum ScrapeSource {
   tmdb,
   anilist,
   jikan,
-  manualUrl
+  manualUrl,
 }
 
 // ─────────────────────────── 条目级元数据 ───────────────────────────
@@ -76,9 +76,9 @@ class ScrapeTag {
   final int count;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'name': name,
-        if (count > 0) 'count': count,
-      };
+    'name': name,
+    if (count > 0) 'count': count,
+  };
 
   static ScrapeTag? fromJson(Object? json) {
     if (json is! Map<String, Object?>) return null;
@@ -105,8 +105,10 @@ class ScrapeInfoboxEntry {
   /// 摊平后的值（多值以 ` / ` 连接）。
   final String value;
 
-  Map<String, Object?> toJson() =>
-      <String, Object?>{'key': key, 'value': value};
+  Map<String, Object?> toJson() => <String, Object?>{
+    'key': key,
+    'value': value,
+  };
 
   static ScrapeInfoboxEntry? fromJson(Object? json) {
     if (json is! Map<String, Object?>) return null;
@@ -225,28 +227,26 @@ class CoverMeta {
   final String? contentSha256;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        // 新清理状态对旧版本降级成既有保护来源，避免旧客户端把未知枚举回退为
-        // autoFrame 后覆盖替换物；新版本通过 cleanupState 无损恢复真实状态。
-        'origin': switch (origin) {
-          CoverOrigin.cleanupPending => CoverOrigin.scraped.name,
-          CoverOrigin.cleanupReplacement => CoverOrigin.manual.name,
-          _ => origin.name,
-        },
-        if (origin == CoverOrigin.cleanupPending)
-          'cleanupState': 'pending',
-        if (origin == CoverOrigin.cleanupReplacement)
-          'cleanupState': 'replacement',
-        if (source != null) 'source': source!.name,
-        if (entryId != null) 'entryId': entryId,
-        if (contentSha256 != null) 'contentSha256': contentSha256,
-      };
+    // 新清理状态对旧版本降级成既有保护来源，避免旧客户端把未知枚举回退为
+    // autoFrame 后覆盖替换物；新版本通过 cleanupState 无损恢复真实状态。
+    'origin': switch (origin) {
+      CoverOrigin.cleanupPending => CoverOrigin.scraped.name,
+      CoverOrigin.cleanupReplacement => CoverOrigin.manual.name,
+      _ => origin.name,
+    },
+    if (origin == CoverOrigin.cleanupPending) 'cleanupState': 'pending',
+    if (origin == CoverOrigin.cleanupReplacement) 'cleanupState': 'replacement',
+    if (source != null) 'source': source!.name,
+    if (entryId != null) 'entryId': entryId,
+    if (contentSha256 != null) 'contentSha256': contentSha256,
+  };
 
   static CoverMeta fromJson(Map<String, Object?> json) {
     final CoverOrigin origin = switch (json['cleanupState']) {
       'pending' => CoverOrigin.cleanupPending,
       'replacement' => CoverOrigin.cleanupReplacement,
-      _ => CoverOrigin.values.asNameMap()[json['origin']] ??
-          CoverOrigin.autoFrame,
+      _ =>
+        CoverOrigin.values.asNameMap()[json['origin']] ?? CoverOrigin.autoFrame,
     };
     return CoverMeta(
       origin: origin,

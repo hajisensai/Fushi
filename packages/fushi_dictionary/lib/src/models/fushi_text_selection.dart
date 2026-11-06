@@ -3,10 +3,7 @@ import 'package:material_ui/material_ui.dart';
 /// Text and a range for a highlighted selection.
 class FushiTextSelection {
   /// Initialise an instance of this entity.
-  FushiTextSelection({
-    required this.text,
-    this.range = TextRange.empty,
-  });
+  FushiTextSelection({required this.text, this.range = TextRange.empty});
 
   /// Text that has a length valid within range.
   final String text;

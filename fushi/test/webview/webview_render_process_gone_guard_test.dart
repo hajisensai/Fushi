@@ -53,26 +53,31 @@ void main() {
   const int knownHostCount = 6;
 
   final List<String> anchorErrors = <String>[];
-  final List<_WebViewHost> hosts =
-      _discoverHosts(constructorNames, anchorErrors);
+  final List<_WebViewHost> hosts = _discoverHosts(
+    constructorNames,
+    anchorErrors,
+  );
 
   test('lib/ 下能发现 WebView 构造点（发现规则本身不许空跑）', () {
     expect(
       anchorErrors,
       isEmpty,
-      reason: '括号配对回溯没落在被找的构造器上，窗口锚歪了，'
+      reason:
+          '括号配对回溯没落在被找的构造器上，窗口锚歪了，'
           '后面的参数断言不可信：\n${anchorErrors.join('\n')}',
     );
     expect(
       hosts,
       isNotEmpty,
-      reason: '一处 InAppWebView 构造都没扫到，说明发现规则失效（包名/构造器改了？），'
+      reason:
+          '一处 InAppWebView 构造都没扫到，说明发现规则失效（包名/构造器改了？），'
           '此时后面的逐处断言会全部空转成假绿',
     );
     expect(
       hosts.length,
       greaterThanOrEqualTo(knownHostCount),
-      reason: '已知 $knownHostCount 处 WebView 构造点，现在只发现 ${hosts.length} 处：'
+      reason:
+          '已知 $knownHostCount 处 WebView 构造点，现在只发现 ${hosts.length} 处：'
           '要么构造点被搬走/改名（发现规则要跟着更新），要么真的被删了。'
           '发现到的：${hosts.map((_WebViewHost h) => h.where).join(', ')}',
     );
@@ -81,8 +86,10 @@ void main() {
   test('每一处 WebView 构造都传了非 null 的 onRenderProcessGone', () {
     final List<String> offenders = <String>[];
     for (final _WebViewHost host in hosts) {
-      final String? value =
-          _topLevelNamedArgument(host.call.text, 'onRenderProcessGone');
+      final String? value = _topLevelNamedArgument(
+        host.call.text,
+        'onRenderProcessGone',
+      );
       if (value == null) {
         offenders.add('${host.where} —— 没有 onRenderProcessGone 参数');
         continue;
@@ -94,7 +101,8 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: 'Android 上没接管 renderer 死亡 = 系统把整个 app 进程一起杀掉'
+      reason:
+          'Android 上没接管 renderer 死亡 = 系统把整个 app 进程一起杀掉'
           '（InAppWebViewClientCompat.onRenderProcessGone 回落 super）。'
           '救命动作就是传一个非 null 回调，处置逻辑收在 '
           'lib/src/webview/webview_death_guard.dart 的 WebViewDeathGuard。'
@@ -116,7 +124,8 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: '把 useOnRenderProcessGone 写成 false 会让 Java 侧无视已传的回调、'
+      reason:
+          '把 useOnRenderProcessGone 写成 false 会让 Java 侧无视已传的回调、'
           '回落 super（= 杀 app），上一条断言随即变成假绿。'
           '默认不写即可：in_app_webview.dart:444 会在回调非 null 时自动推成 true。'
           '违规处：${offenders.join(', ')}',
@@ -130,7 +139,9 @@ void main() {
     final List<String> offenders = <String>[];
     for (final _WebViewHost host in hosts) {
       final String? value = _topLevelNamedArgument(
-          host.call.text, 'onWebContentProcessDidTerminate');
+        host.call.text,
+        'onWebContentProcessDidTerminate',
+      );
       if (value == null || value.isEmpty || value == 'null') {
         offenders.add(host.where);
       }
@@ -138,7 +149,8 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: 'iOS/macOS 上 WebContent 进程终止没人接管 = 永久白屏，'
+      reason:
+          'iOS/macOS 上 WebContent 进程终止没人接管 = 永久白屏，'
           '处置与 Android renderer 死亡同构（WebViewDeathGuard.'
           'handleWebContentTerminated）。未接管的构造点：\n'
           '${offenders.join('\n')}',
@@ -161,12 +173,13 @@ List<_WebViewHost> _discoverHosts(
   List<String> anchorErrors,
 ) {
   final List<_WebViewHost> hosts = <_WebViewHost>[];
-  final List<File> files = Directory('lib')
-      .listSync(recursive: true)
-      .whereType<File>()
-      .where((File f) => f.path.endsWith('.dart'))
-      .toList()
-    ..sort((File a, File b) => a.path.compareTo(b.path));
+  final List<File> files =
+      Directory('lib')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((File f) => f.path.endsWith('.dart'))
+          .toList()
+        ..sort((File a, File b) => a.path.compareTo(b.path));
   for (final File file in files) {
     final String source = file.readAsStringSync();
     // 先做词法掩码再找：注释里写着 `InAppWebView(` 不算构造点。掩码等长，
@@ -180,17 +193,17 @@ List<_WebViewHost> _discoverHosts(
         final EnclosingCall call = enclosingCall(source, match.end);
         // 防锚歪：括号回溯拿到的必须就是这个构造器本身。
         if (call.name != name) {
-          anchorErrors.add(
-            '${file.path} 里 $name 的括号配对回溯拿到了 `${call.name}`',
-          );
+          anchorErrors.add('${file.path} 里 $name 的括号配对回溯拿到了 `${call.name}`');
           continue;
         }
         final int line =
             '\n'.allMatches(source.substring(0, call.start)).length + 1;
-        hosts.add(_WebViewHost(
-          where: '${file.path.replaceAll(r'\', '/')}:$line $name',
-          call: call,
-        ));
+        hosts.add(
+          _WebViewHost(
+            where: '${file.path.replaceAll(r'\', '/')}:$line $name',
+            call: call,
+          ),
+        );
       }
     }
   }

@@ -226,7 +226,9 @@ void main() {
         ),
       );
       expect(
-        body.contains('this.countCharsBeforeViewport(nodes[k], vertical, edge)'),
+        body.contains(
+          'this.countCharsBeforeViewport(nodes[k], vertical, edge)',
+        ),
         isTrue,
       );
     });
@@ -269,7 +271,9 @@ void main() {
       // BUG-2492：起点是否在本页由 getLastVisibleCharOffset(start) 校验（不在 → -1），
       // atEnd 的 total 钳位只能盖在已校验通过的 end 上，不能绕过 -1。
       expect(
-        body.contains('var end = hasEnd ? r.getLastVisibleCharOffset(off) : -1;'),
+        body.contains(
+          'var end = hasEnd ? r.getLastVisibleCharOffset(off) : -1;',
+        ),
         isTrue,
         reason: 'end 必须先经 getLastVisibleCharOffset(start) 校验，atEnd 不得直接取 total',
       );

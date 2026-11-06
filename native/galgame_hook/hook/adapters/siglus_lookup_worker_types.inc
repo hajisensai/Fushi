@@ -65,4 +65,7 @@ struct SiglusLookupClickTarget {
 struct SiglusLookupClickEvent {
   volatile LONG64 seq = 0;
   SiglusLookupPayload payload;
+  // Glyph events reserved before the release. The worker must consume these
+  // before deciding; later redraws are after the click and cannot hold it.
+  uint64_t release_glyph_seq = 0;
 };

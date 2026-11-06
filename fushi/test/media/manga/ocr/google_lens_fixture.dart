@@ -39,8 +39,9 @@ Uint8List makeGoogleLensFixture({
 }) {
   void writeGeometry(_ProtoWriter line, double boxCenterY) {
     line.message(GoogleLensWireFields.lineGeometry, (_ProtoWriter geometry) {
-      geometry.message(GoogleLensWireFields.geometryBoundingBox,
-          (_ProtoWriter box) {
+      geometry.message(GoogleLensWireFields.geometryBoundingBox, (
+        _ProtoWriter box,
+      ) {
         box.float32(GoogleLensWireFields.boxCenterX, centerX);
         box.float32(GoogleLensWireFields.boxCenterY, boxCenterY);
         box.float32(GoogleLensWireFields.boxWidth, width);
@@ -51,35 +52,51 @@ Uint8List makeGoogleLensFixture({
   }
 
   final _ProtoWriter root = _ProtoWriter();
-  root.message(GoogleLensWireFields.serverResponseObjectsResponse,
-      (_ProtoWriter recognition) {
-    recognition.message(GoogleLensWireFields.objectsResponseText,
-        (_ProtoWriter text) {
+  root.message(GoogleLensWireFields.serverResponseObjectsResponse, (
+    _ProtoWriter recognition,
+  ) {
+    recognition.message(GoogleLensWireFields.objectsResponseText, (
+      _ProtoWriter text,
+    ) {
       text.message(GoogleLensWireFields.textTextLayout, (_ProtoWriter layout) {
-        layout.message(GoogleLensWireFields.textLayoutParagraphs,
-            (_ProtoWriter paragraph) {
-          paragraph.message(GoogleLensWireFields.paragraphLines,
-              (_ProtoWriter line) {
+        layout.message(GoogleLensWireFields.textLayoutParagraphs, (
+          _ProtoWriter paragraph,
+        ) {
+          paragraph.message(GoogleLensWireFields.paragraphLines, (
+            _ProtoWriter line,
+          ) {
             if (words != null) {
               for (final ({String text, Rect? box}) entry in words) {
-                line.message(GoogleLensWireFields.lineWords,
-                    (_ProtoWriter word) {
+                line.message(GoogleLensWireFields.lineWords, (
+                  _ProtoWriter word,
+                ) {
                   word.string(GoogleLensWireFields.wordPlainText, entry.text);
                   final Rect? box = entry.box;
                   if (box != null) {
-                    word.message(GoogleLensWireFields.wordGeometry,
-                        (_ProtoWriter geometry) {
-                      geometry.message(GoogleLensWireFields.geometryBoundingBox,
-                          (_ProtoWriter rotated) {
-                        rotated.float32(
-                            GoogleLensWireFields.boxCenterX, box.center.dx);
-                        rotated.float32(
-                            GoogleLensWireFields.boxCenterY, box.center.dy);
-                        rotated.float32(
-                            GoogleLensWireFields.boxWidth, box.width);
-                        rotated.float32(
-                            GoogleLensWireFields.boxHeight, box.height);
-                      });
+                    word.message(GoogleLensWireFields.wordGeometry, (
+                      _ProtoWriter geometry,
+                    ) {
+                      geometry.message(
+                        GoogleLensWireFields.geometryBoundingBox,
+                        (_ProtoWriter rotated) {
+                          rotated.float32(
+                            GoogleLensWireFields.boxCenterX,
+                            box.center.dx,
+                          );
+                          rotated.float32(
+                            GoogleLensWireFields.boxCenterY,
+                            box.center.dy,
+                          );
+                          rotated.float32(
+                            GoogleLensWireFields.boxWidth,
+                            box.width,
+                          );
+                          rotated.float32(
+                            GoogleLensWireFields.boxHeight,
+                            box.height,
+                          );
+                        },
+                      );
                     });
                   }
                 });
@@ -93,18 +110,23 @@ Uint8List makeGoogleLensFixture({
               line.message(
                 GoogleLensWireFields.lineWords,
                 (_ProtoWriter word) => word.string(
-                    GoogleLensWireFields.wordTextSeparator, secondWord),
+                  GoogleLensWireFields.wordTextSeparator,
+                  secondWord,
+                ),
               );
             }
             writeGeometry(line, centerY);
           });
           if (secondLineText != null) {
-            paragraph.message(GoogleLensWireFields.paragraphLines,
-                (_ProtoWriter line) {
+            paragraph.message(GoogleLensWireFields.paragraphLines, (
+              _ProtoWriter line,
+            ) {
               line.message(
                 GoogleLensWireFields.lineWords,
                 (_ProtoWriter word) => word.string(
-                    GoogleLensWireFields.wordPlainText, secondLineText),
+                  GoogleLensWireFields.wordPlainText,
+                  secondLineText,
+                ),
               );
               writeGeometry(line, secondLineCenterY);
             });

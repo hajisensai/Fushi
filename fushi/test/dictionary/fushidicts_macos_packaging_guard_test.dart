@@ -1,12 +1,15 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   String read(String relativeToFushi) {
     final File file = File(relativeToFushi);
-    expect(file.existsSync(), isTrue,
-        reason: 'expected file at ${file.absolute.path}');
+    expect(
+      file.existsSync(),
+      isTrue,
+      reason: 'expected file at ${file.absolute.path}',
+    );
     return file.readAsStringSync();
   }
 
@@ -14,9 +17,13 @@ void main() {
     final String cmake = read('../native/fushidicts/CMakeLists.txt');
 
     expect(cmake, contains('add_library(fushidicts_ffi SHARED'));
-    expect(cmake, contains('if(APPLE AND NOT FUSHIDICTS_IOS)'),
-        reason: 'macOS (non-iOS) needs an @rpath dylib id for app-bundle '
-            'loading; iOS switched to a force_loaded merged static archive.');
+    expect(
+      cmake,
+      contains('if(APPLE AND NOT FUSHIDICTS_IOS)'),
+      reason:
+          'macOS (non-iOS) needs an @rpath dylib id for app-bundle '
+          'loading; iOS switched to a force_loaded merged static archive.',
+    );
     expect(cmake, contains('INSTALL_NAME_DIR "@rpath"'));
     expect(cmake, contains('BUILD_WITH_INSTALL_NAME_DIR TRUE'));
   });
@@ -31,11 +38,9 @@ void main() {
     expect(cmake, contains('target_compile_features(fushidicts PUBLIC'));
     expect(cmake, contains('cxx_std_23'));
     expect(cmake, contains('target_compile_features(fushidicts_ffi PRIVATE'));
-    expect(cmake, contains('target_compile_features(fushidicts_jni PRIVATE'));
   });
 
-  test('macOS Runner builds fushidicts and copies the dylib into Frameworks',
-      () {
+  test('macOS Runner builds fushidicts and copies the dylib into Frameworks', () {
     final String project = read('macos/Runner.xcodeproj/project.pbxproj');
     final String config = read('macos/Runner/Configs/AppInfo.xcconfig');
 
@@ -56,23 +61,27 @@ void main() {
       r'33CC10EC2044A3C60003C045 /\* Runner \*/ = \{[\s\S]*?buildPhases = \(([\s\S]*?)\);',
     );
     final String phases = runnerPhases.firstMatch(project)!.group(1)!;
-    expect(phases.indexOf('3399D490228B24CF009A79C7 /* ShellScript */'),
-        lessThan(phases.indexOf('Build FushiDicts FFI')),
-        reason: 'copy the dylib after Flutter embeds the macOS app bundle.');
+    expect(
+      phases.indexOf('3399D490228B24CF009A79C7 /* ShellScript */'),
+      lessThan(phases.indexOf('Build FushiDicts FFI')),
+      reason: 'copy the dylib after Flutter embeds the macOS app bundle.',
+    );
   });
 
   test('Runner runpath can load dylibs from Contents/Frameworks', () {
     final String project = read('macos/Runner.xcodeproj/project.pbxproj');
 
-    expect('@executable_path/../Frameworks'.allMatches(project).length,
-        greaterThanOrEqualTo(3),
-        reason:
-            'Debug/Profile/Release must all keep the app Frameworks rpath.');
+    expect(
+      '@executable_path/../Frameworks'.allMatches(project).length,
+      greaterThanOrEqualTo(3),
+      reason: 'Debug/Profile/Release must all keep the app Frameworks rpath.',
+    );
   });
 
   test('CI verifies the bundled macOS fushidicts dylib', () {
-    final String workflow =
-        read('../.github/workflows/build-multiplatform.yml');
+    final String workflow = read(
+      '../.github/workflows/build-multiplatform.yml',
+    );
 
     expect(workflow, contains('Verify macOS fushidicts dylib bundle'));
     expect(workflow, contains(r'find "$app_dir/Contents/Frameworks"'));

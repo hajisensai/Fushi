@@ -25,9 +25,9 @@ void main() {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(FushiChannels.saf, (MethodCall call) async {
-      expect(call.method, anyOf('pickRealFile', 'pickRealDirectory'));
-      return response;
-    });
+          expect(call.method, anyOf('pickRealFile', 'pickRealDirectory'));
+          return response;
+        });
     try {
       late BuildContext context;
       await tester.pumpWidget(

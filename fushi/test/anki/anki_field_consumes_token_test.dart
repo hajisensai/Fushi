@@ -10,30 +10,28 @@ void main() {
   group('AnkiHandlebarOptions.anyFieldConsumesToken', () {
     test('bare token in a field value matches', () {
       expect(
-        AnkiHandlebarOptions.anyFieldConsumesToken(
-          {'Sentence': '{sentence}'},
-          '{sentence}',
-        ),
+        AnkiHandlebarOptions.anyFieldConsumesToken({
+          'Sentence': '{sentence}',
+        }, '{sentence}'),
         isTrue,
       );
     });
 
     test('token embedded inside a larger HTML template matches', () {
       expect(
-        AnkiHandlebarOptions.anyFieldConsumesToken(
-          {'Front': '<div>{expression}</div><span>{sentence}</span>'},
-          '{sentence}',
-        ),
+        AnkiHandlebarOptions.anyFieldConsumesToken({
+          'Front': '<div>{expression}</div><span>{sentence}</span>',
+        }, '{sentence}'),
         isTrue,
       );
     });
 
     test('no field consuming the token returns false', () {
       expect(
-        AnkiHandlebarOptions.anyFieldConsumesToken(
-          {'Expression': '{expression}', 'Reading': '{reading}'},
-          '{sentence}',
-        ),
+        AnkiHandlebarOptions.anyFieldConsumesToken({
+          'Expression': '{expression}',
+          'Reading': '{reading}',
+        }, '{sentence}'),
         isFalse,
       );
     });
@@ -47,35 +45,33 @@ void main() {
 
     test('fields mapped to literal "-" (no token) return false', () {
       expect(
-        AnkiHandlebarOptions.anyFieldConsumesToken(
-          {'Front': '-', 'Back': '-'},
-          '{sentence}',
-        ),
+        AnkiHandlebarOptions.anyFieldConsumesToken({
+          'Front': '-',
+          'Back': '-',
+        }, '{sentence}'),
         isFalse,
       );
     });
 
     test('matches {sentence-audio} for the sentence-audio diagnostic', () {
       expect(
-        AnkiHandlebarOptions.anyFieldConsumesToken(
-          {'SentenceAudio': '{sentence-audio}'},
-          '{sentence-audio}',
-        ),
+        AnkiHandlebarOptions.anyFieldConsumesToken({
+          'SentenceAudio': '{sentence-audio}',
+        }, '{sentence-audio}'),
         isTrue,
       );
       expect(
-        AnkiHandlebarOptions.anyFieldConsumesToken(
-          {'Word': '{audio}'},
-          '{sentence-audio}',
-        ),
+        AnkiHandlebarOptions.anyFieldConsumesToken({
+          'Word': '{audio}',
+        }, '{sentence-audio}'),
         isFalse,
       );
       // 退役别名 {sasayaki-audio} 已由载入期迁移改写为 {sentence-audio}，
       // 诊断只认新键：仅映射旧别名不算消费句子音频。
       expect(
-        AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
-          {'SentenceAudio': '{sasayaki-audio}'},
-        ),
+        AnkiHandlebarOptions.anyFieldConsumesSentenceAudio({
+          'SentenceAudio': '{sasayaki-audio}',
+        }),
         isFalse,
       );
     });
@@ -98,9 +94,10 @@ void main() {
 
     test('neither {sentence} nor {cue-sentence} mapped returns false', () {
       expect(
-        AnkiHandlebarOptions.anyFieldConsumesSentence(
-          {'Expression': '{expression}', 'Glossary': '{glossary}'},
-        ),
+        AnkiHandlebarOptions.anyFieldConsumesSentence({
+          'Expression': '{expression}',
+          'Glossary': '{glossary}',
+        }),
         isFalse,
       );
     });
@@ -117,33 +114,37 @@ void main() {
     // 「缺少游戏卡片字段: {card-image}」，尽管画面/GIF 其实已通过别名落卡（BUG）。
     test('{card-image} counts as consuming the card image', () {
       expect(
-        AnkiHandlebarOptions.anyFieldConsumesCardImage(
-            {'Picture': '{card-image}'}),
+        AnkiHandlebarOptions.anyFieldConsumesCardImage({
+          'Picture': '{card-image}',
+        }),
         isTrue,
       );
     });
 
     test('legacy alias {book-cover} also counts (pre-TODO-1298 config)', () {
       expect(
-        AnkiHandlebarOptions.anyFieldConsumesCardImage(
-            {'Picture': '{book-cover}'}),
+        AnkiHandlebarOptions.anyFieldConsumesCardImage({
+          'Picture': '{book-cover}',
+        }),
         isTrue,
       );
     });
 
     test('legacy alias {video-clip} also counts', () {
       expect(
-        AnkiHandlebarOptions.anyFieldConsumesCardImage(
-            {'Picture': '{video-clip}'}),
+        AnkiHandlebarOptions.anyFieldConsumesCardImage({
+          'Picture': '{video-clip}',
+        }),
         isTrue,
       );
     });
 
     test('none of the three card-image aliases mapped returns false', () {
       expect(
-        AnkiHandlebarOptions.anyFieldConsumesCardImage(
-          {'Expression': '{expression}', 'Sentence': '{sentence}'},
-        ),
+        AnkiHandlebarOptions.anyFieldConsumesCardImage({
+          'Expression': '{expression}',
+          'Sentence': '{sentence}',
+        }),
         isFalse,
       );
     });
@@ -179,16 +180,20 @@ void main() {
 
     test('the legacy alias currently in use stays visible', () {
       final List<String> options = optionsFor('{book-cover}');
-      expect(options, contains('{book-cover}'),
-          reason: '当前值必须在候选里，否则 picker 显示不出当前选中项');
+      expect(
+        options,
+        contains('{book-cover}'),
+        reason: '当前值必须在候选里，否则 picker 显示不出当前选中项',
+      );
       // 其它没用到的别名仍然隐藏。
       expect(options, isNot(contains('{video-clip}')));
       expect(options, isNot(contains('{sasayaki-audio}')));
     });
 
     test('alias embedded in a composite HTML template also stays visible', () {
-      final List<String> options =
-          optionsFor('<div>{expression}</div><img>{book-cover}</img>');
+      final List<String> options = optionsFor(
+        '<div>{expression}</div><img>{book-cover}</img>',
+      );
       expect(options, contains('{book-cover}'));
     });
 

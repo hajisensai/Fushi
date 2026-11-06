@@ -1,12 +1,18 @@
 import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// BUG-3487：截屏识字带来的「被点字所在 OCR text block 全文 + 本行在块里的起点」。
-/// 只有截屏识字入口给；其它入口为 null（制卡句子回落为整行）。
-typedef PopupSourceBlock = ({String text, int offset});
+/// 只有截屏识字入口给；其它入口为 null（制卡句子回落为整行）。[cardImage] 是这次
+/// 截屏的卡图来源（反馈 Gz7z6Y6Mbr，「截屏识字制卡带图」关着时为 null）。
+typedef PopupSourceBlock = ({
+  String text,
+  int offset,
+  ScreenOcrCardImage? cardImage,
+});
 
 /// 原生侧推来的一次查词。
 typedef PopupProcessTextHandler =
@@ -158,7 +164,19 @@ class PopupChannel {
     final Object? offset = map['sourceBlockOffset'];
     if (text is! String || offset is! int) return null;
     if (offset < 0 || offset > text.length) return null;
-    return (text: text, offset: offset);
+    return (text: text, offset: offset, cardImage: _parseCardImage(map));
+  }
+
+  /// 反馈 Gz7z6Y6Mbr：截屏识字把定格帧写进 app 缓存（`cardImagePath`），连同所点文本块
+  /// （`cardImageBlock`）与被点行（`cardImageLine`，都是那张图的像素 [l, t, r, b]）一起
+  /// 带来，制卡时裁成卡图。「截屏识字制卡带图」关着时原生不写文件、不带这些键。
+  static ScreenOcrCardImage? _parseCardImage(Map<Object?, Object?> map) {
+    final Object? path = map['cardImagePath'];
+    if (path is! String || path.isEmpty) return null;
+    final Rect? block = _parseAnchor(map['cardImageBlock']);
+    final Rect? line = _parseAnchor(map['cardImageLine']);
+    if (block == null || line == null) return null;
+    return ScreenOcrCardImage(path: path, textBlock: block, line: line);
   }
 
   /// TODO-872：浮动字幕条点字传来的「被查字屏幕矩形」（物理像素 [left, top, right,

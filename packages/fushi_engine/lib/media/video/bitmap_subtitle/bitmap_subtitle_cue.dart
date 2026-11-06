@@ -1,13 +1,14 @@
 /// 位图字幕（PGS / VobSub / DVB）的公共形状：一条 cue = 一段显示区间 + 一张惰性渲染的
 /// 位图。整轨转文字、逐句时间表、模糊遮蔽只认这一层，不关心位图来自哪种编码。
 ///
-/// 渲染统一走 [composeBitmapSubtitleImage]：不透明黑底、Alpha 按本 cue 调色板的最大
+/// 渲染统一走 [composeBitmapSubtitleRgba]：不透明黑底、Alpha 按本 cue 调色板的最大
 /// 不透明度归一化（淡入帧也按满不透明渲染）——OCR 只关心字形，黑底上的浅色字最好认。
 library;
 
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' show sha1;
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:image/image.dart' as img;
 
 /// 单个位图对象 / 区域的边长上限。BD PGS 与 DVB 的对象都不超过 4096（DVB 对象坐标
@@ -121,59 +122,51 @@ BitmapSubtitleBounds bitmapSubtitleLayerBounds(
   return (left: l, top: t, right: r, bottom: b);
 }
 
-/// 把 [layers] 合成到 [bounds] 外扩 [padding] 的不透明黑底画布上。
+/// 把 [layers] 合成到 [bounds] 外扩 [padding] 的不透明黑底画布上，返回 RGBA 像素。
 ///
 /// Alpha 按所有层调色板里的最大不透明度归一化：淡入帧（整体半透明）也按满不透明渲染；
 /// 调色板全透明时得到纯黑图。半透明像素按 alpha 预乘到黑底上（描边的抗锯齿边缘变暗，
-/// 字形主体保持原色）。
-img.Image composeBitmapSubtitleImage({
+/// 字形主体保持原色）。合成在原生内核（ffc_image_compose_indexed）里做。
+BitmapSubtitleImage composeBitmapSubtitleRgba({
   required BitmapSubtitleBounds bounds,
   required List<BitmapSubtitleLayer> layers,
   int padding = 16,
 }) {
   final int w = (bounds.right - bounds.left + padding * 2).clamp(1, 1 << 15);
   final int h = (bounds.bottom - bounds.top + padding * 2).clamp(1, 1 << 15);
-  final img.Image canvas = img.Image(width: w, height: h, numChannels: 4)
-    ..clear(img.ColorRgba8(0, 0, 0, 255));
-  int maxAlpha = 0;
-  for (final BitmapSubtitleLayer layer in layers) {
-    for (final int argb in layer.palette) {
-      final int a = argb >>> 24;
-      if (a > maxAlpha) maxAlpha = a;
-    }
-  }
-  if (maxAlpha == 0) return canvas;
-  final int originX = bounds.left - padding;
-  final int originY = bounds.top - padding;
-  for (final BitmapSubtitleLayer layer in layers) {
-    final Uint32List palette = layer.palette;
-    for (int y = 0; y < layer.height; y++) {
-      final int row = (layer.sourceY + y) * layer.stride + layer.sourceX;
-      final int cy = layer.y + y - originY;
-      if (cy < 0 || cy >= h) continue;
-      for (int x = 0; x < layer.width; x++) {
-        final int at = row + x;
-        if (at >= layer.indices.length) break;
-        final int index = layer.indices[at];
-        if (index >= palette.length) continue;
-        final int argb = palette[index];
-        final int a = argb >>> 24;
-        if (a == 0) continue;
-        final int cx = layer.x + x - originX;
-        if (cx < 0 || cx >= w) continue;
-        final double k = a >= maxAlpha ? 1 : a / maxAlpha;
-        canvas.setPixelRgb(
-          cx,
-          cy,
-          (((argb >> 16) & 0xFF) * k).round(),
-          (((argb >> 8) & 0xFF) * k).round(),
-          ((argb & 0xFF) * k).round(),
-        );
-      }
-    }
-  }
-  return canvas;
+  final Uint8List rgba = FushiComputeBitmapSubtitle.instance.composeIndexed(
+    layers: <FfcIndexedLayer>[
+      for (final BitmapSubtitleLayer l in layers)
+        (
+          indices: l.indices,
+          palette: l.palette,
+          x: l.x,
+          y: l.y,
+          width: l.width,
+          height: l.height,
+          stride: l.stride,
+          sourceX: l.sourceX,
+          sourceY: l.sourceY,
+        ),
+    ],
+    originX: bounds.left - padding,
+    originY: bounds.top - padding,
+    canvasWidth: w,
+    canvasHeight: h,
+  );
+  return BitmapSubtitleImage(rgba: rgba, width: w, height: h);
 }
+
+/// [composeBitmapSubtitleRgba] 的 `img.Image` 形态（编码 PNG 等）。
+img.Image composeBitmapSubtitleImage({
+  required BitmapSubtitleBounds bounds,
+  required List<BitmapSubtitleLayer> layers,
+  int padding = 16,
+}) => composeBitmapSubtitleRgba(
+  bounds: bounds,
+  layers: layers,
+  padding: padding,
+).toImage();
 
 /// [composeBitmapSubtitleImage] 的结果转成 [BitmapSubtitleImage]。
 BitmapSubtitleImage bitmapSubtitleImageOf(img.Image canvas) =>

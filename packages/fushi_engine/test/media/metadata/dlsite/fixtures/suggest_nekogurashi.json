@@ -1,0 +1,65 @@
+{
+ "work": [
+  {
+   "work_name": "【耳かき・革手袋・梵天】ねこぐらし。～シャム猫娘と癒やしのだらけ～【CV: 茅野愛衣】",
+   "workno": "RJ292031",
+   "maker_name": "CANDY VOICE",
+   "maker_id": "RG51654",
+   "work_type": "SOU",
+   "intro_s": "第4弾は、シャム猫(CV:茅野愛衣)!実力派の音響効果スタッフによる梵天、赤ちゃ",
+   "age_category": 1,
+   "is_ana": false
+  },
+  {
+   "work_name": "【耳かき・ねこじゃらし・3時間】ねこぐらし。〜ミケ猫少女と鈴のオト〜【CV: 上坂すみれ】",
+   "workno": "RJ290139",
+   "maker_name": "CANDY VOICE",
+   "maker_id": "RG51654",
+   "work_type": "SOU",
+   "intro_s": "第1弾は、ミケ猫(CV.上坂すみれ)!本作は約3時間に及ぶ超大作!実力派の音響効",
+   "age_category": 1,
+   "is_ana": false
+  },
+  {
+   "work_name": "【耳かき・炭酸綿棒・しっぽ】ねこぐらし。～シロ猫少女の無邪気なしっぽ～【CV: 竹達彩奈】",
+   "workno": "RJ291224",
+   "maker_name": "CANDY VOICE",
+   "maker_id": "RG51654",
+   "work_type": "SOU",
+   "intro_s": "第2弾は、シロ猫(CV:竹達彩奈)!実力派の音響効果スタッフによる炭酸綿棒での耳",
+   "age_category": 1,
+   "is_ana": false
+  },
+  {
+   "work_name": "【耳かき・だらけ】ねこぐらし。2〜シャム猫娘のおもてなしだらけ〜【CV: 茅野愛衣】",
+   "workno": "RJ308609",
+   "maker_name": "CANDY VOICE",
+   "maker_id": "RG51654",
+   "work_type": "SOU",
+   "intro_s": "第5弾は、シャム猫(CV.茅野愛衣)!本作は2時間を超える超大作!実力派の音響効",
+   "age_category": 1,
+   "is_ana": false
+  },
+  {
+   "work_name": "【耳かき】ねこぐらし。2〜アメショ猫娘と癒やしのひととき〜【CV: 沢城みゆき】",
+   "workno": "RJ310041",
+   "maker_name": "CANDY VOICE",
+   "maker_id": "RG51654",
+   "work_type": "SOU",
+   "intro_s": "第6弾は、アメショ猫(CV.沢城みゆき)!本作は2時間を超える超大作!実力派の音",
+   "age_category": 1,
+   "is_ana": false
+  }
+ ],
+ "maker": [
+  {
+   "workno": "RJ292031",
+   "maker_name": "CANDY VOICE",
+   "maker_name_kana": "キャンディボイス",
+   "maker_id": "RG51654",
+   "age_category": 1,
+   "is_ana": false
+  }
+ ],
+ "reqtime": 1
+}

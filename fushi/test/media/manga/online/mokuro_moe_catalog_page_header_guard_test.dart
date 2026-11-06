@@ -1,14 +1,11 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 String _navigationBranch(String source) {
   final int branchStart = source.indexOf('if (navigation != null)');
   if (branchStart < 0) return '';
-  final int branchEnd = source.indexOf(
-    'return FushiPageHeader(',
-    branchStart,
-  );
+  final int branchEnd = source.indexOf('return FushiPageHeader(', branchStart);
   if (branchEnd <= branchStart) return '';
   return source.substring(branchStart, branchEnd);
 }

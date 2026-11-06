@@ -25,6 +25,7 @@ class DictStylePreview extends StatefulWidget {
     required this.css,
     required this.highlightPart,
     required this.onPickPart,
+    this.themeVariablesJs,
   });
 
   /// 当前规则编译出的 CSS，改一次换一次（不重载页面）。
@@ -35,6 +36,14 @@ class DictStylePreview extends StatefulWidget {
 
   /// 用户在预览里点了某个部位。
   final ValueChanged<DictStylePart> onPickPart;
+
+  /// 真弹窗的主题注入段（`buildInAppPopupThemeVariablesJs`）：设计系统 class
+  /// （`fushi-m3e` / `fushi-glass-host` + `fushi-apple` / `eink`）与全部 `--md-*` 令牌。
+  ///
+  /// 给了它，预览与 app 内弹窗同一外观：M3E 分段卡片 / Apple 淡染标签，文档背景
+  /// 透明、底色由外层 Flutter 面板画（与真弹窗的 FushiPopupSurface 同一结构）。
+  /// null 时退回只设 `data-theme` / `eink`（集成测试的裸宿主没有 AppModel）。
+  final String? themeVariablesJs;
 
   @override
   State<DictStylePreview> createState() => _DictStylePreviewState();
@@ -54,13 +63,15 @@ class DictStylePreviewDebug {
 
 class _DictStylePreviewState extends State<DictStylePreview> {
   InAppWebViewController? _controller;
-  final WebViewDeathGuard _deathGuard =
-      WebViewDeathGuard(surface: 'dict-style-preview');
+  final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
+    surface: 'dict-style-preview',
+  );
   bool _ready = false;
 
   /// 上一次真正推给 WebView 的主题标识，避免每次依赖变化都重复 evaluateJavascript。
   bool? _pushedDark;
   bool? _pushedEink;
+  String? _pushedThemeVariablesJs;
 
   @override
   void didChangeDependencies() {
@@ -79,7 +90,16 @@ class _DictStylePreviewState extends State<DictStylePreview> {
   /// 用 `toggle` 而非 `add`：主题来回切时要能摘除（与真弹窗同款）。
   Future<void> _pushTheme() async {
     final InAppWebViewController? controller = _controller;
-    if (controller == null || !_ready) return;
+    // 反馈 63DhJLTAHW 日志：_bootstrap 的 evaluateJavascript 往返期间用户已离开词典样式页，
+    // 续体再读 `Theme.of(context)` 就是 State.context 的空断言（UncaughtZone）。
+    if (!mounted || controller == null || !_ready) return;
+    final String? themeVariablesJs = widget.themeVariablesJs;
+    if (themeVariablesJs != null) {
+      if (_pushedThemeVariablesJs == themeVariablesJs) return;
+      _pushedThemeVariablesJs = themeVariablesJs;
+      await controller.evaluateJavascript(source: themeVariablesJs);
+      return;
+    }
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final bool eink = theme.extension<FushiEinkTheme>()?.einkMode ?? false;
@@ -87,7 +107,8 @@ class _DictStylePreviewState extends State<DictStylePreview> {
     _pushedDark = dark;
     _pushedEink = eink;
     await controller.evaluateJavascript(
-      source: '''
+      source:
+          '''
         document.documentElement.setAttribute('data-theme', '${dark ? 'dark' : 'light'}');
         document.documentElement.classList.toggle('eink', $eink);
       ''',
@@ -97,6 +118,9 @@ class _DictStylePreviewState extends State<DictStylePreview> {
   @override
   void didUpdateWidget(DictStylePreview oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.themeVariablesJs != widget.themeVariablesJs) {
+      unawaited(_pushTheme());
+    }
     if (oldWidget.css != widget.css ||
         oldWidget.highlightPart != widget.highlightPart) {
       unawaited(_pushStyles());
@@ -107,9 +131,10 @@ class _DictStylePreviewState extends State<DictStylePreview> {
   /// 拖滑块时那是一帧一跳。
   Future<void> _pushStyles() async {
     final InAppWebViewController? controller = _controller;
-    if (controller == null || !_ready) return;
+    if (!mounted || controller == null || !_ready) return;
     await controller.evaluateJavascript(
-      source: '''
+      source:
+          '''
         window.__fushiStylePreviewApply(
           ${jsonEncode(widget.css)},
           ${jsonEncode(dictStylePartSelector(widget.highlightPart))}
@@ -125,10 +150,12 @@ class _DictStylePreviewState extends State<DictStylePreview> {
   /// `--background-color` 在 popup.css 里根本没有定义值，整页透明。
   Future<void> _bootstrap() async {
     final InAppWebViewController? controller = _controller;
-    if (controller == null) return;
+    // onLoadStop 可能在本页已卸载后才到（平台 WebView 的加载回调不随 widget 生命周期撤销）。
+    if (!mounted || controller == null) return;
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     await controller.evaluateJavascript(
-      source: '''
+      source:
+          '''
         document.documentElement.setAttribute('data-theme', '${dark ? 'dark' : 'light'}');
         window.lookupEntries = ${jsonEncode(kDictStylePreviewEntries)};
         window.kanjiResults = [];
@@ -142,8 +169,11 @@ class _DictStylePreviewState extends State<DictStylePreview> {
         window.renderPopup();
       ''',
     );
+    // 每个 await 之后都可能已卸载：后面两步都读 widget / context。
+    if (!mounted) return;
     _ready = true;
     await _pushTheme();
+    if (!mounted) return;
     await _pushStyles();
   }
 
@@ -155,12 +185,11 @@ class _DictStylePreviewState extends State<DictStylePreview> {
     // 空 <script>，预览白屏（BUG-1918 ②）。
     final String? inlineHtml =
         DictionaryPopupWebViewState.shouldInlinePopupAssets
-            ? DictionaryPopupWebViewState.buildInlinePopupHtmlIfReady(
-                themeAttr:
-                    theme.brightness == Brightness.dark ? 'dark' : 'light',
-                bgHex: _hex(theme.colorScheme.surface),
-              )
-            : null;
+        ? DictionaryPopupWebViewState.buildInlinePopupHtmlIfReady(
+            themeAttr: theme.brightness == Brightness.dark ? 'dark' : 'light',
+            bgHex: _hex(theme.colorScheme.surface),
+          )
+        : null;
     return KeyedSubtree(
       key: _deathGuard.rebuildKey,
       child: InAppWebView(
@@ -181,7 +210,9 @@ class _DictStylePreviewState extends State<DictStylePreview> {
           supportZoom: false,
           disableContextMenu: true,
           horizontalScrollBarEnabled: false,
-          transparentBackground: false,
+          // 有真弹窗主题段时文档背景透明（html.fushi-glass-host），WebView 也必须
+          // 透明，否则露出的是 WebView 自己的默认白底，深色主题下白底浅字。
+          transparentBackground: widget.themeVariablesJs != null,
         ),
         onWebViewCreated: (InAppWebViewController controller) {
           _controller = controller;
@@ -214,11 +245,11 @@ class _DictStylePreviewState extends State<DictStylePreview> {
         onRenderProcessGone:
             (InAppWebViewController _, RenderProcessGoneDetail detail) =>
                 unawaited(
-          _deathGuard.handleDeath(
-            didCrash: detail.didCrash,
-            rendererPriorityAtExit: detail.rendererPriorityAtExit,
-          ),
-        ),
+                  _deathGuard.handleDeath(
+                    didCrash: detail.didCrash,
+                    rendererPriorityAtExit: detail.rendererPriorityAtExit,
+                  ),
+                ),
       ),
     );
   }
@@ -250,8 +281,13 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
   'favoriteEntry',
   'findMinedMatches',
   'getDictAsset',
+  // 「我库里的例句」：预览不查用户库（回 null = 区块不出现）、不跳转。
+  'librarySentenceOpen',
+  'librarySentences',
   'listWordAudioSources',
   'mineEntry',
+  // BUG-3652 续：制卡失败回包到达时发起按钮已被换掉 → 交回宿主 toast；预览不制卡。
+  'mineFailureUnseen',
   'minedCardAction',
   'onLinkClick',
   'openAdvancedMining',
@@ -275,6 +311,7 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
   // 复习词状态标记：预览不显示复习状态（回 null = 不渲染标记）、不打开卡片。
   'srsOpenCard',
   'srsTermStatus',
+  'srsTermStatusBatch',
   'tapOutside',
   'textSelected',
   'updateEntry',
@@ -283,13 +320,10 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
 /// 注入预览 WebView 的点选逻辑。
 ///
 /// 部位 → 选择器表由 Dart 侧生成，避免两边各维护一份而漂移。
-final String _kPickerJs = '''
+final String _kPickerJs =
+    '''
   window.__fushiStylePreviewParts = ${jsonEncode(<Map<String, String>>[
-      for (final DictStylePart part in DictStylePart.values)
-        <String, String>{
-          'name': part.name,
-          'selector': dictStylePartSelector(part),
-        },
+      for (final DictStylePart part in DictStylePart.values) <String, String>{'name': part.name, 'selector': dictStylePartSelector(part)},
     ])};
 
   (function () {

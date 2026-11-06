@@ -18,15 +18,27 @@ import 'dart:io';
 
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_notifier.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
+    show AudiobookAlignmentStep;
+import 'package:fushi_engine/media/audiobook/audiobook_text_coverage.dart';
 
 /// 任务生命周期。[done] / [failed] / [cancelled] 是终态。
 enum AudiobookTranscribeJobStatus { queued, running, done, failed, cancelled }
 
-/// running 状态下进行到哪一步。
+/// running 状态下进行到哪一步（按流水线先后排列；持久化用 name，新增值不影响
+/// 旧清单的读取）。
 enum AudiobookTranscribeJobPhase {
+  /// 查已有产物 / 规划模型（还不知道要不要下模型）。
   preparing,
   downloadingModel,
+
+  /// 模型装进推理会话（大模型在 CPU 上要十几秒，此前这段算在「转录中 0%」里）。
+  loadingModel,
   transcribing,
+
+  /// 正文匹配（读正文 → 解析字幕 → 匹配器 → 句界重切）；没有正文的独立字幕书
+  /// 不经过这一步。
+  matching,
   importing,
 }
 
@@ -45,6 +57,7 @@ class AudiobookTranscribeJob {
     this.progress,
     this.error,
     this.resultKey,
+    this.coverage,
   });
 
   factory AudiobookTranscribeJob.fromJson(Map<String, Object?> json) {
@@ -69,6 +82,11 @@ class AudiobookTranscribeJob {
       progress: (json['progress'] as num?)?.toDouble(),
       error: json['error'] as String?,
       resultKey: json['resultKey'] as String?,
+      coverage: json['coverage'] is Map
+          ? AudiobookTextCoverage.fromJson(
+              Map<String, Object?>.from(json['coverage']! as Map),
+            )
+          : null,
     );
   }
 
@@ -92,6 +110,17 @@ class AudiobookTranscribeJob {
   /// 入库后的身份键；任务 done 而它为 null = 同名书已在库被跳过。
   String? resultKey;
 
+  /// 正文匹配后的覆盖情况（有正文时才有；落盘，完成后任务行据此显示覆盖率）。
+  AudiobookTextCoverage? coverage;
+
+  /// [AudiobookTranscribeJobPhase.matching] / [AudiobookTranscribeJobPhase.importing]
+  /// 里的细分步骤（不落盘）。
+  AudiobookAlignmentStep? alignmentStep;
+
+  /// 本轮运行里没下模型就进了装载 / 转录（模型本来就在）。不落盘：重启后 running
+  /// 回到 queued，会重新经过这一判定。
+  bool modelDownloadSkipped = false;
+
   bool get isTerminal =>
       status == AudiobookTranscribeJobStatus.done ||
       status == AudiobookTranscribeJobStatus.failed ||
@@ -110,6 +139,7 @@ class AudiobookTranscribeJob {
     'progress': progress,
     'error': error,
     'resultKey': resultKey,
+    if (coverage != null) 'coverage': coverage!.toJson(),
   };
 }
 
@@ -159,8 +189,39 @@ abstract interface class AudiobookTranscriber {
 }
 
 /// 入库端口：拿转出的字幕把 [job] 入库，返回身份键；同名书已在库返回 null。
+/// 走到哪一步、覆盖率多少经 [sink] 报回队列。
 typedef AudiobookTranscribeImporter =
-    Future<String?> Function(AudiobookTranscribeJob job, String subtitlePath);
+    Future<String?> Function(
+      AudiobookTranscribeJob job,
+      String subtitlePath,
+      AudiobookTranscribeImportSink sink,
+    );
+
+/// 入库端口的回报口：对齐服务的步骤 → 任务阶段（匹配 / 入库），覆盖率 → 任务。
+class AudiobookTranscribeImportSink {
+  AudiobookTranscribeImportSink(this._onStep, this._onCoverage);
+
+  final void Function(AudiobookAlignmentStep step) _onStep;
+  final void Function(AudiobookTextCoverage coverage) _onCoverage;
+
+  /// 对齐服务的 `onStep` 可以直接接这里。
+  void step(AudiobookAlignmentStep step, {String? detail}) => _onStep(step);
+
+  void coverage(AudiobookTextCoverage coverage) => _onCoverage(coverage);
+}
+
+/// 对齐步骤落在任务的哪个阶段。
+AudiobookTranscribeJobPhase audiobookTranscribePhaseForStep(
+  AudiobookAlignmentStep step,
+) => switch (step) {
+  AudiobookAlignmentStep.readingText ||
+  AudiobookAlignmentStep.parsingSubtitle ||
+  AudiobookAlignmentStep.matching ||
+  AudiobookAlignmentStep.finishing => AudiobookTranscribeJobPhase.matching,
+  AudiobookAlignmentStep.persisting ||
+  AudiobookAlignmentStep.saving ||
+  AudiobookAlignmentStep.done => AudiobookTranscribeJobPhase.importing,
+};
 
 class AudiobookTranscribeImportQueue extends EngineChangeNotifier {
   AudiobookTranscribeImportQueue({
@@ -336,14 +397,25 @@ class AudiobookTranscribeImportQueue extends EngineChangeNotifier {
       ..phase = AudiobookTranscribeJobPhase.preparing
       ..progress = null
       ..error = null
+      ..coverage = null
+      ..alignmentStep = null
+      ..modelDownloadSkipped = false
       ..updatedAt = _now().millisecondsSinceEpoch;
     await _persist();
     notifyListeners();
+    bool sawModelDownload = false;
     try {
       final String subtitlePath = await _transcriber.transcribe(
         job,
         onProgress: (AudiobookTranscribeJobPhase phase, double? progress) {
           final bool phaseChanged = job.phase != phase;
+          if (phase == AudiobookTranscribeJobPhase.downloadingModel) {
+            sawModelDownload = true;
+          } else if (!sawModelDownload &&
+              phase.index >
+                  AudiobookTranscribeJobPhase.downloadingModel.index) {
+            job.modelDownloadSkipped = true;
+          }
           job
             ..phase = phase
             ..progress = progress;
@@ -353,11 +425,28 @@ class AudiobookTranscribeImportQueue extends EngineChangeNotifier {
         cancel: cancel,
       );
       if (cancel.isCancelled) throw const AudiobookTranscribeCancelled();
+      // 有正文（新正文或已有的书）先匹配，独立字幕书直接入库；之后由入库端口
+      // 经 sink 按真实步骤推进。匹配器在 isolate 里一次跑完，没有数值进度。
       job
-        ..phase = AudiobookTranscribeJobPhase.importing
+        ..phase = job.contentPath != null || job.targetBookKey != null
+            ? AudiobookTranscribeJobPhase.matching
+            : AudiobookTranscribeJobPhase.importing
         ..progress = null;
       notifyListeners();
-      job.resultKey = await _importer(job, subtitlePath);
+      job.resultKey = await _importer(
+        job,
+        subtitlePath,
+        AudiobookTranscribeImportSink((AudiobookAlignmentStep step) {
+          final AudiobookTranscribeJobPhase phase =
+              audiobookTranscribePhaseForStep(step);
+          if (job.phase == phase && job.alignmentStep == step) return;
+          job
+            ..phase = phase
+            ..alignmentStep = step
+            ..progress = null;
+          notifyListeners();
+        }, (AudiobookTextCoverage coverage) => job.coverage = coverage),
+      );
       _finish(job, AudiobookTranscribeJobStatus.done);
     } on AudiobookTranscribeCancelled {
       // close() 触发的取消不是用户取消：保持 queued，下次启动接着跑。
@@ -392,6 +481,7 @@ class AudiobookTranscribeImportQueue extends EngineChangeNotifier {
     job
       ..status = status
       ..phase = null
+      ..alignmentStep = null
       ..progress = null
       ..updatedAt = _now().millisecondsSinceEpoch;
   }

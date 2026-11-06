@@ -150,9 +150,10 @@ and macOS 13.4–14.0 for free, with no change to the ORT binary or the Dart API
     encoder GPU idle ~85% of the time for lack of queued work, which is what
     the Dart-side pipeline rewrite (`AsrBatchPipeline`) addresses.
 
-**The Dart API under `lib/` carries three deltas (#8, the
+**The Dart API under `lib/` carries four deltas (#8, the
 `freeDimensionOverrides` option, #10, `getDeviceMemoryInfo`, and #13,
-`probeCuda` / `registerCudaRuntime`); everything
+`probeCuda` / `registerCudaRuntime`, and #15, native provider-name
+normalisation); everything
 else there is byte-for-byte upstream.** The Apple, Android and Linux native
 trees are untouched; the Windows tree carries deltas 6–11 and 13 — provider
 wiring, error-string encoding, free-dimension overrides, worker-thread
@@ -186,7 +187,7 @@ path or drift the floors apart.
 
 ## Re-vendoring on upgrade
 
-Copy the new upstream version over this folder, then re-apply deltas #1–#13.
+Copy the new upstream version over this folder, then re-apply deltas #1–#15.
 Before bumping the `onnxruntime-objc` pin, check the new version's podspec
 platforms (`pod spec cat onnxruntime-objc --version=X.Y.Z`) — if the floor moved,
 the four project deployment targets and the guard test move with it.
@@ -269,6 +270,59 @@ the four project deployment targets and the guard test move with it.
     The download manifests (per-member sizes + SHA-256) and the startup core
     choice live in the app: `fushi/lib/src/asr_host/gpu_runtime_pack.dart` and
     `gpu_acceleration.dart`.
+
+14. Android ORT `1.23.0` -> **`1.28.0`**, and every Android session gets
+    `mlas.disable_kleidiai=1` (`android/build.gradle`,
+    `FlutterOnnxruntimePlugin.kt` `createSession`; BUG-3636). iOS/macOS stay on
+    `onnxruntime-objc` 1.23.0.
+
+    - 1.23.x MLAS picks KleidiAI's **SME2** kernels whenever the CPU reports
+      SME. Snapdragon 8 Elite Gen 5 (Oryon) has SME but not SME2, so
+      `OrtSession.run` died with SIGILL ILL_ILLOPC. Measured on the release
+      aar (BuildId `34a68042…`): the crash PC is `whilelt pn8.h, x11, x24,
+      vlx2` right after `smstart` — predicate-as-counter is SME2-only. The
+      1.23.0 binary ships only `_sme2_mopa` f32 matmul kernels; 1.28.0 ships
+      `_sme_mopa` and `_sme2_mopa` variants and dispatches between them
+      (microsoft/onnxruntime#26377, fixed by #27403).
+    - 1.28.0, not newer: sherpa-onnx measured 1.27.0 miscomputing on the same
+      SoC with 1.28.0 correct, and from 1.29 the official Android package sends
+      telemetry by default (#27379 / #29872). Upstream plugin PR #79 picked
+      1.28.0 for the same reason.
+    - KleidiAI stays off on Android even after the upgrade: it only engages on
+      SME phones, and there it still keeps per-thread MatMul buffers sized for
+      the largest input shape and never returns them (#29538, reproduced on
+      1.28.0 at GB scale; OCR inputs are dynamic-shape). The key exists from
+      ORT 1.25. Every Android device therefore runs the same NEON MLAS path
+      non-SME phones always ran. Remove the entry only once #29538 is fixed and
+      KleidiAI is verified on an SME-only device.
+    - Same 12 JNI `FindClass` descriptors and still `classes.jar`-only (no
+      consumer ProGuard rules) — `fushi/android/app/proguard-rules.pro` keeps
+      them unchanged. Guard: `fushi/test/ocr/onnxruntime_android_kleidiai_guard_test.dart`.
+
+15. `lib/src/ort_provider.dart` + `lib/src/onnxruntime.dart`:
+    `getAvailableProviders()` no longer throws on a provider name the Dart enum
+    does not know (feedback eEnV5gBn1K).
+
+    - Upstream matched native names against `OrtProvider.name` exactly and threw
+      `ArgumentError('Provider X is not a valid OrtProvider.')` otherwise. Android
+      passes the Java `OrtProvider` enum name through, and since delta #14 the
+      1.28.0 aar's Java enum contains `WEBGPU` (`javap` on
+      `ai/onnxruntime/OrtProvider.class`: CPU, CUDA, DNNL, OPEN_VINO, VITIS_AI,
+      TENSOR_RT, NNAPI, RK_NPU, DIRECT_ML, MI_GRAPH_X, ACL, ROCM, CORE_ML,
+      XNNPACK, AZURE, QNN, WEBGPU). The Dart spelling is `WEB_GPU`, so every
+      Android probe failed and the ASR sheet showed the raw `ArgumentError`.
+    - The Dart enum gains the Java names upstream lacked (`MI_GRAPH_X`,
+      `RK_NPU`, `VITIS_AI`). `ortProviderFromNativeName` is the one normaliser:
+      exact enum name, then aliases for every spelling a native side reports —
+      Java `WEBGPU`, the Windows/Linux tables' `MIGRAPHX`, and raw ORT C names
+      (`XxxExecutionProvider`), which Windows/Linux/Apple pass through when
+      unmapped. Native code is unchanged.
+    - A name with no `OrtProvider` value is left out of the list and logged
+      under `flutter_onnxruntime`: it cannot be requested through
+      `OrtSessionOptions.providers` anyway, so it is correctly absent from the
+      "providers you can request" result rather than an error of the probe.
+    - Test: `fushi/test/onnx/onnxruntime_provider_names_test.dart` (through the
+      real method channel).
 
 Before bumping the bundled Windows core, bump the CUDA plugin EP to the release
 built against the same ORT revision (and its manifest in

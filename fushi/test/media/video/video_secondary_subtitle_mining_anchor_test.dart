@@ -35,8 +35,9 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
 
 void main() {
   group('BUG-1592 命中项带出所属 cue（制卡锚点）', () {
-    testWidgets('只开副字幕（主字幕流为空）：点副字幕字符 → 锚点 cue 是那条副字幕、时间窗非零',
-        (WidgetTester tester) async {
+    testWidgets('只开副字幕（主字幕流为空）：点副字幕字符 → 锚点 cue 是那条副字幕、时间窗非零', (
+      WidgetTester tester,
+    ) async {
       AudioCue? anchor;
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
@@ -62,8 +63,9 @@ void main() {
       expect(anchor!.endMs, 15000);
     });
 
-    testWidgets('主副同开：点副字幕那条 → 锚点是副字幕 cue（不错锚到主字幕）',
-        (WidgetTester tester) async {
+    testWidgets('主副同开：点副字幕那条 → 锚点是副字幕 cue（不错锚到主字幕）', (
+      WidgetTester tester,
+    ) async {
       AudioCue? anchor;
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
@@ -111,8 +113,9 @@ void main() {
 
     // 主字幕**同时在放**（`currentCue` 非空）才能证明命中项用的是「被点那条」而不是
     // 「主字幕当前那条」——只开副字幕的用例里 `currentCue` 恒 null，两种实现都能过。
-    testWidgets('hitTester 反查（浮层 barrier 换词路径）带出被点那条 cue（主字幕同时在放）',
-        (WidgetTester tester) async {
+    testWidgets('hitTester 反查（浮层 barrier 换词路径）带出被点那条 cue（主字幕同时在放）', (
+      WidgetTester tester,
+    ) async {
       final VideoSubtitleHitTester hitTester = VideoSubtitleHitTester();
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
@@ -124,8 +127,9 @@ void main() {
         VideoSubtitleOverlay(controller: c, hitTester: hitTester),
       );
 
-      final SubtitleCharHit? hit =
-          hitTester.hitTest(tester.getCenter(find.text('か').first));
+      final SubtitleCharHit? hit = hitTester.hitTest(
+        tester.getCenter(find.text('か').first),
+      );
       expect(hit, isNotNull);
       expect(hit!.cue.text, 'か');
       expect(hit.cue.startMs, 7000);
@@ -163,8 +167,11 @@ void main() {
       expect(c.miningCues.single.text, '主');
 
       c.setCues(const <AudioCue>[]);
-      expect(c.miningCues.single.text, '副',
-          reason: '主字幕关闭时制卡必须落到副字幕流，否则锚点恒 null → 区间 0..0 → 封面抽片头黑帧');
+      expect(
+        c.miningCues.single.text,
+        '副',
+        reason: '主字幕关闭时制卡必须落到副字幕流，否则锚点恒 null → 区间 0..0 → 封面抽片头黑帧',
+      );
     });
 
     test('cueStreamOwning：按身份定位锚点所属流（上下 N 句上下文取邻句用）', () {
@@ -178,8 +185,10 @@ void main() {
 
       expect(identical(c.cueStreamOwning(main0), c.cues), isTrue);
       // 副字幕锚点必须解析到副流；解析成主流会让 indexOf 恒 -1 → 上下 N 句静默失效。
-      expect(c.cueStreamOwning(sec1).map((AudioCue e) => e.text).toList(),
-          <String>['副0', '副1']);
+      expect(
+        c.cueStreamOwning(sec1).map((AudioCue e) => e.text).toList(),
+        <String>['副0', '副1'],
+      );
       // 两条流都不含（列表合成 cue / 换集后的陈旧 cue）→ 回落有效流，不返回空。
       expect(c.cueStreamOwning(_cue('孤儿', 0, 1)).isNotEmpty, isTrue);
     });
@@ -198,8 +207,11 @@ void main() {
         positionMs: 13000,
         delayMs: 0,
       );
-      expect(resolved, isNotNull,
-          reason: '没有查词命中项的入口（直接制卡）也必须解析得到区间，否则回退第 0 秒黑帧');
+      expect(
+        resolved,
+        isNotNull,
+        reason: '没有查词命中项的入口（直接制卡）也必须解析得到区间，否则回退第 0 秒黑帧',
+      );
       expect(resolved!.startMs, 12000);
       expect(resolved.endMs, 14000);
     });

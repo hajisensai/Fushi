@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 // 守卫：lib/ 下新代码禁止直接构造 Material / Cupertino 交互控件（按钮 / 开关 /
 // 复选 / 单选 / 滑块 / chip / 分段 / 进度 / FAB），一律走设计系统包装
@@ -90,6 +90,9 @@ const List<String> _implementationFiles = <String>[
   'src/media/video/video_m3e_chrome.dart',
   // FushiRefreshIndicator 包装本体：MD3 RefreshIndicator / Apple 下拉菊花。
   'src/utils/components/fushi_m3e_feedback.dart',
+  // FushiIconButton 包装本体：MD3 路径就是官方 M3E IconButton（material_ui
+  // 1.8 起换官方实现，见 _buildMaterialIcon）。
+  'src/utils/components/fushi_icon_button.dart',
 ];
 
 /// 待迁移存量（相对 lib/ 的路径 → 当前处数上限）。多为 2026-10 并行改动中的
@@ -97,7 +100,6 @@ const List<String> _implementationFiles = <String>[
 const Map<String, int> _pendingFiles = <String, int>{
   'src/media/audiobook/audiobook_play_bar.dart': 1,
   'src/media/audiobook/reader_quick_settings_sheet.dart': 3,
-  'src/pages/implementations/home_page.dart': 1,
   'src/pages/implementations/profile_management_page.dart': 1,
   'src/pages/implementations/reader_fushi/chrome.part.dart': 1,
   'src/pages/implementations/reader_history/books.part.dart': 1,
@@ -105,7 +107,6 @@ const Map<String, int> _pendingFiles = <String, int>{
   'src/reader/reader_panel_chrome_kit.dart': 1,
   'src/reader/reader_panel_kit.dart': 1,
   'src/settings/master_detail_settings_sheet.dart': 1,
-  'src/settings/settings_kit.dart': 1,
   'src/sync/sync_settings_schema/account.part.dart': 2,
   'src/utils/components/fushi_m3e_overlays.dart': 1,
   'src/utils/components/settings_shared.dart': 1,

@@ -10,11 +10,22 @@
  * The app registers it through fushi_aacs_set_disc_key() before opening the
  * disc; this module never reads configuration files, processes media key
  * blocks, talks to drives, removes bus encryption, or implements AACS 2/BD+.
- * Decryption matches AacsContentDecoder (aacs_content_decoder.dart) exactly.
+ * Encrypted units are decrypted like AacsContentDecoder (aacs_content_decoder.dart):
+ * same unit key derivation, CBC, TS sync check, CPI clearing and multi-key
+ * retry. Error handling differs on purpose: unencrypted units are passed
+ * through without checking their 0x47 sync bytes (libbluray's own
+ * _validate_unit() check then skips a bad unit), whereas AacsContentDecoder
+ * rejects such a unit and stops the stream. aacs_decrypt_unit() also reports
+ * only success/failure, without the decoder's corrupt-vs-key-mismatch split.
  *
  * Exported names and signatures are those of VideoLAN libaacs 0.11 (aacs.h).
- * aacs_init/aacs_open_device are intentionally absent, so libbluray uses the
- * aacs_open2() path-based contract that Fushi's directory discs need.
+ * Both libbluray open contracts are served: aacs_open2() reads the disc's
+ * AACS/ files by path, and aacs_init() + aacs_set_fopen() + aacs_open_device()
+ * read them through libbluray's own file layer. libbluray prefers the latter
+ * whenever it is exported; it is the only one that works for a disc opened
+ * with bd_open_files() (Fushi's remote discs read over HTTP, where there is
+ * no local path at all). Both read the same three files and apply the same
+ * key policy.
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -49,7 +60,24 @@ static const uint8_t kAacsIv[16] = {0x0b, 0xa0, 0xf8, 0xdd, 0xfe, 0xa6,
                                     0x1f, 0xb3, 0xd8, 0xdf, 0x9f, 0x56,
                                     0x6a, 0x05, 0x0f, 0x78};
 
+/* libaacs file.h: the same layout as libbluray's BD_FILE_H, whose
+ * disc_open_path() libbluray hands to aacs_set_fopen(). */
+typedef struct aacs_file_s AACS_FILE_H;
+struct aacs_file_s {
+  void *internal;
+  void (*close)(AACS_FILE_H *file);
+  int64_t (*seek)(AACS_FILE_H *file, int64_t offset, int32_t origin);
+  int64_t (*tell)(AACS_FILE_H *file);
+  int (*eof)(AACS_FILE_H *file);
+  int64_t (*read)(AACS_FILE_H *file, uint8_t *buf, int64_t size);
+  int64_t (*write)(AACS_FILE_H *file, const uint8_t *buf, int64_t size);
+};
+typedef AACS_FILE_H *(*AACS_FILE_OPEN2)(void *handle, const char *filename);
+
 typedef struct aacs {
+  /* aacs_set_fopen(): when set, disc files are read through it. */
+  void *fopen_handle;
+  AACS_FILE_OPEN2 fopen_fp;
   uint8_t disc_id[20];
   uint32_t key_count;
   fushi_aes128 *unit_keys;
@@ -138,6 +166,52 @@ static uint8_t *read_disc_file(const char *device, const char *relative,
   return data;
 }
 
+/* Size of a file-layer handle, measured like libbluray's own file_size():
+ * seek's return value is not a position on every platform (libbluray 1.5.0
+ * file_win32.c returns fseeko64's 0-on-success, file_posix.c returns lseek's
+ * offset), so only its sign is meaningful and the size comes from tell. */
+static int64_t file_cb_size(AACS_FILE_H *file) {
+  if (!file->seek || !file->tell) return -1;
+  if (file->seek(file, 0, SEEK_END) < 0) return -1;
+  const int64_t size = file->tell(file);
+  if (file->seek(file, 0, SEEK_SET) < 0) return -1;
+  return size;
+}
+
+/* Reads <relative> fully through libbluray's file layer (aacs_set_fopen). */
+static uint8_t *read_disc_file_cb(const AACS *aacs, const char *relative,
+                                  size_t max_bytes, size_t *length) {
+  AACS_FILE_H *file = aacs->fopen_fp(aacs->fopen_handle, relative);
+  if (!file) return NULL;
+  uint8_t *data = NULL;
+  const int64_t size = file_cb_size(file);
+  if (size > 0 && (uint64_t)size <= max_bytes) {
+    data = (uint8_t *)malloc((size_t)size);
+    int64_t done = 0;
+    while (data && done < size) {
+      const int64_t got = file->read(file, data + done, size - done);
+      if (got <= 0) break;
+      done += got;
+    }
+    if (data && done != size) {
+      free(data);
+      data = NULL;
+    }
+  }
+  if (file->close) file->close(file);
+  if (data) *length = (size_t)size;
+  return data;
+}
+
+/* One source for both open contracts: the file callback when libbluray gave
+ * one, otherwise <device>/<relative>. */
+static uint8_t *read_aacs_file(const AACS *aacs, const char *device,
+                               const char *relative, size_t max_bytes,
+                               size_t *length) {
+  if (aacs->fopen_fp) return read_disc_file_cb(aacs, relative, max_bytes, length);
+  return device ? read_disc_file(device, relative, max_bytes, length) : NULL;
+}
+
 /* Returns 1 and copies the VUK (or reports a key-less plain disc). */
 static int lookup_disc(const uint8_t disc_id[20], int *has_vuk, uint8_t vuk[16]) {
   int found = 0;
@@ -181,7 +255,8 @@ static int load_unit_keys(AACS *aacs, const uint8_t *file, size_t length,
 
 static void load_mkb_version(AACS *aacs, const char *device) {
   size_t length = 0;
-  uint8_t *mkb = read_disc_file(device, "AACS/MKB_RO.inf", 64 * 1024 * 1024, &length);
+  uint8_t *mkb = read_aacs_file(aacs, device, "AACS/MKB_RO.inf",
+                                64 * 1024 * 1024, &length);
   if (!mkb) return;
   /* Records are type(1) + length(3); "Type and Version" (0x10) holds it at +8. */
   for (size_t at = 0; at + 12 <= length;) {
@@ -200,7 +275,7 @@ static void load_content_cert(AACS *aacs, const char *device) {
   static const char *const kNames[] = {"AACS/Content000.cer", "AACS/Content001.cer"};
   for (size_t n = 0; n < sizeof(kNames) / sizeof(kNames[0]); n++) {
     size_t length = 0;
-    uint8_t *cert = read_disc_file(device, kNames[n], MAX_CONTENT_CERT, &length);
+    uint8_t *cert = read_aacs_file(aacs, device, kNames[n], MAX_CONTENT_CERT, &length);
     if (!cert) continue;
     /* AACS 1 content certificate; AACS 2 is rejected by the app beforehand. */
     if (length >= 26 && cert[0] == 0x00) {
@@ -226,21 +301,17 @@ static void release(AACS *aacs) {
   free(aacs);
 }
 
-FUSHI_AACS_API AACS *aacs_open2(const char *path, const char *keyfile_path,
-                                int *error_code) {
-  (void)keyfile_path; /* Keys come only from fushi_aacs_set_disc_key(). */
+/* Fills an allocated (zeroed apart from the file callback) handle. On failure
+ * the handle holds no keys and stays releasable. */
+static int open_into(AACS *aacs, const char *path) {
   int error = AACS_ERROR_UNKNOWN;
-  AACS *aacs = NULL;
   size_t length = 0;
-  uint8_t *unit_file = path
-      ? read_disc_file(path, "AACS/Unit_Key_RO.inf", MAX_UNIT_KEY_FILE, &length)
-      : NULL;
+  uint8_t *unit_file = read_aacs_file(aacs, path, "AACS/Unit_Key_RO.inf",
+                                      MAX_UNIT_KEY_FILE, &length);
   if (!unit_file || length < 16) {
     error = AACS_ERROR_CORRUPTED_DISC;
     goto done;
   }
-  aacs = (AACS *)calloc(1, sizeof(AACS));
-  if (!aacs) goto done;
   fushi_sha1(unit_file, length, aacs->disc_id);
   int has_vuk = 0;
   uint8_t vuk[16];
@@ -257,12 +328,39 @@ FUSHI_AACS_API AACS *aacs_open2(const char *path, const char *keyfile_path,
 
 done:
   free(unit_file);
+  return error;
+}
+
+FUSHI_AACS_API AACS *aacs_open2(const char *path, const char *keyfile_path,
+                                int *error_code) {
+  (void)keyfile_path; /* Keys come only from fushi_aacs_set_disc_key(). */
+  int error = AACS_ERROR_UNKNOWN;
+  AACS *aacs = path ? (AACS *)calloc(1, sizeof(AACS)) : NULL;
+  if (!path) error = AACS_ERROR_CORRUPTED_DISC;
+  if (aacs) error = open_into(aacs, path);
   if (error != AACS_SUCCESS) {
     release(aacs);
     aacs = NULL;
   }
   if (error_code) *error_code = error;
   return aacs;
+}
+
+/* libaacs 0.11 split open: libbluray calls init, set_fopen, open_device. */
+FUSHI_AACS_API AACS *aacs_init(void) { return (AACS *)calloc(1, sizeof(AACS)); }
+
+FUSHI_AACS_API void aacs_set_fopen(AACS *aacs, void *handle, AACS_FILE_OPEN2 p) {
+  if (!aacs) return;
+  aacs->fopen_handle = handle;
+  aacs->fopen_fp = p;
+}
+
+FUSHI_AACS_API int aacs_open_device(AACS *aacs, const char *path,
+                                    const char *configfile_path) {
+  (void)configfile_path; /* Keys come only from fushi_aacs_set_disc_key(). */
+  if (!aacs) return AACS_ERROR_UNKNOWN;
+  if (!aacs->fopen_fp && !path) return AACS_ERROR_CORRUPTED_DISC;
+  return open_into(aacs, path);
 }
 
 FUSHI_AACS_API AACS *aacs_open(const char *path, const char *keyfile_path) {

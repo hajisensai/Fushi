@@ -21,6 +21,9 @@ const String kSrsMediaScheme = 'fushi-srs';
 /// 媒体路径前缀。
 const String kSrsMediaPath = '/media/';
 
+/// `[sound:]` 播放键的类名：Fushi 自己的样式类 + Anki reviewer 的 `replay-button soundLink`。
+const String kSrsSoundButtonClasses = 'fushi-srs-sound replay-button soundLink';
+
 /// 卡面 JS 桥：播放 `[sound:]` 的 handler 名。
 const String kSrsPlaySoundHandler = 'onSrsPlaySound';
 
@@ -68,9 +71,13 @@ String _mediaUrl(String prefix, String rawName) =>
     '$prefix${Uri.encodeComponent(_htmlUnescape(rawName.trim()))}';
 
 /// `[sound:x]` 渲染成的播放按钮（内联 SVG 三角，样式见 [kSrsCardMediaCss]）。
+///
+/// 同时带 Anki reviewer 给 `[sound:]` 的类名 `replay-button soundLink`：导入的模板按它找音频键
+/// （eggrolls 背面 `document.querySelector('.VocabAudio .replay-button').click()` 强制播单词音频，
+/// 模板 CSS 也按它画键；反馈 uCPhpeCM35）。点击仍由 [kSrsCardMediaScript] 按 `data-sound` 接管。
 String srsSoundButtonHtml(String name) {
   final String n = _attrEscape(_htmlUnescape(name.trim()));
-  return '<button type="button" class="fushi-srs-sound" data-sound="$n" '
+  return '<button type="button" class="$kSrsSoundButtonClasses" data-sound="$n" '
       'aria-label="$n">'
       '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">'
       '<path d="M8 5v14l11-7z" fill="currentColor"/></svg></button>';
@@ -98,6 +105,26 @@ String srsLocalizeCardCss(String css, {required String urlPrefix}) =>
       if (!srsIsBareMediaName(value)) return m.group(0)!;
       return 'url("${_mediaUrl(urlPrefix, value)}")';
     });
+
+/// [text]（卡面正文 / CSS / 字段值）引用的媒体库文件名：`[sound:]`、`src` / `poster`、CSS `url()`
+/// 里的裸文件名，与 [srsLocalizeCardHtml] 改写的是同一批（远程刷卡据此先把媒体拉进缓存）。
+Set<String> srsCardReferencedMedia(String text) {
+  final Set<String> names = <String>{};
+  void add(String raw) {
+    if (srsIsBareMediaName(raw)) names.add(_htmlUnescape(raw.trim()));
+  }
+
+  for (final Match m in _soundTag.allMatches(text)) {
+    add(m.group(1)!);
+  }
+  for (final Match m in _srcAttr.allMatches(text)) {
+    add(m.group(3)!);
+  }
+  for (final Match m in _cssUrl.allMatches(text)) {
+    add(m.group(2)!);
+  }
+  return names;
+}
 
 /// 拦截到的 URL 是不是卡面媒体请求；是则返回解码后的文件名，否则 null。
 String? srsMediaNameFromUrl(Uri url) {
@@ -128,6 +155,11 @@ background:var(--fushi-srs-accent,#6750a4);}
 ''';
 
 /// 播放按钮的点击委托（捕获阶段，不受卡片自己的脚本影响）。
+///
+/// 卡片模板脚本在手势之外合成的 `.click()`（`isTrusted` 为 false，例如模板在显示时把
+/// 每颗音频按钮挨个点一遍来「自动播放」）在牌组关了自动播放时一律不放行——闸门
+/// `window.__fushiSrsMediaBlocked` 由 srs_card_autoplay.dart 的自动播放闸门脚本定义；
+/// 同一次用户点按里转手的合成点击（Lapis「点例句重播」）仍在手势窗口内，照常播放（#15）。
 const String kSrsCardMediaScript =
     '''
 (function(){
@@ -139,6 +171,8 @@ const String kSrsCardMediaScript =
     if (!b) return;
     e.preventDefault();
     e.stopPropagation();
+    if (e.isTrusted !== true && typeof window.__fushiSrsMediaBlocked === 'function' &&
+        window.__fushiSrsMediaBlocked()) return;
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler('$kSrsPlaySoundHandler', b.getAttribute('data-sound'));
     }

@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: fushi <fushi@localhost>
+Date: Sat, 17 Oct 2026 20:03:54 +0800
+Subject: [PATCH 2/2] apple: build ffmpeg/ffprobe programs on the frameworks
+ when FUSHI_FFMPEG_PROGRAMS=1
+
+---
+ scripts/apple/ffmpeg.sh | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/scripts/apple/ffmpeg.sh b/scripts/apple/ffmpeg.sh
+index 3726928..2ff9434 100755
+--- a/scripts/apple/ffmpeg.sh
++++ b/scripts/apple/ffmpeg.sh
+@@ -519,6 +519,14 @@ fi
+ # ALWAYS BUILD SHARED LIBRARIES
+ BUILD_LIBRARY_OPTIONS="--enable-shared --disable-static --install-name-dir=@rpath"
+ 
++# Fushi: macOS ships the unified FFmpeg's ffmpeg/ffprobe programs next to the
++# player, linked against these same frameworks (FUSHI_FFMPEG_PROGRAMS=1).
++if [[ "${FUSHI_FFMPEG_PROGRAMS}" == "1" ]]; then
++  FUSHI_PROGRAM_OPTIONS="--disable-ffplay --enable-ffmpeg --enable-ffprobe"
++else
++  FUSHI_PROGRAM_OPTIONS="--disable-programs"
++fi
++
+ # OPTIMIZE FOR SPEED INSTEAD OF SIZE
+ if [[ -z ${FFMPEG_KIT_OPTIMIZED_FOR_SPEED} ]]; then
+   SIZE_OPTIONS="--enable-small"
+@@ -644,7 +652,7 @@ ${SED_INLINE} 's/static atomic_int av_log_level/__thread atomic_int av_log_level
+   --disable-xmm-clobber-test \
+   ${DEBUG_OPTIONS} \
+   --disable-neon-clobber-test \
+-  --disable-programs \
++  ${FUSHI_PROGRAM_OPTIONS} \
+   --disable-doc \
+   --disable-htmlpages \
+   --disable-manpages \

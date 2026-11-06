@@ -1,10 +1,12 @@
 #ifndef FLUTTER_INAPPWEBVIEW_PLUGIN_IN_APP_WEBVIEW_H_
 #define FLUTTER_INAPPWEBVIEW_PLUGIN_IN_APP_WEBVIEW_H_
 
+#include <array>
 #include <functional>
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 #include <WebView2.h>
 #include <wil/com.h>
 #include <windows.ui.composition.desktop.h>
@@ -130,6 +132,14 @@ namespace flutter_inappwebview_plugin
     void setSurfaceSize(size_t width, size_t height, float capture_scale_factor,
       float device_scale_factor);
     void setPosition(size_t x, size_t y, float scale_factor);
+    // 窗口宿主模式：子 HWND 是否接收鼠标 / 触摸。关掉后（EnableWindow FALSE）命中测试跳过它，
+    // 输入落到下面的 Flutter 视图（底层合成：Flutter 层画在它上面）。composition 档返回 false。
+    bool setWindowedInputEnabled(bool enabled);
+    // 窗口宿主模式：子 HWND 上挖掉的输入区（逻辑 px，相对本 WebView 左上角；每项
+    // {left, top, right, bottom, radius}）。底层合成下画在网页上面的 Flutter 控件（悬浮球等）
+    // 在这些区域里收得到点击：窗口区域（SetWindowRgn）同时裁掉子窗口的命中测试与绘制。
+    // 空表 = 整块矩形。composition 档返回 false。
+    bool setWindowedInputExclusions(const std::vector<std::array<double, 5>>& exclusions);
     void setCursorPos(double x, double y);
     void setPointerUpdate(int32_t pointer, InAppWebViewPointerEventKind eventKind,
       double x, double y, double size, double pressure);
@@ -192,7 +202,6 @@ namespace flutter_inappwebview_plugin
       return pageFrameId_;
     }
 
-    static bool isSslError(const COREWEBVIEW2_WEB_ERROR_STATUS& webErrorStatus);
     void rememberMainFrameInjectedOk(const std::string& rawUrl);
     bool consumeMainFrameInjectedOk(const std::string& rawUrl);
   private:
@@ -212,6 +221,8 @@ namespace flutter_inappwebview_plugin
     int windowedWidth_ = 0;
     int windowedHeight_ = 0;
     void applyWindowedBounds();
+    std::vector<std::array<double, 5>> windowedExclusions_;
+    void applyWindowedRegion(HWND child);
     POINT lastCursorPos_ = { 0, 0 };
     VirtualKeyState virtualKeys_;
 
@@ -240,6 +251,14 @@ namespace flutter_inappwebview_plugin
     std::shared_ptr<NavigationAction> lastNavigationAction_;
     bool isLoading_ = false;
     std::string pageFrameId_;
+    // Fushi bridge lock（docs/specs/2026-10-23-dictionary-script-sandbox.md「桥锁定」）。
+    // 顶层文档调 callHandler('_fushiLockBridge') 后原生生成的随机令牌；空 = 未锁定（旧行为）。
+    // 锁定后每条 JS→原生消息都必须带同一令牌，且 WebMessageReceived 的 Source 必须是锁定时的
+    // 顶层文档（或当前顶层 Source），否则丢弃并记 warn。顶层新文档提交（ContentLoading）清空。
+    std::string bridgeLockToken_;
+    std::wstring bridgeLockSource_;
+    void handleBridgeLockRequest(const std::wstring& source, int64_t callHandlerID);
+    bool isBridgeMessageAuthorized(const std::wstring& source, const std::string* token) const;
     // 对象存活标志：所有跨 Dart 桥异步回来的 WebResourceRequested deferral 回调都捕获它的
     // 拷贝，回调入口先解引用判断本对象是否仍存活。析构里翻成 false，使迟到回调不再触碰
     // this/channelDelegate/args，避免 use-after-free（TODO-931）。
@@ -258,8 +277,13 @@ namespace flutter_inappwebview_plugin
     EventRegistrationToken newWindowRequestedToken_ = {};
     EventRegistrationToken windowCloseRequestedToken_ = {};
     EventRegistrationToken permissionRequestedToken_ = {};
+    // ProcessFailed：主渲染进程 / 浏览器进程退出时转成 onRenderProcessGone（宿主据此重建表面）。
+    EventRegistrationToken processFailedToken_ = {};
     // DOMContentLoaded 注册在 ICoreWebView2_2 接口上，析构时需重新 QueryInterface 该接口才能 remove。
     EventRegistrationToken domContentLoadedToken_ = {};
+    // DownloadStarting 注册在 ICoreWebView2_4 接口上（Runtime 过旧取不到则不注册，token 保持空），
+    // 析构时同样重新 QueryInterface 再 remove。
+    EventRegistrationToken downloadStartingToken_ = {};
     // CursorChanged 注册在 webViewCompositionController 上。
     EventRegistrationToken cursorChangedToken_ = {};
     // Fetch.requestPaused / Runtime.consoleAPICalled 注册在各自的 DevTools 事件 receiver 上；

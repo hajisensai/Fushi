@@ -7,10 +7,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 /// 单一真相：哪个 DOM 鼠标按钮触发「seek 到点击句」由快捷键注册表决定（默认中键）。
 /// 鼠标键是位置型动作，不进位置无关的 `_executeShortcutAction`，故单列此判定供
 /// 阅读器与歌词两处复用、并可纯测。
-bool isSeekToClickedSentenceButton(
-  FushiShortcutRegistry registry,
-  int button,
-) {
+bool isSeekToClickedSentenceButton(FushiShortcutRegistry registry, int button) {
   if (button < 0) return false;
   return registry.resolveMouse(button, scope: ShortcutScope.audiobook) ==
       ShortcutAction.audiobookSeekToClickedSentence;

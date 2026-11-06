@@ -14,8 +14,11 @@ void main() {
         label: 'ch4 50%',
         createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
       );
-      expect(bm.charAnchor, isNull,
-          reason: '真实书签不带绝对字符锚 → 跳转端走 normCharOffset/10000 分数恢复');
+      expect(
+        bm.charAnchor,
+        isNull,
+        reason: '真实书签不带绝对字符锚 → 跳转端走 normCharOffset/10000 分数恢复',
+      );
       expect(bm.preserveSavedPosition, isFalse, reason: '真实书签跳转照常持久化阅读进度');
     });
 
@@ -38,16 +41,23 @@ void main() {
         'sectionIndex': 2,
         'normCharOffset': 1234,
         'label': 'l',
-        'createdAt':
-            DateTime.fromMillisecondsSinceEpoch(3000).toIso8601String(),
+        'createdAt': DateTime.fromMillisecondsSinceEpoch(
+          3000,
+        ).toIso8601String(),
         // 故意塞入临时字段——必须被忽略，不污染持久化书签语义。
         'charAnchor': 9999,
         'preserveSavedPosition': true,
       });
-      expect(roundTripped.charAnchor, isNull,
-          reason: 'charAnchor 是内存传输字段，反序列化不读取');
-      expect(roundTripped.preserveSavedPosition, isFalse,
-          reason: 'preserveSavedPosition 是内存传输字段，反序列化恒默认 false');
+      expect(
+        roundTripped.charAnchor,
+        isNull,
+        reason: 'charAnchor 是内存传输字段，反序列化不读取',
+      );
+      expect(
+        roundTripped.preserveSavedPosition,
+        isFalse,
+        reason: 'preserveSavedPosition 是内存传输字段，反序列化恒默认 false',
+      );
 
       final Map<String, dynamic> json = Bookmark(
         sectionIndex: 1,
@@ -57,10 +67,16 @@ void main() {
         label: '',
         createdAt: DateTime.fromMillisecondsSinceEpoch(2000),
       ).toJson();
-      expect(json.containsKey('charAnchor'), isFalse,
-          reason: 'toJson 不写 charAnchor（不持久化）');
-      expect(json.containsKey('preserveSavedPosition'), isFalse,
-          reason: 'toJson 不写 preserveSavedPosition（不持久化）');
+      expect(
+        json.containsKey('charAnchor'),
+        isFalse,
+        reason: 'toJson 不写 charAnchor（不持久化）',
+      );
+      expect(
+        json.containsKey('preserveSavedPosition'),
+        isFalse,
+        reason: 'toJson 不写 preserveSavedPosition（不持久化）',
+      );
     });
   });
 }

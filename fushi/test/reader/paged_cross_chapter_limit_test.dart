@@ -28,34 +28,33 @@ void main() {
     required double pitch,
     double min = 0,
     required double max,
-  }) =>
-      ReaderPaginationScripts.resolvePaginateStepForTesting(
-        direction: ReaderNavigationDirection.forward,
-        currentScroll: current,
-        columnPitch: pitch,
-        minAlignedScroll: min,
-        maxAlignedScroll: max,
-      );
+  }) => ReaderPaginationScripts.resolvePaginateStepForTesting(
+    direction: ReaderNavigationDirection.forward,
+    currentScroll: current,
+    columnPitch: pitch,
+    minAlignedScroll: min,
+    maxAlignedScroll: max,
+  );
 
   ReaderPageStep backward(
     double current, {
     required double pitch,
     required double min,
     double max = double.infinity,
-  }) =>
-      ReaderPaginationScripts.resolvePaginateStepForTesting(
-        direction: ReaderNavigationDirection.backward,
-        currentScroll: current,
-        columnPitch: pitch,
-        minAlignedScroll: min,
-        maxAlignedScroll: max,
-      );
+  }) => ReaderPaginationScripts.resolvePaginateStepForTesting(
+    direction: ReaderNavigationDirection.backward,
+    currentScroll: current,
+    columnPitch: pitch,
+    minAlignedScroll: min,
+    maxAlignedScroll: max,
+  );
 
   // 模拟单一量纲下 buildPaginationMetrics 的 maxAlignedScroll 派生：
   // maxScroll = totalSize − pageStep；maxAligned = floor(maxScroll/pageStep)*pageStep。
   double alignedMax(double totalSize, double pageStep) {
-    final double maxScroll =
-        (totalSize - pageStep) < 0 ? 0 : totalSize - pageStep;
+    final double maxScroll = (totalSize - pageStep) < 0
+        ? 0
+        : totalSize - pageStep;
     return (maxScroll / pageStep).floorToDouble() * pageStep;
   }
 
@@ -65,8 +64,10 @@ void main() {
       // 例：pageStep = 812（content-box 790 + gap 22）。共 5 整页，totalSize 含一末列。
       const double pitch = 812;
       const double total = pitch * 4 + 600; // 末列只有 600px 内容（< pitch）
-      final double max =
-          alignedMax(total, pitch); // = floor((total-pitch)/pitch)*pitch
+      final double max = alignedMax(
+        total,
+        pitch,
+      ); // = floor((total-pitch)/pitch)*pitch
       // 倒数第二页（max − pitch）forward 必须真翻到对齐末页边界。
       final ReaderPageStep s = forward(max - pitch, pitch: pitch, max: max);
       expect(s.scrolled, isTrue, reason: '倒数第二页还有整页可翻，绝不能误判 limit 提前跨章（翻一半跳章）');
@@ -104,16 +105,23 @@ void main() {
       int guard = 0;
       while (cur < max && guard < 100) {
         final ReaderPageStep s = forward(cur, pitch: pitch, max: max);
-        expect(s.scrolled, isTrue,
-            reason: 'scroll=$cur 还未到末页(max=$max)，必须能前进，'
-                '不得在 padding≠gap 失配下提前误判 limit');
+        expect(
+          s.scrolled,
+          isTrue,
+          reason:
+              'scroll=$cur 还未到末页(max=$max)，必须能前进，'
+              '不得在 padding≠gap 失配下提前误判 limit',
+        );
         expect(s.targetScroll, greaterThan(cur));
         cur = s.targetScroll;
         guard++;
       }
       expect(cur, max, reason: '应恰好逐页落到对齐末页');
-      expect(forward(max, pitch: pitch, max: max).scrolled, isFalse,
-          reason: '到达对齐末页后才停（跨章）');
+      expect(
+        forward(max, pitch: pitch, max: max).scrolled,
+        isFalse,
+        reason: '到达对齐末页后才停（跨章）',
+      );
     });
 
     test('1px sub-pixel 漂移在末页前一页不被误判 limit（WebView 漂移）', () {
@@ -121,8 +129,11 @@ void main() {
       const double total = pitch * 4 + 600;
       final double max = alignedMax(total, pitch);
       // 倒数第二页带 0.4px 漂移，仍须前进到末页。
-      final ReaderPageStep s =
-          forward(max - pitch + 0.4, pitch: pitch, max: max);
+      final ReaderPageStep s = forward(
+        max - pitch + 0.4,
+        pitch: pitch,
+        max: max,
+      );
       expect(s.scrolled, isTrue);
       expect(s.targetScroll, max);
     });

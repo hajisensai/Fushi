@@ -35,7 +35,10 @@ typedef _CloseDart = int Function(int fd);
 
 /// libc `write(2)`。用 `@Native` 叶子调用是为了直接传 `Uint8List.address`（免一次
 /// 堆拷贝，也不用拉 package:ffi 的 malloc）；符号回落到进程里查找，只在 POSIX 上调。
-@Native<IntPtr Function(Int32, Pointer<Uint8>, IntPtr)>(symbol: 'write', isLeaf: true)
+@Native<IntPtr Function(Int32, Pointer<Uint8>, IntPtr)>(
+  symbol: 'write',
+  isLeaf: true,
+)
 external int _posixWrite(int fd, Pointer<Uint8> buf, int count);
 
 /// 这次调用的命令链（`audiobook` → `align` …）里有没有哪一层要了 `--json`。
@@ -85,7 +88,9 @@ Future<T> runWithJsonStdoutIsolation<T>(Future<T> Function() body) async {
   // 调用方已经用 IOOverrides 接管了 stdout（测试捕获输出）：结果照旧写给它；
   // 否则写到原 fd 1 的副本。根 zone 里取到的才是进程真正的 stdout。
   final Stdout current = stdout;
-  final Stdout sink = identical(current, Zone.root.run(() => stdout)) ? _FdStdout(saved, current) : current;
+  final Stdout sink = identical(current, Zone.root.run(() => stdout))
+      ? _FdStdout(saved, current)
+      : current;
   try {
     return await IOOverrides.runZoned<Future<T>>(body, stdout: () => sink);
   } finally {
@@ -148,7 +153,8 @@ class _FdStdout implements Stdout {
   }
 
   @override
-  void writeAll(Iterable<Object?> objects, [String separator = '']) => write(objects.join(separator));
+  void writeAll(Iterable<Object?> objects, [String separator = '']) =>
+      write(objects.join(separator));
 
   @override
   void writeCharCode(int charCode) => write(String.fromCharCode(charCode));

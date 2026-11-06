@@ -9,7 +9,8 @@ Future<void> main(List<String> args) async {
   final HostPlatformId host = _hostPlatform();
   final Set<TestPlatformId> platforms = options.platforms;
   final Set<ScenarioId> scenarios = options.scenarios;
-  final String outputDir = options.reportDir ??
+  final String outputDir =
+      options.reportDir ??
       '../.codex-test/comprehensive/${DateTime.now().toIso8601String().replaceAll(':', '-')}';
 
   final ComprehensiveReport report;

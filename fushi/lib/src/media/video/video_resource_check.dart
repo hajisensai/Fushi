@@ -4,6 +4,9 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
+import 'package:fushi_engine/media/video/media_server_video_path.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart'
+    show videoMemberExists;
 
 /// 纯函数（TODO-897）：判断 [videoPath] 是否需要做「本地文件存在性校验」。
 ///
@@ -24,13 +27,15 @@ bool videoResourceRequiresLocalCheck(String? videoPath) {
   if (isPlayableStreamUrl(trimmed)) return false;
   // 在线视频源入库集：起播时向扩展取流，没有本地文件可校验。
   if (isAnimeSourceVideoPath(trimmed)) return false;
+  // 媒体服务器入库条目：起播时按服务器配置取流，同上。
+  if (isMediaServerVideoPath(trimmed)) return false;
   return true;
 }
 
 /// 异步判定（TODO-897）：本地视频资源是否「缺失」（被移动 / 删除 / 所在盘未挂载）。
 ///
 /// 流 / 远端 / 空路径不需校验，恒返回 false（不缺失，照常 load）。需校验时返回
-/// `!await File(videoPath).exists()`——用**异步** `exists()` 不阻塞 UI 线程
+/// `!await videoMemberExists(videoPath)`（原盘成员按盘上真实文件判）——用**异步** `exists()` 不阻塞 UI 线程
 /// （调用方 `_applyLoad` 已是 async）。
 ///
 /// 注意：外接盘 / 网络盘暂时离线时 `exists()` 也返 false → 会把「盘没挂」判成缺失。
@@ -38,7 +43,9 @@ bool videoResourceRequiresLocalCheck(String? videoPath) {
 /// 默认 / 不诱导删除（避免误删用户仍想看的活条目，Never-break-userspace 红线）。
 Future<bool> isLocalVideoResourceMissing(String? videoPath) async {
   if (!videoResourceRequiresLocalCheck(videoPath)) return false;
-  return !await File(videoPath!.trim()).exists();
+  // Disc members are judged by the file that backs them (a DVD title path is
+  // virtual: its VIDEO_TS.IFO or .iso is what must still be there).
+  return !await videoMemberExists(videoPath!.trim());
 }
 
 /// Relocates an app-owned iOS Documents path whose container UUID changed.
@@ -55,7 +62,7 @@ Future<String?> relocateMissingAppDocumentPath(
   if (!videoResourceRequiresLocalCheck(path)) return null;
   final String trimmed = path!.trim();
   if (trimmed.isEmpty || !p.isAbsolute(trimmed)) return null;
-  if (await File(trimmed).exists()) return null;
+  if (await videoMemberExists(trimmed)) return null;
 
   final List<String> staleSegments = p.split(p.normalize(trimmed));
   final int documentsIndex = _iosAppDocumentsIndex(staleSegments);

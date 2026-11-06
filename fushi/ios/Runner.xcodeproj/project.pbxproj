@@ -7,26 +7,69 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0BE0CD5296411787642F138E /* FushiWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F614157384B59C28CC685114 /* FushiWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
+		2D80DF415CD40599A04BED0E /* FushiHomeWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 511C982113DEABB4CE573305 /* FushiHomeWidgets.swift */; };
+		2E39B27262BEEB2C78517C36 /* FushiWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDE1DD7466060ED0A31A1D6C /* FushiWidgetSnapshot.swift */; };
+		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
+		52DBCD55EC6B9F4EE816C6CF /* FushiLiveActivities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59DDF739F6E2E90F2F213F79 /* FushiLiveActivities.swift */; };
+		600FC16A1C5648083716432B /* FushiGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E2F4C14E49AEF0DA07820BC /* FushiGallery.swift */; };
+		61FEF2834CC237156E0983BA /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0F5A058A6A618CF04E7D9DEC /* Pods_Runner.framework */; };
+		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
+		76CA7D3F633B2CD2169FDD0C /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B93E953DF655A588C767DC29 /* Localizable.xcstrings */; };
+		7DA0D5C4659636AEBA47BFFD /* FushiOpenLinkIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D7906063CF2EA2E077F7061 /* FushiOpenLinkIntent.swift */; };
+		8F6D7C1B2A3948576E0D1234 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6D7C1A2A3948576E0D1234 /* SceneDelegate.swift */; };
+		8F6D7C1D2A3948576E0D1234 /* LookupImeLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6D7C1C2A3948576E0D1234 /* LookupImeLanguage.swift */; };
+		8F6D7C1F2A3948576E0D1234 /* FushiDirectoryImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6D7C1E2A3948576E0D1234 /* FushiDirectoryImport.swift */; };
+		8F6D7C212A3948576E0D1234 /* FushiFloatingBall.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6D7C202A3948576E0D1234 /* FushiFloatingBall.swift */; };
+		8F6D7C232A3948576E0D1234 /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8F6D7C222A3948576E0D1234 /* AppIntents.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
+		8F6D7C252A3948576E0D1234 /* MusicOutputChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6D7C242A3948576E0D1234 /* MusicOutputChannel.swift */; };
+		8F6D7C272A3948576E0D1234 /* FushiBackgroundDownload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6D7C262A3948576E0D1234 /* FushiBackgroundDownload.swift */; };
+		8F6D7C312A3948576E0D1234 /* FushiSystemTts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6D7C302A3948576E0D1234 /* FushiSystemTts.swift */; };
+		8F7E64F9E9DC6CBFE6579384 /* FushiWidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 480D2C385566BDE01B3FB32B /* FushiWidgetIntents.swift */; };
+		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
+		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
+		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		9BB22124C483CB4337903A35 /* FushiOpenLinkIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D7906063CF2EA2E077F7061 /* FushiOpenLinkIntent.swift */; };
+		A19A39B5DED4990D3EBA2158 /* FushiControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B34D97C1355AD307775726 /* FushiControls.swift */; };
+		AAE1A248453AE78BBCB4EADA /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EC899DCF01177FD86B29CF9E /* Foundation.framework */; };
+		AC5F5428473AE521BB6A73E9 /* FushiWidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 480D2C385566BDE01B3FB32B /* FushiWidgetIntents.swift */; };
+		B2E5848DCE949C0FDCA60FE6 /* FushiWidgetTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A75E8B9F9792D3F98B8CF3F /* FushiWidgetTimeline.swift */; };
+		C40F521D2BA325DB196B0AD1 /* FushiHomeWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4265390B10601C015B741898 /* FushiHomeWidgetViews.swift */; };
+		CEEDFA362DF58A6DE941856C /* FushiActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57AA5825867FECE527A963E1 /* FushiActivityAttributes.swift */; };
+		CFA398E5D9F0CB37F3E58D4F /* FushiWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDE1DD7466060ED0A31A1D6C /* FushiWidgetSnapshot.swift */; };
+		D16587D6A995B438B14FE20B /* FushiWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29DA159773B0DFE3050C3C52 /* FushiWidgetsBundle.swift */; };
+		E2405029E69CDAC77D5096C3 /* FushiActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57AA5825867FECE527A963E1 /* FushiActivityAttributes.swift */; };
 		FA171A002B000001001C0F01 /* FushiChallengeBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000001001C0F02 /* FushiChallengeBrowser.swift */; };
 		FA171A002B000002001C0F01 /* FushiSystemOcr.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000002001C0F02 /* FushiSystemOcr.swift */; };
 		FA171A002B000003001C0F01 /* FushiSpeechTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000003001C0F02 /* FushiSpeechTranscriber.swift */; };
 		FA171A002B000004001C0F01 /* FushiClipboardImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000004001C0F02 /* FushiClipboardImage.swift */; };
 		FA171A002B000006001C0F01 /* FushiNativeMaterialView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000006001C0F02 /* FushiNativeMaterialView.swift */; };
-		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
-		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
-		61FEF2834CC237156E0983BA /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0F5A058A6A618CF04E7D9DEC /* Pods_Runner.framework */; };
-		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
-		8F6D7C1B2A3948576E0D1234 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6D7C1A2A3948576E0D1234 /* SceneDelegate.swift */; };
-		8F6D7C1D2A3948576E0D1234 /* LookupImeLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6D7C1C2A3948576E0D1234 /* LookupImeLanguage.swift */; };
-		8F6D7C212A3948576E0D1234 /* FushiFloatingBall.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6D7C202A3948576E0D1234 /* FushiFloatingBall.swift */; };
-		8F6D7C232A3948576E0D1234 /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8F6D7C222A3948576E0D1234 /* AppIntents.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
-		8F6D7C1F2A3948576E0D1234 /* FushiDirectoryImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6D7C1E2A3948576E0D1234 /* FushiDirectoryImport.swift */; };
-		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
-		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
-		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		FA171A002B000007001C0F01 /* FushiAppleMusic.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000007001C0F02 /* FushiAppleMusic.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		131E44AA2E5A41AE6FCFF967 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 43AEFBB28DDCD0694D58E474;
+			remoteInfo = FushiWidgets;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXCopyFilesBuildPhase section */
+		21D5C823DC35542AC8AF1473 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				0BE0CD5296411787642F138E /* FushiWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		9705A1C41CF9048500538489 /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -40,23 +83,31 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		FA171A002B000001001C0F02 /* FushiChallengeBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiChallengeBrowser.swift; path = ../../apple/FushiChallengeBrowser.swift; sourceTree = "<group>"; };
-		FA171A002B000002001C0F02 /* FushiSystemOcr.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiSystemOcr.swift; path = ../../apple/FushiSystemOcr.swift; sourceTree = "<group>"; };
-		FA171A002B000003001C0F02 /* FushiSpeechTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiSpeechTranscriber.swift; path = ../../apple/FushiSpeechTranscriber.swift; sourceTree = "<group>"; };
-		FA171A002B000004001C0F02 /* FushiClipboardImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiClipboardImage.swift; path = ../../apple/FushiClipboardImage.swift; sourceTree = "<group>"; };
-		FA171A002B000006001C0F02 /* FushiNativeMaterialView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiNativeMaterialView.swift; path = ../../apple/FushiNativeMaterialView.swift; sourceTree = "<group>"; };
+		0D7906063CF2EA2E077F7061 /* FushiOpenLinkIntent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FushiOpenLinkIntent.swift; sourceTree = "<group>"; };
 		0F5A058A6A618CF04E7D9DEC /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
+		29DA159773B0DFE3050C3C52 /* FushiWidgetsBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FushiWidgetsBundle.swift; sourceTree = "<group>"; };
+		2E2F4C14E49AEF0DA07820BC /* FushiGallery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FushiGallery.swift; sourceTree = "<group>"; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
+		4265390B10601C015B741898 /* FushiHomeWidgetViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FushiHomeWidgetViews.swift; sourceTree = "<group>"; };
+		480D2C385566BDE01B3FB32B /* FushiWidgetIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FushiWidgetIntents.swift; sourceTree = "<group>"; };
+		511C982113DEABB4CE573305 /* FushiHomeWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FushiHomeWidgets.swift; sourceTree = "<group>"; };
+		57AA5825867FECE527A963E1 /* FushiActivityAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FushiActivityAttributes.swift; sourceTree = "<group>"; };
+		59DDF739F6E2E90F2F213F79 /* FushiLiveActivities.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FushiLiveActivities.swift; sourceTree = "<group>"; };
+		5A75E8B9F9792D3F98B8CF3F /* FushiWidgetTimeline.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FushiWidgetTimeline.swift; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
+		89443867A3F4B1B5A7F478D2 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		8F6D7C1A2A3948576E0D1234 /* SceneDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		8F6D7C1C2A3948576E0D1234 /* LookupImeLanguage.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = LookupImeLanguage.swift; sourceTree = "<group>"; };
+		8F6D7C1E2A3948576E0D1234 /* FushiDirectoryImport.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FushiDirectoryImport.swift; sourceTree = "<group>"; };
 		8F6D7C202A3948576E0D1234 /* FushiFloatingBall.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FushiFloatingBall.swift; sourceTree = "<group>"; };
 		8F6D7C222A3948576E0D1234 /* AppIntents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppIntents.framework; path = System/Library/Frameworks/AppIntents.framework; sourceTree = SDKROOT; };
-		8F6D7C1E2A3948576E0D1234 /* FushiDirectoryImport.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FushiDirectoryImport.swift; sourceTree = "<group>"; };
-		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
+		8F6D7C242A3948576E0D1234 /* MusicOutputChannel.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MusicOutputChannel.swift; sourceTree = "<group>"; };
+		8F6D7C262A3948576E0D1234 /* FushiBackgroundDownload.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FushiBackgroundDownload.swift; sourceTree = "<group>"; };
+		8F6D7C302A3948576E0D1234 /* FushiSystemTts.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FushiSystemTts.swift; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
 		9740EEB31CF90195004384FC /* Generated.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Generated.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = "<group>"; };
 		97C146EE1CF9000F007C117D /* Runner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Runner.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -65,8 +116,21 @@
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		98BDBE4503C990FEE020FA76 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
+		A343B6BD9FA4A739DA775278 /* FushiWidgets.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = FushiWidgets.xcconfig; path = Flutter/FushiWidgets.xcconfig; sourceTree = "<group>"; };
+		B93E953DF655A588C767DC29 /* Localizable.xcstrings */ = {isa = PBXFileReference; includeInIndex = 1; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		CDE1DD7466060ED0A31A1D6C /* FushiWidgetSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FushiWidgetSnapshot.swift; sourceTree = "<group>"; };
 		D9A52DE6A05798E2273C9F32 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 		E028078670CD7C9794E8BB9B /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
+		E1B34D97C1355AD307775726 /* FushiControls.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FushiControls.swift; sourceTree = "<group>"; };
+		EC899DCF01177FD86B29CF9E /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		F119C24A005B5AE3BBF97B57 /* FushiWidgets.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = FushiWidgets.entitlements; sourceTree = "<group>"; };
+		F614157384B59C28CC685114 /* FushiWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FushiWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		FA171A002B000001001C0F02 /* FushiChallengeBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiChallengeBrowser.swift; path = ../../apple/FushiChallengeBrowser.swift; sourceTree = "<group>"; };
+		FA171A002B000002001C0F02 /* FushiSystemOcr.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiSystemOcr.swift; path = ../../apple/FushiSystemOcr.swift; sourceTree = "<group>"; };
+		FA171A002B000003001C0F02 /* FushiSpeechTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiSpeechTranscriber.swift; path = ../../apple/FushiSpeechTranscriber.swift; sourceTree = "<group>"; };
+		FA171A002B000004001C0F02 /* FushiClipboardImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiClipboardImage.swift; path = ../../apple/FushiClipboardImage.swift; sourceTree = "<group>"; };
+		FA171A002B000006001C0F02 /* FushiNativeMaterialView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiNativeMaterialView.swift; path = ../../apple/FushiNativeMaterialView.swift; sourceTree = "<group>"; };
+		FA171A002B000007001C0F02 /* FushiAppleMusic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiAppleMusic.swift; path = ../../apple/FushiAppleMusic.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -79,16 +143,50 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D2F4FD43AF443C6C2374F6B8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AAE1A248453AE78BBCB4EADA /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		08977FC736310A3228D5B562 /* FushiWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				89443867A3F4B1B5A7F478D2 /* Info.plist */,
+				F119C24A005B5AE3BBF97B57 /* FushiWidgets.entitlements */,
+			);
+			name = FushiWidgets;
+			path = FushiWidgets;
+			sourceTree = "<group>";
+		};
 		1D3CD73C7D9CCFDBC1D715ED /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
 				0F5A058A6A618CF04E7D9DEC /* Pods_Runner.framework */,
 				8F6D7C222A3948576E0D1234 /* AppIntents.framework */,
+				F982538E2380452370312A3C /* iOS */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		9378AE97077A43B54D337732 /* Extension */ = {
+			isa = PBXGroup;
+			children = (
+				E1B34D97C1355AD307775726 /* FushiControls.swift */,
+				2E2F4C14E49AEF0DA07820BC /* FushiGallery.swift */,
+				4265390B10601C015B741898 /* FushiHomeWidgetViews.swift */,
+				59DDF739F6E2E90F2F213F79 /* FushiLiveActivities.swift */,
+				5A75E8B9F9792D3F98B8CF3F /* FushiWidgetTimeline.swift */,
+				29DA159773B0DFE3050C3C52 /* FushiWidgetsBundle.swift */,
+				B93E953DF655A588C767DC29 /* Localizable.xcstrings */,
+			);
+			name = Extension;
+			path = Extension;
 			sourceTree = "<group>";
 		};
 		9740EEB11CF90186004384FC /* Flutter */ = {
@@ -98,6 +196,7 @@
 				9740EEB21CF90195004384FC /* Debug.xcconfig */,
 				7AFA3C8E1D35360C0083082E /* Release.xcconfig */,
 				9740EEB31CF90195004384FC /* Generated.xcconfig */,
+				A343B6BD9FA4A739DA775278 /* FushiWidgets.xcconfig */,
 			);
 			name = Flutter;
 			sourceTree = "<group>";
@@ -110,6 +209,8 @@
 				97C146EF1CF9000F007C117D /* Products */,
 				EB95B78877CDD31699B9B134 /* Pods */,
 				1D3CD73C7D9CCFDBC1D715ED /* Frameworks */,
+				D1D3329A9722F6B9C678BA31 /* HomeWidgets */,
+				08977FC736310A3228D5B562 /* FushiWidgets */,
 			);
 			sourceTree = "<group>";
 		};
@@ -117,6 +218,7 @@
 			isa = PBXGroup;
 			children = (
 				97C146EE1CF9000F007C117D /* Runner.app */,
+				F614157384B59C28CC685114 /* FushiWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -134,15 +236,42 @@
 				FA171A002B000002001C0F02 /* FushiSystemOcr.swift */,
 				FA171A002B000003001C0F02 /* FushiSpeechTranscriber.swift */,
 				FA171A002B000004001C0F02 /* FushiClipboardImage.swift */,
+				FA171A002B000007001C0F02 /* FushiAppleMusic.swift */,
 				FA171A002B000006001C0F02 /* FushiNativeMaterialView.swift */,
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				8F6D7C1A2A3948576E0D1234 /* SceneDelegate.swift */,
 				8F6D7C1C2A3948576E0D1234 /* LookupImeLanguage.swift */,
+				8F6D7C302A3948576E0D1234 /* FushiSystemTts.swift */,
 				8F6D7C202A3948576E0D1234 /* FushiFloatingBall.swift */,
+				8F6D7C242A3948576E0D1234 /* MusicOutputChannel.swift */,
+				8F6D7C262A3948576E0D1234 /* FushiBackgroundDownload.swift */,
 				8F6D7C1E2A3948576E0D1234 /* FushiDirectoryImport.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
 			path = Runner;
+			sourceTree = "<group>";
+		};
+		D1D3329A9722F6B9C678BA31 /* HomeWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				E66BF0365CEA46D6093AC585 /* Shared */,
+				511C982113DEABB4CE573305 /* FushiHomeWidgets.swift */,
+				9378AE97077A43B54D337732 /* Extension */,
+			);
+			name = HomeWidgets;
+			path = ../apple/HomeWidgets;
+			sourceTree = "<group>";
+		};
+		E66BF0365CEA46D6093AC585 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				CDE1DD7466060ED0A31A1D6C /* FushiWidgetSnapshot.swift */,
+				57AA5825867FECE527A963E1 /* FushiActivityAttributes.swift */,
+				480D2C385566BDE01B3FB32B /* FushiWidgetIntents.swift */,
+				0D7906063CF2EA2E077F7061 /* FushiOpenLinkIntent.swift */,
+			);
+			name = Shared;
+			path = Shared;
 			sourceTree = "<group>";
 		};
 		EB95B78877CDD31699B9B134 /* Pods */ = {
@@ -156,20 +285,50 @@
 			path = Pods;
 			sourceTree = "<group>";
 		};
+		F982538E2380452370312A3C /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				EC899DCF01177FD86B29CF9E /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		43AEFBB28DDCD0694D58E474 /* FushiWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 343DA442C8C7534CAC9A86D5 /* Build configuration list for PBXNativeTarget "FushiWidgets" */;
+			buildPhases = (
+				C5D8F0F41E5A1B124F13D0C2 /* Sources */,
+				D2F4FD43AF443C6C2374F6B8 /* Frameworks */,
+				AE7CF1725D786D12EF6DC09B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FushiWidgets;
+			productName = FushiWidgets;
+			productReference = F614157384B59C28CC685114 /* FushiWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		97C146ED1CF9000F007C117D /* Runner */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 97C147051CF9000F007C117D /* Build configuration list for PBXNativeTarget "Runner" */;
 			buildPhases = (
 				913B847A994ABA4520129689 /* [CP] Check Pods Manifest.lock */,
 				B20200000000000000000001 /* Build FushiDicts FFI */,
+				B20200000000000000000002 /* Check fushi_compute (iOS umbrella) */,
+				B20200000000000000000003 /* Check fushi_rwkv (iOS umbrella) */,
+				B20200000000000000000004 /* Check fushi_music (iOS umbrella) */,
+				B20200000000000000000005 /* Check fushi_corpus (iOS umbrella) */,
 				9740EEB61CF901F6004384FC /* Run Script */,
 				97C146EA1CF9000F007C117D /* Sources */,
 				97C146EB1CF9000F007C117D /* Frameworks */,
 				97C146EC1CF9000F007C117D /* Resources */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
+				21D5C823DC35542AC8AF1473 /* Embed Foundation Extensions */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				4A503E8BEA363684D8AE6DAF /* [CP] Embed Pods Frameworks */,
 				6EF0EBA4A7F1146005A69FBC /* [CP] Copy Pods Resources */,
@@ -177,6 +336,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				1DB4871083E311006FCA71F3 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			productName = Runner;
@@ -212,6 +372,7 @@
 			projectRoot = "";
 			targets = (
 				97C146ED1CF9000F007C117D /* Runner */,
+				43AEFBB28DDCD0694D58E474 /* FushiWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -225,6 +386,14 @@
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AE7CF1725D786D12EF6DC09B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				76CA7D3F633B2CD2169FDD0C /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -339,6 +508,82 @@
 			shellPath = /bin/bash;
 			shellScript = "/bin/bash \"$PROJECT_DIR/build_fushidicts_ffi.sh\"\n";
 		};
+		B20200000000000000000002 /* Check fushi_compute (iOS umbrella) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Check fushi_compute (iOS umbrella)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"$PROJECT_DIR/check_fushi_compute.sh\"\n";
+		};
+		B20200000000000000000003 /* Check fushi_rwkv (iOS umbrella) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Check fushi_rwkv (iOS umbrella)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"$PROJECT_DIR/check_fushi_rwkv.sh\"\n";
+		};
+		B20200000000000000000004 /* Check fushi_music (iOS umbrella) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Check fushi_music (iOS umbrella)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"$PROJECT_DIR/check_fushi_music.sh\"\n";
+		};
+		B20200000000000000000005 /* Check fushi_corpus (iOS umbrella) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Check fushi_corpus (iOS umbrella)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"$PROJECT_DIR/check_fushi_corpus.sh\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -350,17 +595,52 @@
 				FA171A002B000002001C0F01 /* FushiSystemOcr.swift in Sources */,
 				FA171A002B000003001C0F01 /* FushiSpeechTranscriber.swift in Sources */,
 				FA171A002B000004001C0F01 /* FushiClipboardImage.swift in Sources */,
+				FA171A002B000007001C0F01 /* FushiAppleMusic.swift in Sources */,
 				FA171A002B000006001C0F01 /* FushiNativeMaterialView.swift in Sources */,
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				8F6D7C1B2A3948576E0D1234 /* SceneDelegate.swift in Sources */,
 				8F6D7C1D2A3948576E0D1234 /* LookupImeLanguage.swift in Sources */,
+				8F6D7C312A3948576E0D1234 /* FushiSystemTts.swift in Sources */,
 				8F6D7C212A3948576E0D1234 /* FushiFloatingBall.swift in Sources */,
+				8F6D7C252A3948576E0D1234 /* MusicOutputChannel.swift in Sources */,
+				8F6D7C272A3948576E0D1234 /* FushiBackgroundDownload.swift in Sources */,
 				8F6D7C1F2A3948576E0D1234 /* FushiDirectoryImport.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
+				2E39B27262BEEB2C78517C36 /* FushiWidgetSnapshot.swift in Sources */,
+				CEEDFA362DF58A6DE941856C /* FushiActivityAttributes.swift in Sources */,
+				AC5F5428473AE521BB6A73E9 /* FushiWidgetIntents.swift in Sources */,
+				9BB22124C483CB4337903A35 /* FushiOpenLinkIntent.swift in Sources */,
+				2D80DF415CD40599A04BED0E /* FushiHomeWidgets.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C5D8F0F41E5A1B124F13D0C2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A19A39B5DED4990D3EBA2158 /* FushiControls.swift in Sources */,
+				600FC16A1C5648083716432B /* FushiGallery.swift in Sources */,
+				C40F521D2BA325DB196B0AD1 /* FushiHomeWidgetViews.swift in Sources */,
+				52DBCD55EC6B9F4EE816C6CF /* FushiLiveActivities.swift in Sources */,
+				B2E5848DCE949C0FDCA60FE6 /* FushiWidgetTimeline.swift in Sources */,
+				D16587D6A995B438B14FE20B /* FushiWidgetsBundle.swift in Sources */,
+				E2405029E69CDAC77D5096C3 /* FushiActivityAttributes.swift in Sources */,
+				7DA0D5C4659636AEBA47BFFD /* FushiOpenLinkIntent.swift in Sources */,
+				8F7E64F9E9DC6CBFE6579384 /* FushiWidgetIntents.swift in Sources */,
+				CFA398E5D9F0CB37F3E58D4F /* FushiWidgetSnapshot.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		1DB4871083E311006FCA71F3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = FushiWidgets;
+			target = 43AEFBB28DDCD0694D58E474 /* FushiWidgets */;
+			targetProxy = 131E44AA2E5A41AE6FCFF967 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		97C146FA1CF9000F007C117D /* Main.storyboard */ = {
@@ -382,6 +662,56 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		1203BEC54634B6ACFE90D608 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A343B6BD9FA4A739DA775278 /* FushiWidgets.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FushiWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.fushi.reader.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		230C2564EBD819803CA9426E /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A343B6BD9FA4A739DA775278 /* FushiWidgets.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FushiWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.fushi.reader.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		249021D3217E4FDB00AE95B9 /* Profile */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -642,9 +972,44 @@
 			};
 			name = Release;
 		};
+		9C2D852E1C9A4CDA9172F7E5 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A343B6BD9FA4A739DA775278 /* FushiWidgets.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FushiWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.fushi.reader.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Profile;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		343DA442C8C7534CAC9A86D5 /* Build configuration list for PBXNativeTarget "FushiWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1203BEC54634B6ACFE90D608 /* Debug */,
+				230C2564EBD819803CA9426E /* Release */,
+				9C2D852E1C9A4CDA9172F7E5 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		97C146E91CF9000F007C117D /* Build configuration list for PBXProject "Runner" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

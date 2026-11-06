@@ -25,13 +25,17 @@ void main() {
   group('主窗前台判据', () {
     test('Dart 侧类名常量与 runner 注册的窗口类名逐字符一致', () {
       final File source = File('windows/runner/win32_window.cpp');
-      expect(source.existsSync(), isTrue,
-          reason: '守卫要读 ${source.path}，路径变了就更新这里');
+      expect(
+        source.existsSync(),
+        isTrue,
+        reason: '守卫要读 ${source.path}，路径变了就更新这里',
+      );
       final String text = source.readAsStringSync();
       expect(
         text.contains('L"$kFushiMainWindowClassName"'),
         isTrue,
-        reason: 'win32_window.cpp 改了主窗类名，'
+        reason:
+            'win32_window.cpp 改了主窗类名，'
             'kFushiMainWindowClassName 必须同步——否则判据永远为假，'
             '主窗回到前台后再也收不回键盘焦点',
       );
@@ -49,19 +53,24 @@ void main() {
       // 整棵树不可聚焦，所有靠 Tab 遍历的 Windows 集成测试在焦点起步处就死
       // （primaryFocus 卡在 View Scope）。flutter_tester 里 FLUTTER_TEST 先行放行，
       // 运行时测不到这条分支，故按源码顺序守卫。
-      final String source =
-          File('lib/src/sync/desktop_foreground_guard.dart').readAsStringSync();
+      final String source = File(
+        'lib/src/sync/desktop_foreground_guard.dart',
+      ).readAsStringSync();
       final int start = source.indexOf('static bool isMainWindowForeground()');
       expect(start, greaterThan(-1));
       final int end = source.indexOf('\n  }\n', start);
       final String body = source.substring(start, end);
-      final int hidden = body.indexOf('if (isHiddenWindowsRunner) return true;');
+      final int hidden = body.indexOf(
+        'if (isHiddenWindowsRunner) return true;',
+      );
       final int probe = body.indexOf('_WindowsForegroundProbe');
-      expect(hidden, greaterThan(-1),
-          reason: 'isMainWindowForeground 必须给隐藏运行器放行');
+      expect(
+        hidden,
+        greaterThan(-1),
+        reason: 'isMainWindowForeground 必须给隐藏运行器放行',
+      );
       expect(probe, greaterThan(-1));
-      expect(hidden, lessThan(probe),
-          reason: '放行必须排在真实探测之前，否则探测恒 false 先返回');
+      expect(hidden, lessThan(probe), reason: '放行必须排在真实探测之前，否则探测恒 false 先返回');
     });
   });
 
@@ -97,8 +106,11 @@ void main() {
       );
       for (final FocusReclaimCause cause in FocusReclaimCause.values) {
         if (cause == FocusReclaimCause.appResumed) continue;
-        expect(ownership.reclaim(cause), isTrue,
-            reason: '$cause 是页面内部时序，与窗口前台归属无关，不该被这条判据拦下');
+        expect(
+          ownership.reclaim(cause),
+          isTrue,
+          reason: '$cause 是页面内部时序，与窗口前台归属无关，不该被这条判据拦下',
+        );
       }
     });
   });
@@ -115,7 +127,8 @@ void main() {
       expect(
         body.contains('isMainWindowForeground'),
         isTrue,
-        reason: '首页 resumed 回收必须先确认主窗自己在前台；'
+        reason:
+            '首页 resumed 回收必须先确认主窗自己在前台；'
             '否则剪贴板面板夺焦就会把主界面拽到用户面前（BUG-1619）',
       );
     });

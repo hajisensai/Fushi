@@ -26,14 +26,17 @@ void main() {
 
     // 截取 _buildVideoSideRailFor 方法体（以紧随其后的 _mergeRailSafeAreaPadding 为下界）。
     final int start = src.indexOf('Widget _buildVideoSideRailFor(');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: '应能定位 _buildVideoSideRailFor 方法');
-    final int end = src.indexOf(
-      'EdgeInsets _mergeRailSafeAreaPadding(',
+    expect(
       start,
+      greaterThanOrEqualTo(0),
+      reason: '应能定位 _buildVideoSideRailFor 方法',
     );
-    expect(end, greaterThan(start),
-        reason: '应能界定 _buildVideoSideRailFor 方法体范围');
+    final int end = src.indexOf('EdgeInsets _mergeRailSafeAreaPadding(', start);
+    expect(
+      end,
+      greaterThan(start),
+      reason: '应能界定 _buildVideoSideRailFor 方法体范围',
+    );
     railBody = src.substring(start, end);
   });
 
@@ -55,8 +58,11 @@ void main() {
 
   test('_mergeRailSafeAreaPadding 逐边对系统安全区取 max', () {
     final int hs = src.indexOf('EdgeInsets _mergeRailSafeAreaPadding(');
-    expect(hs, greaterThanOrEqualTo(0),
-        reason: '应有 _mergeRailSafeAreaPadding helper');
+    expect(
+      hs,
+      greaterThanOrEqualTo(0),
+      reason: '应有 _mergeRailSafeAreaPadding helper',
+    );
     final int he = src.indexOf('\n  }', hs);
     final String helperBody = src.substring(hs, he);
     expect(

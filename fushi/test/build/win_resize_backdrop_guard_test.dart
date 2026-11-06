@@ -115,7 +115,8 @@ void main() {
       expect(
         body.contains('GetDCEx(window_handle_, nullptr, DCX_CACHE)'),
         isTrue,
-        reason: 'GetDC honours WS_CLIPCHILDREN and would skip the pixels under '
+        reason:
+            'GetDC honours WS_CLIPCHILDREN and would skip the pixels under '
             'the view, which is exactly where the stale splash fill lives.',
       );
       expect(body.contains('PaintBackdrop(dc)'), isTrue);
@@ -142,8 +143,7 @@ void main() {
       },
     );
 
-    test(
-        'backdrop brush starts as the splash colour, follows the theme, and '
+    test('backdrop brush starts as the splash colour, follows the theme, and '
         'refills the surface when replaced', () {
       expect(header.contains('void SetBackdropColor(COLORREF color);'), isTrue);
       expect(header.contains('void FillSurfaceBackdrop();'), isTrue);
@@ -161,7 +161,8 @@ void main() {
       expect(
         cpp.substring(setAt, setEnd).contains('FillSurfaceBackdrop();'),
         isTrue,
-        reason: 'replacing the brush without repainting leaves the splash '
+        reason:
+            'replacing the brush without repainting leaves the splash '
             'colour under the view until the first maximize shows it.',
       );
       final int applyAt = flutterWindow.indexOf(
@@ -175,7 +176,8 @@ void main() {
             .substring(applyAt, applyEnd)
             .contains('SetBackdropColor(caption)'),
         isTrue,
-        reason: 'the theme surface colour pushed by Dart must drive the '
+        reason:
+            'the theme surface colour pushed by Dart must drive the '
             'backdrop, or the transition frame stays teal.',
       );
     });
@@ -194,7 +196,8 @@ void main() {
       expect(
         RegExp(r'caption:\s*settled\.surface(?![A-Za-z0-9_])').hasMatch(call),
         isTrue,
-        reason: 'the caption/backdrop colour must be the theme surface colour '
+        reason:
+            'the caption/backdrop colour must be the theme surface colour '
             '(the page background), not any other role.',
       );
       // 2026-10-09: and it must be the SETTLED (target) theme's surface, not the
@@ -205,7 +208,8 @@ void main() {
       expect(
         RegExp(r'settledTheme\s*=\s*fushiSettledTheme\(').hasMatch(mainDart),
         isTrue,
-        reason: 'caption colours must come from fushiSettledTheme(...), not '
+        reason:
+            'caption colours must come from fushiSettledTheme(...), not '
             'from the animated Theme.of(context) inside MaterialApp.builder',
       );
       expect(

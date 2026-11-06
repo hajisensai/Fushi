@@ -28,9 +28,9 @@ void main() {
       ],
       overwriteScope: scope,
     );
-    SharedPreferences.setMockInitialValues(
-      {'fushi_anki_settings': jsonEncode(settings.toJson())},
-    );
+    SharedPreferences.setMockInitialValues({
+      'fushi_anki_settings': jsonEncode(settings.toJson()),
+    });
   }
 
   test('scope=latest never queries Anki and returns null', () async {
@@ -39,11 +39,12 @@ void main() {
     final client = MockClient((req) async {
       calls++;
       return http.Response(
-          jsonEncode({
-            'result': [111],
-            'error': null
-          }),
-          200);
+        jsonEncode({
+          'result': [111],
+          'error': null,
+        }),
+        200,
+      );
     });
     final repo = AnkiConnectRepository(
       service: AnkiConnectService(client: client),
@@ -64,7 +65,7 @@ void main() {
       return http.Response(
         jsonEncode({
           'result': [100, 305, 207],
-          'error': null
+          'error': null,
         }),
         200,
       );
@@ -79,8 +80,11 @@ void main() {
     expect(captured['action'], 'findNotes');
     final query = (captured['params'] as Map)['query'] as String;
     expect(query, contains('deck:'));
-    expect(query, contains('Expression:'),
-        reason: 'must reuse first field = expression as the dupe condition');
+    expect(
+      query,
+      contains('Expression:'),
+      reason: 'must reuse first field = expression as the dupe condition',
+    );
     expect(query, contains('日本語'));
   });
 
@@ -98,19 +102,24 @@ void main() {
     expect(id, isNull);
   });
 
-  test('scope=all swallows backend failure and returns null (no throw)',
-      () async {
-    await seedSettings(AnkiOverwriteScope.all);
-    final client = MockClient((req) async {
-      return http.Response('boom', 500);
-    });
-    final repo = AnkiConnectRepository(
-      service: AnkiConnectService(client: client),
-    );
+  test(
+    'scope=all swallows backend failure and returns null (no throw)',
+    () async {
+      await seedSettings(AnkiOverwriteScope.all);
+      final client = MockClient((req) async {
+        return http.Response('boom', 500);
+      });
+      final repo = AnkiConnectRepository(
+        service: AnkiConnectService(client: client),
+      );
 
-    final id = await repo.findOverwriteTargetNoteId('日本語', 'にほんご');
+      final id = await repo.findOverwriteTargetNoteId('日本語', 'にほんご');
 
-    expect(id, isNull,
-        reason: 'a failed lookup must degrade, not crash mining');
-  });
+      expect(
+        id,
+        isNull,
+        reason: 'a failed lookup must degrade, not crash mining',
+      );
+    },
+  );
 }

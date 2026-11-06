@@ -7,8 +7,9 @@ import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart';
 
 void main() {
   test('漫画封面跨缓存实例命中磁盘且不重复联网', () async {
-    final Directory root =
-        await Directory.systemTemp.createTemp('fushi-mihon-cover-cache-');
+    final Directory root = await Directory.systemTemp.createTemp(
+      'fushi-mihon-cover-cache-',
+    );
     addTearDown(() async {
       if (await root.exists()) await root.delete(recursive: true);
     });
@@ -43,8 +44,9 @@ void main() {
   });
 
   test('共享 in-flight 请求不被单个订阅者的退场打成失败', () async {
-    final Directory root =
-        await Directory.systemTemp.createTemp('fushi-mihon-cover-shared-');
+    final Directory root = await Directory.systemTemp.createTemp(
+      'fushi-mihon-cover-shared-',
+    );
     addTearDown(() async {
       if (await root.exists()) await root.delete(recursive: true);
     });
@@ -86,8 +88,9 @@ void main() {
   });
 
   test('所有订阅者都退场后共享请求才真的取消', () async {
-    final Directory root =
-        await Directory.systemTemp.createTemp('fushi-mihon-cover-cancel-');
+    final Directory root = await Directory.systemTemp.createTemp(
+      'fushi-mihon-cover-cancel-',
+    );
     addTearDown(() async {
       if (await root.exists()) await root.delete(recursive: true);
     });

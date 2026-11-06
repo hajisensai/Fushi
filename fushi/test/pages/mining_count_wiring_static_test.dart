@@ -38,21 +38,33 @@ void main() {
   test('reader onMineFromPopup 成功分支把制卡计入书籍统计', () {
     final String src = readReaderPageSource();
     // reader 经 describeMineOutcome 路由：record（== 成功）时调私有 _recordMined（不 mixin）。
-    expect(containsIdentifierCall(src, 'describeMineOutcome'), isTrue,
-        reason: 'reader 应经 describeMineOutcome 判定制卡结果');
     expect(
-        containsCodeLine(
-            src, 'if (described.record) unawaited(_recordMined());'),
-        isTrue,
-        reason: 'reader 成功（described.record）必须记账，否则统计页「制卡」恒为 0');
+      containsIdentifierCall(src, 'describeMineOutcome'),
+      isTrue,
+      reason: 'reader 应经 describeMineOutcome 判定制卡结果',
+    );
+    expect(
+      containsCodeLine(src, 'if (described.record) unawaited(_recordMined());'),
+      isTrue,
+      reason: 'reader 成功（described.record）必须记账，否则统计页「制卡」恒为 0',
+    );
     // helper 缺失时 methodBody 直接 fail（不会静默返回空串再让下面的断言假绿）。
-    final String recordBody =
-        methodBody(src, 'Future<void> _recordMined() async {');
-    expect(containsIdentifierCall(recordBody, 'recordMiningEvent'), isTrue,
-        reason: 'reader 记账必须走 FushiDatabase.recordMiningEvent 复合入口'
-            '（同事务写 mining_statistics + per-book），不得回到散点直调底层 DAO');
-    expect(containsCodeLine(recordBody, 'sourceType: kStatSourceBook'), isTrue,
-        reason: 'reader 记账来源应为书籍');
+    final String recordBody = methodBody(
+      src,
+      'Future<void> _recordMined() async {',
+    );
+    expect(
+      containsIdentifierCall(recordBody, 'recordMiningEvent'),
+      isTrue,
+      reason:
+          'reader 记账必须走 FushiDatabase.recordMiningEvent 复合入口'
+          '（同事务写 mining_statistics + per-book），不得回到散点直调底层 DAO',
+    );
+    expect(
+      containsCodeLine(recordBody, 'sourceType: kStatSourceBook'),
+      isTrue,
+      reason: 'reader 记账来源应为书籍',
+    );
   });
 
   test('video onMineEntry 成功分支把制卡计入视频统计', () {
@@ -62,64 +74,99 @@ void main() {
     // 记账不再经 mixin 的 protected recordMined()：在线视频的卡可能在页面关掉之后才在
     // 后台落地（VideoOnlineMiningMode），`ref` 已不可用，故改由 `_recordVideoMineStat`
     // 用点击时冻结的库 + 归属直调同一个复合入口 recordMiningEvent。
-    expect(containsIdentifierCall(src, 'describeMineOutcome'), isTrue,
-        reason: 'video 应经 describeMineOutcome 判定制卡结果');
+    expect(
+      containsIdentifierCall(src, 'describeMineOutcome'),
+      isTrue,
+      reason: 'video 应经 describeMineOutcome 判定制卡结果',
+    );
     // 回看会话（BUG-2503）里的制卡是对已有卡的回写，不记新卡账：调用点把
     // `reviewSession == null` 作为 recordStats 传进收尾；普通路径仍按 described.record 记账。
-    expect(containsCodeLine(src, 'if (described.record && recordStats) {'),
-        isTrue,
-        reason: 'video 成功（described.record）必须记账，否则视频统计「制卡」恒为 0');
-    expect(containsCodeLine(src, 'recordStats: reviewSession == null,'), isTrue,
-        reason: '回看会话的回写不得记新卡账');
     expect(
-        containsCodeLine(
-            src, 'unawaited(_recordVideoMineStat(mineDb, statIdentity));'),
-        isTrue);
-    final String recordBody =
-        methodBody(src, 'Future<void> _recordVideoMineStat(');
-    expect(containsIdentifierCall(recordBody, 'recordMiningEvent'), isTrue,
-        reason: 'video 记账必须走 FushiDatabase.recordMiningEvent 复合入口');
-    expect(containsCodeLine(recordBody, 'sourceType: kStatSourceVideo,'), isTrue,
-        reason: 'video 记账来源应为视频');
+      containsCodeLine(src, 'if (described.record && recordStats) {'),
+      isTrue,
+      reason: 'video 成功（described.record）必须记账，否则视频统计「制卡」恒为 0',
+    );
     expect(
-        containsCodeLine(
-            src, 'String get dictionarySourceType => kStatSourceVideo'),
-        isTrue,
-        reason: 'video 记账来源应为视频');
+      containsCodeLine(src, 'recordStats: reviewSession == null,'),
+      isTrue,
+      reason: '回看会话的回写不得记新卡账',
+    );
+    expect(
+      containsCodeLine(
+        src,
+        'unawaited(_recordVideoMineStat(mineDb, statIdentity));',
+      ),
+      isTrue,
+    );
+    final String recordBody = methodBody(
+      src,
+      'Future<void> _recordVideoMineStat(',
+    );
+    expect(
+      containsIdentifierCall(recordBody, 'recordMiningEvent'),
+      isTrue,
+      reason: 'video 记账必须走 FushiDatabase.recordMiningEvent 复合入口',
+    );
+    expect(
+      containsCodeLine(recordBody, 'sourceType: kStatSourceVideo,'),
+      isTrue,
+      reason: 'video 记账来源应为视频',
+    );
+    expect(
+      containsCodeLine(
+        src,
+        'String get dictionarySourceType => kStatSourceVideo',
+      ),
+      isTrue,
+      reason: 'video 记账来源应为视频',
+    );
   });
 
   test('mixin 暴露 protected recordMined（供 video 等覆写页调用）', () {
-    final String src =
-        File('lib/src/pages/implementations/dictionary_page_mixin.dart')
-            .readAsStringSync();
+    final String src = File(
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
+    ).readAsStringSync();
     // 裸 `contains('@protected')` 只问「文件里有没有这个注解」——本文件里 @protected
     // 有一大把，recordMined 就算被改回 private 也照绿。这里钉的是**紧邻 recordMined
     // 签名的那一个**。
     const String signature = 'Future<void> recordMined() async {';
     final String masked = maskComments(src);
     final int signatureAt = masked.indexOf(signature);
-    expect(signatureAt, greaterThanOrEqualTo(0),
-        reason: 'mixin 必须自带 recordMined 记账 helper');
-    expect(masked.substring(0, signatureAt).trimRight().endsWith('@protected'),
-        isTrue,
-        reason: 'recordMined 应是 protected 而非 private，子类覆写才能调');
+    expect(
+      signatureAt,
+      greaterThanOrEqualTo(0),
+      reason: 'mixin 必须自带 recordMined 记账 helper',
+    );
+    expect(
+      masked.substring(0, signatureAt).trimRight().endsWith('@protected'),
+      isTrue,
+      reason: 'recordMined 应是 protected 而非 private，子类覆写才能调',
+    );
     final String recordBody = methodBody(src, signature);
-    expect(containsIdentifierCall(recordBody, 'recordMiningEvent'), isTrue,
-        reason: 'mixin 记账必须走 FushiDatabase.recordMiningEvent 复合入口'
-            '（同事务写 mining_statistics + per-book），不得回到散点直调底层 DAO');
+    expect(
+      containsIdentifierCall(recordBody, 'recordMiningEvent'),
+      isTrue,
+      reason:
+          'mixin 记账必须走 FushiDatabase.recordMiningEvent 复合入口'
+          '（同事务写 mining_statistics + per-book），不得回到散点直调底层 DAO',
+    );
     // 基类 onMineEntry 经 describeMineOutcome 路由，record 时记账（书内/独立查词页这条不回归）。
     expect(
-        containsCodeLine(
-            src, 'if (described.record) unawaited(recordMined());'),
-        isTrue,
-        reason: '基类成功分支记账不得丢');
+      containsCodeLine(src, 'if (described.record) unawaited(recordMined());'),
+      isTrue,
+      reason: '基类成功分支记账不得丢',
+    );
   });
 
   test('stat_activity 暴露公开 statTodayKey（记账日期键的唯一权威实现）', () {
-    final String src = File('lib/src/pages/implementations/stat_activity.dart')
-        .readAsStringSync();
-    expect(containsCodeLine(src, 'String statTodayKey() =>'), isTrue,
-        reason: 'reader/mixin 记账共用同一个 today dateKey 实现，避免各写一遍');
+    final String src = File(
+      'lib/src/pages/implementations/stat_activity.dart',
+    ).readAsStringSync();
+    expect(
+      containsCodeLine(src, 'String statTodayKey() =>'),
+      isTrue,
+      reason: 'reader/mixin 记账共用同一个 today dateKey 实现，避免各写一遍',
+    );
     expect(containsCodeLine(src, 'String statDateKey(DateTime d) =>'), isTrue);
   });
 }

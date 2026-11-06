@@ -32,8 +32,10 @@ AudioCue _bottomCue(
     ..markup = SubtitleMarkup(
       plainText: text,
       spans: const <SubtitleSpan>[],
-      anchor:
-          const SubtitleAnchor(SubtitleVAlign.bottom, SubtitleHAlign.center),
+      anchor: const SubtitleAnchor(
+        SubtitleVAlign.bottom,
+        SubtitleHAlign.center,
+      ),
       cueStyle: style,
       playResY: 720, // 显示区 720 / PlayResY 720 → 缩放 1.0，MarginV 直用像素值。
     )
@@ -43,13 +45,15 @@ AudioCue _bottomCue(
 
 Rect _fillRect(WidgetTester tester, String ch) {
   final Finder fill = find.byWidgetPredicate(
-      (Widget w) => w is Text && w.data == ch && w.style?.foreground == null);
+    (Widget w) => w is Text && w.data == ch && w.style?.foreground == null,
+  );
   return tester.getRect(fill.first);
 }
 
 void main() {
-  testWidgets('底部双语（\\an2 MarginV 4 + 30，均 < bottomPadding）不重叠、各自可查词',
-      (WidgetTester tester) async {
+  testWidgets('底部双语（\\an2 MarginV 4 + 30，均 < bottomPadding）不重叠、各自可查词', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1280, 720);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -64,20 +68,22 @@ void main() {
     expect(c.activeCues.length, 2, reason: '两条底部对白应同时活动');
 
     final VideoSubtitleHitTester hitTester = VideoSubtitleHitTester();
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: SizedBox(
-          width: 1280,
-          height: 720,
-          child: VideoSubtitleOverlay(
-            controller: c,
-            respectAssStyle: true,
-            hitTester: hitTester,
-            onCharTap: (_, __, ___, ____) {},
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 1280,
+            height: 720,
+            child: VideoSubtitleOverlay(
+              controller: c,
+              respectAssStyle: true,
+              hitTester: hitTester,
+              onCharTap: (_, __, ___, ____) {},
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     // 两条都渲染（各 stroke+fill 双层）。
@@ -88,8 +94,11 @@ void main() {
     final Rect chRect = _fillRect(tester, '中');
 
     // 核心：两条竖直方向**不重叠**（修复前共基线、盒相交）。
-    expect(chRect.bottom, lessThanOrEqualTo(jpRect.top + 0.5),
-        reason: 'CH(上) 底缘应在 JP(下) 顶缘之上，两条分离不叠印');
+    expect(
+      chRect.bottom,
+      lessThanOrEqualTo(jpRect.top + 0.5),
+      reason: 'CH(上) 底缘应在 JP(下) 顶缘之上，两条分离不叠印',
+    );
     // CH（MarginV 大）在 JP 之上。
     expect(chRect.center.dy, lessThan(jpRect.center.dy));
 
@@ -100,8 +109,9 @@ void main() {
     expect(chHit?.sentence, '中');
   });
 
-  testWidgets('大 MarginV（超出 bottomPadding）仍各自 authored 高度（TODO-1341 不回归）',
-      (WidgetTester tester) async {
+  testWidgets('大 MarginV（超出 bottomPadding）仍各自 authored 高度（TODO-1341 不回归）', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1280, 720);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -113,20 +123,25 @@ void main() {
     final AudioCue title = _bottomCue('題', marginV: 400, fontSizePx: 40);
     c.setCues(<AudioCue>[dialog, title]);
     c.debugUpdateCueForPosition(1000);
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: SizedBox(
-          width: 1280,
-          height: 720,
-          child: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 1280,
+            height: 720,
+            child: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     final double dialogDy = tester.getCenter(find.text('白').first).dy;
     final double titleDy = tester.getCenter(find.text('題').first).dy;
     // 标题 MarginV=400 明显更高（dy 更小），与贴底对白分居，未被折进同一基线。
-    expect(titleDy, lessThan(dialogDy - 200),
-        reason: '大 MarginV 标题应在 authored 高位，不与贴底对白折叠');
+    expect(
+      titleDy,
+      lessThan(dialogDy - 200),
+      reason: '大 MarginV 标题应在 authored 高位，不与贴底对白折叠',
+    );
   });
 }

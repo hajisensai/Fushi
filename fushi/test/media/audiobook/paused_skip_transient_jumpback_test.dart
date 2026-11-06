@@ -22,52 +22,65 @@ import 'package:just_audio_platform_interface/just_audio_platform_interface.dart
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('paused explicit-seek transient must not override authoritative cue',
-      () {
-    test('暂停态点下一句：seek 瞬态(旧位置接近本句末尾)不把高亮拉回当前句', () async {
-      final AudiobookPlayerController controller =
-          await _loadController(<AudioCue>[
-        _cue(0), // cue0: [0, 1000]
-        _cue(1000), // cue1: [1000, 2000]
-      ]);
+  group(
+    'paused explicit-seek transient must not override authoritative cue',
+    () {
+      test('暂停态点下一句：seek 瞬态(旧位置接近本句末尾)不把高亮拉回当前句', () async {
+        final AudiobookPlayerController controller = await _loadController(
+          <AudioCue>[
+            _cue(0), // cue0: [0, 1000]
+            _cue(1000), // cue1: [1000, 2000]
+          ],
+        );
 
-      // 用户暂停在 cue0 末尾，点「下一句」→ 权威跳到 cue1。
-      await controller.skipToCue(controller.chapterCuesSnapshot[1]);
-      expect(controller.currentCue?.startMs, 1000,
-          reason: 'skipToCue 必须立即写入权威 cue1');
+        // 用户暂停在 cue0 末尾，点「下一句」→ 权威跳到 cue1。
+        await controller.skipToCue(controller.chapterCuesSnapshot[1]);
+        expect(
+          controller.currentCue?.startMs,
+          1000,
+          reason: 'skipToCue 必须立即写入权威 cue1',
+        );
 
-      // seek 的瞬态 tick 仍停在旧位置 800（在 cue0 内，且距 cue1.start=1000
-      // 只有 200ms，落进 target-容差(300ms) 窗内）。暂停态不得据此重解析。
-      controller.debugUpdateCueForPosition(800);
+        // seek 的瞬态 tick 仍停在旧位置 800（在 cue0 内，且距 cue1.start=1000
+        // 只有 200ms，落进 target-容差(300ms) 窗内）。暂停态不得据此重解析。
+        controller.debugUpdateCueForPosition(800);
 
-      expect(controller.currentCue?.startMs, 1000,
-          reason: '暂停态瞬态 tick 不能把权威 cue1 覆盖回 cue0');
+        expect(
+          controller.currentCue?.startMs,
+          1000,
+          reason: '暂停态瞬态 tick 不能把权威 cue1 覆盖回 cue0',
+        );
 
-      controller.dispose();
-    });
+        controller.dispose();
+      });
 
-    test('暂停态点上一句：seek 瞬态(旧位置高于目标)不把高亮拉回当前句', () async {
-      final AudiobookPlayerController controller =
-          await _loadController(<AudioCue>[
-        _cue(0), // cue0
-        _cue(1000), // cue1
-        _cue(2000), // cue2
-      ]);
+      test('暂停态点上一句：seek 瞬态(旧位置高于目标)不把高亮拉回当前句', () async {
+        final AudiobookPlayerController controller = await _loadController(
+          <AudioCue>[
+            _cue(0), // cue0
+            _cue(1000), // cue1
+            _cue(2000), // cue2
+          ],
+        );
 
-      // 用户暂停在 cue2，点「上一句」→ 权威跳到 cue1。
-      await controller.skipToCue(controller.chapterCuesSnapshot[1]);
-      expect(controller.currentCue?.startMs, 1000);
+        // 用户暂停在 cue2，点「上一句」→ 权威跳到 cue1。
+        await controller.skipToCue(controller.chapterCuesSnapshot[1]);
+        expect(controller.currentCue?.startMs, 1000);
 
-      // 后向 seek：旧位置 2100（在 cue2 内）远高于 target(cue1.start=1000)，
-      // reached 判据恒真 → 旧逻辑会误判落定并重解析回 cue2。
-      controller.debugUpdateCueForPosition(2100);
+        // 后向 seek：旧位置 2100（在 cue2 内）远高于 target(cue1.start=1000)，
+        // reached 判据恒真 → 旧逻辑会误判落定并重解析回 cue2。
+        controller.debugUpdateCueForPosition(2100);
 
-      expect(controller.currentCue?.startMs, 1000,
-          reason: '暂停态后向 seek 的旧高位置瞬态不能把权威 cue1 覆盖回 cue2');
+        expect(
+          controller.currentCue?.startMs,
+          1000,
+          reason: '暂停态后向 seek 的旧高位置瞬态不能把权威 cue1 覆盖回 cue2',
+        );
 
-      controller.dispose();
-    });
-  });
+        controller.dispose();
+      });
+    },
+  );
 
   // 源码守卫：暂停态抑制必须接在显式 seek guard 内，删掉就会让「跳两次」复发。
   test('源码守卫：_updateCurrentCue 显式 seek 段内有暂停态抑制', () {
@@ -81,9 +94,11 @@ void main() {
       guardIdx,
     );
     final String block = src.substring(guardIdx, reachedIdx);
-    expect(block.contains('!_player.playing'), isTrue,
-        reason:
-            '显式 seek guard 内、reached 判定之前必须有暂停态抑制 (!_player.playing) return;');
+    expect(
+      block.contains('!_player.playing'),
+      isTrue,
+      reason: '显式 seek guard 内、reached 判定之前必须有暂停态抑制 (!_player.playing) return;',
+    );
   });
 }
 
@@ -99,10 +114,7 @@ Future<AudiobookPlayerController> _loadController(List<AudioCue> cues) async {
   addTearDown(() {
     if (audioFile.existsSync()) audioFile.deleteSync();
   });
-  await controller.load(
-    audiobook: _audiobook(),
-    audioFiles: <File>[audioFile],
-  );
+  await controller.load(audiobook: _audiobook(), audioFiles: <File>[audioFile]);
   controller.setChapterCues(cues);
   return controller;
 }
@@ -130,8 +142,9 @@ Audiobook _audiobook() {
 }
 
 _HangingJustAudioPlatform _installHangingAudioPlatform() {
-  const MethodChannel audioSessionChannel =
-      MethodChannel('com.ryanheise.audio_session');
+  const MethodChannel audioSessionChannel = MethodChannel(
+    'com.ryanheise.audio_session',
+  );
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(audioSessionChannel, (_) async => null);
   addTearDown(() {
@@ -200,22 +213,19 @@ class _HangingAudioPlayer extends AudioPlayerPlatform {
   @override
   Future<SetAndroidAudioAttributesResponse> setAndroidAudioAttributes(
     SetAndroidAudioAttributesRequest request,
-  ) async =>
-      SetAndroidAudioAttributesResponse();
+  ) async => SetAndroidAudioAttributesResponse();
 
   @override
   Future<SetAutomaticallyWaitsToMinimizeStallingResponse>
-      setAutomaticallyWaitsToMinimizeStalling(
+  setAutomaticallyWaitsToMinimizeStalling(
     SetAutomaticallyWaitsToMinimizeStallingRequest request,
-  ) async =>
-          SetAutomaticallyWaitsToMinimizeStallingResponse();
+  ) async => SetAutomaticallyWaitsToMinimizeStallingResponse();
 
   @override
   Future<SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse>
-      setCanUseNetworkResourcesForLiveStreamingWhilePaused(
+  setCanUseNetworkResourcesForLiveStreamingWhilePaused(
     SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest request,
-  ) async =>
-          SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
+  ) async => SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
 
   @override
   Future<SetLoopModeResponse> setLoopMode(SetLoopModeRequest request) async =>
@@ -228,26 +238,22 @@ class _HangingAudioPlayer extends AudioPlayerPlatform {
   @override
   Future<SetPreferredPeakBitRateResponse> setPreferredPeakBitRate(
     SetPreferredPeakBitRateRequest request,
-  ) async =>
-      SetPreferredPeakBitRateResponse();
+  ) async => SetPreferredPeakBitRateResponse();
 
   @override
   Future<SetShuffleModeResponse> setShuffleMode(
     SetShuffleModeRequest request,
-  ) async =>
-      SetShuffleModeResponse();
+  ) async => SetShuffleModeResponse();
 
   @override
   Future<SetShuffleOrderResponse> setShuffleOrder(
     SetShuffleOrderRequest request,
-  ) async =>
-      SetShuffleOrderResponse();
+  ) async => SetShuffleOrderResponse();
 
   @override
   Future<SetSkipSilenceResponse> setSkipSilence(
     SetSkipSilenceRequest request,
-  ) async =>
-      SetSkipSilenceResponse();
+  ) async => SetSkipSilenceResponse();
 
   @override
   Future<SetSpeedResponse> setSpeed(SetSpeedRequest request) async =>
@@ -260,8 +266,7 @@ class _HangingAudioPlayer extends AudioPlayerPlatform {
   @override
   Future<SetWebCrossOriginResponse> setWebCrossOrigin(
     SetWebCrossOriginRequest request,
-  ) async =>
-      SetWebCrossOriginResponse();
+  ) async => SetWebCrossOriginResponse();
 
   @override
   Future<DisposeResponse> dispose(DisposeRequest request) async {

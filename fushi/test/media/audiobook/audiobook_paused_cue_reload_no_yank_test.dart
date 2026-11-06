@@ -58,11 +58,7 @@ void main() {
       isEmpty,
       reason: '暂停态重灌同一份 cue 不得把阅读器拽回音频章（BUG-2781）',
     );
-    expect(
-      controller.currentCue?.startMs,
-      1000,
-      reason: '当前句身份应在换列表后保留',
-    );
+    expect(controller.currentCue?.startMs, 1000, reason: '当前句身份应在换列表后保留');
 
     // 对照：音频真的推进到下一句时，跟随照常接管。
     await controller.seekMs(2500);
@@ -133,8 +129,9 @@ Audiobook _audiobook() {
 }
 
 void _installFakeAudioPlatform() {
-  const MethodChannel audioSessionChannel =
-      MethodChannel('com.ryanheise.audio_session');
+  const MethodChannel audioSessionChannel = MethodChannel(
+    'com.ryanheise.audio_session',
+  );
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(audioSessionChannel, (_) async => null);
   addTearDown(() {
@@ -185,16 +182,18 @@ class _FakeAudioPlayer extends AudioPlayerPlatform {
       StreamController<PlaybackEventMessage>.broadcast();
 
   void _emit(int ms) {
-    _events.add(PlaybackEventMessage(
-      processingState: ProcessingStateMessage.ready,
-      updateTime: DateTime.now(),
-      updatePosition: Duration(milliseconds: ms),
-      bufferedPosition: Duration(milliseconds: ms),
-      duration: const Duration(seconds: 100),
-      icyMetadata: null,
-      currentIndex: 0,
-      androidAudioSessionId: null,
-    ));
+    _events.add(
+      PlaybackEventMessage(
+        processingState: ProcessingStateMessage.ready,
+        updateTime: DateTime.now(),
+        updatePosition: Duration(milliseconds: ms),
+        bufferedPosition: Duration(milliseconds: ms),
+        duration: const Duration(seconds: 100),
+        icyMetadata: null,
+        currentIndex: 0,
+        androidAudioSessionId: null,
+      ),
+    );
   }
 
   @override
@@ -221,22 +220,19 @@ class _FakeAudioPlayer extends AudioPlayerPlatform {
   @override
   Future<SetAndroidAudioAttributesResponse> setAndroidAudioAttributes(
     SetAndroidAudioAttributesRequest request,
-  ) async =>
-      SetAndroidAudioAttributesResponse();
+  ) async => SetAndroidAudioAttributesResponse();
 
   @override
   Future<SetAutomaticallyWaitsToMinimizeStallingResponse>
-      setAutomaticallyWaitsToMinimizeStalling(
+  setAutomaticallyWaitsToMinimizeStalling(
     SetAutomaticallyWaitsToMinimizeStallingRequest request,
-  ) async =>
-          SetAutomaticallyWaitsToMinimizeStallingResponse();
+  ) async => SetAutomaticallyWaitsToMinimizeStallingResponse();
 
   @override
   Future<SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse>
-      setCanUseNetworkResourcesForLiveStreamingWhilePaused(
+  setCanUseNetworkResourcesForLiveStreamingWhilePaused(
     SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest request,
-  ) async =>
-          SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
+  ) async => SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
 
   @override
   Future<SetLoopModeResponse> setLoopMode(SetLoopModeRequest request) async =>
@@ -249,26 +245,22 @@ class _FakeAudioPlayer extends AudioPlayerPlatform {
   @override
   Future<SetPreferredPeakBitRateResponse> setPreferredPeakBitRate(
     SetPreferredPeakBitRateRequest request,
-  ) async =>
-      SetPreferredPeakBitRateResponse();
+  ) async => SetPreferredPeakBitRateResponse();
 
   @override
   Future<SetShuffleModeResponse> setShuffleMode(
     SetShuffleModeRequest request,
-  ) async =>
-      SetShuffleModeResponse();
+  ) async => SetShuffleModeResponse();
 
   @override
   Future<SetShuffleOrderResponse> setShuffleOrder(
     SetShuffleOrderRequest request,
-  ) async =>
-      SetShuffleOrderResponse();
+  ) async => SetShuffleOrderResponse();
 
   @override
   Future<SetSkipSilenceResponse> setSkipSilence(
     SetSkipSilenceRequest request,
-  ) async =>
-      SetSkipSilenceResponse();
+  ) async => SetSkipSilenceResponse();
 
   @override
   Future<SetSpeedResponse> setSpeed(SetSpeedRequest request) async =>
@@ -281,8 +273,7 @@ class _FakeAudioPlayer extends AudioPlayerPlatform {
   @override
   Future<SetWebCrossOriginResponse> setWebCrossOrigin(
     SetWebCrossOriginRequest request,
-  ) async =>
-      SetWebCrossOriginResponse();
+  ) async => SetWebCrossOriginResponse();
 
   @override
   Future<DisposeResponse> dispose(DisposeRequest request) async {

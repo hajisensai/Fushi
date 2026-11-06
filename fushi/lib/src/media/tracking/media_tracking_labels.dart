@@ -1,6 +1,6 @@
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 追踪状态的 i18n 外显（设置页与首页 Bangumi 同步卡共用）。
@@ -47,7 +47,7 @@ String trackingLastSyncLabel(MediaTrackingStatus status, DateTime now) {
 
 /// 一条映射的副标题：类别 · Bangumi 条目名 · 进度单位。
 String trackingMappingSubtitle(MediaTrackingMappingRow mapping) => <String>[
-      trackingKindLabel(mapping.kind),
-      mapping.subjectName,
-      trackingProgressModeLabel(mapping.progressMode),
-    ].join(' · ');
+  trackingKindLabel(mapping.kind),
+  mapping.subjectName,
+  trackingProgressModeLabel(mapping.progressMode),
+].join(' · ');

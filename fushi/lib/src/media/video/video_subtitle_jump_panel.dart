@@ -10,13 +10,29 @@ import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/shortcuts/platform_modifier_state.dart';
 import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/copy_feedback.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_toolbar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
 
 export 'subtitle_transcript_text.dart';
 
@@ -511,7 +527,17 @@ class VideoSubtitleListHitTester {
 /// 路径）。[classic] / [m3e] 显式钉死一种（经典行的几何守卫测试钉 [classic]）。
 enum VideoSubtitleListLayout { auto, m3e, classic }
 
+/// 字幕列表页签（全部 / 收藏）。[Enum.name] 是持久化值（偏好键
+/// `video_subtitle_list_filter`），冻结不改名。
 enum VideoSubtitleListFilter { all, favorites }
+
+/// 把持久化的页签名解析回 [VideoSubtitleListFilter]；未写过 / 认不出时回落 [all]。
+VideoSubtitleListFilter videoSubtitleListFilterFromName(String? name) {
+  for (final VideoSubtitleListFilter f in VideoSubtitleListFilter.values) {
+    if (f.name == name) return f;
+  }
+  return VideoSubtitleListFilter.all;
+}
 
 class VideoSubtitleJumpPanel extends StatefulWidget {
   const VideoSubtitleJumpPanel({
@@ -522,6 +548,8 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     required this.onFavoriteCue,
     required this.isCueFavorited,
     required this.onClose,
+    this.onEditCue,
+    this.onRestoreCue,
     this.onLookupCue,
     this.hitTester,
     required this.colorScheme,
@@ -532,9 +560,12 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     this.onAutoScrollChanged,
     this.initialTapLookup = true,
     this.onTapLookupChanged,
+    this.initialFilter = VideoSubtitleListFilter.all,
+    this.onFilterChanged,
     this.initialFontScaleIndex = _kDefaultFontScaleIndex,
     this.onFontScaleIndexChanged,
     this.hoverAutoLookupEnabled = false,
+    this.hoverLookupModifier = HoverLookupModifier.shift,
     this.fontSize = 14,
     this.fontFamily,
     this.width = 320,
@@ -548,6 +579,26 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   /// 见 [VideoSubtitleListLayout]。
   final VideoSubtitleListLayout layout;
 
+  /// 本面板走不走 M3E 贴边列（与 [colorScheme] 一起决定底色），测量与渲染同源。
+  static bool usesM3eColumn(
+    BuildContext context, {
+    VideoSubtitleListLayout layout = VideoSubtitleListLayout.auto,
+  }) => switch (layout) {
+    VideoSubtitleListLayout.m3e => true,
+    VideoSubtitleListLayout.classic => false,
+    VideoSubtitleListLayout.auto => videoM3ePanelNeutral(context),
+  };
+
+  /// 面板整列的不透明底色（唯一真相源）。面板外的东西要「看起来还是这块面板」时用它，
+  /// 例如 push-aside 收起动画里画面宽度冻结、列与画面之间露出的那条（BUG-3888）。
+  static Color columnSurfaceColor(
+    BuildContext context, {
+    required ColorScheme colorScheme,
+    VideoSubtitleListLayout layout = VideoSubtitleListLayout.auto,
+  }) => usesM3eColumn(context, layout: layout)
+      ? Theme.of(context).colorScheme.surfaceContainer
+      : colorScheme.surface;
+
   final VideoPlayerController controller;
   final void Function(AudioCue cue) onTapCue;
 
@@ -558,6 +609,13 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   final Future<void> Function(AudioCue cue) onFavoriteCue;
   final bool Function(AudioCue cue) isCueFavorited;
   final VoidCallback onClose;
+
+  /// 行菜单「编辑字幕」（反馈 gleDreKAvo / dpAsMkUjKT）：改这一句的文本。null = 不提供
+  /// 编辑（菜单不出这一项）。触屏长按行、桌面右键行弹出行菜单。
+  final Future<void> Function(AudioCue cue)? onEditCue;
+
+  /// 行菜单「还原原文」：只在这句被手改过（[AudioCue.uneditedCue] 非 null）时出现。
+  final Future<void> Function(AudioCue cue)? onRestoreCue;
 
   /// 点列表项字幕文本 → 从点击命中的字符起查词（TODO-340）。[cue] 为被点行的字幕句，
   /// [graphemeIndex] 为点击位置命中的 grapheme 下标（与底部字幕逐字查词同语义，
@@ -592,6 +650,13 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   /// 用户切换「点字幕查词」时回调，页面层落 Drift preferences（null 时纯本地切换）。
   final ValueChanged<bool>? onTapLookupChanged;
 
+  /// 打开列表时停在哪个页签（xlzGuK5YmD：记住上次打开的页签，下次打开恢复；不按
+  /// 「有收藏就开收藏」硬判）。
+  final VideoSubtitleListFilter initialFilter;
+
+  /// 用户切换页签时回调，页面层落 Drift preferences（null 时纯本地切换）。
+  final ValueChanged<VideoSubtitleListFilter>? onFilterChanged;
+
   /// 行字号档位初值（BUG-878）：面板内 [_fontScaleIndex] 以此为种子（seed 时 clamp 到
   /// [_kFontScaleSteps] 范围），用户 A+/A- 或 Ctrl+滚轮调节时回调 [onFontScaleIndexChanged]
   /// 通知页面层落 Drift preferences。默认 [_kDefaultFontScaleIndex]（1.0×，向后兼容：
@@ -607,6 +672,9 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   /// true 时列表行文本纯悬停即查词，false 时退回按住 Shift 悬停才查词。由页面层从
   /// `ReaderFushiSource.instance.hoverAutoLookup` 传入。默认 false（向后兼容）。
   final bool hoverAutoLookupEnabled;
+
+  /// 悬停查词按住的键（设置「悬停查词按键」）。
+  final HoverLookupModifier hoverLookupModifier;
 
   final double fontSize;
 
@@ -716,7 +784,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     0,
     _kFontScaleSteps.length - 1,
   );
-  VideoSubtitleListFilter _filter = VideoSubtitleListFilter.all;
+  late VideoSubtitleListFilter _filter = widget.initialFilter;
 
   /// BUG-878：Ctrl / ⌘ 是否按住。按住时列表滚动物理改为 [NeverScrollableScrollPhysics]，
   /// 让 Ctrl+滚轮只缩字号而不同时滚动列表（裸滚轮仍正常滚列表，浏览器式缩放）。由
@@ -1069,11 +1137,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     _textDirection = Directionality.of(context);
     _textScaler = MediaQuery.textScalerOf(context);
     // 行高缓存 key 带 M3E / 经典前缀，切换形态不必作废。
-    _m3e = switch (widget.layout) {
-      VideoSubtitleListLayout.m3e => true,
-      VideoSubtitleListLayout.classic => false,
-      VideoSubtitleListLayout.auto => videoM3ePanelNeutral(context),
-    };
+    _m3e = VideoSubtitleJumpPanel.usesM3eColumn(context, layout: widget.layout);
   }
 
   /// BUG-878：同步 Ctrl / ⌘ 修饰键状态（纯观察、恒返回 false 不消费按键，不干扰任何快捷键
@@ -1095,8 +1159,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 与持久化）。非缩放修饰键 / 非滚轮信号一律忽略，交回列表滚动。
   void _handleZoomWheel(PointerSignalEvent event) {
     if (event is! PointerScrollEvent) return;
-    if (!HardwareKeyboard.instance.isControlPressed &&
-        !HardwareKeyboard.instance.isMetaPressed) {
+    // 以平台真实修饰键状态为准（Ctrl 抬起落在 WebView2 / 别的窗口时缓存会卡在按下，
+    // 反馈 TpKspDUst7）；卡住的「按下」顺手解除，列表恢复可滚。
+    if (!isZoomModifierPressed()) {
+      if (_zoomModifierHeld && mounted) {
+        setState(() => _zoomModifierHeld = false);
+      }
       return;
     }
     if (event.scrollDelta.dy == 0) return;
@@ -1112,7 +1180,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final void Function(AudioCue, int, Rect)? onLookup = _lookupCue;
     if (onLookup == null) return;
     if (!widget.hoverAutoLookupEnabled &&
-        !HardwareKeyboard.instance.isShiftPressed) {
+        !widget.hoverLookupModifier.isPressed()) {
       // 未开「悬停即查词」且未按 Shift：复位节流锚，下次按 Shift 进入即触发。
       _lastRowHoverPos = Offset.zero;
       _lastRowHoverCueKey = null;
@@ -1357,14 +1425,18 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   void _setFilter(Set<VideoSubtitleListFilter> next) {
     if (next.isEmpty) return;
+    final VideoSubtitleListFilter picked = next.single;
+    if (picked == _filter) return;
     setState(() {
-      _filter = next.single;
+      _filter = picked;
       _hoveredIndex = -1;
       _lastScrolledIndex = -1;
       // 过滤集变 → visibleIndex 重排，旧 visibleIndex→key 映射作废（TODO-340）。
       _rowKeys.clear();
       _clearCueCaches();
     });
+    // xlzGuK5YmD：通知页面层记住这次的页签。
+    widget.onFilterChanged?.call(picked);
     _scheduleScrollToCurrentCue();
   }
 
@@ -1669,7 +1741,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           top: widget.safeAreaInsets.top,
           right: widget.safeAreaInsets.right,
         ),
-        color: cs.surface,
+        color: VideoSubtitleJumpPanel.columnSurfaceColor(
+          context,
+          colorScheme: cs,
+          layout: widget.layout,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
@@ -2077,33 +2153,57 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       onExit: (_) {
         if (_hoveredIndex == index) setState(() => _hoveredIndex = -1);
       },
-      child: InkWell(
-        // 行点击 = seek 到该句（与 asbplayer transcript 一致）。文本字符查词由文本区
-        // 叠加的 translucent hit-test 层承载（[onLookupCue] 非 null 时），它赢手势竞技场、
-        // 截断本 InkWell，故点字查词、点空白 / 时间戳 seek，两不冲突（BUG-263）。
-        onTap: () => widget.onTapCue(cue),
-        child: SubtitleTranscriptRow(
-          colorScheme: cs,
-          selected: selected,
-          hovered: hovered,
-          favorited: favorited,
-          leading: SizedBox(
-            width: _timestampColumnWidth,
-            child: Text(
-              formatCueTimestamp(cue.startMs),
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: tsColor,
-                fontSize: _effectiveFontSize - 1,
-                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+      child: _withRowMenuGestures(
+        cue: cue,
+        rawIndex: rawIndex,
+        child: InkWell(
+          // 行点击 = seek 到该句（与 asbplayer transcript 一致）。文本字符查词由文本区
+          // 叠加的 translucent hit-test 层承载（[onLookupCue] 非 null 时），它赢手势竞技场、
+          // 截断本 InkWell，故点字查词、点空白 / 时间戳 seek，两不冲突（BUG-263）。
+          onTap: () => widget.onTapCue(cue),
+          child: SubtitleTranscriptRow(
+            colorScheme: cs,
+            selected: selected,
+            hovered: hovered,
+            favorited: favorited,
+            leading: SizedBox(
+              width: _timestampColumnWidth,
+              child: Text(
+                formatCueTimestamp(cue.startMs),
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: tsColor,
+                  fontSize: _effectiveFontSize - 1,
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
+                ),
               ),
             ),
+            text: _buildRowText(cue, textColor, selected, textKey),
+            trailing: _buildRowActions(cs, cue, rawIndex, selected, favorited),
           ),
-          text: _buildRowText(cue, textColor, selected, textKey),
-          trailing: _buildRowActions(cs, cue, rawIndex, selected, favorited),
         ),
+      ),
+    );
+  }
+
+  /// 行菜单手势：触屏长按、桌面菜单键（绑定表决定，默认右键）都弹 [_showM3eRowMenu]
+  /// （跳到这句 / 复制 / 收藏 / 编辑字幕 / 还原原文）。
+  Widget _withRowMenuGestures({
+    required AudioCue cue,
+    required int rawIndex,
+    required Widget child,
+  }) {
+    return ContextMenuTrigger(
+      onInvoke: (Offset position) =>
+          _showM3eRowMenu(context, cue, rawIndex, position),
+      child: GestureDetector(
+        onLongPressStart: (LongPressStartDetails details) =>
+            _showM3eRowMenu(context, cue, rawIndex, details.globalPosition),
+        child: child,
       ),
     );
   }
@@ -2248,7 +2348,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       type: MaterialType.transparency,
       child: ColoredBox(
         key: const ValueKey<String>('video-subtitle-jump-panel-surface'),
-        color: cs.surfaceContainer,
+        color: VideoSubtitleJumpPanel.columnSurfaceColor(
+          context,
+          colorScheme: widget.colorScheme,
+          layout: widget.layout,
+        ),
         child: Padding(
           padding: EdgeInsets.only(
             top: widget.safeAreaInsets.top,
@@ -2782,10 +2886,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           onExit: (_) {
             if (_hoveredIndex == index) setState(() => _hoveredIndex = -1);
           },
-          child: GestureDetector(
-            // 触屏没有悬停：长按行弹出同一组动作（跳到这句 / 复制 / 收藏）。
-            onLongPressStart: (LongPressStartDetails details) =>
-                _showM3eRowMenu(context, cue, rawIndex, details.globalPosition),
+          // 触屏没有悬停：长按行弹出行菜单；桌面右键同一份菜单（行尾悬停动作列之外的
+          // 编辑字幕 / 还原原文只在菜单里）。
+          child: _withRowMenuGestures(
+            cue: cue,
+            rawIndex: rawIndex,
             child: AnimatedContainer(
               duration: stateDuration,
               curve: FushiMotion.standard,
@@ -2896,6 +3001,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     if (overlay is! RenderBox) return;
     final Offset local = overlay.globalToLocal(globalPosition);
     final bool favorited = widget.isCueFavorited(cue);
+    final bool canEdit = widget.onEditCue != null;
+    final bool canRestore =
+        widget.onRestoreCue != null && cue.uneditedCue != null;
     final int? choice = await showFushiMenu<int>(
       context: context,
       position: RelativeRect.fromRect(
@@ -2938,6 +3046,28 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             ],
           ),
         ),
+        if (canEdit)
+          PopupMenuItem<int>(
+            value: 3,
+            child: Row(
+              children: <Widget>[
+                const FushiIcon(FushiIcons.edit, size: 20),
+                const SizedBox(width: 12),
+                Flexible(child: Text(t.video_subtitle_list_edit)),
+              ],
+            ),
+          ),
+        if (canRestore)
+          PopupMenuItem<int>(
+            value: 4,
+            child: Row(
+              children: <Widget>[
+                const FushiIcon(FushiIcons.undo, size: 20),
+                const SizedBox(width: 12),
+                Flexible(child: Text(t.video_subtitle_list_edit_restore)),
+              ],
+            ),
+          ),
       ],
     );
     if (!mounted) return;
@@ -2948,6 +3078,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         if (widget.onCopyCue(cue)) _markCueCopied(rawIndex);
       case 2:
         await widget.onFavoriteCue(cue);
+      case 3:
+        await widget.onEditCue?.call(cue);
+      case 4:
+        await widget.onRestoreCue?.call(cue);
       default:
         break;
     }

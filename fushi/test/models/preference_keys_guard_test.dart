@@ -47,18 +47,24 @@ void f(Prefs p) {
 ''';
     final List<String> keys = extractPrefKeyLiterals(sample);
     expect(
-        keys, containsAll(<String>['real_key_a', 'real_key_b', 'real_key_c']));
+      keys,
+      containsAll(<String>['real_key_a', 'real_key_b', 'real_key_c']),
+    );
     expect(keys, isNot(contains('commented_out_key')), reason: '行注释里的键不算调用');
     expect(keys, isNot(contains('block_commented_key')), reason: '块注释里的键不算调用');
-    expect(keys.where((String k) => k.startsWith('dyn_')), isEmpty,
-        reason: '插值动态键跳过');
+    expect(
+      keys.where((String k) => k.startsWith('dyn_')),
+      isEmpty,
+      reason: '插值动态键跳过',
+    );
   });
 
   test('lib 全树：getPref*/setPref* 的字面量键必须在注册表里', () {
     final List<Directory> roots = <Directory>[
       Directory('lib'),
       ...Directory('../packages').listSync().whereType<Directory>().map(
-          (Directory d) => Directory('${d.path}${Platform.pathSeparator}lib')),
+        (Directory d) => Directory('${d.path}${Platform.pathSeparator}lib'),
+      ),
     ].where((Directory d) => d.existsSync()).toList();
     expect(roots, isNotEmpty);
 
@@ -81,7 +87,8 @@ void f(Prefs p) {
     expect(
       violations,
       isEmpty,
-      reason: '发现未登记的偏好键。新键必须先登记进 '
+      reason:
+          '发现未登记的偏好键。新键必须先登记进 '
           'lib/src/models/preference_keys.dart 的 kKnownPreferenceKeys'
           '（按字母序），并在调用点旁注释类型与用途。违规：\n'
           '${violations.entries.map((e) => '  ${e.key} ← ${e.value.join(', ')}').join('\n')}',
@@ -94,7 +101,10 @@ void f(Prefs p) {
     expect(keys, sorted, reason: '注册表按字母序维护，插错位置合并冲突翻倍');
     expect(keys.any((String k) => k.isEmpty), isFalse);
     expect(kKnownPreferenceKeyPrefixes.any((String p) => p.isEmpty), isFalse);
-    expect(kCredentialPreferenceKeys.difference(kKnownPreferenceKeys), isEmpty,
-        reason: '凭据键是注册表子集');
+    expect(
+      kCredentialPreferenceKeys.difference(kKnownPreferenceKeys),
+      isEmpty,
+      reason: '凭据键是注册表子集',
+    );
   });
 }

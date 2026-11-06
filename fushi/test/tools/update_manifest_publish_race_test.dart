@@ -20,11 +20,15 @@ void main() {
   setUpAll(() {
     workspace = Directory.current.parent;
     script = File(p.join(workspace.path, 'tool', 'publish_update_manifest.sh'));
-    expect(script.existsSync(), isTrue,
-        reason: 'publish_update_manifest.sh must exist at ${script.path}');
     expect(
-      File(p.join(workspace.path, 'tool', 'merge_update_manifest.py'))
-          .existsSync(),
+      script.existsSync(),
+      isTrue,
+      reason: 'publish_update_manifest.sh must exist at ${script.path}',
+    );
+    expect(
+      File(
+        p.join(workspace.path, 'tool', 'merge_update_manifest.py'),
+      ).existsSync(),
       isTrue,
       reason: 'merge_update_manifest.py helper must exist',
     );
@@ -49,8 +53,11 @@ void main() {
     expect(desktop.exitCode, 0, reason: _io(desktop));
 
     final List<String> assets = await fx.finalAssetNames();
-    expect(assets, containsAll(<String>[fx.apkName, fx.exeName]),
-        reason: 'final manifest dropped a platform: $assets');
+    expect(
+      assets,
+      containsAll(<String>[fx.apkName, fx.exeName]),
+      reason: 'final manifest dropped a platform: $assets',
+    );
     expect(assets.length, 2);
   });
 
@@ -73,78 +80,88 @@ void main() {
     expect(android.exitCode, 0, reason: _io(android));
 
     final List<String> assets = await fx.finalAssetNames();
-    expect(assets, containsAll(<String>[fx.apkName, fx.exeName]),
-        reason: 'final manifest dropped a platform: $assets');
+    expect(
+      assets,
+      containsAll(<String>[fx.apkName, fx.exeName]),
+      reason: 'final manifest dropped a platform: $assets',
+    );
     expect(assets.length, 2);
   });
 
-  test('concurrent same-tag publishes survive the push race without clobber',
-      () async {
-    final _Fixture fx = await _Fixture.create();
-    addTearDown(fx.dispose);
+  test(
+    'concurrent same-tag publishes survive the push race without clobber',
+    () async {
+      final _Fixture fx = await _Fixture.create();
+      addTearDown(fx.dispose);
 
-    final List<ProcessResult> results =
-        await Future.wait(<Future<ProcessResult>>[
-      fx.publish(
+      final List<ProcessResult> results =
+          await Future.wait(<Future<ProcessResult>>[
+            fx.publish(
+              label: 'android',
+              artifactsSubdir: 'art_android',
+              assetGlob: 'fushi-*.apk',
+            ),
+            fx.publish(
+              label: 'desktop',
+              artifactsSubdir: 'art_desktop',
+              assetGlob: 'fushi-*-windows-setup.exe',
+            ),
+          ]);
+      for (final ProcessResult r in results) {
+        expect(r.exitCode, 0, reason: _io(r));
+      }
+
+      final List<String> assets = await fx.finalAssetNames();
+      expect(
+        assets,
+        containsAll(<String>[fx.apkName, fx.exeName]),
+        reason: 'concurrent publish clobbered a platform: $assets',
+      );
+      expect(assets.length, 2);
+    },
+  );
+
+  test(
+    'a newer tag from another platform keeps the lagging platform asset',
+    () async {
+      // TODO-1173: a newer DESKTOP tag must not fully supersede the older ANDROID
+      // asset -- that android build is android's only release, so dropping it
+      // leaves android clients with no update. Keep both (cross-platform union),
+      // advertise the newest tag.
+      final _Fixture fx = await _Fixture.create();
+      addTearDown(fx.dispose);
+
+      final ProcessResult oldAndroid = await fx.publish(
         label: 'android',
-        artifactsSubdir: 'art_android',
+        artifactsSubdir: 'art_android_old',
         assetGlob: 'fushi-*.apk',
-      ),
-      fx.publish(
+        tag: 'v0.11.1-debug.5630+08dc73c',
+        version: '0.11.1-debug.5630',
+        releaseSequence: 5630,
+      );
+      expect(oldAndroid.exitCode, 0, reason: _io(oldAndroid));
+
+      final ProcessResult newDesktop = await fx.publish(
         label: 'desktop',
         artifactsSubdir: 'art_desktop',
         assetGlob: 'fushi-*-windows-setup.exe',
-      ),
-    ]);
-    for (final ProcessResult r in results) {
-      expect(r.exitCode, 0, reason: _io(r));
-    }
+      );
+      expect(newDesktop.exitCode, 0, reason: _io(newDesktop));
 
-    final List<String> assets = await fx.finalAssetNames();
-    expect(assets, containsAll(<String>[fx.apkName, fx.exeName]),
-        reason: 'concurrent publish clobbered a platform: $assets');
-    expect(assets.length, 2);
-  });
-
-  test('a newer tag from another platform keeps the lagging platform asset',
-      () async {
-    // TODO-1173: a newer DESKTOP tag must not fully supersede the older ANDROID
-    // asset -- that android build is android's only release, so dropping it
-    // leaves android clients with no update. Keep both (cross-platform union),
-    // advertise the newest tag.
-    final _Fixture fx = await _Fixture.create();
-    addTearDown(fx.dispose);
-
-    final ProcessResult oldAndroid = await fx.publish(
-      label: 'android',
-      artifactsSubdir: 'art_android_old',
-      assetGlob: 'fushi-*.apk',
-      tag: 'v0.11.1-debug.5630+08dc73c',
-      version: '0.11.1-debug.5630',
-      releaseSequence: 5630,
-    );
-    expect(oldAndroid.exitCode, 0, reason: _io(oldAndroid));
-
-    final ProcessResult newDesktop = await fx.publish(
-      label: 'desktop',
-      artifactsSubdir: 'art_desktop',
-      assetGlob: 'fushi-*-windows-setup.exe',
-    );
-    expect(newDesktop.exitCode, 0, reason: _io(newDesktop));
-
-    final List<String> assets = await fx.finalAssetNames();
-    expect(
-      assets,
-      containsAll(<String>[
-        'fushi-0.11.1-debug.5630-08dc73c-debug.apk',
-        fx.exeName,
-      ]),
-      reason: 'cross-platform union dropped the lagging platform: $assets',
-    );
-    expect(assets.length, 2);
-    expect(await fx.finalTag(), 'v0.11.1-debug.5633+3cf5905');
-    expect(await fx.finalReleaseSequence(), 5633);
-  });
+      final List<String> assets = await fx.finalAssetNames();
+      expect(
+        assets,
+        containsAll(<String>[
+          'fushi-0.11.1-debug.5630-08dc73c-debug.apk',
+          fx.exeName,
+        ]),
+        reason: 'cross-platform union dropped the lagging platform: $assets',
+      );
+      expect(assets.length, 2);
+      expect(await fx.finalTag(), 'v0.11.1-debug.5633+3cf5905');
+      expect(await fx.finalReleaseSequence(), 5633);
+    },
+  );
 
   test('a late older-sequence publish never downgrades the manifest', () async {
     // TODO-1173 core guard: the reported bug was an installed newer build being
@@ -185,126 +202,153 @@ void main() {
     expect(assets.length, 2);
   });
 
-  test('BUG-1516: a pruned platform asset is dropped, not advertised as 404',
-      () async {
-    // Reported shape: desktop published, then stopped; Android kept publishing.
-    // The rolling release prunes per platform, so the desktop file was deleted
-    // while the manifest still advertised it. The client's only in-app action
-    // was downloading that URL -> hard 404, no recovery (real case: an old
-    // Hibiki debug client pinned to hibiki-1.3.2-debug.10182-windows-setup.exe
-    // while the manifest's top level already read 1.3.3-debug.10192).
-    final _Fixture fx = await _Fixture.create();
-    addTearDown(fx.dispose);
+  test(
+    'BUG-1516: a pruned platform asset is dropped, not advertised as 404',
+    () async {
+      // Reported shape: desktop published, then stopped; Android kept publishing.
+      // The rolling release prunes per platform, so the desktop file was deleted
+      // while the manifest still advertised it. The client's only in-app action
+      // was downloading that URL -> hard 404, no recovery (real case: an old
+      // Hibiki debug client pinned to hibiki-1.3.2-debug.10182-windows-setup.exe
+      // while the manifest's top level already read 1.3.3-debug.10192).
+      final _Fixture fx = await _Fixture.create();
+      addTearDown(fx.dispose);
 
-    final ProcessResult desktop = await fx.publish(
-      label: 'desktop',
-      artifactsSubdir: 'art_desktop',
-      assetGlob: 'fushi-*-windows-setup.exe',
-    );
-    expect(desktop.exitCode, 0, reason: _io(desktop));
-    expect(await fx.finalAssetNames(), contains(fx.exeName),
-        reason: 'precondition: desktop asset advertised before the prune');
+      final ProcessResult desktop = await fx.publish(
+        label: 'desktop',
+        artifactsSubdir: 'art_desktop',
+        assetGlob: 'fushi-*-windows-setup.exe',
+      );
+      expect(desktop.exitCode, 0, reason: _io(desktop));
+      expect(
+        await fx.finalAssetNames(),
+        contains(fx.exeName),
+        reason: 'precondition: desktop asset advertised before the prune',
+      );
 
-    // Android publishes later; by then the desktop asset is gone from the
-    // release, so it must not survive into the merged manifest.
-    final ProcessResult android = await fx.publish(
-      label: 'android',
-      artifactsSubdir: 'art_android',
-      assetGlob: 'fushi-*.apk',
-      liveAssetsJson: json.encode(<String>[fx.apkName]),
-    );
-    expect(android.exitCode, 0, reason: _io(android));
+      // Android publishes later; by then the desktop asset is gone from the
+      // release, so it must not survive into the merged manifest.
+      final ProcessResult android = await fx.publish(
+        label: 'android',
+        artifactsSubdir: 'art_android',
+        assetGlob: 'fushi-*.apk',
+        liveAssetsJson: json.encode(<String>[fx.apkName]),
+      );
+      expect(android.exitCode, 0, reason: _io(android));
 
-    final List<String> assets = await fx.finalAssetNames();
-    expect(assets, isNot(contains(fx.exeName)),
-        reason: '被 prune 的资产仍留在清单里 → 客户端下载必 404：$assets');
-    expect(assets, contains(fx.apkName), reason: '刚上传的资产不得被存活性过滤误删：$assets');
-  });
+      final List<String> assets = await fx.finalAssetNames();
+      expect(
+        assets,
+        isNot(contains(fx.exeName)),
+        reason: '被 prune 的资产仍留在清单里 → 客户端下载必 404：$assets',
+      );
+      expect(assets, contains(fx.apkName), reason: '刚上传的资产不得被存活性过滤误删：$assets');
+    },
+  );
 
-  test('BUG-1516: an unavailable live list must not wipe retained assets',
-      () async {
-    // Fail-open half of the same guard. `gh release view` can fail for reasons
-    // unrelated to the manifest (rate limit, 5xx, tag not created yet). Reading
-    // that as "nothing is live" would delete every platform that did not
-    // publish in this run — a much bigger outage than the stale entry.
-    final _Fixture fx = await _Fixture.create();
-    addTearDown(fx.dispose);
+  test(
+    'BUG-1516: an unavailable live list must not wipe retained assets',
+    () async {
+      // Fail-open half of the same guard. `gh release view` can fail for reasons
+      // unrelated to the manifest (rate limit, 5xx, tag not created yet). Reading
+      // that as "nothing is live" would delete every platform that did not
+      // publish in this run — a much bigger outage than the stale entry.
+      final _Fixture fx = await _Fixture.create();
+      addTearDown(fx.dispose);
 
-    final ProcessResult desktop = await fx.publish(
-      label: 'desktop',
-      artifactsSubdir: 'art_desktop',
-      assetGlob: 'fushi-*-windows-setup.exe',
-    );
-    expect(desktop.exitCode, 0, reason: _io(desktop));
+      final ProcessResult desktop = await fx.publish(
+        label: 'desktop',
+        artifactsSubdir: 'art_desktop',
+        assetGlob: 'fushi-*-windows-setup.exe',
+      );
+      expect(desktop.exitCode, 0, reason: _io(desktop));
 
-    final ProcessResult android = await fx.publish(
-      label: 'android',
-      artifactsSubdir: 'art_android',
-      assetGlob: 'fushi-*.apk',
-      liveAssetsJson: '', // query failed → filter must switch off entirely
-    );
-    expect(android.exitCode, 0, reason: _io(android));
+      final ProcessResult android = await fx.publish(
+        label: 'android',
+        artifactsSubdir: 'art_android',
+        assetGlob: 'fushi-*.apk',
+        liveAssetsJson: '', // query failed → filter must switch off entirely
+      );
+      expect(android.exitCode, 0, reason: _io(android));
 
-    final List<String> assets = await fx.finalAssetNames();
-    expect(assets, containsAll(<String>[fx.apkName, fx.exeName]),
-        reason: '存活列表取不到时必须放行全部保留资产（fail-open）：$assets');
-  });
+      final List<String> assets = await fx.finalAssetNames();
+      expect(
+        assets,
+        containsAll(<String>[fx.apkName, fx.exeName]),
+        reason: '存活列表取不到时必须放行全部保留资产（fail-open）：$assets',
+      );
+    },
+  );
 
-  test('BUG-1516: a desktop publish mirrors into the hibiki-family manifest',
-      () async {
-    // Desktop is the ONLY platform where the rename migrates by self-update:
-    // Windows/macOS overwrite in place, so a Hibiki client selecting
-    // fushi-*-windows-setup.exe and installing it IS the migration. BUG-1481
-    // split the manifest per FILE, which cut that path off; the desktop assets
-    // have to reach latest-debug.json again.
-    final _Fixture fx = await _Fixture.create();
-    addTearDown(fx.dispose);
-    await fx.seedLegacyBridgeManifest();
+  test(
+    'BUG-1516: a desktop publish mirrors into the hibiki-family manifest',
+    () async {
+      // Desktop is the ONLY platform where the rename migrates by self-update:
+      // Windows/macOS overwrite in place, so a Hibiki client selecting
+      // fushi-*-windows-setup.exe and installing it IS the migration. BUG-1481
+      // split the manifest per FILE, which cut that path off; the desktop assets
+      // have to reach latest-debug.json again.
+      final _Fixture fx = await _Fixture.create();
+      addTearDown(fx.dispose);
+      await fx.seedLegacyBridgeManifest();
 
-    final ProcessResult desktop = await fx.publish(
-      label: 'desktop',
-      artifactsSubdir: 'art_desktop',
-      assetGlob: 'fushi-*-windows-setup.exe',
-    );
-    expect(desktop.exitCode, 0, reason: _io(desktop));
+      final ProcessResult desktop = await fx.publish(
+        label: 'desktop',
+        artifactsSubdir: 'art_desktop',
+        assetGlob: 'fushi-*-windows-setup.exe',
+      );
+      expect(desktop.exitCode, 0, reason: _io(desktop));
 
-    final List<String> legacy = await fx.legacyAssetNames();
-    expect(legacy, contains(fx.exeName),
-        reason: 'Hibiki 桌面客户端拿不到 Fushi 安装包，迁移路径仍然是断的：$legacy');
-    expect(legacy, contains(fx.legacyBridgeApkName),
-        reason: '镜像不得动桥自己的 APK（那是 Android 的迁移路径）：$legacy');
+      final List<String> legacy = await fx.legacyAssetNames();
+      expect(
+        legacy,
+        contains(fx.exeName),
+        reason: 'Hibiki 桌面客户端拿不到 Fushi 安装包，迁移路径仍然是断的：$legacy',
+      );
+      expect(
+        legacy,
+        contains(fx.legacyBridgeApkName),
+        reason: '镜像不得动桥自己的 APK（那是 Android 的迁移路径）：$legacy',
+      );
 
-    // The top level belongs to the bridge. Moving it would show Android clients
-    // a version whose only selectable APK is the older bridge build — the exact
-    // cross-family mismatch BUG-1481 fixed.
-    final Map<String, dynamic> m = await fx.legacyManifest();
-    expect(m['version'], _Fixture.legacyBridgeVersion);
-    expect(m['tag'], _Fixture.legacyBridgeTag);
-    expect(m['releaseSequence'], _Fixture.legacyBridgeSeq);
-  });
+      // The top level belongs to the bridge. Moving it would show Android clients
+      // a version whose only selectable APK is the older bridge build — the exact
+      // cross-family mismatch BUG-1481 fixed.
+      final Map<String, dynamic> m = await fx.legacyManifest();
+      expect(m['version'], _Fixture.legacyBridgeVersion);
+      expect(m['tag'], _Fixture.legacyBridgeTag);
+      expect(m['releaseSequence'], _Fixture.legacyBridgeSeq);
+    },
+  );
 
-  test('BUG-1516: an Android publish never mirrors its APK across families',
-      () async {
-    // The other half of the asymmetry: Android genuinely cannot install across
-    // package names (INSTALL_FAILED_UPDATE_INCOMPATIBLE), so a Fushi APK must
-    // never appear in the hibiki-family manifest.
-    final _Fixture fx = await _Fixture.create();
-    addTearDown(fx.dispose);
-    await fx.seedLegacyBridgeManifest();
+  test(
+    'BUG-1516: an Android publish never mirrors its APK across families',
+    () async {
+      // The other half of the asymmetry: Android genuinely cannot install across
+      // package names (INSTALL_FAILED_UPDATE_INCOMPATIBLE), so a Fushi APK must
+      // never appear in the hibiki-family manifest.
+      final _Fixture fx = await _Fixture.create();
+      addTearDown(fx.dispose);
+      await fx.seedLegacyBridgeManifest();
 
-    final ProcessResult android = await fx.publish(
-      label: 'android',
-      artifactsSubdir: 'art_android',
-      assetGlob: 'fushi-*.apk',
-    );
-    expect(android.exitCode, 0, reason: _io(android));
+      final ProcessResult android = await fx.publish(
+        label: 'android',
+        artifactsSubdir: 'art_android',
+        assetGlob: 'fushi-*.apk',
+      );
+      expect(android.exitCode, 0, reason: _io(android));
 
-    final List<String> legacy = await fx.legacyAssetNames();
-    expect(legacy, isNot(contains(fx.apkName)),
-        reason: 'Fushi 的 APK 混进了桥的清单，安卓客户端会装不上：$legacy');
-    expect(legacy, <String>[fx.legacyBridgeApkName],
-        reason: '安卓发布不该改动桥清单的任何条目：$legacy');
-  });
+      final List<String> legacy = await fx.legacyAssetNames();
+      expect(
+        legacy,
+        isNot(contains(fx.apkName)),
+        reason: 'Fushi 的 APK 混进了桥的清单，安卓客户端会装不上：$legacy',
+      );
+      expect(legacy, <String>[
+        fx.legacyBridgeApkName,
+      ], reason: '安卓发布不该改动桥清单的任何条目：$legacy');
+    },
+  );
 
   test('production retry backoff stays polite to the real GitHub remote', () {
     // BUG-1178 guard: this suite lowers MANIFEST_RETRY_BACKOFF_MS so a local
@@ -312,11 +356,16 @@ void main() {
     // to make CI "faster" by hammering github.com -- the DEFAULT stays 3000ms.
     final String source = File(
       p.join(
-          Directory.current.parent.path, 'tool', 'publish_update_manifest.sh'),
+        Directory.current.parent.path,
+        'tool',
+        'publish_update_manifest.sh',
+      ),
     ).readAsStringSync();
-    expect(source,
-        contains(r'RETRY_BACKOFF_MS="${MANIFEST_RETRY_BACKOFF_MS:-3000}"'),
-        reason: 'default publish retry backoff must remain 3000ms');
+    expect(
+      source,
+      contains(r'RETRY_BACKOFF_MS="${MANIFEST_RETRY_BACKOFF_MS:-3000}"'),
+      reason: 'default publish retry backoff must remain 3000ms',
+    );
   });
 }
 
@@ -351,8 +400,11 @@ class _Fixture {
 
   /// Every asset this fixture can upload — the default "nothing was pruned"
   /// answer handed to the script's liveness filter (BUG-1516).
-  List<String> get allFixtureAssetNames =>
-      <String>[apkName, exeName, oldApkName];
+  List<String> get allFixtureAssetNames => <String>[
+    apkName,
+    exeName,
+    oldApkName,
+  ];
 
   // The retired hibiki-family manifest, as the Android bridge leaves it.
   //
@@ -369,23 +421,36 @@ class _Fixture {
 
   static Future<_Fixture> create() async {
     final Directory workspace = Directory.current.parent;
-    final File script =
-        File(p.join(workspace.path, 'tool', 'publish_update_manifest.sh'));
-    final Directory root =
-        await Directory.systemTemp.createTemp('fushi_manifest_race_');
+    final File script = File(
+      p.join(workspace.path, 'tool', 'publish_update_manifest.sh'),
+    );
+    final Directory root = await Directory.systemTemp.createTemp(
+      'fushi_manifest_race_',
+    );
 
     final Directory origin = Directory(p.join(root.path, 'origin.git'));
     await _git(root, <String>['init', '-q', '--bare', origin.path]);
 
     _writeAsset(
-        root, 'art_android', 'fushi-0.11.1-debug.5633-3cf5905-debug.apk');
+      root,
+      'art_android',
+      'fushi-0.11.1-debug.5633-3cf5905-debug.apk',
+    );
     _writeAsset(
-        root, 'art_android_old', 'fushi-0.11.1-debug.5630-08dc73c-debug.apk');
+      root,
+      'art_android_old',
+      'fushi-0.11.1-debug.5630-08dc73c-debug.apk',
+    );
     _writeAsset(
-        root, 'art_desktop', 'fushi-0.11.1-debug.5633-windows-setup.exe');
+      root,
+      'art_desktop',
+      'fushi-0.11.1-debug.5633-windows-setup.exe',
+    );
 
-    final String originUrl =
-        Uri.file(origin.path, windows: Platform.isWindows).toString();
+    final String originUrl = Uri.file(
+      origin.path,
+      windows: Platform.isWindows,
+    ).toString();
     return _Fixture._(root, script, originUrl);
   }
 
@@ -466,8 +531,11 @@ class _Fixture {
       stdoutEncoding: utf8,
       stderrEncoding: utf8,
     );
-    expect(show.exitCode, 0,
-        reason: 'could not read final manifest: ${show.stderr}');
+    expect(
+      show.exitCode,
+      0,
+      reason: 'could not read final manifest: ${show.stderr}',
+    );
     return json.decode(show.stdout as String) as Map<String, dynamic>;
   }
 
@@ -493,7 +561,7 @@ class _Fixture {
             'name': legacyBridgeApkName,
             'browser_download_url':
                 'https://github.com/owner/repo/releases/download/'
-                    'debug-rolling/$legacyBridgeApkName',
+                'debug-rolling/$legacyBridgeApkName',
           },
         ],
       }),
@@ -525,8 +593,11 @@ class _Fixture {
       stdoutEncoding: utf8,
       stderrEncoding: utf8,
     );
-    expect(show.exitCode, 0,
-        reason: 'could not read legacy manifest: ${show.stderr}');
+    expect(
+      show.exitCode,
+      0,
+      reason: 'could not read legacy manifest: ${show.stderr}',
+    );
     return json.decode(show.stdout as String) as Map<String, dynamic>;
   }
 
@@ -541,10 +612,11 @@ class _Fixture {
   Future<List<String>> finalAssetNames() async {
     final Map<String, dynamic> m = await _finalManifest();
     final List<dynamic> assets = m['assets'] as List<dynamic>;
-    final List<String> names = assets
-        .map((dynamic a) => (a as Map<String, dynamic>)['name'] as String)
-        .toList()
-      ..sort();
+    final List<String> names =
+        assets
+            .map((dynamic a) => (a as Map<String, dynamic>)['name'] as String)
+            .toList()
+          ..sort();
     return names;
   }
 
@@ -576,8 +648,13 @@ class _Fixture {
 }
 
 Future<void> _git(Directory cwd, List<String> args) async {
-  final ProcessResult r = await Process.run('git', args,
-      workingDirectory: cwd.path, stdoutEncoding: utf8, stderrEncoding: utf8);
+  final ProcessResult r = await Process.run(
+    'git',
+    args,
+    workingDirectory: cwd.path,
+    stdoutEncoding: utf8,
+    stderrEncoding: utf8,
+  );
   if (r.exitCode != 0) {
     throw StateError('git ${args.join(' ')} failed: ${r.stdout}\n${r.stderr}');
   }

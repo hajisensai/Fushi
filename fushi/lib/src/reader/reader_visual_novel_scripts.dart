@@ -16,12 +16,15 @@
 //   * Images render from cloned chapter markup; block-image promotion stays
 //     VN-specific, while spoiler/reveal identity reuses the shared reader
 //     image semantics.
-//   * Sasayaki cues always take the inline `.fushi-sentence-audio-cue` wrapper
-//     path, in e-ink too. hoshi swaps to a native rect overlay under e-ink
+//   * Sasayaki cues take the same in-page path in every mode, e-ink too: live
+//     Ranges in the `fushi-sentence-audio` CSS highlight wherever the engine
+//     supports CSS Highlight (BUG-3518 / BUG-3741: the DOM is never cut while the
+//     sentence is on screen), the inline `.fushi-sentence-audio-cue` wrapper only
+//     on older WebViews. hoshi swaps to a native rect overlay under e-ink
 //     (`popupHost.renderSentenceAudioHighlight`); Fushi never ported that host,
 //     so the branch rendered nothing at all and the read-along highlight was
-//     invisible in VN + e-ink. The wrapper class is what the e-ink CSS bar rule
-//     in `ReaderContentStyles` targets, so one path now serves every mode.
+//     invisible in VN + e-ink. `ReaderContentStyles` styles both the
+//     `::highlight(fushi-sentence-audio)` and the wrapper class in e-ink.
 //   * Config placeholders become Dart interpolation; `clickAdvance` is NOT a
 //     hoshi JS concern -- the host (webview.part.dart) binds blank-tap ->
 //     `paginate("forward")`.
@@ -436,6 +439,35 @@ $imageRevealSemantics
       return entry.startMatchable + normalizeText(entry.text.slice(0, end)).length;
     },
 
+    // BUG-3630：章内 raw 偏移（码点计数，与 sourceTextRawOffsets 同一坐标）→ 源章节里的
+    // （文本节点, UTF-16 偏移）。屏是源章节的切片克隆，一句话可能被切屏切成两半；取句要回到
+    // 源章节才能拿到整句。落在两个节点交界时取「从这里开始的那个字」所在节点（下一节点的 0），
+    // 空节点跳过；超出末尾时落到最后一个节点的末尾。
+    sourcePositionForRawOffset: function(rawOffset) {
+      var target = Number(rawOffset);
+      var entries = this.textEntries;
+      if (!Number.isFinite(target) || target < 0 || !entries.length) return null;
+      var low = 0;
+      var high = entries.length - 1;
+      while (low < high) {
+        var mid = Math.ceil((low + high) / 2);
+        if (entries[mid].startRaw <= target) low = mid;
+        else high = mid - 1;
+      }
+      while (low > 0 && entries[low].startRaw === entries[low].endRaw &&
+          entries[low - 1].endRaw >= target) {
+        low--;
+      }
+      var entry = entries[low];
+      var remaining = Math.max(0, Math.min(target, entry.endRaw) - entry.startRaw);
+      var end = 0;
+      while (remaining > 0 && end < entry.text.length) {
+        end += String.fromCodePoint(entry.text.codePointAt(end)).length;
+        remaining--;
+      }
+      return { node: entry.node, offset: end };
+    },
+
     indexSourcePreorder: function() {
       var index = 0;
       var visit = (function(node) {
@@ -836,7 +868,8 @@ window.fushiReader = {
   sentenceAudioCueMap: new Map(),
   sentenceAudioCuesSignature: null,
   cueWrappers: new Map(),
-  // BUG-3518：WebKit 上当前屏的句子不包裹，登记成 live Range（见选区脚本 window.__fushiCueRanges）。
+  // BUG-3518 / BUG-3741：支持 CSS Highlight 的引擎上当前屏的句子不包裹，登记成 live Range
+  // （见选区脚本 window.__fushiCueRanges.availableForLiveText）。
   cueRanges: new Map(),
 $kSentenceAudioRubyGapJs
   cueSourceRanges: new Map(),
@@ -954,9 +987,26 @@ $kSentenceAudioRubyGapJs
   },
   getMatchableOffset: function(node, offset) {
     var rawStart = this.nodeStartRawOffsets.get(node);
+    // BUG-3630：取句回到源章节（见 sourceTextPosition），句首 / 句尾节点是源节点而不是
+    // 当前屏的克隆，按源节点自己的章内 raw 偏移换算。
+    if (rawStart === undefined) rawStart = this.sourceTextRawOffsetForNode(node);
     if (rawStart === undefined || !this.contentStream) return null;
     var prefix = (node.textContent || '').slice(0, offset);
     return this.contentStream.matchableOffsetForRawOffset(
+      rawStart + this.countRawChars(prefix));
+  },
+  // BUG-3630：当前屏克隆里的（文本节点, 偏移）→ 源章节里的同一位置。VN 只把一屏的切片
+  // 克隆进 document，切屏可以落在一句话中间（量尺装不下时按字切，ruby 是原子单元），
+  // 在克隆上取句会被屏首 / 屏尾截断——用户报「書|きと同じ…」制卡只拿到半句。选区脚本的
+  // getSentenceContext 先经这里回到源章节再按标点取句，句子边界与分页 / 连续模式一致。
+  // 不是当前屏克隆的节点（源节点本身、未登记偏移的节点）返回 null，调用方原地取句。
+  sourceTextPosition: function(node, offset) {
+    if (!node || !this.contentStream ||
+        typeof this.contentStream.sourcePositionForRawOffset !== 'function') return null;
+    var rawStart = this.nodeStartRawOffsets.get(node);
+    if (rawStart === undefined) return null;
+    var prefix = (node.textContent || '').slice(0, offset);
+    return this.contentStream.sourcePositionForRawOffset(
       rawStart + this.countRawChars(prefix));
   },
   waitForImages: function() {
@@ -965,17 +1015,6 @@ $kSentenceAudioRubyGapJs
       : [];
     var promises = images.map(function(img) {
       return new Promise(function(resolve) {
-        // VN keeps the source chapter in a detached root while it builds the
-        // screen descriptors. A lazy image in a detached tree is not eligible
-        // for intersection-based loading, so its load/error event never fires
-        // and the chapter ready promise remains pending forever. Make the
-        // loading policy explicit before waiting; eager images still resolve
-        // through the normal load/error path and already-complete images take
-        // the fast path below.
-        if (img && img.getAttribute && img.getAttribute('loading') === 'lazy' &&
-            img.setAttribute) {
-          img.setAttribute('loading', 'eager');
-        }
         if (img.complete) {
           resolve();
           return;
@@ -1881,8 +1920,13 @@ $sharedInitViewport
   },
   buildSentenceScreens: function() {
     this.sentenceAtomicRoots = this.buildSentenceAtomicRoots();
-    var units = this.buildSentenceUnits()
-      .concat(this.buildStandaloneSentenceUnits())
+    // BUG-3891：独立单元（插图 / 表格等原子块）先算出来，作为句子切分的硬边界传进
+    // buildSentenceUnits——否则不以「。！？」收尾的一句（典型是「……」对白段）会越过插图
+    // 把图后的正文吞进同一个句子单元，排序后插图屏落到这句之后、字符区间倒挂，跟随
+    // 跨过插图时 pauseAtCrossedMediaScreen 看不见它（插图要等下一句才冒出来）。
+    var standaloneUnits = this.buildStandaloneSentenceUnits();
+    var units = this.buildSentenceUnits(standaloneUnits)
+      .concat(standaloneUnits)
       .sort(function(a, b) {
         if (a.order !== b.order) return a.order - b.order;
         if (a.startRawCount !== b.startRawCount) return a.startRawCount - b.startRawCount;
@@ -2084,14 +2128,37 @@ $sharedInitViewport
     }).length;
     return sharedRootCount <= 1 ? unit.renderRoot : unit.mediaNode;
   },
-  buildSentenceUnits: function() {
+  buildSentenceUnits: function(standaloneUnits) {
     var items = this.buildTextItems();
     if (!items.length) return [];
     var units = [];
     var unitStart = 0;
     var dialogueDepth = 0;
     var segmenterBoundaries = this.sentenceSegmenterBoundaryIndexes(items);
+    // BUG-3891：独立单元在原文里的位置是句子切分的硬边界（见 buildSentenceScreens）。
+    var breaks = (Array.isArray(standaloneUnits) ? standaloneUnits : [])
+      .map((unit) => ({
+        start: this.screenStartRawCount(unit),
+        end: this.screenEndRawCount(unit)
+      }))
+      .sort(function(a, b) { return a.start - b.start; });
+    var breakCursor = 0;
     for (var i = 0; i < items.length; i++) {
+      if (i > 0 && breakCursor < breaks.length) {
+        var prevEnd = items[i - 1].chapterRawEnd;
+        var nextStart = items[i].chapterRawStart;
+        while (breakCursor < breaks.length && breaks[breakCursor].start < prevEnd) breakCursor += 1;
+        var crossed = false;
+        while (breakCursor < breaks.length && breaks[breakCursor].end <= nextStart) {
+          crossed = true;
+          breakCursor += 1;
+        }
+        if (crossed && i > unitStart) {
+          this.pushSentenceUnit(units, items, unitStart, i);
+          unitStart = i;
+          dialogueDepth = 0;
+        }
+      }
       var char = items[i].char;
       var split = false;
       if (this.preserveDialogue && (char === '「' || char === '『')) {
@@ -2589,6 +2656,7 @@ $sharedInitViewport
       selection.clearSelection();
     }
     this.clearRevealTimer();
+    this.clearRevealRange();
     this.currentScreenIndex = safeIndex;
     this.clearCurrentSentenceAudioScreenTargets();
     if (this.screen.replaceChildren) {
@@ -2600,6 +2668,7 @@ $sharedInitViewport
     content.className = 'fushi-vn-content';
     content.appendChild(this.screens[safeIndex].render());
     this.screen.appendChild(content);
+    this.prewrapScreenSentenceAudioCues();
     this.centerScreenInk(content);
     if (fullyRevealed || this.revealSpeed <= 0) {
       this.revealComplete = true;
@@ -2674,21 +2743,87 @@ $sharedInitViewport
   hideCurrentScreenForReveal: function() {
     this.revealSegments = [];
     this.revealCursor = 0;
+    this.clearRevealRange();
     var walker = this.createWalker();
     var textNodes = [];
     var node;
     while (node = walker.nextNode()) {
       if (node.textContent) textNodes.push(node);
     }
-    for (var i = 0; i < textNodes.length; i++) {
-      this.prepareTextNodeForReveal(textNodes[i]);
+    if (this.revealByRangeAvailable()) {
+      this.prepareRevealRange(textNodes);
+    } else {
+      for (var i = 0; i < textNodes.length; i++) {
+        this.prepareTextNodeForReveal(textNodes[i]);
+      }
     }
     if (!this.revealSegments.length) {
+      this.clearRevealRange();
       this.revealComplete = true;
       return;
     }
     this.revealComplete = false;
     this.scheduleRevealTick();
+  },
+  // BUG-3778：逐字显现不能改屏上 DOM。旧做法把每个文本节点切成「已显现文本 + visibility:hidden
+  // 的 span」，每个 tick 在两者之间挪字；Blink 对含 ruby 的段落按不同的文本节点切分排出不同的
+  // 行盒（与 BUG-3741 同一机制，含注音那列差 6px），显现推进到注音词时整屏居中平移 3px、显现
+  // 完成拆掉 span 时又平移回来。所以支持 CSS Highlight 的引擎上，未显现部分登记成一个 live Range
+  // （从下一个要显现的字到屏末），用 ::highlight(fushi-vn-unrevealed) 画成透明，DOM 一字不动；
+  // 注音（rt）跟着同一 Range 走，基字显现完才露出。查词命中与窄条层经 window.__fushiRevealRange
+  // 认出未显现的字（见 reader_selection_scripts.dart）。不支持 CSS Highlight 的旧 WebView 仍切节点。
+  // window.__fushiVnRevealRangeMode === false 可强关，供测试跑兜底路径。
+  revealByRangeAvailable: function() {
+    if (!window.__fushiCssHighlightsSupported || typeof Highlight !== 'function') return false;
+    return window.__fushiVnRevealRangeMode !== false;
+  },
+  prepareRevealRange: function(textNodes) {
+    var ua = (window.navigator && window.navigator.userAgent) || '';
+    var webKit = ua.indexOf('AppleWebKit/') >= 0 &&
+      ua.indexOf('Chrome/') < 0 && ua.indexOf('Chromium/') < 0;
+    for (var i = 0; i < textNodes.length; i++) {
+      var node = textNodes[i];
+      if (typeof window.__fushiEnsureHighlightPaintable === 'function') {
+        window.__fushiEnsureHighlightPaintable(node);
+      }
+      // WebKit 不给直接挂在 <ruby> 下的基字文本画 ::highlight（macOS WKWebView 实测，与 BUG-3323
+      // 同类），未显现的基字会提前露出。建屏时（首帧之前，此后不再动）把它就地包进无样式行内
+      // 元素：节点身份不变，ruby 本身不移动（BUG-2806）。
+      if (webKit && node.parentNode && node.parentNode.localName === 'ruby') {
+        var wrapper = document.createElement('fushi-hl-text');
+        node.parentNode.insertBefore(wrapper, node);
+        wrapper.appendChild(node);
+      }
+      var chars = Array.from(node.textContent);
+      var offsets = [];
+      var cursor = 0;
+      for (var c = 0; c < chars.length; c++) {
+        offsets.push(cursor);
+        cursor += chars[c].length;
+      }
+      this.revealSegments.push({ node: node, chars: chars, offsets: offsets, revealed: 0 });
+    }
+    if (!this.revealSegments.length) return;
+    var content = this.screen.firstChild;
+    var range = document.createRange();
+    range.setStart(this.revealSegments[0].node, 0);
+    range.setEnd(content, content.childNodes.length);
+    window.__fushiRevealRange = range;
+    this.paintRevealRange();
+  },
+  // 只改 live Range 的端点不保证引擎重绘，每次推进都重新登记一份 Highlight。
+  paintRevealRange: function() {
+    var range = window.__fushiRevealRange;
+    if (!range) return;
+    var highlight = new Highlight(range);
+    // 压过查词 / 当前句等所有高亮的字色。
+    highlight.priority = 100;
+    CSS.highlights.set('fushi-vn-unrevealed', highlight);
+  },
+  clearRevealRange: function() {
+    if (!window.__fushiRevealRange) return;
+    window.__fushiRevealRange = null;
+    if (window.CSS && CSS.highlights) CSS.highlights.delete('fushi-vn-unrevealed');
   },
   prepareTextNodeForReveal: function(node) {
     var parent = node.parentNode;
@@ -2737,13 +2872,22 @@ $sharedInitViewport
     this.scheduleRevealTick();
   },
   revealOneCharacter: function() {
+    var range = window.__fushiRevealRange;
     for (var i = 0; i < this.revealSegments.length; i++) {
       var segment = this.revealSegments[i];
       if (segment.revealed >= segment.chars.length) continue;
       segment.revealed += 1;
+      this.revealCursor += 1;
+      if (range) {
+        var next = segment.revealed < segment.chars.length ? segment : this.revealSegments[i + 1];
+        if (next) {
+          range.setStart(next.node, next === segment ? segment.offsets[segment.revealed] : 0);
+          this.paintRevealRange();
+        }
+        return true;
+      }
       segment.visible.textContent = segment.chars.slice(0, segment.revealed).join('');
       segment.hiddenText.textContent = segment.chars.slice(segment.revealed).join('');
-      this.revealCursor += 1;
       return true;
     }
     return false;
@@ -2761,7 +2905,9 @@ $sharedInitViewport
   },
   completeCurrentReveal: function() {
     this.clearRevealTimer();
+    this.clearRevealRange();
     this.revealSegments.forEach(function(segment) {
+      if (!segment.hidden) return;
       segment.visible.textContent = segment.chars.join('');
       if (segment.hidden.parentNode) {
         segment.hidden.parentNode.removeChild(segment.hidden);
@@ -3004,8 +3150,12 @@ $sharedInitViewport
     var wrapped = new Map();
     // BUG-3518：WebKit 上切开文本节点会丢掉切口处的字距调整、整行后移；VN 又是播放到那句才包裹，
     // 排版恰好在高亮出现那一刻变动（句子被「顶开」）。那边改登记 Range，不动 DOM。
+    // BUG-3741：Blink 同样会变——包裹段落里后一句的文本节点，同段含 ruby 那一列的行盒差出 6px，
+    // 整屏居中跟着平移。所以 VN 在任何支持 CSS Highlight 的引擎上都登记 Range；包裹只留给旧 WebView。
+    // BUG-3776：Blink 上要换字色时不登记 Range（CSS Highlight 换色会把墨迹裁进字框），改包裹；
+    // 包裹在换屏时（显示之前）就做完（prewrapScreenSentenceAudioCues），播放中不再切 DOM。
     var rangeLayer = window.__fushiCueRanges;
-    if (rangeLayer && rangeLayer.enabled()) {
+    if (rangeLayer && rangeLayer.availableForLiveText() && !this.recolorsSentenceAudioByWrapping()) {
       if (!this.cueRanges) this.cueRanges = new Map();
       for (var r = 0; r < cueRanges.length; r++) {
         var built = rangeLayer.build(cueRanges[r].ranges);
@@ -3037,6 +3187,27 @@ $sharedInitViewport
       wrapped.set(id, wrappers);
     }
     return wrapped;
+  },
+  recolorsSentenceAudioByWrapping: function() {
+    var layer = window.__fushiCueRanges;
+    if (!layer || typeof layer.recolorClipsInk !== 'function' || !this.screen) return false;
+    return layer.recolorClipsInk(this.screen.querySelector('p') || this.screen);
+  },
+  // BUG-3776：换字色走包裹时，屏上各句在这一屏显示之前一次包好（BUG-3741：句子已在屏上再切文本
+  // 节点，Blink 含 ruby 的段落会重排、整屏平移）。之后播放只切 class。
+  prewrapScreenSentenceAudioCues: function() {
+    if (!this.sentenceAudioCues.length || !this.recolorsSentenceAudioByWrapping()) return;
+    var screen = this.screens && this.screens[this.currentScreenIndex];
+    if (!screen) return;
+    var self = this;
+    var cues = this.sentenceAudioCues.filter(function(cue) {
+      return self.sentenceAudioCueIntersectsScreen(self.sentenceAudioCueForInput(cue), screen);
+    });
+    if (!cues.length) return;
+    this.buildNodeOffsets();
+    var cueRanges = this.collectSentenceAudioCueRanges(cues);
+    this.rememberSentenceAudioCueSources(cueRanges);
+    this.prepareSentenceAudioInlineTargets(cueRanges);
   },
   prepareSentenceAudioInlineTargets: function(cueRanges) {
     this.wrapSentenceAudioCueRanges(cueRanges);
@@ -3120,6 +3291,7 @@ $sharedInitViewport
       return;
     }
     this.buildNodeOffsets();
+    this.prewrapScreenSentenceAudioCues();
     if (this.activeCueId) this.refreshSentenceAudioCuePresentation();
   },
   highlightSentenceAudioCue: function(cue, reveal, pauseEnabled, fromChapterStart) {
@@ -3295,6 +3467,45 @@ $sharedInitViewport
   if (typeof vn.contentRoot !== 'function') {
     vn.contentRoot = function() {
       return this.sourceRoot || document.body;
+    };
+  }
+  // 中键「跳到点击句」反查（Dart `_seekToClickedSentence` 调 cueIdAtPoint，查词载荷的
+  // audioCuePayload 调 cueIdAtDomPoint）。分页 / 连续 shell 按 cue↔DOM 映射表反查，VN 屏上
+  // 是克隆、映射表只在播放到某句时才对那一句建——此前 VN 整个缺这对方法，中键恒拿到 null、
+  // 静默无反应。VN 的 cue 本来就是章内音频坐标区间（start/length，与跟随同一口径），这里把
+  // 点击处换算到同一坐标（getMatchableOffset，克隆 / 源节点都认）再按区间找所属句，
+  // 回 `{type:'frag', id}`（id 即 textFragmentId，见 AudiobookBridge）。点在注音上按所属
+  // ruby 的基字起点算。
+  if (typeof vn.cueIdAtPoint !== 'function') {
+    vn.cueIdAtPoint = function(x, y) {
+      if (!window.fushiSelection || !window.fushiSelection.getCaretRange) return null;
+      var caret = window.fushiSelection.getCaretRange(x, y);
+      if (!caret) return null;
+      return this.cueIdAtDomPoint(caret.startContainer, caret.startOffset);
+    };
+  }
+  if (typeof vn.cueIdAtDomPoint !== 'function') {
+    vn.cueIdAtDomPoint = function(node, off) {
+      var cues = this.sentenceAudioCues;
+      if (!node || !cues || !cues.length) return null;
+      var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      var annotation = el && el.closest ? el.closest('rt, rp') : null;
+      if (annotation) {
+        var ruby = annotation.closest('ruby');
+        node = ruby ? this.createWalker(ruby).nextNode() : null;
+        off = 0;
+      }
+      if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+      var offset = this.getMatchableOffset(node, off);
+      if (offset === null) return null;
+      for (var i = 0; i < cues.length; i++) {
+        var cue = cues[i];
+        if (!cue || !cue.id) continue;
+        if (offset >= this.sentenceAudioCueStart(cue) && offset < this.sentenceAudioCueEnd(cue)) {
+          return JSON.stringify({ type: 'frag', id: cue.id });
+        }
+      }
+      return null;
     };
   }
   // 章内字符偏移 → 屏索引：**唯一**一份两段式查找（先找覆盖该偏移的屏，再取第一个

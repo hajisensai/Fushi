@@ -15,7 +15,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('引导里默认开，而设置本身仍默认关（不是升级送的）', () {
-    expect(kOnboardingAnkiAutoRepositionDefault, isTrue);
+    expect(kOnboardingAutoRepositionDefault, isTrue);
     expect(const AnkiSettings().autoRepositionEnabled, isFalse);
     expect(
       AnkiSettings.fromJson(const <String, dynamic>{}).autoRepositionEnabled,
@@ -46,7 +46,7 @@ void main() {
     for (final String needle in <String>[
       't.anki_reposition_auto_title',
       't.onboarding_anki_auto_reposition_hint',
-      'value: _ankiAutoReposition',
+      'value: _autoReposition',
     ]) {
       expect(
         build.contains(needle),
@@ -55,11 +55,9 @@ void main() {
       );
     }
     expect(
-      src.contains(
-        'bool _ankiAutoReposition = kOnboardingAnkiAutoRepositionDefault;',
-      ),
+      src.contains('bool _autoReposition = kOnboardingAutoRepositionDefault;'),
       isTrue,
-      reason: '向导内初值必须取 kOnboardingAnkiAutoRepositionDefault',
+      reason: '向导内初值必须取 kOnboardingAutoRepositionDefault',
     );
 
     final String next = methodBody(src, 'Future<void> _goNextAsync() async {');
@@ -67,7 +65,7 @@ void main() {
       'if (_steps[_stepIndex] == OnboardingStepId.anki) {',
     );
     final int write = next.indexOf(
-      '.setAutoRepositionEnabled(_ankiAutoReposition)',
+      '.setAutoRepositionEnabled(_autoReposition)',
     );
     expect(ankiBranch, isNonNegative);
     expect(
@@ -75,5 +73,33 @@ void main() {
       greaterThan(ankiBranch),
       reason: '离开 Anki 步时没把开关写进 AnkiSettings.autoRepositionEnabled',
     );
+  });
+
+  // Fushi 复习出卡直接按卡上的词频名次排（牌组「新卡顺序」），不需要制卡后改写位置：
+  // 复习方式一步不摆这颗开关，离开时也不写它（否则用户以为复习还要靠它排序）。
+  test('Fushi 复习路径：复习方式一步没有自动重排开关、也不写回（产品代码判据）', () {
+    final String src = maskComments(
+      File(
+        'lib/src/pages/implementations/onboarding_wizard_page.dart',
+      ).readAsStringSync(),
+    );
+    final int stepCase = src.indexOf('case OnboardingStepId.reviewMethod:');
+    final int nextCase = src.indexOf('case OnboardingStepId.anki:', stepCase);
+    expect(stepCase, isNonNegative);
+    final String step = src.substring(stepCase, nextCase);
+    expect(step.contains('_autoReposition'), isFalse);
+
+    final String next = methodBody(src, 'Future<void> _goNextAsync() async {');
+    final int reviewBranch = next.indexOf(
+      'if (_steps[_stepIndex] == OnboardingStepId.reviewMethod) {',
+    );
+    expect(reviewBranch, isNonNegative);
+    final String branch = next.substring(reviewBranch);
+    expect(
+      branch.contains('_applyReviewMethod(_reviewMethod)'),
+      isTrue,
+      reason: '照着默认按下一步时没把复习方式写进偏好',
+    );
+    expect(branch.contains('setAutoRepositionEnabled'), isFalse);
   });
 }

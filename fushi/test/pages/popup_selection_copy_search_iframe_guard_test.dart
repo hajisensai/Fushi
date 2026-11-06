@@ -24,8 +24,11 @@ void main() {
   );
 
   test('popup copy/search must not read selection via getSelectedText', () {
-    expect(file.existsSync(), isTrue,
-        reason: 'popup webview source not found at ${file.path}');
+    expect(
+      file.existsSync(),
+      isTrue,
+      reason: 'popup webview source not found at ${file.path}',
+    );
     final String code = maskComments(file.readAsStringSync());
 
     // getSelectedText 在桌面 fork 未实现（恒 null）且天然只读顶层文档，取不到 iframe 内
@@ -33,7 +36,8 @@ void main() {
     expect(
       code.contains('getSelectedText'),
       isFalse,
-      reason: '弹窗不得用 getSelectedText 读选区：桌面 fork 未实现（NotImplemented→null），'
+      reason:
+          '弹窗不得用 getSelectedText 读选区：桌面 fork 未实现（NotImplemented→null），'
           '且只读顶层文档取不到子 iframe 选区。改用 _selectedTextAcrossFrames（BUG-802）。',
     );
   });
@@ -57,14 +61,22 @@ void main() {
     // 仍取不到词条卡 iframe 内的选区。
     final int jsStart = source.indexOf('_selectedTextAcrossFramesJs');
     expect(jsStart, isNonNegative);
-    final int jsEnd =
-        source.indexOf("'''", source.indexOf("r'''", jsStart) + 4);
+    final int jsEnd = source.indexOf(
+      "'''",
+      source.indexOf("r'''", jsStart) + 4,
+    );
     expect(jsEnd, isNonNegative, reason: 'selection JS 常量未正常闭合');
     final String js = source.substring(jsStart, jsEnd);
     expect(js.contains('iframe'), isTrue, reason: '选区 JS 必须查询 iframe 子 frame');
-    expect(js.contains('contentWindow'), isTrue,
-        reason: '选区 JS 必须递归读 iframe.contentWindow 的选区');
-    expect(js.contains('getSelection'), isTrue,
-        reason: '选区 JS 必须读 window.getSelection()');
+    expect(
+      js.contains('contentWindow'),
+      isTrue,
+      reason: '选区 JS 必须递归读 iframe.contentWindow 的选区',
+    );
+    expect(
+      js.contains('getSelection'),
+      isTrue,
+      reason: '选区 JS 必须读 window.getSelection()',
+    );
   });
 }

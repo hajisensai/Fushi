@@ -81,8 +81,8 @@ bool readerStudyClockTurnAdvanced({
 ///    或 [noteAudiobookPlaying] 见到有声书开始出声，就清掉暂停旗，只触发一次。
 class ReaderStudyClockStartGate {
   ReaderStudyClockStartGate(this.mode)
-      : _manualPause = mode.startsPaused,
-        _awaitingFirstTurn = mode.awaitsFirstPageTurn;
+    : _manualPause = mode.startsPaused,
+      _awaitingFirstTurn = mode.awaitsFirstPageTurn;
 
   /// 本次会话打开时的开始方式（会话内改设置不影响已打开的书）。
   final ReaderStudyClockStartMode mode;

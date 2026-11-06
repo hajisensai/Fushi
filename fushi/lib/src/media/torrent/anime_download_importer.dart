@@ -59,7 +59,8 @@ List<String> sortVideoPathsByEpisode(List<String> paths) {
 Future<AnimeDownloadImportOutcome?> Function(
   AnimeDownloadPlan plan,
   List<String> videoAbsolutePaths,
-) buildAnimeDownloadImporter(
+)
+buildAnimeDownloadImporter(
   FushiDatabase db, {
   http.Client? httpClient,
   Directory? collectionCoversDirectory,
@@ -125,17 +126,18 @@ Future<AnimeDownloadImportOutcome?> Function(
             final String? coverUrl = plan.coverUrl;
             if (coverUrl != null && coverUrl.isNotEmpty) {
               try {
-                final Directory covers = collectionCoversDirectory ??
+                final Directory covers =
+                    collectionCoversDirectory ??
                     await VideoStorage.collectionCoversDir();
                 final String? collectionCoverPath =
                     await downloadVideoCoverToPath(
-                  coverUrl: coverUrl,
-                  outputPath: p.join(
-                    covers.path,
-                    videoCoverFileName('${result.collectionId}'),
-                  ),
-                  httpClient: httpClient,
-                );
+                      coverUrl: coverUrl,
+                      outputPath: p.join(
+                        covers.path,
+                        videoCoverFileName('${result.collectionId}'),
+                      ),
+                      httpClient: httpClient,
+                    );
                 if (collectionCoverPath != null) {
                   await db.updateMediaCollectionCoverPath(
                     result.collectionId,
@@ -148,8 +150,9 @@ Future<AnimeDownloadImportOutcome?> Function(
             // ② 首集抽帧缩略图 → 首集条目封面 + coverSource 借用链兜底。
             try {
               final String firstUid = result.episodeUids.first;
-              final CoverMetaStore store =
-                  CoverMetaStore(await VideoStorage.coversDir());
+              final CoverMetaStore store = CoverMetaStore(
+                await VideoStorage.coversDir(),
+              );
               if (await store.allowsAutoFrameWrite(firstUid)) {
                 final String? framePath = await extractVideoCover(
                   videoPath: sorted.first,
@@ -157,8 +160,9 @@ Future<AnimeDownloadImportOutcome?> Function(
                 );
                 if (framePath != null) {
                   await repo.updateCover(firstUid, framePath);
-                  final bool committed =
-                      await store.markAutoFrameAfterWrite(firstUid);
+                  final bool committed = await store.markAutoFrameAfterWrite(
+                    firstUid,
+                  );
                   if (committed) {
                     // ⚠️ 唯一落库点：MediaCollections.coverSource 持久化
                     // 'video|<uid>'，compositeKey 与历史手写插值逐字节一致。

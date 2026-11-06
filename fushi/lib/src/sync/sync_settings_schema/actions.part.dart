@@ -37,16 +37,17 @@ class _LegacyAssetSyncNoticeState extends State<_LegacyAssetSyncNotice> {
   }
 
   Future<void> _load() async {
-    final bool had =
-        await SyncRepository(widget.settingsContext.appModel.database)
-            .hadLegacyAssetAutoSync();
+    final bool had = await SyncRepository(
+      widget.settingsContext.appModel.database,
+    ).hadLegacyAssetAutoSync();
     if (!mounted) return;
     setState(() => _show = had);
   }
 
   Future<void> _dismiss() async {
-    await SyncRepository(widget.settingsContext.appModel.database)
-        .acknowledgeLegacyAssetAutoSync();
+    await SyncRepository(
+      widget.settingsContext.appModel.database,
+    ).acknowledgeLegacyAssetAutoSync();
     if (!mounted) return;
     setState(() => _show = false);
   }

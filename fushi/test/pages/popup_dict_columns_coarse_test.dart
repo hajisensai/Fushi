@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-3139：触屏（coarse 指针）上词典弹窗的有效列数。手机横屏的视频查词弹窗约
 /// 620 逻辑 px 宽，用户「最多三列」时必须排出两列；竖屏手机弹窗（~380 px）仍是

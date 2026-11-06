@@ -11,8 +11,9 @@ void main() {
 
   Widget buildApp(Widget child) {
     return TranslationProvider(
-      child:
-          MaterialApp(home: Scaffold(body: Column(children: <Widget>[child]))),
+      child: MaterialApp(
+        home: Scaffold(body: Column(children: <Widget>[child])),
+      ),
     );
   }
 
@@ -29,10 +30,7 @@ void main() {
     expect(find.byIcon(Icons.warning_amber_rounded), findsNothing);
     expect(find.text(t.download_network_fake_ip_udp_blocked), findsNothing);
     expect(find.text(t.download_network_dht_unreachable), findsNothing);
-    expect(
-      tester.getSize(find.byType(TorrentNetworkIssueBanner)).height,
-      0,
-    );
+    expect(tester.getSize(find.byType(TorrentNetworkIssueBanner)).height, 0);
     expect(torrentNetworkIssueMessage(TorrentNetworkIssue.none), isNull);
   });
 
@@ -52,9 +50,7 @@ void main() {
     expect(find.text(t.download_network_dht_unreachable), findsNothing);
   });
 
-  testWidgets('BUG-2950：DHT 不可达显示出站 UDP 被拦的说明', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('BUG-2950：DHT 不可达显示出站 UDP 被拦的说明', (WidgetTester tester) async {
     await tester.pumpWidget(
       buildApp(
         const TorrentNetworkIssueBanner(

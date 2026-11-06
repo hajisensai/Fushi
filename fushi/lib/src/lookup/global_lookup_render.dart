@@ -11,6 +11,7 @@
 // no BuildContext needs to be threaded from the (UI-less) controller.
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -50,6 +51,7 @@ class GlobalLookupFrameSettingsJs {
     required this.staticRevision,
     required this.entriesJs,
     required this.renderJs,
+    this.entriesAsync = false,
   });
 
   final String staticHeadJs;
@@ -57,6 +59,10 @@ class GlobalLookupFrameSettingsJs {
   final int staticRevision;
   final String entriesJs;
   final String renderJs;
+
+  /// 词条经 [GlobalLookupEntriesStore] 异步取回（渲染在取回之后才发生）。宿主据此
+  /// 等根卡渲染完再上报尺寸。
+  final bool entriesAsync;
 
   /// Legacy/full-frame form used by source-contract tests and any caller that
   /// deliberately wants one self-contained script. The hot host path sends the
@@ -69,13 +75,13 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
   required BuildContext context,
   required AppModel appModel,
   required DictionarySearchResult result,
+  GlobalLookupEntriesStore? entriesStore,
 }) {
   final PopupStaticSettingsJs staticSettings = buildPopupStaticSettingsJs(
     appModel: appModel,
     theme: Theme.of(context),
     options: const PopupSettingsOptions(globalLookup: true),
   );
-  final String entriesJs = buildPopupEntriesJs(result);
   // TODO-1231 P1 — `window.__hasChildPopup` is DELIBERATELY NOT part of this body
   // anymore. The flag flips whenever a child card opens/closes on top of THIS
   // frame, but everything else in the body (theme/zoom/entries) is
@@ -105,32 +111,130 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
   // BUG-2770 — the overlay has no Flutter pointer tree, so the mobile-style
   // horizontal "swipe to close" has to be recognised in the page. Overlay only:
   // the in-app popup already has the Flutter body detector for the same swipe.
-  const String renderJs = '''
+  const String renderJs =
+      '''
     $kPopupTopPullReleaseJs
     $kPopupTouchSideSwipeReleaseJs
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
     window.renderPopup && window.renderPopup();
 ''';
+  if (entriesStore == null) {
+    return GlobalLookupFrameSettingsJs(
+      staticHeadJs: staticSettings.head,
+      staticTailJs: staticSettings.tail,
+      staticRevision: staticSettings.revision,
+      entriesJs: buildPopupEntriesJs(result),
+      renderJs: renderJs,
+    );
+  }
+  // 应用外宿主的词条投递（见 [GlobalLookupEntriesStore]）。两条路都先写令牌：
+  // 同一个 iframe realm 跨查词复用，上一张大卡的取回若晚于这次的字面量渲染才回来，
+  // 只有令牌变了它才会自行作废，不会把旧词条盖到新卡上。令牌按结果对象稳定，
+  // 同一帧同一结果重渲时这段字节不变，宿主照旧跳过父卡重渲。
+  final int token = entriesStore.tokenFor(result);
+  final String entriesJson = popupEntriesJsonOf(result);
+  final String? url = entriesStore.register(token, entriesJson);
+  final String tokenJs = '    window.__fushiRenderToken = $token;\n';
+  if (url == null) {
+    return GlobalLookupFrameSettingsJs(
+      staticHeadJs: staticSettings.head,
+      staticTailJs: staticSettings.tail,
+      staticRevision: staticSettings.revision,
+      entriesJs: '$tokenJs${buildPopupEntriesJs(result)}',
+      renderJs: renderJs,
+    );
+  }
+  // 取回是异步的，渲染体随取回结果一起执行（与 in-app P1-B 同一段脚本）；宿主的
+  // 显示门本来就等 popupRendered，不依赖注入那一刻同步出卡。
   return GlobalLookupFrameSettingsJs(
     staticHeadJs: staticSettings.head,
     staticTailJs: staticSettings.tail,
     staticRevision: staticSettings.revision,
-    entriesJs: entriesJs,
-    renderJs: renderJs,
+    entriesJs:
+        '$tokenJs${buildPopupFetchedEntriesJs(result: result, url: url, renderToken: token, pending: false, idle: false, afterEntriesJs: renderJs)}',
+    renderJs: '',
+    entriesAsync: true,
   );
+}
+
+/// 应用外宿主（桌面全局查词窗 / 游戏内查词卡片）的**大结果词条投递**，即 in-app
+/// 弹窗 P1-B 在裸 WebView2 上的同一做法。
+///
+/// 词条 JSON 达到 [kPopupEntriesFetchMinChars] 时不再写进渲染脚本——那样几 MB 词条
+/// 要先被 `jsonEncode` 成 JS 字面量、再整个嵌进 renderStack 的载荷再转义一遍、过平台
+/// 通道、ExecuteScript 解析一遍、iframe 里 eval 再解析一遍。改为卡片页面用
+/// [buildPopupFetchedEntriesJs]（in-app 同一段）去取 [urlFor] 这个地址；原生窗口的
+/// 资源拦截（与外字 / 词典样式同一条通道）把请求交给 Dart，由 [bytesFor] 回字节。
+///
+/// 取回失败（`popupEntriesFetchFailed`）后 [fetchUnavailable] 置位，此后一律走字面量，
+/// 与 in-app 的回退语义一致（in-app 也是按 WebView 各自回退）。
+///
+/// **一个物理宿主一份**（PR #2763 审查）：桌面查词窗与游戏内卡片是两个 WebView2 realm，
+/// 旧实现共用一份——[retain] 只看当前宿主的栈，桌面一渲染就把游戏卡片还没取走的字节删掉
+/// （反之亦然），对面随即取回 404，又把 [fetchUnavailable] 置成全进程永久生效。现在地址
+/// 里带宿主键（`<prefix><hostKey>/<token>.json`），字节、保留与回退都只作用于本宿主。
+class GlobalLookupEntriesStore {
+  GlobalLookupEntriesStore({this.hostKey = 'desktop'});
+
+  /// 原生拦截按这个前缀把请求转给 Dart（`global_lookup_window.cpp`
+  /// `kGlobalLookupEntriesUrlPrefix`，两处字面量由守卫测试钉成一致）。
+  static const String urlPrefix = 'https://fushi.local/popup-entries/glookup/';
+
+  static final Expando<int> _tokens = Expando<int>('globalLookupEntriesToken');
+  static int _tokenSeq = 0;
+
+  /// 物理宿主键（`desktop` / galCard 的 route target），与静态段修订缓存同一口径。
+  final String hostKey;
+
+  final Map<int, Uint8List> _bytes = <int, Uint8List>{};
+
+  /// 这个 WebView 宿主上取回失败过：此后不再走取回。
+  bool fetchUnavailable = false;
+
+  /// [result] 的投递令牌：同一个结果对象恒为同一个值，进程内全局递增。
+  int tokenFor(DictionarySearchResult result) =>
+      _tokens[result] ??= ++_tokenSeq;
+
+  String get _hostPrefix => '$urlPrefix${Uri.encodeComponent(hostKey)}/';
+
+  String urlFor(int token) => '$_hostPrefix$token.json';
+
+  /// 结果够大且取回可用时登记字节并返回取回地址；否则 null（走字面量）。
+  String? register(int token, String entriesJson) {
+    if (fetchUnavailable || entriesJson.length < kPopupEntriesFetchMinChars) {
+      return null;
+    }
+    _bytes.putIfAbsent(token, () => utf8.encode(entriesJson));
+    return urlFor(token);
+  }
+
+  /// 拦截器侧：[url] 是本宿主登记过的取回地址时返回字节，否则 null。
+  Uint8List? bytesFor(String url) {
+    final String prefix = _hostPrefix;
+    if (!url.startsWith(prefix) || !url.endsWith('.json')) return null;
+    final int? token = int.tryParse(
+      url.substring(prefix.length, url.length - '.json'.length),
+    );
+    return token == null ? null : _bytes[token];
+  }
+
+  /// 只留仍在栈里的帧的字节（帧关掉 / 换词后其字节不会再被取）。
+  void retain(Iterable<int> liveTokens) {
+    final Set<int> live = liveTokens.toSet();
+    _bytes.removeWhere((int token, _) => !live.contains(token));
+  }
 }
 
 String buildFrameSettingsJs({
   required BuildContext context,
   required AppModel appModel,
   required DictionarySearchResult result,
-}) =>
-    buildFrameSettingsJsParts(
-      context: context,
-      appModel: appModel,
-      result: result,
-    ).combined;
+}) => buildFrameSettingsJsParts(
+  context: context,
+  appModel: appModel,
+  result: result,
+).combined;
 
 /// One stacked lookup card as the host script expects it (TODO-867 P3b/P3c).
 /// [frame] supplies the stack identity/linkage (id, parentIndex); [result]
@@ -231,6 +335,22 @@ typedef StackRenderScript = ({String script, Set<int> pendingRevisions});
 /// second lookup onward. Nested child frames keep their own monotonic ids (they
 /// are genuinely added/removed), so only the root/card layer is pinned.
 const String kGlobalLookupRootFrameId = 'global-lookup-root';
+
+/// 游戏内嵌查词冷启动预热：只把静态段（主题 / 字体 / 词典样式）送进宿主页的脚本。
+///
+/// 宿主（`global_lookup_host.js` 的 `prewarmStatic`）按 revision 缓存这一段，并把它
+/// 装进一个备用 iframe realm；首次查词的根卡直接接管那个 realm，渲染负载里不再
+/// 带这几十 MB。与 [buildStackRenderScript] 同样以 `window.__globalLookupHost &&`
+/// 守卫，宿主未装好时是空操作。
+String buildPrewarmStaticScript(PopupStaticSettingsJs settings) {
+  final String descriptor = jsonEncode(<String, Object>{
+    'staticRevision': settings.revision,
+    'staticHeadJs': settings.head,
+    'staticTailJs': settings.tail,
+  });
+  return 'window.__globalLookupHost && '
+      'window.__globalLookupHost.prewarmStatic($descriptor);';
+}
 
 /// TODO-1095 — builds the host `beginLookup(rootId)` prelude script prepended to
 /// each fresh root render (see [GlobalLookupController]). It tells the host a NEW
@@ -366,20 +486,25 @@ StackRenderScript buildStackRenderScript({
   // 必填之后，少传就是编译错误。本次真正发出去的版本从返回值的 pendingRevisions
   // 带出，调用方在 render 成功后 commit。
   required PopupStaticRevisionCache staticRevisions,
+  // 大结果词条走取回（见 [GlobalLookupEntriesStore]）。必填，理由同上：漏传就是
+  // 静默退回「几 MB 词条塞进脚本」。
+  required GlobalLookupEntriesStore entriesStore,
   required String hostKey,
 }) {
   // 本次渲染开始时宿主已装载的版本（副本）；下面每发出一个新版本就往里加，
   // 同一次调用内的后续帧据此不再重复携带同一份静态段。
-  final Set<int> availableStaticRevisions =
-      staticRevisions.snapshotFor(hostKey);
+  final Set<int> availableStaticRevisions = staticRevisions.snapshotFor(
+    hostKey,
+  );
   final Set<int> emittedStaticRevisions = <int>{};
   // TODO-867 P3c F2 — the host shell (.global-lookup-frame-shell) is built in the
   // TOP-LEVEL host document, which carries no data-theme of its own (the theme
   // vars live INSIDE each iframe). So the shell's dark/light border variant can't
   // read a CSS var; stamp the resolved brightness onto each popup descriptor and
   // host.js sets data-theme on the shell.
-  final String shellTheme =
-      Theme.of(context).brightness == Brightness.dark ? 'dark' : 'light';
+  final String shellTheme = Theme.of(context).brightness == Brightness.dark
+      ? 'dark'
+      : 'light';
   // TODO-1231（BUG-583/670 续）——根卡（anchorless 分支）的工作区钳位偏移。根卡是
   // 级联里唯一不经 computeFrameRect clamp 的卡；reserve-to-edge 地板把 C++ 的窗口
   // 右/下 clamp 变成 no-op 后，光标靠屏右/下时根卡越出工作区被窗口边裁掉（「弹窗
@@ -402,6 +527,7 @@ StackRenderScript buildStackRenderScript({
       context: context,
       appModel: appModel,
       result: p.result,
+      entriesStore: entriesStore,
     );
     final Map<String, Object?> map = p.frame.toRenderMap();
     map['theme'] = shellTheme;
@@ -426,6 +552,7 @@ StackRenderScript buildStackRenderScript({
     map['staticRevision'] = settings.staticRevision;
     map['entriesJs'] = settings.entriesJs;
     map['renderJs'] = settings.renderJs;
+    if (settings.entriesAsync) map['entriesAsync'] = true;
     if (!availableStaticRevisions.contains(settings.staticRevision)) {
       map['staticHeadJs'] = settings.staticHeadJs;
       map['staticTailJs'] = settings.staticTailJs;
@@ -434,9 +561,7 @@ StackRenderScript buildStackRenderScript({
     }
     popups.add(map);
   }
-  final Map<String, Object?> payloadObj = <String, Object?>{
-    'popups': popups,
-  };
+  final Map<String, Object?> payloadObj = <String, Object?>{'popups': popups};
   // TODO-1345 (BUG-583 深层根因续) — reserve cascade headroom toward the screen
   // interior so an up/left child lands INSIDE the window origin committed at the
   // first reveal; the host's measureAndReport then never moves the origin when the
@@ -452,7 +577,8 @@ StackRenderScript buildStackRenderScript({
   }
   final String payloadJson = jsonEncode(payloadObj);
   return (
-    script: 'window.__globalLookupHost && '
+    script:
+        'window.__globalLookupHost && '
         'window.__globalLookupHost.renderStack($payloadJson);',
     pendingRevisions: emittedStaticRevisions,
   );

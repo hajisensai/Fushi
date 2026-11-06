@@ -1,0 +1,56 @@
+# Whole-repo `dart format` gate (2026-11-01).
+#
+# Until then nearly half of the tracked Dart files had never been formatted, so
+# every `dart format <touched file>` dragged unrelated reflows into diffs and
+# merges. The tree was formatted once (tool/dart_format.sh fix) and this gate
+# keeps it that way. Scope and exclusions (vendored upstream, forks, generator
+# output) live in tool/dart_format.sh; fix locally with `bash tool/dart_format.sh fix`.
+#
+# Its own light workflow rather than a step in main.yml / release.yml: the
+# scope includes Dart outside fushi/** and packages/** (tool/, native/), and a
+# change there must not start an Android / release build just to be checked.
+name: Dart format
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['main', 'develop']
+    paths:
+      - '**.dart'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - 'tool/dart_format.sh'
+      - '.github/workflows/dart-format.yml'
+  push:
+    branches: ['develop']
+    paths:
+      - '**.dart'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - 'tool/dart_format.sh'
+      - '.github/workflows/dart-format.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.6'
+          cache: true
+      # The formatter reads each package's language version from the workspace
+      # package_config.json, so resolve first (no build hooks run here).
+      - name: Flutter pub get
+        working-directory: fushi
+        run: flutter pub get
+      - name: Check dart format
+        run: bash tool/dart_format.sh check

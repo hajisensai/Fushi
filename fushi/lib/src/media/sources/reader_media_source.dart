@@ -1,7 +1,14 @@
 import 'package:flutter/widgets.dart';
 
-import 'package:fushi/media.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/sources/manga_fushi_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/sources/reader_pdf_source.dart';
+import 'package:fushi/src/media/types/reader_media_type.dart';
+import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/pages/implementations/history_reader_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 
 /// A source for the [ReaderMediaType], which handles primarily text-based
 /// media.
@@ -16,9 +23,7 @@ abstract class ReaderMediaSource extends MediaSource {
     required super.implementsHistory,
     super.overridesAutoImage = false,
     super.overridesAutoAudio = false,
-  }) : super(
-          mediaType: ReaderMediaType.instance,
-        );
+  }) : super(mediaType: ReaderMediaType.instance);
 
   /// BUG-1317：EPUB / 漫画 / PDF 是**同一本书**的三种 `EpubBooks.format`，共享
   /// `hoshi://book/<bookKey>` 身份，而 `mediaSourceIdentifier` 由**当前** format
@@ -31,10 +36,10 @@ abstract class ReaderMediaSource extends MediaSource {
   /// `src:<sourceId>:` 命名空间里，三个都要试。
   @override
   List<MediaSource> get legacyOverrideStores => <MediaSource>[
-        ReaderFushiSource.instance,
-        MangaFushiSource.instance,
-        ReaderPdfSource.instance,
-      ];
+    ReaderFushiSource.instance,
+    MangaFushiSource.instance,
+    ReaderPdfSource.instance,
+  ];
 
   // TODO-786：阅读类媒体源默认卡槽比例归到书封比例 [kShelfBookCardAspectRatio]
   // （≈160/260），让书架封面 fitHeight 自然铺满、消除两侧白带。（书架视频分区

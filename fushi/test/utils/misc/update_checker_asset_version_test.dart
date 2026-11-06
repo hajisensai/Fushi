@@ -86,8 +86,9 @@ void main() {
       String manifestBody,
       String currentVersion,
     ) async {
-      final Map<String, dynamic> release =
-          buildReleaseFromManifest(manifestBody)!;
+      final Map<String, dynamic> release = buildReleaseFromManifest(
+        manifestBody,
+      )!;
       return selectUpdateReleaseForCurrentPlatform(
         <Map<String, dynamic>>[release],
         currentVersion: currentVersion,
@@ -97,98 +98,118 @@ void main() {
     }
 
     test(
-        'top 6636 but android asset 6621 == installed -> NO prompt (loop fixed)',
-        () async {
-      final String body = _debugManifest(
-        topVersion: '1.0.1-debug.6636',
-        topTag: 'v1.0.1-debug.6636+aaaaaaa',
-        assets: <Map<String, dynamic>>[
-          _stampedAsset(
-            name: 'fushi-1.0.1-debug.6621-bbbbbbb-debug.apk',
-            downloadTag: 'debug-rolling',
-            version: '1.0.1-debug.6621',
-            tag: 'v1.0.1-debug.6621+bbbbbbb',
-            releaseSequence: 6621,
-          ),
-        ],
-      );
-      final UpdateReleaseSelection? selected =
-          await selectAndroid(body, '1.0.1-debug.6621');
-      expect(
-        selected,
-        isNull,
-        reason:
-            'installed asset version == advertised platform asset -> not update',
-      );
-    });
-
-    test('android asset 6640 > installed 6621 -> prompt shows ASSET version',
-        () async {
-      final String body = _debugManifest(
-        topVersion: '1.0.1-debug.6640',
-        topTag: 'v1.0.1-debug.6640+aaaaaaa',
-        assets: <Map<String, dynamic>>[
-          _stampedAsset(
-            name: 'fushi-1.0.1-debug.6640-bbbbbbb-debug.apk',
-            downloadTag: 'debug-rolling',
-            version: '1.0.1-debug.6640',
-            tag: 'v1.0.1-debug.6640+bbbbbbb',
-            releaseSequence: 6640,
-          ),
-        ],
-      );
-      final UpdateReleaseSelection? selected =
-          await selectAndroid(body, '1.0.1-debug.6621');
-      expect(selected, isNotNull);
-      // Display / download use the asset OWN version, not the top-level tag.
-      expect(selected!.version, '1.0.1-debug.6640');
-      expect(
-        selected.downloadUrl,
-        'https://github.com/hajisensai/fushi/releases/download/debug-rolling/fushi-1.0.1-debug.6640-bbbbbbb-debug.apk',
-      );
-    });
+      'top 6636 but android asset 6621 == installed -> NO prompt (loop fixed)',
+      () async {
+        final String body = _debugManifest(
+          topVersion: '1.0.1-debug.6636',
+          topTag: 'v1.0.1-debug.6636+aaaaaaa',
+          assets: <Map<String, dynamic>>[
+            _stampedAsset(
+              name: 'fushi-1.0.1-debug.6621-bbbbbbb-debug.apk',
+              downloadTag: 'debug-rolling',
+              version: '1.0.1-debug.6621',
+              tag: 'v1.0.1-debug.6621+bbbbbbb',
+              releaseSequence: 6621,
+            ),
+          ],
+        );
+        final UpdateReleaseSelection? selected = await selectAndroid(
+          body,
+          '1.0.1-debug.6621',
+        );
+        expect(
+          selected,
+          isNull,
+          reason:
+              'installed asset version == advertised platform asset -> not update',
+        );
+      },
+    );
 
     test(
-        'divergent: top 6636 but android asset itself newer 6640 -> asset wins',
-        () async {
-      final String body = _debugManifest(
-        topVersion: '1.0.1-debug.6636',
-        topTag: 'v1.0.1-debug.6636+aaaaaaa',
-        assets: <Map<String, dynamic>>[
-          _stampedAsset(
-            name: 'fushi-1.0.1-debug.6640-bbbbbbb-debug.apk',
-            downloadTag: 'debug-rolling',
-            version: '1.0.1-debug.6640',
-            releaseSequence: 6640,
-          ),
-        ],
-      );
-      final UpdateReleaseSelection? selected =
-          await selectAndroid(body, '1.0.1-debug.6621');
-      expect(selected, isNotNull);
-      expect(selected!.version, '1.0.1-debug.6640');
-    });
+      'android asset 6640 > installed 6621 -> prompt shows ASSET version',
+      () async {
+        final String body = _debugManifest(
+          topVersion: '1.0.1-debug.6640',
+          topTag: 'v1.0.1-debug.6640+aaaaaaa',
+          assets: <Map<String, dynamic>>[
+            _stampedAsset(
+              name: 'fushi-1.0.1-debug.6640-bbbbbbb-debug.apk',
+              downloadTag: 'debug-rolling',
+              version: '1.0.1-debug.6640',
+              tag: 'v1.0.1-debug.6640+bbbbbbb',
+              releaseSequence: 6640,
+            ),
+          ],
+        );
+        final UpdateReleaseSelection? selected = await selectAndroid(
+          body,
+          '1.0.1-debug.6621',
+        );
+        expect(selected, isNotNull);
+        // Display / download use the asset OWN version, not the top-level tag.
+        expect(selected!.version, '1.0.1-debug.6640');
+        expect(
+          selected.downloadUrl,
+          'https://github.com/hajisensai/fushi/releases/download/debug-rolling/fushi-1.0.1-debug.6640-bbbbbbb-debug.apk',
+        );
+      },
+    );
 
-    test('no per-asset version stamp -> fail-open to top-level tag (legacy)',
-        () async {
-      final String body = _debugManifest(
-        topVersion: '1.0.1-debug.6636',
-        topTag: 'v1.0.1-debug.6636+aaaaaaa',
-        assets: <Map<String, dynamic>>[
-          // No version key: mimic a legacy manifest / GitHub API asset.
-          _stampedAsset(
-            name: 'fushi-1.0.1-debug.6636-bbbbbbb-debug.apk',
-            downloadTag: 'debug-rolling',
-          ),
-        ],
-      );
-      final UpdateReleaseSelection? selected =
-          await selectAndroid(body, '1.0.1-debug.6621');
-      expect(selected, isNotNull,
-          reason: 'must not stall updates on legacy manifests');
-      expect(selected!.version, '1.0.1-debug.6636',
-          reason: 'fail-open uses the advertised top-level version');
-    });
+    test(
+      'divergent: top 6636 but android asset itself newer 6640 -> asset wins',
+      () async {
+        final String body = _debugManifest(
+          topVersion: '1.0.1-debug.6636',
+          topTag: 'v1.0.1-debug.6636+aaaaaaa',
+          assets: <Map<String, dynamic>>[
+            _stampedAsset(
+              name: 'fushi-1.0.1-debug.6640-bbbbbbb-debug.apk',
+              downloadTag: 'debug-rolling',
+              version: '1.0.1-debug.6640',
+              releaseSequence: 6640,
+            ),
+          ],
+        );
+        final UpdateReleaseSelection? selected = await selectAndroid(
+          body,
+          '1.0.1-debug.6621',
+        );
+        expect(selected, isNotNull);
+        expect(selected!.version, '1.0.1-debug.6640');
+      },
+    );
+
+    test(
+      'no per-asset version stamp -> fail-open to top-level tag (legacy)',
+      () async {
+        final String body = _debugManifest(
+          topVersion: '1.0.1-debug.6636',
+          topTag: 'v1.0.1-debug.6636+aaaaaaa',
+          assets: <Map<String, dynamic>>[
+            // No version key: mimic a legacy manifest / GitHub API asset.
+            _stampedAsset(
+              name: 'fushi-1.0.1-debug.6636-bbbbbbb-debug.apk',
+              downloadTag: 'debug-rolling',
+            ),
+          ],
+        );
+        final UpdateReleaseSelection? selected = await selectAndroid(
+          body,
+          '1.0.1-debug.6621',
+        );
+        expect(
+          selected,
+          isNotNull,
+          reason: 'must not stall updates on legacy manifests',
+        );
+        expect(
+          selected!.version,
+          '1.0.1-debug.6636',
+          reason: 'fail-open uses the advertised top-level version',
+        );
+      },
+    );
 
     test('windows setup asset 6621 == installed -> NO prompt', () async {
       final String body = _debugManifest(
@@ -206,13 +227,16 @@ void main() {
       final Map<String, dynamic> release = buildReleaseFromManifest(body)!;
       final UpdateReleaseSelection? selected =
           await selectUpdateReleaseForCurrentPlatform(
-        <Map<String, dynamic>>[release],
-        currentVersion: '1.0.1-debug.6621',
-        channel: UpdateChannel.debug,
-        updater: WindowsUpdater(),
+            <Map<String, dynamic>>[release],
+            currentVersion: '1.0.1-debug.6621',
+            channel: UpdateChannel.debug,
+            updater: WindowsUpdater(),
+          );
+      expect(
+        selected,
+        isNull,
+        reason: 'platform-general: windows keys off own asset version too',
       );
-      expect(selected, isNull,
-          reason: 'platform-general: windows keys off own asset version too');
     });
   });
 }

@@ -33,13 +33,13 @@ class DiscoveryDomainImporters {
 
   /// 独立字幕书（字幕 + 音频、无正文）。
   final Future<String?> Function(SubtitleAudiobookPlan plan)
-      importSubtitleAudiobook;
+  importSubtitleAudiobook;
 
   /// 只有音频：交给宿主的转录后入库队列。排上队返回
   /// `DiscoveryImportOutcome(deferred: true)`；本宿主不自动转录时抛
   /// `DiscoveryImportBlockedException(audiobookMissingSubtitle)`。
   final Future<DiscoveryImportOutcome> Function(TranscribeAudiobookPlan plan)
-      transcribeAudiobook;
+  transcribeAudiobook;
 
   /// 漫画图包整包导入（cbz/cbr/cb7/rar/zip）。解包与 `.mokuro` sidecar 识别
   /// 都在域导入器内部完成，执行层只递一个路径进去。
@@ -54,18 +54,27 @@ class DiscoveryImportExecutor {
   DiscoveryImportExecutor({
     required DiscoveryDomainImporters importers,
     DiscoveryArchiveExtractor? extractor,
-  })  : _importers = importers,
-        _extractor = extractor ?? DiscoveryArchiveExtractor();
+    required this.subtitleLangCode,
+  }) : _importers = importers,
+       _extractor = extractor ?? DiscoveryArchiveExtractor();
 
   final DiscoveryDomainImporters _importers;
   final DiscoveryArchiveExtractor _extractor;
+
+  /// 有声书包里有几份字幕时优先的学习语言（宿主必须显式注入，通常是
+  /// `kLearningLanguageCode`），见 [classifyDiscoveryDirectory]。
+  final String subtitleLangCode;
 
   /// [DiscoveryDownloadQueue] 的 importer 端口（`DiscoveryDownloadImporter`）。
   Future<DiscoveryImportOutcome> importDownload(
     DiscoveryDownloadTask task,
     File file,
-  ) =>
-      importFile(task.item.kind, file);
+  ) => task.companionPaths.isEmpty
+      ? importFile(task.item.kind, file)
+      : importPaths(task.item.kind, <String>[
+          file.path,
+          ...task.companionPaths,
+        ]);
 
   /// torrent 整包入口：对一组已就位的绝对路径分类入库（torrent 下载完成后
   /// `AnimeDownloadService` 调这里）。
@@ -83,19 +92,24 @@ class DiscoveryImportExecutor {
       for (final String path in filePaths)
         if (File(path).existsSync()) path: File(path).lengthSync(),
     };
-    DiscoveryImportPlan plan =
-        classifyDiscoveryDirectory(kind, filePaths, fileSizes: sizes);
+    DiscoveryImportPlan plan = classifyDiscoveryDirectory(
+      kind,
+      filePaths,
+      fileSizes: sizes,
+      subtitleLangCode: subtitleLangCode,
+    );
     // 只有音频也算「还没凑齐」：包里的压缩包可能装着字幕/正文，先解开再判，
     // 免得白跑几个小时转录（这一档以前就是 UnsupportedPlan，走同一条解压路）。
     if (plan is UnsupportedPlan || plan is TranscribeAudiobookPlan) {
-      final List<String> archives = <String>[
-        for (final String path in filePaths)
-          if (isDiscoveryArchivePath(path)) path,
-      ]..sort((String a, String b) {
-          // 同大小时按路径定二，不把「解哪个包」交给调用方清单的偶然顺序。
-          final int bySize = (sizes[b] ?? 0).compareTo(sizes[a] ?? 0);
-          return bySize != 0 ? bySize : a.compareTo(b);
-        });
+      final List<String> archives =
+          <String>[
+            for (final String path in filePaths)
+              if (isDiscoveryArchivePath(path)) path,
+          ]..sort((String a, String b) {
+            // 同大小时按路径定二，不把「解哪个包」交给调用方清单的偶然顺序。
+            final int bySize = (sizes[b] ?? 0).compareTo(sizes[a] ?? 0);
+            return bySize != 0 ? bySize : a.compareTo(b);
+          });
       if (archives.isNotEmpty) {
         final File archive = File(archives.first);
         final Directory extracted = await _extractor.extract(
@@ -104,14 +118,21 @@ class DiscoveryImportExecutor {
               '${archive.parent.path}${Platform.pathSeparator}${_stemOf(archive.path)}',
         );
         final List<String> merged = List<String>.of(filePaths);
-        for (final FileSystemEntity entity
-            in extracted.listSync(recursive: true, followLinks: false)) {
+        for (final FileSystemEntity entity in extracted.listSync(
+          recursive: true,
+          followLinks: false,
+        )) {
           if (entity is File) {
             merged.add(entity.path);
             sizes[entity.path] = entity.lengthSync();
           }
         }
-        plan = classifyDiscoveryDirectory(kind, merged, fileSizes: sizes);
+        plan = classifyDiscoveryDirectory(
+          kind,
+          merged,
+          fileSizes: sizes,
+          subtitleLangCode: subtitleLangCode,
+        );
       }
     }
     return _execute(plan);
@@ -121,7 +142,11 @@ class DiscoveryImportExecutor {
     DiscoveryMediaKind kind,
     File file,
   ) async {
-    DiscoveryImportPlan plan = classifyDiscoveryFile(kind, file.path);
+    DiscoveryImportPlan plan = classifyDiscoveryFile(
+      kind,
+      file.path,
+      subtitleLangCode: subtitleLangCode,
+    );
     if (plan is ExtractArchivePlan) {
       final String stem = _stemOf(file.path);
       final Directory extracted = await _extractor.extract(
@@ -130,14 +155,21 @@ class DiscoveryImportExecutor {
       );
       final List<String> paths = <String>[];
       final Map<String, int> sizes = <String, int>{};
-      for (final FileSystemEntity entity
-          in extracted.listSync(recursive: true, followLinks: false)) {
+      for (final FileSystemEntity entity in extracted.listSync(
+        recursive: true,
+        followLinks: false,
+      )) {
         if (entity is File) {
           paths.add(entity.path);
           sizes[entity.path] = entity.lengthSync();
         }
       }
-      plan = classifyDiscoveryDirectory(kind, paths, fileSizes: sizes);
+      plan = classifyDiscoveryDirectory(
+        kind,
+        paths,
+        fileSizes: sizes,
+        subtitleLangCode: subtitleLangCode,
+      );
     }
     return _execute(plan);
   }
@@ -188,10 +220,8 @@ class DiscoveryImportExecutor {
     }
   }
 
-  static DiscoveryImportOutcome _single(String? key) => DiscoveryImportOutcome(
-        importedCount: key == null ? 0 : 1,
-        summary: key,
-      );
+  static DiscoveryImportOutcome _single(String? key) =>
+      DiscoveryImportOutcome(importedCount: key == null ? 0 : 1, summary: key);
 
   static String _stemOf(String path) {
     final String base = _fileName(path);

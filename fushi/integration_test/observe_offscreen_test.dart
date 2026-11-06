@@ -35,29 +35,39 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
 
       // 1) Flutter UI（主页）必须非空白
-      final ObserveShot home =
-          await captureFlutterFrame(tester, 'observe-home');
+      final ObserveShot home = await captureFlutterFrame(
+        tester,
+        'observe-home',
+      );
       expect(home.saved, isTrue, reason: 'Flutter 帧应落盘');
-      expect(home.nonBlank, isTrue,
-          reason: 'Flutter 抓图不应是白屏（${home.path}, ${home.bytes}B）');
+      expect(
+        home.nonBlank,
+        isTrue,
+        reason: 'Flutter 抓图不应是白屏（${home.path}, ${home.bytes}B）',
+      );
 
       // 2) 确定性打开阅读器 fixture：焦点卡激活在离屏/非焦点下偶发不触发书卡 onTap，
       //    故用书架页测试钩子按 mediaIdentifier 走书卡同路径 appModel.openMedia。
       final String bookKey = await seedReaderBook(tester);
       final String mediaId = ReaderFushiSource.mediaIdentifierFor(bookKey);
-      final Finder seededEntry =
-          find.byKey(ValueKey<String>('book_entry_$mediaId'));
+      final Finder seededEntry = find.byKey(
+        ValueKey<String>('book_entry_$mediaId'),
+      );
       for (int i = 0; i < 40 && seededEntry.evaluate().isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 500));
       }
       expect(seededEntry, findsOneWidget, reason: '播种的书应出现在书架');
-      expect(ReaderFushiHistoryPage.debugOpenBook, isNotNull,
-          reason: '书架页打开书测试钩子应已注册（debug/profile build）');
+      expect(
+        ReaderFushiHistoryPage.debugOpenBook,
+        isNotNull,
+        reason: '书架页打开书测试钩子应已注册（debug/profile build）',
+      );
       // openMedia 会初始化音频处理器；纯离屏会挂，-Visible 下能完成。加超时兜底
       // fail-fast，绝不让测试无限挂起。
       try {
-        await ReaderFushiHistoryPage.debugOpenBook!(mediaId)
-            .timeout(const Duration(seconds: 30));
+        await ReaderFushiHistoryPage.debugOpenBook!(mediaId).timeout(
+          const Duration(seconds: 30),
+        );
       } on TimeoutException {
         debugPrint('[observe] openMedia 超时（音频处理器初始化在纯离屏阻塞？改用 -Visible）');
       }
@@ -72,8 +82,11 @@ void main() {
           break;
         }
       }
-      expect(readerReady, isTrue,
-          reason: '阅读器 WebView 应已创建（debugCaptureWebView 钩子就绪）');
+      expect(
+        readerReady,
+        isTrue,
+        reason: '阅读器 WebView 应已创建（debugCaptureWebView 钩子就绪）',
+      );
       // 等正文 ready（best-effort）。
       for (int i = 0; i < 30; i++) {
         await tester.pump(const Duration(milliseconds: 500));
@@ -87,14 +100,20 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
 
       // 3) 阅读器正文（WebView，CDP 抓）必须非空白
-      final ObserveShot body =
-          await captureReaderWebView('observe-reader-body');
+      final ObserveShot body = await captureReaderWebView(
+        'observe-reader-body',
+      );
       expect(body.saved, isTrue, reason: 'WebView 正文应落盘（钩子注册成功）');
-      expect(body.nonBlank, isTrue,
-          reason: '阅读器正文不应是白屏（${body.path}, ${body.bytes}B）');
+      expect(
+        body.nonBlank,
+        isTrue,
+        reason: '阅读器正文不应是白屏（${body.path}, ${body.bytes}B）',
+      );
 
-      debugPrint('[observe] home=${home.path} (${home.bytes}B) '
-          'body=${body.path} (${body.bytes}B)');
+      debugPrint(
+        '[observe] home=${home.path} (${home.bytes}B) '
+        'body=${body.path} (${body.bytes}B)',
+      );
 
       // 网络层（离线 GitHub 更新检查）以外的 FlutterError 一律视为失败。
       assertStrictErrors(errors);

@@ -26,7 +26,10 @@ import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 import 'package:fushi/src/shortcuts/shortcut_labels.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/shortcuts/visual/keyboard_layout_view.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
 

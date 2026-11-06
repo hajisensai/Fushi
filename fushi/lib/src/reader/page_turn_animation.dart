@@ -19,7 +19,10 @@ enum PageTurnAnimation {
   none('none'),
   slide('slide'),
   cover('cover'),
-  fade('fade');
+  fade('fade'),
+
+  /// 卷页（仿实体书）：Flutter 层着色器画的圆柱卷曲，见 `page_curl/page_curl.dart`。
+  curl('curl');
 
   const PageTurnAnimation(this.key);
 
@@ -37,9 +40,11 @@ enum PageTurnAnimation {
     return fallback;
   }
 
-  /// 是否是有位移的效果（只有这两种能做「拖动跟手」）。
+  /// 是否是有位移的效果（只有这几种能做「拖动跟手」）。
   bool get isDirectional =>
-      this == PageTurnAnimation.slide || this == PageTurnAnimation.cover;
+      this == PageTurnAnimation.slide ||
+      this == PageTurnAnimation.cover ||
+      this == PageTurnAnimation.curl;
 }
 
 /// 翻页动画速度三档，时长一律取 [FushiMotion] token（不在阅读器另立毫秒常量）：
@@ -61,6 +66,15 @@ enum PageTurnAnimationSpeed {
 
   /// 一次完整翻页动画的时长（[FushiMotion] token）。
   final Duration duration;
+
+  /// 卷页一次完整翻过去的时长。卷页走的是整页宽再卷半圈，套用平移的时长会像被
+  /// 「甩」过去，所以整体高一档 token：快 = [FushiMotion.medium]、正常 =
+  /// [FushiMotion.long]、慢 = [FushiMotion.long] + [FushiMotion.short]。
+  Duration get curlDuration => switch (this) {
+    PageTurnAnimationSpeed.fast => FushiMotion.medium,
+    PageTurnAnimationSpeed.normal => FushiMotion.long,
+    PageTurnAnimationSpeed.slow => FushiMotion.long + FushiMotion.short,
+  };
 
   /// 传给 JS 的毫秒数（由 [duration] 派生）。
   int get durationMs => duration.inMilliseconds;

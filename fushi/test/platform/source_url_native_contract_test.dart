@@ -1,7 +1,9 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:xml/xml.dart';
+
+import 'package:fushi/src/platform/source_url_channel.dart';
 
 void main() {
   test(
@@ -68,10 +70,10 @@ void main() {
       expect(delegate, contains('open urls: [URL]'));
       expect(delegate, contains('app.fushi.reader/source_urls/stream'));
       expect(delegate, contains('sourceUrlChannel.setStreamHandler(self)'));
-      expect(
-        delegate,
-        contains('pendingSourceUrls.append(url.absoluteString)'),
-      );
+      // open urls 把认得的 host 交给 deliverUrl；deliverUrl 在 Dart 订阅前排队。
+      expect(delegate, contains('deliverUrl(url.absoluteString)'));
+      expect(delegate, contains('func deliverUrl(_ url: String)'));
+      expect(delegate, contains('pendingSourceUrls.append(url)'));
       expect(delegate, contains('let pending = pendingSourceUrls'));
       expect(delegate, contains('pendingSourceUrls.removeAll()'));
       expect(
@@ -81,6 +83,24 @@ void main() {
       expect(delegate, contains('sourceUrlEventSink = nil'));
     },
   );
+
+  test('macOS routes exactly the hosts Dart listens for (no silent drift)', () {
+    final String delegate = File(
+      'macos/Runner/AppDelegate.swift',
+    ).readAsStringSync();
+    final RegExpMatch? match = RegExp(
+      r'static let fushiRoutedUrlHosts: Set<String> = \[([^\]]*)\]',
+    ).firstMatch(delegate);
+    expect(match, isNotNull, reason: 'fushiRoutedUrlHosts literal not found');
+    final Set<String> native = RegExp(
+      r'"([a-z_]+)"',
+    ).allMatches(match!.group(1)!).map((RegExpMatch m) => m.group(1)!).toSet();
+    expect(native, SourceUrlChannel.routedHosts);
+    // 每个 host 都真有 Dart 落地：卡片出处 / 小组件 / 快捷方式 / 查词。
+    expect(SourceUrlChannel.isRoutedUrl('fushi://widget/srs'), isTrue);
+    expect(SourceUrlChannel.isRoutedUrl('fushi://source/x'), isTrue);
+    expect(SourceUrlChannel.isRoutedUrl('fushi://auth/callback'), isFalse);
+  });
 
   test(
     'iOS keeps its shared callback channel for cold and warm source links',
@@ -117,38 +137,40 @@ void main() {
     },
   );
 
-  test('Android source lookup validates the UUID and fails closed (BUG-2527)',
-      () {
-    final String handler = File(
-      'android/app/src/main/java/app/fushi/reader/AnkiChannelHandler.java',
-    ).readAsStringSync();
-    expect(handler, contains('case "findNotesBySourceId":'));
-    expect(handler, contains('sourceId.matches(SOURCE_ID_PATTERN)'));
-    expect(
-      handler,
-      contains(
-        r'"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"',
-      ),
-    );
-    // The redundant marker tag is gone: no tag query, no tag emission.
-    expect(handler, isNot(contains('fushi_source_')));
-    expect(handler, isNot(contains('findNotesBySourceMarker')));
-    final int start = handler.indexOf(
-      'private List<Long> findNotesBySourceId(',
-    );
-    expect(start, greaterThan(-1));
-    final String body = handler.substring(
-      start,
-      handler.indexOf('private boolean openNote(', start),
-    );
-    expect(
-      body,
-      contains('target.rebase(FlashCardsContract.Note.CONTENT_URI)'),
-    );
-    // Same query literal as CardSourceLink.searchQueryForSourceId.
-    expect(body, contains('"sourceId=" + sourceId'));
-    expect(body, contains('getColumnIndexOrThrow'));
-    expect(body, contains('if (cursor == null)'));
-    expect(body, contains('throw new IllegalStateException'));
-  });
+  test(
+    'Android source lookup validates the UUID and fails closed (BUG-2527)',
+    () {
+      final String handler = File(
+        'android/app/src/main/java/app/fushi/reader/AnkiChannelHandler.java',
+      ).readAsStringSync();
+      expect(handler, contains('case "findNotesBySourceId":'));
+      expect(handler, contains('sourceId.matches(SOURCE_ID_PATTERN)'));
+      expect(
+        handler,
+        contains(
+          r'"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"',
+        ),
+      );
+      // The redundant marker tag is gone: no tag query, no tag emission.
+      expect(handler, isNot(contains('fushi_source_')));
+      expect(handler, isNot(contains('findNotesBySourceMarker')));
+      final int start = handler.indexOf(
+        'private List<Long> findNotesBySourceId(',
+      );
+      expect(start, greaterThan(-1));
+      final String body = handler.substring(
+        start,
+        handler.indexOf('private boolean openNote(', start),
+      );
+      expect(
+        body,
+        contains('target.rebase(FlashCardsContract.Note.CONTENT_URI)'),
+      );
+      // Same query literal as CardSourceLink.searchQueryForSourceId.
+      expect(body, contains('"sourceId=" + sourceId'));
+      expect(body, contains('getColumnIndexOrThrow'));
+      expect(body, contains('if (cursor == null)'));
+      expect(body, contains('throw new IllegalStateException'));
+    },
+  );
 }

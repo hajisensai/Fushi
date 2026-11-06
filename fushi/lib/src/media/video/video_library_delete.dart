@@ -35,9 +35,13 @@ import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart'
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show LocalVideoFileDeleteHooks;
+import 'package:fushi_engine/media/video/video_work_companions.dart'
+    show videoWorkCompanionBookUids;
 import 'package:fushi/src/startup/media_handle_registry.dart';
 import 'package:fushi/src/sync/local_file_delete_feedback.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 
 /// [deleteVideoBooksWithDecision] 的结果：删了几行 + 没删掉的行（BUG-2754：某条
@@ -51,6 +55,9 @@ typedef VideoLibraryDeleteResult = ({
 /// 删掉 [bookUids] 对应的视频行 + app 副本；[decision].deleteLocalFiles 为真时再删
 /// 原始视频文件（含跟着它走的 sidecar 字幕）并联动下载任务；
 /// [decision].deleteStatistics 为真时先把这些视频攒下的统计一并删掉。
+///
+/// [removeFromCollections] 见 [VideoBookRepository.deleteVideoBooks]：只有「删掉从
+/// 配对设备下载来的本机副本」传 false（那一集仍在对端，合集成员留着退回远端集）。
 Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
   required VideoBookRepository repo,
   required FushiDatabase database,
@@ -58,14 +65,25 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
   required Iterable<String> bookUids,
   required DeleteDecision decision,
   bool compactDatabase = true,
+  bool removeFromCollections = true,
   Future<void> Function()? afterDeleteBeforeReclaim,
 }) async {
+  // 删的是一整部作品时，它名下不在合集里的附属行（本地特典 / 下载整理出的附件）
+  // 跟着一起删，否则正片没了、特典行和特典文件原样留下（fuQcFmZZxb / BUG-3817）。
+  // 「只删本机副本、成员行保留」（removeFromCollections: false）的作品仍在，不扩。
+  final List<String> requested = bookUids.toList(growable: false);
+  final List<String> targetUids = removeFromCollections
+      ? <String>[
+          ...requested,
+          ...await videoWorkCompanionBookUids(database, requested),
+        ]
+      : requested;
   LocalFileDeleteReport report = const LocalFileDeleteReport();
   if (decision.deleteStatistics) {
     await _deleteStatisticsForVideos(
       repo: repo,
       database: database,
-      bookUids: bookUids,
+      bookUids: targetUids,
     );
   }
   // 蓝光盘特典不在盘合集里，删掉它不留任何成员墓碑，下一次重扫会原样建回来
@@ -74,20 +92,26 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
   List<BlurayExtraDeletionTombstone> extraTombstones =
       const <BlurayExtraDeletionTombstone>[];
   try {
-    extraTombstones =
-        await planBlurayExtraDeletionTombstones(database, bookUids);
+    extraTombstones = await planBlurayExtraDeletionTombstones(
+      database,
+      targetUids,
+    );
   } catch (e, stack) {
-    ErrorLogService.instance
-        .log('VideoLibraryDelete.planBlurayExtraTombstones', e, stack);
+    ErrorLogService.instance.log(
+      'VideoLibraryDelete.planBlurayExtraTombstones',
+      e,
+      stack,
+    );
   }
   int deleted;
   List<VideoBookDeleteFailure> failed = const <VideoBookDeleteFailure>[];
   try {
     deleted = await repo.deleteVideoBooksAndReclaimAssets(
-      bookUids,
+      targetUids,
       scope: decision.scope,
       compactDatabase: compactDatabase,
       deleteLocalFiles: decision.deleteLocalFiles,
+      removeFromCollections: removeFromCollections,
       localFileHooks: decision.deleteLocalFiles
           ? LocalVideoFileDeleteHooks(
               beforeDelete: (List<String> candidates) async {
@@ -135,13 +159,16 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
         database,
         extraTombstones,
         deletedUids: <String>{
-          for (final String uid in bookUids)
+          for (final String uid in targetUids)
             if (!failedUids.contains(uid)) uid,
         },
       );
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('VideoLibraryDelete.writeBlurayExtraTombstones', e, stack);
+      ErrorLogService.instance.log(
+        'VideoLibraryDelete.writeBlurayExtraTombstones',
+        e,
+        stack,
+      );
     }
   }
   return (deleted: deleted, failed: failed, localFiles: report);
@@ -191,7 +218,11 @@ Future<void> _deleteStatisticsForVideos({
         bookUid: bookUid,
       );
     } catch (e, stack) {
-      ErrorLogService.instance.log('VideoLibraryDelete.deleteStatistics', e, stack);
+      ErrorLogService.instance.log(
+        'VideoLibraryDelete.deleteStatistics',
+        e,
+        stack,
+      );
     }
   }
 }

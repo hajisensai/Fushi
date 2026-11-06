@@ -1,0 +1,16 @@
+## BUG-3579 · SRS 打开大牌组很慢（eggrolls 首张卡要等十几秒），首张卡出来前退出复习页时 State 卡成僵尸
+- **报告**：2026-10-20（用户：「srs 优化卡组打开卡组速度，特别是非 fushi card 的卡组还有那个 eggrolls 太慢了」，附卡面空白截图「有时候直接就是这样打不开」）
+- **真实性**：✅ 真 bug。用户真实库（卡 44,070 / 笔记 14,266 / 复习日志 301,372）只读副本 + Windows 离屏 runner 走原始路径复现：冷开（app 刚启动）首张卡数据 28.4 s、卡面内容 29.5 s 才上屏；用户 `error_log.txt` 6 次「首张卡未出就离开」、离开后 `_loadNext` 还要 8–21 s。
+  - 根因 1（主因，「打不开 / 空白」）：SRS 自动备份把整份快照（含 30 万条复习日志）放在**一个** drift 事务里分页读、中途写暂存文件（`packages/fushi_engine/lib/srs/srs_backup_store.dart` `create`），约 25 s。drift 单连接下事务开着时别的语句全排在它后面，复习页 `nextCard` 等 28 s；而自动备份在 app 启动、每次**离开复习页**时触发，复习完回列表再点下一个牌组正好撞上。卡面在这段时间里是外壳底色（截图的浅紫空白）。
+  - 根因 2：复习页只为当前牌组的计数调 `deckSummaries()`，把整张 `srs_cards_cache`（4.4 万行）搬回 Dart 逐张数；`nextCard` 把子树全部卡行搬回 Dart（`srs_db_store.dart` 旧 `deckSummaries` / `_countTree` / `nextCard`）。
+  - 根因 3：近 30 天日志按天计数读整行 json；「今天动过的卡」查询（`profile_uid = ? AND id IN (…)`）被 SQLite 规划到 profile 前缀索引逐行回表，237 ms（主键 1.6 ms）。
+  - 根因 4：`srs_review_page.dart` 的 `_audio` 惰性 `late final`，首张卡未出就离开时第一次初始化在 `dispose()` 里，`ref.read` 抛错，`super.dispose()` 被跳过、State 永远 mounted。
+  - 根因 5（卡面静默空白的口子）：`SrsCardFaceSync._flush` 在结果回来前就记「已下发」，返回 null（Windows 上页内顶层异常）时永不重发；主题 / 样式 / 换卡拼在一个调用里，前一步抛错连带换卡不执行；`SrsWebCardFace` 没接 `onReceivedError`，WebView 创建失败 / 外壳导航失败完全无声。
+- **[x] ① 已修复** —
+  - 自动备份给 SRS 界面让路：复习页开着或 SRS 底栏在显示（且 app 在前台）时不开始自动备份，在做的读完当前页就叫停（`SrsBackupCancelled`，只读事务回滚、暂存删除），不用了（离开 SRS 界面 / app 退后台）立即补；新备份开始前清掉上次没做完的暂存文件（`srs_app_runtime.dart` `_syncBackupUse`、`srs_backup.dart`、`srs_backup_store.dart`）。
+  - 计数原料 SQL 按牌组聚合（`_deckTallies`）、选卡三类候选各一条 `LIMIT 1`、新增单牌组 `deckSummary`、按天计数只取时刻列、今日活动卡按主键查。
+  - `_audio` 改在 `initState` 建。
+  - 卡面：各步独立 try/catch、页内错误文本带回宿主留痕、调用没执行不算已下发；接 `onReceivedError`（创建失败重建一次、外壳加载失败重载一次，均留痕）。
+  - 真实数据 runner 复测：冷开首张卡 1.0 s / 卡面内容 2.3 s（修前 28.7 s / 29.5 s），热开 0.33 s / 1.1 s；全部 43 个牌组的计数与选出的下一张卡改前改后逐行相同。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/srs/srs_deck_tree_counts_test.dart`（单牌组计数 = 列表同一行）；`fushi/test/srs/srs_backup_controller_test.dart`（在用时不自动备份、读快照中途叫停不留文件、残留暂存清理）；`fushi/test/srs/srs_card_face_shell_test.dart`（返回 null 重发、某步抛错不拦换卡）；`fushi/test/srs/srs_review_live_settings_test.dart`（首张卡未出就离开）；手动真实数据：`packages/fushi_engine/test/srs/srs_review_open_real_data_bench_test.dart`、`fushi/integration_test/srs_real_deck_open_itest.dart`。
+- **备注**：字体实测不是瓶颈——eggrolls 每次开复习页重新请求两个 OTF（6.3 MB + 11.7 MB，WebView2 不缓存拦截响应），Dart 侧供出 4–32 ms，在文字首帧之前完成，`font-display: swap` 不挡首帧；没有改。真实数据复测在 Windows 离屏 runner，未在用户安装版上复测。

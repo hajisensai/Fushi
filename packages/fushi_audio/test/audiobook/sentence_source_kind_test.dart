@@ -47,6 +47,20 @@ void main() {
       expect(sentenceSourceKindOf('lyrics'), SentenceSourceKind.lyrics);
     });
 
+    test('L3 新增的 game / manga / music 落库值精确映射（与常量逐字节一致）', () {
+      expect(sentenceSourceKindOf('game'), SentenceSourceKind.game);
+      expect(sentenceSourceKindOf('manga'), SentenceSourceKind.manga);
+      expect(sentenceSourceKindOf('music'), SentenceSourceKind.music);
+      expect(SentenceSourceKind.game.dbValue, kFavoriteSentenceSourceGame);
+      expect(SentenceSourceKind.manga.dbValue, kFavoriteSentenceSourceManga);
+      expect(SentenceSourceKind.music.dbValue, kFavoriteSentenceSourceMusic);
+    });
+
+    test('浏览器扩展网页视频（KGC1ifR1a3）的 web 落库值精确映射', () {
+      expect(sentenceSourceKindOf('web'), SentenceSourceKind.web);
+      expect(SentenceSourceKind.web.dbValue, kFavoriteSentenceSourceWeb);
+    });
+
     test('未知串/null/空串一律回退 book（向后兼容默认）', () {
       expect(sentenceSourceKindOf(null), SentenceSourceKind.book);
       expect(sentenceSourceKindOf(''), SentenceSourceKind.book);
@@ -55,12 +69,13 @@ void main() {
     });
 
     test('FavoriteSentence 旧条目缺 source 的默认与回退一致', () {
-      final FavoriteSentence legacy =
-          FavoriteSentence.fromJson(<String, dynamic>{
-        'text': 'テスト文',
-        'bookTitle': 'テスト本',
-        'createdAt': '2026-07-26T00:00:00.000',
-      });
+      final FavoriteSentence legacy = FavoriteSentence.fromJson(
+        <String, dynamic>{
+          'text': 'テスト文',
+          'bookTitle': 'テスト本',
+          'createdAt': '2026-07-26T00:00:00.000',
+        },
+      );
       expect(sentenceSourceKindOf(legacy.source), SentenceSourceKind.book);
     });
   });

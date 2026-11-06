@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:drift/drift.dart'
-    show Value;
+import 'dart:typed_data';
+import 'package:drift/drift.dart' show Value;
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show discRootForMemberPath;
 import 'package:fushi_engine/models/dictionary_directory.dart';
 import 'package:fushi_engine/models/local_audio_db_entry.dart';
 import 'package:fushi_engine/media/video/video_library_import.dart'
@@ -16,12 +18,18 @@ import 'package:fushi_engine/media/video/video_sidecar.dart'
         sidecarSuffixesDisplacedBy;
 import 'package:fushi_audio/fushi_audio_core.dart'
     show AudioCue, AudiobookStorage, readTextWithEncoding;
+import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart'
+    show isStandaloneSubtitleBook, srtBookHasGeneratedBody;
 import 'package:fushi_engine/media/media_pref_keys.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
-import 'package:fushi_engine/media/video/m3u8_playlist.dart'
-    show PlaylistEntry;
+import 'package:fushi_engine/media/video/media_server_video_path.dart';
+import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:fushi_engine/media/video/strm_file.dart'
-    show isNetworkOnlyVideoPath, lacksLocalMediaFile;
+    show isNetworkOnlyVideoPath, isStrmPath, lacksLocalMediaFile;
+import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
+    show DandanplayFileKey, dandanplayFileKeyOf;
+import 'package:fushi_engine/media/video/video_subtitle_source.dart'
+    show isImportedExternalSubtitlePath;
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart'
     show VideoPendingScrapeWork, planScrapeWorksForCollection;
 import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.dart';
@@ -46,8 +54,13 @@ import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/media/video/series_playback_prefs.dart'
-    show effectiveSeriesAudioTrackId, effectiveSeriesDelayMs, effectiveSeriesSecondaryDelayMs;
+    show
+        effectiveSeriesAudioTrackId,
+        effectiveSeriesDelayMs,
+        effectiveSeriesSecondaryDelayMs;
 import 'package:fushi_engine/sync/online_novel_book.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
+import 'package:fushi_engine/sync/online_manga_host_reader.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart'
     show hasExportableMangaContent, kMangaPackageMarker, repackageMangaBook;
 import 'package:fushi_engine/stats/stat_facts.dart';
@@ -56,6 +69,7 @@ import 'package:fushi_engine/sync/override_title_lookup.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
+import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
@@ -67,6 +81,8 @@ import 'package:fushi_engine/sync/sync_channel_scope.dart';
 import 'package:fushi_engine/sync/epub_repackage.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show extractAudioSegmentViaFfmpeg;
+import 'package:fushi_engine/media/video/video_clip_exporter.dart'
+    show exportVideoClipSourceSegmentViaFfmpeg;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/foundation/engine_log.dart';
@@ -81,8 +97,7 @@ import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
         mangaChapterDirectoryByDigest,
         mangaChapterImagesDirectory,
         readDownloadedChapterPayload;
-import 'package:fushi_engine/media/manga/manga_storage.dart'
-    show MangaStorage;
+import 'package:fushi_engine/media/manga/manga_storage.dart' show MangaStorage;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart'
     show MokuroPayload, parseMangaJson;
 
@@ -111,9 +126,15 @@ void _assertSafeName(String name) {
   }
 }
 
-String? _existingFilePath(String? path) {
+/// [path] 指向的文件存在则原样返回，否则 null。async：host 跑在 app 主 isolate 上，路径可能落在网络盘
+/// （rclone / SMB 挂载）上，同步 existsSync 冷目录时会冻结整条 isolate（BUG-3756）。
+Future<String?> _existingFilePathAsync(String? path) async {
   if (path == null || path.isEmpty) return null;
-  return File(path).existsSync() ? path : null;
+  try {
+    return await File(path).exists() ? path : null;
+  } on FileSystemException {
+    return null;
+  }
 }
 
 /// [LocalLibraryHostService] 的抽象骨架：宣告全部 host 接口，并把具体类的注入字段以抽象私有
@@ -124,8 +145,12 @@ abstract class _LocalLibraryHostBase
         FushiLibraryHostService,
         MangaLibraryHost,
         DeletionTombstoneHost,
+        PeerPushDeletionGate,
         VideoDeletionHost,
         VideoPlaybackSyncHost,
+        VideoDanmakuKeyHost,
+        VideoDiscShareHost,
+        VideoClipExportHost,
         AudiobookDelayHost,
         AudiobookSubtitleHost,
         VideoSubtitleDefaultHost,
@@ -134,14 +159,15 @@ abstract class _LocalLibraryHostBase
         InterconnectProfileHost,
         VideoMetadataHost,
         VideoMetadataOrderingHost,
-        TagSyncHost {
+        TagSyncHost,
+        MediaLinkSyncHost {
   FushiDatabase get _db;
   Directory get _dictionaryResourceRoot;
   SyncAssetPackageService get _packages;
   Future<void> Function() get _refreshDictionaryCache;
   Future<void> Function(Future<void> Function() body) get _runExclusive;
   Future<void> Function(Future<void> Function() body)
-      get _runSyncStateExclusive;
+  get _runSyncStateExclusive;
   Future<bool> Function()? get _isProfileTransferEnabled;
   Future<String> Function()? get _exportActiveProfileJson;
   Future<String> Function(String json)? get _importProfileJson;
@@ -149,7 +175,8 @@ abstract class _LocalLibraryHostBase
     required String bookKey,
     required String title,
     required int updatedAt,
-  })? get _adoptOverrideTitle;
+  })?
+  get _adoptOverrideTitle;
   Future<String?> Function(File epubFile)? get _importBookFromFile;
   Future<void> Function(EpubBookRow row)? get _cleanupBookOnDisk;
   List<LocalAudioDbEntry> get _localAudioEntries;
@@ -160,10 +187,13 @@ abstract class _LocalLibraryHostBase
   String get _videoSubtitleLangCode;
   Directory? get _uploadedVideoRoot;
   Directory? get _videoCoversDirectory;
-  Future<String?> Function(
-      {required String videoPath,
-      required String bookUid})? get _extractVideoCover;
+  Future<String?> Function({
+    required String videoPath,
+    required String bookUid,
+  })?
+  get _extractVideoCover;
   Future<VideoSourceScrapeTaskController?> Function()? get _scrapeController;
+  OnlineMangaHostReader? get _onlineMangaReader;
 }
 
 /// 用真实 Fushi 库（Drift DB + [SyncAssetPackageService]）实现 host 库服务。
@@ -218,38 +248,42 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
       required String bookKey,
       required String title,
       required int updatedAt,
-    })? adoptOverrideTitle,
+    })?
+    adoptOverrideTitle,
     String videoSubtitleLangCode = 'ja',
     Directory? uploadedVideoRoot,
     Directory? videoCoversDirectory,
     Future<String?> Function({
       required String videoPath,
       required String bookUid,
-    })? extractVideoCover,
+    })?
+    extractVideoCover,
     Future<VideoSourceScrapeTaskController?> Function()? scrapeController,
-  })  : _db = db,
-        _dictionaryResourceRoot = dictionaryResourceRoot,
-        _packages = packages,
-        _refreshDictionaryCache = refreshDictionaryCache,
-        _runExclusive = runExclusive,
-        _runSyncStateExclusive = runSyncStateExclusive ?? runExclusive,
-        _importBookFromFile = importBookFromFile,
-        _cleanupBookOnDisk = cleanupBookOnDisk,
-        _localAudioEntriesSnapshot = localAudioEntries,
-        _localAudioEntriesProvider = localAudioEntriesProvider,
-        _localAudioStagingDir = localAudioStagingDir,
-        _onLocalAudioImported = onLocalAudioImported,
-        _audioDatabaseRoot = audioDatabaseRoot,
-        _removeLocalAudioEntry = removeLocalAudioEntry,
-        _isProfileTransferEnabled = isProfileTransferEnabled,
-        _exportActiveProfileJson = exportActiveProfileJson,
-        _importProfileJson = importProfileJson,
-        _adoptOverrideTitle = adoptOverrideTitle,
-        _videoSubtitleLangCode = videoSubtitleLangCode,
-        _uploadedVideoRoot = uploadedVideoRoot,
-        _videoCoversDirectory = videoCoversDirectory,
-        _extractVideoCover = extractVideoCover,
-        _scrapeController = scrapeController;
+    OnlineMangaHostReader? onlineMangaReader,
+  }) : _db = db,
+       _dictionaryResourceRoot = dictionaryResourceRoot,
+       _packages = packages,
+       _refreshDictionaryCache = refreshDictionaryCache,
+       _runExclusive = runExclusive,
+       _runSyncStateExclusive = runSyncStateExclusive ?? runExclusive,
+       _importBookFromFile = importBookFromFile,
+       _cleanupBookOnDisk = cleanupBookOnDisk,
+       _localAudioEntriesSnapshot = localAudioEntries,
+       _localAudioEntriesProvider = localAudioEntriesProvider,
+       _localAudioStagingDir = localAudioStagingDir,
+       _onLocalAudioImported = onLocalAudioImported,
+       _audioDatabaseRoot = audioDatabaseRoot,
+       _removeLocalAudioEntry = removeLocalAudioEntry,
+       _isProfileTransferEnabled = isProfileTransferEnabled,
+       _exportActiveProfileJson = exportActiveProfileJson,
+       _importProfileJson = importProfileJson,
+       _adoptOverrideTitle = adoptOverrideTitle,
+       _videoSubtitleLangCode = videoSubtitleLangCode,
+       _uploadedVideoRoot = uploadedVideoRoot,
+       _videoCoversDirectory = videoCoversDirectory,
+       _extractVideoCover = extractVideoCover,
+       _scrapeController = scrapeController,
+       _onlineMangaReader = onlineMangaReader;
 
   @override
   final FushiDatabase _db;
@@ -262,7 +296,8 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
   @override
   final Future<void> Function(Future<void> Function() body) _runExclusive;
 
-  /// 同步状态域（聚合快照折叠 / 合集清单合并）专用的**窄**互斥（BUG-2717）。
+  /// 同步状态域（聚合快照折叠 / 合集清单合并 / 对端进度与播放位置的读-比较-写）
+  /// 专用的**窄**互斥（BUG-2717）。
   ///
   /// 这两个对端写只是本机 DB 的读-改-写，唯一需要互斥的对象是「同一批表上的其它
   /// 本地 apply 步骤」——包括本机自己作为 client 出站同步时的聚合 / 合集落库。它们
@@ -274,7 +309,7 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
   /// （无头服务端那把本来就是库专用锁，形状相同）。
   @override
   final Future<void> Function(Future<void> Function() body)
-      _runSyncStateExclusive;
+  _runSyncStateExclusive;
 
   /// 互联「配置文件」（Profile）搬运的三个可选依赖（与本类其余可选能力同范式：
   /// 注入回调而不是把 ProfileRepository 的构造依赖整条拖进来）。生产由 AppModel
@@ -294,7 +329,8 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
     required String bookKey,
     required String title,
     required int updatedAt,
-  })? _adoptOverrideTitle;
+  })?
+  _adoptOverrideTitle;
 
   /// 书籍导入回调（可选；null 时 importBook 抛 [UnsupportedError]）。
   /// 生产传 `(f) => EpubImporter.importFromPath(db: db, filePath: f.path, fileName: p.basename(f.path))`。
@@ -359,8 +395,11 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
   /// 上传视频后的封面抽取回调（可选、best-effort；null 时上传的视频无封面占位）。
   /// 生产传 `extractVideoCover`（桌面 ffmpeg 抽帧；移动端无 ffmpeg 返 null 留空占位）。
   @override
-  final Future<String?> Function(
-      {required String videoPath, required String bookUid})? _extractVideoCover;
+  final Future<String?> Function({
+    required String videoPath,
+    required String bookUid,
+  })?
+  _extractVideoCover;
 
   /// 7a 远程刮削用的 host 刮削控制器解析器（可选）。控制器归 UI 层（HomePage）
   /// 持有并按偏好重建，host 不自造第二个协调器（两个协调器会各自抢
@@ -368,6 +407,10 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
   /// candidates 回空、scrape 回 notPlanned。
   @override
   final Future<VideoSourceScrapeTaskController?> Function()? _scrapeController;
+
+  /// 在线漫画按需取页（app 装配；null = 只供 host 已下载的章，无头服务端即此）。
+  @override
+  final OnlineMangaHostReader? _onlineMangaReader;
 }
 
 /// 跨域共享的查询 helper（书 / 视频 / 有声书都用）：主合集归属一趟映射、可导出有声书键集。
@@ -376,15 +419,20 @@ mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
   /// host 端删除资产后记同步删除墓碑（BUG-2945），让其它已配对设备经
   /// `/api/tombstones` 拉到并删掉本地副本。best-effort：墓碑写失败不该把已
   /// 完成的删除变成 HTTP 500。
+  ///
+  /// [cloudFolderName]：书墓碑的云盘书文件夹名（`sanitizeTtuFilename(书名)`），host
+  /// 自己的云通道发布墓碑时据此删掉云盘上的书文件夹；其它资产留 null。
   Future<void> _writeHostSyncTombstone(
     SyncTombstoneKind kind,
-    String itemKey,
-  ) async {
+    String itemKey, {
+    String? cloudFolderName,
+  }) async {
     try {
       await _db.writeSyncDeletionTombstone(
         kind.dbValue,
         itemKey,
         DateTime.now().millisecondsSinceEpoch,
+        cloudFolderName: cloudFolderName,
       );
     } catch (e, stack) {
       engineLog.log('LocalLibraryHostService.writeHostSyncTombstone', e, stack);
@@ -394,11 +442,13 @@ mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
   /// `'<mediaType>|<entryKey>'` → 该条目的**主合集归属**（多端库联合视图 §2.3
   /// 任务5.1）的一趟映射。归属跟随 [FushiDatabase.getPrimaryCollectionIdByEntry] 的
   /// 「最小 collectionId」折叠语义：一条目属多合集时只带它折进的那一张，与库网格
-  /// 折叠 / UI 占位卡归行一致。孤儿引用（合集已删）跳过 = 无归属（散卡）。每个被引用
-  /// 合集只 [getCollectionItems] 一次，避免逐条目 N+1。
+  /// 折叠 / UI 占位卡归行一致。孤儿引用（合集已删）跳过 = 无归属（散卡）。
+  ///
+  /// 只含本机库里存在的条目（视频 bookUid / EPUB uid 与 bookKey / SRT uid）——消费方
+  /// [listBooks] / [listVideos] 也只按这几种键查。
   Future<Map<String, RemoteCollectionMembership>>
-      _primaryCollectionMembership() async =>
-          (await _primaryCollectionData()).membership;
+  _primaryCollectionMembership() async =>
+      (await _primaryCollectionData()).membership;
 
   /// [_primaryCollectionMembership] 的富版本：同一趟查询顺带产出
   /// `'<mediaType>|<entryKey>'` → 主归属合集**行**（[MediaCollectionRow]）的映射，
@@ -406,12 +456,20 @@ mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
   /// v52「同系列共享」——此前清单只读 row 级值，host 在合集里调的轴/选的音轨
   /// 远端永远看不到）。
   Future<
-      ({
-        Map<String, RemoteCollectionMembership> membership,
-        Map<String, MediaCollectionRow> collectionByEntry,
-      })> _primaryCollectionData() async {
-    final Map<String, int> primaryByEntry =
-        await _db.getPrimaryCollectionIdByEntry();
+    ({
+      Map<String, RemoteCollectionMembership> membership,
+      Map<String, MediaCollectionRow> collectionByEntry,
+    })
+  >
+  _primaryCollectionData() async {
+    // 一趟 SQL 收窄到本机条目（[FushiDatabase.getLocalPrimaryCollectionMembership]，
+    // 与 getPrimaryCollectionIdByEntry 同一 MIN(collection_id) 折叠口径并带回组内
+    // sortIndex）。旧实现全表 GROUP BY 后按主归属合集逐个 getCollectionItems：
+    // 成员表远大于本机库（在线源 / 播放列表合集挂着成千上万本机不存在的集数），
+    // 3000+ 合集的 host 每次出清单就是 3000+ 次跨 isolate 查询 + 8 万行搬运，
+    // `/api/library/books` 与 `/api/library/videos` 秒级的主因。
+    final Map<String, ({int collectionId, int sortIndex})> primaryByEntry =
+        await _db.getLocalPrimaryCollectionMembership();
     if (primaryByEntry.isEmpty) {
       return (
         membership: const <String, RemoteCollectionMembership>{},
@@ -420,31 +478,25 @@ mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
     }
     final Map<int, MediaCollectionRow> collectionsById =
         <int, MediaCollectionRow>{
-      for (final MediaCollectionRow c in await _db.getAllMediaCollections())
-        c.id: c,
-    };
+          for (final MediaCollectionRow c in await _db.getAllMediaCollections())
+            c.id: c,
+        };
     final Map<String, RemoteCollectionMembership> out =
         <String, RemoteCollectionMembership>{};
     final Map<String, MediaCollectionRow> rowByEntry =
         <String, MediaCollectionRow>{};
-    // 只遍历真正承载某条目主归属的合集（按 id 去重），逐合集取一次成员行。
-    for (final int cid in primaryByEntry.values.toSet()) {
-      final MediaCollectionRow? col = collectionsById[cid];
+    for (final MapEntry<String, ({int collectionId, int sortIndex})> e
+        in primaryByEntry.entries) {
+      final MediaCollectionRow? col = collectionsById[e.value.collectionId];
       if (col == null) continue; // 孤儿引用：归属合集已删 → 该条目退化散卡。
-      for (final MediaCollectionItemRow item
-          in await _db.getCollectionItems(cid)) {
-        // v83：epub 成员行 entryKey = 本机 epub_books.uid（透传行 = 对端 bookKey），
-        // 本 map 键随成员表面貌走——bookKey 侧消费方（listBooks）负责先换到 uid。
-        final String key = '${item.mediaType}|${item.entryKey}';
-        // 仅记录以本合集为主归属的成员（该条目也可能在别的更大 id 合集里）。
-        if (primaryByEntry[key] != cid) continue;
-        out[key] = RemoteCollectionMembership(
-          collectionName: col.name,
-          collectionType: col.collectionType,
-          sortIndex: item.sortIndex,
-        );
-        rowByEntry[key] = col;
-      }
+      // v83：epub 成员行 entryKey = 本机 epub_books.uid（透传行 = 对端 bookKey），
+      // 本 map 键随成员表面貌走——bookKey 侧消费方（listBooks）负责先换到 uid。
+      out[e.key] = RemoteCollectionMembership(
+        collectionName: col.name,
+        collectionType: col.collectionType,
+        sortIndex: e.value.sortIndex,
+      );
+      rowByEntry[e.key] = col;
     }
     return (membership: out, collectionByEntry: rowByEntry);
   }
@@ -457,13 +509,33 @@ mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
   /// [listBooks] 的 `hasAudiobook` 徽章、[listAudiobooks] 清单、orchestrator
   /// sweep 三处判据全部走此单一派生逻辑，确保徽章/清单/导出契约完全同源（TODO-778）。
   Future<Set<String>> _srtBackedAudiobookKeys() async {
-    final List<AudiobookRow> rows = await _db.getAllAudiobooks();
-    final Set<String> keys = <String>{};
-    for (final AudiobookRow r in rows) {
-      if (await _db.getSrtBookByBookKey(r.bookKey) != null) {
-        keys.add(r.bookKey);
-      }
-    }
-    return keys;
+    // 一趟取 SrtBooks 的 bookKey 集合（与逐条 getSrtBookByBookKey 同判据：该 bookKey
+    // 有任一 SrtBooks 行），不再按有声书逐本查。
+    final Set<String> srtBookKeys = <String>{
+      for (final SrtBookRow s in await _db.getAllSrtBooks()) s.bookKey,
+    };
+    return <String>{
+      for (final AudiobookRow r in await _db.getAllAudiobooks())
+        if (srtBookKeys.contains(r.bookKey)) r.bookKey,
+    };
+  }
+
+  /// 独立字幕书由 cue 生成的正文 EPUB 的 bookKey（BUG-4197）。[listBooks] 给这些
+  /// 书标 `subtitleBookBody`：那本字幕书走有声书清单（按 uid），正文由收端按 cue
+  /// 再生成，不是一本单独可下的书。
+  Future<Set<String>> _standaloneSubtitleBodyKeys() async {
+    final Set<String> audiobookKeys = <String>{
+      for (final AudiobookRow r in await _db.getAllAudiobooks()) r.bookKey,
+    };
+    return <String>{
+      for (final SrtBookRow s in await _db.getAllSrtBooks())
+        if (srtBookHasGeneratedBody(uid: s.uid, bookKey: s.bookKey) &&
+            isStandaloneSubtitleBook(
+              uid: s.uid,
+              bookKey: s.bookKey,
+              audiobookKeys: audiobookKeys,
+            ))
+          s.bookKey,
+    };
   }
 }

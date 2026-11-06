@@ -4,10 +4,12 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_store.dart';
+import 'package:fushi/src/media/source_library/source_library_privacy.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
@@ -22,6 +24,11 @@ import 'package:image/image.dart' as img;
 class _FakeServer {
   final List<http.Request> requests = <http.Request>[];
   String accountId = 'ServerAccount001';
+  String nickname = 'N';
+  String? avatar;
+
+  /// `/v1/me` 永不回（模拟 iOS 冷启动网络还没就绪：请求超时）。
+  bool hangMe = false;
   final Set<String> shelfWorks = <String>{};
   bool failShelf = false;
 
@@ -67,9 +74,9 @@ class _FakeServer {
 
   Map<String, dynamic> _self() => <String, dynamic>{
     'id': accountId,
-    'nickname': 'N',
+    'nickname': nickname,
     'discriminator': 7,
-    'avatar': null,
+    'avatar': avatar,
     'visibility': 'public',
     'createdAt': 1,
     'shelfCount': shelfCount,
@@ -91,7 +98,10 @@ class _FakeServer {
     if (path == '/v1/me' && r.method == 'DELETE') {
       return _json(<String, dynamic>{'ok': true});
     }
-    if (path == '/v1/me') return _json(_self());
+    if (path == '/v1/me') {
+      if (hangMe) return Completer<http.Response>().future;
+      return _json(_self());
+    }
     if (path == '/v1/me/avatar') {
       return _json(<String, dynamic>{'avatar': '/img/avatars/x.jpg'});
     }
@@ -400,6 +410,129 @@ void main() {
     await s.signOutLocally();
     expect(server.requests, isEmpty);
     expect(await store().read(), isNull);
+  });
+
+  group('自己资料的本机缓存（反馈 hDfesbQvxB：iOS 冷启动首页头像空白）', () {
+    test('冷启动：load 读出上次的昵称 / 头像，不等网络；selfFresh=false', () async {
+      server.avatar = '/img/avatars/me.jpg';
+      final LeaderboardService first = service();
+      await first.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      expect(first.selfFresh, isTrue);
+      expect(store().selfCacheFile.existsSync(), isTrue);
+
+      // 重启：网络还没就绪（/v1/me 挂死）。
+      server
+        ..requests.clear()
+        ..hangMe = true;
+      final LeaderboardService cold = service();
+      int notified = 0;
+      cold.addListener(() => notified++);
+      await cold.load();
+      expect(server.requests, isEmpty, reason: 'load 只读本机文件');
+      expect(cold.status, LeaderboardStatus.active);
+      expect(cold.self, isNotNull, reason: '冷启动就要有头像可画');
+      expect(cold.self!.account.avatar, '/img/avatars/me.jpg');
+      expect(cold.self!.account.nickname, 'N');
+      expect(cold.selfFresh, isFalse, reason: '缓存不是新鲜值，首页仍要刷新');
+      expect(notified, greaterThan(0), reason: 'load 完成要通知，首页据此重建');
+    });
+
+    test('刷新回来覆盖缓存：内存与文件都换成服务端新值', () async {
+      final LeaderboardService first = service();
+      await first.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+
+      server
+        ..nickname = 'Renamed'
+        ..avatar = '/img/avatars/new.jpg';
+      final LeaderboardService cold = service();
+      await cold.load();
+      expect(cold.self!.account.nickname, 'N');
+      await cold.refreshSelf();
+      expect(cold.selfFresh, isTrue);
+      expect(cold.self!.account.nickname, 'Renamed');
+
+      final LeaderboardService again = service();
+      await again.load();
+      expect(again.self!.account.nickname, 'Renamed');
+      expect(again.self!.account.avatar, '/img/avatars/new.jpg');
+    });
+
+    test('改资料 / 换头像同样写缓存', () async {
+      final LeaderboardService s = service();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      server.avatar = '/img/avatars/x.jpg';
+      await s.setAvatarFromFile('/whatever.png');
+      final LeaderboardService again = service();
+      await again.load();
+      expect(again.self!.account.avatar, '/img/avatars/x.jpg');
+    });
+
+    test('退出删缓存：下次冷启动不显示上一个账户的头像', () async {
+      final LeaderboardService s = service();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      await s.signOutLocally();
+      expect(store().selfCacheFile.existsSync(), isFalse);
+      final LeaderboardService again = service();
+      await again.load();
+      expect(again.self, isNull);
+    });
+
+    test('缓存属于别的账户（换号后残留）时不用', () async {
+      final LeaderboardService s = service();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      await store().writeSelf(
+        LeaderboardSelf.fromJson(<String, dynamic>{
+          'id': 'SomeoneElse',
+          'nickname': 'X',
+          'discriminator': 1,
+          'visibility': 'public',
+          'createdAt': 1,
+        }),
+      );
+      final LeaderboardService again = service();
+      await again.load();
+      expect(again.status, LeaderboardStatus.active);
+      expect(again.self, isNull);
+    });
+
+    test('缓存文件坏了：当没有缓存，账户照常可用', () async {
+      final LeaderboardService s = service();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      store().selfCacheFile.writeAsStringSync('{not json');
+      final LeaderboardService again = service();
+      await again.load();
+      expect(again.status, LeaderboardStatus.active);
+      expect(again.self, isNull);
+    });
+
+    test('请求在飞时退出：迟到的资料不落回内存、也不重新写出缓存', () async {
+      final LeaderboardService s = service();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      server.hangMe = true;
+      final LeaderboardService cold = service();
+      await cold.load();
+      server.hangMe = false;
+      final Future<LeaderboardSelf> inFlight = cold.refreshSelf();
+      await cold.signOutLocally();
+      await inFlight;
+      expect(cold.self, isNull);
+      expect(store().selfCacheFile.existsSync(), isFalse);
+    });
+
+    test('首页头像：有缓存也要在 load 后联网刷新一次（判 selfFresh 不判 self）', () {
+      // _HomeAvatarPill 是私有组件，且 load 的真实文件 IO 在 widget 测试的
+      // fakeAsync 里不推进；这里钉它的判据：旧写法 `self != null` 遇到缓存就永远
+      // 不刷新，昵称 / 头像会一直停在上次。
+      final String src = File(
+        'lib/src/pages/implementations/home_dashboard_page.dart',
+      ).readAsStringSync();
+      final int start = src.indexOf('void _maybeRefreshSelf(');
+      expect(start, greaterThan(0));
+      final String body = src.substring(start, src.indexOf('\n  }', start));
+      expect(body, contains('service.selfFresh'));
+      expect(body, isNot(contains('service.self != null')));
+      expect(body, contains('LeaderboardStatus.active'));
+    });
   });
 
   test('Profile 隔离：不同 Profile 读写各自的文件', () async {
@@ -834,5 +967,159 @@ void main() {
     now += const Duration(days: 1).inMilliseconds;
     await s.maybeSyncInBackground();
     expect(backfills, 2);
+  });
+
+  // 反馈 kEAgATi1LF：来源库隐私开关。书架用真实的 buildLocalShelf 从库里建（不注入
+  // 固定书架），钉死「打开开关 → 立即同步 → 服务端撤下已上报的条目」整条链路。
+  group('隐私来源：打开开关后从服务端撤下', () {
+    late int secretSource;
+
+    LeaderboardService realShelfService() => LeaderboardService(
+      database: () => db,
+      supportRoot: () async => root,
+      profileId: () async => 1,
+      httpClientFactory: () async => MockClient(server.handle),
+      defaultBaseUrl: Uri.parse('https://rank.example'),
+      clockMs: () => now,
+      shelfBuilder: (FushiDatabase d, int profileId, DateTime at) =>
+          buildLocalShelf(d, profileId: profileId, now: at),
+      isbnBackfill: (FushiDatabase _) async => 0,
+      coverThumb: (LocalShelfEntry _) async => null,
+    );
+
+    Future<void> book(String key, {int? sourceId}) async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: key,
+          title: key,
+          epubPath: '/x/$key.epub',
+          extractDir: '/x/$key',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: 0,
+          completedAt: Value<DateTime?>(DateTime(2023, 1, 1)),
+          sourceId: Value<int?>(sourceId),
+        ),
+      );
+    }
+
+    setUp(() async {
+      secretSource = await db
+          .into(db.mediaSources)
+          .insert(
+            MediaSourcesCompanion.insert(
+              label: 'nsfw',
+              mediaKind: 'book',
+              rootPath: '/books/nsfw',
+              createdAt: 0,
+            ),
+          );
+      await book('Nsfw', sourceId: secretSource);
+      await book('Open');
+    });
+
+    Map<Object?, Object?> lastShelfBody() =>
+        jsonDecode(utf8.decode(server.at('/v1/shelf').last.bodyBytes))
+            as Map<Object?, Object?>;
+
+    /// 与隐私对话框同一流程：先落库，打开时再撤下（对话框里撤下在后台跑）。
+    /// 关掉时不撤下，返回 null。
+    Future<SourceLibraryWithdrawResult?> toggle(
+      LeaderboardService s,
+      bool isPrivate,
+    ) async {
+      await setSourceLibraryPrivate(
+        db: db,
+        sourceId: secretSource,
+        isPrivate: isPrivate,
+      );
+      if (!isPrivate) return null;
+      return withdrawSourceLibraryFromLeaderboard(s.syncAfterPrivacyChange);
+    }
+
+    test('已上报的隐私来源条目被 remove，公开条目保留；开关已落库', () async {
+      final LeaderboardService s = realShelfService();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      await s.syncNow();
+      expect(server.shelfWorks, <String>{'W_Nsfw', 'W_Open'});
+
+      server.requests.clear();
+      final SourceLibraryWithdrawResult? result = await toggle(s, true);
+      expect(result!.outcome, SourceLibraryWithdrawOutcome.withdrawn);
+      expect((await db.getMediaSourceById(secretSource))!.isPrivate, isTrue);
+      expect(server.at('/v1/shelf'), hasLength(1));
+      final Map<Object?, Object?> body = lastShelfBody();
+      expect(body['remove'], <Object?>['W_Nsfw']);
+      expect(body['put'], isEmpty, reason: '没变的公开条目不重传');
+      expect(server.shelfWorks, <String>{'W_Open'});
+      final LeaderboardLocalAccount saved = (await store().read())!;
+      expect(saved.syncState.entries.keys, <String>[
+        'book:Open',
+      ], reason: '同步状态不再记着撤下的条目');
+
+      // 关掉：开关落库、不立即同步；下一次同步照常重新上传。
+      server.requests.clear();
+      expect(await toggle(s, false), isNull);
+      expect(server.requests, isEmpty);
+      await s.syncNow();
+      expect(server.shelfWorks, <String>{'W_Nsfw', 'W_Open'});
+    });
+
+    test('在途同步（开关之前建的书架）结束后再跑一轮，不搭它的便车', () async {
+      final LeaderboardService s = realShelfService();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      await s.syncNow();
+      expect(server.shelfWorks, <String>{'W_Nsfw', 'W_Open'});
+
+      // 让下一轮有东西可传（读完日变了 → put），请求挂在服务端；期间打开开关。
+      await db
+          .update(db.epubBooks)
+          .write(
+            EpubBooksCompanion(
+              completedAt: Value<DateTime?>(DateTime(2023, 2, 1)),
+            ),
+          );
+      server.shelfGate = Completer<void>();
+      server.shelfArrived = Completer<void>();
+      final Future<void> inFlight = s.syncNow();
+      await server.shelfArrived.future;
+      final Future<SourceLibraryWithdrawResult?> toggling = toggle(s, true);
+      server.shelfGate!.complete();
+      await inFlight;
+      server.shelfGate = null;
+      final SourceLibraryWithdrawResult? result = await toggling;
+      expect(result!.outcome, SourceLibraryWithdrawOutcome.withdrawn);
+      expect(server.shelfWorks, <String>{'W_Open'});
+    });
+
+    test('没开排行榜 / 上传关着：不发书架请求，结果为「仅本地」', () async {
+      final LeaderboardService s = realShelfService();
+      SourceLibraryWithdrawResult? result = await toggle(s, true);
+      expect(result!.outcome, SourceLibraryWithdrawOutcome.notUploading);
+      expect(server.requests, isEmpty);
+
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      await s.setUploadEnabled(false);
+      server.requests.clear();
+      result = await toggle(s, true);
+      expect(result!.outcome, SourceLibraryWithdrawOutcome.notUploading);
+      expect(server.at('/v1/shelf'), isEmpty);
+    });
+
+    test('撤下的同步失败：开关仍生效（不回滚），结果带错误；下次同步补撤', () async {
+      final LeaderboardService s = realShelfService();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      await s.syncNow();
+      server.failShelf = true;
+      final SourceLibraryWithdrawResult? result = await toggle(s, true);
+      expect(result!.outcome, SourceLibraryWithdrawOutcome.failed);
+      expect(result.error, isA<LeaderboardApiException>());
+      expect((await db.getMediaSourceById(secretSource))!.isPrivate, isTrue);
+      expect(server.shelfWorks, contains('W_Nsfw'));
+
+      server.failShelf = false;
+      await s.syncNow();
+      expect(server.shelfWorks, <String>{'W_Open'});
+    });
   });
 }

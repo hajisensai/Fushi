@@ -1,6 +1,8 @@
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/media/image_kernels.dart';
+import 'package:fushi_compute/fushi_compute.dart' show FfcImageFormat;
 import 'package:image/image.dart' as img;
 
 /// TODO-646 近无损压缩：制卡截图降采样。
@@ -75,7 +77,8 @@ Uint8List downsampleCardScreenshot(
     // `img.decodeImage` 对损坏字节可能返回 null，也可能在嗅探解码器时抛
     // （如 GIF 头探测越界 RangeError）。两种都视作「不是可处理的截图」，
     // 保守原样返回，绝不让降采样把一张有效封面变成空/异常而破坏制卡。
-    final img.Image? decoded = img.decodeImage(bytes);
+    // 原生解码（已转正）。
+    final img.Image? decoded = decodeImageNative(bytes);
     if (decoded == null) return bytes;
     final ({int width, int height})? target = computeDownsampledSize(
       width: decoded.width,
@@ -89,11 +92,8 @@ Uint8List downsampleCardScreenshot(
     }
     final img.Image out = target == null
         ? decoded
-        : img.copyResize(
-            decoded,
-            width: target.width,
-            height: target.height,
-          );
+        // 最近邻（= 旧的 img.copyResize 缺省插值），原生内核实现。
+        : resizeImageExact(decoded, width: target.width, height: target.height);
     return switch (encoding) {
       CardScreenshotEncoding.jpeg => img.encodeJpg(out, quality: quality),
       CardScreenshotEncoding.png => img.encodePng(out),
@@ -113,9 +113,9 @@ CardScreenshotEncoding? cardScreenshotEncodingOf(Uint8List bytes) {
   // 直接抛 RangeError（`InputBuffer.readString` 越界）——不是返回 false。嗅探失败等价于
   // 「不是我们认得的静图」，与 [downsampleCardScreenshot] 的保守回退同一条纪律。
   try {
-    return switch (img.findFormatForData(bytes)) {
-      img.ImageFormat.jpg => CardScreenshotEncoding.jpeg,
-      img.ImageFormat.png => CardScreenshotEncoding.png,
+    return switch (probeImageNative(bytes)?.format) {
+      FfcImageFormat.jpeg => CardScreenshotEncoding.jpeg,
+      FfcImageFormat.png => CardScreenshotEncoding.png,
       _ => null,
     };
   } catch (_) {
@@ -143,7 +143,7 @@ Uint8List transcodeCardScreenshot(
   final CardScreenshotEncoding? actual = cardScreenshotEncodingOf(bytes);
   if (actual == null || actual == encoding) return bytes;
   try {
-    final img.Image? decoded = img.decodeImage(bytes);
+    final img.Image? decoded = decodeImageNative(bytes);
     if (decoded == null) return bytes;
     return switch (encoding) {
       CardScreenshotEncoding.jpeg => img.encodeJpg(decoded, quality: quality),

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
@@ -34,7 +34,7 @@ void main() {
         path,
         isMainProcess: false,
       );
-      expect(migrated.schemaVersion, 118);
+      expect(migrated.schemaVersion, 146);
       expect(
         await migrated.anidbFileIdentityByHash(
           ed2k: '0123456789abcdef0123456789abcdef',
@@ -76,7 +76,7 @@ void main() {
       addTearDown(reopened.close);
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 118);
+      expect(probe.select('PRAGMA user_version').first.values.first, 146);
       expect(
         probe
             .select(
@@ -90,11 +90,11 @@ void main() {
           'idx_anidb_file_identities_anime',
         ]),
       );
-      final AnidbFileIdentityRow? byHash =
-          await reopened.anidbFileIdentityByHash(
-        ed2k: '0123456789ABCDEF0123456789ABCDEF',
-        fileSize: 1,
-      );
+      final AnidbFileIdentityRow? byHash = await reopened
+          .anidbFileIdentityByHash(
+            ed2k: '0123456789ABCDEF0123456789ABCDEF',
+            fileSize: 1,
+          );
       expect(byHash?.anidbFileId, 200, reason: '按内容键查不分大小写');
       expect(
         byHash?.ed2k,

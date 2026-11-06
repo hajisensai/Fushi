@@ -73,8 +73,10 @@ class _FakeSyncBackend implements SyncBackend {
       // Only the audioBook field is populated, so _fetchRemoteBookData touches
       // getAudioBookFile but never getProgressFile/getStatsFile.
       ? const SyncFileTrio(
-          audioBook:
-              SyncFileRef(id: audioAssetId, name: 'audiobook.fushiaudio'),
+          audioBook: SyncFileRef(
+            id: audioAssetId,
+            name: 'audiobook.fushiaudio',
+          ),
         )
       : const SyncFileTrio();
   @override
@@ -83,8 +85,10 @@ class _FakeSyncBackend implements SyncBackend {
   Future<List<AssetEntry>> listChildren(String namespaceId) async =>
       namespaceId == _dictNs ? dictAssets : const <AssetEntry>[];
   @override
-  void restoreCache(
-      {String? rootFolderId, Map<String, String>? titleToFolderId}) {}
+  void restoreCache({
+    String? rootFolderId,
+    Map<String, String>? titleToFolderId,
+  }) {}
   @override
   String? get cachedRootFolderId => null;
   @override
@@ -111,8 +115,7 @@ class _FakeSyncBackend implements SyncBackend {
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<TtuProgress> getProgressFile(String fileId) async =>
       throw UnimplementedError();
@@ -123,50 +126,46 @@ class _FakeSyncBackend implements SyncBackend {
   // _fetchRemoteBookData reads playbackPositionSec off the returned instance.
   @override
   Future<TtuAudioBook> getAudioBookFile(String fileId) async => TtuAudioBook(
-        title: 'BookA',
-        playbackPositionSec: 0,
-        lastAudioBookModified: 0,
-      );
+    title: 'BookA',
+    playbackPositionSec: 0,
+    lastAudioBookModified: 0,
+  );
   @override
   Future<void> updateProgressFile({
     required String folderId,
     required String? fileId,
     required TtuProgress progress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> updateStatsFile({
     required String folderId,
     required String? fileId,
     required List<TtuStatistics> stats,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> updateAudioBookFile({
     required String folderId,
     required String? fileId,
     required TtuAudioBook audioBook,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> uploadContentFile({
     required String folderId,
     required String fileName,
     required File file,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<SyncFileRef?> findContentFile(
-          String folderId, String fileName) async =>
-      throw UnimplementedError();
+    String folderId,
+    String fileName,
+  ) async => throw UnimplementedError();
   @override
   Future<AssetEntry?> findAsset(String namespaceId, String name) async =>
       throw UnimplementedError();
@@ -174,13 +173,18 @@ class _FakeSyncBackend implements SyncBackend {
   Future<String> ensureFolder(String parentId, String name) async =>
       throw UnimplementedError();
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
-  Future<void> getAsset(String assetId, File destination,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
   Future<Object?> getJsonAsset(String assetId) async =>
       throw UnimplementedError();
@@ -210,11 +214,13 @@ void main() {
     addTearDown(db.close);
     await tester.runAsync(() async {
       for (final (int i, String name) in localDicts.indexed) {
-        await db.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
-          name: name,
-          formatKey: 'yomichan',
-          order: i,
-        ));
+        await db.upsertDictionaryMeta(
+          DictionaryMetadataCompanion.insert(
+            name: name,
+            formatKey: 'yomichan',
+            order: i,
+          ),
+        );
       }
     });
     tester.view.physicalSize = const Size(1200, 1600);
@@ -249,55 +255,59 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('book row delete calls deleteAsset on remote folder id (folder)',
-      (WidgetTester tester) async {
-    final _FakeSyncBackend fake = _FakeSyncBackend(
-      books: <SyncFileRef>[const SyncFileRef(id: 'folderX', name: 'BookA')],
-      dictAssets: const <AssetEntry>[],
-    );
-    await pumpDialog(tester, fake);
+  testWidgets(
+    'book row delete calls deleteAsset on remote folder id (folder)',
+    (WidgetTester tester) async {
+      final _FakeSyncBackend fake = _FakeSyncBackend(
+        books: <SyncFileRef>[const SyncFileRef(id: 'folderX', name: 'BookA')],
+        dictAssets: const <AssetEntry>[],
+      );
+      await pumpDialog(tester, fake);
 
-    expect(find.text('BookA'), findsOneWidget);
+      expect(find.text('BookA'), findsOneWidget);
 
-    await tapDeleteAndConfirm(
-      tester,
-      rowDeleteIcon: find.byIcon(FushiIcons.delete),
-      menuLabel: t.sync_compare_delete_book,
-    );
+      await tapDeleteAndConfirm(
+        tester,
+        rowDeleteIcon: find.byIcon(FushiIcons.delete),
+        menuLabel: t.sync_compare_delete_book,
+      );
 
-    expect(fake.deletedIds, contains('folderX'));
-    expect(fake.deletedFolderFlags['folderX'], isTrue);
-    // Optimistic removal: the row is gone after a successful delete.
-    expect(find.text('BookA'), findsNothing);
-  });
+      expect(fake.deletedIds, contains('folderX'));
+      expect(fake.deletedFolderFlags['folderX'], isTrue);
+      // Optimistic removal: the row is gone after a successful delete.
+      expect(find.text('BookA'), findsNothing);
+    },
+  );
 
   testWidgets(
-      'dictionary row delete calls deleteAsset on remote asset id (not folder)',
-      (WidgetTester tester) async {
-    const String assetId = '__dictionaries__/JMdict.fushidict';
-    final _FakeSyncBackend fake = _FakeSyncBackend(
-      books: const <SyncFileRef>[],
-      dictAssets: const <AssetEntry>[
-        AssetEntry(id: assetId, name: 'JMdict.fushidict'),
-      ],
-    );
-    await pumpDialog(tester, fake);
+    'dictionary row delete calls deleteAsset on remote asset id (not folder)',
+    (WidgetTester tester) async {
+      const String assetId = '__dictionaries__/JMdict.fushidict';
+      final _FakeSyncBackend fake = _FakeSyncBackend(
+        books: const <SyncFileRef>[],
+        dictAssets: const <AssetEntry>[
+          AssetEntry(id: assetId, name: 'JMdict.fushidict'),
+        ],
+      );
+      await pumpDialog(tester, fake);
 
-    expect(find.text('JMdict'), findsOneWidget);
+      expect(find.text('JMdict'), findsOneWidget);
 
-    await tapDeleteAndConfirm(
-      tester,
-      rowDeleteIcon: find.byIcon(FushiIcons.delete),
-      menuLabel: t.sync_compare_delete_dict,
-    );
+      await tapDeleteAndConfirm(
+        tester,
+        rowDeleteIcon: find.byIcon(FushiIcons.delete),
+        menuLabel: t.sync_compare_delete_dict,
+      );
 
-    expect(fake.deletedIds, contains(assetId));
-    expect(fake.deletedFolderFlags[assetId], isFalse);
-    expect(find.text('JMdict'), findsNothing);
-  });
+      expect(fake.deletedIds, contains(assetId));
+      expect(fake.deletedFolderFlags[assetId], isFalse);
+      expect(find.text('JMdict'), findsNothing);
+    },
+  );
 
-  testWidgets('failed delete keeps the row and surfaces an error',
-      (WidgetTester tester) async {
+  testWidgets('failed delete keeps the row and surfaces an error', (
+    WidgetTester tester,
+  ) async {
     final _FakeSyncBackend fake = _FakeSyncBackend(
       books: <SyncFileRef>[const SyncFileRef(id: 'folderX', name: 'BookA')],
       dictAssets: const <AssetEntry>[],
@@ -318,57 +328,56 @@ void main() {
   });
 
   testWidgets(
-      'audiobook row delete removes only the audiobook action, keeps the book row',
-      (WidgetTester tester) async {
-    final _FakeSyncBackend fake = _FakeSyncBackend(
-      books: <SyncFileRef>[const SyncFileRef(id: 'folderX', name: 'BookA')],
-      dictAssets: const <AssetEntry>[],
-    )..withAudio = true;
-    await pumpDialog(tester, fake);
+    'audiobook row delete removes only the audiobook action, keeps the book row',
+    (WidgetTester tester) async {
+      final _FakeSyncBackend fake = _FakeSyncBackend(
+        books: <SyncFileRef>[const SyncFileRef(id: 'folderX', name: 'BookA')],
+        dictAssets: const <AssetEntry>[],
+      )..withAudio = true;
+      await pumpDialog(tester, fake);
 
-    expect(find.text('BookA'), findsOneWidget);
+      expect(find.text('BookA'), findsOneWidget);
 
-    await tapDeleteAndConfirm(
-      tester,
-      rowDeleteIcon: find.byIcon(FushiIcons.delete),
-      menuLabel: t.sync_compare_delete_audiobook,
-    );
+      await tapDeleteAndConfirm(
+        tester,
+        rowDeleteIcon: find.byIcon(FushiIcons.delete),
+        menuLabel: t.sync_compare_delete_audiobook,
+      );
 
-    // Deleted the audiobook asset (not a folder).
-    expect(fake.deletedIds, contains(_FakeSyncBackend.audioAssetId));
-    expect(
-      fake.deletedFolderFlags[_FakeSyncBackend.audioAssetId],
-      isFalse,
-    );
-    // The book folder was never touched.
-    expect(fake.deletedIds, isNot(contains('folderX')));
-    // Unlike a whole-book delete, the row survives — only the audiobook
-    // sub-action is cleared (_copyWithoutAudio optimistic refresh).
-    expect(find.text('BookA'), findsOneWidget);
+      // Deleted the audiobook asset (not a folder).
+      expect(fake.deletedIds, contains(_FakeSyncBackend.audioAssetId));
+      expect(fake.deletedFolderFlags[_FakeSyncBackend.audioAssetId], isFalse);
+      // The book folder was never touched.
+      expect(fake.deletedIds, isNot(contains('folderX')));
+      // Unlike a whole-book delete, the row survives — only the audiobook
+      // sub-action is cleared (_copyWithoutAudio optimistic refresh).
+      expect(find.text('BookA'), findsOneWidget);
 
-    // Re-open the row overflow: the audiobook item is gone, the book item stays.
-    await tester.tap(find.byIcon(FushiIcons.delete));
-    await tester.pumpAndSettle();
-    expect(find.text(t.sync_compare_delete_audiobook), findsNothing);
-    expect(find.text(t.sync_compare_delete_book), findsOneWidget);
-  });
+      // Re-open the row overflow: the audiobook item is gone, the book item stays.
+      await tester.tap(find.byIcon(FushiIcons.delete));
+      await tester.pumpAndSettle();
+      expect(find.text(t.sync_compare_delete_audiobook), findsNothing);
+      expect(find.text(t.sync_compare_delete_book), findsOneWidget);
+    },
+  );
 
   group('dictionary row presence label (#1473)', () {
     _FakeSyncBackend dictOnly(List<String> remoteNames) => _FakeSyncBackend(
-          books: const <SyncFileRef>[],
-          dictAssets: <AssetEntry>[
-            for (final String n in remoteNames)
-              AssetEntry(
-                id: '__dictionaries__/$n.fushidict',
-                name: '$n.fushidict',
-              ),
-          ],
-        );
+      books: const <SyncFileRef>[],
+      dictAssets: <AssetEntry>[
+        for (final String n in remoteNames)
+          AssetEntry(id: '__dictionaries__/$n.fushidict', name: '$n.fushidict'),
+      ],
+    );
 
-    testWidgets('dictionary on both sides shows Local and Remote',
-        (WidgetTester tester) async {
-      await pumpDialog(tester, dictOnly(<String>['JMdict']),
-          localDicts: <String>['JMdict']);
+    testWidgets('dictionary on both sides shows Local and Remote', (
+      WidgetTester tester,
+    ) async {
+      await pumpDialog(
+        tester,
+        dictOnly(<String>['JMdict']),
+        localDicts: <String>['JMdict'],
+      );
 
       expect(find.text('JMdict'), findsOneWidget);
       expect(
@@ -379,8 +388,9 @@ void main() {
       expect(find.byIcon(FushiIcons.delete), findsOneWidget);
     });
 
-    testWidgets('remote-only dictionary shows Remote, never Local',
-        (WidgetTester tester) async {
+    testWidgets('remote-only dictionary shows Remote, never Local', (
+      WidgetTester tester,
+    ) async {
       await pumpDialog(tester, dictOnly(<String>['JMdict']));
 
       expect(find.text(t.sync_compare_remote), findsOneWidget);
@@ -391,10 +401,14 @@ void main() {
       );
     });
 
-    testWidgets('local-only dictionary shows Local and no remote delete',
-        (WidgetTester tester) async {
-      await pumpDialog(tester, dictOnly(const <String>[]),
-          localDicts: <String>['JMdict']);
+    testWidgets('local-only dictionary shows Local and no remote delete', (
+      WidgetTester tester,
+    ) async {
+      await pumpDialog(
+        tester,
+        dictOnly(const <String>[]),
+        localDicts: <String>['JMdict'],
+      );
 
       expect(find.text('JMdict'), findsOneWidget);
       expect(find.text(t.sync_compare_local), findsOneWidget);

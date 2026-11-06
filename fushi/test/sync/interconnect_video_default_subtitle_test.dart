@@ -357,13 +357,11 @@ void main() {
     test('改名前 client 的 X-Hibiki-* 请求头：设为默认照收，响应新旧两个后缀头都回', () async {
       final HttpClient http = HttpClient();
       try {
-        final HttpClientResponse res = await legacyClientPut(
-          http,
-          <String, String>{
-            'X-Hibiki-Subtitle-Suffix': Uri.encodeComponent('.en.srt'),
-            'X-Hibiki-Subtitle-Default': '1',
-          },
-        );
+        final HttpClientResponse res =
+            await legacyClientPut(http, <String, String>{
+              'X-Hibiki-Subtitle-Suffix': Uri.encodeComponent('.en.srt'),
+              'X-Hibiki-Subtitle-Default': '1',
+            });
         await res.drain<void>();
         expect(res.statusCode, 200);
         expect(res.headers.value('x-hibiki-subtitle-suffix'), '.ja.srt');

@@ -9,13 +9,21 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/controls/control_layout.dart';
 import 'package:fushi/src/controls/control_layout_editor.dart';
+import 'package:fushi/src/controls/drag_auto_scroll_region.dart';
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 export 'package:fushi/src/controls/control_layout_editor.dart'
@@ -31,6 +39,8 @@ IconData readerControlItemIcon(ReaderControlItem item) {
       return FushiIcons.lyrics;
     case ReaderControlItem.navigation:
       return FushiIcons.bulletList;
+    case ReaderControlItem.bookmarks:
+      return FushiIcons.bookmark;
     case ReaderControlItem.gallery:
       return FushiIcons.collections;
     case ReaderControlItem.statistics:
@@ -70,6 +80,8 @@ String readerControlItemLabel(ReaderControlItem item) {
       return t.lyrics_mode;
     case ReaderControlItem.navigation:
       return t.section_navigation;
+    case ReaderControlItem.bookmarks:
+      return t.reader_control_bookmarks;
     case ReaderControlItem.gallery:
       return t.reader_gallery_tooltip;
     case ReaderControlItem.statistics:
@@ -358,21 +370,24 @@ class ReaderControlLayoutEditor extends StatelessWidget {
           ),
         ),
     ];
-    return DefaultTextStyle.merge(
-      style: TextStyle(
-        color: glass
-            ? appleColorsOf(context).label
-            : theme.colorScheme.onSurface,
-      ),
-      child: FushiEntranceScope(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            for (int i = 0; i < sections.length; i++) ...<Widget>[
-              if (i > 0) const SizedBox(height: 12),
-              readerPanelStagger(i, sections[i]),
+    // Wn1SZdlyhl：拖拽时外层设置列表收不到滚动手势，拖到视口边缘自动滚。
+    return DragAutoScrollRegion(
+      child: DefaultTextStyle.merge(
+        style: TextStyle(
+          color: glass
+              ? appleColorsOf(context).label
+              : theme.colorScheme.onSurface,
+        ),
+        child: FushiEntranceScope(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              for (int i = 0; i < sections.length; i++) ...<Widget>[
+                if (i > 0) const SizedBox(height: 12),
+                readerPanelStagger(i, sections[i]),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -659,17 +674,30 @@ class _DraggableChip extends StatelessWidget {
       ),
     );
     final Widget ghost = Opacity(opacity: 0.35, child: chip);
+    final DragAutoScrollRegionState? autoScroll = DragAutoScrollRegion.maybeOf(
+      context,
+    );
     final Widget draggable = touch
         ? LongPressDraggable<ReaderControlItem>(
             data: item,
             feedback: feedback,
             childWhenDragging: ghost,
+            onDragUpdate: (DragUpdateDetails d) =>
+                autoScroll?.updateDrag(d.globalPosition),
+            onDragEnd: (DraggableDetails _) => autoScroll?.endDrag(),
+            onDraggableCanceled: (Velocity _, Offset __) =>
+                autoScroll?.endDrag(),
             child: chip,
           )
         : Draggable<ReaderControlItem>(
             data: item,
             feedback: feedback,
             childWhenDragging: ghost,
+            onDragUpdate: (DragUpdateDetails d) =>
+                autoScroll?.updateDrag(d.globalPosition),
+            onDragEnd: (DraggableDetails _) => autoScroll?.endDrag(),
+            onDraggableCanceled: (Velocity _, Offset __) =>
+                autoScroll?.endDrag(),
             child: chip,
           );
     return Builder(
@@ -838,19 +866,19 @@ class _ReaderToolbarPreview extends StatelessWidget {
     final Widget? bottomBar = !hasBottom
         ? null
         : floating
-            // 与阅读器真底栏同形：纯图标、一组排开不画组间分隔。
-            ? FushiFloatingToolbar(
-                groups: <List<FushiToolbarItem>>[
-                  <FushiToolbarItem>[
-                    for (final List<FushiToolbarItem> g in bottom) ...g,
-                  ],
-                ],
-              )
-            : _DockedPreviewBar(
-                leading: bottom[0],
-                center: bottom[1],
-                trailing: bottom[2],
-              );
+        // 与阅读器真底栏同形：纯图标、一组排开不画组间分隔。
+        ? FushiFloatingToolbar(
+            groups: <List<FushiToolbarItem>>[
+              <FushiToolbarItem>[
+                for (final List<FushiToolbarItem> g in bottom) ...g,
+              ],
+            ],
+          )
+        : _DockedPreviewBar(
+            leading: bottom[0],
+            center: bottom[1],
+            trailing: bottom[2],
+          );
     final Color paper = glass
         ? appleColorsOf(context).secondaryGroupedBackground
         : theme.colorScheme.surfaceContainer;

@@ -34,6 +34,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
     show FushiExpressiveLoadingIndicator;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart'
+    show FushiJumpProgressMarks;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -421,6 +423,10 @@ enum MangaChromeSlot {
   /// 单双页 / 翻页方向 / 快捷设置）。窄屏放不下时按 [MangaChromeAction.priority]
   /// 从低到高降到右上角动作胶囊。
   toolbar,
+
+  /// 「更多」菜单：恒在右上角「⋯」里（用户在工具栏布局里放进「更多」的按钮），
+  /// 不参与平铺测宽。
+  overflow,
 }
 
 /// chrome 里的一颗动作。[active] 是「开关型」动作的当前态（选中底 + 更多菜单
@@ -495,7 +501,11 @@ double mangaToolbarWidth({
 /// [planMangaChrome] 的结果：每颗动作最终画在哪儿。
 @immutable
 class MangaChromePlan {
-  const MangaChromePlan({required this.top, required this.toolbar});
+  const MangaChromePlan({
+    required this.top,
+    required this.toolbar,
+    this.overflow = const <MangaChromeAction>[],
+  });
 
   /// 右上角动作胶囊的全部动作，按 [MangaChromeAction.priority] 从高到低（同优先级
   /// 保持声明顺序）：[MangaChromeSlot.top] + 底部工具栏放不下降下来的。顶栏按真实
@@ -504,16 +514,23 @@ class MangaChromePlan {
 
   /// 底部悬浮工具栏的分组（空组已剔除；画出来时摊平成一排）。
   final List<List<MangaChromeAction>> toolbar;
+
+  /// 恒在「⋯」里的动作（[MangaChromeSlot.overflow]，按声明顺序）。
+  final List<MangaChromeAction> overflow;
 }
 
 /// 按**真实宽度**把动作分到右上角动作胶囊 / 底部工具栏（纯函数，单测钉住）。
 ///
 ///  1. [groups] 是页面声明的全部动作（按组、组内按序）；[MangaChromeSlot.top] 恒在
-///     右上角；
+///     右上角（**保持声明顺序**——那是用户在工具栏布局里排的顺序）；
+///     [MangaChromeSlot.overflow] 恒在「⋯」里；
 ///  2. [MangaChromeSlot.toolbar] 动作排进底部纯图标工具栏；
 ///  3. 工具栏（含 FAB）超出可用宽（屏宽 − 两侧边距，封顶
 ///     [kMangaChromeBottomMaxWidth]）时，按 [MangaChromeAction.priority] 从低到高
-///     （同优先级先降靠后的）逐个降到右上角，直到放得下；降空也不报错。
+///     （同优先级先降靠后的）逐个降到右上角，直到放得下；降空也不报错。降下来的
+///     动作按优先级插进右上角：插在第一颗优先级更低（或同优先级的原顶栏动作）之前
+///     ——顶栏动作本身按优先级从高到低声明时（出厂布局），结果与「整体按优先级稳定
+///     排序」逐字相同。
 ///
 /// 右上角那一排**默认全部平铺**——要不要收进「⋯」不在这里定，由顶栏按自己拿到的
 /// 真实宽度、经共享的 [FushiTopBarOverflowFit] 决定。
@@ -552,20 +569,33 @@ MangaChromePlan planMangaChrome({
     kept.removeWhere((List<MangaChromeAction> g) => g.isEmpty);
     demoted.add(victim);
   }
-  // 右上角：固定的顶栏动作 + 降下来的，按优先级从高到低（稳定排序：同优先级保持
-  // 声明顺序）。
+  // 右上角：顶栏动作保持声明顺序（用户排的），降下来的按优先级插进去：插在第一颗
+  // 优先级更低、或同优先级的原顶栏动作之前（同优先级的先降者在前）。
   final List<MangaChromeAction> top = <MangaChromeAction>[
     for (final MangaChromeAction a in actions)
-      if (a.slot == MangaChromeSlot.top || demoted.contains(a)) a,
+      if (a.slot == MangaChromeSlot.top) a,
   ];
-  final List<int> order = <int>[for (int i = 0; i < top.length; i++) i];
-  order.sort((int a, int b) {
-    final int byPriority = top[b].priority.compareTo(top[a].priority);
-    return byPriority != 0 ? byPriority : a.compareTo(b);
-  });
+  final Set<MangaChromeAction> pinnedTop = top.toSet();
+  for (final MangaChromeAction a in actions) {
+    if (!demoted.contains(a)) continue;
+    int at = top.length;
+    for (int i = 0; i < top.length; i++) {
+      final MangaChromeAction other = top[i];
+      if (other.priority < a.priority ||
+          (other.priority == a.priority && pinnedTop.contains(other))) {
+        at = i;
+        break;
+      }
+    }
+    top.insert(at, a);
+  }
   return MangaChromePlan(
-    top: <MangaChromeAction>[for (final int i in order) top[i]],
+    top: top,
     toolbar: kept,
+    overflow: <MangaChromeAction>[
+      for (final MangaChromeAction a in actions)
+        if (a.slot == MangaChromeSlot.overflow) a,
+    ],
   );
 }
 
@@ -592,6 +622,8 @@ class MangaReaderTopBar extends StatefulWidget {
     this.titleTooltip,
     this.status,
     this.actions = const <MangaChromeAction>[],
+    this.overflowActions = const <MangaChromeAction>[],
+    this.jumpItems = const <FushiToolbarItem>[],
   });
 
   /// 主标题（章节名 / 卷名）；空串且无副标题时不画标题胶囊。
@@ -613,6 +645,15 @@ class MangaReaderTopBar extends StatefulWidget {
   /// 其余进「⋯」。
   final List<MangaChromeAction> actions;
 
+  /// 恒在「⋯」里的动作（[MangaChromePlan.overflow]）：排在放不下的 [actions]
+  /// 之后；非空时「⋯」常驻，测宽时把它算进去。
+  final List<MangaChromeAction> overflowActions;
+
+  /// 「跳转记录」的返回 / 前进图标（[jumpHistoryToolbarItems]）：动作胶囊里最前面
+  /// 一组、优先级最高（最后才收）。放不下时直接不画——「⋯」里的「跳转记录」面板
+  /// 入口（页面放进 [overflowActions]）仍在。
+  final List<FushiToolbarItem> jumpItems;
+
   /// 悬浮态：胶囊浮在页图上；固定态：胶囊画在让出的区域里（同样画投影，两种
   /// 形态外观一致，只差正文让不让位）。
   final bool floating;
@@ -629,6 +670,8 @@ class _MangaReaderTopBarState extends State<MangaReaderTopBar> {
   String? get subtitle => widget.subtitle;
   Widget? get status => widget.status;
   List<MangaChromeAction> get actions => widget.actions;
+  List<MangaChromeAction> get overflowActions => widget.overflowActions;
+  List<FushiToolbarItem> get jumpItems => widget.jumpItems;
 
   bool get _hasTitlePill =>
       title.trim().isNotEmpty ||
@@ -693,10 +736,11 @@ class _MangaReaderTopBarState extends State<MangaReaderTopBar> {
     palette,
     double maxWidth,
   ) {
-    final int visible = actions.isEmpty
+    final int visible = actions.isEmpty && jumpItems.isEmpty
         ? 0
         : _fit.visibleFor(
             groups: <List<FushiToolbarItem>>[
+              if (jumpItems.isNotEmpty) jumpItems,
               <FushiToolbarItem>[
                 for (final MangaChromeAction a in actions) a.toToolbarItem(),
               ],
@@ -706,9 +750,20 @@ class _MangaReaderTopBarState extends State<MangaReaderTopBar> {
               leadingCount: 1,
               hasTitle: _hasTitlePill,
             ),
+            pinnedMenu: overflowActions.isNotEmpty,
           );
-    final List<MangaChromeAction> shown = actions.sublist(0, visible);
-    final List<MangaChromeAction> folded = actions.sublist(visible);
+    // 跳转图标恒在（最多两颗，所有者 2026-11-02「窄屏也放得下、不收起」）：
+    // 先占平铺名额，名额不够时让标题胶囊（Expanded，省略号）收窄，普通动作全进「⋯」。
+    final List<FushiToolbarItem> shownJump = jumpItems;
+    final int actionsShown = math.max(
+      0,
+      math.min(visible - jumpItems.length, actions.length),
+    );
+    final List<MangaChromeAction> shown = actions.sublist(0, actionsShown);
+    final List<MangaChromeAction> folded = <MangaChromeAction>[
+      ...actions.sublist(actionsShown),
+      ...overflowActions,
+    ];
     return Row(
       children: <Widget>[
         FushiFloatingPill(
@@ -731,9 +786,11 @@ class _MangaReaderTopBarState extends State<MangaReaderTopBar> {
             child: _titlePill(context, palette),
           ),
         ),
-        if (actions.isNotEmpty) ...<Widget>[
+        if (shownJump.isNotEmpty ||
+            actions.isNotEmpty ||
+            overflowActions.isNotEmpty) ...<Widget>[
           const SizedBox(width: 8),
-          _actionPill(context, palette, shown, folded),
+          _actionPill(context, palette, shownJump, shown, folded),
         ],
       ],
     );
@@ -842,21 +899,33 @@ class _MangaReaderTopBarState extends State<MangaReaderTopBar> {
       Color selectedForeground,
     })
     palette,
+    List<FushiToolbarItem> shownJump,
     List<MangaChromeAction> shown,
     List<MangaChromeAction> folded,
   ) {
+    final List<Widget> buttons = <Widget>[
+      for (final FushiToolbarItem item in shownJump)
+        FushiToolbarButton(
+          item: item,
+          foreground: palette.foreground,
+          selectedContainer: palette.selectedContainer,
+          selectedForeground: palette.selectedForeground,
+        ),
+      for (final MangaChromeAction a in shown)
+        mangaChromeActionButton(a, palette),
+    ];
     return FushiFloatingPill(
       key: const ValueKey<String>('manga_reader_action_pill'),
       color: palette.container,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          for (int i = 0; i < shown.length; i++) ...<Widget>[
+          for (int i = 0; i < buttons.length; i++) ...<Widget>[
             if (i > 0) const SizedBox(width: kFushiFloatingToolbarItemGap),
-            mangaChromeActionButton(shown[i], palette),
+            buttons[i],
           ],
           if (folded.isNotEmpty) ...<Widget>[
-            if (shown.isNotEmpty)
+            if (buttons.isNotEmpty)
               const SizedBox(width: kFushiFloatingToolbarItemGap),
             MangaChromeOverflowButton(
               actions: folded,
@@ -1239,6 +1308,22 @@ double mangaSliderPosition({
   return (rtl ? pageCount - 1 - clamped : clamped).toDouble();
 }
 
+/// 页号在页码滑块轴上的 0..1 位置（0 = 物理左端；RTL 镜像同 [mangaSliderPosition]），
+/// 给「跳转记录」刻度用。1 页及以下没有轴，返回 null。
+double? mangaJumpMarkFraction({
+  required int pageIndex,
+  required int pageCount,
+  required bool rtl,
+}) {
+  if (pageCount <= 1) return null;
+  return mangaSliderPosition(
+        pageIndex: pageIndex,
+        pageCount: pageCount,
+        rtl: rtl,
+      ) /
+      (pageCount - 1);
+}
+
 /// [mangaSliderPosition] 的逆：slider 位置 → 0-based 真实页号。
 int mangaSliderPageIndex({
   required double position,
@@ -1261,7 +1346,7 @@ int mangaSliderPageIndex({
 /// 细线滑块。两端是 tonal 圆钮的上一章 / 下一章（[onPreviousChapter] / [onNextChapter] 为 null 时不画——
 /// 本地卷没有「章」）。RTL 下两颗按钮随 slider 一起镜像：左钮恒指向物理左端。
 /// 拖动中在手柄上方画一枚数值气泡（`页 / 总页`），有 [pagePreview] 时气泡里带
-/// 那一页的缩略图。左侧读数可点（[onPageTap]）：弹出跳页输入框——顶栏不再放页码
+/// 那一页的缩略图。当前页读数（LTR 在左、RTL 在右）可点（[onPageTap]）：弹出跳页输入框——顶栏不再放页码
 /// 胶囊，跳页入口与滑块收在同一块胶囊里。
 ///
 /// 拖动中只更新本地预览，**松手才真跳页**（[onPageCommitted]）：漫画翻页要
@@ -1282,6 +1367,7 @@ class MangaReaderBottomBar extends StatefulWidget {
     this.nextChapterTooltip,
     this.pagePreview,
     this.bubbleLabel,
+    this.jumpMarks,
   });
 
   /// 整卷总页数；<= 1 时整条栏不画（一页的书没有跳页需求）。
@@ -1315,6 +1401,11 @@ class MangaReaderBottomBar extends StatefulWidget {
   /// 气泡文案（0-based 页号 -> 文案）；null = `页 / 总页`。双页模式下页面传
   /// 跨页对的区间（`12-13 / 40`），与页码读数同口径。
   final String Function(int pageIndex)? bubbleLabel;
+
+  /// 「跳转记录」落点刻度（只看不点），值是**滑块轴上**的 0..1 位置（0 = 物理
+  /// 左端，RTL 已由页面折算，见 [mangaJumpMarkFraction]）。只含同一话内的点；
+  /// null / 两侧皆空 = 不画。
+  final ({List<double> back, List<double> forward})? jumpMarks;
 
   @override
   State<MangaReaderBottomBar> createState() => _MangaReaderBottomBarState();
@@ -1388,6 +1479,30 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
     final String? rightTooltip = widget.rtl
         ? widget.previousChapterTooltip
         : widget.nextChapterTooltip;
+    final Widget currentReadout = _pageReadout(
+      colors,
+      ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 28),
+        child: Text(
+          '$shownPage',
+          key: const ValueKey<String>('manga_slider_current_page'),
+          textAlign: TextAlign.center,
+          style: readout,
+        ),
+      ),
+    );
+    final Widget totalReadout = ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 28),
+      child: Text(
+        '$pageCount',
+        key: const ValueKey<String>('manga_slider_page_count'),
+        textAlign: TextAlign.center,
+        style: readout?.copyWith(
+          color: colors.secondaryForeground,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
     return Row(
       children: <Widget>[
         if (leftAction != null)
@@ -1403,18 +1518,9 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
           )
         else
           const SizedBox(width: 10),
-        _pageReadout(
-          colors,
-          ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 28),
-            child: Text(
-              '$shownPage',
-              key: const ValueKey<String>('manga_slider_current_page'),
-              textAlign: TextAlign.center,
-              style: readout,
-            ),
-          ),
-        ),
+        // 读数跟着页序走：LTR 当前页在左、总页数在右；RTL（右开本）第 1 页在
+        // 物理右端，当前页读数也在右、总页数在左（#oOre-vefJy）。
+        if (widget.rtl) totalReadout else currentReadout,
         Expanded(
           child: LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
@@ -1423,6 +1529,20 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
                 alignment: Alignment.center,
                 children: <Widget>[
                   _slider(context, colors, position, maxPosition),
+                  if (widget.jumpMarks case (
+                    back: final List<double> back,
+                    forward: final List<double> forward,
+                  ) when back.isNotEmpty || forward.isNotEmpty)
+                    // 与滑块轨道同宽（两侧同一 [_sliderInset]）、竖直居中。
+                    Positioned.fill(
+                      key: const ValueKey<String>('manga_slider_jump_marks'),
+                      left: _sliderInset,
+                      right: _sliderInset,
+                      child: FushiJumpProgressMarks(
+                        back: back,
+                        forward: forward,
+                      ),
+                    ),
                   if (_dragPosition != null)
                     _bubble(
                       context,
@@ -1439,18 +1559,7 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
             },
           ),
         ),
-        ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 28),
-          child: Text(
-            '$pageCount',
-            key: const ValueKey<String>('manga_slider_page_count'),
-            textAlign: TextAlign.center,
-            style: readout?.copyWith(
-              color: colors.secondaryForeground,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
+        if (widget.rtl) currentReadout else totalReadout,
         if (rightAction != null)
           Padding(
             padding: const EdgeInsets.only(right: 6),
@@ -1508,9 +1617,16 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
     double position,
     double maxPosition,
   ) {
-    final Widget slider = FushiSlider(
+    // 本栏其余部分（气泡、跳转刻度、读数）都按「物理左端起」的 [position]
+    // 算；滑块控件本身在 RTL 下包一层 Directionality.rtl、吃逻辑页号（物理
+    // 位置的镜像）：这样已读的那段高亮轨道从物理右端（第 1 页）长到把手，
+    // 而不是从左端长出一截「未读」高亮（#oOre-vefJy）。拖动 / 方向键方向随之
+    // 由控件自己镜像。
+    final bool rtl = widget.rtl;
+    double toPhysical(double v) => rtl ? maxPosition - v : v;
+    Widget slider = FushiSlider(
       key: const ValueKey<String>('manga_page_slider'),
-      value: position.clamp(0, maxPosition),
+      value: toPhysical(position.clamp(0, maxPosition)),
       max: maxPosition,
       // Apple 滑块默认取主题强调色，压在深色玻璃上换成深色档的强调色 / 填充色；
       // MD3 跟主题（primary / secondaryContainer）。
@@ -1524,18 +1640,21 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
       // 两端都要分格——它的刻度点在格距不足 8px 时自己不画，长卷不会糊成一串。
       // 0 / 1 页没有可跳的格（整条栏本就不画），保持 null。
       divisions: widget.pageCount <= 1 ? null : widget.pageCount - 1,
-      onChanged: (double v) => setState(() => _dragPosition = v),
+      onChanged: (double v) => setState(() => _dragPosition = toPhysical(v)),
       onChangeEnd: (double v) {
         setState(() => _dragPosition = null);
         widget.onPageCommitted(
           mangaSliderPageIndex(
-            position: v,
+            position: toPhysical(v),
             pageCount: widget.pageCount,
-            rtl: widget.rtl,
+            rtl: rtl,
           ),
         );
       },
     );
+    if (rtl) {
+      slider = Directionality(textDirection: TextDirection.rtl, child: slider);
+    }
     if (colors.apple) return slider;
     // 一页一格的离散滑块在 40 页上会画出 40 颗刻度点：数值气泡由本栏自己画，
     // 刻度点与系统气泡都关掉。

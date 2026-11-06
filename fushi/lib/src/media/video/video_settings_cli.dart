@@ -14,6 +14,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
+import 'package:fushi/src/media/video/video_immersive_control_layout.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
@@ -145,6 +146,45 @@ final SettingsCliValue videoControlLayoutCli = SettingsCliValue(
       } else {
         await c.appModel.setVideoCustomActionBindings(bindings);
       }
+    }
+    c.refresh();
+  },
+);
+
+/// 沉浸布局（锁定后屏幕左右侧栏的按钮）。写法是布局 JSON（`{"version":1,"slots":{...}}`，
+/// config get 的输出可改后原样写回）；空串 = 恢复默认（按普通布局派生）。解码器对坏
+/// 输入静默回派生默认，所以这里先校验结构，写坏不会悄悄把用户布局清掉。
+final SettingsCliValue videoImmersiveControlLayoutCli = SettingsCliValue(
+  help: '<沉浸布局 JSON，含 version 与 slots>；空串 = 恢复默认',
+  offPageWritable: true,
+  read: (SettingsContext c) {
+    final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(c);
+    final VideoImmersiveControlLayout layout =
+        host?.immersiveControlLayout?.call() ??
+        c.appModel.videoImmersiveControlLayout;
+    return layout.encode();
+  },
+  write: (SettingsContext c, String raw) async {
+    final VideoImmersiveControlLayout? layout;
+    if (raw.trim().isEmpty) {
+      layout = null;
+    } else {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic> ||
+          decoded['version'] != 1 ||
+          decoded['slots'] is! Map<String, dynamic>) {
+        throw const FormatException('沉浸布局须是 {"version":1,"slots":{...}}');
+      }
+      layout = VideoImmersiveControlLayout.decode(
+        raw,
+        base: c.appModel.videoControlLayout,
+      );
+    }
+    final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(c);
+    if (host?.onImmersiveControlLayoutChanged != null) {
+      await host!.onImmersiveControlLayoutChanged!(layout);
+    } else {
+      await c.appModel.setVideoImmersiveControlLayout(layout);
     }
     c.refresh();
   },

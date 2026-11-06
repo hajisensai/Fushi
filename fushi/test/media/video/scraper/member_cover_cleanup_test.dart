@@ -41,21 +41,21 @@ void main() {
       String? coverPath = '$covers/video_ep1.jpg',
       Map<String, int>? members,
       Set<int> withOwnCover = const <int>{},
-    }) =>
-        planMemberCoverCleanup(
-          multiMemberCollectionIdByVideoUid:
-              members ?? <String, int>{'video/ep1': 1},
-          coverMetaByUid: <String, CoverMeta>{
-            if (origin != null) 'video/ep1': CoverMeta(origin: origin),
-          },
-          coverPathByUid: <String, String?>{'video/ep1': coverPath},
-          collectionsWithOwnCover: withOwnCover,
-          coversDirectoryPath: covers,
-        );
+    }) => planMemberCoverCleanup(
+      multiMemberCollectionIdByVideoUid:
+          members ?? <String, int>{'video/ep1': 1},
+      coverMetaByUid: <String, CoverMeta>{
+        if (origin != null) 'video/ep1': CoverMeta(origin: origin),
+      },
+      coverPathByUid: <String, String?>{'video/ep1': coverPath},
+      collectionsWithOwnCover: withOwnCover,
+      coversDirectoryPath: covers,
+    );
 
     test('目标：多成员合集成员 + autoScraped + 封面在自有目录 → 进计划并升格', () {
-      final List<MemberCoverCleanup> result =
-          plan(origin: CoverOrigin.autoScraped);
+      final List<MemberCoverCleanup> result = plan(
+        origin: CoverOrigin.autoScraped,
+      );
       expect(result, hasLength(1));
       expect(result.single.bookUid, 'video/ep1');
       expect(result.single.collectionId, 1);
@@ -150,8 +150,10 @@ void main() {
         collectionsWithOwnCover: const <int>{},
         coversDirectoryPath: covers,
       );
-      expect(result.map((MemberCoverCleanup a) => a.bookUid).toList(),
-          <String>['video/ep1', 'video/ep2']);
+      expect(result.map((MemberCoverCleanup a) => a.bookUid).toList(), <String>[
+        'video/ep1',
+        'video/ep2',
+      ]);
       expect(result.first.promoteToCollection, isTrue);
       expect(result.last.promoteToCollection, isFalse);
     });
@@ -172,12 +174,14 @@ void main() {
         await f.writeAsBytes(_jpegBytes);
         coverPath = f.path;
       }
-      await db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value(uid),
-        title: Value(uid),
-        videoPath: Value('D:/v/$uid.mkv'),
-        coverPath: Value(coverPath),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value(uid),
+          title: Value(uid),
+          videoPath: Value('D:/v/$uid.mkv'),
+          coverPath: Value(coverPath),
+        ),
+      );
     }
 
     setUp(() async {
@@ -195,20 +199,24 @@ void main() {
     });
 
     Future<int> run() => runMemberCoverCleanup(
-          repo: repo,
-          coverMetaStore: coverMeta,
-          coversDirectory: covers,
-          collectionCoversDirectory: collectionCovers,
-        );
+      repo: repo,
+      coverMetaStore: coverMeta,
+      coversDirectory: covers,
+      collectionCoversDirectory: collectionCovers,
+    );
 
     test('海报升格成合集封面、成员那一列被清；非目标行逐字节不变', () async {
       // A：双成员合集，ep1 顶着自动刮来的作品海报，ep2 是抽帧。
       await seedBook('video/ep1', coverFile: 'ep1.jpg');
       await seedBook('video/ep2', coverFile: 'ep2.jpg');
       await coverMeta.set(
-          'video/ep1', const CoverMeta(origin: CoverOrigin.autoScraped));
+        'video/ep1',
+        const CoverMeta(origin: CoverOrigin.autoScraped),
+      );
       await coverMeta.set(
-          'video/ep2', const CoverMeta(origin: CoverOrigin.autoFrame));
+        'video/ep2',
+        const CoverMeta(origin: CoverOrigin.autoFrame),
+      );
       final int a = await db.createMediaCollection('A');
       await db.addToCollection(a, MediaKind.video, 'video/ep1');
       await db.addToCollection(a, MediaKind.video, 'video/ep2');
@@ -216,20 +224,26 @@ void main() {
       // B：单成员合集 —— 单片，海报本来就该留在成员上。
       await seedBook('video/solo', coverFile: 'solo.jpg');
       await coverMeta.set(
-          'video/solo', const CoverMeta(origin: CoverOrigin.autoScraped));
+        'video/solo',
+        const CoverMeta(origin: CoverOrigin.autoScraped),
+      );
       final int b = await db.createMediaCollection('B');
       await db.addToCollection(b, MediaKind.video, 'video/solo');
 
       // C：不属任何合集的独立条目。
       await seedBook('video/free', coverFile: 'free.jpg');
       await coverMeta.set(
-          'video/free', const CoverMeta(origin: CoverOrigin.autoScraped));
+        'video/free',
+        const CoverMeta(origin: CoverOrigin.autoScraped),
+      );
 
       // D：双成员合集，但用户手选过成员封面（userScraped）——永不覆盖。
       await seedBook('video/mine', coverFile: 'mine.jpg');
       await seedBook('video/mine2', coverFile: 'mine2.jpg');
       await coverMeta.set(
-          'video/mine', const CoverMeta(origin: CoverOrigin.userScraped));
+        'video/mine',
+        const CoverMeta(origin: CoverOrigin.userScraped),
+      );
       final int d = await db.createMediaCollection('D');
       await db.addToCollection(d, MediaKind.video, 'video/mine');
       await db.addToCollection(d, MediaKind.video, 'video/mine2');
@@ -240,8 +254,10 @@ void main() {
       final VideoBookRow ep1 = (await db.getVideoBookByBookUid('video/ep1'))!;
       expect(ep1.coverPath, isNull);
       expect(await coverMeta.get('video/ep1'), isNull);
-      final String promoted =
-          p.join(collectionCovers.path, videoCoverFileName('$a'));
+      final String promoted = p.join(
+        collectionCovers.path,
+        videoCoverFileName('$a'),
+      );
       expect((await db.getMediaCollectionById(a))!.coverPath, promoted);
       expect(File(promoted).readAsBytesSync(), _jpegBytes);
 
@@ -259,9 +275,13 @@ void main() {
       }
       expect((await coverMeta.get('video/ep2'))!.origin, CoverOrigin.autoFrame);
       expect(
-          (await coverMeta.get('video/solo'))!.origin, CoverOrigin.autoScraped);
+        (await coverMeta.get('video/solo'))!.origin,
+        CoverOrigin.autoScraped,
+      );
       expect(
-          (await coverMeta.get('video/mine'))!.origin, CoverOrigin.userScraped);
+        (await coverMeta.get('video/mine'))!.origin,
+        CoverOrigin.userScraped,
+      );
       expect((await db.getMediaCollectionById(b))!.coverPath, isNull);
       expect((await db.getMediaCollectionById(d))!.coverPath, isNull);
     });
@@ -270,7 +290,9 @@ void main() {
       await seedBook('video/e1', coverFile: 'e1.jpg');
       await seedBook('video/e2', coverFile: 'e2.jpg');
       await coverMeta.set(
-          'video/e1', const CoverMeta(origin: CoverOrigin.autoScraped));
+        'video/e1',
+        const CoverMeta(origin: CoverOrigin.autoScraped),
+      );
       final int cid = await db.createMediaCollection('已刮过');
       await db.addToCollection(cid, MediaKind.video, 'video/e1');
       await db.addToCollection(cid, MediaKind.video, 'video/e2');
@@ -279,8 +301,11 @@ void main() {
       await db.updateMediaCollectionCoverPath(cid, own.path);
 
       expect(await run(), 1);
-      expect((await db.getMediaCollectionById(cid))!.coverPath, own.path,
-          reason: '合集已有的自有封面（用户刮的）不许被存量清理顶掉');
+      expect(
+        (await db.getMediaCollectionById(cid))!.coverPath,
+        own.path,
+        reason: '合集已有的自有封面（用户刮的）不许被存量清理顶掉',
+      );
       expect(own.readAsBytesSync(), fakePngBytes());
       expect((await db.getVideoBookByBookUid('video/e1'))!.coverPath, isNull);
     });
@@ -289,7 +314,9 @@ void main() {
       await seedBook('video/a1', coverFile: 'a1.jpg');
       await seedBook('video/a2', coverFile: 'a2.jpg');
       await coverMeta.set(
-          'video/a1', const CoverMeta(origin: CoverOrigin.autoScraped));
+        'video/a1',
+        const CoverMeta(origin: CoverOrigin.autoScraped),
+      );
       final int cid = await db.createMediaCollection('A');
       await db.addToCollection(cid, MediaKind.video, 'video/a1');
       await db.addToCollection(cid, MediaKind.video, 'video/a2');
@@ -299,21 +326,26 @@ void main() {
       expect(await run(), 0);
       expect((await db.getMediaCollectionById(cid))!.coverPath, after);
       expect(
-          (await db.getVideoBookByBookUid('video/a2'))!.coverPath, isNotNull);
+        (await db.getVideoBookByBookUid('video/a2'))!.coverPath,
+        isNotNull,
+      );
     });
 
     test('误删方向 · 升格后的合集封面不会被既有 gcOrphanCovers 当孤儿删掉', () async {
       await seedBook('video/g1', coverFile: 'g1.jpg');
       await seedBook('video/g2', coverFile: 'g2.jpg');
       await coverMeta.set(
-          'video/g1', const CoverMeta(origin: CoverOrigin.autoScraped));
+        'video/g1',
+        const CoverMeta(origin: CoverOrigin.autoScraped),
+      );
       final int cid = await db.createMediaCollection('G');
       await db.addToCollection(cid, MediaKind.video, 'video/g1');
       await db.addToCollection(cid, MediaKind.video, 'video/g2');
       await run();
 
-      final String promoted =
-          (await db.getMediaCollectionById(cid))!.coverPath!;
+      final String promoted = (await db.getMediaCollectionById(
+        cid,
+      ))!.coverPath!;
       // GC 的保留集只含全库 video_books.cover_path（清完 g1 后就剩 g2）。
       await VideoStorage.gcOrphanCovers(
         referencedCoverPaths: <String>[
@@ -322,11 +354,15 @@ void main() {
         ],
         coversDirectory: covers,
       );
-      expect(File(promoted).existsSync(), isTrue,
-          reason: 'gcOrphanCovers 非递归，collections/ 子目录必须免疫');
       expect(
-        File((await db.getVideoBookByBookUid('video/g2'))!.coverPath!)
-            .existsSync(),
+        File(promoted).existsSync(),
+        isTrue,
+        reason: 'gcOrphanCovers 非递归，collections/ 子目录必须免疫',
+      );
+      expect(
+        File(
+          (await db.getVideoBookByBookUid('video/g2'))!.coverPath!,
+        ).existsSync(),
         isTrue,
         reason: '仍被引用的成员封面不许被 GC 删',
       );

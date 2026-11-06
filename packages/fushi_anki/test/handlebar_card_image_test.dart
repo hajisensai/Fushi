@@ -10,10 +10,8 @@ import 'package:fushi_anki/fushi_anki.dart';
 void main() {
   const AnkiMiningPayload payload = AnkiMiningPayload(expression: '言葉');
 
-  AnkiMiningContext contextWithCover(String? cover) => AnkiMiningContext(
-        sentence: 'これは言葉です。',
-        coverPath: cover,
-      );
+  AnkiMiningContext contextWithCover(String? cover) =>
+      AnkiMiningContext(sentence: 'これは言葉です。', coverPath: cover);
 
   group('AnkiHandlebarRenderer {card-image} (TODO-1298)', () {
     test('renders context.coverPath', () {
@@ -27,12 +25,21 @@ void main() {
 
     test('{card-image} == {book-cover} == {video-clip} 逐字节相同（向后兼容）', () {
       final AnkiMiningContext ctx = contextWithCover('fushi_cover_x.gif');
-      final String cardImage =
-          AnkiHandlebarRenderer.render('{card-image}', payload, ctx);
-      final String bookCover =
-          AnkiHandlebarRenderer.render('{book-cover}', payload, ctx);
-      final String videoClip =
-          AnkiHandlebarRenderer.render('{video-clip}', payload, ctx);
+      final String cardImage = AnkiHandlebarRenderer.render(
+        '{card-image}',
+        payload,
+        ctx,
+      );
+      final String bookCover = AnkiHandlebarRenderer.render(
+        '{book-cover}',
+        payload,
+        ctx,
+      );
+      final String videoClip = AnkiHandlebarRenderer.render(
+        '{video-clip}',
+        payload,
+        ctx,
+      );
       expect(cardImage, bookCover);
       expect(cardImage, videoClip);
     });
@@ -49,7 +56,9 @@ void main() {
       const String mediaRef = '<img src="fushi_cover_abc.gif">';
       final AnkiMiningContext ctx = contextWithCover(mediaRef);
       expect(
-          AnkiHandlebarRenderer.render('{card-image}', payload, ctx), mediaRef);
+        AnkiHandlebarRenderer.render('{card-image}', payload, ctx),
+        mediaRef,
+      );
       expect(
         AnkiHandlebarRenderer.render('{card-image}', payload, ctx),
         AnkiHandlebarRenderer.render('{book-cover}', payload, ctx),
@@ -69,8 +78,9 @@ void main() {
     });
 
     test('forTermDictionaries 保留 card-image', () {
-      final List<String> options =
-          AnkiHandlebarOptions.forTermDictionaries(<String>['広辞苑']);
+      final List<String> options = AnkiHandlebarOptions.forTermDictionaries(
+        <String>['広辞苑'],
+      );
       expect(options, contains('{card-image}'));
     });
   });

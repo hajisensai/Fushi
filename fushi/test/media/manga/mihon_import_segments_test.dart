@@ -10,8 +10,10 @@ import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_installed_sources_section.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
+import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 在线来源面（2026-09-27 起住在「浏览」模块）的两块共享部件：
@@ -108,7 +110,7 @@ void main() {
       expect(tester.takeException(), null);
     });
 
-    testWidgets('「扩展」段：扩展目录 + 刷新 / 导入 APK，没有仓库卡与添加仓库', (
+    testWidgets('「扩展」段：扩展目录 + 导入 APK，没有刷新、仓库卡与添加仓库', (
       WidgetTester tester,
     ) async {
       await pumpSlivers(tester, <Widget>[
@@ -122,7 +124,11 @@ void main() {
       ]);
       expect(find.text('Fixture Extension'), findsOneWidget);
       expect(find.text(t.mihon_extension_import), findsOneWidget);
-      expect(find.text(t.mihon_store_refresh), findsOneWidget);
+      expect(
+        find.text(t.mihon_store_refresh),
+        findsNothing,
+        reason: '刷新只在「扩展仓库」页，目录那排只放四颗目录动作',
+      );
       expect(
         find.byKey(const ValueKey<String>('mihon_extension_bulk_install')),
         findsOneWidget,
@@ -131,6 +137,54 @@ void main() {
       expect(find.byTooltip(t.mihon_store_remove), findsNothing);
       expect(find.text(t.mihon_store_add), findsNothing);
       expect(tester.takeException(), null);
+    });
+
+    testWidgets('「扩展」段带 onOpenStores：目录按钮行有带字的「扩展仓库」，点了走回调', (
+      WidgetTester tester,
+    ) async {
+      int opened = 0;
+      await pumpSlivers(tester, <Widget>[
+        MihonExtensionsPage(
+          manager: manager,
+          embedded: true,
+          onOpenStores: () => opened++,
+          sections: const <MihonExtensionsSection>[
+            MihonExtensionsSection.catalog,
+          ],
+        ),
+      ]);
+      final Finder button = find.byKey(
+        const ValueKey<String>('mihon_extension_open_stores'),
+      );
+      expect(button, findsOneWidget);
+      expect(
+        find.descendant(
+          of: button,
+          matching: find.text(t.online_sources_stores_manage),
+        ),
+        findsOneWidget,
+        reason: '入口必须带字：页头那颗无字图标新用户认不出来',
+      );
+      await tester.tap(button);
+      await tester.pump();
+      expect(opened, 1);
+      expect(tester.takeException(), null);
+    });
+
+    testWidgets('没传 onOpenStores 时目录里不画「扩展仓库」按钮', (WidgetTester tester) async {
+      await pumpSlivers(tester, <Widget>[
+        MihonExtensionsPage(
+          manager: manager,
+          embedded: true,
+          sections: const <MihonExtensionsSection>[
+            MihonExtensionsSection.catalog,
+          ],
+        ),
+      ]);
+      expect(
+        find.byKey(const ValueKey<String>('mihon_extension_open_stores')),
+        findsNothing,
+      );
     });
 
     testWidgets('空 sections 渲染空 sliver：兄弟节仍在、不抛', (WidgetTester tester) async {
@@ -160,6 +214,60 @@ void main() {
       expect(find.text(t.mihon_store_refresh), findsOneWidget);
       expect(find.text(t.mihon_extension_import), findsOneWidget);
       expect(find.text(t.mihon_store_add), findsOneWidget);
+    });
+  });
+
+  group('来源空态去扩展', () {
+    testWidgets('没有扩展源：空态给「浏览扩展」按钮，点了走 onBrowseExtensions', (
+      WidgetTester tester,
+    ) async {
+      int browsed = 0;
+      await pumpSlivers(tester, <Widget>[
+        MihonInstalledSourcesSection(
+          manager: manager,
+          emptyLabel: t.video_online_sources_empty,
+          onBrowseExtensions: () => browsed++,
+        ),
+      ]);
+      expect(find.text(t.video_online_sources_empty), findsOneWidget);
+      final Finder button = find.byKey(
+        const ValueKey<String>('mihon_sources_browse_extensions'),
+      );
+      expect(button, findsOneWidget);
+      await tester.tap(button);
+      await tester.pump();
+      expect(browsed, 1);
+      expect(tester.takeException(), null);
+    });
+
+    testWidgets('库页壳里 openOnlineSourceExtensions 就地切到「扩展」视图，不 push', (
+      WidgetTester tester,
+    ) async {
+      final List<MediaLibraryViewKind> selected = <MediaLibraryViewKind>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaLibraryShellScope(
+            kinds: const <MediaLibraryViewKind>{
+              MediaLibraryViewKind.onlineSources,
+              MediaLibraryViewKind.extensions,
+            },
+            select: selected.add,
+            child: Builder(
+              builder: (BuildContext context) => TextButton(
+                onPressed: () => openOnlineSourceExtensions(
+                  context,
+                  OnlineSourcesDomain.video,
+                ),
+                child: const Text('go'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('go'));
+      await tester.pump();
+      expect(selected, <MediaLibraryViewKind>[MediaLibraryViewKind.extensions]);
+      expect(find.byType(BrowseSubPage), findsNothing);
     });
   });
 
@@ -367,6 +475,130 @@ void main() {
         ),
       ]);
       expect(find.text('nothing-installed'), findsOneWidget);
+      expect(tester.takeException(), null);
+    });
+  });
+
+  // 1PKqUbCed7：同一扩展里同名的多个语言源（E-Hentai JA / EN / ZH …）合成一行；
+  // 数据仍是一源一行，开关 / 语言选择逐源写穿。
+  group('多语言同名源合成一行', () {
+    const String pkg = 'org.example.ehentai';
+    setUp(() async {
+      await database.replaceMangaOnlineSources(
+        pkg,
+        <MangaOnlineSourcesCompanion>[
+          for (final (int i, String lang) in <String>[
+            'ja',
+            'en',
+            'zh',
+            'fr',
+          ].indexed)
+            MangaOnlineSourcesCompanion.insert(
+              extensionPackage: pkg,
+              sourceId: '${i + 1}',
+              name: 'E-Hentai',
+              language: lang,
+              sortOrder: Value<int>(i),
+            ),
+          MangaOnlineSourcesCompanion.insert(
+            extensionPackage: pkg,
+            sourceId: '9',
+            name: 'ExHentai',
+            language: 'all',
+            sortOrder: const Value<int>(9),
+          ),
+        ],
+      );
+      await manager.reload();
+    });
+
+    Future<Map<String, bool>> enabledById() async => <String, bool>{
+      for (final MangaOnlineSourceRow row
+          in await database.getMangaOnlineSources())
+        if (row.extensionPackage == pkg) row.sourceId: row.enabled,
+    };
+
+    test('合组：按扩展 + 名称，语言摘要超出三个记 +N', () {
+      final List<MihonSourceGroup> groups = groupMihonSources(manager.sources);
+      expect(groups, hasLength(2));
+      expect(
+        groups.first.members.map((MangaOnlineSourceRow s) => s.sourceId),
+        <String>['1', '2', '3', '4'],
+      );
+      expect(mihonSourceGroupLanguageSummary(groups.first), 'JA · EN · ZH +1');
+      expect(groups.last.isMulti, isFalse);
+    });
+
+    testWidgets('一行显示；开关控整组；点行先选语言再进源；菜单「语言」逐语言启停', (
+      WidgetTester tester,
+    ) async {
+      Finder inDialog(String text) =>
+          find.descendant(of: find.byType(Dialog), matching: find.text(text));
+      final List<String> opened = <String>[];
+      await pumpSlivers(tester, <Widget>[
+        MihonInstalledSourcesSection(
+          manager: manager,
+          onOpenSource: (MangaOnlineSourceRow source) =>
+              opened.add(source.sourceId),
+        ),
+      ]);
+      expect(find.text('E-Hentai'), findsOneWidget);
+      expect(find.text('JA · EN · ZH +1'), findsOneWidget);
+      expect(find.text('ExHentai'), findsOneWidget);
+
+      // 点行：弹语言选择，选 EN 进的是 EN 那个源。
+      await tester.tap(find.text('E-Hentai'));
+      await tester.pumpAndSettle();
+      expect(find.text(t.mihon_source_pick_language), findsOneWidget);
+      await tester.tap(inDialog('EN'));
+      await tester.pumpAndSettle();
+      expect(opened, <String>['2']);
+
+      // 菜单「语言」：取消 JA、ZH、FR，只留 EN。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('mihon_source_menu_${pkg}_1')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.mihon_source_languages));
+      await tester.pumpAndSettle();
+      for (final String label in <String>['JA', 'ZH', 'FR']) {
+        await tester.tap(inDialog(label));
+        await tester.pump();
+      }
+      await tester.tap(inDialog(t.dialog_ok));
+      await tester.pumpAndSettle();
+      expect(await enabledById(), <String, bool>{
+        '1': false,
+        '2': true,
+        '3': false,
+        '4': false,
+        '9': true,
+      });
+
+      // 只剩一个启用的语言：点行直接进它，不再弹选择。
+      await tester.tap(find.text('E-Hentai'));
+      await tester.pumpAndSettle();
+      expect(opened, <String>['2', '2']);
+
+      // 组开关：关掉整组（写穿所有语言源），再打开整组。
+      final Finder groupSwitch = find.descendant(
+        of: find.byKey(const ValueKey<String>('mihon_source_row_${pkg}_1')),
+        matching: find.byType(Switch),
+      );
+      await tester.tap(groupSwitch);
+      await tester.pumpAndSettle();
+      expect((await enabledById()).values.where((bool v) => v), <bool>[
+        true,
+      ], reason: '只剩 ExHentai 开着');
+      await tester.tap(groupSwitch);
+      await tester.pumpAndSettle();
+      expect(await enabledById(), <String, bool>{
+        '1': true,
+        '2': true,
+        '3': true,
+        '4': true,
+        '9': true,
+      });
       expect(tester.takeException(), null);
     });
   });

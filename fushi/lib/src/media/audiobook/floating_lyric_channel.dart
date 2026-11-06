@@ -6,8 +6,9 @@ import 'package:fushi/src/platform/floating_overlay_channel.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 /// 悬浮字幕点词。[wordRect] 是被点那个字的**屏幕逻辑 px** 矩形，查词卡据此锚定到
-/// 词而不是鼠标位置；native 没回传（Android 系统 overlay 走自己的 PopupDictActivity，
-/// 老 payload 也没有这些字段）时为 null，调用方回落光标锚定。
+/// 词而不是鼠标位置；native 没回传（Android 系统 overlay 点词直接拉起
+/// PopupDictFlutterActivity、不回这里，老 payload 也没有这些字段）时为 null，调用方回落
+/// 光标锚定。
 typedef FloatingLyricLookupHandler =
     void Function(String text, int index, Rect? wordRect);
 typedef FloatingLyricControlHandler = void Function();
@@ -56,19 +57,46 @@ class FloatingLyricWindowRect {
   }
 }
 
+/// 这个操作系统（`Platform.operatingSystem` 的取值）有没有原生悬浮字幕后端：
+/// Android 系统 overlay、Windows 置顶分层窗、macOS 置顶 NSPanel。Linux 没有。
+///
+/// 平台判据只写这一处：[FloatingLyricChannel.isSupported] 与所有入口（设置、迷你条、
+/// 书架长按、阅读器快捷设置）都经它，不各自写 `Platform.isXxx`。
+bool floatingLyricBackendAvailableOn(String operatingSystem) =>
+    operatingSystem == 'android' ||
+    operatingSystem == 'windows' ||
+    operatingSystem == 'macos';
+
+/// 后端是不是**桌面富文本窗**（Windows DirectWrite / macOS TextKit）：读
+/// `FloatingLyricStyle.nativeStyleArgs` 里的扩展样式（字体、粗体、行高、字距、对齐、
+/// 边距、描边、当前句色、上下文透明度），并且窗口有固定视口（当前句滚到视口中央、
+/// 超出窗高的裁掉），所以「同时显示句数 = 0（自动按窗高）」成立。Android TextView
+/// 两样都没有。
+bool floatingLyricDesktopWindowOn(String operatingSystem) =>
+    operatingSystem == 'windows' || operatingSystem == 'macos';
+
+/// 竖排（字从上往下、行从右往左）只有 Windows 原生窗实现；macOS 后端没有竖排排版。
+bool floatingLyricVerticalTextOn(String operatingSystem) =>
+    operatingSystem == 'windows';
+
 /// Floating subtitle overlay channel.
 ///
-/// Two native back-ends share the same MethodChannel contract:
+/// Three native back-ends share the same MethodChannel contract:
 /// - Android: a system overlay window ([FloatingLyricService]) drawn over
-///   other apps, with its own [PopupDictActivity] for tap lookup.
+///   other apps; a tap opens `PopupDictFlutterActivity` (the `:popup`
+///   Flutter popup) directly.
 /// - Windows: a standalone always-on-top layered window in the runner
 ///   (`windows/runner/floating_lyric_window.cpp`)，跑与 galgame hook 台词浮窗
 ///   **同一套富文本形态**：换行、滚动条、拖角改尺寸、鼠标穿透、一键透明、
 ///   Shift-悬停查词。点词经 [setEventHandlers] 的 `onLookupText` 带出被点字的屏幕
 ///   矩形，查词卡锚定到那个词并弹在 app 外（不起第二个 Flutter engine）。
+/// - macOS: a non-activating always-on-top NSPanel in the runner
+///   (`macos/Runner/FushiFloatingLyric.swift`)，同一套行为（双行 / 多行上下文、区间
+///   高亮、点字带屏幕矩形、拖动 / 拖角缩放、锁定 / 置顶、穿透 + 独立工具条）；
+///   不做竖排与注音。
 ///
-/// macOS / Linux have no native back-end yet, so [isSupported] excludes them
-/// and every outgoing call is short-circuited by [FloatingOverlayChannel].
+/// Linux has no native back-end, so [isSupported] excludes it and every
+/// outgoing call is short-circuited by [FloatingOverlayChannel].
 class FloatingLyricChannel extends FloatingOverlayChannel {
   FloatingLyricChannel._() : super(FushiChannels.floatingLyric);
 
@@ -79,7 +107,8 @@ class FloatingLyricChannel extends FloatingOverlayChannel {
 
   @override
   bool get isSupported =>
-      platformOverride ?? (Platform.isAndroid || Platform.isWindows);
+      platformOverride ??
+      floatingLyricBackendAvailableOn(Platform.operatingSystem);
 
   static FloatingLyricLookupHandler? _onLookupText;
   static FloatingLyricControlHandler? _onPreviousCue;
@@ -231,6 +260,9 @@ class FloatingLyricChannel extends FloatingOverlayChannel {
   // ---------------------------------------------------------------------------
 
   static Future<bool> canDrawOverlays() => _instance.canDrawOverlaysImpl();
+
+  /// 本平台有没有原生悬浮字幕窗口（Android / Windows / macOS）。
+  static bool get supported => _instance.isSupported;
 
   static Future<bool> show({
     double fontSize = 16,
@@ -408,9 +440,8 @@ class FloatingLyricChannel extends FloatingOverlayChannel {
 
   static Future<void> setClickLookupEnabled(bool enabled) async {
     if (!_instance.isSupported) return;
-    await _instance.channel.invokeMethod<void>(
-      'setClickLookupEnabled',
-      {'enabled': enabled},
-    );
+    await _instance.channel.invokeMethod<void>('setClickLookupEnabled', {
+      'enabled': enabled,
+    });
   }
 }

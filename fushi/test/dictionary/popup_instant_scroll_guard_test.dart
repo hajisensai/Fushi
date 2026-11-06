@@ -17,7 +17,7 @@
 // flutter test cwd 是 fushi 包根。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   const List<String> popupCopies = <String>[
@@ -110,9 +110,12 @@ void main() {
       ).readAsStringSync();
       expect(
         appModel,
-        contains("'--fushi-instant-scroll': popupInstantScroll ? '1' : '0',"),
+        contains("'--fushi-instant-scroll': inputs.instantScroll ? '1' : '0',"),
         reason: '扩展弹窗只有 theme 这一条下发通道（与 --fushi-wheel-speed 同法）',
       );
+      // 反馈 biLEesNqWb：theme 表的输入由 App 当前设置与扩展所选配置的只读视图两路填。
+      expect(appModel, contains('instantScroll: popupInstantScroll,'));
+      expect(appModel, contains('instantScroll: p.popupInstantScroll,'));
       for (final String path in <String>[
         'assets/browser_extension/content.js',
         '../tools/browser-extension/content.js',
@@ -138,7 +141,8 @@ void main() {
         contains(
           "'window.fushiCaret && window.fushiCaret.setInstantScroll(\$enabled)'",
         ),
-        reason: '该调用被拼进 _pushResults 的整条 evaluateJavascript；裸调用在 fushiCaret '
+        reason:
+            '该调用被拼进 _pushResults 的整条 evaluateJavascript；裸调用在 fushiCaret '
             '尚未落地时抛 TypeError，会连带吃掉后面的 __fushiRenderToken / renderPopup()',
       );
     });

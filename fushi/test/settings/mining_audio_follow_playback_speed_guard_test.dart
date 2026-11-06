@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
@@ -17,9 +18,9 @@ import 'package:fushi_core/fushi_core.dart';
 /// 3. `TtsChannel.extractAudioSegment` 把 `tempo` 透传到 `extractAudioSegmentViaFfmpeg`；
 /// 4. Anki 设置页有开关行 + 搜索条目，wire 到 AppModel 的 getter/toggle。
 ///
-/// 桌面 ffmpeg-min 必须编入 `atempo`（`tool/ffmpeg-min/build-ffmpeg-min.sh` FILTERS），
-/// 配方与入库二进制的一致性由 `ffmpeg_min_vendored_recipe_guard_test.dart` 钉住；这里
-/// 只钉配方本身列了它。
+/// 统一 FFmpeg 必须编入 `atempo`（`tool/ffmpeg-unified/capabilities.json` 的 "filters"），
+/// 能力清单与实际二进制的一致性由统一 FFmpeg 的能力校验脚本 / 守卫钉住；这里
+/// 只钉清单本身列了它。
 
 FushiDatabase _testDb() {
   return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
@@ -45,8 +46,11 @@ void main() {
     });
 
     test('默认开', () {
-      expect(repo.miningAudioFollowPlaybackSpeed, isTrue,
-          reason: '默认值改了就是行为变更，必须有意');
+      expect(
+        repo.miningAudioFollowPlaybackSpeed,
+        isTrue,
+        reason: '默认值改了就是行为变更，必须有意',
+      );
     });
 
     test('toggle 写穿 Drift（往返 + DB key）', () async {
@@ -56,8 +60,11 @@ void main() {
       await repo.setPref('mining_audio_follow_playback_speed', false);
       final PreferencesRepository restored = PreferencesRepository(db);
       await restored.loadFromDb();
-      expect(restored.miningAudioFollowPlaybackSpeed, isFalse,
-          reason: '设过必须落盘且跨实例可见');
+      expect(
+        restored.miningAudioFollowPlaybackSpeed,
+        isFalse,
+        reason: '设过必须落盘且跨实例可见',
+      );
       final Map<String, String> prefs = await db.getAllPrefs();
       expect(
         prefs.containsKey('mining_audio_follow_playback_speed'),
@@ -87,15 +94,17 @@ void main() {
       expect(
         src,
         contains('? _audiobookController?.speed'),
-        reason: '读的必须是控制器当前实时倍速（用户刚拨的倍速就是这次制卡的倍速），'
+        reason:
+            '读的必须是控制器当前实时倍速（用户刚拨的倍速就是这次制卡的倍速），'
             '不是落库偏好',
       );
       expect(src, contains('tempo: sentenceAudioTempo,'));
     });
 
     test('TtsChannel.extractAudioSegment 透传 tempo 到 ffmpeg 裁剪', () {
-      final String src =
-          File('lib/src/utils/misc/tts_channel.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/utils/misc/tts_channel.dart',
+      ).readAsStringSync();
       expect(src, contains('double? tempo,'));
       expect(src, contains('tempo: tempo,'));
     });
@@ -127,15 +136,18 @@ void main() {
       );
     });
 
-    test('桌面 ffmpeg-min 配方编入 atempo', () {
-      final String recipe = File(
-        '../tool/ffmpeg-min/build-ffmpeg-min.sh',
-      ).readAsStringSync();
-      final RegExpMatch? filters =
-          RegExp(r'^FILTERS="([^"]*)"', multiLine: true).firstMatch(recipe);
+    test('统一 FFmpeg 能力清单编入 atempo', () {
+      final Map<String, dynamic> caps =
+          jsonDecode(
+                File(
+                  '../tool/ffmpeg-unified/capabilities.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      final List<dynamic>? filters = caps['filters'] as List<dynamic>?;
       expect(filters, isNotNull);
       expect(
-        filters!.group(1)!.split(','),
+        filters,
         contains('atempo'),
         reason: '倍速制卡的 -af atempo 在精简构建里缺滤镜就整条 ffmpeg 失败',
       );

@@ -94,8 +94,11 @@ void main() {
     });
 
     test('SRT 跨章经 _resolveSrtCueChapter 反查真实章 index', () {
-      expect(src.contains('_resolveSrtCueChapter('), isTrue,
-          reason: 'cue→章必须按 chapterHref/正文反查回真实 chapters index');
+      expect(
+        src.contains('_resolveSrtCueChapter('),
+        isTrue,
+        reason: 'cue→章必须按 chapterHref/正文反查回真实 chapters index',
+      );
     });
 
     test('SRT 跨章经纯决策 audiobookSrtCrossChapterTarget 收口（剔除目录/未命中）', () {
@@ -115,11 +118,16 @@ void main() {
       final String navSrc = File(
         'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
       ).readAsStringSync();
-      expect(navSrc.contains('isChapterNav('), isTrue,
-          reason: '_navigateToChapter 纵深防御：被动导航不落 nav 页');
-      expect(src.contains('isChapterNav('), isTrue,
-          reason:
-              '_handleCueCrossChapter（sentenceAudioHighlight 路径 B）守卫 nav 页');
+      expect(
+        navSrc.contains('isChapterNav('),
+        isTrue,
+        reason: '_navigateToChapter 纵深防御：被动导航不落 nav 页',
+      );
+      expect(
+        src.contains('isChapterNav('),
+        isTrue,
+        reason: '_handleCueCrossChapter（sentenceAudioHighlight 路径 B）守卫 nav 页',
+      );
     });
   });
 }

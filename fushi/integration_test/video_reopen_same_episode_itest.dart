@@ -46,158 +46,192 @@ void main() {
 
   final bool hasFixture = File(_kEpisode).existsSync();
 
-  testWidgets(
-    'same episode reopens and really opens on the real player',
-    (WidgetTester tester) async {
-      // 离屏真窗口在 0→1920 resize / 控制条布局时会冒非致命框架异常（与本用例无关）。
-      // 收集而不重抛，测尾只对真正关心的不变式断言。
-      final List<String> caught = <String>[];
-      final FlutterExceptionHandler? oldHandler = FlutterError.onError;
-      FlutterError.onError = (FlutterErrorDetails details) {
-        caught.add(details.exceptionAsString());
-        debugPrint('[reopen-itest] caught: ${details.exceptionAsString()}');
-      };
-      try {
-        app.main(const <String>[]);
-        expect(await waitForHome(tester), isTrue);
-        await tester.pump(const Duration(seconds: 2));
+  testWidgets('same episode reopens and really opens on the real player', (
+    WidgetTester tester,
+  ) async {
+    // 离屏真窗口在 0→1920 resize / 控制条布局时会冒非致命框架异常（与本用例无关）。
+    // 收集而不重抛，测尾只对真正关心的不变式断言。
+    final List<String> caught = <String>[];
+    final FlutterExceptionHandler? oldHandler = FlutterError.onError;
+    FlutterError.onError = (FlutterErrorDetails details) {
+      caught.add(details.exceptionAsString());
+      debugPrint('[reopen-itest] caught: ${details.exceptionAsString()}');
+    };
+    try {
+      app.main(const <String>[]);
+      expect(await waitForHome(tester), isTrue);
+      await tester.pump(const Duration(seconds: 2));
 
-        final ProviderContainer container = ProviderScope.containerOf(
-          tester.element(find.byType(MaterialApp).first),
-        );
-        final AppModel appModel = container.read(appProvider);
-        final VideoBookRepository repo = VideoBookRepository(appModel.database);
+      final ProviderContainer container = ProviderScope.containerOf(
+        tester.element(find.byType(MaterialApp).first),
+      );
+      final AppModel appModel = container.read(appProvider);
+      final VideoBookRepository repo = VideoBookRepository(appModel.database);
 
-        // 单视频（非播放列表），从 0 开始——与故障现场一致（lastPositionMs=0）。
-        await repo.saveVideoBook(VideoBooksCompanion(
+      // 单视频（非播放列表），从 0 开始——与故障现场一致（lastPositionMs=0）。
+      await repo.saveVideoBook(
+        VideoBooksCompanion(
           bookUid: const Value(_kBookUid),
           title: const Value('itest reopen same episode'),
           videoPath: const Value(_kEpisode),
           lastPositionMs: const Value(0),
-        ));
+        ),
+      );
 
-        final NavigatorState navigator =
-            tester.state<NavigatorState>(find.byType(Navigator).first);
+      final NavigatorState navigator = tester.state<NavigatorState>(
+        find.byType(Navigator).first,
+      );
 
-        VideoFushiTestHooks? readHooks() {
-          final Iterable<Element> els = find.byType(VideoFushiPage).evaluate();
-          if (els.isEmpty) return null;
-          return tester.state<State<VideoFushiPage>>(
-              find.byType(VideoFushiPage)) as VideoFushiTestHooks;
-        }
+      VideoFushiTestHooks? readHooks() {
+        final Iterable<Element> els = find.byType(VideoFushiPage).evaluate();
+        if (els.isEmpty) return null;
+        return tester.state<State<VideoFushiPage>>(find.byType(VideoFushiPage))
+            as VideoFushiTestHooks;
+      }
 
-        /// 打开一次并等到「控制器就绪」，返回就绪时的 hooks。
-        Future<VideoFushiTestHooks> openOnce(String label) async {
-          unawaited(navigator.push<void>(MaterialPageRoute<void>(
-            builder: (_) => VideoFushiPage(bookUid: _kBookUid, repo: repo),
-          )));
-          bool ready = false;
-          // 6.7GB 容器的内嵌字幕枚举可能先跑一轮 ffmpeg，给足 30s。
-          for (int i = 0; i < 120; i++) {
-            await tester.pump(const Duration(milliseconds: 250));
-            if (readHooks()?.debugPositionMs != null) {
-              ready = true;
-              break;
-            }
+      /// 打开一次并等到「控制器就绪」，返回就绪时的 hooks。
+      Future<VideoFushiTestHooks> openOnce(String label) async {
+        unawaited(
+          navigator.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => VideoFushiPage(bookUid: _kBookUid, repo: repo),
+            ),
+          ),
+        );
+        bool ready = false;
+        // 6.7GB 容器的内嵌字幕枚举可能先跑一轮 ffmpeg，给足 30s。
+        for (int i = 0; i < 120; i++) {
+          await tester.pump(const Duration(milliseconds: 250));
+          if (readHooks()?.debugPositionMs != null) {
+            ready = true;
+            break;
           }
-          expect(ready, isTrue,
-              reason: '[$label] 控制器应在 load 后就绪（debugPositionMs 非 null）');
-          return readHooks()!;
         }
+        expect(
+          ready,
+          isTrue,
+          reason: '[$label] 控制器应在 load 后就绪（debugPositionMs 非 null）',
+        );
+        return readHooks()!;
+      }
 
-        /// 走页面自己的退出汇聚点（PopScope → _handleBackOrExit）。
-        Future<void> exitOnce(String label) async {
-          await navigator.maybePop();
-          for (int i = 0; i < 40; i++) {
-            await tester.pump(const Duration(milliseconds: 100));
-            if (find.byType(VideoFushiPage).evaluate().isEmpty) break;
-          }
-          expect(find.byType(VideoFushiPage), findsNothing,
-              reason: '[$label] 退出后视频页应已 pop');
-        }
-
-        // ── ① 第一次打开：必须真的 open（duration > 0）并能播 ─────────────────
-        final VideoFushiTestHooks first = await openOnce('first');
-        await first.debugPlay();
-        for (int i = 0; i < 40; i++) {
-          await tester.pump(const Duration(milliseconds: 125));
-        }
-        final int firstDuration = first.debugDurationMs ?? 0;
-        final int firstPlayed = first.debugPositionMs ?? 0;
-        expect(firstDuration, greaterThan(0),
-            reason: '首次打开 libmpv 应报出真实时长，实测=$firstDuration');
-        expect(firstPlayed, greaterThan(1500),
-            reason: '首次打开应真实播放前进，实测=$firstPlayed');
-
-        await exitOnce('first');
-
-        // 退出必须把刚才播到的位置 flush 落库——这一条同时给③建立**非零基线**：
-        // 没有它，③ 的「没被抹成 0」就是拿 0 和 0 比，永远恒真。
-        final VideoBookRow? afterFirst = await repo.getByBookUid(_kBookUid);
-        final int savedAfterFirst = afterFirst?.lastPositionMs ?? 0;
-        expect(savedAfterFirst, greaterThan(0),
-            reason: '首次退出应把播放位置 flush 落库，实测=$savedAfterFirst');
-
-        // 故障现场两次打开之间隔了约 4 分钟；这里只需跨过 teardown 的异步收尾窗口。
+      /// 走页面自己的退出汇聚点（PopScope → _handleBackOrExit）。
+      Future<void> exitOnce(String label) async {
+        await navigator.maybePop();
         for (int i = 0; i < 40; i++) {
           await tester.pump(const Duration(milliseconds: 100));
+          if (find.byType(VideoFushiPage).evaluate().isEmpty) break;
         }
-
-        // ── ② 再打开同一集：这里正是故障点 ────────────────────────────────
-        final VideoFushiTestHooks second = await openOnce('second');
-        int secondDuration = second.debugDurationMs ?? 0;
-        // duration 由 libmpv 异步报出，给它与首次同等的观测窗口。
-        for (int i = 0; i < 40 && secondDuration <= 0; i++) {
-          await tester.pump(const Duration(milliseconds: 250));
-          secondDuration = readHooks()?.debugDurationMs ?? 0;
-        }
-        expect(secondDuration, greaterThan(0),
-            reason: '重开同一集后 libmpv 必须真的打开媒体（用户现场此处恒 0 → '
-                '画面全黑、控件显示 00:00/00:00 且无任何错误提示）');
-
-        await readHooks()!.debugPlay();
-        int secondPlayed = 0;
-        for (int i = 0; i < 64; i++) {
-          await tester.pump(const Duration(milliseconds: 125));
-          secondPlayed = readHooks()?.debugPositionMs ?? 0;
-          if (secondPlayed > 1000) break;
-        }
-        expect(secondPlayed, greaterThan(1000),
-            reason: '重开同一集后必须真的能播放前进，实测=$secondPlayed');
-
-        // ── ③ 数据损坏防线：重开这一程绝不能把已存进度抹掉 ───────────────────
-        // 基线由①退出时的 flush 建立（savedAfterFirst > 0）。若重开失败而位置写入
-        // 又没门控，第一个 125ms tick 就会把 0 写进去——现场就是这么丢的 135 秒。
-        await exitOnce('second');
-        final VideoBookRow? afterSecond = await repo.getByBookUid(_kBookUid);
-        final int savedAfterSecond = afterSecond?.lastPositionMs ?? -1;
-        expect(savedAfterSecond, greaterThan(0),
-            reason: '重开这一程不得把已存进度抹成 0（基线 $savedAfterFirst，'
-                '实测 $savedAfterSecond）');
-
-        // 捕获到的框架异常里，除了离屏真窗口已知的 resize / 控制条布局噪声之外，
-        // 不该有别的——否则本用例会把真实回归静默吞掉（只打印条数等于没断言）。
-        const List<String> knownOffscreenNoise = <String>[
-          'RenderFlex',
-          'overflowed',
-          'ScrollController',
-          'ScrollPosition',
-          'Scrollbar',
-          'constraints',
-          'Size',
-        ];
-        final List<String> unexpected = caught
-            .where((String e) =>
-                !knownOffscreenNoise.any((String n) => e.contains(n)))
-            .toList();
-        expect(unexpected, isEmpty,
-            reason: '出现了与离屏 resize / 布局无关的框架异常：$unexpected');
-        debugPrint(
-            '[reopen-itest] non-fatal framework errors=${caught.length}');
-      } finally {
-        FlutterError.onError = oldHandler;
+        expect(
+          find.byType(VideoFushiPage),
+          findsNothing,
+          reason: '[$label] 退出后视频页应已 pop',
+        );
       }
-    },
-    skip: !hasFixture,
-  );
+
+      // ── ① 第一次打开：必须真的 open（duration > 0）并能播 ─────────────────
+      final VideoFushiTestHooks first = await openOnce('first');
+      await first.debugPlay();
+      for (int i = 0; i < 40; i++) {
+        await tester.pump(const Duration(milliseconds: 125));
+      }
+      final int firstDuration = first.debugDurationMs ?? 0;
+      final int firstPlayed = first.debugPositionMs ?? 0;
+      expect(
+        firstDuration,
+        greaterThan(0),
+        reason: '首次打开 libmpv 应报出真实时长，实测=$firstDuration',
+      );
+      expect(
+        firstPlayed,
+        greaterThan(1500),
+        reason: '首次打开应真实播放前进，实测=$firstPlayed',
+      );
+
+      await exitOnce('first');
+
+      // 退出必须把刚才播到的位置 flush 落库——这一条同时给③建立**非零基线**：
+      // 没有它，③ 的「没被抹成 0」就是拿 0 和 0 比，永远恒真。
+      final VideoBookRow? afterFirst = await repo.getByBookUid(_kBookUid);
+      final int savedAfterFirst = afterFirst?.lastPositionMs ?? 0;
+      expect(
+        savedAfterFirst,
+        greaterThan(0),
+        reason: '首次退出应把播放位置 flush 落库，实测=$savedAfterFirst',
+      );
+
+      // 故障现场两次打开之间隔了约 4 分钟；这里只需跨过 teardown 的异步收尾窗口。
+      for (int i = 0; i < 40; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      // ── ② 再打开同一集：这里正是故障点 ────────────────────────────────
+      final VideoFushiTestHooks second = await openOnce('second');
+      int secondDuration = second.debugDurationMs ?? 0;
+      // duration 由 libmpv 异步报出，给它与首次同等的观测窗口。
+      for (int i = 0; i < 40 && secondDuration <= 0; i++) {
+        await tester.pump(const Duration(milliseconds: 250));
+        secondDuration = readHooks()?.debugDurationMs ?? 0;
+      }
+      expect(
+        secondDuration,
+        greaterThan(0),
+        reason:
+            '重开同一集后 libmpv 必须真的打开媒体（用户现场此处恒 0 → '
+            '画面全黑、控件显示 00:00/00:00 且无任何错误提示）',
+      );
+
+      await readHooks()!.debugPlay();
+      int secondPlayed = 0;
+      for (int i = 0; i < 64; i++) {
+        await tester.pump(const Duration(milliseconds: 125));
+        secondPlayed = readHooks()?.debugPositionMs ?? 0;
+        if (secondPlayed > 1000) break;
+      }
+      expect(
+        secondPlayed,
+        greaterThan(1000),
+        reason: '重开同一集后必须真的能播放前进，实测=$secondPlayed',
+      );
+
+      // ── ③ 数据损坏防线：重开这一程绝不能把已存进度抹掉 ───────────────────
+      // 基线由①退出时的 flush 建立（savedAfterFirst > 0）。若重开失败而位置写入
+      // 又没门控，第一个 125ms tick 就会把 0 写进去——现场就是这么丢的 135 秒。
+      await exitOnce('second');
+      final VideoBookRow? afterSecond = await repo.getByBookUid(_kBookUid);
+      final int savedAfterSecond = afterSecond?.lastPositionMs ?? -1;
+      expect(
+        savedAfterSecond,
+        greaterThan(0),
+        reason:
+            '重开这一程不得把已存进度抹成 0（基线 $savedAfterFirst，'
+            '实测 $savedAfterSecond）',
+      );
+
+      // 捕获到的框架异常里，除了离屏真窗口已知的 resize / 控制条布局噪声之外，
+      // 不该有别的——否则本用例会把真实回归静默吞掉（只打印条数等于没断言）。
+      const List<String> knownOffscreenNoise = <String>[
+        'RenderFlex',
+        'overflowed',
+        'ScrollController',
+        'ScrollPosition',
+        'Scrollbar',
+        'constraints',
+        'Size',
+      ];
+      final List<String> unexpected = caught
+          .where(
+            (String e) => !knownOffscreenNoise.any((String n) => e.contains(n)),
+          )
+          .toList();
+      expect(
+        unexpected,
+        isEmpty,
+        reason: '出现了与离屏 resize / 布局无关的框架异常：$unexpected',
+      );
+      debugPrint('[reopen-itest] non-fatal framework errors=${caught.length}');
+    } finally {
+      FlutterError.onError = oldHandler;
+    }
+  }, skip: !hasFixture);
 }

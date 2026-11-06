@@ -44,7 +44,9 @@ void main() {
 
     test('去向枚举是真偏好，照常随 Profile 走', () {
       expect(
-          ProfileKeys.isExcludedPref(kVideoScreenshotDestinationPref), isFalse);
+        ProfileKeys.isExcludedPref(kVideoScreenshotDestinationPref),
+        isFalse,
+      );
     });
   });
 }

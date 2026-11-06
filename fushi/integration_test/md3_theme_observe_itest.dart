@@ -2,8 +2,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/models.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
 
 import 'helpers/library_fixture.dart';
 import 'helpers/observe_capture.dart';
@@ -41,15 +41,19 @@ void main() {
         for (final (HomeTab tab, String name) in pages) {
           HomePage.debugSelectTab?.call(tab);
           await tester.pump(const Duration(seconds: 3));
-          final ObserveShot shot =
-              await captureFlutterFrame(tester, '$name-$mode');
+          final ObserveShot shot = await captureFlutterFrame(
+            tester,
+            '$name-$mode',
+          );
           expect(shot.saved, isTrue, reason: '$name-$mode 应抓到帧');
         }
         final ColorScheme cs = Theme.of(
           tester.element(find.byType(Scaffold).first),
         ).colorScheme;
-        debugPrint('[md3-probe] $mode brightness=${cs.brightness} '
-            'surface=${cs.surface} primary=${cs.primary}');
+        debugPrint(
+          '[md3-probe] $mode brightness=${cs.brightness} '
+          'surface=${cs.surface} primary=${cs.primary}',
+        );
       }
     } finally {
       await appModel.setBrightnessMode(original);

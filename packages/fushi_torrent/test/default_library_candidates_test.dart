@@ -11,7 +11,8 @@ void main() {
   test('Linux 先试 exe 同级 lib/ 的绝对路径，再退裸名', () {
     final List<String> candidates =
         EmbeddedTorrentEngine.defaultLibraryCandidates(
-            executablePath: '/opt/fushi/bundle/fushi');
+          executablePath: '/opt/fushi/bundle/fushi',
+        );
     if (Platform.isLinux) {
       expect(candidates, <String>[
         '/opt/fushi/bundle/lib/libfushi_torrent_ffi.so',
@@ -25,7 +26,8 @@ void main() {
   test('macOS 先试 Contents/Frameworks 的绝对路径，再退裸名', () {
     final List<String> candidates =
         EmbeddedTorrentEngine.defaultLibraryCandidates(
-            executablePath: '/Applications/fushi.app/Contents/MacOS/fushi');
+          executablePath: '/Applications/fushi.app/Contents/MacOS/fushi',
+        );
     if (Platform.isMacOS) {
       expect(candidates, <String>[
         '/Applications/fushi.app/Contents/Frameworks/libfushi_torrent_ffi.dylib',

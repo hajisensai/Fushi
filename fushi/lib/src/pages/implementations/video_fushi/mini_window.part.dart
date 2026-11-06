@@ -24,7 +24,9 @@ extension _VideoMiniWindow on _VideoFushiPageState {
   /// 本机有没有小窗可用：桌面恒有（主窗自己变形）；移动端取决于系统画中画，
   /// 只有 Android 有、且要 API 26+（见 [AndroidPictureInPicture.isSupported]）。
   bool get _miniWindowAvailable =>
-      isDesktopPlatform || _pictureInPictureSupported;
+      // 网页档没有小窗：站点画面是 WebView2 子窗口，主窗缩成小窗塞不下站点布局，
+      // 系统画中画也拿不到这条画面。
+      !_webMode && (isDesktopPlatform || _pictureInPictureSupported);
 
   /// 当前画面宽高比；尺寸还没解析出来时退回 16:9（两个平台的小窗几何都要它，
   /// 且都不接受 0 / NaN）。
@@ -90,8 +92,9 @@ extension _VideoMiniWindow on _VideoFushiPageState {
   /// 系统画中画进出的唯一写入点。
   void _handlePictureInPictureChanged(bool active) {
     if (!mounted) return;
-    final VideoMiniSurface next =
-        active ? VideoMiniSurface.pictureInPicture : VideoMiniSurface.none;
+    final VideoMiniSurface next = active
+        ? VideoMiniSurface.pictureInPicture
+        : VideoMiniSurface.none;
     if (_miniSurface.value == next) return;
     _miniSurface.value = next;
     // 密度档随表面变，控制条 theme / 字幕避让都要按新几何重算一帧。
@@ -385,7 +388,8 @@ extension _VideoMiniWindow on _VideoFushiPageState {
           _videoControlEditMode,
         ]),
         builder: (BuildContext context, _) {
-          final bool interactive = !_immersiveLocked.value &&
+          final bool interactive =
+              !_immersiveLocked.value &&
               _videoSidePanel.value == null &&
               !_episodeListVisible.value &&
               !_videoControlEditMode.value;
@@ -399,20 +403,42 @@ extension _VideoMiniWindow on _VideoFushiPageState {
                 controlsVisible: controlsVisible,
               );
               if (!visible) return const SizedBox.shrink();
-              return VideoSlimProgressBar(
+              final double lineHeight = 3 * _videoUiScale;
+              final Widget bar = VideoSlimProgressBar(
                 positionMs: () => controller.positionMs,
                 durationMs: () => controller.durationMs,
                 // 播放器 chrome 的「主题色」口径：裸压固定深色 scrim 的前景必须取亮 tone
                 // primary，直接用 cs.primary 在浅色 / eink 主题下是深色、黑压黑不可见。
                 color: _videoChromeAccent(cs),
-                height: 3 * _videoUiScale,
+                height: lineHeight,
                 // 点 / 横拖这条线直接跳转（小窗里它是唯一的进度控件，常规档它是控制条
                 // 淡出后唯一还在的那条）。命中带随「界面大小」一起缩放，与线本身同源。
                 hitTestHeight: 12 * _videoUiScale,
                 onSeekFraction: interactive
                     ? (double fraction) =>
-                        unawaited(_seekToProgressFraction(fraction))
+                          unawaited(_seekToProgressFraction(fraction))
                     : null,
+              );
+              // 「跳转记录」落点刻度：竖直居中压在细线上（刻度比线高，上半截露在
+              // 画面上）；刻度层 IgnorePointer，点 / 横拖照旧落到细线的命中带。
+              final double tickHeight = 3 * lineHeight;
+              return Stack(
+                clipBehavior: Clip.none,
+                children: <Widget>[
+                  bar,
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: lineHeight / 2 - tickHeight / 2,
+                    height: tickHeight,
+                    child: _videoJumpProgressMarks(
+                      controller: controller,
+                      tickWidth: 2 * _videoUiScale,
+                      tickHeight: tickHeight,
+                      // 细线硬 ltr（见 [VideoSlimProgressBar]），刻度同向。
+                    ),
+                  ),
+                ],
               );
             },
           );

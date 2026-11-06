@@ -82,7 +82,7 @@ void main() {
   test('手动入口：登记对齐产物后导入并重算；抽轨 / 确认后换了集就不落结果', () {
     final String body = region(
       'Future<void> _alignSubtitleFileToEmbeddedTracks(',
-      'String? _currentExternalSubtitlePath()',
+      'String? _currentExternalSubtitleSelection()',
     );
     final int save = body.indexOf(
       'saveSubtitleAlignmentOriginal(original: bytes, aligned: aligned)',

@@ -35,16 +35,17 @@ class UpdateCheckCacheEntry {
   final UpdateChannel channel;
 
   /// 上次检查时刻（本地时区 [DateTime]）。
-  DateTime get lastCheckTime =>
-      DateTime.fromMillisecondsSinceEpoch(lastCheckEpochMs, isUtc: true)
-          .toLocal();
+  DateTime get lastCheckTime => DateTime.fromMillisecondsSinceEpoch(
+    lastCheckEpochMs,
+    isUtc: true,
+  ).toLocal();
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'lastCheckEpochMs': lastCheckEpochMs,
-        'latestTag': latestTag,
-        'htmlUrl': htmlUrl,
-        'channel': channel.name,
-      };
+    'lastCheckEpochMs': lastCheckEpochMs,
+    'latestTag': latestTag,
+    'htmlUrl': htmlUrl,
+    'channel': channel.name,
+  };
 
   /// 编码成可落 `preferences` 表的 JSON 字符串。
   String encode() => jsonEncode(toJson());
@@ -74,8 +75,8 @@ class UpdateCheckCacheEntry {
     final int epoch = epochRaw is int
         ? epochRaw
         : epochRaw is num
-            ? epochRaw.toInt()
-            : 0;
+        ? epochRaw.toInt()
+        : 0;
 
     final Object? htmlRaw = decoded['htmlUrl'];
     final String html = htmlRaw is String ? htmlRaw : '';
@@ -115,5 +116,5 @@ UpdateCheckCacheEntry? cachedEntryForChannel(
 
 /// 把一次成功网络检查的结果写回缓存。由调用方（持有 `preferences` 的 [AppModel]）注入，
 /// [UpdateChecker] 不直接持有 DB。乐观「读缓存」由调用方直接读 `appModel.updateCheckCache`。
-typedef UpdateCheckCacheWriter = Future<void> Function(
-    UpdateCheckCacheEntry entry);
+typedef UpdateCheckCacheWriter =
+    Future<void> Function(UpdateCheckCacheEntry entry);

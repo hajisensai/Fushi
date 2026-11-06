@@ -36,7 +36,8 @@ AudioCue _cue(String text, int startMs, int endMs) => AudioCue()
 /// 隐藏态遮蔽的判据：不能只断言「找不到文本」——那正是被修掉的旧实现。
 bool _opaqueZero(WidgetTester tester, Finder of) => tester
     .widgetList<Opacity>(
-        find.ancestor(of: of.first, matching: find.byType(Opacity)))
+      find.ancestor(of: of.first, matching: find.byType(Opacity)),
+    )
     .any((Opacity o) => o.opacity == 0);
 
 Future<void> _pumpOverlay(
@@ -44,21 +45,24 @@ Future<void> _pumpOverlay(
   VideoPlayerController c, {
   required bool secondaryHidden,
 }) async {
-  await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      body: VideoSubtitleOverlay(
-        controller: c,
-        secondaryHidden: secondaryHidden,
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(
+          controller: c,
+          secondaryHidden: secondaryHidden,
+        ),
       ),
     ),
-  ));
+  );
   await tester.pump();
 }
 
 void main() {
   group('TODO-1382 ① 副字幕隐藏门控（overlay 真行为）', () {
-    testWidgets('secondaryHidden=true：副字幕不绘制（Opacity 0）、主字幕照常显示',
-        (tester) async {
+    testWidgets('secondaryHidden=true：副字幕不绘制（Opacity 0）、主字幕照常显示', (
+      tester,
+    ) async {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
       c.setCues(<AudioCue>[_cue('主', 0, 6000)]);
@@ -70,14 +74,15 @@ void main() {
       await _pumpOverlay(tester, c, secondaryHidden: true);
 
       expect(find.text('主'), findsWidgets, reason: '主字幕不受副字幕隐藏影响');
-      expect(_opaqueZero(tester, find.text('主')), isFalse,
-          reason: '主字幕没被误遮蔽');
+      expect(_opaqueZero(tester, find.text('主')), isFalse, reason: '主字幕没被误遮蔽');
       // 隐藏 = 布局照常、不绘制：cue 仍在树上（否则没有几何可供悬停显形），
       // 但被 opacity 为 0 的 Opacity 包住 → 用户看不见。
-      expect(find.text('副'), findsWidgets,
-          reason: '隐藏态保留几何（不再整条摘掉），否则鼠标无处可悬停');
-      expect(_opaqueZero(tester, find.text('副')), isTrue,
-          reason: '副字幕隐藏时不绘制（Opacity 0）');
+      expect(find.text('副'), findsWidgets, reason: '隐藏态保留几何（不再整条摘掉），否则鼠标无处可悬停');
+      expect(
+        _opaqueZero(tester, find.text('副')),
+        isTrue,
+        reason: '副字幕隐藏时不绘制（Opacity 0）',
+      );
     });
 
     testWidgets('secondaryHidden=false：副字幕正常显示（回归守卫）', (tester) async {
@@ -91,13 +96,15 @@ void main() {
 
       expect(find.text('主'), findsWidgets);
       expect(find.text('副'), findsWidgets, reason: '默认不隐藏，副字幕照常渲染');
-      expect(_opaqueZero(tester, find.text('副')), isFalse,
-          reason: '不隐藏时不得有 Opacity(0) 遮蔽层');
+      expect(
+        _opaqueZero(tester, find.text('副')),
+        isFalse,
+        reason: '不隐藏时不得有 Opacity(0) 遮蔽层',
+      );
     });
 
     // BUG-2198：副字幕隐藏与主字幕同一条门——暂停（含查词自动暂停）让位、播放遮回去。
-    testWidgets('暂停时副字幕隐藏让位、恢复播放再遮回去（与主字幕同一条门）',
-        (tester) async {
+    testWidgets('暂停时副字幕隐藏让位、恢复播放再遮回去（与主字幕同一条门）', (tester) async {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
       c.setCues(<AudioCue>[_cue('主', 0, 6000)]);
@@ -107,14 +114,20 @@ void main() {
 
       await _pumpOverlay(tester, c, secondaryHidden: true);
 
-      expect(_opaqueZero(tester, find.text('副')), isFalse,
-          reason: '暂停时副字幕也该显示（查词对照原句走同一条路径）');
+      expect(
+        _opaqueZero(tester, find.text('副')),
+        isFalse,
+        reason: '暂停时副字幕也该显示（查词对照原句走同一条路径）',
+      );
 
       c.debugSetIsPlayingForTesting(true);
       await tester.pump();
 
-      expect(_opaqueZero(tester, find.text('副')), isTrue,
-          reason: '继续播放就该遮回去，否则一暂停等于永久解除隐藏');
+      expect(
+        _opaqueZero(tester, find.text('副')),
+        isTrue,
+        reason: '继续播放就该遮回去，否则一暂停等于永久解除隐藏',
+      );
     });
   });
 
@@ -122,28 +135,39 @@ void main() {
     final Map<ShortcutAction, ShortcutBindingSet> desktop =
         ShortcutDefaults.forPlatform(TargetPlatform.windows);
 
-    bool hasKey(ShortcutAction action, LogicalKeyboardKey key,
-        Set<ModifierKey> modifiers) {
+    bool hasKey(
+      ShortcutAction action,
+      LogicalKeyboardKey key,
+      Set<ModifierKey> modifiers,
+    ) {
       final ShortcutBindingSet? set = desktop[action];
       if (set == null) return false;
-      return set.keyboardBindings.any((InputBinding b) =>
-          b.key == key &&
-          b.modifiers.length == modifiers.length &&
-          b.modifiers.containsAll(modifiers));
+      return set.keyboardBindings.any(
+        (InputBinding b) =>
+            b.key == key &&
+            b.modifiers.length == modifiers.length &&
+            b.modifiers.containsAll(modifiers),
+      );
     }
 
     test('隐藏副字幕默认 Shift+H（与主字幕 H 对称）', () {
       expect(
-        hasKey(ShortcutAction.videoToggleSecondarySubtitleHide,
-            LogicalKeyboardKey.keyH, {ModifierKey.shift}),
+        hasKey(
+          ShortcutAction.videoToggleSecondarySubtitleHide,
+          LogicalKeyboardKey.keyH,
+          {ModifierKey.shift},
+        ),
         isTrue,
       );
     });
 
     test('循环副字幕遮蔽默认 Shift+G', () {
       expect(
-        hasKey(ShortcutAction.videoCycleSecondarySubtitleObscure,
-            LogicalKeyboardKey.keyG, {ModifierKey.shift}),
+        hasKey(
+          ShortcutAction.videoCycleSecondarySubtitleObscure,
+          LogicalKeyboardKey.keyG,
+          {ModifierKey.shift},
+        ),
         isTrue,
       );
     });
@@ -160,21 +184,20 @@ void main() {
     });
 
     test('快捷键 action→callback 映射含两新 action', () {
-      final String src =
-          readSrc('lib/src/media/video/video_player_shortcuts.dart');
+      final String src = readSrc(
+        'lib/src/media/video/video_player_shortcuts.dart',
+      );
       expect(
         src,
         contains('ShortcutAction.videoCycleSecondarySubtitleObscure:'),
       );
-      expect(
-        src,
-        contains('ShortcutAction.videoToggleSecondarySubtitleHide:'),
-      );
+      expect(src, contains('ShortcutAction.videoToggleSecondarySubtitleHide:'));
     });
 
     test('layout 把副字幕遮蔽映射成 overlay 两正交标志', () {
       final String src = readSrc(
-          'lib/src/pages/implementations/video_fushi/layout.part.dart');
+        'lib/src/pages/implementations/video_fushi/layout.part.dart',
+      );
       expect(src, contains('secondaryBlurEnabled:'));
       expect(src, contains('secondaryHidden:'));
       expect(src, contains('appModel.videoSecondarySubtitleObscureMode'));

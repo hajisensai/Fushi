@@ -21,30 +21,37 @@ import '../helpers/source_guard.dart';
 void main() {
   // 必须剥注释：修复注释里就写着「文案**不能**用 sync_compare_delete_confirm」，
   // 不剥的话下面那条 isNot(contains(...)) 会被注释命中而恒红。走共享原语。
-  String read(String path) => maskComments(
-      File(path).readAsStringSync().replaceAll('\r\n', '\n'));
+  String read(String path) =>
+      maskComments(File(path).readAsStringSync().replaceAll('\r\n', '\n'));
 
-  Map<String, dynamic> locale(String suffix) => jsonDecode(
-        File('lib/i18n/strings$suffix.i18n.json').readAsStringSync(),
-      ) as Map<String, dynamic>;
+  Map<String, dynamic> locale(String suffix) =>
+      jsonDecode(File('lib/i18n/strings$suffix.i18n.json').readAsStringSync())
+          as Map<String, dynamic>;
 
   test('远端书卡与远端视频卡各用自己的对端文案', () {
-    final String remote =
-        read('lib/src/pages/implementations/reader_history/remote.part.dart');
+    final String remote = read(
+      'lib/src/pages/implementations/reader_history/remote.part.dart',
+    );
     expect(remote, contains('t.sync_peer_book_delete_confirm(name: name)'));
-    expect(remote, isNot(contains('sync_compare_delete_confirm')),
-        reason: '远端书卡下「本地数据保留」保留的是空集，是反向暗示。');
+    expect(
+      remote,
+      isNot(contains('sync_compare_delete_confirm')),
+      reason: '远端书卡下「本地数据保留」保留的是空集，是反向暗示。',
+    );
 
-    final String video =
-        read('lib/src/pages/implementations/home_video_page.dart');
+    final String video = read(
+      'lib/src/pages/implementations/home_video_page.dart',
+    );
     expect(video, contains('t.sync_peer_video_delete_confirm('));
     expect(video, isNot(contains('sync_compare_delete_confirm')));
   });
 
   test('比较对话框保留老文案（那里「本地数据保留」是真话）', () {
-    expect(read('lib/src/sync/sync_compare_dialog.dart'),
-        contains('t.sync_compare_delete_confirm(name: name)'),
-        reason: '别为了修远端卡把这里的真话一起改掉。');
+    expect(
+      read('lib/src/sync/sync_compare_dialog.dart'),
+      contains('t.sync_compare_delete_confirm(name: name)'),
+      reason: '别为了修远端卡把这里的真话一起改掉。',
+    );
   });
 
   test('对端文案里不得再出现「本地数据保留」', () {
@@ -55,8 +62,11 @@ void main() {
         'sync_peer_video_delete_confirm',
       ]) {
         final String value = table[key] as String;
-        expect(value.contains('Local data is kept'), isFalse,
-            reason: '$key ($suffix)');
+        expect(
+          value.contains('Local data is kept'),
+          isFalse,
+          reason: '$key ($suffix)',
+        );
         expect(value.contains('本地数据保留'), isFalse, reason: '$key ($suffix)');
         expect(value.contains('本機資料會保留'), isFalse, reason: '$key ($suffix)');
       }

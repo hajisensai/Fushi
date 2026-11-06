@@ -31,7 +31,7 @@ class _FakeRuntime extends OnnxRuntime {
 
 class _FakeFactory extends OrtOnnxSessionFactory {
   _FakeFactory({this.available = const <OnnxExecutionProvider>{}, this.budget})
-      : super(runtime: _FakeRuntime());
+    : super(runtime: _FakeRuntime());
 
   final Set<OnnxExecutionProvider> available;
   final int? budget;
@@ -55,8 +55,10 @@ class _FakeFactory extends OrtOnnxSessionFactory {
     int? intraOpNumThreads,
     Map<String, int>? freeDimensionOverrides,
   }) async {
-    final _FakeSession s =
-        _FakeSession(modelPath, List<OnnxExecutionProvider>.from(providers));
+    final _FakeSession s = _FakeSession(
+      modelPath,
+      List<OnnxExecutionProvider>.from(providers),
+    );
     onProviderResolved?.call(
       OnnxProviderResolution(requested: providers, effective: providers.first),
     );
@@ -78,9 +80,9 @@ void main() {
     store = AsrModelStore(tmp, kAsrOmnilingualPack);
     for (final AsrModelFile f in kAsrOmnilingualPack.files) {
       if (f.role == AsrModelRole.tokens) {
-        store.fileFor(f.role).writeAsStringSync(
-              '<s> 0\n<pad> 1\n</s> 2\n<unk> 3\n  4\na 5\n',
-            );
+        store
+            .fileFor(f.role)
+            .writeAsStringSync('<s> 0\n<pad> 1\n</s> 2\n<unk> 3\n  4\na 5\n');
       } else {
         store.fileFor(f.role).writeAsBytesSync(<int>[1, 2, 3]);
       }
@@ -90,43 +92,46 @@ void main() {
     if (tmp.existsSync()) await tmp.delete(recursive: true);
   });
 
-  test('int8 · CPU：只建模型 + VAD，无 decoder/joiner/静态桶，blank=<s>，段上限 20 s',
-      () async {
-    final _FakeFactory f = _FakeFactory();
-    final AsrEngineSessions s = await AsrEngineLoader(factory: f).load(
-      store: store,
-      variant: AsrEncoderVariant.int8,
-      preference: AsrAccelerationPreference.auto,
-    );
-    expect(s.architecture, AsrModelArchitecture.ctc);
-    expect(s.decoder, isNull);
-    expect(s.joiner, isNull);
-    expect(s.greedy, isNull);
-    expect(s.staticEncoders, isNull);
-    expect(s.tokens.blankId, 0);
-    expect(s.tokens.padId, 1);
-    expect(s.maxSegmentMs, kAsrDefaultMaxSegmentMs);
-    expect(f.plain.map((e) => e.path),
-        <String>['model.int8.onnx', 'silero_vad.onnx']);
-    expect(f.plain.first.providers,
-        <OnnxExecutionProvider>[OnnxExecutionProvider.cpu]);
-    expect(s.newDecoder(), isA<AsrCtcDecoder>());
-    await s.close();
-    expect(f.buckets, isEmpty);
-  });
+  test(
+    'int8 · CPU：只建模型 + VAD，无 decoder/joiner/静态桶，blank=<s>，段上限 20 s',
+    () async {
+      final _FakeFactory f = _FakeFactory();
+      final AsrEngineSessions s = await AsrEngineLoader(factory: f).load(
+        store: store,
+        variant: AsrEncoderVariant.int8,
+        preference: AsrAccelerationPreference.auto,
+      );
+      expect(s.architecture, AsrModelArchitecture.ctc);
+      expect(s.decoder, isNull);
+      expect(s.joiner, isNull);
+      expect(s.greedy, isNull);
+      expect(s.staticEncoders, isNull);
+      expect(s.tokens.blankId, 0);
+      expect(s.tokens.padId, 1);
+      expect(s.maxSegmentMs, kAsrDefaultMaxSegmentMs);
+      expect(f.plain.map((e) => e.path), <String>[
+        'model.int8.onnx',
+        'silero_vad.onnx',
+      ]);
+      expect(f.plain.first.providers, <OnnxExecutionProvider>[
+        OnnxExecutionProvider.cpu,
+      ]);
+      expect(s.newDecoder(), isA<AsrCtcDecoder>());
+      await s.close();
+      expect(f.buckets, isEmpty);
+    },
+  );
 
   test('fp32 · DirectML：模型走 GPU、静态桶钉 N/num_samples、只预热最小桶（预算未知）', () async {
     final _FakeFactory f = _FakeFactory(
       available: const <OnnxExecutionProvider>{OnnxExecutionProvider.directml},
     );
-    final AsrEngineSessions s = await AsrEngineLoader(
-      factory: f,
-      platform: AsrPlatform.windows,
-    ).load(
-      store: store,
-      variant: AsrEncoderVariant.fp32,
-      preference: AsrAccelerationPreference.auto,
-    );
+    final AsrEngineSessions s =
+        await AsrEngineLoader(factory: f, platform: AsrPlatform.windows).load(
+          store: store,
+          variant: AsrEncoderVariant.fp32,
+          preference: AsrAccelerationPreference.auto,
+        );
     expect(s.encoderResolution.effective, OnnxExecutionProvider.directml);
     expect(f.plain.first.path, 'model.onnx');
     expect(s.staticEncoders, isNotNull);
@@ -140,7 +145,9 @@ void main() {
     ]);
     // CTC 桶无哨兵行：整批都是真实行。
     expect(
-        kAsrCtcGpuBuckets.every((AsrEncoderBucket b) => !b.sentinel), isTrue);
+      kAsrCtcGpuBuckets.every((AsrEncoderBucket b) => !b.sentinel),
+      isTrue,
+    );
     expect(s.newDecoder(), isA<AsrCtcDecoder>());
     expect(s.newDecoder(), isNot(isA<AsrTransducerDecoder>()));
     await s.close();
@@ -152,15 +159,13 @@ void main() {
       available: const <OnnxExecutionProvider>{OnnxExecutionProvider.directml},
       budget: 32 * 1024 * 1024 * 1024,
     );
-    final AsrEngineSessions s = await AsrEngineLoader(
-      factory: f,
-      platform: AsrPlatform.windows,
-    ).load(
-      store: store,
-      variant: AsrEncoderVariant.fp32,
-      preference: AsrAccelerationPreference.auto,
-      materialMs: 60 * 60 * 1000,
-    );
+    final AsrEngineSessions s =
+        await AsrEngineLoader(factory: f, platform: AsrPlatform.windows).load(
+          store: store,
+          variant: AsrEncoderVariant.fp32,
+          preference: AsrAccelerationPreference.auto,
+          materialMs: 60 * 60 * 1000,
+        );
     expect(f.buckets, hasLength(kAsrCtcGpuBuckets.length));
     await s.close();
   });
@@ -171,12 +176,12 @@ void main() {
     };
     const int gib = 1024 * 1024 * 1024;
     AsrEncoderVariant f({int? min, int? budget}) => recommendAsrEncoderVariant(
-          platform: AsrPlatform.windows,
-          available: gpu,
-          preference: AsrAccelerationPreference.auto,
-          fp32GpuMinBudgetBytes: min,
-          budgetBytes: budget,
-        );
+      platform: AsrPlatform.windows,
+      available: gpu,
+      preference: AsrAccelerationPreference.auto,
+      fp32GpuMinBudgetBytes: min,
+      budgetBytes: budget,
+    );
     expect(f(min: 8 * gib, budget: null), AsrEncoderVariant.int8);
     expect(f(min: 8 * gib, budget: 6 * gib), AsrEncoderVariant.int8);
     expect(f(min: 8 * gib, budget: 8 * gib), AsrEncoderVariant.fp32);

@@ -1,0 +1,562 @@
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kSecondaryMouseButton;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_core/fushi_core.dart' show MusicTrackRow;
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_unified_search.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart';
+import 'package:fushi_music/fushi_music.dart'
+    show MusicPluginManifest, MusicPluginSearchType;
+import 'package:material_ui/material_ui.dart';
+
+import '../../helpers/test_platform_services.dart';
+
+/// 统一搜索接入服务器来源（Jellyfin / OpenSubsonic / Apple Music catalog）：来源 chip 有
+/// 服务器、结果在插件之后按服务器分段并带服务器名、某台出错只在它那段显示错误行。
+class _FakeServer implements MusicServerBrowser {
+  _FakeServer({
+    required this.serverId,
+    required this.displayName,
+    this.result = const MusicServerSearchResult(),
+    this.error,
+    this.kind = MusicServerKind.subsonic,
+  });
+
+  @override
+  final String serverId;
+
+  @override
+  final String displayName;
+
+  final MusicServerSearchResult result;
+  final Error? error;
+
+  /// [search] 被调了几次（每台服务器每个查询只该搜一次）。
+  int searchCalls = 0;
+
+  @override
+  final MusicServerKind kind;
+
+  @override
+  Future<MusicServerPage<MusicServerAlbum>> listAlbums({
+    int offset = 0,
+    int limit = kMusicServerPageSize,
+    MusicServerAlbumSort sort = MusicServerAlbumSort.name,
+  }) async =>
+      const MusicServerPage<MusicServerAlbum>(items: <MusicServerAlbum>[]);
+
+  @override
+  Future<List<MusicServerTrack>> albumTracks(String albumId) async =>
+      const <MusicServerTrack>[];
+
+  @override
+  Future<List<MusicServerArtist>> listArtists() async =>
+      const <MusicServerArtist>[];
+
+  @override
+  Future<List<MusicServerAlbum>> artistAlbums(String artistId) async =>
+      const <MusicServerAlbum>[];
+
+  @override
+  Future<MusicServerPage<MusicServerPlaylist>> listPlaylists({
+    int offset = 0,
+    int limit = kMusicServerPageSize,
+  }) async => const MusicServerPage<MusicServerPlaylist>(
+    items: <MusicServerPlaylist>[],
+  );
+
+  @override
+  Future<List<MusicServerTrack>> playlistTracks(String playlistId) async =>
+      const <MusicServerTrack>[];
+
+  @override
+  Future<MusicServerSearchResult> search(String query, {int limit = 30}) async {
+    searchCalls++;
+    final Error? e = error;
+    if (e != null) throw e;
+    return result;
+  }
+
+  @override
+  MusicServerStream streamFor(MusicServerTrack track, {int? maxBitrateKbps}) =>
+      MusicServerStream(
+        uri: Uri.parse('https://example.invalid/${track.id}'),
+        transcoded: false,
+      );
+
+  @override
+  Uri? coverUri(String? coverRef, {int size = kMusicServerCoverSize}) => null;
+
+  @override
+  void close() {}
+}
+
+const MusicPluginManifest _plugin = MusicPluginManifest(
+  id: 'moe.example.music',
+  name: '示例音乐',
+  version: '0.4.0',
+  api: 1,
+  capabilities: <String>['search'],
+  searchTypes: <String>['song'],
+  permissions: <String>[],
+  networkDomains: <String>[],
+);
+
+MusicSearchLocalActions _noLocalActions() => MusicSearchLocalActions(
+  albumCard: (BuildContext context, Object _) => const SizedBox.shrink(),
+  openAlbum: (_) {},
+  openArtist: (_) {},
+);
+
+Future<void> _pump(WidgetTester tester, Widget body) async {
+  LocaleSettings.setLocale(AppLocale.en);
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        appProvider.overrideWith((Ref ref) => AppModel(testPlatformServices())),
+      ],
+      child: TranslationProvider(
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          builder: (BuildContext context, Widget? child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(disableAnimations: true),
+            child: child!,
+          ),
+          home: Scaffold(body: body),
+        ),
+      ),
+    ),
+  );
+}
+
+/// 过防抖 → 哨兵排搜索 → 结果落地。
+Future<void> _settleSearch(WidgetTester tester) async {
+  await tester.pump(kMusicSearchDebounce + const Duration(milliseconds: 10));
+  await tester.pump();
+  await tester.pump();
+  await tester.pumpAndSettle();
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  final _FakeServer navidrome = _FakeServer(
+    serverId: 'subsonic:navi',
+    displayName: 'Navidrome',
+    result: const MusicServerSearchResult(
+      tracks: <MusicServerTrack>[
+        MusicServerTrack(
+          id: 'tr1',
+          title: 'Server Song',
+          artist: 'Server Singer',
+          codec: 'flac',
+          durationMs: 185000,
+        ),
+      ],
+    ),
+  );
+
+  testWidgets('来源 chip：插件之后为每台服务器出一个 chip，值是 serverId', (
+    WidgetTester tester,
+  ) async {
+    String? picked = 'unset';
+    await _pump(
+      tester,
+      MusicSearchSourceChips(
+        sources: const <MusicPluginManifest>[_plugin],
+        servers: <MusicServerBrowser>[navidrome],
+        selected: null,
+        onSelected: (String? v) => picked = v,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder chip = find.byKey(
+      const ValueKey<String>('music-search-source-subsonic:navi'),
+    );
+    expect(chip, findsOneWidget);
+    expect(find.text('Navidrome'), findsOneWidget);
+    expect(find.text('示例音乐'), findsOneWidget);
+    // 服务器 chip 排在插件 chip 之后。
+    expect(
+      tester.getTopLeft(chip).dx,
+      greaterThan(
+        tester
+            .getTopLeft(
+              find.byKey(
+                const ValueKey<String>('music-search-source-moe.example.music'),
+              ),
+            )
+            .dx,
+      ),
+    );
+
+    await tester.tap(chip);
+    await tester.pump();
+    expect(picked, 'subsonic:navi');
+  });
+
+  testWidgets('结果列表歌曲页签：服务器结果成段出现，段标题是服务器名', (WidgetTester tester) async {
+    final _FakeServer server = _FakeServer(
+      serverId: navidrome.serverId,
+      displayName: navidrome.displayName,
+      result: navidrome.result,
+    );
+    await _pump(
+      tester,
+      MusicSearchResultsView(
+        type: MusicPluginSearchType.song,
+        query: 'song',
+        sources: const <MusicPluginManifest>[],
+        servers: <MusicServerBrowser>[server],
+        local: MusicSearchLocalItems.none,
+        localActions: _noLocalActions(),
+      ),
+    );
+    await _settleSearch(tester);
+
+    expect(
+      find.byKey(
+        const ValueKey<String>('music-search-header-server-subsonic:navi'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Navidrome'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey<String>('music-search-song-server-subsonic:navi-tr1'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Server Song'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('music-search-play-all')),
+      findsOneWidget,
+    );
+    expect(server.searchCalls, 1, reason: '每台服务器每个查询只搜一次、不翻页');
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('结果列表：某台服务器出错只在它那段显示错误行，另一台照常', (WidgetTester tester) async {
+    final _FakeServer ok = _FakeServer(
+      serverId: navidrome.serverId,
+      displayName: navidrome.displayName,
+      result: navidrome.result,
+    );
+    final _FakeServer broken = _FakeServer(
+      serverId: 'jellyfin:home',
+      displayName: 'Home Jellyfin',
+      error: StateError('server down'),
+    );
+    await _pump(
+      tester,
+      MusicSearchResultsView(
+        type: MusicPluginSearchType.song,
+        query: 'song',
+        sources: const <MusicPluginManifest>[],
+        servers: <MusicServerBrowser>[broken, ok],
+        local: MusicSearchLocalItems.none,
+        localActions: _noLocalActions(),
+      ),
+    );
+    await _settleSearch(tester);
+
+    expect(
+      find.byKey(
+        const ValueKey<String>('music-search-server-error-jellyfin:home'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('music-search-server-error-subsonic:navi'),
+      ),
+      findsNothing,
+    );
+    expect(find.text('Server Song'), findsOneWidget);
+    expect(find.text('Home Jellyfin'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('歌单页签服务器不参与：不发请求、不出服务器段', (WidgetTester tester) async {
+    final _FakeServer server = _FakeServer(
+      serverId: navidrome.serverId,
+      displayName: navidrome.displayName,
+      result: navidrome.result,
+    );
+    await _pump(
+      tester,
+      MusicSearchResultsView(
+        type: MusicPluginSearchType.playlist,
+        query: 'song',
+        sources: const <MusicPluginManifest>[],
+        servers: <MusicServerBrowser>[server],
+        local: MusicSearchLocalItems.none,
+        localActions: _noLocalActions(),
+      ),
+    );
+    await _settleSearch(tester);
+
+    expect(find.text('Navidrome'), findsNothing);
+    expect(server.searchCalls, 0);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('综合结果：服务器歌曲并进歌曲前 5，行尾来源标签是服务器名', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 900);
+    addTearDown(tester.view.reset);
+    final _FakeServer server = _FakeServer(
+      serverId: navidrome.serverId,
+      displayName: navidrome.displayName,
+      result: navidrome.result,
+    );
+    await _pump(
+      tester,
+      MusicSearchOverview(
+        query: 'song',
+        sources: const <MusicPluginManifest>[],
+        servers: <MusicServerBrowser>[server],
+        local: MusicSearchLocalItems.none,
+        localActions: _noLocalActions(),
+        onSeeAll: (_) {},
+      ),
+    );
+    await _settleSearch(tester);
+
+    expect(
+      find.byKey(
+        const ValueKey<String>('music-search-song-server-subsonic:navi-tr1'),
+      ),
+      findsOneWidget,
+    );
+    // 歌曲行尾的来源标签（最佳匹配卡的副行也带服务器名）。
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('music-search-song-server-subsonic:navi-tr1'),
+        ),
+        matching: find.text('Navidrome'),
+      ),
+      findsOneWidget,
+    );
+    expect(server.searchCalls, 1);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('共享服务器搜索缓存：综合结果与各页签同一搜索词只对每台服务器发一次', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 900);
+    addTearDown(tester.view.reset);
+    final _FakeServer server = _FakeServer(
+      serverId: navidrome.serverId,
+      displayName: navidrome.displayName,
+      result: navidrome.result,
+    );
+    final MusicServerSearchCache cache = MusicServerSearchCache();
+    await _pump(
+      tester,
+      MusicSearchOverview(
+        query: 'song',
+        sources: const <MusicPluginManifest>[],
+        servers: <MusicServerBrowser>[server],
+        serverSearch: cache,
+        local: MusicSearchLocalItems.none,
+        localActions: _noLocalActions(),
+        onSeeAll: (_) {},
+      ),
+    );
+    await _settleSearch(tester);
+    expect(server.searchCalls, 1);
+
+    // 切到歌曲 / 专辑页签（每个页签是新的结果视图）：同一搜索词不再发请求。
+    for (final MusicPluginSearchType type in <MusicPluginSearchType>[
+      MusicPluginSearchType.song,
+      MusicPluginSearchType.album,
+    ]) {
+      await _pump(
+        tester,
+        MusicSearchResultsView(
+          key: ValueKey<String>('results-${type.wire}'),
+          type: type,
+          query: 'song',
+          sources: const <MusicPluginManifest>[],
+          servers: <MusicServerBrowser>[server],
+          serverSearch: cache,
+          local: MusicSearchLocalItems.none,
+          localActions: _noLocalActions(),
+        ),
+      );
+      await _settleSearch(tester);
+    }
+    expect(
+      find.byKey(
+        const ValueKey<String>('music-search-song-server-subsonic:navi-tr1'),
+      ),
+      findsNothing,
+      reason: '专辑页签只投影专辑',
+    );
+    expect(server.searchCalls, 1);
+
+    // 换搜索词才重新搜。
+    await _pump(
+      tester,
+      MusicSearchResultsView(
+        key: const ValueKey<String>('results-song-2'),
+        type: MusicPluginSearchType.song,
+        query: 'other',
+        sources: const <MusicPluginManifest>[],
+        servers: <MusicServerBrowser>[server],
+        serverSearch: cache,
+        local: MusicSearchLocalItems.none,
+        localActions: _noLocalActions(),
+      ),
+    );
+    await _settleSearch(tester);
+    expect(server.searchCalls, 2);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  test('共享服务器搜索缓存：失败的请求不留，重试会重新发', () async {
+    final _FakeServer broken = _FakeServer(
+      serverId: 'subsonic:broken',
+      displayName: 'Broken',
+      error: StateError('boom'),
+    );
+    final MusicServerSearchCache cache = MusicServerSearchCache();
+    await expectLater(cache.search(broken, 'q'), throwsStateError);
+    await Future<void>.delayed(Duration.zero);
+    await expectLater(cache.search(broken, 'q'), throwsStateError);
+    expect(broken.searchCalls, 2);
+  });
+
+  group('歌曲行的菜单入口', () {
+    const MusicTrackRow localTrack = MusicTrackRow(
+      trackUid: 'lt1',
+      path: '/m/local.flac',
+      title: 'Local Song',
+      isLossless: true,
+      fileMtimeAt: 1,
+      fileSize: 1,
+      hasEmbeddedCover: false,
+      addedAt: 1,
+    );
+
+    Future<void> pumpSongs(
+      WidgetTester tester, {
+      List<MusicServerBrowser> servers = const <MusicServerBrowser>[],
+      MusicSearchLocalItems local = MusicSearchLocalItems.none,
+    }) async {
+      await _pump(
+        tester,
+        MusicSearchResultsView(
+          type: MusicPluginSearchType.song,
+          query: 'song',
+          sources: const <MusicPluginManifest>[],
+          servers: servers,
+          local: local,
+          localActions: _noLocalActions(),
+        ),
+      );
+      await _settleSearch(tester);
+    }
+
+    testWidgets('本地曲目：没有行尾「⋯」，整行右键给播放 / 曲目详情', (WidgetTester tester) async {
+      await pumpSongs(
+        tester,
+        local: const MusicSearchLocalItems(tracks: <MusicTrackRow>[localTrack]),
+      );
+      final Finder row = find.byKey(
+        const ValueKey<String>('music-search-song-local-lt1'),
+      );
+      expect(row, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('music-track-menu-lt1')),
+        findsNothing,
+        reason: '点按播放、长按详情已覆盖本地菜单的两项，行尾不加按钮',
+      );
+      await tester.tap(
+        row,
+        buttons: kSecondaryMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('music-menu-action-play')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('music-menu-action-detail')),
+        findsOneWidget,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('Apple Music 曲目有行尾「⋯」；其它服务器曲目没有菜单', (
+      WidgetTester tester,
+    ) async {
+      const MusicServerSearchResult result = MusicServerSearchResult(
+        tracks: <MusicServerTrack>[MusicServerTrack(id: 'tr1', title: 'Song')],
+      );
+      await pumpSongs(
+        tester,
+        servers: <MusicServerBrowser>[
+          _FakeServer(
+            serverId: 'apple_music:catalog',
+            displayName: 'Apple Music',
+            result: result,
+            kind: MusicServerKind.appleMusic,
+          ),
+          _FakeServer(
+            serverId: 'subsonic:navi',
+            displayName: 'Navidrome',
+            result: result,
+          ),
+        ],
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>(
+            'music-search-song-server-apple_music:catalog-tr1',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('apple-music-track-menu-tr1')),
+        findsOneWidget,
+        reason: '只有 Apple Music 这一行有菜单按钮（Navidrome 同 id 的行没有）',
+      );
+      final Finder navi = find.byKey(
+        const ValueKey<String>('music-search-song-server-subsonic:navi-tr1'),
+      );
+      expect(navi, findsOneWidget);
+      await tester.tap(
+        navi,
+        buttons: kSecondaryMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byWidgetPredicate((Widget w) => w is PopupMenuItem),
+        findsNothing,
+        reason: '非 Apple Music 服务器曲目没有菜单，右键不弹',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    });
+  });
+}

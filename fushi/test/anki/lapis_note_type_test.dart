@@ -51,18 +51,22 @@ void main() {
       expect(LapisNoteType.template.front, LapisNoteType.front);
       expect(LapisNoteType.template.back, LapisNoteType.back);
       // template.css is the verbatim upstream css followed by the Hibiki delta.
-      expect(LapisNoteType.template.css,
-          '${LapisNoteType.css}\n${LapisNoteType.fushiCssOverride}');
+      expect(
+        LapisNoteType.template.css,
+        '${LapisNoteType.css}\n${LapisNoteType.fushiCssOverride}',
+      );
     });
 
-    test('Fushi css override separates the def-info label from the sentence',
-        () {
+    test('Fushi css override separates the def-info label from the sentence', () {
       // BUG-056 follow-up: upstream `.def-info` has no top margin so the
       // "Primary Definition N/M" label crowds the sentence on multi-def desktop
       // cards. The delta lives in its own constant (css stays verbatim) and is
       // appended after the vendored css so it wins by source order.
-      expect(LapisNoteType.css, isNot(contains('Hibiki delta')),
-          reason: 'vendored css must stay byte-identical to upstream');
+      expect(
+        LapisNoteType.css,
+        isNot(contains('Hibiki delta')),
+        reason: 'vendored css must stay byte-identical to upstream',
+      );
       // BUG-2151 / BUG-2155 曾把四处补丁直接写进 vendored `css`，而上面那条
       // 只认 'Hibiki delta' 这一个串，没抓到。本仓的补丁一律带 `BUG-NNNN` 引用，
       // 拿它当判据：vendored 常量里出现本仓的 bug 号 = 有人又在里面打补丁了。
@@ -72,7 +76,8 @@ void main() {
       expect(
         RegExp(r'BUG-\d+').hasMatch(LapisNoteType.css),
         isFalse,
-        reason: 'Fushi 的 CSS 补丁只能写在 fushiCssOverride 里，'
+        reason:
+            'Fushi 的 CSS 补丁只能写在 fushiCssOverride 里，'
             '不能改 vendored 的 css 常量',
       );
       expect(LapisNoteType.fushiCssOverride, contains('.def-info'));
@@ -90,8 +95,10 @@ void main() {
         expect(LapisNoteType.fields, contains(field));
       }
       expect(LapisNoteType.defaultFieldMappings['Picture'], '{card-image}');
-      expect(LapisNoteType.defaultFieldMappings['SentenceAudio'],
-          '{sentence-audio}');
+      expect(
+        LapisNoteType.defaultFieldMappings['SentenceAudio'],
+        '{sentence-audio}',
+      );
       expect(LapisNoteType.defaultFieldMappings['IsWordAndSentenceCard'], 'x');
     });
   });

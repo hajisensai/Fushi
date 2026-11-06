@@ -75,8 +75,7 @@ class _FakeSyncBackend implements SyncBackend {
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) async =>
-      remoteBooks[bookTitle]?.folderId ?? 'folder-$bookTitle';
+  }) async => remoteBooks[bookTitle]?.folderId ?? 'folder-$bookTitle';
 
   @override
   Future<String> ensureNamespace(String name) async => name;
@@ -100,8 +99,10 @@ class _FakeSyncBackend implements SyncBackend {
   }
 
   @override
-  void restoreCache(
-      {String? rootFolderId, Map<String, String>? titleToFolderId}) {
+  void restoreCache({
+    String? rootFolderId,
+    Map<String, String>? titleToFolderId,
+  }) {
     _cachedRoot = rootFolderId;
     if (titleToFolderId != null) _cachedFolders.addAll(titleToFolderId);
   }
@@ -137,34 +138,31 @@ class _FakeSyncBackend implements SyncBackend {
     required String folderId,
     required String? fileId,
     required List<TtuStatistics> stats,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> updateAudioBookFile({
     required String folderId,
     required String? fileId,
     required TtuAudioBook audioBook,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> uploadContentFile({
     required String folderId,
     required String fileName,
     required File file,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<SyncFileRef?> findContentFile(
-          String folderId, String fileName) async =>
-      throw UnimplementedError();
+    String folderId,
+    String fileName,
+  ) async => throw UnimplementedError();
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) async =>
       throw UnimplementedError();
@@ -175,13 +173,18 @@ class _FakeSyncBackend implements SyncBackend {
   Future<String> ensureFolder(String parentId, String name) async =>
       throw UnimplementedError();
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
-  Future<void> getAsset(String assetId, File destination,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
   Future<Object?> getJsonAsset(String assetId) async =>
       throw UnimplementedError();
@@ -220,15 +223,17 @@ class _RemoteBook {
 }
 
 Future<EpubBookRow> _seedBook(FushiDatabase db, String title) async {
-  await db.insertEpubBook(EpubBooksCompanion.insert(
-    bookKey: title,
-    title: title,
-    epubPath: '/fake/$title.epub',
-    extractDir: '/fake/$title',
-    chapterCount: 1,
-    chaptersJson: _chaptersJson,
-    importedAt: DateTime.now().millisecondsSinceEpoch,
-  ));
+  await db.insertEpubBook(
+    EpubBooksCompanion.insert(
+      bookKey: title,
+      title: title,
+      epubPath: '/fake/$title.epub',
+      extractDir: '/fake/$title',
+      chapterCount: 1,
+      chaptersJson: _chaptersJson,
+      importedAt: DateTime.now().millisecondsSinceEpoch,
+    ),
+  );
   return (await db.getAllEpubBooks()).firstWhere((b) => b.title == title);
 }
 
@@ -239,25 +244,27 @@ Future<void> _seedPosition(
   required double fraction,
 }) async {
   final int normOffset = (fraction * 10000).round();
-  await db.upsertReaderPosition(ReaderPositionsCompanion(
-    bookUid: Value(bookUid),
-    sectionIndex: const Value(0),
-    normCharOffset: Value(normOffset),
-    updatedAt: Value(updatedAt),
-  ));
+  await db.upsertReaderPosition(
+    ReaderPositionsCompanion(
+      bookUid: Value(bookUid),
+      sectionIndex: const Value(0),
+      normCharOffset: Value(normOffset),
+      updatedAt: Value(updatedAt),
+    ),
+  );
 }
 
 /// One genuine fork (both sides off baseline) → SyncCompareDialog renders it as
 /// a conflict.
 List<SyncConflict> _oneConflict() => <SyncConflict>[
-      SyncConflict(
-        assetKey: sanitizeTtuFilename('BookA'),
-        dimension: 'progress',
-        title: 'BookA',
-        localVersion: 120,
-        remoteVersion: 100,
-      ),
-    ];
+  SyncConflict(
+    assetKey: sanitizeTtuFilename('BookA'),
+    dimension: 'progress',
+    title: 'BookA',
+    localVersion: 120,
+    remoteVersion: 100,
+  ),
+];
 
 void main() {
   setUp(() {
@@ -329,8 +336,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('manual source presents the conflict resolution dialog',
-      (WidgetTester tester) async {
+  testWidgets('manual source presents the conflict resolution dialog', (
+    WidgetTester tester,
+  ) async {
     final (FushiDatabase db, _FakeSyncBackend fake) = await seedForkedLibrary();
     addTearDown(db.close);
     final SyncConflictPrompter prompter = SyncConflictPrompter();
@@ -361,8 +369,7 @@ void main() {
   // 通道上都分叉时逐通道各弹一次同样的弹窗——用户点完「立即同步」它紧接着又弹。
   // 现在两条通道共用一本裁决簿：第一条通道里用户裁决过的书，第二条通道直接按同一
   // 裁决应用并关闭，不再问。
-  testWidgets(
-      'resolving through the dialog records the decision on the '
+  testWidgets('resolving through the dialog records the decision on the '
       'shared ledger', (WidgetTester tester) async {
     final (FushiDatabase db, _FakeSyncBackend fake) = await seedForkedLibrary();
     addTearDown(db.close);
@@ -399,8 +406,7 @@ void main() {
     });
   });
 
-  testWidgets(
-      'a book already decided on the ledger is applied on the next '
+  testWidgets('a book already decided on the ledger is applied on the next '
       'channel without prompting again', (WidgetTester tester) async {
     final (FushiDatabase db, _FakeSyncBackend fake) = await seedForkedLibrary();
     addTearDown(db.close);
@@ -430,13 +436,21 @@ void main() {
     );
 
     // 没等用户：弹窗已自行应用并关闭，present 也已经返回。
-    expect(find.byType(SyncCompareDialog), findsNothing,
-        reason: '同一本书用户只裁决一次，第二条通道不再弹');
+    expect(
+      find.byType(SyncCompareDialog),
+      findsNothing,
+      reason: '同一本书用户只裁决一次，第二条通道不再弹',
+    );
     expect(presented, isTrue);
-    expect(fake.exportedByFolder['folderA']?.lastBookmarkModified, 120,
-        reason: '第二条通道按同一裁决真的应用了（本机推过去）');
-    expect(await db.getSyncBaseline(sanitizeTtuFilename('BookA'), 'progress'),
-        120);
+    expect(
+      fake.exportedByFolder['folderA']?.lastBookmarkModified,
+      120,
+      reason: '第二条通道按同一裁决真的应用了（本机推过去）',
+    );
+    expect(
+      await db.getSyncBaseline(sanitizeTtuFilename('BookA'), 'progress'),
+      120,
+    );
   });
 
   // 簿上记的是用户的真实选择。第一条通道用户选了「用远端」——本机被写成云盘那
@@ -444,46 +458,52 @@ void main() {
   // 按簿自动「把本机推过去」就是把 host 更新的进度盖掉——PC 既是互联 host 又往云
   // 盘导出的用户会在这里丢进度。真分叉必须照旧弹给用户看。
   testWidgets(
-      'a book decided "use remote" on the ledger still prompts on the next '
-      'channel when that channel has its own fork',
-      (WidgetTester tester) async {
-    final (FushiDatabase db, _FakeSyncBackend fake) = await seedForkedLibrary();
-    addTearDown(db.close);
-    final SyncConflictPrompter prompter = SyncConflictPrompter();
-    final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    final Map<String, SyncChoice> decisions = <String, SyncChoice>{
-      sanitizeTtuFilename('BookA'): SyncChoice.useRemote,
-    };
+    'a book decided "use remote" on the ledger still prompts on the next '
+    'channel when that channel has its own fork',
+    (WidgetTester tester) async {
+      final (FushiDatabase db, _FakeSyncBackend fake) =
+          await seedForkedLibrary();
+      addTearDown(db.close);
+      final SyncConflictPrompter prompter = SyncConflictPrompter();
+      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+      final Map<String, SyncChoice> decisions = <String, SyncChoice>{
+        sanitizeTtuFilename('BookA'): SyncChoice.useRemote,
+      };
 
-    await pumpAndPresent(
-      tester,
-      prompter: prompter,
-      navKey: navKey,
-      body: () => prompter.present(
-        navigatorKey: navKey,
-        db: db,
-        backend: fake,
-        conflicts: _oneConflict(),
-        source: ConflictSource.manual,
-        inBook: false,
-        decisions: decisions,
-      ),
-    );
+      await pumpAndPresent(
+        tester,
+        prompter: prompter,
+        navKey: navKey,
+        body: () => prompter.present(
+          navigatorKey: navKey,
+          db: db,
+          backend: fake,
+          conflicts: _oneConflict(),
+          source: ConflictSource.manual,
+          inBook: false,
+          decisions: decisions,
+        ),
+      );
 
-    expect(find.byType(SyncCompareDialog), findsOneWidget,
-        reason: '本通道远端自己动过，用户没裁决过这个值，必须弹');
-    expect(fake.exportedByFolder, isEmpty, reason: '不得按簿自动把本机推给这条通道');
-    // 用户在这里真的裁决后，簿上记的也是这一次的真实选择。
-    await tester.tap(find.text(t.sync_compare_use_remote).last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(t.sync_compare_apply(count: 1)));
-    await tester.pumpAndSettle();
-    expect(find.byType(SyncCompareDialog), findsNothing);
-    expect(decisions[sanitizeTtuFilename('BookA')], SyncChoice.useRemote);
-  });
+      expect(
+        find.byType(SyncCompareDialog),
+        findsOneWidget,
+        reason: '本通道远端自己动过，用户没裁决过这个值，必须弹',
+      );
+      expect(fake.exportedByFolder, isEmpty, reason: '不得按簿自动把本机推给这条通道');
+      // 用户在这里真的裁决后，簿上记的也是这一次的真实选择。
+      await tester.tap(find.text(t.sync_compare_use_remote).last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.sync_compare_apply(count: 1)));
+      await tester.pumpAndSettle();
+      expect(find.byType(SyncCompareDialog), findsNothing);
+      expect(decisions[sanitizeTtuFilename('BookA')], SyncChoice.useRemote);
+    },
+  );
 
-  testWidgets('a book skipped on the ledger is not prompted again either',
-      (WidgetTester tester) async {
+  testWidgets('a book skipped on the ledger is not prompted again either', (
+    WidgetTester tester,
+  ) async {
     final (FushiDatabase db, _FakeSyncBackend fake) = await seedForkedLibrary();
     addTearDown(db.close);
     final SyncConflictPrompter prompter = SyncConflictPrompter();
@@ -511,8 +531,9 @@ void main() {
     expect(fake.exportedByFolder, isEmpty, reason: '跳过 = 两端都不动');
   });
 
-  testWidgets('auto source while in-book does NOT present',
-      (WidgetTester tester) async {
+  testWidgets('auto source while in-book does NOT present', (
+    WidgetTester tester,
+  ) async {
     final (FushiDatabase db, _FakeSyncBackend fake) = await seedForkedLibrary();
     addTearDown(db.close);
     final SyncConflictPrompter prompter = SyncConflictPrompter();
@@ -558,8 +579,9 @@ void main() {
     expect(find.byType(SyncCompareDialog), findsNothing);
   });
 
-  testWidgets('auto source out-of-book presents the dialog',
-      (WidgetTester tester) async {
+  testWidgets('auto source out-of-book presents the dialog', (
+    WidgetTester tester,
+  ) async {
     final (FushiDatabase db, _FakeSyncBackend fake) = await seedForkedLibrary();
     addTearDown(db.close);
     final SyncConflictPrompter prompter = SyncConflictPrompter();

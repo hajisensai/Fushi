@@ -1,19 +1,23 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/creator.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/creator/enhancement.dart';
+import 'package:fushi/src/creator/fields/sentence_field.dart';
+import 'package:fushi/src/creator/fields/term_field.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// An enhancement used to pick an appropriate term from a text field easily.
 class TextSegmentationEnhancement extends Enhancement {
   /// Initialise this enhancement with the hardset parameters.
   TextSegmentationEnhancement({required super.field})
-      : super(
-          uniqueKey: key,
-          label: 'Text Segmentation',
-          description: 'Search or select a new term from segmented text.',
-          icon: Icons.account_tree_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Text Segmentation',
+        description: 'Search or select a new term from segmented text.',
+        icon: Icons.account_tree_outlined,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].

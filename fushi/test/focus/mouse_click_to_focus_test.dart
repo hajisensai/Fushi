@@ -15,125 +15,127 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart';
 void main() {
   group('FushiFocusTarget mouse click-to-focus (desktop-gated)', () {
     testWidgets(
-        'a mouse click on a desktop target carries focus without double-firing',
-        (WidgetTester tester) async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      'a mouse click on a desktop target carries focus without double-firing',
+      (WidgetTester tester) async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
 
-      final FocusNode first = FocusNode(debugLabel: 'first');
-      final FocusNode second = FocusNode(debugLabel: 'second');
-      addTearDown(first.dispose);
-      addTearDown(second.dispose);
+        final FocusNode first = FocusNode(debugLabel: 'first');
+        final FocusNode second = FocusNode(debugLabel: 'second');
+        addTearDown(first.dispose);
+        addTearDown(second.dispose);
 
-      int secondTaps = 0;
-      late FushiFocusController controller;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: FushiFocusRoot(
-            child: Builder(
-              builder: (BuildContext context) {
-                controller = FushiFocusRoot.controllerOf(context);
-                return Column(
-                  children: <Widget>[
-                    FushiFocusTarget(
-                      id: const FushiFocusId('first'),
-                      focusNode: first,
-                      child: const SizedBox(width: 40, height: 40),
-                    ),
-                    FushiFocusTarget(
-                      id: const FushiFocusId('second'),
-                      focusNode: second,
-                      child: GestureDetector(
-                        onTap: () => secondTaps++,
-                        behavior: HitTestBehavior.opaque,
+        int secondTaps = 0;
+        late FushiFocusController controller;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: FushiFocusRoot(
+              child: Builder(
+                builder: (BuildContext context) {
+                  controller = FushiFocusRoot.controllerOf(context);
+                  return Column(
+                    children: <Widget>[
+                      FushiFocusTarget(
+                        id: const FushiFocusId('first'),
+                        focusNode: first,
                         child: const SizedBox(width: 40, height: 40),
                       ),
-                    ),
-                  ],
-                );
-              },
+                      FushiFocusTarget(
+                        id: const FushiFocusId('second'),
+                        focusNode: second,
+                        child: GestureDetector(
+                          onTap: () => secondTaps++,
+                          behavior: HitTestBehavior.opaque,
+                          child: const SizedBox(width: 40, height: 40),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
-        ),
-      );
-      await tester.pump();
+        );
+        await tester.pump();
 
-      first.requestFocus();
-      await tester.pump();
-      expect(controller.activeId, const FushiFocusId('first'));
+        first.requestFocus();
+        await tester.pump();
+        expect(controller.activeId, const FushiFocusId('first'));
 
-      await tester.tap(
-        find.byType(GestureDetector),
-        kind: PointerDeviceKind.mouse,
-      );
-      await tester.pump();
+        await tester.tap(
+          find.byType(GestureDetector),
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pump();
 
-      expect(controller.activeId, const FushiFocusId('second'));
-      expect(second.hasPrimaryFocus, isTrue);
-      expect(first.hasPrimaryFocus, isFalse);
-      expect(secondTaps, 1);
+        expect(controller.activeId, const FushiFocusId('second'));
+        expect(second.hasPrimaryFocus, isTrue);
+        expect(first.hasPrimaryFocus, isFalse);
+        expect(secondTaps, 1);
 
-      debugDefaultTargetPlatformOverride = null;
-    });
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
 
     testWidgets(
-        'on a mobile platform a mouse click does NOT change focus navigation',
-        (WidgetTester tester) async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      'on a mobile platform a mouse click does NOT change focus navigation',
+      (WidgetTester tester) async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
-      final FocusNode first = FocusNode(debugLabel: 'first');
-      final FocusNode second = FocusNode(debugLabel: 'second');
-      addTearDown(first.dispose);
-      addTearDown(second.dispose);
+        final FocusNode first = FocusNode(debugLabel: 'first');
+        final FocusNode second = FocusNode(debugLabel: 'second');
+        addTearDown(first.dispose);
+        addTearDown(second.dispose);
 
-      int secondTaps = 0;
-      late FushiFocusController controller;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: FushiFocusRoot(
-            child: Builder(
-              builder: (BuildContext context) {
-                controller = FushiFocusRoot.controllerOf(context);
-                return Column(
-                  children: <Widget>[
-                    FushiFocusTarget(
-                      id: const FushiFocusId('first'),
-                      focusNode: first,
-                      child: const SizedBox(width: 40, height: 40),
-                    ),
-                    FushiFocusTarget(
-                      id: const FushiFocusId('second'),
-                      focusNode: second,
-                      child: GestureDetector(
-                        onTap: () => secondTaps++,
-                        behavior: HitTestBehavior.opaque,
+        int secondTaps = 0;
+        late FushiFocusController controller;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: FushiFocusRoot(
+              child: Builder(
+                builder: (BuildContext context) {
+                  controller = FushiFocusRoot.controllerOf(context);
+                  return Column(
+                    children: <Widget>[
+                      FushiFocusTarget(
+                        id: const FushiFocusId('first'),
+                        focusNode: first,
                         child: const SizedBox(width: 40, height: 40),
                       ),
-                    ),
-                  ],
-                );
-              },
+                      FushiFocusTarget(
+                        id: const FushiFocusId('second'),
+                        focusNode: second,
+                        child: GestureDetector(
+                          onTap: () => secondTaps++,
+                          behavior: HitTestBehavior.opaque,
+                          child: const SizedBox(width: 40, height: 40),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
-        ),
-      );
-      await tester.pump();
+        );
+        await tester.pump();
 
-      first.requestFocus();
-      await tester.pump();
-      expect(controller.activeId, const FushiFocusId('first'));
+        first.requestFocus();
+        await tester.pump();
+        expect(controller.activeId, const FushiFocusId('first'));
 
-      await tester.tap(
-        find.byType(GestureDetector),
-        kind: PointerDeviceKind.mouse,
-      );
-      await tester.pump();
+        await tester.tap(
+          find.byType(GestureDetector),
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pump();
 
-      expect(secondTaps, 1);
-      expect(controller.activeId, const FushiFocusId('first'));
-      expect(second.hasPrimaryFocus, isFalse);
+        expect(secondTaps, 1);
+        expect(controller.activeId, const FushiFocusId('first'));
+        expect(second.hasPrimaryFocus, isFalse);
 
-      debugDefaultTargetPlatformOverride = null;
-    });
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
   });
 
   group('GamepadService pointer ring behaviour (TODO-1113 P3)', () {
@@ -142,8 +144,9 @@ void main() {
           FocusHighlightStrategy.automatic;
     });
 
-    testWidgets('with focus navigation ON, a mouse DOWN keeps the ring lit',
-        (WidgetTester tester) async {
+    testWidgets('with focus navigation ON, a mouse DOWN keeps the ring lit', (
+      WidgetTester tester,
+    ) async {
       final GamepadService service = GamepadService(
         navigatorKey: GlobalKey<NavigatorState>(),
         focusNavigationEnabled: () => true,
@@ -152,15 +155,18 @@ void main() {
       addTearDown(service.dispose);
 
       await tester.pumpWidget(
-        const MaterialApp(home: Scaffold(body: Center(child: Text('x')))),
+        const MaterialApp(
+          home: Scaffold(body: Center(child: Text('x'))),
+        ),
       );
       await tester.pump();
 
       FocusManager.instance.highlightStrategy =
           FocusHighlightStrategy.alwaysTraditional;
 
-      final TestGesture gesture =
-          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      final TestGesture gesture = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
       await gesture.down(tester.getCenter(find.text('x')));
       await tester.pump();
 
@@ -183,36 +189,40 @@ void main() {
     });
 
     testWidgets(
-        'with focus navigation OFF, a mouse DOWN drops the ring (old behaviour)',
-        (WidgetTester tester) async {
-      final GamepadService service = GamepadService(
-        navigatorKey: GlobalKey<NavigatorState>(),
-        focusNavigationEnabled: () => false,
-      );
-      service.start();
-      addTearDown(service.dispose);
+      'with focus navigation OFF, a mouse DOWN drops the ring (old behaviour)',
+      (WidgetTester tester) async {
+        final GamepadService service = GamepadService(
+          navigatorKey: GlobalKey<NavigatorState>(),
+          focusNavigationEnabled: () => false,
+        );
+        service.start();
+        addTearDown(service.dispose);
 
-      await tester.pumpWidget(
-        const MaterialApp(home: Scaffold(body: Center(child: Text('x')))),
-      );
-      await tester.pump();
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: Scaffold(body: Center(child: Text('x'))),
+          ),
+        );
+        await tester.pump();
 
-      FocusManager.instance.highlightStrategy =
-          FocusHighlightStrategy.alwaysTraditional;
+        FocusManager.instance.highlightStrategy =
+            FocusHighlightStrategy.alwaysTraditional;
 
-      final TestGesture gesture =
-          await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await gesture.down(tester.getCenter(find.text('x')));
-      await tester.pump();
+        final TestGesture gesture = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        await gesture.down(tester.getCenter(find.text('x')));
+        await tester.pump();
 
-      expect(
-        FocusManager.instance.highlightStrategy,
-        FocusHighlightStrategy.alwaysTouch,
-        reason: 'with focus navigation off, any pointer hides the ring',
-      );
+        expect(
+          FocusManager.instance.highlightStrategy,
+          FocusHighlightStrategy.alwaysTouch,
+          reason: 'with focus navigation off, any pointer hides the ring',
+        );
 
-      await gesture.up();
-      service.dispose();
-    });
+        await gesture.up();
+        service.dispose();
+      },
+    );
   });
 }

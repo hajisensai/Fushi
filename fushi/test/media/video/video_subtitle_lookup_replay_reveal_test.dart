@@ -38,14 +38,16 @@ AudioCue _cue(String text, int startMs, int endMs) => AudioCue()
 /// 该 widget 是否被某个 `opacity == 0` 的 [Opacity] 祖先包住（= 布局在、不绘制）。
 bool _obscured(WidgetTester tester, Finder of) => tester
     .widgetList<Opacity>(
-        find.ancestor(of: of.first, matching: find.byType(Opacity)))
+      find.ancestor(of: of.first, matching: find.byType(Opacity)),
+    )
     .any((Opacity o) => o.opacity == 0);
 
 /// 该 widget 是否被 [ImageFiltered] 祖先包住（= 模糊态的视觉）。测试 cue 不带 ASS
 /// `\blur`，字幕树里唯一的 ImageFiltered 只可能是遮蔽层。
 bool _blurred(WidgetTester tester, Finder of) => tester
     .widgetList<ImageFiltered>(
-        find.ancestor(of: of.first, matching: find.byType(ImageFiltered)))
+      find.ancestor(of: of.first, matching: find.byType(ImageFiltered)),
+    )
     .isNotEmpty;
 
 /// 重播中的控制器：**正在播放**（这正是本 bug 的触发条件——暂停态早被 BUG-2198 覆盖）。
@@ -73,21 +75,27 @@ Future<void> _pump(
   bool blurEnabled = false,
   bool lookupPopupVisible = false,
   void Function(
-          String sentence, int graphemeIndex, Rect charRect, AudioCue cue)?
-      onCharTap,
+    String sentence,
+    int graphemeIndex,
+    Rect charRect,
+    AudioCue cue,
+  )?
+  onCharTap,
 }) async {
-  await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      body: VideoSubtitleOverlay(
-        controller: c,
-        subtitleHidden: subtitleHidden,
-        secondaryHidden: secondaryHidden,
-        blurEnabled: blurEnabled,
-        lookupPopupVisible: lookupPopupVisible,
-        onCharTap: onCharTap,
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(
+          controller: c,
+          subtitleHidden: subtitleHidden,
+          secondaryHidden: secondaryHidden,
+          blurEnabled: blurEnabled,
+          lookupPopupVisible: lookupPopupVisible,
+          onCharTap: onCharTap,
+        ),
       ),
     ),
-  ));
+  );
   await tester.pump();
 }
 
@@ -99,8 +107,11 @@ void main() {
       await _pump(tester, c, subtitleHidden: true, lookupPopupVisible: true);
 
       expect(find.text('主'), findsWidgets);
-      expect(_obscured(tester, find.text('主')), isFalse,
-          reason: '查词会话期间字幕恒定让位——重播起播不是「用户不看了」');
+      expect(
+        _obscured(tester, find.text('主')),
+        isFalse,
+        reason: '查词会话期间字幕恒定让位——重播起播不是「用户不看了」',
+      );
     });
 
     testWidgets('hidden + 播放中 + 浮层已关：照常遮蔽（防一刀关掉遮蔽的伪修复）', (tester) async {
@@ -108,8 +119,11 @@ void main() {
 
       await _pump(tester, c, subtitleHidden: true);
 
-      expect(_obscured(tester, find.text('主')), isTrue,
-          reason: '让位只在查词会话内；关栈恢复播放后该遮还得遮');
+      expect(
+        _obscured(tester, find.text('主')),
+        isTrue,
+        reason: '让位只在查词会话内；关栈恢复播放后该遮还得遮',
+      );
     });
 
     testWidgets('关掉浮层的那一帧立刻遮回去（同一 controller 仍在播）', (tester) async {
@@ -120,8 +134,11 @@ void main() {
 
       await _pump(tester, c, subtitleHidden: true);
 
-      expect(_obscured(tester, find.text('主')), isTrue,
-          reason: '关栈 = 查词结束，遮蔽下一帧自动回来（不靠复位显形态）');
+      expect(
+        _obscured(tester, find.text('主')),
+        isTrue,
+        reason: '关栈 = 查词结束，遮蔽下一帧自动回来（不靠复位显形态）',
+      );
     });
 
     testWidgets('blur 走同一条门：播放中 + 浮层可见不糊（模糊 / 隐藏对称）', (tester) async {
@@ -129,8 +146,11 @@ void main() {
 
       await _pump(tester, c, blurEnabled: true, lookupPopupVisible: true);
 
-      expect(_blurred(tester, find.text('主')), isFalse,
-          reason: '两种视觉共用一条判据，不得再长出第二份');
+      expect(
+        _blurred(tester, find.text('主')),
+        isFalse,
+        reason: '两种视觉共用一条判据，不得再长出第二份',
+      );
     });
 
     testWidgets('blur + 浮层已关：照常模糊（对称基准）', (tester) async {
@@ -142,16 +162,24 @@ void main() {
     });
 
     testWidgets('副字幕同一条门：播放中 + 浮层可见时也让位', (tester) async {
-      final VideoPlayerController c =
-          _playingController(tester, secondary: '副');
+      final VideoPlayerController c = _playingController(
+        tester,
+        secondary: '副',
+      );
 
-      await _pump(tester, c,
-          subtitleHidden: true,
-          secondaryHidden: true,
-          lookupPopupVisible: true);
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        secondaryHidden: true,
+        lookupPopupVisible: true,
+      );
 
-      expect(_obscured(tester, find.text('副')), isFalse,
-          reason: '副字幕的遮蔽与主字幕共用「用户在看」判据');
+      expect(
+        _obscured(tester, find.text('副')),
+        isFalse,
+        reason: '副字幕的遮蔽与主字幕共用「用户在看」判据',
+      );
       expect(_obscured(tester, find.text('主')), isFalse);
     });
 
@@ -178,18 +206,26 @@ void main() {
     String readSrc(String path) => File(path).readAsStringSync();
 
     test('layout 把查词浮层可见性传进字幕 overlay', () {
-      final String src =
-          readSrc('lib/src/pages/implementations/video_fushi/layout.part.dart');
-      expect(src, contains('lookupPopupVisible: _hasVisiblePopup'),
-          reason: 'overlay 侧修好了但页面不传 = 用户侧毫无变化');
+      final String src = readSrc(
+        'lib/src/pages/implementations/video_fushi/layout.part.dart',
+      );
+      expect(
+        src,
+        contains('lookupPopupVisible: _hasVisiblePopup'),
+        reason: 'overlay 侧修好了但页面不传 = 用户侧毫无变化',
+      );
     });
 
     test('查词浮层「重播本句」确实会起播（本 bug 成立的前提）', () {
       final String src = readSrc(
-          'lib/src/pages/implementations/video_fushi/lookup_favorite.part.dart');
+        'lib/src/pages/implementations/video_fushi/lookup_favorite.part.dart',
+      );
       expect(src, contains('_replayLookupCue'));
-      expect(src, contains('controller.replayCue(cue)'),
-          reason: '重播语义若改动，需同步复核「查词中让位」这条门是否仍必要');
+      expect(
+        src,
+        contains('controller.replayCue(cue)'),
+        reason: '重播语义若改动，需同步复核「查词中让位」这条门是否仍必要',
+      );
     });
   });
 }

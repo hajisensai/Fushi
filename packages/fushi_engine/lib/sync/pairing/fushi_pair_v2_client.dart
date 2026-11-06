@@ -55,8 +55,8 @@ class FushiPairV2Client {
     required this.expectedFingerprint,
     http.Client? httpClient,
     this.timeout = const Duration(seconds: 65),
-  })  : _httpClient = httpClient,
-        _ownsClient = httpClient == null;
+  }) : _httpClient = httpClient,
+       _ownsClient = httpClient == null;
 
   final String baseUrl;
   final String expectedFingerprint;
@@ -94,8 +94,9 @@ class FushiPairV2Client {
   }) async {
     final http.Client client = _client();
     final String? deviceId = clientDeviceId?.trim();
-    final InterconnectDeviceKey? key =
-        (deviceId != null && deviceId.isNotEmpty) ? deviceKey : null;
+    final InterconnectDeviceKey? key = (deviceId != null && deviceId.isNotEmpty)
+        ? deviceKey
+        : null;
     try {
       final String clientNonce = FushiPairingProtocol.generateNonce();
       final http.Response startResp = await client

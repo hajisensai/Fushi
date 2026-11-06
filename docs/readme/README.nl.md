@@ -14,6 +14,8 @@
 
 [![Nieuwste versie downloaden](https://img.shields.io/badge/%E2%AC%87%20Nieuwste%20versie%20downloaden-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Word lid van Discord](https://img.shields.io/badge/Word%20lid%20van%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor%20on%20GitHub-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/hajisensai)
+[![Support on Ko-fi](https://img.shields.io/badge/Support%20on%20Ko-fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/hajisensai)
 
 </div>
 
@@ -136,9 +138,9 @@ Fushi slaat geïmporteerde boeken, woordenboeken, lettertypen, audioboekgegevens
 
 - **Synchronisatie** — Google Drive / OneDrive / Dropbox gebruiken OAuth-aanmelding; WebDAV / FTP / SFTP / Fushi Server gebruiken het serveradres en de referenties die je opgeeft. Fushi Interconnect verbindt gekoppelde apparaten rechtstreeks (LAN, IPv6, overlaynetwerken of openbare adressen) en valt terug op een end-to-end iroh-P2P-tunnel als geen directe route werkt; koppelingslinks vragen altijd om bevestiging.
 - **Anki** — het maken van kaarten communiceert met AnkiDroid of het AnkiConnect-adres dat je configureert.
-- **Gebruiksstatistieken** — eenmaal per dag sturen desktop- en Android-builds een willekeurig installatie-ID, de appversie, het platform en het updatekanaal naar fushi.moe om actieve gebruikers te tellen; er worden geen account-, bibliotheek- of leesgegevens meegestuurd en IP-adressen worden niet opgeslagen. Schakel het uit met *Gebruiksstatistieken delen* in de update-instellingen. iOS-builds sturen dit niet.
+- **Gebruiksstatistieken** — eenmaal per dag sturen desktop- en Android-builds een van het apparaat afgeleid installatie-ID (blijft gelijk na herinstallatie), de appversie, het platform en het updatekanaal naar fushi.moe om actieve gebruikers te tellen; er worden geen account-, bibliotheek- of leesgegevens meegestuurd en IP-adressen worden niet opgeslagen. Schakel het uit met *Gebruiksstatistieken delen* in de update-instellingen. iOS-builds sturen dit niet.
 - **Alleen als je erom vraagt** — het uploaden van logs (na een eenmalige toestemmingsvraag), feedback in de app en het leaderboard (standaard uit; uploadt je bibliotheektitels en voortgang pas nadat je je aanmeldt).
-- **Manga-OCR** — de standaardengine is Google Lens, die de pagina-afbeelding naar Google stuurt; schakel in de instellingen over op het model op het apparaat of systeem-OCR om afbeeldingen lokaal te houden.
+- **Manga-OCR** — de standaardengine is het CTC-model op het apparaat, dus pagina-afbeeldingen blijven lokaal (eenmalig downloaden in de instellingen); Google Lens is optioneel en stuurt de pagina-afbeelding naar Google.
 - **AI-functies** — verzoeken gaan alleen naar de LLM-provider die je configureert en aan een functie toewijst; zonder toegewezen provider wordt niets verzonden.
 - **Diensten van derden** — functies voor metadata, ondertitels en online bronnen contacteren de diensten onder [Contentbronnen en integraties](#contentbronnen-en-integraties) alleen wanneer je ze gebruikt.
 

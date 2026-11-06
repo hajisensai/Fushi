@@ -52,7 +52,7 @@ void main() {
     final String hostMethod = _between(
       source,
       'VideoQuickSettingsHost _buildVideoQuickSettingsHost() {',
-      'Future<void> _switchToSkiaAndRestart()',
+      'void _showPlayerSettings({',
     );
     final String panelChildMethod = _between(
       source,
@@ -179,8 +179,9 @@ void main() {
       reason: 'categories must not render as a list anymore',
     );
     expect(
-      source.replaceAll(RegExp(r'\s+'), ''),
-      contains("labelKey:ValueKey<String>('video-settings-cat-\${cat.id}',)"),
+      // 去掉空白与尾逗号再比：dart format 按行宽决定是否拆行加尾逗号。
+      source.replaceAll(RegExp(r'\s+'), '').replaceAll(',)', ')'),
+      contains("labelKey:ValueKey<String>('video-settings-cat-\${cat.id}')"),
       reason: 'category tabs keep their stable id keys',
     );
     // 详情按选中 id KeyedSubtree，防 Element 复用副作用。

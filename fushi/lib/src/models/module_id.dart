@@ -22,9 +22,7 @@ library;
 
 import 'package:flutter/foundation.dart';
 
-import 'package:fushi/src/models/prerelease_only_capability.dart';
 import 'package:fushi/src/models/store_compliance.dart';
-import 'package:fushi/src/utils/misc/build_version.dart';
 
 /// 一个可被用户整体关闭的功能模块。
 ///
@@ -43,6 +41,11 @@ enum ModuleId {
 
   /// 视频库（播放器 + 番剧刮削 + 发现）。
   video('module_video_enabled'),
+
+  /// 音乐库（曲库 / 专辑 / 播放 / 歌词，docs/specs/2026-10-23-music-module-design.md）。
+  /// 独立底栏模块（设计 D1），与只管有声书的 [listening] 不合并；五端都有，不新增
+  /// App Store 受限能力。
+  music('module_music_enabled'),
 
   /// 游戏。Windows 上是本机 galgame 库与文本/语音捕获（galgame hook 平台边界）；
   /// Android / iOS / macOS / Linux 上是串流接收端的远端游戏库（从已配对 Windows
@@ -71,13 +74,17 @@ enum ModuleId {
   /// .settleSrsMiningTargetInstallDefault` 一次性显式写成关（老用户不提醒：自己去设置
   /// 打开才看得到）。新手引导不提供它的方格，由「复习方式」一步写入（选 Fushi 复习 =
   /// 开，见 `onboarding_steps.dart` 的 `OnboardingReviewMethod`）。
-  ///
-  /// **正式版构建里不存在**（用户 2026-10-16 拍板「正式版屏蔽 SRS」）：只在
-  /// debug / beta 预发布与本地构建里提供，判据见 [PrereleaseOnlyCapability.srs]。
   srs('module_srs_enabled'),
 
-  /// 浏览器扩展管理页与本机扩展服务。**仅桌面**。
-  browserExtension('module_browser_extension_enabled'),
+  /// 浏览器：app 内浏览网站（通用浏览、网页视频站点、网页漫画）+ 浏览器扩展管理页
+  /// 与本机扩展服务。**五端都有**；子页各自再按平台门控（见 `WebHubSection`，
+  /// 浏览器扩展只在桌面，见 [browserExtensionSupportedOn]）。
+  ///
+  /// 2026-10-19 由「浏览器扩展」模块升级而来（用户：app 内浏览取代扩展成为主路径，
+  /// 扩展降为次级子页；「改名成浏览器，这样就能重置一下这个开关」）：持久化键
+  /// **刻意换新** `module_web_enabled`，旧键 `module_browser_extension_enabled`
+  /// 不再读取——老用户关过扩展模块的，升级后这个新模块按出厂默认开。
+  web('module_web_enabled'),
 
   /// 听书：有声书播放/导入、语音转录（ASR）、悬浮歌词。
   listening('module_listening_enabled'),
@@ -125,39 +132,32 @@ enum ModuleId {
   ///
   /// [isAndroid] 目前没有模块按它区分（串流接收端已覆盖全部平台，见
   /// [GamesModuleForm]）；保留它让调用方始终给出完整的平台元组。
-  ///
-  /// [buildVersionDefine] 是构建通道这条正交边界（见 [PrereleaseOnlyCapability]）
-  /// 的输入：构建期注入的 `FUSHI_BUILD_VERSION` 原值，缺省就取本构建的编译期常量，
-  /// 所以每个调用方（设置开关、新手引导、桌面控制通道、[ModuleVisibility.resolve]）
-  /// 不必各自读版本也一律生效；测试显式传值断言各通道的结论。与
-  /// `resolveCurrentAppVersion` 的 `runningCodeVersionDefine` 同一种注入形状。
   bool availableOn({
     required bool isWindows,
     required bool isDesktop,
     required bool isIOS,
     required bool isAndroid,
-    String buildVersionDefine = kFushiBuildVersionDefine,
   }) => switch (this) {
     // 每个平台都有 games 模块，只是形态不同（见 [GamesModuleForm.on]）。
     ModuleId.games => true,
-    // 手机浏览器不支持加载未解压扩展，故按平台而非实验开关门控。
-    ModuleId.browserExtension => isDesktop,
     // 「浏览」装的是发现页、三域在线扩展源与通用 torrent / 磁力下载器，都不能进
     // App Store。判据不在这里写死，委托给合规边界的唯一真相源；各页签内的每个域
     // 仍各自再问对应的 [StoreRestrictedCapability]，两处若各判各的就会分头漂移。
     ModuleId.browse => StoreRestrictedCapability.downloads.availableOn(
       isIOS: isIOS,
     ),
-    // 复习不是 App Store 受限能力（纯本地数据 + 用户自己的同步后端），五端都有；
-    // 但正式版构建里整体缺席。判据委托给构建通道的唯一真相源，这里不解析版本串。
-    ModuleId.srs => PrereleaseOnlyCapability.srs.availableFor(
-      buildVersion: normalizeFushiBuildVersion(buildVersionDefine),
-    ),
+    // 通用 app 内浏览器不属于 App Store 受限能力（受限的在线漫画源动作由子页自己问
+    // [StoreRestrictedCapability.onlineMangaSource]）；浏览器扩展子页另按
+    // [browserExtensionSupportedOn] 只在桌面出现。
+    ModuleId.web => true,
     ModuleId.home ||
     ModuleId.books ||
     ModuleId.manga ||
     ModuleId.video ||
+    ModuleId.music ||
     ModuleId.lookup ||
+    // 复习不是 App Store 受限能力（纯本地数据 + 用户自己的同步后端），五端都有。
+    ModuleId.srs ||
     ModuleId.listening ||
     ModuleId.cardCreation ||
     ModuleId.services ||
@@ -177,10 +177,11 @@ enum ModuleId {
     ModuleId.books ||
     ModuleId.manga ||
     ModuleId.video ||
+    ModuleId.music ||
     ModuleId.games ||
     ModuleId.browse ||
     ModuleId.lookup ||
-    ModuleId.browserExtension ||
+    ModuleId.web ||
     ModuleId.listening ||
     ModuleId.cardCreation ||
     ModuleId.services ||
@@ -235,9 +236,38 @@ enum ModuleId {
     return out;
   }
 
-  /// [parseOrder] 的逆。
-  static String encodeOrder(Iterable<ModuleId> order) =>
-      order.map((ModuleId id) => id.prefKey).join(',');
+  /// [orderPrefKey] 里「设置」tab 的位置标记（反馈 TqJ_xq3UlO：设置也要能拖）。
+  /// 设置不是 [ModuleId]（它恒在、不可关），所以它在顺序里只是一个标记：不是任何
+  /// 模块的 [prefKey]，旧版本的 [parseOrder] 把它当未知键跳过，设置回到最后。
+  static const String settingsOrderToken = 'settings';
+
+  /// [orderPrefKey] 存储值里「设置」排在第几个模块之前（= 它前面有几个能解析的
+  /// 模块）；没有标记 = null（设置在最后）。与 [parseOrder] 同口径跳过未知键与重复项。
+  static int? parseSettingsSlot(String? stored) {
+    if (stored == null || stored.isEmpty) return null;
+    final List<ModuleId> seen = <ModuleId>[];
+    for (final String raw in stored.split(',')) {
+      final String key = raw.trim();
+      if (key == settingsOrderToken) return seen.length;
+      final ModuleId? id = tryParsePrefKey(key);
+      if (id != null && !seen.contains(id)) seen.add(id);
+    }
+    return null;
+  }
+
+  /// [parseOrder] / [parseSettingsSlot] 的逆。[settingsSlot] 为 null 或不小于
+  /// 模块数时不写标记（设置在最后，与没排过一样）。
+  static String encodeOrder(Iterable<ModuleId> order, {int? settingsSlot}) {
+    final List<String> keys = <String>[
+      for (final ModuleId id in order) id.prefKey,
+    ];
+    if (settingsSlot != null &&
+        settingsSlot >= 0 &&
+        settingsSlot < keys.length) {
+      keys.insert(settingsSlot, settingsOrderToken);
+    }
+    return keys.join(',');
+  }
 }
 
 /// 把用户排过的顺序补全成**覆盖全部 [ModuleId] 的完整序列**：[preferred] 去重后
@@ -268,9 +298,20 @@ enum GamesModuleForm {
   streamClient;
 
   /// 本平台上 games 模块的形态。galgame hook 与画面采集只做 Windows（见
-  /// CLAUDE.md「Galgame Hook 硬规则」），其余平台只能当串流接收端。
+  /// CLAUDE.md「领域硬边界」），其余平台只能当串流接收端。
   static GamesModuleForm on({required bool isWindows}) =>
       isWindows ? GamesModuleForm.localLibrary : GamesModuleForm.streamClient;
+
+  /// 本形态能不能跑 galgame hook 的注入 / 捕获 / 窗口绑定（只有 Windows 的
+  /// [localLibrary]）。texthooker 页里所有 Windows 独有控件都问它，不各自判平台。
+  bool get supportsHookCapture => this == GamesModuleForm.localLibrary;
+
+  /// 本形态要不要在 games 模块里单独挂「外部 texthooker 台词」页：Windows 的
+  /// 捕获工作台本来就承载它；非 Windows **桌面**（Linux / macOS）没有 hook，但
+  /// 外部 WebSocket texthooker（LunaTranslator / Textractor / mpv）照样能把台词
+  /// 推过来，需要一个地方看台词、点词查词。手机端不在范围内。
+  bool offersExternalTexthooker({required bool isDesktop}) =>
+      this == GamesModuleForm.streamClient && isDesktop;
 }
 
 /// 「此刻哪些模块可见」的不可变快照：用户意愿（pref）与平台可用性的**唯一合成**。
@@ -278,7 +319,11 @@ enum GamesModuleForm {
 /// 全 app 的门控一律读它，不再各自组合 pref + 平台。
 @immutable
 class ModuleVisibility {
-  const ModuleVisibility(this.enabled, {this.order = const <ModuleId>[]});
+  const ModuleVisibility(
+    this.enabled, {
+    this.order = const <ModuleId>[],
+    this.settingsSlot,
+  });
 
   /// 当前可见的模块集合。
   final Set<ModuleId> enabled;
@@ -291,20 +336,34 @@ class ModuleVisibility {
   /// 它导出（`homeActiveTabs`）。
   List<ModuleId> get ordered => orderModules(order);
 
+  /// 「设置」tab 排在 [ordered] 的第几项之前；null = 最后（默认）。位置按**全部**
+  /// 模块（含被关掉、平台上不存在的）计，开关模块不会让设置跳位。
+  final int? settingsSlot;
+
+  /// 导航 tab 的完整顺序：[ordered] 里插入一个 `null` 代表设置（恒在、恰好一次）。
+  List<ModuleId?> get navOrder {
+    final List<ModuleId?> out = <ModuleId?>[...ordered];
+    final int? slot = settingsSlot;
+    if (slot == null || slot < 0 || slot >= out.length) {
+      out.add(null);
+    } else {
+      out.insert(slot, null);
+    }
+    return out;
+  }
+
   /// 全部模块都可见（平台可用的那些）。仅供测试与默认值使用。
   factory ModuleVisibility.all({
     required bool isWindows,
     required bool isDesktop,
     required bool isIOS,
     required bool isAndroid,
-    String buildVersionDefine = kFushiBuildVersionDefine,
   }) => ModuleVisibility.resolve(
     prefOf: (ModuleId _) => true,
     isWindows: isWindows,
     isDesktop: isDesktop,
     isIOS: isIOS,
     isAndroid: isAndroid,
-    buildVersionDefine: buildVersionDefine,
   );
 
   /// 把「每个模块的 pref 真值」与平台判据合成为可见集合。
@@ -312,8 +371,7 @@ class ModuleVisibility {
   /// [prefOf] 只回答用户意愿（开关存的 bool）；平台可用性由
   /// [ModuleId.availableOn] 负责。调用方**不得**再自己叠平台条件 —— 那正是
   /// 旧实现里 `Platform.isWindows && appModel.moduleGamesEnabled` 抄两遍、
-  /// 漏一遍的成因。构建通道同理（正式版里复习不存在，即使 pref 开着）：
-  /// [buildVersionDefine] 缺省取本构建常量，原样转给 [ModuleId.availableOn]。
+  /// 漏一遍的成因。
   factory ModuleVisibility.resolve({
     required bool Function(ModuleId id) prefOf,
     required bool isWindows,
@@ -321,7 +379,7 @@ class ModuleVisibility {
     required bool isIOS,
     required bool isAndroid,
     List<ModuleId> order = const <ModuleId>[],
-    String buildVersionDefine = kFushiBuildVersionDefine,
+    int? settingsSlot,
   }) {
     final Set<ModuleId> enabled = <ModuleId>{};
     for (final ModuleId id in ModuleId.values) {
@@ -330,14 +388,13 @@ class ModuleVisibility {
         isDesktop: isDesktop,
         isIOS: isIOS,
         isAndroid: isAndroid,
-        buildVersionDefine: buildVersionDefine,
       )) {
         continue;
       }
       if (!prefOf(id)) continue;
       enabled.add(id);
     }
-    return ModuleVisibility(enabled, order: order);
+    return ModuleVisibility(enabled, order: order, settingsSlot: settingsSlot);
   }
 
   bool isEnabled(ModuleId id) => enabled.contains(id);
@@ -350,13 +407,20 @@ class ModuleVisibility {
   bool operator ==(Object other) =>
       other is ModuleVisibility &&
       setEquals(other.enabled, enabled) &&
-      listEquals(other.ordered, ordered);
+      listEquals(other.navOrder, navOrder);
 
   @override
   int get hashCode =>
-      Object.hash(Object.hashAllUnordered(enabled), Object.hashAll(ordered));
+      Object.hash(Object.hashAllUnordered(enabled), Object.hashAll(navOrder));
 
   @override
   String toString() =>
       'ModuleVisibility(${enabled.map((ModuleId e) => e.name).join(', ')})';
 }
+
+/// 浏览器扩展（「浏览器」模块的次级子页、扩展安装引导、扩展副本刷新）在本平台是否
+/// 存在：手机浏览器不支持加载未解压扩展，故只在桌面。
+///
+/// 2026-10-19 前这条判据就是整个模块的 `availableOn`；模块改为五端都有后，扩展
+/// 相关的消费端一律问这里，不各自写 `isDesktop`。
+bool browserExtensionSupportedOn({required bool isDesktop}) => isDesktop;

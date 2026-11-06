@@ -183,10 +183,11 @@ void main() {
     });
 
     test('页头仅在非 Cupertino 渲染（与书架/词典同门控）', () {
+      // 允许 dart format 把调用折到下一行（带参数后就会折）。
       expect(
-        videoSrc.contains(
-          'if (!isCupertinoPlatform(context)) _buildPageHeader(',
-        ),
+        RegExp(
+          r'if \(!isCupertinoPlatform\(context\)\)\s*_buildPageHeader\(',
+        ).hasMatch(videoSrc),
         isTrue,
       );
     });

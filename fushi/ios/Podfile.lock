@@ -58,7 +58,7 @@ PODS:
     - Flutter
   - external_path (2.0.1):
     - Flutter
-  - ffmpeg_kit_flutter (6.0.3):
+  - ffmpeg_kit_next_flutter (9.0.0):
     - Flutter
   - file_picker (0.0.1):
     - DKImagePickerController/PhotoGallery
@@ -160,31 +160,6 @@ PODS:
   - sqflite (0.0.3):
     - Flutter
     - FlutterMacOS
-  - sqlite3 (3.52.0):
-    - sqlite3/common (= 3.52.0)
-  - sqlite3/common (3.52.0)
-  - sqlite3/dbstatvtab (3.52.0):
-    - sqlite3/common
-  - sqlite3/fts5 (3.52.0):
-    - sqlite3/common
-  - sqlite3/math (3.52.0):
-    - sqlite3/common
-  - sqlite3/perf-threadsafe (3.52.0):
-    - sqlite3/common
-  - sqlite3/rtree (3.52.0):
-    - sqlite3/common
-  - sqlite3/session (3.52.0):
-    - sqlite3/common
-  - sqlite3_flutter_libs (0.0.1):
-    - Flutter
-    - FlutterMacOS
-    - sqlite3 (~> 3.52.0)
-    - sqlite3/dbstatvtab
-    - sqlite3/fts5
-    - sqlite3/math
-    - sqlite3/perf-threadsafe
-    - sqlite3/rtree
-    - sqlite3/session
   - SwiftyGif (5.4.5)
   - Toast (4.1.1)
   - UniversalDetector2 (2.0.1)
@@ -203,7 +178,7 @@ DEPENDENCIES:
   - device_info_plus (from `.symlinks/plugins/device_info_plus/ios`)
   - external_app_launcher (from `.symlinks/plugins/external_app_launcher/ios`)
   - external_path (from `.symlinks/plugins/external_path/ios`)
-  - ffmpeg_kit_flutter (from `.symlinks/plugins/ffmpeg_kit_flutter/ios`)
+  - ffmpeg_kit_next_flutter (from `.symlinks/plugins/ffmpeg_kit_next_flutter/ios`)
   - file_picker (from `.symlinks/plugins/file_picker/ios`)
   - Flutter (from `Flutter`)
   - flutter_archive (from `.symlinks/plugins/flutter_archive/ios`)
@@ -229,7 +204,6 @@ DEPENDENCIES:
   - share_plus (from `.symlinks/plugins/share_plus/ios`)
   - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
   - sqflite (from `.symlinks/plugins/sqflite/darwin`)
-  - sqlite3_flutter_libs (from `.symlinks/plugins/sqlite3_flutter_libs/darwin`)
   - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
   - wakelock_plus (from `.symlinks/plugins/wakelock_plus/ios`)
 
@@ -248,7 +222,6 @@ SPEC REPOS:
     - OrderedSet
     - PromisesObjC
     - SDWebImage
-    - sqlite3
     - SwiftyGif
     - Toast
     - UniversalDetector2
@@ -271,8 +244,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/external_app_launcher/ios"
   external_path:
     :path: ".symlinks/plugins/external_path/ios"
-  ffmpeg_kit_flutter:
-    :path: ".symlinks/plugins/ffmpeg_kit_flutter/ios"
+  ffmpeg_kit_next_flutter:
+    :path: ".symlinks/plugins/ffmpeg_kit_next_flutter/ios"
   file_picker:
     :path: ".symlinks/plugins/file_picker/ios"
   Flutter:
@@ -323,8 +296,6 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/shared_preferences_foundation/darwin"
   sqflite:
     :path: ".symlinks/plugins/sqflite/darwin"
-  sqlite3_flutter_libs:
-    :path: ".symlinks/plugins/sqlite3_flutter_libs/darwin"
   url_launcher_ios:
     :path: ".symlinks/plugins/url_launcher_ios/ios"
   wakelock_plus:
@@ -343,7 +314,7 @@ SPEC CHECKSUMS:
   DKPhotoGallery: b3834fecb755ee09a593d7c9e389d8b5d6deed60
   external_app_launcher: 3411245965270a74040a3de17e27bd02b8abb905
   external_path: fd37c654b69a1336e33a2403f48383ae6100e443
-  ffmpeg_kit_flutter: aa48194ef36cfedca6ac6524acc7c56c3e5e087a
+  ffmpeg_kit_next_flutter: 4688ccaa59340170d3d0d6726c1217b8b92bde24
   file_picker: a0560bc09d61de87f12d246fc47d2119e6ef37be
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_archive: 6eb3c5273c448b55cd5e87421cc72976de255322
@@ -378,8 +349,6 @@ SPEC CHECKSUMS:
   share_plus: de6030e33b4e106470e09322d87cf2a4258d2d1d
   shared_preferences_foundation: 9e1978ff2562383bd5676f64ec4e9aa8fa06a6f7
   sqflite: c35dad70033b8862124f8337cc994a809fcd9fa3
-  sqlite3: a51c07cf16e023d6c48abd5e5791a61a47354921
-  sqlite3_flutter_libs: b3e120efe9a82017e5552a620f696589ed4f62ab
   SwiftyGif: 706c60cf65fa2bc5ee0313beece843c8eb8194d4
   Toast: 1f5ea13423a1e6674c4abdac5be53587ae481c4e
   UniversalDetector2: 7c9ffd935cf050eeb19edf7e90f6febe3743a1af

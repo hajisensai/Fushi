@@ -2,16 +2,32 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/ai/mcp/ai_mcp_access.dart';
+import 'package:fushi/src/ai/mcp/ai_mcp_ui.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/store_compliance.dart';
-import 'package:fushi/src/pages/implementations/ai_interconnect_host_row.dart';
+import 'package:fushi/src/pages/implementations/ai_agent_history_page.dart';
+import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
 import 'package:fushi/src/pages/implementations/ai_web_knowledge_sites_section.dart';
+import 'package:fushi/src/pages/implementations/ai_web_search_section.dart';
+import 'package:fushi/src/pages/implementations/library_organize_history_page.dart';
+import 'package:fushi/src/pages/implementations/torrent_settings_section.dart'
+    show kDownloadExecutionHostSettingsItemId;
+import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart'
+    show SettingsDetailPage;
+import 'package:fushi/src/settings/settings_schema_downloads.dart'
+    show buildDownloadsDestination;
+import 'package:fushi/src/settings/settings_search.dart'
+    show SettingsSearchReveal;
 import 'package:fushi/src/settings/settings_kit.dart' show settingsResetSpecFor;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart'
     show subtitleLanguageNativeName;
 
@@ -92,6 +108,16 @@ SettingsDestination buildAiDestination() {
           ),
         ],
       ),
+      // 联网搜索：真正的搜索引擎（SearXNG / Brave），与上面固定资料站并列。
+      SettingsSection(
+        id: 'ai.web_search',
+        title: t.ai_web_search_section,
+        footer: t.ai_web_search_section_hint,
+        presentation: SettingsSectionPresentation.collapsed,
+        summaryBuilder: (SettingsContext c) =>
+            _aiSectionModifiedSummary('ai.web_search', c),
+        items: buildAiWebSearchItems(),
+      ),
       SettingsSection(
         id: 'ai.video_download',
         title: t.ai_video_download_section,
@@ -106,15 +132,19 @@ SettingsDestination buildAiDestination() {
         summaryBuilder: (SettingsContext c) =>
             _aiSectionModifiedSummary('ai.video_download', c),
         items: <SettingsItem>[
-          // 经 Fushi 互联交给已配对电脑办（PR #1749 的 `/api/assistant` 会话）：判据一直是
-          // 「下载执行设备」偏好，此前只挂在下载设置页，AI 页看不到这条路。这里是同一
-          // 偏好的第二处入口；未配对时给可见说明 + 去配对，而不是整行消失。
-          SettingsCustomItem.rows(
+          // 经 Fushi 互联交给已配对电脑办（PR #1749 的 `/api/assistant` 会话）：判据是
+          // 「下载执行设备」偏好。控件只在下载页渲染一份（反馈 sOLqsIv6R9 拍板），这里
+          // 只留一行链接：跳到下载页并定位、高亮那一行（未配对时那一行给说明 + 去配对）。
+          SettingsNavigationItem(
             id: 'ai.interconnect_host',
-            searchTitle: t.ai_interconnect_host_title,
-            rowsBuilder: (SettingsContext c) => c.appModel.isPreferencesReady
-                ? <Widget>[AiInterconnectHostRow(appModel: c.appModel)]
-                : const <Widget>[],
+            title: t.ai_interconnect_host_title,
+            subtitle: t.ai_interconnect_host_link_hint,
+            icon: FushiIcons.devices,
+            visible: (SettingsContext c) => isSettingsDestinationVisible(
+              SettingsDestinationId.downloads,
+              c.appModel.moduleVisibility,
+            ),
+            onTap: openDownloadExecutionHostSetting,
           ),
           SettingsSegmentedItem<String>(
             id: 'ai.video_download_quality',
@@ -258,6 +288,111 @@ SettingsDestination buildAiDestination() {
           ),
         ],
       ),
+      // AI 整理库（spec docs/specs/2026-10-20-ai-library-organize-design.md §10）：
+      // 导入后自动整理的开关（设备本地，默认关；副标题就是「会发送什么」的完整说明，
+      // 用户亲手打开即同意——不另弹模态框）+ 整理记录（按次 / 按处撤销、允许再次
+      // 建议被拒绝的分组）。
+      // AI 助手（spec 2026-10-26）：打开对话 + 操作记录（过了会话也能撤销）。
+      SettingsSection(
+        id: 'ai.agent',
+        title: t.ai_feature_agent,
+        items: <SettingsItem>[
+          SettingsActionItem(
+            id: 'ai.agent_open',
+            title: t.ai_agent_title,
+            subtitle: t.ai_feature_agent_summary,
+            icon: FushiIcons.aiAssistant,
+            cli: const SettingsCliAction.unsupported(
+              '对话页只在界面里开；命令行用 fushi_cli ai ask "<一句话>"',
+            ),
+            onTap: (SettingsContext c) => pushAiAgentPage(c.context),
+          ),
+          SettingsActionItem(
+            id: 'ai.agent_history',
+            title: t.ai_agent_history_title,
+            subtitle: t.ai_agent_history_summary,
+            icon: FushiIcons.history,
+            cli: const SettingsCliAction.unsupported(
+              '操作记录只在界面里看；命令行用 fushi_cli ai log / fushi_cli ai undo <id>',
+            ),
+            onTap: (SettingsContext c) =>
+                openAiAgentHistoryPage(c.context, c.appModel),
+          ),
+          // 本机当互联 host 时远端 AI 助手的门（与服务端 ai.agent_for_peers 同一判据）：
+          // 默认关；授权开关只能在这里亲手拨，控制通道 / AI 自己写不进去（userOnly）。
+          SettingsSwitchItem(
+            id: 'ai.agent_for_peers',
+            title: t.ai_agent_peer_access,
+            subtitle: t.ai_agent_peer_access_hint,
+            icon: FushiIcons.devices,
+            userOnly: true,
+            value: (SettingsContext c) => c.appModel.prefsRepo.aiAgentForPeers,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setAiAgentForPeers(value),
+            defaultValue: false,
+          ),
+          // 外部 AI 访问（MCP，docs/mcp-external-ai.md）：只在桌面（挂在本机控制通道
+          // `/mcp` 上）。默认关；授权开关与配对令牌只能在这里亲手操作——AI 自己的
+          // settings.set 写不进开关（userOnly），令牌不经控制通道签发。
+          SettingsSwitchItem(
+            id: 'ai.mcp_access',
+            title: t.ai_mcp_access,
+            subtitle: t.ai_mcp_access_hint,
+            icon: FushiIcons.link,
+            userOnly: true,
+            visible: (_) => isDesktopPlatform,
+            value: (SettingsContext c) => c.appModel.prefsRepo.aiMcpEnabled,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setAiMcpEnabled(value),
+            defaultValue: false,
+          ),
+          SettingsActionItem(
+            id: 'ai.mcp_token',
+            title: t.ai_mcp_token,
+            subtitle: t.ai_mcp_token_hint,
+            icon: FushiIcons.key,
+            visible: (SettingsContext c) =>
+                isDesktopPlatform && c.appModel.prefsRepo.aiMcpEnabled,
+            cli: const SettingsCliAction.unsupported(
+              '配对令牌只在设置页里由用户亲手生成：令牌授权的是外部 AI，不能由控制通道或 AI 自己签发',
+            ),
+            onTap: (SettingsContext c) => showAiMcpTokenIssueDialog(
+              c.context,
+              () => issueAiMcpToken(c.appModel.prefsRepo),
+            ),
+          ),
+        ],
+      ),
+      SettingsSection(
+        id: 'ai.library_organize',
+        title: t.ai_feature_library_organize,
+        presentation: SettingsSectionPresentation.collapsed,
+        summaryBuilder: (SettingsContext c) =>
+            _aiSectionModifiedSummary('ai.library_organize', c),
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'ai.library_organize_auto',
+            title: t.library_organize_auto_setting,
+            subtitle: t.library_organize_auto_setting_notice,
+            icon: FushiIcons.aiAssistant,
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.libraryOrganizeAuto,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setLibraryOrganizeAuto(value),
+            defaultValue: false,
+          ),
+          SettingsActionItem(
+            id: 'ai.library_organize_history',
+            title: t.library_organize_history_title,
+            icon: FushiIcons.history,
+            cli: const SettingsCliAction.unsupported(
+              '整理记录只在界面里看；命令行整理用 fushi_cli library organize',
+            ),
+            onTap: (SettingsContext c) =>
+                openLibraryOrganizeHistoryPage(c.context, c.appModel),
+          ),
+        ],
+      ),
     ],
     bodySearchEntries: <SettingsBodySearchEntry>[
       SettingsBodySearchEntry(
@@ -291,4 +426,14 @@ String? _aiSectionModifiedSummary(String sectionId, SettingsContext context) {
       )
       .length;
   return count == 0 ? null : t.settings_section_modified_count(n: count);
+}
+
+/// 「AI › 交给互联电脑办」的跳转：登记一次性定位挂点，推出下载设置页，由那一行的
+/// `SettingsSearchTarget` 消费（滚入视口 + 闪烁高亮）。
+Future<void> openDownloadExecutionHostSetting(SettingsContext c) async {
+  SettingsSearchReveal.pendingItemId = kDownloadExecutionHostSettingsItemId;
+  await pushSettingsPage(
+    c,
+    (_) => SettingsDetailPage(destination: buildDownloadsDestination()),
+  );
 }

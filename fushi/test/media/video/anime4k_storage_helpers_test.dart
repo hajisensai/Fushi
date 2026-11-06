@@ -21,8 +21,9 @@ void main() {
   });
 
   void writeFile(String name, int bytes) {
-    File(p.join(dir.path, name))
-        .writeAsBytesSync(List<int>.filled(bytes, 0x61));
+    File(
+      p.join(dir.path, name),
+    ).writeAsBytesSync(List<int>.filled(bytes, 0x61));
   }
 
   test('清单是全预设文件名的去重并集且非空', () {
@@ -54,8 +55,11 @@ void main() {
     expect(deleted.toSet(), <String>{manifest[0], manifest[1]});
     expect(File(p.join(dir.path, manifest[0])).existsSync(), isFalse);
     expect(File(p.join(dir.path, manifest[1])).existsSync(), isFalse);
-    expect(File(p.join(dir.path, 'My_Custom_Shader.glsl')).existsSync(), isTrue,
-        reason: '非清单文件（用户自导入）绝不能被删');
+    expect(
+      File(p.join(dir.path, 'My_Custom_Shader.glsl')).existsSync(),
+      isTrue,
+      reason: '非清单文件（用户自导入）绝不能被删',
+    );
     expect(anime4kInstalledBytesIn(dir), 0);
   });
 

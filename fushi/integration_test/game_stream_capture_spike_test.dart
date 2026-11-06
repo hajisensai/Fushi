@@ -157,28 +157,29 @@ void main() {
               'client ice candidate mid=${candidate.sdpMid} '
               'mLine=${candidate.sdpMLineIndex}',
             );
-            clientSignals = clientSignals.then(
-              (_) => _sendClientSignal(
-                service!,
-                session.sessionId,
-                GameStreamSignalType.iceCandidate,
-                <String, Object?>{
-                  'candidate': candidate.candidate,
-                  'sdpMid': candidate.sdpMid,
-                  'sdpMLineIndex': candidate.sdpMLineIndex,
-                },
-              ),
-              onError: (_) => _sendClientSignal(
-                service!,
-                session.sessionId,
-                GameStreamSignalType.iceCandidate,
-                <String, Object?>{
-                  'candidate': candidate.candidate,
-                  'sdpMid': candidate.sdpMid,
-                  'sdpMLineIndex': candidate.sdpMLineIndex,
-                },
-              ),
-            );
+            clientSignals =
+                clientSignals.then(
+                  (_) => _sendClientSignal(
+                    service!,
+                    session.sessionId,
+                    GameStreamSignalType.iceCandidate,
+                    <String, Object?>{
+                      'candidate': candidate.candidate,
+                      'sdpMid': candidate.sdpMid,
+                      'sdpMLineIndex': candidate.sdpMLineIndex,
+                    },
+                  ),
+                  onError: (_) => _sendClientSignal(
+                    service!,
+                    session.sessionId,
+                    GameStreamSignalType.iceCandidate,
+                    <String, Object?>{
+                      'candidate': candidate.candidate,
+                      'sdpMid': candidate.sdpMid,
+                      'sdpMLineIndex': candidate.sdpMLineIndex,
+                    },
+                  ),
+                );
           }
         };
         client.onTrack = (RTCTrackEvent event) {

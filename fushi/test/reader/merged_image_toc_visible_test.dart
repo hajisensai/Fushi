@@ -13,10 +13,7 @@ import 'package:fushi/src/reader/ttu_toc_flatten.dart';
 /// （如一长串插图/图片页被一个尾部文本章整段吸收）时，压平结果变空 → 整个章节列表消失。
 /// 修复把压平抽成纯函数 [flattenTtuTocEntries]，保留所有解析到的章、永不因合并隐藏，
 /// 被吸收章的目录跳转交给导航层 `_resolveNavChapter` 重定向到宿主文本章。
-EpubBook _makeBook({
-  required int count,
-  required List<bool> imageOnly,
-}) {
+EpubBook _makeBook({required int count, required List<bool> imageOnly}) {
   return EpubBook(
     title: 'test',
     chapters: List<EpubChapter>.generate(count, (int i) {
@@ -36,39 +33,56 @@ EpubBook _makeBook({
 
 void main() {
   group('TODO-1333 flattenTtuTocEntries keeps every chapter', () {
-    test('flat TOC flattens in order, resolving each href to its chapter index',
-        () {
-      final List<EpubTocItem> toc = <EpubTocItem>[
-        EpubTocItem(label: 'p1', href: 'ch0.xhtml'),
-        EpubTocItem(label: 'p2', href: 'ch1.xhtml'),
-        EpubTocItem(label: 'p3', href: 'ch2.xhtml'),
-      ];
-      final Map<String, int> hrefToIndex = <String, int>{
-        'ch0.xhtml': 0,
-        'ch1.xhtml': 1,
-        'ch2.xhtml': 2,
-      };
-      final List<TtuTocEntry> entries =
-          flattenTtuTocEntries(toc, (String? h) => hrefToIndex[h] ?? -1);
-      expect(entries.map((TtuTocEntry e) => e.index).toList(), <int>[0, 1, 2]);
-      expect(entries.map((TtuTocEntry e) => e.label).toList(),
-          <String>['p1', 'p2', 'p3']);
-    });
+    test(
+      'flat TOC flattens in order, resolving each href to its chapter index',
+      () {
+        final List<EpubTocItem> toc = <EpubTocItem>[
+          EpubTocItem(label: 'p1', href: 'ch0.xhtml'),
+          EpubTocItem(label: 'p2', href: 'ch1.xhtml'),
+          EpubTocItem(label: 'p3', href: 'ch2.xhtml'),
+        ];
+        final Map<String, int> hrefToIndex = <String, int>{
+          'ch0.xhtml': 0,
+          'ch1.xhtml': 1,
+          'ch2.xhtml': 2,
+        };
+        final List<TtuTocEntry> entries = flattenTtuTocEntries(
+          toc,
+          (String? h) => hrefToIndex[h] ?? -1,
+        );
+        expect(entries.map((TtuTocEntry e) => e.index).toList(), <int>[
+          0,
+          1,
+          2,
+        ]);
+        expect(entries.map((TtuTocEntry e) => e.label).toList(), <String>[
+          'p1',
+          'p2',
+          'p3',
+        ]);
+      },
+    );
 
     test('nested children are walked and carry the parent label', () {
       final List<EpubTocItem> toc = <EpubTocItem>[
-        EpubTocItem(label: 'Part 1', href: 'ch0.xhtml', children: <EpubTocItem>[
-          EpubTocItem(label: 'Sub A', href: 'ch1.xhtml'),
-          EpubTocItem(label: 'Sub B', href: 'ch2.xhtml'),
-        ]),
+        EpubTocItem(
+          label: 'Part 1',
+          href: 'ch0.xhtml',
+          children: <EpubTocItem>[
+            EpubTocItem(label: 'Sub A', href: 'ch1.xhtml'),
+            EpubTocItem(label: 'Sub B', href: 'ch2.xhtml'),
+          ],
+        ),
       ];
       final Map<String, int> hrefToIndex = <String, int>{
         'ch0.xhtml': 0,
         'ch1.xhtml': 1,
         'ch2.xhtml': 2,
       };
-      final List<TtuTocEntry> entries =
-          flattenTtuTocEntries(toc, (String? h) => hrefToIndex[h] ?? -1);
+      final List<TtuTocEntry> entries = flattenTtuTocEntries(
+        toc,
+        (String? h) => hrefToIndex[h] ?? -1,
+      );
       expect(entries.length, 3);
       expect(entries[0].parent, isNull);
       expect(entries[1].parent, 'Part 1');
@@ -85,14 +99,17 @@ void main() {
         'ch0.xhtml': 0,
         'ch1.xhtml': 1,
       };
-      final List<TtuTocEntry> entries =
-          flattenTtuTocEntries(toc, (String? h) => hrefToIndex[h] ?? -1);
-      expect(entries.map((TtuTocEntry e) => e.label).toList(),
-          <String>['good', 'good2']);
+      final List<TtuTocEntry> entries = flattenTtuTocEntries(
+        toc,
+        (String? h) => hrefToIndex[h] ?? -1,
+      );
+      expect(entries.map((TtuTocEntry e) => e.label).toList(), <String>[
+        'good',
+        'good2',
+      ]);
     });
 
-    test(
-        'a TOC whose entries all point to merge-absorbed image chapters stays '
+    test('a TOC whose entries all point to merge-absorbed image chapters stays '
         'non-empty (the reported bug)', () {
       // 3 illustration/image pages followed by a single trailing text chapter
       // (奥付/colophon). With image-merge on, the whole leading image run folds
@@ -126,44 +143,59 @@ void main() {
         'ch1.xhtml': 1,
         'ch2.xhtml': 2,
       };
-      final List<TtuTocEntry> entries =
-          flattenTtuTocEntries(toc, (String? h) => hrefToIndex[h] ?? -1);
+      final List<TtuTocEntry> entries = flattenTtuTocEntries(
+        toc,
+        (String? h) => hrefToIndex[h] ?? -1,
+      );
       expect(entries, isNotEmpty, reason: '图片合并后章节列表不得被清空（TODO-1333）');
       expect(entries.map((TtuTocEntry e) => e.index).toList(), <int>[0, 1, 2]);
     });
   });
 
-  group('TODO-1333 source-scan guard: TOC flatten never hides absorbed images',
-      () {
-    final File chrome = File(
-      'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
-    );
-    final File flatten = File('lib/src/reader/ttu_toc_flatten.dart');
+  group(
+    'TODO-1333 source-scan guard: TOC flatten never hides absorbed images',
+    () {
+      final File chrome = File(
+        'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
+      );
+      final File flatten = File('lib/src/reader/ttu_toc_flatten.dart');
 
-    test('_buildTtuToc delegates to the un-filtered pure flattener', () {
-      final String src = chrome.readAsStringSync();
-      expect(src.contains('flattenTtuTocEntries('), isTrue,
-          reason: '_buildTtuToc 必须调用纯函数 flattenTtuTocEntries 压平目录');
-      // The old private hide-filter must be gone.
-      expect(src.contains('void _flattenTocToTtu('), isFalse,
-          reason: '旧的会隐藏被吸收章的 _flattenTocToTtu 必须删除');
-    });
-
-    test('the TOC flatten path does not gate entries on image absorption', () {
-      // Neither the pure flattener nor the reader TOC builder may key TOC
-      // visibility off isAbsorbedImageChapter — that is exactly what emptied the
-      // chapter list. Absorbed-chapter nav is handled by _resolveNavChapter.
-      expect(flatten.readAsStringSync().contains('isAbsorbedImageChapter('),
+      test('_buildTtuToc delegates to the un-filtered pure flattener', () {
+        final String src = chrome.readAsStringSync();
+        expect(
+          src.contains('flattenTtuTocEntries('),
+          isTrue,
+          reason: '_buildTtuToc 必须调用纯函数 flattenTtuTocEntries 压平目录',
+        );
+        // The old private hide-filter must be gone.
+        expect(
+          src.contains('void _flattenTocToTtu('),
           isFalse,
-          reason: '纯压平函数不得再按 isAbsorbedImageChapter 隐藏目录项');
-      final String src = chrome.readAsStringSync();
-      final int start = src.indexOf('List<TtuTocEntry> _buildTtuToc()');
-      expect(start, greaterThanOrEqualTo(0));
-      final int end = src.indexOf('_reloadWithCurrentSettings', start);
-      expect(end, greaterThan(start));
-      final String buildToc = src.substring(start, end);
-      expect(buildToc.contains('isAbsorbedImageChapter('), isFalse,
-          reason: '_buildTtuToc 区间不得再按 isAbsorbedImageChapter 隐藏目录项');
-    });
-  });
+          reason: '旧的会隐藏被吸收章的 _flattenTocToTtu 必须删除',
+        );
+      });
+
+      test('the TOC flatten path does not gate entries on image absorption', () {
+        // Neither the pure flattener nor the reader TOC builder may key TOC
+        // visibility off isAbsorbedImageChapter — that is exactly what emptied the
+        // chapter list. Absorbed-chapter nav is handled by _resolveNavChapter.
+        expect(
+          flatten.readAsStringSync().contains('isAbsorbedImageChapter('),
+          isFalse,
+          reason: '纯压平函数不得再按 isAbsorbedImageChapter 隐藏目录项',
+        );
+        final String src = chrome.readAsStringSync();
+        final int start = src.indexOf('List<TtuTocEntry> _buildTtuToc()');
+        expect(start, greaterThanOrEqualTo(0));
+        final int end = src.indexOf('_reloadWithCurrentSettings', start);
+        expect(end, greaterThan(start));
+        final String buildToc = src.substring(start, end);
+        expect(
+          buildToc.contains('isAbsorbedImageChapter('),
+          isFalse,
+          reason: '_buildTtuToc 区间不得再按 isAbsorbedImageChapter 隐藏目录项',
+        );
+      });
+    },
+  );
 }

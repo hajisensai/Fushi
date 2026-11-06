@@ -99,8 +99,16 @@ class DownloadTaskStats {
   }
 
   @override
-  int get hashCode => Object.hash(progress, downRateBps, upRateBps,
-      downloadedBytes, uploadedBytes, numPeers, state, amountLeft);
+  int get hashCode => Object.hash(
+    progress,
+    downRateBps,
+    upRateBps,
+    downloadedBytes,
+    uploadedBytes,
+    numPeers,
+    state,
+    amountLeft,
+  );
 }
 
 /// 把种子文件列表解析为视频绝对路径列表。纯函数。
@@ -216,8 +224,9 @@ String sidecarPathFor(String videoAbsolutePath, PlanSubtitle sub) {
   String ext = p.extension(sub.fileName).toLowerCase();
   if (ext.isEmpty) ext = '.srt';
   final String? language = sub.language;
-  final String langSegment =
-      (language == null || language.isEmpty) ? '' : '.$language';
+  final String langSegment = (language == null || language.isEmpty)
+      ? ''
+      : '.$language';
   return p.join(dir, '$stem$langSegment$ext');
 }
 
@@ -254,31 +263,35 @@ class AnimeDownloadService {
     required Future<AnimeDownloadImportOutcome?> Function(
       AnimeDownloadPlan plan,
       List<String> videoAbsolutePaths,
-    ) importer,
+    )
+    importer,
     TorrentBackend Function(QbConnectionConfig config)? backendFactory,
     Future<int?> Function(
       AnimeDownloadPlan plan,
       List<String> bookAbsolutePaths,
-    )? bookImporter,
+    )?
+    bookImporter,
     Future<ResolvedPlanSubtitles> Function(
       AnimeDownloadPlan plan,
       List<String> videoAbsolutePaths,
-    )? subtitleResolver,
+    )?
+    subtitleResolver,
     Future<DiscoveryImportOutcome?> Function(
       AnimeDownloadPlan plan,
       List<String> absolutePaths,
-    )? discoveryImporter,
+    )?
+    discoveryImporter,
     AutomaticSubtitleAligner? subtitleAligner,
     void Function()? onTick,
     this.interval = const Duration(seconds: 20),
-  })  : _configProvider = configProvider,
-        _subtitleAligner = subtitleAligner,
-        _importer = importer,
-        _bookImporter = bookImporter,
-        _subtitleResolver = subtitleResolver,
-        _discoveryImporter = discoveryImporter,
-        _backendFactory = backendFactory ?? _defaultBackendFactory,
-        _onTick = onTick;
+  }) : _configProvider = configProvider,
+       _subtitleAligner = subtitleAligner,
+       _importer = importer,
+       _bookImporter = bookImporter,
+       _subtitleResolver = subtitleResolver,
+       _discoveryImporter = discoveryImporter,
+       _backendFactory = backendFactory ?? _defaultBackendFactory,
+       _onTick = onTick;
 
   /// 种子在后端里消失（用户手动删除）后，计划保留等待的时长；
   /// 超过（按 [AnimeDownloadPlan.createdAtMs] 判断）标 failed。
@@ -300,14 +313,16 @@ class AnimeDownloadService {
   final Future<AnimeDownloadImportOutcome?> Function(
     AnimeDownloadPlan plan,
     List<String> videoAbsolutePaths,
-  ) _importer;
+  )
+  _importer;
 
   /// 书籍（epub）入库回调（AppModel 接线 EpubImporter；null = 不支持书，
   /// 遇书内容按失败处理）。返回成功入库的书本数（0/null = 无/失败）。
   final Future<int?> Function(
     AnimeDownloadPlan plan,
     List<String> bookAbsolutePaths,
-  )? _bookImporter;
+  )?
+  _bookImporter;
 
   /// 发现页新内容类型（[AnimeDownloadPlan.kindAudiobook] /
   /// [AnimeDownloadPlan.kindGame]）的入库回调（AppModel 接线
@@ -317,7 +332,8 @@ class AnimeDownloadService {
   final Future<DiscoveryImportOutcome?> Function(
     AnimeDownloadPlan plan,
     List<String> absolutePaths,
-  )? _discoveryImporter;
+  )?
+  _discoveryImporter;
 
   /// 延迟字幕解析回调（[AnimeDownloadPlan.subtitlePending] 的计划完成时调用，
   /// 用包内真实视频文件名反查 Jimaku，见 [JimakuPlanSubtitleResolver]）。
@@ -325,7 +341,8 @@ class AnimeDownloadService {
   final Future<ResolvedPlanSubtitles> Function(
     AnimeDownloadPlan plan,
     List<String> videoAbsolutePaths,
-  )? _subtitleResolver;
+  )?
+  _subtitleResolver;
 
   /// 暂存字幕按视频内嵌字幕轨对时间轴（见 embedded_reference_subtitle_sync.dart）；
   /// null = 不对齐。**只在视频真正下载完成后调**：边下边播那一轮视频是残缺的
@@ -356,7 +373,8 @@ class AnimeDownloadService {
   /// 键集合与 [downloadProgress] 一致，UI 任务行用它渲染速度与流量。
   final ValueNotifier<Map<String, DownloadTaskStats>> downloadStats =
       ValueNotifier<Map<String, DownloadTaskStats>>(
-          const <String, DownloadTaskStats>{});
+        const <String, DownloadTaskStats>{},
+      );
 
   /// 发布新一轮进度快照；内容没变不通知（避免无谓重建任务行）。
   void _publishProgress(
@@ -408,7 +426,8 @@ class AnimeDownloadService {
     required Duration idle,
     Duration active = activeInterval,
   }) {
-    final bool embedded = config != null &&
+    final bool embedded =
+        config != null &&
         config.resolveBackend(embeddedSupported: embeddedSupported) ==
             QbConnectionConfig.backendEmbedded;
     return embedded && hasActiveDownloads ? active : idle;
@@ -463,10 +482,10 @@ class AnimeDownloadService {
     late final Future<bool> operation;
     operation = _runPlanSerial<bool>(planId, () => _importNowUnlocked(planId))
         .whenComplete(() {
-      if (identical(_importNowInFlight[planId], operation)) {
-        _importNowInFlight.remove(planId);
-      }
-    });
+          if (identical(_importNowInFlight[planId], operation)) {
+            _importNowInFlight.remove(planId);
+          }
+        });
     _importNowInFlight[planId] = operation;
     return operation;
   }
@@ -505,13 +524,16 @@ class AnimeDownloadService {
         // BUG-1296：这里手上就有完整快照，必须把观测值一起带上。`_publishProgress`
         // 是无条件覆盖 `downloadStats`，只传进度等于把**全表**的速度/流量清空，
         // 任务行要一直等到下一轮 tick 才恢复。
-        _publishProgress(<String, double>{
-          ...downloadProgress.value,
-          plan.id: info.progress.clamp(0.0, 1.0).toDouble(),
-        }, <String, DownloadTaskStats>{
-          ...downloadStats.value,
-          plan.id: DownloadTaskStats.fromSnapshot(info),
-        });
+        _publishProgress(
+          <String, double>{
+            ...downloadProgress.value,
+            plan.id: info.progress.clamp(0.0, 1.0).toDouble(),
+          },
+          <String, DownloadTaskStats>{
+            ...downloadStats.value,
+            plan.id: DownloadTaskStats.fromSnapshot(info),
+          },
+        );
       }
       await _finishPlan(
         client,
@@ -553,42 +575,41 @@ class AnimeDownloadService {
     String planId, {
     bool deleteFiles = false,
     Future<void> Function(List<String> videoAbsolutePaths)? onFilesDeleted,
-  }) =>
-      _runPlanSerial<AnimeDownloadPlanDeleteResult>(planId, () async {
-        final QbConnectionConfig? config = _configProvider();
-        List<String> deletedVideos = const <String>[];
-        bool backendUnavailable = true;
-        bool filesDeleted = false;
-        if (config != null && config.isConfigured) {
-          final TorrentBackend backend = _backendFactory(config);
-          try {
-            if (deleteFiles) {
-              deletedVideos = await _resolvePlanVideoPaths(backend, planId);
-            }
-            if (backend is TorrentRemovalBackend) {
-              backendUnavailable = false;
-              final bool removed = await backend.removeTorrent(
-                planId,
-                deleteFiles: deleteFiles,
-              );
-              filesDeleted = deleteFiles && removed;
-            }
-          } finally {
-            backend.close();
-          }
+  }) => _runPlanSerial<AnimeDownloadPlanDeleteResult>(planId, () async {
+    final QbConnectionConfig? config = _configProvider();
+    List<String> deletedVideos = const <String>[];
+    bool backendUnavailable = true;
+    bool filesDeleted = false;
+    if (config != null && config.isConfigured) {
+      final TorrentBackend backend = _backendFactory(config);
+      try {
+        if (deleteFiles) {
+          deletedVideos = await _resolvePlanVideoPaths(backend, planId);
         }
-        await store.delete(planId);
-        if (filesDeleted && deletedVideos.isNotEmpty && onFilesDeleted != null) {
-          await onFilesDeleted(deletedVideos);
+        if (backend is TorrentRemovalBackend) {
+          backendUnavailable = false;
+          final bool removed = await backend.removeTorrent(
+            planId,
+            deleteFiles: deleteFiles,
+          );
+          filesDeleted = deleteFiles && removed;
         }
-        return AnimeDownloadPlanDeleteResult(
-          planRemoved: !(await store.loadAll()).any(
-            (AnimeDownloadPlan plan) => plan.id == planId,
-          ),
-          filesDeleted: filesDeleted,
-          backendUnavailable: backendUnavailable,
-        );
-      });
+      } finally {
+        backend.close();
+      }
+    }
+    await store.delete(planId);
+    if (filesDeleted && deletedVideos.isNotEmpty && onFilesDeleted != null) {
+      await onFilesDeleted(deletedVideos);
+    }
+    return AnimeDownloadPlanDeleteResult(
+      planRemoved: !(await store.loadAll()).any(
+        (AnimeDownloadPlan plan) => plan.id == planId,
+      ),
+      filesDeleted: filesDeleted,
+      backendUnavailable: backendUnavailable,
+    );
+  });
 
   /// 种子仍在后端时反查这个计划包内视频文件的绝对路径；查不到（种子已摘 / 后端
   /// 离线 / 元数据未解析）返回空表，绝不抛——它只服务 best-effort 的库行清理。
@@ -691,11 +712,11 @@ class AnimeDownloadService {
       };
       final Map<String, DownloadTaskStats> statsNext =
           <String, DownloadTaskStats>{
-        for (final AnimeDownloadPlan plan in pending)
-          if (byHash[plan.id.toLowerCase()] case final TorrentSnapshot info
-              when !info.isComplete)
-            plan.id: DownloadTaskStats.fromSnapshot(info),
-      };
+            for (final AnimeDownloadPlan plan in pending)
+              if (byHash[plan.id.toLowerCase()] case final TorrentSnapshot info
+                  when !info.isComplete)
+                plan.id: DownloadTaskStats.fromSnapshot(info),
+          };
       _publishProgress(progressNext, statsNext);
 
       for (final AnimeDownloadPlan plan in pending) {
@@ -867,7 +888,7 @@ class AnimeDownloadService {
     // 书：走阅读库入库回调（epub）。
     if (importBooks && books.isNotEmpty) {
       final Future<int?> Function(AnimeDownloadPlan, List<String>)?
-          bookImporter = _bookImporter;
+      bookImporter = _bookImporter;
       if (bookImporter == null) {
         importError ??= 'book import unsupported';
       } else {
@@ -926,13 +947,16 @@ class AnimeDownloadService {
     final Future<DiscoveryImportOutcome?> Function(
       AnimeDownloadPlan,
       List<String>,
-    )? importer = _discoveryImporter;
+    )?
+    importer = _discoveryImporter;
     if (importer == null) {
       importError = 'content kind ${plan.contentKind} unsupported';
     } else {
       try {
-        final DiscoveryImportOutcome? outcome =
-            await importer(plan, resolveAllAbsolutePaths(info, files));
+        final DiscoveryImportOutcome? outcome = await importer(
+          plan,
+          resolveAllAbsolutePaths(info, files),
+        );
         imported = outcome?.importedCount ?? 0;
         deferred = outcome?.deferred ?? false;
       } on DiscoveryImportBlockedException catch (e) {
@@ -992,7 +1016,8 @@ class AnimeDownloadService {
     final Future<ResolvedPlanSubtitles> Function(
       AnimeDownloadPlan,
       List<String>,
-    )? resolver = _subtitleResolver;
+    )?
+    resolver = _subtitleResolver;
     if (resolver == null) {
       return attempted.copyWith(
         subtitleStatus: AnimeDownloadPlan.subtitleUnavailable,
@@ -1078,8 +1103,11 @@ class AnimeDownloadService {
     );
     final Map<String, int> videosPerStaged = <String, int>{};
     for (final PlanSubtitle sub in pairs.values) {
-      videosPerStaged.update(sub.stagedPath, (int n) => n + 1,
-          ifAbsent: () => 1);
+      videosPerStaged.update(
+        sub.stagedPath,
+        (int n) => n + 1,
+        ifAbsent: () => 1,
+      );
     }
     for (final MapEntry<String, PlanSubtitle> entry in pairs.entries) {
       if (videosPerStaged[entry.value.stagedPath] != 1) continue;

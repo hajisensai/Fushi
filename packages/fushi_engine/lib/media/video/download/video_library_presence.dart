@@ -59,7 +59,8 @@ class VideoLibraryPresence {
   int? highestEpisodeOf(int season) {
     final String prefix = 'S${season.toString().padLeft(2, '0')}E';
     return _highest(
-        managedEpisodeKeys.where((String k) => k.startsWith(prefix)));
+      managedEpisodeKeys.where((String k) => k.startsWith(prefix)),
+    );
   }
 
   static int? _highest(Iterable<String> keys) {
@@ -95,11 +96,11 @@ Future<VideoLibraryPresence> resolveVideoLibraryPresence(
     return VideoLibraryPresence.none;
   }
   if (mediaKind == VideoMetadataMediaKind.movie) {
-    final VideoMetadataWorkRow? work =
-        await database.getVideoMetadataWorkByProviderIdentity(
-      provider: provider,
-      externalId: normalizedExternalId,
-    );
+    final VideoMetadataWorkRow? work = await database
+        .getVideoMetadataWorkByProviderIdentity(
+          provider: provider,
+          externalId: normalizedExternalId,
+        );
     return VideoLibraryPresence(
       workId: work?.id,
       collectionId: work?.collectionId,
@@ -123,7 +124,7 @@ Future<VideoLibraryPresence> resolveVideoLibraryPresence(
     // 住，不依赖这里的任务扫描。
     final bool jobOwnsEpisodeFiles =
         job.lifecycle == VideoDownloadJobLifecycle.active ||
-            job.lifecycle == VideoDownloadJobLifecycle.completed;
+        job.lifecycle == VideoDownloadJobLifecycle.completed;
     if (!sameIdentity(job) || !jobOwnsEpisodeFiles) continue;
     for (final VideoDownloadJobFileRow file
         in await database.getVideoDownloadJobFiles(job.jobId)) {
@@ -138,23 +139,22 @@ Future<VideoLibraryPresence> resolveVideoLibraryPresence(
     }
   }
 
-  final VideoMetadataWorkRow? work =
-      await database.getVideoMetadataWorkByProviderIdentity(
-    provider: provider,
-    externalId: normalizedExternalId,
-  );
+  final VideoMetadataWorkRow? work = await database
+      .getVideoMetadataWorkByProviderIdentity(
+        provider: provider,
+        externalId: normalizedExternalId,
+      );
   final int? collectionId = work?.collectionId;
   if (work == null || collectionId == null) {
-    return VideoLibraryPresence(
-      workId: work?.id,
-      managedEpisodeKeys: result,
-    );
+    return VideoLibraryPresence(workId: work?.id, managedEpisodeKeys: result);
   }
-  for (final MediaCollectionItemRow item
-      in await database.getCollectionItems(collectionId)) {
+  for (final MediaCollectionItemRow item in await database.getCollectionItems(
+    collectionId,
+  )) {
     if (item.mediaType != MediaKind.video.dbValue) continue;
-    final VideoBookRow? book =
-        await database.getVideoBookByBookUid(item.entryKey);
+    final VideoBookRow? book = await database.getVideoBookByBookUid(
+      item.entryKey,
+    );
     if (book == null) continue;
     final VideoNameInfo parsed = parseVideoFilename(book.videoPath);
     final int? episode = parsed.episode;

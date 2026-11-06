@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_segment_widths.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -42,6 +43,9 @@ class FushiPillSegmentedButton<T> extends SegmentedButton<T> {
   /// 段的左右内边距：文字段 / 纯图标段。
   static const double labelPadding = 16;
   static const double iconOnlyPadding = 12;
+
+  /// 宽度不够时段的左右内边距最多收到这里（再不够才折行）。
+  static const double minSegmentPadding = 8;
 
   /// 段内图标尺寸与「图标 + 文字」段的图标 / 文字间距。
   static const double iconSize = 18;
@@ -94,19 +98,18 @@ class _FushiPillSegmentedButtonState<T> extends State<SegmentedButton<T>> {
           : on
           ? fushiPillSegmentSelectedForeground(cs, eink: eink)
           : cs.onSurfaceVariant;
-      final bool iconOnly = s.label == null;
       final Widget content = IconTheme.merge(
-        data: IconThemeData(
-          color: fg,
-          size: FushiPillSegmentedButton.iconSize,
-        ),
+        data: IconThemeData(color: fg, size: FushiPillSegmentedButton.iconSize),
         child: DefaultTextStyle.merge(
           style: base.copyWith(
             color: fg,
             fontWeight: on ? FontWeight.w700 : FontWeight.w500,
           ),
-          maxLines: 1,
+          // 段宽 ≥ 自然宽时单行不会折；所有退让都用尽仍放不下时折成两行，
+          // 而不是省略号吞掉文案（反馈 GaI5uPQEbF）。
+          maxLines: 2,
           overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
@@ -120,14 +123,18 @@ class _FushiPillSegmentedButtonState<T> extends State<SegmentedButton<T>> {
         ),
       );
       const ShapeBorder pill = StadiumBorder();
+      // 段自身只带最小内边距；首选内边距（[FushiPillSegmentedButton.labelPadding]
+      // / [FushiPillSegmentedButton.iconOnlyPadding]）多出的部分由
+      // [FushiSegmentRow] 按可用宽度分配（放不下时先收它，再折行）。
       Widget body = AnimatedContainer(
         duration: duration,
         curve: FushiMotion.standard,
-        height: FushiPillSegmentedButton.segmentHeight,
-        padding: EdgeInsets.symmetric(
-          horizontal: iconOnly
-              ? FushiPillSegmentedButton.iconOnlyPadding
-              : FushiPillSegmentedButton.labelPadding,
+        constraints: const BoxConstraints(
+          minHeight: FushiPillSegmentedButton.segmentHeight,
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: FushiPillSegmentedButton.minSegmentPadding,
+          vertical: 2,
         ),
         alignment: Alignment.center,
         decoration: ShapeDecoration(
@@ -176,16 +183,21 @@ class _FushiPillSegmentedButtonState<T> extends State<SegmentedButton<T>> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(FushiPillSegmentedButton.trackPadding),
-        // 各段等宽（取最宽段，与 Material SegmentedButton 同一约定）：选中胶囊
-        // 在段间切换时宽度不跳。
-        child: IntrinsicWidth(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              for (final ButtonSegment<T> s in _w.segments)
-                Expanded(child: segment(s)),
-            ],
-          ),
+        // 段宽分配见 [fushiSegmentWidths]：放得下时各段等宽（选中胶囊切换不跳
+        // 宽），放不下时按内容分宽 → 收内边距 → 折行，不再一律等比缩窄截断。
+        child: FushiSegmentRow(
+          extras: <double>[
+            for (final ButtonSegment<T> s in _w.segments)
+              2 *
+                  ((s.label == null
+                          ? FushiPillSegmentedButton.iconOnlyPadding
+                          : FushiPillSegmentedButton.labelPadding) -
+                      FushiPillSegmentedButton.minSegmentPadding),
+          ],
+          textDirection: Directionality.of(context),
+          children: <Widget>[
+            for (final ButtonSegment<T> s in _w.segments) segment(s),
+          ],
         ),
       ),
     );

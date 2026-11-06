@@ -5,19 +5,36 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_change_note_type_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_field_info_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_type_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_field_catalog.dart' show srsFieldDisplayName;
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_visual_template.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
+    show FushiCheckbox;
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show
+        FushiCardBlock,
+        FushiCardBlockItem,
+        FushiCardFieldItem,
+        FushiCardFrontBlock,
+        FushiCardHtmlItem,
+        FushiCardItem,
+        fushiCardBackLayoutOf,
+        fushiCardFrontLayoutOf,
+        kFushiOptPitch,
+        templateIdsToNames;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -25,7 +42,6 @@ import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../helpers/test_platform_services.dart';
 import 'srs_test_support.dart';
 
 Future<SrsDbStore> _openStore(WidgetTester tester) async {
@@ -54,19 +70,21 @@ Future<void> _pumpPage(
   required SrsDbStore store,
   required bool apple,
   required Widget page,
+  Widget Function(BuildContext, SrsCardFace)? faceBuilder,
 }) async {
   tester.view.physicalSize = const Size(1100, 1400);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  final AppModel appModel = AppModel(testPlatformServices());
+  final AppModel appModel = SrsTestAppModel();
   await tester.pumpWidget(
     ProviderScope(
       overrides: <Override>[
         appProvider.overrideWith((Ref ref) => appModel),
         srsStoreProvider.overrideWith((Ref ref) async => store),
         srsCardFaceBuilderProvider.overrideWithValue(
-          (BuildContext context, SrsCardFace face) =>
-              SrsPlainCardFace(face: face),
+          faceBuilder ??
+              (BuildContext context, SrsCardFace face) =>
+                  SrsPlainCardFace(face: face),
         ),
       ],
       child: TranslationProvider(
@@ -90,6 +108,27 @@ Future<void> _pumpPage(
   await _settle(tester);
 }
 
+/// 计数卡面：每次 initState（= 卡面被新建一次）加一。
+int _faceInits = 0;
+
+class _CountingFace extends StatefulWidget {
+  const _CountingFace();
+
+  @override
+  State<_CountingFace> createState() => _CountingFaceState();
+}
+
+class _CountingFaceState extends State<_CountingFace> {
+  @override
+  void initState() {
+    super.initState();
+    _faceInits++;
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.expand();
+}
+
 Future<void> _unmount(WidgetTester tester) async {
   await tester.pumpWidget(const SizedBox.shrink());
   await tester.pump(const Duration(seconds: 1));
@@ -102,6 +141,14 @@ Future<void> _submitTextDialog(WidgetTester tester, String text) async {
   await tester.tap(find.text(t.dialog_ok).last);
   await _settle(tester);
 }
+
+/// 模板 / 笔记预览里的原生 HTML 卡面（Basic 等非 Fushi 卡片两面原生画得全时）。
+final Finder _htmlPreview = find.byKey(
+  const ValueKey<String>('srs-preview-html-face'),
+);
+
+Finder _inHtmlPreview(String text) =>
+    find.descendant(of: _htmlPreview, matching: find.textContaining(text));
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
@@ -272,18 +319,18 @@ void main() {
         page: SrsTemplateEditorPage(
           noteTypeId: nt,
           templateId: v.templates.single.id,
+          initialTab: SrsTemplateEditorTab.front,
         ),
       );
-      final Finder face = find.byKey(
-        const ValueKey<String>('srs-face-question'),
-      );
-      expect(face, findsOneWidget);
-      expect((tester.widget(face) as Text).data, '猫');
+      // Basic 卡两面都在原生认得的子集里：预览与复习页同样走原生 HTML 卡面。
+      expect(_htmlPreview, findsOneWidget);
+      expect(_inHtmlPreview('猫'), findsWidgets);
       expect(find.text('{{Front}}'), findsOneWidget, reason: '编辑器按字段名显示');
 
       await tester.enterText(find.byType(EditableText).first, '{{Back}}');
       await _settle(tester);
-      expect((tester.widget(face) as Text).data, 'cat', reason: '实时预览');
+      expect(_inHtmlPreview('cat'), findsWidgets, reason: '实时预览');
+      expect(_inHtmlPreview('猫'), findsNothing);
       await tester.tap(
         find.byKey(const ValueKey<String>('srs_template_save')).first,
       );
@@ -308,6 +355,467 @@ void main() {
         '{{fld:${v.fields[1].id}}}',
         reason: '模板有错误时不写库',
       );
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 模板编辑器可视化页：代码模板 → 按字段生成 → 预览 → 删块 → 保存写库且能读回布局', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String nt = await _db(
+        tester,
+        () => store.createStockNoteType(SrsStockNoteType.basic, 'B'),
+      );
+      final SrsNoteTypeView v = (await _db(tester, () => store.noteType(nt)))!;
+      await _db(
+        tester,
+        () => store.createNote(
+          noteTypeId: nt,
+          fieldsById: <String, String>{
+            v.fields[0].id: '猫',
+            v.fields[1].id: 'cat',
+          },
+        ),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsTemplateEditorPage(
+          noteTypeId: nt,
+          templateId: v.templates.single.id,
+        ),
+      );
+      // 默认打开可视化页；现有模板是代码写的 → 先给「转成可视化」。
+      expect(
+        find.byKey(const ValueKey<String>('srs-visual-convert')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-visual-generate')),
+      );
+      await _settle(tester);
+      // 模板已有内容 → 确认替换。
+      await tester.tap(find.text(t.srs_visual_generate).last);
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-visual-block-b1')),
+        findsOneWidget,
+      );
+      expect(_inHtmlPreview('猫'), findsWidgets, reason: '正面放词条');
+
+      // 换到背面：重复正面 + 分隔线 + 其余字段（未知字段带字段名小标题）。
+      await tester.tap(find.text(t.srs_note_types_side_back).first);
+      await _settle(tester);
+      expect(_inHtmlPreview('cat'), findsWidgets);
+      final Finder del = find.byKey(
+        const ValueKey<String>('srs-visual-delete-b3'),
+      );
+      await tester.ensureVisible(del);
+      await tester.tap(del);
+      await _settle(tester);
+      expect(_inHtmlPreview('cat'), findsNothing);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs_template_save')).first,
+      );
+      await _settle(tester);
+      final SrsTemplateDef saved = (await _db(
+        tester,
+        () => store.noteType(nt),
+      ))!.templates.single;
+      expect(saved.front, startsWith(kSrsVisualMarkerPrefix));
+      expect(saved.front, contains('{{fld:${v.fields[0].id}}}'));
+      expect(saved.back, isNot(contains('fld:${v.fields[1].id}')));
+      final List<SrsVisualBlock> back = srsParseVisualMarker(saved.back)!;
+      expect(back.map((SrsVisualBlock b) => b.kind), <SrsVisualBlockKind>[
+        SrsVisualBlockKind.frontSide,
+        SrsVisualBlockKind.divider,
+      ]);
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 内置 Lapis 类型：概览卡、开关字段折叠组、模板行副标题列出正面字段', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsNoteTypeEditorPage(noteTypeId: store.lapisNoteTypeId),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-note-type-overview')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-note-type-flag-fields')),
+        findsOneWidget,
+      );
+      final SrsNoteTypeView lapis = (await _db(
+        tester,
+        () => store.noteType(store.lapisNoteTypeId),
+      ))!;
+      final SrsTemplateDef tpl = lapis.templates.first;
+      final List<SrsFieldDef> front = srsFieldsShownOnSide(lapis, tpl.front);
+      expect(front, isNotEmpty);
+      final Finder row = find.byKey(
+        ValueKey<String>('srs-note-type-template-${tpl.name}'),
+      );
+      expect(row, findsOneWidget);
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.textContaining(srsFieldDisplayName(front.first)),
+        ),
+        findsWidgets,
+      );
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 编辑页：没被任何模板引用的新字段带「未上卡面」标签', (WidgetTester tester) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String nt = await _db(
+        tester,
+        () => store.createStockNoteType(SrsStockNoteType.basic, 'B'),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsNoteTypeEditorPage(noteTypeId: nt),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-note-type-field-unused-Front')),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-note-type-add-field')),
+      );
+      await _settle(tester);
+      await _submitTextDialog(tester, 'Extra');
+      expect(
+        find.byKey(const ValueKey<String>('srs-note-type-field-unused-Extra')),
+        findsOneWidget,
+      );
+      await _unmount(tester);
+    });
+
+    testWidgets(
+      '[$ds] Fushi 卡片区块布局：取消区块、加字段 / HTML 区块、改正面选项 → 预览仍是原生卡面 → 保存后模板认得新布局',
+      (WidgetTester tester) async {
+        final SrsDbStore store = await _openStore(tester);
+        final SrsNoteTypeView fushi = (await _db(
+          tester,
+          () => store.noteType(store.fushiCardNoteTypeId),
+        ))!;
+        String fieldId(String name) =>
+            fushi.fields.firstWhere((SrsFieldDef f) => f.name == name).id;
+        final String noteId = await _db(
+          tester,
+          () => store.createNote(
+            noteTypeId: fushi.id,
+            fieldsById: <String, String>{
+              fieldId('Term'): '通う',
+              fieldId('MainDefinition'): '<ol><li>to commute</li></ol>',
+              fieldId('Source'): 'Book',
+            },
+          ),
+        );
+        await _pumpPage(
+          tester,
+          store: store,
+          apple: apple,
+          page: SrsTemplateEditorPage(
+            noteTypeId: store.fushiCardNoteTypeId,
+            templateId: fushi.templates.single.id,
+          ),
+        );
+        final Finder native = find.byKey(
+          const ValueKey<String>('srs-note-preview-native'),
+        );
+        expect(native, findsOneWidget);
+        // 可视化页切到背面：Fushi 卡片出区块布局，不出通用可视化块。
+        await tester.tap(find.text(t.srs_note_types_side_back).first);
+        await _settle(tester);
+        expect(
+          find.byKey(const ValueKey<String>('srs-fushi-block-layout-back')),
+          findsOneWidget,
+        );
+        // 取消勾选来源区块（勾选框；点行本身是展开它的选项）。
+        final Finder source = find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-fushi-layout-source')),
+          matching: find.byType(FushiCheckbox),
+        );
+        await tester.ensureVisible(source);
+        await tester.tap(source);
+        await _settle(tester);
+        // 加一个字段区块（默认第一个字段）与一个 HTML 区块，HTML 区块写一段原生画得了的。
+        final Finder addField = find.byKey(
+          const ValueKey<String>('srs-fushi-layout-add-field'),
+        );
+        await tester.ensureVisible(addField);
+        await tester.tap(addField);
+        await _settle(tester);
+        final Finder addHtml = find.byKey(
+          const ValueKey<String>('srs-fushi-layout-add-html'),
+        );
+        await tester.ensureVisible(addHtml);
+        await tester.tap(addHtml);
+        await _settle(tester);
+        final Finder htmlEditor = find.descendant(
+          of: find.byWidgetPredicate(
+            (Widget w) =>
+                w.key is ValueKey<String> &&
+                (w.key! as ValueKey<String>).value.endsWith('-html') &&
+                (w.key! as ValueKey<String>).value.startsWith(
+                  'srs-fushi-layout-item-',
+                ),
+          ),
+          matching: find.byType(EditableText),
+        );
+        await tester.ensureVisible(htmlEditor);
+        await tester.enterText(htmlEditor, '<p>{{Term}} 的 HTML</p>');
+        await _settle(tester);
+        expect(
+          find.text(t.srs_fushi_block_html_native),
+          findsOneWidget,
+          reason: '当场判：原生画得了',
+        );
+        // 只动了区块：预览仍走原生 Fushi 卡面。
+        expect(native, findsOneWidget);
+        expect(
+          find.byKey(const ValueKey<String>('srs-fushi-layout-unrecognized')),
+          findsNothing,
+        );
+        // 换到正面：题面关音调。
+        await tester.tap(find.text(t.srs_note_types_side_front).first);
+        await _settle(tester);
+        expect(
+          find.byKey(const ValueKey<String>('srs-fushi-block-layout-front')),
+          findsOneWidget,
+        );
+        final Finder prompt = find.byKey(
+          const ValueKey<String>('srs-fushi-layout-prompt-edit'),
+        );
+        await tester.ensureVisible(prompt);
+        await tester.tap(prompt);
+        await _settle(tester);
+        final Finder pitch = find.byKey(
+          const ValueKey<String>('srs-fushi-layout-prompt-opt-pitch'),
+        );
+        await tester.ensureVisible(pitch);
+        await tester.tap(pitch);
+        await _settle(tester);
+        expect(native, findsOneWidget);
+
+        await tester.tap(
+          find.byKey(const ValueKey<String>('srs_template_save')).first,
+        );
+        await _settle(tester);
+        final SrsNoteTypeView saved = (await _db(
+          tester,
+          () => store.noteType(store.fushiCardNoteTypeId),
+        ))!;
+        final String back = templateIdsToNames(
+          saved.templates.single.back,
+          <String, String>{
+            for (final SrsFieldDef f in saved.fields) f.id: f.name,
+          },
+        );
+        final List<FushiCardItem>? layout = fushiCardBackLayoutOf(back);
+        expect(layout, isNotNull);
+        expect(
+          <FushiCardItem>[...layout!.take(6)],
+          <FushiCardItem>[
+            for (final FushiCardBlock b in FushiCardBlock.values)
+              if (b != FushiCardBlock.source) FushiCardBlockItem(b),
+          ],
+        );
+        expect(layout[6], FushiCardFieldItem(field: saved.fields.first.name));
+        expect(layout[7], const FushiCardHtmlItem('<p>{{Term}} 的 HTML</p>'));
+        final String front = templateIdsToNames(
+          saved.templates.single.front,
+          <String, String>{
+            for (final SrsFieldDef f in saved.fields) f.id: f.name,
+          },
+        );
+        expect(fushiCardFrontLayoutOf(front), <FushiCardItem>[
+          FushiCardBlockItem(FushiCardFrontBlock.frequency),
+          FushiCardBlockItem(
+            FushiCardFrontBlock.prompt,
+            options: <String, String>{kFushiOptPitch: '0'},
+          ),
+          FushiCardBlockItem(FushiCardFrontBlock.hint),
+        ]);
+        // 存下的卡在复习页渲染同样走原生（字段区块 / HTML 区块已按字段展开）。
+        final SrsCardCacheRow card = (await _db(
+          tester,
+          () => store.cardsOfNote(noteId),
+        )).first;
+        final SrsRenderedCard rendered = (await _db(
+          tester,
+          () => store.renderCard(card.id),
+        ))!;
+        expect(rendered.fushiCardDefinitions, isNotNull);
+        expect(
+          rendered.fushiCardBack.whereType<FushiCardHtmlItem>().single.html,
+          '<p>通う 的 HTML</p>',
+        );
+        await _unmount(tester);
+      },
+    );
+
+    testWidgets('[$ds] Lapis 模板编辑页可视化 tab：内置类型出内置说明而不是转换说明', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final SrsNoteTypeView lapis = (await _db(
+        tester,
+        () => store.noteType(store.lapisNoteTypeId),
+      ))!;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsTemplateEditorPage(
+          noteTypeId: store.lapisNoteTypeId,
+          templateId: lapis.templates.first.id,
+        ),
+      );
+      final Finder note = find.byKey(
+        const ValueKey<String>('srs-visual-builtin-note'),
+      );
+      expect(note, findsOneWidget);
+      expect(
+        (tester.widget(note) as Text).data,
+        t.srs_visual_builtin_other_note,
+      );
+      expect(find.text(t.srs_visual_builtin_title), findsOneWidget);
+      expect(find.text(t.srs_visual_convert_title), findsNothing);
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 模板编辑器：正面改成语法错误再改回，卡面不被拆掉重建', (
+      WidgetTester tester,
+    ) async {
+      _faceInits = 0;
+      final SrsDbStore store = await _openStore(tester);
+      final String nt = await _db(
+        tester,
+        () => store.createStockNoteType(SrsStockNoteType.basic, 'B'),
+      );
+      final SrsNoteTypeView v = (await _db(tester, () => store.noteType(nt)))!;
+      await _db(
+        tester,
+        () => store.createNote(
+          noteTypeId: nt,
+          fieldsById: <String, String>{
+            v.fields[0].id: '猫',
+            // 带卡片脚本 → 原生 HTML 卡面画不了，预览走整面 WebView（本测试测的就是它不被拆）。
+            v.fields[1].id: 'cat<script>void 0;</script>',
+          },
+        ),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        faceBuilder: (BuildContext context, SrsCardFace face) =>
+            const _CountingFace(),
+        page: SrsTemplateEditorPage(
+          noteTypeId: nt,
+          templateId: v.templates.single.id,
+          initialTab: SrsTemplateEditorTab.front,
+        ),
+      );
+      expect(_faceInits, 1);
+      // 引用不存在的字段：模板渲染报错（与「未知字段报错不保存」同一错误路径）。
+      await tester.enterText(find.byType(EditableText).first, '{{Nope}}');
+      await tester.pump(const Duration(milliseconds: 250));
+      await _settle(tester);
+      expect(
+        find.textContaining(t.srs_note_types_template_error(error: '').trim()),
+        findsWidgets,
+        reason: '确实进了错误态',
+      );
+      await tester.enterText(find.byType(EditableText).first, '{{Back}}');
+      await tester.pump(const Duration(milliseconds: 250));
+      await _settle(tester);
+      expect(_faceInits, 1, reason: '错误态只盖提示层，卡面不拆');
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 字段说明：内置字段显示人话名字与内置说明；自建字段写说明保存写库、编辑页字段行显示', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsFieldInfoPage(
+          noteTypeId: store.lapisNoteTypeId,
+          fieldId: srsLapisFieldId(store.profileUid, 'ExpressionReading'),
+        ),
+      );
+      expect(find.text(t.srs_field_info_expression_reading_name), findsWidgets);
+      expect(
+        find.text(t.srs_field_info_raw_name(name: 'ExpressionReading')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('srs-field-info-builtin-description'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(t.srs_field_info_mining(slot: t.handlebar_reading)),
+        findsOneWidget,
+        reason: '制卡时自动填入读音',
+      );
+      await _unmount(tester);
+
+      final String nt = await _db(
+        tester,
+        () => store.createStockNoteType(SrsStockNoteType.basic, 'B'),
+      );
+      final SrsNoteTypeView v = (await _db(tester, () => store.noteType(nt)))!;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsFieldInfoPage(noteTypeId: nt, fieldId: v.fields[1].id),
+      );
+      await tester.enterText(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey<String>('srs-field-info-description-input'),
+          ),
+          matching: find.byType(EditableText),
+        ),
+        '中文释义',
+      );
+      await _settle(tester);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-field-info-save')).first,
+      );
+      await _settle(tester);
+      expect(
+        (await _db(tester, () => store.noteType(nt)))!.fields[1].description,
+        '中文释义',
+      );
+      await _unmount(tester);
+
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsNoteTypeEditorPage(noteTypeId: nt),
+      );
+      expect(find.textContaining('中文释义'), findsOneWidget);
       await _unmount(tester);
     });
 
@@ -396,6 +904,30 @@ void main() {
       await _unmount(tester);
     });
   }
+
+  test('srsFieldsShownOnSide：条件段不算、过滤器算、按出现位置排序', () async {
+    final (FushiDatabase db, SrsDbStore store) = await openSrsTestStore();
+    addTearDown(db.close);
+    final String nt = await store.createStockNoteType(
+      SrsStockNoteType.basic,
+      'B',
+    );
+    final SrsNoteTypeView v = (await store.noteType(nt))!;
+    final String a = v.fields[0].id;
+    final String b = v.fields[1].id;
+    expect(
+      srsFieldsShownOnSide(
+        v,
+        '{{#fld:$a}}x{{/fld:$a}}{{furigana:fld:$b}}{{fld:$a}}',
+      ).map((SrsFieldDef x) => x.id),
+      <String>[b, a],
+    );
+    expect(
+      srsFieldsShownOnSide(v, '{{#fld:$a}}x{{/fld:$a}}'),
+      isEmpty,
+      reason: '只有条件段 = 没显示',
+    );
+  });
 
   testWidgets('[Apple] 牌组列表的「笔记类型」入口打开管理页', (WidgetTester tester) async {
     final SrsDbStore store = await _openStore(tester);

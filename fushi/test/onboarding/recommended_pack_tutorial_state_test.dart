@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 
 void main() {
@@ -19,15 +19,17 @@ void main() {
     expect(await RecommendedPackTutorialState(root).shouldPrompt, isTrue);
   });
 
-  test('explicit skip remains dismissed after restart and another import',
-      () async {
-    await state.markImportSucceeded();
-    await state.dismissPrompt();
-    final RecommendedPackTutorialState restarted =
-        RecommendedPackTutorialState(root);
-    await restarted.markImportSucceeded();
-    expect(await restarted.shouldPrompt, isFalse);
-  });
+  test(
+    'explicit skip remains dismissed after restart and another import',
+    () async {
+      await state.markImportSucceeded();
+      await state.dismissPrompt();
+      final RecommendedPackTutorialState restarted =
+          RecommendedPackTutorialState(root);
+      await restarted.markImportSucceeded();
+      expect(await restarted.shouldPrompt, isFalse);
+    },
+  );
 
   test('completed tutorials do not prompt after later imports', () async {
     await state.markCompleted();

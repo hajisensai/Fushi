@@ -1,20 +1,21 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/field.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 
 /// Used to return a formatted text from hidden dictionary entries from
 /// collapsed dictionaries only.
 class CollapsedMeaningField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   CollapsedMeaningField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Collapsed Meaning',
-          description: 'Dictionary definitions only from collapsed'
-              ' dictionaries.',
-          icon: Icons.close_fullscreen_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Collapsed Meaning',
+        description:
+            'Dictionary definitions only from collapsed'
+            ' dictionaries.',
+        icon: Icons.close_fullscreen_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static CollapsedMeaningField get instance => _instance;

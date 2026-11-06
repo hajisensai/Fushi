@@ -22,13 +22,15 @@ void main() {
   group('FushiFilePickerRow whole-row tap', () {
     testWidgets('tapping the title text fires onTap', (tester) async {
       bool rowTapped = false;
-      await tester.pumpWidget(buildSubject(
-        FushiFilePickerRow(
-          title: 'Pick EPUB',
-          icon: Icons.menu_book_outlined,
-          onTap: () => rowTapped = true,
+      await tester.pumpWidget(
+        buildSubject(
+          FushiFilePickerRow(
+            title: 'Pick EPUB',
+            icon: Icons.menu_book_outlined,
+            onTap: () => rowTapped = true,
+          ),
         ),
-      ));
+      );
 
       await tester.tap(find.text('Pick EPUB'));
       await tester.pumpAndSettle();
@@ -38,14 +40,16 @@ void main() {
 
     testWidgets('disabled row does not fire onTap', (tester) async {
       bool rowTapped = false;
-      await tester.pumpWidget(buildSubject(
-        FushiFilePickerRow(
-          title: 'Pick EPUB',
-          icon: Icons.menu_book_outlined,
-          enabled: false,
-          onTap: () => rowTapped = true,
+      await tester.pumpWidget(
+        buildSubject(
+          FushiFilePickerRow(
+            title: 'Pick EPUB',
+            icon: Icons.menu_book_outlined,
+            enabled: false,
+            onTap: () => rowTapped = true,
+          ),
         ),
-      ));
+      );
 
       await tester.tap(find.text('Pick EPUB'));
       await tester.pumpAndSettle();
@@ -53,25 +57,28 @@ void main() {
       expect(rowTapped, isFalse);
     });
 
-    testWidgets('trailing icon tap fires the icon callback, not the row',
-        (tester) async {
+    testWidgets('trailing icon tap fires the icon callback, not the row', (
+      tester,
+    ) async {
       bool rowTapped = false;
       bool iconTapped = false;
-      await tester.pumpWidget(buildSubject(
-        FushiFilePickerRow(
-          title: 'Pick subtitle',
-          icon: Icons.subtitles_outlined,
-          onTap: () => rowTapped = true,
-          actions: [
-            FushiIconButton(
-              icon: Icons.close,
-              tooltip: 'Clear',
-              isWideTapArea: true,
-              onTap: () => iconTapped = true,
-            ),
-          ],
+      await tester.pumpWidget(
+        buildSubject(
+          FushiFilePickerRow(
+            title: 'Pick subtitle',
+            icon: Icons.subtitles_outlined,
+            onTap: () => rowTapped = true,
+            actions: [
+              FushiIconButton(
+                icon: Icons.close,
+                tooltip: 'Clear',
+                isWideTapArea: true,
+                onTap: () => iconTapped = true,
+              ),
+            ],
+          ),
         ),
-      ));
+      );
 
       await tester.tap(find.byIcon(Icons.close));
       await tester.pumpAndSettle();
@@ -89,8 +96,11 @@ void main() {
 
       String rowBody(String methodName) {
         final int start = source.indexOf('Widget $methodName()');
-        expect(start, greaterThanOrEqualTo(0),
-            reason: 'missing $methodName in book_import_dialog.dart');
+        expect(
+          start,
+          greaterThanOrEqualTo(0),
+          reason: 'missing $methodName in book_import_dialog.dart',
+        );
         // Each *Row method returns a single FushiFilePickerRow; slice up to the
         // closing `);` of that return statement followed by the method `}`.
         final int rowStart = source.indexOf('FushiFilePickerRow(', start);

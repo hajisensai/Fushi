@@ -1,7 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// 整页形态的标签选择器（深链 / 旧调用点兼容）。主体与 [showTagPicker] 的 sheet /
 /// 弹层是**同一个** [TagPickerPanel]：搜索、一键新建、已选 input chip、filter
@@ -10,14 +11,11 @@ class TagPickerPage extends StatelessWidget {
   /// 两种目标二选一，共用同一标签池：媒体条目传 [media]（统一媒体身份
   /// [MediaRef]：epub=bookKey / srt=SrtBooks.uid / video=bookUid /
   /// game=galgames.id）；合集传 [collectionId]（media_collections 主键）。
-  const TagPickerPage({
-    this.media,
-    this.collectionId,
-    super.key,
-  }) : assert(
-          (media != null) ^ (collectionId != null),
-          'exactly one of: media / collectionId',
-        );
+  const TagPickerPage({this.media, this.collectionId, super.key})
+    : assert(
+        (media != null) ^ (collectionId != null),
+        'exactly one of: media / collectionId',
+      );
   final MediaRef? media;
   final int? collectionId;
 

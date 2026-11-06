@@ -19,6 +19,7 @@ import com.pichillilorenzo.flutter_inappwebview_android.find_interaction.FindInt
 import com.pichillilorenzo.flutter_inappwebview_android.pull_to_refresh.PullToRefreshLayout;
 import com.pichillilorenzo.flutter_inappwebview_android.pull_to_refresh.PullToRefreshSettings;
 import com.pichillilorenzo.flutter_inappwebview_android.webview.PlatformWebView;
+import com.pichillilorenzo.flutter_inappwebview_android.webview.WebViewProfileManager;
 import com.pichillilorenzo.flutter_inappwebview_android.types.URLRequest;
 import com.pichillilorenzo.flutter_inappwebview_android.types.UserScript;
 
@@ -65,6 +66,15 @@ public class FlutterWebView implements PlatformWebView {
 
     webView = new InAppWebView(context, plugin, id, windowId, customSettings, contextMenu,
             customSettings.useHybridComposition ? null : plugin.flutterView, userScripts);
+    // Hibiki patch: a named profile (isolated cookies / storage, used for
+    // incognito tabs) must be set before the WebView is touched in any other
+    // way, i.e. before prepare() applies settings and before the initial load.
+    if (initialSettings != null) {
+      Object profileName = initialSettings.get(WebViewProfileManager.SETTINGS_KEY);
+      if (profileName instanceof String) {
+        webView.profileName = WebViewProfileManager.attach(webView, (String) profileName);
+      }
+    }
     displayListenerProxy.onPostWebViewInitialization(displayManager);
 
     // set MATCH_PARENT layout params to the WebView, otherwise it won't take all the available space!

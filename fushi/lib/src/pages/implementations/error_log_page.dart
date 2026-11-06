@@ -8,8 +8,12 @@ import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/utils/misc/log_exporter.dart';
 import 'package:fushi/src/utils/misc/log_upload_config.dart';
 import 'package:fushi/src/utils/misc/log_uploader.dart';
-import 'package:fushi/utils.dart';
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 
 class ErrorLogPage extends StatefulWidget {
   const ErrorLogPage({super.key});
@@ -84,11 +88,8 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
           FushiIconButton(
             icon: FushiIcons.cloudUpload,
             tooltip: t.log_upload_action,
-            onTap: () => uploadLogToServer(
-              context: context,
-              log: _log,
-              kind: 'error',
-            ),
+            onTap: () =>
+                uploadLogToServer(context: context, log: _log, kind: 'error'),
           ),
         if (showSaveLogAction)
           FushiIconButton(
@@ -123,7 +124,10 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
           ) => count == 0
           // 空状态：settings kit 统一空态（M3E 形状图标 + 标题），不是一块只写着
           // 「暂无日志」的空日志面板。
-          ? SettingsEmptyState(icon: FushiIcons.success, title: t.error_log_empty)
+          ? SettingsEmptyState(
+              icon: FushiIcons.success,
+              title: t.error_log_empty,
+            )
           : FushiLogPanel(
               log: _log,
               shareAction: (text) => FushiShare.shareText(text),

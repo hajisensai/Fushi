@@ -6,9 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/audio_controller.dart' show MediaSessionOwner;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
+    show fushiPlayButtonBorder;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/cover_image.dart';
@@ -78,6 +82,11 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
     if (book == null || controller == null) {
       return const SizedBox.shrink();
     }
+    // 与音乐迷你条互斥（音乐模块 §7.5）：音乐持有媒体会话时让位给音乐条。
+    if (appModel.musicSession.isActive &&
+        appModel.audioCtrl.sessionOwner.value == MediaSessionOwner.music) {
+      return const SizedBox.shrink();
+    }
 
     final ColorScheme scheme = Theme.of(context).colorScheme;
     // 书架 mini bar 字幕行同属「显示意图」（TODO-1065, BUG-509）：display cue
@@ -110,19 +119,20 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: glass
-                          ? appleColorsOf(context).secondaryLabel
-                          : scheme.onSurfaceVariant,
-                    ),
+                  color: glass
+                      ? appleColorsOf(context).secondaryLabel
+                      : scheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
         ),
         // TODO-354 ③：书架底栏迷你条上的「悬浮字幕」开关——真启停 app 外悬浮字幕
         // 窗口（复用 toggleFloatingLyricFromControls：拉起/隐藏悬浮窗 + 偏好读写）。
-        // 仅 Android/Windows 有 native 悬浮窗后端（floating_lyric_channel），其余桌面
-        // 隐藏开关（优雅降级）。开着态用实心高亮图标提示当前已开。
-        if (Platform.isAndroid || Platform.isWindows)
+        // 只有有 native 悬浮窗后端的平台（FloatingLyricChannel.supported：Android /
+        // Windows / macOS）显示开关，其余（Linux）隐藏（优雅降级）。开着态用实心高亮
+        // 图标提示当前已开。
+        if (FloatingLyricChannel.supported)
           FushiIconButtonControl(
             icon: FushiIcon(
               appModel.showFloatingLyric
@@ -136,17 +146,19 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
             onPressed: () => _toggleFloatingLyric(appModel),
           ),
         if (expressive)
-          // M3E：播放键是迷你胶囊里唯一的实心主色圆钮（与浮动工具栏的 FAB
-          // 同一强调层级），播放中弹簧变形成方圆角——形状即状态。
+          // M3E：播放键是迷你胶囊里唯一的实心主色钮（与浮动工具栏的 FAB
+          // 同一强调层级），外形是统一的主播放键多边形（[fushiPlayButtonBorder]）。
           FushiIconButtonControl.filled(
             icon: FushiIcon(
               playing
                   ? FushiIcons.filled(FushiIcons.pause)
                   : FushiIcons.filled(FushiIcons.play),
             ),
-            shape: playing
-                ? FushiIconButtonShape.square
-                : FushiIconButtonShape.round,
+            style: ButtonStyle(
+              shape: WidgetStatePropertyAll<OutlinedBorder>(
+                fushiPlayButtonBorder(),
+              ),
+            ),
             tooltip: t.floating_lyric_play_pause,
             onPressed: () => controller.togglePlayPause(),
           )
@@ -239,12 +251,9 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
             curve: motion.spatialDefault.curve,
             builder: (BuildContext context, double v, Widget? child) =>
                 Transform.translate(
-              offset: Offset(0, (1 - v) * 24),
-              child: Transform.scale(
-                scale: 0.92 + 0.08 * v,
-                child: child,
-              ),
-            ),
+                  offset: Offset(0, (1 - v) * 24),
+                  child: Transform.scale(scale: 0.92 + 0.08 * v, child: child),
+                ),
             child: SizedBox(
               height: kFushiFloatingToolbarExtent,
               child: DecoratedBox(
@@ -339,19 +348,18 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
   // eink：primaryContainer 塌成页面底色，补描边免得只剩一枚悬空耳机图标。
   // Apple：中性 systemFill 底 + label 色单色图标（不要彩色底块）。
   Widget _coverFallback(ColorScheme scheme) => DecoratedBox(
-        decoration: BoxDecoration(
-          color: isGlassDesign(context)
-              ? appleColorsOf(context).fill
-              : scheme.primaryContainer,
-          border:
-              isEinkTheme(context) ? Border.all(color: scheme.outline) : null,
-        ),
-        child: FushiIcon(
-          FushiIcons.audiobook,
-          size: 20,
-          color: isGlassDesign(context)
-              ? appleColorsOf(context).label
-              : scheme.onPrimaryContainer,
-        ),
-      );
+    decoration: BoxDecoration(
+      color: isGlassDesign(context)
+          ? appleColorsOf(context).fill
+          : scheme.primaryContainer,
+      border: isEinkTheme(context) ? Border.all(color: scheme.outline) : null,
+    ),
+    child: FushiIcon(
+      FushiIcons.audiobook,
+      size: 20,
+      color: isGlassDesign(context)
+          ? appleColorsOf(context).label
+          : scheme.onPrimaryContainer,
+    ),
+  );
 }

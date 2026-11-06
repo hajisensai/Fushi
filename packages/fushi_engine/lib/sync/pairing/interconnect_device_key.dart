@@ -14,7 +14,7 @@
 //             签名无法搬到别的会话或别的 host 上重放。
 //
 // 密码学与字节格式复用排行榜设备钥匙（[LeaderboardIdentity]：P-256、RFC 6979 确定性 k、
-// pointycastle 纯 Dart），不另引依赖；引擎纯度不受影响。
+// 曲线运算在 native/fushi_compute），不另引依赖；引擎纯度不受影响。
 
 import 'dart:typed_data';
 

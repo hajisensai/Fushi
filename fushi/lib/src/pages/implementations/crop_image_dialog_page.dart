@@ -7,8 +7,16 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:fushi/pages.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// The content of the dialog when using the crop image enhancement.
 class CropImageDialogPage extends BasePage {
@@ -17,6 +25,7 @@ class CropImageDialogPage extends BasePage {
     required this.imageFile,
     required this.onCrop,
     this.aspectRatio,
+    this.maxDimension,
     super.key,
   });
 
@@ -32,14 +41,24 @@ class CropImageDialogPage extends BasePage {
   /// 用户以为自己裁歪了。
   final double? aspectRatio;
 
+  /// 源图解码与裁剪输出的长边上限（像素）；null = 原分辨率。
+  ///
+  /// 应用图标最终只用到几百像素，按原分辨率解码 + 全尺寸裁剪 + PNG 编码 +
+  /// 整张交给原生，在低内存手机上整段峰值过高（BUG-3601）。
+  final int? maxDimension;
+
   @override
   BasePageState createState() => _CropImageDialogPageState();
 }
 
 class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
-  late final CropController _controller =
-      CropController(aspectRatio: widget.aspectRatio);
-  late final ImageProvider _provider = FileImage(widget.imageFile);
+  late final CropController _controller = CropController(
+    aspectRatio: widget.aspectRatio,
+  );
+  late final ImageProvider _provider = cropSourceImageProvider(
+    widget.imageFile,
+    maxDimension: widget.maxDimension,
+  );
 
   /// BUG-2496：[CropImage] 只拿传入 `Image` 的 provider 自己 `resolve`，从不把那个
   /// `Image` 挂进树，所以 `errorBuilder` 在这里是死代码；它自己挂的监听器又没有
@@ -99,10 +118,7 @@ class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
           tokens.spacing.card,
           tokens.spacing.card,
         ),
-        body: SizedBox(
-          width: double.maxFinite,
-          child: buildContent(),
-        ),
+        body: SizedBox(width: double.maxFinite, child: buildContent()),
         footer: Wrap(
           alignment: WrapAlignment.end,
           spacing: tokens.spacing.gap,
@@ -113,10 +129,7 @@ class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
     );
   }
 
-  List<Widget> get actions => [
-        buildCancelButton(),
-        buildCropButton(),
-      ];
+  List<Widget> get actions => [buildCancelButton(), buildCropButton()];
 
   Widget buildContent() {
     if (_decodeError != null) {
@@ -179,9 +192,12 @@ class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
 
     String timestamp = DateFormat('yyyyMMddTkkmmss').format(DateTime.now());
     Directory imageDir = Directory('$cropImagePath/$timestamp');
-    ui.Image croppedImage = await _controller.croppedBitmap();
-    ByteData? data =
-        await croppedImage.toByteData(format: ui.ImageByteFormat.png);
+    ui.Image croppedImage = await _controller.croppedBitmap(
+      maxSize: widget.maxDimension?.toDouble(),
+    );
+    ByteData? data = await croppedImage.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
     Uint8List bytes = data!.buffer.asUint8List();
 
     String imagePath = '${imageDir.path}/cropped';
@@ -194,6 +210,20 @@ class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
   }
 }
 
+/// 裁剪对话框的源图：给了 [maxDimension] 就按长边上限等比解码（不放大），
+/// 否则原图。
+ImageProvider<Object> cropSourceImageProvider(File file, {int? maxDimension}) {
+  final FileImage source = FileImage(file);
+  if (maxDimension == null) return source;
+  return ResizeImage(
+    source,
+    width: maxDimension,
+    height: maxDimension,
+    policy: ResizeImagePolicy.fit,
+    allowUpscaling: false,
+  );
+}
+
 /// 弹出裁剪对话框，返回裁好的文件；用户取消返回 null。
 ///
 /// [CropImageDialogPage] 本身是回调式的（`onCrop` + 自己 pop），三个调用点各写一遍
@@ -202,6 +232,7 @@ Future<File?> showCropImageDialog(
   BuildContext context,
   File source, {
   double? aspectRatio,
+  int? maxDimension,
 }) async {
   File? cropped;
   await showAppDialog<void>(
@@ -209,6 +240,7 @@ Future<File?> showCropImageDialog(
     builder: (_) => CropImageDialogPage(
       imageFile: source,
       aspectRatio: aspectRatio,
+      maxDimension: maxDimension,
       onCrop: (File file) => cropped = file,
     ),
   );

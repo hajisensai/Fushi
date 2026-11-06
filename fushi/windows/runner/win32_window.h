@@ -8,6 +8,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 // A class abstraction for a high DPI-aware Win32 Window. Intended to be
@@ -84,15 +85,8 @@ class Win32Window {
   // backdrop show through. Does not touch DWM itself; FlutterWindow owns that.
   void SetSystemBackdrop(bool enabled);
 
-  // BUG-2964: same surface rule while the HDR video passthrough is live (the
-  // libmpv host window behind this one must show through the video hole, and
-  // a theme-coloured GDI fill would be added onto the picture). Does not touch
-  // DWM itself; FlutterWindow owns that (see main_surface_composition.h).
-  void SetVideoPassthrough(bool enabled);
-
   fushi::MainSurfaceState main_surface_state() const {
-    return fushi::MainSurfaceState{system_backdrop_, video_passthrough_,
-                                   fullscreen_};
+    return fushi::MainSurfaceState{system_backdrop_};
   }
 
   // BUG-1933: flash-free fullscreen, owned by the runner. window_manager's
@@ -153,6 +147,14 @@ class Win32Window {
 
   bool quit_on_close_ = false;
 
+  // BUG-3768: test-mode origin every move is pinned to (WM_WINDOWPOSCHANGING,
+  // see test_window_origin_pin.h); nullopt outside FUSHI_TEST_HIDDEN.
+  std::optional<POINT> test_origin_pin_;
+
+  // BUG-3888: test-mode outer size every resize is pinned to
+  // (FUSHI_TEST_WINDOW_RECT only); nullopt otherwise.
+  std::optional<SIZE> test_size_pin_;
+
   // window handle for top level window.
   HWND window_handle_ = nullptr;
 
@@ -202,10 +204,6 @@ class Win32Window {
   // True while FlutterWindow has a DWM system backdrop applied; see
   // SetSystemBackdrop.
   bool system_backdrop_ = false;
-
-  // True while the HDR video passthrough host is live; see
-  // SetVideoPassthrough.
-  bool video_passthrough_ = false;
 
   // BUG-1933: captures the window's current on-screen client pixels into
   // |transition_snapshot_| (screen BitBlt; fails soft to no snapshot). While a

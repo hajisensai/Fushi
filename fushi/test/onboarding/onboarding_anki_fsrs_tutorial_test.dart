@@ -101,7 +101,8 @@ void main() {
       expect(
         body.contains(needle),
         isTrue,
-        reason: '_buildAnkiStep 里没有 `$needle`：FSRS 教程没挂进向导，'
+        reason:
+            '_buildAnkiStep 里没有 `$needle`：FSRS 教程没挂进向导，'
             '用户看不到它，而这是打开 FSRS 开关的唯一指引',
       );
     }

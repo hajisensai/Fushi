@@ -86,69 +86,84 @@ void main() {
     expect(c.position.inMilliseconds, 65000);
   });
 
-  test('baseline: priming cues after load must not clobber savedMs with 0',
-      () async {
-    installPlatform();
-    final AudiobookPlayerController c = AudiobookPlayerController();
-    addTearDown(c.dispose);
+  test(
+    'baseline: priming cues after load must not clobber savedMs with 0',
+    () async {
+      installPlatform();
+      final AudiobookPlayerController c = AudiobookPlayerController();
+      addTearDown(c.dispose);
 
-    await c.load(
-      audiobook: ab(),
-      audioFiles: <File>[makeFile('fushi-flush-b.mp3')],
-      initialPositionMs: 65000,
-    );
+      await c.load(
+        audiobook: ab(),
+        audioFiles: <File>[makeFile('fushi-flush-b.mp3')],
+        initialPositionMs: 65000,
+      );
 
-    final List<int> writes = <int>[];
-    c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
-    c.setChapterCues(<AudioCue>[cue(60000), cue(65000), cue(70000)]);
+      final List<int> writes = <int>[];
+      c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+      c.setChapterCues(<AudioCue>[cue(60000), cue(65000), cue(70000)]);
 
-    expect(writes, isNot(contains(0)));
-  });
+      expect(writes, isNot(contains(0)));
+    },
+  );
 
   // ── the actual fix ───────────────────────────────────────────────────
 
-  test('flushPosition force-saves the current position even at the same second',
-      () async {
-    final _FakePlatform plat = installPlatform();
-    final AudiobookPlayerController c = AudiobookPlayerController();
-    addTearDown(c.dispose);
+  test(
+    'flushPosition force-saves the current position even at the same second',
+    () async {
+      final _FakePlatform plat = installPlatform();
+      final AudiobookPlayerController c = AudiobookPlayerController();
+      addTearDown(c.dispose);
 
-    await c.load(
-      audiobook: ab(),
-      audioFiles: <File>[makeFile('fushi-flush-c.mp3')],
-      initialPositionMs: 0,
-    );
-    c.setChapterCues(<AudioCue>[cue(0), cue(1000), cue(2000), cue(3000)]);
+      await c.load(
+        audiobook: ab(),
+        audioFiles: <File>[makeFile('fushi-flush-c.mp3')],
+        initialPositionMs: 0,
+      );
+      c.setChapterCues(<AudioCue>[cue(0), cue(1000), cue(2000), cue(3000)]);
 
-    final List<int> writes = <int>[];
-    c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+      final List<int> writes = <int>[];
+      c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
 
-    await c.play();
-    await Future<void>.delayed(const Duration(milliseconds: 50));
+      await c.play();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
 
-    // Advance playback to 3s: the periodic save persists the position once the
-    // whole-second changes (the playing position extrapolates a few ms past).
-    final _LivePositionWindow advancedTo3s =
-        _LivePositionWindow.openedBefore(3000);
-    plat.player!.emit(3000, ProcessingStateMessage.ready, playing: true);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-    expect(writes.where((int w) => w >= 3000), isNotEmpty,
-        reason: 'periodic save must persist advancing playback position');
+      // Advance playback to 3s: the periodic save persists the position once the
+      // whole-second changes (the playing position extrapolates a few ms past).
+      final _LivePositionWindow advancedTo3s = _LivePositionWindow.openedBefore(
+        3000,
+      );
+      plat.player!.emit(3000, ProcessingStateMessage.ready, playing: true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(
+        writes.where((int w) => w >= 3000),
+        isNotEmpty,
+        reason: 'periodic save must persist advancing playback position',
+      );
 
-    // App goes to background within the same whole-second: the periodic save
-    // would be throttled (wholeSec unchanged), but flushPosition must still
-    // write so a subsequent kill keeps the progress.
-    writes.clear();
-    await c.flushPosition();
-    // Exactly one write, carrying the live position extrapolated from the
-    // emitted 3000 (see [_LivePositionWindow] for why this is a window and not
-    // an equality).
-    expect(writes, hasLength(1),
-        reason: 'background flush must write once despite the per-second '
-            'throttle');
-    expect(writes.single, advancedTo3s.matcher,
-        reason: 'background flush must persist the latest position');
-  });
+      // App goes to background within the same whole-second: the periodic save
+      // would be throttled (wholeSec unchanged), but flushPosition must still
+      // write so a subsequent kill keeps the progress.
+      writes.clear();
+      await c.flushPosition();
+      // Exactly one write, carrying the live position extrapolated from the
+      // emitted 3000 (see [_LivePositionWindow] for why this is a window and not
+      // an equality).
+      expect(
+        writes,
+        hasLength(1),
+        reason:
+            'background flush must write once despite the per-second '
+            'throttle',
+      );
+      expect(
+        writes.single,
+        advancedTo3s.matcher,
+        reason: 'background flush must persist the latest position',
+      );
+    },
+  );
 
   test('flushPosition awaits the persistence write (durability)', () async {
     installPlatform();
@@ -172,114 +187,137 @@ void main() {
 
     final Future<void> flush = c.flushPosition();
     await writeStarted.future;
-    expect(writeFinished, isFalse,
-        reason: 'flushPosition must not return before the write completes');
+    expect(
+      writeFinished,
+      isFalse,
+      reason: 'flushPosition must not return before the write completes',
+    );
 
     allowWrite.complete();
     await flush;
     expect(writeFinished, isTrue);
   });
 
-  test('BUG-1240 stopPlayback persists the live position before stop resets it',
-      () async {
-    installPlatform();
-    final AudiobookPlayerController c = AudiobookPlayerController();
+  test(
+    'BUG-1240 stopPlayback persists the live position before stop resets it',
+    () async {
+      installPlatform();
+      final AudiobookPlayerController c = AudiobookPlayerController();
 
-    await c.load(
-      audiobook: ab(),
-      audioFiles: <File>[makeFile('fushi-stop-position-order.mp3')],
-      initialPositionMs: 65000,
-    );
-    final List<int> writes = <int>[];
-    c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+      await c.load(
+        audiobook: ab(),
+        audioFiles: <File>[makeFile('fushi-stop-position-order.mp3')],
+        initialPositionMs: 65000,
+      );
+      final List<int> writes = <int>[];
+      c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
 
-    await c.stopPlayback();
-    await c.disposeAndRelease();
+      await c.stopPlayback();
+      await c.disposeAndRelease();
 
-    expect(writes, isNotEmpty);
-    expect(
-      writes.last,
-      65000,
-      reason: 'stop 后采样会得到 0；持久化必须发生在 stop 释放播放器之前',
-    );
-  });
+      expect(writes, isNotEmpty);
+      expect(writes.last, 65000, reason: 'stop 后采样会得到 0；持久化必须发生在 stop 释放播放器之前');
+    },
+  );
 
-  test('BUG-1240 old queued write completes before the final stop write',
-      () async {
-    final _FakePlatform plat = installPlatform();
-    final AudiobookPlayerController c = AudiobookPlayerController();
-    addTearDown(c.dispose);
+  test(
+    'BUG-1240 old queued write completes before the final stop write',
+    () async {
+      final _FakePlatform plat = installPlatform();
+      final AudiobookPlayerController c = AudiobookPlayerController();
+      addTearDown(c.dispose);
 
-    final _LivePositionWindow loadedAt65s =
-        _LivePositionWindow.openedBefore(65000);
-    await c.load(
-      audiobook: ab(),
-      audioFiles: <File>[makeFile('fushi-stop-position-queue.mp3')],
-      initialPositionMs: 65000,
-    );
-    await c.play();
-    final Completer<void> firstWriteStarted = Completer<void>();
-    final Completer<void> allowFirstWrite = Completer<void>();
-    final List<int> started = <int>[];
-    final List<int> completed = <int>[];
-    c.onPositionWrite = (String uid, int ms) async {
-      started.add(ms);
-      if (started.length == 1) {
-        firstWriteStarted.complete();
-        await allowFirstWrite.future;
-      }
-      completed.add(ms);
-    };
+      final _LivePositionWindow loadedAt65s = _LivePositionWindow.openedBefore(
+        65000,
+      );
+      await c.load(
+        audiobook: ab(),
+        audioFiles: <File>[makeFile('fushi-stop-position-queue.mp3')],
+        initialPositionMs: 65000,
+      );
+      await c.play();
+      final Completer<void> firstWriteStarted = Completer<void>();
+      final Completer<void> allowFirstWrite = Completer<void>();
+      final List<int> started = <int>[];
+      final List<int> completed = <int>[];
+      c.onPositionWrite = (String uid, int ms) async {
+        started.add(ms);
+        if (started.length == 1) {
+          firstWriteStarted.complete();
+          await allowFirstWrite.future;
+        }
+        completed.add(ms);
+      };
 
-    final Future<void> oldFlush = c.flushPosition();
-    await firstWriteStarted.future;
-    final _LivePositionWindow jumpedTo70s =
-        _LivePositionWindow.openedBefore(70000);
-    plat.player!.emit(70000, ProcessingStateMessage.ready, playing: false);
-    await Future<void>.delayed(Duration.zero);
+      final Future<void> oldFlush = c.flushPosition();
+      await firstWriteStarted.future;
+      final _LivePositionWindow jumpedTo70s = _LivePositionWindow.openedBefore(
+        70000,
+      );
+      plat.player!.emit(70000, ProcessingStateMessage.ready, playing: false);
+      await Future<void>.delayed(Duration.zero);
 
-    final Future<void> stop = c.stopPlayback();
-    await Future<void>.delayed(Duration.zero);
-    // 这一条才是队列不变量：位置值多少无关，关键是**只有一个**写入起跑。
-    expect(started, hasLength(1),
-        reason: 'the final write must queue behind the older in-flight write');
-    // 窗口在这里定格复用，后面不再随测试后半程一起变宽。
-    final Matcher preJumpPosition = loadedAt65s.matcher;
-    expect(started.single, preJumpPosition,
-        reason: 'the in-flight write must carry the pre-jump live position');
+      final Future<void> stop = c.stopPlayback();
+      await Future<void>.delayed(Duration.zero);
+      // 这一条才是队列不变量：位置值多少无关，关键是**只有一个**写入起跑。
+      expect(
+        started,
+        hasLength(1),
+        reason: 'the final write must queue behind the older in-flight write',
+      );
+      // 窗口在这里定格复用，后面不再随测试后半程一起变宽。
+      final Matcher preJumpPosition = loadedAt65s.matcher;
+      expect(
+        started.single,
+        preJumpPosition,
+        reason: 'the in-flight write must carry the pre-jump live position',
+      );
 
-    allowFirstWrite.complete();
-    await oldFlush;
-    await stop;
-    expect(started.first, preJumpPosition);
-    expect(started.skip(1), everyElement(jumpedTo70s.matcher),
-        reason: 'every write queued after the jump must carry the new '
-            'position, never the stale pre-jump one');
-    expect(completed, started,
-        reason: 'DB/cache completion order must match capture order');
-  });
+      allowFirstWrite.complete();
+      await oldFlush;
+      await stop;
+      expect(started.first, preJumpPosition);
+      expect(
+        started.skip(1),
+        everyElement(jumpedTo70s.matcher),
+        reason:
+            'every write queued after the jump must carry the new '
+            'position, never the stale pre-jump one',
+      );
+      expect(
+        completed,
+        started,
+        reason: 'DB/cache completion order must match capture order',
+      );
+    },
+  );
 
-  test('BUG-1240 flush failure is surfaced only after playback is stopped',
-      () async {
-    final _FakePlatform plat = installPlatform();
-    final AudiobookPlayerController c = AudiobookPlayerController();
-    addTearDown(c.dispose);
+  test(
+    'BUG-1240 flush failure is surfaced only after playback is stopped',
+    () async {
+      final _FakePlatform plat = installPlatform();
+      final AudiobookPlayerController c = AudiobookPlayerController();
+      addTearDown(c.dispose);
 
-    await c.load(
-      audiobook: ab(),
-      audioFiles: <File>[makeFile('fushi-stop-position-write-error.mp3')],
-      initialPositionMs: 42000,
-    );
-    await c.play();
-    c.onPositionWrite = (String uid, int ms) async {
-      throw StateError('write failed');
-    };
-    final int disposeBefore = plat.disposePlayerCalls;
+      await c.load(
+        audiobook: ab(),
+        audioFiles: <File>[makeFile('fushi-stop-position-write-error.mp3')],
+        initialPositionMs: 42000,
+      );
+      await c.play();
+      c.onPositionWrite = (String uid, int ms) async {
+        throw StateError('write failed');
+      };
+      final int disposeBefore = plat.disposePlayerCalls;
 
-    await expectLater(c.stopPlayback(), throwsStateError);
-    expect(plat.disposePlayerCalls, greaterThan(disposeBefore),
-        reason: 'a persistence error must never leave native playback alive');
-  });
+      await expectLater(c.stopPlayback(), throwsStateError);
+      expect(
+        plat.disposePlayerCalls,
+        greaterThan(disposeBefore),
+        reason: 'a persistence error must never leave native playback alive',
+      );
+    },
+  );
 
   // BUG-1240 的守卫此前钉的是**源码行顺序**（`await flushPosition()` 必须早于两个
   // stop）。那是把「实现顺序」当成了不变式，而真正的不变式只是「落库的值必须是 stop
@@ -290,48 +328,52 @@ void main() {
   // 而 `await _playActivationTail` 正是靠这条守卫长期存活的——在 just_audio 的
   // Darwin/ExoPlayer 后端上它与 `_player.stop()` 循环等待，导致退出后音频永不停止。
   // 所以这里换成钉「**不得**在停止路径上 await play 激活链」这条真正的不变式。
-  test('stop path must never await the play activation chain (deadlock guard)',
-      () {
-    final String source = File(
-      '${Directory.current.path}/lib/src/media/audiobook/'
-      'audiobook_controller.dart',
-    ).readAsStringSync();
-    final int start =
-        source.indexOf('Future<void> _stopPlaybackOnce() async {');
-    final int end = source.indexOf(
-      'bool get debugMainPlayerPlaying',
-      start,
-    );
-    expect(start, greaterThanOrEqualTo(0));
-    expect(end, greaterThan(start));
-    // 用词法遮蔽而非手写剥行：test/tools/source_guard_adoption_test.dart 明令禁止
-    // startsWith 那种形态（不认块注释、串与模板串）。要断言的是**可执行代码**，
-    // 而解释这条禁令的注释里必然会写出 await _playActivationTail 本身。
-    final String body = maskComments(source.substring(start, end));
+  test(
+    'stop path must never await the play activation chain (deadlock guard)',
+    () {
+      final String source = File(
+        '${Directory.current.path}/lib/src/media/audiobook/'
+        'audiobook_controller.dart',
+      ).readAsStringSync();
+      final int start = source.indexOf(
+        'Future<void> _stopPlaybackOnce() async {',
+      );
+      final int end = source.indexOf('bool get debugMainPlayerPlaying', start);
+      expect(start, greaterThanOrEqualTo(0));
+      expect(end, greaterThan(start));
+      // 用词法遮蔽而非手写剥行：test/tools/source_guard_adoption_test.dart 明令禁止
+      // startsWith 那种形态（不认块注释、串与模板串）。要断言的是**可执行代码**，
+      // 而解释这条禁令的注释里必然会写出 await _playActivationTail 本身。
+      final String body = maskComments(source.substring(start, end));
 
-    expect(
-      body,
-      isNot(contains('await _playActivationTail')),
-      reason: 'just_audio 的 Darwin(AVQueuePlayer)/Android(ExoPlayer) 后端把 play '
-          '的平台回调挂起到 pause/complete/stop 才触发；停止路径 await 它就与唯一能'
-          '解开它的 _player.stop() 形成循环等待 → 退出后音频永不停止且无法手动关闭。',
-    );
+      expect(
+        body,
+        isNot(contains('await _playActivationTail')),
+        reason:
+            'just_audio 的 Darwin(AVQueuePlayer)/Android(ExoPlayer) 后端把 play '
+            '的平台回调挂起到 pause/complete/stop 才触发；停止路径 await 它就与唯一能'
+            '解开它的 _player.stop() 形成循环等待 → 退出后音频永不停止且无法手动关闭。',
+      );
 
-    final int mainStopAt = body.indexOf('_player.stop()');
-    expect(mainStopAt, greaterThanOrEqualTo(0));
-    expect(
-      body.substring(mainStopAt),
-      isNot(contains('_maybeSavePosition(force: true)')),
-      reason: '释放后不得再用归零位置覆盖刚写穿的值',
-    );
-    // 位置必须在 stop 之前**同步**采样（BUG-1240 的真不变式），此后不再采样。
-    // BUG-2330 起采的是 globalPosition（全书毫秒 = 前序文件时长和 + `_player.position`，
-    // 同步 getter），多文件书才不会把文件内毫秒当全书位置存。
-    final int sampleAt = body.indexOf('globalPosition.inMilliseconds');
-    expect(sampleAt, greaterThanOrEqualTo(0), reason: '必须显式采样 stop 前的位置');
-    expect(sampleAt, lessThan(mainStopAt),
-        reason: 'stop 会把 position 归零，采样必须发生在它之前');
-  });
+      final int mainStopAt = body.indexOf('_player.stop()');
+      expect(mainStopAt, greaterThanOrEqualTo(0));
+      expect(
+        body.substring(mainStopAt),
+        isNot(contains('_maybeSavePosition(force: true)')),
+        reason: '释放后不得再用归零位置覆盖刚写穿的值',
+      );
+      // 位置必须在 stop 之前**同步**采样（BUG-1240 的真不变式），此后不再采样。
+      // BUG-2330 起采的是 globalPosition（全书毫秒 = 前序文件时长和 + `_player.position`，
+      // 同步 getter），多文件书才不会把文件内毫秒当全书位置存。
+      final int sampleAt = body.indexOf('globalPosition.inMilliseconds');
+      expect(sampleAt, greaterThanOrEqualTo(0), reason: '必须显式采样 stop 前的位置');
+      expect(
+        sampleAt,
+        lessThan(mainStopAt),
+        reason: 'stop 会把 position 归零，采样必须发生在它之前',
+      );
+    },
+  );
 }
 
 /// 播放位置断言的**物理上界**计算器。
@@ -368,9 +410,9 @@ class _LivePositionWindow {
 
   /// 在断言点求值：截至此刻，外推最多只能走到 `baseMs + elapsed`。
   Matcher get matcher => inInclusiveRange(
-        baseMs,
-        baseMs + DateTime.now().difference(_openedAt).inMilliseconds,
-      );
+    baseMs,
+    baseMs + DateTime.now().difference(_openedAt).inMilliseconds,
+  );
 }
 
 class _FakePlatform extends JustAudioPlatform {
@@ -384,7 +426,8 @@ class _FakePlatform extends JustAudioPlatform {
 
   @override
   Future<DisposePlayerResponse> disposePlayer(
-      DisposePlayerRequest request) async {
+    DisposePlayerRequest request,
+  ) async {
     disposePlayerCalls++;
     await player?.dispose(DisposeRequest());
     return DisposePlayerResponse();
@@ -392,7 +435,8 @@ class _FakePlatform extends JustAudioPlatform {
 
   @override
   Future<DisposeAllPlayersResponse> disposeAllPlayers(
-      DisposeAllPlayersRequest request) async {
+    DisposeAllPlayersRequest request,
+  ) async {
     await player?.dispose(DisposeRequest());
     return DisposeAllPlayersResponse();
   }
@@ -405,16 +449,18 @@ class _FakePlayer extends AudioPlayerPlatform {
   bool _disposed = false;
 
   void emit(int ms, ProcessingStateMessage state, {required bool playing}) {
-    _events.add(PlaybackEventMessage(
-      processingState: state,
-      updateTime: DateTime.now(),
-      updatePosition: Duration(milliseconds: ms),
-      bufferedPosition: Duration(milliseconds: ms),
-      duration: const Duration(seconds: 100),
-      icyMetadata: null,
-      currentIndex: 0,
-      androidAudioSessionId: null,
-    ));
+    _events.add(
+      PlaybackEventMessage(
+        processingState: state,
+        updateTime: DateTime.now(),
+        updatePosition: Duration(milliseconds: ms),
+        bufferedPosition: Duration(milliseconds: ms),
+        duration: const Duration(seconds: 100),
+        icyMetadata: null,
+        currentIndex: 0,
+        androidAudioSessionId: null,
+      ),
+    );
   }
 
   @override
@@ -422,9 +468,11 @@ class _FakePlayer extends AudioPlayerPlatform {
 
   @override
   Future<LoadResponse> load(LoadRequest request) async {
-    emit(request.initialPosition?.inMilliseconds ?? 0,
-        ProcessingStateMessage.ready,
-        playing: false);
+    emit(
+      request.initialPosition?.inMilliseconds ?? 0,
+      ProcessingStateMessage.ready,
+      playing: false,
+    );
     return LoadResponse(duration: const Duration(seconds: 100));
   }
 
@@ -434,26 +482,28 @@ class _FakePlayer extends AudioPlayerPlatform {
   Future<PlayResponse> play(PlayRequest request) async => PlayResponse();
   @override
   Future<SeekResponse> seek(SeekRequest request) async {
-    emit(request.position?.inMilliseconds ?? 0, ProcessingStateMessage.ready,
-        playing: false);
+    emit(
+      request.position?.inMilliseconds ?? 0,
+      ProcessingStateMessage.ready,
+      playing: false,
+    );
     return SeekResponse();
   }
 
   @override
   Future<SetAndroidAudioAttributesResponse> setAndroidAudioAttributes(
-          SetAndroidAudioAttributesRequest request) async =>
-      SetAndroidAudioAttributesResponse();
+    SetAndroidAudioAttributesRequest request,
+  ) async => SetAndroidAudioAttributesResponse();
   @override
   Future<SetAutomaticallyWaitsToMinimizeStallingResponse>
-      setAutomaticallyWaitsToMinimizeStalling(
-              SetAutomaticallyWaitsToMinimizeStallingRequest request) async =>
-          SetAutomaticallyWaitsToMinimizeStallingResponse();
+  setAutomaticallyWaitsToMinimizeStalling(
+    SetAutomaticallyWaitsToMinimizeStallingRequest request,
+  ) async => SetAutomaticallyWaitsToMinimizeStallingResponse();
   @override
   Future<SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse>
-      setCanUseNetworkResourcesForLiveStreamingWhilePaused(
-              SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest
-                  request) async =>
-          SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
+  setCanUseNetworkResourcesForLiveStreamingWhilePaused(
+    SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest request,
+  ) async => SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
   @override
   Future<SetLoopModeResponse> setLoopMode(SetLoopModeRequest request) async =>
       SetLoopModeResponse();
@@ -462,20 +512,20 @@ class _FakePlayer extends AudioPlayerPlatform {
       SetPitchResponse();
   @override
   Future<SetPreferredPeakBitRateResponse> setPreferredPeakBitRate(
-          SetPreferredPeakBitRateRequest request) async =>
-      SetPreferredPeakBitRateResponse();
+    SetPreferredPeakBitRateRequest request,
+  ) async => SetPreferredPeakBitRateResponse();
   @override
   Future<SetShuffleModeResponse> setShuffleMode(
-          SetShuffleModeRequest request) async =>
-      SetShuffleModeResponse();
+    SetShuffleModeRequest request,
+  ) async => SetShuffleModeResponse();
   @override
   Future<SetShuffleOrderResponse> setShuffleOrder(
-          SetShuffleOrderRequest request) async =>
-      SetShuffleOrderResponse();
+    SetShuffleOrderRequest request,
+  ) async => SetShuffleOrderResponse();
   @override
   Future<SetSkipSilenceResponse> setSkipSilence(
-          SetSkipSilenceRequest request) async =>
-      SetSkipSilenceResponse();
+    SetSkipSilenceRequest request,
+  ) async => SetSkipSilenceResponse();
   @override
   Future<SetSpeedResponse> setSpeed(SetSpeedRequest request) async =>
       SetSpeedResponse();
@@ -484,8 +534,8 @@ class _FakePlayer extends AudioPlayerPlatform {
       SetVolumeResponse();
   @override
   Future<SetWebCrossOriginResponse> setWebCrossOrigin(
-          SetWebCrossOriginRequest request) async =>
-      SetWebCrossOriginResponse();
+    SetWebCrossOriginRequest request,
+  ) async => SetWebCrossOriginResponse();
   @override
   Future<DisposeResponse> dispose(DisposeRequest request) async {
     if (_disposed) return DisposeResponse();

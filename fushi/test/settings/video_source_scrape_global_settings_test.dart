@@ -38,15 +38,11 @@ void main() {
   // Bangumi / Douban / AniList 不得借「可选」回潮。2026-09-20 用户拍板对齐 Shoko
   // 后 AniDB 升格为默认主源（HTTP anime XML 资料链 + TMDB 补充），MAL 仍可选。
   test('primary metadata source is selectable: AniDB (default), MAL, TMDB', () {
-    expect(
-      kSelectableVideoMetadataProviders,
-      <VideoMetadataProviderKind>[
-        VideoMetadataProviderKind.anidb,
-        VideoMetadataProviderKind.mal,
-        VideoMetadataProviderKind.tmdb,
-      ],
-      reason: '作品资料源只有这三家；加第四家是 provider 边界变更，要先过用户',
-    );
+    expect(kSelectableVideoMetadataProviders, <VideoMetadataProviderKind>[
+      VideoMetadataProviderKind.anidb,
+      VideoMetadataProviderKind.mal,
+      VideoMetadataProviderKind.tmdb,
+    ], reason: '作品资料源只有这三家；加第四家是 provider 边界变更，要先过用户');
     expect(
       kDefaultVideoMetadataPrimaryProvider,
       VideoMetadataProviderKind.anidb,

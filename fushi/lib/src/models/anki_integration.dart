@@ -4,7 +4,11 @@ import 'package:external_app_launcher/external_app_launcher.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 class AnkiIntegration {
@@ -37,8 +41,9 @@ class AnkiIntegration {
 
   Future<List<String>> getDecks(BuildContext? ctx) async {
     try {
-      Map<dynamic, dynamic> result =
-          await methodChannel.invokeMethod('getDecks');
+      Map<dynamic, dynamic> result = await methodChannel.invokeMethod(
+        'getDecks',
+      );
       List<String> decks = result.values.toList().cast<String>();
       decks.sort((a, b) => a.compareTo(b));
       return decks;
@@ -50,8 +55,9 @@ class AnkiIntegration {
 
   Future<List<String>> getModelList(BuildContext? ctx) async {
     try {
-      Map<dynamic, dynamic> result =
-          await methodChannel.invokeMethod('getModelList');
+      Map<dynamic, dynamic> result = await methodChannel.invokeMethod(
+        'getModelList',
+      );
       List<String> models = result.values.toList().cast<String>();
       models.sort((a, b) => a.compareTo(b));
       return models;
@@ -64,10 +70,9 @@ class AnkiIntegration {
   Future<List<String>> getFieldList(String model, BuildContext? ctx) async {
     try {
       return List<String>.from(
-        await methodChannel.invokeMethod(
-          'getFieldList',
-          <String, dynamic>{'model': model},
-        ),
+        await methodChannel.invokeMethod('getFieldList', <String, dynamic>{
+          'model': model,
+        }),
       );
     } catch (e) {
       if (ctx != null && ctx.mounted) showApiMessage(ctx);
@@ -78,10 +83,7 @@ class AnkiIntegration {
 
 @visibleForTesting
 class AnkiApiMessageDialog extends StatelessWidget {
-  const AnkiApiMessageDialog({
-    required this.onLaunch,
-    super.key,
-  });
+  const AnkiApiMessageDialog({required this.onLaunch, super.key});
 
   final VoidCallback onLaunch;
 

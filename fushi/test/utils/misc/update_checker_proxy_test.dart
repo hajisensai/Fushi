@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 // BUG-1348：代理解析层已从 update_checker 的 net part 搬进独立库（同步层要用同一套
 // 出口，而 part 没法被外部 import）。测试跟着搬 import，断言逐字不变。
 import 'package:fushi_engine/utils/net/app_proxy.dart';
@@ -202,8 +202,9 @@ void main() {
       final (Map<String, String> env1, bool pac1) = parseScutilProxy('');
       expect(env1, isEmpty);
       expect(pac1, isFalse);
-      final (Map<String, String> env2, bool pac2) =
-          parseScutilProxy('garbage no colon here\n}{][');
+      final (Map<String, String> env2, bool pac2) = parseScutilProxy(
+        'garbage no colon here\n}{][',
+      );
       expect(env2, isEmpty);
       expect(pac2, isFalse);
     });
@@ -344,23 +345,31 @@ void main() {
     });
 
     test('带 http:// 前缀 → 剥前缀', () {
-      expect(normalizeUserProxyHostPort('http://127.0.0.1:7890'),
-          '127.0.0.1:7890');
+      expect(
+        normalizeUserProxyHostPort('http://127.0.0.1:7890'),
+        '127.0.0.1:7890',
+      );
     });
 
     test('带 https:// 前缀 → 剥前缀', () {
-      expect(normalizeUserProxyHostPort('https://127.0.0.1:7890'),
-          '127.0.0.1:7890');
+      expect(
+        normalizeUserProxyHostPort('https://127.0.0.1:7890'),
+        '127.0.0.1:7890',
+      );
     });
 
     test('前后空格 → trim 后合法', () {
       expect(
-          normalizeUserProxyHostPort('  127.0.0.1:7890  '), '127.0.0.1:7890');
+        normalizeUserProxyHostPort('  127.0.0.1:7890  '),
+        '127.0.0.1:7890',
+      );
     });
 
     test('主机名 host:port → 合法', () {
       expect(
-          normalizeUserProxyHostPort('proxy.local:1080'), 'proxy.local:1080');
+        normalizeUserProxyHostPort('proxy.local:1080'),
+        'proxy.local:1080',
+      );
     });
 
     test('端口边界 1 / 65535 合法', () {

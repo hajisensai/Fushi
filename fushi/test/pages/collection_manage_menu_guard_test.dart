@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-2791 / BUG-1547：合集管理菜单里的「刮削分集资料」是个死按钮 —— 它硬门
 /// 「合集资料已刮削」，未刮时只会弹「请先刮削合集资料」；而已刮时集名/集号本就由
@@ -34,16 +34,16 @@ void main() {
     ]) {
       expect(page.contains(key), isFalse, reason: '页面仍引用 $key');
       expect(
-        File('lib/i18n/strings.i18n.json')
-            .readAsStringSync()
-            .contains('"$key"'),
+        File(
+          'lib/i18n/strings.i18n.json',
+        ).readAsStringSync().contains('"$key"'),
         isFalse,
         reason: 'strings.i18n.json 仍留着 $key',
       );
       expect(
-        File('lib/i18n/strings_zh-CN.i18n.json')
-            .readAsStringSync()
-            .contains('"$key"'),
+        File(
+          'lib/i18n/strings_zh-CN.i18n.json',
+        ).readAsStringSync().contains('"$key"'),
         isFalse,
         reason: 'strings_zh-CN.i18n.json 仍留着 $key',
       );

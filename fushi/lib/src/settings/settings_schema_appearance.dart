@@ -2,20 +2,31 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/misc/jump_history.dart'
+    show kJumpHistoryAutoHideDefaultSeconds, kJumpHistoryAutoHideOptions;
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/miscellaneous_settings_page.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
+import 'package:fushi/src/settings/settings_schema_page_backdrop.dart';
 import 'package:fushi/src/settings/nav_module_order_list.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart'
     show currentAppIconSelection;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/content_language_picker.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 
 /// 「功能模块」开关行的 item id。
 ///
@@ -28,12 +39,14 @@ String _moduleItemId(ModuleId module) => switch (module) {
   ModuleId.books => 'system.module_books',
   ModuleId.manga => 'system.module_manga',
   ModuleId.video => 'system.module_video',
+  // 2026-10 新增（音乐模块），跟随同一前缀。
+  ModuleId.music => 'system.module_music',
   ModuleId.games => 'system.module_games',
   ModuleId.browse => 'system.module_downloads',
   ModuleId.lookup => 'system.module_lookup',
   // 2026-10-14 新增（复习 / Fushi 内置 SRS），跟随同一前缀。
   ModuleId.srs => 'system.module_srs',
-  ModuleId.browserExtension => 'system.module_browser_extension',
+  ModuleId.web => 'system.module_browser_extension',
   ModuleId.listening => 'system.module_listening',
   ModuleId.cardCreation => 'system.module_card_creation',
   ModuleId.services => 'system.module_services',
@@ -79,13 +92,12 @@ String _moduleItemId(ModuleId module) => switch (module) {
     ModuleId.books ||
     ModuleId.manga ||
     ModuleId.video ||
+    ModuleId.music ||
     ModuleId.games ||
     ModuleId.browse ||
     ModuleId.lookup ||
     ModuleId.srs ||
-    ModuleId.browserExtension => throw StateError(
-      '$module 有对应 HomeTab，标识应走 homeNavItemFor',
-    ),
+    ModuleId.web => throw StateError('$module 有对应 HomeTab，标识应走 homeNavItemFor'),
   };
 }
 
@@ -174,6 +186,10 @@ SettingsCustomItem _navModuleOrderItem() => SettingsCustomItem(
     settingsContext: settingsContext,
     modules: _orderedNavModules(settingsContext),
     identityOf: moduleNavIdentity,
+    settingsIdentity: (
+      label: homeNavItemFor(HomeTab.settings).label,
+      icon: homeNavItemFor(HomeTab.settings).icon,
+    ),
     hintOf: moduleSwitchHint,
     onEnabledChanged: (ModuleId module, bool enabled) =>
         _applyModuleEnabled(settingsContext, module, enabled),
@@ -211,6 +227,15 @@ SettingsDestination buildAppearanceDestination() {
             icon: Icons.contrast_outlined,
             searchTitle: t.dark_mode,
             builder: buildBrightnessSelector,
+          ),
+          // 「页面背景」子页（2026-10-30）：每一页底下的装饰——形状预设、纯色、
+          // 用户自定义图片（可从图片取色）。
+          SettingsNavigationItem(
+            id: 'appearance.page_backdrop',
+            title: t.page_backdrop_title,
+            subtitle: t.page_backdrop_hint,
+            icon: FushiIcons.pageBackdrop,
+            child: buildPageBackdropDestination,
           ),
           // 「纯黑深色背景」：原「纯黑」预设的语义（2026-10 预设只决定种子色、不再
           // 自带明暗 / 纯黑），改成明暗旁的独立开关；对系统取色 / 预设 / 自定义主题
@@ -313,6 +338,69 @@ SettingsDestination buildAppearanceDestination() {
           ),
         ],
       ),
+      // 「跳转记录」（2026-11-02 浮动胶囊改顶栏图标）：小说 / 漫画 / 视频三页共用。
+      // 顶栏图标关掉照样记录；自动隐藏只藏图标，记录 / 面板 / 刻度保留。三项都
+      // 由页面现读偏好（无双写）。
+      SettingsSection(
+        id: 'appearance.section.jump_history',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.media_jump_history_title,
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'appearance.jump_history.toolbar',
+            title: t.media_jump_history_setting_toolbar,
+            subtitle: t.media_jump_history_setting_toolbar_hint,
+            icon: FushiIcons.undo,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.jumpHistoryToolbar,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setJumpHistoryToolbar(value);
+            },
+            defaultValue: true,
+          ),
+          SettingsSwitchItem(
+            id: 'appearance.jump_history.progress_marks',
+            title: t.media_jump_history_setting_marks,
+            subtitle: t.media_jump_history_setting_marks_hint,
+            icon: FushiIcons.flag,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.jumpHistoryProgressMarks,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setJumpHistoryProgressMarks(value);
+            },
+            defaultValue: true,
+          ),
+          SettingsSegmentedItem<int>(
+            id: 'appearance.jump_history.auto_hide',
+            title: t.media_jump_history_setting_auto_hide,
+            subtitle: t.media_jump_history_setting_auto_hide_hint,
+            icon: FushiIcons.timer,
+            options: <SettingsSegmentOption<int>>[
+              for (final int seconds in kJumpHistoryAutoHideOptions)
+                SettingsSegmentOption<int>(
+                  value: seconds,
+                  label: seconds == 0
+                      ? t.media_jump_history_setting_auto_hide_never
+                      : seconds % 60 == 0
+                      ? t.media_jump_history_setting_auto_hide_minutes(
+                          minutes: seconds ~/ 60,
+                        )
+                      : t.media_jump_history_setting_auto_hide_seconds(
+                          seconds: seconds,
+                        ),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.jumpHistoryAutoHideSeconds,
+            onChanged: (SettingsContext settingsContext, int seconds) async {
+              await settingsContext.appModel.setJumpHistoryAutoHideSeconds(
+                seconds,
+              );
+            },
+            defaultValue: kJumpHistoryAutoHideDefaultSeconds,
+          ),
+        ],
+      ),
       SettingsSection(
         id: 'appearance.section.typography',
         presentation: SettingsSectionPresentation.alwaysExpanded,
@@ -351,7 +439,9 @@ SettingsDestination buildAppearanceDestination() {
                   : contentLanguageLabelOf(current);
               return '${t.settings_content_language_title} · $label';
             },
-            subtitle: t.settings_content_language_description,
+            subtitle:
+                '${t.settings_content_language_description} '
+                '${t.settings_content_language_screen_ocr_note}',
             icon: FushiIcons.language,
             onTap: (SettingsContext settingsContext) async {
               final String current =
@@ -359,7 +449,9 @@ SettingsDestination buildAppearanceDestination() {
               await showContentLanguagePicker(
                 context: settingsContext.context,
                 title: t.settings_content_language_title,
-                description: t.settings_content_language_description,
+                description:
+                    '${t.settings_content_language_description} '
+                    '${t.settings_content_language_screen_ocr_note}',
                 current: current.isEmpty ? null : current,
                 autoDetected: '',
                 autoLabel: t.settings_content_language_unset,
@@ -496,8 +588,8 @@ SettingsDestination buildAppearanceDestination() {
             },
             defaultValue: false,
           ),
-          // 手机底栏形态：平铺（放不下收进「更多」）/ 分页滑动（所有入口同级，
-          // 底栏横滑翻页、按住拖选）。
+          // 手机底栏形态：平铺（放不下收进「更多」）/ 拇指转盘 / 相机模式条
+          // （出厂默认）。分页滑动与圆柱滚筒已于 2026-10-25 删除。
           SettingsSegmentedItem<AdaptiveNavBarStyle>(
             id: 'appearance.nav_bar_style',
             title: t.home_nav_bar_style,
@@ -508,10 +600,15 @@ SettingsDestination buildAppearanceDestination() {
                 label: t.home_nav_bar_style_flat,
               ),
               SettingsSegmentOption<AdaptiveNavBarStyle>(
-                value: AdaptiveNavBarStyle.pager,
-                label: t.home_nav_bar_style_pager,
+                value: AdaptiveNavBarStyle.dial,
+                label: t.home_nav_bar_style_dial,
+              ),
+              SettingsSegmentOption<AdaptiveNavBarStyle>(
+                value: AdaptiveNavBarStyle.modeStrip,
+                label: t.home_nav_bar_style_mode_strip,
               ),
             ],
+            dropdown: true,
             selected: (SettingsContext settingsContext) =>
                 settingsContext.appModel.navBarStyle,
             onChanged:
@@ -543,6 +640,18 @@ SettingsItem _homePanelModeItem(HomeDashboardPanel panel) {
       t.home_panel_srs_hint,
       FushiIcons.repeat,
       ModuleId.srs,
+    ),
+    HomeDashboardPanel.aiAgent => (
+      t.ai_agent_title,
+      t.home_panel_ai_agent_hint,
+      FushiIcons.aiAssistant,
+      ModuleId.ai,
+    ),
+    HomeDashboardPanel.panorama => (
+      t.home_panel_panorama_title,
+      t.home_panel_panorama_hint,
+      FushiIcons.blur,
+      ModuleId.home,
     ),
   };
   return SettingsSegmentedItem<HomeDashboardPanelMode>(

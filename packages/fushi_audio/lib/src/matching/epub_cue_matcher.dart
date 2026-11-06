@@ -113,17 +113,17 @@ class _MatchAndFillRequest {
   final AnchorGapFiller gapFiller;
 
   List<AudioCue> rebuildCues() => <AudioCue>[
-        for (int i = 0; i < cueTexts.length; i++)
-          (AudioCue()
-            ..bookKey = ''
-            ..chapterHref = ''
-            ..sentenceIndex = cueIndexes[i]
-            ..textFragmentId = ''
-            ..text = cueTexts[i]
-            ..startMs = 0
-            ..endMs = 0
-            ..audioFileIndex = 0),
-      ];
+    for (int i = 0; i < cueTexts.length; i++)
+      (AudioCue()
+        ..bookKey = ''
+        ..chapterHref = ''
+        ..sentenceIndex = cueIndexes[i]
+        ..textFragmentId = ''
+        ..text = cueTexts[i]
+        ..startMs = 0
+        ..endMs = 0
+        ..audioFileIndex = 0),
+  ];
 }
 
 MatchResult _matchAndFillEntrypoint(_MatchAndFillRequest req) {

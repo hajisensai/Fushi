@@ -53,8 +53,7 @@ class _FakeSyncBackend implements SyncBackend {
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) async =>
-      'folder';
+  }) async => 'folder';
 
   @override
   Future<SyncFileTrio> listSyncFiles(String folderId) async =>
@@ -88,8 +87,10 @@ class _FakeSyncBackend implements SyncBackend {
   }
 
   @override
-  void restoreCache(
-      {String? rootFolderId, Map<String, String>? titleToFolderId}) {
+  void restoreCache({
+    String? rootFolderId,
+    Map<String, String>? titleToFolderId,
+  }) {
     _cachedRoot = rootFolderId;
     if (titleToFolderId != null) _cachedFolders.addAll(titleToFolderId);
   }
@@ -159,8 +160,9 @@ class _FakeSyncBackend implements SyncBackend {
   }) async {}
   @override
   Future<SyncFileRef?> findContentFile(
-          String folderId, String fileName) async =>
-      null;
+    String folderId,
+    String fileName,
+  ) async => null;
 
   // ── SyncAssetStore (unreached) ──────────────────────────────────────
   @override
@@ -176,20 +178,27 @@ class _FakeSyncBackend implements SyncBackend {
   Future<AssetEntry?> findAsset(String namespaceId, String name) async =>
       throw UnimplementedError();
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
-  Future<void> getAsset(String assetId, File destination,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
   Future<Object?> getJsonAsset(String assetId) async =>
       throw UnimplementedError();
   @override
   Future<void> putJsonAsset(
-          String namespaceId, String name, Object? json) async =>
-      throw UnimplementedError();
+    String namespaceId,
+    String name,
+    Object? json,
+  ) async => throw UnimplementedError();
 }
 
 /// One chapter of 1000 characters keeps fraction math simple: explored chars
@@ -197,20 +206,22 @@ class _FakeSyncBackend implements SyncBackend {
 const String _chaptersJson = '[{"characters":1000}]';
 
 SyncFileRef _progressFile(int timestampMs, double fraction) => SyncFileRef(
-      id: 'progress-id',
-      name: progressFileName(timestampMs, fraction),
-    );
+  id: 'progress-id',
+  name: progressFileName(timestampMs, fraction),
+);
 
 Future<EpubBookRow> _seedBook(FushiDatabase db, String title) async {
-  await db.insertEpubBook(EpubBooksCompanion.insert(
-    bookKey: title,
-    title: title,
-    epubPath: '/fake/book.epub',
-    extractDir: '/fake/extract',
-    chapterCount: 1,
-    chaptersJson: _chaptersJson,
-    importedAt: DateTime.now().millisecondsSinceEpoch,
-  ));
+  await db.insertEpubBook(
+    EpubBooksCompanion.insert(
+      bookKey: title,
+      title: title,
+      epubPath: '/fake/book.epub',
+      extractDir: '/fake/extract',
+      chapterCount: 1,
+      chaptersJson: _chaptersJson,
+      importedAt: DateTime.now().millisecondsSinceEpoch,
+    ),
+  );
   return (await db.getAllEpubBooks()).single;
 }
 
@@ -223,12 +234,14 @@ Future<void> _seedPosition(
   required double fraction,
 }) async {
   final int normOffset = (fraction * 10000).round();
-  await db.upsertReaderPosition(ReaderPositionsCompanion(
-    bookUid: Value(bookUid),
-    sectionIndex: const Value(0),
-    normCharOffset: Value(normOffset),
-    updatedAt: Value(updatedAt),
-  ));
+  await db.upsertReaderPosition(
+    ReaderPositionsCompanion(
+      bookUid: Value(bookUid),
+      sectionIndex: const Value(0),
+      normCharOffset: Value(normOffset),
+      updatedAt: Value(updatedAt),
+    ),
+  );
 }
 
 void main() {
@@ -348,8 +361,7 @@ void main() {
   // 看到 local 与 remote 都偏离旧 baseline → resolveProgressSync 判 isConflict →
   // 假「本地远端冲突」。修复后 baseline 紧贴权威进度传输（updateProgressFile 返回
   // 后立即写），尾部传输崩溃也不会留下陈旧 baseline。
-  test(
-      'BUG-201: progress baseline lands with the progress upload, even when a '
+  test('BUG-201: progress baseline lands with the progress upload, even when a '
       'trailing transfer crashes → no false conflict on re-open', () async {
     final FushiDatabase db = _testDb();
     addTearDown(db.close);
@@ -362,13 +374,15 @@ void main() {
     // Seed a local reading statistic so the export's merged stats are non-empty
     // and the (crashing) updateStatsFile tail actually runs after the progress
     // upload — i.e. a real trailing-transfer failure, not a skipped one.
-    await db.setReadingStatistic(ReadingStatisticsCompanion(
-      title: Value(title),
-      dateKey: const Value('2026-06-11'),
-      charactersRead: const Value(600),
-      readingTimeMs: const Value(60000),
-      lastStatisticModified: const Value(120),
-    ));
+    await db.setReadingStatistic(
+      ReadingStatisticsCompanion(
+        title: Value(title),
+        dateKey: const Value('2026-06-11'),
+        charactersRead: const Value(600),
+        readingTimeMs: const Value(60000),
+        lastStatisticModified: const Value(120),
+      ),
+    );
 
     // Remote still at the old ancestor, plus a remote stats file so the export
     // reaches the (crashing) stats-upload tail AFTER the progress upload.

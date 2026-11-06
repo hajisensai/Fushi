@@ -25,9 +25,9 @@ class FushiTag extends StatelessWidget {
     this.dense = false,
     super.key,
   }) : assert(
-          backgroundColor != null || tone != null,
-          'FushiTag needs a backgroundColor or a tone',
-        );
+         backgroundColor != null || tone != null,
+         'FushiTag needs a backgroundColor or a tone',
+       );
 
   final IconData? icon;
   final String text;
@@ -68,14 +68,16 @@ class FushiTag extends StatelessWidget {
     final FushiAppleColors? appleColors = apple ? appleColorsOf(context) : null;
     final FushiTagTone? tone = this.tone;
     final bool einkTone = tone != null && !apple && isEinkTheme(context);
-    final ({Color background, Color foreground})? toned =
-        tone == null ? null : _toneColors(context, tone, appleColors);
+    final ({Color background, Color foreground})? toned = tone == null
+        ? null
+        : _toneColors(context, tone, appleColors);
     final Color background =
         toned?.background ?? backgroundColor ?? scheme.secondaryContainer;
     // Apple：元信息标签不铺 systemFill 灰底（用户 2026-10-04「很多地方有底
     // 色」），只留发丝分隔线描边的空心胶囊，与 FushiTagChip 纯展示形态一致。
     final Color surface = appleColors != null ? Colors.transparent : background;
-    final Color effectiveForeground = toned?.foreground ??
+    final Color effectiveForeground =
+        toned?.foreground ??
         appleColors?.secondaryLabel ??
         foregroundColor ??
         scheme.onSecondaryContainer;
@@ -95,7 +97,8 @@ class FushiTag extends StatelessWidget {
         : () {
             FushiToast.show(
               backgroundColor: background,
-              textColor: toned?.foreground ??
+              textColor:
+                  toned?.foreground ??
                   foregroundColor ??
                   scheme.onSecondaryContainer,
               msg: message!,
@@ -121,11 +124,7 @@ class FushiTag extends StatelessWidget {
               const SizedBox(width: 5),
             ],
             if (icon != null) ...[
-              FushiIcon(
-                icon,
-                color: effectiveForeground,
-                size: iconSize ?? 12,
-              ),
+              FushiIcon(icon, color: effectiveForeground, size: iconSize ?? 12),
               const SizedBox(width: 4),
             ],
             Flexible(
@@ -141,7 +140,8 @@ class FushiTag extends StatelessWidget {
               Flexible(
                 child: DecoratedBox(
                   decoration: ShapeDecoration(
-                    color: appleColors?.separator ??
+                    color:
+                        appleColors?.separator ??
                         scheme.surfaceContainerHighest,
                     shape: appleColors != null
                         ? const StadiumBorder()
@@ -158,7 +158,8 @@ class FushiTag extends StatelessWidget {
                       trailingText!,
                       style: baseStyle.copyWith(
                         fontSize: 10,
-                        color: appleColors?.secondaryLabel ??
+                        color:
+                            appleColors?.secondaryLabel ??
                             scheme.onSurfaceVariant,
                       ),
                       maxLines: 1,
@@ -199,8 +200,9 @@ class FushiTag extends StatelessWidget {
                     : BorderSide.none,
               ),
         clipBehavior: Clip.antiAlias,
-        child:
-            apple ? appleTap(content) : InkWell(onTap: onTap, child: content),
+        child: apple
+            ? appleTap(content)
+            : InkWell(onTap: onTap, child: content),
       ),
     );
   }
@@ -238,10 +240,7 @@ class FushiTag extends StatelessWidget {
           foreground: cs.onPrimaryContainer,
         );
       case FushiTagTone.error:
-        return (
-          background: cs.errorContainer,
-          foreground: cs.onErrorContainer,
-        );
+        return (background: cs.errorContainer, foreground: cs.onErrorContainer);
       case FushiTagTone.success:
       case FushiTagTone.warning:
         final Color status = fushiStatusColor(
@@ -250,10 +249,7 @@ class FushiTag extends StatelessWidget {
               ? FushiStatusTone.success
               : FushiStatusTone.warning,
         );
-        return (
-          background: status.withValues(alpha: 0.16),
-          foreground: status,
-        );
+        return (background: status.withValues(alpha: 0.16), foreground: status);
     }
   }
 

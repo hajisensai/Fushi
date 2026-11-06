@@ -127,17 +127,17 @@ double fushiHingeGutterPx({
 /// 把 [FushiFoldState.of] 给出的 MediaQuery 坐标空间矩形（如 [FushiFoldState.hinge]）
 /// 换算成 [box] 的本地坐标。
 ///
-/// 先按 [FushiAppUiScale.mediaQueryToWindowFactorOf] 还原到窗口逻辑坐标（Flutter
-/// global 坐标），再经 `globalToLocal` 走 [box] 到根的完整变换链——区域偏移、界面
-/// 缩放、嵌套缩放层一并算进去，调用方不必知道自己在哪个缩放层下。[context] 必须是
-/// 读 [rect] 时用的那个 context（或同一 MediaQuery 下的后代）；[box] 必须已布局并挂载
-/// （一般在帧后回调里调）。
+/// 先乘 [mediaQueryToWindow]（读 [rect] 那个 context 的
+/// [FushiAppUiScale.mediaQueryToWindowFactorOf]）还原到窗口逻辑坐标（Flutter global
+/// 坐标），再经 `globalToLocal` 走 [box] 到根的完整变换链——区域偏移、界面缩放、
+/// 嵌套缩放层一并算进去，调用方不必知道自己在哪个缩放层下。[box] 必须已布局并挂载
+/// （帧后回调或绘制期调）。
 Rect fushiFoldRectToLocal({
-  required BuildContext context,
   required RenderBox box,
   required Rect rect,
+  required double mediaQueryToWindow,
 }) {
-  final double toWindow = FushiAppUiScale.mediaQueryToWindowFactorOf(context);
+  final double toWindow = mediaQueryToWindow;
   final Offset topLeft = box.globalToLocal(rect.topLeft * toWindow);
   final Offset bottomRight = box.globalToLocal(rect.bottomRight * toWindow);
   return Rect.fromPoints(topLeft, bottomRight);

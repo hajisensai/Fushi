@@ -1,5 +1,5 @@
-﻿import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:drift/native.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 Future<FushiDatabase> _openDb() async {
@@ -10,11 +10,7 @@ Future<FushiDatabase> _openDb() async {
 
 ProfilesCompanion _profile({String name = 'Default'}) {
   final now = DateTime.now().millisecondsSinceEpoch;
-  return ProfilesCompanion.insert(
-    name: name,
-    createdAt: now,
-    updatedAt: now,
-  );
+  return ProfilesCompanion.insert(name: name, createdAt: now, updatedAt: now);
 }
 
 void main() {

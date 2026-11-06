@@ -26,6 +26,9 @@ on:
     branches: ['main', 'develop']
     paths:
       - 'native/galgame_hook/**'
+      - 'tool/vendored_binaries.json'
+      - 'tool/vendored_binaries.py'
+      - '.github/actions/fetch-vendored-binaries/**'
       - '.github/workflows/native-galgame-gate.yml'
 
 # 全程只读：不构建产物、不碰任何 release/tag/发布通道。
@@ -42,6 +45,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
+      # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
+      - name: Fetch vendored binaries
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: galgame
 
       - uses: actions/setup-python@v6
         with:

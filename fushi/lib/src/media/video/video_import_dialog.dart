@@ -25,14 +25,26 @@ import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/video_library_import.dart';
 export 'package:fushi_engine/media/video/video_library_import.dart'
-    show playlistBookUid, singleVideoBookUid, uniqueVideoBookUid, parseSubtitleCues;
+    show
+        playlistBookUid,
+        singleVideoBookUid,
+        uniqueVideoBookUid,
+        parseSubtitleCues;
 // TODO-817 M1c → 审计 §1-A: videoCoverFileName / extractVideoCover 已下沉到
 // media/video/video_cover_extractor.dart（视频封面抽取的归宿，使扫描器无需
 // import UI 层）；从这里 re-export 让既有调用点（home_video_page /
@@ -64,8 +76,7 @@ Future<CoverMetaStore?> _admitAutoFrameCoverWrite({
 }) async {
   if (!allowAutoCover) return null;
   try {
-    final CoverMetaStore store =
-        CoverMetaStore(await VideoStorage.coversDir());
+    final CoverMetaStore store = CoverMetaStore(await VideoStorage.coversDir());
     return await store.allowsAutoFrameWrite(bookUid) ? store : null;
   } on Object catch (error) {
     // 元数据不可读时 fail closed：媒体仍可导入，但不得发布未受 provenance
@@ -93,10 +104,6 @@ Future<void> _commitAutoFrameCoverWrite({
     debugPrint('[video-import] cover provenance commit failed: $error');
   }
 }
-
-
-
-
 
 /// 用用户挑选的图片 [pickedPath] 覆盖 [bookUid] 的封面：拷到持久化
 /// `video_covers/<uid>.jpg` → **驱逐旧解码缓存** → 落库 `coverPath`，返回目标路径。
@@ -129,6 +136,180 @@ Future<String> setVideoCoverFromPickedFile({
   return dest;
 }
 
+/// 「从 URL 导入」一次的结果。
+typedef StreamVideoUrlImport = ({String bookUid, String title});
+
+/// 「从 URL 导入视频」的门面（导入对话框粘贴 URL 与控制通道 / AI 的
+/// `POST /api/admin/url-import` 调同一个方法，不依赖 BuildContext）。
+///
+/// TODO-1157：把粘贴的流媒体 URL 当作一种视频源**导入**（像本地视频一样落 VideoBooks、
+/// 进书架、可重复打开），而不再「即播不入库」。videoPath 存原始 URL（YouTube=watch URL、
+/// 直链/HLS=直链），外挂字幕 URL + 防盗链 header 存进 [VideoBooks.streamSpecJson]；
+/// 重开时由 [buildStreamVideoLaunch] 据此重建流客户端（YouTube 重解析）。身份
+/// [streamVideoBookUid]，同名碰撞经 [uniqueVideoBookUid] 加后缀。不下载任何视频字节
+/// （不是下载中心的能力）。
+class StreamVideoUrlImporter {
+  StreamVideoUrlImporter(this.repo);
+
+  final VideoBookRepository repo;
+
+  /// 导入 [url]（须是 [isPlayableStreamUrl]），返回新条目的 bookUid 与标题。
+  /// [subtitleUrl] 不是 http(s) 时忽略；[referer] / [userAgent] 空串视为未填。
+  Future<StreamVideoUrlImport> importUrl(
+    String url, {
+    String? subtitleUrl,
+    String? referer,
+    String? userAgent,
+  }) async {
+    if (!isPlayableStreamUrl(url)) {
+      throw ArgumentError.value(url, 'url', 'not an http(s) stream url');
+    }
+    late String bookUid;
+    late String title;
+    await _runVideoImportCoverMutation((bool allowAutoCover) async {
+      final List<VideoBookRow> existing = await repo.listAll();
+      bookUid = uniqueVideoBookUid(
+        streamVideoBookUid(url),
+        existing.map((VideoBookRow r) => r.bookUid).toSet(),
+      );
+      final String subtitleUrlRaw = (subtitleUrl ?? '').trim();
+      final String? subtitle = isPlayableStreamUrl(subtitleUrlRaw)
+          ? subtitleUrlRaw
+          : null;
+      final String refererValue = (referer ?? '').trim();
+      final String userAgentValue = (userAgent ?? '').trim();
+      final StreamVideoSpec spec = StreamVideoSpec(
+        subtitleUrl: subtitle,
+        subtitleFileName: subtitle == null
+            ? null
+            : _subtitleFileNameForUrl(subtitle),
+        referer: refererValue.isEmpty ? null : refererValue,
+        userAgent: userAgentValue.isEmpty ? null : userAgentValue,
+      );
+      // TODO-1281：YouTube 导入时用 watch URL 派生的标题恒是字面 "watch"（query 里的
+      // ?v= 才是视频标识），且流媒体无本地文件可 ffmpeg 抽封面 → 名字错 + 无封面。故对
+      // YouTube URL 轻量抓一次元数据（真实标题 + 缩略图 URL），落库真名 + 下载封面。
+      // best-effort：抓取失败退回 URL 派生标题 + 无封面，导入不中止（见
+      // [resolveYoutubeMetadata]）。直链/HLS 无此问题，保持原逻辑。
+      title = _streamTitleForUrl(url);
+      final CoverMetaStore? coverMetaStore = await _admitAutoFrameCoverWrite(
+        allowAutoCover: allowAutoCover,
+        bookUid: bookUid,
+      );
+      String? coverPath;
+      switch (streamImportCoverStrategy(url)) {
+        case StreamImportCoverStrategy.youtubeThumbnail:
+          coverPath = await _resolveYoutubeImportCover(
+            url,
+            bookUid,
+            (String resolved) => title = resolved,
+            downloadCover: coverMetaStore != null,
+          );
+        case StreamImportCoverStrategy.noAutomaticCover:
+          // BUG-1975：已知网页视频站的 URL 是 HTML 播放页，不是 ffmpeg 可解复用
+          // 的媒体输入。网页播放器仍照常导入/打开，封面用占位图。
+          coverPath = null;
+        case StreamImportCoverStrategy.ffmpegFrame:
+          // TODO-1304：直链/HLS 也出封面。videoPath 是可 seek 的流 URL → ffmpeg 抽一帧
+          // （桌面 CLI / 移动端 ffmpeg-kit，均支持 http 输入，经 _isRemoteFfmpegInput 放行）。
+          // 抽不到（无 ffmpeg / 流不可 seek）→ null，书架占位（与本地视频无 ffmpeg 一致，不中止）。
+          if (coverMetaStore != null) {
+            coverPath = await extractVideoCover(
+              videoPath: url,
+              bookUid: bookUid,
+            );
+          }
+      }
+      await repo.saveVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value(bookUid),
+          title: Value(title),
+          videoPath: Value(url),
+          streamSpecJson: Value<String?>(spec.toStorageJson()),
+          coverPath: Value<String?>(coverPath),
+          importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+        ),
+      );
+      await _commitAutoFrameCoverWrite(
+        store: coverMetaStore,
+        bookUid: bookUid,
+        coverPath: coverPath,
+      );
+    });
+    // v49：用户明示导入流媒体成功 → 记一条 added 活动事件（title=解析出的流标题）。
+    await repo.recordVideoImportActivity(bookUid: bookUid, title: title);
+    return (bookUid: bookUid, title: title);
+  }
+
+  /// TODO-1304：YouTube 导入封面 + 真实标题（best-effort，绝不阻断导入）。
+  ///
+  /// watch URL 派生的标题恒是字面 "watch"（`?v=` 才是标识）、且流媒体无本地文件可 ffmpeg
+  /// 抽帧 → 用 [resolveYoutubeMetadata] 轻量抓一次真实标题（经 [onTitle] 回传）+ 缩略图
+  /// URL，再 [downloadVideoCoverToPath] 落封面。缩略图下载失败（[downloadVideoCoverToPath]
+  /// 返回 null）旧代码**完全静默**——无从区分「网络失败」与「没实现/URL 拼错」；这里**重试
+  /// 一次并记日志**留证。metadata 抓取抛异常（超时/网络）→ 记日志、退回 URL 派生标题 +
+  /// 无封面（导入仍成功）。
+  Future<String?> _resolveYoutubeImportCover(
+    String url,
+    String bookUid,
+    void Function(String title) onTitle, {
+    required bool downloadCover,
+  }) async {
+    try {
+      final YoutubeMetadata meta = await resolveYoutubeMetadata(url);
+      if (meta.title.trim().isNotEmpty) onTitle(meta.title.trim());
+      // maintenance 或受保护 provenance 下仍保留真实标题解析，但绝不派生/写入
+      // 自动封面路径。正常下载路径由调用方的 operation -> mutation 临界区覆盖。
+      if (!downloadCover) return null;
+      final Directory coverDir = await AppPaths.videoCoversDirectory();
+      final String outputPath = p.join(
+        coverDir.path,
+        videoCoverFileName(bookUid),
+      );
+      String? cover = await downloadVideoCoverToPath(
+        coverUrl: meta.thumbnailUrl,
+        outputPath: outputPath,
+      );
+      if (cover == null) {
+        // 一次重试：区分瞬时网络失败（重试常成功）与持续失败（记日志留证）。
+        debugPrint('[fushi][youtube] 缩略图下载失败，重试一次：${meta.thumbnailUrl}');
+        cover = await downloadVideoCoverToPath(
+          coverUrl: meta.thumbnailUrl,
+          outputPath: outputPath,
+        );
+        if (cover == null) {
+          debugPrint(
+            '[fushi][youtube] 缩略图重试仍失败（网络/URL 问题），书架用占位：'
+            '${meta.thumbnailUrl}',
+          );
+        }
+      }
+      return cover;
+    } catch (e) {
+      debugPrint('[fushi][youtube] import metadata resolve failed: $e');
+      return null;
+    }
+  }
+
+  /// 从字幕 URL 末段取文件名（保留扩展名给字幕格式路由）；取不到回退 `subtitle`。
+  String _subtitleFileNameForUrl(String url) {
+    final Uri? uri = Uri.tryParse(url);
+    final String last = (uri != null && uri.pathSegments.isNotEmpty)
+        ? uri.pathSegments.last
+        : '';
+    return last.isEmpty ? 'subtitle' : last;
+  }
+
+  /// 流标题：取 URL 末段文件名（无扩展名）；取不到回退 host；再不行回退原 URL。
+  String _streamTitleForUrl(String url) {
+    final Uri? uri = Uri.tryParse(url);
+    if (uri == null) return url;
+    if (uri.pathSegments.isNotEmpty && uri.pathSegments.last.isNotEmpty) {
+      return p.basenameWithoutExtension(uri.pathSegments.last);
+    }
+    return uri.host.isNotEmpty ? uri.host : url;
+  }
+}
 
 /// 导入按钮可用性的纯判定（抽出便于单测）。
 ///
@@ -235,18 +416,20 @@ class _VideoImportDialogState extends State<VideoImportDialog>
   }
 
   bool get _canImport => videoImportCanImport(
-        videoPath: _videoPath,
-        subtitlePath: _subtitlePath,
-        streamUrl: _streamUrlController.text,
-        busy: importing,
-      );
+    videoPath: _videoPath,
+    subtitlePath: _subtitlePath,
+    streamUrl: _streamUrlController.text,
+    busy: importing,
+  );
 
   Future<void> _pickVideo() async {
     // 安卓：走真实路径浏览器拿绝对路径（不复制到 cache，清缓存不失效）；
     // 桌面/iOS 及安卓无全文件访问时回退 file_picker（board 1112）。
     // 视频不限扩展名（allowedExtensions:null），避免维护第二份视频扩展名清单。
-    final AppModel appModel =
-        ProviderScope.containerOf(context, listen: false).read(appProvider);
+    final AppModel appModel = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appProvider);
     final String? path = await pickRealFilePath(
       context: context,
       appModel: appModel,
@@ -266,6 +449,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
       videoPath,
       wantAudio: false,
       subtitleExts: const <String>{'srt', 'vtt', 'ass', 'ssa'},
+      subtitleRule: SidecarSubtitleRule.exactName,
     );
     if (!mounted || m.subtitlePath == null || _subtitlePath != null) return;
     setState(() => _subtitlePath = m.subtitlePath);
@@ -303,8 +487,10 @@ class _VideoImportDialogState extends State<VideoImportDialog>
       action: () async {
         final String content = await readTextWithEncoding(File(m3u8Path));
         final String baseDir = p.dirname(m3u8Path);
-        final List<PlaylistEntry> entries =
-            parseM3u8(content: content, baseDir: baseDir);
+        final List<PlaylistEntry> entries = parseM3u8(
+          content: content,
+          baseDir: baseDir,
+        );
         if (entries.isEmpty) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -317,39 +503,38 @@ class _VideoImportDialogState extends State<VideoImportDialog>
         // 统一合集 Phase 2：多集拆成 N 条独立 VideoBooks 行 + 一个 playlist 合集
         // （单一真相源 importSplitPlaylist，与 v38 迁移落库形状对齐）。
         final SplitPlaylistImportResult result =
-            await _runVideoImportCoverMutation(
-          (bool allowAutoCover) async {
-            final SplitPlaylistImportResult imported =
-                await widget.repo.importSplitPlaylist(
-              collectionName: p.basenameWithoutExtension(m3u8Path),
-              entries: entries,
-            );
-            final String firstUid = imported.episodeUids.first;
-            final CoverMetaStore? coverMetaStore =
-                await _admitAutoFrameCoverWrite(
-              allowAutoCover: allowAutoCover,
-              bookUid: firstUid,
-            );
-            // TODO-1237 ①：遍历各集取首个可用封面（首集缺失/远端占位时退到后续集）给首集
-            // 承接（合集卡封面纯函数取首成员封面）。桌面 ffmpeg；移动端无 ffmpeg 时留空占位。
-            final String? coverPath = coverMetaStore == null
-                ? null
-                : await extractPlaylistCover(
-                    episodePaths:
-                        entries.map((PlaylistEntry e) => e.path).toList(),
+            await _runVideoImportCoverMutation((bool allowAutoCover) async {
+              final SplitPlaylistImportResult imported = await widget.repo
+                  .importSplitPlaylist(
+                    collectionName: p.basenameWithoutExtension(m3u8Path),
+                    entries: entries,
+                  );
+              final String firstUid = imported.episodeUids.first;
+              final CoverMetaStore? coverMetaStore =
+                  await _admitAutoFrameCoverWrite(
+                    allowAutoCover: allowAutoCover,
                     bookUid: firstUid,
                   );
-            if (coverPath != null) {
-              await widget.repo.updateCover(firstUid, coverPath);
-            }
-            await _commitAutoFrameCoverWrite(
-              store: coverMetaStore,
-              bookUid: firstUid,
-              coverPath: coverPath,
-            );
-            return imported;
-          },
-        );
+              // TODO-1237 ①：遍历各集取首个可用封面（首集缺失/远端占位时退到后续集）给首集
+              // 承接（合集卡封面纯函数取首成员封面）。桌面 ffmpeg；移动端无 ffmpeg 时留空占位。
+              final String? coverPath = coverMetaStore == null
+                  ? null
+                  : await extractPlaylistCover(
+                      episodePaths: entries
+                          .map((PlaylistEntry e) => e.path)
+                          .toList(),
+                      bookUid: firstUid,
+                    );
+              if (coverPath != null) {
+                await widget.repo.updateCover(firstUid, coverPath);
+              }
+              await _commitAutoFrameCoverWrite(
+                store: coverMetaStore,
+                bookUid: firstUid,
+                coverPath: coverPath,
+              );
+              return imported;
+            });
         final String firstUid = result.episodeUids.first;
 
         // v49：手动选/拖入 m3u8 播放列表也是用户明示导入，整本只记 1 条 added 活动
@@ -374,8 +559,9 @@ class _VideoImportDialogState extends State<VideoImportDialog>
   /// 对齐 EpubImporter 的无回调去重 UX，保证不写入重复主键。
   Future<String> _uniqueBookUid(String base) async {
     final List<VideoBookRow> existing = await widget.repo.listAll();
-    final Set<String> keys =
-        existing.map((VideoBookRow r) => r.bookUid).toSet();
+    final Set<String> keys = existing
+        .map((VideoBookRow r) => r.bookUid)
+        .toSet();
     return uniqueVideoBookUid(base, keys);
   }
 
@@ -405,10 +591,13 @@ class _VideoImportDialogState extends State<VideoImportDialog>
           List<AudioCue>? cues;
           if (subtitlePath != null) {
             // 选了外挂字幕：先解析 cue；封面文件只在其余输入已就绪后才发布。
-            format =
-                p.extension(subtitlePath).replaceFirst('.', '').toLowerCase();
-            final String content =
-                await readTextWithEncoding(File(subtitlePath));
+            format = p
+                .extension(subtitlePath)
+                .replaceFirst('.', '')
+                .toLowerCase();
+            final String content = await readTextWithEncoding(
+              File(subtitlePath),
+            );
             cues = parseSubtitleCues(
               content: content,
               format: format,
@@ -418,40 +607,41 @@ class _VideoImportDialogState extends State<VideoImportDialog>
 
           final CoverMetaStore? coverMetaStore =
               await _admitAutoFrameCoverWrite(
-            allowAutoCover: allowAutoCover,
-            bookUid: bookUid,
-          );
+                allowAutoCover: allowAutoCover,
+                bookUid: bookUid,
+              );
           // 抽一帧做书架封面（桌面 ffmpeg；移动端无 ffmpeg 时留空占位）。
           final String? coverPath = coverMetaStore == null
               ? null
-              : await extractVideoCover(
-                  videoPath: videoPath,
-                  bookUid: bookUid,
-                );
+              : await extractVideoCover(videoPath: videoPath, bookUid: bookUid);
 
           if (subtitlePath != null) {
-            await widget.repo.saveVideoBook(VideoBooksCompanion(
-              bookUid: Value(bookUid),
-              title: Value(p.basenameWithoutExtension(videoPath)),
-              videoPath: Value(videoPath),
-              subtitleSource: Value(subtitlePath),
-              subtitleFormat: Value(format!),
-              coverPath: Value<String?>(coverPath),
-              importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-            ));
+            await widget.repo.saveVideoBook(
+              VideoBooksCompanion(
+                bookUid: Value(bookUid),
+                title: Value(p.basenameWithoutExtension(videoPath)),
+                videoPath: Value(videoPath),
+                subtitleSource: Value(subtitlePath),
+                subtitleFormat: Value(format!),
+                coverPath: Value<String?>(coverPath),
+                importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+              ),
+            );
           } else {
             // 未选外挂字幕：标记用内嵌默认轨（track 0），不写 cue——字幕靠 libmpv
             // 画面渲染，cue 级功能（高亮/句导航）无数据（Phase 0 已知降级）。
-            await widget.repo.saveVideoBook(VideoBooksCompanion(
-              bookUid: Value(bookUid),
-              title: Value(p.basenameWithoutExtension(videoPath)),
-              videoPath: Value(videoPath),
-              subtitleSource: const Value<String?>(null),
-              subtitleFormat: const Value<String?>(null),
-              embeddedSubtitleTrack: const Value<int?>(0),
-              coverPath: Value<String?>(coverPath),
-              importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-            ));
+            await widget.repo.saveVideoBook(
+              VideoBooksCompanion(
+                bookUid: Value(bookUid),
+                title: Value(p.basenameWithoutExtension(videoPath)),
+                videoPath: Value(videoPath),
+                subtitleSource: const Value<String?>(null),
+                subtitleFormat: const Value<String?>(null),
+                embeddedSubtitleTrack: const Value<int?>(0),
+                coverPath: Value<String?>(coverPath),
+                importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+              ),
+            );
           }
           await _commitAutoFrameCoverWrite(
             store: coverMetaStore,
@@ -491,154 +681,27 @@ class _VideoImportDialogState extends State<VideoImportDialog>
   Future<void> _importStreamUrl(String url) {
     // 错误处理（BUG-1117）走 runImport 模板：流解析/落库异常（拖 URL 自动导入是
     // fire-and-forget 调用，异常必然无人接）落日志 + toast 提示，不逃逸 zone。
+    // 落库本体在 [StreamVideoUrlImporter.importUrl]（控制通道 / AI 同一个门面）。
     return runImport(
       logTag: 'VideoImportDialog.importStream',
       debugMessage: (Object e) =>
           '[fushi-drop] [video-import] importStream failed: $e',
       action: () async {
-        late String bookUid;
-        late String title;
-        await _runVideoImportCoverMutation((bool allowAutoCover) async {
-          bookUid = await _uniqueBookUid(streamVideoBookUid(url));
-          final String subtitleUrlRaw =
-              _streamSubtitleUrlController.text.trim();
-          final String? subtitleUrl =
-              isPlayableStreamUrl(subtitleUrlRaw) ? subtitleUrlRaw : null;
-          final String referer = _streamRefererController.text.trim();
-          final String userAgent = _streamUserAgentController.text.trim();
-          final StreamVideoSpec spec = StreamVideoSpec(
-            subtitleUrl: subtitleUrl,
-            subtitleFileName: subtitleUrl == null
-                ? null
-                : _subtitleFileNameForUrl(subtitleUrl),
-            referer: referer.isEmpty ? null : referer,
-            userAgent: userAgent.isEmpty ? null : userAgent,
-          );
-          // TODO-1281：YouTube 导入时用 watch URL 派生的标题恒是字面 "watch"（query 里的
-          // ?v= 才是视频标识），且流媒体无本地文件可 ffmpeg 抽封面 → 名字错 + 无封面。故对
-          // YouTube URL 轻量抓一次元数据（真实标题 + 缩略图 URL），落库真名 + 下载封面。
-          // best-effort：抓取失败退回 URL 派生标题 + 无封面，导入不中止（见
-          // [resolveYoutubeMetadata]）。直链/HLS 无此问题，保持原逻辑。
-          title = _streamTitleForUrl(url);
-          final CoverMetaStore? coverMetaStore =
-              await _admitAutoFrameCoverWrite(
-            allowAutoCover: allowAutoCover,
-            bookUid: bookUid,
-          );
-          String? coverPath;
-          switch (streamImportCoverStrategy(url)) {
-            case StreamImportCoverStrategy.youtubeThumbnail:
-              coverPath = await _resolveYoutubeImportCover(
-                url,
-                bookUid,
-                (String resolved) => title = resolved,
-                downloadCover: coverMetaStore != null,
-              );
-            case StreamImportCoverStrategy.noAutomaticCover:
-              // BUG-1975：已知网页视频站的 URL 是 HTML 播放页，不是 ffmpeg 可解复用
-              // 的媒体输入。网页播放器仍照常导入/打开，封面用占位图。
-              coverPath = null;
-            case StreamImportCoverStrategy.ffmpegFrame:
-              // TODO-1304：直链/HLS 也出封面。videoPath 是可 seek 的流 URL → ffmpeg 抽一帧
-              // （桌面 CLI / 移动端 ffmpeg-kit，均支持 http 输入，经 _isRemoteFfmpegInput 放行）。
-              // 抽不到（无 ffmpeg / 流不可 seek）→ null，书架占位（与本地视频无 ffmpeg 一致，不中止）。
-              if (coverMetaStore != null) {
-                coverPath =
-                    await extractVideoCover(videoPath: url, bookUid: bookUid);
-              }
-          }
-          await widget.repo.saveVideoBook(VideoBooksCompanion(
-            bookUid: Value(bookUid),
-            title: Value(title),
-            videoPath: Value(url),
-            streamSpecJson: Value<String?>(spec.toStorageJson()),
-            coverPath: Value<String?>(coverPath),
-            importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-          ));
-          await _commitAutoFrameCoverWrite(
-            store: coverMetaStore,
-            bookUid: bookUid,
-            coverPath: coverPath,
-          );
-        });
-        // v49：用户明示导入流媒体成功 → 记一条 added 活动事件（title=解析出的流标题）。
-        await widget.repo
-            .recordVideoImportActivity(bookUid: bookUid, title: title);
+        final StreamVideoUrlImport imported =
+            await StreamVideoUrlImporter(widget.repo).importUrl(
+              url,
+              subtitleUrl: _streamSubtitleUrlController.text,
+              referer: _streamRefererController.text,
+              userAgent: _streamUserAgentController.text,
+            );
         if (!mounted) return;
         debugPrint(
-          '[fushi-drop] [video-import] importedStream bookUid=$bookUid '
-          'url=$url',
+          '[fushi-drop] [video-import] importedStream '
+          'bookUid=${imported.bookUid} url=$url',
         );
-        Navigator.pop(context, bookUid);
+        Navigator.pop(context, imported.bookUid);
       },
     );
-  }
-
-  /// TODO-1304：YouTube 导入封面 + 真实标题（best-effort，绝不阻断导入）。
-  ///
-  /// watch URL 派生的标题恒是字面 "watch"（`?v=` 才是标识）、且流媒体无本地文件可 ffmpeg
-  /// 抽帧 → 用 [resolveYoutubeMetadata] 轻量抓一次真实标题（经 [onTitle] 回传）+ 缩略图
-  /// URL，再 [downloadVideoCoverToPath] 落封面。缩略图下载失败（[downloadVideoCoverToPath]
-  /// 返回 null）旧代码**完全静默**——无从区分「网络失败」与「没实现/URL 拼错」；这里**重试
-  /// 一次并记日志**留证。metadata 抓取抛异常（超时/网络）→ 记日志、退回 URL 派生标题 +
-  /// 无封面（导入仍成功）。
-  Future<String?> _resolveYoutubeImportCover(
-    String url,
-    String bookUid,
-    void Function(String title) onTitle, {
-    required bool downloadCover,
-  }) async {
-    try {
-      final YoutubeMetadata meta = await resolveYoutubeMetadata(url);
-      if (meta.title.trim().isNotEmpty) onTitle(meta.title.trim());
-      // maintenance 或受保护 provenance 下仍保留真实标题解析，但绝不派生/写入
-      // 自动封面路径。正常下载路径由调用方的 operation -> mutation 临界区覆盖。
-      if (!downloadCover) return null;
-      final Directory coverDir = await AppPaths.videoCoversDirectory();
-      final String outputPath =
-          p.join(coverDir.path, videoCoverFileName(bookUid));
-      String? cover = await downloadVideoCoverToPath(
-        coverUrl: meta.thumbnailUrl,
-        outputPath: outputPath,
-      );
-      if (cover == null) {
-        // 一次重试：区分瞬时网络失败（重试常成功）与持续失败（记日志留证）。
-        debugPrint('[fushi][youtube] 缩略图下载失败，重试一次：${meta.thumbnailUrl}');
-        cover = await downloadVideoCoverToPath(
-          coverUrl: meta.thumbnailUrl,
-          outputPath: outputPath,
-        );
-        if (cover == null) {
-          debugPrint(
-            '[fushi][youtube] 缩略图重试仍失败（网络/URL 问题），书架用占位：'
-            '${meta.thumbnailUrl}',
-          );
-        }
-      }
-      return cover;
-    } catch (e) {
-      debugPrint('[fushi][youtube] import metadata resolve failed: $e');
-      return null;
-    }
-  }
-
-  /// 从字幕 URL 末段取文件名（保留扩展名给字幕格式路由）；取不到回退 `subtitle`。
-  String _subtitleFileNameForUrl(String url) {
-    final Uri? uri = Uri.tryParse(url);
-    final String last = (uri != null && uri.pathSegments.isNotEmpty)
-        ? uri.pathSegments.last
-        : '';
-    return last.isEmpty ? 'subtitle' : last;
-  }
-
-  /// 流标题：取 URL 末段文件名（无扩展名）；取不到回退 host；再不行回退原 URL。
-  String _streamTitleForUrl(String url) {
-    final Uri? uri = Uri.tryParse(url);
-    if (uri == null) return url;
-    if (uri.pathSegments.isNotEmpty && uri.pathSegments.last.isNotEmpty) {
-      return p.basenameWithoutExtension(uri.pathSegments.last);
-    }
-    return uri.host.isNotEmpty ? uri.host : url;
   }
 
   /// 拖文件进本对话框 → 有 m3u8/m3u 播放列表则走 [_importPlaylistFromPath]
@@ -733,8 +796,10 @@ class _VideoImportDialogState extends State<VideoImportDialog>
                 child: FushiTextButton.icon(
                   onPressed: importing
                       ? null
-                      : () => setState(() =>
-                          _streamAdvancedExpanded = !_streamAdvancedExpanded),
+                      : () => setState(
+                          () => _streamAdvancedExpanded =
+                              !_streamAdvancedExpanded,
+                        ),
                   icon: AnimatedRotation(
                     turns: _streamAdvancedExpanded ? 0.5 : 0,
                     duration: context.fushiMotion.spatialFast.duration,

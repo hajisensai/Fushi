@@ -5,6 +5,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import '../helpers/glass_unwrap.dart';
 
 VideoDiscoveryItem _item(String id, String title) {
@@ -26,10 +27,7 @@ VideoDiscoveryItem _item(String id, String title) {
 
 Widget _harness(VideoDiscoveryDetailPage page) {
   return TranslationProvider(
-    child: MaterialApp(
-      theme: ThemeData.dark(useMaterial3: true),
-      home: page,
-    ),
+    child: MaterialApp(theme: ThemeData.dark(useMaterial3: true), home: page),
   );
 }
 
@@ -94,7 +92,11 @@ void main() {
     );
     expect(find.text('字幕处理中'), findsOneWidget);
     expect(statusWatches, 1);
-    expect(find.text(t.video_discovery_subscription_manage), findsOneWidget);
+    // 紧凑 hero 下次按钮是图标钮，文案进 tooltip。
+    expect(
+      find.byTooltip(t.video_discovery_subscription_manage),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey<String>('video-discovery-play')),
       findsOneWidget,
@@ -181,13 +183,26 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    // M3E 详情骨架：「找资源」是主按钮（filled）、字幕是 tonal 次按钮，两者都是
-    // FilledButton。
-    final FilledButton resource = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-discovery-search-resource'))),);
-    final FilledButton subtitle = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-discovery-search-subtitle'))),);
-    final FilledButton subscribe = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-discovery-subscribe'))),);
-    expect(resource.onPressed, isNotNull,
-        reason: '下载进行中要能换源重下；per-series 并发限制在队列层根本不存在。');
+    // M3E 详情骨架：「找资源」是主按钮（filled）；紧凑 hero 下字幕 / 订阅是
+    // tonal 图标次按钮（FushiIconButtonControl，文案进 tooltip）。
+    final FilledButton resource = tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.byKey(const ValueKey<String>('video-discovery-search-resource')),
+      ),
+    );
+    final FushiIconButtonControl subtitle = tester
+        .widget<FushiIconButtonControl>(
+          find.byKey(const ValueKey<String>('video-discovery-search-subtitle')),
+        );
+    final FushiIconButtonControl subscribe = tester
+        .widget<FushiIconButtonControl>(
+          find.byKey(const ValueKey<String>('video-discovery-subscribe')),
+        );
+    expect(
+      resource.onPressed,
+      isNotNull,
+      reason: '下载进行中要能换源重下；per-series 并发限制在队列层根本不存在。',
+    );
     expect(subscribe.onPressed, isNull);
     expect(subtitle.onPressed, isNotNull);
 
@@ -248,14 +263,17 @@ void main() {
       (MethodCall call) async {
         if (call.method == 'Clipboard.setData') {
           copied.add(
-              (call.arguments as Map<Object?, Object?>)['text']! as String);
+            (call.arguments as Map<Object?, Object?>)['text']! as String,
+          );
         }
         return null;
       },
     );
     addTearDown(
-      () => tester.binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform, null),
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
     );
     final VideoDiscoveryItem listItem = _item('romaji', '银河特急');
     final VideoDiscoveryItem detailed = VideoDiscoveryItem(

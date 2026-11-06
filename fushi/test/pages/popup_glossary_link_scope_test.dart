@@ -35,29 +35,27 @@ void main() {
       final String? nodeExe = _resolveNode();
       if (nodeExe == null) {
         markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
+          'node not found on PATH; skipping JS behavior execution',
+        );
         return;
       }
 
-      final File jsTest = File(
-        'test/pages/popup_glossary_link_scope_test.js',
-      );
+      final File jsTest = File('test/pages/popup_glossary_link_scope_test.js');
       expect(
         jsTest.existsSync(),
         isTrue,
         reason: 'behavior harness ${jsTest.path} must exist',
       );
 
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path],
-        workingDirectory: Directory.current.path,
-      );
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
 
       expect(
         result.exitCode,
         0,
-        reason: 'glossary link scope JS behavior test failed.\n'
+        reason:
+            'glossary link scope JS behavior test failed.\n'
             'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
       expect(
@@ -77,9 +75,11 @@ void main() {
     final String css = maskCssComments(raw);
 
     final int ruleStart = css.indexOf('a.gloss-sc-a');
-    expect(ruleStart, greaterThanOrEqualTo(0),
-        reason:
-            'popup.css must carry the TODO-860 a.gloss-sc-a inline-flow rule');
+    expect(
+      ruleStart,
+      greaterThanOrEqualTo(0),
+      reason: 'popup.css must carry the TODO-860 a.gloss-sc-a inline-flow rule',
+    );
 
     final int braceOpen = css.indexOf('{', ruleStart);
     final int braceClose = css.indexOf('}', braceOpen);
@@ -87,20 +87,33 @@ void main() {
     expect(braceClose, greaterThan(braceOpen));
 
     final String selector = css.substring(ruleStart, braceOpen);
-    final String body =
-        css.substring(braceOpen + 1, braceClose).replaceAll(RegExp(r'\s+'), '');
+    final String body = css
+        .substring(braceOpen + 1, braceClose)
+        .replaceAll(RegExp(r'\s+'), '');
 
     // The fix must neutralize the escaping properties.
-    expect(body.contains('float:none!important'), isTrue,
-        reason: 'fix must force float:none!important');
-    expect(body.contains('position:static!important'), isTrue,
-        reason: 'fix must force position:static!important');
+    expect(
+      body.contains('float:none!important'),
+      isTrue,
+      reason: 'fix must force float:none!important',
+    );
+    expect(
+      body.contains('position:static!important'),
+      isTrue,
+      reason: 'fix must force position:static!important',
+    );
 
     // SCOPE GUARD: never touch image links (TODO-859/350 keep position/float).
-    expect(selector.contains('gloss-image-link'), isFalse,
-        reason: 'fix selector must NOT mention gloss-image-link');
-    expect(body.contains('gloss-image-link'), isFalse,
-        reason: 'fix body must NOT mention gloss-image-link');
+    expect(
+      selector.contains('gloss-image-link'),
+      isFalse,
+      reason: 'fix selector must NOT mention gloss-image-link',
+    );
+    expect(
+      body.contains('gloss-image-link'),
+      isFalse,
+      reason: 'fix body must NOT mention gloss-image-link',
+    );
   });
 
   // BUG-520 (regression of the BUG-478 fix): the blanket popup.css rule
@@ -114,63 +127,90 @@ void main() {
   // source (isFlowEscapingStructuredContentStyle inside
   // setStructuredContentElementStyle), and the blanket CSS rule is BANNED.
   // The same filter must exist in the browser-extension vendor snapshot.
-  test(
-      'popup.js filters flow-escaping dict styles at the source; '
+  test('popup.js filters flow-escaping dict styles at the source; '
       'no blanket gloss-sc span/div CSS rule (BUG-520)', () {
     final String js = File('assets/popup/popup.js').readAsStringSync();
 
     // Source filter present and wired into setStructuredContentElementStyle.
-    expect(js.contains('function isFlowEscapingStructuredContentStyle'), isTrue,
-        reason: 'popup.js must define the flow-escape source filter '
-            '(root fix for BUG-435/478/519)');
-    final int setterIdx =
-        js.indexOf('function setStructuredContentElementStyle');
+    expect(
+      js.contains('function isFlowEscapingStructuredContentStyle'),
+      isTrue,
+      reason:
+          'popup.js must define the flow-escape source filter '
+          '(root fix for BUG-435/478/519)',
+    );
+    final int setterIdx = js.indexOf(
+      'function setStructuredContentElementStyle',
+    );
     expect(setterIdx, greaterThanOrEqualTo(0));
     final int setterEnd = js.indexOf('\n}', setterIdx);
     final String setterBody = js.substring(setterIdx, setterEnd);
-    expect(setterBody.contains('isFlowEscapingStructuredContentStyle'), isTrue,
-        reason: 'setStructuredContentElementStyle must consult the filter '
-            'before landing dict inline styles');
+    expect(
+      setterBody.contains('isFlowEscapingStructuredContentStyle'),
+      isTrue,
+      reason:
+          'setStructuredContentElementStyle must consult the filter '
+          'before landing dict inline styles',
+    );
 
     // The filter must drop float and absolute/fixed/sticky position, and it
     // must NOT special-case relative (position:relative stays in the flow and
     // is legitimately used by dictionaries for glyph nudges).
-    final int filterIdx =
-        js.indexOf('function isFlowEscapingStructuredContentStyle');
+    final int filterIdx = js.indexOf(
+      'function isFlowEscapingStructuredContentStyle',
+    );
     final int filterEnd = js.indexOf('\n}', filterIdx);
     final String filterBody = js.substring(filterIdx, filterEnd);
-    expect(filterBody.contains("'float'"), isTrue,
-        reason: 'filter must drop float');
-    expect(filterBody.contains('absolute|fixed|sticky'), isTrue,
-        reason: 'filter must drop only absolute/fixed/sticky positions');
+    expect(
+      filterBody.contains("'float'"),
+      isTrue,
+      reason: 'filter must drop float',
+    );
+    expect(
+      filterBody.contains('absolute|fixed|sticky'),
+      isTrue,
+      reason: 'filter must drop only absolute/fixed/sticky positions',
+    );
 
     // BUG-520 regression guard: the blanket span/div neutralization rule that
     // broke line breaks must never come back.
     final String rawCss = File('assets/popup/popup.css').readAsStringSync();
     final String css = maskCssComments(rawCss);
-    expect(css.contains('span[class*="gloss-sc-"]'), isFalse,
-        reason: 'BUG-520: no blanket span[class*="gloss-sc-"] rule in '
-            'popup.css -- neutralize at the popup.js source instead');
-    expect(css.contains('div[class*="gloss-sc-"]'), isFalse,
-        reason: 'BUG-520: no blanket div[class*="gloss-sc-"] rule in '
-            'popup.css -- forcing display:inline on dict divs destroys '
-            'line breaks');
+    expect(
+      css.contains('span[class*="gloss-sc-"]'),
+      isFalse,
+      reason:
+          'BUG-520: no blanket span[class*="gloss-sc-"] rule in '
+          'popup.css -- neutralize at the popup.js source instead',
+    );
+    expect(
+      css.contains('div[class*="gloss-sc-"]'),
+      isFalse,
+      reason:
+          'BUG-520: no blanket div[class*="gloss-sc-"] rule in '
+          'popup.css -- forcing display:inline on dict divs destroys '
+          'line breaks',
+    );
 
     // The browser-extension vendor snapshot ships the same renderer and must
     // carry the same source filter (both vendor copies are byte-locked by the
     // browser_extension_installer drift guard).
-    final String vendorJs =
-        File('assets/browser_extension/vendor/popup.js').readAsStringSync();
-    expect(vendorJs.contains('function isFlowEscapingStructuredContentStyle'),
-        isTrue,
-        reason: 'extension vendor popup.js must carry the same source filter');
+    final String vendorJs = File(
+      'assets/browser_extension/vendor/popup.js',
+    ).readAsStringSync();
+    expect(
+      vendorJs.contains('function isFlowEscapingStructuredContentStyle'),
+      isTrue,
+      reason: 'extension vendor popup.js must carry the same source filter',
+    );
   });
 }
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

@@ -99,21 +99,25 @@ internal class MihonExtensionLoader(private val context: Context) {
         if (versionName.isEmpty()) {
             throw MihonHostException("INVALID_APK", "Extension versionName is missing")
         }
-        val libVersion = metadata.getFloat(METADATA_EXTENSION_LIB)
-            .takeUnless { version -> version == 0.0f }
+        // Aniyomi lib 17 renamed the `tachiyomix.*` keys to `aniyomix.*`.
+        val libVersion = (
+            metadata.getFloat(METADATA_EXTENSION_LIB).takeUnless { version -> version == 0.0f }
+                ?: metadata.getFloat(METADATA_ANIYOMI_EXTENSION_LIB).takeUnless { version -> version == 0.0f }
+            )
             ?.toString()
             ?.toDoubleOrNull()
             ?: versionName.substringBeforeLast('.').toDoubleOrNull()
-        // 视频扩展收 Aniyomi extensions-lib 14 / 15 / 16：编进宿主的 `animesource` ABI
-        // （third_party/m_extension_server/overlay）是 lib 14 与 lib 16 的并集——老构造
-        // `Video(url, quality, videoUrl, …)` + `getVideoList(episode)` 与新 data class
-        // `Video(videoUrl, videoTitle, …)` + Hoster API 并存。yuzono / Anikku 的 APK
-        // versionName 写 14、dex 却按 lib 16 面编译，版本标签本身从不决定能不能播。
+        // 视频扩展收 Aniyomi extensions-lib 14 / 15 / 16 / 17：编进宿主的 `animesource` ABI
+        // （third_party/m_extension_server/overlay）是 lib 14、16、17 的并集——老构造
+        // `Video(url, quality, videoUrl, …)` + `getVideoList(episode)`、lib 16 的
+        // `Video(videoUrl, videoTitle, …)` + Hoster API、lib 17 的 `memo` + 合并式
+        // `getAnimeEpisodeUpdate` 并存。yuzono / Anikku 的 APK versionName 写 14、dex 却按
+        // lib 16 面编译，版本标签本身从不决定能不能播。
         val libVersionLabel = supportedLibVersionLabel(kind, libVersion)
             ?: throw MihonHostException(
                 "UNSUPPORTED_LIB",
                 if (kind == KIND_ANIME) {
-                    "Only Aniyomi extension-lib 14 to 16 is supported"
+                    "Only Aniyomi extension-lib 14 to 17 is supported"
                 } else {
                     "Only Mihon extension-lib 1.4 and 1.6 are supported"
                 },
@@ -122,7 +126,7 @@ internal class MihonExtensionLoader(private val context: Context) {
         if (signatures.isEmpty()) {
             throw MihonHostException("UNSIGNED", "Extension APK is not signed")
         }
-        val label = metadata.getString(METADATA_NAME)
+        val label = metadata.getString(METADATA_NAME) ?: metadata.getString(METADATA_ANIYOMI_NAME)
             ?: packageManager.getApplicationLabel(appInfo)
                 .toString()
                 .substringAfter("Tachiyomi: ")
@@ -268,6 +272,7 @@ internal class MihonExtensionLoader(private val context: Context) {
                     14.0 -> "14"
                     15.0 -> "15"
                     16.0 -> "16"
+                    17.0 -> "17"
                     else -> null
                 }
                 else -> when (libVersion) {
@@ -278,6 +283,8 @@ internal class MihonExtensionLoader(private val context: Context) {
             }
         private const val METADATA_EXTENSION_LIB = "tachiyomix.extensionLib"
         private const val METADATA_NAME = "tachiyomix.name"
+        private const val METADATA_ANIYOMI_EXTENSION_LIB = "aniyomix.extensionLib"
+        private const val METADATA_ANIYOMI_NAME = "aniyomix.name"
         private val PACKAGE_NAME = Regex("""[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+""")
     }
 }

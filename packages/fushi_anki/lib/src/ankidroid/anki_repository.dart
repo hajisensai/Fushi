@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../anki_models.dart';
 import '../card_source_link.dart';
+import '../fushi_card_fields.dart';
 import '../anki_note_type_definition.dart';
 import '../anki_remote_media_http.dart';
 import '../base_anki_repository.dart';
@@ -15,6 +16,8 @@ import '../ankiconnect/ankiconnect_repository.dart';
 import '../lapis_note_type.dart';
 
 class AnkiRepository extends BaseAnkiRepository {
+  AnkiRepository({super.settingsStore});
+
   static const _channel = MethodChannel('app.fushi.reader/anki');
   static const _legacyDeckKey = 'last_selected_deck';
 
@@ -29,8 +32,9 @@ class AnkiRepository extends BaseAnkiRepository {
   /// 旧 native / 测试桩返回 `true` 或 `null`（没有这个方法的桩），一律视为已授权，
   /// 保持向后兼容——只有明确的失败终态才短路。
   Future<void> _ensurePermission() async {
-    final Object? status =
-        await _channel.invokeMethod('requestAnkidroidPermissions');
+    final Object? status = await _channel.invokeMethod(
+      'requestAnkidroidPermissions',
+    );
     switch (status) {
       case null:
       case true:
@@ -44,7 +48,8 @@ class AnkiRepository extends BaseAnkiRepository {
       case 'permanently_denied':
         throw PlatformException(
           code: 'PERMISSION_PERMANENTLY_DENIED',
-          message: 'AnkiDroid permission was permanently denied. '
+          message:
+              'AnkiDroid permission was permanently denied. '
               'Grant it in the system app settings.',
         );
       default:
@@ -61,8 +66,9 @@ class AnkiRepository extends BaseAnkiRepository {
   /// AnkiDroid 权限——那种状态下系统不再弹框，这是唯一出路。成功返回 true。
   static Future<bool> openPermissionSettings() async {
     try {
-      final Object? ok =
-          await _channel.invokeMethod('openAnkiPermissionSettings');
+      final Object? ok = await _channel.invokeMethod(
+        'openAnkiPermissionSettings',
+      );
       return ok == true;
     } on PlatformException catch (e, stack) {
       debugPrint('AnkiRepository.openPermissionSettings: $e\n$stack');
@@ -75,13 +81,13 @@ class AnkiRepository extends BaseAnkiRepository {
 
   @override
   Future<AnkiSettings> loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    // 原始串必须经基类 readSettingsJson 取（W2-7 键搬移 + W2-2 别名改写的唯一
-    // 通道）；直接 prefs.getString 会绕过两个载入期迁移。
-    final String? raw = await readSettingsJson(prefs);
+    // 原始串必须经基类 readSettingsJson 取（载入期迁移的唯一通道）；直接读存储
+    // 会绕过它们。
+    final AnkiSettingsStore store = settingsStore;
+    final String? raw = await readSettingsJson(store);
     if (raw == null) {
-      await _migrateFromLegacy(prefs);
-      final migrated = prefs.getString(BaseAnkiRepository.settingsKey);
+      await _migrateFromLegacy(store);
+      final migrated = await store.read();
       if (migrated != null) {
         try {
           return AnkiSettings.fromJson(
@@ -255,7 +261,8 @@ class AnkiRepository extends BaseAnkiRepository {
     final AnkiDeck? deck = resolveTargetDeck(settings, payload);
     if (deck == null) return const MineOutcome.notConfigured();
 
-    final noteType = settings.availableNoteTypes.firstWhereOrNull(
+    final noteType =
+        settings.availableNoteTypes.firstWhereOrNull(
           (t) => t.id == settings.selectedNoteTypeId,
         ) ??
         (settings.selectedNoteTypeName != null
@@ -270,7 +277,11 @@ class AnkiRepository extends BaseAnkiRepository {
       payload: payload,
       context: context,
     );
-    final Map<String, String> fields = rendered.fields;
+    // 渲染键与笔记类型字段名新旧不一致（Fushi 卡片改名）时按别名对上，AnkiDroid 按名取值。
+    final Map<String, String> fields = FushiCardFields.alignToFields(
+      rendered.fields,
+      noteType.fields,
+    );
     // TODO-779: 单词远程音频下载失败时带可见原因到成功 toast（卡片仍建好）。
     final String? audioWarning = rendered.audioWarning;
 
@@ -283,7 +294,10 @@ class AnkiRepository extends BaseAnkiRepository {
       if (firstFieldValue.isNotEmpty) {
         final readingIdx = _findReadingFieldIndex(
           noteType,
-          settings.fieldMappings,
+          FushiCardFields.alignToFields(
+            settings.fieldMappings,
+            noteType.fields,
+          ),
         );
         try {
           final isDupe = await _channel.invokeMethod('checkForDuplicates', {
@@ -307,6 +321,7 @@ class AnkiRepository extends BaseAnkiRepository {
       return MineOutcome.failure(
         'All fields are empty — refusing to create a blank card. '
         'Check your note type field mappings.',
+        errorCode: AnkiErrorCode.allFieldsEmpty,
       );
     }
     // BUG-1900：Anki 的 `fields_check()` **只看第一个字段**——其余字段填得再满，首字段
@@ -322,18 +337,16 @@ class AnkiRepository extends BaseAnkiRepository {
     // user's configured tags via the shared base helper — same behavior as the
     // AnkiConnect backend.
     final tags = buildNoteTags(
-      settings.tags,
+      settings.noteTags,
       source: context.source,
       includeHibiki: settings.tagIncludeHibiki,
       includeCategory: settings.tagIncludeCategory,
+      nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
       // TODO-681 / BUG-393：调用方按「自动添加书名到标签」开关注入已清洗书名/番名标签
       // （书籍/视频同语义）；关闭或无标题时为 null，buildNoteTags 不追加。
       titleTag: context.bookTitleTag,
       // 合集/系列名标签（同上开关）：视频=播放列表系列名、书籍=所属合集名；不属合集时 null。
       collectionTag: context.collectionTag,
-      // 制卡所在字符数标签（`chars_12345`）：小说阅读器按「自动添加制卡位置到标签」
-      // 开关注入；其它来源与开关关闭时为 null，buildNoteTags 不追加。
-      charPositionTag: context.charPositionTag,
     );
 
     try {
@@ -342,15 +355,13 @@ class AnkiRepository extends BaseAnkiRepository {
       // 字段使用。与 AnkiConnect 后端对称。旧版 native 返回字符串 "Added note"（无 id），
       // 升级前装的 app 仍可工作：_asNoteId 解析失败时返回 null = 优雅降级（弹窗进不了
       // 「最新可改」第三态，与现状一致，Never break userspace）。
-      final dynamic addResult = await _channel.invokeMethod(
-        'addNote',
-        <String, dynamic>{
-          'deck': deck.name,
-          'model': noteType.name,
-          'fields': fieldArray,
-          'tags': tags,
-        },
-      );
+      final dynamic addResult = await _channel
+          .invokeMethod('addNote', <String, dynamic>{
+            'deck': deck.name,
+            'model': noteType.name,
+            'fields': fieldArray,
+            'tags': tags,
+          });
       // BUG-1549：实际落卡的牌组名随成功结果带回（与 AnkiConnect 后端对称）。
       return MineOutcome.success(
         noteId: _asNoteId(addResult),
@@ -521,18 +532,19 @@ class AnkiRepository extends BaseAnkiRepository {
         return MineOutcome.failure(
           'All fields are empty — refusing to clear an existing card. '
           'Check your note type field mappings.',
+          errorCode: AnkiErrorCode.allFieldsEmpty,
         );
       }
 
       // BUG-2606：与 [mineEntry] 同一组标签、同一个 helper。
       final List<String> tags = buildNoteTags(
-        settings.tags,
+        settings.noteTags,
         source: context.source,
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,
+        nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
         titleTag: context.bookTitleTag,
         collectionTag: context.collectionTag,
-        charPositionTag: context.charPositionTag,
       );
 
       try {
@@ -675,8 +687,9 @@ class AnkiRepository extends BaseAnkiRepository {
       for (final item in raw) {
         if (item is! Map) continue;
         final rawId = item['noteId'];
-        final int? id =
-            rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+        final int? id = rawId is int
+            ? rawId
+            : int.tryParse(rawId?.toString() ?? '');
         if (id == null) continue;
         result.add(
           MinedNoteRef(
@@ -707,6 +720,23 @@ class AnkiRepository extends BaseAnkiRepository {
       return null;
     }
   }
+
+  @override
+  bool get canOpenMinedNote => true;
+
+  @override
+  Future<bool> deleteMinedNote(int noteId) async {
+    // 原生侧 `AnkiProvider.deleteNote`（CardContentProvider.delete notes/<id>）；
+    // 没权限 / provider 出错经 PlatformException 照抛。
+    final Object? deleted = await _channel.invokeMethod<Object?>(
+      'deleteNote',
+      <String, dynamic>{'noteId': noteId},
+    );
+    return deleted == true;
+  }
+
+  @override
+  bool get canDeleteMinedNotes => true;
 
   // TODO-1007/1008：用 ACTION_VIEW intent 在 AnkiDroid 中打开该 note（native `openNote`）。
   @override
@@ -760,13 +790,14 @@ class AnkiRepository extends BaseAnkiRepository {
     await _ensurePermission();
     final bool? created =
         await _channel.invokeMethod('createNoteType', <String, dynamic>{
-      'noteTypeName': template.name,
-      'noteTypeFields': template.fields,
-      'cardName': template.cardName,
-      'front': template.front,
-      'back': template.back,
-      'css': template.css,
-    }) as bool?;
+              'noteTypeName': template.name,
+              'noteTypeFields': template.fields,
+              'cardName': template.cardName,
+              'front': template.front,
+              'back': template.back,
+              'css': template.css,
+            })
+            as bool?;
     // null 只可能来自契约漂移（native 该回 bool）。当成「建了」，最坏只是 toast
     // 说成新建而非已存在；真正的成败由 native 抛 CREATE_MODEL_FAILED 表达。
     return created ?? true;
@@ -805,10 +836,11 @@ class AnkiRepository extends BaseAnkiRepository {
     String modelName,
   ) async {
     await _ensurePermission();
-    final Map? raw = await _channel.invokeMethod(
-      'readNoteType',
-      <String, dynamic>{'noteTypeName': modelName},
-    ) as Map?;
+    final Map? raw =
+        await _channel.invokeMethod('readNoteType', <String, dynamic>{
+              'noteTypeName': modelName,
+            })
+            as Map?;
     if (raw == null) return null;
     final List<dynamic> templates =
         (raw['templates'] as List?) ?? const <dynamic>[];
@@ -820,14 +852,16 @@ class AnkiRepository extends BaseAnkiRepository {
       // ord 只在写回时用于定位（Java 侧按模板名反查），backend 无关的
       // AnkiCardTemplate 不带它——备份文件里存位置号毫无意义，模板被重排
       // 之后按位置写回就会把正面写进另一张卡。
-      templates: templates.map((dynamic e) {
-        final Map tmpl = e as Map;
-        return AnkiCardTemplate(
-          name: tmpl['name']?.toString() ?? '',
-          front: tmpl['front']?.toString() ?? '',
-          back: tmpl['back']?.toString() ?? '',
-        );
-      }).toList(growable: false),
+      templates: templates
+          .map((dynamic e) {
+            final Map tmpl = e as Map;
+            return AnkiCardTemplate(
+              name: tmpl['name']?.toString() ?? '',
+              front: tmpl['front']?.toString() ?? '',
+              back: tmpl['back']?.toString() ?? '',
+            );
+          })
+          .toList(growable: false),
       css: raw['css']?.toString() ?? '',
     );
   }
@@ -835,10 +869,12 @@ class AnkiRepository extends BaseAnkiRepository {
   @override
   Future<bool> updateNoteTypeStyling(String modelName, String css) async {
     await _ensurePermission();
-    final bool? ok = await _channel.invokeMethod(
-      'updateNoteTypeStyling',
-      <String, dynamic>{'noteTypeName': modelName, 'css': css},
-    ) as bool?;
+    final bool? ok =
+        await _channel.invokeMethod('updateNoteTypeStyling', <String, dynamic>{
+              'noteTypeName': modelName,
+              'css': css,
+            })
+            as bool?;
     return ok ?? false;
   }
 
@@ -849,19 +885,23 @@ class AnkiRepository extends BaseAnkiRepository {
   ) async {
     if (templates.isEmpty) return false;
     await _ensurePermission();
-    final bool? ok = await _channel.invokeMethod(
-      'updateNoteTypeTemplates',
-      <String, dynamic>{
-        'noteTypeName': modelName,
-        'templates': templates
-            .map((AnkiCardTemplate t) => <String, String>{
-                  'name': t.name,
-                  'front': t.front,
-                  'back': t.back,
-                })
-            .toList(growable: false),
-      },
-    ) as bool?;
+    final bool? ok =
+        await _channel.invokeMethod(
+              'updateNoteTypeTemplates',
+              <String, dynamic>{
+                'noteTypeName': modelName,
+                'templates': templates
+                    .map(
+                      (AnkiCardTemplate t) => <String, String>{
+                        'name': t.name,
+                        'front': t.front,
+                        'back': t.back,
+                      },
+                    )
+                    .toList(growable: false),
+              },
+            )
+            as bool?;
     return ok ?? false;
   }
 
@@ -874,8 +914,9 @@ class AnkiRepository extends BaseAnkiRepository {
     await _ensurePermission();
     final bool? created =
         await _channel.invokeMethod('createDeck', <String, dynamic>{
-      'deckName': name,
-    }) as bool?;
+              'deckName': name,
+            })
+            as bool?;
     return created ?? true;
   }
 
@@ -1049,14 +1090,12 @@ class AnkiRepository extends BaseAnkiRepository {
         filePath,
         preferredName,
       );
-      final result = await _channel.invokeMethod(
-        'addFileToMedia',
-        <String, dynamic>{
-          'filename': stagedPath,
-          'preferredName': preferredName,
-          'mimeType': mimeType,
-        },
-      );
+      final result = await _channel
+          .invokeMethod('addFileToMedia', <String, dynamic>{
+            'filename': stagedPath,
+            'preferredName': preferredName,
+            'mimeType': mimeType,
+          });
       return result as String?;
     } catch (e, stack) {
       debugPrint('AnkiRepository._addMediaFile $preferredName: $e\n$stack');
@@ -1142,14 +1181,14 @@ class AnkiRepository extends BaseAnkiRepository {
     return -1;
   }
 
-  Future<void> _migrateFromLegacy(SharedPreferences prefs) async {
+  /// 更早的「只存牌组名」旧键（SharedPreferences）：设置存储里一份都没有时，用它
+  /// 种一份初始设置写进 [store]。只读 SP、不改 SP。
+  Future<void> _migrateFromLegacy(AnkiSettingsStore store) async {
+    final prefs = await SharedPreferences.getInstance();
     final legacyDeck = prefs.getString(_legacyDeckKey);
     if (legacyDeck != null && legacyDeck != 'Default') {
       final settings = AnkiSettings(selectedDeckName: legacyDeck);
-      await prefs.setString(
-        BaseAnkiRepository.settingsKey,
-        jsonEncode(settings.toJson()),
-      );
+      await store.write(jsonEncode(settings.toJson()));
     }
   }
 }

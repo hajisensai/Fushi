@@ -140,7 +140,12 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 // v25 appends the game-stream native input request/status plane. It is
 // deliberately independent from lookup_shield: remote confirm input targets the
 // game itself, not the lookup popup suppression contract.
-constexpr uint32_t kSharedVersion = 25;
+// v26 — LookupHitSlot 尾部纯追加 `publish_qpc_us`（hook 发布 hit 那一刻的
+//     QueryPerformanceCounter，换算成微秒）。QPC 在同一台机器的所有进程间是同一时钟，
+//     host 用它量「hook 发布 → runner 读到」这一段，再与 Dart 的 Timeline.now（同为
+//     QPC 微秒）接成一条跨进程的查词耗时链。槽变长 8 字节，其后的输入槽 / 帧 / 位图
+//     区整体后移，新旧混装会错位而版本门本会放行——必须升版。
+constexpr uint32_t kSharedVersion = 26;
 
 enum class NativeTextOwner : uint32_t {
   kPending = 0,
@@ -366,9 +371,10 @@ constexpr uint32_t kTextSourceKogadoHy = 11;
 // LucaSystem exact text: the Japanese record of the scenario VM's MESSAGE
 // opcode, role prefix and glossary markers removed.
 constexpr uint32_t kTextSourceLuca = 12;
-// Text source ids 13-14: reserved, unassigned. The Malie adapter took 15 while
-// other engine adapters were in flight; no branch in this repository uses
-// 13-14 (checked 2026-10-03 across all local refs). The host maps unknown kinds
+// Text source id 14: reserved, unassigned. The Malie adapter took 15 while
+// other engine adapters were in flight; no branch in this repository used
+// 13-14 (checked 2026-10-03 across all local refs; 13 went to knife on
+// 2026-10-24 after the same check). The host maps unknown kinds
 // to the generic 'hook:' lane, so a new kind must be registered here AND in
 // GalHookedLine.textThreadKey/textThreadLabel (fushi/lib/src/mining/
 // galgame_audio_source.dart) in the same change; register the number here
@@ -376,9 +382,16 @@ constexpr uint32_t kTextSourceLuca = 12;
 // Malie exact text: the click unit the message window's segment parser hands
 // to the RICHTEXT3D reveal (voice tag and ruby removed).
 constexpr uint32_t kTextSourceMalie = 15;
+// knife (Rust reimplementation of the Switch Tsukihime engine) exact text: the
+// message the engine serves on its own text WebSocket, ruby already removed.
+constexpr uint32_t kTextSourceKnife = 13;
 // FVP (Favorite View Point) exact text published by the native TextPrint
 // (text object Print) hook.
 constexpr uint32_t kTextSourceFvp = 10;
+// SoftPal ADV System (Pal.dll) exact text: the page one PalSpriteLock ..
+// PalSpriteUnlock transaction lays out with PalFontDrawText, speaker plate
+// excluded (16 = first unused id on every local branch, checked 2026-11-03).
+constexpr uint32_t kTextSourceSoftpal = 16;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the
@@ -386,6 +399,13 @@ constexpr uint32_t kTextEventThreadDiscovered = 1;
 // not apply the usual same-face fallback to lines carrying this flag. Bit 0 is
 // already used by thread-discovery events for Luna's embedable attribute.
 constexpr uint32_t kTextEventFlagExactThreadContext = 0x00000002u;
+// The writer declares that its hook code names exactly one lane: no other
+// lane of this process ever writes under the same hook code.  Consumers may
+// then recognise the lane by its hook code alone (cross-session thread
+// memory does not need line-length disambiguation).  Engine adapters that
+// keep one hook code for several lanes (FVP per text buffer, Luca, BGI,
+// YU-RIS, Kogado Hy per identity) must not set it.
+constexpr uint32_t kTextEventFlagLaneUniqueHookCode = 0x00000004u;
 
 // 语音 clip 索引：最近 kClipCount 条语音片段的位置记录（按 source voice / DirectSound buffer
 // 的一次提交切一条；galgame 一句台词≈一条语音）。指向音频环形里的 [ring_offset, byte_len)。
@@ -695,7 +715,8 @@ struct TextSlot {
   uint32_t hook_name_len;   // hook_name 有效字节数（不含结尾 0）
   uint32_t hook_code_len;   // hook_code 有效 wchar 数（不含结尾 0）
   uint32_t event_kind;      // kTextEvent*；0 保持旧写者默认语义为台词行
-  uint32_t event_flags;     // bit 0: discovery embedable; bit 1: exact ctx only
+  uint32_t event_flags;     // bit 0: discovery embedable; bit 1: exact ctx only;
+                            // bit 2: hook code names exactly one lane
   // hook「面」id（不含 ctx，见 luna_text_selector.h 的 LunaTextFaceIdFrom）。
   //
   // v13 把选定线程的过滤从采集期挪到消费期，这个字段是**挪过去还能等价**的前提：旧的
@@ -942,6 +963,9 @@ constexpr uint32_t kLookupGeometryProviderIdMalie = 28u;
 // FVP (Favorite View Point) text-buffer print exact layout provider
 // (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdFvp = 23u;
+// SoftPal ADV System (Pal.dll) sprite text-transaction exact layout provider
+// (append-only id; 29 = first unused id on every local branch, 2026-11-03).
+constexpr uint32_t kLookupGeometryProviderIdSoftpal = 29u;
 
 constexpr uint32_t kLookupGeometryStatusUnavailable = 0u;
 constexpr uint32_t kLookupGeometryStatusReady = 1u;
@@ -1097,6 +1121,21 @@ inline void FormatSha256Hex(const uint8_t* digest, size_t digest_bytes,
   out[digest_bytes * 2] = '\0';
 }
 
+// 当前 QueryPerformanceCounter 换算成微秒。QPC 是全机单调时钟、跨进程同值，所以
+// hook / runner / Dart（Timeline.now 在 Windows 上同样由 QPC 换算）三处的读数可以直接
+// 相减。先除后乘，避免 ticks * 1e6 在长时间开机后溢出 int64。
+inline uint64_t QpcMicrosNow() {
+  LARGE_INTEGER frequency;
+  LARGE_INTEGER counter;
+  if (!QueryPerformanceFrequency(&frequency) || frequency.QuadPart <= 0 ||
+      !QueryPerformanceCounter(&counter) || counter.QuadPart < 0) {
+    return 0;
+  }
+  const uint64_t ticks = static_cast<uint64_t>(counter.QuadPart);
+  const uint64_t hz = static_cast<uint64_t>(frequency.QuadPart);
+  return (ticks / hz) * 1000000u + (ticks % hz) * 1000000u / hz;
+}
+
 // hook → host：用户真正提交查词时命中了哪个字符。hover 由游戏线程即时画高亮，不写这个
 // 单槽，避免后到 hover 覆盖尚未被 host 消费的 submit。写侧先把 `seq` 清 0，再写 payload，
 // 最后用 Interlocked 发布新 `seq`，与 VoiceClip / LoopbackMarker 同一套纪律。
@@ -1129,6 +1168,8 @@ struct LookupHitSlot {
   // **整行**台词，不截断。prototype 从点击字向后截 48 字，结果是制卡拿不到完整句子；
   // 分词也不该在注入侧做——host 的分词才是全 app 唯一真值。
   uint8_t line_utf8[kLookupLineBytes];
+  // v26：发布时刻，QPC 微秒（见 QpcMicrosNow）。0 = 发布侧没填（只出现在测试桩里）。
+  uint64_t publish_qpc_us;
 };
 
 constexpr uint32_t kLookupHitFlagSubmit = 0x00000001u;
@@ -2565,6 +2606,10 @@ struct TextLaneWrite {
   uint32_t byte_len = 0;
   const char* hook_name = nullptr;
   const wchar_t* hook_code = nullptr;
+  // 0 = 用写入时刻。精确文本源若能证明「这一行开始出现在屏幕上」早于发布时刻（SGRE
+  // 打字机：整句显示完才发布，但语音与首个字形同时开始，BUG-4206），可以填首字形
+  // 时刻；必须与 GetTickCount64 同一时钟，且不得晚于写入时刻。
+  uint64_t timestamp_ms = 0;
 };
 
 // 把一条文本事件写进 [thread_id] 自己那条道。返回全局发布序（0 = 没写成：道满/参数非法）。
@@ -2635,7 +2680,11 @@ inline uint64_t WriteTextLaneEvent(SharedHeader* header, uint32_t lane_begin,
   if (byte_len > max_bytes) byte_len = max_bytes;
   if (byte_len != 0) memcpy(slot + sizeof(TextSlot), write.text, byte_len);
   ts->seq = global_seq;
-  ts->timestamp_ms = GetTickCount64();
+  const uint64_t committed_ms = GetTickCount64();
+  ts->timestamp_ms =
+      write.timestamp_ms != 0 && write.timestamp_ms <= committed_ms
+          ? write.timestamp_ms
+          : committed_ms;
   ts->byte_len = byte_len;
   ts->is_utf8 = write.is_utf8;
   ts->thread_id = write.thread_id;
@@ -2661,7 +2710,7 @@ inline uint64_t WriteTextLaneEvent(SharedHeader* header, uint32_t lane_begin,
     ts->hook_code[n] = L'\0';
     ts->hook_code_len = static_cast<uint32_t>(n);
   }
-  lane->last_write_ms = ts->timestamp_ms;
+  lane->last_write_ms = committed_ms;
   // 完成标记，**最后**写：Interlocked 是全栅栏（前面的 payload 写对 reader 必先可见）
   // 且 64 位不可撕裂（x86 上普通写会被拆成两次 32 位写）。与预览槽 seq 同一套纪律。
   AtomicStorePreview64(&ts->lane_seq, lane_seq);
@@ -2841,6 +2890,14 @@ inline std::wstring SharedMemoryName(DWORD target_pid) {
 }
 inline std::wstring ReadyEventName(DWORD target_pid) {
   return std::wstring(L"Local\\FushiVoiceHookReady_") +
+         std::to_wstring(target_pid);
+}
+// 查词点击的唤醒事件（自动复位）：fushi.exe 的查词泵创建并在后台等它，hook 每发布
+// 一次 submit hit 就 SetEvent 一下，泵立刻读 hit，而不是等下一拍 16ms 定时器。
+// 它只是加速信号、不承载数据：打不开（旧版另一侧、完整性级别不允许写）时两边都
+// 照旧靠定时器轮询，行为与没有它时完全相同，所以不需要升协议版本。
+inline std::wstring LookupWakeEventName(DWORD target_pid) {
+  return std::wstring(L"Local\\FushiLookupWake_") +
          std::to_wstring(target_pid);
 }
 

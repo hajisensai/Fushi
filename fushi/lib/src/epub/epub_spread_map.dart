@@ -110,8 +110,9 @@ class EpubSpreadMap {
     // TODO-1128: image-merge is a second, independent pass applied *after*
     // spread pairing — spread-paired image chapters are already consumed and
     // can never be absorbed, so pairing wins over merge by construction.
-    final List<SpreadEntry> entries =
-        mergeImagePages ? _mergeImageEntries(book, base) : base;
+    final List<SpreadEntry> entries = mergeImagePages
+        ? _mergeImageEntries(book, base)
+        : base;
     return EpubSpreadMap._(entries, _buildIndex(entries));
   }
 
@@ -133,10 +134,9 @@ class EpubSpreadMap {
         continue;
       }
       if (i + 1 < book.chapters.length && book.isImageOnlyChapter(i + 1)) {
-        entries.add(SpreadEntry.spread(
-          chapterIndex: i,
-          secondChapterIndex: i + 1,
-        ));
+        entries.add(
+          SpreadEntry.spread(chapterIndex: i, secondChapterIndex: i + 1),
+        );
         i += 2;
       } else {
         entries.add(SpreadEntry.single(chapterIndex: i));
@@ -155,10 +155,9 @@ class EpubSpreadMap {
     int i = 0;
     while (i < book.chapters.length) {
       if (i + 1 < book.chapters.length && _shouldPairAuto(book, i, edgeMatch)) {
-        entries.add(SpreadEntry.spread(
-          chapterIndex: i,
-          secondChapterIndex: i + 1,
-        ));
+        entries.add(
+          SpreadEntry.spread(chapterIndex: i, secondChapterIndex: i + 1),
+        );
         i += 2;
       } else {
         entries.add(SpreadEntry.single(chapterIndex: i));
@@ -210,21 +209,25 @@ class EpubSpreadMap {
 
     for (int i = 0; i < base.length; i++) {
       final SpreadEntry entry = base[i];
-      final bool isLeadingImage = !entry.isSpread &&
+      final bool isLeadingImage =
+          !entry.isSpread &&
           entry.mergedImageChapters.isEmpty &&
           book.isImageOnlyChapter(entry.chapterIndex);
       if (isLeadingImage) {
         pending.add(entry.chapterIndex);
         continue;
       }
-      final bool isAbsorbingText = !entry.isSpread &&
+      final bool isAbsorbingText =
+          !entry.isSpread &&
           entry.mergedImageChapters.isEmpty &&
           !book.isImageOnlyChapter(entry.chapterIndex);
       if (isAbsorbingText && pending.isNotEmpty) {
-        out.add(SpreadEntry.single(
-          chapterIndex: entry.chapterIndex,
-          mergedImageChapters: List<int>.unmodifiable(pending),
-        ));
+        out.add(
+          SpreadEntry.single(
+            chapterIndex: entry.chapterIndex,
+            mergedImageChapters: List<int>.unmodifiable(pending),
+          ),
+        );
         pending.clear();
         continue;
       }
@@ -238,11 +241,7 @@ class EpubSpreadMap {
     return out;
   }
 
-  static bool _shouldPairAuto(
-    EpubBook book,
-    int i,
-    Map<int, bool>? edgeMatch,
-  ) {
+  static bool _shouldPairAuto(EpubBook book, int i, Map<int, bool>? edgeMatch) {
     final EpubChapter a = book.chapters[i];
     final EpubChapter b = book.chapters[i + 1];
 

@@ -216,6 +216,43 @@ void main() {
       expect(committed.single, greaterThan(20), reason: 'RTL 下往物理左拖必须走向卷尾');
     });
 
+    // #oOre-vefJy：右开本时进度栏最右是当前页、最左是总页数，已读高亮从右端长出。
+    for (final bool rtl in <bool>[false, true]) {
+      testWidgets('读数与已读轨道跟页序同向（rtl=$rtl）', (WidgetTester tester) async {
+        final ValueNotifier<int> page = ValueNotifier<int>(9);
+        addTearDown(page.dispose);
+        await tester.pumpWidget(
+          _host(pageCount: 40, page: page, rtl: rtl, onCommitted: (_) {}),
+        );
+        final double currentX = tester
+            .getCenter(
+              find.byKey(const ValueKey<String>('manga_slider_current_page')),
+            )
+            .dx;
+        final double totalX = tester
+            .getCenter(
+              find.byKey(const ValueKey<String>('manga_slider_page_count')),
+            )
+            .dx;
+        if (rtl) {
+          expect(currentX, greaterThan(totalX), reason: 'RTL：当前页在右、总页数在左');
+        } else {
+          expect(currentX, lessThan(totalX), reason: 'LTR：当前页在左、总页数在右');
+        }
+        final Finder sliderFinder = find.descendant(
+          of: find.byKey(const ValueKey<String>('manga_page_slider')),
+          matching: find.byType(Slider),
+        );
+        final Slider slider = tester.widget<Slider>(sliderFinder);
+        expect(slider.value, 9, reason: '控件吃逻辑页号，已读段 = 0..当前页');
+        expect(
+          Directionality.of(tester.element(sliderFinder)),
+          rtl ? TextDirection.rtl : TextDirection.ltr,
+          reason: 'RTL 下滑块自己镜像，已读高亮从物理右端（第 1 页）长到把手',
+        );
+      });
+    }
+
     testWidgets('拖动中气泡显示「页 / 总页」，松手气泡消失', (WidgetTester tester) async {
       final ValueNotifier<int> page = ValueNotifier<int>(0);
       addTearDown(page.dispose);

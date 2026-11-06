@@ -33,6 +33,21 @@ List<int> audiobookFileDurationsFromCues(Iterable<AudioCue> cues) {
   return durations;
 }
 
+/// 全书毫秒编码用的各文件时长——播放控制器编码与仓库层换字幕时的换算**共用这一条**。
+///
+/// 有 cue 就按 cue 推（[audiobookFileDurationsFromCues]）；没有 cue 的流式书（只听
+/// 不挂字幕）推不出时长，退回服务器给的真实音轨时长 [remoteTrackDurationsMs]。两处
+/// 若各写一份，「先纯听、后补字幕」时旧编码按空列表拆、就会把进度挪到别处。
+List<int> audiobookPositionDurationsMs(
+  Iterable<AudioCue> cues, {
+  List<int> remoteTrackDurationsMs = const <int>[],
+}) {
+  final List<int> fromCues = audiobookFileDurationsFromCues(cues);
+  return fromCues.isEmpty && remoteTrackDurationsMs.isNotEmpty
+      ? remoteTrackDurationsMs
+      : fromCues;
+}
+
 /// 把按 [oldDurationsMs] 编码的全书毫秒 [globalMs] 换算成按 [newDurationsMs]
 /// 编码的全书毫秒，保持（文件下标, 文件内偏移）这一**真实时间位置**不变。
 ///

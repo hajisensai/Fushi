@@ -1,0 +1,531 @@
+{
+ "video": false,
+ "title": "Lemon",
+ "isrcs": [
+  "JPU901800227"
+ ],
+ "releases": [
+  {
+   "media": [
+    {
+     "format-id": "9712d52a-4509-3d4b-a1a2-67c88c643e31",
+     "tracks": [
+      {
+       "id": "5b13cca5-a323-4426-a6da-932d8b0978bc",
+       "artist-credit": [
+        {
+         "name": "米津玄師",
+         "joinphrase": "",
+         "artist": {
+          "name": "米津玄師",
+          "disambiguation": "",
+          "country": "JP",
+          "type": "Person",
+          "sort-name": "Yonezu, Kenshi",
+          "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+          "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046"
+         }
+        }
+       ],
+       "length": 256106,
+       "position": 1,
+       "number": "1",
+       "title": "Lemon"
+      }
+     ],
+     "title": "",
+     "format": "CD",
+     "track-offset": 0,
+     "id": "7edc9741-a617-3672-8ede-afee8581151f",
+     "position": 1,
+     "track-count": 3
+    }
+   ],
+   "id": "dad6dbbe-68a8-4b31-8c60-2fd287360d50",
+   "country": "JP",
+   "disambiguation": "映像盤",
+   "status": "Official",
+   "packaging": null,
+   "artist-credit": [
+    {
+     "artist": {
+      "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+      "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046",
+      "name": "米津玄師",
+      "country": "JP",
+      "disambiguation": "",
+      "type": "Person",
+      "sort-name": "Yonezu, Kenshi"
+     },
+     "joinphrase": "",
+     "name": "米津玄師"
+    }
+   ],
+   "quality": "normal",
+   "barcode": "4547366349399",
+   "release-events": [
+    {
+     "date": "2018-03-14",
+     "area": {
+      "iso-3166-1-codes": [
+       "JP"
+      ],
+      "type-id": null,
+      "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+      "name": "Japan",
+      "disambiguation": "",
+      "type": null,
+      "sort-name": "Japan"
+     }
+    }
+   ],
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "packaging-id": null,
+   "release-group": {
+    "first-release-date": "2018-03-14",
+    "secondary-type-ids": [],
+    "secondary-types": [],
+    "artist-credit": [
+     {
+      "name": "米津玄師",
+      "artist": {
+       "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+       "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046",
+       "name": "米津玄師",
+       "type": "Person",
+       "sort-name": "Yonezu, Kenshi",
+       "disambiguation": "",
+       "country": "JP"
+      },
+      "joinphrase": ""
+     }
+    ],
+    "id": "6821e0d9-cdf8-4430-a556-9e999708d6cd",
+    "title": "Lemon",
+    "primary-type": "Single",
+    "primary-type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+    "disambiguation": "",
+    "releases": []
+   },
+   "text-representation": {
+    "script": "Jpan",
+    "language": "jpn"
+   },
+   "date": "2018-03-14",
+   "title": "Lemon"
+  },
+  {
+   "id": "b92cfc89-bb7e-47dd-948f-f125ed145370",
+   "media": [
+    {
+     "title": "",
+     "tracks": [
+      {
+       "title": "Lemon",
+       "id": "e98a1d75-d414-4d69-8675-5a84f729ad38",
+       "artist-credit": [
+        {
+         "artist": {
+          "country": "JP",
+          "disambiguation": "",
+          "type": "Person",
+          "sort-name": "Yonezu, Kenshi",
+          "name": "米津玄師",
+          "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+          "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046"
+         },
+         "joinphrase": "",
+         "name": "米津玄師"
+        }
+       ],
+       "length": 256106,
+       "position": 1,
+       "number": "1"
+      }
+     ],
+     "format": "CD",
+     "format-id": "9712d52a-4509-3d4b-a1a2-67c88c643e31",
+     "position": 1,
+     "track-count": 3,
+     "track-offset": 0,
+     "id": "4d4490b4-583c-36fb-b949-b3352e90dc22"
+    }
+   ],
+   "status": "Official",
+   "packaging": "Jewel Case",
+   "disambiguation": "通常盤",
+   "country": "JP",
+   "barcode": "4547366349405",
+   "artist-credit": [
+    {
+     "artist": {
+      "sort-name": "Yonezu, Kenshi",
+      "type": "Person",
+      "disambiguation": "",
+      "country": "JP",
+      "name": "米津玄師",
+      "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046",
+      "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+     },
+     "joinphrase": "",
+     "name": "米津玄師"
+    }
+   ],
+   "quality": "normal",
+   "title": "Lemon",
+   "date": "2018-03-14",
+   "release-group": {
+    "artist-credit": [
+     {
+      "name": "米津玄師",
+      "artist": {
+       "type": "Person",
+       "sort-name": "Yonezu, Kenshi",
+       "country": "JP",
+       "disambiguation": "",
+       "name": "米津玄師",
+       "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+       "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046"
+      },
+      "joinphrase": ""
+     }
+    ],
+    "id": "6821e0d9-cdf8-4430-a556-9e999708d6cd",
+    "first-release-date": "2018-03-14",
+    "secondary-types": [],
+    "secondary-type-ids": [],
+    "primary-type": "Single",
+    "primary-type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+    "releases": [],
+    "disambiguation": "",
+    "title": "Lemon"
+   },
+   "text-representation": {
+    "language": "jpn",
+    "script": "Jpan"
+   },
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "release-events": [
+    {
+     "area": {
+      "iso-3166-1-codes": [
+       "JP"
+      ],
+      "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+      "type-id": null,
+      "disambiguation": "",
+      "sort-name": "Japan",
+      "type": null,
+      "name": "Japan"
+     },
+     "date": "2018-03-14"
+    }
+   ],
+   "packaging-id": "ec27701a-4a22-37f4-bfac-6616e0f9750a"
+  },
+  {
+   "packaging": null,
+   "status": null,
+   "disambiguation": "レモン盤",
+   "country": "JP",
+   "media": [
+    {
+     "format-id": "9712d52a-4509-3d4b-a1a2-67c88c643e31",
+     "format": "CD",
+     "tracks": [
+      {
+       "title": "Lemon",
+       "number": "1",
+       "position": 1,
+       "artist-credit": [
+        {
+         "artist": {
+          "type": "Person",
+          "sort-name": "Yonezu, Kenshi",
+          "country": "JP",
+          "disambiguation": "",
+          "name": "米津玄師",
+          "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+          "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046"
+         },
+         "joinphrase": "",
+         "name": "米津玄師"
+        }
+       ],
+       "id": "c8170c20-963e-470f-b92f-816025598846",
+       "length": 256106
+      }
+     ],
+     "title": "",
+     "id": "61c89251-61c0-35f3-8126-edd552a20e68",
+     "track-offset": 0,
+     "track-count": 3,
+     "position": 1
+    }
+   ],
+   "id": "29df2f4d-7081-4474-b078-a83b46ccd354",
+   "date": "2018-03-14",
+   "title": "Lemon",
+   "packaging-id": null,
+   "release-events": [
+    {
+     "area": {
+      "name": "Japan",
+      "sort-name": "Japan",
+      "type": null,
+      "disambiguation": "",
+      "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+      "type-id": null,
+      "iso-3166-1-codes": [
+       "JP"
+      ]
+     },
+     "date": "2018-03-14"
+    }
+   ],
+   "status-id": null,
+   "text-representation": {
+    "script": "Jpan",
+    "language": "jpn"
+   },
+   "release-group": {
+    "secondary-type-ids": [],
+    "secondary-types": [],
+    "first-release-date": "2018-03-14",
+    "id": "6821e0d9-cdf8-4430-a556-9e999708d6cd",
+    "artist-credit": [
+     {
+      "name": "米津玄師",
+      "artist": {
+       "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046",
+       "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+       "name": "米津玄師",
+       "sort-name": "Yonezu, Kenshi",
+       "type": "Person",
+       "disambiguation": "",
+       "country": "JP"
+      },
+      "joinphrase": ""
+     }
+    ],
+    "title": "Lemon",
+    "disambiguation": "",
+    "releases": [],
+    "primary-type": "Single",
+    "primary-type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9"
+   },
+   "quality": "normal",
+   "artist-credit": [
+    {
+     "name": "米津玄師",
+     "joinphrase": "",
+     "artist": {
+      "disambiguation": "",
+      "country": "JP",
+      "type": "Person",
+      "sort-name": "Yonezu, Kenshi",
+      "name": "米津玄師",
+      "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+      "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046"
+     }
+    }
+   ],
+   "barcode": "4547366349382"
+  },
+  {
+   "release-events": [
+    {
+     "area": {
+      "name": "Japan",
+      "disambiguation": "",
+      "type": null,
+      "sort-name": "Japan",
+      "iso-3166-1-codes": [
+       "JP"
+      ],
+      "type-id": null,
+      "id": "2db42837-c832-3c27-b4a3-08198f75693c"
+     },
+     "date": "2018-03-14"
+    }
+   ],
+   "status-id": "41121bb9-3413-3818-8a9a-9742318349aa",
+   "packaging-id": null,
+   "release-group": {
+    "first-release-date": "2018-03-14",
+    "secondary-types": [],
+    "secondary-type-ids": [],
+    "id": "6821e0d9-cdf8-4430-a556-9e999708d6cd",
+    "artist-credit": [
+     {
+      "artist": {
+       "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046",
+       "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+       "name": "米津玄師",
+       "sort-name": "Yonezu, Kenshi",
+       "type": "Person",
+       "country": "JP",
+       "disambiguation": ""
+      },
+      "joinphrase": "",
+      "name": "米津玄師"
+     }
+    ],
+    "title": "Lemon",
+    "primary-type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+    "primary-type": "Single",
+    "releases": [],
+    "disambiguation": ""
+   },
+   "text-representation": {
+    "language": "jpn",
+    "script": "Latn"
+   },
+   "date": "2018-03-14",
+   "title": "Lemon",
+   "artist-credit": [
+    {
+     "name": "Kenshi Yonezu",
+     "artist": {
+      "type": "Person",
+      "sort-name": "Yonezu, Kenshi",
+      "country": "JP",
+      "disambiguation": "",
+      "name": "米津玄師",
+      "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+      "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046"
+     },
+     "joinphrase": ""
+    }
+   ],
+   "quality": "normal",
+   "barcode": null,
+   "disambiguation": "English Translation",
+   "country": "JP",
+   "packaging": null,
+   "status": "Pseudo-Release",
+   "media": [
+    {
+     "track-offset": 0,
+     "id": "328f080c-5be3-4414-a8e6-d2f414c7f5db",
+     "position": 1,
+     "track-count": 3,
+     "format-id": "9712d52a-4509-3d4b-a1a2-67c88c643e31",
+     "title": "",
+     "tracks": [
+      {
+       "id": "13e75e8f-62af-4c76-911e-8a61a95bcfce",
+       "artist-credit": [
+        {
+         "name": "Kenshi Yonezu",
+         "joinphrase": "",
+         "artist": {
+          "disambiguation": "",
+          "country": "JP",
+          "sort-name": "Yonezu, Kenshi",
+          "type": "Person",
+          "name": "米津玄師",
+          "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046",
+          "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+         }
+        }
+       ],
+       "length": 256106,
+       "number": "1",
+       "position": 1,
+       "title": "Lemon"
+      }
+     ],
+     "format": "CD"
+    }
+   ],
+   "id": "2681f9df-e2b9-43c3-9337-be35d7f3791d"
+  }
+ ],
+ "disambiguation": "",
+ "first-release-date": "2018-03-14",
+ "relations": [
+  {
+   "target-credit": "",
+   "type": "purchase for download",
+   "source-credit": "",
+   "begin": null,
+   "target-type": "url",
+   "attribute-ids": {},
+   "direction": "forward",
+   "type-id": "92777657-504c-4acb-bd33-51a201bd57e1",
+   "end": null,
+   "ended": false,
+   "attribute-values": {},
+   "url": {
+    "id": "2f3cc1bb-22aa-4bfd-8d54-61f28eaaae9f",
+    "resource": "https://music.apple.com/gb/song/1538265741"
+   },
+   "attributes": []
+  },
+  {
+   "attributes": [],
+   "url": {
+    "resource": "https://music.apple.com/gb/song/1538265741",
+    "id": "2f3cc1bb-22aa-4bfd-8d54-61f28eaaae9f"
+   },
+   "attribute-values": {},
+   "end": null,
+   "type-id": "b5f3058a-666c-406f-aafb-f9249fc7b122",
+   "direction": "forward",
+   "ended": false,
+   "begin": null,
+   "target-type": "url",
+   "attribute-ids": {},
+   "target-credit": "",
+   "source-credit": "",
+   "type": "streaming"
+  },
+  {
+   "source-credit": "",
+   "type": "performance",
+   "target-credit": "",
+   "attribute-ids": {},
+   "target-type": "work",
+   "begin": null,
+   "type-id": "a3005666-a872-32c3-ad06-98af558e99b0",
+   "direction": "forward",
+   "end": null,
+   "ended": false,
+   "attribute-values": {},
+   "work": {
+    "type": "Song",
+    "disambiguation": "",
+    "title": "Lemon",
+    "language": "jpn",
+    "id": "d69ecd96-bb2c-461f-9762-29102d2b50a1",
+    "iswcs": [
+     "T-924.390.287-6"
+    ],
+    "type-id": "f061270a-2fd6-32f1-a641-f0f8676d14e6",
+    "languages": [
+     "jpn"
+    ],
+    "attributes": []
+   },
+   "attributes": []
+  }
+ ],
+ "id": "79a8b80c-018d-4004-b3ff-cc10d21a3ddd",
+ "artist-credit": [
+  {
+   "artist": {
+    "name": "米津玄師",
+    "disambiguation": "",
+    "country": "JP",
+    "sort-name": "Yonezu, Kenshi",
+    "type": "Person",
+    "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046",
+    "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+   },
+   "joinphrase": "",
+   "name": "米津玄師"
+  }
+ ],
+ "length": 255826
+}

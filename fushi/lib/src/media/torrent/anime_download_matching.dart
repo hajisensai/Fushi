@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/jimaku_matching.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 
 // 按集索引与单集判据已抽到 media/video/jimaku_matching.dart（BUG-1695）——它同时
@@ -57,16 +58,16 @@ class TorrentEpisodeScope {
 
   /// 集号区间已知（`01-13`）。
   const TorrentEpisodeScope.range((int, int) range)
-      : this._(TorrentEpisodeScopeKind.range, range: range);
+    : this._(TorrentEpisodeScopeKind.range, range: range);
 
   /// 单集。
   const TorrentEpisodeScope.single(int episode)
-      : this._(TorrentEpisodeScopeKind.single, episode: episode);
+    : this._(TorrentEpisodeScopeKind.single, episode: episode);
 
   /// 整季包（集号未知）。[episodeCount] 是标题自报的包内集数（`全13話`），
   /// 标题没写为 null。
   const TorrentEpisodeScope.season({int? episodeCount})
-      : this._(TorrentEpisodeScopeKind.season, episode: episodeCount);
+    : this._(TorrentEpisodeScopeKind.season, episode: episodeCount);
 
   /// 无集数概念。
   const TorrentEpisodeScope.unknown() : this._(TorrentEpisodeScopeKind.unknown);
@@ -110,8 +111,9 @@ TorrentEpisodeScope torrentEpisodeScope(NyaaTorrent t) {
   if (t.isBatch || t.season != null || _seasonPackMarker.hasMatch(t.title)) {
     final RegExpMatch? countMatch = _seasonPackEpisodeCount.firstMatch(t.title);
     return TorrentEpisodeScope.season(
-      episodeCount:
-          countMatch == null ? null : int.tryParse(countMatch.group(1)!),
+      episodeCount: countMatch == null
+          ? null
+          : int.tryParse(countMatch.group(1)!),
     );
   }
   return const TorrentEpisodeScope.unknown();
@@ -152,8 +154,10 @@ List<int> _seasonEpisodes(
   int? seriesEpisodeCount,
 ) {
   final List<int> episodes = index.byEpisode.keys.toList()..sort();
-  final int? cap =
-      seasonSubtitleCap(scope, seriesEpisodeCount: seriesEpisodeCount);
+  final int? cap = seasonSubtitleCap(
+    scope,
+    seriesEpisodeCount: seriesEpisodeCount,
+  );
   if (cap == null || episodes.length <= cap) return episodes;
   return episodes.sublist(0, cap);
 }
@@ -187,11 +191,14 @@ List<int> _seasonEpisodes(
     case TorrentEpisodeScopeKind.single:
       return (
         covered: index.byEpisode.containsKey(scope.episode!) ? 1 : 0,
-        total: 1
+        total: 1,
       );
     case TorrentEpisodeScopeKind.season:
-      final List<int> episodes =
-          _seasonEpisodes(index, scope, seriesEpisodeCount);
+      final List<int> episodes = _seasonEpisodes(
+        index,
+        scope,
+        seriesEpisodeCount,
+      );
       if (episodes.isNotEmpty) {
         return (covered: episodes.length, total: null);
       }
@@ -244,8 +251,11 @@ List<(int?, JimakuFile)> chooseSubtitlesFor(
       }
       return <(int?, JimakuFile)>[(episode, candidates.first)];
     case TorrentEpisodeScopeKind.season:
-      final List<int> episodes =
-          _seasonEpisodes(index, scope, seriesEpisodeCount);
+      final List<int> episodes = _seasonEpisodes(
+        index,
+        scope,
+        seriesEpisodeCount,
+      );
       if (episodes.isNotEmpty) {
         return <(int?, JimakuFile)>[
           for (final int episode in episodes)
@@ -324,6 +334,7 @@ List<ResolvedSubtitleMatch> matchJimakuFilesToVideoNames(
   List<String> videoFileNames,
   List<JimakuFile> jimakuFiles, {
   String? preferredLanguage,
+  Map<String, String> contentLanguageByVersion = const <String, String>{},
 }) {
   if (videoFileNames.isEmpty || jimakuFiles.isEmpty) {
     return const <ResolvedSubtitleMatch>[];
@@ -334,27 +345,42 @@ List<ResolvedSubtitleMatch> matchJimakuFilesToVideoNames(
   );
   if (index.isEmpty) return const <ResolvedSubtitleMatch>[];
 
+  // 整包共用一个字幕版本（缺集由次选版本补），而不是逐集各挑各的——否则同一季
+  // 会 `.ass` / `.srt`、不同发布组混排。
+  final SubtitleEpisodeIndex<JimakuFile> consistent =
+      preferConsistentJimakuVersion(
+        index,
+        targetEpisodes: <int>[
+          for (final String path in videoFileNames)
+            ?parseVideoFilename(p.basename(path)).episode,
+        ],
+        preferredLanguage: preferredLanguage,
+        contentLanguageByVersion: contentLanguageByVersion,
+      );
+
   // ① 按集号严格相等逐个视频反查。判据本身走共享原语
-  // （[chooseJimakuFileForEpisode]，BUG-1695），这里只负责「有几个视频、集号从
+  // （[chooseSubtitleForEpisode]，BUG-1695），这里只负责「有几个视频、集号从
   // 文件名怎么来」——即本函数相对批量路径多出来的那部分信息。
   final List<ResolvedSubtitleMatch> out = <ResolvedSubtitleMatch>[];
   for (final String path in videoFileNames) {
     final String name = p.basename(path);
     final int? episode = parseVideoFilename(name).episode;
     if (episode == null) continue;
-    final JimakuEpisodeMatch match = chooseJimakuFileForEpisode(
-      index,
+    final JimakuEpisodeMatch match = chooseSubtitleForEpisode<JimakuFile>(
+      consistent,
       episode: episode,
       // 未编号字幕的 1v1 兜底由下面 ② 统一处理（它还要看视频侧集号），这里
       // 只取精确命中，故一律 false。
       soleTarget: false,
     );
     if (match.kind != JimakuEpisodeMatchKind.exact) continue;
-    out.add(ResolvedSubtitleMatch(
-      videoFileName: name,
-      file: match.file!,
-      episode: episode,
-    ));
+    out.add(
+      ResolvedSubtitleMatch(
+        videoFileName: name,
+        file: match.file!,
+        episode: episode,
+      ),
+    );
   }
   if (out.isNotEmpty) return out;
 

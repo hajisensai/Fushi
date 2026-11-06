@@ -28,8 +28,9 @@ import 'package:fushi/src/mining/galgame_audio_source.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('launch 模式引擎-hook 抓到真实 DirectSound PCM',
-      (WidgetTester tester) async {
+  testWidgets('launch 模式引擎-hook 抓到真实 DirectSound PCM', (
+    WidgetTester tester,
+  ) async {
     // 只 pump 平凡 widget：让 runner 起来注册 voice_hook 通道，但不碰 AppModel/DB。
     await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
     await tester.pump(const Duration(milliseconds: 200));
@@ -72,9 +73,11 @@ void main() {
       expect(hasSound, true, reason: '抓到的 PCM 全是静音');
 
       // ignore: avoid_print
-      print('GALTEST OK fmt=${fmt.sampleRate}/${fmt.channels}/'
-          '${fmt.bitsPerSample} float=${fmt.isFloat} pcmBytes=${slice.pcm.length} '
-          'gpid=$gpid');
+      print(
+        'GALTEST OK fmt=${fmt.sampleRate}/${fmt.channels}/'
+        '${fmt.bitsPerSample} float=${fmt.isFloat} pcmBytes=${slice.pcm.length} '
+        'gpid=$gpid',
+      );
     } finally {
       await src.stop(); // 关通道 + 杀 injector
       if (gpid != null) {

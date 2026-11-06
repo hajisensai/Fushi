@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show QueryRow, Value;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
@@ -74,11 +74,11 @@ void main() {
       isMainProcess: false,
     );
     addTearDown(migrated.close);
-    expect(migrated.schemaVersion, 118);
+    expect(migrated.schemaVersion, 146);
     final QueryRow version = await migrated
         .customSelect('PRAGMA user_version')
         .getSingle();
-    expect(version.read<int>('user_version'), 118);
+    expect(version.read<int>('user_version'), 146);
 
     Future<Set<String>> columnsOf(String table) async => <String>{
       for (final QueryRow row
@@ -114,7 +114,7 @@ void main() {
   test('fresh v115 schema has both columns', () async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
-    expect(db.schemaVersion, 118);
+    expect(db.schemaVersion, 146);
     final Set<String> epubCols = <String>{
       for (final QueryRow row
           in await db.customSelect("PRAGMA table_info('epub_books')").get())

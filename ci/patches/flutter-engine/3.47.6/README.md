@@ -1,7 +1,7 @@
 # Flutter 3.47.6 Windows 引擎补丁：合成器内 HDR 输出
 
 让 HDR 视频画在 Flutter **自己的**交换链里（R16G16B16A16_FLOAT + scRGB），
-不再需要把 libmpv 的 gpu-next 画进主窗后面的独立宿主窗。只改 Windows 嵌入层
+不再需要把 libmpv 的 gpu-next 画进主窗后面的独立宿主窗（该宿主窗已于 2026-10-18 删除）。只改 Windows 嵌入层
 （`flutter_windows.dll`），Dart 侧与其它平台不受影响。
 
 ## 基线
@@ -12,10 +12,14 @@
 | 引擎版本（`bin/internal/engine.version`） | `692136cb6582dbfc5af3fb33c2515a069f2f66d0` |
 | ANGLE（`engine/src/flutter/third_party/angle`，DEPS 拉取） | `84027aca9b71c9ba335bd000dad1107b8810a511` |
 
-升级 Flutter 时两份补丁都要重新对齐基线（3.44.0 → 3.47.6 的移植记录见文末）；`tool/engine_overlay.ps1` 会拒绝把
+升级 Flutter 时全部补丁都要重新对齐基线（3.44.0 → 3.47.6 的移植记录见文末）；`tool/engine_overlay.ps1` 会拒绝把
 引擎版本不符的产物装进 SDK。
 
-## 两份补丁
+## 补丁（按顺序 `git apply`）
+
+渲染后端：Fushi 五端全线 Impeller、不保留 Skia 回退（所有者 2026-10-24 拍板，
+`docs/specs/2026-10-23-music-module-design.md` D13）。runner（`fushi/windows/runner/main.cpp`）显式
+`set_impeller_switch(Enabled)`；HDR 输出在 Impeller 下由第 3 份补丁接上。
 
 ### `engine-hdr-output.patch`（flutter 仓库根目录 `git apply`）
 
@@ -34,9 +38,55 @@
 - 渲染目标缓存按尺寸命中，补了「格式代」计数：开关 HDR 时作废旧 backing store。
 - 诊断：`FUSHI_HDR_PROBE=1` 时在切到 RGBA16F 后第 120 帧回读 backing store 三个点；
   状态切换以 `FML_LOG(IMPORTANT)` 记一行（只在变化时）。
-- Impeller 路径不支持（`SetHdrOutput` 直接返回 false）。Flutter 3.47 起 Windows **默认 Impeller**，
-  所以 runner（`fushi/windows/runner/main.cpp`）显式 `set_impeller_switch(Disabled)` 钉 Skia——
-  删了它不会编译失败，只会让 HDR 静默退回宿主窗（守卫咬住）。
+- 这份补丁本身只接了 Skia 路径（Impeller 下 `SetHdrOutput` 返回 false）；Impeller 由
+  `engine-impeller-hdr.patch` 接上。
+
+### `engine-underlay-composition.patch`（flutter 仓库根目录，叠在上一份之上）
+
+`FlutterDesktopViewSetUnderlayComposition`：按 view 改用 DirectComposition 顶层 visual 呈现
+（8-bit，开着时 HDR 暂停），让网页视频的窗口化 WebView2 子窗透过 Flutter 透明像素显示。
+与渲染后端无关（只换窗口 surface）。
+
+### `engine-impeller-hdr.patch`（flutter 仓库根目录，叠在前两份之上）
+
+把合成器内 HDR 接到 Impeller（GLES / ANGLE）路径上，行为与 Skia 路径一致：
+
+- 合成器：Impeller 的三条 backing store 分支都能分配 RGBA16F（隐式 MSAA = 半浮点纹理 +
+  `EXT_multisampled_render_to_texture`；只有离屏 MSAA 时半浮点改走单采样纹理，因为 Present
+  的 scRGB pass 要把 backing store 当纹理采样）；`SetHdrOutput` 不再因 Impeller 拒绝。
+- embedder：`GL_RGBA16F` 的 backing store 包成 `kR16G16B16A16Float` 渲染目标；RGBA16F 外部
+  纹理（HDR 视频）按 `kR16G16B16A16Float` 包装，不再被「只支持 GL_RGBA8」拒掉。
+- Impeller 离屏格式：Impeller GLES 的离屏层（saveLayer、背景滤镜触发的整帧 readback、模糊等
+  滤镜子 pass）一律按上下文默认的 8-bit 分配——不改的话画面里一出现 `BackdropFilter`，整帧
+  就被钳回 ≤1.0（实测：backing store 中线三点全部 1.000）。`RenderTargetAllocator` 加了「默认
+  颜色格式覆盖」，`Canvas` 在根目标是 RGBA16F 的帧里把它设成 RGBA16F、帧尾还原；渲染目标缓存
+  命中时额外比对颜色格式。Impeller GLES 的着色器程序按 shader 缓存、与目标格式无关，半浮点
+  变体不触发重新编译。
+- 诊断：`FUSHI_HDR_PROBE=repeat` 每 30 帧回读一次（8-bit 帧也读，便于两种渲染器对照），
+  `FUSHI_HDR_PROBE_LOG=<文件>` 同时追加到文件（`flutter test -d windows` 不收引擎日志）。
+  取证脚本：`fushi/integration_test/video_compositor_hdr_probe_itest.dart`。
+
+### `engine-d3d-keyed-mutex.patch`（flutter 仓库根目录，叠在前三份之上；BUG-3888）
+
+外部视频纹理改成 keyed mutex 同步。原版 `ExternalTextureD3d` 对 share handle 只做一次
+`eglCreatePbufferFromClientBuffer` + `eglBindTexImage`，之后一直直接采样那块跨设备共享纹理；
+legacy `D3D11_RESOURCE_MISC_SHARED` 资源只靠 OS 隐式串行化，生产端（media_kit 的设备）随时可能
+覆写正在被采样的纹理，ANGLE 自己也从不 `AcquireSync`。补丁：
+
+- `ExternalTextureD3d`：share handle 先在 ANGLE 设备上 `OpenSharedResource` 看 `MiscFlags`。带
+  `D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX` 时**不绑共享纹理**，另建一块引擎自有的同尺寸同格式纹理，
+  GL 只绑它（`EGL_D3D_TEXTURE_ANGLE`）。每次 resolve（即生产端每 mark 一帧）在 raster 线程上
+  `AcquireSync(0, 0)` → `CopyResource(引擎副本, 共享纹理)` → 立刻 `ReleaseSync(0)`；取不到（生产端正在写，
+  `WAIT_TIMEOUT`）就沿用上一份副本，生产端放锁后再 mark 会重新 resolve。锁从不跨 ANGLE 的 draw 持有
+  （ANGLE 注释：keyed mutex 释放会把资源从管线上解绑，打乱它的状态缓存），raster 线程从不等锁。
+  不带 keyed mutex 的纹理走原版路径不变。
+- `egl::Manager`：构造时解析 ANGLE 的 D3D11 设备并 `ID3D10Multithread::SetMultithreadProtected(TRUE)`——
+  上面的 D3D11 调用发生在 ANGLE 的共享上下文锁之外，而 IO 线程的 resource context 可能同时在 ANGLE
+  里用同一个 immediate context；必须在任何别的线程用设备之前打开（中途切换会和在途调用竞争）。
+  设备没被保护时，带 keyed mutex 的纹理不显示（报错日志），绝不无锁采样。
+- 新导出 `FlutterDesktopGpuSurfaceSupportsKeyedMutex()`：插件用 `GetProcAddress` 查到它才给纹理加 keyed
+  mutex；原版引擎没有这个导出，插件留在 legacy 共享纹理，「补丁引擎与原版引擎都能跑同一份 app」不变。
+- 代价：每个新视频帧在 Flutter 设备上多一次整帧 GPU 拷贝。
 
 ### `angle-scrgb-swapchain.patch`（ANGLE 仓库根目录 `git apply`）
 
@@ -55,12 +105,12 @@ sRGB 合成，>1.0 全被钳掉（实测：backing store 里 2.57，桌面上 1.
 `<工作目录>\depot_tools`）：
 
 ```powershell
-tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-1   # 自动取 fushi/.fvmrc 的 Flutter 版本
+tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-3   # 自动取 fushi/.fvmrc 的 Flutter 版本
 # 只重编 / 只打包：-Steps build,stage,pack -Modes release
 # 本机 VS 缺 ATL 时：-AtlDir '<另一套 VS>\VC\Tools\MSVC\<ver>\atlmfc'
 ```
 
-步骤：sync（clone `.fvmrc` 版本 + `gclient sync`；已有源码树就 fetch 新 tag 切过去再增量 sync）→ patch（两份补丁，已打过则跳过）→
+步骤：sync（clone `.fvmrc` 版本 + `gclient sync`；已有源码树就 fetch 新 tag 切过去再增量 sync）→ patch（四份引擎补丁 + ANGLE 一份，干净树上按序打）→
 build（`gn --runtime-mode <mode>` + `ninja flutter_windows`，与官方产物同配置）→
 stage（按 `windows-x64{,-profile,-release}` 布局 + `engine-overlay.json`）→
 pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutter_windows.dll.pdb`，
@@ -70,15 +120,21 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 `-Manifest ci/patches/flutter-engine/3.47.6/artifacts.json`（下载 + SHA-256 校验），
 原文件备份到 `.stock-backup`，`-Restore` 还原。CI 走
 `.github/actions/flutter-engine-overlay`，`artifacts.json` 不存在时用原版引擎构建（app
-运行期回退宿主窗，并打 warning）。
+运行期只能 SDR 输出，并打 warning）。
 
 ## 当前产物
 
-`artifacts.json` → release `flutter-engine-3.47.6-hdr-output-1`（prerelease、非 Latest；
-三种模式 + 匹配的 pdb——`flutter build windows` 缺 pdb 会在 assemble 失败；tag 不以数字 /
-`v`+数字开头，app 更新检查与发布 workflow 都不会把它当 app 版本）。重编后换一个新的
-`patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release 留着给旧提交复现用
-（3.44.0 时代的是 `flutter-engine-3.44.0-hdr-output-2`）。
+`artifacts.json` → release `flutter-engine-3.47.6-hdr-output-3`（prerelease、非 Latest；
+2026-11-05 编，含 `engine-hdr-output` + `engine-underlay-composition` + `engine-impeller-hdr` +
+`engine-d3d-keyed-mutex` 四份引擎补丁与 ANGLE 补丁；三种模式 + 匹配的 pdb——`flutter build windows`
+缺 pdb 会在 assemble 失败；tag 不以数字 / `v`+数字开头，app 更新检查与发布 workflow 都不会把它当
+app 版本）。重编后换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release
+留着给旧提交复现用（`hdr-output-2` 是前三份补丁、无 keyed mutex；`hdr-output-1` 只有 Skia 路径的
+HDR、不含 underlay；3.44.0 时代的是 `flutter-engine-3.44.0-hdr-output-2`）。
+
+注意：在**已经打过补丁**的源码树上重跑 `patch` 步骤会失败——`Invoke-Patch` 用「能否反向应用」判断
+已打过，但前几份补丁的改动被后几份覆盖后不能单独反向应用。增量重编时只打新补丁
+（`git -C <Root>lutter apply <新补丁>`），再跑 `-Steps build,stage,pack`。
 
 ## 3.44.0 → 3.47.6 移植记录
 
@@ -90,11 +146,12 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 - embedder：上游把 `EmbedderExternalView::Render` 的渲染目标处理挪进
   `embedder_external_view_embedder.cc`，新增的缓存查找点用单参 `RenderTargetDescriptor`
   （取当前格式代），格式代失效语义不变。
-- **Windows 默认渲染器变成 Impeller**（3.44 要显式 `--enable-impeller=true` 才开）：补丁只有
-  Skia 路径，runner 因此显式钉 Skia（见上文「两份补丁」）。
+- **Windows 默认渲染器变成 Impeller**（3.44 要显式 `--enable-impeller=true` 才开）：当时补丁只有
+  Skia 路径，runner 曾显式钉 Skia；2026-10-24 起 `engine-impeller-hdr.patch` 把 HDR 接到
+  Impeller，runner 改钉 Impeller（见上文「补丁」）。
 
 ## 运行时契约
 
 - runner 用 `GetProcAddress` 解析 `FlutterDesktopViewSetHdrOutput`：原版引擎没有这个
-  导出 → 报告不支持，app 继续走宿主窗路径。补丁引擎与原版引擎都能跑同一份 app。
+  导出 → 报告不支持，app 留在 SDR 纹理路径。补丁引擎与原版引擎都能跑同一份 app。
 - media_kit 只在引擎报告支持之后才交出 format=3 的纹理描述符。

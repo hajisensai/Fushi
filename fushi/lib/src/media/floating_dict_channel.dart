@@ -5,10 +5,10 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/platform/floating_overlay_channel.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 
-typedef FloatingDictSearchHandler = Future<DictionarySearchResult?> Function(
-    String term);
-typedef FloatingDictAnkiHandler = Future<void> Function(
-    String word, String reading, String meaning);
+typedef FloatingDictSearchHandler =
+    Future<DictionarySearchResult?> Function(String term);
+typedef FloatingDictAnkiHandler =
+    Future<void> Function(String word, String reading, String meaning);
 
 class FloatingDictChannel extends FloatingOverlayChannel {
   FloatingDictChannel._() : super(FushiChannels.floatingDict);
@@ -44,14 +44,18 @@ class FloatingDictChannel extends FloatingOverlayChannel {
           return;
         }
         final List<Map<String, String>> entries = result.entries
-            .map((e) => <String, String>{
-                  'word': e.word,
-                  'reading': e.reading,
-                  'meaning': DictionaryEntry.meaningToPlainText(e.meaning),
-                })
+            .map(
+              (e) => <String, String>{
+                'word': e.word,
+                'reading': e.reading,
+                'meaning': DictionaryEntry.meaningToPlainText(e.meaning),
+              },
+            )
             .toList();
-        await _instance.channel
-            .invokeMethod<void>('searchResult', jsonEncode(entries));
+        await _instance.channel.invokeMethod<void>(
+          'searchResult',
+          jsonEncode(entries),
+        );
         break;
       case 'ankiExport':
         final Map<dynamic, dynamic>? args =
@@ -82,8 +86,10 @@ class FloatingDictChannel extends FloatingOverlayChannel {
 
   static Future<void> setClipboardMonitoring({required bool enabled}) async {
     if (!_instance.isSupported) return;
-    await _instance.channel
-        .invokeMethod<void>('setClipboardMonitoring', enabled);
+    await _instance.channel.invokeMethod<void>(
+      'setClipboardMonitoring',
+      enabled,
+    );
   }
 
   static Future<void> searchTerm(String term) async {

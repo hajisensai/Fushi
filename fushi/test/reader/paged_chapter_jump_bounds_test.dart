@@ -27,14 +27,13 @@ void main() {
     required double ctxMax,
     required double pageStep,
     double? physicalMax,
-  }) =>
-      ReaderPaginationScripts.resolveContentBoundsForTesting(
-        firstContentEdge: first,
-        lastContentEdge: last,
-        contextMaxScroll: ctxMax,
-        physicalMaxScroll: physicalMax ?? ctxMax,
-        pageStep: pageStep,
-      );
+  }) => ReaderPaginationScripts.resolveContentBoundsForTesting(
+    firstContentEdge: first,
+    lastContentEdge: last,
+    contextMaxScroll: ctxMax,
+    physicalMaxScroll: physicalMax ?? ctxMax,
+    pageStep: pageStep,
+  );
 
   group('章首 minScroll：floor 落含首行页，绝不 round-up 跳首行', () {
     test('普通章首（内容边≈padding）→ minScroll = 0', () {
@@ -48,36 +47,55 @@ void main() {
       // firstContentEdge 恰在第 3 页边界下方 0.4px：round 会向上取整到 3*ps（跳掉首行页），
       // floor 必须落到含该内容边的第 2 页边界 2*ps。
       const double edge = 3 * ps - 0.4;
-      final r =
-          bounds(first: edge, last: 10 * ps, ctxMax: 12 * ps, pageStep: ps);
-      expect(r.minScroll, 2 * ps,
-          reason: '内容边在页 k-1，minScroll 必须 floor 到 k-1，绝不 round-up 抬到 k 跳过首行');
-      expect(r.minScroll, lessThan(edge),
-          reason: 'minScroll 不得越过首行内容边（越过=首行被滚出视口）');
+      final r = bounds(
+        first: edge,
+        last: 10 * ps,
+        ctxMax: 12 * ps,
+        pageStep: ps,
+      );
+      expect(
+        r.minScroll,
+        2 * ps,
+        reason: '内容边在页 k-1，minScroll 必须 floor 到 k-1，绝不 round-up 抬到 k 跳过首行',
+      );
+      expect(
+        r.minScroll,
+        lessThan(edge),
+        reason: 'minScroll 不得越过首行内容边（越过=首行被滚出视口）',
+      );
     });
 
     test('内容起始边落页边界上方 <1px（k*pageStep+ε）→ floor 仍到页 k（首行本在页 k）', () {
       const double ps = 800;
       const double edge = 4 * ps + 0.3;
-      final r =
-          bounds(first: edge, last: 20 * ps, ctxMax: 25 * ps, pageStep: ps);
+      final r = bounds(
+        first: edge,
+        last: 20 * ps,
+        ctxMax: 25 * ps,
+        pageStep: ps,
+      );
       expect(r.minScroll, 4 * ps);
     });
   });
 
   group('末页 maxScroll：单一量纲 sub-pixel 下溢仍覆盖真实末行页', () {
-    test('ctxMax = P*pageStep − ε（sub-pixel 下溢）→ maxScroll 仍达 P*pageStep（末行页）',
-        () {
-      const double ps = 815.28;
-      const int p = 6;
-      // 末列内容边落在第 P 页内；物理 ctxMax 因 sub-pixel 比 P*ps 少 0.4px：
-      // 裸 floor 会砍成 (P-1)*ps（末行整页不可达），+1 容差必须恢复到 P*ps。
-      const double ctxMax = p * ps - 0.4;
-      const double last = p * ps + ps * 0.5; // 末内容边在第 P 页中段
-      final r = bounds(first: 17.0, last: last, ctxMax: ctxMax, pageStep: ps);
-      expect(r.maxScroll, p * ps,
-          reason: 'sub-pixel 下溢不得让 maxScroll 掉一页，否则后退跳章末行被跳');
-    });
+    test(
+      'ctxMax = P*pageStep − ε（sub-pixel 下溢）→ maxScroll 仍达 P*pageStep（末行页）',
+      () {
+        const double ps = 815.28;
+        const int p = 6;
+        // 末列内容边落在第 P 页内；物理 ctxMax 因 sub-pixel 比 P*ps 少 0.4px：
+        // 裸 floor 会砍成 (P-1)*ps（末行整页不可达），+1 容差必须恢复到 P*ps。
+        const double ctxMax = p * ps - 0.4;
+        const double last = p * ps + ps * 0.5; // 末内容边在第 P 页中段
+        final r = bounds(first: 17.0, last: last, ctxMax: ctxMax, pageStep: ps);
+        expect(
+          r.maxScroll,
+          p * ps,
+          reason: 'sub-pixel 下溢不得让 maxScroll 掉一页，否则后退跳章末行被跳',
+        );
+      },
+    );
 
     test('无 sub-pixel 下溢时 maxScroll 行为不变（floor 到 ctxMax 所在整页 == 末内容页）', () {
       const double ps = 800;
@@ -95,8 +113,11 @@ void main() {
       final r = bounds(first: 17.0, last: last, ctxMax: 8 * ps, pageStep: ps);
       final double lastContentScroll = ((last - 1) / ps).floorToDouble() * ps;
       expect(r.maxScroll, lastContentScroll);
-      expect(r.maxScroll, lessThanOrEqualTo(last),
-          reason: 'maxScroll 不得越过末内容边所在页（否则末页空白）');
+      expect(
+        r.maxScroll,
+        lessThanOrEqualTo(last),
+        reason: 'maxScroll 不得越过末内容边所在页（否则末页空白）',
+      );
     });
 
     test('chrome inset 后末内容落下一网格页时，以浏览器物理终点补一张非网格尾页', () {
@@ -117,8 +138,11 @@ void main() {
       );
 
       expect(r.maxScroll, physicalMax, reason: '最后一个整页网格不可达时，必须保留浏览器可达的非网格章尾页');
-      expect(r.maxScroll, greaterThan(61 * ps),
-          reason: '章尾页必须越过最后一个整页网格，才能露出剩余正文');
+      expect(
+        r.maxScroll,
+        greaterThan(61 * ps),
+        reason: '章尾页必须越过最后一个整页网格，才能露出剩余正文',
+      );
       expect(r.maxScroll, lessThan(62 * ps), reason: '不得请求超过浏览器物理上限的下一整页网格');
     });
 
@@ -191,8 +215,11 @@ void main() {
         pageStep: ps,
       );
 
-      expect(info.totalPages, 4,
-          reason: 'round(span/pageStep) 会漏掉不足半页但真实可读的 terminal 页');
+      expect(
+        info.totalPages,
+        4,
+        reason: 'round(span/pageStep) 会漏掉不足半页但真实可读的 terminal 页',
+      );
       expect(info.currentPage, 4);
     });
   });
@@ -215,8 +242,11 @@ void main() {
         pageStep: ps,
         contentStart: phase,
       );
-      expect(r.maxScroll, lastPage,
-          reason: '末页必须是末行所在那一列；不减相位会多算一页、落到补出栏的物理终点');
+      expect(
+        r.maxScroll,
+        lastPage,
+        reason: '末页必须是末行所在那一列；不减相位会多算一页、落到补出栏的物理终点',
+      );
       expect(r.minScroll, 0);
     });
 
@@ -246,18 +276,24 @@ void main() {
     });
 
     test('JS buildPaginationMetrics 的 lastContentScroll 同样减相位（与影子同算法）', () {
-      final String source =
-          File('lib/src/reader/reader_pagination_scripts.dart')
-              .readAsStringSync();
-      final int start =
-          source.indexOf('  buildPaginationMetrics: function() {');
+      final String source = File(
+        'lib/src/reader/reader_pagination_scripts.dart',
+      ).readAsStringSync();
+      final int start = source.indexOf(
+        '  buildPaginationMetrics: function() {',
+      );
       final int end = source.indexOf('\n  calculateProgress:', start);
       expect(start, greaterThanOrEqualTo(0));
       final String metrics = source.substring(start, end);
-      expect(metrics,
-          contains('var lastContentPhase = context.contentStart || 0;'));
-      expect(metrics, contains('lastContentEdge - 1 - lastContentPhase'),
-          reason: '末页列号要先减相位，否则末行接近满行时多算一页');
+      expect(
+        metrics,
+        contains('var lastContentPhase = context.contentStart || 0;'),
+      );
+      expect(
+        metrics,
+        contains('lastContentEdge - 1 - lastContentPhase'),
+        reason: '末页列号要先减相位，否则末行接近满行时多算一页',
+      );
     });
   });
 }

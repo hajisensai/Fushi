@@ -1,0 +1,31 @@
+## BUG-4076 · 桌面端无原生证据的「意外退出」（Windows 22838+ / macOS）
+- **报告**：2026-11-04，来自崩溃报告的整批分诊。
+  - Windows：
+    - `24q7Ni3J4G`：退出时正在做 srs migrate，maxRss 2405 MB。
+    - `9BCV3IAkNO`：4 次。
+    - `J5VpC6Lfkc`、`VDMDngIA4W`、`WwuPr8PwDY`、`oe5x8Oib9_`、`VExnEUmnc0`、`bsDs3AQsy0`。
+    - `hnn07qX6F4`：发生在安装器未完成、反复重装的期间。
+  - macOS：
+    - `X-SCadVi2V`。
+    - `_R1qJD0xDB`：退出前 27 s 有一条 Riverpod 的 `Concurrent modification` FlutterError。
+- **真实性**：❌ **未复现，无法定性**。
+  - 这些报告的共同点：
+    - 会话标记停在 `resumed` 或 `inactive`；
+    - 没有 `crash_summary.log` 原生摘要（Windows 的 SEH 摘要和 minidump 都没有记录）；
+    - 没有平台退出记录；
+    - 出事版本都不低于 22838。
+  - 因此它们不属于 BUG-4074 的更新交接误报（那个问题 22838 已修）。
+  - 能产生这种形态的途径有三类，**目前材料无法区分**：
+    - 用户在任务管理器结束进程，或系统注销、关机时强杀；
+    - 安装器强杀第二个实例（`fushi.iss` InitializeSetup 先 `WM_CLOSE` 再强杀，`hnn07qX6F4` 疑似属于这种）；
+    - 栈溢出、堆损坏这类连 SEH 摘要都来不及写的原生故障，`24q7Ni3J4G` 的 2.4 GB maxRss 有这种可能。
+- **[ ] ① 未修复**：没有可定位的根因。不为凑结论而改判定逻辑：降级这类报告会把真正的静默崩溃一起藏掉。
+  - 下一步：如果用户本机有 minidump，在「诊断 → 崩溃转储」上传；
+  - 或者让 Windows 退出路径区分 `WM_ENDSESSION`（注销 / 关机），并把它写进标记，这样可以排除第一类。
+- **[ ] ② 未加自动化测试**：没有根因，无法加。
+- **备注**：
+  - `_R1qJD0xDB` 的 Riverpod `Concurrent modification` 是 FlutterError，不会让进程退出，也没有证据把它和这次退出联系起来，所以没有单独立案。
+  - `24q7Ni3J4G` 的 migrate 高内存与 BUG-4075 的同步内存问题可能同源，属于推测。
+  - **2026-11-06 续报（整批闪退分诊）**：Windows `2RXqMQLC5y`（x4）、`aQIVBfj9dm`、`iSYv6WLND0`（同一台 Win11 26100，3.2.0-debug.22820，报告由 22820 自己发出、非更新交接，不属 BUG-4074），`YUwyuXNpjj`（23469）、`3SbZhpARQ9`（23025）、`oRjvqsXWoP`（23866，崩前 rss 1.1–1.7 GB、maxRss 2.09 GB）、`eZMo2PT6c_`（23855，启动初始化未完成）；macOS `i7jZwYOnHB`（23876，停在 `SrsConflictsPage`、`srs_sync stage=media` 进行中，rss 399 → 1774 MB，无 `.ips`）。全部同一形态：无 `crash_summary.log`、无会话结束记录、无平台退出记录。`2RXq` 那台连续 4 次进程从启动到消失 6–12 分钟都停在 `launching`（生命周期从未到 `resumed`）。
+  - **证据缺口定位**：`fushi/windows/runner/crash_dump.cpp:392` 只装 `SetUnhandledExceptionFilter`。`__fastfail`（0xc0000409：CRT `abort()`、Rust `panic=abort`、`/GS`、CFG）、堆损坏、栈溢出不经这个过滤器，卡死后被用户在「未响应」里关掉也不是异常——这几类死法 `crash_summary.log` 永远是空的。开发机事件日志里就有 Fushi 自己的 `Application Error 1000`（2.9–3.0 版与本地 Debug 构建）：`c0000409` / `c0000005` / `c000041d` @ `flutter_windows.dll`，说明 Windows 错误报告对这些死法有记录（这几次是否进过 `crash_summary.log` 未核对）。
+  - **证据缺口补上（取证，不是修复）**：下次启动若上次没标 clean，按 pid 从「应用程序」事件日志读 Windows 错误报告（`wevtutil qe Application /f:xml`，`fushi/lib/src/diagnostics/previous_exit_log.dart` `queryWindowsEventLog` / `formatWindowsErrorEvents`）：`Application Error 1000` → 原生崩溃（异常码 + 模块+偏移 + 模块版本），`Application Hang 1002` → 卡死被结束（anr）。查不到 = 外部强杀 / 任务管理器结束的可能性上升。测试 `fushi/test/diagnostics/previous_exit_windows_error_report_test.dart`。下一份 ≥ 本 PR 构建的 Windows 报告据此分型。

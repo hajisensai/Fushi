@@ -29,52 +29,51 @@ import '../helpers/source_guard.dart';
 void main() {
   /// 复刻生产拓扑：全局缩放包住 Navigator/Overlay，页面再被中和。
   Widget wrap({required double scale, required Widget page}) => MaterialApp(
-        builder: (BuildContext context, Widget? child) =>
-            FushiAppUiScale(scale: scale, child: child!),
-        home: FushiAppUiScaleNeutralizer(child: page),
-      );
+    builder: (BuildContext context, Widget? child) =>
+        FushiAppUiScale(scale: scale, child: child!),
+    home: FushiAppUiScaleNeutralizer(child: page),
+  );
 
   group('不变式 A：菜单锚点经 Overlay 换算后贴住真实点击点', () {
     /// 被测页面：整屏右键热区。[mapThroughOverlay] 切换「正确范式 / 修复前写法」，
     /// 让同一个测试既能证明修复有效，也能证明它抓得住回归（变异对照）。
     Widget menuPage({required bool mapThroughOverlay}) => Builder(
-          builder: (BuildContext context) => Scaffold(
-            body: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onSecondaryTapDown: (TapDownDetails d) {
-                final RenderBox overlay = Overlay.of(context)
-                    .context
-                    .findRenderObject()! as RenderBox;
-                final RelativeRect position;
-                if (mapThroughOverlay) {
-                  final Offset anchor = overlay.globalToLocal(d.globalPosition);
-                  position = RelativeRect.fromRect(
-                    Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
-                    Offset.zero & overlay.size,
-                  );
-                } else {
-                  // 修复前：真实屏幕坐标直接当画布坐标，边界取 MediaQuery（中和层内
-                  // 是真实视口，比 overlay.size 大 scale 倍）。
-                  final Size size = MediaQuery.of(context).size;
-                  position = RelativeRect.fromLTRB(
-                    d.globalPosition.dx,
-                    d.globalPosition.dy,
-                    size.width - d.globalPosition.dx,
-                    size.height - d.globalPosition.dy,
-                  );
-                }
-                showMenu<String>(
-                  context: context,
-                  position: position,
-                  items: const <PopupMenuEntry<String>>[
-                    PopupMenuItem<String>(value: 'a', child: Text('ITEM')),
-                  ],
-                );
-              },
-              child: const SizedBox.expand(),
-            ),
-          ),
-        );
+      builder: (BuildContext context) => Scaffold(
+        body: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onSecondaryTapDown: (TapDownDetails d) {
+            final RenderBox overlay =
+                Overlay.of(context).context.findRenderObject()! as RenderBox;
+            final RelativeRect position;
+            if (mapThroughOverlay) {
+              final Offset anchor = overlay.globalToLocal(d.globalPosition);
+              position = RelativeRect.fromRect(
+                Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
+                Offset.zero & overlay.size,
+              );
+            } else {
+              // 修复前：真实屏幕坐标直接当画布坐标，边界取 MediaQuery（中和层内
+              // 是真实视口，比 overlay.size 大 scale 倍）。
+              final Size size = MediaQuery.of(context).size;
+              position = RelativeRect.fromLTRB(
+                d.globalPosition.dx,
+                d.globalPosition.dy,
+                size.width - d.globalPosition.dx,
+                size.height - d.globalPosition.dy,
+              );
+            }
+            showMenu<String>(
+              context: context,
+              position: position,
+              items: const <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(value: 'a', child: Text('ITEM')),
+              ],
+            );
+          },
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
 
     /// 右键点屏幕中心偏右下（离原点足够远，放大缩放偏移），返回菜单项与点击点的距离。
     Future<double> menuOffsetFromClick(
@@ -86,8 +85,12 @@ void main() {
       tester.view.physicalSize = const Size(1200, 900);
       addTearDown(tester.view.reset);
 
-      await tester.pumpWidget(wrap(
-          scale: scale, page: menuPage(mapThroughOverlay: mapThroughOverlay)));
+      await tester.pumpWidget(
+        wrap(
+          scale: scale,
+          page: menuPage(mapThroughOverlay: mapThroughOverlay),
+        ),
+      );
       await tester.pumpAndSettle();
 
       const Offset click = Offset(700, 520);
@@ -115,19 +118,31 @@ void main() {
     // padding，又远小于修复前的偏移量（scale=0.5 实测 302）。
     for (final double scale in <double>[0.5, 1.0, 2.0]) {
       testWidgets('缩放 $scale：换算后菜单贴住点击点', (WidgetTester tester) async {
-        final double dist = await menuOffsetFromClick(tester,
-            scale: scale, mapThroughOverlay: true);
-        expect(dist, lessThan(24.0 * scale),
-            reason: 'overlay.globalToLocal 换算后菜单应贴住右键点，实测间隙=$dist');
+        final double dist = await menuOffsetFromClick(
+          tester,
+          scale: scale,
+          mapThroughOverlay: true,
+        );
+        expect(
+          dist,
+          lessThan(24.0 * scale),
+          reason: 'overlay.globalToLocal 换算后菜单应贴住右键点，实测间隙=$dist',
+        );
       });
     }
 
     // 变异对照：证明上面的阈值真能抓住回归，而不是恒真断言。
     testWidgets('对照：不换算（修复前写法）在缩放下必然偏离', (WidgetTester tester) async {
-      final double dist = await menuOffsetFromClick(tester,
-          scale: 0.5, mapThroughOverlay: false);
-      expect(dist, greaterThan(200.0),
-          reason: '修复前把真实坐标当画布坐标，菜单应明显偏离点击点，实测间隙=$dist');
+      final double dist = await menuOffsetFromClick(
+        tester,
+        scale: 0.5,
+        mapThroughOverlay: false,
+      );
+      expect(
+        dist,
+        greaterThan(200.0),
+        reason: '修复前把真实坐标当画布坐标，菜单应明显偏离点击点，实测间隙=$dist',
+      );
     });
   });
 
@@ -142,13 +157,17 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       late BuildContext pageContext;
-      await tester.pumpWidget(wrap(
-        scale: scale,
-        page: Builder(builder: (BuildContext c) {
-          pageContext = c;
-          return const Scaffold(body: SizedBox.expand());
-        }),
-      ));
+      await tester.pumpWidget(
+        wrap(
+          scale: scale,
+          page: Builder(
+            builder: (BuildContext c) {
+              pageContext = c;
+              return const Scaffold(body: SizedBox.expand());
+            },
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
 
       // 修复前：中和层内页面读 appUiScale 当 menuScale 再乘一次。
@@ -168,8 +187,11 @@ void main() {
       // PopupMenuRoute 会留在 Navigator 栈里叠加出第二个 'ITEM'。必须断言唯一并在
       // measure 后 pop 掉，否则 `.first` 量到的是上一轮的菜单（会把 scale² 回归量成
       // 正常值，测试假绿）。
-      expect(find.text('ITEM'), findsOneWidget,
-          reason: '菜单应唯一——出现多个说明上一轮 route 未清理');
+      expect(
+        find.text('ITEM'),
+        findsOneWidget,
+        reason: '菜单应唯一——出现多个说明上一轮 route 未清理',
+      );
       final double h = tester.getRect(find.text('ITEM')).height;
       Navigator.of(pageContext).pop();
       await tester.pumpAndSettle();
@@ -177,24 +199,44 @@ void main() {
     }
 
     testWidgets('scale=2 时菜单文字恰好是 scale=1 的 2 倍', (WidgetTester tester) async {
-      final double at1 =
-          await menuTextHeight(tester, scale: 1.0, doubleScaleBug: false);
-      final double at2 =
-          await menuTextHeight(tester, scale: 2.0, doubleScaleBug: false);
-      expect(at2 / at1, closeTo(2.0, 0.01),
-          reason: '菜单落在缩放画布内，画布→屏幕已放大一次，比值应恰为 scale；'
-              '实测 $at1 -> $at2');
+      final double at1 = await menuTextHeight(
+        tester,
+        scale: 1.0,
+        doubleScaleBug: false,
+      );
+      final double at2 = await menuTextHeight(
+        tester,
+        scale: 2.0,
+        doubleScaleBug: false,
+      );
+      expect(
+        at2 / at1,
+        closeTo(2.0, 0.01),
+        reason:
+            '菜单落在缩放画布内，画布→屏幕已放大一次，比值应恰为 scale；'
+            '实测 $at1 -> $at2',
+      );
     });
 
     // 变异对照：手动再乘一次 scale 会变成 4 倍（scale²），证明上面的断言抓得住回归。
-    testWidgets('对照：手动乘 menuScale 会变成 4 倍（scale²）',
-        (WidgetTester tester) async {
-      final double at1 =
-          await menuTextHeight(tester, scale: 1.0, doubleScaleBug: true);
-      final double at2 =
-          await menuTextHeight(tester, scale: 2.0, doubleScaleBug: true);
-      expect(at2 / at1, closeTo(4.0, 0.01),
-          reason: '双重缩放应产生 scale² 放大；实测 $at1 -> $at2');
+    testWidgets('对照：手动乘 menuScale 会变成 4 倍（scale²）', (
+      WidgetTester tester,
+    ) async {
+      final double at1 = await menuTextHeight(
+        tester,
+        scale: 1.0,
+        doubleScaleBug: true,
+      );
+      final double at2 = await menuTextHeight(
+        tester,
+        scale: 2.0,
+        doubleScaleBug: true,
+      );
+      expect(
+        at2 / at1,
+        closeTo(4.0, 0.01),
+        reason: '双重缩放应产生 scale² 放大；实测 $at1 -> $at2',
+      );
     });
   });
 
@@ -215,25 +257,35 @@ void main() {
     }
 
     test('漫画阅读器右键菜单：锚点经 Overlay 换算，边界用 overlay.size', () {
-      final String source =
-          read('lib/src/media/manga/reader/manga_fushi_page.dart');
+      final String source = read(
+        'lib/src/media/manga/reader/manga_fushi_page.dart',
+      );
       final String fn = slice(
         source,
         'Future<void> _showReaderContextMenu(String payloadJson)',
         'if (!mounted || action == null) return;',
       );
 
-      expect(fn, contains('Overlay.of(context).context.findRenderObject()'),
-          reason: '必须拿根 Overlay 的 RenderBox 做坐标换算');
-      expect(fn, contains('overlay.globalToLocal(Offset(x, y))'),
-          reason: 'JS 报的 clientX/clientY 是真实屏幕坐标，必须映射到 Overlay 本地');
+      expect(
+        fn,
+        contains('Overlay.of(context).context.findRenderObject()'),
+        reason: '必须拿根 Overlay 的 RenderBox 做坐标换算',
+      );
+      expect(
+        fn,
+        contains('overlay.globalToLocal(Offset(x, y))'),
+        reason: 'JS 报的 clientX/clientY 是真实屏幕坐标，必须映射到 Overlay 本地',
+      );
       expect(
         RegExp(r'Rect\.fromLTWH\(\s*anchor\.dx,\s*anchor\.dy').hasMatch(fn),
         isTrue,
         reason: 'RelativeRect 必须锚在换算后的 anchor 上，不能是裸 x/y',
       );
-      expect(fn, contains('Offset.zero & overlay.size'),
-          reason: '边界必须用 overlay.size（画布空间）');
+      expect(
+        fn,
+        contains('Offset.zero & overlay.size'),
+        reason: '边界必须用 overlay.size（画布空间）',
+      );
       expect(
         stripComments(fn),
         isNot(contains('MediaQuery.of(context).size')),
@@ -242,10 +294,12 @@ void main() {
     });
 
     test('阅读器菜单 / 选区操作条：不得手动乘界面缩放', () {
-      final String chrome =
-          read('lib/src/pages/implementations/reader_fushi/chrome.part.dart');
-      final String shell =
-          read('lib/src/pages/implementations/reader_fushi_page.dart');
+      final String chrome = read(
+        'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
+      );
+      final String shell = read(
+        'lib/src/pages/implementations/reader_fushi_page.dart',
+      );
 
       // 注释里可以解释这段历史，但代码里不能再出现该 getter 与乘法。
       expect(
@@ -261,19 +315,26 @@ void main() {
     });
 
     test('日志面板选区工具条：锚点经 Overlay 换算', () {
-      final String source =
-          read('lib/src/utils/components/fushi_material_components.dart');
+      final String source = read(
+        'lib/src/utils/components/fushi_material_components.dart',
+      );
       final String fn = slice(
         source,
         'Widget _buildContextMenu(',
         'buttonItems: items,',
       );
-      expect(fn, contains('overlayBox.globalToLocal(rawAnchor)'),
-          reason: 'toolbar 挂根 Overlay（画布空间），锚点须换算（BUG-1438）');
       expect(
         fn,
-        isNot(contains(
-            'primaryAnchor: _lastPointerDownGlobalPosition ?? Offset.zero')),
+        contains('overlayBox.globalToLocal(rawAnchor)'),
+        reason: 'toolbar 挂根 Overlay（画布空间），锚点须换算（BUG-1438）',
+      );
+      expect(
+        fn,
+        isNot(
+          contains(
+            'primaryAnchor: _lastPointerDownGlobalPosition ?? Offset.zero',
+          ),
+        ),
         reason: '不得把真实屏幕坐标直接当 Overlay 锚点',
       );
     });

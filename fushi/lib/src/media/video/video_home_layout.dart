@@ -1,5 +1,7 @@
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
+import 'package:fushi_core/fushi_core.dart' show VideoMetadataImageRow;
+import 'package:fushi_engine/media/video/disc/disc_format.dart' show DiscFormat;
 
 /// 视频首页（hayase 式改版，TODO-2486）的布局与筛选纯函数。
 ///
@@ -89,6 +91,17 @@ double allVideoThumbnailTargetWidthForWidth(double width) {
 /// 不至于占满半屏，桌面超宽不至于无限长高。
 double videoHeroHeightForWidth(double width) =>
     (width * 9 / 21).clamp(220.0, 420.0);
+
+/// 视频首页横滚行（继续观看 / 已更新未看 / 最近添加）的竖版 2:3 卡宽。
+///
+/// 首页行卡一律画作品竖封面（不再按封面图宽高比探测横 / 竖卡）：
+/// - 手机（内容宽 < 600）：按内容宽 / 3.45 取，一行露出约 3.3 张，露半张提示可横滑
+///   （390 宽手机内容宽 358 → 约 104）；
+/// - 平板 / 桌面：内容宽 / 8，夹在 [120, 140]。
+double videoHomePosterCardWidth(double contentWidth) {
+  if (contentWidth < 600) return (contentWidth / 3.45).clamp(96.0, 128.0);
+  return (contentWidth / 8).clamp(120.0, 140.0);
+}
 
 /// 视频库搜索行的单行排版下限（2026-10 体验优化）：宽度低于此值时搜索框独占
 /// 一行、年份 / 看完状态 chip 落到第二行可横滑。宽度取 LayoutBuilder 的逻辑
@@ -326,6 +339,55 @@ int? continueWatchingSeriesIndex(List<VideoSeriesPlaybackState> members) {
   return current + 1 < members.length ? current + 1 : null;
 }
 
+/// 「规格」筛选的档位（多选，交接文档 2026-10-24 第 9 项）：前四档是**载体**
+/// （BD 原盘 / UHD BD / DVD / 普通文件，互斥），后两档是**画质**（4K / HDR）。
+enum VideoSpecFilter { bluray, uhdBluray, dvd, plainFile, uhd4k, hdr }
+
+/// 载体档位集合（同组内「或」）。
+const Set<VideoSpecFilter> kVideoSpecCarrierFilters = <VideoSpecFilter>{
+  VideoSpecFilter.bluray,
+  VideoSpecFilter.uhdBluray,
+  VideoSpecFilter.dvd,
+  VideoSpecFilter.plainFile,
+};
+
+/// 条目级规格判定（本地即筛）。
+///
+/// 语义按分面筛选：**同组内「或」、两组之间「与」**——勾「BD + DVD」= 两种盘都要；
+/// 再勾「HDR」= 其中带 HDR 的。一组都没勾 = 这组不设限。
+///
+/// - [discFormat]：已确证的原盘规格；普通文件为 null。蓝光还没读过 `index.bdmv`
+///   时调用方也传 null 但 [isDiscMember] 为真——此时既不算 BD 也不算 UHD（分不清
+///   就不猜），也不算普通文件，库页会立刻补解析再重建。
+/// - [is4k] / [isHdr]：来自规格服务；没探过的文件两者都是 false。
+bool matchesVideoSpecFilter({
+  required Set<VideoSpecFilter> selected,
+  required DiscFormat? discFormat,
+  required bool isDiscMember,
+  required bool is4k,
+  required bool isHdr,
+}) {
+  if (selected.isEmpty) return true;
+  final Set<VideoSpecFilter> carriers = selected.intersection(
+    kVideoSpecCarrierFilters,
+  );
+  if (carriers.isNotEmpty) {
+    final VideoSpecFilter? carrier = switch (discFormat) {
+      DiscFormat.bluray => VideoSpecFilter.bluray,
+      DiscFormat.uhdBluray => VideoSpecFilter.uhdBluray,
+      DiscFormat.dvd => VideoSpecFilter.dvd,
+      null => isDiscMember ? null : VideoSpecFilter.plainFile,
+    };
+    if (carrier == null || !carriers.contains(carrier)) return false;
+  }
+  final bool wants4k = selected.contains(VideoSpecFilter.uhd4k);
+  final bool wantsHdr = selected.contains(VideoSpecFilter.hdr);
+  if (wants4k || wantsHdr) {
+    if (!((wants4k && is4k) || (wantsHdr && isHdr))) return false;
+  }
+  return true;
+}
+
 /// 条目级看完状态判定（本地即筛）：
 /// * completed —— `completedAt` 非空；
 /// * watching —— 未完成但有播放痕迹（`lastPositionMs > 0`）；
@@ -421,4 +483,83 @@ List<T> selectVideoHeroUnits<T>(
               b.latestImportedAt.compareTo(a.latestImportedAt),
         ));
   return <T>[for (final VideoHeroCandidate<T> c in pool.take(limit)) c.unit];
+}
+
+/// 主卡「这一集自己的剧照」候选：只留 thumb 类图，按 `position` 升序、`id` 升序
+/// 兜底（全序：同一组输入每次刷新排出同一个顺序，不依赖 [List.sort] 的稳定性）。
+/// 本地文件 / 远程 URL 的取舍由调用方做；没有 thumb（未刮削 / 刮削源不给）返回空，
+/// 调用方回落到原有选图链（backdrop / 刮削横图 / 封面）。
+List<VideoMetadataImageRow> orderedEpisodeStills(
+  Iterable<VideoMetadataImageRow> rows,
+) =>
+    rows.where((VideoMetadataImageRow r) => r.kind == 'thumb').toList()
+      ..sort((VideoMetadataImageRow a, VideoMetadataImageRow b) {
+        final int byPosition = a.position.compareTo(b.position);
+        return byPosition != 0 ? byPosition : a.id.compareTo(b.id);
+      });
+
+/// 一个本地视频文件绑定的一条分集（v110 起一文件可绑多集，如 `01-02` 合集文件）
+/// 连同它自己的刮削剧照。[seasonNumber] 来自所属季行（缺季行时为 null）。
+class VideoFileEpisodeStills {
+  const VideoFileEpisodeStills({
+    required this.episodeId,
+    required this.seasonNumber,
+    required this.episodeNumber,
+    required this.runtimeMinutes,
+    required this.stills,
+  });
+
+  final int episodeId;
+  final int? seasonNumber;
+  final int episodeNumber;
+  final int? runtimeMinutes;
+
+  /// 这一集自己的图（未筛 kind，[resumedFileEpisodeStills] 里过 [orderedEpisodeStills]）。
+  final List<VideoMetadataImageRow> stills;
+}
+
+/// 一个文件里的分集按集序排：季号（缺季行排最后）→ 集号 → 分集行 id，全序。
+List<VideoFileEpisodeStills> orderFileEpisodes(
+  Iterable<VideoFileEpisodeStills> episodes,
+) =>
+    episodes.toList()
+      ..sort((VideoFileEpisodeStills a, VideoFileEpisodeStills b) {
+        final int? sa = a.seasonNumber;
+        final int? sb = b.seasonNumber;
+        if (sa != sb) {
+          if (sa == null) return 1;
+          if (sb == null) return -1;
+          return sa.compareTo(sb);
+        }
+        final int byEpisode = a.episodeNumber.compareTo(b.episodeNumber);
+        return byEpisode != 0 ? byEpisode : a.episodeId.compareTo(b.episodeId);
+      });
+
+/// 主卡该用哪一集的剧照：续播点所在的那一集。
+///
+/// 播放进度按文件记（`video_books.lastPositionMs`），一文件多集时没有逐集进度；
+/// 能定位续播点的唯一依据是各集片长——每一集都有 `runtimeMinutes` 时按集序累加
+/// 成区间，[positionMs] 落在哪一段就是哪一集（超出总长归最后一集）。任何一集缺
+/// 片长就定位不了，取集序第一集。返回那一集的剧照（[orderedEpisodeStills] 序）；
+/// 那一集没有剧照返回空——不拿别的集的剧照冒充，由调用方回落到作品图链。
+List<VideoMetadataImageRow> resumedFileEpisodeStills(
+  Iterable<VideoFileEpisodeStills> episodes, {
+  required int positionMs,
+}) {
+  final List<VideoFileEpisodeStills> ordered = orderFileEpisodes(episodes);
+  if (ordered.isEmpty) return const <VideoMetadataImageRow>[];
+  VideoFileEpisodeStills resumed = ordered.first;
+  if (ordered.length > 1 &&
+      ordered.every((VideoFileEpisodeStills e) => e.runtimeMinutes != null)) {
+    int endMs = 0;
+    resumed = ordered.last;
+    for (final VideoFileEpisodeStills episode in ordered) {
+      endMs += episode.runtimeMinutes! * Duration.millisecondsPerMinute;
+      if (positionMs < endMs) {
+        resumed = episode;
+        break;
+      }
+    }
+  }
+  return orderedEpisodeStills(resumed.stills);
 }

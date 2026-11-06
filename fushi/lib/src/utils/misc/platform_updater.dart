@@ -1,7 +1,11 @@
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:fushi_compute/fushi_compute.dart' show ffcSha256File;
 
+import 'package:fushi/src/platform/app_exit_coordinator.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart'
     show kGalgameHelperInstallDirectoryName;
 import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
@@ -11,7 +15,7 @@ import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/mac_update_handoff.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';
 import 'package:fushi/src/utils/misc/update_landing.dart';
-import 'package:fushi/utils.dart'; // ErrorLogService
+import 'package:fushi/src/utils/misc/error_log_service.dart'; // ErrorLogService
 
 export 'update_handoff.dart'
     show
@@ -62,14 +66,13 @@ class UpdateAsset {
     int? sizeBytes,
     String? sha256Digest,
     String? version,
-  }) =>
-      UpdateAsset(
-        name: name ?? this.name,
-        url: url ?? this.url,
-        sizeBytes: sizeBytes ?? this.sizeBytes,
-        sha256Digest: sha256Digest ?? this.sha256Digest,
-        version: version ?? this.version,
-      );
+  }) => UpdateAsset(
+    name: name ?? this.name,
+    url: url ?? this.url,
+    sizeBytes: sizeBytes ?? this.sizeBytes,
+    sha256Digest: sha256Digest ?? this.sha256Digest,
+    version: version ?? this.version,
+  );
 }
 
 int? _assetSizeBytes(Object? raw) {
@@ -100,6 +103,32 @@ String? _assetVersionStamp(Object? raw) {
   if (raw is! String) return null;
   final String trimmed = raw.trim();
   return trimmed.isEmpty ? null : trimmed;
+}
+
+/// 本进程**亲手**按发布方公布的 SHA-256 校验通过的更新包（BUG-3567）。
+///
+/// 安装包落在用户可写的 updates 目录，旁边的 `.meta.json` 同样可写，都不能当「这个文件
+/// 已校验」的凭据；只有下载引擎在本进程里刚核过的结论可信。下载完成（或复用已完成的
+/// 下载）且资产带有公布的哈希时由下载层登记；安装层据此决定能否把安装器经 UAC 提权，
+/// 并把这个哈希交给 launcher 在锁住文件后复核。进程内状态：重启后清空，届时重新下载 /
+/// 复用会再走一遍校验并重新登记。
+abstract final class UpdateDownloadTrust {
+  static final Map<String, String> _verified = <String, String>{};
+
+  static String _key(String path) => File(path).absolute.path.toLowerCase();
+
+  /// 下载层：[file] 已按 [sha256Digest]（发布方公布的值）校验通过。
+  static void recordVerified(File file, String sha256Digest) {
+    final String digest = sha256Digest.trim().toLowerCase();
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(digest)) return;
+    _verified[_key(file.path)] = digest;
+  }
+
+  /// 安装层：[file] 在本进程里按公布哈希校验过的话返回那个哈希，否则 null。
+  static String? verifiedSha256For(File file) => _verified[_key(file.path)];
+
+  @visibleForTesting
+  static void debugReset() => _verified.clear();
 }
 
 /// 每平台的更新策略：选包（[selectAsset]）+ 安装（[apply]）。
@@ -248,9 +277,9 @@ bool androidAssetMatchesAbi(String name, String abi) =>
 /// 候选里是否存在**任何**按架构切分的包。用于区分「这个 release 提供分架构包、只是
 /// 没有本机这一档」与「这个 release 只有一个 universal 包」（debug 通道即后者）。
 bool _hasPerAbiCandidate(Iterable<String> names) => names.any(
-      (String n) => kAndroidReleaseAbis
-          .any((String abi) => androidAssetMatchesAbi(n, abi)),
-    );
+  (String n) =>
+      kAndroidReleaseAbis.any((String abi) => androidAssetMatchesAbi(n, abi)),
+);
 
 bool _isDebugWindowsSetupAsset(String name) =>
     name.endsWith('-windows-setup.exe') && name.contains('-debug.');
@@ -260,8 +289,7 @@ bool _windowsAssetMatchesChannel(String name, UpdateChannel channel) {
   return switch (channel) {
     UpdateChannel.debug => _isDebugWindowsSetupAsset(name),
     UpdateChannel.stable ||
-    UpdateChannel.beta =>
-      !_isDebugWindowsSetupAsset(name),
+    UpdateChannel.beta => !_isDebugWindowsSetupAsset(name),
   };
 }
 
@@ -290,7 +318,7 @@ bool _macosAssetMatchesChannel(String name, UpdateChannel channel) {
 
 class AndroidUpdater extends PlatformUpdater {
   AndroidUpdater({Future<List<String>> Function()? abiProvider})
-      : _abiProvider = abiProvider ?? _defaultAbis;
+    : _abiProvider = abiProvider ?? _defaultAbis;
 
   final Future<List<String>> Function() _abiProvider;
 
@@ -369,6 +397,7 @@ class WindowsUpdater extends PlatformUpdater {
       file.path,
       targetVersion: version,
       handoffMarkerFile: WindowsUpdateHandoff.markerFile(file.parent),
+      expectedSha256: UpdateDownloadTrust.verifiedSha256For(file),
     );
   }
 }
@@ -422,8 +451,7 @@ class IosUpdater extends PlatformUpdater {
   Future<UpdateAsset?> selectAsset(
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<UpdateLanding> resolveDownloadLanding(String releaseHtmlUrl) async {
@@ -449,8 +477,7 @@ class UnsupportedUpdater extends PlatformUpdater {
   Future<UpdateAsset?> selectAsset(
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<void> apply(File file, String version) async {
@@ -478,23 +505,39 @@ class AndroidInstaller {
 /// - `/NORESTARTAPPLICATIONS`：不让 RestartManager 自动拉起被它管理的应用。
 /// - `/NORESTART`：禁止安装器重启**操作系统**（我们只想重启 app，不重启系统）。
 /// - `/DIR=`：应用内更新只写当前运行 `fushi.exe` 所在目录，不追随注册表或历史路径。
+/// - [kWindowsInstallerNoRelaunchSwitch]（仅 [suppressAppRelaunch]）：提权安装时
+///   `fushi.iss` 跳过 `[Run]` 自启——被 UAC 提权的安装器拉起的 app 会继承管理员令牌，
+///   改由仍是普通权限的 launcher 在安装结束后拉回 app。
 List<String> windowsInstallerArgs(
   String installerPath, {
   String? logPath,
   String? targetInstallDir,
-}) =>
-    <String>[
-      '/VERYSILENT',
-      '/SP-',
-      '/SUPPRESSMSGBOXES',
-      '/NOCLOSEAPPLICATIONS',
-      '/NOFORCECLOSEAPPLICATIONS',
-      '/NORESTARTAPPLICATIONS',
-      '/NORESTART',
-      if (targetInstallDir != null && targetInstallDir.trim().isNotEmpty)
-        '/DIR=$targetInstallDir',
-      '/LOG=${logPath ?? windowsInstallerLogPath(installerPath)}',
-    ];
+  bool suppressAppRelaunch = false,
+}) => <String>[
+  '/VERYSILENT',
+  '/SP-',
+  '/SUPPRESSMSGBOXES',
+  '/NOCLOSEAPPLICATIONS',
+  '/NOFORCECLOSEAPPLICATIONS',
+  '/NORESTARTAPPLICATIONS',
+  '/NORESTART',
+  if (targetInstallDir != null && targetInstallDir.trim().isNotEmpty)
+    '/DIR=$targetInstallDir',
+  '/LOG=${logPath ?? windowsInstallerLogPath(installerPath)}',
+  if (suppressAppRelaunch) kWindowsInstallerNoRelaunchSwitch,
+];
+
+/// `fushi.iss` 的 `ShouldLaunchAppAfterInstall` 认的开关名，两侧须一致。
+const String kWindowsInstallerNoRelaunchSwitch = '/FUSHINORELAUNCH';
+
+/// launcher 的提权开关：用 UAC（`ShellExecuteExW` + `runas`）启动安装器。
+const String kWindowsUpdateLauncherElevateFlag = '--elevate';
+
+/// 提权时必带：安装包应有的 SHA-256（发布方公布的那个）。launcher 以「拒绝写 / 删 /
+/// 改名共享」打开安装包、在**持有该句柄**的状态下重算哈希，对得上才经 UAC 拉起，并一直
+/// 握着句柄到安装器结束——校验之后、提权执行之前，同用户的其它进程换不掉这个文件
+/// （安装包在用户可写的 updates 目录里，BUG-3567）。
+const String kWindowsUpdateLauncherInstallerSha256Flag = '--installer-sha256';
 
 const String kWindowsUpdateLauncherExecutable = 'fushi_update_launcher.exe';
 
@@ -553,25 +596,33 @@ String? resolveWindowsUpdateLauncherSource({
   if (probe(stalePath)) return stalePath;
 
   // 带序号的退让名（`.old1.exe`…）。名字不固定，只能扫。
-  final List<String> Function(String dirPath) list = listDirectory ??
+  final List<String> Function(String dirPath) list =
+      listDirectory ??
       (String path) {
         try {
           return Directory(path)
               .listSync(followLinks: false)
               .whereType<File>()
-              .map((File f) => f.path.substring(
-                  _lastPathSeparatorIndex(f.path) + 1))
+              .map(
+                (File f) =>
+                    f.path.substring(_lastPathSeparatorIndex(f.path) + 1),
+              )
               .toList();
         } catch (_) {
           return const <String>[];
         }
       };
-  final List<String> candidates = list(dirPath)
-      .where((String name) =>
-          name.toLowerCase().startsWith(kWindowsUpdateLauncherStalePrefix) &&
-          name.toLowerCase().endsWith('.exe'))
-      .toList()
-    ..sort();
+  final List<String> candidates =
+      list(dirPath)
+          .where(
+            (String name) =>
+                name.toLowerCase().startsWith(
+                  kWindowsUpdateLauncherStalePrefix,
+                ) &&
+                name.toLowerCase().endsWith('.exe'),
+          )
+          .toList()
+        ..sort();
   for (final String name in candidates) {
     final String path = joined(name);
     if (probe(path)) return path;
@@ -585,21 +636,43 @@ List<String> windowsUpdateLauncherArgs({
   required String installerPath,
   required List<String> installerArgs,
   String? appExecutablePath,
-}) =>
-    <String>[
-      '--marker',
-      markerPath,
-      '--parent-pid',
-      '$parentProcessId',
-      '--installer',
-      installerPath,
-      // BUG-1786：launcher 从安装目录外的副本运行，副本同目录没有 fushi.exe，
-      // 「安装失败就把 app 拉回来」这一环必须拿到显式路径才不至于失效。
-      if (appExecutablePath != null && appExecutablePath.trim().isNotEmpty)
-        ...<String>['--app-exe', appExecutablePath],
-      '--',
-      ...installerArgs,
-    ];
+  String? elevatedInstallerSha256,
+}) => <String>[
+  // 非 null = 经 UAC 提权启动安装器；提权只接受带着已校验哈希的安装包，
+  // 所以两者绑成一个参数，不存在「提权但不带哈希」的组合。
+  if (elevatedInstallerSha256 != null) ...<String>[
+    kWindowsUpdateLauncherElevateFlag,
+    kWindowsUpdateLauncherInstallerSha256Flag,
+    _requireSha256Hex(elevatedInstallerSha256),
+  ],
+  '--marker',
+  markerPath,
+  '--parent-pid',
+  '$parentProcessId',
+  '--installer',
+  installerPath,
+  // BUG-1786：launcher 从安装目录外的副本运行，副本同目录没有 fushi.exe，
+  // 「安装失败就把 app 拉回来」这一环必须拿到显式路径才不至于失效。
+  if (appExecutablePath != null &&
+      appExecutablePath.trim().isNotEmpty) ...<String>[
+    '--app-exe',
+    appExecutablePath,
+  ],
+  '--',
+  ...installerArgs,
+];
+
+String _requireSha256Hex(String value) {
+  final String normalized = value.trim().toLowerCase();
+  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalized)) {
+    throw ArgumentError.value(
+      value,
+      'elevatedInstallerSha256',
+      'must be a 64-char hex SHA-256 digest',
+    );
+  }
+  return normalized;
+}
 
 /// launcher 副本的落地目录名（在 updates 目录下，**安装目录之外**）。
 const String kWindowsUpdateLauncherStageDirName = 'launcher';
@@ -656,11 +729,27 @@ Future<String?> stageWindowsUpdateLauncher({
   }
 }
 
+/// 提权安装时 Inno 日志的落点：安装目录本身（`{app}`）。只在探针判定当前用户在
+/// [installDir] 里建不了文件时使用——这正是同用户进程无法在此预置 junction / 硬链接 /
+/// 符号链接的保证；普通用户对安装目录有读权限，reconcile 能照常读回。文件名带本次交接
+/// 时刻，避免读到上一轮提权安装留下的旧日志；`fushi.iss` 安装成功后清掉其余的
+/// [kWindowsElevatedInstallLogPrefix]`*.log`，卸载时一并删除。
+String windowsElevatedInstallerLogPath(String installDir, DateTime startedAt) {
+  final String dir = installDir.replaceFirst(RegExp(r'[\\/]+$'), '');
+  return '$dir${Platform.pathSeparator}'
+      '$kWindowsElevatedInstallLogPrefix'
+      '${startedAt.toUtc().millisecondsSinceEpoch}.log';
+}
+
+/// 与 `fushi.iss` 的 `CleanupStaleElevatedInstallLogs` / `[UninstallDelete]` 一致。
+const String kWindowsElevatedInstallLogPrefix = 'fushi-update-install-';
+
 String windowsInstallerLogPath(String installerPath) {
   final int sep = _lastPathSeparatorIndex(installerPath);
   final String dir = sep >= 0 ? installerPath.substring(0, sep) : '';
-  final String name =
-      sep >= 0 ? installerPath.substring(sep + 1) : installerPath;
+  final String name = sep >= 0
+      ? installerPath.substring(sep + 1)
+      : installerPath;
   final String stem = name.toLowerCase().endsWith('.exe')
       ? name.substring(0, name.length - 4)
       : name;
@@ -731,11 +820,18 @@ class WindowsInstaller {
     Future<WindowsInstallerStartedProcess> Function(
       String executable,
       List<String> args,
-    )? startProcess,
+    )?
+    startProcess,
     void Function(int code)? exitProcess,
+    Future<WindowsInstallDirWriteProbe> Function(Directory dir)?
+    probeInstallDirWritable,
+    String? expectedSha256,
+    Future<String> Function(File file)? hashFile,
+    bool Function(int pid)? grantForegroundTo,
   }) async {
     final DateTime Function() clock = now ?? DateTime.now;
-    final String innoLogPath = windowsInstallerLogPath(installerPath);
+    // 提权安装时改写到受保护位置，见 [windowsElevatedInstallerLogPath]。
+    String innoLogPath = windowsInstallerLogPath(installerPath);
     final String resolvedExecutablePath =
         currentExecutablePath ?? Platform.resolvedExecutable;
     final Directory currentInstallDir = File(resolvedExecutablePath).parent;
@@ -758,9 +854,32 @@ class WindowsInstaller {
         // 抛错让上层提示「更新失败」并保留 app 存活，而不是硬启动一个坏 exe。
         try {
           installer.deleteSync();
-        } catch (_) {/* best-effort cleanup */}
+        } catch (_) {
+          /* best-effort cleanup */
+        }
         throw UpdateInstallerException(
-            'downloaded file is not a Windows executable: $installerPath');
+          'downloaded file is not a Windows executable: $installerPath',
+        );
+      }
+      // BUG-3567：安装包放在用户可写的 updates 目录里，下载时的校验之后它仍可能被换掉
+      // （CLI `update download` 与 `update install` 之间可以隔任意久）。交接前按发布方
+      // 公布的哈希再核一次：对不上就删掉、不交接。
+      if (expectedSha256 != null) {
+        final String expected = expectedSha256.trim().toLowerCase();
+        final String actual = (await (hashFile ?? _sha256OfInstaller)(
+          installer,
+        )).toLowerCase();
+        if (actual != expected) {
+          try {
+            installer.deleteSync();
+          } catch (_) {
+            /* best-effort cleanup */
+          }
+          throw UpdateInstallerException(
+            'installer SHA-256 mismatch (expected $expected, got $actual): '
+            '$installerPath',
+          );
+        }
       }
     } catch (e, stack) {
       await _markLaunchFailed(handoffMarkerFile, e, clock(), stack);
@@ -769,23 +888,23 @@ class WindowsInstaller {
 
     final WindowsInstallerDiagnostics rawDiagnostics =
         collectDiagnostics != null
-            ? await collectDiagnostics()
-            : Platform.isWindows
-                ? await collectWindowsInstallerDiagnostics(
-                    currentExecutablePath: resolvedExecutablePath,
-                    currentProcessId: pid,
-                  )
-                : WindowsInstallerDiagnostics(
-                    currentExecutablePath: resolvedExecutablePath,
-                    currentInstallDir: currentInstallDir.path,
-                    targetInstallDir: currentInstallDir.path,
-                    detectedInstallLocations: <WindowsDetectedInstallLocation>[
-                      WindowsDetectedInstallLocation(
-                        source: 'current',
-                        path: currentInstallDir.path,
-                      ),
-                    ],
-                  );
+        ? await collectDiagnostics()
+        : Platform.isWindows
+        ? await collectWindowsInstallerDiagnostics(
+            currentExecutablePath: resolvedExecutablePath,
+            currentProcessId: pid,
+          )
+        : WindowsInstallerDiagnostics(
+            currentExecutablePath: resolvedExecutablePath,
+            currentInstallDir: currentInstallDir.path,
+            targetInstallDir: currentInstallDir.path,
+            detectedInstallLocations: <WindowsDetectedInstallLocation>[
+              WindowsDetectedInstallLocation(
+                source: 'current',
+                path: currentInstallDir.path,
+              ),
+            ],
+          );
     final String targetInstallDir =
         rawDiagnostics.targetInstallDir ?? currentInstallDir.path;
     final WindowsInstallerDiagnostics diagnostics = rawDiagnostics.copyWith(
@@ -795,13 +914,14 @@ class WindowsInstaller {
           rawDiagnostics.currentInstallDir ?? currentInstallDir.path,
       targetInstallDir: targetInstallDir,
     );
+    final DateTime handoffStartedAt = clock();
     if (targetVersion != null && handoffMarkerFile != null) {
       await WindowsUpdateHandoff.writePending(
         markerFile: handoffMarkerFile,
         targetVersion: targetVersion,
         installerPath: installerPath,
         innoLogPath: innoLogPath,
-        startedAt: clock(),
+        startedAt: handoffStartedAt,
         diagnostics: diagnostics,
       );
       ErrorLogService.instance.log(
@@ -813,8 +933,66 @@ class WindowsInstaller {
     }
 
     try {
-      if (Platform.isWindows) {
-        await ensureWindowsInstallTargetWritable(Directory(targetInstallDir));
+      final bool useDelayedLauncher = handoffMarkerFile != null;
+      // 安装目录以当前权限写不进去（典型是手动提权装进了 C:\Program Files）：
+      // 不再让用户「以管理员身份重开 Fushi」——只把安装器本身经 UAC 提权，app 继续以
+      // 普通权限运行。提权只能由 launcher 做（它在 app 退出后才拉起安装器），所以没有
+      // launcher 的直启路径仍按旧行为报错。
+      //
+      // 只有「拒绝访问」才提权：磁盘满、受控文件夹访问、路径坏掉这类失败，管理员权限也
+      // 救不了，弹 UAC 只会让用户白点一次再看到同一个失败。提权还要求发布方公布了安装包
+      // 的 SHA-256：launcher 会在锁住文件后按它复核，拿不到就不提权执行（BUG-3567）。
+      bool elevateInstaller = false;
+      final Future<WindowsInstallDirWriteProbe> Function(Directory dir)?
+      probeWritable =
+          probeInstallDirWritable ??
+          (Platform.isWindows ? probeWindowsInstallTargetWritable : null);
+      final WindowsInstallDirWriteProbe writeProbe = probeWritable == null
+          ? WindowsInstallDirWriteProbe.writable
+          : await probeWritable(Directory(targetInstallDir));
+      if (writeProbe != WindowsInstallDirWriteProbe.writable) {
+        final String? cannotElevateReason =
+            writeProbe != WindowsInstallDirWriteProbe.accessDenied
+            ? 'the failure is not a permission problem'
+            : !useDelayedLauncher
+            ? 'there is no update launcher to elevate the installer'
+            : expectedSha256 == null
+            ? 'the release did not publish a SHA-256 digest for '
+                  'the installer, so it cannot be verified before '
+                  'running it as administrator'
+            : null;
+        if (cannotElevateReason != null) {
+          throw UpdateInstallerException(
+            'Cannot write to installation directory: $targetInstallDir '
+            '($cannotElevateReason). Close Fushi and run the installer as '
+            'administrator, or reinstall Fushi to a user-writable folder.',
+          );
+        }
+        elevateInstaller = true;
+        // 提权的 Inno 不能把日志写进用户可写的 updates 目录：同用户进程可以预先在
+        // 那里放 junction / 符号链接，把一次管理员身份的写重定向到任意位置。改写进
+        // 安装目录本身——探针刚证明当前用户在那里建不了文件，也就放不了链接；
+        // 普通权限仍可读，reconcile 照常按 marker 里的路径读回（BUG-3567）。
+        innoLogPath = windowsElevatedInstallerLogPath(
+          targetInstallDir,
+          handoffStartedAt,
+        );
+        if (targetVersion != null && handoffMarkerFile != null) {
+          await WindowsUpdateHandoff.writePending(
+            markerFile: handoffMarkerFile,
+            targetVersion: targetVersion,
+            installerPath: installerPath,
+            innoLogPath: innoLogPath,
+            startedAt: handoffStartedAt,
+            diagnostics: diagnostics,
+          );
+        }
+        ErrorLogService.instance.log(
+          'WindowsInstaller.elevate',
+          'Install dir $targetInstallDir is not writable with the current '
+              'privileges; the update launcher will start the installer '
+              'elevated (UAC) and relaunch Fushi unelevated afterwards.',
+        );
       }
       // 先收干净我们自己拉起的辅助子进程（ffmpeg/ffprobe 的可执行文件就在安装目录里），
       // 再把安装交出去。它们不随 app 退出而死（Dart 的 Process.start 不绑 job object），
@@ -837,8 +1015,8 @@ class WindowsInstaller {
         installerPath,
         logPath: innoLogPath,
         targetInstallDir: Platform.isWindows ? targetInstallDir : null,
+        suppressAppRelaunch: elevateInstaller,
       );
-      final bool useDelayedLauncher = handoffMarkerFile != null;
       final String installedLauncherPath = windowsUpdateLauncherPath(
         currentExecutablePath: resolvedExecutablePath,
       );
@@ -848,7 +1026,8 @@ class WindowsInstaller {
       // BUG-1831：原件可能已被「改名让路 + 本次安装回滚」的组合抹掉，安装目录里只剩
       // `fushi_update_launcher.old.exe`。它是同一份映像，拿它接着走即可自愈；不接受
       // 它就等于让这台机器永远发不出更新（安装器一次都起不来，连日志都不会有）。
-      final String launcherSourcePath = resolveWindowsUpdateLauncherSource(
+      final String launcherSourcePath =
+          resolveWindowsUpdateLauncherSource(
             installedLauncherPath: installedLauncherPath,
           ) ??
           installedLauncherPath;
@@ -862,20 +1041,20 @@ class WindowsInstaller {
       }
       final String? stagedLauncherPath =
           useDelayedLauncher && Platform.isWindows
-              ? await stageWindowsUpdateLauncher(
-                  launcherPath: launcherSourcePath,
-                  stageRoot: handoffMarkerFile.parent,
-                )
-              : null;
+          ? await stageWindowsUpdateLauncher(
+              launcherPath: launcherSourcePath,
+              stageRoot: handoffMarkerFile.parent,
+            )
+          : null;
       if (useDelayedLauncher) {
         ErrorLogService.instance.log(
           'WindowsInstaller.stageLauncher',
           stagedLauncherPath != null
               ? 'Running update launcher from a staged copy outside the '
-                  'install dir: $stagedLauncherPath'
+                    'install dir: $stagedLauncherPath'
               : 'Staging the update launcher failed; falling back to the '
-                  'in-place copy at $installedLauncherPath '
-                  '(Inno may abort on it).',
+                    'in-place copy at $installedLauncherPath '
+                    '(Inno may abort on it).',
         );
       }
       final String executable = useDelayedLauncher
@@ -888,6 +1067,7 @@ class WindowsInstaller {
               installerPath: installerPath,
               installerArgs: args,
               appExecutablePath: resolvedExecutablePath,
+              elevatedInstallerSha256: elevateInstaller ? expectedSha256 : null,
             )
           : args;
       if (useDelayedLauncher &&
@@ -895,31 +1075,48 @@ class WindowsInstaller {
           Platform.isWindows &&
           !File(executable).existsSync()) {
         throw UpdateInstallerException(
-            'update launcher not found: $executable');
+          'update launcher not found: $executable',
+        );
       }
       ErrorLogService.instance.log(
         'WindowsInstaller.launch',
         useDelayedLauncher
             ? 'Launching Windows update launcher: $executable '
-                'parent=$pid installer=$installerPath'
+                  'parent=$pid installer=$installerPath'
             : 'Launching Windows installer: $installerPath',
       );
       final Future<WindowsInstallerStartedProcess> Function(
         String executable,
         List<String> args,
-      ) start = startProcess ?? _startDetachedLauncherProcess;
+      )
+      start = startProcess ?? _startDetachedLauncherProcess;
       final WindowsInstallerStartedProcess started = await start(
         executable,
         launchArgs,
       );
+      // UAC 同意框只在发起方窗口处于前台时直接弹出，否则只在任务栏闪烁。此刻用户刚
+      // 点了「更新」，本进程就是前台进程，是唯一有权把前台让给 launcher 的一方；
+      // 定向让渡（不用 ASFW_ANY），launcher 发起提权前再自己置前台（BUG-3567）。
+      final int? launcherPid = started.pid;
+      if (elevateInstaller && launcherPid != null && launcherPid > 0) {
+        final bool granted =
+            (grantForegroundTo ??
+            (Platform.isWindows
+                ? _allowSetForegroundWindow
+                : (int _) => false))(launcherPid);
+        ErrorLogService.instance.log(
+          'WindowsInstaller.elevate',
+          'AllowSetForegroundWindow(launcher pid=$launcherPid) -> $granted',
+        );
+      }
       ErrorLogService.instance.log(
         'WindowsInstaller.launch',
         useDelayedLauncher
             ? 'Windows update launcher launched: '
-                'target=${targetVersion ?? 'unknown'}, '
-                'launcherPid=${started.pid ?? 'unknown'}, log=$innoLogPath'
+                  'target=${targetVersion ?? 'unknown'}, '
+                  'launcherPid=${started.pid ?? 'unknown'}, log=$innoLogPath'
             : 'Windows installer launched: target=${targetVersion ?? 'unknown'}, '
-                'pid=${started.pid ?? 'unknown'}, log=$innoLogPath',
+                  'pid=${started.pid ?? 'unknown'}, log=$innoLogPath',
       );
     } on ProcessException catch (e) {
       final exception = UpdateInstallerException(
@@ -944,8 +1141,32 @@ class WindowsInstaller {
     // 只有安装器杀不掉的真外部锁（非 Fushi/WebView2 占用目标目录 libmpv）才在 preflight
     // 硬中止并要求用户手动关闭（见 _throwIfWindowsInstallBlocked，TODO-1181）。
     await Future<void>.delayed(Duration.zero);
-    await WindowsNativePreExit.prepareForExit(WindowsExitReason.update);
-    (exitProcess ?? exit)(0);
+    // 主动让位给安装器是正常退出：不标 clean 的话下次启动会把这次更新当成
+    // 「停在前台时没了，疑似闪退」弹闪退报告（反馈 3PqGTEsweI / 9ZYafFWPky /
+    // hfzlMGXJWr / msySECp2Cy 都是 WindowsInstaller.handoff 之后的这种误报）。意图先于
+    // 原生 teardown 落盘，teardown 卡住 / 被安装器强杀也不误报；结束经唯一出口标 clean。
+    final AppExitCoordinator coordinator = AppExitCoordinator.instance;
+    coordinator.begin('updateHandoff');
+    await coordinator.runStep(
+      'native pre-exit',
+      () => WindowsNativePreExit.prepareForExit(WindowsExitReason.update),
+    );
+    coordinator.terminate('updateHandoff', exitWith: exitProcess);
+  }
+
+  static Future<String> _sha256OfInstaller(File file) =>
+      ffcSha256File(file.path);
+
+  static bool _allowSetForegroundWindow(int pid) {
+    try {
+      final int Function(int) allow = DynamicLibrary.open('user32.dll')
+          .lookupFunction<Int32 Function(Uint32), int Function(int)>(
+            'AllowSetForegroundWindow',
+          );
+      return allow(pid) != 0;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<List<int>> _readHeaderBytes(File file) async {
@@ -972,16 +1193,19 @@ class WindowsInstaller {
     WindowsInstallerDiagnostics diagnostics,
     String innoLogPath,
   ) {
-    final List<WindowsProcessInfo> blockers =
-        _blockingWindowsInstallProcesses(diagnostics);
+    final List<WindowsProcessInfo> blockers = _blockingWindowsInstallProcesses(
+      diagnostics,
+    );
     if (blockers.isEmpty) return;
 
     final String target = diagnostics.targetInstallDir ?? 'unknown';
     final List<WindowsProcessInfo> externalLocks = blockers
-        .where((WindowsProcessInfo process) => !_installerCanClose(
-              process,
-              targetInstallDir: diagnostics.targetInstallDir,
-            ))
+        .where(
+          (WindowsProcessInfo process) => !_installerCanClose(
+            process,
+            targetInstallDir: diagnostics.targetInstallDir,
+          ),
+        )
         .toList(growable: false);
     if (externalLocks.isEmpty) {
       // 只剩安装器能强杀的 fushi.exe / WebView2 实例：不中止，记警告后继续启动安装器，
@@ -1010,12 +1234,16 @@ class WindowsInstaller {
         .map((WindowsProcessInfo process) => process.pid)
         .toSet();
     final List<WindowsProcessInfo> hookHolders = externalLocks
-        .where((WindowsProcessInfo process) =>
-            galHookHolderPids.contains(process.pid))
+        .where(
+          (WindowsProcessInfo process) =>
+              galHookHolderPids.contains(process.pid),
+        )
         .toList(growable: false);
     final List<WindowsProcessInfo> otherLocks = externalLocks
-        .where((WindowsProcessInfo process) =>
-            !galHookHolderPids.contains(process.pid))
+        .where(
+          (WindowsProcessInfo process) =>
+              !galHookHolderPids.contains(process.pid),
+        )
         .toList(growable: false);
 
     final StringBuffer message = StringBuffer(
@@ -1097,13 +1325,12 @@ class WindowsInstaller {
 
   static String _summarizeBlockingProcesses(
     List<WindowsProcessInfo> processes,
-  ) =>
-      processes
-          .map(
-            (WindowsProcessInfo process) =>
-                'PID ${process.pid}: ${process.path ?? process.name ?? 'unknown'}',
-          )
-          .join('; ');
+  ) => processes
+      .map(
+        (WindowsProcessInfo process) =>
+            'PID ${process.pid}: ${process.path ?? process.name ?? 'unknown'}',
+      )
+      .join('; ');
 
   static List<WindowsProcessInfo> _blockingWindowsInstallProcesses(
     WindowsInstallerDiagnostics diagnostics,
@@ -1145,11 +1372,7 @@ class WindowsInstaller {
         failedAt: failedAt,
       );
     } catch (e, s) {
-      ErrorLogService.instance.log(
-        'WindowsInstaller.markLaunchFailed',
-        e,
-        s,
-      );
+      ErrorLogService.instance.log('WindowsInstaller.markLaunchFailed', e, s);
     }
   }
 }
@@ -1162,27 +1385,33 @@ Future<WindowsInstallerDiagnostics> collectWindowsInstallerDiagnostics({
   final String targetInstallDir = currentInstallDir;
   final List<WindowsDetectedInstallLocation> detectedInstallLocations =
       <WindowsDetectedInstallLocation>[
-    WindowsDetectedInstallLocation(
-      source: 'current',
-      path: currentInstallDir,
-    ),
-    ...await queryWindowsRegisteredInstallLocations(),
-    ...detectWindowsHistoricalInstallLocations(),
-  ];
+        WindowsDetectedInstallLocation(
+          source: 'current',
+          path: currentInstallDir,
+        ),
+        ...await queryWindowsRegisteredInstallLocations(),
+        ...detectWindowsHistoricalInstallLocations(),
+      ];
   final List<WindowsProcessInfo> runningFushiProcesses =
       (await queryWindowsFushiProcesses())
-          .where((WindowsProcessInfo process) =>
-              currentProcessId == null || process.pid != currentProcessId)
+          .where(
+            (WindowsProcessInfo process) =>
+                currentProcessId == null || process.pid != currentProcessId,
+          )
           .toList(growable: false);
   final List<WindowsProcessInfo> libmpvModuleHolders =
       (await queryWindowsLibmpvModuleHolders(targetInstallDir))
-          .where((WindowsProcessInfo process) =>
-              currentProcessId == null || process.pid != currentProcessId)
+          .where(
+            (WindowsProcessInfo process) =>
+                currentProcessId == null || process.pid != currentProcessId,
+          )
           .toList(growable: false);
   final List<WindowsProcessInfo> galHookModuleHolders =
       (await queryWindowsGalHookModuleHolders(targetInstallDir))
-          .where((WindowsProcessInfo process) =>
-              currentProcessId == null || process.pid != currentProcessId)
+          .where(
+            (WindowsProcessInfo process) =>
+                currentProcessId == null || process.pid != currentProcessId,
+          )
           .toList(growable: false);
 
   return WindowsInstallerDiagnostics(
@@ -1201,32 +1430,25 @@ Future<WindowsInstallerDiagnostics> collectWindowsInstallerDiagnostics({
 }
 
 Future<List<WindowsDetectedInstallLocation>>
-    queryWindowsRegisteredInstallLocations() async {
+queryWindowsRegisteredInstallLocations() async {
   if (!Platform.isWindows) return const <WindowsDetectedInstallLocation>[];
   const String appId = r'{8F2C1A3E-7B4D-4E9A-9C21-0A1B2C3D4E5F}_is1';
   const String uninstallSubKey =
       r'Software\Microsoft\Windows\CurrentVersion\Uninstall\' + appId;
   const List<(WindowsRegistryRoot, String)> keys =
       <(WindowsRegistryRoot, String)>[
-    (WindowsRegistryRoot.currentUser, uninstallSubKey),
-    (WindowsRegistryRoot.localMachine, uninstallSubKey),
-  ];
+        (WindowsRegistryRoot.currentUser, uninstallSubKey),
+        (WindowsRegistryRoot.localMachine, uninstallSubKey),
+      ];
   final List<WindowsDetectedInstallLocation> result =
       <WindowsDetectedInstallLocation>[];
   for (final (WindowsRegistryRoot root, String subKey) in keys) {
     try {
       result.addAll(
         windowsRegistryInstallLocations(
-          installLocation: readWindowsRegistryString(
-                root,
-                subKey,
-                'InstallLocation',
-              ) ??
-              readWindowsRegistryString(
-                root,
-                subKey,
-                'Inno Setup: App Path',
-              ),
+          installLocation:
+              readWindowsRegistryString(root, subKey, 'InstallLocation') ??
+              readWindowsRegistryString(root, subKey, 'Inno Setup: App Path'),
           displayIcon: readWindowsRegistryString(root, subKey, 'DisplayIcon'),
         ),
       );
@@ -1282,13 +1504,11 @@ List<WindowsDetectedInstallLocation> detectWindowsHistoricalInstallLocations() {
     if ((Platform.environment['LOCALAPPDATA'] ?? '').isNotEmpty)
       '${Platform.environment['LOCALAPPDATA']}\\Hibiki',
   ];
-  return _dedupeInstallLocations(
-    <WindowsDetectedInstallLocation>[
-      for (final String path in candidates)
-        if (Directory(path).existsSync())
-          WindowsDetectedInstallLocation(source: 'historical', path: path),
-    ],
-  );
+  return _dedupeInstallLocations(<WindowsDetectedInstallLocation>[
+    for (final String path in candidates)
+      if (Directory(path).existsSync())
+        WindowsDetectedInstallLocation(source: 'historical', path: path),
+  ]);
 }
 
 String? windowsInstallPathMismatchWarning({
@@ -1296,14 +1516,18 @@ String? windowsInstallPathMismatchWarning({
   required List<WindowsDetectedInstallLocation> locations,
 }) {
   final List<WindowsDetectedInstallLocation> mismatches = locations
-      .where((WindowsDetectedInstallLocation location) =>
-          location.path.isNotEmpty &&
-          !_windowsPathEquals(location.path, targetInstallDir))
+      .where(
+        (WindowsDetectedInstallLocation location) =>
+            location.path.isNotEmpty &&
+            !_windowsPathEquals(location.path, targetInstallDir),
+      )
       .toList(growable: false);
   if (mismatches.isEmpty) return null;
   final String details = mismatches
-      .map((WindowsDetectedInstallLocation location) =>
-          '${location.source}: ${location.path}')
+      .map(
+        (WindowsDetectedInstallLocation location) =>
+            '${location.source}: ${location.path}',
+      )
       .join('; ');
   return 'Install locations differ from the running Fushi directory '
       '$targetInstallDir. This update will install only to the running '
@@ -1323,11 +1547,13 @@ Future<List<WindowsProcessInfo>> queryWindowsFushiProcesses() async {
   if (!Platform.isWindows) return const <WindowsProcessInfo>[];
   try {
     return windowsProcessesByNames(kFushiImageNames)
-        .map((WindowsProcessEntry entry) => WindowsProcessInfo(
-              pid: entry.pid,
-              name: entry.name,
-              path: entry.path,
-            ))
+        .map(
+          (WindowsProcessEntry entry) => WindowsProcessInfo(
+            pid: entry.pid,
+            name: entry.name,
+            path: entry.path,
+          ),
+        )
         .toList(growable: false);
   } catch (_) {
     return const <WindowsProcessInfo>[];
@@ -1355,11 +1581,13 @@ Future<List<WindowsProcessInfo>> queryWindowsLibmpvModuleHolders(
     final String libmpv =
         '$targetInstallDir${Platform.pathSeparator}libmpv-2.dll';
     return windowsProcessesHoldingFile(libmpv)
-        .map((WindowsProcessEntry entry) => WindowsProcessInfo(
-              pid: entry.pid,
-              name: entry.name,
-              path: entry.path,
-            ))
+        .map(
+          (WindowsProcessEntry entry) => WindowsProcessInfo(
+            pid: entry.pid,
+            name: entry.name,
+            path: entry.path,
+          ),
+        )
         .toList(growable: false);
   } catch (_) {
     return const <WindowsProcessInfo>[];
@@ -1400,8 +1628,10 @@ Future<List<WindowsProcessInfo>> queryWindowsGalHookModuleHolders(
     );
     if (!root.existsSync()) return const <WindowsProcessInfo>[];
     final List<String> binaries = <String>[
-      for (final FileSystemEntity entity
-          in root.listSync(recursive: true, followLinks: false))
+      for (final FileSystemEntity entity in root.listSync(
+        recursive: true,
+        followLinks: false,
+      ))
         if (entity is File &&
             (entity.path.toLowerCase().endsWith('.dll') ||
                 entity.path.toLowerCase().endsWith('.exe')))
@@ -1411,11 +1641,13 @@ Future<List<WindowsProcessInfo>> queryWindowsGalHookModuleHolders(
     // 通常同时持有 hook DLL 和它加载的 LunaHook DLL，结果已按 pid 去重）。逐文件开
     // 会话在这 28 个文件上实测 ~1 s 同步 FFI，正卡在下载完成→退出交给安装器之间。
     return windowsProcessesHoldingFiles(binaries)
-        .map((WindowsProcessEntry entry) => WindowsProcessInfo(
-              pid: entry.pid,
-              name: entry.name,
-              path: entry.path,
-            ))
+        .map(
+          (WindowsProcessEntry entry) => WindowsProcessInfo(
+            pid: entry.pid,
+            name: entry.name,
+            path: entry.path,
+          ),
+        )
         .toList(growable: false);
   } catch (_) {
     return const <WindowsProcessInfo>[];
@@ -1480,19 +1712,49 @@ String _normalizeWindowsPath(String path) {
       .toLowerCase();
 }
 
-Future<void> ensureWindowsInstallTargetWritable(Directory installDir) async {
+/// [probeWindowsInstallTargetWritable] 的结论。
+enum WindowsInstallDirWriteProbe {
+  /// 当前权限能在安装目录里建文件。
+  writable,
+
+  /// `ERROR_ACCESS_DENIED`：权限不够（典型是 `C:\Program Files`），提权能解决。
+  accessDenied,
+
+  /// 其它失败（磁盘满、受控文件夹访问、路径无效…），提权解决不了。
+  failed,
+}
+
+/// Win32 `ERROR_ACCESS_DENIED`。
+const int _kWin32ErrorAccessDenied = 5;
+
+/// 以当前进程权限实测 [installDir] 是否可写（真建一个探针文件再删掉——ACL / 继承 /
+/// 拒绝项的组合只有让系统自己判最可靠）。失败原因写进日志，由调用方决定是提权交接
+/// 还是报错。
+Future<WindowsInstallDirWriteProbe> probeWindowsInstallTargetWritable(
+  Directory installDir,
+) async {
   final File probe = File(
     '${installDir.path}${Platform.pathSeparator}.fushi-update-write-test',
   );
   try {
     await installDir.create(recursive: true);
     await probe.writeAsString('fushi updater preflight', flush: true);
-  } catch (e) {
-    throw UpdateInstallerException(
-      'Cannot write to installation directory: ${installDir.path}. '
-      'Close Fushi and run the installer as administrator, or reinstall '
-      'Fushi to a user-writable folder. Details: $e',
+    return WindowsInstallDirWriteProbe.writable;
+  } on FileSystemException catch (e) {
+    ErrorLogService.instance.log(
+      'WindowsInstaller.installDirNotWritable',
+      'Cannot write to installation directory ${installDir.path} with the '
+          'current privileges: $e',
     );
+    return e.osError?.errorCode == _kWin32ErrorAccessDenied
+        ? WindowsInstallDirWriteProbe.accessDenied
+        : WindowsInstallDirWriteProbe.failed;
+  } catch (e) {
+    ErrorLogService.instance.log(
+      'WindowsInstaller.installDirNotWritable',
+      'Cannot write to installation directory ${installDir.path}: $e',
+    );
+    return WindowsInstallDirWriteProbe.failed;
   } finally {
     try {
       if (await probe.exists()) await probe.delete();
@@ -1546,11 +1808,14 @@ String buildMacSwapScript({
   final StringBuffer b = StringBuffer();
   b.writeln('#!/bin/sh');
   b.writeln(
-      '# Fushi macOS in-app update swap (Phase 3). Waits for the running');
+    '# Fushi macOS in-app update swap (Phase 3). Waits for the running',
+  );
   b.writeln(
-      '# app to exit, then swaps the .app bundle and relaunches. Restores');
+    '# app to exit, then swaps the .app bundle and relaunches. Restores',
+  );
   b.writeln(
-      '# the previous bundle on any failure so a botched swap never leaves');
+    '# the previous bundle on any failure so a botched swap never leaves',
+  );
   b.writeln('# the user without a working app.');
   b.writeln('set -u');
   b.writeln('PARENT_PID=$parentPid');
@@ -1561,13 +1826,17 @@ String buildMacSwapScript({
   b.writeln('RESULT=${_shSingleQuote(resultPath)}');
   b.writeln('LOG=${_shSingleQuote(logPath)}');
   b.writeln(
-      r'''log() { echo "$(date '+%Y-%m-%dT%H:%M:%S') $1" >> "$LOG" 2>/dev/null || true; }''');
+    r'''log() { echo "$(date '+%Y-%m-%dT%H:%M:%S') $1" >> "$LOG" 2>/dev/null || true; }''',
+  );
   b.writeln(
-      r'''write_result() { printf '{"status":"%s","message":"%s"}' "$1" "$2" > "$RESULT" 2>/dev/null || true; }''');
+    r'''write_result() { printf '{"status":"%s","message":"%s"}' "$1" "$2" > "$RESULT" 2>/dev/null || true; }''',
+  );
   b.writeln(
-      '# Wait (bounded ~60s) for the parent process to exit. Uses a `ps`');
+    '# Wait (bounded ~60s) for the parent process to exit. Uses a `ps`',
+  );
   b.writeln(
-      '# liveness probe (never terminates anything) so the swap only starts');
+    '# liveness probe (never terminates anything) so the swap only starts',
+  );
   b.writeln('# once Fushi has quit on its own and released the bundle.');
   b.writeln('i=0');
   b.writeln(r'while ps -p "$PARENT_PID" > /dev/null 2>&1; do');
@@ -1580,21 +1849,25 @@ String buildMacSwapScript({
   b.writeln(r'  log "FAIL: $1"');
   b.writeln(r'  write_result failed "$1"');
   b.writeln(
-      r'  open "$TARGET_APP" 2>/dev/null || open "$BACKUP" 2>/dev/null || true');
+    r'  open "$TARGET_APP" 2>/dev/null || open "$BACKUP" 2>/dev/null || true',
+  );
   b.writeln(r'  rm -rf "$EXTRACT_DIR" 2>/dev/null || true');
   b.writeln('  exit 1');
   b.writeln('}');
   b.writeln(r'[ -d "$NEW_APP" ] || fail "extracted app bundle missing"');
   b.writeln(
-      '# Move the old bundle aside (reversible) rather than deleting first.');
+    '# Move the old bundle aside (reversible) rather than deleting first.',
+  );
   b.writeln(r'rm -rf "$BACKUP" 2>/dev/null || true');
   b.writeln(r'if [ -d "$TARGET_APP" ]; then');
   b.writeln(
-      r'  mv "$TARGET_APP" "$BACKUP" || fail "cannot move current app aside"');
+    r'  mv "$TARGET_APP" "$BACKUP" || fail "cannot move current app aside"',
+  );
   b.writeln('fi');
   b.writeln(r'if /usr/bin/ditto "$NEW_APP" "$TARGET_APP"; then');
   b.writeln(
-      r'  /usr/bin/xattr -dr com.apple.quarantine "$TARGET_APP" 2>/dev/null || true');
+    r'  /usr/bin/xattr -dr com.apple.quarantine "$TARGET_APP" 2>/dev/null || true',
+  );
   b.writeln(r'  rm -rf "$BACKUP" 2>/dev/null || true');
   b.writeln(r'  rm -rf "$EXTRACT_DIR" 2>/dev/null || true');
   b.writeln(r'  log "OK swapped -> $TARGET_APP"');
@@ -1606,7 +1879,8 @@ String buildMacSwapScript({
   b.writeln(r'  rm -rf "$TARGET_APP" 2>/dev/null || true');
   b.writeln(r'  [ -d "$BACKUP" ] && mv "$BACKUP" "$TARGET_APP"');
   b.writeln(
-      r'  fail "failed to copy new app into place; restored previous version"');
+    r'  fail "failed to copy new app into place; restored previous version"',
+  );
   b.writeln('fi');
   return b.toString();
 }
@@ -1673,10 +1947,12 @@ class MacInstaller {
       await extractDir.delete(recursive: true);
     }
     await extractDir.create(recursive: true);
-    final ProcessResult unzip = await Process.run(
-      '/usr/bin/ditto',
-      <String>['-x', '-k', zipPath, extractDir.path],
-    );
+    final ProcessResult unzip = await Process.run('/usr/bin/ditto', <String>[
+      '-x',
+      '-k',
+      zipPath,
+      extractDir.path,
+    ]);
     if (unzip.exitCode != 0) {
       throw UpdateInstallerException(
         'Failed to extract macOS update zip (ditto exit ${unzip.exitCode}): '
@@ -1703,9 +1979,11 @@ class MacInstaller {
       startedAt: clock(),
     );
     final int parentPid = currentPid ?? pid;
-    final String backupPath = '${updatesDir.path}${Platform.pathSeparator}'
+    final String backupPath =
+        '${updatesDir.path}${Platform.pathSeparator}'
         'mac-update-$targetVersion.backup';
-    final String logPath = '${updatesDir.path}${Platform.pathSeparator}'
+    final String logPath =
+        '${updatesDir.path}${Platform.pathSeparator}'
         'mac-update-$targetVersion.log';
     final String script = buildMacSwapScript(
       parentPid: parentPid,
@@ -1739,22 +2017,22 @@ class MacInstaller {
       );
     }
 
-    // 7. 退出本进程，让脚本接管替换。
-    (exitProcess ?? _defaultExit)(0);
+    // 7. 退出本进程，让脚本接管替换。主动退出 = 正常退出，标 clean，免得下次启动
+    // 把这次更新误报成闪退（同 Windows 安装器交接）。
+    AppExitCoordinator.instance.terminate(
+      'updateHandoff',
+      exitWith: exitProcess,
+    );
   }
 
   static Future<MacSwapStartedProcess> _startDetachedScript(
     String scriptPath,
   ) async {
-    final Process process = await Process.start(
-      '/bin/sh',
-      <String>[scriptPath],
-      mode: ProcessStartMode.detached,
-    );
+    final Process process = await Process.start('/bin/sh', <String>[
+      scriptPath,
+    ], mode: ProcessStartMode.detached);
     return MacSwapStartedProcess(pid: process.pid);
   }
-
-  static void _defaultExit(int code) => exit(code);
 
   static String? _findAppBundleIn(Directory dir) {
     try {

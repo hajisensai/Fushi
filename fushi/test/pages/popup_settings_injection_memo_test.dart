@@ -6,7 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/lookup/global_lookup_render.dart';
 import 'package:fushi/src/lookup/global_lookup_stack.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -211,6 +211,7 @@ void main() {
                     maxHeight: 600,
                     staticRevisions: revisions,
                     hostKey: hostKey,
+                    entriesStore: GlobalLookupEntriesStore(),
                   );
                   // 模拟平台侧 render 调用成功——只有此时才允许记账。
                   revisions.commit(hostKey, cold.pendingRevisions);
@@ -224,6 +225,7 @@ void main() {
                     maxHeight: 600,
                     staticRevisions: revisions,
                     hostKey: hostKey,
+                    entriesStore: GlobalLookupEntriesStore(),
                   );
                 }
                 return const SizedBox.shrink();
@@ -438,9 +440,20 @@ void main() {
             marker: 'window.__fushiPopupUiScale = 1.5',
           ),
           (
+            // 反馈 2jGkpD-iD6：弹窗缩放系数乘在界面大小之上，同样是 zoom 输入。
+            name: 'popupUiScaleFactor（弹窗缩放 → zoom）',
+            mutate: (MemoAppModel m) => m.popupUiScaleFactorValue = 0.5,
+            marker: 'window.__fushiPopupUiScale = 0.5',
+          ),
+          (
             name: 'dictionaryFontSize（词典字号 → zoom）',
             mutate: (MemoAppModel m) => m.dictionaryFontSizeValue = 24,
             marker: 'window.__fushiPopupFontSize = 24.0',
+          ),
+          (
+            name: 'librarySentencesEnabled（「我库里的例句」开关，作品图谱 L4）',
+            mutate: (MemoAppModel m) => m.librarySentencesEnabledValue = false,
+            marker: 'window.__fushiLibrarySentencesEnabled = false',
           ),
           (
             name: 'popupWheelSpeed（BUG-1026 滚轮速度）',
@@ -862,6 +875,7 @@ class MemoAppModel extends AppModel {
   // 每个可变字段恰好对应 _PopupStaticSettingsMemo 的一个比较项，供「逐字段失效」
   // 用例只翻一个输入（这样删掉某一行比较就只有它对应的用例会红）。
   double appUiScaleValue = 1.0;
+  double popupUiScaleFactorValue = 1.0;
   double dictionaryFontSizeValue = 16;
   double popupWheelSpeedValue = 1.0;
   int popupDictionaryColumnsValue = 1;
@@ -876,6 +890,7 @@ class MemoAppModel extends AppModel {
   double popupInstantScrollWheelStepValue = 0.5;
   double popupInstantScrollTouchStepValue = 0.25;
   bool compactGlossariesValue = false;
+  bool librarySentencesEnabledValue = true;
   List<Dictionary> dictionariesValue = <Dictionary>[];
   Map<String, String> customDictCSSValue = <String, String>{};
   String globalDictCSSValue = '';
@@ -883,7 +898,11 @@ class MemoAppModel extends AppModel {
   Directory? appDirectoryOverride;
 
   @override
+  bool get librarySentencesEnabled => librarySentencesEnabledValue;
+  @override
   double get appUiScale => appUiScaleValue;
+  @override
+  double get popupUiScaleFactor => popupUiScaleFactorValue;
   @override
   double get dictionaryFontSize => dictionaryFontSizeValue;
   @override

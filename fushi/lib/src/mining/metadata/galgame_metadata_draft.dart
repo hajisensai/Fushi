@@ -207,8 +207,10 @@ class SourceCandidate {
 const int kSourceCandidateSummaryRunes = 200;
 
 /// 把简介截成候选摘要：超长截断并加省略号；空 / 全空白 → null。纯函数。
-String? summaryExcerpt(Object? value,
-    {int maxRunes = kSourceCandidateSummaryRunes}) {
+String? summaryExcerpt(
+  Object? value, {
+  int maxRunes = kSourceCandidateSummaryRunes,
+}) {
   final String? text = draftString(value);
   if (text == null) {
     return null;

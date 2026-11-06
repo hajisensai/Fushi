@@ -12,10 +12,15 @@
 ///    与 probe 结果，假时钟 + 假 probe 即可完整单测；
 /// 3. [GalgamePlayTracker]——只负责按 200ms / 1s 起定时器驱动 2，并在 Windows 上
 ///    注入 1 的真实实现。非 Windows 平台整体 no-op（galgame 只做 Windows，见根
-///    `CLAUDE.md`「Galgame Hook 硬规则」）。
+///    `CLAUDE.md`「领域硬边界」）。
 ///
 /// 会话结束时**不落库**，只回调 [GalgamePlaySessionSink]；写 `galgame_sessions`
 /// 由调用方接线，计时器本身不认识数据库。
+///
+/// 计时器**不判活**（BUG-4002 起）：游戏进程还在不在由捕获会话的进程存活监视
+/// （`GalGameExitWatch`）单一来源决定——它确认退出就停会话（会话停即结算计时），
+/// 确认换了接手进程就调 [GalgamePlayTracker.followMainProcess]。旧实现计时器与会话
+/// 各自轮询同一个 PID、各有门槛与归属判据，两边结论曾经相反。
 library;
 
 import 'dart:async';
@@ -24,7 +29,7 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
-import 'package:fushi/src/mining/galgame_path_match.dart';
+import 'package:fushi/src/mining/galgame_process_group.dart';
 
 /// 计时语义（契约 §1.6）。
 enum GalgamePlayTimingMode {
@@ -38,7 +43,7 @@ enum GalgamePlayTimingMode {
 /// 入库门槛（秒）：不足此值的会话直接丢弃，不落库。
 const int kMinSessionSeconds = 60;
 
-/// 主进程连续判活失败多少次后重扫游戏目录换主 PID。
+/// 游戏进程连续判活失败多少次才算确认退出 / 换接手进程（`GalGameExitWatch`）。
 const int kMaxConsecutiveFailures = 3;
 
 /// 启动后多久做一次候选进程组全量扫描（毫秒）。
@@ -79,14 +84,14 @@ class GalgamePlaySessionResult {
   final int durationSeconds;
 
   @override
-  String toString() => 'GalgamePlaySessionResult(gameId: $gameId, '
+  String toString() =>
+      'GalgamePlaySessionResult(gameId: $gameId, '
       'startMs: $startMs, endMs: $endMs, durationSeconds: $durationSeconds)';
 }
 
 /// 会话结束回调（落库在别处接线）。
-typedef GalgamePlaySessionSink = Future<void> Function(
-  GalgamePlaySessionResult result,
-);
+typedef GalgamePlaySessionSink =
+    Future<void> Function(GalgamePlaySessionResult result);
 
 /// 计时器对操作系统的**全部**依赖面。Windows 实现见
 /// [GalgameWindowsProcessProbe]，测试注入假实现。
@@ -120,11 +125,10 @@ class GalgamePlaySessionMachine {
     required GalgamePlaySessionSink onSessionEnded,
     this.mode = GalgamePlayTimingMode.playtime,
     this.minSessionSeconds = kMinSessionSeconds,
-    this.maxConsecutiveFailures = kMaxConsecutiveFailures,
     this.candidateScanDelayMs = kCandidateScanDelayMs,
-  })  : _gameDirectory = gameDirectory,
-        _probe = probe,
-        _onSessionEnded = onSessionEnded;
+  }) : _probe = probe,
+       _group = GalgameProcessGroup(gameDirectory: gameDirectory, probe: probe),
+       _onSessionEnded = onSessionEnded;
 
   /// `galgames.id`。
   final String gameId;
@@ -135,14 +139,13 @@ class GalgamePlaySessionMachine {
   /// 入库门槛（秒）。
   final int minSessionSeconds;
 
-  /// 连续判活失败多少次触发换 PID。
-  final int maxConsecutiveFailures;
-
   /// 候选进程组全量扫描的延迟（毫秒）。
   final int candidateScanDelayMs;
 
-  final String _gameDirectory;
   final GalgameProcessProbe _probe;
+
+  /// 归属判据（含 canonicalize 回退），与会话的进程存活监视共用同一实现。
+  final GalgameProcessGroup _group;
   final GalgamePlaySessionSink _onSessionEnded;
 
   bool _running = false;
@@ -151,11 +154,9 @@ class GalgamePlaySessionMachine {
   int _endMs = 0;
   int _mainPid = 0;
   int _activeSeconds = 0;
-  int _consecutiveFailures = 0;
   bool _candidatesScanned = false;
   bool _foregroundIsGame = false;
-  String? _canonicalGameDirectory;
-  bool _canonicalGameDirectoryResolved = false;
+  bool _remotePresent = false;
 
   final Set<int> _candidatePids = <int>{};
 
@@ -183,6 +184,20 @@ class GalgamePlaySessionMachine {
   /// 最近一次前台采样是否落在候选进程组内。
   bool get foregroundIsGame => _foregroundIsGame;
 
+  /// 游戏窗口此刻是否正被串流到已连上的接收端（见 [setRemotePresence]）。
+  bool get remotePresent => _remotePresent;
+
+  /// 远端在场：游戏窗口正被串流到已连上的接收端（iPad / 手机）时，玩家的「前台」
+  /// 在接收端，主机上的游戏窗口按设计留在后台（窗口级捕获 + 只投递到该窗口的
+  /// 输入，`GameStreamInputFocus.background` 是默认值）。只认主机前台会让整场
+  /// 串流游玩累计 0 秒、不足门槛被丢弃（BUG-3616），所以在场期间与「前台是本游戏」
+  /// 同等计时——两者取或，同时成立也只记一秒，不双计。
+  ///
+  /// 在场状态由外部（串流宿主）维护，与会话起止无关：可以在 [start] 之前设置。
+  void setRemotePresence(bool present) {
+    _remotePresent = present;
+  }
+
   /// 当前候选进程组快照。
   Set<int> get candidatePids => Set<int>.unmodifiable(_candidatePids);
 
@@ -197,7 +212,6 @@ class GalgamePlaySessionMachine {
     _endMs = nowMs;
     _mainPid = mainPid;
     _activeSeconds = 0;
-    _consecutiveFailures = 0;
     _candidatesScanned = false;
     _foregroundIsGame = false;
     _candidatePids
@@ -226,7 +240,7 @@ class GalgamePlaySessionMachine {
       return;
     }
     final String? imagePath = _probe.processImagePath(foregroundPid);
-    if (imagePath != null && _isUnderGameDirectory(imagePath)) {
+    if (imagePath != null && _group.isUnderGameDirectory(imagePath)) {
       _candidatePids.add(foregroundPid);
       _foregroundIsGame = true;
       return;
@@ -236,7 +250,7 @@ class GalgamePlaySessionMachine {
     _foregroundIsGame = false;
   }
 
-  /// 1s 累加 tick：候选组延迟扫描 → 按模式累加 → 主进程判活。
+  /// 1s 累加 tick：候选组延迟扫描 → 按模式累加。判活不在这里（见文件头）。
   void onSecondTick({required int nowMs}) {
     if (!_running) return;
     _endMs = nowMs;
@@ -244,13 +258,13 @@ class GalgamePlaySessionMachine {
       _candidatesScanned = true;
       _rescanCandidates();
     }
-    if (mode == GalgamePlayTimingMode.playtime && _foregroundIsGame) {
+    if (mode == GalgamePlayTimingMode.playtime &&
+        (_foregroundIsGame || _remotePresent)) {
       _activeSeconds++;
     }
-    _tickLiveness(nowMs);
   }
 
-  /// 外部主动结束会话（用户关闭游戏库、App 退出等）。幂等。
+  /// 外部主动结束会话（游戏退出、停止捕获、App 退出等）。幂等。
   Future<void> stop({required int nowMs}) {
     if (!_running) return pendingWrite;
     _endMs = nowMs;
@@ -258,37 +272,17 @@ class GalgamePlaySessionMachine {
     return pendingWrite;
   }
 
-  /// 主进程判活：连续失败 [maxConsecutiveFailures] 次才动作——单次 `OpenProcess`
-  /// 失败可能只是瞬时权限/句柄抖动，立刻换 PID 会把正常会话打断。
-  void _tickLiveness(int nowMs) {
-    if (_probe.isProcessAlive(_mainPid)) {
-      _consecutiveFailures = 0;
-      return;
-    }
-    _consecutiveFailures++;
-    if (_consecutiveFailures < maxConsecutiveFailures) return;
-    final int? next = _findLiveCandidate();
-    if (next != null) {
-      _mainPid = next;
-      _candidatePids.add(next);
-      _consecutiveFailures = 0;
-      return;
-    }
-    _end(nowMs);
-  }
-
-  /// 找一个仍活着的替补主进程。
+  /// 游戏的主进程换人了（会话的进程存活监视确认原进程退出、目录下有接手进程，或
+  /// 开局不知道 PID 时认领到了游戏进程）：改认 [pid] 为主进程，计时不中断。
   ///
-  /// **先重扫再挑**，不走「先在旧候选集里碰运气」的捷径：旧集合里可能有已退出、
-  /// PID 又被系统回收给别人的条目，直接判活会把毫不相干的进程认成本游戏。重扫一次
-  /// 只发生在主进程连续失活之后，成本可忽略。
-  int? _findLiveCandidate() {
+  /// **先重扫再收编**：旧候选集里可能有已退出、PID 又被系统回收给别人的条目，
+  /// 不重建就会被当成本游戏继续计前台时间。
+  void followMainProcess(int pid) {
+    if (!_running || pid <= 0) return;
+    _mainPid = pid;
     _rescanCandidates();
-    for (final int pid in _candidatePids.toList(growable: false)) {
-      if (pid == _mainPid) continue;
-      if (_probe.isProcessAlive(pid)) return pid;
-    }
-    return null;
+    _candidatePids.add(pid);
+    _rejectedPids.remove(pid);
   }
 
   /// 重建候选进程组 = 游戏目录下的全部在跑进程（+ 仍活着的主 PID）。
@@ -297,32 +291,12 @@ class GalgamePlaySessionMachine {
   /// 变成误判「前台是游戏」的来源。主 PID 只在**仍活着**时保留——它可能因权限问题
   /// 读不到 exe 路径而扫不进来，但一旦它已经死了就没有任何理由继续留着。
   void _rescanCandidates() {
-    final Set<int> scanned = <int>{};
-    for (final GalgameProcessInfo info in _probe.listProcesses()) {
-      final String? imagePath = info.imagePath;
-      if (info.pid <= 0 || imagePath == null) continue;
-      if (_isUnderGameDirectory(imagePath)) scanned.add(info.pid);
-    }
-    if (_probe.isProcessAlive(_mainPid)) scanned.add(_mainPid);
+    final Set<int> scanned = _group.scanMembers();
+    if (_group.isAlive(_mainPid)) scanned.add(_mainPid);
     _candidatePids
       ..clear()
       ..addAll(scanned);
     _rejectedPids.removeAll(scanned);
-  }
-
-  /// 原始路径与 `canonicalize` 后的路径任一命中即算在游戏目录下（游戏装在符号
-  /// 链接 / junction 后面时，进程报的是解析后的真实路径）。
-  bool _isUnderGameDirectory(String path) {
-    if (galgamePathIsWithin(path, _gameDirectory)) return true;
-    if (!_canonicalGameDirectoryResolved) {
-      _canonicalGameDirectoryResolved = true;
-      _canonicalGameDirectory = _probe.canonicalize(_gameDirectory);
-    }
-    final String? canonicalDirectory = _canonicalGameDirectory;
-    if (canonicalDirectory == null) return false;
-    final String? canonicalPath = _probe.canonicalize(path);
-    if (canonicalPath == null) return false;
-    return galgamePathIsWithin(canonicalPath, canonicalDirectory);
   }
 
   /// 结算：按模式算时长，达门槛才回调 sink。幂等（[_ended] 守卫）。
@@ -362,14 +336,14 @@ class GalgamePlayTracker {
     int Function()? nowMs,
     Duration foregroundInterval = const Duration(milliseconds: 200),
     Duration accrualInterval = const Duration(seconds: 1),
-  })  : _gameDirectory = gameDirectory,
-        _onSessionEnded = onSessionEnded,
-        _probe = probe,
-        _mode = mode,
-        _isWindows = isWindows ?? Platform.isWindows,
-        _nowMs = nowMs ?? _defaultNowMs,
-        _foregroundInterval = foregroundInterval,
-        _accrualInterval = accrualInterval;
+  }) : _gameDirectory = gameDirectory,
+       _onSessionEnded = onSessionEnded,
+       _probe = probe,
+       _mode = mode,
+       _isWindows = isWindows ?? Platform.isWindows,
+       _nowMs = nowMs ?? _defaultNowMs,
+       _foregroundInterval = foregroundInterval,
+       _accrualInterval = accrualInterval;
 
   static int _defaultNowMs() => DateTime.now().millisecondsSinceEpoch;
 
@@ -388,6 +362,15 @@ class GalgamePlayTracker {
   Timer? _foregroundTimer;
   Timer? _accrualTimer;
   GalgamePlaySessionMachine? _machine;
+  bool _remotePresent = false;
+
+  /// 远端在场（游戏窗口正被串流到已连上的接收端），见
+  /// [GalgamePlaySessionMachine.setRemotePresence]。启动前设置的值在 [start] 时带入。
+  bool get remotePresent => _remotePresent;
+  set remotePresent(bool present) {
+    _remotePresent = present;
+    _machine?.setRemotePresence(present);
+  }
 
   /// 当前状态机（未启动 / 非 Windows 时为 null）。
   @visibleForTesting
@@ -406,7 +389,7 @@ class GalgamePlayTracker {
       probe: probe,
       onSessionEnded: _onSessionEnded,
       mode: _mode,
-    );
+    )..setRemotePresence(_remotePresent);
     machine.start(nowMs: _nowMs(), mainPid: mainPid);
     _machine = machine;
     _foregroundTimer = Timer.periodic(_foregroundInterval, (_) {
@@ -417,9 +400,12 @@ class GalgamePlayTracker {
     });
     _accrualTimer = Timer.periodic(_accrualInterval, (_) {
       machine.onSecondTick(nowMs: _nowMs());
-      if (!machine.isRunning) unawaited(stop());
     });
   }
+
+  /// 游戏主进程换成了 [pid]（见 [GalgamePlaySessionMachine.followMainProcess]）。
+  /// 由捕获会话的进程存活监视调用；未启动 / 非 Windows 时是空操作。
+  void followMainProcess(int pid) => _machine?.followMainProcess(pid);
 
   /// 结束计时并等待结算回调完成。非 Windows / 未启动时是空操作。
   Future<void> stop() async {
@@ -440,32 +426,37 @@ class GalgamePlayTracker {
 /// `desktop_foreground_guard.dart` / `selection_capture_ffi.dart` 也是这个范式。
 class GalgameWindowsProcessProbe implements GalgameProcessProbe {
   GalgameWindowsProcessProbe()
-      : _getForegroundWindow = _user32.lookupFunction<
-            _GetForegroundWindowNative,
-            _GetForegroundWindowDart>('GetForegroundWindow'),
-        _getWindowThreadProcessId = _user32.lookupFunction<
+    : _getForegroundWindow = _user32
+          .lookupFunction<_GetForegroundWindowNative, _GetForegroundWindowDart>(
+            'GetForegroundWindow',
+          ),
+      _getWindowThreadProcessId = _user32
+          .lookupFunction<
             _GetWindowThreadProcessIdNative,
-            _GetWindowThreadProcessIdDart>('GetWindowThreadProcessId'),
-        _openProcess =
-            _kernel32.lookupFunction<_OpenProcessNative, _OpenProcessDart>(
-                'OpenProcess'),
-        _getExitCodeProcess = _kernel32.lookupFunction<
-            _GetExitCodeProcessNative,
-            _GetExitCodeProcessDart>('GetExitCodeProcess'),
-        _queryFullProcessImageName = _kernel32.lookupFunction<
+            _GetWindowThreadProcessIdDart
+          >('GetWindowThreadProcessId'),
+      _openProcess = _kernel32
+          .lookupFunction<_OpenProcessNative, _OpenProcessDart>('OpenProcess'),
+      _getExitCodeProcess = _kernel32
+          .lookupFunction<_GetExitCodeProcessNative, _GetExitCodeProcessDart>(
+            'GetExitCodeProcess',
+          ),
+      _queryFullProcessImageName = _kernel32
+          .lookupFunction<
             _QueryFullProcessImageNameNative,
-            _QueryFullProcessImageNameDart>('QueryFullProcessImageNameW'),
-        _createToolhelp32Snapshot = _kernel32.lookupFunction<
+            _QueryFullProcessImageNameDart
+          >('QueryFullProcessImageNameW'),
+      _createToolhelp32Snapshot = _kernel32
+          .lookupFunction<
             _CreateToolhelp32SnapshotNative,
-            _CreateToolhelp32SnapshotDart>('CreateToolhelp32Snapshot'),
-        _process32First =
-            _kernel32.lookupFunction<_Process32Native, _Process32Dart>(
-                'Process32FirstW'),
-        _process32Next = _kernel32
-            .lookupFunction<_Process32Native, _Process32Dart>('Process32NextW'),
-        _closeHandle =
-            _kernel32.lookupFunction<_CloseHandleNative, _CloseHandleDart>(
-                'CloseHandle');
+            _CreateToolhelp32SnapshotDart
+          >('CreateToolhelp32Snapshot'),
+      _process32First = _kernel32
+          .lookupFunction<_Process32Native, _Process32Dart>('Process32FirstW'),
+      _process32Next = _kernel32
+          .lookupFunction<_Process32Native, _Process32Dart>('Process32NextW'),
+      _closeHandle = _kernel32
+          .lookupFunction<_CloseHandleNative, _CloseHandleDart>('CloseHandle');
 
   static final DynamicLibrary _user32 = DynamicLibrary.open('user32.dll');
   static final DynamicLibrary _kernel32 = DynamicLibrary.open('kernel32.dll');
@@ -505,7 +496,7 @@ class GalgameWindowsProcessProbe implements GalgameProcessProbe {
 
   /// `GetExitCodeProcess` 返回 `STILL_ACTIVE`(259) 即在跑。
   ///
-  /// 已知 Win32 边角：进程若真以退出码 259 结束，这里会误判成仍存活。计时器为此
+  /// 已知 Win32 边角：进程若真以退出码 259 结束，这里会误判成仍存活。进程存活监视为此
   /// 才有「连续 [kMaxConsecutiveFailures] 次失败 + 重扫目录」这一层，而不是拿单次
   /// 判活当真理。
   @override
@@ -630,65 +621,48 @@ final class _ProcessEntry32W extends Struct {
 typedef _GetForegroundWindowNative = IntPtr Function();
 typedef _GetForegroundWindowDart = int Function();
 
-typedef _GetWindowThreadProcessIdNative = Uint32 Function(
-  IntPtr hWnd,
-  Pointer<Uint32> processId,
-);
-typedef _GetWindowThreadProcessIdDart = int Function(
-  int hWnd,
-  Pointer<Uint32> processId,
-);
+typedef _GetWindowThreadProcessIdNative =
+    Uint32 Function(IntPtr hWnd, Pointer<Uint32> processId);
+typedef _GetWindowThreadProcessIdDart =
+    int Function(int hWnd, Pointer<Uint32> processId);
 
-typedef _OpenProcessNative = IntPtr Function(
-  Uint32 desiredAccess,
-  Int32 inheritHandle,
-  Uint32 processId,
-);
-typedef _OpenProcessDart = int Function(
-  int desiredAccess,
-  int inheritHandle,
-  int processId,
-);
+typedef _OpenProcessNative =
+    IntPtr Function(
+      Uint32 desiredAccess,
+      Int32 inheritHandle,
+      Uint32 processId,
+    );
+typedef _OpenProcessDart =
+    int Function(int desiredAccess, int inheritHandle, int processId);
 
-typedef _GetExitCodeProcessNative = Int32 Function(
-  IntPtr process,
-  Pointer<Uint32> exitCode,
-);
-typedef _GetExitCodeProcessDart = int Function(
-  int process,
-  Pointer<Uint32> exitCode,
-);
+typedef _GetExitCodeProcessNative =
+    Int32 Function(IntPtr process, Pointer<Uint32> exitCode);
+typedef _GetExitCodeProcessDart =
+    int Function(int process, Pointer<Uint32> exitCode);
 
-typedef _QueryFullProcessImageNameNative = Int32 Function(
-  IntPtr process,
-  Uint32 flags,
-  Pointer<Utf16> exeName,
-  Pointer<Uint32> size,
-);
-typedef _QueryFullProcessImageNameDart = int Function(
-  int process,
-  int flags,
-  Pointer<Utf16> exeName,
-  Pointer<Uint32> size,
-);
+typedef _QueryFullProcessImageNameNative =
+    Int32 Function(
+      IntPtr process,
+      Uint32 flags,
+      Pointer<Utf16> exeName,
+      Pointer<Uint32> size,
+    );
+typedef _QueryFullProcessImageNameDart =
+    int Function(
+      int process,
+      int flags,
+      Pointer<Utf16> exeName,
+      Pointer<Uint32> size,
+    );
 
-typedef _CreateToolhelp32SnapshotNative = IntPtr Function(
-  Uint32 flags,
-  Uint32 processId,
-);
-typedef _CreateToolhelp32SnapshotDart = int Function(
-  int flags,
-  int processId,
-);
+typedef _CreateToolhelp32SnapshotNative =
+    IntPtr Function(Uint32 flags, Uint32 processId);
+typedef _CreateToolhelp32SnapshotDart = int Function(int flags, int processId);
 
-typedef _Process32Native = Int32 Function(
-  IntPtr snapshot,
-  Pointer<_ProcessEntry32W> entry,
-);
-typedef _Process32Dart = int Function(
-  int snapshot,
-  Pointer<_ProcessEntry32W> entry,
-);
+typedef _Process32Native =
+    Int32 Function(IntPtr snapshot, Pointer<_ProcessEntry32W> entry);
+typedef _Process32Dart =
+    int Function(int snapshot, Pointer<_ProcessEntry32W> entry);
 
 typedef _CloseHandleNative = Int32 Function(IntPtr handle);
 typedef _CloseHandleDart = int Function(int handle);

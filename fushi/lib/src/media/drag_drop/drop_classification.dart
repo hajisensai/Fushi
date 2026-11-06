@@ -1,3 +1,6 @@
+import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
+import 'package:fushi_engine/media/media_extensions.dart'
+    show isAudioOnlyMediaPath;
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
     show blurayDiscRootForFile;
 import 'package:path/path.dart' as p;
@@ -25,14 +28,8 @@ const Set<String> kDragBookExtensions = <String>{
   'xml',
 };
 
-/// 字幕扩展名（不带点，小写）。
-const Set<String> kDragSubtitleExtensions = <String>{
-  'srt',
-  'vtt',
-  'ass',
-  'ssa',
-  'lrc',
-};
+/// 字幕扩展名（不带点，小写）= 有声书字幕唯一真相源 [kAudiobookSubtitleExtensions]。
+const Set<String> kDragSubtitleExtensions = kAudiobookSubtitleExtensions;
 
 /// 视频扩展名（不带点，小写）。镜像 [kVideoExtensions]（media_extensions.dart
 /// 共享真相源，文件夹扫描 / 刮削同用一份），守卫测试钉死两者同步——否则拖入
@@ -60,21 +57,14 @@ const Set<String> kDragVideoExtensions = <String>{
 /// 播放列表扩展名（不带点，小写）。扩展 M3U（m3u8/m3u）= 多集视频清单，语义不同于
 /// 单个视频文件：拖入后走 [parseM3u8] 解析成 playlist VideoBook（多集 + 各集进度），
 /// 不能当单视频导入。故单列一类，与 [kDragVideoExtensions] 区分。
-const Set<String> kDragPlaylistExtensions = <String>{
-  'm3u8',
-  'm3u',
-};
+const Set<String> kDragPlaylistExtensions = <String>{'m3u8', 'm3u'};
 
 /// 词典包扩展名（不带点，小写）。= 词典管理页文件选择器实际能导入的格式
 /// （Yomitan/Migaku/mdict/dsl 的 zip + 裸 .dsl/.mdx），见 DictionaryImportManager
 /// 的 detectFormat。`.ifo`/`.css` 不在此列：前者非独立导入单位、后者是随词典的样式
 /// 附件（拖单个 css 不构成一次导入）。词典拖放是词典管理页专属落点，与书架/视频
 /// 表面（books/video）互不影响，故 .zip 在此被识别为词典包而非 unknown。
-const Set<String> kDragDictionaryExtensions = <String>{
-  'zip',
-  'dsl',
-  'mdx',
-};
+const Set<String> kDragDictionaryExtensions = <String>{'zip', 'dsl', 'mdx'};
 
 /// 漫画扩展名（不带点，小写）：**明确**的漫画载体，落点表面一见即知。
 ///
@@ -106,9 +96,7 @@ const Set<String> kDragMangaExtensions = <String>{
 /// 又一处「按钮能导、拖进去不认」。判据由调用方注入（widget 层传
 /// `MangaModule.isImageArchive`，即 `MangaArchiveImporter.looksLikeImageArchive`），
 /// 分类层自身仍不碰文件系统；判据缺席时 zip 维持词典包分类，向后兼容。
-const Set<String> kDragImageArchiveProbeExtensions = <String>{
-  'zip',
-};
+const Set<String> kDragImageArchiveProbeExtensions = <String>{'zip'};
 
 /// 落点**偏好漫画**（漫画库）时额外开包定性的扩展名（不带点，小写）。
 ///
@@ -133,8 +121,8 @@ const Set<String> kDragMangaSurfaceDirectExtensions = <String>{'pdf'};
 /// [classifyDroppedFiles] / `probeDroppedImageArchives` 按落点取开包扩展名。
 Set<String> dragImageArchiveProbeExtensionsFor({required bool preferManga}) =>
     preferManga
-        ? kDragMangaSurfaceProbeExtensions
-        : kDragImageArchiveProbeExtensions;
+    ? kDragMangaSurfaceProbeExtensions
+    : kDragImageArchiveProbeExtensions;
 
 /// 看得出是漫画包、但当前**导入器不支持**的扩展名（不带点，小写）。
 ///
@@ -144,7 +132,10 @@ Set<String> dragImageArchiveProbeExtensionsFor({required bool preferManga}) =>
 /// Superseded by the supported set above; RAR/CBR/CB7 no longer enter here.
 const Set<String> kDragUnsupportedMangaExtensions = <String>{};
 
-/// 音频扩展名（不带点，小写）。镜像 AudiobookStorage.audioExtensions（守卫测试钉死同步）。
+/// 音频扩展名（不带点，小写）。镜像 AudiobookStorage.audioExtensions（守卫测试钉死同步）：
+/// 这是**有声书素材**的口径（书架挂书卡、`.mp4` 也算）。「是不是纯音频、要不要交给音乐
+/// 库」不看本表，看 [DroppedFiles.pureAudios]（[isAudioOnlyMediaPath]，范围更宽：有声书
+/// 播放器 just_audio 在 Android 上解不了的 ape / dsf / tta / wv / mka 也算纯音频）。
 const Set<String> kDragAudioExtensions = <String>{
   'mp3',
   'm4a',
@@ -166,9 +157,7 @@ const Set<String> kDragAudioExtensions = <String>{
 /// （`ManualDownloadTaskDialog`）预填种子——与该对话框「选 .torrent 文件」按钮
 /// 同一条入库路径，不在拖放层另解 metainfo。磁力链接不经此处：它是字符串不是
 /// 文件，桌面拖放通道也不会把它当路径送进来。
-const Set<String> kDragTorrentExtensions = <String>{
-  'torrent',
-};
+const Set<String> kDragTorrentExtensions = <String>{'torrent'};
 
 /// 拖入文件按扩展名分类的结果。一个路径可同时落入多个类（如 .mp4 既是视频又是音频），
 /// 由落点上下文（DropSurface）决定最终语义。
@@ -187,6 +176,7 @@ class DroppedFiles {
     this.directories = const <String>[],
     this.torrents = const <String>[],
     this.blurayDiscs = const <String>[],
+    this.pureAudios = const <String>[],
   });
 
   final List<String> books;
@@ -253,15 +243,13 @@ class DroppedFiles {
         blurayDiscs.contains(p.dirname(normalized));
   }
 
-  /// 视频库能收录的媒体：全部视频 + 不是视频的纯音频（`.mp4` 两类都在，只算一次）。
+  /// 拖入的纯音频（[isAudioOnlyMediaPath]；`.mp4` 首先是视频，不算）。
   ///
-  /// 纯音频在视频页按「无画面的视频」入库（专辑曲目等）；书架表面仍把音频当有声书
-  /// 素材（挂到书卡），不走这里。
-  List<String> get videoLibraryMedia => <String>[
-    ...videos,
-    for (final String audio in audios)
-      if (!videos.contains(audio)) audio,
-  ];
+  /// 视频页拖入时交给音乐库（`MusicAudioIntake.importAudioFiles`，反馈
+  /// QAondMh4M5），不进视频库；书架表面仍把音频当有声书素材（挂到书卡，只看
+  /// [audios]），不走这里。与 [audios] 交叠但不是它的子集：`.ape` / `.dsf` 这类有声书
+  /// 播放器放不了的格式只在这里。
+  final List<String> pureAudios;
 
   /// 是否有任何可被本功能识别（非 unknown）的文件。
   bool get hasAny =>
@@ -269,6 +257,7 @@ class DroppedFiles {
       videos.isNotEmpty ||
       subtitles.isNotEmpty ||
       audios.isNotEmpty ||
+      pureAudios.isNotEmpty ||
       playlists.isNotEmpty ||
       dictionaries.isNotEmpty ||
       urls.isNotEmpty ||
@@ -303,11 +292,16 @@ bool isImportableDropUrl(String candidate) {
 ///
 /// [isDirectory] 是唯一的外注入判据：拖入的**目录**（漫画页图文件夹）没有扩展名，
 /// 纯扩展名分类无法与「无扩展名的文件」区分，而本函数不碰文件系统。调用方
-/// （widget 层）传 `(pth) => Directory(pth).existsSync()`，测试注入假谓词。
+/// （widget 层）先用 async 文件 API（`FileSystemEntity.isDirectory`，各路径
+/// `Future.wait` 并发）判完，再传**查表**谓词（如 `directories.contains`）；测试注入
+/// 假谓词。**禁止**在谓词里做同步 stat（`existsSync` 之类）：拖进来的常是网络盘上的
+/// 文件，同步 stat 冷目录要数秒、冻结 UI isolate（BUG-3756）。
 /// 不传（默认 null）时行为与历史逐字节一致——目录会落进 [DroppedFiles.unknown]。
 ///
-/// [blurayDiscRootForDirectory] 同理由 widget 层注入（`bluray_disc.dart` 的同名函数，
-/// 要看目录下有没有 `BDMV/PLAYLIST`）；盘内**文件**只看路径形状，本函数自己认。
+/// [blurayDiscRootForDirectory] 同理：调用方先对判为目录的路径 await
+/// `bluray_disc.dart` 的同名 async 函数（看目录下有没有 `BDMV/PLAYLIST`），把
+/// 「目录 → 盘根」结果做成表，这里只传查表函数（如 `(d) => discRoots[d]`）；
+/// 盘内**文件**只看路径形状，本函数自己认。
 ///
 /// [preferManga]：落点是漫画库。图片型 `.epub` 经 [isImageArchive] 归漫画、`.pdf`
 /// 直接归漫画（见 [kDragMangaSurfaceProbeExtensions] / [kDragMangaSurfaceDirectExtensions]）。
@@ -319,12 +313,14 @@ DroppedFiles classifyDroppedFiles(
   String? Function(String directory)? blurayDiscRootForDirectory,
   bool preferManga = false,
 }) {
-  final Set<String> probeExtensions =
-      dragImageArchiveProbeExtensionsFor(preferManga: preferManga);
+  final Set<String> probeExtensions = dragImageArchiveProbeExtensionsFor(
+    preferManga: preferManga,
+  );
   final List<String> books = <String>[];
   final List<String> videos = <String>[];
   final List<String> subtitles = <String>[];
   final List<String> audios = <String>[];
+  final List<String> pureAudios = <String>[];
   final List<String> playlists = <String>[];
   final List<String> dictionaries = <String>[];
   final List<String> urls = <String>[];
@@ -397,6 +393,10 @@ DroppedFiles classifyDroppedFiles(
       audios.add(path);
       matched = true;
     }
+    if (isAudioOnlyMediaPath(path)) {
+      pureAudios.add(path);
+      matched = true;
+    }
     if (kDragDictionaryExtensions.contains(ext)) {
       dictionaries.add(path);
       matched = true;
@@ -422,6 +422,7 @@ DroppedFiles classifyDroppedFiles(
     torrents: torrents,
     unknown: unknown,
     blurayDiscs: blurayDiscs.toList(),
+    pureAudios: pureAudios,
   );
 }
 

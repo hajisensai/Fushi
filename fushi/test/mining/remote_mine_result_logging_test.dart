@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
-import 'package:fushi/utils.dart' show ErrorLogService;
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// TODO-1303：远端制卡（浏览器扩展）失败必须**写进错误日志 + 回带诊断**，不再只
 /// `debugPrint` 进黑洞。`remoteMineResultFromOutcome` / `remoteMineError` 是那条真相路径：
@@ -12,8 +12,9 @@ void main() {
 
   test('error outcome -> RemoteMineResult error + 写进 ErrorLogService', () {
     final int before = ErrorLogService.instance.entries.length;
-    final RemoteMineResult r =
-        remoteMineResultFromOutcome(MineOutcome.failure('boom'));
+    final RemoteMineResult r = remoteMineResultFromOutcome(
+      MineOutcome.failure('boom'),
+    );
     expect(r.result, 'error');
     expect(r.detail, 'boom');
     expect(r.message, isNotNull);
@@ -22,6 +23,21 @@ void main() {
     expect(entries.length, greaterThan(before));
     expect(entries.last.source, 'Anki.mineEntry');
     expect(entries.last.error, contains('boom'));
+    // 落卡阶段失败（AnkiConnect 不可达等）是环境问题：必须显式标 transient，扩展据此
+    // 不计该项尝试次数，不会把整条队列移进失败分组。
+    expect(r.errorKind, RemoteMineErrorKind.transient);
+    expect(r.errorCode, isNull);
+  });
+
+  test('反馈 E52FUMdbR6：失败分类码随结果回传给互联客户端', () {
+    final RemoteMineResult r = remoteMineResultFromOutcome(
+      MineOutcome.failure(
+        'refused',
+        errorCode: AnkiErrorCode.connectionRefused,
+      ),
+    );
+    expect(r.result, 'error');
+    expect(r.errorCode, AnkiErrorCode.connectionRefused);
   });
 
   test('remoteMineError 写日志并回带 reason/detail', () {
@@ -41,15 +57,17 @@ void main() {
 
   test('success + audioWarning -> message 带警告、result success（部分成功）', () {
     final RemoteMineResult r = remoteMineResultFromOutcome(
-        const MineOutcome.success(audioWarning: 'audio 404'));
+      const MineOutcome.success(audioWarning: 'audio 404'),
+    );
     expect(r.result, 'success');
     expect(r.message, 'audio 404');
     expect(r.detail, isNull);
   });
 
   test('纯成功 -> 无 message/detail', () {
-    final RemoteMineResult r =
-        remoteMineResultFromOutcome(const MineOutcome.success());
+    final RemoteMineResult r = remoteMineResultFromOutcome(
+      const MineOutcome.success(),
+    );
     expect(r.result, 'success');
     expect(r.message, isNull);
     expect(r.detail, isNull);
@@ -57,11 +75,14 @@ void main() {
 
   test('duplicate/notConfigured -> 结果名直出、不写错误日志', () {
     final int before = ErrorLogService.instance.entries.length;
-    expect(remoteMineResultFromOutcome(const MineOutcome.duplicate()).result,
-        'duplicate');
     expect(
-        remoteMineResultFromOutcome(const MineOutcome.notConfigured()).result,
-        'notConfigured');
+      remoteMineResultFromOutcome(const MineOutcome.duplicate()).result,
+      'duplicate',
+    );
+    expect(
+      remoteMineResultFromOutcome(const MineOutcome.notConfigured()).result,
+      'notConfigured',
+    );
     expect(ErrorLogService.instance.entries.length, before);
   });
 }

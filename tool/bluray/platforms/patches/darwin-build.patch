@@ -758,7 +758,7 @@ index 0000000..bc5bf16
 +      -Diconv=enabled -Duchardet=enabled -Dzlib=enabled -Dgl=enabled
 +      -Dplain-gl=enabled -Dlibbluray=enabled)
 +    if [ "${os}" = macos ]; then
-+      OPTIONS+=(-Dcoreaudio=enabled -Dcocoa=enabled -Dgl-cocoa=enabled -Dvideotoolbox-gl=enabled)
++      OPTIONS+=(-Dcoreaudio=enabled -Davfoundation=enabled -Dcocoa=enabled -Dgl-cocoa=enabled -Dvideotoolbox-gl=enabled)
 +    else
 +      OPTIONS+=(-Daudiounit=enabled -Dios-gl=enabled)
 +    fi

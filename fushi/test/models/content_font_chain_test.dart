@@ -33,7 +33,9 @@ void main() {
       expect(cjkScriptForLanguageTag('zh-TW'), CjkScript.traditionalChinese);
       expect(cjkScriptForLanguageTag('zh-HK'), CjkScript.traditionalChinese);
       expect(
-          cjkScriptForLanguageTag('zh-Hans-TW'), CjkScript.simplifiedChinese);
+        cjkScriptForLanguageTag('zh-Hans-TW'),
+        CjkScript.simplifiedChinese,
+      );
       // 粤语默认繁体，但显式 Hans 要尊重。
       expect(cjkScriptForLanguageTag('yue'), CjkScript.traditionalChinese);
       expect(cjkScriptForLanguageTag('yue-Hans'), CjkScript.simplifiedChinese);
@@ -135,16 +137,16 @@ void main() {
         style: CjkFontStyle.serif,
       );
       expect(serif, contains('Yu Mincho'));
-      expect(serif.contains('Yu Gothic UI'), isFalse,
-          reason: 'serif 链里混进黑体说明取表取错了: $serif');
+      expect(
+        serif.contains('Yu Gothic UI'),
+        isFalse,
+        reason: 'serif 链里混进黑体说明取表取错了: $serif',
+      );
     });
 
     test('按平台取各自存在的家族名', () {
       expect(
-        contentFontFamilies(
-          languageTag: 'ja',
-          platform: TargetPlatform.macOS,
-        ),
+        contentFontFamilies(languageTag: 'ja', platform: TargetPlatform.macOS),
         contains('Hiragino Sans'),
       );
       expect(

@@ -24,19 +24,24 @@ import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import '../helpers/source_guard.dart';
 
 void main() {
-  final String hookSrc =
-      File('windows/runner/low_level_mouse_hook.cpp').readAsStringSync();
-  final String hookHdr =
-      File('windows/runner/low_level_mouse_hook.h').readAsStringSync();
-  final String winSrc =
-      File('windows/runner/global_lookup_window.cpp').readAsStringSync();
-  final String winHdr =
-      File('windows/runner/global_lookup_window.h').readAsStringSync();
-  final String hostJs =
-      File('assets/popup/global_lookup_host.js').readAsStringSync();
-  final String injectionSrc =
-      File('lib/src/pages/implementations/popup_settings_injection.dart')
-          .readAsStringSync();
+  final String hookSrc = File(
+    'windows/runner/low_level_mouse_hook.cpp',
+  ).readAsStringSync();
+  final String hookHdr = File(
+    'windows/runner/low_level_mouse_hook.h',
+  ).readAsStringSync();
+  final String winSrc = File(
+    'windows/runner/global_lookup_window.cpp',
+  ).readAsStringSync();
+  final String winHdr = File(
+    'windows/runner/global_lookup_window.h',
+  ).readAsStringSync();
+  final String hostJs = File(
+    'assets/popup/global_lookup_host.js',
+  ).readAsStringSync();
+  final String injectionSrc = File(
+    'lib/src/pages/implementations/popup_settings_injection.dart',
+  ).readAsStringSync();
 
   // 钩子回调本体（HookProc 到它的收尾大括号）——所有「吞 / 放行」判定都必须在这里。
   final int procStart = hookSrc.indexOf('LRESULT CALLBACK HookProc(');
@@ -55,7 +60,8 @@ void main() {
     expect(
       RegExp(r'return 1;').hasMatch(hookProc),
       isTrue,
-      reason: '返回非 0 才是「事件到此为止」。改成 CallNextHookEx 等于没修——'
+      reason:
+          '返回非 0 才是「事件到此为止」。改成 CallNextHookEx 等于没修——'
           '游戏是前台窗口，滚轮会照常投给它',
     );
     expect(
@@ -76,7 +82,8 @@ void main() {
       beforeSwallow.contains('WindowFromPoint(info->pt)') &&
           beforeSwallow.contains('IsChild(target, hit)'),
       isTrue,
-      reason: '命中必须按**窗口区域**判：级联查词窗是整叠卡片的包围盒，TODO-1345 的'
+      reason:
+          '命中必须按**窗口区域**判：级联查词窗是整叠卡片的包围盒，TODO-1345 的'
           '保留地板窗横跨大半个工作区，真正可见的只有 SetWindowRgn 裁出的卡片'
           '（BUG-749）。用 GetWindowRect 判等于卡片一开就吞掉半屏滚轮',
     );
@@ -96,20 +103,36 @@ void main() {
     // 没变，两段各自 CallNextHookEx。分别断言比原来的合并串更严——合并串还在只
     // 说明"有那么一行"，说不清拆开之后哪一条还在放行。
     final int noTarget = hookProc.indexOf('if (target == nullptr)');
-    final int noTargetPass =
-        hookProc.indexOf('return CallNextHookEx(', noTarget);
-    expect(noTarget, greaterThanOrEqualTo(0),
-        reason: '没有查词卡（Disarm 宽限期内）时必须有纯放行门');
-    expect(noTargetPass, greaterThan(noTarget),
-        reason: '无 target 时必须直接 CallNextHookEx 放行，不做任何判定');
+    final int noTargetPass = hookProc.indexOf(
+      'return CallNextHookEx(',
+      noTarget,
+    );
+    expect(
+      noTarget,
+      greaterThanOrEqualTo(0),
+      reason: '没有查词卡（Disarm 宽限期内）时必须有纯放行门',
+    );
+    expect(
+      noTargetPass,
+      greaterThan(noTarget),
+      reason: '无 target 时必须直接 CallNextHookEx 放行，不做任何判定',
+    );
 
     final int deadTarget = hookProc.indexOf('if (!IsWindow(target))');
-    final int deadTargetPass =
-        hookProc.indexOf('return CallNextHookEx(', deadTarget);
-    expect(deadTarget, greaterThan(noTarget),
-        reason: 'target 已销毁的放行门必须还在（排在无 target 门之后）');
-    expect(deadTargetPass, greaterThan(deadTarget),
-        reason: 'target 失效时同样必须纯放行');
+    final int deadTargetPass = hookProc.indexOf(
+      'return CallNextHookEx(',
+      deadTarget,
+    );
+    expect(
+      deadTarget,
+      greaterThan(noTarget),
+      reason: 'target 已销毁的放行门必须还在（排在无 target 门之后）',
+    );
+    expect(
+      deadTargetPass,
+      greaterThan(deadTarget),
+      reason: 'target 失效时同样必须纯放行',
+    );
     // 放行分支不止一处，且都走 CallNextHookEx。
     expect(
       'CallNextHookEx'.allMatches(hookProc).length >= 4,
@@ -122,9 +145,13 @@ void main() {
     final int firstCompare = hookProc.indexOf('const bool is_button_down =');
     final int firstSyscall = hookProc.indexOf('g_target.load');
     expect(firstCompare, greaterThan(0));
-    expect(firstSyscall, greaterThan(firstCompare),
-        reason: 'WH_MOUSE_LL 是同步钩子，每秒上千次的移动事件必须在读任何状态之前'
-            '就被比较挡掉，否则全系统鼠标跟着卡（BUG-1048 的原始症状）');
+    expect(
+      firstSyscall,
+      greaterThan(firstCompare),
+      reason:
+          'WH_MOUSE_LL 是同步钩子，每秒上千次的移动事件必须在读任何状态之前'
+          '就被比较挡掉，否则全系统鼠标跟着卡（BUG-1048 的原始症状）',
+    );
     expect(
       hookProc.indexOf('GetWindowRect') > firstCompare,
       isTrue,
@@ -138,12 +165,15 @@ void main() {
   });
 
   test('④ 钩子线程只 PostMessage，绝不 SendMessage', () {
-    expect(hookProc.contains('PostMessage(target, kLowLevelMouseWheelMessage'),
-        isTrue);
+    expect(
+      hookProc.contains('PostMessage(target, kLowLevelMouseWheelMessage'),
+      isTrue,
+    );
     expect(
       hookSrc.contains('SendMessage'),
       isFalse,
-      reason: 'SendMessage 会让钩子线程等窗口线程——窗口线程正忙于 WebView2/FFI 时，'
+      reason:
+          'SendMessage 会让钩子线程等窗口线程——窗口线程正忙于 WebView2/FFI 时，'
           '全系统输入跟着一起停（BUG-1048 的根因形状）',
     );
   });
@@ -154,7 +184,8 @@ void main() {
     expect(
       hookProc.contains('GetKeyState('),
       isFalse,
-      reason: '钩子线程的 GetKeyState 读的是它自己那份从不更新的输入状态，永远返回'
+      reason:
+          '钩子线程的 GetKeyState 读的是它自己那份从不更新的输入状态，永远返回'
           '「没按下」；物理按键必须用 GetAsyncKeyState',
     );
     expect(
@@ -184,89 +215,145 @@ void main() {
   // 下面每条都已做负向验证：抽掉分流，对应断言就转红。
   group('⑤bis 修饰键必须以数据形式抵达消费端（不许指望 Chromium 的 GetKeyState）', () {
     test('钩子取物理 Alt，且 ctrl/alt 是独立载荷字段（不只是 MK_ 位）', () {
-      expect(hookProc.contains('GetAsyncKeyState(VK_MENU)'), isTrue,
-          reason: 'Alt 没有 MK_ 位，不单独取物理键就永远拿不到');
-      expect(hookHdr.contains('bool ctrl = false;'), isTrue,
-          reason: 'ctrl 必须是独立字段：MK_CONTROL 过不了 WebView2 那道边界');
-      expect(hookHdr.contains('bool alt = false;'), isTrue,
-          reason: 'alt 必须是独立字段：WM_MOUSEWHEEL 结构上没有 ALT 位');
+      expect(
+        hookProc.contains('GetAsyncKeyState(VK_MENU)'),
+        isTrue,
+        reason: 'Alt 没有 MK_ 位，不单独取物理键就永远拿不到',
+      );
+      expect(
+        hookHdr.contains('bool ctrl = false;'),
+        isTrue,
+        reason: 'ctrl 必须是独立字段：MK_CONTROL 过不了 WebView2 那道边界',
+      );
+      expect(
+        hookHdr.contains('bool alt = false;'),
+        isTrue,
+        reason: 'alt 必须是独立字段：WM_MOUSEWHEEL 结构上没有 ALT 位',
+      );
       expect(hookSrc.contains('wheel.ctrl ? 1u : 0u'), isTrue);
       expect(hookSrc.contains('wheel.alt ? 1u : 0u'), isTrue);
       expect(
-          hookSrc.contains('wheel.ctrl = ((raw >> 33) & 0x1ull) != 0;'), isTrue,
-          reason: '解包必须与打包同位，否则分流判据恒 false');
+        hookSrc.contains('wheel.ctrl = ((raw >> 33) & 0x1ull) != 0;'),
+        isTrue,
+        reason: '解包必须与打包同位，否则分流判据恒 false',
+      );
       expect(
-          hookSrc.contains('wheel.alt = ((raw >> 34) & 0x1ull) != 0;'), isTrue);
+        hookSrc.contains('wheel.alt = ((raw >> 34) & 0x1ull) != 0;'),
+        isTrue,
+      );
     });
 
     test('分流分支存在，且排在任何「合成消息」之前', () {
-      final int i =
-          winSrc.indexOf('void GlobalLookupWindow::HandleGlobalWheel(');
+      final int i = winSrc.indexOf(
+        'void GlobalLookupWindow::HandleGlobalWheel(',
+      );
       expect(i, greaterThan(0));
       final String handler = winSrc.substring(
-          i,
-          winSrc.indexOf(
-              'void GlobalLookupWindow::ForwardGlobalWheelToHost(', i));
+        i,
+        winSrc.indexOf('void GlobalLookupWindow::ForwardGlobalWheelToHost(', i),
+      );
       final int branch = handler.indexOf('wheel.ctrl || wheel.alt');
-      expect(branch, greaterThan(0),
-          reason: '必须按「有没有按 Ctrl/Alt」分流 —— 这是整条修复的落点');
+      expect(
+        branch,
+        greaterThan(0),
+        reason: '必须按「有没有按 Ctrl/Alt」分流 —— 这是整条修复的落点',
+      );
       final int dispatch = handler.indexOf('ForwardGlobalWheelToHost(');
       expect(dispatch, greaterThan(branch), reason: '分流分支里必须真的走那条显式携带修饰键的路');
       final int post = handler.indexOf('PostMessage(');
       final int composition = handler.indexOf('ForwardCompositionMouse(');
-      expect(post, greaterThan(dispatch),
-          reason: 'PostMessage 合成消息丢修饰键，必须排在分流之后');
-      expect(composition, greaterThan(dispatch),
-          reason: 'SendMouseInput 带不了 Alt，同样排在分流之后');
+      expect(
+        post,
+        greaterThan(dispatch),
+        reason: 'PostMessage 合成消息丢修饰键，必须排在分流之后',
+      );
+      expect(
+        composition,
+        greaterThan(dispatch),
+        reason: 'SendMouseInput 带不了 Alt，同样排在分流之后',
+      );
     });
 
     test('裸滚轮 / 仅 Shift 不绕道，仍走原生子窗 PostMessage', () {
       expect(
-          winSrc.contains('PostMessage(hit, message, wparam, lparam);'), isTrue,
-          reason: '普通滚轮那条原生路本来就是对的；绕道反而丢掉浏览器自己的平滑滚动'
-              '与 Shift→deltaX 横滚转换');
+        winSrc.contains('PostMessage(hit, message, wparam, lparam);'),
+        isTrue,
+        reason:
+            '普通滚轮那条原生路本来就是对的；绕道反而丢掉浏览器自己的平滑滚动'
+            '与 Shift→deltaX 横滚转换',
+      );
     });
 
     test('C++ 把三个修饰键显式作为实参交给 host JS', () {
-      final int i =
-          winSrc.indexOf('void GlobalLookupWindow::ForwardGlobalWheelToHost(');
+      final int i = winSrc.indexOf(
+        'void GlobalLookupWindow::ForwardGlobalWheelToHost(',
+      );
       expect(i, greaterThan(0), reason: '必须有这条显式携带修饰键的落地点');
       final String fn = winSrc.substring(
-          i, winSrc.indexOf('GlobalLookupWindow::GlobalLookupWindow()', i));
+        i,
+        winSrc.indexOf('GlobalLookupWindow::GlobalLookupWindow()', i),
+      );
       expect(fn.contains('handleGlobalWheel('), isTrue);
-      expect(fn.contains('wheel.ctrl ? L"true" : L"false"'), isTrue,
-          reason: 'ctrl 必须作为实参显式传进 JS');
-      expect(fn.contains('wheel.alt ? L"true" : L"false"'), isTrue,
-          reason: 'alt 必须作为实参显式传进 JS');
-      expect(fn.contains('MK_SHIFT) != 0 ? L"true" : L"false"'), isTrue,
-          reason: 'shift 同样显式传，JS 侧绑定全等比对才不会误判');
+      expect(
+        fn.contains('wheel.ctrl ? L"true" : L"false"'),
+        isTrue,
+        reason: 'ctrl 必须作为实参显式传进 JS',
+      );
+      expect(
+        fn.contains('wheel.alt ? L"true" : L"false"'),
+        isTrue,
+        reason: 'alt 必须作为实参显式传进 JS',
+      );
+      expect(
+        fn.contains('MK_SHIFT) != 0 ? L"true" : L"false"'),
+        isTrue,
+        reason: 'shift 同样显式传，JS 侧绑定全等比对才不会误判',
+      );
     });
 
     test('host JS 用参数（而非环境键状态）填 flag，且只投给命中的那一帧', () {
       final int i = hostJs.indexOf('function handleGlobalWheel(');
       expect(i, greaterThan(0), reason: 'host 必须有这个入口');
-      final String fn =
-          hostJs.substring(i, hostJs.indexOf('function topPopupId()', i));
-      expect(fn.contains('ctrlKey: !!ctrlKey'), isTrue,
-          reason: 'flag 必须来自**参数** —— 这正是绕开 Chromium GetKeyState 的全部意义');
+      final String fn = hostJs.substring(
+        i,
+        hostJs.indexOf('function topPopupId()', i),
+      );
+      expect(
+        fn.contains('ctrlKey: !!ctrlKey'),
+        isTrue,
+        reason: 'flag 必须来自**参数** —— 这正是绕开 Chromium GetKeyState 的全部意义',
+      );
       expect(fn.contains('altKey: !!altKey'), isTrue);
       expect(fn.contains('shiftKey: !!shiftKey'), isTrue);
-      expect(fn.contains('frameIdAtPoint(x, y)'), isTrue,
-          reason: '只投给命中的那张卡，卡片间缝隙不投');
-      expect(fn.contains('bubbles: true'), isTrue,
-          reason: '缩放监听挂在 window 上，不冒泡就收不到');
-      expect(fn.contains('cancelable: true'), isTrue,
-          reason: '下游要 preventDefault');
+      expect(
+        fn.contains('frameIdAtPoint(x, y)'),
+        isTrue,
+        reason: '只投给命中的那张卡，卡片间缝隙不投',
+      );
+      expect(
+        fn.contains('bubbles: true'),
+        isTrue,
+        reason: '缩放监听挂在 window 上，不冒泡就收不到',
+      );
+      expect(
+        fn.contains('cancelable: true'),
+        isTrue,
+        reason: '下游要 preventDefault',
+      );
     });
 
     test('方向端到端不翻：Win32 上滚 → DOM 负 deltaY → +1 档 → 字号真的变大', () {
-      final int i =
-          winSrc.indexOf('void GlobalLookupWindow::ForwardGlobalWheelToHost(');
+      final int i = winSrc.indexOf(
+        'void GlobalLookupWindow::ForwardGlobalWheelToHost(',
+      );
       final String fn = winSrc.substring(
-          i, winSrc.indexOf('GlobalLookupWindow::GlobalLookupWindow()', i));
+        i,
+        winSrc.indexOf('GlobalLookupWindow::GlobalLookupWindow()', i),
+      );
       expect(
         fn.contains(
-            'const double dom_delta_y = -static_cast<double>(wheel.delta);'),
+          'const double dom_delta_y = -static_cast<double>(wheel.delta);',
+        ),
         isTrue,
         reason: 'Win32 上滚 delta 为正、DOM 上滚 deltaY 为负 —— 不取负就把缩放做反了',
       );
@@ -276,10 +363,16 @@ void main() {
         reason: 'PR#462 的约定：上滚（deltaY<0）= +1 档 = 放大。改了这里方向就翻',
       );
       const double base = 16.0;
-      expect(zoomFontSizeAfterSteps(base, 1), greaterThan(base),
-          reason: '上滚一格必须放大');
-      expect(zoomFontSizeAfterSteps(base, -1), lessThan(base),
-          reason: '下滚一格必须缩小');
+      expect(
+        zoomFontSizeAfterSteps(base, 1),
+        greaterThan(base),
+        reason: '上滚一格必须放大',
+      );
+      expect(
+        zoomFontSizeAfterSteps(base, -1),
+        lessThan(base),
+        reason: '下滚一格必须缩小',
+      );
     });
 
     test('Ctrl 链路末端：popupZoomFontStep 真被既有 Dart 消费端接住', () {
@@ -293,8 +386,11 @@ void main() {
         },
         onFontSizeChanged: () => rerenders++,
       );
-      expect(handled, isTrue,
-          reason: 'C++ 分流后 Ctrl 最终必须落到这个既有 handler 上（PR#462 原链路整条复用）');
+      expect(
+        handled,
+        isTrue,
+        reason: 'C++ 分流后 Ctrl 最终必须落到这个既有 handler 上（PR#462 原链路整条复用）',
+      );
       expect(rerenders, 0, reason: '无 model 时不重渲（不炸、不空转）');
     });
   });
@@ -302,8 +398,10 @@ void main() {
   test('⑥ 窗口侧还原成真滚轮消息，走 WebView2 既有输入路', () {
     final int i = winSrc.indexOf('void GlobalLookupWindow::HandleGlobalWheel(');
     expect(i, greaterThan(0), reason: '窗口线程必须有滚轮落地点');
-    final String handler =
-        winSrc.substring(i, winSrc.indexOf('GlobalLookupWindow::~', i));
+    final String handler = winSrc.substring(
+      i,
+      winSrc.indexOf('GlobalLookupWindow::~', i),
+    );
     expect(
       handler.contains('MAKEWPARAM(static_cast<WORD>(wheel.keys)'),
       isTrue,
@@ -318,7 +416,8 @@ void main() {
       handler.contains('WindowFromPoint(screen_pt)') &&
           handler.contains('GetWindow(hwnd_, GW_CHILD)'),
       isTrue,
-      reason: 'windowed 实例的 WebView2 输入落在子 HWND 上：投回顶层窗只会走'
+      reason:
+          'windowed 实例的 WebView2 输入落在子 HWND 上：投回顶层窗只会走'
           'DefWindowProc（顶层窗不往下传），卡片一样滚不动',
     );
     expect(
@@ -332,7 +431,8 @@ void main() {
     expect(
       winHdr.contains('SetActivatable'),
       isFalse,
-      reason: '让查词卡抢焦点确实能挡住滚轮，但那会让 galgame 失焦——很多 VN '
+      reason:
+          '让查词卡抢焦点确实能挡住滚轮，但那会让 galgame 失焦——很多 VN '
           '一失焦就暂停/变暗。design §5 保证 3 不得放弃：不得再给窗口加可激活开关',
     );
     expect(

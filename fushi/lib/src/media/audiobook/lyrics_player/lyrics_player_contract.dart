@@ -1,9 +1,16 @@
+export 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart'
+    show lyricsPlayerIsWide;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/widgets.dart';
 
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show FushiToolbarItem;
+import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart'
+    show lyricsPlayerIsWide;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show FushiPlaybackClock;
 
@@ -20,11 +27,6 @@ import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
 ///     背景透出来）——它在树里的位置恒定，换布局只改矩形、不重建平台视图；
 ///  3. 控件层（封面卡 / 标题 / 读数 / 进度条 / 播放键 / 关闭键）。控件层只在
 ///     自己画了东西的地方吃指针，空白处让给下面的歌词 WebView。
-
-/// 宽屏（横屏 / 桌面窗口）才显示「左封面 + 控件、右歌词」双栏；手机竖屏或窄窗
-/// 一律单栏：全屏歌词 + 底部紧凑控件条，不显示封面（放不下）。
-bool lyricsPlayerIsWide(Size size) =>
-    size.width >= 600 && size.width >= size.height;
 
 /// 覆盖层要显示的阅读器读数快照。**只读**——数据来自阅读器的 `StudyClock`
 /// （本次会话时长 / 字数）与进度状态（全书已读 / 总字数），覆盖层不写回。
@@ -103,6 +105,33 @@ String formatLyricsPlayerTime(Duration d) {
   return '$m:$ss';
 }
 
+/// 歌词模式播放控件的布局（偏好 `lyrics_controls_style`，默认新版）。
+///
+/// * [modern]：新版（2026-10-31 用户拍板）。窄屏 = 可收起的迷你条（64dp）/ 展开卡
+///   （约 160dp）；宽屏 = 底部三浮岛（书名 · 播放胶囊 · 全部次要动作与关闭），
+///   进度条是浮岛上方的整宽直线，正文横向占满。
+/// * [classic]：经典布局原样保留（窄屏现卡、宽屏左栏 + 右上角按钮）。
+///
+/// MD3 与 Apple 两套设计系统都读它：两边的新版布局与交互一致（几何 / 测宽 / 读数
+/// 共用 `lyrics_player_modern_shared.dart`），只是视觉各用各的件。
+enum LyricsControlsStyle {
+  modern('modern'),
+  classic('classic');
+
+  const LyricsControlsStyle(this.wire);
+
+  /// 持久化值（偏好里存的字符串，冻结）。
+  final String wire;
+
+  /// 偏好值 → 布局；未知值 / 空串回落到默认新版。
+  static LyricsControlsStyle fromWire(String? value) {
+    for (final LyricsControlsStyle style in values) {
+      if (style.wire == value) return style;
+    }
+    return modern;
+  }
+}
+
 /// 覆盖层一帧的静态数据（换书 / 播放态 / 倍速变化时重建）。高频变化的播放位置与
 /// 读数走 [LyricsPlayerClock]，由控件层自己按帧 / 按秒读，不经整页重建。
 @immutable
@@ -114,15 +143,57 @@ class LyricsPlayerData {
     required this.speed,
     required this.lyricsMasked,
     required this.clock,
+    this.playbackHeldForLookup = false,
     this.chapterLabel,
-    this.sleepTimerMinutes,
+    this.statsTimerPaused = false,
     this.illustrations,
     this.sidesMirrored = false,
-  });
+    this.controlsStyle = LyricsControlsStyle.modern,
+    this.compactControlsExpanded = false,
+    this.jumpActions = const <FushiToolbarItem>[],
+    this.jumpMarks,
+    LyricsControlLayout? wideControls,
+    LyricsControlLayout? compactControls,
+  }) : _wideControls = wideControls,
+       _compactControls = compactControls;
+
+  /// 阅读器「跳转记录」的返回 / 前进图标（纯图标，长按 / 右键开面板）：各外观
+  /// 画在顶栏右侧动作区的**最前面**。空 = 不画（没跳转过 / 顶栏图标关了 / 自动
+  /// 隐藏到时）。不占歌词矩形，出现 / 消失不改歌词 WebView 的位置。
+  final List<FushiToolbarItem> jumpActions;
+
+  /// 阅读器跳转记录在**全书音频时间轴**上的落点（0–1，与 [LyricsPlayerClock]
+  /// 同一条轴）：返回点 / 前进点。各外观的进度条（含新版波浪线、窄屏细进度）用
+  /// 共享的 `FushiJumpProgressMarks` 画同款刻度（与视频进度条一致，只看不点）。
+  /// 只有音频点有时间；正文点不在这条轴上，不画。null = 不画（没跳转过 / 设置
+  /// 「进度条刻度」关了 / 时长未知）。
+  final ({List<double> back, List<double> forward})? jumpMarks;
+
+  final LyricsControlLayout? _wideControls;
+  final LyricsControlLayout? _compactControls;
+
+  /// 宽屏（双栏）次要按钮布局（偏好 `lyrics_control_layout`；未给 = 出厂）。
+  LyricsControlLayout get wideControls =>
+      _wideControls ?? LyricsControlLayout.defaults;
+
+  /// 窄屏（单栏）次要按钮布局（偏好 `lyrics_control_layout_compact`；未给 = 出厂）。
+  LyricsControlLayout get compactControls =>
+      _compactControls ?? LyricsControlLayout.compactDefaults;
+
+  /// 当前尺寸下生效的那份布局（与 [lyricsPlayerIsWide] 同一判据）。
+  LyricsControlLayout controlsFor(Size size) =>
+      lyricsPlayerIsWide(size) ? wideControls : compactControls;
 
   /// 宽屏双栏左右互换（偏好 `lyrics_panel_mirrored`）：true = 歌词在左、封面与
   /// 播放卡在右。只换位置，两栏各自的宽度不变。窄屏不受影响。
   final bool sidesMirrored;
+
+  /// 播放控件布局（新版 / 经典，偏好 `lyrics_controls_style`；MD3 / Apple 都读）。
+  final LyricsControlsStyle controlsStyle;
+
+  /// 新版窄屏播放卡是否展开（偏好 `lyrics_controls_expanded`，默认收起）。
+  /// 宽屏 / 经典布局不读它。
+  final bool compactControlsExpanded;
 
   /// 书中插图（播放走过插图时封面位换成插图，见 lyrics_illustrations.dart）。
   /// null = 这本书没有可显示的插图（或还在探测），封面位照旧只显示封面。
@@ -134,14 +205,24 @@ class LyricsPlayerData {
   /// 当前章名（正文跟随音频所在的目录项）；未知为 null。只用于显示。
   final String? chapterLabel;
 
-  /// 睡眠定时剩余分钟；没开定时为 null。只用于显示（定时本身挂在播放控制器上）。
-  final int? sleepTimerMinutes;
+  /// 阅读统计计时是否被用户手动停了（阅读器的手动暂停旗）——计时键的状态。
+  /// 只用于显示，停 / 续走 [LyricsPlayerCallbacks.onToggleStatsTimer]。
+  final bool statsTimerPaused;
 
   /// 封面（无封面为 null，设计系统画占位）。
   final ImageProvider? cover;
 
-  /// 是否正在播放。
+  /// 是否正在播放（播放器实际状态；播放键图标按它画）。
   final bool isPlaying;
+
+  /// 播放只是被查词**临时**按住（「查词时暂停」）：查词会话结束会自动恢复，包括
+  /// 已发出恢复、播放器还没真正起播的那一小段。这段暂停属于查词会话，不是用户暂停。
+  final bool playbackHeldForLookup;
+
+  /// 「有效播放态」：实际在播，或只是被查词临时按住。覆盖层的光标空闲隐藏按它判：
+  /// 查词的临时暂停不算暂停，光标不因查词复现又消失（反馈 awLXfD49Ep / M8YDOqJ5Bm
+  /// 的同一判据）。
+  bool get playbackActive => isPlaying || playbackHeldForLookup;
 
   /// 当前倍速。
   final double speed;
@@ -174,7 +255,21 @@ abstract class LyricsPlayerClock implements FushiPlaybackClock {
 /// 之外——从页面弹出的菜单是全局主题的表面色，与歌词页完全不搭。
 @immutable
 class LyricsMenuAnchor {
-  const LyricsMenuAnchor({required this.rect, required this.context});
+  const LyricsMenuAnchor({
+    required this.rect,
+    required this.context,
+    this.collapsedItems = const <LyricsControlItem>[],
+    this.relativeSeekOnScreen = false,
+  });
+
+  /// 新版宽屏右岛因宽度不够收进「⋯」的按钮（按显示顺序）；页面把它们排在菜单
+  /// 最前面。经典布局与窄屏恒为空。
+  final List<LyricsControlItem> collapsedItems;
+
+  /// 按下 ⋯ 时，这套布局此刻在屏上是否摆着 ±10 秒键。是则页面菜单不再列
+  /// 「后退 / 前进 10 秒」（同一动作出现两次，反馈 MnVAGO_nry）；经典 Apple 布局、
+  /// 新版窄屏收起的迷你条等没有 ±10 键的形态为 false，菜单照列，触屏仍有入口。
+  final bool relativeSeekOnScreen;
 
   /// 按钮的全局矩形。
   final Rect rect;
@@ -199,11 +294,36 @@ class LyricsPlayerCallbacks {
     required this.onTapBackground,
     this.onTypography,
     this.onSeekRelative,
-    this.onSleepTimer,
+    this.onToggleStatsTimer,
+    this.onSpeedPanel,
     this.onOpenIllustration,
     this.onReplayCue,
     this.onSwapSides,
+    this.onExitBook,
+    this.onCompactControlsExpandedChanged,
+    this.onPositionJump,
+    this.onOpenJumpHistory,
   });
+
+  /// 进度跳转（按字数 / 百分比）：打开阅读器导航面板的同一段「按字数跳转」，
+  /// 歌词模式下落到目标字数所在的那句音频。null = 不显示该键。
+  final VoidCallback? onPositionJump;
+
+  /// 「跳转记录」面板。null = 还没有任何跳转记录：键照常摆出但置灰（布局里放了
+  /// 它就该看得见，不因历史为空忽隐忽现）。
+  final VoidCallback? onOpenJumpHistory;
+
+  /// 新版窄屏播放卡展开 / 收起（写偏好 `lyrics_controls_expanded`）。null = 卡片
+  /// 固定在当前状态（测试 / 未接偏好）。
+  final ValueChanged<bool>? onCompactControlsExpandedChanged;
+
+  /// 关掉歌词层并直接退出本书回书架，**不改**这本书记住的「歌词模式」——下次
+  /// 打开仍是歌词模式（每本书各记各的，见 `ReaderFushiSource.lyricsModeForBook`）。
+  ///
+  /// 非 null 时右上角 × 走它，另加一颗「书籍模式」键走 [onClose]（反馈
+  /// QvYpZODImz：× 原本只回正文，想退书还得再按一次返回，而且回正文那一下会把
+  /// 这本书记成书籍模式）。null = 维持旧形态（× 即 [onClose]）。
+  final VoidCallback? onExitBook;
 
   /// 宽屏左右整块互换（写偏好 `lyrics_panel_mirrored`）。null = 不显示该键。
   final VoidCallback? onSwapSides;
@@ -216,8 +336,13 @@ class LyricsPlayerCallbacks {
   /// 后退 / 前进若干秒（负数后退）。null = 不显示 ±10 秒键。
   final ValueChanged<int>? onSeekRelative;
 
-  /// 睡眠定时菜单（锚定在按钮上，从按钮 context 取歌词模式主题）。null = 不显示。
-  final ValueChanged<LyricsMenuAnchor>? onSleepTimer;
+  /// 停 / 续阅读统计计时（阅读器的手动暂停，与顶栏计时键、快捷键同一入口）。
+  /// null = 不显示该键。
+  final VoidCallback? onToggleStatsTimer;
+
+  /// 打开倍速面板（锚定在按钮上）。由页面弹，面板开着期间页面停表（BUG-2208
+  /// 「面板压着听书也停表」，与阅读器一致）。null = 按钮自己弹（无停表，测试用）。
+  final ValueChanged<LyricsMenuAnchor>? onSpeedPanel;
 
   /// Aa：歌词文字快捷面板（字号 / 竖排 / 更多歌词设置）。参数带按钮的全局矩形与
   /// 按钮自己的 context（面板从它取歌词模式主题）。null = 不显示该键。
@@ -268,16 +393,7 @@ abstract class LyricsPlayerDesign {
   Rect lyricsRect(BuildContext context, Size size, EdgeInsets padding);
 
   /// 背景层（铺满）。必须是不透明的——它就是歌词页的底色。
-  ///
-  /// [bleedTop]：背景向上延伸到桌面自绘标题栏底下的高度。画布 = 页面尺寸再加
-  /// 这一截，布局相关的形状（宽屏歌词底板）仍按页面尺寸算、整体下移
-  /// [bleedTop]——这样标题栏画画布顶上那截、页面画下面那截，两边像素连续，
-  /// 标题栏不再是一条独立色带。
-  Widget buildBackground(
-    BuildContext context,
-    LyricsPlayerData data, {
-    double bleedTop = 0,
-  });
+  Widget buildBackground(BuildContext context, LyricsPlayerData data);
 
   /// 控件层（铺满，透明处不吃指针）。[lyricsRect] 是 [lyricsRect] 算出的同一个矩形，
   /// 供控件避让 / 对齐。
@@ -310,7 +426,6 @@ class LyricsHtmlTheme {
     required this.alignStart,
     required this.contextBlurPx,
     required this.rowRadius,
-    required this.hoverFill,
     this.pastOpacityFactor = 1,
   });
 
@@ -351,11 +466,8 @@ class LyricsHtmlTheme {
   /// 非当前行的轻模糊（px，0 = 不模糊）。
   final double contextBlurPx;
 
-  /// 行悬停底块圆角（px）。
+  /// 行圆角（px）。
   final double rowRadius;
-
-  /// 行悬停底块颜色（含透明度）。
-  final Color hoverFill;
 
   @override
   bool operator ==(Object other) =>
@@ -372,7 +484,6 @@ class LyricsHtmlTheme {
       other.alignStart == alignStart &&
       other.contextBlurPx == contextBlurPx &&
       other.rowRadius == rowRadius &&
-      other.hoverFill == hoverFill &&
       other.pastOpacityFactor == pastOpacityFactor;
 
   @override
@@ -389,7 +500,6 @@ class LyricsHtmlTheme {
     alignStart,
     contextBlurPx,
     rowRadius,
-    hoverFill,
     pastOpacityFactor,
   );
 }

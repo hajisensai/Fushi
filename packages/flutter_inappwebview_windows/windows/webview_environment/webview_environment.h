@@ -29,6 +29,17 @@ namespace flutter_inappwebview_plugin
     /// platform-interface 的 settings 类在 pub-cache 里改不了。
     bool windowedHosting = false;
 
+    /// 把哨兵从浏览器参数里剥掉（整词匹配，连同它前面的空白；在开头时连同后面的空白），
+    /// 返回真正交给 WebView2 的参数串；[found] 报告是否带了哨兵。
+    ///
+    /// 哨兵必须剥掉而不是原样交给浏览器：WebView2 要求同一 user data folder 上的所有环境
+    /// 浏览器参数逐字一致（否则 0x8007139F）。剥掉之后「浏览器参数 + 哨兵」与「浏览器参数」
+    /// 在 WebView2 看来是同一套选项，窗口宿主档就能与 app 内浏览器共用同一个 user data
+    /// folder（同一个 cookie 罐、同一个浏览器进程）。Dart 侧镜像
+    /// `stripWindowedHostingSentinel`（fushi/lib/src/media/video/web_video_hosting.dart），
+    /// 守卫测试比对两侧行为。
+    static std::string StripWindowedHostingSentinel(const std::string& arguments, bool& found);
+
     std::unique_ptr<WebViewEnvironmentChannelDelegate> channelDelegate;
 
     WebViewEnvironment(const FlutterInappwebviewWindowsPlugin* plugin, const std::string& id);

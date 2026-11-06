@@ -18,10 +18,11 @@ import 'package:fushi_engine/tts/local/gpt_sovits_local_server.dart';
 import 'package:fushi_engine/tts/local/irodori_local_engine.dart';
 import 'package:fushi_engine/tts/local/local_service_process.dart';
 import 'package:fushi_engine/tts/local/local_service_support.dart';
-import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
+import 'package:fushi_engine/tts/local/voicevox_local_engine.dart';
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/irodori_server_tts_provider.dart';
-import 'package:fushi_engine/tts/providers/translate_tts_providers.dart';
+import 'package:fushi_engine/tts/providers/voicepeak_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/voicevox_tts_provider.dart';
 import 'package:fushi_engine/tts/tts_audio_probe.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
@@ -33,32 +34,36 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/gpt_sovits_local_page.dart';
 import 'package:fushi/src/media/audiobook/tts/irodori_local_page.dart';
+import 'package:fushi/src/media/audiobook/tts/system_tts_provider.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_two_pane_layout.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_list_layout.dart';
+import 'package:fushi/src/media/audiobook/tts/voicevox_local_page.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
     show GlassSettingsRenderer;
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 const Duration _kSaveDebounce = Duration(milliseconds: 600);
 
 /// 声音参数旁边存显示名的键后缀（`voice` → `voice_name`）。
 const String _kVoiceNameSuffix = '_name';
-
-/// 非官方在线接口（网页版朗读），编辑页额外提示可能失效。
-const Set<String> _kUnofficialProviders = <String>{
-  EdgeTtsDescriptor.providerId,
-  MicrosoftTranslatorTtsDescriptor.providerId,
-  GoogleTranslateTtsDescriptor.providerId,
-};
-
-/// 试听默认文本（日语学习场景；用户可改）。
-const String _kDefaultTestText = 'こんにちは。これは朗読のテストです。';
 
 /// 参考音频能选的扩展名（GPT-SoVITS 经 librosa / ffmpeg 读，常见格式都认）。
 const Set<String> _kReferenceAudioExtensions = <String>{
@@ -247,11 +252,12 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
     });
   }
 
-  /// 本机部署页（GPT-SoVITS / [irodori] 时 Irodori-TTS）新建了声音：重读清单、
-  /// 定位到它。
+  /// 本机部署页（GPT-SoVITS / [irodori] 时 Irodori-TTS / 给了 [voicevox] 时该
+  /// VOICEVOX 兼容引擎）新建了声音：重读清单、定位到它。
   Future<void> _openLocalDeploy({
     required bool wide,
     bool irodori = false,
+    VoicevoxLocalEngine? voicevox,
   }) async {
     // 那边直接读写预设仓：先把防抖中的编辑落盘，回来重读时才不丢。
     if (_saveDebounce?.isActive ?? false) {
@@ -259,7 +265,9 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
       await _store.savePresets(_presets);
       if (!mounted) return;
     }
-    final String? created = irodori
+    final String? created = voicevox != null
+        ? await openVoicevoxLocalPage(context, widget.services, voicevox)
+        : irodori
         ? await openIrodoriLocalPage(context, widget.services)
         : await openGptSovitsLocalPage(context, widget.services);
     if (created == null || !mounted) return;
@@ -356,6 +364,19 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
             subtitle: t.audiobook_tts_irodori_local_add_hint,
             icon: FushiIcons.download,
           ),
+        for (final VoicevoxLocalEngine engine in <VoicevoxLocalEngine>[
+          widget.services.localVoicevox,
+          widget.services.localAivisSpeech,
+        ])
+          if (engine.isSupported)
+            FushiChoiceOption<Object>(
+              value: engine,
+              label: t.audiobook_tts_voicevox_local_add(
+                engine: voicevoxLocalEngineName(engine),
+              ),
+              subtitle: voicevoxLocalAddHint(engine),
+              icon: FushiIcons.download,
+            ),
         for (final TtsProviderCategory c in categories)
           FushiChoiceOption<Object>(
             value: c,
@@ -372,6 +393,10 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
     }
     if (choice == _kAddLocalIrodori) {
       await _openLocalDeploy(wide: wide, irodori: true);
+      return;
+    }
+    if (choice is VoicevoxLocalEngine) {
+      await _openLocalDeploy(wide: wide, voicevox: choice);
       return;
     }
     final TtsProviderCategory picked = choice as TtsProviderCategory;
@@ -458,6 +483,7 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
       _openLocalDeploy(
         wide: embedded,
         irodori: preset.providerId == IrodoriServerTtsDescriptor.providerId,
+        voicevox: widget.services.voicevoxLocalFor(preset.providerId),
       ),
     ),
   );
@@ -576,9 +602,22 @@ class _TtsVoiceEditorPage extends StatefulWidget {
 class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
   final Map<String, TextEditingController> _controllers =
       <String, TextEditingController>{};
-  final TextEditingController _testText = TextEditingController(
-    text: _kDefaultTestText,
+  late final TextEditingController _testText = TextEditingController(
+    text: _autoTestText,
   );
+
+  /// 当前自动给出的试听文本（跟随所选语言 / 声音，见 [ttsSampleTextFor]）。
+  /// 输入框还是它时换语言 / 声音就跟着换；用户改过文字就不再覆盖。
+  late String _autoTestText = ttsSampleTextFor(ttsPresetLanguage(_preset));
+
+  void _followTestLanguage(String? languageTag) {
+    final String next = ttsSampleTextFor(languageTag);
+    if (_testText.text == _autoTestText && next != _autoTestText) {
+      _testText.text = next;
+    }
+    _autoTestText = next;
+  }
+
   bool _testing = false;
   bool _fetchingVoices = false;
   ({bool ok, String message})? _testResult;
@@ -591,11 +630,18 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
   GptSovitsLocalEngine get _local => widget.services.localGptSovits;
   IrodoriLocalEngine get _localIrodori => widget.services.localIrodori;
 
+  /// VOICEPEAK 找可执行文件的结果（null = 还没找过 / 不是 VOICEPEAK）。
+  ({bool found, String message})? _voicepeakDetect;
+  bool _voicepeakDetecting = false;
+
   @override
   void initState() {
     super.initState();
     _local.addListener(_onLocalEngine);
     _localIrodori.addListener(_onLocalEngine);
+    widget.services.localVoicevox.addListener(_onLocalEngine);
+    widget.services.localAivisSpeech.addListener(_onLocalEngine);
+    _maybeAutoDetectVoicepeak(_preset);
   }
 
   void _onLocalEngine() {
@@ -606,6 +652,8 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
   void dispose() {
     _local.removeListener(_onLocalEngine);
     _localIrodori.removeListener(_onLocalEngine);
+    widget.services.localVoicevox.removeListener(_onLocalEngine);
+    widget.services.localAivisSpeech.removeListener(_onLocalEngine);
     _testCancel?.cancel();
     unawaited(_releaseTestPlayer());
     for (final TextEditingController c in _controllers.values) {
@@ -658,15 +706,96 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
     final bool defaultName =
         _preset.name.isEmpty ||
         _preset.name == ttsProviderLabel(_preset.providerId);
+    final TtsVoicePreset next = TtsVoicePreset(
+      id: _preset.id,
+      providerId: picked.id,
+      name: defaultName ? ttsProviderLabel(picked.id) : _preset.name,
+      params: ttsDefaultParams(picked),
+    );
+    widget.onChanged(next);
+    setState(() {
+      _testResult = null;
+      _voicepeakDetect = null;
+    });
+    _maybeAutoDetectVoicepeak(next);
+  }
+
+  /// VOICEPEAK 声音的程序路径不存在时自动找一次已装的（默认目录、Windows 注册表
+  /// 卸载项、macOS 的 Applications），找到就填进去。
+  void _maybeAutoDetectVoicepeak(TtsVoicePreset preset) {
+    if (preset.providerId != VoicepeakTtsDescriptor.providerId) return;
+    final String current = preset
+        .param(
+          VoicepeakTtsDescriptor.executableKey,
+          fallback: voicepeakDefaultExecutable(),
+        )
+        .trim();
+    if (current.isNotEmpty && File(current).existsSync()) return;
+    unawaited(_detectVoicepeak(preset));
+  }
+
+  Future<void> _detectVoicepeak([TtsVoicePreset? base]) async {
+    if (_voicepeakDetecting) return;
+    setState(() => _voicepeakDetecting = true);
+    final String? found = await detectVoicepeakExecutable();
+    if (!mounted) return;
+    setState(() {
+      _voicepeakDetecting = false;
+      _voicepeakDetect = found == null
+          ? (found: false, message: t.audiobook_tts_voicepeak_not_found)
+          : (
+              found: true,
+              message: t.audiobook_tts_voicepeak_found(path: found),
+            );
+    });
+    if (found == null) return;
+    final TtsVoicePreset preset = base ?? _preset;
+    if (preset.providerId != VoicepeakTtsDescriptor.providerId) return;
+    _controllers[VoicepeakTtsDescriptor.executableKey]?.text = found;
     widget.onChanged(
-      TtsVoicePreset(
-        id: _preset.id,
-        providerId: picked.id,
-        name: defaultName ? ttsProviderLabel(picked.id) : _preset.name,
-        params: ttsDefaultParams(picked),
+      preset.copyWith(
+        params: <String, String>{
+          ...preset.params,
+          VoicepeakTtsDescriptor.executableKey: found,
+        },
       ),
     );
-    setState(() => _testResult = null);
+  }
+
+  /// 手动选 VOICEPEAK 的可执行文件（Windows 限 .exe；macOS / Linux 的可执行文件
+  /// 没有扩展名，不限）。
+  Future<void> _pickExecutable(TtsParamSpec spec) async {
+    final String? picked = await pickSystemFilePath(
+      context: context,
+      allowedExtensions: Platform.isWindows ? const <String>{'exe'} : null,
+    );
+    if (picked == null || !mounted) return;
+    _controllerFor(spec).text = picked;
+    _setParam(spec, picked);
+    setState(() => _voicepeakDetect = null);
+  }
+
+  /// VOICEPEAK 的「查找已安装的 VOICEPEAK」行：找不到时给购买 / 安装指引。
+  Widget? _voicepeakRow() {
+    if (_preset.providerId != VoicepeakTtsDescriptor.providerId) return null;
+    final ({bool found, String message})? detect = _voicepeakDetect;
+    return KeyedSubtree(
+      key: const ValueKey<String>('tts-voice-voicepeak-detect'),
+      child: AdaptiveSettingsRow(
+        icon: FushiIcons.search,
+        showIcon: true,
+        title: t.audiobook_tts_voicepeak_detect,
+        subtitle: detect?.message,
+        subtitleMaxLines: 5,
+        onTap: _voicepeakDetecting ? null : () => unawaited(_detectVoicepeak()),
+        trailing: _voicepeakDetecting
+            ? const SizedBox.square(
+                dimension: 18,
+                child: FushiCircularProgressIndicator(strokeWidth: 2),
+              )
+            : null,
+      ),
+    );
   }
 
   void _setParam(TtsParamSpec spec, String value) {
@@ -681,6 +810,10 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
             : null,
       ),
     );
+    if (_preset.providerId == GptSovitsTtsDescriptor.providerId &&
+        spec.key == GptSovitsTtsDescriptor.textLangKey) {
+      _followTestLanguage(ttsLanguageCodeToTag(value));
+    }
     // 配置变了，上一次试听结论作废。
     if (_testResult != null) setState(() => _testResult = null);
   }
@@ -770,7 +903,7 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
     );
     List<TtsVoice> voices = const <TtsVoice>[];
     try {
-      voices = await provider.listVoices();
+      voices = await provider.listParamOptions(spec.key);
     } on TtsFailure catch (failure) {
       if (mounted) {
         setState(
@@ -807,29 +940,46 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
       title: ttsParamLabel(spec.key),
       selected: current,
       options: <FushiChoiceOption<String>>[
+        // 非必填的声音类参数（系统语音的引擎 / 声音）可以不选：空 = 引擎默认行为。
+        if (!spec.required)
+          FushiChoiceOption<String>(
+            value: '',
+            label: ttsParamEmptyLabel(spec.key),
+          ),
         for (final TtsVoice v in sorted)
           FushiChoiceOption<String>(
             value: v.id,
             label: v.displayName == v.id ? v.id : '${v.displayName} · ${v.id}',
             subtitle: <String>[
-              v.locale,
+              if (v.locale.isNotEmpty) v.locale,
               if (v.gender != null) v.gender!,
             ].join(' · '),
           ),
       ],
     );
     if (picked == null || !mounted) return;
-    final TtsVoice chosen = sorted.firstWhere((TtsVoice v) => v.id == picked);
-    // 显示名只给界面用（不在参数表里，不进缓存键）：Irodori 的声音 id 是不透明串。
-    widget.onChanged(
-      _preset.copyWith(
-        params: <String, String>{
-          ..._preset.params,
-          spec.key: picked,
-          '${spec.key}$_kVoiceNameSuffix': chosen.displayName,
-        },
-      ),
-    );
+    final Map<String, String> params = <String, String>{..._preset.params};
+    if (picked.isEmpty) {
+      params
+        ..remove(spec.key)
+        ..remove('${spec.key}$_kVoiceNameSuffix');
+    } else {
+      final TtsVoice chosen = sorted.firstWhere((TtsVoice v) => v.id == picked);
+      // 显示名只给界面用（不在参数表里，不进缓存键）：Irodori 的声音 id 是不透明串。
+      params[spec.key] = picked;
+      params['${spec.key}$_kVoiceNameSuffix'] = chosen.displayName;
+      // 声音带语言（Edge / Azure / 系统语音等）：试听文本换成该语言的示例句。
+      if (chosen.locale.isNotEmpty) _followTestLanguage(chosen.locale);
+    }
+    // 系统语音的声音属于某个引擎：换了引擎，旧引擎的声音名在新引擎里没有意义。
+    if (_preset.providerId == SystemTtsDescriptor.providerId &&
+        spec.key == SystemTtsDescriptor.engineKey &&
+        picked != current) {
+      params
+        ..remove(SystemTtsDescriptor.voiceKey)
+        ..remove('${SystemTtsDescriptor.voiceKey}$_kVoiceNameSuffix');
+    }
+    widget.onChanged(_preset.copyWith(params: params));
     if (_testResult != null) setState(() => _testResult = null);
   }
 
@@ -956,10 +1106,10 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
           child: FushiInlineNotice(
             key: const ValueKey<String>('tts-voice-online-notice'),
             severity: FushiNoticeSeverity.info,
-            message: _kUnofficialProviders.contains(descriptor.id)
-                ? '${t.audiobook_tts_online_notice}\n'
-                      '${t.audiobook_tts_unofficial_notice}'
-                : t.audiobook_tts_online_notice,
+            message: <String>[
+              t.audiobook_tts_online_notice,
+              ?ttsUnofficialNotice(descriptor.id),
+            ].join('\n'),
           ),
         ),
       AdaptiveSettingsSection(
@@ -1011,6 +1161,7 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
             for (final TtsParamSpec spec in descriptor.params)
               _paramRow(spec, problems.contains(spec.key), field),
           if (_localServiceRow() case final Widget row) row,
+          if (_voicepeakRow() case final Widget row) row,
           if (descriptor != null &&
               descriptor.category != TtsProviderCategory.system)
             _concurrencyRow(descriptor),
@@ -1132,6 +1283,10 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
     if (_preset.providerId == IrodoriServerTtsDescriptor.providerId) {
       return _localIrodoriRow();
     }
+    if (widget.services.voicevoxLocalFor(_preset.providerId)
+        case final VoicevoxLocalEngine engine) {
+      return _localVoicevoxRow(engine);
+    }
     if (_preset.providerId != GptSovitsTtsDescriptor.providerId ||
         !_local.isSupported) {
       return null;
@@ -1162,6 +1317,44 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
         icon: installed ? FushiIcons.server : FushiIcons.download,
         showIcon: true,
         title: t.audiobook_tts_local_title,
+        subtitle: subtitle,
+        subtitleMaxLines: 3,
+        onTap: widget.onOpenLocalDeploy,
+      ),
+    );
+  }
+
+  /// VOICEVOX / AivisSpeech 声音指向本机时的同一行：已部署显示服务状态，没部署给
+  /// 一键部署入口。
+  Widget? _localVoicevoxRow(VoicevoxLocalEngine engine) {
+    if (!engine.isSupported) return null;
+    final String endpoint = _preset.param(
+      VoicevoxCompatibleTtsDescriptor.endpointKey,
+      fallback: 'http://127.0.0.1:${engine.manifest.defaultPort}',
+    );
+    if (!ttsEndpointIsLoopback(endpoint)) return null;
+    final bool installed = engine.isInstalled;
+    final bool managed = localServiceEndpointIsManaged(
+      endpoint,
+      engine.settings.port,
+    );
+    if (installed && !managed) return null;
+    final String name = voicevoxLocalEngineName(engine);
+    final String subtitle = !installed
+        ? t.audiobook_tts_voicevox_local_editor_not_installed(engine: name)
+        : switch (engine.server.phase) {
+            LocalServicePhase.running => t.audiobook_tts_local_server_running(
+              endpoint: engine.endpoint,
+            ),
+            LocalServicePhase.starting => t.audiobook_tts_local_server_starting,
+            _ => t.audiobook_tts_local_server_stopped,
+          };
+    return KeyedSubtree(
+      key: const ValueKey<String>('tts-voice-local-voicevox'),
+      child: AdaptiveSettingsRow(
+        icon: installed ? FushiIcons.server : FushiIcons.download,
+        showIcon: true,
+        title: t.audiobook_tts_voicevox_local_title(engine: name),
         subtitle: subtitle,
         subtitleMaxLines: 3,
         onTap: widget.onOpenLocalDeploy,
@@ -1287,7 +1480,9 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
           child: AdaptiveSettingsRow(
             title: label,
             subtitle: id.isEmpty
-                ? t.audiobook_tts_voice_pick
+                ? (spec.required
+                      ? t.audiobook_tts_voice_pick
+                      : ttsParamEmptyLabel(spec.key))
                 : (name.isEmpty || name == id ? id : '$name · $id'),
             subtitleMaxLines: 2,
             onTap: _fetchingVoices ? null : () => unawaited(_pickVoice(spec)),
@@ -1328,6 +1523,13 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
                     tooltip: t.audiobook_tts_param_ref_audio_pick,
                     onTap: () => unawaited(_pickReferenceAudio(spec)),
                   )
+                : _isVoicepeakExecutable(spec)
+                ? FushiIconButton(
+                    key: const ValueKey<String>('tts-voice-executable-pick'),
+                    icon: FushiIcons.folderOpen,
+                    tooltip: t.audiobook_tts_param_executable_pick,
+                    onTap: () => unawaited(_pickExecutable(spec)),
+                  )
                 : null,
 
             onChanged: (String v) => _setParam(spec, v.trim()),
@@ -1335,6 +1537,10 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
         );
     }
   }
+
+  bool _isVoicepeakExecutable(TtsParamSpec spec) =>
+      _preset.providerId == VoicepeakTtsDescriptor.providerId &&
+      spec.key == VoicepeakTtsDescriptor.executableKey;
 
   /// 参考音频行带「选择文件」：只在 GPT-SoVITS 服务就是本机时才有意义。
   bool _canPickReferenceAudio(TtsParamSpec spec) =>

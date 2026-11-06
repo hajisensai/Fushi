@@ -111,8 +111,10 @@ void main() {
       // 媒体库在线条目（粘贴链接 / YouTube / 在线视频源剧集）同样直接在线回看：
       // 不再提示先下载，回看中也不进网页播放器（站点播放器会记观看记录）。
       final int streamBook = video.indexOf('if (isStreamVideoBook(row))');
+      // 网页站分流（原生页网页档 / 内置网页播放器页）收在 web_source.part.dart 的
+      // `_openWebSource`，主壳里只剩这一处调用。
       final int webpagePlayer = video.indexOf(
-        'WebVideoFushiPage.neutralized(',
+        'await _openWebSource(row);',
         streamBook,
       );
       expect(streamBook, greaterThan(0));

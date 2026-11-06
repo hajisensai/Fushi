@@ -1,7 +1,7 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
 
-/// `ffmpeg-min`（n7.1.x，`--disable-everything` + 白名单）`-filters` 的真实开头，
+/// 旧 `ffmpeg-min`（n7.1.x，`--disable-everything` + 白名单）`-filters` 的真实开头，
 /// 取自**加 overlay 重编之前**入库的那版二进制（28 个 filter）。flag 列是 **3 位**
 /// （`T..` / `..C`），且没有 overlay——这正是 BUG-2202 的起点事实。表头那几行是
 /// 图例，不能被当成 filter 解析出来。
@@ -60,7 +60,7 @@ ClipBurnCue _cue(int a, int b, [String p = 'c.png']) =>
 
 void main() {
   group('parseFfmpegFilterNames', () {
-    test('reads the 3-flag ffmpeg-min listing and skips the legend', () {
+    test('reads the 3-flag (old ffmpeg-min) listing and skips the legend', () {
       final Set<String> names = parseFfmpegFilterNames(_kFiltersMinReal);
 
       expect(names, contains('scale'));
@@ -91,7 +91,7 @@ void main() {
 
   group('ffmpegCanBurnClipSubtitles', () {
     test('a whitelist build without overlay cannot burn', () {
-      // 语料是**重编之前**入库 ffmpeg-min 的真实输出（28 个 filter，没有 overlay）
+      // 语料是**重编之前**入库的旧 ffmpeg-min 的真实输出（28 个 filter，没有 overlay）
       // ——这正是 BUG-2202 的起点事实。二进制现已重编（29 个 filter，含 overlay），
       // 但这条负向用例照旧有效：用户可以用 `FUSHI_FFMPEG` 指到自己的精简构建，
       // 那时必须干净地判「不能烧」而不是拼一条注定失败的命令。
@@ -116,7 +116,10 @@ void main() {
 
   group('parseClipFrameSize', () {
     test('takes the frame size off the real probe log', () {
-      expect(parseClipFrameSize(_kProbeLogReal), const ClipFrameSize(1920, 1080));
+      expect(
+        parseClipFrameSize(_kProbeLogReal),
+        const ClipFrameSize(1920, 1080),
+      );
     });
 
     test('is not fooled by DAR / SAR / bitrate / fps on the same line', () {
@@ -137,17 +140,19 @@ void main() {
       expect(parseClipFrameSize(''), isNull);
     });
 
-    test('returns null rather than guessing when the size field is missing',
-        () {
-      // 尺寸猜错会让字幕被 overlay 拉伸或裁掉，比没有字幕更糟——所以宁可返回
-      // null 让调用方不烧。
-      expect(
-        parseClipFrameSize(
-          '  Stream #0:0: Video: h264 (High), yuv420p, 994 kb/s\n',
-        ),
-        isNull,
-      );
-    });
+    test(
+      'returns null rather than guessing when the size field is missing',
+      () {
+        // 尺寸猜错会让字幕被 overlay 拉伸或裁掉，比没有字幕更糟——所以宁可返回
+        // null 让调用方不烧。
+        expect(
+          parseClipFrameSize(
+            '  Stream #0:0: Video: h264 (High), yuv420p, 994 kb/s\n',
+          ),
+          isNull,
+        );
+      },
+    );
   });
 
   group('buildClipBurnFilterGraph', () {
@@ -175,8 +180,9 @@ void main() {
       // filtergraph 里 `,` 是链接分隔符：between(t,a,b) 不加引号会被 ffmpeg 自己的
       // 词法器拆成三段。参数是按列表传给进程、不经 shell 的，所以引号必须留在
       // 字符串里，不能当成 shell 引号删掉。
-      final String graph =
-          buildClipBurnFilterGraph(<ClipBurnCue>[_cue(500, 1500)]);
+      final String graph = buildClipBurnFilterGraph(<ClipBurnCue>[
+        _cue(500, 1500),
+      ]);
       expect(graph, contains("enable='between(t,0.500,1.500)'"));
       expect(graph, isNot(contains('enable=between(')));
     });
@@ -244,8 +250,10 @@ void main() {
 
   group('canBurnClipCues', () {
     test('accepts a normal batch', () {
-      expect(canBurnClipCues(<ClipBurnCue>[_cue(0, 1000), _cue(1000, 2000)]),
-          isTrue);
+      expect(
+        canBurnClipCues(<ClipBurnCue>[_cue(0, 1000), _cue(1000, 2000)]),
+        isTrue,
+      );
     });
 
     test('refuses an empty batch', () {
@@ -254,9 +262,9 @@ void main() {
 
     test('refuses more cues than the command line can carry', () {
       List<ClipBurnCue> n(int count) => List<ClipBurnCue>.generate(
-            count,
-            (int i) => _cue(i * 100, i * 100 + 50, 'c$i.png'),
-          );
+        count,
+        (int i) => _cue(i * 100, i * 100 + 50, 'c$i.png'),
+      );
 
       expect(canBurnClipCues(n(kMaxClipBurnCues)), isTrue);
       // 超一条就整段不烧，**不静默截断**——只烧前 N 条会产出「后半段突然没字幕」
@@ -272,10 +280,7 @@ void main() {
     });
 
     test('refuses a cue with no rendered image', () {
-      expect(
-        canBurnClipCues(<ClipBurnCue>[_cue(0, 1000, '')]),
-        isFalse,
-      );
+      expect(canBurnClipCues(<ClipBurnCue>[_cue(0, 1000, '')]), isFalse);
     });
 
     test('one bad cue disqualifies the whole batch', () {

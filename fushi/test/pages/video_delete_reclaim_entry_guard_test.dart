@@ -5,103 +5,100 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 
 void main() {
-  test(
-    'live VideoBook deletion entries use one delete-and-reclaim operation',
-    () {
-      final String home = File(
-        'lib/src/pages/implementations/home_video_page.dart',
-      ).readAsStringSync();
-      final String player = File(
-        'lib/src/pages/implementations/video_fushi_page.dart',
-      ).readAsStringSync();
-      // B4 拆分后 deleteVideo 在 videos.part.dart。
-      final String host = File(
-        '../packages/fushi_engine/lib/sync/local_library_host_service/videos.part.dart',
-      ).readAsStringSync();
-      final String appModel = File(
-        'lib/src/models/app_model.dart',
-      ).readAsStringSync();
-      final String pipeline = File(
-        '../packages/fushi_engine/lib/media/video/download/video_download_pipeline_service.dart',
-      ).readAsStringSync();
+  test('live VideoBook deletion entries use one delete-and-reclaim operation', () {
+    final String home = File(
+      'lib/src/pages/implementations/home_video_page.dart',
+    ).readAsStringSync();
+    final String player = File(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    ).readAsStringSync();
+    // B4 拆分后 deleteVideo 在 videos.part.dart。
+    final String host = File(
+      '../packages/fushi_engine/lib/sync/local_library_host_service/videos.part.dart',
+    ).readAsStringSync();
+    final String appModel = File(
+      'lib/src/models/app_model.dart',
+    ).readAsStringSync();
+    final String pipeline = File(
+      '../packages/fushi_engine/lib/media/video/download/video_download_pipeline_service.dart',
+    ).readAsStringSync();
 
-      final String libraryDelete = File(
-        'lib/src/media/video/video_library_delete.dart',
-      ).readAsStringSync();
-      final Map<String, ({String body, String operation})>
-      entries = <String, ({String body, String operation})>{
-        // 视频页两个入口经 deleteVideoBooksWithDecision（同时删本地文件 + 联动
-        // 下载任务）落到仓库层；helper 自身再由下一条守住「必须走 reclaim 操作」。
-        'home batch delete': (
-          body: methodBody(home, 'Future<void> _batchDeleteConfirm() async'),
-          operation: 'deleteVideoBooksWithDecision',
+    final String libraryDelete = File(
+      'lib/src/media/video/video_library_delete.dart',
+    ).readAsStringSync();
+    final Map<String, ({String body, String operation})>
+    entries = <String, ({String body, String operation})>{
+      // 视频页两个入口经 deleteVideoBooksWithDecision（同时删本地文件 + 联动
+      // 下载任务）落到仓库层；helper 自身再由下一条守住「必须走 reclaim 操作」。
+      'home batch delete': (
+        body: methodBody(home, 'Future<void> _batchDeleteConfirm() async'),
+        operation: 'deleteVideoBooksWithDecision',
+      ),
+      'home single delete': (
+        body: methodBody(
+          home,
+          'Future<void> _confirmDelete(VideoBookRow book) async',
         ),
-        'home single delete': (
-          body: methodBody(
-            home,
-            'Future<void> _confirmDelete(VideoBookRow book) async',
-          ),
-          operation: 'deleteVideoBooksWithDecision',
+        operation: 'deleteVideoBooksWithDecision',
+      ),
+      'library delete helper': (
+        body: topLevelFunctionBody(
+          libraryDelete,
+          'deleteVideoBooksWithDecision',
+        )!,
+        operation: 'deleteVideoBooksAndReclaimAssets',
+      ),
+      'missing-resource delete': (
+        body: methodBody(
+          player,
+          'Future<void> _confirmMissingResourceDelete(VideoBookRow row) async',
         ),
-        'library delete helper': (
-          body: topLevelFunctionBody(
-            libraryDelete,
-            'deleteVideoBooksWithDecision',
-          )!,
-          operation: 'deleteVideoBooksAndReclaimAssets',
-        ),
-        'missing-resource delete': (
-          body: methodBody(
-            player,
-            'Future<void> _confirmMissingResourceDelete(VideoBookRow row) async',
-          ),
-          operation: 'deleteVideoBookAndReclaimAssets',
-        ),
-        'host remote delete': (
-          body: methodBody(host, 'Future<void> deleteVideo(String id) async'),
-          operation: 'deleteVideoBookAndReclaimAssets',
-        ),
-        'confirmed sync deletion': (
-          body: methodBody(appModel, 'Future<void> _applyConfirmedDeletions('),
-          operation: 'deleteVideoBookAndReclaimAssets',
-        ),
-        'download-job deletion': (
-          body: topLevelFunctionBody(
-            pipeline,
-            'deletePersistedVideoDownloadJob',
-          )!,
-          // 一个任务的所有入库行一次批量删（BUG-2949：逐行调单条入口 = 每集
-          // 两次全表扫描 + 一个事务）。
-          operation: 'deleteVideoBooksAndReclaimAssets',
-        ),
-      };
+        operation: 'deleteVideoBookAndReclaimAssets',
+      ),
+      'host remote delete': (
+        body: methodBody(host, 'Future<void> deleteVideo(String id) async'),
+        operation: 'deleteVideoBookAndReclaimAssets',
+      ),
+      'confirmed sync deletion': (
+        body: methodBody(appModel, 'Future<void> _applyConfirmedDeletions('),
+        operation: 'deleteVideoBookAndReclaimAssets',
+      ),
+      'download-job deletion': (
+        body: topLevelFunctionBody(
+          pipeline,
+          'deletePersistedVideoDownloadJob',
+        )!,
+        // 一个任务的所有入库行一次批量删（BUG-2949：逐行调单条入口 = 每集
+        // 两次全表扫描 + 一个事务）。
+        operation: 'deleteVideoBooksAndReclaimAssets',
+      ),
+    };
 
-      for (final entry in entries.entries) {
-        expect(
-          containsIdentifierCall(entry.value.body, entry.value.operation),
-          isTrue,
-          reason:
-              '${entry.key} must keep DB mutation and asset reclaim in one '
-              'VideoScrapeOperationGate lease',
-        );
-        expect(
-          containsIdentifierCall(entry.value.body, 'deleteVideoBook'),
-          isFalse,
-          reason:
-              '${entry.key} must not expose a maintenance entry gap after '
-              'the live DB row is deleted',
-        );
-        expect(
-          containsIdentifierCall(
-            entry.value.body,
-            'reclaimDeletedVideoBookAssets',
-          ),
-          isFalse,
-          reason: '${entry.key} must not start reclaim under a second lease',
-        );
-      }
-    },
-  );
+    for (final entry in entries.entries) {
+      expect(
+        containsIdentifierCall(entry.value.body, entry.value.operation),
+        isTrue,
+        reason:
+            '${entry.key} must keep DB mutation and asset reclaim in one '
+            'VideoScrapeOperationGate lease',
+      );
+      expect(
+        containsIdentifierCall(entry.value.body, 'deleteVideoBook'),
+        isFalse,
+        reason:
+            '${entry.key} must not expose a maintenance entry gap after '
+            'the live DB row is deleted',
+      );
+      expect(
+        containsIdentifierCall(
+          entry.value.body,
+          'reclaimDeletedVideoBookAssets',
+        ),
+        isFalse,
+        reason: '${entry.key} must not start reclaim under a second lease',
+      );
+    }
+  });
 
   test(
     '_loadLibraryMaps is latest-request-wins across scrape cleanup refresh',

@@ -9,11 +9,6 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiBadgeControl;
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:flutter/foundation.dart' show listEquals;
-import 'package:flutter/gestures.dart'
-    show
-        DragStartBehavior,
-        HorizontalDragGestureRecognizer,
-        LongPressGestureRecognizer;
 import 'package:flutter/rendering.dart' show OverflowBoxFit, RenderFlex;
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -24,10 +19,23 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
+import 'package:fushi/src/utils/adaptive/nav_overflow/nav_overflow_spec.dart';
+import 'package:fushi/src/utils/adaptive/nav_shape.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show FushiCapsuleScale, kFushiFloatingCapsuleScale;
+import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
+    show FushiWavyLinearProgress;
 import 'package:fushi/src/utils/components/fushi_haptics.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/media/media_search_text.dart' show matchesMediaSearch;
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show ShelfCoverFrame;
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
     show
         FushiSpring,
@@ -52,9 +60,18 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
         SpringBuilder,
         VelocitySpringBuilder;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
-    show fushiClearGlassSettings;
+    show FushiFilledButton, fushiClearGlassSettings;
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart'
+    show FushiTextFieldControl;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
+
+part 'nav_rail/nav_rail_shape.part.dart';
+part 'nav_rail/nav_rail_peek.part.dart';
+part 'nav_rail/apple_sidebar_tabs.part.dart';
 
 class AdaptiveNavItem {
   final IconData icon;
@@ -65,11 +82,21 @@ class AdaptiveNavItem {
   /// 底栏与侧栏共用同一渲染，徽标随之一致。
   final bool experimentalBadge;
 
+  /// MD3 侧栏选中时图标后面的专属形状（M3E 官方 [MaterialShapes]）：选中由圆
+  /// 形变过来并缓慢自转。null = 按序号从 [kNavRailFallbackShapes] 取。
+  final RoundedPolygon? railShape;
+
+  /// MD3 侧栏悬停速览卡的内容（鼠标停在图标上弹出）。null = 不弹卡，收起 rail
+  /// 的名称照常进 tooltip。
+  final AdaptiveNavPeek? peek;
+
   const AdaptiveNavItem({
     required this.icon,
     required this.label,
     this.selectedIcon,
     this.experimentalBadge = false,
+    this.railShape,
+    this.peek,
   });
 }
 
@@ -185,6 +212,47 @@ const double kMaterialNavRailFloatingInset =
 /// MD3 悬浮 rail 面板圆角（M3E 大容器 28）。
 const double _kMaterialRailPanelRadius = 28;
 
+/// MD3 悬浮胶囊的高度：按「选中多边形 40 + 缝 2 + 标签实际行高」加上下各
+/// [_kCapsuleVerticalPadding] 算，跟随（钳到 1.3 的）文字缩放；标签隐藏时只
+/// 剩药丸，取 [kAdaptiveNavBarContentHeight]（64）。此前用 64 的最小高 +
+/// IntrinsicHeight，Windows 上标签字体行高偏大时下半截被胶囊圆角裁掉
+/// （2026-10-06 用户截图）。
+double materialNavBarCapsuleHeight(
+  BuildContext context, {
+  required bool showLabels,
+}) {
+  if (!showLabels) return kAdaptiveNavBarContentHeight;
+  final TextStyle style =
+      (Theme.of(context).textTheme.labelMedium ?? const TextStyle()).copyWith(
+        fontWeight: FontWeight.w600,
+      );
+  final TextPainter painter = TextPainter(
+    text: TextSpan(text: 'Ag国', style: style),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.3),
+    maxLines: 1,
+  )..layout();
+  final double labelHeight = painter.height;
+  painter.dispose();
+  return math.max(
+    kAdaptiveNavBarContentHeight,
+    (2 * _kCapsuleVerticalPadding +
+            _kMaterialBarLabeledShapeSize +
+            _kMaterialBarLabelGap +
+            labelHeight)
+        .ceilToDouble(),
+  );
+}
+
+/// MD3 悬浮底栏右侧 FAB 的实际边长（胶囊同高、再经 [FushiCapsuleScale] 缩放）。
+/// 给叠在它上方的外壳按钮（首页「后台任务」小环钮）对齐中线用。
+double materialNavBarFabExtent(
+  BuildContext context, {
+  required bool showLabels,
+}) =>
+    materialNavBarCapsuleHeight(context, showLabels: showLabels) *
+    kFushiFloatingCapsuleScale;
+
 /// MD3 悬浮底栏离屏幕底边的距离：浮在手势区之上，最少 12。
 double _materialNavBarBottomMargin(BuildContext context) =>
     math.max(kAdaptiveNavFloatingMargin, MediaQuery.paddingOf(context).bottom);
@@ -195,14 +263,30 @@ const double _kMaterialMenuPillHeight = 40;
 /// M3 Expressive「expressive」动效方案的 default spatial 弹簧（刚度 380、
 /// 阻尼比 0.8）：导航指示器选中时带一点回弹地展开，rail 展开 / 收起同用。
 /// 按压类形变用的 standard 方案见 fushi_expressive.dart。
-final SpringDescription _kNavExpressiveSpatial =
-    SpringDescription.withDampingRatio(mass: 1, stiffness: 380, ratio: 0.8);
+final SpringDescription _kNavExpressiveSpatial = kNavExpressiveSpatial;
 
 /// MD3 展开 rail 一行的高度与收起 rail / 底栏指示器药丸的尺寸（M3 Expressive：
 /// 行 56、药丸 56×32，全圆角）。
 const double _kMaterialRailRowHeight = 56;
 const double _kMaterialPillWidth = 56;
 const double _kMaterialPillHeight = 32;
+
+/// MD3 底栏选中项图标背后的专属多边形边长（用户 2026-10-24「底部栏的高亮也
+/// 用跟侧边栏一样有多边形的」）：纯图标底栏 48（整格高即 48dp 命中区），带
+/// 标签时 40、与标签隔 [_kMaterialBarLabelGap]。窄格再按格宽收（见
+/// [AdaptiveNavTileMetrics.pillWidth]）。
+const double _kMaterialBarShapeSize = 48;
+const double _kMaterialBarLabeledShapeSize = 40;
+const double _kMaterialBarLabelGap = 2;
+
+/// MD3 底栏一格选中多边形（也是状态层裁剪区）的实际边长。
+double _materialBarShapeSize({
+  required bool showLabel,
+  required double pillWidth,
+}) => math.min(
+  showLabel ? _kMaterialBarLabeledShapeSize : _kMaterialBarShapeSize,
+  pillWidth,
+);
 
 /// 当前设计系统下导航 rail / 侧栏实际占的宽（标题栏按它缩进标题）。
 double adaptiveNavRailWidthFor(BuildContext context, {required bool extended}) {
@@ -266,10 +350,8 @@ const double _kGlassSidebarCollapsedCellWidth = 60;
 /// 传入的 [items] 决定（已按反转排好）。
 ///
 /// [barStyle]：底栏形态（用户偏好 `nav_bar_style`，见 [AdaptiveNavBarStyle]）。
-/// 分页滑动（MD3）：查词并进胶囊、所有目的地同级，每页 5 个，在底栏上横滑翻页；
-/// 按住约 0.3 秒进入拖选（震一下），手指停在哪一格就选哪一格，拖到胶囊左右
-/// 边缘停一下自动翻页，松手切过去。目的地不超过 5 个时与平铺同一排。Apple
-/// 胶囊同语义分页（2026-10-16），分页状态 / 手势与 MD3 共用 [_NavPagedRow]。
+/// 拇指转盘 / 相机模式条（`nav_overflow/`）在 MD3 悬浮胶囊与 Apple 胶囊里
+/// 都画（2026-10-30 起 Apple 也接，视觉按 [NavOverflowPalette] 换成 Apple）。
 Widget adaptiveBottomBar({
   required BuildContext context,
   required int currentIndex,
@@ -410,19 +492,19 @@ class _MaterialNavCluster extends StatelessWidget {
     int i, {
     bool iconOnly = false,
     double? cellWidth,
-    bool? looksSelected,
     bool glassOwnLens = false,
   }) {
     return _NavFocusCell(
       id: FushiFocusId('$idPrefix-$i'),
       glassOwnLens: glassOwnLens,
       item: items[i],
-      // 分页底栏拖选中：选中药丸画在手指罩着的那一格（只是外观）。
-      selected: looksSelected ?? i == currentIndex,
+      selected: i == currentIndex,
       horizontal: axis == Axis.horizontal,
       extended: axis == Axis.vertical && extended,
       iconOnly: iconOnly,
       cellWidth: cellWidth,
+      railShape: navShapeOf(items, i),
+      order: i,
       onSelect: () {
         if (i != currentIndex) fushiSelectionHaptic(context);
         onTap(i);
@@ -430,56 +512,17 @@ class _MaterialNavCluster extends StatelessWidget {
     );
   }
 
-  /// 分页滑动的一排（MD3 悬浮胶囊与 Apple 胶囊共用）：每页 [_kNavPageSize]
-  /// 格，底栏横滑翻页、长按拖选（见 [_NavPagedRow]）。不挂整条胶囊的滑动
-  /// 指示器，各格自己画选中态（MD3 药丸 / Apple lens，[glass]）。
-  /// 拖选落地：MD3 走 [onDragSelect]（宿主据此播模块切换转场），没接时退回
-  /// [onTap]；Apple 保持 iOS 标签栏的点按切换语义（同胶囊拖动 lens 的落地），
-  /// 一律走 [onTap]。
-  Widget _buildPagedRow(
-    BuildContext context,
-    double width,
-    List<int> indices, {
-    bool glass = false,
-  }) {
-    final List<List<int>> pages = <List<int>>[
-      for (int start = 0; start < indices.length; start += _kNavPageSize)
-        indices.sublist(start, math.min(indices.length, start + _kNavPageSize)),
-    ];
-    final double cellWidth = width / _kNavPageSize;
-    final ValueChanged<int> dragSelect = glass
-        ? onTap
-        : (onDragSelect ?? onTap);
-    return _NavPagedRow(
-      pages: pages,
-      currentIndex: currentIndex,
-      cellBuilder: (int i, bool? looksSelected) => _cell(
-        context,
-        i,
-        cellWidth: cellWidth,
-        looksSelected: looksSelected,
-        glassOwnLens: glass,
-      ),
-      onDragSelect: dragSelect,
-    );
-  }
-
-  /// 底栏是否按「分页滑动」画：偏好选了分页、且进胶囊的目的地多于一页。
-  /// 不多于 [_kNavPageSize] 个时与平铺同一排（MD3 / Apple 同一判据）。
-  bool _pagedFor(List<int> capsuleIndices) =>
-      barStyle == AdaptiveNavBarStyle.pager &&
-      capsuleIndices.length > _kNavPageSize;
-
   /// Apple 设计系统（iOS 26）的悬浮标签栏本体：一枚放目的地的玻璃胶囊，
   /// [glassSearchIndex] 那一项拆成右侧的圆形玻璃钮。下滑最小化时胶囊收成
   /// 只剩当前项图标的圆（宽度动画；减弱动态效果下瞬间到位），其余目的地
   /// 淡出并移出焦点遍历 / 命中测试。焦点 id 与展开态一致（`nav-bar-<序号>`），
   /// 最小化圆用单独的 `nav-mini-bar`。
   ///
-  /// 分页滑动（[barStyle]，2026-10-16 用户「apple 也要分页」）：与 MD3 同语义
-  /// ——查词仍是右侧圆钮，其余目的地多于一页时胶囊里换成共用的
-  /// [_NavPagedRow]（横滑翻页、页点、按住拖选、边缘停留翻页）；胶囊自己的
-  /// 「横拖 lens」让位给翻页手势，选中态由各格自己画 lens。
+  /// 底栏样式（[barStyle]，2026-10-30 用户拍板「Apple 下也要真正画出拇指
+  /// 转盘与相机模式条」）：拇指转盘 / 相机模式条时胶囊里换成 `nav_overflow/`
+  /// 的同一份原型（Apple 配色与 lens，见 [NavOverflowPalette]），查词仍是
+  /// 右侧圆钮；胶囊自己的「横拖 lens」与统一 lens 让位给原型（模式条横拨、
+  /// 转盘旋钮），转盘的固定格自己画 lens。平铺保持原样。
   Widget _buildGlassTabBar(BuildContext context) {
     final int? rawSearch = glassSearchIndex;
     final int? search =
@@ -510,9 +553,33 @@ class _MaterialNavCluster extends StatelessWidget {
         final double innerFull = fullWidth - 2 * _kGlassNavBarInnerPadding;
         const double innerMini =
             _kGlassNavBarMinimizedWidth - 2 * _kGlassNavBarInnerPadding;
-        final bool paged = _pagedFor(capsuleIndices);
-        final Widget fullRow = paged
-            ? _buildPagedRow(context, innerFull, capsuleIndices, glass: true)
+        final bool variant =
+            barStyle.isOverflowVariant && capsuleIndices.isNotEmpty;
+        final Widget fullRow = variant
+            ? buildNavOverflowVariant(
+                barStyle,
+                NavOverflowSpec(
+                  items: items,
+                  indices: capsuleIndices,
+                  currentIndex: currentIndex,
+                  // 保持 iOS 标签栏的点按切换语义（同胶囊拖动 lens 的落地），
+                  // 一律走 [onTap]，不走 MD3 的拖选转场。
+                  onSelect: (int i) {
+                    if (i != currentIndex) fushiSelectionHaptic(context);
+                    onTap(i);
+                  },
+                  cellBuilder: (int i, double cellWidth) => _cell(
+                    context,
+                    i,
+                    cellWidth: cellWidth,
+                    glassOwnLens: true,
+                  ),
+                  width: innerFull,
+                  height:
+                      kGlassNavBarCapsuleHeight - 2 * _kGlassNavBarInnerPadding,
+                  focusIdPrefix: idPrefix,
+                ),
+              )
             : Row(
                 children: <Widget>[
                   for (final int i in capsuleIndices)
@@ -555,9 +622,9 @@ class _MaterialNavCluster extends StatelessWidget {
           );
         }
 
-        // 分页时胶囊不画统一 lens（它按整枚胶囊的格数对齐，翻页后对不上），
-        // 由各格自己画（[_NavFocusCell.glassOwnLens]）。
-        final int? selectedPos = selectedInCapsule && !paged
+        // 原型样式时胶囊不画统一 lens（它按整枚胶囊的格数等分对齐，与转盘的
+        // 固定格 + 旋钮、模式条的滚动条带都对不上），由原型自己画。
+        final int? selectedPos = selectedInCapsule && !variant
             ? capsuleIndices.indexOf(currentIndex)
             : null;
         // 搜索圆钮：默认在胶囊右侧；反转底栏方向时挪到左侧（[searchLeading]）。
@@ -587,8 +654,8 @@ class _MaterialNavCluster extends StatelessWidget {
                 minimized: minimized,
                 itemCount: capsuleIndices.length,
                 selectedPos: selectedPos,
-                // 分页时横拖归翻页（[_NavPagedRow]），胶囊不再横拖滑 lens。
-                swipeSelect: !paged,
+                // 原型样式时横拖归原型（模式条横拨 / 转盘旋钮），胶囊不再横拖滑 lens。
+                swipeSelect: !variant,
                 duration: duration,
                 curve: curve,
                 onSelectPos: (int pos) {
@@ -653,7 +720,10 @@ class _MaterialNavCluster extends StatelessWidget {
       );
     }
     final bool currentValid = currentIndex >= 0 && currentIndex < items.length;
-    final double capsuleHeight = _materialCapsuleHeight(context);
+    final double capsuleHeight = materialNavBarCapsuleHeight(
+      context,
+      showLabels: showLabels,
+    );
     // BUG-3064：FAB 那一项（查词）选中时同样随下滑收起——胶囊里没有当前项可
     // 留，整条胶囊让位（M3E 浮动工具栏滚走、FAB 留下），回滚 / 焦点进入再展开。
     // 此前这里直接不收起，查词页往下滑底栏纹丝不动。
@@ -686,35 +756,6 @@ class _MaterialNavCluster extends StatelessWidget {
     );
   }
 
-  /// MD3 悬浮胶囊的高度：按「指示器药丸 32 + 缝 4 + 标签实际行高」加上下各
-  /// [_kCapsuleVerticalPadding] 算，跟随（钳到 1.3 的）文字缩放；标签隐藏时只
-  /// 剩药丸，取 [kAdaptiveNavBarContentHeight]（64）。此前用 64 的最小高 +
-  /// IntrinsicHeight，Windows 上标签字体行高偏大时下半截被胶囊圆角裁掉
-  /// （2026-10-06 用户截图）。
-  double _materialCapsuleHeight(BuildContext context) {
-    if (!showLabels) return kAdaptiveNavBarContentHeight;
-    final TextStyle style =
-        (Theme.of(context).textTheme.labelMedium ?? const TextStyle()).copyWith(
-          fontWeight: FontWeight.w600,
-        );
-    final TextPainter painter = TextPainter(
-      text: TextSpan(text: 'Ag国', style: style),
-      textDirection: Directionality.of(context),
-      textScaler: MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.3),
-      maxLines: 1,
-    )..layout();
-    final double labelHeight = painter.height;
-    painter.dispose();
-    return math.max(
-      kAdaptiveNavBarContentHeight,
-      (2 * _kCapsuleVerticalPadding +
-              AdaptiveNavTileMetrics.pillHeight +
-              4 +
-              labelHeight)
-          .ceilToDouble(),
-    );
-  }
-
   /// MD3 悬浮底栏胶囊里的一排目的地（[indices] 是进胶囊的那些，按视觉序）。
   /// 标签显示时恒显示、不截断：
   /// 1. 每格要的宽 = max([_kMinNavCellWidth], 标签实宽（12 号 w600、跟随
@@ -739,8 +780,27 @@ class _MaterialNavCluster extends StatelessWidget {
       );
     }
     final double width = box.maxWidth;
-    if (_pagedFor(indices)) {
-      return _buildPagedRow(context, width, indices);
+    if (this.barStyle.isOverflowVariant) {
+      final ValueChanged<int> select = onDragSelect ?? onTap;
+      return buildNavOverflowVariant(
+        this.barStyle,
+        NavOverflowSpec(
+          items: items,
+          indices: indices,
+          currentIndex: currentIndex,
+          onSelect: (int i) {
+            if (i != currentIndex) fushiSelectionHaptic(context);
+            select(i);
+          },
+          cellBuilder: (int i, double cellWidth) =>
+              _cell(context, i, cellWidth: cellWidth),
+          width: width,
+          height: box.maxHeight.isFinite
+              ? box.maxHeight
+              : kAdaptiveNavBarContentHeight,
+          focusIdPrefix: idPrefix,
+        ),
+      );
     }
     final TextStyle style =
         (Theme.of(context).textTheme.labelMedium ?? const TextStyle()).copyWith(
@@ -823,6 +883,9 @@ class _MaterialNavCluster extends StatelessWidget {
     final ValueChanged<int>? dragSelect = onDragSelect;
     return _SlidingIndicatorScope(
       selectedId: selectedId,
+      // 与侧栏同一枚液态墨滴：槽是方的，滑动时画成拉伸的圆，落定交给选中项
+      // 的多边形由圆变形（[NavMorphShape]）。
+      liquid: true,
       color: barStyle?.indicator ?? Theme.of(context).colorScheme.tertiary,
       // 长按拖选只认胶囊里看得见的目的地；「更多」不参与（拖到它上面松手 =
       // 取消），FAB（查词）不在胶囊里。
@@ -955,8 +1018,13 @@ class _MaterialNavCluster extends StatelessWidget {
                           glassBottom,
                         ),
                   child: glassDesign
-                      ? _buildGlassTabBar(context)
-                      : _buildMaterialFloatingBar(context),
+                      // 底部浮动胶囊与查词圆钮同样按全局胶囊比例缩
+                      // （[kFushiFloatingCapsuleScale]，2026-10-30 用户「胶囊
+                      // 最好就是所有地方都要生效」）。
+                      ? FushiCapsuleScale(child: _buildGlassTabBar(context))
+                      : FushiCapsuleScale(
+                          child: _buildMaterialFloatingBar(context),
+                        ),
                 ),
               ),
             ),
@@ -1049,74 +1117,84 @@ class _MaterialNavCluster extends StatelessWidget {
                       _kMaterialRailFloatingEnd,
                       _kMaterialRailFloatingStart,
                     ),
-              child: _FloatingNavSurface(
-                paint: !glassDesign,
-                borderRadius: BorderRadius.circular(_kMaterialRailPanelRadius),
-                child: Padding(
-                  padding: glassDesign
-                      ? EdgeInsets.symmetric(
-                          horizontal: railExtended
-                              ? glassInset
-                              : (kAdaptiveNavRailWidth -
-                                        2 * _kGlassSidebarMargin -
-                                        _kGlassSidebarCollapsedCellWidth) /
-                                    2,
-                          vertical: glassInset,
-                        )
-                      : EdgeInsets.symmetric(
-                          horizontal: railExtended ? 12 : 0,
-                          vertical: 8,
-                        ),
-                  child: Column(
-                    children: <Widget>[
-                      if (menu != null || brand != null) header,
-                      // 矮窗口下所有 tile 的总高可能超过可用高度：直接放进 Column 会 RenderFlex
-                      // 溢出（左侧导航底部 overflow）。改用 SingleChildScrollView 让 tile 在窗口
-                      // 过矮时滚动。
-                      Expanded(
-                        // 反馈 #ChIDEam2hf：桌面默认会给 SingleChildScrollView 画常驻滚动条，
-                        // 项高只差一点点溢出时就整条竖线立在侧栏上，既多余又难看。侧栏
-                        // 只靠滚轮 / 触摸 / 焦点自动滚入滚动，不画滚动条。
-                        child: ScrollConfiguration(
-                          behavior: ScrollConfiguration.of(
-                            context,
-                          ).copyWith(scrollbars: false),
-                          child: SingleChildScrollView(
-                            // 侧栏同样只有一枚在项间纵向滑动的指示器（2026-10-06
-                            // 用户「侧边栏也要有切换动画」）：收起 rail 的 56×32
-                            // 药丸、展开 rail 的整行药丸都由它滑过去，选中项超出
-                            // 可视区时自动滚进来。Apple 设计系统的行不登记药丸槽，
-                            // 滑块不画。
-                            child: _SlidingIndicatorScope(
-                              selectedId:
-                                  currentIndex >= 0 &&
-                                      currentIndex < items.length
-                                  ? FushiFocusId('$idPrefix-$currentIndex')
-                                  : null,
-                              color: isEinkTheme(context)
-                                  ? colors.onSurface
-                                  : colors.secondaryContainer,
-                              child: Column(
-                                children: <Widget>[
-                                  const SizedBox(height: 8),
-                                  for (final Widget tile in buildTiles(
-                                    cellWidth: null,
-                                  ))
-                                    Padding(
-                                      padding: EdgeInsets.symmetric(
-                                        vertical: glassDesign
-                                            ? 1
-                                            : (railExtended ? 0 : 3),
+              // 速览卡贴在这块悬浮面板的右缘外（见 [_NavRailPeekScope]）。
+              child: _NavRailPeekScope(
+                enabled: !glassDesign,
+                child: _FloatingNavSurface(
+                  paint: !glassDesign,
+                  borderRadius: BorderRadius.circular(
+                    _kMaterialRailPanelRadius,
+                  ),
+                  child: Padding(
+                    padding: glassDesign
+                        ? EdgeInsets.symmetric(
+                            horizontal: railExtended
+                                ? glassInset
+                                : (kAdaptiveNavRailWidth -
+                                          2 * _kGlassSidebarMargin -
+                                          _kGlassSidebarCollapsedCellWidth) /
+                                      2,
+                            vertical: glassInset,
+                          )
+                        : EdgeInsets.symmetric(
+                            horizontal: railExtended ? 12 : 0,
+                            vertical: 8,
+                          ),
+                    child: Column(
+                      children: <Widget>[
+                        if (menu != null || brand != null) header,
+                        // 矮窗口下所有 tile 的总高可能超过可用高度：直接放进 Column 会 RenderFlex
+                        // 溢出（左侧导航底部 overflow）。改用 SingleChildScrollView 让 tile 在窗口
+                        // 过矮时滚动。
+                        Expanded(
+                          // 反馈 #ChIDEam2hf：桌面默认会给 SingleChildScrollView 画常驻滚动条，
+                          // 项高只差一点点溢出时就整条竖线立在侧栏上，既多余又难看。侧栏
+                          // 只靠滚轮 / 触摸 / 焦点自动滚入滚动，不画滚动条。
+                          child: ScrollConfiguration(
+                            behavior: ScrollConfiguration.of(
+                              context,
+                            ).copyWith(scrollbars: false),
+                            child: SingleChildScrollView(
+                              // 侧栏同样只有一枚在项间纵向滑动的指示器（2026-10-06
+                              // 用户「侧边栏也要有切换动画」）：收起 rail 的 56×32
+                              // 药丸、展开 rail 的整行药丸都由它滑过去，选中项超出
+                              // 可视区时自动滚进来。Apple 设计系统的行不登记药丸槽，
+                              // 滑块不画。
+                              child: _SlidingIndicatorScope(
+                                selectedId:
+                                    currentIndex >= 0 &&
+                                        currentIndex < items.length
+                                    ? FushiFocusId('$idPrefix-$currentIndex')
+                                    : null,
+                                // MD3 侧栏是液态墨滴（M3E 组合方案，2026-10-23）：
+                                // 收起态墨滴与落定后的专属形状同为 primary，展开态
+                                // 是 secondaryContainer 整行药丸。
+                                liquid: !glassDesign,
+                                color: isEinkTheme(context)
+                                    ? colors.onSurface
+                                    : (railExtended
+                                          ? colors.secondaryContainer
+                                          : colors.primary),
+                                child: Column(
+                                  children: <Widget>[
+                                    const SizedBox(height: 8),
+                                    for (final Widget tile in buildTiles(
+                                      cellWidth: null,
+                                    ))
+                                      Padding(
+                                        padding: EdgeInsets.symmetric(
+                                          vertical: glassDesign ? 1 : 0,
+                                        ),
+                                        child: tile,
                                       ),
-                                      child: tile,
-                                    ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1213,7 +1291,7 @@ class _MaterialFloatingBar extends StatefulWidget {
     this.fabLeading = false,
   });
 
-  /// 胶囊高（[_MaterialNavCluster._materialCapsuleHeight]）；FAB 与之同高。
+  /// 胶囊高（[materialNavBarCapsuleHeight]）；FAB 与之同高。
   final double height;
 
   final bool minimized;
@@ -1683,7 +1761,13 @@ class _SlidingIndicatorScope extends StatefulWidget {
     this.dragExcludedId,
     this.onDragSelect,
     this.hoverColor,
+    this.liquid = false,
   });
+
+  /// 液态墨滴（MD3 侧栏）：滑动时前沿先走、后沿后到，指示器沿行进方向拉长、
+  /// 横向收细，落点随弹簧回弹（见 [_liquidRect]）。MD3 侧栏与 MD3 底栏都开；
+  /// false = 整块平移（Apple 侧栏）。
+  final bool liquid;
 
   /// 拖选的目标：目的地焦点 id → 序号。null = 不启用拖选。
   ///
@@ -1790,6 +1874,7 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
   void initState() {
     super.initState();
     _progress.animation.addStatusListener(_onStatus);
+    _progress.animation.addListener(_onProgress);
   }
 
   /// 离 [point] 最近的拖选目标（按槽矩形中心的横向距离）。
@@ -1905,8 +1990,21 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
   /// 触发，推到帧后再复核、再 setState。
   void _onStatus(AnimationStatus status) {
     if (status.isAnimating || !_sliding) return;
+    _land();
+  }
+
+  /// 墨滴**首次到达**终点（进度 ≥ 1）就交接，不等弹簧 `isDone`：默认容差
+  /// （位置与速度都 < 1e-3）要到约 0.53 s 才成立，而墨滴约 0.2 s 就已到位，
+  /// 中间整段静止空等，多边形迟迟不出（用户 2026-10-26「点完到达后还要等一下
+  /// 才显示出多边形」）。剩下的过冲由 [NavMorphShape] 自己的弹簧吸收。
+  void _onProgress() {
+    if (_sliding && _progress.value >= 1) _land();
+  }
+
+  void _land() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_sliding || _progress.animation.isAnimating) return;
+      if (!mounted || !_sliding) return;
+      if (_progress.value < 1 && _progress.animation.isAnimating) return;
       setState(() {
         _sliding = false;
         _from = null;
@@ -1969,6 +2067,7 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
   @override
   void dispose() {
     _progress.animation.removeStatusListener(_onStatus);
+    _progress.animation.removeListener(_onProgress);
     _progress.dispose();
     _lift.dispose();
     _dragTick.dispose();
@@ -2089,14 +2188,50 @@ class _SlidingIndicatorPainter extends CustomPainter {
     final Rect? from = state._from;
     final Rect rect = from == null || !state._sliding
         ? target
-        : Rect.lerp(from, target, t)!;
+        : (state.widget.liquid
+              ? _liquidRect(from, target, t)
+              : Rect.lerp(from, target, t)!);
     state._painted = rect;
     // 静止时选中项自己的药丸在画（同色同矩形），滑块不重复画。
     if (!state._sliding) return;
     canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, Radius.circular(rect.height / 2)),
+      RRect.fromRectAndRadius(
+        rect,
+        Radius.circular(math.min(rect.width, rect.height) / 2),
+      ),
       Paint()..color = state.widget.color,
     );
+  }
+
+  /// 液态墨滴在进度 [t] 时的矩形：沿位移较大的轴，前沿按 `1-(1-t)²`、后沿按
+  /// `t²` 走，两沿在 t = 1 汇合（之后的弹簧过冲两沿同步，落点回弹）；拉得越长
+  /// 横向越细，位移越远收得越多（最多收到 65%）。
+  static Rect _liquidRect(Rect a, Rect b, double t) {
+    if (t >= 1 || t <= 0) return Rect.lerp(a, b, t)!;
+    final double lead = 1 - (1 - t) * (1 - t);
+    final double trail = t * t;
+    final bool vertical =
+        (b.center.dy - a.center.dy).abs() >= (b.center.dx - a.center.dx).abs();
+    final double distance = vertical
+        ? (b.center.dy - a.center.dy).abs()
+        : (b.center.dx - a.center.dx).abs();
+    final double thin =
+        1 - 0.35 * (lead - trail) * 2 * (distance / 240).clamp(0.0, 1.0);
+    double edge(double from, double to, double p) => from + (to - from) * p;
+    if (vertical) {
+      final bool down = b.center.dy >= a.center.dy;
+      final double top = edge(a.top, b.top, down ? trail : lead);
+      final double bottom = edge(a.bottom, b.bottom, down ? lead : trail);
+      final double cx = edge(a.center.dx, b.center.dx, t);
+      final double w = edge(a.width, b.width, t) * thin;
+      return Rect.fromLTRB(cx - w / 2, top, cx + w / 2, bottom);
+    }
+    final bool right = b.center.dx >= a.center.dx;
+    final double left = edge(a.left, b.left, right ? trail : lead);
+    final double rightEdge = edge(a.right, b.right, right ? lead : trail);
+    final double cy = edge(a.center.dy, b.center.dy, t);
+    final double h = edge(a.height, b.height, t) * thin;
+    return Rect.fromLTRB(left, cy - h / 2, rightEdge, cy + h / 2);
   }
 
   /// 长按拖选中：悬停目的地的状态层 + 跟手的拎起指示器。
@@ -2270,407 +2405,6 @@ class _FloatingNavSurface extends StatelessWidget {
           child,
         ],
       ),
-    );
-  }
-}
-
-/// 分页底栏每页的格数。
-const int _kNavPageSize = 5;
-
-/// 按住多久进入拖选（短于系统长按：底栏上的长按只服务拖选）。
-const Duration _kNavPagedSelectHold = Duration(milliseconds: 300);
-
-/// 拖选中手指在胶囊左右边缘这么宽的范围内（含胶囊外）停住就翻页。
-const double _kNavPagedEdgeZone = 20;
-
-/// 停在边缘多久翻一页；一直停着就每隔这么久再翻一页。
-const Duration _kNavPagedEdgeDwell = Duration(milliseconds: 450);
-
-/// 底栏分页行：[pages] 每页一组目的地（每页 [_kNavPageSize] 格）。MD3 悬浮
-/// 胶囊与 Apple 胶囊共用这一份状态 / 手势，外观只差在格子（[cellBuilder]）
-/// 与页点样式。
-/// - 横滑：手指跟手拖动整排，松手拖过 1/4 页或甩一下就翻到相邻页（spatial
-///   弹簧带回弹），底部一排小圆点提示页数与当前页；
-/// - 按住约 0.3 秒：进入拖选（震一下），手指罩着哪一格就把选中药丸画在哪一格、
-///   换格轻震；拖到胶囊左右边缘停一下自动翻页；松手切到罩着的那一项（落在空格 /
-///   当前项上 = 取消）；
-/// - 当前项换到别的页（如正文横滑切模块）时自动翻过去；分组变了（开关模块）
-///   直接落到当前项所在页。
-class _NavPagedRow extends StatefulWidget {
-  const _NavPagedRow({
-    required this.pages,
-    required this.currentIndex,
-    required this.cellBuilder,
-    required this.onDragSelect,
-  });
-
-  final List<List<int>> pages;
-  final int currentIndex;
-
-  /// 画一格；`looksSelected` 非空时按它画选中态（拖选中），否则按当前项。
-  final Widget Function(int index, bool? looksSelected) cellBuilder;
-
-  /// 拖选松手落在某一项上。
-  final ValueChanged<int> onDragSelect;
-
-  @override
-  State<_NavPagedRow> createState() => _NavPagedRowState();
-}
-
-class _NavPagedRowState extends State<_NavPagedRow>
-    with SingleTickerProviderStateMixin {
-  /// 以「页」为单位的连续位置：0 = 第一页，1 = 第二页……拖动时取小数。
-  late final AnimationController _position = AnimationController.unbounded(
-    vsync: this,
-  );
-  late int _page = _pageOf(widget.currentIndex) ?? 0;
-  double _width = 1;
-
-  /// 拖选态：手指罩着的目的地（null = 空格 / 胶囊外）。
-  bool _selecting = false;
-  int? _hover;
-  Offset? _selectPoint;
-  int _edgeDirection = 0;
-  Timer? _edgeTimer;
-
-  /// 焦点（方向键 / 手柄 / Tab）此刻停在哪一页的哪一格（null = 不在本行）。
-  /// 停在当前页首格 / 末格时，相邻那一页放进焦点遍历（[_pageFocusable]），
-  /// 方向键再往外走就能进去、进去即翻页（[_onCellFocusChange]）。
-  int? _focusPage;
-  int? _focusSlot;
-
-  @override
-  void initState() {
-    super.initState();
-    _position.value = _page.toDouble();
-  }
-
-  @override
-  void didUpdateWidget(_NavPagedRow oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // 分组变了（开关模块）：旧页号已无意义，直接落到当前项所在页。
-    if (!_samePages(oldWidget.pages, widget.pages)) {
-      _page = _pageOf(widget.currentIndex) ?? 0;
-      _position.value = _page.toDouble();
-      _focusPage = null;
-      _focusSlot = null;
-      return;
-    }
-    if (oldWidget.currentIndex != widget.currentIndex && !_selecting) {
-      final int? page = _pageOf(widget.currentIndex);
-      if (page != null && page != _page) _settleTo(page);
-    }
-  }
-
-  @override
-  void dispose() {
-    _edgeTimer?.cancel();
-    _position.dispose();
-    super.dispose();
-  }
-
-  static bool _samePages(List<List<int>> a, List<List<int>> b) {
-    if (a.length != b.length) return false;
-    for (int p = 0; p < a.length; p++) {
-      if (!listEquals(a[p], b[p])) return false;
-    }
-    return true;
-  }
-
-  int? _pageOf(int index) {
-    for (int p = 0; p < widget.pages.length; p++) {
-      if (widget.pages[p].contains(index)) return p;
-    }
-    return null;
-  }
-
-  void _settleTo(int page, {double velocity = 0}) {
-    setState(() => _page = page);
-    // 减弱动态效果 / 墨水屏下 token 是降级版，直接落到终值。
-    unawaited(
-      _position.fushiSpringTo(
-        page.toDouble(),
-        context.fushiMotion.spatialFast,
-        velocity: velocity,
-      ),
-    );
-  }
-
-  /// 第 [page] 页的格此刻是否进焦点遍历。
-  ///
-  /// 当前页恒进；别页默认**不进**——被动焦点修复（进页 / 焦点丢失时自动落点）
-  /// 按阅读顺序挑首个目标，看不见的页若一直可聚焦，修复会把焦点落到屏幕外、再
-  /// 把整排翻走。只在焦点停在当前页的边缘格时放开紧挨着的那一页：此时主焦点
-  /// 可用、被动修复不会动它，而显式方向输入（几何上最近的就是相邻页紧挨着的
-  /// 那一格）终于够得着别页的目的地。
-  bool _pageFocusable(int page) {
-    if (page == _page) return true;
-    final int? slot = _focusSlot;
-    if (_focusPage != _page || slot == null) return false;
-    if (page == _page + 1) return slot == widget.pages[_page].length - 1;
-    if (page == _page - 1) return slot == 0;
-    return false;
-  }
-
-  /// 焦点进 / 出某一格。进了别页的格（方向键越过当前页边缘）就翻到那一页。
-  void _onCellFocusChange(int page, int slot, bool hasFocus) {
-    if (!mounted) return;
-    if (!hasFocus) {
-      if (page == _focusPage && slot == _focusSlot) {
-        setState(() {
-          _focusPage = null;
-          _focusSlot = null;
-        });
-      }
-      return;
-    }
-    setState(() {
-      _focusPage = page;
-      _focusSlot = slot;
-    });
-    if (page != _page && !_selecting) _settleTo(page);
-  }
-
-  // ---- 横滑翻页 ----
-
-  void _onDragUpdate(DragUpdateDetails details) {
-    final int last = widget.pages.length - 1;
-    double next = _position.value - details.delta.dx / _width;
-    // 首页 / 末页之外有阻尼，不让整排被拖空。
-    if (next < 0 || next > last) {
-      next = _position.value - details.delta.dx / _width / 3;
-    }
-    _position.value = next.clamp(-0.3, last + 0.3);
-  }
-
-  void _onDragEnd(DragEndDetails details) {
-    final double velocity = -details.velocity.pixelsPerSecond.dx / _width;
-    // 胶囊窄（每页只有一个手掌宽），半页门槛太苛：拖过 1/4 页或甩一下就翻。
-    final double moved = _position.value - _page;
-    int target = _page;
-    if (velocity.abs() > 0.8) {
-      target = velocity > 0 ? _page + 1 : _page - 1;
-    } else if (moved.abs() > 0.25) {
-      target = moved > 0 ? _page + 1 : _page - 1;
-    }
-    target = target.clamp(0, widget.pages.length - 1);
-    if (target != _page) fushiSelectionHaptic(context);
-    _settleTo(target, velocity: velocity);
-  }
-
-  // ---- 长按拖选 ----
-
-  /// 手指位置（本行局部坐标）罩着的目的地：按格宽算第几格，胶囊外 / 空格 = null。
-  int? _targetAt(Offset point) {
-    if (point.dx < 0 || point.dx >= _width) return null;
-    final int slot = (point.dx / (_width / _kNavPageSize)).floor();
-    final List<int> page = widget.pages[_page];
-    return slot < page.length ? page[slot] : null;
-  }
-
-  void _updateHover(Offset point) {
-    _selectPoint = point;
-    final int? hover = _targetAt(point);
-    if (hover != _hover) {
-      if (hover != null) fushiSelectionHaptic(context);
-      setState(() => _hover = hover);
-    }
-    final int direction = point.dx < _kNavPagedEdgeZone
-        ? -1
-        : (point.dx > _width - _kNavPagedEdgeZone ? 1 : 0);
-    if (direction == _edgeDirection) return;
-    _edgeDirection = direction;
-    _edgeTimer?.cancel();
-    _edgeTimer = direction == 0
-        ? null
-        : Timer.periodic(_kNavPagedEdgeDwell, (_) => _edgeFlip());
-  }
-
-  /// 拖选中停在边缘：往那一侧翻一页，罩着的格按新页重算。
-  void _edgeFlip() {
-    final int next = _page + _edgeDirection;
-    if (!mounted || next < 0 || next >= widget.pages.length) return;
-    fushiSelectionHaptic(context);
-    _settleTo(next);
-    final Offset? point = _selectPoint;
-    if (point != null) {
-      final int? hover = _targetAt(point);
-      if (hover != _hover) setState(() => _hover = hover);
-    }
-  }
-
-  void _onSelectStart(LongPressStartDetails details) {
-    // 进入拖选态：一记「拎起」震动，和平铺底栏长按拎起指示器同一手感。
-    fushiLiftHaptic(context);
-    setState(() => _selecting = true);
-    _updateHover(details.localPosition);
-  }
-
-  void _onSelectMove(LongPressMoveUpdateDetails details) =>
-      _updateHover(details.localPosition);
-
-  void _onSelectEnd(LongPressEndDetails details) {
-    final int? target = _hover;
-    _stopSelecting();
-    if (target != null && target != widget.currentIndex) {
-      widget.onDragSelect(target);
-    }
-  }
-
-  void _stopSelecting() {
-    _edgeTimer?.cancel();
-    _edgeTimer = null;
-    _edgeDirection = 0;
-    _selectPoint = null;
-    if (!_selecting && _hover == null) return;
-    setState(() {
-      _selecting = false;
-      _hover = null;
-    });
-  }
-
-  Widget _pageRow(int p) {
-    final List<int> page = widget.pages[p];
-    return Row(
-      children: <Widget>[
-        for (int k = 0; k < _kNavPageSize; k++)
-          Expanded(
-            child: k < page.length
-                // 只听焦点进出（定位「焦点在哪页哪格」），自己不是落点。
-                ? Focus(
-                    canRequestFocus: false,
-                    skipTraversal: true,
-                    includeSemantics: false,
-                    onFocusChange: (bool has) => _onCellFocusChange(p, k, has),
-                    child: widget.cellBuilder(
-                      page[k],
-                      _selecting ? page[k] == _hover : null,
-                    ),
-                  )
-                : const SizedBox.shrink(),
-          ),
-      ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // 页点：MD3 是当前页拉长的短胶囊（胶囊前景色）；Apple 是 iOS 页控件的
-    // 等大小圆点，当前页实色、其余淡（label 色）。
-    final bool glass = isGlassDesign(context);
-    final _FloatingBarStyle? bar = _FloatingBarStyle.maybeOf(context);
-    final Color dot = glass
-        ? appleColorsOf(context).label
-        : (bar?.content ?? Theme.of(context).colorScheme.onSurface);
-    final double dotSize = glass ? 5 : 4;
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints box) {
-        _width = math.max(1, box.maxWidth);
-        return RawGestureDetector(
-          behavior: HitTestBehavior.translucent,
-          // 翻页 / 拖选是纯指针手势，不进语义树；读屏 / 手柄靠各格自己的焦点与
-          // 点击语义，焦点移到别页的格子上时随当前项自动翻过去。
-          excludeFromSemantics: true,
-          gestures: <Type, GestureRecognizerFactory>{
-            // 横向位移先过线 = 翻页；按住不动先到 0.3 秒 = 拖选。两者在手势
-            // 竞技场里谁先成立谁赢，赢了另一个就放弃这根指针。
-            HorizontalDragGestureRecognizer:
-                GestureRecognizerFactoryWithHandlers<
-                  HorizontalDragGestureRecognizer
-                >(HorizontalDragGestureRecognizer.new, (
-                  HorizontalDragGestureRecognizer r,
-                ) {
-                  r
-                    // 从按下点起算位移：判定拖动前的触摸余量也算进翻页距离，
-                    // 整排贴着手指走。
-                    ..dragStartBehavior = DragStartBehavior.down
-                    ..onUpdate = _onDragUpdate
-                    ..onEnd = _onDragEnd;
-                }),
-            LongPressGestureRecognizer:
-                GestureRecognizerFactoryWithHandlers<
-                  LongPressGestureRecognizer
-                >(
-                  () => LongPressGestureRecognizer(
-                    duration: _kNavPagedSelectHold,
-                  ),
-                  (LongPressGestureRecognizer r) {
-                    r
-                      ..onLongPressStart = _onSelectStart
-                      ..onLongPressMoveUpdate = _onSelectMove
-                      ..onLongPressEnd = _onSelectEnd
-                      ..onLongPressCancel = _stopSelecting;
-                  },
-                ),
-          },
-          child: Stack(
-            children: <Widget>[
-              ClipRect(
-                child: AnimatedBuilder(
-                  animation: _position,
-                  builder: (BuildContext context, Widget? _) {
-                    final double pos = _position.value;
-                    return Stack(
-                      children: <Widget>[
-                        for (int p = 0; p < widget.pages.length; p++)
-                          if ((p - pos).abs() < 1.5)
-                            Positioned.fill(
-                              // 按页号保身份：窗口里的页集合随翻页增减，按下标
-                              // 复用元素会把别页的格（及其焦点节点）错配过来。
-                              key: ValueKey<int>(p),
-                              child: Transform.translate(
-                                offset: Offset((p - pos) * _width, 0),
-                                // 看不见的页不接指针；焦点遍历见
-                                // [_pageFocusable]（焦点停在边缘格时放开相邻
-                                // 页，否则键盘 / 手柄永远够不着别页的目的地）。
-                                child: ExcludeFocus(
-                                  excluding: !_pageFocusable(p),
-                                  child: IgnorePointer(
-                                    ignoring: p != _page,
-                                    child: _pageRow(p),
-                                  ),
-                                ),
-                              ),
-                            ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 3,
-                child: IgnorePointer(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: <Widget>[
-                      for (int p = 0; p < widget.pages.length; p++)
-                        AnimatedContainer(
-                          duration: fushiMotionDuration(
-                            context,
-                            FushiMotion.short,
-                          ),
-                          margin: EdgeInsets.symmetric(
-                            horizontal: glass ? 2.5 : 2,
-                          ),
-                          width: p == _page && !glass ? 10 : dotSize,
-                          height: dotSize,
-                          decoration: BoxDecoration(
-                            color: dot.withValues(
-                              alpha: p == _page ? 0.9 : (glass ? 0.3 : 0.35),
-                            ),
-                            borderRadius: BorderRadius.circular(dotSize / 2),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }
@@ -3063,8 +2797,8 @@ class _GlassTabCapsule extends StatefulWidget {
     this.swipeSelect = true,
   });
 
-  /// 按住横拖让 lens 在各项间滑行、松手切过去。分页底栏关掉它：横拖归翻页
-  /// （[_NavPagedRow]），否则两个横向拖动识别器在竞技场里抢同一根指针。
+  /// 按住横拖让 lens 在各项间滑行、松手切过去。原型样式（模式条 / 转盘）关掉
+  /// 它：横拖归原型，否则两个横向拖动识别器在竞技场里抢同一根指针。
   final bool swipeSelect;
 
   /// 胶囊目标宽（展开 = 可用宽减搜索圆钮，最小化 = 胶囊高）。
@@ -3410,7 +3144,12 @@ class _NavFocusCell extends StatefulWidget {
     this.iconOnly = false,
     this.cellWidth,
     this.glassOwnLens = false,
+    this.railShape,
+    this.order = 0,
   });
+
+  /// 在整排里的序号（速览卡据此判断内容上下交换的方向）。
+  final int order;
 
   final FushiFocusId id;
   final AdaptiveNavItem item;
@@ -3418,7 +3157,10 @@ class _NavFocusCell extends StatefulWidget {
   final bool horizontal;
   final VoidCallback onSelect;
 
-  /// Apple 分页底栏的格：自己画选中 lens（胶囊的统一 lens 只在平铺时画）。
+  /// MD3 侧栏选中形状（见 [AdaptiveNavItem.railShape]）；底栏不读。
+  final RoundedPolygon? railShape;
+
+  /// Apple 转盘胶囊的固定格：自己画选中 lens（胶囊的统一 lens 只在平铺时画）。
   final bool glassOwnLens;
 
   /// 侧栏是否展开（见 [_MaterialNavCluster.extended]）。
@@ -3488,10 +3230,18 @@ class _NavFocusCellState extends State<_NavFocusCell> {
       compactLabel: metrics.compact,
       indicatorKey: _indicatorKey,
       glassOwnLens: widget.glassOwnLens,
+      railShape: widget.railShape,
     );
+    // MD3 收起 rail 纯图标（用户 2026-10-23「侧边栏收起不显示文字」）：名称进
+    // tooltip / 速览卡标题与无障碍语义，与纯图标底栏同一规则。
+    final bool collapsedMaterialRail = !horizontal && !extended && !glassDesign;
     final bool labelsHidden =
+        collapsedMaterialRail ||
         !(_FloatingBarStyle.maybeOf(context)?.showLabels ?? true);
-    if (labelsHidden) {
+    if (collapsedMaterialRail && item.peek != null) {
+      // 有速览卡的目的地：悬停弹的是速览卡（标题就是名称），不再叠一个 tooltip。
+      tile = Semantics(label: item.label, selected: selected, child: tile);
+    } else if (labelsHidden) {
       // 纯图标底栏（出厂形态）：名称进 tooltip（长按 / 悬停可见），无障碍语义
       // 仍报原文案——不靠 tooltip 的语义（那是「提示」不是「名称」）。
       tile = Semantics(
@@ -3521,7 +3271,7 @@ class _NavFocusCellState extends State<_NavFocusCell> {
     final Color glassHover = appleColorsOf(context).tertiaryFill;
     // ActivateIntent must sit ABOVE the focus node: the gamepad/keyboard path
     // dispatches it at the primary-focus context and walks UP the Actions chain.
-    return Actions(
+    final Widget cell = Actions(
       actions: <Type, Action<Intent>>{
         ActivateIntent: CallbackAction<ActivateIntent>(
           onInvoke: (ActivateIntent intent) {
@@ -3549,7 +3299,13 @@ class _NavFocusCellState extends State<_NavFocusCell> {
             : BorderRadius.circular(
                 materialRailRow
                     ? _kMaterialRailRowHeight / 2
-                    : _kMaterialPillHeight / 2,
+                    : (collapsedMaterialRail
+                          ? _kNavRailShapeSize / 2
+                          : _materialBarShapeSize(
+                                  showLabel: !labelsHidden,
+                                  pillWidth: metrics.pillWidth,
+                                ) /
+                                2),
               ),
         // 玻璃设计系统不画 MD 涟漪（按压反馈是选中气泡本身）；InkWell 本身保留，
         // 焦点目标的父链不随设计系统变。
@@ -3568,9 +3324,9 @@ class _NavFocusCellState extends State<_NavFocusCell> {
           padding: glassDesign || materialRailRow
               ? EdgeInsets.zero
               : EdgeInsets.symmetric(
-                  // 纯图标底栏：32 高的药丸上下各补 8，整格点击区凑足 48dp
-                  // 触控目标（带标签时标签行已把格撑过 48）。
-                  vertical: horizontal ? (labelsHidden ? 8 : 0) : 4,
+                  // 底栏的多边形槽自己就是 48（纯图标）/ 40 + 标签，整格点击区
+                  // 已足 48dp 触控目标，不再上下补边。
+                  vertical: horizontal ? 0 : 4,
                   horizontal: horizontal ? 4 : 0,
                 ),
           child: Align(
@@ -3582,6 +3338,29 @@ class _NavFocusCellState extends State<_NavFocusCell> {
             child: FushiFocusTarget(id: id, child: tile),
           ),
         ),
+      ),
+    );
+    // MD3 侧栏：鼠标悬停弹速览卡（见 [_NavRailPeekScope]），点下去先收卡。
+    final _NavRailPeekScopeState? peek =
+        !horizontal && !glassDesign && item.peek != null
+        ? _NavRailPeekScope.maybeOf(context)
+        : null;
+    if (peek == null) return cell;
+    return Listener(
+      onPointerDown: (_) => peek.close(),
+      child: MouseRegion(
+        onEnter: (_) => peek.enter(
+          _NavRailPeekTarget(
+            id: id,
+            item: item,
+            anchor: _indicatorKey,
+            order: widget.order,
+            onSelect: onSelect,
+            shape: widget.railShape,
+          ),
+        ),
+        onExit: (_) => peek.leave(),
+        child: cell,
       ),
     );
   }
@@ -3622,14 +3401,12 @@ class _NavIndicatorInkWell extends InkWell {
   }
 }
 
-/// Pure MD3 destination visual: an indicator pill behind the icon (filled when
-/// selected) over a label. Shared by the bottom bar and the side rail.
+/// Pure MD3 destination visual: the destination's own M3E shape behind the icon
+/// (drawn when selected) over a label. Shared by the bottom bar and the side rail.
 ///
-/// 2026-10 动效重做：选中药丸不再一帧跳出——它从图标宽度（32）横向展开到 56、
-/// 同时由透明渐入填充色（M3 导航栏的「指示器展开」），M3 Expressive 下由
-/// expressive spatial 弹簧驱动、落点带回弹（[_NavIndicatorPill]）；图标的线框 ↔
-/// 实心切换走一次轻缩放交叉淡化，标签字重随之过渡。墨水屏 / 减弱动态效果下
-/// 三处都瞬间到位，最终几何与配色不变。
+/// 2026-10-24 起底栏与侧栏同一套选中高亮：该目的地的专属多边形
+/// （[NavMorphShape]），墨滴落定后由圆形弹簧变形出来；图标的线框 ↔ 实心切换走
+/// 一次轻缩放交叉淡化，标签字重随之过渡。墨水屏 / 减弱动态效果下瞬间到位。
 class _FushiNavTile extends StatelessWidget {
   const _FushiNavTile({
     required this.item,
@@ -3641,12 +3418,16 @@ class _FushiNavTile extends StatelessWidget {
     this.compactLabel = false,
     this.indicatorKey,
     this.glassOwnLens = false,
+    this.railShape,
   });
 
   final AdaptiveNavItem item;
   final bool selected;
 
-  /// Apple 底栏胶囊里的格自己画选中 lens（分页底栏；平铺时 lens 由
+  /// MD3 侧栏选中形状（收起格 52、展开行图标后 40）。
+  final RoundedPolygon? railShape;
+
+  /// Apple 底栏胶囊里的格自己画选中 lens（拇指转盘的固定格；平铺时 lens 由
   /// [_GlassTabCapsule] 统一画）。
   final bool glassOwnLens;
 
@@ -3678,30 +3459,15 @@ class _FushiNavTile extends StatelessWidget {
     // 演示 indicatorColor = label@20%，参照 Niratan 的选中 pill 不着强调色）+
     // 一圈细高光边 + 柔和投影；强调色只落在选中项的图标与文字上。系统降低透明度
     // 时实色高一阶底、无高光。侧栏行仍是强调色实底源列表选中行（Niratan 同）。
-    final bool solidLens = glassMaterialOf(context) == FushiGlassMaterial.off;
-    final bool darkMode =
-        Theme.of(context).colorScheme.brightness == Brightness.dark;
+    // 实色 / 玻璃两档的 lens 取值与拇指转盘、相机模式条同一份
+    // （[NavOverflowPalette]）。
+    final NavOverflowPalette lens = NavOverflowPalette.of(context);
     final Color tabFg = selected ? apple.accent : apple.label;
     final Color lensFill = selected
-        ? (solidLens
-              ? apple.tertiaryGroupedBackground
-              : apple.label.withValues(alpha: darkMode ? 0.16 : 0.1))
+        ? lens.highlight
         : apple.label.withValues(alpha: 0);
-    final Border? lensRim = selected && !solidLens
-        ? Border.all(
-            color: Colors.white.withValues(alpha: darkMode ? 0.22 : 0.5),
-            width: 0.8,
-          )
-        : null;
-    final List<BoxShadow>? lensShadow = selected && !solidLens
-        ? <BoxShadow>[
-            BoxShadow(
-              color: Colors.black.withValues(alpha: darkMode ? 0.35 : 0.12),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ]
-        : null;
+    final Border? lensRim = selected ? lens.highlightRim : null;
+    final List<BoxShadow>? lensShadow = selected ? lens.highlightShadows : null;
     final IconData icon = selected
         ? (item.selectedIcon ?? item.icon)
         : item.icon;
@@ -3741,15 +3507,14 @@ class _FushiNavTile extends StatelessWidget {
       // 底栏纯图标（与 MD3 底栏同一规则，用户 2026-10-12「底部栏跟安卓一样文字
       // 也去掉」）：文字只进 tooltip 与无障碍语义，不再画在图标下面。
       //
-      // 分页底栏（[glassOwnLens]）：胶囊的统一 lens 按整枚胶囊格数对齐、翻页
-      // 后对不上，改由格自己画同款 lens（实色档高一阶底 / 玻璃档透明 + 细高光
-      // 边 + 柔和投影），选中 / 拖选换格时随 [duration] 淡入淡出。长按归拖选，
-      // tooltip 只留悬停（名称仍在语义里）。
+      // 拇指转盘的固定格（[glassOwnLens]）：胶囊的统一 lens 按整枚胶囊格数
+      // 等分对齐、与「固定格 + 旋钮」对不上，改由格自己画同款 lens（实色档高
+      // 一阶底 / 玻璃档透明 + 细高光边 + 柔和投影，[NavOverflowPalette] 同一
+      // 份），选中换格时随 [duration] 淡入淡出。
       const double cellHeight =
           kGlassNavBarCapsuleHeight - 2 * _kGlassNavBarInnerPadding;
       return FushiTooltip(
         message: item.label,
-        triggerMode: glassOwnLens ? TooltipTriggerMode.manual : null,
         child: Semantics(
           label: item.label,
           selected: selected,
@@ -3847,11 +3612,9 @@ class _FushiNavTile extends StatelessWidget {
   /// 「只给选中项显示标签」（2026-10-05 用户反馈）。
   final bool compactLabel;
 
-  /// 挂在 MD3 指示器药丸槽（[pillWidth] × 32）上，供 [_NavIndicatorInkWell]
-  /// 把状态层裁到药丸。
+  /// 挂在 MD3 指示器槽上（底栏 = 选中多边形的方槽，收起 rail = 52 方槽），供
+  /// [_NavIndicatorInkWell] 把状态层裁到指示器、滑动墨滴取落点。
   final GlobalKey? indicatorKey;
-
-  static const double _pillHeight = AdaptiveNavTileMetrics.pillHeight;
 
   /// MD3 展开 rail 的一行（M3 Expressive expanded navigation rail）：行高 56，
   /// 24 图标 + 14 号 w500 标签横排，选中是包住图标与文字的全圆角
@@ -3879,6 +3642,34 @@ class _FushiNavTile extends StatelessWidget {
     final IconData icon = selected
         ? (item.selectedIcon ?? item.icon)
         : item.icon;
+    // 选中项图标背后的小专属形状（墨滴落定后由圆形变过来，见 [NavMorphShape]）；
+    // 形状在时图标改 onPrimary。
+    final bool shapeShown = selected && !sliding && railShape != null;
+    final Widget glyph = SizedBox.square(
+      dimension: _kNavRailRowShapeSize,
+      child: Stack(
+        alignment: Alignment.center,
+        children: <Widget>[
+          if (railShape != null)
+            NavMorphShape(
+              shape: railShape!,
+              visible: shapeShown,
+              color: eink ? colors.surface : colors.primary,
+              size: _kNavRailRowShapeSize,
+            ),
+          _maybeBadge(
+            item: item,
+            child: FushiIcon(
+              icon,
+              size: 24,
+              color: shapeShown
+                  ? (eink ? colors.onSurface : colors.onPrimary)
+                  : fg,
+            ),
+          ),
+        ],
+      ),
+    );
     // 选中药丸撑满整行（2026-10-05 用户反馈「这个条的长度不对」）：旧实现药丸
     // 只包住图标 + 文字，而外层 InkWell 的悬停 / 焦点状态层是整行宽，选中项上
     // 就叠出一枚短的强调色药丸 + 一条更长的灰色底。现在两者同宽同圆角；选中时
@@ -3890,17 +3681,14 @@ class _FushiNavTile extends StatelessWidget {
       curve: FushiMotion.standard,
       width: double.infinity,
       height: _kMaterialRailRowHeight,
-      padding: const EdgeInsetsDirectional.only(start: 16, end: 24),
+      padding: const EdgeInsetsDirectional.only(start: 8, end: 24),
       decoration: BoxDecoration(
         color: selected ? pillColor : pillColor.withValues(alpha: 0),
         borderRadius: BorderRadius.circular(_kMaterialRailRowHeight / 2),
       ),
       child: Row(
         children: <Widget>[
-          _maybeBadge(
-            item: item,
-            child: FushiIcon(icon, size: 24, color: fg),
-          ),
+          glyph,
           const SizedBox(width: 12),
           Flexible(
             child: Text(
@@ -3912,6 +3700,52 @@ class _FushiNavTile extends StatelessWidget {
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// MD3 收起 rail 的一格（M3E 组合方案，2026-10-23）：纯图标，选中项图标
+  /// 背后是 52 的 primary 专属形状（[NavMorphShape]），图标 onPrimary。墨滴
+  /// 还在路上时新选中项只把图标染成 primary、形状不画，落定后形状从圆变出来。
+  /// 52 的方槽同时是墨滴的落点矩形（[indicatorKey]）与状态层的圆形裁剪区。
+  Widget _buildMaterialRailCollapsed(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final bool sliding =
+        _SlidingIndicatorScope.maybeOf(context)?.sliding ?? false;
+    final bool landed = selected && !sliding;
+    // 新选中项一开始就朝 onPrimary 渐变（时长与墨滴滑行同量级），墨滴滑到
+    // 它底下时字形已经是反色。此前滑行中染成 primary，与 primary 墨滴同色，
+    // 图标整个被「纯色盖住」直到落定（用户 2026-10-26）。
+    final Color fg = selected
+        ? (eink ? colors.surface : colors.onPrimary)
+        : colors.onSurfaceVariant;
+    final IconData icon = selected
+        ? (item.selectedIcon ?? item.icon)
+        : item.icon;
+    return SizedBox.square(
+      key: indicatorKey,
+      dimension: _kNavRailShapeSize,
+      child: Stack(
+        alignment: Alignment.center,
+        children: <Widget>[
+          NavMorphShape(
+            shape: railShape ?? kNavRailFallbackShapes.first,
+            visible: landed,
+            color: eink ? colors.onSurface : colors.primary,
+            size: _kNavRailShapeSize,
+          ),
+          TweenAnimationBuilder<Color?>(
+            tween: ColorTween(end: fg),
+            duration: fushiMotionDuration(context, FushiMotion.medium),
+            curve: FushiMotion.standard,
+            builder: (BuildContext context, Color? color, Widget? _) =>
+                _maybeBadge(
+                  item: item,
+                  child: FushiIcon(icon, size: 24, color: color),
+                ),
           ),
         ],
       ),
@@ -3932,6 +3766,7 @@ class _FushiNavTile extends StatelessWidget {
       );
     }
     if (!horizontal && extended) return _buildMaterialRailRow(context);
+    if (!horizontal) return _buildMaterialRailCollapsed(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final TextTheme textTheme = Theme.of(context).textTheme;
     // MD3 悬浮底栏的 vibrant 胶囊（[_FloatingBarStyle]）：指示器 / 前景取胶囊
@@ -3942,12 +3777,11 @@ class _FushiNavTile extends StatelessWidget {
     // 之差；改反色药丸（segmentedButtonTheme / chipTheme 同一套处理）。
     final bool eink = isEinkTheme(context);
     // 滑动指示器正在项间滑：本格药丸先不填色，只留那一枚滑块。
+    // 墨滴正在项间滑（或被拎起拖动）：本格多边形先不画，落定后由圆变出来。
     final bool sliding =
         _SlidingIndicatorScope.maybeOf(context)?.sliding ?? false;
-    final Color pillColor = sliding
-        ? Colors.transparent
-        : bar?.indicator ??
-              (eink ? colors.onSurface : colors.secondaryContainer);
+    final Color indicatorColor =
+        bar?.indicator ?? (eink ? colors.onSurface : colors.secondaryContainer);
     final Color pillIconColor =
         bar?.onIndicator ??
         (eink ? colors.surface : colors.onSecondaryContainer);
@@ -3957,6 +3791,10 @@ class _FushiNavTile extends StatelessWidget {
     final IconData icon = selected
         ? (item.selectedIcon ?? item.icon)
         : item.icon;
+    final double shapeSize = _materialBarShapeSize(
+      showLabel: showLabel,
+      pillWidth: pillWidth,
+    );
     // 图标线框 ↔ 实心切换：一次轻缩放交叉淡化。
     final Widget glyph = AnimatedSwitcher(
       duration: duration,
@@ -3999,127 +3837,33 @@ class _FushiNavTile extends StatelessWidget {
         textAlign: TextAlign.center,
       ),
     );
+    // 选中项图标背后是该目的地的专属 M3E 多边形（与侧栏同一形状），墨滴落定
+    // 后由圆形弹簧变形出来（[NavMorphShape]）。方槽同时是墨滴落点与状态层的
+    // 圆形裁剪区（[indicatorKey]）。
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        _NavIndicatorPill(
+        SizedBox.square(
           key: indicatorKey,
-          selected: selected,
-          color: pillColor,
-          width: pillWidth,
-          height: _pillHeight,
-          child: glyph,
-        ),
-        if (showLabel) ...<Widget>[const SizedBox(height: 4), label],
-      ],
-    );
-  }
-}
-
-/// MD3 导航的活动指示器（M3 Expressive）：全圆角药丸，选中时从图标宽（=高）
-/// 横向展开到整宽、由透明渐入填充色，按 expressive default spatial 弹簧
-/// （[_kNavExpressiveSpatial]）驱动——落点前带一点回弹，取消选中反向收拢。
-/// 快速连点时弹簧带着当前速度续上，不会跳帧回零。
-///
-/// 外层 [SizedBox] 恒为静止几何（状态层按它裁剪，见 [_NavIndicatorInkWell]），
-/// 回弹超出的几个像素画在格内边距里。墨水屏 / 减弱动态效果下瞬间到位；静止时
-/// 填充色与目标色逐值相同（eink 守卫按 `decoration.color == onSurface` 断言）。
-class _NavIndicatorPill extends StatefulWidget {
-  const _NavIndicatorPill({
-    required this.selected,
-    required this.color,
-    required this.height,
-    required this.child,
-    required this.width,
-    super.key,
-  });
-
-  final bool selected;
-  final Color color;
-  final double width;
-  final double height;
-  final Widget child;
-
-  @override
-  State<_NavIndicatorPill> createState() => _NavIndicatorPillState();
-}
-
-class _NavIndicatorPillState extends State<_NavIndicatorPill>
-    with SingleTickerProviderStateMixin {
-  /// 回弹允许超出静止宽度的量（每侧一半，落在格的 4dp 内边距里）。
-  static const double _kOvershootAllowance = 8;
-
-  late final FushiSpring _select = FushiSpring(
-    vsync: this,
-    initial: widget.selected ? 1 : 0,
-    spring: _kNavExpressiveSpatial,
-  );
-
-  @override
-  void didUpdateWidget(covariant _NavIndicatorPill oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.selected != widget.selected) {
-      _select.animateTo(
-        widget.selected ? 1 : 0,
-        animate: fushiExpressiveMotionEnabled(context),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _select.dispose();
-    super.dispose();
-  }
-
-  /// 弹簧当前进度；落到目标附近直接取目标，静止几何与配色与目标逐值相同。
-  double get _t {
-    final double target = _select.target;
-    final double raw = _select.value;
-    return (raw - target).abs() < 0.001 ? target : raw;
-  }
-
-  Color _fillFor(double t) => t >= 1
-      ? widget.color
-      : t <= 0
-      ? Colors.transparent
-      : widget.color.withValues(alpha: widget.color.a * t.clamp(0.0, 1.0));
-
-  @override
-  Widget build(BuildContext context) {
-    final double height = widget.height;
-    final BorderRadius radius = BorderRadius.circular(height / 2);
-    final double width = widget.width;
-    return SizedBox(
-      width: width,
-      height: height,
-      child: Center(
-        child: AnimatedBuilder(
-          animation: _select.animation,
-          child: widget.child,
-          builder: (BuildContext context, Widget? child) {
-            final double t = _t;
-            final double pill = math.min(
-              math.max(0.0, height + (width - height) * t),
-              width + _kOvershootAllowance,
-            );
-            return OverflowBox(
-              maxWidth: width + _kOvershootAllowance,
-              maxHeight: height,
-              child: Container(
-                width: pill,
-                height: height,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: _fillFor(t),
-                  borderRadius: radius,
-                ),
-                child: child,
+          dimension: shapeSize,
+          child: Stack(
+            alignment: Alignment.center,
+            children: <Widget>[
+              NavMorphShape(
+                shape: railShape ?? kNavRailFallbackShapes.first,
+                visible: selected && !sliding,
+                color: indicatorColor,
+                size: shapeSize,
               ),
-            );
-          },
+              glyph,
+            ],
+          ),
         ),
-      ),
+        if (showLabel) ...<Widget>[
+          const SizedBox(height: _kMaterialBarLabelGap),
+          label,
+        ],
+      ],
     );
   }
 }

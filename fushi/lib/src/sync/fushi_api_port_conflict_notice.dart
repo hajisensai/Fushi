@@ -1,7 +1,9 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/utils.dart';
-import 'package:fushi/src/sync/fushi_api_server.dart'
-    show kFushiApiDefaultPort;
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/sync/fushi_api_server.dart' show kFushiApiDefaultPort;
 
 /// Fushi API 服务器（内部名 Yomitan API server）端口被占用时给用户看的说明。
 /// 默认端口的占用者几乎总是浏览器拉起的 yomitan-api Python 进程，给专项修复路径；

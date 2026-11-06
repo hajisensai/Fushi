@@ -25,7 +25,8 @@ void main() {
     expect(
       popupHeader,
       contains('FushiIconButton('),
-      reason: '查词弹窗 header 是 Flutter 兄弟层，手柄/键盘方向导航只走 '
+      reason:
+          '查词弹窗 header 是 Flutter 兄弟层，手柄/键盘方向导航只走 '
           'FushiFocusTarget；裸 IconButton 会被自定义焦点系统跳过。',
     );
     // 原写法靠 replaceAll 抠掉 FushiIconButton 再做裸子串匹配——那是白名单，
@@ -36,13 +37,13 @@ void main() {
     expect(
       containsIdentifierCall(popupHeader, 'IconButton'),
       isFalse,
-      reason: '查词弹窗 header 不得再使用未注册的裸 IconButton'
+      reason:
+          '查词弹窗 header 不得再使用未注册的裸 IconButton'
           '（含 IconButton.filledTonal 等命名构造器）。',
     );
   });
 
-  test('reader and popup caret focus navigation is gated by the global switch',
-      () {
+  test('reader and popup caret focus navigation is gated by the global switch', () {
     expect(
       code,
       contains(

@@ -25,22 +25,18 @@ void main() {
   // 两镜像：app 内弹窗、浏览器扩展 vendor 副本（CLAUDE.md 的「弹窗样式三镜像同步」）。
   const List<(String js, String css, String label)> mirrors =
       <(String, String, String)>[
-    (
-      'assets/popup/popup.js',
-      'assets/popup/popup.css',
-      'app 内查词弹窗',
-    ),
-    (
-      'assets/browser_extension/vendor/popup.js',
-      'assets/browser_extension/vendor/popup.css',
-      '随包扩展 vendor 副本',
-    ),
-    (
-      '../tools/browser-extension/vendor/popup.js',
-      '../tools/browser-extension/vendor/popup.css',
-      '浏览器扩展 vendor 副本',
-    ),
-  ];
+        ('assets/popup/popup.js', 'assets/popup/popup.css', 'app 内查词弹窗'),
+        (
+          'assets/browser_extension/vendor/popup.js',
+          'assets/browser_extension/vendor/popup.css',
+          '随包扩展 vendor 副本',
+        ),
+        (
+          '../tools/browser-extension/vendor/popup.js',
+          '../tools/browser-extension/vendor/popup.css',
+          '浏览器扩展 vendor 副本',
+        ),
+      ];
 
   /// 原生 masonry 的特性名（CSSWG 几度改名，都列上）。
   const List<String> nativeMasonryTokens = <String>[
@@ -54,8 +50,11 @@ void main() {
       final File js = File('${Directory.current.path}/$jsPath');
       // 缺席即判红，不再静默 return：静默自禁用会让守卫在最该说话时闭嘴
       // （三镜像本就必须逐字节一致，缺一份本身就是问题）。
-      expect(js.existsSync(), isTrue,
-          reason: '\$label: 找不到 \$jsPath —— 三镜像必须齐全');
+      expect(
+        js.existsSync(),
+        isTrue,
+        reason: '\$label: 找不到 \$jsPath —— 三镜像必须齐全',
+      );
       // 词法遮蔽而非手写剥行：test/tools/source_guard_adoption_test.dart 明令禁止
       // startsWith 那种形态；且 JS 有模板串与正则字面量，裸剥行会错。
       final String jsCode = maskJsComments(js.readAsStringSync());
@@ -69,7 +68,8 @@ void main() {
       expect(
         jsCode,
         isNot(contains('HAS_NATIVE_MASONRY')),
-        reason: '$label: 可执行代码里仍出现 HAS_NATIVE_MASONRY。它要么是「原生 '
+        reason:
+            '$label: 可执行代码里仍出现 HAS_NATIVE_MASONRY。它要么是「原生 '
             'masonry 就整体放弃」的死分支（CSS 侧没有对应实现，命中即退化成行对齐 '
             'grid、矮卡下方留空洞），要么是删了声明没删干净的悬空引用（运行时 '
             'ReferenceError，masonry 直接不工作）。两种都不允许。',
@@ -78,15 +78,19 @@ void main() {
       // ② 更一般的不变式：JS 代码只要**检测**某个原生 masonry 特性，CSS 就必须真的
       //    用上它；否则这个检测只能通向死分支。
       final File css = File('${Directory.current.path}/$cssPath');
-      expect(css.existsSync(), isTrue,
-          reason: '$label: 找不到 $cssPath —— 缺席会让下面这条检查静默失效');
+      expect(
+        css.existsSync(),
+        isTrue,
+        reason: '$label: 找不到 $cssPath —— 缺席会让下面这条检查静默失效',
+      );
       final String cssCode = css.readAsStringSync();
       for (final String token in nativeMasonryTokens) {
         if (!jsCode.contains(token)) continue;
         expect(
           cssCode,
           contains(token),
-          reason: '$label: popup.js 的代码里检测了原生 masonry 特性「$token」，但 '
+          reason:
+              '$label: popup.js 的代码里检测了原生 masonry 特性「$token」，但 '
               '$cssPath 没有任何对应实现。特性检测必须以「实现存在」为前提，'
               '否则命中时布局会掉进死分支。',
         );

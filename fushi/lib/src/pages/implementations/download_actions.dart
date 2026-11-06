@@ -15,7 +15,10 @@ import 'package:fushi/src/media/downloads/download_start_result.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/download_notice.dart';
 import 'package:fushi/src/pages/implementations/torrent_upload_consent_dialog.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/misc/toast_severity.dart';
 import 'package:fushi/src/media/discovery/sources/core_audio_discovery_source.dart';
 
 /// 通用磁力推送的结果（调用方据此弹提示）。
@@ -280,7 +283,10 @@ Future<DownloadStartResult> startDiscoveryItemDownload({
   // 第三方游戏资源站（真红小站 / 内置 AList）：压缩包、安装程序有恶意软件风险，
   // 先给一次风险说明（勾过「不再提示」就跳过），取消 = 这次不下。
   if (item.kind == DiscoveryMediaKind.game &&
-      isExternalDiscoverySource(appModel.mediaDiscoveryService, item.sourceId)) {
+      isExternalDiscoverySource(
+        appModel.mediaDiscoveryService,
+        item.sourceId,
+      )) {
     if (!await confirmDownloadNotice(
           context,
           DownloadNoticeKind.gameResource,
@@ -372,7 +378,7 @@ Future<DownloadStartResult> startDiscoveryItemDownload({
     case DiscoveryPayloadKind.httpFile:
       final bool added = appModel.discoveryDownloadQueue.enqueue(
         item,
-        destinationDir: appModel.discoveryDownloadDirFor(item.kind),
+        destinationDir: await appModel.discoveryDownloadDirFor(item.kind),
       );
       return added
           ? DownloadStartResult.started(<DownloadStartNotice>[

@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/source_guard.dart';
 
 /// BUG-1432：把「`LogicalKeyboardKey.process` 在 Fushi 出包的 5 个平台上产不出来」
 /// 这条**平台事实**钉成可执行断言。
@@ -25,14 +29,18 @@ import 'package:flutter_test/flutter_test.dart';
 /// 引进某个原生平台的键表（那才是兼容层生效的前提），这里立刻转红，提醒重新评估；
 /// 在那之前，它就是「别再往这个方向打补丁」的可执行注脚。
 ///
-/// 注意本守卫**不禁止**代码里出现 `process` 比较（存量兼容层照旧、无害），它只钉
-/// 「这些分支目前不可达」这条事实本身。
+/// 2026-11-05 真机取证（BUG-430/853/936 结案）：那套兼容层已删除，真修复在平台边界
+/// ——无文本焦点时 `WindowsImeGuard` 解除 Flutter view 的 IME 关联（BUG-1450），按键
+/// 以正常 `WM_KEYDOWN` 到达。故本文件末尾两条源码守卫：`lib/` 不得再出现
+/// `LogicalKeyboardKey.process` 判据（防死代码回流），`main.dart` 必须在 `runApp`
+/// 前装上 `WindowsImeGuard`（去掉它就是原 bug 原样复现）。
 void main() {
   test('LogicalKeyboardKey.process 只在 Web 键表里有条目', () {
     expect(
       kWebToLogicalKey.values,
       contains(LogicalKeyboardKey.process),
-      reason: 'process 是 DOM KeyboardEvent.key === "Process" 的产物；这条若不再成立，'
+      reason:
+          'process 是 DOM KeyboardEvent.key === "Process" 的产物；这条若不再成立，'
           '说明 Flutter 改了 IME 键的表达方式，整套回退层的前提要重新评估',
     );
   });
@@ -43,29 +51,30 @@ void main() {
     // 逐张列全，而不是只挑 kWindowsToLogicalKey。
     final Map<String, Map<Object, LogicalKeyboardKey>> nativeMaps =
         <String, Map<Object, LogicalKeyboardKey>>{
-      'kAndroidToLogicalKey': kAndroidToLogicalKey,
-      'kAndroidNumPadMap': kAndroidNumPadMap,
-      'kFuchsiaToLogicalKey': kFuchsiaToLogicalKey,
-      'kMacOsToLogicalKey': kMacOsToLogicalKey,
-      'kMacOsNumPadMap': kMacOsNumPadMap,
-      'kMacOsFunctionKeyMap': kMacOsFunctionKeyMap,
-      'kIosToLogicalKey': kIosToLogicalKey,
-      'kIosNumPadMap': kIosNumPadMap,
-      'kIosSpecialLogicalMap': kIosSpecialLogicalMap,
-      'kGlfwToLogicalKey': kGlfwToLogicalKey,
-      'kGlfwNumpadMap': kGlfwNumpadMap,
-      'kGtkToLogicalKey': kGtkToLogicalKey,
-      'kGtkNumpadMap': kGtkNumpadMap,
-      'kWindowsToLogicalKey': kWindowsToLogicalKey,
-      'kWindowsNumPadMap': kWindowsNumPadMap,
-    };
+          'kAndroidToLogicalKey': kAndroidToLogicalKey,
+          'kAndroidNumPadMap': kAndroidNumPadMap,
+          'kFuchsiaToLogicalKey': kFuchsiaToLogicalKey,
+          'kMacOsToLogicalKey': kMacOsToLogicalKey,
+          'kMacOsNumPadMap': kMacOsNumPadMap,
+          'kMacOsFunctionKeyMap': kMacOsFunctionKeyMap,
+          'kIosToLogicalKey': kIosToLogicalKey,
+          'kIosNumPadMap': kIosNumPadMap,
+          'kIosSpecialLogicalMap': kIosSpecialLogicalMap,
+          'kGlfwToLogicalKey': kGlfwToLogicalKey,
+          'kGlfwNumpadMap': kGlfwNumpadMap,
+          'kGtkToLogicalKey': kGtkToLogicalKey,
+          'kGtkNumpadMap': kGtkNumpadMap,
+          'kWindowsToLogicalKey': kWindowsToLogicalKey,
+          'kWindowsNumPadMap': kWindowsNumPadMap,
+        };
 
     for (final MapEntry<String, Map<Object, LogicalKeyboardKey>> entry
         in nativeMaps.entries) {
       expect(
         entry.value.values,
         isNot(contains(LogicalKeyboardKey.process)),
-        reason: '${entry.key} 出现了 process：原生端 IME 键的表达方式变了，'
+        reason:
+            '${entry.key} 出现了 process：原生端 IME 键的表达方式变了，'
             'BUG-430/853/936 的 physicalKey 回退层可能终于可达，需重新评估',
       );
     }
@@ -78,5 +87,44 @@ void main() {
     // ——回退层仍然不生效。这条钉住「换个漏法也救不了」。
     expect(LogicalKeyboardKey.process.keyId, 0x0010000070f);
     expect(const LogicalKeyboardKey(0xE5), isNot(LogicalKeyboardKey.process));
+  });
+
+  test('lib/ 不再以 LogicalKeyboardKey.process 作判据（死代码不得回流）', () {
+    final List<String> offenders = <String>[];
+    for (final FileSystemEntity entity in Directory(
+      'lib',
+    ).listSync(recursive: true)) {
+      if (entity is! File || !entity.path.endsWith('.dart')) continue;
+      if (entity.path.endsWith('.g.dart')) continue;
+      final String code = maskCommentsAndStrings(entity.readAsStringSync());
+      if (code.contains('LogicalKeyboardKey.process')) {
+        offenders.add(entity.path);
+      }
+    }
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          '原生端产不出 process（见上面三条）；Windows 输入法吞键要在平台边界修'
+          '（WindowsImeGuard / ime_association_guard.cpp），不要在 Dart 判据层补',
+    );
+  });
+
+  test('main.dart 在 runApp 之前装上 WindowsImeGuard', () {
+    final String code = maskCommentsAndStrings(
+      File('lib/main.dart').readAsStringSync(),
+    );
+    final int install = code.indexOf('WindowsImeGuard.install()');
+    final int runApp = code.indexOf('runApp(');
+    expect(
+      install,
+      isNonNegative,
+      reason: '去掉它，Windows 输入法激活时空格 / 字母 / 组字中的全部快捷键都被吞',
+    );
+    expect(
+      install,
+      lessThan(runApp),
+      reason: '必须在 runApp 前装上，冷启动第一帧起就解除 IME 关联',
+    );
   });
 }

@@ -354,6 +354,7 @@ private:
   void SetState(std::string state, std::string status,
                 std::string reason = std::string());
   void EmitStateIfChanged(bool force = false);
+  void LogStateTransition(const Snapshot &snapshot);
   void NotifyCalibrationCommitted();
   void NotifyCalibrationCancelled(const std::string &reason);
 
@@ -456,6 +457,10 @@ private:
   std::string status_ = "detached";
   std::string reason_;
   std::string last_emitted_signature_;
+  // 上一次写进 hibiki_glookup.log 的 state/status/reason/visible（反馈 Ny1bK1hFeJ）：
+  // 表面为什么、从何时起不接点击，只能靠这条转换时间线回答。
+  std::string last_logged_transition_;
+  ULONGLONG last_logged_transition_at_ = 0;
 
   StateCallback on_state_;
   CalibrationCommittedCallback on_calibration_committed_;

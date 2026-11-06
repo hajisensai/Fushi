@@ -37,10 +37,12 @@ const List<String> _generalGlobals = <String>[
   'screen_ocr',
   'camera_ocr',
   'feedback',
+  'ai',
 ];
 
-/// 阅读器 / 漫画 / 视频：只带「查词」与「反馈」，其余全局按钮要用户自己勾。
-const List<String> _mediaGlobals = <String>['lookup', 'feedback'];
+/// 阅读器 / 漫画 / 视频：只带「查词」「反馈」与「AI」（spec 2026-10-26 §6.4），其余
+/// 全局按钮要用户自己勾。
+const List<String> _mediaGlobals = <String>['lookup', 'feedback', 'ai'];
 
 void main() {
   group('FloatingBallScope', () {
@@ -59,7 +61,7 @@ void main() {
       );
     });
 
-    test('桌面应用外球：查词 / 应用外查词（查选区）/ 剪贴板 / 截屏识字 / 同步，没有拍照', () {
+    test('桌面应用外球：查词 / 应用外查词（查选区）/ 剪贴板 / 截屏识字 / 同步 / 切换配置，没有拍照', () {
       Set<FloatingBallGlobalAction> onDesktop(
         FloatingBallScope scope, {
         bool lookupModuleEnabled = true,
@@ -81,14 +83,18 @@ void main() {
         FloatingBallGlobalAction.clipboard,
         FloatingBallGlobalAction.screenOcr,
         FloatingBallGlobalAction.sync,
+        FloatingBallGlobalAction.switchProfile,
+        FloatingBallGlobalAction.ai,
       });
       // 查词模块关着：打开查词页与全局查词（含截屏识字的结果卡）都没有入口，只剩
-      // 剪贴板（它在覆盖窗不可用时退回主窗查词弹窗）与同步（与查词无关）。
+      // 剪贴板（它在覆盖窗不可用时退回主窗查词弹窗）与同步、切换配置（与查词无关）。
       expect(
         onDesktop(FloatingBallScope.system, lookupModuleEnabled: false),
         <FloatingBallGlobalAction>{
           FloatingBallGlobalAction.clipboard,
           FloatingBallGlobalAction.sync,
+          FloatingBallGlobalAction.switchProfile,
+          FloatingBallGlobalAction.ai,
         },
       );
       // 应用内的球仍按平台能力（桌面没有独立查词窗），与查词模块无关。
@@ -99,7 +105,9 @@ void main() {
             FloatingBallGlobalAction.lookup,
             FloatingBallGlobalAction.clipboard,
             FloatingBallGlobalAction.sync,
+            FloatingBallGlobalAction.switchProfile,
             FloatingBallGlobalAction.feedback,
+            FloatingBallGlobalAction.ai,
           },
         );
       }
@@ -194,6 +202,40 @@ void main() {
           ),
           isTrue,
         );
+      }
+    });
+
+    test('切换配置：每个场景都能勾选、出厂不勾，五端都有（桌面应用外球也有）', () {
+      const String id = 'switch_profile';
+      expect(
+        FloatingBallGlobalAction.fromStorage(id),
+        FloatingBallGlobalAction.switchProfile,
+      );
+      for (final FloatingBallScope scope in FloatingBallScope.values) {
+        expect(
+          FloatingBallGlobalAction.switchProfile.onByDefaultIn(scope),
+          isFalse,
+        );
+        expect(scope.catalog, contains(id), reason: scope.storageValue);
+        expect(scope.defaultButtons, isNot(contains(id)));
+        for (final (bool android, bool ios, bool desktop)
+            in <(bool, bool, bool)>[
+              (true, false, false),
+              (false, true, false),
+              (false, false, true),
+            ]) {
+          expect(
+            FloatingBallGlobalAction.switchProfile.availableIn(
+              scope,
+              isAndroid: android,
+              isIOS: ios,
+              isDesktop: desktop,
+              lookupModuleEnabled: false,
+            ),
+            isTrue,
+            reason: '${scope.storageValue} $android/$ios/$desktop',
+          );
+        }
       }
     });
 
@@ -657,6 +699,8 @@ void main() {
       expect(request!.text, '今日は晴れ');
       expect(request.index, 2); // は
       expect(request.selectionRect, const Rect.fromLTWH(180, 350, 40, 20));
+      // 反馈 1Mwaro8UTC：悬浮球拍照查词制卡要有例句——请求带上被点字所在的那一句。
+      expect(request.sentence, '今日は晴れ');
     });
   });
 
@@ -702,6 +746,45 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       await tester.pump();
       expect(registry.current.actions, isEmpty);
+    });
+
+    testWidgets('场景带上页面此刻的主题，页面换主题（歌词模式封面取色）时跟着变', (WidgetTester tester) async {
+      final FloatingBallSceneRegistry registry =
+          FloatingBallSceneRegistry.instance;
+      final ThemeData root = ThemeData(colorSchemeSeed: Colors.purple);
+      final ThemeData cover = ThemeData(colorSchemeSeed: Colors.brown);
+      Widget app(ThemeData? pageTheme) => MaterialApp(
+        theme: root,
+        home: Builder(
+          builder: (BuildContext context) {
+            final Widget scene = FloatingBallScene(
+              scope: FloatingBallScope.reader,
+              actions: <String, ReaderHeaderAction>{'a': _action('a')},
+            );
+            return pageTheme == null
+                ? Theme(data: Theme.of(context), child: scene)
+                : Theme(data: pageTheme, child: scene);
+          },
+        ),
+      );
+
+      await tester.pumpWidget(app(null));
+      await tester.pump();
+      expect(
+        registry.current.theme?.colorScheme.primary,
+        root.colorScheme.primary,
+      );
+
+      await tester.pumpWidget(app(cover));
+      await tester.pump();
+      expect(
+        registry.current.theme?.colorScheme.primary,
+        cover.colorScheme.primary,
+      );
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      expect(registry.current.theme, isNull);
     });
 
     test('sameFloatingBallActions 只比外观不比闭包', () {

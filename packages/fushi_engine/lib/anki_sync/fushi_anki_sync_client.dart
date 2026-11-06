@@ -8,8 +8,37 @@ class FushiAnkiSyncException implements Exception {
 
   final String message;
 
+  /// 同步服务器限流（HTTP 429 Too Many Requests）。
+  ///
+  /// helper 只回 rslib 错误的 Debug 原文（`NetworkError { info: "HTTP status client
+  /// error (429 Too Many Requests) for url ()", kind: Other }`）：rslib 把 429 归进
+  /// `NetworkErrorKind::Other`，没有结构化状态码；它用 reqwest 的 `error_for_status`
+  /// 出错，响应头（含 Retry-After）在那一步就丢了，所以这里只能认状态行文字。
+  bool get isRateLimited => _rateLimitPattern.hasMatch(message);
+
+  static final RegExp _rateLimitPattern = RegExp(
+    'too many requests',
+    caseSensitive: false,
+  );
+
   @override
   String toString() => 'FushiAnkiSyncException: $message';
+}
+
+/// 把用户填的同步服务器地址规范成 rslib 期望的形状。
+///
+/// rslib 对地址做 `join("./")` 再拼 `sync/hostKey` 等路径——这一步会**丢掉最后一个
+/// 不带 `/` 的路径段**：`http://nas/anki` 变成 `http://nas/`，请求落到反代根上的
+/// 别的站点，对方回一个普通网页，rslib 于是报 `missing original size`（响应缺
+/// `anki-original-size` 头）。带路径前缀的地址补一个结尾 `/`；只有主机端口的
+/// （`http://nas:8080`）本来就没问题，原样交出。空串 = AnkiWeb（null）。
+String? normalizeAnkiSyncEndpoint(String? endpoint) {
+  final String? trimmed = endpoint?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  final Uri? uri = Uri.tryParse(trimmed);
+  if (uri == null || !uri.hasScheme || uri.path.isEmpty) return trimmed;
+  if (uri.path.endsWith('/')) return trimmed;
+  return uri.replace(path: '${uri.path}/').toString();
 }
 
 /// 一个笔记类型及其字段名。
@@ -136,7 +165,7 @@ class FushiAnkiSyncClient {
   }) async =>
       (await _call(<String, Object?>{
                 'cmd': 'login',
-                'endpoint': endpoint,
+                'endpoint': normalizeAnkiSyncEndpoint(endpoint),
                 'username': username,
                 'password': password,
               })
@@ -252,7 +281,7 @@ class FushiAnkiSyncClient {
         await _call(<String, Object?>{
               'cmd': 'sync',
               'hkey': hkey,
-              'endpoint': endpoint,
+              'endpoint': normalizeAnkiSyncEndpoint(endpoint),
             })
             as Map;
     if (r['status'] == 'full_sync_blocked') {
@@ -272,7 +301,7 @@ class FushiAnkiSyncClient {
       _call(<String, Object?>{
         'cmd': 'full_download',
         'hkey': hkey,
-        'endpoint': endpoint,
+        'endpoint': normalizeAnkiSyncEndpoint(endpoint),
       });
 
   /// 结束 helper。空闲时发 `close` 让它关库、读到 EOF 自行退出；有请求在飞（同步 /

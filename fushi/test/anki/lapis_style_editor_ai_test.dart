@@ -11,7 +11,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -113,10 +113,14 @@ void main() {
       t.ai_assist_no_provider,
     );
     // 什么都没改，保存按钮保持灰。
-    final FilledButton saveButton = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.ancestor(
-        of: find.byIcon(FushiIcons.save),
-        matching: find.byType(FilledButton),
-      )),);
+    final FilledButton saveButton = tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.ancestor(
+          of: find.byIcon(FushiIcons.save),
+          matching: find.byType(FilledButton),
+        ),
+      ),
+    );
     expect(saveButton.onPressed, isNull);
   });
 

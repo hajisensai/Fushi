@@ -1,20 +1,22 @@
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/creator.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/creator/enhancement.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// An enhancement used to pick a sentence from text.
 class SentencePickerEnhancement extends Enhancement {
   /// Initialise this enhancement with the hardset parameters.
   SentencePickerEnhancement({required super.field})
-      : super(
-          uniqueKey: key,
-          label: 'Sentence Picker',
-          description: 'Pick sentences delimited by punctuation and spacing.',
-          icon: Icons.colorize_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Sentence Picker',
+        description: 'Pick sentences delimited by punctuation and spacing.',
+        icon: Icons.colorize_outlined,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].

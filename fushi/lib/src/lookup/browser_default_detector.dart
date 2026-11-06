@@ -55,9 +55,10 @@ BrowserKind? browserKindFromDefaultBrowserId(String id) {
 @visibleForTesting
 String? parseWindowsUserChoiceProgId(String regOutput) {
   for (final String line in regOutput.split(RegExp(r'\r?\n'))) {
-    final Match? m =
-        RegExp(r'^\s*ProgId\s+REG_SZ\s+(\S.*?)\s*$', caseSensitive: false)
-            .firstMatch(line);
+    final Match? m = RegExp(
+      r'^\s*ProgId\s+REG_SZ\s+(\S.*?)\s*$',
+      caseSensitive: false,
+    ).firstMatch(line);
     if (m != null) return m.group(1);
   }
   return null;
@@ -74,8 +75,9 @@ String? parseMacLaunchServicesHandler(String output) {
       if (!RegExp('LSHandlerURLScheme\\s*=\\s*"?$scheme"?;').hasMatch(block)) {
         continue;
       }
-      final Match? m =
-          RegExp(r'LSHandlerRoleAll\s*=\s*"?([^";\s]+)"?;').firstMatch(block);
+      final Match? m = RegExp(
+        r'LSHandlerRoleAll\s*=\s*"?([^";\s]+)"?;',
+      ).firstMatch(block);
       if (m != null) return m.group(1);
     }
     return null;
@@ -111,8 +113,10 @@ Future<BrowserKind?> detectDefaultBrowserKind() async {
           : browserKindFromDefaultBrowserId(bundleId);
     }
     if (Platform.isLinux) {
-      final ProcessResult r = await Process.run(
-          'xdg-settings', <String>['get', 'default-web-browser']);
+      final ProcessResult r = await Process.run('xdg-settings', <String>[
+        'get',
+        'default-web-browser',
+      ]);
       if (r.exitCode != 0) return null;
       return browserKindFromDefaultBrowserId('${r.stdout}');
     }
@@ -126,12 +130,12 @@ Future<BrowserKind?> detectDefaultBrowserKind() async {
 
 /// Windows App Paths 里各浏览器登记的可执行名。
 String _windowsExeName(BrowserKind kind) => switch (kind) {
-      BrowserKind.chrome => 'chrome.exe',
-      BrowserKind.edge => 'msedge.exe',
-      BrowserKind.brave => 'brave.exe',
-      BrowserKind.vivaldi => 'vivaldi.exe',
-      BrowserKind.opera => 'opera.exe',
-    };
+  BrowserKind.chrome => 'chrome.exe',
+  BrowserKind.edge => 'msedge.exe',
+  BrowserKind.brave => 'brave.exe',
+  BrowserKind.vivaldi => 'vivaldi.exe',
+  BrowserKind.opera => 'opera.exe',
+};
 
 /// 纯函数：从 `reg query <App Paths\x.exe> /ve` 的输出里取默认值（可执行文件
 /// 绝对路径）。默认值的名字列是本地化的（「(默认)」/「(Default)」），只认
@@ -139,8 +143,9 @@ String _windowsExeName(BrowserKind kind) => switch (kind) {
 @visibleForTesting
 String? parseWindowsRegDefaultValue(String regOutput) {
   for (final String line in regOutput.split(RegExp(r'\r?\n'))) {
-    final Match? m =
-        RegExp(r'\sREG_(?:EXPAND_)?SZ\s+(\S.*?)\s*$').firstMatch(line);
+    final Match? m = RegExp(
+      r'\sREG_(?:EXPAND_)?SZ\s+(\S.*?)\s*$',
+    ).firstMatch(line);
     if (m != null) return m.group(1)!.replaceAll('"', '');
   }
   return null;
@@ -148,8 +153,11 @@ String? parseWindowsRegDefaultValue(String regOutput) {
 
 /// macOS / Linux 把 [url] 交给 [kind] 浏览器的命令行（可执行名 + 参数）。
 @visibleForTesting
-List<String>? browserLaunchCommand(BrowserKind kind, String url,
-    {required String os}) {
+List<String>? browserLaunchCommand(
+  BrowserKind kind,
+  String url, {
+  required String os,
+}) {
   switch (os) {
     case 'macos':
       final String app = switch (kind) {
@@ -211,8 +219,11 @@ Future<bool> tryOpenBrowserExtensionsPage(BrowserKind kind) async {
     }
     if (Platform.isLinux) {
       final List<String> cmd = browserLaunchCommand(kind, url, os: 'linux')!;
-      await Process.start(cmd.first, cmd.sublist(1),
-          mode: ProcessStartMode.detached);
+      await Process.start(
+        cmd.first,
+        cmd.sublist(1),
+        mode: ProcessStartMode.detached,
+      );
       return true;
     }
   } on ProcessException {

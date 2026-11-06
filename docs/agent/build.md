@@ -6,7 +6,7 @@
 
 5 平台均出包：Android / iOS / macOS / Windows / Linux（`auto` 下五个平台统一走 Material 3；Cupertino / macOS renderer 仅保留为隐藏内部能力；桌面 EPUB 渲染：Windows 靠 fork 的 `flutter_inappwebview_windows`，Linux 靠 vendored 的 `packages/flutter_inappwebview_linux`（WPE WebKit，见下「Linux 桌面（源码构建）」）。Android：`compileSdk 36` / `minSdkVersion 24` / `targetSdk 35`。
 
-**macOS 只出 Apple Silicon（arm64），不再支持 Intel Mac（2026-10 起）。** `flutter build macos --release` 默认出 universal，靠 `fushi/macos/Runner.xcodeproj` 工程级 `EXCLUDED_ARCHS = x86_64`（Flutter 把它透传给 xcodebuild；`fushi/macos/Podfile` 的 `post_install` 给 Pods 钉同一份）收成 arm64；`release-desktop.yml` 的「Verify macOS app is arm64-only」门钉住 app 本体恰好是 arm64，随包原生件（`libfushi_p2p.dylib` / `libfushi_fsrs.dylib` / `libfushi_torrent_ffi.dylib` / `fushi-anki-sync` / ffmpeg-min / Mihon `runtime-macos-arm64`）一律只出 arm64，并按 app 本体的 `lipo -archs` 核对。发布资产名随之从 `fushi-<v>-macos.zip` 改为 `fushi-<v>-macos-arm64.zip`：已发出去的旧版（universal，可能跑在 Intel Mac 上）的更新器只认 `-macos.zip`，改名让它们选不中 Intel 上启动不了的 arm64 包，代价是旧版在 Apple Silicon 上也跨不过这一版的应用内自动更新（判「无更新」），需要手动下载一次新版。iOS 模拟器的 x86_64 切片、Windows / Linux / Android 的 x64 不在此列。Intel Mac 上的开发构建同样不再支持（`build_desktop_runtime.sh` / `script/build_and_run.sh` 在 Intel 宿主上直接报错）。
+**macOS 只出 Apple Silicon（arm64），不再支持 Intel Mac（2026-10 起）。** `flutter build macos --release` 默认出 universal，靠 `fushi/macos/Runner.xcodeproj` 工程级 `EXCLUDED_ARCHS = x86_64`（Flutter 把它透传给 xcodebuild；`fushi/macos/Podfile` 的 `post_install` 给 Pods 钉同一份）收成 arm64；`release-desktop.yml` 的「Verify macOS app is arm64-only」门钉住 app 本体恰好是 arm64，随包原生件（`libfushi_p2p.dylib` / `libfushi_fsrs.dylib` / `libfushi_compute.dylib` / `libfushi_torrent_ffi.dylib` / `fushi-anki-sync` / 统一 FFmpeg（`ffmpeg-unified-macos.tar.gz`）/ Mihon `runtime-macos-arm64`）一律只出 arm64，并按 app 本体的 `lipo -archs` 核对。发布资产名随之从 `fushi-<v>-macos.zip` 改为 `fushi-<v>-macos-arm64.zip`：已发出去的旧版（universal，可能跑在 Intel Mac 上）的更新器只认 `-macos.zip`，改名让它们选不中 Intel 上启动不了的 arm64 包，代价是旧版在 Apple Silicon 上也跨不过这一版的应用内自动更新（判「无更新」），需要手动下载一次新版。iOS 模拟器的 x86_64 切片、Windows / Linux / Android 的 x64 不在此列。Intel Mac 上的开发构建同样不再支持（`build_desktop_runtime.sh` / `script/build_and_run.sh` 在 Intel 宿主上直接报错）。
 
 ## Linux 桌面（源码构建）
 
@@ -26,13 +26,15 @@ bundle 布局：`build/linux/x64/<mode>/bundle/{fushi, lib/, data/, mihon_bridge
 - 目标机缺 WPE、或不允许非特权 user namespace（WPE 的 bubblewrap 沙箱必需；Docker 默认、Ubuntu 24.04+ 的 AppArmor userns 限制都会触发）时，app 照常启动，WebView 位置显示原因（`LinuxWebViewRuntime` / `LinuxWebViewUnavailablePlaceholder`），headless 抛 `LinuxWebViewUnavailableException`。不做这层时 WebKit 会在第一次建 WebView（启动预热）时 `g_error` 中止整个进程。
 - 资源投递走自定义 scheme（与 WKWebView 同路径，判据 `webViewUsesCustomSchemeTransport`）：WPE 没有能拦截 `https://` 的 `shouldInterceptRequest`。
 
-运行时依赖（发行版包，打包时声明）：GTK 3、`libmpv2`（media_kit）、`libkeybinder-3.0`（全局快捷键）、`ffmpeg` / `ffprobe` 在 PATH（Linux 不随包精简 ffmpeg：`ffmpeg-min.yml` 编出的 Linux 版动态链发行版的 x264 / gnutls / dav1d，跨发行版不可移植）、`parecord`（录音，PulseAudio / PipeWire-pulse）、可选 WPE WebKit 2.x（Debian / Ubuntu 25.04+：`libwpewebkit-2.0-1 libwpebackend-fdo-1.0-1`；Fedora / Arch：`wpewebkit`；没装时阅读器 / 弹窗 / LNReader 小说源显示安装提示）、可选 Open JTalk（制卡词音频的最后兜底 TTS，能读汉字；Debian / Ubuntu：`open-jtalk open-jtalk-mecab-naist-jdic hts-voice-nitech-jp-atr503-m001`，非标准路径用 `FUSHI_OPEN_JTALK_DIC` / `FUSHI_OPEN_JTALK_VOICE` 指定）或 `espeak-ng`（只读纯假名）。
+运行时依赖（发行版包，打包时声明）：GTK 3、`libmpv2`（media_kit；音乐模块播放音频 CD 要它带 `cdda` 协议——发行版的 libmpv 编没编 libcdio 各不相同，用 `mpv --list-protocols | grep cdda` 核对，没有就换带 `-Dcdda=enabled` 的构建；另外发行版 mpv 没有 Fushi 的 `cdda-seek-sector-offset.patch`，seek 后会整段提前最多 587 个样本，见 `tool/bluray/forks/README.md`）、`libkeybinder-3.0`（全局快捷键）、`ffmpeg` / `ffprobe` 在 PATH（Linux 不随包 FFmpeg：播放器的发行版 `libmpv2` 与 PATH 上的 ffmpeg 本来就共用系统 FFmpeg，统一 FFmpeg 只覆盖随包的 Windows / macOS / Android / iOS）、`parecord`（录音，PulseAudio / PipeWire-pulse）、可选 WPE WebKit 2.x（Debian：`libwpewebkit-2.0-1 libwpebackend-fdo-1.0-1`；Fedora / Arch：`wpewebkit`；没装时阅读器 / 弹窗 / LNReader 小说源显示安装提示）、可选 Open JTalk（制卡词音频的最后兜底 TTS，能读汉字；Debian / Ubuntu：`open-jtalk open-jtalk-mecab-naist-jdic hts-voice-nitech-jp-atr503-m001`，非标准路径用 `FUSHI_OPEN_JTALK_DIC` / `FUSHI_OPEN_JTALK_VOICE` 指定）或 `espeak-ng`（只读纯假名）。
 
 **单实例**：runner 以 `G_APPLICATION_HANDLES_COMMAND_LINE` 注册到会话 D-Bus（id `app.fushi.reader`），第二次启动（文件关联 / `fushi://` 深链 / 终端 `fushi <路径>`）把第一条非 flag 参数经 `app.fushi/external_video` 交给已开着的实例并前置窗口（`linux/runner/my_application.cc` + `external_open_handoff.cc`）；Dart 处理器注册前到达的参数在 runner 排队，Dart 发 `externalOpenReady` 后冲出，首帧前不前置窗口（BUG-3089）；首实例退出链开始时 Dart 发 `appExiting`，此后它对二次启动回退出码 75、不接管，二次启动方等名字让出后自己按首实例启动（BUG-3087，对应 Windows「窗口不可见 ⇔ 正在退出」）；`--fushi-restarted` 先等旧实例让出名字；设了 `FUSHI_TEST_HIDDEN` / `FUSHI_TEST_ROOT` 的测试实例不参与单实例；没有会话总线时 GLib 自动退化成多实例。系统关联本身靠打包时装的 `.desktop`（`Exec=fushi %u` + `MimeType=x-scheme-handler/fushi;…`），本仓不随带。
 
-构建依赖（Debian trixie 一条龙）：`clang cmake ninja-build make pkg-config g++`（≥ 14，fushidicts 要 `std::expected`）、`libgtk-3-dev liblzma-dev libmpv-dev libsecret-1-dev libkeybinder-3.0-dev`，要 WebView 再加 `libwpewebkit-2.0-dev libwpebackend-fdo-1.0-dev libwpe-1.0-dev libepoxy-dev libwayland-dev`。Flutter（3.47.6）用 `CC=clang` 调 CMake，而 Debian 的 clang 配 libstdc++ 时 `std::expected` 不一定可用：在 PATH 前面放两个垫片脚本把 `clang` / `clang++` 指到 `gcc` / `g++`（≥ 14）再 `flutter build linux`。Mihon 运行时：`tool/mihon/build_desktop_runtime.sh bundle/mihon_bridge` 在 Linux 上出宿主架构的 `runtime/` + JAR。
+构建依赖（Debian trixie 一条龙）：`clang cmake ninja-build make pkg-config g++`（≥ 14，fushidicts 要 `std::expected`）、`libgtk-3-dev liblzma-dev libmpv-dev libsecret-1-dev libkeybinder-3.0-dev`，要 WebView 再加 `libwpewebkit-2.0-dev libwpebackend-fdo-1.0-dev libwpe-1.0-dev libepoxy-dev libwayland-dev`；要 app 外全局查词卡（`fushi_lookup_card`，独立进程，见 [Linux 全局查词卡](../specs/2026-11-05-linux-global-lookup-card.md)）再加 `libwebkit2gtk-4.1-dev libjson-glib-dev libx11-dev libxi-dev`，缺了只是不编这个 helper；`wayland-protocols`（≥ 1.39）让 runner 能读 Wayland 应用里选中的字，缺了只读 X11 PRIMARY。Flutter（3.47.6）用 `CC=clang` 调 CMake，而 Debian 的 clang 配 libstdc++ 时 `std::expected` 不一定可用：在 PATH 前面放两个垫片脚本把 `clang` / `clang++` 指到 `gcc` / `g++`（≥ 14）再 `flutter build linux`。Mihon 运行时：`tool/mihon/build_desktop_runtime.sh bundle/mihon_bridge` 在 Linux 上出宿主架构的 `runtime/` + JAR。
 
 本机没有 Linux：用 Docker Desktop（`debian:trixie` + 拷进 `/opt/flutter` 的 3.47.6 SDK）构建；源码以 `git ls-files -co --exclude-standard` 打包进 docker 卷再编，别直接 bind mount 工作区（`.dart_tool/package_config.json` 会被写成 Linux 路径）。跑 app / 集成测试用 `Xvfb :99` + `dbus-run-session`；容器里没有 user namespace，WebView 相关测试要设 `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1`（**只限容器测试**）。
+
+**一条命令出包（2026-11-03）**：`bash tool/linux/build_in_docker.sh [--skip-native] [--clean]`（Git Bash / Linux / macOS 宿主均可）按上面的做法在 `tool/linux/Dockerfile`（trixie + Flutter 3.47.6 + Rust 1.95.0 / 1.97.1 + protoc 31.1 + vcpkg）里跑 `tool/linux/build_bundle.sh`，产出 `build/linux-dist/fushi-<版本>-linux-x64.tar.gz`。与 app CMake 的 copy-if-present 不同，**出包时 p2p / fsrs / torrent 一律必需**，并补上 CMake 不管的 `fushi-anki-sync`、`mihon_bridge/`、`fushi_cli`；缺任何一件即失败。缓存放在 `fushi-linux-*` 命名卷里，`--skip-native` 跳过 p2p / torrent 与 bootstrap 的 Rust 重编；容器默认只用一半核心与 12 GB。产物要求 glibc ≥ 2.38（实测）。无头冒烟：`bash tool/linux/smoke_in_docker.sh [秒]` → `build/linux-dist/smoke/{run.log,screen.png}`。目标机运行库（Ubuntu 26.04 / WSL 实测缺的）：`libsecret-1-0 libsoup-3.0-0 libpulse0 libwayland-server0 libkeybinder-3.0-0 libmpv2 libgles2 libegl1 libgl1-mesa-dri`，外加 PATH 上的 `ffmpeg ffprobe parecord`（`pulseaudio-utils`）；可选 WPE：Debian 13 `libwpewebkit-2.0-1 libwpebackend-fdo-1.0-1 libwpe-1.0-1`、Fedora / Arch `wpewebkit`；查词卡 helper 要 `libwebkit2gtk-4.1-0 libjson-glib-1.0-0 libxi6`（GNOME 49 Flatpak 运行时自带）。**Ubuntu 26.04 的官方源没有 WPE WebKit**（实测 `apt-cache search wpe` 为空），Ubuntu 上阅读器 / 弹窗只显示安装提示——要覆盖 Ubuntu 只能随包 / Flatpak 带 WPE 或改用 WebKitGTK。
 
 ## Melos
 
@@ -40,7 +42,7 @@ bundle 布局：`build/linux/x64/<mode>/bundle/{fushi, lib/, data/, mihon_bridge
 
 ## 准备 + 构建
 
-`tool/bootstrap.sh`（Windows：`.\tool\bootstrap.ps1`）一条命令完成：`flutter pub get` → `ci/apply-patches.sh`。`melos bootstrap` 经 post hook 做同样两步。然后：
+`tool/bootstrap.sh`（Windows：`.\tool\bootstrap.ps1`）一条命令完成：取回不入库的预编译二进制（见「vendored 二进制」）→ `flutter pub get` → `ci/apply-patches.sh`。`melos bootstrap` 经 post hook 做同样两步。然后：
 
 > **代理**：`pub get` 只认继承来的 `HTTPS_PROXY`/`HTTP_PROXY`，而 agent 每次工具调用都是新 shell —— 上一条命令里设的代理不会留到下一条，这是「`setup_worktree.ps1` 首跑 socket error、带代理重跑就过」的根因。`bootstrap.ps1` 按 `调用方环境变量 > FUSHI_BOOTSTRAP_PROXY > <主 checkout>/tool/bootstrap.local.env`（gitignore，本机私有，一次配好所有 worktree 通用）取代理，三者都没有也照常直连跑（CI 不受影响），只是会先探一次 pub.dev 并在不通时把配法打在前面——**探测只示警不拦路**（实测单次探测会误报：探测 10s 超时失败的同一时刻，`pub get` 自带重试仍 45s 跑通），真判死刑交给 `pub get` 自己，失败时把同一份配法作为报错抛出。代理地址绝不写进入库脚本。
 
@@ -82,7 +84,7 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 ## 互联 P2P 隧道原生库 fushi_p2p（Rust / iroh）
 
 - 源码 `native/fushi_p2p/`（Rust crate，C ABI）+ 纯 Dart FFI 包 `packages/fushi_p2p/`。每端一个构建脚本，产物落 `native/fushi_p2p/prebuilt/<平台>/`（不入库）：`build_windows_dll.ps1` / `build_android_so.{ps1,sh}` / `build_linux_so.sh` / `build_macos_dylib.sh`（只出 arm64）/ `build_ios_staticlib.sh`（staticlib + xcconfig 片段）。
-- **五端都是「prebuilt 有则随包」**：Windows / Linux CMake、Android `jniLibs.srcDirs`、macOS Runner 构建阶段 `fushi/macos/bundle_fushi_p2p.sh`、iOS 链的是伞形静态库 `native/fushi_ios_umbrella`（fushi_p2p + fushi_fsrs 合一、Rust std 只有一份；两份单独 .a 同时 `-force_load` 会撞重复 std 符号），经 `fushi/ios/Flutter/*.xcconfig` 可选 `#include?` 它生成的 xcconfig 给 `OTHER_LDFLAGS` 加 `$(FUSHI_IOS_NATIVE_LDFLAGS)`（`-force_load` 静态库，Dart 侧 `DynamicLibrary.process()`）。没装 Rust 的机器照常出包，P2P 能力判不可用——与内置 libtorrent 不同，Windows CMake **故意不在 Release 强制**，因为缺库只隐藏能力、不会「宣称有后端却打不开」。
+- **五端都是「prebuilt 有则随包」**：Windows / Linux CMake、Android `jniLibs.srcDirs`、macOS Runner 构建阶段 `fushi/macos/bundle_fushi_p2p.sh`、iOS 链的是伞形静态库 `native/fushi_ios_umbrella`（fushi_p2p + fushi_fsrs + fushi_compute 合一、Rust std 只有一份；多份单独 .a 同时 `-force_load` 会撞重复 std 符号），经 `fushi/ios/Flutter/*.xcconfig` 可选 `#include?` 它生成的 xcconfig 给 `OTHER_LDFLAGS` 加 `$(FUSHI_IOS_NATIVE_LDFLAGS)`（`-force_load` 静态库，Dart 侧 `DynamicLibrary.process()`）。没装 Rust 的机器照常出包，P2P 能力判不可用——与内置 libtorrent 不同，Windows CMake **故意不在 Release 强制**，因为缺库只隐藏能力、不会「宣称有后端却打不开」。
 - **发布包的保证在 CI**：`release.yml`（Android arm64-v8a / armeabi-v7a / x86_64）、`release-desktop.yml`（Windows / macOS arm64 / iOS device）、`release-server.yml`（Linux / Windows）都在出包前跑 Rust 构建，**失败即 job 失败**（与 libtorrent 同口径），出包后再核对库真的进了包（APK 每个带 `libflutter.so` 的 ABI、Windows bundle、macOS Frameworks 里的 dylib 恰好是 arm64、iOS Runner 导出 `fp2p_*`、服务端拿 bundle 里那份跑真隧道测试）。PR 上 `build-multiplatform.yml` 覆盖 Windows / macOS / iOS 三个 app 端与 Linux 服务端 bundle（`linux-server`；Linux、Windows 还跑 `packages/fushi_p2p` 真隧道测试；改到 `native/fushi_p2p/**` 或 `packages/fushi_p2p/**` 时路径门四个 job 全开），`native-p2p-gate.yml` 补 Android 三 ABI 交叉编译。Rust 钉 1.95.0，cargo-ndk 钉 4.1.2。
 - 真隧道测试在库加载失败时**整组 skip 且退出码 0**，CI 因此额外断言日志里没有 skip 原因；`native/fushi_p2p/verify_abi.sh` 按 Dart 绑定 lookup 的 `fp2p_*` 名核对导出表。细节见 [native/fushi_p2p/README.md](../../native/fushi_p2p/README.md)。
 
@@ -92,6 +94,20 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - **随包语义与 fushi_p2p 相同（copy-if-present）**：Windows / Linux CMake、Android `jniLibs.srcDirs`、macOS Runner 构建阶段 `fushi/macos/bundle_fushi_fsrs.sh`；缺库 = SRS 原生内核判不可用，不是构建失败。
 - **iOS 暂未随包**：两份 Rust staticlib 同时 `-force_load` 会撞重复的 Rust std 符号，iOS 要改链伞形库 `native/fushi_ios_umbrella/`（`fp2p_*` + `ffsrs_*` 合一），Runner 尚未切换（步骤见 [native/fushi_fsrs/README.md](../../native/fushi_fsrs/README.md)「iOS」）；PR 上 `build-multiplatform.yml` 的 ios job 只核对伞形库能编过。
 - **发布包的保证在 CI**（同 fushi_p2p 口径）：`release.yml`（Android 三 ABI）、`release-desktop.yml`（Windows / macOS arm64）、`release-server.yml`（Linux / Windows）出包前跑 Rust 构建，**失败即 job 失败**，出包后核对库进了包（APK 每个带 `libflutter.so` 的 ABI 都有 `libfushi_fsrs.so`、Windows bundle 有 `fushi_fsrs.dll`、macOS Frameworks 里的 dylib 恰好是 arm64 且导出 `ffsrs_*`）。fushi_fsrs **不进原生产物持久库**（冷编便宜），只靠 `Swatinem/rust-cache`；Rust / cargo-ndk 版本读 `native-store-names` 的 `p2p_rust` / `cargo_ndk`，与 fushi_p2p 同源。PR 上 `build-multiplatform.yml` 覆盖 Windows / macOS / iOS（伞形库）/ `linux-server`，`native-fsrs-gate.yml` 补 Android 三 ABI 与 `cargo test`。
+
+## 计算内核原生库 fushi_compute（Rust：哈希 / 图像 / 文本）—— **硬依赖**
+
+- 源码 `native/fushi_compute/`（Rust crate，C ABI `ffc_*`，`opt-level = 3`）+ 纯 Dart FFI 包 `packages/fushi_compute/`（各域绑定在 `lib/src/<域>/`）。构建脚本与 fushi_fsrs 同形：`build_windows_dll.ps1` / `build_android_so.{ps1,sh}` / `build_linux_so.sh` / `build_macos_dylib.sh`（只出 arm64，部署目标 13.4）；iOS 不单独出件，只进伞形库。产物落 `native/fushi_compute/prebuilt/<平台>/`（不入库）。`verify_abi.sh` 的期望符号集**递归**取自 `packages/fushi_compute/lib/` 下所有 `'ffc_*'` 字面量，新增域自动跟上。
+- **与 fushi_p2p / fushi_fsrs 相反：缺库 = 构建失败**（所有者拍板：不维护 Dart 与 Rust 两份实现，没有 Dart 回退）。Windows / Linux CMake 配置期 `FATAL_ERROR`；macOS Runner 构建阶段 `fushi/macos/bundle_fushi_compute.sh` `exit 1`；iOS Runner 在编译前跑 `fushi/ios/check_fushi_compute.sh`（伞形库缺失、`FUSHI_IOS_NATIVE_LDFLAGS` 为空或 `.a` 不导出 `ffc_abi_version` 都失败——注意这让 iOS 构建从此必须先编伞形库，fushi_p2p / fushi_fsrs 也随之一起到位）；Android `checkFushiComputeNative`（挂 `preBuild`）按 Flutter 传的 `target-platform` 逐 ABI 查 `libfushi_compute.so`；无头服务端 bundle 由 `release-server.yml` 硬拷贝。守卫 `fushi/test/build/fushi_compute_hard_dependency_guard_test.dart`。
+- **本地前提**：要装 Rust（cargo）。`tool/setup_worktree.ps1` → `tool/bootstrap.ps1` 在 pub get 之后按主机平台编一次（Windows `build_windows_dll.ps1`，Linux / macOS 对应 sh；`tool/bootstrap.sh` 同理），没有 cargo 直接报错失败；显式跳过用 `-SkipNativeCompute` / `FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE=1`。编 Android 包另需 NDK + `cargo install cargo-ndk`，先跑 `build_android_so.ps1 -Abis <要出的 ABI>`。`flutter test` / `dart test` 由 `FUSHI_COMPUTE_LIB`（绝对路径）或加载器在测试宿主下向上找 `native/fushi_compute/prebuilt/<平台>/` 定位。
+- **CI**：跑 Dart / Flutter 测试的 job（`main.yml` build + unit-tests、`release.yml` tests、`server-gate.yml`、`golden-tests.yml`、`build-multiplatform.yml` android）一律经 composite action `.github/actions/setup-fushi-compute` 先编宿主平台库并导出 `FUSHI_COMPUTE_LIB`（需要 APK 的 job 再按 ABI 交叉编；工具链读 `native-store-names/names.sh` 的 `P2P_RUST` / `CARGO_NDK`；为省缓存配额不挂 rust-cache）。出包 job（`release.yml` Android 三 ABI、`release-desktop.yml` Windows / macOS / iOS、`release-server.yml` Linux / Windows、`build-multiplatform.yml` 四端）各自带 rust-cache 构建，失败即 job 失败，出包后硬核对（APK 每个 ABI、Windows bundle、macOS Frameworks 的 install name / arm64 / 符号 / ctypes 调 `ffc_abi_version` == 1、iOS Runner 导出 `ffc_*`），Windows 与 Linux 服务端再拿真库跑 `packages/fushi_compute` 整个 test 目录并断言没有 `native library not found`。PR 上 `native-compute-gate.yml` 补 Android 三 ABI 与 `cargo test --release --locked`。
+
+## RWKV-Instant 排程推理原生库 fushi_rwkv（Rust，AGPL-3.0-or-later）—— **硬依赖**
+
+- 源码 `native/fushi_rwkv/`（C ABI `frwkv_*`，`opt-level = 3` + LTO，`panic = "unwind"`）+ Dart FFI 包 `packages/fushi_rwkv/`（`FushiRwkv.load`，环境变量 `FUSHI_RWKV_LIB`）。接线**逐项照抄 fushi_compute**：同名构建脚本 `build_windows_dll.ps1` / `build_android_so.{ps1,sh}` / `build_linux_so.sh` / `build_macos_dylib.sh`（arm64，部署目标 13.4，`/usr/bin/strip -x` + dlopen 冒烟），产物落 `native/fushi_rwkv/prebuilt/<平台>/`；iOS 只进伞形库 `native/fushi_ios_umbrella`（`IOS_NATIVE` 持久库件名随之带上 `native/fushi_rwkv`）。`verify_abi.sh` 的期望集 = `src/` 里全部 `extern "C" fn frwkv_*` ∪ `packages/fushi_rwkv/lib/` 下的 `'frwkv_*'` 字面量，新增导出自动跟上；也认 Windows PE（取 `llvm-nm` 同目录的 `llvm-readobj` 读导出表）。
+- 缺库 = 构建失败：Windows / Linux CMake `FATAL_ERROR`（`FUSHI_RWKV_DLL` / `FUSHI_RWKV_SO`）、macOS `fushi/macos/bundle_fushi_rwkv.sh` `exit 1`、iOS 编译前 `fushi/ios/check_fushi_rwkv.sh`（伞形库不导出 `frwkv_abi_version` 即失败）、Android `checkFushiRwkvNative`（挂 `preBuild`）。本地 `tool/bootstrap.ps1` / `bootstrap.sh` 紧接 fushi_compute 编它，`-SkipNativeCompute` 两个一起跳过。守卫 `fushi/test/build/fushi_rwkv_hard_dependency_guard_test.dart`。
+- **CI**：凡用 `setup-fushi-compute` 的 job 紧跟着用 `.github/actions/setup-fushi-rwkv`（同样的 `android-abis`，导出 `FUSHI_RWKV_LIB`）；出包 job 与 fushi_compute 同处各带 rust-cache 构建并出包后核对（APK 每个 ABI、Windows bundle、macOS Frameworks、iOS Runner 导出 `frwkv_*`、服务端 Linux / Windows bundle），dlopen 冒烟比对的 ABI 版本从 `src/lib.rs` 的 `ABI_VERSION` 读、不写死。PR 上 `native-rwkv-gate.yml` 跑三种 CPU 内核的 `cargo test --release`（权重与小模型包按 `fetch_model.sh` 钉的两个 SHA-256 缓存）+ Android 三 ABI 真编与符号核对。
+- **许可**：fushi_rwkv 是 AGPL-3.0-or-later（推理核心搬自 kuma3-anki-core，所有者 2026-10-19 拍板接受，见 `native/fushi_rwkv/UPSTREAM.md`）。动态加载它的四端 app 与静态链它的 iOS 伞形库 / Runner 都随之受 AGPL 约束（GPL-3.0 第 13 条允许与 AGPL-3.0 合并分发）。
 
 ## 发布通道
 
@@ -161,7 +177,7 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 `${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 'release-publish' || 'release-auto' }}`：
 
 - `release-publish`（id `24572755799`）：必需审批人 hajisensai，`prevent_self_review=false`（自己 dispatch 的自己能批），不限分支。formal / beta 的 dispatch 跑完构建后发布 job 显示 **Waiting**。
-- `release-auto`（id `24572756532`）：无任何保护规则。push 滚动 debug、手动发 GitHub Release（`release` 事件，本身就是发布动作）、`testflight_only` 补传、push 每第三次的 TestFlight 都走它，**不等人**，行为与改动前一致。
+- `release-auto`（id `24572756532`）：无任何保护规则。push 滚动 debug、手动发 GitHub Release（`release` 事件，本身就是发布动作）、`testflight_only` 补传、develop push 每次的 debug TestFlight 都走它，**不等人**，行为与改动前一致。
 - 没用「表达式算出空串 = 不挂环境」：官方文档没有写这条语义，而 push 发布每天跑十几次，赌错就是全停；两个具名环境的行为都有文档保证。代价是 push 发布会在 `release-auto` 下留部署记录（纯展示）。
 - `build_only=true`：两条 workflow 的发布 job 都整个跳过，不弹审批（`testflight` job 也因签名门关闭而跳过）。
 - 期限：待审批 job 最长挂 **30 天**后自动失败（GitHub 上限；整条 run 上限 35 天）。审批 run 的 run artifact 保留期因此从 14 天提到 30 天（非审批 run 不变；签名 IPA artifact 非审批 run 只留 1 天）。超过 30 天没批，就重新 dispatch 构建。
@@ -211,21 +227,29 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - **TestFlight 上传两条路**：手动 `workflow_dispatch` 的 beta / formal 放行（输入
   `upload_testflight`，默认开；签名 IPA 在 `ios` job 里构建好，上传在独立的 `testflight` job，
   要等审批门批准，见下「正式版预构建与审批发布」），debug 只在 `testflight_only=true` 时放行；**push 的 debug 通道
-  约每三次传一次**（发布序列 = 构建号能被 3 整除的那次，2026-09-16 用户拍板「发三次调试版
-  触发一次 TestFlight」；用共享序列而不是 run 号，run 号在发布 workflow 里是禁用词）。不每次
-  都传：push 一天 5~13 次，全传会让 App Store Connect 的处理排队压后真正想发的 beta、TestFlight
-  列表被 debug 构建淹掉（每个挂 90 天）。缺任一 Apple 密钥 push 门直接关（fork 照常绿）。
-  09-14 ~ 09-16 的定时通道 `testflight-debug.yml` 已撤（两条节律并存会重复上传），守卫钉着
-  不得回潮。
-- **大合并后保证一次 TestFlight**（2026-10-14 用户拍板，CLAUDE.md「提交」节的硬规则）：
-  批量合入多条 PR 或合入一条大型功能 PR 后，若该 push 的发布序列不能被 3 整除（或那条 push
-  run 被后续 push 顶掉），手动补 `gh workflow run release-desktop.yml --repo hajisensai/fushi
-  --ref develop -f channel=debug -f testflight_only=true`。testflight_only 的 run 只签 iOS、
-  不发 Release、走独立 concurrency 组，不会与 push 构建互相取消。
+  每次都传**（2026-11-02 用户拍板「改成每次 ci 自动推 tf，不用每次看」，取代 09-16 的「发布
+  序列 % 3 == 0 才传」与 10-14 的「大合并后核序列、不整除手动补发」）。构建号 = 共享发布序列
+  （commit 计数），沿 develop 每次 push 单调递增。只认 develop：`main` 的 push 不传（main 的 commit 数远低于 develop，序列落在已传号段下面，快进到已传过的 sha 时必撞号，见下条）。代价：每条 push 多一趟约 15 分钟签名构建，TestFlight 列表
+  debug 构建变多（每个挂 90 天）。缺任一 Apple 密钥 push 门直接关（fork 照常绿）。被后续 push
+  顶掉的 pending run 不传，由更新的那轮传。09-14 ~ 09-16 的定时通道 `testflight-debug.yml`
+  已撤（两条节律并存会重复上传），守卫钉着不得回潮。
+- **`testflight_only` 手动补传**仍保留（`gh workflow run release-desktop.yml --repo
+  hajisensai/fushi --ref develop -f channel=debug -f testflight_only=true`）：只签 iOS、不发
+  Release、走独立 concurrency 组。日常不需要；同一 sha 上 push 已传过时它必撞号（见下条）。
+- **同一个 commit 不能重复传 TestFlight**（2026-10-22 实测）：build number 由
+  `tool/release_sequence.sh`（commit 数 + 地板）算出、经 `--build-number` 直接喂给 iOS 构建，
+  `pubspec.yaml` 的 `+build` 与 `workflow_dispatch` 输入都改不了它。所以在同一个 sha 上重跑
+  `testflight_only` 必然算出同一个号，ASC 直接 409 `ENTITY_ERROR.ATTRIBUTE.INVALID.DUPLICATE`
+  （`The bundle version must be higher than the previously uploaded version: '<seq>'`）：`ios`
+  job 全绿、只有 `testflight` job 红，容易误判成签名或凭据问题。要真正再出一份新包，唯一前提是
+  让序列涨一格（develop 多一个 commit），触发方式本身解决不了。纯为出包抬序列时优先落 docs 类
+  改动——`docs/**` 不在本 workflow 的 push `paths` 里，不会顺带触发一轮全量构建，随后单独 dispatch
+  `testflight_only` 只跑一轮 iOS。
+
 - **GitHub Release 里的 `fushi-<版本>-ios.ipa` 仍是未签名包**，走的还是
   `flutter build ios --release --no-codesign`。老用户自签侧载的就是它，不能换成
-  App Store 签名包。TestFlight 用的是另一次签名构建（手动 beta/formal，或每第三次 debug
-  push），产物不进 Release 资产 —— 代价是这种 run 下 iOS 构建两次。
+  App Store 签名包。TestFlight 用的是另一次签名构建（手动 beta/formal，或每次 develop
+  debug push），产物不进 Release 资产 —— 代价是这种 run 下 iOS 构建两次。
 - macOS 走 **Developer ID + 公证**，不进 Mac App Store：`Release.entitlements` 已刻意
   去沙盒以支持应用内自动更新替换 `/Applications/fushi.app`，商店强制沙盒，两者不可兼得。
 
@@ -241,7 +265,7 @@ Flutter 版本号以 `fushi/pubspec.yaml` 的 `version: X.Y.Z+build` 为准。�
 - Android `versionCode` 的单调递增由 CI 的 `git rev-list --count HEAD`（每个 commit +1）**加一次性地板**经 `--build-number` 喂给 `build.gradle` 的 `versionCodeBase + 100 × <seq> + abiOffset` 保证；`build.gradle` 还带 2.1e9 上限断言，越界即 fail-fast（TODO-414）。**不依赖 pubspec `+build`**。
 - 纯文档、PM 元数据、不影响分发行为的 CI 维护不强制 bump；发布、安装包或运行行为变化应 bump。
 - **序号算式收在 `tool/release_sequence.sh` 一个文件里**，六处 workflow 一律 `RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)`，不得在 workflow 里写裸 `git rev-list --count HEAD` 赋值（守卫会红）。算式 = 提交计数 + `RELEASE_SEQUENCE_FLOOR`。
-- **为什么有地板**：提交计数只在「历史只增不减」时单调，**重写历史会让它倒退**。2026-08-12 develop 被强推成重写后的历史，计数从 10546 掉到 9466，而已发布并装到用户机器上的最大序号是 10405。序号倒退会同时锁死三处单调比较——Android `versionCode`（系统安装器拒装）、app 内更新器的 `releaseSequence` 全序比较（永远提示已是最新）、`tool/merge_update_manifest.py` 的「Never downgrades the advertised top-level release」（新包写不进清单）。这三处都没错，错的是序号倒退，所以修在源头加地板，而不是去放宽任何一处守卫。
+- **为什么有地板**：提交计数只在「历史只增不减」时单调，**重写历史会让它倒退**。2026-08-12 develop 被强推成重写后的历史，计数从 10546 掉到 9466，而已发布并装到用户机器上的最大序号是 10405。序号倒退会同时锁死三处单调比较——Android `versionCode`（系统安装器拒装）、app 内更新器的 `releaseSequence` 全序比较（永远提示已是最新）、`tool/merge_update_manifest.py` 的「Never downgrades the advertised top-level release」（新包写不进清单）。这三处都没错，错的是序号倒退，所以修在源头加地板，而不是去放宽任何一处守卫。2026-11-01 第二次重写（filter-repo 剪掉 54 个空提交）计数 20671 → 20619，已发布最大 22671，地板抬到 2200（20619 + 2200 = 22819）。
 - **什么时候要再抬地板**：只有再次重写历史、且新的 `计数 + FLOOR` 不再高于「已发布过的最大序号」时。抬之前先去 GitHub Release 资产名里查真实的 `-debug.<seq>` / `-beta.<seq>` 最大值，别凭感觉加。守卫：`fushi/test/build/release_sequence_floor_guard_test.dart`。
 - 发布 workflow 修改后必须运行 `tool/check_release_policy.ps1`（Windows：`powershell -NoProfile -ExecutionPolicy Bypass -File tool/check_release_policy.ps1`；GitHub Actions 用 `pwsh`）。该守卫会拒绝重新引入 workflow-local run number、缺失完整历史 checkout、缺失同 tag/commit 发布并发锁，或文档缺少 cross-workflow release sequence / single GitHub Release 规则。
 
@@ -363,6 +387,60 @@ macOS 32 次、iOS 25 次、linux-server 95 次（此前每个 job 都是 237 �
   `ctest-gcc`（与 `ctest-msvc` 并列），只在 `native/fushidicts/**` 或它读的
   `fushi/assets/transforms/**` 变化时跑。
 
+## vendored 二进制
+
+预编译第三方二进制**不入 git**（2026-11-01 起；此前每次重编 libmpv / FFmpeg 都往历史里塞
+20–45 MB）。它们放在 `hajisensai/Fushi` 的 GitHub release **`vendored-binaries`** 里，按原路径
+gitignore，消费方（Windows CMake 的 MD5 校验、Gradle、podspec / Makefile、galgame / Mihon 脚本、
+单测）一行不改：
+
+- **清单** `tool/vendored_binaries.json`：每项 `path / group / size / sha256 / url`。资产名按内容寻址
+  `<sha256 前 16 位>-<basename>`，同一路径的每个版本各占一个资产，旧提交照样取到自己那份字节。
+  group：`windows`（mpv-dev 7z、ANGLE.7z、libplacebo DLL）、`galgame`（LunaHook/LunaHost DLL）、
+  `mihon`（jogamp 离线 Maven 的两个 jar）、`android`（ffmpeg-kit-next.aar、bluray-menu jar）、
+  `ios`（iOS libmpv tar.gz、FFmpegKit xcframework 里的 22 个 Mach-O）、`macos`（两个 tar.gz）。
+- **取回** `python3 tool/vendored_binaries.py fetch [--group G ...]`（纯标准库，Windows 入口
+  `tool/vendored_binaries.ps1`）：已对上的文件只算一遍 sha256；缺的 / 不一致的先查本机缓存
+  （`FUSHI_VENDORED_CACHE`，默认 `%LOCALAPPDATA%\fushi\vendored-binaries` / `~/.cache/fushi/vendored-binaries`，
+  所有 worktree 共用），再经 `HTTPS_PROXY` 下载；大小或 sha256 不符直接失败，不落盘。只校验不写用 `check`。
+  - **网络重试（外部 CDN，允许的有界例外）**：只重试传输层失败——连不上 / 超时 / body 比自己的
+    `Content-Length` 短（断流）/ HTTP 5xx，共 `DOWNLOAD_ATTEMPTS = 3` 次、退避 2 s × 次数，**每次失败都打一行**
+    `<path>: download attempt N/3 failed (...); retrying in Ns`，用完报错退出。HTTP 4xx 与「完整收到但 size /
+    sha256 不符」**一次都不重试**：那是错的资产或错的清单，立刻红。
+  - **共享缓存并发**：缓存在同一台机器的所有进程间共享（并行 worktree bootstrap、dist_test 的多个 slot），
+    每个缓存项 `<sha256>` 由同目录 `<sha256>.lock` 上的 OS 文件锁（`fcntl.flock` / `msvcrt.locking`，持有者
+    进程退出即由 OS 释放，不会留下死锁）保护：持锁者下载到唯一临时名再 `os.replace` 进位，读者也在锁内把缓存
+    复制成目标旁的唯一临时名，再原子 `os.replace` 到目标——Windows 上不会再有「一边 replace 一边 copy」的
+    共享冲突。等锁超过 `LOCK_TIMEOUT_SECONDS`（30 min）直接报错并点名锁文件，不无限等。`.lock` 文件留在缓存里，
+    别删（删掉正被等待的锁文件会让两个进程各锁一个文件）。回归：`tool/vendored_binaries_test.py`（由
+    `vendored_binaries_manifest_guard_test.dart` 调起：identity 只出 LF、重试策略、多进程同取只下载一次、等锁超时）。
+- **谁会调它**：`tool/bootstrap.ps1` / `tool/bootstrap.sh`（`setup_worktree.ps1 -SkipBootstrap` 不取，
+  之后要构建 / 测试先跑 bootstrap 或 `tool/vendored_binaries.ps1`）；dist_test worker 的
+  `fushi/tool/dist_test/worker_prepare.sh`；CI 用 composite action `.github/actions/fetch-vendored-binaries`
+  （`groups:` 输入），紧跟 checkout：`main.yml` build / unit-tests、`release.yml` build / tests、
+  `build-multiplatform.yml` android / macos / ios / windows、`release-desktop.yml` windows / macos / ios、
+  `ci-config-gate.yml` guards、`native-galgame-gate.yml` guards。新 job 读这些文件就照抄这一步。
+  不挂 `actions/cache`：同机房下载几秒，按 group 缓存每版要吃约 0.5 GB 缓存配额（见上节）。
+  native artifact store 的 Mihon / galgame 名字经 `names.sh` 的 `vendored_identity` 折入清单 sha256
+  （`git ls-tree` 已看不到这些字节）。
+- **从旧分支切回来**：切到仍跟踪这些文件的旧提交再切回，git 会删掉它们，重跑 `fetch` 即可（走缓存，秒级）。
+- **release 规则**：`vendored-binaries` 是 prerelease、**永不 Latest**，tag 指向一个只含 README 的无父提交
+  （不拖住任何历史，历史重写后仍有效）；发布 workflow 的 `release` 触发只认 `v<数字>` tag，
+  `mirror-releases.yml` 不镜像 prerelease。**资产只增不删、不覆盖**——旧提交靠它们构建。
+
+**升级一个二进制**（以 libmpv 为例）：
+
+1. 按原流程构建产物，放到原路径（同时照旧更新它自己的钉值：CMake `LIBMPV` / `LIBMPV_MD5`、
+   `SHA256SUMS`、`VERSION.json`、`sha256.json`、`provenance.json` 等）。
+2. `python3 tool/vendored_binaries.py register --group windows <新路径>`：写入 sha256 / size / url。
+   路径变了（新文件名）就删掉旧条目，并把 `.gitignore` 末尾那段里的旧路径换成新路径。
+3. `python3 tool/vendored_binaries.py publish`（需要 `gh` 已登录、对仓库有写权限）：上传 release 里还没有的
+   资产，再逐个下载回来比 sha256。
+4. 提交清单 + `.gitignore` + 钉值文件，**不提交二进制本身**。守卫
+   `fushi/test/build/vendored_binaries_manifest_guard_test.dart` 会把清单与各消费方钉值逐一对账、要求每条路径
+   被 `.gitignore` 精确排除且不被跟踪、`third_party/` 与 `native/**/third_party/` 下不得再跟踪 >1 MiB 的文件
+   （白名单只有 `m_extension_server/upstream_src` 的上游字体），并钉住上面每个 CI job 的取回步骤。
+
 ## 依赖补丁
 
 Flutter 3.47.6 下部分上游依赖未适配，两种补法并存（对个别包**有重叠**）：
@@ -371,9 +449,11 @@ Flutter 3.47.6 下部分上游依赖未适配，两种补法并存（对个别�
 - **pub-cache 补丁**：`ci/apply-patches.sh` 把 `ci/patches/{hosted,git}/<包-版本>/` 覆盖到 pub cache，按精确版本号命名；版本漂移就跳过并警告（HBK-AUDIT-005）。每次清 cache 或 `pub get` 后要重跑（bootstrap 已含）。
 - **Flutter SDK 框架补丁**：同一脚本还把 `ci/patches/flutter-sdk/<frameworkVersion>/*.patch`（`-p1` unified diff）打进当前 SDK（`FLUTTER_ROOT` 或 PATH 上的 flutter）。框架 Dart 会编进 app 快照，不用重编引擎。与 pub-cache 补丁不同，**版本不符直接失败**：升 Flutter 时必须回移或删除这些补丁，否则它修的崩溃会悄悄回来。补丁是幂等的（已打过就跳过），而且改的是本机全局 SDK。来历和删除条件见 `ci/patches/flutter-sdk/README.md`（当前一条：BUG-2839 语义孤儿节点）。
 
-- **Flutter 引擎补丁（仅 Windows）**：`ci/patches/flutter-engine/<版本>/` 是 `flutter_windows.dll` 的源码补丁（引擎 + ANGLE 两份），让 HDR 视频画在 Flutter 自己的 FP16 scRGB 交换链里（合成器内 HDR）。它**不能**像框架补丁那样打进本机 SDK——要重编引擎：`tool/flutter_engine/build_patched_engine.ps1 -Root <工作目录> -PatchVersion <名>`（sync → patch → build → stage → pack；gclient 同步几十 GB、三种模式各编一遍）。产物用 `tool/engine_overlay.ps1 -ArtifactDir <目录>`（或 `-Manifest <artifacts.json>` 下载并校验 SHA-256）装进 SDK 缓存，`-Restore` 还原原版。CI 的 Windows app 构建经 `.github/actions/flutter-engine-overlay` 安装；`artifacts.json` 不存在时用原版引擎构建并打 warning——app 照常跑，runner 运行期报告「合成器 HDR 不可用」、HDR 视频继续走宿主窗。**本机日常开发不装也行**，同理回退。升级 Flutter 时补丁要重新对齐基线（守卫 `fushi/test/build/compositor_hdr_engine_guard_test.dart` 要求补丁目录与 `.fvmrc` 同版本），细节见该目录 `README.md`。
+- **Flutter 引擎补丁（仅 Windows）**：`ci/patches/flutter-engine/<版本>/` 是 `flutter_windows.dll` 的源码补丁（flutter 仓库四份按序叠加：`engine-hdr-output` → `engine-underlay-composition` → `engine-impeller-hdr` → `engine-d3d-keyed-mutex`（BUG-3888：外部视频纹理按 keyed mutex 同步，插件见 `FlutterDesktopGpuSurfaceSupportsKeyedMutex` 导出才启用），外加 ANGLE 一份），让 HDR 视频画在 Flutter 自己的 FP16 scRGB 交换链里（合成器内 HDR，Windows 唯一的 HDR 路径；原版引擎下只能 SDR）。app 全线 Impeller（runner 钉 `ImpellerSwitch::Enabled`），HDR 走的是 Impeller 路径，所以补丁产物必须包含 `engine-impeller-hdr.patch`，否则 HDR 静默退回 SDR。它**不能**像框架补丁那样打进本机 SDK——要重编引擎：`tool/flutter_engine/build_patched_engine.ps1 -Root <工作目录> -PatchVersion <名>`（sync → patch → build → stage → pack；gclient 同步几十 GB、三种模式各编一遍）。产物用 `tool/engine_overlay.ps1 -ArtifactDir <目录>`（或 `-Manifest <artifacts.json>` 下载并校验 SHA-256）装进 SDK 缓存，`-Restore` 还原原版。CI 的 Windows app 构建经 `.github/actions/flutter-engine-overlay` 安装；`artifacts.json` 不存在时用原版引擎构建并打 warning——app 照常跑，runner 运行期报告「合成器 HDR 不可用」、HDR 视频只能 SDR 输出（mpv 色调映射；宿主窗已于 2026-10-18 删除）。**本机日常开发不装也行**，同理回退。升级 Flutter 时补丁要重新对齐基线（守卫 `fushi/test/build/compositor_hdr_engine_guard_test.dart` 要求补丁目录与 `.fvmrc` 同版本），细节见该目录 `README.md`。
 
 > `carousel_slider` / `fading_edge_scrollview` / `network_to_file_image` 两边都有：`dependency_overrides` 生效，pub-cache 同名补丁因版本对不上被自动跳过，以 vendored 为准。
+
+移动端 / Apple 的 libmpv（jar / xcframework 归档；字节在 `vendored-binaries` release，见「vendored 二进制」）在两个 fork 里构建，**CI 都跑在私有镜像仓**：Android `hajisensai/libmpv-android-video-build` → `hajisensai/libmpv-android-build-fushi`（原 fork 的 Actions 被 GitHub 停用，任何触发回 422），Darwin `hajisensai/libmpv-darwin-build` → `hajisensai/libmpv-darwin-build-fushi`（2026-10-24 DVD 重编起，同一做法）。fork 仓保留源码分支与统一 FFmpeg 的 Release（`unified-ffmpeg-9.0.1-r<N>`），构建在镜像仓手动 dispatch；产物来源记在各自 `provenance.json`，当前 fork 补丁与顺序见 `tool/dvd/forks/README.md`。
 
 第三种（native 依赖）：**vcpkg overlay ports**。`native/fushi_torrent/vcpkg-ports/` 是 libtorrent 2.0.11 port 的原样拷贝 + 本仓补丁（DHT 混合代理豁免，P2P 代理混合档依赖它），三个构建脚本（`build_windows_dll.ps1` / `build_android_so.ps1` / `build_android_so.sh`，含 CI）都用 `-DVCPKG_OVERLAY_PORTS` 挂上；overlay 无条件优先于 registry。补丁存在性/引用/挂载由 `fushi/test/torrent/download_http_client_proxy_test.dart` E 组守卫钉住，动机与清理条件见 `native/fushi_torrent/vcpkg-ports/README.md`。
 

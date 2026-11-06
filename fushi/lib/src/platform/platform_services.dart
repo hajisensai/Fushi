@@ -23,6 +23,12 @@ import 'package:fushi/src/platform/ios/ios_clipboard_service.dart';
 import 'package:fushi/src/platform/ios/ios_permission_service.dart';
 import 'package:fushi/src/platform/ios/ios_device_info_service.dart';
 
+/// Anki 后端工厂：[settingsStore] 非 null 时新实例读写它而不是进程级装配点
+/// （`BaseAnkiRepository.defaultSettingsStore`）。反馈 biLEesNqWb：浏览器扩展所选的
+/// 非激活配置用只读设置视图建仓库，同一后端、按那个配置的牌组 / 字段映射制卡。
+typedef AnkiRepositoryFactory =
+    BaseAnkiRepository Function({AnkiSettingsStore? settingsStore});
+
 /// Holds all platform-specific service implementations.
 ///
 /// Created once in `main()` before `runApp()` and passed to [AppModel] as a
@@ -34,8 +40,8 @@ class PlatformServices {
   final PlatformClipboardService clipboard;
   final PlatformPermissionService permission;
   final PlatformDeviceInfoService deviceInfo;
-  final BaseAnkiRepository Function() _createDefaultAnkiRepository;
-  final BaseAnkiRepository Function()? _createMobileAnkiConnectRepository;
+  final AnkiRepositoryFactory _createDefaultAnkiRepository;
+  final AnkiRepositoryFactory? _createMobileAnkiConnectRepository;
 
   /// 本平台的原生 Anki 后端是否受限、因而提供「改用 AnkiConnect」这条路
   /// （Android 的 AnkiDroid / iOS 的 AnkiMobile 都是）。桌面本来就走 AnkiConnect，
@@ -80,46 +86,67 @@ class PlatformServices {
   /// 拿到完整的平台元组。
   final bool isAndroid;
 
+  /// 本平台有没有 audio_service 的系统媒体会话实现（Android / iOS / macOS：通知、
+  /// 锁屏、Now Playing 控制）。默认取真实平台。
+  ///
+  /// 收在这里同 [isWindows]：音乐会话据此决定要不要起 `AudioService.init`，而那一步
+  /// 会连带构造 `DefaultCacheManager`、在后台调 path_provider。此前判据是
+  /// `MusicSession` 里直读 `Platform` 的静态量，widget 测试没有缝，macOS 宿主上一放音乐
+  /// 就真去起系统媒体会话，测试绑定里没有插件实现 → 未捕获的 MissingPluginException
+  /// （Windows / Linux 宿主上判据为 false，同一用例不红）。
+  final bool hasSystemMediaSession;
+
   PlatformServices({
     required this.directory,
     required this.lifecycle,
     required this.clipboard,
     required this.permission,
     required this.deviceInfo,
-    required BaseAnkiRepository Function() createAnkiRepository,
-    BaseAnkiRepository Function()? createMobileAnkiConnectRepository,
+    required AnkiRepositoryFactory createAnkiRepository,
+    AnkiRepositoryFactory? createMobileAnkiConnectRepository,
     bool isMobile = false,
     AndroidClipboardService? androidClipboard,
     bool? isWindows,
     bool? isDesktop,
     bool? isIOS,
     bool? isAndroid,
+    bool? hasSystemMediaSession,
     AnkiSyncSession? Function()? ankiSyncSession,
-  })  : _ankiSyncSession = ankiSyncSession ?? (() => sharedAnkiSyncSession),
-        isWindows = isWindows ?? Platform.isWindows,
-        isDesktop = isDesktop ??
-            (Platform.isWindows || Platform.isMacOS || Platform.isLinux),
-        isIOS = isIOS ?? Platform.isIOS,
-        isAndroid = isAndroid ?? Platform.isAndroid,
-        _createDefaultAnkiRepository = createAnkiRepository,
-        _createMobileAnkiConnectRepository = createMobileAnkiConnectRepository,
-        _isMobile = isMobile,
-        _androidClipboard = androidClipboard,
-        assert(
-          !isMobile || createMobileAnkiConnectRepository != null,
-          'Mobile requires an AnkiConnect repository factory.',
-        );
+  }) : _ankiSyncSession = ankiSyncSession ?? (() => sharedAnkiSyncSession),
+       isWindows = isWindows ?? Platform.isWindows,
+       isDesktop =
+           isDesktop ??
+           (Platform.isWindows || Platform.isMacOS || Platform.isLinux),
+       isIOS = isIOS ?? Platform.isIOS,
+       isAndroid = isAndroid ?? Platform.isAndroid,
+       hasSystemMediaSession =
+           hasSystemMediaSession ??
+           (Platform.isAndroid || Platform.isIOS || Platform.isMacOS),
+       _createDefaultAnkiRepository = createAnkiRepository,
+       _createMobileAnkiConnectRepository = createMobileAnkiConnectRepository,
+       _isMobile = isMobile,
+       _androidClipboard = androidClipboard,
+       assert(
+         !isMobile || createMobileAnkiConnectRepository != null,
+         'Mobile requires an AnkiConnect repository factory.',
+       );
 
   /// Creates the active Anki backend. 移动端保留各自的原生后端（AnkiDroid /
   /// AnkiMobile）作为升级安全的默认值，但可显式改用一台可达的 AnkiConnect。
-  BaseAnkiRepository createAnkiRepository() {
+  ///
+  /// [settingsStore]：见 [AnkiRepositoryFactory]。后端**选择**（同步客户端 / 移动端
+  /// AnkiConnect）是设备设置，不随它变。
+  BaseAnkiRepository createAnkiRepository({AnkiSettingsStore? settingsStore}) {
     if (_useAnkiSyncClient) {
-      return AnkiSyncClientRepository(session: _ankiSyncSession());
+      return AnkiSyncClientRepository(
+        session: _ankiSyncSession(),
+        settingsStore: settingsStore,
+      );
     }
     if (_isMobile && _useAnkiConnectOnMobile) {
-      return _createMobileAnkiConnectRepository!();
+      return _createMobileAnkiConnectRepository!(settingsStore: settingsStore);
     }
-    return _createDefaultAnkiRepository();
+    return _createDefaultAnkiRepository(settingsStore: settingsStore);
   }
 
   bool get useAnkiConnectOnMobile => _isMobile && _useAnkiConnectOnMobile;
@@ -143,10 +170,7 @@ class PlatformServices {
   /// 运行时后端选择。判据只有 [AnkiSettings.ankiConnectUsableOnMobile] 一份——
   /// 这里不再自己写一遍 `value && apiKey.isNotEmpty`，否则与 UI 门控、启动期修复
   /// 三处迟早漂开（BUG-1608）。
-  void setUseAnkiConnectOnMobile(
-    bool value, {
-    String apiKey = '',
-  }) {
+  void setUseAnkiConnectOnMobile(bool value, {String apiKey = ''}) {
     if (!_isMobile) return;
     _useAnkiConnectOnMobile = AnkiSettings(
       useAnkiConnectOnMobile: value,
@@ -160,8 +184,17 @@ class PlatformServices {
   /// after all services are constructed.
   Future<void> init() async {
     await _androidClipboard?.init();
-    final AnkiSettings settings =
-        await _createDefaultAnkiRepository().loadSettings();
+    await restoreAnkiBackendSelection();
+  }
+
+  /// 按持久化的 Anki 设置重新选后端（同步客户端 / 移动端 AnkiConnect）。
+  ///
+  /// 启动时由 [init] 调一次；常驻的 `:popup` 进程 / 悬浮词典在发现主 app 改过偏好
+  /// （跨进程 prefs_version 变了）时再调，否则主 app 切了后端，应用外制卡仍走旧后端。
+  /// 幂等：只读设置；唯一的写是下面那条存量坏状态修复，修过一次就不再命中。
+  Future<void> restoreAnkiBackendSelection() async {
+    final AnkiSettings settings = await _createDefaultAnkiRepository()
+        .loadSettings();
     setUseAnkiSyncClient(settings.useAnkiSyncClient);
     if (_isMobile) {
       setUseAnkiConnectOnMobile(
@@ -188,8 +221,9 @@ class PlatformServices {
   factory PlatformServices.forCurrentPlatform() {
     if (Platform.isAndroid) {
       final AndroidDeviceInfoService deviceInfo = AndroidDeviceInfoService();
-      final AndroidClipboardService clipboard =
-          AndroidClipboardService(deviceInfo);
+      final AndroidClipboardService clipboard = AndroidClipboardService(
+        deviceInfo,
+      );
       return PlatformServices(
         directory: AndroidDirectoryService(),
         lifecycle: AndroidLifecycleService(),

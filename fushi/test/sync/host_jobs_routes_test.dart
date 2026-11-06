@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_routes.dart';
@@ -20,11 +20,15 @@ class _EchoRunner implements HostJobRunner {
   String get kind => 'echo';
 
   @override
-  Future<Map<String, Object?>> capability() async => <String, Object?>{'ready': true};
+  Future<Map<String, Object?>> capability() async => <String, Object?>{
+    'ready': true,
+  };
 
   @override
   void validateParams(Map<String, Object?> params) {
-    if (params['suffix'] == null) throw const FormatException('suffix required');
+    if (params['suffix'] == null) {
+      throw const FormatException('suffix required');
+    }
   }
 
   @override
@@ -56,7 +60,9 @@ Future<shelf.Response> _call(
     method,
     Uri.parse('http://h$path'),
     body: bytes ?? (body == null ? null : jsonEncode(body)),
-    headers: body == null ? null : const <String, String>{'Content-Type': 'application/json'},
+    headers: body == null
+        ? null
+        : const <String, String>{'Content-Type': 'application/json'},
   );
   return handleHostJobRequest(jobs, request, method, path);
 }
@@ -77,20 +83,38 @@ void main() {
 
   test('create → upload → start → poll → result → delete 全链路', () async {
     final _EchoRunner runner = _EchoRunner();
-    final HostJobManager jobs = HostJobManager(jobRoot: root, runners: <HostJobRunner>[runner]);
+    final HostJobManager jobs = HostJobManager(
+      jobRoot: root,
+      runners: <HostJobRunner>[runner],
+    );
 
-    final shelf.Response created = await _call(jobs, 'POST', '/api/jobs',
-        body: <String, Object?>{'kind': 'echo', 'params': <String, Object?>{'suffix': '!'}});
+    final shelf.Response created = await _call(
+      jobs,
+      'POST',
+      '/api/jobs',
+      body: <String, Object?>{
+        'kind': 'echo',
+        'params': <String, Object?>{'suffix': '!'},
+      },
+    );
     expect(created.statusCode, 200);
     final String id = (await _json(created))['jobId'] as String;
     expect(id.length, 24);
 
-    final shelf.Response up = await _call(jobs, 'PUT', '/api/jobs/$id/input/in.txt',
-        bytes: utf8.encode('hi'));
+    final shelf.Response up = await _call(
+      jobs,
+      'PUT',
+      '/api/jobs/$id/input/in.txt',
+      bytes: utf8.encode('hi'),
+    );
     expect(up.statusCode, 200);
     expect((await _json(up))['state'], 'uploading');
 
-    final shelf.Response started = await _call(jobs, 'POST', '/api/jobs/$id/start');
+    final shelf.Response started = await _call(
+      jobs,
+      'POST',
+      '/api/jobs/$id/start',
+    );
     expect(started.statusCode, 200);
 
     // 轮询直到终态（runner 是同步完成的，几轮内必到）。
@@ -109,11 +133,19 @@ void main() {
     expect(status['primaryOutput'], 'out.txt');
     expect(runner.seenParams.single['suffix'], '!');
 
-    final shelf.Response result = await _call(jobs, 'GET', '/api/jobs/$id/result');
+    final shelf.Response result = await _call(
+      jobs,
+      'GET',
+      '/api/jobs/$id/result',
+    );
     expect(result.statusCode, 200);
     expect(result.headers['Content-Type'], startsWith('text/plain'));
     expect(await result.readAsString(), 'hi!');
-    final shelf.Response named = await _call(jobs, 'GET', '/api/jobs/$id/result/out.txt');
+    final shelf.Response named = await _call(
+      jobs,
+      'GET',
+      '/api/jobs/$id/result/out.txt',
+    );
     expect(await named.readAsString(), 'hi!');
 
     // 磁盘上有记录（重启可续的依据）。
@@ -126,41 +158,96 @@ void main() {
   });
 
   test('参数校验 400、未知 kind 400、未完成取 result 409、上传已密封 409', () async {
-    final HostJobManager jobs =
-        HostJobManager(jobRoot: root, runners: <HostJobRunner>[_EchoRunner()]);
+    final HostJobManager jobs = HostJobManager(
+      jobRoot: root,
+      runners: <HostJobRunner>[_EchoRunner()],
+    );
     expect(
-        (await _call(jobs, 'POST', '/api/jobs',
-                body: <String, Object?>{'kind': 'echo', 'params': <String, Object?>{}}))
-            .statusCode,
-        400);
+      (await _call(
+        jobs,
+        'POST',
+        '/api/jobs',
+        body: <String, Object?>{'kind': 'echo', 'params': <String, Object?>{}},
+      )).statusCode,
+      400,
+    );
     expect(
-        (await _call(jobs, 'POST', '/api/jobs',
-                body: <String, Object?>{'kind': 'nope', 'params': <String, Object?>{'suffix': 1}}))
-            .statusCode,
-        400);
-    final String id = (await _json(await _call(jobs, 'POST', '/api/jobs',
-        body: <String, Object?>{'kind': 'echo', 'params': <String, Object?>{'suffix': '?'}})))['jobId'] as String;
-    final shelf.Response early = await _call(jobs, 'GET', '/api/jobs/$id/result');
+      (await _call(
+        jobs,
+        'POST',
+        '/api/jobs',
+        body: <String, Object?>{
+          'kind': 'nope',
+          'params': <String, Object?>{'suffix': 1},
+        },
+      )).statusCode,
+      400,
+    );
+    final String id =
+        (await _json(
+              await _call(
+                jobs,
+                'POST',
+                '/api/jobs',
+                body: <String, Object?>{
+                  'kind': 'echo',
+                  'params': <String, Object?>{'suffix': '?'},
+                },
+              ),
+            ))['jobId']
+            as String;
+    final shelf.Response early = await _call(
+      jobs,
+      'GET',
+      '/api/jobs/$id/result',
+    );
     expect(early.statusCode, 409);
     expect((await _json(early))['reason'], 'not_done');
-    await _call(jobs, 'PUT', '/api/jobs/$id/input/in.txt', bytes: utf8.encode('x'));
+    await _call(
+      jobs,
+      'PUT',
+      '/api/jobs/$id/input/in.txt',
+      bytes: utf8.encode('x'),
+    );
     await _call(jobs, 'POST', '/api/jobs/$id/start');
     for (int i = 0; i < 400 && jobs.get(id).state != HostJobState.done; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 25));
     }
     // 终态落盘还在飞时 tearDown 删作业根目录会让 rename 抛 PathNotFound。
     await jobs.whenIdle();
-    final shelf.Response late =
-        await _call(jobs, 'PUT', '/api/jobs/$id/input/more.txt', bytes: utf8.encode('y'));
+    final shelf.Response late = await _call(
+      jobs,
+      'PUT',
+      '/api/jobs/$id/input/more.txt',
+      bytes: utf8.encode('y'),
+    );
     expect(late.statusCode, 409);
   });
 
   test('runner 抛异常 → error 态带 error 文本；重启后 running 降级为 error', () async {
-    final HostJobManager jobs =
-        HostJobManager(jobRoot: root, runners: <HostJobRunner>[_EchoRunner(fail: true)]);
-    final String id = (await _json(await _call(jobs, 'POST', '/api/jobs',
-        body: <String, Object?>{'kind': 'echo', 'params': <String, Object?>{'suffix': '!'}})))['jobId'] as String;
-    await _call(jobs, 'PUT', '/api/jobs/$id/input/in.txt', bytes: utf8.encode('x'));
+    final HostJobManager jobs = HostJobManager(
+      jobRoot: root,
+      runners: <HostJobRunner>[_EchoRunner(fail: true)],
+    );
+    final String id =
+        (await _json(
+              await _call(
+                jobs,
+                'POST',
+                '/api/jobs',
+                body: <String, Object?>{
+                  'kind': 'echo',
+                  'params': <String, Object?>{'suffix': '!'},
+                },
+              ),
+            ))['jobId']
+            as String;
+    await _call(
+      jobs,
+      'PUT',
+      '/api/jobs/$id/input/in.txt',
+      bytes: utf8.encode('x'),
+    );
     await _call(jobs, 'POST', '/api/jobs/$id/start');
     Map<String, dynamic> status = <String, dynamic>{};
     for (int i = 0; i < 400; i++) {
@@ -184,8 +271,10 @@ void main() {
     final File f = File(p.join(root.path, ghost.id, 'job.json'));
     f.parent.createSync(recursive: true);
     f.writeAsStringSync(ghost.encode());
-    final HostJobManager restarted =
-        HostJobManager(jobRoot: root, runners: <HostJobRunner>[_EchoRunner()]);
+    final HostJobManager restarted = HostJobManager(
+      jobRoot: root,
+      runners: <HostJobRunner>[_EchoRunner()],
+    );
     await restarted.load();
     expect(restarted.get(ghost.id).state, HostJobState.error);
     expect(restarted.get(ghost.id).error, contains('restarted'));
@@ -199,8 +288,10 @@ void main() {
   });
 
   test('capability 汇总 kinds 与每种 kind 的就绪信息', () async {
-    final HostJobManager jobs =
-        HostJobManager(jobRoot: root, runners: <HostJobRunner>[_EchoRunner()]);
+    final HostJobManager jobs = HostJobManager(
+      jobRoot: root,
+      runners: <HostJobRunner>[_EchoRunner()],
+    );
     final Map<String, Object?> cap = await jobs.capability();
     expect(cap['kinds'], <String>['echo']);
     expect((cap['echo'] as Map)['ready'], isTrue);

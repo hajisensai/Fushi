@@ -119,14 +119,13 @@ Future<Map<String, dynamic>?> readJsonObjectBody(shelf.Request request) async {
 shelf.Response jsonRawResponse(
   String body, {
   Map<String, String> extraHeaders = const <String, String>{},
-}) =>
-    shelf.Response.ok(
-      body,
-      headers: <String, String>{
-        ...extraHeaders,
-        'Content-Type': 'application/json; charset=utf-8',
-      },
-    );
+}) => shelf.Response.ok(
+  body,
+  headers: <String, String>{
+    ...extraHeaders,
+    'Content-Type': 'application/json; charset=utf-8',
+  },
+);
 
 shelf.Response jsonResponse(Object body) => jsonRawResponse(jsonEncode(body));
 
@@ -140,11 +139,7 @@ shelf.Response jsonResponse(Object body) => jsonRawResponse(jsonEncode(body));
 /// `/api/extension/status`（扩展侧上报扩展版本）、互联独有的 `/api/anki/media/dedup/*`
 /// 与 `/api/media/dictionary`。
 class RemoteLookupRoutes {
-  RemoteLookupRoutes({
-    required this.audioTokens,
-    this.lookup,
-    this.mining,
-  });
+  RemoteLookupRoutes({required this.audioTokens, this.lookup, this.mining});
 
   final RemoteAudioTokenStore audioTokens;
   final FushiRemoteLookupService? lookup;
@@ -196,11 +191,15 @@ class RemoteLookupRoutes {
     if (expression.trim().isEmpty) {
       choices = const <RemoteAudioChoice>[];
     } else if (service is FushiRemoteAudioListService) {
-      choices = await (service as FushiRemoteAudioListService)
-          .listAudio(expression: expression, reading: reading);
+      choices = await (service as FushiRemoteAudioListService).listAudio(
+        expression: expression,
+        reading: reading,
+      );
     } else {
-      final RemoteAudioLookup? found =
-          await service.lookupAudio(expression: expression, reading: reading);
+      final RemoteAudioLookup? found = await service.lookupAudio(
+        expression: expression,
+        reading: reading,
+      );
       choices = found == null
           ? const <RemoteAudioChoice>[]
           : <RemoteAudioChoice>[
@@ -215,23 +214,30 @@ class RemoteLookupRoutes {
           <String, String>{
             'name': choice.name,
             'variant': choice.variant,
-            'url': request.requestedUri.replace(
-              path: '/api/lookup/audio/file',
-              queryParameters: <String, String>{
-                'id': audioTokens.mint(
-                    choice.audio.bytes, choice.audio.contentType),
-              },
-            ).toString(),
+            'url': request.requestedUri
+                .replace(
+                  path: '/api/lookup/audio/file',
+                  queryParameters: <String, String>{
+                    'id': audioTokens.mint(
+                      choice.audio.bytes,
+                      choice.audio.contentType,
+                    ),
+                  },
+                )
+                .toString(),
           },
       ],
     });
   }
 
   /// 单词音频②：GET/HEAD `?id=` 取字节（免鉴权，靠不可猜 id）；命中即续期。
-  shelf.Response handleAudioFile(shelf.Request request,
-      {required bool headOnly}) {
-    final RemoteAudioToken? token =
-        audioTokens.take(request.url.queryParameters['id']);
+  shelf.Response handleAudioFile(
+    shelf.Request request, {
+    required bool headOnly,
+  }) {
+    final RemoteAudioToken? token = audioTokens.take(
+      request.url.queryParameters['id'],
+    );
     if (token == null) return shelf.Response.notFound('Not found');
     return shelf.Response.ok(
       headOnly ? null : token.bytes,
@@ -243,10 +249,10 @@ class RemoteLookupRoutes {
   }
 
   shelf.Response _audioMissResponse() => jsonResponse(<String, dynamic>{
-        'type': 'audioResult',
-        'url': null,
-        'contentType': null,
-      });
+    'type': 'audioResult',
+    'url': null,
+    'contentType': null,
+  });
 
   /// 制卡（BUG-530）。未注入挖词 service → 404；fields 缺失/类型错 → 400。
   Future<shelf.Response> handleMine(shelf.Request request) async {
@@ -255,11 +261,13 @@ class RemoteLookupRoutes {
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
     try {
-      return jsonResponse(await buildRemoteMineResponse(
-        body,
-        mining: svc,
-        wordAudio: resolveMineWordAudio,
-      ));
+      return jsonResponse(
+        await buildRemoteMineResponse(
+          body,
+          mining: svc,
+          wordAudio: resolveMineWordAudio,
+        ),
+      );
     } on FormatException {
       return shelf.Response(400, body: 'Missing fields');
     }
@@ -276,10 +284,9 @@ class RemoteLookupRoutes {
   }) async {
     final RemoteAudioToken? token = audioTokens.take(tokenId);
     if (token != null) {
-      return remoteAudioLookupToDataUri(RemoteAudioLookup(
-        bytes: token.bytes,
-        contentType: token.contentType,
-      ));
+      return remoteAudioLookupToDataUri(
+        RemoteAudioLookup(bytes: token.bytes, contentType: token.contentType),
+      );
     }
     final FushiRemoteLookupService? service = lookup;
     if (service == null || expression.trim().isEmpty) return null;
@@ -348,13 +355,16 @@ class RemoteLookupRoutes {
       switch (path) {
         case '/api/anki/note-type/read':
           return jsonResponse(
-              await buildAnkiNoteTypeReadResponse(body, mining: svc));
+            await buildAnkiNoteTypeReadResponse(body, mining: svc),
+          );
         case '/api/anki/note-type/styling':
           return jsonResponse(
-              await buildAnkiNoteTypeStylingResponse(body, mining: svc));
+            await buildAnkiNoteTypeStylingResponse(body, mining: svc),
+          );
         case '/api/anki/note-type/templates':
           return jsonResponse(
-              await buildAnkiNoteTypeTemplatesResponse(body, mining: svc));
+            await buildAnkiNoteTypeTemplatesResponse(body, mining: svc),
+          );
         default:
           return shelf.Response.notFound('Unknown endpoint');
       }
@@ -384,12 +394,14 @@ class RemoteLookupRoutes {
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
     if (svc == null) {
-      return jsonResponse(
-          <String, dynamic>{'outcome': AnkiOpenWordOutcome.failed.name});
+      return jsonResponse(<String, dynamic>{
+        'outcome': AnkiOpenWordOutcome.failed.name,
+      });
     }
     try {
       return jsonResponse(
-          await buildRemoteOpenInAnkiResponse(body, mining: svc));
+        await buildRemoteOpenInAnkiResponse(body, mining: svc),
+      );
     } on FormatException catch (e) {
       return shelf.Response(400, body: e.message);
     }

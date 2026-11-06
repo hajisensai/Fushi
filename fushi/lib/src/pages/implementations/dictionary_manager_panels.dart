@@ -3,7 +3,20 @@ import 'package:flutter/services.dart'
     show KeyDownEvent, KeyEvent, KeyRepeatEvent, LogicalKeyboardKey;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_tag.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 // 词典管理页（[DictionaryDialogPage]）的呈现组件：宽屏详情侧板 / 窄屏底部
@@ -41,10 +54,12 @@ class DictionaryOrderBadge extends StatelessWidget {
     final TextTheme textTheme = Theme.of(context).textTheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 停用：退成浮起面那一阶的中性底（tokens 色阶，不在页面里自选容器色）。
-    final Color fill =
-        enabled ? tokens.surfaces.primaryContainer : tokens.surfaces.search;
-    final Color ink =
-        enabled ? scheme.onPrimaryContainer : scheme.onSurfaceVariant;
+    final Color fill = enabled
+        ? tokens.surfaces.primaryContainer
+        : tokens.surfaces.search;
+    final Color ink = enabled
+        ? scheme.onPrimaryContainer
+        : scheme.onSurfaceVariant;
     return SizedBox.square(
       dimension: 32,
       child: DecoratedBox(
@@ -102,7 +117,11 @@ class DictionaryManagerDetail extends StatelessWidget {
   final int count;
 
   final ValueChanged<bool> onEnabledChanged;
-  final ValueChanged<DictionaryCollapseState> onCollapseChanged;
+
+  /// null = 不给折叠控件。折叠管的是查词弹窗里这本的**释义**；「汉字」分区里的行
+  /// （纯 kanji 词典 / 混合词典的汉字部分）对应的是汉字卡，汉字卡不折叠——在那里给
+  /// 这个控件，改的其实是混合词典术语部分的折叠状态（BUG-3573）。
+  final ValueChanged<DictionaryCollapseState>? onCollapseChanged;
   final VoidCallback onRename;
   final VoidCallback onLanguage;
   final VoidCallback onUpdate;
@@ -142,27 +161,31 @@ class DictionaryManagerDetail extends StatelessWidget {
               value: enabled,
               onChanged: onEnabledChanged,
             ),
-            AdaptiveSettingsSegmentedRow<DictionaryCollapseState>(
-              title: t.dict_detail_collapse_title,
-              icon: Icons.unfold_more,
-              showIcon: true,
-              segments: <ButtonSegment<DictionaryCollapseState>>[
-                ButtonSegment<DictionaryCollapseState>(
-                  value: DictionaryCollapseState.inherit,
-                  label: Text(t.dict_collapse_state_inherit),
+            if (onCollapseChanged != null)
+              AdaptiveSettingsSegmentedRow<DictionaryCollapseState>(
+                key: ValueKey<String>(
+                  'dict-detail-collapse-${dictionary.name}',
                 ),
-                ButtonSegment<DictionaryCollapseState>(
-                  value: DictionaryCollapseState.expanded,
-                  label: Text(t.dict_collapse_state_expanded),
-                ),
-                ButtonSegment<DictionaryCollapseState>(
-                  value: DictionaryCollapseState.collapsed,
-                  label: Text(t.dict_collapse_state_collapsed),
-                ),
-              ],
-              selected: collapseState,
-              onChanged: onCollapseChanged,
-            ),
+                title: t.dict_detail_collapse_title,
+                icon: Icons.unfold_more,
+                showIcon: true,
+                segments: <ButtonSegment<DictionaryCollapseState>>[
+                  ButtonSegment<DictionaryCollapseState>(
+                    value: DictionaryCollapseState.inherit,
+                    label: Text(t.dict_collapse_state_inherit),
+                  ),
+                  ButtonSegment<DictionaryCollapseState>(
+                    value: DictionaryCollapseState.expanded,
+                    label: Text(t.dict_collapse_state_expanded),
+                  ),
+                  ButtonSegment<DictionaryCollapseState>(
+                    value: DictionaryCollapseState.collapsed,
+                    label: Text(t.dict_collapse_state_collapsed),
+                  ),
+                ],
+                selected: collapseState,
+                onChanged: onCollapseChanged!,
+              ),
           ],
         ),
         SizedBox(height: gap),
@@ -489,14 +512,18 @@ class DictionaryManagerOverview extends StatelessWidget {
         SizedBox(height: gap * 3),
         Row(
           children: <Widget>[
-            FushiIcon(Icons.touch_app_outlined,
-                size: 18, color: scheme.onSurfaceVariant),
+            FushiIcon(
+              Icons.touch_app_outlined,
+              size: 18,
+              color: scheme.onSurfaceVariant,
+            ),
             SizedBox(width: gap),
             Expanded(
               child: Text(
                 t.dict_detail_placeholder,
-                style: textTheme.bodyMedium
-                    ?.copyWith(color: scheme.onSurfaceVariant),
+                style: textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
             ),
           ],
@@ -640,11 +667,8 @@ Future<int?> showDictionaryPositionDialog({
 }) {
   return showAppDialog<int>(
     context: context,
-    builder: (_) => DictionaryPositionDialog(
-      name: name,
-      position: position,
-      count: count,
-    ),
+    builder: (_) =>
+        DictionaryPositionDialog(name: name, position: position, count: count),
   );
 }
 
@@ -669,8 +693,9 @@ class DictionaryPositionDialog extends StatefulWidget {
 }
 
 class _DictionaryPositionDialogState extends State<DictionaryPositionDialog> {
-  late final TextEditingController _controller =
-      TextEditingController(text: '${widget.position + 1}');
+  late final TextEditingController _controller = TextEditingController(
+    text: '${widget.position + 1}',
+  );
 
   @override
   void initState() {

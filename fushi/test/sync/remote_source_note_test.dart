@@ -102,12 +102,12 @@ void main() {
         }),
         pinnedClientFactory: (String fingerprint) =>
             MockClient((http.Request request) async {
-          hosts.add(request.url.host);
-          return _json(<String, dynamic>{
-            'ok': true,
-            'note': encodeRemoteSourceNote(original),
-          });
-        }),
+              hosts.add(request.url.host);
+              return _json(<String, dynamic>{
+                'ok': true,
+                'note': encodeRemoteSourceNote(original),
+              });
+            }),
       );
       await client.bindSourcePeer(
         sourceId,
@@ -287,8 +287,7 @@ void main() {
         (await client.post(
           uri,
           body: jsonEncode(<String, dynamic>{'sourceId': sourceId}),
-        ))
-            .statusCode,
+        )).statusCode,
         401,
       );
       expect(service.reads, 0);

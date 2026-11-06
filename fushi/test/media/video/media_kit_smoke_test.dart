@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:media_kit/media_kit.dart';
 
 /// Phase 0 / Task 0 smoke coverage for the media_kit video backend.
@@ -26,7 +26,8 @@ void main() {
       await player.dispose();
     },
     // 测试宿主无 libmpv 原生库，构造必抛；真实验证走设备 spike。
-    skip: 'Player 构造需真实设备/libmpv 原生库，已降级到设备 spike（见 '
+    skip:
+        'Player 构造需真实设备/libmpv 原生库，已降级到设备 spike（见 '
         'docs/specs/media_kit-api-notes.md）',
   );
 }

@@ -155,7 +155,7 @@ Duration Function() _monotonicClock() {
 /// 是 预算 × 取数次数，而不是预算。
 class _FetchBudget {
   _FetchBudget.withClock(this.total, MihonElapsedClockFactory clock)
-      : _elapsed = clock();
+    : _elapsed = clock();
 
   final Duration total;
   final Duration Function() _elapsed;
@@ -181,8 +181,8 @@ class MihonExtensionStoreClient {
     this.downloadBudget = const Duration(minutes: 10),
     this.bodyStallTimeout = const Duration(seconds: 30),
     MihonElapsedClockFactory? elapsedClock,
-  })  : _client = client ?? createAppHttpIoClient(),
-        _elapsedClock = elapsedClock ?? _monotonicClock;
+  }) : _client = client ?? createAppHttpIoClient(),
+       _elapsedClock = elapsedClock ?? _monotonicClock;
 
   final http.Client _client;
 
@@ -224,15 +224,14 @@ class MihonExtensionStoreClient {
     String? etag,
     String? lastModified,
     bool allowInsecure = false,
-  }) =>
-      _fetchStore(
-        rawUrl,
-        etag: etag,
-        lastModified: lastModified,
-        allowInsecure: allowInsecure,
-        hop: 0,
-        budget: _FetchBudget.withClock(fetchBudget, _elapsedClock),
-      );
+  }) => _fetchStore(
+    rawUrl,
+    etag: etag,
+    lastModified: lastModified,
+    allowInsecure: allowInsecure,
+    hop: 0,
+    budget: _FetchBudget.withClock(fetchBudget, _elapsedClock),
+  );
 
   Future<MihonStoreFetchResult> _fetchStore(
     String rawUrl, {
@@ -337,8 +336,10 @@ class MihonExtensionStoreClient {
     if (store.embeddedExtensions.isNotEmpty) {
       return store.embeddedExtensions;
     }
-    final _FetchBudget budget =
-        _FetchBudget.withClock(fetchBudget, _elapsedClock);
+    final _FetchBudget budget = _FetchBudget.withClock(
+      fetchBudget,
+      _elapsedClock,
+    );
     final Uri indexUrl = Uri.parse(store.indexUrl);
     if (store.format == MihonStoreFormat.legacy) {
       final Uri listUrl = indexUrl.replace(
@@ -350,12 +351,12 @@ class MihonExtensionStoreClient {
       final Uri base = indexUrl.resolve('.');
       final _Fetched<List<MihonAvailableExtension>> response =
           await _get<List<MihonAvailableExtension>>(
-        listUrl,
-        parse: (Uint8List bytes) =>
-            _parseLegacyExtensionList(store, base, bytes),
-        budget: budget,
-        allowInsecure: allowInsecure,
-      );
+            listUrl,
+            parse: (Uint8List bytes) =>
+                _parseLegacyExtensionList(store, base, bytes),
+            budget: budget,
+            allowInsecure: allowInsecure,
+          );
       return response.value!;
     }
     final String? rawListUrl = store.extensionListUrl;
@@ -366,12 +367,12 @@ class MihonExtensionStoreClient {
     );
     final _Fetched<List<MihonAvailableExtension>> response =
         await _get<List<MihonAvailableExtension>>(
-      listUrl,
-      parse: (Uint8List bytes) =>
-          _parseCurrentExtensionList(store, listUrl, bytes),
-      budget: budget,
-      allowInsecure: allowInsecure,
-    );
+          listUrl,
+          parse: (Uint8List bytes) =>
+              _parseCurrentExtensionList(store, listUrl, bytes),
+          budget: budget,
+          allowInsecure: allowInsecure,
+        );
     return response.value!;
   }
 
@@ -393,11 +394,10 @@ class MihonExtensionStoreClient {
     }
     return decoded
         .whereType<Map<Object?, Object?>>()
-        .map((Map<Object?, Object?> item) => _parseLegacyExtension(
-              store,
-              base,
-              item.cast<String, Object?>(),
-            ))
+        .map(
+          (Map<Object?, Object?> item) =>
+              _parseLegacyExtension(store, base, item.cast<String, Object?>()),
+        )
         .toList(growable: false);
   }
 
@@ -414,11 +414,13 @@ class MihonExtensionStoreClient {
           json['extensions'] as List<Object?>? ?? const <Object?>[];
       return values
           .whereType<Map<Object?, Object?>>()
-          .map((Map<Object?, Object?> item) => _parseCurrentExtensionJson(
-                store,
-                listUrl,
-                item.cast<String, Object?>(),
-              ))
+          .map(
+            (Map<Object?, Object?> item) => _parseCurrentExtensionJson(
+              store,
+              listUrl,
+              item.cast<String, Object?>(),
+            ),
+          )
           .toList(growable: false);
     }
     return _parseExtensionListProto(store, listUrl, bytes);
@@ -543,8 +545,9 @@ class MihonExtensionStoreClient {
     if (lastModified != null && lastModified.isNotEmpty) {
       request.headers[HttpHeaders.ifModifiedSinceHeader] = lastModified;
     }
-    final http.StreamedResponse response =
-        await _client.send(request).timeout(budget.capped(_kHeadersTimeout));
+    final http.StreamedResponse response = await _client
+        .send(request)
+        .timeout(budget.capped(_kHeadersTimeout));
     if (<int>{
       HttpStatus.movedPermanently,
       HttpStatus.found,
@@ -623,8 +626,9 @@ class MihonExtensionStoreClient {
     // `Stream.timeout` 计的是**两个事件之间**的间隔：回了 200 就不再发字节的
     // 公共代理会在 [bodyStallTimeout] 后抛 TimeoutException（= 传输失败 =
     // 换下一个候选），而一个慢但一直在传的大文件永远不会被它掐断。
-    await for (final List<int> chunk
-        in response.stream.timeout(bodyStallTimeout)) {
+    await for (final List<int> chunk in response.stream.timeout(
+      bodyStallTimeout,
+    )) {
       length += chunk.length;
       if (length > maxBytes) {
         throw MihonRuntimeException(
@@ -641,10 +645,7 @@ class MihonExtensionStoreClient {
     );
   }
 
-  static Uri _validatedUri(
-    String rawUrl, {
-    required bool allowInsecure,
-  }) {
+  static Uri _validatedUri(String rawUrl, {required bool allowInsecure}) {
     // 归一化必须在解析之前：全角句点能骗过 hasAuthority，带着
     // `host%EF%BC%8Ecom` 这样的垃圾域名走到网络层，事后补救抓不到它。
     final Uri? uri = Uri.tryParse(normalizeUrlInput(rawUrl));
@@ -663,10 +664,7 @@ class MihonExtensionStoreClient {
     return uri;
   }
 
-  static MihonStore _parseLegacyStore(
-    Uri indexUrl,
-    Map<String, Object?> json,
-  ) {
+  static MihonStore _parseLegacyStore(Uri indexUrl, Map<String, Object?> json) {
     final Map<String, Object?> meta =
         (json['meta'] as Map<Object?, Object?>? ?? const <Object?, Object?>{})
             .cast<String, Object?>();
@@ -699,29 +697,33 @@ class MihonExtensionStoreClient {
         (json['contact'] as Map<Object?, Object?>? ??
                 const <Object?, Object?>{})
             .cast<String, Object?>();
-    final MihonStore shell = _validateCurrentStore(MihonStore(
-      indexUrl: indexUrl.toString(),
-      name: json['name']?.toString() ?? '',
-      badgeLabel: json['badgeLabel']?.toString() ?? '',
-      signingKey: json['signingKey']?.toString() ?? '',
-      contact: <String, String?>{
-        'website': contact['website']?.toString(),
-        'discord': contact['discord']?.toString(),
-      },
-      format: MihonStoreFormat.currentJson,
-      extensionListUrl: json['extensionListUrl']?.toString(),
-    ));
+    final MihonStore shell = _validateCurrentStore(
+      MihonStore(
+        indexUrl: indexUrl.toString(),
+        name: json['name']?.toString() ?? '',
+        badgeLabel: json['badgeLabel']?.toString() ?? '',
+        signingKey: json['signingKey']?.toString() ?? '',
+        contact: <String, String?>{
+          'website': contact['website']?.toString(),
+          'discord': contact['discord']?.toString(),
+        },
+        format: MihonStoreFormat.currentJson,
+        extensionListUrl: json['extensionListUrl']?.toString(),
+      ),
+    );
     final Map<String, Object?>? list =
         (json['extensionList'] as Map<Object?, Object?>?)
             ?.cast<String, Object?>();
     final List<MihonAvailableExtension> extensions =
         (list?['extensions'] as List<Object?>? ?? const <Object?>[])
             .whereType<Map<Object?, Object?>>()
-            .map((Map<Object?, Object?> item) => _parseCurrentExtensionJson(
-                  shell,
-                  indexUrl,
-                  item.cast<String, Object?>(),
-                ))
+            .map(
+              (Map<Object?, Object?> item) => _parseCurrentExtensionJson(
+                shell,
+                indexUrl,
+                item.cast<String, Object?>(),
+              ),
+            )
             .toList(growable: false);
     return MihonStore(
       indexUrl: shell.indexUrl,
@@ -748,21 +750,23 @@ class MihonExtensionStoreClient {
         (json['sources'] as List<Object?>? ?? const <Object?>[])
             .whereType<Map<Object?, Object?>>()
             .map((Map<Object?, Object?> item) {
-      final Map<String, Object?> source = item.cast<String, Object?>();
-      return MihonAvailableSource(
-        id: source['id'].toString(),
-        name: source['name']?.toString() ?? '',
-        language: source['language']?.toString() ?? '',
-        baseUrl: source['homeUrl']?.toString() ?? '',
-      );
-    }).toList(growable: false);
+              final Map<String, Object?> source = item.cast<String, Object?>();
+              return MihonAvailableSource(
+                id: source['id'].toString(),
+                name: source['name']?.toString() ?? '',
+                language: source['language']?.toString() ?? '',
+                baseUrl: source['homeUrl']?.toString() ?? '',
+              );
+            })
+            .toList(growable: false);
     final Object? warning = json['contentWarning'];
     return MihonAvailableExtension(
       storeUrl: store.indexUrl,
       name: json['name']?.toString() ?? '',
       packageName: json['packageName']?.toString() ?? '',
-      apkUrl:
-          documentUrl.resolve(resources['apkUrl']?.toString() ?? '').toString(),
+      apkUrl: documentUrl
+          .resolve(resources['apkUrl']?.toString() ?? '')
+          .toString(),
       iconUrl: documentUrl
           .resolve(resources['iconUrl']?.toString() ?? '')
           .toString(),
@@ -774,9 +778,9 @@ class MihonExtensionStoreClient {
       versionName: json['versionName']?.toString() ?? '',
       language:
           sources.map((MihonAvailableSource s) => s.language).toSet().length ==
-                  1
-              ? sources.first.language
-              : 'all',
+              1
+          ? sources.first.language
+          : 'all',
       contentWarning: warning is num
           ? warning.toInt()
           : switch (warning?.toString()) {
@@ -800,14 +804,15 @@ class MihonExtensionStoreClient {
         (json['sources'] as List<Object?>? ?? const <Object?>[])
             .whereType<Map<Object?, Object?>>()
             .map((Map<Object?, Object?> item) {
-      final Map<String, Object?> source = item.cast<String, Object?>();
-      return MihonAvailableSource(
-        id: source['id'].toString(),
-        name: source['name']?.toString() ?? '',
-        language: source['lang']?.toString() ?? '',
-        baseUrl: source['baseUrl']?.toString() ?? '',
-      );
-    }).toList(growable: false);
+              final Map<String, Object?> source = item.cast<String, Object?>();
+              return MihonAvailableSource(
+                id: source['id'].toString(),
+                name: source['name']?.toString() ?? '',
+                language: source['lang']?.toString() ?? '',
+                baseUrl: source['baseUrl']?.toString() ?? '',
+              );
+            })
+            .toList(growable: false);
     final String language = json['lang']?.toString() ?? '';
     return MihonAvailableExtension(
       storeUrl: store.indexUrl,
@@ -864,15 +869,17 @@ class MihonExtensionStoreClient {
           extensionListUrl = field.stringValue;
       }
     }
-    final MihonStore shell = _validateCurrentStore(MihonStore(
-      indexUrl: indexUrl.toString(),
-      name: name,
-      badgeLabel: badgeLabel,
-      signingKey: signingKey,
-      contact: contact,
-      format: MihonStoreFormat.currentProtobuf,
-      extensionListUrl: extensionListUrl,
-    ));
+    final MihonStore shell = _validateCurrentStore(
+      MihonStore(
+        indexUrl: indexUrl.toString(),
+        name: name,
+        badgeLabel: badgeLabel,
+        signingKey: signingKey,
+        contact: contact,
+        format: MihonStoreFormat.currentProtobuf,
+        extensionListUrl: extensionListUrl,
+      ),
+    );
     return MihonStore(
       indexUrl: shell.indexUrl,
       name: shell.name,
@@ -941,8 +948,9 @@ class MihonExtensionStoreClient {
           sources.add(_parseSourceProto(field.bytesValue));
       }
     }
-    final Set<String> languages =
-        sources.map((MihonAvailableSource source) => source.language).toSet();
+    final Set<String> languages = sources
+        .map((MihonAvailableSource source) => source.language)
+        .toSet();
     return MihonAvailableExtension(
       storeUrl: store.indexUrl,
       name: name,
@@ -1044,15 +1052,13 @@ class MihonExtensionStoreClient {
     return store;
   }
 
-  static Uint8List _decodeGzip(
-    Uint8List bytes, {
-    required int maxBytes,
-  }) {
+  static Uint8List _decodeGzip(Uint8List bytes, {required int maxBytes}) {
     Uint8List decoded = bytes;
     if (bytes.length >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b) {
       final _LimitedByteSink sink = _LimitedByteSink(maxBytes);
-      final ByteConversionSink decoder =
-          gzip.decoder.startChunkedConversion(sink);
+      final ByteConversionSink decoder = gzip.decoder.startChunkedConversion(
+        sink,
+      );
       try {
         decoder
           ..add(bytes)
@@ -1162,8 +1168,11 @@ class _ProtoReader {
             'Truncated protobuf field',
           );
         }
-        final Uint8List value =
-            Uint8List.sublistView(bytes, _offset, _offset + length);
+        final Uint8List value = Uint8List.sublistView(
+          bytes,
+          _offset,
+          _offset + length,
+        );
         _offset += length;
         return _ProtoField(number, bytesValue: value);
       case 5:
@@ -1204,11 +1213,8 @@ class _ProtoReader {
 }
 
 class _ProtoField {
-  _ProtoField(
-    this.number, {
-    this.varintValue = 0,
-    Uint8List? bytesValue,
-  }) : bytesValue = bytesValue ?? Uint8List(0);
+  _ProtoField(this.number, {this.varintValue = 0, Uint8List? bytesValue})
+    : bytesValue = bytesValue ?? Uint8List(0);
 
   final int number;
   final int varintValue;

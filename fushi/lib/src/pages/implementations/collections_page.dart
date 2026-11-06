@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -11,8 +12,30 @@ import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/pages/base_page.dart';
@@ -21,11 +44,15 @@ import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/favorites/favorite_batch_mining.dart';
 import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
+import 'package:fushi/src/media/favorites/web_video_favorite.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:fushi/src/mining/mined_origin_navigation.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
+import 'package:fushi/src/media/media_source.dart';
 
 enum _CollectionType { sentence, mined, word }
 
@@ -83,10 +110,12 @@ List<CollectionGroupRow<T>> groupCollectionItems<T>({
   final bool hasNamedSection = collectionIds.any((int? id) => id != null);
   for (final int? cid in collectionIds) {
     if (cid != null || hasNamedSection) {
-      rows.add(CollectionGroupRow<T>._(
-        CollectionGroupRowKind.collectionHeader,
-        collectionId: cid,
-      ));
+      rows.add(
+        CollectionGroupRow<T>._(
+          CollectionGroupRowKind.collectionHeader,
+          collectionId: cid,
+        ),
+      );
     }
     final Map<String, List<T>> byMedia = tree[cid]!;
     // 无媒体键的行殿后平铺；有媒体键的小节按首见序（= 最新行倒序）。
@@ -94,10 +123,12 @@ List<CollectionGroupRow<T>> groupCollectionItems<T>({
       if (media.key.isEmpty) continue;
       final String? label = mediaLabelOf(media.value.first);
       if (label != null && label.isNotEmpty) {
-        rows.add(CollectionGroupRow<T>._(
-          CollectionGroupRowKind.mediaHeader,
-          mediaLabel: label,
-        ));
+        rows.add(
+          CollectionGroupRow<T>._(
+            CollectionGroupRowKind.mediaHeader,
+            mediaLabel: label,
+          ),
+        );
       }
       for (final T item in media.value) {
         rows.add(
@@ -114,7 +145,7 @@ List<CollectionGroupRow<T>> groupCollectionItems<T>({
   return rows;
 }
 
-@visibleForTesting
+/// 收藏句 / 「我库里的例句」（`corpus_origin_navigation.dart`）共用的视频起点解析。
 ({int? episodeIndex, int? startMs}) resolveVideoFavoriteOpenTarget({
   required VideoBookRow row,
   required int? favoriteSectionIndex,
@@ -167,13 +198,16 @@ List<CollectionGroupRow<T>> groupCollectionItems<T>({
   }
 
   // 多集播放列表：按收藏的集索引取那一集的绝对路径。
-  final int episodeIndex =
-      (favoriteSectionIndex ?? 0).clamp(0, episodeCount - 1);
+  final int episodeIndex = (favoriteSectionIndex ?? 0).clamp(
+    0,
+    episodeCount - 1,
+  );
   try {
     final dynamic decoded = jsonDecode(row.playlistJson!);
     if (decoded is! List) return null;
-    final PlaylistEntry entry =
-        PlaylistEntry.fromJson(decoded[episodeIndex] as Map<String, dynamic>);
+    final PlaylistEntry entry = PlaylistEntry.fromJson(
+      decoded[episodeIndex] as Map<String, dynamic>,
+    );
     if (entry.path.isEmpty) return null;
     return (filePath: entry.path, startMs: startMs, endMs: endMs);
   } catch (_) {
@@ -204,6 +238,12 @@ MediaItem buildCollectionReaderMediaItem({
   );
 }
 
+/// 制卡历史行的定位是否在媒体时间轴上（v132 position_ms / duration_ms）。
+bool _minedIsTimeAxis(String source) =>
+    source == kFavoriteSentenceSourceVideo ||
+    source == kFavoriteSentenceSourceMusic ||
+    source == kFavoriteSentenceSourceWeb;
+
 class _CollectionItem {
   _CollectionItem({
     required this.type,
@@ -215,6 +255,7 @@ class _CollectionItem {
     this.sectionIndex,
     this.normCharOffset,
     this.normCharLength,
+    this.pageIndex,
     this.favoriteId,
     this.minedId,
     this.wordReading,
@@ -233,8 +274,16 @@ class _CollectionItem {
   final String? text;
   final String? chapterLabel;
   final int? sectionIndex;
+
+  /// 收藏句 wire 口径的锚点：书 = 章内字符偏移 / 长度；**视频 = cue 起点 / 时长毫秒**
+  /// （FavoriteSentence / favorite_words 仍一列两义）。制卡历史 v132 起在 DB 里各占
+  /// 一列（position_ms / duration_ms），读进本模型时在 [_load] 边界折回这一口径，
+  /// 让下游视频跳转 / 抽音只认一种形状。音乐行同视频（毫秒）。
   final int? normCharOffset;
   final int? normCharLength;
+
+  /// 漫画制卡行的页码（0 起；[_CollectionType.mined] 且来源 manga 专用）。
+  final int? pageIndex;
   final String? favoriteId;
 
   /// 制卡历史行 id（TODO-633，[_CollectionType.mined] 专用，供删除一条用）。
@@ -259,6 +308,13 @@ class _CollectionItem {
   final String? headwordReading;
 
   bool get isWord => type == _CollectionType.word;
+
+  /// 浏览器扩展收藏的「视频本身」（KGC1ifR1a3）：网页来源、没有句子文本。标题显示视频名，
+  /// 类型标「网页视频」，没有时间点。
+  bool get isWebVideoFavorite =>
+      !isWord &&
+      source == kFavoriteSentenceSourceWeb &&
+      (text == null || text!.isEmpty);
 
   /// 词行是否带可定位的收藏上下文（有归属 + 章节或偏移锚点）。存量词行没有锚点，
   /// 仍不可跳转、不播音频——拿词形去匹配音频会命中错句。
@@ -431,8 +487,15 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           text: m.sentence.isNotEmpty ? m.sentence : m.expression,
           chapterLabel: m.chapterLabel,
           sectionIndex: m.sectionIndex,
-          normCharOffset: m.normCharOffset,
-          normCharLength: m.normCharLength,
+          // v132：时间轴来源的定位在 position_ms / duration_ms，折回本模型的
+          // 收藏句口径（见 [_CollectionItem.normCharOffset]）。
+          normCharOffset: _minedIsTimeAxis(m.source)
+              ? m.positionMs
+              : m.normCharOffset,
+          normCharLength: _minedIsTimeAxis(m.source)
+              ? m.durationMs
+              : m.normCharLength,
+          pageIndex: m.pageIndex,
           minedId: m.id,
           source: m.source,
         ),
@@ -468,12 +531,19 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
     final allBookKeys = <String>{};
     for (final fav in allFavorites) {
+      // 网页视频收藏（KGC1ifR1a3）的 bookKey 是网页地址，不是书身份。
+      if (fav.source == kFavoriteSentenceSourceWeb) continue;
       if (fav.bookKey != null && fav.bookKey!.isNotEmpty) {
         allBookKeys.add(fav.bookKey!);
       }
     }
     for (final m in allMined) {
-      if (m.source != kFavoriteSentenceSourceVideo &&
+      // 只有书域（书 / 有声书 / 歌词模式）的行按 bookKey 解析书内音频；视频 / 游戏 /
+      // 漫画 / 音乐行的 bookKey 不是书身份。
+      final SentenceSourceKind kind = sentenceSourceKindOf(m.source);
+      if ((kind == SentenceSourceKind.book ||
+              kind == SentenceSourceKind.audiobook ||
+              kind == SentenceSourceKind.lyrics) &&
           m.bookKey != null &&
           m.bookKey!.isNotEmpty) {
         allBookKeys.add(m.bookKey!);
@@ -631,9 +701,12 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     required String? source,
     required String? rawSnapshot,
   }) {
-    final String? raw =
-        (rawSnapshot != null && rawSnapshot.isNotEmpty) ? rawSnapshot : null;
+    final String? raw = (rawSnapshot != null && rawSnapshot.isNotEmpty)
+        ? rawSnapshot
+        : null;
     if (bookKey == null || bookKey.isEmpty) return raw;
+    // 网页视频（KGC1ifR1a3）：bookKey 是网页地址，标题快照就是网页标题。
+    if (source == kFavoriteSentenceSourceWeb) return raw ?? bookKey;
     if (source == kFavoriteSentenceSourceVideo) {
       final VideoBookRow? row = _videoRowMap[bookKey];
       return row != null ? displayTitleForVideo(row) : raw;
@@ -647,10 +720,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   /// [_displayBookTitleFor] 的 [_CollectionItem] 便捷入口（列表副标题/详情弹窗）。
   String? _itemDisplayBookTitle(_CollectionItem item) => _displayBookTitleFor(
-        bookKey: item.bookKey,
-        source: item.source,
-        rawSnapshot: item.bookTitle,
-      );
+    bookKey: item.bookKey,
+    source: item.source,
+    rawSnapshot: item.bookTitle,
+  );
 
   Future<void> _openBook(_CollectionItem item) async {
     final String? bookKey = item.bookKey;
@@ -663,7 +736,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final BookFormat format = BookFormat.parseOrEpub(book?.format);
 
     // 标题仅作展示（身份走 mediaIdentifier=bookKey），过门面显示改名后书名。
-    final String title = _displayBookTitleFor(
+    final String title =
+        _displayBookTitleFor(
           bookKey: bookKey,
           source: item.source,
           rawSnapshot: item.bookTitle,
@@ -684,7 +758,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     // 跳章首。这里按行类型分流：句子/制卡走绝对字符锚（charAnchor）让阅读器精确恢复，
     // 且标 preserveSavedPosition——临时浏览跳转不覆盖用户真实阅读进度。
     // v114：带上下文锚点的收藏词与收藏句同口径（锚点就是收藏时那句）。
-    final bool isSentenceJump = item.type == _CollectionType.sentence ||
+    final bool isSentenceJump =
+        item.type == _CollectionType.sentence ||
         item.type == _CollectionType.mined ||
         item.hasWordAnchor;
     final Bookmark? bookmark = item.sectionIndex != null
@@ -730,8 +805,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     // schema v52）被整段跳过，退回读本集 per-book 默认值（音轨 null / 调轴 0），
     // 表现为「从收藏跳转后音轨与调好的字幕轴又被重置」。解析口径与书架/首页
     // dashboard 续播一致（getPrimaryCollectionIdByEntry，key='video|<bookUid>'）。
-    final int? playlistCollectionId =
-        await _resolveVideoPlaylistCollectionId(row.bookUid);
+    final int? playlistCollectionId = await _resolveVideoPlaylistCollectionId(
+      row.bookUid,
+    );
     if (!mounted) return;
     Navigator.push(
       context,
@@ -753,8 +829,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   /// 与书架 [_open]（`collection.id`）、首页 dashboard 续播（`_primaryCollectionByEntry`）
   /// 同口径，确保系列级音轨/字幕调轴记忆命中同一 collectionId（BUG-1067）。
   Future<int?> _resolveVideoPlaylistCollectionId(String bookUid) async {
-    final Map<String, int> primaryByEntry =
-        await appModel.database.getPrimaryCollectionIdByEntry();
+    final Map<String, int> primaryByEntry = await appModel.database
+        .getPrimaryCollectionIdByEntry();
     return primaryByEntry[MediaKind.video.compositeKey(bookUid)];
   }
 
@@ -798,11 +874,12 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       final dir = Directory(audioRoot);
       if (!await dir.exists()) return [];
       final entries = await dir.list().toList();
-      final files = entries
-          .whereType<File>()
-          .where((f) => AudiobookStorage.isAudioFile(f.path))
-          .toList()
-        ..sort((a, b) => compareAudioFilePath(a.path, b.path));
+      final files =
+          entries
+              .whereType<File>()
+              .where((f) => AudiobookStorage.isAudioFile(f.path))
+              .toList()
+            ..sort((a, b) => compareAudioFilePath(a.path, b.path));
       return files;
     }
     return [];
@@ -896,11 +973,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     }
     final ({String filePath, int startMs, int endMs})? clip =
         resolveVideoFavoriteAudioClip(
-      row: row,
-      favoriteSectionIndex: item.sectionIndex,
-      favoriteStartMs: item.normCharOffset,
-      favoriteDurationMs: item.normCharLength,
-    );
+          row: row,
+          favoriteSectionIndex: item.sectionIndex,
+          favoriteStartMs: item.normCharOffset,
+          favoriteDurationMs: item.normCharLength,
+        );
     if (clip == null) {
       FushiToast.show(
         msg: t.srt_audio_unresolved,
@@ -998,14 +1075,15 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
     final Set<_CollectionType>? scopes =
         await adaptiveModalSheet<Set<_CollectionType>>(
-      context: context,
-      isScrollControlled: false,
-      showDragHandle: false,
-      builder: (ctx) => _ClearSheet(availableTypes: available),
-    );
+          context: context,
+          isScrollControlled: false,
+          showDragHandle: false,
+          builder: (ctx) => _ClearSheet(availableTypes: available),
+        );
     if (scopes == null || scopes.isEmpty || !mounted) return;
 
-    final bool confirmed = await showAppDialog<bool>(
+    final bool confirmed =
+        await showAppDialog<bool>(
           context: context,
           builder: (ctx) => CollectionDeleteDialog(
             message: t.collection_clear_confirm,
@@ -1039,9 +1117,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   /// 当前列表中是否存在可导出条目（收藏句或制卡句任一存在即显示，TODO-913）。
   /// AppBar 的「导出」按钮仅在为真时显示；收藏词单独由导出面板内的全部导出处理。
-  bool get _hasExportableItems => _items.any((item) =>
-      item.type == _CollectionType.sentence ||
-      item.type == _CollectionType.mined);
+  bool get _hasExportableItems => _items.any(
+    (item) =>
+        item.type == _CollectionType.sentence ||
+        item.type == _CollectionType.mined,
+  );
 
   /// BUG-1906：按**身份**把当前列表里的条目归成可选来源（合集优先，未归合集的
   /// 条目单列）。
@@ -1053,8 +1133,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   /// 四种 mediaType——map 已在内存里，命中即得，猜错的成本是零。
   Future<List<_ExportSourceOption>> _exportSourceOptions() async {
     // 归属映射取最新（打开导出面板时合集可能已变），换算表沿用 _load 的快照。
-    _primaryCollectionByEntry =
-        await appModel.database.getPrimaryCollectionIdByEntry();
+    _primaryCollectionByEntry = await appModel.database
+        .getPrimaryCollectionIdByEntry();
 
     // 收藏句 + 制卡句都参与：来源列表要能覆盖两个勾选范围，否则选了合集却发现
     // 制卡句段没被过滤，就成了另一个「两端口径不一致」。
@@ -1068,7 +1148,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       final String? key = item.bookKey;
       if (key == null || key.isEmpty) continue;
       labelByKey.putIfAbsent(
-          key, () => _itemDisplayBookTitle(item) ?? t.collection_sentence);
+        key,
+        () => _itemDisplayBookTitle(item) ?? t.collection_sentence,
+      );
       isVideoByKey.putIfAbsent(key, () => _itemIsVideo(item));
     }
 
@@ -1084,31 +1166,40 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       if (collectionId != null) {
         byCollection.putIfAbsent(collectionId, () => <String>{}).add(e.key);
       } else {
-        loose.add(_ExportSourceOption(
-          id: 'entry:${e.key}',
-          label: e.value,
-          bookKeys: <String>{e.key},
-          isCollection: false,
-        ));
+        loose.add(
+          _ExportSourceOption(
+            id: 'entry:${e.key}',
+            label: e.value,
+            bookKeys: <String>{e.key},
+            isCollection: false,
+          ),
+        );
       }
     }
 
     final List<_ExportSourceOption> collections = <_ExportSourceOption>[];
     for (final MapEntry<int, Set<String>> e in byCollection.entries) {
-      final MediaCollectionRow? row =
-          await appModel.database.getMediaCollectionById(e.key);
-      collections.add(_ExportSourceOption(
-        id: 'collection:${e.key}',
-        // 合集行意外缺失（并发删除）时退回它任一成员的显示名，绝不显示空标题。
-        label: row?.name ?? labelByKey[e.value.first] ?? t.collection_sentence,
-        bookKeys: e.value,
-        isCollection: true,
-      ));
+      final MediaCollectionRow? row = await appModel.database
+          .getMediaCollectionById(e.key);
+      collections.add(
+        _ExportSourceOption(
+          id: 'collection:${e.key}',
+          // 合集行意外缺失（并发删除）时退回它任一成员的显示名，绝不显示空标题。
+          label:
+              row?.name ?? labelByKey[e.value.first] ?? t.collection_sentence,
+          bookKeys: e.value,
+          isCollection: true,
+        ),
+      );
     }
-    collections.sort((_ExportSourceOption a, _ExportSourceOption b) =>
-        a.label.compareTo(b.label));
-    loose.sort((_ExportSourceOption a, _ExportSourceOption b) =>
-        a.label.compareTo(b.label));
+    collections.sort(
+      (_ExportSourceOption a, _ExportSourceOption b) =>
+          a.label.compareTo(b.label),
+    );
+    loose.sort(
+      (_ExportSourceOption a, _ExportSourceOption b) =>
+          a.label.compareTo(b.label),
+    );
     return <_ExportSourceOption>[...collections, ...loose];
   }
 
@@ -1155,24 +1246,27 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   Future<List<ExportMinedSentence>> _loadMinedForExport({
     Set<String> bookKeys = const <String>{},
   }) async {
-    final List<MinedSentenceRow> rows =
-        await appModel.database.getAllMinedSentences();
+    final List<MinedSentenceRow> rows = await appModel.database
+        .getAllMinedSentences();
     final List<ExportMinedSentence> mapped = rows
-        .map((r) => ExportMinedSentence(
-              sentence: r.sentence,
-              expression: r.expression,
-              reading: r.reading,
-              glossary: r.glossary,
-              bookTitle: _displayBookTitleFor(
-                    bookKey: r.bookKey,
-                    source: r.source,
-                    rawSnapshot: r.documentTitle,
-                  ) ??
-                  t.collection_export_mined_title,
-              source: r.source,
-              createdAt: DateTime.fromMillisecondsSinceEpoch(r.createdAt),
-              bookKey: r.bookKey,
-            ))
+        .map(
+          (r) => ExportMinedSentence(
+            sentence: r.sentence,
+            expression: r.expression,
+            reading: r.reading,
+            glossary: r.glossary,
+            bookTitle:
+                _displayBookTitleFor(
+                  bookKey: r.bookKey,
+                  source: r.source,
+                  rawSnapshot: r.documentTitle,
+                ) ??
+                t.collection_export_mined_title,
+            source: r.source,
+            createdAt: DateTime.fromMillisecondsSinceEpoch(r.createdAt),
+            bookKey: r.bookKey,
+          ),
+        )
         .toList();
     // BUG-1906：制卡句段此前**恒是 DB 全量**，来源选择只作用于收藏句——用户选了
     // 一部作品却导出了全库制卡句，这个不对称没有任何理由。现在两段同一范围。
@@ -1191,22 +1285,26 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   Future<List<ExportSentence>> _loadFavoritesForExport({
     Set<String> bookKeys = const <String>{},
   }) async {
-    final List<FavoriteSentence> all =
-        await FavoriteSentenceRepository(appModel.database).getAll();
+    final List<FavoriteSentence> all = await FavoriteSentenceRepository(
+      appModel.database,
+    ).getAll();
     final List<ExportSentence> mapped = all
-        .map((FavoriteSentence f) => ExportSentence(
-              text: f.text,
-              bookTitle: _displayBookTitleFor(
-                    bookKey: f.bookKey,
-                    source: f.source,
-                    rawSnapshot: f.bookTitle,
-                  ) ??
-                  t.collection_sentence,
-              chapterLabel: f.chapterLabel,
-              source: f.source,
-              createdAt: f.createdAt,
-              bookKey: f.bookKey,
-            ))
+        .map(
+          (FavoriteSentence f) => ExportSentence(
+            text: f.text,
+            bookTitle:
+                _displayBookTitleFor(
+                  bookKey: f.bookKey,
+                  source: f.source,
+                  rawSnapshot: f.bookTitle,
+                ) ??
+                t.collection_sentence,
+            chapterLabel: f.chapterLabel,
+            source: f.source,
+            createdAt: f.createdAt,
+            bookKey: f.bookKey,
+          ),
+        )
         .toList();
     // BUG-1906：按**身份**过滤，不再按显示名字符串相等——那样既表达不了合集，
     // 也会让同名/改名后重名的两个条目塌成一项。
@@ -1218,23 +1316,26 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   Future<void> _emptyExportToast() async {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      FushiSnackBar(content: Text(t.collection_export_no_items)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(t.collection_export_no_items)));
   }
 
   /// 仅制卡句（去重聚合 / 平铺二分，TODO-914）。
   Future<void> _exportMinedOnly(_ExportChoice choice) async {
-    final List<ExportMinedSentence> items =
-        await _loadMinedForExport(bookKeys: choice.bookKeys);
+    final List<ExportMinedSentence> items = await _loadMinedForExport(
+      bookKeys: choice.bookKeys,
+    );
     if (!mounted) return;
     if (items.isEmpty) {
       await _emptyExportToast();
       return;
     }
     final String content = choice.dedupe
-        ? buildMinedGroupedExport(dedupeMinedBySentence(items),
-            format: choice.format)
+        ? buildMinedGroupedExport(
+            dedupeMinedBySentence(items),
+            format: choice.format,
+          )
         : buildMinedExport(items, format: choice.format);
     await _saveExport(
       content: content,
@@ -1245,15 +1346,17 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   /// 仅收藏句（去重 / 平铺二分；选具体书则只导该书，TODO-914）。
   Future<void> _exportFavoritesOnly(_ExportChoice choice) async {
-    final List<ExportSentence> all =
-        await _loadFavoritesForExport(bookKeys: choice.bookKeys);
+    final List<ExportSentence> all = await _loadFavoritesForExport(
+      bookKeys: choice.bookKeys,
+    );
     if (!mounted) return;
     if (all.isEmpty) {
       await _emptyExportToast();
       return;
     }
-    final List<ExportSentence> rows =
-        choice.dedupe ? dedupeSentences(all) : all;
+    final List<ExportSentence> rows = choice.dedupe
+        ? dedupeSentences(all)
+        : all;
     final String content = buildSentenceExport(rows, format: choice.format);
     await _saveExport(
       content: content,
@@ -1267,21 +1370,25 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   /// 「全部」= 制卡句段 + 收藏句段，两段一份文件（段内各自去重，段间不互消，TODO-914）。
   Future<void> _exportCombined(_ExportChoice choice) async {
-    final List<ExportMinedSentence> minedRows =
-        await _loadMinedForExport(bookKeys: choice.bookKeys);
+    final List<ExportMinedSentence> minedRows = await _loadMinedForExport(
+      bookKeys: choice.bookKeys,
+    );
     if (!mounted) return;
-    final List<ExportSentence> favRows =
-        await _loadFavoritesForExport(bookKeys: choice.bookKeys);
+    final List<ExportSentence> favRows = await _loadFavoritesForExport(
+      bookKeys: choice.bookKeys,
+    );
     if (!mounted) return;
     if (minedRows.isEmpty && favRows.isEmpty) {
       await _emptyExportToast();
       return;
     }
     // 「全部」模式两段语义需要 words 结构，制卡段恒按句聚合（dedupe 开关对收藏段生效）。
-    final List<ExportMinedSentenceGroup> mined =
-        dedupeMinedBySentence(minedRows);
-    final List<ExportSentence> favorites =
-        choice.dedupe ? dedupeSentences(favRows) : favRows;
+    final List<ExportMinedSentenceGroup> mined = dedupeMinedBySentence(
+      minedRows,
+    );
+    final List<ExportSentence> favorites = choice.dedupe
+        ? dedupeSentences(favRows)
+        : favRows;
     final String content = buildCombinedExport(
       mined: mined,
       favorites: favorites,
@@ -1315,8 +1422,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   /// 导出全部收藏词（按 sourceType 分组）。
   Future<void> _exportAllWords(ExportFormat format) async {
-    final List<FavoriteWordRow> rows =
-        await appModel.database.getAllFavoriteWords();
+    final List<FavoriteWordRow> rows = await appModel.database
+        .getAllFavoriteWords();
     if (!mounted) return;
     if (rows.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1325,13 +1432,15 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       return;
     }
     final List<ExportWord> words = rows
-        .map((r) => ExportWord(
-              expression: r.expression,
-              reading: r.reading,
-              glossary: r.glossary,
-              sourceType: r.sourceType,
-              createdAt: DateTime.fromMillisecondsSinceEpoch(r.createdAt),
-            ))
+        .map(
+          (r) => ExportWord(
+            expression: r.expression,
+            reading: r.reading,
+            glossary: r.glossary,
+            sourceType: r.sourceType,
+            createdAt: DateTime.fromMillisecondsSinceEpoch(r.createdAt),
+          ),
+        )
         .toList();
     final String content = buildWordExport(words, format: format);
     final ExportFileMeta meta = exportFileMeta(format);
@@ -1372,10 +1481,92 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   /// 阅读器打开。
   ModuleId _moduleOfSentenceSource(SentenceSourceKind kind) => switch (kind) {
     SentenceSourceKind.video => ModuleId.video,
+    SentenceSourceKind.game => ModuleId.games,
+    SentenceSourceKind.manga => ModuleId.manga,
+    SentenceSourceKind.music => ModuleId.music,
+    // 网页视频收藏归视频模块（[_canNavigateTo] 对它另判：打开的是系统浏览器，不受模块开关限制）。
+    SentenceSourceKind.web => ModuleId.video,
     SentenceSourceKind.book ||
     SentenceSourceKind.audiobook ||
     SentenceSourceKind.lyrics => ModuleId.books,
   };
+
+  /// 「跳回原文」的唯一分派（条目菜单与列表行共用）：每种来源落到自己模块已有的
+  /// 出口（漫画 / 游戏 / 音乐经 `mined_origin_navigation.dart`，与复习卡片的来源
+  /// 链接同一组出口）。
+  void _openOrigin(_CollectionItem item, SentenceSourceKind kind) {
+    final String? key = item.bookKey;
+    switch (kind) {
+      case SentenceSourceKind.video:
+        unawaited(_openVideoSentence(item));
+      case SentenceSourceKind.game:
+        if (key == null || key.isEmpty) return;
+        unawaited(
+          openGameOrigin(
+            navigator: Navigator.of(context),
+            db: appModel.database,
+            gameId: key,
+          ),
+        );
+      case SentenceSourceKind.manga:
+        if (key == null || key.isEmpty) return;
+        unawaited(
+          openMangaOriginAtPage(
+            ref: ref,
+            bookKey: key,
+            pageIndex: item.pageIndex,
+          ),
+        );
+      case SentenceSourceKind.music:
+        if (key == null || key.isEmpty) return;
+        unawaited(
+          playMusicOriginClip(
+            app: appModel,
+            trackUid: key,
+            positionMs: item.normCharOffset ?? 0,
+          ),
+        );
+      case SentenceSourceKind.web:
+        unawaited(_openWebOrigin(item));
+      case SentenceSourceKind.book:
+      case SentenceSourceKind.audiobook:
+      case SentenceSourceKind.lyrics:
+        // audiobook/lyrics 的 bookKey 共享 hoshi://book/ 身份，reader 是正确目的地
+        // （内部处理有声书/歌词模式）。
+        unawaited(_openBook(item));
+    }
+  }
+
+  /// 网页视频收藏（KGC1ifR1a3）跳回原网页：支持时间参数的站点直接从收藏的时间点起播
+  /// （YouTube `t=` / niconico `from=` / bilibili `t=`），其余站点只打开原网页并告诉用户
+  /// 这句在第几分几秒。
+  Future<void> _openWebOrigin(_CollectionItem item) async {
+    final String? url = item.bookKey;
+    if (url == null) return;
+    final int? position = item.isWebVideoFavorite ? null : item.normCharOffset;
+    final WebVideoJumpTarget? target = webVideoJumpTarget(url, position);
+    bool opened = false;
+    if (target != null) {
+      try {
+        opened = await launchUrl(
+          target.uri,
+          mode: LaunchMode.externalApplication,
+        );
+      } on Object catch (error, stack) {
+        ErrorLogService.instance.log('Collections.openWebOrigin', error, stack);
+      }
+    }
+    if (!mounted) return;
+    final String? message = !opened
+        ? t.collection_web_page_open_failed
+        : (target != null && !target.timed && position != null)
+        ? t.collection_web_page_untimed(time: formatWebVideoPosition(position))
+        : null;
+    if (message == null) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
+  }
 
   /// 收藏行能否「跳回原文」的**唯一**谓词：条目菜单（[_showItemDialog]）与列表行
   /// （[_buildItem]）共用，此前是两份逐字同构的表达式。
@@ -1393,6 +1584,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     if (item.isWord && !item.hasWordAnchor) return false;
     final String? bookKey = item.bookKey;
     if (bookKey == null || bookKey.isEmpty) return false;
+    // 网页视频（KGC1ifR1a3）回到系统浏览器里的原网页，与 App 内模块开关无关。
+    if (item.sourceKind == SentenceSourceKind.web) {
+      return webVideoJumpTarget(bookKey, null) != null;
+    }
     return appModel.moduleVisibility.isEnabled(
       _moduleOfSentenceSource(item.sourceKind),
     );
@@ -1435,14 +1630,17 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final FavoriteMiningItem? miningItem = _miningItemOf(item);
     final bool canMine = miningItem != null && _cardCreationEnabled;
     final hasAudio = _hasAudio(item);
-    final displayTitle = item.text ?? '';
+    final displayTitle = item.isWebVideoFavorite
+        ? (_itemDisplayBookTitle(item) ?? '')
+        : item.text ?? '';
     // P4：副标题（所属书/视频名）过 display-title 门面（快照列保持 raw 身份）。
     final String? bookDisplayTitle = _itemDisplayBookTitle(item);
     final cs = Theme.of(context).colorScheme;
 
     // 词行：读音 + 释义 + 原句；句行：当时查的词。此前详情里只有词形和书名。
-    final String? reading =
-        item.isWord ? item.wordReading : item.headwordReading;
+    final String? reading = item.isWord
+        ? item.wordReading
+        : item.headwordReading;
     final String? headword = item.isWord ? null : item.headword;
     final String? glossary = item.isWord ? item.glossary : null;
     final String? contextSentence = item.isWord ? item.contextSentence : null;
@@ -1477,7 +1675,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       context: context,
       builder: (ctx) => CollectionItemDialogFrame(
         title: SelectableText(displayTitle, maxLines: 3),
-        content: details.isNotEmpty || bookDisplayTitle != null || blockedByModule
+        content:
+            details.isNotEmpty || bookDisplayTitle != null || blockedByModule
             ? Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1546,28 +1745,29 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           ),
           if (canNavigate)
             FushiFilledButton.icon(
-              icon: FushiIcon(
-                switch (kind) {
-                  SentenceSourceKind.video => FushiIcons.video,
-                  SentenceSourceKind.audiobook => FushiIcons.audio,
-                  SentenceSourceKind.lyrics => FushiIcons.lyrics,
-                  SentenceSourceKind.book => FushiIcons.books,
-                },
-                size: 18,
-              ),
-              label: Text(
-                kind == SentenceSourceKind.video ? t.nav_video : t.dialog_read,
-              ),
+              icon: FushiIcon(switch (kind) {
+                SentenceSourceKind.video => FushiIcons.video,
+                SentenceSourceKind.audiobook => FushiIcons.audio,
+                SentenceSourceKind.lyrics => FushiIcons.lyrics,
+                SentenceSourceKind.book => FushiIcons.books,
+                SentenceSourceKind.game => FushiIcons.games,
+                SentenceSourceKind.manga => FushiIcons.manga,
+                SentenceSourceKind.music => FushiIcons.music,
+                SentenceSourceKind.web => FushiIcons.openInNew,
+              }, size: 18),
+              label: Text(switch (kind) {
+                SentenceSourceKind.video => t.nav_video,
+                SentenceSourceKind.game => t.nav_game,
+                SentenceSourceKind.music => t.nav_music,
+                SentenceSourceKind.web => t.collection_web_page_open,
+                SentenceSourceKind.book ||
+                SentenceSourceKind.audiobook ||
+                SentenceSourceKind.lyrics ||
+                SentenceSourceKind.manga => t.dialog_read,
+              }),
               onPressed: () {
                 Navigator.pop(ctx);
-                switch (kind) {
-                  case SentenceSourceKind.video:
-                    _openVideoSentence(item);
-                  case SentenceSourceKind.book:
-                  case SentenceSourceKind.audiobook:
-                  case SentenceSourceKind.lyrics:
-                    _openBook(item);
-                }
+                _openOrigin(item, kind);
               },
             ),
         ],
@@ -1606,8 +1806,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       ],
       // 类型筛选条原本固定在正文顶部：页头浮在正文上之后会被胶囊盖住，所以随
       // 页头一起进 headerBottom（页头 → 筛选纵向堆叠、一起收起）。
-      headerBottom:
-          !_loading && _items.isNotEmpty ? _buildTypeFilterBar() : null,
+      headerBottom: !_loading && _items.isNotEmpty
+          ? _buildTypeFilterBar()
+          : null,
       // Builder：正文要在页头脚手架之内取 MediaQuery 顶部让位（状态栏 + 浮动页头）。
       body: Builder(
         builder: (BuildContext context) => _loading
@@ -1634,16 +1835,16 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                 ),
               )
             : _items.isEmpty || _visibleItems.isEmpty
-                ? SafeArea(
-                    bottom: false,
-                    child: Center(
-                      child: FushiPlaceholderMessage(
-                        icon: FushiIcons.collection,
-                        message: t.no_collections,
-                      ),
-                    ),
-                  )
-                : _buildGroupedListView(context),
+            ? SafeArea(
+                bottom: false,
+                child: Center(
+                  child: FushiPlaceholderMessage(
+                    icon: FushiIcons.collection,
+                    message: t.no_collections,
+                  ),
+                ),
+              )
+            : _buildGroupedListView(context),
       ),
     );
   }
@@ -1695,9 +1896,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         itemCount: rows.length,
         itemBuilder: (BuildContext context, int index) =>
             FushiStaggeredEntrance(
-          index: index,
-          child: _buildGroupedRow(rows, index, groupIndex, groupCount),
-        ),
+              index: index,
+              child: _buildGroupedRow(rows, index, groupIndex, groupCount),
+            ),
       ),
     );
   }
@@ -1711,45 +1912,45 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double page = tokens.spacing.page;
     final CollectionGroupRow<_CollectionItem> row = rows[index];
-        switch (row.kind) {
-          case CollectionGroupRowKind.collectionHeader:
-            final String name = row.collectionId == null
-                ? t.stat_detail_ungrouped
-                : (_collectionNamesById[row.collectionId] ??
-                    t.stat_detail_ungrouped);
-            // 合集名 = 内容区块标题（MD3 titleLarge / Apple Title 2 粗体），
-            // 不再是主色文件夹图标 + 小号字。
-            return FushiSectionTitle(
-              name,
-              padding: EdgeInsets.fromLTRB(
-                page,
-                index == 0 ? tokens.spacing.gap : tokens.spacing.card + 8,
-                page,
-                tokens.spacing.gap / 2,
-              ),
-            );
-          case CollectionGroupRowKind.mediaHeader:
-            // 所属书 / 视频 = 分组小标题（MD3 titleSmall 主色 / Apple 13 号
-            // 灰字），与分组行的文字起点对齐。
-            return FushiSectionTitle.group(
-              row.mediaLabel!,
-              padding: EdgeInsets.fromLTRB(
-                page + tokens.spacing.rowHorizontal,
-                tokens.spacing.gap,
-                page,
-                tokens.spacing.gap / 2,
-              ),
-            );
-          case CollectionGroupRowKind.item:
-            final _CollectionItem item = row.item!;
-            return FushiGroupedListItem(
-              key: ValueKey<String>('favorite-row-${_itemKey(item)}'),
-              index: groupIndex[index],
-              count: groupCount[index],
-              margin: EdgeInsets.symmetric(horizontal: page),
-              child: _buildItem(item),
-            );
-        }
+    switch (row.kind) {
+      case CollectionGroupRowKind.collectionHeader:
+        final String name = row.collectionId == null
+            ? t.stat_detail_ungrouped
+            : (_collectionNamesById[row.collectionId] ??
+                  t.stat_detail_ungrouped);
+        // 合集名 = 内容区块标题（MD3 titleLarge / Apple Title 2 粗体），
+        // 不再是主色文件夹图标 + 小号字。
+        return FushiSectionTitle(
+          name,
+          padding: EdgeInsets.fromLTRB(
+            page,
+            index == 0 ? tokens.spacing.gap : tokens.spacing.card + 8,
+            page,
+            tokens.spacing.gap / 2,
+          ),
+        );
+      case CollectionGroupRowKind.mediaHeader:
+        // 所属书 / 视频 = 分组小标题（MD3 titleSmall 主色 / Apple 13 号
+        // 灰字），与分组行的文字起点对齐。
+        return FushiSectionTitle.group(
+          row.mediaLabel!,
+          padding: EdgeInsets.fromLTRB(
+            page + tokens.spacing.rowHorizontal,
+            tokens.spacing.gap,
+            page,
+            tokens.spacing.gap / 2,
+          ),
+        );
+      case CollectionGroupRowKind.item:
+        final _CollectionItem item = row.item!;
+        return FushiGroupedListItem(
+          key: ValueKey<String>('favorite-row-${_itemKey(item)}'),
+          index: groupIndex[index],
+          count: groupCount[index],
+          margin: EdgeInsets.symmetric(horizontal: page),
+          child: _buildItem(item),
+        );
+    }
   }
 
   /// 收藏行副标题：可截断的[metadata]（书名/章节/来源前缀）+ **恒可见**的收藏日期。
@@ -1847,16 +2048,16 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     }
     final List<_CollectionItem>? picked =
         await adaptiveModalSheet<List<_CollectionItem>>(
-      context: context,
-      showDragHandle: false,
-      builder: (BuildContext ctx) => _BatchMineSheet(
-        candidates: candidates,
-        titleOf: (_CollectionItem i) =>
-            i.isWord ? (i.text ?? '') : (i.headword ?? ''),
-        subtitleOf: (_CollectionItem i) =>
-            i.isWord ? i.contextSentence : i.text,
-      ),
-    );
+          context: context,
+          showDragHandle: false,
+          builder: (BuildContext ctx) => _BatchMineSheet(
+            candidates: candidates,
+            titleOf: (_CollectionItem i) =>
+                i.isWord ? (i.text ?? '') : (i.headword ?? ''),
+            subtitleOf: (_CollectionItem i) =>
+                i.isWord ? i.contextSentence : i.text,
+          ),
+        );
     if (picked == null || picked.isEmpty || !mounted) return;
     await showFavoriteBatchMining(context, <FavoriteMiningItem>[
       for (final _CollectionItem i in picked) _miningItemOf(i)!,
@@ -1868,13 +2069,13 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   Widget _buildTypeFilterBar() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     Widget chip(_CollectionType? type, String label) => Padding(
-          padding: EdgeInsets.only(right: tokens.spacing.gap / 2),
-          child: FushiChoiceChip(
-            label: Text(label),
-            selected: _typeFilter == type,
-            onSelected: (_) => setState(() => _typeFilter = type),
-          ),
-        );
+      padding: EdgeInsets.only(right: tokens.spacing.gap / 2),
+      child: FushiChoiceChip(
+        label: Text(label),
+        selected: _typeFilter == type,
+        onSelected: (_) => setState(() => _typeFilter = type),
+      ),
+    );
     return HorizontalDragScrollable(
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -1941,16 +2142,21 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool isMined = item.type == _CollectionType.mined;
     final bool isWord = item.type == _CollectionType.word;
+    final bool isWebVideo = item.isWebVideoFavorite;
     final IconData icon = isMined
         ? FushiIcons.ankiCard
         : isWord
-            ? FushiIcons.star
-            : FushiIcons.quote;
+        ? FushiIcons.star
+        : isWebVideo
+        ? FushiIcons.video
+        : FushiIcons.quote;
     final String typeLabel = isMined
         ? t.collection_mined
         : isWord
-            ? t.collection_word
-            : t.collection_sentence;
+        ? t.collection_word
+        : isWebVideo
+        ? t.collection_web_video
+        : t.collection_sentence;
 
     final String title;
     final String? subtitle;
@@ -1983,14 +2189,25 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         SentenceSourceKind.video => t.nav_video,
         SentenceSourceKind.audiobook => t.section_audiobook,
         SentenceSourceKind.lyrics => t.lyrics_mode,
+        SentenceSourceKind.game => t.nav_game,
+        SentenceSourceKind.manga => t.manga_library,
+        SentenceSourceKind.music => t.nav_music,
+        // 网页视频：来源网站名在 chapterLabel（YouTube / niconico / 域名）。
+        SentenceSourceKind.web => isWebVideo ? null : t.collection_web_video,
         SentenceSourceKind.book => null,
       };
-      title = item.text ?? '';
+      final int? webPosition = kind == SentenceSourceKind.web && !isWebVideo
+          ? item.normCharOffset
+          : null;
+      title = isWebVideo
+          ? (_itemDisplayBookTitle(item) ?? '')
+          : item.text ?? '';
       subtitle = [
         sourcePrefix,
         // 阶段 3：所属书/视频名升级为媒体小节头（[_buildGroupedListView]），
         // 行副标题不再重复拼书名，只留来源前缀 + 章节。
         item.chapterLabel,
+        if (webPosition != null) formatWebVideoPosition(webPosition),
       ].where((s) => s != null && s.isNotEmpty).join(' · ');
     }
 
@@ -2060,8 +2277,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
               // 平板横向空间不足）时书名+章节占满整行，排在末尾的日期被省略号吃掉看不见。
               // 根因=两段不同截断语义（元数据可截、日期不可截）共用同一行宽预算。修=拆成
               // Row：元数据 Flexible+ellipsis 优先让位，日期固定宽不参与收缩永远显示。
-              subtitle:
-                  _buildSubtitle(metadata: subtitle, createdAt: item.createdAt),
+              subtitle: _buildSubtitle(
+                metadata: subtitle,
+                createdAt: item.createdAt,
+              ),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -2074,7 +2293,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                             child: const SizedBox(
                               width: 18,
                               height: 18,
-                              child: FushiCircularProgressIndicator(strokeWidth: 2),
+                              child: FushiCircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
                             ),
                           )
                         : FushiIconButton(
@@ -2109,18 +2330,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
               // Non-navigable rows still get an onTap so they are a gamepad focus
               // stop (otherwise hold-A / the item menu can never be reached).
               onTap: canNavigate
-                  ? () {
-                      switch (kind) {
-                        case SentenceSourceKind.video:
-                          _openVideoSentence(item);
-                        case SentenceSourceKind.book:
-                        case SentenceSourceKind.audiobook:
-                        case SentenceSourceKind.lyrics:
-                          // audiobook/lyrics 的 bookKey 共享 hoshi://book/ 身份，
-                          // reader 是正确目的地（内部处理有声书/歌词模式）。
-                          _openBook(item);
-                      }
-                    }
+                  ? () => _openOrigin(item, kind)
                   : () => _showItemDialog(item),
             ),
           ),
@@ -2439,10 +2649,7 @@ class _ExportDialogState extends State<_ExportDialog> {
       selected: value,
       onTap: () => onChanged(!value),
       title: Text(label),
-      trailing: FushiSwitch(
-        value: value,
-        onChanged: onChanged,
-      ),
+      trailing: FushiSwitch(value: value, onChanged: onChanged),
     );
   }
 
@@ -2544,7 +2751,11 @@ class _ExportDialogState extends State<_ExportDialog> {
               value: _dedupe,
               onChanged: (bool v) => setState(() => _dedupe = v),
             ),
-            FushiDividerControl(height: 1, thickness: 1, color: tokens.surfaces.outline),
+            FushiDividerControl(
+              height: 1,
+              thickness: 1,
+              color: tokens.surfaces.outline,
+            ),
             SizedBox(height: tokens.spacing.gap),
             // ── 格式 ──
             Padding(
@@ -2713,8 +2924,8 @@ class _BatchMineSheet extends StatefulWidget {
 }
 
 class _BatchMineSheetState extends State<_BatchMineSheet> {
-  late final Set<_CollectionItem> _selected =
-      Set<_CollectionItem>.identity()..addAll(widget.candidates);
+  late final Set<_CollectionItem> _selected = Set<_CollectionItem>.identity()
+    ..addAll(widget.candidates);
 
   bool get _allSelected => _selected.length == widget.candidates.length;
 
@@ -2793,13 +3004,10 @@ class _BatchMineSheetState extends State<_BatchMineSheet> {
           label: Text(t.collection_batch_mine_start(n: _selected.length)),
           onPressed: _selected.isEmpty
               ? null
-              : () => Navigator.pop(
-                    context,
-                    <_CollectionItem>[
-                      for (final _CollectionItem i in widget.candidates)
-                        if (_selected.contains(i)) i,
-                    ],
-                  ),
+              : () => Navigator.pop(context, <_CollectionItem>[
+                  for (final _CollectionItem i in widget.candidates)
+                    if (_selected.contains(i)) i,
+                ]),
         ),
       ),
     );

@@ -1,5 +1,35 @@
 # Fushi 快捷键清单（TODO-048a 统计）
 
+> **2026-11-01 增补（焦点导航进快捷键体系，反馈 bjPjRHsaUy）：**
+>
+> - 设置页新分组「焦点导航」= 原 `gamepad` scope（枚举名与动作名 `dpadUp/Down/Left/Right`、
+>   持久化 key `dpad_*` **冻结**，操作目录 / MCP 按名字收发）。四个移焦动作开放键盘通道，
+>   默认键盘 = 裸 ↑/↓/←/→、手柄 = dpad 四向；新增 `focusActivate`（确认，默认 Enter / 手柄 A）。
+>   默认值就是改造前的硬编码键，行为不变；schema v15 给老快照补上方向键（只换键盘）。
+> - 「返回」不另设动作，仍是 universal 的 `globalBack`（设置页分组「返回·退出」）。
+> - 优先级：焦点导航是**兜底** scope——页面 scope（阅读器翻页 / 有声书上下句 / 视频 seek …）先解析，
+>   页面没占用的键才落到焦点导航（键盘：`global_navigation.dart` 的 `_handleGlobalFocusNavigation`，
+>   排在 `globalBack` 之后；手柄：`GamepadService._dispatchButton`，排在页面 Actions / 弹窗 / 滚页 /
+>   B 返回之后，任何按钮都能绑）。所以要在 ←/→ 被句子导航占用的页面移焦，给焦点导航加一枚
+>   页面没占用的备选键。
+> - 设置页「焦点导航」分组顶部有两个**默认关闭**的一键预设开关：WASD、Shift+方向键（追加为
+>   备选键，不替换方向键）。W/A/S/D 在视频页仍是 seek / 截图，Shift+←/→ 在音乐页仍是 ±5 秒。
+> - 文本框持焦时，用户另加的移焦 / 确认键一律放行（WASD 照常打字、Shift+方向键照常扩选）；
+>   裸方向键仍是既有契约（实验焦点导航关 → 框架 `DirectionalFocusIntent`；开 → 受管控件门 +
+>   单行框逃逸）。裸 Enter / 手柄 A 的确认仍由框架完成（wrapper 不重复激活）。
+> - 守卫：`fushi/test/shortcuts/focus_navigation_shortcuts_test.dart`。
+
+> **2026-10-27 增补（视频页，反馈 Dbd86l4kA- / _Eb0txdN4H / Ix4j5SKUth）：**
+>
+> - 「重播当前句」`videoReplayCurrentSubtitle`（R / 手柄 LT）与「重播上一句」
+>   `videoReplayPreviousSubtitle`（Shift+R）**一律起播**：暂停态按下也开始播放
+>   （`VideoPlayerController.playFromCue` / `playFromPreviousCue`）。「上一句 / 下一句字幕」
+>   仍只跳不播。浏览器扩展「重播本句」同口径。
+> - 新增 `videoCopyCurrentSubtitle` / `videoCopyCurrentSecondarySubtitle`（复制当前台词，
+>   主 / 副字幕）与 `videoToggleLoopCurrentSubtitle`（循环当前句开关），三者**默认空绑定**，
+>   在快捷键设置页与屏幕自定义按钮里由用户自配（反馈提议的 Ctrl+C / Ctrl+Shift+C / Ctrl+R
+>   不设为默认）。
+
 > ⚠️ **2026-08-02 增补：「返回上一级」已统一，本文与之冲突的行以本段为准。**
 >
 > Esc / Alt+← / 手柄 B 现在全部绑在**唯一一个**可改键动作
@@ -67,6 +97,7 @@
 | globalScrollLineUp | ↑ | — | 单步上滚（同上） |
 | globalScrollToBottom | End | — | 滚到底 |
 | globalScrollToTop | Home | — | 滚到顶 |
+| globalOpenAiAssistant | Ctrl+J（macOS ⌘J） | — | 呼出 AI 助手浮层（带当前悬浮球场景上下文；AI 模块关着时不响应、照常冒泡）。执行体在 app 根 `wrapWithGlobalNavigation`，三通道（键盘 / 手柄 / 鼠标）共用 `openAiAgentFromShortcut` |
 
 > 页面滚动六件套（2026-09-12）：键盘 / 手柄 / 鼠标三通道共用执行体
 > `shortcuts/page_scroll_shortcuts.dart`，目标解析唯一入口
@@ -124,6 +155,8 @@
 | B | 切换字幕模糊（`video_fushi_page.dart:3305`，内层 CallbackShortcuts，asbplayer 同款） |
 
 ### 2b. 全局焦点/导航（`global_navigation.dart`，仅实验性焦点导航开启时）
+
+> 2026-11-01 起方向由注册表「焦点导航」分组决定（见顶部增补），下表的裸方向键路径不变。
 
 | 键 | 功能 |
 |---|---|

@@ -14,6 +14,7 @@ import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart'
     show RemoteThemeColorsProvider;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
+import 'package:fushi/src/media/favorites/web_video_favorite.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
@@ -125,7 +126,8 @@ class _FakeMining implements FushiRemoteMiningService {
 
   @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
-      String modelName) async {
+    String modelName,
+  ) async {
     lastNoteTypeRead = modelName;
     return noteTypeDef;
   }
@@ -138,8 +140,9 @@ class _FakeMining implements FushiRemoteMiningService {
 
   @override
   Future<bool> updateNoteTypeTemplates(
-          String modelName, List<AnkiCardTemplate> templates) async =>
-      true;
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) async => true;
 
   @override
   Future<bool> probeMediaMaintenance() async => false;
@@ -160,8 +163,9 @@ Future<HttpClientResponse> _post(
 }) async {
   // 不在这里 close client（响应尚未被调用方读取）；测试进程退出即回收。
   final HttpClient c = HttpClient();
-  final HttpClientRequest req =
-      await c.postUrl(Uri.parse('http://127.0.0.1:$port$path'));
+  final HttpClientRequest req = await c.postUrl(
+    Uri.parse('http://127.0.0.1:$port$path'),
+  );
   req.headers.contentType = ContentType.json;
   if (auth != null) req.headers.set('authorization', auth);
   req.write(jsonEncode(body));
@@ -189,7 +193,6 @@ Future<List<int>> _collectBytes(HttpClientResponse resp) async {
 
 void main() {
   const Tokenizer tok = _noopTokenize;
-  const ReadingResolver rr = _noopReading;
 
   group('FushiApiServer browser-extension endpoints (BUG-530)', () {
     late _FakeLookup lookup;
@@ -205,6 +208,7 @@ void main() {
       void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
       void Function(BrowserVideoSample sample)? onExtensionStudy,
       ExtensionFavoriteHandler? onExtensionFavorite,
+      ExtensionVideoFavoriteHandler? onExtensionVideoFavorite,
     }) async {
       lookup = _FakeLookup();
       mining = _FakeMining();
@@ -213,7 +217,6 @@ void main() {
         lookupService: lookup,
         miningService: mining,
         tokenizer: tok,
-        readingResolver: rr,
         themeColorsProvider: themeColorsProvider,
         audioSourcesProvider: audioSourcesProvider,
         extensionBuildProvider: extensionBuildProvider,
@@ -221,6 +224,7 @@ void main() {
         onExtensionPopupSize: onExtensionPopupSize,
         onExtensionStudy: onExtensionStudy,
         onExtensionFavorite: onExtensionFavorite,
+        onExtensionVideoFavorite: onExtensionVideoFavorite,
         apiKey: apiKey,
       );
       await server.start();
@@ -244,63 +248,63 @@ void main() {
       expect(j['popupJson'], contains('走る'));
     });
 
-    test('/api/extension/status identifies Fushi on the configured port',
-        () async {
-      await startServer(apiKey: 'k123');
-      final HttpClientResponse resp = await _post(
-        server.port,
-        '/api/extension/status',
-        <String, dynamic>{},
-        auth: _basic('k123'),
-      );
-      expect(resp.statusCode, 200);
-      final Map<String, dynamic> j = await _json(resp);
-      expect(j['app'], 'fushi');
-      expect(j['ready'], true);
-      expect(j['port'], server.port);
-    });
-
-    test('popupOnly returns only bestLength while default keeps full result',
-        () async {
-      await startServer(apiKey: 'k123');
-
-      final Map<String, dynamic> compact = await _json(await _post(
-        server.port,
-        '/api/lookup/dictionary',
-        <String, dynamic>{
-          'term': '見る',
-          'record': false,
-          'popupOnly': true,
-        },
-        auth: _basic('k123'),
-      ));
-      expect(compact['result'], <String, dynamic>{'bestLength': 0});
-      expect(compact['popupJson'], contains('見る'));
-      expect(lookup.popupLookupCount, 1);
-      expect(lookup.fullLookupCount, 0);
-
-      final Map<String, dynamic> full = await _json(await _post(
-        server.port,
-        '/api/lookup/dictionary',
-        <String, dynamic>{'term': '見る', 'record': false},
-        auth: _basic('k123'),
-      ));
-      expect((full['result'] as Map<String, dynamic>)['searchTerm'], '見る');
-      expect(lookup.fullLookupCount, 1);
-    });
+    test(
+      '/api/extension/status identifies Fushi on the configured port',
+      () async {
+        await startServer(apiKey: 'k123');
+        final HttpClientResponse resp = await _post(
+          server.port,
+          '/api/extension/status',
+          <String, dynamic>{},
+          auth: _basic('k123'),
+        );
+        expect(resp.statusCode, 200);
+        final Map<String, dynamic> j = await _json(resp);
+        expect(j['app'], 'fushi');
+        expect(j['ready'], true);
+        expect(j['port'], server.port);
+      },
+    );
 
     test(
-        'lookup response carries popup size vars from themeColorsProvider '
+      'popupOnly returns only bestLength while default keeps full result',
+      () async {
+        await startServer(apiKey: 'k123');
+
+        final Map<String, dynamic> compact = await _json(
+          await _post(server.port, '/api/lookup/dictionary', <String, dynamic>{
+            'term': '見る',
+            'record': false,
+            'popupOnly': true,
+          }, auth: _basic('k123')),
+        );
+        expect(compact['result'], <String, dynamic>{'bestLength': 0});
+        expect(compact['popupJson'], contains('見る'));
+        expect(lookup.popupLookupCount, 1);
+        expect(lookup.fullLookupCount, 0);
+
+        final Map<String, dynamic> full = await _json(
+          await _post(server.port, '/api/lookup/dictionary', <String, dynamic>{
+            'term': '見る',
+            'record': false,
+          }, auth: _basic('k123')),
+        );
+        expect((full['result'] as Map<String, dynamic>)['searchTerm'], '見る');
+        expect(lookup.fullLookupCount, 1);
+      },
+    );
+
+    test('lookup response carries popup size vars from themeColorsProvider '
         '(TODO-1185)', () async {
       // TODO-1185 follow-up：浏览器扩展弹窗尺寸跟随 app 内弹窗尺寸设置。app 注入的
       // browserExtensionThemeColors 把用户配置的 popupMaxWidth/Height 作为
       // --fushi-popup-max-width / --fushi-popup-max-height 放进查词响应 theme 字段，
       // content.js 逐项 setProperty 到 #entries-container，content.css 同名 var(...) 消费。
       Map<String, String> provider(String? _) => <String, String>{
-            '--md-primary': 'rgb(1, 2, 3)',
-            '--fushi-popup-max-width': '520px',
-            '--fushi-popup-max-height': '640px',
-          };
+        '--md-primary': 'rgb(1, 2, 3)',
+        '--fushi-popup-max-width': '520px',
+        '--fushi-popup-max-height': '640px',
+      };
       await startServer(apiKey: 'k123', themeColorsProvider: provider);
       final HttpClientResponse resp = await _post(
         server.port,
@@ -315,84 +319,95 @@ void main() {
       expect(theme['--fushi-popup-max-height'], '640px');
     });
 
-    test('lookup response omits theme when provider absent (backward compat)',
-        () async {
-      await startServer(apiKey: 'k123');
-      final HttpClientResponse resp = await _post(
-        server.port,
-        '/api/lookup/dictionary',
-        <String, dynamic>{'term': '猫', 'record': false},
-        auth: _basic('k123'),
-      );
-      expect(resp.statusCode, 200);
-      final Map<String, dynamic> j = await _json(resp);
-      // 无 provider（旧 app / server 未注入）→ 不带 theme，扩展 CSS 回落默认 400x360。
-      expect(j.containsKey('theme'), isFalse);
-    });
+    test(
+      'lookup response omits theme when provider absent (backward compat)',
+      () async {
+        await startServer(apiKey: 'k123');
+        final HttpClientResponse resp = await _post(
+          server.port,
+          '/api/lookup/dictionary',
+          <String, dynamic>{'term': '猫', 'record': false},
+          auth: _basic('k123'),
+        );
+        expect(resp.statusCode, 200);
+        final Map<String, dynamic> j = await _json(resp);
+        // 无 provider（旧 app / server 未注入）→ 不带 theme，扩展 CSS 回落默认 400x360。
+        expect(j.containsKey('theme'), isFalse);
+      },
+    );
 
     test('lookup response carries appLocale from provider and omits it when '
         'absent', () async {
       // app 当前 UI 语言随查词响应下发（Slang languageTag），扩展据此选文案；
       // 未注入（旧 app / sync host）→ 不带字段，扩展回落浏览器语言。
       await startServer(apiKey: 'k123', appLocaleProvider: () => 'ja');
-      final Map<String, dynamic> j = await _json(await _post(
-        server.port,
-        '/api/lookup/dictionary',
-        <String, dynamic>{'term': '猫', 'record': false},
-        auth: _basic('k123'),
-      ));
+      final Map<String, dynamic> j = await _json(
+        await _post(server.port, '/api/lookup/dictionary', <String, dynamic>{
+          'term': '猫',
+          'record': false,
+        }, auth: _basic('k123')),
+      );
       expect(j['appLocale'], 'ja');
 
       await server.stop();
       await startServer(apiKey: 'k123');
-      final Map<String, dynamic> j2 = await _json(await _post(
-        server.port,
-        '/api/lookup/dictionary',
-        <String, dynamic>{'term': '猫', 'record': false},
-        auth: _basic('k123'),
-      ));
+      final Map<String, dynamic> j2 = await _json(
+        await _post(server.port, '/api/lookup/dictionary', <String, dynamic>{
+          'term': '猫',
+          'record': false,
+        }, auth: _basic('k123')),
+      );
       expect(j2.containsKey('appLocale'), isFalse);
     });
 
     // 扩展「主题：跟随 / 浅色 / 深色」设置：显式明暗随查词请求体 `colorScheme` 送到
     // app，provider 按它生成变量；缺省 / 非法值一律 null = 跟随 app 当前明暗。
-    test('lookup request colorScheme is forwarded to themeColorsProvider',
-        () async {
-      final List<String?> received = <String?>[];
-      Map<String, String> provider(String? colorScheme) {
-        received.add(colorScheme);
-        return <String, String>{'--fushi-color-scheme': colorScheme ?? 'app'};
-      }
-
-      await startServer(apiKey: 'k123', themeColorsProvider: provider);
-      Future<Map<String, dynamic>> lookup(Map<String, dynamic> extra) async =>
-          _json(await _post(
-            server.port,
-            '/api/lookup/dictionary',
-            <String, dynamic>{'term': '猫', 'record': false, ...extra},
-            auth: _basic('k123'),
-          ));
-
-      // 显式深色 / 浅色原样到达 provider。
-      final Map<String, dynamic> dark =
-          await lookup(<String, dynamic>{'colorScheme': 'dark'});
-      expect((dark['theme'] as Map<String, dynamic>)['--fushi-color-scheme'],
-          'dark');
-      final Map<String, dynamic> light =
-          await lookup(<String, dynamic>{'colorScheme': 'light'});
-      expect((light['theme'] as Map<String, dynamic>)['--fushi-color-scheme'],
-          'light');
-      // 缺省（旧扩展 / 跟随）→ null。
-      await lookup(<String, dynamic>{});
-      // 非法值（别的字符串 / 非字符串）→ 当 null，不让扩展随便塞值。
-      await lookup(<String, dynamic>{'colorScheme': 'auto'});
-      await lookup(<String, dynamic>{'colorScheme': 1});
-      await lookup(<String, dynamic>{'colorScheme': null});
-      expect(received, <String?>['dark', 'light', null, null, null, null]);
-    });
-
     test(
-        'lookup response carries extensionBuild from provider and omits it '
+      'lookup request colorScheme is forwarded to themeColorsProvider',
+      () async {
+        final List<String?> received = <String?>[];
+        Map<String, String> provider(String? colorScheme) {
+          received.add(colorScheme);
+          return <String, String>{'--fushi-color-scheme': colorScheme ?? 'app'};
+        }
+
+        await startServer(apiKey: 'k123', themeColorsProvider: provider);
+        Future<Map<String, dynamic>> lookup(Map<String, dynamic> extra) async =>
+            _json(
+              await _post(
+                server.port,
+                '/api/lookup/dictionary',
+                <String, dynamic>{'term': '猫', 'record': false, ...extra},
+                auth: _basic('k123'),
+              ),
+            );
+
+        // 显式深色 / 浅色原样到达 provider。
+        final Map<String, dynamic> dark = await lookup(<String, dynamic>{
+          'colorScheme': 'dark',
+        });
+        expect(
+          (dark['theme'] as Map<String, dynamic>)['--fushi-color-scheme'],
+          'dark',
+        );
+        final Map<String, dynamic> light = await lookup(<String, dynamic>{
+          'colorScheme': 'light',
+        });
+        expect(
+          (light['theme'] as Map<String, dynamic>)['--fushi-color-scheme'],
+          'light',
+        );
+        // 缺省（旧扩展 / 跟随）→ null。
+        await lookup(<String, dynamic>{});
+        // 非法值（别的字符串 / 非字符串）→ 当 null，不让扩展随便塞值。
+        await lookup(<String, dynamic>{'colorScheme': 'auto'});
+        await lookup(<String, dynamic>{'colorScheme': 1});
+        await lookup(<String, dynamic>{'colorScheme': null});
+        expect(received, <String?>['dark', 'light', null, null, null, null]);
+      },
+    );
+
+    test('lookup response carries extensionBuild from provider and omits it '
         'when absent (BUG-726)', () async {
       // BUG-726：扩展自更新信号。app 把内置扩展内容指纹随查词响应下发（extensionBuild），
       // 扩展 background 与自身 FUSHI_DEFAULTS.build 比对，不一致即 runtime.reload 拉新。
@@ -410,12 +425,12 @@ void main() {
       // 未注入（旧 app / sync host）→ 不带该字段（向后兼容：旧扩展代码不受影响）。
       await server.stop();
       await startServer(apiKey: 'k123');
-      final Map<String, dynamic> j2 = await _json(await _post(
-        server.port,
-        '/api/lookup/dictionary',
-        <String, dynamic>{'term': '猫', 'record': false},
-        auth: _basic('k123'),
-      ));
+      final Map<String, dynamic> j2 = await _json(
+        await _post(server.port, '/api/lookup/dictionary', <String, dynamic>{
+          'term': '猫',
+          'record': false,
+        }, auth: _basic('k123')),
+      );
       expect(j2.containsKey('extensionBuild'), isFalse);
     });
 
@@ -476,7 +491,8 @@ void main() {
             'fields': <String, String>{
               'expression': '鼠',
               'reading': 'ねずみ',
-              'audio': 'http://127.0.0.1:${server.port}'
+              'audio':
+                  'http://127.0.0.1:${server.port}'
                   '/api/lookup/audio/file?id=expired-token',
             },
             'sentence': '鼠が走る。',
@@ -487,8 +503,10 @@ void main() {
         expect((await _json(resp))['result'], 'success');
         expect(lookup.lastAudioExpression, '鼠');
         expect(lookup.lastAudioReading, 'ねずみ');
-        expect(mining.plainFields!['audio'],
-            'data:audio/mpeg;base64,${base64Encode(<int>[1, 2, 3])}');
+        expect(
+          mining.plainFields!['audio'],
+          'data:audio/mpeg;base64,${base64Encode(<int>[1, 2, 3])}',
+        );
         // 其余字段原样。
         expect(mining.plainFields!['expression'], '鼠');
       });
@@ -522,16 +540,17 @@ void main() {
           auth: _basic('k123'),
         );
         expect(resp.statusCode, 200);
-        expect(mining.plainFields!['audio'],
-            'data:audio/ogg;base64,${base64Encode(<int>[9, 8, 7])}');
+        expect(
+          mining.plainFields!['audio'],
+          'data:audio/ogg;base64,${base64Encode(<int>[9, 8, 7])}',
+        );
         expect(lookup.lastAudioExpression, isNull);
       });
 
       test('token 过期且音频库无此词 → 原引用保留（让 404 诊断照常浮出）', () async {
         await startServer(apiKey: 'k123');
         lookup.audioResult = null;
-        const String stale =
-            'http://127.0.0.1:1/api/lookup/audio/file?id=gone';
+        const String stale = 'http://127.0.0.1:1/api/lookup/audio/file?id=gone';
         final HttpClientResponse resp = await _post(
           server.port,
           '/api/mine',
@@ -581,8 +600,7 @@ void main() {
           List<int>.generate(1024, (int i) => (i * 7919 + 13) % 256),
         );
         final String b64 = base64Encode(audio);
-        expect(b64, contains('+'),
-            reason: '构造必须含 + 才覆盖得到本 bug（短音频碰不到）');
+        expect(b64, contains('+'), reason: '构造必须含 + 才覆盖得到本 bug（短音频碰不到）');
         lookup.audioResult = RemoteAudioLookup(
           bytes: audio,
           contentType: 'audio/mpeg',
@@ -595,7 +613,8 @@ void main() {
             'fields': <String, String>{
               'expression': '鼠',
               'reading': 'ねずみ',
-              'audio': 'http://127.0.0.1:${server.port}'
+              'audio':
+                  'http://127.0.0.1:${server.port}'
                   '/api/lookup/audio/file?id=expired-token',
             },
             'sentence': '鼠が走る。',
@@ -607,9 +626,13 @@ void main() {
         expect(landed, startsWith('data:audio/mpeg;base64,'));
         // 落卡侧真实解码路径：解不出字节 = 卡片没有单词音频。
         final AnkiAudioData? decoded = AnkiAudioRef.decodeDataUri(landed!);
-        expect(decoded, isNotNull,
-            reason: '解码失败 = 落卡侧 AudioFetchOutcome.none() '
-                '= ExpressionAudio 空');
+        expect(
+          decoded,
+          isNotNull,
+          reason:
+              '解码失败 = 落卡侧 AudioFetchOutcome.none() '
+              '= ExpressionAudio 空',
+        );
         expect(decoded!.bytes, audio);
       });
 
@@ -626,7 +649,8 @@ void main() {
             'fields': <String, String>{
               'expression': '鼠',
               'reading': 'ねずみ',
-              'audio': 'http://localhost:19633'
+              'audio':
+                  'http://localhost:19633'
                   '/api/lookup/audio/file?id=expired',
             },
             'sentence': '鼠が走る。',
@@ -638,8 +662,10 @@ void main() {
         );
         expect(resp.statusCode, 200);
         expect(mining.immersionPayload, isNotNull);
-        expect(mining.immersionPayload!.fields['audio'],
-            'data:audio/mpeg;base64,${base64Encode(<int>[4, 5])}');
+        expect(
+          mining.immersionPayload!.fields['audio'],
+          'data:audio/mpeg;base64,${base64Encode(<int>[4, 5])}',
+        );
       });
     });
 
@@ -655,18 +681,20 @@ void main() {
       await resp.drain<void>();
     });
 
-    test('no api key configured → auth skipped (extension still works)',
-        () async {
-      await startServer(apiKey: null);
-      final HttpClientResponse resp = await _post(
-        server.port,
-        '/api/lookup/dictionary',
-        <String, dynamic>{'term': '猫'},
-        auth: _basic(''),
-      );
-      expect(resp.statusCode, 200);
-      expect((await _json(resp))['type'], 'dictionaryResult');
-    });
+    test(
+      'no api key configured → auth skipped (extension still works)',
+      () async {
+        await startServer(apiKey: null);
+        final HttpClientResponse resp = await _post(
+          server.port,
+          '/api/lookup/dictionary',
+          <String, dynamic>{'term': '猫'},
+          auth: _basic(''),
+        );
+        expect(resp.statusCode, 200);
+        expect((await _json(resp))['type'], 'dictionaryResult');
+      },
+    );
 
     test('mine without fields → 400', () async {
       await startServer(apiKey: null);
@@ -694,20 +722,22 @@ void main() {
       expect(mining.lastDupReading, 'はしる');
     });
 
-    test('/api/duplicate empty expression → false without hitting backend',
-        () async {
-      await startServer(apiKey: 'k123');
-      mining.dupResult = true;
-      final HttpClientResponse resp = await _post(
-        server.port,
-        '/api/duplicate',
-        <String, dynamic>{'expression': ''},
-        auth: _basic('k123'),
-      );
-      expect(resp.statusCode, 200);
-      expect((await _json(resp))['duplicate'], false);
-      expect(mining.lastDupExpression, isNull);
-    });
+    test(
+      '/api/duplicate empty expression → false without hitting backend',
+      () async {
+        await startServer(apiKey: 'k123');
+        mining.dupResult = true;
+        final HttpClientResponse resp = await _post(
+          server.port,
+          '/api/duplicate',
+          <String, dynamic>{'expression': ''},
+          auth: _basic('k123'),
+        );
+        expect(resp.statusCode, 200);
+        expect((await _json(resp))['duplicate'], false);
+        expect(mining.lastDupExpression, isNull);
+      },
+    );
 
     test('单词音频①②：/api/lookup/audio 返 file url，GET file 免鉴权返字节', () async {
       await startServer(apiKey: 'k123');
@@ -771,15 +801,17 @@ void main() {
     test('/api/lookup/audio/file 未知 id → 404', () async {
       await startServer(apiKey: 'k123');
       final HttpClientResponse resp = await _get(
-          'http://127.0.0.1:${server.port}/api/lookup/audio/file?id=nope');
+        'http://127.0.0.1:${server.port}/api/lookup/audio/file?id=nope',
+      );
       expect(resp.statusCode, 404);
       await resp.drain<void>();
     });
 
     test('查词响应带 audioSources（provider 非空 → 渲染 ♪ 按钮）', () async {
       await startServer(
-          apiKey: 'k123',
-          audioSourcesProvider: () => <String>['hibiki://audio']);
+        apiKey: 'k123',
+        audioSourcesProvider: () => <String>['hibiki://audio'],
+      );
       final HttpClientResponse resp = await _post(
         server.port,
         '/api/lookup/dictionary',
@@ -864,7 +896,6 @@ void main() {
         lookupService: lookup,
         miningService: mining,
         tokenizer: tok,
-        readingResolver: rr,
         onExtensionSeen: () => seen++,
         apiKey: 'k123',
       );
@@ -893,29 +924,31 @@ void main() {
     });
 
     // 弹窗尺寸精细化 Phase D：扩展拖角 resize 回写端点 /api/extension/popup-size。
-    test('/api/extension/popup-size 把原始尺寸交给 sink（未 clamp，clamp 在 app 侧）',
-        () async {
-      double? gotW;
-      double? gotH;
-      await startServer(
-        apiKey: 'k123',
-        onExtensionPopupSize: (double w, double h) {
-          gotW = w;
-          gotH = h;
-        },
-      );
-      final HttpClientResponse resp = await _post(
-        server.port,
-        '/api/extension/popup-size',
-        <String, dynamic>{'maxWidth': 720, 'maxHeight': 600},
-        auth: _basic('k123'),
-      );
-      expect(resp.statusCode, 200);
-      expect((await _json(resp))['ok'], true);
-      // server 不 clamp（透传原始值给 app 侧 resolveExtensionPopupSize）。
-      expect(gotW, 720);
-      expect(gotH, 600);
-    });
+    test(
+      '/api/extension/popup-size 把原始尺寸交给 sink（未 clamp，clamp 在 app 侧）',
+      () async {
+        double? gotW;
+        double? gotH;
+        await startServer(
+          apiKey: 'k123',
+          onExtensionPopupSize: (double w, double h) {
+            gotW = w;
+            gotH = h;
+          },
+        );
+        final HttpClientResponse resp = await _post(
+          server.port,
+          '/api/extension/popup-size',
+          <String, dynamic>{'maxWidth': 720, 'maxHeight': 600},
+          auth: _basic('k123'),
+        );
+        expect(resp.statusCode, 200);
+        expect((await _json(resp))['ok'], true);
+        // server 不 clamp（透传原始值给 app 侧 resolveExtensionPopupSize）。
+        expect(gotW, 720);
+        expect(gotH, 600);
+      },
+    );
 
     test('/api/extension/popup-size 数值型 int/double 都接受', () async {
       double? gotW;
@@ -955,18 +988,20 @@ void main() {
       expect(called, isFalse);
     });
 
-    test('/api/extension/popup-size 未注入 sink → 404（旧 app / 配对 host 向后兼容）',
-        () async {
-      await startServer(apiKey: 'k123'); // onExtensionPopupSize 缺省 null
-      final HttpClientResponse resp = await _post(
-        server.port,
-        '/api/extension/popup-size',
-        <String, dynamic>{'maxWidth': 720, 'maxHeight': 600},
-        auth: _basic('k123'),
-      );
-      expect(resp.statusCode, 404);
-      await resp.drain<void>();
-    });
+    test(
+      '/api/extension/popup-size 未注入 sink → 404（旧 app / 配对 host 向后兼容）',
+      () async {
+        await startServer(apiKey: 'k123'); // onExtensionPopupSize 缺省 null
+        final HttpClientResponse resp = await _post(
+          server.port,
+          '/api/extension/popup-size',
+          <String, dynamic>{'maxWidth': 720, 'maxHeight': 600},
+          auth: _basic('k123'),
+        );
+        expect(resp.statusCode, 404);
+        await resp.drain<void>();
+      },
+    );
 
     test('/api/extension/popup-size 错 token → 401，不触发 sink（鉴权守卫）', () async {
       bool called = false;
@@ -999,8 +1034,7 @@ void main() {
         'ended': false,
       };
 
-      test('好体 → 200 且 sink 收到解析后的样本（mediaKey 原样、不加前缀）',
-          () async {
+      test('好体 → 200 且 sink 收到解析后的样本（mediaKey 原样、不加前缀）', () async {
         BrowserVideoSample? got;
         await startServer(
           apiKey: 'k123',
@@ -1024,33 +1058,35 @@ void main() {
         expect(got!.ended, isFalse);
       });
 
-      test('缺省字段取默认：durationMs null（直播）、speed 1.0、ended false、title 空串',
-          () async {
-        BrowserVideoSample? got;
-        await startServer(
-          apiKey: 'k123',
-          onExtensionStudy: (BrowserVideoSample s) => got = s,
-        );
-        final HttpClientResponse resp = await _post(
-          server.port,
-          '/api/extension/study',
-          <String, dynamic>{
-            'mediaKind': 'video',
-            'mediaKey': 'web:live',
-            'positionMs': 0,
-            'durationMs': null,
-            'playing': false,
-          },
-          auth: _basic('k123'),
-        );
-        expect(resp.statusCode, 200);
-        await resp.drain<void>();
-        expect(got!.durationMs, isNull);
-        expect(got!.speed, 1.0);
-        expect(got!.ended, isFalse);
-        expect(got!.title, '');
-        expect(got!.displayTitle, 'web:live');
-      });
+      test(
+        '缺省字段取默认：durationMs null（直播）、speed 1.0、ended false、title 空串',
+        () async {
+          BrowserVideoSample? got;
+          await startServer(
+            apiKey: 'k123',
+            onExtensionStudy: (BrowserVideoSample s) => got = s,
+          );
+          final HttpClientResponse resp = await _post(
+            server.port,
+            '/api/extension/study',
+            <String, dynamic>{
+              'mediaKind': 'video',
+              'mediaKey': 'web:live',
+              'positionMs': 0,
+              'durationMs': null,
+              'playing': false,
+            },
+            auth: _basic('k123'),
+          );
+          expect(resp.statusCode, 200);
+          await resp.drain<void>();
+          expect(got!.durationMs, isNull);
+          expect(got!.speed, 1.0);
+          expect(got!.ended, isFalse);
+          expect(got!.title, '');
+          expect(got!.displayTitle, 'web:live');
+        },
+      );
 
       test('坏体 → 400，不触发 sink', () async {
         int called = 0;
@@ -1220,8 +1256,108 @@ void main() {
         await denied.drain<void>();
       });
     });
+
+    // 反馈 KGC1ifR1a3：扩展看网页视频时收藏当前句 / 视频本身（App 收藏夹同一份收藏句）。
+    group('/api/extension/video-favorite (KGC1ifR1a3)', () {
+      test('切换体解析后交 handler，回 {favorite, video, sentences}', () async {
+        final List<ExtensionVideoFavoriteRequest> got =
+            <ExtensionVideoFavoriteRequest>[];
+        await startServer(
+          apiKey: 'k123',
+          onExtensionVideoFavorite: (ExtensionVideoFavoriteRequest r) async {
+            got.add(r);
+            return const ExtensionVideoFavoriteState(
+              favorite: true,
+              video: false,
+              sentences: <WebVideoFavoritedLine>[
+                WebVideoFavoritedLine(text: '夏が来た', startMs: 83000),
+              ],
+            );
+          },
+        );
+        final HttpClientResponse resp = await _post(
+          server.port,
+          '/api/extension/video-favorite',
+          <String, dynamic>{
+            'op': 'toggle',
+            'kind': 'sentence',
+            'url': 'https://youtu.be/abc?t=5',
+            'title': '歌 - YouTube',
+            'text': '夏が来た',
+            'startMs': 83000,
+            'endMs': 85000,
+          },
+          auth: _basic('k123'),
+        );
+        expect(resp.statusCode, 200);
+        expect(await _json(resp), <String, dynamic>{
+          'favorite': true,
+          'video': false,
+          'sentences': <dynamic>[
+            <String, dynamic>{'text': '夏が来た', 'startMs': 83000},
+          ],
+        });
+        expect(got.single.toggle, isTrue);
+        expect(got.single.url, 'https://www.youtube.com/watch?v=abc');
+        expect(got.single.title, '歌');
+      });
+
+      test('不合契约 400 不触发 handler；未注入 404；错 token 401', () async {
+        int called = 0;
+        await startServer(
+          apiKey: 'k123',
+          onExtensionVideoFavorite: (ExtensionVideoFavoriteRequest r) async {
+            called++;
+            return const ExtensionVideoFavoriteState(
+              video: false,
+              sentences: <WebVideoFavoritedLine>[],
+            );
+          },
+        );
+        for (final Map<String, dynamic> body in <Map<String, dynamic>>[
+          <String, dynamic>{'op': 'toggle', 'kind': 'video'},
+          <String, dynamic>{
+            'op': 'toggle',
+            'kind': 'sentence',
+            'url': 'https://a.jp/v',
+          },
+        ]) {
+          final HttpClientResponse resp = await _post(
+            server.port,
+            '/api/extension/video-favorite',
+            body,
+            auth: _basic('k123'),
+          );
+          expect(resp.statusCode, 400, reason: jsonEncode(body));
+          await resp.drain<void>();
+        }
+        expect(called, 0);
+        final HttpClientResponse denied = await _post(
+          server.port,
+          '/api/extension/video-favorite',
+          <String, dynamic>{'url': 'https://a.jp/v'},
+          auth: _basic('WRONG'),
+        );
+        expect(denied.statusCode, 401);
+        await denied.drain<void>();
+        await server.stop();
+
+        await startServer(apiKey: 'k123');
+        final HttpClientResponse missing = await _post(
+          server.port,
+          '/api/extension/video-favorite',
+          <String, dynamic>{'url': 'https://a.jp/v'},
+          auth: _basic('k123'),
+        );
+        expect(missing.statusCode, 404);
+        await missing.drain<void>();
+      });
+    });
   });
 }
 
-List<String> _noopTokenize(String text) => <String>[text];
-String _noopReading(String word) => '';
+Future<List<List<TokenizedSegment>>> _noopTokenize(List<String> texts) async =>
+    <List<TokenizedSegment>>[
+      for (final String text in texts)
+        <TokenizedSegment>[(text: text, reading: '')],
+    ];

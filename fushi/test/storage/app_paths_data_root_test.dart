@@ -28,9 +28,9 @@ void main() {
   /// BUG-1115：默认（无自定义数据根）documents 根 = `<平台 Documents>/Fushi/data`。
   /// 本文件的 mock support 根下没有 `fushi.db`（也没有旧名 `hibiki.db`），故一律判为**全新安装** → 新布局。
   String nestedDefaultDocs(String platformDocuments) => p.joinAll(<String>[
-        platformDocuments,
-        ...AppPaths.defaultDocumentsChildSegments,
-      ]);
+    platformDocuments,
+    ...AppPaths.defaultDocumentsChildSegments,
+  ]);
 
   setUp(() {
     // 布局判定有进程内缓存，用例间必须清掉，否则先跑的用例会把结论钉给后面的。
@@ -41,18 +41,18 @@ void main() {
     // 使 resolve() 里 _resolveTempRoot 不触碰真实平台通道。
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (MethodCall call) async {
-        if (call.method == 'getTemporaryDirectory') return fakeTemp.path;
-        if (call.method == 'getApplicationSupportDirectory') {
-          return p.join(tmp.path, 'default_support');
-        }
-        if (call.method == 'getApplicationDocumentsDirectory') {
-          return p.join(tmp.path, 'default_documents');
-        }
-        return null;
-      },
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (MethodCall call) async {
+            if (call.method == 'getTemporaryDirectory') return fakeTemp.path;
+            if (call.method == 'getApplicationSupportDirectory') {
+              return p.join(tmp.path, 'default_support');
+            }
+            if (call.method == 'getApplicationDocumentsDirectory') {
+              return p.join(tmp.path, 'default_documents');
+            }
+            return null;
+          },
+        );
   });
 
   tearDown(() {
@@ -60,9 +60,9 @@ void main() {
     AppPaths.debugResetDocumentsLayoutCache();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      null,
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          null,
+        );
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 
@@ -75,7 +75,9 @@ void main() {
       final AppPaths paths = await AppPaths.resolve();
 
       expect(
-          paths.documentsRoot.path, equals(p.join(dataRoot.path, 'documents')));
+        paths.documentsRoot.path,
+        equals(p.join(dataRoot.path, 'documents')),
+      );
       expect(paths.supportRoot.path, equals(p.join(dataRoot.path, 'support')));
       // temp 永远走系统临时目录，不接管到 dataRoot 下。
       expect(paths.tempRoot.path, isNot(startsWith(dataRoot.path)));
@@ -83,41 +85,53 @@ void main() {
     });
 
     test(
-        'data_root 指向不存在目录 → 抛 DataRootUnavailableException，不静默回退空默认根 (BUG-815)',
-        () async {
-      // BUG-815 契约变更：配置了自定义根但探测不可达（含目录不存在——盘休眠/未挂载时
-      // 表现同样是「路径不存在」）→ 抛异常给启动层渲染逃生屏，绝不静默派生空默认根
-      // （旧行为=用户数据「被清空」观感，正是 BUG-815 要消灭的）。
-      final String missing = p.join(tmp.path, 'does_not_exist');
-      AppPaths.debugDataRootReader = () async => missing;
+      'data_root 指向不存在目录 → 抛 DataRootUnavailableException，不静默回退空默认根 (BUG-815)',
+      () async {
+        // BUG-815 契约变更：配置了自定义根但探测不可达（含目录不存在——盘休眠/未挂载时
+        // 表现同样是「路径不存在」）→ 抛异常给启动层渲染逃生屏，绝不静默派生空默认根
+        // （旧行为=用户数据「被清空」观感，正是 BUG-815 要消灭的）。
+        final String missing = p.join(tmp.path, 'does_not_exist');
+        AppPaths.debugDataRootReader = () async => missing;
 
-      await expectLater(
-        AppPaths.resolve(),
-        throwsA(isA<DataRootUnavailableException>()
-            .having((e) => e.configuredPath, 'configuredPath', missing)),
-      );
-    });
+        await expectLater(
+          AppPaths.resolve(),
+          throwsA(
+            isA<DataRootUnavailableException>().having(
+              (e) => e.configuredPath,
+              'configuredPath',
+              missing,
+            ),
+          ),
+        );
+      },
+    );
 
-    test('data_root 指向不存在目录 + forceDefaultRootForSession → 用户显式回退默认根 (BUG-815)',
-        () async {
-      final String missing = p.join(tmp.path, 'does_not_exist');
-      AppPaths.debugDataRootReader = () async => missing;
-      AppPaths.forceDefaultRootForSession = true;
-      addTearDown(() => AppPaths.forceDefaultRootForSession = false);
+    test(
+      'data_root 指向不存在目录 + forceDefaultRootForSession → 用户显式回退默认根 (BUG-815)',
+      () async {
+        final String missing = p.join(tmp.path, 'does_not_exist');
+        AppPaths.debugDataRootReader = () async => missing;
+        AppPaths.forceDefaultRootForSession = true;
+        addTearDown(() => AppPaths.forceDefaultRootForSession = false);
 
-      final AppPaths paths = await AppPaths.resolve();
+        final AppPaths paths = await AppPaths.resolve();
 
-      expect(paths.documentsRoot.path, isNot(startsWith(missing)));
-      expect(paths.documentsRoot.path,
-          equals(nestedDefaultDocs(p.join(tmp.path, 'default_documents'))));
-    });
+        expect(paths.documentsRoot.path, isNot(startsWith(missing)));
+        expect(
+          paths.documentsRoot.path,
+          equals(nestedDefaultDocs(p.join(tmp.path, 'default_documents'))),
+        );
+      },
+    );
 
     test('空 data_root → 回退默认（无覆盖等价老用户）', () async {
       AppPaths.debugDataRootReader = () async => '';
       final AppPaths paths = await AppPaths.resolve();
       expect(paths.documentsRoot.path, isNot(contains('NewRoot')));
       expect(
-          paths.supportRoot.path, equals(p.join(tmp.path, 'default_support')));
+        paths.supportRoot.path,
+        equals(p.join(tmp.path, 'default_support')),
+      );
     });
 
     test('SharedPreferences 平台通道不可用（未 mock）→ 回退默认不抛（E1 回归守卫）', () async {
@@ -127,15 +141,20 @@ void main() {
       // 修复后应 catch 回退 path_provider 默认根。
       AppPaths.debugDataRootReader = null;
       final AppPaths paths = await AppPaths.resolve();
-      expect(paths.documentsRoot.path,
-          equals(nestedDefaultDocs(p.join(tmp.path, 'default_documents'))));
       expect(
-          paths.supportRoot.path, equals(p.join(tmp.path, 'default_support')));
+        paths.documentsRoot.path,
+        equals(nestedDefaultDocs(p.join(tmp.path, 'default_documents'))),
+      );
+      expect(
+        paths.supportRoot.path,
+        equals(p.join(tmp.path, 'default_support')),
+      );
     });
 
     test('rootsForDataRoot 纯派生（子目录名固定）', () {
-      final (Directory docs, Directory support) =
-          AppPaths.rootsForDataRoot('/x/y/Z');
+      final (Directory docs, Directory support) = AppPaths.rootsForDataRoot(
+        '/x/y/Z',
+      );
       expect(docs.path, equals(p.join('/x/y/Z', 'documents')));
       expect(support.path, equals(p.join('/x/y/Z', 'support')));
     });
@@ -145,8 +164,9 @@ void main() {
         ..createSync(recursive: true);
       AppPaths.debugDataRootReader = () async => dataRoot.path;
       final AppPaths paths = await AppPaths.resolve();
-      final (Directory docs, Directory support) =
-          AppPaths.rootsForDataRoot(dataRoot.path);
+      final (Directory docs, Directory support) = AppPaths.rootsForDataRoot(
+        dataRoot.path,
+      );
       expect(paths.documentsRoot.path, equals(docs.path));
       expect(paths.supportRoot.path, equals(support.path));
     });

@@ -5,6 +5,7 @@ import 'dart:typed_data' show BytesBuilder, Uint8List;
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/services.dart' show AssetManifest, ByteData, rootBundle;
 import 'package:path/path.dart' as p;
+import 'package:fushi/src/startup/test_environment.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// TODO-1000：浏览器扩展「安装助手」。自建 MV3 扩展没有真·一键（浏览器封了商店外侧载），
@@ -108,8 +109,9 @@ String computeBrowserExtensionFingerprint(Map<String, List<int>> assets) {
 /// BUG-726：从已解压副本的 `fushi-defaults.js` 源码里解析 `build` 指纹。
 /// 旧版副本（无 build 键）返回 null —— 与当前指纹必然不等，触发刷新，正是所求。
 String? parseBrowserExtensionBuild(String defaultsJs) {
-  final RegExpMatch? m =
-      RegExp('build:\\s*"([0-9a-f]+)"').firstMatch(defaultsJs);
+  final RegExpMatch? m = RegExp(
+    'build:\\s*"([0-9a-f]+)"',
+  ).firstMatch(defaultsJs);
   return m?.group(1);
 }
 
@@ -158,8 +160,9 @@ Future<void> _extractExtensionTo(
   await dest.create(recursive: true);
 
   for (final MapEntry<String, Uint8List> entry in assets.entries) {
-    final File out =
-        File(p.join(dest.path, p.joinAll(p.posix.split(entry.key))));
+    final File out = File(
+      p.join(dest.path, p.joinAll(p.posix.split(entry.key))),
+    );
     await out.parent.create(recursive: true);
     await out.writeAsBytes(entry.value);
   }
@@ -168,29 +171,43 @@ Future<void> _extractExtensionTo(
   // BUG-726：同时写入内容指纹 build，供「app 升级 → 磁盘副本刷新 → 扩展自 reload」链路。
   if (serverConfig != null) {
     final File defaults = File(p.join(dest.path, _kDefaultsFileName));
-    await defaults.writeAsString(buildBrowserExtensionDefaultsJs(
-      serverConfig,
-      build: computeBrowserExtensionFingerprint(assets),
-    ));
+    await defaults.writeAsString(
+      buildBrowserExtensionDefaultsJs(
+        serverConfig,
+        build: computeBrowserExtensionFingerprint(assets),
+      ),
+    );
   }
 }
 
+/// 扩展解压的父目录：平台 app-support 根（**不跟数据根**——浏览器按绝对路径记住
+/// 扩展，搬家会让已加载的扩展失效），但隔离测试根（`FUSHI_TEST_ROOT`）下落进测试根。
+/// 曾经直接取平台目录：Mac 上 debug 包与用户正式版同 bundle id，集成测试一启动就把
+/// 用户真实的扩展目录删掉重写，`fushi-defaults.js` 换成测试实例的 token。
+Future<Directory> browserExtensionSupportRoot({
+  Map<String, String>? environment,
+}) async =>
+    fushiTestDirectory('app-support', environment: environment) ??
+    await getApplicationSupportDirectory();
+
 Future<Directory> _extensionDestDir() async {
-  final Directory support = await getApplicationSupportDirectory();
+  final Directory support = await browserExtensionSupportRoot();
   return Directory(p.join(support.path, _kExtensionDirName));
 }
 
 Future<Directory> _legacyExtensionDestDir() async {
-  final Directory support = await getApplicationSupportDirectory();
+  final Directory support = await browserExtensionSupportRoot();
   return Directory(p.join(support.path, _kLegacyExtensionDirName));
 }
 
 /// 读出随 app 打包的全部扩展资产（相对路径 → 字节）。
 Future<Map<String, Uint8List>> _loadBundledExtensionAssets() async {
-  final AssetManifest manifest =
-      await AssetManifest.loadFromAssetBundle(rootBundle);
-  final Iterable<String> keys =
-      manifest.listAssets().where((String k) => k.startsWith(_kBundlePrefix));
+  final AssetManifest manifest = await AssetManifest.loadFromAssetBundle(
+    rootBundle,
+  );
+  final Iterable<String> keys = manifest.listAssets().where(
+    (String k) => k.startsWith(_kBundlePrefix),
+  );
   final Map<String, Uint8List> assets = <String, Uint8List>{};
   for (final String key in keys) {
     final String rel = key.substring(_kBundlePrefix.length);
@@ -206,8 +223,9 @@ Future<Map<String, Uint8List>> _loadBundledExtensionAssets() async {
 
 /// BUG-726：当前 app 内置扩展的内容指纹（进程内缓存；内置资产运行期不变）。
 Future<String> bundledBrowserExtensionFingerprint() async {
-  return _bundledFingerprintCache ??=
-      computeBrowserExtensionFingerprint(await _loadBundledExtensionAssets());
+  return _bundledFingerprintCache ??= computeBrowserExtensionFingerprint(
+    await _loadBundledExtensionAssets(),
+  );
 }
 
 String? _bundledFingerprintCache;
@@ -222,6 +240,45 @@ String? _bundledFingerprintCache;
 /// - 两个副本目录都不存在（用户从没装过扩展）→ 不落盘、返回 false；
 /// - 存在的副本 `fushi-defaults.js` 里的 build 指纹都与内置一致 → 已最新、返回 false；
 /// - 否则把陈旧的那些整目录重解压（注入 [serverConfig] 真值 + 新指纹）→ 返回 true。
+/// 改了 Fushi API 的密钥 / 端口后，把新真值写进本机已解压的扩展副本的
+/// `fushi-defaults.js`（保留其 build 指纹，不重解压其它文件）。扩展在连接被拒（401 /
+/// 连不上）时会重读该文件自愈；此前这里只在扩展**内容**变化时才重写，改密钥后
+/// 扩展永远拿着旧 token，状态卡一直报「API 密钥不匹配」。
+///
+/// 两个副本目录都不存在（没装过扩展）时不落盘。返回是否真的改写了任一副本。
+Future<bool> rewriteBrowserExtensionServerConfig(
+  BrowserExtensionServerConfig serverConfig,
+) async {
+  bool changed = false;
+  for (final Directory dir in <Directory>[
+    await _extensionDestDir(),
+    await _legacyExtensionDestDir(),
+  ]) {
+    if (!dir.existsSync()) continue;
+    final File defaults = File(p.join(dir.path, _kDefaultsFileName));
+    if (!defaults.existsSync()) continue;
+    if (await rewriteBrowserExtensionDefaultsFile(defaults, serverConfig)) {
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/// 按 [serverConfig] + 文件里原有的 build 重新生成 defaults；内容不同才写。
+Future<bool> rewriteBrowserExtensionDefaultsFile(
+  File defaults,
+  BrowserExtensionServerConfig serverConfig,
+) async {
+  final String current = await defaults.readAsString();
+  final String next = buildBrowserExtensionDefaultsJs(
+    serverConfig,
+    build: parseBrowserExtensionBuild(current),
+  );
+  if (next == current) return false;
+  await defaults.writeAsString(next);
+  return true;
+}
+
 Future<bool> refreshBundledBrowserExtensionIfStale({
   required BrowserExtensionServerConfig serverConfig,
 }) async {
@@ -237,6 +294,8 @@ Future<bool> refreshBundledBrowserExtensionIfStale({
         : null;
     if (installed != null &&
         installed == await bundledBrowserExtensionFingerprint()) {
+      // 内容已是最新，但 server 真值（改过密钥 / 端口）可能已变：只重写 defaults。
+      await rewriteBrowserExtensionDefaultsFile(defaults, serverConfig);
       continue;
     }
     stale.add(dir);

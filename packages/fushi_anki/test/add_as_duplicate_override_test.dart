@@ -68,10 +68,13 @@ void main() {
         'expression': '掛かる',
         'reading': 'かかる',
       };
-      final Map<String, String> tagged =
-          AnkiMiningPayload.withAllowDuplicate(original);
+      final Map<String, String> tagged = AnkiMiningPayload.withAllowDuplicate(
+        original,
+      );
       expect(
-          original.containsKey(AnkiMiningPayload.allowDuplicateKey), isFalse);
+        original.containsKey(AnkiMiningPayload.allowDuplicateKey),
+        isFalse,
+      );
       expect(tagged['expression'], '掛かる');
       expect(tagged['reading'], 'かかる');
     });
@@ -84,18 +87,18 @@ void main() {
       fields: <String>['Expression', 'ExpressionReading'],
     );
     AnkiSettings settings() => const AnkiSettings(
-          selectedDeckId: 1,
-          selectedDeckName: 'Mining',
-          selectedNoteTypeId: 6,
-          selectedNoteTypeName: 'Lapis',
-          availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
-          availableNoteTypes: <AnkiNoteType>[lapis],
-          fieldMappings: <String, String>{
-            'Expression': '{expression}',
-            'ExpressionReading': '{reading}',
-          },
-          allowDupes: false,
-        );
+      selectedDeckId: 1,
+      selectedDeckName: 'Mining',
+      selectedNoteTypeId: 6,
+      selectedNoteTypeName: 'Lapis',
+      availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
+      availableNoteTypes: <AnkiNoteType>[lapis],
+      fieldMappings: <String, String>{
+        'Expression': '{expression}',
+        'ExpressionReading': '{reading}',
+      },
+      allowDupes: false,
+    );
 
     Future<Map<String, dynamic>> addNoteOptionsFor(String rawPayload) async {
       final List<Map<String, dynamic>> sink = <Map<String, dynamic>>[];
@@ -128,8 +131,9 @@ void main() {
       final Map<String, dynamic> add = sink.singleWhere(
         (Map<String, dynamic> b) => b['action'] == 'addNote',
       );
-      final Map<String, dynamic> note = (add['params']
-          as Map<String, dynamic>)['note'] as Map<String, dynamic>;
+      final Map<String, dynamic> note =
+          (add['params'] as Map<String, dynamic>)['note']
+              as Map<String, dynamic>;
       return note['options'] as Map<String, dynamic>;
     }
 
@@ -150,48 +154,48 @@ void main() {
   group('AnkiDroid：payload 位跳过 checkForDuplicates', () {
     const MethodChannel channel = MethodChannel('app.fushi.reader/anki');
     AnkiSettings settings() => const AnkiSettings(
-          selectedDeckId: 1,
-          selectedNoteTypeId: 2,
-          availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
-          availableNoteTypes: <AnkiNoteType>[
-            AnkiNoteType(
-              id: 2,
-              name: 'Fushi',
-              fields: <String>['Expression', 'Reading'],
-            ),
-          ],
-          fieldMappings: <String, String>{
-            'Expression': '{expression}',
-            'Reading': '{reading}',
-          },
-          allowDupes: false,
-        );
+      selectedDeckId: 1,
+      selectedNoteTypeId: 2,
+      availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
+      availableNoteTypes: <AnkiNoteType>[
+        AnkiNoteType(
+          id: 2,
+          name: 'Fushi',
+          fields: <String>['Expression', 'Reading'],
+        ),
+      ],
+      fieldMappings: <String, String>{
+        'Expression': '{expression}',
+        'Reading': '{reading}',
+      },
+      allowDupes: false,
+    );
 
     Future<List<String>> channelCallsFor(String rawPayload) async {
       final List<String> calls = <String>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {
-        if (call.method == 'requestAnkidroidPermissions') return true;
-        calls.add(call.method);
-        switch (call.method) {
-          case 'checkForDuplicates':
-            // 这台假机上这个词**确实**已有——不带位的请求必须在这里被拦。
-            return true;
-          case 'addNote':
-            return 1654000000123;
-          default:
-            fail('unexpected channel call: ${call.method}');
-        }
-      });
+            if (call.method == 'requestAnkidroidPermissions') return true;
+            calls.add(call.method);
+            switch (call.method) {
+              case 'checkForDuplicates':
+                // 这台假机上这个词**确实**已有——不带位的请求必须在这里被拦。
+                return true;
+              case 'addNote':
+                return 1654000000123;
+              default:
+                fail('unexpected channel call: ${call.method}');
+            }
+          });
       addTearDown(() {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(channel, null);
       });
-      final MineOutcome outcome =
-          await _ConfiguredDroidRepo(settings()).mineEntry(
-        rawPayloadJson: rawPayload,
-        context: const AnkiMiningContext(sentence: 's'),
-      );
+      final MineOutcome outcome = await _ConfiguredDroidRepo(settings())
+          .mineEntry(
+            rawPayloadJson: rawPayload,
+            context: const AnkiMiningContext(sentence: 's'),
+          );
       calls.add('=> ${outcome.result.name}');
       return calls;
     }
@@ -202,17 +206,14 @@ void main() {
           Map<String, String>.from(jsonDecode(kPayload) as Map),
         ),
       );
-      expect(
-        await channelCallsFor(tagged),
-        <String>['addNote', '=> success'],
-      );
+      expect(await channelCallsFor(tagged), <String>['addNote', '=> success']);
     });
 
     test('不带位：仍先查重并被拦成 duplicate（回归钉）', () async {
-      expect(
-        await channelCallsFor(kPayload),
-        <String>['checkForDuplicates', '=> duplicate'],
-      );
+      expect(await channelCallsFor(kPayload), <String>[
+        'checkForDuplicates',
+        '=> duplicate',
+      ]);
     });
   });
 }

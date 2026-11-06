@@ -336,7 +336,10 @@ void main() {
       // Malie RICHTEXT3D（kLookupGeometryProviderIdMalie = 28）。
       expect(isGalLookupProductionProviderPair(2, 28), isTrue);
       expect(isGalLookupProductionProviderPair(1, 28), isFalse);
-      expect(isGalLookupProductionProviderPair(2, 29), isFalse);
+      // SoftPal Pal.dll sprite text（kLookupGeometryProviderIdSoftpal = 29）。
+      expect(isGalLookupProductionProviderPair(2, 29), isTrue);
+      expect(isGalLookupProductionProviderPair(1, 29), isFalse);
+      expect(isGalLookupProductionProviderPair(2, 30), isFalse);
       expect(isGalLookupProductionProviderPair(2, 23), isTrue);
       // Kogado Hy message window（kLookupGeometryProviderIdKogadoHy = 24）。
       expect(isGalLookupProductionProviderPair(2, 24), isTrue);
@@ -351,7 +354,7 @@ void main() {
       expect(isGalLookupProductionProviderPair(1, 16), isFalse);
       expect(isGalLookupProductionProviderPair(3, 11), isFalse);
       // native 的 engine_exact provider 注册表登记到 22（Yuris）、23（Fvp）、
-      // 24（Kogado Hy）、25（LucaSystem）、28（Malie）（voice_hook_ipc.h）；26–27
+      // 24（Kogado Hy）、25（LucaSystem）、28（Malie）、29（SoftPal）（voice_hook_ipc.h）；26–27
       // 在那里登记为「保留、未分配」，Dart 单方面放行不存在的 id 会让两端契约错位。
       for (int id = 26; id <= 27; id++) {
         expect(
@@ -1006,11 +1009,12 @@ void main() {
           calls.where((MethodCall c) => c.method == 'galLookupPresent'),
           isNotEmpty,
         );
-        expect(
-          GlobalLookupController.instance.debugCascadeLayoutDomain,
-          (w: 1000.0, h: 750.0, x: 160.0, y: 175.0),
-          reason: '子卡必须在真实客户区里、以 runner 放下的根卡为原点排版（BUG-2921）',
-        );
+        expect(GlobalLookupController.instance.debugCascadeLayoutDomain, (
+          w: 1000.0,
+          h: 750.0,
+          x: 160.0,
+          y: 175.0,
+        ), reason: '子卡必须在真实客户区里、以 runner 放下的根卡为原点排版（BUG-2921）');
 
         globalCalls.clear();
         final GalHookCaptureLease lease = await controller

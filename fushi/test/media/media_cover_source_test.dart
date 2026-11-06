@@ -76,10 +76,7 @@ void main() {
   });
 
   test('missing cover returns null and fallback icon follows media kind', () {
-    expect(
-      resolveMediaCoverImage(kind: MediaKind.video),
-      isNull,
-    );
+    expect(resolveMediaCoverImage(kind: MediaKind.video), isNull);
     expect(mediaCoverFallbackIcon(MediaKind.video), Icons.movie_outlined);
     expect(
       mediaCoverFallbackIcon(MediaKind.game),

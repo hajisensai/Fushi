@@ -17,7 +17,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 class RemoteDownloadTasksSection extends ConsumerStatefulWidget {
@@ -58,7 +59,8 @@ class _RemoteDownloadTasksSectionState
 
   Future<void> _probe() async {
     final AppModel appModel = ref.read(appProvider);
-    final InterconnectDownloadClient client = widget.clientOverride ??
+    final InterconnectDownloadClient client =
+        widget.clientOverride ??
         InterconnectDownloadClient(repo: SyncRepository(appModel.database));
     _client = client;
     HostDownloadTarget? target;
@@ -116,8 +118,8 @@ class _RemoteDownloadTasksSectionState
     };
     final bool finished =
         job.lifecycle == VideoDownloadJobLifecycle.completed ||
-            job.lifecycle == VideoDownloadJobLifecycle.cancelled ||
-            job.lifecycle == VideoDownloadJobLifecycle.failed;
+        job.lifecycle == VideoDownloadJobLifecycle.cancelled ||
+        job.lifecycle == VideoDownloadJobLifecycle.failed;
     return DownloadTaskEntry(
       id: 'remote:${target.baseUrl}:${job.jobId}',
       title: job.title,
@@ -137,7 +139,8 @@ class _RemoteDownloadTasksSectionState
       // 无头服务端连数据一起删，客户端分不出是哪种），所以不摆勾选框
       // （deletesFiles: false），改在卡片详情里如实提示。
       actions: DownloadTaskActions(
-        retry: job.lifecycle == VideoDownloadJobLifecycle.needsAttention ||
+        retry:
+            job.lifecycle == VideoDownloadJobLifecycle.needsAttention ||
                 job.lifecycle == VideoDownloadJobLifecycle.failed
             ? () => _action(() => client.retry(target, job.jobId))
             : null,
@@ -146,12 +149,12 @@ class _RemoteDownloadTasksSectionState
             : () => _action(() => client.cancel(target, job.jobId)),
         delete: finished
             ? ({required bool deleteFiles}) => _action(
-                  () => client.delete(
-                    target,
-                    job.jobId,
-                    deleteFiles: target.deleteFilesParam ? deleteFiles : null,
-                  ),
-                )
+                () => client.delete(
+                  target,
+                  job.jobId,
+                  deleteFiles: target.deleteFilesParam ? deleteFiles : null,
+                ),
+              )
             : null,
         deletesFiles: target.deleteFilesParam,
       ),
@@ -163,7 +166,8 @@ class _RemoteDownloadTasksSectionState
         method: DownloadTransferMethod.torrent,
         externalSource: true,
         title: job.title,
-        status: '${job.stage} · ${(job.stageProgress * 100).toStringAsFixed(0)}%',
+        status:
+            '${job.stage} · ${(job.stageProgress * 100).toStringAsFixed(0)}%',
         subtitle: target.label,
         progress: job.stageProgress,
         leading: const FushiIcon(Icons.cloud_download_outlined),

@@ -14,7 +14,7 @@ import 'package:fushi/src/media/alist/alist_stream_url_resolver.dart';
 import 'package:fushi/src/media/source_library/sftp_stream_source.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
-import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/media/source_library/source_library_transports.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/stream_auth_scope.dart';
 import 'package:fushi/src/media/video/stream_url_resolver.dart';
@@ -46,8 +46,9 @@ Future<Map<String, String>> resolveSourceStreamHeaders({
   }
   final Map<String, Object?> cfg = decodeSourceConfig(source.configJson);
   final String username = (cfg['username'] as String?) ?? '';
-  final SourceLibrarySecret secret =
-      await SourceLibraryCredentialStore(db).readSecret(source.id);
+  final SourceLibrarySecret secret = await SourceLibraryCredentialStore(
+    db,
+  ).readSecret(source.id);
   final String password = secret.password ?? '';
   if (username.isEmpty && password.isEmpty) return const <String, String>{};
   final String token = base64Encode(utf8.encode('$username:$password'));
@@ -75,9 +76,10 @@ Future<StreamUrlResolver?> resolveSourceStreamUrlResolver({
   if (source == null) return null;
   if (source.transport == 'sftp') {
     final Map<String, Object?> cfg = decodeSourceConfig(source.configJson);
-    final SourceLibrarySecret secret =
-        await SourceLibraryCredentialStore(db).readSecret(source.id);
-    final SourceFileSystem fs = SourceLibraryScanner.buildNetworkFileSystem(
+    final SourceLibrarySecret secret = await SourceLibraryCredentialStore(
+      db,
+    ).readSecret(source.id);
+    final SourceFileSystem fs = buildSourceFileSystem(
       transport: source.transport,
       config: cfg,
       password: secret.password,
@@ -94,8 +96,9 @@ Future<StreamUrlResolver?> resolveSourceStreamUrlResolver({
   final String baseUrl = (cfg['baseUrl'] as String?) ?? '';
   if (baseUrl.trim().isEmpty) return null;
   final String username = (cfg['username'] as String?) ?? '';
-  final SourceLibrarySecret secret =
-      await SourceLibraryCredentialStore(db).readSecret(source.id);
+  final SourceLibrarySecret secret = await SourceLibraryCredentialStore(
+    db,
+  ).readSecret(source.id);
   return AListStreamUrlResolver(
     baseUrl: baseUrl,
     username: username,

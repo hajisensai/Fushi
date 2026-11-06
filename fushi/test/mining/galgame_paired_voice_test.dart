@@ -111,10 +111,7 @@ void main() {
     });
 
     test('窗口内无候选时返回 null', () {
-      final List<String> files = <String>[
-        '9000_yui.ogg',
-        '9990_yui.ogg',
-      ];
+      final List<String> files = <String>['9000_yui.ogg', '9990_yui.ogg'];
       expect(pickPairedVoiceOgg(oggFileNames: files, textTsMs: 10000), isNull);
     });
 

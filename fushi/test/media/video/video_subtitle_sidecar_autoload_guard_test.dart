@@ -17,11 +17,12 @@ import '../../helpers/source_guard.dart';
 /// 防止后续重构把抑制挪回 open 之后（回归 BUG-801）。纯字符串扫描，无需 libmpv/真机。
 void main() {
   test('sub-auto=no suppression is applied BEFORE player.open() in load()', () {
-    final File src = File(
-      'lib/src/media/video/video_player_controller.dart',
+    final File src = File('lib/src/media/video/video_player_controller.dart');
+    expect(
+      src.existsSync(),
+      isTrue,
+      reason: '找不到 video_player_controller.dart（路径随重构变了？）',
     );
-    expect(src.existsSync(), isTrue,
-        reason: '找不到 video_player_controller.dart（路径随重构变了？）');
     final String text = src.readAsStringSync();
 
     final int openIdx = text.indexOf('await player.open(');
@@ -48,9 +49,14 @@ void main() {
     // 已经越过函数尾、滑进下一个函数的文档注释（那段注释里就写着 `sub-auto` 仍保持
     // `no`），多两个 map 条目就会让判据漂移或被注释喂绿。
     final String fnBody = methodBody(
-        cfgText, 'Map<String, String> buildSubtitleSuppressionProperties(');
-    expect(fnBody.contains("'sub-auto': 'no'"), isTrue,
-        reason:
-            'buildSubtitleSuppressionProperties 必须含 sub-auto=no（禁止 sidecar 自动加载）');
+      cfgText,
+      'Map<String, String> buildSubtitleSuppressionProperties(',
+    );
+    expect(
+      fnBody.contains("'sub-auto': 'no'"),
+      isTrue,
+      reason:
+          'buildSubtitleSuppressionProperties 必须含 sub-auto=no（禁止 sidecar 自动加载）',
+    );
   });
 }

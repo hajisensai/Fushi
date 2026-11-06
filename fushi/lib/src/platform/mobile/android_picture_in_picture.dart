@@ -118,9 +118,9 @@ abstract final class AndroidPictureInPicture {
     try {
       entered =
           await _channel.invokeMethod<bool>(_methodEnter, <String, Object?>{
-                _argAspectRatio: clamped,
-              }) ??
-              false;
+            _argAspectRatio: clamped,
+          }) ??
+          false;
     } on MissingPluginException {
       entered = false;
     } on PlatformException {

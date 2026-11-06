@@ -1,7 +1,7 @@
 // 反馈 LUgHjyc8By：galgame 快进 / 跳过与 Backlog 回看的台词不得计入阅读字数与时长。
 import 'package:fushi/src/mining/galgame_char_count.dart';
 import 'package:fushi/src/stats/galgame_line_study_gate.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 模拟会话侧的入账：计数器 → 门 → 净字数 / 跳过时长（与
 /// `GalHookSessionController._recordActivity` 同一顺序）。

@@ -409,6 +409,59 @@ void main() {
         reason: '下半块必须从窗口里的折痕位置开始',
       );
     });
+
+    testWidgets('上方横幅变高只让祖先重新布局、切分组件不重建时，切分线仍跟着折痕', (
+      WidgetTester tester,
+    ) async {
+      setUpView(tester, <DisplayFeature>[
+        _fold(
+          const Rect.fromLTWH(0, 300, 800, 0),
+          DisplayFeatureState.postureHalfOpened,
+        ),
+      ]);
+      final ValueNotifier<double> banner = ValueNotifier<double>(0);
+      addTearDown(banner.dispose);
+      // 同一个 widget 实例：横幅变化时 FushiTabletopSplit 不会被重建。
+      final Widget split = FushiTabletopSplit(
+        minTopHeight: 50,
+        minBottomHeight: 50,
+        top: const SizedBox.expand(key: ValueKey<String>('top')),
+        bottomBuilder: (BuildContext _) =>
+            const SizedBox.expand(key: ValueKey<String>('bottom')),
+      );
+      await tester.pumpWidget(
+        fromView(
+          tester,
+          Column(
+            children: <Widget>[
+              ValueListenableBuilder<double>(
+                valueListenable: banner,
+                builder: (BuildContext _, double h, __) => SizedBox(height: h),
+              ),
+              Expanded(child: split),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey<String>('bottom'))).dy,
+        300,
+      );
+
+      banner.value = 60;
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.byKey(const ValueKey<String>('top'))).height,
+        240,
+        reason: '区域下移 60 后，折痕上方只剩 300-60',
+      );
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey<String>('bottom'))).dy,
+        300,
+        reason: '下半块仍须从窗口里的折痕位置开始，不能停在旧原点',
+      );
+    });
   });
 }
 

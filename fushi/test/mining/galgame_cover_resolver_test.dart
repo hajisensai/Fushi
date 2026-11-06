@@ -25,15 +25,17 @@ void main() {
         gameName: 'Some Game',
       );
 
-      expect(ranked.map((GameCoverCandidate c) => p.basename(c.path)),
-          <String>['cover.png', 'パッケージ.jpg']);
+      expect(ranked.map((GameCoverCandidate c) => p.basename(c.path)), <String>[
+        'cover.png',
+        'パッケージ.jpg',
+      ]);
     });
 
     test('与游戏同名的图拿到额外加分', () {
       final List<GameCoverCandidate> ranked = rankGameCoverCandidates(
         filePaths: <String>[
           p.join('g', 'sakura_moyu.png'),
-          p.join('g', 'thumb.png')
+          p.join('g', 'thumb.png'),
         ],
         gameName: 'Sakura Moyu',
       );
@@ -52,14 +54,17 @@ void main() {
     test('同分候选按路径稳定排序（目录枚举顺序不影响结果）', () {
       final List<String> files = <String>[
         p.join('g', 'b_cover.png'),
-        p.join('g', 'a_cover.png')
+        p.join('g', 'a_cover.png'),
       ];
       expect(
-        rankGameCoverCandidates(filePaths: files, gameName: 'x')
-            .map((GameCoverCandidate c) => c.path),
         rankGameCoverCandidates(
-                filePaths: files.reversed.toList(), gameName: 'x')
-            .map((GameCoverCandidate c) => c.path),
+          filePaths: files,
+          gameName: 'x',
+        ).map((GameCoverCandidate c) => c.path),
+        rankGameCoverCandidates(
+          filePaths: files.reversed.toList(),
+          gameName: 'x',
+        ).map((GameCoverCandidate c) => c.path),
       );
     });
   });
@@ -147,23 +152,26 @@ void main() {
 
       expect(resolved, isNotNull);
       expect(resolved!.source, GameCoverSource.exeIcon);
-      final img.Image? decoded =
-          img.decodePng(File(resolved.path).readAsBytesSync());
+      final img.Image? decoded = img.decodePng(
+        File(resolved.path).readAsBytesSync(),
+      );
       expect(decoded!.width, 64);
     });
 
     test('换封面时清掉该游戏的旧封面文件（不同扩展名也不残留）', () async {
       final String jpg = p.join(gameDir.path, 'old.jpg');
-      File(jpg)
-          .writeAsBytesSync(img.encodeJpg(img.Image(width: 300, height: 400)));
+      File(
+        jpg,
+      ).writeAsBytesSync(img.encodeJpg(img.Image(width: 300, height: 400)));
       await saveGameCoverFromFile(
         gameId: 'g4',
         sourcePath: jpg,
         coverDirectory: coverDir,
       );
       expect(
-          coverDir.listSync().map((FileSystemEntity e) => p.basename(e.path)),
-          <String>['g4.jpg']);
+        coverDir.listSync().map((FileSystemEntity e) => p.basename(e.path)),
+        <String>['g4.jpg'],
+      );
 
       _writePng(p.join(gameDir.path, 'new.png'), 300, 400);
       final String? second = await saveGameCoverFromFile(
@@ -174,8 +182,9 @@ void main() {
 
       expect(second, isNotNull);
       expect(
-          coverDir.listSync().map((FileSystemEntity e) => p.basename(e.path)),
-          <String>['g4.png']);
+        coverDir.listSync().map((FileSystemEntity e) => p.basename(e.path)),
+        <String>['g4.png'],
+      );
     });
 
     test('exe 不存在 / 目录不存在时安静返回 null', () async {

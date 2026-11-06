@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi_engine/media/collections/collection_cover.dart'
+    show yieldGeneratedCollectionCoverToDiscCover;
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
@@ -66,8 +68,7 @@ class MediaCoverService {
   static Future<void> applyCoverBytes({
     required List<int> bytes,
     required String destPath,
-  }) =>
-      writeCoverBytesAtomically(bytes: bytes, destPath: destPath);
+  }) => writeCoverBytesAtomically(bytes: bytes, destPath: destPath);
 
   /// 统一「封面已消失」入口：[destPath] 上的封面文件**已经被删除**时调用，
   /// 双键驱逐它的解码缓存。
@@ -130,8 +131,9 @@ class MediaCoverService {
       return await VideoCoverMutationGate.runExclusive(() async {
         final Directory covers =
             coversDirectory ?? await VideoStorage.coversDir();
-        await CoverMetaStore(covers)
-            .set(bookUid, const CoverMeta(origin: CoverOrigin.manual));
+        await CoverMetaStore(
+          covers,
+        ).set(bookUid, const CoverMeta(origin: CoverOrigin.manual));
         return setVideoCoverFromPickedFile(
           repo: repo,
           bookUid: bookUid,
@@ -173,13 +175,64 @@ class MediaCoverService {
     if (lease == null) throw StateError('视频刮削资料正在清理');
     try {
       return await VideoCoverMutationGate.runExclusive(() async {
-        final Directory covers = collectionCoversDirectory ??
+        final Directory covers =
+            collectionCoversDirectory ??
             await VideoStorage.collectionCoversDir();
         await covers.create(recursive: true);
-        final String destPath =
-            p.join(covers.path, videoCoverFileName('$collectionId'));
+        final String destPath = p.join(
+          covers.path,
+          videoCoverFileName('$collectionId'),
+        );
         await applyCoverFile(source: File(pickedPath), destPath: destPath);
         await database.updateMediaCollectionCoverPath(collectionId, destPath);
+        return destPath;
+      });
+    } finally {
+      lease.release();
+    }
+  }
+
+  /// 原盘盘面图（`media_images` 的 [MediaImageKind.discArt] 横图 /
+  /// [MediaImageKind.discCover] 竖图）：复制进
+  /// `video_covers/collections/<id>_disc.jpg` / `<id>_disc_cover.jpg` 再登记，门与
+  /// [applyCollectionCover] 相同。**不碰** [MediaCollections.coverPath]（那是合集
+  /// 自有封面，见 `collection_cover.dart`）；登记竖图后让 `coverPath` 里未改动的
+  /// 刮削生成图退出自有层（[yieldGeneratedCollectionCoverToDiscCover]），先刮削后
+  /// 扫描与先扫描后刮削收敛到同一终态。文件在合集封面目录里，删合集时随附加图组
+  /// 一起回收（`collection_asset_reclaim.dart`）。
+  static Future<String> applyCollectionDiscImage({
+    required FushiDatabase database,
+    required int collectionId,
+    required MediaImageKind kind,
+    required String sourcePath,
+    Directory? collectionCoversDirectory,
+  }) async {
+    final String suffix = switch (kind) {
+      MediaImageKind.discArt => 'disc',
+      MediaImageKind.discCover => 'disc_cover',
+      _ => throw ArgumentError.value(kind, 'kind', 'not a disc image kind'),
+    };
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) throw StateError('视频刮削资料正在清理');
+    try {
+      return await VideoCoverMutationGate.runExclusive(() async {
+        final Directory covers =
+            collectionCoversDirectory ??
+            await VideoStorage.collectionCoversDir();
+        await covers.create(recursive: true);
+        final String destPath = p.join(
+          covers.path,
+          videoCoverFileName('${collectionId}_$suffix'),
+        );
+        await applyCoverFile(source: File(sourcePath), destPath: destPath);
+        await database.setCollectionDiscImage(collectionId, kind, destPath);
+        if (kind == MediaImageKind.discCover) {
+          await yieldGeneratedCollectionCoverToDiscCover(
+            database,
+            collectionId,
+          );
+        }
         return destPath;
       });
     } finally {

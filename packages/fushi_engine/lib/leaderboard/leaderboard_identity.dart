@@ -5,13 +5,15 @@
 // - 账户 id：base64url(sha256(spki)) 前 16 字符（无填充），同时是好友码；
 // - 签名：ECDSA/SHA-256，IEEE P1363（r‖s 各 32 字节大端）→ base64url 无填充。
 //   k 用 RFC 6979 确定性派生：同一消息同一钥匙签名恒定，测试向量可复现，也不依赖系统熵。
+// 曲线运算 / 签名 / 验签在 native/fushi_compute（RustCrypto p256，`ffc_crypto_p256_*`），
+// 与原 pointycastle 实现逐字节一致（固定向量钉死）；原生库是硬依赖。
 
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
-import 'package:pointycastle/export.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 
 /// P-256 SPKI DER 的固定前缀（SEQUENCE { AlgorithmIdentifier{ecPublicKey, prime256v1}, BIT STRING }）。
 /// 后面紧跟 65 字节未压缩点 `04‖x‖y`，总长 91。
@@ -26,7 +28,11 @@ const String _recoveryPrefix = 'FUSHI1-';
 const int _recoveryKeyChars = 43; // base64url(32 字节) 无填充
 const int _recoveryChecksumChars = 4;
 
-final ECDomainParameters _p256 = ECCurve_secp256r1();
+/// P-256 群阶 n。
+final BigInt kP256Order = BigInt.parse(
+  'ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551',
+  radix: 16,
+);
 
 /// base64url 无填充。
 String leaderboardBase64Url(List<int> bytes) =>
@@ -61,7 +67,7 @@ Uint8List _bigIntToBytes(BigInt value, int length) {
   return out;
 }
 
-bool _validScalar(BigInt d) => d > BigInt.zero && d < _p256.n;
+bool _validScalar(BigInt d) => d > BigInt.zero && d < kP256Order;
 
 /// 一把排行榜账户钥匙。不可变；私钥只在内存里，持久化由调用方负责（app 按 Profile 存数据目录下的本机文件，不进偏好表 / 备份）。
 class LeaderboardIdentity {
@@ -91,10 +97,9 @@ class LeaderboardIdentity {
     if (!_validScalar(d)) {
       throw ArgumentError.value(d32, 'd32', 'scalar out of range');
     }
-    final ECPoint q = (_p256.G * d)!;
     final Uint8List spki = Uint8List.fromList(<int>[
       ..._spkiPrefix,
-      ...q.getEncoded(false),
+      ...FushiComputeCrypto.instance.p256PublicKey(d32),
     ]);
     return LeaderboardIdentity._(d, spki);
   }
@@ -147,23 +152,12 @@ class LeaderboardIdentity {
   String get accountId => leaderboardAccountIdFromSpki(_spki);
 
   /// ECDSA/SHA-256 签 [message] 的 UTF-8 字节，返回 P1363（r‖s）base64url。
-  String sign(String message) {
-    final ECDSASigner signer = ECDSASigner(
-      SHA256Digest(),
-      HMac(SHA256Digest(), 64),
-    );
-    signer.init(
-      true,
-      PrivateKeyParameter<ECPrivateKey>(ECPrivateKey(_d, _p256)),
-    );
-    final ECSignature sig =
-        signer.generateSignature(Uint8List.fromList(utf8.encode(message)))
-            as ECSignature;
-    return leaderboardBase64Url(<int>[
-      ..._bigIntToBytes(sig.r, _scalarBytes),
-      ..._bigIntToBytes(sig.s, _scalarBytes),
-    ]);
-  }
+  String sign(String message) => leaderboardBase64Url(
+    FushiComputeCrypto.instance.p256SignSha256(
+      privateKey,
+      utf8.encode(message),
+    ),
+  );
 
   /// 导出恢复码（含私钥，换设备用；等同密码，不得进日志 / 备份外传）。
   String toRecoveryCode() {
@@ -177,8 +171,8 @@ class LeaderboardIdentity {
     String message,
     String signatureBase64Url,
   ) {
-    final ECPublicKey? key = _publicKeyFromSpki(spki);
-    if (key == null) return false;
+    final Uint8List? point = _publicPointFromSpki(spki);
+    if (point == null) return false;
     final Uint8List sig;
     try {
       sig = leaderboardBase64UrlDecode(signatureBase64Url);
@@ -189,11 +183,10 @@ class LeaderboardIdentity {
     final BigInt r = _bytesToBigInt(sig.sublist(0, _scalarBytes));
     final BigInt s = _bytesToBigInt(sig.sublist(_scalarBytes));
     if (!_validScalar(r) || !_validScalar(s)) return false;
-    final ECDSASigner verifier = ECDSASigner(SHA256Digest());
-    verifier.init(false, PublicKeyParameter<ECPublicKey>(key));
-    return verifier.verifySignature(
-      Uint8List.fromList(utf8.encode(message)),
-      ECSignature(r, s),
+    return FushiComputeCrypto.instance.p256VerifySha256(
+      point,
+      utf8.encode(message),
+      sig,
     );
   }
 }
@@ -205,18 +198,17 @@ String leaderboardAccountIdFromSpki(List<int> spki) =>
 String _recoveryChecksum(Uint8List d) =>
     leaderboardBase64Url(_sha256(d)).substring(0, _recoveryChecksumChars);
 
-ECPublicKey? _publicKeyFromSpki(Uint8List spki) {
+/// SPKI → 65 字节未压缩点；前缀 / 长度不对返回 null。
+///
+/// 混合编码（`06` / `07` 前缀）按原 pointycastle `decodePoint` 的行为收下、**不核对 y 的
+/// 奇偶**，换成 `04` 交给原生侧；点是否在曲线上由原生侧判。
+Uint8List? _publicPointFromSpki(Uint8List spki) {
   if (spki.length != _spkiPrefix.length + 65) return null;
   for (int i = 0; i < _spkiPrefix.length; i++) {
     if (spki[i] != _spkiPrefix[i]) return null;
   }
-  try {
-    final ECPoint? q = _p256.curve.decodePoint(
-      spki.sublist(_spkiPrefix.length),
-    );
-    if (q == null || q.isInfinity) return null;
-    return ECPublicKey(q, _p256);
-  } on Object {
-    return null;
-  }
+  final Uint8List point = Uint8List.fromList(spki.sublist(_spkiPrefix.length));
+  if (point[0] == 0x06 || point[0] == 0x07) point[0] = 0x04;
+  if (point[0] != 0x04) return null;
+  return point;
 }

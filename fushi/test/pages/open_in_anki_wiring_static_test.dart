@@ -35,77 +35,112 @@ void main() {
     return file.readAsStringSync();
   }
 
-  test('popup.js: open-in-anki button only shows when mined and calls the host',
-      () {
-    final src = read('assets/popup/popup.js');
-    // 图标与按钮存在。
-    expect(src.contains('openInAnki:'), isTrue,
-        reason: 'openInAnki icon path must exist in ICON_PATHS');
-    expect(src.contains("className: 'inline-action-button open-anki-button"),
-        isTrue);
-    // 点击调宿主 openInAnki 处理器（带 expression/reading）。
-    expect(src.contains("'openInAnki', { expression, reading }"), isTrue,
-        reason: 'the button click must call the openInAnki host handler');
-    // 可见性跟随真实制卡态：setMineState 据 isMined 切换隐藏类（不装饰）。
-    expect(
-        src.contains(
-            "openAnkiButton.classList.toggle('open-anki-hidden', !isMined)"),
+  test(
+    'popup.js: open-in-anki button only shows when mined and calls the host',
+    () {
+      final src = read('assets/popup/popup.js');
+      // 图标与按钮存在。
+      expect(
+        src.contains('openInAnki:'),
         isTrue,
-        reason: 'button visibility must be driven by the real mined state');
-  });
+        reason: 'openInAnki icon path must exist in ICON_PATHS',
+      );
+      expect(
+        src.contains("className: 'inline-action-button open-anki-button"),
+        isTrue,
+      );
+      // 点击调宿主 openInAnki 处理器（带 expression/reading）。
+      expect(
+        src.contains("'openInAnki', { expression, reading }"),
+        isTrue,
+        reason: 'the button click must call the openInAnki host handler',
+      );
+      // 可见性跟随真实制卡态：setMineState 据 isMined 切换隐藏类（不装饰）。
+      expect(
+        src.contains(
+          "openAnkiButton.classList.toggle('open-anki-hidden', !isMined)",
+        ),
+        isTrue,
+        reason: 'button visibility must be driven by the real mined state',
+      );
+    },
+  );
 
-  test('popup.css: open-anki-button has a hidden state and shared base look',
-      () {
-    final css = read('assets/popup/popup.css');
-    expect(css.contains('.open-anki-button.open-anki-hidden'), isTrue);
-    expect(css.contains('.open-anki-button,'), isTrue,
-        reason: 'must share the audio/favorite/mine base button styling');
-  });
+  test(
+    'popup.css: open-anki-button has a hidden state and shared base look',
+    () {
+      final css = read('assets/popup/popup.css');
+      expect(css.contains('.open-anki-button.open-anki-hidden'), isTrue);
+      expect(
+        css.contains('.open-anki-button,'),
+        isTrue,
+        reason: 'must share the audio/favorite/mine base button styling',
+      );
+    },
+  );
 
-  test('extension vendor mirrors carry the new button (byte-parity elsewhere)',
-      () {
-    for (final root in const <String>[
-      'assets/browser_extension/vendor',
-      '../tools/browser-extension/vendor',
-    ]) {
-      expect(read('$root/popup.js').contains('open-anki-button'), isTrue,
-          reason: '$root/popup.js missing the open-in-anki button');
-      expect(read('$root/content.css').contains('.open-anki-button'), isTrue,
-          reason: '$root/content.css missing the scoped open-anki-button rule');
-    }
-  });
+  test(
+    'extension vendor mirrors carry the new button (byte-parity elsewhere)',
+    () {
+      for (final root in const <String>[
+        'assets/browser_extension/vendor',
+        '../tools/browser-extension/vendor',
+      ]) {
+        expect(
+          read('$root/popup.js').contains('open-anki-button'),
+          isTrue,
+          reason: '$root/popup.js missing the open-in-anki button',
+        );
+        expect(
+          read('$root/content.css').contains('.open-anki-button'),
+          isTrue,
+          reason: '$root/content.css missing the scoped open-anki-button rule',
+        );
+      }
+    },
+  );
 
   test('dictionary_popup_webview.dart registers the openInAnki JS handler', () {
-    final src =
-        read('lib/src/pages/implementations/dictionary_popup_webview.dart');
+    final src = read(
+      'lib/src/pages/implementations/dictionary_popup_webview.dart',
+    );
     expect(src.contains("handlerName: 'openInAnki'"), isTrue);
     expect(src.contains('widget.onOpenInAnki!'), isTrue);
     expect(
-        src.contains(
-            'Future<AnkiOpenWordOutcome> Function(String expression, String reading)?'),
-        isTrue,
-        reason: 'onOpenInAnki field must be declared on the webview');
-    expect(src.contains('return outcome.name;'), isTrue,
-        reason: '三态结局必须回传，popup.js 靠它区分「没有卡」与「打不开」');
+      src.contains(
+        'Future<AnkiOpenWordOutcome> Function(String expression, String reading)?',
+      ),
+      isTrue,
+      reason: 'onOpenInAnki field must be declared on the webview',
+    );
+    expect(
+      src.contains('return outcome.name;'),
+      isTrue,
+      reason: '三态结局必须回传，popup.js 靠它区分「没有卡」与「打不开」',
+    );
   });
 
   test('dictionary_popup_layer.dart threads onOpenInAnki to the webview', () {
-    final src =
-        read('lib/src/pages/implementations/dictionary_popup_layer.dart');
+    final src = read(
+      'lib/src/pages/implementations/dictionary_popup_layer.dart',
+    );
     expect(src.contains('this.onOpenInAnki'), isTrue);
     expect(src.contains('onOpenInAnki: onOpenInAnki'), isTrue);
   });
 
   test('both host lanes provide onOpenInAnki and wire it into the layer', () {
-    final mixin =
-        read('lib/src/pages/implementations/dictionary_page_mixin.dart');
+    final mixin = read(
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
+    );
     expect(mixin.contains('Future<AnkiOpenWordOutcome> onOpenInAnki('), isTrue);
     expect(mixin.contains('onOpenInAnki: onOpenInAnki'), isTrue);
     expect(mixin.contains('repo.openWordInAnki(expression, reading)'), isTrue);
 
     final base = read('lib/src/pages/base_source_page.dart');
-    expect(base.contains('Future<AnkiOpenWordOutcome> onOpenInAnkiFromPopup('),
-        isTrue);
+    expect(
+      base.contains('Future<AnkiOpenWordOutcome> onOpenInAnkiFromPopup('),
+      isTrue,
+    );
     // 钉的是「这个回调确实被接进去了」，不是某一种写法：制卡模块关掉时接线变成
     // `onOpenInAnki: cardCreationEnabled ? onOpenInAnkiFromPopup : null`，
     // 不变式（↗ 由 host lane 提供并传进弹窗层）没变。把整串实参写死会让这类
@@ -120,9 +155,11 @@ void main() {
 
   test('BUG-2051 仓库层：↗ 与查重同源，且查询串里不放名字', () {
     final repo = read(
-        '../packages/fushi_anki/lib/src/ankiconnect/ankiconnect_repository.dart');
-    final int openWordAt =
-        repo.indexOf('Future<AnkiOpenWordOutcome> openWordInAnki(');
+      '../packages/fushi_anki/lib/src/ankiconnect/ankiconnect_repository.dart',
+    );
+    final int openWordAt = repo.indexOf(
+      'Future<AnkiOpenWordOutcome> openWordInAnki(',
+    );
     expect(openWordAt, greaterThan(-1));
     // 方法体 = 到下一个 @override 为止（不用固定窗口：那会随代码长短漂移，
     // 要么切掉半个方法、要么把邻居的实现算进来，两头都让断言失去判别力）。
@@ -131,12 +168,18 @@ void main() {
     final String body = repo.substring(openWordAt, nextOverride);
     // 判命中：与查重共用的 dupe 构造器。
     expect(body.contains('ankiDuplicateSearchQuery('), isTrue);
-    expect(body.contains('findNotesByField('), isFalse,
-        reason: '按第一字段名查是被删掉的那条判据，不得在 ↗ 路径上复活');
+    expect(
+      body.contains('findNotesByField('),
+      isFalse,
+      reason: '按第一字段名查是被删掉的那条判据，不得在 ↗ 路径上复活',
+    );
     // 卡组范围按 **id** 解析：Anki 搜索的 `deck:` 是通配匹配（`_`/`*`），而查重侧
     // 是精确名——把卡组名塞回搜索串就是给判据留第二个漂移入口。
-    expect(body.contains('ankiDuplicateDeckIds('), isTrue,
-        reason: '卡组必须先按名字精确解析成 id，不能交给 Anki 的通配匹配');
+    expect(
+      body.contains('ankiDuplicateDeckIds('),
+      isTrue,
+      reason: '卡组必须先按名字精确解析成 id，不能交给 Anki 的通配匹配',
+    );
     // 打开：只喂 note id。词与卡组名都不进浏览器的查询串。
     expect(body.contains('ankiNoteIdBrowseQuery('), isTrue);
     expect(body.contains('service.guiBrowseQuery(browseQuery)'), isTrue);
@@ -144,7 +187,8 @@ void main() {
     // 构造器自己也不许再拼卡组名：`ankiDuplicateDeckFilter` 产出的是 `deck:"名字"`，
     // 那条通配路径只留给尚未改造的旧字段名查询（见 BUG-2051 备注），不得回流到这里。
     final service = read(
-        '../packages/fushi_anki/lib/src/ankiconnect/ankiconnect_service.dart');
+      '../packages/fushi_anki/lib/src/ankiconnect/ankiconnect_service.dart',
+    );
     final int qAt = service.indexOf('String ankiDuplicateSearchQuery(');
     expect(qAt, greaterThan(-1));
     final int qEnd = topLevelBodyEnd(service, qAt);
@@ -153,17 +197,26 @@ void main() {
     // 非空转自检：真取到了函数体（不是被参数表截断成一小段）。
     expect(queryBody, contains('dupe:'));
     expect(queryBody.contains('ankiDeckIdFilter('), isTrue);
-    expect(queryBody.contains('ankiDuplicateDeckFilter('), isFalse,
-        reason: '卡组名进搜索串 = 交给 Anki 的通配匹配，与查重侧的精确名不同源');
+    expect(
+      queryBody.contains('ankiDuplicateDeckFilter('),
+      isFalse,
+      reason: '卡组名进搜索串 = 交给 Anki 的通配匹配，与查重侧的精确名不同源',
+    );
     expect(queryBody.contains('deck:'), isFalse);
 
     // 没有原生「按词打开」能力的后端走基类默认（按 note id，两者本就同源）。
-    final base =
-        read('../packages/fushi_anki/lib/src/base_anki_repository.dart');
+    final base = read(
+      '../packages/fushi_anki/lib/src/base_anki_repository.dart',
+    );
     expect(
-        base.contains('Future<AnkiOpenWordOutcome> openWordInAnki('), isTrue);
-    expect(base.contains('AnkiOpenWordOutcome.noMatch'), isTrue,
-        reason: '「Anki 可达但这个词没有卡」必须是独立的第三态');
+      base.contains('Future<AnkiOpenWordOutcome> openWordInAnki('),
+      isTrue,
+    );
+    expect(
+      base.contains('AnkiOpenWordOutcome.noMatch'),
+      isTrue,
+      reason: '「Anki 可达但这个词没有卡」必须是独立的第三态',
+    );
   });
 
   // ── BUG-2051（守卫覆盖面）：「打开 Anki」只有一个原语 ────────────────────
@@ -254,8 +307,10 @@ void main() {
       '../packages/fushi_anki/lib/src/ankiconnect/ankiconnect_repository.dart',
     };
     expect(
-      filesWhere('../packages/fushi_anki/lib',
-          (String code) => code.contains('guiBrowseQuery(')),
+      filesWhere(
+        '../packages/fushi_anki/lib',
+        (String code) => code.contains('guiBrowseQuery('),
+      ),
       owners,
     );
   });

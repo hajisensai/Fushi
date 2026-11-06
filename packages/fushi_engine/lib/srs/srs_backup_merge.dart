@@ -25,31 +25,58 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
-/// 只读地读一份备份库里的 SRS 数据。
+/// 只读地读一份备份里的 SRS 数据。
 ///
-/// 备份库可以是单独打开的 [FushiDatabase]（[SrsBackupSource.database]），也可以是
-/// ATTACH 在本机库连接上的附加库（[SrsBackupSource.attached]，合并导入引擎的形态）。
-/// 两种都只发 SELECT。
+/// profile 名字与 uid 总在备份的主库（`profiles` 表）里；SRS 的事件有两种存放：
+/// - 老备份（2026-10-23 之前）：srs_* 表也在备份的主库里——[SrsBackupSource.database]（单独打开
+///   的备份库）或 [SrsBackupSource.attached]（ATTACH 在本机主库连接上，合并导入引擎的形态）；
+/// - 新备份：备份里单独的 `srs.db`，由 Rust 只读打开（[SrsBackupSource.split]；Dart 的 SQLite
+///   绝不打开它，见 docs/specs/2026-10-23-srs-rust-store.md §1）。
+/// 都只发 SELECT。
 class SrsBackupSource {
-  SrsBackupSource.database(FushiDatabase db) : this._(db, '');
+  SrsBackupSource.database(DatabaseConnectionUser db) : this._(db, '', db, '');
 
   /// [schema] 是 `ATTACH DATABASE ... AS <schema>` 的别名。
-  SrsBackupSource.attached(FushiDatabase connection, String schema)
-    : this._(connection, '$schema.');
+  SrsBackupSource.attached(DatabaseConnectionUser connection, String schema)
+    : this._(connection, '$schema.', connection, '$schema.');
 
-  SrsBackupSource._(this._db, this._prefix);
+  /// profile 从 [profiles]（可带 ATTACH 别名 [profilesSchema]）读，SRS 事件从 [srs] 读。
+  SrsBackupSource.split({
+    required DatabaseConnectionUser profiles,
+    String? profilesSchema,
+    required SrsDatabase srs,
+  }) : this._(
+         profiles,
+         profilesSchema == null ? '' : '$profilesSchema.',
+         srs,
+         '',
+       );
 
-  final FushiDatabase _db;
+  SrsBackupSource._(
+    this._profilesDb,
+    this._profilesPrefix,
+    this._db,
+    this._prefix,
+  );
+
+  final DatabaseConnectionUser _profilesDb;
+  final String _profilesPrefix;
+  final DatabaseConnectionUser _db;
   final String _prefix;
 
   String _t(String table) => '$_prefix$table';
+
+  /// ID 列的绑定：srs.db（[SrsDatabase]）里 ID 列存编码值，要走 `srsIdType`；老备份在 fushi.db 里，仍是文本。
+  Variable<String> _id(String v) =>
+      Variable<String>(v, _db is SrsDatabase ? srsIdType : null);
 
   Future<bool> _any(String table, String profileUid) async =>
       await _db
           .customSelect(
             'SELECT 1 FROM ${_t(table)} WHERE profile_uid = ? LIMIT 1',
-            variables: <Variable<Object>>[Variable<String>(profileUid)],
+            variables: <Variable<Object>>[_id(profileUid)],
           )
           .getSingleOrNull() !=
       null;
@@ -62,7 +89,7 @@ class SrsBackupSource {
     final List<QueryRow> ids = await _db
         .customSelect(
           'SELECT id FROM ${_t('srs_entities')} WHERE profile_uid = ?',
-          variables: <Variable<Object>>[Variable<String>(profileUid)],
+          variables: <Variable<Object>>[_id(profileUid)],
         )
         .get();
     if (ids.any((QueryRow r) => !builtin.contains(r.read<String>('id')))) {
@@ -80,9 +107,9 @@ class SrsBackupSource {
 
   /// 备份里有 SRS 数据的 profile（按本地自增 id 排序，确定性）。
   Future<List<SrsBackupProfile>> profilesWithSrsData() async {
-    final List<QueryRow> rows = await _db
+    final List<QueryRow> rows = await _profilesDb
         .customSelect(
-          'SELECT name, uid FROM ${_t('profiles')} '
+          'SELECT name, uid FROM ${_profilesPrefix}profiles '
           "WHERE uid IS NOT NULL AND uid != '' ORDER BY id",
         )
         .get();
@@ -99,9 +126,7 @@ class SrsBackupSource {
   /// 该 profile 的全部事件（身份记录 → 修改记录 → 复习日志 → 不认识的事件），
   /// 解码方式与 [SrsDbStore.exportAll] 一致。
   Future<List<SrsEvent>> eventsOf(String profileUid) async {
-    final List<Variable<Object>> v = <Variable<Object>>[
-      Variable<String>(profileUid),
-    ];
+    final List<Variable<Object>> v = <Variable<Object>>[_id(profileUid)];
     Map<String, Object?> obj(String json) =>
         (jsonDecode(json) as Map).cast<String, Object?>();
     final List<SrsEvent> out = <SrsEvent>[];
@@ -220,15 +245,21 @@ const List<String> _kSrsProfileTables = <String>[
   'srs_local_state',
   'srs_notes_cache',
   'srs_cards_cache',
+  // srs.db schema v3：有效复习投影（可重建缓存）。
+  'srs_stat_reviews',
+  // v121：本机已冻结批次留存。
+  'srs_sent_batches',
 ];
 
-/// 把 [source] 里每个有 SRS 数据的 profile 合并进本机库 [local]（铁律 E，见库注释）。
+/// 把 [source] 里每个有 SRS 数据的 profile 合并进本机（铁律 E，见库注释）：profile 行在主库
+/// [local]，SRS 事件在 [localSrs]。
 ///
-/// 幂等：同一份备份合并两次，第二次全部走「同 uid」且不新增事件。
-/// 调用方若在事务里调用，本函数的写入随之一起提交 / 回滚（drift 嵌套事务 = savepoint）。
+/// 幂等：同一份备份合并两次，第二次全部走「同 uid」且不新增事件。两个文件不能一起原子提交：
+/// 改 uid 时先删 [localSrs] 里旧 uid 的行、再写主库的 `profiles.uid`，两步都幂等，中途失败重跑即收敛。
 Future<List<SrsBackupMergeResult>> mergeSrsFromBackup({
   required SrsBackupSource source,
   required FushiDatabase local,
+  required SrsStorage localSrs,
   required String deviceId,
   required SrsCreateProfile createProfile,
 }) async {
@@ -249,16 +280,10 @@ Future<List<SrsBackupMergeResult>> mergeSrsFromBackup({
         profiles,
         (_LocalProfile p) => p.name == bp.name,
       );
-      if (sameName != null &&
-          await _canAdoptUid(local, sameName.uid, deviceId)) {
+      if (sameName != null && await _canAdoptUid(localSrs, sameName.uid)) {
         final String? oldUid = sameName.uid;
         if (oldUid != null && oldUid.isNotEmpty) {
-          for (final String table in _kSrsProfileTables) {
-            await local.customStatement(
-              'DELETE FROM main.$table WHERE profile_uid = ?',
-              <Object>[oldUid],
-            );
-          }
+          await _deleteProfileRows(localSrs.db, oldUid);
         }
         await local.adoptProfileUid(sameName.id, bp.uid);
         localId = sameName.id;
@@ -273,7 +298,7 @@ Future<List<SrsBackupMergeResult>> mergeSrsFromBackup({
       }
     }
     final int added = await _mergeEvents(
-      local: local,
+      local: localSrs,
       profileUid: bp.uid,
       deviceId: deviceId,
       events: await source.eventsOf(bp.uid),
@@ -320,76 +345,69 @@ Future<List<_LocalProfile>> _localProfiles(
 ];
 
 /// 本机 profile（当前 uid [uid]）能否改用备份的 uid：没有用户笔记，且从未发布过批次。
-Future<bool> _canAdoptUid(
-  FushiDatabase db,
-  String? uid,
-  String deviceId,
-) async {
+Future<bool> _canAdoptUid(SrsStorage srs, String? uid) async {
+  final SrsDatabase db = srs.db;
   if (uid == null || uid.isEmpty) return true;
   final bool hasNotes =
       await db
           .customSelect(
-            'SELECT 1 FROM main.srs_entities WHERE profile_uid = ? AND kind = ? '
+            'SELECT 1 FROM srs_entities WHERE profile_uid = ? AND kind = ? '
             'LIMIT 1',
             variables: <Variable<Object>>[
-              Variable<String>(uid),
+              Variable<String>(uid, srsIdType),
               Variable<String>(SrsEntityKind.note.wire),
             ],
           )
           .getSingleOrNull() !=
       null;
   if (hasNotes) return false;
-  // 没有本机同步状态 = 从没发布过（发布进度只记在 srs_local_state）。有状态时才打开副本读
-  // everPublished（发布元信息的编码归 SrsDbStore 所有，这里不重复解析）。
-  final bool hasLocalState =
-      await db
-          .customSelect(
-            'SELECT 1 FROM main.srs_local_state WHERE profile_uid = ?',
-            variables: <Variable<Object>>[Variable<String>(uid)],
-          )
-          .getSingleOrNull() !=
-      null;
-  if (!hasLocalState) return true;
-  final SrsDbStore store = await SrsDbStore.open(
-    db: db,
-    profileUid: uid,
-    deviceId: deviceId,
-  );
-  return !store.everPublished && !await store.hasUserNotes();
+  // 同步 v2：传到过任何位置就算发布过（别的设备可能已经拿到这个身份下的操作）。只读判断，不打开副本。
+  final Object? locations = srs.core.sync2(<String, Object?>{
+    'op': 'status',
+    'profile': uid,
+  }).map['locations'];
+  final bool published =
+      locations is List &&
+      locations.any(
+        (Object? l) => l is Map && ((l['uploaded'] as int?) ?? 0) > 0,
+      );
+  return !published;
 }
 
 /// 本机 profile（当前 uid [currentUid]）能否改用另一个 uid：没有用户笔记、也从未发布过批次（铁律 E）。
 /// 复习备份页「从文件恢复」另一台设备的备份时用：新装的设备可以直接接上那个 profile。
-Future<bool> srsCanAdoptProfileUid(
-  FushiDatabase db,
-  String currentUid,
-  String deviceId,
-) => _canAdoptUid(db, currentUid, deviceId);
+Future<bool> srsCanAdoptProfileUid(SrsStorage db, String currentUid) =>
+    _canAdoptUid(db, currentUid);
 
 /// 本机 profile [profileId] 改用 [newUid]：先删掉旧 uid 下的全部 SRS 行（只可能是内置行 / 本机状态 /
 /// 缓存，内置行的 ID 由 uid 派生，换 uid 后随新 uid 重新生成）。调用方先用 [srsCanAdoptProfileUid] 检查。
+///
+/// 两个文件分别提交：先删 [srs] 里旧 uid 的行，再写主库 [db] 的 `profiles.uid`。中途失败时
+/// 旧 uid 下只剩空（内置行随下次打开重建），重跑即收敛。
 Future<void> srsAdoptProfileUid(
-  FushiDatabase db, {
+  FushiDatabase db,
+  SrsDatabase srs, {
   required int profileId,
   required String oldUid,
   required String newUid,
 }) async {
-  await db.transaction(() async {
-    for (final String table in _kSrsProfileTables) {
-      await db.customStatement(
-        'DELETE FROM main.$table WHERE profile_uid = ?',
-        <Object>[oldUid],
-      );
-    }
-    await db.adoptProfileUid(profileId, newUid);
-  });
+  await _deleteProfileRows(srs, oldUid);
+  await db.adoptProfileUid(profileId, newUid);
 }
 
+/// 删掉 [uid] 名下全部 SRS 行（一个事务）。
+Future<void> _deleteProfileRows(SrsDatabase srs, String uid) =>
+    srs.transaction(() async {
+      for (final String table in _kSrsProfileTables) {
+        await srs.customStatement(
+          'DELETE FROM $table WHERE profile_uid = srs_id(?)',
+          <Object>[uid],
+        );
+      }
+    });
+
 /// 本机 SRS 四张事件表里已存在的事件 ID。
-Future<Set<String>> _existingEventIds(
-  FushiDatabase db,
-  List<String> ids,
-) async {
+Future<Set<String>> _existingEventIds(SrsDatabase db, List<String> ids) async {
   final Set<String> out = <String>{};
   for (int i = 0; i < ids.length; i += 400) {
     final List<String> chunk = ids.sublist(
@@ -398,7 +416,7 @@ Future<Set<String>> _existingEventIds(
     );
     final String marks = List<String>.filled(chunk.length, '?').join(', ');
     final List<Variable<Object>> vars = <Variable<Object>>[
-      for (final String id in chunk) Variable<String>(id),
+      for (final String id in chunk) Variable<String>(id, srsIdType),
     ];
     for (final String table in const <String>[
       'srs_entities',
@@ -409,7 +427,7 @@ Future<Set<String>> _existingEventIds(
       for (final QueryRow r
           in await db
               .customSelect(
-                'SELECT id FROM main.$table WHERE id IN ($marks)',
+                'SELECT id FROM $table WHERE id IN ($marks)',
                 variables: vars,
               )
               .get()) {
@@ -422,31 +440,30 @@ Future<Set<String>> _existingEventIds(
 
 /// 经本机副本合并一组事件，返回新落下的事件数（这些事件重新进发件箱）。
 Future<int> _mergeEvents({
-  required FushiDatabase local,
+  required SrsStorage local,
   required String profileUid,
   required String deviceId,
   required List<SrsEvent> events,
 }) async {
   final SrsDbStore store = await SrsDbStore.open(
-    db: local,
+    db: local.db,
+    core: local.core,
     profileUid: profileUid,
     deviceId: deviceId,
   );
   if (events.isEmpty) return 0;
   final List<String> ids = <String>[for (final SrsEvent e in events) e.id];
-  final Set<String> before = await _existingEventIds(local, ids);
+  final Set<String> before = await _existingEventIds(local.db, ids);
   await store.applyRemote(events);
   final List<String> fresh = <String>[
     for (final String id in ids)
       if (!before.contains(id)) id,
   ];
   if (fresh.isEmpty) return 0;
-  // 被本机更晚的修改支配而丢掉的记录不在库里，不进发件箱（否则发件箱留下永远发不出的行）。
-  final Set<String> landed = await _existingEventIds(local, fresh);
-  final List<String> requeue = <String>[
+  // 被本机更晚的修改支配而丢掉的记录不在库里；落进来的都已是本机操作（同步 v2：并入即发布，不需要发件箱）。
+  final Set<String> landed = await _existingEventIds(local.db, fresh);
+  return <String>[
     for (final String id in fresh)
       if (landed.contains(id)) id,
-  ];
-  if (requeue.isNotEmpty) await store.requeue(requeue);
-  return requeue.length;
+  ].length;
 }

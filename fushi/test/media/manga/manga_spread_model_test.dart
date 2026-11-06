@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/manga/manga_spread_model.dart';
 
 /// Flatten entries into a [pageIndices...] list-of-lists for easy comparison.
@@ -135,8 +135,9 @@ void main() {
         layout: MangaPageLayout.double,
         spreadOffset: 1,
       );
-      final List<int> flat =
-          entries.expand((MangaSpreadEntry e) => e.pageIndices).toList();
+      final List<int> flat = entries
+          .expand((MangaSpreadEntry e) => e.pageIndices)
+          .toList();
       expect(flat, <int>[0, 1, 2, 3, 4, 5, 6]);
     });
   });

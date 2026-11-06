@@ -58,6 +58,180 @@ abstract class FushiRemotePopupLookupService {
   });
 }
 
+/// 查词请求带了**请求方的查词语言**（wire 字段 [kRemoteLookupLanguageField]）时的可选
+/// 能力：实现方按请求方语言决定查词行为（中文 → 引擎额外试简体 → 繁體变体），而不是按
+/// 本机当前查词语言——两台设备可能正在读不同语言的内容。
+///
+/// 探测式接口（与 [FushiRemotePopupLookupService] 同法）：请求不带语言、或 service 没实现
+/// 它（旧实现 / 测试替身）时一律走 [FushiRemoteLookupService.searchDictionary] 等旧方法，
+/// 行为与从前逐字相同。分派只在 [searchRemoteDictionaryForRequest] /
+/// [searchRemoteDictionaryPopupForRequest] 一处。
+abstract class FushiRemoteLanguageLookupService {
+  /// [language] 为请求方声明的 BCP-47 语言标签（已裁掉空白、非空）。
+  Future<DictionarySearchResult?> searchDictionaryInLanguage({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required String language,
+  });
+
+  /// [FushiRemotePopupLookupService.searchDictionaryPopup] 的带语言版本；[timing] 非 null
+  /// 时与 [FushiRemoteTimedPopupLookupService] 同语义地记录阶段耗时。
+  Future<RemoteDictionaryPopupLookup?> searchDictionaryPopupInLanguage({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required String language,
+    RemoteDictionaryPopupTiming? timing,
+  });
+}
+
+/// 查词请求带了**原文自带振假名**（wire 字段 [kRemoteLookupRubyField]，`[{s, e, r}]`，
+/// 以请求的 `term` 为 UTF-16 坐标系）时的可选能力：实现方把区间交给引擎
+/// （`LookupOptions::ruby_readings`），同匹配长度的候选里读音与原文 ruby 吻合的排前面。
+/// 只用来源自带的读音，不推断读音。
+///
+/// 探测式接口（与 [FushiRemoteLanguageLookupService] 同法）：请求不带 ruby、或 service
+/// 没实现它（旧实现 / 测试替身）时一律走旧方法，结果照原序。[language] 为 null = 请求
+/// 没声明查词语言（旧行为）。分派只在 [searchRemoteDictionaryForRequest] /
+/// [searchRemoteDictionaryPopupForRequest] 一处。
+abstract class FushiRemoteRubyLookupService {
+  /// [rubySpans] 非空，以 [term]（清洗前）为坐标系；实现方负责与清洗后的查询串对齐。
+  Future<DictionarySearchResult?> searchDictionaryWithRuby({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required List<FushiRubySpan> rubySpans,
+    String? language,
+  });
+
+  /// [searchDictionaryWithRuby] 的 popup 快路径版本；[timing] 同
+  /// [FushiRemoteTimedPopupLookupService]。
+  Future<RemoteDictionaryPopupLookup?> searchDictionaryPopupWithRuby({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required List<FushiRubySpan> rubySpans,
+    String? language,
+    RemoteDictionaryPopupTiming? timing,
+  });
+}
+
+/// 查词请求体里「原文振假名区间」的字段名（可选；缺省 / 空数组 = 旧行为）。
+const String kRemoteLookupRubyField = 'ruby';
+
+/// 从请求体取原文振假名区间（畸形项丢弃，见 [FushiRubySpan.listFromWire]）。
+List<FushiRubySpan> remoteLookupRubySpansOf(Map<String, dynamic> body) =>
+    FushiRubySpan.listFromWire(body[kRemoteLookupRubyField]);
+
+/// 查词请求体里「请求方查词语言」的字段名（可选；缺省 = 旧行为，按 host 本机语言）。
+const String kRemoteLookupLanguageField = 'language';
+
+/// 从请求体（JSON body / ctl 查询参数）取请求方查词语言：非字符串、空串、纯空白都当没给。
+String? remoteLookupLanguageOf(Map<String, dynamic> body) {
+  final Object? raw = body[kRemoteLookupLanguageField];
+  if (raw is! String) return null;
+  final String trimmed = raw.trim();
+  return trimmed.isEmpty ? null : trimmed;
+}
+
+/// 完整查词结果的唯一分派点：请求带了语言且 [lookup] 认识语言时走
+/// [FushiRemoteLanguageLookupService.searchDictionaryInLanguage]，否则走旧方法。
+Future<DictionarySearchResult?> searchRemoteDictionaryForRequest(
+  FushiRemoteLookupService lookup, {
+  required String term,
+  required bool wildcards,
+  required int maximumTerms,
+  required String? language,
+  List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+}) {
+  final Object service = lookup;
+  if (rubySpans.isNotEmpty && service is FushiRemoteRubyLookupService) {
+    return service.searchDictionaryWithRuby(
+      term: term,
+      wildcards: wildcards,
+      maximumTerms: maximumTerms,
+      rubySpans: rubySpans,
+      language: language,
+    );
+  }
+  if (language != null && service is FushiRemoteLanguageLookupService) {
+    return service.searchDictionaryInLanguage(
+      term: term,
+      wildcards: wildcards,
+      maximumTerms: maximumTerms,
+      language: language,
+    );
+  }
+  return lookup.searchDictionary(
+    term: term,
+    wildcards: wildcards,
+    maximumTerms: maximumTerms,
+  );
+}
+
+/// 本次请求能否走 popup 快路径（[searchRemoteDictionaryPopupForRequest]）；false 时调用方
+/// 回落完整查词。单列成判断而不是让快路径返回 null，免得「没有快路径」与「快路径查无
+/// 结果」混成同一个 null。
+bool hasPopupFastPath(
+  FushiRemoteLookupService lookup, {
+  String? language,
+  List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+}) {
+  final Object service = lookup;
+  return (rubySpans.isNotEmpty && service is FushiRemoteRubyLookupService) ||
+      (language != null && service is FushiRemoteLanguageLookupService) ||
+      service is FushiRemotePopupLookupService;
+}
+
+/// 见 [hasPopupFastPath]：调用前必须先确认它为 true。
+Future<RemoteDictionaryPopupLookup?> searchRemoteDictionaryPopupForRequest(
+  FushiRemoteLookupService lookup, {
+  required String term,
+  required bool wildcards,
+  required int maximumTerms,
+  required String? language,
+  RemoteDictionaryPopupTiming? timing,
+  List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+}) {
+  final Object service = lookup;
+  if (rubySpans.isNotEmpty && service is FushiRemoteRubyLookupService) {
+    return service.searchDictionaryPopupWithRuby(
+      term: term,
+      wildcards: wildcards,
+      maximumTerms: maximumTerms,
+      rubySpans: rubySpans,
+      language: language,
+      timing: timing,
+    );
+  }
+  if (language != null && service is FushiRemoteLanguageLookupService) {
+    return service.searchDictionaryPopupInLanguage(
+      term: term,
+      wildcards: wildcards,
+      maximumTerms: maximumTerms,
+      language: language,
+      timing: timing,
+    );
+  }
+  if (service is! FushiRemotePopupLookupService) {
+    throw StateError('lookup service has no popup fast path');
+  }
+  if (timing != null && service is FushiRemoteTimedPopupLookupService) {
+    return service.searchDictionaryPopupWithTiming(
+      term: term,
+      wildcards: wildcards,
+      maximumTerms: maximumTerms,
+      timing: timing,
+    );
+  }
+  return service.searchDictionaryPopup(
+    term: term,
+    wildcards: wildcards,
+    maximumTerms: maximumTerms,
+  );
+}
+
 /// [FushiRemotePopupLookupService] 的可选诊断能力。
 ///
 /// 保持原 popup 快路径接口不变，只有需要服务端阶段计时的调用方才探测本接口并传入
@@ -109,6 +283,15 @@ class RemoteDictionaryPopupLookup {
 
   final String popupJson;
   final int bestLength;
+}
+
+/// 反馈 E0sdqm4h-F / PR #2980 审查：可选能力——挖词 service 能回答本机「允许重复」
+/// （`AnkiSettings.allowDupes`）时实现它。`POST /api/duplicate` 据此多回一个
+/// `allowDuplicates` 位，浏览器扩展单击已制卡 ✓ 时与 app 内同一判据：开着就直接再制一张、
+/// 不弹「新增为重复卡 / 取消」；没实现（旧 app / 无头服务端）时不带这个位，扩展照旧问。
+abstract interface class FushiRemoteDuplicatePolicyService {
+  /// 本机制卡是否跳过重复检查。实现方不得抛：读不到设置时回 false（照旧问用户）。
+  Future<bool> allowsDuplicates();
 }
 
 /// 浏览器扩展挖词的窄接口（与查词分离，避免 server 直接依赖 AnkiRepository）。
@@ -210,10 +393,7 @@ abstract class FushiRemoteHistoryService {
 
 /// 对端 host 返回的单词音频查询结果（原始字节 + Content-Type，wire DTO）。
 class RemoteAudioLookup {
-  const RemoteAudioLookup({
-    required this.bytes,
-    required this.contentType,
-  });
+  const RemoteAudioLookup({required this.bytes, required this.contentType});
 
   final Uint8List bytes;
   final String contentType;
@@ -228,6 +408,8 @@ class RemoteAudioLookup {
 ///   （部分成功）时是音频警告——让扩展区分「真成功」与「卡建了但没音频」。
 /// * [detail]：更长的技术细节（如引擎中止原因 / errorDetail 原文），可空。
 ///
+/// * [errorKind]：`error` 时的失败分型（`permanent` / `transient`），可空。
+///
 /// 由 [buildRemoteMineResponse] 摊进 `/api/mine` 响应体（`{result, message?, detail?}`），
 /// 浏览器扩展 content.js 读 `resp.data.message` 弹 toast 显因。
 class RemoteMineResult {
@@ -236,14 +418,36 @@ class RemoteMineResult {
     this.message,
     this.detail,
     this.deckName,
+    this.errorKind,
+    this.errorCode,
   });
 
   final String result;
   final String? message;
   final String? detail;
 
+  /// EMI05fe8RJ：`error` 时的失败分型，wire 值见 [RemoteMineErrorKind]。浏览器扩展的
+  /// YouTube 批量队列据此区分「再试也没用」（付费 / 已删除 / 不可用视频、无效时间窗）与
+  /// 「下次可能成功」（网络、超时、限流）：前者移出待生成队列进失败分组，不再每次生成都
+  /// 重新解析一遍。null = 未分型（旧实现 / 非 error），扩展按可重试处理。旧客户端忽略即可。
+  final RemoteMineErrorKind? errorKind;
+
+  /// 反馈 E52FUMdbR6：`error` 时主机侧的稳定分类码（`AnkiErrorCode`，如
+  /// `ANKI_CONNECTION_REFUSED`），随响应回传给互联客户端写进诊断日志；未分类为 null。
+  /// 旧客户端 / 扩展忽略即可。
+  final String? errorCode;
+
   /// BUG-1549：`success` 时主机**实际落卡**的牌组名（主机侧配置的 deck），随
   /// `/api/mine/forward` 响应回传给客户端的成功 toast；失败为 `null`。旧客户端
   /// 忽略此字段即旧行为（向后兼容）。
   final String? deckName;
+}
+
+/// [RemoteMineResult.errorKind] 的取值（wire 上用 [name]）。
+enum RemoteMineErrorKind {
+  /// 同一请求再发也不会成功：视频需购买 / 已删除 / 不可用、字幕时间窗无效等。
+  permanent,
+
+  /// 可能自行恢复：网络、超时、限流、Anki 暂不可达等。
+  transient,
 }

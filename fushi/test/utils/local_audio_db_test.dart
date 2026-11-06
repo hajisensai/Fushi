@@ -15,15 +15,17 @@ void main() {
     dbPath = '${dir.path}/audio.db';
     final Database db = sqlite3.open(dbPath);
     db.execute(
-        'CREATE TABLE entries (expression TEXT, reading TEXT, file TEXT, source TEXT)');
+      'CREATE TABLE entries (expression TEXT, reading TEXT, file TEXT, source TEXT)',
+    );
     db.execute('CREATE TABLE android (file TEXT, source TEXT, data BLOB)');
     db.execute("INSERT INTO entries VALUES ('勉強','べんきょう','a.mp3','src1')");
-    final PreparedStatement stmt =
-        db.prepare('INSERT INTO android (file, source, data) VALUES (?,?,?)');
+    final PreparedStatement stmt = db.prepare(
+      'INSERT INTO android (file, source, data) VALUES (?,?,?)',
+    );
     stmt.execute(<Object?>[
       'a.mp3',
       'src1',
-      Uint8List.fromList(<int>[1, 2, 3, 4, 5])
+      Uint8List.fromList(<int>[1, 2, 3, 4, 5]),
     ]);
     stmt.dispose();
     db.dispose();
@@ -97,14 +99,22 @@ void main() {
 
     // forvo 优先 → 选 forvo
     expect(
-      LocalAudioDb.queryMeta(dbPath, '猫', 'ねこ',
-          order: <String>['forvo', 'nhk16'])?.source,
+      LocalAudioDb.queryMeta(
+        dbPath,
+        '猫',
+        'ねこ',
+        order: <String>['forvo', 'nhk16'],
+      )?.source,
       'forvo',
     );
     // nhk16 优先 → 选 nhk16
     expect(
-      LocalAudioDb.queryMeta(dbPath, '猫', 'ねこ',
-          order: <String>['nhk16', 'forvo'])?.source,
+      LocalAudioDb.queryMeta(
+        dbPath,
+        '猫',
+        'ねこ',
+        order: <String>['nhk16', 'forvo'],
+      )?.source,
       'nhk16',
     );
   });
@@ -117,8 +127,12 @@ void main() {
 
     // 只启用 nhk16（forvo 禁用，不在 order）→ 即便 forvo 也命中，也只返回 nhk16
     expect(
-      LocalAudioDb.queryMeta(dbPath, '猫', 'ねこ', order: <String>['nhk16'])
-          ?.source,
+      LocalAudioDb.queryMeta(
+        dbPath,
+        '猫',
+        'ねこ',
+        order: <String>['nhk16'],
+      )?.source,
       'nhk16',
     );
     // 所有命中来源都不在 order → null
@@ -128,22 +142,57 @@ void main() {
     );
   });
 
-  test('queryMeta with empty order keeps first-match behavior', () {
-    expect(
-      LocalAudioDb.queryMeta(dbPath, '勉強', 'べんきょう')?.source,
-      'src1',
+  test('queryMetaAll lists every enabled sub-source, priority-ordered', () {
+    // 「选择音频源」菜单：一个 android.db 里 forvo / nhk16 / jpod 都有这个词时，
+    // 只回一条（queryMeta）的话菜单里永远只露出一个子来源。
+    final Database db = sqlite3.open(dbPath);
+    db.execute("INSERT INTO entries VALUES ('猫','ねこ','nhk.mp3','nhk16')");
+    db.execute("INSERT INTO entries VALUES ('猫','ねこ','a/f1.mp3','forvo')");
+    db.execute("INSERT INTO entries VALUES ('猫','ねこ','jpod.mp3','jpod')");
+    db.execute("INSERT INTO entries VALUES ('猫','ねこ','b/f2.mp3','forvo')");
+    db.dispose();
+
+    final List<({String file, String source})> all = LocalAudioDb.queryMetaAll(
+      dbPath,
+      '猫',
+      'ねこ',
+      order: <String>['forvo', 'nhk16'],
     );
+    // jpod 不在 order（禁用）→ 不列；同级 forvo 保持库内顺序。
+    expect(all.map((m) => m.file).toList(), <String>[
+      'a/f1.mp3',
+      'b/f2.mp3',
+      'nhk.mp3',
+    ]);
+    // 首项就是单条查询会挑的那条（单击 ♪ 播的默认）。
+    expect(
+      LocalAudioDb.queryMeta(
+        dbPath,
+        '猫',
+        'ねこ',
+        order: <String>['forvo', 'nhk16'],
+      )?.file,
+      all.first.file,
+    );
+    // order 为空：全部命中，库内顺序。
+    expect(LocalAudioDb.queryMetaAll(dbPath, '猫', 'ねこ').length, 4);
+    expect(LocalAudioDb.queryMetaAll(dbPath, '狗', 'いぬ'), isEmpty);
+  });
+
+  test('queryMeta with empty order keeps first-match behavior', () {
+    expect(LocalAudioDb.queryMeta(dbPath, '勉強', 'べんきょう')?.source, 'src1');
   });
 
   test('uses the .opus extension when the file name ends in .opus', () {
     final Database db = sqlite3.open(dbPath);
     db.execute("INSERT INTO entries VALUES ('opusword','','b.opus','src1')");
-    final PreparedStatement stmt =
-        db.prepare('INSERT INTO android (file, source, data) VALUES (?,?,?)');
+    final PreparedStatement stmt = db.prepare(
+      'INSERT INTO android (file, source, data) VALUES (?,?,?)',
+    );
     stmt.execute(<Object?>[
       'b.opus',
       'src1',
-      Uint8List.fromList(<int>[9, 9, 9])
+      Uint8List.fromList(<int>[9, 9, 9]),
     ]);
     stmt.dispose();
     db.dispose();
@@ -172,7 +221,8 @@ void main() {
       final String junk = '${dir.path}/junk.zip';
       // PK\x03\x04 = ZIP 魔数 + 垃圾字节：sqlite3 首个 query 会抛「not a database」。
       File(junk).writeAsBytesSync(
-          Uint8List.fromList(<int>[0x50, 0x4b, 0x03, 0x04, 9, 9, 9, 9]));
+        Uint8List.fromList(<int>[0x50, 0x4b, 0x03, 0x04, 9, 9, 9, 9]),
+      );
       expect(LocalAudioDb.isUsableAudioSource(junk), isFalse);
     });
 
@@ -188,8 +238,10 @@ void main() {
     test('rejects an audio db whose android table has no rows (empty)', () {
       final String empty = '${dir.path}/empty.db';
       final Database db = sqlite3.open(empty);
-      db.execute('CREATE TABLE entries '
-          '(expression TEXT, reading TEXT, file TEXT, source TEXT)');
+      db.execute(
+        'CREATE TABLE entries '
+        '(expression TEXT, reading TEXT, file TEXT, source TEXT)',
+      );
       db.execute('CREATE TABLE android (file TEXT, source TEXT, data BLOB)');
       db.dispose(); // 结构对但没有任何音频行
       expect(LocalAudioDb.isUsableAudioSource(empty), isFalse);
@@ -199,12 +251,13 @@ void main() {
   test('extractBlob keeps different local audio blobs on different paths', () {
     final Database db = sqlite3.open(dbPath);
     db.execute("INSERT INTO entries VALUES ('other','','b.mp3','src1')");
-    final PreparedStatement stmt =
-        db.prepare('INSERT INTO android (file, source, data) VALUES (?,?,?)');
+    final PreparedStatement stmt = db.prepare(
+      'INSERT INTO android (file, source, data) VALUES (?,?,?)',
+    );
     stmt.execute(<Object?>[
       'b.mp3',
       'src1',
-      Uint8List.fromList(<int>[8, 7, 6])
+      Uint8List.fromList(<int>[8, 7, 6]),
     ]);
     stmt.dispose();
     db.dispose();
@@ -249,12 +302,18 @@ void main() {
     }
 
     test('ensureIndexes builds both query indexes and is idempotent', () async {
-      expect(hasIndex('idx_entries_expr_read'), isFalse,
-          reason: 'setUp 建的库本无索引');
+      expect(
+        hasIndex('idx_entries_expr_read'),
+        isFalse,
+        reason: 'setUp 建的库本无索引',
+      );
       expect(hasIndex('idx_android_file_source'), isFalse);
       await LocalAudioDb.ensureIndexes(dbPath);
-      expect(hasIndex('idx_entries_expr_read'), isTrue,
-          reason: 'entries(expression,reading) 索引必须被建，消除全表扫描');
+      expect(
+        hasIndex('idx_entries_expr_read'),
+        isTrue,
+        reason: 'entries(expression,reading) 索引必须被建，消除全表扫描',
+      );
       expect(hasIndex('idx_android_file_source'), isTrue);
       // 幂等：重复调用不抛、索引仍在（CREATE INDEX IF NOT EXISTS）。
       await LocalAudioDb.ensureIndexes(dbPath);
@@ -289,23 +348,31 @@ void main() {
     });
 
     test('queryMeta / extractBlob never create indexes (read-only path)', () {
-      expect(LocalAudioDb.queryMeta(dbPath, '勉強', 'べんきょう'), isNotNull,
-          reason: '无索引的库查询仍必须成功（只是慢）');
+      expect(
+        LocalAudioDb.queryMeta(dbPath, '勉強', 'べんきょう'),
+        isNotNull,
+        reason: '无索引的库查询仍必须成功（只是慢）',
+      );
       LocalAudioDb.extractBlob(
         dbPath: dbPath,
         file: 'a.mp3',
         source: 'src1',
         cacheDir: dir,
       );
-      expect(hasIndex('idx_entries_expr_read'), isFalse,
-          reason: '查询路径不得再有任何 DDL：索引只归 ensureIndexes 建');
+      expect(
+        hasIndex('idx_entries_expr_read'),
+        isFalse,
+        reason: '查询路径不得再有任何 DDL：索引只归 ensureIndexes 建',
+      );
       expect(hasIndex('idx_android_file_source'), isFalse);
     });
 
-    test('query path succeeds after indexes exist (readOnly still works)',
-        () async {
-      await LocalAudioDb.ensureIndexes(dbPath);
-      expect(LocalAudioDb.queryMeta(dbPath, '勉強', 'べんきょう')?.file, 'a.mp3');
-    });
+    test(
+      'query path succeeds after indexes exist (readOnly still works)',
+      () async {
+        await LocalAudioDb.ensureIndexes(dbPath);
+        expect(LocalAudioDb.queryMeta(dbPath, '勉強', 'べんきょう')?.file, 'a.mp3');
+      },
+    );
   });
 }

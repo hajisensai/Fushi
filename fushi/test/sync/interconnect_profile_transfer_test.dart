@@ -45,8 +45,8 @@ void main() {
         Uri.parse('http://127.0.0.1:${server.port}$kInterconnectProfilePath');
 
     Map<String, String> authHeaders() => <String, String>{
-          'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
-        };
+      'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+    };
 
     test('GET 在明文会话上被拒（403 HTTPS required）', () async {
       final http.Response res = await http.get(
@@ -83,12 +83,18 @@ void main() {
       expect(res.statusCode, 200);
       final Map<String, dynamic> json =
           jsonDecode(res.body) as Map<String, dynamic>;
-      final Map<String, dynamic> live =
-          (json['liveLibrary'] as Map).cast<String, dynamic>();
-      expect(live.containsKey('profileTransfer'), isTrue,
-          reason: 'client 靠这个字段决定要不要显示配置传输入口');
-      expect(live['profileTransfer'], false,
-          reason: '无 TLS 时能力位必须为 false（与端点的 403 一致，别让 UI 给出假承诺）');
+      final Map<String, dynamic> live = (json['liveLibrary'] as Map)
+          .cast<String, dynamic>();
+      expect(
+        live.containsKey('profileTransfer'),
+        isTrue,
+        reason: 'client 靠这个字段决定要不要显示配置传输入口',
+      );
+      expect(
+        live['profileTransfer'],
+        false,
+        reason: '无 TLS 时能力位必须为 false（与端点的 403 一致，别让 UI 给出假承诺）',
+      );
     });
   });
 
@@ -96,9 +102,7 @@ void main() {
     late FushiDatabase db;
     late Directory tempDir;
 
-    LocalLibraryHostService buildHost({
-      required bool wireProfileCallbacks,
-    }) {
+    LocalLibraryHostService buildHost({required bool wireProfileCallbacks}) {
       return LocalLibraryHostService(
         db: db,
         dictionaryResourceRoot: tempDir,
@@ -108,9 +112,12 @@ void main() {
         isProfileTransferEnabled: wireProfileCallbacks
             ? () => SyncRepository(db).isInterconnectProfileTransferEnabled()
             : null,
-        exportActiveProfileJson:
-            wireProfileCallbacks ? () async => '{"type":"hibiki.profile"}' : null,
-        importProfileJson: wireProfileCallbacks ? (String _) async => 'p' : null,
+        exportActiveProfileJson: wireProfileCallbacks
+            ? () async => '{"type":"hibiki.profile"}'
+            : null,
+        importProfileJson: wireProfileCallbacks
+            ? (String _) async => 'p'
+            : null,
       );
     }
 
@@ -125,31 +132,34 @@ void main() {
     });
 
     test('默认关：接线了回调但用户没开，仍然不可用', () async {
-      final LocalLibraryHostService host =
-          buildHost(wireProfileCallbacks: true);
-      expect(await host.isInterconnectProfileTransferEnabled(), isFalse,
-          reason: '整份配置的读写必须是用户显式 opt-in（BUG-988 的规矩）');
+      final LocalLibraryHostService host = buildHost(
+        wireProfileCallbacks: true,
+      );
+      expect(
+        await host.isInterconnectProfileTransferEnabled(),
+        isFalse,
+        reason: '整份配置的读写必须是用户显式 opt-in（BUG-988 的规矩）',
+      );
     });
 
     test('用户开启后可用', () async {
       await SyncRepository(db).setInterconnectProfileTransferEnabled(true);
-      final LocalLibraryHostService host =
-          buildHost(wireProfileCallbacks: true);
+      final LocalLibraryHostService host = buildHost(
+        wireProfileCallbacks: true,
+      );
       expect(await host.isInterconnectProfileTransferEnabled(), isTrue);
     });
 
     test('依赖未接线时即使开关为真也不可用（不会抛给对端 500）', () async {
       await SyncRepository(db).setInterconnectProfileTransferEnabled(true);
-      final LocalLibraryHostService host =
-          buildHost(wireProfileCallbacks: false);
+      final LocalLibraryHostService host = buildHost(
+        wireProfileCallbacks: false,
+      );
       expect(await host.isInterconnectProfileTransferEnabled(), isFalse);
       // 端点在开关判据为假时就 403 了，永远走不到这两个方法；真被调到也要如实抛，
       // 不能静默返回空串让对端导入一份空配置。
       expect(host.exportInterconnectProfile(), throwsUnsupportedError);
-      expect(
-        host.importInterconnectProfile('{}'),
-        throwsUnsupportedError,
-      );
+      expect(host.importInterconnectProfile('{}'), throwsUnsupportedError);
     });
 
     test('开关是设备本地的持久化偏好，读回与写入一致', () async {
@@ -171,7 +181,9 @@ void main() {
     });
 
     test('handler 依次过 TLS → peer token → 能力探测 → 用户开关', () {
-      final int at = src.indexOf('Future<shelf.Response> _handleInterconnectProfile(');
+      final int at = src.indexOf(
+        'Future<shelf.Response> _handleInterconnectProfile(',
+      );
       expect(at, greaterThan(0), reason: '找不到配置传输端点 handler');
       final String body = src.substring(at, at + 2400);
       final int tls = body.indexOf('_securityContext == null');
@@ -184,16 +196,22 @@ void main() {
       expect(gate, greaterThan(cap), reason: 'host 侧用户开关是最后一道门');
       // 开关关着必须是 403（明确拒绝），不能是 404（会被 client 当成「不支持」而静默）。
       final String gateTail = body.substring(gate, gate + 240);
-      expect(gateTail, contains('shelf.Response.forbidden'),
-          reason: '开关关着要 403，让 client 能把「关着」与「不支持」分开报');
+      expect(
+        gateTail,
+        contains('shelf.Response.forbidden'),
+        reason: '开关关着要 403，让 client 能把「关着」与「不支持」分开报',
+      );
     });
 
     test('入站导入永不覆盖 host 既有配置（契约写在接口文档里）', () {
-      final String iface =
-          File('../packages/fushi_engine/lib/sync/interconnect_profile_transfer.dart')
-              .readAsStringSync();
-      expect(iface, contains('createNew'),
-          reason: '入站一律新建 Profile 的契约必须留在接口文档里');
+      final String iface = File(
+        '../packages/fushi_engine/lib/sync/interconnect_profile_transfer.dart',
+      ).readAsStringSync();
+      expect(
+        iface,
+        contains('createNew'),
+        reason: '入站一律新建 Profile 的契约必须留在接口文档里',
+      );
     });
   });
 }

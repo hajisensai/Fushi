@@ -1,18 +1,18 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/field.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 
 /// Returns the formatted furigana HTML of a [DictionaryEntry].
 class FuriganaField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   FuriganaField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Furigana',
-          description: 'Pre-fills text to export for Furigana.',
-          icon: Icons.data_array_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Furigana',
+        description: 'Pre-fills text to export for Furigana.',
+        icon: Icons.data_array_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static FuriganaField get instance => _instance;

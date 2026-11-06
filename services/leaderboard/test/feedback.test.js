@@ -498,6 +498,33 @@ describe('网页处理台', () => {
     expect((await page(env, 'GET', '/dev', { cookie })).data).toContain('发送验证码');
   });
 
+  it('GET /dev/feedback.json 与 /dev/f/:id.json：开发者会话下返回列表 / 详情 JSON；没有会话 → 401', async () => {
+    const env = makeEnv();
+    const dev = await makeDev(env);
+    const a = (await submit(env, { title: '阅读器白屏' })).data;
+    const b = (await submit(env, { title: '视频卡顿' })).data;
+    await withTicket(env, 'POST', `/v1/feedback/${b.id}/close`, b.ticket);
+    const anon = await page(env, 'GET', '/dev/feedback.json');
+    expect(anon.status).toBe(401);
+    expect(anon.data.error).toBe('dev_session_required');
+    expect((await page(env, 'GET', `/dev/f/${a.id}.json`)).status).toBe(401);
+
+    const cookie = (await webLogin(env, dev)).res.headers.get('Set-Cookie').split(';')[0];
+    const active = await page(env, 'GET', '/dev/feedback.json', { cookie });
+    expect(active.status).toBe(200);
+    expect(active.data.items.map((f) => f.id)).toEqual([a.id]);
+    const all = await page(env, 'GET', '/dev/feedback.json?status=all', { cookie });
+    expect(all.data.items.map((f) => f.id).sort()).toEqual([a.id, b.id].sort());
+    const hit = await page(env, 'GET', `/dev/feedback.json?status=all&q=${encodeURIComponent('视频')}`, { cookie });
+    expect(hit.data.items.map((f) => f.id)).toEqual([b.id]);
+
+    const detail = await page(env, 'GET', `/dev/f/${a.id}.json`, { cookie });
+    expect(detail.status).toBe(200);
+    expect(detail.data).toMatchObject({ id: a.id, title: '阅读器白屏', status: 'open' });
+    expect(detail.data.messages).toEqual([]);
+    expect((await page(env, 'GET', '/dev/f/ZZZZZZZZZZ.json', { cookie })).status).toBe(404);
+  });
+
   it('列表有搜索框，q 过滤并在分页 / 状态标签里保留；时间线标出「反馈人标记完成」', async () => {
     const env = makeEnv();
     const dev = await makeDev(env);
@@ -534,6 +561,35 @@ describe('网页处理台', () => {
     expect((await page(env, 'GET', '/dev', { cookie })).data).toContain('反馈');
     await call(env, 'POST', `/admin/api/accounts/${dev.id}/role`, { headers: basic, body: { role: 'user' }, now: NOW });
     expect((await page(env, 'GET', '/dev', { cookie })).data).toContain('发送验证码');
+  });
+
+  it('开发者账户提的反馈醒目标出：自己的写「我提的」，其他开发者写昵称，外部用户 / 匿名不标', async () => {
+    const env = makeEnv();
+    const me = await makeDev(env, 'me');
+    const other = await makeDev(env, 'boss');
+    const user = await registerUser(env, 'outsider', { now: NOW });
+    const mine = (await submit(env, { title: '我自测的' }, { user: me })).data.id;
+    const boss = (await submit(env, { title: '超管提的' }, { user: other })).data.id;
+    const ext = (await submit(env, { title: '外部用户' }, { user })).data.id;
+    const anon = (await submit(env, { title: '匿名' })).data.id;
+
+    const items = (await as(env, me, 'GET', '/v1/dev/feedback')).data.items;
+    const byId = Object.fromEntries(items.map((x) => [x.id, x.devReporter]));
+    expect(byId[mine]).toEqual({ id: me.id, nickname: 'me' });
+    expect(byId[boss]).toEqual({ id: other.id, nickname: 'boss' });
+    expect(byId[ext]).toBeNull();
+    expect(byId[anon]).toBeNull();
+    expect((await as(env, me, 'GET', `/v1/dev/feedback/${boss}`)).data.reporter.isDev).toBe(true);
+    expect((await as(env, me, 'GET', `/v1/dev/feedback/${ext}`)).data.reporter.isDev).toBe(false);
+
+    const cookie = (await webLogin(env, me)).res.headers.get('Set-Cookie').split(';')[0];
+    const list = (await page(env, 'GET', '/dev', { cookie })).data;
+    expect(list).toContain('★ 我提的');
+    expect(list).toContain('★ 开发者 boss');
+    expect(list.match(/class="row insider"/g)).toHaveLength(2);
+    expect((await page(env, 'GET', `/dev/f/${boss}`, { cookie })).data).toContain('★ 开发者 boss');
+    expect((await page(env, 'GET', `/dev/f/${mine}`, { cookie })).data).toContain('★ 我提的');
+    expect((await page(env, 'GET', `/dev/f/${ext}`, { cookie })).data).not.toContain('badge insider');
   });
 });
 

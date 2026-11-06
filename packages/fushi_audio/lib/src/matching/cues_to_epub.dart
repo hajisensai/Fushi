@@ -23,6 +23,16 @@ import 'epub_builder.dart';
 /// The bridge can locate each span with the CSS selector
 /// `[data-cue-id="N"]` and highlight it during audio playback.
 ///
+/// ### Half-width `!` / `?` in Japanese text
+/// ASR (and many hand-made subtitles) write Japanese exclamations with ASCII
+/// `!` / `?` (`断る!`, `何を?`). In vertical writing `text-orientation: mixed`
+/// lays those sideways like Latin letters — correct CSS, wrong Japanese
+/// typesetting. A run of one or two of them right after a Japanese character
+/// is wrapped in `<span class="tcy">` (縦中横, `text-combine-upright: all`), the
+/// same markup a typeset Japanese EPUB uses; the text itself is untouched (no
+/// full-width conversion), so cue text ↔ book text matching, lookup and mining
+/// see exactly what the subtitle said. Horizontal writing ignores the rule.
+///
 /// Container assembly (ZIP/OPF/NCX/nav) is shared with the app-side
 /// text importer via [EpubBuilder].
 class CuesToEpub {
@@ -136,8 +146,9 @@ class CuesToEpub {
     required int totalChapters,
     required List<AudioCue> cues,
   }) {
-    final String chapterLabel =
-        totalChapters > 1 ? 'Chapter ${chapterIndex + 1}' : bookTitle;
+    final String chapterLabel = totalChapters > 1
+        ? 'Chapter ${chapterIndex + 1}'
+        : bookTitle;
 
     final List<List<AudioCue>> paragraphs = _groupParagraphs(cues);
     final StringBuffer body = StringBuffer();
@@ -149,7 +160,7 @@ class CuesToEpub {
         body.write(
           '    <span data-cue-id="${cue.sentenceIndex}"'
           ' data-start="$start"'
-          ' data-end="$end">${_esc(cue.text)}</span>\n',
+          ' data-end="$end">${typesetCueText(cue.text)}</span>\n',
         );
       }
       body.write('  </p>\n');
@@ -161,7 +172,8 @@ class CuesToEpub {
         '<head>\n'
         '  <meta charset="utf-8"/>\n'
         '  <title>${_esc(chapterLabel)}</title>\n'
-        '  <style type="text/css">body{margin:1em 1.5em;line-height:1.8;}p{margin:0.5em 0;}</style>\n'
+        '  <style type="text/css">body{margin:1em 1.5em;line-height:1.8;}p{margin:0.5em 0;}'
+        '.tcy{-webkit-text-combine:horizontal;text-combine-upright:all;}</style>\n'
         '</head>\n'
         '<body>\n'
         '  <h1>${_esc(chapterLabel)}</h1>\n'
@@ -171,4 +183,43 @@ class CuesToEpub {
   }
 
   static String _esc(String s) => EpubBuilder.escXml(s);
+
+  /// XML-escapes [text] and wraps each run of one or two half-width `!` / `?`
+  /// that directly follows a Japanese character in a `tcy` span (see the class
+  /// doc). Longer runs (`!!!`) stay as they are: three glyphs do not fit one
+  /// em box. Latin context (`Hello!`) is never touched.
+  static String typesetCueText(String text) {
+    final StringBuffer out = StringBuffer();
+    final List<int> runes = text.runes.toList();
+    int i = 0;
+    while (i < runes.length) {
+      if (!_isBang(runes[i])) {
+        out.write(_esc(String.fromCharCode(runes[i])));
+        i++;
+        continue;
+      }
+      int j = i;
+      while (j < runes.length && _isBang(runes[j])) {
+        j++;
+      }
+      final String run = String.fromCharCodes(runes.sublist(i, j));
+      final bool afterJapanese = i > 0 && _isJapanese(runes[i - 1]);
+      out.write(
+        afterJapanese && j - i <= 2 ? '<span class="tcy">$run</span>' : run,
+      );
+      i = j;
+    }
+    return out.toString();
+  }
+
+  static bool _isBang(int c) => c == 0x21 || c == 0x3F;
+
+  /// Kana, ー, CJK ideographs, CJK punctuation / brackets, full-width forms.
+  static bool _isJapanese(int c) =>
+      (c >= 0x3000 && c <= 0x30FF) ||
+      (c >= 0x31F0 && c <= 0x31FF) ||
+      (c >= 0x3400 && c <= 0x4DBF) ||
+      (c >= 0x4E00 && c <= 0x9FFF) ||
+      (c >= 0xF900 && c <= 0xFAFF) ||
+      (c >= 0xFF01 && c <= 0xFF9F);
 }

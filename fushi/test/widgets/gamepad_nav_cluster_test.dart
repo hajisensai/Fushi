@@ -37,17 +37,20 @@ void main() {
     );
   }
 
-  testWidgets('D-pad Down reaches the bottom bar; Left/Right switches tabs',
-      (WidgetTester tester) async {
+  testWidgets('D-pad Down reaches the bottom bar; Left/Right switches tabs', (
+    WidgetTester tester,
+  ) async {
     int index = 0;
-    await tester.pumpWidget(buildTestApp(
-      StatefulBuilder(
-        builder: (BuildContext c, StateSetter setState) => contentThenCluster(
-          index: index,
-          onSelect: (int i) => setState(() => index = i),
+    await tester.pumpWidget(
+      buildTestApp(
+        StatefulBuilder(
+          builder: (BuildContext c, StateSetter setState) => contentThenCluster(
+            index: index,
+            onSelect: (int i) => setState(() => index = i),
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(Column)),
@@ -56,8 +59,11 @@ void main() {
     await tester.pump();
 
     // Down from the content lands on the nav bar (now a registered focus stop).
-    expect(controller.move(FushiFocusDirection.down), isTrue,
-        reason: 'the bottom bar is reachable, not a focus dead zone');
+    expect(
+      controller.move(FushiFocusDirection.down),
+      isTrue,
+      reason: 'the bottom bar is reachable, not a focus dead zone',
+    );
     await tester.pump();
     final FushiFocusId? onBar = controller.activeId;
     expect(onBar, isNot(const FushiFocusId('content')));
@@ -84,17 +90,20 @@ void main() {
     expect(index, 0);
   });
 
-  testWidgets('horizontal bar clamps at the ends and bubbles the cross axis',
-      (WidgetTester tester) async {
+  testWidgets('horizontal bar clamps at the ends and bubbles the cross axis', (
+    WidgetTester tester,
+  ) async {
     int index = 2; // last tab
-    await tester.pumpWidget(buildTestApp(
-      StatefulBuilder(
-        builder: (BuildContext c, StateSetter setState) => contentThenCluster(
-          index: index,
-          onSelect: (int i) => setState(() => index = i),
+    await tester.pumpWidget(
+      buildTestApp(
+        StatefulBuilder(
+          builder: (BuildContext c, StateSetter setState) => contentThenCluster(
+            index: index,
+            onSelect: (int i) => setState(() => index = i),
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(Column)),
@@ -107,30 +116,40 @@ void main() {
 
     // Right at the last tab clamps (no wrap).
     Actions.maybeInvoke<GamepadButtonIntent>(
-        ctx, const GamepadButtonIntent(GamepadButton.dpadRight));
+      ctx,
+      const GamepadButtonIntent(GamepadButton.dpadRight),
+    );
     await tester.pump();
     expect(index, 2, reason: 'clamped at the last tab');
 
     // Up (cross axis) is NOT consumed → focus can leave the bar upward.
     final Object? up = Actions.maybeInvoke<GamepadButtonIntent>(
-        ctx, const GamepadButtonIntent(GamepadButton.dpadUp));
-    expect(up, isNot(true),
-        reason: 'the cross-axis press must bubble so focus can leave the bar');
+      ctx,
+      const GamepadButtonIntent(GamepadButton.dpadUp),
+    );
+    expect(
+      up,
+      isNot(true),
+      reason: 'the cross-axis press must bubble so focus can leave the bar',
+    );
     expect(index, 2, reason: 'up does not switch tabs');
   });
 
-  testWidgets('vertical rail switches on Up/Down, bubbles Left/Right',
-      (WidgetTester tester) async {
+  testWidgets('vertical rail switches on Up/Down, bubbles Left/Right', (
+    WidgetTester tester,
+  ) async {
     int index = 0;
-    await tester.pumpWidget(buildTestApp(
-      StatefulBuilder(
-        builder: (BuildContext c, StateSetter setState) => contentThenCluster(
-          index: index,
-          axis: Axis.vertical,
-          onSelect: (int i) => setState(() => index = i),
+    await tester.pumpWidget(
+      buildTestApp(
+        StatefulBuilder(
+          builder: (BuildContext c, StateSetter setState) => contentThenCluster(
+            index: index,
+            axis: Axis.vertical,
+            onSelect: (int i) => setState(() => index = i),
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(Column)),
@@ -144,7 +163,9 @@ void main() {
     // Down switches to the next tab (vertical axis).
     expect(
       Actions.maybeInvoke<GamepadButtonIntent>(
-          ctx, const GamepadButtonIntent(GamepadButton.dpadDown)),
+        ctx,
+        const GamepadButtonIntent(GamepadButton.dpadDown),
+      ),
       isTrue,
     );
     await tester.pump();
@@ -152,7 +173,9 @@ void main() {
 
     // Right (cross axis) bubbles so focus can leave the rail toward content.
     final Object? right = Actions.maybeInvoke<GamepadButtonIntent>(
-        ctx, const GamepadButtonIntent(GamepadButton.dpadRight));
+      ctx,
+      const GamepadButtonIntent(GamepadButton.dpadRight),
+    );
     expect(right, isNot(true));
     expect(index, 1, reason: 'right does not switch rail tabs');
   });

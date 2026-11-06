@@ -15,20 +15,44 @@ import 'package:flutter/services.dart'
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as path;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/types/dictionary_media_type.dart';
+import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_dialog_delete_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_dialog_import_page.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
+import 'package:fushi/src/models/dictionary_download_resume.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
-import 'package:fushi/src/models/recommended_dictionary_installer.dart';
+import 'package:fushi/src/dictionary/recommended_dictionary_installer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/content_language_picker.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_dropdown.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
@@ -599,7 +623,8 @@ class _DictionaryDialogPageState extends BasePageState {
                 onTap: _showDownloadSelectionDialog,
               ),
             ),
-            if (appModel.dictionaries.isEmpty) _buildOverflowMenu(compact: true),
+            if (appModel.dictionaries.isEmpty)
+              _buildOverflowMenu(compact: true),
           ],
         ),
       );
@@ -728,21 +753,13 @@ class _DictionaryDialogPageState extends BasePageState {
             key: ValueKey<String>(focusPrefix),
             onPressed: onTap,
             icon: FushiIcon(icon, size: 18),
-            label: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
           )
         : FushiFilledButton.tonalIcon(
             key: ValueKey<String>(focusPrefix),
             onPressed: onTap,
             icon: FushiIcon(icon, size: 18),
-            label: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
           );
     if (FushiFocusRoot.maybeControllerOf(context) == null) {
       return button;
@@ -889,7 +906,7 @@ class _DictionaryDialogPageState extends BasePageState {
       title: t.dialog_title_dictionary_delete(
         name: dictionary.effectiveDisplayName,
       ),
-      content: t.dialog_content_dictionary_delete,
+      content: _deleteConfirmContent(<Dictionary>[dictionary]),
       confirmLabel: t.dialog_delete,
       run: () => appModel.deleteDictionary(dictionary),
       progressName: dictionary.effectiveDisplayName,
@@ -909,10 +926,7 @@ class _DictionaryDialogPageState extends BasePageState {
   }) async {
     final Widget dialog = DictionaryConfirmationDialog(
       title: Text(title),
-      content: Text(
-        content,
-        textAlign: TextAlign.justify,
-      ),
+      content: Text(content, textAlign: TextAlign.justify),
       actions: <Widget>[
         adaptiveDialogAction(
           context: context,
@@ -967,10 +981,7 @@ class _DictionaryDialogPageState extends BasePageState {
       ],
     );
 
-    showAppDialog(
-      context: context,
-      builder: (context) => dialog,
-    );
+    showAppDialog(context: context, builder: (context) => dialog);
   }
 
   Future<void> _importDictionaryFiles() async {
@@ -1007,13 +1018,11 @@ class _DictionaryDialogPageState extends BasePageState {
 
     if (dictFiles.isEmpty) return;
 
-    final ValueNotifier<String> progressNotifier =
-        ValueNotifier<String>(t.import_start);
+    final ValueNotifier<String> progressNotifier = ValueNotifier<String>(
+      t.import_start,
+    );
     final ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
     final ValueNotifier<int?> totalNotifier = ValueNotifier<int?>(null);
-    progressNotifier.addListener(() {
-      debugPrint('[Dictionary Import] ${progressNotifier.value}');
-    });
 
     if (!mounted) return;
     showAppDialog(
@@ -1027,10 +1036,7 @@ class _DictionaryDialogPageState extends BasePageState {
     );
     // TODO-082：导入一开始就给用户一个明确反馈（开始后台导入），不只让用户盯着
     // 模态进度框猜测进度。
-    FushiToast.show(
-      msg: t.dict_import_started,
-      severity: ToastSeverity.info,
-    );
+    FushiToast.show(msg: t.dict_import_started, severity: ToastSeverity.info);
 
     bool hadMemoryError = false;
     final List<DictionaryTaskFailure> failures = <DictionaryTaskFailure>[];
@@ -1076,8 +1082,9 @@ class _DictionaryDialogPageState extends BasePageState {
     if (failures.isNotEmpty) {
       // BUG-2188：文件导入失败同样带全文诊断——原生 toast 会把它截成两行且不可复制。
       // 页面已经销毁（用户导入期间离开）时退回 toast，失败提示不能因此静默丢失。
-      final String summary =
-          DictionaryImportManager.formatImportFailureSummary(failures);
+      final String summary = DictionaryImportManager.formatImportFailureSummary(
+        failures,
+      );
       if (mounted) {
         unawaited(
           showErrorDetails(
@@ -1151,7 +1158,8 @@ class _DictionaryDialogPageState extends BasePageState {
   // HBK-AUDIT-110: build a rec->index map once per catalog so checkbox tiles do
   // an O(1) lookup instead of List.indexOf (O(n)) per checkbox per rebuild.
   Map<RecommendedDictionary, int> _computeRecIndices(
-      List<RecommendedDictionary> cat) {
+    List<RecommendedDictionary> cat,
+  ) {
     final Map<RecommendedDictionary, int> indices =
         <RecommendedDictionary, int>{};
     for (int i = 0; i < cat.length; i++) {
@@ -1169,12 +1177,15 @@ class _DictionaryDialogPageState extends BasePageState {
     }
     var selectedLearningLang = 'ja';
     var workingCatalog = DictionaryDownloader.catalogForLearningLang(
-        learningLang: selectedLearningLang, glossLang: selectedLang);
+      learningLang: selectedLearningLang,
+      glossLang: selectedLang,
+    );
     var installedIndices = _computeInstalledIndices(workingCatalog);
     var defaults = DictionaryDownloader.defaultSelectionForLearningLang(
-        learningLang: selectedLearningLang,
-        glossLang: selectedLang,
-        workingCatalog: workingCatalog);
+      learningLang: selectedLearningLang,
+      glossLang: selectedLang,
+      workingCatalog: workingCatalog,
+    );
     var checked = Set<int>.from(defaults.difference(installedIndices));
     // HBK-AUDIT-110: byCategory and the rec->index map depend only on
     // workingCatalog, not on checkbox toggles. Compute them here (and again
@@ -1185,14 +1196,17 @@ class _DictionaryDialogPageState extends BasePageState {
     // 学习语言/释义语言任一变化都重建整个目录派生状态。
     void recomputeCatalogState() {
       workingCatalog = DictionaryDownloader.catalogForLearningLang(
-          learningLang: selectedLearningLang, glossLang: selectedLang);
+        learningLang: selectedLearningLang,
+        glossLang: selectedLang,
+      );
       byCategory = DictionaryDownloader.byCategoryFrom(workingCatalog);
       recIndex = _computeRecIndices(workingCatalog);
       installedIndices = _computeInstalledIndices(workingCatalog);
       defaults = DictionaryDownloader.defaultSelectionForLearningLang(
-          learningLang: selectedLearningLang,
-          glossLang: selectedLang,
-          workingCatalog: workingCatalog);
+        learningLang: selectedLearningLang,
+        glossLang: selectedLang,
+        workingCatalog: workingCatalog,
+      );
       checked = Set<int>.from(defaults.difference(installedIndices));
     }
 
@@ -1250,16 +1264,15 @@ class _DictionaryDialogPageState extends BasePageState {
                       expandedCategories: expandedCategories,
                       onCheckedChanged: (Set<int> next) =>
                           setDialogState(() => checked = next),
-                      onExpansionChanged: (
-                        DictionaryCategory cat,
-                        bool expanded,
-                      ) => setDialogState(() {
-                        if (expanded) {
-                          expandedCategories.add(cat);
-                        } else {
-                          expandedCategories.remove(cat);
-                        }
-                      }),
+                      onExpansionChanged:
+                          (DictionaryCategory cat, bool expanded) =>
+                              setDialogState(() {
+                                if (expanded) {
+                                  expandedCategories.add(cat);
+                                } else {
+                                  expandedCategories.remove(cat);
+                                }
+                              }),
                     ),
                   ],
                 ),
@@ -1276,7 +1289,8 @@ class _DictionaryDialogPageState extends BasePageState {
                       ? () => Navigator.pop(ctx, checked)
                       : null,
                   child: Text(
-                      t.dict_download_button(count: downloadCount.toString())),
+                    t.dict_download_button(count: downloadCount.toString()),
+                  ),
                 ),
               ],
             );
@@ -1362,10 +1376,10 @@ class _DictionaryDialogPageState extends BasePageState {
                 tempDir: tempDir,
                 onBytes: (int received, int total) =>
                     progressNotifier.value = dictionaryDownloadStageMessage(
-                  name: rec.name,
-                  received: received,
-                  total: total,
-                ),
+                      name: rec.name,
+                      received: received,
+                      total: total,
+                    ),
                 onDownloaded: () {
                   zipDownloaded = true;
                   // BUG-1493：与单本更新同一套阶段切换（归零进度条 → 不定态），否则
@@ -1410,8 +1424,9 @@ class _DictionaryDialogPageState extends BasePageState {
           // BUG-2188：**标题保持短**（它渲染在 `maxLines: 1` 的单行标题里），失败
           // 原因走 `job.detail`，在正文里多行显示。以前把整串 `DioError [connection ...`
           // 塞进标题，用户能看到的恰好是它被截断的前半段。
-          final String lastReason =
-              failures.isEmpty ? '' : failures.last.reason;
+          final String lastReason = failures.isEmpty
+              ? ''
+              : failures.last.reason;
           if (cancelled) {
             progressNotifier.value = t.dict_download_cancelled;
           } else if (successCount == toDownload.length) {
@@ -1446,8 +1461,9 @@ class _DictionaryDialogPageState extends BasePageState {
         }
         if (failures.isNotEmpty) {
           return DictionaryDownloadOutcome(
-            message:
-                DictionaryImportManager.formatImportFailureSummary(failures),
+            message: DictionaryImportManager.formatImportFailureSummary(
+              failures,
+            ),
             toastLength: Toast.LENGTH_LONG,
             severity: ToastSeverity.error,
             // BUG-2188：全文诊断（含试过哪些地址、原始异常）交给「错误详情」框，
@@ -1473,7 +1489,8 @@ class _DictionaryDialogPageState extends BasePageState {
     required String initialMessage,
     required Future<DictionaryDownloadOutcome?> Function(
       DictionaryDownloadJob job,
-    ) body,
+    )
+    body,
   }) async {
     final DictionaryDownloadController controller =
         appModel.dictionaryDownloadController;
@@ -1504,15 +1521,15 @@ class _DictionaryDialogPageState extends BasePageState {
             valueListenable: controller.cancellable,
             builder: (_, bool cancellable, __) =>
                 DictionaryDownloadProgressDialog(
-              message: msg,
-              detailListenable: controller.detail,
-              progressListenable: controller.progress,
-              // 导入阶段 cancellable 为 false → 按钮置灰 + 说明为什么停不下来，
-              // 而不是给一个按了没反应的按钮（BUG-1499）。
-              onCancel: cancellable ? controller.requestCancel : null,
-              cancelDisabledHint: t.dict_download_import_uncancellable,
-              onHide: () => Navigator.of(ctx).pop(),
-            ),
+                  message: msg,
+                  detailListenable: controller.detail,
+                  progressListenable: controller.progress,
+                  // 导入阶段 cancellable 为 false → 按钮置灰 + 说明为什么停不下来，
+                  // 而不是给一个按了没反应的按钮（BUG-1499）。
+                  onCancel: cancellable ? controller.requestCancel : null,
+                  cancelDisabledHint: t.dict_download_import_uncancellable,
+                  onHide: () => Navigator.of(ctx).pop(),
+                ),
           ),
         ),
       ),
@@ -1574,8 +1591,8 @@ class _DictionaryDialogPageState extends BasePageState {
                     valueListenable: controller.progress,
                     builder: (_, double progress, __) =>
                         FushiLinearProgressIndicator(
-                      value: progress > 0 ? progress : null,
-                    ),
+                          value: progress > 0 ? progress : null,
+                        ),
                   ),
                 ),
               ],
@@ -1595,7 +1612,7 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 必须用原生**返回的**路径：安卓把目录内容直接拷进 [tempDir]（返回它本身），
   /// iOS 拷成 `tempDir/<文件夹名>`（返回那一层）。清理永远删 [tempDir]。
   Future<({Directory directory, Directory? cleanupDir})?>
-      _pickDictionaryImportDirectory() async {
+  _pickDictionaryImportDirectory() async {
     if (Platform.isAndroid || Platform.isIOS) {
       final Directory tempDir = Directory(
         '${appModel.dictionaryResourceDirectory.path}/saf_import_temp',
@@ -1614,13 +1631,11 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Future<void> _importDictionaryFolder() async {
-    ValueNotifier<String> progressNotifier =
-        ValueNotifier<String>(t.import_start);
+    ValueNotifier<String> progressNotifier = ValueNotifier<String>(
+      t.import_start,
+    );
     ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
     ValueNotifier<int?> totalNotifier = ValueNotifier<int?>(null);
-    progressNotifier.addListener(() {
-      debugPrint('[Dictionary Import] ${progressNotifier.value}');
-    });
 
     final ({Directory? cleanupDir, Directory directory})? pickedDirectory;
     try {
@@ -1648,10 +1663,7 @@ class _DictionaryDialogPageState extends BasePageState {
       );
       // TODO-082：目录导入也在开始时给明确反馈（成功/失败提示由
       // DictionaryImportManager.importFromDirectory 在完成时弹出）。
-      FushiToast.show(
-        msg: t.dict_import_started,
-        severity: ToastSeverity.info,
-      );
+      FushiToast.show(msg: t.dict_import_started, severity: ToastSeverity.info);
     }
 
     bool hadMemoryError = false;
@@ -1706,8 +1718,9 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Widget buildContent() {
-    final List<Dictionary> selectedDictionaries =
-        _dictionariesForType(_selectedType);
+    final List<Dictionary> selectedDictionaries = _dictionariesForType(
+      _selectedType,
+    );
     if (appModel.dictionaries.isEmpty) return buildEmptyMessage();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1716,13 +1729,93 @@ class _DictionaryDialogPageState extends BasePageState {
         if (selectedDictionaries.isEmpty)
           _buildEmptyCategoryRow()
         else
-          // 进场窗口：首开与切换词典类型时，首屏词典行错峰淡入上移。
+          // 进场窗口：首开与切换词典类型时，首屏的组标题与词典行错峰淡入上移。
           FushiEntranceScope(
             replayKey: _selectedType,
-            child: _buildDictionaryList(selectedDictionaries),
+            child: _buildLanguageGroups(selectedDictionaries),
           ),
       ],
     );
+  }
+
+  /// 按「有效语言」（手动指定优先，其次包内声明）分组的列表（反馈 D_Nz5R4vSH）：
+  /// 每组一个语言名标题 + 一列只能在组内拖动的词典；没有语言信息的归「未标注
+  /// 语言」组放最后。分组与组内顺序的推导见 [groupDictionariesByLanguage]——
+  /// 组内顺序就是全局查词优先级在该组的子序列；组内重排写回时整个分区按「各组
+  /// 首尾相接」重编号（[moveDictionaryWithinLanguageGroup]），所以这里从上到下
+  /// 画出来的顺序就是真实查词顺序，其它组的组内顺序不变。
+  ///
+  /// 只有一个语言组时不画组标题：多数用户只装一种语言的词典，列表保持原样，
+  /// 不平白多一行标题；两组及以上才需要标题来区分。
+  Widget _buildLanguageGroups(List<Dictionary> section) {
+    final List<DictionaryLanguageGroup> groups = groupDictionariesByLanguage(
+      section,
+    );
+    final bool showHeaders = groups.length > 1;
+    final List<Widget> children = <Widget>[];
+    // 错峰下标跨组累加：标题与词典行按屏幕自上而下依次进场。
+    int entranceIndex = 0;
+    for (int g = 0; g < groups.length; g++) {
+      final DictionaryLanguageGroup group = groups[g];
+      if (showHeaders) {
+        children.add(
+          FushiStaggeredEntrance(
+            index: entranceIndex++,
+            child: _buildLanguageGroupHeader(group, first: g == 0),
+          ),
+        );
+      }
+      children.add(
+        _buildDictionaryList(
+          group.dictionaries,
+          groupKey: group.language,
+          entranceOffset: entranceIndex,
+        ),
+      );
+      entranceIndex += group.dictionaries.length;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    );
+  }
+
+  /// 组标题：语言自称（与内容语言选择器同一套标签，见 [contentLanguageLabelOf]）
+  /// + 本组本数。走 [SettingsSectionHeader]，MD3 / Apple 各按自己的分组外标题排。
+  Widget _buildLanguageGroupHeader(
+    DictionaryLanguageGroup group, {
+    required bool first,
+  }) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final String? language = group.language;
+    final String label = language == null
+        ? t.dict_language_group_unset
+        : contentLanguageLabelOf(language);
+    return KeyedSubtree(
+      key: ValueKey<String>('dict-language-group-${language ?? ''}'),
+      child: SettingsSectionHeader(
+        t.dict_language_group_title(
+          language: label,
+          n: group.dictionaries.length,
+        ),
+        padding: EdgeInsets.only(
+          top: first ? 0 : tokens.spacing.card,
+          bottom: tokens.spacing.gap,
+        ),
+      ),
+    );
+  }
+
+  /// [dictionary] 在它所在分区里的语言组（组内顺序）。详情里的上移 / 下移 /
+  /// 置顶 / 置底 / 移到第几位与键盘 Alt+↑↓ 都以组为排序范围。
+  List<Dictionary> _languageGroupOf(Dictionary dictionary) {
+    final String? language = dictionaryLanguageGroupOf(dictionary);
+    return <Dictionary>[
+      for (final Dictionary d in _dictionariesForType(
+        _sectionTypeOf(dictionary),
+      ))
+        if (dictionaryLanguageGroupOf(d) == language) d,
+    ];
   }
 
   /// 列表头：分类标题 + 「共 N 本 · 已启用 M 本」，右侧是排序方式提示（桌面
@@ -1730,17 +1823,16 @@ class _DictionaryDialogPageState extends BasePageState {
   Widget _buildListHeader(List<Dictionary> dictionaries) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = theme.colorScheme;
-    final int enabledCount = dictionaries
-        .where((Dictionary d) => !d.isHidden(JapaneseLanguage.instance))
-        .length;
+    final int enabledCount = dictionaries.where(_enabledInSection).length;
     final TargetPlatform platform = theme.platform;
-    final bool desktop = platform == TargetPlatform.windows ||
+    final bool desktop =
+        platform == TargetPlatform.windows ||
         platform == TargetPlatform.linux ||
         platform == TargetPlatform.macOS;
     final bool compact = MediaQuery.sizeOf(context).width < 480;
     // Material 手机：多选开关与溢出菜单住在这一行右侧（动作条只放两个主入口）。
-    final bool headerActions = compact &&
-        !(isCupertinoPlatform(context) || isGlassDesign(context));
+    final bool headerActions =
+        compact && !(isCupertinoPlatform(context) || isGlassDesign(context));
     final Widget? hint = dictionaries.length > 1
         ? Text(
             desktop ? t.dict_reorder_hint_desktop : t.dict_reorder_hint_touch,
@@ -1888,7 +1980,8 @@ class _DictionaryDialogPageState extends BasePageState {
       icon: DictionaryMediaType.instance.outlinedIcon,
       onImport: _importDictionaryFiles,
       onDownload: _showDownloadSelectionDialog,
-      showDropHint: platform == TargetPlatform.windows ||
+      showDropHint:
+          platform == TargetPlatform.windows ||
           platform == TargetPlatform.linux ||
           platform == TargetPlatform.macOS,
     );
@@ -1927,7 +2020,7 @@ class _DictionaryDialogPageState extends BasePageState {
     required List<Dictionary> dictionaries,
     required bool split,
   }) {
-    final bool enabled = !dictionary.isHidden(JapaneseLanguage.instance);
+    final bool enabled = _enabledInSection(dictionary);
     final ColorScheme scheme = theme.colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool compact = MediaQuery.sizeOf(context).width < 480;
@@ -1941,10 +2034,11 @@ class _DictionaryDialogPageState extends BasePageState {
         fontWeight: FontWeight.w600,
       ),
     );
+    final String baseSubtitle = _isKanjiPart(dictionary)
+        ? '${_subtitleForDictionary(dictionary)} · ${t.dict_mixed_kanji_part}'
+        : _subtitleForDictionary(dictionary);
     final Widget subtitle = Text(
-      enabled
-          ? _subtitleForDictionary(dictionary)
-          : '${_subtitleForDictionary(dictionary)} · ${t.dict_status_disabled}',
+      enabled ? baseSubtitle : '$baseSubtitle · ${t.dict_status_disabled}',
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
@@ -1961,7 +2055,9 @@ class _DictionaryDialogPageState extends BasePageState {
         : Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              _buildDictionaryCollapseButton(dictionary),
+              // 折叠管的是查词弹窗里这本的释义；汉字卡不折叠，「汉字」分区不给这个钮。
+              if (_hasCollapseControl(dictionary))
+                _buildDictionaryCollapseButton(dictionary),
               _buildDictionaryVisibilityButton(dictionary, enabled),
             ],
           );
@@ -2022,10 +2118,7 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  Widget _buildDictionaryVisibilityButton(
-    Dictionary dictionary,
-    bool enabled,
-  ) {
+  Widget _buildDictionaryVisibilityButton(Dictionary dictionary, bool enabled) {
     final String tooltip = enabled ? t.options_hide : t.options_show;
     return FushiTooltip(
       message: tooltip,
@@ -2038,7 +2131,8 @@ class _DictionaryDialogPageState extends BasePageState {
           value: enabled,
           // 走开关自身的主题配色（MD3 primary 轨 / Apple 系统开关），
           // 不再自定 primaryContainer 浅色轨——那与全应用其它开关不是一个长相。
-          onChanged: (bool enabled) => _setDictionaryEnabled(dictionary, enabled),
+          onChanged: (bool enabled) =>
+              _setDictionaryEnabled(dictionary, enabled),
         ),
       ),
     );
@@ -2056,33 +2150,36 @@ class _DictionaryDialogPageState extends BasePageState {
   // collapse_dictionaries 默认 true，用户对自动展开窗口之外的词典点「展开」，
   // 视觉上毫无反应。现在是三态循环：继承 → 显式展开 → 显式折叠 → 继承。
   //
-  // 图标表示**当前态**（20+ 本词典要能一眼扫出谁被显式设过），tooltip 说的是
-  // **点一下会变成什么**——两者故意不同，别再把它们合成一个。
+  // 图标与 tooltip 都表示**当前态**（20+ 本词典要能一眼扫出谁被显式设过）。
+  // 以前 tooltip 说的是「点一下会变成什么」，折叠图标配「跟随全局设置」被读成
+  // 当前态。tooltip 带「默认展示」标题、用详情分段控件同一套状态词，免得中文
+  // 「折叠」被读成动作。
   Widget _buildDictionaryCollapseButton(Dictionary dictionary) {
-    final DictionaryCollapseState state =
-        dictionary.collapseStateFor(JapaneseLanguage.instance);
-    final (IconData icon, String tooltip) = switch (state) {
+    final DictionaryCollapseState state = dictionary.collapseStateFor(
+      JapaneseLanguage.instance,
+    );
+    final (IconData icon, String stateLabel) = switch (state) {
       // 未表态：一条横杠，与两个「已表态」图标一眼可分。点下去 → 显式展开。
       DictionaryCollapseState.inherit => (
-          Icons.horizontal_rule,
-          t.options_expand,
-        ),
+        Icons.horizontal_rule,
+        t.dict_collapse_state_inherit,
+      ),
       // 显式展开：展开图标。点下去 → 显式折叠。
       DictionaryCollapseState.expanded => (
-          Icons.unfold_more,
-          t.options_collapse,
-        ),
+        Icons.unfold_more,
+        t.dict_collapse_state_expanded,
+      ),
       // 显式折叠：折叠图标。点下去 → 交还给全局。
       DictionaryCollapseState.collapsed => (
-          Icons.unfold_less,
-          t.dictionary_collapse_follow_global,
-        ),
+        Icons.unfold_less,
+        t.dict_collapse_state_collapsed,
+      ),
     };
     return FushiIconButton(
       key: ValueKey<String>('dict-row-collapse-${dictionary.name}'),
       icon: icon,
       size: 20,
-      tooltip: tooltip,
+      tooltip: t.dict_row_collapse_tooltip(state: stateLabel),
       onTap: () => _saveDictionaryChange(
         () => appModel.cycleDictionaryCollapseState(dictionary),
       ),
@@ -2096,10 +2193,20 @@ class _DictionaryDialogPageState extends BasePageState {
   // → 任意缩放下都精确跟手、零偏移且视觉一致。键盘 Alt+↑/↓ 与详情里的
   // 上移 / 下移按钮（Icons.keyboard_arrow_up / Icons.keyboard_arrow_down）仍是
   // 无障碍 / 手柄重排路径。
-  Widget _buildDictionaryList(List<Dictionary> dictionaries) {
-    final bool split =
-        dictionaryManagerUsesSplitLayout(MediaQuery.sizeOf(context).width);
+  ///
+  /// 一组语言一列：[dictionaries] 是该组词典（组内顺序），拖拽天然只能落在本组
+  /// 之内；[groupKey] 让各组的列表 element 不因组数变化而错位复用；
+  /// [entranceOffset] 是本组第一行在整屏错峰序列里的下标。
+  Widget _buildDictionaryList(
+    List<Dictionary> dictionaries, {
+    required String? groupKey,
+    required int entranceOffset,
+  }) {
+    final bool split = dictionaryManagerUsesSplitLayout(
+      MediaQuery.sizeOf(context).width,
+    );
     return FushiReorderableColumn(
+      key: ValueKey<String>('dict-language-list-${groupKey ?? ''}'),
       itemCount: dictionaries.length,
       // 行间距由列表统一插入（见 _buildDictionaryTile 不再自带 bottom padding）；
       // 圆角传卡片半径，让拖拽浮层裁成圆角、不在卡片四角露出底色。
@@ -2115,7 +2222,7 @@ class _DictionaryDialogPageState extends BasePageState {
       // 位移、不改布局，列表测高与拖拽浮层复制不受影响；拖拽浮层挂载时窗口早已
       // 关闭，浮层瞬间出现。
       itemBuilder: (BuildContext context, int index) => FushiStaggeredEntrance(
-        index: index,
+        index: entranceOffset + index,
         child: _buildDictionaryTile(
           dictionary: dictionaries[index],
           index: index,
@@ -2131,20 +2238,33 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 并持久化。`newIndex` 是移动完成后该词典应处的位置（非 SDK 的「插入前下标」），
   /// 拖拽、键盘、详情里的上移 / 下移 / 置顶 / 置底统一走这套最终下标语义——无需
   /// SDK 的 `if(new>old)new--` 特例。越界与原地不动直接忽略。
+  ///
+  /// [dictionaries] 是**一个语言组**（组内顺序），只用来取被移动的是哪本：组成员
+  /// 一律从最新分区现算（[moveDictionaryWithinLanguageGroup]）——列表是渲染时捕获
+  /// 的，期间别处（ctl 路由、导入、改语言）可能已经改了组成员，拿旧组去合并会因
+  /// 成员不符抛错。写回的是整个分区的规范顺序（各语言组按显示顺序首尾相接），
+  /// 按新下标重编号后，管理页显示的顺序就是真实查词顺序。
   Future<bool> _reorderDictionaries(
     int oldIndex,
     int newIndex,
     List<Dictionary> dictionaries,
   ) async {
-    if (newIndex < 0 ||
-        newIndex >= dictionaries.length ||
-        newIndex == oldIndex) {
-      return false;
-    }
-    final List<Dictionary> cloneDictionaries = List.from(dictionaries);
+    if (oldIndex < 0 || oldIndex >= dictionaries.length) return false;
+    final List<Dictionary>? cloneDictionaries =
+        moveDictionaryWithinLanguageGroup(
+          _dictionariesForType(_selectedType),
+          dictionaries[oldIndex].name,
+          newIndex,
+        );
+    if (cloneDictionaries == null) return false;
 
-    final Dictionary item = cloneDictionaries.removeAt(oldIndex);
-    cloneDictionaries.insert(newIndex, item);
+    // 「汉字」分区里混合词典只动汉字部分的位置，不能走按 order 整体重编号的路径
+    // （那会把它在「术语」分区的位置一起改掉）。
+    if (_selectedType == DictionaryType.kanji) {
+      return _saveDictionaryChange(
+        () => appModel.updateKanjiSectionOrder(cloneDictionaries),
+      );
+    }
 
     for (int i = 0; i < cloneDictionaries.length; i++) {
       cloneDictionaries[i] = cloneDictionaries[i].copyWith(order: i);
@@ -2155,11 +2275,12 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  /// 把 [dictionary] 挪到本类型列表的最终下标 [to]（详情里的四个排序按钮）。
+  /// 把 [dictionary] 挪到它所在语言组的最终下标 [to]（详情里的四个排序按钮）。
   Future<bool> _moveDictionaryTo(Dictionary dictionary, int to) async {
-    final List<Dictionary> dictionaries = _dictionariesForType(dictionary.type);
-    final int from =
-        dictionaries.indexWhere((Dictionary d) => d.name == dictionary.name);
+    final List<Dictionary> dictionaries = _languageGroupOf(dictionary);
+    final int from = dictionaries.indexWhere(
+      (Dictionary d) => d.name == dictionary.name,
+    );
     if (from < 0) return false;
     return _reorderDictionaries(from, to, dictionaries);
   }
@@ -2168,9 +2289,10 @@ class _DictionaryDialogPageState extends BasePageState {
   /// [_reorderDictionaries] 写入路径，焦点跟着被移动的词典走（列表所在路由是
   /// 当前路由时——窄屏从底部 sheet 里移动时焦点留在 sheet，sheet 内容自己刷新）。
   Future<void> _promptMoveDictionary(Dictionary dictionary) async {
-    final List<Dictionary> dictionaries = _dictionariesForType(dictionary.type);
-    final int from =
-        dictionaries.indexWhere((Dictionary d) => d.name == dictionary.name);
+    final List<Dictionary> dictionaries = _languageGroupOf(dictionary);
+    final int from = dictionaries.indexWhere(
+      (Dictionary d) => d.name == dictionary.name,
+    );
     if (from < 0 || dictionaries.length < 2) return;
     final int? to = await showDictionaryPositionDialog(
       context: context,
@@ -2185,9 +2307,9 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   FocusNode _rowFocusNode(String name) => _rowFocusNodes.putIfAbsent(
-        name,
-        () => FocusNode(debugLabel: 'dict-row-$name'),
-      );
+    name,
+    () => FocusNode(debugLabel: 'dict-row-$name'),
+  );
 
   /// 行级键盘：Alt+↑/↓ 上下挪一位（焦点跟着词典走），Delete 删除这本。只在行内
   /// 某个控件持焦时生效；其余键照常冒泡给全局方向导航。
@@ -2256,8 +2378,7 @@ class _DictionaryDialogPageState extends BasePageState {
   void _openDictionaryDetail(Dictionary dictionary) {
     if (dictionaryManagerUsesSplitLayout(MediaQuery.sizeOf(context).width)) {
       setState(() {
-        _detailName =
-            _detailName == dictionary.name ? null : dictionary.name;
+        _detailName = _detailName == dictionary.name ? null : dictionary.name;
       });
       return;
     }
@@ -2276,7 +2397,7 @@ class _DictionaryDialogPageState extends BasePageState {
             final FushiDesignTokens tokens = FushiDesignTokens.of(context);
             return FushiModalSheetFrame(
               title: current.effectiveDisplayName,
-              subtitle: _typeLabel(current.type),
+              subtitle: _sectionTypeLabel(current),
               leadingIcon: DictionaryMediaType.instance.outlinedIcon,
               scrollable: true,
               maxHeightFactor: 0.9,
@@ -2315,9 +2436,11 @@ class _DictionaryDialogPageState extends BasePageState {
     required bool showHeader,
     required VoidCallback onDeleteRequested,
   }) {
-    final List<Dictionary> siblings = _dictionariesForType(dictionary.type);
-    final int position =
-        siblings.indexWhere((Dictionary d) => d.name == dictionary.name);
+    // 位置与「共几本」都按语言组算：排序只在组内进行。
+    final List<Dictionary> siblings = _languageGroupOf(dictionary);
+    final int position = siblings.indexWhere(
+      (Dictionary d) => d.name == dictionary.name,
+    );
     final DictionaryFormat? format =
         appModel.dictionaryFormats[dictionary.formatKey];
     final String override = dictionary.languageOverride ?? '';
@@ -2325,14 +2448,14 @@ class _DictionaryDialogPageState extends BasePageState {
     final String languageLabel = override.isNotEmpty
         ? contentLanguageLabelOf(override)
         : source.isNotEmpty
-            ? '${t.dict_language_auto} · ${contentLanguageLabelOf(source)}'
-            : t.dict_language_auto;
+        ? '${t.dict_language_auto} · ${contentLanguageLabelOf(source)}'
+        : t.dict_language_auto;
     return DictionaryManagerDetail(
       key: ValueKey<String>('dict-detail-${dictionary.name}'),
       dictionary: dictionary,
-      enabled: !dictionary.isHidden(JapaneseLanguage.instance),
+      enabled: _enabledInSection(dictionary),
       collapseState: dictionary.collapseStateFor(JapaneseLanguage.instance),
-      typeLabel: _typeLabel(dictionary.type),
+      typeLabel: _sectionTypeLabel(dictionary),
       versionLabel: dictionary.revision,
       formatLabel: format?.name ?? dictionary.formatKey,
       languageLabel: languageLabel,
@@ -2341,8 +2464,10 @@ class _DictionaryDialogPageState extends BasePageState {
       showHeader: showHeader,
       onEnabledChanged: (bool enabled) =>
           _setDictionaryEnabled(dictionary, enabled),
-      onCollapseChanged: (DictionaryCollapseState state) =>
-          _setCollapseState(dictionary, state),
+      onCollapseChanged: _hasCollapseControl(dictionary)
+          ? (DictionaryCollapseState state) =>
+                _setCollapseState(dictionary, state)
+          : null,
       onRename: () => _renameDictionary(dictionary),
       onLanguage: () => _showDictionaryLanguageDialog(dictionary),
       // TODO-839：每本词典都给「更新」（消除「这本能更新那本不能」的断层），按
@@ -2371,8 +2496,9 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 切换时淡入 + 轻微上移（时长取 FushiMotion，减弱动态效果下归零）。
   Widget _buildDetailPane() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Dictionary? dictionary =
-        _detailName == null ? null : _findDictionary(_detailName!);
+    final Dictionary? dictionary = _detailName == null
+        ? null
+        : _findDictionary(_detailName!);
     final Widget content = dictionary == null
         ? DictionaryManagerOverview(
             key: const ValueKey<String>('dict-overview'),
@@ -2396,15 +2522,15 @@ class _DictionaryDialogPageState extends BasePageState {
       switchOutCurve: FushiMotion.exit,
       transitionBuilder: (Widget child, Animation<double> animation) =>
           FadeTransition(
-        opacity: animation,
-        child: SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 0.02),
-            end: Offset.zero,
-          ).animate(animation),
-          child: child,
-        ),
-      ),
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.02),
+                end: Offset.zero,
+              ).animate(animation),
+              child: child,
+            ),
+          ),
       child: ListView(
         key: ValueKey<String?>(dictionary?.name),
         padding: EdgeInsets.all(tokens.spacing.page),
@@ -2422,7 +2548,11 @@ class _DictionaryDialogPageState extends BasePageState {
         icon: icon,
         total: list.length,
         enabled: list
-            .where((Dictionary d) => !d.isHidden(JapaneseLanguage.instance))
+            .where(
+              (Dictionary d) => type == DictionaryType.kanji
+                  ? d.isKanjiSectionEnabled(JapaneseLanguage.instance)
+                  : !d.isHidden(JapaneseLanguage.instance),
+            )
             .length,
       );
     }
@@ -2462,8 +2592,8 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   List<Dictionary> get _selectedDictionaries => _dictionariesForType(
-        _selectedType,
-      ).where((Dictionary d) => _selectedNames.contains(d.name)).toList();
+    _selectedType,
+  ).where((Dictionary d) => _selectedNames.contains(d.name)).toList();
 
   /// 多选态的底部批量栏（共享 [BatchActionBar]：已选 N · 全选 · 反选 + 动作）。
   /// 全选 / 反选的域是当前类型的可见列表。非多选态返回 null（不占位）。
@@ -2478,7 +2608,7 @@ class _DictionaryDialogPageState extends BasePageState {
       key: const ValueKey<String>('dict-batch-move-to'),
       icon: Icons.format_list_numbered,
       tooltip: t.dict_order_position_move,
-      enabled: picked.length == 1 && visible.length > 1,
+      enabled: picked.length == 1 && _languageGroupOf(picked.single).length > 1,
       onTap: () => _promptMoveDictionary(picked.single),
     );
     final Widget delete = FushiIconButton(
@@ -2547,9 +2677,17 @@ class _DictionaryDialogPageState extends BasePageState {
   Future<bool> _batchSetEnabled(bool enabled) =>
       _saveDictionaryChange(() async {
         for (final Dictionary dictionary in _selectedDictionaries) {
-          await appModel.setDictionaryHidden(dictionary, !enabled);
+          await _writeEnabledInSection(dictionary, enabled);
         }
       });
+
+  /// 删除确认正文。「汉字」分区里的混合词典行只是整本词典的汉字部分，删除却是
+  /// 整本删（术语词条一起没了），确认框必须说清楚并指向只关汉字部分的开关。
+  String _deleteConfirmContent(List<Dictionary> targets) =>
+      targets.any(_isKanjiPart)
+      ? '${t.dialog_content_dictionary_delete}\n\n'
+            '${t.dict_mixed_kanji_part_delete_note}'
+      : t.dialog_content_dictionary_delete;
 
   /// 批量删除：一次确认，逐本走与单本删除同一条 [AppModel.deleteDictionary]
   /// （同一进度页 / 失败提示），删完退出多选。
@@ -2558,7 +2696,7 @@ class _DictionaryDialogPageState extends BasePageState {
     if (targets.isEmpty) return Future<void>.value();
     return _showDictionaryActionConfirmDialog(
       title: t.dict_batch_delete_title(n: targets.length),
-      content: t.dialog_content_dictionary_delete,
+      content: _deleteConfirmContent(targets),
       confirmLabel: t.dialog_delete,
       run: () async {
         for (final Dictionary dictionary in targets) {
@@ -2577,7 +2715,8 @@ class _DictionaryDialogPageState extends BasePageState {
   String _subtitleForDictionary(Dictionary dictionary) {
     final DictionaryFormat? dictionaryFormat =
         appModel.dictionaryFormats[dictionary.formatKey];
-    final String revision = dictionary.metadata['revision'] ??
+    final String revision =
+        dictionary.metadata['revision'] ??
         dictionary.metadata['version'] ??
         dictionary.metadata['formatVersion'] ??
         '';
@@ -2588,11 +2727,39 @@ class _DictionaryDialogPageState extends BasePageState {
   List<Dictionary> _dictionariesForType(DictionaryType type) {
     return switch (type) {
       DictionaryType.term => appModel.termDictionaries,
-      DictionaryType.kanji => appModel.kanjiDictionaries,
+      DictionaryType.kanji => appModel.kanjiSectionDictionaries,
       DictionaryType.frequency => appModel.freqDictionaries,
       DictionaryType.pitch => appModel.pitchDictionaries,
     };
   }
+
+  /// 当前在「汉字」分区里看的是一本混合词典的汉字部分（Hoshi Reader 同款：附汉字
+  /// 表的 term 词典在「术语」「汉字」两个分区各占一行，开关与排序各管各的）。
+  bool _isKanjiPart(Dictionary dictionary) =>
+      _selectedType == DictionaryType.kanji && dictionary.hasEmbeddedKanji;
+
+  /// 这一行所在的分区：汉字部分算「汉字」，其余按词典自身类型。
+  DictionaryType _sectionTypeOf(Dictionary dictionary) =>
+      _isKanjiPart(dictionary) ? DictionaryType.kanji : dictionary.type;
+
+  /// 这一行给不给「折叠」控件（行内按钮与详情里的分段同一判据）：折叠只作用于查词
+  /// 弹窗里的释义，「汉字」分区的行对应汉字卡（不折叠），在那里给控件改的会是混合
+  /// 词典术语部分的状态。
+  bool _hasCollapseControl(Dictionary dictionary) =>
+      _sectionTypeOf(dictionary) != DictionaryType.kanji;
+
+  String _sectionTypeLabel(Dictionary dictionary) => _isKanjiPart(dictionary)
+      ? '${_typeLabel(DictionaryType.kanji)} · ${t.dict_mixed_kanji_part}'
+      : _typeLabel(dictionary.type);
+
+  bool _enabledInSection(Dictionary dictionary) => _isKanjiPart(dictionary)
+      ? !dictionary.isKanjiPartHidden
+      : !dictionary.isHidden(JapaneseLanguage.instance);
+
+  Future<void> _writeEnabledInSection(Dictionary dictionary, bool enabled) =>
+      _isKanjiPart(dictionary)
+      ? appModel.setDictionaryKanjiPartHidden(dictionary, !enabled)
+      : appModel.setDictionaryHidden(dictionary, !enabled);
 
   String _labelForType(DictionaryType type) {
     return switch (type) {
@@ -2604,8 +2771,7 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Future<bool> _setDictionaryEnabled(Dictionary dictionary, bool enabled) =>
-      _saveDictionaryChange(
-          () => appModel.setDictionaryHidden(dictionary, !enabled));
+      _saveDictionaryChange(() => _writeEnabledInSection(dictionary, enabled));
 
   FushiPopupMenuItem<VoidCallback> buildPopupItem({
     required String label,
@@ -2642,6 +2808,12 @@ class _DictionaryDialogPageState extends BasePageState {
     final Directory tempDir = Directory(
       path.join(appModel.dictionaryResourceDirectory.path, 'update_temp'),
     );
+    // W-2：更新即知本词典可更新——显式回填 isUpdatable:'true' + 两 URL，使
+    // 即便重导包内 index.json 不声明 isUpdatable，更新后仍保持可更新（不丢按钮）。
+    final Map<String, String> sourceOverride = remote.updatedSourceMetadata(
+      localDownloadUrl: dictionary.downloadUrl,
+      localIndexUrl: dictionary.indexUrl,
+    );
     try {
       job.markDownloadPhase();
       progressNotifier.value = t.dict_update_updating(name: name);
@@ -2651,9 +2823,18 @@ class _DictionaryDialogPageState extends BasePageState {
         tempDir: tempDir,
         progressNotifier: downloadProgress,
         cancelToken: job.cancelToken,
-        onBytes: (int received, int total) => progressNotifier.value =
-            dictionaryDownloadStageMessage(
-                name: name, received: received, total: total),
+        onBytes: (int received, int total) =>
+            progressNotifier.value = dictionaryDownloadStageMessage(
+              name: name,
+              received: received,
+              total: total,
+            ),
+        // BUG-3887 续：iOS 进程被回收后新进程据此接着下、按同一配方重导。
+        handoffPayload: DictionaryImportRecipe.update(
+          name: name,
+          replaceTargetName: dictionary.name,
+          sourceOverride: sourceOverride,
+        ).toPayload(),
       );
       enterDictionaryImportStage(
         name: name,
@@ -2666,12 +2847,7 @@ class _DictionaryDialogPageState extends BasePageState {
         progressNotifier: progressNotifier,
         onImportSuccess: () {},
         replaceTarget: dictionary,
-        // W-2：更新即知本词典可更新——显式回填 isUpdatable:'true' + 两 URL，使
-        // 即便重导包内 index.json 不声明 isUpdatable，更新后仍保持可更新（不丢按钮）。
-        sourceOverride: remote.updatedSourceMetadata(
-          localDownloadUrl: dictionary.downloadUrl,
-          localIndexUrl: dictionary.indexUrl,
-        ),
+        sourceOverride: sourceOverride,
       );
       return true;
     } finally {
@@ -2693,7 +2869,8 @@ class _DictionaryDialogPageState extends BasePageState {
         try {
           final DictionaryRemoteIndexResult remote =
               await DictionaryUpdateService.fetchRemoteIndexResult(
-                  dictionary.indexUrl);
+                dictionary.indexUrl,
+              );
           // 拉不到远端 index 不是「已是最新」——以前两者同一条提示，断网时用户
           // 被告知已最新，其实根本没检查成。
           if (!remote.succeeded) {
@@ -2703,7 +2880,9 @@ class _DictionaryDialogPageState extends BasePageState {
             );
           }
           if (!DictionaryUpdateService.needsUpdate(
-              dictionary.revision, remote.revision)) {
+            dictionary.revision,
+            remote.revision,
+          )) {
             return DictionaryDownloadOutcome(
               message: t.dict_update_latest,
               severity: ToastSeverity.info,
@@ -2715,8 +2894,7 @@ class _DictionaryDialogPageState extends BasePageState {
             job: job,
           );
           return DictionaryDownloadOutcome(
-            message: t.dict_update_done(
-                name: dictionary.effectiveDisplayName),
+            message: t.dict_update_done(name: dictionary.effectiveDisplayName),
             severity: ToastSeverity.success,
           );
         } catch (e, stack) {
@@ -2728,8 +2906,11 @@ class _DictionaryDialogPageState extends BasePageState {
               severity: ToastSeverity.info,
             );
           }
-          ErrorLogService.instance
-              .log('DictionaryDialog.updateSingle', e, stack);
+          ErrorLogService.instance.log(
+            'DictionaryDialog.updateSingle',
+            e,
+            stack,
+          );
           return DictionaryDownloadOutcome(
             message: t.dict_update_failed(error: '$e'),
             severity: ToastSeverity.error,
@@ -2769,8 +2950,9 @@ class _DictionaryDialogPageState extends BasePageState {
     final File file = File(pickedPath);
 
     // 异名确认：仅 yomitan zip 能廉价探出 title；探到且与目标词典异名时先弹确认。
-    final String? incomingTitle =
-        DictionaryImportManager.peekDictionaryTitle(file);
+    final String? incomingTitle = DictionaryImportManager.peekDictionaryTitle(
+      file,
+    );
     if (incomingTitle != null && incomingTitle != dictionary.name) {
       final bool? confirmed = await _confirmNameMismatch(
         incoming: incomingTitle,
@@ -2787,8 +2969,9 @@ class _DictionaryDialogPageState extends BasePageState {
     if (!mounted) return;
 
     await _runWithDownloadProgressDialog(
-      initialMessage:
-          t.dict_update_updating(name: dictionary.effectiveDisplayName),
+      initialMessage: t.dict_update_updating(
+        name: dictionary.effectiveDisplayName,
+      ),
       body: (DictionaryDownloadJob job) async {
         // 本地文件覆盖更新**全程都是导入阶段**（没有下载），故整条路径不可取消：
         // 进入 body 就切 importing，取消按钮从头到尾是灰的（BUG-1499）。
@@ -2803,13 +2986,15 @@ class _DictionaryDialogPageState extends BasePageState {
           );
           // 覆盖导入没抛异常即成功。
           return DictionaryDownloadOutcome(
-            message: t.dict_update_done(
-                name: dictionary.effectiveDisplayName),
+            message: t.dict_update_done(name: dictionary.effectiveDisplayName),
             severity: ToastSeverity.success,
           );
         } catch (e, stack) {
-          ErrorLogService.instance
-              .log('DictionaryDialog.updateFromFile', e, stack);
+          ErrorLogService.instance.log(
+            'DictionaryDialog.updateFromFile',
+            e,
+            stack,
+          );
           return DictionaryDownloadOutcome(
             message: t.dict_update_failed(error: '$e'),
             severity: ToastSeverity.error,
@@ -2859,8 +3044,9 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 汇总 N 更新 / M 最新 / K 失败。复用现有下载进度 UI。
   Future<void> _checkForUpdates() async {
     if (_isDownloading) return;
-    final List<Dictionary> updatable =
-        appModel.dictionaries.where((Dictionary d) => d.isUpdatable).toList();
+    final List<Dictionary> updatable = appModel.dictionaries
+        .where((Dictionary d) => d.isUpdatable)
+        .toList();
     if (updatable.isEmpty) {
       FushiToast.show(
         msg: t.dict_update_all_no_source,
@@ -2886,14 +3072,17 @@ class _DictionaryDialogPageState extends BasePageState {
             job.message.value = t.dict_update_checking;
             final DictionaryRemoteIndexResult remote =
                 await DictionaryUpdateService.fetchRemoteIndexResult(
-                    d.indexUrl);
+                  d.indexUrl,
+                );
             // 检查失败计入失败，不算「最新」（旧实现把断网也数成最新）。
             if (!remote.succeeded) {
               failed++;
               continue;
             }
             if (!DictionaryUpdateService.needsUpdate(
-                d.revision, remote.revision)) {
+              d.revision,
+              remote.revision,
+            )) {
               current++;
               continue;
             }
@@ -2905,8 +3094,11 @@ class _DictionaryDialogPageState extends BasePageState {
             updated++;
           } catch (e, stack) {
             if (DictionaryDownloadController.isCancellation(e)) break;
-            ErrorLogService.instance
-                .log('DictionaryDialog.checkUpdates', e, stack);
+            ErrorLogService.instance.log(
+              'DictionaryDialog.checkUpdates',
+              e,
+              stack,
+            );
             failed++;
           }
         }
@@ -3122,10 +3314,7 @@ class DictionaryDownloadProgressDialog extends StatelessWidget {
               ),
             if (onCancel == null && cancelDisabledHint != null) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
-              Text(
-                cancelDisabledHint!,
-                style: tokens.type.listSubtitle,
-              ),
+              Text(cancelDisabledHint!, style: tokens.type.listSubtitle),
             ],
           ],
         ),

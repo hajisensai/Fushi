@@ -21,11 +21,6 @@ struct DictionaryStyle {
   std::string styles;
 };
 
-struct MediaFileView {
-  const char* data;
-  size_t size;
-};
-
 struct ZSTD_DDict_s;
 
 struct GlossaryEntry {
@@ -35,9 +30,20 @@ struct GlossaryEntry {
   std::string term_tags;
   const uint8_t* compressed_data = nullptr;
   uint32_t compressed_size = 0;
+  // 压缩 blob 在 blobs.bin 里的身份（来源文件 + 偏移）：同一 blob 的判等用它，不用
+  // compressed_data 指针——32 位进程按窗口映射 blobs.bin（BUG-4013），同一 blob 可能
+  // 落在不同窗口 / 堆缓冲里。compressed_owner 撑住那份窗口直到懒解压完成；64 位整份
+  // 映射时为空。
+  const void* compressed_source = nullptr;
+  uint64_t compressed_offset = 0;
+  std::shared_ptr<const void> compressed_owner;
   // v2 词典的 term glossary 用训练字典压缩（上游 8993838）；v1 恒为 nullptr，
   // usingDDict(nullptr) 等价普通解压。
   const ZSTD_DDict_s* zstd_dict = nullptr;
+  // 所属词典经 redirect_glossary.flag 确认不含任何纯重定向 glossary（见
+  // util/redirect_glossary.hpp）。为真时 Lookup 不必在查询期逐条读帧头 / 解压判断
+  // 重定向；默认 false = 照旧逐条检测（未知即不跳过，行为不变）。
+  bool dict_redirect_free = false;
 };
 
 struct FrequencyEntry {
@@ -94,6 +100,13 @@ struct KanjiResult {
 // may have mislabeled, and for self-healing already-imported dictionaries.
 int probe_dict_content(const std::string& dir);
 
+// 已导入词典的 redirect_glossary.flag 一次性迁移（util/redirect_glossary.hpp）：
+// sidecar 已有效就直接返回它；否则整本扫描一遍、写回 sidecar 再返回。1 = 含纯重定向
+// glossary，0 = 不含（之后 add_term_dict 装载时查询期跳过逐条检测），-1 = 读不了。
+// 扫描会读遍 blobs.bin（大词典百毫秒到秒级），只在后台线程 / isolate 上调；结果在
+// 下一次 add_term_dict 装载该目录时生效。
+int ensure_redirect_glossary_flag(const std::string& dir);
+
 class DictionaryQuery {
  public:
   DictionaryQuery();
@@ -117,8 +130,6 @@ class DictionaryQuery {
   std::vector<KanjiResult> query_kanji(const std::string& character) const;
 
   std::vector<char> get_media_file(const std::string& dict_name, const std::string& media_path) const;
-  SWIFT_IMPORT_UNSAFE
-  MediaFileView get_media_file_view(const std::string& dict_name, const std::string& media_path) const;
   std::vector<DictionaryStyle> get_styles() const;
   std::vector<std::string> get_freq_dict_order() const;
 

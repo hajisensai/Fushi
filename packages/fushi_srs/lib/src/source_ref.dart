@@ -14,6 +14,9 @@ abstract final class SrsSourceKind {
   static const String onlineNovel = 'onlineNovel';
   static const String onlineVideo = 'onlineVideo';
   static const String game = 'game';
+
+  /// 音乐模块歌词（曲目身份 + 时间区间，形状同 [video]）。
+  static const String music = 'music';
   static const String web = 'web';
   static const String manual = 'manual';
   static const String anki = 'anki';

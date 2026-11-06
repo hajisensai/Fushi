@@ -5,10 +5,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
-import 'package:fushi/media.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi/src/media/drag_drop/drop_classification.dart'
+    show
+        kDragAudioExtensions,
+        kDragBookExtensions,
+        kDragPlaylistExtensions,
+        kDragSubtitleExtensions;
 import 'package:fushi/src/media/import/quick_import_section.dart';
+import 'package:fushi_engine/media/media_extensions.dart' show kVideoExtensions;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
@@ -19,7 +26,14 @@ import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 库页导航壳里的「导入」视图：**本域内容入库的唯一入口页**。
 ///
@@ -70,7 +84,8 @@ class MediaSourcesPage extends ConsumerStatefulWidget {
   final Future<void> Function(
     SourceLibraryRow source,
     SourceScanSummary summary,
-  )? onVideoScanCompleted;
+  )?
+  onVideoScanCompleted;
 
   /// 应用生命周期级刮削任务，来源行用它显示进度并防止重入。
   final VideoSourceScrapeTaskController? scrapeTaskController;
@@ -117,7 +132,8 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
     if (mounted) setState(() {});
   }
 
-  bool get _busy => _clearingScrapeRecords ||
+  bool get _busy =>
+      _clearingScrapeRecords ||
       widget.scrapeTaskController?.isBusy == true ||
       _viewKey.currentState?.isBusy == true;
 
@@ -177,8 +193,9 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
         if (quickActions.isNotEmpty) ...<Widget>[
           QuickImportSection(
             actions: quickActions,
-            heroIcon:
-                widget.mediaKind == 'video' ? FushiIcons.video : FushiIcons.books,
+            heroIcon: widget.mediaKind == 'video'
+                ? FushiIcons.video
+                : FushiIcons.books,
             formats: _supportedFormats(),
             // 网络来源（SFTP / FTP / WebDAV / AList）也是一种导入方式：在网格里
             // 给一张卡，与「常驻来源」区头的添加按钮走同一个 addSource。
@@ -196,10 +213,7 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
           ),
           const SizedBox(height: 28),
         ],
-        FushiStaggeredEntrance(
-          index: 4,
-          child: _buildSourcesSectionHeader(),
-        ),
+        FushiStaggeredEntrance(index: 4, child: _buildSourcesSectionHeader()),
         const SizedBox(height: 8),
         FushiStaggeredEntrance(
           index: 5,
@@ -216,27 +230,24 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
     );
   }
 
-  /// 拖放区「支持格式」chip 行（格式名不翻译）。
+  /// 拖放区「支持格式」chip 行（格式名不翻译），从导入实际认的扩展名集合派生。
   List<String> _supportedFormats() => switch (widget.mediaKind) {
-        'book' => const <String>[
-            'EPUB',
-            'PDF',
-            'TXT',
-            'SRT',
-            'ASS',
-            'MP3',
-            'M4B',
-          ],
-        'video' => const <String>[
-            'MP4',
-            'MKV',
-            'WEBM',
-            'M3U',
-            'M3U8',
-            'HTTP',
-          ],
-        _ => const <String>[],
-      };
+    // 书（EPUB / PDF / 文本转 EPUB）+ 字幕书 / 伴随字幕 + 有声书音频。
+    'book' => importFormatLabels(<Iterable<String>>[
+      kDragBookExtensions,
+      kDragSubtitleExtensions,
+      kDragAudioExtensions,
+    ]),
+    // 视频库收录的视频（纯音频归音乐库，反馈 QAondMh4M5）、M3U 播放列表，以及网络地址。
+    'video' => <String>[
+      ...importFormatLabels(<Iterable<String>>[
+        kVideoExtensions,
+        kDragPlaylistExtensions,
+      ]),
+      'HTTP',
+    ],
+    _ => const <String>[],
+  };
 
   /// 本域的快速导入入口（各域只声明真正有的入口）。
   ///
@@ -245,34 +256,34 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
   List<QuickImportAction> _quickImportActions() {
     return switch (widget.mediaKind) {
       'book' => <QuickImportAction>[
-          QuickImportAction(
-            icon: FushiIcons.importFile,
-            label: t.srt_import,
-            onTap: _importBookFile,
-          ),
-          QuickImportAction(
-            icon: FushiIcons.folder,
-            label: t.media_import_folder,
-            onTap: _importFolder,
-          ),
-        ],
+        QuickImportAction(
+          icon: FushiIcons.importFile,
+          label: t.srt_import,
+          onTap: _importBookFile,
+        ),
+        QuickImportAction(
+          icon: FushiIcons.folder,
+          label: t.media_import_folder,
+          onTap: _importFolder,
+        ),
+      ],
       'video' => <QuickImportAction>[
-          QuickImportAction(
-            icon: FushiIcons.video,
-            label: t.video_import_action,
-            onTap: _importVideo,
-          ),
-          QuickImportAction(
-            icon: FushiIcons.tv,
-            label: t.video_iptv_import_action,
-            onTap: _importIptvPlaylist,
-          ),
-          QuickImportAction(
-            icon: FushiIcons.folder,
-            label: t.media_import_folder,
-            onTap: _importFolder,
-          ),
-        ],
+        QuickImportAction(
+          icon: FushiIcons.video,
+          label: t.video_import_action,
+          onTap: _importVideo,
+        ),
+        QuickImportAction(
+          icon: FushiIcons.tv,
+          label: t.video_iptv_import_action,
+          onTap: _importIptvPlaylist,
+        ),
+        QuickImportAction(
+          icon: FushiIcons.folder,
+          label: t.media_import_folder,
+          onTap: _importFolder,
+        ),
+      ],
       _ => const <QuickImportAction>[],
     };
   }
@@ -310,9 +321,8 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
   Future<void> _importVideo() async {
     final String? bookUid = await showAppDialog<String>(
       context: context,
-      builder: (_) => VideoImportDialog(
-        repo: VideoBookRepository(_appModel.database),
-      ),
+      builder: (_) =>
+          VideoImportDialog(repo: VideoBookRepository(_appModel.database)),
     );
     if (bookUid != null && mounted) widget.onLibraryChanged?.call();
   }
@@ -324,17 +334,17 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
     final VideoBookRepository repo = VideoBookRepository(_appModel.database);
     final IptvPlaylistImportOutcome? outcome =
         await showAppDialog<IptvPlaylistImportOutcome>(
-      context: context,
-      builder: (_) => IptvPlaylistImportDialog(repo: repo),
-    );
+          context: context,
+          builder: (_) => IptvPlaylistImportDialog(repo: repo),
+        );
     if (!mounted || outcome == null) return;
     switch (outcome) {
       case IptvPlaylistImported():
         widget.onLibraryChanged?.call();
       case IptvPlaylistIsHlsStream(
-          :final String? url,
-          :final String? localPath,
-        ):
+        :final String? url,
+        :final String? localPath,
+      ):
         final String? bookUid = await showAppDialog<String>(
           context: context,
           builder: (_) => VideoImportDialog(
@@ -395,8 +405,7 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
             if (!busy) unawaited(widget.onScrapeAll!());
           },
         ),
-      if (widget.mediaKind == 'video' &&
-          widget.onClearAllScrapeRecords != null)
+      if (widget.mediaKind == 'video' && widget.onClearAllScrapeRecords != null)
         FushiIconButton(
           tooltip: t.video_source_scrape_clear_all,
           label: t.video_source_scrape_clear_all,
@@ -417,10 +426,7 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
     ];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {
-      return FushiPageHeader.customTitle(
-        title: navigation,
-        actions: actions,
-      );
+      return FushiPageHeader.customTitle(title: navigation, actions: actions);
     }
     return FushiPageHeader(
       title: t.media_source_manage_title,

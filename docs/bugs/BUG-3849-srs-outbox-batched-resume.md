@@ -1,0 +1,23 @@
+## BUG-3849 · SRS 同步 v2 发件一次性全量进内存、断点整份重传、推送失败不退避
+- **报告**：2026-10-27（应用内反馈 XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL，同一台小米 23116PN5BC；BUG-3832 的结构性后续）
+- **真实性**：✅ 真缺陷（已沿代码路径验证；是否就是那三次闪退的直接原因仍未坐实，见 BUG-3832 / BUG-3831）：
+  - 发件全量进内存：`native/fushi_fsrs/src/store/sync2/transport.rs` 旧 `sync2_outbox`（改前 648-697 行）对 `uploaded` 之后的**每一段**都 `load_op` + `segment::pack`，全部攒进一个 `Vec` 一次返回，FFI 再整份拷给 Dart（`srs_sync2_round.dart` 第 3 步一次性拿 `out.files`）。峰值内存随积压线性增长。
+  - 断点整份重来：`uploaded` 水位只在 `sync2_head`（改前 735-746 行）里前进，而 head 要等全部段写完才写；上传中途断一次，下一轮 `uploaded` 原地不动、整份重新打包重传。日志里该设备失败段 seq 一天内从 277661 涨到 427227 即此。
+  - 推送不退避：`fushi/lib/src/srs/srs_interconnect_watch.dart` 旧 `SrsLocalPush` 失败后照常每次去抖 5 s 就推，host 不可达时每答一张卡就对死地址探测一轮。
+  - 推送 / 长轮询不进互斥：`fushi/lib/src/srs/srs_app_runtime.dart` 旧 `_pushInterconnect` 与 `interconnectWatch.onChange` 直接 `syncWithBackend(InterconnectSyncBackend.instance)`，不拿常规同步的 `_autoSyncMutex`，与常规同步并发改同一个单例后端的会话 / 选路缓存。
+- **[x] ① 已修复** —
+  - Rust：`sync2_outbox(profile, location, key, max_bytes, max_segments)` 改为按批产出（`OUTBOX_BATCH_BYTES` = 8 MiB、`OUTBOX_BATCH_SEGMENTS` = 64，理由写在常量注释），返回 `OutboxBatch{files, segments, upto, more}`；新增 `sync2_outbox_ack(segments)`：清这些段的重传登记，把 `sync2_locations.uploaded` 推进到「水位之后首尾相接、全部已确认」的最后一段（水位含义不变：seq ≤ 它的本机段都已在该位置上）；段在发件与确认之间被改切时 `accepted = false`、不推进。FFI `outbox` 收可选 `maxBytes` / `maxSegments`、回 `more` / `segments`，新增 `outbox_ack`。
+  - Dart：`srsSync2Round` 第 3 步循环「取一批 → 上传 → ack → more 则再取」，批间问 `shouldStop`；ack 不被接受报 `kSrsSync2OutboxRecut` 且不写 head。head 仍在全部批次写完后才写——**对读者透明、线协议不变**（对端只看 head 引用的段，见设计 §6.1 读取纪律），旧对端不受影响。
+  - `SrsLocalPush`：`push` 返回是否推成；失败指数退避（30 s 起翻倍，封顶 10 min），退避期内的触发合并到到期时一次；长轮询重新连上（`SrsInterconnectWatcher.onReachable`）、常规同步经互联成功、用户手动同步（`SrsAppRuntime.syncNow` / AnkiConnect `sync`）时 `resetBackoff`。`SrsSyncScheduler.autoPush` 返回互联这一步是否成功（`kSrsSyncLocalStateErrors` 里的本机状态类原因不算失败）。
+  - 互斥：推送的「取互联后端 + 一轮」经 `autoPush(exclusive: runExclusiveWithSync)`，长轮询的 `ready`（含 `restoreAuth`）与 `onChange` 的一轮都在 `runExclusiveWithSync` 里。长轮询 GET 本身**不**拿锁（一挂 25 s 会挡住常规同步；它只用已解析的会话发独立请求，会话被换掉时请求失败、走 watcher 自己的退避）。非重入核对：锁内调的 `syncWithBackend` 只排进调度器 `_serially`，串行链上的轮次体都不拿这把锁，不会自锁。
+- **[x] ② 已加自动化测试** —
+  - Rust `native/fushi_fsrs/src/store/sync2/tests.rs` `a_huge_backlog_is_sent_in_bounded_batches_and_resumes_from_the_watermark`：20 万条小操作（4 段），默认预算下每批段数 / 字节在上限内、段不重不漏；一段一批时第一批确认、第二批上传失败，下一轮从第二批续发、第一批不再发、确认过的段每个只 PUT 一次；认不出的段不推进水位；新设备收齐全部操作、摘要一致。release 下约 34 s。测试 helper `Device::sync` 改为与生产同节奏分批发件（全部 sync2 端到端测试都走新路径，`cargo test --release --lib` 131 过）。
+  - Dart `packages/fushi_engine/test/srs/sync2/srs_sync2_ingest_batching_test.dart`「srsSync2Round 分批发件」：真 store，第二批 PUT 抛错 → 不写 head；下一轮续发、第一批不重发；另一台设备收齐。
+  - `fushi/test/srs/srs_interconnect_watch_test.dart`：推送失败指数退避有上限、退避期触发合并、重置后按普通去抖；抛错同样退避。
+  - `fushi/test/srs/srs_sync_scheduler_test.dart`：`autoPush` 互联一轮在 exclusive 里、本机目录在锁外、失败报 false；接线守卫（推送 / 长轮询走 `runExclusiveWithSync`、`onReachable` 与手动同步重置退避）。
+  - 变异（已做，已还原）：让 `sync2_outbox_ack` 不再持久化水位（`if mark > uploaded && false`）→ Rust 测试红，断言 `segment … sent twice`（下一批重发了已确认的第一批）。
+- **备注**：
+  - 未在真机（小米 23116PN5BC）验证：没有那台设备与它 43 万条积压的数据；只在单测里用 20 万条积压验证批大小上限与续传。闪退是否因此消失仍要等下一次带退出原因（BUG-3831）的反馈确认。
+  - 峰值内存 = 一批（≤ 8 MiB + 每段 < 1/64 余量）+ 正在打包那一段的解码操作（单段 ≤ `SEGMENT_MAX_OPS` = 25 万条）。后者是既有的单段上限，与积压总量无关，本次未动。
+  - 顺带发现（未修，既有）：`segment.rs` `Splitter` 注释称体积估计（各小块分别压缩之和）是上界、「真实段不超过 `SEGMENT_TARGET_BYTES`」，实测不可压缩内容下一段 4 205 574 B，超出约 0.27%。影响仅是段 / 批略超目标，测试按 1/64 余量断言。
+  - `sync2_status` 的 `unpublished` 现在按「未上传」而非「未写进 head」计（水位在批确认时就前进）；head 写成之前对端仍看不到这些段。

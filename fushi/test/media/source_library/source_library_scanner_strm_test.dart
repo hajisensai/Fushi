@@ -23,12 +23,14 @@ import 'package:path/path.dart' as p;
 FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 Future<SourceLibraryRow> _videoSource(FushiDatabase db, String root) async {
-  final int id = await db.insertMediaSource(MediaSourcesCompanion.insert(
-    label: 'Vids',
-    mediaKind: 'video',
-    rootPath: root,
-    createdAt: 1000,
-  ));
+  final int id = await db.insertMediaSource(
+    MediaSourcesCompanion.insert(
+      label: 'Vids',
+      mediaKind: 'video',
+      rootPath: root,
+      createdAt: 1000,
+    ),
+  );
   return (await db.getMediaSourceById(id))!;
 }
 
@@ -43,21 +45,21 @@ void main() {
     AppPaths.debugResetDocumentsLayoutCache();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (MethodCall call) async => switch (call.method) {
-        'getApplicationDocumentsDirectory' => p.join(tmp.path, 'documents'),
-        'getTemporaryDirectory' => p.join(tmp.path, 'systemp'),
-        'getApplicationSupportDirectory' => p.join(tmp.path, 'support'),
-        _ => null,
-      },
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (MethodCall call) async => switch (call.method) {
+            'getApplicationDocumentsDirectory' => p.join(tmp.path, 'documents'),
+            'getTemporaryDirectory' => p.join(tmp.path, 'systemp'),
+            'getApplicationSupportDirectory' => p.join(tmp.path, 'support'),
+            _ => null,
+          },
+        );
   });
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      null,
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          null,
+        );
     AppPaths.debugResetDocumentsLayoutCache();
     try {
       if (tmp.existsSync()) tmp.deleteSync(recursive: true);
@@ -65,11 +67,8 @@ void main() {
   });
 
   test('planScanFromFileList：.strm 归入视频并关联同名字幕', () {
-    SourceFileEntry f(String name) => SourceFileEntry(
-          name: name,
-          path: '/lib/$name',
-          isDirectory: false,
-        );
+    SourceFileEntry f(String name) =>
+        SourceFileEntry(name: name, path: '/lib/$name', isDirectory: false);
     final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
       f('Show S01E01.strm'),
       f('Show S01E01.srt'),
@@ -85,8 +84,9 @@ void main() {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final Directory show = Directory(p.join(tmp.path, 'Show'))..createSync();
-    File(p.join(show.path, 'Show S01E01.strm'))
-        .writeAsStringSync('https://cdn.example/show/e1.m3u8\n');
+    File(
+      p.join(show.path, 'Show S01E01.strm'),
+    ).writeAsStringSync('https://cdn.example/show/e1.m3u8\n');
     File(p.join(show.path, 'Show S01E01.srt')).writeAsStringSync(_srt);
     File(p.join(tmp.path, 'live.m3u8')).writeAsStringSync(
       '#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:120\n'
@@ -100,8 +100,9 @@ void main() {
       'rtsp://iptv.example/bs1\n',
     );
 
-    final SourceScanSummary summary =
-        await SourceLibraryScanner(db).scan(await _videoSource(db, tmp.path));
+    final SourceScanSummary summary = await SourceLibraryScanner(
+      db,
+    ).scan(await _videoSource(db, tmp.path));
     expect(summary.succeeded, isTrue, reason: summary.error ?? '');
 
     final List<VideoBookRow> rows = await VideoBookRepository(db).listAll();

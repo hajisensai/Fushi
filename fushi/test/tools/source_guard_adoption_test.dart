@@ -35,16 +35,16 @@ void main() {
   const Map<String, String> allowed = <String, String>{
     'test/helpers/source_guard.dart':
         '共享 helper 的**实现本体**。maskCommentsAndScriptLines 里那一遍「整行以 '
-            '// 开头」是有意保留的保守超集（并集，只会掩得更多、绝不更少），'
-            '用来兜住三引号串里 JS 词法器没覆盖到的边角。',
+        '// 开头」是有意保留的保守超集（并集，只会掩得更多、绝不更少），'
+        '用来兜住三引号串里 JS 词法器没覆盖到的边角。',
     'test/helpers/banned_comment_strip.dart':
         '禁用形态的**模式表本体**：那些字面量按定义必须出现在这里。单独成文件正是'
-            '为了让守卫本体不含任何禁用形态，从而能被自己覆盖；本文件里没有任何'
-            '扫描逻辑可以退化。',
+        '为了让守卫本体不含任何禁用形态，从而能被自己覆盖；本文件里没有任何'
+        '扫描逻辑可以退化。',
     'test/reader/reader_script_compactor_test.dart':
         '这里的 `trimmed.startsWith(\'//\')` 不是「剥注释」，而是**被测对象自己的'
-            '契约断言**：ReaderScriptCompactor 只许删空行与注释行，测试逐条核对'
-            '被删掉的行确实是注释。换成掩码反而表达不了这个判据。',
+        '契约断言**：ReaderScriptCompactor 只许删空行与注释行，测试逐条核对'
+        '被删掉的行确实是注释。换成掩码反而表达不了这个判据。',
   };
 
   // 模式表放在 helpers/banned_comment_strip.dart：那些字面量若写在本文件里，
@@ -55,9 +55,9 @@ void main() {
   test('test/ 下不得再手写注释剥离，一律走 helpers/source_guard.dart', () {
     final List<String> offenders = <String>[];
     int scanned = 0;
-    for (final FileSystemEntity e in Directory('test').listSync(
-      recursive: true,
-    )) {
+    for (final FileSystemEntity e in Directory(
+      'test',
+    ).listSync(recursive: true)) {
       if (e is! File || !e.path.endsWith('.dart')) continue;
       final String rel = e.path.replaceAll('\\', '/');
       if (allowed.containsKey(rel)) continue;
@@ -75,29 +75,46 @@ void main() {
 
     // 扫描本身失效（路径变了 / listSync 拿不到东西）必须红，不能静默变成
     // 「零违规」的摆设。
-    expectScanScale(scanned,
-        what: 'test/ 下未豁免的 .dart', atLeast: 1800, measured: 2199);
+    expectScanScale(
+      scanned,
+      what: 'test/ 下未豁免的 .dart',
+      atLeast: 1800,
+      measured: 2199,
+    );
 
-    expect(offenders, isEmpty,
-        reason: '这些地方手写了注释剥离：\n${offenders.join('\n')}\n\n'
-            '手写形态只跳 `//` 开头的整行：块注释 `/* needle */` 一概放行'
-            '（要求型断言可被「实现删光、注释留字面量」骗绿）、行尾注释也放行、'
-            '删行还会让后续 indexOf/substring 的下标与原文错位。\n'
-            '共享原语在 test/helpers/source_guard.dart：maskComments / '
-            'maskCommentsAndStrings / maskJsComments / maskCssComments / '
-            'maskHtmlComments / maskCommentsAndScriptLines / containsCodeLine。\n'
-            '确有正当理由的，加进本文件的 allowed 表并写清为什么。');
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          '这些地方手写了注释剥离：\n${offenders.join('\n')}\n\n'
+          '手写形态只跳 `//` 开头的整行：块注释 `/* needle */` 一概放行'
+          '（要求型断言可被「实现删光、注释留字面量」骗绿）、行尾注释也放行、'
+          '删行还会让后续 indexOf/substring 的下标与原文错位。\n'
+          '共享原语在 test/helpers/source_guard.dart：maskComments / '
+          'maskCommentsAndStrings / maskJsComments / maskCssComments / '
+          'maskHtmlComments / maskCommentsAndScriptLines / containsCodeLine。\n'
+          '确有正当理由的，加进本文件的 allowed 表并写清为什么。',
+    );
   });
 
   test('豁免表不许过期，也不许是只有文件名的橡皮图章', () {
     for (final MapEntry<String, String> e in allowed.entries) {
-      expect(File(e.key).existsSync(), isTrue,
-          reason: '豁免表里的 ${e.key} 已不存在，请清理');
-      expect(e.value.trim().length, greaterThanOrEqualTo(20),
-          reason: '${e.key} 的豁免理由太短，等于没写');
+      expect(
+        File(e.key).existsSync(),
+        isTrue,
+        reason: '豁免表里的 ${e.key} 已不存在，请清理',
+      );
+      expect(
+        e.value.trim().length,
+        greaterThanOrEqualTo(20),
+        reason: '${e.key} 的豁免理由太短，等于没写',
+      );
       for (final String placeholder in <String>['TODO', 'FIXME', '待补', 'n/a']) {
-        expect(e.value.contains(placeholder), isFalse,
-            reason: '${e.key} 的豁免理由是占位符（含 "$placeholder"）');
+        expect(
+          e.value.contains(placeholder),
+          isFalse,
+          reason: '${e.key} 的豁免理由是占位符（含 "$placeholder"）',
+        );
       }
     }
   });
@@ -106,9 +123,13 @@ void main() {
     for (final String rel in allowed.keys) {
       final String masked = maskComments(File(rel).readAsStringSync());
       final bool hit = banned.keys.any(masked.contains);
-      expect(hit, isTrue,
-          reason: '$rel 已经不含任何禁用形态了，说明它早该从豁免表里删掉——'
-              '留着就是给后来人开的后门');
+      expect(
+        hit,
+        isTrue,
+        reason:
+            '$rel 已经不含任何禁用形态了，说明它早该从豁免表里删掉——'
+            '留着就是给后来人开的后门',
+      );
     }
   });
 }

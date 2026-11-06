@@ -2,6 +2,11 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/media/video/underlay_composition.dart'
+    show
+        UnderlayInputRegion,
+        kUnderlayRegionEdgeInset,
+        underlayCompositionActive;
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/utils/components/accent_logo_image.dart';
 import 'package:fushi/src/utils/misc/logo_accent_tint.dart';
@@ -9,7 +14,14 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_color_roles.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 /// 悬浮球停靠的屏幕边。
@@ -45,7 +57,16 @@ const double kReaderFloatingBallLabelPadding = 12;
 const double kReaderFloatingBallMinTouchTarget = 48;
 
 /// 收起态整体不透明度：半透明、不抢正文。
+///
+/// 底层合成（网页视频档，`underlay_composition.dart`）开着时不用：球要登记成挖洞输入区，
+/// 洞里没有网页像素，半透明的球透出的是黑底，所以那一档收起态也画成不透明。
 const double kReaderFloatingBallIdleOpacity = 0.42;
+
+/// 动作按钮登记挖洞时的内收量：抗锯齿边 + 按下缩放（[FushiMotion.pressScale]）让出的
+/// 半圈，洞始终落在按下后仍不透明的圆面里。
+const double kReaderFloatingBallButtonRegionInset =
+    kUnderlayRegionEdgeInset +
+    kReaderFloatingBallButtonSize * (1 - FushiMotion.pressScale) / 2;
 
 /// 悬浮球几何：收起 / 展开 / 拖动三态下球与按钮的落点（纯函数，测试直接钉）。
 ///
@@ -532,6 +553,17 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
     _syncFocusNodes();
     _labelWidths = _measureLabels(context);
     final ReaderFloatingBallLayout layout = _layout();
+    // 底层合成档：球 / 按钮 / 标签画在 WebView2 子窗口挖出的洞上，洞里只有 Flutter 的
+    // 像素、底下是黑底——这一档全部画成不透明实色，挖洞区域只在静止时登记（见
+    // [UnderlayInputRegion]）。
+    return ValueListenableBuilder<bool>(
+      valueListenable: underlayCompositionActive,
+      builder: (BuildContext context, bool underlay, Widget? _) =>
+          _buildBox(layout, underlay: underlay),
+    );
+  }
+
+  Widget _buildBox(ReaderFloatingBallLayout layout, {required bool underlay}) {
     return AnimatedBuilder(
       animation: _expand,
       builder: (BuildContext context, Widget? _) {
@@ -578,19 +610,34 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
                     // 也不让收起态多画一圈看不见的按钮。
                     if (menuLive && layout.showsLabels)
                       for (int i = 0; i < _labelWidths.length; i++)
-                        _buildLabel(layout, i, ballCenter),
+                        _buildLabel(layout, i, ballCenter, underlay: underlay),
                     if (menuLive)
                       for (int i = 0; i < widget.actions.length; i++)
-                        _buildColumnButton(layout, i, ballCenter),
+                        _buildColumnButton(
+                          layout,
+                          i,
+                          ballCenter,
+                          underlay: underlay,
+                        ),
                     Positioned(
                       left: ballCenter.dx - layout.ballSize / 2,
                       top: ballCenter.dy - layout.ballSize / 2,
                       width: layout.ballSize,
                       height: layout.ballSize,
-                      child: _buildBall(
-                        layout,
-                        progress: t,
-                        dragging: dragging,
+                      // 底层合成的网页档（视频站点）里球画在 WebView2 子窗口上面：登记成
+                      // 输入区，否则点击全落进网页（2026-10-26「点不到悬浮球」）。
+                      // 挖内切圆再内收抗锯齿边：收起态圆角方块、展开态正圆都包得住它。
+                      // 展开 / 收起途中不登记：球可能沿边滑动，异步下发的洞追不上。
+                      child: UnderlayInputRegion(
+                        radius: layout.ballSize / 2,
+                        inset: kUnderlayRegionEdgeInset,
+                        enabled: dragging || t == 0 || t == 1,
+                        child: _buildBall(
+                          layout,
+                          progress: t,
+                          dragging: dragging,
+                          underlay: underlay,
+                        ),
                       ),
                     ),
                   ],
@@ -629,8 +676,9 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
   Widget _buildColumnButton(
     ReaderFloatingBallLayout layout,
     int index,
-    Offset ballCenter,
-  ) {
+    Offset ballCenter, {
+    required bool underlay,
+  }) {
     final double k = _stagger(index);
     final Offset target = layout.buttonOffset(index);
     final Offset center = ballCenter + target * k;
@@ -653,12 +701,19 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
             excludeFromSemantics: true,
             onTap: action.onPressed,
             child: Center(
-              child: SizedBox.square(
-                dimension: size,
-                child: _ColumnButton(
-                  action: action,
-                  size: size,
-                  focusNode: _itemFocus[index],
+              // 只在展开动画走完（不透明度 1、停在落点）时挖洞。
+              child: UnderlayInputRegion(
+                radius: size / 2,
+                inset: kReaderFloatingBallButtonRegionInset,
+                enabled: _expand.value == 1,
+                child: SizedBox.square(
+                  dimension: size,
+                  child: _ColumnButton(
+                    action: action,
+                    size: size,
+                    focusNode: _itemFocus[index],
+                    opaque: underlay,
+                  ),
                 ),
               ),
             ),
@@ -673,8 +728,9 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
   Widget _buildLabel(
     ReaderFloatingBallLayout layout,
     int index,
-    Offset ballCenter,
-  ) {
+    Offset ballCenter, {
+    required bool underlay,
+  }) {
     final double k = _stagger(index);
     final Offset target = layout.buttonOffset(index);
     final Offset center = ballCenter + target * k;
@@ -698,10 +754,16 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
           alignment: towardRight ? Alignment.centerLeft : Alignment.centerRight,
           // 无障碍名已由按钮本身给出，标签只是同一个动作的第二个点击面。
           child: ExcludeSemantics(
-            child: _LabelCapsule(
-              label: action.label,
-              style: _labelStyle(context),
-              onPressed: action.onPressed,
+            child: UnderlayInputRegion(
+              radius: kReaderFloatingBallLabelHeight / 2,
+              inset: kUnderlayRegionEdgeInset,
+              enabled: _expand.value == 1,
+              child: _LabelCapsule(
+                label: action.label,
+                style: _labelStyle(context),
+                onPressed: action.onPressed,
+                opaque: underlay,
+              ),
             ),
           ),
         ),
@@ -713,14 +775,20 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
     ReaderFloatingBallLayout layout, {
     required double progress,
     required bool dragging,
+    required bool underlay,
   }) {
-    final double opacity = dragging
+    final double opacity = dragging || underlay
         ? 1
         : kReaderFloatingBallIdleOpacity +
               (1 - kReaderFloatingBallIdleOpacity) * progress;
     return Opacity(
       opacity: opacity,
+      // container：球必须自成一个语义节点。不设时这条标注会往上冒、并进包住整个
+      // app 的祖先节点（全局球与页面是根 Stack 的兄弟）——球一显隐 / 换场景，整棵
+      // app 语义子树就在两个父节点间搬家，Windows 引擎的 AXTree 吃不下这种搬家，
+      // 更新失败后一路在坏树上改，最终堆损坏卡死 / 崩溃（BUG-3796）。
       child: Semantics(
+        container: true,
         button: true,
         expanded: _expanded,
         label: t.reader_floating_ball,
@@ -738,6 +806,7 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
               progress: progress,
               dragging: dragging,
               eink: !widget.animate,
+              opaque: underlay,
             ),
           ),
         ),
@@ -777,7 +846,8 @@ const double kReaderFloatingBallMascotScale = 1.55;
 /// - Material：primaryContainer 圆角方块 + 吉祥物 → 展开变形为 primary 正圆 +
 ///   关闭图标（形状 / 颜色走 spatial 弹簧，吉祥物与图标旋转交叉淡入），阴影按
 ///   M3E elevation level 1 → 3；
-/// - Apple：液态玻璃圆球（不做形变），吉祥物 → label 色关闭图标；
+/// - Apple：液态玻璃圆球（不做形变），吉祥物 → label 色关闭图标；[opaque] 时换不透明
+///   实色圆球；
 /// - 墨水屏：surface 底 + onSurface 描边，无阴影。
 class _BallFace extends StatelessWidget {
   const _BallFace({
@@ -785,12 +855,16 @@ class _BallFace extends StatelessWidget {
     required this.progress,
     required this.dragging,
     required this.eink,
+    required this.opaque,
   });
 
   final double size;
   final double progress;
   final bool dragging;
   final bool eink;
+
+  /// 底层合成档：只许画不透明像素（玻璃半透明会透出洞底的黑）。
+  final bool opaque;
 
   @override
   Widget build(BuildContext context) {
@@ -805,7 +879,17 @@ class _BallFace extends StatelessWidget {
 
     final Color closeColor;
     final Widget surface;
-    if (apple) {
+    if (apple && opaque) {
+      final FushiAppleColors colors = appleColorsOf(context);
+      closeColor = colors.label;
+      surface = DecoratedBox(
+        decoration: BoxDecoration(
+          color: readerFloatingBallOpaqueGlassFill(colors),
+          shape: BoxShape.circle,
+        ),
+        child: SizedBox.square(dimension: size),
+      );
+    } else if (apple) {
       closeColor = appleColorsOf(context).label;
       surface = GlassContainer(
         useOwnLayer: true,
@@ -905,11 +989,15 @@ class _ColumnButton extends StatelessWidget {
     required this.action,
     required this.size,
     required this.focusNode,
+    required this.opaque,
   });
 
   final ReaderHeaderAction action;
   final double size;
   final FocusNode focusNode;
+
+  /// 底层合成档：玻璃换不透明实色（见 [_BallFace.opaque]）。
+  final bool opaque;
 
   @override
   Widget build(BuildContext context) {
@@ -959,32 +1047,41 @@ class _ColumnButton extends StatelessWidget {
   /// 走 BackdropFilter 回退（[GlassContainer.platformViewBackdrop]）。
   Widget _buildGlass(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
-    return SizedBox.square(
-      key: action.key,
-      dimension: size,
-      child: GlassContainer(
-        useOwnLayer: true,
-        quality: fushiGlassQuality(context),
-        settings: fushiGlassSettingsOverPlatformView(context),
-        shape: const LiquidOval(),
-        platformViewBackdrop: fushiGlassOverPlatformView(context),
-        child: FushiTooltip(
-          message: action.tooltipText,
-          child: Semantics(
-            identifier: action.semanticsId,
-            button: true,
-            child: FushiPlainButton(
-              onPressed: action.onPressed,
-              focusNode: focusNode,
-              borderRadius: BorderRadius.circular(size / 2),
-              child: SizedBox.square(
-                dimension: size,
-                child: FushiIcon(action.icon, size: 22, color: apple.label),
-              ),
-            ),
+    final Widget content = FushiTooltip(
+      message: action.tooltipText,
+      child: Semantics(
+        identifier: action.semanticsId,
+        button: true,
+        child: FushiPlainButton(
+          onPressed: action.onPressed,
+          focusNode: focusNode,
+          borderRadius: BorderRadius.circular(size / 2),
+          child: SizedBox.square(
+            dimension: size,
+            child: FushiIcon(action.icon, size: 22, color: apple.label),
           ),
         ),
       ),
+    );
+    return SizedBox.square(
+      key: action.key,
+      dimension: size,
+      child: opaque
+          ? DecoratedBox(
+              decoration: BoxDecoration(
+                color: readerFloatingBallOpaqueGlassFill(apple),
+                shape: BoxShape.circle,
+              ),
+              child: content,
+            )
+          : GlassContainer(
+              useOwnLayer: true,
+              quality: fushiGlassQuality(context),
+              settings: fushiGlassSettingsOverPlatformView(context),
+              shape: const LiquidOval(),
+              platformViewBackdrop: fushiGlassOverPlatformView(context),
+              child: content,
+            ),
     );
   }
 }
@@ -997,11 +1094,15 @@ class _LabelCapsule extends StatelessWidget {
     required this.label,
     required this.style,
     required this.onPressed,
+    required this.opaque,
   });
 
   final String label;
   final TextStyle style;
   final VoidCallback? onPressed;
+
+  /// 底层合成档：玻璃换不透明实色（见 [_BallFace.opaque]）。
+  final bool opaque;
 
   Widget _text(Color color) => Padding(
     padding: const EdgeInsets.symmetric(
@@ -1020,6 +1121,20 @@ class _LabelCapsule extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context) && opaque) {
+      final FushiAppleColors apple = appleColorsOf(context);
+      return DecoratedBox(
+        decoration: ShapeDecoration(
+          color: readerFloatingBallOpaqueGlassFill(apple),
+          shape: const StadiumBorder(),
+        ),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onPressed,
+          child: _text(apple.label),
+        ),
+      );
+    }
     if (isGlassDesign(context)) {
       final FushiAppleColors apple = appleColorsOf(context);
       return GlassContainer(
@@ -1054,3 +1169,8 @@ class _LabelCapsule extends StatelessWidget {
     );
   }
 }
+
+/// 底层合成档里 Apple 玻璃件的替身实色：卡片底（secondarySystemGroupedBackground），
+/// 强制 alpha 1——洞里任何非不透明像素都会透出黑底。
+Color readerFloatingBallOpaqueGlassFill(FushiAppleColors colors) =>
+    colors.secondaryGroupedBackground.withValues(alpha: 1);

@@ -7,6 +7,7 @@ export 'src/models/fushi_text_selection.dart';
 
 // 以下依赖 Flutter / 平台插件，只供 app 使用。
 export 'src/engine/dictionary.dart';
+export 'src/engine/dictionary_language_groups.dart';
 export 'src/engine/dictionary_utils.dart';
 export 'src/engine/fushidicts.dart';
 // HBK-AUDIT-098: do NOT export the raw FFI bindings. The Ffi* Struct mirrors

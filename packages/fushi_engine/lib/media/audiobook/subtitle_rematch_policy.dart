@@ -6,17 +6,15 @@
 library;
 
 import 'package:fushi_audio/fushi_audio_core.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 
 class SubtitleRematchPolicy {
   const SubtitleRematchPolicy._();
 
-  /// 只有 SRT/LRC/VTT/ASS 走 matcher；SMIL/JSON 有硬时间码锚点，与 window 无关。
-  static const Set<String> supportedFormats = <String>{
-    'srt',
-    'lrc',
-    'vtt',
-    'ass'
-  };
+  /// 有声书字幕格式（[kAudiobookSubtitleExtensions]）全部走 matcher；SMIL/JSON 有硬
+  /// 时间码锚点，与 window 无关。此前这里手抄成 srt/lrc/vtt/ass，漏了 ssa——ssa 与
+  /// ass 同一个解析器，却因此既不跑 matcher、导入前的探测也返回空。
+  static const Set<String> supportedFormats = kAudiobookSubtitleExtensions;
 
   /// 硬时间码格式，matcher 无能为力，直接排除。
   static const Set<String> nonMatcherFormats = <String>{'smil', 'json'};

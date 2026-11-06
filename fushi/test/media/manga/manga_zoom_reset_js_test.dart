@@ -37,6 +37,9 @@ void main() {
   }
 
   String harness(String document, String body) {
+    // 缩放下限 / 快速缩回的设置变量（反馈 EjyFnomM6w）：默认值下双击与吸附
+    // 行为不变，这里注入的就是默认值。
+    final String vars = section(document, '  var ZOOM_OUT_LIMIT', '  // 灵敏度倍率');
     final String zoom = section(
       document,
       '  function _clampZoom(z){',
@@ -54,6 +57,7 @@ let rafQueue=[], rafTime=0;
 function requestAnimationFrame(cb){ rafQueue.push(cb); return rafQueue.length; }
 function cancelAnimationFrame(){ rafQueue=[]; }
 function flushFrames(){ while(rafQueue.length){ const cb=rafQueue.shift(); rafTime+=16; cb(rafTime); } }
+$vars
 $zoom
 function setZoom(z){ ZOOM=z; _recenterPan(); }
 $body
@@ -153,15 +157,22 @@ for (const end of [1.05, 1.052, 1.06, 1.035]) {
     final String document = documentFor(animate: true);
     expect(
       document.contains(
-        'pinch = {dist: g.dist, zoom: ZOOM, cx: g.cx, cy: g.cy};',
+        'pinch = {dist: g.dist, zoom: ZOOM, cx: g.cx, cy: g.cy,',
       ),
       isTrue,
     );
     expect(document.contains('pinch.cx = g.cx;'), isTrue);
+    // 捏合结束先分流双指轻点（快速缩回，反馈 EjyFnomM6w；没选该手势时恒为假），
+    // 其余照旧吸附。
     final int nullAt = document.indexOf(
       '          pinch = null;\n'
-      '          _snapPinchZoom(lastPinch.cx, lastPinch.cy, lastPinch.zoom);',
+      '          if (_isTwoFingerTap(lastPinch)) {',
     );
     expect(nullAt, greaterThanOrEqualTo(0));
+    final int snapAt = document.indexOf(
+      '            _snapPinchZoom(lastPinch.cx, lastPinch.cy, lastPinch.zoom);',
+      nullAt,
+    );
+    expect(snapAt, greaterThan(nullAt));
   });
 }

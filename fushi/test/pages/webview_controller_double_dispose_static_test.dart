@@ -31,38 +31,49 @@ void main() {
   ];
 
   for (final String relativePath in widgetSites) {
-    test('$relativePath does not double-dispose its InAppWebView controller',
-        () {
+    test('$relativePath does not double-dispose its InAppWebView controller', () {
       final File file = File(relativePath);
-      expect(file.existsSync(), isTrue,
-          reason: 'guarded file moved or renamed: $relativePath — update this '
-              'test to keep covering every InAppWebView widget site');
+      expect(
+        file.existsSync(),
+        isTrue,
+        reason:
+            'guarded file moved or renamed: $relativePath — update this '
+            'test to keep covering every InAppWebView widget site',
+      );
 
       // TODO-589 batch8: reader_fushi_page.dart 的 InAppWebView 构建(_buildWebView)
       // 已搬到 reader_fushi/webview.part.dart。该站点改读「主壳 + 全部 part」合并
       // 语料，使 InAppWebView( 哨兵与 _controller.dispose() 负向检查都覆盖 part；
       // 其余 widget 站点仍逐文件读取。
-      final String rawSource = relativePath ==
-              'lib/src/pages/implementations/reader_fushi_page.dart'
+      final String rawSource =
+          relativePath == 'lib/src/pages/implementations/reader_fushi_page.dart'
           ? readReaderPageSource()
           : file.readAsStringSync();
       final String code = _stripLineComments(rawSource);
 
       // Sanity: confirm this really is an InAppWebView widget site, so the test
       // fails loudly (rather than silently passing) if a file stops using it.
-      expect(code, contains('InAppWebView('),
-          reason: '$relativePath no longer builds an InAppWebView widget — '
-              'remove it from widgetSites');
+      expect(
+        code,
+        contains('InAppWebView('),
+        reason:
+            '$relativePath no longer builds an InAppWebView widget — '
+            'remove it from widgetSites',
+      );
 
       for (final String call in <String>[
         '_controller?.dispose()',
         '_controller!.dispose()',
         '_controller.dispose()',
       ]) {
-        expect(code, isNot(contains(call)),
-            reason: '$relativePath manually disposes its webview controller '
-                '($call). The InAppWebView widget owns it — remove the call '
-                '(see the Windows double-dispose crash).');
+        expect(
+          code,
+          isNot(contains(call)),
+          reason:
+              '$relativePath manually disposes its webview controller '
+              '($call). The InAppWebView widget owns it — remove the call '
+              '(see the Windows double-dispose crash).',
+        );
       }
     });
   }

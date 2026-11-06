@@ -13,14 +13,20 @@
 ///
 /// **mokuro.moe 整卷**（阶段 C，设计稿 §4）：`kind = mokuro_volume` 的任务由同一个
 /// worker 调既有 [MokuroMoeVolumeDownloader]（`.part` 续传 / 原子 rename / 解包 /
-/// `importFromMokuroPath` 落库语义原样），进度映射到 `pages_done / pages_total`
-/// （CBZ 阶段是字节、导入阶段是页）。原内存队列 `MokuroMoeDownloadQueue` 已删除：
+/// `importFromMokuroPath` 落库语义原样）。`pages_done / pages_total` **只记页**
+/// （导入阶段）；CBZ 阶段的字节进度是瞬态，只存在内存 [MangaDownloadService]
+/// 的传输进度里，由 [MangaDownloadService.progressOf] 统一成带单位的
+/// [MangaDownloadProgress]（BUG：字节曾被塞进页列，UI 显示「第 4718782 /
+/// 31302239 页」）。原内存队列 `MokuroMoeDownloadQueue` 已删除：
 /// 任务落表后关目录页、重启 app 都不丢，重试仍是**同一行**复位成 `queued`
 /// （BUG-1433 的「就地重试不新建行」语义）。
 ///
 /// **合规**：本服务**不**挂 `StoreRestrictedCapability.downloads`——互联对端漫画
 /// 在 iOS 是保留的在线源，改成必须下载后读，若下载被门挡住就是死路。Mihon
-/// 入口继续受 `onlineMangaSource` 门控（iOS 无入口）。
+/// 入口继续受 `onlineMangaSource` 门控（iOS 无入口）。Kavita 按运行时问用户自配
+/// 服务器能力（直读与下载 iOS 都保留，2026-10-27 用户拍板），判据收在
+/// `online_manga_download_gate.dart`，[MangaDownloadService.enqueueChapter] 再判
+/// 一次兜住所有入队路径（作品页 / 阅读器 / 订阅自动下载 / 下载中心）。
 library;
 
 import 'dart:async';
@@ -39,6 +45,7 @@ import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/download/manga_download_sidecar.dart';
+import 'package:fushi/src/media/manga/download/online_manga_download_gate.dart';
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
@@ -69,6 +76,43 @@ String? mokuroMoeSeriesNameOf(String bookKey) =>
 /// 生产用 [MokuroMoeVolumeDownloader] 的构造口（一个下载器只跑一次 run）；
 /// 测试注入假下载器。
 typedef MokuroMoeVolumeDownloaderFactory = MokuroMoeVolumeDownloader Function();
+
+/// 一个任务当前的进度，带单位：页（章节取页 / 卷导入）或字节（mokuro CBZ 下载）。
+///
+/// 任务表的 `pages_done / pages_total` 只承载页；字节进度不落库（瞬态，进程重启
+/// 后从 `.part` 续传重新计），两者经 [MangaDownloadService.progressOf] 合成本类型，
+/// UI 据子类型选文案，不再把任意两个整数当页数显示。
+sealed class MangaDownloadProgress {
+  const MangaDownloadProgress();
+
+  /// 0..1；总量未知时 null（不定进度）。
+  double? get fraction;
+}
+
+/// 页进度（总量为 0 = 还不知道有几页）。
+final class MangaDownloadPageProgress extends MangaDownloadProgress {
+  const MangaDownloadPageProgress({required this.done, required this.total});
+
+  final int done;
+  final int total;
+
+  @override
+  double? get fraction => total > 0 ? (done / total).clamp(0.0, 1.0) : null;
+}
+
+/// 字节进度（[total] 为 null = 服务端没给 Content-Length）。
+final class MangaDownloadByteProgress extends MangaDownloadProgress {
+  const MangaDownloadByteProgress({required this.received, this.total});
+
+  final int received;
+  final int? total;
+
+  @override
+  double? get fraction {
+    final int? all = total;
+    return all != null && all > 0 ? (received / all).clamp(0.0, 1.0) : null;
+  }
+}
 
 /// 一章下载完成后交给钩子的上下文。
 class MangaDownloadedChapter {
@@ -200,6 +244,40 @@ class MangaDownloadService {
   _ActiveJob? _active;
   Completer<void>? _idle;
 
+  /// 当前任务的瞬态字节进度（只有 mokuro CBZ 下载阶段非空）；键 = jobId。
+  ({String jobId, MangaDownloadByteProgress progress})? _transfer;
+
+  /// 瞬态进度变化的信号；并入 [watchJobs]，消费方无需另外订阅。
+  final StreamController<void> _transferChanges =
+      StreamController<void>.broadcast(sync: true);
+
+  void _setTransfer(String jobId, MangaDownloadByteProgress? progress) {
+    final ({String jobId, MangaDownloadByteProgress progress})? previous =
+        _transfer;
+    if (progress == null) {
+      if (previous == null || previous.jobId != jobId) return;
+      _transfer = null;
+    } else {
+      _transfer = (jobId: jobId, progress: progress);
+    }
+    if (!_transferChanges.isClosed) _transferChanges.add(null);
+  }
+
+  /// 任务当前进度（带单位）：正在下载 CBZ 的任务给字节，其余给表里的页数。
+  MangaDownloadProgress progressOf(MangaDownloadJobRow job) {
+    final ({String jobId, MangaDownloadByteProgress progress})? transfer =
+        _transfer;
+    if (transfer != null &&
+        transfer.jobId == job.jobId &&
+        job.status == MangaDownloadJobStatus.running) {
+      return transfer.progress;
+    }
+    return MangaDownloadPageProgress(
+      done: job.pagesDone,
+      total: job.pagesTotal,
+    );
+  }
+
   int get _now => _clock().millisecondsSinceEpoch;
 
   /// 上一条新排任务的 `created_at`。worker 按 `(created_at, job_id)` 领取，同一
@@ -233,10 +311,30 @@ class MangaDownloadService {
       active.abort?.call();
     }
     _stopKeepAlive();
+    unawaited(_transferChanges.close());
   }
 
-  /// 任务表变了的信号流（不带行，消费方自己 [listJobs]）。
-  Stream<void> watchJobs() => _database.watchMangaDownloadJobs();
+  /// 任务表变了（或当前任务的瞬态字节进度变了）的信号流（不带行，消费方自己
+  /// [listJobs]，进度经 [progressOf] 取）。
+  Stream<void> watchJobs() {
+    StreamSubscription<void>? table;
+    StreamSubscription<void>? transfer;
+    late final StreamController<void> merged;
+    merged = StreamController<void>(
+      onListen: () {
+        table = _database.watchMangaDownloadJobs().listen(
+          merged.add,
+          onError: merged.addError,
+        );
+        transfer = _transferChanges.stream.listen(merged.add);
+      },
+      onCancel: () async {
+        await transfer?.cancel();
+        await table?.cancel();
+      },
+    );
+    return merged.stream;
+  }
 
   Future<List<MangaDownloadJobRow>> listJobs({
     Set<String> statuses = const <String>{},
@@ -344,6 +442,9 @@ class MangaDownloadService {
     required OnlineMangaChapter chapter,
     required bool autoOcr,
   }) async {
+    if (!onlineMangaChapterDownloadsAvailable(entry.runtime)) {
+      throw StateError('Chapter downloads are unavailable on this platform');
+    }
     final String bookKey = OnlineMangaLibraryService.bookKeyOf(entry);
     final String jobId = mangaDownloadJobId(
       kind: MangaDownloadJobKind.chapter,
@@ -422,7 +523,7 @@ class MangaDownloadService {
         status: MangaDownloadJobStatus.cancelled,
         updatedAt: _now,
       );
-      await _deleteChapterDirectory(row);
+      await _discardPartialDownload(row);
     }
   }
 
@@ -573,7 +674,7 @@ class MangaDownloadService {
           status: MangaDownloadJobStatus.cancelled,
           updatedAt: _now,
         );
-        await _deleteChapterDirectory(job);
+        await _discardPartialDownload(job);
         return;
       } on Object catch (error, stack) {
         ErrorLogService.instance.log(
@@ -612,7 +713,7 @@ class MangaDownloadService {
             status: MangaDownloadJobStatus.cancelled,
             updatedAt: _now,
           );
-          await _deleteChapterDirectory(job);
+          await _discardPartialDownload(job);
           return;
         }
       }
@@ -775,8 +876,9 @@ class MangaDownloadService {
 
   /// mokuro.moe 卷：把 [MokuroMoeVolumeDownloader.run] 的事件流映射到任务行。
   ///
-  /// 进度：CBZ 阶段 `pages_done / pages_total` 记字节（总量未知时不写），导入阶段
-  /// 记页——UI 侧只看比值。取消 / 停止经 [_ActiveJob.abort] 直接掐下载器
+  /// 进度：CBZ 阶段的字节只进内存 [_transfer]（经 [progressOf] / [watchJobs]
+  /// 给 UI），导入阶段的页才落 `pages_done / pages_total`——页列永远是页。开跑先把
+  /// 页列清零：旧版本曾把字节写进页列，续跑的行不能带着它显示。取消 / 停止经 [_ActiveJob.abort] 直接掐下载器
   /// （它在下个 chunk 处抛 [MokuroMoeDownloadCancelled]，`.part` 保留续传），再
   /// 由 token 区分是用户取消还是服务停止。流没走到 done 就正常结束按取消处理
   /// （与旧队列语义一致）。
@@ -794,6 +896,12 @@ class MangaDownloadService {
     }
     final _CancelToken token = active.token;
     _throwIfCancelled(token);
+    await _database.updateMangaDownloadJobProgress(
+      job.jobId,
+      pagesDone: 0,
+      pagesTotal: 0,
+      updatedAt: _now,
+    );
     final MokuroMoeVolumeDownloader downloader = factory();
     active.abort = downloader.cancel;
     MokuroMoeVolumeDownloadEvent? last;
@@ -804,15 +912,27 @@ class MangaDownloadService {
         volumeName: job.chapterKey,
       )) {
         last = event;
-        final ({int done, int total})? progress = _mokuroProgressOf(event);
-        if (progress != null) {
-          await _database.updateMangaDownloadJobProgress(
-            job.jobId,
-            pagesDone: progress.done,
-            pagesTotal: progress.total,
-            updatedAt: _now,
-          );
-          _reportKeepAlive(job, done: progress.done, total: progress.total);
+        switch (_mokuroProgressOf(event)) {
+          case MangaDownloadByteProgress bytes:
+            _setTransfer(job.jobId, bytes);
+            final int? total = bytes.total;
+            if (total != null) {
+              _reportKeepAlive(job, done: bytes.received, total: total);
+            }
+          case MangaDownloadPageProgress pages:
+            _setTransfer(job.jobId, null);
+            await _database.updateMangaDownloadJobProgress(
+              job.jobId,
+              pagesDone: pages.done,
+              pagesTotal: pages.total,
+              updatedAt: _now,
+            );
+            _reportKeepAlive(job, done: pages.done, total: pages.total);
+          case null:
+            // 字节阶段之后（解包 / 落库前）不再有字节可报。
+            if (event.stage != MokuroMoeDownloadStage.downloadingCbz) {
+              _setTransfer(job.jobId, null);
+            }
         }
       }
     } on MokuroMoeDownloadCancelled {
@@ -821,6 +941,7 @@ class MangaDownloadService {
       throw const _Cancelled();
     } finally {
       active.abort = null;
+      _setTransfer(job.jobId, null);
     }
     _throwIfCancelled(token);
     if (last == null || last.stage != MokuroMoeDownloadStage.done) {
@@ -839,18 +960,26 @@ class MangaDownloadService {
     }
   }
 
-  /// 事件 → `(pages_done, pages_total)`；本阶段没有可比的进度返回 null（不动列）。
-  static ({int done, int total})? _mokuroProgressOf(
+  /// 事件 → 带单位的进度：CBZ 阶段是字节（只进内存），导入阶段是页（落
+  /// `pages_done / pages_total`）；本阶段没有可报的进度返回 null。
+  static MangaDownloadProgress? _mokuroProgressOf(
     MokuroMoeVolumeDownloadEvent event,
   ) {
     switch (event.stage) {
       case MokuroMoeDownloadStage.downloadingCbz:
         final int? total = event.totalBytes;
-        if (total == null || total <= 0) return null;
-        return (done: event.receivedBytes.clamp(0, total), total: total);
+        if (total == null || total <= 0) {
+          return MangaDownloadByteProgress(
+            received: event.receivedBytes < 0 ? 0 : event.receivedBytes,
+          );
+        }
+        return MangaDownloadByteProgress(
+          received: event.receivedBytes.clamp(0, total),
+          total: total,
+        );
       case MokuroMoeDownloadStage.importing:
         if (event.pagesTotal <= 0) return null;
-        return (
+        return MangaDownloadPageProgress(
           done: event.pagesDone.clamp(0, event.pagesTotal),
           total: event.pagesTotal,
         );
@@ -948,7 +1077,13 @@ class MangaDownloadService {
   /// 续跑时找磁盘上已落地的第 [index] 页（任意扩展名，`.tmp` 除外，空文件不算）。
   Future<_PageFile?> _existingPageFile(Directory images, int index) async {
     final String stem = _pageStem(index);
-    for (final String ext in const <String>['.jpg', '.png', '.webp', '.gif']) {
+    for (final String ext in const <String>[
+      '.jpg',
+      '.png',
+      '.webp',
+      '.gif',
+      '.avif',
+    ]) {
       final File file = File(p.join(images.path, '$stem$ext'));
       if (await file.exists() && await file.length() > 0) {
         return _PageFile(
@@ -968,21 +1103,40 @@ class MangaDownloadService {
         return '.webp';
       case 'image/gif':
         return '.gif';
+      case 'image/avif':
+        // 以前落进 default 存成 `.jpg`：WebView 按扩展名给 image/jpeg、导入白名单也照旧，
+        // 但内容其实是 AVIF，换扩展名就能对上真实格式。
+        return '.avif';
       default:
         return '.jpg';
     }
   }
 
-  Future<void> _deleteChapterDirectory(MangaDownloadJobRow job) async {
-    // mokuro 卷的半成品是下载器 staging 目录里的 `.part`，刻意保留供续传。
-    if (job.kind != MangaDownloadJobKind.chapter) return;
+  /// 用户取消后丢掉这条任务的半成品（issue #2720）。
+  ///
+  /// - 章节任务：删未完成章的目录（页图 / `.tmp`）；章已完整落地（manga.json
+  ///   在、判据 [isChapterDownloaded] 为真）就是用户的内容，**不删**——取消一条
+  ///   排队中的重下任务不能把已下好的章顺手抹掉。
+  /// - mokuro 卷：删下载器 staging（`.part` / 未导入的 `.cbz`）；已导入的卷在库
+  ///   目录里，不在 staging，不受影响。失败 / 服务停止不走这里，`.part` 照留续传。
+  Future<void> _discardPartialDownload(MangaDownloadJobRow job) async {
     try {
+      if (job.kind == MangaDownloadJobKind.mokuroVolume) {
+        final String? seriesName = mokuroMoeSeriesNameOf(job.bookKey);
+        final MokuroMoeVolumeDownloaderFactory? factory = _mokuroDownloader;
+        if (seriesName == null || factory == null) return;
+        await factory().discardStaging(
+          seriesName: seriesName,
+          volumeName: job.chapterKey,
+        );
+        return;
+      }
+      if (job.kind != MangaDownloadJobKind.chapter) return;
       final EpubBookRow? row = await _database.getEpubBook(job.bookKey);
       if (row == null) return;
-      await deleteChapterDownload(
-        await MangaStorage.bookPath(row.bookKey),
-        job.chapterKey,
-      );
+      final String bookDir = await MangaStorage.bookPath(row.bookKey);
+      if (await isChapterDownloaded(bookDir, job.chapterKey)) return;
+      await deleteChapterDownload(bookDir, job.chapterKey);
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
         'MangaDownloadService.deleteChapter ${job.jobId}',

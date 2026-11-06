@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:external_path/external_path.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/migration/migration_exporter.dart';
 import 'package:fushi/src/migration/migration_readonly.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
@@ -10,7 +10,18 @@ import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -32,8 +43,7 @@ class MigrationPage extends StatefulWidget {
 }
 
 /// Fushi 发布页（下载引导用；与更新检查同仓）。
-const String kFushiReleasesUrl =
-    'https://github.com/hajisensai/fushi/releases';
+const String kFushiReleasesUrl = 'https://github.com/hajisensai/fushi/releases';
 
 enum _TargetState { checking, missing, installed }
 
@@ -67,18 +77,19 @@ class _MigrationPageState extends State<MigrationPage> {
   }
 
   String _batchLabel(MigrationBatch batch) => switch (batch) {
-        MigrationBatch.core => t.migration_batch_core_label,
-        MigrationBatch.dictionaries => t.backup_category_dictionary,
-        MigrationBatch.books => t.backup_category_books,
-        MigrationBatch.audiobooks => t.backup_category_audiobooks,
-        MigrationBatch.fonts => t.backup_category_fonts,
-        MigrationBatch.localAudio => t.backup_category_local_audio,
-      };
+    MigrationBatch.core => t.migration_batch_core_label,
+    MigrationBatch.dictionaries => t.backup_category_dictionary,
+    MigrationBatch.books => t.backup_category_books,
+    MigrationBatch.audiobooks => t.backup_category_audiobooks,
+    MigrationBatch.fonts => t.backup_category_fonts,
+    MigrationBatch.localAudio => t.backup_category_local_audio,
+  };
 
   Future<Directory> _transferDir() async {
     final String documents =
         await ExternalPath.getExternalStoragePublicDirectory(
-            ExternalPath.DIRECTORY_DOCUMENTS);
+          ExternalPath.DIRECTORY_DOCUMENTS,
+        );
     // 计划 P1-1 定值：不在 /Android/data 下，卸载老版不会被系统清掉。
     return Directory(p.join(documents, 'Hibiki', 'migration'));
   }
@@ -105,11 +116,16 @@ class _MigrationPageState extends State<MigrationPage> {
         dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
         appVersion: appModel.packageInfo.version,
         booksRootDirectory: p.join(appModel.appDirectory.path, 'fushi_books'),
-        audiobooksRootDirectory:
-            p.join(appModel.appDirectory.path, 'audiobooks'),
+        audiobooksRootDirectory: p.join(
+          appModel.appDirectory.path,
+          'audiobooks',
+        ),
         fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
-        gameCoversRootDirectory:
-            p.join(appModel.appDirectory.path, 'game_covers'),
+        gameCoversRootDirectory: p.join(
+          appModel.appDirectory.path,
+          'game_covers',
+        ),
+        srsStorage: appModel.srsStorageForBackup,
       );
       final MigrationExporter exporter = MigrationExporter(
         backupService: service,
@@ -118,8 +134,9 @@ class _MigrationPageState extends State<MigrationPage> {
         sourceAppVersion: appModel.packageInfo.version,
         nowMs: () => DateTime.now().millisecondsSinceEpoch,
       );
-      final MigrationPlan plan =
-          exporter.planBatches(includeLocalAudio: _includeLocalAudio);
+      final MigrationPlan plan = exporter.planBatches(
+        includeLocalAudio: _includeLocalAudio,
+      );
       for (final MigrationBatch batch in plan.batches) {
         if (!mounted) return;
         setState(() => _currentBatch = batch.name);
@@ -183,10 +200,7 @@ class _MigrationPageState extends State<MigrationPage> {
           tone: FushiCardTone.secondary,
           message: t.migration_target_missing,
           actions: <Widget>[
-            FushiTextButton(
-              onPressed: _refreshTarget,
-              child: Text(t.retry),
-            ),
+            FushiTextButton(onPressed: _refreshTarget, child: Text(t.retry)),
             FushiFilledButton.icon(
               onPressed: () => launchUrl(
                 Uri.parse(kFushiReleasesUrl),
@@ -260,9 +274,7 @@ class _MigrationPageState extends State<MigrationPage> {
                     )
                   : const FushiIcon(FushiIcons.moveFile),
               label: _running
-                  ? Text(
-                      t.migration_batch_running(batch: _currentBatch ?? ''),
-                    )
+                  ? Text(t.migration_batch_running(batch: _currentBatch ?? ''))
                   : Text(t.migration_start),
             ),
           ),

@@ -15,6 +15,49 @@ const String kProfile = '01928c3e-0000-7000-8000-000000000001';
 /// 内置「Fushi 卡片」：确定性播种、与 Lapis 互不相同的 ID、读音键、内置字段不可删，
 /// 以及 Lapis → Fushi 卡片 一键迁移（按字段键直映、复习历史随迁、改过名的字段照样对上）。
 void main() {
+  test('renamed fields keep the field ids derived from their legacy names', () {
+    final String nt = srsFushiCardNoteTypeId(kProfile);
+    final SrsBuiltinNoteType fushi = srsBuiltinFushiCard(kProfile);
+    for (final MapEntry<String, String> e
+        in FushiCardFields.legacyNames.entries) {
+      // 旧实现：fieldId = field(noteTypeId, builtinFieldAnkiNum('fushi_card', 旧名))。
+      final String legacyId = SrsIds.field(
+        nt,
+        SrsIds.builtinFieldAnkiNum(kSrsBuiltinFushiCardKey, e.value),
+      );
+      final SrsFieldDef def = fushi.fields.firstWhere(
+        (SrsFieldDef f) => f.name == e.key,
+      );
+      expect(def.id, legacyId, reason: '${e.value} -> ${e.key}');
+      expect(
+        def.ankiNum,
+        SrsIds.builtinFieldAnkiNum(kSrsBuiltinFushiCardKey, e.value),
+      );
+      // 新旧名都能算出同一个 fieldId。
+      expect(srsFushiCardFieldId(kProfile, e.key), legacyId);
+      expect(srsFushiCardFieldId(kProfile, e.value), legacyId);
+    }
+    expect(
+      fushi.fields.map((SrsFieldDef f) => f.name),
+      FushiCardNoteType.fields,
+    );
+    // 词条 / 词频序字段仍是原来那两个 ID。
+    expect(fushi.termFieldId, srsFushiCardFieldId(kProfile, 'Expression'));
+    expect(fushi.freqFieldId, srsFushiCardFieldId(kProfile, 'FreqSort'));
+  });
+
+  test('Lapis built-in field ids are untouched by the Fushi renames', () {
+    final SrsBuiltinNoteType lapis = srsBuiltinLapis(kProfile);
+    expect(lapis.fields.map((SrsFieldDef f) => f.name), LapisNoteType.fields);
+    expect(
+      lapis.fields.first.id,
+      SrsIds.field(
+        srsLapisNoteTypeId(kProfile),
+        SrsIds.builtinFieldAnkiNum(kSrsBuiltinLapisKey, 'Expression'),
+      ),
+    );
+  });
+
   int t = DateTime.utc(2026, 10, 16, 12).millisecondsSinceEpoch;
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
@@ -62,6 +105,42 @@ void main() {
       );
       expect(a.isBuiltinField(fushi, fushi.fields.first.id), isTrue);
       expect(a.canDeleteNoteType(fushi), isFalse);
+    },
+  );
+
+  test(
+    'field-definition snapshots still carrying a legacy default name show the new name',
+    () async {
+      final SrsDbStore a = await device('a');
+      final String nt = a.fushiCardNoteTypeId;
+      final String term = srsFushiCardFieldId(kProfile, FushiCardFields.term);
+      final String media = srsFushiCardFieldId(kProfile, FushiCardFields.media);
+      final String source = srsFushiCardFieldId(
+        kProfile,
+        FushiCardFields.source,
+      );
+      // 旧版本写下的整份快照：名字是旧默认名（调序 / 改说明前的写法）。
+      await a.renameField(nt, term, 'Expression');
+      await a.renameField(nt, media, 'Picture');
+      // 用户真改过的名字。
+      await a.renameField(nt, source, '出典');
+      final SrsNoteTypeView before = (await a.noteType(nt))!;
+      await a.reorderFields(nt, <String>[
+        media,
+        for (final SrsFieldDef f in before.fields)
+          if (f.id != media) f.id,
+      ]);
+      final SrsNoteTypeView v = (await a.noteType(nt))!;
+      expect(v.fields.first.id, media, reason: '调过的顺序保留');
+      expect(v.fields.first.name, FushiCardFields.media);
+      expect(v.fieldById(term)!.name, FushiCardFields.term);
+      expect(v.fieldById(source)!.name, '出典');
+      // 只在读时认：再物化一次结果不变。
+      final SrsNoteTypeView again = (await a.noteType(nt))!;
+      expect(
+        again.fields.map((SrsFieldDef f) => f.name),
+        v.fields.map((SrsFieldDef f) => f.name),
+      );
     },
   );
 
@@ -127,7 +206,7 @@ void main() {
       expect(n.field(srsFushiCardFieldId(kProfile, 'SentenceTranslation')), '');
       final SrsNoteTypeView fushi = (await a.noteType(a.fushiCardNoteTypeId))!;
       final String newCard = SrsIds.card(note, fushi.templates.single.id, 0);
-      expect((await a.cardRow(oldCard))!.hidden, isTrue);
+      expect(await a.cardRow(oldCard), isNull, reason: '旧卡不再生成，删缓存行；增量与重建同一张表');
       final SrsCardCacheRow c = (await a.cardRow(newCard))!;
       expect(c.hidden, isFalse);
       expect(c.lastLogId, l2.id);
@@ -198,7 +277,7 @@ void main() {
         a.fushiCardNoteTypeId,
         (String n) => srsFushiCardFieldId(kProfile, n),
       );
-      expect(fushi.fields['Expression'], '通う');
+      expect(fushi.fields['Term'], '通う');
       expect(fushi.fushiCardDefinitions, contains('fc-defs-only'));
       expect(fushi.fushiCardDefinitions, contains('to commute'));
       expect(fushi.fushiCardDefinitions, isNot(contains('通う')));
@@ -210,6 +289,71 @@ void main() {
             lapisType.fields.firstWhere((SrsFieldDef f) => f.name == n).id,
       );
       expect(lapis.fushiCardDefinitions, isNull);
+
+      expect(fushi.fushiCardBack, kFushiCardDefaultBackItems);
+      expect(fushi.fushiCardFront, kFushiCardDefaultFrontItems);
+
+      // 调了背面区块布局（图片挪到释义后面、删掉来源、关掉读音行的音调、释义默认展开、加字段
+      // 区块与 HTML 区块）、正面加了 HTML 区块：仍走原生，按新布局画，HTML 区块已按字段展开。
+      final SrsNoteTypeView fushiType = (await a.noteType(
+        a.fushiCardNoteTypeId,
+      ))!;
+      final List<FushiCardItem> layout = <FushiCardItem>[
+        FushiCardBlockItem(FushiCardBlock.term),
+        FushiCardBlockItem(
+          FushiCardBlock.reading,
+          options: <String, String>{kFushiOptPitch: '0'},
+        ),
+        FushiCardBlockItem(FushiCardBlock.sentence),
+        FushiCardFieldItem(field: 'MainDefinition', title: '主释义'),
+        FushiCardBlockItem(
+          FushiCardBlock.definitions,
+          options: <String, String>{kFushiOptExpand: '1'},
+        ),
+        FushiCardBlockItem(FushiCardBlock.picture),
+        const FushiCardHtmlItem('<p>词：{{Term}}</p>'),
+        FushiCardBlockItem(FushiCardBlock.frequency),
+      ];
+      final List<FushiCardItem> front = <FushiCardItem>[
+        const FushiCardHtmlItem('<b>{{Term}}</b>'),
+        ...kFushiCardDefaultFrontItems,
+      ];
+      final Map<String, String> ids = <String, String>{
+        for (final SrsFieldDef f in fushiType.fields) f.name: f.id,
+      };
+      await a.updateTemplate(
+        a.fushiCardNoteTypeId,
+        fushiType.templates.single.id,
+        front: templateNamesToIds(
+          fushiCardTemplateFor(FushiCardSide.front, front),
+          ids,
+        ),
+        back: templateNamesToIds(fushiCardBackTemplateFor(layout), ids),
+      );
+      final SrsRenderedCard moved = await render(
+        a.fushiCardNoteTypeId,
+        (String n) => srsFushiCardFieldId(kProfile, n),
+      );
+      expect(moved.fushiCardDefinitions, contains('to commute'));
+      expect(moved.fushiCardDefinitions, contains('data-fc-opt-expand="1"'));
+      expect(moved.fushiCardBack, <FushiCardItem>[
+        ...layout.take(6),
+        const FushiCardHtmlItem('<p>词：通う</p>'),
+        layout.last,
+      ]);
+      expect(moved.fushiCardFront.first, const FushiCardHtmlItem('<b>通う</b>'));
+
+      // 正面骨架改了（不在任何区块里）：整面 WebView。
+      await a.updateTemplate(
+        a.fushiCardNoteTypeId,
+        fushiType.templates.single.id,
+        front: templateNamesToIds('<p>x</p>$kFushiCardFrontTemplate', ids),
+      );
+      final SrsRenderedCard skeleton = await render(
+        a.fushiCardNoteTypeId,
+        (String n) => srsFushiCardFieldId(kProfile, n),
+      );
+      expect(skeleton.fushiCardDefinitions, isNull);
 
       // 用户改过 Fushi 卡片的样式：回到整面 WebView（不再原生渲染）。
       await a.setCss(

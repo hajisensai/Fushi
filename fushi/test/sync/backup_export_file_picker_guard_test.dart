@@ -11,8 +11,11 @@ import '../helpers/source_guard.dart';
 /// `{` 是**参数表**而不是函数体，裸 `indexOf('{')` 会匹配到参数表，断言于是恒假。
 String _bracedBody(String src, int declStart, {String openAfter = '{'}) {
   final int at = src.indexOf(openAfter, declStart);
-  expect(at, greaterThanOrEqualTo(0),
-      reason: 'no "$openAfter" after $declStart');
+  expect(
+    at,
+    greaterThanOrEqualTo(0),
+    reason: 'no "$openAfter" after $declStart',
+  );
   final int open = src.indexOf('{', at);
   expect(open, greaterThanOrEqualTo(0), reason: 'no block at $declStart');
   int depth = 0;
@@ -32,34 +35,46 @@ void main() {
   // 用共享原语（等长掩码，下标可直接回原串切片），并连字符串内容一起掩掉 ——
   // 下面要做花括号配对，三引号/普通串里的花括号不能参与配对。
   final String src = maskCommentsAndStrings(
-    File('lib/src/sync/sync_settings_schema/backup.part.dart')
-        .readAsStringSync()
-        .replaceAll('\r\n', '\n'),
+    File(
+      'lib/src/sync/sync_settings_schema/backup.part.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n'),
   );
 
-  test('desktop backup export treats a cancelled save dialog as cancellation',
-      () {
-    final int saveDialog = src.indexOf('await FilePicker.platform.saveFile(');
-    expect(saveDialog, greaterThanOrEqualTo(0),
-        reason: 'Desktop backup export must use FilePicker.saveFile.');
+  test(
+    'desktop backup export treats a cancelled save dialog as cancellation',
+    () {
+      final int saveDialog = src.indexOf('await FilePicker.platform.saveFile(');
+      expect(
+        saveDialog,
+        greaterThanOrEqualTo(0),
+        reason: 'Desktop backup export must use FilePicker.saveFile.',
+      );
 
-    final int successToast = src.indexOf('t.backup_export_success', saveDialog);
-    expect(successToast, greaterThan(saveDialog),
-        reason: 'The success toast should remain after the save branch.');
+      final int successToast = src.indexOf(
+        't.backup_export_success',
+        saveDialog,
+      );
+      expect(
+        successToast,
+        greaterThan(saveDialog),
+        reason: 'The success toast should remain after the save branch.',
+      );
 
-    final String desktopSaveBody = src.substring(saveDialog, successToast);
-    expect(
-      desktopSaveBody,
-      contains('cancelled = true'),
-      reason: 'If FilePicker returns null, the user cancelled or the native '
-          'panel failed; that has to be recorded as a cancellation.',
-    );
-    expect(
-      desktopSaveBody,
-      contains('if (cancelled) return;'),
-      reason: '取消必须在成功提示之前 return —— 否则用户取消了另存却收到「备份成功」。',
-    );
-  });
+      final String desktopSaveBody = src.substring(saveDialog, successToast);
+      expect(
+        desktopSaveBody,
+        contains('cancelled = true'),
+        reason:
+            'If FilePicker returns null, the user cancelled or the native '
+            'panel failed; that has to be recorded as a cancellation.',
+      );
+      expect(
+        desktopSaveBody,
+        contains('if (cancelled) return;'),
+        reason: '取消必须在成功提示之前 return —— 否则用户取消了另存却收到「备份成功」。',
+      );
+    },
+  );
 
   test('备份打包的所有权不在设置行的 State 上', () {
     // 根因：「本地备份」是可折叠分区，收起时整棵 rows 子树从 widget tree 移除、
@@ -70,9 +85,13 @@ void main() {
     // 结构上根治：流程搬到**库级函数**。顶层函数根本看不到 State 的 mounted，
     // 这类丢结果的写法于是无从产生。下面钉的就是这个结构。
     final int flow = src.indexOf('\nFuture<void> runBackupExportFlow(');
-    expect(flow, greaterThanOrEqualTo(0),
-        reason: '导出流程必须是**顶层**函数（行首无缩进），不能挂回会被折叠销毁的 '
-            'State 上。');
+    expect(
+      flow,
+      greaterThanOrEqualTo(0),
+      reason:
+          '导出流程必须是**顶层**函数（行首无缩进），不能挂回会被折叠销毁的 '
+          'State 上。',
+    );
 
     expect(
       'service.createBackup('.allMatches(src).length,
@@ -80,11 +99,15 @@ void main() {
       reason: '打包入口只应有一处。',
     );
     final String flowBody = _bracedBody(src, flow, openAfter: ') async {');
-    expect(flowBody, contains('service.createBackup('),
-        reason: '打包必须发生在 runBackupExportFlow 里。');
+    expect(
+      flowBody,
+      contains('service.createBackup('),
+      reason: '打包必须发生在 runBackupExportFlow 里。',
+    );
 
-    final int stateClass =
-        src.indexOf('class _BackupExportWidgetState extends State<');
+    final int stateClass = src.indexOf(
+      'class _BackupExportWidgetState extends State<',
+    );
     expect(stateClass, greaterThanOrEqualTo(0));
     expect(
       _bracedBody(src, stateClass),
@@ -102,9 +125,7 @@ void main() {
     final String flowBody = _bracedBody(src, flow, openAfter: ') async {');
     final int sweep = flowBody.indexOf('_sweepStaleBackupArchives(');
     final int pack = flowBody.indexOf('service.createBackup(');
-    expect(sweep, greaterThanOrEqualTo(0),
-        reason: '导出流程必须清理上一次遗留的备份包。');
-    expect(sweep, lessThan(pack),
-        reason: '清理必须发生在打包之前 —— 打完再清会把这一次的成果也删掉。');
+    expect(sweep, greaterThanOrEqualTo(0), reason: '导出流程必须清理上一次遗留的备份包。');
+    expect(sweep, lessThan(pack), reason: '清理必须发生在打包之前 —— 打完再清会把这一次的成果也删掉。');
   });
 }

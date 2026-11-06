@@ -34,8 +34,9 @@ class ThumbnailPreviewState {
   });
 
   /// hidden 初态：浮层不显示。
-  static const ThumbnailPreviewState hidden =
-      ThumbnailPreviewState(phase: ThumbnailPreviewPhase.hidden);
+  static const ThumbnailPreviewState hidden = ThumbnailPreviewState(
+    phase: ThumbnailPreviewPhase.hidden,
+  );
 
   final ThumbnailPreviewPhase phase;
 
@@ -81,8 +82,10 @@ int? thumbnailBucketTargetMs(double fraction, int durationMs) {
   // 并且最后一格是 `kThumbnailBuckets - 1`。若允许取到第 600 格，目标就正好等于
   // 总时长，而那里没有帧可取（`ffmpeg -ss <duration>` 必然产不出画面），进度条
   // 最右端就永远只剩时间戳。
-  final int bucket =
-      (clamped * kThumbnailBuckets).floor().clamp(0, kThumbnailBuckets - 1);
+  final int bucket = (clamped * kThumbnailBuckets).floor().clamp(
+    0,
+    kThumbnailBuckets - 1,
+  );
   final int ms = (bucket / kThumbnailBuckets * durationMs).round();
   return ms.clamp(0, durationMs);
 }
@@ -127,10 +130,10 @@ class VideoThumbnailPreviewController extends ChangeNotifier {
     ThumbnailCachedFrameLookup? cachedFrameLookup,
     VoidCallback? onWarmUp,
     this.grabTimeout = const Duration(seconds: 6),
-  })  : _grabber = grabber,
-        _durationMsProvider = durationMsProvider,
-        _cachedFrameLookup = cachedFrameLookup,
-        _onWarmUp = onWarmUp;
+  }) : _grabber = grabber,
+       _durationMsProvider = durationMsProvider,
+       _cachedFrameLookup = cachedFrameLookup,
+       _onWarmUp = onWarmUp;
 
   final ThumbnailFrameGrabber _grabber;
   final int Function() _durationMsProvider;
@@ -180,11 +183,13 @@ class VideoThumbnailPreviewController extends ChangeNotifier {
 
     // 无时长（远端流未就绪 / 媒体头未解析）或非桌面 → 只显时间戳，不取帧。
     if (!desktop || targetMs == null) {
-      _setState(ThumbnailPreviewState(
-        phase: ThumbnailPreviewPhase.timestampOnly,
-        fraction: fraction,
-        targetMs: targetMs,
-      ));
+      _setState(
+        ThumbnailPreviewState(
+          phase: ThumbnailPreviewPhase.timestampOnly,
+          fraction: fraction,
+          targetMs: targetMs,
+        ),
+      );
       return;
     }
 
@@ -200,24 +205,28 @@ class VideoThumbnailPreviewController extends ChangeNotifier {
     final ui.Image? cached = _cachedFrameLookup?.call(grabTargetMs);
     if (cached != null) {
       _disposeStateImage();
-      _setState(ThumbnailPreviewState(
-        phase: ThumbnailPreviewPhase.ready,
-        fraction: fraction,
-        targetMs: targetMs,
-        image: cached,
-      ));
+      _setState(
+        ThumbnailPreviewState(
+          phase: ThumbnailPreviewPhase.ready,
+          fraction: fraction,
+          targetMs: targetMs,
+          image: cached,
+        ),
+      );
       return;
     }
 
     // 即时更新位置 + 时间戳（跟手）；沿用上一帧避免移动时闪白，但态是 loading
     // ——这一帧**不是**当前位置的画面，浮层据此决定要不要提示加载中。所有权随
     // state 平移（不 dispose），下一次真正换帧时才释放。
-    _setState(ThumbnailPreviewState(
-      phase: ThumbnailPreviewPhase.loading,
-      fraction: fraction,
-      targetMs: targetMs,
-      image: _state.image,
-    ));
+    _setState(
+      ThumbnailPreviewState(
+        phase: ThumbnailPreviewPhase.loading,
+        fraction: fraction,
+        targetMs: targetMs,
+        image: _state.image,
+      ),
+    );
 
     // 直接派发，不做防抖。限流由「量化到格」+「单飞闸门」+「收尾追最新」三层
     // 承担，再加一层「等指针停下」只会制造 bug：只要 hover 间隔（约 16ms）短于
@@ -270,20 +279,24 @@ class VideoThumbnailPreviewController extends ChangeNotifier {
 
     if (image != null) {
       _disposeStateImage();
-      _setState(ThumbnailPreviewState(
-        phase: ThumbnailPreviewPhase.ready,
-        fraction: _state.fraction ?? fraction,
-        targetMs: _state.targetMs ?? targetMs,
-        image: image,
-      ));
+      _setState(
+        ThumbnailPreviewState(
+          phase: ThumbnailPreviewPhase.ready,
+          fraction: _state.fraction ?? fraction,
+          targetMs: _state.targetMs ?? targetMs,
+          image: image,
+        ),
+      );
     } else {
       // 取帧失败（没装 ffmpeg / 媒体解不了）→ 降级 timestampOnly。
       _disposeStateImage();
-      _setState(ThumbnailPreviewState(
-        phase: ThumbnailPreviewPhase.timestampOnly,
-        fraction: _state.fraction ?? fraction,
-        targetMs: _state.targetMs ?? targetMs,
-      ));
+      _setState(
+        ThumbnailPreviewState(
+          phase: ThumbnailPreviewPhase.timestampOnly,
+          fraction: _state.fraction ?? fraction,
+          targetMs: _state.targetMs ?? targetMs,
+        ),
+      );
     }
     _chaseLatestTarget(targetMs);
   }

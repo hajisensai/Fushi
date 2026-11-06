@@ -25,13 +25,15 @@ const Map<String, String> kLapisPreviewFieldSamples = <String, String>{
   'ExpressionReading': 'たべる',
   'ExpressionAudio': '<a class="replay-button">▶</a>',
   'SelectionText': '生命を維持するために食物を取る。',
-  'MainDefinition': '<div class="yomitan-glossary" style="text-align: left;">'
+  'MainDefinition':
+      '<div class="yomitan-glossary" style="text-align: left;">'
       '<ol><li data-dictionary="明鏡国語辞典 第三版">'
       '<i>(他動詞, 明鏡国語辞典 第三版)</i>'
       '<span>物を口に入れ、かんで飲み込む。'
       '<span data-sc-content="example-sentence">例：朝食を食べる。</span>'
       '</span></li></ol></div>',
-  'Glossary': '<div class="yomitan-glossary" style="text-align: left;">'
+  'Glossary':
+      '<div class="yomitan-glossary" style="text-align: left;">'
       '<ol><li data-dictionary="JMdict"><i>(v1, vt, JMdict)</i>'
       '<span><ul><li>to eat; to consume</li><li>to live on</li></ul></span>'
       '</li>'

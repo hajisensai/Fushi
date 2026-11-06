@@ -13,11 +13,7 @@ class TestImageGenerator {
 
   /// 生成 [width]×[height] 的 RGB PNG 字节。[seed] 改变噪声花纹，让同一本书里的
   /// 多张插图字节不同（避免 WebView 按同一 URL/内容走缓存而测不到真实成本）。
-  Uint8List pngBytes({
-    int width = 1600,
-    int height = 2400,
-    int seed = 1,
-  }) {
+  Uint8List pngBytes({int width = 1600, int height = 2400, int seed = 1}) {
     // 每行 1 字节 filter(0=None) + width*3 字节 RGB。
     final Uint8List raw = Uint8List(height * (1 + width * 3));
     int p = 0;

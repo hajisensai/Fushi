@@ -120,8 +120,32 @@ bool contextMenuButtonNumberMatches({
 /// 多数卡片的菜单是长按菜单的同一份执行体（`showModalBottomSheet` / 对话框，自己居中
 /// 定位），不需要按下处的坐标；需要锚点的表面（阅读器选区菜单、视频画面菜单、插图页）
 /// 直接写 `(Offset p) => …` 即可。null 原样透传 = 此刻不提供菜单。
+///
+/// 坐标不丢：回调**同步执行期间**经 [activeContextMenuAnchor] 可读到按下处的 global
+/// 坐标——条目菜单（`showMediaItemActions`）据此在指针处弹右键菜单，长按 / 键盘 /
+/// 手柄路径读到 null 则照旧居中弹出。卡片层的 `onSecondaryTap` 都是无参
+/// `VoidCallback`，不必为了一个锚点把十几处卡片签名改成带坐标。
 void Function(Offset)? contextMenuInvoker(VoidCallback? callback) =>
-    callback == null ? null : (Offset _) => callback();
+    callback == null
+    ? null
+    : (Offset position) => runWithContextMenuAnchor(position, callback);
+
+Offset? _activeContextMenuAnchor;
+
+/// 正在同步派发的右键菜单调用的按下坐标（global）；不在 [runWithContextMenuAnchor]
+/// 的同步执行范围内时为 null。菜单函数要在**第一个 await 之前**读它。
+Offset? get activeContextMenuAnchor => _activeContextMenuAnchor;
+
+/// 在 [body] 同步执行期间把 [anchor] 暴露为 [activeContextMenuAnchor]（可嵌套）。
+void runWithContextMenuAnchor(Offset anchor, VoidCallback body) {
+  final Offset? previous = _activeContextMenuAnchor;
+  _activeContextMenuAnchor = anchor;
+  try {
+    body();
+  } finally {
+    _activeContextMenuAnchor = previous;
+  }
+}
 
 /// 包住任何「右键要弹菜单」的子树，替代硬绑右键的 `GestureDetector.onSecondaryTap*`。
 ///

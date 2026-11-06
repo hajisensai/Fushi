@@ -45,8 +45,9 @@ void main() {
 
     setUpAll(() {
       // 测试 cwd 是 fushi/；源码相对路径稳定。
-      source = File('lib/src/media/video/video_import_dialog.dart')
-          .readAsStringSync();
+      source = File(
+        'lib/src/media/video/video_import_dialog.dart',
+      ).readAsStringSync();
     });
 
     // 动作按钮在 busy 期都用 `importing ? null :` 起手禁用，避免重入导入。
@@ -58,7 +59,8 @@ void main() {
         expect(
           source.contains('importing ? null : $onTap'),
           isTrue,
-          reason: '$onTap 按钮必须在 importing 期禁用（`importing ? null : $onTap`），'
+          reason:
+              '$onTap 按钮必须在 importing 期禁用（`importing ? null : $onTap`），'
               '否则导入中可重入触发并发导入',
         );
       });
@@ -67,25 +69,28 @@ void main() {
     test('cancel button is gated on importing', () {
       expect(
         source.contains(
-            'onPressed: importing ? null : () => Navigator.pop(context)'),
+          'onPressed: importing ? null : () => Navigator.pop(context)',
+        ),
         isTrue,
         reason: '取消按钮必须在 importing 期禁用，避免导入进行中关窗造成状态错乱',
       );
     });
 
-    test('confirm button is gated on _canImport (which is false while busy)',
-        () {
-      expect(
-        source.contains('onPressed: _canImport ? _doImport : null'),
-        isTrue,
-        reason: '确认按钮经 _canImport 门控；_canImport 在 busy 期返回 false',
-      );
-      // _canImport 确实把 busy 透传给纯判定函数。
-      expect(
-        source.contains('busy: importing,'),
-        isTrue,
-        reason: '_canImport 必须把 importing 喂给 videoImportCanImport',
-      );
-    });
+    test(
+      'confirm button is gated on _canImport (which is false while busy)',
+      () {
+        expect(
+          source.contains('onPressed: _canImport ? _doImport : null'),
+          isTrue,
+          reason: '确认按钮经 _canImport 门控；_canImport 在 busy 期返回 false',
+        );
+        // _canImport 确实把 busy 透传给纯判定函数。
+        expect(
+          source.contains('busy: importing,'),
+          isTrue,
+          reason: '_canImport 必须把 importing 喂给 videoImportCanImport',
+        );
+      },
+    );
   });
 }

@@ -1,19 +1,19 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/field.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 
 /// Used to track the current sentence context from the current playing media
 /// in the application.
 class ReadingField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   ReadingField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Reading',
-          description: 'Pronunciation or speech pattern.',
-          icon: Icons.surround_sound_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Reading',
+        description: 'Pronunciation or speech pattern.',
+        icon: Icons.surround_sound_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static ReadingField get instance => _instance;

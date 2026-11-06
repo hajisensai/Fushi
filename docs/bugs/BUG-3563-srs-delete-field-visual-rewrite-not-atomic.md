@@ -1,0 +1,6 @@
+## BUG-3563 · 复习笔记类型：删字段时可视化模板的改写与字段删除分两次写入，删不掉时模板已被改
+- **报告**：2026-10-19（PR #2366 审查遗留，协调要求修复）
+- **真实性**：✅ 真 bug（沿代码路径确认）。修前 `fushi/lib/src/pages/implementations/srs/srs_note_type_editor_page.dart` 的删字段先跑 `_dropFieldFromVisualTemplates`（逐个模板 `store.updateTemplate`，各自一次 `writeEdits`），再调 `SrsDbStore.deleteField`；后者在 `packages/fushi_engine/lib/srs/srs_note_type_store.dart` 里才校验「最后一个字段 / 内置字段不能删」并抛 `StateError`。校验失败时可视化模板已经少了引用该字段的块，字段却还在；多个模板时中途失败还会只改一部分。界面上 `canDelete` 挡住了常见情况，但两步之间被别的写入（同步到达、另一页面）改变状态时仍会触发。
+- **[x] ① 已修复** — `deleteField` 新增可选 `prepareTemplate`：在全部校验通过**之后**、基于同一份读到的笔记类型对每个模板改写，再剥字段引用，与字段删除标记、主字段清空同在一次 `writeEdits` 里落库（`_templateAfterFieldDelete`）。页面改为传 `srsVisualTemplateWithoutField`（`fushi/lib/src/srs/srs_visual_template.dart`，纯函数，存储形态 `fld:<id>` 进出），不再先调 `updateTemplate`。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/srs/srs_note_type_store_test.dart`「删字段带模板改写（prepareTemplate）……」：成功时改写与删除新增恰好 2 条修改记录；删最后一个字段 / 内置字段抛错时改写回调从未被调用、模板与字段原样、修改记录集合不变。`fushi/test/srs/srs_visual_template_test.dart`「删字段的模板改写（存储形态 fld:<id>）……」覆盖改写函数本身。变异实测：把改写挪回校验之前单独 `updateTemplate`，引擎用例红；还原后绿。
+- **备注**：`deleteField` 的「读 → 校验 → 写」本身仍不在同一个 `runExclusive` 里（存量结构，其它笔记类型操作同样如此），本修复保证的是改写与删除不再被拆成两次写入。

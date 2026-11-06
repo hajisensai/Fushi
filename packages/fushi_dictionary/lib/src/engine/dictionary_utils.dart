@@ -5,6 +5,9 @@ Future<FushiImportResult> importDictionaryViaFushidicts({
   required String outputDir,
   String breadcrumbDir = '',
 }) async {
-  return FushiDicts.importDictionary(zipPath, outputDir,
-      breadcrumbDir: breadcrumbDir);
+  return FushiDicts.importDictionary(
+    zipPath,
+    outputDir,
+    breadcrumbDir: breadcrumbDir,
+  );
 }

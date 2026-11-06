@@ -19,18 +19,26 @@ void main() {
   final String swift = maskComments(
     File('apple/FushiSystemOcr.swift').readAsStringSync(),
   );
-  final String dart =
-      File('lib/src/ocr/system_ocr_channel.dart').readAsStringSync();
-  final String iosDelegate =
-      File('ios/Runner/AppDelegate.swift').readAsStringSync();
-  final String macosDelegate =
-      File('macos/Runner/AppDelegate.swift').readAsStringSync();
+  final String dart = File(
+    'lib/src/ocr/system_ocr_channel.dart',
+  ).readAsStringSync();
+  final String iosDelegate = File(
+    'ios/Runner/AppDelegate.swift',
+  ).readAsStringSync();
+  final String macosDelegate = File(
+    'macos/Runner/AppDelegate.swift',
+  ).readAsStringSync();
 
   test('channel 名与 Dart 侧常量逐字一致', () {
     // Dart 那边是 `MethodChannel('app.fushi.reader/system_ocr')`；两边对不上时
     // Dart 收到的是 MissingPluginException → isAvailable() 返回 false → 引擎选项
     // 静默消失，看起来就像「这个平台不支持」。
-    expect(dart, contains("MethodChannel('app.fushi.reader/system_ocr')"));
+    // 折叠空白 + 剥注释后比对：`dart format` 会把这个构造调用拆行并补尾逗号，
+    // 守卫只钉 channel 名语义，不钉排版。
+    expect(
+      compactCode(dart),
+      matches(RegExp(r"MethodChannel\('app\.fushi\.reader/system_ocr',?\)")),
+    );
     expect(swift, contains('"app.fushi.reader/system_ocr"'));
   });
 
@@ -58,7 +66,8 @@ void main() {
       expect(
         pbx,
         contains(
-            '/* FushiSystemOcr.swift in Sources */ = {isa = PBXBuildFile;'),
+          '/* FushiSystemOcr.swift in Sources */ = {isa = PBXBuildFile;',
+        ),
         reason: '$path 缺 PBXBuildFile',
       );
       // group children + Sources phase：两处引用各一次，加上上面两条定义，共四处。
@@ -140,11 +149,17 @@ void main() {
       expect(swift, contains('if #available(iOS 26.0, macOS 26.0, *)'));
       expect(swift, contains('@available(iOS 26.0, macOS 26.0, *)'));
       expect(swift, contains('RecognizeDocumentsRequest()'));
-      expect(swift, contains('VNRecognizeTextRequest()'),
-          reason: '旧系统没有新请求，老路径必须留着');
+      expect(
+        swift,
+        contains('VNRecognizeTextRequest()'),
+        reason: '旧系统没有新请求，老路径必须留着',
+      );
       final int gate = swift.indexOf('#if compiler(>=6.2)');
-      expect(swift.indexOf('RecognizeDocumentsRequest()'), greaterThan(gate),
-          reason: '新符号必须落在编译期门控之内');
+      expect(
+        swift.indexOf('RecognizeDocumentsRequest()'),
+        greaterThan(gate),
+        reason: '新符号必须落在编译期门控之内',
+      );
     });
 
     test('切片参数读 tiles，逐片裁剪识别，坐标加回片的左上角', () {

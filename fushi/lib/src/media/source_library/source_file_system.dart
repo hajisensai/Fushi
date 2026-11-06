@@ -20,6 +20,7 @@
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
@@ -27,6 +28,8 @@ import 'package:ftpconnect/ftpconnect.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/source_library/book_library_prune.dart'
+    show sourceContentFingerprint;
 import 'package:fushi_engine/media/video/external_video.dart'
     show sourceEntryBasename;
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -45,6 +48,8 @@ class SourceFileEntry {
     required this.path,
     required this.isDirectory,
     this.sizeBytes,
+    this.modifiedAt,
+    this.etag,
   });
 
   /// 条目 basename（不含父目录）。
@@ -59,6 +64,21 @@ class SourceFileEntry {
   /// 文件字节大小；目录或不可知时为 null。本地传输恒为 null（列目录不逐文件
   /// stat，见 [LocalSourceFileSystem.listFiles]）；远端传输由列目录响应顺带给出。
   final int? sizeBytes;
+
+  /// 修改时刻（UTC 毫秒），远端列目录响应顺带给出时才有（SFTP mtime / FTP MLSD·LIST
+  /// 时间 / WebDAV `getlastmodified` / AList `modified`）；本地传输恒为 null。
+  final int? modifiedAt;
+
+  /// WebDAV `getetag`（内容一变就必须变，RFC 4918 §15.6）；其它传输为 null。
+  final String? etag;
+
+  /// 远端条目的内容指纹（[sourceContentFingerprint]：ETag 优先，否则大小 + 修改时刻）；
+  /// 一样元数据都没有时为 null。本地条目不靠它，按需 stat（[localSourceContentFingerprint]）。
+  String? get contentFingerprint => sourceContentFingerprint(
+    sizeBytes: sizeBytes,
+    modifiedAt: modifiedAt,
+    etag: etag,
+  );
 }
 
 /// 来源库文件系统抽象：把「列目录 / 找 sidecar / 读文本 / 拉到本地」统一成
@@ -94,6 +114,54 @@ abstract class SourceFileSystem {
   Future<String> copyToLocal(String filePath, String destDir);
 }
 
+/// 能按字节读远端文件的来源文件系统（远程曲库扫描读标签 / CUE 原始字节，反馈
+/// QAondMh4M5）。只有 SFTP / WebDAV / AList 实现——FTP 读不了区间。
+abstract interface class SourceByteReader {
+  /// [filePath] 从 [offset] 起至多 [length] 字节；越过文件尾时交回的更短（[offset] 已在
+  /// 文件尾之后交回空）。连接 / 认证 / HTTP 失败照常抛。
+  Future<Uint8List> readRange(String filePath, int offset, int length);
+
+  /// [filePath] 的全部原始字节（不做任何文本解码：CUE 的编码由音乐核心判）。
+  Future<Uint8List> readBytes(String filePath);
+}
+
+/// 来源 [fs] 能否按字节读（[SourceByteReader] 且传输支持区间读）。
+bool sourceSupportsByteReads(SourceFileSystem fs) => switch (fs) {
+  NetworkSourceFileSystem(:final NetworkSourceConfig config) =>
+    config.isSftp || config.isWebDav || config.isAList,
+  SourceByteReader() => true,
+  _ => false,
+};
+
+/// 从字节流里截出 [skip] 之后的 [take] 字节（服务器无视 `Range` 回 200 整文件时也对）。
+/// 截够就取消订阅，不把整个文件读完。
+Future<Uint8List> takeSourceByteSpan(
+  Stream<List<int>> bytes, {
+  required int skip,
+  required int take,
+}) async {
+  final BytesBuilder out = BytesBuilder(copy: false);
+  int toSkip = skip;
+  int left = take;
+  if (left <= 0) return Uint8List(0);
+  await for (final List<int> chunk in bytes) {
+    int start = 0;
+    if (toSkip > 0) {
+      if (chunk.length <= toSkip) {
+        toSkip -= chunk.length;
+        continue;
+      }
+      start = toSkip;
+      toSkip = 0;
+    }
+    final int n = (chunk.length - start) < left ? chunk.length - start : left;
+    out.add(chunk.sublist(start, start + n));
+    left -= n;
+    if (left == 0) break;
+  }
+  return out.takeBytes();
+}
+
 /// 本地磁盘实现：用 `dart:io` 直读，[isLocal] 恒 true。
 ///
 /// 复用 sidecar_finder 的扫描语义（[listSiblingNames] 返回同目录所有文件
@@ -111,35 +179,49 @@ class LocalSourceFileSystem implements SourceFileSystem {
   }) async {
     final Directory dir = Directory(dirPath);
     if (!await dir.exists()) {
-      return const <SourceFileEntry>[];
+      // 不存在 / 读不到（盘没挂上、iOS 沙盒外未授权的安全作用域路径）必须抛：以前
+      // 回空列表，扫描记成「0 个媒体、无错误」，来源页看起来扫过了却什么都没有，
+      // 用户只能猜是不是子文件夹没扫（Tz04dfBf2f）。抛出后扫描器把原因落进
+      // lastScanError，来源行照实显示。
+      throw FileSystemException(
+        'Source folder does not exist or is not accessible',
+        dirPath,
+      );
     }
     final List<SourceFileEntry> entries = <SourceFileEntry>[];
-    await for (final FileSystemEntity e
-        in dir.list(recursive: recursive, followLinks: false)) {
+    await for (final FileSystemEntity e in dir.list(
+      recursive: recursive,
+      followLinks: false,
+    )) {
       if (e is File) {
         // 本地传输不 stat 每个文件取大小：扫描链路（扫描器 / 规划器）不读
         // sizeBytes，远端传输由列目录响应顺带给出零成本；而递归枚举一棵几万
         // 文件的漫画/视频树时每文件一次 `length()` 是几万次额外系统调用。唯一
         // 要大小的消费方是低频的刮削诊断导出器，它自己按需 stat。
-        entries.add(SourceFileEntry(
-          name: p.basename(e.path),
-          path: e.path,
-          isDirectory: false,
-        ));
+        entries.add(
+          SourceFileEntry(
+            name: p.basename(e.path),
+            path: e.path,
+            isDirectory: false,
+          ),
+        );
       } else if (e is Directory && !recursive) {
         // 递归模式只回文件（供扫描器直接消费），非递归才单列子目录。
-        entries.add(SourceFileEntry(
-          name: p.basename(e.path),
-          path: e.path,
-          isDirectory: true,
-        ));
+        entries.add(
+          SourceFileEntry(
+            name: p.basename(e.path),
+            path: e.path,
+            isDirectory: true,
+          ),
+        );
       }
     }
     // 文件系统枚举顺序不是稳定输入（NTFS 按名字、ext4 是目录哈希序），
     // 而这份清单一路流到 planScanFromFileList 的 books/videos/mangas 分类列表，
     // 再决定扫描导入的落库次序（用户可见）。在 IO 边界就定下来。
     entries.sort(
-        (SourceFileEntry a, SourceFileEntry b) => a.path.compareTo(b.path));
+      (SourceFileEntry a, SourceFileEntry b) => a.path.compareTo(b.path),
+    );
     return entries;
   }
 
@@ -224,7 +306,7 @@ class NetworkSourceConfig {
 /// 连接惰性建立（首个列目录/下载时才连），跨调用复用同一连接，扫描结束由调用方
 /// [close]。SFTP/FTP 远端路径统一用正斜杠拼接（[_joinRemote]），WebDAV 直接以完整
 /// URL（PROPFIND 返回的 href）作路径，二者都与本地平台分隔符无关。
-class NetworkSourceFileSystem implements SourceFileSystem {
+class NetworkSourceFileSystem implements SourceFileSystem, SourceByteReader {
   NetworkSourceFileSystem(this.config);
 
   final NetworkSourceConfig config;
@@ -301,8 +383,9 @@ class NetworkSourceFileSystem implements SourceFileSystem {
       await SSHSocket.connect(config.host, config.port),
       username: config.username,
       onPasswordRequest: (pass != null && pass.isNotEmpty) ? () => pass : null,
-      identities:
-          (key != null && key.isNotEmpty) ? SSHKeyPair.fromPem(key) : null,
+      identities: (key != null && key.isNotEmpty)
+          ? SSHKeyPair.fromPem(key)
+          : null,
     );
     _sftp = await _ssh!.sftp();
     return _sftp!;
@@ -313,11 +396,7 @@ class NetworkSourceFileSystem implements SourceFileSystem {
   /// 不再需要时**必须**取消订阅。[start] 越过文件尾抛 [RangeError]（流播中继映射成
   /// 416）。连接断了（移动端挂起后被系统掐掉）下一次调用自动重连。
   Future<({int totalBytes, int start, int end, Stream<List<int>> bytes})>
-      openSftpRange(
-    String filePath, {
-    required int start,
-    int? end,
-  }) async {
+  openSftpRange(String filePath, {required int start, int? end}) async {
     if (!config.isSftp) {
       throw UnsupportedError('Range reads are only implemented for SFTP');
     }
@@ -336,8 +415,10 @@ class NetworkSourceFileSystem implements SourceFileSystem {
     // 句柄在流真正开始读时才打开：中继对 HEAD 是「订阅后立刻取消」，生成器体可能
     // 根本没跑起来，那时在外面先开的句柄就再也没人关。
     Stream<List<int>> bytes() async* {
-      final SftpFile handle =
-          await sftp.open(filePath, mode: SftpFileOpenMode.read);
+      final SftpFile handle = await sftp.open(
+        filePath,
+        mode: SftpFileOpenMode.read,
+      );
       try {
         yield* handle.read(offset: start, length: last - start + 1);
       } finally {
@@ -367,19 +448,27 @@ class NetworkSourceFileSystem implements SourceFileSystem {
           if (recursive) {
             await walk(childPath);
           } else {
-            result.add(SourceFileEntry(
-              name: e.filename,
-              path: childPath,
-              isDirectory: true,
-            ));
+            result.add(
+              SourceFileEntry(
+                name: e.filename,
+                path: childPath,
+                isDirectory: true,
+              ),
+            );
           }
         } else {
-          result.add(SourceFileEntry(
-            name: e.filename,
-            path: childPath,
-            isDirectory: false,
-            sizeBytes: e.attr.size,
-          ));
+          result.add(
+            SourceFileEntry(
+              name: e.filename,
+              path: childPath,
+              isDirectory: false,
+              sizeBytes: e.attr.size,
+              // SFTP mtime 是秒。
+              modifiedAt: e.attr.modifyTime == null
+                  ? null
+                  : e.attr.modifyTime! * 1000,
+            ),
+          );
         }
       }
     }
@@ -391,8 +480,10 @@ class NetworkSourceFileSystem implements SourceFileSystem {
   Future<String> _copySftp(String filePath, String destDir) async {
     final SftpClient sftp = await _ensureSftp();
     final String local = p.join(destDir, _remoteBasename(filePath));
-    final SftpFile handle =
-        await sftp.open(filePath, mode: SftpFileOpenMode.read);
+    final SftpFile handle = await sftp.open(
+      filePath,
+      mode: SftpFileOpenMode.read,
+    );
     final IOSink sink = File(local).openWrite();
     try {
       await for (final Uint8List chunk in handle.read()) {
@@ -405,13 +496,38 @@ class NetworkSourceFileSystem implements SourceFileSystem {
     return local;
   }
 
-  Future<String> _readTextSftp(String filePath) async {
+  Future<String> _readTextSftp(String filePath) async =>
+      utf8.decode(await _readBytesSftp(filePath), allowMalformed: true);
+
+  Future<Uint8List> _readBytesSftp(String filePath) async {
     final SftpClient sftp = await _ensureSftp();
-    final SftpFile handle =
-        await sftp.open(filePath, mode: SftpFileOpenMode.read);
+    final SftpFile handle = await sftp.open(
+      filePath,
+      mode: SftpFileOpenMode.read,
+    );
     try {
-      final Uint8List bytes = await handle.readBytes();
-      return utf8.decode(bytes, allowMalformed: true);
+      return await handle.readBytes();
+    } finally {
+      await handle.close();
+    }
+  }
+
+  Future<Uint8List> _readRangeSftp(
+    String filePath,
+    int offset,
+    int length,
+  ) async {
+    final SftpClient sftp = await _ensureSftp();
+    final SftpFile handle = await sftp.open(
+      filePath,
+      mode: SftpFileOpenMode.read,
+    );
+    try {
+      return await takeSourceByteSpan(
+        handle.read(offset: offset, length: length),
+        skip: 0,
+        take: length,
+      );
     } finally {
       await handle.close();
     }
@@ -463,10 +579,7 @@ class NetworkSourceFileSystem implements SourceFileSystem {
     return _joinRemote(home.isEmpty ? '/' : home, path);
   }
 
-  Future<List<SourceFileEntry>> _listFtp(
-    String dirPath,
-    bool recursive,
-  ) async {
+  Future<List<SourceFileEntry>> _listFtp(String dirPath, bool recursive) async {
     final FTPConnect ftp = await _ensureFtp();
     final List<SourceFileEntry> result = <SourceFileEntry>[];
 
@@ -485,19 +598,20 @@ class NetworkSourceFileSystem implements SourceFileSystem {
           if (recursive) {
             await walk(childPath);
           } else {
-            result.add(SourceFileEntry(
-              name: name,
-              path: childPath,
-              isDirectory: true,
-            ));
+            result.add(
+              SourceFileEntry(name: name, path: childPath, isDirectory: true),
+            );
           }
         } else {
-          result.add(SourceFileEntry(
-            name: name,
-            path: childPath,
-            isDirectory: false,
-            sizeBytes: e.size,
-          ));
+          result.add(
+            SourceFileEntry(
+              name: name,
+              path: childPath,
+              isDirectory: false,
+              sizeBytes: e.size,
+              modifiedAt: e.modifyTime?.toUtc().millisecondsSinceEpoch,
+            ),
+          );
         }
       }
     }
@@ -532,14 +646,10 @@ class NetworkSourceFileSystem implements SourceFileSystem {
     if (existing != null) {
       return existing;
     }
-    final Uri u = Uri.parse(anyUrl);
-    final bool defaultPort =
-        (u.scheme == 'https' && (!u.hasPort || u.port == 443)) ||
-            (u.scheme == 'http' && (!u.hasPort || u.port == 80));
-    final String portSuffix = defaultPort ? '' : ':${u.port}';
-    final String origin = '${u.scheme}://${u.host}$portSuffix';
+    // Uri.origin 保留 IPv6 字面量的方括号、省略默认端口；手拼 `u.host` 会丢方括号，
+    // IPv6 NAS 地址拼出的 baseUrl 再被解析时端口位错乱。
     return _dav = WebDavOps(
-      baseUrl: origin,
+      baseUrl: Uri.parse(anyUrl).origin,
       username: config.username,
       password: config.password ?? '',
     );
@@ -552,8 +662,8 @@ class NetworkSourceFileSystem implements SourceFileSystem {
 
   static String _stripTrailingSlash(String url) =>
       (url.length > 1 && url.endsWith('/'))
-          ? url.substring(0, url.length - 1)
-          : url;
+      ? url.substring(0, url.length - 1)
+      : url;
 
   /// 从远端路径取末段文件名，**不做解码**。
   ///
@@ -571,10 +681,7 @@ class NetworkSourceFileSystem implements SourceFileSystem {
     return last.isEmpty ? _remoteBasename(url) : last;
   }
 
-  Future<List<SourceFileEntry>> _listDav(
-    String dirPath,
-    bool recursive,
-  ) async {
+  Future<List<SourceFileEntry>> _listDav(String dirPath, bool recursive) async {
     final WebDavOps dav = _ensureDav(dirPath);
     final List<SourceFileEntry> result = <SourceFileEntry>[];
 
@@ -591,18 +698,25 @@ class NetworkSourceFileSystem implements SourceFileSystem {
           if (recursive) {
             await walk(e.href);
           } else {
-            result.add(SourceFileEntry(
-              name: e.displayName,
-              path: _stripTrailingSlash(e.href),
-              isDirectory: true,
-            ));
+            result.add(
+              SourceFileEntry(
+                name: e.displayName,
+                path: _stripTrailingSlash(e.href),
+                isDirectory: true,
+              ),
+            );
           }
         } else {
-          result.add(SourceFileEntry(
-            name: e.displayName,
-            path: e.href,
-            isDirectory: false,
-          ));
+          result.add(
+            SourceFileEntry(
+              name: e.displayName,
+              path: e.href,
+              isDirectory: false,
+              sizeBytes: e.contentLength,
+              modifiedAt: e.modifiedAt,
+              etag: e.etag,
+            ),
+          );
         }
       }
     }
@@ -635,16 +749,43 @@ class NetworkSourceFileSystem implements SourceFileSystem {
     return local;
   }
 
-  Future<String> _readTextDav(String filePath) async {
+  Future<String> _readTextDav(String filePath) async =>
+      utf8.decode(await _readBytesDav(filePath), allowMalformed: true);
+
+  Future<Uint8List> _readBytesDav(String filePath) async {
     final WebDavOps dav = _ensureDav(filePath);
     final HttpClientRequest req = await dav.buildRequest('GET', filePath);
     final HttpClientResponse resp = await req.close();
     dav.checkStatus(resp.statusCode, 'GET $filePath');
-    final List<int> bytes = <int>[];
+    final BytesBuilder out = BytesBuilder(copy: false);
     await for (final List<int> chunk in resp) {
-      bytes.addAll(chunk);
+      out.add(chunk);
     }
-    return utf8.decode(bytes, allowMalformed: true);
+    return out.takeBytes();
+  }
+
+  Future<Uint8List> _readRangeDav(
+    String filePath,
+    int offset,
+    int length,
+  ) async {
+    final WebDavOps dav = _ensureDav(filePath);
+    final HttpClientRequest req = await dav.buildRequest('GET', filePath);
+    req.headers.set(
+      HttpHeaders.rangeHeader,
+      'bytes=$offset-${offset + length - 1}',
+    );
+    final HttpClientResponse resp = await req.close();
+    if (resp.statusCode == HttpStatus.requestedRangeNotSatisfiable) {
+      await resp.drain<void>();
+      return Uint8List(0);
+    }
+    dav.checkStatus(resp.statusCode, 'GET $filePath');
+    return takeSourceByteSpan(
+      resp,
+      skip: resp.statusCode == HttpStatus.partialContent ? 0 : offset,
+      take: length,
+    );
   }
 
   // ── AList / OpenList ─────────────────────────────────────────────
@@ -660,18 +801,20 @@ class NetworkSourceFileSystem implements SourceFileSystem {
   }
 
   AListApiClient _ensureAList() => _alist ??= AListApiClient(
-        baseUrl: _alistBaseUrl,
-        providerId: 'alist-source',
-        username: config.username,
-        password: config.password,
-      );
+    baseUrl: _alistBaseUrl,
+    providerId: 'alist-source',
+    username: config.username,
+    password: config.password,
+  );
 
   http.Client _ensureAListHttp() => _alistHttp ??= createAppHttpIoClient();
 
   /// 条目地址 → AList 路径；地址不在本站点 `/d/` 命名空间下按参数错误抛。
   String _alistPathOf(String url) {
-    final String? path =
-        alistPathFromSourceUrl(baseUrl: _alistBaseUrl, url: url);
+    final String? path = alistPathFromSourceUrl(
+      baseUrl: _alistBaseUrl,
+      url: url,
+    );
     if (path == null) {
       throw ArgumentError.value(url, 'url', 'not under this AList source');
     }
@@ -696,19 +839,22 @@ class NetworkSourceFileSystem implements SourceFileSystem {
           if (recursive) {
             await walk(childPath);
           } else {
-            result.add(SourceFileEntry(
-              name: e.name,
-              path: url,
-              isDirectory: true,
-            ));
+            result.add(
+              SourceFileEntry(name: e.name, path: url, isDirectory: true),
+            );
           }
         } else {
-          result.add(SourceFileEntry(
-            name: e.name,
-            path: url,
-            isDirectory: false,
-            sizeBytes: e.sizeBytes,
-          ));
+          result.add(
+            SourceFileEntry(
+              name: e.name,
+              path: url,
+              isDirectory: false,
+              sizeBytes: e.sizeBytes,
+              modifiedAt: DateTime.tryParse(
+                e.modified ?? '',
+              )?.toUtc().millisecondsSinceEpoch,
+            ),
+          );
         }
       }
     }
@@ -717,17 +863,43 @@ class NetworkSourceFileSystem implements SourceFileSystem {
     return result;
   }
 
+  /// 最近一次换到的签名直链（远程曲库扫描对同一个文件连着要几段字节，不为每段都调一次
+  /// `fs/get`）。只留一条：扫描逐文件推进，换了文件就作废。
+  ({String path, String rawUrl})? _alistLastLink;
+
+  Future<String> _alistRawUrl(String filePath) async {
+    final ({String path, String rawUrl})? last = _alistLastLink;
+    if (last != null && last.path == filePath) return last.rawUrl;
+    final AListFileLink link = await _ensureAList().getFile(
+      _alistPathOf(filePath),
+    );
+    _alistLastLink = (path: filePath, rawUrl: link.rawUrl);
+    return link.rawUrl;
+  }
+
   /// 经 `fs/get` 换签名直链再 GET。直链多指向存储后端或站点 `/p/` 代理，
-  /// 与 API 不同源，**不带** token。
-  Future<http.StreamedResponse> _openAListRaw(String filePath) async {
-    final AListFileLink link =
-        await _ensureAList().getFile(_alistPathOf(filePath));
-    final http.StreamedResponse resp = await _ensureAListHttp()
-        .send(http.Request('GET', Uri.parse(link.rawUrl)));
+  /// 与 API 不同源，**不带** token。[range] 给出时带 `Range` 头。
+  Future<http.StreamedResponse> _openAListRaw(
+    String filePath, {
+    ({int offset, int length})? range,
+  }) async {
+    final String rawUrl = await _alistRawUrl(filePath);
+    final http.Request request = http.Request('GET', Uri.parse(rawUrl));
+    if (range != null) {
+      request.headers[HttpHeaders.rangeHeader] =
+          'bytes=${range.offset}-${range.offset + range.length - 1}';
+    }
+    final http.StreamedResponse resp = await _ensureAListHttp().send(request);
+    if (range != null &&
+        resp.statusCode == HttpStatus.requestedRangeNotSatisfiable) {
+      return resp;
+    }
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      // 签名过期等：作废缓存的直链，下次重新换。
+      _alistLastLink = null;
       throw HttpException(
         'GET raw_url failed: HTTP ${resp.statusCode}',
-        uri: Uri.parse(link.rawUrl),
+        uri: Uri.parse(rawUrl),
       );
     }
     return resp;
@@ -754,13 +926,32 @@ class NetworkSourceFileSystem implements SourceFileSystem {
     return local;
   }
 
-  Future<String> _readTextAList(String filePath) async {
+  Future<String> _readTextAList(String filePath) async =>
+      utf8.decode(await _readBytesAList(filePath), allowMalformed: true);
+
+  Future<Uint8List> _readBytesAList(String filePath) async {
     final http.StreamedResponse resp = await _openAListRaw(filePath);
-    final List<int> bytes = <int>[];
-    await for (final List<int> chunk in resp.stream) {
-      bytes.addAll(chunk);
+    return resp.stream.toBytes();
+  }
+
+  Future<Uint8List> _readRangeAList(
+    String filePath,
+    int offset,
+    int length,
+  ) async {
+    final http.StreamedResponse resp = await _openAListRaw(
+      filePath,
+      range: (offset: offset, length: length),
+    );
+    if (resp.statusCode == HttpStatus.requestedRangeNotSatisfiable) {
+      await resp.stream.drain<void>();
+      return Uint8List(0);
     }
-    return utf8.decode(bytes, allowMalformed: true);
+    return takeSourceByteSpan(
+      resp.stream,
+      skip: resp.statusCode == HttpStatus.partialContent ? 0 : offset,
+      take: length,
+    );
   }
 
   // ── SourceFileSystem 契约 ────────────────────────────────────────
@@ -808,19 +999,34 @@ class NetworkSourceFileSystem implements SourceFileSystem {
       return _readTextAList(filePath);
     }
     // FTP 无随机读文本原语：下载到临时盘再读。
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('net_src_ftp_read_');
+    final Directory tmp = Directory.systemTemp.createTempSync(
+      'net_src_ftp_read_',
+    );
     try {
       final String local = await _copyFtp(filePath, tmp.path);
-      return utf8.decode(
-        await File(local).readAsBytes(),
-        allowMalformed: true,
-      );
+      return utf8.decode(await File(local).readAsBytes(), allowMalformed: true);
     } finally {
       try {
         tmp.deleteSync(recursive: true);
       } catch (_) {}
     }
+  }
+
+  @override
+  Future<Uint8List> readRange(String filePath, int offset, int length) {
+    if (length <= 0) return Future<Uint8List>.value(Uint8List(0));
+    if (config.isSftp) return _readRangeSftp(filePath, offset, length);
+    if (config.isWebDav) return _readRangeDav(filePath, offset, length);
+    if (config.isAList) return _readRangeAList(filePath, offset, length);
+    throw UnsupportedError('FTP sources cannot read byte ranges');
+  }
+
+  @override
+  Future<Uint8List> readBytes(String filePath) {
+    if (config.isSftp) return _readBytesSftp(filePath);
+    if (config.isWebDav) return _readBytesDav(filePath);
+    if (config.isAList) return _readBytesAList(filePath);
+    throw UnsupportedError('FTP sources cannot read raw bytes');
   }
 
   @override

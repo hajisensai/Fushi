@@ -96,15 +96,22 @@ void main() {
     });
 
     test('两包装器都转调 resolvePopupRect', () {
-      final String base =
-          File('lib/src/pages/base_source_page.dart').readAsStringSync();
+      final String base = File(
+        'lib/src/pages/base_source_page.dart',
+      ).readAsStringSync();
       final String mixin = File(
         'lib/src/pages/implementations/dictionary_page_mixin.dart',
       ).readAsStringSync();
-      expect(base, contains('resolvePopupRect('),
-          reason: 'base._calculatePopupPosition 应转调 resolvePopupRect');
-      expect(mixin, contains('resolvePopupRect('),
-          reason: 'mixin._calcMixinPopupPosition 应转调 resolvePopupRect');
+      expect(
+        base,
+        contains('resolvePopupRect('),
+        reason: 'base._calculatePopupPosition 应转调 resolvePopupRect',
+      );
+      expect(
+        mixin,
+        contains('resolvePopupRect('),
+        reason: 'mixin._calcMixinPopupPosition 应转调 resolvePopupRect',
+      );
     });
   });
 }

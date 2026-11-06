@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
@@ -31,13 +31,13 @@ void main() {
   test('available embedded runtime keeps its installation-bound identity', () {
     final VideoDownloadBackendIdentity identity =
         buildVideoDownloadBackendIdentity(
-      config: const QbConnectionConfig(
-        backend: QbConnectionConfig.backendEmbedded,
-        category: 'fushi',
-      ),
-      resolvedBackend: QbConnectionConfig.backendEmbedded,
-      embeddedInstallationId: 'installation-1',
-    );
+          config: const QbConnectionConfig(
+            backend: QbConnectionConfig.backendEmbedded,
+            category: 'fushi',
+          ),
+          resolvedBackend: QbConnectionConfig.backendEmbedded,
+          embeddedInstallationId: 'installation-1',
+        );
 
     expect(identity.kind, QbConnectionConfig.backendEmbedded);
     expect(identity.profileId, 'embedded');

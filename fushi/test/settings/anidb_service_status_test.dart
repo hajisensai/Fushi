@@ -4,13 +4,13 @@ import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 
@@ -68,12 +68,13 @@ void main() {
     return settingsContext;
   }
 
-  SettingsNavigationItem aniDbRow() => buildServicesDestination()
-      .sections
-      .expand((SettingsSection s) => s.items)
-      .firstWhere(
-        (SettingsItem i) => i.id == 'services.metadata.configure',
-      ) as SettingsNavigationItem;
+  SettingsNavigationItem aniDbRow() =>
+      buildServicesDestination().sections
+              .expand((SettingsSection s) => s.items)
+              .firstWhere(
+                (SettingsItem i) => i.id == 'services.metadata.configure',
+              )
+          as SettingsNavigationItem;
 
   testWidgets('账号填齐、客户端留空走内置身份 → 状态「已配置」', (WidgetTester tester) async {
     final SettingsContext settingsContext = await pumpContext(tester);
@@ -126,7 +127,8 @@ void main() {
         aniDbRow().child!().sections
                 .expand((SettingsSection s) => s.items)
                 .firstWhere(
-                  (SettingsItem i) => i.id == 'services.metadata.anidb_http_api',
+                  (SettingsItem i) =>
+                      i.id == 'services.metadata.anidb_http_api',
                 )
             as SettingsStatusItem;
 

@@ -1,0 +1,481 @@
+diff --git a/engine/src/flutter/impeller/display_list/canvas.cc b/engine/src/flutter/impeller/display_list/canvas.cc
+index e4496d8..c87ea56 100644
+--- a/engine/src/flutter/impeller/display_list/canvas.cc
++++ b/engine/src/flutter/impeller/display_list/canvas.cc
+@@ -1604,6 +1604,22 @@ void Canvas::SetupRenderPass() {
+   renderer_.GetRenderTargetCache()->Start();
+   ColorAttachment color0 = render_target_.GetColorAttachment(0);
+ 
++  // Fushi patch (HDR output): a half-float onscreen target (extended-range
++  // HDR video) keeps every offscreen of this frame half float too; with the
++  // context's 8-bit default a save layer or backdrop readback would clamp the
++  // whole frame to SDR. Restored in EndReplay.
++  previous_color_format_override_ =
++      renderer_.GetRenderTargetCache()->GetDefaultColorFormatOverride();
++  if (color0.texture &&
++      color0.texture->GetTextureDescriptor().format ==
++          PixelFormat::kR16G16B16A16Float) {
++    renderer_.GetRenderTargetCache()->SetDefaultColorFormatOverride(
++        PixelFormat::kR16G16B16A16Float);
++  } else {
++    renderer_.GetRenderTargetCache()->SetDefaultColorFormatOverride(
++        std::nullopt);
++  }
++
+   auto& stencil_attachment = render_target_.GetStencilAttachment();
+   auto& depth_attachment = render_target_.GetDepthAttachment();
+   if (!stencil_attachment.has_value() || !depth_attachment.has_value()) {
+@@ -2626,6 +2642,9 @@ void Canvas::EndReplay() {
+   }
+   render_passes_.clear();
+   renderer_.GetRenderTargetCache()->End();
++  // Fushi patch (HDR output): see SetupRenderPass.
++  renderer_.GetRenderTargetCache()->SetDefaultColorFormatOverride(
++      previous_color_format_override_);
+   clip_geometry_.clear();
+ 
+   Reset();
+diff --git a/engine/src/flutter/impeller/display_list/canvas.h b/engine/src/flutter/impeller/display_list/canvas.h
+index 5647921..20d9e61 100644
+--- a/engine/src/flutter/impeller/display_list/canvas.h
++++ b/engine/src/flutter/impeller/display_list/canvas.h
+@@ -300,6 +300,9 @@ class Canvas {
+   RenderTarget render_target_;
+   const bool is_onscreen_;
+   bool requires_readback_;
++  // Fushi patch (HDR output): render target cache colour format override in
++  // effect before this canvas, restored in EndReplay.
++  std::optional<PixelFormat> previous_color_format_override_;
+   EntityPassClipStack clip_coverage_stack_;
+ 
+   std::deque<CanvasStackEntry> transform_stack_;
+diff --git a/engine/src/flutter/impeller/entity/render_target_cache.cc b/engine/src/flutter/impeller/entity/render_target_cache.cc
+index edb1e4a..c5b08ec 100644
+--- a/engine/src/flutter/impeller/entity/render_target_cache.cc
++++ b/engine/src/flutter/impeller/entity/render_target_cache.cc
+@@ -74,10 +74,16 @@ RenderTarget RenderTargetCache::CreateOffscreen(
+       .has_depth_stencil = stencil_attachment_config.has_value(),
+   };
+ 
++  const PixelFormat color_format =
++      ResolveColorFormat(context, target_pixel_format);
+   if (CacheEnabled()) {
+     for (RenderTargetData& render_target_data : render_target_data_) {
+       const RenderTargetConfig other_config = render_target_data.config;
+-      if (!render_target_data.used_this_frame && other_config == config) {
++      // Fushi patch (HDR output): the config carries no colour format;
++      // never hand an 8-bit target to a half-float request or back.
++      if (!render_target_data.used_this_frame && other_config == config &&
++          render_target_data.render_target.GetRenderTargetPixelFormat() ==
++              color_format) {
+         render_target_data.used_this_frame = true;
+         render_target_data.keep_alive_frame_count = keep_alive_frame_count_;
+         ColorAttachment color0 =
+@@ -133,10 +139,16 @@ RenderTarget RenderTargetCache::CreateOffscreenMSAA(
+       .has_msaa = true,
+       .has_depth_stencil = stencil_attachment_config.has_value(),
+   };
++  const PixelFormat color_format =
++      ResolveColorFormat(context, target_pixel_format);
+   if (CacheEnabled()) {
+     for (RenderTargetData& render_target_data : render_target_data_) {
+       const RenderTargetConfig other_config = render_target_data.config;
+-      if (!render_target_data.used_this_frame && other_config == config) {
++      // Fushi patch (HDR output): the config carries no colour format;
++      // never hand an 8-bit target to a half-float request or back.
++      if (!render_target_data.used_this_frame && other_config == config &&
++          render_target_data.render_target.GetRenderTargetPixelFormat() ==
++              color_format) {
+         render_target_data.used_this_frame = true;
+         render_target_data.keep_alive_frame_count = keep_alive_frame_count_;
+         ColorAttachment color0 =
+diff --git a/engine/src/flutter/impeller/renderer/render_target.cc b/engine/src/flutter/impeller/renderer/render_target.cc
+index 2333242..6caa666 100644
+--- a/engine/src/flutter/impeller/renderer/render_target.cc
++++ b/engine/src/flutter/impeller/renderer/render_target.cc
+@@ -334,6 +334,18 @@ void RenderTargetAllocator::Start() {}
+ 
+ void RenderTargetAllocator::End() {}
+ 
++PixelFormat RenderTargetAllocator::ResolveColorFormat(
++    const Context& context,
++    std::optional<PixelFormat> target_pixel_format) const {
++  if (target_pixel_format.has_value()) {
++    return target_pixel_format.value();
++  }
++  if (default_color_format_override_.has_value()) {
++    return default_color_format_override_.value();
++  }
++  return context.GetCapabilities()->GetDefaultColorFormat();
++}
++
+ RenderTarget RenderTargetAllocator::CreateOffscreen(
+     const Context& context,
+     ISize size,
+@@ -356,10 +368,7 @@ RenderTarget RenderTargetAllocator::CreateOffscreen(
+   } else {
+     TextureDescriptor color0_tex_desc;
+     color0_tex_desc.storage_mode = color_attachment_config.storage_mode;
+-    color0_tex_desc.format =
+-        target_pixel_format.has_value()
+-            ? target_pixel_format.value()
+-            : context.GetCapabilities()->GetDefaultColorFormat();
++    color0_tex_desc.format = ResolveColorFormat(context, target_pixel_format);
+     color0_tex_desc.size = size;
+     color0_tex_desc.mip_count = mip_count;
+     color0_tex_desc.usage =
+@@ -406,10 +415,7 @@ RenderTarget RenderTargetAllocator::CreateOffscreenMSAA(
+   }
+ 
+   RenderTarget target;
+-  PixelFormat pixel_format =
+-      target_pixel_format.has_value()
+-          ? target_pixel_format.value()
+-          : context.GetCapabilities()->GetDefaultColorFormat();
++  PixelFormat pixel_format = ResolveColorFormat(context, target_pixel_format);
+ 
+   // Create MSAA color texture.
+   std::shared_ptr<Texture> color0_msaa_tex;
+diff --git a/engine/src/flutter/impeller/renderer/render_target.h b/engine/src/flutter/impeller/renderer/render_target.h
+index f4c1a14..9477a5a 100644
+--- a/engine/src/flutter/impeller/renderer/render_target.h
++++ b/engine/src/flutter/impeller/renderer/render_target.h
+@@ -196,8 +196,29 @@ class RenderTargetAllocator {
+   ///        This may be used to deallocate any unused textures.
+   virtual void End();
+ 
++  /// @brief Fushi patch (HDR output): colour format used by `CreateOffscreen*`
++  ///        when the caller passes no `target_pixel_format`. A frame rendered
++  ///        into a half-float onscreen target sets this so save layers,
++  ///        backdrop readbacks and filter subpasses keep extended-range values
++  ///        instead of clamping to the context's 8-bit default.
++  void SetDefaultColorFormatOverride(std::optional<PixelFormat> format) {
++    default_color_format_override_ = format;
++  }
++
++  std::optional<PixelFormat> GetDefaultColorFormatOverride() const {
++    return default_color_format_override_;
++  }
++
++ protected:
++  /// @brief `target_pixel_format`, else the override, else the context
++  ///        default.
++  PixelFormat ResolveColorFormat(
++      const Context& context,
++      std::optional<PixelFormat> target_pixel_format) const;
++
+  private:
+   std::shared_ptr<Allocator> allocator_;
++  std::optional<PixelFormat> default_color_format_override_;
+ };
+ 
+ }  // namespace impeller
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder.cc b/engine/src/flutter/shell/platform/embedder/embedder.cc
+index 73196e1..575fd28 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder.cc
++++ b/engine/src/flutter/shell/platform/embedder/embedder.cc
+@@ -1144,6 +1144,10 @@ static std::optional<impeller::PixelFormat> FlutterFormatToImpellerPixelFormat(
+       return impeller::PixelFormat::kB8G8R8A8UNormInt;
+     case GL_RGBA8:
+       return impeller::PixelFormat::kR8G8B8A8UNormInt;
++    // Fushi patch (HDR output, Impeller): half-float backing stores hold
++    // extended-range sRGB for HDR video.
++    case 0x881A /* GL_RGBA16F */:
++      return impeller::PixelFormat::kR16G16B16A16Float;
+     default:
+       FML_LOG(ERROR) << "Cannot convert format " << format
+                      << " to impeller::PixelFormat.";
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc b/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc
+index dedd646..0c55979 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc
++++ b/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc
+@@ -155,14 +155,19 @@ sk_sp<DlImage> EmbedderExternalTextureGL::ResolveTextureImpeller(
+     }
+   });
+ 
+-  if (texture->format != GL_RGBA8) {
+-    FML_LOG(ERROR) << "Only support GL_RGBA8 format now";
++  // Fushi patch (HDR output, Impeller): half-float external textures (HDR
++  // video) are sampled as RGBA16F so extended-range values survive.
++  constexpr uint32_t kGlRgba16f = 0x881A;
++  if (texture->format != GL_RGBA8 && texture->format != kGlRgba16f) {
++    FML_LOG(ERROR) << "Only support GL_RGBA8 / GL_RGBA16F formats now";
+     return nullptr;
+   }
+ 
+   impeller::TextureDescriptor desc;
+   desc.size = impeller::ISize(texture->width, texture->height);
+-  desc.format = impeller::PixelFormat::kR8G8B8A8UNormInt;
++  desc.format = texture->format == kGlRgba16f
++                    ? impeller::PixelFormat::kR16G16B16A16Float
++                    : impeller::PixelFormat::kR8G8B8A8UNormInt;
+ 
+   impeller::ContextGLES& context =
+       impeller::ContextGLES::Cast(*aiks_context->GetContext());
+diff --git a/engine/src/flutter/shell/platform/windows/compositor_opengl.cc b/engine/src/flutter/shell/platform/windows/compositor_opengl.cc
+index f40a769..ce63b1c 100644
+--- a/engine/src/flutter/shell/platform/windows/compositor_opengl.cc
++++ b/engine/src/flutter/shell/platform/windows/compositor_opengl.cc
+@@ -4,6 +4,10 @@
+ 
+ #include "flutter/shell/platform/windows/compositor_opengl.h"
+ 
++#include <chrono>
++#include <fstream>
++#include <sstream>
++
+ #include "GLES3/gl3.h"
+ #include "flutter/fml/logging.h"
+ #include "flutter/shell/platform/embedder/embedder_render_target_format_generation.h"
+@@ -209,10 +213,10 @@ bool CompositorOpenGL::CreateBackingStore(
+   auto store = std::make_unique<FramebufferBackingStore>();
+ 
+   // Fushi patch (HDR output): half-float backing stores for views with HDR
+-  // output requested (Skia path only).
++  // output requested (Skia and Impeller).
+   FlutterWindowsView* view = engine_->view(config.view_id);
+-  store->half_float = !enable_impeller_ && half_float_renderable_ &&
+-                      view != nullptr && view->hdr_output_requested();
++  store->half_float = half_float_renderable_ && view != nullptr &&
++                      view->hdr_output_requested();
+   if (logged_half_float_ != static_cast<int>(store->half_float)) {
+     logged_half_float_ = static_cast<int>(store->half_float);
+     FML_LOG(IMPORTANT) << "HDR output: backing stores "
+@@ -224,18 +228,36 @@ bool CompositorOpenGL::CreateBackingStore(
+   gl_->GenFramebuffers(1, &store->framebuffer_id);
+   gl_->BindFramebuffer(GL_FRAMEBUFFER, store->framebuffer_id);
+ 
++  // Fushi patch (HDR output): allocates the colour texture of |store|, 8-bit
++  // or half float. Shared by the Skia branch and the texture-backed Impeller
++  // branches; leaves GL_TEXTURE_2D unbound.
++  auto allocate_color_texture = [&]() {
++    gl_->GenTextures(1, &store->texture_id);
++    gl_->BindTexture(GL_TEXTURE_2D, store->texture_id);
++    gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
++    gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
++    gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++    gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++    if (!store->half_float) {
++      gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.sized_format,
++                      config.size.width, config.size.height, 0,
++                      format_.general_format, GL_UNSIGNED_BYTE, nullptr);
++    } else if (half_float_sized_format_) {
++      // ES 3.0 takes the sized internal format; an ES 2.0 context (what the
++      // Windows embedder requests) needs the unsized form with
++      // OES_texture_half_float.
++      gl_->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, config.size.width,
++                      config.size.height, 0, GL_RGBA, GL_HALF_FLOAT, nullptr);
++    } else {
++      gl_->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, config.size.width,
++                      config.size.height, 0, GL_RGBA, kHalfFloatOes, nullptr);
++    }
++    gl_->BindTexture(GL_TEXTURE_2D, 0);
++  };
++
+   if (enable_impeller_) {
+     if (supports_implicit_msaa_) {
+-      gl_->GenTextures(1, &store->texture_id);
+-      gl_->BindTexture(GL_TEXTURE_2D, store->texture_id);
+-      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+-      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+-      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+-      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+-      gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.sized_format, config.size.width,
+-                      config.size.height, 0, format_.general_format,
+-                      GL_UNSIGNED_BYTE, nullptr);
+-      gl_->BindTexture(GL_TEXTURE_2D, 0);
++      allocate_color_texture();
+ 
+       // MSAA color attachment
+       gl_->FramebufferTexture2DMultisampleEXT(
+@@ -252,7 +274,10 @@ bool CompositorOpenGL::CreateBackingStore(
+                                    GL_RENDERBUFFER, store->depth_stencil_id);
+       gl_->FramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
+                                    GL_RENDERBUFFER, store->depth_stencil_id);
+-    } else if (supports_offscreen_msaa_) {
++    } else if (supports_offscreen_msaa_ && !store->half_float) {
++      // Fushi patch (HDR output): the output pass samples the backing store
++      // as a texture, so half-float stores take the single-sample texture
++      // branch below instead of an MSAA renderbuffer.
+       // MSAA color renderbuffer attachment
+       gl_->GenRenderbuffers(1, &store->color_renderbuffer_id);
+       gl_->BindRenderbuffer(GL_RENDERBUFFER, store->color_renderbuffer_id);
+@@ -274,16 +299,7 @@ bool CompositorOpenGL::CreateBackingStore(
+       gl_->FramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
+                                    GL_RENDERBUFFER, store->depth_stencil_id);
+     } else {
+-      gl_->GenTextures(1, &store->texture_id);
+-      gl_->BindTexture(GL_TEXTURE_2D, store->texture_id);
+-      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+-      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+-      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+-      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+-      gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.sized_format, config.size.width,
+-                      config.size.height, 0, format_.general_format,
+-                      GL_UNSIGNED_BYTE, nullptr);
+-      gl_->BindTexture(GL_TEXTURE_2D, 0);
++      allocate_color_texture();
+ 
+       gl_->FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                 GL_TEXTURE_2D, store->texture_id, 0);
+@@ -298,27 +314,7 @@ bool CompositorOpenGL::CreateBackingStore(
+                                    GL_RENDERBUFFER, store->depth_stencil_id);
+     }
+   } else {
+-    gl_->GenTextures(1, &store->texture_id);
+-    gl_->BindTexture(GL_TEXTURE_2D, store->texture_id);
+-    gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+-    gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+-    gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+-    gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+-    if (!store->half_float) {
+-      gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.sized_format,
+-                      config.size.width, config.size.height, 0,
+-                      format_.general_format, GL_UNSIGNED_BYTE, nullptr);
+-    } else if (half_float_sized_format_) {
+-      // Fushi patch (HDR output): ES 3.0 takes the sized internal format; an
+-      // ES 2.0 context (what the Windows embedder requests) needs the unsized
+-      // form with OES_texture_half_float.
+-      gl_->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, config.size.width,
+-                      config.size.height, 0, GL_RGBA, GL_HALF_FLOAT, nullptr);
+-    } else {
+-      gl_->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, config.size.width,
+-                      config.size.height, 0, GL_RGBA, kHalfFloatOes, nullptr);
+-    }
+-    gl_->BindTexture(GL_TEXTURE_2D, 0);
++    allocate_color_texture();
+ 
+     gl_->FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               GL_TEXTURE_2D, store->texture_id, 0);
+@@ -420,15 +416,20 @@ bool CompositorOpenGL::Present(FlutterWindowsView* view,
+   // unsupported half-float request cannot make every frame bump again.
+   const auto* store = static_cast<const FramebufferBackingStore*>(
+       layers[0]->backing_store->open_gl.framebuffer.user_data);
+-  const bool want_half_float = !enable_impeller_ && half_float_renderable_ &&
++  const bool want_half_float = half_float_renderable_ &&
+                                view->hdr_output_requested();
+   if (store->half_float != want_half_float) {
+     BumpEmbedderRenderTargetFormatGeneration();
+     engine_->ScheduleFrame();
+   }
+-  if (store->half_float && hdr_probe_countdown_ > 0 &&
++  // FUSHI_HDR_PROBE=1 probes half-float frames only; =repeat probes every
++  // frame kind (8-bit too) so SDR output can be compared across renderers.
++  if ((store->half_float || hdr_probe_repeat_) && hdr_probe_countdown_ > 0 &&
+       --hdr_probe_countdown_ == 0) {
+-    ProbeBackingStore(store->framebuffer_id, width, height);
++    ProbeBackingStore(store->framebuffer_id, width, height, store->half_float);
++    if (hdr_probe_repeat_) {
++      hdr_probe_countdown_ = 30;
++    }
+   }
+   if (surface->is_hdr() || store->half_float) {
+     if (!DrawToSurface(store->texture_id, width, height,
+@@ -533,20 +534,52 @@ bool CompositorOpenGL::Initialize() {
+ 
+ void CompositorOpenGL::ProbeBackingStore(uint32_t framebuffer_id,
+                                          size_t width,
+-                                         size_t height) {
++                                         size_t height,
++                                         bool half_float) {
+   GLint previous = 0;
+   gl_->GetIntegerv(GL_FRAMEBUFFER_BINDING, &previous);
+   gl_->BindFramebuffer(GL_FRAMEBUFFER, framebuffer_id);
+   const GLint y = static_cast<GLint>(height / 2);
++  std::ostringstream line;
++  line << "HDR probe #" << ++hdr_probe_index_ << " at="
++       << std::chrono::duration_cast<std::chrono::milliseconds>(
++              std::chrono::system_clock::now().time_since_epoch())
++              .count()
++       << " renderer=" << (enable_impeller_ ? "impeller" : "skia")
++       << " store=" << (half_float ? "RGBA16F" : "8-bit")
++       << " repeat=" << hdr_probe_repeat_ << " size=" << width
++       << "x" << height;
+   for (size_t i = 1; i < 4; i++) {
+     const GLint x = static_cast<GLint>(width * i / 4);
+     GLfloat p[4] = {};
+-    gl_->ReadPixels(x, y, 1, 1, GL_RGBA, GL_FLOAT, p);
+-    FML_LOG(IMPORTANT) << "HDR probe backing store (" << x << "," << y
+-                       << ") = " << p[0] << " " << p[1] << " " << p[2] << " "
+-                       << p[3];
++    if (half_float) {
++      gl_->ReadPixels(x, y, 1, 1, GL_RGBA, GL_FLOAT, p);
++    } else {
++      // 8-bit stores read back as normalized bytes (BGRA stores included:
++      // GL_RGBA/GL_UNSIGNED_BYTE is always a valid read format).
++      uint8_t b[4] = {};
++      gl_->ReadPixels(x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, b);
++      for (size_t c = 0; c < 4; c++) {
++        p[c] = b[c] / 255.0f;
++      }
++    }
++    line << " | (" << x << "," << y << ")=" << p[0] << " " << p[1] << " "
++         << p[2] << " " << p[3];
+   }
++  auto get_error =
++      reinterpret_cast<decltype(glGetError)*>(resolver_("glGetError"));
++  line << " glError=" << (get_error != nullptr ? get_error() : 0u);
+   gl_->BindFramebuffer(GL_FRAMEBUFFER, previous);
++  FML_LOG(IMPORTANT) << line.str();
++  // FUSHI_HDR_PROBE_LOG=<path>: also append the line to a file (the engine
++  // log is not captured by `flutter test -d windows`).
++  char path[MAX_PATH] = {};
++  const DWORD length =
++      ::GetEnvironmentVariableA("FUSHI_HDR_PROBE_LOG", path, MAX_PATH);
++  if (length > 0 && length < MAX_PATH) {
++    std::ofstream file(path, std::ios::app);
++    file << line.str() << '\n';
++  }
+ }
+ 
+ bool CompositorOpenGL::InitializeOutputProgram() {
+diff --git a/engine/src/flutter/shell/platform/windows/compositor_opengl.h b/engine/src/flutter/shell/platform/windows/compositor_opengl.h
+index 0a16779..8c189c1 100644
+--- a/engine/src/flutter/shell/platform/windows/compositor_opengl.h
++++ b/engine/src/flutter/shell/platform/windows/compositor_opengl.h
+@@ -6,6 +6,7 @@
+ #define FLUTTER_SHELL_PLATFORM_WINDOWS_COMPOSITOR_OPENGL_H_
+ 
+ #include <memory>
++#include <string>
+ 
+ #include "flutter/fml/macros.h"
+ #include "flutter/impeller/renderer/backend/gles/proc_table_gles.h"
+@@ -81,11 +82,22 @@ class CompositorOpenGL : public Compositor {
+   uint32_t output_vertex_buffer_ = 0;
+   // Last backing store format reported in the log (-1 = none yet).
+   int logged_half_float_ = -1;
+-  // Diagnostics: FUSHI_HDR_PROBE logs backing store pixels once.
++  // Diagnostics: FUSHI_HDR_PROBE logs backing store pixels once;
++  // FUSHI_HDR_PROBE=repeat logs every frame kind, then every 30 frames.
+   // Half-float frames left before the probe fires (-1 = disabled).
+   int hdr_probe_countdown_ =
+       ::GetEnvironmentVariableA("FUSHI_HDR_PROBE", nullptr, 0) > 0 ? 120 : -1;
+-  void ProbeBackingStore(uint32_t framebuffer_id, size_t width, size_t height);
++  const bool hdr_probe_repeat_ = [] {
++    char value[8] = {};
++    return ::GetEnvironmentVariableA("FUSHI_HDR_PROBE", value, sizeof(value)) ==
++               6 &&
++           std::string(value) == "repeat";
++  }();
++  int hdr_probe_index_ = 0;
++  void ProbeBackingStore(uint32_t framebuffer_id,
++                         size_t width,
++                         size_t height,
++                         bool half_float);
+   int32_t output_texture_location_ = -1;
+   int32_t output_scale_location_ = -1;
+   int32_t output_decode_location_ = -1;
+diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc b/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
+index 1995d72..8661bb5 100644
+--- a/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
++++ b/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
+@@ -895,7 +895,7 @@ bool FlutterWindowsView::SetHdrOutput(bool enabled, float sdr_white_nits) {
+   if (enabled) {
+     egl::Manager* manager = engine_->egl_manager();
+     if (manager == nullptr || !manager->SupportsHdrSurfaces() ||
+-        engine_->impeller_enabled() || !(sdr_white_nits > 0.0f)) {
++        !(sdr_white_nits > 0.0f)) {
+       enabled = false;
+       sdr_white_nits = 80.0f;
+       if (!hdr_output_requested()) {

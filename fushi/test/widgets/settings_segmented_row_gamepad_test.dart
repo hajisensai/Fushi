@@ -43,17 +43,21 @@ void main() {
     );
   }
 
-  testWidgets('D-pad Down from a stepper reaches the segmented row below',
-      (WidgetTester tester) async {
+  testWidgets('D-pad Down from a stepper reaches the segmented row below', (
+    WidgetTester tester,
+  ) async {
     String spread = 'off';
-    await tester.pumpWidget(buildTestApp(
-      StatefulBuilder(
-        builder: (BuildContext c, StateSetter setState) => stepperThenSegmented(
-          selected: spread,
-          onChanged: (String v) => setState(() => spread = v),
+    await tester.pumpWidget(
+      buildTestApp(
+        StatefulBuilder(
+          builder: (BuildContext c, StateSetter setState) =>
+              stepperThenSegmented(
+                selected: spread,
+                onChanged: (String v) => setState(() => spread = v),
+              ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     final FushiFocusController controller = FushiFocusRoot.controllerOf(
@@ -66,8 +70,11 @@ void main() {
 
     // Down must land on the segmented row — it is now a registered focus stop,
     // not skipped. Before the fix this returned false / stayed on the stepper.
-    expect(controller.move(FushiFocusDirection.down), isTrue,
-        reason: 'the segmented row is reachable by geometric down');
+    expect(
+      controller.move(FushiFocusDirection.down),
+      isTrue,
+      reason: 'the segmented row is reachable by geometric down',
+    );
     await tester.pump();
 
     // Prove the landing IS the segmented row: D-pad Right cycles its value.
@@ -83,17 +90,21 @@ void main() {
     expect(spread, 'on', reason: 'off → on (next segment)');
   });
 
-  testWidgets('D-pad Left/Right cycles segments and clamps at the ends',
-      (WidgetTester tester) async {
+  testWidgets('D-pad Left/Right cycles segments and clamps at the ends', (
+    WidgetTester tester,
+  ) async {
     String spread = 'on';
-    await tester.pumpWidget(buildTestApp(
-      StatefulBuilder(
-        builder: (BuildContext c, StateSetter setState) => stepperThenSegmented(
-          selected: spread,
-          onChanged: (String v) => setState(() => spread = v),
+    await tester.pumpWidget(
+      buildTestApp(
+        StatefulBuilder(
+          builder: (BuildContext c, StateSetter setState) =>
+              stepperThenSegmented(
+                selected: spread,
+                onChanged: (String v) => setState(() => spread = v),
+              ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.text('Spread')),
@@ -106,55 +117,73 @@ void main() {
 
     // on → auto (right), auto → auto (right clamps at last).
     Actions.maybeInvoke<GamepadButtonIntent>(
-        ctx, const GamepadButtonIntent(GamepadButton.dpadRight));
+      ctx,
+      const GamepadButtonIntent(GamepadButton.dpadRight),
+    );
     await tester.pump();
     expect(spread, 'auto');
     Actions.maybeInvoke<GamepadButtonIntent>(
-        ctx, const GamepadButtonIntent(GamepadButton.dpadRight));
+      ctx,
+      const GamepadButtonIntent(GamepadButton.dpadRight),
+    );
     await tester.pump();
     expect(spread, 'auto', reason: 'clamped at the last segment, no wrap');
 
     // auto → on → off (left), off → off (left clamps at first).
     Actions.maybeInvoke<GamepadButtonIntent>(
-        ctx, const GamepadButtonIntent(GamepadButton.dpadLeft));
+      ctx,
+      const GamepadButtonIntent(GamepadButton.dpadLeft),
+    );
     await tester.pump();
     expect(spread, 'on');
     Actions.maybeInvoke<GamepadButtonIntent>(
-        ctx, const GamepadButtonIntent(GamepadButton.dpadLeft));
+      ctx,
+      const GamepadButtonIntent(GamepadButton.dpadLeft),
+    );
     await tester.pump();
     expect(spread, 'off');
     Actions.maybeInvoke<GamepadButtonIntent>(
-        ctx, const GamepadButtonIntent(GamepadButton.dpadLeft));
+      ctx,
+      const GamepadButtonIntent(GamepadButton.dpadLeft),
+    );
     await tester.pump();
     expect(spread, 'off', reason: 'clamped at the first segment, no wrap');
   });
 
-  testWidgets('Up/Down is NOT consumed by the segmented row (focus can leave)',
-      (WidgetTester tester) async {
-    String spread = 'off';
-    await tester.pumpWidget(buildTestApp(
-      stepperThenSegmented(
-          selected: spread,
-          onChanged: (String v) {
-            spread = v;
-          }),
-    ));
-    await tester.pump();
-    final FushiFocusController controller = FushiFocusRoot.controllerOf(
-      tester.element(find.text('Spread')),
-    );
-    controller.ensureFocus();
-    await tester.pump();
-    controller.move(FushiFocusDirection.down); // onto the segmented row
-    await tester.pump();
-    final BuildContext ctx = controller.activeContext!;
+  testWidgets(
+    'Up/Down is NOT consumed by the segmented row (focus can leave)',
+    (WidgetTester tester) async {
+      String spread = 'off';
+      await tester.pumpWidget(
+        buildTestApp(
+          stepperThenSegmented(
+            selected: spread,
+            onChanged: (String v) {
+              spread = v;
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
+        tester.element(find.text('Spread')),
+      );
+      controller.ensureFocus();
+      await tester.pump();
+      controller.move(FushiFocusDirection.down); // onto the segmented row
+      await tester.pump();
+      final BuildContext ctx = controller.activeContext!;
 
-    final Object? down = Actions.maybeInvoke<GamepadButtonIntent>(
-      ctx,
-      const GamepadButtonIntent(GamepadButton.dpadDown),
-    );
-    expect(down, isNot(true),
-        reason: 'down must bubble so focus can move off the segmented row');
-    expect(spread, 'off', reason: 'up/down does not change the segment');
-  });
+      final Object? down = Actions.maybeInvoke<GamepadButtonIntent>(
+        ctx,
+        const GamepadButtonIntent(GamepadButton.dpadDown),
+      );
+      expect(
+        down,
+        isNot(true),
+        reason: 'down must bubble so focus can move off the segmented row',
+      );
+      expect(spread, 'off', reason: 'up/down does not change the segment');
+    },
+  );
 }

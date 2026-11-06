@@ -17,7 +17,7 @@ outputs:
     description: fushi_p2p (windows DLL / macOS arm64 dylib / linux .so / android .so)
     value: ${{ steps.names.outputs.p2p }}
   ios_native:
-    description: iOS umbrella staticlib (fushi_p2p + fushi_fsrs, device slice)
+    description: iOS umbrella staticlib (fushi_p2p + fushi_fsrs + fushi_compute, device slice)
     value: ${{ steps.names.outputs.ios_native }}
   mihon:
     description: Mihon desktop runtime (windows)

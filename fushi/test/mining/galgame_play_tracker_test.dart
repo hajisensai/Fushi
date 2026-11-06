@@ -3,7 +3,7 @@ import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:path/path.dart' as p;
 
 /// [GalgamePlaySessionMachine] 状态机守卫：假时钟 + 假 probe 驱动，覆盖前台/后台
-/// 切换累加、Launcher→本体切换、逃逸检测、连续失活切 PID、门槛丢弃、两种计时模式。
+/// 切换累加、Launcher→本体切换、逃逸检测、换主 PID、门槛丢弃、两种计时模式。
 ///
 /// 状态机是**平台无关纯逻辑**（不读系统时钟、不碰 Win32），这些用例在 Linux CI 上
 /// 照跑。路径一律 [p.join] 构造，不硬编码 `C:\`（Linux 上 `\` 不是分隔符，
@@ -15,8 +15,11 @@ void main() {
   final String launcherExe = p.join(gameDir, 'Launcher.exe');
   final String mainExe = p.join(gameDir, 'bin', 'SiglusEngine.exe');
   final String siblingExe = p.join(siblingDir, 'SiglusEngine.exe');
-  final String browserExe =
-      p.join(p.rootPrefix(p.current), 'Programs', 'browser.exe');
+  final String browserExe = p.join(
+    p.rootPrefix(p.current),
+    'Programs',
+    'browser.exe',
+  );
 
   test('playtime：只累计前台活跃秒；后台/无前台窗口不计', () async {
     final _Harness h = _Harness(gameDir, <int, String>{100: launcherExe});
@@ -37,11 +40,9 @@ void main() {
   });
 
   test('elapsed：墙钟计时，后台时间照算', () async {
-    final _Harness h = _Harness(
-      gameDir,
-      <int, String>{100: launcherExe},
-      mode: GalgamePlayTimingMode.elapsed,
-    );
+    final _Harness h = _Harness(gameDir, <int, String>{
+      100: launcherExe,
+    }, mode: GalgamePlayTimingMode.elapsed);
     h.run(10, (int _) => 100);
     h.run(170, (int _) => 777);
     await h.stop();
@@ -106,43 +107,38 @@ void main() {
     await h.stop();
   });
 
-  test('主进程连续失活 $kMaxConsecutiveFailures 次才切 PID：单次抖动不打断会话', () async {
+  test('Launcher 退出、本体接手：followMainProcess 换主 PID，计时不断', () async {
     final _Harness h = _Harness(gameDir, <int, String>{100: launcherExe});
     h.run(5, (int _) => 100);
 
-    // 抖动：单次判活失败后立刻恢复，主 PID 不变。
-    h.probe.deadPids.add(100);
-    h.run(1, (int _) => 100);
-    h.probe.deadPids.remove(100);
-    h.run(1, (int _) => 100);
-    expect(h.machine.mainPid, 100);
-    expect(h.machine.isRunning, isTrue);
-
-    // 真死：Launcher 退出，本体（PID 200）在游戏目录下 → 第 3 次失败时重扫切过去。
+    // 判活归会话的进程存活监视（GalGameExitWatch）；它确认接手后调这里。
     h.probe.processes.remove(100);
     h.probe.deadPids.add(100);
     h.probe.processes[200] = mainExe;
-    h.run(kMaxConsecutiveFailures, (int _) => 200);
+    h.machine.followMainProcess(200);
     expect(h.machine.mainPid, 200);
     expect(h.machine.isRunning, isTrue);
+    expect(h.machine.candidatePids, <int>{200});
 
     h.run(90, (int _) => 200);
     await h.stop();
-    expect(h.results.single.durationSeconds, greaterThanOrEqualTo(90));
+    expect(h.results.single.durationSeconds, 95);
   });
 
-  test('重扫也找不到活进程 → 会话自行结束并结算（结算幂等）', () async {
+  test('计时器不自己判活：主进程死了也不自行结算，等会话停止（结算幂等）', () async {
     final _Harness h = _Harness(gameDir, <int, String>{100: launcherExe});
     h.run(120, (int _) => 100);
     expect(h.machine.activeSeconds, 120);
+    h.probe.aliveQueries = 0;
 
     h.probe.processes.remove(100);
     h.probe.deadPids.add(100);
-    h.run(kMaxConsecutiveFailures, (int _) => null);
+    h.run(10, (int _) => null);
+    expect(h.machine.isRunning, isTrue, reason: '「游戏退出」只有会话的退出监视一路判定');
+    expect(h.probe.aliveQueries, 0, reason: '1s tick 不再跨 FFI 判活');
 
-    expect(h.machine.isRunning, isFalse);
+    await h.stop();
     expect(h.machine.isEnded, isTrue);
-    await h.machine.pendingWrite;
     expect(h.results, hasLength(1));
     expect(h.results.single.durationSeconds, 120);
 
@@ -150,23 +146,27 @@ void main() {
     expect(h.results, hasLength(1), reason: '重复 stop 不得重复落库');
   });
 
-  test('候选组重建会剔除已退出的 PID，防 PID 回收后误判前台', () async {
-    final _Harness h = _Harness(
-      gameDir,
-      <int, String>{100: launcherExe, 200: mainExe},
-    );
+  test('换主 PID 时重建候选组，剔除已退出的 PID，防 PID 回收后误判前台', () async {
+    final _Harness h = _Harness(gameDir, <int, String>{
+      100: launcherExe,
+      200: mainExe,
+    });
     h.run(4, (int _) => 100); // 跨过 3 秒扫描点
     expect(h.machine.candidatePids, containsAll(<int>[100, 200]));
 
-    // 本体退出，PID 200 被系统回收给一个毫无关系的进程；主进程也死了。
+    // 本体退出，PID 200 被系统回收给一个毫无关系的进程；Launcher 换代成 300。
     h.probe.processes[200] = browserExe;
     h.probe.processes.remove(100);
     h.probe.deadPids.add(100);
-    h.run(kMaxConsecutiveFailures, (int _) => null);
+    h.probe.processes[300] = mainExe;
+    h.machine.followMainProcess(300);
 
-    expect(h.machine.candidatePids.contains(200), isFalse,
-        reason: '回收后的 PID 必须被重扫剔除，否则会被当成本游戏继续计时');
-    expect(h.machine.isEnded, isTrue);
+    expect(
+      h.machine.candidatePids.contains(200),
+      isFalse,
+      reason: '回收后的 PID 必须被重扫剔除，否则会被当成本游戏继续计时',
+    );
+    expect(h.machine.candidatePids, <int>{300});
   });
 
   test('canonicalize 兜底：游戏装在符号链接后面时仍判为本游戏', () {
@@ -182,6 +182,45 @@ void main() {
     h.run(1, (int _) => 100);
     expect(h.machine.foregroundIsGame, isTrue);
     expect(h.machine.candidatePids.contains(100), isTrue);
+  });
+
+  test('BUG-3616：远端在场（串流到已连上的接收端）与前台同等计时，两者同时成立不双计', () async {
+    final _Harness h = _Harness(gameDir, <int, String>{100: launcherExe});
+    // 串流：主机前台是别的进程，游戏留在后台。
+    h.run(30, (int _) => 777);
+    expect(h.machine.activeSeconds, 0, reason: '无远端在场时后台不计（既有语义）');
+
+    h.machine.setRemotePresence(true);
+    h.run(90, (int _) => 777);
+    expect(h.machine.activeSeconds, 90);
+    // 主机前台恰好也是游戏：同一秒只记一次。
+    h.run(10, (int _) => 100);
+    expect(h.machine.activeSeconds, 100);
+
+    h.machine.setRemotePresence(false);
+    h.run(20, (int _) => 777);
+    expect(h.machine.activeSeconds, 100, reason: '接收端断开后不再计时');
+
+    await h.stop();
+    expect(h.results.single.durationSeconds, 100);
+  });
+
+  test('BUG-3616：计时器外壳在 start 前设置的远端在场带进状态机', () async {
+    final GalgamePlayTracker tracker = GalgamePlayTracker(
+      gameId: 'g1',
+      gameDirectory: gameDir,
+      isWindows: true,
+      probe: _FakeProcessProbe(processes: <int, String>{100: launcherExe}),
+      onSessionEnded: (GalgamePlaySessionResult _) async {},
+      foregroundInterval: const Duration(hours: 1),
+      accrualInterval: const Duration(hours: 1),
+    );
+    tracker.remotePresent = true;
+    tracker.start(mainPid: 100);
+    expect(tracker.machine!.remotePresent, isTrue);
+    tracker.remotePresent = false;
+    expect(tracker.machine!.remotePresent, isFalse);
+    await tracker.stop();
   });
 
   test('非 Windows 平台整体 no-op：不建状态机、不回调、stop 安全', () async {
@@ -211,11 +250,11 @@ class _Harness {
     GalgamePlayTimingMode mode = GalgamePlayTimingMode.playtime,
     int mainPid = 100,
     Map<String, String> canonicalMap = const <String, String>{},
-  })  : probe = _FakeProcessProbe(
-          processes: processes,
-          canonicalMap: canonicalMap,
-        ),
-        results = <GalgamePlaySessionResult>[] {
+  }) : probe = _FakeProcessProbe(
+         processes: processes,
+         canonicalMap: canonicalMap,
+       ),
+       results = <GalgamePlaySessionResult>[] {
     machine = GalgamePlaySessionMachine(
       gameId: 'g1',
       gameDirectory: gameDirectory,
@@ -260,6 +299,9 @@ class _FakeProcessProbe implements GalgameProcessProbe {
 
   final Set<int> deadPids = <int>{};
 
+  /// 判活调用次数（断言计时器的 1s tick 不再判活）。
+  int aliveQueries = 0;
+
   /// 每个 pid 被查询 exe 路径的次数（用于断言负缓存生效）。
   final Map<int, int> imagePathQueries = <int, int>{};
 
@@ -267,8 +309,10 @@ class _FakeProcessProbe implements GalgameProcessProbe {
   int? foregroundProcessId() => null; // 前台由用例显式喂给状态机
 
   @override
-  bool isProcessAlive(int pid) =>
-      processes.containsKey(pid) && !deadPids.contains(pid);
+  bool isProcessAlive(int pid) {
+    aliveQueries++;
+    return processes.containsKey(pid) && !deadPids.contains(pid);
+  }
 
   @override
   String? processImagePath(int pid) {

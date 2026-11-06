@@ -1,0 +1,34 @@
+# 黄金值生成器：把上游 kuma3-anki-core 的 `rslib/src/rwkv` **原样**编译进来，
+# 对 tests/fixtures/ 的输入跑上游实现。不参与 fushi_rwkv 的构建 / 测试 / CI。
+#
+# 重新生成夹具（见 ../../UPSTREAM.md「重新生成黄金值」）：
+#   git clone --branch rwkv https://github.com/Pedrubik2000/kuma3-anki-core upstream
+#   git -C upstream checkout c639bcec696f2317f9bb9a736d433b9d6c0d9c56
+#   RWKV_UPSTREAM_SHA=c639bcec696f2317f9bb9a736d433b9d6c0d9c56 \
+#     cargo run --release --bin golden -- ../../model/RWKV_trained_on_5000_10000.bin py_golden.json ../../tests/fixtures
+[package]
+name = "rwkv_oracle"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "AGPL-3.0-or-later"
+
+# 独立工程，不挂在任何上层 workspace 下。
+[workspace]
+
+[dependencies]
+# 下面四个只为让上游模块原样编译（它的 SQLite 状态缓存、resident-state spill 与
+# workload 模拟会用到）；生成黄金值时一行都不执行。
+anki_io = { path = "shims/anki_io" }
+anki_proto = { path = "shims/anki_proto" }
+blake3 = "1.8.2"
+rusqlite = { version = "0.36.0", features = ["bundled", "blob"] }
+tracing = "0.1.41"
+# 上游版本一致（kuma3-anki-core 的 Cargo.lock）。
+half = "2.7.1"
+rayon = "1.12.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3

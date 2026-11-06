@@ -1,11 +1,14 @@
 import 'package:flutter/services.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/scheduler.dart' show SchedulerBinding, Ticker;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/widgets.dart';
 import '_static_channel.dart';
+import 'texture_capacity.dart';
 import 'trackpad_gesture_router.dart';
 
 const Map<String, SystemMouseCursor> _cursors = {
@@ -141,6 +144,37 @@ List<MouseInputDispatch> planMouseInputDispatches({
 
 const MethodChannel _pluginChannel = IN_APP_WEBVIEW_STATIC_CHANNEL;
 
+/// 平台视图纹理的栅格倍率：一个**本地**逻辑像素最终在屏幕上占多少物理像素。
+///
+/// 纹理按 `box.size × 倍率` 出物理尺寸、WebView2 按同一倍率栅格化（CSS 视口 =
+/// `box.size`，排版不变）。只用 [devicePixelRatio] 时，祖先里的整体缩放（app 的
+/// 「界面大小」`FittedBox`、任何 `Transform.scale`）会把按 dpr 栅格化的纹理再放大
+/// 显示——放大 1.06~1.16 倍（桌面自动界面大小的常见值）就是整面文字发糊。
+/// [transform] 是 box 到窗口逻辑坐标的变换（`getTransformTo(null)`，不含 dpr），取它
+/// 两条轴里较大的缩放，绝不欠采样。变换退化（缩到 0、非有限值）或乘出来不足 1 物理
+/// 像素时退回 dpr：那是转场的瞬态，稳定后会按真实倍率重报（见 [CustomPlatformView]）。
+@visibleForTesting
+double surfaceRasterScale({
+  required double devicePixelRatio,
+  required Matrix4 transform,
+  required Size size,
+}) {
+  final List<double> m = transform.storage;
+  final double sx = math.sqrt(m[0] * m[0] + m[1] * m[1]);
+  final double sy = math.sqrt(m[4] * m[4] + m[5] * m[5]);
+  final double s = math.max(sx, sy);
+  if (!s.isFinite || s <= 0) return devicePixelRatio;
+  // 缩放后又中和回来（`FushiAppUiScaleNeutralizer`：×s 再 ×1/s）的乘积只差浮点误差，
+  // 按 1 算：0.9999999 × 宽度在 native 取整时会少 1 物理像素，纹理反被拉伸。
+  if ((s - 1).abs() < 1e-6) return devicePixelRatio;
+  final double scale = devicePixelRatio * s;
+  if (size.width.floorToDouble() * scale < 1 ||
+      size.height.floorToDouble() * scale < 1) {
+    return devicePixelRatio;
+  }
+  return scale;
+}
+
 /// setSize 去抖判定（TODO-428/420）。
 ///
 /// 喂入 `_setSize` 的三条路径（`SizeChangedLayoutNotification` /
@@ -197,7 +231,16 @@ class CustomPlatformViewController
   int _textureId = 0;
   bool _isDisposed = false;
 
-  Future<void> get ready => _creatingCompleter.future;
+  /// native 实例的创建结果：成功 true，失败 false。
+  ///
+  /// BUG-4073：创建失败的异常只走一条上报路径——[initialize] rethrow →
+  /// [CustomPlatformView.onCreationError]。尺寸 / 位置上报这类「等创建完成再干活」
+  /// 的等待者只需要知道成没成；若它们直接 await 带错误的 completer，同一个
+  /// PlatformException 会作为未捕获异常再冒两次（崩溃报告里的「× 多次」）。
+  /// 构造时就挂上监听，保证 completer 的错误不会因暂无监听者被当成未处理。
+  late final Future<bool> created = _creatingCompleter.future.then(
+      (_) => true,
+      onError: (Object _, StackTrace __) => false);
 
   late MethodChannel _methodChannel;
   late EventChannel _eventChannel;
@@ -211,11 +254,21 @@ class CustomPlatformViewController
   // 的无谓重复下发，避免 native 端每帧重建 WGC 帧池。判定逻辑见 SetSizeDedup。
   final SetSizeDedup _setSizeDedup = SetSizeDedup();
 
+  /// BUG-3913：native 共享目标纹理 / WGC 帧池的容量（物理像素）与算它时的栅格倍率。
+  /// 只增不减（[nextTextureCapacity]），布局在容量内变化时 native 不换纹理、不重建帧池；
+  /// widget 按它把 [Texture] 摆成「容量 / 倍率」逻辑尺寸并裁到自身大小，纹理与屏幕像素
+  /// 1:1、只露出左上角的可见内容。null = 还没下发过尺寸（native 也还没有纹理）。
+  final ValueNotifier<TextureLayout?> _textureLayout =
+      ValueNotifier<TextureLayout?>(null);
+
   /// A stream reflecting the current cursor style.
   Stream<SystemMouseCursor> get _cursor => _cursorStreamController.stream;
 
   CustomPlatformViewController()
-      : super(CustomFlutterViewControllerValue.uninitialized());
+      : super(CustomFlutterViewControllerValue.uninitialized()) {
+    // 立即求值 late final，让监听在 completer 可能 completeError 之前就挂上。
+    unawaited(created);
+  }
 
   /// Initializes the underlying platform view.
   ///
@@ -283,6 +336,7 @@ class CustomPlatformViewController
     // 失败时 _textureId 保持默认 0：native manager 对未知 id 是纯 no-op
     // （map_contains(webViews, 0) 为 false），不会 double-free。
     await _pluginChannel.invokeMethod('dispose', {"id": _textureId});
+    _textureLayout.dispose();
     super.dispose();
   }
 
@@ -346,7 +400,8 @@ class CustomPlatformViewController
   }
 
   /// Sets the surface size to the provided [size].
-  Future<void> _setSize(Size size, double scaleFactor) async {
+  Future<void> _setSize(
+      Size size, double scaleFactor, TextureCapacity display) async {
     if (_isDisposed) {
       return;
     }
@@ -357,8 +412,29 @@ class CustomPlatformViewController
     if (!_setSizeDedup.shouldDispatch(size.width, size.height, scaleFactor)) {
       return;
     }
-    return _methodChannel
-        .invokeMethod('setSize', [size.width, size.height, scaleFactor]);
+    final TextureLayout? previous = _textureLayout.value;
+    final TextureCapacity capacity = nextTextureCapacity(
+      current: previous?.capacity ?? (width: 0, height: 0),
+      needed: textureCapacityNeeded(size.width, size.height, scaleFactor),
+      display: display,
+    );
+    // 先把容量发给 native（消息先于下一帧排进平台线程），再让 widget 按新容量摆
+    // Texture。native 另按引擎每帧请求的盒子尺寸挑「这一帧布局对应的那份容量」，
+    // 两边换档差一帧也不会画错比例（texture_bridge_gpu.cc SelectSurfaceSize）。
+    final Future<void> sent = _methodChannel.invokeMethod('setSize', [
+      size.width,
+      size.height,
+      scaleFactor,
+      capacity.width.toDouble(),
+      capacity.height.toDouble(),
+    ]);
+    if (previous == null ||
+        previous.capacity != capacity ||
+        previous.scaleFactor != scaleFactor) {
+      _textureLayout.value =
+          TextureLayout(capacity: capacity, scaleFactor: scaleFactor);
+    }
+    return sent;
   }
 
   /// Sets the surface size to the provided [size].
@@ -406,7 +482,8 @@ class CustomPlatformView extends StatefulWidget {
   _CustomPlatformViewState createState() => _CustomPlatformViewState();
 }
 
-class _CustomPlatformViewState extends State<CustomPlatformView> {
+class _CustomPlatformViewState extends State<CustomPlatformView>
+    with SingleTickerProviderStateMixin {
   final GlobalKey _key = GlobalKey();
 
   /// BUG-1419：WebView2 侧的鼠标键状态（`VirtualKeyState`，in_app_webview.h）是
@@ -426,6 +503,40 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
 
   PointerDeviceKind _pointerKind = PointerDeviceKind.unknown;
   final TrackpadGestureRouter _trackpad = TrackpadGestureRouter();
+
+  /// 触控板两指滚动的速度采样（喂 PanZoom 的累计平移），松手时据此起惯性。
+  VelocityTracker _trackpadVelocity =
+      VelocityTracker.withKind(PointerDeviceKind.trackpad);
+
+  /// 正在进行的触控板惯性；每帧由 [_trackpadFlingTicker] 推进。
+  TrackpadFling? _trackpadFling;
+  late final Ticker _trackpadFlingTicker = createTicker(_onTrackpadFlingTick);
+
+  void _onTrackpadFlingTick(Duration elapsed) {
+    final Offset? delta = _trackpadFling?.step(elapsed);
+    if (delta == null) {
+      _stopTrackpadFling();
+      return;
+    }
+    if (delta != Offset.zero) {
+      _controller._setScrollDelta(delta.dx, delta.dy);
+    }
+  }
+
+  /// 新手势 / 按下 / 鼠标滚轮 / 系统惯性取消 / 销毁时立刻停下，与浏览器里
+  /// 「手指再次放上触控板惯性即停」一致。
+  void _stopTrackpadFling() {
+    _trackpadFling = null;
+    if (_trackpadFlingTicker.isActive) _trackpadFlingTicker.stop();
+  }
+
+  void _startTrackpadFling(Offset velocity) {
+    _stopTrackpadFling();
+    final TrackpadFling? fling = TrackpadFling.fromVelocity(velocity);
+    if (fling == null) return;
+    _trackpadFling = fling;
+    _trackpadFlingTicker.start();
+  }
 
   MouseCursor _cursor = SystemMouseCursors.basic;
 
@@ -458,6 +569,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
       _reportSurfaceSize();
       _reportWidgetPosition();
     });
+    _trackWidgetPosition();
 
     _cursorSubscription = _controller._cursor.listen((cursor) {
       setState(() {
@@ -468,6 +580,11 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
 
   @override
   Widget build(BuildContext context) {
+    // View.of 建立依赖：换显示器 / 改 DPI 时重建，刷新上限（见 [largestDisplayCapacity]）。
+    _display = largestDisplayCapacity(<({double width, double height})>[
+      for (final Display d in View.of(context).platformDispatcher.displays)
+        (width: d.size.width, height: d.size.height),
+    ]);
     return Focus(
       autofocus: true,
       focusNode: _focusNode,
@@ -525,18 +642,18 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
                       _syncMouseInput(ev.localPosition, ev.buttons);
                     },
                     onPointerDown: (ev) {
+                      _stopTrackpadFling();
                       _reportSurfaceSize();
                       _reportWidgetPosition();
 
-                      if (!_focusNode.hasFocus) {
-                        _focusNode.requestFocus();
-                        Future.delayed(const Duration(milliseconds: 50), () {
-                          if (!_focusNode.hasFocus) {
-                            _focusNode.requestFocus();
-                          }
-                        });
-                      }
-
+                      // 按下时**不**向 Flutter 要焦点（BUG-3858）。WebView2 收到 down 会自己
+                      // SetFocus 到 Chromium 的子窗，Flutter 视图随之收到 WM_KILLFOCUS，框架把
+                      // 焦点停到根作用域。此时再 `_focusNode.requestFocus()`，View 作用域
+                      // 重新得焦 → `requestViewFocusChange(focused)` → 引擎 SetFocus 回 Flutter
+                      // 视图，与 Chromium 来回抢几轮：页面里每次都是一次 window blur，
+                      // YouTube 设置菜单这类「失焦即关」的弹层点二级项时整个关掉，网页输入框
+                      // 也可能在抢夺结束时丢键盘。点进网页 = 键盘归网页，与浏览器一致；
+                      // app 快捷键走宿主页面自己的键盘桥。
                       _pointerKind = ev.kind;
                       if (ev.kind == PointerDeviceKind.touch) {
                         _controller._setPointerUpdate(
@@ -603,13 +720,29 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
                       }
                     },
                     onPointerSignal: (signal) {
-                      if (signal is PointerScrollEvent) {
+                      if (signal is PointerScrollInertiaCancelEvent) {
+                        _stopTrackpadFling();
+                      } else if (signal is PointerScrollEvent) {
+                        _stopTrackpadFling();
                         _controller._setScrollDelta(
                             -signal.scrollDelta.dx, -signal.scrollDelta.dy);
                       }
                     },
-                    onPointerPanZoomStart: (_) => _trackpad.start(),
+                    onPointerPanZoomStart: (ev) {
+                      _stopTrackpadFling();
+                      _trackpad.start();
+                      _trackpadVelocity =
+                          VelocityTracker.withKind(PointerDeviceKind.trackpad)
+                            ..addPosition(ev.timeStamp, Offset.zero);
+                    },
+                    onPointerPanZoomEnd: (_) {
+                      // 捏合不续惯性（浏览器里缩放松手即停）。
+                      if (_trackpad.isPinching) return;
+                      _startTrackpadFling(
+                          _trackpadVelocity.getVelocity().pixelsPerSecond);
+                    },
                     onPointerPanZoomUpdate: (ev) {
+                      _trackpadVelocity.addPosition(ev.timeStamp, ev.pan);
                       final TrackpadGestureOutput out = _trackpad.update(
                           panDelta: ev.panDelta, scale: ev.scale);
                       switch (out.kind) {
@@ -624,40 +757,135 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
                     },
                     child: MouseRegion(
                         cursor: _cursor,
-                        child: Texture(
-                          textureId: _controller._textureId,
-                          filterQuality: widget.filterQuality,
+                        child: ValueListenableBuilder<TextureLayout?>(
+                          valueListenable: _controller._textureLayout,
+                          builder: _buildTextureLayout,
+                          child: Texture(
+                            textureId: _controller._textureId,
+                            filterQuality: widget.filterQuality,
+                          ),
                         )),
                   )
                 : const SizedBox()));
   }
 
+  /// BUG-3913：native 纹理按容量分配（≥ 可见内容），内容在左上角。引擎把整张纹理画满
+  /// [Texture] 的盒子，所以盒子必须正好是「容量 / 倍率」，再裁回 widget 自身大小——
+  /// 纹理像素与屏幕像素 1:1，容量里多出来的部分被裁掉，不拉伸、不错位。
+  Widget _buildTextureLayout(
+      BuildContext context, TextureLayout? layout, Widget? texture) {
+    if (layout == null) return texture!;
+    return ClipRect(
+      child: OverflowBox(
+        alignment: Alignment.topLeft,
+        minWidth: layout.logicalWidth,
+        maxWidth: layout.logicalWidth,
+        minHeight: layout.logicalHeight,
+        maxHeight: layout.logicalHeight,
+        child: texture,
+      ),
+    );
+  }
+
+  /// 已知显示器里最大的物理像素尺寸，喂 [nextTextureCapacity] 的增长上限。每次
+  /// build 刷新（View 依赖变化 = 换显示器 / 改 DPI 都会触发 rebuild）。
+  TextureCapacity _display = (width: 0, height: 0);
+
   void _reportSurfaceSize() async {
     // 先等 native WebView2 跨帧创建完成；await 之后旧的 box/context 可能已随
     // widget 销毁/重建失效（TODO-965），必须复检 mounted 并重新取 box，
     // 否则 View.of 返回 null 被 `!` 解引用、box.localToGlobal 崩溃。
-    await _controller.ready;
+    if (!await _controller.created) return;
     if (!mounted) return;
     final BuildContext? context = _key.currentContext;
     final RenderBox? box = context?.findRenderObject() as RenderBox?;
     if (context == null || box == null || !box.attached) return;
-    unawaited(_controller._setSize(
-        box.size, widget.scaleFactor ?? View.of(context).devicePixelRatio));
+    final double rasterScale = _surfaceScaleOf(context, box);
+    _lastSeenSurfaceScale = rasterScale;
+    unawaited(_controller._setSize(box.size, rasterScale, _display));
+  }
+
+  /// 纹理 / 栅格倍率（见 [surfaceRasterScale]）；显式 [CustomPlatformView.scaleFactor]
+  /// 优先。位置上报仍用 dpr（native 用它还原窗口坐标与滚轮倍率）。
+  double _surfaceScaleOf(BuildContext context, RenderBox box) {
+    final double? fixed = widget.scaleFactor;
+    if (fixed != null) return fixed;
+    return surfaceRasterScale(
+      devicePixelRatio: View.of(context).devicePixelRatio,
+      transform: box.getTransformTo(null),
+      size: box.size,
+    );
+  }
+
+  /// 上一帧量到的栅格倍率。祖先缩放在动（转场、按压缩放）时每帧都不同，不逐帧重建
+  /// native 帧池（TODO-428）；连续两帧相同 = 已稳定，才按它重报尺寸（与上次下发相同时
+  /// 被 [SetSizeDedup] 拦下，静止时零开销）。
+  double? _lastSeenSurfaceScale;
+
+  void _reportSurfaceScaleIfSettled(BuildContext context, RenderBox box) {
+    final double rasterScale = _surfaceScaleOf(context, box);
+    final bool settled = rasterScale == _lastSeenSurfaceScale;
+    _lastSeenSurfaceScale = rasterScale;
+    if (settled) {
+      unawaited(_controller._setSize(box.size, rasterScale, _display));
+    } else {
+      // 动画的最后一帧之后不一定还有帧：补一帧确认稳定值，否则会停在中途的倍率上。
+      SchedulerBinding.instance.scheduleFrame();
+    }
+  }
+
+  /// 只换位置不换尺寸的变化（路由转场滑入 / 缩放、Stack 里 top 变了但高度凑巧
+  /// 不变、外层滚动）没有 SizeChangedLayoutNotification。窗口宿主档的 WebView2 是
+  /// 真子窗口，位置停在首帧报的那个点上就和 Flutter 画面错开——首帧恰在转场动画
+  /// 中途，整页就一直偏下一截。每帧画完比一次全局位置，变了才下发；
+  /// addPostFrameCallback 本身不请求帧，静止时零开销。
+  Offset? _lastReportedPosition;
+  double? _lastReportedScale;
+
+  void _trackWidgetPosition() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _reportWidgetPositionIfChanged();
+      _trackWidgetPosition();
+    });
+  }
+
+  void _reportWidgetPositionIfChanged() {
+    if (!_controller.value.isInitialized) return;
+    final BuildContext? context = _key.currentContext;
+    final RenderBox? box = context?.findRenderObject() as RenderBox?;
+    if (context == null || box == null || !box.attached || !box.hasSize) {
+      return;
+    }
+    _reportSurfaceScaleIfSettled(context, box);
+    final Offset position = box.localToGlobal(Offset.zero);
+    final double scale =
+        widget.scaleFactor ?? View.of(context).devicePixelRatio;
+    if (position == _lastReportedPosition && scale == _lastReportedScale) {
+      return;
+    }
+    _lastReportedPosition = position;
+    _lastReportedScale = scale;
+    unawaited(_controller._setPosition(position, scale));
   }
 
   void _reportWidgetPosition() async {
-    await _controller.ready;
+    if (!await _controller.created) return;
     if (!mounted) return;
     final BuildContext? context = _key.currentContext;
     final RenderBox? box = context?.findRenderObject() as RenderBox?;
     if (context == null || box == null || !box.attached) return;
     final Offset position = box.localToGlobal(Offset.zero);
-    unawaited(_controller._setPosition(
-        position, widget.scaleFactor ?? View.of(context).devicePixelRatio));
+    final double scale =
+        widget.scaleFactor ?? View.of(context).devicePixelRatio;
+    _lastReportedPosition = position;
+    _lastReportedScale = scale;
+    unawaited(_controller._setPosition(position, scale));
   }
 
   @override
   void dispose() {
+    _trackpadFlingTicker.dispose();
     super.dispose();
     _cursorSubscription?.cancel();
     _controller.dispose();

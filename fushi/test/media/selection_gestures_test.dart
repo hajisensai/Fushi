@@ -66,9 +66,7 @@ void main() {
     // 过长按判定时限，长按识别器才宣布胜出。
     await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
     if (to != null) {
-      await gesture.moveTo(
-        tester.getCenter(find.byKey(ValueKey<String>(to))),
-      );
+      await gesture.moveTo(tester.getCenter(find.byKey(ValueKey<String>(to))));
       await tester.pump();
     }
     await gesture.up();
@@ -81,11 +79,9 @@ void main() {
       loose: <String>['card-0', 'card-1', 'card-2', 'card-3', 'card-4'],
       collections: const <int>[],
     );
-    await tester.pumpWidget(buildHarness(
-      controller: controller,
-      enabled: true,
-      onChanged: () {},
-    ));
+    await tester.pumpWidget(
+      buildHarness(controller: controller, enabled: true, onChanged: () {}),
+    );
 
     await longPressDrag(tester, from: 'card-0', to: 'card-2');
 
@@ -99,11 +95,9 @@ void main() {
       loose: <String>['card-0', 'card-1', 'card-2', 'card-3', 'card-4'],
       collections: const <int>[],
     );
-    await tester.pumpWidget(buildHarness(
-      controller: controller,
-      enabled: true,
-      onChanged: () {},
-    ));
+    await tester.pumpWidget(
+      buildHarness(controller: controller, enabled: true, onChanged: () {}),
+    );
 
     await longPressDrag(tester, from: 'card-3', to: 'card-1');
 
@@ -116,11 +110,9 @@ void main() {
       loose: <String>['card-0', 'card-1', 'card-2', 'card-3', 'card-4'],
       collections: const <int>[],
     );
-    await tester.pumpWidget(buildHarness(
-      controller: controller,
-      enabled: true,
-      onChanged: () {},
-    ));
+    await tester.pumpWidget(
+      buildHarness(controller: controller, enabled: true, onChanged: () {}),
+    );
 
     await longPressDrag(tester, from: 'blank', to: 'card-2');
 
@@ -133,11 +125,9 @@ void main() {
       loose: <String>['card-0', 'card-1', 'card-2', 'card-3', 'card-4'],
       collections: const <int>[],
     );
-    await tester.pumpWidget(buildHarness(
-      controller: controller,
-      enabled: false,
-      onChanged: () {},
-    ));
+    await tester.pumpWidget(
+      buildHarness(controller: controller, enabled: false, onChanged: () {}),
+    );
 
     // 刻意**不**断言「树里没有 GestureDetector」：那是在钉实现形状，而恰恰是
     // 那个形状（enabled=false 时 early-return child）导致进/退多选态整棵子树重建、
@@ -153,11 +143,13 @@ void main() {
       collections: const <int>[],
     );
     int changes = 0;
-    await tester.pumpWidget(buildHarness(
-      controller: controller,
-      enabled: true,
-      onChanged: () => changes++,
-    ));
+    await tester.pumpWidget(
+      buildHarness(
+        controller: controller,
+        enabled: true,
+        onChanged: () => changes++,
+      ),
+    );
 
     final TestGesture gesture = await tester.startGesture(
       tester.getCenter(find.byKey(const ValueKey<String>('card-0'))),
@@ -192,13 +184,17 @@ void main() {
 
     testWidgets('Windows/Linux 用 Ctrl 进多选，⌘ 不算', (WidgetTester tester) async {
       late BuildContext ctx;
-      await tester.pumpWidget(MaterialApp(
-        theme: ThemeData(platform: TargetPlatform.windows),
-        home: Builder(builder: (BuildContext context) {
-          ctx = context;
-          return const SizedBox();
-        }),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.windows),
+          home: Builder(
+            builder: (BuildContext context) {
+              ctx = context;
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
 
       expect(selectionEntryModifierPressed(ctx), isFalse);
       await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -211,13 +207,17 @@ void main() {
 
     testWidgets('macOS 用 ⌘ 进多选，Ctrl 不算', (WidgetTester tester) async {
       late BuildContext ctx;
-      await tester.pumpWidget(MaterialApp(
-        theme: ThemeData(platform: TargetPlatform.macOS),
-        home: Builder(builder: (BuildContext context) {
-          ctx = context;
-          return const SizedBox();
-        }),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.macOS),
+          home: Builder(
+            builder: (BuildContext context) {
+              ctx = context;
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
 
       await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
       expect(selectionEntryModifierPressed(ctx), isTrue);
@@ -227,21 +227,26 @@ void main() {
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     });
 
-    testWidgets('Android/iOS/Fuchsia 外接键盘修饰键也不能绕过明确选择入口',
-        (WidgetTester tester) async {
+    testWidgets('Android/iOS/Fuchsia 外接键盘修饰键也不能绕过明确选择入口', (
+      WidgetTester tester,
+    ) async {
       for (final TargetPlatform platform in <TargetPlatform>[
         TargetPlatform.android,
         TargetPlatform.iOS,
         TargetPlatform.fuchsia,
       ]) {
         late BuildContext ctx;
-        await tester.pumpWidget(MaterialApp(
-          theme: ThemeData(platform: platform),
-          home: Builder(builder: (BuildContext context) {
-            ctx = context;
-            return const SizedBox();
-          }),
-        ));
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(platform: platform),
+            home: Builder(
+              builder: (BuildContext context) {
+                ctx = context;
+                return const SizedBox();
+              },
+            ),
+          ),
+        );
         await tester.pumpAndSettle();
 
         for (final LogicalKeyboardKey key in <LogicalKeyboardKey>[
@@ -281,10 +286,8 @@ void main() {
                 child: ListView.builder(
                   controller: scrollController,
                   itemCount: 200,
-                  itemBuilder: (BuildContext _, int i) => SizedBox(
-                    height: 50,
-                    child: Text('item $i'),
-                  ),
+                  itemBuilder: (BuildContext _, int i) =>
+                      SizedBox(height: 50, child: Text('item $i')),
                 ),
               );
             },
@@ -303,10 +306,12 @@ void main() {
       addTearDown(enabled.dispose);
       final ScrollController scrollController = ScrollController();
       addTearDown(scrollController.dispose);
-      await tester.pumpWidget(buildScrollHarness(
-        enabled: enabled,
-        scrollController: scrollController,
-      ));
+      await tester.pumpWidget(
+        buildScrollHarness(
+          enabled: enabled,
+          scrollController: scrollController,
+        ),
+      );
 
       final ScrollableState before = tester.state(find.byType(Scrollable));
       before.position.jumpTo(2000);
@@ -318,8 +323,11 @@ void main() {
 
       final ScrollableState after = tester.state(find.byType(Scrollable));
       // 同一个 State 实例 = Element 被复用 = 子树没被重建。
-      expect(identical(after, before), isTrue,
-          reason: 'SelectionDragArea 翻转 enabled 时重建了子树');
+      expect(
+        identical(after, before),
+        isTrue,
+        reason: 'SelectionDragArea 翻转 enabled 时重建了子树',
+      );
       expect(after.position.pixels, 2000, reason: '进多选把列表滚回了顶部');
     });
 
@@ -329,10 +337,12 @@ void main() {
       addTearDown(enabled.dispose);
       final ScrollController scrollController = ScrollController();
       addTearDown(scrollController.dispose);
-      await tester.pumpWidget(buildScrollHarness(
-        enabled: enabled,
-        scrollController: scrollController,
-      ));
+      await tester.pumpWidget(
+        buildScrollHarness(
+          enabled: enabled,
+          scrollController: scrollController,
+        ),
+      );
 
       final ScrollableState before = tester.state(find.byType(Scrollable));
       before.position.jumpTo(1500);
@@ -343,8 +353,11 @@ void main() {
       await tester.pump();
 
       final ScrollableState after = tester.state(find.byType(Scrollable));
-      expect(identical(after, before), isTrue,
-          reason: 'SelectionDragArea 翻转 enabled 时重建了子树');
+      expect(
+        identical(after, before),
+        isTrue,
+        reason: 'SelectionDragArea 翻转 enabled 时重建了子树',
+      );
       expect(after.position.pixels, 1500, reason: '退出多选把列表滚回了顶部');
     });
 
@@ -355,15 +368,18 @@ void main() {
       addTearDown(enabled.dispose);
       final ScrollController scrollController = ScrollController();
       addTearDown(scrollController.dispose);
-      await tester.pumpWidget(buildScrollHarness(
-        enabled: enabled,
-        scrollController: scrollController,
-      ));
+      await tester.pumpWidget(
+        buildScrollHarness(
+          enabled: enabled,
+          scrollController: scrollController,
+        ),
+      );
 
       // 长按后拖动：非多选态下这一串必须仍然被 Scrollable 当成普通拖动消费，
       // 而不是被 SelectionDragArea 截走。
-      final TestGesture gesture =
-          await tester.startGesture(const Offset(200, 300));
+      final TestGesture gesture = await tester.startGesture(
+        const Offset(200, 300),
+      );
       await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
       await gesture.moveBy(const Offset(0, -200));
       await tester.pump();
@@ -371,8 +387,11 @@ void main() {
       await tester.pump();
 
       final ScrollableState state = tester.state(find.byType(Scrollable));
-      expect(state.position.pixels, greaterThan(0),
-          reason: '非多选态的长按后拖动应当仍然滚动列表');
+      expect(
+        state.position.pixels,
+        greaterThan(0),
+        reason: '非多选态的长按后拖动应当仍然滚动列表',
+      );
     });
   });
 }

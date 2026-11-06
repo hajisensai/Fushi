@@ -17,28 +17,30 @@ void main() {
     String? deleteSubscriptionsLabel,
   }) async {
     dialogResult = null;
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: Builder(
-          builder: (BuildContext context) => TextButton(
-            onPressed: () {
-              dialogResult = showDialog<FushiDestructiveConfirmResult>(
-                context: context,
-                builder: (_) => FushiDestructiveConfirmDialog(
-                  title: '删除书籍',
-                  message: '此操作不可撤销。',
-                  checkboxLabel: checkboxLabel,
-                  statisticsSubtitle: statisticsSubtitle,
-                  checkedDisclosure: checkedDisclosure,
-                  deleteSubscriptionsLabel: deleteSubscriptionsLabel,
-                ),
-              );
-            },
-            child: const Text('open'),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) => TextButton(
+              onPressed: () {
+                dialogResult = showDialog<FushiDestructiveConfirmResult>(
+                  context: context,
+                  builder: (_) => FushiDestructiveConfirmDialog(
+                    title: '删除书籍',
+                    message: '此操作不可撤销。',
+                    checkboxLabel: checkboxLabel,
+                    statisticsSubtitle: statisticsSubtitle,
+                    checkedDisclosure: checkedDisclosure,
+                    deleteSubscriptionsLabel: deleteSubscriptionsLabel,
+                  ),
+                );
+              },
+              child: const Text('open'),
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
   }
@@ -68,8 +70,9 @@ void main() {
 
     await tester.tap(find.text('连同本体删除'));
     await tester.pumpAndSettle();
-    final Checkbox checkbox =
-        tester.widget<Checkbox>(glassUnwrap<Checkbox>(find.byType(Checkbox)));
+    final Checkbox checkbox = tester.widget<Checkbox>(
+      glassUnwrap<Checkbox>(find.byType(Checkbox)),
+    );
     expect(checkbox.value, isTrue);
 
     await tester.tap(find.text('DELETE'));
@@ -77,8 +80,7 @@ void main() {
     expect((await dialogResult)!.checked, isTrue);
   });
 
-  testWidgets(
-      '800x600: expanded deletion disclosure scrolls while confirm '
+  testWidgets('800x600: expanded deletion disclosure scrolls while confirm '
       'stays reachable and returns the checked decision', (
     WidgetTester tester,
   ) async {
@@ -99,8 +101,11 @@ void main() {
     expect(tester.takeException(), isNull);
 
     final Finder confirm = find.text('DELETE');
-    expect(confirm.hitTestable(), findsOneWidget,
-        reason: '展开披露后，不滚正文也必须能点到确认，不能点中遮罩');
+    expect(
+      confirm.hitTestable(),
+      findsOneWidget,
+      reason: '展开披露后，不滚正文也必须能点到确认，不能点中遮罩',
+    );
     final Rect before = tester.getRect(confirm);
     final Finder scrollable = find
         .descendant(
@@ -109,8 +114,11 @@ void main() {
         )
         .first;
     final ScrollableState state = tester.state<ScrollableState>(scrollable);
-    expect(state.position.maxScrollExtent, greaterThan(0),
-        reason: '正文确实超过视口，才能守住 footer 独立固定的契约');
+    expect(
+      state.position.maxScrollExtent,
+      greaterThan(0),
+      reason: '正文确实超过视口，才能守住 footer 独立固定的契约',
+    );
     await tester.drag(scrollable, const Offset(0, -160));
     await tester.pumpAndSettle();
     expect(state.position.pixels, greaterThan(0));
@@ -138,8 +146,9 @@ void main() {
     const String longLabel = '同时删除其中的视频（保留你的原始视频文件）';
     await openDialog(tester, checkboxLabel: longLabel);
 
-    final RenderParagraph paragraph =
-        tester.renderObject<RenderParagraph>(find.text(longLabel));
+    final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+      find.text(longLabel),
+    );
     expect(
       paragraph.didExceedMaxLines,
       isFalse,
@@ -173,26 +182,28 @@ void main() {
       String? checkboxLabel = '我确认删除这 37 条记录',
     }) async {
       dialogResult = null;
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (BuildContext context) => TextButton(
-              onPressed: () {
-                dialogResult = showDialog<FushiDestructiveConfirmResult>(
-                  context: context,
-                  builder: (_) => FushiDestructiveConfirmDialog(
-                    title: '清除全部会话记录',
-                    message: '此操作不可撤销。',
-                    checkboxLabel: checkboxLabel,
-                    requireCheckboxToConfirm: gate,
-                  ),
-                );
-              },
-              child: const Text('open'),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (BuildContext context) => TextButton(
+                onPressed: () {
+                  dialogResult = showDialog<FushiDestructiveConfirmResult>(
+                    context: context,
+                    builder: (_) => FushiDestructiveConfirmDialog(
+                      title: '清除全部会话记录',
+                      message: '此操作不可撤销。',
+                      checkboxLabel: checkboxLabel,
+                      requireCheckboxToConfirm: gate,
+                    ),
+                  );
+                },
+                child: const Text('open'),
+              ),
             ),
           ),
         ),
-      ));
+      );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
     }
@@ -225,10 +236,11 @@ void main() {
       await tester.tap(find.text('我确认删除这 37 条记录'));
       await tester.pumpAndSettle();
       expect(
-          tester
-              .widget<FilledButton>(glassUnwrap<FilledButton>(confirm()))
-              .onPressed,
-          isNotNull);
+        tester
+            .widget<FilledButton>(glassUnwrap<FilledButton>(confirm()))
+            .onPressed,
+        isNotNull,
+      );
 
       await tester.tap(confirm());
       await tester.pumpAndSettle();
@@ -257,8 +269,11 @@ void main() {
       WidgetTester tester,
     ) async {
       await openDialog(tester, statisticsSubtitle: '游戏统计口径');
-      expect(find.text(t.delete_statistics), findsOneWidget,
-          reason: '没有主勾选也要摆出统计行');
+      expect(
+        find.text(t.delete_statistics),
+        findsOneWidget,
+        reason: '没有主勾选也要摆出统计行',
+      );
 
       await tester.tap(find.text('DELETE'));
       await tester.pumpAndSettle();
@@ -276,11 +291,12 @@ void main() {
       expect((await dialogResult)!.deleteStatistics, isTrue);
     });
 
-    testWidgets('有主勾选时仍挂在主勾选之下：主勾选未勾就不出现', (
-      WidgetTester tester,
-    ) async {
-      await openDialog(tester,
-          checkboxLabel: '连同本体删除', statisticsSubtitle: '统计口径');
+    testWidgets('有主勾选时仍挂在主勾选之下：主勾选未勾就不出现', (WidgetTester tester) async {
+      await openDialog(
+        tester,
+        checkboxLabel: '连同本体删除',
+        statisticsSubtitle: '统计口径',
+      );
       expect(find.text(t.delete_statistics), findsNothing);
       await tester.tap(find.text('连同本体删除'));
       await tester.pumpAndSettle();
@@ -308,13 +324,18 @@ void main() {
           .disclosure;
       expect(shown().willKeep, contains(t.delete_disclosure_stats_kept));
       expect(
-          shown().willDelete, isNot(contains(t.delete_disclosure_stats_kept)));
+        shown().willDelete,
+        isNot(contains(t.delete_disclosure_stats_kept)),
+      );
 
       await tester.tap(find.text(t.delete_statistics));
       await tester.pumpAndSettle();
       expect(shown().willDelete, contains(t.delete_disclosure_stats_kept));
-      expect(shown().willKeep, isNot(contains(t.delete_disclosure_stats_kept)),
-          reason: '勾了删统计还把它列在「会被保留」就是在说反话（BUG-1305 同型）');
+      expect(
+        shown().willKeep,
+        isNot(contains(t.delete_disclosure_stats_kept)),
+        reason: '勾了删统计还把它列在「会被保留」就是在说反话（BUG-1305 同型）',
+      );
 
       await tester.tap(find.text('DELETE'));
       await tester.pumpAndSettle();

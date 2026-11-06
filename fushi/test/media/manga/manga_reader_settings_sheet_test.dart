@@ -6,7 +6,7 @@ import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_panel_kit.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 void main() {
   test('descriptor list gates device settings and preserves every mode', () {
@@ -250,7 +250,8 @@ void main() {
       host(
         MangaReaderSettingsSheet(
           globalDefaults: const MangaReaderPreferences(),
-          overrides: const <String, Object?>{},
+          // 纵向分页：只对它生效的「显示页间距」也要出现（见下一条测试）。
+          overrides: const <String, Object?>{'mode': 'paged_vertical'},
           onChanged: (Map<String, Object?> next) async {},
         ),
         width: null,
@@ -284,6 +285,45 @@ void main() {
     expect(seen, <String>{
       for (final MangaReaderPreferenceDescriptor d in all) d.key,
     });
+  });
+
+  testWidgets('page-gap switch only shows in paged-vertical mode (BUG-3749)', (
+    WidgetTester tester,
+  ) async {
+    // 长条漫的间距由「条漫 / 带间距长条漫」两个模式本身决定，开关只剩纵向分页
+    // 在用；其它模式下还摆着它，会让人以为它控制条漫的黑缝。
+    tester.view.physicalSize = const Size(400, 6000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final String gaps = mangaReaderPreferenceDescriptors(const <String>{})
+        .firstWhere(
+          (MangaReaderPreferenceDescriptor d) => d.key == 'showPageGaps',
+        )
+        .title;
+    for (final (String mode, bool shown) in <(String, bool)>[
+      ('webtoon', false),
+      ('webtoon_gaps', false),
+      ('spread', false),
+      ('paged_vertical', true),
+    ]) {
+      await tester.pumpWidget(
+        host(
+          MangaReaderSettingsSheet(
+            key: ValueKey<String>(mode),
+            globalDefaults: const MangaReaderPreferences(),
+            overrides: <String, Object?>{'mode': mode},
+            onChanged: (Map<String, Object?> next) async {},
+          ),
+          width: null,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text(gaps),
+        shown ? findsOneWidget : findsNothing,
+        reason: 'mode $mode',
+      );
+    }
   });
 
   testWidgets('list leaves room for the floating scope bar', (
@@ -404,20 +444,20 @@ void main() {
     expect(writes.last.speed, PageTurnAnimationSpeed.slow);
     expect(writes.last.animation, MangaPageAnimation.cover);
 
-    // 淡入淡出没有位移：跟手开关收起，速度保留。
+    // 淡入淡出：跟手与效果无关，开关仍在（BUG-3624）；速度保留。
     await tester.tap(
       find.byKey(const ValueKey<String>('manga_page_turn_animation_fade')),
     );
     await tester.pumpAndSettle();
     expect(
       find.byKey(const ValueKey<String>('manga_page_turn_follow_drag')),
-      findsNothing,
+      findsOneWidget,
     );
     expect(
       find.byKey(const ValueKey<String>('manga_page_turn_speed')),
       findsOneWidget,
     );
-    // 无动画：速度也收起。
+    // 无动画：速度收起，跟手开关仍在。
     await tester.tap(
       find.byKey(const ValueKey<String>('manga_page_turn_animation_none')),
     );
@@ -425,6 +465,10 @@ void main() {
     expect(
       find.byKey(const ValueKey<String>('manga_page_turn_speed')),
       findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('manga_page_turn_follow_drag')),
+      findsOneWidget,
     );
     expect(writes.last.animation, MangaPageAnimation.none);
     expect(tester.takeException(), isNull);

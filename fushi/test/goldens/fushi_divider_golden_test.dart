@@ -10,10 +10,9 @@ import 'golden_test_helpers.dart';
 void main() {
   group('FushiDivider golden', () {
     testWidgets('light theme', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiDivider(),
-        size: const Size(300, 30),
-      ));
+      await tester.pumpWidget(
+        buildGoldenApp(const FushiDivider(), size: const Size(300, 30)),
+      );
       await tester.pumpAndSettle();
 
       await expectLater(
@@ -23,11 +22,13 @@ void main() {
     });
 
     testWidgets('dark theme', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiDivider(),
-        theme: ThemeData.dark(useMaterial3: true),
-        size: const Size(300, 30),
-      ));
+      await tester.pumpWidget(
+        buildGoldenApp(
+          const FushiDivider(),
+          theme: ThemeData.dark(useMaterial3: true),
+          size: const Size(300, 30),
+        ),
+      );
       await tester.pumpAndSettle();
 
       await expectLater(

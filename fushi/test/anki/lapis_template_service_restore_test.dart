@@ -44,8 +44,8 @@ class _FakeRepo extends BaseAnkiRepository {
 
   @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
-          String modelName) async =>
-      definition;
+    String modelName,
+  ) async => definition;
 
   @override
   Future<bool> updateNoteTypeStyling(String modelName, String css) async {
@@ -55,7 +55,9 @@ class _FakeRepo extends BaseAnkiRepository {
 
   @override
   Future<bool> updateNoteTypeTemplates(
-      String modelName, List<AnkiCardTemplate> templates) async {
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) async {
     templateWriteCalls++;
     return templatesOk;
   }
@@ -68,8 +70,7 @@ class _FakeRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      MineOutcome.failure('unused');
+  }) async => MineOutcome.failure('unused');
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
@@ -82,23 +83,29 @@ class _FakeRepo extends BaseAnkiRepository {
 }
 
 AnkiNoteTypeDefinition _definition(String css) => AnkiNoteTypeDefinition(
-      name: LapisNoteType.modelName,
-      fields: LapisNoteType.fields,
-      templates: const <AnkiCardTemplate>[
-        AnkiCardTemplate(
-            name: 'Card 1', front: '{{Expression}}', back: '{{Meaning}}'),
-      ],
-      css: css,
-    );
+  name: LapisNoteType.modelName,
+  fields: LapisNoteType.fields,
+  templates: const <AnkiCardTemplate>[
+    AnkiCardTemplate(
+      name: 'Card 1',
+      front: '{{Expression}}',
+      back: '{{Meaning}}',
+    ),
+  ],
+  css: css,
+);
 
 Future<File> _writeBackup(Directory dir, AnkiNoteTypeDefinition def) async {
-  final File file =
-      File('${dir.path}${Platform.pathSeparator}lapis-backup.json');
-  await file.writeAsString(jsonEncode(<String, dynamic>{
-    'version': 1,
-    'exportedAt': DateTime.now().toUtc().toIso8601String(),
-    'noteType': def.toJson(),
-  }));
+  final File file = File(
+    '${dir.path}${Platform.pathSeparator}lapis-backup.json',
+  );
+  await file.writeAsString(
+    jsonEncode(<String, dynamic>{
+      'version': 1,
+      'exportedAt': DateTime.now().toUtc().toIso8601String(),
+      'noteType': def.toJson(),
+    }),
+  );
   return file;
 }
 
@@ -117,7 +124,9 @@ void main() {
 
   test('恢复成功：styling 写穿 + settings 与备份对齐', () async {
     final String backupCss = composeLapisCss(
-        fontScalePercent: 100, customCss: '.mine { color: #0f0; }');
+      fontScalePercent: 100,
+      customCss: '.mine { color: #0f0; }',
+    );
     final AnkiNoteTypeDefinition def = _definition(backupCss);
     final _FakeRepo repo = _FakeRepo(definition: def);
     final File file = await _writeBackup(dir, def);
@@ -145,8 +154,10 @@ void main() {
   });
 
   test('卡模板写入被后端拒绝：上抛而不是谎报成功', () async {
-    final String backupCss =
-        composeLapisCss(fontScalePercent: 100, customCss: '.mine { }');
+    final String backupCss = composeLapisCss(
+      fontScalePercent: 100,
+      customCss: '.mine { }',
+    );
     final AnkiNoteTypeDefinition def = _definition(backupCss);
     final _FakeRepo repo = _FakeRepo(definition: def, templatesOk: false);
     final File file = await _writeBackup(dir, def);

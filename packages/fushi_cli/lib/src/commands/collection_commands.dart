@@ -6,7 +6,7 @@ import '../ctl_commands.dart';
 ///
 /// 只是 `shelf_commands.dart` 里**唯一**那个 `collection` 组的一部分（由它展开进
 /// 组的 `commands`），不单独注册命令组——同名组注册两次会让 CLI 解析器在启动时
-/// 撞名。app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_collection_routes.dart`，
+/// 撞名。app 侧路由见 `fushi/lib/src/ops/ctl_collection_routes.dart`，
 /// 与合集的 ls / get / add / remove 同在 `/api/admin/library/collections` 下。
 ///
 /// 成员键与 `collection get` 列出的一致（`book:` / `srt:` / `video:` / `game:` 前缀

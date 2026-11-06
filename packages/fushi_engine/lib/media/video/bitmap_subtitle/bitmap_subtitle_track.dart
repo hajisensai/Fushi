@@ -120,17 +120,33 @@ List<BitmapSubtitleCue> decodeBitmapSubtitlePayload(
     case BitmapSubtitleCodec.pgs:
       return PgsSubtitleParser.parse(payload);
     case BitmapSubtitleCodec.dvd:
-      return decodeDvdSubtitlePackets(
+    case BitmapSubtitleCodec.dvb:
+      return decodeBitmapSubtitlePackets(
         demuxMpegTsSubtitlePackets(payload, complete: complete),
+        header,
+      );
+  }
+}
+
+/// 经 TS 承载的编码（VobSub / DVB）：已解复用出的字幕包 → cue。增量解复用
+/// （`MpegTsSubtitleDemuxSession`）攒下的包走这里，与 [decodeBitmapSubtitlePayload] 同一条
+/// 解码路径。[header] 是 PGS 时抛 [ArgumentError]（PGS 不经 TS）。
+List<BitmapSubtitleCue> decodeBitmapSubtitlePackets(
+  List<BitmapSubtitlePacket> packets,
+  BitmapSubtitleTrackHeader header,
+) {
+  switch (header.codec) {
+    case BitmapSubtitleCodec.pgs:
+      throw ArgumentError('PGS payloads are not carried in TS packets');
+    case BitmapSubtitleCodec.dvd:
+      return decodeDvdSubtitlePackets(
+        packets,
         header: VobSubHeader.parse(header.extradata),
         fallbackWidth: header.width,
         fallbackHeight: header.height,
       );
     case BitmapSubtitleCodec.dvb:
-      return decodeDvbSubtitlePackets(
-        demuxMpegTsSubtitlePackets(payload, complete: complete),
-        extradata: header.extradata,
-      );
+      return decodeDvbSubtitlePackets(packets, extradata: header.extradata);
   }
 }
 

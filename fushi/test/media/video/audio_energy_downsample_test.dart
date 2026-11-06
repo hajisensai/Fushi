@@ -8,8 +8,10 @@ import 'package:fushi/src/media/video/audio_energy_probe.dart';
 void main() {
   group('downsampleEnergyEnvelope', () {
     test('桶数 < 帧数：输出长度恰为 targetBuckets', () {
-      final List<double> frames =
-          List<double>.generate(1000, (int i) => i.toDouble());
+      final List<double> frames = List<double>.generate(
+        1000,
+        (int i) => i.toDouble(),
+      );
       expect(downsampleEnergyEnvelope(frames, 100).length, 100);
       expect(downsampleEnergyEnvelope(frames, 37).length, 37);
       expect(downsampleEnergyEnvelope(frames, 1).length, 1);
@@ -33,8 +35,11 @@ void main() {
       // 3 帧 3 桶，每桶单帧峰值即帧值。归一化在**线性振幅**域做（先 dB->10^(dB/20)）：
       // -30dB->0.03162, -20dB->0.1, -10dB->0.31623。桶数<=2 时分位落到最大值，退化为
       // min/max 归一化：min=0.03162 -> 0，max=0.31623 -> 1，中间桶按线性振幅比例落点。
-      final List<double> out =
-          downsampleEnergyEnvelope(<double>[-30, -20, -10], 3);
+      final List<double> out = downsampleEnergyEnvelope(<double>[
+        -30,
+        -20,
+        -10,
+      ], 3);
       expect(out.length, 3);
       expect(out[0], closeTo(0.0, 1e-6)); // 最小振幅 -> 地基 0
       // (0.1 - 0.03162) / (0.31623 - 0.03162) = 0.24025（不是线性拉伸 dB 的 0.5）。
@@ -47,8 +52,10 @@ void main() {
     });
 
     test('每桶跨多帧时仍夹在 0..1', () {
-      final List<double> frames =
-          List<double>.generate(500, (int i) => -120.0 + (i % 90));
+      final List<double> frames = List<double>.generate(
+        500,
+        (int i) => -120.0 + (i % 90),
+      );
       final List<double> out = downsampleEnergyEnvelope(frames, 64);
       expect(out.length, 64);
       for (final double v in out) {
@@ -79,16 +86,22 @@ void main() {
       });
 
       test('targetBuckets > 帧数：每帧一桶，不上采样补桶', () {
-        final List<double> out =
-            downsampleEnergyEnvelope(<double>[-30, -20, -10], 1000);
+        final List<double> out = downsampleEnergyEnvelope(<double>[
+          -30,
+          -20,
+          -10,
+        ], 1000);
         expect(out.length, 3); // 收敛到帧数，不产出 1000 桶
         expect(out[0], closeTo(0.0, 1e-9));
         expect(out[2], closeTo(1.0, 1e-9));
       });
 
       test('targetBuckets == 帧数：每帧一桶', () {
-        final List<double> out =
-            downsampleEnergyEnvelope(<double>[-30, -20, -10], 3);
+        final List<double> out = downsampleEnergyEnvelope(<double>[
+          -30,
+          -20,
+          -10,
+        ], 3);
         expect(out.length, 3);
       });
 
@@ -105,8 +118,10 @@ void main() {
     });
 
     test('幂等：同输入恒定同输出', () {
-      final List<double> frames =
-          List<double>.generate(777, (int i) => -100.0 + (i * 0.37) % 60);
+      final List<double> frames = List<double>.generate(
+        777,
+        (int i) => -100.0 + (i * 0.37) % 60,
+      );
       final List<double> a = downsampleEnergyEnvelope(frames, 120);
       final List<double> b = downsampleEnergyEnvelope(frames, 120);
       expect(a, b);
@@ -115,32 +130,16 @@ void main() {
     });
   });
 
-  group('dbToLinearAmplitude（TODO-1244 波形密度根因）', () {
-    test('0dB=满刻度 1.0；每 -20dB 掉一个数量级', () {
-      expect(dbToLinearAmplitude(0.0), closeTo(1.0, 1e-12));
-      expect(dbToLinearAmplitude(-20.0), closeTo(0.1, 1e-9));
-      expect(dbToLinearAmplitude(-40.0), closeTo(0.01, 1e-9));
-      expect(dbToLinearAmplitude(-6.020599913), closeTo(0.5, 1e-6)); // -6dB≈半幅
-    });
-
-    test('静音底（-120dB）塌到接近 0', () {
-      expect(dbToLinearAmplitude(-120.0), closeTo(1e-6, 1e-9));
-      expect(dbToLinearAmplitude(-120.0), lessThan(0.001));
-    });
-
-    test('单调：越响振幅越大', () {
-      expect(
-          dbToLinearAmplitude(-10.0), greaterThan(dbToLinearAmplitude(-30.0)));
-    });
-  });
-
   group('波形对比：句间静音可辨（TODO-1244）', () {
     test('中等安静段（-50dB）在线性域接近底部，而非线性拉伸 dB 的半高', () {
       // 静音 -80dB / 中等 -50dB / 语音 -20dB 三桶。
       // 线性拉伸 dB（旧）会把 -50dB 画成 0.5（半高，看着像有声）；线性振幅域（新）把它
       // 压到 ~0.03——安静段贴地、语音尖峰凸出，句子边界可辨。
-      final List<double> out =
-          downsampleEnergyEnvelope(<double>[-80, -50, -20], 3);
+      final List<double> out = downsampleEnergyEnvelope(<double>[
+        -80,
+        -50,
+        -20,
+      ], 3);
       expect(out.length, 3);
       expect(out[0], closeTo(0.0, 1e-3)); // 静音 -> 地基
       expect(out[1], lessThan(0.1)); // 中等安静段远低于旧的 0.5
@@ -148,8 +147,10 @@ void main() {
     });
 
     test('纯静音（全 -120dB）画平：全 0，不被归一化放大到满高', () {
-      final List<double> out =
-          downsampleEnergyEnvelope(List<double>.filled(20, -120.0), 8);
+      final List<double> out = downsampleEnergyEnvelope(
+        List<double>.filled(20, -120.0),
+        8,
+      );
       expect(out, List<double>.filled(8, 0.0));
     });
   });

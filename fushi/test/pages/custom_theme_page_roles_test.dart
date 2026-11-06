@@ -2,12 +2,13 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show kCustomThemeDefaultSeed;
 import 'package:fushi/src/pages/implementations/custom_theme_page.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -25,9 +26,9 @@ class _RecordingAppModel extends AppModel {
   _RecordingAppModel({
     List<CustomThemeEntry> themes = const <CustomThemeEntry>[],
     String themeKey = 'system-theme',
-  })  : _themes = List<CustomThemeEntry>.from(themes),
-        _themeKey = themeKey,
-        super(testPlatformServices());
+  }) : _themes = List<CustomThemeEntry>.from(themes),
+       _themeKey = themeKey,
+       super(testPlatformServices());
 
   final List<CustomThemeEntry> _themes;
   String _themeKey;
@@ -133,16 +134,9 @@ final Finder _verticalScrollable = find
 /// `scrollUntilVisible` 只保证进了视口，目标可能正被页头 / 预览压着，
 /// 点下去落在叠放层上。再把它对到视口中下部、露出叠放层之外再点。
 Future<void> _revealUnobscured(WidgetTester tester, Finder target) async {
-  await tester.scrollUntilVisible(
-    target,
-    120,
-    scrollable: _verticalScrollable,
-  );
+  await tester.scrollUntilVisible(target, 120, scrollable: _verticalScrollable);
   await tester.pumpAndSettle();
-  await Scrollable.ensureVisible(
-    tester.element(target.first),
-    alignment: 0.7,
-  );
+  await Scrollable.ensureVisible(tester.element(target.first), alignment: 0.7);
   await tester.pumpAndSettle();
 }
 
@@ -330,7 +324,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       await _scrollToSwitches(tester);
-      final Switch autoTone = tester.widget<Switch>(glassUnwrap<Switch>(_settingsSwitch(1)));
+      final Switch autoTone = tester.widget<Switch>(
+        glassUnwrap<Switch>(_settingsSwitch(1)),
+      );
       expect(autoTone.value, isTrue);
 
       await _tapApply(tester);
@@ -354,8 +350,10 @@ void main() {
         scrollable: _verticalScrollable,
       );
       await tester.pumpAndSettle();
-      final int followingBefore =
-          find.text(t.theme_role_follows_theme).evaluate().length;
+      final int followingBefore = find
+          .text(t.theme_role_follows_theme)
+          .evaluate()
+          .length;
       expect(followingBefore, greaterThanOrEqualTo(4));
       expect(find.byTooltip(t.theme_role_reset), findsNothing);
 

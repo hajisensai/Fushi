@@ -21,25 +21,27 @@ void main() {
       expect(m.plainText, '題');
     });
 
-    test('\\fscy10 + \\t(18,226,\\fscy100)：缩放动画 from 0.1 → to 1.0，t=18..226',
-        () {
-      final SubtitleMarkup m = parseSubtitleMarkup(
-        r'{\fs40\bord3\pos(219,330)\fscy10\t(18,226,\fscy100)}生',
-        playResX: 1280,
-        playResY: 720,
-      );
-      final SubtitleScale? s = m.scale;
-      expect(s, isNotNull);
-      expect(s!.fromY, closeTo(0.1, 1e-9));
-      expect(s.toY, closeTo(1.0, 1e-9));
-      expect(s.fromX, 1.0);
-      expect(s.isAnimated, isTrue);
-      expect(s.t1Ms, 18);
-      expect(s.t2Ms, 226);
-      // 动画中点(t=122)纵向缩放约 (0.1+1.0)/2=0.55。
-      final (double, double) mid = s.scaleAt(122, 5000);
-      expect(mid.$2, closeTo(0.55, 0.02));
-    });
+    test(
+      '\\fscy10 + \\t(18,226,\\fscy100)：缩放动画 from 0.1 → to 1.0，t=18..226',
+      () {
+        final SubtitleMarkup m = parseSubtitleMarkup(
+          r'{\fs40\bord3\pos(219,330)\fscy10\t(18,226,\fscy100)}生',
+          playResX: 1280,
+          playResY: 720,
+        );
+        final SubtitleScale? s = m.scale;
+        expect(s, isNotNull);
+        expect(s!.fromY, closeTo(0.1, 1e-9));
+        expect(s.toY, closeTo(1.0, 1e-9));
+        expect(s.fromX, 1.0);
+        expect(s.isAnimated, isTrue);
+        expect(s.t1Ms, 18);
+        expect(s.t2Ms, 226);
+        // 动画中点(t=122)纵向缩放约 (0.1+1.0)/2=0.55。
+        final (double, double) mid = s.scaleAt(122, 5000);
+        expect(mid.$2, closeTo(0.55, 0.02));
+      },
+    );
 
     test('\\fscx60 + \\frz242.7 + \\move(...,23,3901)：静态横缩放 + 旋转 + 运动', () {
       final SubtitleMarkup m = parseSubtitleMarkup(
@@ -87,8 +89,10 @@ void main() {
         ..endMs = 5000;
     }
 
-    Future<VideoPlayerController> pump(WidgetTester tester,
-        {required bool respect}) async {
+    Future<VideoPlayerController> pump(
+      WidgetTester tester, {
+      required bool respect,
+    }) async {
       tester.view.physicalSize = const Size(1280, 720);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
@@ -96,18 +100,22 @@ void main() {
       addTearDown(c.dispose);
       c.setCues(<AudioCue>[rotatedSign()]);
       c.debugUpdateCueForPosition(1000);
-      await tester.pumpWidget(MaterialApp(
-        // 关调试横幅：它是一个 45° 旋转 Transform，会污染 [hasRotation] 扫描。
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          body: SizedBox(
-            width: 1280,
-            height: 720,
-            child:
-                VideoSubtitleOverlay(controller: c, respectAssStyle: respect),
+      await tester.pumpWidget(
+        MaterialApp(
+          // 关调试横幅：它是一个 45° 旋转 Transform，会污染 [hasRotation] 扫描。
+          debugShowCheckedModeBanner: false,
+          home: Scaffold(
+            body: SizedBox(
+              width: 1280,
+              height: 720,
+              child: VideoSubtitleOverlay(
+                controller: c,
+                respectAssStyle: respect,
+              ),
+            ),
           ),
         ),
-      ));
+      );
       await tester.pump();
       return c;
     }
@@ -118,7 +126,9 @@ void main() {
       // 阈值 0.1 远高于数值噪声）。
       final Iterable<Transform> ancestors = tester.widgetList<Transform>(
         find.ancestor(
-            of: find.text('看').first, matching: find.byType(Transform)),
+          of: find.text('看').first,
+          matching: find.byType(Transform),
+        ),
       );
       for (final Transform t in ancestors) {
         final Matrix4 m = t.transform;
@@ -129,15 +139,17 @@ void main() {
       return false;
     }
 
-    testWidgets('respectAssStyle ON：招牌被旋转（存在旋转 Transform）',
-        (WidgetTester tester) async {
+    testWidgets('respectAssStyle ON：招牌被旋转（存在旋转 Transform）', (
+      WidgetTester tester,
+    ) async {
       await pump(tester, respect: true);
       expect(find.text('看'), findsNWidgets(2)); // stroke+fill
       expect(hasRotation(tester), isTrue, reason: '\\frz30 应产出旋转 Transform');
     });
 
-    testWidgets('respectAssStyle OFF：不旋转（历史行为，无旋转 Transform）',
-        (WidgetTester tester) async {
+    testWidgets('respectAssStyle OFF：不旋转（历史行为，无旋转 Transform）', (
+      WidgetTester tester,
+    ) async {
       await pump(tester, respect: false);
       // 默认外观(OFF)=单层 fill+柔和阴影(PR#23/BUG-323)，无 stroke 层，故 1 个候选
       expect(find.text('看'), findsNWidgets(1));

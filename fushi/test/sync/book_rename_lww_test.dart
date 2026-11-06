@@ -74,27 +74,25 @@ void main() {
     FushiDatabase db, {
     Future<String?> Function(File)? importBookFromFile,
     ReaderFushiSource? source,
-  }) =>
-      LocalLibraryHostService(
-        db: db,
-        dictionaryResourceRoot: Directory.systemTemp,
-        packages: SyncAssetPackageService(db: db),
-        refreshDictionaryCache: () async {},
-        runExclusive: (Future<void> Function() body) => body(),
-        importBookFromFile: importBookFromFile,
-        adoptOverrideTitle: source == null
-            ? null
-            : ({
-                required String bookKey,
-                required String title,
-                required int updatedAt,
-              }) =>
-                source.adoptOverrideTitleIfNewer(
-                  item: source.overrideTitleMediaItemForBookKey(bookKey),
-                  title: title,
-                  updatedAt: updatedAt,
-                ),
-      );
+  }) => LocalLibraryHostService(
+    db: db,
+    dictionaryResourceRoot: Directory.systemTemp,
+    packages: SyncAssetPackageService(db: db),
+    refreshDictionaryCache: () async {},
+    runExclusive: (Future<void> Function() body) => body(),
+    importBookFromFile: importBookFromFile,
+    adoptOverrideTitle: source == null
+        ? null
+        : ({
+            required String bookKey,
+            required String title,
+            required int updatedAt,
+          }) => source.adoptOverrideTitleIfNewer(
+            item: source.overrideTitleMediaItemForBookKey(bookKey),
+            title: title,
+            updatedAt: updatedAt,
+          ),
+  );
 
   /// 把 [db] 装成 `MediaSource` 的共享库并清掉源的内存偏好缓存，让
   /// `ReaderFushiSource.instance`（单例，跨用例复用）每次都从这个库读。
@@ -116,8 +114,9 @@ void main() {
     );
     expect(renamed.toJson()['displayTitleAt'], 1700000000000);
 
-    final RemoteBookInfo decoded =
-        RemoteBookInfo.fromJson(renamed.toJson().cast<String, Object?>());
+    final RemoteBookInfo decoded = RemoteBookInfo.fromJson(
+      renamed.toJson().cast<String, Object?>(),
+    );
     expect(decoded.displayTitle, '我改的名字');
     expect(decoded.displayTitleAt, 1700000000000);
     // 身份红线：显示名与戳都不参与任何键派生。
@@ -125,8 +124,10 @@ void main() {
   });
 
   test('没改过名 / 戳为 0：不写 displayTitleAt 键（旧 client 字节不变）', () {
-    const RemoteBookInfo plain =
-        RemoteBookInfo(title: '原始书名', hasContent: true);
+    const RemoteBookInfo plain = RemoteBookInfo(
+      title: '原始书名',
+      hasContent: true,
+    );
     expect(plain.toJson().containsKey('displayTitleAt'), isFalse);
 
     // 改过名但戳 0（v84 迁移前改的存量）→ 发名字不发戳。
@@ -212,8 +213,11 @@ void main() {
       ),
       isTrue,
     );
-    expect(source.overrideTitleForBookKey('书甲'), '母设备第二次',
-        reason: '内存缓存必须与 DB 一起走，否则书架会一直显示旧名');
+    expect(
+      source.overrideTitleForBookKey('书甲'),
+      '母设备第二次',
+      reason: '内存缓存必须与 DB 一起走，否则书架会一直显示旧名',
+    );
     expect(
       PrefCodec.decodeUntyped((await db.getAllPrefs())[overridePrefKey('书甲')]!),
       '母设备第二次',
@@ -280,8 +284,9 @@ void main() {
   // ── D. 备份合并：与另两条通道同一裁决 ────────────────────────────────────
 
   test('合并导入 LWW：更新的覆盖、更旧的不覆盖、平局保留本机', () async {
-    final Directory srcDir =
-        await Directory.systemTemp.createTemp('bug1502_src_');
+    final Directory srcDir = await Directory.systemTemp.createTemp(
+      'bug1502_src_',
+    );
     addTearDown(() => cleanupTempDir(srcDir));
     final FushiDatabase src = FushiDatabase(srcDir.path);
     for (final String key in <String>['书甲', '书乙', '书丙', '书丁']) {
@@ -289,14 +294,26 @@ void main() {
     }
     // 甲：src 更新 → 应覆盖。乙：src 更旧 → 不覆盖。丙：平局 → 保留本机。
     // 丁：本机没有 → 采纳。
-    await src.setPrefIfNewer(overridePrefKey('书甲'), PrefCodec.encode('母设备较新'),
-        updatedAt: 2000);
-    await src.setPrefIfNewer(overridePrefKey('书乙'), PrefCodec.encode('母设备较旧'),
-        updatedAt: 1000);
-    await src.setPrefIfNewer(overridePrefKey('书丙'), PrefCodec.encode('母设备同戳'),
-        updatedAt: 1500);
-    await src.setPrefIfNewer(overridePrefKey('书丁'), PrefCodec.encode('母设备独有'),
-        updatedAt: 1234);
+    await src.setPrefIfNewer(
+      overridePrefKey('书甲'),
+      PrefCodec.encode('母设备较新'),
+      updatedAt: 2000,
+    );
+    await src.setPrefIfNewer(
+      overridePrefKey('书乙'),
+      PrefCodec.encode('母设备较旧'),
+      updatedAt: 1000,
+    );
+    await src.setPrefIfNewer(
+      overridePrefKey('书丙'),
+      PrefCodec.encode('母设备同戳'),
+      updatedAt: 1500,
+    );
+    await src.setPrefIfNewer(
+      overridePrefKey('书丁'),
+      PrefCodec.encode('母设备独有'),
+      updatedAt: 1234,
+    );
     await src.close();
 
     final FushiDatabase target = await openDb('bug1502_dst_');
@@ -304,17 +321,24 @@ void main() {
       await target.insertEpubBook(book(key, key));
     }
     await target.setPrefIfNewer(
-        overridePrefKey('书甲'), PrefCodec.encode('子设备较旧'),
-        updatedAt: 1000);
+      overridePrefKey('书甲'),
+      PrefCodec.encode('子设备较旧'),
+      updatedAt: 1000,
+    );
     await target.setPrefIfNewer(
-        overridePrefKey('书乙'), PrefCodec.encode('子设备较新'),
-        updatedAt: 2000);
+      overridePrefKey('书乙'),
+      PrefCodec.encode('子设备较新'),
+      updatedAt: 2000,
+    );
     await target.setPrefIfNewer(
-        overridePrefKey('书丙'), PrefCodec.encode('子设备同戳'),
-        updatedAt: 1500);
+      overridePrefKey('书丙'),
+      PrefCodec.encode('子设备同戳'),
+      updatedAt: 1500,
+    );
 
-    final String srcDbPath =
-        p.join(srcDir.path, 'fushi.db').replaceAll(r'\', '/');
+    final String srcDbPath = p
+        .join(srcDir.path, 'fushi.db')
+        .replaceAll(r'\', '/');
     await target.customStatement("ATTACH DATABASE '$srcDbPath' AS mergesrc");
     await BackupMergeEngine(target).merge();
     await target.customStatement('DETACH DATABASE mergesrc');
@@ -324,8 +348,11 @@ void main() {
         PrefCodec.decodeUntyped(prefs[overridePrefKey(key)]!) as String;
 
     expect(nameOf('书甲'), '母设备较新', reason: '母设备的第二次改名必须并进来（本 bug 的核心）');
-    expect(await target.getPrefUpdatedAt(overridePrefKey('书甲')), 2000,
-        reason: '戳也要跟着走，否则下一轮合并的比较基准是错的');
+    expect(
+      await target.getPrefUpdatedAt(overridePrefKey('书甲')),
+      2000,
+      reason: '戳也要跟着走，否则下一轮合并的比较基准是错的',
+    );
     expect(nameOf('书乙'), '子设备较新', reason: '更旧的备份不得回滚本机改名');
     expect(nameOf('书丙'), '子设备同戳', reason: '平局保留本机');
     expect(nameOf('书丁'), '母设备独有', reason: 'insert-if-absent 能力不能退化');
@@ -352,8 +379,9 @@ void main() {
       FushiClientUrl(url: 'http://127.0.0.1:${server.port}', enabled: true),
     ]);
     await repo.setFushiClientToken('tok');
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String u, String t) async => true);
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+      (String u, String t) async => true,
+    );
     await backend.restoreAuth(repo);
     await backend.authenticate(repo: repo);
 
@@ -376,10 +404,7 @@ void main() {
     );
     expect(seen[kBookDisplayTitleAtHeader.toLowerCase()], '1700000000000');
     // 改名前的 host 只读旧名：两个 header 都要以旧名再发一份。
-    expect(
-      seen['x-hibiki-book-display-title'],
-      Uri.encodeComponent('本機改的名'),
-    );
+    expect(seen['x-hibiki-book-display-title'], Uri.encodeComponent('本機改的名'));
     expect(seen['x-hibiki-book-display-title-at'], '1700000000000');
   });
 
@@ -402,8 +427,9 @@ void main() {
       FushiClientUrl(url: 'http://127.0.0.1:${server.port}', enabled: true),
     ]);
     await repo.setFushiClientToken('tok');
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String u, String t) async => true);
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+      (String u, String t) async => true,
+    );
     await backend.restoreAuth(repo);
     await backend.authenticate(repo: repo);
 
@@ -450,7 +476,9 @@ void main() {
     // override 挂在 importer 返回的真实 bookKey 上，不是 URL 里的 title。
     expect(source.overrideTitleForBookKey('原始書名 (2)'), '推送方改的名');
     expect(
-        await db.getPrefUpdatedAt(overridePrefKey('原始書名 (2)')), 1700000000000);
+      await db.getPrefUpdatedAt(overridePrefKey('原始書名 (2)')),
+      1700000000000,
+    );
     // 身份红线：显示名没有变成书的 title / bookKey。
     final List<EpubBookRow> rows = await db.getAllEpubBooks();
     expect(rows.single.title, '原始書名 (2)');

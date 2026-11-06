@@ -144,8 +144,9 @@ List<Map<String, dynamic>> _frequencies(dynamic raw) {
         'hasReading': false,
         'frequencyMode': 'rank-based',
         'frequency': (v['value'] as num?)?.toInt() ?? 0,
-        'displayValue':
-            (display is String && display.isNotEmpty) ? display : null,
+        'displayValue': (display is String && display.isNotEmpty)
+            ? display
+            : null,
         'displayValueParsed': false,
       });
     }

@@ -9,6 +9,9 @@ bool IsSiglusVoiceSourceInstalled();
 
 constexpr uint32_t kSiglusMessageMaxTextUnits = 1500;
 constexpr uint32_t kSiglusMessageTaskSlots = 32;
+// ENGINE: marks a proved engine boundary (one per game, the on-screen line);
+// the app auto-selects such a thread instead of asking the user to pick it.
+constexpr wchar_t kSiglusMessageHookCode[] = L"ENGINE:SIGLUS:message";
 struct SiglusMessageTextTask {
   uint64_t tick_ms = 0;
   uint32_t voice_key = UINT32_MAX;
@@ -27,6 +30,9 @@ fushi_voice_hook::SiglusMessageLayout g_siglus_message_layout;
 bool g_siglus_message_native_ecx = false;
 bool g_siglus_message_legacy = false;
 bool g_siglus_message_eightarg = false;
+// The nine-argument wrapper carries no script voice key. Its lane owns the
+// text only; archive reads keep the time-paired OVK capture.
+bool g_siglus_message_silent_voice = false;
 fushi_voice_hook::siglus_eightarg_message::Layout g_siglus_eightarg_message_layout;
 fushi_voice_hook::SiglusLegacyMessageProfile g_siglus_legacy_message_profile;
 fushi_voice_hook::SiglusLegacyMessageLayout g_siglus_legacy_message_layout;
@@ -276,6 +282,12 @@ bool IsSiglusMessageVoiceMappingProved() {
          IsSiglusVoiceSourceInstalled();
 }
 
+// Whether the installed message lane decides voice: then unproved archive
+// reads must not reach the time matcher. A silent lane decides nothing.
+bool IsSiglusMessageVoiceOwned() {
+  return IsSiglusMessageTextInstalled() && !g_siglus_message_silent_voice;
+}
+
 // Never free a trampoline that a thread already inside an observer may jump to.
 // Disabled previously-enabled hooks keep their trampolines until DLL-wide
 // MinHook teardown. A failed disable prevents Luna ownership from being granted.
@@ -405,6 +417,9 @@ bool InstallSiglusMessageHookGroup() {
   if (complete) {
     g_siglus_message_install_state.store(1, std::memory_order_release);
     g_siglus_message_capture_enabled.store(true, std::memory_order_release);
+    // The proved message boundary owns this process's text from now on. GDI
+    // would otherwise publish save-screen dates etc. before the first line.
+    if (g_header != nullptr) g_header->luna_active = 1;
   } else {
     const bool clean = RollbackSiglusMessageHooks();
     // BUG-2348: NativeEcx's plain fallback targets this same MinHook registry.
@@ -444,6 +459,33 @@ bool TryHookSiglusMessageText() {
     g_siglus_message_profile.scenario_return_rva = sites.message_scenario_return_rva;
     g_siglus_message_targets[0] = reinterpret_cast<void*>(base + sites.message_entry_rva);
     g_siglus_message_targets[1] = reinterpret_cast<void*>(base + sites.scenario_entry_rva);
+    return InstallSiglusMessageHookGroup();
+  }
+  if (IsNineArgSiglusLookup(*lane)) {
+    // The family resolver already proved the wrapper, its legacy text call
+    // and the shared stack layout. Install only over original prologues.
+    const auto& sites = g_siglus_ninearg_sites;
+    bool original = false;
+    __try {
+      original = sites.message_entry != 0 && sites.text_entry != 0 &&
+          reinterpret_cast<const uint8_t*>(base)[sites.message_entry] == 0x6a &&
+          reinterpret_cast<const uint8_t*>(base)[sites.text_entry] == 0x6a;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+      original = false;
+    }
+    if (!original) {
+      g_siglus_message_install_state.store(-1, std::memory_order_release);
+      return false;
+    }
+    g_siglus_message_legacy = true;
+    g_siglus_message_silent_voice = true;
+    g_siglus_legacy_message_layout = {
+        0u, static_cast<uint32_t>(base + sites.message_text_return),
+        kSiglusMessageMaxTextUnits, false};
+    g_siglus_message_scenario_rva = sites.text_entry;
+    g_siglus_message_profile.scenario_return_rva = sites.message_text_return;
+    g_siglus_message_targets[0] = reinterpret_cast<void*>(base + sites.message_entry);
+    g_siglus_message_targets[1] = reinterpret_cast<void*>(base + sites.text_entry);
     return InstallSiglusMessageHookGroup();
   }
   if (lane->glyph_abi ==
@@ -505,12 +547,22 @@ bool TryHookSiglusMessageText() {
       profile.owner_voice_key_offset, profile.owner_surface_index_offset,
       profile.owner_surface_begin_offset, profile.owner_surface_end_offset,
       profile.surface_stride,
-      static_cast<uint32_t>(base + profile.message_surface_return_rva),
-      static_cast<uint32_t>(base + profile.scenario_return_rva)};
+      profile.direct_scenario_call
+          ? 0u
+          : static_cast<uint32_t>(base + profile.message_surface_return_rva),
+      static_cast<uint32_t>(base + profile.scenario_return_rva),
+      profile.direct_scenario_call};
   g_siglus_message_scenario_rva = lane->exact_text_rva;
   g_siglus_message_targets[0] = reinterpret_cast<void*>(base + profile.message_entry_rva);
   g_siglus_message_targets[1] = reinterpret_cast<void*>(base + lane->exact_text_rva);
   return InstallSiglusMessageHookGroup();
+}
+
+// The text-lane identity this message lane commits under; 0 until installed.
+uint64_t SiglusMessageLaneThreadId() {
+  if (!IsSiglusMessageTextInstalled()) return 0;
+  return (static_cast<uint64_t>(g_siglus_message_scenario_rva) << 32) ^
+         g_siglus_message_profile.scenario_return_rva;
 }
 
 void ProcessSiglusMessageTextTasks() {
@@ -522,17 +574,15 @@ void ProcessSiglusMessageTextTasks() {
   for (uint32_t count = 0; count < kSiglusMessageTaskSlots; ++count) {
     if (!g_siglus_message_tasks.TryPop(&task)) break;
     if (g_siglus_message_eightarg && task.eightarg_epoch == 0) continue;
-    const uint64_t thread_id =
-        (static_cast<uint64_t>(g_siglus_message_scenario_rva) << 32) ^
-        g_siglus_message_profile.scenario_return_rva;
+    const uint64_t thread_id = SiglusMessageLaneThreadId();
     EnterCriticalSection(&g_text_cs);
     uint64_t committed_tick_ms = 0;
     const uint64_t event_id = WriteTextRingEntryLocked(
         task.text, static_cast<int>(task.text_units), thread_id,
         g_siglus_message_scenario_rva,
         g_siglus_message_profile.scenario_return_rva,
-        fushi_voice_hook::kTextSourceSiglus, "SiglusEngine message", nullptr,
-        &committed_tick_ms);
+        fushi_voice_hook::kTextSourceSiglus, "SiglusEngine message",
+        kSiglusMessageHookCode, &committed_tick_ms);
     if (event_id != 0) {
       const fushi_voice_hook::SiglusLookupTextIdentity identity{event_id, thread_id};
       if (task.eightarg_epoch == 0 || BindSiglusEightArgText(
@@ -572,6 +622,8 @@ bool TryHookSiglusMessageText() { return false; }
 bool IsSiglusMessageTextInstalled() { return false; }
 bool IsSiglusMessageTextOwnershipBlocked() { return false; }
 bool IsSiglusMessageVoiceMappingProved() { return false; }
+bool IsSiglusMessageVoiceOwned() { return false; }
+uint64_t SiglusMessageLaneThreadId() { return 0; }
 void ProcessSiglusMessageTextTasks() {}
 void ShutdownSiglusMessageText() {}
 

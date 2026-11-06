@@ -8,7 +8,9 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:path/path.dart' as p;
 
-/// BUG-2642 残留的端到端证据：真捆绑 ffmpeg-min + 真本机中继 + 伪装分片的 HLS。
+import '../../helpers/unified_ffmpeg.dart';
+
+/// BUG-2642 残留的端到端证据：真随包统一 FFmpeg + 真本机中继 + 伪装分片的 HLS。
 ///
 /// 上游形状照抄在线 hoster：播放列表里的分片叫 `seg0.jpg`，响应 `image/png`，正文先是
 /// 一张 PNG（垫到 252 字节，AnimeKai / MegaPlay 的实测长度）再接 MPEG-TS。
@@ -16,11 +18,13 @@ import 'package:path/path.dart' as p;
 /// 播放列表挂在一个**解析不了的域名**上，只有中继（经用户代理出网，本地服务就是那个
 /// 代理）能取到——所以「本地服务收到了请求」本身就证明 ffmpeg 走了中继，而不是碰巧
 /// 直连成功。三组对照：
-///  - 不改道：直连解析不了域名，失败（改动前制卡的样子）；
+///  - 不改道：失败（改动前制卡的样子）。ffmpeg 跟随 app 代理（vhW6OpRy2H），播放列表
+///    可能经用户代理取到，但伪装分片读不出；所以这一组之后清空请求记录，后两组的
+///    「本地服务收到了请求」只记经中继那一程；
 ///  - 改道但不放开扩展名：FFmpeg 7.1 按白名单拒掉 `.jpg` 分片（`Invalid data`）；
 ///  - 改道 + 放开：抽出句子音频，本地服务先后收到播放列表与分片。
 ///
-/// 只在带捆绑 ffmpeg-min 的平台跑（Windows / macOS）；它是 BUG-2642 那条配方产物。
+/// 只在带随包统一 FFmpeg 的平台跑（Windows / macOS）；它是 BUG-2642 那条配方产物。
 void main() {
   final String? bundled = _bundledFfmpeg();
 
@@ -135,9 +139,17 @@ void main() {
             onFailure: failures.add,
           );
 
-      // 不改道：直连解析不了域名。
+      // 不改道：ffmpeg 跟随 app 代理裁决（反馈 vhW6OpRy2H，PR #2753 起制卡 ffmpeg 的远端
+      // 输入与 Dart 出站同一份代理）——这里用户代理就是本地服务，所以播放列表可能经它
+      // 取到；但没有中继放开扩展名、剥 PNG 前缀，伪装分片照样读不出（改动前制卡的样子）。
       expect(await cut(source, 'direct'), isNull);
-      expect(seen, isEmpty, reason: '直连不该经过中继');
+      expect(
+        seen,
+        isNot(contains('/hls/seg0.jpg')),
+        reason: '不经中继时 `.jpg` 分片在请求前就被扩展名白名单拒掉',
+      );
+      // 下面两组只看经中继那一程收到的请求。
+      seen.clear();
 
       // 改道但不放开扩展名：`.jpg` 分片被白名单拒掉。
       final ({String url, Future<void> ready}) strict = relayFfmpegRemoteInput(
@@ -166,7 +178,7 @@ void main() {
       expect(File(out!).lengthSync(), greaterThan(0));
       expect(seen, containsAllInOrder(<String>['/hls/index', '/hls/seg0.jpg']));
     },
-    skip: bundled == null ? '只在带捆绑 ffmpeg-min 的平台跑（Windows / macOS）' : false,
+    skip: bundled == null ? '只在带随包统一 FFmpeg 的平台跑（Windows / macOS）' : false,
     timeout: const Timeout(Duration(seconds: 90)),
   );
 
@@ -326,18 +338,9 @@ void main() {
         containsAll(<String>['/m/lo/index', '/m/mid/index', '/m/hi/index']),
       );
     },
-    skip: bundled == null ? '只在带捆绑 ffmpeg-min 的平台跑（Windows / macOS）' : false,
+    skip: bundled == null ? '只在带随包统一 FFmpeg 的平台跑（Windows / macOS）' : false,
     timeout: const Timeout(Duration(seconds: 90)),
   );
 }
 
-String? _bundledFfmpeg() {
-  final String? rel = Platform.isWindows
-      ? p.join('..', 'third_party', 'ffmpeg-min', 'windows', 'ffmpeg.exe')
-      : Platform.isMacOS
-      ? p.join('..', 'third_party', 'ffmpeg-min', 'macos', 'ffmpeg')
-      : null;
-  if (rel == null) return null;
-  final File file = File(p.normalize(p.absolute(rel)));
-  return file.existsSync() ? file.path : null;
-}
+String? _bundledFfmpeg() => resolveBundledUnifiedFfmpegForTests()?.ffmpeg;

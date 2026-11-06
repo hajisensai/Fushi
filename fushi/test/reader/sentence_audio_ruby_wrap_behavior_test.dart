@@ -140,7 +140,8 @@ void main() {
     expect(
       selection,
       contains('window.__fushiLiveRanges.moveNodes([node], function() {'),
-      reason: 'the <fushi-hl-text> move keeps live Ranges and the native '
+      reason:
+          'the <fushi-hl-text> move keeps live Ranges and the native '
           'selection',
     );
   });

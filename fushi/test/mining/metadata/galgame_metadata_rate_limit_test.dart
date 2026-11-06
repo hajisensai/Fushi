@@ -1,7 +1,7 @@
 /// 令牌桶限流 + `Retry-After` 的确定性测试：时钟与 sleep 全部注入，**不等真实时间**。
 library;
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_rate_limit.dart';
 
 /// 虚拟时钟：`sleep` 直接把时间快进过去，测试零真实耗时。
@@ -200,9 +200,13 @@ void main() {
     test('已过期的 HTTP-date → null；月份非法 → null', () {
       final DateTime now = DateTime.utc(2026, 1, 1);
       expect(
-          parseRetryAfter('Sun, 06 Nov 1994 08:49:37 GMT', now: now), isNull);
+        parseRetryAfter('Sun, 06 Nov 1994 08:49:37 GMT', now: now),
+        isNull,
+      );
       expect(
-          parseRetryAfter('Sun, 06 Xxx 2030 08:49:37 GMT', now: now), isNull);
+        parseRetryAfter('Sun, 06 Xxx 2030 08:49:37 GMT', now: now),
+        isNull,
+      );
       expect(parseRetryAfter('2030-01-01T00:00:00Z', now: now), isNull);
     });
   });

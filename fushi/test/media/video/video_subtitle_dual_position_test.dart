@@ -17,31 +17,29 @@ AudioCue _cueWithMarkup(
   SubtitleMarkup markup, {
   int start = 0,
   int end = 8000,
-}) =>
-    AudioCue()
-      ..bookKey = 'b'
-      ..chapterHref = 'c'
-      ..sentenceIndex = 0
-      ..textFragmentId = ''
-      ..text = text
-      ..markup = markup
-      ..startMs = start
-      ..endMs = end
-      ..audioFileIndex = 0;
+}) => AudioCue()
+  ..bookKey = 'b'
+  ..chapterHref = 'c'
+  ..sentenceIndex = 0
+  ..textFragmentId = ''
+  ..text = text
+  ..markup = markup
+  ..startMs = start
+  ..endMs = end
+  ..audioFileIndex = 0;
 
 SubtitleMarkup _markup(
   String text, {
   required SubtitleVAlign valign,
   int? primaryColorArgb,
-}) =>
-    SubtitleMarkup(
-      plainText: text,
-      spans: const <SubtitleSpan>[],
-      anchor: SubtitleAnchor(valign, SubtitleHAlign.center),
-      cueStyle: primaryColorArgb == null
-          ? null
-          : SubtitleCueStyle(primaryColorArgb: primaryColorArgb),
-    );
+}) => SubtitleMarkup(
+  plainText: text,
+  spans: const <SubtitleSpan>[],
+  anchor: SubtitleAnchor(valign, SubtitleHAlign.center),
+  cueStyle: primaryColorArgb == null
+      ? null
+      : SubtitleCueStyle(primaryColorArgb: primaryColorArgb),
+);
 
 Future<void> _pump(WidgetTester tester, Widget child) async {
   await tester.pumpWidget(MaterialApp(home: Scaffold(body: child)));
@@ -54,58 +52,89 @@ Text _fillOf(WidgetTester tester, String ch) => tester
 
 void main() {
   group('TODO-1341 双字幕各就各位（不同锚点独立定位，不来回跳）', () {
-    testWidgets('顶部 \\an8 + 底部 \\an2 重叠：顶部在上、底部在下（不共位）',
-        (WidgetTester tester) async {
+    testWidgets('顶部 \\an8 + 底部 \\an2 重叠：顶部在上、底部在下（不共位）', (
+      WidgetTester tester,
+    ) async {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
       // A 顶部歌词 0-5000、B 底部对白 2000-8000；3000 处两条同时活动。
       c.setCues(<AudioCue>[
-        _cueWithMarkup('上', _markup('上', valign: SubtitleVAlign.top),
-            start: 0, end: 5000),
-        _cueWithMarkup('下', _markup('下', valign: SubtitleVAlign.bottom),
-            start: 2000, end: 8000),
+        _cueWithMarkup(
+          '上',
+          _markup('上', valign: SubtitleVAlign.top),
+          start: 0,
+          end: 5000,
+        ),
+        _cueWithMarkup(
+          '下',
+          _markup('下', valign: SubtitleVAlign.bottom),
+          start: 2000,
+          end: 8000,
+        ),
       ]);
       c.debugUpdateCueForPosition(3000);
       // 两条都活动。
-      expect(c.activeCues.map((AudioCue e) => e.text).toList(),
-          <String>['上', '下']);
+      expect(c.activeCues.map((AudioCue e) => e.text).toList(), <String>[
+        '上',
+        '下',
+      ]);
 
       // BUG-903：ASS 定位现属「尊重 .ass」语义（respectAssStyle 关=纯字幕模式恒底部）。
       await _pump(
-          tester, VideoSubtitleOverlay(controller: c, respectAssStyle: true));
+        tester,
+        VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+      );
 
       // 尊重 .ass（BUG-903 起定位属尊重语义）：每字 stroke+fill 两层 Text → 各 2 个。
       expect(find.text('上'), findsNWidgets(2));
       expect(find.text('下'), findsNWidgets(2));
 
-      final Rect overlayRect =
-          tester.getRect(find.byType(VideoSubtitleOverlay));
+      final Rect overlayRect = tester.getRect(
+        find.byType(VideoSubtitleOverlay),
+      );
       final double topDy = tester.getCenter(find.text('上').first).dy;
       final double bottomDy = tester.getCenter(find.text('下').first).dy;
       // 核心：顶部字幕落画面上半、底部字幕落下半——修复前两条会被裹挟到同一处。
-      expect(topDy, lessThan(overlayRect.center.dy),
-          reason: '\\an8 顶部字幕必须在画面上半');
-      expect(bottomDy, greaterThan(overlayRect.center.dy),
-          reason: '\\an2 底部字幕必须在画面下半');
+      expect(
+        topDy,
+        lessThan(overlayRect.center.dy),
+        reason: '\\an8 顶部字幕必须在画面上半',
+      );
+      expect(
+        bottomDy,
+        greaterThan(overlayRect.center.dy),
+        reason: '\\an2 底部字幕必须在画面下半',
+      );
       expect(bottomDy - topDy, greaterThan(100), reason: '两条锚点不同的字幕应明显分离，而非共位');
     });
 
-    testWidgets('代表 cue（currentCue）翻转不改变各自位置（消除「来回变」）',
-        (WidgetTester tester) async {
+    testWidgets('代表 cue（currentCue）翻转不改变各自位置（消除「来回变」）', (
+      WidgetTester tester,
+    ) async {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
       c.setCues(<AudioCue>[
-        _cueWithMarkup('上', _markup('上', valign: SubtitleVAlign.top),
-            start: 0, end: 5000),
-        _cueWithMarkup('下', _markup('下', valign: SubtitleVAlign.bottom),
-            start: 2000, end: 8000),
+        _cueWithMarkup(
+          '上',
+          _markup('上', valign: SubtitleVAlign.top),
+          start: 0,
+          end: 5000,
+        ),
+        _cueWithMarkup(
+          '下',
+          _markup('下', valign: SubtitleVAlign.bottom),
+          start: 2000,
+          end: 8000,
+        ),
       ]);
 
       // 位置 2500：currentCue 为其一。
       c.debugUpdateCueForPosition(2500);
       // BUG-903：ASS 定位现属「尊重 .ass」语义（respectAssStyle 关=纯字幕模式恒底部）。
       await _pump(
-          tester, VideoSubtitleOverlay(controller: c, respectAssStyle: true));
+        tester,
+        VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+      );
       final Rect r1 = tester.getRect(find.byType(VideoSubtitleOverlay));
       final double top1 = tester.getCenter(find.text('上').first).dy;
       final double bottom1 = tester.getCenter(find.text('下').first).dy;
@@ -118,30 +147,42 @@ void main() {
       final double top2 = tester.getCenter(find.text('上').first).dy;
       final double bottom2 = tester.getCenter(find.text('下').first).dy;
       expect(top2, lessThan(r1.center.dy), reason: '顶部字幕不得随 currentCue 翻转跳到底部');
-      expect(bottom2, greaterThan(r1.center.dy),
-          reason: '底部字幕不得随 currentCue 翻转跳到顶部');
+      expect(
+        bottom2,
+        greaterThan(r1.center.dy),
+        reason: '底部字幕不得随 currentCue 翻转跳到顶部',
+      );
       // 位置几何稳定（同锚点定位纯函数，不受代表 cue 影响）。
       expect((top2 - top1).abs(), lessThan(1.0));
       expect((bottom2 - bottom1).abs(), lessThan(1.0));
     });
 
-    testWidgets('双轨样式独立：每条 cue 遵循自己的主色（respectAssStyle）',
-        (WidgetTester tester) async {
+    testWidgets('双轨样式独立：每条 cue 遵循自己的主色（respectAssStyle）', (
+      WidgetTester tester,
+    ) async {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
       c.setCues(<AudioCue>[
         _cueWithMarkup(
+          '赤',
+          _markup(
             '赤',
-            _markup('赤',
-                valign: SubtitleVAlign.top, primaryColorArgb: 0xFFFF0000),
-            start: 0,
-            end: 5000),
+            valign: SubtitleVAlign.top,
+            primaryColorArgb: 0xFFFF0000,
+          ),
+          start: 0,
+          end: 5000,
+        ),
         _cueWithMarkup(
+          '緑',
+          _markup(
             '緑',
-            _markup('緑',
-                valign: SubtitleVAlign.bottom, primaryColorArgb: 0xFF00FF00),
-            start: 2000,
-            end: 8000),
+            valign: SubtitleVAlign.bottom,
+            primaryColorArgb: 0xFF00FF00,
+          ),
+          start: 2000,
+          end: 8000,
+        ),
       ]);
       c.debugUpdateCueForPosition(3000);
       await _pump(
@@ -163,21 +204,36 @@ void main() {
       addTearDown(c.dispose);
       // 两条同为底部锚点、时间重叠 → 应堆叠进同一底部组（都在下半屏）。
       c.setCues(<AudioCue>[
-        _cueWithMarkup('一', _markup('一', valign: SubtitleVAlign.bottom),
-            start: 0, end: 5000),
-        _cueWithMarkup('二', _markup('二', valign: SubtitleVAlign.bottom),
-            start: 2000, end: 8000),
+        _cueWithMarkup(
+          '一',
+          _markup('一', valign: SubtitleVAlign.bottom),
+          start: 0,
+          end: 5000,
+        ),
+        _cueWithMarkup(
+          '二',
+          _markup('二', valign: SubtitleVAlign.bottom),
+          start: 2000,
+          end: 8000,
+        ),
       ]);
       c.debugUpdateCueForPosition(3000);
       // BUG-903：ASS 定位现属「尊重 .ass」语义（respectAssStyle 关=纯字幕模式恒底部）。
       await _pump(
-          tester, VideoSubtitleOverlay(controller: c, respectAssStyle: true));
-      final Rect overlayRect =
-          tester.getRect(find.byType(VideoSubtitleOverlay));
-      expect(tester.getCenter(find.text('一').first).dy,
-          greaterThan(overlayRect.center.dy));
-      expect(tester.getCenter(find.text('二').first).dy,
-          greaterThan(overlayRect.center.dy));
+        tester,
+        VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+      );
+      final Rect overlayRect = tester.getRect(
+        find.byType(VideoSubtitleOverlay),
+      );
+      expect(
+        tester.getCenter(find.text('一').first).dy,
+        greaterThan(overlayRect.center.dy),
+      );
+      expect(
+        tester.getCenter(find.text('二').first).dy,
+        greaterThan(overlayRect.center.dy),
+      );
     });
   });
 }

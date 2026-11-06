@@ -12,27 +12,32 @@ import 'package:fushi/src/utils/components/settings_shared.dart';
 void main() {
   testWidgets('开关行在焦点根下只有一个 Tab 停靠点，整行点击仍可切换', (WidgetTester tester) async {
     bool value = false;
-    await tester.pumpWidget(MaterialApp(
-      home: FushiFocusRoot(
-        child: Scaffold(
-          body: StatefulBuilder(
-            builder: (BuildContext context, StateSetter setState) {
-              return AdaptiveSettingsSwitchRow(
-                title: '测试开关',
-                value: value,
-                onChanged: (bool v) => setState(() => value = v),
-              );
-            },
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FushiFocusRoot(
+          child: Scaffold(
+            body: StatefulBuilder(
+              builder: (BuildContext context, StateSetter setState) {
+                return AdaptiveSettingsSwitchRow(
+                  title: '测试开关',
+                  value: value,
+                  onChanged: (bool v) => setState(() => value = v),
+                );
+              },
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     final Element row = tester.element(find.byType(AdaptiveSettingsSwitchRow));
     final FocusScopeNode scope = FocusScope.of(row);
-    expect(scope.traversalDescendants.length, 1,
-        reason: '开关行应只贡献 1 个焦点停靠点（此前 InkWell/Switch 额外各占一个）');
+    expect(
+      scope.traversalDescendants.length,
+      1,
+      reason: '开关行应只贡献 1 个焦点停靠点（此前 InkWell/Switch 额外各占一个）',
+    );
 
     // 整行 tap 仍切换（ExcludeFocus 只挡焦点遍历，不挡指针）。
     await tester.tap(find.byType(AdaptiveSettingsSwitchRow));

@@ -24,120 +24,141 @@ Future<FushiDatabase> _freshDb(String prefix) async {
 }
 
 void main() {
-  test('materialize then apply on empty peer round-trips local state',
-      () async {
-    final FushiDatabase db = await _freshDb('agg_rt_');
-    addTearDown(db.close);
-    await db.setReadingStatistic(ReadingStatisticsCompanion.insert(
-      title: 'Book A',
-      dateKey: '2026-06-01',
-      charactersRead: 120,
-      readingTimeMs: 60000,
-      lastStatisticModified: 10,
-    ));
-    await db.setMiningCount(
-        sourceType: 'book', dateKey: '2026-06-01', count: 5);
-    await db.addFavoriteWord(
-      expression: 'w1',
-      reading: 'r1',
-      glossary: 'g1',
-      sourceType: 'book',
-      dateKey: '2026-06-01',
-    );
+  test(
+    'materialize then apply on empty peer round-trips local state',
+    () async {
+      final FushiDatabase db = await _freshDb('agg_rt_');
+      addTearDown(db.close);
+      await db.setReadingStatistic(
+        ReadingStatisticsCompanion.insert(
+          title: 'Book A',
+          dateKey: '2026-06-01',
+          charactersRead: 120,
+          readingTimeMs: 60000,
+          lastStatisticModified: 10,
+        ),
+      );
+      await db.setMiningCount(
+        sourceType: 'book',
+        dateKey: '2026-06-01',
+        count: 5,
+      );
+      await db.addFavoriteWord(
+        expression: 'w1',
+        reading: 'r1',
+        glossary: 'g1',
+        sourceType: 'book',
+        dateKey: '2026-06-01',
+      );
 
-    final AggregateSyncService svc = AggregateSyncService(db);
-    final AggregateSnapshot snap = await svc.materializeLocalSnapshot();
-    expect(snap.readingStats.single.charactersRead, 120);
-    expect(snap.miningStats.single.count, 5);
-    expect(snap.favoriteWords.single.expression, 'w1');
+      final AggregateSyncService svc = AggregateSyncService(db);
+      final AggregateSnapshot snap = await svc.materializeLocalSnapshot();
+      expect(snap.readingStats.single.charactersRead, 120);
+      expect(snap.miningStats.single.count, 5);
+      expect(snap.favoriteWords.single.expression, 'w1');
 
-    // Applying the same snapshot back is a no-op (values unchanged).
-    await svc.applySnapshotToLocal(snap);
-    final List<ReadingStatisticRow> reading =
-        await db.getAllReadingStatistics();
-    expect(reading.single.charactersRead, 120);
-    expect((await db.getMiningStatisticsBySource('book')).single.count, 5);
-    expect((await db.getAllFavoriteWords()).length, 1);
-  });
+      // Applying the same snapshot back is a no-op (values unchanged).
+      await svc.applySnapshotToLocal(snap);
+      final List<ReadingStatisticRow> reading = await db
+          .getAllReadingStatistics();
+      expect(reading.single.charactersRead, 120);
+      expect((await db.getMiningStatisticsBySource('book')).single.count, 5);
+      expect((await db.getAllFavoriteWords()).length, 1);
+    },
+  );
 
-  test('hourly formats: materialize splits, old-peer totals lift unattributed',
-      () async {
-    // v67：本地按写入面分桶（epub 20s + manga 10s，同一小时）。v92 起累加 DAO
-    // 已删，legacy 小时表用 OVERWRITE 版 set* 造数。
-    final FushiDatabase db = await _freshDb('agg_hourly_fmt_');
-    addTearDown(db.close);
-    await db.setReadingHourlyLog(
+  test(
+    'hourly formats: materialize splits, old-peer totals lift unattributed',
+    () async {
+      // v67：本地按写入面分桶（epub 20s + manga 10s，同一小时）。v92 起累加 DAO
+      // 已删，legacy 小时表用 OVERWRITE 版 set* 造数。
+      final FushiDatabase db = await _freshDb('agg_hourly_fmt_');
+      addTearDown(db.close);
+      await db.setReadingHourlyLog(
         dateKey: '2026-06-01',
         hour: 9,
         readingTimeMs: 20000,
-        format: BookFormat.epub.dbValue);
-    await db.setReadingHourlyLog(
+        format: BookFormat.epub.dbValue,
+      );
+      await db.setReadingHourlyLog(
         dateKey: '2026-06-01',
         hour: 9,
         readingTimeMs: 10000,
-        format: BookFormat.manga.dbValue);
+        format: BookFormat.manga.dbValue,
+      );
 
-    final AggregateSyncService svc = AggregateSyncService(db);
-    final AggregateSnapshot snap = await svc.materializeLocalSnapshot();
-    // 旧 wire 字段 = 该小时全部阅读面之和（旧端看到的语义与拆分前一致）；
-    // 拆分数据走 readingHourlyByFormat。
-    expect(snap.readingHourly.single.durationMs, 30000);
-    expect(snap.readingHourlyByFormat, hasLength(2));
+      final AggregateSyncService svc = AggregateSyncService(db);
+      final AggregateSnapshot snap = await svc.materializeLocalSnapshot();
+      // 旧 wire 字段 = 该小时全部阅读面之和（旧端看到的语义与拆分前一致）；
+      // 拆分数据走 readingHourlyByFormat。
+      expect(snap.readingHourly.single.durationMs, 30000);
+      expect(snap.readingHourlyByFormat, hasLength(2));
 
-    // 自我重放幂等：不产生未区分桶、不改变任何行。
-    await svc.applySnapshotToLocal(snap);
-    expect(await db.getHourlyLogsForDate('2026-06-01'), hasLength(2));
+      // 自我重放幂等：不产生未区分桶、不改变任何行。
+      await svc.applySnapshotToLocal(snap);
+      expect(await db.getHourlyLogsForDate('2026-06-01'), hasLength(2));
 
-    // 旧端 peer 只带逐时总量 45s（不带 format）：与本地 30s 之差 15s 无法归因
-    // 到任何写入面 → 落 ''（未区分）桶；已归因的 epub/manga 桶原样不动。
-    const AggregateSnapshot oldPeer = AggregateSnapshot(
-      readingHourly: <HourlyRecord>[
-        HourlyRecord(dateKey: '2026-06-01', hour: 9, durationMs: 45000),
-      ],
-    );
-    final AggregateSnapshot merged =
-        AggregateSyncService.mergeSnapshots(snap, oldPeer);
-    await svc.applySnapshotToLocal(merged);
-    List<ReadingHourlyLogRow> logs =
-        await db.getHourlyLogsForDate('2026-06-01');
-    expect(logs, hasLength(3));
-    expect(
+      // 旧端 peer 只带逐时总量 45s（不带 format）：与本地 30s 之差 15s 无法归因
+      // 到任何写入面 → 落 ''（未区分）桶；已归因的 epub/manga 桶原样不动。
+      const AggregateSnapshot oldPeer = AggregateSnapshot(
+        readingHourly: <HourlyRecord>[
+          HourlyRecord(dateKey: '2026-06-01', hour: 9, durationMs: 45000),
+        ],
+      );
+      final AggregateSnapshot merged = AggregateSyncService.mergeSnapshots(
+        snap,
+        oldPeer,
+      );
+      await svc.applySnapshotToLocal(merged);
+      List<ReadingHourlyLogRow> logs = await db.getHourlyLogsForDate(
+        '2026-06-01',
+      );
+      expect(logs, hasLength(3));
+      expect(
         logs
             .singleWhere((l) => l.format == BookFormat.epub.dbValue)
             .readingTimeMs,
-        20000);
-    expect(
+        20000,
+      );
+      expect(
         logs
             .singleWhere((l) => l.format == BookFormat.manga.dbValue)
             .readingTimeMs,
-        10000);
-    expect(logs.singleWhere((l) => l.format.isEmpty).readingTimeMs, 15000);
+        10000,
+      );
+      expect(logs.singleWhere((l) => l.format.isEmpty).readingTimeMs, 15000);
 
-    // 重复应用同一 merged 快照：差额为 0，幂等（不虚增未区分桶）。
-    await svc.applySnapshotToLocal(merged);
-    logs = await db.getHourlyLogsForDate('2026-06-01');
-    expect(logs, hasLength(3));
-    expect(logs.singleWhere((l) => l.format.isEmpty).readingTimeMs, 15000);
-  });
+      // 重复应用同一 merged 快照：差额为 0，幂等（不虚增未区分桶）。
+      await svc.applySnapshotToLocal(merged);
+      logs = await db.getHourlyLogsForDate('2026-06-01');
+      expect(logs, hasLength(3));
+      expect(logs.singleWhere((l) => l.format.isEmpty).readingTimeMs, 15000);
+    },
+  );
 
-  test('first sync with empty namespace uploads own snapshot, no crash',
-      () async {
-    final FushiDatabase db = await _freshDb('agg_first_');
-    addTearDown(db.close);
-    await db.setMiningCount(
-        sourceType: 'book', dateKey: '2026-06-01', count: 2);
+  test(
+    'first sync with empty namespace uploads own snapshot, no crash',
+    () async {
+      final FushiDatabase db = await _freshDb('agg_first_');
+      addTearDown(db.close);
+      await db.setMiningCount(
+        sourceType: 'book',
+        dateKey: '2026-06-01',
+        count: 2,
+      );
 
-    final FakeAssetStore store = FakeAssetStore();
-    await AggregateSyncService(db).sync(store: store, deviceId: 'dev-A');
+      final FakeAssetStore store = FakeAssetStore();
+      await AggregateSyncService(db).sync(store: store, deviceId: 'dev-A');
 
-    final String ns = await store.ensureNamespace(kSyncAggregateNamespace);
-    final List<AssetEntry> children = await store.listChildren(ns);
-    expect(children.length, 1);
-    expect(children.single.name, 'dev-A.fushiaggregate');
-    final Object? json = await store.getJsonAsset(children.single.id);
-    final AggregateSnapshot uploaded = AggregateSnapshot.fromJson(json);
-    expect(uploaded.miningStats.single.count, 2);
-  });
+      final String ns = await store.ensureNamespace(kSyncAggregateNamespace);
+      final List<AssetEntry> children = await store.listChildren(ns);
+      expect(children.length, 1);
+      expect(children.single.name, 'dev-A.fushiaggregate');
+      final Object? json = await store.getJsonAsset(children.single.id);
+      final AggregateSnapshot uploaded = AggregateSnapshot.fromJson(json);
+      expect(uploaded.miningStats.single.count, 2);
+    },
+  );
 
   test('empty device with empty namespace uploads nothing', () async {
     final FushiDatabase db = await _freshDb('agg_empty_');
@@ -195,29 +216,34 @@ void main() {
     // 版 set* 造数——本用例只关心接收端落地面，不关心发送端怎么产生的）。
     final FushiDatabase src = await _freshDb('agg_act_src_');
     addTearDown(src.close);
-    await src.setReadingStatistic(ReadingStatisticsCompanion.insert(
-      title: 'Book A',
-      dateKey: '2026-08-10',
-      charactersRead: 120,
-      readingTimeMs: 60000,
-      lastStatisticModified: 1,
-    ));
+    await src.setReadingStatistic(
+      ReadingStatisticsCompanion.insert(
+        title: 'Book A',
+        dateKey: '2026-08-10',
+        charactersRead: 120,
+        readingTimeMs: 60000,
+        lastStatisticModified: 1,
+      ),
+    );
     await src.recordMiningEvent(
       bookKey: 'bk-a',
       title: 'Book A',
       sourceType: FushiDatabase.statSourceBook,
       at: DateTime(2026, 8, 10, 21, 5),
     );
-    await src.setVideoWatchStatistic(VideoWatchStatisticsCompanion.insert(
-      title: 'Ep1',
-      bookUid: const Value('v1'),
-      dateKey: '2026-08-10',
-      subtitleChars: 0,
-      watchTimeMs: 30000,
-      lastModified: 1,
-    ));
-    final AggregateSnapshot snap =
-        await AggregateSyncService(src).materializeLocalSnapshot();
+    await src.setVideoWatchStatistic(
+      VideoWatchStatisticsCompanion.insert(
+        title: 'Ep1',
+        bookUid: const Value('v1'),
+        dateKey: '2026-08-10',
+        subtitleChars: 0,
+        watchTimeMs: 30000,
+        lastModified: 1,
+      ),
+    );
+    final AggregateSnapshot snap = await AggregateSyncService(
+      src,
+    ).materializeLocalSnapshot();
     expect(snap.readingStats, isNotEmpty);
     expect(snap.miningStats, isNotEmpty);
     expect(snap.videoStats, isNotEmpty);
@@ -228,10 +254,16 @@ void main() {
     final FushiDatabase dst = await _freshDb('agg_act_dst_');
     addTearDown(dst.close);
     await AggregateSyncService(dst).applySnapshotToLocal(snap);
-    expect(await dst.getAllReadingStatistics(), isNotEmpty,
-        reason: '投影确实落地了（前置：不是空快照假绿）');
-    expect(await dst.getRecentActivityEvents(limit: 10), isEmpty,
-        reason: 'sync 落地不产 activity 行');
+    expect(
+      await dst.getAllReadingStatistics(),
+      isNotEmpty,
+      reason: '投影确实落地了（前置：不是空快照假绿）',
+    );
+    expect(
+      await dst.getRecentActivityEvents(limit: 10),
+      isEmpty,
+      reason: 'sync 落地不产 activity 行',
+    );
   });
 
   test('two devices converge to the union via the store', () async {
@@ -239,15 +271,20 @@ void main() {
 
     final FushiDatabase dbA = await _freshDb('agg_A_');
     addTearDown(dbA.close);
-    await dbA.setReadingStatistic(ReadingStatisticsCompanion.insert(
-      title: 'Book A',
-      dateKey: '2026-06-01',
-      charactersRead: 100,
-      readingTimeMs: 1000,
-      lastStatisticModified: 1,
-    ));
+    await dbA.setReadingStatistic(
+      ReadingStatisticsCompanion.insert(
+        title: 'Book A',
+        dateKey: '2026-06-01',
+        charactersRead: 100,
+        readingTimeMs: 1000,
+        lastStatisticModified: 1,
+      ),
+    );
     await dbA.setMiningCount(
-        sourceType: 'book', dateKey: '2026-06-01', count: 3);
+      sourceType: 'book',
+      dateKey: '2026-06-01',
+      count: 3,
+    );
     await dbA.addFavoriteWord(
       expression: 'wA',
       reading: 'rA',
@@ -259,15 +296,20 @@ void main() {
 
     final FushiDatabase dbB = await _freshDb('agg_B_');
     addTearDown(dbB.close);
-    await dbB.setReadingStatistic(ReadingStatisticsCompanion.insert(
-      title: 'Book A',
-      dateKey: '2026-06-01',
-      charactersRead: 40,
-      readingTimeMs: 5000,
-      lastStatisticModified: 2,
-    ));
+    await dbB.setReadingStatistic(
+      ReadingStatisticsCompanion.insert(
+        title: 'Book A',
+        dateKey: '2026-06-01',
+        charactersRead: 40,
+        readingTimeMs: 5000,
+        lastStatisticModified: 2,
+      ),
+    );
     await dbB.setMiningCount(
-        sourceType: 'book', dateKey: '2026-06-01', count: 8);
+      sourceType: 'book',
+      dateKey: '2026-06-01',
+      count: 8,
+    );
     await dbB.addFavoriteWord(
       expression: 'wB',
       reading: 'rB',
@@ -302,97 +344,110 @@ void main() {
     expect(aReading.readingTimeMs, 5000);
   });
 
-  test('two devices converge lookup/mine counters to the per-column union',
-      () async {
-    final FakeAssetStore store = FakeAssetStore();
+  test(
+    'two devices converge lookup/mine counters to the per-column union',
+    () async {
+      final FakeAssetStore store = FakeAssetStore();
 
-    final FushiDatabase dbA = await _freshDb('agg_lmcA_');
-    addTearDown(dbA.close);
-    // A: 10 lookups, 2 mines on Book A / 2026-06-01, plus a no-book lookup.
-    await dbA.setLookupCount(
-      bookKey: 'keyA',
-      title: 'Book A',
-      sourceType: 'book',
-      dateKey: '2026-06-01',
-      count: 10,
-    );
-    await dbA.setMineCountPerBook(
-      bookKey: 'keyA',
-      title: 'Book A',
-      sourceType: 'book',
-      dateKey: '2026-06-01',
-      count: 2,
-    );
-    await dbA.setLookupCount(
-      title: '', // no-book lookup (home / standalone window / lyrics)
-      sourceType: 'book',
-      dateKey: '2026-06-01',
-      count: 7,
-    );
-    await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
+      final FushiDatabase dbA = await _freshDb('agg_lmcA_');
+      addTearDown(dbA.close);
+      // A: 10 lookups, 2 mines on Book A / 2026-06-01, plus a no-book lookup.
+      await dbA.setLookupCount(
+        bookKey: 'keyA',
+        title: 'Book A',
+        sourceType: 'book',
+        dateKey: '2026-06-01',
+        count: 10,
+      );
+      await dbA.setMineCountPerBook(
+        bookKey: 'keyA',
+        title: 'Book A',
+        sourceType: 'book',
+        dateKey: '2026-06-01',
+        count: 2,
+      );
+      await dbA.setLookupCount(
+        title: '', // no-book lookup (home / standalone window / lyrics)
+        sourceType: 'book',
+        dateKey: '2026-06-01',
+        count: 7,
+      );
+      await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
 
-    final FushiDatabase dbB = await _freshDb('agg_lmcB_');
-    addTearDown(dbB.close);
-    // B: 4 lookups (lower), 9 mines (higher) on the same bucket.
-    await dbB.setLookupCount(
-      bookKey: 'keyA',
-      title: 'Book A',
-      sourceType: 'book',
-      dateKey: '2026-06-01',
-      count: 4,
-    );
-    await dbB.setMineCountPerBook(
-      bookKey: 'keyA',
-      title: 'Book A',
-      sourceType: 'book',
-      dateKey: '2026-06-01',
-      count: 9,
-    );
-    await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
+      final FushiDatabase dbB = await _freshDb('agg_lmcB_');
+      addTearDown(dbB.close);
+      // B: 4 lookups (lower), 9 mines (higher) on the same bucket.
+      await dbB.setLookupCount(
+        bookKey: 'keyA',
+        title: 'Book A',
+        sourceType: 'book',
+        dateKey: '2026-06-01',
+        count: 4,
+      );
+      await dbB.setMineCountPerBook(
+        bookKey: 'keyA',
+        title: 'Book A',
+        sourceType: 'book',
+        dateKey: '2026-06-01',
+        count: 9,
+      );
+      await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
 
-    // B holds the union: lookup MAX(10,4)=10, mine MAX(2,9)=9 on the shared
-    // bucket, plus A's no-book lookup bucket (title='').
-    final List<LookupMiningCounterRow> bRows =
-        await dbB.getLookupMiningCountersBySource('book');
-    final LookupMiningCounterRow bShared =
-        bRows.firstWhere((LookupMiningCounterRow r) => r.title == 'Book A');
-    expect(bShared.lookupCount, 10);
-    expect(bShared.mineCount, 9);
-    expect(bShared.bookKey, 'keyA');
-    final LookupMiningCounterRow bNoBook =
-        bRows.firstWhere((LookupMiningCounterRow r) => r.title == '');
-    expect(bNoBook.lookupCount, 7);
+      // B holds the union: lookup MAX(10,4)=10, mine MAX(2,9)=9 on the shared
+      // bucket, plus A's no-book lookup bucket (title='').
+      final List<LookupMiningCounterRow> bRows = await dbB
+          .getLookupMiningCountersBySource('book');
+      final LookupMiningCounterRow bShared = bRows.firstWhere(
+        (LookupMiningCounterRow r) => r.title == 'Book A',
+      );
+      expect(bShared.lookupCount, 10);
+      expect(bShared.mineCount, 9);
+      expect(bShared.bookKey, 'keyA');
+      final LookupMiningCounterRow bNoBook = bRows.firstWhere(
+        (LookupMiningCounterRow r) => r.title == '',
+      );
+      expect(bNoBook.lookupCount, 7);
 
-    // A syncs again and converges to the identical union; re-sync stays MAX,
-    // never SUM (idempotent, no double count).
-    await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
-    await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
-    final LookupMiningCounterRow aShared =
-        (await dbA.getLookupMiningCountersBySource('book'))
-            .firstWhere((LookupMiningCounterRow r) => r.title == 'Book A');
-    expect(aShared.lookupCount, 10);
-    expect(aShared.mineCount, 9);
-  });
+      // A syncs again and converges to the identical union; re-sync stays MAX,
+      // never SUM (idempotent, no double count).
+      await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
+      await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
+      final LookupMiningCounterRow aShared =
+          (await dbA.getLookupMiningCountersBySource(
+            'book',
+          )).firstWhere((LookupMiningCounterRow r) => r.title == 'Book A');
+      expect(aShared.lookupCount, 10);
+      expect(aShared.mineCount, 9);
+    },
+  );
 
-  test('re-syncing the same peer snapshot is idempotent (no double count)',
-      () async {
-    final FakeAssetStore store = FakeAssetStore();
+  test(
+    're-syncing the same peer snapshot is idempotent (no double count)',
+    () async {
+      final FakeAssetStore store = FakeAssetStore();
 
-    final FushiDatabase dbA = await _freshDb('agg_idA_');
-    addTearDown(dbA.close);
-    await dbA.setMiningCount(
-        sourceType: 'book', dateKey: '2026-06-01', count: 4);
-    await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
+      final FushiDatabase dbA = await _freshDb('agg_idA_');
+      addTearDown(dbA.close);
+      await dbA.setMiningCount(
+        sourceType: 'book',
+        dateKey: '2026-06-01',
+        count: 4,
+      );
+      await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
 
-    final FushiDatabase dbB = await _freshDb('agg_idB_');
-    addTearDown(dbB.close);
-    await dbB.setMiningCount(
-        sourceType: 'book', dateKey: '2026-06-01', count: 4);
-    // Sync twice: MAX(4,4) stays 4, never 8. Idempotent, no SUM.
-    await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
-    await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
-    expect((await dbB.getMiningStatisticsBySource('book')).single.count, 4);
-  });
+      final FushiDatabase dbB = await _freshDb('agg_idB_');
+      addTearDown(dbB.close);
+      await dbB.setMiningCount(
+        sourceType: 'book',
+        dateKey: '2026-06-01',
+        count: 4,
+      );
+      // Sync twice: MAX(4,4) stays 4, never 8. Idempotent, no SUM.
+      await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
+      await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
+      expect((await dbB.getMiningStatisticsBySource('book')).single.count, 4);
+    },
+  );
 
   test('取消收藏词写墓碑后 peer 快照并集不复活；重新收藏清碑可再并入', () async {
     // 删除传播上线后行为更新：`removeFavoriteWord` 默认写 favoriteword 墓碑，
@@ -417,14 +472,20 @@ void main() {
     expect((await dbB.getAllFavoriteWords()).length, 1);
     // 取消收藏 → 本地删 + 写墓碑。
     await dbB.removeFavoriteWord(
-        expression: 'wShared', reading: 'r', sourceType: 'book');
+      expression: 'wShared',
+      reading: 'r',
+      sourceType: 'book',
+    );
     expect((await dbB.getAllFavoriteWords()).isEmpty, isTrue);
 
     // A 的快照仍带 wShared；B 再同步折进 merged，但墓碑令 applySnapshotToLocal 跳过它
     // → 保持删除（删除传播生效）。
     await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
-    expect((await dbB.getAllFavoriteWords()).isEmpty, isTrue,
-        reason: '墓碑抑制并集复活');
+    expect(
+      (await dbB.getAllFavoriteWords()).isEmpty,
+      isTrue,
+      reason: '墓碑抑制并集复活',
+    );
 
     // 重新收藏 → 清碑；此后 peer 快照的同词可正常并入（「重加清墓碑」语义）。
     await dbB.addFavoriteWord(
@@ -438,30 +499,36 @@ void main() {
     expect((await dbB.getAllFavoriteWords()).length, 1);
   });
 
-  test(
-      'a tombstoned book stat is NOT resurrected by a peer snapshot '
+  test('a tombstoned book stat is NOT resurrected by a peer snapshot '
       '(TODO-1204 后续)', () async {
     final FakeAssetStore store = FakeAssetStore();
     final FushiDatabase dbA = await _freshDb('agg_tombA_');
     addTearDown(dbA.close);
-    await dbA.setReadingStatistic(ReadingStatisticsCompanion.insert(
+    await dbA.setReadingStatistic(
+      ReadingStatisticsCompanion.insert(
         title: 'Ghost',
         dateKey: '2026-06-01',
         charactersRead: 100,
         readingTimeMs: 6000,
-        lastStatisticModified: 1));
+        lastStatisticModified: 1,
+      ),
+    );
     await dbA.addLookupCount(
-        bookKey: 'book/Ghost',
-        title: 'Ghost',
-        sourceType: 'book',
-        dateKey: '2026-06-01');
+      bookKey: 'book/Ghost',
+      title: 'Ghost',
+      sourceType: 'book',
+      dateKey: '2026-06-01',
+    );
     await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
 
     final FushiDatabase dbB = await _freshDb('agg_tombB_');
     addTearDown(dbB.close);
     await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
-    expect((await dbB.getAllReadingStatistics()).length, 1,
-        reason: 'B pulled Ghost from A');
+    expect(
+      (await dbB.getAllReadingStatistics()).length,
+      1,
+      reason: 'B pulled Ghost from A',
+    );
 
     // User deletes Ghost's stats on B -> local rows gone + tombstone written.
     await dbB.deleteReadingStatisticsForTitle('Ghost');
@@ -470,22 +537,31 @@ void main() {
     // A's snapshot still carries Ghost; a re-sync folds it into merged, but the
     // tombstone must make applySnapshotToLocal skip it -> Ghost stays gone.
     await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
-    expect(await dbB.getAllReadingStatistics(), isEmpty,
-        reason: 'tombstone blocks resurrection of the deleted book stat');
-    expect(await dbB.getLookupMiningCountersBySource('book'), isEmpty,
-        reason: 'tombstone also blocks the lookup counter resurrection');
+    expect(
+      await dbB.getAllReadingStatistics(),
+      isEmpty,
+      reason: 'tombstone blocks resurrection of the deleted book stat',
+    );
+    expect(
+      await dbB.getLookupMiningCountersBySource('book'),
+      isEmpty,
+      reason: 'tombstone also blocks the lookup counter resurrection',
+    );
 
     // New local activity naming Ghost on B clears the tombstone; future syncs
     // may revive it (matching the "重加书清墓碑" intent). v92 起本地不再写
     // legacy 阅读行，legacy (title, sourceType) 墓碑的本地清碑入口只剩查词 /
     // 制卡计数（addLookupCount / addMineCountPerBook）。
     await dbB.addLookupCount(
-        bookKey: 'book/Ghost',
-        title: 'Ghost',
-        sourceType: 'book',
-        dateKey: '2026-06-02');
-    expect(await dbB.getStatisticsTombstoneKeys(),
-        isNot(contains(('Ghost', 'book'))));
+      bookKey: 'book/Ghost',
+      title: 'Ghost',
+      sourceType: 'book',
+      dateKey: '2026-06-02',
+    );
+    expect(
+      await dbB.getStatisticsTombstoneKeys(),
+      isNot(contains(('Ghost', 'book'))),
+    );
   });
 
   // W9-4 兼容读：资产后缀 .hibikiaggregate → .fushiaggregate 改名后，云上仍有
@@ -497,7 +573,10 @@ void main() {
     final FushiDatabase dbA = await _freshDb('agg_legacyA_');
     addTearDown(dbA.close);
     await dbA.setMiningCount(
-        sourceType: 'book', dateKey: '2026-06-01', count: 7);
+      sourceType: 'book',
+      dateKey: '2026-06-01',
+      count: 7,
+    );
     await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
 
     // 把 A 刚写下的新名快照原样搬到旧名下，制造「迁移前写的资产」。
@@ -512,195 +591,241 @@ void main() {
     addTearDown(dbB.close);
     await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
 
-    expect((await dbB.getMiningStatisticsBySource('book')).single.count, 7,
-        reason: '旧后缀快照被跳过就会读不到 A 的状态');
+    expect(
+      (await dbB.getMiningStatisticsBySource('book')).single.count,
+      7,
+      reason: '旧后缀快照被跳过就会读不到 A 的状态',
+    );
   });
 
   // v76：lookup_mining_counters 本地行 per-identity 可多行，wire 合并键仍是
   // {title,sourceType,dateKey}。物化必须按 wire 键把多行求和——逐行上行会在
   // 合并 map 构建时 last-wins 静默丢数（同名双视频只剩后一行的计数）。
-  test(
-      'v76: same-title multi-identity counter rows are SUMMED into one '
+  test('v76: same-title multi-identity counter rows are SUMMED into one '
       'wire record, not last-wins dropped', () async {
     final FushiDatabase db = await _freshDb('agg_fold_');
     addTearDown(db.close);
     await db.addLookupCount(
-        bookKey: 'uid-1',
-        title: '同名',
-        sourceType: 'video',
-        dateKey: '2026-06-01',
-        delta: 3);
+      bookKey: 'uid-1',
+      title: '同名',
+      sourceType: 'video',
+      dateKey: '2026-06-01',
+      delta: 3,
+    );
     await db.addLookupCount(
-        bookKey: 'uid-2',
-        title: '同名',
-        sourceType: 'video',
-        dateKey: '2026-06-01',
-        delta: 4);
+      bookKey: 'uid-2',
+      title: '同名',
+      sourceType: 'video',
+      dateKey: '2026-06-01',
+      delta: 4,
+    );
     await db.addMineCountPerBook(
-        bookKey: 'uid-2',
-        title: '同名',
-        sourceType: 'video',
-        dateKey: '2026-06-01',
-        delta: 2);
+      bookKey: 'uid-2',
+      title: '同名',
+      sourceType: 'video',
+      dateKey: '2026-06-01',
+      delta: 2,
+    );
 
-    final AggregateSnapshot snap =
-        await AggregateSyncService(db).materializeLocalSnapshot();
+    final AggregateSnapshot snap = await AggregateSyncService(
+      db,
+    ).materializeLocalSnapshot();
     final List<LookupMiningRecord> records = snap.lookupMiningCounters
         .where((LookupMiningRecord r) => r.title == '同名')
         .toList();
     expect(records, hasLength(1), reason: 'wire 键去重，一条 record');
     expect(records.single.lookupCount, 7, reason: '3+4 求和，不 last-wins');
     expect(records.single.mineCount, 2);
-    expect(records.single.bookKey, isNull,
-        reason: '混桶总量不得归因单一身份——接收端会把 7 全记给 uid-1，'
-            '在对端重新制造互串（review-1）');
+    expect(
+      records.single.bookKey,
+      isNull,
+      reason:
+          '混桶总量不得归因单一身份——接收端会把 7 全记给 uid-1，'
+          '在对端重新制造互串（review-1）',
+    );
   });
 
   test(
-      'review3-1: same-title per-uid watch rows are SUMMED into one wire '
-      'record — no last-wins loss, and re-applying keeps local rows intact',
-      () async {
-    final FushiDatabase db = await _freshDb('agg_wfold_');
-    addTearDown(db.close);
-    // 同 (title, dateKey) 两条 per-uid 行只能 drift 直插：setVideoWatchStatistic
-    // 是 title 粒度 OVERWRITE，会把第二行塌缩掉（v92 起累加 DAO 已删）。
-    await db.into(db.videoWatchStatistics).insert(
-        VideoWatchStatisticsCompanion.insert(
-            title: '同名',
-            bookUid: const Value('uid-1'),
-            dateKey: '2026-06-01',
-            subtitleChars: 100,
-            watchTimeMs: 3600000,
-            lastModified: 1));
-    await db.into(db.videoWatchStatistics).insert(
-        VideoWatchStatisticsCompanion.insert(
-            title: '同名',
-            bookUid: const Value('uid-2'),
-            dateKey: '2026-06-01',
-            subtitleChars: 50,
-            watchTimeMs: 2400000,
-            lastModified: 1));
+    'review3-1: same-title per-uid watch rows are SUMMED into one wire '
+    'record — no last-wins loss, and re-applying keeps local rows intact',
+    () async {
+      final FushiDatabase db = await _freshDb('agg_wfold_');
+      addTearDown(db.close);
+      // 同 (title, dateKey) 两条 per-uid 行只能 drift 直插：setVideoWatchStatistic
+      // 是 title 粒度 OVERWRITE，会把第二行塌缩掉（v92 起累加 DAO 已删）。
+      await db
+          .into(db.videoWatchStatistics)
+          .insert(
+            VideoWatchStatisticsCompanion.insert(
+              title: '同名',
+              bookUid: const Value('uid-1'),
+              dateKey: '2026-06-01',
+              subtitleChars: 100,
+              watchTimeMs: 3600000,
+              lastModified: 1,
+            ),
+          );
+      await db
+          .into(db.videoWatchStatistics)
+          .insert(
+            VideoWatchStatisticsCompanion.insert(
+              title: '同名',
+              bookUid: const Value('uid-2'),
+              dateKey: '2026-06-01',
+              subtitleChars: 50,
+              watchTimeMs: 2400000,
+              lastModified: 1,
+            ),
+          );
 
-    final AggregateSyncService svc = AggregateSyncService(db);
-    final AggregateSnapshot snap = await svc.materializeLocalSnapshot();
-    final VideoStatRecord record =
-        snap.videoStats.singleWhere((VideoStatRecord r) => r.title == '同名');
-    expect(record.watchTimeMs, 6000000,
-        reason: '60+40 分钟求和上行，不 last-wins 丢掉一行（丢了对端 MAX 合并后'
-            '回写会把本地 100 分钟永久砍成 40）');
-    expect(record.subtitleChars, 150);
+      final AggregateSyncService svc = AggregateSyncService(db);
+      final AggregateSnapshot snap = await svc.materializeLocalSnapshot();
+      final VideoStatRecord record = snap.videoStats.singleWhere(
+        (VideoStatRecord r) => r.title == '同名',
+      );
+      expect(
+        record.watchTimeMs,
+        6000000,
+        reason:
+            '60+40 分钟求和上行，不 last-wins 丢掉一行（丢了对端 MAX 合并后'
+            '回写会把本地 100 分钟永久砍成 40）',
+      );
+      expect(record.subtitleChars, 150);
 
-    // 自回声应用：wire 值 == 本地和 → no-op，per-uid 行原样保留。
-    await svc.applySnapshotToLocal(snap);
-    final List<VideoWatchStatisticRow> rows =
-        await db.getAllVideoWatchStatistics();
-    expect(rows, hasLength(2), reason: 'wire 无新知不塌缩（review3-5），身份行不被同步周期性抹掉');
-  });
+      // 自回声应用：wire 值 == 本地和 → no-op，per-uid 行原样保留。
+      await svc.applySnapshotToLocal(snap);
+      final List<VideoWatchStatisticRow> rows = await db
+          .getAllVideoWatchStatistics();
+      expect(rows, hasLength(2), reason: 'wire 无新知不塌缩（review3-5），身份行不被同步周期性抹掉');
+    },
+  );
 
-  test(
-      'review4-2: watch collapse takes per-column max — a column the wire is '
+  test('review4-2: watch collapse takes per-column max — a column the wire is '
       'behind on never shrinks below the local sum', () async {
     final FushiDatabase db = await _freshDb('agg_colmax_');
     addTearDown(db.close);
     // 本地：chars=500 / ms=1500（wire 只见过 ms=1000 的旧状态）。drift 直插一条
     // 本地 per-uid 行（v92 起累加 DAO 已删）。
-    await db.into(db.videoWatchStatistics).insert(
-        VideoWatchStatisticsCompanion.insert(
+    await db
+        .into(db.videoWatchStatistics)
+        .insert(
+          VideoWatchStatisticsCompanion.insert(
             title: 'T',
             bookUid: const Value('uid-1'),
             dateKey: '2026-06-01',
             subtitleChars: 500,
             watchTimeMs: 1500,
-            lastModified: 1));
+            lastModified: 1,
+          ),
+        );
     // wire：chars 600（更多）但 ms 1000（落后）→ 单列超出触发塌缩。
-    await db.setVideoWatchStatistic(VideoWatchStatisticsCompanion(
-      title: const Value('T'),
-      dateKey: const Value('2026-06-01'),
-      subtitleChars: const Value(600),
-      watchTimeMs: const Value(1000),
-      lastModified: const Value(99),
-    ));
+    await db.setVideoWatchStatistic(
+      VideoWatchStatisticsCompanion(
+        title: const Value('T'),
+        dateKey: const Value('2026-06-01'),
+        subtitleChars: const Value(600),
+        watchTimeMs: const Value(1000),
+        lastModified: const Value(99),
+      ),
+    );
     final VideoWatchStatisticRow row =
         (await db.getAllVideoWatchStatistics()).single;
     expect(row.subtitleChars, 600, reason: 'wire 更多的列抬上去');
     expect(row.watchTimeMs, 1500, reason: 'wire 落后的列保本地和——往返窗口里的本地新增不许被砍');
   });
 
-  test('review3-3: merge only keeps bookKey metadata both sides agree on',
-      () async {
-    const LookupMiningRecord localRec = LookupMiningRecord(
-      bookKey: 'uid-1',
-      title: 'T',
-      sourceType: 'video',
-      dateKey: '2026-06-01',
-      lookupCount: 1,
-      mineCount: 0,
-    );
-    const LookupMiningRecord remoteMixed = LookupMiningRecord(
-      bookKey: null, // v76 起 null = 刻意混桶，不是「不知道」
-      title: 'T',
-      sourceType: 'video',
-      dateKey: '2026-06-01',
-      lookupCount: 8,
-      mineCount: 0,
-    );
-    final AggregateSnapshot merged = AggregateSyncService.mergeSnapshots(
-      const AggregateSnapshot(
-          lookupMiningCounters: <LookupMiningRecord>[localRec]),
-      const AggregateSnapshot(
-          lookupMiningCounters: <LookupMiningRecord>[remoteMixed]),
-    );
-    final LookupMiningRecord out = merged.lookupMiningCounters.single;
-    expect(out.lookupCount, 8, reason: '数值照常 MAX');
-    expect(out.bookKey, isNull,
-        reason: '一侧是混桶 → 合并结果不得把混合总量重新归因给 uid-1'
-            '（否则全新设备落地时复刻互串）');
+  test(
+    'review3-3: merge only keeps bookKey metadata both sides agree on',
+    () async {
+      const LookupMiningRecord localRec = LookupMiningRecord(
+        bookKey: 'uid-1',
+        title: 'T',
+        sourceType: 'video',
+        dateKey: '2026-06-01',
+        lookupCount: 1,
+        mineCount: 0,
+      );
+      const LookupMiningRecord remoteMixed = LookupMiningRecord(
+        bookKey: null, // v76 起 null = 刻意混桶，不是「不知道」
+        title: 'T',
+        sourceType: 'video',
+        dateKey: '2026-06-01',
+        lookupCount: 8,
+        mineCount: 0,
+      );
+      final AggregateSnapshot merged = AggregateSyncService.mergeSnapshots(
+        const AggregateSnapshot(
+          lookupMiningCounters: <LookupMiningRecord>[localRec],
+        ),
+        const AggregateSnapshot(
+          lookupMiningCounters: <LookupMiningRecord>[remoteMixed],
+        ),
+      );
+      final LookupMiningRecord out = merged.lookupMiningCounters.single;
+      expect(out.lookupCount, 8, reason: '数值照常 MAX');
+      expect(
+        out.bookKey,
+        isNull,
+        reason:
+            '一侧是混桶 → 合并结果不得把混合总量重新归因给 uid-1'
+            '（否则全新设备落地时复刻互串）',
+      );
 
-    // 两侧一致时身份保留。
-    final AggregateSnapshot agreed = AggregateSyncService.mergeSnapshots(
-      const AggregateSnapshot(
-          lookupMiningCounters: <LookupMiningRecord>[localRec]),
-      const AggregateSnapshot(
-          lookupMiningCounters: <LookupMiningRecord>[localRec]),
-    );
-    expect(agreed.lookupMiningCounters.single.bookKey, 'uid-1');
-  });
+      // 两侧一致时身份保留。
+      final AggregateSnapshot agreed = AggregateSyncService.mergeSnapshots(
+        const AggregateSnapshot(
+          lookupMiningCounters: <LookupMiningRecord>[localRec],
+        ),
+        const AggregateSnapshot(
+          lookupMiningCounters: <LookupMiningRecord>[localRec],
+        ),
+      );
+      expect(agreed.lookupMiningCounters.single.bookKey, 'uid-1');
+    },
+  );
 
   test('v76: single-identity fold keeps its bookKey metadata', () async {
     final FushiDatabase db = await _freshDb('agg_fold1_');
     addTearDown(db.close);
     await db.addLookupCount(
-        bookKey: 'uid-1',
-        title: '独占',
-        sourceType: 'video',
-        dateKey: '2026-06-01',
-        delta: 3);
+      bookKey: 'uid-1',
+      title: '独占',
+      sourceType: 'video',
+      dateKey: '2026-06-01',
+      delta: 3,
+    );
     await db.addMineCountPerBook(
-        bookKey: 'uid-1',
-        title: '独占',
-        sourceType: 'video',
-        dateKey: '2026-06-01',
-        delta: 2);
+      bookKey: 'uid-1',
+      title: '独占',
+      sourceType: 'video',
+      dateKey: '2026-06-01',
+      delta: 2,
+    );
 
-    final AggregateSnapshot snap =
-        await AggregateSyncService(db).materializeLocalSnapshot();
-    final LookupMiningRecord record = snap.lookupMiningCounters
-        .singleWhere((LookupMiningRecord r) => r.title == '独占');
+    final AggregateSnapshot snap = await AggregateSyncService(
+      db,
+    ).materializeLocalSnapshot();
+    final LookupMiningRecord record = snap.lookupMiningCounters.singleWhere(
+      (LookupMiningRecord r) => r.title == '独占',
+    );
     expect(record.bookKey, 'uid-1', reason: '桶内单一身份无歧义，metadata 保留');
     expect(record.lookupCount, 3);
     expect(record.mineCount, 2);
   });
 
-  test(
-      'v76: no-identity counter rows travel with wire bookKey null '
+  test('v76: no-identity counter rows travel with wire bookKey null '
       '(byte-compatible with pre-v76 snapshots)', () async {
     final FushiDatabase db = await _freshDb('agg_nullkey_');
     addTearDown(db.close);
     await db.addLookupCount(sourceType: 'book', dateKey: '2026-06-01');
 
-    final AggregateSnapshot snap =
-        await AggregateSyncService(db).materializeLocalSnapshot();
-    expect(snap.lookupMiningCounters.single.bookKey, isNull,
-        reason: "存储 '' 必须映射回 wire null，旧端字节语义不变");
+    final AggregateSnapshot snap = await AggregateSyncService(
+      db,
+    ).materializeLocalSnapshot();
+    expect(
+      snap.lookupMiningCounters.single.bookKey,
+      isNull,
+      reason: "存储 '' 必须映射回 wire null，旧端字节语义不变",
+    );
   });
 }

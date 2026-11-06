@@ -45,10 +45,7 @@ void main() {
     await tester.tap(mineButton);
     await tester.pumpAndSettle();
 
-    expect(minedFields, <String, String>{
-      'expression': '猫',
-      'reading': 'ねこ',
-    });
+    expect(minedFields, <String, String>{'expression': '猫', 'reading': 'ねこ'});
   });
 
   /// extra 里的 deinflectionTrace 已经是 buildDeinflectionTags 的**成品**
@@ -71,9 +68,7 @@ void main() {
         ],
       );
 
-  testWidgets('变形标签按接续顺序渲染，点开能看到该层的语法说明', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('变形标签按接续顺序渲染，点开能看到该层的语法说明', (WidgetTester tester) async {
     await tester.pumpWidget(
       buildTestApp(
         SizedBox(
@@ -113,9 +108,7 @@ void main() {
     expect(find.text('Indicates the past.'), findsNothing);
   });
 
-  testWidgets('没有语法说明的回落标签不可点（点了也不弹空框）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('没有语法说明的回落标签不可点（点了也不弹空框）', (WidgetTester tester) async {
     // 文本变体归一（colour→color）没有经过任何变形规则，因此没有语法说明。
     await tester.pumpWidget(
       buildTestApp(
@@ -124,10 +117,7 @@ void main() {
           height: 480,
           child: DictionaryPopupNative(
             result: resultWithTrace(<Map<String, String>>[
-              <String, String>{
-                'name': '当たっていた → 当たる',
-                'description': '',
-              },
+              <String, String>{'name': '当たっていた → 当たる', 'description': ''},
             ]),
           ),
         ),

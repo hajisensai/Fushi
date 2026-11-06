@@ -69,15 +69,22 @@ void main() {
 
   group('buildStableReleaseFromTag (302 tag -> API 同构 release map)', () {
     test(
-        'stable release URL helpers prefer canonical repo with legacy fallback',
-        () {
-      expect(kStableReleasesLatestUrl,
-          'https://github.com/hajisensai/fushi/releases/latest');
-      expect(kLegacyStableReleasesLatestUrl,
-          'https://github.com/hajisensai/hibiki/releases/latest');
-      expect(stableReleasesLatestUrlForRepo(kLegacyGitHubRepo),
-          'https://github.com/hajisensai/hibiki/releases/latest');
-    });
+      'stable release URL helpers prefer canonical repo with legacy fallback',
+      () {
+        expect(
+          kStableReleasesLatestUrl,
+          'https://github.com/hajisensai/fushi/releases/latest',
+        );
+        expect(
+          kLegacyStableReleasesLatestUrl,
+          'https://github.com/hajisensai/hibiki/releases/latest',
+        );
+        expect(
+          stableReleasesLatestUrlForRepo(kLegacyGitHubRepo),
+          'https://github.com/hajisensai/hibiki/releases/latest',
+        );
+      },
+    );
 
     test('用原始 tag（含 v）拼 download URL，version 去前导 v', () {
       final Map<String, dynamic> release = buildStableReleaseFromTag('v0.4.1');
@@ -90,16 +97,17 @@ void main() {
       final List<dynamic> assets = release['assets'] as List<dynamic>;
       final Map<String, dynamic> windows = assets
           .cast<Map<String, dynamic>>()
-          .firstWhere((Map<String, dynamic> a) =>
-              (a['name'] as String).endsWith('-windows-setup.exe'));
+          .firstWhere(
+            (Map<String, dynamic> a) =>
+                (a['name'] as String).endsWith('-windows-setup.exe'),
+          );
       expect(
         windows['browser_download_url'],
         'https://github.com/hajisensai/fushi/releases/download/v0.4.1/fushi-0.4.1-windows-setup.exe',
       );
     });
 
-    test('legacy repo override preserves installable fallback download URLs',
-        () {
+    test('legacy repo override preserves installable fallback download URLs', () {
       final Map<String, dynamic> release = buildStableReleaseFromTag(
         'v0.4.1',
         repo: kLegacyGitHubRepo,
@@ -111,8 +119,10 @@ void main() {
       final List<dynamic> assets = release['assets'] as List<dynamic>;
       final Map<String, dynamic> windows = assets
           .cast<Map<String, dynamic>>()
-          .firstWhere((Map<String, dynamic> a) =>
-              (a['name'] as String).endsWith('-windows-setup.exe'));
+          .firstWhere(
+            (Map<String, dynamic> a) =>
+                (a['name'] as String).endsWith('-windows-setup.exe'),
+          );
       expect(
         windows['browser_download_url'],
         'https://github.com/hajisensai/hibiki/releases/download/v0.4.1/fushi-0.4.1-windows-setup.exe',
@@ -155,10 +165,14 @@ void main() {
   group('302 候选并发竞速（直连恒首位 + 并发选最快活源，注入 fetcher）', () {
     test('直连首位 302 失败时镜像候选胜出（候选并发发起，不串行逐个等）', () async {
       final List<String> attempted = <String>[];
-      final List<String> urls =
-          updateCheckUrls('https://github.com/x/y/releases/latest');
-      expect(urls.first, 'https://github.com/x/y/releases/latest',
-          reason: '直连必须恒为首候选');
+      final List<String> urls = updateCheckUrls(
+        'https://github.com/x/y/releases/latest',
+      );
+      expect(
+        urls.first,
+        'https://github.com/x/y/releases/latest',
+        reason: '直连必须恒为首候选',
+      );
 
       // 模拟：直连本身被 GFW 切断（返回 null），镜像透传 302 拿到 tag。
       final String? tag = await fetchFirstSuccessfulBody(
@@ -179,8 +193,9 @@ void main() {
     });
 
     test('全候选 302 都失败则整体返回 null（回退到 API 直连由上层负责）', () async {
-      final List<String> urls =
-          updateCheckUrls('https://github.com/x/y/releases/latest');
+      final List<String> urls = updateCheckUrls(
+        'https://github.com/x/y/releases/latest',
+      );
       final String? tag = await fetchFirstSuccessfulBody(
         urls,
         fetch: (String _) async => null,

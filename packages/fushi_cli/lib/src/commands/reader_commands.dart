@@ -4,7 +4,7 @@ import '../ctl_commands.dart';
 import 'library_commands.dart' show libraryItemPath;
 
 /// 阅读会话遥控、有声书、漫画 OCR 命令组（app 侧路由见
-/// `fushi/lib/src/platform/desktop/ctl/ctl_reader_routes.dart` /
+/// `fushi/lib/src/ops/ctl_reader_routes.dart` /
 /// `ctl_audiobook_routes.dart` / `ctl_manga_ocr_routes.dart`）。
 const List<CtlCommandGroup> readerCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
@@ -516,7 +516,9 @@ CtlRequestSpec _buildOcrCancel(CtlCommandContext context) =>
 String _ocrLine(Map<Object?, Object?> job) {
   final StringBuffer out = StringBuffer('${job['key']}  ${job['state']}');
   if (job['pagesTotal'] != null) {
-    out.write(' ${job['pagesDone']}/${job['pagesTotal']} 页');
+    // 远程引擎先上传再识别，两段各自从 0 数起（BUG-3605）。
+    final String phase = job['phase'] == 'uploading' ? ' 上传' : '';
+    out.write('$phase ${job['pagesDone']}/${job['pagesTotal']} 页');
   }
   if (job['directory'] != null) out.write('（${job['directory']}）');
   final Object? queued = job['queued'];

@@ -18,72 +18,94 @@ void mockClipboard(WidgetTester tester, String? text) {
       return null;
     },
   );
-  addTearDown(() => tester.binding.defaultBinaryMessenger
-      .setMockMethodCallHandler(SystemChannels.platform, null));
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      null,
+    ),
+  );
 }
 
 void main() {
   group('FushiGamepadKeyboard', () {
-    testWidgets('A (ActivateIntent) on a focused key emits its character',
-        (WidgetTester tester) async {
+    testWidgets('A (ActivateIntent) on a focused key emits its character', (
+      WidgetTester tester,
+    ) async {
       final List<String> typed = <String>[];
-      await tester.pumpWidget(buildTestApp(
-        FushiFocusRoot(
-          child: FushiGamepadKeyboard(
-            onChar: typed.add,
-            onBackspace: () => typed.add('<BS>'),
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiFocusRoot(
+            child: FushiGamepadKeyboard(
+              onChar: typed.add,
+              onBackspace: () => typed.add('<BS>'),
+            ),
           ),
         ),
-      ));
+      );
       await tester.pump();
 
-      final FushiFocusController controller =
-          FushiFocusRoot.controllerOf(tester.element(find.text('q')));
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
+        tester.element(find.text('q')),
+      );
       controller.ensureFocus();
       await tester.pump();
-      expect(controller.activeId, isNotNull,
-          reason: 'keys register as gamepad focus targets');
+      expect(
+        controller.activeId,
+        isNotNull,
+        reason: 'keys register as gamepad focus targets',
+      );
 
       Actions.maybeInvoke<ActivateIntent>(
-          controller.activeContext!, const ActivateIntent());
+        controller.activeContext!,
+        const ActivateIntent(),
+      );
       await tester.pump();
       expect(typed, <String>['q'], reason: 'A presses the focused key');
     });
 
-    testWidgets('D-pad moves focus to the next key, then A types it',
-        (WidgetTester tester) async {
+    testWidgets('D-pad moves focus to the next key, then A types it', (
+      WidgetTester tester,
+    ) async {
       final List<String> typed = <String>[];
-      await tester.pumpWidget(buildTestApp(
-        FushiFocusRoot(
-          child: FushiGamepadKeyboard(
-            onChar: typed.add,
-            onBackspace: () {},
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiFocusRoot(
+            child: FushiGamepadKeyboard(onChar: typed.add, onBackspace: () {}),
           ),
         ),
-      ));
+      );
       await tester.pump();
 
-      final FushiFocusController controller =
-          FushiFocusRoot.controllerOf(tester.element(find.text('q')));
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
+        tester.element(find.text('q')),
+      );
       controller.ensureFocus();
       await tester.pump();
 
-      expect(controller.move(FushiFocusDirection.right), isTrue,
-          reason: 'D-pad right moves q → w');
+      expect(
+        controller.move(FushiFocusDirection.right),
+        isTrue,
+        reason: 'D-pad right moves q → w',
+      );
       await tester.pump();
       Actions.maybeInvoke<ActivateIntent>(
-          controller.activeContext!, const ActivateIntent());
+        controller.activeContext!,
+        const ActivateIntent(),
+      );
       await tester.pump();
       expect(typed, <String>['w']);
     });
 
-    testWidgets('the ⇧ / abc key cycles lower → upper → symbols',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(buildTestApp(
-        FushiFocusRoot(
-          child: FushiGamepadKeyboard(onChar: (_) {}, onBackspace: () {}),
+    testWidgets('the ⇧ / abc key cycles lower → upper → symbols', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiFocusRoot(
+            child: FushiGamepadKeyboard(onChar: (_) {}, onBackspace: () {}),
+          ),
         ),
-      ));
+      );
       await tester.pump();
       expect(find.text('q'), findsOneWidget); // lower
 
@@ -101,20 +123,23 @@ void main() {
       expect(find.text('q'), findsOneWidget); // back to lower
     });
 
-    testWidgets('space / backspace / done keys fire their callbacks',
-        (WidgetTester tester) async {
+    testWidgets('space / backspace / done keys fire their callbacks', (
+      WidgetTester tester,
+    ) async {
       final List<String> typed = <String>[];
       int backspaces = 0;
       int submits = 0;
-      await tester.pumpWidget(buildTestApp(
-        FushiFocusRoot(
-          child: FushiGamepadKeyboard(
-            onChar: typed.add,
-            onBackspace: () => backspaces++,
-            onSubmit: () => submits++,
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiFocusRoot(
+            child: FushiGamepadKeyboard(
+              onChar: typed.add,
+              onBackspace: () => backspaces++,
+              onSubmit: () => submits++,
+            ),
           ),
         ),
-      ));
+      );
       await tester.pump();
 
       await tester.tap(find.text('␣'));
@@ -130,35 +155,49 @@ void main() {
       expect(submits, 1);
     });
 
-    testWidgets('paste key renders only when onPaste is provided',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(buildTestApp(
-        FushiFocusRoot(
-          child: FushiGamepadKeyboard(onChar: (_) {}, onBackspace: () {}),
+    testWidgets('paste key renders only when onPaste is provided', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiFocusRoot(
+            child: FushiGamepadKeyboard(onChar: (_) {}, onBackspace: () {}),
+          ),
         ),
-      ));
+      );
       await tester.pump();
       expect(find.byIcon(Icons.content_paste_outlined), findsNothing);
 
-      await tester.pumpWidget(buildTestApp(
-        FushiFocusRoot(
-          child: FushiGamepadKeyboard(
-              onChar: (_) {}, onBackspace: () {}, onPaste: () {}),
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiFocusRoot(
+            child: FushiGamepadKeyboard(
+              onChar: (_) {},
+              onBackspace: () {},
+              onPaste: () {},
+            ),
+          ),
         ),
-      ));
+      );
       await tester.pump();
       expect(find.byIcon(Icons.content_paste_outlined), findsOneWidget);
     });
 
-    testWidgets('tapping the paste key fires onPaste',
-        (WidgetTester tester) async {
+    testWidgets('tapping the paste key fires onPaste', (
+      WidgetTester tester,
+    ) async {
       int pastes = 0;
-      await tester.pumpWidget(buildTestApp(
-        FushiFocusRoot(
-          child: FushiGamepadKeyboard(
-              onChar: (_) {}, onBackspace: () {}, onPaste: () => pastes++),
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiFocusRoot(
+            child: FushiGamepadKeyboard(
+              onChar: (_) {},
+              onBackspace: () {},
+              onPaste: () => pastes++,
+            ),
+          ),
         ),
-      ));
+      );
       await tester.pump();
       await tester.tap(find.byIcon(Icons.content_paste_outlined));
       await tester.pump();
@@ -218,8 +257,9 @@ void main() {
   });
 
   group('gamepadKeyboardPaste', () {
-    testWidgets('inserts clipboard text at the cursor and advances it',
-        (WidgetTester tester) async {
+    testWidgets('inserts clipboard text at the cursor and advances it', (
+      WidgetTester tester,
+    ) async {
       mockClipboard(tester, 'XY');
       final TextEditingController c = TextEditingController(text: 'ac');
       addTearDown(c.dispose);
@@ -239,8 +279,9 @@ void main() {
       expect(c.text, 'aBc');
     });
 
-    testWidgets('empty clipboard is a no-op returning false',
-        (WidgetTester tester) async {
+    testWidgets('empty clipboard is a no-op returning false', (
+      WidgetTester tester,
+    ) async {
       mockClipboard(tester, '');
       final TextEditingController c = TextEditingController(text: 'ab');
       addTearDown(c.dispose);
@@ -249,8 +290,9 @@ void main() {
       expect(c.text, 'ab');
     });
 
-    testWidgets('null clipboard is a no-op returning false',
-        (WidgetTester tester) async {
+    testWidgets('null clipboard is a no-op returning false', (
+      WidgetTester tester,
+    ) async {
       mockClipboard(tester, null);
       final TextEditingController c = TextEditingController(text: 'ab');
       addTearDown(c.dispose);
@@ -259,19 +301,25 @@ void main() {
     });
   });
 
-  testWidgets('showGamepadKeyboard fires onChanged on char and on paste',
-      (WidgetTester tester) async {
+  testWidgets('showGamepadKeyboard fires onChanged on char and on paste', (
+    WidgetTester tester,
+  ) async {
     mockClipboard(tester, 'PV');
     final TextEditingController c = TextEditingController();
     addTearDown(c.dispose);
     final List<String> changes = <String>[];
 
-    await tester.pumpWidget(buildTestApp(Builder(
-      builder: (BuildContext ctx) => ElevatedButton(
-        onPressed: () => showGamepadKeyboard(ctx, c, onChanged: changes.add),
-        child: const Text('open'),
+    await tester.pumpWidget(
+      buildTestApp(
+        Builder(
+          builder: (BuildContext ctx) => ElevatedButton(
+            onPressed: () =>
+                showGamepadKeyboard(ctx, c, onChanged: changes.add),
+            child: const Text('open'),
+          ),
+        ),
       ),
-    )));
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 

@@ -21,51 +21,64 @@ void main() {
 
   group('lookupHighlightCharCount (BUG-206)', () {
     test(
-        'kana body, kanji headword: highlight count = matched inflected length, '
-        'NOT headword length', () {
-      // 正文里读到的是假名活用形「うやうやしく」(6 字)，去屈折成词典形，词条 headword
-      // 是汉字「恭しい」(3 字)。bestLength=6 是 FFI 记录的 matched 源串长度。
-      final result = DictionarySearchResult(
-        searchTerm: 'うやうやしく見上げた',
-        bestLength: 6,
-        entries: [
-          DictionaryEntry(
-              word: '恭しい', reading: 'うやうやしい', meaning: 'respectful'),
-        ],
-      );
+      'kana body, kanji headword: highlight count = matched inflected length, '
+      'NOT headword length',
+      () {
+        // 正文里读到的是假名活用形「うやうやしく」(6 字)，去屈折成词典形，词条 headword
+        // 是汉字「恭しい」(3 字)。bestLength=6 是 FFI 记录的 matched 源串长度。
+        final result = DictionarySearchResult(
+          searchTerm: 'うやうやしく見上げた',
+          bestLength: 6,
+          entries: [
+            DictionaryEntry(
+              word: '恭しい',
+              reading: 'うやうやしい',
+              meaning: 'respectful',
+            ),
+          ],
+        );
 
-      final int count = lookupHighlightCharCount(
-        result: result,
-        searchTerm: 'うやうやしく見上げた',
-        language: ja,
-      );
+        final int count = lookupHighlightCharCount(
+          result: result,
+          searchTerm: 'うやうやしく見上げた',
+          language: ja,
+        );
 
-      // 必须是 6（活用形长度），不能是 3（headword「恭しい」.runes.length）。
-      expect(count, 6,
-          reason: '高亮须覆盖正文真实出现的活用形「うやうやしく」(6 字)，而非汉字 headword 长度 3');
-      expect(count, isNot(3),
-          reason: '旧实现取 entries.first.word.runes.length=3，会少选字 → 必须避免');
-    });
+        // 必须是 6（活用形长度），不能是 3（headword「恭しい」.runes.length）。
+        expect(
+          count,
+          6,
+          reason: '高亮须覆盖正文真实出现的活用形「うやうやしく」(6 字)，而非汉字 headword 长度 3',
+        );
+        expect(
+          count,
+          isNot(3),
+          reason: '旧实现取 entries.first.word.runes.length=3，会少选字 → 必须避免',
+        );
+      },
+    );
 
-    test('inflected verb: matched length drives highlight, not dictionary form',
-        () {
-      // 「食べられた」(5 字) 去屈折 → 词典形「食べる」(3 字)。高亮须覆盖 5 字活用形。
-      final result = DictionarySearchResult(
-        searchTerm: '食べられた',
-        bestLength: 5,
-        entries: [
-          DictionaryEntry(word: '食べる', reading: 'たべる', meaning: 'to eat'),
-        ],
-      );
+    test(
+      'inflected verb: matched length drives highlight, not dictionary form',
+      () {
+        // 「食べられた」(5 字) 去屈折 → 词典形「食べる」(3 字)。高亮须覆盖 5 字活用形。
+        final result = DictionarySearchResult(
+          searchTerm: '食べられた',
+          bestLength: 5,
+          entries: [
+            DictionaryEntry(word: '食べる', reading: 'たべる', meaning: 'to eat'),
+          ],
+        );
 
-      final int count = lookupHighlightCharCount(
-        result: result,
-        searchTerm: '食べられた',
-        language: ja,
-      );
+        final int count = lookupHighlightCharCount(
+          result: result,
+          searchTerm: '食べられた',
+          language: ja,
+        );
 
-      expect(count, 5, reason: '活用形「食べられた」=5 字，词典形「食べる」=3 字；高亮以活用形长度为准');
-    });
+        expect(count, 5, reason: '活用形「食べられた」=5 字，词典形「食べる」=3 字；高亮以活用形长度为准');
+      },
+    );
 
     test('no entries → 0 (no highlight), preserving prior behavior', () {
       final result = DictionarySearchResult(
@@ -84,23 +97,25 @@ void main() {
       );
     });
 
-    test('exact-match (no inflection): count equals the matched word length',
-        () {
-      // 「猫」非活用，matched=headword，bestLength=1。回归保护：不破坏直配词的高亮。
-      final result = DictionarySearchResult(
-        searchTerm: '猫',
-        bestLength: 1,
-        entries: [DictionaryEntry(word: '猫', reading: 'ねこ', meaning: 'cat')],
-      );
-
-      expect(
-        lookupHighlightCharCount(
-          result: result,
+    test(
+      'exact-match (no inflection): count equals the matched word length',
+      () {
+        // 「猫」非活用，matched=headword，bestLength=1。回归保护：不破坏直配词的高亮。
+        final result = DictionarySearchResult(
           searchTerm: '猫',
-          language: ja,
-        ),
-        1,
-      );
-    });
+          bestLength: 1,
+          entries: [DictionaryEntry(word: '猫', reading: 'ねこ', meaning: 'cat')],
+        );
+
+        expect(
+          lookupHighlightCharCount(
+            result: result,
+            searchTerm: '猫',
+            language: ja,
+          ),
+          1,
+        );
+      },
+    );
   });
 }

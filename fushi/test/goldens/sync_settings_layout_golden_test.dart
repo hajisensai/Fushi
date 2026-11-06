@@ -6,7 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -25,7 +25,7 @@ import '../helpers/test_platform_services.dart';
 /// 同步/互联设置页排版的 golden 基线（C 系列重组的改前/改后对照）。
 ///
 /// 两页各出宽窄两档：900 宽 ≈ 桌面主从布局的详情 pane，400 宽 ≈ 手机单列。
-/// 高度按档给足（宽 2400、窄 3400），让整页内容一次落在图里（详情容器是非懒
+/// 高度按档给足（宽 2400、窄 3800），让整页内容一次落在图里（详情容器是非懒
 /// 加载的 SingleChildScrollView，见 BUG-037），改前/改后的总长度一眼可比。
 /// 页面长高到装不下时 [_expectWholePageVisible] 直接报红，而不是让 golden
 /// 悄悄只截到上半页（BUG-3494：窄档曾被截掉约 650px 无人察觉）。
@@ -183,10 +183,13 @@ void main() {
     FocusManager.instance.highlightStrategy = FocusHighlightStrategy.automatic;
   });
 
-  for (final ({String name, double width, double height}) size
-      in <({String name, double width, double height})>[
-        (name: 'wide', width: 900, height: 2400),
-        (name: 'narrow', width: 400, height: 3400),
+  // syncHeight：同步与备份页比互联页长（反馈 AWp-0BtDDv 加了「同步设置」与
+  // 「合并导入时包含设置」两行），单独给它更高的视口，互联页基线不动。
+  for (final ({String name, double width, double height, double syncHeight})
+      size
+      in <({String name, double width, double height, double syncHeight})>[
+        (name: 'wide', width: 900, height: 2400, syncHeight: 2800),
+        (name: 'narrow', width: 400, height: 3800, syncHeight: 4900),
       ]) {
     testWidgets('sync & backup page · ${size.name}', (
       WidgetTester tester,
@@ -195,7 +198,7 @@ void main() {
         tester,
         destination: buildSyncBackupDestination,
         width: size.width,
-        height: size.height,
+        height: size.syncHeight,
         seed: _seedSyncPage,
       );
       _expectWholePageVisible(tester);

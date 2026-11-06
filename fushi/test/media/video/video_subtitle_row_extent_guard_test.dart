@@ -71,32 +71,28 @@ Widget _panel({
   required VideoPlayerController controller,
   bool Function(AudioCue cue)? isCueFavorited,
   int fontScaleIndex = 1,
-}) =>
-    VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-      controller: controller,
-      onTapCue: (_) {},
-      onClose: () {},
-      onCopyCue: (_) => true,
-      onFavoriteCue: (_) async {},
-      isCueFavorited: isCueFavorited ?? (_) => false,
-      colorScheme: const ColorScheme.dark(),
-      title: 'Subtitle list',
-      emptyHint: 'empty',
-      fontSize: _kFontSize,
-      width: _kPanelWidth,
-      initialFontScaleIndex: fontScaleIndex,
-    );
+}) => VideoSubtitleJumpPanel(
+  layout: VideoSubtitleListLayout.classic,
+  controller: controller,
+  onTapCue: (_) {},
+  onClose: () {},
+  onCopyCue: (_) => true,
+  onFavoriteCue: (_) async {},
+  isCueFavorited: isCueFavorited ?? (_) => false,
+  colorScheme: const ColorScheme.dark(),
+  title: 'Subtitle list',
+  emptyHint: 'empty',
+  fontSize: _kFontSize,
+  width: _kPanelWidth,
+  initialFontScaleIndex: fontScaleIndex,
+);
 
 /// 该行的行盒（[_buildRow] 里承载背景 / 收藏色条 / 上下内缩的那个 [Container]），
 /// 高度 = `ListView.itemExtentBuilder` 给出的行高。
 double _rowHeight(WidgetTester tester, String text) => tester
     .renderObject<RenderBox>(
       find
-          .ancestor(
-            of: _cueTextFinder(text),
-            matching: find.byType(Container),
-          )
+          .ancestor(of: _cueTextFinder(text), matching: find.byType(Container))
           .first,
     )
     .size
@@ -121,10 +117,9 @@ void main() {
           _cue(1, 20000, 'バレちゃうかもね'),
         ]);
 
-        await tester.pumpWidget(_wrap(
-          _panel(controller: controller),
-          textScaler: scaler,
-        ));
+        await tester.pumpWidget(
+          _wrap(_panel(controller: controller), textScaler: scaler),
+        );
         await tester.pump();
 
         final Finder longRow = _cueTextFinder(_kLongCue);
@@ -155,8 +150,9 @@ void main() {
       await tester.pumpWidget(_wrap(_panel(controller: controller)));
       await tester.pump();
 
-      final RenderBox textBox =
-          tester.renderObject<RenderBox>(_cueTextFinder(_kLongCue));
+      final RenderBox textBox = tester.renderObject<RenderBox>(
+        _cueTextFinder(_kLongCue),
+      );
       final double expected = subtitleRowTextWidth(
         rowWidth: _kPanelWidth,
         effectiveFontSize: _kFontSize,
@@ -201,7 +197,8 @@ void main() {
       expect(
         panelRect.right - buttonRect.right,
         greaterThanOrEqualTo(kSubtitleRowScrollbarGutter),
-        reason: '星标可点区域右缘到面板右缘的距离必须 ≥ 滚动条通道宽度，'
+        reason:
+            '星标可点区域右缘到面板右缘的距离必须 ≥ 滚动条通道宽度，'
             '否则滚动条盖住它并吞掉点击',
       );
     });
@@ -216,16 +213,24 @@ void main() {
 
       await tester.pumpWidget(_wrap(_panel(controller: controller)));
       await tester.pump();
-      final double plainWidth =
-          tester.renderObject<RenderBox>(_cueTextFinder(_kLongCue)).size.width;
+      final double plainWidth = tester
+          .renderObject<RenderBox>(_cueTextFinder(_kLongCue))
+          .size
+          .width;
 
-      await tester.pumpWidget(_wrap(_panel(
-        controller: controller,
-        isCueFavorited: (AudioCue cue) => cue.text == _kLongCue,
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          _panel(
+            controller: controller,
+            isCueFavorited: (AudioCue cue) => cue.text == _kLongCue,
+          ),
+        ),
+      );
       await tester.pump();
-      final double favoritedWidth =
-          tester.renderObject<RenderBox>(_cueTextFinder(_kLongCue)).size.width;
+      final double favoritedWidth = tester
+          .renderObject<RenderBox>(_cueTextFinder(_kLongCue))
+          .size
+          .width;
 
       expect(
         favoritedWidth,
@@ -255,16 +260,17 @@ void main() {
         final VideoPlayerController probe = VideoPlayerController();
         addTearDown(probe.dispose);
         probe.setCues(<AudioCue>[_cue(0, 0, 'あ')]);
-        await tester.pumpWidget(_wrap(
-          _panel(controller: probe, fontScaleIndex: scaleIndex),
-        ));
+        await tester.pumpWidget(
+          _wrap(_panel(controller: probe, fontScaleIndex: scaleIndex)),
+        );
         await tester.pump();
 
-        final RichText probeRich =
-            tester.widget<RichText>(_cueTextFinder('あ'));
+        final RichText probeRich = tester.widget<RichText>(_cueTextFinder('あ'));
         final double rowFontSize = probeRich.text.style!.fontSize!;
-        final double textColumnWidth =
-            tester.renderObject<RenderBox>(_cueTextFinder('あ')).size.width;
+        final double textColumnWidth = tester
+            .renderObject<RenderBox>(_cueTextFinder('あ'))
+            .size
+            .width;
         final int perLine = (textColumnWidth / rowFontSize).floor();
         expect(perLine, greaterThan(2), reason: '文本列窄到造不出多行样例');
 
@@ -279,9 +285,9 @@ void main() {
           _cue(1, 4000, twoLines),
           _cue(2, 8000, threeLines),
         ]);
-        await tester.pumpWidget(_wrap(
-          _panel(controller: controller, fontScaleIndex: scaleIndex),
-        ));
+        await tester.pumpWidget(
+          _wrap(_panel(controller: controller, fontScaleIndex: scaleIndex)),
+        );
         await tester.pump();
 
         // 样例真的分别是 1 / 2 / 3 行，否则这条守卫失去意义。
@@ -290,13 +296,17 @@ void main() {
         expect(_textHeight(tester, threeLines), closeTo(line * 3, 0.5));
 
         // 行内另两个子项的**真实**渲染高度（Row 高度 = 子项高度最大值）。
-        final double timestampHeight =
-            tester.renderObject<RenderBox>(find.text('0:00')).size.height;
+        final double timestampHeight = tester
+            .renderObject<RenderBox>(find.text('0:00'))
+            .size
+            .height;
         final double actionsHeight = tester
-            .renderObject<RenderBox>(find.ancestor(
-              of: find.byIcon(FushiIcons.play).first,
-              matching: find.byType(InkResponse),
-            ))
+            .renderObject<RenderBox>(
+              find.ancestor(
+                of: find.byIcon(FushiIcons.play).first,
+                matching: find.byType(InkResponse),
+              ),
+            )
             .size
             .height;
 
@@ -308,7 +318,8 @@ void main() {
           expect(
             _rowHeight(tester, text),
             closeTo(kSubtitleRowPaddingVertical + content, 0.5),
-            reason: '行高必须等于「上下内缩 + 内容」，不许有保底下界把矮行撑高'
+            reason:
+                '行高必须等于「上下内缩 + 内容」，不许有保底下界把矮行撑高'
                 '（BUG-2057：单行英文译文上下留白特别大）',
           );
         }

@@ -18,7 +18,23 @@ import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:material_ui/material_ui.dart';
@@ -208,6 +224,9 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
       widget.feedbackId,
     );
     final bool attachable = local != null && service.canAttach(local);
+    // 待传槽位在上传进行中时也在 [pending] 里（追加截图先落盘再传）：这时它们是「正在传」，
+    // 不是「没传上去」，不能显示失败提示与重试按钮（#aiRZmYl5zS）。
+    final bool uploading = service.attachInFlight(widget.feedbackId);
     // 截图只数截图槽位：视频（v0）与日志不占截图名额。
     final int shots =
         d.attachments
@@ -245,7 +264,26 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
           ),
         ),
       ],
-      if (pending.isNotEmpty && transfer == null) ...<Widget>[
+      if (uploading && transfer == null) ...<Widget>[
+        SizedBox(height: tokens.spacing.card),
+        FushiCard(
+          key: const ValueKey<String>('feedback-detail-uploading'),
+          margin: EdgeInsets.zero,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                pending.isNotEmpty && pending.every((String s) => s == 'log')
+                    ? t.feedback_stage_logs
+                    : t.feedback_stage_screenshots,
+              ),
+              SizedBox(height: tokens.spacing.gap),
+              const FushiLinearProgressIndicator(),
+            ],
+          ),
+        ),
+      ],
+      if (pending.isNotEmpty && !uploading && transfer == null) ...<Widget>[
         SizedBox(height: tokens.spacing.card),
         FushiInlineNotice(
           key: const ValueKey<String>('feedback-detail-pending'),

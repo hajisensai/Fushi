@@ -3,10 +3,7 @@ import 'dart:convert';
 import 'package:path/path.dart' as p;
 
 class FontCatalogState {
-  const FontCatalogState({
-    required this.fonts,
-    required this.targets,
-  });
+  const FontCatalogState({required this.fonts, required this.targets});
 
   static const int version = 1;
 
@@ -51,8 +48,10 @@ class FontCatalogState {
         if (rawRows is! List<dynamic>) return null;
         final List<FontTargetFont> parsedRows = <FontTargetFont>[];
         for (final dynamic row in rawRows) {
-          final FontTargetFont? parsed =
-              FontTargetFont.fromJson(row, knownFontIds: ids);
+          final FontTargetFont? parsed = FontTargetFont.fromJson(
+            row,
+            knownFontIds: ids,
+          );
           if (parsed != null) parsedRows.add(parsed);
         }
         targets[key] = parsedRows;
@@ -96,17 +95,17 @@ class FontCatalogState {
       for (final Map<String, dynamic> font in target.value) {
         final FontListFont? listFont = FontListFont.fromMap(font);
         if (listFont == null) continue;
-        final String identity =
-            FontCatalogEntry.identityOf(listFont.name, listFont.path);
+        final String identity = FontCatalogEntry.identityOf(
+          listFont.name,
+          listFont.path,
+        );
         String? id = idByIdentity[identity];
         if (id == null) {
           id = reserveId();
           idByIdentity[identity] = id;
-          fonts.add(FontCatalogEntry(
-            id: id,
-            name: listFont.name,
-            path: listFont.path,
-          ));
+          fonts.add(
+            FontCatalogEntry(id: id, name: listFont.name, path: listFont.path),
+          );
         }
         rows.add(FontTargetFont(fontId: id, enabled: listFont.enabled));
       }
@@ -121,8 +120,9 @@ class FontCatalogState {
     List<Map<String, dynamic>> targetFonts,
   ) {
     final List<FontCatalogEntry> nextFonts = <FontCatalogEntry>[...fonts];
-    final Set<String> ids =
-        nextFonts.map((FontCatalogEntry font) => font.id).toSet();
+    final Set<String> ids = nextFonts
+        .map((FontCatalogEntry font) => font.id)
+        .toSet();
     final Map<String, String> idByIdentity = <String, String>{
       for (final FontCatalogEntry font in nextFonts) font.identity: font.id,
     };
@@ -142,27 +142,24 @@ class FontCatalogState {
     for (final Map<String, dynamic> font in targetFonts) {
       final FontListFont? listFont = FontListFont.fromMap(font);
       if (listFont == null) continue;
-      final String identity =
-          FontCatalogEntry.identityOf(listFont.name, listFont.path);
+      final String identity = FontCatalogEntry.identityOf(
+        listFont.name,
+        listFont.path,
+      );
       String? id = idByIdentity[identity];
       if (id == null) {
         id = reserveId();
         idByIdentity[identity] = id;
-        nextFonts.add(FontCatalogEntry(
-          id: id,
-          name: listFont.name,
-          path: listFont.path,
-        ));
+        nextFonts.add(
+          FontCatalogEntry(id: id, name: listFont.name, path: listFont.path),
+        );
       }
       rows.add(FontTargetFont(fontId: id, enabled: listFont.enabled));
     }
 
     return FontCatalogState(
       fonts: nextFonts,
-      targets: <String, List<FontTargetFont>>{
-        ...targets,
-        targetKey: rows,
-      },
+      targets: <String, List<FontTargetFont>>{...targets, targetKey: rows},
     );
   }
 
@@ -207,8 +204,9 @@ class FontCatalogState {
     int next = 1;
     for (final String id in ids) {
       final RegExpMatch? match = generatedId.firstMatch(id);
-      final int? value =
-          match == null ? null : int.tryParse(match.group(1) ?? '');
+      final int? value = match == null
+          ? null
+          : int.tryParse(match.group(1) ?? '');
       if (value != null && value >= next) {
         next = value + 1;
       }
@@ -249,27 +247,16 @@ class FontCatalogEntry {
   }
 
   Map<String, dynamic> toJson() {
-    return <String, dynamic>{
-      'id': id,
-      'name': name,
-      'path': path,
-    };
+    return <String, dynamic>{'id': id, 'name': name, 'path': path};
   }
 
   Map<String, dynamic> toFontListMap({required bool enabled}) {
-    return <String, dynamic>{
-      'name': name,
-      'path': path,
-      'enabled': enabled,
-    };
+    return <String, dynamic>{'name': name, 'path': path, 'enabled': enabled};
   }
 }
 
 class FontTargetFont {
-  const FontTargetFont({
-    required this.fontId,
-    required this.enabled,
-  });
+  const FontTargetFont({required this.fontId, required this.enabled});
 
   final String fontId;
   final bool enabled;
@@ -289,10 +276,7 @@ class FontTargetFont {
   }
 
   Map<String, dynamic> toJson() {
-    return <String, dynamic>{
-      'fontId': fontId,
-      'enabled': enabled,
-    };
+    return <String, dynamic>{'fontId': fontId, 'enabled': enabled};
   }
 }
 
@@ -371,8 +355,11 @@ String fontPathBasename(String path) {
     root['fonts'] = fonts.map<dynamic>((dynamic e) {
       if (e is! Map) return e;
       final Map<String, dynamic> row = Map<String, dynamic>.from(e);
-      final String? next =
-          _relocatedFontPath(row['path'], currentFontsDir, fileExists);
+      final String? next = _relocatedFontPath(
+        row['path'],
+        currentFontsDir,
+        fileExists,
+      );
       if (next != null) {
         row['path'] = next;
         relocated += 1;
@@ -402,8 +389,11 @@ String fontPathBasename(String path) {
     final List<dynamic> out = decoded.map<dynamic>((dynamic e) {
       if (e is! Map) return e;
       final Map<String, dynamic> row = Map<String, dynamic>.from(e);
-      final String? next =
-          _relocatedFontPath(row['path'], currentFontsDir, fileExists);
+      final String? next = _relocatedFontPath(
+        row['path'],
+        currentFontsDir,
+        fileExists,
+      );
       if (next != null) {
         row['path'] = next;
         relocated += 1;

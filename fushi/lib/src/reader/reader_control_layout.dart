@@ -68,6 +68,10 @@ enum ReaderControlItem implements ControlItemSpec<ReaderControlSlot> {
   /// 目录 / 搜索 / 收藏（左侧导航抽屉）。
   navigation('navigation', recoverySlot: ReaderControlSlot.topLeft),
 
+  /// 书签与收藏句：打开导航抽屉并直达「收藏」页的「书签」段。出厂在「更多」
+  /// （宽窗 / 窄窗都是）；存量布局 JSON 缺这颗时按出厂表回填到「更多」。
+  bookmarks('bookmarks', recoverySlot: ReaderControlSlot.topRight),
+
   /// 插图册。
   gallery('gallery', recoverySlot: ReaderControlSlot.topLeft),
 
@@ -146,15 +150,14 @@ enum ReaderControlItem implements ControlItemSpec<ReaderControlSlot> {
 
   /// 有声书传输键（上一句 / 播放暂停 / 下一句 / ±10s / 跟随）。
   bool get isAudiobookTransport => switch (this) {
-        ReaderControlItem.audiobookPrev ||
-        ReaderControlItem.audiobookPlayPause ||
-        ReaderControlItem.audiobookNext ||
-        ReaderControlItem.audiobookSeekBack ||
-        ReaderControlItem.audiobookSeekForward ||
-        ReaderControlItem.audiobookFollow =>
-          true,
-        _ => false,
-      };
+    ReaderControlItem.audiobookPrev ||
+    ReaderControlItem.audiobookPlayPause ||
+    ReaderControlItem.audiobookNext ||
+    ReaderControlItem.audiobookSeekBack ||
+    ReaderControlItem.audiobookSeekForward ||
+    ReaderControlItem.audiobookFollow => true,
+    _ => false,
+  };
 
   @override
   bool canMoveToSlot(ReaderControlSlot target, {bool isTouchControls = false}) {
@@ -185,10 +188,10 @@ enum ReaderControlItem implements ControlItemSpec<ReaderControlSlot> {
 /// 的那颗键。歌词模式另加模式切换键（页面追加，与顶栏在歌词模式强制保留它同理）。
 const List<ReaderControlItem> kReaderToolbarsTakeoverItems =
     <ReaderControlItem>[
-  ReaderControlItem.back,
-  ReaderControlItem.settings,
-  ReaderControlItem.toolbars,
-];
+      ReaderControlItem.back,
+      ReaderControlItem.settings,
+      ReaderControlItem.toolbars,
+    ];
 
 /// 顶栏中间只有书名：其它按钮误进 topCenter 时挪回各自的 recoverySlot。
 void _readerPostNormalize(
@@ -209,13 +212,13 @@ void _readerPostNormalize(
 }
 
 const ControlLayoutScheme<ReaderControlSlot, ReaderControlItem>
-    kReaderControlScheme =
+kReaderControlScheme =
     ControlLayoutScheme<ReaderControlSlot, ReaderControlItem>(
-  slots: ReaderControlSlot.values,
-  hiddenSlot: ReaderControlSlot.hidden,
-  items: ReaderControlItem.values,
-  postNormalize: _readerPostNormalize,
-);
+      slots: ReaderControlSlot.values,
+      hiddenSlot: ReaderControlSlot.hidden,
+      items: ReaderControlItem.values,
+      postNormalize: _readerPostNormalize,
+    );
 
 /// 窄于此宽度（逻辑 px，MD3 compact window class 上界）用窄窗布局
 /// （[ReaderControlLayout.compactDefaults] / 偏好 `reader_control_layout_compact`）。
@@ -229,12 +232,11 @@ class ReaderControlLayout {
 
   factory ReaderControlLayout.fromCore(
     ControlLayout<ReaderControlSlot, ReaderControlItem> core,
-  ) =>
-      ReaderControlLayout._(core);
+  ) => ReaderControlLayout._(core);
 
   /// 宽窗（≥ [kReaderControlCompactWidth]）出厂布局（2026-10 工具栏精简，按使用频率
   /// 重排）：左「← 返回」，中「书名」（点它 = 打开导航），右主操作组「导航 /
-  /// 有声书 / 阅读设置」；中频的「歌词模式 / 统计 / 插图 / 全屏」收进「更多」；
+  /// 有声书 / 阅读设置」；中频的「歌词模式 / 统计 / 插图 / 全屏 / 书签」收进「更多」；
   /// 计时 / 开关栏 / 有声书传输键留在托盘（传输键由播放条与 FAB 承担）。
   ///
   /// 只影响**没有存过布局**的用户：存量布局 JSON 把每颗按钮都显式列在某个槽或
@@ -243,9 +245,7 @@ class ReaderControlLayout {
     ControlLayout<ReaderControlSlot, ReaderControlItem>.fromSlots(
       kReaderControlScheme,
       <ReaderControlSlot, List<ReaderControlItem>>{
-        ReaderControlSlot.topLeft: <ReaderControlItem>[
-          ReaderControlItem.back,
-        ],
+        ReaderControlSlot.topLeft: <ReaderControlItem>[ReaderControlItem.back],
         ReaderControlSlot.topCenter: <ReaderControlItem>[
           ReaderControlItem.title,
         ],
@@ -259,6 +259,7 @@ class ReaderControlLayout {
           ReaderControlItem.statistics,
           ReaderControlItem.gallery,
           ReaderControlItem.fullscreen,
+          ReaderControlItem.bookmarks,
         ],
       },
     ),
@@ -271,9 +272,7 @@ class ReaderControlLayout {
     ControlLayout<ReaderControlSlot, ReaderControlItem>.fromSlots(
       kReaderControlScheme,
       <ReaderControlSlot, List<ReaderControlItem>>{
-        ReaderControlSlot.topLeft: <ReaderControlItem>[
-          ReaderControlItem.back,
-        ],
+        ReaderControlSlot.topLeft: <ReaderControlItem>[ReaderControlItem.back],
         ReaderControlSlot.topCenter: <ReaderControlItem>[
           ReaderControlItem.title,
         ],
@@ -287,6 +286,7 @@ class ReaderControlLayout {
           ReaderControlItem.modeToggle,
           ReaderControlItem.gallery,
           ReaderControlItem.fullscreen,
+          ReaderControlItem.bookmarks,
         ],
       },
     ),
@@ -294,11 +294,10 @@ class ReaderControlLayout {
 
   static Map<ReaderControlItem, ReaderControlSlot> _defaultAssignments(
     ReaderControlLayout base,
-  ) =>
-      <ReaderControlItem, ReaderControlSlot>{
-        for (final ReaderControlItem item in ReaderControlItem.values)
-          item: base.core.slotOf(item),
-      };
+  ) => <ReaderControlItem, ReaderControlSlot>{
+    for (final ReaderControlItem item in ReaderControlItem.values)
+      item: base.core.slotOf(item),
+  };
 
   List<ReaderControlItem> itemsIn(ReaderControlSlot slot) => core.itemsIn(slot);
 
@@ -335,11 +334,11 @@ class ReaderControlLayout {
       if (slotsRaw is! Map<String, dynamic>) return base;
       final ControlLayout<ReaderControlSlot, ReaderControlItem>? core =
           ControlLayout.decodeSlots<ReaderControlSlot, ReaderControlItem>(
-        kReaderControlScheme,
-        slotsRaw,
-        removedRaw: raw['removed'],
-        fallbackAssignments: _defaultAssignments(base),
-      );
+            kReaderControlScheme,
+            slotsRaw,
+            removedRaw: raw['removed'],
+            fallbackAssignments: _defaultAssignments(base),
+          );
       return core == null ? base : ReaderControlLayout._(core);
     } catch (_) {
       return base;

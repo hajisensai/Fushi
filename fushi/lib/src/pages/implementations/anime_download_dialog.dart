@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/pages/implementations/download_notice.dart';
+import 'package:fushi/src/pages/implementations/bt_site_settings_route.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -20,6 +21,7 @@ import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi_engine/media/torrent/download_timeouts.dart'
     show kDownloadDiscoveryTimeout;
 import 'package:fushi/src/media/torrent/download_relocate_service.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_task_display.dart';
@@ -39,7 +41,25 @@ import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart'
     show showDownloadTaskDeleteConfirm;
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/components/header_scroll_split.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
@@ -364,6 +384,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   /// 选种搜索失败的真实错误串（异常 toString，如 HandshakeException / 超时），
   /// 错误态原样展示：站点被墙 / 代理未配时用户能看出是自己网络的问题。
   String? _torrentsErrorDetail;
+
+  /// 用户没有能搜动画的 BT 站：不发请求，结果区显示去添加 BT 站的引导。
+  bool _btSiteMissing = false;
   List<NyaaTorrent> _torrents = const <NyaaTorrent>[];
   int _torrentRequestGeneration = 0;
   NyaaClient? _activeNyaaClient;
@@ -518,8 +541,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       anilist = AniListClient(
         client: await ref.read(appProvider).createDownloadHttpClient(),
       );
-      final AniListSearchOutcome outcome =
-          await anilist.searchAnime(query).timeout(kDownloadDiscoveryTimeout);
+      final AniListSearchOutcome outcome = await anilist
+          .searchAnime(query)
+          .timeout(kDownloadDiscoveryTimeout);
       if (!mounted) return;
       // BUG-1782：非 200（含 429 限流）此前被 searchAnime 内部吞成空列表，走不到下面的
       // catch，于是限流被显示成「无结果」。现在如实并入既有失败态，用户拿到重试 + 原因。
@@ -559,8 +583,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         : media.displayTitle;
     _nyaaQueryCtrl.text = query;
     final List<String> titleOptions = _titleOptions(media);
-    _jimakuQueryCtrl.text =
-        titleOptions.isNotEmpty ? titleOptions.first : media.displayTitle;
+    _jimakuQueryCtrl.text = titleOptions.isNotEmpty
+        ? titleOptions.first
+        : media.displayTitle;
     _jimakuEpisodeCtrl.clear();
     // 预填即将由选番自动搜使用，视作「已应用」，搜索按钮不该一进来就报待生效。
     _appliedJimakuSearch = _currentJimakuSearchInput();
@@ -618,15 +643,30 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   Future<void> _fetchTorrents() async {
     final String query = _nyaaQueryCtrl.text.trim();
     if (query.isEmpty) return;
+    final BtSiteConfig? site = _animeSite;
+    if (site == null) {
+      ++_torrentRequestGeneration;
+      _activeNyaaClient?.close();
+      _activeNyaaClient = null;
+      setState(() {
+        _btSiteMissing = true;
+        _loadingTorrents = false;
+        _torrentsLoaded = false;
+        _torrentsError = false;
+        _torrentsErrorDetail = null;
+      });
+      return;
+    }
     final _TorrentSearchSnapshot request = _TorrentSearchSnapshot(
       generation: ++_torrentRequestGeneration,
       query: query,
-      category: _category,
+      category: _requestCategory(site),
       trustedOnly: _trustedOnly,
     );
     _activeNyaaClient?.close();
     _activeNyaaClient = null;
     setState(() {
+      _btSiteMissing = false;
       _loadingTorrents = true;
       _torrentsLoaded = false;
       _torrentsError = false;
@@ -635,6 +675,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     NyaaClient? nyaa;
     try {
       nyaa = NyaaClient(
+        baseUrl: site.baseUrl.toString(),
         client: await ref.read(appProvider).createDownloadHttpClient(),
         minRequestInterval:
             widget.debugNyaaMinRequestInterval ?? kNyaaMinRequestInterval,
@@ -804,8 +845,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       final List<JimakuFile> files = target == null
           ? const <JimakuFile>[]
           : await jimaku
-              .listFiles(target.id, episode: episode)
-              .timeout(kDownloadDiscoveryTimeout);
+                .listFiles(target.id, episode: episode)
+                .timeout(kDownloadDiscoveryTimeout);
       // 用户可能已换番：结果只落到仍选中的那个番上。
       if (!mounted || _selectedMedia?.id != guardId) return;
       setState(() {
@@ -894,13 +935,12 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   JimakuEntry? _resolveJimakuEntryFor(
     List<JimakuEntry> entries, {
     NyaaTorrent? torrent,
-  }) =>
-      resolveJimakuEntry(
-        entries,
-        userPickedEntryId: _userPickedJimakuEntryId,
-        torrentSeason: torrent?.season,
-        anilistId: _selectedMedia?.id,
-      );
+  }) => resolveJimakuEntry(
+    entries,
+    userPickedEntryId: _userPickedJimakuEntryId,
+    torrentSeason: torrent?.season,
+    anilistId: _selectedMedia?.id,
+  );
 
   /// 自动选中被季号校验拦下：没手选过、有候选条目，但没有一条季号对得上 [torrent]。
   /// 纯派生（不另存 state，避免与 [_selectedJimakuEntry] 漂开）。
@@ -1009,6 +1049,35 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   Future<void> _retryJimaku() async {
     final AniListMedia? media = _selectedMedia;
     if (media != null) await _fetchJimaku(media);
+  }
+
+  /// 选种用的站点：用户 BT 站里第一个启用、能搜动画的 Nyaa 式站点（与番剧订阅
+  /// 服务 `animeSiteProvider` 同一选法）。Fushi 不内置任何 BT 站。
+  BtSiteConfig? get _animeSite => ref
+      .read(appProvider)
+      .btSites
+      .where(
+        (BtSiteConfig site) =>
+            site.enabled &&
+            site.format == BtSiteFormat.nyaa &&
+            site.effectiveDomains.contains(BtSiteDomain.anime),
+      )
+      .firstOrNull;
+
+  /// 分类条（全部 / 生肉 / 英译 / 非英译）是 `1_x` 动画子类，只有站点的动画分类
+  /// 正是大类 `1_0` 时才成立；其余站点一律用站点自己的动画分类。
+  static bool _subcategoriesApply(BtSiteConfig? site) =>
+      site?.nyaaCategories[BtSiteDomain.anime] == '1_0';
+
+  /// 实际请求（与订阅保存）用的分类号。
+  String _requestCategory(BtSiteConfig site) => _subcategoriesApply(site)
+      ? _category
+      : site.nyaaCategories[BtSiteDomain.anime]!;
+
+  /// 去添加 BT 站，回来后重搜一次。
+  Future<void> _openBtSiteSettings() async {
+    await pushBtSiteSettingsPage(context);
+    if (mounted && _selectedMedia != null) unawaited(_fetchTorrents());
   }
 
   void _selectCategory(String category) {
@@ -1155,7 +1224,10 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             seriesTitle: media.displayTitle,
             coverUrl: media.coverUrl,
             nyaaQuery: _nyaaQueryCtrl.text.trim(),
-            category: _category,
+            category: switch (_animeSite) {
+              final BtSiteConfig site => _requestCategory(site),
+              null => _category,
+            },
             trustedOnly: _trustedOnly,
             releaseGroup: releaseGroup,
             resolution: torrent.resolution,
@@ -1171,8 +1243,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     unawaited(appModel.animeDownloadService?.tick());
     if (!mounted) return;
     // 说清字幕的时序：选了条目就必然还没下，别让用户以为「推送时字幕已经拿好」。
-    final String pushedMessage =
-        subscribed ? t.download_subscription_created : t.anime_download_pushed;
+    final String pushedMessage = subscribed
+        ? t.download_subscription_created
+        : t.anime_download_pushed;
     _snack(
       subsEntry == null
           ? pushedMessage
@@ -1200,8 +1273,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
 
   Future<void> _reloadPlans() async {
     final int generation = ++_planLoadGeneration;
-    final AnimeDownloadPlanStore? store =
-        ref.read(appProvider).animeDownloadPlanStore;
+    final AnimeDownloadPlanStore? store = ref
+        .read(appProvider)
+        .animeDownloadPlanStore;
     if (store == null) {
       widget.onTaskPresenceChanged?.call(false);
       return;
@@ -1229,7 +1303,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     // 「同时删除已下载文件」只在真兑现得了时才摆出来：删数据只能由下载后端执行，
     // 没有 service 或后端没配好时勾了也只会静默丢弃（与两个删除确认框里
     // 「兑现不了就不显示」同一纪律）。
-    final bool canDeleteFiles = service != null &&
+    final bool canDeleteFiles =
+        service != null &&
         effectiveTorrentConfig(appModel.qbConnectionConfig).isConfigured;
     final bool? deleteFiles = await showDownloadTaskDeleteConfirm(
       context,
@@ -1258,8 +1333,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         plan.id,
         deleteFiles: deleteFiles,
         onFilesDeleted: (List<String> videoAbsolutePaths) async {
-          final VideoBookRepository repo =
-              VideoBookRepository(appModel.database);
+          final VideoBookRepository repo = VideoBookRepository(
+            appModel.database,
+          );
           bool any = false;
           for (final String path in videoAbsolutePaths) {
             final VideoBookRow? row = await repo.findByVideoPath(path);
@@ -1335,15 +1411,15 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     final RelocateOutcome outcome = choice.isMove
         ? await service.moveTorrent(
             infoHash: plan.id,
-            currentSaveRoot: snapshot.savePath,
-            newSaveRoot: choice.value,
+            backendSaveRoot: snapshot.savePath,
+            newLocalSaveRoot: choice.value,
           )
         : await service.renameFile(
             infoHash: plan.id,
             fileIndex: choice.fileIndex!,
             currentRelativePath: choice.currentRelativePath!,
             newRelativePath: choice.value,
-            saveRoot: snapshot.savePath,
+            backendSaveRoot: snapshot.savePath,
           );
     if (!mounted) return;
     switch (outcome.status) {
@@ -1367,7 +1443,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   Future<void> _playNow(AnimeDownloadPlan plan) async {
     final bool ok =
         await ref.read(appProvider).animeDownloadService?.importNow(plan.id) ??
-            false;
+        false;
     if (!mounted) return;
     _snack(ok ? t.anime_download_play_now_ok : t.anime_download_play_now_fail);
     if (ok) await _reloadPlans();
@@ -1404,8 +1480,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     }
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) =>
-            const BrowseDownloadSettingsPage(),
+        builder: (BuildContext context) => const BrowseDownloadSettingsPage(),
       ),
     );
   }
@@ -1586,8 +1661,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       style: const ButtonStyle(visualDensity: VisualDensity.compact),
     );
     final Widget button = FushiFilledButton.icon(
-      onPressed:
-          (!_genericPushEnabled || _pushingGeneric) ? null : _pushGeneric,
+      onPressed: (!_genericPushEnabled || _pushingGeneric)
+          ? null
+          : _pushGeneric,
       icon: const FushiIcon(FushiIcons.download, size: 18),
       label: Text(t.anime_download_generic_download),
     );
@@ -1611,9 +1687,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         );
         // 下载按钮：图标 18 + 图标/文字间距与左右内边距合计约 46，再加标签字形宽
         // （与 estimateSegmentedStripWidth 同一套保守的 CJK 倾向估算）。
-        final double buttonWidth = 46 +
+        final double buttonWidth =
+            46 +
             t.anime_download_generic_download.length * fontSize * textScale;
-        final bool fitsOneRow = constraints.maxWidth.isFinite &&
+        final bool fitsOneRow =
+            constraints.maxWidth.isFinite &&
             stripWidth + 8 + buttonWidth <= constraints.maxWidth;
         if (fitsOneRow) {
           return Row(
@@ -1813,32 +1891,39 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     }
     if (_animeSearchError) {
       final AniListFailureKind? kind = _animeSearchErrorKind;
-      return _scrollableResultStatus(_buildErrorRetry(
-        theme,
-        t.anime_download_search_failed,
-        _searchAnime,
-        detail: _animeSearchErrorDetail,
-        // 只有真·连不上才谈代理。AniList 官方停服 / 限流时请求已经打到对方并被
-        // 明确拒绝，此时提示「配置代理」是把用户往错误方向支使（他配到天亮也
-        // 好不了）——所以按类别决定，而不是无脑 true。
-        offerSettings: kind == null ||
-            kind == AniListFailureKind.unreachable ||
-            kind == AniListFailureKind.other,
-        anilistNotice: anilistFailureNotice(kind),
-      ));
+      return _scrollableResultStatus(
+        _buildErrorRetry(
+          theme,
+          t.anime_download_search_failed,
+          _searchAnime,
+          detail: _animeSearchErrorDetail,
+          // 只有真·连不上才谈代理。AniList 官方停服 / 限流时请求已经打到对方并被
+          // 明确拒绝，此时提示「配置代理」是把用户往错误方向支使（他配到天亮也
+          // 好不了）——所以按类别决定，而不是无脑 true。
+          offerSettings:
+              kind == null ||
+              kind == AniListFailureKind.unreachable ||
+              kind == AniListFailureKind.other,
+          anilistNotice: anilistFailureNotice(kind),
+        ),
+      );
     }
     if (_searchedAnime && _animeMatches.isEmpty) {
-      return _scrollableResultStatus(_buildNoResults(
-        theme,
-        query: _animeQueryCtrl.text.trim(),
-        filters: 'AniList · ANIME',
-      ));
+      return _scrollableResultStatus(
+        _buildNoResults(
+          theme,
+          query: _animeQueryCtrl.text.trim(),
+          filters: 'AniList · ANIME',
+        ),
+      );
     }
     if (_animeMatches.isEmpty) {
-      return _scrollableResultStatus(FushiPlaceholderMessage(
-        icon: FushiIcons.travelExplore,
-        message: t.anime_download_search_start_hint,
-      ));
+      return _scrollableResultStatus(
+        FushiPlaceholderMessage(
+          icon: FushiIcons.travelExplore,
+          message: t.anime_download_search_start_hint,
+        ),
+      );
     }
     // 每次出新结果都重开进场窗口，结果行错峰淡入上移（spring）。
     return FushiEntranceScope(
@@ -1926,18 +2011,19 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           runSpacing: 4,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: <Widget>[
-            for (final (String id, String label) in <(String, String)>[
-              ('1_0', t.anime_download_category_all),
-              ('1_4', t.anime_download_category_raw),
-              ('1_2', t.anime_download_category_english),
-              ('1_3', t.anime_download_category_non_english),
-            ])
-              FushiChoiceChip(
-                label: Text(label),
-                visualDensity: VisualDensity.compact,
-                selected: _category == id,
-                onSelected: (_) => _selectCategory(id),
-              ),
+            if (_subcategoriesApply(_animeSite))
+              for (final (String id, String label) in <(String, String)>[
+                ('1_0', t.anime_download_category_all),
+                ('1_4', t.anime_download_category_raw),
+                ('1_2', t.anime_download_category_english),
+                ('1_3', t.anime_download_category_non_english),
+              ])
+                FushiChoiceChip(
+                  label: Text(label),
+                  visualDensity: VisualDensity.compact,
+                  selected: _category == id,
+                  onSelected: (_) => _selectCategory(id),
+                ),
             FushiFilterChip(
               label: Text(t.anime_download_trusted_only),
               visualDensity: VisualDensity.compact,
@@ -1981,12 +2067,12 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
               onSelected: _selectTorrentSort,
               itemBuilder: (BuildContext context) =>
                   <PopupMenuEntry<TorrentSortKey>>[
-                for (final TorrentSortKey key in TorrentSortKey.values)
-                  PopupMenuItem<TorrentSortKey>(
-                    value: key,
-                    child: Text(_torrentSortLabel(key)),
-                  ),
-              ],
+                    for (final TorrentSortKey key in TorrentSortKey.values)
+                      PopupMenuItem<TorrentSortKey>(
+                        value: key,
+                        child: Text(_torrentSortLabel(key)),
+                      ),
+                  ],
               child: FushiChip(
                 avatar: const FushiIcon(FushiIcons.sort, size: 18),
                 label: Text('${t.sort_by}: ${_torrentSortLabel(_torrentSort)}'),
@@ -2006,23 +2092,42 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   /// 撑满剩余视口居中，窗口太矮放不下时按自身高度排、随整页滚动，不会溢出裁掉
   /// 「重试 / 去设置」。
   List<Widget> _buildTorrentResultSlivers(ThemeData theme) {
-    Widget status(Widget child) => SliverFillRemaining(
-      hasScrollBody: false,
-      child: Center(child: child),
-    );
+    Widget status(Widget child) =>
+        SliverFillRemaining(hasScrollBody: false, child: Center(child: child));
     if (_loadingTorrents) {
       return <Widget>[
         SliverToBoxAdapter(child: _buildResultsSkeleton(shrinkWrap: true)),
       ];
     }
+    if (_btSiteMissing) {
+      return <Widget>[
+        status(
+          FushiPlaceholderMessage(
+            key: const ValueKey<String>('anime-download-bt-site-missing'),
+            icon: FushiIcons.travelExplore,
+            message: t.bt_site_missing_status,
+            detail: t.bt_site_empty_hint,
+            action: FushiFilledButton.tonal(
+              key: const ValueKey<String>('anime-download-open-bt-sites'),
+              onPressed: () => unawaited(_openBtSiteSettings()),
+              child: Text(t.bt_site_open_settings_action),
+            ),
+          ),
+        ),
+      ];
+    }
     if (_torrentsError) {
-      return <Widget>[status(_buildErrorRetry(
-        theme,
-        t.anime_download_search_failed,
-        _fetchTorrents,
-        detail: _torrentsErrorDetail,
-        offerSettings: true,
-      ))];
+      return <Widget>[
+        status(
+          _buildErrorRetry(
+            theme,
+            t.anime_download_search_failed,
+            _fetchTorrents,
+            detail: _torrentsErrorDetail,
+            offerSettings: true,
+          ),
+        ),
+      ];
     }
     if (_torrentsLoaded && _torrents.isEmpty) {
       final _TorrentSearchSnapshot applied = _appliedTorrentSearch!;
@@ -2032,12 +2137,16 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         '1_3' => t.anime_download_category_non_english,
         _ => t.anime_download_category_all,
       };
-      return <Widget>[status(_buildNoResults(
-        theme,
-        query: applied.query,
-        filters:
-            '$categoryLabel · ${applied.trustedOnly ? t.anime_download_trusted_only : t.anime_download_unfiltered}',
-      ))];
+      return <Widget>[
+        status(
+          _buildNoResults(
+            theme,
+            query: applied.query,
+            filters:
+                '$categoryLabel · ${applied.trustedOnly ? t.anime_download_trusted_only : t.anime_download_unfiltered}',
+          ),
+        ),
+      ];
     }
     final List<NyaaTorrent> visible = _visibleTorrents;
     if (_torrentsLoaded && visible.isEmpty) {
@@ -2052,44 +2161,46 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       ];
     }
     // replayKey = 本次结果列表 + 筛选：重搜 / 换排序 / 换筛选都重播一次进场。
-    return <Widget>[FushiEntranceScope(
-      replayKey: (_torrents, _packScope, _episodeScope),
-      child: SliverList.builder(
-        key: const ValueKey<String>('anime-download-torrent-results'),
-        itemCount: visible.length,
-        itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
-          final NyaaTorrent torrent = visible[i];
-          return _groupedResultRow(
-            index: i,
-            count: visible.length,
-            onTap: () => _selectTorrent(torrent),
-            child: FushiListItem(
-              // 合集包 / 单集用形状区分（饼干 = 合集），可信发布组走 primary 色块。
-              leading: FushiListLeadingIcon(
-                torrent.isBatch ? FushiIcons.collection : FushiIcons.download,
-                shape: torrent.isBatch
-                    ? FushiLeadingShape.cookie
-                    : FushiLeadingShape.circle,
-                tone: torrent.trusted
-                    ? FushiCardTone.primary
-                    : FushiCardTone.secondary,
-              ),
-              titleMaxLines: 2,
-              subtitleMaxLines: 4,
-              title: Text(torrent.title),
-              subtitle: Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: _torrentChips(theme, torrent),
+    return <Widget>[
+      FushiEntranceScope(
+        replayKey: (_torrents, _packScope, _episodeScope),
+        child: SliverList.builder(
+          key: const ValueKey<String>('anime-download-torrent-results'),
+          itemCount: visible.length,
+          itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
+            final NyaaTorrent torrent = visible[i];
+            return _groupedResultRow(
+              index: i,
+              count: visible.length,
+              onTap: () => _selectTorrent(torrent),
+              child: FushiListItem(
+                // 合集包 / 单集用形状区分（饼干 = 合集），可信发布组走 primary 色块。
+                leading: FushiListLeadingIcon(
+                  torrent.isBatch ? FushiIcons.collection : FushiIcons.download,
+                  shape: torrent.isBatch
+                      ? FushiLeadingShape.cookie
+                      : FushiLeadingShape.circle,
+                  tone: torrent.trusted
+                      ? FushiCardTone.primary
+                      : FushiCardTone.secondary,
+                ),
+                titleMaxLines: 2,
+                subtitleMaxLines: 4,
+                title: Text(torrent.title),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: _torrentChips(theme, torrent),
+                  ),
                 ),
               ),
-            ),
-          );
-        }),
+            );
+          }),
+        ),
       ),
-    )];
+    ];
   }
 
   /// 单个种子行的徽标：分辨率/组名/体积/seeders/trusted/合集区间/字幕覆盖。
@@ -2127,7 +2238,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       final String label = range == null
           ? t.anime_download_batch
           : '${range.$1.toString().padLeft(2, '0')}'
-              '-${range.$2.toString().padLeft(2, '0')}';
+                '-${range.$2.toString().padLeft(2, '0')}';
       chips.add(_miniChip(theme, label, icon: FushiIcons.collection));
     }
     if (_jimakuLoaded) {
@@ -2244,7 +2355,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           builder: (BuildContext context) {
             final NyaaTorrent torrent = _selectedTorrent!;
             final String? group = torrent.releaseGroup?.trim();
-            final bool canSubscribe = !torrent.isBatch &&
+            final bool canSubscribe =
+                !torrent.isBatch &&
                 torrent.episode != null &&
                 group != null &&
                 group.isNotEmpty &&
@@ -2272,8 +2384,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                       label: Text(t.download_subscription_download_and_create),
                     ),
                     FushiFilledButton.icon(
-                      onPressed:
-                          (_qbMissing || _pushing) ? null : () => _push(),
+                      onPressed: (_qbMissing || _pushing)
+                          ? null
+                          : () => _push(),
                       icon: progressIcon,
                       label: Text(t.anime_download_push),
                     ),
@@ -2295,7 +2408,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                     '${t.video_jimaku_source}: '
                     '${_selectedJimakuEntry!.name}'
                     '${_jimakuPreferredLanguage == null ? '' : ' · '
-                        '${jimakuLanguageLabel(_jimakuPreferredLanguage!)}'}',
+                              '${jimakuLanguageLabel(_jimakuPreferredLanguage!)}'}',
                     textAlign: TextAlign.end,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -2323,8 +2436,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
 
   Widget _buildJimakuManualSearchRow(ThemeData theme, double rowWidth) {
     final AniListMedia? media = _selectedMedia;
-    final List<String> titleOptions =
-        media == null ? const <String>[] : _titleOptions(media);
+    final List<String> titleOptions = media == null
+        ? const <String>[]
+        : _titleOptions(media);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
@@ -2348,16 +2462,16 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                       },
                       itemBuilder: (BuildContext context) =>
                           <PopupMenuEntry<String>>[
-                        for (final String title in titleOptions)
-                          PopupMenuItem<String>(
-                            value: title,
-                            child: Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                      ],
+                            for (final String title in titleOptions)
+                              PopupMenuItem<String>(
+                                value: title,
+                                child: Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                          ],
                     ),
             ),
             textInputAction: TextInputAction.search,
@@ -2389,7 +2503,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             _jimakuEpisodeCtrl,
           ]),
           builder: (BuildContext context, Widget? child) {
-            final bool dirty = _jimakuQueryCtrl.text.trim().isNotEmpty &&
+            final bool dirty =
+                _jimakuQueryCtrl.text.trim().isNotEmpty &&
                 _currentJimakuSearchInput() != _appliedJimakuSearch;
             return FushiIconButtonControl(
               tooltip: t.anime_download_search,
@@ -2538,12 +2653,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: glass || eink
-                            ? null
-                            : scheme.secondaryContainer,
-                        border: eink
-                            ? Border.all(color: scheme.outline)
-                            : null,
+                        color: glass || eink ? null : scheme.secondaryContainer,
+                        border: eink ? Border.all(color: scheme.outline) : null,
                       ),
                       child: Text(
                         episode == null ? '—' : '$episode',
@@ -2695,7 +2806,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     // 静默 return，批量却会把它记成「已处理」。删不了就别填槽位。
     final bool canDelete = appModel.animeDownloadPlanStore != null;
     // 删磁盘数据只能由下载后端执行，判据与单条删除确认框逐字一致。
-    final bool canDeleteFiles = canDelete &&
+    final bool canDeleteFiles =
+        canDelete &&
         appModel.animeDownloadService != null &&
         effectiveTorrentConfig(appModel.qbConnectionConfig).isConfigured;
     return DownloadTaskActions(
@@ -2710,7 +2822,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       retry: failed ? () => _batchRetryPlan(plan) : null,
       delete: canDelete
           ? ({required bool deleteFiles}) =>
-              _deletePlanResolved(plan, deleteFiles: deleteFiles)
+                _deletePlanResolved(plan, deleteFiles: deleteFiles)
           : null,
       deletesFiles: canDeleteFiles,
     );
@@ -2840,8 +2952,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   ///   可读，不再只藏 hover Tooltip）+ trailing 重试按钮。
   Widget _buildPlanRow(ThemeData theme, AnimeDownloadPlan plan) {
     if (plan.status == AnimeDownloadPlan.statusDownloading) {
-      final AnimeDownloadService? service =
-          ref.read(appProvider).animeDownloadService;
+      final AnimeDownloadService? service = ref
+          .read(appProvider)
+          .animeDownloadService;
       if (service != null) {
         // BUG-1296：百分比与确定进度环只认 [AnimeDownloadService.downloadProgress]
         // ——它是恒发布的规范通道。BUG-1294 的速度/流量走 downloadStats，只是**增强
@@ -2851,20 +2964,31 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           valueListenable: service.downloadProgress,
           builder: (BuildContext context, Map<String, double> progress, _) =>
               ValueListenableBuilder<Map<String, DownloadTaskStats>>(
-            valueListenable: service.downloadStats,
-            builder: (BuildContext context,
-                    Map<String, DownloadTaskStats> stats, _) =>
-                _buildPlanRowInner(
-                    theme, plan, progress[plan.id], stats[plan.id]),
-          ),
+                valueListenable: service.downloadStats,
+                builder:
+                    (
+                      BuildContext context,
+                      Map<String, DownloadTaskStats> stats,
+                      _,
+                    ) => _buildPlanRowInner(
+                      theme,
+                      plan,
+                      progress[plan.id],
+                      stats[plan.id],
+                    ),
+              ),
         );
       }
     }
     return _buildPlanRowInner(theme, plan, null, null);
   }
 
-  Widget _buildPlanRowInner(ThemeData theme, AnimeDownloadPlan plan,
-      double? progress, DownloadTaskStats? stats) {
+  Widget _buildPlanRowInner(
+    ThemeData theme,
+    AnimeDownloadPlan plan,
+    double? progress,
+    DownloadTaskStats? stats,
+  ) {
     final ColorScheme scheme = theme.colorScheme;
     final bool eink = isEinkTheme(context);
     final bool downloading = plan.status == AnimeDownloadPlan.statusDownloading;
@@ -2874,47 +2998,50 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     // 墨水屏一律静态图标（转圈 = 墨水屏残影）。
     final Widget statusIcon = switch (plan.status) {
       AnimeDownloadPlan.statusImported => FushiListLeadingIcon(
-          FushiIcons.success,
-          size: 36,
-          iconSize: 20,
-          tone: isGlassDesign(context)
-              ? FushiCardTone.tertiary
-              : FushiCardTone.primary,
-        ),
+        FushiIcons.success,
+        size: 36,
+        iconSize: 20,
+        tone: isGlassDesign(context)
+            ? FushiCardTone.tertiary
+            : FushiCardTone.primary,
+      ),
       AnimeDownloadPlan.statusFailed => const FushiListLeadingIcon(
-          FushiIcons.error,
-          size: 36,
-          iconSize: 20,
-          tone: FushiCardTone.error,
-          shape: FushiLeadingShape.square,
-        ),
-      _ => eink
-          ? const FushiListLeadingIcon(
-              FushiIcons.downloading,
-              size: 36,
-              iconSize: 20,
-            )
-          : SizedBox(
-              width: 36,
-              height: 36,
-              child: Padding(
-                padding: const EdgeInsets.all(6),
-                child: FushiCircularProgressIndicator(
-                  strokeWidth: 3,
-                  value: progress,
+        FushiIcons.error,
+        size: 36,
+        iconSize: 20,
+        tone: FushiCardTone.error,
+        shape: FushiLeadingShape.square,
+      ),
+      _ =>
+        eink
+            ? const FushiListLeadingIcon(
+                FushiIcons.downloading,
+                size: 36,
+                iconSize: 20,
+              )
+            : SizedBox(
+                width: 36,
+                height: 36,
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: FushiCircularProgressIndicator(
+                    strokeWidth: 3,
+                    value: progress,
+                  ),
                 ),
               ),
-            ),
     };
     // BUG-1294：进度百分比之外补速度与累计流量（单位串是纯数字/符号，无需
     // i18n key）。速率为 0 时仍显示（「0 B/s 卡住了」本身就是有效信息）。
     // BUG-1296：百分比只依赖 progress；观测值缺席就只渲染百分比，不整条消失。
     // TODO-2481：再补状态文本 / ETA / 分享率 —— 三者都是增强位，算不出
     // （未知词 / 零速度 / 零分母）就整段不渲染，绝不把百分比一起吞掉。
-    final TorrentDisplayStatus? displayStatus =
-        stats == null ? null : torrentDisplayStatusFor(stats.state);
-    final String? statusLabel =
-        displayStatus == null ? null : _torrentStatusLabel(displayStatus);
+    final TorrentDisplayStatus? displayStatus = stats == null
+        ? null
+        : torrentDisplayStatusFor(stats.state);
+    final String? statusLabel = displayStatus == null
+        ? null
+        : _torrentStatusLabel(displayStatus);
     final String? etaText = stats == null
         ? null
         : formatTorrentEta(
@@ -2942,25 +3069,25 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         : null;
     final String? failReason =
         (failed && (plan.failReason?.isNotEmpty ?? false))
-            ? describeAnimeDownloadFailReason(plan.failReason!)
-            : null;
+        ? describeAnimeDownloadFailReason(plan.failReason!)
+        : null;
     // 字幕的时序对用户是可见的（BUG-1206）：推送时不再预下字幕，所以必须在这里
     // 说清「还没配」「没配上」，否则用户会以为字幕功能没了。
     // resolved / none 不占行——前者字幕已经贴成 sidecar，后者用户压根没要字幕。
     final (String, Color)? subtitleNote = switch (plan.subtitleStatus) {
       AnimeDownloadPlan.subtitlePending => (
-          t.anime_download_subs_pending,
-          scheme.onSurfaceVariant,
-        ),
+        t.anime_download_subs_pending,
+        scheme.onSurfaceVariant,
+      ),
       // BUG-1696 起 unavailable 不再是终态：还排得上 backoff 重试的说「稍后自动
       // 重试」，重试次数用完了才说「未匹配到（可手动补）」。两种对用户是完全不同
       // 的处境——前者什么都不用做，后者要么手动补要么改条目。
       AnimeDownloadPlan.subtitleUnavailable => (
-          plan.subtitleRetryPossible
-              ? t.anime_download_subs_retrying
-              : t.anime_download_subs_unmatched,
-          scheme.tertiary,
-        ),
+        plan.subtitleRetryPossible
+            ? t.anime_download_subs_retrying
+            : t.anime_download_subs_unmatched,
+        scheme.tertiary,
+      ),
       _ => null,
     };
     return FushiListItem(
@@ -3264,9 +3391,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
 /// TODO-1961-e：用户在改名/移动对话框里做出的选择。
 class _RelocateChoice {
   const _RelocateChoice.move(this.value)
-      : isMove = true,
-        fileIndex = null,
-        currentRelativePath = null;
+    : isMove = true,
+      fileIndex = null,
+      currentRelativePath = null;
 
   const _RelocateChoice.rename({
     required this.value,
@@ -3305,9 +3432,9 @@ class _RelocateDialogState extends State<_RelocateDialog> {
   /// 逐文件的改名输入框（key = 文件下标），初值 = 当前种子内相对路径。
   late final Map<int, TextEditingController> _controllers =
       <int, TextEditingController>{
-    for (final TorrentFileEntry f in widget.files)
-      f.index: TextEditingController(text: f.name),
-  };
+        for (final TorrentFileEntry f in widget.files)
+          f.index: TextEditingController(text: f.name),
+      };
 
   @override
   void dispose() {
@@ -3353,70 +3480,68 @@ class _RelocateDialogState extends State<_RelocateDialog> {
       title: Text(t.anime_download_relocate),
       content: SizedBox(
         width: 520,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              // 为什么必须在 app 里改名，而不是去资源管理器 —— 说清楚，否则用户
-              // 改完再来问「怎么做种断了」。
-              Text(
-                t.anime_download_relocate_hint,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.outline,
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            // 为什么必须在 app 里改名，而不是去资源管理器 —— 说清楚，否则用户
+            // 改完再来问「怎么做种断了」。
+            Text(
+              t.anime_download_relocate_hint,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
               ),
-              const SizedBox(height: 16),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              t.anime_download_relocate_move_title,
+              style: theme.textTheme.titleSmall,
+            ),
+            const SizedBox(height: 6),
+            Text(widget.snapshot.savePath, style: theme.textTheme.bodySmall),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FushiFilledButton.tonalIcon(
+                onPressed: _pickDestination,
+                icon: const FushiIcon(FushiIcons.folderOpen, size: 18),
+                label: Text(t.anime_download_relocate_pick_folder),
+              ),
+            ),
+            if (widget.files.isNotEmpty) ...<Widget>[
+              const FushiDividerControl(height: 28),
               Text(
-                t.anime_download_relocate_move_title,
+                t.anime_download_relocate_rename_title,
                 style: theme.textTheme.titleSmall,
               ),
               const SizedBox(height: 6),
-              Text(widget.snapshot.savePath, style: theme.textTheme.bodySmall),
-              const SizedBox(height: 6),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: FushiFilledButton.tonalIcon(
-                  onPressed: _pickDestination,
-                  icon: const FushiIcon(FushiIcons.folderOpen, size: 18),
-                  label: Text(t.anime_download_relocate_pick_folder),
-                ),
-              ),
-              if (widget.files.isNotEmpty) ...<Widget>[
-                const FushiDividerControl(height: 28),
-                Text(
-                  t.anime_download_relocate_rename_title,
-                  style: theme.textTheme.titleSmall,
-                ),
-                const SizedBox(height: 6),
-                for (final TorrentFileEntry file in widget.files)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: FushiTextFieldControl(
-                            controller: _controllers[file.index],
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              border: FushiOutlinedFieldBorder(),
-                            ),
-                            onSubmitted: (_) => _submitRename(file),
+              for (final TorrentFileEntry file in widget.files)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: FushiTextFieldControl(
+                          controller: _controllers[file.index],
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            border: FushiOutlinedFieldBorder(),
                           ),
+                          onSubmitted: (_) => _submitRename(file),
                         ),
-                        const SizedBox(width: 8),
-                        FushiIconButton(
-                          tooltip: t.anime_download_relocate_rename_title,
-                          icon: FushiIcons.rename,
-                          size: 20,
-                          onTap: () => _submitRename(file),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 8),
+                      FushiIconButton(
+                        tooltip: t.anime_download_relocate_rename_title,
+                        icon: FushiIcons.rename,
+                        size: 20,
+                        onTap: () => _submitRename(file),
+                      ),
+                    ],
                   ),
-              ],
+                ),
             ],
-          ),
+          ],
         ),
       ),
       actions: <Widget>[

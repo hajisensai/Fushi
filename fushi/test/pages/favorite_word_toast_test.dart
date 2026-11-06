@@ -40,8 +40,11 @@ void main() {
     await tester.pump(); // 插入 overlay
     await tester.pump(const Duration(milliseconds: 250)); // 走完淡入
 
-    expect(find.text(t.word_favorite_added), findsOneWidget,
-        reason: '收藏成功必须有一条可见 toast，不依赖 callHandler 返回值');
+    expect(
+      find.text(t.word_favorite_added),
+      findsOneWidget,
+      reason: '收藏成功必须有一条可见 toast，不依赖 callHandler 返回值',
+    );
     expect(t.word_favorite_added.trim(), isNotEmpty);
 
     // 让自动消失计时器跑完，避免 pending-timer。
@@ -69,41 +72,52 @@ void main() {
   // 弹 toast；既不能去掉 toast，也不能把 toast 改成只在 callHandler 返回成功时才弹。
   group('收藏 handler 在写 DB 后解耦弹 toast（防回归）', () {
     test('base_source_page.onFavoriteFromPopup：add/remove 各弹一次词条 toast', () {
-      final String src =
-          File('lib/src/pages/base_source_page.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/pages/base_source_page.dart',
+      ).readAsStringSync();
       final int handlerStart = src.indexOf('Future<bool> onFavoriteFromPopup(');
       expect(handlerStart, greaterThan(0));
       final String body = compactCode(src.substring(handlerStart));
-      expect(body,
-          contains(compactCode('FushiToast.show(msg: t.word_favorite_added,')),
-          reason: '收藏成功后必须弹「已收藏」toast');
-      expect(body,
-          contains(compactCode('FushiToast.show(msg: t.word_favorite_removed,')),
-          reason: '取消收藏后必须弹「已取消收藏」toast');
+      expect(
+        body,
+        contains(compactCode('FushiToast.show(msg: t.word_favorite_added,')),
+        reason: '收藏成功后必须弹「已收藏」toast',
+      );
+      expect(
+        body,
+        contains(compactCode('FushiToast.show(msg: t.word_favorite_removed,')),
+        reason: '取消收藏后必须弹「已取消收藏」toast',
+      );
       expect(
         body.indexOf('addFavoriteWord(') <
             body.indexOf(
-                compactCode('FushiToast.show(msg: t.word_favorite_added,')),
+              compactCode('FushiToast.show(msg: t.word_favorite_added,'),
+            ),
         isTrue,
         reason: 'add 的 toast 必须在 addFavoriteWord 写库之后（解耦于返回值通道）',
       );
     });
 
     test('dictionary_page_mixin.onFavoriteEntry（视频宿主）：add/remove 各弹一次', () {
-      final String src =
-          File('lib/src/pages/implementations/dictionary_page_mixin.dart')
-              .readAsStringSync();
+      final String src = File(
+        'lib/src/pages/implementations/dictionary_page_mixin.dart',
+      ).readAsStringSync();
       final int handlerStart = src.indexOf('Future<bool> onFavoriteEntry(');
       expect(handlerStart, greaterThan(0));
       final String body = compactCode(src.substring(handlerStart));
-      expect(body,
-          contains(compactCode('FushiToast.show(msg: t.word_favorite_added,')));
-      expect(body,
-          contains(compactCode('FushiToast.show(msg: t.word_favorite_removed,')));
+      expect(
+        body,
+        contains(compactCode('FushiToast.show(msg: t.word_favorite_added,')),
+      );
+      expect(
+        body,
+        contains(compactCode('FushiToast.show(msg: t.word_favorite_removed,')),
+      );
       expect(
         body.indexOf('addFavoriteWord(') <
             body.indexOf(
-                compactCode('FushiToast.show(msg: t.word_favorite_added,')),
+              compactCode('FushiToast.show(msg: t.word_favorite_added,'),
+            ),
         isTrue,
       );
     });

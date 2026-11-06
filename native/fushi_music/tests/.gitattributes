@@ -1,0 +1,2 @@
+# 样本按字节入库（Shift_JIS + CRLF 的 .cue 是测试点本身，不许换行归一化 / 转码 / 空白检查）。
+fixtures/** binary

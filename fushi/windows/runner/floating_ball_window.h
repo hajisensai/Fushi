@@ -11,6 +11,8 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -36,7 +38,9 @@ class FloatingBallWindow {
     bool animate = true;
     // 只控制可见标签；labels 仍用于 tooltip 和操作名称。
     bool show_labels = true;
-    // Dart 勾选的动作 id（自上而下）；open_app / close 由本类固定加在最上。
+    // 菜单里有没有「打开 Fushi」（Dart 应用外按钮组里的开关；旧调用缺字段 = 有）。
+    bool show_open_app = true;
+    // Dart 勾选的动作 id（自上而下）；close（与没关掉的 open_app）由本类加在最上。
     std::vector<std::string> actions;
     // 按钮文案 / tooltip：键为动作 id + open_app / close / ball。
     std::map<std::string, std::wstring> labels;
@@ -70,6 +74,16 @@ class FloatingBallWindow {
   using PositionCallback =
       std::function<void(bool dock_left, double fraction)>;
 
+  // 「切换配置」菜单的一项（Dart showProfileMenu 的 items，按顺序）。
+  struct ProfileMenuItem {
+    int64_t id = 0;
+    std::wstring label;
+    bool checked = false;
+  };
+  // |selected| = 用户选中项的 id；点菜单外 / Esc / 空列表 / 球没在跑 / 被拒 = 空。
+  using ProfileMenuCallback =
+      std::function<void(std::optional<int64_t> selected)>;
+
   FloatingBallWindow();
   ~FloatingBallWindow();
 
@@ -90,7 +104,8 @@ class FloatingBallWindow {
   // 原地更新按钮 / 配色 / 图片（不挪位置、收起菜单，忽略位置参数）。
   bool Start(const Config& config, bool dock_left, double fraction,
              HWND monitor_hint);
-  // 销毁全部窗口；不触发任何回调。
+  // 销毁全部窗口；不触发任何回调——唯一例外是还没结束的配置菜单：它的
+  // ProfileMenuCallback 以空结果收尾（Dart 那边有个 future 在等，不能悬着）。
   void Stop();
   bool IsRunning() const;
 
@@ -103,6 +118,14 @@ class FloatingBallWindow {
   // 状态跨 Stop / Start 保留——Dart 在起球之前先下发，新球首帧就按它决定显不显示。
   void SetHiddenForApp(bool hidden);
 
+  // 桌面「切换配置」（Dart showProfileMenu）：在球旁弹原生弹出式菜单，不唤起主窗、
+  // 结束后前台还给用户正在用的程序。|anchor| = 球在屏幕上的矩形（物理像素、左上
+  // 原点，systemBallAction 报出去的那个原样回传）；空 = 贴着光标弹。
+  // 菜单是模态循环，不在调用栈里跑：投递到球窗、在它的消息里弹，结束后经 |done|
+  // 回结果（恰好一次）。已有一个菜单在等或正弹着时，新请求直接以空结果拒绝。
+  void ShowProfileMenu(std::vector<ProfileMenuItem> items,
+                       std::optional<RECT> anchor, ProfileMenuCallback done);
+
  private:
   struct Screen {
     HMONITOR monitor = nullptr;
@@ -110,23 +133,6 @@ class FloatingBallWindow {
     double scale = 1.0;
     bool tuck_left = true;
     bool tuck_right = true;
-  };
-
-  struct ProgressAnimation {
-    bool active = false;
-    double from = 0;
-    double to = 0;
-    double start_ms = 0;
-    double duration_ms = 1;
-  };
-
-  struct SnapAnimation {
-    bool active = false;
-    double from_left = 0;
-    double from_top = 0;
-    double to_left = 0;
-    double to_top = 0;
-    double start_ms = 0;
   };
 
   struct CachedBitmap {
@@ -208,6 +214,10 @@ class FloatingBallWindow {
   void ClearBitmapCache();
   bool Suppressed() const { return hidden_for_capture_ || hidden_for_app_; }
   void ShowBallWindows();
+  // 球窗收到投递的配置菜单请求：真正弹菜单、交还前台、回结果。
+  void RunProfileMenu(HWND hwnd);
+  // 把还没结束的配置菜单以 |selected| 收尾（没有就无操作）。
+  void FinishProfileMenu(std::optional<int64_t> selected);
 
   Config config_;
   bool dock_left_ = false;
@@ -231,8 +241,8 @@ class FloatingBallWindow {
 
   double progress_ = 0;
   bool expand_target_ = false;
-  ProgressAnimation progress_anim_;
-  SnapAnimation snap_anim_;
+  fushi::floating_ball::ProgressAnimation progress_anim_;
+  fushi::floating_ball::SnapAnimation snap_anim_;
   bool timer_running_ = false;
 
   // 球上的指针手势。
@@ -268,6 +278,15 @@ class FloatingBallWindow {
   std::vector<Microsoft::WRL::ComPtr<IDWriteTextLayout>> menu_label_layouts_;
   std::vector<double> menu_label_widths_;
   std::map<std::string, CachedBitmap> bitmaps_;
+
+  // 配置菜单：从 ShowProfileMenu 投递起、到菜单结束回结果止，done 非空 = 有一个
+  // 在等（profile_menu_tracking_ 区分「已投递未弹」与「模态循环里」）。
+  std::vector<ProfileMenuItem> profile_menu_items_;
+  std::optional<RECT> profile_menu_anchor_;
+  ProfileMenuCallback profile_menu_done_;
+  bool profile_menu_tracking_ = false;
+  // 菜单模态循环里本对象可能被析构（主窗拆通道）：循环返回后先看它再碰成员。
+  std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
 
   ActionCallback on_action_;
   ClosedCallback on_closed_;

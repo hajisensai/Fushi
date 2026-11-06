@@ -27,6 +27,9 @@ const int kEpubImageIndexCacheVersion = 1;
 /// support 根下的缓存目录名。
 const String kEpubImageIndexCacheDirName = 'epub_image_index';
 
+/// 缓存目录里所有读 / 替换 / 删除共用的锁文件名（见 [_withCacheLock]）。
+const String kEpubImageIndexLockFileName = '.lock';
+
 /// [cacheDir] 里属于解压目录 [extractDir] 的插图表缓存文件（按规范化路径的 sha1 命名）。
 File epubImageIndexCacheFile(Directory cacheDir, String extractDir) {
   final String key = sha1
@@ -62,7 +65,11 @@ Future<void> deleteEpubImageIndexCache(String extractDir) async {
   final File? file = await epubImageIndexCacheFileFor(extractDir);
   if (file == null) return;
   try {
-    if (file.existsSync()) file.deleteSync();
+    if (!file.existsSync()) return;
+    // 后台 isolate 可能正开着它读；Windows 上开着的文件删不掉，与读者互斥。
+    _withCacheLock(file, FileLock.blockingExclusive, () {
+      if (file.existsSync()) file.deleteSync();
+    });
   } on Object catch (error, stack) {
     engineLog.log('deleteEpubImageIndexCache', error, stack);
   }
@@ -167,7 +174,14 @@ List<EpubImageRef>? _readCache(
   try {
     // 不存在 / 指纹不符是正常的未命中，不算失败。
     if (!file.existsSync()) return null;
-    final Object? decoded = jsonDecode(file.readAsStringSync());
+    // 读整份内容时持共享锁：别的 isolate 此刻不能替换它（见 [_withCacheLock]）。
+    // existsSync 之后、加锁之前文件被删书删掉时 readAsStringSync 会抛，那是真异常，照报。
+    final String text = _withCacheLock(
+      file,
+      FileLock.blockingShared,
+      file.readAsStringSync,
+    );
+    final Object? decoded = jsonDecode(text);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('cache root is not a JSON object');
     }
@@ -192,11 +206,46 @@ List<EpubImageRef>? _readCache(
   }
 }
 
+/// 缓存文件 [cacheFile] 所在目录的锁文件。整个缓存目录一把锁：临界区只有读一份 JSON
+/// 或一次 rename，书与书之间的争用可以忽略，也免得每本书多留一个锁文件、删书时还要管它。
+File _lockFileFor(File cacheFile) =>
+    File(p.join(cacheFile.parent.path, kEpubImageIndexLockFileName));
+
+/// 在缓存目录锁里执行 [body]：读者持共享锁（[FileLock.blockingShared]），替换 / 删除
+/// 持排他锁（[FileLock.blockingExclusive]）。
+///
+/// 「临时文件 + rename」只保证读者看不到半截内容，不保证读与换不撞车：Windows 上
+/// `dart:io` 打开文件不带 `FILE_SHARE_DELETE`，`renameSync` 走
+/// `MoveFileExW(MOVEFILE_REPLACE_EXISTING)`——有读者开着目标时替换被拒（errno 5，
+/// ERROR_ACCESS_DENIED），替换进行中读者去开目标又被拒（errno 32，
+/// ERROR_SHARING_VIOLATION）。几个后台 isolate 同时打开同一本书时两种都会出现（BUG-3519）。
+/// 这两种拒绝不是坏缓存，也不该当成未命中吞掉；正确做法是让读与换互斥。
+///
+/// Windows 的 `LockFileEx` 按句柄生效，同进程不同 isolate、不同进程之间都互斥。POSIX 上
+/// `dart:io` 走 fcntl 锁，同进程的 isolate 之间不互斥——那里 rename 本就原子、不碍着
+/// 开着的读者，不需要它。锁只围住读一次 / rename 一次，不嵌套，不会死锁。
+T _withCacheLock<T>(File cacheFile, FileLock mode, T Function() body) {
+  final RandomAccessFile lock = _lockFileFor(
+    cacheFile,
+  ).openSync(mode: FileMode.append);
+  try {
+    lock.lockSync(mode);
+    try {
+      return body();
+    } finally {
+      lock.unlockSync();
+    }
+  } finally {
+    lock.closeSync();
+  }
+}
+
 final Random _tmpNameRandom = Random();
 
 /// 写缓存用的临时文件名。同一本书可能被几个后台 isolate 同时算（阅读器插图册、歌词
 /// 模式、书架插图库、看兄弟卷），共用一个 `.tmp` 会互相截断、rename 撞车；每次写用独立
 /// 文件名（进程号 + 微秒 + 随机数），最后一次 rename 胜出——各家内容相同，谁赢都对。
+/// 临时文件在锁外写完，锁里只做 rename（与读者互斥，见 [_withCacheLock]）。
 File _uniqueTmpFor(File file) => File(
   '${file.path}.$pid.${DateTime.now().microsecondsSinceEpoch}.'
   '${_tmpNameRandom.nextInt(1 << 32)}.tmp',
@@ -220,7 +269,11 @@ void _writeCache(
       }),
       flush: true,
     );
-    tmp.renameSync(file.path);
+    _withCacheLock(
+      file,
+      FileLock.blockingExclusive,
+      () => tmp.renameSync(file.path),
+    );
   } on Object catch (error, stack) {
     failures.add(
       EpubImageIndexCacheFailure(

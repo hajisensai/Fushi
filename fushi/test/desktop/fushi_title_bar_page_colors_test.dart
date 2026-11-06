@@ -1,9 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/video_hdr_output.dart'
-    show hdrHostActiveGlobal;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:window_manager/window_manager.dart' show DragToMoveArea;
 
 /// 桌面自绘顶栏挂在 Navigator 外，`Theme.of` 只读得到根主题；阅读器的纸色是
@@ -17,6 +18,9 @@ void main() {
   const FushiTitleBarColors readerColors = (background: paper, foreground: ink);
 
   setUp(() {
+    // 上报通道的生命周期与宿主无关；沉浸页的版面各宿主一致（铺满整窗、
+    // 顶栏悬停浮出），见文件末尾按宿主分的组。
+    FushiDesktopTitleBar.debugHostPlatform = () => TargetPlatform.macOS;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('window_manager'), (
           MethodCall call,
@@ -33,6 +37,8 @@ void main() {
   });
 
   tearDown(() {
+    FushiDesktopTitleBar.debugHostPlatform = () => defaultTargetPlatform;
+    WindowCaptionChannel.captionMaxButtonHovered.value = false;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('window_manager'), null);
   });
@@ -75,6 +81,10 @@ void main() {
   Color? titleColor(WidgetTester tester) =>
       FushiDesktopTitleBar.pageColors.value?.foreground;
 
+  /// 页面上报的底色（沉浸页标题行透明，按钮组 / 柔光从它派生）。
+  Color? reportedBackground(WidgetTester tester) =>
+      FushiDesktopTitleBar.pageColors.value?.background;
+
   Widget reader() => const FushiTitleBarColorScope(
     colors: readerColors,
     child: Scaffold(backgroundColor: paper),
@@ -91,25 +101,25 @@ void main() {
     );
   });
 
-  testWidgets('阅读器上报纸色后顶栏底色 / 标题色跟随，关书后回落', (WidgetTester tester) async {
+  testWidgets('阅读器上报纸色后上报纸色 / 前景色，关书后回落', (WidgetTester tester) async {
     await pumpShell(tester, const Scaffold());
 
     navigatorKey.currentState!.push(
       MaterialPageRoute<void>(builder: (_) => reader()),
     );
     await tester.pumpAndSettle();
-    expect(captionColor(tester), paper);
+    expect(reportedBackground(tester), paper);
     expect(titleColor(tester), ink);
 
     navigatorKey.currentState!.pop();
     await tester.pumpAndSettle();
-    expect(captionColor(tester), Colors.transparent);
+    expect(reportedBackground(tester), isNull);
     expect(FushiDesktopTitleBar.pageColors.value, isNull);
   });
 
   testWidgets('被另一整页盖住时撤回、回到阅读器时恢复；弹窗不撤回', (WidgetTester tester) async {
     await pumpShell(tester, reader());
-    expect(captionColor(tester), paper);
+    expect(reportedBackground(tester), paper);
 
     // 弹窗（PopupRoute）不推动 PageRoute 的 secondaryAnimation：顶栏不闪色。
     showDialog<void>(
@@ -117,7 +127,7 @@ void main() {
       builder: (_) => const AlertDialog(content: Text('dialog')),
     );
     await tester.pumpAndSettle();
-    expect(captionColor(tester), paper);
+    expect(reportedBackground(tester), paper);
     navigatorKey.currentState!.pop();
     await tester.pumpAndSettle();
 
@@ -126,39 +136,11 @@ void main() {
       MaterialPageRoute<void>(builder: (_) => const Scaffold()),
     );
     await tester.pumpAndSettle();
-    expect(captionColor(tester), Colors.transparent);
+    expect(reportedBackground(tester), isNull);
 
     navigatorKey.currentState!.pop();
     await tester.pumpAndSettle();
-    expect(captionColor(tester), paper);
-  });
-
-  testWidgets('HDR 直通时内容区透明，标题行仍是不透明的页面色；半透明上报也叠成不透明', (
-    WidgetTester tester,
-  ) async {
-    addTearDown(() => hdrHostActiveGlobal.value = false);
-    final ColorScheme scheme = await pumpShell(
-      tester,
-      const FushiTitleBarColorScope(
-        colors: (background: Color(0x80000000), foreground: ink),
-        child: SizedBox.expand(),
-      ),
-    );
-    hdrHostActiveGlobal.value = true;
-    await tester.pumpAndSettle();
-
-    final Color caption = captionColor(tester)!;
-    expect(caption.a, 1.0, reason: '标题行透明 = HDR 时能看见后面的窗口');
-    expect(caption, Color.alphaBlend(const Color(0x80000000), scheme.surface));
-    final ColoredBox frame = tester.widget<ColoredBox>(
-      find
-          .ancestor(
-            of: find.byType(DragToMoveArea),
-            matching: find.byType(ColoredBox),
-          )
-          .at(1),
-    );
-    expect(frame.color, Colors.transparent, reason: '内容区底色仍听 HDR 让开');
+    expect(reportedBackground(tester), paper);
   });
 
   testWidgets('阅读器在 build 中改色（切换阅读主题）顶栏跟着重画', (WidgetTester tester) async {
@@ -174,11 +156,259 @@ void main() {
         ),
       ),
     );
-    expect(captionColor(tester), paper);
+    expect(reportedBackground(tester), paper);
 
     bg.value = const Color(0xFF1E1E1E);
     await tester.pumpAndSettle();
-    expect(captionColor(tester), const Color(0xFF1E1E1E));
+    expect(reportedBackground(tester), const Color(0xFF1E1E1E));
     expect(tester.takeException(), isNull);
   });
+
+  // 沉浸页铺满整窗，顶栏悬停才浮出（用户 2026-10-30「顶栏条只有在应用外才
+  // 显示……都要占满」「目的只是为了更多显示面积」；同日「mac 也要和 windows
+  // 一样……顶部胶囊位置不变」）。macOS 的系统红绿灯随标题行显隐。
+  for (final TargetPlatform host in <TargetPlatform>[
+    TargetPlatform.windows,
+    TargetPlatform.macOS,
+  ]) {
+    group('${host.name} 沉浸页', () {
+      setUp(() => FushiDesktopTitleBar.debugHostPlatform = () => host);
+
+      // 顶边停留触发时长（与组件内 _kImmersiveRevealDwell 一致）。
+      const Duration dwell = Duration(milliseconds: 400);
+
+      double captionOpacity(WidgetTester tester) => tester
+          .widget<AnimatedOpacity>(
+            find
+                .ancestor(
+                  of: find.byType(DragToMoveArea),
+                  matching: find.byType(AnimatedOpacity),
+                )
+                .first,
+          )
+          .opacity;
+
+      testWidgets('页面从窗口顶端铺起，padding 仍为顶栏让位；标题行透明', (
+        WidgetTester tester,
+      ) async {
+        await pumpShell(tester, reader());
+
+        final Finder page = find.byType(Scaffold).last;
+        expect(tester.getTopLeft(page).dy, 0, reason: '沉浸页不再被顶栏下推');
+        expect(
+          MediaQuery.paddingOf(tester.element(page)).top,
+          greaterThanOrEqualTo(FushiDesktopTitleBar.height),
+          reason: '页面的悬浮胶囊要按 padding 排在窗口按钮下面',
+        );
+        expect(FushiDesktopTitleBar.pageColors.value, readerColors);
+        // macOS：浮出时铺一层不可见（1/255）的页面底色，让这一条在 WKWebView
+        // 上方归 Flutter 命中、拖得动窗口；Windows 全透明。
+        expect(
+          captionColor(tester),
+          host == TargetPlatform.macOS
+              ? paper.withAlpha(1)
+              : Colors.transparent,
+        );
+      });
+
+      testWidgets('指针进入顶栏才显示，离开淡出；原生最大化键悬停也算', (WidgetTester tester) async {
+        await pumpShell(tester, reader());
+        expect(captionOpacity(tester), 0);
+
+        final TestGesture mouse = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        addTearDown(mouse.removePointer);
+        await mouse.addPointer(location: const Offset(200, 300));
+        await mouse.moveTo(const Offset(200, 8));
+        await tester.pump(dwell);
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+
+        await mouse.moveTo(const Offset(200, 300));
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 0);
+
+        // 最大化键是 runner 的 HTMAXBUTTON 原生命中区：Flutter 只收到离开，
+        // 悬停真值由原生回传，不并进来指针一停到最大化键整条就隐去。
+        WindowCaptionChannel.captionMaxButtonHovered.value = true;
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+        WindowCaptionChannel.captionMaxButtonHovered.value = false;
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 0);
+      });
+
+      testWidgets('从原生最大化键移到相邻的关闭键（带子里、离顶边较远）标题行不隐去', (
+        WidgetTester tester,
+      ) async {
+        await pumpShell(tester, reader());
+        final TestGesture mouse = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        await mouse.addPointer(location: const Offset(200, 300));
+        await mouse.moveTo(const Offset(200, 4));
+        await tester.pump(dwell);
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+
+        // 进入 HTMAXBUTTON：Flutter 只收到移除，悬停真值由原生回传。
+        await mouse.removePointer();
+        WindowCaptionChannel.captionMaxButtonHovered.value = true;
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+
+        // 移出最大化键、落到关闭键（y = 16 > 顶边触发带）：原生悬停撤掉，Flutter
+        // 重新收到这只指针。整条应一直显示，关闭键不能在指针下面消失。
+        await mouse.addPointer(location: const Offset(260, 16));
+        WindowCaptionChannel.captionMaxButtonHovered.value = false;
+        await mouse.moveTo(const Offset(262, 16));
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+
+        await mouse.moveTo(const Offset(262, 300));
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 0);
+        await mouse.removePointer();
+      });
+
+      testWidgets('从下面移进带子 / 划过顶边不浮出（顶部正文照常可点），在顶边停留才浮出', (
+        WidgetTester tester,
+      ) async {
+        await pumpShell(tester, reader());
+        final TestGesture mouse = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        addTearDown(mouse.removePointer);
+        await mouse.addPointer(location: const Offset(200, 300));
+        await mouse.moveTo(const Offset(200, 20));
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 0, reason: '带子里的正文要能点击查词');
+
+        // 划过顶边（手滑出窗口再划回来）不浮出：没停够就离开了顶边。
+        await mouse.moveTo(const Offset(200, 3));
+        await tester.pump(const Duration(milliseconds: 150));
+        await mouse.moveTo(const Offset(200, 20));
+        await tester.pump(dwell);
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 0, reason: '路过顶边不算想要顶栏');
+
+        await mouse.moveTo(const Offset(200, 3));
+        await tester.pump(dwell);
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+
+        // 浮出后在带子里往下移（去拖动 / 点窗口按钮）保持显示。
+        await mouse.moveTo(const Offset(200, 24));
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+      });
+
+      testWidgets('触摸没有悬停：带子里按下浮出，带子外按下收起', (WidgetTester tester) async {
+        await pumpShell(tester, reader());
+        expect(captionOpacity(tester), 0);
+
+        final TestGesture touch = await tester.startGesture(
+          const Offset(200, 8),
+          kind: PointerDeviceKind.touch,
+        );
+        await touch.up();
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1, reason: '纯触屏也要够得着窗口按钮');
+
+        // 浮出后再点带子里（窗口按钮所在处）不收起。
+        final TestGesture again = await tester.startGesture(
+          const Offset(300, 10),
+          kind: PointerDeviceKind.touch,
+        );
+        await again.up();
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+
+        final TestGesture outside = await tester.startGesture(
+          const Offset(200, 300),
+          kind: PointerDeviceKind.touch,
+        );
+        await outside.up();
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 0);
+      });
+
+      // 反馈 BEX2_5K1zV / BUG-3929：播放页控制条浮出时标题行跟着浮出，窗口按钮与
+      // 拖动区随控制条出现；不再只能摸到顶边 8 像素停留才拖得动窗口。
+      testWidgets('页面 chrome 浮出时标题行跟着浮出；指针在带子里时控制条收起也不隐去', (
+        WidgetTester tester,
+      ) async {
+        final ValueNotifier<bool> controls = ValueNotifier<bool>(false);
+        addTearDown(controls.dispose);
+        await pumpShell(
+          tester,
+          ValueListenableBuilder<bool>(
+            valueListenable: controls,
+            builder: (_, bool shown, Widget? page) =>
+                FushiTitleBarRevealScope(revealed: shown, child: page!),
+            child: reader(),
+          ),
+        );
+        expect(captionOpacity(tester), 0);
+
+        controls.value = true;
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1, reason: '控制条一出来就能拖窗口 / 点窗口按钮');
+
+        controls.value = false;
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 0);
+
+        // 控制条带出标题行后指针进带子（去拖窗口）：控制条随后自动收起，标题行
+        // 不能在指针下面隐去。
+        controls.value = true;
+        await tester.pumpAndSettle();
+        final TestGesture mouse = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        addTearDown(mouse.removePointer);
+        await mouse.addPointer(location: const Offset(200, 300));
+        await mouse.moveTo(const Offset(200, 20));
+        await tester.pumpAndSettle();
+        controls.value = false;
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+
+        await mouse.moveTo(const Offset(200, 300));
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 0);
+      });
+
+      testWidgets('被另一整页盖住时撤回浮出请求', (WidgetTester tester) async {
+        final ValueNotifier<bool> controls = ValueNotifier<bool>(true);
+        addTearDown(controls.dispose);
+        await pumpShell(
+          tester,
+          ValueListenableBuilder<bool>(
+            valueListenable: controls,
+            builder: (_, bool shown, Widget? page) =>
+                FushiTitleBarRevealScope(revealed: shown, child: page!),
+            child: reader(),
+          ),
+        );
+        expect(FushiDesktopTitleBar.captionRevealRequested.value, isTrue);
+
+        navigatorKey.currentState!.push(
+          MaterialPageRoute<void>(builder: (_) => const Scaffold()),
+        );
+        await tester.pumpAndSettle();
+        expect(FushiDesktopTitleBar.captionRevealRequested.value, isFalse);
+
+        navigatorKey.currentState!.pop();
+        await tester.pumpAndSettle();
+        expect(FushiDesktopTitleBar.captionRevealRequested.value, isTrue);
+      });
+
+      testWidgets('普通页（未上报配色）顶栏常显', (WidgetTester tester) async {
+        await pumpShell(tester, const Scaffold());
+        expect(captionOpacity(tester), 1);
+      });
+    });
+  }
 }

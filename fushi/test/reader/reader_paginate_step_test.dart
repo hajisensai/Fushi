@@ -22,25 +22,29 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 void main() {
   const double pitch = 1000.0;
 
-  ReaderPageStep stepForward(double scroll,
-          {double min = 0, double max = 9000}) =>
-      ReaderPaginationScripts.resolvePaginateStepForTesting(
-        direction: ReaderNavigationDirection.forward,
-        currentScroll: scroll,
-        columnPitch: pitch,
-        minAlignedScroll: min,
-        maxAlignedScroll: max,
-      );
+  ReaderPageStep stepForward(
+    double scroll, {
+    double min = 0,
+    double max = 9000,
+  }) => ReaderPaginationScripts.resolvePaginateStepForTesting(
+    direction: ReaderNavigationDirection.forward,
+    currentScroll: scroll,
+    columnPitch: pitch,
+    minAlignedScroll: min,
+    maxAlignedScroll: max,
+  );
 
-  ReaderPageStep stepBackward(double scroll,
-          {double min = 0, double max = 9000}) =>
-      ReaderPaginationScripts.resolvePaginateStepForTesting(
-        direction: ReaderNavigationDirection.backward,
-        currentScroll: scroll,
-        columnPitch: pitch,
-        minAlignedScroll: min,
-        maxAlignedScroll: max,
-      );
+  ReaderPageStep stepBackward(
+    double scroll, {
+    double min = 0,
+    double max = 9000,
+  }) => ReaderPaginationScripts.resolvePaginateStepForTesting(
+    direction: ReaderNavigationDirection.backward,
+    currentScroll: scroll,
+    columnPitch: pitch,
+    minAlignedScroll: min,
+    maxAlignedScroll: max,
+  );
 
   group('aligned scroll behaves exactly like single-page step', () {
     test('forward from an aligned page advances exactly one pitch', () {
@@ -79,60 +83,63 @@ void main() {
       const double fractionalPitch = 564.490967;
       final ReaderPageStep step =
           ReaderPaginationScripts.resolvePaginateStepForTesting(
-        direction: ReaderNavigationDirection.forward,
-        currentScroll: 17499,
-        columnPitch: fractionalPitch,
-        minAlignedScroll: 0,
-        maxAlignedScroll: 40 * fractionalPitch,
-      );
+            direction: ReaderNavigationDirection.forward,
+            currentScroll: 17499,
+            columnPitch: fractionalPitch,
+            minAlignedScroll: 0,
+            maxAlignedScroll: 40 * fractionalPitch,
+          );
 
       expect(step.scrolled, isTrue);
       expect(step.targetScroll, closeTo(32 * fractionalPitch, 1e-9));
     });
 
     test(
-        'backward crosses an N-plus-epsilon quotient instead of returning limit',
-        () {
-      const double fractionalPitch = 564.490967;
-      final ReaderPageStep step =
-          ReaderPaginationScripts.resolvePaginateStepForTesting(
-        direction: ReaderNavigationDirection.backward,
-        currentScroll: 33305,
-        columnPitch: fractionalPitch,
-        minAlignedScroll: 0,
-        maxAlignedScroll: 80 * fractionalPitch,
-      );
+      'backward crosses an N-plus-epsilon quotient instead of returning limit',
+      () {
+        const double fractionalPitch = 564.490967;
+        final ReaderPageStep step =
+            ReaderPaginationScripts.resolvePaginateStepForTesting(
+              direction: ReaderNavigationDirection.backward,
+              currentScroll: 33305,
+              columnPitch: fractionalPitch,
+              minAlignedScroll: 0,
+              maxAlignedScroll: 80 * fractionalPitch,
+            );
 
-      expect(step.scrolled, isTrue);
-      expect(step.targetScroll, closeTo(58 * fractionalPitch, 1e-9));
-    });
+        expect(step.scrolled, isTrue);
+        expect(step.targetScroll, closeTo(58 * fractionalPitch, 1e-9));
+      },
+    );
 
-    test('forward keeps a position just over 1px before a boundary in-page',
-        () {
-      const double fractionalPitch = 564.490967;
-      final ReaderPageStep step =
-          ReaderPaginationScripts.resolvePaginateStepForTesting(
-        direction: ReaderNavigationDirection.forward,
-        currentScroll: 31 * fractionalPitch - 1.01,
-        columnPitch: fractionalPitch,
-        minAlignedScroll: 0,
-        maxAlignedScroll: 40 * fractionalPitch,
-      );
+    test(
+      'forward keeps a position just over 1px before a boundary in-page',
+      () {
+        const double fractionalPitch = 564.490967;
+        final ReaderPageStep step =
+            ReaderPaginationScripts.resolvePaginateStepForTesting(
+              direction: ReaderNavigationDirection.forward,
+              currentScroll: 31 * fractionalPitch - 1.01,
+              columnPitch: fractionalPitch,
+              minAlignedScroll: 0,
+              maxAlignedScroll: 40 * fractionalPitch,
+            );
 
-      expect(step.scrolled, isTrue);
-      expect(step.targetScroll, closeTo(31 * fractionalPitch, 1e-9));
-    });
+        expect(step.scrolled, isTrue);
+        expect(step.targetScroll, closeTo(31 * fractionalPitch, 1e-9));
+      },
+    );
 
     test('backward keeps a position just over 1px past a boundary in-page', () {
       const double fractionalPitch = 564.490967;
       final ReaderPageStep step =
           ReaderPaginationScripts.resolvePaginateStepForTesting(
-        direction: ReaderNavigationDirection.backward,
-        currentScroll: 59 * fractionalPitch + 1.01,
-        columnPitch: fractionalPitch,
-        minAlignedScroll: 0,
-        maxAlignedScroll: 80 * fractionalPitch,
-      );
+            direction: ReaderNavigationDirection.backward,
+            currentScroll: 59 * fractionalPitch + 1.01,
+            columnPitch: fractionalPitch,
+            minAlignedScroll: 0,
+            maxAlignedScroll: 80 * fractionalPitch,
+          );
 
       expect(step.scrolled, isTrue);
       expect(step.targetScroll, closeTo(59 * fractionalPitch, 1e-9));
@@ -145,8 +152,11 @@ void main() {
       // → target 4000（跳到第 4 页起点，越过第 3 页）。正确：到 3000（第 3 页起点）。
       final ReaderPageStep step = stepForward(2600);
       expect(step.scrolled, isTrue);
-      expect(step.targetScroll, 3000,
-          reason: 'forward 必须落到 currentScroll 之后最近的整页边界，不能跳 2 页');
+      expect(
+        step.targetScroll,
+        3000,
+        reason: 'forward 必须落到 currentScroll 之后最近的整页边界，不能跳 2 页',
+      );
     });
 
     test('forward from just-past-start advances one page', () {
@@ -196,12 +206,12 @@ void main() {
     test('zero or negative pitch reports limit', () {
       final ReaderPageStep step =
           ReaderPaginationScripts.resolvePaginateStepForTesting(
-        direction: ReaderNavigationDirection.forward,
-        currentScroll: 1000,
-        columnPitch: 0,
-        minAlignedScroll: 0,
-        maxAlignedScroll: 9000,
-      );
+            direction: ReaderNavigationDirection.forward,
+            currentScroll: 1000,
+            columnPitch: 0,
+            minAlignedScroll: 0,
+            maxAlignedScroll: 9000,
+          );
       expect(step.scrolled, isFalse);
     });
   });

@@ -191,6 +191,7 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
           'reading_controls.page_turn_animation',
           'reading_controls.page_turn_animation_speed',
           'reading_controls.page_turn_follow_drag',
+          'reading_controls.tap_zone_layout',
           'reading_controls.keep_screen_awake',
         ],
       ),
@@ -248,6 +249,7 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
           'lookup.popup_max_height',
           'lookup.popup_size_preview',
           'lookup.dictionary_font_size',
+          'lookup.popup_ui_scale',
           'lookup.popup_bottom_docked_books_only',
         ],
         itemIdPrefixes: const <String>['lookup.popup_bottom_docked.'],
@@ -278,7 +280,6 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
         itemIds: const <String>[
           'reading_controls.enable_swipe_to_close',
           'reading_controls.dismiss_swipe_sensitivity',
-          'reading_controls.popup_dismiss_animation',
           'reading_controls.dismiss_popup_on_scroll',
           'reading_controls.close_popup_after_mining',
         ],
@@ -318,8 +319,9 @@ ReaderSettingsTab readerSettingsInitialTab(
   String? requested,
 }) {
   // 定向入口只影响本次初始选择，不覆盖普通设置入口的会话记忆。
-  final ReaderSettingsTab? target =
-      requested == null ? null : ReaderSettingsTab.byId(requested);
+  final ReaderSettingsTab? target = requested == null
+      ? null
+      : ReaderSettingsTab.byId(requested);
   if (target != null && tabs.contains(target)) return target;
   final ReaderSettingsTab? byId = ReaderSettingsTab.byId(remembered);
   if (byId != null && tabs.contains(byId)) return byId;

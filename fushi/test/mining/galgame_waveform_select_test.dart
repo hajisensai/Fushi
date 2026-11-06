@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/mining/galgame_waveform_select.dart';
 
 /// galgame 波形选区纯函数单测（docs/specs/galgame-mining A5）：
@@ -13,8 +13,11 @@ void main() {
       for (final int ms in <int>[0, 137, 1000, 2499, 2500, 4999, 5000]) {
         final double x = msToPixel(ms, width, total);
         final int back = pixelToMs(x, width, total);
-        expect((back - ms).abs(), lessThanOrEqualTo(toleranceMs),
-            reason: 'ms=$ms -> x=$x -> back=$back 往返漂移过大');
+        expect(
+          (back - ms).abs(),
+          lessThanOrEqualTo(toleranceMs),
+          reason: 'ms=$ms -> x=$x -> back=$back 往返漂移过大',
+        );
       }
     });
 

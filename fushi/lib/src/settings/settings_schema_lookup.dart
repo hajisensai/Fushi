@@ -1,17 +1,25 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_settings_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/local_audio_sources_dialog.dart';
+import 'package:fushi/src/corpus/library_corpus_settings.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart'
     show
+        kLookupPopupDefaultHeight,
+        kLookupPopupDefaultWidth,
         kLookupPopupMaxHeight,
         kLookupPopupMaxWidth,
         kLookupPopupMinHeight,
         kLookupPopupMinWidth;
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/lookup_popup_size_preview.dart';
+import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -22,18 +30,22 @@ import 'package:fushi/src/settings/audio_sources_cli.dart'
     show listAudioSourcesForCli;
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
-import 'package:fushi/src/settings/port_kill_confirm.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_local_services.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
-import 'package:fushi/src/sync/fushi_api_port_conflict_notice.dart'
-    show fushiApiPortInUseMessage;
-import 'package:fushi_engine/sync/fushi_sync_server.dart';
-import 'package:fushi/src/sync/port_process_terminator.dart';
+import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/content_language_picker.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
 
 void _showSettingsSnackBar(SettingsContext settingsContext, String message) {
   final BuildContext ctx = settingsContext.context;
@@ -41,113 +53,26 @@ void _showSettingsSnackBar(SettingsContext settingsContext, String message) {
   ScaffoldMessenger.of(ctx).showSnackBar(FushiSnackBar(content: Text(message)));
 }
 
-/// 端口冲突提示：说明占用者（默认端口时通常是浏览器拉起的 yomitan-api Python
-/// 进程），并在支持的桌面平台附「结束进程并重试」action——直接结束占用进程后
-/// 自动重试开启，免去用户去 Yomitan 高级设置绕一圈。
-void _showFushiApiPortConflictSnackBar(SettingsContext settingsContext) {
-  final BuildContext ctx = settingsContext.context;
-  if (!ctx.mounted) return;
-  final int port = settingsContext.appModel.fushiApiPort;
-  ScaffoldMessenger.of(ctx).showSnackBar(
-    FushiSnackBar(
-      content: Text(fushiApiPortInUseMessage(port)),
-      duration: const Duration(seconds: 10),
-      action: PortProcessTerminator.isSupported
-          ? SnackBarAction(
-              label: t.yomitan_port_kill_action,
-              onPressed: () =>
-                  unawaited(_terminatePortOwnerAndRetry(settingsContext, port)),
-            )
-          : null,
-    ),
-  );
-}
-
-Future<void> _terminatePortOwnerAndRetry(
-  SettingsContext settingsContext,
-  int port,
-) async {
-  final AppModel appModel = settingsContext.appModel;
-  // 杀前必须确认：弹窗展示实际占用者（进程名 + PID + 路径；Fushi 旧实例
-  // 特别标注），关键系统进程直接拒杀。端口是用户可配置偏好，占用者完全可能
-  // 是 IDE 辅助进程/dev server，未经确认一键 taskkill 不可接受。
-  final PortKillDecision decision = await decidePortKill(
-    settingsContext.context,
-    port: port,
-  );
-  switch (decision.kind) {
-    case PortKillDecisionKind.cancelled:
-      return;
-    case PortKillDecisionKind.refusedProtected:
-      _showSettingsSnackBar(
-        settingsContext,
-        t.yomitan_port_kill_protected(
-          process: describePortListener(decision.listener!),
-        ),
-      );
-      return;
-    case PortKillDecisionKind.listenerChanged:
-      // 占用者换人：重走冲突提示，让用户对新占用者重新发起并确认。
-      _showFushiApiPortConflictSnackBar(settingsContext);
-      return;
-    case PortKillDecisionKind.confirmed:
-      final PortListenerInfo listener = decision.listener!;
-      final bool killed = await PortProcessTerminator.terminate(listener);
-      if (!killed) {
-        _showSettingsSnackBar(
-          settingsContext,
-          t.yomitan_port_kill_failed(process: describePortListener(listener)),
-        );
-        return;
-      }
-    case PortKillDecisionKind.noListener:
-      break;
-  }
-  // 占用进程已结束（或本就已退出）：重试开启。进程退出后 OS 释放端口可能有极短
-  // 延迟，端口仍占时再等一拍重试一次，仍失败按端口冲突报出。
-  await appModel.setFushiApiServerEnabled(true);
-  for (int attempt = 0;; attempt++) {
-    try {
-      await appModel.startFushiApiServer();
-      break;
-    } on SyncServerPortInUseException {
-      if (attempt >= 1) {
-        _showSettingsSnackBar(
-          settingsContext,
-          fushiApiPortInUseMessage(port),
-        );
-        settingsContext.refresh();
-        return;
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-      // startFushiApiServer 抛出前把开关复位成 false，重试前需重新置位。
-      await appModel.setFushiApiServerEnabled(true);
-    }
-  }
-  _showSettingsSnackBar(settingsContext, t.fushi_api_server_started);
-  settingsContext.refresh();
-}
-
 /// 「底部停靠」在单个媒体模块里是否启用的子开关（[AppModel.popupBottomDockedIn]）。
 SettingsSwitchItem _popupBottomDockedModuleSwitch(ModuleId module) {
   // 图标取各模块底栏 tab 的同一真值（homeNavItemFor）。
   final ({String title, IconData icon}) identity = switch (module) {
     ModuleId.books => (
-        title: t.popup_bottom_docked_books,
-        icon: homeNavItemFor(HomeTab.books).icon,
-      ),
+      title: t.popup_bottom_docked_books,
+      icon: homeNavItemFor(HomeTab.books).icon,
+    ),
     ModuleId.manga => (
-        title: t.popup_bottom_docked_manga,
-        icon: homeNavItemFor(HomeTab.manga).icon,
-      ),
+      title: t.popup_bottom_docked_manga,
+      icon: homeNavItemFor(HomeTab.manga).icon,
+    ),
     ModuleId.video => (
-        title: t.popup_bottom_docked_video,
-        icon: homeNavItemFor(HomeTab.video).icon,
-      ),
+      title: t.popup_bottom_docked_video,
+      icon: homeNavItemFor(HomeTab.video).icon,
+    ),
     ModuleId.games => (
-        title: t.popup_bottom_docked_games,
-        icon: homeNavItemFor(HomeTab.games).icon,
-      ),
+      title: t.popup_bottom_docked_games,
+      icon: homeNavItemFor(HomeTab.games).icon,
+    ),
     _ => throw StateError('$module 没有底部停靠细分开关'),
   };
   return SettingsSwitchItem(
@@ -289,6 +214,13 @@ SettingsDestination buildLookupDestination() {
           ),
         ],
       ),
+      // 「我库里的例句」（作品图谱 L4，D-L2 默认开）：开关 + 重建索引。
+      SettingsSection(
+        id: 'lookup.section.library_sentences',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.lookup_library_sentences_enabled,
+        items: librarySentencesSettingsItems(),
+      ),
       // 原「查词行为」19+ 项平铺长列表，按职责拆为四组：查词触发 / 外部集成 /
       // 朗读与反馈 / 弹窗窗口。纯展示重组：item id、持久化 key、
       // onChanged、ReaderPlacement 全部不变。
@@ -305,6 +237,39 @@ SettingsDestination buildLookupDestination() {
                 settingsContext.appModel.autoSearchEnabled,
             onChanged: (SettingsContext settingsContext, bool value) {
               settingsContext.appModel.toggleAutoSearchEnabled();
+              settingsContext.refresh();
+            },
+            defaultValue: true,
+          ),
+          // 反馈 3D-JH966Kr：查词页结果顶部下拉 = 清空查询回到历史。默认开（原行为），
+          // 往上翻结果顶到头被甩回历史的用户可以关掉。
+          SettingsSwitchItem(
+            id: 'lookup.page_pull_to_clear',
+            title: t.lookup_page_pull_to_clear,
+            subtitle: t.lookup_page_pull_to_clear_hint,
+            icon: FushiIcons.arrowDown,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.lookupPagePullToClear,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setLookupPagePullToClear(value);
+              settingsContext.refresh();
+            },
+            defaultValue: true,
+          ),
+          // 反馈 cczhbM7ZOI：进入查词页 / 清空查询时自动弹键盘（BUG-2687 的有意行为）。
+          // 默认开（原行为）；关掉后只有点搜索框才聚焦 / 弹键盘。桌面上同一判据管
+          // 「自动聚焦」，所以不按平台隐藏。
+          SettingsSwitchItem(
+            id: 'lookup.page_auto_show_keyboard',
+            title: t.lookup_page_auto_show_keyboard,
+            subtitle: t.lookup_page_auto_show_keyboard_hint,
+            icon: FushiIcons.keyboard,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.lookupPageAutoShowKeyboard,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setLookupPageAutoShowKeyboard(
+                value,
+              );
               settingsContext.refresh();
             },
             defaultValue: true,
@@ -353,6 +318,34 @@ SettingsDestination buildLookupDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
             defaultValue: false,
+          ),
+          // 悬停查词按住哪个键（浏览器扩展 / Yomitan 同款可选）。与上面的「悬停即查词」
+          // 并存：那个开着就不用按键。
+          SettingsSegmentedItem<String>(
+            id: 'lookup.hover_lookup_modifier',
+            dropdown: true,
+            title: t.hover_lookup_modifier,
+            subtitle: t.hover_lookup_modifier_hint,
+            icon: FushiIcons.keyboard,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 26),
+            options: <SettingsSegmentOption<String>>[
+              for (final HoverLookupModifier m in HoverLookupModifier.values)
+                SettingsSegmentOption<String>(
+                  value: m.storageKey,
+                  label: m.label,
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.hoverLookupModifier.storageKey,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await settingsContext.readerSource.setHoverLookupModifier(
+                HoverLookupModifier.fromStorage(value),
+              );
+              notifyReaderSettingsChanged(settingsContext);
+            },
+            defaultValue: HoverLookupModifier.shift.storageKey,
           ),
           // 悬停查词的收尾动作：鼠标离开字幕与查词浮层即自动关浮层 + 恢复播放，免去
           // 「再点一下空白」。只作用于悬停发起的查词会话（点击查词不受影响），故与上面
@@ -445,7 +438,8 @@ SettingsDestination buildLookupDestination() {
             cli: SettingsCliAction(
               run: (SettingsContext c, Map<String, String> args) async =>
                   <String, Object?>{
-                    'trusted': await SelectionCapture.requestAccessibilityTrust(),
+                    'trusted':
+                        await SelectionCapture.requestAccessibilityTrust(),
                   },
             ),
             onTap: (SettingsContext settingsContext) async {
@@ -718,6 +712,30 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // 反馈 2jGkpD-iD6：查词弹窗独立缩放，乘在「界面大小」之上，只缩放弹窗内容
+          // （WebView zoom）与弹窗顶栏按钮，不改弹窗盒子尺寸。取值单点
+          // AppModel.popupUiScale，所有弹窗宿主共用。schema 项由 MD3 / Apple 两套设置
+          // 渲染器共同渲染。松手才提交，免拖动时逐帧写库 + 已开弹窗逐帧重注入。
+          SettingsSliderItem(
+            id: 'lookup.popup_ui_scale',
+            title: t.lookup_popup_ui_scale,
+            subtitle: t.lookup_popup_ui_scale_hint,
+            icon: FushiIcons.zoomIn,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 6),
+            min: kPopupUiScaleMin,
+            max: kPopupUiScaleMax,
+            divisions: kPopupUiScaleDivisions,
+            label: (double value) => '${(value * 100).round()}%',
+            titleReadout: true,
+            commitOnRelease: true,
+            defaultValue: kPopupUiScaleDefault,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupUiScaleFactor,
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.appModel.setPopupUiScaleFactor(value);
+              settingsContext.refresh();
+            },
+          ),
         ],
       ),
       // 朗读与反馈：查中词后的语音朗读与播放暂停联动。
@@ -809,7 +827,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setPopupMaxWidth(value);
               settingsContext.refresh();
             },
-            defaultValue: 400,
+            defaultValue: kLookupPopupDefaultWidth,
           ),
           SettingsSliderItem(
             id: 'lookup.popup_max_height',
@@ -830,7 +848,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setPopupMaxHeight(value);
               settingsContext.refresh();
             },
-            defaultValue: 360,
+            defaultValue: kLookupPopupDefaultHeight,
           ),
           // 宽高滑杆写的是「上限」，实际尺寸还要按当前屏幕 / 停靠 / 竖排夹一次：
           // 预览用宿主同一个 resolvePopupRect 画出小说里弹窗的真实落点与尺寸。
@@ -839,16 +857,20 @@ SettingsDestination buildLookupDestination() {
             reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 2),
             builder: (SettingsContext settingsContext) =>
                 LookupPopupSizePreview(
-              maxWidth: settingsContext.appModel.popupMaxWidth *
-                  settingsContext.appModel.appUiScale,
-              maxHeight: settingsContext.appModel.popupMaxHeight *
-                  settingsContext.appModel.appUiScale,
-              bottomDocked: settingsContext.appModel.popupBottomDockedFor(
-                ModuleId.books,
-              ),
-              verticalWriting: settingsContext.readerSource.readerWritingMode
-                  .startsWith('vertical'),
-            ),
+                  maxWidth:
+                      settingsContext.appModel.popupMaxWidth *
+                      settingsContext.appModel.appUiScale,
+                  maxHeight:
+                      settingsContext.appModel.popupMaxHeight *
+                      settingsContext.appModel.appUiScale,
+                  bottomDocked: settingsContext.appModel.popupBottomDockedFor(
+                    ModuleId.books,
+                  ),
+                  verticalWriting: settingsContext
+                      .readerSource
+                      .readerWritingMode
+                      .startsWith('vertical'),
+                ),
           ),
           // 弹窗尺寸精细化：app 外覆盖查词窗独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
           // 关闭时跟随上面的 app 内最大宽高（overlayLookupEffectiveSize 解析）。
@@ -884,7 +906,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setOverlayLookupMaxWidth(value);
               settingsContext.refresh();
             },
-            defaultValue: 400,
+            defaultValue: kLookupPopupDefaultWidth,
           ),
           SettingsSliderItem(
             id: 'lookup.overlay_lookup_max_height',
@@ -903,7 +925,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setOverlayLookupMaxHeight(value);
               settingsContext.refresh();
             },
-            defaultValue: 360,
+            defaultValue: kLookupPopupDefaultHeight,
           ),
           // 弹窗尺寸精细化：浏览器扩展弹窗独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
           // 关闭时跟随 app 内最大宽高（extensionPopupEffectiveSize 解析，经 theme 下发）。
@@ -939,7 +961,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setExtensionPopupMaxWidth(value);
               settingsContext.refresh();
             },
-            defaultValue: 400,
+            defaultValue: kLookupPopupDefaultWidth,
           ),
           SettingsSliderItem(
             id: 'lookup.extension_popup_max_height',
@@ -958,7 +980,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setExtensionPopupMaxHeight(value);
               settingsContext.refresh();
             },
-            defaultValue: 360,
+            defaultValue: kLookupPopupDefaultHeight,
           ),
           // 墨水屏「瞬时滚动」+ 两个步长旋钮。同时经 ReaderPlacement 出现在阅读器快捷
           // 设置的查词段（墨水屏用户是在书里查词时才发现步长不合手，不该为此退出阅读器
@@ -1091,26 +1113,6 @@ SettingsDestination buildLookupDestination() {
             },
             defaultValue: 0.6,
           ),
-          // 用户诉求（2026-09-10）：滑动关闭弹窗那段滑出/弹回动画要能**单独**关掉。
-          // 此前唯一的关闭途径是开墨水屏模式（externally 顺带归零），想要瞬时关闭
-          // 就得连带吃下纯黑白主题。与上面两项同属查词弹窗滑关行为，紧邻摆放。
-          // 默认 true = 保持既有手感；墨水屏模式下无论本开关如何都已归零。
-          SettingsSwitchItem(
-            id: 'reading_controls.popup_dismiss_animation',
-            title: t.popup_dismiss_animation,
-            subtitle: t.popup_dismiss_animation_hint,
-            icon: Icons.animation_outlined,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 16),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.popupDismissAnimation,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.readerSource.setPopupDismissAnimation(
-                value,
-              );
-              notifyReaderSettingsChanged(settingsContext);
-            },
-            defaultValue: true,
-          ),
           // 用户诉求（2026-09-23）：滚动模式下查词后继续滚动正文（横排/竖排都算）
           // 即关闭弹窗，并做成开关。只在滚动（连续）模式生效，故仅该模式可见
           // （与 page_columns 只在翻页模式可见同理）。默认开启。
@@ -1125,9 +1127,7 @@ SettingsDestination buildLookupDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.dismissPopupOnScroll,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.readerSource.setDismissPopupOnScroll(
-                value,
-              );
+              await settingsContext.readerSource.setDismissPopupOnScroll(value);
               notifyReaderSettingsChanged(settingsContext);
             },
             defaultValue: true,
@@ -1152,7 +1152,7 @@ SettingsDestination buildLookupDestination() {
           ),
           // 防截屏（用户诉求）：桌面查词浮窗经 native
           // SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 从截图/录屏/串流中
-          // 排除。默认关（用户要求，2026-07）。仅 Windows——display affinity 是 Win32 能力。
+          // 排除。默认关（用户要求，2026-07）。Windows / macOS 有，X11 没有（canBlockCapture）。
           // 写穿 pref（存储键沿用历史名 clipboard_panel_block_capture）后经
           // GlobalLookupController.applyBlockCapture 即时重应用到覆盖窗；native 侧
           // 记值并在窗口重建后自动重加，不新起并行机制。
@@ -1162,7 +1162,7 @@ SettingsDestination buildLookupDestination() {
             subtitle: t.lookup_block_capture_hint,
             icon: Icons.shield_outlined,
             visible: (SettingsContext settingsContext) =>
-                GlobalLookupController.isSupported,
+                GlobalLookupController.canBlockCapture,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.lookupBlockCapture,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -1174,107 +1174,34 @@ SettingsDestination buildLookupDestination() {
           ),
         ],
       ),
-      // 外部集成：远程查词 / Yomitan API / texthooker——都是「让别的程序或设备
-      // 参与查词」的接线项，与本机查词触发行为分开。
+      // 外部集成：远程查词 / texthooker——都是「让别的程序或设备参与查词」的接线项，
+      // 与本机查词触发行为分开。Fushi API 服务器在「本机服务」分类（见指路行）。
       SettingsSection(
         id: 'lookup.section.integrations',
         presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_section_lookup_integrations,
         items: <SettingsItem>[
-          // 浏览器扩展「安装助手」已独立成桌面专属顶层页（BrowserExtensionPage，仅桌面
-          // 出现），复杂正文（安装引导 + 连接检测 + 版本信息）不再埋在查词设置里；这里
-          // 保留一条可搜索的导航项直达该页（审计 K：独立成页后设置搜索完全搜不到它）。
+          // Fushi API 服务器（开关 / 允许谁连 / 端口 / 密钥 / AnkiConnect）与浏览器
+          // 扩展入口已搬到「连接 › 本机服务」：服务不只服务查词，且监听范围与端口
+          // 此前根本没有入口。这里留一条指路，从查词页找过来的用户不迷路。
           SettingsNavigationItem(
-            id: 'lookup.browser_extension',
-            title: t.nav_browser_extension,
-            icon: Icons.extension_outlined,
+            id: 'lookup.local_services',
+            title: t.settings_local_services_title,
+            subtitle: t.settings_local_services_summary,
+            icon: FushiIcons.server,
             showIcon: true,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop,
             onTap: (SettingsContext settingsContext) async {
               await pushSettingsPage(
                 settingsContext,
-                (_) => const BrowserExtensionPage(),
+                (_) => SettingsDetailPage(
+                  destination: buildLocalServicesDestination(),
+                ),
               );
             },
           ),
           // 远端词典查询抽成共享 builder：查词分类与 Fushi 互联分类都引用（它直连
           // 互联对端的词典，逻辑上属互联，故互联分类也提供入口）。
           buildRemoteDictionaryLookupItem(),
-          SettingsSwitchItem(
-            id: 'lookup.fushi_api_server',
-            title: t.fushi_api_server,
-            subtitle: t.fushi_api_server_hint,
-            icon: Icons.api_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.fushiApiServerEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              // 从关到开时空 key 自动播种（见 setFushiApiServerEnabledByUser）。
-              await settingsContext.appModel.setFushiApiServerEnabledByUser(
-                value,
-              );
-              if (value) {
-                try {
-                  await settingsContext.appModel.startFushiApiServer();
-                } on SyncServerPortInUseException {
-                  // startFushiApiServer 已在抛出前把开关复位为 false。
-                  _showFushiApiPortConflictSnackBar(settingsContext);
-                }
-              } else {
-                await settingsContext.appModel.stopFushiApiServer();
-              }
-              settingsContext.refresh();
-            },
-          ),
-          // 一等文本项（secret）：行尾自动获得眼睛显隐切换。写穿后重启 Yomitan
-          // API 服务（若已开启）。
-          SettingsTextItem(
-            id: 'lookup.fushi_api_key',
-            visible: (SettingsContext c) => c.appModel.fushiApiServerEnabled,
-            title: t.fushi_api_key,
-            // 不再写「可选」：其他设备 / AnkiConnect 客户端连这里要填同一个 key，
-            // 与 Fushi 作为 AnkiConnect 客户端那边「远程必填」是同一件事的两端。
-            subtitle: t.fushi_api_key_hint,
-            icon: Icons.key_outlined,
-            secret: true,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.fushiApiKey,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await settingsContext.appModel.setFushiApiKey(value);
-              await _restartFushiApiServerIfEnabled(settingsContext);
-            },
-          ),
-          // 复习模块（SRS，默认关）开着时，Fushi API 根路径同时是 AnkiConnect v6 兼容
-          // 端点：Yomitan / asbplayer 等只认 AnkiConnect 的工具填这个地址即可往 Fushi
-          // 复习里加卡（API key 与上面同一个）。模块关着时这一行不出现、端点也不存在。
-          SettingsStatusItem(
-            id: 'lookup.srs_ankiconnect',
-            visible: (SettingsContext c) =>
-                c.appModel.moduleVisibility.isEnabled(ModuleId.srs),
-            title: t.srs_ankiconnect_title,
-            icon: FushiIcons.hub,
-            // 端点没 key 时只收回环请求（非本机一律 403）：状态行直说，并就地给
-            // 「生成密钥」入口（只在空 key 时出现，绝不覆盖已有 key）。
-            subtitleBuilder: (SettingsContext c) {
-              final String hint = t.srs_ankiconnect_hint(
-                port: c.appModel.fushiApiPort,
-              );
-              final String keyState = c.appModel.fushiApiKey.isEmpty
-                  ? t.srs_ankiconnect_key_missing
-                  : t.srs_ankiconnect_key_set;
-              return '$hint\n$keyState';
-            },
-            actionLabel: t.srs_ankiconnect_generate_key,
-            actionVisible: (SettingsContext c) =>
-                c.appModel.fushiApiKey.isEmpty,
-            onAction: (SettingsContext settingsContext) async {
-              final bool seeded = await settingsContext.appModel
-                  .seedFushiApiKeyIfEmpty();
-              if (seeded) {
-                await _restartFushiApiServerIfEnabled(settingsContext);
-              }
-            },
-          ),
           SettingsSwitchItem(
             id: 'lookup.texthooker',
             title: t.texthooker_enabled,
@@ -1290,6 +1217,30 @@ SettingsDestination buildLookupDestination() {
                 );
               } else {
                 await TexthookerWsClientManager.instance.stop();
+              }
+              settingsContext.refresh();
+            },
+          ),
+          // 要连的端点。此前只能用写死的三个默认端口，LunaTranslator 这类把 WS 输出挂在
+          // 路径上的服务端（/api/ws/text/origin）根本连不上，诊断页只会一直「重连」。
+          SettingsTextItem(
+            id: 'lookup.texthooker_urls',
+            title: t.texthooker_urls,
+            subtitle: t.texthooker_urls_hint,
+            icon: FushiIcons.link,
+            placeholder: TexthookerWsClient.defaultUrls.join(', '),
+            keyboardType: TextInputType.url,
+            debounce: const Duration(milliseconds: 800),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.texthookerUrls.join(', '),
+            resetValue: (SettingsContext settingsContext) =>
+                TexthookerWsClient.defaultUrls.join(', '),
+            onChanged: (SettingsContext settingsContext, String value) async {
+              final List<String> urls = parseTexthookerEndpointInput(value);
+              await settingsContext.appModel.setTexthookerUrls(urls);
+              // 开着时按新列表重连；关着时只落盘，下次打开开关自然用新列表。
+              if (settingsContext.appModel.texthookerEnabled) {
+                await TexthookerWsClientManager.instance.restart(urls);
               }
               settingsContext.refresh();
             },
@@ -1450,16 +1401,4 @@ SettingsItem buildRemoteDictionaryLookupItem() {
     },
     defaultValue: false,
   );
-}
-
-Future<void> _restartFushiApiServerIfEnabled(
-  SettingsContext settingsContext,
-) async {
-  if (!settingsContext.appModel.fushiApiServerEnabled) return;
-  await settingsContext.appModel.stopFushiApiServer();
-  try {
-    await settingsContext.appModel.startFushiApiServer();
-  } on SyncServerPortInUseException {
-    _showFushiApiPortConflictSnackBar(settingsContext);
-  }
 }

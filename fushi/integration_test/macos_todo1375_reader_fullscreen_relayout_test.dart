@@ -30,8 +30,9 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final String tmp = Directory.systemTemp.path;
 
-  testWidgets('TODO-1375 reader re-layout on a fullscreen-sized viewport',
-      (WidgetTester tester) async {
+  testWidgets('TODO-1375 reader re-layout on a fullscreen-sized viewport', (
+    WidgetTester tester,
+  ) async {
     await launchFushiTestApp();
     ui.PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
       debugPrint('[t1375b] swallowed async error: $error');

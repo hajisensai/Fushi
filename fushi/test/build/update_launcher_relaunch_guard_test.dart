@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1708 第三面：**安装失败后必须有人把 app 拉回来**。
 ///
@@ -34,8 +34,11 @@ void main() {
     expect(ensureIndex, greaterThan(0));
     final String body = source.substring(ensureIndex);
     final int waitIndex = body.indexOf('WaitForAppAlive(kAppRelaunchWaitMs)');
-    expect(waitIndex, greaterThan(0),
-        reason: 'EnsureAppBack 必须以「app 是否已回来」为判据');
+    expect(
+      waitIndex,
+      greaterThan(0),
+      reason: 'EnsureAppBack 必须以「app 是否已回来」为判据',
+    );
     // 已经回来就直接返回，绝不重复拉起（安装成功时 [Run] 已经拉起新版）。
     expect(body.substring(waitIndex, waitIndex + 400), contains('return;'));
   });
@@ -43,7 +46,8 @@ void main() {
   test('安装器根本没起来时也要把 app 拉回来', () {
     // CreateProcess 失败原本直接 return 4：launcher 是分离进程，没人读这个返回码，
     // 于是 app 就这么没了。
-    final int failIndex = source.indexOf('if (!LaunchInstaller(args, &run))');
+    // 只锚到实参前缀：#2369 给 LaunchInstaller 加了提权锁参数，整条调用写死会让锚点失效。
+    final int failIndex = source.indexOf('if (!LaunchInstaller(args, &run');
     expect(failIndex, greaterThan(0));
     final String branch = source.substring(failIndex, failIndex + 500);
     expect(branch, contains('EnsureAppBack('), reason: '启动安装器失败必须先恢复 app 再返回');

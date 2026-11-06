@@ -26,11 +26,15 @@ void main() {
   /// 恰夹住两套 controls 主题 + 其 topButtonBar/bottomBar。
   String controlsThemes() {
     final int start = src.indexOf(
-        'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(');
+      'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(',
+    );
     final int end = src.indexOf('\n}', start);
     expect(start, greaterThanOrEqualTo(0), reason: '需有桌面 controls 主题起点');
-    expect(end, greaterThan(start),
-        reason: '需有 part 顶格 extension 闭合作为 controls 段终点');
+    expect(
+      end,
+      greaterThan(start),
+      reason: '需有 part 顶格 extension 闭合作为 controls 段终点',
+    );
     return src.substring(start, end);
   }
 
@@ -44,20 +48,32 @@ void main() {
     }
 
     test('控制条不含 Icons.compare 按钮', () {
-      expect(controlsThemes().contains('Icons.compare') || controlsThemes().contains('FushiIcons.compare'), isFalse,
-          reason: '着色器对比按钮应移出桌面 / 移动控制条');
+      expect(
+        controlsThemes().contains('Icons.compare') ||
+            controlsThemes().contains('FushiIcons.compare'),
+        isFalse,
+        reason: '着色器对比按钮应移出桌面 / 移动控制条',
+      );
     });
     test('_toggleShaderCompare 方法与 C 快捷键接线保留', () {
       expect(
-          src.contains('Future<void> _toggleShaderCompare() async {'), isTrue,
-          reason: '_toggleShaderCompare 方法必须保留（右键菜单 + 快捷键引用）');
+        src.contains('Future<void> _toggleShaderCompare() async {'),
+        isTrue,
+        reason: '_toggleShaderCompare 方法必须保留（右键菜单 + 快捷键引用）',
+      );
       final String callback = actionCallback('toggleShaderCompare', 'volumeUp');
       final int gate = callback.indexOf('_runWhenImmersiveAllowsShortcuts');
       final int toggle = callback.indexOf('_toggleShaderCompare()');
-      expect(gate, greaterThanOrEqualTo(0),
-          reason: 'C 快捷键 action 必须先走沉浸模式 shortcuts gate');
-      expect(toggle, greaterThan(gate),
-          reason: 'C 快捷键 action 通过 gate 后必须调用 _toggleShaderCompare');
+      expect(
+        gate,
+        greaterThanOrEqualTo(0),
+        reason: 'C 快捷键 action 必须先走沉浸模式 shortcuts gate',
+      );
+      expect(
+        toggle,
+        greaterThan(gate),
+        reason: 'C 快捷键 action 通过 gate 后必须调用 _toggleShaderCompare',
+      );
     });
   });
 
@@ -74,8 +90,9 @@ void main() {
         src.indexOf('\n  List<', start + startSig.length),
         src.indexOf('\n  double ', start + startSig.length),
       ].where((int i) => i > start).toList();
-      final int end =
-          ends.isEmpty ? src.length : ends.reduce((a, b) => a < b ? a : b);
+      final int end = ends.isEmpty
+          ? src.length
+          : ends.reduce((a, b) => a < b ? a : b);
       return src.substring(start, end);
     }
 
@@ -85,57 +102,92 @@ void main() {
     // Column of ListTile，外层设置面板 SingleChildScrollView 负责滚动（长列表不裁底）。
     test('音轨切换收进设置面板「音频」分类（TODO-1351，取代浮动音轨侧栏）', () {
       final String show = sourceMember(src, 'void _showAudioTrackMenu(');
-      expect(show, contains("initialCategory: 'audio'"),
-          reason: '音轨按钮改为把设置面板开在「音频」分类');
-      expect(show, contains('sourceSlot: sourceSlot'),
-          reason: '仍把触发 slot 传给设置面板');
-      expect(src, isNot(contains('_buildAudioTracksSidePanel')),
-          reason: '浮动音轨侧栏（builder）已删');
-      expect(src, isNot(contains('_VideoSidePanelKind.audioTracks')),
-          reason: '浮动音轨侧栏（kind）已删');
+      expect(
+        show,
+        contains("initialCategory: 'audio'"),
+        reason: '音轨按钮改为把设置面板开在「音频」分类',
+      );
+      expect(
+        show,
+        contains('sourceSlot: sourceSlot'),
+        reason: '仍把触发 slot 传给设置面板',
+      );
+      expect(
+        src,
+        isNot(contains('_buildAudioTracksSidePanel')),
+        reason: '浮动音轨侧栏（builder）已删',
+      );
+      expect(
+        src,
+        isNot(contains('_VideoSidePanelKind.audioTracks')),
+        reason: '浮动音轨侧栏（kind）已删',
+      );
       final String body = panelBody(
-          'Widget _buildAudioTrackSettingsSection(VideoPlayerController');
+        'Widget _buildAudioTrackSettingsSection(VideoPlayerController',
+      );
       // 玻璃重设计：行控件走共享 FushiListTileControl（ListTile 的设计系统分派版）。
-      expect(body.contains('FushiListTileControl('), isTrue,
-          reason: '音轨切换区逐轨一行 ListTile（收进面板不丢功能）');
+      expect(
+        body.contains('FushiListTileControl('),
+        isTrue,
+        reason: '音轨切换区逐轨一行 ListTile（收进面板不丢功能）',
+      );
     });
 
     test('字幕轨切换收进设置面板「字幕」分类（TODO-1351，取代浮动字幕源侧栏）', () {
       expect(
-          RegExp(r"_showPlayerSettings\([^)]*initialCategory: 'subtitle'")
-              .hasMatch(src),
-          isTrue,
-          reason: '字幕轨菜单改为把设置面板开在「字幕」分类');
-      final String showPlayerSettings =
-          sourceMember(src, 'void _showPlayerSettings(');
-      expect(showPlayerSettings, contains('_VideoSidePanelKind.settings'),
-          reason: '字幕轨入口应继续使用右侧设置栏容器');
+        RegExp(
+          r"_showPlayerSettings\([^)]*initialCategory: 'subtitle'",
+        ).hasMatch(src),
+        isTrue,
+        reason: '字幕轨菜单改为把设置面板开在「字幕」分类',
+      );
+      final String showPlayerSettings = sourceMember(
+        src,
+        'void _showPlayerSettings(',
+      );
       expect(
-          showPlayerSettings,
-          isNot(contains("initialCategory == 'subtitle'")),
-          reason: '字幕分类不应被单独分流到其它容器');
-      expect(src, isNot(contains('_VideoSidePanelKind.subtitleAdjust')),
-          reason: '字幕轨入口不得恢复底部调整抽屉分流');
+        showPlayerSettings,
+        contains('_VideoSidePanelKind.settings'),
+        reason: '字幕轨入口应继续使用右侧设置栏容器',
+      );
+      expect(
+        showPlayerSettings,
+        isNot(contains("initialCategory == 'subtitle'")),
+        reason: '字幕分类不应被单独分流到其它容器',
+      );
+      expect(
+        src,
+        isNot(contains('_VideoSidePanelKind.subtitleAdjust')),
+        reason: '字幕轨入口不得恢复底部调整抽屉分流',
+      );
       // BUG-1991 撤回抽屉时连带删掉了 PR-C 的接线守卫，但「三处字幕入口
       // （字幕轨按钮 / 右键字幕轨 / 字幕加载遮罩）都经 _showPlayerSettings 传
       // 'subtitle'，没有哪个入口自己挑容器」这条不变量与抽屉无关，TODO-1351
       // 就已经成立。上面那条 hasMatch 只要求“至少一处”，两个入口退化成
       // 一个也照样绿，故补回计数下界。
       expect(
-          RegExp(r"_showPlayerSettings\([^)]*initialCategory: 'subtitle'")
-              .allMatches(src)
-              .length,
-          greaterThanOrEqualTo(2),
-          reason: '字幕入口不止一处，且均必须经 _showPlayerSettings 打开对应分类');
-      expect(src, isNot(contains('_buildSubtitleSourcesSidePanel')),
-          reason: '浮动字幕源侧栏（builder）已删');
-      expect(src, isNot(contains('_VideoSidePanelKind.subtitleSources')),
-          reason: '浮动字幕源侧栏（kind）已删');
+        RegExp(
+          r"_showPlayerSettings\([^)]*initialCategory: 'subtitle'",
+        ).allMatches(src).length,
+        greaterThanOrEqualTo(2),
+        reason: '字幕入口不止一处，且均必须经 _showPlayerSettings 打开对应分类',
+      );
+      expect(
+        src,
+        isNot(contains('_buildSubtitleSourcesSidePanel')),
+        reason: '浮动字幕源侧栏（builder）已删',
+      );
+      expect(
+        src,
+        isNot(contains('_VideoSidePanelKind.subtitleSources')),
+        reason: '浮动字幕源侧栏（kind）已删',
+      );
       final String body = panelBody('Widget _buildSubtitleTrackRows(');
       expect(
-          body.contains('ListTile(') || body.contains('_subtitleMenuSources'),
-          isTrue,
-          reason: '字幕轨切换区含字幕源行（收进面板不丢功能）');
+        body.contains('ListTile(') || body.contains('_subtitleMenuSources'),
+        isTrue,
+        reason: '字幕轨切换区含字幕源行（收进面板不丢功能）',
+      );
     });
   });
 
@@ -145,32 +197,47 @@ void main() {
       // `{LayerLink? popoverLink, VideoControlSlot? sourceSlot}`；守卫只锁方法头前缀
       // （含 popoverLink 触发源形参），对未来追加形参鲁棒，不再硬编码闭合签名。
       const String speedMenuSig = 'void _showSpeedMenu({LayerLink? popoverLink';
-      expect(src.contains(speedMenuSig), isTrue,
-          reason: '_showSpeedMenu 方法必须保留（右键菜单 / 可配置按钮仍引用）');
       expect(
-          RegExp(r'void _showSpeedMenu\(\{LayerLink\? popoverLink, '
-                  r'VideoControlSlot\? sourceSlot\}\)')
-              .hasMatch(src),
-          isTrue,
-          reason: 'BUG-325：倍速入口须接收触发 slot（sourceSlot）以让浮层跟随按钮');
+        src.contains(speedMenuSig),
+        isTrue,
+        reason: '_showSpeedMenu 方法必须保留（右键菜单 / 可配置按钮仍引用）',
+      );
+      expect(
+        RegExp(
+          r'void _showSpeedMenu\(\{LayerLink\? popoverLink, '
+          r'VideoControlSlot\? sourceSlot\}\)',
+        ).hasMatch(src),
+        isTrue,
+        reason: 'BUG-325：倍速入口须接收触发 slot（sourceSlot）以让浮层跟随按钮',
+      );
       final String show = sourceMember(src, speedMenuSig);
       expect(
-          RegExp(r'_toggleControlPopover\(\s*_VideoControlPopoverKind\.speed')
-              .hasMatch(show),
-          isTrue,
-          reason: 'TODO-438：带触发源的倍速入口应打开或固定锚点轻浮层');
-      expect(show.contains('if (popoverLink == null)'), isTrue,
-          reason: '右键菜单等无锚点入口不能触发不可见 follower');
+        RegExp(
+          r'_toggleControlPopover\(\s*_VideoControlPopoverKind\.speed',
+        ).hasMatch(show),
+        isTrue,
+        reason: 'TODO-438：带触发源的倍速入口应打开或固定锚点轻浮层',
+      );
       expect(
-          RegExp(r'_showVideoSidePanel\(\s*_VideoSidePanelKind\.speed')
-              .hasMatch(show),
-          isTrue,
-          reason: '无触发源入口应保留可见 fallback，而不是打开无锚点浮层');
+        show.contains('if (popoverLink == null)'),
+        isTrue,
+        reason: '右键菜单等无锚点入口不能触发不可见 follower',
+      );
       expect(
-          src.contains('item(Icons.speed, t.video_setting_speed, '
-              '_showSpeedMenu)'),
-          isTrue,
-          reason: '右键菜单倍速项仍走 _showSpeedMenu');
+        RegExp(
+          r'_showVideoSidePanel\(\s*_VideoSidePanelKind\.speed',
+        ).hasMatch(show),
+        isTrue,
+        reason: '无触发源入口应保留可见 fallback，而不是打开无锚点浮层',
+      );
+      expect(
+        src.contains(
+          'item(Icons.speed, t.video_setting_speed, '
+          '_showSpeedMenu)',
+        ),
+        isTrue,
+        reason: '右键菜单倍速项仍走 _showSpeedMenu',
+      );
     });
   });
 }
@@ -185,7 +252,8 @@ String sourceMember(String src, String startSig) {
     src.indexOf('\n  List<', start + startSig.length),
     src.indexOf('\n  double ', start + startSig.length),
   ].where((int i) => i > start).toList();
-  final int end =
-      ends.isEmpty ? src.length : ends.reduce((int a, int b) => a < b ? a : b);
+  final int end = ends.isEmpty
+      ? src.length
+      : ends.reduce((int a, int b) => a < b ? a : b);
   return src.substring(start, end);
 }

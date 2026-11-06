@@ -11,19 +11,25 @@ void main() {
       '  Future<void> _applyLoad({',
       '  /// 位置持久化',
     );
-    final int bindAt =
-        fn.indexOf('controller.setOnCompleted(_handlePlaybackCompleted);');
+    final int bindAt = fn.indexOf(
+      'controller.setOnCompleted(_handlePlaybackCompleted);',
+    );
     final int loadAt = fn.indexOf('await controller.load(');
 
-    expect(bindAt, greaterThan(-1),
-        reason: 'page must bind EOF handling before opening media');
+    expect(
+      bindAt,
+      greaterThan(-1),
+      reason: 'page must bind EOF handling before opening media',
+    );
     expect(loadAt, greaterThan(-1));
-    expect(bindAt, lessThan(loadAt),
-        reason: 'completed can fire during/just after load, so bind first');
+    expect(
+      bindAt,
+      lessThan(loadAt),
+      reason: 'completed can fire during/just after load, so bind first',
+    );
   });
 
-  test(
-      'completed handler gates on the auto-play-next toggle + playlist '
+  test('completed handler gates on the auto-play-next toggle + playlist '
       'and reentry guards (TODO-639)', () {
     expect(pageSource, contains('bool _autoAdvanceInFlight = false'));
     final String fn = _functionSource(
@@ -38,8 +44,11 @@ void main() {
     // TODO-639: the advance decision is the pure predicate gating on the
     // user's auto-play-next preference, next-episode existence, and reentry.
     expect(fn, contains('shouldAutoPlayNextOnCompletion('));
-    expect(fn, contains('autoPlayNextEnabled: appModel.videoAutoPlayNext'),
-        reason: 'EOF advance must honour the auto-play-next toggle');
+    expect(
+      fn,
+      contains('autoPlayNextEnabled: appModel.videoAutoPlayNext'),
+      reason: 'EOF advance must honour the auto-play-next toggle',
+    );
     expect(fn, contains('hasNextEpisode: nextEpisode != null'));
     expect(fn, contains('alreadyAdvancing: _autoAdvanceInFlight'));
     // EOF no longer advances immediately; it starts a cancelable countdown.
@@ -53,75 +62,94 @@ void main() {
     );
     expect(runFn, contains('if (_autoAdvanceInFlight) return'));
     expect(runFn, contains('if (!mounted) return'));
-    expect(runFn, contains('intent: EpisodeStartIntent.autoAdvance'),
-        reason:
-            'non-last EOF must carry autoAdvance intent instead of reusing saved near-end positions');
+    expect(
+      runFn,
+      contains('intent: EpisodeStartIntent.autoAdvance'),
+      reason:
+          'non-last EOF must carry autoAdvance intent instead of reusing saved near-end positions',
+    );
   });
 
-  test('the cancel-next countdown overlay + cancel button are wired (TODO-639)',
-      () {
-    // Countdown state + lifecycle.
-    expect(pageSource,
-        contains('ValueNotifier<int?> _autoAdvanceCountdownNotifier'));
-    expect(pageSource, contains('void _cancelAutoAdvanceCountdown()'));
-    expect(pageSource, contains('Timer.periodic('));
-    expect(pageSource, contains('_autoAdvanceCountdownTimer?.cancel();'),
-        reason: 'countdown timer must be cancelable / disposed');
-    // A manual episode switch cancels any pending countdown.
-    expect(
-      _functionSource(
+  test(
+    'the cancel-next countdown overlay + cancel button are wired (TODO-639)',
+    () {
+      // Countdown state + lifecycle.
+      expect(
+        pageSource,
+        contains('ValueNotifier<int?> _autoAdvanceCountdownNotifier'),
+      );
+      expect(pageSource, contains('void _cancelAutoAdvanceCountdown()'));
+      expect(pageSource, contains('Timer.periodic('));
+      expect(
+        pageSource,
+        contains('_autoAdvanceCountdownTimer?.cancel();'),
+        reason: 'countdown timer must be cancelable / disposed',
+      );
+      // A manual episode switch cancels any pending countdown.
+      expect(
+        _functionSource(
+          pageSource,
+          '  Future<void> _switchEpisode(',
+          '  void _showEpisodeList() {',
+        ),
+        contains('_cancelAutoAdvanceCountdown();'),
+        reason:
+            'switching episodes mid-countdown must clear the pending advance',
+      );
+      // The interactive cancel overlay is built + mounted (not under IgnorePointer).
+      expect(pageSource, contains('Widget _buildAutoAdvanceOverlay()'));
+      expect(
+        pageSource,
+        contains('_buildAutoAdvanceOverlay(),'),
+        reason: 'overlay must be mounted in the controls stack',
+      );
+      final String overlayFn = _functionSource(
+        pageSource,
+        '  Widget _buildAutoAdvanceOverlay() {',
+        '\n}',
+      );
+      expect(overlayFn, contains('t.video_auto_play_next_countdown('));
+      expect(overlayFn, contains('onPressed: _cancelAutoAdvanceCountdown'));
+      expect(overlayFn, contains('t.video_auto_play_next_cancel'));
+      expect(
+        overlayFn,
+        isNot(contains('IgnorePointer')),
+        reason: 'the cancel button must be tappable (no IgnorePointer)',
+      );
+    },
+  );
+
+  test(
+    'episode switches require explicit start intents at every call site',
+    () {
+      final String fn = _functionSource(
         pageSource,
         '  Future<void> _switchEpisode(',
         '  void _showEpisodeList() {',
-      ),
-      contains('_cancelAutoAdvanceCountdown();'),
-      reason: 'switching episodes mid-countdown must clear the pending advance',
-    );
-    // The interactive cancel overlay is built + mounted (not under IgnorePointer).
-    expect(pageSource, contains('Widget _buildAutoAdvanceOverlay()'));
-    expect(pageSource, contains('_buildAutoAdvanceOverlay(),'),
-        reason: 'overlay must be mounted in the controls stack');
-    final String overlayFn = _functionSource(
-      pageSource,
-      '  Widget _buildAutoAdvanceOverlay() {',
-      '\n}',
-    );
-    expect(overlayFn, contains('t.video_auto_play_next_countdown('));
-    expect(overlayFn, contains('onPressed: _cancelAutoAdvanceCountdown'));
-    expect(overlayFn, contains('t.video_auto_play_next_cancel'));
-    expect(overlayFn, isNot(contains('IgnorePointer')),
-        reason: 'the cancel button must be tappable (no IgnorePointer)');
-  });
-
-  test('episode switches require explicit start intents at every call site',
-      () {
-    final String fn = _functionSource(
-      pageSource,
-      '  Future<void> _switchEpisode(',
-      '  void _showEpisodeList() {',
-    );
-
-    expect(fn, contains('required EpisodeStartIntent intent'));
-    expect(fn, contains('startIntent: intent'));
-
-    final String pageWithoutDefinition = pageSource.replaceFirst(fn, '');
-    final Iterable<String> calls = RegExp(r'_switchEpisode\([\s\S]*?\);')
-        .allMatches(pageWithoutDefinition)
-        .map((RegExpMatch m) => m.group(0)!);
-    expect(calls, isNotEmpty);
-    for (final String call in calls) {
-      expect(
-        call,
-        contains('intent: EpisodeStartIntent.'),
-        reason: 'episode switching must not fall back to an implicit resume',
       );
-    }
 
-    expect(pageSource, contains('EpisodeStartIntent.manualPrevious'));
-    expect(pageSource, contains('EpisodeStartIntent.manualNext'));
-    expect(pageSource, contains('EpisodeStartIntent.listSelect'));
-    expect(pageSource, contains('EpisodeStartIntent.autoAdvance'));
-  });
+      expect(fn, contains('required EpisodeStartIntent intent'));
+      expect(fn, contains('startIntent: intent'));
+
+      final String pageWithoutDefinition = pageSource.replaceFirst(fn, '');
+      final Iterable<String> calls = RegExp(
+        r'_switchEpisode\([\s\S]*?\);',
+      ).allMatches(pageWithoutDefinition).map((RegExpMatch m) => m.group(0)!);
+      expect(calls, isNotEmpty);
+      for (final String call in calls) {
+        expect(
+          call,
+          contains('intent: EpisodeStartIntent.'),
+          reason: 'episode switching must not fall back to an implicit resume',
+        );
+      }
+
+      expect(pageSource, contains('EpisodeStartIntent.manualPrevious'));
+      expect(pageSource, contains('EpisodeStartIntent.manualNext'));
+      expect(pageSource, contains('EpisodeStartIntent.listSelect'));
+      expect(pageSource, contains('EpisodeStartIntent.autoAdvance'));
+    },
+  );
 
   test('initial open uses explicit start policy before autoplay', () {
     // 统一合集 Phase 3：每集（含播放列表某一集）都照单视频路径 _loadSingle 加载，显式
@@ -138,8 +166,11 @@ void main() {
     );
 
     expect(loadSingleFn, contains('EpisodeStartIntent.initialOpen'));
-    expect(loadSingleFn, contains('EpisodeStartIntent.explicitCue'),
-        reason: 'favorite/cue opens are not saved-position resumes');
+    expect(
+      loadSingleFn,
+      contains('EpisodeStartIntent.explicitCue'),
+      reason: 'favorite/cue opens are not saved-position resumes',
+    );
     expect(loadFn, contains('startIntent: startIntent'));
   });
 
@@ -151,13 +182,17 @@ void main() {
       // 以调用行本身作尾界标。
       '    _ensureWatchTracker(controller, title);',
     );
-    final int currentAt =
-        fn.indexOf('unawaited(prewarmEmbeddedSubtitleCache(videoPath));');
+    final int currentAt = fn.indexOf(
+      'unawaited(prewarmEmbeddedSubtitleCache(videoPath));',
+    );
     final int nextAt = fn.indexOf('_prewarmNextEpisodeSubtitleCache();');
 
     expect(currentAt, greaterThan(-1));
-    expect(nextAt, greaterThan(currentAt),
-        reason: 'next episode should be warmed after the current file warmup');
+    expect(
+      nextAt,
+      greaterThan(currentAt),
+      reason: 'next episode should be warmed after the current file warmup',
+    );
     expect(pageSource, contains('String? _lastPrewarmedEpisodePath'));
   });
 }

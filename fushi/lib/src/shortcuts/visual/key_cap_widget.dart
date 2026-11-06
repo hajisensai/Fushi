@@ -75,8 +75,9 @@ class KeyCapWidget extends StatelessWidget {
     if (glass) {
       final bool dark = scheme.brightness == Brightness.dark;
       // 浅色白键压在分组灰底上、深色 #2C2C2E 键压在 #1C1C1E 分组上。
-      final Color keyFace =
-          dark ? apple.tertiaryGroupedBackground : apple.groupedBackground;
+      final Color keyFace = dark
+          ? apple.tertiaryGroupedBackground
+          : apple.groupedBackground;
       if (bound) {
         faceColor = apple.accent;
         sideColor = Color.alphaBlend(
@@ -119,17 +120,15 @@ class KeyCapWidget extends StatelessWidget {
       // `Align.widthFactor: 1` 让键面宽 = 文字宽 + 内边距，高度仍撑满。以前
       // 这里是无因子的 center 对齐、侧壁又全是 Positioned，Stack 只能取父约束
       // 的最大宽——引导页的 ⌃ ⌥ D 三枚键帽各占满一整行（BUG-3203）。
-      constraints:
-          width == null ? BoxConstraints(minWidth: height - stepHeight) : null,
+      constraints: width == null
+          ? BoxConstraints(minWidth: height - stepHeight)
+          : null,
       padding: const EdgeInsets.symmetric(horizontal: 6),
       decoration: BoxDecoration(
         borderRadius: radius,
         border: glass
             ? null
-            : Border.all(
-                color: borderColor,
-                width: bound ? 1.5 : 1,
-              ),
+            : Border.all(color: borderColor, width: bound ? 1.5 : 1),
         color: glass ? faceColor : null,
         gradient: glass
             ? null
@@ -158,10 +157,7 @@ class KeyCapWidget extends StatelessWidget {
           // 侧壁（底层）：填满，底部露出 stepHeight 的深色台阶。
           Positioned.fill(
             child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: sideColor,
-                borderRadius: radius,
-              ),
+              decoration: BoxDecoration(color: sideColor, borderRadius: radius),
             ),
           ),
           // 键面（顶层）：顶部对齐、底部留 stepHeight 露台阶。非定位子节点，
@@ -178,11 +174,7 @@ class KeyCapWidget extends StatelessWidget {
 
     return Material(
       type: MaterialType.transparency,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: radius,
-        child: cap,
-      ),
+      child: InkWell(onTap: onTap, borderRadius: radius, child: cap),
     );
   }
 

@@ -63,8 +63,9 @@ void main() {
         allowedImports: kMagpieInstallerImports,
       );
       expect(
-        readStripped('lib/src/mining/magpie_installer.dart')
-            .contains('_installBundledMagpie'),
+        readStripped(
+          'lib/src/mining/magpie_installer.dart',
+        ).contains('_installBundledMagpie'),
         isTrue,
       );
     });

@@ -116,9 +116,9 @@ List<List<String>> buildLoadScriptCommands(List<String> absolutePaths) {
 /// （不常驻时间/状态行）。`osd-on-seek=no`：seek 命令不再顺带画原生进度条——
 /// Fushi 的进度条是 Flutter 层自己的，两条叠着就是 bug。
 Map<String, String> buildLuaOsdProperties() => const <String, String>{
-      'osd-level': '1',
-      'osd-on-seek': 'no',
-    };
+  'osd-level': '1',
+  'osd-on-seek': 'no',
+};
 
 /// 每次 `open` 之前都下发的 Lua 宿主基线属性，与有没有装用户脚本无关。纯函数。
 ///
@@ -129,8 +129,8 @@ Map<String, String> buildLuaOsdProperties() => const <String, String>{
 /// 白白多一轮失败重试、把真实的加载错误盖掉。必须在 `open` 之前设：钩子挂在
 /// loadfile 的 `on_load` / `on_load_fail` 上。
 Map<String, String> buildLuaHostBaselineProperties() => const <String, String>{
-      'ytdl': 'no',
-    };
+  'ytdl': 'no',
+};
 
 final RegExp _nonIdentifierChar = RegExp(r'[^A-Za-z0-9]');
 

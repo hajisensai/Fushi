@@ -65,15 +65,17 @@ Map<String, List<String>> _collectLabels() {
     expect(
       uses,
       total,
-      reason: '${file.path}：有 ${total - uses} 个 MediaLibraryViewSpec 没被本守卫的'
+      reason:
+          '${file.path}：有 ${total - uses} 个 MediaLibraryViewSpec 没被本守卫的'
           '正则认出来（`kind:` 不再是第一个具名参数？），标签会漏检',
     );
     final List<String> keys = <String>[];
     for (final RegExpMatch use in _specUse.allMatches(source)) {
       // 一个 spec 的三个具名参数挨在一起，往后取一小段足够覆盖 label。
       final int end = (use.start + 600).clamp(0, source.length);
-      final RegExpMatch? label =
-          _label.firstMatch(source.substring(use.start, end));
+      final RegExpMatch? label = _label.firstMatch(
+        source.substring(use.start, end),
+      );
       expect(
         label,
         isNotNull,
@@ -84,7 +86,8 @@ Map<String, List<String>> _collectLabels() {
       expect(
         key,
         isNotNull,
-        reason: '${file.path}：tab 标签必须是 `t.<key>` 直引用（拿到的是 '
+        reason:
+            '${file.path}：tab 标签必须是 `t.<key>` 直引用（拿到的是 '
             '`$expression`）。拼接出来的标签没法在源码层面比对重复，'
             '等于给这条守卫开后门',
       );
@@ -100,16 +103,22 @@ void main() {
     test('扫描面非空：库页壳文件确实被找到了', () {
       final Map<String, List<String>> labelsByFile = _collectLabels();
       // 零文件也能让下面的断言全绿——这条就是防「守卫其实什么都没看」。
-      expect(labelsByFile.length, greaterThanOrEqualTo(2),
-          reason: '至少书 tab 与漫画库页两处声明视图；一个都没扫到说明正则失效了');
+      expect(
+        labelsByFile.length,
+        greaterThanOrEqualTo(2),
+        reason: '至少书 tab 与漫画库页两处声明视图；一个都没扫到说明正则失效了',
+      );
       expect(
         labelsByFile.keys,
         contains('lib/src/media/manga/manga_library_page.dart'),
         reason: 'BUG-1710 就出在漫画库页，它必须在扫描面里',
       );
       for (final MapEntry<String, List<String>> entry in labelsByFile.entries) {
-        expect(entry.value.length, greaterThanOrEqualTo(2),
-            reason: '${entry.key}：一个 tab 栏至少两个视图，否则壳不会渲染导航条');
+        expect(
+          entry.value.length,
+          greaterThanOrEqualTo(2),
+          reason: '${entry.key}：一个 tab 栏至少两个视图，否则壳不会渲染导航条',
+        );
       }
     });
 
@@ -119,7 +128,8 @@ void main() {
         expect(
           entry.value.toSet().length,
           entry.value.length,
-          reason: '${entry.key}：同一个 tab 栏里有两个视图用了同一个 i18n key '
+          reason:
+              '${entry.key}：同一个 tab 栏里有两个视图用了同一个 i18n key '
               '(${entry.value})',
         );
       }
@@ -133,13 +143,17 @@ void main() {
           final Map<String, String> seen = <String, String>{};
           for (final String key in entry.value) {
             final String? text = table[key];
-            expect(text, isNotNull,
-                reason: '${entry.key}：i18n key `$key` 在 $locale 里不存在');
+            expect(
+              text,
+              isNotNull,
+              reason: '${entry.key}：i18n key `$key` 在 $locale 里不存在',
+            );
             final String? owner = seen[text];
             expect(
               owner,
               isNull,
-              reason: '${entry.key}：$locale 下 `$owner` 与 `$key` 的文案都是 '
+              reason:
+                  '${entry.key}：$locale 下 `$owner` 与 `$key` 的文案都是 '
                   '「$text」——同一个 tab 栏里出现两个字面相同的标签，'
                   '用户点哪个都分不清（BUG-1710）',
             );

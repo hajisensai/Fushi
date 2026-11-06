@@ -46,14 +46,20 @@ ActivityRelativeTime activityRelativeTime(int timestampMs, DateTime now) {
   }
   if (deltaMs < const Duration(hours: 1).inMilliseconds) {
     return ActivityRelativeTime(
-        ActivityRelativeUnit.minutesAgo, deltaMs ~/ 60000);
+      ActivityRelativeUnit.minutesAgo,
+      deltaMs ~/ 60000,
+    );
   }
   if (deltaMs < const Duration(days: 1).inMilliseconds) {
     return ActivityRelativeTime(
-        ActivityRelativeUnit.hoursAgo, deltaMs ~/ 3600000);
+      ActivityRelativeUnit.hoursAgo,
+      deltaMs ~/ 3600000,
+    );
   }
   return ActivityRelativeTime(
-      ActivityRelativeUnit.daysAgo, deltaMs ~/ 86400000);
+    ActivityRelativeUnit.daysAgo,
+    deltaMs ~/ 86400000,
+  );
 }
 
 /// 一条聚合后的时间线条目：同一天 + 同标题 + 同事件类型的多个事件合并成一条。
@@ -148,7 +154,8 @@ List<ActivityDateGroup> aggregateActivityEvents(
     // 设备来源进分组键：互联对端事件与本机事件**不合并**（provenance 优先——
     // 标明设备来源后混并无法归属），各自成条各带标签。分隔符沿用 NUL（标题可含任意可见字符）。
     final String? device = sourceDeviceOf?.call(e);
-    final String key = '${device ?? ''}\u0000${e.dateKey}\u0000${e.eventType}'
+    final String key =
+        '${device ?? ''}\u0000${e.dateKey}\u0000${e.eventType}'
         '\u0000${e.mediaType}\u0000${e.mediaKey ?? e.title}';
     (byKey[key] ??= <ActivityEventRow>[]).add(e);
     deviceByKey[key] = device;
@@ -158,8 +165,10 @@ List<ActivityDateGroup> aggregateActivityEvents(
   final List<ActivityEntry> entries = <ActivityEntry>[];
   for (final MapEntry<String, List<ActivityEventRow>> kv in byKey.entries) {
     final List<ActivityEventRow> group = kv.value;
-    group.sort((ActivityEventRow a, ActivityEventRow b) =>
-        a.timestampMs.compareTo(b.timestampMs));
+    group.sort(
+      (ActivityEventRow a, ActivityEventRow b) =>
+          a.timestampMs.compareTo(b.timestampMs),
+    );
     int totalDuration = 0;
     int totalChars = 0;
     int latest = group.first.timestampMs;
@@ -177,19 +186,21 @@ List<ActivityDateGroup> aggregateActivityEvents(
       }
       stamps.add(e.timestampMs);
     }
-    entries.add(ActivityEntry(
-      // 标题快照与 mediaKey 同取向：都取组内最新一行（改名当天显示新名）。
-      title: group.last.title,
-      eventType: group.first.eventType,
-      mediaType: group.first.mediaType,
-      mediaKey: mediaKey,
-      dateKey: group.first.dateKey,
-      latestTimestampMs: latest,
-      totalDurationMs: totalDuration,
-      totalChars: totalChars,
-      sessionCount: _countSessions(stamps, sessionGap),
-      sourceDevice: deviceByKey[kv.key],
-    ));
+    entries.add(
+      ActivityEntry(
+        // 标题快照与 mediaKey 同取向：都取组内最新一行（改名当天显示新名）。
+        title: group.last.title,
+        eventType: group.first.eventType,
+        mediaType: group.first.mediaType,
+        mediaKey: mediaKey,
+        dateKey: group.first.dateKey,
+        latestTimestampMs: latest,
+        totalDurationMs: totalDuration,
+        totalChars: totalChars,
+        sessionCount: _countSessions(stamps, sessionGap),
+        sourceDevice: deviceByKey[kv.key],
+      ),
+    );
   }
 
   // 按 dateKey 分组（dateKey 形如 2026-07-18，可字典序倒序）。
@@ -205,8 +216,10 @@ List<ActivityDateGroup> aggregateActivityEvents(
       ActivityDateGroup(
         dateKey: dk,
         entries: byDate[dk]!
-          ..sort((ActivityEntry a, ActivityEntry b) =>
-              b.latestTimestampMs.compareTo(a.latestTimestampMs)),
+          ..sort(
+            (ActivityEntry a, ActivityEntry b) =>
+                b.latestTimestampMs.compareTo(a.latestTimestampMs),
+          ),
       ),
   ];
 }

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   final String readerPage = File(
@@ -65,7 +65,7 @@ void main() {
   test('_navigateToChapter 在任何状态变更前拒绝已销毁 reader', () {
     final String body = bodyBetween(
       navigationPart,
-      'Future<void> _navigateToChapter(',
+      'Future<bool> _navigateToChapter(',
       'Future<bool> _navigateToChapterAndWait(',
     );
     final int mountedGuard = body.indexOf('if (!mounted ||');
@@ -81,7 +81,8 @@ void main() {
     // TODO-2337：守卫必须真的早退，而不是只把条件写出来。
     final String guardBody = guardBlockBody(body, 'if (!mounted ||');
     expect(
-      guardBody.contains('return;'),
+      // BUG-3798：_navigateToChapter 回报「是否开始导航」，守卫块里是 `return false;`。
+      guardBody.contains('return false;'),
       isTrue,
       reason: '已销毁 State 命中守卫后必须 return，否则照样跑到 _beginNavigation/setState',
     );
@@ -103,8 +104,10 @@ void main() {
     final int pauseAwait =
         // 同理不钉实参排版：调用点带返回值后 dart format 必然折行。
         body.indexOf('await _pauseThroughImageOnlyChapters(');
-    final int mountedGuard =
-        body.indexOf('if (!mounted || _controller == null)', pauseAwait);
+    final int mountedGuard = body.indexOf(
+      'if (!mounted || _controller == null)',
+      pauseAwait,
+    );
     final int cancelTransition = body.indexOf(
       '_audiobookController?.cancelChapterTransition();',
       mountedGuard,

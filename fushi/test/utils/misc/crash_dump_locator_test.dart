@@ -20,12 +20,16 @@ void main() {
     test('LOCALAPPDATA 缺失 / 空返回 null', () {
       expect(
         CrashDumpLocator.resolveDumpDirectory(
-            isWindows: true, localAppData: null),
+          isWindows: true,
+          localAppData: null,
+        ),
         isNull,
       );
       expect(
         CrashDumpLocator.resolveDumpDirectory(
-            isWindows: true, localAppData: ''),
+          isWindows: true,
+          localAppData: '',
+        ),
         isNull,
       );
     });
@@ -78,17 +82,14 @@ void main() {
 
       final List<File> dumps = CrashDumpLocator.listDumps(tmp);
       expect(dumps.length, 3, reason: '只数 .dmp，不含 wgc_capture.log');
-      final List<String> names =
-          dumps.map((File f) => f.uri.pathSegments.last).toList();
-      expect(
-        names,
-        <String>[
-          'hibiki-300-3000.dmp',
-          'hibiki-200-2000.dmp',
-          'hibiki-100-1000.dmp',
-        ],
-        reason: '按 mtime 降序：最近的崩溃排最前',
-      );
+      final List<String> names = dumps
+          .map((File f) => f.uri.pathSegments.last)
+          .toList();
+      expect(names, <String>[
+        'hibiki-300-3000.dmp',
+        'hibiki-200-2000.dmp',
+        'hibiki-100-1000.dmp',
+      ], reason: '按 mtime 降序：最近的崩溃排最前');
     });
 
     test('大写 .DMP 也算（扩展名匹配不区分大小写）', () {

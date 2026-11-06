@@ -271,14 +271,14 @@ class PaginationState {
   final bool vertical;
 
   PaginationState.fromJson(Map<String, dynamic> json)
-      : scroll = (json['scroll'] as num).toDouble(),
-        columnPitch = (json['columnPitch'] as num).toDouble(),
-        pageSize = (json['pageSize'] as num).toDouble(),
-        maxScroll = (json['maxScroll'] as num).toDouble(),
-        physicalMaxScroll = (json['physicalMaxScroll'] as num).toDouble(),
-        minScroll = (json['minScroll'] as num).toDouble(),
-        totalChars = (json['totalChars'] as num?)?.toInt() ?? 0,
-        vertical = json['vertical'] as bool? ?? false;
+    : scroll = (json['scroll'] as num).toDouble(),
+      columnPitch = (json['columnPitch'] as num).toDouble(),
+      pageSize = (json['pageSize'] as num).toDouble(),
+      maxScroll = (json['maxScroll'] as num).toDouble(),
+      physicalMaxScroll = (json['physicalMaxScroll'] as num).toDouble(),
+      minScroll = (json['minScroll'] as num).toDouble(),
+      totalChars = (json['totalChars'] as num?)?.toInt() ?? 0,
+      vertical = json['vertical'] as bool? ?? false;
 
   @override
   String toString() =>
@@ -293,13 +293,16 @@ class PageData {
   final PaginationState state;
 
   PageData.fromJson(Map<String, dynamic> json)
-      : pageNumber = (json['page'] as num).toInt(),
-        markers = (json['markers'] as List).cast<String>(),
-        markerFractions = (json['markerFractions'] as Map? ?? const {})
-            .map<String, double>((dynamic key, dynamic value) =>
-                MapEntry<String, double>(
-                    key as String, (value as num).toDouble())),
-        state = PaginationState.fromJson(json['state'] as Map<String, dynamic>);
+    : pageNumber = (json['page'] as num).toInt(),
+      markers = (json['markers'] as List).cast<String>(),
+      markerFractions = (json['markerFractions'] as Map? ?? const {})
+          .map<String, double>(
+            (dynamic key, dynamic value) => MapEntry<String, double>(
+              key as String,
+              (value as num).toDouble(),
+            ),
+          ),
+      state = PaginationState.fromJson(json['state'] as Map<String, dynamic>);
 }
 
 class RenderedSettings {
@@ -313,17 +316,18 @@ class RenderedSettings {
   final int columnCount;
 
   RenderedSettings.fromJson(Map<String, dynamic> json)
-      : fontSize = (json['fontSize'] as num).toDouble(),
-        lineHeight = (json['lineHeight'] as num).toDouble(),
-        writingMode = json['writingMode'] as String,
-        contentWidth = (json['contentWidth'] as num).toDouble(),
-        contentHeight = (json['contentHeight'] as num).toDouble(),
-        viewportWidth = (json['viewportWidth'] as num).toDouble(),
-        viewportHeight = (json['viewportHeight'] as num).toDouble(),
-        columnCount = (json['columnCount'] as num).toInt();
+    : fontSize = (json['fontSize'] as num).toDouble(),
+      lineHeight = (json['lineHeight'] as num).toDouble(),
+      writingMode = json['writingMode'] as String,
+      contentWidth = (json['contentWidth'] as num).toDouble(),
+      contentHeight = (json['contentHeight'] as num).toDouble(),
+      viewportWidth = (json['viewportWidth'] as num).toDouble(),
+      viewportHeight = (json['viewportHeight'] as num).toDouble(),
+      columnCount = (json['columnCount'] as num).toInt();
 
   @override
-  String toString() => 'RenderedSettings(fontSize=$fontSize, lh=$lineHeight, '
+  String toString() =>
+      'RenderedSettings(fontSize=$fontSize, lh=$lineHeight, '
       'wm=$writingMode, cols=$columnCount)';
 }
 
@@ -365,17 +369,21 @@ List<InvariantViolation> validateChapterScan(
       final int pageIndex = (page.state.scroll / pitch).round();
       final double expectedScroll = pageIndex * pitch;
       final double error = (page.state.scroll - expectedScroll).abs();
-      final bool isTerminalClamp = i == pages.length - 1 &&
+      final bool isTerminalClamp =
+          i == pages.length - 1 &&
           (page.state.scroll - page.state.physicalMaxScroll).abs() <= 1 &&
           (page.state.maxScroll - page.state.physicalMaxScroll).abs() <= 1;
       if (error > 1 && !isTerminalClamp) {
-        violations.add(InvariantViolation(
-          invariant: 'I1',
-          pageNumber: page.pageNumber,
-          message: 'Scroll ${page.state.scroll.toStringAsFixed(3)} not aligned '
-              'to absolute pitch ${pitch.toStringAsFixed(3)} '
-              '(error=${error.toStringAsFixed(3)})',
-        ));
+        violations.add(
+          InvariantViolation(
+            invariant: 'I1',
+            pageNumber: page.pageNumber,
+            message:
+                'Scroll ${page.state.scroll.toStringAsFixed(3)} not aligned '
+                'to absolute pitch ${pitch.toStringAsFixed(3)} '
+                '(error=${error.toStringAsFixed(3)})',
+          ),
+        );
       }
     }
 
@@ -384,34 +392,42 @@ List<InvariantViolation> validateChapterScan(
       final prevLast = _markerIndex(pages[i - 1].markers.last);
       final currFirst = _markerIndex(page.markers.first);
       if (currFirst > prevLast + 1) {
-        violations.add(InvariantViolation(
-          invariant: 'I2',
-          pageNumber: page.pageNumber,
-          message: 'Gap: prev last=m${prevLast.toString().padLeft(3, "0")} '
-              'curr first=m${currFirst.toString().padLeft(3, "0")} '
-              '(${currFirst - prevLast - 1} markers skipped)',
-          details: {'prevLast': prevLast, 'currFirst': currFirst},
-        ));
+        violations.add(
+          InvariantViolation(
+            invariant: 'I2',
+            pageNumber: page.pageNumber,
+            message:
+                'Gap: prev last=m${prevLast.toString().padLeft(3, "0")} '
+                'curr first=m${currFirst.toString().padLeft(3, "0")} '
+                '(${currFirst - prevLast - 1} markers skipped)',
+            details: {'prevLast': prevLast, 'currFirst': currFirst},
+          ),
+        );
       }
       if (currFirst < prevLast - 1) {
-        violations.add(InvariantViolation(
-          invariant: 'I2',
-          pageNumber: page.pageNumber,
-          message:
-              'Severe overlap: regressed by ${prevLast - currFirst} markers',
-          details: {'prevLast': prevLast, 'currFirst': currFirst},
-        ));
+        violations.add(
+          InvariantViolation(
+            invariant: 'I2',
+            pageNumber: page.pageNumber,
+            message:
+                'Severe overlap: regressed by ${prevLast - currFirst} markers',
+            details: {'prevLast': prevLast, 'currFirst': currFirst},
+          ),
+        );
       }
     }
 
     // I4: Progress monotonicity (checked via scroll position)
     if (i > 0 && page.state.scroll < pages[i - 1].state.scroll - 1) {
-      violations.add(InvariantViolation(
-        invariant: 'I4',
-        pageNumber: page.pageNumber,
-        message: 'Scroll went backward: '
-            '${pages[i - 1].state.scroll} → ${page.state.scroll}',
-      ));
+      violations.add(
+        InvariantViolation(
+          invariant: 'I4',
+          pageNumber: page.pageNumber,
+          message:
+              'Scroll went backward: '
+              '${pages[i - 1].state.scroll} → ${page.state.scroll}',
+        ),
+      );
     }
 
     // I6: Constant step. Every forward page turn must advance by EXACTLY one
@@ -424,21 +440,26 @@ List<InvariantViolation> validateChapterScan(
       final delta = page.state.scroll - pages[i - 1].state.scroll;
       final pitch = page.state.columnPitch;
       final isLast = i == pages.length - 1;
-      final isPhysicalTerminal = isLast &&
+      final isPhysicalTerminal =
+          isLast &&
           (page.state.scroll - page.state.physicalMaxScroll).abs() <= 1 &&
           (page.state.maxScroll - page.state.physicalMaxScroll).abs() <= 1;
-      final ok = (delta - pitch).abs() <= 1 ||
+      final ok =
+          (delta - pitch).abs() <= 1 ||
           (isPhysicalTerminal && delta > 1 && delta <= pitch + 1);
       if (!ok) {
-        violations.add(InvariantViolation(
-          invariant: 'I6',
-          pageNumber: page.pageNumber,
-          message: 'Page step ${delta.toStringAsFixed(3)} != pitch '
-              '${pitch.toStringAsFixed(3)} (drift '
-              '${(delta - pitch).toStringAsFixed(3)}px on turn '
-              '${page.pageNumber})',
-          details: {'delta': delta, 'pitch': pitch},
-        ));
+        violations.add(
+          InvariantViolation(
+            invariant: 'I6',
+            pageNumber: page.pageNumber,
+            message:
+                'Page step ${delta.toStringAsFixed(3)} != pitch '
+                '${pitch.toStringAsFixed(3)} (drift '
+                '${(delta - pitch).toStringAsFixed(3)}px on turn '
+                '${page.pageNumber})',
+            details: {'delta': delta, 'pitch': pitch},
+          ),
+        );
       }
     }
   }
@@ -449,21 +470,27 @@ List<InvariantViolation> validateChapterScan(
   if (pages.isNotEmpty) {
     final PageData first = pages.first;
     if ((first.state.scroll - first.state.minScroll).abs() > 1) {
-      violations.add(InvariantViolation(
-        invariant: 'I1',
-        pageNumber: first.pageNumber,
-        message: 'Scan starts at ${first.state.scroll.toStringAsFixed(3)}, '
-            'not minScroll ${first.state.minScroll.toStringAsFixed(3)}',
-      ));
+      violations.add(
+        InvariantViolation(
+          invariant: 'I1',
+          pageNumber: first.pageNumber,
+          message:
+              'Scan starts at ${first.state.scroll.toStringAsFixed(3)}, '
+              'not minScroll ${first.state.minScroll.toStringAsFixed(3)}',
+        ),
+      );
     }
     final PageData last = pages.last;
     if ((last.state.scroll - last.state.maxScroll).abs() > 1) {
-      violations.add(InvariantViolation(
-        invariant: 'I1',
-        pageNumber: last.pageNumber,
-        message: 'Scan ends at ${last.state.scroll.toStringAsFixed(3)}, '
-            'not maxScroll ${last.state.maxScroll.toStringAsFixed(3)}',
-      ));
+      violations.add(
+        InvariantViolation(
+          invariant: 'I1',
+          pageNumber: last.pageNumber,
+          message:
+              'Scan ends at ${last.state.scroll.toStringAsFixed(3)}, '
+              'not maxScroll ${last.state.maxScroll.toStringAsFixed(3)}',
+        ),
+      );
     }
   }
 
@@ -476,13 +503,16 @@ List<InvariantViolation> validateChapterScan(
     final prevFirst = _markerIndex(pages[i - 1].markers.first);
     final currFirst = _markerIndex(pages[i].markers.first);
     if (currFirst < prevFirst) {
-      violations.add(InvariantViolation(
-        invariant: 'I2',
-        pageNumber: pages[i].pageNumber,
-        message: 'First marker regressed: '
-            'm${prevFirst.toString().padLeft(3, "0")} -> '
-            'm${currFirst.toString().padLeft(3, "0")}',
-      ));
+      violations.add(
+        InvariantViolation(
+          invariant: 'I2',
+          pageNumber: pages[i].pageNumber,
+          message:
+              'First marker regressed: '
+              'm${prevFirst.toString().padLeft(3, "0")} -> '
+              'm${currFirst.toString().padLeft(3, "0")}',
+        ),
+      );
     }
   }
 
@@ -490,11 +520,13 @@ List<InvariantViolation> validateChapterScan(
   for (int m = 1; m <= expectedMarkerCount; m++) {
     final id = 'm${m.toString().padLeft(3, "0")}';
     if (!allSeen.contains(id)) {
-      violations.add(InvariantViolation(
-        invariant: 'I3',
-        pageNumber: -1,
-        message: 'Marker $id never appeared on any page',
-      ));
+      violations.add(
+        InvariantViolation(
+          invariant: 'I3',
+          pageNumber: -1,
+          message: 'Marker $id never appeared on any page',
+        ),
+      );
     }
   }
 
@@ -510,13 +542,16 @@ List<InvariantViolation> validateChapterScan(
       if (fraction > tailBestFraction) tailBestFraction = fraction;
     }
     if (allSeen.contains(tailId) && tailBestFraction < 0.5) {
-      violations.add(InvariantViolation(
-        invariant: 'I3',
-        pageNumber: pages.isEmpty ? -1 : pages.last.pageNumber,
-        message: 'Tail marker $tailId was never substantially visible '
-            '(best fraction ${tailBestFraction.toStringAsFixed(3)})',
-        details: <String, dynamic>{'bestFraction': tailBestFraction},
-      ));
+      violations.add(
+        InvariantViolation(
+          invariant: 'I3',
+          pageNumber: pages.isEmpty ? -1 : pages.last.pageNumber,
+          message:
+              'Tail marker $tailId was never substantially visible '
+              '(best fraction ${tailBestFraction.toStringAsFixed(3)})',
+          details: <String, dynamic>{'bestFraction': tailBestFraction},
+        ),
+      );
     }
   }
 
@@ -525,12 +560,15 @@ List<InvariantViolation> validateChapterScan(
     final last = pages.last;
     final trailing = last.state.maxScroll - last.state.scroll;
     if (trailing > last.state.columnPitch && last.state.columnPitch > 0) {
-      violations.add(InvariantViolation(
-        invariant: 'I5',
-        pageNumber: last.pageNumber,
-        message: 'Excessive trailing space: ${trailing}px '
-            '(> pitch ${last.state.columnPitch}px)',
-      ));
+      violations.add(
+        InvariantViolation(
+          invariant: 'I5',
+          pageNumber: last.pageNumber,
+          message:
+              'Excessive trailing space: ${trailing}px '
+              '(> pitch ${last.state.columnPitch}px)',
+        ),
+      );
     }
   }
 
@@ -540,20 +578,26 @@ List<InvariantViolation> validateChapterScan(
     final totalChars = pages.first.state.totalChars;
     if (totalChars > 0) {
       if (totalPages > totalChars / 5) {
-        violations.add(InvariantViolation(
-          invariant: 'I7',
-          pageNumber: -1,
-          message: 'Too many pages: $totalPages for $totalChars chars '
-              '(< 5 chars/page)',
-        ));
+        violations.add(
+          InvariantViolation(
+            invariant: 'I7',
+            pageNumber: -1,
+            message:
+                'Too many pages: $totalPages for $totalChars chars '
+                '(< 5 chars/page)',
+          ),
+        );
       }
       if (totalPages < totalChars / 2000) {
-        violations.add(InvariantViolation(
-          invariant: 'I7',
-          pageNumber: -1,
-          message: 'Too few pages: $totalPages for $totalChars chars '
-              '(> 2000 chars/page)',
-        ));
+        violations.add(
+          InvariantViolation(
+            invariant: 'I7',
+            pageNumber: -1,
+            message:
+                'Too few pages: $totalPages for $totalChars chars '
+                '(> 2000 chars/page)',
+          ),
+        );
       }
     }
   }
@@ -574,46 +618,58 @@ List<InvariantViolation> validateRenderedSettings(
   if (expectedFontSize != null) {
     final diff = (rendered.fontSize - expectedFontSize).abs();
     if (diff > 1.5) {
-      violations.add(InvariantViolation(
-        invariant: 'I8',
-        pageNumber: -1,
-        message: 'fontSize: expected $expectedFontSize, '
-            'got ${rendered.fontSize} (diff=$diff)',
-      ));
+      violations.add(
+        InvariantViolation(
+          invariant: 'I8',
+          pageNumber: -1,
+          message:
+              'fontSize: expected $expectedFontSize, '
+              'got ${rendered.fontSize} (diff=$diff)',
+        ),
+      );
     }
   }
 
   if (expectedLineHeight != null) {
     final diff = (rendered.lineHeight - expectedLineHeight).abs();
     if (diff > 0.2) {
-      violations.add(InvariantViolation(
-        invariant: 'I8',
-        pageNumber: -1,
-        message: 'lineHeight: expected $expectedLineHeight, '
-            'got ${rendered.lineHeight} (diff=$diff)',
-      ));
+      violations.add(
+        InvariantViolation(
+          invariant: 'I8',
+          pageNumber: -1,
+          message:
+              'lineHeight: expected $expectedLineHeight, '
+              'got ${rendered.lineHeight} (diff=$diff)',
+        ),
+      );
     }
   }
 
   if (expectedWritingMode != null &&
       rendered.writingMode != expectedWritingMode) {
-    violations.add(InvariantViolation(
-      invariant: 'I8',
-      pageNumber: -1,
-      message: 'writingMode: expected $expectedWritingMode, '
-          'got ${rendered.writingMode}',
-    ));
+    violations.add(
+      InvariantViolation(
+        invariant: 'I8',
+        pageNumber: -1,
+        message:
+            'writingMode: expected $expectedWritingMode, '
+            'got ${rendered.writingMode}',
+      ),
+    );
   }
 
   if (expectedColumns != null &&
       expectedColumns >= 2 &&
       rendered.columnCount < 2) {
-    violations.add(InvariantViolation(
-      invariant: 'I8',
-      pageNumber: -1,
-      message: 'columnCount: expected >= $expectedColumns, '
-          'got ${rendered.columnCount}',
-    ));
+    violations.add(
+      InvariantViolation(
+        invariant: 'I8',
+        pageNumber: -1,
+        message:
+            'columnCount: expected >= $expectedColumns, '
+            'got ${rendered.columnCount}',
+      ),
+    );
   }
 
   return violations;
@@ -628,12 +684,15 @@ List<InvariantViolation> validatePositionRestoration({
   final violations = <InvariantViolation>[];
 
   if (beforeMarkers.isEmpty || afterMarkers.isEmpty) {
-    violations.add(InvariantViolation(
-      invariant: 'I9',
-      pageNumber: -1,
-      message: 'Empty markers: before=${beforeMarkers.length}, '
-          'after=${afterMarkers.length}',
-    ));
+    violations.add(
+      InvariantViolation(
+        invariant: 'I9',
+        pageNumber: -1,
+        message:
+            'Empty markers: before=${beforeMarkers.length}, '
+            'after=${afterMarkers.length}',
+      ),
+    );
     return violations;
   }
 
@@ -643,13 +702,16 @@ List<InvariantViolation> validatePositionRestoration({
     final afterMid = _markerIndex(afterMarkers[afterMarkers.length ~/ 2]);
     final drift = (afterMid - beforeMid).abs();
     if (drift > maxMarkerDrift) {
-      violations.add(InvariantViolation(
-        invariant: 'I9',
-        pageNumber: -1,
-        message: 'No marker overlap and drift=$drift > $maxMarkerDrift. '
-            'Before: ${beforeMarkers.first}..${beforeMarkers.last}, '
-            'After: ${afterMarkers.first}..${afterMarkers.last}',
-      ));
+      violations.add(
+        InvariantViolation(
+          invariant: 'I9',
+          pageNumber: -1,
+          message:
+              'No marker overlap and drift=$drift > $maxMarkerDrift. '
+              'Before: ${beforeMarkers.first}..${beforeMarkers.last}, '
+              'After: ${afterMarkers.first}..${afterMarkers.last}',
+        ),
+      );
     }
   }
 

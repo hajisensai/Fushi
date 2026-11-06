@@ -28,7 +28,9 @@ void main() {
       // 多级同理，只保留第一段。
       expect(
         ankiDuplicateDeckFilter(
-            'Lapis::Vocab::N5', AnkiDuplicateScope.deckRoot),
+          'Lapis::Vocab::N5',
+          AnkiDuplicateScope.deckRoot,
+        ),
         'deck:"Lapis"',
       );
       // 本来就是根卡组时 deckRoot 与 deck 等价。
@@ -69,8 +71,11 @@ void main() {
           headers: <String, String>{'content-type': 'application/json'},
         );
       });
-      final service =
-          AnkiConnectService(host: '127.0.0.1', port: 8765, client: client);
+      final service = AnkiConnectService(
+        host: '127.0.0.1',
+        port: 8765,
+        client: client,
+      );
       await service.findNotesByField(
         deckName: 'Lapis::Vocab',
         fieldName: 'Word',
@@ -88,8 +93,10 @@ void main() {
     });
 
     test('deckRoot 查整棵 Lapis 树', () async {
-      expect(await queryFor(AnkiDuplicateScope.deckRoot),
-          'deck:"Lapis" "Word:散乱"');
+      expect(
+        await queryFor(AnkiDuplicateScope.deckRoot),
+        'deck:"Lapis" "Word:散乱"',
+      );
     });
 
     test('collection 完全不带 deck 子句（前面也不留空格）', () async {
@@ -108,8 +115,11 @@ void main() {
           headers: <String, String>{'content-type': 'application/json'},
         );
       });
-      final service =
-          AnkiConnectService(host: '127.0.0.1', port: 8765, client: client);
+      final service = AnkiConnectService(
+        host: '127.0.0.1',
+        port: 8765,
+        client: client,
+      );
       await service.addNote(
         deckName: 'Lapis::Vocab',
         modelName: 'Lapis',
@@ -118,8 +128,9 @@ void main() {
       );
       final Map<String, dynamic> body =
           jsonDecode(sink.single.body) as Map<String, dynamic>;
-      final Map<String, dynamic> note = (body['params']
-          as Map<String, dynamic>)['note'] as Map<String, dynamic>;
+      final Map<String, dynamic> note =
+          (body['params'] as Map<String, dynamic>)['note']
+              as Map<String, dynamic>;
       return note['options'] as Map<String, dynamic>;
     }
 

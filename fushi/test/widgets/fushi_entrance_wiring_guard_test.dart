@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 2026-10 动效重做的接入面守卫：PR #1905 只给书架散书网格接了错峰进场，
 /// 用户实测「视频那块手感还是之前那样、设置页也要做」（2026-10-04）。这里钉住
@@ -21,11 +21,17 @@ void main() {
           '三个分区共用一个 State，切分区必须重开进场窗口；首屏骨架换成真墙'
           '也要重开（BUG-3235），否则映射晚于窗口到达时真卡没有进场',
     );
+    // PR #2922（桌面直拖重排）起格子先包 [LibraryReorderCell]（经
+    // `_videoDragReorderCell`）再进场：进场包装仍在最外层，重排单元在其内。
+    // 折掉换行/缩进后比对，免得 dart format 的换行位置成为守卫的隐形前提。
+    final String flat = src.replaceAll(RegExp(r'\s+'), ' ');
     for (final String orientation in <String>['portrait', 'landscape']) {
       expect(
-        src,
+        flat,
         contains(
-          'child: cells[index].build(VideoCardOrientation.$orientation)',
+          'FushiStaggeredEntrance( index: index, '
+          'child: _videoDragReorderCell( dragReorderKeys, index, '
+          'cells[index].build(VideoCardOrientation.$orientation), ), ),',
         ),
         reason: '$orientation 网格格子应包在 FushiStaggeredEntrance 里',
       );
@@ -65,10 +71,16 @@ void main() {
       'lib/src/pages/implementations/media_server/media_server_server_list_view.dart',
       'lib/src/pages/implementations/media_server/media_server_home_view.dart',
       'lib/src/pages/implementations/media_server/media_server_detail_view.dart',
+      // 书库 Audiobookshelf 标签页：封面网格 + 「继续收听」行与条目 / 播客单集详情。
+      'lib/src/pages/implementations/audiobookshelf/audiobookshelf_library_view.dart',
+      'lib/src/pages/implementations/audiobookshelf/audiobookshelf_item_page.dart',
       'lib/src/pages/implementations/video_discovery_page.dart',
       'lib/src/media/online/online_source_browse_page.dart',
       'lib/src/media/manga/discovery/manga_discovery_page.dart',
       'lib/src/media/manga/interconnect/interconnect_manga_browse_page.dart',
+      'lib/src/pages/implementations/kavita/kavita_browse_page.dart',
+      'lib/src/pages/implementations/kavita/kavita_books_view.dart',
+      'lib/src/pages/implementations/kavita/kavita_book_series_page.dart',
       'lib/src/media/manga/online/mokuro_moe_catalog_view.dart',
       // 2026-10 漫画阅读器重做：「全部页面」缩略图网格。
       'lib/src/media/manga/reader/manga_reader_page_grid.dart',
@@ -92,11 +104,26 @@ void main() {
       // 同步冲突 / 复习完成页。
       'lib/src/pages/implementations/srs/srs_deck_list_page.dart',
       'lib/src/pages/implementations/srs/srs_browse_page.dart',
+      // 2026-11-04 卡片浏览器重设计：检查器（编辑 / 历史页签）、表格 / 出处视图。
+      'lib/src/pages/implementations/srs/srs_browse_inspector.dart',
+      'lib/src/pages/implementations/srs/srs_browse_views.dart',
       // 表单类页面（笔记编辑 / 更改笔记类型 / 笔记类型编辑…）共用的分栏正文
       // SrsAdaptiveSections：窗口与逐项包装都在这里，页面经它接入（见下一条）。
       'lib/src/pages/implementations/srs/srs_ui.dart',
       'lib/src/pages/implementations/srs/srs_conflicts_page.dart',
       'lib/src/pages/implementations/srs/srs_review_page.dart',
+      // 2026-10-19 视频日语字幕管线：生成面板（单集 / 整季）与专名表编辑页。
+      'lib/src/media/video/subtitle/video_subtitle_generate_sheet.dart',
+      'lib/src/media/video/subtitle/video_subtitle_glossary_page.dart',
+      'lib/src/media/video/subtitle/remote_video_subtitle_sheet.dart',
+      // 2026-10-25 条目长按 / 右键菜单重设计：抽屉宫格 / 双栏分组列表 / 右键菜单行。
+      'lib/src/pages/implementations/media_item_dialog_page.dart',
+      // 2026-10-27 用户 BT 站设置区：站点卡列表。
+      'lib/src/pages/implementations/bt_site_settings_section.dart',
+      // 2026-10-27 发现作品详情页「获取途径」面板：渠道组 / 组内命中。
+      'lib/src/pages/implementations/discovery/video_work_acquisition_section.dart',
+      // 2026-10-31 AI 助手多会话：会话列表（整页侧栏 / 弹出列表共用）。
+      'lib/src/pages/implementations/ai_agent_sessions.dart',
     ]) {
       final String src = read(path);
       expect(src, contains('FushiEntranceScope('), reason: path);

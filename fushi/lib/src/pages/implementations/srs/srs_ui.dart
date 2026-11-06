@@ -8,8 +8,20 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_color_roles.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 
 /// 新卡 / 学习 / 到期三种计数的颜色。
 ///
@@ -45,6 +57,30 @@ class SrsMetaLine extends StatelessWidget {
   /// 把已用 [separator] 拼好的本地化串（如 i18n 摘要）拆回各段。
   static List<String> split(String joined) => joined.split(separator);
 
+  /// 全角收尾标点（「（Fushi 3.3）」的「）」等）字形自带右侧留白，后面再接 [separator] 的前导空格
+  /// 会显得中点左边空了两格：这种段后只接「· 」。
+  static const String _fullWidthClosers = '）】」』〉》〕';
+
+  /// [segment] 后面接的分隔符。
+  static String separatorAfter(String segment) =>
+      segment.isNotEmpty &&
+          _fullWidthClosers.contains(segment[segment.length - 1])
+      ? '· '
+      : separator;
+
+  /// 跳过空段、按 [separatorAfter] 拼成一行文本（不需要按段折行的地方用）。
+  static String join(Iterable<String> segments) {
+    final StringBuffer out = StringBuffer();
+    String last = '';
+    for (final String s in segments) {
+      if (s.isEmpty) continue;
+      if (out.isNotEmpty) out.write(separatorAfter(last));
+      out.write(s);
+      last = s;
+    }
+    return out.toString();
+  }
+
   final List<String> segments;
 
   @override
@@ -57,13 +93,49 @@ class SrsMetaLine extends StatelessWidget {
       children: <Widget>[
         for (int i = 0; i < parts.length; i++)
           Text(
-            i == parts.length - 1 ? parts[i] : '${parts[i]}$separator',
+            i == parts.length - 1
+                ? parts[i]
+                : '${parts[i]}${separatorAfter(parts[i])}',
             maxLines: 1,
             softWrap: false,
             overflow: TextOverflow.ellipsis,
           ),
       ],
     );
+  }
+}
+
+/// 到期一格（第三格）显示什么：牌组行 / 首页复习条 / 导航速览 / 复习页顶栏共用这一份口径与格式。
+///
+/// - [due] 就是到期数：FSRS 牌组按存下的到期日；RWKV 牌组 = 今天结束前回忆率会降到目标保留率以下的卡（内核计数，
+///   随作答实时重算，出卡同一口径）。以前 RWKV 那部分显示过近 30 天日均，用户 2026-11-03 拍板删掉；
+/// - [pending]：RWKV 准备中（RWKV 牌组的卡这时本就没算进计数），文字后面跟「准备中」。
+@immutable
+class SrsReviewCell {
+  const SrsReviewCell({required this.due, this.pending = false});
+
+  /// 牌组行的那一格。
+  factory SrsReviewCell.ofDeck(SrsDeckSummary d) =>
+      SrsReviewCell(due: d.reviewCount, pending: d.rwkvPending);
+
+  final int due;
+  final bool pending;
+
+  /// 格子里的字。
+  String get numbers => '$due';
+
+  /// 带名字的文字（速览副行 / 复习页顶栏 / 读屏）：「到期 12」，准备中再跟「(准备中)」
+  /// （准备中时到期 0 不写成「到期 0」——那不代表今天没有到期）。
+  /// [omitZero]：到期 0 且不在准备中时返回 null（速览只列非零项）。
+  String? label({bool omitZero = false}) {
+    final List<String> parts = <String>[
+      if (!((omitZero || pending) && due == 0)) '${t.srs_count_review} $due',
+    ];
+    if (pending) {
+      if (parts.isEmpty) parts.add(t.srs_count_review);
+      return '${parts.join(' · ')} (${t.srs_settings_rwkv_preparing_start})';
+    }
+    return parts.isEmpty ? null : parts.join(' · ');
   }
 }
 
@@ -74,6 +146,7 @@ class SrsCountTriple extends StatelessWidget {
     required this.newCount,
     required this.learnCount,
     required this.reviewCount,
+    this.reviewPending = false,
     this.dense = false,
     this.tight = false,
   });
@@ -81,6 +154,10 @@ class SrsCountTriple extends StatelessWidget {
   final int newCount;
   final int learnCount;
   final int reviewCount;
+
+  /// RWKV 还没准备好，RWKV 牌组的复习卡没算进 [reviewCount]（[SrsDeckSummary.rwkvPending]）：到期一格显示
+  /// 「准备中」（沙漏），不把 0 显示成「今天没有到期」；有别的（FSRS）牌组的到期时数字照旧、后面跟沙漏。
+  final bool reviewPending;
   final bool dense;
 
   /// 手机竖屏牌组列表：数字列收窄（最小 20）、列间距减半，三个数合成一小块，
@@ -99,6 +176,10 @@ class SrsCountTriple extends StatelessWidget {
               fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
             );
     final Color muted = Theme.of(context).disabledColor;
+    final SrsReviewCell review = SrsReviewCell(
+      due: reviewCount,
+      pending: reviewPending,
+    );
     Widget cell(int value, Color color, String label) => FushiTooltip(
       message: label,
       child: ConstrainedBox(
@@ -119,10 +200,42 @@ class SrsCountTriple extends StatelessWidget {
         ),
       ),
     );
+    Widget pendingReviewCell() => FushiTooltip(
+      message: t.srs_review_rwkv_pending,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minWidth: tight
+              ? 20
+              : dense
+              ? 24
+              : 32,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: <Widget>[
+            if (review.due > 0)
+              Text(
+                review.numbers,
+                style: base.copyWith(
+                  color: colors.review,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            FushiIcon(
+              FushiIcons.pending,
+              key: const ValueKey<String>('srs-count-review-pending'),
+              size: (base.fontSize ?? 14) * 1.05,
+              color: colors.review,
+            ),
+          ],
+        ),
+      ),
+    );
     return Semantics(
       label:
           '${t.srs_count_new} $newCount, ${t.srs_count_learn} $learnCount, '
-          '${t.srs_count_review} $reviewCount',
+          '${review.label()}',
       child: ExcludeSemantics(
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -130,7 +243,10 @@ class SrsCountTriple extends StatelessWidget {
           children: <Widget>[
             cell(newCount, colors.fresh, t.srs_count_new),
             cell(learnCount, colors.learn, t.srs_count_learn),
-            cell(reviewCount, colors.review, t.srs_count_review),
+            if (reviewPending)
+              pendingReviewCell()
+            else
+              cell(reviewCount, colors.review, t.srs_count_review),
           ],
         ),
       ),
@@ -237,31 +353,34 @@ class SrsAdaptiveSections extends StatelessWidget {
           );
         }
         final double half = tokens.spacing.gap * 0.75;
+        // 两栏各自滚动：页头（返回键）不跟任何一栏收起，见 [FushiPinnedPageChromeScope]。
         return FushiEntranceScope(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Expanded(
-                flex: primaryFlex,
-                child: FocusTraversalGroup(
-                  child: column(
-                    primary,
-                    padding(tokens.spacing.page, half),
-                    key: primaryPaneKey,
+          child: FushiPinnedPageChromeScope(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(
+                  flex: primaryFlex,
+                  child: FocusTraversalGroup(
+                    child: column(
+                      primary,
+                      padding(tokens.spacing.page, half),
+                      key: primaryPaneKey,
+                    ),
                   ),
                 ),
-              ),
-              Expanded(
-                flex: secondaryFlex,
-                child: FocusTraversalGroup(
-                  child: column(
-                    secondary,
-                    padding(half, tokens.spacing.page),
-                    key: secondaryPaneKey,
+                Expanded(
+                  flex: secondaryFlex,
+                  child: FocusTraversalGroup(
+                    child: column(
+                      secondary,
+                      padding(half, tokens.spacing.page),
+                      key: secondaryPaneKey,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -269,10 +388,13 @@ class SrsAdaptiveSections extends StatelessWidget {
   }
 }
 
-/// 新卡被自动缩减时的一行说明；没缩减返回 null。
+/// 新卡被自动调整时的一行说明；没调整返回 null。
 String? srsNewBudgetNote(SrsNewCardBudget budget) => switch (budget.reason) {
   SrsNewCardBudgetReason.reduced => t.srs_deck_new_reduced(n: budget.allowed),
   SrsNewCardBudgetReason.paused => t.srs_deck_new_paused,
+  SrsNewCardBudgetReason.increased => t.srs_deck_new_increased(
+    n: budget.allowed,
+  ),
   null => null,
 };
 
@@ -288,6 +410,52 @@ String srsShortDevice(String writerId) {
   return device.length <= 8 ? device : device.substring(0, 8);
 }
 
+/// 同步通道位置的人读名（位置 ID 的格式见 `fushi/lib/src/srs/srs_directory_key.dart`）：
+/// `后端名 · 账户 / 地址`。互联位置的 ID 是 host 的设备 ID（一长串 base64），不能直接显示：
+/// 是本机（本机就是互联 host）就写「本机」，否则用配对时记下的 host 名（[hostNames]，按 hostId），
+/// 都没有才退到前 8 位。认不出的种类原样显示去掉种类前缀的部分。
+String srsChannelLocationTitle(
+  String locationId, {
+  String? ownDeviceId,
+  Map<String, String> hostNames = const <String, String>{},
+}) {
+  const String obfuscated = 'obfuscated:';
+  final String id = locationId.startsWith(obfuscated)
+      ? locationId.substring(obfuscated.length)
+      : locationId;
+  final int colon = id.indexOf(':');
+  if (colon < 0) return id;
+  final String kind = id.substring(0, colon);
+  final String rest = id.substring(colon + 1);
+  String server() {
+    final int bar = rest.lastIndexOf('|');
+    if (bar < 0) return rest;
+    final String user = rest.substring(bar + 1);
+    final String host = rest.substring(0, bar);
+    return user.isEmpty ? host : '$user@$host';
+  }
+
+  final (String, String)? named = switch (kind) {
+    'interconnect' => (
+      t.sync_backend_fushi_server,
+      rest == ownDeviceId
+          ? t.srs_timeline_this_device
+          : (hostNames[rest]?.trim().isNotEmpty ?? false)
+          ? hostNames[rest]!.trim()
+          : srsShortDevice(rest),
+    ),
+    'googleDrive' => (t.sync_backend_google_drive, rest),
+    'oneDrive' => (t.sync_backend_onedrive, rest),
+    'dropbox' => (t.sync_backend_dropbox, rest),
+    'webDav' => (t.sync_backend_webdav, server()),
+    'ftp' => (t.sync_backend_ftp, server()),
+    'sftp' => (t.sync_backend_sftp, server()),
+    _ => null,
+  };
+  if (named == null) return rest;
+  return '${named.$1} · ${named.$2}';
+}
+
 /// 冲突值的人读形式（布尔 / 空 / 结构化值）。
 String srsFormatValue(Object? value) => switch (value) {
   null => '—',
@@ -298,6 +466,14 @@ String srsFormatValue(Object? value) => switch (value) {
   final num n => '$n',
   _ => jsonEncode(value),
 };
+
+/// 本地化的「日期 时刻」（跟随系统 24 小时制设置）。
+String srsTimeLabel(BuildContext context, DateTime t) {
+  final MaterialLocalizations l = MaterialLocalizations.of(context);
+  final bool h24 = MediaQuery.maybeAlwaysUse24HourFormatOf(context) ?? false;
+  return '${l.formatMediumDate(t)} '
+      '${l.formatTimeOfDay(TimeOfDay.fromDateTime(t), alwaysUse24HourFormat: h24)}';
+}
 
 /// 毫秒时刻 → 本地「日期 时:分」。
 String srsFormatMoment(int ms) =>
@@ -322,6 +498,68 @@ Future<String?> pickSrsDeck(
   );
 }
 
+/// 牌组选择器的一项（只要 id 与全名，不带计数）。
+typedef SrsDeckChoice = ({String id, String fullName});
+
+/// 牌组选择器用的牌组清单：先序（父在前、子紧跟父），同级按手动位置再按名字——与
+/// [SrsDbStore.deckSummaries] 的顺序同一口径，但**只读牌组树**。
+///
+/// 编辑页 / 移动卡片只要名字：`deckSummaries()` 会给每个牌组数新卡 / 学习 / 到期，
+/// RWKV 牌组还要对全部复习卡跑一遍即时可提取度推理（`_instantReviews`，缓存最多 30 秒）——
+/// 查词弹窗跳到卡片打开编辑页时那一下就慢在这里。
+Future<List<SrsDeckChoice>> srsDeckChoices(SrsDbStore store) async {
+  final SrsDeckTree tree = await store.deckTree();
+  final Map<String?, List<SrsDeckView>> children =
+      <String?, List<SrsDeckView>>{};
+  for (final SrsDeckView d in tree.decks) {
+    (children[tree.parentOf(d.id)] ??= <SrsDeckView>[]).add(d);
+  }
+  final List<SrsDeckChoice> out = <SrsDeckChoice>[];
+  void visit(String? parent) {
+    final List<SrsDeckView> level = (children[parent] ?? <SrsDeckView>[])
+      ..sort(SrsDeckView.compareSiblings);
+    for (final SrsDeckView d in level) {
+      out.add((id: d.id, fullName: tree.fullName(d.id)));
+      visit(d.id);
+    }
+  }
+
+  visit(null);
+  return out;
+}
+
+/// [pickSrsDeck] 的轻量版：吃 [srsDeckChoices] 的结果（不需要计数的地方用它）。
+Future<String?> pickSrsDeckChoice(
+  BuildContext context, {
+  required List<SrsDeckChoice> decks,
+  String? selected,
+  required String title,
+}) {
+  return showFushiChoiceDialog<String>(
+    context: context,
+    title: title,
+    icon: FushiIcons.folder,
+    selected: selected,
+    options: <FushiChoiceOption<String>>[
+      for (final SrsDeckChoice d in decks)
+        FushiChoiceOption<String>(value: d.id, label: d.fullName),
+    ],
+  );
+}
+
+/// 删除一条笔记（连同全部卡片）前的确认框；确认返回 true。文案与浏览页批量删除同一套。
+/// 编辑页顶栏「删除笔记」用：确认后调 `SrsDbStore.deleteNote`（墓碑，可在浏览 / 冲突页恢复）。
+Future<bool> confirmSrsNoteDelete(BuildContext context) =>
+    showFushiConfirmDialog(
+      context: context,
+      title: t.srs_note_delete,
+      message: t.srs_browse_delete_confirm(n: 1),
+      confirmLabel: t.srs_note_delete,
+      cancelLabel: t.cancel,
+      icon: FushiIcons.delete,
+      destructive: true,
+    );
+
 /// Lapis 里最常用、放在编辑页最前面的字段（其余折进「更多字段」）。
 const List<String> kSrsLapisPrimaryFields = <String>[
   'Expression',
@@ -331,14 +569,13 @@ const List<String> kSrsLapisPrimaryFields = <String>[
 ];
 
 /// Fushi 卡片编辑页默认展开的字段（按卡面区块分组显示，其余折进「更多字段」）：
-/// 词条、读音与单词音频、图片、例句（含注音 / 翻译 / 音频）、主释义。
+/// 词条、读音与单词音频、图片、例句（含翻译 / 音频）、主释义。
 const Set<String> kSrsFushiCardPrimaryFields = <String>{
-  'Expression',
-  'ExpressionFurigana',
-  'ExpressionReading',
-  'ExpressionAudio',
-  'Picture',
-  'SentenceFurigana',
+  'Term',
+  'TermFurigana',
+  'TermReading',
+  'TermAudio',
+  'Media',
   'Sentence',
   'SentenceTranslation',
   'SentenceAudio',
@@ -364,6 +601,9 @@ String srsFieldKeyLabel(SrsEntityKind kind, String key) => switch (key) {
   SrsFieldKeys.deckSteps => t.srs_key_steps,
   SrsFieldKeys.deckRetention => t.srs_settings_retention,
   SrsFieldKeys.deckAlgorithm => t.srs_settings_algorithm,
+  SrsFieldKeys.deckRwkvQueue => t.srs_settings_rwkv_queue,
+  SrsFieldKeys.deckNewPlan => t.srs_settings_new_plan,
+  SrsFieldKeys.deckExtendLimits => t.srs_custom_study_title,
   SrsFieldKeys.deckFsrs6Params ||
   SrsFieldKeys.deckFsrs7Params => t.srs_key_params,
   SrsFieldKeys.deckAutoOptimize => t.srs_settings_auto_optimize,
@@ -382,3 +622,45 @@ String srsFieldKeyLabel(SrsEntityKind kind, String key) => switch (key) {
   SrsFieldKeys.termField => t.srs_note_types_term_field,
   _ => key,
 };
+
+/// 评分按钮的语义色调。
+enum SrsRatingTone { again, hard, good, easy }
+
+/// 评分配色的唯一定义：复习页评分按钮、「已评」回执与首次评分说明的色块共用，
+/// 保证说明里的色块与底下的按钮一眼对上。
+///
+/// MD3 = M3E 色调按钮（重来 errorContainer、困难 neutral 容器、良好 primary 实心、
+/// 简单 tertiaryContainer）；Apple = 系统实色胶囊（良好 = 强调色底，其余 = 语义色
+/// 16% 底 + 语义色字，同 iOS `.bordered` 着色）。
+({Color background, Color foreground}) srsRatingColors(
+  SrsRatingTone tone,
+  ColorScheme cs, {
+  required bool apple,
+}) {
+  if (apple) {
+    final Color accent = switch (tone) {
+      SrsRatingTone.again => cs.error,
+      SrsRatingTone.hard => cs.onSurfaceVariant,
+      SrsRatingTone.good => cs.primary,
+      SrsRatingTone.easy => cs.tertiary,
+    };
+    return tone == SrsRatingTone.good
+        ? (background: cs.primary, foreground: cs.onPrimary)
+        : (background: accent.withValues(alpha: 0.16), foreground: accent);
+  }
+  return switch (tone) {
+    SrsRatingTone.again => (
+      background: cs.containerOf(FushiTone.error),
+      foreground: cs.onContainerOf(FushiTone.error),
+    ),
+    SrsRatingTone.hard => (
+      background: cs.containerOf(FushiTone.neutral),
+      foreground: cs.onContainerOf(FushiTone.neutral),
+    ),
+    SrsRatingTone.good => (background: cs.primary, foreground: cs.onPrimary),
+    SrsRatingTone.easy => (
+      background: cs.containerOf(FushiTone.tertiary),
+      foreground: cs.onContainerOf(FushiTone.tertiary),
+    ),
+  };
+}

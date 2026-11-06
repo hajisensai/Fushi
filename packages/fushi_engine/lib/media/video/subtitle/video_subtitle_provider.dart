@@ -28,9 +28,9 @@ class VideoSubtitleSearchRequest {
     this.fingerprint,
     this.page = 1,
     this.anime,
-  })  : alternateTitles = List<String>.unmodifiable(alternateTitles),
-        languages = List<String>.unmodifiable(languages),
-        assert(page > 0);
+  }) : alternateTitles = List<String>.unmodifiable(alternateTitles),
+       languages = List<String>.unmodifiable(languages),
+       assert(page > 0);
 
   final VideoMediaReference? media;
   final String? query;
@@ -70,8 +70,8 @@ class SubtitleWorkClaim {
     this.tmdbId,
     this.imdbId,
   }) : titles = List<String>.unmodifiable(
-          titles.where((String title) => title.trim().isNotEmpty),
-        );
+         titles.where((String title) => title.trim().isNotEmpty),
+       );
 
   /// 来源给这部作品的名字（条目名 / 日文名 / 英文名 / 特征标题），去空。
   final List<String> titles;
@@ -167,8 +167,8 @@ class VideoSubtitleDownload {
     required this.fileName,
     required this.language,
     List<ArchivedSubtitle> archiveEntries = const <ArchivedSubtitle>[],
-  })  : bytes = Uint8List.fromList(bytes),
-        archiveEntries = List<ArchivedSubtitle>.unmodifiable(archiveEntries);
+  }) : bytes = Uint8List.fromList(bytes),
+       archiveEntries = List<ArchivedSubtitle>.unmodifiable(archiveEntries);
 
   final Uint8List bytes;
   final String fileName;

@@ -3,15 +3,27 @@ import 'dart:convert';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_native.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/profile/profile_view_model.dart'
+    show invalidateAnkiStateAfterPrefsChange;
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 class FloatingDictPage extends ConsumerStatefulWidget {
   const FloatingDictPage({
@@ -68,12 +80,33 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
     }
   }
 
+  /// 悬浮词典是同进程的另一个 engine、自有一份 AppModel 偏好缓存：常驻期间主 app
+  /// 改了偏好（牌组 / Anki 后端 / Profile 等）它看不到。与 `:popup` 的热复用路径同
+  /// 一口径（同一个 [AppModel.refreshForWarmDictionaryPopup]）——单行读跨进程
+  /// prefs_version，变了才全量重载、按主进程发布的作品会话重新镜像（反馈 kEFPY4cuKZ）并丢掉
+  /// Anki 派生状态（fiwDIpFep7）；词典元数据变了重载引擎。DB 读失败不拦查词 / 制卡：记日志
+  /// 后带旧缓存继续（同 TODO-1336）。
+  Future<void> _syncPrefsChangedElsewhere() async {
+    try {
+      if (await appModel.refreshForWarmDictionaryPopup() && mounted) {
+        invalidateAnkiStateAfterPrefsChange(ref);
+      }
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log(
+        'FloatingDict.refreshForWarmDictionaryPopup',
+        e,
+        stack,
+      );
+    }
+  }
+
   Future<void> _doSearch(String term) async {
     if (term.trim().isEmpty) return;
     final query = term.trim();
     if (query == _lastSearch && _result != null) return;
     _lastSearch = query;
     setState(() => _isSearching = true);
+    await _syncPrefsChangedElsewhere();
 
     try {
       final result = await appModel.searchDictionary(
@@ -96,6 +129,8 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
   }
 
   Future<void> _exportToAnki(Map<String, String> fields) async {
+    await _syncPrefsChangedElsewhere();
+    if (!mounted) return;
     final repo = ref.read(ankiRepositoryProvider);
     const miningContext = AnkiMiningContext(sentence: '');
     final outcome = await repo.mineEntry(
@@ -104,11 +139,17 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
     );
     // 牌组名由后端随成功结果带回（outcome.deckName，BUG-1549）。
     final described = describeMineOutcome(outcome);
-    FushiToast.show(
+    // 制卡结果的语义已由 describeMineOutcome 算出（added/duplicate/failed）；走
+    // showMine 才过「制卡提示」开关（popup_main 装了同一份偏好闭包）。
+    FushiToast.showMine(
       msg: described.message,
-      // 制卡结果的语义已由 describeMineOutcome 算出（added/duplicate/failed），
-      // 这里只把它翻译成 toast 配色，不再另判一次。
-      severity: mineToastSeverity(described.status),
+      status: described.status,
+      // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
+      action: minedCardUndoToastAction(
+        repo,
+        outcome,
+        expression: fields['expression'],
+      ),
     );
   }
 
@@ -148,10 +189,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return GestureDetector(
       onPanUpdate: (details) {
-        _invoke('drag', {
-          'dx': details.delta.dx,
-          'dy': details.delta.dy,
-        });
+        _invoke('drag', {'dx': details.delta.dx, 'dy': details.delta.dy});
       },
       onPanEnd: (_) {
         _invoke('dragEnd');
@@ -266,10 +304,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
       alignment: Alignment.bottomRight,
       child: GestureDetector(
         onPanUpdate: (details) {
-          _invoke('resize', {
-            'dw': details.delta.dx,
-            'dh': details.delta.dy,
-          });
+          _invoke('resize', {'dw': details.delta.dx, 'dh': details.delta.dy});
         },
         onPanEnd: (_) {
           _invoke('dragEnd');

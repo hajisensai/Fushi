@@ -3,6 +3,12 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!-- 长按图片「保存图片」写系统相册（gal）：Android 10 及以下要写公共 Pictures 目录
+         （Android 10 还要 application 上的 requestLegacyExternalStorage，否则直写路径被
+         分区存储拒绝；该属性在 targetSdk 30+ 的 Android 11+ 设备上无效）；11+ 走 MediaStore
+         无需此权限。 -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
@@ -15,6 +21,12 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- 内置浏览器网页 getUserMedia（视频通话 / 扫码等）与配对扫码。运行时权限：
+         网页申请且站点设置允许后才弹系统框，用户自己决定（web_browser_permissions.dart）。
+         mobile_scanner 的库 manifest 本来就会合并进同一条 CAMERA，这里显式声明是为了
+         不依赖某个插件碰巧带上。required=false：不让商店过滤掉没有摄像头的设备。 -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <!-- 互联配对链接写 NFC 贴纸（普通权限，不弹运行时授权框）。required=false：
          没有 NFC 的设备照常能装，入口按 NfcAdapter 可用性自行降级。 -->
     <uses-permission android:name="android.permission.NFC"/>
@@ -27,6 +39,7 @@
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"
+        android:requestLegacyExternalStorage="true"
         xmlns:tools="http://schemas.android.com/tools"
         tools:replace="android:label">
         <activity
@@ -163,21 +176,6 @@
                 android:resource="@style/NormalTheme"/>
         </activity-alias>
 
-        <!-- 失活：暂留作回退，本轮不删；intent-filter 已迁到 PopupDictFlutterActivity -->
-        <activity
-            android:name=".PopupDictActivity"
-            android:theme="@style/PopupDictTheme"
-            android:process=":popup"
-            android:taskAffinity="app.fushi.reader.popup"
-            android:excludeFromRecents="true"
-            android:autoRemoveFromRecents="true"
-            android:launchMode="singleTop"
-            android:exported="false"
-            android:hardwareAccelerated="true"
-            android:configChanges="orientation|keyboardHidden|keyboard|navigation|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-            android:windowSoftInputMode="adjustResize">
-        </activity>
-
         <activity
             android:name=".PopupDictFlutterActivity"
             android:theme="@style/PopupDictTheme"
@@ -256,6 +254,22 @@
             android:configChanges="orientation|keyboardHidden|keyboard|navigation|screenSize|smallestScreenSize|screenLayout|density|uiMode"/>
         <!-- 互联下载保活：下载进行期间的 dataSync 前台服务（进度通知），
              防止切到后台后进程被杀、下载随之中断。 -->
+        <!-- 串流第二块屏（双屏掌机下屏 / 外接显示器）上的查词面板：独立进程（与 :popup
+             同理，里面跑完整的查词 AppModel），由主进程 GameStreamCompanionDisplay 用
+             ActivityOptions.setLaunchDisplayId 拉到那块屏上。落到这块屏上的按键 / 手柄
+             事件一律转发给串流页，按钮始终操作游戏。 -->
+        <activity
+            android:name=".GameStreamCompanionActivity"
+            android:process=":companion"
+            android:theme="@style/NormalTheme"
+            android:taskAffinity="app.fushi.reader.companion"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:resizeableActivity="true"
+            android:hardwareAccelerated="true"
+            android:configChanges="orientation|keyboardHidden|keyboard|navigation|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"/>
+        <service android:name=".GameStreamCompanionRelayService"
+            android:exported="false"/>
         <service android:name=".DownloadKeepAliveService"
             android:exported="false"
             android:foregroundServiceType="dataSync"/>
@@ -335,6 +349,124 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Home-screen widgets (Jetpack Glance, Material You colors). -->
+        <receiver android:name=".widgets.ContinueReceiver"
+            android:exported="true"
+            android:label="@string/widget_continue_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_continue_info" />
+        </receiver>
+        <receiver android:name=".widgets.TodayReceiver"
+            android:exported="true"
+            android:label="@string/widget_today_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_today_info" />
+        </receiver>
+        <receiver android:name=".widgets.SrsReceiver"
+            android:exported="true"
+            android:label="@string/widget_srs_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_srs_info" />
+        </receiver>
+        <receiver android:name=".widgets.ShelfReceiver"
+            android:exported="true"
+            android:label="@string/widget_shelf_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_shelf_info" />
+        </receiver>
+        <receiver android:name=".widgets.WeekReceiver"
+            android:exported="true"
+            android:label="@string/widget_week_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_week_info" />
+        </receiver>
+        <receiver android:name=".widgets.ShortcutsReceiver"
+            android:exported="true"
+            android:label="@string/widget_shortcuts_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_shortcuts_info" />
+        </receiver>
+        <receiver android:name=".widgets.GoalsReceiver"
+            android:exported="true"
+            android:label="@string/widget_goals_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_goals_info" />
+        </receiver>
+        <receiver android:name=".widgets.StreakReceiver"
+            android:exported="true"
+            android:label="@string/widget_streak_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_streak_info" />
+        </receiver>
+        <receiver android:name=".widgets.VocabReceiver"
+            android:exported="true"
+            android:label="@string/widget_vocab_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_vocab_info" />
+        </receiver>
+        <receiver android:name=".widgets.NowPlayingReceiver"
+            android:exported="true"
+            android:label="@string/widget_nowplaying_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_nowplaying_info" />
+        </receiver>
+        <receiver android:name=".widgets.DownloadsReceiver"
+            android:exported="true"
+            android:label="@string/widget_downloads_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_downloads_info" />
+        </receiver>
+        <receiver android:name=".widgets.OnDeckReceiver"
+            android:exported="true"
+            android:label="@string/widget_on_deck_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_on_deck_info" />
+        </receiver>
+        <!-- Per-widget settings (theme / privacy / vocabulary source); plain Views, no Flutter. -->
+        <activity android:name=".widgets.WidgetConfigActivity"
+            android:exported="true"
+            android:theme="@style/WidgetConfigTheme"
+            android:label="@string/widget_config_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
     </application>
     <!-- Used for AnkiDroid API.
          BUG-2195：AnkiDroid 的并行版（parallel builds）由上游 gradle 的 customSuffix
@@ -374,6 +506,14 @@
             <action android:name="android.intent.action.VIEW" />
             <category android:name="android.intent.category.BROWSABLE" />
             <data android:scheme="https" />
+        </intent>
+        <!-- 系统语音（TextToSpeech）。Android 11+ 包可见性：不声明 TTS_SERVICE 查询时，
+             第三方 TTS 引擎（讯飞、MultiTTS、商店版谷歌 / 微软……）对本 app 不可见——
+             TextToSpeech 绑不上用户在系统里设的默认引擎、回落到别的引擎或直接初始化失败，
+             引擎列表也列不出来。「别的软件能用系统 TTS，Fushi 不能」就是这条缺失
+             （SystemTtsController；有源码守卫钉住）。 -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
     </queries>
 </manifest>

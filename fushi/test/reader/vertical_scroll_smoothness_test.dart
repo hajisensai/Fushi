@@ -20,14 +20,17 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 /// （逐帧逼近·单调·收敛不超调），JS 接线与「不再裸 scrollBy(behavior:auto)」由
 /// 源码守卫锁定（见 swipe_page_turn_no_animation_test.dart）。
 void main() {
-  double step(double current, double target,
-          {double factor = 0.18, double snap = 0.5}) =>
-      ReaderPaginationScripts.smoothScrollStep(
-        current: current,
-        target: target,
-        factor: factor,
-        snap: snap,
-      );
+  double step(
+    double current,
+    double target, {
+    double factor = 0.18,
+    double snap = 0.5,
+  }) => ReaderPaginationScripts.smoothScrollStep(
+    current: current,
+    target: target,
+    factor: factor,
+    snap: snap,
+  );
 
   group('smoothScrollStep（rAF 缓动步进，正向：横向 scrollLeft 增大）', () {
     test('单帧朝目标推进剩余距离的 factor 比例', () {
@@ -43,8 +46,11 @@ void main() {
       while (pos != target) {
         final double next = step(pos, target);
         // 单调：每帧都更接近目标（剩余距离绝对值严格不增）。
-        expect((target - next).abs(), lessThanOrEqualTo((target - pos).abs()),
-            reason: '缓动必须单调逼近，不得抖动远离目标');
+        expect(
+          (target - next).abs(),
+          lessThanOrEqualTo((target - pos).abs()),
+          reason: '缓动必须单调逼近，不得抖动远离目标',
+        );
         // 不超调：正向逼近不得越过目标。
         expect(next, lessThanOrEqualTo(target), reason: '正向缓动不得越过目标（超调）');
         prev = pos;
@@ -82,8 +88,11 @@ void main() {
 
   group('smoothScrollStep（收尾吸附 / 退化）', () {
     test('剩余距离在 snap 阈值内直接吸附到目标（消除亚像素抖动）', () {
-      expect(step(99.7, 100, snap: 0.5), 100,
-          reason: '不足吸附阈值的尾巴必须一次落到目标，避免无限趋近抖动');
+      expect(
+        step(99.7, 100, snap: 0.5),
+        100,
+        reason: '不足吸附阈值的尾巴必须一次落到目标，避免无限趋近抖动',
+      );
       expect(step(-100.3, -100, snap: 0.5), -100);
     });
 

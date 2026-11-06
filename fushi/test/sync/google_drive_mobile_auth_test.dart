@@ -21,43 +21,55 @@ void main() {
     expect(await GoogleDriveAuth.instance.restoreMobileAuth(), isFalse);
   });
 
-  test(
-      'source guard: mobile session is rehydrated via signInSilently '
+  test('source guard: mobile session is rehydrated via signInSilently '
       '(BUG-047)', () {
     final auth = File('lib/src/sync/google_drive_auth.dart').readAsStringSync();
 
     // The explicit rehydration entry point must exist and use signInSilently().
-    expect(auth.contains('Future<bool> restoreMobileAuth()'), isTrue,
-        reason: 'mobile restore must rehydrate the saved google_sign_in '
-            'session, not return false (BUG-047).');
+    expect(
+      auth.contains('Future<bool> restoreMobileAuth()'),
+      isTrue,
+      reason:
+          'mobile restore must rehydrate the saved google_sign_in '
+          'session, not return false (BUG-047).',
+    );
     expect(auth.contains('signInSilently()'), isTrue);
 
     // Auth state + email must be driven off the rehydrated account, not the
     // unreliable isSignedIn()/lazy lookup that left "已登录" with no name.
     expect(auth.contains('GoogleSignInAccount? _mobileUser'), isTrue);
     expect(auth.contains('_mobileUser?.email'), isTrue);
-    expect(auth.contains('_signIn.isSignedIn()'), isFalse,
-        reason: 'isAuthenticated must not gate on the unreliable isSignedIn() '
-            '(BUG-047).');
+    expect(
+      auth.contains('_signIn.isSignedIn()'),
+      isFalse,
+      reason:
+          'isAuthenticated must not gate on the unreliable isSignedIn() '
+          '(BUG-047).',
+    );
   });
 
-  test(
-      'source guard: backend restoreAuth rehydrates on mobile, not no-op '
+  test('source guard: backend restoreAuth rehydrates on mobile, not no-op '
       '(BUG-047)', () {
-    final backend =
-        File('lib/src/sync/google_drive_sync_backend.dart').readAsStringSync();
+    final backend = File(
+      'lib/src/sync/google_drive_sync_backend.dart',
+    ).readAsStringSync();
 
-    expect(backend.contains('return _auth.restoreMobileAuth();'), isTrue,
-        reason: 'mobile restoreAuth must rehydrate the session (BUG-047).');
-    expect(backend.contains('if (GoogleDriveAuth.useMobileAuth) return false;'),
-        isFalse,
-        reason: 'the old no-op mobile restore must stay gone (BUG-047).');
+    expect(
+      backend.contains('return _auth.restoreMobileAuth();'),
+      isTrue,
+      reason: 'mobile restoreAuth must rehydrate the session (BUG-047).',
+    );
+    expect(
+      backend.contains('if (GoogleDriveAuth.useMobileAuth) return false;'),
+      isFalse,
+      reason: 'the old no-op mobile restore must stay gone (BUG-047).',
+    );
   });
 
-  test('source guard: compare dialog restores auth before gating (BUG-047)',
-      () {
-    final dialog =
-        File('lib/src/sync/sync_compare_dialog.dart').readAsStringSync();
+  test('source guard: compare dialog restores auth before gating (BUG-047)', () {
+    final dialog = File(
+      'lib/src/sync/sync_compare_dialog.dart',
+    ).readAsStringSync();
     // The auth-state read must be preceded by a restore so a cold-start open
     // doesn't wrongly report "set up sync first". (BUG-083 moved this restore +
     // read into a runExclusiveWithSync closure so it can't race an in-flight
@@ -65,16 +77,27 @@ void main() {
     // enabledSyncChannelBackends so an interconnect-only user can reach compare
     // at all. The restore-before-read ordering guarded here is unchanged — only
     // the anchors moved onto `channel.backend`.)
-    final restoreAt =
-        dialog.indexOf('await channel.backend.restoreAuth(repo);');
+    final restoreAt = dialog.indexOf(
+      'await channel.backend.restoreAuth(repo);',
+    );
     final readAt = dialog.indexOf('if (await channel.backend.isAuthenticated)');
     final gateAt = dialog.indexOf('if (backend == null)');
-    expect(restoreAt, greaterThanOrEqualTo(0),
-        reason: 'showSyncCompareDialog must restoreAuth first (BUG-047).');
-    expect(readAt, greaterThan(restoreAt),
-        reason: 'restoreAuth must run before the isAuthenticated read '
-            '(BUG-047).');
-    expect(gateAt, greaterThan(readAt),
-        reason: 'the gate must branch on the restored auth state (BUG-047).');
+    expect(
+      restoreAt,
+      greaterThanOrEqualTo(0),
+      reason: 'showSyncCompareDialog must restoreAuth first (BUG-047).',
+    );
+    expect(
+      readAt,
+      greaterThan(restoreAt),
+      reason:
+          'restoreAuth must run before the isAuthenticated read '
+          '(BUG-047).',
+    );
+    expect(
+      gateAt,
+      greaterThan(readAt),
+      reason: 'the gate must branch on the restored auth state (BUG-047).',
+    );
   });
 }

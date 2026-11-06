@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// Source-scan guards for the desktop floating-lyric strip. The native window
@@ -8,19 +8,22 @@ import '../pages/reader_fushi_page_source_corpus.dart';
 /// pin the load-bearing wiring that a refactor could silently break.
 void main() {
   group('desktop floating lyric guards', () {
-    test('channel isSupported includes Windows alongside Android', () {
+    test('channel isSupported delegates to the single platform predicate', () {
       final File file = File(
         'lib/src/media/audiobook/floating_lyric_channel.dart',
       );
       final String src = file.readAsStringSync();
-      // The strip is the Windows counterpart of the Android overlay, so both
-      // platforms must pass the gate; macOS/Linux must stay excluded.
+      // 平台判据只写一处（floatingLyricBackendAvailableOn，行为在
+      // floating_lyric_channel_test 里按 OS 取值逐个钉）；isSupported 不得再自己
+      // 拼 Platform.isXxx，否则入口与 channel 会各说各的。
       expect(
-        src.contains('Platform.isAndroid || Platform.isWindows'),
+        RegExp(
+          r'platformOverride \?\?\s*floatingLyricBackendAvailableOn\(\s*'
+          r'Platform\.operatingSystem',
+        ).hasMatch(src),
         isTrue,
-        reason: 'isSupported must allow Android and Windows.',
+        reason: 'isSupported must delegate to floatingLyricBackendAvailableOn.',
       );
-      expect(src.contains('Platform.isMacOS'), isFalse);
       expect(src.contains('Platform.isLinux'), isFalse);
     });
 
@@ -37,9 +40,11 @@ void main() {
         isTrue,
         reason: 'Reader must install its lookup handler into the session.',
       );
-      expect(session.contains('onLookupText: _onFloatingLyricLookup'), isTrue,
-          reason:
-              'Session wires the strip lookup tap to the installed handler.');
+      expect(
+        session.contains('onLookupText: _onFloatingLyricLookup'),
+        isTrue,
+        reason: 'Session wires the strip lookup tap to the installed handler.',
+      );
       // 签名带 wordRect：native 回传被点字的屏幕矩形，查词卡据此锚定到那个词而不是
       // 鼠标位置。丢了这个参数卡片会退回跟着光标飘。
       //
@@ -52,7 +57,8 @@ void main() {
           r'Rect\? wordRect,?\s*\)',
         ).hasMatch(reader),
         isTrue,
-        reason: 'Lookup handler must carry the tapped word rect so the card '
+        reason:
+            'Lookup handler must carry the tapped word rect so the card '
             'anchors to the word instead of the mouse.',
       );
       // The lookup must reuse the existing segmenter + popup path.
@@ -60,8 +66,7 @@ void main() {
       expect(reader.contains('searchDictionaryResult('), isTrue);
     });
 
-    test('desktop failure shows the generic hint, not a false permission hint',
-        () {
+    test('desktop failure shows the generic hint, not a false permission hint', () {
       // TODO-1227: the failure-hint selection moved out of the reader page into
       // the shared pure helper floating_lyric_hint.dart (floatingLyricFailureHint).
       // Assert the branching lives there: Android failure = overlay permission,

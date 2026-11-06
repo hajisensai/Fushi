@@ -45,6 +45,7 @@ class FeedbackDraft {
     this.contact = '',
     this.includeLogs = true,
     this.includeDeviceInfo = true,
+    this.includeDebugLog = true,
     this.linkAccount = true,
     this.screenshots = const <Uint8List>[],
     this.video,
@@ -58,6 +59,10 @@ class FeedbackDraft {
   final String contact;
   final bool includeLogs;
   final bool includeDeviceInfo;
+
+  /// [includeLogs] 时是否连调试日志一起带（仍要用户开着「调试日志」才有内容）。手动反馈
+  /// 默认带；闪退自动报告不带（[buildCrashReportDraft]），只发错误日志与退出摘要。
+  final bool includeDebugLog;
 
   /// 已登录排行榜账户时是否关联账户提交（开发者能看到昵称）。
   final bool linkAccount;
@@ -186,7 +191,7 @@ class FeedbackService extends ChangeNotifier {
     required LeaderboardClient Function() client,
     Future<Map<String, Object?>> Function()? meta,
     Future<InstallAttestation?> Function()? installId,
-    String Function()? logText,
+    String Function({required bool includeDebugLog})? logText,
     Uint8List Function(String log)? logEncoder,
     FeedbackVideoPreparer? prepareVideo,
     this.onSubmitted,
@@ -220,7 +225,7 @@ class FeedbackService extends ChangeNotifier {
     }
   }
 
-  final String Function() _logText;
+  final String Function({required bool includeDebugLog}) _logText;
   final Uint8List Function(String log) _logEncoder;
   final FeedbackVideoPreparer _prepareVideo;
 
@@ -619,7 +624,10 @@ class FeedbackService extends ChangeNotifier {
       onStage?.call(FeedbackSubmitStage.logs);
       Uint8List? gz;
       try {
-        final Uint8List encoded = await compute(_logEncoder, _logText());
+        final Uint8List encoded = await compute(
+          _logEncoder,
+          _logText(includeDebugLog: draft.includeDebugLog),
+        );
         gz = encoded;
         await client.uploadFeedbackAttachment(
           receipt.id,
@@ -683,8 +691,21 @@ class FeedbackService extends ChangeNotifier {
   /// 和同一个待传目录（「重试上传」与「追加截图」两个按钮可以同时按），排成一队依次跑。
   final Map<String, Future<void>> _attachChains = <String, Future<void>>{};
 
+  /// 反馈 id → 链上排着 / 正在跑的附件操作个数（见 [attachInFlight]）。
+  final Map<String, int> _attachBusy = <String, int>{};
+
+  /// 这条反馈有附件操作排着或正在跑（[addScreenshots] / [retryPending] / [addVideo] 的上传段）。
+  ///
+  /// [pendingSlots] 同时装着「正在传」与「上次传失败」两种槽位（追加截图是先落盘进待传、
+  /// 再上传）：只有本值为 false 时，待传槽位才是真的「没传上去」。界面拿它区分「正在上传」
+  /// 与「上传失败，重试」——不区分时，追加截图上传的那一两秒里就显示「没上传成功 + 重试」，
+  /// 反馈人以为第一下必定失败（#aiRZmYl5zS）。
+  bool attachInFlight(String id) => (_attachBusy[id] ?? 0) > 0;
+
   /// 把 [task] 接到反馈 [id] 的附件操作链末尾；前一个失败不影响后一个。
   Future<T> _serialAttach<T>(String id, Future<T> Function() task) {
+    _attachBusy[id] = (_attachBusy[id] ?? 0) + 1;
+    notifyListeners();
     final Future<void> previous = _attachChains[id] ?? Future<void>.value();
     final Future<T> result = previous.then<T>((_) => task());
     // 链尾只管「轮到下一个」：结果与异常照常交给调用方 [result]。
@@ -696,6 +717,13 @@ class FeedbackService extends ChangeNotifier {
     unawaited(
       tail.then<void>((_) {
         if (identical(_attachChains[id], tail)) _attachChains.remove(id);
+        final int left = (_attachBusy[id] ?? 1) - 1;
+        if (left > 0) {
+          _attachBusy[id] = left;
+        } else {
+          _attachBusy.remove(id);
+        }
+        notifyListeners();
       }),
     );
     return result;
@@ -1034,6 +1062,46 @@ class FeedbackService extends ChangeNotifier {
         if (t.id != id) t,
     ];
     await _persist();
+  }
+
+  /// 把另一处数据根（[spoolRoot]，结构同 `<数据根>`）里提交的反馈并进本机清单：回执
+  /// 插到最前（同 id 以 spool 里的为准——那是刚提交的），没传上去的截图 / 日志挪进本机
+  /// 待传区，然后删掉 [spoolRoot]。返回并入的条数。
+  ///
+  /// 用于启动即闪退时的闪退报告（crash_report.dart）：那时数据库还没打开、数据根未解析，
+  /// 提交先落在错误日志目录下，初始化完成后由这里接手，反馈中心照常看得到进度、能重试。
+  Future<int> adoptSpool(Directory spoolRoot) async {
+    if (!spoolRoot.existsSync()) return 0;
+    await load();
+    final List<FeedbackTicket> adopted = await FeedbackTicketStore(
+      spoolRoot,
+    ).read();
+    if (adopted.isNotEmpty) {
+      final Set<String> ids = <String>{
+        for (final FeedbackTicket t in adopted) t.id,
+      };
+      _tickets = <FeedbackTicket>[
+        ...adopted,
+        for (final FeedbackTicket t in _tickets)
+          if (!ids.contains(t.id)) t,
+      ];
+      _accountTickets = _withoutLocal(_accountTickets);
+      await _persist();
+    }
+    final FeedbackPendingStore from = FeedbackPendingStore(spoolRoot);
+    final FeedbackPendingStore to = await _pendingFor();
+    final Map<String, Set<String>> pending = await from.scan();
+    for (final MapEntry<String, Set<String>> e in pending.entries) {
+      for (final String slot in e.value) {
+        final Uint8List? bytes = await from.read(e.key, slot);
+        if (bytes == null) continue;
+        await to.put(e.key, slot, bytes);
+        (_pending[e.key] ??= <String>{}).add(slot);
+      }
+    }
+    await spoolRoot.delete(recursive: true);
+    notifyListeners();
+    return adopted.length;
   }
 }
 

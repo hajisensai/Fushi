@@ -162,7 +162,7 @@ void main() {
     final InterconnectSyncBackend backend = await buildBackend();
     final File dest = File('${work.path}/sample.mp4');
     partOf(dest).writeAsBytesSync(source.sublist(0, 1000));
-    etagOf(dest).writeAsStringSync(videoFileEtag(lib.videoFile));
+    etagOf(dest).writeAsStringSync(await videoFileEtag(lib.videoFile));
 
     final List<int> received = <int>[];
     final List<int?> totals = <int?>[];
@@ -266,7 +266,7 @@ void main() {
     final int partLength = partOf(dest).lengthSync();
     expect(partLength, greaterThan(0));
     expect(partLength, lessThan(source.length));
-    expect(etagOf(dest).readAsStringSync(), videoFileEtag(lib.videoFile));
+    expect(etagOf(dest).readAsStringSync(), await videoFileEtag(lib.videoFile));
 
     final List<int> received = <int>[];
     await backend.downloadRemoteVideo(
@@ -328,7 +328,7 @@ void main() {
       final Uint8List source = _pattern(4096);
       await startServer(source);
       final String url = await streamUrl();
-      final String etag = videoFileEtag(lib.videoFile);
+      final String etag = await videoFileEtag(lib.videoFile);
 
       final HttpClientResponse full = await get(url);
       expect(full.statusCode, 200);

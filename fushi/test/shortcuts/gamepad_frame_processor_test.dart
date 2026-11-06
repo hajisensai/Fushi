@@ -22,8 +22,14 @@ void main() {
   });
 
   // Convenience: a centred-stick, no-trigger frame with the given button mask.
-  void frame(int mask,
-      {int nowMs = 0, int lx = 0, int ly = 0, int lt = 0, int rt = 0}) {
+  void frame(
+    int mask, {
+    int nowMs = 0,
+    int lx = 0,
+    int ly = 0,
+    int lt = 0,
+    int rt = 0,
+  }) {
     processor.processFrame(
       buttons: mask,
       leftTrigger: lt,
@@ -98,13 +104,13 @@ void main() {
     late List<GamepadButton> longPresses;
     late GamepadFrameProcessor lp;
     void lpFrame(int mask, {required int nowMs}) => lp.processFrame(
-          buttons: mask,
-          leftTrigger: 0,
-          rightTrigger: 0,
-          stickX: 0,
-          stickY: 0,
-          nowMs: nowMs,
-        );
+      buttons: mask,
+      leftTrigger: 0,
+      rightTrigger: 0,
+      stickX: 0,
+      stickY: 0,
+      nowMs: nowMs,
+    );
 
     setUp(() {
       buttons = <GamepadButton>[];
@@ -123,17 +129,19 @@ void main() {
       expect(longPresses, isEmpty);
     });
 
-    test('holding A past the threshold fires one long-press and NO activate',
-        () {
-      lpFrame(GamepadFrameBits.a, nowMs: 0);
-      lpFrame(GamepadFrameBits.a, nowMs: 300); // < 500ms, still nothing
-      expect(longPresses, isEmpty);
-      lpFrame(GamepadFrameBits.a, nowMs: 520); // ≥ 500ms → long-press
-      lpFrame(GamepadFrameBits.a, nowMs: 700); // still held → no repeat
-      lpFrame(0, nowMs: 800); // released → activate suppressed
-      expect(longPresses, <GamepadButton>[GamepadButton.a]);
-      expect(buttons, isEmpty);
-    });
+    test(
+      'holding A past the threshold fires one long-press and NO activate',
+      () {
+        lpFrame(GamepadFrameBits.a, nowMs: 0);
+        lpFrame(GamepadFrameBits.a, nowMs: 300); // < 500ms, still nothing
+        expect(longPresses, isEmpty);
+        lpFrame(GamepadFrameBits.a, nowMs: 520); // ≥ 500ms → long-press
+        lpFrame(GamepadFrameBits.a, nowMs: 700); // still held → no repeat
+        lpFrame(0, nowMs: 800); // released → activate suppressed
+        expect(longPresses, <GamepadButton>[GamepadButton.a]);
+        expect(buttons, isEmpty);
+      },
+    );
 
     test('only A is deferred; B still fires on the press edge', () {
       lpFrame(GamepadFrameBits.b, nowMs: 0);
@@ -142,8 +150,9 @@ void main() {
   });
 
   group('GamepadLongPressActions native key path', () {
-    testWidgets('holding gameButtonA invokes long press without activate',
-        (WidgetTester tester) async {
+    testWidgets('holding gameButtonA invokes long press without activate', (
+      WidgetTester tester,
+    ) async {
       int activations = 0;
       int longPresses = 0;
       final FocusNode focusNode = FocusNode();
@@ -200,8 +209,10 @@ void main() {
       frame(GamepadFrameBits.dpadDown, nowMs: 0); // initial fire
       frame(GamepadFrameBits.dpadDown, nowMs: 100); // < repeatDelay → no repeat
       frame(GamepadFrameBits.dpadDown, nowMs: 500); // ≥ delay → repeat
-      frame(GamepadFrameBits.dpadDown,
-          nowMs: 560); // < interval since last → no
+      frame(
+        GamepadFrameBits.dpadDown,
+        nowMs: 560,
+      ); // < interval since last → no
       frame(GamepadFrameBits.dpadDown, nowMs: 620); // ≥ interval → repeat
       expect(buttons, <GamepadButton>[
         GamepadButton.dpadDown,
@@ -210,16 +221,18 @@ void main() {
       ]);
     });
 
-    test('releasing the D-pad stops the repeat and re-press fires immediately',
-        () {
-      frame(GamepadFrameBits.dpadLeft, nowMs: 0);
-      frame(0, nowMs: 500); // released — no repeat
-      frame(GamepadFrameBits.dpadLeft, nowMs: 600); // fresh press
-      expect(buttons, <GamepadButton>[
-        GamepadButton.dpadLeft,
-        GamepadButton.dpadLeft,
-      ]);
-    });
+    test(
+      'releasing the D-pad stops the repeat and re-press fires immediately',
+      () {
+        frame(GamepadFrameBits.dpadLeft, nowMs: 0);
+        frame(0, nowMs: 500); // released — no repeat
+        frame(GamepadFrameBits.dpadLeft, nowMs: 600); // fresh press
+        expect(buttons, <GamepadButton>[
+          GamepadButton.dpadLeft,
+          GamepadButton.dpadLeft,
+        ]);
+      },
+    );
 
     test('changing D-pad direction fires the new direction immediately', () {
       frame(GamepadFrameBits.dpadUp, nowMs: 0);
@@ -236,16 +249,14 @@ void main() {
   // channel. It NEVER emits dpad* buttons (so it can never reach the registry /
   // lookup), but keeps the SAME dead-zone hysteresis + held-direction auto-repeat
   // (TODO-699 feel preserved).
-  group('left stick → focus-only onStickMove channel (decoupled from D-pad)',
-      () {
+  group('left stick → focus-only onStickMove channel (decoupled from D-pad)', () {
     test('below the enter threshold the stick is ignored', () {
       frame(0, lx: 15000, nowMs: 0); // < stickEnter (18000)
       expect(stickMoves, isEmpty);
       expect(buttons, isEmpty);
     });
 
-    test('past the enter threshold emits the matching direction (up is +Y)',
-        () {
+    test('past the enter threshold emits the matching direction (up is +Y)', () {
       frame(0, ly: 30000, nowMs: 0);
       expect(stickMoves, <TraversalDirection>[TraversalDirection.up]);
       // CRITICAL: the stick must NOT emit a dpad* button — that channel is the
@@ -253,57 +264,66 @@ void main() {
       expect(buttons, isEmpty);
     });
 
-    test('hysteresis: stays active between exit and enter, releases below exit',
-        () {
-      frame(0, lx: 30000, nowMs: 0); // enter → right
-      frame(0, lx: 13000, nowMs: 500); // between exit/enter, ≥ delay → repeat
-      frame(0, lx: 5000, nowMs: 1000); // below exit → released, no fire
-      expect(stickMoves, <TraversalDirection>[
-        TraversalDirection.right,
-        TraversalDirection.right,
-      ]);
-      expect(buttons, isEmpty);
-    });
+    test(
+      'hysteresis: stays active between exit and enter, releases below exit',
+      () {
+        frame(0, lx: 30000, nowMs: 0); // enter → right
+        frame(0, lx: 13000, nowMs: 500); // between exit/enter, ≥ delay → repeat
+        frame(0, lx: 5000, nowMs: 1000); // below exit → released, no fire
+        expect(stickMoves, <TraversalDirection>[
+          TraversalDirection.right,
+          TraversalDirection.right,
+        ]);
+        expect(buttons, isEmpty);
+      },
+    );
 
-    test('held stick auto-repeats on its own clock after the initial delay',
-        () {
-      frame(0, ly: 30000, nowMs: 0); // initial fire (up)
-      frame(0, ly: 30000, nowMs: 100); // < repeatDelay → no repeat
-      frame(0, ly: 30000, nowMs: 500); // ≥ delay → repeat
-      frame(0, ly: 30000, nowMs: 560); // < interval → no
-      frame(0, ly: 30000, nowMs: 620); // ≥ interval → repeat
-      expect(stickMoves, <TraversalDirection>[
-        TraversalDirection.up,
-        TraversalDirection.up,
-        TraversalDirection.up,
-      ]);
-      expect(buttons, isEmpty);
-    });
+    test(
+      'held stick auto-repeats on its own clock after the initial delay',
+      () {
+        frame(0, ly: 30000, nowMs: 0); // initial fire (up)
+        frame(0, ly: 30000, nowMs: 100); // < repeatDelay → no repeat
+        frame(0, ly: 30000, nowMs: 500); // ≥ delay → repeat
+        frame(0, ly: 30000, nowMs: 560); // < interval → no
+        frame(0, ly: 30000, nowMs: 620); // ≥ interval → repeat
+        expect(stickMoves, <TraversalDirection>[
+          TraversalDirection.up,
+          TraversalDirection.up,
+          TraversalDirection.up,
+        ]);
+        expect(buttons, isEmpty);
+      },
+    );
 
-    test('D-pad and stick are independent channels (both fire, on their own)',
-        () {
-      // D-pad left held + stick pushed right: the d-pad emits its button, the
-      // stick emits its (opposite) direction — they no longer collapse into one.
-      frame(GamepadFrameBits.dpadLeft, lx: 30000, nowMs: 0);
-      expect(buttons, <GamepadButton>[GamepadButton.dpadLeft]);
-      expect(stickMoves, <TraversalDirection>[TraversalDirection.right]);
-    });
+    test(
+      'D-pad and stick are independent channels (both fire, on their own)',
+      () {
+        // D-pad left held + stick pushed right: the d-pad emits its button, the
+        // stick emits its (opposite) direction — they no longer collapse into one.
+        frame(GamepadFrameBits.dpadLeft, lx: 30000, nowMs: 0);
+        expect(buttons, <GamepadButton>[GamepadButton.dpadLeft]);
+        expect(stickMoves, <TraversalDirection>[TraversalDirection.right]);
+      },
+    );
 
-    test('a null onStickMove makes the stick a no-op (not a dpad fallback)',
-        () {
-      final List<GamepadButton> b2 = <GamepadButton>[];
-      final GamepadFrameProcessor noStick =
-          GamepadFrameProcessor(onButton: b2.add); // onStickMove omitted
-      noStick.processFrame(
-        buttons: 0,
-        leftTrigger: 0,
-        rightTrigger: 0,
-        stickX: 0,
-        stickY: 30000,
-        nowMs: 0,
-      );
-      expect(b2, isEmpty);
-    });
+    test(
+      'a null onStickMove makes the stick a no-op (not a dpad fallback)',
+      () {
+        final List<GamepadButton> b2 = <GamepadButton>[];
+        final GamepadFrameProcessor noStick = GamepadFrameProcessor(
+          onButton: b2.add,
+        ); // onStickMove omitted
+        noStick.processFrame(
+          buttons: 0,
+          leftTrigger: 0,
+          rightTrigger: 0,
+          stickX: 0,
+          stickY: 30000,
+          nowMs: 0,
+        );
+        expect(b2, isEmpty);
+      },
+    );
   });
 
   group('reset', () {
@@ -330,13 +350,13 @@ void main() {
     });
 
     void f(int mask, {int nowMs = 0, int lt = 0}) => rp.processFrame(
-          buttons: mask,
-          leftTrigger: lt,
-          rightTrigger: 0,
-          stickX: 0,
-          stickY: 0,
-          nowMs: nowMs,
-        );
+      buttons: mask,
+      leftTrigger: lt,
+      rightTrigger: 0,
+      stickX: 0,
+      stickY: 0,
+      nowMs: nowMs,
+    );
 
     test('a held face button reports one press and one release', () {
       f(GamepadFrameBits.x, nowMs: 0);
@@ -360,12 +380,14 @@ void main() {
       expect(events, <String>['down:dpadUp', 'down:dpadUp', 'up:dpadUp']);
     });
 
-    test('switching D-pad direction releases the old one before the new press',
-        () {
-      f(GamepadFrameBits.dpadUp, nowMs: 0);
-      f(GamepadFrameBits.dpadDown, nowMs: 60);
-      expect(events, <String>['down:dpadUp', 'up:dpadUp', 'down:dpadDown']);
-    });
+    test(
+      'switching D-pad direction releases the old one before the new press',
+      () {
+        f(GamepadFrameBits.dpadUp, nowMs: 0);
+        f(GamepadFrameBits.dpadDown, nowMs: 60);
+        expect(events, <String>['down:dpadUp', 'up:dpadUp', 'down:dpadDown']);
+      },
+    );
 
     test('reset releases whatever was held (no stuck hold on disconnect)', () {
       f(GamepadFrameBits.x | GamepadFrameBits.dpadLeft, nowMs: 0);

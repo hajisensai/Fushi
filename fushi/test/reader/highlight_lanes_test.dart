@@ -110,7 +110,9 @@ void main() {
         '<script>window.flutter_inappwebview = { callHandler: function() '
         '{ return Promise.resolve(null); } };'
         'window.__fushiApplyReaderMargins = function() {};'
-        '${rangeMode ? 'window.__fushiSentenceAudioRangeMode = true;' : ''}</script>'
+        // 非 Range 页专测包裹路径：VN 在支持 CSS Highlight 的引擎上默认走 Range（BUG-3741），
+        // 包裹只剩旧 WebView 兜底，这里显式关掉 Range 才覆盖得到。
+        'window.__fushiSentenceAudioRangeMode = $rangeMode;</script>'
         '</head><body><p>$p1</p>'
         '${backdrop ? '<p class="bd">${p2.replaceFirst('窓の外', '<span class="mk">窓の外</span>')}</p>' : '<p>$p2</p>'}'
         '<p>$p3</p>'
@@ -230,7 +232,7 @@ void main() {
   });
 
   test(
-    'reader CSS colours every lane group and e-ink hides the layer',
+    'reader CSS colours every lane group and e-ink turns lanes into lines',
     () async {
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),
@@ -259,10 +261,19 @@ void main() {
         settings: settings,
         einkMode: true,
       );
-      final int hide = eink.lastIndexOf('fushi-hl-lanes {');
-      expect(hide, greaterThan(0));
+      // BUG-3886：墨水屏不隐藏窄条层——四类高亮的线由窄条层画成「下划线」笔触 SVG
+      // （用户 2026-11-04）；底色窄条一律不画。
+      final int layer = eink.lastIndexOf('fushi-hl-lanes {');
       expect(
-        eink.substring(hide, eink.indexOf('}', hide)),
+        eink.substring(layer, eink.indexOf('}', layer)),
+        isNot(contains('display: none')),
+      );
+      expect(eink, contains('--fushi-mark-audio-style: underline;'));
+      expect(eink, isNot(contains('::after {\n  content: \'\' !important;')));
+      final int lane = eink.lastIndexOf('fushi-hl-lane {');
+      expect(lane, greaterThan(layer));
+      expect(
+        eink.substring(lane, eink.indexOf('}', lane)),
         contains('display: none'),
       );
     },

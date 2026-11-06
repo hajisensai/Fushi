@@ -42,16 +42,26 @@ void main() {
     test('存在 _pokeControlsVisible 助手，唯一出口是 _restartHideTimerSignal.poke()', () {
       // methodBody 找不到签名会直接 fail——「必须有唤醒控制条的助手」由它兜住。
       final String body = methodBody(src, 'void _pokeControlsVisible()');
-      expect(containsCodeLine(body, '_restartHideTimerSignal.poke();'), isTrue,
-          reason: 'poke 必须发 _restartHideTimerSignal：桌面 fork 的 wakeSignal 收到即调'
-              '自己的 onHover() 重置隐藏计时（BUG-176 ② 的原始诉求），页面不再合成指针'
-              '事件去命中 MouseRegion（BUG-2453）');
+      expect(
+        containsCodeLine(body, '_restartHideTimerSignal.poke();'),
+        isTrue,
+        reason:
+            'poke 必须发 _restartHideTimerSignal：桌面 fork 的 wakeSignal 收到即调'
+            '自己的 onHover() 重置隐藏计时（BUG-176 ② 的原始诉求），页面不再合成指针'
+            '事件去命中 MouseRegion（BUG-2453）',
+      );
       // 反向：旧的「派指针事件命中 MouseRegion」路径不得以任何形式回到 poke 体内——
       // 那正是幽灵设备的来源。
-      expect(containsCodeLine(body, 'handlePointerEvent('), isFalse,
-          reason: 'poke 不得再派发指针事件（BUG-2453：合成设备永不注销）');
-      expect(containsCodeLine(body, 'PointerHoverEvent('), isFalse,
-          reason: 'poke 不得再构造合成 hover（BUG-2453）');
+      expect(
+        containsCodeLine(body, 'handlePointerEvent('),
+        isFalse,
+        reason: 'poke 不得再派发指针事件（BUG-2453：合成设备永不注销）',
+      );
+      expect(
+        containsCodeLine(body, 'PointerHoverEvent('),
+        isFalse,
+        reason: 'poke 不得再构造合成 hover（BUG-2453）',
+      );
     });
 
     test('poke 两端都发信号；桌面只多续命侧边锁按钮', () {
@@ -61,21 +71,34 @@ void main() {
       // （合成 hover 时代它经页面根 Listener 顺带续命锁按钮，改信号后显式补上），而
       // 信号本身**必须在平台分支之外**无条件发出——否则任一端都会回到「控制条 2 秒消失」。
       final String body = methodBody(src, 'void _pokeControlsVisible()');
-      final int branchAt =
-          maskComments(body).indexOf('if (_isDesktopVideoControls)');
-      expect(branchAt, greaterThanOrEqualTo(0),
-          reason: 'poke 应保留桌面分支续命侧边锁按钮（键盘 seek 时锁按钮跟着露出）');
-      final String desktopBranch =
-          balancedBlockFrom(body, branchAt, what: 'poke 的桌面分支');
-      expect(containsCodeLine(desktopBranch, '_pokeLockButton();'), isTrue,
-          reason: '桌面分支必须续命侧边锁按钮');
+      final int branchAt = maskComments(
+        body,
+      ).indexOf('if (_isDesktopVideoControls)');
+      expect(
+        branchAt,
+        greaterThanOrEqualTo(0),
+        reason: 'poke 应保留桌面分支续命侧边锁按钮（键盘 seek 时锁按钮跟着露出）',
+      );
+      final String desktopBranch = balancedBlockFrom(
+        body,
+        branchAt,
+        what: 'poke 的桌面分支',
+      );
+      expect(
+        containsCodeLine(desktopBranch, '_pokeLockButton();'),
+        isTrue,
+        reason: '桌面分支必须续命侧边锁按钮',
+      );
       expect(
         containsCodeLine(desktopBranch, '_restartHideTimerSignal.poke();'),
         isFalse,
         reason: '信号不得被桌面分支包住——移动端也靠它续命隐藏 Timer（TODO-1059）',
       );
-      expect(containsCodeLine(body, '_restartHideTimerSignal.poke();'), isTrue,
-          reason: '信号在平台分支之外无条件发出（两端共用，BUG-2453）');
+      expect(
+        containsCodeLine(body, '_restartHideTimerSignal.poke();'),
+        isTrue,
+        reason: '信号在平台分支之外无条件发出（两端共用，BUG-2453）',
+      );
     });
 
     test('键盘 / 手柄六个入口只【续命】控制条，不唤起（BUG-2030）', () {
@@ -97,13 +120,20 @@ void main() {
         final List<String> callbacks = namedArgumentValues(src, entry);
         expect(callbacks, isNotEmpty, reason: '缺快捷键入口 $entry:');
         for (final String callback in callbacks) {
-          expect(containsCodeLine(callback, '_keepControlsAliveIfVisible()'),
-              isTrue,
-              reason: '$entry: 键盘/手柄回调必须走 _keepControlsAliveIfVisible()'
-                  '（控制条隐藏时不得唤起，BUG-2030）；注释里写着这句不算实现');
-          expect(containsCodeLine(callback, '_pokeControlsVisible()'), isFalse,
-              reason: '$entry: 键盘/手柄回调不得直接 poke——那会把隐藏的控制条整个'
-                  '弹出来（BUG-2030）');
+          expect(
+            containsCodeLine(callback, '_keepControlsAliveIfVisible()'),
+            isTrue,
+            reason:
+                '$entry: 键盘/手柄回调必须走 _keepControlsAliveIfVisible()'
+                '（控制条隐藏时不得唤起，BUG-2030）；注释里写着这句不算实现',
+          );
+          expect(
+            containsCodeLine(callback, '_pokeControlsVisible()'),
+            isFalse,
+            reason:
+                '$entry: 键盘/手柄回调不得直接 poke——那会把隐藏的控制条整个'
+                '弹出来（BUG-2030）',
+          );
         }
       }
     });
@@ -114,10 +144,16 @@ void main() {
         'Future<void> _replayPreviousCueAndKeepControls() async {',
       ]) {
         final String body = methodBody(src, signature);
-        expect(containsCodeLine(body, '_keepControlsAliveIfVisible()'), isTrue,
-            reason: '$signature 必须走 keepAlive（BUG-2030）');
-        expect(containsCodeLine(body, '_pokeControlsVisible()'), isFalse,
-            reason: '$signature 不得唤起隐藏的控制条（BUG-2030）');
+        expect(
+          containsCodeLine(body, '_keepControlsAliveIfVisible()'),
+          isTrue,
+          reason: '$signature 必须走 keepAlive（BUG-2030）',
+        );
+        expect(
+          containsCodeLine(body, '_pokeControlsVisible()'),
+          isFalse,
+          reason: '$signature 不得唤起隐藏的控制条（BUG-2030）',
+        );
       }
     });
 
@@ -126,13 +162,17 @@ void main() {
       expect(
         containsCodeLine(body, 'if (!_mediaKitControlsVisible.value) return;'),
         isTrue,
-        reason: '续命原语必须以「不可见就早退」开路——门控只能做在发信号'
+        reason:
+            '续命原语必须以「不可见就早退」开路——门控只能做在发信号'
             '**之前**：桌面 fork 的 wakeSignal 处理就是它自己的 onHover，无条件 '
             '`visible = true`，信号本身分不出续命与唤起（BUG-2030）',
       );
       // 早退之后才是真正的续命动作，否则这方法就成了空壳。
-      expect(containsCodeLine(body, '_pokeControlsVisible();'), isTrue,
-          reason: '已可见时必须真的续命（复用 poke 的信号路径）');
+      expect(
+        containsCodeLine(body, '_pokeControlsVisible();'),
+        isTrue,
+        reason: '已可见时必须真的续命（复用 poke 的信号路径）',
+      );
     });
 
     test('media_kit fork 的桌面 onHover 仍是无条件唤起（BUG-2030 门控前提）', () {
@@ -145,12 +185,16 @@ void main() {
         'src/controls/material_desktop.dart',
       ).readAsStringSync().replaceAll('\r\n', '\n');
       final String body = methodBody(fork, 'void onHover() {');
-      expect(containsCodeLine(body, 'visible = true;'), isTrue,
-          reason: 'fork 的 onHover 应当仍是无条件把控制条翻可见');
+      expect(
+        containsCodeLine(body, 'visible = true;'),
+        isTrue,
+        reason: 'fork 的 onHover 应当仍是无条件把控制条翻可见',
+      );
       expect(
         RegExp(r'if\s*\(\s*!\s*visible\s*\)').hasMatch(maskComments(body)),
         isFalse,
-        reason: 'onHover 里出现了可见性判断——fork 语义变了，请重新评估 '
+        reason:
+            'onHover 里出现了可见性判断——fork 语义变了，请重新评估 '
             '_keepControlsAliveIfVisible 的门控位置（BUG-2030）',
       );
     });
@@ -158,8 +202,9 @@ void main() {
     test('_seekRelative 与底部跳句按钮都唤醒控制条', () {
       // _seekRelative（底部 ±10 共用）内部 poke。
       expect(
-        RegExp(r'Future<void> _seekRelative\(int deltaMs\) async \{\s*_pokeControlsVisible\(\);')
-            .hasMatch(src),
+        RegExp(
+          r'Future<void> _seekRelative\(int deltaMs\) async \{\s*_pokeControlsVisible\(\);',
+        ).hasMatch(src),
         isTrue,
         reason: '_seekRelative 必须 poke（底部 ±10 按钮共用，tap 不触发 media_kit 重置）',
       );
@@ -167,8 +212,9 @@ void main() {
       expect(src.contains('_skipCueAndPokeControls(forward: false)'), isTrue);
       expect(src.contains('_skipCueAndPokeControls(forward: true)'), isTrue);
       expect(
-        RegExp(r'Future<void> _skipCueAndPokeControls\(\{required bool forward\}\) async \{\s*_pokeControlsVisible\(\);')
-            .hasMatch(src),
+        RegExp(
+          r'Future<void> _skipCueAndPokeControls\(\{required bool forward\}\) async \{\s*_pokeControlsVisible\(\);',
+        ).hasMatch(src),
         isTrue,
         reason: '_skipCueAndPokeControls 必须先 poke',
       );
@@ -190,9 +236,13 @@ void main() {
   group('poke 去重抖动脚手架不得回来 (BUG-215/TODO-148 → BUG-2453)', () {
     test('语料里没有 _pokeParity / pokePosition', () {
       for (final String needle in <String>['_pokeParity', 'pokePosition']) {
-        expect(containsIdentifier(src, needle), isFalse,
-            reason: '$needle 是合成 hover 抖动的脚手架，只在派指针事件时有意义；'
-                '它回来 = 合成设备回来（BUG-2453）');
+        expect(
+          containsIdentifier(src, needle),
+          isFalse,
+          reason:
+              '$needle 是合成 hover 抖动的脚手架，只在派指针事件时有意义；'
+              '它回来 = 合成设备回来（BUG-2453）',
+        );
       }
     });
 
@@ -200,10 +250,16 @@ void main() {
       final String body = methodBody(src, 'void _pokeControlsVisible()');
       // BUG-425 的微任务去重旗与 BUG-215 的抖动一样，都是合成派发的附属物；poke 一旦
       // 再按「已排程 / 同坐标」折叠调用，连按就回到「第二次起不续命」。
-      expect(containsCodeLine(body, '_pokeDispatchScheduled'), isFalse,
-          reason: '不得再用去重旗折叠 poke（BUG-425 脚手架，随合成派发一起删除）');
-      expect(containsCodeLine(body, '_restartHideTimerSignal.poke();'), isTrue,
-          reason: '每次 poke 都必须无条件到达信号（BUG-215 原始不变量）');
+      expect(
+        containsCodeLine(body, '_pokeDispatchScheduled'),
+        isFalse,
+        reason: '不得再用去重旗折叠 poke（BUG-425 脚手架，随合成派发一起删除）',
+      );
+      expect(
+        containsCodeLine(body, '_restartHideTimerSignal.poke();'),
+        isTrue,
+        reason: '每次 poke 都必须无条件到达信号（BUG-215 原始不变量）',
+      );
     });
   });
 }

@@ -52,8 +52,11 @@ void main() {
 
     test('原生侧没人接（回调已被销毁中的旧 Activity 清掉）→ false', () async {
       mockPopup((MethodCall call) async => false);
-      expect(await PopupChannel.instance.finishPopup(), isFalse,
-          reason: '这正是 BUG-1757 的现场：窗口不会关，调用方必须解开闭锁');
+      expect(
+        await PopupChannel.instance.finishPopup(),
+        isFalse,
+        reason: '这正是 BUG-1757 的现场：窗口不会关，调用方必须解开闭锁',
+      );
     });
 
     test('原生返回 null（旧协议 / 未实现）→ false，宁可解锁也不锁死', () async {
@@ -76,14 +79,18 @@ void main() {
     test('_close 在关闭未被接受时复位 _isClosing', () {
       final String src = compactCode(File(pagePath).readAsStringSync());
       expect(
-        src.contains(compactCode(
-            'final bool accepted = await PopupChannel.instance.finishPopup();')),
+        src.contains(
+          compactCode(
+            'final bool accepted = await PopupChannel.instance.finishPopup();',
+          ),
+        ),
         isTrue,
         reason: '必须拿到原生侧的接受结果，而不是 fire-and-forget',
       );
       expect(
         src.contains(
-            compactCode('if (!accepted && mounted) { _isClosing = false; }')),
+          compactCode('if (!accepted && mounted) { _isClosing = false; }'),
+        ),
         isTrue,
         reason: '没人接下关闭就必须解开 _isClosing，否则所有关闭入口永久静默早退',
       );
@@ -105,14 +112,16 @@ void main() {
       final String src = read('PopupEngineHolder.kt');
       expect(
         src.contains(
-            compactCode('fun setOnFinish(owner: Any, callback: () -> Unit)')),
+          compactCode('fun setOnFinish(owner: Any, callback: () -> Unit)'),
+        ),
         isTrue,
         reason: '注册必须带 owner，否则无从判断该不该注销',
       );
       expect(
         src.contains(compactCode('if (finishHandler?.owner !== owner) return')),
         isTrue,
-        reason: 'BUG-1757 的根因：旧 Activity 的 onDestroy 晚于新 Activity 的 '
+        reason:
+            'BUG-1757 的根因：旧 Activity 的 onDestroy 晚于新 Activity 的 '
             'onCreate，注销必须先确认当前回调确实属于自己',
       );
       // 「无条件清空」入口存在多久，这个竞态就存在多久 —— 不允许它回来。
@@ -126,21 +135,28 @@ void main() {
     test('finishPopup 把「有没有人接」回给 Dart', () {
       final String src = read('PopupEngineHolder.kt');
       expect(
-          src.contains(compactCode('result.success(handler != null)')), isTrue,
-          reason: 'Dart 侧的解锁判据来自这里；回 null 会让安全网失效');
+        src.contains(compactCode('result.success(handler != null)')),
+        isTrue,
+        reason: 'Dart 侧的解锁判据来自这里；回 null 会让安全网失效',
+      );
     });
 
     test('PopupDictFlutterActivity 用 clearOnFinish(this) 注销自己那次注册', () {
       final String src = read('PopupDictFlutterActivity.kt');
       expect(
-        src.contains(compactCode(
-            'PopupEngineHolder.setOnFinish(this) { runOnUiThread { finish() } }')),
+        src.contains(
+          compactCode(
+            'PopupEngineHolder.setOnFinish(this) { runOnUiThread { finish() } }',
+          ),
+        ),
         isTrue,
         reason: '注册时把自己作为 owner 交出去',
       );
-      expect(src.contains(compactCode('PopupEngineHolder.clearOnFinish(this)')),
-          isTrue,
-          reason: 'onDestroy 只注销自己那次注册');
+      expect(
+        src.contains(compactCode('PopupEngineHolder.clearOnFinish(this)')),
+        isTrue,
+        reason: 'onDestroy 只注销自己那次注册',
+      );
     });
   });
 }

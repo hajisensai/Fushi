@@ -35,8 +35,7 @@ class _FakeAnkiRepository extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
@@ -74,13 +73,14 @@ void main() {
   });
 
   group('M1: per-swatch pinned selection', () {
-    test(
-        'setAppThemeKey(custom-theme:id) pins activeCustomThemeEntry to that '
+    test('setAppThemeKey(custom-theme:id) pins activeCustomThemeEntry to that '
         'id regardless of selectedCustomThemeId', () async {
       await n.upsertCustomTheme(
-          const CustomThemeEntry(id: 'a', name: 'A', seed: 0xFF111111));
+        const CustomThemeEntry(id: 'a', name: 'A', seed: 0xFF111111),
+      );
       await n.upsertCustomTheme(
-          const CustomThemeEntry(id: 'b', name: 'B', seed: 0xFF222222));
+        const CustomThemeEntry(id: 'b', name: 'B', seed: 0xFF222222),
+      );
       expect(n.selectedCustomThemeId, 'b');
 
       await n.setAppThemeKey('custom-theme:a');
@@ -93,9 +93,11 @@ void main() {
 
     test('bare custom-theme key falls back to selected entry', () async {
       await n.upsertCustomTheme(
-          const CustomThemeEntry(id: 'a', name: 'A', seed: 0xFF111111));
+        const CustomThemeEntry(id: 'a', name: 'A', seed: 0xFF111111),
+      );
       await n.upsertCustomTheme(
-          const CustomThemeEntry(id: 'b', name: 'B', seed: 0xFF222222));
+        const CustomThemeEntry(id: 'b', name: 'B', seed: 0xFF222222),
+      );
       await n.selectCustomTheme('a');
       await n.setAppThemeKey('custom-theme');
       expect(n.activeCustomThemeEntry!.id, 'a');
@@ -103,9 +105,11 @@ void main() {
 
     test('pinned key for a deleted id falls back to selected/first', () async {
       await n.upsertCustomTheme(
-          const CustomThemeEntry(id: 'a', name: 'A', seed: 0xFF111111));
+        const CustomThemeEntry(id: 'a', name: 'A', seed: 0xFF111111),
+      );
       await n.upsertCustomTheme(
-          const CustomThemeEntry(id: 'b', name: 'B', seed: 0xFF222222));
+        const CustomThemeEntry(id: 'b', name: 'B', seed: 0xFF222222),
+      );
       await n.setAppThemeKey('custom-theme:zzz');
       expect(n.activeCustomThemeEntry!.id, 'b');
     });
@@ -113,33 +117,41 @@ void main() {
 
   group('M2: editor new + delete flow', () {
     test('upsert of a brand-new entry adds it and selects it', () async {
-      const CustomThemeEntry fresh =
-          CustomThemeEntry(id: 'new', name: 'My theme', seed: 0xFF445566);
+      const CustomThemeEntry fresh = CustomThemeEntry(
+        id: 'new',
+        name: 'My theme',
+        seed: 0xFF445566,
+      );
       await n.upsertCustomTheme(fresh);
       expect(n.customThemes.map((CustomThemeEntry e) => e.id), <String>['new']);
       expect(n.selectedCustomThemeId, 'new');
       expect(n.customThemeById('new')!.name, 'My theme');
     });
 
-    test('upsert replacing an existing id keeps selection + replaces fields',
-        () async {
-      await n.upsertCustomTheme(
-          const CustomThemeEntry(id: 'a', name: 'A', seed: 0xFF111111));
-      await n.upsertCustomTheme(
-          const CustomThemeEntry(id: 'a', name: 'A renamed', seed: 0xFF999999));
-      expect(n.customThemes, hasLength(1));
-      expect(n.customThemeById('a')!.name, 'A renamed');
-      expect(n.customThemeById('a')!.seed, 0xFF999999);
-      expect(n.selectedCustomThemeId, 'a');
-    });
-
     test(
-        'deleting the selected entry falls back to the first remaining '
+      'upsert replacing an existing id keeps selection + replaces fields',
+      () async {
+        await n.upsertCustomTheme(
+          const CustomThemeEntry(id: 'a', name: 'A', seed: 0xFF111111),
+        );
+        await n.upsertCustomTheme(
+          const CustomThemeEntry(id: 'a', name: 'A renamed', seed: 0xFF999999),
+        );
+        expect(n.customThemes, hasLength(1));
+        expect(n.customThemeById('a')!.name, 'A renamed');
+        expect(n.customThemeById('a')!.seed, 0xFF999999);
+        expect(n.selectedCustomThemeId, 'a');
+      },
+    );
+
+    test('deleting the selected entry falls back to the first remaining '
         '(decision 1)', () async {
       await n.upsertCustomTheme(
-          const CustomThemeEntry(id: 'a', name: 'A', seed: 0xFF111111));
+        const CustomThemeEntry(id: 'a', name: 'A', seed: 0xFF111111),
+      );
       await n.upsertCustomTheme(
-          const CustomThemeEntry(id: 'b', name: 'B', seed: 0xFF222222));
+        const CustomThemeEntry(id: 'b', name: 'B', seed: 0xFF222222),
+      );
       await n.selectCustomTheme('b');
       await n.deleteCustomTheme('b');
       expect(n.customThemes.map((CustomThemeEntry e) => e.id), <String>['a']);
@@ -148,7 +160,8 @@ void main() {
 
     test('deleting the last entry clears selection (decision 1/4)', () async {
       await n.upsertCustomTheme(
-          const CustomThemeEntry(id: 'a', name: 'A', seed: 0xFF111111));
+        const CustomThemeEntry(id: 'a', name: 'A', seed: 0xFF111111),
+      );
       await n.deleteCustomTheme('a');
       expect(n.customThemes, isEmpty);
       expect(n.selectedCustomThemeId, isNull);
@@ -156,8 +169,7 @@ void main() {
   });
 
   group('M3: per-Profile snapshot carries multi-theme keys', () {
-    test(
-        'custom_themes + selected_custom_theme_id are NOT excluded from '
+    test('custom_themes + selected_custom_theme_id are NOT excluded from '
         'profile snapshots', () {
       expect(
         ProfileKeys.isExcludedPref(ThemeNotifier.customThemesPrefKey),
@@ -169,40 +181,54 @@ void main() {
       );
     });
 
-    test('two profiles keep independent custom theme lists across a switch',
-        () async {
-      final ProfileRepository repo =
-          ProfileRepository(db, _FakeAnkiRepository());
+    test(
+      'two profiles keep independent custom theme lists across a switch',
+      () async {
+        final ProfileRepository repo = ProfileRepository(
+          db,
+          _FakeAnkiRepository(),
+        );
 
-      final int profileA = await repo.createProfile('A');
-      final int profileB = await repo.createProfile('B');
+        final int profileA = await repo.createProfile('A');
+        final int profileB = await repo.createProfile('B');
 
-      await n.upsertCustomTheme(
-          const CustomThemeEntry(id: 'a1', name: 'A1', seed: 0xFF111111));
-      await n.upsertCustomTheme(
-          const CustomThemeEntry(id: 'a2', name: 'A2', seed: 0xFF222222));
-      await n.selectCustomTheme('a1');
-      await repo.snapshotCurrentSettings(profileA);
+        await n.upsertCustomTheme(
+          const CustomThemeEntry(id: 'a1', name: 'A1', seed: 0xFF111111),
+        );
+        await n.upsertCustomTheme(
+          const CustomThemeEntry(id: 'a2', name: 'A2', seed: 0xFF222222),
+        );
+        await n.selectCustomTheme('a1');
+        await repo.snapshotCurrentSettings(profileA);
 
-      await repo.applyProfile(profileB);
-      await n.refreshFromDb();
-      expect(n.customThemes, isEmpty,
-          reason: 'switching to a fresh profile should not leak A themes');
+        await repo.applyProfile(profileB);
+        await n.refreshFromDb();
+        expect(
+          n.customThemes,
+          isEmpty,
+          reason: 'switching to a fresh profile should not leak A themes',
+        );
 
-      await n.upsertCustomTheme(
-          const CustomThemeEntry(id: 'b1', name: 'B1', seed: 0xFF333333));
-      await repo.snapshotCurrentSettings(profileB);
+        await n.upsertCustomTheme(
+          const CustomThemeEntry(id: 'b1', name: 'B1', seed: 0xFF333333),
+        );
+        await repo.snapshotCurrentSettings(profileB);
 
-      await repo.applyProfile(profileA);
-      await n.refreshFromDb();
-      expect(n.customThemes.map((CustomThemeEntry e) => e.id),
-          <String>['a1', 'a2']);
-      expect(n.selectedCustomThemeId, 'a1');
-      expect(n.customThemeById('a2')!.seed, 0xFF222222);
+        await repo.applyProfile(profileA);
+        await n.refreshFromDb();
+        expect(n.customThemes.map((CustomThemeEntry e) => e.id), <String>[
+          'a1',
+          'a2',
+        ]);
+        expect(n.selectedCustomThemeId, 'a1');
+        expect(n.customThemeById('a2')!.seed, 0xFF222222);
 
-      await repo.applyProfile(profileB);
-      await n.refreshFromDb();
-      expect(n.customThemes.map((CustomThemeEntry e) => e.id), <String>['b1']);
-    });
+        await repo.applyProfile(profileB);
+        await n.refreshFromDb();
+        expect(n.customThemes.map((CustomThemeEntry e) => e.id), <String>[
+          'b1',
+        ]);
+      },
+    );
   });
 }

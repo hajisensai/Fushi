@@ -104,7 +104,7 @@ Future<String> resolveDuplicateTitle({
 }
 
 String _uniqueSuffixedTitle(String base, Set<String> existingKeys) {
-  for (int i = 2;; i++) {
+  for (int i = 2; ; i++) {
     final String candidate = '$base ($i)';
     if (!existingKeys.contains(sanitizeTtuFilename(candidate))) {
       return candidate;

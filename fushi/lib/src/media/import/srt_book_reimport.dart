@@ -4,19 +4,16 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show parseCuesForFormat, throwIfAlignmentCancelled;
-import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
+import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 字幕书重新导入的进度回调（与 [AudiobookAlignmentProgress] 同形）。
-typedef SrtBookReimportProgress = void Function(
-  double fraction,
-  String message,
-);
+typedef SrtBookReimportProgress =
+    void Function(double fraction, String message);
 
 /// 步骤文案注入（非 UI 层不碰 i18n，范式仿 `AudiobookAlignmentMessages`）。
 class SrtBookReimportMessages {
@@ -42,12 +39,13 @@ class SrtBookReimportMessages {
 }
 
 /// 正文重建的注入点（测试接缝）。生产恒为 null，走 [_rebuildGeneratedBody]。
-typedef SrtBookBodyRebuilder = Future<bool> Function({
-  required FushiDatabase db,
-  required EpubBookRow row,
-  required SrtBook book,
-  required List<AudioCue> cues,
-});
+typedef SrtBookBodyRebuilder =
+    Future<bool> Function({
+      required FushiDatabase db,
+      required EpubBookRow row,
+      required SrtBook book,
+      required List<AudioCue> cues,
+    });
 
 /// 覆写正文重建实现。真实实现要跑 isolate 解压 + path_provider 临时目录，单测里
 /// 跑不动；接缝让「什么时候**该**重建、什么时候**绝不**重建」这条判据可以被正反
@@ -108,12 +106,17 @@ class SrtBookReimportOutcome {
 ///
 /// [isCancelled]：在动磁盘之前的检查点（开始、解析完字幕、重建正文前）检查，为真
 /// 时抛 `AudiobookAlignmentCancelled`，库与磁盘都还没动；之后是提交阶段不再检查。
+///
+/// [subtitleOrigin]：换字幕后记到远端绑定上的字幕来源（只对绑在服务器上的书有效）。
+/// null = 用户选的本机文件（`local`）；从服务器条目取的传
+/// `RemoteAudioBinding.subtitleOriginServer(ino)`。
 Future<SrtBookReimportOutcome> reimportSrtBook({
   required FushiDatabase db,
   required SrtBookRepository repo,
   required String uid,
   List<String>? audioPaths,
   String? subtitlePath,
+  String? subtitleOrigin,
   SrtBookReimportProgress? onProgress,
   SrtBookReimportMessages messages = const SrtBookReimportMessages(),
   bool Function()? isCancelled,
@@ -144,10 +147,29 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
     report(0.05, messages.parsing);
     // cue 的命名空间是 uid（与 `SrtBookRepository.cuesFor` / 首次导入同源），
     // 不是 bookKey——两者在字幕书上是不同的键，写错整本书查不到 cue。
-    final List<AudioCue> cues =
-        await parseCuesForFormat(File(subtitlePath), uid, 0);
+    List<AudioCue> cues = await parseCuesForFormat(File(subtitlePath), uid, 0);
     if (cues.isEmpty) {
       throw SrtBookReimportEmptyCuesException(subtitlePath);
+    }
+    // 从服务器流式播放的书：字幕是整本书的时间轴，要按音轨偏移切成各文件内的时间。
+    // 判据与 `AudiobookSessionLauncher` 同一条：只有本机没有可播放音频（且这次也没
+    // 一并导入本机音频）时才走远端绑定；本机有音频的书播放走本机文件，cue 必须保持
+    // 原样，切了就整本错位。
+    final RemoteAudioBindingRepository bindings = RemoteAudioBindingRepository(
+      db,
+    );
+    final RemoteAudioBinding? binding = await bindings.get(uid);
+    final bool streamsFromServer =
+        binding != null &&
+        !wantAudio &&
+        (await resolveAudiobookPlaybackFiles(
+          audioPaths: book.audioPaths,
+          audioRoot: book.audioRoot,
+        )).isEmpty;
+    if (binding != null && streamsFromServer) {
+      cues = splitCuesAcrossTracks(cues, <AudioTrackSpan>[
+        for (final RemoteAudioTrack t in binding.tracks) t.span,
+      ]);
     }
     cueCount = cues.length;
     throwIfAlignmentCancelled(isCancelled);
@@ -182,6 +204,15 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
     await repo.saveCues(uid: uid, cues: cues);
     book.srtPath = persistedSrt;
     await repo.save(book);
+    if (binding != null) {
+      await bindings.save(
+        binding.copyWith(
+          subtitleOrigin:
+              subtitleOrigin ?? RemoteAudioBinding.subtitleOriginLocal,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    }
   }
 
   if (wantAudio) {
@@ -204,72 +235,24 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
   );
 }
 
-/// 返回「正文由 cue 生成、因此换字幕时必须跟着重建」的那条 EpubBooks 行；
-/// 不该重建时返回 null。
-///
-/// 三道闸门，任何一道不过就只换 cue 不动正文：
-/// 1. [SrtBook.bookKey] 为空 = 没有配对正文（cue 解析不出来时首次导入就不生成
-///    EPUB），无正文可重建；
-/// 2. **uid 形态**：`srtbook_epub_<bookKey>` 是 EPUB 有声书的配对行
-///    （[epubBackedSrtBookUid]），那本书的正文是用户自己的 EPUB，用 cue 重新
-///    生成会**直接毁掉用户的书**——这是本文件最重要的一条负向判据；
-/// 3. EpubBooks 行不存在（孤儿字幕书）→ 无处可写。
-Future<EpubBookRow?> _rebuildableBodyRow(
-  FushiDatabase db,
-  SrtBook book,
-) async {
-  final String bookKey = book.bookKey;
-  if (bookKey.isEmpty) return null;
-  if (book.uid == epubBackedSrtBookUid(bookKey)) return null;
-  return db.getEpubBook(bookKey);
-}
+/// 可按 cue 重建的正文行；判据（三道闸门）见引擎 [generatedSubtitleBodyRow]。
+Future<EpubBookRow?> _rebuildableBodyRow(FushiDatabase db, SrtBook book) =>
+    generatedSubtitleBodyRow(db, uid: book.uid, bookKey: book.bookKey);
 
-/// 用 [cues] 重新生成正文 EPUB 并就地替换 [row] 的解压树 + 章节元数据。
-/// 返回是否真的替换成功；失败只记日志并返回 false（旧正文已由原子替换回滚复位，
-/// 此时 cue 与正文不一致但书仍可读，比让整次导入炸掉好）。
+/// 生产实现：引擎 [rebuildGeneratedSubtitleBody]（与互联收包重建正文同一份）。
 Future<bool> _rebuildGeneratedBody({
   required FushiDatabase db,
   required EpubBookRow row,
   required SrtBook book,
   required List<AudioCue> cues,
-}) async {
-  String? epubPath;
-  try {
-    final Directory tmpDir = await getTemporaryDirectory();
-    epubPath = p.join(tmpDir.path, 'cues_to_epub_${book.uid}_rebuild.epub');
-    await CuesToEpub.convert(
-      title: book.title,
-      cues: cues,
-      outputPath: epubPath,
-      author: book.author,
-    );
-    final ({int chapterCount, String chaptersJson, String? coverPath}) parsed =
-        await EpubImporter.rebuildExtractedInPlace(
-      epubFilePath: epubPath,
-      extractDir: row.extractDir,
-    );
-    await db.updateEpubBookChapters(
-      row.bookKey,
-      chapterCount: parsed.chapterCount,
-      chaptersJson: parsed.chaptersJson,
-    );
-    debugPrint('[fushi-import] srt reimport: body rebuilt key=${row.bookKey} '
-        'chapters=${parsed.chapterCount} cues=${cues.length}');
-    return true;
-  } catch (e, stack) {
-    ErrorLogService.instance.log('SrtBookReimport.rebuildBody', e, stack);
-    debugPrint('[fushi-import] srt reimport: body rebuild failed: $e');
-    return false;
-  } finally {
-    try {
-      final String? tmpPath = epubPath;
-      if (tmpPath != null) {
-        final File tmp = File(tmpPath);
-        if (tmp.existsSync()) tmp.deleteSync();
-      }
-    } catch (_) {}
-  }
-}
+}) => rebuildGeneratedSubtitleBody(
+  db: db,
+  row: row,
+  uid: book.uid,
+  title: book.title,
+  author: book.author,
+  cues: cues,
+);
 
 /// 删掉持久目录里的旧字幕文件。只删**落在持久目录内**的（引用导入模式下
 /// `srtPath` 可能是用户原始文件，绝不能删用户的东西）。

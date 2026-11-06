@@ -26,6 +26,7 @@ class ReaderEngineConfig {
     required this.vnClickAdvance,
     required this.scanNonJapaneseText,
     required this.hoverAutoLookup,
+    this.hoverKey = 'shiftKey',
     this.hostHoverLookup = false,
     required this.highlightOnTap,
     required this.showChrome,
@@ -76,6 +77,9 @@ class ReaderEngineConfig {
   final bool vnClickAdvance;
   final bool scanNonJapaneseText;
   final bool hoverAutoLookup;
+
+  /// 悬停查词按住的键在 `MouseEvent` 上的字段名（[HoverLookupModifier.jsEventFlag]）。
+  final String hoverKey;
 
   /// BUG-2508：true = 宿主（Flutter）侧接管 Shift-悬停 / 纯悬停查词，文档内的
   /// mousemove 腿整条关掉（只有 macOS，判据 `hostOwnsWebViewHoverLookup`）；
@@ -161,6 +165,7 @@ class ReaderEngineConfig {
     'vnClickAdvance': vnClickAdvance,
     'scanNonJapaneseText': scanNonJapaneseText,
     'hoverAutoLookup': hoverAutoLookup,
+    'hoverKey': hoverKey,
     'hostHoverLookup': hostHoverLookup,
     'highlightOnTap': highlightOnTap,
     'showChrome': showChrome,

@@ -12,8 +12,13 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Directory;
 
+import 'package:fushi/src/corpus/library_sentences_bridge.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/anki/mine_failure_notice.dart';
+import 'package:fushi/src/anki/mined_card_tap_policy.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -22,7 +27,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
-import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
+import 'package:fushi/src/lookup/lookup_audio_playback.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -32,10 +37,11 @@ typedef OverlayBridgeResolver = Future<void> Function(int id, Object? value);
 
 /// 可选的场景制卡委托。瞬态查词窗仍负责解析 popup.js payload 和统计；委托只替换
 /// 最终的创建/覆盖写入，以便 Hook 查词附加精确台词、游戏画面和句子音频。
-typedef OverlayMiningHandler = Future<Map<String, Object?>> Function({
-  required Map<String, String> fields,
-  int? updateNoteId,
-});
+typedef OverlayMiningHandler =
+    Future<Map<String, Object?>> Function({
+      required Map<String, String> fields,
+      int? updateNoteId,
+    });
 
 /// Dispatches [handler] if it is one of the natively-DEFERRED bridges.
 /// Returns true when handled (the caller's _onJsMessage returns immediately);
@@ -50,6 +56,11 @@ typedef OverlayMiningHandler = Future<Map<String, Object?>> Function({
 /// banner; here it doubles as the mine sentence (per the clipboard-panel spec
 /// intent). [resolveMineSentence] still prefers a JS-sent `fields['sentence']`
 /// when present, so this is a pure fallback and never overrides real data.
+///
+/// [isOriginOnScreen]（BUG-3652 续）：制卡 / 覆写回包这一刻，发起这次请求的那张查词卡
+/// 是否还在屏上（调用方在派发这条消息时捕获自己的查词 route，回包时核对它仍是当前
+/// 且未作废）。为假时失败原因改由宿主 toast（[MineFailureNotice.settle]）。null =
+/// 视为一直在屏上。
 bool maybeHandleOverlayDeferredBridge({
   required AppModel? model,
   required Object? handler,
@@ -57,6 +68,7 @@ bool maybeHandleOverlayDeferredBridge({
   required OverlayBridgeResolver resolveBridge,
   String sentenceContext = '',
   OverlayMiningHandler? miningHandler,
+  MineOriginOnScreen? isOriginOnScreen,
 }) {
   switch (handler) {
     // playWordAudio 桥已删：popup.js 三端统一自己用 HTML5 <audio> 播放解析好的
@@ -65,25 +77,45 @@ bool maybeHandleOverlayDeferredBridge({
     // 本地文件路径。
     case 'resolveWordAudio':
     case 'queryLocalAudio':
-      unawaited(_handleAudioBridge(
-          model, handler! as String, message, resolveBridge));
+      unawaited(
+        _handleAudioBridge(model, handler! as String, message, resolveBridge),
+      );
       return true;
     case 'listWordAudioSources':
       unawaited(_handleAudioListBridge(model, message, resolveBridge));
       return true;
     case 'favoriteEntry':
     case 'favoriteCheck':
-      unawaited(_handleFavoriteBridge(
-          model, handler! as String, message, resolveBridge, sentenceContext));
+      unawaited(
+        _handleFavoriteBridge(
+          model,
+          handler! as String,
+          message,
+          resolveBridge,
+          sentenceContext,
+        ),
+      );
       return true;
     case 'mineEntry':
-      unawaited(_handleMineBridge(
-        model,
-        message,
-        resolveBridge,
-        sentenceContext,
-        miningHandler,
-      ));
+      unawaited(
+        _handleMineBridge(
+          model,
+          message,
+          resolveBridge,
+          sentenceContext,
+          miningHandler,
+          isOriginOnScreen,
+        ),
+      );
+      return true;
+    // BUG-3652 续：popup.js 收到失败回包时发起制卡的按钮已被换掉（同一窗口里换了词 /
+    // 嵌套卡复用），原因无处可画，交回宿主 toast。不是 deferred 桥（native 已即时回
+    // null），这里只消费。
+    case 'mineFailureUnseen':
+      final Object? args = message['args'];
+      MineFailureNotice.reportUnseen(
+        args is List && args.isNotEmpty ? args.first : null,
+      );
       return true;
     case 'duplicateCheck':
       unawaited(_handleDuplicateBridge(model, message, resolveBridge));
@@ -94,8 +126,19 @@ bool maybeHandleOverlayDeferredBridge({
     case 'srsTermStatus':
       unawaited(_handleSrsTermStatusBridge(message, resolveBridge));
       return true;
+    case 'srsTermStatusBatch':
+      unawaited(_handleSrsTermStatusBatchBridge(message, resolveBridge));
+      return true;
     case 'srsOpenCard':
       unawaited(_handleSrsOpenCardBridge(message, resolveBridge));
+      return true;
+    // 「我库里的例句」（作品图谱 L4）：查本机语料库 / 在主窗口回到出处。开关关着时注入的
+    // __fushiLibrarySentencesEnabled=false 已让 JS 不发；这里照样秒回 null / false。
+    case 'librarySentences':
+      unawaited(_handleLibrarySentencesBridge(model, message, resolveBridge));
+      return true;
+    case 'librarySentenceOpen':
+      unawaited(_handleLibrarySentenceOpenBridge(message, resolveBridge));
       return true;
     // BUG-1064 —— app 外「卡已存在」操作面板的两根数据桥。面板本身画在 popup.js
     // 自己的 WebView 里（app 外没有 Flutter 层可以呈现对话框，见文件尾注），Dart
@@ -117,13 +160,16 @@ bool maybeHandleOverlayDeferredBridge({
       unawaited(_handleOverwriteTargetBridge(model, message, resolveBridge));
       return true;
     case 'updateEntry':
-      unawaited(_handleUpdateBridge(
-        model,
-        message,
-        resolveBridge,
-        sentenceContext,
-        miningHandler,
-      ));
+      unawaited(
+        _handleUpdateBridge(
+          model,
+          message,
+          resolveBridge,
+          sentenceContext,
+          miningHandler,
+          isOriginOnScreen,
+        ),
+      );
       return true;
     default:
       return false;
@@ -232,9 +278,11 @@ Future<void> _handleAudioBridge(
       final String reading = data['reading']?.toString() ?? '';
       // Diagnostic: which audio sources are configured/enabled? A null reply
       // with 0 enabled sources = nothing to query (config), not a wiring bug.
-      glog('audio: resolve "$expression"/"$reading" '
-          'enabled=${model.enabledAudioSources} '
-          'configs=${model.audioSourceConfigs.length}');
+      glog(
+        'audio: resolve "$expression"/"$reading" '
+        'enabled=${model.enabledAudioSources} '
+        'configs=${model.audioSourceConfigs.length}',
+      );
       reply = expression.isEmpty
           ? null
           : await resolveWordAudioWebViewUrl(model, expression, reading);
@@ -329,17 +377,16 @@ Future<bool> _toggleOrCheckFavorite(
   required String reading,
   required String glossary,
   required String sentence,
-}) =>
-    overlayToggleOrCheckFavoriteWord(
-      db: model.database,
-      toggle: toggle,
-      expression: expression,
-      reading: reading,
-      addSourceType: overlayStatSourceType(),
-      dateKey: statTodayKey(),
-      glossary: glossary,
-      sentence: sentence,
-    );
+}) => overlayToggleOrCheckFavoriteWord(
+  db: model.database,
+  toggle: toggle,
+  expression: expression,
+  reading: reading,
+  addSourceType: overlayStatSourceType(),
+  dateKey: statTodayKey(),
+  glossary: glossary,
+  sentence: sentence,
+);
 
 /// TODO-1188 follow-up — resolves a DEFERRED mineEntry bridge call and pushes
 /// the {ankiConnect, noteId} result back so popup.js flips the ➕ button
@@ -351,6 +398,7 @@ Future<void> _handleMineBridge(
   OverlayBridgeResolver resolveBridge,
   String sentenceContext,
   OverlayMiningHandler? miningHandler,
+  MineOriginOnScreen? isOriginOnScreen,
 ) async {
   final int? id = _bridgeIdOf(message);
   Map<String, Object?> reply = const <String, Object?>{
@@ -392,6 +440,11 @@ Future<void> _handleMineBridge(
       'message': t.card_export_failed,
     };
   }
+  // 失败原因恰好说一次：卡还在就交给它就地说，卡已关 / 换了词就宿主 toast。
+  reply = MineFailureNotice.settle(
+    reply,
+    originOnScreen: isOriginOnScreen?.call() ?? true,
+  );
   if (id != null) {
     glog('mine: mineEntry -> reply=$reply (id=$id)');
     unawaited(resolveBridge(id, reply));
@@ -413,34 +466,84 @@ Future<void> _handleMineBridge(
 Future<Map<String, Object?>> _mineEntry(
   AppModel model,
   Map<String, String> fields,
-  String sentenceContext,
-) async {
+  String sentenceContext, {
+  String? coverPath,
+  bool recordStats = true,
+}) async {
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
   final String sentence = resolveMineSentence(fields, sentenceContext);
   final BaseAnkiRepository repo = model.miningAnkiRepository;
+  // galgame 会话在跑：卡片带游戏出处（复习时「回到出处」打开该游戏），书域不带。
+  final ({String gameId, String? title})? game =
+      overlayMinedSentenceGameOrigin();
   final MineOutcome outcome = await repo.mineEntry(
     rawPayloadJson: jsonEncode(fields),
     context: AnkiMiningContext(
       sentence: sentence,
+      coverPath: coverPath,
       source: AnkiMiningSource.book,
+      documentTitle: game?.title,
+      sourceLink: game == null
+          ? null
+          : CardSourceLink.tryGame(gameId: game.gameId),
     ),
   );
   // 与 in-app 入口（texthooker 页）同判据：describeMineOutcome 决定成败与记不记，
   // 回包由 MinePopupResult 构造——成功回 ankiConnect + noteId，进了待发队列回
   // queued（popup.js 画 ✓ 不回查），重复回 duplicate（BUG-1908）。
   final described = describeMineOutcome(outcome);
-  if (described.record) {
+  if (recordStats && described.record) {
     unawaited(_recordMinedStats(model, fields, outcome.noteId, sentence));
   }
   final MinePopupResult reply = described.success
       ? MinePopupResult.mined(outcome)
-      : MinePopupResult.failed(outcome);
+      : MinePopupResult.failed(outcome, message: described.message);
   return <String, Object?>{
     ...reply.toJson(),
     // BUG-1908：失败原因必须回到浮窗。app 外的裸浮窗连 Flutter toast 都没有
     // （FushiToast 在拿不到 Overlay 时直接 return），此前失败就是纯静默。
     if (!described.success && described.message.isNotEmpty)
       'message': described.message,
+  };
+}
+
+/// 桌面截屏识字（冻结层点字）的制卡委托（反馈 Gz7z6Y6Mbr）：与默认的 [_mineEntry] /
+/// [_updateEntry] 同一条写入路径，只多带一张卡图——识别用的整屏截图里所点文字所在的
+/// 文本块（[ScreenOcrCardImage]），按制卡图片质量档裁好走 `coverPath`。偏好「截屏识字
+/// 制卡带图」关着时不带图。统计由桥接层在委托返回成功后统一记（委托路径的约定），
+/// 这里不再记一遍。
+OverlayMiningHandler screenOcrOverlayMiningHandler({
+  required AppModel model,
+  required ScreenOcrCardImage cardImage,
+  required String sentenceContext,
+}) {
+  return ({required Map<String, String> fields, int? updateNoteId}) async {
+    final ({String path, Directory dir})? cover =
+        model.prefsRepo.screenOcrCardImage
+        ? await writeScreenOcrCardImage(
+            cardImage,
+            imageTier: model.miningImageQuality,
+          )
+        : null;
+    try {
+      return updateNoteId == null
+          ? await _mineEntry(
+              model,
+              fields,
+              sentenceContext,
+              coverPath: cover?.path,
+              recordStats: false,
+            )
+          : await _updateEntry(
+              model,
+              updateNoteId,
+              fields,
+              sentenceContext,
+              coverPath: cover?.path,
+            );
+    } finally {
+      if (cover != null) unawaited(deleteScreenOcrCardDir(cover.dir));
+    }
   };
 }
 
@@ -463,9 +566,14 @@ Future<void> _recordMinedStats(
     // P4 写侧收敛：全局汇总 + per-book 计数走 DB 复合入口（同事务；app 外查词
     // 无书 → bookKey/title 空，只进汇总桶）。制卡历史行与之共用同一时刻的 dateKey。
     await db.recordMiningEvent(sourceType: overlayStatSourceType(), at: now);
+    // 游戏域时记下「哪个游戏」（回到出处 = 打开该游戏的详情 / 文本钩子历史）。
+    final ({String gameId, String? title})? game =
+        overlayMinedSentenceGameOrigin();
     await db.addMinedSentence(
       source: overlayMinedSentenceSource(),
       dateKey: dateKey,
+      bookKey: game?.gameId,
+      documentTitle: game?.title,
       expression: fields['expression'] ?? '',
       reading: fields['reading'] ?? '',
       glossary: fields['glossary'] ?? '',
@@ -506,6 +614,25 @@ Future<void> _handleDuplicateBridge(
   }
 }
 
+/// Fushi 复习词状态批量版（deferred）：一轮可见批次一次往返，回 `{statuses: [...]}`；
+/// 模块关着 / 参数不对回 null（popup.js 退回逐条 srsTermStatus）。
+Future<void> _handleSrsTermStatusBatchBridge(
+  Map<String, Object?> message,
+  OverlayBridgeResolver resolveBridge,
+) async {
+  final int? id = _bridgeIdOf(message);
+  Map<String, Object?>? reply;
+  try {
+    reply = await srsHandleTermStatusBatchBridge(<Object?>[
+      _firstMapArg(message),
+    ], SrsAppHost.current);
+  } catch (e, st) {
+    ErrorLogService.instance.log('overlay.srsTermStatusBatch', e, st);
+    reply = null;
+  }
+  if (id != null) unawaited(resolveBridge(id, reply));
+}
+
 /// Fushi 复习词状态（deferred）：回 null 或 popup.js 的状态对象。
 Future<void> _handleSrsTermStatusBridge(
   Map<String, Object?> message,
@@ -524,6 +651,45 @@ Future<void> _handleSrsTermStatusBridge(
   } catch (e, st) {
     ErrorLogService.instance.log('overlay.srsTermStatus', e, st);
     reply = null;
+  }
+  if (id != null) unawaited(resolveBridge(id, reply));
+}
+
+/// 「我库里的例句」（deferred）：回 popup.js 的分组例句回包（没有 / 关着回 null）。
+Future<void> _handleLibrarySentencesBridge(
+  AppModel? model,
+  Map<String, Object?> message,
+  OverlayBridgeResolver resolveBridge,
+) async {
+  final int? id = _bridgeIdOf(message);
+  Map<String, Object?>? reply;
+  try {
+    if (model != null) {
+      reply = await librarySentencesHandleBridge(<dynamic>[
+        _firstMapArg(message),
+      ], model.moduleVisibility);
+    }
+  } catch (e, st) {
+    ErrorLogService.instance.log('overlay.librarySentences', e, st);
+    reply = null;
+  }
+  if (id != null) unawaited(resolveBridge(id, reply));
+}
+
+/// 点一条例句（deferred）：在主窗口回到出处，回是否打开。
+Future<void> _handleLibrarySentenceOpenBridge(
+  Map<String, Object?> message,
+  OverlayBridgeResolver resolveBridge,
+) async {
+  final int? id = _bridgeIdOf(message);
+  bool reply = false;
+  try {
+    reply = await librarySentenceOpenHandleBridge(<dynamic>[
+      _firstMapArg(message),
+    ]);
+  } catch (e, st) {
+    ErrorLogService.instance.log('overlay.librarySentenceOpen', e, st);
+    reply = false;
   }
   if (id != null) unawaited(resolveBridge(id, reply));
 }
@@ -559,21 +725,38 @@ Future<void> _handleSrsOpenCardBridge(
 /// 显示已制卡但现在查不到」(deleted elsewhere) — popup.js then falls through to a
 /// plain re-mine, mirroring the in-app `matches.isEmpty -> mineNew()` branch.
 /// Always resolves so the ✓ button never freezes.
+///
+/// 反馈 E0sdqm4h-F / PR #2980 审查：单击 ✓（请求不带 `openChooser: true`）且
+/// [ankiMinedTapMinesNewDirectly]（「允许重复」开着）时**不反查**，回
+/// `{mineNew: true}`——popup.js 据此不弹页内面板、直接再制一张，与 app 内
+/// `runAnkiMinedCardAction` 同一判据。右键 / 长按（`openChooser: true`）照旧列命中卡。
 Future<void> _handleFindMinedMatchesBridge(
   AppModel? model,
   Map<String, Object?> message,
   OverlayBridgeResolver resolveBridge,
 ) async {
   final int? id = _bridgeIdOf(message);
-  List<Map<String, Object?>> reply = const <Map<String, Object?>>[];
+  Object reply = const <Map<String, Object?>>[];
   try {
     final Map<Object?, Object?> data = _firstMapArg(message);
     final String expression = data['expression']?.toString() ?? '';
     final String reading = data['reading']?.toString() ?? '';
+    final bool openChooser = data['openChooser'] == true;
     if (model != null && expression.isNotEmpty) {
       final BaseAnkiRepository repo = model.miningAnkiRepository;
-      final List<MinedNoteRef> matches =
-          await repo.findMatchingNotes(expression, reading);
+      if (!openChooser && await ankiMinedTapMinesNewDirectly(repo)) {
+        glog('mined-matches: allowDupes on -> mineNew (id=$id)');
+        if (id != null) {
+          unawaited(
+            resolveBridge(id, const <String, Object?>{'mineNew': true}),
+          );
+        }
+        return;
+      }
+      final List<MinedNoteRef> matches = await repo.findMatchingNotes(
+        expression,
+        reading,
+      );
       reply = <Map<String, Object?>>[
         for (final MinedNoteRef note in matches)
           <String, Object?>{'noteId': note.noteId, 'preview': note.preview},
@@ -584,7 +767,10 @@ Future<void> _handleFindMinedMatchesBridge(
     reply = const <Map<String, Object?>>[];
   }
   if (id != null) {
-    glog('mined-matches: findMinedMatches -> ${reply.length} hit(s) (id=$id)');
+    glog(
+      'mined-matches: findMinedMatches -> '
+      '${reply is List ? reply.length : 0} hit(s) (id=$id)',
+    );
     unawaited(resolveBridge(id, reply));
   }
 }
@@ -604,8 +790,9 @@ Future<void> _handleOpenMinedNoteBridge(
   try {
     final Map<Object?, Object?> data = _firstMapArg(message);
     final Object? rawNoteId = data['noteId'];
-    final int? noteId =
-        (rawNoteId is num) ? rawNoteId.toInt() : int.tryParse('$rawNoteId');
+    final int? noteId = (rawNoteId is num)
+        ? rawNoteId.toInt()
+        : int.tryParse('$rawNoteId');
     if (model != null && noteId != null) {
       final BaseAnkiRepository repo = model.miningAnkiRepository;
       reply = await repo.openNoteInAnki(noteId);
@@ -693,6 +880,7 @@ Future<void> _handleUpdateBridge(
   OverlayBridgeResolver resolveBridge,
   String sentenceContext,
   OverlayMiningHandler? miningHandler,
+  MineOriginOnScreen? isOriginOnScreen,
 ) async {
   final int? id = _bridgeIdOf(message);
   Map<String, Object?> reply = const <String, Object?>{
@@ -705,8 +893,9 @@ Future<void> _handleUpdateBridge(
         ? (envelope['noteId'] as num).toInt()
         : null;
     final Object? rawFields = envelope['fields'];
-    final Map<Object?, Object?> raw =
-        rawFields is Map ? rawFields : const <Object?, Object?>{};
+    final Map<Object?, Object?> raw = rawFields is Map
+        ? rawFields
+        : const <Object?, Object?>{};
     final Map<String, String> fields = <String, String>{
       for (final MapEntry<Object?, Object?> e in raw.entries)
         e.key.toString(): e.value?.toString() ?? '',
@@ -729,6 +918,10 @@ Future<void> _handleUpdateBridge(
       'message': t.card_export_failed,
     };
   }
+  reply = MineFailureNotice.settle(
+    reply,
+    originOnScreen: isOriginOnScreen?.call() ?? true,
+  );
   if (id != null) {
     glog('update: updateEntry -> reply=$reply (id=$id)');
     unawaited(resolveBridge(id, reply));
@@ -743,8 +936,9 @@ Future<Map<String, Object?>> _updateEntry(
   AppModel model,
   int noteId,
   Map<String, String> fields,
-  String sentenceContext,
-) async {
+  String sentenceContext, {
+  String? coverPath,
+}) async {
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
   final BaseAnkiRepository repo = model.miningAnkiRepository;
   final MineOutcome outcome = await repo.updateMinedNote(
@@ -752,14 +946,16 @@ Future<Map<String, Object?>> _updateEntry(
     rawPayloadJson: jsonEncode(fields),
     context: AnkiMiningContext(
       sentence: resolveMineSentence(fields, sentenceContext),
+      coverPath: coverPath,
       source: AnkiMiningSource.book,
     ),
   );
   final bool success = outcome.result == MineResult.success;
   // BUG-1908：覆写失败同样带原因回浮窗（口径与 _mineEntry 一致，overwrite: true
   // 让 describeMineOutcome 给出「已覆写/覆写失败」而不是「已导出」）。
-  final String? message =
-      success ? null : describeMineOutcome(outcome, overwrite: true).message;
+  final String? message = success
+      ? null
+      : describeMineOutcome(outcome, overwrite: true).message;
   return <String, Object?>{
     'ankiConnect': success,
     'noteId': success ? outcome.noteId : null,

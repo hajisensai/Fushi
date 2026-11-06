@@ -216,6 +216,80 @@ void main() {
     client.cancelPending();
   });
 
+  test('fetches a library cover from the selected host only', () async {
+    final List<Uri> reached = <Uri>[];
+    final VideoRemoteClient client = VideoRemoteClient(
+      repository: repository,
+      peer: selected,
+      httpClient: MockClient((http.Request request) async {
+        reached.add(request.url);
+        expect(request.method, 'GET');
+        expect(
+          request.headers['Authorization'],
+          'Basic ${base64Encode(utf8.encode('hibiki:secret'))}',
+        );
+        if (request.url.path == '/api/library/videos/video/a%20b/cover') {
+          return http.Response.bytes(<int>[1, 2, 3], 200);
+        }
+        return http.Response('Video cover not found', 404);
+      }),
+    );
+    expect(
+      videoRemoteCoverPath('video/a b'),
+      '/api/library/videos/video/a%20b/cover',
+    );
+    expect(
+      await client.fetchRemoteCover(videoRemoteCoverPath('video/a b')),
+      <int>[1, 2, 3],
+    );
+    await expectLater(
+      client.fetchRemoteCover(videoRemoteCoverPath('video/none')),
+      throwsA(isA<VideoRemoteError>()),
+    );
+    expect(reached.map((Uri u) => u.host).toSet(), <String>{'selected'});
+    client.cancelPending();
+  });
+
+  test('cover cache namespace follows the paired host and credential', () {
+    String namespace(FushiClientUrl peer) => VideoRemoteClient(
+      repository: repository,
+      peer: peer,
+    ).coverCacheNamespace;
+    final String base = namespace(selected);
+    // 内容摘要，跨进程不变（磁盘缓存要在重启后还读得中）。
+    expect(base, 'vrc3da0ba5e1b68bfa');
+    expect(
+      namespace(
+        const FushiClientUrl(
+          url: 'http://moved:8765',
+          token: 'secret',
+          hostId: 'selected',
+        ),
+      ),
+      base,
+    );
+    expect(
+      namespace(
+        const FushiClientUrl(
+          url: 'http://selected:8765',
+          token: 'repaired',
+          hostId: 'selected',
+        ),
+      ),
+      isNot(base),
+    );
+    expect(
+      namespace(
+        const FushiClientUrl(
+          url: 'http://selected:8765',
+          token: 'secret',
+          hostId: 'another',
+        ),
+      ),
+      isNot(base),
+    );
+  });
+
   test('subtitle chunks are cached per session and subtitle version', () async {
     final List<int> offsets = <int>[];
     int? failAt;

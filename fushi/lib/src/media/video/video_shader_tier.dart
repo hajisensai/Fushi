@@ -19,13 +19,7 @@ import 'package:fushi/src/media/video/video_shader_downloader.dart';
 /// - [ultra] = 极高：内置缩放 on + Anime4K Mode A VL + 额外去模糊修复（高档 VL 链再叠一个
 ///   Restore_CNN_Soft_VL 去模糊/降噪 pass，MIT，需较强 GPU；BUG-836：UL 大 pass 越过 ANGLE
 ///   的 GL_MAX_VERTEX_ATTRIBS=16 会黑屏，故极高用 VL 类文件而非 UL）。
-enum VideoShaderTier {
-  off,
-  low,
-  medium,
-  high,
-  ultra,
-}
+enum VideoShaderTier { off, low, medium, high, ultra }
 
 /// 一个档位的完整定义：稳定 id + 是否开内置缩放 + 该档对应的 GLSL 预设（null=不用 GLSL）。
 class VideoShaderTierSpec {
@@ -145,8 +139,9 @@ List<VideoShaderTierSpec> shaderTiersFor({bool? isMobile}) {
 
 /// 取某档的规格。纯函数。
 VideoShaderTierSpec shaderTierSpec(VideoShaderTier tier, {bool? isMobile}) =>
-    shaderTiersFor(isMobile: isMobile)
-        .firstWhere((VideoShaderTierSpec s) => s.tier == tier);
+    shaderTiersFor(
+      isMobile: isMobile,
+    ).firstWhere((VideoShaderTierSpec s) => s.tier == tier);
 
 /// 该档需要的 GLSL 文件名集合（落盘 + 启用）。纯函数。
 List<String> shaderFilesForTier(VideoShaderTier tier, {bool? isMobile}) =>

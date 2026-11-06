@@ -1,9 +1,19 @@
 import 'package:collection/collection.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_scrollbar.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// The content of the dialog used for selecting segmented units of a source
 /// text.
@@ -158,13 +168,13 @@ class _TextSegmentationDialogPage
         final Color background = glass
             ? fushiNeutralBlockColor(context)
             : (hasPick
-                ? colors.secondaryContainer
-                : fushiNeutralBlockColor(context));
+                  ? colors.secondaryContainer
+                  : fushiNeutralBlockColor(context));
         final Color foreground = glass
             ? (hasPick ? colors.primary : tokens.surfaces.onVariant)
             : (hasPick
-                ? colors.onSecondaryContainer
-                : tokens.surfaces.onVariant);
+                  ? colors.onSecondaryContainer
+                  : tokens.surfaces.onVariant);
         final FushiSpringSpec spring = context.fushiMotion.spatialDefault;
         return AnimatedContainer(
           duration: spring.duration,
@@ -179,8 +189,9 @@ class _TextSegmentationDialogPage
             maxLines: 4,
             overflow: TextOverflow.ellipsis,
             style: hasPick
-                ? context.fushiType.titleMediumEmphasized
-                    .copyWith(color: foreground)
+                ? context.fushiType.titleMediumEmphasized.copyWith(
+                    color: foreground,
+                  )
                 : tokens.type.listSubtitle.copyWith(color: foreground),
           ),
         );
@@ -228,10 +239,10 @@ class _TextSegmentationDialogPage
   }
 
   List<Widget> get actions => [
-        buildStashButton(),
-        if (widget.onSearch != null) buildSearchButton(),
-        if (widget.onSelect != null) buildSelectButton(),
-      ];
+    buildStashButton(),
+    if (widget.onSearch != null) buildSearchButton(),
+    if (widget.onSelect != null) buildSelectButton(),
+  ];
 
   Widget buildSearchButton() {
     return adaptiveDialogAction(
@@ -268,10 +279,7 @@ class _TextSegmentationDialogPage
       range = TextRange(start: start, end: end);
     }
 
-    return FushiTextSelection(
-      text: widget.sourceText,
-      range: range,
-    );
+    return FushiTextSelection(text: widget.sourceText, range: range);
   }
 
   void executeStash() {

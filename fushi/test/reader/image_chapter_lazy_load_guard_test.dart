@@ -16,7 +16,8 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 /// 图片慢）。
 ///
 /// 修复：
-///   1. 每个 <img> 加 `loading="lazy"`（视口外不预取）+ `decoding="async"`（解码离主线程）。
+///   1. 每个 <img> 加 `decoding="async"`（解码离主线程）。不加 `loading="lazy"`：章节
+///      几何要计入每张图的真实尺寸，分页远列的懒图永不加载会把章节算短、提前跨章。
 ///   2. 未完成的图**立即不 gate** restore：`imagePromises` 恒为空数组，block-img 归类改由
 ///      每张图自己的 `load` 事件补做，并在补做后失效 paginationMetrics（与 TODO-627 同源）。
 ///
@@ -33,15 +34,7 @@ void main() {
 
   String norm(String s) => s.replaceAll(RegExp(r'\s+'), ' ');
 
-  group('TODO-1074：<img> 懒加载 + 异步解码属性', () {
-    test('分页 shell 给 <img> 加 loading="lazy"', () {
-      expect(
-        norm(paginated).contains("img.setAttribute('loading', 'lazy')"),
-        isTrue,
-        reason: '视口外图片必须 lazy，否则 window.load 仍被全部图片拖住',
-      );
-    });
-
+  group('TODO-1074：<img> 异步解码属性', () {
     test('分页 shell 给 <img> 加 decoding="async"', () {
       expect(
         norm(paginated).contains("img.setAttribute('decoding', 'async')"),
@@ -50,9 +43,8 @@ void main() {
       );
     });
 
-    test('连续 shell 同样加 loading="lazy" 与 decoding="async"', () {
+    test('连续 shell 同样加 decoding="async"', () {
       final String n = norm(continuous);
-      expect(n.contains("img.setAttribute('loading', 'lazy')"), isTrue);
       expect(n.contains("img.setAttribute('decoding', 'async')"), isTrue);
     });
   });
@@ -66,10 +58,7 @@ void main() {
         isTrue,
         reason: 'restore/buildNodeOffsets 只能等已完成图（瞬时），未完成图不得 gate',
       );
-      expect(
-        norm(continuous).contains('var imagePromises = [];'),
-        isTrue,
-      );
+      expect(norm(continuous).contains('var imagePromises = [];'), isTrue);
     });
 
     test('不再把 img.onload 塞进 imagePromises 的 Promise（不得逐图阻塞 resolve）', () {
@@ -80,23 +69,14 @@ void main() {
         isFalse,
         reason: '旧的逐图 onload gate（阻塞 Promise.all）必须删除',
       );
-      expect(
-        continuous.contains('img.onload = mark'),
-        isFalse,
-      );
+      expect(continuous.contains('img.onload = mark'), isFalse);
     });
 
     test('Promise.all(imagePromises).then 仍在（保留 restore/metrics 失效编排壳）', () {
       // 保留消费点，只是 imagePromises 现在为空立即 resolve —— 不动 restore/sasayaki/
       // paginationMetrics=null 的编排结构（最小改面）。
-      expect(
-        paginated.contains('Promise.all(imagePromises).then('),
-        isTrue,
-      );
-      expect(
-        continuous.contains('Promise.all(imagePromises).then('),
-        isTrue,
-      );
+      expect(paginated.contains('Promise.all(imagePromises).then('), isTrue);
+      expect(continuous.contains('Promise.all(imagePromises).then('), isTrue);
     });
   });
 
@@ -105,7 +85,7 @@ void main() {
       expect(
         norm(paginated).contains("img.addEventListener('load', function()"),
         isTrue,
-        reason: '未完成图真正 load 后必须补做 block-img 归类（懒图滚进视口才 load）',
+        reason: '未完成图真正 load 后必须补做 block-img 归类',
       );
     });
 
@@ -116,7 +96,7 @@ void main() {
       expect(
         n.contains('r.paginationMetrics = null'),
         isTrue,
-        reason: '延迟归类命中后失效 metrics，避免图未撑开时的过小 maxScroll 误判',
+        reason: '图 load 后失效 metrics，避免图未撑开时的过小 maxScroll 误判',
       );
     });
   });
@@ -125,10 +105,7 @@ void main() {
     test('SVG 封面仍走同步 querySelectorAll(\'svg\') 分支（无 onload 依赖）', () {
       // <svg><image> 封面尺寸取属性/viewBox，同步归类；本次只动 <img> 的 promise，
       // 不触及 svg 分支 → BUG-025 行为不变。
-      expect(
-        paginated.contains("document.querySelectorAll('svg')"),
-        isTrue,
-      );
+      expect(paginated.contains("document.querySelectorAll('svg')"), isTrue);
       expect(
         paginated.contains("svg.classList.add('block-img')"),
         isTrue,

@@ -2,14 +2,20 @@ import 'dart:async';
 
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart' show Clipboard, KeyDownEvent, KeyEvent;
+import 'package:flutter/services.dart'
+    show Clipboard, KeyDownEvent, KeyEvent, SystemChannels;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
+import 'package:fushi/src/media/media_type.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/types/dictionary_media_type.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/base_source_page.dart';
+import 'package:fushi/src/pages/base_tab_page.dart';
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/lookup/source_lookup_sentence.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
@@ -24,14 +30,31 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
-import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_divider.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_tag.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 测试可见的查词状态探针：让 widget 行为测试直接断言「查词后 _isSearching 已复位」
@@ -143,7 +166,7 @@ class HomeDictionaryPage extends BaseTabPage {
 }
 
 class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
-    with DictionaryPageMixin
+    with DictionaryPageMixin, WidgetsBindingObserver
     implements HomeDictionarySearchDebug {
   @override
   AppModel get mixinAppModel => appModel;
@@ -237,9 +260,60 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// await 失败路径）。生产路径仍 fire-and-forget，不改变行为。
   Future<void>? _lastDispatchedSearch;
 
+  /// 软键盘此刻是否弹着（移动端，窗口底部 viewInsets > 0）。由
+  /// [didChangeMetrics] 维护：Scaffold 会把 body 的 viewInsets 抹成 0，本页读
+  /// `MediaQuery.viewInsetsOf` 拿不到，必须看 View 本身。
+  bool _softKeyboardVisible = false;
+
+  bool _readSoftKeyboardVisible() {
+    return (View.maybeOf(context)?.viewInsets.bottom ?? 0) > 0;
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (!mounted) return;
+    final bool visible = _readSoftKeyboardVisible();
+    if (visible == _softKeyboardVisible) return;
+    setState(() => _softKeyboardVisible = visible);
+  }
+
+  /// 搜索栏尾部「收起键盘」的显示判据（反馈 cczhbM7ZOI）：只在触屏平台、搜索框
+  /// 持焦且软键盘真的弹着时出现——此前收键盘只能点一块不聚焦的空白（查词页几乎没有），
+  /// 返回键又会清空查询或退出 app。
+  bool get _showsHideKeyboardButton {
+    final TargetPlatform platform = Theme.of(context).platform;
+    if (platform != TargetPlatform.android && platform != TargetPlatform.iOS) {
+      return false;
+    }
+    return _softKeyboardVisible && _searchFocusNode.hasFocus;
+  }
+
+  /// 只收键盘、不交焦点：与提交后收键盘（BUG-2686）同一理由——unfocus 会被
+  /// FushiFocusRoot 的被动修复把焦点还回搜索框，键盘又弹一次。再点一下框
+  /// （EditableText.requestKeyboard）键盘就回来。
+  void _hideSoftKeyboard() {
+    unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.hide'));
+  }
+
+  Widget _buildHideKeyboardButton() {
+    return FushiStaggeredEntrance(
+      key: const ValueKey<String>('home_dictionary_hide_keyboard_entrance'),
+      index: 0,
+      child: FushiIconButton(
+        key: const ValueKey<String>('home_dictionary_hide_keyboard_button'),
+        tooltip: t.lookup_page_hide_keyboard,
+        icon: FushiIcons.keyboard,
+        onTap: _hideSoftKeyboard,
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // 挂载时键盘可能已经弹着（从别的输入框切过来），补读一次初值。
+    WidgetsBinding.instance.addPostFrameCallback((_) => didChangeMetrics());
     appModelNoUpdate.dictionarySearchAgainNotifier.addListener(_searchAgain);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
     attachLookupCounter(_popup);
@@ -484,6 +558,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.focusSignal?.removeListener(_consumeFocusRequest);
     DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
     _searchFocusNode.removeListener(_onFocusChanged);
@@ -550,9 +625,14 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   bool get _hasActiveQuery => _controller.text.isNotEmpty;
 
+  /// 清空查询并把用户送回搜索框（键盘随之弹起，BUG-2687）——除非用户在查词设置里
+  /// 关掉了「自动弹出键盘」（反馈 cczhbM7ZOI）：那时只清空，焦点与键盘原样不动。
+  /// 导航点进查词（[DictionaryFocusIntent.clearQuery]）、结果顶部下拉、返回键清空都
+  /// 经过这里，所以一个判据管住全部「替用户弹键盘」的路径；显式热键「聚焦搜索框」
+  /// （keepQuery / selectQuery）不经过这里，照常聚焦。
   void _clearSearch() {
     _resetQuery();
-    _focusSearchField();
+    if (appModel.lookupPageAutoShowKeyboard) _focusSearchField();
   }
 
   /// 清掉查询串、结果与扫描状态（不碰焦点）。[_clearSearch] 清完把用户送回
@@ -576,6 +656,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   }
 
   void _clearSearchFromResultPull() {
+    // 反馈 3D-JH966Kr：往上翻结果顶到头会被甩回搜索历史——查词设置里可关。
+    if (!appModel.lookupPagePullToClear) return;
     // TODO-931：常驻热槽使 entries 永不空，可见性判据改用 hasVisiblePopup（隐藏热槽不算）。
     if (_popup.hasVisiblePopup || _popup.isSearchingUi) return;
     _clearSearch();
@@ -621,6 +703,18 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       windowSizeClassReal(logicalWidth, FushiAppUiScale.of(context)) ==
       WindowSizeClass.expanded;
 
+  /// MD3 窄屏的 tab 承载不画页头：底栏已标明「查词」，页头只剩一行重复的大标题 +
+  /// 一枚清空历史，白占搜索栏上方一整行（用户 2026-10-18 实报「只有查词有这个多余
+  /// 的标题」——库页页头放的是库导航，不多余）。清空历史并进搜索栏一行，与
+  /// Cupertino 同位。独立路由仍要页头：返回键是它唯一的出口。
+  bool _hidesCompactPageHeader(BuildContext context) =>
+      !widget.showBackButton &&
+      windowSizeClassReal(
+            MediaQuery.sizeOf(context).width,
+            FushiAppUiScale.of(context),
+          ) ==
+          WindowSizeClass.compact;
+
   /// Apple（iOS）搜索中折叠大标题：搜索区持焦或已有查询时收起，把高度让给建议与
   /// 结果（UISearchController 搜索态隐藏导航栏大标题的同款）。只在窄屏——桌面 /
   /// 平板的大标题不挤占结果区。独立路由不折叠：它的返回键在页头里，是 iOS 上唯一的
@@ -633,6 +727,29 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   @override
   Widget build(BuildContext context) {
+    // BUG-3685：探针挂在本页路由里，路由被压住 / 回到栈顶时刷新根 Overlay 浮层。
+    return LookupOwnerRouteProbe(
+      onChanged: _onLookupOwnerRouteChanged,
+      child: _buildPage(context),
+    );
+  }
+
+  /// BUG-3685（反馈 5yWS2o6U6q）：查词浮层挂在根 Overlay、跟随本页路由。别的整页
+  /// 推上来（设置 / 反馈……）时本页不再是栈顶，[DictionaryPageMixin] 把浮层停靠屏外、
+  /// 撤掉整屏 barrier——否则 `Overlay.rearrange` 把浮层排回最顶，压住新页面、吃掉点击。
+  @override
+  ModalRoute<Object?>? get lookupOwnerRoute =>
+      mounted ? ModalRoute.of(context) : null;
+
+  /// [LookupOwnerRouteProbe] 回报本页路由栈顶状态变了：帧后刷新根 Overlay 浮层 entry
+  /// （它只在自己 build 时读 [lookupOwnerRoute]；探针回调在 build 阶段，不能同步刷新）。
+  void _onLookupOwnerRouteChanged() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncPopupOverlay();
+    });
+  }
+
+  Widget _buildPage(BuildContext context) {
     return PopScope(
       // TODO-931：常驻热槽永远占着 entries[0]，返回判据改用 hasVisiblePopup（隐藏热槽不拦返回）。
       canPop: !_hasActiveQuery && !_popup.hasVisiblePopup,
@@ -662,7 +779,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
               // 走的 `_StandaloneDictionaryRoute`）是个裸 Scaffold，页头里的返回键
               // 是它唯一的可见出口——iOS 没有系统返回键，`canPop` 又在有查询词时
               // 关掉侧滑，藏掉页头就等于把用户锁在查词页里。
-              if (!isCupertinoPlatform(context) || widget.showBackButton)
+              // MD3 窄屏同理不画页头（见 [_hidesCompactPageHeader]）。
+              if ((!isCupertinoPlatform(context) &&
+                      !_hidesCompactPageHeader(context)) ||
+                  widget.showBackButton)
                 _buildCollapsibleHeader(
                   collapsed: _collapsesLargeTitle(context),
                   child: _buildPageHeader(),
@@ -690,8 +810,6 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         return Column(
           children: [
             _buildSearchRegion(),
-            // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
-            const SyncProgressBanner(),
             Expanded(child: _buildBody()),
           ],
         );
@@ -735,7 +853,6 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           child: Column(
             children: <Widget>[
               _buildSearchRegion(),
-              const SyncProgressBanner(),
               Expanded(
                 child: FushiRefreshIndicator(
                   onRefresh: _pullToRefreshDictionary,
@@ -918,32 +1035,28 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                 // MD3：SearchBar 尾部一枚 tonal 圆钮直达词典管理（导入 / 排序 /
                 // 启用），收进搜索栏的 trailing 槽（48 触控区，按钮本体 40）。
                 // 墨水屏不铺 tonal 底。Apple 下没有这枚钮（与原来一致）。
-                trailing: glass
-                    ? const <Widget>[]
-                    : <Widget>[
-                        FushiIconButton(
-                          key: const ValueKey<String>(
-                            'home_dictionary_manage_button',
-                          ),
-                          tooltip: t.dictionaries,
-                          icon: FushiIcons.dictionary,
-                          backgroundColor: isEinkTheme(context)
-                              ? null
-                              : Theme.of(
-                                  context,
-                                ).colorScheme.secondaryContainer,
-                          enabledColor: isEinkTheme(context)
-                              ? null
-                              : Theme.of(
-                                  context,
-                                ).colorScheme.onSecondaryContainer,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 40,
-                            height: 40,
-                          ),
-                          onTap: appModel.showDictionaryMenu,
-                        ),
-                      ],
+                trailing: <Widget>[
+                  if (_showsHideKeyboardButton) _buildHideKeyboardButton(),
+                  if (!glass)
+                    FushiIconButton(
+                      key: const ValueKey<String>(
+                        'home_dictionary_manage_button',
+                      ),
+                      tooltip: t.dictionaries,
+                      icon: FushiIcons.dictionary,
+                      backgroundColor: isEinkTheme(context)
+                          ? null
+                          : Theme.of(context).colorScheme.secondaryContainer,
+                      enabledColor: isEinkTheme(context)
+                          ? null
+                          : Theme.of(context).colorScheme.onSecondaryContainer,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 40,
+                        height: 40,
+                      ),
+                      onTap: appModel.showDictionaryMenu,
+                    ),
+                ],
               ),
             ),
           ),
@@ -967,8 +1080,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                   )
                 : const SizedBox.shrink(),
           ),
-          if (isCupertinoPlatform(context))
+          if (isCupertinoPlatform(context) || _hidesCompactPageHeader(context))
             FushiIconButton(
+              key: const ValueKey<String>('home_dictionary_search_row_clear'),
               tooltip: t.clear_dictionary_title,
               icon: FushiIcons.deleteSweep,
               onTap: _showDeleteDictionaryHistoryPrompt,
@@ -1018,7 +1132,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         _buildQueryStateBody(state),
         FushiDeferredLoading(
           active: state == QueryBodyState.loading,
-          background: Theme.of(context).scaffoldBackgroundColor,
+          background: fushiOpaquePageColor(context),
         ),
       ],
     );
@@ -1837,13 +1951,16 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                       // TODO-617：顶层查词把 WebView 局部 localRect 经结果 WebView 的 render box
                       // localToGlobal 映成屏幕坐标（popupWordScreenRect），与根 Overlay 弹窗同系。
                       // localRect==Zero 时直传 Zero，由 mixin fallbackSelectionRect 兜底。
-                      onTextSelected: (text, localRect) {
-                        _pushNestedPopup(
-                          text,
-                          _resultWordScreenRect(localRect),
-                          reuseWarmSlot: true,
-                        );
-                      },
+                      onTextSelected:
+                          (text, localRect, rubySpans, contextSentence) {
+                            _pushNestedPopup(
+                              text,
+                              _resultWordScreenRect(localRect),
+                              reuseWarmSlot: true,
+                              rubySpans: rubySpans,
+                              contextSentence: contextSentence,
+                            );
+                          },
                       onLinkClick: (query, localRect) {
                         _pushNestedPopup(
                           query,
@@ -1860,6 +1977,34 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                           onUpdateEntry(noteId, _withSourceSentence(fields)),
                       onDuplicateCheck: checkDuplicate,
                       onOverwriteTargetNoteId: findOverwriteTargetNoteId,
+                      // 反馈 -xJWu33WgJ：结果区以前只接了 + 与覆写最新卡两条，点 ✓
+                      // （这个词以前就制过卡）时 popup.js 按「app 内宿主有原生操作单」
+                      // 调 minedCardAction，这里没接 → 桥回空结果、静默无反应，以前
+                      // 制的那张没句子的卡永远覆写不了。☆ / ↗ / 高级制卡同样漏接。
+                      // 与浮层各层（DictionaryPageMixin.buildNestedPopupLayer）同一套。
+                      onMinedCardAction:
+                          (
+                            Map<String, String> fields, {
+                            bool openChooser = false,
+                          }) => onMinedCardAction(
+                            _withSourceSentence(fields),
+                            openChooser: openChooser,
+                          ),
+                      onQueueOverwrite: (Map<String, String> fields) =>
+                          onQueueOverwrite(_withSourceSentence(fields)),
+                      onOpenInAnki: onOpenInAnki,
+                      // ☆ 与高级制卡的字段预填同读结果区语境（源文本条那一句），
+                      // 与上面制卡 / ✓ 的例句同源（[_resultLookupContext]）。
+                      onFavoriteEntry: (Map<String, String> fields) =>
+                          onFavoriteEntry(
+                            fields,
+                            lookupContext: _resultLookupContext,
+                          ),
+                      onFavoriteCheck: onFavoriteCheck,
+                      onOpenAdvancedMining: advancedMiningOpenerFor(
+                        _resultWebViewKey,
+                        lookupContext: () => _resultLookupContext,
+                      ),
                       onScrolledToBottom: _allLoaded ? null : _loadMore,
                       onTopPullReleased: _clearSearchFromResultPull,
                       // BUG-3064：结果正文在 WebView 里滚，Flutter 收不到滚动通知；
@@ -2069,21 +2214,30 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     );
   }
 
-  /// BUG-3216：结果区制卡用的例句——源文本条上扫描高亮所在的那一句。
+  /// BUG-3216 / BUG-4209：结果区的查词语境——源文本条上扫描高亮所在的那一句。结果区
+  /// 的制卡、✓ 操作单（覆写 / 新增重复卡）、排队覆写、高级制卡字段预填、☆ 收藏全读
+  /// 这一份；没有可用的源文本（空 / 与查询串重复而隐藏）时为 null。只属于结果区：浮层
+  /// 里的词语境是被点处那一句（[miningFieldsForLayer]），所以不覆写宿主级的
+  /// [favoriteLookupContext]。
+  FavoriteLookupContext? get _resultLookupContext {
+    final String sentence = sourceLookupMiningSentence(
+      sourceText: _sourceLookupText,
+      highlight: _sourceHighlight,
+      stripRedundant: _sourceStripRedundant,
+    );
+    return sentence.isEmpty ? null : FavoriteLookupContext(sentence: sentence);
+  }
+
+  /// 结果区制卡字段：JS 没带例句时补上 [_resultLookupContext] 那一句。
   Map<String, String> _withSourceSentence(Map<String, String> fields) =>
-      withFallbackMiningSentence(
-        fields,
-        sourceLookupMiningSentence(
-          sourceText: _sourceLookupText,
-          highlight: _sourceHighlight,
-          stripRedundant: _sourceStripRedundant,
-        ),
-      );
+      withFallbackMiningSentence(fields, _resultLookupContext?.sentence ?? '');
 
   Future<int> _pushNestedPopup(
     String query,
     Rect selectionRect, {
     bool reuseWarmSlot = false,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    String contextSentence = '',
   }) {
     return pushNestedPopup(
       query: query,
@@ -2091,8 +2245,25 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       controller: _popup,
       reuseWarmSlot: reuseWarmSlot,
       autoRead: true,
+      rubySpans: rubySpans,
+      contextSentence: contextSentence,
     );
   }
+
+  /// 反馈 TnKWBi4C-9：浮层里的词是从释义正文点出来的，例句就是被点处那一句
+  /// （[DictionaryPopupEntry.contextSentence]）——与 Yomitan 在弹窗释义里扫词同口径。
+  /// 源文本条那句只属于结果区（BUG-3216），不是浮层词的语境，所以这里不用它。
+  @override
+  Map<String, String> miningFieldsForLayer(
+    int index,
+    DictionaryPopupController controller,
+    Map<String, String> fields,
+  ) => index < controller.entries.length
+      ? withFallbackMiningSentence(
+          fields,
+          controller.entries[index].contextSentence,
+        )
+      : fields;
 
   /// TODO-931：是否有任何**可见**弹窗层（常驻隐藏热槽不算）。
   bool get _hasVisiblePopup => _popup.hasVisiblePopup;
@@ -2113,7 +2284,12 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       index: index,
       screen: screen,
       controller: _popup,
-      onPush: (text, rect) => _pushNestedPopup(text, rect),
+      onPush: (text, rect, rubySpans, contextSentence) => _pushNestedPopup(
+        text,
+        rect,
+        rubySpans: rubySpans,
+        contextSentence: contextSentence,
+      ),
       onPop: _popNestedPopupAt,
     );
   }

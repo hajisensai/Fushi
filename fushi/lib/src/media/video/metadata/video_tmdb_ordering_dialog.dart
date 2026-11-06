@@ -18,7 +18,14 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_work_loader.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 打开备选排序对话框并在用户确认后写库 + 重刮。返回是否真的改了排序。
@@ -107,12 +114,11 @@ Future<VideoTmdbOrderingChoice?> showVideoTmdbOrderingPicker({
   required BuildContext context,
   required List<VideoMetadataEpisodeGroupSummary> groups,
   required String? initial,
-}) =>
-    showAppDialog<VideoTmdbOrderingChoice>(
-      context: context,
-      builder: (BuildContext context) =>
-          _VideoTmdbOrderingDialog(groups: groups, initial: initial),
-    );
+}) => showAppDialog<VideoTmdbOrderingChoice>(
+  context: context,
+  builder: (BuildContext context) =>
+      _VideoTmdbOrderingDialog(groups: groups, initial: initial),
+);
 
 class _VideoTmdbOrderingDialog extends StatefulWidget {
   const _VideoTmdbOrderingDialog({required this.groups, required this.initial});
@@ -174,31 +180,29 @@ class _VideoTmdbOrderingDialogState extends State<_VideoTmdbOrderingDialog> {
       title: Text(t.collection_tmdb_ordering),
       content: SizedBox(
         width: 460,
-        child: SingleChildScrollView(
-          child: FushiEntranceScope(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Text(
-                  t.collection_tmdb_ordering_hint,
-                  style: context.fushiType.bodyMedium.copyWith(
-                    color: cs.onSurfaceVariant,
+        child: FushiEntranceScope(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(
+                t.collection_tmdb_ordering_hint,
+                style: context.fushiType.bodyMedium.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 16),
+              for (int i = 0; i < options.length; i++)
+                FushiStaggeredEntrance(
+                  index: i,
+                  child: FushiGroupedListItem(
+                    index: i,
+                    count: options.length,
+                    selected: _selected == options[i].$1,
+                    child: options[i].$2,
                   ),
                 ),
-                const SizedBox(height: 16),
-                for (int i = 0; i < options.length; i++)
-                  FushiStaggeredEntrance(
-                    index: i,
-                    child: FushiGroupedListItem(
-                      index: i,
-                      count: options.length,
-                      selected: _selected == options[i].$1,
-                      child: options[i].$2,
-                    ),
-                  ),
-              ],
-            ),
+            ],
           ),
         ),
       ),

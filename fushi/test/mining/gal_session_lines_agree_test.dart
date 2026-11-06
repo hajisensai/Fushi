@@ -35,12 +35,12 @@ void main() {
     // 这正是分叉发生的条件。
     service.appendLine('I am not a fan of mornings.');
 
-    expect(controller.workbenchLines, isNotEmpty,
-        reason: '工作台在未计会话时本来就会显示台词');
+    expect(controller.workbenchLines, isNotEmpty, reason: '工作台在未计会话时本来就会显示台词');
     expect(
       controller.selectedSessionLines.map((e) => e.id).toList(),
       controller.workbenchLines.map((e) => e.id).toList(),
-      reason: '制卡回溯用的集合与工作台展示的集合必须逐条一致，'
+      reason:
+          '制卡回溯用的集合与工作台展示的集合必须逐条一致，'
           '否则用户看得见的台词在制卡时"不存在"，且失败是静默的',
     );
   });
@@ -53,14 +53,18 @@ void main() {
     service.appendLine('The morning is when you are not awake enough.');
     service.appendLine('I am not a fan of mornings.');
 
-    final List<String> workbench =
-        controller.workbenchLines.map((e) => e.id).toList();
-    final List<String> session =
-        controller.selectedSessionLines.map((e) => e.id).toList();
+    final List<String> workbench = controller.workbenchLines
+        .map((e) => e.id)
+        .toList();
+    final List<String> session = controller.selectedSessionLines
+        .map((e) => e.id)
+        .toList();
     expect(workbench.length, 3);
     expect(session, workbench);
     // 制卡按「最新一条」回溯，所以末元素必须是最后写进来的那句。
-    expect(controller.selectedSessionLines.last.text,
-        'I am not a fan of mornings.');
+    expect(
+      controller.selectedSessionLines.last.text,
+      'I am not a fan of mornings.',
+    );
   });
 }

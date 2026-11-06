@@ -9,9 +9,9 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 void main() {
   test('FushiFocusRing follows the focused control shape', () {
-    final String source =
-        File('lib/src/utils/components/fushi_focus_ring.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/utils/components/fushi_focus_ring.dart',
+    ).readAsStringSync();
 
     // 环的圆角取被聚焦控件自身的外形（胶囊 / 圆钮 / 圆角），不再是恒定小圆角。
     expect(source, contains('_probeTargetShape('));
@@ -21,26 +21,29 @@ void main() {
     expect(source, isNot(contains('Scrollable.ensureVisible')));
   });
 
-  testWidgets('FushiFocusRing builds and overlays its child',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(MaterialApp(
-      home: FushiFocusRing(
-        child: Scaffold(
-          body: Center(
-            child: ElevatedButton(onPressed: () {}, child: const Text('x')),
+  testWidgets('FushiFocusRing builds and overlays its child', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FushiFocusRing(
+          child: Scaffold(
+            body: Center(
+              child: ElevatedButton(onPressed: () {}, child: const Text('x')),
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     expect(find.text('x'), findsOneWidget);
     expect(find.byType(FushiFocusRing), findsOneWidget);
   });
 
-  testWidgets(
-      'does not throw when a focused sibling is removed while the ring '
-      'rebuilds in the same frame (desktop startup regression)',
-      (WidgetTester tester) async {
+  testWidgets('does not throw when a focused sibling is removed while the ring '
+      'rebuilds in the same frame (desktop startup regression)', (
+    WidgetTester tester,
+  ) async {
     // Desktop defaults to the traditional (keyboard) highlight mode from
     // launch, so the focus-ring geometry path runs immediately — unlike mobile
     // (touch mode), where it is skipped. Reading the focused element's geometry
@@ -63,31 +66,36 @@ void main() {
 
     late StateSetter setOuter;
     bool show = true;
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: StatefulBuilder(
-          builder: (BuildContext context, StateSetter setState) {
-            setOuter = setState;
-            return Column(
-              children: <Widget>[
-                if (show)
-                  Focus(
-                    focusNode: node,
-                    autofocus: true,
-                    child: const SizedBox(width: 30, height: 30),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (BuildContext context, StateSetter setState) {
+              setOuter = setState;
+              return Column(
+                children: <Widget>[
+                  if (show)
+                    Focus(
+                      focusNode: node,
+                      autofocus: true,
+                      child: const SizedBox(width: 30, height: 30),
+                    ),
+                  FushiFocusRing(
+                    // Child identity changes with `show`, forcing the ring to
+                    // rebuild in the same pass that removes the focused sibling.
+                    child: SizedBox(
+                      key: ValueKey<bool>(show),
+                      width: 10,
+                      height: 10,
+                    ),
                   ),
-                FushiFocusRing(
-                  // Child identity changes with `show`, forcing the ring to
-                  // rebuild in the same pass that removes the focused sibling.
-                  child: SizedBox(
-                      key: ValueKey<bool>(show), width: 10, height: 10),
-                ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     expect(node.hasFocus, isTrue);
 
@@ -98,8 +106,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-      'renders a focus ring for a stable focused widget in '
+  testWidgets('renders a focus ring for a stable focused widget in '
       'traditional mode', (WidgetTester tester) async {
     final FocusManager fm = FocusManager.instance;
     final FocusHighlightStrategy previous = fm.highlightStrategy;
@@ -109,19 +116,21 @@ void main() {
     final FocusNode node = FocusNode();
     addTearDown(node.dispose);
 
-    await tester.pumpWidget(MaterialApp(
-      home: FushiFocusRing(
-        child: Scaffold(
-          body: Center(
-            child: Focus(
-              focusNode: node,
-              autofocus: true,
-              child: const SizedBox(width: 40, height: 40),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FushiFocusRing(
+          child: Scaffold(
+            body: Center(
+              child: Focus(
+                focusNode: node,
+                autofocus: true,
+                child: const SizedBox(width: 40, height: 40),
+              ),
             ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pump(); // post-frame rect computation
     await tester.pump(); // setState -> ring drawn
 
@@ -131,95 +140,107 @@ void main() {
   });
 
   testWidgets(
-      'ring follows the focused control when the in-app UI scale changes',
-      (WidgetTester tester) async {
-    // Regression: dragging the "界面大小" (app UI scale) slider reflows the whole
-    // subtree via FushiAppUiScale's Transform — moving the focused control —
-    // without any window-metrics, focus, scroll, or highlight change. None of
-    // the ring's recompute triggers fired, so the ring stayed pinned to the
-    // control's old position ("焦点不跟着动").
-    final FocusManager fm = FocusManager.instance;
-    final FocusHighlightStrategy previous = fm.highlightStrategy;
-    fm.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
-    addTearDown(() => fm.highlightStrategy = previous);
+    'ring follows the focused control when the in-app UI scale changes',
+    (WidgetTester tester) async {
+      // Regression: dragging the "界面大小" (app UI scale) slider reflows the whole
+      // subtree via FushiAppUiScale's Transform — moving the focused control —
+      // without any window-metrics, focus, scroll, or highlight change. None of
+      // the ring's recompute triggers fired, so the ring stayed pinned to the
+      // control's old position ("焦点不跟着动").
+      final FocusManager fm = FocusManager.instance;
+      final FocusHighlightStrategy previous = fm.highlightStrategy;
+      fm.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
+      addTearDown(() => fm.highlightStrategy = previous);
 
-    final FocusNode node = FocusNode();
-    addTearDown(node.dispose);
-    const Key focusKey = ValueKey<String>('scaled-focus-target');
+      final FocusNode node = FocusNode();
+      addTearDown(node.dispose);
+      const Key focusKey = ValueKey<String>('scaled-focus-target');
 
-    late StateSetter setOuter;
-    double scale = 1.0;
-    await tester.pumpWidget(MaterialApp(
-      home: StatefulBuilder(
-        builder: (BuildContext context, StateSetter setState) {
-          setOuter = setState;
-          return FushiAppUiScale(
-            scale: scale,
-            child: FushiFocusRing(
-              child: Scaffold(
-                body: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    // Height scales with textScaler, so the focus target below
-                    // it shifts down when the UI scale grows.
-                    const Text('header', style: TextStyle(fontSize: 48)),
-                    Focus(
-                      focusNode: node,
-                      autofocus: true,
-                      child: const SizedBox(
-                        key: focusKey,
-                        width: 40,
-                        height: 40,
-                      ),
+      late StateSetter setOuter;
+      double scale = 1.0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StatefulBuilder(
+            builder: (BuildContext context, StateSetter setState) {
+              setOuter = setState;
+              return FushiAppUiScale(
+                scale: scale,
+                child: FushiFocusRing(
+                  child: Scaffold(
+                    body: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        // Height scales with textScaler, so the focus target below
+                        // it shifts down when the UI scale grows.
+                        const Text('header', style: TextStyle(fontSize: 48)),
+                        Focus(
+                          focusNode: node,
+                          autofocus: true,
+                          child: const SizedBox(
+                            key: focusKey,
+                            width: 40,
+                            height: 40,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-          );
-        },
-      ),
-    ));
-    await tester.pump(); // post-frame rect computation
-    await tester.pump(); // setState -> ring drawn
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pump(); // post-frame rect computation
+      await tester.pump(); // setState -> ring drawn
 
-    // The ring is the only bordered DecoratedBox in the subtree.
-    final Finder ringIndicator = find.descendant(
-      of: find.byType(FushiFocusRing),
-      matching: find.byWidgetPredicate((Widget w) =>
-          w is DecoratedBox &&
-          w.decoration is BoxDecoration &&
-          (w.decoration as BoxDecoration).border != null),
-    );
-    expect(ringIndicator, findsOneWidget);
+      // The ring is the only bordered DecoratedBox in the subtree.
+      final Finder ringIndicator = find.descendant(
+        of: find.byType(FushiFocusRing),
+        matching: find.byWidgetPredicate(
+          (Widget w) =>
+              w is DecoratedBox &&
+              w.decoration is BoxDecoration &&
+              (w.decoration as BoxDecoration).border != null,
+        ),
+      );
+      expect(ringIndicator, findsOneWidget);
 
-    // Ring sits at the focused control's rect inflated by 2px.
-    final Offset focusTopLeft = tester.getTopLeft(find.byKey(focusKey));
-    Offset ringTopLeft = tester.getTopLeft(ringIndicator);
-    expect((ringTopLeft - (focusTopLeft - const Offset(2, 2))).distance,
+      // Ring sits at the focused control's rect inflated by 2px.
+      final Offset focusTopLeft = tester.getTopLeft(find.byKey(focusKey));
+      Offset ringTopLeft = tester.getTopLeft(ringIndicator);
+      expect(
+        (ringTopLeft - (focusTopLeft - const Offset(2, 2))).distance,
         lessThan(0.5),
-        reason: 'ring should align to focus at scale 1.0');
+        reason: 'ring should align to focus at scale 1.0',
+      );
 
-    // Grow the UI scale: the header text gets taller, pushing the focus target
-    // down. No window resize / focus change / scroll happens.
-    setOuter(() => scale = 2.0);
-    await tester.pump(); // rebuild with new scale (reflow)
-    await tester.pump(); // didChangeDependencies-scheduled recompute
-    await tester.pump(); // setState -> ring repositioned
+      // Grow the UI scale: the header text gets taller, pushing the focus target
+      // down. No window resize / focus change / scroll happens.
+      setOuter(() => scale = 2.0);
+      await tester.pump(); // rebuild with new scale (reflow)
+      await tester.pump(); // didChangeDependencies-scheduled recompute
+      await tester.pump(); // setState -> ring repositioned
 
-    final Offset movedFocusTopLeft = tester.getTopLeft(find.byKey(focusKey));
-    expect(movedFocusTopLeft.dy, greaterThan(focusTopLeft.dy),
-        reason: 'sanity: focus target moved down after scale increase');
+      final Offset movedFocusTopLeft = tester.getTopLeft(find.byKey(focusKey));
+      expect(
+        movedFocusTopLeft.dy,
+        greaterThan(focusTopLeft.dy),
+        reason: 'sanity: focus target moved down after scale increase',
+      );
 
-    ringTopLeft = tester.getTopLeft(ringIndicator);
-    expect((ringTopLeft - (movedFocusTopLeft - const Offset(2, 2))).distance,
+      ringTopLeft = tester.getTopLeft(ringIndicator);
+      expect(
+        (ringTopLeft - (movedFocusTopLeft - const Offset(2, 2))).distance,
         lessThan(0.5),
-        reason: 'ring must follow the focus target after a UI scale change');
-  });
+        reason: 'ring must follow the focus target after a UI scale change',
+      );
+    },
+  );
 
-  testWidgets(
-      'ring on-screen size tracks the scaled control (not just position)',
-      (WidgetTester tester) async {
+  testWidgets('ring on-screen size tracks the scaled control (not just position)', (
+    WidgetTester tester,
+  ) async {
     // Regression: the ring's rect was built as `localToGlobal(Offset.zero) &
     // ro.size` — a scaled top-left but the control's UN-scaled local size. build()
     // then divides by the scale, so the ring SHRANK as the UI zoomed in (44px ring
@@ -238,36 +259,44 @@ void main() {
 
     late StateSetter setOuter;
     double scale = 1.0;
-    await tester.pumpWidget(MaterialApp(
-      home: StatefulBuilder(
-        builder: (BuildContext context, StateSetter setState) {
-          setOuter = setState;
-          return FushiAppUiScale(
-            scale: scale,
-            child: FushiFocusRing(
-              child: Scaffold(
-                body: Center(
-                  child: Focus(
-                    focusNode: node,
-                    autofocus: true,
-                    child: const SizedBox(key: focusKey, width: 40, height: 40),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            setOuter = setState;
+            return FushiAppUiScale(
+              scale: scale,
+              child: FushiFocusRing(
+                child: Scaffold(
+                  body: Center(
+                    child: Focus(
+                      focusNode: node,
+                      autofocus: true,
+                      child: const SizedBox(
+                        key: focusKey,
+                        width: 40,
+                        height: 40,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
-    ));
+    );
     await tester.pump();
     await tester.pump();
 
     final Finder ring = find.descendant(
       of: find.byType(FushiFocusRing),
-      matching: find.byWidgetPredicate((Widget w) =>
-          w is DecoratedBox &&
-          w.decoration is BoxDecoration &&
-          (w.decoration as BoxDecoration).border != null),
+      matching: find.byWidgetPredicate(
+        (Widget w) =>
+            w is DecoratedBox &&
+            w.decoration is BoxDecoration &&
+            (w.decoration as BoxDecoration).border != null,
+      ),
     );
 
     // The ring must stay the control's on-screen rect inflated by exactly 2px at
@@ -277,10 +306,16 @@ void main() {
       final Rect r = tester.getRect(ring);
       expect(r.left, closeTo(control.left - 2, 0.6), reason: 'left @ $s');
       expect(r.top, closeTo(control.top - 2, 0.6), reason: 'top @ $s');
-      expect(r.width, closeTo(control.width + 4, 0.6),
-          reason: 'width must track scaled control @ $s');
-      expect(r.height, closeTo(control.height + 4, 0.6),
-          reason: 'height must track scaled control @ $s');
+      expect(
+        r.width,
+        closeTo(control.width + 4, 0.6),
+        reason: 'width must track scaled control @ $s',
+      );
+      expect(
+        r.height,
+        closeTo(control.height + 4, 0.6),
+        reason: 'height must track scaled control @ $s',
+      );
     }
 
     expectRingHugsControl(1.0);
@@ -290,8 +325,11 @@ void main() {
     await tester.pump();
     await tester.pump();
     // Control is 80px on screen at 2.0×; ring must be 84px, not the old 44px.
-    expect(tester.getRect(find.byKey(focusKey)).width, closeTo(80, 0.6),
-        reason: 'sanity: control doubles on screen at 2.0×');
+    expect(
+      tester.getRect(find.byKey(focusKey)).width,
+      closeTo(80, 0.6),
+      reason: 'sanity: control doubles on screen at 2.0×',
+    );
     expectRingHugsControl(2.0);
 
     setOuter(() => scale = 0.5);
@@ -302,71 +340,76 @@ void main() {
   });
 
   testWidgets(
-      'ring converts view coordinates into its offset host coordinate space '
-      '(Windows custom title bar, BUG-1963)',
-      (WidgetTester tester) async {
-    final FocusManager fm = FocusManager.instance;
-    final FocusHighlightStrategy previous = fm.highlightStrategy;
-    fm.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
-    addTearDown(() => fm.highlightStrategy = previous);
+    'ring converts view coordinates into its offset host coordinate space '
+    '(Windows custom title bar, BUG-1963)',
+    (WidgetTester tester) async {
+      final FocusManager fm = FocusManager.instance;
+      final FocusHighlightStrategy previous = fm.highlightStrategy;
+      fm.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
+      addTearDown(() => fm.highlightStrategy = previous);
 
-    final FocusNode node = FocusNode();
-    addTearDown(node.dispose);
-    const Key focusKey = ValueKey<String>('offset-host-focus-target');
+      final FocusNode node = FocusNode();
+      addTearDown(node.dispose);
+      const Key focusKey = ValueKey<String>('offset-host-focus-target');
 
-    await tester.pumpWidget(MaterialApp(
-      home: Column(
-        children: <Widget>[
-          // Mirrors FushiDesktopTitleBar: the app/focus-ring subtree starts
-          // below a native-sized caption row instead of at view y = 0.
-          const SizedBox(height: 48),
-          Expanded(
-            child: FushiAppUiScale(
-              scale: 1.25,
-              child: FushiFocusRing(
-                child: Scaffold(
-                  body: Center(
-                    child: Focus(
-                      focusNode: node,
-                      autofocus: true,
-                      child: const SizedBox(
-                        key: focusKey,
-                        width: 48,
-                        height: 40,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Column(
+            children: <Widget>[
+              // Mirrors FushiDesktopTitleBar: the app/focus-ring subtree starts
+              // below a native-sized caption row instead of at view y = 0.
+              const SizedBox(height: 48),
+              Expanded(
+                child: FushiAppUiScale(
+                  scale: 1.25,
+                  child: FushiFocusRing(
+                    child: Scaffold(
+                      body: Center(
+                        child: Focus(
+                          focusNode: node,
+                          autofocus: true,
+                          child: const SizedBox(
+                            key: focusKey,
+                            width: 48,
+                            height: 40,
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
-    ));
-    await tester.pump();
-    await tester.pump();
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
 
-    final Finder ring = find.descendant(
-      of: find.byType(FushiFocusRing),
-      matching: find.byWidgetPredicate((Widget widget) =>
-          widget is DecoratedBox &&
-          widget.decoration is BoxDecoration &&
-          (widget.decoration as BoxDecoration).border != null),
-    );
-    expect(ring, findsOneWidget);
+      final Finder ring = find.descendant(
+        of: find.byType(FushiFocusRing),
+        matching: find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is DecoratedBox &&
+              widget.decoration is BoxDecoration &&
+              (widget.decoration as BoxDecoration).border != null,
+        ),
+      );
+      expect(ring, findsOneWidget);
 
-    final Rect controlRect = tester.getRect(find.byKey(focusKey));
-    final Rect ringRect = tester.getRect(ring);
-    expect(ringRect.left, closeTo(controlRect.left - 2, 0.6));
-    expect(ringRect.top, closeTo(controlRect.top - 2, 0.6));
-    expect(ringRect.right, closeTo(controlRect.right + 2, 0.6));
-    expect(ringRect.bottom, closeTo(controlRect.bottom + 2, 0.6));
-  });
+      final Rect controlRect = tester.getRect(find.byKey(focusKey));
+      final Rect ringRect = tester.getRect(ring);
+      expect(ringRect.left, closeTo(controlRect.left - 2, 0.6));
+      expect(ringRect.top, closeTo(controlRect.top - 2, 0.6));
+      expect(ringRect.right, closeTo(controlRect.right + 2, 0.6));
+      expect(ringRect.bottom, closeTo(controlRect.bottom + 2, 0.6));
+    },
+  );
 
-  testWidgets(
-      'ring follows the focused control after a plain layout shift '
-      '(async content load — no focus/scroll/scale/theme event, BUG-1300)',
-      (WidgetTester tester) async {
+  testWidgets('ring follows the focused control after a plain layout shift '
+      '(async content load — no focus/scroll/scale/theme event, BUG-1300)', (
+    WidgetTester tester,
+  ) async {
     // 用户截图：首页 dashboard 的异步区块（热力图/继续观看）加载后整页 reflow，
     // 焦点卡片被推走，环钉死在旧矩形上、悬空横跨两个区块之间。布局位移本身没有
     // 任何事件（无焦点变化/滚动通知/窗口尺寸/缩放/主题），旧的事件枚举式重算
@@ -382,47 +425,56 @@ void main() {
 
     late StateSetter setOuter;
     double headerHeight = 0;
-    await tester.pumpWidget(MaterialApp(
-      home: StatefulBuilder(
-        builder: (BuildContext context, StateSetter setState) {
-          setOuter = setState;
-          return FushiAppUiScale(
-            scale: 1.0,
-            child: FushiFocusRing(
-              child: Scaffold(
-                body: Column(
-                  children: <Widget>[
-                    // 模拟异步加载完成后撑开的区块（如 dashboard 热力图）。
-                    SizedBox(height: headerHeight),
-                    Focus(
-                      focusNode: node,
-                      autofocus: true,
-                      child:
-                          const SizedBox(key: focusKey, width: 40, height: 40),
-                    ),
-                  ],
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            setOuter = setState;
+            return FushiAppUiScale(
+              scale: 1.0,
+              child: FushiFocusRing(
+                child: Scaffold(
+                  body: Column(
+                    children: <Widget>[
+                      // 模拟异步加载完成后撑开的区块（如 dashboard 热力图）。
+                      SizedBox(height: headerHeight),
+                      Focus(
+                        focusNode: node,
+                        autofocus: true,
+                        child: const SizedBox(
+                          key: focusKey,
+                          width: 40,
+                          height: 40,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
-    ));
+    );
     await tester.pump(); // post-frame rect computation
     await tester.pump(); // setState -> ring drawn
 
     final Finder ring = find.descendant(
       of: find.byType(FushiFocusRing),
-      matching: find.byWidgetPredicate((Widget w) =>
-          w is DecoratedBox &&
-          w.decoration is BoxDecoration &&
-          (w.decoration as BoxDecoration).border != null),
+      matching: find.byWidgetPredicate(
+        (Widget w) =>
+            w is DecoratedBox &&
+            w.decoration is BoxDecoration &&
+            (w.decoration as BoxDecoration).border != null,
+      ),
     );
     expect(ring, findsOneWidget);
     final Offset before = tester.getTopLeft(find.byKey(focusKey));
-    expect((tester.getTopLeft(ring) - (before - const Offset(2, 2))).distance,
-        lessThan(0.5),
-        reason: 'sanity: ring aligned before the layout shift');
+    expect(
+      (tester.getTopLeft(ring) - (before - const Offset(2, 2))).distance,
+      lessThan(0.5),
+      reason: 'sanity: ring aligned before the layout shift',
+    );
 
     // 纯布局位移：上方区块长高 120px，把焦点控件推下去。无任何事件。
     setOuter(() => headerHeight = 120);
@@ -430,16 +482,21 @@ void main() {
     await tester.pump(); // setState -> ring 重定位
 
     final Offset after = tester.getTopLeft(find.byKey(focusKey));
-    expect(after.dy, greaterThan(before.dy),
-        reason: 'sanity: focus target moved down by the layout shift');
-    expect((tester.getTopLeft(ring) - (after - const Offset(2, 2))).distance,
-        lessThan(0.5),
-        reason: '环必须跟随纯布局位移（BUG-1300：不许钉在旧位置悬空）');
+    expect(
+      after.dy,
+      greaterThan(before.dy),
+      reason: 'sanity: focus target moved down by the layout shift',
+    );
+    expect(
+      (tester.getTopLeft(ring) - (after - const Offset(2, 2))).distance,
+      lessThan(0.5),
+      reason: '环必须跟随纯布局位移（BUG-1300：不许钉在旧位置悬空）',
+    );
   });
 
-  testWidgets(
-      'a theme change does not yank a manually-scrolled-away focus back',
-      (WidgetTester tester) async {
+  testWidgets('a theme change does not yank a manually-scrolled-away focus back', (
+    WidgetTester tester,
+  ) async {
     // didChangeDependencies fires for ANY inherited dependency the ring reads in
     // build() — including Theme.of. A theme change must NOT trigger the
     // reveal/scroll path: it does not move geometry, and pulling a deliberately
@@ -457,41 +514,43 @@ void main() {
 
     late StateSetter setOuter;
     bool dark = false;
-    await tester.pumpWidget(StatefulBuilder(
-      builder: (BuildContext context, StateSetter setState) {
-        setOuter = setState;
-        return MaterialApp(
-          theme: ThemeData(brightness: Brightness.light),
-          darkTheme: ThemeData(brightness: Brightness.dark),
-          themeMode: dark ? ThemeMode.dark : ThemeMode.light,
-          home: FushiAppUiScale(
-            scale: 1.0,
-            child: FushiFocusRing(
-              child: Scaffold(
-                // SingleChildScrollView keeps every child mounted regardless of
-                // scroll, so the focused node stays alive (and primary) when we
-                // scroll it off-screen — isolating the theme path from any
-                // focus-change-driven reveal.
-                body: SingleChildScrollView(
-                  controller: controller,
-                  child: Column(
-                    children: <Widget>[
-                      const SizedBox(height: 400),
-                      Focus(
-                        focusNode: node,
-                        autofocus: true,
-                        child: const SizedBox(width: 40, height: 40),
-                      ),
-                      const SizedBox(height: 2000),
-                    ],
+    await tester.pumpWidget(
+      StatefulBuilder(
+        builder: (BuildContext context, StateSetter setState) {
+          setOuter = setState;
+          return MaterialApp(
+            theme: ThemeData(brightness: Brightness.light),
+            darkTheme: ThemeData(brightness: Brightness.dark),
+            themeMode: dark ? ThemeMode.dark : ThemeMode.light,
+            home: FushiAppUiScale(
+              scale: 1.0,
+              child: FushiFocusRing(
+                child: Scaffold(
+                  // SingleChildScrollView keeps every child mounted regardless of
+                  // scroll, so the focused node stays alive (and primary) when we
+                  // scroll it off-screen — isolating the theme path from any
+                  // focus-change-driven reveal.
+                  body: SingleChildScrollView(
+                    controller: controller,
+                    child: Column(
+                      children: <Widget>[
+                        const SizedBox(height: 400),
+                        Focus(
+                          focusNode: node,
+                          autofocus: true,
+                          child: const SizedBox(width: 40, height: 40),
+                        ),
+                        const SizedBox(height: 2000),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        );
-      },
-    ));
+          );
+        },
+      ),
+    );
     await tester.pump(); // autofocus + initial reveal (focus already visible)
     await tester.pump();
 
@@ -499,8 +558,11 @@ void main() {
     // scroll must never be pulled back.
     controller.jumpTo(800);
     await tester.pump();
-    expect(node.hasPrimaryFocus, isTrue,
-        reason: 'focus stays alive while scrolled away (kept mounted)');
+    expect(
+      node.hasPrimaryFocus,
+      isTrue,
+      reason: 'focus stays alive while scrolled away (kept mounted)',
+    );
     expect(controller.offset, 800.0);
 
     // Toggle the theme: changes Theme.of below the ring → didChangeDependencies,
@@ -510,76 +572,86 @@ void main() {
     await tester.pump(); // any scheduled post-frame callbacks
     await tester.pump();
 
-    expect(controller.offset, 800.0,
-        reason:
-            'theme change must not scroll the manually-positioned viewport');
+    expect(
+      controller.offset,
+      800.0,
+      reason: 'theme change must not scroll the manually-positioned viewport',
+    );
   });
 
   testWidgets(
-      'ring uses the registered visual bounds of a composite search field',
-      (WidgetTester tester) async {
-    final FocusManager fm = FocusManager.instance;
-    final FocusHighlightStrategy previous = fm.highlightStrategy;
-    fm.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
-    addTearDown(() => fm.highlightStrategy = previous);
+    'ring uses the registered visual bounds of a composite search field',
+    (WidgetTester tester) async {
+      final FocusManager fm = FocusManager.instance;
+      final FocusHighlightStrategy previous = fm.highlightStrategy;
+      fm.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
+      addTearDown(() => fm.highlightStrategy = previous);
 
-    final FocusNode node = FocusNode(debugLabel: 'registered-search');
-    final TextEditingController textController = TextEditingController();
-    addTearDown(node.dispose);
-    addTearDown(textController.dispose);
+      final FocusNode node = FocusNode(debugLabel: 'registered-search');
+      final TextEditingController textController = TextEditingController();
+      addTearDown(node.dispose);
+      addTearDown(textController.dispose);
 
-    await tester.pumpWidget(MaterialApp(
-      home: FushiFocusRoot(
-        child: FushiFocusRing(
-          child: Scaffold(
-            body: Align(
-              alignment: Alignment.topCenter,
-              child: SizedBox(
-                // 600 而不是 900：测试面只有 800 宽，900 会被 constraints 夹到 800，
-                // 而 _computeFocusRect 的近全屏早退门槛是 sw * 0.92 = 736——那时只靠
-                // 高度 56 < 552 才没触发，离静默返回 null（整条断言空转）只差一个条件。
-                width: 600,
-                child: FushiSearchField(
-                  fieldKey: const ValueKey<String>('registered-search-field'),
-                  focusId: const FushiFocusId('registered-search'),
-                  controller: textController,
-                  focusNode: node,
-                  hintText: 'Search',
-                  onChanged: (_) {},
-                  onSubmitted: (_) {},
+      await tester.pumpWidget(
+        MaterialApp(
+          home: FushiFocusRoot(
+            child: FushiFocusRing(
+              child: Scaffold(
+                body: Align(
+                  alignment: Alignment.topCenter,
+                  child: SizedBox(
+                    // 600 而不是 900：测试面只有 800 宽，900 会被 constraints 夹到 800，
+                    // 而 _computeFocusRect 的近全屏早退门槛是 sw * 0.92 = 736——那时只靠
+                    // 高度 56 < 552 才没触发，离静默返回 null（整条断言空转）只差一个条件。
+                    width: 600,
+                    child: FushiSearchField(
+                      fieldKey: const ValueKey<String>(
+                        'registered-search-field',
+                      ),
+                      focusId: const FushiFocusId('registered-search'),
+                      controller: textController,
+                      focusNode: node,
+                      hintText: 'Search',
+                      onChanged: (_) {},
+                      onSubmitted: (_) {},
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
         ),
-      ),
-    ));
-    await tester.pump();
-    node.requestFocus();
-    await tester.pump();
-    await tester.pump();
+      );
+      await tester.pump();
+      node.requestFocus();
+      await tester.pump();
+      await tester.pump();
 
-    final Finder ring = find.descendant(
-      of: find.byType(FushiFocusRing),
-      matching: find.byWidgetPredicate((Widget widget) =>
-          widget is DecoratedBox &&
-          widget.decoration is BoxDecoration &&
-          (widget.decoration as BoxDecoration).border != null),
-    );
-    expect(ring, findsOneWidget);
+      final Finder ring = find.descendant(
+        of: find.byType(FushiFocusRing),
+        matching: find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is DecoratedBox &&
+              widget.decoration is BoxDecoration &&
+              (widget.decoration as BoxDecoration).border != null,
+        ),
+      );
+      expect(ring, findsOneWidget);
 
-    final Rect fieldRect =
-        tester.getRect(find.byKey(const ValueKey('registered-search-field')));
-    final Rect ringRect = tester.getRect(ring);
-    expect(ringRect.left, closeTo(fieldRect.left - 2, 0.6));
-    expect(ringRect.top, closeTo(fieldRect.top - 2, 0.6));
-    expect(ringRect.right, closeTo(fieldRect.right + 2, 0.6));
-    expect(ringRect.bottom, closeTo(fieldRect.bottom + 2, 0.6));
-  });
+      final Rect fieldRect = tester.getRect(
+        find.byKey(const ValueKey('registered-search-field')),
+      );
+      final Rect ringRect = tester.getRect(ring);
+      expect(ringRect.left, closeTo(fieldRect.left - 2, 0.6));
+      expect(ringRect.top, closeTo(fieldRect.top - 2, 0.6));
+      expect(ringRect.right, closeTo(fieldRect.right + 2, 0.6));
+      expect(ringRect.bottom, closeTo(fieldRect.bottom + 2, 0.6));
+    },
+  );
 
-  testWidgets(
-      'BUG-1984 焦点导航在第一帧之后才打开时，环仍然贴合登记锚点（冷启动时序）',
-      (WidgetTester tester) async {
+  testWidgets('BUG-1984 焦点导航在第一帧之后才打开时，环仍然贴合登记锚点（冷启动时序）', (
+    WidgetTester tester,
+  ) async {
     // 上面那条从第一帧起 FushiFocusRoot 就是 enabled，所以它证明了算法对、
     // 完全证明不了接线对。生产时序恰恰相反：main.dart 的 runApp() 在
     // initialise() 之前执行（先给用户看加载页而不是白屏），第一帧
@@ -600,38 +672,40 @@ void main() {
     bool enabled = false;
     late StateSetter setOuter;
 
-    await tester.pumpWidget(MaterialApp(
-      home: StatefulBuilder(
-        builder: (BuildContext context, StateSetter setState) {
-          setOuter = setState;
-          // 与 main.dart 的 _wrapFocusNavigation 同构：两层吃同一个开关，
-          // 且结构恒定（那边特意保证 Element 全保留，连重挂载自愈都没有）。
-          return FushiFocusRoot(
-            enabled: enabled,
-            child: FushiFocusRing(
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            setOuter = setState;
+            // 与 main.dart 的 _wrapFocusNavigation 同构：两层吃同一个开关，
+            // 且结构恒定（那边特意保证 Element 全保留，连重挂载自愈都没有）。
+            return FushiFocusRoot(
               enabled: enabled,
-              child: Scaffold(
-                body: Align(
-                  alignment: Alignment.topCenter,
-                  child: SizedBox(
-                    width: 600,
-                    child: FushiSearchField(
-                      fieldKey: const ValueKey<String>('late-enabled-field'),
-                      focusId: const FushiFocusId('late-enabled-search'),
-                      controller: textController,
-                      focusNode: node,
-                      hintText: 'Search',
-                      onChanged: (_) {},
-                      onSubmitted: (_) {},
+              child: FushiFocusRing(
+                enabled: enabled,
+                child: Scaffold(
+                  body: Align(
+                    alignment: Alignment.topCenter,
+                    child: SizedBox(
+                      width: 600,
+                      child: FushiSearchField(
+                        fieldKey: const ValueKey<String>('late-enabled-field'),
+                        focusId: const FushiFocusId('late-enabled-search'),
+                        controller: textController,
+                        focusNode: node,
+                        hintText: 'Search',
+                        onChanged: (_) {},
+                        onSubmitted: (_) {},
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
-    ));
+    );
     await tester.pump();
 
     // 偏好加载完 / 用户翻开关：结构不变，只有 enabled 变 → 只走 didUpdateWidget。
@@ -645,19 +719,26 @@ void main() {
 
     final Finder ring = find.descendant(
       of: find.byType(FushiFocusRing),
-      matching: find.byWidgetPredicate((Widget widget) =>
-          widget is DecoratedBox &&
-          widget.decoration is BoxDecoration &&
-          (widget.decoration as BoxDecoration).border != null),
+      matching: find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is DecoratedBox &&
+            widget.decoration is BoxDecoration &&
+            (widget.decoration as BoxDecoration).border != null,
+      ),
     );
     expect(ring, findsOneWidget, reason: '开关翻开后焦点环必须出现');
 
-    final Rect fieldRect =
-        tester.getRect(find.byKey(const ValueKey('late-enabled-field')));
+    final Rect fieldRect = tester.getRect(
+      find.byKey(const ValueKey('late-enabled-field')),
+    );
     final Rect ringRect = tester.getRect(ring);
-    expect(ringRect.left, closeTo(fieldRect.left - 2, 0.6),
-        reason: '控制器在第一帧之后才可用；环不得缓存它，否则退回 EditableText '
-            '内嵌编辑区（左边界被 leading 图标 + padding 内缩约 40px）');
+    expect(
+      ringRect.left,
+      closeTo(fieldRect.left - 2, 0.6),
+      reason:
+          '控制器在第一帧之后才可用；环不得缓存它，否则退回 EditableText '
+          '内嵌编辑区（左边界被 leading 图标 + padding 内缩约 40px）',
+    );
     expect(ringRect.top, closeTo(fieldRect.top - 2, 0.6));
     expect(ringRect.right, closeTo(fieldRect.right + 2, 0.6));
     expect(ringRect.bottom, closeTo(fieldRect.bottom + 2, 0.6));

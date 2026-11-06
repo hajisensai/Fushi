@@ -1,25 +1,10 @@
-enum TestPlatformId {
-  android,
-  windows,
-  macos,
-}
+enum TestPlatformId { android, windows, macos }
 
-enum HostPlatformId {
-  linux,
-  windows,
-  macos,
-}
+enum HostPlatformId { linux, windows, macos }
 
-enum OutputExpectationKind {
-  contains,
-  excludes,
-}
+enum OutputExpectationKind { contains, excludes }
 
-enum OutputExpectationStream {
-  stdout,
-  stderr,
-  combined,
-}
+enum OutputExpectationStream { stdout, stderr, combined }
 
 enum ScenarioId {
   appSmoke,
@@ -119,9 +104,7 @@ List<PlatformPlan> buildComprehensiveMatrix() {
     ),
     PlatformPlan(
       platform: TestPlatformId.windows,
-      compatibleHosts: <HostPlatformId>{
-        HostPlatformId.windows,
-      },
+      compatibleHosts: <HostPlatformId>{HostPlatformId.windows},
       hostMissingMessage:
           'Windows scenarios require running this runner on a Windows host.',
       scenarios: <TestScenario>[
@@ -139,9 +122,7 @@ List<PlatformPlan> buildComprehensiveMatrix() {
     ),
     PlatformPlan(
       platform: TestPlatformId.macos,
-      compatibleHosts: <HostPlatformId>{
-        HostPlatformId.macos,
-      },
+      compatibleHosts: <HostPlatformId>{HostPlatformId.macos},
       hostMissingMessage:
           'macOS scenarios require running this runner on a macOS host.',
       scenarios: <TestScenario>[
@@ -162,26 +143,26 @@ List<PlatformPlan> buildComprehensiveMatrix() {
 
 extension TestPlatformLabel on TestPlatformId {
   String get label => switch (this) {
-        TestPlatformId.android => 'Android',
-        TestPlatformId.windows => 'Windows',
-        TestPlatformId.macos => 'macOS',
-      };
+    TestPlatformId.android => 'Android',
+    TestPlatformId.windows => 'Windows',
+    TestPlatformId.macos => 'macOS',
+  };
 }
 
 extension HostPlatformLabel on HostPlatformId {
   String get label => switch (this) {
-        HostPlatformId.linux => 'Linux',
-        HostPlatformId.windows => 'Windows',
-        HostPlatformId.macos => 'macOS',
-      };
+    HostPlatformId.linux => 'Linux',
+    HostPlatformId.windows => 'Windows',
+    HostPlatformId.macos => 'macOS',
+  };
 }
 
 abstract final class TestScenarios {
   static const List<OutputExpectation> flutterSuccessOutput =
       <OutputExpectation>[
-    OutputExpectation.contains('All tests passed'),
-    OutputExpectation.excludes('Some tests failed'),
-  ];
+        OutputExpectation.contains('All tests passed'),
+        OutputExpectation.excludes('Some tests failed'),
+      ];
 
   static const TestScenario appSmoke = TestScenario(
     id: ScenarioId.appSmoke,
@@ -193,10 +174,7 @@ abstract final class TestScenarios {
       'primary navigation can switch away and back',
       'unexpected FlutterError entries are rejected',
     ],
-    evidence: <String>[
-      'report.json',
-      'integration log',
-    ],
+    evidence: <String>['report.json', 'integration log'],
     outputExpectations: flutterSuccessOutput,
   );
 
@@ -247,9 +225,7 @@ abstract final class TestScenarios {
 
   static const TestScenario syncP2pRoundtrip = TestScenario(
     id: ScenarioId.syncP2pRoundtrip,
-    commands: <String>[
-      'flutter test test/sync/fushi_p2p_roundtrip_test.dart',
-    ],
+    commands: <String>['flutter test test/sync/fushi_p2p_roundtrip_test.dart'],
     assertions: <String>[
       'local Fushi sync server stores progress JSON',
       'client backend reads the uploaded progress JSON back',

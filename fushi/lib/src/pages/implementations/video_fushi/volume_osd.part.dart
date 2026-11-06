@@ -20,6 +20,9 @@ part of '../video_fushi_page.dart';
 /// (`_videoChromeColorScheme` / `_osdSurfaceColor` / `_osdTextColor` /
 /// `_videoUiScale`) stay in the main shell; the extension reads/calls them
 /// through the shared private scope.
+/// 突出 OSD（制卡结果）的停留时长；结果卡的倒计时条按它耗尽。
+const Duration _kProminentOsdDuration = Duration(milliseconds: 3600);
+
 extension _VideoVolumeOsd on _VideoFushiPageState {
   /// 在视频左上角短暂显示一条 OSD 通知（约 2.6s 后自动消失）。mounted-safe，可在
   /// `await` 之后直接调（取代各处 `ScaffoldMessenger.showSnackBar`）。
@@ -29,6 +32,8 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
     double? progress,
     bool prominent = false,
     ToastSeverity severity = ToastSeverity.neutral,
+    MineToastStatus? mineStatus,
+    MineNoticeAction? mineAction,
   }) {
     if (!mounted) return;
     _osdNotifier.value = _VideoOsdMessage(
@@ -37,20 +42,67 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
       progress: progress?.clamp(0.0, 1.0).toDouble(),
       prominent: prominent,
       severity: severity,
+      mineStatus: mineStatus,
+      mineAction: mineAction,
     );
     _osdTimer?.cancel();
-    // TODO-971：突出 OSD（制卡成功）停留更久（3.6s），普通通知仍 2.6s。
+    // TODO-971：突出 OSD（制卡成功）停留更久，普通通知仍 2.6s；带「撤销」按钮的
+    // 再久一点，留出去点的时间。
     _osdTimer = Timer(
-      Duration(milliseconds: prominent ? 3600 : 2600),
+      mineAction != null
+          ? kMineNoticeActionVisibleFor
+          : prominent
+          ? _kProminentOsdDuration
+          : const Duration(milliseconds: 2600),
       () {
         _osdNotifier.value = null;
       },
     );
   }
 
+  /// 制卡结果的 OSD 出口：先过「制卡提示」开关（[MineNotices.shown]，与底部制卡
+  /// toast 同一个裁决点），再按结果语义着色、突出显示
+  /// （TODO-971：制卡成功居中放大、停留更久）。视频页所有制卡结果（成功 / 重复 /
+  /// 待发）都从这里出，不许直接 [_showOsd]（守卫
+  /// `test/anki/mine_notice_single_exit_guard_test.dart`）。
+  ///
+  /// [undo]（反馈 JNyykxvuY9）：新制成功时卡片上出「撤销」，点下收起 OSD、删卡，
+  /// 结局再用一条普通 OSD 说出来（视频页不走底部 toast，BUG-931）。
+  void _showMineOsd(
+    String message,
+    MineToastStatus status, [
+    MinedCardUndo? undo,
+  ]) {
+    if (!MineNotices.shown(status)) return;
+    _showOsd(
+      message,
+      prominent: true,
+      severity: mineToastSeverity(status),
+      mineStatus: status,
+      mineAction: undo == null
+          ? null
+          : MineNoticeAction(
+              label: t.card_notice_undo,
+              onPressed: () async {
+                _osdTimer?.cancel();
+                _osdNotifier.value = null;
+                final MinedCardDeleteResult result = await undo.run();
+                _showOsd(
+                  minedCardDeleteResultText(result),
+                  severity: minedCardDeleteResultSeverity(result),
+                );
+              },
+            ),
+    );
+  }
+
+  /// 音量上限（百分比）：随 controller 的 [VideoPlayerController.maxVolume]（mpv 配置
+  /// 「音量上限」100 / 150 / 200；网页后端恒 100）。滑条、HUD、手势与持久化同一口径。
+  double get _maxVideoVolume => _controller?.maxVolume ?? 100.0;
+
   /// 滑条拖动写音量：即时写 controller + OSD + 同步显示真相源（TODO-377）。
   void _setVolumeFromSlider(double value) {
-    final double next = value.clamp(0.0, 100.0).toDouble();
+    final double next = value.clamp(0.0, _maxVideoVolume).toDouble();
     unawaited(_applyUserVideoVolume(next));
   }
 
@@ -66,7 +118,7 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
   /// 同步音量显示真相源（[_volumeDisplay]）→ 驱动音量图标与浮层滑条重建。
   /// 所有改音量入口（滑条 / 滚轮 / 键盘音量键 / 静音切换 / media_kit 移动竖滑）统一调它。
   void _syncVolumeDisplay(double volume) {
-    _volumeDisplay.value = volume.clamp(0.0, 100.0).toDouble();
+    _volumeDisplay.value = volume.clamp(0.0, _maxVideoVolume).toDouble();
   }
 
   /// 应用一次用户真实音量变化。默认持久化；M 静音传 [persist]=false，只更新显示和 HUD。
@@ -77,7 +129,7 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
   }) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    final double clamped = volume.clamp(0.0, 100.0).toDouble();
+    final double clamped = volume.clamp(0.0, controller.maxVolume).toDouble();
     _syncVolumeDisplay(clamped);
     if (mounted) _showVolumeOsd(clamped);
     if (applyToController) {
@@ -90,7 +142,7 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
   }
 
   void _queuePersistVideoVolume(double volume) {
-    _pendingVolumePersist = volume.clamp(0.0, 100.0).toDouble();
+    _pendingVolumePersist = volume.clamp(0.0, _maxVideoVolume).toDouble();
     _volumePersistDebounce?.cancel();
     _volumePersistDebounce = Timer(const Duration(milliseconds: 350), () {
       unawaited(_flushPersistedVideoVolume());
@@ -125,20 +177,16 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
     final double next = await controller.toggleMute();
-    await _applyUserVideoVolume(
-      next,
-      persist: false,
-      applyToController: false,
-    );
+    await _applyUserVideoVolume(next, persist: false, applyToController: false);
   }
 
   void _showLevelHud(_VideoLevelHudKind kind, double value) {
     if (!mounted) return;
-    final double clamped = value.clamp(0.0, 100.0).toDouble();
-    _levelHudNotifier.value = _VideoLevelHudState(
-      kind: kind,
-      value: clamped,
-    );
+    final double max = kind == _VideoLevelHudKind.rightVolume
+        ? _maxVideoVolume
+        : 100.0;
+    final double clamped = value.clamp(0.0, max).toDouble();
+    _levelHudNotifier.value = _VideoLevelHudState(kind: kind, value: clamped);
     _levelHudTimer?.cancel();
     _levelHudTimer = Timer(const Duration(milliseconds: 1600), () {
       if (!mounted) return;
@@ -156,13 +204,13 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
 
   /// media_kit 移动控制条的「右半区竖滑调音量」回调（TODO-057）。media_kit
   /// 已做好区域判定、逐帧累积与 clamp，传入 [value] 为 0..1。我们只把它转成现有
-  /// 音量通道的 0..100 并复用 [VideoPlayerController.setVolume]——与 TODO-044 方向键
+  /// 音量通道的 0..[_maxVideoVolume]（满程 = 音量上限）并复用 [VideoPlayerController.setVolume]——与 TODO-044 方向键
   /// 音量、音量条 UI 同一条 setter，不另开并行状态。可见反馈由页面级 level HUD 接管；
   /// media_kit 内部 indicator builder 仅返回空占位，避免 200ms 内部动画与页面 HUD 叠影。
   void _onMediaKitVolumeChanged(double value) {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    final double pct = (value.clamp(0.0, 1.0) * 100.0).toDouble();
+    final double pct = (value.clamp(0.0, 1.0) * _maxVideoVolume).toDouble();
     unawaited(_applyUserVideoVolume(pct));
   }
 
@@ -191,12 +239,14 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
 
   Widget _buildRightVolumeIndicator(double volume) {
     final ColorScheme cs = _videoChromeColorScheme(context);
-    final double clamped = volume.clamp(0.0, 100.0).toDouble();
+    final double max = _maxVideoVolume;
+    final double clamped = volume.clamp(0.0, max).toDouble();
     final Color textColor = _osdTextColor(cs);
     final double scale = _videoUiScale;
     return IgnorePointer(
       child: VideoLevelHudCard(
         value: clamped,
+        maximum: max,
         uiScale: scale,
         icon: _volumeIconFor(clamped),
         alignment: Alignment.centerRight,
@@ -270,25 +320,51 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
 
   /// mpv 式左上角 OSD 通知层。监听 [_osdNotifier]，非空时淡入一条圆角半透明提示，
   /// 2.6s 后自动淡出。[IgnorePointer] 确保它从不拦截点击（单击暂停 / 拖放 / 字幕
-  /// 查词都不受影响）。放在控制条上方一点（避开顶栏返回/标题），窗口与全屏复用。
+  /// 查词都不受影响）——唯一例外是带「撤销」的制卡结果卡。放在控制条上方一点（避开顶栏返回/标题），窗口与全屏复用。
   Widget _buildOsdOverlay() {
     return Positioned.fill(
       child: SafeArea(
-        child: IgnorePointer(
-          child: ValueListenableBuilder<_VideoOsdMessage?>(
-            valueListenable: _osdNotifier,
-            builder: (BuildContext _, _VideoOsdMessage? osd, __) {
-              return AnimatedSwitcher(
+        child: ValueListenableBuilder<_VideoOsdMessage?>(
+          valueListenable: _osdNotifier,
+          // 只有带「撤销」的制卡结果卡接收指针（且只有卡片那一块：外层 Align 不拦），
+          // 其余 OSD 照旧从不拦截点击。
+          builder: (BuildContext _, _VideoOsdMessage? osd, __) {
+            return IgnorePointer(
+              ignoring: osd?.mineAction == null,
+              child: AnimatedSwitcher(
                 // eink 下归零（墨水屏残影，UI 巡检 PR-4）。
                 duration: einkSafeDuration(
                   context,
                   const Duration(milliseconds: 180),
                 ),
-                child:
-                    osd == null ? const SizedBox.shrink() : _buildOsdCard(osd),
-              );
-            },
-          ),
+                // M3E 进场（与底部 FushiToast 同一手感）：淡入 + 从左上角锚点由
+                // 0.86 弹到 1（spatialFast 带一点过冲）；退场反向。
+                transitionBuilder: (Widget child, Animation<double> animation) {
+                  return FadeTransition(
+                    opacity: CurvedAnimation(
+                      parent: animation,
+                      curve: FushiMotion.enter,
+                      reverseCurve: FushiMotion.exit,
+                    ),
+                    child: ScaleTransition(
+                      alignment: Alignment.topLeft,
+                      scale: Tween<double>(begin: 0.86, end: 1).animate(
+                        CurvedAnimation(
+                          parent: animation,
+                          curve: FushiMotion.release,
+                          reverseCurve: FushiMotion.exit,
+                        ),
+                      ),
+                      child: child,
+                    ),
+                  );
+                },
+                child: osd == null
+                    ? const SizedBox.shrink()
+                    : _buildOsdCard(osd),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -304,24 +380,21 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
       child: IgnorePointer(
         child: ValueListenableBuilder<({Offset position, double speed})?>(
           valueListenable: _longPressSpeedBadge,
-          builder: (
-            BuildContext _,
-            ({Offset position, double speed})? badge,
-            __,
-          ) {
-            if (badge == null) return const SizedBox.shrink();
-            final ColorScheme cs = _videoChromeColorScheme(context);
-            return Stack(
-              children: <Widget>[
-                VideoLongPressSpeedBadge(
-                  position: badge.position,
-                  speed: badge.speed,
-                  surfaceColor: _osdSurfaceColor(cs),
-                  textColor: _osdTextColor(cs),
-                ),
-              ],
-            );
-          },
+          builder:
+              (BuildContext _, ({Offset position, double speed})? badge, __) {
+                if (badge == null) return const SizedBox.shrink();
+                final ColorScheme cs = _videoChromeColorScheme(context);
+                return Stack(
+                  children: <Widget>[
+                    VideoLongPressSpeedBadge(
+                      position: badge.position,
+                      speed: badge.speed,
+                      surfaceColor: _osdSurfaceColor(cs),
+                      textColor: _osdTextColor(cs),
+                    ),
+                  ],
+                );
+              },
         ),
       ),
     );
@@ -331,29 +404,41 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
   // 更厚卡片、勾图标醒目区别于音量/亮度被动小角标。TODO-1254：突出变体不再居中
   // （居中会遮挡画面、干扰观看），与被动 OSD 同锚点回归左上角，仅保留醒目卡片样式。
   Widget _buildOsdCard(_VideoOsdMessage osd) {
+    final MineToastStatus? mineStatus = osd.mineStatus;
+    if (mineStatus != null) {
+      // 制卡结果：与底部制卡 toast 同一张 M3E 结果卡，锚点同普通 OSD（左上角、
+      // 顶栏下方）。key 带状态，连续两次同文案不同结果也会重新进场。
+      return Align(
+        alignment: Alignment.topLeft,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            top: _videoButtonBarHeight + 8 * _videoUiScale,
+          ),
+          child: FushiMineNoticeCard(
+            key: ValueKey<(String, MineToastStatus)>((osd.message, mineStatus)),
+            status: mineStatus,
+            message: osd.message,
+            visibleFor: osd.mineAction != null
+                ? kMineNoticeActionVisibleFor
+                : _kProminentOsdDuration,
+            action: osd.mineAction,
+            maxWidth: math.min(440, MediaQuery.sizeOf(context).width - 32),
+          ),
+        ),
+      );
+    }
     final ColorScheme cs = _videoChromeColorScheme(context);
     final bool prominent = osd.prominent;
-    // 语义配色：null（neutral）＝旧的半透明 inverseSurface。着色时保留同样的半透明
-    // 观感，OSD 压在画面上，实心色块会挡视线。
+    // 语义（severity）只落在前置图标上：OSD 压在画面上，整块饱和色既挡视线又和
+    // 全应用的 M3E 通知长得不一样。
     final ({Color background, Color foreground, IconData icon})? palette =
         toastSeverityPalette(osd.severity);
     final bool apple = _appleChrome;
-    final Color surfaceColor = palette == null
-        ? _osdSurfaceColor(cs)
-        : palette.background.withValues(alpha: 0.88);
-    final Color textColor = apple
-        ? videoChromeNeutralForeground
-        : palette == null
-        ? _osdTextColor(cs)
-        : palette.foreground;
-    final Color iconColor =
-        apple && palette != null ? palette.background : textColor;
-    final double fontSize = prominent ? 18 : 14;
-    final double iconSize = prominent ? 24 : 18;
-    final EdgeInsets cardPadding = prominent
-        ? const EdgeInsets.symmetric(horizontal: 20, vertical: 14)
-        : const EdgeInsets.symmetric(horizontal: 12, vertical: 8);
-    final BorderRadius radius = BorderRadius.circular(prominent ? 12 : 6);
+    // 图标：调用点给的 > 语义图标（e-ink / 灰阶下形状是唯一区分手段）> 突出变体
+    // 的勾。
+    final IconData? leadingIcon =
+        osd.icon ?? palette?.icon ?? (prominent ? Icons.check_circle : null);
     const AlignmentGeometry alignment = Alignment.topLeft;
     // OSD 顶部避让从顶栏几何推导（UI 巡检 PR-4）：顶栏高 = [_videoButtonBarHeight]
     // （56×界面缩放）+ 8×缩放 呼吸间距——此前固定 52 不吃 [_videoUiScale]，缩放
@@ -362,23 +447,44 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
       left: 16,
       top: _videoButtonBarHeight + 8 * _videoUiScale,
     );
+    final double maxWidth = math.min(
+      440,
+      MediaQuery.sizeOf(context).width - 32,
+    );
+    if (!apple) {
+      // Material：与底部 [FushiToast] 同一副 M3E 通知胶囊（全胶囊 + 语义图标色块），
+      // 表面换成播放器浮层色，和顶栏 / 底栏胶囊同一族。M3E 进场：淡入 + 从 0.86
+      // 弹到 1（见 [_buildOsdOverlay] 的 transitionBuilder）。
+      return Align(
+        alignment: alignment,
+        child: Padding(
+          padding: outerPadding,
+          child: FushiToastCapsule(
+            key: ValueKey<String>(osd.message),
+            message: osd.message,
+            icon: leadingIcon,
+            severity: osd.severity,
+            surfaceColor: _osdSurfaceColor(cs),
+            foregroundColor: _osdTextColor(cs),
+            progress: osd.progress,
+            maxWidth: maxWidth,
+          ),
+        ),
+      );
+    }
+    const Color textColor = videoChromeNeutralForeground;
+    final Color iconColor = palette != null ? palette.background : textColor;
+    final double fontSize = prominent ? 18 : 14;
+    final double iconSize = prominent ? 24 : 18;
+    final EdgeInsets cardPadding = prominent
+        ? const EdgeInsets.symmetric(horizontal: 20, vertical: 14)
+        : const EdgeInsets.symmetric(horizontal: 12, vertical: 8);
     final Widget content = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        if (osd.icon != null) ...<Widget>[
-          FushiIcon(osd.icon, size: iconSize, color: iconColor),
+        if (leadingIcon != null) ...<Widget>[
+          FushiIcon(leadingIcon, size: iconSize, color: iconColor),
           SizedBox(width: prominent ? 12 : 8),
-        ] else if (palette != null) ...<Widget>[
-          // 语义图标：e-ink / 灰阶下颜色会塌掉，形状是唯一区分手段。
-          FushiIcon(palette.icon, size: iconSize, color: iconColor),
-          SizedBox(width: prominent ? 12 : 8),
-        ] else if (prominent) ...<Widget>[
-          FushiIcon(
-            Icons.check_circle,
-            size: iconSize,
-            color: iconColor,
-          ),
-          const SizedBox(width: 12),
         ],
         Flexible(
           child: Column(
@@ -390,8 +496,7 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
                 style: TextStyle(
                   color: textColor,
                   fontSize: fontSize,
-                  fontWeight:
-                      prominent ? FontWeight.w600 : FontWeight.normal,
+                  fontWeight: prominent ? FontWeight.w600 : FontWeight.normal,
                   height: 1.2,
                 ),
               ),
@@ -402,10 +507,8 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
                   child: FushiLinearProgressIndicator(
                     value: osd.progress,
                     minHeight: 3,
-                    backgroundColor:
-                        textColor.withValues(alpha: 0.25),
-                    valueColor:
-                        AlwaysStoppedAnimation<Color>(textColor),
+                    backgroundColor: textColor.withValues(alpha: 0.25),
+                    valueColor: AlwaysStoppedAnimation<Color>(textColor),
                   ),
                 ),
               ],
@@ -420,33 +523,14 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
         padding: outerPadding,
         child: ConstrainedBox(
           key: ValueKey<String>(osd.message),
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.sizeOf(context).width - 32,
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          // Apple：通知是一枚深色液态玻璃胶囊（iOS 26 系统 HUD），白字；语义色只
+          // 上在图标上（玻璃本身不着色），突出变体更大的圆角与内边距不变。
+          child: VideoGlassHud(
+            radius: prominent ? 20 : 16,
+            padding: cardPadding,
+            child: content,
           ),
-          child: apple
-              // Apple：通知是一枚深色液态玻璃胶囊（iOS 26 系统 HUD），白字；语义色只
-              // 上在图标上（玻璃本身不着色），突出变体更大的圆角与内边距不变。
-              ? VideoGlassHud(
-                  radius: prominent ? 20 : 16,
-                  padding: cardPadding,
-                  child: content,
-                )
-              : DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: surfaceColor,
-                    borderRadius: radius,
-                    boxShadow: prominent
-                        ? <BoxShadow>[
-                            BoxShadow(
-                              color: cs.shadow.withValues(alpha: 0.4),
-                              blurRadius: 16,
-                              offset: const Offset(0, 4),
-                            ),
-                          ]
-                        : null,
-                  ),
-                  child: Padding(padding: cardPadding, child: content),
-                ),
         ),
       ),
     );

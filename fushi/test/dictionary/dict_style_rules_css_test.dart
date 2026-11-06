@@ -1,6 +1,4 @@
-import 'dart:convert';
-
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
 
@@ -157,7 +155,9 @@ void main() {
       for (final DictStylePart part in DictStylePart.values) {
         final String css = buildGlobalDictStyleCss(<DictStyleRule>[
           DictStyleRule(
-              part: part, props: const DictStyleProps(cornerRadius: 4)),
+            part: part,
+            props: const DictStyleProps(cornerRadius: 4),
+          ),
         ]);
         expect(css, contains('border-radius: 4px !important'), reason: '$part');
         expect(css, isNot(contains('display')), reason: '$part');
@@ -290,8 +290,10 @@ void main() {
 
     test('copyWith 省略保持原值，显式 null 清除', () {
       // 「把颜色改回默认」就是传 null，普通 copyWith 分不出「没传」和「清空」。
-      const DictStyleProps base =
-          DictStyleProps(textColor: 0xFF112233, bold: true);
+      const DictStyleProps base = DictStyleProps(
+        textColor: 0xFF112233,
+        bold: true,
+      );
       expect(base.copyWith(bold: false).textColor, 0xFF112233);
       expect(base.copyWith(textColor: null).textColor, isNull);
       expect(base.copyWith(textColor: null).bold, isTrue);
@@ -396,49 +398,6 @@ void main() {
         dictStylePropsFor(rules, DictStylePart.glossaryContent, '三省堂').italic,
         isTrue,
       );
-    });
-  });
-
-  group('非 Dart 消费方的产物缓存', () {
-    test('全空返回空串，消费方一个 if 就能短路', () {
-      expect(encodeCompiledDictStyleCss(const <DictStyleRule>[]), '');
-    });
-
-    test('同时带上全局与单典两份', () {
-      // 只存全局的话，per-dict 规则会在 Android 独立弹窗里静默失效。
-      final String raw = encodeCompiledDictStyleCss(<DictStyleRule>[
-        const DictStyleRule(
-          part: DictStylePart.expression,
-          props: DictStyleProps(bold: true),
-        ),
-        const DictStyleRule(
-          part: DictStylePart.glossaryContent,
-          dictionaryName: '三省堂',
-          props: DictStyleProps(italic: true),
-        ),
-      ]);
-      final Map<String, dynamic> decoded =
-          jsonDecode(raw) as Map<String, dynamic>;
-      expect(decoded['global'], contains('.expression {'));
-      final Map<String, dynamic> byDict =
-          decoded['byDictionary'] as Map<String, dynamic>;
-      expect(byDict.keys, <String>['三省堂']);
-      expect(byDict['三省堂'], contains('font-style: italic'));
-      // 单典段不能自带前缀——消费方把它塞进 custom_dict_css，下游还会再加一次。
-      expect(byDict['三省堂'], isNot(contains('data-dictionary')));
-    });
-
-    test('只有全局规则时 byDictionary 为空对象而非缺字段', () {
-      final Map<String, dynamic> decoded = jsonDecode(
-        encodeCompiledDictStyleCss(<DictStyleRule>[
-          const DictStyleRule(
-            part: DictStylePart.pitch,
-            props: DictStyleProps(bold: true),
-          ),
-        ]),
-      ) as Map<String, dynamic>;
-      expect(decoded['byDictionary'], isEmpty);
-      expect(decoded.containsKey('byDictionary'), isTrue);
     });
   });
 

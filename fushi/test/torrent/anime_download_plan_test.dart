@@ -307,20 +307,19 @@ void main() {
       int attempts = 0,
       int? lastAttemptAtMs,
       int? jimakuEntryId = 77,
-    }) =>
-        AnimeDownloadPlan(
-          id: 'abc',
-          createdAtMs: t0,
-          seriesTitle: 'S',
-          torrentTitle: 'T',
-          magnet: 'magnet:?xt=urn:btih:abc',
-          qbCategory: 'hibiki',
-          status: AnimeDownloadPlan.statusImported,
-          jimakuEntryId: jimakuEntryId,
-          subtitleStatus: subtitleStatus,
-          subtitleAttempts: attempts,
-          subtitleLastAttemptAtMs: lastAttemptAtMs,
-        );
+    }) => AnimeDownloadPlan(
+      id: 'abc',
+      createdAtMs: t0,
+      seriesTitle: 'S',
+      torrentTitle: 'T',
+      magnet: 'magnet:?xt=urn:btih:abc',
+      qbCategory: 'hibiki',
+      status: AnimeDownloadPlan.statusImported,
+      jimakuEntryId: jimakuEntryId,
+      subtitleStatus: subtitleStatus,
+      subtitleAttempts: attempts,
+      subtitleLastAttemptAtMs: lastAttemptAtMs,
+    );
 
     test('只有 unavailable 才重试；resolved/none/pending 都不碰', () {
       for (final String status in <String>[
@@ -348,8 +347,9 @@ void main() {
 
     test('老计划（attempts=0，本 bug 之前卡死的那批）立刻获得一次重试机会', () {
       expect(
-        planWith(subtitleStatus: AnimeDownloadPlan.subtitleUnavailable)
-            .shouldRetrySubtitles(t0),
+        planWith(
+          subtitleStatus: AnimeDownloadPlan.subtitleUnavailable,
+        ).shouldRetrySubtitles(t0),
         isTrue,
       );
     });
@@ -385,8 +385,9 @@ void main() {
         attempts: 3,
         lastAttemptAtMs: t0,
       );
-      final AnimeDownloadPlan? round =
-          decodeAnimeDownloadPlan(encodeAnimeDownloadPlan(plan));
+      final AnimeDownloadPlan? round = decodeAnimeDownloadPlan(
+        encodeAnimeDownloadPlan(plan),
+      );
       expect(round?.subtitleAttempts, 3);
       expect(round?.subtitleLastAttemptAtMs, t0);
 

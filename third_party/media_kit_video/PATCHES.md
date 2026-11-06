@@ -933,3 +933,68 @@ on the controls or on the picture" decision uses it, always at pointer-down:
   brightness drags that go down on the chrome. Both drag layers keep their
   bottom dead zone (`16 + subtitleVerticalShiftOffset`) unchanged: it applies
   while the bar is hidden too and is not a chrome test.
+
+## Seek on drag (`seekOnDrag`)
+
+`lib/media_kit_video_controls/src/controls/material_desktop.dart` and
+`lib/media_kit_video_controls/src/controls/material.dart`
+(`MaterialDesktopVideoControlsThemeData.seekOnDrag` /
+`MaterialVideoControlsThemeData.seekOnDrag`, read in the seek bar's
+`onPointerMove`).
+
+Upstream calls `player.seek` on every pointer move while the seek bar is
+dragged. For the web-site backend (Netflix / YouTube in a WebView2) each call is
+a page round-trip, and a long drag fed Netflix's player dozens of large seeks in
+a row until it stalled ("jumping far freezes"). With `seekOnDrag: false` a drag
+only moves the thumb and `onPointerUp` seeks once to the release point. Default
+`true` keeps upstream behaviour; Fushi sets `false` only when
+`VideoPlayerController.isWebBackend`.
+
+## BUG-3888: Flutter's raster thread no longer waits for libmpv's render lock
+
+`windows/angle_surface_manager.{h,cc}` (`Draw`, removed `Read`) and
+`windows/video_output.cc` (the GPU surface texture callback).
+
+Upstream copies libmpv's internal texture into the texture Flutter samples in
+`ANGLESurfaceManager::Read()`, called from the `GpuSurfaceTexture` callback —
+that is, on Flutter's **raster thread**, inside `LayerTree::Paint`. `Read()`
+waited (`INFINITE`) on the same mutex `Draw()` holds across the whole
+`mpv_render_context_render` plus `glFinish()`. Whenever a libmpv frame was slow
+(heavy scalers / user shaders, decoder threads holding the multithread-protected
+D3D11 device) Flutter's raster thread was stalled for the same time, and the
+late Flutter frames lengthened libmpv's next `glFinish()` in turn. Field log
+(Windows, RTX 5090, debug.23345): after toggling the push-aside subtitle list,
+bursts of 300–880 ms raster frames for 1–3 s; lab timelines show those frames as
+`LayerTree::Paint` self time with no child events.
+
+The copy now runs at the end of `Draw()`, on media_kit's render thread, right
+after `glFinish()` and still under the mutex; the texture callback only returns
+the descriptor. Flutter's raster thread never touches the mutex or media_kit's
+D3D11 device. `MarkTextureFrameAvailable` still fires after the copy, so Flutter
+never samples a frame older than the last finished one.
+
+Source-guard test: `fushi/test/third_party/media_kit_video_raster_never_waits_guard_test.dart`.
+
+Cross-device synchronisation is still the implicit one of a legacy
+`D3D11_RESOURCE_MISC_SHARED` texture: media_kit's device writes it
+(`CopyResource` + `Flush`), Flutter's ANGLE device samples it, and there is no
+keyed mutex. Adding one only here would not help: Flutter's
+`ExternalTextureD3d` binds the share handle once (`eglBindTexImage`) and never
+calls `AcquireSync`, and ANGLE only exposes the mutex through
+`eglQuerySurfacePointerANGLE(EGL_DXGI_KEYED_MUTEX_ANGLE)` without acquiring it.
+A keyed mutex needs an engine patch that acquires it on the raster side first
+(see BUG-3888, 2026-11-04 (二)); the source guard refuses a producer-only one.
+
+### Keyed mutex (2026-11-05)
+
+That engine patch now exists:
+`ci/patches/flutter-engine/3.47.6/engine-d3d-keyed-mutex.patch`. A patched
+`flutter_windows.dll` exports `FlutterDesktopGpuSurfaceSupportsKeyedMutex`;
+`ANGLESurfaceManager::EngineSyncsKeyedMutexTextures()` resolves it once with
+`GetProcAddress`. Only when it returns true does `CreateD3DTexture` create the
+texture Flutter reads with `D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX` (instead of
+`D3D11_RESOURCE_MISC_SHARED`), and `Draw()` then wraps its `CopyResource` in
+`AcquireSync(0, INFINITE)` / `ReleaseSync(0)`. The engine holds key 0 only for
+its own `CopyResource` out of the texture into an engine-owned copy (it never
+samples the shared texture), so the wait is bounded by one copy call. On a
+stock engine nothing changes: legacy shared texture, `CopyResource` + `Flush`.

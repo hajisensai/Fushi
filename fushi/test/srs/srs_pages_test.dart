@@ -4,40 +4,56 @@
 // widget 测试里没有 WebView，卡面经 srsCardFaceBuilderProvider 换成纯文本实现。
 // 数据库读写一律放 tester.runAsync（fake zone 里 await 真异步会挂死）。
 import 'dart:async';
+import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
+import 'package:fushi/src/shortcuts/input_binding.dart'
+    show GamepadBinding, GamepadButton, InputBinding, ShortcutBindingSet;
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
+import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
     show DictionaryEntry, DictionarySearchResult;
+import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'srs_test_support.dart' show SrsTestAppModel, openSrsTestStorage;
+import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
 import '../helpers/popup_mining_target_overrides.dart';
-import '../helpers/test_platform_services.dart';
 
 /// 确定性假引擎（同 packages/fushi_engine/test/srs/srs_db_store_test.dart）。
 class _FakeEngine implements FsrsEngine {
@@ -107,26 +123,25 @@ class _FakeEngine implements FsrsEngine {
   @override
   List<double> computeParameters({
     required SrsAlgorithm algorithm,
-    required List<List<SrsFsrsReview>> items,
-    List<int>? cardIds,
+    required SrsFsrsTrainingSet items,
     SrsOptimizerControl? control,
   }) => defaultParams(algorithm);
   @override
   SrsEvaluation evaluateTimeSeries({
     required SrsAlgorithm algorithm,
-    required List<List<SrsFsrsReview>> items,
+    required SrsFsrsTrainingSet items,
   }) => const SrsEvaluation(logLoss: 0.3, rmseBins: 0.1);
   @override
   SrsEvaluation evaluate({
     required SrsAlgorithm algorithm,
     required List<double> params,
-    required List<List<SrsFsrsReview>> items,
+    required SrsFsrsTrainingSet items,
   }) => const SrsEvaluation(logLoss: 0.3, rmseBins: 0.1);
 }
 
 /// 复习页「只留重来 / 良好」偏好放内存里（不碰数据库），其余同真 AppModel。
-class _HideHardEasyApp extends AppModel {
-  _HideHardEasyApp() : super(testPlatformServices());
+class _HideHardEasyApp extends SrsTestAppModel {
+  _HideHardEasyApp();
 
   bool hidden = false;
 
@@ -140,9 +155,66 @@ class _HideHardEasyApp extends AppModel {
   }
 }
 
+/// 复习布局两项偏好钉在内存里（测试里偏好层没初始化）。
+class _LayoutApp extends SrsTestAppModel {
+  _LayoutApp();
+
+  SrsReviewReplayButton replay = SrsReviewReplayButton.end;
+  bool intervals = true;
+  bool counts = true;
+  double volume = 1.0;
+
+  @override
+  double get srsReviewVolume => volume;
+
+  @override
+  Future<void> setSrsReviewVolume(double value) async {
+    volume = value;
+    notifyListeners();
+  }
+
+  @override
+  bool get srsReviewShowCounts => counts;
+
+  @override
+  Future<void> setSrsReviewShowCounts(bool value) async {
+    counts = value;
+    notifyListeners();
+  }
+
+  @override
+  SrsReviewReplayButton get srsReviewReplayButton => replay;
+
+  @override
+  Future<void> setSrsReviewReplayButton(SrsReviewReplayButton value) async {
+    replay = value;
+    notifyListeners();
+  }
+
+  @override
+  bool get srsReviewShowIntervals => intervals;
+
+  @override
+  Future<void> setSrsReviewShowIntervals(bool value) async {
+    intervals = value;
+    notifyListeners();
+  }
+
+  SrsReviewImageSize imageSize = SrsReviewImageSize.original;
+
+  @override
+  SrsReviewImageSize get srsReviewImageSize => imageSize;
+
+  @override
+  Future<void> setSrsReviewImageSize(SrsReviewImageSize value) async {
+    imageSize = value;
+    notifyListeners();
+  }
+}
+
 /// 卡面查词：弹窗几何 / 历史读偏好的那几项钉成常量（测试里偏好层没初始化）。
-class _LookupApp extends AppModel {
-  _LookupApp() : super(testPlatformServices());
+class _LookupApp extends SrsTestAppModel {
+  _LookupApp();
 
   @override
   int get maximumTerms => 10;
@@ -173,12 +245,29 @@ class _LookupApp extends AppModel {
 
 const String _kProfile = '01928c3e-0000-7000-8000-0000000000aa';
 
+/// 把默认牌组切成 FSRS-7：评分按钮上的「进复习队列的天数」只有非 RWKV 牌组才显示（RWKV 牌组的复习卡按此刻
+/// 的回忆率回来，天数不是它真正回来的时间；RWKV 没就绪时也不退回 FSRS-7 的到期日，BUG-3900）。
+Future<void> _useFsrs7(WidgetTester tester, SrsDbStore store) async {
+  await tester.runAsync(
+    () => store.editFields(
+      SrsEntityKind.deck,
+      store.defaultDeckId,
+      <String, Object?>{
+        SrsFieldKeys.deckAlgorithm: <String, Object?>{
+          'alg': SrsAlgorithm.fsrs7.wire,
+          'auto': false,
+        },
+      },
+    ),
+  );
+}
+
 Future<SrsDbStore> _openStore(WidgetTester tester) async {
-  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-  addTearDown(() => tester.runAsync(db.close));
+  final SrsStorage srs = (await tester.runAsync(openSrsTestStorage))!;
   return (await tester.runAsync(
     () => SrsDbStore.open(
-      db: db,
+      db: srs.db,
+      core: srs.core,
       profileUid: _kProfile,
       deviceId: 'test-device',
       engine: const _FakeEngine(),
@@ -199,6 +288,10 @@ Future<String> _addLapis(
     },
   ),
 ))!;
+
+/// 子牌组收起要等收起弹簧落定（FushiTreeReveal：ζ 钉 1，Apple 的 spatialDefault 刚度
+/// 157.91 落到 0.1% 约 0.73 s），默认 12 轮 × 60 ms 不够，收起断言多等一段。
+const int _kTreeSettleRounds = 20;
 
 /// 让真异步（drift）与帧都推进：DB 读在 runAsync 里跑一小段真实时间。
 Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
@@ -222,16 +315,22 @@ Future<void> _pumpPage(
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  final AppModel appModel = app ?? AppModel(testPlatformServices());
+  final AppModel appModel = app ?? SrsTestAppModel();
   await tester.pumpWidget(
     ProviderScope(
       overrides: <Override>[
         appProvider.overrideWith((Ref ref) => appModel),
         srsStoreProvider.overrideWith((Ref ref) async => store),
+        // 复习页先等 RWKV 服务装配到 store 上：测试不起真服务（会去下载权重），要用 RWKV 的用例自己给
+        // `store.rwkv` 装替身。
+        srsRwkvServiceProvider.overrideWith((Ref ref) async => null),
         srsCardFaceBuilderProvider.overrideWithValue(
           (BuildContext context, SrsCardFace face) =>
               SrsPlainCardFace(face: face),
         ),
+        // 这里的用例按固定页头断言顶栏按钮；悬浮顶栏（默认）见
+        // srs_review_floating_chrome_test.dart。
+        srsReviewChromeFloatingProvider.overrideWithValue(false),
         ...overrides,
       ],
       child: TranslationProvider(
@@ -283,7 +382,24 @@ void main() {
         apple,
       );
       expect(find.byKey(const ValueKey<String>('srs-empty')), findsOneWidget);
-      expect(find.text('Default'), findsOneWidget);
+      // 宽屏：左栏牌组树 + 右栏选中牌组详情，名字两边各有一份，按行取。
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey<String>('srs-deck-${store.defaultDeckId}')),
+          matching: find.text('Default'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(ValueKey<String>('srs-home-detail-${store.defaultDeckId}')),
+        findsOneWidget,
+        reason: '宽屏右栏默认显示第一个顶层牌组',
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-home-start')),
+        findsNothing,
+        reason: '没有卡：没有今日计划，也不给「开始复习」',
+      );
       // 排程内核可用：不出「内核不可用」横幅。
       expect(
         find.byKey(const ValueKey<String>('srs-engine-missing')),
@@ -308,6 +424,21 @@ void main() {
         findsOneWidget,
         reason: '一张新卡：新卡计数为 1',
       );
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.byKey(
+            ValueKey<String>('srs-deck-review-${store.defaultDeckId}'),
+          ),
+        ),
+        findsOneWidget,
+        reason: '有活的行尾有播放按钮',
+      );
+      expect(find.text(t.srs_home_today_left(n: 1)), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('srs-home-start')),
+        findsOneWidget,
+      );
       // 顶栏动作：添加笔记 / 浏览 / 冲突 / 新建牌组 / 导入。
       expect(find.byKey(const ValueKey<String>('srs_add_note')), findsWidgets);
       await _unmount(tester);
@@ -329,7 +460,9 @@ void main() {
         store: store,
         apple: apple,
         page: const SrsDeckListPage(),
-        size: const Size(412, 915),
+        // 测的是 412 的手机宽度；高度放到首页头部（今日计划 + 开始复习）之下 7 行都在首屏、
+        // 都已构建（懒列表只建可见行）。
+        size: const Size(412, 1400),
       );
       expect(tester.takeException(), isNull, reason: '窄屏行不溢出');
       for (final String name in <String>[
@@ -354,7 +487,9 @@ void main() {
             w.key is ValueKey<String> &&
             (w.key! as ValueKey<String>).value.startsWith('srs-deck-') &&
             !(w.key! as ValueKey<String>).value.contains('toggle') &&
-            !(w.key! as ValueKey<String>).value.contains('indent'),
+            !(w.key! as ValueKey<String>).value.contains('indent') &&
+            !(w.key! as ValueKey<String>).value.contains('progress') &&
+            !(w.key! as ValueKey<String>).value.contains('review'),
       );
       expect(rows, findsNWidgets(7));
       for (final Element e in rows.evaluate()) {
@@ -374,7 +509,117 @@ void main() {
       await _unmount(tester);
     });
 
-    testWidgets('[$ds] 牌组列表宽屏：三列计数与行尾「⋯」，行首不放图标', (WidgetTester tester) async {
+    testWidgets('[$ds] 牌组拖放：拖到行中间 = 挪成子牌组、拖到行上缘 = 排到它前面；拖着子牌组出现「移到顶层」落点', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await tester.runAsync(() async {
+        await store.createDeck('Alpha');
+        await store.createDeck('Beta');
+      });
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsDeckListPage(),
+        // 单栏（窄于双栏阈值 840、行宽于 480）：宽屏右栏详情会再画一份选中牌组的名字。
+        size: const Size(600, 900),
+      );
+      Future<List<String>> names() async => (await tester.runAsync(
+        store.deckSummaries,
+      ))!.map((SrsDeckSummary d) => d.fullName).toList();
+      final Finder zone = find.byKey(
+        const ValueKey<String>('srs-drop-top-level'),
+      );
+
+      // 拖着顶层牌组：没有「移到顶层」落点。
+      TestGesture g = await tester.startGesture(
+        tester.getCenter(find.text('Beta')),
+        kind: PointerDeviceKind.mouse,
+      );
+      await g.moveBy(const Offset(0, 24));
+      await tester.pump();
+      expect(zone, findsNothing);
+      await g.moveTo(tester.getCenter(find.text('Alpha')));
+      await tester.pump();
+      await g.up();
+      await _settle(tester);
+      expect(await names(), contains('Alpha::Beta'));
+
+      // 拖着子牌组：顶上出现落点，放下 = 回到顶层。
+      g = await tester.startGesture(
+        tester.getCenter(find.text('Beta')),
+        kind: PointerDeviceKind.mouse,
+      );
+      await g.moveBy(const Offset(0, 24));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(zone, findsOneWidget);
+      await g.moveTo(tester.getCenter(zone));
+      await tester.pump();
+      await g.up();
+      await _settle(tester);
+      final List<String> after = await names();
+      expect(after, contains('Beta'));
+      expect(after, isNot(contains('Alpha::Beta')));
+      expect(zone, findsNothing);
+      expect(after.indexOf('Alpha'), lessThan(after.indexOf('Beta')));
+
+      // 拖到 Alpha 行的上缘 = 同级排到 Alpha 前面（不是挪成子牌组）。
+      final String alphaId = (await tester.runAsync(
+        store.deckSummaries,
+      ))!.firstWhere((SrsDeckSummary d) => d.fullName == 'Alpha').deck.id;
+      final Rect alphaRow = tester.getRect(
+        find.byKey(ValueKey<String>('srs-drag-$alphaId')),
+      );
+      g = await tester.startGesture(
+        tester.getCenter(find.text('Beta')),
+        kind: PointerDeviceKind.mouse,
+      );
+      await g.moveBy(const Offset(0, -24));
+      await tester.pump();
+      await g.moveTo(Offset(alphaRow.center.dx, alphaRow.top + 3));
+      await tester.pump();
+      await g.up();
+      await _settle(tester);
+      final List<String> reordered = await names();
+      expect(reordered, isNot(contains('Alpha::Beta')));
+      expect(reordered.indexOf('Beta'), lessThan(reordered.indexOf('Alpha')));
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 牌组列表「导入」：一个入口列出 Anki 迁移 / 文件 / 制卡历史三种来源', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsDeckListPage(),
+      );
+      // 旧的分散入口不再出现在顶栏 / ⋯ 里。
+      expect(
+        find.byKey(const ValueKey<String>('srs_anki_migrate')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs_history_import')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('srs_import')).first);
+      await _settle(tester);
+      expect(find.text(t.srs_anki_migrate), findsOneWidget);
+      expect(find.text(t.srs_import_file), findsOneWidget);
+      expect(find.text(t.srs_history_import), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(tester);
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 牌组列表宽屏：行尾是三列计数 + 播放（不放「⋯」，右键出菜单），子牌组行首不放图标', (
+      WidgetTester tester,
+    ) async {
       final SrsDbStore store = await _openStore(tester);
       await tester.runAsync(
         () => store.ensureDeckPath('Spark::JP-Mining-Note::Vocabulary'),
@@ -391,10 +636,290 @@ void main() {
           (Widget w) =>
               w.runtimeType.toString().startsWith('FushiPopupMenuButton'),
         ),
+        findsNothing,
+        reason: '方案 D：行尾只有三色计数与播放按钮，菜单走右键 / 菜单键 / 右栏「选项」',
+      );
+      expect(
+        find.byType(SrsCountTriple),
         findsNWidgets(3),
-        reason: '宽屏每行保留行尾「⋯」（空着又没有子牌组的 Default 不显示，见 srsVisibleDecks）',
+        reason: '三行各一组计数（空着又没有子牌组的 Default 不显示，见 srsVisibleDecks）',
       );
       expect(find.byType(FushiListLeadingIcon), findsNothing);
+      await tester.tap(find.text('Vocabulary'), buttons: kSecondaryButton);
+      await _settle(tester);
+      expect(find.text(t.srs_deck_rename), findsOneWidget, reason: '右键行出牌组菜单');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(tester);
+      await _unmount(tester);
+    });
+
+    testWidgets(
+      '[$ds] 复习首页（手机）：点行进牌组详情、返回键逐层回退、播放 / 「开始复习」/ 详情「复习这个牌组」直接复习、长按出菜单',
+      (WidgetTester tester) async {
+        final SrsDbStore store = await _openStore(tester);
+        final (String spark, String jp, String vocab) = (await tester.runAsync(
+          () async {
+            final String vocab = await store.ensureDeckPath(
+              'Spark::JP::Vocabulary',
+            );
+            await store.ensureDeckPath('Spark::JP::Kanji');
+            final SrsDeckTree tree = await store.deckTree();
+            final String jp = tree.parentOf(vocab)!;
+            return (tree.parentOf(jp)!, jp, vocab);
+          },
+        ))!;
+        await _addLapis(tester, store, '食べる');
+        final String def = store.defaultDeckId;
+        await _pumpPage(
+          tester,
+          store: store,
+          apple: apple,
+          page: const SrsDeckListPage(),
+          size: const Size(412, 915),
+        );
+        expect(tester.takeException(), isNull);
+        Finder row(String id) => find.byKey(ValueKey<String>('srs-deck-$id'));
+        Finder detail(String id) =>
+            find.byKey(ValueKey<String>('srs-home-detail-$id'));
+        Future<void> tapRow(String id, String name) async {
+          await tester.tap(
+            find.descendant(of: row(id), matching: find.text(name)),
+          );
+          await _settle(tester);
+        }
+
+        Future<void> expectReviewOf(String deckId) async {
+          final Finder review = find.byType(SrsReviewPage);
+          expect(review, findsOneWidget);
+          expect(tester.widget<SrsReviewPage>(review).deckId, deckId);
+          Navigator.of(tester.element(review)).pop();
+          await _settle(tester);
+          expect(review, findsNothing);
+        }
+
+        // 树下两张统计卡在窄屏一律上下排（用户 2026-11-06：412 宽并排时热力图只剩
+        // 三个月、到期图挤掉一半星期）。
+        await _settle(tester);
+        final Rect heat = tester.getRect(
+          find.byKey(
+            const ValueKey<String>('srs-home-heatmap'),
+            skipOffstage: false,
+          ),
+        );
+        final Rect forecast = tester.getRect(
+          find.byKey(
+            const ValueKey<String>('srs-home-forecast'),
+            skipOffstage: false,
+          ),
+        );
+        expect(forecast.top, greaterThanOrEqualTo(heat.bottom));
+        expect(forecast.width, moreOrLessEquals(heat.width));
+        // 根层：今日计划 + 整棵牌组树（没有单独的整理模式），没有详情。
+        expect(
+          find.byKey(const ValueKey<String>('srs-home-today')),
+          findsOneWidget,
+        );
+        for (final String id in <String>[def, spark, jp, vocab]) {
+          expect(row(id), findsOneWidget);
+        }
+        expect(detail(spark), findsNothing);
+        expect(
+          find.byKey(const ValueKey<String>('srs_organize')),
+          findsNothing,
+        );
+
+        // 点行：进该牌组的详情页（面包屑 + 详情 + 子牌组清单），不开复习。
+        await tapRow(spark, 'Spark');
+        expect(find.byType(SrsReviewPage), findsNothing, reason: '点行不开复习');
+        expect(detail(spark), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey<String>('srs-home-breadcrumb')),
+          findsOneWidget,
+        );
+        expect(row(jp), findsOneWidget, reason: '详情页下面是它的子牌组');
+        expect(row(spark), findsNothing);
+        expect(row(def), findsNothing);
+        await tapRow(jp, 'JP');
+        expect(detail(jp), findsOneWidget);
+        expect(row(vocab), findsOneWidget);
+        await tapRow(vocab, 'Vocabulary');
+        expect(detail(vocab), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey<String>('srs-home-subdecks-header')),
+          findsNothing,
+          reason: '叶子牌组没有子牌组清单',
+        );
+
+        // 系统返回键：逐层回上一层，到根层才交给路由。
+        await tester.binding.handlePopRoute();
+        await _settle(tester);
+        expect(detail(jp), findsOneWidget);
+        await tester.binding.handlePopRoute();
+        await _settle(tester);
+        expect(detail(spark), findsOneWidget);
+        await tester.binding.handlePopRoute();
+        await _settle(tester);
+        expect(detail(spark), findsNothing);
+        expect(row(spark), findsOneWidget);
+        expect(find.byType(SrsDeckListPage), findsOneWidget);
+
+        // 行尾播放：直接复习这个牌组。
+        await tester.tap(find.byKey(ValueKey<String>('srs-deck-review-$def')));
+        await _settle(tester);
+        await expectReviewOf(def);
+        expect(
+          find.byKey(ValueKey<String>('srs-deck-review-$spark')).hitTestable(),
+          findsNothing,
+          reason: '没活的行播放按钮只留位、不可点',
+        );
+
+        // 长按行（窄屏）：弹出牌组菜单。
+        await tester.longPress(
+          find.descendant(of: row(spark), matching: find.text('Spark')),
+        );
+        await _settle(tester);
+        expect(find.text(t.srs_deck_rename), findsOneWidget);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await _settle(tester);
+
+        // 今日计划「开始复习」：从第一个还有活的顶层牌组开始（这里是有一张新卡的默认牌组）。
+        await tester.tap(find.byKey(const ValueKey<String>('srs-home-start')));
+        await _settle(tester);
+        await expectReviewOf(def);
+
+        // 详情页「复习这个牌组」。
+        await tapRow(def, 'Default');
+        expect(detail(def), findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey<String>('srs-home-detail-review')),
+        );
+        await _settle(tester);
+        await expectReviewOf(def);
+        expect(tester.takeException(), isNull);
+        await _unmount(tester);
+      },
+    );
+
+    testWidgets('[$ds] 复习首页（宽屏）：双栏，点行 = 选中（右栏换详情、不开复习），播放 = 复习，详情「浏览卡片」带牌组查询', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String jp = (await tester.runAsync(
+        () => store.ensureDeckPath('Spark::JP'),
+      ))!;
+      final String spark = (await tester.runAsync(
+        () async => (await store.deckTree()).parentOf(jp)!,
+      ))!;
+      await _addLapis(tester, store, '食べる');
+      final String def = store.defaultDeckId;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsDeckListPage(),
+        size: const Size(1100, 900),
+      );
+      // 首页统计（热力图 / 预测）要读整库复习日志，多给几轮真异步。
+      await _settle(tester, rounds: 40);
+      expect(tester.takeException(), isNull);
+      Finder row(String id) => find.byKey(ValueKey<String>('srs-deck-$id'));
+      Finder detail(String id) =>
+          find.byKey(ValueKey<String>('srs-home-detail-$id'));
+      expect(find.byKey(const ValueKey<String>('srs_organize')), findsNothing);
+      expect(detail(def), findsOneWidget, reason: '默认选中第一个有活的顶层牌组');
+      expect(
+        find.byKey(const ValueKey<String>('srs-home-heatmap')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-home-forecast')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.descendant(of: row(spark), matching: find.text('Spark')),
+      );
+      await _settle(tester);
+      expect(find.byType(SrsReviewPage), findsNothing, reason: '宽屏点行 = 选中');
+      expect(detail(spark), findsOneWidget);
+      expect(detail(def), findsNothing);
+      expect(row(spark), findsOneWidget, reason: '树不随选中切换');
+      expect(row(jp), findsOneWidget);
+
+      await tester.tap(find.byKey(ValueKey<String>('srs-deck-review-$def')));
+      await _settle(tester);
+      final Finder review = find.byType(SrsReviewPage);
+      expect(tester.widget<SrsReviewPage>(review).deckId, def);
+      Navigator.of(tester.element(review)).pop();
+      await _settle(tester);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-home-detail-browse')),
+      );
+      await _settle(tester);
+      final Finder browse = find.byType(SrsBrowsePage);
+      expect(browse, findsOneWidget);
+      expect(
+        tester.widget<SrsBrowsePage>(browse).initialQuery,
+        srsDeckQuery('Spark'),
+      );
+      Navigator.of(tester.element(browse)).pop();
+      await _settle(tester);
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 复习首页：选中 / 进入的牌组被删后丢掉悬空 id，宽屏回落到仍存在的进入牌组', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String jp = (await tester.runAsync(
+        () => store.ensureDeckPath('Spark::JP'),
+      ))!;
+      final String kanji = (await tester.runAsync(
+        () => store.ensureDeckPath('Kanji'),
+      ))!;
+      await _addLapis(tester, store, '食べる');
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsDeckListPage(),
+        size: const Size(412, 915),
+      );
+      Finder row(String id) => find.byKey(ValueKey<String>('srs-deck-$id'));
+      Finder detail(String id) =>
+          find.byKey(ValueKey<String>('srs-home-detail-$id'));
+
+      // 手机：进入 Spark（_focusId = Spark）。
+      final String spark = (await tester.runAsync(
+        () async => (await store.deckTree()).parentOf(jp)!,
+      ))!;
+      await tester.tap(
+        find.descendant(of: row(spark), matching: find.text('Spark')),
+      );
+      await _settle(tester);
+      expect(detail(spark), findsOneWidget);
+
+      // 转成宽屏：没有「进入」层，右栏沿用进入的牌组；再点 Kanji 行选中它。
+      tester.view.physicalSize = const Size(1100, 900);
+      await _settle(tester, rounds: 40);
+      expect(detail(spark), findsOneWidget, reason: '宽屏右栏沿用手机进入的牌组');
+      await tester.tap(
+        find.descendant(of: row(kanji), matching: find.text('Kanji')),
+      );
+      await _settle(tester);
+      expect(detail(kanji), findsOneWidget);
+
+      // 选中的 Kanji 被删（别处 / 同步删掉）：选中 id 必须清掉，右栏回到仍存在的 Spark，
+      // 而不是让悬空的选中 id 盖过进入的牌组、掉到默认牌组。
+      await tester.runAsync(() => store.deleteDeck(kanji));
+      ProviderScope.containerOf(
+        tester.element(find.byType(SrsDeckListPage)),
+      ).read(srsRevisionProvider.notifier).state++;
+      await _settle(tester, rounds: 40);
+      expect(row(kanji), findsNothing);
+      expect(detail(spark), findsOneWidget, reason: '悬空选中 id 已丢弃');
+      expect(tester.takeException(), isNull);
       await _unmount(tester);
     });
 
@@ -431,8 +956,12 @@ void main() {
         greaterThanOrEqualTo(apple ? 36 : 48),
       );
 
+      final ProviderContainer container = ProviderScope.containerOf(
+        tester.element(find.byType(SrsDeckListPage)),
+      );
+      final int revisionBefore = container.read(srsRevisionProvider);
       await tester.tap(toggle);
-      await _settle(tester);
+      await _settle(tester, rounds: _kTreeSettleRounds);
       expect(childHeight(), 0, reason: '收起后后代消失');
       expect(
         await tester.runAsync(
@@ -441,6 +970,22 @@ void main() {
         isTrue,
         reason: '折叠写进牌组本身',
       );
+      expect(
+        container.read(srsRevisionProvider),
+        revisionBefore,
+        reason: '收起 / 展开只是界面状态，不触发牌组计数 / 角标重读',
+      );
+
+      // 之后别处（同步来的对端改动）把它改成展开、列表重读：以重读的数据为准，本地覆盖
+      // 不能把它一直钉在「收起」。
+      await tester.runAsync(() => store.setDeckCollapsed(parent, false));
+      container.read(srsRevisionProvider.notifier).state++;
+      await _settle(tester);
+      expect(childHeight(), greaterThan(0), reason: '重读的数据晚于本地写入：撤掉覆盖');
+      await tester.runAsync(() => store.setDeckCollapsed(parent, true));
+      container.read(srsRevisionProvider.notifier).state++;
+      await _settle(tester, rounds: _kTreeSettleRounds);
+      expect(childHeight(), 0);
 
       await tester.tap(toggle);
       await _settle(tester);
@@ -465,7 +1010,7 @@ void main() {
       await tester.pump();
       expect(rowFocus.hasPrimaryFocus, isTrue);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
-      await _settle(tester);
+      await _settle(tester, rounds: _kTreeSettleRounds);
       expect(childHeight(), 0);
       expect(
         await tester.runAsync(
@@ -491,7 +1036,7 @@ void main() {
       expect(leading, findsOneWidget);
       final Rect leadingRect = tester.getRect(leading);
       await tester.tapAt(Offset(leadingRect.right - 4, leadingRect.center.dy));
-      await _settle(tester);
+      await _settle(tester, rounds: _kTreeSettleRounds);
       expect(childHeight(), 0, reason: '点行首图标收起后代');
       expect(find.byType(SrsReviewPage), findsNothing, reason: '没有进入复习');
       // 行首左侧留白（缩进左边、贴着行边）同样算折叠区。
@@ -523,10 +1068,12 @@ void main() {
       );
       final String lapisLabel = t.srs_card_edit_template(name: 'Lapis');
       // 菜单项在 MD3 可能平铺、可能收进 ⋯；Apple 平铺为图标按钮（文字进 tooltip）。
-      Future<bool> hasItem(String label) async {
-        final String key = label == t.srs_card_appearance_title
-            ? 'srs_review_appearance'
-            : 'srs_review_edit_template';
+      Future<bool> hasItem(String label, {String? itemKey}) async {
+        final String key =
+            itemKey ??
+            (label == t.srs_card_appearance_title
+                ? 'srs_review_appearance'
+                : 'srs_review_edit_template');
         if (find.text(label).evaluate().isNotEmpty ||
             find.byKey(ValueKey<String>(key)).evaluate().isNotEmpty) {
           return true;
@@ -555,11 +1102,41 @@ void main() {
           : lapisLabel;
       expect(await hasItem(expected), isTrue);
       expect(await hasItem(unexpected), isFalse);
+      // 顶栏只剩一个卡面样式入口：「卡面跟随设计系统」「只留重来 / 良好」两个显示开关
+      // 收进了「复习选项」面板，不再各占一颗（以前与模板入口同用调色板图标、并排两颗）。
+      expect(
+        await hasItem(
+          t.srs_card_appearance_design_skin,
+          itemKey: 'srs_review_design_skin',
+        ),
+        isFalse,
+      );
+      expect(
+        await hasItem(
+          t.srs_review_hide_hard_easy,
+          itemKey: 'srs_review_hide_hard_easy',
+        ),
+        isFalse,
+      );
+      // 模板编辑器入口用代码图标，不与卡面外观的调色板图标撞成一样。
+      final Finder tpl = find.byKey(
+        const ValueKey<String>('srs_review_edit_template'),
+      );
+      if (tpl.evaluate().isNotEmpty) {
+        expect(
+          find.descendant(
+            of: tpl.first,
+            matching: find.byIcon(FushiIcons.appearance),
+          ),
+          findsNothing,
+        );
+      }
       await _unmount(tester);
     });
 
     testWidgets('[$ds] 复习页：显示答案 → 评分预览 → 评分', (WidgetTester tester) async {
       final SrsDbStore store = await _openStore(tester);
+      await _useFsrs7(tester, store);
       await _addLapis(tester, store, '食べる');
       await _pumpPage(
         tester,
@@ -634,10 +1211,10 @@ void main() {
         expect(rate(r), findsOneWidget, reason: '默认四个按钮：$r');
       }
 
-      // 开关在 MD3 可能平铺、可能收进 ⋯；Apple 平铺为图标按钮。
+      // 开关在「复习选项」面板里；面板入口在 MD3 可能平铺、可能收进 ⋯，Apple 平铺为图标按钮。
       Future<void> toggle() async {
         final Finder flat = find.byKey(
-          const ValueKey<String>('srs_review_hide_hard_easy'),
+          const ValueKey<String>('srs_review_layout'),
         );
         if (flat.evaluate().isNotEmpty) {
           await tester.tap(flat.first);
@@ -650,8 +1227,18 @@ void main() {
                 .first,
           );
           await _settle(tester);
-          await tester.tap(find.text(t.srs_review_hide_hard_easy).last);
+          await tester.tap(find.text(t.srs_review_layout_title).last);
         }
+        await _settle(tester);
+        // 设置行整行可点（两套设计系统的开关控件不同，点行最稳）；抽屉可滚，先滚到这一行。
+        final Finder hideRow = find.byKey(
+          const ValueKey<String>('srs-review-layout-hide-hard-easy'),
+        );
+        await tester.ensureVisible(hideRow);
+        await _settle(tester);
+        await tester.tap(hideRow);
+        await _settle(tester);
+        Navigator.of(tester.element(find.byType(SrsReviewLayoutSheet))).pop();
         await _settle(tester);
       }
 
@@ -794,6 +1381,147 @@ void main() {
     await _unmount(tester);
   });
 
+  group('自定义按键（反馈 itlb0djDq6，ShortcutScope.srsReview）', () {
+    Future<SrsDbStore> pumpReview(WidgetTester tester, AppModel app) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _addLapis(tester, store, '食べる');
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        app: app,
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'Default'),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-face-question')),
+        findsOneWidget,
+      );
+      return store;
+    }
+
+    testWidgets('把「良好」改绑到 G：答案面按 G 评分，原来的 3 不再评分', (WidgetTester tester) async {
+      final SrsTestAppModel app = SrsTestAppModel();
+      app.shortcutRegistry.updateBinding(
+        ShortcutAction.srsReviewGood,
+        const ShortcutBindingSet(
+          keyboardBindings: <InputBinding>[
+            InputBinding(key: LogicalKeyboardKey.keyG),
+          ],
+        ),
+      );
+      await pumpReview(tester, app);
+
+      // 问题面按评分键不评分（评分键只在答案面生效）。
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-face-question')),
+        findsOneWidget,
+      );
+
+      // 默认主键（空格）不受影响：翻面。
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-face-answer')),
+        findsOneWidget,
+      );
+
+      // 3 已不再绑定「良好」：不评分。
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-face-answer')),
+        findsOneWidget,
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-review-finished')),
+        findsOneWidget,
+        reason: 'G 现在就是「良好」，评完唯一一张卡',
+      );
+      await _unmount(tester);
+    });
+
+    testWidgets('卡面键盘桥回传改过的键与小键盘 token 也按注册表执行', (WidgetTester tester) async {
+      final SrsTestAppModel app = SrsTestAppModel();
+      app.shortcutRegistry.updateBinding(
+        ShortcutAction.srsReviewPrimary,
+        const ShortcutBindingSet(
+          keyboardBindings: <InputBinding>[
+            InputBinding(key: LogicalKeyboardKey.keyF),
+          ],
+        ),
+      );
+      await pumpReview(tester, app);
+      SrsCardFace face() =>
+          tester.widget<SrsPlainCardFace>(find.byType(SrsPlainCardFace)).face;
+      expect(face().bridgeKeys, contains('KeyF'));
+      expect(face().bridgeKeys, isNot(contains('Space')));
+
+      face().onBridgeKey('KeyF');
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-face-answer')),
+        findsOneWidget,
+      );
+      face().onBridgeKey('Numpad4');
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-review-finished')),
+        findsOneWidget,
+      );
+      await _unmount(tester);
+    });
+
+    testWidgets('手柄：默认 A 翻面；改绑到 Y 后 A 交回兜底、Y 翻面', (WidgetTester tester) async {
+      final SrsTestAppModel app = SrsTestAppModel();
+      await pumpReview(tester, app);
+      bool press(GamepadButton button) =>
+          Actions.maybeInvoke<GamepadButtonIntent>(
+            FocusManager.instance.primaryFocus!.context!,
+            GamepadButtonIntent(button),
+          ) ==
+          true;
+
+      app.shortcutRegistry.updateBinding(
+        ShortcutAction.srsReviewPrimary,
+        const ShortcutBindingSet(
+          gamepadBindings: <GamepadBinding>[GamepadBinding(GamepadButton.y)],
+        ),
+      );
+      expect(press(GamepadButton.a), isFalse, reason: 'A 已不绑本页动作');
+      expect(press(GamepadButton.y), isTrue);
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-face-answer')),
+        findsOneWidget,
+      );
+      await _unmount(tester);
+    });
+
+    testWidgets('默认表下手柄 A 翻面（与改造前 Android 的 gameButtonA 同义）', (
+      WidgetTester tester,
+    ) async {
+      await pumpReview(tester, SrsTestAppModel());
+      final bool handled =
+          Actions.maybeInvoke<GamepadButtonIntent>(
+            FocusManager.instance.primaryFocus!.context!,
+            const GamepadButtonIntent(GamepadButton.a),
+          ) ==
+          true;
+      expect(handled, isTrue);
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-face-answer')),
+        findsOneWidget,
+      );
+      await _unmount(tester);
+    });
+  });
+
   testWidgets('牌组列表：空的默认牌组在有别的顶层牌组时隐藏（Anki hide_default_deck）', (
     WidgetTester tester,
   ) async {
@@ -838,16 +1566,17 @@ void main() {
 
   testWidgets('牌组列表：手机宽度下多级子牌组的名字仍有宽度，行首不放图标', (WidgetTester tester) async {
     final SrsDbStore store = await _openStore(tester);
+    const List<String> names = <String>[
+      'Spark',
+      'JP-Mining-Long-Deck-Name',
+      'Vocabulary',
+      'Chapter Twelve',
+      'Kanji Drill',
+    ];
     final List<String> ids = (await tester.runAsync(() async {
       final List<String> out = <String>[];
       String? parent;
-      for (final String name in <String>[
-        'Spark',
-        'JP-Mining-Long-Deck-Name',
-        'Vocabulary',
-        'Chapter Twelve',
-        'Kanji Drill',
-      ]) {
+      for (final String name in names) {
         parent = await store.createDeck(name, parentId: parent);
         out.add(parent);
       }
@@ -874,14 +1603,10 @@ void main() {
           SrsDeckIndentGuides.widthFor(depth),
         );
       }
+      // 按名字取：顶层行多了一个画首字的形状徽章，不能按「含字母的第一个 Text」找。
       final Finder name = find.descendant(
         of: row,
-        matching: find.byWidgetPredicate(
-          (Widget w) =>
-              w is Text &&
-              w.data != null &&
-              RegExp(r'[A-Za-z]').hasMatch(w.data!),
-        ),
+        matching: find.text(names[depth]),
       );
       expect(
         tester.getSize(name.first).width,
@@ -978,6 +1703,426 @@ void main() {
       }
     });
 
+    testWidgets('HrB0STYm3E：整面卡只播页面上报看得见的发音（CSS 隐藏的不播、不出重播键）', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await addWithAudio(tester, store);
+      final _RecordingAudio audio = _RecordingAudio();
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+        overrides: <Override>[
+          srsCardAudioOutputProvider.overrideWithValue(audio),
+          // 页面替身：例句音频的容器被卡片 CSS 隐藏，只报单词那颗。
+          srsCardFaceBuilderProvider.overrideWithValue(
+            (BuildContext context, SrsCardFace face) => _VisibleSubsetFace(
+              face: face,
+              hidden: const <String>{'sent.mp3'},
+            ),
+          ),
+        ],
+      );
+      expect(audio.played, isEmpty);
+      await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
+      await _settle(tester);
+      expect(audio.played, <String>['word.mp3'], reason: '隐藏的例句音频不自动播');
+      audio.played.clear();
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
+      await _settle(tester);
+      expect(audio.played, <String>['word.mp3'], reason: 'R 重播同一份清单');
+      await _unmount(tester);
+    });
+
+    testWidgets('整面卡问题面上报没赶上翻面：答案面不把 {{FrontSide}} 带来的正面音频再播一遍', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await tester.runAsync(() async {
+        final String nt = await store.createStockNoteType(
+          SrsStockNoteType.basic,
+          'Basic',
+        );
+        final SrsNoteTypeView v = (await store.noteType(nt))!;
+        final String front = v.fields
+            .firstWhere((SrsFieldDef f) => f.name == 'Front')
+            .id;
+        final String back = v.fields
+            .firstWhere((SrsFieldDef f) => f.name == 'Back')
+            .id;
+        await store.createNote(
+          noteTypeId: nt,
+          fieldsById: <String, String>{
+            // 带卡片脚本 → 原生 HTML 卡面画不了，回退整面 WebView（本测试测的就是它）。
+            front: 'Q[sound:front.mp3]<script>void 0;</script>',
+            back: 'A[sound:back.mp3]',
+          },
+        );
+      });
+      final _RecordingAudio audio = _RecordingAudio();
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+        overrides: <Override>[
+          srsCardAudioOutputProvider.overrideWithValue(audio),
+          // 慢卡：问题面卡片脚本没跑完就翻面，问题面那次上报永远不到。
+          srsCardFaceBuilderProvider.overrideWithValue(
+            (BuildContext context, SrsCardFace face) =>
+                _VisibleSubsetFace(face: face, dropQuestionReport: true),
+          ),
+        ],
+      );
+      expect(audio.played, isEmpty, reason: '问题面还没上报，自动播放挂起');
+      await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
+      await _settle(tester);
+      expect(audio.played, <String>['back.mp3'], reason: '答案面只自动播答案新出现的那段');
+      await _unmount(tester);
+    });
+
+    testWidgets('复习布局：底部重播键放拇指那端、R 键重播、间隔副标签可关，⋯ 面板改了即生效', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _useFsrs7(tester, store);
+      await addWithAudio(tester, store);
+      final _RecordingAudio audio = _RecordingAudio();
+      final _LayoutApp app = _LayoutApp();
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        app: app,
+        size: const Size(390, 844),
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+        overrides: <Override>[
+          srsCardAudioOutputProvider.overrideWithValue(audio),
+          // 整面卡的可点 / 自动播只认页面上报「看得见」的发音（HrB0STYm3E）；Lapis 正面没有
+          // 音频，键位在问题面就按答案面预排，翻面前后同一位置、同样多。
+          srsCardFaceBuilderProvider.overrideWithValue(
+            (BuildContext context, SrsCardFace face) =>
+                _VisibleSubsetFace(face: face),
+          ),
+        ],
+      );
+      final Finder replay = find.byKey(
+        const ValueKey<String>('srs-bottom-replay-0'),
+      );
+      final Finder replaySentence = find.byKey(
+        const ValueKey<String>('srs-bottom-replay-1'),
+      );
+      // 每段音频一个键（单词 + 例句两颗），翻面前后同一位置：「显示答案」行右端就有。
+      expect(replay, findsOneWidget);
+      expect(replaySentence, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('srs-bottom-replay-2')),
+        findsNothing,
+      );
+      expect(
+        tester.getCenter(replay).dx,
+        greaterThan(
+          tester
+              .getCenter(find.byKey(const ValueKey<String>('srs-show-answer')))
+              .dx,
+        ),
+      );
+      // 窄屏放不下对称空位：「显示答案」不被两颗重播键挤到最小宽度以下。
+      expect(
+        tester
+            .getSize(find.byKey(const ValueKey<String>('srs-show-answer')))
+            .width,
+        greaterThanOrEqualTo(219.5),
+      );
+      // 正面还没有的那段先不可点（键位已按答案面排好）。
+      final Offset wordAt = tester.getCenter(replay);
+      final Offset sentenceAt = tester.getCenter(replaySentence);
+      audio.played.clear();
+      await tester.tap(replay, warnIfMissed: false);
+      await tester.tap(replaySentence, warnIfMissed: false);
+      await _settle(tester);
+      expect(audio.played, isEmpty, reason: '问题面上答案面的音频不可点');
+      await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
+      await _settle(tester);
+      // 翻面后可点、播的就是那一段。
+      audio.played.clear();
+      await tester.tap(replaySentence);
+      await _settle(tester);
+      expect(audio.played, <String>['sent.mp3']);
+      expect(
+        tester.getCenter(replay).dx,
+        moreOrLessEquals(wordAt.dx, epsilon: 0.5),
+        reason: '翻面前后同一水平位置',
+      );
+      expect(
+        tester.getCenter(replaySentence).dx,
+        moreOrLessEquals(sentenceAt.dx, epsilon: 0.5),
+      );
+      // #17：重播键单独一行、在评分按钮上方（不再与评分按钮并排同高），靠选定的右端。
+      expect(
+        tester.getRect(replaySentence).bottom,
+        lessThanOrEqualTo(
+          tester.getRect(find.byKey(const ValueKey<String>('srs-rate-4'))).top,
+        ),
+      );
+      expect(
+        tester.getRect(replaySentence).right,
+        moreOrLessEquals(
+          tester
+              .getRect(find.byKey(const ValueKey<String>('srs-rate-4')))
+              .right,
+          epsilon: 0.5,
+        ),
+      );
+      // 评分按钮：间隔 + 评价词两行；整颗不高过 64（M3E 中号按钮）。关掉间隔后只剩评价词。
+      int rateTexts() => find
+          .descendant(
+            of: find.byKey(const ValueKey<String>('srs-rate-3')),
+            matching: find.byType(Text),
+          )
+          .evaluate()
+          .length;
+      expect(rateTexts(), 2, reason: '间隔 + 评价词');
+      expect(
+        tester.getSize(find.byKey(const ValueKey<String>('srs-rate-3'))).height,
+        lessThanOrEqualTo(64),
+      );
+
+      // 各键只播自己那一段（只想听例句就只点例句那颗）。
+      audio.played.clear();
+      await tester.tap(replay);
+      await _settle(tester);
+      expect(audio.played, <String>['word.mp3']);
+      audio.played.clear();
+      await tester.tap(replaySentence);
+      await _settle(tester);
+      expect(audio.played, <String>['sent.mp3']);
+
+      audio.played.clear();
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
+      await _settle(tester);
+      expect(audio.played, <String>['word.mp3', 'sent.mp3'], reason: 'R 重播');
+
+      // ⋯「复习布局」：间隔关掉、重播键挪到左边，复习页立即跟着变。
+      Future<void> openLayout() async {
+        final Finder flat = find.byKey(
+          const ValueKey<String>('srs_review_layout'),
+        );
+        if (flat.evaluate().isNotEmpty) {
+          await tester.tap(flat.first);
+        } else {
+          await tester.tap(
+            find
+                .byKey(
+                  const ValueKey<String>('fushi_floating_toolbar_overflow'),
+                )
+                .first,
+          );
+          await _settle(tester);
+          await tester.tap(find.text(t.srs_review_layout_title).last);
+        }
+        await _settle(tester);
+      }
+
+      // 页头剩余卡数（对齐 Anki「显示剩余卡片数量」）：默认显示。
+      Finder countsText() => find.byWidgetPredicate(
+        (Widget w) =>
+            w is Text && (w.data ?? '').startsWith('${t.srs_count_new} '),
+      );
+      expect(countsText(), findsWidgets, reason: '默认显示剩余卡数');
+
+      await openLayout();
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-review-layout-intervals')),
+          matching: find.byType(Switch),
+        ),
+      );
+      await _settle(tester);
+      expect(app.intervals, isFalse);
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-review-layout-counts')),
+          matching: find.byType(Switch),
+        ),
+      );
+      await _settle(tester);
+      expect(app.counts, isFalse);
+      // 音量滑杆：往左拖到底 = 静音，写穿偏好。
+      final Finder volume = find.descendant(
+        of: find.byKey(const ValueKey<String>('srs-review-layout-volume')),
+        matching: find.byType(Slider),
+      );
+      expect(volume, findsOneWidget);
+      await tester.drag(volume, const Offset(-2000, 0));
+      await _settle(tester);
+      expect(app.volume, 0.0);
+      // 行宽放不下分段时设置行降级成菜单（设计系统行为）：先点开再选。
+      final Finder left = find.text(t.srs_review_layout_replay_start);
+      if (left.evaluate().isEmpty) {
+        await tester.tap(
+          find.byKey(const ValueKey<String>('srs-review-layout-replay')),
+        );
+        await _settle(tester);
+      }
+      await tester.tap(left.last);
+      await _settle(tester);
+      expect(app.replay, SrsReviewReplayButton.start);
+      await tester.tapAt(const Offset(195, 40));
+      await _settle(tester);
+      expect(rateTexts(), 1, reason: '间隔关掉后只剩评价词');
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-rate-3')),
+          matching: find.textContaining(RegExp(r'\d')),
+        ),
+        findsNothing,
+        reason: '间隔关掉后评分按钮上不再有任何时间文字',
+      );
+      expect(countsText(), findsNothing, reason: '剩余卡数关掉后页头不显示');
+      expect(
+        tester.getCenter(replay).dx,
+        lessThan(
+          tester.getCenter(find.byKey(const ValueKey<String>('srs-rate-1'))).dx,
+        ),
+      );
+      await _unmount(tester);
+    });
+
+    testWidgets('复习布局：一行放不下逐段重播键时退回一颗整面重播键，不把底栏挤窄', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      // 六段音频：340 宽的一行放不下六颗逐段键。
+      await tester.runAsync(
+        () => store.createNote(
+          noteTypeId: store.lapisNoteTypeId,
+          fieldsById: <String, String>{
+            srsLapisFieldId(_kProfile, 'Expression'): '食べる',
+            srsLapisFieldId(_kProfile, 'MainDefinition'): 'to eat',
+            srsLapisFieldId(_kProfile, 'ExpressionAudio'):
+                '[sound:w1.mp3][sound:w2.mp3][sound:w3.mp3]',
+            srsLapisFieldId(_kProfile, 'SentenceAudio'):
+                '[sound:s1.mp3][sound:s2.mp3][sound:s3.mp3]',
+          },
+        ),
+      );
+      final _RecordingAudio audio = _RecordingAudio();
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        app: _LayoutApp(),
+        size: const Size(340, 700),
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+        overrides: <Override>[
+          srsCardAudioOutputProvider.overrideWithValue(audio),
+          // 整面卡的可点 / 自动播只认页面上报「看得见」的发音（HrB0STYm3E）；Lapis 正面没有
+          // 音频，键位在问题面就按答案面预排，翻面前后同一位置、同样多。
+          srsCardFaceBuilderProvider.overrideWithValue(
+            (BuildContext context, SrsCardFace face) =>
+                _VisibleSubsetFace(face: face),
+          ),
+        ],
+      );
+      final Finder replay = find.byKey(
+        const ValueKey<String>('srs-bottom-replay-0'),
+      );
+      expect(replay, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('srs-bottom-replay-1')),
+        findsNothing,
+        reason: '六段音频在 340 宽的一行里放不下逐段键',
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
+      await _settle(tester);
+      // 四颗评分键都保有 ≥ 48dp 命中区。
+      for (int r = 1; r <= 4; r++) {
+        final Finder rate = find.byKey(ValueKey<String>('srs-rate-$r'));
+        if (rate.evaluate().isEmpty) continue;
+        expect(tester.getSize(rate).width, greaterThanOrEqualTo(48));
+      }
+      // 单颗键是整面重播（同 R）。
+      audio.played.clear();
+      await tester.tap(replay);
+      await _settle(tester);
+      expect(audio.played, <String>[
+        'w1.mp3',
+        'w2.mp3',
+        'w3.mp3',
+        's1.mp3',
+        's2.mp3',
+        's3.mp3',
+      ]);
+      await _unmount(tester);
+    });
+
+    testWidgets('复习布局（Apple）：底部重播键单独一行在底栏按钮上方、靠选定那端、点了重播', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await addWithAudio(tester, store);
+      final _RecordingAudio audio = _RecordingAudio();
+      final _LayoutApp app = _LayoutApp()..replay = SrsReviewReplayButton.start;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: true,
+        app: app,
+        size: const Size(1024, 768),
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+        overrides: <Override>[
+          srsCardAudioOutputProvider.overrideWithValue(audio),
+          // 整面卡的可点 / 自动播只认页面上报「看得见」的发音（HrB0STYm3E）；Lapis 正面没有
+          // 音频，键位在问题面就按答案面预排，翻面前后同一位置、同样多。
+          srsCardFaceBuilderProvider.overrideWithValue(
+            (BuildContext context, SrsCardFace face) =>
+                _VisibleSubsetFace(face: face),
+          ),
+        ],
+      );
+      final Finder replay = find.byKey(
+        const ValueKey<String>('srs-bottom-replay-0'),
+      );
+      expect(replay, findsOneWidget);
+      final Finder showAnswer = find.byKey(
+        const ValueKey<String>('srs-show-answer'),
+      );
+      expect(
+        tester.getCenter(replay).dx,
+        lessThan(tester.getCenter(showAnswer).dx),
+      );
+      // 放得下对称空位时，重播键放哪端都不把「显示答案」推离屏幕中线。
+      expect(
+        tester.getCenter(showAnswer).dx,
+        moreOrLessEquals(512, epsilon: 0.5),
+      );
+      expect(tester.getSize(replay).height, greaterThanOrEqualTo(48));
+      // #17：重播键单独一行，在「显示答案」上方，与它不同行。
+      expect(
+        tester.getRect(replay).bottom,
+        lessThanOrEqualTo(tester.getRect(showAnswer).top),
+      );
+      await tester.tap(showAnswer);
+      await _settle(tester);
+      final Rect rate = tester.getRect(
+        find.byKey(const ValueKey<String>('srs-rate-1')),
+      );
+      // 在评分按钮上方、与第一颗评分按钮左对齐（选的是左端）。
+      expect(tester.getRect(replay).bottom, lessThanOrEqualTo(rate.top));
+      expect(
+        tester.getRect(replay).left,
+        moreOrLessEquals(rate.left, epsilon: 0.5),
+      );
+      audio.played.clear();
+      await tester.tap(replay);
+      await _settle(tester);
+      expect(audio.played, <String>['word.mp3']);
+      await _unmount(tester);
+    });
+
     testWidgets('评分换卡时打断还在播的序列', (WidgetTester tester) async {
       final SrsDbStore store = await _openStore(tester);
       await addWithAudio(tester, store);
@@ -1022,10 +2167,13 @@ void main() {
       );
       expect(autoplay, findsOneWidget);
       expect(replay, findsOneWidget);
+      // ensureVisible 改的滚动位置要下一帧才排版到位：开关不在首屏时（每日上限卡片多了 RWKV 两项）不 pump 就点空。
       await tester.ensureVisible(autoplay);
+      await tester.pump();
       await tester.tap(autoplay);
       await tester.pump();
       await tester.ensureVisible(replay);
+      await tester.pump();
       await tester.tap(replay);
       await tester.pump();
       await tester.tap(
@@ -1047,13 +2195,659 @@ void main() {
       expect(autoplay, findsNothing);
       await _unmount(tester);
     });
+
+    testWidgets('牌组设置页：新卡顺序缺省按词频，改成按位置写进牌组；继承参数的子牌组不显示选择', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String kid = (await tester.runAsync(
+        () => store.createDeck('Kid', parentId: store.defaultDeckId),
+      ))!;
+      expect(
+        (await tester.runAsync(
+          store.deckTree,
+        ))![store.defaultDeckId]!.newCardOrder,
+        SrsNewCardOrder.frequency,
+        reason: '缺省 = 按词频',
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+      );
+      final Finder order = find.byKey(
+        const ValueKey<String>('srs-settings-new-order'),
+      );
+      await tester.scrollUntilVisible(
+        order,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      // 顶栏浮在列表上：居中，免得滚到顶被顶栏盖住。
+      await Scrollable.ensureVisible(tester.element(order), alignment: 0.5);
+      await tester.pumpAndSettle();
+      final Finder position = find.descendant(
+        of: order,
+        matching: find.text(t.srs_settings_new_order_position),
+      );
+      if (position.evaluate().isEmpty) {
+        // 行宽放不下分段时设置行降级成菜单（设计系统行为）：先点开再选。
+        await tester.tap(
+          find.descendant(
+            of: order,
+            matching: find.text(t.srs_settings_new_order),
+          ),
+        );
+        await _settle(tester);
+      }
+      await tester.tap(find.text(t.srs_settings_new_order_position).last);
+      await _settle(tester);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      );
+      await _settle(tester);
+      final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      expect(tree[store.defaultDeckId]!.newCardOrder, SrsNewCardOrder.position);
+      expect(
+        tree.paramsOwner(kid).newCardOrder,
+        SrsNewCardOrder.position,
+        reason: '子牌组随继承',
+      );
+      await _unmount(tester);
+
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: kid),
+      );
+      expect(order, findsNothing);
+      await _unmount(tester);
+    });
+
+    testWidgets('牌组设置页：「让子牌组都继承这里」把整棵子树里单独设置的后代改成继承', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final (String kid, String grandKid, String plain) = (await tester
+          .runAsync(() async {
+            final String kid = await store.createDeck(
+              'Kid',
+              parentId: store.defaultDeckId,
+            );
+            final String grandKid = await store.createDeck(
+              'GrandKid',
+              parentId: kid,
+            );
+            final String plain = await store.createDeck(
+              'Plain',
+              parentId: store.defaultDeckId,
+            );
+            for (final String id in <String>[kid, grandKid]) {
+              await store.editField(
+                SrsEntityKind.deck,
+                id,
+                SrsFieldKeys.deckParamsMode,
+                'own',
+              );
+            }
+            return (kid, grandKid, plain);
+          }))!;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+      );
+      final Finder button = find.byKey(
+        const ValueKey<String>('srs-settings-children-inherit'),
+      );
+      expect(button, findsOneWidget);
+      expect(find.text(t.srs_settings_children_inherit(n: 2)), findsOneWidget);
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await _settle(tester);
+      final String label = t.srs_settings_children_inherit(n: 2);
+      await tester.tap(
+        find.byWidgetPredicate(
+          (Widget w) => w is FushiDialogAction && w.label == label,
+        ),
+      );
+      await _settle(tester);
+      final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      for (final String id in <String>[kid, grandKid, plain]) {
+        expect(tree[id]!.ownParams, isFalse);
+        expect(tree.paramsOwner(id).id, store.defaultDeckId);
+      }
+      expect(button, findsNothing, reason: '没有单独设置的后代了，按钮收起');
+      await _unmount(tester);
+    });
+
+    testWidgets('牌组设置页：RWKV 排队设置（每天最少复习数 / 同日重复间隔）写进牌组，子牌组随继承', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String kid = (await tester.runAsync(
+        () => store.createDeck('Kid', parentId: store.defaultDeckId),
+      ))!;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+      );
+      Future<void> enter(String key, String value) async {
+        final Finder field = find.byKey(ValueKey<String>(key));
+        await tester.ensureVisible(field);
+        await tester.enterText(
+          find.descendant(of: field, matching: find.byType(EditableText)),
+          value,
+        );
+        await tester.pump();
+      }
+
+      // 默认算法是 RWKV：排队设置显示上游默认值。
+      expect(
+        find.byKey(const ValueKey<String>('srs-settings-rwkv-queue')),
+        findsOneWidget,
+      );
+      await enter('srs-settings-rwkv-min-reviews', '7');
+      await enter('srs-settings-rwkv-repeat-reviews', '2');
+      await enter('srs-settings-rwkv-repeat-seconds', '15');
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      );
+      await _settle(tester);
+      final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      const SrsRwkvQueueSettings want = SrsRwkvQueueSettings(
+        minReviewsPerDay: 7,
+        repeatMinReviews: 2,
+        repeatMinSeconds: 15,
+      );
+      expect(tree[store.defaultDeckId]!.rwkvQueue, want);
+      expect(tree.paramsOwner(kid).rwkvQueue, want, reason: '子牌组随继承');
+      await _unmount(tester);
+    });
+
+    testWidgets(
+      '牌组设置页：每日上限卡片里三个值联动提示——复习上限 < 10× 新卡、最少复习超过上限，各带一键改成参考值；开了忽略上限就不提示',
+      (WidgetTester tester) async {
+        final SrsDbStore store = await _openStore(tester);
+        await _pumpPage(
+          tester,
+          store: store,
+          apple: false,
+          page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+        );
+        // 只读断言不看是否在视口里（skipOffstage: false）：点了某个按钮滚动后，同一张卡片可能滚出首屏。
+        Finder byKey(String key) =>
+            find.byKey(ValueKey<String>(key), skipOffstage: false);
+        EditableText field(String key) => tester.widget<EditableText>(
+          find.descendant(
+            of: byKey(key),
+            matching: find.byType(EditableText, skipOffstage: false),
+          ),
+        );
+        Future<void> reveal(Finder finder) async {
+          await tester.ensureVisible(finder);
+          await tester.pump();
+        }
+
+        Future<void> enter(String key, String value) async {
+          await reveal(byKey(key));
+          await tester.enterText(
+            find.descendant(
+              of: byKey(key),
+              matching: find.byType(EditableText),
+            ),
+            value,
+          );
+          await _settle(tester);
+        }
+
+        Future<void> tapKey(String key) async {
+          await reveal(byKey(key));
+          await tester.tap(find.byKey(ValueKey<String>(key)));
+          await _settle(tester);
+        }
+
+        // 默认 20 / 200：不提示；最少复习数与忽略上限在每日上限卡片里（默认牌组是 RWKV）。
+        expect(byKey('srs-settings-review-limit-low'), findsNothing);
+        for (final String key in <String>[
+          'srs-settings-rwkv-min-reviews',
+          'srs-settings-rwkv-ignore-limit',
+        ]) {
+          expect(
+            find.descendant(
+              of: byKey('srs-settings-limits'),
+              matching: byKey(key),
+            ),
+            findsOneWidget,
+            reason: key,
+          );
+        }
+
+        await enter('srs-settings-new', '30');
+        expect(byKey('srs-settings-review-limit-low'), findsOneWidget);
+        expect(
+          find.text(t.srs_settings_set_to(n: 300), skipOffstage: false),
+          findsOneWidget,
+        );
+        await tapKey('srs-settings-review-limit-fix');
+        expect(field('srs-settings-review').controller.text, '300');
+        expect(byKey('srs-settings-review-limit-low'), findsNothing);
+
+        await enter('srs-settings-rwkv-min-reviews', '400');
+        expect(byKey('srs-settings-min-over-limit'), findsOneWidget);
+        await tapKey('srs-settings-min-reviews-fix');
+        expect(field('srs-settings-rwkv-min-reviews').controller.text, '60');
+        expect(byKey('srs-settings-min-over-limit'), findsNothing);
+
+        // 开「忽略每日复习上限」：上限不截断，输入框置灰，上限相关的提示都不出。
+        await enter('srs-settings-review', '10');
+        expect(byKey('srs-settings-review-limit-low'), findsOneWidget);
+        await reveal(byKey('srs-settings-rwkv-ignore-limit'));
+        await tester.tap(
+          find.descendant(
+            of: find.byKey(
+              const ValueKey<String>('srs-settings-rwkv-ignore-limit'),
+            ),
+            matching: find.byType(Switch),
+          ),
+        );
+        await _settle(tester);
+        expect(byKey('srs-settings-review-limit-low'), findsNothing);
+        expect(byKey('srs-settings-min-over-limit'), findsNothing);
+        expect(field('srs-settings-review').readOnly, isTrue);
+        await _unmount(tester);
+      },
+    );
+
+    testWidgets('牌组设置页：从 FSRS 切到 RWKV 时，每天最少复习数还是 0 就预填复习上限的 1/5', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await tester.runAsync(
+        () => store.editFields(SrsEntityKind.deck, store.defaultDeckId, <
+          String,
+          Object?
+        >{
+          // 内置默认牌组没写过 rwkvQueue 时按推荐值读出（最少复习 40，registers.rs `deck_view`），不走预填；
+          // 这里写成本 PR 之前的牌组那样最少复习数为 0 的值。
+          SrsFieldKeys.deckRwkvQueue: const SrsRwkvQueueSettings().toValue(),
+          SrsFieldKeys.deckAlgorithm: <String, Object?>{
+            'alg': SrsAlgorithm.fsrs7.wire,
+            'auto': false,
+          },
+          SrsFieldKeys.deckLimits: <String, Object?>{'new': 10, 'review': 150},
+        }),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+      );
+      final Finder minField = find.byKey(
+        const ValueKey<String>('srs-settings-rwkv-min-reviews'),
+        skipOffstage: false,
+      );
+      expect(minField, findsNothing, reason: 'FSRS 牌组不显示 RWKV 的最少复习数');
+      final Finder rwkv = find.text(t.srs_settings_algorithm_rwkv_recommended);
+      await tester.ensureVisible(rwkv);
+      await tester.pump();
+      await tester.tap(rwkv);
+      await _settle(tester);
+      expect(minField, findsOneWidget);
+      expect(
+        tester
+            .widget<EditableText>(
+              find.descendant(
+                of: minField,
+                matching: find.byType(EditableText, skipOffstage: false),
+              ),
+            )
+            .controller
+            .text,
+        '30',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      );
+      await _settle(tester);
+      final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      expect(tree[store.defaultDeckId]!.rwkvQueue.minReviewsPerDay, 30);
+      await _unmount(tester);
+    });
+
+    testWidgets('牌组设置页：RWKV 牌组的步长收在「高级」；还带着步长（如 Anki 预设带来的）时基础区提示并可一键清空', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await tester.runAsync(
+        () => store.editFields(
+          SrsEntityKind.deck,
+          store.defaultDeckId,
+          <String, Object?>{
+            SrsFieldKeys.deckSteps: <String, Object?>{
+              'learn': <double>[1, 10],
+              'relearn': <double>[10],
+            },
+          },
+        ),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+      );
+      Finder byKey(String key) =>
+          find.byKey(ValueKey<String>(key), skipOffstage: false);
+      // 步长在高级区的 RWKV 步长分组里，不在基础区单独一张卡片。
+      expect(
+        find.descendant(
+          of: byKey('srs-settings-rwkv-steps'),
+          matching: byKey('srs-settings-learn-steps'),
+        ),
+        findsOneWidget,
+      );
+      expect(byKey('srs-settings-rwkv-steps-set'), findsOneWidget);
+      await tester.ensureVisible(byKey('srs-settings-steps-clear'));
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-settings-steps-clear')),
+      );
+      await _settle(tester);
+      expect(byKey('srs-settings-rwkv-steps-set'), findsNothing);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      );
+      await _settle(tester);
+      final SrsDeckView deck = (await tester.runAsync(
+        store.deckTree,
+      ))![store.defaultDeckId]!;
+      expect(deck.learnSteps, isEmpty);
+      expect(deck.relearnSteps, isEmpty);
+      await _unmount(tester);
+    });
+
+    testWidgets('牌组设置页：同一次编辑里切换算法，步长显示与「是否改动」按新算法重算，保存后的生效值与显示一致', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String id = store.defaultDeckId;
+      // 默认牌组是 RWKV、没写过步长：生效的是「不用步长」。
+      SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      expect(tree[id]!.localAlgorithm, SrsAlgorithm.rwkv);
+      expect(tree[id]!.learnStepsSet, isFalse);
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: id),
+      );
+      String stepsText(String key) => tester
+          .widget<EditableText>(
+            find.descendant(
+              of: find.byKey(ValueKey<String>(key)),
+              matching: find.byType(EditableText),
+            ),
+          )
+          .controller
+          .text;
+      Future<void> reveal(String key) async {
+        final Finder f = find.byKey(ValueKey<String>(key));
+        await tester.scrollUntilVisible(
+          f,
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await Scrollable.ensureVisible(tester.element(f), alignment: 0.5);
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> pickAlgorithm(String label) async {
+        await reveal('srs-settings-algorithm');
+        await tester.tap(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('srs-settings-algorithm')),
+            matching: find.text(label),
+          ),
+        );
+        await _settle(tester);
+      }
+
+      // 保存后重开设置页（测试里设置页是根页面，保存的 maybePop 不会退出）。
+      Future<void> save() async {
+        await tester.tap(
+          find.byKey(const ValueKey<String>('srs_settings_save')).first,
+        );
+        await _settle(tester);
+        await _unmount(tester);
+        await _pumpPage(
+          tester,
+          store: store,
+          apple: false,
+          page: SrsDeckSettingsPage(deckId: id),
+        );
+      }
+
+      await reveal('srs-settings-learn-steps');
+      expect(stepsText('srs-settings-learn-steps'), '');
+      expect(stepsText('srs-settings-relearn-steps'), '');
+      // 切到 FSRS-7：没改过的步长输入换成 FSRS 下的生效值（默认 1 10 / 10）。
+      await pickAlgorithm('FSRS-7');
+      // FSRS 牌组的步长在基础区（RWKV 的收在高级区）：换了位置，重新滚到它。
+      await reveal('srs-settings-learn-steps');
+      expect(stepsText('srs-settings-learn-steps'), '1 10');
+      expect(stepsText('srs-settings-relearn-steps'), '10');
+      await save();
+      tree = (await tester.runAsync(store.deckTree))!;
+      expect(tree[id]!.localAlgorithm, SrsAlgorithm.fsrs7);
+      expect(tree[id]!.learnStepsSet, isFalse, reason: '显示的就是 FSRS 下的生效值：不写步长');
+      SrsSchedulingConfig c = tree.schedulingConfig(id);
+      expect(c.learnStepsMinutes, <double>[1, 10]);
+      expect(c.relearnStepsMinutes, <double>[10]);
+
+      // 反过来：FSRS → RWKV，显示跟着变成「不用步长」，保存后生效值也是空。
+      await pickAlgorithm(t.srs_settings_algorithm_rwkv_recommended);
+      await reveal('srs-settings-learn-steps');
+      expect(stepsText('srs-settings-learn-steps'), '');
+      expect(stepsText('srs-settings-relearn-steps'), '');
+      await save();
+      tree = (await tester.runAsync(store.deckTree))!;
+      c = tree.schedulingConfig(id);
+      expect(tree[id]!.localAlgorithm, SrsAlgorithm.rwkv);
+      expect(c.learnStepsMinutes, isEmpty);
+      expect(c.relearnStepsMinutes, isEmpty);
+
+      // 用户先改了步长再切算法：输入保留，保存时按切换后的算法与生效值比，写进牌组。
+      await reveal('srs-settings-learn-steps');
+      await tester.enterText(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-settings-learn-steps')),
+          matching: find.byType(EditableText),
+        ),
+        '5',
+      );
+      await tester.pump();
+      await pickAlgorithm('FSRS-7');
+      await reveal('srs-settings-learn-steps');
+      expect(stepsText('srs-settings-learn-steps'), '5');
+      expect(
+        stepsText('srs-settings-relearn-steps'),
+        '10',
+        reason: '重学步长没改过：换成 FSRS 下的生效值',
+      );
+      await save();
+      tree = (await tester.runAsync(store.deckTree))!;
+      c = tree.schedulingConfig(id);
+      expect(c.learnStepsMinutes, <double>[5]);
+      expect(c.relearnStepsMinutes, <double>[10]);
+      await _unmount(tester);
+    });
+
+    testWidgets('牌组设置页：新卡计划（按复习量调整的预算与多出比例 / 关掉调整）写进牌组', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+      );
+      // 设置页是懒构建的列表：新卡计划在基础设置末尾，先滚到它。
+      Future<Finder> reveal(String key) async {
+        final Finder field = find.byKey(ValueKey<String>(key));
+        await tester.scrollUntilVisible(
+          field,
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        // 顶栏浮在列表上：居中，免得滚到顶被顶栏盖住。
+        await Scrollable.ensureVisible(tester.element(field), alignment: 0.5);
+        await tester.pumpAndSettle();
+        return field;
+      }
+
+      Future<void> enter(String key, String value) async {
+        final Finder field = await reveal(key);
+        await tester.enterText(
+          find.descendant(of: field, matching: find.byType(EditableText)),
+          value,
+        );
+        await tester.pump();
+      }
+
+      Future<void> save() async {
+        await tester.tap(
+          find.byKey(const ValueKey<String>('srs_settings_save')).first,
+        );
+        await _settle(tester);
+      }
+
+      await enter('srs-settings-new-load-budget', '120');
+      await enter('srs-settings-new-load-boost', '30');
+      await save();
+      SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      expect(
+        tree[store.defaultDeckId]!.newCardPlan,
+        const SrsNewCardPlan(budgetPercent: 120, boostPercent: 30),
+      );
+
+      // 关掉按复习量调整：预算 / 多出两项收起，保存后只改开关。
+      final Finder auto = await reveal('srs-settings-new-load-auto');
+      await tester.tap(auto);
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('srs-settings-new-load-budget')),
+        findsNothing,
+      );
+      await save();
+      tree = (await tester.runAsync(store.deckTree))!;
+      expect(
+        tree[store.defaultDeckId]!.newCardPlan,
+        const SrsNewCardPlan(
+          autoLoad: false,
+          budgetPercent: 120,
+          boostPercent: 30,
+        ),
+      );
+      await _unmount(tester);
+    });
+  });
+
+  testWidgets('复习选项「卡面图片大小」：改了即换卡面注入的 CSS；卡面点图回传地址后全屏查看', (
+    WidgetTester tester,
+  ) async {
+    final SrsDbStore store = await _openStore(tester);
+    await _addLapis(tester, store, '食べる');
+    final _LayoutApp app = _LayoutApp();
+    await _pumpPage(
+      tester,
+      store: store,
+      apple: false,
+      app: app,
+      page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+      overrides: <Override>[
+        srsMediaStoreProvider.overrideWith(
+          (Ref ref) async => SrsMediaStore(Directory.systemTemp),
+        ),
+      ],
+    );
+    SrsCardFace face() =>
+        tester.widget<SrsPlainCardFace>(find.byType(SrsPlainCardFace)).face;
+    expect(face().hostCss, isEmpty, reason: '默认原样：不注入图片样式');
+    expect(face().onImageTap, isNotNull);
+
+    final Finder flat = find.byKey(const ValueKey<String>('srs_review_layout'));
+    if (flat.evaluate().isNotEmpty) {
+      await tester.tap(flat.first);
+    } else {
+      await tester.tap(
+        find
+            .byKey(const ValueKey<String>('fushi_floating_toolbar_overflow'))
+            .first,
+      );
+      await _settle(tester);
+      await tester.tap(find.text(t.srs_review_layout_title).last);
+    }
+    await _settle(tester);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('srs-review-layout-image-size')),
+    );
+    await _settle(tester);
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('srs-review-layout-image-size')),
+        matching: find.text(t.srs_review_layout_image_large),
+      ),
+    );
+    await _settle(tester);
+    expect(app.imageSize, SrsReviewImageSize.large);
+    expect(face().hostCss, srsReviewImageSizeCss(SrsReviewImageSize.large));
+    expect(face().hostCss, contains('.card img{width:100%!important'));
+    Navigator.of(tester.element(find.byType(SrsReviewLayoutSheet))).pop();
+    await _settle(tester);
+
+    // 页内点图脚本经 onSrsImageTap 回传的是改写后的媒体地址：换回媒体名、全屏查看。
+    expect(find.byType(InteractiveViewer), findsNothing);
+    face().onImageTap!('https://srs.local/media/pic%201.png');
+    await _settle(tester);
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    final Image shown = tester.widget<Image>(
+      find.descendant(
+        of: find.byType(InteractiveViewer),
+        matching: find.byType(Image),
+      ),
+    );
+    expect(
+      (shown.image as FileImage).file.path,
+      endsWith('${Platform.pathSeparator}pic 1.png'),
+    );
+    await tester.tap(find.byType(InteractiveViewer));
+    await _settle(tester);
+    expect(find.byType(InteractiveViewer), findsNothing);
+
+    // 不是卡面媒体的地址（远程图）不弹。
+    face().onImageTap!('https://example.com/a.png');
+    await _settle(tester);
+    expect(find.byType(InteractiveViewer), findsNothing);
+    await _unmount(tester);
   });
 
   testWidgets('排程内核不可用：横幅提示，复习页不给评分', (WidgetTester tester) async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(() => tester.runAsync(db.close));
+    final SrsStorage srs = (await tester.runAsync(openSrsTestStorage))!;
     final SrsDbStore store = (await tester.runAsync(
-      () => SrsDbStore.open(db: db, profileUid: _kProfile, deviceId: 'd'),
+      () => SrsDbStore.open(
+        db: srs.db,
+        core: srs.core,
+        profileUid: _kProfile,
+        deviceId: 'd',
+      ),
     ))!;
     await _pumpPage(
       tester,
@@ -1093,6 +2887,50 @@ void main() {
     );
     for (final OnboardingTutorialItem item in items) {
       expect(find.text(item.title), findsOneWidget);
+    }
+  });
+
+  testWidgets('RWKV 牌组评分按钮不显示进复习队列的天数（RWKV 没就绪也不显示）；学习步照常显示', (
+    WidgetTester tester,
+  ) async {
+    for (final bool ready in <bool>[true, false]) {
+      final SrsDbStore store = await _openStore(tester);
+      store.rwkv = _FakeRwkv(ready: ready);
+      // 这里要验学习步的显示：RWKV 牌组缺省不用步长，写上步长。
+      await tester.runAsync(
+        () => store.editFields(
+          SrsEntityKind.deck,
+          store.defaultDeckId,
+          <String, Object?>{
+            SrsFieldKeys.deckSteps: <String, Object?>{
+              'learn': <double>[1, 10],
+              'relearn': <double>[10],
+            },
+          },
+        ),
+      );
+      await _addLapis(tester, store, '食べる');
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
+      await _settle(tester);
+      int texts(int rating) => find
+          .descendant(
+            of: find.byKey(ValueKey<String>('srs-rate-$rating')),
+            matching: find.byType(Text),
+          )
+          .evaluate()
+          .length;
+      // 新卡：「重来」进学习步（分钟），「简单」直接毕业进复习队列（天数）。
+      expect(texts(1), 2, reason: '学习步按步长计时，ready=$ready');
+      // RWKV 没就绪也一样（PR #2711）：RWKV 牌组的复习卡等 RWKV 就绪后按 R 出，不退回按存下的到期日排，
+      // 所以 FSRS-7 的天数同样不是它回来的时间。
+      expect(texts(4), 1, reason: 'RWKV 排队：天数不是它真正回来的时间，ready=$ready');
+      await _unmount(tester);
     }
   });
 
@@ -1188,7 +3026,88 @@ void main() {
   });
 }
 
+/// RWKV 排程的替身：只决定「现在能不能按 R 排队」。
+class _FakeRwkv implements SrsRwkvScheduling {
+  _FakeRwkv({required this.ready});
+
+  @override
+  final bool ready;
+
+  @override
+  Future<List<double>?> instantRetrievability(
+    List<SrsRwkvCandidate> cards, {
+    required int atMs,
+  }) async => ready ? List<double>.filled(cards.length, 0) : null;
+
+  @override
+  Future<List<double>?> currentRetrievability(
+    List<SrsRwkvCandidate> cards, {
+    required int nowMs,
+  }) async => ready ? List<double>.filled(cards.length, 0) : null;
+
+  @override
+  Future<void> onAnswered(String cardId, SrsReviewLog log) async {}
+  @override
+  Future<void> onCardsPurged(List<String> cardIds) async {}
+}
+
 /// 记下播了哪些音频的假播放出口。[holdOpen] = 每段都「播不完」，直到 stop。
+/// 整面 WebView 卡面的替身：像页面一样在这一面上屏后上报看得见的发音（[hidden] 当作被 CSS
+/// 隐藏，不报）。
+class _VisibleSubsetFace extends StatefulWidget {
+  const _VisibleSubsetFace({
+    required this.face,
+    this.hidden = const <String>{},
+    this.dropQuestionReport = false,
+  });
+
+  final SrsCardFace face;
+  final Set<String> hidden;
+
+  /// 问题面的上报永远不到（慢卡：外部脚本还没加载完用户就翻面，页面那次上报被换卡作废）。
+  final bool dropQuestionReport;
+
+  @override
+  State<_VisibleSubsetFace> createState() => _VisibleSubsetFaceState();
+}
+
+class _VisibleSubsetFaceState extends State<_VisibleSubsetFace> {
+  @override
+  void initState() {
+    super.initState();
+    _report();
+  }
+
+  @override
+  void didUpdateWidget(_VisibleSubsetFace old) {
+    super.didUpdateWidget(old);
+    if (old.face.cardId != widget.face.cardId ||
+        old.face.showingAnswer != widget.face.showingAnswer) {
+      _report();
+    }
+  }
+
+  void _report() {
+    final SrsCardFace face = widget.face;
+    if (widget.dropQuestionReport && !face.showingAnswer) return;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      if (!mounted) return;
+      face.onVisibleSounds?.call(face.cardId, face.showingAnswer, <String>[
+        for (final String n in srsCardSoundNames(face.bodyHtml))
+          if (!widget.hidden.contains(n)) n,
+      ]);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => Text(
+    widget.face.showingAnswer ? 'answer' : 'question',
+    key: ValueKey<String>(
+      widget.face.showingAnswer ? 'srs-face-answer' : 'srs-face-question',
+    ),
+  );
+}
+
 class _RecordingAudio implements SrsCardAudioOutput {
   _RecordingAudio({this.holdOpen = false});
 
@@ -1196,6 +3115,10 @@ class _RecordingAudio implements SrsCardAudioOutput {
   final List<String> played = <String>[];
   final List<Completer<bool>> _open = <Completer<bool>>[];
   int stops = 0;
+
+  /// 路径即文件名：[played] 记的仍是卡面上的音频名。
+  @override
+  Future<String?> resolve(String name) => Future<String?>.value(name);
 
   @override
   Future<bool> playToEnd(String name) {

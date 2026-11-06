@@ -30,7 +30,8 @@ void main() {
   );
 
   AudiobookSession makeSession(
-      void Function(String, int, Rect?) appLevelLookup) {
+    void Function(String, int, Rect?) appLevelLookup,
+  ) {
     return AudiobookSession(
       audioHandler: () => null,
       // 复现前提：偏好开关 false（悬浮条临时拉起时的真实状态）。旧代码正是用它
@@ -65,10 +66,10 @@ void main() {
     );
     await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .handlePlatformMessage(
-      FushiChannels.floatingLyric.name,
-      data,
-      (ByteData? _) {},
-    );
+          FushiChannels.floatingLyric.name,
+          data,
+          (ByteData? _) {},
+        );
   }
 
   setUp(() {
@@ -82,12 +83,12 @@ void main() {
     FloatingLyricChannel.clearEventHandlers();
   });
 
-  test(
-      'BUG-708: install/restoreDefaultSurfaces 无条件重接 channel 点词 handler，'
+  test('BUG-708: install/restoreDefaultSurfaces 无条件重接 channel 点词 handler，'
       '即使 show_floating_lyric=false（后台听书点词不再静默丢）', () async {
     final List<String> calls = <String>[];
-    final AudiobookSession session =
-        makeSession((String t, int i, Rect? r) => calls.add('app:$t'));
+    final AudiobookSession session = makeSession(
+      (String t, int i, Rect? r) => calls.add('app:$t'),
+    );
 
     // reader attach：channel 必须接上 reader 的点词 handler（即便偏好开关 false）。
     session.installReaderSurfaces(
@@ -96,15 +97,17 @@ void main() {
           calls.add('reader:$t'),
     );
     await sendNativeLookup('あ', 0);
-    expect(calls, <String>['reader:あ'],
-        reason: 'attach 必须重接 reader handler，不得被 show_floating_lyric 门控');
+    expect(calls, <String>[
+      'reader:あ',
+    ], reason: 'attach 必须重接 reader handler，不得被 show_floating_lyric 门控');
 
     // reader detach：channel 必须还原 app 级默认 handler（无 !mounted 门），
     // 否则残留已卸载 reader handler → 点词被 `if (!mounted) return` 吞掉。
     calls.clear();
     session.restoreDefaultSurfaces();
     await sendNativeLookup('い', 0);
-    expect(calls, <String>['app:い'],
-        reason: 'detach 必须还原 app 级默认 handler，不得被 show_floating_lyric 门控');
+    expect(calls, <String>[
+      'app:い',
+    ], reason: 'detach 必须还原 app 级默认 handler，不得被 show_floating_lyric 门控');
   });
 }

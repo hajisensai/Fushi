@@ -54,16 +54,16 @@ class FushiPredictiveBackPageTransitionsBuilder extends PageTransitionsBuilder {
 
   @override
   Duration get transitionDuration => const Duration(
-        milliseconds:
-            FadeForwardsPageTransitionsBuilder.kTransitionMilliseconds,
-      );
+    milliseconds: FadeForwardsPageTransitionsBuilder.kTransitionMilliseconds,
+  );
 
   /// 下层路由的配合动画沿用 [FadeForwardsPageTransitionsBuilder] 的委托转场，
   /// 保证上层页面滑走时下层页面照常配合，不因本包装而丢失。
   @override
   DelegatedTransitionBuilder? get delegatedTransition =>
-      FadeForwardsPageTransitionsBuilder(backgroundColor: backgroundColor)
-          .delegatedTransition;
+      FadeForwardsPageTransitionsBuilder(
+        backgroundColor: backgroundColor,
+      ).delegatedTransition;
 
   @override
   Widget buildTransitions<T>(
@@ -77,13 +77,7 @@ class FushiPredictiveBackPageTransitionsBuilder extends PageTransitionsBuilder {
       route: route,
       child: FadeForwardsPageTransitionsBuilder(
         backgroundColor: backgroundColor,
-      ).buildTransitions(
-        route,
-        context,
-        animation,
-        secondaryAnimation,
-        child,
-      ),
+      ).buildTransitions(route, context, animation, secondaryAnimation, child),
     );
   }
 }
@@ -166,8 +160,9 @@ class _FushiPredictiveBackGestureDetectorState
     // 平台对同一次手势重发起始事件（口子 1）。已经持有手势就不再计一次开始，只把
     // 进度接上；仍然返回 true，保证后续 commit/cancel 依旧落到本 detector。
     if (_holdsGesture) {
-      widget.route
-          .handleUpdateBackGestureProgress(progress: 1 - backEvent.progress);
+      widget.route.handleUpdateBackGestureProgress(
+        progress: 1 - backEvent.progress,
+      );
       return true;
     }
     // 系统返回键（非手势）与「本路由不允许手势返回」都不接管：交回框架走普通
@@ -184,8 +179,9 @@ class _FushiPredictiveBackGestureDetectorState
   @override
   void handleUpdateBackGestureProgress(PredictiveBackEvent backEvent) {
     if (!_holdsGesture) return;
-    widget.route
-        .handleUpdateBackGestureProgress(progress: 1 - backEvent.progress);
+    widget.route.handleUpdateBackGestureProgress(
+      progress: 1 - backEvent.progress,
+    );
   }
 
   @override

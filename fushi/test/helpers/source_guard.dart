@@ -89,8 +89,14 @@ int _scanStringLiteral(
       while (i < n && depth > 0) {
         final String d = src[i];
         if (d == "'" || d == '"') {
-          i = _scanStringLiteral(src, i, out,
-              mask: mask, raw: false, tripleSpans: tripleSpans);
+          i = _scanStringLiteral(
+            src,
+            i,
+            out,
+            mask: mask,
+            raw: false,
+            tripleSpans: tripleSpans,
+          );
           continue;
         }
         if (d == '{') depth++;
@@ -161,8 +167,14 @@ String _mask(
     }
     if (stringLiterals) {
       if (c == "'" || c == '"') {
-        i = _scanStringLiteral(source, i, out,
-            mask: maskStringContent, raw: false, tripleSpans: tripleSpans);
+        i = _scanStringLiteral(
+          source,
+          i,
+          out,
+          mask: maskStringContent,
+          raw: false,
+          tripleSpans: tripleSpans,
+        );
         continue;
       }
       if ((c == 'r' || c == 'R') &&
@@ -170,8 +182,14 @@ String _mask(
           (source[i + 1] == "'" || source[i + 1] == '"') &&
           (i == 0 || !_identifierChar.hasMatch(source[i - 1]))) {
         _emit(out, c, maskStringContent);
-        i = _scanStringLiteral(source, i + 1, out,
-            mask: maskStringContent, raw: true, tripleSpans: tripleSpans);
+        i = _scanStringLiteral(
+          source,
+          i + 1,
+          out,
+          mask: maskStringContent,
+          raw: true,
+          tripleSpans: tripleSpans,
+        );
         continue;
       }
     }
@@ -186,11 +204,11 @@ String _mask(
 ///
 /// 长度与换行位置与 [source] 逐字节一致，可直接拿掩码串的下标回原串切片。
 String maskComments(String source) => _mask(
-      source,
-      lineComments: true,
-      stringLiterals: true,
-      maskStringContent: false,
-    );
+  source,
+  lineComments: true,
+  stringLiterals: true,
+  maskStringContent: false,
+);
 
 /// 把注释掩掉后折叠全部空白，供必须跨 `dart format` 换行匹配的源码守卫使用。
 ///
@@ -204,21 +222,21 @@ String compactCode(String source) =>
 /// 用于花括号 / 圆括号配对这类**结构**扫描：串里的花括号（尤其是三引号里注入的
 /// JS/CSS）不再参与配对。
 String maskCommentsAndStrings(String source) => _mask(
-      source,
-      lineComments: true,
-      stringLiterals: true,
-      maskStringContent: true,
-    );
+  source,
+  lineComments: true,
+  stringLiterals: true,
+  maskStringContent: true,
+);
 
 /// CSS 版：只剥 `/* */`（CSS 没有 `//` 注释，也不按 Dart 规则解析引号）。
 /// CSS 的块注释**不嵌套**，首个 `*/` 收口。同样等长，可直接拿下标回原串切片。
 String maskCssComments(String source) => _mask(
-      source,
-      lineComments: false,
-      stringLiterals: false,
-      maskStringContent: false,
-      nestedBlockComments: false,
-    );
+  source,
+  lineComments: false,
+  stringLiterals: false,
+  maskStringContent: false,
+  nestedBlockComments: false,
+);
 
 /// HTML 版：把 `<!-- ... -->` 换成等长空白。
 ///
@@ -727,8 +745,9 @@ String methodBody(
   SourceLexicon lexicon = SourceLexicon.dart,
 }) {
   // 找签名：只掩码注释（签名可能落在被扫描的字符串语料里，串要保留）。
-  final String searchable =
-      lexicon == SourceLexicon.js ? maskJsComments(src) : maskComments(src);
+  final String searchable = lexicon == SourceLexicon.js
+      ? maskJsComments(src)
+      : maskComments(src);
   // 配对：注释与字符串都掩掉，只剩真结构。
   final String structural = lexicon == SourceLexicon.js
       ? maskJsCommentsAndStrings(src)
@@ -740,12 +759,16 @@ String methodBody(
   final _MethodBodyBounds? bounds = _methodBodyBounds(structural, start);
   if (_methodBodyAudit) {
     // ignore: avoid_print
-    print('#MBAUDIT|${bounds?.form.name ?? 'none'}|'
-        '${signature.replaceAll('\n', r'\n')}');
+    print(
+      '#MBAUDIT|${bounds?.form.name ?? 'none'}|'
+      '${signature.replaceAll('\n', r'\n')}',
+    );
   }
   if (bounds == null) {
-    fail('方法签名后找不到可收口的方法体（花括号体不配对 / 箭头体缺分号 / '
-        '这是个没有体的声明）：$signature');
+    fail(
+      '方法签名后找不到可收口的方法体（花括号体不配对 / 箭头体缺分号 / '
+      '这是个没有体的声明）：$signature',
+    );
   }
   return src.substring(start, bounds.close + 1);
 }
@@ -1114,8 +1137,9 @@ EnclosingCall enclosingCall(String src, int index) {
   if (close < 0) {
     fail('下标 $index 所在调用的括号不配对');
   }
-  final String name =
-      nameStart < nameEnd ? src.substring(nameStart, nameEnd) : '';
+  final String name = nameStart < nameEnd
+      ? src.substring(nameStart, nameEnd)
+      : '';
   final int start = nameStart < nameEnd ? nameStart : open;
   return EnclosingCall(
     name: name,

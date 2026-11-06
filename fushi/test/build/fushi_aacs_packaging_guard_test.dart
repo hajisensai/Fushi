@@ -6,7 +6,7 @@
 // Each link of name → build → bundle → Dart preload is pinned here.
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 String _read(String relativeToFushi) {
   final File file = File(relativeToFushi);
@@ -48,6 +48,12 @@ void main() {
       'aacs_get_bus_encryption',
       'fushi_aacs_set_disc_key',
       'fushi_aacs_abi_version',
+      // libaacs 0.11 split open: libbluray prefers it whenever exported, and
+      // it is the only contract that reads a bd_open_files() disc (remote
+      // discs over HTTP have no path); the module serves both.
+      'aacs_init',
+      'aacs_set_fopen',
+      'aacs_open_device',
     ]) {
       expect(
         RegExp('FUSHI_AACS_API [^;{]*\\b$symbol\\(').hasMatch(source),
@@ -55,10 +61,9 @@ void main() {
         reason: '$symbol must be exported',
       );
     }
-    // With aacs_init + aacs_open_device libbluray would switch to its UDF
-    // callback contract, which this module does not implement.
-    expect(source, isNot(contains('FUSHI_AACS_API AACS *aacs_init(')));
-    expect(source, isNot(contains(' aacs_open_device(')));
+    // The split open must read the AACS files through libbluray's callback
+    // when one is set (no local path exists for a remote disc).
+    expect(source, contains('if (aacs->fopen_fp) return read_disc_file_cb('));
   });
 
   test('Dart preloads the same file names and ABI version', () {
@@ -99,8 +104,14 @@ void main() {
       'set(CMAKE_INSTALL_PREFIX "\${BUILD_BUNDLE_DIR}" CACHE PATH "..." FORCE)',
     );
     expect(prefix, greaterThanOrEqualTo(0));
-    expect(prefix, lessThan(cmake.indexOf('add_subdirectory(\${FLUTTER_MANAGED_DIR})')));
-    expect(prefix, lessThan(cmake.indexOf('include(flutter/generated_plugins.cmake)')));
+    expect(
+      prefix,
+      lessThan(cmake.indexOf('add_subdirectory(\${FLUTTER_MANAGED_DIR})')),
+    );
+    expect(
+      prefix,
+      lessThan(cmake.indexOf('include(flutter/generated_plugins.cmake)')),
+    );
   });
 
   test('Android builds the module in the app native build', () {

@@ -17,12 +17,31 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_rwkv_panel.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 步长输入（「1 10」/「1, 10」，单位分钟）→ 列表；有解析不了的项返回 null。
 List<double>? parseSrsSteps(String text) {
@@ -30,7 +49,8 @@ List<double>? parseSrsSteps(String text) {
       .split(RegExp(r'[\s,，、]+'))
       .where((String s) => s.isNotEmpty)
       .toList();
-  if (parts.isEmpty) return null;
+  // 留空 = 不用步长（直接进复习）。
+  if (parts.isEmpty) return const <double>[];
   final List<double> out = <double>[];
   for (final String p in parts) {
     final double? v = double.tryParse(p);
@@ -56,6 +76,7 @@ String srsFormatOptimizedAt(int ms) {
 String _algorithmLabel(SrsAlgorithm a) => switch (a) {
   SrsAlgorithm.fsrs7 => 'FSRS-7',
   SrsAlgorithm.fsrs6 => 'FSRS-6',
+  SrsAlgorithm.rwkv => 'RWKV',
 };
 
 class SrsDeckSettingsPage extends ConsumerStatefulWidget {
@@ -73,6 +94,9 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   SrsDeckView? _deck;
   SrsDeckView? _owner;
   bool _hasParent = false;
+
+  /// 子树里自己管参数（own）的后代牌组：「子牌组都继承这里」要改的那些。
+  List<String> _ownDescendants = const <String>[];
   bool _loading = true;
   bool _saving = false;
   bool _optimizing = false;
@@ -87,12 +111,24 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   final TextEditingController _learnSteps = TextEditingController();
   final TextEditingController _relearnSteps = TextEditingController();
   final TextEditingController _maxInterval = TextEditingController();
+  final TextEditingController _rwkvMinReviews = TextEditingController();
+  final TextEditingController _rwkvRepeatReviews = TextEditingController();
+  final TextEditingController _rwkvRepeatSeconds = TextEditingController();
+  final TextEditingController _rwkvRefreshEvery = TextEditingController();
+  final TextEditingController _newLoadBudget = TextEditingController();
+  final TextEditingController _newLoadBoost = TextEditingController();
+  bool _newLoadAuto = true;
+  bool _rwkvIgnoreLimit = false;
   double _retention = 0.8;
   SrsAlgorithm _algorithm = srsDefaultAlgorithm;
   bool _autoOptimize = true;
   bool _ownParams = true;
   bool _autoplayAudio = true;
   bool _replayQuestionAudio = true;
+  SrsNewCardOrder _newCardOrder = SrsNewCardOrder.frequency;
+
+  /// 父牌组那条继承链上的参数归属牌组的算法（切到「随上级」后本牌组按它排程）；顶层为 null。
+  SrsAlgorithm? _parentOwnerAlgorithm;
 
   String? _learnError;
   String? _relearnError;
@@ -100,7 +136,22 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   @override
   void initState() {
     super.initState();
+    // 每日上限卡片里的联动提示（复习上限 < 10× 新卡、最少复习数超过上限）随输入实时刷新。
+    // RWKV 牌组「还带着步长」的提示随步长输入实时出现 / 消失。
+    for (final TextEditingController c in <TextEditingController>[
+      _newPerDay,
+      _reviewsPerDay,
+      _rwkvMinReviews,
+      _learnSteps,
+      _relearnSteps,
+    ]) {
+      c.addListener(_onLimitsEdited);
+    }
     unawaited(_load());
+  }
+
+  void _onLimitsEdited() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -112,6 +163,12 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       _learnSteps,
       _relearnSteps,
       _maxInterval,
+      _rwkvMinReviews,
+      _rwkvRepeatReviews,
+      _rwkvRepeatSeconds,
+      _rwkvRefreshEvery,
+      _newLoadBudget,
+      _newLoadBoost,
     ]) {
       c.dispose();
     }
@@ -127,7 +184,9 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       if (deck == null) throw StateError('deck ${widget.deckId} not found');
       final Set<String> conflictKeys = <String>{
         for (final (SrsEntityKind kind, String id, SrsRegister reg)
-            in await store.syncConflicts())
+            in await store.syncConflicts(
+              entity: (kind: SrsEntityKind.deck, id: widget.deckId),
+            ))
           if (kind == SrsEntityKind.deck && id == widget.deckId) reg.key,
       };
       if (!mounted) return;
@@ -136,12 +195,18 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _deck = deck;
         _owner = tree.paramsOwner(deck.id);
         _hasParent = tree.parentOf(deck.id) != null;
+        _ownDescendants = <String>[
+          for (final String id in tree.subtree(deck.id).skip(1))
+            if (tree[id]!.ownParams) id,
+        ];
         _conflictKeys = conflictKeys;
         _name.text = deck.name;
         _newPerDay.text = '${deck.newPerDay}';
         _reviewsPerDay.text = '${deck.reviewsPerDay}';
-        _learnSteps.text = _formatSteps(deck.learnSteps);
-        _relearnSteps.text = _formatSteps(deck.relearnSteps);
+        final String? parent = tree.parentOf(deck.id);
+        _parentOwnerAlgorithm = parent == null
+            ? null
+            : tree.paramsOwner(parent).localAlgorithm;
         _maxInterval.text = '${deck.maxIntervalDays}';
         _retention = deck.desiredRetention.clamp(0.7, 0.97);
         _algorithm = deck.localAlgorithm;
@@ -149,6 +214,19 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _ownParams = deck.ownParams;
         _autoplayAudio = deck.autoplayAudio;
         _replayQuestionAudio = deck.replayQuestionAudio;
+        _newCardOrder = deck.newCardOrder;
+        _rwkvMinReviews.text = '${deck.rwkvQueue.minReviewsPerDay}';
+        _rwkvRepeatReviews.text = '${deck.rwkvQueue.repeatMinReviews}';
+        _rwkvRepeatSeconds.text = '${deck.rwkvQueue.repeatMinSeconds}';
+        _rwkvRefreshEvery.text = '${deck.rwkvQueue.refreshEvery}';
+        _rwkvIgnoreLimit = deck.rwkvQueue.ignoreReviewLimit;
+        _newLoadAuto = deck.newCardPlan.autoLoad;
+        _newLoadBudget.text = '${deck.newCardPlan.budgetPercent}';
+        _newLoadBoost.text = '${deck.newCardPlan.boostPercent}';
+        // 步长按此刻生效的算法显示（没写过步长的 RWKV 牌组为空，见 [SrsDeckView.learnStepsFor]）；
+        // 要在 _algorithm / _ownParams / _hasParent 都就位之后算。
+        _learnSteps.text = _formatSteps(_baselineLearn);
+        _relearnSteps.text = _formatSteps(_baselineRelearn);
         _loading = false;
       });
     } catch (e, stack) {
@@ -161,6 +239,88 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       }
     }
   }
+
+  /// 保存后本牌组按哪个算法排程：自己管参数（或顶层）= 页面上选的算法；随上级 = 上级的。
+  /// 没写过步长时实际用的步长取决于它（RWKV 不用步长，FSRS 用默认步长）。
+  SrsAlgorithm get _stepsAlgorithm => (_ownParams || !_hasParent)
+      ? _algorithm
+      : (_parentOwnerAlgorithm ?? _algorithm);
+
+  /// 不改步长、按 [_stepsAlgorithm] 保存后实际生效的学习 / 重学步长。
+  List<double> get _baselineLearn => _deck!.learnStepsFor(_stepsAlgorithm);
+  List<double> get _baselineRelearn => _deck!.relearnStepsFor(_stepsAlgorithm);
+
+  /// 改了决定排程算法的选项（算法、随上级 / 自己管）：输入框还是原先生效值的，换成新算法下的
+  /// 生效值，免得显示的步长与保存后实际用的对不上；用户已改过的输入原样保留（保存时与新生效值比）。
+  void _changeStepsAlgorithm(VoidCallback change) {
+    final String learnBefore = _formatSteps(_baselineLearn);
+    final String relearnBefore = _formatSteps(_baselineRelearn);
+    change();
+    bool untouched(TextEditingController c, String before) {
+      final List<double>? parsed = parseSrsSteps(c.text);
+      return parsed != null && _formatSteps(parsed) == before;
+    }
+
+    if (untouched(_learnSteps, learnBefore)) {
+      _learnSteps.text = _formatSteps(_baselineLearn);
+    }
+    if (untouched(_relearnSteps, relearnBefore)) {
+      _relearnSteps.text = _formatSteps(_baselineRelearn);
+    }
+  }
+
+  /// 选算法。切到 RWKV 时「每天最少复习数」还是 0（从没设过）就预填参考值（复习上限的 1/5）：RWKV 按回忆率
+  /// 出卡，前几张都答对时会以为今天没什么要复习的；用户可以再改，保存前不落库。
+  void _selectAlgorithm(SrsAlgorithm algorithm) {
+    final bool toRwkv = algorithm.usesRwkv && !_algorithm.usesRwkv;
+    _changeStepsAlgorithm(() => _algorithm = algorithm);
+    if (toRwkv && (int.tryParse(_rwkvMinReviews.text.trim()) ?? 0) == 0) {
+      _rwkvMinReviews.text =
+          '${SrsRwkvQueueSettings.recommendedMinReviews(_reviewsLimit)}';
+    }
+  }
+
+  int get _newLimit => int.tryParse(_newPerDay.text.trim()) ?? 0;
+  int get _reviewsLimit => int.tryParse(_reviewsPerDay.text.trim()) ?? 0;
+
+  /// 保存后本牌组的每日复习上限是否被「忽略每日复习上限」关掉（规则同内核 `DeckTree::ignores_review_limit`：
+  /// 看参数归属牌组的算法与设置）。自己管参数时看页面上的输入；随上级时看加载时的归属牌组。
+  bool get _reviewLimitIgnored {
+    if (_ownParams || !_hasParent) {
+      return _algorithm.usesRwkv && _rwkvIgnoreLimit;
+    }
+    final SrsDeckView? owner = _owner;
+    return owner != null &&
+        owner.id != _deck?.id &&
+        owner.localAlgorithm.usesRwkv &&
+        owner.rwkvQueue.ignoreReviewLimit;
+  }
+
+  /// 输入框里的 RWKV 排队设置；空 / 非数字的项沿用 [current]，越界的夹到合法范围。
+  SrsRwkvQueueSettings _rwkvQueue(SrsRwkvQueueSettings current) =>
+      SrsRwkvQueueSettings.fromValue(<String, Object?>{
+        'minReviews':
+            int.tryParse(_rwkvMinReviews.text.trim()) ??
+            current.minReviewsPerDay,
+        'repeatReviews':
+            int.tryParse(_rwkvRepeatReviews.text.trim()) ??
+            current.repeatMinReviews,
+        'repeatSeconds':
+            int.tryParse(_rwkvRepeatSeconds.text.trim()) ??
+            current.repeatMinSeconds,
+        'refreshEvery':
+            int.tryParse(_rwkvRefreshEvery.text.trim()) ?? current.refreshEvery,
+        'ignoreLimit': _rwkvIgnoreLimit,
+      });
+
+  /// 输入框里的新卡计划；空 / 非数字的项沿用 [current]，越界的夹到合法范围。
+  SrsNewCardPlan _newCardPlan(
+    SrsNewCardPlan current,
+  ) => SrsNewCardPlan.fromValue(<String, Object?>{
+    'auto': _newLoadAuto,
+    'budget': int.tryParse(_newLoadBudget.text.trim()) ?? current.budgetPercent,
+    'boost': int.tryParse(_newLoadBoost.text.trim()) ?? current.boostPercent,
+  });
 
   /// 与物化视图逐项比较，只收改动过的键。步长不合法返回 null（并标出错误）。
   Map<String, Object?>? _changes() {
@@ -180,6 +340,11 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         'review': reviewsPerDay.clamp(0, 99999),
       };
     }
+    // 新卡计划与每日上限一样是牌组自己的值（不随参数继承）。
+    final SrsNewCardPlan plan = _newCardPlan(deck.newCardPlan);
+    if (plan != deck.newCardPlan) {
+      out[SrsFieldKeys.deckNewPlan] = plan.toValue();
+    }
     final List<double>? learn = parseSrsSteps(_learnSteps.text);
     final List<double>? relearn = parseSrsSteps(_relearnSteps.text);
     _learnError = learn == null || !srsValidateSteps(learn)
@@ -189,8 +354,9 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         ? t.srs_settings_steps_invalid
         : null;
     if (_learnError != null || _relearnError != null) return null;
-    if (_formatSteps(learn!) != _formatSteps(deck.learnSteps) ||
-        _formatSteps(relearn!) != _formatSteps(deck.relearnSteps)) {
+    // 与「不写步长、按保存后的算法」实际生效的步长比（同一次编辑里切了算法也对得上）。
+    if (_formatSteps(learn!) != _formatSteps(_baselineLearn) ||
+        _formatSteps(relearn!) != _formatSteps(_baselineRelearn)) {
       out[SrsFieldKeys.deckSteps] = <String, Object?>{
         'learn': learn,
         'relearn': relearn,
@@ -226,6 +392,13 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       }
       if (_replayQuestionAudio != deck.replayQuestionAudio) {
         out[SrsFieldKeys.deckReplayQuestion] = _replayQuestionAudio;
+      }
+      if (_newCardOrder != deck.newCardOrder) {
+        out[SrsFieldKeys.deckNewOrder] = _newCardOrder.wire;
+      }
+      final SrsRwkvQueueSettings queue = _rwkvQueue(deck.rwkvQueue);
+      if (queue != deck.rwkvQueue) {
+        out[SrsFieldKeys.deckRwkvQueue] = queue.toValue();
       }
     }
     return out;
@@ -275,6 +448,40 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     if (!mounted) return;
     bumpSrsRevision(ref);
     FushiToast.show(msg: t.srs_settings_rescheduled(n: n));
+  }
+
+  /// 「子牌组都继承这里」：把子树里所有「单独设置」的后代一次改成「继承上级」，之后改这里的
+  /// 记忆率 / 算法 / 自动优化就对整棵子树生效（Anki 导入的子牌组常各带一份预设，逐个改太累）。
+  /// 后代自己的步长与每日上限不动。
+  Future<void> _childrenInherit() async {
+    final SrsDbStore? store = _store;
+    final List<String> targets = _ownDescendants;
+    if (store == null || targets.isEmpty) return;
+    final bool ok = await showFushiConfirmDialog(
+      context: context,
+      title: t.srs_settings_children_inherit(n: targets.length),
+      message: t.srs_settings_children_inherit_confirm(n: targets.length),
+      confirmLabel: t.srs_settings_children_inherit(n: targets.length),
+      cancelLabel: t.cancel,
+      icon: FushiIcons.merge,
+    );
+    if (!ok || !mounted) return;
+    await store.writeEdits(<SrsEditSpec>[
+      for (final String id in targets)
+        SrsEditSpec(
+          SrsEntityKind.deck,
+          id,
+          SrsFieldKeys.deckParamsMode,
+          'inherit',
+        ),
+    ]);
+    if (!mounted) return;
+    bumpSrsRevision(ref);
+    FushiToast.show(
+      msg: t.srs_settings_children_inherit_done(n: targets.length),
+      severity: ToastSeverity.success,
+    );
+    await _load();
   }
 
   /// 「立即优化」：只跑本牌组所属的参数组；跳过样本门槛与触发基线（用户显式要求），
@@ -480,10 +687,12 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     TextEditingController controller,
     String label, {
     String? helper,
+    bool enabled = true,
     Key? key,
   }) => FushiTextField(
     key: key,
     controller: controller,
+    enabled: enabled,
     labelText: label,
     helperText: helper,
     keyboardType: TextInputType.number,
@@ -491,6 +700,91 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       FilteringTextInputFormatter.digitsOnly,
     ],
   );
+
+  /// RWKV-Instant 的排队设置（上游 kuma3 的 RWKV 牌组选项）里不常改的那部分；「忽略每日复习上限」与「每天
+  /// 最少复习数」和每日上限放在一起（[_limitsGroup]）。
+  Widget _rwkvQueueSection(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Column(
+      key: const ValueKey<String>('srs-settings-rwkv-queue'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: tokens.spacing.gap * 1.5,
+      children: <Widget>[
+        Text(t.srs_settings_rwkv_queue, style: tokens.type.sectionLabel),
+        Text(
+          t.srs_settings_rwkv_queue_defaults_hint,
+          style: context.fushiType.bodySmall,
+        ),
+        _numberField(
+          _rwkvRefreshEvery,
+          t.srs_settings_rwkv_refresh_every,
+          helper: t.srs_settings_rwkv_refresh_every_hint,
+          key: const ValueKey<String>('srs-settings-rwkv-refresh-every'),
+        ),
+        Text(
+          t.srs_settings_rwkv_repeat,
+          style: context.fushiType.titleSmallEmphasized,
+        ),
+        _numberField(
+          _rwkvRepeatReviews,
+          t.srs_settings_rwkv_repeat_reviews,
+          key: const ValueKey<String>('srs-settings-rwkv-repeat-reviews'),
+        ),
+        _numberField(
+          _rwkvRepeatSeconds,
+          t.srs_settings_rwkv_repeat_seconds,
+          helper: t.srs_settings_rwkv_repeat_hint,
+          key: const ValueKey<String>('srs-settings-rwkv-repeat-seconds'),
+        ),
+        ?_conflictNote(context, SrsFieldKeys.deckRwkvQueue),
+      ],
+    );
+  }
+
+  /// 学习 / 重学步长两个输入框（步长是牌组自己的值，不随参数继承）。说明只写一次，放在第二个框下面。
+  List<Widget?> _stepsFields(BuildContext context) => <Widget?>[
+    FushiTextField(
+      key: const ValueKey<String>('srs-settings-learn-steps'),
+      controller: _learnSteps,
+      labelText: t.srs_settings_learn_steps,
+      errorText: _learnError,
+    ),
+    FushiTextField(
+      key: const ValueKey<String>('srs-settings-relearn-steps'),
+      controller: _relearnSteps,
+      labelText: t.srs_settings_relearn_steps,
+      helperText:
+          '${t.srs_settings_steps_hint}\n${t.srs_settings_steps_empty_hint}',
+      errorText: _relearnError,
+    ),
+    _conflictNote(context, SrsFieldKeys.deckSteps),
+  ];
+
+  /// 保存后按 RWKV 排程（自己选的或随上级）：步长推荐留空，不放在基础区，收进「高级」。
+  bool get _stepsUnderRwkv => _stepsAlgorithm.usesRwkv;
+
+  /// 输入框里还有步长（解析得出、非空）。
+  bool get _hasSteps =>
+      (parseSrsSteps(_learnSteps.text) ?? const <double>[]).isNotEmpty ||
+      (parseSrsSteps(_relearnSteps.text) ?? const <double>[]).isNotEmpty;
+
+  /// RWKV 牌组的步长（高级区）：说明 + 两个输入框。
+  Widget _rwkvStepsSection(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Column(
+      key: const ValueKey<String>('srs-settings-rwkv-steps'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: tokens.spacing.gap * 1.5,
+      children: <Widget>[
+        Text(t.srs_settings_steps_section, style: tokens.type.sectionLabel),
+        Text(
+          t.srs_settings_rwkv_steps_note,
+          style: context.fushiType.bodySmall,
+        ),
+        ..._stepsFields(context).whereType<Widget>(),
+      ],
+    );
+  }
 
   Widget _group(BuildContext context, List<Widget?> children) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -559,6 +853,121 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     );
   }
 
+  /// 每日上限：新卡 → 最多复习 →（RWKV）忽略上限 / 最少复习，三个值挨在一起，并就地提示它们之间的关系
+  /// （复习上限至少新卡的 10 倍、最少复习不超过上限），每条提示带一键改成参考值。只提示不联动改值：
+  /// 用户写下的数不被悄悄覆盖。
+  Widget _limitsGroup(BuildContext context, bool ownsParams) {
+    final bool rwkv = (ownsParams ? _algorithm : _stepsAlgorithm).usesRwkv;
+    final bool ignored = _reviewLimitIgnored;
+    final int newLimit = _newLimit;
+    final int reviewLimit = _reviewsLimit;
+    final int recommendedReviews = SrsDeckView.recommendedReviewsPerDay(
+      newLimit,
+    );
+    final int minReviews = int.tryParse(_rwkvMinReviews.text.trim()) ?? 0;
+    final List<Widget> notices = <Widget>[
+      if (!ignored && newLimit > 0 && reviewLimit < recommendedReviews)
+        FushiInlineNotice(
+          key: const ValueKey<String>('srs-settings-review-limit-low'),
+          severity: FushiNoticeSeverity.warning,
+          message: t.srs_settings_review_limit_low(
+            n: newLimit,
+            rec: recommendedReviews,
+          ),
+          actions: <Widget>[
+            FushiTextButton(
+              key: const ValueKey<String>('srs-settings-review-limit-fix'),
+              onPressed: () => _reviewsPerDay.text = '$recommendedReviews',
+              child: Text(t.srs_settings_set_to(n: recommendedReviews)),
+            ),
+          ],
+        ),
+      if (rwkv && ownsParams && !ignored && minReviews > reviewLimit)
+        FushiInlineNotice(
+          key: const ValueKey<String>('srs-settings-min-over-limit'),
+          severity: FushiNoticeSeverity.warning,
+          message: t.srs_settings_rwkv_min_over_limit(
+            min: minReviews,
+            limit: reviewLimit,
+          ),
+          actions: <Widget>[
+            FushiTextButton(
+              key: const ValueKey<String>('srs-settings-min-reviews-fix'),
+              onPressed: () => _rwkvMinReviews.text =
+                  '${SrsRwkvQueueSettings.recommendedMinReviews(reviewLimit)}',
+              child: Text(
+                t.srs_settings_set_to(
+                  n: SrsRwkvQueueSettings.recommendedMinReviews(reviewLimit),
+                ),
+              ),
+            ),
+          ],
+        ),
+    ];
+    final double gap = FushiDesignTokens.of(context).spacing.gap;
+    final Widget fields = _group(context, <Widget?>[
+      _numberField(
+        _newPerDay,
+        t.srs_settings_new_per_day,
+        helper: t.srs_settings_new_per_day_hint,
+        key: const ValueKey<String>('srs-settings-new'),
+      ),
+      _numberField(
+        _reviewsPerDay,
+        t.srs_settings_reviews_per_day,
+        helper: ignored
+            ? t.srs_settings_reviews_per_day_ignored
+            : rwkv
+            ? t.srs_settings_reviews_per_day_rwkv_hint
+            : null,
+        enabled: !ignored,
+        key: const ValueKey<String>('srs-settings-review'),
+      ),
+      _conflictNote(context, SrsFieldKeys.deckLimits),
+      if (rwkv && ownsParams) ...<Widget?>[
+        _numberField(
+          _rwkvMinReviews,
+          t.srs_settings_rwkv_min_reviews,
+          helper: t.srs_settings_rwkv_min_reviews_shared_hint,
+          key: const ValueKey<String>('srs-settings-rwkv-min-reviews'),
+        ),
+        AdaptiveSettingsSwitchRow(
+          key: const ValueKey<String>('srs-settings-rwkv-ignore-limit'),
+          title: t.srs_settings_rwkv_ignore_limit,
+          subtitle: t.srs_settings_rwkv_ignore_limit_hint,
+          value: _rwkvIgnoreLimit,
+          onChanged: (bool v) => setState(() => _rwkvIgnoreLimit = v),
+        ),
+      ] else if (rwkv)
+        Text(
+          t.srs_settings_rwkv_limits_inherited(name: _owner?.name ?? ''),
+          style: context.fushiType.bodySmall,
+        ),
+    ]);
+    // 提示条在卡片外、紧跟其下：出现 / 消失时按 FushiMotion 展开收起，没有提示时不占高度。
+    return Column(
+      key: const ValueKey<String>('srs-settings-limits'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        fields,
+        FushiAnimatedSize(
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.standard,
+          child: notices.isEmpty
+              ? const SizedBox(width: double.infinity)
+              : Padding(
+                  padding: EdgeInsets.only(top: gap),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: gap,
+                    children: notices,
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
   List<Widget> _basicGroups(BuildContext context, bool ownsParams) {
     return <Widget>[
       _group(context, <Widget?>[
@@ -569,20 +978,24 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         ),
         _conflictNote(context, SrsFieldKeys.name),
       ]),
-      _group(context, <Widget?>[
-        _numberField(
-          _newPerDay,
-          t.srs_settings_new_per_day,
-          helper: t.srs_settings_new_per_day_hint,
-          key: const ValueKey<String>('srs-settings-new'),
+      _limitsGroup(context, ownsParams),
+      // RWKV 牌组还带着步长（多半是 Anki 预设带来的）：步长本身收在「高级」，紧跟每日上限提示并给一键清空。
+      if (_stepsUnderRwkv && _hasSteps)
+        FushiInlineNotice(
+          key: const ValueKey<String>('srs-settings-rwkv-steps-set'),
+          severity: FushiNoticeSeverity.warning,
+          message: t.srs_settings_rwkv_steps_set_warning,
+          actions: <Widget>[
+            FushiTextButton(
+              key: const ValueKey<String>('srs-settings-steps-clear'),
+              onPressed: () {
+                _learnSteps.text = '';
+                _relearnSteps.text = '';
+              },
+              child: Text(t.srs_settings_steps_clear),
+            ),
+          ],
         ),
-        _numberField(
-          _reviewsPerDay,
-          t.srs_settings_reviews_per_day,
-          key: const ValueKey<String>('srs-settings-review'),
-        ),
-        _conflictNote(context, SrsFieldKeys.deckLimits),
-      ]),
       _group(context, <Widget?>[
         if (ownsParams) ...<Widget?>[
           Text(
@@ -637,22 +1050,67 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
             style: context.fushiType.bodyMedium,
           ),
       ]),
+      if (!_stepsUnderRwkv) _group(context, _stepsFields(context)),
+      // 新卡顺序与记忆率同一条继承（只看 own 祖先，见 [SrsDeckView.newCardOrder]）。
       _group(context, <Widget?>[
-        FushiTextField(
-          key: const ValueKey<String>('srs-settings-learn-steps'),
-          controller: _learnSteps,
-          labelText: t.srs_settings_learn_steps,
-          helperText: t.srs_settings_steps_hint,
-          errorText: _learnError,
+        if (ownsParams) ...<Widget?>[
+          AdaptiveSettingsSegmentedRow<SrsNewCardOrder>(
+            key: const ValueKey<String>('srs-settings-new-order'),
+            title: t.srs_settings_new_order,
+            subtitle: switch (_newCardOrder) {
+              SrsNewCardOrder.frequency =>
+                t.srs_settings_new_order_frequency_hint,
+              SrsNewCardOrder.position =>
+                t.srs_settings_new_order_position_hint,
+            },
+            segments: <ButtonSegment<SrsNewCardOrder>>[
+              ButtonSegment<SrsNewCardOrder>(
+                value: SrsNewCardOrder.frequency,
+                label: Text(t.srs_settings_new_order_frequency),
+              ),
+              ButtonSegment<SrsNewCardOrder>(
+                value: SrsNewCardOrder.position,
+                label: Text(t.srs_settings_new_order_position),
+              ),
+            ],
+            selected: _newCardOrder,
+            onChanged: (SrsNewCardOrder v) => setState(() => _newCardOrder = v),
+          ),
+          _conflictNote(context, SrsFieldKeys.deckNewOrder),
+        ] else
+          Text(
+            t.srs_settings_inherited_from(name: _owner?.name ?? ''),
+            style: context.fushiType.bodyMedium,
+          ),
+      ]),
+      // 新卡计划与每日上限一样是牌组自己的值（不随继承），放在新卡顺序之后。
+      _group(context, <Widget?>[
+        Text(
+          t.srs_settings_new_plan,
+          style: context.fushiType.titleSmallEmphasized,
         ),
-        FushiTextField(
-          key: const ValueKey<String>('srs-settings-relearn-steps'),
-          controller: _relearnSteps,
-          labelText: t.srs_settings_relearn_steps,
-          helperText: t.srs_settings_steps_hint,
-          errorText: _relearnError,
+        AdaptiveSettingsSwitchRow(
+          key: const ValueKey<String>('srs-settings-new-load-auto'),
+          title: t.srs_settings_new_load_auto,
+          subtitle: t.srs_settings_new_load_auto_hint,
+          value: _newLoadAuto,
+          onChanged: (bool v) => setState(() => _newLoadAuto = v),
         ),
-        _conflictNote(context, SrsFieldKeys.deckSteps),
+        if (_newLoadAuto) ...<Widget?>[
+          _numberField(
+            _newLoadBudget,
+            t.srs_settings_new_load_budget,
+            helper: t.srs_settings_new_load_budget_hint,
+            key: const ValueKey<String>('srs-settings-new-load-budget'),
+          ),
+          _numberField(
+            _newLoadBoost,
+            t.srs_settings_new_load_boost,
+            helper: t.srs_settings_new_load_boost_hint,
+            key: const ValueKey<String>('srs-settings-new-load-boost'),
+          ),
+        ],
+        _conflictNote(context, SrsFieldKeys.deckNewPlan),
       ]),
     ];
   }
@@ -690,10 +1148,35 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           ],
           selected: <bool>{_ownParams},
           onSelectionChanged: (Set<bool> v) =>
-              setState(() => _ownParams = v.first),
+              setState(() => _changeStepsAlgorithm(() => _ownParams = v.first)),
         ),
       );
       add(_conflictNote(context, SrsFieldKeys.deckParamsMode));
+    }
+    if (_ownDescendants.isNotEmpty) {
+      add(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            FushiOutlinedButton.icon(
+              key: const ValueKey<String>('srs-settings-children-inherit'),
+              onPressed: () => srsRunLogged(
+                'SrsDeckSettings.childrenInherit',
+                _childrenInherit,
+              ),
+              icon: const FushiIcon(FushiIcons.merge),
+              label: Text(
+                t.srs_settings_children_inherit(n: _ownDescendants.length),
+              ),
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            Text(
+              t.srs_settings_children_inherit_hint,
+              style: context.fushiType.bodySmall,
+            ),
+          ],
+        ),
+      );
     }
     if (ownsParams) {
       add(Text(t.srs_settings_algorithm, style: tokens.type.sectionLabel));
@@ -703,9 +1186,14 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           key: const ValueKey<String>('srs-settings-algorithm'),
           showSelectedIcon: false,
           segments: <ButtonSegment<SrsAlgorithm>>[
+            // 默认算法（srsDefaultAlgorithm）排第一并标「推荐」，FSRS-7 次之。
+            ButtonSegment<SrsAlgorithm>(
+              value: SrsAlgorithm.rwkv,
+              label: Text(t.srs_settings_algorithm_rwkv_recommended),
+            ),
             ButtonSegment<SrsAlgorithm>(
               value: SrsAlgorithm.fsrs7,
-              label: Text(t.srs_settings_algorithm_fsrs7),
+              label: Text(_algorithmLabel(SrsAlgorithm.fsrs7)),
             ),
             ButtonSegment<SrsAlgorithm>(
               value: SrsAlgorithm.fsrs6,
@@ -714,7 +1202,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           ],
           selected: <SrsAlgorithm>{_algorithm},
           onSelectionChanged: (Set<SrsAlgorithm> v) =>
-              setState(() => _algorithm = v.first),
+              setState(() => _selectAlgorithm(v.first)),
         ),
       );
       if (deck.algorithmUnknownLocally) {
@@ -732,12 +1220,20 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       add(
         Text(t.srs_settings_algorithm_hint, style: context.fushiType.bodySmall),
       );
+      if (_algorithm == SrsAlgorithm.rwkv) {
+        add(const SrsRwkvPanel(key: ValueKey<String>('srs-settings-rwkv')));
+        add(_rwkvQueueSection(context));
+      }
       add(_conflictNote(context, SrsFieldKeys.deckAlgorithm));
       add(
         AdaptiveSettingsSwitchRow(
           key: const ValueKey<String>('srs-settings-auto-optimize'),
           title: t.srs_settings_auto_optimize,
-          subtitle: t.srs_settings_auto_optimize_hint,
+          // RWKV 牌组优化的是影子记忆状态（FSRS-7）的参数（srsPrepareOptimization），要写明它管
+          // 什么，否则看着像「RWKV 还得手动点优化」。
+          subtitle: _algorithm.usesRwkv
+              ? t.srs_settings_auto_optimize_rwkv_hint
+              : t.srs_settings_auto_optimize_hint,
           value: _autoOptimize,
           onChanged: (bool v) => setState(() => _autoOptimize = v),
         ),
@@ -753,6 +1249,8 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         );
       }
     }
+    // RWKV 牌组（自己选的或随上级）的步长收在这里；FSRS 牌组的在基础区。
+    if (_stepsUnderRwkv) add(_rwkvStepsSection(context));
     add(
       _numberField(
         _maxInterval,

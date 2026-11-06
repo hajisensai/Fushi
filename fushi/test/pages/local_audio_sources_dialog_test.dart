@@ -5,7 +5,9 @@ import 'package:fushi/src/pages/implementations/local_audio_sources_dialog.dart'
 import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart'
     show FushiDragHandle;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));

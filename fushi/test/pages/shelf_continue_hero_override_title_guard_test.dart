@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1108 源码扫描守卫：书架顶部「继续阅读」hero 条的书名必须经
 /// [MediaSource.getDisplayTitleFromMediaItem] 应用编辑弹窗写入的 override 书名，
@@ -11,17 +11,22 @@ import 'package:flutter_test/flutter_test.dart';
 /// `shelf_srt_card_override_title_guard_test.dart`，这里按同一范式补上 hero 条。
 void main() {
   String hero() => _functionSource(
-        File('lib/src/pages/implementations/reader_fushi_history_page.dart')
-            .readAsStringSync()
-            .replaceAll('\r\n', '\n'),
-        '  Widget _buildContinueReadingHero(',
-        '\n  Widget ',
-      );
+    File(
+      'lib/src/pages/implementations/reader_fushi_history_page.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n'),
+    '  Widget _buildContinueReadingHero(',
+    '\n  Widget ',
+  );
 
   test('hero 书名经 getDisplayTitleFromMediaItem 应用 override', () {
     expect(
       hero(),
-      contains('mediaSource.getDisplayTitleFromMediaItem(hero)'),
+      // 主卡与并列卡共用 entryOf(item) 建卡，书名参数是 item（主卡传 hero）。
+      matches(
+        RegExp(
+          r'mediaSource\s*\.getDisplayTitleFromMediaItem\(\s*(hero|item)\s*\)',
+        ),
+      ),
       reason: 'hero 条书名必须与同卡封面同源，应用编辑弹窗写入的 override 书名',
     );
   });
@@ -30,7 +35,7 @@ void main() {
     // 以表达式形态（带逗号结尾）匹配，避免误伤注释里的提及。
     expect(
       hero(),
-      isNot(contains('hero.title,')),
+      allOf(isNot(contains('hero.title,')), isNot(contains('item.title,'))),
       reason: '直读 hero.title 会在改名后仍显示旧名（BUG-1108）',
     );
   });

@@ -186,7 +186,9 @@ void main() {
       'lib/src/pages/implementations/video_fushi/fullscreen.part.dart',
     ).readAsStringSync();
     expect(src, contains('VideoFullscreenBackScope('));
-    expect(src, contains('dismissTopLayer: _dismissTopForegroundLayer'));
+    // 先关前景浮层；原盘会话里没有浮层可关时，这一下呼出会话控制栏。
+    expect(src, contains('_dismissTopForegroundLayer() ||'));
+    expect(src, contains('_discSessionShowBarOnBack()'));
     // 显式退全屏若仍走 maybePop，会被本层当成「返回上一级」先去关面板。
     // 只有全屏路由不是栈顶（上面压着对话框）时才保留 maybePop。
     expect(

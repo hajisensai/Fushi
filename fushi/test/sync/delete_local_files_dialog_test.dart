@@ -94,8 +94,11 @@ void main() {
       await tester.pumpAndSettle();
 
       final Finder delete = find.text(t.dialog_delete);
-      expect(delete.hitTestable(), findsOneWidget,
-          reason: '「删除」不能落在面板外或被正文滚动挤出可视区');
+      expect(
+        delete.hitTestable(),
+        findsOneWidget,
+        reason: '「删除」不能落在面板外或被正文滚动挤出可视区',
+      );
       final Rect panel = tester.getRect(
         find.ancestor(of: delete, matching: find.byType(Material)).last,
       );
@@ -234,10 +237,10 @@ void main() {
       expect(got!.scope, DeleteScope.keepLocalOnly);
     });
 
-    testWidgets('统计勾选不被「记住这些选择」带默认值：勾过一次后重开仍是未勾', (
-      WidgetTester tester,
-    ) async {
-      final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    testWidgets('沿用上次勾选：本地文件重开仍勾，统计勾过一次后重开仍是未勾', (WidgetTester tester) async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       // 三个勾选行 + 正文在 800x600 默认测试窗口里会把确认按钮挤出可视区。
       tester.view.physicalSize = const Size(1200, 2000);
@@ -264,14 +267,12 @@ void main() {
         ),
       );
 
-      // 第一次：两个都勾上，并勾「记住这些选择」。
+      // 第一次：两个都勾上（没有「记住」开关，确认即记住）。
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.delete_local_files));
       await tester.pump();
       await tester.tap(find.text(t.delete_statistics));
-      await tester.pump();
-      await tester.tap(find.text(t.delete_choices_remember));
       await tester.pump();
       await tester.tap(find.text(t.dialog_delete));
       await tester.pumpAndSettle();
@@ -293,7 +294,7 @@ void main() {
   });
 
   group('ReaderHistoryDeleteDialog', () {
-    testWidgets('已记住的两项作为默认值，并连同记住状态一起回写', (WidgetTester tester) async {
+    testWidgets('上次的两项作为默认值，确认后回写本次状态', (WidgetTester tester) async {
       useTallView(tester);
       DeleteDecision? got;
       DeletePromptRememberedChoices? persisted;
@@ -307,7 +308,7 @@ void main() {
               syncEverywhere: true,
               deleteLocalFiles: true,
             ),
-            onPersistChoices: (DeletePromptRememberedChoices? choices) async {
+            onPersistChoices: (DeletePromptRememberedChoices choices) async {
               persisted = choices;
             },
             onConfirm: (DeleteDecision d) => got = d,
@@ -315,21 +316,60 @@ void main() {
         ),
       );
 
-      expect(find.text(t.delete_choices_remember), findsOneWidget);
+      expect(
+        find.byType(FushiCheckbox),
+        findsNWidgets(2),
+        reason: '只剩同步删除、本地文件两个勾选框，不再有「记住这些选择」',
+      );
       expect(
         find.byWidgetPredicate(
           (Widget w) => w is FushiCheckbox && w.value == true,
         ),
-        findsNWidgets(3),
-        reason: '同步删除、本地文件、记住选择都应从偏好恢复为勾选',
+        findsNWidgets(2),
+        reason: '同步删除、本地文件都应从上次状态恢复为勾选',
       );
+      // 取消一项再确认：写回的是本次状态，而不是加载来的旧值。
+      await tester.tap(find.text(t.delete_local_files));
+      await tester.pump();
       await tester.tap(find.text(t.dialog_delete));
       await tester.pump();
 
       expect(got!.scope, DeleteScope.syncEverywhere);
-      expect(got!.deleteLocalFiles, isTrue);
+      expect(got!.deleteLocalFiles, isFalse);
       expect(persisted!.syncEverywhere, isTrue);
-      expect(persisted!.deleteLocalFiles, isTrue);
+      expect(persisted!.deleteLocalFiles, isFalse);
+    });
+
+    testWidgets('没有上次状态时两项默认未勾，确认后照样记住', (WidgetTester tester) async {
+      useTallView(tester);
+      DeletePromptRememberedChoices? persisted;
+      await tester.pumpWidget(
+        app(
+          ReaderHistoryDeleteDialog(
+            title: t.epub_delete_title,
+            message: 'msg',
+            localFilesSubtitle: t.delete_local_files_audio_desc,
+            onPersistChoices: (DeletePromptRememberedChoices choices) async {
+              persisted = choices;
+            },
+            onConfirm: (_) {},
+          ),
+        ),
+      );
+
+      expect(
+        find.byWidgetPredicate(
+          (Widget w) => w is FushiCheckbox && w.value == true,
+        ),
+        findsNothing,
+      );
+      await tester.tap(find.text(t.delete_scope_sync_everywhere));
+      await tester.pump();
+      await tester.tap(find.text(t.dialog_delete));
+      await tester.pump();
+
+      expect(persisted!.syncEverywhere, isTrue);
+      expect(persisted!.deleteLocalFiles, isFalse);
     });
 
     testWidgets('勾选后披露只承诺删音频，书与字幕原件仍在「会保留」里', (WidgetTester tester) async {
@@ -442,7 +482,7 @@ void main() {
   });
 
   group('DeletePromptPreferenceStore', () {
-    test('组合值原子往返，传 null 后恢复安全默认（无记录）', () async {
+    test('组合值原子往返，后写整体覆盖前写', () async {
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),
       );
@@ -460,8 +500,15 @@ void main() {
       expect(loaded!.syncEverywhere, isTrue);
       expect(loaded.deleteLocalFiles, isFalse);
 
-      await store.write(null);
-      expect(await store.load(), isNull);
+      await store.write(
+        const DeletePromptRememberedChoices(
+          syncEverywhere: false,
+          deleteLocalFiles: true,
+        ),
+      );
+      final DeletePromptRememberedChoices? overwritten = await store.load();
+      expect(overwritten!.syncEverywhere, isFalse);
+      expect(overwritten.deleteLocalFiles, isTrue);
     });
 
     test('损坏或未知版本偏好不会把破坏性选项误判为 true', () async {

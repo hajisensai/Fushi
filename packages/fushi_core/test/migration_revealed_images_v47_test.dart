@@ -10,24 +10,26 @@ import 'package:fushi_core/fushi_core.dart';
 
 void main() {
   test('fresh DB round-trips revealed image keys, isolated per book', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     expect(db.schemaVersion, greaterThanOrEqualTo(47));
 
     await db.markImageRevealed('book-a', 'OEBPS/images/foo.jpg', 1000);
-    await db.markImagesRevealed(
-        'book-a', <String>['OEBPS/images/bar.png', 'cover.svg'], 2000);
+    await db.markImagesRevealed('book-a', <String>[
+      'OEBPS/images/bar.png',
+      'cover.svg',
+    ], 2000);
     await db.markImageRevealed('book-b', 'OEBPS/images/foo.jpg', 3000);
 
-    expect(
-      await db.getRevealedImageKeys('book-a'),
-      <String>{'OEBPS/images/foo.jpg', 'OEBPS/images/bar.png', 'cover.svg'},
-    );
-    expect(await db.getRevealedImageKeys('book-b'),
-        <String>{'OEBPS/images/foo.jpg'},
-        reason: '不同书的相同 imageKey 各自独立，互不影响');
+    expect(await db.getRevealedImageKeys('book-a'), <String>{
+      'OEBPS/images/foo.jpg',
+      'OEBPS/images/bar.png',
+      'cover.svg',
+    });
+    expect(await db.getRevealedImageKeys('book-b'), <String>{
+      'OEBPS/images/foo.jpg',
+    }, reason: '不同书的相同 imageKey 各自独立，互不影响');
 
     // 幂等：重复揭开同 key 刷新时间戳、不产生重复行。
     await db.markImageRevealed('book-a', 'cover.svg', 9999);

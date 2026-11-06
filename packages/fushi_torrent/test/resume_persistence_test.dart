@@ -52,8 +52,9 @@ void main() {
   }
 
   final EmbeddedTorrentEngine? engine = tryOpen();
-  final String? skip =
-      engine == null ? 'fushi_torrent_ffi native lib not built' : null;
+  final String? skip = engine == null
+      ? 'fushi_torrent_ffi native lib not built'
+      : null;
 
   late Directory tempDir;
 
@@ -74,23 +75,32 @@ void main() {
     () async {
       const int contentSize = 2 * 1024 * 1024;
       final LocalSeedRig rig = await LocalSeedRig.start(
-          engine: engine!, workDir: tempDir, contentBytes: contentSize);
+        engine: engine!,
+        workDir: tempDir,
+        contentBytes: contentSize,
+      );
       addTearDown(rig.dispose);
 
       final Directory dlDir = Directory('${tempDir.path}/dl')..createSync();
       final Directory resumeDir = Directory('${tempDir.path}/resume');
 
       // ── 第一段会话：正常下完 ──────────────────────────────────────
-      final EmbeddedTorrentSession? first =
-          EmbeddedTorrentSession.open(engine, listenInterfaces: '127.0.0.1:0');
+      final EmbeddedTorrentSession? first = EmbeddedTorrentSession.open(
+        engine,
+        listenInterfaces: '127.0.0.1:0',
+      );
       expect(first, isNotNull);
 
-      final FtAddResult added =
-          first!.addMagnet(rig.magnetUri, savePath: dlDir.path);
+      final FtAddResult added = first!.addMagnet(
+        rig.magnetUri,
+        savePath: dlDir.path,
+      );
       expect(added.ok, isTrue, reason: 'addMagnet: ${added.error}');
       expect(added.id, rig.infoHash);
-      expect(first.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
-          isTrue);
+      expect(
+        first.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
+        isTrue,
+      );
 
       await _pollUntil(
         () {
@@ -107,28 +117,36 @@ void main() {
       );
 
       // ── 存 resume ────────────────────────────────────────────────
-      final FtResumeSaveResult saveResult =
-          first.saveResumeData(resumeDir.path);
-      expect(saveResult.saved, 1,
-          reason: 'exactly one torrent should be persisted '
-              '(failed=${saveResult.failed}, timedOut=${saveResult.timedOut})');
+      final FtResumeSaveResult saveResult = first.saveResumeData(
+        resumeDir.path,
+      );
+      expect(
+        saveResult.saved,
+        1,
+        reason:
+            'exactly one torrent should be persisted '
+            '(failed=${saveResult.failed}, timedOut=${saveResult.timedOut})',
+      );
       expect(saveResult.failed, 0);
       expect(saveResult.timedOut, 0);
 
-      final File resumeFile =
-          File('${resumeDir.path}/${rig.infoHash}.resume');
-      expect(resumeFile.existsSync(), isTrue,
-          reason: 'resume file must be named <infohash>.resume');
+      final File resumeFile = File('${resumeDir.path}/${rig.infoHash}.resume');
+      expect(
+        resumeFile.existsSync(),
+        isTrue,
+        reason: 'resume file must be named <infohash>.resume',
+      );
       expect(resumeFile.lengthSync(), greaterThan(0));
       // 原子写：不得留下 .tmp 残骸。
       expect(
-          resumeDir
-              .listSync()
-              .whereType<File>()
-              .where((File f) => f.path.endsWith('.tmp'))
-              .isEmpty,
-          isTrue,
-          reason: 'atomic write must not leave .tmp files behind');
+        resumeDir
+            .listSync()
+            .whereType<File>()
+            .where((File f) => f.path.endsWith('.tmp'))
+            .isEmpty,
+        isTrue,
+        reason: 'atomic write must not leave .tmp files behind',
+      );
 
       // ── 关掉整个会话（等价于 app 退出） ──────────────────────────
       first.close();
@@ -142,9 +160,13 @@ void main() {
       expect(second, isNotNull);
       addTearDown(second!.close);
 
-      expect(second.listTorrents(), isEmpty,
-          reason: 'fresh session must start with no torrents — this is the '
-              'pre-TODO-1961-a behaviour that silently killed all seeding');
+      expect(
+        second.listTorrents(),
+        isEmpty,
+        reason:
+            'fresh session must start with no torrents — this is the '
+            'pre-TODO-1961-a behaviour that silently killed all seeding',
+      );
 
       final List<String> restored = second.loadResumeDir(resumeDir.path);
       expect(restored, <String>[rig.infoHash]);
@@ -161,21 +183,27 @@ void main() {
         what: 'restored torrent to finish checking and report complete',
       );
 
-      final FtTorrentStatus restoredStatus = second
-          .listTorrents()
-          .firstWhere((FtTorrentStatus t) => t.id == rig.infoHash);
+      final FtTorrentStatus restoredStatus = second.listTorrents().firstWhere(
+        (FtTorrentStatus t) => t.id == rig.infoHash,
+      );
       // 元数据来自 resume 里的 info dict（save_info_dict），不是从 peer 取的
       // —— 本会话根本没有 peer。
       expect(restoredStatus.hasMetadata, isTrue);
-      expect(restoredStatus.numPeers, 0,
-          reason: 'no peer may be involved — completeness must come from disk');
+      expect(
+        restoredStatus.numPeers,
+        0,
+        reason: 'no peer may be involved — completeness must come from disk',
+      );
       expect(restoredStatus.left, 0);
       expect(restoredStatus.savePath, isNotEmpty);
 
       final FtPieceMap? pieces = second.torrentPieces(rig.infoHash);
       expect(pieces, isNotNull);
-      expect(pieces!.haveCount, pieces.numPieces,
-          reason: 'every piece must be recovered from disk');
+      expect(
+        pieces!.haveCount,
+        pieces.numPieces,
+        reason: 'every piece must be recovered from disk',
+      );
 
       // 做种态（上传能力恢复）——完成后 libtorrent 进 seeding。
       await _pollUntil(
@@ -199,37 +227,33 @@ void main() {
     timeout: const Timeout(Duration(minutes: 5)),
   );
 
-  test(
-    'loadResumeDir on a missing directory is a no-op, not an error',
-    () {
-      final EmbeddedTorrentSession? session =
-          EmbeddedTorrentSession.open(engine!, listenInterfaces: '');
-      expect(session, isNotNull);
-      addTearDown(session!.close);
+  test('loadResumeDir on a missing directory is a no-op, not an error', () {
+    final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(
+      engine!,
+      listenInterfaces: '',
+    );
+    expect(session, isNotNull);
+    addTearDown(session!.close);
 
-      expect(session.loadResumeDir('${tempDir.path}/nope'), isEmpty);
-      expect(session.listTorrents(), isEmpty);
-    },
-    skip: skip,
-  );
+    expect(session.loadResumeDir('${tempDir.path}/nope'), isEmpty);
+    expect(session.listTorrents(), isEmpty);
+  }, skip: skip);
 
-  test(
-    'saveResumeData with no torrents writes nothing and reports zero',
-    () {
-      final EmbeddedTorrentSession? session =
-          EmbeddedTorrentSession.open(engine!, listenInterfaces: '');
-      expect(session, isNotNull);
-      addTearDown(session!.close);
+  test('saveResumeData with no torrents writes nothing and reports zero', () {
+    final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(
+      engine!,
+      listenInterfaces: '',
+    );
+    expect(session, isNotNull);
+    addTearDown(session!.close);
 
-      final Directory outDir = Directory('${tempDir.path}/empty-resume');
-      final FtResumeSaveResult result = session.saveResumeData(outDir.path);
-      expect(result.saved, 0);
-      expect(result.failed, 0);
-      expect(result.timedOut, 0);
-      // 目录被建出来（下次保存直接可用），但里面没有 resume 文件。
-      expect(outDir.existsSync(), isTrue);
-      expect(outDir.listSync(), isEmpty);
-    },
-    skip: skip,
-  );
+    final Directory outDir = Directory('${tempDir.path}/empty-resume');
+    final FtResumeSaveResult result = session.saveResumeData(outDir.path);
+    expect(result.saved, 0);
+    expect(result.failed, 0);
+    expect(result.timedOut, 0);
+    // 目录被建出来（下次保存直接可用），但里面没有 resume 文件。
+    expect(outDir.existsSync(), isTrue);
+    expect(outDir.listSync(), isEmpty);
+  }, skip: skip);
 }

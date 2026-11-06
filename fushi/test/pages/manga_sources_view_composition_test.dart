@@ -24,9 +24,10 @@ import '../helpers/source_guard.dart';
 /// 本文件全是「必须包含 X」型断言，不掩注释的话，把实现删光、只在注释里留下那串
 /// 字面量就能骗绿——这是本仓真实抓到过的假绿形态。
 String _read(List<String> parts) => maskComments(
-      File(p.joinAll(<String>['lib', 'src', 'media', 'manga', ...parts]))
-          .readAsStringSync(),
-    );
+  File(
+    p.joinAll(<String>['lib', 'src', 'media', 'manga', ...parts]),
+  ).readAsStringSync(),
+);
 
 void main() {
   group('漫画「来源」视图与在线来源面组成', () {
@@ -95,9 +96,15 @@ void main() {
       );
       expect(sources, isNot(contains('MokuroMoeSourceRow')));
       final String localRoots = maskComments(
-        File(p.join('lib', 'src', 'pages', 'implementations',
-                'media_sources_view.dart'))
-            .readAsStringSync(),
+        File(
+          p.join(
+            'lib',
+            'src',
+            'pages',
+            'implementations',
+            'media_sources_view.dart',
+          ),
+        ).readAsStringSync(),
       );
       expect(
         localRoots,
@@ -126,10 +133,14 @@ void main() {
     // BUG-1710：原「浏览」tab 已并进「发现」，这些能力现在落在发现页 +
     // 「浏览来源」节两个文件里。断言跟着搬家，一条都没放宽。
     test('「发现」页恒有 mokuro.moe，Mihon 在线源与它并列', () {
-      final String discovery =
-          _read(<String>['discovery', 'manga_discovery_page.dart']);
-      final String section =
-          _read(<String>['discovery', 'manga_source_catalog_section.dart']);
+      final String discovery = _read(<String>[
+        'discovery',
+        'manga_discovery_page.dart',
+      ]);
+      final String section = _read(<String>[
+        'discovery',
+        'manga_source_catalog_section.dart',
+      ]);
       expect(
         discovery,
         contains('if (!MihonRuntimeFactory.isSupported) return;'),

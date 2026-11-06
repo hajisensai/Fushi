@@ -1,0 +1,987 @@
+// 一次性：用**旧的 Dart 实现**（field_edit.dart 的 srsResolveRegister / SrsRegister / 支配判定 /
+// srsEditsConcurrentWithDelete / srsEditIsNoop，entities.dart / deck.dart 的 materialize，
+// ordering.dart 的 srsSortKey，valid_logs.dart 的 srsImportEquivalent，以及 srs_db_store.dart 的
+// _cardLineage / _inheritedCardEdits / 落库支配裁剪，提交 34834441d7 时的版本）生成寄存器物化的
+// 固定向量，写到 test/registers/fixtures/register_vectors.json（入库前 gzip 成 .json.gz）。
+// 搬进 Rust（native/fushi_fsrs/src/registers.rs）之后旧实现已删，本脚本改名
+// test/registers/fixtures/gen_register_vectors.dart.txt 只作留档。
+//
+//   （当时放在 packages/fushi_srs/tool/，`dart run tool/gen_register_vectors.dart` 运行。）
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:fushi_srs/fushi_srs.dart';
+
+const int _t0 = 1735689600000; // 2025-01-01T00:00:00Z
+
+final Random _r = Random(20261024);
+
+T _pick<T>(List<T> xs) => xs[_r.nextInt(xs.length)];
+
+bool _p(int oneIn) => _r.nextInt(oneIn) == 0;
+
+const List<String> _writers = <String>[
+  'A',
+  'B',
+  'C',
+  'anki',
+  'dev-é',
+  'w:with:colons',
+  // U+1D4E7（代理对）与 U+FF21：UTF-16 码元序与码点序相反，钉死「按 Dart String.compareTo」。
+  '\u{1D4E7}w',
+  'Ａw',
+];
+
+// ------------------------------------------------------------------ 值
+
+String _css(int n, String seed) {
+  final StringBuffer b = StringBuffer();
+  int i = 0;
+  while (b.length < n) {
+    b.write('.c$seed$i{color:#${(i * 2654435761 % 0xffffff).toRadixString(16)}} ');
+    i++;
+  }
+  return b.toString();
+}
+
+final List<String> _bigCss = <String>[
+  _css(600, 'a'),
+  _css(512, 'b').substring(0, 512),
+  _css(2000, 'ç字'),
+];
+
+/// 字段文本：普通文本、内联大样式（会被去重）、已去重的引用行、小样式、`<script>` 里的样式、
+/// 畸形 / 嵌套样式、大小写混写的 script 标签。
+String _fieldText() {
+  final String css = _pick(_bigCss);
+  final String body = _pick(<String>['雨', 'snow', '', '\u{1D4E7}x', 'a<b>c</b>']);
+  switch (_r.nextInt(12)) {
+    case 0:
+    case 1:
+      return body;
+    case 2:
+      return '<style>$css</style>$body';
+    case 3:
+      return srsDedupStyles('<style>$css</style>$body').html;
+    case 4:
+      return '<style>.small{}</style>$body';
+    case 5:
+      return '<script>var s="<style>$css</style>";</script>$body';
+    case 6:
+      return '<SCRIPT type="x">a</sCrIpT >$body<style>$css</style>';
+    case 7:
+      return '<style>$css<style>$css</style>$body';
+    case 8:
+      return '<style>${css.substring(0, 511)}</style>$body';
+    case 9:
+      return '$body<style>$css</style><style>${_pick(_bigCss)}</style>';
+    case 10:
+      return srsDedupStyles('$body<style>$css</style><style>${_pick(_bigCss)}</style>').html;
+    default:
+      return 'v${_r.nextInt(4)}';
+  }
+}
+
+/// 任意 JSON 值（含 int / double 同值、-0.0、键序不同的对象、嵌套字符串）。
+Object? _anyValue() => switch (_r.nextInt(14)) {
+  0 => null,
+  1 => true,
+  2 => false,
+  3 => _r.nextInt(5),
+  4 => _r.nextInt(5).toDouble(),
+  5 => -0.0,
+  6 => 0.0,
+  7 => 0.1 + _r.nextInt(3),
+  8 => <String, Object?>{'b': 1, 'a': _r.nextInt(2)},
+  9 => <String, Object?>{'a': _r.nextInt(2), 'b': 1},
+  10 => <Object?>['x', 1, null],
+  11 => 'v${_r.nextInt(3)}',
+  12 => <Object?>[_pick(_bigCss).substring(0, 10)],
+  _ => _fieldText(),
+};
+
+/// 某字段键的值；[bad] 时故意给类型不对的值（物化里的强转会抛错）。
+Object? _valueFor(SrsEntityKind kind, String key, {required bool bad}) {
+  if (bad) return _pick(<Object?>[123, 'str', <Object?>[1], <String, Object?>{'x': 1}, 1.5]);
+  if (key == SrsFieldKeys.deleted) {
+    return _pick(<Object?>[null, _t0 + _r.nextInt(1000), _t0 + 5, 5.0, null]);
+  }
+  switch (kind) {
+    case SrsEntityKind.note:
+      if (key.startsWith('f/')) return _p(15) ? _anyValue() : _fieldText();
+      if (key == SrsFieldKeys.noteTags) {
+        return _pick(<Object?>[
+          <String>['a', 'b'],
+          <String>['b', 'a'],
+          <Object?>['a', 1, null, 'c'],
+          <String>[],
+          'notalist',
+          null,
+        ]);
+      }
+      if (key == SrsFieldKeys.noteSource) {
+        return _pick(<Object?>[
+          null,
+          <String, Object?>{'kind': 'book', 'bookId': 'b1', 'pos': 3},
+          <String, Object?>{'kind': 'video', 'z': 1, 'a': 'x'},
+          <String, Object?>{'nokind': 1},
+          <String, Object?>{'kind': 5},
+          'str',
+        ]);
+      }
+      if (key == SrsFieldKeys.noteDeck) return _pick(<Object?>['d1', 'd2', null]);
+      if (key == SrsFieldKeys.noteType) return _pick(<Object?>['nt2', 'nt3', null]);
+      return _anyValue();
+    case SrsEntityKind.card:
+      if (key == SrsFieldKeys.suspended) return _pick(<Object?>[true, false, null, 1, 'true']);
+      if (key == SrsFieldKeys.buriedUntilDay) return _pick(<Object?>[null, 20000 + _r.nextInt(9), 0]);
+      if (key == SrsFieldKeys.flag) return _pick(<Object?>[0, 1, 2, 7, null]);
+      if (key == SrsFieldKeys.cardDeck) return _pick(<Object?>['d1', 'd2', 'd3', null]);
+      if (key == SrsFieldKeys.cardNewPosition) {
+        return _pick(<Object?>[null, 0, 5, 12, 3.0, 7.9, -2.5, 'x', <Object?>[]]);
+      }
+      if (key.startsWith(SrsFieldKeys.cardHistoryFromPrefix)) {
+        return _pick(<Object?>[true, true, true, false, null, 1, 'true']);
+      }
+      return _anyValue();
+    case SrsEntityKind.noteType:
+      if (key == SrsFieldKeys.name || key == SrsFieldKeys.css) {
+        return _pick(<Object?>['Basic', 'Cloze', '基本', '', null]);
+      }
+      if (key == SrsFieldKeys.termField) return _pick(<Object?>['fa', 'fb', 'fz', null]);
+      if (key.startsWith(SrsFieldKeys.fieldDescriptionPrefix)) {
+        return _pick(<Object?>['desc', '', null, 3, <Object?>[]]);
+      }
+      if (key.startsWith('fieldDef/') || key.startsWith('tmplDef/')) {
+        if (_p(12)) return _pick(<Object?>[null, 'x', <Object?>[]]);
+        return <String, Object?>{
+          'name': _pick(<String>['Front', 'Back', '\u{1D4E7}', 'Ａ', 'a']),
+          'ord': _r.nextInt(4),
+          if (_r.nextBool()) 'ankiNum': (_r.nextInt(1 << 30) * 1024 + 7),
+          if (_p(4)) 'deleted': _pick(<Object?>[true, false, 1]),
+          if (key.startsWith('tmplDef/')) 'front': '{{fld:fa}}',
+          if (key.startsWith('tmplDef/') && _r.nextBool()) 'back': 'B',
+          if (_p(6)) 'zzFuture': 1,
+        };
+      }
+      return _anyValue();
+    case SrsEntityKind.deck:
+      return switch (key) {
+        SrsFieldKeys.name => _pick(<Object?>['Default', 'A', '日本語', null]),
+        SrsFieldKeys.deckParent => _pick(<Object?>['d1', 'd2', null]),
+        SrsFieldKeys.deckParamsMode => _pick(<Object?>['own', 'inherit', null]),
+        SrsFieldKeys.deckLimits => _pick(<Object?>[
+          <String, Object?>{'new': 5, 'review': 50},
+          <String, Object?>{'new': 7},
+          <String, Object?>{},
+          'x',
+          null,
+        ]),
+        SrsFieldKeys.deckSteps => _pick(<Object?>[
+          <String, Object?>{'learn': <Object?>[1, 10.5, 2000, 'x'], 'relearn': <Object?>[]},
+          <String, Object?>{'learn': <Object?>[3000]},
+          <String, Object?>{'relearn': 5},
+          null,
+        ]),
+        SrsFieldKeys.deckRetention => _pick(<Object?>[0.9, 0.85, 1, null]),
+        SrsFieldKeys.deckAlgorithm => _pick(<Object?>[
+          <String, Object?>{'alg': 'fsrs6', 'auto': false},
+          <String, Object?>{'alg': 'futureAlg'},
+          <String, Object?>{'auto': true},
+          'fsrs7',
+          null,
+        ]),
+        SrsFieldKeys.deckFsrs6Params || SrsFieldKeys.deckFsrs7Params => _pick(<Object?>[
+          <String, Object?>{'params': <Object?>[0.1, 1, 'x', 2.5], 'rev': 'r', 'at': 5, 'n': 9, 'logLoss': 0.3},
+          <String, Object?>{'params': 'bad'},
+          null,
+          5,
+        ]),
+        SrsFieldKeys.deckAutoOptimize ||
+        SrsFieldKeys.deckCollapsed ||
+        SrsFieldKeys.deckAutoplay ||
+        SrsFieldKeys.deckReplayQuestion => _pick(<Object?>[true, false, null, 0, 'false']),
+        SrsFieldKeys.deckOptimizeBaseline => _pick(<Object?>[
+          <String, Object?>{'at': 5, 'n': 3},
+          <String, Object?>{'at': 6},
+          'x',
+          null,
+        ]),
+        SrsFieldKeys.deckMaxInterval => _pick(<Object?>[365, 36500, null]),
+        SrsFieldKeys.deckPosition => _pick(<Object?>[1, 2.5, -1, null, 'x', 0]),
+        SrsFieldKeys.deckRwkvQueue => _pick(<Object?>[
+          <String, Object?>{'minReviews': 3, 'repeatReviews': 2000, 'repeatSeconds': -1},
+          <String, Object?>{'minReviews': 1.5},
+          null,
+        ]),
+        _ => _anyValue(),
+      };
+    case SrsEntityKind.profile:
+      return _pick(<Object?>[0, 4, 23, 30, null, -60, 540]);
+  }
+}
+
+/// 不会抛错的强转键（错类型只在这些键上才会让物化抛）。
+bool _castKey(SrsEntityKind kind, String key) => switch (kind) {
+  SrsEntityKind.note =>
+    key == SrsFieldKeys.noteType || key == SrsFieldKeys.noteDeck,
+  SrsEntityKind.card =>
+    key == SrsFieldKeys.cardDeck ||
+        key == SrsFieldKeys.buriedUntilDay ||
+        key == SrsFieldKeys.flag,
+  SrsEntityKind.noteType =>
+    key == SrsFieldKeys.name ||
+        key == SrsFieldKeys.css ||
+        key == SrsFieldKeys.termField,
+  SrsEntityKind.deck =>
+    key == SrsFieldKeys.name ||
+        key == SrsFieldKeys.deckParent ||
+        key == SrsFieldKeys.deckRetention ||
+        key == SrsFieldKeys.deckMaxInterval,
+  SrsEntityKind.profile => false,
+};
+
+List<String> _keysFor(SrsEntityKind kind) => switch (kind) {
+  SrsEntityKind.note => <String>[
+    'f/fa',
+    'f/fb',
+    'f/\u{1D4E7}',
+    'f/Ａ',
+    SrsFieldKeys.noteTags,
+    SrsFieldKeys.noteSource,
+    SrsFieldKeys.noteDeck,
+    SrsFieldKeys.noteType,
+    SrsFieldKeys.deleted,
+    SrsFieldKeys.deleted,
+    'zzFuture',
+  ],
+  SrsEntityKind.card => <String>[
+    SrsFieldKeys.suspended,
+    SrsFieldKeys.buriedUntilDay,
+    SrsFieldKeys.flag,
+    SrsFieldKeys.cardDeck,
+    SrsFieldKeys.cardNewPosition,
+    SrsFieldKeys.deleted,
+  ],
+  SrsEntityKind.noteType => <String>[
+    SrsFieldKeys.name,
+    SrsFieldKeys.css,
+    SrsFieldKeys.termField,
+    'fieldDef/fa',
+    'fieldDef/fb',
+    'fieldDef/\u{1D4E7}',
+    'fieldDef/Ａ',
+    'fieldDesc/fa',
+    'fieldDesc/fz',
+    'tmplDef/t1',
+    'tmplDef/t2',
+    SrsFieldKeys.deleted,
+  ],
+  SrsEntityKind.deck => <String>[
+    SrsFieldKeys.name,
+    SrsFieldKeys.deckParent,
+    SrsFieldKeys.deckParamsMode,
+    SrsFieldKeys.deckLimits,
+    SrsFieldKeys.deckSteps,
+    SrsFieldKeys.deckRetention,
+    SrsFieldKeys.deckAlgorithm,
+    SrsFieldKeys.deckFsrs6Params,
+    SrsFieldKeys.deckFsrs7Params,
+    SrsFieldKeys.deckAutoOptimize,
+    SrsFieldKeys.deckOptimizeBaseline,
+    SrsFieldKeys.deckMaxInterval,
+    SrsFieldKeys.deckCollapsed,
+    SrsFieldKeys.deckPosition,
+    SrsFieldKeys.deckAutoplay,
+    SrsFieldKeys.deckReplayQuestion,
+    SrsFieldKeys.deckRwkvQueue,
+    SrsFieldKeys.deleted,
+  ],
+  SrsEntityKind.profile => <String>[
+    SrsFieldKeys.dayRolloverHour,
+    SrsFieldKeys.utcOffsetMin,
+  ],
+};
+
+// ------------------------------------------------------------------ 修改记录集
+
+class _Gen {
+  _Gen(this.kind, this.entityId) {
+    for (final String w in _writers.take(2 + _r.nextInt(_writers.length - 1))) {
+      writers.add(SrsEditWriter(writerId: w));
+    }
+  }
+
+  final SrsEntityKind kind;
+  final String entityId;
+  final List<SrsEditWriter> writers = <SrsEditWriter>[];
+  final List<SrsFieldEdit> made = <SrsFieldEdit>[];
+  int clock = _t0 + _r.nextInt(1 << 28);
+  bool bad = false;
+
+  /// 随机一段协作：写入、互相同步（应用对方的部分记录 = 并发 / 支配）、删除、恢复。
+  void run(int steps, List<String> keys) {
+    for (int i = 0; i < steps; i++) {
+      final SrsEditWriter w = _pick(writers);
+      switch (_r.nextInt(10)) {
+        case 0:
+        case 1:
+          // 同步：应用别人做过的一部分记录（含闭包）。
+          if (made.isNotEmpty) {
+            for (int k = 0; k < 1 + _r.nextInt(3); k++) {
+              w.apply(_pick(made));
+            }
+          }
+        case 2:
+          if (made.isNotEmpty && _p(2)) {
+            for (final SrsFieldEdit e in made) {
+              w.apply(e);
+            }
+          }
+        default:
+          if (_r.nextInt(3) != 0) clock += _r.nextInt(100000);
+          final String key = _pick(keys);
+          final bool b = _p(40) && _castKey(kind, key);
+          if (b) bad = true;
+          final String hlcWriter = _p(8) ? _pick(_writers) : w.writerId;
+          final SrsFieldEdit e = w.create(
+            profileUid: 'p',
+            entityKind: kind,
+            entityId: entityId,
+            fieldKey: key,
+            value: _valueFor(kind, key, bad: b),
+            hlc: Hlc(clock, _p(4) ? _r.nextInt(3) : 0, hlcWriter),
+            timeSource: _r.nextBool() ? SrsTimeSource.anchored : SrsTimeSource.wall,
+            machine: _p(6),
+          );
+          made.add(e);
+      }
+    }
+    // 不连续 dot（旧化身重新发布）：ctx 带 cloud 的记录。
+    if (_p(4) && made.isNotEmpty) {
+      final SrsFieldEdit src = _pick(made);
+      made.add(
+        SrsFieldEdit(
+          profileUid: 'p',
+          entityKind: kind,
+          entityId: entityId,
+          fieldKey: src.fieldKey,
+          dot: SrsDot('old#${_r.nextInt(3)}', 5 + _r.nextInt(5)),
+          ctx: SrsCausalContext.of(
+            vv: <String, int>{src.dot.writerId: src.dot.seq - (_r.nextBool() ? 1 : 0)},
+            cloud: <String, Iterable<int>>{
+              src.dot.writerId: <int>[src.dot.seq, src.dot.seq + 2],
+              'old#9': <int>[3, 4],
+            },
+          ),
+          value: _valueFor(kind, src.fieldKey, bad: false),
+          hlc: Hlc(clock + _r.nextInt(3), 0, 'old'),
+          timeSource: SrsTimeSource.wall,
+        ),
+      );
+    }
+  }
+}
+
+/// 落库形态：canonical JSON 原文（偶尔是同 ID 的重复 / 同 ID 异内容）。
+List<String> _stored(List<SrsFieldEdit> edits) {
+  final List<String> out = <String>[
+    for (final SrsFieldEdit e in edits) e.canonical(),
+  ];
+  if (out.isNotEmpty && _p(6)) out.add(_pick(out));
+  if (edits.isNotEmpty && _p(8)) {
+    // 同 dot（同 ID）异内容：后到的生效。
+    final SrsFieldEdit e = _pick(edits);
+    out.add(
+      SrsFieldEdit(
+        profileUid: e.profileUid,
+        entityKind: e.entityKind,
+        entityId: e.entityId,
+        fieldKey: e.fieldKey,
+        dot: e.dot,
+        ctx: e.ctx,
+        value: 'dup-${_r.nextInt(9)}',
+        hlc: e.hlc,
+        timeSource: e.timeSource,
+      ).canonical(),
+    );
+  }
+  out.shuffle(_r);
+  return out;
+}
+
+Map<String, int> _serverTimes(List<String> stored) {
+  final Map<String, int> s = <String, int>{};
+  for (final String j in stored) {
+    final Map<String, Object?> m = (jsonDecode(j) as Map).cast<String, Object?>();
+    final String id = m['id']! as String;
+    final int phys = int.parse((m['hlc']! as String).split(':').first);
+    switch (_r.nextInt(5)) {
+      case 0:
+        s[id] = phys - srsClockToleranceMs - 1 - _r.nextInt(100000);
+      case 1:
+        s[id] = phys - srsClockToleranceMs;
+      case 2:
+        s[id] = phys + _r.nextInt(1000);
+    }
+  }
+  return s;
+}
+
+List<SrsFieldEdit> _decode(List<String> stored) => <SrsFieldEdit>[
+  for (final String j in stored)
+    SrsFieldEdit.fromJson((jsonDecode(j) as Map).cast<String, Object?>()),
+];
+
+// ------------------------------------------------------------------ 序列化（测试同一份）
+
+List<Object?> _regs(SrsEntityEdits edits) => <Object?>[
+  for (final String k in edits.keys)
+    <Object?>[
+      k,
+      <String>[for (final SrsFieldEdit e in edits[k]!.live) e.id],
+      edits[k]!.conflicted,
+      <String>[for (final SrsFieldEdit e in edits[k]!.visibleLosers) e.id],
+    ],
+];
+
+Map<String, Object?> _noteJson(SrsNoteView n) => <String, Object?>{
+  'id': n.id,
+  'noteTypeId': n.noteTypeId,
+  'guid': n.guid,
+  'createdAt': n.createdAt,
+  'fields': <Object?>[
+    for (final MapEntry<String, String> e in n.fields.entries) <String>[e.key, e.value],
+  ],
+  'tags': n.tags,
+  'source': n.source?.toJson(),
+  'deckId': n.deckId,
+  'deletedAt': n.deletedAt,
+  'pending': n.hasPendingDecision,
+};
+
+Map<String, Object?> _fieldDefJson(SrsFieldDef f) => <String, Object?>{
+  'id': f.id,
+  ...f.toValue(),
+  'description': f.description,
+};
+
+Map<String, Object?> _tmplDefJson(SrsTemplateDef t) => <String, Object?>{
+  'id': t.id,
+  ...t.toValue(),
+};
+
+Map<String, Object?> _noteTypeJson(SrsNoteTypeView t) => <String, Object?>{
+  'id': t.id,
+  'ankiNum': t.ankiNum,
+  'kind': t.kind,
+  'name': t.name,
+  'fields': <Object?>[for (final SrsFieldDef f in t.fields) _fieldDefJson(f)],
+  'templates': <Object?>[for (final SrsTemplateDef x in t.templates) _tmplDefJson(x)],
+  'css': t.css,
+  'termFieldId': t.termFieldId,
+  'deletedAt': t.deletedAt,
+  'builtinKey': t.builtinKey,
+};
+
+Map<String, Object?> _deckJson(SrsDeckView d) => <String, Object?>{
+  'id': d.id,
+  'name': d.name,
+  'parentId': d.parentId,
+  'ownParams': d.ownParams,
+  'newPerDay': d.newPerDay,
+  'reviewsPerDay': d.reviewsPerDay,
+  'learnSteps': d.learnSteps,
+  'relearnSteps': d.relearnSteps,
+  'desiredRetention': d.desiredRetention,
+  'algorithmWire': d.algorithmWire,
+  'algorithmAuto': d.algorithmAuto,
+  'fsrs6': d.fsrs6?.toValue(),
+  'fsrs7': d.fsrs7?.toValue(),
+  'autoOptimize': d.autoOptimize,
+  'maxIntervalDays': d.maxIntervalDays,
+  'collapsed': d.collapsed,
+  'position': d.position,
+  'autoplayAudio': d.autoplayAudio,
+  'replayQuestionAudio': d.replayQuestionAudio,
+  'rwkvQueue': d.rwkvQueue.toValue(),
+  'optimizeBaselineAt': d.optimizeBaselineAt,
+  'optimizeBaselineCount': d.optimizeBaselineCount,
+  'deletedAt': d.deletedAt,
+  'builtinKey': d.builtinKey,
+  'createdAt': d.createdAt,
+};
+
+Map<String, Object?> _flagsJson(SrsCardFlags f) => <String, Object?>{
+  'deckId': f.deckId,
+  'suspended': f.suspended,
+  'buriedUntilDay': f.buriedUntilDay,
+  'flag': f.flag,
+  'newPosition': f.newPosition,
+};
+
+// ------------------------------------------------------------------ 身份记录 / 内置类型
+
+SrsEntityRecord _record(SrsEntityKind kind, String id) {
+  final Map<String, Object?> d = switch (kind) {
+    SrsEntityKind.note => <String, Object?>{
+      'noteTypeId': 'nt1',
+      'guid': 'g${_r.nextInt(99)}',
+      if (!_p(6)) 'createdAt': _t0 + _r.nextInt(1000),
+    },
+    SrsEntityKind.noteType => <String, Object?>{
+      if (!_p(6)) 'ankiNum': (_r.nextInt(1 << 30) * 1024 + 7),
+      if (!_p(5)) 'ntKind': _pick(<String>['standard', 'cloze', 'future']),
+      'createdAt': _t0,
+      if (_p(3)) 'builtin': 'lapis',
+    },
+    _ => <String, Object?>{
+      'createdAt': _t0 + _r.nextInt(1000),
+      if (_p(4)) 'builtin': 'default',
+    },
+  };
+  return SrsEntityRecord(id: id, profileUid: 'p', kind: kind, payload: d);
+}
+
+SrsBuiltinNoteType? _builtin() {
+  if (_p(2)) return null;
+  return SrsBuiltinNoteType(
+    key: 'lapis',
+    name: _pick(<String>['Lapis', '内置']),
+    kind: 'standard',
+    fields: <SrsFieldDef>[
+      SrsFieldDef(id: 'fa', name: 'Expression', ord: 0, ankiNum: 11, description: _pick(<String>['', 'term'])),
+      const SrsFieldDef(id: 'fb', name: 'Meaning', ord: 1),
+      const SrsFieldDef(id: 'fq', name: 'Old', ord: 1, deleted: true),
+      if (_r.nextBool()) const SrsFieldDef(id: '\u{FF21}', name: 'X', ord: 2),
+    ],
+    templates: <SrsTemplateDef>[
+      const SrsTemplateDef(id: 't1', name: 'Card 1', ord: 0, front: 'F', back: 'B', ankiNum: 5),
+      if (_r.nextBool()) const SrsTemplateDef(id: 't0', name: 'Card 0', ord: 0, front: 'F0', back: 'B0'),
+    ],
+    css: '.card{}',
+    termFieldId: _p(3) ? null : 'fa',
+  );
+}
+
+Map<String, Object?> _builtinJson(SrsBuiltinNoteType b) => <String, Object?>{
+  'key': b.key,
+  'name': b.name,
+  'kind': b.kind,
+  'fields': <Object?>[for (final SrsFieldDef f in b.fields) _fieldDefJson(f)],
+  'templates': <Object?>[for (final SrsTemplateDef t in b.templates) _tmplDefJson(t)],
+  'css': b.css,
+  'termFieldId': b.termFieldId,
+};
+
+// ------------------------------------------------------------------ 卡片血统（旧 srs_db_store 逻辑）
+
+List<(String, SrsEntityEdits)> _cardLineage(
+  String cardId,
+  SrsEntityEdits Function(String id) editsOf,
+) {
+  final List<(String, SrsEntityEdits)> out = <(String, SrsEntityEdits)>[];
+  final Set<String> seen = <String>{cardId};
+  final List<String> queue = <String>[cardId];
+  while (queue.isNotEmpty && out.length < 256) {
+    final String id = queue.removeAt(0);
+    final SrsEntityEdits edits = editsOf(id);
+    out.add((id, edits));
+    final List<String> preds = <String>[
+      for (final String k in edits.keys)
+        if (k.startsWith(SrsFieldKeys.cardHistoryFromPrefix) &&
+            edits.value(k) == true)
+          k.substring(SrsFieldKeys.cardHistoryFromPrefix.length),
+    ]..sort();
+    for (final String p in preds) {
+      if (seen.add(p)) queue.add(p);
+    }
+  }
+  return out;
+}
+
+SrsEntityEdits _inheritedCardEdits(List<(String, SrsEntityEdits)> lineage) {
+  final Map<String, SrsRegister> regs = <String, SrsRegister>{};
+  for (final (String _, SrsEntityEdits edits) in lineage.reversed) {
+    for (final String k in edits.keys) {
+      if (k.startsWith(SrsFieldKeys.cardHistoryFromPrefix)) continue;
+      regs[k] = edits[k]!;
+    }
+  }
+  return SrsEntityEdits(regs);
+}
+
+// ------------------------------------------------------------------ 用例
+
+/// 实体用例：note / notetype / deck / profile。
+Map<String, Object?> _entityCase(SrsEntityKind kind) {
+  final String id = '${kind.wire}-${_r.nextInt(1 << 20)}';
+  final _Gen g = _Gen(kind, id);
+  g.run(1 + _r.nextInt(_p(10) ? 60 : 12), _keysFor(kind));
+  final List<String> stored = _stored(g.made);
+  final Map<String, int> server = _p(4) ? <String, int>{} : _serverTimes(stored);
+  final SrsEntityRecord rec = _record(kind, id);
+  final SrsBuiltinNoteType? builtin = kind == SrsEntityKind.noteType ? _builtin() : null;
+  final Map<String, Object?> v = <String, Object?>{
+    'kind': kind.wire,
+    'record': rec.toJson(),
+    if (builtin != null) 'builtin': _builtinJson(builtin),
+    'edits': stored,
+    'server': server,
+  };
+  try {
+    final SrsEntityEdits edits = SrsEntityEdits.build(
+      _decode(stored),
+      serverTimeOf: (String e) => server[e],
+    );
+    final Object? view = switch (kind) {
+      SrsEntityKind.note => _noteJson(SrsNoteView.materialize(rec, edits)),
+      SrsEntityKind.noteType => _noteTypeJson(
+        SrsNoteTypeView.materialize(rec, edits, builtin: builtin),
+      ),
+      SrsEntityKind.deck => _deckJson(SrsDeckView.materialize(rec, edits)),
+      _ => null,
+    };
+    final SrsRegister? del = edits[SrsFieldKeys.deleted];
+    v['expect'] = <String, Object?>{
+      'regs': _regs(edits),
+      'deletedAt': edits.deletedAt,
+      'concurrent': del == null
+          ? <String>[]
+          : <String>[
+              for (final SrsFieldEdit e in srsEditsConcurrentWithDelete(del, <SrsFieldEdit>[
+                for (final SrsRegister r in edits.registers)
+                  if (r.key != SrsFieldKeys.deleted) ...r.live,
+              ]))
+                e.id,
+            ],
+      'view': view,
+      'noop': _noops(edits),
+    };
+  } on Object catch (e) {
+    v['expect'] = <String, Object?>{'error': '${e.runtimeType}'};
+  }
+  if (g.bad && v['expect'] is Map && (v['expect']! as Map)['error'] == null) {
+    // 坏值没被强转碰到（被别的记录支配 / 不是生效值）：照常记结果。
+  }
+  return v;
+}
+
+List<Object?> _noops(SrsEntityEdits edits) {
+  final List<Object?> out = <Object?>[];
+  for (final String k in edits.keys) {
+    if (!_p(2)) continue;
+    final SrsRegister reg = edits[k]!;
+    final List<Object?> candidates = <Object?>[
+      reg.value,
+      if (reg.live.length > 1) reg.live[1].value,
+      if (reg.value is String) srsDedupStyles(reg.value! as String).html,
+      if (reg.value is String && (reg.value! as String).contains(kSrsStyleMediaPrefix))
+        srsExpandStyles(reg.value! as String, (String name) {
+          for (final String css in _bigCss) {
+            if (srsStyleMediaName(css) == name) return css;
+          }
+          return null;
+        }),
+      _anyValue(),
+      _fieldText(),
+    ];
+    final Object? nv = _pick(candidates);
+    out.add(<Object?>[k, jsonEncode(nv), srsEditIsNoop(reg, nv)]);
+  }
+  return out;
+}
+
+/// 卡片用例：一张卡 + 前身链（成环、缺失、historyFrom 值不为 true、冲突）。
+Map<String, Object?> _cardCase() {
+  final List<String> ids = <String>['c0', 'c1', 'c2', '\u{1D4E7}c', 'Ａc', 'c5'];
+  final Map<String, List<String>> stored = <String, List<String>>{};
+  final Map<String, int> server = <String, int>{};
+  bool bad = false;
+  for (final String id in ids) {
+    if (_p(4) && id != 'c0') continue; // 缺失：没有修改记录的前身
+    final _Gen g = _Gen(SrsEntityKind.card, id);
+    final List<String> keys = <String>[
+      ..._keysFor(SrsEntityKind.card),
+      for (final String p in ids)
+        if (p != id || _p(10)) '${SrsFieldKeys.cardHistoryFromPrefix}$p',
+      '${SrsFieldKeys.cardHistoryFromPrefix}missing',
+    ];
+    g.run(_r.nextInt(10), keys);
+    bad = bad || g.bad;
+    stored[id] = _stored(g.made);
+    if (!_p(4)) server.addAll(_serverTimes(stored[id]!));
+  }
+  final String? noteDeck = _pick(<String?>['nd', null]);
+  final Map<String, Object?> v = <String, Object?>{
+    'kind': 'card',
+    'card': 'c0',
+    'cards': stored,
+    'server': server,
+    'noteDeckId': noteDeck,
+    'fallbackDeckId': 'fallback',
+  };
+  try {
+    final Map<String, SrsEntityEdits> built = <String, SrsEntityEdits>{
+      for (final MapEntry<String, List<String>> e in stored.entries)
+        e.key: SrsEntityEdits.build(
+          _decode(e.value),
+          serverTimeOf: (String x) => server[x],
+        ),
+    };
+    final List<(String, SrsEntityEdits)> lineage = _cardLineage(
+      'c0',
+      (String id) => built[id] ?? SrsEntityEdits.build(const <SrsFieldEdit>[]),
+    );
+    final SrsCardFlags flags = SrsCardFlags.materialize(
+      _inheritedCardEdits(lineage),
+      noteDeckId: noteDeck,
+      fallbackDeckId: 'fallback',
+    );
+    v['expect'] = <String, Object?>{
+      'lineage': <String>[for (final (String c, SrsEntityEdits _) in lineage) c],
+      'flags': _flagsJson(flags),
+      'regs': <String, Object?>{
+        for (final MapEntry<String, SrsEntityEdits> e in built.entries) e.key: _regs(e.value),
+      },
+    };
+  } on Object catch (e) {
+    v['expect'] = <String, Object?>{'error': '${e.runtimeType}'};
+  }
+  return v;
+}
+
+/// 落库支配裁剪（旧 srs_db_store `_storeLocalBatch` / SrsEventStore `_applyEdit` 的同一规则）：
+/// 已有的记录 + 依次到达的记录 → 每条到达的落不落库、哪些已有 / 先到的被支配删掉。
+Map<String, Object?> _landingCase() {
+  final _Gen g = _Gen(SrsEntityKind.note, 'n');
+  g.run(2 + _r.nextInt(14), <String>['f/fa', 'f/fb']);
+  final List<SrsFieldEdit> all = <SrsFieldEdit>[...g.made]..shuffle(_r);
+  final int split = _r.nextInt(all.length + 1);
+  final List<SrsFieldEdit> existing = all.sublist(0, split);
+  final List<SrsFieldEdit> incoming = <SrsFieldEdit>[
+    ...all.sublist(split),
+    if (existing.isNotEmpty && _p(3)) _pick(existing),
+    if (all.isNotEmpty && _p(3)) _pick(all),
+  ]..shuffle(_r);
+  final Map<String, List<SrsFieldEdit>> regs = <String, List<SrsFieldEdit>>{};
+  final Set<String> ids = <String>{};
+  for (final SrsFieldEdit e in existing) {
+    (regs[e.registerKey] ??= <SrsFieldEdit>[]).add(e);
+    ids.add(e.id);
+  }
+  final List<bool> landed = <bool>[];
+  final List<String> deleted = <String>[];
+  for (final SrsFieldEdit edit in incoming) {
+    final List<SrsFieldEdit> reg = regs[edit.registerKey] ??= <SrsFieldEdit>[];
+    final bool ok =
+        !ids.contains(edit.id) && !reg.any((SrsFieldEdit b) => b.dominates(edit));
+    landed.add(ok);
+    if (!ok) continue;
+    final List<String> dominated = <String>[
+      for (final SrsFieldEdit a in reg)
+        if (edit.dominates(a)) a.id,
+    ];
+    reg.removeWhere((SrsFieldEdit a) => dominated.contains(a.id));
+    ids.removeAll(dominated);
+    deleted.addAll(dominated);
+    reg.add(edit);
+    ids.add(edit.id);
+  }
+  return <String, Object?>{
+    'kind': 'landing',
+    'existing': <String>[for (final SrsFieldEdit e in existing) e.canonical()],
+    'incoming': <String>[for (final SrsFieldEdit e in incoming) e.canonical()],
+    'expect': <String, Object?>{'landed': landed, 'deleted': deleted},
+  };
+}
+
+/// 导入判重（旧 srsImportEquivalent，sameCard: true）：一条导入日志对一组原生日志。
+Map<String, Object?> _importCase() {
+  final int at = _t0 + _r.nextInt(1 << 30);
+  SrsReviewLog log(String id, String origin, int occurredAt, int? ankiId) => SrsReviewLog(
+    id: id,
+    profileUid: 'p',
+    cardId: _pick(<String>['c', 'pred']),
+    kind: _pick(<String>[SrsLogKind.review, SrsLogKind.review, SrsLogKind.review, SrsLogKind.review, SrsLogKind.manual, 'futureKind']),
+    hlc: Hlc(occurredAt, 0, origin == SrsLogOrigin.anki ? 'anki' : 'A'),
+    occurredAt: occurredAt,
+    timeSource: SrsTimeSource.wall,
+    origin: origin,
+    reviewType: _pick(<String>[
+      SrsReviewType.learn,
+      SrsReviewType.review,
+      SrsReviewType.relearn,
+      SrsReviewType.review,
+      SrsReviewType.review,
+      SrsReviewType.manual,
+      SrsReviewType.filtered,
+    ]),
+    rating: _p(8) ? null : 1 + _r.nextInt(2),
+    ankiRevlogId: ankiId,
+  );
+  final List<SrsReviewLog> natives = <SrsReviewLog>[
+    for (int i = 0; i < _r.nextInt(5); i++)
+      log('n$i', _pick(<String>[SrsLogOrigin.fushi, SrsLogOrigin.fushi, SrsLogOrigin.anki]),
+          at + _r.nextInt(5000) - 2500, _p(3) ? at : null),
+  ];
+  final SrsReviewLog? src = natives.isEmpty ? null : _pick(natives);
+  final int near = src?.occurredAt ?? at;
+  final SrsReviewLog raw = log(
+    'imp',
+    SrsLogOrigin.anki,
+    near,
+    _p(8) ? null : near + _pick(<int>[0, 1, -1, 999, -1000, 1000, 1001, -1001, 2500]),
+  );
+  // 多数照着一条原生日志镜像（同评分、评分类），等价 / 不等价两侧都要有。
+  final SrsReviewLog imported = src != null && !_p(3)
+      ? SrsReviewLog(
+          id: 'imp',
+          profileUid: 'p',
+          cardId: 'c',
+          kind: _p(6) ? SrsLogKind.manual : SrsLogKind.review,
+          hlc: raw.hlc,
+          occurredAt: raw.occurredAt,
+          timeSource: SrsTimeSource.wall,
+          origin: SrsLogOrigin.anki,
+          reviewType: _pick(<String>[SrsReviewType.review, SrsReviewType.learn, SrsReviewType.manual]),
+          rating: _p(5) ? 1 + _r.nextInt(4) : src.rating,
+          ankiRevlogId: raw.ankiRevlogId,
+        )
+      : raw;
+  return <String, Object?>{
+    'kind': 'import',
+    'imported': imported.canonical(),
+    'natives': <String>[for (final SrsReviewLog l in natives) l.canonical()],
+    'expect': natives.any((SrsReviewLog n) => srsImportEquivalent(imported, n, sameCard: true)),
+  };
+}
+
+/// 卡片历史的钳位标记（旧 SrsCardHistory.sortKeyOf：钳位后的物理时间 < HLC 物理时间）。
+Map<String, Object?> _clampCase() {
+  final List<SrsReviewLog> logs = <SrsReviewLog>[];
+  final Map<String, int> server = <String, int>{};
+  int clock = _t0 + _r.nextInt(1 << 28);
+  for (int i = 0; i < 1 + _r.nextInt(8); i++) {
+    clock += _r.nextInt(3) == 0 ? 0 : _r.nextInt(10000000);
+    final String id = 'L$i';
+    logs.add(
+      SrsReviewLog(
+        id: id,
+        profileUid: 'p',
+        cardId: 'c',
+        kind: SrsLogKind.review,
+        hlc: Hlc(clock, 0, _pick(_writers)),
+        occurredAt: clock,
+        timeSource: SrsTimeSource.wall,
+        origin: SrsLogOrigin.fushi,
+        reviewType: SrsReviewType.review,
+        rating: 3,
+        result: SrsScheduleResult.initial,
+      ),
+    );
+    switch (_r.nextInt(4)) {
+      case 0:
+        server[id] = clock - srsClockToleranceMs - 1 - _r.nextInt(1000000);
+      case 1:
+        server[id] = clock - srsClockToleranceMs;
+      case 2:
+        server[id] = clock + 5;
+    }
+  }
+  final SrsCardHistory h = SrsCardHistory(logs, serverTimeOf: (String e) => server[e]);
+  return <String, Object?>{
+    'kind': 'clamp',
+    'logs': <String>[for (final SrsReviewLog l in logs) l.canonical()],
+    'server': server,
+    'expect': <String, Object?>{
+      'all': <String>[for (final SrsReviewLog l in h.all) l.id],
+      'clamped': <String>[
+        for (final SrsReviewLog l in h.all)
+          if (h.sortKeyOf(l).physical < l.hlc.physical) l.id,
+      ],
+    },
+  };
+}
+
+/// 坏数据：修改记录本身解不出来（与 SrsFieldEdit.fromJson 判坏的同一类）。
+Map<String, Object?> _malformedCase() {
+  final SrsFieldEdit ok = SrsFieldEdit(
+    profileUid: 'p',
+    entityKind: SrsEntityKind.note,
+    entityId: 'n',
+    fieldKey: 'f/fa',
+    dot: const SrsDot('A', 1),
+    ctx: SrsCausalContext.empty(),
+    value: 'x',
+    hlc: Hlc(_t0, 0, 'A'),
+    timeSource: SrsTimeSource.wall,
+  );
+  final Map<String, Object?> j = ok.toJson();
+  final List<Map<String, Object?>> bads = <Map<String, Object?>>[
+    <String, Object?>{...j}..remove('p'),
+    <String, Object?>{...j, 'k': 'nope'},
+    <String, Object?>{...j, 'k': 5},
+    <String, Object?>{...j, 's': '1'},
+    <String, Object?>{...j, 's': 1.0},
+    <String, Object?>{...j, 'hlc': 'bad'},
+    <String, Object?>{...j, 'hlc': '1:x:A'},
+    <String, Object?>{...j, 'id': 'wrong-id'},
+    <String, Object?>{...j, 'ts': 3},
+    <String, Object?>{...j, 'w': null},
+    <String, Object?>{...j, 'e': 1},
+    // 能解出来的「怪」形状：id 不是字符串（不校验）、ctx 不是对象（当空）、ts 不认识（当 wall）。
+    <String, Object?>{...j, 'id': 7},
+    <String, Object?>{...j, 'ctx': 'x'},
+    <String, Object?>{...j, 'ctx': <String, Object?>{'vv': <String, Object?>{'A': 1.0, 'B': -3, 'C': 2}, 'cloud': <String, Object?>{'C': <Object?>[3, 'x', 5, 1.0], 'D': 'x'}}},
+    <String, Object?>{...j, 'ts': 'futureSource', 'm': 1},
+    <String, Object?>{...j}..remove('id'),
+  ];
+  final Map<String, Object?> pick = _pick(bads);
+  final String text = srsCanonicalJson(pick);
+  Object? expect;
+  try {
+    final SrsEntityEdits edits = SrsEntityEdits.build(<SrsFieldEdit>[
+      SrsFieldEdit.fromJson((jsonDecode(text) as Map).cast<String, Object?>()),
+    ]);
+    expect = <String, Object?>{'regs': _regs(edits)};
+  } on Object catch (e) {
+    expect = <String, Object?>{'error': '${e.runtimeType}'};
+  }
+  return <String, Object?>{
+    'kind': 'edits',
+    'edits': <String>[text],
+    'server': <String, int>{},
+    'expect': expect,
+  };
+}
+
+void main() {
+  final List<Map<String, Object?>> vectors = <Map<String, Object?>>[];
+  for (int i = 0; i < 2400; i++) {
+    final int m = i % 24;
+    vectors.add(switch (m) {
+      < 7 => _entityCase(SrsEntityKind.note),
+      < 10 => _entityCase(SrsEntityKind.noteType),
+      < 13 => _entityCase(SrsEntityKind.deck),
+      13 => _entityCase(SrsEntityKind.profile),
+      < 17 => _cardCase(),
+      < 19 => _landingCase(),
+      < 21 => _importCase(),
+      < 23 => _clampCase(),
+      _ => _malformedCase(),
+    });
+  }
+  final Map<String, int> stats = <String, int>{};
+  for (final Map<String, Object?> v in vectors) {
+    final Object? e = v['expect'];
+    final String k = '${v['kind']}${e is Map && e['error'] != null ? '!error' : ''}';
+    stats[k] = (stats[k] ?? 0) + 1;
+  }
+  final File out = File('test/registers/fixtures/register_vectors.json');
+  out.parent.createSync(recursive: true);
+  out.writeAsStringSync(jsonEncode(<String, Object?>{'vectors': vectors}));
+  stdout.writeln('wrote ${vectors.length} vectors -> ${out.path}');
+  stdout.writeln(stats);
+}

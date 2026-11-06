@@ -32,127 +32,150 @@ void main() {
 ''';
 
   testWidgets(
-      'cue-advance across an image fires onImageDetected in a real WebView',
-      (WidgetTester tester) async {
-    bool imageDetected = false;
-    final Completer<void> driven = Completer<void>();
+    'cue-advance across an image fires onImageDetected in a real WebView',
+    (WidgetTester tester) async {
+      bool imageDetected = false;
+      final Completer<void> driven = Completer<void>();
 
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: InAppWebView(
-          initialData: InAppWebViewInitialData(data: html),
-          onWebViewCreated: (InAppWebViewController controller) {
-            controller.addJavaScriptHandler(
-              handlerName: 'onImageDetected',
-              callback: (List<dynamic> _) {
-                imageDetected = true;
-                return null;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InAppWebView(
+              initialData: InAppWebViewInitialData(data: html),
+              onWebViewCreated: (InAppWebViewController controller) {
+                controller.addJavaScriptHandler(
+                  handlerName: 'onImageDetected',
+                  callback: (List<dynamic> _) {
+                    imageDetected = true;
+                    return null;
+                  },
+                );
               },
-            );
-          },
-          onLoadStop: (InAppWebViewController controller, WebUri? url) async {
-            // 注入真实 bridge（含 __fushiHighlight）。
-            await AudiobookBridge.inject(controller);
-            // 先高亮图片前一句（建立 __fushiPrevHighlight 锚点）。
-            await controller.evaluateJavascript(
-              source: "window.__fushiHighlight('[data-fushi-sid=s1]', false);",
-            );
-            // 再推进到图片后一句 —— 中间隔着 svg，应触发检测。
-            await controller.evaluateJavascript(
-              source: "window.__fushiHighlight('[data-fushi-sid=s2]', false);",
-            );
-            if (!driven.isCompleted) driven.complete();
-          },
+              onLoadStop: (InAppWebViewController controller, WebUri? url) async {
+                // 注入真实 bridge（含 __fushiHighlight）。
+                await AudiobookBridge.inject(controller);
+                // 先高亮图片前一句（建立 __fushiPrevHighlight 锚点）。
+                await controller.evaluateJavascript(
+                  source:
+                      "window.__fushiHighlight('[data-fushi-sid=s1]', false);",
+                );
+                // 再推进到图片后一句 —— 中间隔着 svg，应触发检测。
+                await controller.evaluateJavascript(
+                  source:
+                      "window.__fushiHighlight('[data-fushi-sid=s2]', false);",
+                );
+                if (!driven.isCompleted) driven.complete();
+              },
+            ),
+          ),
         ),
-      ),
-    ));
+      );
 
-    // 等 WebView 加载 + onLoadStop 把两次推进驱动完。
-    for (int i = 0; i < 150 && !driven.isCompleted; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    expect(driven.isCompleted, isTrue, reason: 'WebView 未在 15s 内完成加载/驱动');
-    await tester.pump(const Duration(seconds: 1));
+      // 等 WebView 加载 + onLoadStop 把两次推进驱动完。
+      for (int i = 0; i < 150 && !driven.isCompleted; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(driven.isCompleted, isTrue, reason: 'WebView 未在 15s 内完成加载/驱动');
+      await tester.pump(const Duration(seconds: 1));
 
-    expect(imageDetected, isTrue,
-        reason: 'cue 推进从 s1 跨过 svg 到 s2 必须触发 onImageDetected（旧 IO 视口'
-            '检测在离散翻页下漏报，新锚点间 DOM 检测应确定性命中）');
-  });
+      expect(
+        imageDetected,
+        isTrue,
+        reason:
+            'cue 推进从 s1 跨过 svg 到 s2 必须触发 onImageDetected（旧 IO 视口'
+            '检测在离散翻页下漏报，新锚点间 DOM 检测应确定性命中）',
+      );
+    },
+  );
 
   testWidgets(
-      'selector cue: crossing an image reveals the IMAGE (not next text) when reveal=true',
-      (WidgetTester tester) async {
-    final Completer<void> driven = Completer<void>();
-    String? revealTarget;
+    'selector cue: crossing an image reveals the IMAGE (not next text) when reveal=true',
+    (WidgetTester tester) async {
+      final Completer<void> driven = Completer<void>();
+      String? revealTarget;
 
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: InAppWebView(
-          initialData: InAppWebViewInitialData(data: html),
-          onWebViewCreated: (InAppWebViewController controller) {
-            controller.addJavaScriptHandler(
-              handlerName: 'reportReveal',
-              callback: (List<dynamic> args) {
-                revealTarget = args.isNotEmpty ? args.first as String? : null;
-                return null;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InAppWebView(
+              initialData: InAppWebViewInitialData(data: html),
+              onWebViewCreated: (InAppWebViewController controller) {
+                controller.addJavaScriptHandler(
+                  handlerName: 'reportReveal',
+                  callback: (List<dynamic> args) {
+                    revealTarget = args.isNotEmpty
+                        ? args.first as String?
+                        : null;
+                    return null;
+                  },
+                );
               },
-            );
-          },
-          onLoadStop: (InAppWebViewController controller, WebUri? url) async {
-            await controller.evaluateJavascript(
-                source: 'window.fushiReader={scrollToTarget:function(t){'
-                    "window.flutter_inappwebview.callHandler('reportReveal',"
-                    '(t&&(t.id||t.tagName))||null);}};');
-            await AudiobookBridge.inject(controller);
-            await controller.evaluateJavascript(
-                source:
-                    "window.__fushiHighlight('[data-fushi-sid=s1]', true);");
-            await controller.evaluateJavascript(
-                source:
-                    "window.__fushiHighlight('[data-fushi-sid=s2]', true);");
-            if (!driven.isCompleted) driven.complete();
-          },
+              onLoadStop: (InAppWebViewController controller, WebUri? url) async {
+                await controller.evaluateJavascript(
+                  source:
+                      'window.fushiReader={scrollToTarget:function(t){'
+                      "window.flutter_inappwebview.callHandler('reportReveal',"
+                      '(t&&(t.id||t.tagName))||null);}};',
+                );
+                await AudiobookBridge.inject(controller);
+                await controller.evaluateJavascript(
+                  source:
+                      "window.__fushiHighlight('[data-fushi-sid=s1]', true);",
+                );
+                await controller.evaluateJavascript(
+                  source:
+                      "window.__fushiHighlight('[data-fushi-sid=s2]', true);",
+                );
+                if (!driven.isCompleted) driven.complete();
+              },
+            ),
+          ),
         ),
-      ),
-    ));
+      );
 
-    for (int i = 0; i < 150 && !driven.isCompleted; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    await tester.pump(const Duration(seconds: 1));
-    expect(revealTarget, 'pic',
-        reason: 'cue 推进跨过插图、reveal=true 时应把视口滚到插图(id=pic)而非 s2 文字');
-  });
+      for (int i = 0; i < 150 && !driven.isCompleted; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await tester.pump(const Duration(seconds: 1));
+      expect(
+        revealTarget,
+        'pic',
+        reason: 'cue 推进跨过插图、reveal=true 时应把视口滚到插图(id=pic)而非 s2 文字',
+      );
+    },
+  );
 
   testWidgets(
-      'sentenceAudioHighlight cue: advancing across an image fires onImageDetected (BUG-007 gap1)',
-      (WidgetTester tester) async {
-    bool imageDetected = false;
-    String? revealTarget;
-    final Completer<void> driven = Completer<void>();
+    'sentenceAudioHighlight cue: advancing across an image fires onImageDetected (BUG-007 gap1)',
+    (WidgetTester tester) async {
+      bool imageDetected = false;
+      String? revealTarget;
+      final Completer<void> driven = Completer<void>();
 
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: InAppWebView(
-          initialData: InAppWebViewInitialData(data: html),
-          onWebViewCreated: (InAppWebViewController controller) {
-            controller.addJavaScriptHandler(
-              handlerName: 'onImageDetected',
-              callback: (List<dynamic> _) {
-                imageDetected = true;
-                return null;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InAppWebView(
+              initialData: InAppWebViewInitialData(data: html),
+              onWebViewCreated: (InAppWebViewController controller) {
+                controller.addJavaScriptHandler(
+                  handlerName: 'onImageDetected',
+                  callback: (List<dynamic> _) {
+                    imageDetected = true;
+                    return null;
+                  },
+                );
+                controller.addJavaScriptHandler(
+                  handlerName: 'reportReveal',
+                  callback: (List<dynamic> a) {
+                    revealTarget = a.isNotEmpty ? a.first as String? : null;
+                    return null;
+                  },
+                );
               },
-            );
-            controller.addJavaScriptHandler(
-              handlerName: 'reportReveal',
-              callback: (List<dynamic> a) {
-                revealTarget = a.isNotEmpty ? a.first as String? : null;
-                return null;
-              },
-            );
-          },
-          onLoadStop: (InAppWebViewController controller, WebUri? url) async {
-            await controller.evaluateJavascript(source: '''
+              onLoadStop: (InAppWebViewController controller, WebUri? url) async {
+                await controller.evaluateJavascript(
+                  source: '''
               window.__fushiCssHighlightsSupported = true;
               window.fushiReader = {
                 cueRangesMap: new Map(),
@@ -169,28 +192,39 @@ void main() {
                 window.fushiReader.cueRangesMap.set('c1', [rng('[data-fushi-sid=s1]')]);
                 window.fushiReader.cueRangesMap.set('c2', [rng('[data-fushi-sid=s2]')]);
               })();
-            ''');
-            await AudiobookBridge.inject(controller);
-            await controller.evaluateJavascript(
-                source:
-                    "window.__fushiHighlightSentenceAudioCueById('c1', false);");
-            await controller.evaluateJavascript(
-                source:
-                    "window.__fushiHighlightSentenceAudioCueById('c2', true);");
-            if (!driven.isCompleted) driven.complete();
-          },
+            ''',
+                );
+                await AudiobookBridge.inject(controller);
+                await controller.evaluateJavascript(
+                  source:
+                      "window.__fushiHighlightSentenceAudioCueById('c1', false);",
+                );
+                await controller.evaluateJavascript(
+                  source:
+                      "window.__fushiHighlightSentenceAudioCueById('c2', true);",
+                );
+                if (!driven.isCompleted) driven.complete();
+              },
+            ),
+          ),
         ),
-      ),
-    ));
+      );
 
-    for (int i = 0; i < 150 && !driven.isCompleted; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    await tester.pump(const Duration(seconds: 1));
-    expect(imageDetected, isTrue,
+      for (int i = 0; i < 150 && !driven.isCompleted; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await tester.pump(const Duration(seconds: 1));
+      expect(
+        imageDetected,
+        isTrue,
         reason:
-            'sentenceAudioHighlight cue 从 s1 跨过 svg 推进到 s2 必须触发 onImageDetected');
-    expect(revealTarget, 'pic',
-        reason: 'sentenceAudioHighlight 跨图、reveal=true 时也应把视口滚到插图');
-  });
+            'sentenceAudioHighlight cue 从 s1 跨过 svg 推进到 s2 必须触发 onImageDetected',
+      );
+      expect(
+        revealTarget,
+        'pic',
+        reason: 'sentenceAudioHighlight 跨图、reveal=true 时也应把视口滚到插图',
+      );
+    },
+  );
 }

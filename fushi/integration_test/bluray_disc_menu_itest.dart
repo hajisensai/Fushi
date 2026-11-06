@@ -29,7 +29,8 @@ import 'test_helpers.dart';
 /// FUSHI_BLURAY_MENU_ROOT: playable disc root (containing BDMV).
 /// FUSHI_BLURAY_MENU_ENTRY: imported representative MPLS basename, e.g. 00001.
 /// FUSHI_BLURAY_MENU_EXPECTED: MPLS selected by the authored menu.
-/// FUSHI_BLURAY_MENU_KEYS: comma-separated up/down/left/right/enter/escape.
+/// FUSHI_BLURAY_MENU_KEYS: comma-separated up/down/left/right/enter/return
+/// (return = the disc's own Return key, Backspace; Esc is the session's back).
 /// FUSHI_BLURAY_MENU_REPLAY_KEYS: replay from Top after an override, default enter.
 /// FUSHI_BLURAY_MENU_VERIFY_TRACKS: additionally exercise persisted text/Off versus
 /// authored PGS/audio; the initial key sequence must enable the desired tracks.
@@ -357,7 +358,7 @@ const Map<String, LogicalKeyboardKey> _keys = <String, LogicalKeyboardKey>{
   'left': LogicalKeyboardKey.arrowLeft,
   'right': LogicalKeyboardKey.arrowRight,
   'enter': LogicalKeyboardKey.enter,
-  'escape': LogicalKeyboardKey.escape,
+  'return': LogicalKeyboardKey.backspace,
 };
 
 bool _isTopMenu(VideoDiscNavigationState? state) =>

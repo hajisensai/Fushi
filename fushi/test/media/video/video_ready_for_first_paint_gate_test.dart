@@ -44,33 +44,48 @@ void main() {
       expect(
         VideoPlayerController.readyForFirstPaint(1920, 1080, true),
         isFalse,
-        reason: '这正是「进度条已缓冲但还在加载」的场景：首帧解码出画但 mpv 仍缓冲，'
+        reason:
+            '这正是「进度条已缓冲但还在加载」的场景：首帧解码出画但 mpv 仍缓冲，'
             '若此刻挂载 Video，media_kit 缓冲圈会接力成第二个圈',
       );
     });
 
     test('缓冲结束但首帧未出画 -> 仍未就绪（无稳定帧不挂载）', () {
       expect(
-          VideoPlayerController.readyForFirstPaint(null, null, false), isFalse);
+        VideoPlayerController.readyForFirstPaint(null, null, false),
+        isFalse,
+      );
       expect(
-          VideoPlayerController.readyForFirstPaint(1920, null, false), isFalse);
+        VideoPlayerController.readyForFirstPaint(1920, null, false),
+        isFalse,
+      );
       expect(VideoPlayerController.readyForFirstPaint(0, 0, false), isFalse);
     });
 
     test('未解码且仍在缓冲 -> 未就绪', () {
       expect(
-          VideoPlayerController.readyForFirstPaint(null, null, true), isFalse);
+        VideoPlayerController.readyForFirstPaint(null, null, true),
+        isFalse,
+      );
     });
 
     test('纯音频已打开且未缓冲 -> 就绪（没有首帧可等）', () {
       expect(
-        VideoPlayerController.readyForFirstPaint(null, null, false,
-            audioOnlyOpened: true),
+        VideoPlayerController.readyForFirstPaint(
+          null,
+          null,
+          false,
+          audioOnlyOpened: true,
+        ),
         isTrue,
       );
       expect(
-        VideoPlayerController.readyForFirstPaint(null, null, true,
-            audioOnlyOpened: true),
+        VideoPlayerController.readyForFirstPaint(
+          null,
+          null,
+          true,
+          audioOnlyOpened: true,
+        ),
         isFalse,
         reason: '纯音频仍须等缓冲结束',
       );
@@ -83,31 +98,42 @@ void main() {
     test('isReadyForFirstPaint 组合首帧 + 非缓冲', () {
       expect(src.contains('bool get isReadyForFirstPaint'), isTrue);
       expect(
-        RegExp(r'readyForFirstPaint\(\s*videoWidth,\s*videoHeight,\s*isBuffering,')
-            .hasMatch(src),
+        RegExp(
+          r'readyForFirstPaint\(\s*videoWidth,\s*videoHeight,\s*isBuffering,',
+        ).hasMatch(src),
         isTrue,
         reason: '就绪 = 首帧已出画 && 未缓冲，读同一 player.state.buffering 真值',
       );
-      expect(src.contains('audioOnlyOpened: isAudioOnly && _mediaOpened'),
-          isTrue,
-          reason: '纯音频没有首帧：必须以「媒体已打开」代替，否则每首都白等兜底定时器');
+      expect(
+        src.contains('audioOnlyOpened: isAudioOnly && _mediaOpened'),
+        isTrue,
+        reason: '纯音频没有首帧：必须以「媒体已打开」代替，否则每首都白等兜底定时器',
+      );
       expect(src.contains('bool get isBuffering'), isTrue);
     });
 
     test('始终挂缓冲订阅，翻转即 notifyListeners 驱动就绪重评', () {
-      expect(src.contains('_bufferingReadySub'), isTrue,
-          reason: '缓冲结束不一定伴随宽高/播放态变化，须独立订阅驱动就绪重评，'
-              '否则页级加载层只能等兜底定时器让位');
+      expect(
+        src.contains('_bufferingReadySub'),
+        isTrue,
+        reason:
+            '缓冲结束不一定伴随宽高/播放态变化，须独立订阅驱动就绪重评，'
+            '否则页级加载层只能等兜底定时器让位',
+      );
       // 该订阅必须在 dispose / 换集前取消，避免向已销毁 State 通知（对齐 widthSub）。
       final int cancels = '_bufferingReadySub?.cancel()'.allMatches(src).length;
-      expect(cancels >= 2, isTrue,
-          reason: '换集清理 + dispose 两处都要取消，防泄漏 / 向旧 player 通知');
+      expect(
+        cancels >= 2,
+        isTrue,
+        reason: '换集清理 + dispose 两处都要取消，防泄漏 / 向旧 player 通知',
+      );
     });
   });
 
   group('页面首开就绪门控 (TODO-1297)', () {
-    final String src =
-        read('lib/src/pages/implementations/video_fushi_page.dart');
+    final String src = read(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    );
 
     test('首开就绪判据用 isReadyForFirstPaint（含缓冲结束），非仅 hasFirstFrame', () {
       expect(

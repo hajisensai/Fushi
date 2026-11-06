@@ -4,7 +4,10 @@ import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_labels.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 「快捷键 N」动作选择的结果。
 ///
@@ -44,18 +47,17 @@ Future<VideoCustomActionPick?> showVideoCustomActionPicker({
           title: Text(t.video_control_custom_action_none),
           leading: const FushiIcon(Icons.block),
           selected: current == null,
-          onTap: () => Navigator.of(dialogContext).pop(
-            const VideoCustomActionPick(null),
-          ),
+          onTap: () => Navigator.of(
+            dialogContext,
+          ).pop(const VideoCustomActionPick(null)),
         ),
         for (final ShortcutAction action in kVideoAssignableActions)
           FushiListItem(
             title: Text(action.label),
             leading: FushiIcon(action.buttonIcon ?? Icons.bolt_outlined),
             selected: current == action,
-            onTap: () => Navigator.of(dialogContext).pop(
-              VideoCustomActionPick(action),
-            ),
+            onTap: () =>
+                Navigator.of(dialogContext).pop(VideoCustomActionPick(action)),
           ),
       ],
     ),

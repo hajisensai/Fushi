@@ -48,12 +48,11 @@ JimakuFile? pickBestSubtitleFile(
   required int episode,
   required bool soleTarget,
   String? preferredLanguage,
-}) =>
-    chooseJimakuFileForEpisode(
-      JimakuEpisodeIndex.fromFiles(files, preferredLanguage: preferredLanguage),
-      episode: episode,
-      soleTarget: soleTarget,
-    ).file;
+}) => chooseJimakuFileForEpisode(
+  JimakuEpisodeIndex.fromFiles(files, preferredLanguage: preferredLanguage),
+  episode: episode,
+  soleTarget: soleTarget,
+).file;
 
 /// 批量下载只能在所选来源的预检查已经成功完成且确有可解析字幕时开放。
 ///

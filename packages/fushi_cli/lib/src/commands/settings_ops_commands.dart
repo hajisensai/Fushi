@@ -107,10 +107,11 @@ const List<CtlCommandSpec> ankiSyncClientCommands = <CtlCommandSpec>[
   ),
   CtlCommandSpec(
     name: 'sync-use',
-    summary: '切换制卡后端到 / 离开内置 Anki 同步客户端',
+    summary: '切换制卡后端到 / 离开内置 Anki 同步客户端（on 需 --yes 确认风险）',
     usage: '<on|off>',
+    configure: _configureYes,
     build: _buildAnkiSyncUse,
-    render: _renderSetting,
+    render: _renderAnkiSyncUse,
   ),
   CtlCommandSpec(
     name: 'sync-login',
@@ -198,6 +199,11 @@ String _renderSetting(Object? data) =>
 String _renderAudioRemoved(Object? data) => '已删除';
 
 String _renderActionResult(Object? data) => renderCtlJson(_actionResult(data));
+
+/// `sync-use`：off 回的是设置项应答（`键 = 值`），on 回的是动作应答（状态 JSON）。
+String _renderAnkiSyncUse(Object? data) => data is Map && data['ran'] == true
+    ? _renderActionResult(data)
+    : _renderSetting(data);
 
 // ── audiosrc ────────────────────────────────────────────────────────────────
 
@@ -464,16 +470,25 @@ const String _ankiSync = 'card_creation.anki.sync_client';
 CtlRequestSpec _buildAnkiSyncStatus(CtlCommandContext context) =>
     _run('$_ankiSync.status');
 
+/// 启用与设置页同一道闸：设置页先弹「启用 Anki 同步？」警告确认，这里就要
+/// `--yes`，走带确认的 `.enable` 动作（直接写开关为 true 会被 app 拒）。关闭不用确认。
 CtlRequestSpec _buildAnkiSyncUse(CtlCommandContext context) {
-  final String value = switch (context.positional(0, 'on|off')) {
-    'on' => 'true',
-    'off' => 'false',
-    final String other => throw CtlUsageError('取 on / off，收到「$other」'),
-  };
-  return CtlRequestSpec.put(
-    _settingPath('$_ankiSync.enabled'),
-    body: <String, Object?>{'value': value, 'source': 'argv'},
-  );
+  switch (context.positional(0, 'on|off')) {
+    case 'on':
+      _requireYes(
+        context,
+        '启用内置 Anki 同步客户端（实验功能：同步到 AnkiWeb 不被第三方客户端允许，'
+        '可能失败或危及账号）',
+      );
+      return _run('$_ankiSync.enable', confirm: true);
+    case 'off':
+      return CtlRequestSpec.put(
+        _settingPath('$_ankiSync.enabled'),
+        body: const <String, Object?>{'value': 'false', 'source': 'argv'},
+      );
+    case final String other:
+      throw CtlUsageError('取 on / off，收到「$other」');
+  }
 }
 
 void _configureAnkiLogin(ArgParser parser) {

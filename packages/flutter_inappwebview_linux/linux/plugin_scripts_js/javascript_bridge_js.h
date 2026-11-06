@@ -63,6 +63,11 @@ window.)JS" +
   var _Array_slice;
   var _UserMessageHandler;
   var _postMessage;
+  var _Promise_then;
+  // Fushi bridge lock token (docs/specs/2026-10-23-dictionary-script-sandbox.md).
+  // Lives only in this closure, never on window, so other frames (sandboxed
+  // dictionary iframes have an opaque origin) cannot read it.
+  var _fushiBridgeToken = null;
   
   try {
     _JSON_stringify = window.JSON.stringify;
@@ -71,20 +76,40 @@ window.)JS" +
     _UserMessageHandler = window.webkit.messageHandlers['callHandler'];
     _postMessage = _UserMessageHandler.postMessage;
     _postMessage.call = window.Function.prototype.call;
+    _Promise_then = window.Promise.prototype.then;
+    _Promise_then.call = window.Function.prototype.call;
   } catch (_) { return; }
+
+  // Every JS->native call goes through here so the lock token is always attached.
+  function _fushiPostToNative(handlerName, argsJson) {
+    return _postMessage.call(_UserMessageHandler, {
+      'handlerName': handlerName,
+      '_bridgeSecret': bridgeSecret,
+      'args': argsJson,
+      '_windowId': )JS" +
+           WINDOW_ID_VARIABLE_JS_SOURCE() + R"JS(,
+      '_isMainFrame': (window.top === window),
+      '_fushiBridgeToken': _fushiBridgeToken
+    });
+  }
   
   window.)JS" +
            get_JAVASCRIPT_BRIDGE_NAME() + R"JS(.callHandler = function() {
-    var _windowId = )JS" +
-           WINDOW_ID_VARIABLE_JS_SOURCE() + R"JS(;
+    var handlerName = arguments[0];
+    if (handlerName === '_fushiLockBridge') {
+      // Intercepted by the bridge: native answers with the new token (or false
+      // when already locked / not the top frame). Resolve with the dedicated
+      // value only on success; anything else means "not locked".
+      return _Promise_then.call(_fushiPostToNative('_fushiLockBridge', '[]'), function(token) {
+        if (_fushiBridgeToken === null && typeof token === 'string' && token.length >= 32) {
+          _fushiBridgeToken = token;
+          return 'fushi-bridge-locked-v1';
+        }
+        return false;
+      });
+    }
     // Use with_reply API - postMessage returns a Promise directly
-    return _postMessage.call(_UserMessageHandler, {
-      'handlerName': arguments[0],
-      '_bridgeSecret': bridgeSecret,
-      'args': _JSON_stringify(_Array_slice.call(arguments, 1)),
-      '_windowId': _windowId,
-      '_isMainFrame': (window.top === window)
-    });
+    return _fushiPostToNative(handlerName, _JSON_stringify(_Array_slice.call(arguments, 1)));
   };
 })(window);
 )JS";

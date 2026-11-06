@@ -38,33 +38,34 @@ class _Repo extends AnkiConnectRepository {
 
   @override
   Future<AnkiSettings> loadSettings() async => const AnkiSettings(
-        selectedDeckId: 1,
-        selectedNoteTypeId: 2,
-        availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
-        availableNoteTypes: <AnkiNoteType>[
-          AnkiNoteType(
-            id: 2,
-            name: 'Fushi',
-            fields: <String>['Expression', 'Reading'],
-          ),
-        ],
-      );
+    selectedDeckId: 1,
+    selectedNoteTypeId: 2,
+    availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
+    availableNoteTypes: <AnkiNoteType>[
+      AnkiNoteType(
+        id: 2,
+        name: 'Fushi',
+        fields: <String>['Expression', 'Reading'],
+      ),
+    ],
+  );
 }
 
 void main() {
   group('BUG-1799 findDeletedNotes 只报「确认已删除」', () {
     test('Anki 应答里缺席的 note 被判为已删除', () async {
       final service = _NotesService(present: <int>{11, 33});
-      final Set<int> deleted =
-          await _Repo(service: service).findDeletedNotes(<int>{11, 22, 33});
-      expect(deleted, <int>{22},
-          reason: '只有 22 不在应答里，它才是被用户删掉的那张');
+      final Set<int> deleted = await _Repo(
+        service: service,
+      ).findDeletedNotes(<int>{11, 22, 33});
+      expect(deleted, <int>{22}, reason: '只有 22 不在应答里，它才是被用户删掉的那张');
     });
 
     test('全部都还在时返回空集（一个徽章都不该清）', () async {
       final service = _NotesService(present: <int>{11, 22});
-      final Set<int> deleted =
-          await _Repo(service: service).findDeletedNotes(<int>{11, 22});
+      final Set<int> deleted = await _Repo(
+        service: service,
+      ).findDeletedNotes(<int>{11, 22});
       expect(deleted, isEmpty);
     });
 
@@ -77,8 +78,9 @@ void main() {
 
     test('空输入不打网络', () async {
       final service = _NotesService();
-      final Set<int> deleted =
-          await _Repo(service: service).findDeletedNotes(<int>{});
+      final Set<int> deleted = await _Repo(
+        service: service,
+      ).findDeletedNotes(<int>{});
       expect(deleted, isEmpty);
       expect(service.queries, isEmpty);
     });
@@ -89,18 +91,19 @@ void main() {
         present: <int>{},
         failure: const SocketExceptionStub(),
       );
-      final Set<int> deleted =
-          await _Repo(service: service).findDeletedNotes(<int>{11, 22});
-      expect(deleted, isEmpty,
-          reason: 'Anki 没开着时必须一张都不清，否则满屏徽章会被误清空');
+      final Set<int> deleted = await _Repo(
+        service: service,
+      ).findDeletedNotes(<int>{11, 22});
+      expect(deleted, isEmpty, reason: 'Anki 没开着时必须一张都不清，否则满屏徽章会被误清空');
     });
 
     test('业务错误（牌组/字段异常）同样返回空集', () async {
       final service = _NotesService(
         failure: StateError('AnkiConnect: model not found'),
       );
-      final Set<int> deleted =
-          await _Repo(service: service).findDeletedNotes(<int>{7});
+      final Set<int> deleted = await _Repo(
+        service: service,
+      ).findDeletedNotes(<int>{7});
       expect(deleted, isEmpty);
     });
   });
@@ -122,8 +125,7 @@ class _DegradedRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      const MineOutcome(MineResult.error);
+  }) async => const MineOutcome(MineResult.error);
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;

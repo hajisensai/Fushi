@@ -1,8 +1,12 @@
 # third_party/libplacebo-win 的版本守卫构建（Windows x64，仅 D3D11 后端 + shaderc）。
 #
-# 消费模型与 ffmpeg-min.yml 相同：workflow_dispatch 手动跑 → 下载 artifact → 把单个 bin/*.dll、
-# include/libplacebo/（含生成的 config.h）、SHA256SUMS 提交进 third_party/libplacebo-win/
-# （UPSTREAM.md 记版本与哈希）。app 构建不从网络拉，fork 运行期 LoadLibrary 动态加载。
+# 消费模型：workflow_dispatch 手动跑 → 下载 artifact → 把 include/libplacebo/（含生成的
+# config.h）、bin/SHA256SUMS、UPSTREAM.md 的版本与哈希更新进 third_party/libplacebo-win/ 并提交；
+# 单个 bin/*.dll **不入 git**（2026-11-01 起）：放到原路径后
+# `python3 tool/vendored_binaries.py register --group windows third_party/libplacebo-win/bin/<dll>`
+# → `python3 tool/vendored_binaries.py publish` 传进 vendored-binaries release，只提交清单
+# （流程见 docs/agent/build.md「vendored 二进制」）。app 构建由 bootstrap / CI 的 fetch 取回该 DLL，
+# 不从网络现编；fork 运行期 LoadLibrary 动态加载。
 name: libplacebo-win
 
 on:

@@ -17,8 +17,10 @@ library;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:image/image.dart' as img;
 
+import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/ocr/ocr_glyph_boxes.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 
@@ -82,23 +84,17 @@ List<String> buildPpOcrCtcVocab(List<String> characterDict) => <String>[
     (kPpRecHeight * line.width / line.height).ceil(),
   );
   final int inputW = math.max(kPpRecMinWidth, scaledW);
-  final img.Image resized = img.copyResize(
+  // 填充区（x ≥ scaledW）保持 0。
+  final Float32List chw = imageToChw(
     line,
     width: scaledW,
     height: kPpRecHeight,
     interpolation: img.Interpolation.linear,
+    planeWidth: inputW,
+    bgr: true,
+    mean: const <double>[0.5, 0.5, 0.5],
+    std: const <double>[0.5, 0.5, 0.5],
   );
-  final int planeSize = kPpRecHeight * inputW;
-  final Float32List chw = Float32List(3 * planeSize); // 填充区保持 0
-  for (int y = 0; y < kPpRecHeight; y++) {
-    for (int x = 0; x < scaledW; x++) {
-      final img.Pixel pixel = resized.getPixel(x, y);
-      final int index = y * inputW + x;
-      chw[index] = (pixel.b / 255.0 - 0.5) / 0.5;
-      chw[planeSize + index] = (pixel.g / 255.0 - 0.5) / 0.5;
-      chw[2 * planeSize + index] = (pixel.r / 255.0 - 0.5) / 0.5;
-    }
-  }
   return (data: chw, width: inputW);
 }
 
@@ -176,8 +172,9 @@ ctcGreedyDecodePositioned(
   return (text: decoded.text, confidence: decoded.confidence, tokens: tokens);
 }
 
-/// 贪心 CTC 的唯一实现：逐帧 argmax、合并相邻重复、去 blank；[onRun] 在每个
-/// 吐字 run 结束时给出它在输出文本里的 UTF-16 区间与起止帧（止帧不含）。
+/// 贪心 CTC 的唯一实现（原生 `ffc_ocr_ctc_greedy`）：逐帧 argmax、合并相邻重复、去 blank；
+/// [onRun] 在每个吐字 run 结束时给出它在输出文本里的 UTF-16 区间与起止帧（止帧不含）。
+/// 置信度取各 run 首帧置信度的最小值（只在吐字帧上算 softmax 分母）。
 ({String text, double? confidence}) _ctcGreedyDecodeRuns(
   Float32List logits,
   int frames,
@@ -186,43 +183,22 @@ ctcGreedyDecodePositioned(
   void Function(int start, int end, int frameStart, int frameEnd)? onRun,
 }) {
   assert(logits.length == frames * vocabSize);
+  final List<FfcCtcRun> runs = FushiComputeOcr.instance.ctcGreedy(
+    logits,
+    frames,
+    vocabSize,
+    detailed: false,
+  )!;
   final StringBuffer out = StringBuffer();
   double? minConfidence;
-  int previous = -1;
-  int runFrameStart = 0;
-  int runTextStart = 0;
-  for (int t = 0; t < frames; t++) {
-    final int base = t * vocabSize;
-    int best = 0;
-    double bestScore = logits[base];
-    for (int v = 1; v < vocabSize; v++) {
-      final double s = logits[base + v];
-      if (s > bestScore) {
-        bestScore = s;
-        best = v;
-      }
+  for (final FfcCtcRun run in runs) {
+    final int start = out.length;
+    out.write(vocab[run.token]);
+    final double confidence = run.firstConfidence;
+    if (minConfidence == null || confidence < minConfidence) {
+      minConfidence = confidence;
     }
-    if (best != previous) {
-      if (previous > 0) onRun?.call(runTextStart, out.length, runFrameStart, t);
-      if (best != 0) {
-        runFrameStart = t;
-        runTextStart = out.length;
-        out.write(vocab[best]);
-        final double confidence = _ppOcrFrameConfidence(
-          logits,
-          base,
-          vocabSize,
-          best,
-        );
-        if (minConfidence == null || confidence < minConfidence) {
-          minConfidence = confidence;
-        }
-      }
-    }
-    previous = best;
-  }
-  if (previous > 0) {
-    onRun?.call(runTextStart, out.length, runFrameStart, frames);
+    onRun?.call(start, out.length, run.frameStart, run.frameEnd);
   }
   return (text: out.toString(), confidence: minConfidence);
 }
@@ -349,19 +325,22 @@ _PpOcrDecodedOutput _decodePpOcrDetailed({
   required int contentWidth,
   required int inputWidth,
 }) {
+  // 详细口径要求整个张量都是有限值（原生里查，查不过返回 null）。
+  final List<FfcCtcRun>? runs = FushiComputeOcr.instance.ctcGreedy(
+    data,
+    frames,
+    vocabSize,
+    detailed: true,
+  );
+  if (runs == null) {
+    throw StateError('PP-OCR rec output data contains a non-finite value');
+  }
   final StringBuffer text = StringBuffer();
   final List<PpOcrCtcToken> tokens = <PpOcrCtcToken>[];
-  int previous = -1;
-  int? runToken;
-  int runStart = 0;
-  double confidenceSum = 0;
-  int confidenceCount = 0;
-
-  void finishRun(int endExclusive) {
-    final int? tokenId = runToken;
-    if (tokenId == null) return;
-    final double inputLeft = runStart / frames * inputWidth;
-    final double inputRight = endExclusive / frames * inputWidth;
+  for (final FfcCtcRun run in runs) {
+    final int tokenId = run.token;
+    final double inputLeft = run.frameStart / frames * inputWidth;
+    final double inputRight = run.frameEnd / frames * inputWidth;
     final double validInputLeft = math.max(0.0, inputLeft);
     final double validInputRight = math.min(
       contentWidth.toDouble(),
@@ -374,94 +353,23 @@ _PpOcrDecodedOutput _decodePpOcrDetailed({
         inputCenter >= 0 &&
         inputCenter < contentWidth &&
         validInputRight > validInputLeft;
-    final double? left = hasPosition
-        ? validInputLeft / contentWidth * lineWidth
-        : null;
-    final double? right = hasPosition
-        ? validInputRight / contentWidth * lineWidth
-        : null;
-    final double confidence = confidenceCount == 0
-        ? 0
-        : confidenceSum / confidenceCount;
     tokens.add(
       PpOcrCtcToken(
         tokenId: tokenId,
         text: vocab[tokenId],
-        frameStart: runStart,
-        frameEndExclusive: endExclusive,
+        frameStart: run.frameStart,
+        frameEndExclusive: run.frameEnd,
         inputLeft: inputLeft,
         inputRight: inputRight,
-        left: left,
-        right: right,
-        confidence: confidence,
+        left: hasPosition ? validInputLeft / contentWidth * lineWidth : null,
+        right: hasPosition ? validInputRight / contentWidth * lineWidth : null,
+        // Mean argmax probability over the run's frames.
+        confidence: run.meanConfidence,
       ),
     );
     text.write(vocab[tokenId]);
-    runToken = null;
-    confidenceSum = 0;
-    confidenceCount = 0;
   }
-
-  for (int t = 0; t < frames; t++) {
-    final int base = t * vocabSize;
-    int best = 0;
-    double bestScore = data[base];
-    for (int v = 1; v < vocabSize; v++) {
-      final double score = data[base + v];
-      if (score > bestScore) {
-        bestScore = score;
-        best = v;
-      }
-    }
-    final double confidence = _ppOcrFrameConfidence(
-      data,
-      base,
-      vocabSize,
-      best,
-    );
-    if (best == 0 || best != previous) {
-      finishRun(t);
-    }
-    if (best != 0) {
-      if (runToken == null) {
-        runToken = best;
-        runStart = t;
-      }
-      confidenceSum += confidence;
-      confidenceCount++;
-    }
-    previous = best;
-  }
-  finishRun(frames);
   return _PpOcrDecodedOutput(text.toString(), tokens);
-}
-
-double _ppOcrFrameConfidence(
-  Float32List data,
-  int base,
-  int vocabSize,
-  int best,
-) {
-  double sum = 0;
-  bool probabilityRow = true;
-  for (int v = 0; v < vocabSize; v++) {
-    final double value = data[base + v];
-    sum += value;
-    if (value < -1e-5 || value > 1.00001) probabilityRow = false;
-  }
-  if (probabilityRow && (sum - 1).abs() <= 0.02) {
-    return data[base + best].clamp(0.0, 1.0);
-  }
-
-  // PP-OCR exports normally contain probabilities, but accepting logits here
-  // keeps the detailed API correct for equivalent ONNX exports.  Subtracting
-  // the row maximum avoids overflow in exp() for large logits.
-  final double rowMax = data[base + best];
-  double denominator = 0;
-  for (int v = 0; v < vocabSize; v++) {
-    denominator += math.exp(data[base + v] - rowMax);
-  }
-  return 1 / denominator;
 }
 
 ({Float32List data, int frames, int vocabSize}) _validatePpOcrOutput(
@@ -498,12 +406,63 @@ double _ppOcrFrameConfidence(
       'expected $expectedLength for shape $shape',
     );
   }
-  for (final double value in data) {
-    if (!value.isFinite) {
-      throw StateError('PP-OCR rec output data contains a non-finite value');
-    }
-  }
+  // 非有限值由 [_decodePpOcrDetailed] 在原生里查（同一条 StateError）。
   return (data: data, frames: frames, vocabSize: vocabSize);
+}
+
+/// [PpOcrLineRecognizer.recognizeLineDetailed] 前处理块的产物：输入张量与后处理
+/// 要用的几个宽度（全是纯数据，可跨 isolate 传）。
+typedef PpRecDetailedInput = ({
+  Float32List data,
+  int inputWidth,
+  int contentWidth,
+  int lineWidth,
+  int lineHeight,
+});
+
+/// [PpOcrLineRecognizer.recognizeLineDetailed] 的前处理块（纯计算，不碰会话）。
+/// [line] 没有面积时返回 null（识别结果是 [PpOcrLineRecognition.empty]）。
+PpRecDetailedInput? ppRecPrepareDetailed(img.Image line) {
+  if (line.width <= 0 || line.height <= 0) return null;
+  final ({Float32List data, int width}) input = ppRecPreprocess(line);
+  return (
+    data: input.data,
+    inputWidth: input.width,
+    contentWidth: _ppRecContentWidth(line, input.width),
+    lineWidth: line.width,
+    lineHeight: line.height,
+  );
+}
+
+/// [PpOcrLineRecognizer.recognizeLineDetailed] 的后处理块（纯计算，不碰会话）：
+/// 校验输出形状 / 词表 / 长度，再做详细 CTC 解码（逐帧置信度、有限值检查）。
+PpOcrLineRecognition ppRecDecodeDetailed(
+  OcrTensor logits,
+  List<String> vocab, {
+  required int lineWidth,
+  required int lineHeight,
+  required int contentWidth,
+  required int inputWidth,
+}) {
+  final ({Float32List data, int frames, int vocabSize}) validated =
+      _validatePpOcrOutput(logits, vocab.length);
+  final _PpOcrDecodedOutput decoded = _decodePpOcrDetailed(
+    data: validated.data,
+    frames: validated.frames,
+    vocabSize: validated.vocabSize,
+    vocab: vocab,
+    lineWidth: lineWidth,
+    contentWidth: contentWidth,
+    inputWidth: inputWidth,
+  );
+  return PpOcrLineRecognition(
+    text: decoded.text,
+    tokens: decoded.tokens,
+    lineWidth: lineWidth,
+    lineHeight: lineHeight,
+    contentWidth: contentWidth,
+    inputWidth: inputWidth,
+  );
 }
 
 /// [PpOcrLineRecognizer.recognizeLinePositioned] 的结果：文字、置信度（同
@@ -609,19 +568,43 @@ class PpOcrLineRecognizer {
   /// 坐标是原始 [line] 的像素坐标。位置是模型帧感受野映射得到的近似
   /// 横向范围，绝不是字形 bbox；右 padding 中的 token 仍保留在 [text]，
   /// 但 [PpOcrCtcToken.hasPosition] 为 false。
+  ///
+  /// 三块的组合：[ppRecPrepareDetailed]（纯前处理）→ [runRecognition]（只做推理）
+  /// → [ppRecDecodeDetailed]（纯后处理）。两块纯计算不碰会话，可以挪到别的 isolate。
   Future<PpOcrLineRecognition> recognizeLineDetailed(img.Image line) async {
-    if (line.width <= 0 || line.height <= 0) {
-      return const PpOcrLineRecognition.empty();
-    }
-    final ({Float32List data, int width}) input = ppRecPreprocess(line);
-    final int contentWidth = _ppRecContentWidth(line, input.width);
+    final PpRecDetailedInput? input = ppRecPrepareDetailed(line);
+    if (input == null) return const PpOcrLineRecognition.empty();
+    final OcrTensor logits = await runRecognition(
+      input.data,
+      inputWidth: input.inputWidth,
+    );
+    return ppRecDecodeDetailed(
+      logits,
+      vocab,
+      lineWidth: input.lineWidth,
+      lineHeight: input.lineHeight,
+      contentWidth: input.contentWidth,
+      inputWidth: input.inputWidth,
+    );
+  }
+
+  /// 只做推理：[data] 是 [1,3,[kPpRecHeight],[inputWidth]] 的输入张量
+  /// （[ppRecPrepareDetailed] / [ppRecPreprocess]），返回唯一的输出（逐帧 logits）。
+  /// 输出个数不是 1、或输出的形状 / 词表维度 / 长度 / 元素类型不对时抛
+  /// [StateError]——推理一返回就查（都是 O(1) 的元数据检查），不推迟到后处理：
+  /// 逐行推理、批量后处理的调用方（校准 OCR）要在第一行就停，而不是把剩下的行
+  /// 全推理完才发现模型不对。逐元素的有限值检查仍在 [ppRecDecodeDetailed]。
+  Future<OcrTensor> runRecognition(
+    Float32List data, {
+    required int inputWidth,
+  }) async {
     final Map<String, OcrTensor> outputs = await _session.run(
       <String, OcrTensor>{
-        inputName: OcrTensor.float32(input.data, <int>[
+        inputName: OcrTensor.float32(data, <int>[
           1,
           3,
           kPpRecHeight,
-          input.width,
+          inputWidth,
         ]),
       },
     );
@@ -631,25 +614,8 @@ class PpOcrLineRecognizer {
       );
     }
     final OcrTensor logits = outputs.values.single;
-    final ({Float32List data, int frames, int vocabSize}) validated =
-        _validatePpOcrOutput(logits, vocab.length);
-    final _PpOcrDecodedOutput decoded = _decodePpOcrDetailed(
-      data: validated.data,
-      frames: validated.frames,
-      vocabSize: validated.vocabSize,
-      vocab: vocab,
-      lineWidth: line.width,
-      contentWidth: contentWidth,
-      inputWidth: input.width,
-    );
-    return PpOcrLineRecognition(
-      text: decoded.text,
-      tokens: decoded.tokens,
-      lineWidth: line.width,
-      lineHeight: line.height,
-      contentWidth: contentWidth,
-      inputWidth: input.width,
-    );
+    _validatePpOcrOutput(logits, vocab.length);
+    return logits;
   }
 
   Future<void> close() => _session.close();

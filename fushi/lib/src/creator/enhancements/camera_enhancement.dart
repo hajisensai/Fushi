@@ -6,21 +6,26 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:fushi/creator.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/creator/enhancement.dart';
+import 'package:fushi/src/creator/fields/image_field.dart';
+import 'package:fushi/src/creator/image_enhancement.dart';
+import 'package:fushi/src/creator/image_export_field.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// An enhancement that can be used to take a picture to set a new image.
 class CameraEnhancement extends ImageEnhancement {
   /// Initialise this enhancement with the hardset parameters.
   CameraEnhancement()
-      : super(
-          uniqueKey: key,
-          label: 'Camera',
-          description: 'Take a new photo to use as the new image.',
-          icon: Icons.camera_alt_outlined,
-          field: ImageField.instance,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Camera',
+        description: 'Take a new photo to use as the new image.',
+        icon: Icons.camera_alt_outlined,
+        field: ImageField.instance,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].
@@ -42,8 +47,9 @@ class CameraEnhancement extends ImageEnhancement {
   }) async {
     if (!isMobilePlatform) return;
     ImageExportField imageField = field as ImageExportField;
-    XFile? pickedFile =
-        await ImagePicker().pickImage(source: ImageSource.camera);
+    XFile? pickedFile = await ImagePicker().pickImage(
+      source: ImageSource.camera,
+    );
 
     if (pickedFile == null) {
       return;

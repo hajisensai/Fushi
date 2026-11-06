@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 // ---------------------------------------------------------------------------
 // Fushi 改名收尾守卫（构建/打包/运维**脚本与配置**面）。
@@ -139,6 +139,20 @@ final List<_Exemption> _repoSlugExemptions = <_Exemption>[
       r'git clone --bare https://github\.com/hajisensai/libmpv-darwin-build ',
     ),
     reason: '蓝光 Apple 原生依赖在独立构建仓编译，此行克隆真实依赖源码，不是本仓旧名。',
+  ),
+  _Exemption(
+    pathSuffix: 'tool/dvd/forks/apply.sh',
+    context: RegExp(
+      r'checkout of hajisensai/libmpv-(android-video|darwin)-build @',
+    ),
+    reason: 'DVD 补丁要应用到 libmpv 的两个独立构建仓，用法注释写的是真实依赖仓库名，不是本仓旧名。',
+  ),
+  _Exemption(
+    pathSuffix: 'tool/bluray/forks/apply.sh',
+    context: RegExp(
+      r'checkout of hajisensai/libmpv-(android-video|darwin)-build @',
+    ),
+    reason: '远端原盘补丁同样应用到 libmpv 的两个独立构建仓，用法注释写的是真实依赖仓库名。',
   ),
   _Exemption(
     pathSuffix: 'tools/build_magpie_slim.ps1',

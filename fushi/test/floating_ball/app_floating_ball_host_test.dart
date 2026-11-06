@@ -8,26 +8,32 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
+    show OverlayMiningHandler;
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
+import 'package:fushi/src/profile/profile_repository.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
+import 'package:fushi/src/reader/reader_floating_ball.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import '../helpers/inert_profile_repository.dart';
 import '../helpers/test_platform_services.dart';
 
 class _ReadyAppModel extends AppModel {
@@ -39,6 +45,29 @@ class _ReadyAppModel extends AppModel {
   // 桩没有主题子系统；宿主读它决定球要不要动画。
   @override
   bool get einkMode => false;
+}
+
+/// 两份配置（Default 激活中 + Lapis）的配置仓库桩：只答视图模型首装与悬浮球
+/// 「切换配置」要读的几样。
+class _TwoProfilesRepository extends InertProfileRepository {
+  _TwoProfilesRepository()
+    : super(
+        profiles: const <ProfileRow>[
+          ProfileRow(id: 1, name: 'Default', createdAt: 0, updatedAt: 0),
+          ProfileRow(id: 2, name: 'Lapis', createdAt: 0, updatedAt: 0),
+        ],
+      );
+}
+
+/// 只记下切到了哪份配置的视图模型（真切换要整套 Anki / 偏好重装，不是这里测的）。
+class _RecordingProfileViewModel extends ProfileViewModel {
+  _RecordingProfileViewModel(ProfileRepository repo)
+    : super(repo, () async {}, ProfileDraftCoordinator());
+
+  final List<int> switched = <int>[];
+
+  @override
+  Future<void> switchProfile(int profileId) async => switched.add(profileId);
 }
 
 ReaderHeaderAction _action(String key) => ReaderHeaderAction(
@@ -203,6 +232,42 @@ void main() {
     expect(byKey('floating_ball_action_clipboard'), findsNothing);
   });
 
+  testWidgets('切换配置按钮：文案仍是「切换配置」，当前配置名只进悬停提示', (WidgetTester tester) async {
+    // 回归（PR #2565 审查）：按钮文案曾被换成当前配置名，标签胶囊里只剩
+    // 「Default」，看不出按下去是「切换」。
+    await prefs.setFloatingBallButtons(FloatingBallScope.general, <String>[
+      'switch_profile',
+    ]);
+    await prefs.setFloatingBallShowLabels(true);
+    final ProfileRepository repo = _TwoProfilesRepository();
+    await pumpHost(
+      tester,
+      extraOverrides: <Override>[
+        profileRepositoryProvider.overrideWith((Ref ref) => repo),
+        profileViewModelProvider.overrideWith(
+          (Ref ref) => _RecordingProfileViewModel(repo),
+        ),
+      ],
+    );
+    await tester.pumpAndSettle();
+    await expand(tester);
+    final ReaderHeaderAction action = tester
+        .widget<ReaderFloatingBall>(find.byType(ReaderFloatingBall))
+        .actions
+        .singleWhere(
+          (ReaderHeaderAction a) =>
+              a.key ==
+              const ValueKey<String>('floating_ball_action_switch_profile'),
+        );
+    expect(action.label, t.floating_ball_action_switch_profile);
+    expect(
+      action.tooltipText,
+      t.floating_ball_action_switch_profile_tooltip(name: 'Default'),
+    );
+    expect(find.text(t.floating_ball_action_switch_profile), findsOneWidget);
+    expect(find.text('Default'), findsNothing, reason: '配置名不当按钮文案');
+  });
+
   testWidgets('勾选了但页面此刻没提供的专属按钮跳过', (WidgetTester tester) async {
     await prefs.setFloatingBallButtons(FloatingBallScope.manga, <String>[
       'chapters',
@@ -324,6 +389,30 @@ void main() {
     expect(taps, 1);
   });
 
+  // BUG-3781：底下页面用 Listener 计数，模拟阅读器正文 WebView（Windows fork 的
+  // 指针转发就是一层 Listener，不进手势竞技场，只要被命中就收到按下）。球被点中时
+  // 整个宿主必须向根 Stack 报「已命中」，按下不能再落到下层页面。
+  testWidgets('BUG-3781：点球展开 / 收起，按下不落到底下页面', (WidgetTester tester) async {
+    int pageDowns = 0;
+    await pumpHost(
+      tester,
+      home: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (_) => pageDowns++,
+        child: const SizedBox.expand(),
+      ),
+    );
+    expect(ball(), findsOneWidget);
+    await expand(tester);
+    expect(pageDowns, 0, reason: '点球展开：按下被球吃掉，不该到正文');
+    // 展开后球变成关闭钮、整球回到视口内：再点一下收起，同样不该到正文。
+    await expand(tester);
+    expect(pageDowns, 0, reason: '点展开态的球收起：同样不该到正文');
+    // 对照：球外空白照常落到页面，证明计数器本身是通的。
+    await tester.tapAt(const Offset(40, 40));
+    expect(pageDowns, 1);
+  });
+
   testWidgets('场景要求隐藏时不画球', (WidgetTester tester) async {
     await pumpHost(
       tester,
@@ -346,8 +435,9 @@ void main() {
     // Android 原生侧：模型还没由 Play 服务取下。
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       kSystemOcrChannel,
-      (MethodCall call) async =>
-          call.method == 'modelStatus' ? 'missing' : null,
+      (MethodCall call) async => call.method == 'modelStatus'
+          ? <String, Object?>{'status': 'missing'}
+          : null,
     );
     addTearDown(
       () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -695,11 +785,15 @@ void main() {
       debugLatestSystemBallSync = null;
       target = _RecordingActionTarget();
       debugDesktopSystemBallPlatformOverride = true;
+      // 「应用外查词」「截屏识字」要全局查词覆盖窗；不钉住的话 Linux CI 上
+      // isSupported 为 false，这两项被隐藏（本机 Windows 恒真，所以本地绿）。
+      GlobalLookupController.platformOverride = true;
       desktopSystemBallActionTarget = target;
     });
 
     tearDown(() {
       debugDesktopSystemBallPlatformOverride = null;
+      GlobalLookupController.platformOverride = null;
       desktopSystemBallActionTarget = const DesktopSystemBallActionTarget();
       FloatingBallChannel.debugResetHandler();
     });
@@ -1008,6 +1102,28 @@ void main() {
       );
     }
 
+    testWidgets('应用外球截屏识字语言跟随默认内容语言，改了就重发给原生', (WidgetTester tester) async {
+      mockNative(tester);
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await startSystemBall(tester);
+      Object? ocrLanguageOf(MethodCall call) =>
+          (call.arguments as Map<Object?, Object?>)['ocrLanguage'];
+      expect(ocrLanguageOf(starts().single), 'ja', reason: '没设默认内容语言时回落日语');
+
+      await tester.runAsync(() async {
+        await prefs.setDefaultContentLanguage('zh-Hans');
+        await debugLatestSystemBallSync;
+      });
+      await tester.pump();
+      expect(starts(), hasLength(2));
+      expect(ocrLanguageOf(starts().last), 'zh-Hans');
+    });
+
     testWidgets('出厂「仅应用内」：用户在应用外球上点关闭 → 关掉「应用外显示」', (
       WidgetTester tester,
     ) async {
@@ -1021,6 +1137,25 @@ void main() {
       await startSystemBall(tester);
       await fromNative(tester, 'systemBallClosedByUser', <String, Object?>{});
       expect(prefs.floatingBallSystem, isFalse);
+      expect(prefs.floatingBallInApp, isTrue, reason: '应用内球按「仅应用内」恢复');
+    });
+
+    testWidgets('「不自动恢复」：在应用外球上点关闭 → 应用内外两个显示开关一起关', (
+      WidgetTester tester,
+    ) async {
+      mockNative(tester);
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await prefs.setFloatingBallAutoRestore(FloatingBallAutoRestore.off);
+      await startSystemBall(tester);
+      expect(prefs.floatingBallInApp, isTrue);
+      await fromNative(tester, 'systemBallClosedByUser', <String, Object?>{});
+      expect(prefs.floatingBallSystem, isFalse);
+      expect(prefs.floatingBallInApp, isFalse, reason: '回到 Fushi 不应再看到同一颗球');
     });
 
     testWidgets('自动恢复「应用内外」：关闭不动开关，回到 Fushi 时重新起球', (
@@ -1277,6 +1412,41 @@ void main() {
         expect(prefs.floatingBallSystem, isTrue, reason: '两颗球的开关互不影响');
       });
 
+      testWidgets('BUG-3687 本场景按钮全取消（应用内球不画）：应用外球不让位；勾回按钮再让位', (
+        WidgetTester tester,
+      ) async {
+        mockNative(tester);
+        clearNative(tester);
+        await startSystemBall(tester);
+        expect(yields(), <bool>[true]);
+        await tester.runAsync(() async {
+          await prefs.setFloatingBallButtons(
+            FloatingBallScope.general,
+            const <String>[],
+          );
+          await debugLatestSystemBallSync;
+        });
+        await tester.pump();
+        await tester.pump();
+        expect(ball(), findsNothing);
+        expect(yields(), <bool>[
+          true,
+          false,
+        ], reason: '应用内一颗球都不画时应用外球还让位 = Fushi 里一颗球都没有');
+        expect(prefs.floatingBallInApp, isTrue, reason: '不动开关');
+        await tester.runAsync(() async {
+          await prefs.setFloatingBallButtons(
+            FloatingBallScope.general,
+            const <String>['lookup'],
+          );
+          await debugLatestSystemBallSync;
+        });
+        await tester.pump();
+        await tester.pump();
+        expect(ball(), findsOneWidget);
+        expect(yields(), <bool>[true, false, true]);
+      });
+
       testWidgets('用户关掉应用外球：前后台切换不会把它打开', (WidgetTester tester) async {
         mockNative(tester);
         clearNative(tester);
@@ -1390,6 +1560,197 @@ void main() {
         expect(find.text(t.sync_now_busy), findsOneWidget);
       });
 
+      group('切换配置', () {
+        late _RecordingProfileViewModel profileVm;
+
+        /// 原生消息的处理链跑在 [WidgetTester.runAsync] 的真实异步区里：对话框关掉后
+        /// 它的后续（切配置）也在那边续上，要让真实时间走一下再 pump。
+        Future<void> settleNativeChain(WidgetTester tester) async {
+          await tester.pumpAndSettle();
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+          await tester.pumpAndSettle();
+        }
+
+        List<Override> profileOverrides() {
+          final ProfileRepository repo = _TwoProfilesRepository();
+          final _RecordingProfileViewModel vm = _RecordingProfileViewModel(
+            repo,
+          );
+          profileVm = vm;
+          return <Override>[
+            profileRepositoryProvider.overrideWith((Ref ref) => repo),
+            profileViewModelProvider.overrideWith((Ref ref) => vm),
+          ];
+        }
+
+        /// 原生桩：`showProfileMenu` 回 [picked]（null = 用户关掉了菜单），其余只记录。
+        void mockProfileMenu(WidgetTester tester, int? picked) {
+          tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            FloatingBallChannel.channel,
+            (MethodCall call) async {
+              calls.add(call);
+              return switch (call.method) {
+                'showProfileMenu' => picked,
+                'startSystemBall' => true,
+                'takeSystemBallClosedByUser' => false,
+                _ => null,
+              };
+            },
+          );
+          addTearDown(
+            () => tester.binding.defaultBinaryMessenger
+                .setMockMethodCallHandler(FloatingBallChannel.channel, null),
+          );
+        }
+
+        /// 原生 → Dart 的一次调用，取回 Dart 的回值（[fromNative] 丢掉了回话）。
+        Future<Object?> askDart(
+          WidgetTester tester,
+          String method, [
+          Object? args,
+        ]) async {
+          const StandardMethodCodec codec = StandardMethodCodec();
+          Object? result;
+          await tester.runAsync(() async {
+            final Completer<ByteData?> reply = Completer<ByteData?>();
+            await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+              FloatingBallChannel.channel.name,
+              codec.encodeMethodCall(MethodCall(method, args)),
+              reply.complete,
+            );
+            final ByteData? data = await reply.future;
+            result = data == null ? null : codec.decodeEnvelope(data);
+          });
+          await tester.pump();
+          return result;
+        }
+
+        testWidgets('桌面系统球：在球旁弹原生配置菜单、原地切，不唤起主窗', (WidgetTester tester) async {
+          await pumpHost(tester, extraOverrides: profileOverrides());
+          mockProfileMenu(tester, 2);
+          await tapAction(tester, 'switch_profile');
+          await settleNativeChain(tester);
+          expect(target.log, isEmpty, reason: '用户在别的程序里，主窗不动');
+          final MethodCall menu = calls.lastWhere(
+            (MethodCall c) => c.method == 'showProfileMenu',
+          );
+          final Map<Object?, Object?> args =
+              menu.arguments as Map<Object?, Object?>;
+          expect(args['items'], <Map<String, Object?>>[
+            <String, Object?>{'id': 1, 'label': 'Default', 'checked': true},
+            <String, Object?>{'id': 2, 'label': 'Lapis', 'checked': false},
+          ]);
+          expect(args['anchor'], <double>[1800, 900, 1896, 996]);
+          expect(profileVm.switched, <int>[2]);
+          expect(find.text('Lapis'), findsNothing, reason: '不弹应用内对话框');
+        });
+
+        testWidgets('桌面系统球：选当前配置或关掉菜单都不切', (WidgetTester tester) async {
+          await pumpHost(tester, extraOverrides: profileOverrides());
+          mockProfileMenu(tester, 1);
+          await tapAction(tester, 'switch_profile');
+          await settleNativeChain(tester);
+          mockProfileMenu(tester, null);
+          await tapAction(tester, 'switch_profile');
+          await settleNativeChain(tester);
+          expect(profileVm.switched, isEmpty);
+          expect(target.log, isEmpty);
+        });
+
+        testWidgets('Android 系统球：原生要菜单、选一项后 Dart 原地切并回 Toast 文案', (
+          WidgetTester tester,
+        ) async {
+          await pumpHost(tester, extraOverrides: profileOverrides());
+          expect(await askDart(tester, 'getProfileMenu'), <Object?>[
+            <Object?, Object?>{'id': 1, 'label': 'Default', 'checked': true},
+            <Object?, Object?>{'id': 2, 'label': 'Lapis', 'checked': false},
+          ]);
+          expect(
+            await askDart(tester, 'switchProfileTo', <String, Object?>{
+              'id': 2,
+            }),
+            t.floating_ball_profile_switched(name: 'Lapis'),
+          );
+          expect(profileVm.switched, <int>[2]);
+          expect(
+            await askDart(tester, 'switchProfileTo', <String, Object?>{
+              'id': 99,
+            }),
+            t.floating_ball_profile_switch_failed,
+            reason: '菜单给出后配置被删掉了',
+          );
+          expect(profileVm.switched, <int>[2]);
+        });
+
+        testWidgets('宿主重建后原生回调转给新宿主（不打到已销毁的旧 State 上）', (
+          WidgetTester tester,
+        ) async {
+          // 同一个 ProviderScope 里换掉宿主（新手引导结束换树时就是这样）：旧
+          // State 销毁、新 State 挂上，原生回调只装过一次。
+          final ValueNotifier<int> generation = ValueNotifier<int>(0);
+          addTearDown(generation.dispose);
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: <Override>[
+                appProvider.overrideWith((Ref ref) => appModel),
+                ...profileOverrides(),
+              ],
+              child: TranslationProvider(
+                child: MaterialApp(
+                  navigatorKey: appModel.navigatorKey,
+                  navigatorObservers: <NavigatorObserver>[
+                    floatingBallRouteObserver,
+                  ],
+                  home: const Scaffold(body: SizedBox()),
+                  builder: (BuildContext context, Widget? child) =>
+                      ValueListenableBuilder<int>(
+                        valueListenable: generation,
+                        builder: (BuildContext context, int g, Widget? _) =>
+                            Stack(
+                              children: <Widget>[
+                                child!,
+                                AppFloatingBallHost(key: ValueKey<int>(g)),
+                              ],
+                            ),
+                      ),
+                ),
+              ),
+            ),
+          );
+          await tester.pump();
+          generation.value++;
+          await tester.pump();
+          expect(await askDart(tester, 'getProfileMenu'), hasLength(2));
+          expect(
+            await askDart(tester, 'switchProfileTo', <String, Object?>{
+              'id': 2,
+            }),
+            t.floating_ball_profile_switched(name: 'Lapis'),
+          );
+          expect(profileVm.switched, <int>[2]);
+        });
+
+        testWidgets('Android 主引擎不在时排队的 openProfileSwitch：就绪后在主窗弹配置列表', (
+          WidgetTester tester,
+        ) async {
+          await pumpHost(tester, extraOverrides: profileOverrides());
+          await fromNative(
+            tester,
+            'openProfileSwitch',
+            const <String, Object?>{},
+          );
+          await tester.pumpAndSettle();
+          expect(pendingProfileSwitch.value, isFalse);
+          expect(find.text('Default'), findsOneWidget);
+          await tester.tap(find.text('Lapis'));
+          await settleNativeChain(tester);
+          expect(profileVm.switched, <int>[2]);
+          expect(find.text('Lapis'), findsNothing, reason: '选完对话框关掉');
+        });
+      });
+
       group('截屏识字', () {
         /// 横排一行「吾輩は猫」：截图像素 (100,200)–(500,250)，每字 100 宽。
         const SystemOcrTextLine line = SystemOcrTextLine(
@@ -1464,6 +1825,17 @@ void main() {
             <double>[100, 200, 500, 250],
           ]);
           expect(update['message'], isNull);
+        });
+
+        testWidgets('默认内容语言没设时截屏识字用日语识别器', (WidgetTester tester) async {
+          await startOcr(tester);
+          expect(target.recognizeLanguages, <String>['ja']);
+        });
+
+        testWidgets('默认内容语言设成中文时截屏识字跟着用中文识别器', (WidgetTester tester) async {
+          await prefs.setDefaultContentLanguage('zh-Hans');
+          await startOcr(tester);
+          expect(target.recognizeLanguages, <String>['zh-Hans']);
         });
 
         testWidgets('原生回带取帧诊断（HDR 显示器走 scRGB / 回落 GDI）时记进诊断日志', (
@@ -1541,6 +1913,43 @@ void main() {
             const Rect.fromLTRB(2220, 200, 2320, 250),
           );
           expect(called('stopScreenOcr'), isFalse, reason: '查词时冻结层留着');
+          // 反馈 Gz7z6Y6Mbr：制卡走带截图卡图的委托，而不是默认的无图路径。
+          expect(call.miningHandler, isNotNull);
+        });
+
+        testWidgets('反馈 Eemf0HOZhj：识别分段耗时与点中的那行原文记进诊断日志', (
+          WidgetTester tester,
+        ) async {
+          await startOcr(tester);
+          final ErrorLogEntry timing = ErrorLogService
+              .instance
+              .diagnosticEntries
+              .lastWhere(
+                (ErrorLogEntry e) =>
+                    e.source == 'floating_ball.screen_ocr_timing',
+              );
+          expect(
+            timing.error,
+            allOf(
+              matches(RegExp(r'capture=\d+ms recognize=\d+ms')),
+              contains('image=1920x1080'),
+              contains('png=3B'),
+              contains('lines=1'),
+            ),
+          );
+          await fromNative(tester, 'screenOcrTap', <String, Object?>{
+            'x': 350.0,
+            'y': 220.0,
+          });
+          final ErrorLogEntry tap = ErrorLogService.instance.diagnosticEntries
+              .lastWhere(
+                (ErrorLogEntry e) => e.source == 'floating_ball.screen_ocr_tap',
+              );
+          expect(
+            tap.error,
+            'point=(350,220) line=[100,200,500,250] vertical=false '
+            'charIndex=2 text="吾輩は猫"',
+          );
         });
 
         testWidgets('点在字外：关冻结层并收起查词卡；之后的点击不再查词', (WidgetTester tester) async {
@@ -1571,7 +1980,9 @@ void main() {
           expect(called('stopScreenOcr'), isFalse);
         });
 
-        testWidgets('没装日语识别器：冻结层提示去装语言，点任意处退出', (WidgetTester tester) async {
+        testWidgets('没装对应语言的识别器（默认日语）：冻结层提示去装语言，点任意处退出', (
+          WidgetTester tester,
+        ) async {
           mockCapture(tester, <String, Object?>{
             'png': png,
             'screen': <double>[0, 0, 1920, 1080],
@@ -1583,13 +1994,54 @@ void main() {
           await pumpHost(tester);
           await tapAction(tester, 'screen_ocr');
           final Map<Object?, Object?> update = argsOf('updateScreenOcrOverlay');
-          expect(update['message'], t.floating_ball_ocr_language_missing);
+          expect(
+            update['message'],
+            t.floating_ball_ocr_language_pack_missing(language: '日本語 (ja)'),
+          );
           expect(update['lines'], isEmpty);
           await fromNative(tester, 'screenOcrTap', <String, Object?>{
             'x': 10.0,
             'y': 10.0,
           });
           expect(called('stopScreenOcr'), isTrue);
+        });
+
+        testWidgets('Linux 本机 OCR 模型没下载：冻结层提示去设置里下载', (
+          WidgetTester tester,
+        ) async {
+          mockCapture(tester, <String, Object?>{
+            'png': png,
+            'screen': <double>[0, 0, 1920, 1080],
+          });
+          target.onRecognize = (Uint8List bytes) async =>
+              throw const SystemOcrUnavailableException(
+                kSystemOcrModelUnavailableReason,
+              );
+          await pumpHost(tester);
+          await tapAction(tester, 'screen_ocr');
+          final Map<Object?, Object?> update = argsOf('updateScreenOcrOverlay');
+          expect(update['message'], t.floating_ball_ocr_model_missing);
+          expect(update['lines'], isEmpty);
+        });
+
+        testWidgets('默认内容语言是中文且没装中文识别器：提示里写的是中文', (WidgetTester tester) async {
+          await prefs.setDefaultContentLanguage('zh-Hans');
+          mockCapture(tester, <String, Object?>{
+            'png': png,
+            'screen': <double>[0, 0, 1920, 1080],
+          });
+          target.onRecognize = (Uint8List bytes) async =>
+              throw const SystemOcrUnavailableException(
+                kSystemOcrLanguageUnavailableReason,
+              );
+          await pumpHost(tester);
+          await tapAction(tester, 'screen_ocr');
+          expect(
+            argsOf('updateScreenOcrOverlay')['message'],
+            t.floating_ball_ocr_language_pack_missing(
+              language: '简体中文 (zh-Hans)',
+            ),
+          );
         });
 
         testWidgets('没识别到字：冻结层上直接说', (WidgetTester tester) async {
@@ -1615,6 +2067,18 @@ void main() {
             find.text(t.floating_ball_ocr_screen_permission),
             findsOneWidget,
           );
+          expect(called('updateScreenOcrOverlay'), isFalse);
+        });
+
+        testWidgets('截图途中被作废（Linux 异步 portal）：静默收场，不唤起主窗、不报失败', (
+          WidgetTester tester,
+        ) async {
+          mockCapture(tester, <String, Object?>{'error': 'cancelled'});
+          await pumpHost(tester);
+          await tapAction(tester, 'screen_ocr');
+          expect(target.log, <String>['dismiss']);
+          await tester.pump();
+          expect(find.text(t.floating_ball_ocr_failed), findsNothing);
           expect(called('updateScreenOcrOverlay'), isFalse);
         });
       });
@@ -1727,10 +2191,12 @@ class _LookupTextCall {
     this.anchorScreenRect,
     this.physicalPlacement, {
     this.sentence = '',
+    this.miningHandler,
   });
 
   final String text;
   final String sentence;
+  final OverlayMiningHandler? miningHandler;
   final Rect? anchorScreenRect;
   final GlobalLookupPhysicalPlacement? physicalPlacement;
 }
@@ -1753,6 +2219,7 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
     String sentence = '',
     Rect? anchorScreenRect,
     GlobalLookupPhysicalPlacement? physicalPlacement,
+    OverlayMiningHandler? miningHandler,
   }) async {
     log.add('lookupText');
     lookups.add(
@@ -1761,6 +2228,7 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
         anchorScreenRect,
         physicalPlacement,
         sentence: sentence,
+        miningHandler: miningHandler,
       ),
     );
     return true;
@@ -1774,9 +2242,17 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
         imageHeight: 1,
       );
 
+  /// 每次截屏识字交给系统 OCR 的语言（按调用顺序）。
+  final List<String> recognizeLanguages = <String>[];
+
   @override
-  Future<SystemOcrPageResult> recognize(Uint8List png) async {
+  Future<SystemOcrPageResult> recognize(
+    Uint8List png, {
+    required String language,
+    SystemOcrPlatform? engine,
+  }) async {
     log.add('recognize');
+    recognizeLanguages.add(language);
     return onRecognize(png);
   }
 

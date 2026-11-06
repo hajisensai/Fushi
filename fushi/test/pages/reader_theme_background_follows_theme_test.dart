@@ -37,13 +37,13 @@ void main() {
   };
 
   ColorScheme darkScheme() => ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: Brightness.dark,
-      );
+    seedColor: const Color(0xFF1F4959),
+    brightness: Brightness.dark,
+  );
   ColorScheme lightScheme() => ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: Brightness.light,
-      );
+    seedColor: const Color(0xFF1F4959),
+    brightness: Brightness.light,
+  );
   // 跟随主题分支走 M3E 阅读配色（2026-10-06）：断言与 [fushiReaderPaletteFor] 同源。
   FushiReaderPalette paletteOf(ColorScheme scheme) =>
       fushiReaderPaletteFor(scheme, scheme.brightness);
@@ -102,8 +102,11 @@ void main() {
       );
       // 暗色系统主题下背景必须是 scheme 的深色 surface，而非硬编码白。
       expect(colors.bg, paletteOf(scheme).background);
-      expect(colors.bg, isNot(const Color(0xFFFFFFFF)),
-          reason: '暗色 system-theme 背景恒白 = 没吃主题（BUG-208）');
+      expect(
+        colors.bg,
+        isNot(const Color(0xFFFFFFFF)),
+        reason: '暗色 system-theme 背景恒白 = 没吃主题（BUG-208）',
+      );
       expect(colors.fg, paletteOf(scheme).text);
       expect(colors.dark, isTrue);
     });
@@ -176,12 +179,21 @@ void main() {
       expect(c.selection, paletteOf(scheme).lookupHighlight);
       expect(c.link, paletteOf(scheme).link);
       // 关键回归断言：不再是旧硬编码默认色。
-      expect(c.sentenceAudioHighlight, isNot(const Color(0x6687CEEB)),
-          reason: '旧默认 sentenceAudioHighlight 天蓝 = 没吃强调色（BUG-396）');
-      expect(c.selection, isNot(const Color(0x66A0A0A0)),
-          reason: '旧默认 selection 灰 = 没吃强调色');
-      expect(c.link, isNot(const Color(0xFF426CF5)),
-          reason: '旧默认 link 蓝 = 没吃强调色');
+      expect(
+        c.sentenceAudioHighlight,
+        isNot(const Color(0x6687CEEB)),
+        reason: '旧默认 sentenceAudioHighlight 天蓝 = 没吃强调色（BUG-396）',
+      );
+      expect(
+        c.selection,
+        isNot(const Color(0x66A0A0A0)),
+        reason: '旧默认 selection 灰 = 没吃强调色',
+      );
+      expect(
+        c.link,
+        isNot(const Color(0xFF426CF5)),
+        reason: '旧默认 link 蓝 = 没吃强调色',
+      );
     });
 
     test('暗色 system-theme：高亮/选区取暗档 container 色', () {
@@ -225,9 +237,11 @@ void main() {
         audioHighlightOverride: kOverride,
       );
       expect(c.sentenceAudioHighlight, kOverride);
-      expect(c.sentenceAudioHighlight,
-          isNot(paletteOf(scheme).sentenceHighlight),
-          reason: '设了全局音频高亮色后不应再用主题主色（BUG-464）');
+      expect(
+        c.sentenceAudioHighlight,
+        isNot(paletteOf(scheme).sentenceHighlight),
+        reason: '设了全局音频高亮色后不应再用主题主色（BUG-464）',
+      );
       // 其它角色色不受影响。
       expect(c.selection, paletteOf(scheme).lookupHighlight);
       expect(c.link, paletteOf(scheme).link);

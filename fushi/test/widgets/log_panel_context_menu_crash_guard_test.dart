@@ -47,13 +47,7 @@ void main() {
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
       ),
-      home: Scaffold(
-        body: SizedBox(
-          width: 400,
-          height: 400,
-          child: child,
-        ),
-      ),
+      home: Scaffold(body: SizedBox(width: 400, height: 400, child: child)),
     );
   }
 
@@ -78,163 +72,210 @@ void main() {
   }
 
   testWidgets(
-      'TODO-1380: menu anchor stays pinned to the summoning right-click across '
-      'toolbar rebuilds (no contextMenuAnchors glyph fallback), and the menu '
-      'keeps working', (WidgetTester tester) async {
-    // 拦截剪贴板通道，供菜单项「复制全部」断言真写穿。
-    String? copied;
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (MethodCall call) async {
-        if (call.method == 'Clipboard.setData') {
-          copied = (call.arguments as Map<Object?, Object?>)['text'] as String?;
-        }
-        return null;
-      },
-    );
-    addTearDown(() {
+    'TODO-1380: menu anchor stays pinned to the summoning right-click across '
+    'toolbar rebuilds (no contextMenuAnchors glyph fallback), and the menu '
+    'keeps working',
+    (WidgetTester tester) async {
+      // 拦截剪贴板通道，供菜单项「复制全部」断言真写穿。
+      String? copied;
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
-        null,
+        (MethodCall call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied =
+                (call.arguments as Map<Object?, Object?>)['text'] as String?;
+          }
+          return null;
+        },
       );
-    });
+      addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        );
+      });
 
-    final List<String> lines =
-        List<String>.generate(200, (int i) => 'log-line-$i');
-    final String log = lines.join('\n');
-    await tester.pumpWidget(
-      buildSubject(FushiLogPanel(log: log, shareAction: (_) {})),
-    );
-    await tester.pump();
-
-    // 菜单打开前抓 ScrollableState（菜单自身可能带 Scrollable）。
-    final ScrollableState scrollable =
-        tester.state<ScrollableState>(find.byType(Scrollable).first);
-
-    // 全选（懒加载语义：只命中已注册的视口+cache 行），选区起点=行 0。
-    final SelectableRegionState region =
-        tester.state<SelectableRegionState>(find.byType(SelectableRegion));
-    region.selectAll();
-    await tester.pump();
-
-    // 在选区内某可见行上右键 → 呼出上下文菜单，锚点=右键位置。
-    final Offset clickPos = tester.getCenter(find.text('log-line-5'));
-    await rightClickAt(tester, clickPos);
-    expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget,
-        reason: '右键选区内应弹出上下文菜单');
-    expect(menuAnchors(tester).primaryAnchor,
-        offsetMoreOrLessEquals(clickPos, epsilon: 0.01),
-        reason: '菜单首帧应锚在右键位置');
-
-    // 菜单挂着时小幅滚动：选区几何变化 → SelectionOverlay.markNeedsBuild →
-    // 菜单 post-frame 重建——这正是事故的重建代码路径。修复前重建再求
-    // contextMenuAnchors：右键位置已被首帧消费清空 → 退回 glyph 路径 → 锚点
-    // 从右键位置跳走（真机上此路径遇到 detach/NaN 瞬态就是 startGlyphHeight
-    // 空断言崩溃）；修复后锚点自持，重建幂等、纹丝不动。
-    scrollable.position.jumpTo(120);
-    await tester.pump();
-    await tester.pump();
-    await tester.pump();
-
-    expect(tester.takeException(), isNull, reason: '菜单重建不得抛异常（TODO-1380 事故路径）');
-    expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget,
-        reason: '选区仍在时重建后菜单应保持打开');
-    expect(menuAnchors(tester).primaryAnchor,
-        offsetMoreOrLessEquals(clickPos, epsilon: 0.01),
-        reason: '重建后锚点必须仍钉在右键位置——一旦跳走说明退回了 '
-            'contextMenuAnchors 的 glyph 路径（TODO-1380 崩溃根因）');
-
-    // 重建后的菜单必须仍可用：点「复制全部」→ 真写穿剪贴板（全量）且菜单关闭。
-    await tester.tap(
-      find.descendant(
-        of: find.byType(AdaptiveTextSelectionToolbar),
-        matching: find.text(t.log_copy_all),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(copied, equals(log), reason: '菜单「复制全部」应复制整段日志');
-    expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing,
-        reason: '点完菜单项菜单应关闭');
-  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
-
-  testWidgets(
-      'TODO-1380: when the whole selection is evicted the framework closes the '
-      'menu gracefully (no exception)', (WidgetTester tester) async {
-    final String log =
-        List<String>.generate(200, (int i) => 'log-line-$i').join('\n');
-    await tester.pumpWidget(
-      buildSubject(FushiLogPanel(log: log, shareAction: (_) {})),
-    );
-    await tester.pump();
-
-    final ScrollableState scrollable =
-        tester.state<ScrollableState>(find.byType(Scrollable).first);
-    final SelectableRegionState region =
-        tester.state<SelectableRegionState>(find.byType(SelectableRegion));
-    region.selectAll();
-    await tester.pump();
-    await rightClickAt(tester, tester.getCenter(find.text('log-line-5')));
-    expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget);
-
-    // 大幅滚动把整段选区行全部回收：选区索引清成 -1 → 几何整体 none →
-    // 框架 dispose SelectionOverlay 顺带收走菜单。全程不得抛异常。
-    scrollable.position.jumpTo(600);
-    await tester.pump();
-    await tester.pump();
-    await tester.pump();
-
-    expect(tester.takeException(), isNull, reason: '选区整体消亡时菜单应被框架优雅收走而非崩溃');
-    expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing,
-        reason: '选区没了菜单应随之关闭');
-  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
-
-  testWidgets(
-      'TODO-1380: menu stays open, anchored and crash-free while log content '
-      'keeps appending (live log stream UX)', (WidgetTester tester) async {
-    final List<String> lines =
-        List<String>.generate(50, (int i) => 'log-line-$i');
-    await tester.pumpWidget(
-      buildSubject(
-        FushiLogPanel(log: lines.join('\n'), shareAction: (_) {}),
-      ),
-    );
-    await tester.pump();
-
-    final SelectableRegionState region =
-        tester.state<SelectableRegionState>(find.byType(SelectableRegion));
-    region.selectAll();
-    await tester.pump();
-
-    final Offset clickPos = tester.getCenter(find.text('log-line-3'));
-    await rightClickAt(tester, clickPos);
-    expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget);
-
-    // 菜单挂着时日志持续追加（真实事故场景：错误/调试日志流不断进新行）。
-    // 用户正在选中复制日志，新行进来不得崩溃、不得把菜单打断或挪走。
-    for (int round = 1; round <= 5; round++) {
-      lines.add('appended-line-$round');
+      final List<String> lines = List<String>.generate(
+        200,
+        (int i) => 'log-line-$i',
+      );
+      final String log = lines.join('\n');
       await tester.pumpWidget(
-        buildSubject(
-          FushiLogPanel(log: lines.join('\n'), shareAction: (_) {}),
-        ),
+        buildSubject(FushiLogPanel(log: log, shareAction: (_) {})),
       );
       await tester.pump();
-      expect(tester.takeException(), isNull,
-          reason: '日志追加第 $round 轮后菜单重建不得崩溃（TODO-1380）');
-    }
-    expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget,
-        reason: '日志流追加期间菜单应保持打开（不许用「内容一变就关菜单」绕过）');
-    expect(menuAnchors(tester).primaryAnchor,
+
+      // 菜单打开前抓 ScrollableState（菜单自身可能带 Scrollable）。
+      final ScrollableState scrollable = tester.state<ScrollableState>(
+        find.byType(Scrollable).first,
+      );
+
+      // 全选（懒加载语义：只命中已注册的视口+cache 行），选区起点=行 0。
+      final SelectableRegionState region = tester.state<SelectableRegionState>(
+        find.byType(SelectableRegion),
+      );
+      region.selectAll();
+      await tester.pump();
+
+      // 在选区内某可见行上右键 → 呼出上下文菜单，锚点=右键位置。
+      final Offset clickPos = tester.getCenter(find.text('log-line-5'));
+      await rightClickAt(tester, clickPos);
+      expect(
+        find.byType(AdaptiveTextSelectionToolbar),
+        findsOneWidget,
+        reason: '右键选区内应弹出上下文菜单',
+      );
+      expect(
+        menuAnchors(tester).primaryAnchor,
         offsetMoreOrLessEquals(clickPos, epsilon: 0.01),
-        reason: '日志追加期间菜单锚点应保持在召出位置');
-  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+        reason: '菜单首帧应锚在右键位置',
+      );
+
+      // 菜单挂着时小幅滚动：选区几何变化 → SelectionOverlay.markNeedsBuild →
+      // 菜单 post-frame 重建——这正是事故的重建代码路径。修复前重建再求
+      // contextMenuAnchors：右键位置已被首帧消费清空 → 退回 glyph 路径 → 锚点
+      // 从右键位置跳走（真机上此路径遇到 detach/NaN 瞬态就是 startGlyphHeight
+      // 空断言崩溃）；修复后锚点自持，重建幂等、纹丝不动。
+      scrollable.position.jumpTo(120);
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: '菜单重建不得抛异常（TODO-1380 事故路径）',
+      );
+      expect(
+        find.byType(AdaptiveTextSelectionToolbar),
+        findsOneWidget,
+        reason: '选区仍在时重建后菜单应保持打开',
+      );
+      expect(
+        menuAnchors(tester).primaryAnchor,
+        offsetMoreOrLessEquals(clickPos, epsilon: 0.01),
+        reason:
+            '重建后锚点必须仍钉在右键位置——一旦跳走说明退回了 '
+            'contextMenuAnchors 的 glyph 路径（TODO-1380 崩溃根因）',
+      );
+
+      // 重建后的菜单必须仍可用：点「复制全部」→ 真写穿剪贴板（全量）且菜单关闭。
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AdaptiveTextSelectionToolbar),
+          matching: find.text(t.log_copy_all),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(copied, equals(log), reason: '菜单「复制全部」应复制整段日志');
+      expect(
+        find.byType(AdaptiveTextSelectionToolbar),
+        findsNothing,
+        reason: '点完菜单项菜单应关闭',
+      );
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'TODO-1380: when the whole selection is evicted the framework closes the '
+    'menu gracefully (no exception)',
+    (WidgetTester tester) async {
+      final String log = List<String>.generate(
+        200,
+        (int i) => 'log-line-$i',
+      ).join('\n');
+      await tester.pumpWidget(
+        buildSubject(FushiLogPanel(log: log, shareAction: (_) {})),
+      );
+      await tester.pump();
+
+      final ScrollableState scrollable = tester.state<ScrollableState>(
+        find.byType(Scrollable).first,
+      );
+      final SelectableRegionState region = tester.state<SelectableRegionState>(
+        find.byType(SelectableRegion),
+      );
+      region.selectAll();
+      await tester.pump();
+      await rightClickAt(tester, tester.getCenter(find.text('log-line-5')));
+      expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget);
+
+      // 大幅滚动把整段选区行全部回收：选区索引清成 -1 → 几何整体 none →
+      // 框架 dispose SelectionOverlay 顺带收走菜单。全程不得抛异常。
+      scrollable.position.jumpTo(600);
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+
+      expect(tester.takeException(), isNull, reason: '选区整体消亡时菜单应被框架优雅收走而非崩溃');
+      expect(
+        find.byType(AdaptiveTextSelectionToolbar),
+        findsNothing,
+        reason: '选区没了菜单应随之关闭',
+      );
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'TODO-1380: menu stays open, anchored and crash-free while log content '
+    'keeps appending (live log stream UX)',
+    (WidgetTester tester) async {
+      final List<String> lines = List<String>.generate(
+        50,
+        (int i) => 'log-line-$i',
+      );
+      await tester.pumpWidget(
+        buildSubject(FushiLogPanel(log: lines.join('\n'), shareAction: (_) {})),
+      );
+      await tester.pump();
+
+      final SelectableRegionState region = tester.state<SelectableRegionState>(
+        find.byType(SelectableRegion),
+      );
+      region.selectAll();
+      await tester.pump();
+
+      final Offset clickPos = tester.getCenter(find.text('log-line-3'));
+      await rightClickAt(tester, clickPos);
+      expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget);
+
+      // 菜单挂着时日志持续追加（真实事故场景：错误/调试日志流不断进新行）。
+      // 用户正在选中复制日志，新行进来不得崩溃、不得把菜单打断或挪走。
+      for (int round = 1; round <= 5; round++) {
+        lines.add('appended-line-$round');
+        await tester.pumpWidget(
+          buildSubject(
+            FushiLogPanel(log: lines.join('\n'), shareAction: (_) {}),
+          ),
+        );
+        await tester.pump();
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: '日志追加第 $round 轮后菜单重建不得崩溃（TODO-1380）',
+        );
+      }
+      expect(
+        find.byType(AdaptiveTextSelectionToolbar),
+        findsOneWidget,
+        reason: '日志流追加期间菜单应保持打开（不许用「内容一变就关菜单」绕过）',
+      );
+      expect(
+        menuAnchors(tester).primaryAnchor,
+        offsetMoreOrLessEquals(clickPos, epsilon: 0.01),
+        reason: '日志追加期间菜单锚点应保持在召出位置',
+      );
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 
   // 源码守卫：_buildContextMenu 绝不允许再读 SelectableRegionState 上依赖完整
   // 选区几何的锚点/度量 getter——contextMenuAnchors / startGlyphHeight /
   // endGlyphHeight / selectionEndpoints 都对选区端点做空断言，而懒加载 + 日志流
   // 面板不保证端点存在（TODO-1380 崩溃根因）。锚点必须来自面板自持的 pointer down。
-  test(
-      'TODO-1380 source guard: context menu anchors come from the tracked '
+  test('TODO-1380 source guard: context menu anchors come from the tracked '
       'pointer-down position, never from geometry-dependent getters', () {
     final String source = File(
       'lib/src/utils/components/fushi_material_components.dart',
@@ -256,16 +297,26 @@ void main() {
       '.endGlyphHeight',
       '.selectionEndpoints',
     ]) {
-      expect(panel, isNot(contains(banned)),
-          reason: '$banned 对选区端点空断言；懒加载日志面板的端点可被滚动回收/'
-              '内容更新清空（TODO-1380 崩溃根因），禁止使用');
+      expect(
+        panel,
+        isNot(contains(banned)),
+        reason:
+            '$banned 对选区端点空断言；懒加载日志面板的端点可被滚动回收/'
+            '内容更新清空（TODO-1380 崩溃根因），禁止使用',
+      );
     }
     // 自持锚点在场：记录面板内最近一次 pointer down，并用于 toolbar 锚点。
     // 这两条以前扫的是含注释的原文——本文件的注释里就写着这两个名字，等于让文档
     // 给自己背书；现在只认代码。
-    expect(panel, contains('TextSelectionToolbarAnchors('),
-        reason: '菜单必须用自持的稳定锚点构造 TextSelectionToolbarAnchors');
-    expect(panel, contains('_lastPointerDownGlobalPosition'),
-        reason: '面板必须记录最近一次 pointer down 全局坐标当菜单锚点');
+    expect(
+      panel,
+      contains('TextSelectionToolbarAnchors('),
+      reason: '菜单必须用自持的稳定锚点构造 TextSelectionToolbarAnchors',
+    );
+    expect(
+      panel,
+      contains('_lastPointerDownGlobalPosition'),
+      reason: '面板必须记录最近一次 pointer down 全局坐标当菜单锚点',
+    );
   });
 }

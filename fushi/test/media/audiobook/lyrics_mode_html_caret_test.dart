@@ -14,13 +14,13 @@ void main() {
     ..audioFileIndex = 0;
 
   String html() => LyricsModeHtml.generate(
-        cues: <AudioCue>[cue(0, 'ねこ'), cue(1, 'いぬ'), cue(2, 'とり')],
-        currentIndex: 1,
-        backgroundColor: 'rgba(0,0,0,1.00)',
-        textColor: 'rgba(255,255,255,1.00)',
-        accentColor: 'rgba(255,200,0,1.00)',
-        fontSize: 24,
-      );
+    cues: <AudioCue>[cue(0, 'ねこ'), cue(1, 'いぬ'), cue(2, 'とり')],
+    currentIndex: 1,
+    backgroundColor: 'rgba(0,0,0,1.00)',
+    textColor: 'rgba(255,255,255,1.00)',
+    accentColor: 'rgba(255,200,0,1.00)',
+    fontSize: 24,
+  );
 
   test('exposes __lyricsScrollToCue helper for the caret', () {
     expect(html(), contains('window.__lyricsScrollToCue'));
@@ -50,8 +50,10 @@ void main() {
       final String source = html();
       expect(source, isNot(contains('attempt < 100')));
       expect(source, isNot(contains('notifyLyricsReady(attempt')));
-      expect(source,
-          isNot(contains('window.setTimeout(function() { notifyLyricsReady')));
+      expect(
+        source,
+        isNot(contains('window.setTimeout(function() { notifyLyricsReady')),
+      );
     });
 
     test('no requestAnimationFrame wrapper around the ready callHandler', () {
@@ -66,17 +68,23 @@ void main() {
       expect(before, isNot(contains('requestAnimationFrame')));
     });
 
-    test('platform-ready event is only a fallback behind a synchronous call',
-        () {
-      final String source = html();
-      final int ready = source.indexOf("callHandler('onLyricsReady'");
-      final int listener =
-          source.indexOf("addEventListener('flutterInAppWebViewPlatformReady'");
-      expect(ready, greaterThanOrEqualTo(0));
-      expect(listener, greaterThan(ready),
-          reason: '事件监听必须在同步调用之后注册，且只在同步调用没打出去时才挂上');
-      expect(source, contains('if (!fired) {'));
-      expect(source, contains('{once: true}'));
-    });
+    test(
+      'platform-ready event is only a fallback behind a synchronous call',
+      () {
+        final String source = html();
+        final int ready = source.indexOf("callHandler('onLyricsReady'");
+        final int listener = source.indexOf(
+          "addEventListener('flutterInAppWebViewPlatformReady'",
+        );
+        expect(ready, greaterThanOrEqualTo(0));
+        expect(
+          listener,
+          greaterThan(ready),
+          reason: '事件监听必须在同步调用之后注册，且只在同步调用没打出去时才挂上',
+        );
+        expect(source, contains('if (!fired) {'));
+        expect(source, contains('{once: true}'));
+      },
+    );
   });
 }

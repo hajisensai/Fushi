@@ -39,8 +39,9 @@ void main() {
     return result;
   }
 
-  testWidgets('说清缺的是落地用的视频文件夹；「添加视频来源」开来源对话框并返回 true',
-      (WidgetTester tester) async {
+  testWidgets('说清缺的是落地用的视频文件夹；「添加视频来源」开来源对话框并返回 true', (
+    WidgetTester tester,
+  ) async {
     int opened = 0;
     await pump(tester, openSourcesDialog: (BuildContext _) async => opened++);
 
@@ -54,8 +55,11 @@ void main() {
       isNot(t.download_add_video_source),
       reason: '对话框标题不能与主按钮同文案',
     );
-    expect(find.text(t.download_add_video_source), findsOneWidget,
-        reason: '「添加视频来源」只出现在主按钮上，不再兼任标题');
+    expect(
+      find.text(t.download_add_video_source),
+      findsOneWidget,
+      reason: '「添加视频来源」只出现在主按钮上，不再兼任标题',
+    );
 
     await tester.tap(
       find.byKey(const ValueKey<String>('managed_video_source_prompt_add')),

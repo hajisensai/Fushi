@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:path/path.dart' as p;
@@ -185,7 +185,10 @@ void main() {
       ),
     );
 
-    expect(await store.markAutoScrapedCleanupPending('legacy', 'abc123'), isTrue);
+    expect(
+      await store.markAutoScrapedCleanupPending('legacy', 'abc123'),
+      isTrue,
+    );
     CoverMeta meta = (await store.get('legacy'))!;
     expect(meta.origin, CoverOrigin.cleanupPending);
     expect(meta.contentSha256, 'abc123');
@@ -206,10 +209,7 @@ void main() {
       CoverOrigin.cleanupReplacement,
     );
 
-    await store.set(
-      'frame',
-      const CoverMeta(origin: CoverOrigin.autoScraped),
-    );
+    await store.set('frame', const CoverMeta(origin: CoverOrigin.autoScraped));
     expect(await store.allowsAutoFrameWrite('frame'), isTrue);
     expect(
       (await store.get('frame'))!.origin,

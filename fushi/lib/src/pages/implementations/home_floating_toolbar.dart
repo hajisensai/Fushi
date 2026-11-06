@@ -114,6 +114,24 @@ class HomeToolbarScrollState extends ChangeNotifier {
     return false;
   }
 
+  /// 喂一条 [ScrollMetricsNotification]（内容长度 / 视口变化后的版面修正）。
+  ///
+  /// 版面把位置夹回顶部（窗口变大 / 面板收起后整页放得下）只发这类通知、**不发**
+  /// ScrollUpdate——[handle] 看不见它，栏会停在收起态，而列表已经滚不动，用户
+  /// 再也唤不回顶栏（同库页 BUG-3133）。位置落回顶部一屏栏高之内就弹回栏。
+  bool handleMetrics(ScrollMetricsNotification notification) {
+    if (notification.depth != 0) return false;
+    final ScrollMetrics metrics = notification.metrics;
+    if (metrics.axis != Axis.vertical) return false;
+    final double pixels = metrics.pixels;
+    if (pixels <= kHomeToolbarExtent) _accumulated = 0;
+    _set(
+      visible: pixels <= kHomeToolbarExtent ? true : _visible,
+      pastHero: pixels > fabRevealOffset,
+    );
+    return false;
+  }
+
   void _set({required bool visible, required bool pastHero}) {
     if (visible == _visible && pastHero == _pastHero) return;
     _visible = visible;
@@ -174,22 +192,25 @@ class HomeFloatingToolbar extends StatelessWidget {
         visible: visible,
         // 整栏连同投影一起滑出顶边。
         distance: homeToolbarExtent(context) + 16,
-        child: Padding(
-          padding: const EdgeInsets.only(top: kHomeToolbarTopGap),
-          child: SizedBox(
-            height: homeToolbarHeight(context),
-            child: FocusTraversalGroup(
-              child: Row(
-                children: <Widget>[
-                  leading,
-                  const SizedBox(width: 8),
-                  // 动作组的自适应溢出按剩余宽度测（无标题胶囊，不保底标题宽）。
-                  Expanded(
-                    child: FushiFloatingTopBar(
-                      actions: <List<FushiToolbarItem>>[actions],
+        // 整行（头像 + 动作组）一起按顶部胶囊比例缩，内层顶栏不再重复缩。
+        child: FushiCapsuleScale(
+          child: Padding(
+            padding: const EdgeInsets.only(top: kHomeToolbarTopGap),
+            child: SizedBox(
+              height: homeToolbarHeight(context),
+              child: FocusTraversalGroup(
+                child: Row(
+                  children: <Widget>[
+                    leading,
+                    const SizedBox(width: 8),
+                    // 动作组的自适应溢出按剩余宽度测（无标题胶囊，不保底标题宽）。
+                    Expanded(
+                      child: FushiFloatingTopBar(
+                        actions: <List<FushiToolbarItem>>[actions],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

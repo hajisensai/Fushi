@@ -323,6 +323,9 @@ class PlexVideoClient
       parentBackdropItemId: isEpisode
           ? (m.grandparentArt != null ? m.grandparentRatingKey : null)
           : (isSeason && m.parentArt != null ? m.parentRatingKey : null),
+      seriesCoverItemId: isEpisode && m.grandparentThumb != null
+          ? m.grandparentRatingKey
+          : null,
       overview: m.summary,
       communityRating: m.rating,
       genres: m.genres,

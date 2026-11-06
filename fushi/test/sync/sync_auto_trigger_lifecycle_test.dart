@@ -46,8 +46,11 @@ void main() {
       noteAutoSweepOutcomeForBackoff(SyncOutcomeReason.failed, nowMs: now);
       expect(isAutoSweepBackedOff(nowMs: now), isTrue);
       expect(isAutoSweepBackedOff(nowMs: now + cooldownMs - 1), isTrue);
-      expect(isAutoSweepBackedOff(nowMs: now + cooldownMs), isFalse,
-          reason: '固定退避：窗满必须放行重试');
+      expect(
+        isAutoSweepBackedOff(nowMs: now + cooldownMs),
+        isFalse,
+        reason: '固定退避：窗满必须放行重试',
+      );
     });
 
     test('completed 清零退避；cooledDown/noChannels/autoDisabled 不触碰', () {
@@ -57,21 +60,27 @@ void main() {
 
       noteAutoSweepOutcomeForBackoff(SyncOutcomeReason.cooledDown, nowMs: now);
       noteAutoSweepOutcomeForBackoff(SyncOutcomeReason.noChannels, nowMs: now);
-      noteAutoSweepOutcomeForBackoff(SyncOutcomeReason.autoDisabled,
-          nowMs: now);
+      noteAutoSweepOutcomeForBackoff(
+        SyncOutcomeReason.autoDisabled,
+        nowMs: now,
+      );
       expect(isAutoSweepBackedOff(nowMs: now), isTrue, reason: '非成败结局不得改写退避戳');
 
       noteAutoSweepOutcomeForBackoff(SyncOutcomeReason.completed, nowMs: now);
-      expect(isAutoSweepBackedOff(nowMs: now), isFalse,
-          reason: '成功（对端活了）必须恢复正常节奏');
+      expect(
+        isAutoSweepBackedOff(nowMs: now),
+        isFalse,
+        reason: '成功（对端活了）必须恢复正常节奏',
+      );
     });
   });
 
   group('BUG-1569① 全量 sweep 失败路径推进退避（集成）', () {
     test('对端离线：第一轮 failed 置退避，第二轮 cooledDown 跳过探测', () async {
       final FushiDatabase db = _memDb();
-      final Directory work =
-          await Directory.systemTemp.createTemp('bug1569_backoff_');
+      final Directory work = await Directory.systemTemp.createTemp(
+        'bug1569_backoff_',
+      );
       addTearDown(() async {
         await db.close();
         if (work.existsSync()) await work.delete(recursive: true);
@@ -81,8 +90,10 @@ void main() {
       // 唯一通道 = 互联（云备份后端也选成互联，dedup 后只剩一条），指向一个
       // 已关闭端口 → 连接拒绝 → 全候选探测失败 → SyncBackendError → 通道失败。
       await repo.setBackendType(SyncBackendType.fushiServer);
-      final ServerSocket dead =
-          await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final ServerSocket dead = await ServerSocket.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
       final int deadPort = dead.port;
       await dead.close();
       await repo.setFushiClientUrls(<FushiClientUrl>[
@@ -101,18 +112,31 @@ void main() {
         return lastSyncOutcome.value!.reason;
       }
 
-      expect(await runOnce(), SyncOutcomeReason.failed,
-          reason: '对端离线的通道异常必须如实记为 failed');
-      expect(autoSweepFailureBackoffUntilMsForTest, isNotNull,
-          reason: '失败结局必须推进退避戳（BUG-1569①）');
+      expect(
+        await runOnce(),
+        SyncOutcomeReason.failed,
+        reason: '对端离线的通道异常必须如实记为 failed',
+      );
+      expect(
+        autoSweepFailureBackoffUntilMsForTest,
+        isNotNull,
+        reason: '失败结局必须推进退避戳（BUG-1569①）',
+      );
 
       final Stopwatch watch = Stopwatch()..start();
-      expect(await runOnce(), SyncOutcomeReason.cooledDown,
-          reason: '退避窗内的下一次自动 sweep 必须被闸掉，'
-              '不得再全额重付候选串行探测');
+      expect(
+        await runOnce(),
+        SyncOutcomeReason.cooledDown,
+        reason:
+            '退避窗内的下一次自动 sweep 必须被闸掉，'
+            '不得再全额重付候选串行探测',
+      );
       watch.stop();
-      expect(watch.elapsedMilliseconds, lessThan(1000),
-          reason: '被闸掉的轮次只做本地判断，不得走网络');
+      expect(
+        watch.elapsedMilliseconds,
+        lessThan(1000),
+        reason: '被闸掉的轮次只做本地判断，不得走网络',
+      );
     });
   });
 
@@ -135,15 +159,22 @@ void main() {
       lastSyncOutcome.value = null;
       await db.close();
       await Future<void>.delayed(const Duration(milliseconds: 200));
-      expect(lastSyncOutcome.value, isNull,
-          reason: '未决防抖 Timer 必须随 uninstall 取消，'
-              '否则会对已关闭的 db 跑 _runCollectionsSync（BUG-1569②）');
+      expect(
+        lastSyncOutcome.value,
+        isNull,
+        reason:
+            '未决防抖 Timer 必须随 uninstall 取消，'
+            '否则会对已关闭的 db 跑 _runCollectionsSync（BUG-1569②）',
+      );
     });
 
     test('源码守卫：AppModel 三条关库/销毁路径都撤观察者', () {
       final File f = File('lib/src/models/app_model.dart');
-      expect(f.existsSync(), isTrue,
-          reason: 'run from the fushi/ package root');
+      expect(
+        f.existsSync(),
+        isTrue,
+        reason: 'run from the fushi/ package root',
+      );
       final String src = f.readAsStringSync();
 
       String slice(String start, String end) {
@@ -188,32 +219,46 @@ void main() {
       expect(debugMarkSweepInProgress(true), isTrue);
       triggerAutoSyncOnBackground(db: db, mediaIdentifier: 'fushi://book/abc');
       // 记账发生在 _runAutoSync 读完自动同步开关之后。
-      await _waitFor(() => pendingBookSyncCountForTest == 1,
-          what: 'per-book request to be recorded during sweep');
+      await _waitFor(
+        () => pendingBookSyncCountForTest == 1,
+        what: 'per-book request to be recorded during sweep',
+      );
       triggerAutoSyncOnBackground(db: db, mediaIdentifier: 'fushi://book/abc');
       await Future<void>.delayed(Duration.zero);
-      expect(pendingBookSyncCountForTest, 1,
-          reason: '同一本书在 sweep 期间反复退出只记一笔（去重）');
+      expect(
+        pendingBookSyncCountForTest,
+        1,
+        reason: '同一本书在 sweep 期间反复退出只记一笔（去重）',
+      );
 
       debugMarkSweepInProgress(false);
       lastSyncOutcome.value = null;
       drainPendingBookSyncsAfterSweep();
       expect(pendingBookSyncCountForTest, 0, reason: '补跑后账目清空');
-      await _waitFor(() => lastSyncOutcome.value != null,
-          what: 'replayed per-book sync to finish');
-      expect(lastSyncOutcome.value!.kind, SyncActivityKind.singleBook,
-          reason: '被 sweep 挡下的请求必须真的补跑（此前是静默丢弃）');
+      await _waitFor(
+        () => lastSyncOutcome.value != null,
+        what: 'replayed per-book sync to finish',
+      );
+      expect(
+        lastSyncOutcome.value!.kind,
+        SyncActivityKind.singleBook,
+        reason: '被 sweep 挡下的请求必须真的补跑（此前是静默丢弃）',
+      );
     });
 
     test('源码守卫：自动与手动两条全量 sweep 收尾都接了补跑', () {
       final File f = File('lib/src/sync/sync_auto_trigger.dart');
-      expect(f.existsSync(), isTrue,
-          reason: 'run from the fushi/ package root');
+      expect(
+        f.existsSync(),
+        isTrue,
+        reason: 'run from the fushi/ package root',
+      );
       final String src = f.readAsStringSync();
       expect(
         'drainPendingBookSyncsAfterSweep();'.allMatches(src).length,
         greaterThanOrEqualTo(2),
-        reason: '_runAutoSyncAll 与 runManualFullSync 的 finally 都必须补跑'
+        reason:
+            '_runAutoSyncAll 与 runManualFullSync 的 finally 都必须补跑'
             ' sweep 期间记账的退出书同步（BUG-1569③）——上面的行为用例只测'
             '记账与 drain 本身，不测 finally 接线',
       );

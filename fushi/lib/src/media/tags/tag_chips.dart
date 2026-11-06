@@ -14,7 +14,14 @@ library;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 一个标签相对于一组目标的勾选状态。
@@ -119,8 +126,8 @@ class _FushiTagToggleChipState extends State<FushiTagToggleChip>
         label: widget.state == TagCheckState.partial
             ? '${widget.label} · ${_partialMark()}'
             : widget.count == null
-                ? widget.label
-                : '${widget.label}  ${widget.count}',
+            ? widget.label
+            : '${widget.label}  ${widget.count}',
         color: widget.color,
         selected: widget.state != TagCheckState.none,
         dimmed: widget.dimmed,
@@ -134,12 +141,13 @@ class _FushiTagToggleChipState extends State<FushiTagToggleChip>
     final TagCheckState state = widget.state;
     final Color fill = switch (state) {
       TagCheckState.all => eink ? scheme.onSurface : widget.color,
-      TagCheckState.partial => eink
-          ? scheme.surface
-          : Color.alphaBlend(
-              widget.color.withValues(alpha: 0.42),
-              scheme.surfaceContainerLow,
-            ),
+      TagCheckState.partial =>
+        eink
+            ? scheme.surface
+            : Color.alphaBlend(
+                widget.color.withValues(alpha: 0.42),
+                scheme.surfaceContainerLow,
+              ),
       TagCheckState.none =>
         eink ? scheme.surface : fushiTagTonalColor(context, widget.color),
     };
@@ -156,26 +164,26 @@ class _FushiTagToggleChipState extends State<FushiTagToggleChip>
           ScaleTransition(scale: a, child: child),
       child: switch (state) {
         TagCheckState.all => FushiIcon(
-            FushiIcons.check,
-            key: const ValueKey<String>('all'),
-            size: 18,
-            color: foreground,
-          ),
+          FushiIcons.check,
+          key: const ValueKey<String>('all'),
+          size: 18,
+          color: foreground,
+        ),
         TagCheckState.partial => FushiIcon(
-            FushiIcons.remove,
-            key: const ValueKey<String>('partial'),
-            size: 18,
-            color: foreground,
-          ),
+          FushiIcons.remove,
+          key: const ValueKey<String>('partial'),
+          size: 18,
+          color: foreground,
+        ),
         TagCheckState.none => DecoratedBox(
-            key: const ValueKey<String>('none'),
-            decoration: BoxDecoration(
-              color: widget.color,
-              shape: BoxShape.circle,
-              border: eink ? Border.all(color: scheme.onSurface) : null,
-            ),
-            child: const SizedBox(width: 10, height: 10),
+          key: const ValueKey<String>('none'),
+          decoration: BoxDecoration(
+            color: widget.color,
+            shape: BoxShape.circle,
+            border: eink ? Border.all(color: scheme.onSurface) : null,
           ),
+          child: const SizedBox(width: 10, height: 10),
+        ),
       },
     );
     final Widget content = Row(
@@ -190,11 +198,11 @@ class _FushiTagToggleChipState extends State<FushiTagToggleChip>
             overflow: TextOverflow.ellipsis,
             style: (Theme.of(context).textTheme.labelLarge ?? const TextStyle())
                 .copyWith(
-              color: foreground,
-              fontWeight: state == TagCheckState.none
-                  ? FontWeight.w500
-                  : FontWeight.w600,
-            ),
+                  color: foreground,
+                  fontWeight: state == TagCheckState.none
+                      ? FontWeight.w500
+                      : FontWeight.w600,
+                ),
           ),
         ),
         if (widget.count != null) ...<Widget>[
@@ -212,8 +220,8 @@ class _FushiTagToggleChipState extends State<FushiTagToggleChip>
     final BorderSide side = state == TagCheckState.partial
         ? BorderSide(color: eink ? scheme.onSurface : widget.color, width: 1.5)
         : eink && state == TagCheckState.none
-            ? BorderSide(color: scheme.outline)
-            : BorderSide.none;
+        ? BorderSide(color: scheme.outline)
+        : BorderSide.none;
     Widget chip = AnimatedBuilder(
       animation: _select.animation,
       builder: (BuildContext context, Widget? child) {
@@ -262,7 +270,8 @@ class _FushiTagToggleChipState extends State<FushiTagToggleChip>
       scale: 0.94,
       child: chip,
     );
-    final String? tooltip = widget.tooltip ??
+    final String? tooltip =
+        widget.tooltip ??
         (state == TagCheckState.partial ? _partialMark() : null);
     if (tooltip != null) chip = FushiTooltip(message: tooltip, child: chip);
     return Semantics(selected: state == TagCheckState.all, child: chip);
@@ -319,12 +328,13 @@ class FushiTagInputChip extends StatelessWidget {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: (Theme.of(context).textTheme.labelLarge ??
-                          const TextStyle())
-                      .copyWith(
-                    color: foreground,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style:
+                      (Theme.of(context).textTheme.labelLarge ??
+                              const TextStyle())
+                          .copyWith(
+                            color: foreground,
+                            fontWeight: FontWeight.w600,
+                          ),
                 ),
               ),
               InkWell(
@@ -336,8 +346,9 @@ class FushiTagInputChip extends StatelessWidget {
                     FushiIcons.close,
                     size: 16,
                     color: foreground,
-                    semanticLabel:
-                        MaterialLocalizations.of(context).deleteButtonTooltip,
+                    semanticLabel: MaterialLocalizations.of(
+                      context,
+                    ).deleteButtonTooltip,
                   ),
                 ),
               ),

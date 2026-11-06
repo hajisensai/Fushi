@@ -90,10 +90,11 @@ List<int> distributeSessionChars(List<int> current, int total) {
 ///
 /// 按**日历日之差**平移整个会话（不是「把 startAt 的年月日换掉」）：会话可以跨午夜，
 /// 逐段各自换年月日会把跨午夜的后半段拉回同一天、打乱段间相对关系。
-int studySessionDateShiftMs(DateTime from, DateTime to) =>
-    DateTime(to.year, to.month, to.day)
-        .difference(DateTime(from.year, from.month, from.day))
-        .inMilliseconds;
+int studySessionDateShiftMs(DateTime from, DateTime to) => DateTime(
+  to.year,
+  to.month,
+  to.day,
+).difference(DateTime(from.year, from.month, from.day)).inMilliseconds;
 
 /// 编辑一次学习会话的**唯一**入口。顺序与 [deleteStudySession] 同一条纪律：
 /// 先让段 uid 在所有在跑的 `StudyClock` 上退役，再写库——时钟按 uid upsert 绝对值，
@@ -115,51 +116,56 @@ Future<void> applyStudySessionEdit(
           DateTime.fromMillisecondsSinceEpoch(s.startAt),
           edit.date!,
         );
-  final List<StudySegmentRow> rows =
-      await db.getStudySegmentsByUids(s.segmentUids.toSet());
+  final List<StudySegmentRow> rows = await db.getStudySegmentsByUids(
+    s.segmentUids.toSet(),
+  );
   // 段顺序按 startAt 定死，分摊结果才与「哪一段是第一段」无关于查询返回顺序。
   rows.sort(
-      (StudySegmentRow a, StudySegmentRow b) => a.startAt.compareTo(b.startAt));
+    (StudySegmentRow a, StudySegmentRow b) => a.startAt.compareTo(b.startAt),
+  );
   final List<int> newChars = edit.chars == null
       ? <int>[for (final StudySegmentRow r in rows) r.chars]
-      : distributeSessionChars(
-          <int>[for (final StudySegmentRow r in rows) r.chars],
-          edit.chars!,
-        );
+      : distributeSessionChars(<int>[
+          for (final StudySegmentRow r in rows) r.chars,
+        ], edit.chars!);
   final int now = DateTime.now().millisecondsSinceEpoch;
   final List<StudySegmentsCompanion> updates = <StudySegmentsCompanion>[];
   for (int i = 0; i < rows.length; i++) {
     final StudySegmentRow r = rows[i];
     final int startAt = r.startAt + shiftMs;
     final DateTime startDay = DateTime.fromMillisecondsSinceEpoch(startAt);
-    updates.add(StudySegmentsCompanion(
-      uid: Value(r.uid),
-      startAt: Value(startAt),
-      endAt: Value(r.endAt + shiftMs),
-      dateKey: Value(FushiDatabase.statDateKeyOf(startDay)),
-      hour: Value(startDay.hour),
-      chars: Value(newChars[i]),
-      updatedAt: Value(now),
-    ));
+    updates.add(
+      StudySegmentsCompanion(
+        uid: Value(r.uid),
+        startAt: Value(startAt),
+        endAt: Value(r.endAt + shiftMs),
+        dateKey: Value(FushiDatabase.statDateKeyOf(startDay)),
+        hour: Value(startDay.hour),
+        chars: Value(newChars[i]),
+        updatedAt: Value(now),
+      ),
+    );
   }
   // 游戏纯时长会话改字数：没有任何段可写，新建一条与骨架区间相交的 chars-only 段。
   final List<StudySegmentsCompanion> inserts = <StudySegmentsCompanion>[];
   if (rows.isEmpty && s.isGame && (edit.chars ?? 0) > 0) {
     final int startAt = s.startAt + shiftMs;
     final DateTime startDay = DateTime.fromMillisecondsSinceEpoch(startAt);
-    inserts.add(StudySegmentsCompanion.insert(
-      uid: FushiDatabase.newStudySegmentUid(),
-      deviceId: await db.getOrCreateStudyDeviceId(),
-      mediaKind: s.mediaKind,
-      mediaKey: s.mediaKey,
-      title: s.title,
-      startAt: startAt,
-      endAt: s.endAt + shiftMs,
-      dateKey: FushiDatabase.statDateKeyOf(startDay),
-      hour: startDay.hour,
-      chars: Value(edit.chars!),
-      updatedAt: now,
-    ));
+    inserts.add(
+      StudySegmentsCompanion.insert(
+        uid: FushiDatabase.newStudySegmentUid(),
+        deviceId: await db.getOrCreateStudyDeviceId(),
+        mediaKind: s.mediaKind,
+        mediaKey: s.mediaKey,
+        title: s.title,
+        startAt: startAt,
+        endAt: s.endAt + shiftMs,
+        dateKey: FushiDatabase.statDateKeyOf(startDay),
+        hour: startDay.hour,
+        chars: Value(edit.chars!),
+        updatedAt: now,
+      ),
+    );
   }
   retireStudySegmentUids(s.segmentUids);
   final int gameStartAt = s.startAt + shiftMs;
@@ -311,8 +317,8 @@ List<StudySession> deriveStudySessions({
       StudySession(
         mediaKind: kActivityMediaGame,
         mediaKey: g.gameId,
-        title: gameNamesById[g.gameId] ??
-            (hits.isEmpty ? '' : hits.first.title),
+        title:
+            gameNamesById[g.gameId] ?? (hits.isEmpty ? '' : hits.first.title),
         format: '',
         deviceId: hits.isEmpty ? '' : hits.first.deviceId,
         startAt: g.startMs,
@@ -334,16 +340,17 @@ List<StudySession> deriveStudySessions({
       gameWindowStartAt = g.startMs;
     }
   }
-  final List<StudySegmentRow> rest = <StudySegmentRow>[
-    for (final StudySegmentRow s in segments)
-      if (!_isZero(s) &&
-          !absorbed.contains(s.uid) &&
-          !_outsideGameSkeleton(s, gameWindowStartAt))
-        s,
-  ]..sort((StudySegmentRow a, StudySegmentRow b) {
-      final int c = _compareGroup(_groupKey(a), _groupKey(b));
-      return c != 0 ? c : a.startAt.compareTo(b.startAt);
-    });
+  final List<StudySegmentRow> rest =
+      <StudySegmentRow>[
+        for (final StudySegmentRow s in segments)
+          if (!_isZero(s) &&
+              !absorbed.contains(s.uid) &&
+              !_outsideGameSkeleton(s, gameWindowStartAt))
+            s,
+      ]..sort((StudySegmentRow a, StudySegmentRow b) {
+        final int c = _compareGroup(_groupKey(a), _groupKey(b));
+        return c != 0 ? c : a.startAt.compareTo(b.startAt);
+      });
   final int gapMs = gap.inMilliseconds;
   _Run? run;
   for (final StudySegmentRow s in rest) {
@@ -378,9 +385,9 @@ int _compareGroup(_GroupKey a, _GroupKey b) {
 
 class _Run {
   _Run(StudySegmentRow first)
-      : groupKey = _groupKey(first),
-        first = first,
-        endAt = first.endAt {
+    : groupKey = _groupKey(first),
+      first = first,
+      endAt = first.endAt {
     add(first);
   }
 
@@ -404,16 +411,16 @@ class _Run {
   }
 
   StudySession build() => StudySession(
-        mediaKind: first.mediaKind,
-        mediaKey: first.mediaKey,
-        title: title,
-        format: first.format,
-        deviceId: first.deviceId,
-        startAt: first.startAt,
-        endAt: endAt,
-        durationMs: durationMs,
-        chars: chars,
-        pages: pages,
-        segmentUids: uids,
-      );
+    mediaKind: first.mediaKind,
+    mediaKey: first.mediaKey,
+    title: title,
+    format: first.format,
+    deviceId: first.deviceId,
+    startAt: first.startAt,
+    endAt: endAt,
+    durationMs: durationMs,
+    chars: chars,
+    pages: pages,
+    segmentUids: uids,
+  );
 }

@@ -8,6 +8,8 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
     show kRemoteDictionaryMediaMaxBytes, safeDictionaryMediaPath;
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
+    show kRemoteLookupLanguageField, kRemoteLookupRubyField;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -51,18 +53,18 @@ class FushiRemoteLookupClient {
     Duration timeout = const Duration(seconds: 3),
     Duration audioTransferTimeout = kInterconnectAssetTransferTimeout,
     bool trackDictionaryStyles = false,
-  })  : _transport = InterconnectPostTransport(
-          repo: repo,
-          httpClient: httpClient,
-          pinnedClientFactory: pinnedClientFactory,
-        ),
-        _onlyCandidate = onlyCandidate,
-        _timeout = timeout,
-        _audioTransferTimeout = audioTransferTimeout,
-        _trackDictionaryStyles = trackDictionaryStyles,
-        _pinnedAudioCacheDirectoryProvider =
-            pinnedAudioCacheDirectoryProvider ??
-                _defaultPinnedAudioCacheDirectory;
+  }) : _transport = InterconnectPostTransport(
+         repo: repo,
+         httpClient: httpClient,
+         pinnedClientFactory: pinnedClientFactory,
+       ),
+       _onlyCandidate = onlyCandidate,
+       _timeout = timeout,
+       _audioTransferTimeout = audioTransferTimeout,
+       _trackDictionaryStyles = trackDictionaryStyles,
+       _pinnedAudioCacheDirectoryProvider =
+           pinnedAudioCacheDirectoryProvider ??
+           _defaultPinnedAudioCacheDirectory;
 
   /// 候选轮询 / 鉴权 / 指纹钉扎 / socket 回收统一由 [InterconnectPostTransport]
   /// 承担——本类只管端点、超时与响应体的语义解析。
@@ -78,7 +80,9 @@ class FushiRemoteLookupClient {
 
   /// BUG-3425：查词时是否按 `stylesRevision` 门控顺带取 host 的词典自带样式。
   ///
-  /// 只给**在本端渲染并导出远端结果**、且实例活过整个会话的调用方开（游戏串流）：
+  /// 只给**在本端渲染并导出远端结果**、且实例跨查词复用的调用方开（游戏串流、
+  /// `AppModel` 的 remote-first 查词，BUG-3612）。开着时返回的结果带上
+  /// [DictionarySearchResult.remoteDictionaryStyles]。
   /// 首查发空指纹，host 整表下发一次；之后带上缓存的指纹，host 只回指纹。每次
   /// 查词都新建实例的调用方开了等于每次整表重下，所以默认关、请求体不变。
   final bool _trackDictionaryStyles;
@@ -109,17 +113,31 @@ class FushiRemoteLookupClient {
   /// （`AppModel.searchDictionary` 的 remote-first 语义），配对设备离线/换网/
   /// 休眠时每次查词都要把「3s × 候选数」全额付一遍，且因为短路在缓存之前，
   /// 重复查同一个词也不例外——这正是用户报的「某些机器上查词要 4-5 秒」。
+  ///
+  /// [language]：本端这次查词的语言（BCP-47）。带上后 host 按它而不是 host 自己正在读
+  /// 的内容决定是否开简体 → 繁體回落；null / 空串不发该字段（旧 host 本就忽略它）。
+  ///
+  /// [rubySpans]：原文自带振假名（以 [term] 为坐标系）。非空才发 `ruby` 字段，host 让引擎
+  /// 把读音吻合的同长度候选排前面；空时请求体与旧版逐字相同（旧 host 本就忽略该字段）。
   Future<DictionarySearchResult?> searchDictionary({
     required String term,
     required bool wildcards,
     required int maximumTerms,
+    String? language,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
+    final String? lookupLanguage = (language == null || language.trim().isEmpty)
+        ? null
+        : language.trim();
     final InterconnectPostOutcome outcome = await _postLookup(
       path: '/api/lookup/dictionary',
       body: <String, dynamic>{
         'term': term,
         'wildcards': wildcards,
         'maximumTerms': maximumTerms,
+        if (lookupLanguage != null) kRemoteLookupLanguageField: lookupLanguage,
+        if (rubySpans.isNotEmpty)
+          kRemoteLookupRubyField: FushiRubySpan.listToWire(rubySpans),
         // 空串 ≠ 任何 host 指纹 ⇒ 首查必拿到整表。
         if (_trackDictionaryStyles)
           'stylesRevision': _dictionaryStylesRevision ?? '',
@@ -138,9 +156,15 @@ class FushiRemoteLookupClient {
     if (json == null || json['type'] != 'dictionaryResult') return null;
     final dynamic resultJson = json['result'];
     if (resultJson is! Map) return null;
-    final DictionarySearchResult result =
-        _parseDictionaryResult(Map<String, dynamic>.from(resultJson));
+    final DictionarySearchResult result = _parseDictionaryResult(
+      Map<String, dynamic>.from(resultJson),
+    );
     result.popupJson = json['popupJson']?.toString();
+    // BUG-3612：结果在本端渲染 / 导出，随附 host 的词典样式，弹窗按结果判断用哪份
+    // （老 host 不认 `stylesRevision` 时为 null，弹窗照旧用本机样式）。
+    if (_trackDictionaryStyles) {
+      result.remoteDictionaryStyles = _hostDictionaryStyles;
+    }
     // BUG-1570：kanji-only 结果（单字命中汉字词典但无词条）也算有效结果——与本地
     // 路径的 kanjiOnly 分支同语义。瘦 client（本地无词典）此前会把它当「无结果」
     // 丢掉转本地兜底，而本地根本没有汉字词典。
@@ -192,8 +216,9 @@ class FushiRemoteLookupClient {
     if (kanjiJson is List) {
       for (final dynamic kanji in kanjiJson) {
         if (kanji is Map) {
-          kanjiResults
-              .add(FushiKanjiResult.fromMap(Map<String, dynamic>.from(kanji)));
+          kanjiResults.add(
+            FushiKanjiResult.fromMap(Map<String, dynamic>.from(kanji)),
+          );
         }
       }
     }
@@ -220,10 +245,7 @@ class FushiRemoteLookupClient {
   }) async {
     final InterconnectPostOutcome outcome = await _postLookup(
       path: '/api/lookup/audio',
-      body: <String, dynamic>{
-        'expression': expression,
-        'reading': reading,
-      },
+      body: <String, dynamic>{'expression': expression, 'reading': reading},
     );
     if (outcome.allUnreachable) {
       throw RemoteLookupUnreachableError(

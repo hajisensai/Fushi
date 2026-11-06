@@ -77,19 +77,24 @@ void main() {
 
   final StringBuffer body = StringBuffer();
   forms.forEach((String key, String ruby) {
-    body.write('<p id="f_$key">それは$rubyのある人だった。'
-        'ずっと昔から続いている物語であることは間違いない。</p>');
+    body.write(
+      '<p id="f_$key">それは$rubyのある人だった。'
+      'ずっと昔から続いている物語であることは間違いない。</p>',
+    );
   });
-  final String html = '<!DOCTYPE html><html><head><meta charset="utf-8">'
+  final String html =
+      '<!DOCTYPE html><html><head><meta charset="utf-8">'
       '</head><body>$body</body></html>';
 
-  final String idsJson =
-      jsonEncode(forms.keys.map((String k) => 'f_$k').toList(growable: false));
+  final String idsJson = jsonEncode(
+    forms.keys.map((String k) => 'f_$k').toList(growable: false),
+  );
 
   // Generic measurement: per form, the rects of the base glyphs 貫/禄 (base
   // text = text nodes NOT inside rt/rp/rtc) and of every <rt>, plus computed
   // display of ruby/rt/rb/rtc, plus CSS.supports for the ruby display values.
-  final String probeJs = '''
+  final String probeJs =
+      '''
 (function () {
   function rectObj(r) {
     return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width,
@@ -161,8 +166,9 @@ void main() {
 })();
 ''';
 
-  testWidgets('vertical-rl ruby DOM form matrix under real reader CSS',
-      (WidgetTester tester) async {
+  testWidgets('vertical-rl ruby DOM form matrix under real reader CSS', (
+    WidgetTester tester,
+  ) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = ReaderSettings(db);
@@ -173,21 +179,24 @@ void main() {
     final Completer<void> ready = Completer<void>();
     InAppWebViewController? ctrl;
 
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: SizedBox(
-          width: 800,
-          height: 600,
-          child: InAppWebView(
-            initialData: InAppWebViewInitialData(data: html),
-            onLoadStop: (InAppWebViewController controller, WebUri? url) async {
-              ctrl = controller;
-              if (!ready.isCompleted) ready.complete();
-            },
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 800,
+            height: 600,
+            child: InAppWebView(
+              initialData: InAppWebViewInitialData(data: html),
+              onLoadStop:
+                  (InAppWebViewController controller, WebUri? url) async {
+                    ctrl = controller;
+                    if (!ready.isCompleted) ready.complete();
+                  },
+            ),
           ),
         ),
       ),
-    ));
+    );
 
     for (int i = 0; i < 150 && !ready.isCompleted; i++) {
       await tester.pump(const Duration(milliseconds: 100));
@@ -197,26 +206,32 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
 
     Future<void> injectStyle(String id, String css) async {
-      await controller.evaluateJavascript(source: '''
+      await controller.evaluateJavascript(
+        source:
+            '''
         (function () {
           var s = document.getElementById(${jsonEncode(id)});
           if (!s) { s = document.createElement('style');
             s.id = ${jsonEncode(id)}; document.head.appendChild(s); }
           s.textContent = ${jsonEncode(css)};
         })();
-      ''');
+      ''',
+      );
     }
 
     Future<Map<String, dynamic>> probe(String label) async {
       await controller.evaluateJavascript(
-          source: 'void document.body.offsetHeight;');
+        source: 'void document.body.offsetHeight;',
+      );
       await tester.pump(const Duration(milliseconds: 400));
       final Object? raw = await controller.evaluateJavascript(source: probeJs);
       final Map<String, dynamic> m =
           jsonDecode(raw.toString()) as Map<String, dynamic>;
       debugPrint('[ruby-forms] ===== $label =====');
-      debugPrint('[ruby-forms] writingMode=${m['writingMode']} '
-          'supports=${jsonEncode(m['supports'])}');
+      debugPrint(
+        '[ruby-forms] writingMode=${m['writingMode']} '
+        'supports=${jsonEncode(m['supports'])}',
+      );
       final Map<String, dynamic> f = m['forms'] as Map<String, dynamic>;
       for (final String key in f.keys) {
         final Map<String, dynamic>? g = f[key] as Map<String, dynamic>?;
@@ -244,14 +259,17 @@ void main() {
       ruby rt { display: inline-block; }
     ''');
     // Re-append reader style so it stays last (mirrors production order).
-    await controller.evaluateJavascript(source: '''
+    await controller.evaluateJavascript(
+      source: '''
       (function () {
         var s = document.getElementById('fushi-reader-style');
         if (s) document.head.appendChild(s);
       })();
-    ''');
-    final Map<String, dynamic> withBook =
-        await probe('BOOK rb/rtc/rt overrides + reader CSS last');
+    ''',
+    );
+    final Map<String, dynamic> withBook = await probe(
+      'BOOK rb/rtc/rt overrides + reader CSS last',
+    );
     await injectStyle('fushi-book-style', '');
 
     // Assertions: under the current reader CSS every form must keep EVERY
@@ -266,8 +284,11 @@ void main() {
     for (final String v in broken) {
       debugPrint('[ruby-forms] VIOLATION: $v');
     }
-    expect(broken, isEmpty,
-        reason: 'ruby annotations out of lane:\n${broken.join('\n')}');
+    expect(
+      broken,
+      isEmpty,
+      reason: 'ruby annotations out of lane:\n${broken.join('\n')}',
+    );
   });
 }
 
@@ -277,8 +298,10 @@ String _classify(Map<String, dynamic> g) {
   final Map<String, dynamic>? roku = g['roku'] as Map<String, dynamic>?;
   final List<dynamic> rts = g['rts'] as List<dynamic>? ?? <dynamic>[];
   final StringBuffer sb = StringBuffer();
-  sb.write('ruby=${g['rubyDisplay'] ?? '-'} rb=${g['rbDisplay'] ?? '-'} '
-      'rtc=${g['rtcDisplay'] ?? '-'} ');
+  sb.write(
+    'ruby=${g['rubyDisplay'] ?? '-'} rb=${g['rbDisplay'] ?? '-'} '
+    'rtc=${g['rtcDisplay'] ?? '-'} ',
+  );
   if (kan == null || roku == null) return '$sb(no base rects)';
   final num baseL = _min(kan['l'] as num, roku['l'] as num);
   final num baseR = _max(kan['r'] as num, roku['r'] as num);
@@ -286,18 +309,27 @@ String _classify(Map<String, dynamic> g) {
     final Map<String, dynamic> rt = p as Map<String, dynamic>;
     final Map<String, dynamic> r = rt['rect'] as Map<String, dynamic>;
     sb.write(
-        '| "${rt['text']}"(${rt['display']}) ${_geom(r, kan, roku, baseL, baseR)} ');
+      '| "${rt['text']}"(${rt['display']}) ${_geom(r, kan, roku, baseL, baseR)} ',
+    );
   }
   return sb.toString();
 }
 
-String _geom(Map<String, dynamic> r, Map<String, dynamic> kan,
-    Map<String, dynamic> roku, num baseL, num baseR) {
-  final num overlap =
-      _max(0, _min(r['r'] as num, baseR) - _max(r['l'] as num, baseL));
+String _geom(
+  Map<String, dynamic> r,
+  Map<String, dynamic> kan,
+  Map<String, dynamic> roku,
+  num baseL,
+  num baseR,
+) {
+  final num overlap = _max(
+    0,
+    _min(r['r'] as num, baseR) - _max(r['l'] as num, baseL),
+  );
   final num w = r['w'] as num;
   final double intrude = w > 0 ? (overlap / w).toDouble() : 0.0;
-  final bool inGap = (r['cy'] as num) > (kan['b'] as num) &&
+  final bool inGap =
+      (r['cy'] as num) > (kan['b'] as num) &&
       (r['cy'] as num) < (roku['t'] as num);
   final bool inLane = (r['l'] as num) >= baseR - 1;
   return 'x=${(r['l'] as num).toStringAsFixed(0)}..${(r['r'] as num).toStringAsFixed(0)} '
@@ -339,26 +371,31 @@ List<String> _violations(Map<String, dynamic> m, String tag) {
     final num basesApart = (roku['t'] as num) - (kan['b'] as num);
     if (basesApart > glyphH * 0.5) {
       out.add(
-          '$tag $key: bases pushed apart by ${basesApart.toStringAsFixed(0)}px '
-          '(annotation occupies a base-flow slot)');
+        '$tag $key: bases pushed apart by ${basesApart.toStringAsFixed(0)}px '
+        '(annotation occupies a base-flow slot)',
+      );
     }
     for (final dynamic p in g['rts'] as List<dynamic>? ?? <dynamic>[]) {
       final Map<String, dynamic> rt = p as Map<String, dynamic>;
       final Map<String, dynamic> r = rt['rect'] as Map<String, dynamic>;
       final num w = r['w'] as num;
       if (w <= 0) continue; // hidden
-      final num overlap =
-          _max(0, _min(r['r'] as num, baseR) - _max(r['l'] as num, baseL));
+      final num overlap = _max(
+        0,
+        _min(r['r'] as num, baseR) - _max(r['l'] as num, baseL),
+      );
       final double intrude = (overlap / w).toDouble();
       final bool wrongSide = (r['cx'] as num) <= baseCx;
-      final bool outsideExtent = !_trailingAnnotationForms.contains(key) &&
+      final bool outsideExtent =
+          !_trailingAnnotationForms.contains(key) &&
           ((r['cy'] as num) < (kan['t'] as num) - glyphH * 0.6 ||
               (r['cy'] as num) > (roku['b'] as num) + glyphH * 0.6);
       if (intrude > 0.6 || wrongSide || outsideExtent) {
         out.add(
-            '$tag $key rt="${rt['text']}" intrudeX=${intrude.toStringAsFixed(2)} '
-            'wrongSide=$wrongSide outsideExtent=$outsideExtent '
-            '${_geom(r, kan, roku, baseL, baseR)}');
+          '$tag $key rt="${rt['text']}" intrudeX=${intrude.toStringAsFixed(2)} '
+          'wrongSide=$wrongSide outsideExtent=$outsideExtent '
+          '${_geom(r, kan, roku, baseL, baseR)}',
+        );
       }
     }
   }

@@ -12,6 +12,11 @@ struct SiglusLegacyMessageLayout {
   uint32_t script_slot = 0;  // Absolute address from the admitted image profile.
   uint32_t text_return = 0;
   uint32_t max_text_units = 2048;  // Copy budget, not an engine format limit.
+  // The legacy wrapper copies the script voice key into owner+0x120 and
+  // clears ESI before its inner call. The nine-argument generation's wrapper
+  // has neither: no script slot (its occurrence is silent here) and the
+  // caller's ESI stays live, so the inner check binds ESI to its saved value.
+  bool script_voice = true;
 };
 struct SiglusLegacyMessageSnapshot {
   uint32_t script, voice_key, voice_second;
@@ -56,14 +61,18 @@ template <typename Reader>
 bool Snapshot(const SiglusLegacyMessageLayout& layout, uint32_t owner,
               uint32_t esp, Reader& read, SiglusLegacyMessageSnapshot* out) {
   SiglusLegacyMessageSnapshot s{};
-  if (!Read(read, layout.script_slot, 0, &s.script) || s.script == 0 ||
+  if (!layout.script_voice) {
+    // No script key travels with this wrapper: the occurrence is silent.
+    if (layout.script_slot != 0) return false;
+    s.voice_key = UINT32_MAX;
+  } else if (!Read(read, layout.script_slot, 0, &s.script) || s.script == 0 ||
       (s.script & 3u) != 0 ||
       !Read(read, s.script, 0x19c, &s.voice_key) ||
       !Read(read, s.script, 0x1a0, &s.voice_second) ||
       !Read(read, s.script, 0x1a4, &s.voice_flag) ||
       !Read(read, owner, 0x120, &s.prior_owner_key) ||
-      !Read(read, owner, 0x124, &s.prior_owner_flag) ||
-      !Read(read, esp, 0x18, &s.text_units) ||
+      !Read(read, owner, 0x124, &s.prior_owner_flag)) return false;
+  if (!Read(read, esp, 0x18, &s.text_units) ||
       !Read(read, esp, 0x1c, &s.text_capacity) ||
       !Read(read, esp, 0x20, &s.scalar1) ||
       !Read(read, esp, 0x24, &s.scalar2) ||
@@ -102,7 +111,7 @@ bool ArmSiglusLegacyMessageTicket(const SiglusLegacyMessageLayout& layout,
   const uint32_t esp = SiglusNativeMessageEntryEsp(registers);
   if (esp < 0x68 || esp > UINT32_MAX - 0x28 || (esp & 3u) != 0 ||
       registers.ecx == 0 || (registers.ecx & 3u) != 0 ||
-      layout.script_slot == 0 || layout.text_return == 0 ||
+      (layout.script_slot == 0) == layout.script_voice || layout.text_return == 0 ||
       layout.max_text_units == 0) return false;
   uint32_t outer_return = 0, second_return = 0;
   SiglusLegacyMessageSnapshot first{}, second{};
@@ -142,7 +151,8 @@ bool ConsumeSiglusLegacyMessageTicket(const SiglusLegacyMessageLayout& layout,
       layout.text_return != pending.text_return ||
       layout.max_text_units != pending.max_text_units ||
       esp != outer - 0x68 || registers.ecx != outer + 4 ||
-      registers.edi != pending.owner || registers.esi != 0 ||
+      registers.edi != pending.owner ||
+      registers.esi != (layout.script_voice ? 0u : pending.saved_esi) ||
       registers.ebx != pending.snapshot.scalar1 ||
       registers.ebp != pending.snapshot.scalar2) return false;
   uint32_t value = 0;

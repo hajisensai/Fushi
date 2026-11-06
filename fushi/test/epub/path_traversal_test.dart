@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:path/path.dart' as p;
 
@@ -31,8 +31,9 @@ void main() {
 
       EpubParser.parseSync(bytes, extractDir.path);
 
-      final String escapePath =
-          p.normalize(p.join(extractDir.path, '..', 'escape.txt'));
+      final String escapePath = p.normalize(
+        p.join(extractDir.path, '..', 'escape.txt'),
+      );
       expect(File(escapePath).existsSync(), isFalse);
     });
 
@@ -64,8 +65,11 @@ void main() {
       final book = EpubParser.parseSync(bytes, extractDir.path);
 
       expect(book.chapters, hasLength(1));
-      final String chapterPath =
-          p.join(extractDir.path, 'OEBPS', 'chapter.xhtml');
+      final String chapterPath = p.join(
+        extractDir.path,
+        'OEBPS',
+        'chapter.xhtml',
+      );
       expect(File(chapterPath).existsSync(), isTrue);
     });
   });

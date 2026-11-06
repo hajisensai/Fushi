@@ -194,16 +194,16 @@ class GalgameEntry {
   /// 参与搜索匹配的全部标题：本地名 + 原名 + 中文名 + 别名 + all_titles。
   /// 去重保序，供 `galgame_library_query.dart` 归一化子串匹配。
   List<String> get searchTitles => <String>[
-        for (final String? title in <String?>[
-          name,
-          customData.name,
-          metadata.name,
-          metadata.nameCn,
-          ...metadata.aliases,
-          ...metadata.allTitles,
-        ])
-          if (title != null && title.isNotEmpty) title,
-      ];
+    for (final String? title in <String?>[
+      name,
+      customData.name,
+      metadata.name,
+      metadata.nameCn,
+      ...metadata.aliases,
+      ...metadata.allTitles,
+    ])
+      if (title != null && title.isNotEmpty) title,
+  ];
 
   GalgameEntry copyWith({
     String? name,
@@ -249,13 +249,13 @@ class GalgameEntry {
 
   /// legacy：v55 之前的偏好 JSON 形状（只有 6 个基础字段）。
   Map<String, Object?> toJson() => <String, Object?>{
-        'id': id,
-        'name': name,
-        'exePath': exePath,
-        'workdir': workdir,
-        'coverPath': coverPath,
-        'addedAt': addedAt.millisecondsSinceEpoch,
-      };
+    'id': id,
+    'name': name,
+    'exePath': exePath,
+    'workdir': workdir,
+    'coverPath': coverPath,
+    'addedAt': addedAt.millisecondsSinceEpoch,
+  };
 
   /// 从持久化 map 解析一条；缺关键字段（id/name/exePath）返回 null（跳过脏数据）。
   static GalgameEntry? fromJson(Map<Object?, Object?> m) {
@@ -303,8 +303,9 @@ GalgameEntry newGalgameEntryFromExe(
   final DateTime added = now ?? DateTime.now();
   return GalgameEntry(
     id: added.microsecondsSinceEpoch.toString(),
-    name:
-        (name != null && name.isNotEmpty) ? name : galgameNameFromExe(exePath),
+    name: (name != null && name.isNotEmpty)
+        ? name
+        : galgameNameFromExe(exePath),
     exePath: exePath,
     workdir: _defaultWorkdirForExe(exePath),
     addedAt: added,
@@ -342,10 +343,7 @@ bool _looksLikeLegacyExePath(String value) {
 /// 存在的理由：捕获工作台的「启动并捕获」只拿到一个裸 exe 路径、不经过游戏库条目。
 /// 同一个 exe 就是同一个游戏，两条入口必须用同一份启动参数 —— 否则「从库里启动能跑、
 /// 从工作台启动就崩」这种只差一个 `-nodx9` 的差异，用户根本无从判断。纯函数。
-GalgameEntry? findGalgameByExePath(
-  List<GalgameEntry> games,
-  String exePath,
-) {
+GalgameEntry? findGalgameByExePath(List<GalgameEntry> games, String exePath) {
   if (exePath.isEmpty) return null;
   final String key = _exePathKey(exePath);
   for (final GalgameEntry game in games) {
@@ -526,8 +524,9 @@ List<GalgameEntry> decodeGalgameLibrary(String raw) {
     final List<GalgameEntry> out = <GalgameEntry>[];
     for (final Object? e in decoded) {
       if (e is Map) {
-        final GalgameEntry? entry =
-            GalgameEntry.fromJson(Map<Object?, Object?>.from(e));
+        final GalgameEntry? entry = GalgameEntry.fromJson(
+          Map<Object?, Object?>.from(e),
+        );
         if (entry != null) {
           out.add(entry);
         }

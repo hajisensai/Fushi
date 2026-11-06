@@ -37,8 +37,10 @@ void main() {
     // BUG-1563 之后重启结果要被消费（失败上屏 + 开关回落），所以判据只钉「在
     // _setTlsEnabled 里、以 isRunning 为条件、真的调了 restart()」这个不变式，
     // 不再逐字匹配那一行的写法。
-    final String tls =
-        methodBody(source, '  Future<void> _setTlsEnabled(bool v)');
+    final String tls = methodBody(
+      source,
+      '  Future<void> _setTlsEnabled(bool v)',
+    );
     expect(
       containsCodeLine(tls, '_serverController.isRunning'),
       isTrue,
@@ -60,11 +62,13 @@ void main() {
   });
 
   test('gap②：_toggleUrl 用 copyWith 保留 TOFU 指纹/展示名', () {
-    final int start =
-        source.indexOf('Future<void> _toggleUrl(int index) async {');
+    final int start = source.indexOf(
+      'Future<void> _toggleUrl(int index) async {',
+    );
     expect(start, greaterThanOrEqualTo(0), reason: '_toggleUrl 丢失');
-    final int end =
-        source.indexOf('Future<void> _deleteUrl(int index) async {');
+    final int end = source.indexOf(
+      'Future<void> _deleteUrl(int index) async {',
+    );
     expect(end, greaterThan(start));
     final String toggle = source.substring(start, end);
     expect(
@@ -80,8 +84,9 @@ void main() {
   });
 
   test('发现列表配对走 v2：探测 scheme → 共享 _runPairingV2，老 host 回落 v1', () {
-    final int start = source
-        .indexOf('Future<void> _connectToDevice(FushiDevice device) async {');
+    final int start = source.indexOf(
+      'Future<void> _connectToDevice(FushiDevice device) async {',
+    );
     expect(start, greaterThanOrEqualTo(0), reason: '_connectToDevice 丢失');
     final int end = source.indexOf('String _pairDeniedMessage(String body) {');
     expect(end, greaterThan(start));

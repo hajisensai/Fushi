@@ -13,14 +13,17 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 Fushi API 服务器�
 | `content.js` | 隔离 | Shift 悬停查词、查词暂停、弹窗渲染/定位、高亮、挖词队列、字幕轨 provider（textTracks 收割 / DOM 采样兜底 / 整集拦截接收端）、Netflix/YouTube 批量制卡驱动 |
 | `nested-popup-host.js` | 隔离 | 嵌套父子栈、子 iframe 定位、按层桥接、异步结果归属；只关闭根层时恢复视频 |
 | `nested-popup.html/js` | 扩展 iframe | 每层独立的共享词典 renderer、选区、制卡和滚动状态；经专用 MessageChannel 与宿主通信 |
+| `dict-frame.html/js` | 扩展 iframe | 带 `<script>` 的 MDX 词条沙箱外层中继：扩展页 CSP `frame-src 'self'` 在请求前拦内层自导航；只认 popup.js 交来的 MessageChannel port，内层消息按白名单（height/error/link/select）重建后转出（见 `docs/specs/2026-10-23-dictionary-script-sandbox.md`「浏览器扩展：两层沙箱 frame」） |
+| `dict-sandbox.html` | sandbox 页 | 沙箱内层（manifest `sandbox.pages`，不透明源、`connect-src 'none'`）：只收外层一次 render，`document.write` 渲染词典脚本文档 |
 | `subtitle-panel.js` | 隔离 | 字幕轨状态控制器 + 视频覆盖层（鼠标经左侧拖柄 / 触屏按住整块挪位，位置按视频分数坐标存 `subtitleOverlayPosition`；右下角把手拖拽改底板大小、双击回随内容；点文字查词、鼠标在文字上拖是原生选区可复制；`subtitleOverlayBackground` 关掉只剩描边字）+ 外挂字幕安装 + 全轨时轴偏移 + 快捷键执行端；不渲染网页列表 |
 | `i18n.js` + `locales/` | 隔离 + 扩展页 + SW | 界面多语言：`locales/en.js` 是源字典（同步装入），其余 16 种 `locales/<tag>.json` 按需 fetch；语言默认跟随 Fushi（见「多语言」） |
 | `theme-palette.js` + `theme.js` + `theme.css` | 隔离 + 扩展页 | 调色板引擎（种子色 → 明暗两套 token、预设、自定义条目）+ 明暗 / 调色板 / 外观风格唯一决议点 + 扩展自有界面的唯一 token 源（颜色 + 风格；见「主题与颜色」） |
 | `subtitle-style.js` | 隔离 + options | 视频上字幕外观设置（字体/大小/字重/间距/行高/对齐/颜色/描边/底板含宽高）→ 覆盖层 `--fushi-sub-*` 变量 + `applyBox` 宽高 + `fitTextInto` 自适应缩放（`--fushi-sub-fit`） |
 | `study-tracker.js` | 隔离 | 网页视频沉浸时间：正片 `<video>` 播放时每秒把位置样本经 background 交给 app 记学习统计（见「沉浸时间」） |
 | `side-panel.html/js/css` | 扩展页 | 浏览器原生 Side Panel 字幕列表；侧边栏内取词，默认把词交给宿主页用页面弹窗渲染（见「侧边栏查词跨出面板」），经 tabs 消息读取轨道并执行跳转/制卡/偏移，不把字幕列表注入网页 |
-| `video-shortcuts.js` | 隔离 + options | 视频页快捷键判定（纯函数）+ 绑定；每个动作独立开关、组合键可在设置页改（`videoShortcutKeys`），动作交 subtitle-panel 执行；设置页只借用纯函数做改键录入 |
+| `video-shortcuts.js` | 隔离 + options | 视频页快捷键判定（纯函数）+ 绑定；每个动作独立开关、组合键可在设置页改（`videoShortcutKeys`），动作交 subtitle-panel 执行；按秒快退 / 快进（`videoSeekSeconds`，经 `fushiSubtitleSeekBy`）与按住临时倍速（`videoHoldSpeedRate`，松开 / 失焦恢复原速）不需要字幕轨；设置页只借用纯函数做改键录入 |
 | `video-target.js` | 隔离 | 视频页浮层「跟谁定位 / 用什么坐标系」：`fushiMainVideo()` 按全屏元素与可见面积挑正片（不是文档里第一个 `<video>`），`fushiFixedOrigin(parent)` 量出 fixed 浮层父级的包含块（站点给全屏容器 / body 加 transform 时不再是视口）；字幕覆盖层与通用悬浮按钮共用，不依赖任何站点 DOM |
+| `canvas-ocr.js` | 隔离 | canvas 渲染的网页阅读器（BookWalker 等）抓图取词：取不到文本节点、指针下是大块 canvas 时截取其可见像素（首选读 canvas 位图；被跨源污染 / WebGL 读回全透明时经 background `tabs.captureVisibleTab` 截可视区再裁，需 manifest `<all_urls>`）→ `ocrImage`（`POST /api/ocr/image`，app 用漫画 / 视频暂停帧同一套 OCR）→ 命中字交既有查词弹窗；结果（含失败）按画面缓存，翻页类输入 / 窗口重新获得焦点时作废 |
 | `touch-lookup.js` | 隔离 | 触屏点按/长按查词：单指点正文=查词（默认开）、长按≈0.5s=查词（默认关）；复用 content.js 的 `fushiLookupAtPoint`，零新增查词链路，只认 touch 主指针，绝不影响鼠标行为 |
 | `mobile-drawer.js` | 隔离 | 移动端字幕列表抽屉：安卓无 chrome.sidePanel，触屏视频页挂边缘 ☰ 钮 + 隐形手势带（点=开关、按住=拖宽自由停位）；横屏右挂仅全屏（页面态让位形态太杂已禁用）、竖屏底挂，内容为 iframe 内嵌 `side-panel.html?fushiEmbed=1`（选轨/跳转/偏移/制卡/查词全套复用）；全屏态压播放器让位并以 adopt 跟随其自重排，几何存 `mobileSubtitleDrawerGeom` |
 | `player-controls.js` | 隔离 | 播放器内嵌字幕控制：把一颗 Fushi 按钮插进站点自己的控制栏（YouTube `.ytp-right-controls` / Netflix 全屏钮左侧），其余站点退回「悬停视频时右上角浮出」的通用钮（跟 `video-target.js` 挑出的正片走，滚动即重摆）；菜单是字幕开关（覆盖层 / 替代原生 / 全轨叠加 / 底色 / 隐藏）+ 沉浸统计开关 + 选字幕轨子页 + 字幕列表 + 时轴偏移（±0.1 与手填秒数）+ 字幕外观快捷面板，全部写既有键或调既有执行端，不新增状态（见「播放器内嵌字幕控制」） |
@@ -33,14 +36,16 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 Fushi API 服务器�
 | `scan.js` | 隔离 | 取词纯函数（词窗扩展/句子抽取） |
 | `self-update.js` | SW/options | 自更新决策纯状态机 + 状态文案（node 可测） |
 | `connection-diagnostics.js` | SW/options | 连接六态分类 + 文案（纯函数，文案经 i18n 键） |
+| `profile-selection.js` | SW + 工具栏菜单 | 「Fushi 配置」选择的纯逻辑（node 可测）：存储键、请求头、列表解析、被删 / 改名时的回退与提示（见「选择 Fushi 配置」） |
 | `fushi-defaults.js` | SW/options | 安装助手写入的自动配置（host/port/token/build 指纹） |
+| `auto-config.js` | SW/options | 把磁盘上 `fushi-defaults.js` 的源码文本解析回 host/port/token（不 eval；运行时自愈用，见下） |
 | `offscreen.html/js` | offscreen | tabCapture MediaRecorder（Netflix 逐句回放录制） |
 | `options.html/css/js` | options | 设置页，按任务分六组：查词 / 字幕 / 字幕外观（实时预览）/ 外观（界面风格 · 配色主题 · 明暗 · 语言）/ 快捷键 / 高级（沉浸时间 · 连接与诊断 · 版本与更新）；每组常用项在前、次要项收进「更多选项」折叠，每项一行说明 |
 | `material.css` | 扩展页 | 表面材质层（options / 工具栏菜单 / 字幕侧边栏）：两套外观风格 `extensionStyle`——M3E（缺省，与 Fushi 本体同一套 Material 3 Expressive）与液态玻璃——共用一份规则，形状 / 材质 / 动效全取 `theme.css` 的风格 token；与配色正交 |
 | `icons.js` | 隔离 + 扩展页 | Material Symbols Rounded 图标子集（内联 SVG 路径表，不加载图标字体）：`fushiIcon(name)` / 静态页 `data-fushi-icon` 槽位；只收录界面真用到的字形 |
 | `popup-size.js` | 隔离 + 扩展页 | 查词弹窗尺寸盒的唯一决策器（纯函数）：扩展独立尺寸覆盖 + 视口不足时的收敛 + 只作用于浏览器的词典字号覆盖 `popupFontSize`（缺省跟随 Fushi 下发的 zoom）；页面弹窗与侧边栏弹窗共用 |
 | `vendor/` | — | `popup.{js,css,html}`+`selection.js` = app 查词弹窗原样拷贝（上游 `fushi/assets/popup/`）；`dict-media.js` 允许扩展分叉；`content.css` 由生成器产出；`action-popup.*` 扩展独有 |
-| `scripts/` | 开发 | `generate-content-css.mjs`（popup.css → 零特异性重根 content.css）、`sync-mirrors.mjs`（镜像同步） |
+| `scripts/` | 开发 | `generate-content-css.mjs`（popup.css → 零特异性重根 content.css）、`sync-mirrors.mjs`（镜像同步）、`i18n-fixture.js`（测试共用壳：译文装载） |
 
 ## 三份镜像与同步（改代码必读）
 
@@ -64,6 +69,11 @@ scripts/generate-content-css.mjs ──▶ 两处 vendor/content.css
    **内容指纹 build**（全部文件排除 `fushi-defaults.js` 的 sha256 前 16 hex）写进
    `fushi-defaults.js` → 用户浏览器「加载已解压」后零配置可用。
 3. 用户可在 options 页覆盖连接参数（chrome.storage.local 优先于内置默认）。
+4. app 里改了 API 密钥 / 端口：app 就地重写已解压副本的 `fushi-defaults.js`（build 不变，不触发自更新）。
+   SW 的请求遇 401 / 连不上时 `fetch(chrome.runtime.getURL('fushi-defaults.js'), {cache:'no-store'})`
+   重读磁盘当前内容（`auto-config.js` 解析），**未被用户手动覆盖的字段**变了才更新内存并重试一次
+   （`fetchWithAutoConfigRetry`；超时不重发）；连接诊断同理。心跳每分钟打一次状态端点，所以 ≤1 分钟自愈。
+   设置页打开时也重读一次；状态卡在「恢复自动配置」能解决问题时（有手动覆盖）就地给出该按钮。
 
 ## 自更新流水线
 
@@ -87,8 +97,28 @@ app 升级
 全部 `POST http://<host>:<port>/api/...`，`Authorization: Basic base64('fushi:'+token)`。
 查词 `/api/lookup/dictionary` · 单词音频 `/api/lookup/audio` · 制卡 `/api/mine` · 查重
 `/api/duplicate` · 收藏 `/api/extension/favorite` · 状态/心跳 `/api/extension/status` · 弹窗尺寸 `/api/extension/popup-size` ·
-YouTube 整集字幕 `/api/youtube/captions` · 外挂字幕解析 `/api/subtitle/parse`。
+YouTube 整集字幕 `/api/youtube/captions` · 外挂字幕解析 `/api/subtitle/parse` · 配置列表 `/api/extension/profiles`。
 服务端实现：`fushi/lib/src/sync/fushi_api_server.dart`。
+
+## 选择 Fushi 配置（反馈 biLEesNqWb）
+
+- 工具栏菜单的「Fushi 配置」下拉：首项「跟随 Fushi（当前激活配置名）」= 不存选择、请求不带配置（与本功能
+  引入前完全一致）；其余每项是 app 里的一个配置。选中存 `chrome.storage.local.fushiProfileSelection = {id, name}`。
+- 查词 / 制卡 / 查重 / 单词音频 / 在 Anki 中打开 / 复习标记（词状态、点标记打开笔记）（`fetchWithAutoConfigRetry` 的
+  工厂多拿一个 `profileId`，这些端点用 `profileHeaders()`）带请求头 `X-Fushi-Profile-Id`；字幕 / 字体 / 统计 / 收藏等
+  与配置无关的端点不带。
+- **只影响扩展**：app 收到带头的请求时从该配置的 `profile_settings` 快照组出一份只读设置视图（词典启用 / 顺序 /
+  隐藏、弹窗外观、Anki 牌组 / 模板 / 字段映射、音频源等），这条请求的全部设置都从这份视图读；App 的激活配置与
+  全局偏好一概不动。查词缓存按配置分区。响应头 `X-Fushi-Profile-Active` 回报实际生效的配置。
+- 与 app 里「浏览器」媒体类型绑定的关系：扩展手动选择 > 「浏览器」绑定 > 跟随 App；三者都只决定扩展请求读哪份
+  设置，都不切换 App。
+- 所选配置的挖词目标是 Fushi 复习（SRS）且模块开着时，卡制进**那份配置**的复习（不是 App 当前激活配置的）；查重、
+  同词反查、「在复习里打开」、复习标记的词状态也都按那份配置的复习判。复习数据在同一个 `srs.db` 里按配置 uid 分区，
+  app 在同一个句柄上为那个配置开一份副本（不开第二个库），写入排在激活配置副本的写入之后；用户之后切到那份配置，
+  这些卡照常出现在复习里，同步 v2 的操作也记在那份配置名下。
+- 所选配置在 app 里被删：app 按「浏览器」绑定 / App 激活配置回退处理该请求并回响应头 `X-Fushi-Profile-Missing`，扩展回退到「跟随
+  Fushi」并写 `fushiProfileNotice`（工具栏菜单显示提示行）。改名：打开工具栏菜单列配置时更新保存的名字并提示。
+- 「按网址自动匹配配置」（yomitan 式）**不做**（所有者决定）。
 
 ## 侧边栏查词跨出面板
 
@@ -452,7 +482,7 @@ hook 安装；② `manifest.json` 的 stream-bridge matches 加域名；③ 新�
 
 | 键 | 动作 |
 |---|---|
-| ← / → | 上一句 / 下一句字幕（仅当前视频有字幕轨时接管） |
+| ← / → | 上一句 / 下一句字幕（仅 Fushi 字幕正在出画时接管；没开 Fushi 字幕或 Shift+H 隐藏了字幕时放回站点原生左右键） |
 | ↑ | 回当前句句首重播 |
 | Shift+S | 打开浏览器原生字幕侧边栏（当前视频有 Fushi 字幕轨时） |
 | Shift+H | 隐藏 / 显示字幕（站点原生字幕 + 扩展覆盖层；**不**需要 Fushi 字幕轨） |
@@ -464,7 +494,8 @@ hook 安装；② `manifest.json` 的 stream-bridge matches 加域名；③ 新�
 Esc 取消、与别的动作撞键时拒绝并提示）。改过的键存 `videoShortcutKeys = {动作: 'Ctrl+Shift+KeyJ'}`
 （修饰键规范顺序 + 布局无关的 `KeyboardEvent.code`），只存改过的、改回默认即删项；视频页按
 storage.onChanged 热更新，不必刷新。判定仍是纯函数。站点输入框/可编辑区一律放行；无轨时需要
-字幕轨的动作（上一句 / 下一句 / 重播 / 侧边栏 / 偏移 / 复制）均放行给站点原生行为。
+字幕轨的动作（上一句 / 下一句 / 重播 / 侧边栏 / 偏移 / 复制）均放行给站点原生行为；上一句 / 下一句
+还要求 Fushi 字幕正在出画（`fushiSubtitleStudyState().showing` 且未被 Shift+H 隐藏），否则同样放行。
 
 `Shift+H` 的「隐藏」用 `visibility:hidden` 而非 `display:none`：扩展的取词、逐句制卡、caret
 兜底命中都要读字幕节点的 textContent / 几何，`display:none` 会把它们摘出布局，隐藏字幕就

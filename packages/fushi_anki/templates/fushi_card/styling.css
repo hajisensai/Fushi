@@ -169,7 +169,8 @@
   text-decoration: none;
 }
 
-.fc img {
+.fc img,
+.fc video {
   filter: var(--fc-image-filter);
 }
 
@@ -550,40 +551,55 @@
 .fc-pitch-num[data-type="odaka"] { background: var(--fc-pitch-odaka); }
 .fc-pitch-num[data-type="kifuku"] { background: var(--fc-pitch-kifuku); }
 
-/* 图片：窄屏是标题区右上角的紧凑方形缩略图（裁切填满），不挤占词条行；点按放大看全图 */
-.fc-picture {
+/* 图片：窄屏是标题区右上角的紧凑缩略图，按原比例完整显示（书封等竖图不裁切），
+   限高限宽不挤占词条行；点按放大看全图。Media 也可能是视频片段（<video>，视频制卡默认）
+   或动图（GIF / WebP / AVIF 都是 <img>）：视频与图片同一套尺寸 / 圆角 / 打码规则，
+   但不放大（控制条本身就要点按） */
+.fc-media {
   flex: 0 0 auto;
-  width: var(--fc-thumb);
-  height: var(--fc-thumb);
+  max-width: calc(var(--fc-thumb) * 1.5);
   margin: 0;
 }
 
-.fc-picture img {
+.fc-media img,
+.fc-media video {
   display: block;
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: calc(var(--fc-thumb) * 1.4);
   border-radius: var(--fc-radius-small);
-  object-fit: cover;
   cursor: zoom-in;
   transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
 }
 
+.fc-media video {
+  cursor: auto;
+  background: #000;
+}
+
 @media (hover: hover) {
-  .fc-picture img:hover,
-  .fc-def-picture img:hover {
+  .fc-media img:hover,
+  .fc-def-media img:hover {
     transform: scale(1.03);
   }
 }
 
-.fc-picture.nsfw img,
-.fc-picture.NSFW img,
-.fc-picture.Nsfw img {
+.fc-media.nsfw img,
+.fc-media.NSFW img,
+.fc-media.Nsfw img,
+.fc-media.nsfw video,
+.fc-media.NSFW video,
+.fc-media.Nsfw video {
   filter: blur(14px) var(--fc-image-filter);
 }
 
-.fc-picture.nsfw img:hover,
-.fc-picture.NSFW img:hover,
-.fc-picture.Nsfw img:hover {
+.fc-media.nsfw img:hover,
+.fc-media.NSFW img:hover,
+.fc-media.Nsfw img:hover,
+.fc-media.nsfw video:hover,
+.fc-media.NSFW video:hover,
+.fc-media.Nsfw video:hover {
   filter: var(--fc-image-filter);
 }
 
@@ -614,7 +630,7 @@
   border-radius: 2px;
 }
 
-/* 例句注音默认悬停 / 点按显示（Lapis 的 "hover"），宿主挂 fushi-srs-sentence-furigana 常显 */
+/* 例句字段自带的注音悬停 / 点按显示（Lapis 的 "hover"） */
 .fc-sentence rt {
   font-size: 0.5em;
   color: var(--fc-fg-muted);
@@ -623,8 +639,7 @@
 }
 
 .fc-sentence:hover rt,
-.fc-sentence:active rt,
-.fushi-srs-sentence-furigana .fc-sentence rt {
+.fc-sentence:active rt {
   opacity: 1;
 }
 
@@ -656,7 +671,8 @@
   font-size: var(--fc-size-gloss);
 }
 
-.fc-def-picture img {
+.fc-def-media img,
+.fc-def-media video {
   max-width: 100%;
   max-height: 200px;
   border-radius: var(--fc-radius-small);
@@ -778,6 +794,70 @@
 
 .fc-meta-label--freq::before { content: var(--fc-label-frequency); }
 .fc-meta-label--source::before { content: var(--fc-label-source); }
+/* 区块布局里改了标签文字的词频 / 来源：标签写在元素里，不再用默认标签。 */
+.fc-meta-label--custom::before { content: none; }
+
+/* ---------- 自定义区块（区块布局里加的「字段区块」「HTML 区块」） ----------
+   字段区块：一个字段 + 显示样式（正文 / 标签 / 引用卡片 / 小字）+ 可选标题。 */
+.fc-front-prompt {
+  display: contents;
+}
+
+.fc-field {
+  min-width: 0;
+}
+
+.fc-front .fc-field {
+  max-width: 34em;
+}
+
+.fc-field-title {
+  margin-bottom: 4px;
+  color: var(--fc-fg-muted);
+  font-family: var(--fc-font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.fc-field--body .fc-field-body {
+  font-size: var(--fc-size-body);
+  line-height: var(--fc-lh-body);
+}
+
+.fc-field--quote {
+  padding: calc(var(--fc-pad) - 2px) var(--fc-pad);
+  border-radius: var(--fc-radius);
+  background: var(--fc-surface-1);
+}
+
+.fc-field--quote .fc-field-body {
+  font-size: var(--fc-size-body);
+  line-height: var(--fc-lh-body);
+}
+
+.fc-field--tag .fc-field-body {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--fc-surface-2);
+  color: var(--fc-fg-muted);
+  font-family: var(--fc-font-ui);
+  font-size: 13px;
+}
+
+.fc-field--small .fc-field-body {
+  color: var(--fc-fg-muted);
+  font-family: var(--fc-font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.fc-html {
+  min-width: 0;
+}
 
 .fc-freq-list ul {
   display: flex;
@@ -801,12 +881,20 @@
 }
 
 /* 区块显隐（宿主类名；Anki 里全显示） */
-.fushi-srs-hide-picture .fc-picture,
-.fushi-srs-hide-picture .fc-def-picture,
+.fushi-srs-hide-picture .fc-media,
+.fushi-srs-hide-picture .fc-def-media,
 .fushi-srs-hide-translation .fc-translation,
 .fushi-srs-hide-frequency .fc-meta-row--freq,
 .fushi-srs-hide-frequency .fc-back .fc-chip--freq,
 .fushi-srs-hide-source .fc-meta-row--source {
+  display: none;
+}
+
+/* 词频跟随查词的「词频聚合」（宿主类 fushi-srs-freq-aggregate）：聚合且有平均值时只留读音行的
+   平均值，否则只留按词典合并的明细区，两者不同时出现（与原生卡面同一规则）。宿主类挂在 body 与
+   卡面根节点上；Anki 里没有宿主类 = 明细。 */
+.fushi-srs-freq-aggregate .fc-back:has(.fc-reading-row .fc-chip--freq) .fc-meta-row--freq,
+body:not(.fushi-srs-freq-aggregate) .fc-back:has(.fc-meta-row--freq) .fc-reading-row .fc-chip--freq {
   display: none;
 }
 
@@ -829,7 +917,8 @@
   }
 
   /* 左栏图片在矮视口里收小（点按仍可放大），词条 + 例句尽量留在首屏。 */
-  .fc-back.fc-layout-wide .fc-picture img {
+  .fc-back.fc-layout-wide .fc-media img,
+  .fc-back.fc-layout-wide .fc-media video {
     max-height: 120px;
   }
 }
@@ -867,59 +956,6 @@
 
 .fc-clamp-toggle[hidden],
 .fushi-srs-full-gloss .fc-clamp-toggle {
-  display: none;
-}
-
-.fc-dict-tabs {
-  display: none;
-}
-
-.fc-tabs-on > .fc-gloss .fc-dict-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.fc-dict-tab {
-  min-height: 34px;
-  max-width: 100%;
-  padding: 0 12px;
-  border: 1px solid var(--fc-outline);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--fc-fg-muted);
-  font-family: var(--fc-font-ui);
-  font-size: 13px;
-  line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-}
-
-.fc-dict-tab[aria-selected="true"] {
-  border-color: transparent;
-  background: var(--fc-secondary-container);
-  color: var(--fc-on-secondary-container);
-}
-
-@media (pointer: coarse) {
-  .fc-dict-tab {
-    min-height: 40px;
-  }
-}
-
-.fc-tabs-on .fc-dict:not(.fc-dict--active) {
-  display: none;
-}
-
-.fc-tabs-on .fc-dict--active {
-  border-radius: var(--fc-radius);
-  padding-top: calc(var(--fc-pad) - 4px);
-}
-
-.fc-tabs-on .fc-dict--active > .fc-dict-label {
   display: none;
 }
 
@@ -981,13 +1017,14 @@
   gap: var(--fc-gap);
 }
 
-.fc-layout-wide .fc-picture {
+.fc-layout-wide .fc-media {
   width: auto;
   height: auto;
   max-width: 100%;
 }
 
-.fc-layout-wide .fc-picture img {
+.fc-layout-wide .fc-media img,
+.fc-layout-wide .fc-media video {
   width: auto;
   height: auto;
   max-width: 100%;

@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi_audio/fushi_audio.dart' show Bookmark;
+import 'package:fushi_audio/fushi_audio.dart'
+    show Bookmark, ReaderPosition, ReaderPositionRepository;
 import 'package:fushi_core/fushi_core.dart' show BookFormat, EpubBookRow;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
@@ -13,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
 import 'package:fushi/src/media/novel/online/lnreader_cloudflare_action.dart';
+import 'package:fushi/src/media/novel/online/lnreader_web_login.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
@@ -27,7 +30,22 @@ import 'package:fushi/src/pages/implementations/collections_page.dart'
     show buildCollectionReaderMediaItem;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi/src/media/media_source.dart';
 
 /// 小说源的作品页：详情 + 章节目录。默认**在线阅读**，另有「加入书架」「下载」。
 ///
@@ -79,6 +97,9 @@ class _LnReaderNovelDetailPageState
   /// 这部作品在书架上的在线书（null = 不在书架）。
   EpubBookRow? _shelfBook;
 
+  /// 书架书的阅读位置（null = 从没打开过）：决定「继续阅读 · 某章」还是「开始阅读」。
+  ReaderPosition? _position;
+
   @override
   void initState() {
     super.initState();
@@ -103,10 +124,12 @@ class _LnReaderNovelDetailPageState
         widget.plugin.id,
         widget.item.path,
       );
+      final ReaderPosition? position = await _readPosition(shelfBook);
       if (!mounted) return;
       setState(() {
         _novel = novel;
         _shelfBook = shelfBook;
+        _position = position;
         _loading = false;
       });
     } on Object catch (error, stack) {
@@ -121,6 +144,16 @@ class _LnReaderNovelDetailPageState
         _error = error;
       });
     }
+  }
+
+  /// 菜单「登录」：登完立刻从源重取，用户不用自己想到去点刷新。
+  Future<void> _login() async {
+    final bool saved = await loginToLnReaderSource(
+      context,
+      manager: widget.manager,
+      plugin: widget.plugin,
+    );
+    if (saved && mounted) await _load();
   }
 
   Future<void> _openWebsite() async {
@@ -154,6 +187,26 @@ class _LnReaderNovelDetailPageState
 
   static Future<void> _launchExternal(Uri url) async {
     await launchUrl(url, mode: LaunchMode.externalApplication);
+  }
+
+  Future<ReaderPosition?> _readPosition(EpubBookRow? shelfBook) async {
+    if (shelfBook == null || shelfBook.uid.isEmpty) return null;
+    return ReaderPositionRepository(
+      ref.read(appProvider).database,
+    ).findByBookUid(shelfBook.uid);
+  }
+
+  /// 读完回到作品页时刷新位置（「继续阅读」跟着落到新的章）。
+  Future<void> _refreshPosition() async {
+    final ReaderPosition? position = await _readPosition(_shelfBook);
+    if (mounted) setState(() => _position = position);
+  }
+
+  /// 「继续 / 开始阅读」落到哪一章（阅读器自己按存档恢复，这里只为文案）。
+  int _resumeChapterIndex(List<LnReaderChapter> chapters) {
+    final int? section = _position?.sectionIndex;
+    if (section == null || section < 0 || section >= chapters.length) return 0;
+    return section;
   }
 
   LnReaderOnlineLibrary _onlineLibrary() {
@@ -304,7 +357,6 @@ class _LnReaderNovelDetailPageState
       ref: ref,
       mediaSource: item.getMediaSource(appModel: appModel),
       item: item,
-      waitUntilClosed: false,
       initialBookmarkJump: chapterIndex == null
           ? null
           : Bookmark(
@@ -314,6 +366,8 @@ class _LnReaderNovelDetailPageState
               createdAt: DateTime.now(),
             ),
     );
+    // 等阅读页关掉再刷新阅读位置：「继续阅读 · 某章」跟着落到新读到的章。
+    await _refreshPosition();
   }
 
   Future<void> _download({int startIndex = 0}) async {
@@ -414,6 +468,16 @@ class _LnReaderNovelDetailPageState
     return MediaDetailLayout(
       backdrop: backdrop,
       backdropKey: _backdropUrl,
+      // 「继续 / 开始阅读」悬浮按钮：与 hero 主按钮同一动作（阅读器按存档恢复）。
+      fab: chapters.isEmpty
+          ? null
+          : MediaDetailResumeFab(
+              buttonKey: const ValueKey<String>('novel_detail_resume_fab'),
+              watching: false,
+              started: _position != null,
+              itemLabel: chapters[_resumeChapterIndex(chapters)].name,
+              onPressed: _opening ? null : () => unawaited(_readOnline()),
+            ),
       header: _buildHeader(chapters, backdrop),
       slivers: <Widget>[
         SliverPadding(
@@ -449,6 +513,7 @@ class _LnReaderNovelDetailPageState
     final bool readBusy = _opening && !_shelfActionRunning;
     final bool shelfBusy = _opening && _shelfActionRunning;
     return OnlineWorkHeader(
+      coverMaterial: ShelfCoverMaterial.glossyBook,
       cover: LnReaderCover(
         url: novel?.cover ?? widget.item.cover,
         site: widget.plugin.site,
@@ -479,7 +544,13 @@ class _LnReaderNovelDetailPageState
       primaryAction: MediaDetailPrimaryButton(
         buttonKey: const ValueKey<String>('novel_detail_read_online'),
         icon: FushiIcons.readingMode,
-        label: inShelf ? t.book_continue_reading : t.novel_detail_read_online,
+        label: chapters.isEmpty
+            ? t.novel_detail_read_online
+            : MediaDetailResumeFab.labelFor(
+                watching: false,
+                started: _position != null,
+                itemLabel: chapters[_resumeChapterIndex(chapters)].name,
+              ),
         busy: readBusy,
         onPressed: chapters.isEmpty || _opening
             ? null
@@ -521,6 +592,19 @@ class _LnReaderNovelDetailPageState
           label: t.mihon_source_website_open,
           onSelected: () => unawaited(_openWebsite()),
         ),
+        // 源站要登录才给章节 / 正文时的常驻入口（与漫画作品页同一口径）。
+        if (lnReaderLoginTarget(
+              cloudflare: widget.manager.cloudflare,
+              site: widget.plugin.site,
+            ) !=
+            null)
+          MediaDetailMenuItem(
+            key: const ValueKey<String>('novel_detail_login'),
+            icon: FushiIcons.login,
+            label: t.mihon_source_login,
+            enabled: !_loading,
+            onSelected: () => unawaited(_login()),
+          ),
         MediaDetailMenuItem(
           key: const ValueKey<String>('novel_detail_refresh'),
           icon: FushiIcons.refresh,
@@ -544,10 +628,33 @@ class _LnReaderNovelDetailPageState
               ),
             ),
           // 详情 / 章节下载被 Cloudflare 拦下时给出验证；没有待解挑战时不占位。
-          LnReaderCloudflareAction(
-            cloudflare: widget.manager.cloudflare,
-            pluginId: widget.plugin.id,
-            onVerified: () => unawaited(_load()),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            // 只放真要显示的按钮：零尺寸子项照样占 spacing，会把登录按钮挤偏。
+            children: <Widget>[
+              if (LnReaderCloudflareAction.shows(
+                widget.manager.cloudflare,
+                widget.plugin.id,
+              ))
+                LnReaderCloudflareAction(
+                  cloudflare: widget.manager.cloudflare,
+                  pluginId: widget.plugin.id,
+                  onVerified: () => unawaited(_load()),
+                ),
+              // 加载失败时在错误旁给登录入口（判不出是不是因为没登录，不猜）。
+              if (error != null &&
+                  lnReaderLoginTarget(
+                        cloudflare: widget.manager.cloudflare,
+                        site: widget.plugin.site,
+                      ) !=
+                      null)
+                LnReaderLoginAction(
+                  manager: widget.manager,
+                  plugin: widget.plugin,
+                  onLoggedIn: _load,
+                ),
+            ],
           ),
         ],
       ),

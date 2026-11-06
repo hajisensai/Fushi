@@ -52,13 +52,16 @@ void main() {
     /// 收口断言：到目前为止没有任何布局溢出错误，失败信息带上表面名。
     void expectNoOverflow(String surface) {
       final List<FlutterErrorDetails> overflow = errors
-          .where((FlutterErrorDetails e) =>
-              e.exceptionAsString().toLowerCase().contains('overflowed'))
+          .where(
+            (FlutterErrorDetails e) =>
+                e.exceptionAsString().toLowerCase().contains('overflowed'),
+          )
           .toList();
       expect(
         overflow,
         isEmpty,
-        reason: '「$surface」在最小窗口下出现布局溢出：'
+        reason:
+            '「$surface」在最小窗口下出现布局溢出：'
             '${overflow.map((e) => e.exceptionAsString()).join('; ')}',
       );
     }
@@ -66,11 +69,16 @@ void main() {
     /// 抓当前表面 Flutter 帧留证 + 收口溢出断言。
     Future<void> sweepSurface(String surface) async {
       await tester.pump(const Duration(seconds: 1));
-      final ObserveShot shot =
-          await captureFlutterFrame(tester, 'min-window-$surface');
+      final ObserveShot shot = await captureFlutterFrame(
+        tester,
+        'min-window-$surface',
+      );
       expect(shot.saved, isTrue, reason: '「$surface」截图应落盘');
-      expect(shot.nonBlank, isTrue,
-          reason: '「$surface」不应是空白帧（${shot.path}, ${shot.bytes}B）');
+      expect(
+        shot.nonBlank,
+        isTrue,
+        reason: '「$surface」不应是空白帧（${shot.path}, ${shot.bytes}B）',
+      );
       debugPrint('[min-window] $surface -> ${shot.path} (${shot.bytes}B)');
       expectNoOverflow(surface);
     }
@@ -101,23 +109,39 @@ void main() {
           }
         }
         final Size client = logicalClientSize();
-        debugPrint('[min-window] resized: outer=$outer client=$client '
-            'target=$minSize');
-        expect(outer.width, closeTo(minSize.width, 2),
-            reason: '窗口外框宽应真被缩到下限 ${minSize.width}（实测 ${outer.width}，'
-                '若仍 >=480 说明最小尺寸钳制没放开）');
-        expect(outer.height, closeTo(minSize.height, 2),
-            reason: '窗口外框高应真被缩到下限 ${minSize.height}（实测 ${outer.height}，'
-                '若仍 >=640 说明最小尺寸钳制没放开）');
+        debugPrint(
+          '[min-window] resized: outer=$outer client=$client '
+          'target=$minSize',
+        );
+        expect(
+          outer.width,
+          closeTo(minSize.width, 2),
+          reason:
+              '窗口外框宽应真被缩到下限 ${minSize.width}（实测 ${outer.width}，'
+              '若仍 >=480 说明最小尺寸钳制没放开）',
+        );
+        expect(
+          outer.height,
+          closeTo(minSize.height, 2),
+          reason:
+              '窗口外框高应真被缩到下限 ${minSize.height}（实测 ${outer.height}，'
+              '若仍 >=640 说明最小尺寸钳制没放开）',
+        );
         // client 区（Flutter 逻辑视口）必须已低于旧下限、且不超新下限外框。
-        expect(client.width, lessThan(480),
-            reason: 'client 逻辑宽应 <480（词典 dialog compact 分支可达）');
+        expect(
+          client.width,
+          lessThan(480),
+          reason: 'client 逻辑宽应 <480（词典 dialog compact 分支可达）',
+        );
         expect(client.height, lessThan(640));
         expect(client.width, lessThanOrEqualTo(minSize.width + 2));
 
         // 主要表面遍历：书架 / 视频 / 查词 / 设置。
-        expect(HomePage.debugSelectTab, isNotNull,
-            reason: 'HomePage 切 tab 测试钩子应已注册（debug/profile build）');
+        expect(
+          HomePage.debugSelectTab,
+          isNotNull,
+          reason: 'HomePage 切 tab 测试钩子应已注册（debug/profile build）',
+        );
         HomePage.debugSelectTab!(HomeTab.books);
         await sweepSurface('shelf');
         HomePage.debugSelectTab!(HomeTab.video);
@@ -149,8 +173,11 @@ void main() {
         // async gap 持有（use_build_context_synchronously）。
         double dialogLogicalWidth() =>
             MediaQuery.sizeOf(tester.element(dialogFinder)).width;
-        expect(dialogLogicalWidth(), lessThan(480),
-            reason: '最小窗口下词典管理页应走 <480 compact 手机分支');
+        expect(
+          dialogLogicalWidth(),
+          lessThan(480),
+          reason: '最小窗口下词典管理页应走 <480 compact 手机分支',
+        );
         await sweepSurface('dict-dialog-compact');
         // 经根 NavigatorState 关掉词典管理页（State 不是 BuildContext，可跨 await）。
         tester.state<NavigatorState>(find.byType(Navigator).first).pop();
@@ -173,15 +200,20 @@ void main() {
         // 经根 NavigatorState 推 DialogRoute（State 可跨 await，不触
         // use_build_context_synchronously；navigator.context 仅用于捕获继承主题，
         // 与 showDialog 内部一致）。
-        final NavigatorState rootNavigator =
-            tester.state<NavigatorState>(find.byType(Navigator).first);
-        unawaited(rootNavigator.push(DialogRoute<void>(
-          // rootNavigator 是刚从树里取到的活 State（必然 mounted），context 立即被
-          // DialogRoute 同步消费用于捕获继承主题；lint 的跨 await 告警在此为误报。
-          // ignore: use_build_context_synchronously
-          context: rootNavigator.context,
-          builder: (_) => const MediaSourcesDialog(mediaKind: 'book'),
-        )));
+        final NavigatorState rootNavigator = tester.state<NavigatorState>(
+          find.byType(Navigator).first,
+        );
+        unawaited(
+          rootNavigator.push(
+            DialogRoute<void>(
+              // rootNavigator 是刚从树里取到的活 State（必然 mounted），context 立即被
+              // DialogRoute 同步消费用于捕获继承主题；lint 的跨 await 告警在此为误报。
+              // ignore: use_build_context_synchronously
+              context: rootNavigator.context,
+              builder: (_) => const MediaSourcesDialog(mediaKind: 'book'),
+            ),
+          ),
+        );
         final Finder mediaSourcesFinder = find.byType(MediaSourcesDialog);
         for (int i = 0; i < 40 && mediaSourcesFinder.evaluate().isEmpty; i++) {
           await tester.pump(const Duration(milliseconds: 250));

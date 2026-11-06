@@ -22,7 +22,7 @@ import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 typedef GalgamePlayTotals = (
   int totalSeconds,
   int sessionCount,
-  int lastPlayedMs
+  int lastPlayedMs,
 );
 
 /// 纯函数：把一行 `galgames` + 它的多源快照 + 游玩聚合合成 UI 视图模型。
@@ -38,8 +38,9 @@ GalgameEntry galgameEntryFromRow(
   final Map<GalgameMetadataSource, GalgameMetadataDraft> bySource =
       <GalgameMetadataSource, GalgameMetadataDraft>{};
   for (final GalgameSourceRow source in sources) {
-    final GalgameMetadataSource? key =
-        GalgameMetadataSource.fromKey(source.source);
+    final GalgameMetadataSource? key = GalgameMetadataSource.fromKey(
+      source.source,
+    );
     if (key == null) {
       continue; // 未知源：留着不动（DB 里仍在），但不参与本次合并。
     }
@@ -76,8 +77,9 @@ GalgameEntry galgameEntryFromRow(
 /// `customDataJson` 全空时写 null 而不是 `{}`——空 map 与「没有覆盖」语义相同，
 /// 留 null 让 DB 里少一堆噪音。
 GalgamesCompanion galgamesCompanionFromEntry(GalgameEntry entry) {
-  final String? customJson =
-      entry.customData.isEmpty ? null : entry.customData.encode();
+  final String? customJson = entry.customData.isEmpty
+      ? null
+      : entry.customData.encode();
   return GalgamesCompanion.insert(
     id: entry.id,
     name: entry.name,
@@ -143,10 +145,10 @@ class GalgameRepository extends ChangeNotifier {
   /// 从 DB 全量重载（三个批量查询，无 N+1）。
   Future<List<GalgameEntry>> load() async {
     final List<GalgameRow> rows = await _db.getAllGalgames();
-    final Map<String, List<GalgameSourceRow>> sources =
-        await _db.getAllGalgameSources();
-    final Map<String, GalgamePlayTotals> totals =
-        await _db.getGalgamePlayTotals();
+    final Map<String, List<GalgameSourceRow>> sources = await _db
+        .getAllGalgameSources();
+    final Map<String, GalgamePlayTotals> totals = await _db
+        .getGalgamePlayTotals();
     _games = <GalgameEntry>[
       for (final GalgameRow row in rows)
         galgameEntryFromRow(
@@ -243,7 +245,9 @@ class GalgameRepository extends ChangeNotifier {
   /// 只改本地封面路径（null / 空串 = 回落默认手柄图标）。
   Future<void> setCoverPath(String id, String? path) async {
     await _db.setGalgameCoverPath(
-        id, (path == null || path.isEmpty) ? null : path);
+      id,
+      (path == null || path.isEmpty) ? null : path,
+    );
     await load();
   }
 
@@ -314,8 +318,7 @@ class GalgameRepository extends ChangeNotifier {
     String gameId, {
     int limit = 50,
     int offset = 0,
-  }) =>
-      _db.getGalgameSessions(gameId, limit: limit, offset: offset);
+  }) => _db.getGalgameSessions(gameId, limit: limit, offset: offset);
 
   /// 删除单条会话，并重载（聚合 KPI 现算，删完 KPI 立即跟着变）。
   Future<void> deleteSession(int sessionId) async {
@@ -328,10 +331,9 @@ class GalgameRepository extends ChangeNotifier {
     String gameId, {
     required String fromDateKey,
     required String toDateKey,
-  }) =>
-      _db.getGalgameDailySeconds(
-        gameId,
-        fromDateKey: fromDateKey,
-        toDateKey: toDateKey,
-      );
+  }) => _db.getGalgameDailySeconds(
+    gameId,
+    fromDateKey: fromDateKey,
+    toDateKey: toDateKey,
+  );
 }

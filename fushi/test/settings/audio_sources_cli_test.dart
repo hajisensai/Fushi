@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/audio_source_list_edit.dart';
 import 'package:fushi/src/settings/audio_sources_cli.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
@@ -77,7 +77,7 @@ class _AppModel extends AppModel {
 String _absPath(List<String> parts) =>
     p.joinAll(<String>[p.rootPrefix(p.current), 'fushi_cli_test', ...parts]);
 
-const String _url ='https://audio.example/?term={term}&reading={reading}';
+const String _url = 'https://audio.example/?term={term}&reading={reading}';
 
 void main() {
   group('编辑规则（对话框与 CLI 共用）', () {
@@ -160,11 +160,7 @@ void main() {
       final String dbPath = _absPath(<String>['audio', 'android.db']);
       final Map<String, Object?> added = await addAudioSourceForCli(
         app,
-        <String, String>{
-          'path': dbPath,
-          'reference': 'true',
-          'position': '5',
-        },
+        <String, String>{'path': dbPath, 'reference': 'true', 'position': '5'},
       );
       expect(added['kind'], 'local');
       expect(added['enabled'], isTrue);
@@ -200,7 +196,9 @@ void main() {
       final Map<String, Object?> replaced = await updateAudioSourceForCli(
         app,
         'local:old.db',
-        <String, String>{'path': _absPath(<String>['new.db'])},
+        <String, String>{
+          'path': _absPath(<String>['new.db']),
+        },
       );
       final String newPath = replaced['path']! as String;
       expect(newPath, isNot('old.db'));

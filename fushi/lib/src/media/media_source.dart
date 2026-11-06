@@ -6,15 +6,19 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
 import 'package:transparent_image/transparent_image.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_type.dart';
+import 'package:fushi_engine/media/media_pref_keys.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi_engine/media/cover_file_writer.dart'
     show CoverImageInvalidException;
-import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/utils/cover_image.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/cache_image_provider.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:path/path.dart' as path;
@@ -138,7 +142,10 @@ abstract class MediaSource {
     // nothing is lost by reloading from the authoritative DB state.
     _preferences.clear();
     final prefix = dbSourcePrefKey(uniqueKey, '');
-    final all = await db.getAllPrefs();
+    // 反馈 kEFPY4cuKZ：打开的作品带着作品级配置时，本来源的作品级键取会话覆盖层。
+    final all = WorkProfileScope.instance.effectivePrefs(
+      await db.getAllPrefs(),
+    );
     for (final entry in all.entries) {
       if (entry.key.startsWith(prefix)) {
         final shortKey = entry.key.substring(prefix.length);
@@ -174,9 +181,28 @@ abstract class MediaSource {
     return value is T ? value : null;
   }
 
+  /// [readStoredPreference] 的「按给定偏好快照读」版本：从整份偏好原始编码值 [prefs]
+  /// （键同 `preferences` 表）里取本来源命名空间下的 [key]；没有 / 类型不符返回 null。
+  ///
+  /// 反馈 biLEesNqWb：浏览器扩展所选的配置不是激活配置时，按它的只读设置视图
+  /// （`ProfileSettingsView.prefsMap`）读来源偏好，不碰本实例按激活配置装好的缓存。
+  T? storedPreferenceIn<T>(Map<String, String> prefs, String key) {
+    final String? raw = prefs[_dbPrefKey(key)];
+    if (raw == null) return null;
+    final Object? value = PrefCodec.decodeUntyped(raw);
+    if (value is T) return value;
+    if (T == double && value is int) return value.toDouble() as T;
+    return null;
+  }
+
   /// Set the preference [value] for a certain parameter [key] for this source.
   Future<void> setPreference<T>({required String key, required T value}) async {
     _preferences[key] = value;
+    final String dbKey = _dbPrefKey(key);
+    if (WorkProfileScope.instance.overrides(dbKey)) {
+      await WorkProfileScope.instance.write(dbKey, PrefCodec.encode(value));
+      return;
+    }
     final db = _sharedDb;
     if (db != null) {
       try {
@@ -191,6 +217,11 @@ abstract class MediaSource {
   /// Delete the preference for a certain parameter [key] for this source.
   Future<void> deletePreference({required String key}) async {
     _preferences.remove(key);
+    final String dbKey = _dbPrefKey(key);
+    if (WorkProfileScope.instance.overrides(dbKey)) {
+      await WorkProfileScope.instance.write(dbKey, null);
+      return;
+    }
     final db = _sharedDb;
     if (db != null) {
       try {
@@ -256,10 +287,7 @@ abstract class MediaSource {
     required WidgetRef ref,
     required AppModel appModel,
   }) async {
-    appModel.openMedia(
-      ref: ref,
-      mediaSource: this,
-    );
+    appModel.openMedia(ref: ref, mediaSource: this);
   }
 
   /// This function can be used to clean up resources associated with a
@@ -270,40 +298,28 @@ abstract class MediaSource {
   /// a card while this source is active. Can be set with [setCurrentSentence]
   /// and [clearCurrentSentence] in a source page.
   FushiTextSelection get currentSentence => _currentSentence;
-  FushiTextSelection _currentSentence = FushiTextSelection(
-    text: '',
-  );
+  FushiTextSelection _currentSentence = FushiTextSelection(text: '');
 
   /// Update the current sentence.
-  void setCurrentSentence({
-    required FushiTextSelection selection,
-  }) {
+  void setCurrentSentence({required FushiTextSelection selection}) {
     _currentSentence = selection;
   }
 
   /// Clear the current sentence.
   void clearCurrentSentence() {
-    _currentSentence = FushiTextSelection(
-      text: '',
-    );
+    _currentSentence = FushiTextSelection(text: '');
   }
 
   /// Full subtitle-cue text (not punctuation-segmented).
   FushiTextSelection get currentCueSentence => _currentCueSentence;
-  FushiTextSelection _currentCueSentence = FushiTextSelection(
-    text: '',
-  );
+  FushiTextSelection _currentCueSentence = FushiTextSelection(text: '');
 
-  void setCurrentCueSentence({
-    required FushiTextSelection selection,
-  }) {
+  void setCurrentCueSentence({required FushiTextSelection selection}) {
     _currentCueSentence = selection;
   }
 
   void clearCurrentCueSentence() {
-    _currentCueSentence = FushiTextSelection(
-      text: '',
-    );
+    _currentCueSentence = FushiTextSelection(text: '');
   }
 
   /// This is used to hold data for generating images and audio.
@@ -352,7 +368,8 @@ abstract class MediaSource {
   /// UnimplementedError so a contract violation names the source and the method
   /// that was not overridden, instead of surfacing an opaque runtime trap.
   MediaItem get currentMediaItem => throw UnsupportedError(
-      '$runtimeType does not implement currentMediaItem');
+    '$runtimeType does not implement currentMediaItem',
+  );
 
   /// The body widget to show in the tab when this source's media type and this
   /// source is selected.
@@ -391,10 +408,7 @@ abstract class MediaSource {
   }) {
     if (!noOverride) {
       final ImageProvider<Object>? overrideThumbnail =
-          getOverrideThumbnailFromMediaItem(
-        appModel: appModel,
-        item: item,
-      );
+          getOverrideThumbnailFromMediaItem(appModel: appModel, item: item);
       if (overrideThumbnail != null) {
         return overrideThumbnail;
       }
@@ -506,8 +520,7 @@ abstract class MediaSource {
   static String legacyOverrideTitleKey({
     required String sourceId,
     required String mediaIdentifier,
-  }) =>
-      '$kOverrideTitleKeyMarker$sourceId/$sourceId/$mediaIdentifier';
+  }) => '$kOverrideTitleKeyMarker$sourceId/$sourceId/$mediaIdentifier';
 
   /// The map value used to store the override thumbnail of an item.
   ///
@@ -517,22 +530,20 @@ abstract class MediaSource {
   String getOverrideThumbnailFilename({
     required AppModel appModel,
     required MediaItem item,
-  }) =>
-      _overrideThumbnailPath(
-        appModel,
-        '${item.mediaIdentifier}/override_thumbnail',
-      );
+  }) => _overrideThumbnailPath(
+    appModel,
+    '${item.mediaIdentifier}/override_thumbnail',
+  );
 
   /// BUG-1317 之前的旧封面文件名（把源键烧进 hashCode）。只用于读取期回退与清除。
   String legacyOverrideThumbnailFilename({
     required AppModel appModel,
     required MediaItem item,
     required String sourceId,
-  }) =>
-      _overrideThumbnailPath(
-        appModel,
-        '${item.mediaIdentifier}/$sourceId/override_thumbnail',
-      );
+  }) => _overrideThumbnailPath(
+    appModel,
+    '${item.mediaIdentifier}/$sourceId/override_thumbnail',
+  );
 
   String _overrideThumbnailPath(AppModel appModel, String key) =>
       path.join(appModel.thumbnailsDirectory.path, key.hashCode.toString());
@@ -544,8 +555,10 @@ abstract class MediaSource {
     }
 
     final String key = getOverrideTitleKey(item);
-    final String? current =
-        overrideStore.getPreference<String?>(key: key, defaultValue: null);
+    final String? current = overrideStore.getPreference<String?>(
+      key: key,
+      defaultValue: null,
+    );
     if (current != null) {
       return current;
     }
@@ -566,15 +579,16 @@ abstract class MediaSource {
         sourceId: legacy.uniqueKey,
         mediaIdentifier: item.mediaIdentifier,
       );
-      final String? value =
-          legacy.getPreference<String?>(key: legacyKey, defaultValue: null);
+      final String? value = legacy.getPreference<String?>(
+        key: legacyKey,
+        defaultValue: null,
+      );
       if (value == null) {
         continue;
       }
-      unawaited(overrideStore.setPreference<String?>(
-        key: canonicalKey,
-        value: value,
-      ));
+      unawaited(
+        overrideStore.setPreference<String?>(key: canonicalKey, value: value),
+      );
       unawaited(legacy.deletePreference(key: legacyKey));
       return value;
     }
@@ -606,18 +620,22 @@ abstract class MediaSource {
     required AppModel appModel,
     required MediaItem item,
   }) {
-    final String canonical =
-        getOverrideThumbnailFilename(appModel: appModel, item: item);
+    final String canonical = getOverrideThumbnailFilename(
+      appModel: appModel,
+      item: item,
+    );
     final File canonicalFile = File(canonical);
     if (canonicalFile.existsSync()) {
       return canonicalFile;
     }
     for (final MediaSource legacy in legacyOverrideStores) {
-      final File legacyFile = File(legacyOverrideThumbnailFilename(
-        appModel: appModel,
-        item: item,
-        sourceId: legacy.uniqueKey,
-      ));
+      final File legacyFile = File(
+        legacyOverrideThumbnailFilename(
+          appModel: appModel,
+          item: item,
+          sourceId: legacy.uniqueKey,
+        ),
+      );
       if (!legacyFile.existsSync()) {
         continue;
       }
@@ -625,8 +643,11 @@ abstract class MediaSource {
         canonicalFile.parent.createSync(recursive: true);
         return legacyFile.renameSync(canonical);
       } catch (e, stack) {
-        ErrorLogService.instance
-            .log('MediaSource.adoptLegacyOverrideThumbnail', e, stack);
+        ErrorLogService.instance.log(
+          'MediaSource.adoptLegacyOverrideThumbnail',
+          e,
+          stack,
+        );
         // rename 失败不该让封面凭空消失：仍返回旧文件，下次读再试一次。
         return legacyFile;
       }
@@ -640,11 +661,13 @@ abstract class MediaSource {
     required MediaItem item,
   }) {
     for (final MediaSource legacy in legacyOverrideStores) {
-      final File legacyFile = File(legacyOverrideThumbnailFilename(
-        appModel: appModel,
-        item: item,
-        sourceId: legacy.uniqueKey,
-      ));
+      final File legacyFile = File(
+        legacyOverrideThumbnailFilename(
+          appModel: appModel,
+          item: item,
+          sourceId: legacy.uniqueKey,
+        ),
+      );
       if (legacyFile.existsSync()) {
         legacyFile.deleteSync();
       }
@@ -656,8 +679,10 @@ abstract class MediaSource {
     required AppModel appModel,
     required MediaItem item,
   }) {
-    final File? file =
-        resolveOverrideThumbnailFile(appModel: appModel, item: item);
+    final File? file = resolveOverrideThumbnailFile(
+      appModel: appModel,
+      item: item,
+    );
     if (file == null) {
       return null;
     }
@@ -741,7 +766,9 @@ abstract class MediaSource {
         mediaIdentifier: item.mediaIdentifier,
       );
       final String? value = legacy.getPreference<String?>(
-          key: legacyShortKey, defaultValue: null);
+        key: legacyShortKey,
+        defaultValue: null,
+      );
       if (value == null || value.isEmpty) continue;
       await db.setPrefIfNewer(
         canonicalDbKey,
@@ -798,10 +825,14 @@ abstract class MediaSource {
       // 也不让「保存」整体失败：记诊断后当作没换图返回。
       try {
         await MediaCoverService.applyCoverFile(
-            source: file, destPath: filename);
+          source: file,
+          destPath: filename,
+        );
       } on CoverImageInvalidException catch (e) {
-        ErrorLogService.instance
-            .logDiagnostic('MediaSource.setOverrideThumbnail', e);
+        ErrorLogService.instance.logDiagnostic(
+          'MediaSource.setOverrideThumbnail',
+          e,
+        );
         return;
       }
     } else {
@@ -898,4 +929,19 @@ abstract class MediaSource {
 
   /// Aspect ratio of media items.
   double get aspectRatio;
+}
+
+/// [MediaItem] 按序列化标识回查 app 里注册的媒体类型 / 媒体源。依赖 [AppModel] 的
+/// 注册表，所以住在媒体源层而不是 `media_item.dart`（后者是纯数据模型）。
+extension MediaItemAppLookup on MediaItem {
+  /// Get the [MediaType] from a [MediaItem] from its serialised identifier.
+  MediaType getMediaType({required AppModel appModel}) {
+    return appModel.mediaTypes[mediaTypeIdentifier]!;
+  }
+
+  /// Get the [MediaSource] from a [MediaItem] from its serialised identifier.
+  MediaSource getMediaSource({required AppModel appModel}) {
+    MediaType mediaType = getMediaType(appModel: appModel);
+    return appModel.mediaSources[mediaType]![mediaSourceIdentifier]!;
+  }
 }

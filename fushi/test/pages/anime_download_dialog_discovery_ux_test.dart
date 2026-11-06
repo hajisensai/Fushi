@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
@@ -113,8 +114,7 @@ class _FakeTorrentBackend implements TorrentBackend {
     bool sequential = false,
     bool firstLastPiecePrio = false,
     String? savePath,
-  }) async =>
-      true;
+  }) async => true;
 
   @override
   Future<bool> prepareCategory(String category) async => true;
@@ -135,15 +135,13 @@ class _FakeTorrentBackend implements TorrentBackend {
     String torrentId,
     int fileIndex,
     String newPath,
-  ) async =>
-      const TorrentStorageResult(ok: true);
+  ) async => const TorrentStorageResult(ok: true);
 
   @override
   Future<TorrentStorageResult> moveStorage(
     String torrentId,
     String newSavePath,
-  ) async =>
-      const TorrentStorageResult(ok: true);
+  ) async => const TorrentStorageResult(ok: true);
 
   @override
   void close() {}
@@ -151,6 +149,18 @@ class _FakeTorrentBackend implements TorrentBackend {
 
 class _FakeAppModel extends AppModel {
   _FakeAppModel(this._httpHandler) : super(testPlatformServices());
+
+  // Fushi 不内置 BT 站：番剧选种走用户添加的 Nyaa 式站点。
+  @override
+  List<BtSiteConfig> get btSites => <BtSiteConfig>[
+    BtSiteConfig(
+      id: 'test-anime-site',
+      baseUrl: Uri.parse('https://nyaa.si'),
+      format: BtSiteFormat.nyaa,
+      domains: const <BtSiteDomain>{BtSiteDomain.anime},
+      nyaaCategories: const <BtSiteDomain, String>{BtSiteDomain.anime: '1_0'},
+    ),
+  ];
 
   final Future<http.Response> Function(http.Request request) _httpHandler;
   final _MemPlanStore store = _MemPlanStore();
@@ -164,9 +174,9 @@ class _FakeAppModel extends AppModel {
 
   @override
   QbConnectionConfig? get qbConnectionConfig => const QbConnectionConfig(
-        backend: QbConnectionConfig.backendQbittorrent,
-        baseUrl: 'http://127.0.0.1:1',
-      );
+    backend: QbConnectionConfig.backendQbittorrent,
+    baseUrl: 'http://127.0.0.1:1',
+  );
 
   @override
   bool get torrentUploadIntroShown => true;
@@ -181,6 +191,14 @@ class _FakeAppModel extends AppModel {
   @override
   Future<http.Client> createDownloadHttpClient() async =>
       MockClient(_httpHandler);
+}
+
+/// 用户还没添加任何 BT 站。
+class _NoBtSiteAppModel extends _FakeAppModel {
+  _NoBtSiteAppModel(super.httpHandler);
+
+  @override
+  List<BtSiteConfig> get btSites => const <BtSiteConfig>[];
 }
 
 void main() {
@@ -256,6 +274,29 @@ void main() {
         <String>['ネイティブ'],
       );
     });
+  });
+
+  testWidgets('没有 BT 站：不发请求，结果区引导去添加 BT 站', (WidgetTester tester) async {
+    int requests = 0;
+    final _FakeAppModel appModel = _NoBtSiteAppModel((http.Request req) async {
+      requests++;
+      return http.Response(kNyaaNoResultsHtml, 200);
+    });
+    await pumpDialog(tester, appModel);
+    await tester.tap(find.byTooltip(t.anime_download_search).first);
+    await tester.pumpAndSettle();
+
+    expect(requests, 0, reason: 'Fushi 不内置任何 BT 站，没有站点就不发请求');
+    expect(
+      find.byKey(const ValueKey<String>('anime-download-bt-site-missing')),
+      findsOneWidget,
+    );
+    expect(find.text(t.bt_site_missing_status), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('anime-download-open-bt-sites')),
+      findsOneWidget,
+    );
+    expect(find.text(t.anime_download_no_results), findsNothing);
   });
 
   testWidgets('Nyaa 搜索网络错误：展示真实异常串 + 代理提示 + 去设置', (WidgetTester tester) async {
@@ -403,14 +444,26 @@ void main() {
           w is TextField && w.decoration?.labelText == t.video_jimaku_query,
     );
     expect(queryField, findsOneWidget);
-    expect(tester.widget<TextField>(glassUnwrap<TextField>(queryField)).controller!.text, 'Test Anime');
+    expect(
+      tester
+          .widget<TextField>(glassUnwrap<TextField>(queryField))
+          .controller!
+          .text,
+      'Test Anime',
+    );
 
     // 标题候选下拉：切到日文原名。
     await tester.tap(find.byIcon(FushiIcons.dropDown).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('テスト・アニメ').last);
     await tester.pumpAndSettle();
-    expect(tester.widget<TextField>(glassUnwrap<TextField>(queryField)).controller!.text, 'テスト・アニメ');
+    expect(
+      tester
+          .widget<TextField>(glassUnwrap<TextField>(queryField))
+          .controller!
+          .text,
+      'テスト・アニメ',
+    );
 
     // BUG-1184：集号框宽度必须放得下 label，且**由 label 的实测宽度决定**。
     //
@@ -441,7 +494,8 @@ void main() {
     expect(
       fieldWidth,
       greaterThan(96.0),
-      reason: '不得退回写死的 96（更早是 72）——label 随语言/字号/界面缩放变长，'
+      reason:
+          '不得退回写死的 96（更早是 72）——label 随语言/字号/界面缩放变长，'
           '写死多少都会被裁（BUG-1184）',
     );
     expect(
@@ -548,10 +602,12 @@ void main() {
     // 要守的契约还是那一条「谁被选中」，换成读用户真正看到的那张卡的 `selected`
     // （与 `JimakuEntryPicker.selectedEntryId` 同源，且比读 model 更贴近渲染）。
     bool selected(String name) {
-      final JimakuEntryPicker picker =
-          tester.widget<JimakuEntryPicker>(find.byType(JimakuEntryPicker));
-      final JimakuEntry entry =
-          picker.entries.singleWhere((JimakuEntry e) => e.name == name);
+      final JimakuEntryPicker picker = tester.widget<JimakuEntryPicker>(
+        find.byType(JimakuEntryPicker),
+      );
+      final JimakuEntry entry = picker.entries.singleWhere(
+        (JimakuEntry e) => e.name == name,
+      );
       return tester
           .widget<FushiCard>(
             find.byKey(ValueKey<String>('jimaku_entry_${entry.id}')),
@@ -880,9 +936,7 @@ void main() {
   //
   // 判据钉两件事，缺一不可：**不许有溢出异常**，且**每一条字幕都真的构建出来**。
   // 只断言最后一条即可覆盖「列表高度不足 → 后面的条目不进 viewport 也就不构建」。
-  testWidgets('BUG-1309 确认阶段：窄窗口下不溢出，且字幕条目全部可见', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('BUG-1309 确认阶段：窄窗口下不溢出，且字幕条目全部可见', (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);

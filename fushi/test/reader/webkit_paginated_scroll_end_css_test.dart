@@ -58,27 +58,42 @@ void main() {
       TargetPlatform.linux, // WPE WebKit
     ]) {
       for (final String wm in <String>['horizontal-tb', 'vertical-rl']) {
-        test('${platform.name} $wm paginated: body::after 强制另起一栏且块尺寸非零',
-            () async {
-          final String css = await _css(
-              platform: platform, writingMode: wm, viewMode: 'paginated');
-          final String? block = _columnBreakBodyAfter(css);
-          expect(block, isNotNull,
-              reason: 'Apple 端分页必须在正文末尾补一栏，否则末页对齐位置超出 WebKit 滚动范围');
-          expect(block, matches(RegExp(r'display:\s*block')));
-          expect(block, matches(RegExp(r'content:\s*""')));
-          final RegExpMatch? size =
-              RegExp(r'block-size:\s*([\d.]+)px').firstMatch(block!);
-          expect(size, isNotNull, reason: '要显式块尺寸');
-          expect(double.parse(size!.group(1)!), greaterThan(0),
-              reason: '0 高的块 WebKit 不为它另开一栏');
-        });
+        test(
+          '${platform.name} $wm paginated: body::after 强制另起一栏且块尺寸非零',
+          () async {
+            final String css = await _css(
+              platform: platform,
+              writingMode: wm,
+              viewMode: 'paginated',
+            );
+            final String? block = _columnBreakBodyAfter(css);
+            expect(
+              block,
+              isNotNull,
+              reason: 'Apple 端分页必须在正文末尾补一栏，否则末页对齐位置超出 WebKit 滚动范围',
+            );
+            expect(block, matches(RegExp(r'display:\s*block')));
+            expect(block, matches(RegExp(r'content:\s*""')));
+            final RegExpMatch? size = RegExp(
+              r'block-size:\s*([\d.]+)px',
+            ).firstMatch(block!);
+            expect(size, isNotNull, reason: '要显式块尺寸');
+            expect(
+              double.parse(size!.group(1)!),
+              greaterThan(0),
+              reason: '0 高的块 WebKit 不为它另开一栏',
+            );
+          },
+        );
       }
       for (final String vm in <String>['continuous', 'vn']) {
         test('${platform.name} $vm: 不发强制分栏（不经多列分页）', () async {
           for (final String wm in <String>['horizontal-tb', 'vertical-rl']) {
-            final String css =
-                await _css(platform: platform, writingMode: wm, viewMode: vm);
+            final String css = await _css(
+              platform: platform,
+              writingMode: wm,
+              viewMode: vm,
+            );
             expect(_columnBreakBodyAfter(css), isNull, reason: '$wm $vm');
           }
         });
@@ -92,7 +107,10 @@ void main() {
       test('${platform.name} paginated: Blink 滚动范围含末端 padding，不发', () async {
         for (final String wm in <String>['horizontal-tb', 'vertical-rl']) {
           final String css = await _css(
-              platform: platform, writingMode: wm, viewMode: 'paginated');
+            platform: platform,
+            writingMode: wm,
+            viewMode: 'paginated',
+          );
           expect(_columnBreakBodyAfter(css), isNull, reason: wm);
         }
       });

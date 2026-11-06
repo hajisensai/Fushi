@@ -217,7 +217,8 @@ class RemoteContinueEntry {
 /// 推导（其合集 Next-Up 逻辑按本地 uid 键控）；本函数独立挑远端候选，页面层再按
 /// 时间戳与本地 hero 比较取胜者，让「继续观看」也覆盖互联远端视频（用户反馈）。
 RemoteContinueEntry? pickRemoteContinueEntry(
-    List<RemoteContinueEntry> entries) {
+  List<RemoteContinueEntry> entries,
+) {
   RemoteContinueEntry? best;
   for (final RemoteContinueEntry e in entries) {
     if (e.completed || e.positionMs <= 0) continue;

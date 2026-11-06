@@ -1,6 +1,8 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
+import 'package:fushi_engine/media/media_extensions.dart'
+    show isAudioOnlyMediaPath;
 
 DroppedFiles _files({
   List<String> books = const [],
@@ -11,53 +13,62 @@ DroppedFiles _files({
   List<String> dictionaries = const [],
   List<String> urls = const [],
   List<String> torrents = const [],
-}) =>
-    DroppedFiles(
-        books: books,
-        videos: videos,
-        subtitles: subtitles,
-        audios: audios,
-        playlists: playlists,
-        dictionaries: dictionaries,
-        urls: urls,
-        torrents: torrents,
-        unknown: const []);
+}) => DroppedFiles(
+  books: books,
+  videos: videos,
+  subtitles: subtitles,
+  audios: audios,
+  playlists: playlists,
+  dictionaries: dictionaries,
+  urls: urls,
+  torrents: torrents,
+  unknown: const [],
+  // 与 classifyDroppedFiles 同一判据。
+  pureAudios: <String>[
+    for (final String a in audios)
+      if (isAudioOnlyMediaPath(a)) a,
+  ],
+);
 
 void main() {
   group('decideDropIntent — books surface', () {
     test('book file -> importNewBook', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.books,
-            files: _files(books: ['/a.epub']),
-            cardHit: false),
+          surface: DropSurface.books,
+          files: _files(books: ['/a.epub']),
+          cardHit: false,
+        ),
         DropIntent.importNewBook,
       );
     });
     test('subtitle on a card -> attachToBookCard', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.books,
-            files: _files(subtitles: ['/a.srt']),
-            cardHit: true),
+          surface: DropSurface.books,
+          files: _files(subtitles: ['/a.srt']),
+          cardHit: true,
+        ),
         DropIntent.attachToBookCard,
       );
     });
     test('audio not on a card -> needCardTarget', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.books,
-            files: _files(audios: ['/a.mp3']),
-            cardHit: false),
+          surface: DropSurface.books,
+          files: _files(audios: ['/a.mp3']),
+          cardHit: false,
+        ),
         DropIntent.needCardTarget,
       );
     });
     test('book wins over subtitle when both dropped', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.books,
-            files: _files(books: ['/a.epub'], subtitles: ['/a.srt']),
-            cardHit: false),
+          surface: DropSurface.books,
+          files: _files(books: ['/a.epub'], subtitles: ['/a.srt']),
+          cardHit: false,
+        ),
         DropIntent.importNewBook,
       );
     });
@@ -65,9 +76,10 @@ void main() {
     test('video on books surface -> importNewVideo (auto-switch)', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.books,
-            files: _files(videos: ['/a.mkv']),
-            cardHit: false),
+          surface: DropSurface.books,
+          files: _files(videos: ['/a.mkv']),
+          cardHit: false,
+        ),
         DropIntent.importNewVideo,
       );
     });
@@ -75,9 +87,10 @@ void main() {
     test('mp4 on a book card -> attachToBookCard (audio, not new video)', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.books,
-            files: _files(videos: ['/a.mp4'], audios: ['/a.mp4']),
-            cardHit: true),
+          surface: DropSurface.books,
+          files: _files(videos: ['/a.mp4'], audios: ['/a.mp4']),
+          cardHit: true,
+        ),
         DropIntent.attachToBookCard,
       );
     });
@@ -85,9 +98,10 @@ void main() {
     test('mp4 on books surface blank area -> importNewVideo', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.books,
-            files: _files(videos: ['/a.mp4'], audios: ['/a.mp4']),
-            cardHit: false),
+          surface: DropSurface.books,
+          files: _files(videos: ['/a.mp4'], audios: ['/a.mp4']),
+          cardHit: false,
+        ),
         DropIntent.importNewVideo,
       );
     });
@@ -96,9 +110,10 @@ void main() {
     test('http url on books surface -> importVideoUrl (auto-switch)', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.books,
-            files: _files(urls: ['https://youtu.be/abc']),
-            cardHit: false),
+          surface: DropSurface.books,
+          files: _files(urls: ['https://youtu.be/abc']),
+          cardHit: false,
+        ),
         DropIntent.importVideoUrl,
       );
     });
@@ -106,9 +121,10 @@ void main() {
     test('url wins over video file on books surface', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.books,
-            files: _files(urls: ['https://x.test/a'], videos: ['/a.mkv']),
-            cardHit: false),
+          surface: DropSurface.books,
+          files: _files(urls: ['https://x.test/a'], videos: ['/a.mkv']),
+          cardHit: false,
+        ),
         DropIntent.importVideoUrl,
       );
     });
@@ -116,17 +132,19 @@ void main() {
     test('unknown-only input -> ignore', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.books,
-            files: const DroppedFiles(
-                books: [],
-                videos: [],
-                subtitles: [],
-                audios: [],
-                playlists: [],
-                dictionaries: [],
-                urls: [],
-                unknown: ['/a.bin']),
-            cardHit: false),
+          surface: DropSurface.books,
+          files: const DroppedFiles(
+            books: [],
+            videos: [],
+            subtitles: [],
+            audios: [],
+            playlists: [],
+            dictionaries: [],
+            urls: [],
+            unknown: ['/a.bin'],
+          ),
+          cardHit: false,
+        ),
         DropIntent.ignore,
       );
     });
@@ -136,9 +154,10 @@ void main() {
     test('video file -> importNewVideo', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.video,
-            files: _files(videos: ['/a.mkv']),
-            cardHit: false),
+          surface: DropSurface.video,
+          files: _files(videos: ['/a.mkv']),
+          cardHit: false,
+        ),
         DropIntent.importNewVideo,
       );
     });
@@ -146,143 +165,209 @@ void main() {
     test('http url on video surface -> importVideoUrl', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.video,
-            files: _files(urls: ['https://example.com/a.mp4']),
-            cardHit: false),
+          surface: DropSurface.video,
+          files: _files(urls: ['https://example.com/a.mp4']),
+          cardHit: false,
+        ),
         DropIntent.importVideoUrl,
       );
     });
     test('url wins over playlist on video surface', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.video,
-            files: _files(urls: ['https://x.test/a'], playlists: ['/a.m3u8']),
-            cardHit: false),
+          surface: DropSurface.video,
+          files: _files(urls: ['https://x.test/a'], playlists: ['/a.m3u8']),
+          cardHit: false,
+        ),
         DropIntent.importVideoUrl,
       );
     });
     test('subtitle on a video card -> attachToVideoCard', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.video,
-            files: _files(subtitles: ['/a.srt']),
-            cardHit: true),
+          surface: DropSurface.video,
+          files: _files(subtitles: ['/a.srt']),
+          cardHit: true,
+        ),
         DropIntent.attachToVideoCard,
       );
     });
     test('subtitle not on a card -> needCardTarget', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.video,
-            files: _files(subtitles: ['/a.srt']),
-            cardHit: false),
+          surface: DropSurface.video,
+          files: _files(subtitles: ['/a.srt']),
+          cardHit: false,
+        ),
         DropIntent.needCardTarget,
       );
     });
-    // 纯音频 = 无画面的视频：视频页上拖专辑曲目即新建视频条目（此前回「不支持」）。
-    test('audio-only on video surface -> importNewVideo (on or off a card)', () {
-      for (final bool cardHit in <bool>[true, false]) {
-        expect(
-          decideDropIntent(
+    // 反馈 QAondMh4M5：纯音频不进视频库，视频页上拖入的纯音频交给音乐库。
+    test(
+      'audio-only on video surface -> importAudioToMusic (on or off a card)',
+      () {
+        for (final bool cardHit in <bool>[true, false]) {
+          expect(
+            decideDropIntent(
               surface: DropSurface.video,
               files: _files(audios: ['/a.flac']),
-              cardHit: cardHit),
-          DropIntent.importNewVideo,
-          reason: 'cardHit=$cardHit',
-        );
-      }
-    });
-    test('audio + subtitle on video surface -> importNewVideo', () {
+              cardHit: cardHit,
+            ),
+            DropIntent.importAudioToMusic,
+            reason: 'cardHit=$cardHit',
+          );
+        }
+      },
+    );
+    test('audio + subtitle on video surface -> importAudioToMusic', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.video,
-            files: _files(audios: ['/a.mp3'], subtitles: ['/a.srt']),
-            cardHit: true),
+          surface: DropSurface.video,
+          files: _files(audios: ['/a.mp3'], subtitles: ['/a.srt']),
+          cardHit: true,
+        ),
+        DropIntent.importAudioToMusic,
+      );
+    });
+    test('video + audio on video surface -> importNewVideo (audio split off '
+        'by pureAudios)', () {
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        '/x/ep.mp4',
+        '/x/01.flac',
+        '/x/a.srt',
+        '/x/02.MP3',
+      ]);
+      expect(
+        decideDropIntent(
+          surface: DropSurface.video,
+          files: files,
+          cardHit: false,
+        ),
         DropIntent.importNewVideo,
+      );
+      expect(files.videos, <String>['/x/ep.mp4']);
+      // .mp4 也在 audios 里（书卡挂音频用），但它首先是视频，不算纯音频。
+      expect(files.pureAudios, <String>['/x/01.flac', '/x/02.MP3']);
+    });
+    test('.ape / .dsf on video surface -> importAudioToMusic (not in the '
+        'audiobook table, still pure audio)', () {
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        '/x/01.ape',
+        '/x/02.DSF',
+      ]);
+      expect(
+        decideDropIntent(
+          surface: DropSurface.video,
+          files: files,
+          cardHit: false,
+        ),
+        DropIntent.importAudioToMusic,
+      );
+      expect(files.pureAudios, <String>['/x/01.ape', '/x/02.DSF']);
+    });
+    test('.ape on a book card is not attached (audiobook player cannot '
+        'decode it) and says unsupported instead of staying silent', () {
+      final DroppedFiles files = classifyDroppedFiles(<String>['/x/01.ape']);
+      expect(
+        decideDropIntent(
+          surface: DropSurface.books,
+          files: files,
+          cardHit: true,
+        ),
+        DropIntent.unsupportedSurface,
       );
     });
     test('audio-only on books surface still means audiobook material', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.books,
-            files: _files(audios: ['/a.flac']),
-            cardHit: false),
+          surface: DropSurface.books,
+          files: _files(audios: ['/a.flac']),
+          cardHit: false,
+        ),
         DropIntent.needCardTarget,
       );
-    });
-    test('videoLibraryMedia = videos + non-video audio, mp4 counted once', () {
-      final DroppedFiles files = classifyDroppedFiles(
-          <String>['/x/ep.mp4', '/x/01.flac', '/x/a.srt', '/x/02.MP3']);
-      expect(files.videoLibraryMedia,
-          <String>['/x/ep.mp4', '/x/01.flac', '/x/02.MP3']);
     });
     test('Blu-ray disc fragment (index.bdmv) -> addFolderAsSource', () {
       // 回归：拖 `.bdmv` 进视频页此前落 unknown → 静默无反应。
       const DroppedFiles files = DroppedFiles(
-          books: <String>[],
-          videos: <String>[],
-          subtitles: <String>[],
-          audios: <String>[],
-          playlists: <String>[],
-          dictionaries: <String>[],
-          urls: <String>[],
-          unknown: <String>[],
-          blurayDiscs: <String>['/disc']);
+        books: <String>[],
+        videos: <String>[],
+        subtitles: <String>[],
+        audios: <String>[],
+        playlists: <String>[],
+        dictionaries: <String>[],
+        urls: <String>[],
+        unknown: <String>[],
+        blurayDiscs: <String>['/disc'],
+      );
       expect(
         decideDropIntent(
-            surface: DropSurface.video, files: files, cardHit: false),
+          surface: DropSurface.video,
+          files: files,
+          cardHit: false,
+        ),
         DropIntent.addFolderAsSource,
       );
     });
     test('disc m2ts wins over importing it as a lone video', () {
       const DroppedFiles files = DroppedFiles(
-          books: <String>[],
-          videos: <String>['/disc/BDMV/STREAM/00001.m2ts'],
-          subtitles: <String>[],
-          audios: <String>[],
-          playlists: <String>[],
-          dictionaries: <String>[],
-          urls: <String>[],
-          unknown: <String>[],
-          blurayDiscs: <String>['/disc']);
+        books: <String>[],
+        videos: <String>['/disc/BDMV/STREAM/00001.m2ts'],
+        subtitles: <String>[],
+        audios: <String>[],
+        playlists: <String>[],
+        dictionaries: <String>[],
+        urls: <String>[],
+        unknown: <String>[],
+        blurayDiscs: <String>['/disc'],
+      );
       expect(
         decideDropIntent(
-            surface: DropSurface.video, files: files, cardHit: false),
+          surface: DropSurface.video,
+          files: files,
+          cardHit: false,
+        ),
         DropIntent.addFolderAsSource,
       );
     });
     test('disc on the books surface is not silently eaten', () {
       const DroppedFiles files = DroppedFiles(
-          books: <String>[],
-          videos: <String>[],
-          subtitles: <String>[],
-          audios: <String>[],
-          playlists: <String>[],
-          dictionaries: <String>[],
-          urls: <String>[],
-          unknown: <String>[],
-          blurayDiscs: <String>['/disc']);
+        books: <String>[],
+        videos: <String>[],
+        subtitles: <String>[],
+        audios: <String>[],
+        playlists: <String>[],
+        dictionaries: <String>[],
+        urls: <String>[],
+        unknown: <String>[],
+        blurayDiscs: <String>['/disc'],
+      );
       expect(
         decideDropIntent(
-            surface: DropSurface.books, files: files, cardHit: false),
+          surface: DropSurface.books,
+          files: files,
+          cardHit: false,
+        ),
         DropIntent.unsupportedSurface,
       );
     });
     test('m3u8 playlist -> importNewPlaylist', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.video,
-            files: _files(playlists: ['/a.m3u8']),
-            cardHit: false),
+          surface: DropSurface.video,
+          files: _files(playlists: ['/a.m3u8']),
+          cardHit: false,
+        ),
         DropIntent.importNewPlaylist,
       );
     });
     test('playlist wins over video when both dropped', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.video,
-            files: _files(videos: ['/a.mkv'], playlists: ['/a.m3u8']),
-            cardHit: false),
+          surface: DropSurface.video,
+          files: _files(videos: ['/a.mkv'], playlists: ['/a.m3u8']),
+          cardHit: false,
+        ),
         DropIntent.importNewPlaylist,
       );
     });
@@ -293,9 +378,10 @@ void main() {
     test('m3u8 on books surface -> importNewPlaylist (auto-switch)', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.books,
-            files: _files(playlists: ['/a.m3u8']),
-            cardHit: false),
+          surface: DropSurface.books,
+          files: _files(playlists: ['/a.m3u8']),
+          cardHit: false,
+        ),
         DropIntent.importNewPlaylist,
       );
     });
@@ -303,9 +389,10 @@ void main() {
     test('playlist wins over video on books surface', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.books,
-            files: _files(videos: ['/a.mkv'], playlists: ['/a.m3u8']),
-            cardHit: false),
+          surface: DropSurface.books,
+          files: _files(videos: ['/a.mkv'], playlists: ['/a.m3u8']),
+          cardHit: false,
+        ),
         DropIntent.importNewPlaylist,
       );
     });
@@ -318,9 +405,10 @@ void main() {
       test('.torrent on $surface -> importTorrent', () {
         expect(
           decideDropIntent(
-              surface: surface,
-              files: _files(torrents: ['/a.torrent']),
-              cardHit: false),
+            surface: surface,
+            files: _files(torrents: ['/a.torrent']),
+            cardHit: false,
+          ),
           DropIntent.importTorrent,
         );
       });
@@ -329,9 +417,10 @@ void main() {
     test('torrent wins over url on video surface', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.video,
-            files: _files(torrents: ['/a.torrent'], urls: ['https://x.test/a']),
-            cardHit: false),
+          surface: DropSurface.video,
+          files: _files(torrents: ['/a.torrent'], urls: ['https://x.test/a']),
+          cardHit: false,
+        ),
         DropIntent.importTorrent,
       );
     });
@@ -339,19 +428,21 @@ void main() {
     test('folder wins over torrent on video surface', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.video,
-            files: const DroppedFiles(
-                books: [],
-                videos: [],
-                subtitles: [],
-                audios: [],
-                playlists: [],
-                dictionaries: [],
-                urls: [],
-                directories: ['/season'],
-                torrents: ['/a.torrent'],
-                unknown: []),
-            cardHit: false),
+          surface: DropSurface.video,
+          files: const DroppedFiles(
+            books: [],
+            videos: [],
+            subtitles: [],
+            audios: [],
+            playlists: [],
+            dictionaries: [],
+            urls: [],
+            directories: ['/season'],
+            torrents: ['/a.torrent'],
+            unknown: [],
+          ),
+          cardHit: false,
+        ),
         DropIntent.addFolderAsSource,
       );
     });
@@ -359,11 +450,53 @@ void main() {
     test('book wins over torrent on books surface', () {
       expect(
         decideDropIntent(
-            surface: DropSurface.books,
-            files: _files(books: ['/a.epub'], torrents: ['/a.torrent']),
-            cardHit: false),
+          surface: DropSurface.books,
+          files: _files(books: ['/a.epub'], torrents: ['/a.torrent']),
+          cardHit: false,
+        ),
         DropIntent.importNewBook,
       );
+    });
+  });
+
+  // 视频播放页：.ape / .mka / .ac3 只在纯音频表（不在有声书表），拖到正在播放的视频上
+  // 要和拖 .mp3 一样提示「不支持音频」，不能落到「只支持字幕」。
+  group('decidePlaybackDropIntent — video playback page', () {
+    PlaybackDropIntent decide(List<String> paths, {bool subtitle = false}) =>
+        decidePlaybackDropIntent(
+          files: classifyDroppedFiles(paths),
+          hasImportableSubtitle: subtitle,
+        );
+
+    test('.ape / .mka / .ac3 -> unsupportedAudio (same as .mp3)', () {
+      for (final String path in <String>[
+        '/x/01.ape',
+        '/x/02.mka',
+        '/x/03.ac3',
+        '/x/04.DSF',
+        '/x/05.mp3',
+      ]) {
+        expect(
+          decide(<String>[path]),
+          PlaybackDropIntent.unsupportedAudio,
+          reason: path,
+        );
+      }
+    });
+    test('importable subtitle wins', () {
+      expect(
+        decide(<String>['/x/a.srt', '/x/01.ape'], subtitle: true),
+        PlaybackDropIntent.importSubtitle,
+      );
+    });
+    test('audio together with a video is not "audio unsupported"', () {
+      expect(
+        decide(<String>['/x/ep.mkv', '/x/01.ape']),
+        PlaybackDropIntent.unsupportedSurface,
+      );
+    });
+    test('unknown file -> ignore', () {
+      expect(decide(<String>['/x/a.xyz']), PlaybackDropIntent.ignore);
     });
   });
 }

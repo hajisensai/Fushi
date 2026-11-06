@@ -14,6 +14,8 @@
 
 [![Descargar la última versión](https://img.shields.io/badge/%E2%AC%87%20Descargar%20la%20%C3%BAltima%20versi%C3%B3n-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Únete a Discord](https://img.shields.io/badge/%C3%9Anete%20a%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor%20on%20GitHub-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/hajisensai)
+[![Support on Ko-fi](https://img.shields.io/badge/Support%20on%20Ko-fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/hajisensai)
 
 </div>
 
@@ -136,9 +138,9 @@ Fushi almacena los libros importados, diccionarios, fuentes, datos de audiolibro
 
 - **Sincronización** — Google Drive / OneDrive / Dropbox usan inicio de sesión OAuth; WebDAV / FTP / SFTP / Fushi Server usan la dirección del servidor y las credenciales que proporcionas. Fushi Interconnect conecta directamente los dispositivos emparejados (LAN, IPv6, redes superpuestas o direcciones públicas) y, cuando no hay ninguna ruta directa, recurre a un túnel P2P iroh de extremo a extremo; los enlaces de emparejamiento siempre piden confirmación.
 - **Anki** — la creación de tarjetas se comunica con AnkiDroid o con la dirección de AnkiConnect que configures.
-- **Estadísticas de uso** — una vez al día, las compilaciones de escritorio y Android envían a fushi.moe un ID de instalación aleatorio, la versión de la aplicación, la plataforma y el canal de actualización para contar los usuarios activos; no se incluye ninguna cuenta, biblioteca ni dato de lectura, y no se almacenan direcciones IP. Desactívalo con *Compartir estadísticas de uso* en los ajustes de actualización. Las compilaciones de iOS no las envían.
+- **Estadísticas de uso** — una vez al día, las compilaciones de escritorio y Android envían a fushi.moe un ID de instalación derivado del dispositivo (no cambia al reinstalar), la versión de la aplicación, la plataforma y el canal de actualización para contar los usuarios activos; no se incluye ninguna cuenta, biblioteca ni dato de lectura, y no se almacenan direcciones IP. Desactívalo con *Compartir estadísticas de uso* en los ajustes de actualización. Las compilaciones de iOS no las envían.
 - **Solo cuando lo pides** — la subida de registros (tras un aviso de consentimiento único), los comentarios dentro de la aplicación y el ranking (desactivado por defecto; sube los títulos de tu biblioteca y tu progreso solo después de que lo actives).
-- **OCR de manga** — el motor por defecto es Google Lens, que envía la imagen de la página a Google; cambia al modelo en el dispositivo o al OCR del sistema en los ajustes para mantener las imágenes en local.
+- **OCR de manga** — el motor por defecto es el modelo CTC en el dispositivo, así que las imágenes de página se quedan en local (descárgalo una vez en los ajustes); Google Lens es opcional y envía la imagen de la página a Google.
 - **Funciones de IA** — las solicitudes van únicamente al proveedor de LLM que configures y asignes a una función; si no hay ningún proveedor asignado, no se envía nada.
 - **Servicios de terceros** — las funciones de metadatos, subtítulos y fuentes en línea contactan con los servicios enumerados en [Fuentes de contenido e integraciones](#fuentes-de-contenido-e-integraciones) solo cuando las usas.
 

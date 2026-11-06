@@ -21,15 +21,18 @@ class _FakeSender implements RemoteMineSender {
 
   @override
   Future<Map<String, dynamic>?> mineForward(
-      ForwardedMinePayload payload) async {
+    ForwardedMinePayload payload,
+  ) async {
     captured = payload;
     if (throwAuth) throw SyncAuthError('nope');
     return _response;
   }
 
   @override
-  Future<RemoteDuplicateCheck> isDuplicate(
-      {required String expression, required String reading}) async {
+  Future<RemoteDuplicateCheck> isDuplicate({
+    required String expression,
+    required String reading,
+  }) async {
     dupCalls.add(<String>[expression, reading]);
     return dupResult;
   }
@@ -44,7 +47,8 @@ class _FakeSender implements RemoteMineSender {
 
   @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
-      String modelName) async {
+    String modelName,
+  ) async {
     noteTypeReads.add(modelName);
     return noteTypeDef;
   }
@@ -57,7 +61,9 @@ class _FakeSender implements RemoteMineSender {
 
   @override
   Future<bool> updateNoteTypeTemplates(
-      String modelName, List<AnkiCardTemplate> templates) async {
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) async {
     templateWrites.add((modelName, templates));
     return noteTypeWriteOk;
   }
@@ -86,14 +92,16 @@ class _FakeLocal extends BaseAnkiRepository {
   Future<AnkiFetchResult> fetchConfiguration() async {
     fetchCalled = true;
     return AnkiFetchResult.success(
-        decks: const <AnkiDeck>[], noteTypes: const <AnkiNoteType>[]);
+      decks: const <AnkiDeck>[],
+      noteTypes: const <AnkiNoteType>[],
+    );
   }
 
   @override
-  Future<MineOutcome> mineEntry(
-          {required String rawPayloadJson,
-          required AnkiMiningContext context}) async =>
-      throw StateError('local mineEntry must NOT run in remote mode');
+  Future<MineOutcome> mineEntry({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async => throw StateError('local mineEntry must NOT run in remote mode');
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async =>
@@ -111,8 +119,8 @@ class _FakeLocal extends BaseAnkiRepository {
   // Lapis 模板读写跟随制卡落点走互联：远端模式下绝不该落到本地仓库。
   @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
-          String modelName) async =>
-      throw StateError('local readNoteTypeDefinition must NOT run');
+    String modelName,
+  ) async => throw StateError('local readNoteTypeDefinition must NOT run');
 
   @override
   Future<bool> updateNoteTypeStyling(String modelName, String css) async =>
@@ -120,8 +128,9 @@ class _FakeLocal extends BaseAnkiRepository {
 
   @override
   Future<bool> updateNoteTypeTemplates(
-          String modelName, List<AnkiCardTemplate> templates) async =>
-      throw StateError('local updateNoteTypeTemplates must NOT run');
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) async => throw StateError('local updateNoteTypeTemplates must NOT run');
 }
 
 /// BUG-1549：带可配置本地设置的假本地仓库（配置类委派合法，制卡类仍禁止落地）。
@@ -136,40 +145,47 @@ class _FakeLocalWithSettings extends _FakeLocal {
 
 void main() {
   group('RemoteMiningAnkiRepository', () {
-    test('synchronized video reads and transfers its muxed media once', () async {
-      final sender = _FakeSender(<String, dynamic>{'result': 'success'});
-      final paths = <String>[];
-      final repo = RemoteMiningAnkiRepository(
-        local: _FakeLocal(), client: sender,
-        dictMediaLoader: (String dictionary, String path) => null,
-        fileByteLoader: (String path) async {
-          paths.add(path);
-          return Uint8List.fromList(<int>[1, 2, 3]);
-        },
-      );
-      final outcome = await repo.mineEntry(
-        rawPayloadJson: '{"expression":"猫"}',
-        context: const AnkiMiningContext(
-          sentence: '猫です。', coverPath: '/tmp/sentence.mp4',
-          sentenceAudioPath: '/tmp/sentence.mp4', synchronizedVideo: true,
-          source: AnkiMiningSource.video,
-        ),
-      );
-      expect(outcome.result, MineResult.success);
-      expect(paths, <String>['/tmp/sentence.mp4']);
-      final wire = sender.captured!.toJson();
-      expect(wire['synchronizedVideo'], isTrue);
-      expect(wire.containsKey('sentenceAudioBase64'), isFalse);
-      final received = ForwardedMinePayload.fromJson(wire);
-      expect(received.synchronizedVideo, isTrue);
-      expect(received.coverExt, 'mp4');
-      expect(received.coverBytes, <int>[1, 2, 3]);
-      expect(received.sentenceAudioBytes, isNull);
-    });
+    test(
+      'synchronized video reads and transfers its muxed media once',
+      () async {
+        final sender = _FakeSender(<String, dynamic>{'result': 'success'});
+        final paths = <String>[];
+        final repo = RemoteMiningAnkiRepository(
+          local: _FakeLocal(),
+          client: sender,
+          dictMediaLoader: (String dictionary, String path) => null,
+          fileByteLoader: (String path) async {
+            paths.add(path);
+            return Uint8List.fromList(<int>[1, 2, 3]);
+          },
+        );
+        final outcome = await repo.mineEntry(
+          rawPayloadJson: '{"expression":"猫"}',
+          context: const AnkiMiningContext(
+            sentence: '猫です。',
+            coverPath: '/tmp/sentence.mp4',
+            sentenceAudioPath: '/tmp/sentence.mp4',
+            synchronizedVideo: true,
+            source: AnkiMiningSource.video,
+          ),
+        );
+        expect(outcome.result, MineResult.success);
+        expect(paths, <String>['/tmp/sentence.mp4']);
+        final wire = sender.captured!.toJson();
+        expect(wire['synchronizedVideo'], isTrue);
+        expect(wire.containsKey('sentenceAudioBase64'), isFalse);
+        final received = ForwardedMinePayload.fromJson(wire);
+        expect(received.synchronizedVideo, isTrue);
+        expect(received.coverExt, 'mp4');
+        expect(received.coverBytes, <int>[1, 2, 3]);
+        expect(received.sentenceAudioBytes, isNull);
+      },
+    );
 
     test('mineEntry 采集四类媒体并转发；映射 success', () async {
-      final _FakeSender sender =
-          _FakeSender(<String, dynamic>{'result': 'success'});
+      final _FakeSender sender = _FakeSender(<String, dynamic>{
+        'result': 'success',
+      });
       final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
         local: _FakeLocal(),
         client: sender,
@@ -220,14 +236,15 @@ void main() {
       expect(cap.dictionaryMedia.single.bytes, <int>[9, 9]);
     });
 
-    // 「制卡所在字符数」标签（`chars_12345`）：小说阅读器算好字面量放进
+    // 制卡位置文本（写进 MiscInfo，反馈 MhQHXQI-sB）：小说阅读器格式化好放进
     // AnkiMiningContext，远端制卡时必须原样搬进转发 payload——否则卡落在主机上
-    // 就只有本机才有这条标签，同一本书两台设备制的卡对不上。
+    // 就丢了位置，同一本书两台设备制的卡对不上。
     // 撤掉 remote_mining_anki_repository.dart 里
-    // `charPositionTag: context.charPositionTag` 这一行 → 第一条断言红。
-    test('制卡位置标签从 context 搬进转发 payload', () async {
-      final _FakeSender sender =
-          _FakeSender(<String, dynamic>{'result': 'success'});
+    // `charPositionText: context.charPositionText` 这一行 → 第一条断言红。
+    test('制卡位置从 context 搬进转发 payload', () async {
+      final _FakeSender sender = _FakeSender(<String, dynamic>{
+        'result': 'success',
+      });
       final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
         local: _FakeLocal(),
         client: sender,
@@ -240,23 +257,24 @@ void main() {
         context: const AnkiMiningContext(
           sentence: '猫がいる',
           source: AnkiMiningSource.book,
-          charPositionTag: 'chars_12345',
+          charPositionText: '制卡位置：第 12345 字',
         ),
       );
-      expect(sender.captured!.charPositionTag, 'chars_12345');
+      expect(sender.captured!.charPositionText, '制卡位置：第 12345 字');
 
       // 开关关闭 / 非小说来源 / 锚点取不到 → context 侧就是 null，转发也保持 null
-      // （主机端 buildNoteTags 不追加，绝不补一个 chars_0）。
+      // （主机端不写 MiscInfo 位置，绝不补一个「第 0 字」）。
       await repo.mineEntry(
         rawPayloadJson: jsonEncode(<String, dynamic>{'expression': '犬'}),
         context: const AnkiMiningContext(sentence: '犬がいる'),
       );
-      expect(sender.captured!.charPositionTag, isNull);
+      expect(sender.captured!.charPositionText, isNull);
     });
 
     test('http 单词音频不搬字节（留给服务端下载）', () async {
-      final _FakeSender sender =
-          _FakeSender(<String, dynamic>{'result': 'success'});
+      final _FakeSender sender = _FakeSender(<String, dynamic>{
+        'result': 'success',
+      });
       final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
         local: _FakeLocal(),
         client: sender,
@@ -264,8 +282,10 @@ void main() {
         fileByteLoader: (String p) async => null,
       );
       await repo.mineEntry(
-        rawPayloadJson: jsonEncode(
-            <String, dynamic>{'expression': '猫', 'audio': 'https://x/a.mp3'}),
+        rawPayloadJson: jsonEncode(<String, dynamic>{
+          'expression': '猫',
+          'audio': 'https://x/a.mp3',
+        }),
         context: const AnkiMiningContext(sentence: ''),
       );
       expect(sender.captured!.wordAudioBytes, isNull);
@@ -280,18 +300,55 @@ void main() {
           dictMediaLoader: (String d, String p) => null,
         );
         final MineOutcome o = await repo.mineEntry(
-            rawPayloadJson: '{}',
-            context: const AnkiMiningContext(sentence: ''));
+          rawPayloadJson: '{}',
+          context: const AnkiMiningContext(sentence: ''),
+        );
         return o.result;
       }
 
-      expect(await run(<String, dynamic>{'result': 'duplicate'}),
-          MineResult.duplicate);
-      expect(await run(<String, dynamic>{'result': 'notConfigured'}),
-          MineResult.notConfigured);
-      expect(await run(<String, dynamic>{'result': 'error', 'message': 'boom'}),
-          MineResult.error);
+      expect(
+        await run(<String, dynamic>{'result': 'duplicate'}),
+        MineResult.duplicate,
+      );
+      expect(
+        await run(<String, dynamic>{'result': 'notConfigured'}),
+        MineResult.notConfigured,
+      );
+      expect(
+        await run(<String, dynamic>{'result': 'error', 'message': 'boom'}),
+        MineResult.error,
+      );
       expect(await run(null), MineResult.error); // 无可达主机
+    });
+
+    test('主机侧 Anki 落卡失败（反馈 E52FUMdbR6）：分类成「已配对设备制卡失败」，主机原因与分类码不丢', () async {
+      const String hostReason =
+          'Could not connect to Anki: connection refused.';
+      final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+        local: _FakeLocal(),
+        client: _FakeSender(<String, dynamic>{
+          'result': 'error',
+          'message': hostReason,
+          'detail': 'SocketException: Connection refused',
+          'errorCode': AnkiErrorCode.connectionRefused,
+        }),
+        fileByteLoader: (String p) async => null,
+        dictMediaLoader: (String d, String p) => null,
+      );
+
+      final MineOutcome outcome = await repo.mineEntry(
+        rawPayloadJson: '{}',
+        context: const AnkiMiningContext(sentence: ''),
+      );
+
+      expect(outcome.result, MineResult.error);
+      expect(outcome.errorCode, AnkiErrorCode.pairedDeviceMineFailed);
+      expect(outcome.errorDetail, hostReason);
+      expect(
+        outcome.error.toString(),
+        contains(AnkiErrorCode.connectionRefused),
+      );
+      expect(outcome.error.toString(), contains('Connection refused'));
     });
 
     test('不可达提示说明失败结果和恢复路径，不暴露内部术语', () async {
@@ -303,8 +360,9 @@ void main() {
       );
 
       final MineOutcome outcome = await repo.mineEntry(
-          rawPayloadJson: '{}',
-          context: const AnkiMiningContext(sentence: ''));
+        rawPayloadJson: '{}',
+        context: const AnkiMiningContext(sentence: ''),
+      );
 
       expect(outcome.errorCode, AnkiErrorCode.pairedDeviceUnreachable);
       expect(
@@ -312,15 +370,20 @@ void main() {
         RemoteMiningAnkiRepository.pairedDeviceUnreachableMessage,
       );
       expect(outcome.errorDetail, contains('Fushi is running'));
-      expect(outcome.errorDetail, contains('Mine to Fushi Interconnect server'));
+      expect(
+        outcome.errorDetail,
+        contains('Mine to Fushi Interconnect server'),
+      );
       expect(outcome.errorDetail, isNot(contains('server-side mining')));
     });
 
     test('BUG-1549 主机回传 deckName → 成功 outcome 带主机牌组名', () async {
       final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
         local: _FakeLocal(),
-        client: _FakeSender(
-            <String, dynamic>{'result': 'success', 'deckName': 'HostDeck'}),
+        client: _FakeSender(<String, dynamic>{
+          'result': 'success',
+          'deckName': 'HostDeck',
+        }),
         fileByteLoader: (String p) async => null,
         dictMediaLoader: (String d, String p) => null,
       );
@@ -334,11 +397,15 @@ void main() {
 
     test('BUG-1549 旧主机不回传 deckName → 降级本地设置牌组名', () async {
       final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
-        local: _FakeLocalWithSettings(AnkiSettings(
-          // 旧存档形状：只有 id，没有 selectedDeckName——降级链仍须按 id 解析出名字。
-          selectedDeckId: 1,
-          availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'LocalDeck')],
-        )),
+        local: _FakeLocalWithSettings(
+          AnkiSettings(
+            // 旧存档形状：只有 id，没有 selectedDeckName——降级链仍须按 id 解析出名字。
+            selectedDeckId: 1,
+            availableDecks: const <AnkiDeck>[
+              AnkiDeck(id: 1, name: 'LocalDeck'),
+            ],
+          ),
+        ),
         client: _FakeSender(<String, dynamic>{'result': 'success'}),
         fileByteLoader: (String p) async => null,
         dictMediaLoader: (String d, String p) => null,
@@ -359,15 +426,19 @@ void main() {
         dictMediaLoader: (String d, String p) => null,
       );
       final MineOutcome o = await repo.mineEntry(
-          rawPayloadJson: '{}', context: const AnkiMiningContext(sentence: ''));
+        rawPayloadJson: '{}',
+        context: const AnkiMiningContext(sentence: ''),
+      );
       expect(o.result, MineResult.error);
     });
 
     test('isDuplicate 走远端发送器', () async {
       final _FakeSender sender = _FakeSender(null)
         ..dupResult = RemoteDuplicateCheck.duplicate;
-      final RemoteMiningAnkiRepository repo =
-          RemoteMiningAnkiRepository(local: _FakeLocal(), client: sender);
+      final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+        local: _FakeLocal(),
+        client: sender,
+      );
       expect(await repo.isDuplicate('猫', 'ねこ'), isTrue);
       expect(sender.dupCalls.single, <String>['猫', 'ねこ']);
     });
@@ -408,8 +479,10 @@ void main() {
 
     test('配置类方法委派本地（设置页仍能配置本地 Anki）', () async {
       final _FakeLocal local = _FakeLocal();
-      final RemoteMiningAnkiRepository repo =
-          RemoteMiningAnkiRepository(local: local, client: _FakeSender(null));
+      final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+        local: local,
+        client: _FakeSender(null),
+      );
       await repo.fetchConfiguration();
       expect(local.fetchCalled, isTrue);
       await repo.createDeck('Deck::Sub');
@@ -418,15 +491,18 @@ void main() {
 
     test('覆盖/查看类方法保留基类降级（不误操作本机 Anki）', () async {
       final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
-          local: _FakeLocal(), client: _FakeSender(null));
+        local: _FakeLocal(),
+        client: _FakeSender(null),
+      );
       expect(await repo.findOverwriteTargetNoteId('a', 'b'), isNull);
       expect(await repo.findMatchingNotes('a', 'b'), isEmpty);
       expect(await repo.noteFields(1), isNull);
       expect(await repo.openNoteInAnki(1), isFalse);
       final MineOutcome up = await repo.updateMinedNote(
-          noteId: 1,
-          rawPayloadJson: '{}',
-          context: const AnkiMiningContext(sentence: ''));
+        noteId: 1,
+        rawPayloadJson: '{}',
+        context: const AnkiMiningContext(sentence: ''),
+      );
       expect(up.result, MineResult.error);
     });
 
@@ -435,7 +511,9 @@ void main() {
     group('Lapis note type 读写经互联作用于主机端', () {
       test('supportsNoteTypeEditing 恒 true（本地 AnkiDroid false 也不遮蔽）', () {
         final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
-            local: _FakeLocal(), client: _FakeSender(null));
+          local: _FakeLocal(),
+          client: _FakeSender(null),
+        );
         // _FakeLocal 继承基类默认 false；远端模式下不再看本地能力。
         expect(repo.supportsNoteTypeEditing, isTrue);
       });
@@ -448,18 +526,23 @@ void main() {
             templates: <AnkiCardTemplate>[],
             css: '.card {}',
           );
-        final RemoteMiningAnkiRepository repo =
-            RemoteMiningAnkiRepository(local: _FakeLocal(), client: sender);
-        final AnkiNoteTypeDefinition? def =
-            await repo.readNoteTypeDefinition('Lapis');
+        final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+          local: _FakeLocal(),
+          client: sender,
+        );
+        final AnkiNoteTypeDefinition? def = await repo.readNoteTypeDefinition(
+          'Lapis',
+        );
         expect(def?.name, 'Lapis');
         expect(sender.noteTypeReads.single, 'Lapis');
       });
 
       test('updateNoteTypeStyling / updateNoteTypeTemplates 转发远端', () async {
         final _FakeSender sender = _FakeSender(null);
-        final RemoteMiningAnkiRepository repo =
-            RemoteMiningAnkiRepository(local: _FakeLocal(), client: sender);
+        final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+          local: _FakeLocal(),
+          client: sender,
+        );
         expect(await repo.updateNoteTypeStyling('Lapis', '.card {}'), isTrue);
         expect(sender.stylingWrites.single, ('Lapis', '.card {}'));
         expect(
@@ -474,8 +557,10 @@ void main() {
 
       test('主机版本过旧/不支持 → 写返回 false（不谎报成功）', () async {
         final _FakeSender sender = _FakeSender(null)..noteTypeWriteOk = false;
-        final RemoteMiningAnkiRepository repo =
-            RemoteMiningAnkiRepository(local: _FakeLocal(), client: sender);
+        final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+          local: _FakeLocal(),
+          client: sender,
+        );
         expect(await repo.updateNoteTypeStyling('Lapis', ''), isFalse);
       });
     });
@@ -487,7 +572,9 @@ void main() {
     group('媒体存储优化经互联作用于主机端', () {
       test('supportsMediaMaintenance 恒 true（本地 AnkiDroid false 也不遮蔽）', () {
         final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
-            local: _FakeLocal(), client: _FakeSender(null));
+          local: _FakeLocal(),
+          client: _FakeSender(null),
+        );
         expect(_FakeLocal().supportsMediaMaintenance, isFalse);
         expect(repo.supportsMediaMaintenance, isTrue);
       });
@@ -495,8 +582,10 @@ void main() {
       test('probeMediaMaintenance 问的是主机，不是本地', () async {
         final _FakeSender sender = _FakeSender(null)
           ..mediaMaintenanceAvailable = true;
-        final RemoteMiningAnkiRepository repo =
-            RemoteMiningAnkiRepository(local: _FakeLocal(), client: sender);
+        final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+          local: _FakeLocal(),
+          client: sender,
+        );
         expect(await repo.probeMediaMaintenance(), isTrue);
 
         sender.mediaMaintenanceAvailable = false;
@@ -510,17 +599,23 @@ void main() {
             groupCount: 2,
             deletions: <MediaDedupDeletion>[
               MediaDedupDeletion(
-                  filename: 'a.jpg', canonical: 'b.jpg', bytes: 10),
+                filename: 'a.jpg',
+                canonical: 'b.jpg',
+                bytes: 10,
+              ),
             ],
             notesRewritten: 0,
             modelsRewritten: 0,
             skipped: 0,
           );
-        final RemoteMiningAnkiRepository repo =
-            RemoteMiningAnkiRepository(local: _FakeLocal(), client: sender);
+        final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+          local: _FakeLocal(),
+          client: sender,
+        );
 
-        final AnkiMediaDedupReport? plan =
-            await repo.runMediaDedup(dryRun: true);
+        final AnkiMediaDedupReport? plan = await repo.runMediaDedup(
+          dryRun: true,
+        );
         expect(plan?.groupCount, 2);
         expect(plan?.duplicatesRemoved, 1);
         await repo.runMediaDedup(dryRun: false);
@@ -529,7 +624,9 @@ void main() {
 
       test('进度与取消跨不过 HTTP 往返：明说不支持，UI 据此不画取消按钮', () {
         final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
-            local: _FakeLocal(), client: _FakeSender(null));
+          local: _FakeLocal(),
+          client: _FakeSender(null),
+        );
         expect(repo.supportsMediaMaintenanceProgress, isFalse);
         // 本地后端在同一进程里跑，两者都真会被调用。
         expect(_FakeLocal().supportsMediaMaintenanceProgress, isTrue);
@@ -537,8 +634,10 @@ void main() {
 
       test('主机不支持 → 返回 null（不谎报「没有重复」）', () async {
         final _FakeSender sender = _FakeSender(null)..dedupReport = null;
-        final RemoteMiningAnkiRepository repo =
-            RemoteMiningAnkiRepository(local: _FakeLocal(), client: sender);
+        final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+          local: _FakeLocal(),
+          client: sender,
+        );
         expect(await repo.runMediaDedup(dryRun: true), isNull);
       });
     });

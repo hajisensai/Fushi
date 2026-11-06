@@ -88,15 +88,19 @@ List<AnidbEpisodeShare> decodeOtherEpisodes(String raw) {
           (item[0] as int) > 0)
         if (item.length == 2 || item[2] is! String)
           AnidbEpisodeShare(
-              episodeId: item[0] as int, percentage: item[1] as int)
+            episodeId: item[0] as int,
+            percentage: item[1] as int,
+          )
         else
           AnidbEpisodeShare(
             episodeId: item[0] as int,
             percentage: item[1] as int,
             episodeNumber: item[2] as String,
             airedAt: item[3] is int
-                ? DateTime.fromMillisecondsSinceEpoch(item[3] as int,
-                    isUtc: true)
+                ? DateTime.fromMillisecondsSinceEpoch(
+                    item[3] as int,
+                    isUtc: true,
+                  )
                 : null,
             englishTitle: item[4] is String ? item[4] as String : '',
             romajiTitle: item[5] is String ? item[5] as String : '',
@@ -163,32 +167,38 @@ class AnidbFileIdentityDatabaseStore implements AnidbFileIdentityStore {
   @override
   Future<void> save(AnidbFileIdentityRecord record) {
     final AnidbFileIdentity? identity = record.identity;
-    return _database.upsertAnidbFileIdentity(AnidbFileIdentitiesCompanion(
-      ed2k: Value(record.ed2k.toLowerCase()),
-      fileSize: Value(record.size),
-      anidbFileId: Value(identity?.fileId),
-      anidbAnimeId: Value(identity?.animeId),
-      anidbEpisodeId: Value(identity?.episodeId),
-      episodeNumber: Value(identity?.episodeNumber ?? ''),
-      romajiTitle: Value(identity?.romajiTitle ?? ''),
-      kanjiTitle: Value(identity?.kanjiTitle ?? ''),
-      englishTitle: Value(identity?.englishTitle ?? ''),
-      episodeTitle: Value(identity?.episodeTitle ?? ''),
-      episodeRomajiTitle: Value(identity?.episodeRomajiTitle ?? ''),
-      episodeKanjiTitle: Value(identity?.episodeKanjiTitle ?? ''),
-      episodeAiredAt:
-          Value(identity?.episodeAiredAt?.toUtc().millisecondsSinceEpoch),
-      otherEpisodes: Value(encodeOtherEpisodes(
-          identity?.otherEpisodes ?? const <AnidbEpisodeShare>[])),
-      isDeprecated: Value(identity?.isDeprecated ?? false),
-      fileState: Value(identity?.fileState ?? 0),
-      animeType: Value(identity?.animeType ?? ''),
-      filePath: Value(record.filePath),
-      fileModifiedAt: Value(record.fileModifiedAt?.millisecondsSinceEpoch),
-      missAttempts: Value(identity == null ? record.missAttempts : 0),
-      resolvedAt: Value(record.resolvedAt.millisecondsSinceEpoch),
-      updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
-    ));
+    return _database.upsertAnidbFileIdentity(
+      AnidbFileIdentitiesCompanion(
+        ed2k: Value(record.ed2k.toLowerCase()),
+        fileSize: Value(record.size),
+        anidbFileId: Value(identity?.fileId),
+        anidbAnimeId: Value(identity?.animeId),
+        anidbEpisodeId: Value(identity?.episodeId),
+        episodeNumber: Value(identity?.episodeNumber ?? ''),
+        romajiTitle: Value(identity?.romajiTitle ?? ''),
+        kanjiTitle: Value(identity?.kanjiTitle ?? ''),
+        englishTitle: Value(identity?.englishTitle ?? ''),
+        episodeTitle: Value(identity?.episodeTitle ?? ''),
+        episodeRomajiTitle: Value(identity?.episodeRomajiTitle ?? ''),
+        episodeKanjiTitle: Value(identity?.episodeKanjiTitle ?? ''),
+        episodeAiredAt: Value(
+          identity?.episodeAiredAt?.toUtc().millisecondsSinceEpoch,
+        ),
+        otherEpisodes: Value(
+          encodeOtherEpisodes(
+            identity?.otherEpisodes ?? const <AnidbEpisodeShare>[],
+          ),
+        ),
+        isDeprecated: Value(identity?.isDeprecated ?? false),
+        fileState: Value(identity?.fileState ?? 0),
+        animeType: Value(identity?.animeType ?? ''),
+        filePath: Value(record.filePath),
+        fileModifiedAt: Value(record.fileModifiedAt?.millisecondsSinceEpoch),
+        missAttempts: Value(identity == null ? record.missAttempts : 0),
+        resolvedAt: Value(record.resolvedAt.millisecondsSinceEpoch),
+        updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
   }
 
   static AnidbFileIdentityRecord _fromRow(AnidbFileIdentityRow row) {
@@ -213,8 +223,10 @@ class AnidbFileIdentityDatabaseStore implements AnidbFileIdentityStore {
               episodeKanjiTitle: row.episodeKanjiTitle,
               episodeAiredAt: row.episodeAiredAt == null
                   ? null
-                  : DateTime.fromMillisecondsSinceEpoch(row.episodeAiredAt!,
-                      isUtc: true),
+                  : DateTime.fromMillisecondsSinceEpoch(
+                      row.episodeAiredAt!,
+                      isUtc: true,
+                    ),
               otherEpisodes: decodeOtherEpisodes(row.otherEpisodes),
               isDeprecated: row.isDeprecated,
               fileState: row.fileState,

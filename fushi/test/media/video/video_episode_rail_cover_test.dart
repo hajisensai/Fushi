@@ -13,24 +13,27 @@ import 'package:transparent_image/transparent_image.dart';
 /// [PortraitCoverImage]（landscapeSlot）渲染」这一结构事实——退回裸 Image.cover
 /// 本测试即红。
 void main() {
-  testWidgets('有封面的集卡经 PortraitCoverImage 渲染（横槽自适应）',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: VideoEpisodeRail(
-          episodes: <VideoEpisodeEntry>[
-            VideoEpisodeEntry(
-              title: '第1话',
-              cover: MemoryImage(kTransparentImage),
-            ),
-            const VideoEpisodeEntry(title: '第2话'),
-          ],
-          currentIndex: 0,
-          onTapEpisode: (int _) {},
-          colorScheme: const ColorScheme.dark(),
+  testWidgets('有封面的集卡经 PortraitCoverImage 渲染（横槽自适应）', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoEpisodeRail(
+            episodes: <VideoEpisodeEntry>[
+              VideoEpisodeEntry(
+                title: '第1话',
+                cover: MemoryImage(kTransparentImage),
+              ),
+              const VideoEpisodeEntry(title: '第2话'),
+            ],
+            currentIndex: 0,
+            onTapEpisode: (int _) {},
+            colorScheme: const ColorScheme.dark(),
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     expect(

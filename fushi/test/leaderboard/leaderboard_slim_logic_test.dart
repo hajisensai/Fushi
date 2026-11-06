@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/leaderboard/leaderboard_features.dart';
 import 'package:fushi/src/leaderboard/leaderboard_reference_works.dart';
 import 'package:fushi/src/leaderboard/leaderboard_reference_works_data.dart';

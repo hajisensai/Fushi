@@ -105,67 +105,83 @@ Future<EpubBookRow> _insertBook(
   required String title,
   required String coverPath,
 }) async {
-  await db.insertEpubBook(EpubBooksCompanion.insert(
-    bookKey: title,
-    title: title,
-    epubPath: '/fake/$title.epub',
-    extractDir: '/fake/$title',
-    chapterCount: 1,
-    chaptersJson: '[]',
-    importedAt: DateTime.now().millisecondsSinceEpoch,
-    coverPath: Value<String?>(coverPath),
-  ));
+  await db.insertEpubBook(
+    EpubBooksCompanion.insert(
+      bookKey: title,
+      title: title,
+      epubPath: '/fake/$title.epub',
+      extractDir: '/fake/$title',
+      chapterCount: 1,
+      chaptersJson: '[]',
+      importedAt: DateTime.now().millisecondsSinceEpoch,
+      coverPath: Value<String?>(coverPath),
+    ),
+  );
   return (await db.getAllEpubBooks()).firstWhere((r) => r.title == title);
 }
 
 void main() {
-  test('SyncManager reads the cover only when the backend asks for it',
-      () async {
-    final Directory tempDir =
-        await Directory.systemTemp.createTemp('fushi_cover_lazy_');
-    addTearDown(() => tempDir.delete(recursive: true));
-    final File coverFile = File('${tempDir.path}/cover.png');
+  test(
+    'SyncManager reads the cover only when the backend asks for it',
+    () async {
+      final Directory tempDir = await Directory.systemTemp.createTemp(
+        'fushi_cover_lazy_',
+      );
+      addTearDown(() => tempDir.delete(recursive: true));
+      final File coverFile = File('${tempDir.path}/cover.png');
 
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final EpubBookRow book =
-        await _insertBook(db, title: 'Book', coverPath: coverFile.path);
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      final EpubBookRow book = await _insertBook(
+        db,
+        title: 'Book',
+        coverPath: coverFile.path,
+      );
 
-    // 判别器：封面文件在 syncBook 调用时**还不存在**，只有在后端进到 cache-miss
-    // 分支、正要取封面的那一刻才被写出来。旧的 eager 版在 ensureBookFolder 之前
-    // 就 readAsBytesSync 了，那时文件不存在 → 只能拿到 null。
-    final backend = _LazyCoverBackend(
-      onCacheMiss: () => coverFile.writeAsBytes(_kCoverBytes),
-    );
-    final SyncManager manager = SyncManager(db: db, backend: backend);
+      // 判别器：封面文件在 syncBook 调用时**还不存在**，只有在后端进到 cache-miss
+      // 分支、正要取封面的那一刻才被写出来。旧的 eager 版在 ensureBookFolder 之前
+      // 就 readAsBytesSync 了，那时文件不存在 → 只能拿到 null。
+      final backend = _LazyCoverBackend(
+        onCacheMiss: () => coverFile.writeAsBytes(_kCoverBytes),
+      );
+      final SyncManager manager = SyncManager(db: db, backend: backend);
 
-    expect(coverFile.existsSync(), isFalse);
-    await manager.syncBook(
-      book: book,
-      syncStats: false,
-      statsSyncMode: StatisticsSyncMode.merge,
-      syncAudioBook: false,
-    );
+      expect(coverFile.existsSync(), isFalse);
+      await manager.syncBook(
+        book: book,
+        syncStats: false,
+        statsSyncMode: StatisticsSyncMode.merge,
+        syncAudioBook: false,
+      );
 
-    expect(backend.coverProviderCalls, 1, reason: 'cache-miss 分支必须照旧拿到封面');
-    expect(backend.lastCoverData, _kCoverBytes,
-        reason: '惰性读必须读到回调触发时刻的真实文件内容；'
-            '预读实现只会读到 null（那时文件还没被创建）');
-  });
+      expect(backend.coverProviderCalls, 1, reason: 'cache-miss 分支必须照旧拿到封面');
+      expect(
+        backend.lastCoverData,
+        _kCoverBytes,
+        reason:
+            '惰性读必须读到回调触发时刻的真实文件内容；'
+            '预读实现只会读到 null（那时文件还没被创建）',
+      );
+    },
+  );
 
   test('a cached book folder triggers no cover read at all', () async {
-    final Directory tempDir =
-        await Directory.systemTemp.createTemp('fushi_cover_lazy_hit_');
+    final Directory tempDir = await Directory.systemTemp.createTemp(
+      'fushi_cover_lazy_hit_',
+    );
     addTearDown(() => tempDir.delete(recursive: true));
     final File coverFile = File('${tempDir.path}/cover.png');
     await coverFile.writeAsBytes(_kCoverBytes);
 
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
-    final EpubBookRow book =
-        await _insertBook(db, title: 'Book', coverPath: coverFile.path);
+    final EpubBookRow book = await _insertBook(
+      db,
+      title: 'Book',
+      coverPath: coverFile.path,
+    );
 
     final backend = _LazyCoverBackend();
     final SyncManager manager = SyncManager(db: db, backend: backend);
@@ -183,11 +199,11 @@ void main() {
     expect(backend.coverProviderCalls, 1, reason: '缓存命中的书不许再读封面图');
   });
 
-  test(
-      'InterconnectSyncBackend: cache miss still uploads the cover, '
+  test('InterconnectSyncBackend: cache miss still uploads the cover, '
       'cache hit never reads it', () async {
-    final Directory tempDir =
-        await Directory.systemTemp.createTemp('fushi_cover_p2p_');
+    final Directory tempDir = await Directory.systemTemp.createTemp(
+      'fushi_cover_p2p_',
+    );
     addTearDown(() => tempDir.delete(recursive: true));
     await Directory('${tempDir.path}/sync-data').create(recursive: true);
 
@@ -201,8 +217,7 @@ void main() {
     await server.start();
     addTearDown(server.stop);
 
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
     await repo.setFushiClientUrls(<FushiClientUrl>[
@@ -230,13 +245,18 @@ void main() {
     );
     expect(reads, 1);
 
-    final SyncFileRef? uploaded =
-        await backend.findContentFile(folder, 'cover_1_6.png');
+    final SyncFileRef? uploaded = await backend.findContentFile(
+      folder,
+      'cover_1_6.png',
+    );
     expect(uploaded, isNotNull, reason: 'cache-miss 分支必须仍然上传封面');
     final File dest = File('${tempDir.path}/downloaded.png');
     await backend.downloadContentFile(fileId: uploaded!.id, destination: dest);
-    expect(await dest.readAsBytes(), _kCoverBytes,
-        reason: '上传的封面字节必须与回调返回的逐字节一致');
+    expect(
+      await dest.readAsBytes(),
+      _kCoverBytes,
+      reason: '上传的封面字节必须与回调返回的逐字节一致',
+    );
 
     // ── cache hit：回调一次都不许被调用 ──
     final String folder2 = await backend.ensureBookFolder(

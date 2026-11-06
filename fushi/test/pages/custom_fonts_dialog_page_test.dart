@@ -317,25 +317,17 @@ void main() {
       return result;
     }
 
-    testWidgets('进页就是勾选列表，没选东西时不显示批量栏', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('进页就是勾选列表，没选东西时不显示批量栏', (WidgetTester tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(900, 1400);
       addTearDown(tester.view.reset);
 
       await openPage(tester);
       expect(find.byType(Checkbox), findsWidgets);
-      expect(
-        find.byType(BatchActionBar),
-        findsNothing,
-        reason: '一条都没勾时底栏是多余的',
-      );
+      expect(find.byType(BatchActionBar), findsNothing, reason: '一条都没勾时底栏是多余的');
     });
 
-    testWidgets('勾选多条后一次返回全部选中项（不再选一个就把整页弹掉）', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('勾选多条后一次返回全部选中项（不再选一个就把整页弹掉）', (WidgetTester tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(900, 1400);
       addTearDown(tester.view.reset);
@@ -387,15 +379,13 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(picked, isNotNull);
-      expect(
-        picked!.map((RecommendedFont f) => f.name).toList(),
-        <String>[catalog[0].name, catalog[1].name],
-      );
+      expect(picked!.map((RecommendedFont f) => f.name).toList(), <String>[
+        catalog[0].name,
+        catalog[1].name,
+      ]);
     });
 
-    testWidgets('已添加的字体不可勾选，也不被「全选」卷进来', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('已添加的字体不可勾选，也不被「全选」卷进来', (WidgetTester tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(900, 1400);
       addTearDown(tester.view.reset);

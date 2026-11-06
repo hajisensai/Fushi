@@ -11,7 +11,8 @@ import 'package:fushi_anki/fushi_anki.dart';
 
 import 'lapis_style_editor_harness.dart';
 
-const String _userOverride = '.main-def {\n'
+const String _userOverride =
+    '.main-def {\n'
     '  background-color: #101010 !important;\n'
     '}';
 
@@ -33,8 +34,9 @@ void main() {
     final String managedOnly = composeLapisVisualStyleSheet(
       freeformCss: '',
       rules: const <LapisVisualField, LapisVisualRule>{
-        LapisVisualField.definitionBox:
-            LapisVisualRule(backgroundColorHex: '#FFF0A6'),
+        LapisVisualField.definitionBox: LapisVisualRule(
+          backgroundColorHex: '#FFF0A6',
+        ),
       },
     );
     final String? saved = await _openEditorAndSave(
@@ -58,12 +60,15 @@ void main() {
     final String stored = composeLapisVisualStyleSheet(
       freeformCss: freeform,
       rules: const <LapisVisualField, LapisVisualRule>{
-        LapisVisualField.definitionBox:
-            LapisVisualRule(backgroundColorHex: '#FFF0A6'),
+        LapisVisualField.definitionBox: LapisVisualRule(
+          backgroundColorHex: '#FFF0A6',
+        ),
       },
     );
-    final String? saved =
-        await _openEditorAndSave(tester, initialCustomCss: stored);
+    final String? saved = await _openEditorAndSave(
+      tester,
+      initialCustomCss: stored,
+    );
 
     expect(saved, isNotNull);
     expect(saved, startsWith(freeform));

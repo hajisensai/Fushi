@@ -1,0 +1,8 @@
+format=ultrastar quality=syllable_pitch effects=false lang=- title=Yoru ni Kakeru artist=YOASOBI agents=[P1:Person:, P2:Person:]
+L 1000-2600 agent=P1 role=Main style=-
+  S 1000-1400 Sweep "shi"
+  S 1400-1800 Sweep "zu"
+  S 1800-2600 Sweep "mu"
+L 5000-7000 agent=P2 role=Main style=-
+  S 5000-6500 Sweep "yo"
+  S 6500-7000 Sweep " ru"

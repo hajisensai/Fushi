@@ -35,11 +35,12 @@ void main() {
 
     test('LocalAudioDb.ensureIndexes exists with the exact signature', () {
       expect(
-          dbSrc, contains('static Future<void> ensureIndexes(String dbPath)'));
+        dbSrc,
+        contains('static Future<void> ensureIndexes(String dbPath)'),
+      );
     });
 
-    test(
-        'CREATE INDEX DDL only lives in the index-building region, nowhere '
+    test('CREATE INDEX DDL only lives in the index-building region, nowhere '
         'else', () {
       // BUG-1667：索引真相源从裸 DDL 串常量（`_indexDdls`）改成「表 + 列」spec
       // （`_indexSpecs`），DDL 现在由 `_ensureIndexesImpl` 按缺失项拼出来——因为
@@ -47,36 +48,49 @@ void main() {
       // 异名索引」。本断言的意图不变：DDL 只许出现在建索引区段里，查询路径
       // （queryMeta / extractBlob）一律只读、零 DDL。
       final int specConst = dbSrc.indexOf('_indexSpecs = <(');
-      final int queryStart =
-          dbSrc.indexOf('static ({String file, String source})? queryMeta(');
-      expect(specConst, greaterThanOrEqualTo(0),
-          reason: '索引真相源必须是单一常量 _indexSpecs');
+      final int queryStart = dbSrc.indexOf(
+        'static ({String file, String source})? queryMeta(',
+      );
+      expect(
+        specConst,
+        greaterThanOrEqualTo(0),
+        reason: '索引真相源必须是单一常量 _indexSpecs',
+      );
       expect(queryStart, greaterThan(specConst));
       final Iterable<Match> hits = 'CREATE INDEX'.allMatches(dbSrc);
       expect(hits.isNotEmpty, isTrue);
       for (final Match m in hits) {
-        expect(m.start, inInclusiveRange(specConst, queryStart),
-            reason: '查询路径（queryMeta/extractBlob）不得再有任何 DDL');
+        expect(
+          m.start,
+          inInclusiveRange(specConst, queryStart),
+          reason: '查询路径（queryMeta/extractBlob）不得再有任何 DDL',
+        );
       }
       // 仍然恰好两条索引（entries + android），别悄悄多塞。
       expect(
-          'name:'.allMatches(_slice(dbSrc, '_indexSpecs = <(', ';')).length, 2,
-          reason: '恰好两条索引 spec（entries + android）');
+        'name:'.allMatches(_slice(dbSrc, '_indexSpecs = <(', ';')).length,
+        2,
+        reason: '恰好两条索引 spec（entries + android）',
+      );
     });
 
     test('queryMeta opens readOnly and has no DDL / no readWrite', () {
       final String body = _slice(
-          dbSrc,
-          'static ({String file, String source})? queryMeta(',
-          'static String? extractBlob({');
+        dbSrc,
+        'static ({String file, String source})? queryMeta(',
+        'static String? extractBlob({',
+      );
       expect(body, contains('OpenMode.readOnly'));
       expect(body.contains('OpenMode.readWrite'), isFalse);
       expect(body.contains('CREATE INDEX'), isFalse);
     });
 
     test('extractBlob opens readOnly and has no DDL / no readWrite', () {
-      final String body = _slice(dbSrc, 'static String? extractBlob({',
-          'static String? queryAndExtract({');
+      final String body = _slice(
+        dbSrc,
+        'static String? extractBlob({',
+        'static String? queryAndExtract({',
+      );
       expect(body, contains('OpenMode.readOnly'));
       expect(body.contains('OpenMode.readWrite'), isFalse);
       expect(body.contains('CREATE INDEX'), isFalse);
@@ -85,8 +99,9 @@ void main() {
     test('readWrite is used exactly once, inside ensureIndexes', () {
       final Iterable<Match> hits = 'OpenMode.readWrite'.allMatches(dbSrc);
       expect(hits.length, 1, reason: '唯一的读写打开点只能是 ensureIndexes 的建索引连接');
-      final int ensureStart =
-          dbSrc.indexOf('static Future<void> ensureIndexes');
+      final int ensureStart = dbSrc.indexOf(
+        'static Future<void> ensureIndexes',
+      );
       final int queryStart = dbSrc.indexOf('queryMeta(');
       expect(hits.first.start, greaterThan(ensureStart));
       expect(hits.first.start, lessThan(queryStart));
@@ -94,151 +109,201 @@ void main() {
 
     test('desktop setLocalAudioDbs kicks ensureIndexes per db (unawaited)', () {
       final String body = _slice(
-          ttsSrc,
-          'Future<bool> setLocalAudioDbs(List<LocalAudioDbConfig> dbs) async {',
-          'Future<bool> setLocalAudioDb(String path)');
-      expect(body, contains('unawaited(LocalAudioDb.ensureIndexes('),
-          reason: '绑定期后台补索引，对齐 Android 的做法');
+        ttsSrc,
+        'Future<bool> setLocalAudioDbs(List<LocalAudioDbConfig> dbs) async {',
+        'Future<bool> setLocalAudioDb(String path)',
+      );
+      expect(
+        body,
+        contains('unawaited(LocalAudioDb.ensureIndexes('),
+        reason: '绑定期后台补索引，对齐 Android 的做法',
+      );
     });
 
     test('desktop queryLocalAudio runs its SQLite body in Isolate.run', () {
       final String body = _slice(
-          ttsSrc,
-          'Future<Map<String, dynamic>?> queryLocalAudio(',
-          'Future<String?> extractLocalAudio(');
-      expect(body, contains('Isolate.run('),
-          reason: '同步 SQLite 不下放 isolate，调用方 .timeout(500ms) 就是死代码');
+        ttsSrc,
+        'Future<Map<String, dynamic>?> queryLocalAudio(',
+        'Future<String?> extractLocalAudio(',
+      );
+      expect(
+        body,
+        contains('Isolate.run('),
+        reason: '同步 SQLite 不下放 isolate，调用方 .timeout(500ms) 就是死代码',
+      );
       expect(body, contains('LocalAudioDb.queryMeta('));
     });
 
     test('desktop extractLocalAudio runs its SQLite body in Isolate.run', () {
-      final String body = _slice(ttsSrc, 'Future<String?> extractLocalAudio(',
-          'Future<bool> playFile(');
+      final String body = _slice(
+        ttsSrc,
+        'Future<String?> extractLocalAudio(',
+        'Future<bool> playFile(',
+      );
       expect(body, contains('Isolate.run('));
       expect(body, contains('LocalAudioDb.extractBlob('));
     });
 
     test('desktop queryLocalAudio waits out the binding-time index build', () {
       final String body = _slice(
-          ttsSrc,
-          'Future<Map<String, dynamic>?> queryLocalAudio(',
-          'Future<String?> extractLocalAudio(');
-      expect(body, contains('LocalAudioDb.waitForPendingIndexing('),
-          reason: 'BUG-1365：查询不排在自家 ensureIndexes 写连接之后，'
-              '就会撞 CREATE INDEX 的独占锁 → busy 超时 → 吞成 null＝「暂无发音」');
-      expect(body.indexOf('LocalAudioDb.waitForPendingIndexing('),
-          lessThan(body.indexOf('Isolate.run(')),
-          reason: '等必须发生在把查询交给 Isolate.run 之前，等在后面等于没等');
+        ttsSrc,
+        'Future<Map<String, dynamic>?> queryLocalAudio(',
+        'Future<String?> extractLocalAudio(',
+      );
+      expect(
+        body,
+        contains('LocalAudioDb.waitForPendingIndexing('),
+        reason:
+            'BUG-1365：查询不排在自家 ensureIndexes 写连接之后，'
+            '就会撞 CREATE INDEX 的独占锁 → busy 超时 → 吞成 null＝「暂无发音」',
+      );
+      expect(
+        body.indexOf('LocalAudioDb.waitForPendingIndexing('),
+        lessThan(body.indexOf('Isolate.run(')),
+        reason: '等必须发生在把查询交给 Isolate.run 之前，等在后面等于没等',
+      );
     });
 
-    test('desktop extractLocalAudio waits out the binding-time index build',
-        () {
-      final String body = _slice(ttsSrc, 'Future<String?> extractLocalAudio(',
-          'Future<bool> playFile(');
-      expect(body, contains('LocalAudioDb.waitForPendingIndexing('),
-          reason: 'BUG-1365：blob 提取同样会撞建索引的写锁');
-      expect(body.indexOf('LocalAudioDb.waitForPendingIndexing('),
-          lessThan(body.indexOf('Isolate.run(')));
-    });
+    test(
+      'desktop extractLocalAudio waits out the binding-time index build',
+      () {
+        final String body = _slice(
+          ttsSrc,
+          'Future<String?> extractLocalAudio(',
+          'Future<bool> playFile(',
+        );
+        expect(
+          body,
+          contains('LocalAudioDb.waitForPendingIndexing('),
+          reason: 'BUG-1365：blob 提取同样会撞建索引的写锁',
+        );
+        expect(
+          body.indexOf('LocalAudioDb.waitForPendingIndexing('),
+          lessThan(body.indexOf('Isolate.run(')),
+        );
+      },
+    );
 
     test('dead code speak stays deleted (zero callers repo-wide)', () {
-      expect(ttsSrc.contains('Future<void> speak('), isFalse,
-          reason: 'TtsChannel.speak 全仓零调用者，已删除，不得复活');
+      expect(
+        ttsSrc.contains('Future<void> speak('),
+        isFalse,
+        reason: 'TtsChannel.speak 全仓零调用者，已删除，不得复活',
+      );
       expect(ttsSrc.contains("invokeMethod('speak'"), isFalse);
     });
   });
 
-  group('desktop TtsChannel local-audio behavior (real sqlite via Isolate.run)',
-      () {
-    late Directory tmp;
-    late String dbPath;
+  group(
+    'desktop TtsChannel local-audio behavior (real sqlite via Isolate.run)',
+    () {
+      late Directory tmp;
+      late String dbPath;
 
-    void seedDb(String path) {
-      final Database db = sqlite3.open(path);
-      db.execute('CREATE TABLE entries '
-          '(expression TEXT, reading TEXT, file TEXT, source TEXT)');
-      db.execute('CREATE TABLE android (file TEXT, source TEXT, data BLOB)');
-      db.execute("INSERT INTO entries VALUES ('勉強','べんきょう','a.mp3','src1')");
-      final PreparedStatement stmt =
-          db.prepare('INSERT INTO android (file, source, data) VALUES (?,?,?)');
-      stmt.execute(<Object?>[
-        'a.mp3',
-        'src1',
-        Uint8List.fromList(<int>[1, 2])
-      ]);
-      stmt.dispose();
-      db.dispose();
-    }
-
-    bool hasIndex(String path, String name) {
-      final Database probe = sqlite3.open(path, mode: OpenMode.readOnly);
-      try {
-        // 与生产查询连接同款 busy_timeout：后台 ensureIndexes 写提交瞬间持
-        // 独占锁，不等锁的裸探针会 SQLITE_BUSY 误红。
-        probe.execute('PRAGMA busy_timeout = 10000');
-        return probe.select(
-          "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
-          <Object?>[name],
-        ).isNotEmpty;
-      } finally {
-        probe.dispose();
+      void seedDb(String path) {
+        final Database db = sqlite3.open(path);
+        db.execute(
+          'CREATE TABLE entries '
+          '(expression TEXT, reading TEXT, file TEXT, source TEXT)',
+        );
+        db.execute('CREATE TABLE android (file TEXT, source TEXT, data BLOB)');
+        db.execute("INSERT INTO entries VALUES ('勉強','べんきょう','a.mp3','src1')");
+        final PreparedStatement stmt = db.prepare(
+          'INSERT INTO android (file, source, data) VALUES (?,?,?)',
+        );
+        stmt.execute(<Object?>[
+          'a.mp3',
+          'src1',
+          Uint8List.fromList(<int>[1, 2]),
+        ]);
+        stmt.dispose();
+        db.dispose();
       }
-    }
 
-    setUp(() {
-      tmp = Directory.systemTemp.createTempSync('fushi_tts_offload');
-      dbPath = '${tmp.path}/audio.db';
-      seedDb(dbPath);
-    });
+      bool hasIndex(String path, String name) {
+        final Database probe = sqlite3.open(path, mode: OpenMode.readOnly);
+        try {
+          // 与生产查询连接同款 busy_timeout：后台 ensureIndexes 写提交瞬间持
+          // 独占锁，不等锁的裸探针会 SQLITE_BUSY 误红。
+          probe.execute('PRAGMA busy_timeout = 10000');
+          return probe.select(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
+            <Object?>[name],
+          ).isNotEmpty;
+        } finally {
+          probe.dispose();
+        }
+      }
 
-    tearDown(() async {
-      await TtsChannel.instance.setLocalAudioDbs(const <LocalAudioDbConfig>[]);
-      // setLocalAudioDbs 派发的后台 ensureIndexes 还握着 readWrite 句柄时，
-      // Windows 删临时目录是 errno 32；先确定性排空在途任务再删。
-      await LocalAudioDb.waitForPendingIndexing();
-      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
-    });
+      setUp(() {
+        tmp = Directory.systemTemp.createTempSync('fushi_tts_offload');
+        dbPath = '${tmp.path}/audio.db';
+        seedDb(dbPath);
+      });
 
-    test('setLocalAudioDbs + queryLocalAudio round-trips through Isolate.run',
+      tearDown(() async {
+        await TtsChannel.instance.setLocalAudioDbs(
+          const <LocalAudioDbConfig>[],
+        );
+        // setLocalAudioDbs 派发的后台 ensureIndexes 还握着 readWrite 句柄时，
+        // Windows 删临时目录是 errno 32；先确定性排空在途任务再删。
+        await LocalAudioDb.waitForPendingIndexing();
+        if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+      });
+
+      test(
+        'setLocalAudioDbs + queryLocalAudio round-trips through Isolate.run',
         () async {
-      await TtsChannel.instance.setLocalAudioDbs(
-          <LocalAudioDbConfig>[LocalAudioDbConfig(path: dbPath)]);
-      final Map<String, dynamic>? hit =
-          await TtsChannel.instance.queryLocalAudio('勉強', 'べんきょう');
-      expect(hit, isNotNull);
-      expect(hit!['file'], 'a.mp3');
-      expect(hit['source'], 'src1');
-      expect(hit['dbIndex'], 0);
+          await TtsChannel.instance.setLocalAudioDbs(<LocalAudioDbConfig>[
+            LocalAudioDbConfig(path: dbPath),
+          ]);
+          final Map<String, dynamic>? hit = await TtsChannel.instance
+              .queryLocalAudio('勉強', 'べんきょう');
+          expect(hit, isNotNull);
+          expect(hit!['file'], 'a.mp3');
+          expect(hit['source'], 'src1');
+          expect(hit['dbIndex'], 0);
 
-      final Map<String, dynamic>? miss =
-          await TtsChannel.instance.queryLocalAudio('なし', '');
-      expect(miss, isNull);
-    });
+          final Map<String, dynamic>? miss = await TtsChannel.instance
+              .queryLocalAudio('なし', '');
+          expect(miss, isNull);
+        },
+      );
 
-    test('queryLocalAudio honors dbIndex bounds', () async {
-      await TtsChannel.instance.setLocalAudioDbs(
-          <LocalAudioDbConfig>[LocalAudioDbConfig(path: dbPath)]);
-      expect(
+      test('queryLocalAudio honors dbIndex bounds', () async {
+        await TtsChannel.instance.setLocalAudioDbs(<LocalAudioDbConfig>[
+          LocalAudioDbConfig(path: dbPath),
+        ]);
+        expect(
           await TtsChannel.instance.queryLocalAudio('勉強', 'べんきょう', dbIndex: 1),
           isNull,
-          reason: '越界 dbIndex 不得命中');
-      expect(
+          reason: '越界 dbIndex 不得命中',
+        );
+        expect(
           await TtsChannel.instance.queryLocalAudio('勉強', 'べんきょう', dbIndex: 0),
-          isNotNull);
-    });
+          isNotNull,
+        );
+      });
 
-    test('binding builds the indexes in the background (Android parity)',
+      test(
+        'binding builds the indexes in the background (Android parity)',
         () async {
-      expect(hasIndex(dbPath, 'idx_entries_expr_read'), isFalse,
-          reason: '导入的库本无索引');
-      await TtsChannel.instance.setLocalAudioDbs(
-          <LocalAudioDbConfig>[LocalAudioDbConfig(path: dbPath)]);
-      // 确定性等后台 ensureIndexes 收尾（对齐生产删除路径用的同一原语）。
-      await LocalAudioDb.waitForPendingIndexing(dbPath);
-      expect(hasIndex(dbPath, 'idx_entries_expr_read'), isTrue);
-      expect(hasIndex(dbPath, 'idx_android_file_source'), isTrue);
-    });
-  });
+          expect(
+            hasIndex(dbPath, 'idx_entries_expr_read'),
+            isFalse,
+            reason: '导入的库本无索引',
+          );
+          await TtsChannel.instance.setLocalAudioDbs(<LocalAudioDbConfig>[
+            LocalAudioDbConfig(path: dbPath),
+          ]);
+          // 确定性等后台 ensureIndexes 收尾（对齐生产删除路径用的同一原语）。
+          await LocalAudioDb.waitForPendingIndexing(dbPath);
+          expect(hasIndex(dbPath, 'idx_entries_expr_read'), isTrue);
+          expect(hasIndex(dbPath, 'idx_android_file_source'), isTrue);
+        },
+      );
+    },
+  );
 
   /// BUG-1365 的行为守卫：绑定期 `ensureIndexes` 是**我们自己**对同一库文件开的
   /// readWrite 连接。旧实现里查询与它完全无序，只靠只读连接 3s 的 busy_timeout
@@ -257,26 +322,30 @@ void main() {
       tmp = Directory.systemTemp.createTempSync('fushi_tts_order');
       dbPath = '${tmp.path}/audio.db';
       final Database db = sqlite3.open(dbPath);
-      db.execute('CREATE TABLE entries '
-          '(expression TEXT, reading TEXT, file TEXT, source TEXT)');
+      db.execute(
+        'CREATE TABLE entries '
+        '(expression TEXT, reading TEXT, file TEXT, source TEXT)',
+      );
       db.execute('CREATE TABLE android (file TEXT, source TEXT, data BLOB)');
       // 索引要建得「够慢」才能暴露无序窗口：真实 Yomitan 本地音频库是十万行级。
       db.execute('BEGIN');
-      final PreparedStatement ins =
-          db.prepare('INSERT INTO entries (expression, reading, file, source) '
-              'VALUES (?,?,?,?)');
+      final PreparedStatement ins = db.prepare(
+        'INSERT INTO entries (expression, reading, file, source) '
+        'VALUES (?,?,?,?)',
+      );
       for (int i = 0; i < 200000; i++) {
         ins.execute(<Object?>['w$i', 'r$i', 'f$i.mp3', 'src1']);
       }
       ins.execute(<Object?>['勉強', 'べんきょう', 'a.mp3', 'src1']);
       ins.dispose();
       db.execute('COMMIT');
-      final PreparedStatement stmt =
-          db.prepare('INSERT INTO android (file, source, data) VALUES (?,?,?)');
+      final PreparedStatement stmt = db.prepare(
+        'INSERT INTO android (file, source, data) VALUES (?,?,?)',
+      );
       stmt.execute(<Object?>[
         'a.mp3',
         'src1',
-        Uint8List.fromList(<int>[1, 2])
+        Uint8List.fromList(<int>[1, 2]),
       ]);
       stmt.dispose();
       db.dispose();
@@ -301,17 +370,23 @@ void main() {
       }
     }
 
-    test('queryLocalAudio does not return while indexing is still in flight',
-        () async {
-      expect(indexBuilt(dbPath), isFalse, reason: '导入的库本无索引');
-      await TtsChannel.instance.setLocalAudioDbs(
-          <LocalAudioDbConfig>[LocalAudioDbConfig(path: dbPath)]);
-      final Map<String, dynamic>? hit =
-          await TtsChannel.instance.queryLocalAudio('勉強', 'べんきょう', dbIndex: 0);
-      expect(indexBuilt(dbPath), isTrue,
-          reason: '查询返回时自家建索引还在途 → 读写无序，撞锁只是时间问题（BUG-1365）');
-      expect(hit, isNotNull);
-      expect(hit!['file'], 'a.mp3');
-    });
+    test(
+      'queryLocalAudio does not return while indexing is still in flight',
+      () async {
+        expect(indexBuilt(dbPath), isFalse, reason: '导入的库本无索引');
+        await TtsChannel.instance.setLocalAudioDbs(<LocalAudioDbConfig>[
+          LocalAudioDbConfig(path: dbPath),
+        ]);
+        final Map<String, dynamic>? hit = await TtsChannel.instance
+            .queryLocalAudio('勉強', 'べんきょう', dbIndex: 0);
+        expect(
+          indexBuilt(dbPath),
+          isTrue,
+          reason: '查询返回时自家建索引还在途 → 读写无序，撞锁只是时间问题（BUG-1365）',
+        );
+        expect(hit, isNotNull);
+        expect(hit!['file'], 'a.mp3');
+      },
+    );
   });
 }

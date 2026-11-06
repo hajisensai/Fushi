@@ -6,7 +6,7 @@
 // AI 入口的构造 / 接线点，要求它在同一个文件里经过判据；不是手抄一份文件名单。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 一类 AI 入口：[site] 匹配到的每一处接线都要有一处 [gate] 与之对应。
 class _EntrySite {
@@ -44,6 +44,16 @@ final List<_EntrySite> _sites = <_EntrySite>[
     // 透传（`widget.collectionAiSettings`）不是新入口，只认真正求值的接线点。
     RegExp(r'collectionAiSettings:(?!\s*widget\.)'),
     RegExp(r'collectionAiSettings:\s*isAiModuleEnabled\('),
+  ),
+  _EntrySite(
+    '库页顶栏的「AI 整理」',
+    RegExp(r'onAiOrganize:(?!\s*widget\.)'),
+    RegExp(r'onAiOrganize:\s*isAiModuleEnabled\('),
+  ),
+  _EntrySite(
+    '库页多选的「AI 整理所选」',
+    RegExp(r't\.library_organize_selection_action'),
+    RegExp(r'if \(isAiModuleEnabled\([^\n]*\)\)\s*FushiIconButton\('),
   ),
   _EntrySite(
     '漫画 OCR 的 AI 档位面板',

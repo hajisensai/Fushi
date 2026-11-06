@@ -1,0 +1,40 @@
+name: fushidicts Linux library
+description: >-
+  Builds native/fushidicts for linux-x64 (Release, gcc-14, static libstdc++) via
+  native/fushidicts/build_linux_so.sh and smoke-loads it with ctypes. The real-native Dart
+  tests in packages/fushi_dictionary/test/background_tokenize_native_test.dart (background
+  lookup, redirect-flag migration) treat the library as a hard dependency (they fail, not
+  skip, without it), so every Linux job that runs packages/*/test needs this .so. Producer
+  jobs call this action and upload `native/fushidicts/prebuilt/linux-x64/` as the
+  `fushidicts-linux-x64` artifact; test jobs download it and point FUSHI_DICTS_LIB at it.
+  Same toolchain as build-multiplatform.yml linux-server and native-fushidicts-gate.yml
+  ctest-gcc (gcc-13 cannot compile the C++23 library features fushidicts uses).
+runs:
+  using: composite
+  steps:
+    - name: Install fushidicts Linux build deps (gcc-14, cmake, ninja)
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        sudo apt-get install -y ninja-build cmake gcc-14 g++-14 libstdc++-14-dev
+    - name: Build fushidicts (linux-x64 .so)
+      shell: bash
+      env:
+        CC: gcc-14
+        CXX: g++-14
+      run: |
+        set -euo pipefail
+        bash native/fushidicts/build_linux_so.sh
+        DICTS_LIB="$PWD/native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so" python3 - <<'PY'
+        import ctypes
+        import os
+        lib = ctypes.CDLL(os.environ["DICTS_LIB"])
+        lib.fushidicts_create.restype = ctypes.c_void_p
+        lib.fushidicts_destroy.argtypes = [ctypes.c_void_p]
+        handle = lib.fushidicts_create()
+        if not handle:
+            raise SystemExit("fushidicts_create returned null")
+        lib.fushidicts_destroy(handle)
+        print("fushidicts .so smoke ok")
+        PY

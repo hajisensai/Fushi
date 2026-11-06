@@ -15,7 +15,7 @@ Future<void> main(List<String> args) async {
   final String jobDir = args[1];
   final String extractDir = args.length > 2
       ? args[2]
-      : p.join(Directory.systemTemp.path, 'asr_align_eval_${pid}');
+      : p.join(Directory.systemTemp.path, 'asr_align_eval_$pid');
   final Stopwatch sw = Stopwatch()..start();
   final List<EpubSection> sections = epubSectionsFromBook(
     EpubParser.parseSyncFromPath(epub, extractDir),
@@ -27,16 +27,17 @@ Future<void> main(List<String> args) async {
     sections: sections,
     cues: cues,
   );
-  final MatchResult result = probe.bestResult ??
+  final MatchResult result =
+      probe.bestResult ??
       await EpubCueMatcher.matchInIsolate(sections: sections, cues: cues);
   final ({List<AudioCue> cues, MatchResult result}) done =
       await finalizeAlignedCues(
-    sections: sections,
-    cues: cues,
-    result: result,
-    subtitlePath: srt,
-    hasTokenTiming: timing,
-  );
+        sections: sections,
+        cues: cues,
+        result: result,
+        subtitlePath: srt,
+        hasTokenTiming: timing,
+      );
   stdout.writeln(
     'cues=${done.cues.length} matched=${done.result.matchedCues}/'
     '${done.result.totalCues} window=${probe.best?.key} timing=$timing '

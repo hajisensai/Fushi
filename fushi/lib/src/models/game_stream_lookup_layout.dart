@@ -5,9 +5,13 @@ import 'package:flutter/foundation.dart';
 /// where the panel spans the full width) and the height of the current-line
 /// area at its top (both layouts).
 ///
-/// The line text's font size follows the line area's height, so dragging the
-/// area's bottom edge zooms the line. One gesture fixes the actual complaint
-/// (glyphs too small to tap on a tablet) without a second size control.
+/// The line text's font size follows the line area: dragging the area's
+/// bottom edge zooms the line. One gesture fixes the actual complaint (glyphs
+/// too small to tap on a tablet) without a second size control. The size is
+/// the largest one at which the current line still fits the area (feedback
+/// eXmW0_Kjer: a short line under a strictly proportional size left most of
+/// a tall area empty), never below the proportional [fontSizeFor] and never
+/// above [maxFitFontSize].
 ///
 /// Stored per device: the right size depends on the screen it runs on, so a
 /// tablet's choice must not follow a backup to a phone or a desktop.
@@ -82,6 +86,10 @@ class GameStreamLookupLayout {
   static const double minFontSize = 12;
   static const double maxFontSize = 40;
 
+  /// Ceiling of the fit-to-area line size (a two-word line in a tall area
+  /// would otherwise grow to poster size).
+  static const double maxFitFontSize = 72;
+
   /// Step for one arrow key press on a focused resize handle.
   static const double keyboardStep = 16;
 
@@ -92,7 +100,8 @@ class GameStreamLookupLayout {
   /// default keeps following the screen height.
   final double? compactRailHeight;
 
-  /// Line text size for a line area [height] tall.
+  /// Proportional line text size for a line area [height] tall: the floor of
+  /// the fit-to-area size (see the class doc).
   static double fontSizeFor(double height) =>
       (baseFontSize * height / defaultLineHeight).clamp(
         minFontSize,

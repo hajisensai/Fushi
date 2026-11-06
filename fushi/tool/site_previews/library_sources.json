@@ -1,0 +1,558 @@
+{
+  "_comment": "官网「App 全貌」截图播种用的公有领域 / CC 授权素材清单，由 fetch_library_fixtures.dart 读取。每个下载项的 sha256 是下载核实后钉的值；sha256 为空时脚本照常下载并打印实测值，加 --update-manifest 写回。只收授权核实过的条目，来源不明的图一律不收。",
+  "items": [
+    {
+      "id": "wagahai-wa-neko-de-aru",
+      "kind": "book",
+      "title": "吾輩は猫である",
+      "author": "夏目漱石",
+      "license": {
+        "name": "Public domain（著者 1916 年没）；青空文庫テキスト",
+        "url": "https://www.aozora.gr.jp/guide/kijyunn.html"
+      },
+      "sourcePage": "https://www.aozora.gr.jp/cards/000148/card789.html",
+      "attribution": "夏目漱石『吾輩は猫である』 青空文庫（入力・校正：青空文庫ボランティア、底本情報は EPUB 巻末）",
+      "text": {
+        "url": "https://www.aozora.gr.jp/cards/000148/files/789_ruby_5639.zip",
+        "sha256": "6545750b89ee2c57f215a65079eeab56ee7c997373b7b86e5b00ae74fe69208f",
+        "maxChars": 30000
+      },
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/75/NDL1184660_%E5%90%BE%E8%BC%A9%E3%81%AF%E7%8C%AB%E3%81%A7%E3%81%82%E3%82%8B_part1.pdf/page3-960px-NDL1184660_%E5%90%BE%E8%BC%A9%E3%81%AF%E7%8C%AB%E3%81%A7%E3%81%82%E3%82%8B_part1.pdf.jpg",
+        "sha256": "fb6ea23f04986889dceaabc327573e7b71f02d5dc1cda03e08547606ddffcd43",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:NDL1184660_%E5%90%BE%E8%BC%A9%E3%81%AF%E7%8C%AB%E3%81%A7%E3%81%82%E3%82%8B_part1.pdf",
+        "license": "Public domain（Wikimedia Commons 标注）",
+        "attribution": "国立国会図書館デジタルコレクション（NDL 1184660）『吾輩は猫である』岩波書店版 扉、Wikimedia Commons 経由（PDF 第 3 页左半）",
+        "crop": [
+          0.08,
+          0.04,
+          0.475,
+          0.96
+        ]
+      }
+    },
+    {
+      "id": "sanshiro",
+      "kind": "book",
+      "title": "三四郎",
+      "author": "夏目漱石",
+      "license": {
+        "name": "Public domain（著者 1916 年没）；青空文庫テキスト",
+        "url": "https://www.aozora.gr.jp/guide/kijyunn.html"
+      },
+      "sourcePage": "https://www.aozora.gr.jp/cards/000148/card794.html",
+      "attribution": "夏目漱石『三四郎』 青空文庫",
+      "text": {
+        "url": "https://www.aozora.gr.jp/cards/000148/files/794_ruby_4237.zip",
+        "sha256": "0720d24fed2aa7a5e4a8c54344262f63f0a7770ad2729546d2c155eea4cbd7ba",
+        "maxChars": 30000
+      },
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/NDL886555_%E4%B8%89%E5%9B%9B%E9%83%8E_part1.pdf/page1-960px-NDL886555_%E4%B8%89%E5%9B%9B%E9%83%8E_part1.pdf.jpg",
+        "sha256": "97b963e12e8ed9ed23bf245fc8fe2e9f0f44768815b0b456862d5d7d16be5a25",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:NDL886555_%E4%B8%89%E5%9B%9B%E9%83%8E_part1.pdf",
+        "license": "Public domain（Wikimedia Commons 标注）",
+        "attribution": "国立国会図書館デジタルコレクション（NDL 886555）『三四郎』春陽堂 扉、Wikimedia Commons 経由（PDF 第 1 页左半）",
+        "crop": [
+          0.04,
+          0.06,
+          0.42,
+          0.92
+        ]
+      }
+    },
+    {
+      "id": "kokoro",
+      "kind": "book",
+      "title": "こころ",
+      "author": "夏目漱石",
+      "license": {
+        "name": "Public domain（著者 1916 年没）；青空文庫テキスト",
+        "url": "https://www.aozora.gr.jp/guide/kijyunn.html"
+      },
+      "sourcePage": "https://www.aozora.gr.jp/cards/000148/card773.html",
+      "attribution": "夏目漱石『こころ』 青空文庫",
+      "text": {
+        "url": "https://www.aozora.gr.jp/cards/000148/files/773_ruby_5968.zip",
+        "sha256": "c55d7bf6c7cc5bd960ce291949f38cae9ba6a672a6142c3b9e1a9f5a159fa4c4",
+        "maxChars": 30000
+      },
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/5/51/Natsume_S%C3%B4seki_Umschlag_%22Kokoro%22.jpg",
+        "sha256": "6aea8bd2712f456a6cba7024faf363bf3a8bd6b36710047eca871bc61ecdce73",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:Natsume_S%C3%B4seki_Umschlag_%22Kokoro%22.jpg",
+        "license": "Public domain（Wikimedia Commons 标注）",
+        "attribution": "『こゝろ』初版（1914、岩波書店）表紙、Wikimedia Commons"
+      }
+    },
+    {
+      "id": "maihime",
+      "kind": "book",
+      "title": "舞姫",
+      "author": "森鴎外",
+      "license": {
+        "name": "Public domain（著者 1922 年没）；青空文庫テキスト",
+        "url": "https://www.aozora.gr.jp/guide/kijyunn.html"
+      },
+      "sourcePage": "https://www.aozora.gr.jp/cards/000129/card2078.html",
+      "attribution": "森鴎外『舞姫』 青空文庫",
+      "text": {
+        "url": "https://www.aozora.gr.jp/cards/000129/files/2078_ruby_15898.zip",
+        "sha256": "e2910d3bf24053654496c81ff28a802b54c76dd4aa734ed1e538c563faa0b8e0",
+        "maxChars": 30000
+      },
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cc/NDL876658_%E6%B0%B4%E6%B2%AB%E9%9B%86_part1.pdf/page1-960px-NDL876658_%E6%B0%B4%E6%B2%AB%E9%9B%86_part1.pdf.jpg",
+        "sha256": "6367b32001de7a085932d8516e90f954aeb9665515da382b999b9a31e53ad0e9",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:NDL876658_%E6%B0%B4%E6%B2%AB%E9%9B%86_part1.pdf",
+        "license": "Public domain（Wikimedia Commons 标注）",
+        "attribution": "国立国会図書館デジタルコレクション（NDL 876658）『水沫集』（1892、『舞姫』を収める鴎外初の作品集）目次頁、Wikimedia Commons 経由（PDF 第 1 页左半）。Commons 上没有单行本『舞姫』（鴎外）的书影，故用收录集代替",
+        "crop": [
+          0.0,
+          0.0,
+          0.48,
+          1.0
+        ]
+      }
+    },
+    {
+      "id": "botchan",
+      "kind": "book",
+      "title": "坊っちゃん",
+      "author": "夏目漱石",
+      "license": {
+        "name": "Public domain（著者 1916 年没）；青空文庫テキスト",
+        "url": "https://www.aozora.gr.jp/guide/kijyunn.html"
+      },
+      "sourcePage": "https://www.aozora.gr.jp/cards/000148/card752.html",
+      "attribution": "夏目漱石『坊っちゃん』 青空文庫",
+      "text": {
+        "url": "https://www.aozora.gr.jp/cards/000148/files/752_ruby_2438.zip",
+        "sha256": "53c4d86033d0e4590c0354df5fec2709820ef21c09fa402826ff33376ec21228",
+        "maxChars": 30000
+      },
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/NDL1884801_%E5%9D%8A%E3%81%A4%E3%81%A1%E3%82%84%E3%82%93.pdf/page1-960px-NDL1884801_%E5%9D%8A%E3%81%A4%E3%81%A1%E3%82%84%E3%82%93.pdf.jpg",
+        "sha256": "221f5fbc3b27ef52204b7d6a984027bf8747f9789d64bd79e7f055eee2d8f95e",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:NDL1884801_%E5%9D%8A%E3%81%A4%E3%81%A1%E3%82%84%E3%82%93.pdf",
+        "license": "Public domain（Wikimedia Commons 标注）",
+        "attribution": "国立国会図書館デジタルコレクション（NDL 1884801）『坊つちやん』岩波文庫 表紙、Wikimedia Commons 経由（PDF 第 1 页左半）",
+        "crop": [
+          0.04,
+          0.03,
+          0.52,
+          1.0
+        ]
+      }
+    },
+    {
+      "id": "rashomon",
+      "kind": "book",
+      "title": "羅生門",
+      "author": "芥川龍之介",
+      "license": {
+        "name": "Public domain（著者 1927 年没）；青空文庫テキスト",
+        "url": "https://www.aozora.gr.jp/guide/kijyunn.html"
+      },
+      "sourcePage": "https://www.aozora.gr.jp/cards/000879/card127.html",
+      "attribution": "芥川龍之介『羅生門』 青空文庫",
+      "text": {
+        "url": "https://www.aozora.gr.jp/cards/000879/files/127_ruby_150.zip",
+        "sha256": "e63d8fe54826547fe4a66a66fc39ea0d822895c015b8f300bfe285c86c637400",
+        "maxChars": 30000
+      },
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/3/34/Rashomon_%28cover%29.jpg",
+        "sha256": "e85ba6381c0647cfe7dd1beceaba64bdafa20aa16d8cb2ae74bd91e3987496f2",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:Rashomon_(cover).jpg",
+        "license": "Public domain（Wikimedia Commons 标注）",
+        "attribution": "芥川龍之介 第1短編集『羅生門』（阿蘭陀書房、1917）表紙、国立国会図書館デジタルコレクション（pid 1088339）、Wikimedia Commons"
+      }
+    },
+    {
+      "id": "kusamakura",
+      "kind": "book",
+      "title": "草枕",
+      "author": "夏目漱石",
+      "license": {
+        "name": "Public domain（著者 1916 年没）；青空文庫テキスト",
+        "url": "https://www.aozora.gr.jp/guide/kijyunn.html"
+      },
+      "sourcePage": "https://www.aozora.gr.jp/cards/000148/card776.html",
+      "attribution": "夏目漱石『草枕』 青空文庫",
+      "text": {
+        "url": "https://www.aozora.gr.jp/cards/000148/files/776_ruby_6020.zip",
+        "sha256": "10d2e0a354bc33d807bb1f57833e049b9f2811b3faf7ecd9b49aef275f48811e",
+        "maxChars": 30000
+      },
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/NDL917015_%E8%8D%89%E6%9E%95_part1.pdf/page2-960px-NDL917015_%E8%8D%89%E6%9E%95_part1.pdf.jpg",
+        "sha256": "cc87e31aace7225e0875d1ce6b64c373a32209c09b7d809d8a079f12b72a8626",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:NDL917015_%E8%8D%89%E6%9E%95_part1.pdf",
+        "license": "Public domain（Wikimedia Commons 标注）",
+        "attribution": "国立国会図書館デジタルコレクション（NDL 917015）『草枕』表紙、Wikimedia Commons 経由（PDF 第 2 页左半）",
+        "crop": [
+          0.15,
+          0.15,
+          0.42,
+          0.94
+        ]
+      }
+    },
+    {
+      "id": "kappa",
+      "kind": "book",
+      "title": "河童",
+      "author": "芥川龍之介",
+      "license": {
+        "name": "Public domain（著者 1927 年没）；青空文庫テキスト",
+        "url": "https://www.aozora.gr.jp/guide/kijyunn.html"
+      },
+      "sourcePage": "https://www.aozora.gr.jp/cards/000879/card69.html",
+      "attribution": "芥川龍之介『河童』 青空文庫",
+      "text": {
+        "url": "https://www.aozora.gr.jp/cards/000879/files/69_ruby_1321.zip",
+        "sha256": "8daf7b994cebd17dff5a5447fd18d0408a153855ea821b9bec138ee3e68a49e9",
+        "maxChars": 30000
+      },
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c6/NDL1133078_%E6%B2%B3%E7%AB%A5.pdf/page3-960px-NDL1133078_%E6%B2%B3%E7%AB%A5.pdf.jpg",
+        "sha256": "8cbacf6f5cbe17ca643925b0b5fb4772ebc98133e9e2237a11d8472470e978f1",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:NDL1133078_%E6%B2%B3%E7%AB%A5.pdf",
+        "license": "Public domain（Wikimedia Commons 标注）",
+        "attribution": "国立国会図書館デジタルコレクション（NDL 1133078）『河童』扉、Wikimedia Commons 経由（PDF 第 3 页左半）",
+        "crop": [
+          0.09,
+          0.08,
+          0.47,
+          0.98
+        ]
+      }
+    },
+    {
+      "id": "big-buck-bunny",
+      "kind": "video",
+      "title": "Big Buck Bunny",
+      "author": "Blender Foundation",
+      "license": {
+        "name": "CC BY 3.0",
+        "url": "https://creativecommons.org/licenses/by/3.0/"
+      },
+      "sourcePage": "https://peach.blender.org/",
+      "attribution": "Big Buck Bunny (c) copyright 2008, Blender Foundation / www.bigbuckbunny.org",
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/c/c5/Big_buck_bunny_poster_big.jpg",
+        "sha256": "57bf73fa60189919929a9e413e9e0e37a1a3923375067f11dca7c07254734d4e",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:Big_buck_bunny_poster_big.jpg",
+        "license": "CC BY 3.0",
+        "attribution": "(c) copyright Blender Foundation | peach.blender.org"
+      },
+      "clip": {
+        "url": "https://download.blender.org/peach/trailer/trailer_iphone.m4v",
+        "sha256": "2e09da35a9093921001a6f0a01fc544ba20a84588c4f9bc9a52b506888478280",
+        "sourcePage": "https://download.blender.org/peach/trailer/",
+        "license": "CC BY 3.0",
+        "attribution": "Big Buck Bunny 官方预告（iPhone 版），Blender Foundation",
+        "start": 19,
+        "duration": 3.5
+      }
+    },
+    {
+      "id": "sintel",
+      "kind": "video",
+      "title": "Sintel",
+      "author": "Blender Foundation",
+      "license": {
+        "name": "CC BY 3.0",
+        "url": "https://creativecommons.org/licenses/by/3.0/"
+      },
+      "sourcePage": "https://durian.blender.org/",
+      "attribution": "Sintel (c) copyright Blender Foundation | durian.blender.org",
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/8/8f/Sintel_poster.jpg",
+        "sha256": "7bfeaaa9e69df11188d5520b002196ea127275c482880b84c5b875d5addcb67b",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:Sintel_poster.jpg",
+        "license": "CC BY 3.0",
+        "attribution": "(c) copyright Blender Foundation | durian.blender.org"
+      },
+      "clip": {
+        "url": "https://download.blender.org/durian/trailer/sintel_trailer-480p.mp4",
+        "sha256": "b670602fa00934ca27c4351bb0efe7ea7a07fae57284e44226025eeed7c51254",
+        "sourcePage": "https://download.blender.org/durian/trailer/",
+        "license": "CC BY 3.0",
+        "attribution": "Sintel 官方预告（480p），Blender Foundation",
+        "start": 20,
+        "duration": 6
+      }
+    },
+    {
+      "id": "cosmos-laundromat",
+      "kind": "video",
+      "title": "Cosmos Laundromat",
+      "author": "Blender Institute",
+      "license": {
+        "name": "CC BY 4.0",
+        "url": "https://creativecommons.org/licenses/by/4.0/"
+      },
+      "sourcePage": "https://studio.blender.org/films/cosmos-laundromat/",
+      "attribution": "Cosmos Laundromat – First Cycle, (CC) Blender Foundation | gooseberry.blender.org",
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/c/c5/CosmosLaundromatPoster.jpg",
+        "sha256": "cb96fbda161e10d96c5b130cd57b87d1dcb7879dd64b521fb846b5f0a8ae430f",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:CosmosLaundromatPoster.jpg",
+        "license": "CC BY 4.0",
+        "attribution": "Andy Goralczyk and the Blender Foundation"
+      }
+    },
+    {
+      "id": "tears-of-steel",
+      "kind": "video",
+      "title": "Tears of Steel",
+      "author": "Blender Foundation",
+      "license": {
+        "name": "CC BY 3.0",
+        "url": "https://creativecommons.org/licenses/by/3.0/"
+      },
+      "sourcePage": "https://mango.blender.org/",
+      "attribution": "Tears of Steel (CC) Blender Foundation | mango.blender.org",
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/70/Tos-poster.png/960px-Tos-poster.png",
+        "sha256": "777466845181fa7c3fb58154aef6a6a67976de7c97bdfcf377e003d7592d6c6b",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:Tos-poster.png",
+        "license": "CC BY 3.0",
+        "attribution": "(CC) Blender Foundation | Project Mango"
+      }
+    },
+    {
+      "id": "elephants-dream",
+      "kind": "video",
+      "title": "Elephants Dream",
+      "author": "Orange Open Movie Project / Blender Foundation",
+      "license": {
+        "name": "CC BY 2.5（影片）/ CC BY 4.0（海报）",
+        "url": "https://orange.blender.org/"
+      },
+      "sourcePage": "https://orange.blender.org/",
+      "attribution": "Elephants Dream (c) copyright 2006, Blender Foundation / Netherlands Media Art Institute / www.elephantsdream.org",
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0c/ElephantsDreamPoster.jpg/960px-ElephantsDreamPoster.jpg",
+        "sha256": "5eb77c4848787562daedb12fb3f9d97c99975d3138283a06114f05e1180cd01d",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:ElephantsDreamPoster.jpg",
+        "license": "CC BY 4.0",
+        "attribution": "Bassam Kurdali, Andy Goralczyk, and the Blender Foundation"
+      }
+    },
+    {
+      "id": "charge",
+      "kind": "video",
+      "title": "Charge",
+      "author": "Blender Studio",
+      "license": {
+        "name": "CC BY 4.0",
+        "url": "https://creativecommons.org/licenses/by/4.0/"
+      },
+      "sourcePage": "https://studio.blender.org/films/charge/",
+      "attribution": "Charge (CC) Blender Studio | studio.blender.org",
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fd/Charge-movie_poster.jpg/960px-Charge-movie_poster.jpg",
+        "sha256": "94cc2c3da12ca7e69fd26c39119a081636c12f85f528300585dc6c6cded8a3eb",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:Charge-movie_poster.jpg",
+        "license": "CC BY 4.0",
+        "attribution": "Blender Studio"
+      }
+    },
+    {
+      "id": "pepper-carrot-ep01",
+      "kind": "manga",
+      "title": "ペッパー＆キャロット 第1話 飛行薬",
+      "series": "ペッパー＆キャロット",
+      "author": "David Revoy",
+      "license": {
+        "name": "CC BY 4.0",
+        "url": "https://creativecommons.org/licenses/by/4.0/"
+      },
+      "sourcePage": "https://www.peppercarrot.com/ja/webcomic/ep01_Potion-of-Flight.html",
+      "attribution": "Art: David Revoy, www.peppercarrot.com; 日本語翻訳: guruguru",
+      "pages": [
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep01_Potion-of-Flight/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E01P01.jpg",
+          "sha256": "3bef9922e09cea66ab12271da0070025768ae9bc5d286f41ced617468131267e"
+        },
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep01_Potion-of-Flight/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E01P02.jpg",
+          "sha256": "d7ba528d2ab96c7fb0723197d2349d2981a0b0dd853b16179e1a06cbdd5064d3"
+        },
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep01_Potion-of-Flight/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E01P03.jpg",
+          "sha256": "c62ff81bdac3c979959c55d4cd4dea01659a35097d7cc5723c57c54531694e23"
+        },
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep01_Potion-of-Flight/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E01P04.jpg",
+          "sha256": "d58f4d23964283a2a47cd463dd577a8b191c2cd48e4ad8e93f9806bb7f60c441"
+        }
+      ]
+    },
+    {
+      "id": "pepper-carrot-ep02",
+      "kind": "manga",
+      "title": "ペッパー＆キャロット 第2話 虹の薬",
+      "series": "ペッパー＆キャロット",
+      "author": "David Revoy",
+      "license": {
+        "name": "CC BY 4.0",
+        "url": "https://creativecommons.org/licenses/by/4.0/"
+      },
+      "sourcePage": "https://www.peppercarrot.com/ja/webcomic/ep02_Rainbow-potions.html",
+      "attribution": "Art: David Revoy, www.peppercarrot.com; 日本語翻訳: guruguru",
+      "pages": [
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep02_Rainbow-potions/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E02P01.jpg",
+          "sha256": "f8cc8addb2bba7b6e112816c7b98b2c4df8f272099c5d8c2a95141e2fac5b055"
+        },
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep02_Rainbow-potions/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E02P02.jpg",
+          "sha256": "8ed176b85b45cd69e15440f0e8a5de0dbb81b0c7a21844d69fccdfd621816ce1"
+        },
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep02_Rainbow-potions/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E02P03.jpg",
+          "sha256": "ec4b94026186a47981550937c3f62c3991b395a4a04996d15c9889a7943a0e1e"
+        },
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep02_Rainbow-potions/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E02P04.jpg",
+          "sha256": "2d5ad61f8f47c2ff014e3fa81d22b47818348cb42acf98925922bb9e9c6037ec"
+        },
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep02_Rainbow-potions/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E02P05.jpg",
+          "sha256": "608b35e69d36217c600b66e31970327dec48269d428facfbbb2fee75641b93d8"
+        },
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep02_Rainbow-potions/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E02P06.jpg",
+          "sha256": "2326ed00b2546951af4c6a38689dea2817a6d892f3333b4cb1086382106d077f"
+        }
+      ]
+    },
+    {
+      "id": "pepper-carrot-ep03",
+      "kind": "manga",
+      "title": "ペッパー＆キャロット 第3話 秘密の材料",
+      "series": "ペッパー＆キャロット",
+      "author": "David Revoy",
+      "license": {
+        "name": "CC BY 4.0",
+        "url": "https://creativecommons.org/licenses/by/4.0/"
+      },
+      "sourcePage": "https://www.peppercarrot.com/ja/webcomic/ep03_The-secret-ingredients.html",
+      "attribution": "Art: David Revoy, www.peppercarrot.com; 日本語翻訳: guruguru",
+      "pages": [
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep03_The-secret-ingredients/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E03P01.jpg",
+          "sha256": "f538aeb90f39c787b16fe08d2278dfd39fdfeffa4683bfe5c6e90eed88e015ef"
+        },
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep03_The-secret-ingredients/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E03P02.jpg",
+          "sha256": "a84e6988340c89e0fe552edfc3f5779923cfba0fcbdce5702c04f4a0ae7bd052"
+        },
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep03_The-secret-ingredients/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E03P03.jpg",
+          "sha256": "687469177662e87ae37bd09325226cb8b2db65ae1ba46f984fb8462bdbb99669"
+        },
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep03_The-secret-ingredients/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E03P04.jpg",
+          "sha256": "bdc3cb4f9591ea1b50cab792bd0ad67194e2734811d4f44786f583d603ffcc54"
+        },
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep03_The-secret-ingredients/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E03P05.jpg",
+          "sha256": "828cbd36371d1c7dc0abdccba7a12bddb02de8d19e5542c3489e9830be33c3df"
+        },
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep03_The-secret-ingredients/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E03P06.jpg",
+          "sha256": "2fcc5766280cd04a57d0d4f883b314bce383fc5542cf0992cff6a95f19f1a8bf"
+        },
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep03_The-secret-ingredients/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E03P07.jpg",
+          "sha256": "2817ffbb72f2fbaeaf50b1b35fa52f978168e6d00d1d444a326c9368fc6a1b44"
+        },
+        {
+          "url": "https://www.peppercarrot.com/0_sources/ep03_The-secret-ingredients/low-res/ja_Pepper-and-Carrot_by-David-Revoy_E03P08.jpg",
+          "sha256": "819db36cd095eb9ed5fda7dd37a3048c3264fa8da3e2df3da958242a1c15bf0f"
+        }
+      ]
+    },
+    {
+      "id": "supertuxkart",
+      "kind": "game",
+      "title": "SuperTuxKart",
+      "author": "SuperTuxKart Team",
+      "license": {
+        "name": "GPL-3.0-or-later（游戏本体，未下载）",
+        "url": "https://github.com/supertuxkart/stk-code/blob/master/COPYING"
+      },
+      "sourcePage": "https://supertuxkart.net/",
+      "attribution": "SuperTuxKart in-race screenshot by QwertyChouskie, CC BY-SA 4.0",
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/64/SuperTuxKart_in-race_%282018%29.png/960px-SuperTuxKart_in-race_%282018%29.png",
+        "sha256": "4ab76b6a290a262b5a870d9da1c1eec6c30075e9ed10893fbb674579995ee2ac",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:SuperTuxKart_in-race_(2018).png",
+        "license": "CC BY-SA 4.0",
+        "attribution": "QwertyChouskie, Wikimedia Commons"
+      }
+    },
+    {
+      "id": "0ad",
+      "kind": "game",
+      "title": "0 A.D.",
+      "author": "Wildfire Games",
+      "license": {
+        "name": "GPL-2.0-or-later（代码）/ CC BY-SA 3.0（美术），游戏本体未下载",
+        "url": "https://play0ad.com/about/the-story-of-0-a-d/"
+      },
+      "sourcePage": "https://play0ad.com/",
+      "attribution": "0 A.D. alpha 25 screenshot, Wildfire Games, CC BY-SA 3.0",
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/0_A.D._alpha_25_-_playing_as_Spartans.jpg/960px-0_A.D._alpha_25_-_playing_as_Spartans.jpg",
+        "sha256": "e7290d4478f50de0170881ed5d587d1bf9b964256745069b42742bfed48bacce",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:0_A.D._alpha_25_-_playing_as_Spartans.jpg",
+        "license": "CC BY-SA 3.0",
+        "attribution": "Wildfire Games, Wikimedia Commons"
+      }
+    },
+    {
+      "id": "mindustry",
+      "kind": "game",
+      "title": "Mindustry",
+      "author": "Anuken",
+      "license": {
+        "name": "GPL-3.0（游戏本体，未下载）",
+        "url": "https://github.com/Anuken/Mindustry/blob/master/LICENSE"
+      },
+      "sourcePage": "https://mindustrygame.github.io/",
+      "attribution": "The Serpulo Planet - Mindustry, GPL",
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/0/01/The_Serpulo_Planet_-_Mindustry.jpg",
+        "sha256": "4f05383c2b9b00e79413284f47c7ad5cd551cbfc9800be6da8d758e824292ac4",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:The_Serpulo_Planet_-_Mindustry.jpg",
+        "license": "GPL（Wikimedia Commons 标注）",
+        "attribution": "Mindustry, Wikimedia Commons"
+      }
+    },
+    {
+      "id": "wesnoth",
+      "kind": "game",
+      "title": "The Battle for Wesnoth",
+      "author": "The Battle for Wesnoth Project",
+      "license": {
+        "name": "GPL-2.0-or-later（游戏本体，未下载）",
+        "url": "https://github.com/wesnoth/wesnoth/blob/master/COPYING"
+      },
+      "sourcePage": "https://www.wesnoth.org/",
+      "attribution": "The Battle for Wesnoth title screen, Wesnoth Team, GPL",
+      "cover": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a8/The_Battle_for_Wesnoth-Title_Screen.png/960px-The_Battle_for_Wesnoth-Title_Screen.png",
+        "sha256": "9901b62570f32f8a05bb676664773fc8a67437ce0ad7639bf762988d5a5fd696",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:The_Battle_for_Wesnoth-Title_Screen.png",
+        "license": "GPL（Wikimedia Commons 标注）",
+        "attribution": "Wesnoth Team, Wikimedia Commons"
+      }
+    }
+  ]
+}

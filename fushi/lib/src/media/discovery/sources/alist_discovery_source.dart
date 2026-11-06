@@ -34,31 +34,29 @@ class AListDiscoverySource extends MediaDiscoverySource {
     this.password,
     this.isUserConfigured = false,
     http.Client? client,
-  })  : _kinds = Set<DiscoveryMediaKind>.unmodifiable(kinds),
-        _api = AListApiClient(
-          baseUrl: baseUrl,
-          providerId: id,
-          username: username,
-          password: password,
-          client: client,
-        );
+  }) : _kinds = Set<DiscoveryMediaKind>.unmodifiable(kinds),
+       _api = AListApiClient(
+         baseUrl: baseUrl,
+         providerId: id,
+         username: username,
+         password: password,
+         client: client,
+       );
 
   /// 由用户自配站点建源：id 从配置派生、域按用户声明、空账号 = 游客访问。
   /// 自配站排在内置源之后（priority 30），与 OPDS 自配源同档。
-  AListDiscoverySource.fromConfig(
-    AListSiteConfig config, {
-    http.Client? client,
-  }) : this(
-          id: alistSourceIdFor(config.id),
-          displayName: config.displayName,
-          baseUrl: config.origin,
-          kinds: config.kinds,
-          priority: 30,
-          username: config.username.trim().isEmpty ? null : config.username,
-          password: config.password,
-          isUserConfigured: true,
-          client: client,
-        );
+  AListDiscoverySource.fromConfig(AListSiteConfig config, {http.Client? client})
+    : this(
+        id: alistSourceIdFor(config.id),
+        displayName: config.displayName,
+        baseUrl: config.origin,
+        kinds: config.kinds,
+        priority: 30,
+        username: config.username.trim().isEmpty ? null : config.username,
+        password: config.password,
+        isUserConfigured: true,
+        client: client,
+      );
 
   @override
   final String id;
@@ -98,10 +96,10 @@ class AListDiscoverySource extends MediaDiscoverySource {
 
   @override
   DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
-        kinds: _kinds,
-        supportsBrowse: true,
-        supportsPaging: true,
-      );
+    kinds: _kinds,
+    supportsBrowse: true,
+    supportsPaging: true,
+  );
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> browse(

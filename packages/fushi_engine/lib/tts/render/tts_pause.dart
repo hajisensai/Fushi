@@ -6,16 +6,40 @@ library;
 
 enum TtsPausePreset {
   /// 不额外插停顿（只靠引擎自带的句尾停顿）。
-  none(sentenceMs: 0, paragraphMs: 0, sceneMs: 0, chapterLeadMs: 0, chapterTailMs: 0),
+  none(
+    sentenceMs: 0,
+    paragraphMs: 0,
+    sceneMs: 0,
+    chapterLeadMs: 0,
+    chapterTailMs: 0,
+  ),
 
   /// 通用：段落之间明显换气，场景切换停一拍。
-  standard(sentenceMs: 150, paragraphMs: 600, sceneMs: 1500, chapterLeadMs: 800, chapterTailMs: 2000),
+  standard(
+    sentenceMs: 150,
+    paragraphMs: 600,
+    sceneMs: 1500,
+    chapterLeadMs: 800,
+    chapterTailMs: 2000,
+  ),
 
   /// 文学：停顿更长，适合慢节奏的小说。
-  literary(sentenceMs: 250, paragraphMs: 900, sceneMs: 2200, chapterLeadMs: 1000, chapterTailMs: 3000),
+  literary(
+    sentenceMs: 250,
+    paragraphMs: 900,
+    sceneMs: 2200,
+    chapterLeadMs: 1000,
+    chapterTailMs: 3000,
+  ),
 
   /// 紧凑：轻小说 / 对话多的文本。
-  brisk(sentenceMs: 80, paragraphMs: 350, sceneMs: 1000, chapterLeadMs: 500, chapterTailMs: 1500);
+  brisk(
+    sentenceMs: 80,
+    paragraphMs: 350,
+    sceneMs: 1000,
+    chapterLeadMs: 500,
+    chapterTailMs: 1500,
+  );
 
   const TtsPausePreset({
     required this.sentenceMs,
@@ -48,7 +72,10 @@ enum TtsPausePreset {
   }
 
   /// 句子之后应插的停顿：段落 / 场景边界由分句计划标出。
-  int afterSentence({required bool endsParagraph, required bool sceneBreakAfter}) {
+  int afterSentence({
+    required bool endsParagraph,
+    required bool sceneBreakAfter,
+  }) {
     if (sceneBreakAfter) return sceneMs;
     if (endsParagraph) return paragraphMs;
     return sentenceMs;

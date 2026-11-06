@@ -21,8 +21,8 @@
 //      把戏），再扫 `Uri` / `Http*` / `*Socket` / `download` 这类**能力名**，而不是某个
 //      具体 API 的拼写。`dart:io` 是合法依赖，所以它里面的网络类必须逐个点名。
 //
-// 已知残留：`package:fushi/utils.dart` 是个大 barrel，理论上可以在里面新塞一个下载函数
-// 再从 helper 安装器调用。第 2 条的能力名扫描（`download` / `Uri` / `fetch`）挡住了调用
+// 已知残留：白名单里的项目文件（`fushi_toast.dart`）理论上可以新塞一个下载函数再从
+// helper 安装器调用。第 2 条的能力名扫描（`download` / `Uri` / `fetch`）挡住了调用
 // 侧的常见写法；真要绕还是绕得过去，但那已经不是「顺手加回来」而是刻意。
 
 import 'dart:io';
@@ -124,7 +124,8 @@ void expectOfflineInstaller({
   expect(
     findings,
     isEmpty,
-    reason: '安装器装的是会跑在用户机器上的原生代码，一条「从网上取包」的通道就是 '
+    reason:
+        '安装器装的是会跑在用户机器上的原生代码，一条「从网上取包」的通道就是 '
         'BUG-1103 记的那个攻击面。命中：\n- ${findings.join('\n- ')}',
   );
 }
@@ -137,7 +138,8 @@ const Set<String> kGalgameHelperInstallerImports = <String>{
   'package:crypto/crypto.dart',
   'package:material_ui/material_ui.dart',
   'package:path/path.dart',
-  'package:fushi/utils.dart',
+  'package:fushi/i18n/strings.g.dart',
+  'package:fushi/src/utils/misc/fushi_toast.dart',
 };
 
 /// Magpie 安装器的离线依赖面（BUG-1292）。

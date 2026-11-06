@@ -4,7 +4,7 @@ part of '../fushi_sync_server.dart';
 ///
 /// | 方法 | 路径 | 语义 |
 /// |---|---|---|
-/// | GET  | `/api/library/metadata?since=<ms>` | 7c：host 全部作品（增量按 updatedAt） |
+/// | GET  | `/api/library/metadata?since=<ms>&bookUid=<uid>` | 7c：host 全部作品（增量按 updatedAt；带 bookUid 只回该视频的作品） |
 /// | POST | `/api/library/metadata/candidates` | 7a：`{key, query}` → 候选列表 |
 /// | POST | `/api/library/metadata/scrape` | 7a：`{key, lookup}` → host 重刮 |
 /// | PUT  | `/api/library/metadata` | 7b：`{key, lookup, work, replaceIdentity}` → host 落库 |
@@ -29,10 +29,15 @@ extension _FushiSyncServerVideoMetadata on FushiSyncServer {
     if (reqPath == '/api/library/metadata') {
       switch (method) {
         case 'GET':
-          final int? since =
-              int.tryParse(request.url.queryParameters['since'] ?? '');
-          final List<VideoMetadataWorkEntry> entries =
-              await host.listVideoMetadata(since: since);
+          final int? since = int.tryParse(
+            request.url.queryParameters['since'] ?? '',
+          );
+          final String? bookUid = request.url.queryParameters['bookUid'];
+          final List<VideoMetadataWorkEntry> entries = await host
+              .listVideoMetadata(
+                since: since,
+                bookUid: bookUid == null || bookUid.isEmpty ? null : bookUid,
+              );
           return jsonResponse(<String, Object?>{
             'works': <Object?>[
               for (final VideoMetadataWorkEntry e in entries) e.toJson(),
@@ -82,8 +87,8 @@ extension _FushiSyncServerVideoMetadata on FushiSyncServer {
       if (query is! String) {
         return shelf.Response(400, body: 'Invalid body: query missing');
       }
-      final List<VideoMetadataCandidateEntry> candidates =
-          await host.searchVideoMetadataCandidates(key: key, query: query);
+      final List<VideoMetadataCandidateEntry> candidates = await host
+          .searchVideoMetadataCandidates(key: key, query: query);
       return jsonResponse(<String, Object?>{
         'candidates': <Object?>[
           for (final VideoMetadataCandidateEntry c in candidates) c.toJson(),
@@ -106,8 +111,10 @@ extension _FushiSyncServerVideoMetadata on FushiSyncServer {
       if (lookup == null) {
         return shelf.Response(400, body: 'Invalid body: lookup missing');
       }
-      final VideoMetadataWriteResult result =
-          await host.scrapeVideoMetadata(key: key, lookup: lookup);
+      final VideoMetadataWriteResult result = await host.scrapeVideoMetadata(
+        key: key,
+        lookup: lookup,
+      );
       return _writeResultResponse(result);
     }
 
@@ -130,12 +137,14 @@ extension _FushiSyncServerVideoMetadata on FushiSyncServer {
         return shelf.Response(400, body: 'Invalid body: $e');
       }
       if (reqPath.endsWith('/episode-groups')) {
-        final VideoMetadataEpisodeGroupListing? listing =
-            await ordering.listVideoMetadataEpisodeGroups(key: key);
+        final VideoMetadataEpisodeGroupListing? listing = await ordering
+            .listVideoMetadataEpisodeGroups(key: key);
         if (listing == null) {
-          return _writeResultResponse(const VideoMetadataWriteResult.conflict(
-            VideoMetadataConflict.ambiguousWork,
-          ));
+          return _writeResultResponse(
+            const VideoMetadataWriteResult.conflict(
+              VideoMetadataConflict.ambiguousWork,
+            ),
+          );
         }
         return jsonResponse(listing.toJson());
       }
@@ -143,10 +152,12 @@ extension _FushiSyncServerVideoMetadata on FushiSyncServer {
       if (groupId != null && groupId is! String) {
         return shelf.Response(400, body: 'Invalid body: groupId');
       }
-      return _writeResultResponse(await ordering.setVideoMetadataEpisodeGroup(
-        key: key,
-        groupId: groupId as String?,
-      ));
+      return _writeResultResponse(
+        await ordering.setVideoMetadataEpisodeGroup(
+          key: key,
+          groupId: groupId as String?,
+        ),
+      );
     }
 
     return shelf.Response.notFound('Not found');

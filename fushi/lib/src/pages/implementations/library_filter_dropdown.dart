@@ -6,7 +6,14 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingToolbarSurface;
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show GlassContainer, LiquidRoundedSuperellipse;
 
@@ -127,11 +134,11 @@ class LibraryFilterChip extends StatelessWidget
     final Color foreground = glass
         ? (active ? apple.accent : apple.label)
         : (active ? colors.onSecondaryContainer : colors.onSurfaceVariant);
-    final TextStyle? textStyle =
-        Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: foreground,
-              fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-            );
+    final TextStyle? textStyle = Theme.of(context).textTheme.labelLarge
+        ?.copyWith(
+          color: foreground,
+          fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+        );
     final Widget row = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -341,10 +348,7 @@ class LibraryToolbar extends StatelessWidget {
         key: filtersKey,
         scrollDirection: Axis.horizontal,
         // 上下各留 4：玻璃胶囊的投影不被横滚区裁掉。
-        padding: EdgeInsets.symmetric(
-          horizontal: wide ? 0 : hPad,
-          vertical: 4,
-        ),
+        padding: EdgeInsets.symmetric(horizontal: wide ? 0 : hPad, vertical: 4),
         child: Row(
           children: <Widget>[
             for (int i = 0; i < filters.length; i++) ...<Widget>[
@@ -374,8 +378,9 @@ class LibraryToolbar extends StatelessWidget {
                 order: const NumericFocusOrder(2),
                 child: _filterStrip(wide: wide, hPad: hPad),
               );
-        final Widget? trailingWidget =
-            !wide && compactTrailing != null ? compactTrailing : trailing;
+        final Widget? trailingWidget = !wide && compactTrailing != null
+            ? compactTrailing
+            : trailing;
         final Widget? trailingSlot = trailingWidget == null
             ? null
             : FocusTraversalOrder(
@@ -427,9 +432,7 @@ class LibraryToolbar extends StatelessWidget {
                   padding: EdgeInsetsDirectional.only(end: hPad),
                   child: Row(
                     children: <Widget>[
-                      Expanded(
-                        child: filterSlot ?? const SizedBox.shrink(),
-                      ),
+                      Expanded(child: filterSlot ?? const SizedBox.shrink()),
                       trailingSlot!,
                     ],
                   ),

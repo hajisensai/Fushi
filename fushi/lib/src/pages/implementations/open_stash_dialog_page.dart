@@ -1,8 +1,14 @@
 import 'package:collection/collection.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_scrollbar.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// The content of the dialog used for managing and viewing items in the Stash.
 class OpenStashDialogPage extends BasePage {
@@ -45,8 +51,9 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
 
   Widget buildEmptyMessage() {
     return Padding(
-      padding:
-          EdgeInsets.only(bottom: FushiDesignTokens.of(context).spacing.gap),
+      padding: EdgeInsets.only(
+        bottom: FushiDesignTokens.of(context).spacing.gap,
+      ),
       child: FushiPlaceholderMessage(
         icon: Icons.inventory_2_outlined,
         message: t.stash_placeholder,
@@ -107,19 +114,17 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
   }
 
   List<Widget> get actions => [
-        buildClearButton(),
-        buildExportButton(),
-        buildSearchButton(),
-        buildSelectButton(),
-      ];
+    buildClearButton(),
+    buildExportButton(),
+    buildSearchButton(),
+    buildSelectButton(),
+  ];
 
   Widget buildClearButton() {
     return adaptiveDialogAction(
       context: context,
       onPressed: executeClear,
-      child: Text(
-        t.dialog_clear,
-      ),
+      child: Text(t.dialog_clear),
     );
   }
 
@@ -183,11 +188,7 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
 
 @visibleForTesting
 class OpenStashDialogFrame extends StatelessWidget {
-  const OpenStashDialogFrame({
-    required this.content,
-    this.actions,
-    super.key,
-  });
+  const OpenStashDialogFrame({required this.content, this.actions, super.key});
 
   final Widget content;
   final List<Widget>? actions;
@@ -230,10 +231,7 @@ class OpenStashDialogFrame extends StatelessWidget {
 
 @visibleForTesting
 class OpenStashClearDialog extends StatelessWidget {
-  const OpenStashClearDialog({
-    required this.onConfirm,
-    super.key,
-  });
+  const OpenStashClearDialog({required this.onConfirm, super.key});
 
   final VoidCallback onConfirm;
 
@@ -259,10 +257,7 @@ class OpenStashClearDialog extends StatelessWidget {
           tokens.spacing.card,
           tokens.spacing.card,
         ),
-        body: Text(
-          t.stash_clear_description,
-          style: tokens.type.listSubtitle,
-        ),
+        body: Text(t.stash_clear_description, style: tokens.type.listSubtitle),
         footer: Wrap(
           alignment: WrapAlignment.end,
           spacing: tokens.spacing.gap,

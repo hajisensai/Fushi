@@ -30,54 +30,61 @@ void main() {
     expect(reg.callbackCount, 0);
   });
 
-  test('releaseAll awaits every callback to completion before returning',
-      () async {
-    final MediaHandleRegistry reg = MediaHandleRegistry.instance;
-    final List<String> completed = <String>[];
-
-    // 两个异步释放，各自在 await 后才记「完成」——releaseAll 必须 await 到两者都完成。
-    reg.register(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      completed.add('a');
-    });
-    reg.register(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 40));
-      completed.add('b');
-    });
-
-    await reg.releaseAll();
-
-    // releaseAll 返回时两个释放都已完成（这是迁移「rename 前句柄真放掉」的契约）。
-    expect(completed, containsAll(<String>['a', 'b']));
-    // 消费后清空登记（快照 + clear），避免迁移路径重复触发已释放来源。
-    expect(reg.callbackCount, 0);
-  });
-
-  test('a hung callback is bounded by perCallbackTimeout, others still run',
-      () {
-    // 用 FakeAsync 快进虚拟时间过 perCallbackTimeout，避免真实等待 5s。
-    fakeAsync((FakeAsync async) {
+  test(
+    'releaseAll awaits every callback to completion before returning',
+    () async {
       final MediaHandleRegistry reg = MediaHandleRegistry.instance;
-      bool healthyRan = false;
-      bool releaseAllDone = false;
+      final List<String> completed = <String>[];
 
-      // 卡死的来源：永不完成。releaseAll 不得被它无限拖住（perCallbackTimeout 放行）。
-      reg.register(() => Completer<void>().future);
+      // 两个异步释放，各自在 await 后才记「完成」——releaseAll 必须 await 到两者都完成。
       reg.register(() async {
-        healthyRan = true;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        completed.add('a');
+      });
+      reg.register(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+        completed.add('b');
       });
 
-      unawaited(reg.releaseAll().then((_) => releaseAllDone = true));
+      await reg.releaseAll();
 
-      // 健康来源同步跑完；卡死来源在超时窗口后被放行 → releaseAll 完成。
-      async.elapse(
-        MediaHandleRegistry.perCallbackTimeout + const Duration(seconds: 1),
-      );
-      expect(healthyRan, isTrue);
-      expect(releaseAllDone, isTrue,
-          reason: 'releaseAll 不得被卡死来源无限阻塞（perCallbackTimeout 上限放行）');
-    });
-  });
+      // releaseAll 返回时两个释放都已完成（这是迁移「rename 前句柄真放掉」的契约）。
+      expect(completed, containsAll(<String>['a', 'b']));
+      // 消费后清空登记（快照 + clear），避免迁移路径重复触发已释放来源。
+      expect(reg.callbackCount, 0);
+    },
+  );
+
+  test(
+    'a hung callback is bounded by perCallbackTimeout, others still run',
+    () {
+      // 用 FakeAsync 快进虚拟时间过 perCallbackTimeout，避免真实等待 5s。
+      fakeAsync((FakeAsync async) {
+        final MediaHandleRegistry reg = MediaHandleRegistry.instance;
+        bool healthyRan = false;
+        bool releaseAllDone = false;
+
+        // 卡死的来源：永不完成。releaseAll 不得被它无限拖住（perCallbackTimeout 放行）。
+        reg.register(() => Completer<void>().future);
+        reg.register(() async {
+          healthyRan = true;
+        });
+
+        unawaited(reg.releaseAll().then((_) => releaseAllDone = true));
+
+        // 健康来源同步跑完；卡死来源在超时窗口后被放行 → releaseAll 完成。
+        async.elapse(
+          MediaHandleRegistry.perCallbackTimeout + const Duration(seconds: 1),
+        );
+        expect(healthyRan, isTrue);
+        expect(
+          releaseAllDone,
+          isTrue,
+          reason: 'releaseAll 不得被卡死来源无限阻塞（perCallbackTimeout 上限放行）',
+        );
+      });
+    },
+  );
 
   test('a throwing callback does not abort releasing the others', () async {
     final MediaHandleRegistry reg = MediaHandleRegistry.instance;

@@ -41,8 +41,9 @@ void main() {
     FocusManager.instance.highlightStrategy = FocusHighlightStrategy.automatic;
   });
 
-  testWidgets('touch: passive focus repair does not roll the list back',
-      (WidgetTester tester) async {
+  testWidgets('touch: passive focus repair does not roll the list back', (
+    WidgetTester tester,
+  ) async {
     FocusManager.instance.highlightStrategy =
         FocusHighlightStrategy.alwaysTouch;
 
@@ -51,8 +52,9 @@ void main() {
     await tester.pumpWidget(_list(controller));
     await tester.pumpAndSettle();
 
-    final FushiFocusController focus =
-        FushiFocusRoot.controllerOf(tester.element(find.byType(ListView)));
+    final FushiFocusController focus = FushiFocusRoot.controllerOf(
+      tester.element(find.byType(ListView)),
+    );
 
     // User scrolled deep into the list; the originally-focused top row has
     // recycled away, so focus has fallen off its target.
@@ -68,13 +70,15 @@ void main() {
     expect(
       controller.offset,
       1000,
-      reason: 'touch-mode passive repair recentred the list (rolled from 1000 '
+      reason:
+          'touch-mode passive repair recentred the list (rolled from 1000 '
           'to ${controller.offset})',
     );
   });
 
-  testWidgets('traditional: directional move still reveals the target',
-      (WidgetTester tester) async {
+  testWidgets('traditional: directional move still reveals the target', (
+    WidgetTester tester,
+  ) async {
     FocusManager.instance.highlightStrategy =
         FocusHighlightStrategy.alwaysTraditional;
 
@@ -83,8 +87,9 @@ void main() {
     await tester.pumpWidget(_list(controller));
     await tester.pumpAndSettle();
 
-    final FushiFocusController focus =
-        FushiFocusRoot.controllerOf(tester.element(find.byType(ListView)));
+    final FushiFocusController focus = FushiFocusRoot.controllerOf(
+      tester.element(find.byType(ListView)),
+    );
     focus.requestById(const FushiFocusId('row-0'));
     await tester.pump();
     for (int i = 0; i < 8; i++) {
@@ -93,7 +98,10 @@ void main() {
     }
     await tester.pumpAndSettle();
 
-    expect(controller.offset, greaterThan(0),
-        reason: 'directional move must scroll the focused target into view');
+    expect(
+      controller.offset,
+      greaterThan(0),
+      reason: 'directional move must scroll the focused target into view',
+    );
   });
 }

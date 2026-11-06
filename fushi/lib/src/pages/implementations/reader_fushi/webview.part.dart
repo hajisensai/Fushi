@@ -38,6 +38,26 @@ class _ReaderResourceResponse {
 extension _ReaderWebView on _ReaderFushiPageState {
   // ── URL & Resource Serving (mirrors Hoshi Android's fushi.local scheme) ──
 
+  /// 悬停查词背压的宿主侧显式释放（[ReaderSelectionScripts.hoverLookupSettledInvocation]）。
+  /// fire-and-forget：半销毁 WebView 上 eval 抛 MissingPluginException 时就地记日志——
+  /// 那时 JS 上下文也已随之作废，没有要释放的东西。
+  void _settleHoverLookupJs(
+    InAppWebViewController controller,
+    String invocation,
+  ) {
+    try {
+      controller.evaluateJavascript(source: invocation).catchError((
+        Object e,
+        StackTrace s,
+      ) {
+        ErrorLogService.instance.log('ReaderFushi.hoverLookupSettle', e, s);
+        return null;
+      });
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderFushi.hoverLookupSettle', e, stack);
+    }
+  }
+
   String _chapterUrl(int index) {
     if (_book == null || index < 0 || index >= _book!.chapters.length) {
       return 'about:blank';
@@ -110,6 +130,27 @@ extension _ReaderWebView on _ReaderFushiPageState {
   Future<_ReaderResourceResponse> _readerResourcePayload(WebUri url) async {
     final String path = url.path;
 
+    // BUG-3606：竖排标点子集（随包资产，见 ReaderVerticalPunctuationFont）。只认这一个
+    // 固定路径，不按 URL 拼资产 key。正文与歌词 WebView 共用本拦截器。
+    if (path == ReaderVerticalPunctuationFont.urlPath) {
+      final ByteData asset = await rootBundle.load(
+        ReaderVerticalPunctuationFont.assetKey,
+      );
+      return _ReaderResourceResponse(
+        contentType: 'font/woff2',
+        statusCode: 200,
+        reasonPhrase: 'OK',
+        headers: <String, String>{
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'max-age=3600',
+        },
+        data: asset.buffer.asUint8List(
+          asset.offsetInBytes,
+          asset.lengthInBytes,
+        ),
+      );
+    }
+
     if (path.startsWith('/fonts/')) {
       final String raw = path.substring('/fonts/'.length);
       final String fontPath = Uri.decodeComponent(raw);
@@ -153,9 +194,6 @@ extension _ReaderWebView on _ReaderFushiPageState {
             data: fileBytes,
           );
       final Uint8List data = fixed.data;
-      debugPrint(
-        '[ReaderFushi] font served: $safeFontPath (${data.length} bytes)',
-      );
       final String mime = fixed.mime ?? fallbackMimeType(safeFontPath);
       return _ReaderResourceResponse(
         contentType: mime,
@@ -187,7 +225,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
     if (!p.isWithin(p.canonicalize(_extractDir!), p.canonicalize(joinedPath))) {
       return _forbidden('path traversal blocked: $epubPath');
     }
-    final LnReaderOnlineChapterLoader? onlineChapters = _onlineChapterLoader;
+    final OnlineNovelChapterLoader? onlineChapters = _onlineChapterLoader;
     if (onlineChapters != null) {
       await _ensureOnlineChapter(onlineChapters, filePath);
     }
@@ -247,10 +285,9 @@ extension _ReaderWebView on _ReaderFushiPageState {
         _sanitizedCssCache.remove(_sanitizedCssCache.keys.first);
       }
       data = _sanitizedCssCache.putIfAbsent(filePath, () {
-        // HBK-AUDIT-118: tolerate non-UTF-8 CSS bytes instead of throwing.
-        final String cssText = utf8.decode(data, allowMalformed: true);
-        final String sanitized = ReaderResourceSanitizer.sanitizeCss(cssText);
-        return Uint8List.fromList(utf8.encode(sanitized));
+        // HBK-AUDIT-118: tolerate non-UTF-8 CSS bytes instead of throwing
+        // (decode + rewrite + encode run natively in one FFI call).
+        return ReaderResourceSanitizer.sanitizeCssBytes(data);
       });
     }
 
@@ -284,12 +321,12 @@ extension _ReaderWebView on _ReaderFushiPageState {
     );
   }
 
-  /// 在线小说书：WebView 要的章节还是占位页就先经插件取正文写回解压树（按需
-  /// 取章，见 [LnReaderOnlineChapterLoader]）。换成正文后丢掉这一章的 sanitize
+  /// 在线小说书 / 网页小说书：WebView 要的章节还是占位页就先取正文写回解压树
+  /// （按需取章，见 [OnlineNovelChapterLoader]）。换成正文后丢掉这一章的 sanitize
   /// 缓存与 [EpubChapter] 的正文缓存，否则会继续下发 / 计数占位页。取不到（断网
   /// / 站点挂了 / 插件被删）时照常下发占位页，并提示原因——重进这一章会再取。
   Future<void> _ensureOnlineChapter(
-    LnReaderOnlineChapterLoader loader,
+    OnlineNovelChapterLoader loader,
     String filePath,
   ) async {
     try {
@@ -397,53 +434,52 @@ extension _ReaderWebView on _ReaderFushiPageState {
   }
 
   // BUG-270: the sanitize + style-inject pipeline, extracted from
-  // _interceptRequest so it can also run during prefetch. Decodes the raw
-  // chapter bytes (UTF-8/BOM tolerant, HBK-AUDIT-118), normalizes self-closing
-  // raw-text elements (BUG-079), injects the FOUC cloak + reader styleTag, and
-  // returns the final UTF-8 bytes served to the WebView.
+  // _interceptRequest so it can also run during prefetch. The whole chain runs
+  // natively in ONE FFI call (native/fushi_compute/src/parse/sanitize.rs, byte
+  // for byte the old Dart regex pipeline): decode the raw chapter bytes
+  // (UTF-8/BOM tolerant, HBK-AUDIT-118) -> normalize self-closing non-void
+  // elements (BUG-079 / BUG-737) -> strip body <img> loading attrs (BUG-3533)
+  // -> prepend merged leading illustrations -> inject the FOUC cloak + reader styleTag -> the
+  // final UTF-8 bytes served to the WebView.
   Uint8List _buildSanitizedChapterHtmlBytes(
     Uint8List rawData, {
     int chapterIndex = -1,
   }) {
-    String html = utf8.decode(rawData, allowMalformed: true);
-    html = ReaderResourceSanitizer.sanitizeXhtml(html);
-    // TODO-perf（跨章·图片）：离屏插图不该拖住 window.load —— 属性必须写进 HTML 源码
-    // 才对本次加载生效（JS 侧那次 lazy 跑在 load 之后，来不及，见 markImagesLazy）。
-    // 纯图片章整章 eager：它的分页几何要靠插图真实撑开（TODO-1349）。判据用 EpubBook
-    // 的 isImageOnlyChapter（比 JS 侧「正文无任何可匹配字符」宽松），保证这里 eager 的
-    // 集合是 JS 侧 eager 集合的超集，不会倒挂。合并注入的前导插图自带显式
-    // `loading="eager"`（见 [_injectMergedChapterImages]），故 TODO-1339 的 eager 不依赖
-    // 本行与注入行的先后顺序；守卫 `test/reader/reader_image_lazy_pipeline_guard_test.dart`。
-    html = ReaderResourceSanitizer.markImagesLazy(
-      html,
-      eagerAll: _isImageOnlyChapterCached(chapterIndex),
-    );
-    // TODO-1128 / TODO-1174: when this text chapter absorbs the preceding
-    // single-image chapters (merge-image on), prepend their <img> to the *start*
-    // of the flow before the reader style is injected, so the illustrations
-    // render inline at the top of the chapter they introduce instead of each
-    // taking their own virtual page. No-op on the common path.
-    html = _injectMergedChapterImages(html, chapterIndex);
-    final String styleTag = _buildStyleTag();
     const String hideUntilReady =
         '<style id="fushi-cloak">body{visibility:hidden!important}</style>';
-    // Cloak goes early (right after <head>) to hide FOUC. Reader style goes last
-    // (before </head>) so it wins over EPUB CSS in !important specificity ties.
-    // BUG-2639: the viewport meta is served with the document instead of only
-    // being added later by the shell's initialize(). Without it WKWebView lays
-    // the chapter out at the default 980 CSS px (scale 402/980 ≈ 0.41) until
-    // that JS runs; on a real iPhone the vertical scroll mode stayed stuck in
-    // that layout (text at 4/10 size, columns only 4/10 of the screen tall).
-    html = ReaderResourceSanitizer.injectReaderHead(
-      html,
+    return ReaderResourceSanitizer.buildChapterHtmlBytes(
+      rawData,
+      // 正文插图一律按浏览器默认（eager）加载（连原书自带的 loading="lazy" 也去掉，
+      // BUG-3533）：分页 / 连续 / VN 的章节几何都要靠每张图的真实尺寸撑开，未加载的懒图
+      // 是 0 尺寸、不占列，而分页的远列永远进不了懒加载视口——章节会被算短，还没翻到插图
+      // 末尾就判「到章末」跨到下一章。跨章首开的读图开销由
+      // [_prefetchAdjacentChapterImages] 预热下一章图片承担。守卫
+      // `test/reader/reader_image_pipeline_guard_test.dart`。
+      //
+      // TODO-1128 / TODO-1174: when this text chapter absorbs the preceding
+      // single-image chapters (merge-image on), their <img> go to the *start*
+      // of the flow, so the illustrations render inline at the top of the
+      // chapter they introduce instead of each taking their own virtual page.
+      // Empty on the common path.
+      mergedImagesHtml: _mergedChapterImagesHtml(chapterIndex),
+      // Cloak goes early (right after <head>) to hide FOUC. Reader style goes
+      // last (before </head>) so it wins over EPUB CSS in !important
+      // specificity ties.
       headStart: hideUntilReady,
-      headEnd: '${ReaderPaginationScripts.readerViewportMetaTag}\n$styleTag',
+      // BUG-2639: the viewport meta is served with the document instead of
+      // only being added later by the shell's initialize(). Without it
+      // WKWebView lays the chapter out at the default 980 CSS px (scale
+      // 402/980 ≈ 0.41) until that JS runs; on a real iPhone the vertical
+      // scroll mode stayed stuck in that layout (text at 4/10 size, columns
+      // only 4/10 of the screen tall).
+      headEnd:
+          '${ReaderPaginationScripts.readerViewportMetaTag}\n'
+          '${_buildStyleTag()}',
     );
-    return Uint8List.fromList(utf8.encode(html));
   }
 
-  // TODO-1128 / TODO-1174: prepend the absorbed image-only chapters' images to
-  // the *start* of [html]'s <body> when the spread map records this text chapter
+  // TODO-1128 / TODO-1174: the absorbed image-only chapters' images to prepend
+  // to the *start* of the chapter's <body> when the spread map records this text chapter
   // as absorbing the images that precede it (merge-image on). Each absorbed
   // chapter contributes *all* of its image references (chapterImageSrcs covers
   // <img>, SVG <image>, and CSS background-image — TODO-1174 broadened the
@@ -453,16 +489,16 @@ extension _ReaderWebView on _ReaderFushiPageState {
   // chapter's own href, so a text chapter absorbing images from a different
   // directory still points at the right files (the served text chapter's baseURI
   // would otherwise mis-resolve them); already-absolute (data:/scheme) refs pass
-  // through untouched. The insertion position is a pure string op in
-  // ReaderResourceSanitizer.injectImagesAfterBodyOpen (unit-tested). No-op unless
+  // through untouched. The insertion itself happens in the native chain
+  // (ReaderResourceSanitizer.buildChapterHtmlBytes, unit-tested). Empty unless
   // merge is on and the chapter absorbs images.
-  String _injectMergedChapterImages(String html, int chapterIndex) {
-    if (chapterIndex < 0) return html;
+  String _mergedChapterImagesHtml(int chapterIndex) {
+    if (chapterIndex < 0) return '';
     final EpubBook? book = _book;
     final EpubSpreadMap? map = _spreadMap;
-    if (book == null || map == null) return html;
+    if (book == null || map == null) return '';
     final List<int> merged = map.mergedImagesForChapter(chapterIndex);
-    if (merged.isEmpty) return html;
+    if (merged.isEmpty) return '';
 
     final StringBuffer figures = StringBuffer();
     for (final int imageChapter in merged) {
@@ -477,26 +513,14 @@ extension _ReaderWebView on _ReaderFushiPageState {
             : ReaderFushiSource.epubUrl(
                 p.posix.normalize(p.posix.join(chapterDir, src)),
               );
-        // TODO-1339 / BUG-1140 第二轮：显式 `loading="eager"`。这些前导插图是章首
-        // **结构性**内容（firstContentEdge 只计入非零尺寸媒体，挂 lazy 会让章首锚跳过
-        // 第一张）。JS 侧靠 `.fushi-merged-image` 放行，Dart 侧原本只靠「markImagesLazy
-        // 排在本方法之前」这一条**调用顺序**——谁把两行调个个儿，守卫全绿而 bug 复活。
-        // 写成显式 loading 属性后 [ReaderResourceSanitizer.markImagesLazy] 的
-        // 「已有 loading= 就尊重原书」分支会跳过它们，顺序不再是正确性的承重墙。
         figures.write(
           '<div class="fushi-merged-image">'
-          '<img src="${htmlEscape.convert(absoluteUrl)}" class="block-img" '
-          'loading="eager"/>'
+          '<img src="${htmlEscape.convert(absoluteUrl)}" class="block-img"/>'
           '</div>',
         );
       }
     }
-    if (figures.isEmpty) return html;
-
-    return ReaderResourceSanitizer.injectImagesAfterBodyOpen(
-      html,
-      figures.toString(),
-    );
+    return figures.toString();
   }
 
   // BUG-270: resolve the absolute on-disk path of chapter [index]'s XHTML, or
@@ -572,17 +596,6 @@ extension _ReaderWebView on _ReaderFushiPageState {
         }
       }),
     );
-  }
-
-  /// 章号非法 / 书未就绪时返回 true（保守走 eager，宁可慢一点也不冒「该 eager 的图
-  /// 被挂 lazy」导致分页几何塌缩的风险）；其余委托 [EpubBook.isImageOnlyChapter]——
-  /// 记忆化已下沉到数据拥有者，本拦截器热路径与 spread 配对 / 边缘分析 / 预取共享
-  /// 同一份按章缓存，不再各存一份。
-  bool _isImageOnlyChapterCached(int chapterIndex) {
-    if (chapterIndex < 0) return true;
-    final EpubBook? book = _book;
-    if (book == null) return true;
-    return book.isImageOnlyChapter(chapterIndex);
   }
 
   /// TODO-perf（跨章·图片）：把下一章的插图预热进 WebView 的 HTTP 缓存。
@@ -719,6 +732,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
       // TODO-756b：是否“鼠标悬停即自动查词”。live 变更经 _applyHoverAutoLookupLive
       // 改同一个 JS 全局，无需整章重注入。
       hoverAutoLookup: ReaderFushiSource.instance.hoverAutoLookup,
+      hoverKey: ReaderFushiSource.instance.hoverLookupModifier.jsEventFlag,
       // BUG-2508：macOS 由宿主腿接管悬停查词，关掉文档内 mousemove 腿（判据见
       // [hostOwnsWebViewHoverLookup]，只有 macOS；其余平台 JS 腿不动）。
       hostHoverLookup: hostOwnsWebViewHoverLookup,
@@ -928,6 +942,7 @@ install: function(C) {
   var fushiVnMode = C.vnMode;
   var fushiVnClickAdvance = C.vnClickAdvance;
   window.__hoverAutoLookup = C.hoverAutoLookup;
+  window.__fushiHoverKey = C.hoverKey || 'shiftKey';
   // BUG-2508：宿主（Flutter）侧接管悬停查词的平台上，本文档的 mousemove 腿整条关掉
   // （一平台一条腿，见 reader_host_hover_lookup.dart）。与 __hoverAutoLookup 同为
   // Dart 单写的只读镜像，live 变更经 _applyHoverAutoLookupLive 改同一全局。
@@ -951,6 +966,36 @@ install: function(C) {
   // 松手由 followDragEnd 决定提交（回传 onSwipe，与普通滑动走同一条 Dart 路径）或回弹。
   var _fushiFollowActive = false;
   var _fushiFollowSamples = [];
+  // 卷页（C.pageTurnAnimation === 'curl'）的跟手：纸面画在 Flutter 覆盖层
+  // （page_curl.dart），这里只把手指位置（视口比例）转发给 Dart 的 onPageCurlDrag，
+  // 正文由 Dart 经 fushiReader.curlPreview 瞬时预览到相邻页。移动按 rAF 合并。
+  var _fushiFollowCurl = false;
+  var _fushiCurlMoveRaf = 0;
+  var _fushiCurlLastX = 0, _fushiCurlLastY = 0;
+  function _fushiCurlFollowEnabled() {
+    var r = window.fushiReader;
+    if (fushiContinuousMode || fushiVnMode || !r) return false;
+    if (C.pageTurnAnimation !== 'curl' || C.pageTurnFollowDrag !== true) return false;
+    if (typeof r.isEinkMode === 'function' && r.isEinkMode()) return false;
+    return true;
+  }
+  function _fushiCurlSend(phase, x, y, velocity) {
+    if (!window.flutter_inappwebview || !window.flutter_inappwebview.callHandler) return;
+    var w = window.innerWidth || 1, h = window.innerHeight || 1;
+    window.flutter_inappwebview.callHandler('onPageCurlDrag', phase,
+      x / w, y / h, (velocity || 0) / w, startX / w, startY / h);
+  }
+  function _fushiCurlMove(x, y) {
+    _fushiCurlLastX = x;
+    _fushiCurlLastY = y;
+    if (_fushiCurlMoveRaf) return;
+    _fushiCurlMoveRaf = requestAnimationFrame(function() {
+      _fushiCurlMoveRaf = 0;
+      if (_fushiFollowActive && _fushiFollowCurl) {
+        _fushiCurlSend('move', _fushiCurlLastX, _fushiCurlLastY, 0);
+      }
+    });
+  }
   function _fushiFollowReader() {
     var r = window.fushiReader;
     if (fushiContinuousMode || fushiVnMode || !r) return null;
@@ -974,6 +1019,11 @@ install: function(C) {
   function _fushiFollowCancel() {
     _fushiFollowActive = false;
     _fushiFollowSamples = [];
+    if (_fushiFollowCurl) {
+      _fushiFollowCurl = false;
+      _fushiCurlSend('cancel', 0, 0, 0);
+      return;
+    }
     var r = window.fushiReader;
     if (r && typeof r.followDragCancel === 'function') r.followDragCancel();
   }
@@ -986,12 +1036,22 @@ install: function(C) {
     var dy = y - startY;
     if (!_fushiFollowActive) {
       if (Math.abs(dx) <= 6 || Math.abs(dx) <= Math.abs(dy)) return;
-      var r = _fushiFollowReader();
-      if (!r) return;
       _fushiFollowSamples = [];
-      if (!r.followDragUpdate(dx)) return;
-      _fushiFollowActive = true;
-      clearImageLongPressTimer();
+      if (_fushiCurlFollowEnabled()) {
+        _fushiFollowCurl = true;
+        _fushiFollowActive = true;
+        clearImageLongPressTimer();
+        _fushiCurlSend('start', x, y, 0);
+      } else {
+        var r = _fushiFollowReader();
+        if (!r) return;
+        if (!r.followDragUpdate(dx)) return;
+        _fushiFollowCurl = false;
+        _fushiFollowActive = true;
+        clearImageLongPressTimer();
+      }
+    } else if (_fushiFollowCurl) {
+      _fushiCurlMove(x, y);
     } else {
       window.fushiReader.followDragUpdate(dx);
     }
@@ -1289,6 +1349,13 @@ install: function(C) {
       var followDx = x - startX;
       var followVelocity = _fushiFollowVelocity(x);
       _fushiFollowSamples = [];
+      if (_fushiFollowCurl) {
+        // 卷页：提交 / 回卷由 Dart 控制器判（同一组阈值），这里只交出松手。
+        _fushiFollowCurl = false;
+        if (e && e.preventDefault) e.preventDefault();
+        _fushiCurlSend('end', x, y, followVelocity);
+        return;
+      }
       var followDir = window.fushiReader && window.fushiReader.followDragEnd
         ? window.fushiReader.followDragEnd(followDx, followVelocity) : null;
       if (e && e.preventDefault) e.preventDefault();
@@ -1369,7 +1436,9 @@ install: function(C) {
           // 镜像缺失或 fushiSelection 未就绪时回落旧 onTap 链，行为不变。
           window.fushiSelection.selectText(x, y, tapGate.maxLen || 400, false);
         } else {
-          window.flutter_inappwebview.callHandler('onTap', x, y, shiftTap);
+          // 视口尺寸给 Dart 侧的点击翻页区域模板归一化坐标（reader_tap_zones.dart）。
+          window.flutter_inappwebview.callHandler('onTap', x, y, shiftTap,
+            window.innerWidth, window.innerHeight);
         }
       }
     }
@@ -1720,15 +1789,71 @@ $kContinuousWheelScrollJs
     _handlePagedWheelTick(e);
   }, {passive: false});
   var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
+  // 查词卡顿（P0-2）：悬停查词原先三跳——mousemove → onShiftHover 进 Dart → Dart
+  // evaluateJavascript(selectText) 回 JS → 选中后 onTextSelected 再进 Dart。宿主那一跳
+  // 没有任何门控（onShiftHover 回调只是原样转发 selectText(x, y, 400, true)），所以与
+  // 点按快路（BUG-712）一样在 JS 里直接选词，只留 onTextSelected 一跳。
+  //
+  // 背压：一帧最多选一次（rAF 合并）；onTextSelected 发出后、宿主处理完（callHandler 的
+  // Promise 兑现）之前不再发新查词，只记最后一个指针位置；回执到达后若还挂着位置就补发
+  // 那一个。同一个词内的移动由 selectText 自己的 fromHover 同词短路吃掉，不占回执。
+  //
+  // 释放有两条独立的路，按 onTextSelected 的序号（payload.selectedSeq）对账：
+  //   ① 回执：callHandler 的 Promise 兑现或拒绝；
+  //   ② 宿主显式释放：Dart 的 onTextSelected 回调处理完（成功、失败、异常都在 finally 里）
+  //      调 window.__fushiHoverLookupSettled(seq)。
+  // 只靠 ①，平台把那个 Promise 弄丢（通道重建、handler 摘除）时悬停查词就永久卡死；有了
+  // ②，任一条先到就释放。序号不匹配的释放（上一次的迟到回执）一律忽略，不会放掉新一次。
+  var _fushiHoverLookupX = 0, _fushiHoverLookupY = 0;
+  var _fushiHoverLookupPending = false;
+  var _fushiHoverLookupFrame = false;
+  // 正在等的 onTextSelected 序号；0 = 没有在飞的悬停查词。
+  var _fushiHoverLookupAwaitSeq = 0;
+  function _fushiHoverLookupSchedule() {
+    if (_fushiHoverLookupFrame || _fushiHoverLookupAwaitSeq !== 0 || !_fushiHoverLookupPending) return;
+    _fushiHoverLookupFrame = true;
+    requestAnimationFrame(_fushiHoverLookupFlush);
+  }
+  function _fushiHoverLookupRelease(seq) {
+    if (_fushiHoverLookupAwaitSeq === 0 || seq !== _fushiHoverLookupAwaitSeq) return;
+    _fushiHoverLookupAwaitSeq = 0;
+    _fushiHoverLookupSchedule();
+  }
+  window.__fushiHoverLookupSettled = function(seq) {
+    _fushiHoverLookupRelease(seq);
+  };
+  function _fushiHoverLookupFlush() {
+    _fushiHoverLookupFrame = false;
+    if (_fushiHoverLookupAwaitSeq !== 0 || !_fushiHoverLookupPending) return;
+    _fushiHoverLookupPending = false;
+    var sel = window.fushiSelection;
+    var gate = window.__fushiTapGate;
+    var before = sel.textSelectedSeq || 0;
+    sel.selectText(_fushiHoverLookupX, _fushiHoverLookupY, (gate && gate.maxLen) || 400, true);
+    var fired = sel.textSelectedSeq || 0;
+    if (fired === before) return;
+    var ack = sel.lastTextSelectedAck;
+    if (!ack || typeof ack.then !== 'function') return;
+    _fushiHoverLookupAwaitSeq = fired;
+    var settle = function() { _fushiHoverLookupRelease(fired); };
+    ack.then(settle, settle);
+  }
   document.addEventListener('mousemove', function(e) {
     // BUG-2508：宿主腿活着的平台上本腿让路（macOS 上这里本来也收不到事件）。
     if (window.__fushiHostHoverLookup) return;
     // TODO-756b：开了 window.__hoverAutoLookup 则纯悬停即查词（不要求 Shift）；
     // 否则退回 756a 的 Shift 门控。未触发分支仍复位节流锚，使下次进入即触发。
-    if (!e.shiftKey && !window.__hoverAutoLookup) { _shiftHoverLastX = -1; _shiftHoverLastY = -1; return; }
+    if (!e[window.__fushiHoverKey || 'shiftKey'] && !window.__hoverAutoLookup) { _shiftHoverLastX = -1; _shiftHoverLastY = -1; return; }
     var dx = e.clientX - _shiftHoverLastX, dy = e.clientY - _shiftHoverLastY;
     if (dx * dx + dy * dy < 64) return;
     _shiftHoverLastX = e.clientX; _shiftHoverLastY = e.clientY;
+    if (window.fushiSelection && typeof window.fushiSelection.selectText === 'function') {
+      _fushiHoverLookupX = e.clientX; _fushiHoverLookupY = e.clientY;
+      _fushiHoverLookupPending = true;
+      _fushiHoverLookupSchedule();
+      return;
+    }
+    // 选区脚本未就绪：退回宿主转发链，行为与旧实现一致。
     window.flutter_inappwebview.callHandler('onShiftHover', e.clientX, e.clientY);
   }, {passive: true});
   // TODO-1078：桌面 Windows 阅读器裸 Space 被 WebView2 吞成 Chromium 默认
@@ -2000,6 +2125,9 @@ updateLive: function(patch) {
                     await searchDictionaryResult(
                       searchTerm: text,
                       selectionRect: rect,
+                      rubySpans: sel != null && sel.text == text
+                          ? sel.rubySpans
+                          : const <FushiRubySpan>[],
                     );
                     if (mounted) _checkFavoriteStatus();
                   },
@@ -2078,6 +2206,7 @@ updateLive: function(patch) {
               'window.onerror=function(m,s,l,c,e){console.error("__FUSHI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c);return false;};',
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
+        WebViewMenuDismissBridge.userScript,
       ]),
       initialSettings: InAppWebViewSettings(
         // BUG-468：Windows 上右键会同时弹两个菜单——Fushi 自定义的 Flutter 菜单
@@ -2136,6 +2265,8 @@ updateLive: function(patch) {
       ),
       onWebViewCreated: (controller) {
         _controller = controller;
+        notifyPopupBodyWebViewChanged();
+        _bodyMenuDismiss.attach(controller);
         _openTrace.mark('webViewCreated');
         assert(() {
           // TODO-2603：调试钩子的生命周期属于**本页 State**，不属于单个 WebView
@@ -2209,9 +2340,13 @@ updateLive: function(patch) {
           handlerName: 'onTextSelected',
           callback: (args) async {
             if (args.isEmpty) return;
+            String? hoverSettle;
             try {
               final Map<String, dynamic> payload =
                   jsonDecode(args[0] as String) as Map<String, dynamic>;
+              hoverSettle = ReaderSelectionScripts.hoverLookupSettledInvocation(
+                payload,
+              );
               await _handleTextSelected(ReaderSelectionData.fromJson(payload));
             } catch (e, stack) {
               ErrorLogService.instance.log(
@@ -2220,6 +2355,11 @@ updateLive: function(patch) {
                 stack,
               );
               debugPrint('[ReaderFushi] onTextSelected error: $e');
+            } finally {
+              // 悬停查词背压的显式释放：不只靠本回调返回时 callHandler 的 Promise。
+              if (hoverSettle != null) {
+                _settleHoverLookupJs(controller, hoverSettle);
+              }
             }
           },
         );
@@ -2271,18 +2411,15 @@ updateLive: function(patch) {
           // navigationGeneration。代次缺失/失配一律不能完成当前 restore，更不能
           // 消费当前代 pending。
           callback: (List<dynamic> args) {
-            if (args.length < 2 || args[1] is! num) {
-              debugPrint('[ReaderFushi] onRestoreComplete missing generation');
-              return;
-            }
-            final num rawGeneration = args[1] as num;
-            if (!rawGeneration.isFinite ||
-                rawGeneration != rawGeneration.toInt()) {
-              debugPrint('[ReaderFushi] onRestoreComplete invalid generation');
+            final int? generation = readerReportedNavigationGeneration(args, 1);
+            if (generation == null) {
+              debugPrint(
+                '[ReaderFushi] onRestoreComplete missing/invalid generation',
+              );
               return;
             }
             _acceptRestoreComplete(
-              reportedGeneration: rawGeneration.toInt(),
+              reportedGeneration: generation,
               perfSnapshot: args.first,
             );
           },
@@ -2331,6 +2468,14 @@ updateLive: function(patch) {
             // BUG-2276：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
             if (_closeSideSheetForWebViewPointer()) return;
             final bool shiftKey = args.length >= 3 && args[2] == true;
+            // indZkg2A0I：下面两条分支都**不查词**（挤压态栏收起 / 点按查词关闭），
+            // 点击翻页区域模板在这里先认领两侧，中间照旧。
+            if (!shiftKey &&
+                (!_tapGateChrome ||
+                    !ReaderFushiSource.instance.highlightOnTap) &&
+                _turnPageByTapZone(args, 0)) {
+              return;
+            }
             if (!_tapGateChrome && !shiftKey) {
               _toggleChrome();
               // Tap handed OS focus to the WebView; reclaim it so ESC still
@@ -2371,7 +2516,7 @@ updateLive: function(patch) {
 
         controller.addJavaScriptHandler(
           handlerName: 'onTapEmpty',
-          callback: (_) {
+          callback: (List<dynamic> args) {
             // BUG-2276：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
             if (_closeSideSheetForWebViewPointer()) return;
             // TODO-1027：有可见查词弹窗时，本 onTapEmpty 是 dismiss barrier 转发的
@@ -2387,6 +2532,12 @@ updateLive: function(patch) {
             // 菜单被 dismiss 后不再清选区（留着让用户拖手柄改选），于是「点空白 = 取消选择」
             // 成为自然清除路径；无选区时 clearSelection 是空操作，零副作用。
             _clearReaderAppSelection();
+            // indZkg2A0I：点击翻页区域模板认领两侧（或上下）三分之一；中间三分之一与
+            // 关闭模板时落到下面原来的工具栏分支。查词弹窗在场时上面已经 return，
+            // 所以「点空白关弹窗」永远先于翻页。
+            if (args.length >= 4 && _turnPageByTapZone(args, 0, sizeIndex: 2)) {
+              return;
+            }
             // TODO-975 决策#3：开启「点空白处隐藏控制栏」即底栏悬浮模式。此时点空白
             // 走悬浮唤出/收起状态机（_handleFloatingChromeReveal，不改预留高、不重锚），
             // 而非旧的挤压 _toggleChrome。未开启（挤压）时维持旧行为（不响应空白点）。
@@ -2469,6 +2620,15 @@ updateLive: function(patch) {
             if (action == null) return;
             _executeShortcutAction(action);
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
+          },
+        );
+
+        // 卷页跟手（JS 手势转发手指位置，page_curl.part.dart）。
+        controller.addJavaScriptHandler(
+          handlerName: 'onPageCurlDrag',
+          callback: (List<dynamic> args) {
+            if (_lyricsMode) return;
+            _onPageCurlDrag(args);
           },
         );
 
@@ -2683,7 +2843,13 @@ updateLive: function(patch) {
 
         controller.addJavaScriptHandler(
           handlerName: 'onImageDetected',
-          callback: (_) => _audiobookController?.triggerImagePause(),
+          // 歌词模式下插图停留由歌词插图状态机发起（只认连续播放经过、同一张
+          // 一次经过只停一次、红点模式不停，见 lyrics.part.dart
+          // `_observeLyricsIllustrations`），正文 WebView 的跨图信号不再重复触发。
+          callback: (_) {
+            if (_lyricsMode) return;
+            _audiobookController?.triggerImagePause();
+          },
         );
 
         // TODO-1289 / BUG-898：JS 揭开防剧透图后回传稳定 key（extractDir 相对归一路径）。
@@ -2755,13 +2921,32 @@ updateLive: function(patch) {
           handlerName: 'onImageLongPress',
           callback: (args) async {
             if (args.isEmpty) return;
-            await _shareReaderImage(args[0] as String);
+            await _showReaderImageActions(args[0] as String);
           },
         );
 
         controller.addJavaScriptHandler(
           handlerName: 'spreadReady',
-          callback: (_) {
+          // args[0] = spread 文档装载时冻结的导航代际（buildSpreadPageHtml）。
+          callback: (List<dynamic> args) {
+            // BUG-3798：与 onRestoreComplete 同一判据——代际缺失 / 不是当前导航的一律
+            // 丢弃。旧实现不带代际：被新导航顶掉的 spread 文档晚到的就绪消息会把**当前**
+            // 在飞导航判成完成（清兜底计时、摘遮罩、complete(true)），真正的回执反而
+            // 失去兜底。
+            final int? generation = readerReportedNavigationGeneration(args, 0);
+            if (!mounted ||
+                generation == null ||
+                !isCurrentReaderRestoreCompletion(
+                  reportedGeneration: generation,
+                  currentGeneration: _navigateGeneration,
+                  expectedGeneration: _restoreExpectedGeneration,
+                )) {
+              debugPrint(
+                '[ReaderFushi] stale spreadReady: reported=$generation '
+                'current=$_navigateGeneration',
+              );
+              return;
+            }
             _isNavigatingToChapter = false;
             _restoreInFlight = false;
             if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
@@ -2788,6 +2973,12 @@ updateLive: function(patch) {
               _reapplyChromeInsetsAfterFirstLoad();
               // TODO-700 T3：spread 内容就绪确定性落焦到正文（门控见 helper）。
               _focusOwnership.reclaim(FocusReclaimCause.contentReady);
+              // BUG-3798：spread 就绪就是这次导航的落地回执，与 _onRestoreComplete 同样
+              // 通知有声书控制器（解除跨章守卫、按当前位置重算 cue）。
+              _audiobookController?.notifySectionRestoreCompleted(
+                currentReaderSection: _currentChapter,
+                success: true,
+              );
             }
           },
         );
@@ -2922,12 +3113,14 @@ updateLive: function(patch) {
           // 引擎层根治（packages/flutter_inappwebview_windows：主框架已注入 2xx
           // 时按成功走 onLoadStop），此处不再做事后补偿；下面是真实加载失败处理。
           if (_restoreExpectedGeneration != _navigateGeneration) return;
-          _isNavigatingToChapter = false;
-          _restoreInFlight = false;
-          if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
-            _restoreCompleter!.complete(false);
-          }
-          _restoreCompleter = null;
+          // BUG-3798：只认**当前导航那份文档**的失败（与 onLoadStop 的陈旧判据同口径：
+          // 比路径）。被新导航顶掉的旧加载报的 abort 不是当前导航的结局，拿它收尾会把
+          // 正在飞的那次导航（及它持有的有声书跨章守卫）一起错杀。
+          if (!_isCurrentChapterDocumentUrl(request.url.toString())) return;
+          // 主框架加载失败 = 这次导航的 restore 回执永远不会来。走统一中止收尾
+          // [_failNavigation]（含跨章守卫解除）；旧的手写四行只解开导航态，守卫要白等
+          // 8s content-ready 兜底计时器才放（BUG-3798）。
+          _failNavigation();
         }
       },
       onConsoleMessage: (controller, msg) {
@@ -3056,9 +3249,12 @@ updateLive: function(patch) {
         generation == _lyricsLoadGeneration;
   }
 
-  Future<void> _onChapterLoadComplete(
-    InAppWebViewController controller,
-  ) async {
+  /// [url] 是否就是当前导航目标章的那份文档（只比路径，与 `onLoadStop` 的陈旧判据
+  /// 同一口径）。
+  bool _isCurrentChapterDocumentUrl(String url) =>
+      Uri.parse(url).path == Uri.parse(_chapterUrl(_currentChapter)).path;
+
+  Future<void> _onChapterLoadComplete(InAppWebViewController controller) async {
     // BUG-1280（平台分叉守卫）：spread 独立文档绝不注入正文引擎。
     //
     // `_loadSpreadPage` 传给 `loadData` 的 baseUrl 与 `_chapterUrl(_currentChapter)`

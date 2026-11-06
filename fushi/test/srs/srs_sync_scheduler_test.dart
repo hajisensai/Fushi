@@ -1,22 +1,35 @@
-// 复习同步调度：用现有同步后端跑 SrsSyncEngine、成功后 anchorTime、后端不支持服务器
-// 时间只提示一次、系统时间不准只提示一次、进复习 tab 的 60 秒节流、没配置后端时什么都
-// 不做；以及「常规同步每条通道成功后调后置步骤」这条接线。
+// 复习同步调度：用现有同步后端跑同步 v2（srsSync2Round）、成功后 anchorTime、后端拿不到服务器
+// 时间时照常同步只是不校时、位置要求更新版本时停写并只提示一次、系统时间不准只提示一次、进复习
+// tab 的 60 秒节流、没配置后端时什么都不做、用户加的文件夹位置（不可用只记 folderErrors，不算失败）；
+// 以及「常规同步每条通道成功后调后置步骤」这条接线。
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/diagnostics/previous_exit_log.dart';
+import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/srs/srs_asset_store_directory.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_media_sync.dart';
+import 'package:fushi_engine/srs/srs_profile_link.dart';
+import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_migration.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
-import 'package:fushi_srs/fushi_srs.dart';
+import 'package:path/path.dart' as p;
 
 import 'srs_test_support.dart';
 
@@ -98,6 +111,90 @@ class _AssetBackend extends _NoTimeStore implements SyncBackend {
       throw UnimplementedError('unexpected ${invocation.memberName}');
 }
 
+/// 下载旧根（`v2/`）媒体时卡在 [gate] 上的本地目录后端：模拟大库上几个小时的迁移。
+class _GatedBackend extends LocalDirectoryAssetStore {
+  _GatedBackend(super.root);
+
+  final Completer<void> gate = Completer<void>();
+
+  @override
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async {
+    if (assetId
+        .replaceAll(r'\', '/')
+        .contains('/$kSrsSync2V1Folder/$kSrsMediaFolder/')) {
+      await gate.future;
+    }
+    return super.getAsset(assetId, destination, onProgress: onProgress);
+  }
+}
+
+/// 第一次列目录卡在 [gate] 上的本地目录后端：一轮同步跑到一半（用户在这时关掉位置）。
+class _GatedListBackend extends LocalDirectoryAssetStore {
+  _GatedListBackend(super.root);
+
+  Completer<void>? gate;
+  final Completer<void> reached = Completer<void>();
+
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) async {
+    final Completer<void>? g = gate;
+    if (g != null) {
+      gate = null;
+      if (!reached.isCompleted) reached.complete();
+      await g.future;
+    }
+    return super.listChildren(namespaceId);
+  }
+}
+
+/// 记录每次关联判定的假 linker：[conflictFor] 里的 uid 判成冲突，其余判成「已关联上」。
+class _RecordingLinker implements SrsProfileLinker {
+  _RecordingLinker({this.conflictFor = const <String>{}});
+
+  final Set<String> conflictFor;
+  final List<String> linkedUids = <String>[];
+  final List<String> adopted = <String>[];
+
+  @override
+  Future<SrsProfileLinkOutcome> link(
+    SyncAssetStore backend,
+    SrsDbStore store,
+  ) async {
+    linkedUids.add(store.profileUid);
+    if (conflictFor.contains(store.profileUid)) {
+      return SrsProfileLinkOutcome(
+        store,
+        choose: const <SrsRemoteProfile>[
+          SrsRemoteProfile(uid: 'remote-uid', writers: <String>['v2:x']),
+        ],
+        localHasNotes: true,
+      );
+    }
+    return SrsProfileLinkOutcome(store, linked: true);
+  }
+
+  @override
+  Future<SrsDbStore> adopt(
+    SrsDbStore store,
+    String uid, {
+    SyncAssetStore? within,
+  }) async {
+    adopted.add('${store.profileUid}->$uid');
+    return store;
+  }
+
+  @override
+  Future<void> publish(
+    SyncAssetStore backend,
+    SrsDbStore store,
+    String directoryKey,
+  ) async {}
+}
+
 void main() {
   late Directory root;
   late FushiDatabase db;
@@ -127,48 +224,507 @@ void main() {
   SrsSyncScheduler scheduler({
     SrsDbStore? s,
     SrsChannelRunner? channels,
+    Future<List<SrsLocalDirectory>> Function()? localDirectories,
+    Future<List<SrsFolderLocation>> Function()? folderLocations,
     DateTime Function()? clock,
+    bool Function(String locationId)? locationDisabled,
   }) => SrsSyncScheduler(
     readStore: () async => s ?? store,
     channels:
         channels ??
         (Future<void> Function(SyncAssetStore) body) async {
           await body(LocalDirectoryAssetStore(root));
-          return 1;
+          return (ran: 1, errors: const <Object>[]);
         },
+    // 测试里的目录都是 LocalDirectoryAssetStore：按根目录区分物理目录。
+    directoryKeyOf: (SyncAssetStore b) async => b is LocalDirectoryAssetStore
+        ? 'local:${b.root.path}'
+        : 'store:${identityHashCode(b)}',
+    localDirectories: localDirectories,
+    folderLocations: folderLocations,
     onDataChanged: () => changed++,
     onNotice: notices.add,
     clock: clock,
+    locationDisabled: locationDisabled,
   );
 
-  test('支持服务器时间的后端：同步成功、发布、校时；不提示', () async {
-    final SrsSyncReport? r = await scheduler().syncWithBackend(
+  /// 本机在 [r] 下的 v2 设备目录（`fushi-srs/<profileUid>/v2/devices/<DeviceId>/`）。
+  Directory ownDeviceDir(Directory r, SrsDbStore s) => Directory(
+    p.join(
+      r.path,
+      kSrsSync2Namespace,
+      s.profileUid,
+      kSrsSync2Folder,
+      'devices',
+      s.sync2Device!,
+    ),
+  );
+
+  /// 本机设备目录里的段文件数（没同步过 = 0）。
+  int ownSegments(Directory r, SrsDbStore s) {
+    final Directory d = ownDeviceDir(r, s);
+    if (!d.existsSync()) return 0;
+    return d
+        .listSync()
+        .whereType<File>()
+        .where((File f) => p.basename(f.path).startsWith('seg-'))
+        .length;
+  }
+
+  /// 本机在 [s] 的同步状态里记过上传进度的位置。
+  Future<List<Map<String, Object?>>> uploadedLocations(SrsDbStore s) async {
+    final Object? locations = (await s.sync2Status())['locations'];
+    return <Map<String, Object?>>[
+      if (locations is List)
+        for (final Object? l in locations)
+          if (l is Map && ((l['uploaded'] as int?) ?? 0) > 0)
+            l.cast<String, Object?>(),
+    ];
+  }
+
+  // 用户截图：谷歌云盘位置卡在一次性迁移里、也关不掉。关掉的位置整轮跳过（不建目录、不迁移），不算成功也不算失败。
+  test('关掉的位置：整轮跳过、不报错；打开后照常同步', () async {
+    final Set<String> disabled = <String>{'local:${root.path}'};
+    final SrsSyncScheduler s = scheduler(locationDisabled: disabled.contains);
+    addTearDown(s.dispose);
+    final SrsSyncNowResult off = await s.syncNow();
+    expect(off.ran, 0);
+    expect(off.errors, isEmpty, reason: '关掉不是失败');
+    expect(ownSegments(root, store), 0, reason: '关掉的位置一个文件都不写');
+    expect(root.listSync(), isEmpty);
+
+    disabled.clear();
+    final SrsSyncNowResult on = await s.syncNow();
+    expect(on.ran, 1);
+    expect(on.errors, isEmpty);
+    expect(await uploadedLocations(store), isNotEmpty);
+  });
+
+  // 反馈「媒体同步那么慢」：媒体对账每轮都全量列远端媒体目录、逐个看本机文件、扫三遍笔记引用。
+  test('媒体对账：没有新操作进出的一轮跳过，有新笔记 / 到期 / 用户主动同步时照跑', () async {
+    DateTime now = DateTime(2026, 10, 28, 12);
+    int mediaRuns = 0;
+    final Directory media = Directory(p.join(root.path, '_media'))
+      ..createSync();
+    final Directory location = Directory(p.join(root.path, 'loc'))
+      ..createSync();
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => store,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(location));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:loc',
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+      readMediaRoot: () async => media,
+      clock: () => now,
+      mediaRunner:
+          (
+            SyncAssetStore backend,
+            SrsDbStore st,
+            Directory mediaRoot, {
+            SrsMediaCipher? cipher,
+            required String locationId,
+          }) async {
+            mediaRuns++;
+            return SrsMediaSyncReport();
+          },
+    );
+    Future<void> round() async {
+      expect(
+        (await s.syncWithBackend(LocalDirectoryAssetStore(location))).error,
+        isNull,
+      );
+    }
+
+    await round();
+    expect(mediaRuns, 1, reason: '这个位置第一次：对账');
+    await round();
+    expect(mediaRuns, 1, reason: '什么都没变：跳过');
+    await store.createNote(
+      noteTypeId: store.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): '霧',
+      },
+    );
+    await round();
+    expect(mediaRuns, 2, reason: '发出了新笔记：它可能引用新媒体');
+    // 边背卡边推送：这一轮上传了复习日志，但日志不引用媒体，不对账（以前每轮都整套对账，同步收尾卡 UI）。
+    final SrsCardCacheRow card = (await store.allCardRows()).first;
+    await store.answer(card.id, 3);
+    final SrsSync2Report pushed = await s.syncWithBackend(
+      LocalDirectoryAssetStore(location),
+    );
+    expect(pushed.error, isNull);
+    expect(pushed.uploaded, greaterThan(0), reason: '这一轮确实发出了复习日志');
+    expect(mediaRuns, 2, reason: '只有复习日志：媒体引用不可能变，跳过');
+    now = now.add(kSrsMediaReconcileInterval);
+    await round();
+    expect(mediaRuns, 3, reason: '到期：补上次没下载成的文件');
+    await s.syncNow();
+    expect(mediaRuns, 4, reason: '用户主动同步：全量对账');
+  });
+
+  // 审查 S-11：进复习页的节流同步以前直接调 syncNow，清空对账时刻 → 每次进页都把全部媒体整套对一遍。
+  test('进复习页的节流同步：媒体对账走内容指纹门控，只有手动立即同步做全量', () async {
+    DateTime now = DateTime(2026, 10, 29, 12);
+    int mediaRuns = 0;
+    final Directory media = Directory(p.join(root.path, '_media'))
+      ..createSync();
+    final Directory location = Directory(p.join(root.path, 'loc'))
+      ..createSync();
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => store,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(location));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:loc',
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+      readMediaRoot: () async => media,
+      clock: () => now,
+      mediaRunner:
+          (
+            SyncAssetStore backend,
+            SrsDbStore st,
+            Directory mediaRoot, {
+            SrsMediaCipher? cipher,
+            required String locationId,
+          }) async {
+            mediaRuns++;
+            return SrsMediaSyncReport();
+          },
+    );
+    expect(await s.syncThrottled(), isTrue);
+    expect(mediaRuns, 1, reason: '这个位置第一次：对账');
+    now = now.add(kSrsSyncMinInterval + const Duration(seconds: 1));
+    expect(await s.syncThrottled(), isTrue);
+    expect(mediaRuns, 1, reason: '内容指纹没变：节流同步不重做对账');
+    await store.createNote(
+      noteTypeId: store.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): '霞',
+      },
+    );
+    now = now.add(kSrsSyncMinInterval + const Duration(seconds: 1));
+    expect(await s.syncThrottled(), isTrue);
+    expect(mediaRuns, 2, reason: '新笔记可能引用新媒体：指纹变了就对账');
+    await s.syncNow();
+    expect(mediaRuns, 3, reason: '手动立即同步：全量对账');
+  });
+
+  // 审查 PR #2593：关联判定缓存只按位置记，调度器跨 profile 切换常驻 → 切过去的 profile 永远跳过关联
+  // （不自动采用、不检出冲突、不续做中断的并入）。
+  test('关联判定缓存按（位置, profile）记：切到另一个 profile 照样判定，同一 profile 才复用', () async {
+    final SrsDbStore other = await SrsDbStore.open(
+      db: store.db,
+      core: store.core,
+      profileUid: 'other-profile',
+      deviceId: 'dev',
+    );
+    SrsDbStore active = store;
+    final _RecordingLinker linker = _RecordingLinker();
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => active,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(root));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:root',
+      profileLinker: linker,
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+    );
+    final LocalDirectoryAssetStore dir = LocalDirectoryAssetStore(root);
+    expect((await s.syncWithBackend(dir)).error, isNull);
+    expect((await s.syncWithBackend(dir)).error, isNull);
+    expect(linker.linkedUids, <String>[
+      kSrsTestProfile,
+    ], reason: '同一 profile 已关联上：复用');
+    active = other;
+    expect((await s.syncWithBackend(dir)).error, isNull);
+    expect(linker.linkedUids, <String>[
+      kSrsTestProfile,
+      'other-profile',
+    ], reason: '换了 profile：必须重新判定');
+  });
+
+  test('profile 冲突：每次重新判出都通知；切了 profile 后用旧冲突采用被拒、什么都不动', () async {
+    DateTime now = DateTime(2026, 10, 28, 12);
+    final SrsDbStore other = await SrsDbStore.open(
+      db: store.db,
+      core: store.core,
+      profileUid: 'other-profile',
+      deviceId: 'dev',
+    );
+    SrsDbStore active = store;
+    final _RecordingLinker linker = _RecordingLinker(
+      conflictFor: <String>{kSrsTestProfile},
+    );
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => active,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(root));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:root',
+      profileLinker: linker,
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+      clock: () => now,
+    );
+    final LocalDirectoryAssetStore dir = LocalDirectoryAssetStore(root);
+    await s.syncWithBackend(dir);
+    final SrsProfileConflict conflict = s.profileConflict!;
+    expect(conflict.localUid, kSrsTestProfile);
+    expect(
+      notices.where((SrsSyncNotice n) => n == SrsSyncNotice.profileNotLinked),
+      hasLength(1),
+    );
+    await s.syncWithBackend(dir);
+    expect(
+      notices.where((SrsSyncNotice n) => n == SrsSyncNotice.profileNotLinked),
+      hasLength(1),
+      reason: '判定复用期内不重复通知',
+    );
+    now = now.add(kSrsProfileConflictRecheck);
+    await s.syncWithBackend(dir);
+    expect(
+      notices.where((SrsSyncNotice n) => n == SrsSyncNotice.profileNotLinked),
+      hasLength(2),
+      reason: '过期重判又判出冲突：再通知（用户选过「稍后」也要能再问）',
+    );
+    active = other;
+    await expectLater(s.adoptProfile(conflict, 'remote-uid'), throwsStateError);
+    expect(linker.adopted, isEmpty, reason: '冲突属于别的 profile：不许把当前 profile 并进去');
+  });
+
+  test('加密路径经调度器：注入的 runner / 媒体 runner 拿到本机密钥与封装，开加密生效后位置上没有明文', () async {
+    // P2-8：调度器不再按 identical(runner, 默认实现) 区分测试注入；注入的实现收到的就是生产路径会用的密钥。
+    final SrsLocationKey pending = await srsDeriveLocationKey(
+      store,
+      'correct horse',
+      pendingEnable: true,
+    );
+    SrsLocationKey current = pending;
+    final List<SrsLocationKey?> runnerKeys = <SrsLocationKey?>[];
+    final List<SrsMediaCipher?> ciphers = <SrsMediaCipher?>[];
+    final List<SrsLocationKey> enabled = <SrsLocationKey>[];
+    final Directory media = Directory(p.join(root.path, '_media'))
+      ..createSync();
+    final Directory location = Directory(p.join(root.path, 'loc'))
+      ..createSync();
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => store,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(location));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:loc',
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+      locationKey: (String id) => id == 'local:loc' ? current : null,
+      onEncryptionEnabled: (String id, SrsLocationKey k) async {
+        enabled.add(k);
+        current = k;
+      },
+      readMediaRoot: () async => media,
+      runner:
+          (
+            SyncAssetStore backend,
+            SrsDbStore st,
+            String key, {
+            SrsLocationKey? locationKey,
+          }) {
+            runnerKeys.add(locationKey);
+            return srsDefaultSyncRunner(
+              backend,
+              st,
+              key,
+              locationKey: locationKey,
+            );
+          },
+      mediaRunner:
+          (
+            SyncAssetStore backend,
+            SrsDbStore st,
+            Directory mediaRoot, {
+            SrsMediaCipher? cipher,
+            required String locationId,
+          }) async {
+            ciphers.add(cipher);
+            return SrsMediaSyncReport();
+          },
+    );
+    final SrsSync2Report first = await s.syncWithBackend(
+      LocalDirectoryAssetStore(location),
+    );
+    expect(first.error, isNull);
+    expect(first.encryptionEnabled, isTrue);
+    expect(first.encrypted, isTrue);
+    expect(runnerKeys.single?.keyHex, pending.keyHex);
+    expect(ciphers.single?.keyHex, pending.keyHex);
+    expect(enabled.single.pendingEnable, isFalse);
+    expect(s.locationCrypto['local:loc']?.encrypted, isTrue);
+
+    await store.createNote(
+      noteTypeId: store.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): '秘密の単語',
+      },
+    );
+    final SrsSync2Report second = await s.syncWithBackend(
+      LocalDirectoryAssetStore(location),
+    );
+    expect(second.error, isNull);
+    expect(runnerKeys.last?.pendingEnable, isFalse);
+    final List<int> needle = utf8.encode('秘密の単語');
+    for (final File f in ownDeviceDir(
+      location,
+      store,
+    ).listSync().whereType<File>()) {
+      if (!p.basename(f.path).startsWith('seg-')) continue;
+      final String hex = f.readAsBytesSync().map((int b) => '$b,').join();
+      expect(
+        hex.contains(needle.map((int b) => '$b,').join()),
+        isFalse,
+        reason: f.path,
+      );
+    }
+  });
+
+  // 媒体对账报有内容对象这把密钥解不开（undecryptable，不记可疑）：调度器按口令不对提示，与握手报的是同一条。
+  test('媒体对账有对象解不开：位置的加密状态记成口令不对', () async {
+    final SrsLocationKey key = await srsDeriveLocationKey(
+      store,
+      'correct horse',
+      pendingEnable: true,
+    );
+    SrsLocationKey current = key;
+    final Directory media = Directory(p.join(root.path, '_media_k'))
+      ..createSync();
+    final Directory location = Directory(p.join(root.path, 'loc_k'))
+      ..createSync();
+    bool undecryptable = false;
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => store,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(location));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:loc_k',
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+      locationKey: (String id) => id == 'local:loc_k' ? current : null,
+      onEncryptionEnabled: (String id, SrsLocationKey k) async => current = k,
+      readMediaRoot: () async => media,
+      mediaRunner:
+          (
+            SyncAssetStore backend,
+            SrsDbStore st,
+            Directory mediaRoot, {
+            SrsMediaCipher? cipher,
+            required String locationId,
+          }) async {
+            final SrsMediaSyncReport r = SrsMediaSyncReport();
+            if (undecryptable) r.undecryptable.add('pic.png');
+            return r;
+          },
+    );
+    await s.syncWithBackend(LocalDirectoryAssetStore(location));
+    expect(s.locationCrypto['local:loc_k']?.error, isNull);
+    expect(s.locationCrypto['local:loc_k']?.encrypted, isTrue);
+    undecryptable = true;
+    await store.createNote(
+      noteTypeId: store.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): '絵',
+      },
+    );
+    await s.syncWithBackend(LocalDirectoryAssetStore(location));
+    expect(s.locationCrypto['local:loc_k']?.error, kSrsSync2WrongKey);
+    expect(s.locationCrypto['local:loc_k']?.encrypted, isTrue);
+  });
+
+  test('支持服务器时间的后端：同步成功、上传段与 head、校时；不提示', () async {
+    final SrsSync2Report r = await scheduler().syncWithBackend(
       LocalDirectoryAssetStore(root),
     );
-    expect(r, isNotNull);
-    expect(r!.error, isNull);
+    expect(r.error, isNull);
     expect(r.serverTimeMs, isNotNull);
-    expect(r.published, greaterThan(0));
+    expect(r.uploaded, greaterThan(0));
     expect(store.trustedClock.isAnchored, isTrue, reason: 'anchorTime 被调用');
-    expect(changed, greaterThan(0));
+    expect(changed, 0, reason: '只有本机一台设备：没有远端操作可应用');
     expect(notices, isEmpty);
+    expect(ownSegments(root, store), greaterThan(0));
     expect(
-      Directory(
-        '${root.path}${Platform.pathSeparator}$kSrsSyncNamespace',
+      ownDeviceDir(root, store).listSync().map((FileSystemEntity e) {
+        return p.basename(e.path);
+      }),
+      contains(startsWith('head-')),
+    );
+    expect(
+      File(
+        p.join(
+          root.path,
+          kSrsSync2Namespace,
+          store.profileUid,
+          kSrsSync2Folder,
+          'meta.json',
+        ),
       ).existsSync(),
       isTrue,
     );
+    expect(
+      (await uploadedLocations(
+        store,
+      )).map((Map<String, Object?> l) => l['location']),
+      contains('local:${root.path}'),
+    );
   });
 
-  test('后端拿不到服务器时间：提示「不支持」只一次，不校时', () async {
+  test('后端拿不到服务器时间：v2 照常同步，只是不校时、不提示', () async {
     final SrsSyncScheduler s = scheduler();
     final _NoTimeStore backend = _NoTimeStore(LocalDirectoryAssetStore(root));
-    final SrsSyncReport? r1 = await s.syncWithBackend(backend);
-    final SrsSyncReport? r2 = await s.syncWithBackend(backend);
-    expect(r1!.error, kSrsSyncServerTimeUnavailable);
-    expect(r2!.error, kSrsSyncServerTimeUnavailable);
-    expect(notices, <SrsSyncNotice>[SrsSyncNotice.backendUnsupported]);
+    final SrsSync2Report r1 = await s.syncWithBackend(backend);
+    final SrsSync2Report r2 = await s.syncWithBackend(backend);
+    expect(r1.error, isNull);
+    expect(r2.error, isNull);
+    expect(r1.serverTimeMs, isNull);
+    expect(r1.uploaded, greaterThan(0));
+    expect(notices, isEmpty);
     expect(store.trustedClock.isAnchored, isFalse);
+  });
+
+  test('位置上的数据要求更新版本：停写（不上传）、报 needsUpgrade、只提示一次', () async {
+    final File meta = File(
+      p.join(
+        root.path,
+        kSrsSync2Namespace,
+        store.profileUid,
+        kSrsSync2Folder,
+        'meta.json',
+      ),
+    );
+    meta.parent.createSync(recursive: true);
+    meta.writeAsStringSync(
+      '{"v":${kSrsSync2Protocol + 1},"minReader":${kSrsSync2Protocol + 1}}',
+    );
+    final SrsSyncScheduler s = scheduler();
+    final SrsSync2Report r1 = await s.syncWithBackend(
+      LocalDirectoryAssetStore(root),
+    );
+    final SrsSync2Report r2 = await s.syncWithBackend(
+      LocalDirectoryAssetStore(root),
+    );
+    expect(r1.needsUpgrade, isTrue);
+    expect(r1.error, kSrsSyncNeedsUpgrade);
+    expect(r2.error, kSrsSyncNeedsUpgrade);
+    expect(r1.uploaded, 0);
+    expect(ownSegments(root, store), 0, reason: '读不了的位置一个字节都不写');
+    expect(notices, <SrsSyncNotice>[SrsSyncNotice.backendUnsupported]);
   });
 
   test('系统时间与服务器时间差超过 10 分钟：提示一次', () async {
@@ -187,6 +743,276 @@ void main() {
     expect(notices, <SrsSyncNotice>[SrsSyncNotice.clockSkew]);
   });
 
+  test('一轮同步跑很久：系统时间准就不提示，可信时间不落后整轮耗时', () async {
+    // 服务器时间是一轮开头的探针取到的；整轮跑完才校时。校时若用跑完时的单调时钟，
+    // 30 分钟的一轮会被算成「墙钟超前 30 分钟」→ 误报「系统时间不准」。
+    final SrsTestClock clock = SrsTestClock(
+      DateTime.now().millisecondsSinceEpoch,
+    );
+    final (FushiDatabase db2, SrsDbStore slow) = await openSrsTestStore(
+      deviceId: 'slow',
+      clock: clock,
+    );
+    addTearDown(db2.close);
+    const Duration roundTook = Duration(minutes: 30);
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => slow,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(root));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:${root.path}',
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+      runner:
+          (
+            SyncAssetStore backend,
+            SrsDbStore st,
+            String key, {
+            SrsLocationKey? locationKey,
+          }) async {
+            final SrsSync2Report r = await srsDefaultSyncRunner(
+              backend,
+              st,
+              key,
+              locationKey: locationKey,
+            );
+            clock.advance(roundTook);
+            return r;
+          },
+    );
+    final SrsSync2Report r = await s.syncWithBackend(
+      LocalDirectoryAssetStore(root),
+    );
+    expect(r.error, isNull);
+    expect(slow.trustedClock.isAnchored, isTrue);
+    expect(notices, isEmpty);
+    expect(
+      slow.trustedClock.wallSkewMs!.abs(),
+      lessThan(const Duration(minutes: 1).inMilliseconds),
+    );
+  });
+
+  test('拉进别的设备的变更才报数据变动；之后没有新数据的轮次不报（反馈 I1Bg6uMZ32）', () async {
+    final (FushiDatabase db2, SrsDbStore other) = await openSrsTestStore(
+      deviceId: 'other',
+    );
+    addTearDown(db2.close);
+    final SrsSyncScheduler s = scheduler();
+    final LocalDirectoryAssetStore dir = LocalDirectoryAssetStore(root);
+    await s.syncWithBackend(dir);
+    expect(changed, 0, reason: '只有本机的数据：没有拉进任何东西');
+    await other.createNote(
+      noteTypeId: other.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): '風',
+      },
+    );
+    expect(
+      (await srsDefaultSyncRunner(dir, other, 'other:${root.path}')).error,
+      isNull,
+    );
+    final SrsSync2Report pulled = await s.syncWithBackend(dir);
+    expect(pulled.applied, greaterThan(0));
+    expect(changed, 1, reason: '拉进了另一台设备的笔记：界面要重读');
+    await s.syncWithBackend(dir);
+    await s.syncWithBackend(dir);
+    expect(changed, 1, reason: '没有新数据的轮次不该让界面重读（也就不会再触发推送）');
+  });
+
+  group('自动同步复习数据开关（反馈 VNz9dsLeIy）', () {
+    test('关着：常规同步后置步骤、本机写入后推送、host 收到写入都不跑；立即同步与进复习页照跑', () async {
+      bool auto = false;
+      final List<String> keys = <String>[];
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          await body(LocalDirectoryAssetStore(root));
+          return (ran: 1, errors: const <Object>[]);
+        },
+        directoryKeyOf: (SyncAssetStore b) async => 'channel',
+        localDirectories: () async => <SrsLocalDirectory>[
+          SrsLocalDirectory(
+            directoryKey: 'interconnect:host',
+            store: LocalDirectoryAssetStore(root),
+          ),
+        ],
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        hostWriteDebounce: const Duration(milliseconds: 30),
+        autoSyncEnabled: () async => auto,
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              keys.add(key);
+              return SrsSync2Report();
+            },
+      );
+      addTearDown(s.dispose);
+      final LocalDirectoryAssetStore channel = LocalDirectoryAssetStore(root);
+      SrsSync2Report? afterChannel = SrsSync2Report();
+      afterChannel = await s.autoSyncWithBackend(channel);
+      await s.autoPush(() async => channel);
+      s.notifyLocalDirectoryWritten();
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await s.quiesce();
+      expect(afterChannel, isNull, reason: '后置步骤关着时不跑');
+      expect(keys, isEmpty, reason: '关着时没有任何一处自动触发跑了同步');
+
+      // 用户自己发起的两处不受开关影响。
+      await s.syncNow();
+      expect(keys, <String>['channel', 'interconnect:host']);
+      keys.clear();
+      expect(await s.syncThrottled(), isTrue);
+      expect(keys, <String>['channel', 'interconnect:host']);
+      keys.clear();
+
+      // 打开：每次触发时现读开关，立即生效。
+      auto = true;
+      await s.autoSyncWithBackend(channel);
+      expect(keys, <String>['channel']);
+      keys.clear();
+      await s.autoPush(() async => channel);
+      expect(keys, <String>['channel', 'interconnect:host']);
+      keys.clear();
+      s.notifyLocalDirectoryWritten();
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      // 去抖到点后那一轮排在串行链上：等它跑完。
+      await s.quiesce();
+      expect(keys, <String>['interconnect:host']);
+    });
+
+    test('开关默认开，写入后读回', () async {
+      final SyncRepository repo = SyncRepository(db);
+      expect(await repo.isSrsAutoSyncEnabled(), isTrue);
+      await repo.setSrsAutoSyncEnabled(false);
+      expect(await repo.isSrsAutoSyncEnabled(), isFalse);
+      expect(await db.getPrefTyped<bool>('srs_sync_auto', true), isFalse);
+    });
+
+    test('接线守卫：运行时的自动触发口都经开关', () {
+      final String src = File(
+        'lib/src/srs/srs_app_runtime.dart',
+      ).readAsStringSync();
+      expect(src, contains('isSrsAutoSyncEnabled()'));
+      // 通道后置步骤与互联快速通道走 autoSyncWithBackend，本机写入后的推送走 autoPush。
+      expect(
+        RegExp(
+          r'_postRun\(SyncBackend backend\) async \{\s*(final SrsSync2Report\? r =\s*)?await sync\.autoSyncWithBackend\(backend\);',
+        ).hasMatch(src),
+        isTrue,
+      );
+      expect(
+        src,
+        contains(
+          'await sync.autoSyncWithBackend(InterconnectSyncBackend.instance)',
+        ),
+      );
+      expect(src, contains('await sync.autoPush('));
+      expect(src, contains('&& await sync.isAutoSyncEnabled()'));
+      expect(
+        src,
+        isNot(contains('sync.syncWithBackend(')),
+        reason: '运行时不该绕过开关直接跑一轮',
+      );
+    });
+
+    // 反馈 XDV7Mzc2gw：推送 / 长轮询触发的一轮与常规同步走同一把互斥；推送结果交给 SrsLocalPush 退避。
+    test('autoPush：互联一轮在 exclusive 里跑，本机目录在锁外；失败报 false', () async {
+      final Directory root = Directory.systemTemp.createTempSync('srs-push-');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final List<String> log = <String>[];
+      bool locked = false;
+      String? error;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'channel',
+        localDirectories: () async => <SrsLocalDirectory>[
+          SrsLocalDirectory(
+            directoryKey: 'interconnect:host',
+            store: LocalDirectoryAssetStore(root),
+          ),
+        ],
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              log.add('$key locked=$locked');
+              return SrsSync2Report()..error = key == 'channel' ? error : null;
+            },
+      );
+      addTearDown(s.dispose);
+      final LocalDirectoryAssetStore channel = LocalDirectoryAssetStore(root);
+      Future<bool> exclusive(Future<bool> Function() body) async {
+        locked = true;
+        try {
+          return await body();
+        } finally {
+          locked = false;
+        }
+      }
+
+      expect(
+        await s.autoPush(() async => channel, exclusive: exclusive),
+        isTrue,
+      );
+      expect(log, <String>[
+        'channel locked=true',
+        'interconnect:host locked=false',
+      ]);
+      log.clear();
+      error = 'No reachable Fushi server address';
+      expect(
+        await s.autoPush(() async => channel, exclusive: exclusive),
+        isFalse,
+        reason: '推送失败要让 SrsLocalPush 退避',
+      );
+      error = kSrsSyncAwaitingConfirm;
+      expect(
+        await s.autoPush(() async => channel, exclusive: exclusive),
+        isTrue,
+        reason: '本机状态类原因不算网络失败',
+      );
+      expect(
+        await s.autoPush(() async => null, exclusive: exclusive),
+        isTrue,
+        reason: '没连互联不算失败',
+      );
+    });
+
+    test('接线守卫：推送 / 长轮询走常规同步的互斥，失败会退避、可被重置', () {
+      final String src = File(
+        'lib/src/srs/srs_app_runtime.dart',
+      ).readAsStringSync();
+      expect(src, contains('exclusive: runExclusiveWithSync'));
+      expect(
+        RegExp(
+          r'onChange: \(\) => runExclusiveWithSync\(\(\) async \{\s*await sync\.autoSyncWithBackend\(InterconnectSyncBackend\.instance\);',
+        ).hasMatch(src),
+        isTrue,
+      );
+      expect(src, contains('ready: () => runExclusiveWithSync('));
+      expect(src, contains('onReachable: () => localPush.resetBackoff()'));
+      expect(
+        RegExp(
+          r'Future<SrsSyncNowResult> syncNow\(\) \{\s*localPush\.resetBackoff\(\);',
+        ).hasMatch(src),
+        isTrue,
+      );
+    });
+  });
+
   test('进复习 tab 的节流：60 秒内第二次跳过', () async {
     DateTime now = DateTime(2026, 10, 15, 10);
     int runs = 0;
@@ -194,7 +1020,7 @@ void main() {
       clock: () => now,
       channels: (Future<void> Function(SyncAssetStore) body) async {
         runs++;
-        return 0;
+        return (ran: 0, errors: const <Object>[]);
       },
     );
     expect(await s.syncThrottled(), isTrue);
@@ -203,6 +1029,717 @@ void main() {
     now = now.add(const Duration(seconds: 31));
     expect(await s.syncThrottled(), isTrue);
     expect(runs, 2);
+  });
+
+  group('多个同步目录（云盘 + 互联同时开着）', () {
+    test('同一份操作传到每个目录；再同步不换设备身份（段不再只到先跑的那个）', () async {
+      final Directory cloudRoot = Directory.systemTemp.createTempSync(
+        'fushi_srs_cloud_',
+      );
+      addTearDown(() => cloudRoot.deleteSync(recursive: true));
+      final SrsSyncScheduler s = scheduler(
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          await body(LocalDirectoryAssetStore(cloudRoot));
+          await body(LocalDirectoryAssetStore(root));
+          return (ran: 2, errors: const <Object>[]);
+        },
+      );
+      expect((await s.syncNow()).ran, 2);
+      final String device = store.sync2Device!;
+      final int cloudFirst = ownSegments(cloudRoot, store);
+      final int rootFirst = ownSegments(root, store);
+      expect(cloudFirst, greaterThan(0));
+      expect(rootFirst, greaterThan(0), reason: '后跑的目录同样收到全部操作');
+      // 上传进度按位置各记一份。
+      expect(
+        (await uploadedLocations(
+          store,
+        )).map((Map<String, Object?> l) => l['location']).toSet(),
+        <String>{'local:${cloudRoot.path}', 'local:${root.path}'},
+      );
+      await store.createNote(
+        noteTypeId: store.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(kSrsTestProfile, 'Expression'): '雨',
+        },
+      );
+      expect((await s.syncNow()).ran, 2);
+      expect(store.sync2Device, device, reason: '没有分叉就不换设备身份');
+      expect(ownSegments(cloudRoot, store), greaterThan(cloudFirst));
+      expect(ownSegments(root, store), greaterThan(rootFirst));
+    });
+
+    test('本机开着互联服务：host 自己的同步目录也参与（没有任何通道也算同步过）', () async {
+      final SrsSyncScheduler s = scheduler(
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        localDirectories: () async => <SrsLocalDirectory>[
+          SrsLocalDirectory(
+            directoryKey: 'interconnect:host',
+            store: LocalDirectoryAssetStore(root),
+          ),
+        ],
+      );
+      expect((await s.syncNow()).ran, 1);
+      expect(ownSegments(root, store), greaterThan(0));
+      expect(store.trustedClock.isAnchored, isTrue);
+    });
+
+    test('立即同步：通道抛错与报告带错都记成失败，不算同步成功', () async {
+      final StateError unreachable = StateError('host unreachable');
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          // 第一条通道：引擎跑完但目录身份拿不到（报告带错，没抛）。
+          await body(LocalDirectoryAssetStore(root));
+          // 第二条通道：抛错，由通道 runner 记账。
+          return (ran: 1, errors: <Object>[unreachable]);
+        },
+        directoryKeyOf: (SyncAssetStore b) async => null,
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+      );
+      final SrsSyncNowResult r = await s.syncNow();
+      expect(r.ran, 0);
+      expect(r.unconfigured, isFalse);
+      expect(r.errors, hasLength(2));
+      expect(
+        (r.errors.first as SrsSyncReportError).message,
+        kSrsSyncDirectoryIdentityUnavailable,
+      );
+      expect(r.errors.last, same(unreachable));
+    });
+
+    test('立即同步：本机 SRS 副本打不开时如实报未同步，不算成功、也不说成没配置', () async {
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => null,
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          await body(LocalDirectoryAssetStore(root));
+          return (ran: 1, errors: const <Object>[]);
+        },
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        localDirectories: () async => <SrsLocalDirectory>[
+          SrsLocalDirectory(
+            directoryKey: 'interconnect:host',
+            store: LocalDirectoryAssetStore(root),
+          ),
+        ],
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+      );
+      final SrsSyncNowResult r = await s.syncNow();
+      expect(r.ran, 0);
+      expect(r.unconfigured, isFalse);
+      expect(
+        r.errors.map((Object e) => (e as SrsSyncReportError).message),
+        <String>[kSrsSyncStoreUnavailable, kSrsSyncStoreUnavailable],
+      );
+    });
+
+    test('立即同步：没有通道也没有本机目录 = 没配置', () async {
+      final SrsSyncNowResult r = await scheduler(
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+      ).syncNow();
+      expect(r.unconfigured, isTrue);
+    });
+
+    test('目录身份拿不到（云盘账户还没认出来）：这一轮不跑，不当成新目录', () async {
+      int runs = 0;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => null,
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              runs++;
+              return SrsSync2Report();
+            },
+      );
+      final SrsSync2Report r = await s.syncWithBackend(
+        LocalDirectoryAssetStore(root),
+      );
+      expect(r.error, kSrsSyncDirectoryIdentityUnavailable);
+      expect(runs, 0);
+      expect(await uploadedLocations(store), isEmpty);
+      expect(ownSegments(root, store), 0);
+    });
+
+    // 去抖是墙钟定时器：用真实 delay 驱动时，机器一忙 5 ms 的间隔就会拉长到超过去抖窗口，
+    // 「去抖期间不跑」随负载随机失败。改用 fakeAsync 精确推进时间；runner 等依赖全是
+    // 内存里的 Future，flushMicrotasks 即可跑完一轮。
+    test('host 收到客户端写入：去抖后只跑一次本机目录，不跑通道', () {
+      fakeAsync((FakeAsync async) {
+        final List<String> keys = <String>[];
+        int channelRuns = 0;
+        final SrsSyncScheduler s = SrsSyncScheduler(
+          readStore: () async => store,
+          channels: (Future<void> Function(SyncAssetStore) body) async {
+            channelRuns++;
+            return (ran: 0, errors: const <Object>[]);
+          },
+          directoryKeyOf: (SyncAssetStore b) async => 'cloud',
+          localDirectories: () async => <SrsLocalDirectory>[
+            SrsLocalDirectory(
+              directoryKey: 'interconnect:host',
+              store: LocalDirectoryAssetStore(root),
+            ),
+          ],
+          onDataChanged: () {},
+          onNotice: (SrsSyncNotice _) {},
+          hostWriteDebounce: const Duration(milliseconds: 30),
+          runner:
+              (
+                SyncAssetStore b,
+                SrsDbStore st,
+                String key, {
+                SrsLocationKey? locationKey,
+              }) async {
+                keys.add(key);
+                return SrsSync2Report();
+              },
+        );
+        addTearDown(s.dispose);
+        for (int i = 0; i < 5; i++) {
+          s.notifyLocalDirectoryWritten();
+          async.elapse(const Duration(milliseconds: 5));
+        }
+        expect(keys, isEmpty, reason: '去抖期间不跑');
+        // 最后一次写入后已过 5 ms；再推 24 ms 正好差 1 ms 满 30 ms 去抖窗口。
+        async.elapse(const Duration(milliseconds: 24));
+        expect(keys, isEmpty, reason: '最后一次写入后还没满去抖窗口');
+        async.elapse(const Duration(milliseconds: 1));
+        async.flushMicrotasks();
+        expect(keys, <String>['interconnect:host']);
+        expect(channelRuns, 0);
+        // 销毁后再来的写入不再触发。
+        s.dispose();
+        s.notifyLocalDirectoryWritten();
+        async.elapse(const Duration(milliseconds: 80));
+        async.flushMicrotasks();
+        expect(keys, hasLength(1));
+      });
+    });
+
+    test('坏文件只记一次日志，不影响结果', () async {
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async =>
+                SrsSync2Report()
+                  ..errors.add('devices/x/seg-1-2-00000000.bin: bad'),
+      );
+      final SrsSync2Report r = await s.syncWithBackend(
+        LocalDirectoryAssetStore(root),
+      );
+      expect(r.error, isNull);
+      expect(r.errors, hasLength(1));
+    });
+
+    test('同时触发的几轮依次跑，不交错改同一份本机同步状态', () async {
+      int running = 0;
+      int maxRunning = 0;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              running++;
+              if (running > maxRunning) maxRunning = running;
+              await Future<void>.delayed(const Duration(milliseconds: 20));
+              running--;
+              return SrsSync2Report();
+            },
+      );
+      await Future.wait(<Future<SrsSync2Report>>[
+        for (int i = 0; i < 4; i++)
+          s.syncWithBackend(LocalDirectoryAssetStore(root)),
+      ]);
+      expect(maxRunning, 1);
+    });
+  });
+
+  group('旧根媒体的后台迁移（大库上跑几个小时）', () {
+    test('通道那一轮不等它、互联 host 目录照常同步、进度可见；搬完绑定发布后旧文件删光', () async {
+      final Directory cloudRoot = Directory(p.join(root.path, 'cloud'))
+        ..createSync();
+      final _GatedBackend cloud = _GatedBackend(cloudRoot);
+      // 旧版本（同步协议 1）留下的旧根：v1 meta + 一批按名字存的明文媒体。
+      final Directory v1 = Directory(
+        p.join(
+          cloudRoot.path,
+          kSrsSync2Namespace,
+          store.profileUid,
+          kSrsSync2V1Folder,
+        ),
+      );
+      File(p.join(v1.path, 'meta.json'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode(<String, Object?>{
+            'v': 1,
+            'minReader': 1,
+            'collection': 'c1',
+            'createdAt': 1,
+          }),
+        );
+      const int n = 12;
+      for (int i = 0; i < n; i++) {
+        File(p.join(v1.path, kSrsMediaFolder, 'old$i.png'))
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(<int>[i, 7]);
+      }
+      final Directory hostRoot = Directory(p.join(root.path, 'host'))
+        ..createSync();
+      final SrsSyncScheduler s = scheduler(
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          await body(cloud);
+          return (ran: 1, errors: const <Object>[]);
+        },
+        localDirectories: () async => <SrsLocalDirectory>[
+          SrsLocalDirectory(
+            directoryKey: 'interconnect:host',
+            store: LocalDirectoryAssetStore(hostRoot),
+          ),
+        ],
+      );
+      final List<SrsSyncProgress> seen = <SrsSyncProgress>[];
+      void listen() {
+        final SrsSyncProgress? v = srsMigrationProgress.value;
+        if (v != null) seen.add(v);
+      }
+
+      srsMigrationProgress.addListener(listen);
+      addTearDown(() => srsMigrationProgress.removeListener(listen));
+      final List<String> breadcrumbs = <String>[];
+      final Directory crumbs = Directory(p.join(root.path, 'crumbs'))
+        ..createSync();
+      final Directory? Function() oldResolver =
+          ActivityBreadcrumb.directoryResolver;
+      ActivityBreadcrumb.directoryResolver = () => crumbs;
+      addTearDown(() => ActivityBreadcrumb.directoryResolver = oldResolver);
+
+      // 迁移卡在第一个文件上：通道那一轮照样返回，本机 host 目录照样跑完。
+      final SrsSyncNowResult r = await s.syncNow();
+      expect(r.errors, isEmpty);
+      expect(r.ran, 2);
+      expect(s.v1MediaMigrations.isRunning('local:${cloudRoot.path}'), isTrue);
+      expect(ownSegments(hostRoot, store), greaterThan(0));
+      expect(ownSegments(cloudRoot, store), greaterThan(0), reason: '新根先能用');
+      expect(srsMigrationProgress.value?.stage, SrsSyncStage.migrating);
+      expect(srsMigrationProgress.value?.total, n);
+      expect(srsSyncProgress.value, isNull, reason: '迁移不占同步一轮');
+      for (final FileSystemEntity e in crumbs.listSync()) {
+        breadcrumbs.add(File(e.path).readAsStringSync());
+      }
+      expect(breadcrumbs.join('\n'), contains('total=$n'));
+      // 迁移期间同一个通道再同步一轮也不排在它后面。
+      expect((await s.syncWithBackend(cloud)).error, isNull);
+
+      cloud.gate.complete();
+      await s.settle();
+      expect(srsMigrationProgress.value, isNull);
+      // 最后一次有活可干的迁移把全部文件做完。旧文件删在哪一次迁移里取决于迁移请的发布轮与下一次迁移谁先到（两个
+      // 独立的后台任务）：发布轮先落地时第二次迁移就删光了，之后排着的那一次是空跑（只报起点 0/0），结果相同。
+      expect(seen.where((SrsSyncProgress v) => v.total > 0).last.done, n);
+      expect(
+        crumbs.listSync().where(
+          (FileSystemEntity e) =>
+              p.basename(e.path).contains(kSrsV1MigrateActivity),
+        ),
+        isEmpty,
+        reason: '迁移跑完卸下面包屑',
+      );
+      // 旧根只剩围栏与完成标记；每个文件都按内容在新根上。
+      expect(
+        <String>{
+          for (final FileSystemEntity e in v1.listSync(recursive: true))
+            if (e is File)
+              p.relative(e.path, from: v1.path).replaceAll(r'\', '/'),
+        },
+        <String>{'meta.json', kSrsV1SweepMarker},
+      );
+      for (int i = 0; i < n; i++) {
+        expect(
+          File(
+            p.join(
+              cloudRoot.path,
+              kSrsSync2Namespace,
+              store.profileUid,
+              kSrsSync2Folder,
+              srsMediaContentPath(kSrsMediaFolder, srsMediaSha256(<int>[i, 7])),
+            ),
+          ).readAsBytesSync(),
+          <int>[i, 7],
+        );
+      }
+    });
+
+    test('关库前 quiesce 等后台迁移收手（不在半截迁移上关库）', () async {
+      bool open = true;
+      final Completer<void> gate = Completer<void>();
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        canRun: () => open,
+      );
+      bool stopped = false;
+      s.v1MediaMigrations.start('k', (void Function(int, int) progress) async {
+        progress(0, 3);
+        await gate.future;
+        stopped = true;
+        return SrsV1MediaReport();
+      });
+      open = false;
+      bool quiesced = false;
+      final Future<void> q = s.quiesce().then((_) => quiesced = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(quiesced, isFalse);
+      gate.complete();
+      await q;
+      expect(stopped, isTrue);
+      expect(srsMigrationProgress.value, isNull);
+    });
+  });
+
+  group('按位置收手与发布轮合并（PR #2768 / #2764 审查）', () {
+    test('文件夹位置的发布轮：排着还没开跑的合并成一轮，已开跑的不复用', () async {
+      final Completer<void> gate = Completer<void>();
+      int folderReads = 0;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        folderLocations: () async {
+          folderReads++;
+          return const <SrsFolderLocation>[];
+        },
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              await gate.future;
+              return SrsSync2Report();
+            },
+      );
+      addTearDown(s.dispose);
+      // 一轮通道同步占着串行队列；后台迁移这时每补一批绑定就请一轮文件夹发布。
+      final Future<SrsSync2Report> busy = s.syncWithBackend(
+        LocalDirectoryAssetStore(root),
+      );
+      final List<Future<SrsSyncNowResult>> asked = <Future<SrsSyncNowResult>>[
+        for (int i = 0; i < 6; i++) s.syncFolderLocations(),
+      ];
+      for (final Future<SrsSyncNowResult> f in asked) {
+        expect(identical(f, asked.first), isTrue, reason: '排着的请求复用同一轮');
+      }
+      gate.complete();
+      await busy;
+      await Future.wait(asked);
+      expect(folderReads, 1, reason: '六次请求只跑一轮');
+      await s.syncFolderLocations();
+      expect(folderReads, 2, reason: '上一轮跑完之后再请：新起一轮');
+    });
+
+    test('一轮跑到一半关掉位置：按关掉交回，之后的媒体对账不做；打开后照常', () async {
+      final Directory loc = Directory(p.join(root.path, 'loc'))..createSync();
+      final Directory media = Directory(p.join(root.path, '_media'))
+        ..createSync();
+      final _GatedListBackend backend = _GatedListBackend(loc);
+      final Set<String> disabled = <String>{};
+      int mediaRuns = 0;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'local:loc',
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        readMediaRoot: () async => media,
+        locationDisabled: disabled.contains,
+        mediaRunner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              Directory mediaRoot, {
+              SrsMediaCipher? cipher,
+              required String locationId,
+            }) async {
+              mediaRuns++;
+              return SrsMediaSyncReport();
+            },
+      );
+      addTearDown(s.dispose);
+      final Completer<void> gate = Completer<void>();
+      backend.gate = gate;
+      final Future<SrsSync2Report> round = s.syncWithBackend(backend);
+      await backend.reached.future;
+      disabled.add('local:loc');
+      gate.complete();
+      expect((await round).error, kSrsSyncLocationDisabled);
+      expect(mediaRuns, 0, reason: '关掉之后不再开媒体对账');
+
+      disabled.clear();
+      expect((await s.syncWithBackend(backend)).error, isNull);
+      expect(mediaRuns, 1);
+    });
+
+    test('关掉位置：它的后台迁移在下一个文件收手，排着的不再起；立即同步不报错', () async {
+      final Directory cloudRoot = Directory(p.join(root.path, 'cloud'))
+        ..createSync();
+      final _GatedBackend cloud = _GatedBackend(cloudRoot);
+      final Directory v1 = Directory(
+        p.join(
+          cloudRoot.path,
+          kSrsSync2Namespace,
+          store.profileUid,
+          kSrsSync2V1Folder,
+        ),
+      );
+      File(p.join(v1.path, 'meta.json'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode(<String, Object?>{
+            'v': 1,
+            'minReader': 1,
+            'collection': 'c1',
+            'createdAt': 1,
+          }),
+        );
+      const int n = 24;
+      for (int i = 0; i < n; i++) {
+        File(p.join(v1.path, kSrsMediaFolder, 'old$i.png'))
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(<int>[i, 9]);
+      }
+      final String key = 'local:${cloudRoot.path}';
+      final Set<String> disabled = <String>{};
+      final SrsSyncScheduler s = scheduler(
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          await body(cloud);
+          return (ran: 1, errors: const <Object>[]);
+        },
+        locationDisabled: disabled.contains,
+      );
+      addTearDown(s.dispose);
+      expect((await s.syncNow()).errors, isEmpty);
+      expect(s.v1MediaMigrations.isRunning(key), isTrue);
+      // 迁移在跑时又成功一轮：交来的下一次排着，等这一次跑完接着跑。
+      expect((await s.syncWithBackend(cloud)).error, isNull);
+
+      disabled.add(key);
+      cloud.gate.complete();
+      await s.settle();
+      expect(s.v1MediaMigrations.isRunning(key), isFalse);
+      expect(srsMigrationProgress.value, isNull);
+      int moved = 0;
+      for (int i = 0; i < n; i++) {
+        if (File(
+          p.join(
+            cloudRoot.path,
+            kSrsSync2Namespace,
+            store.profileUid,
+            kSrsSync2Folder,
+            srsMediaContentPath(kSrsMediaFolder, srsMediaSha256(<int>[i, 9])),
+          ),
+        ).existsSync()) {
+          moved++;
+        }
+      }
+      expect(moved, lessThan(n), reason: '关掉之后剩下的文件不再搬');
+
+      final SrsSyncNowResult off = await s.syncNow();
+      expect(off.errors, isEmpty, reason: '关掉不是失败');
+      expect(off.ran, 0);
+    });
+  });
+
+  group('文件夹存储位置（设计 §6.5）', () {
+    Directory folderRoot(SrsFolderLocation l) =>
+        srsFolderCollectionRoot(l, store.profileUid);
+
+    test('可用的文件夹：立即同步跑它、写 v2 布局、算进 ran', () async {
+      final Directory folder = Directory.systemTemp.createTempSync(
+        'fushi_srs_folder_',
+      );
+      addTearDown(() => folder.deleteSync(recursive: true));
+      final SrsFolderLocation loc = SrsFolderLocation(
+        id: 'usb',
+        path: folder.path,
+      );
+      final SrsSyncScheduler s = scheduler(
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        folderLocations: () async => <SrsFolderLocation>[loc],
+      );
+      final SrsSyncNowResult r = await s.syncNow();
+      expect(r.ran, 1);
+      expect(r.errors, isEmpty);
+      expect(s.folderErrors, isEmpty);
+      expect(
+        Directory(
+          p.join(folderRoot(loc).path, 'devices', store.sync2Device!),
+        ).listSync().map((FileSystemEntity e) => p.basename(e.path)),
+        contains(startsWith('seg-')),
+      );
+      expect(
+        (await uploadedLocations(
+          store,
+        )).map((Map<String, Object?> l) => l['location']),
+        contains(loc.locationId),
+      );
+    });
+
+    test('文件夹不在（U 盘没插）：记进 folderErrors，不算立即同步失败；插回后清掉', () async {
+      final Directory parent = Directory.systemTemp.createTempSync(
+        'fushi_srs_folder_missing_',
+      );
+      addTearDown(() => parent.deleteSync(recursive: true));
+      final String path = p.join(parent.path, 'usb');
+      final SrsFolderLocation loc = SrsFolderLocation(id: 'usb', path: path);
+      final SrsSyncScheduler s = scheduler(
+        folderLocations: () async => <SrsFolderLocation>[loc],
+      );
+      final SrsSyncNowResult r = await s.syncNow();
+      // 通道那一份照常成功；不可用的文件夹既不算 ran，也不进 errors。
+      expect(r.ran, 1);
+      expect(r.errors, isEmpty);
+      expect(r.unconfigured, isFalse);
+      expect(s.folderErrors.keys, <String>['usb']);
+      expect(s.folderErrors['usb'], isA<FileSystemException>());
+      expect(Directory(path).existsSync(), isFalse, reason: '不替用户建目录');
+
+      Directory(path).createSync();
+      final SrsSyncNowResult again = await s.syncNow();
+      expect(again.ran, 2);
+      expect(s.folderErrors, isEmpty);
+    });
+
+    test(
+      '文件夹位置的 meta.json 不见了而已有数据：不重写、记进 folderErrors、不算 ran；放回后恢复',
+      () async {
+        final Directory folder = Directory.systemTemp.createTempSync(
+          'fushi_srs_folder_meta_',
+        );
+        addTearDown(() => folder.deleteSync(recursive: true));
+        final SrsFolderLocation loc = SrsFolderLocation(
+          id: 'nas',
+          path: folder.path,
+        );
+        final SrsSyncScheduler s = scheduler(
+          channels: (Future<void> Function(SyncAssetStore) body) async =>
+              (ran: 0, errors: const <Object>[]),
+          folderLocations: () async => <SrsFolderLocation>[loc],
+        );
+        expect((await s.syncNow()).ran, 1);
+        final File meta = File(p.join(folderRoot(loc).path, 'meta.json'));
+        final String original = meta.readAsStringSync();
+        meta.deleteSync();
+        final SrsSyncNowResult r = await s.syncNow();
+        expect(r.ran, 0);
+        expect(meta.existsSync(), isFalse, reason: '不替一份可能还在的 meta.json 重写');
+        expect(
+          (s.folderErrors['nas']! as SrsSyncReportError).message,
+          kSrsSync2MetaUnavailable,
+        );
+        meta.writeAsStringSync(original);
+        expect((await s.syncNow()).ran, 1);
+        expect(s.folderErrors, isEmpty);
+      },
+    );
+
+    test('一个用途都没勾的位置：保留配置但不跑', () async {
+      final Directory folder = Directory.systemTemp.createTempSync(
+        'fushi_srs_folder_idle_',
+      );
+      addTearDown(() => folder.deleteSync(recursive: true));
+      final SrsFolderLocation loc = SrsFolderLocation(
+        id: 'idle',
+        path: folder.path,
+        sync: false,
+        media: false,
+      );
+      final SrsSyncScheduler s = scheduler(
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        folderLocations: () async => <SrsFolderLocation>[loc],
+      );
+      final SrsSyncNowResult r = await s.syncNow();
+      expect(r.ran, 0);
+      expect(folder.listSync(), isEmpty);
+    });
+
+    test('归档位置：一个旧 head 也不删', () async {
+      final Directory folder = Directory.systemTemp.createTempSync(
+        'fushi_srs_folder_archive_',
+      );
+      addTearDown(() => folder.deleteSync(recursive: true));
+      final SrsFolderLocation loc = SrsFolderLocation(
+        id: 'archive',
+        path: folder.path,
+        sync: false,
+        media: false,
+        archive: true,
+      );
+      final SrsSyncScheduler s = scheduler(
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        folderLocations: () async => <SrsFolderLocation>[loc],
+      );
+      for (int i = 0; i < 5; i++) {
+        await store.createNote(
+          noteTypeId: store.lapisNoteTypeId,
+          fieldsById: <String, String>{
+            srsLapisFieldId(kSrsTestProfile, 'Expression'): '雪$i',
+          },
+        );
+        expect((await s.syncNow()).ran, 1);
+      }
+      final List<String> heads = <String>[
+        for (final FileSystemEntity e in Directory(
+          p.join(folderRoot(loc).path, 'devices', store.sync2Device!),
+        ).listSync())
+          if (p.basename(e.path).startsWith('head-')) p.basename(e.path),
+      ];
+      expect(heads.length, greaterThanOrEqualTo(5), reason: '归档只写不删');
+    });
   });
 
   group('runOnAuthenticatedSyncChannels', () {
@@ -227,22 +1764,45 @@ void main() {
               body: (SyncBackend b) => body(b),
             ),
       );
-      expect(await s.syncNow(), 1);
+      expect((await s.syncNow()).ran, 1);
       expect(cloud.restoreCalls, 1);
       expect(offline.restoreCalls, 1);
       expect(store.trustedClock.isAnchored, isTrue);
     });
 
+    test('已认证通道这轮抛错：不算跑过，异常带回给调用方（不能说成没配置）', () async {
+      final _AssetBackend interconnect = _AssetBackend(
+        LocalDirectoryAssetStore(root),
+      );
+      debugSyncChannelsOverride = (SyncRepository _) async => <SyncChannel>[
+        SyncChannel(
+          interconnect,
+          type: SyncBackendType.fushiServer,
+          isInterconnect: true,
+        ),
+      ];
+      final StateError unreachable = StateError('host unreachable');
+      final ({int ran, List<Object> errors}) n =
+          await runOnAuthenticatedSyncChannels(
+            db: db,
+            body: (SyncBackend _) async => throw unreachable,
+          );
+      expect(n.ran, 0);
+      expect(n.errors, <Object>[unreachable]);
+    });
+
     test('没配置任何同步后端：什么都不做', () async {
       debugSyncChannelsOverride = (SyncRepository _) async => <SyncChannel>[];
       int called = 0;
-      final int n = await runOnAuthenticatedSyncChannels(
-        db: FushiDatabase.forTesting(
-          DatabaseConnection(NativeDatabase.memory()),
-        ),
-        body: (SyncBackend _) async => called++,
-      );
-      expect(n, 0);
+      final ({int ran, List<Object> errors}) n =
+          await runOnAuthenticatedSyncChannels(
+            db: FushiDatabase.forTesting(
+              DatabaseConnection(NativeDatabase.memory()),
+            ),
+            body: (SyncBackend _) async => called++,
+          );
+      expect(n.ran, 0);
+      expect(n.errors, isEmpty);
       expect(called, 0);
     });
   });
@@ -261,5 +1821,428 @@ void main() {
     expect(hook, greaterThan(run), reason: 'SRS 同步必须在常规同步成功之后跑');
     // 模块关着时没有任何钩子：默认为 null。
     expect(syncChannelPostRunHook, isNull);
+  });
+
+  // 反馈 OMWOurRQKb：关库（退出 / 备份恢复 / 数据根迁移）时 SRS 同步还在跑，半截同步打在
+  // 已关闭的连接上（`SrsDbStore._loadLocal`「connection was closed」）。关库前先让 canRun
+  // 变 false 再 quiesce：新一轮不开，在跑的一轮等它收尾。
+  group('关库协作', () {
+    test('canRun 为 false：不开新一轮、不碰 runner，报 store 不可用', () async {
+      int runs = 0;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        onDataChanged: () {},
+        onNotice: notices.add,
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              runs++;
+              return SrsSync2Report();
+            },
+        canRun: () => false,
+      );
+      final SrsSync2Report r = await s.syncWithBackend(
+        LocalDirectoryAssetStore(root),
+      );
+      expect(r.error, kSrsSyncStoreUnavailable);
+      expect(runs, 0);
+    });
+
+    test('quiesce 等在跑的一轮结束；之后排进来的轮次在库关着时直接收手', () async {
+      bool open = true;
+      int runs = 0;
+      final Completer<void> release = Completer<void>();
+      final Completer<void> started = Completer<void>();
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        onDataChanged: () {},
+        onNotice: notices.add,
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              runs++;
+              started.complete();
+              await release.future;
+              return SrsSync2Report();
+            },
+        canRun: () => open,
+      );
+      final Future<SrsSync2Report> inFlight = s.syncWithBackend(
+        LocalDirectoryAssetStore(root),
+      );
+      await started.future;
+      // 关库开始：先标成不可用，再等。
+      open = false;
+      final Future<SrsSync2Report> queued = s.syncWithBackend(
+        LocalDirectoryAssetStore(root),
+      );
+      bool quiesced = false;
+      final Future<void> q = s.quiesce().then((_) => quiesced = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(quiesced, isFalse, reason: '在跑的一轮没结束前 quiesce 不能返回');
+      release.complete();
+      await q;
+      expect((await inFlight).error, isNull);
+      expect((await queued).error, kSrsSyncStoreUnavailable);
+      expect(runs, 1, reason: '排队的一轮在库关着时不该跑');
+    });
+  });
+
+  group('轮次合并与取证（XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL）', () {
+    late Directory crumbs;
+    setUp(() {
+      crumbs = Directory.systemTemp.createTempSync('srs_crumbs_');
+      ActivityBreadcrumb.directoryResolver = () => crumbs;
+    });
+    tearDown(() {
+      ActivityBreadcrumb.directoryResolver = () =>
+          ErrorLogService.instance.appDirectory;
+      crumbs.deleteSync(recursive: true);
+    });
+
+    File crumb() =>
+        File(p.join(crumbs.path, 'activity_$kSrsSyncActivity.breadcrumb'));
+
+    test('同一后端排队中的请求合并成一轮，已开跑的不复用', () async {
+      final Completer<void> gate = Completer<void>();
+      int runs = 0;
+      bool crumbDuringRun = false;
+      final SyncAssetStore backend = LocalDirectoryAssetStore(root);
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              runs++;
+              crumbDuringRun = crumb().existsSync();
+              if (runs == 1) await gate.future;
+              return SrsSync2Report();
+            },
+      );
+      // 第一轮开跑并卡在 gate；随后三次触发（本机推送 / 长轮询 / 进 tab）都排在它后面。
+      final Future<SrsSync2Report> first = s.syncWithBackend(backend);
+      await pumpEventQueue();
+      final Future<SrsSync2Report> a = s.syncWithBackend(backend);
+      final Future<SrsSync2Report> b = s.syncWithBackend(backend);
+      final Future<SrsSync2Report> c = s.syncWithBackend(backend);
+      expect(identical(a, b) && identical(b, c), isTrue);
+      expect(identical(first, a), isFalse, reason: '已开跑的一轮不能被复用');
+      expect(s.roundStatsFor(backend).coalesced, 2);
+      gate.complete();
+      await Future.wait(<Future<SrsSync2Report>>[first, a, b, c]);
+      expect(runs, 2, reason: '排队中的三次触发只跑一轮');
+      expect(crumbDuringRun, isTrue, reason: '跑的时候要有活动面包屑');
+      expect(crumb().existsSync(), isFalse, reason: '跑完删掉面包屑');
+      expect(s.roundStatsFor(backend).queued, 0);
+      expect(s.roundStatsFor(backend).running, 0);
+    });
+
+    test('开头的细分步骤写进面包屑（i8qNDs_V_D：死在「开始」阶段时要知道是哪一步）', () async {
+      String? atStore;
+      String? atKey;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async {
+          atStore = crumb().readAsStringSync();
+          return store;
+        },
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async {
+          atKey = crumb().readAsStringSync();
+          return 'k';
+        },
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async => SrsSync2Report(),
+      );
+      await s.syncWithBackend(LocalDirectoryAssetStore(root));
+      expect(atStore, contains('stage=start:store '));
+      expect(atKey, contains('stage=start:directoryKey '));
+      expect(atKey, contains('rss='));
+      expect(crumb().existsSync(), isFalse, reason: '跑完删掉面包屑');
+    });
+
+    test(
+      '文件夹位置与云盘同一套进度 / 面包屑：报到「下载 n/总数」「上传」，跑的时候有 backend=folder 的面包屑',
+      () async {
+        // 真机（小米平板 5，3 GB 真实库）：首次从文件夹收 125 个段跑了好几分钟，界面全程停在「正在准备」、
+        // 进程死在里面也不留面包屑——文件夹这条路径以前一个进度回调都没接。
+        final Directory folder = Directory.systemTemp.createTempSync(
+          'fushi_srs_folder_progress_',
+        );
+        addTearDown(() => folder.deleteSync(recursive: true));
+        final SrsFolderLocation loc = SrsFolderLocation(
+          id: 'usb',
+          path: folder.path,
+        );
+        final (FushiDatabase otherDb, SrsDbStore other) =
+            await openSrsTestStore(deviceId: 'other');
+        addTearDown(otherDb.close);
+        final String rain = await other.createNote(
+          noteTypeId: other.lapisNoteTypeId,
+          fieldsById: <String, String>{
+            srsLapisFieldId(kSrsTestProfile, 'Expression'): '雨',
+          },
+        );
+        await srsSyncFolderLocation(location: loc, store: other);
+
+        final List<SrsSyncProgress> seen = <SrsSyncProgress>[];
+        final List<String> crumbsSeen = <String>[];
+        void onProgress() {
+          final SrsSyncProgress? v = srsSyncProgress.value;
+          if (v == null) return;
+          seen.add(v);
+          if (crumb().existsSync()) crumbsSeen.add(crumb().readAsStringSync());
+        }
+
+        srsSyncProgress.addListener(onProgress);
+        addTearDown(() => srsSyncProgress.removeListener(onProgress));
+        final SrsSyncScheduler s = SrsSyncScheduler(
+          readStore: () async => store,
+          channels: (Future<void> Function(SyncAssetStore) body) async =>
+              (ran: 0, errors: const <Object>[]),
+          directoryKeyOf: (SyncAssetStore b) async => 'k',
+          folderLocations: () async => <SrsFolderLocation>[loc],
+          onDataChanged: () {},
+          onNotice: (SrsSyncNotice _) {},
+        );
+        final SrsSyncNowResult r = await s.syncFolderLocations();
+        expect(r.ran, 1);
+        expect(s.folderErrors, isEmpty);
+        final List<SrsSyncProgress> downloads = <SrsSyncProgress>[
+          for (final SrsSyncProgress v in seen)
+            if (v.stage == SrsSyncStage.downloading) v,
+        ];
+        expect(downloads, isNotEmpty, reason: '收段要报「下载 n/总数」，不能停在「准备」');
+        expect(downloads.last.total, greaterThan(0));
+        expect(downloads.last.done, downloads.last.total);
+        expect(
+          seen.map((SrsSyncProgress v) => v.stage),
+          contains(SrsSyncStage.uploading),
+        );
+        expect(
+          crumbsSeen.any((String c) => c.contains('backend=folder')),
+          isTrue,
+          reason: '跑的时候要有活动面包屑',
+        );
+        expect(crumb().existsSync(), isFalse, reason: '跑完删掉面包屑');
+        expect(srsSyncProgress.value, isNull);
+        expect(await store.note(rain), isNotNull, reason: '段确实收进了本机');
+      },
+    );
+
+    test('文件夹报告的唯一分类：收手 / 口令类问题 / 位置自身的错 / 需要升级', () {
+      SrsFolderSyncReport withOps(SrsSync2Report ops) =>
+          SrsFolderSyncReport(ops: ops);
+      expect(classifySrsFolderReport(SrsFolderSyncReport()), (
+        stopped: false,
+        locationError: null,
+      ));
+      expect(
+        classifySrsFolderReport(
+          withOps(SrsSync2Report()..error = kSrsSync2Stopped),
+        ),
+        (stopped: true, locationError: null),
+      );
+      for (final String crypto in kSrsLocationCryptoErrors) {
+        expect(
+          classifySrsFolderReport(withOps(SrsSync2Report()..error = crypto)),
+          (stopped: false, locationError: null),
+          reason: '$crypto 由 locationCrypto 显示，不算这个位置的错',
+        );
+      }
+      expect(
+        classifySrsFolderReport(
+          withOps(SrsSync2Report()..error = kSrsSync2MetaUnavailable),
+        ),
+        (stopped: false, locationError: kSrsSync2MetaUnavailable),
+      );
+      expect(
+        classifySrsFolderReport(withOps(SrsSync2Report()..needsUpgrade = true)),
+        (stopped: false, locationError: kSrsSyncNeedsUpgrade),
+      );
+    });
+
+    test('文件夹一轮跑到一半收手：连续失败数不动、不记 folderErrors、不算 ran', () async {
+      final Directory folder = Directory.systemTemp.createTempSync(
+        'fushi_srs_folder_stop_',
+      );
+      addTearDown(() => folder.deleteSync(recursive: true));
+      final SrsFolderLocation loc = SrsFolderLocation(
+        id: 'usb',
+        path: folder.path,
+      );
+      final (FushiDatabase otherDb, SrsDbStore other) = await openSrsTestStore(
+        deviceId: 'other',
+      );
+      addTearDown(otherDb.close);
+      for (int i = 0; i < 3; i++) {
+        await other.createNote(
+          noteTypeId: other.lapisNoteTypeId,
+          fieldsById: <String, String>{
+            srsLapisFieldId(kSrsTestProfile, 'Expression'): '雨$i',
+          },
+        );
+        await srsSyncFolderLocation(location: loc, store: other);
+      }
+      bool stop = false;
+      void onProgress() {
+        if (srsSyncProgress.value?.stage == SrsSyncStage.downloading) {
+          stop = true;
+        }
+      }
+
+      srsSyncProgress.addListener(onProgress);
+      addTearDown(() => srsSyncProgress.removeListener(onProgress));
+      final SrsSyncScheduler s = scheduler(
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        folderLocations: () async => <SrsFolderLocation>[loc],
+        locationDisabled: (String id) => stop && id == loc.locationId,
+      );
+      s.folderRoundStats.consecutiveFailures = 3;
+      final SrsSyncNowResult r = await s.syncFolderLocations();
+      expect(stop, isTrue, reason: '这一轮确实开拉了');
+      expect(r.ran, 0);
+      expect(s.folderErrors, isEmpty);
+      expect(
+        s.folderRoundStats.consecutiveFailures,
+        3,
+        reason: '收手既不算失败、也不算成功（不清零）',
+      );
+      expect(s.folderRoundStats.running, 0);
+    });
+
+    test('缺口令的文件夹位置：每轮照常报 locationCrypto，不算失败、不刷诊断；也不碰云盘那份统计', () async {
+      final Directory folder = Directory.systemTemp.createTempSync(
+        'fushi_srs_folder_needs_key_',
+      );
+      addTearDown(() => folder.deleteSync(recursive: true));
+      final SrsFolderLocation loc = SrsFolderLocation(
+        id: 'nas',
+        path: folder.path,
+      );
+      SrsLocationKey? current = await srsDeriveLocationKey(
+        store,
+        'correct horse',
+        pendingEnable: true,
+      );
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        folderLocations: () async => <SrsFolderLocation>[loc],
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        locationKey: (String id) => id == loc.locationId ? current : null,
+        onEncryptionEnabled: (String id, SrsLocationKey k) async => current = k,
+      );
+      expect((await s.syncFolderLocations()).ran, 1);
+      expect(s.locationCrypto[loc.locationId]?.encrypted, isTrue);
+
+      // 本机忘了口令（换机器 / 清了数据）：位置照样每轮报「需要口令」。
+      current = null;
+      final SrsSyncRoundStats cloud = s.roundStatsFor(
+        LocalDirectoryAssetStore(root),
+      )..consecutiveFailures = 2;
+      for (int i = 0; i < 3; i++) {
+        final SrsSyncNowResult r = await s.syncFolderLocations();
+        expect(r.ran, 1, reason: '口令类问题不进 folderErrors（与 UI 分流一致）');
+        expect(s.locationCrypto[loc.locationId]?.error, kSrsSync2NeedsKey);
+        expect(s.folderErrors, isEmpty);
+      }
+      expect(
+        s.folderRoundStats.consecutiveFailures,
+        0,
+        reason: '缺口令是没处理的配置状态，不是这一轮失败',
+      );
+      expect(s.folderRoundStats.lastFailureAt, isNull);
+      expect(cloud.consecutiveFailures, 2, reason: '文件夹成功不清云盘攒下的连续失败');
+    });
+
+    test('失败轮次累计连续失败数；成功清零；面包屑不残留', () async {
+      int runs = 0;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async {
+          runs++;
+          if (runs <= 2) {
+            throw const SocketException('No reachable Fushi server address');
+          }
+          return 'k';
+        },
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async => SrsSync2Report(),
+      );
+      final SyncAssetStore backend = LocalDirectoryAssetStore(root);
+      await expectLater(
+        s.syncWithBackend(backend),
+        throwsA(isA<SocketException>()),
+      );
+      await expectLater(
+        s.syncWithBackend(backend),
+        throwsA(isA<SocketException>()),
+      );
+      expect(s.roundStatsFor(backend).consecutiveFailures, 2);
+      expect(s.roundStatsFor(backend).lastFailureAt, isNotNull);
+      expect(crumb().existsSync(), isFalse);
+      await s.syncWithBackend(backend);
+      expect(s.roundStatsFor(backend).consecutiveFailures, 0);
+    });
+
+    test('进程死在一轮里：下次启动折成 activityCrashRecovered（带阶段与内存）', () {
+      ActivityBreadcrumb.mark(
+        kSrsSyncActivity,
+        'stage=uploading backend=X queued=3 rss=812MB',
+      );
+      final List<ExitReportEntry> recovered = collectActivityBreadcrumbs(
+        crumbs,
+      );
+      expect(recovered, hasLength(1));
+      expect(recovered.single.severe, isTrue);
+      expect(recovered.single.source, kActivityCrashRecoveredSource);
+      expect(recovered.single.text, contains('srs_sync'));
+      expect(recovered.single.text, contains('stage=uploading'));
+      expect(crumb().existsSync(), isFalse);
+    });
   });
 }

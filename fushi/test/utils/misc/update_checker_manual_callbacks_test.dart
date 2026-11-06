@@ -20,36 +20,43 @@ void main() {
   test('empty release list selects nothing (drives onUpToDate)', () async {
     final UpdateReleaseSelection? selection =
         await selectUpdateReleaseForCurrentPlatform(
-      const <Map<String, dynamic>>[],
-      currentVersion: '1.0.0',
-      channel: UpdateChannel.stable,
-      updater: updater,
-    );
+          const <Map<String, dynamic>>[],
+          currentVersion: '1.0.0',
+          channel: UpdateChannel.stable,
+          updater: updater,
+        );
     expect(selection, isNull, reason: '无 release = 无可更新版本 → onUpToDate');
   });
 
   test('older stable release selects nothing (drives onUpToDate)', () async {
     final UpdateReleaseSelection? selection =
         await selectUpdateReleaseForCurrentPlatform(
-      <Map<String, dynamic>>[buildStableReleaseFromTag('v0.0.1')],
-      currentVersion: '9.9.9',
-      channel: UpdateChannel.stable,
-      updater: updater,
-    );
+          <Map<String, dynamic>>[buildStableReleaseFromTag('v0.0.1')],
+          currentVersion: '9.9.9',
+          channel: UpdateChannel.stable,
+          updater: updater,
+        );
     expect(selection, isNull, reason: '远端旧于本地 → 选不出 → onUpToDate');
   });
 
   test('isUpdateVersionNewer: equal/older stable is not newer', () {
     expect(
-        isUpdateVersionNewer('1.2.3', '1.2.3', UpdateChannel.stable), isFalse,
-        reason: '同版本 = 已是最新 → onUpToDate');
+      isUpdateVersionNewer('1.2.3', '1.2.3', UpdateChannel.stable),
+      isFalse,
+      reason: '同版本 = 已是最新 → onUpToDate',
+    );
     expect(
-        isUpdateVersionNewer('1.0.0', '1.2.3', UpdateChannel.stable), isFalse,
-        reason: '远端更旧 = 已是最新 → onUpToDate');
+      isUpdateVersionNewer('1.0.0', '1.2.3', UpdateChannel.stable),
+      isFalse,
+      reason: '远端更旧 = 已是最新 → onUpToDate',
+    );
   });
 
   test('isUpdateVersionNewer: a strictly newer stable is an update', () {
-    expect(isUpdateVersionNewer('2.0.0', '1.2.3', UpdateChannel.stable), isTrue,
-        reason: '远端更新 → 发现新版（走对话框/打开发布页，不触 onUpToDate）');
+    expect(
+      isUpdateVersionNewer('2.0.0', '1.2.3', UpdateChannel.stable),
+      isTrue,
+      reason: '远端更新 → 发现新版（走对话框/打开发布页，不触 onUpToDate）',
+    );
   });
 }

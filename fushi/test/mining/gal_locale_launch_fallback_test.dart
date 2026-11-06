@@ -74,11 +74,11 @@ class _LocaleEngine extends EngineHookGalAudioSource {
 class _QuietLoopback extends LoopbackGalAudioSource {
   @override
   Future<PcmFormat?> start() async => const PcmFormat(
-        sampleRate: 44100,
-        channels: 2,
-        bitsPerSample: 16,
-        isFloat: false,
-      );
+    sampleRate: 44100,
+    channels: 2,
+    bitsPerSample: 16,
+    isFloat: false,
+  );
 
   @override
   Future<GalAudioSlice?> grabRecent(int backMs) async => null;
@@ -97,13 +97,14 @@ void main() {
   late String launchOutput;
 
   GalHookSessionController build() => GalHookSessionController(
-        textService: service,
-        isWindows: true,
-        exe32BitProbe: (_) async => true,
-        targetImagePathProbe: (int pid) =>
-            alivePids.contains(pid) ? 'D:\\game\\game.exe' : null,
-        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
-        engineSourceFactory: ({
+    textService: service,
+    isWindows: true,
+    exe32BitProbe: (_) async => true,
+    targetImagePathProbe: (int pid) =>
+        alivePids.contains(pid) ? 'D:\\game\\game.exe' : null,
+    injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+    engineSourceFactory:
+        ({
           required int targetPid,
           required String? launchExe,
           required String injectorPath,
@@ -124,14 +125,14 @@ void main() {
             launchOutput: launchOutput,
           );
         },
-        loopbackSourceFactory: _QuietLoopback.new,
-        windowListLoader: () async => const <ExternalWindowInfo>[],
-        windowPollAttempts: 1,
-        endpointListenable: endpoints,
-        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
-        startWindowRecording: ({required int hwnd}) async => false,
-        stopWindowRecording: () async {},
-      );
+    loopbackSourceFactory: _QuietLoopback.new,
+    windowListLoader: () async => const <ExternalWindowInfo>[],
+    windowPollAttempts: 1,
+    endpointListenable: endpoints,
+    endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    startWindowRecording: ({required int hwnd}) async => false,
+    stopWindowRecording: () async {},
+  );
 
   setUp(() {
     service = TexthookerService.test();
@@ -152,17 +153,15 @@ void main() {
       japaneseLocaleMode: GalJapaneseLocaleMode.auto,
     );
     expect(result.launched, isTrue);
-    expect(
-        requestedModes,
-        <GalJapaneseLocaleMode>[
-          GalJapaneseLocaleMode.auto,
-          GalJapaneseLocaleMode.off,
-        ],
-        reason: '第二次拉起必须显式 off，而不是再 auto 一次');
+    expect(requestedModes, <GalJapaneseLocaleMode>[
+      GalJapaneseLocaleMode.auto,
+      GalJapaneseLocaleMode.off,
+    ], reason: '第二次拉起必须显式 off，而不是再 auto 一次');
     expect(controller.state.gamePid, 2222, reason: '会话应绑定第二次拉起的进程');
     expect(controller.state.japaneseLocaleApplied, isFalse);
-    final List<String> codes =
-        controller.events.map((GalHookEvent e) => e.code).toList();
+    final List<String> codes = controller.events
+        .map((GalHookEvent e) => e.code)
+        .toList();
     expect(codes, contains('launch.japanese_locale_fallback'));
     expect(
       codes,
@@ -179,8 +178,9 @@ void main() {
       japaneseLocaleMode: GalJapaneseLocaleMode.on,
     );
     expect(requestedModes, <GalJapaneseLocaleMode>[GalJapaneseLocaleMode.on]);
-    final List<String> codes =
-        controller.events.map((GalHookEvent e) => e.code).toList();
+    final List<String> codes = controller.events
+        .map((GalHookEvent e) => e.code)
+        .toList();
     expect(codes, isNot(contains('launch.japanese_locale_fallback')));
     await controller.close();
   });
@@ -209,7 +209,8 @@ void main() {
   });
 
   test('真实子进程已更新：退出的外层 PID 不替换存活游戏', () async {
-    launchOutput = 'LAUNCH pid=1111 arch=x86 role=launcher locale=1\n'
+    launchOutput =
+        'LAUNCH pid=1111 arch=x86 role=launcher locale=1\n'
         'LAUNCH pid=3333 arch=x86 role=game locale=1\n';
     alivePids = <int>{3333};
     final GalHookSessionController controller = build();
@@ -250,8 +251,9 @@ void main() {
       japaneseLocaleMode: GalJapaneseLocaleMode.auto,
     );
     expect(requestedModes, <GalJapaneseLocaleMode>[GalJapaneseLocaleMode.auto]);
-    final List<String> codes =
-        controller.events.map((GalHookEvent e) => e.code).toList();
+    final List<String> codes = controller.events
+        .map((GalHookEvent e) => e.code)
+        .toList();
     expect(codes, contains('engine.launch_injection_degraded'));
     await controller.close();
   });

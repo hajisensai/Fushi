@@ -45,8 +45,8 @@ class VideoBlackFlickerDetector {
   VideoBlackFlickerDetector({
     this.lateFramesPerSecondThreshold = 8,
     this.sustainedBadWindows = 3,
-  })  : assert(lateFramesPerSecondThreshold > 0),
-        assert(sustainedBadWindows > 0);
+  }) : assert(lateFramesPerSecondThreshold > 0),
+       assert(sustainedBadWindows > 0);
 
   /// 单个采样窗内「每秒迟帧数」触发阈值。保守默认 8/s：偶发 1~2 帧迟到属正常，持续
   /// >=8/s 才算显著卡顿/闪烁。

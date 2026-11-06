@@ -8,9 +8,7 @@ import 'video_fushi_page_source_corpus.dart';
 /// i18n keys. media_kit controls are not stable in headless widget tests, so
 /// this pins the page structure instead.
 void main() {
-  final File page = File(
-    'lib/src/pages/implementations/video_fushi_page.dart',
-  );
+  final File page = File('lib/src/pages/implementations/video_fushi_page.dart');
   final File baseI18n = File('lib/i18n/strings.i18n.json');
   final File generated = File('lib/i18n/strings.g.dart');
 
@@ -34,21 +32,33 @@ void main() {
 
   String bottomBarHelper() {
     final int start = src.indexOf('Widget _centeredBottomControlBar(');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: 'shared bottom bar helper must exist');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: 'shared bottom bar helper must exist',
+    );
     final int end = src.indexOf('Widget _seekLabelButton(', start);
-    expect(end, greaterThan(start),
-        reason: '_centeredBottomControlBar should close normally');
+    expect(
+      end,
+      greaterThan(start),
+      reason: '_centeredBottomControlBar should close normally',
+    );
     return src.substring(start, end);
   }
 
   String bottomSlotButtonBuilder() {
     final int start = src.indexOf('Widget _buildBottomSlotButton(');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: 'bottom slot button builder must exist');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: 'bottom slot button builder must exist',
+    );
     final int end = src.indexOf('Widget _plainSlotButton(', start);
-    expect(end, greaterThan(start),
-        reason: '_buildBottomSlotButton should close normally');
+    expect(
+      end,
+      greaterThan(start),
+      reason: '_buildBottomSlotButton should close normally',
+    );
     return src.substring(start, end);
   }
 
@@ -76,8 +86,11 @@ void main() {
         reason: 'bottom transport should include Tooltip(message: t.$key)',
       );
     }
-    expect('Tooltip('.allMatches(slotButtons).length, greaterThanOrEqualTo(3),
-        reason: 'previous/play/next cue buttons each need a Tooltip');
+    expect(
+      'Tooltip('.allMatches(slotButtons).length,
+      greaterThanOrEqualTo(3),
+      reason: 'previous/play/next cue buttons each need a Tooltip',
+    );
     expect(
       'tooltip: t.video_bottom_seek_back'.allMatches(slotButtons).length,
       1,
@@ -88,8 +101,11 @@ void main() {
       1,
       reason: '+10s seek button should pass tooltip into _seekLabelButton',
     );
-    expect(bar.contains('VideoControlSlot.bottomCenter'), isTrue,
-        reason: 'shared bar should render transport buttons from bottomCenter');
+    expect(
+      bar.contains('VideoControlSlot.bottomCenter'),
+      isTrue,
+      reason: 'shared bar should render transport buttons from bottomCenter',
+    );
   });
 
   test('desktop and mobile bottom bars both delegate to the shared helper', () {
@@ -118,10 +134,16 @@ void main() {
 
   test('bottom tooltip i18n keys exist in base and generated files', () {
     for (final String key in tooltipKeys) {
-      expect(i18nSrc.contains('"$key"'), isTrue,
-          reason: 'strings.i18n.json missing key $key');
-      expect(genSrc.contains('String get $key'), isTrue,
-          reason: 'strings.g.dart missing getter $key');
+      expect(
+        i18nSrc.contains('"$key"'),
+        isTrue,
+        reason: 'strings.i18n.json missing key $key',
+      );
+      expect(
+        genSrc.contains('String get $key'),
+        isTrue,
+        reason: 'strings.g.dart missing getter $key',
+      );
     }
   });
 }

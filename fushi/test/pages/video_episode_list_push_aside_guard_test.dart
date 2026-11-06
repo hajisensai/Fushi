@@ -85,8 +85,10 @@ void main() {
     // _showVideoSidePanel 开浮层时关剧集列表。
     final int showStart = src.indexOf('void _showVideoSidePanel(');
     expect(showStart, greaterThan(-1));
-    final int showEnd =
-        src.indexOf('\n  void _hideVideoSidePanel()', showStart);
+    final int showEnd = src.indexOf(
+      '\n  void _hideVideoSidePanel()',
+      showStart,
+    );
     expect(showEnd, greaterThan(showStart));
     final String showBody = src.substring(showStart, showEnd);
     expect(
@@ -98,32 +100,39 @@ void main() {
 
   // 三条关闭路径（面板头部 × / Esc / 控制条剧集按钮）必须语义等价——都经单一真相源
   // _closeEpisodeList，避免「关闭副作用各写一份」再分叉（与 TODO-637 字幕列表同纪律）。
-  group(
-      'TODO-638 close-path parity: three close paths funnel through '
+  group('TODO-638 close-path parity: three close paths funnel through '
       '_closeEpisodeList', () {
-    test(
-        '_closeEpisodeList 含全部三项关闭副作用'
+    test('_closeEpisodeList 含全部三项关闭副作用'
         '（隐藏列表 + 唤回控制条 + 归还焦点）', () {
       final int start = src.indexOf('void _closeEpisodeList() {');
       expect(start, greaterThan(-1), reason: '应有单一真相源 _closeEpisodeList');
       final int end = src.indexOf('\n  }', start);
       final String body = src.substring(start, end);
-      expect(body.contains('_episodeListVisible.value = false'), isTrue,
-          reason: '关闭应隐藏剧集轨道');
-      expect(body.contains('_pokeControlsVisible()'), isTrue,
-          reason: '关闭应唤回控制条');
       expect(
-          body.contains(
-              '_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'),
-          isTrue,
-          reason: '关闭应把焦点归还视频（否则键盘 / 手柄失焦）');
+        body.contains('_episodeListVisible.value = false'),
+        isTrue,
+        reason: '关闭应隐藏剧集轨道',
+      );
+      expect(
+        body.contains('_pokeControlsVisible()'),
+        isTrue,
+        reason: '关闭应唤回控制条',
+      );
+      expect(
+        body.contains(
+          '_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)',
+        ),
+        isTrue,
+        reason: '关闭应把焦点归还视频（否则键盘 / 手柄失焦）',
+      );
     });
 
     test('面板头部 × 的 onClose 经 _closeEpisodeList', () {
       expect(
         src.contains('onClose: _closeEpisodeList'),
         isTrue,
-        reason: 'VideoEpisodePanel 的 onClose 应复用 _closeEpisodeList，与 Esc / '
+        reason:
+            'VideoEpisodePanel 的 onClose 应复用 _closeEpisodeList，与 Esc / '
             '控制条剧集按钮关闭路径等价',
       );
     });
@@ -133,8 +142,9 @@ void main() {
       // 语句是 `_closeEpisodeList();`（即 Esc 分支逐级退出）。用 \s* 容忍缩进/换行，
       // 避免 escape 处理器被重构成不同嵌套深度（如 TODO-1342 手柄映射）时假红。
       expect(
-        RegExp(r'if \(_episodeListVisible\.value\) \{\s*_closeEpisodeList\(\);')
-            .hasMatch(src),
+        RegExp(
+          r'if \(_episodeListVisible\.value\) \{\s*_closeEpisodeList\(\);',
+        ).hasMatch(src),
         isTrue,
         reason: 'Esc 分支应在剧集列表开着时调 _closeEpisodeList 逐级退出',
       );
@@ -157,8 +167,11 @@ void main() {
 
   test('视频布局用 Stack 渲染底部剧集轨道，不把它放进 push-aside Row', () {
     final int start = src.indexOf('Widget _videoWithSubtitlePanel(');
-    expect(start, greaterThan(-1),
-        reason: 'should have push-aside layout _videoWithSubtitlePanel');
+    expect(
+      start,
+      greaterThan(-1),
+      reason: 'should have push-aside layout _videoWithSubtitlePanel',
+    );
     final int end = src.indexOf('\n  Widget ', start + 1);
     final String body = src.substring(start, end);
     expect(
@@ -174,12 +187,21 @@ void main() {
     final int barrier = body.indexOf("'video-episode-dismiss-barrier'");
     final int panel = body.indexOf('_episodeOverlayPanel(episodeVisible)');
     expect(barrier, greaterThan(-1), reason: '选集打开时应在视频区挂点外关闭 barrier');
-    expect(panel, greaterThan(barrier),
-        reason: '选集横轨必须绘制在 barrier 之上，保证卡片与 X 仍可点击');
-    expect(body.contains('if (episodeVisible)'), isTrue,
-        reason: '选集隐藏时 barrier 必须从树中移除，不能拦截普通视频点击');
-    expect(body.contains('onTap: _closeEpisodeList'), isTrue,
-        reason: '点击视频区应复用选集关闭的单一真相源');
+    expect(
+      panel,
+      greaterThan(barrier),
+      reason: '选集横轨必须绘制在 barrier 之上，保证卡片与 X 仍可点击',
+    );
+    expect(
+      body.contains('if (episodeVisible)'),
+      isTrue,
+      reason: '选集隐藏时 barrier 必须从树中移除，不能拦截普通视频点击',
+    );
+    expect(
+      body.contains('onTap: _closeEpisodeList'),
+      isTrue,
+      reason: '点击视频区应复用选集关闭的单一真相源',
+    );
     expect(
       body.contains('_episodeSidePanel('),
       isFalse,
@@ -201,8 +223,11 @@ void main() {
     final int episodeGuard = body.indexOf('if (_episodeListVisible.value)');
     final int doubleClick = body.indexOf('final DateTime now = DateTime.now()');
     expect(episodeGuard, greaterThan(-1));
-    expect(doubleClick, greaterThan(episodeGuard),
-        reason: '选集可见门控必须先于双击 / 暂停 / 全屏判定');
+    expect(
+      doubleClick,
+      greaterThan(episodeGuard),
+      reason: '选集可见门控必须先于双击 / 暂停 / 全屏判定',
+    );
     expect(
       body.substring(episodeGuard, doubleClick),
       contains('return;'),
@@ -211,28 +236,53 @@ void main() {
   });
 
   test('剧集面板封面统一走 resolveMediaCoverImage，兼容本地与互联成员', () {
-    expect(src.contains('this.coverPath,'), isTrue,
-        reason: '_PlaylistEpisodeRef 应承载本地封面路径');
-    expect(src.contains('this.coverUrl,'), isTrue,
-        reason: '_PlaylistEpisodeRef 应承载互联封面 URL');
-    expect(src.contains('this.coverCacheKey,'), isTrue,
-        reason: '_PlaylistEpisodeRef 应承载远端稳定缓存键');
-    expect(src.contains('coverPath: er.coverPath'), isTrue,
-        reason: '本地合集成员应把 video_books.coverPath 带进面板');
-    expect(src.contains('coverUrl: m.coverUrl'), isTrue,
-        reason: '互联合集成员应把 RemoteVideoInfo.coverUrl 带进面板');
-    expect(src.contains('coverCacheKey: m.id'), isTrue,
-        reason: '互联封面应使用 RemoteVideoInfo.id 作稳定缓存键');
-    expect(src.contains('resolveMediaCoverImage('), isTrue,
-        reason: '封面来源应统一走显示侧解析器，不在剧集面板手写来源分支');
-    expect(src.contains('episodes: _episodePanelEntries()'), isTrue,
-        reason: 'VideoEpisodePanel 应接收解析后的标题与封面条目');
+    expect(
+      src.contains('this.coverPath,'),
+      isTrue,
+      reason: '_PlaylistEpisodeRef 应承载本地封面路径',
+    );
+    expect(
+      src.contains('this.coverUrl,'),
+      isTrue,
+      reason: '_PlaylistEpisodeRef 应承载互联封面 URL',
+    );
+    expect(
+      src.contains('this.coverCacheKey,'),
+      isTrue,
+      reason: '_PlaylistEpisodeRef 应承载远端稳定缓存键',
+    );
+    expect(
+      src.contains('coverPath: er.coverPath'),
+      isTrue,
+      reason: '本地合集成员应把 video_books.coverPath 带进面板',
+    );
+    expect(
+      src.contains('coverUrl: m.coverUrl'),
+      isTrue,
+      reason: '互联合集成员应把 RemoteVideoInfo.coverUrl 带进面板',
+    );
+    expect(
+      src.contains('coverCacheKey: m.id'),
+      isTrue,
+      reason: '互联封面应使用 RemoteVideoInfo.id 作稳定缓存键',
+    );
+    expect(
+      src.contains('resolveMediaCoverImage('),
+      isTrue,
+      reason: '封面来源应统一走显示侧解析器，不在剧集面板手写来源分支',
+    );
+    expect(
+      src.contains('episodes: _episodePanelEntries()'),
+      isTrue,
+      reason: 'VideoEpisodePanel 应接收解析后的标题与封面条目',
+    );
   });
 
   test('剧集轨道也门控控制条 / rail 可见性（与字幕列表一致）', () {
     // _applyControlsVisibilityFromMediaKit 的 gated 应含 _episodeListVisible。
-    final int start =
-        src.indexOf('void _applyControlsVisibilityFromMediaKit() {');
+    final int start = src.indexOf(
+      'void _applyControlsVisibilityFromMediaKit() {',
+    );
     expect(start, greaterThan(-1));
     final int end = src.indexOf('\n  }', start);
     final String body = src.substring(start, end);

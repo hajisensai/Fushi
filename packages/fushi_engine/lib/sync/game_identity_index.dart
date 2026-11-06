@@ -7,7 +7,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// `galgames.id` 是添加时刻的微秒时间戳，**只在本机有意义**：同一款游戏在两台
 /// 电脑上各加一次，id 必然不同。跨端要对上号只能靠内容身份，按可信度排序：
 ///
-/// 1. `vndb:<id>` / `bgm:<id>`——刮削源给出的外部条目 id（[GalgameSources].externalId）；
+/// 1. `vndb:<id>` / `bgm:<id>` / `dlsite:<编号>`——刮削源给出的外部条目 id（[GalgameSources].externalId）；
 /// 2. `exe:<归一化 exe 路径>`——两台机器装在同一路径（常见于整盘迁移 / 同步盘）；
 /// 3. `title:<归一化标题>`——用户改的名、刮削名 / 中文名、入库时手填的名。
 ///    未改名的默认名（= exe 文件名去扩展名，如 `game` / `start`）**不产 title 键**：
@@ -134,7 +134,11 @@ class GameIdentityIndex {
     return null;
   }
 
-  static const List<String> _externalSources = <String>['vndb', 'bgm'];
+  static const List<String> _externalSources = <String>[
+    'vndb',
+    'bgm',
+    'dlsite',
+  ];
 
   /// 同一刮削源上两边都有 id 且互不相交 ⇒ 不是同一款游戏。
   static bool _externalIdsConflict(List<String> remote, List<String> local) {

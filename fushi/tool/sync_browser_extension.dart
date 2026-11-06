@@ -34,8 +34,9 @@ List<String> collectMirroredFiles(Directory root) {
   final List<String> out = <String>[];
   for (final FileSystemEntity e in root.listSync(recursive: true)) {
     if (e is! File) continue;
-    final String rel =
-        p.relative(e.path, from: root.path).replaceAll('\\', '/');
+    final String rel = p
+        .relative(e.path, from: root.path)
+        .replaceAll('\\', '/');
     if (!isMirroredExtensionFile(rel)) continue;
     out.add(rel);
   }
@@ -50,9 +51,11 @@ void main(List<String> args) {
   final String scriptDir = p.dirname(Platform.script.toFilePath());
   final String fushiRoot = p.normalize(p.join(scriptDir, '..'));
   final Directory source = Directory(
-      p.normalize(p.join(fushiRoot, '..', 'tools', 'browser-extension')));
-  final Directory mirror =
-      Directory(p.join(fushiRoot, 'assets', 'browser_extension'));
+    p.normalize(p.join(fushiRoot, '..', 'tools', 'browser-extension')),
+  );
+  final Directory mirror = Directory(
+    p.join(fushiRoot, 'assets', 'browser_extension'),
+  );
 
   if (!source.existsSync()) {
     stderr.writeln('找不到源目录：${source.path}');
@@ -60,8 +63,9 @@ void main(List<String> args) {
   }
 
   final List<String> manifest = collectMirroredFiles(source);
-  final List<String> existing =
-      mirror.existsSync() ? collectMirroredFiles(mirror) : <String>[];
+  final List<String> existing = mirror.existsSync()
+      ? collectMirroredFiles(mirror)
+      : <String>[];
 
   final List<String> updated = <String>[];
   for (final String rel in manifest) {
@@ -89,8 +93,9 @@ void main(List<String> args) {
   }
 
   final Set<String> manifestSet = manifest.toSet();
-  final List<String> stale =
-      existing.where((String rel) => !manifestSet.contains(rel)).toList();
+  final List<String> stale = existing
+      .where((String rel) => !manifestSet.contains(rel))
+      .toList();
   if (!checkOnly) {
     for (final String rel in stale) {
       File(p.join(mirror.path, rel)).deleteSync();

@@ -21,7 +21,9 @@ Future<Uint8List> _solidPng(
   );
   if (patch != null) {
     canvas.drawRect(
-        patch, Paint()..color = patchColor ?? const Color(0xFF00FF00));
+      patch,
+      Paint()..color = patchColor ?? const Color(0xFF00FF00),
+    );
   }
   final ui.Picture picture = recorder.endRecording();
   final ui.Image image = await picture.toImage(width, height);
@@ -36,8 +38,9 @@ Future<List<int>> _pixelAt(Uint8List pngBytes, int x, int y) async {
   final ui.Codec codec = await ui.instantiateImageCodec(pngBytes);
   final ui.FrameInfo frame = await codec.getNextFrame();
   final ui.Image image = frame.image;
-  final ByteData? raw =
-      await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+  final ByteData? raw = await image.toByteData(
+    format: ui.ImageByteFormat.rawRgba,
+  );
   final int offset = (y * image.width + x) * 4;
   final List<int> pixel = <int>[
     raw!.getUint8(offset),
@@ -129,7 +132,7 @@ void main() {
       final Uint8List? out = await composeScreenshotWithOverlays(
         frameBytes: base,
         overlayPngs: <Uint8List>[
-          Uint8List.fromList(<int>[9, 9, 9])
+          Uint8List.fromList(<int>[9, 9, 9]),
         ],
       );
       expect(out, isNotNull);

@@ -277,7 +277,13 @@ void main() {
         textDirection: paragraph.textDirection,
         textScaler: paragraph.textScaler,
       )..layout();
-      final double titleBudget = math.min(natural.width, appBar.width * 0.4);
+      // 浮动顶栏胶囊整体按 [kFushiFloatingCapsuleScale] 缩放绘制：屏上矩形是布局
+      // 宽度乘以缩放，自然宽度是未缩放的。统一折回屏幕坐标再比。
+      final double scale = title.width / paragraph.size.width;
+      final double titleBudget = math.min(
+        natural.width * scale,
+        appBar.width * 0.4,
+      );
       expect(
         title.width,
         greaterThanOrEqualTo(titleBudget - 0.5),
@@ -313,7 +319,13 @@ void main() {
     );
     await tester.pumpAndSettle();
     // 番名与集数分别落在两个框里：番名不该再是分集标题（`Episode 7`）。
-    expect(tester.widget<TextField>(glassUnwrap<TextField>(episodeField())).controller?.text, '7');
+    expect(
+      tester
+          .widget<TextField>(glassUnwrap<TextField>(episodeField()))
+          .controller
+          ?.text,
+      '7',
+    );
     expect(
       find.ancestor(
         of: find.text(t.video_jimaku_query),
@@ -334,6 +346,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(tester.widget<TextField>(glassUnwrap<TextField>(episodeField())).controller?.text, '');
+    expect(
+      tester
+          .widget<TextField>(glassUnwrap<TextField>(episodeField()))
+          .controller
+          ?.text,
+      '',
+    );
   });
 }

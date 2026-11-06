@@ -8,9 +8,21 @@ import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart'
     show jimakuLanguageLabel;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/bt_site_settings_route.dart';
+import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart'
+    show isVideoSubscriptionBtSiteMissingError;
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 class DownloadSubscriptionsPanel extends ConsumerStatefulWidget {
@@ -110,15 +122,17 @@ class _DownloadSubscriptionsPanelState
 
   String _formatTime(int? milliseconds) {
     if (milliseconds == null) return t.download_subscription_never_checked;
-    final DateTime value =
-        DateTime.fromMillisecondsSinceEpoch(milliseconds).toLocal();
+    final DateTime value = DateTime.fromMillisecondsSinceEpoch(
+      milliseconds,
+    ).toLocal();
     return FushiTimeFormat.dateHourMinute(value);
   }
 
   @override
   Widget build(BuildContext context) {
-    final AnimeDownloadSubscriptionService? service =
-        ref.read(appProvider).animeDownloadSubscriptionService;
+    final AnimeDownloadSubscriptionService? service = ref
+        .read(appProvider)
+        .animeDownloadSubscriptionService;
     if (_loading) return buildLoading();
     if (service == null) {
       return Center(child: Text(t.anime_download_store_unavailable));
@@ -141,10 +155,10 @@ class _DownloadSubscriptionsPanelState
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (BuildContext context, int index) =>
                             _buildSubscriptionCard(
-                          context,
-                          _subscriptions[index],
-                          checking,
-                        ),
+                              context,
+                              _subscriptions[index],
+                              checking,
+                            ),
                       ),
                     ),
             ),
@@ -224,7 +238,7 @@ class _DownloadSubscriptionsPanelState
       if (subscription.jimakuEntryName?.isNotEmpty ?? false)
         '${t.video_jimaku_source}: ${subscription.jimakuEntryName}'
             '${subscription.jimakuLanguage == null ? '' : ' · '
-                '${jimakuLanguageLabel(subscription.jimakuLanguage!)}'}',
+                      '${jimakuLanguageLabel(subscription.jimakuLanguage!)}'}',
       t.download_subscription_after_episode(
         episode: subscription.startAfterEpisode,
       ),
@@ -271,13 +285,35 @@ class _DownloadSubscriptionsPanelState
                     ),
                     style: theme.textTheme.bodySmall,
                   ),
-                if (subscription.lastError?.isNotEmpty ?? false)
+                // 没有可用 BT 站而暂停：中性提示 + 去添加的入口，不显示引擎标记。
+                if (isVideoSubscriptionBtSiteMissingError(
+                  subscription.lastError,
+                ))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: FushiInlineNotice(
+                      key: ValueKey<String>(
+                        'anime-subscription-bt-site-missing-${subscription.id}',
+                      ),
+                      severity: FushiNoticeSeverity.warning,
+                      message: t.bt_site_missing_status,
+                      actions: <Widget>[
+                        FushiTextButton(
+                          onPressed: () =>
+                              unawaited(pushBtSiteSettingsPage(context)),
+                          child: Text(t.bt_site_open_settings_action),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (subscription.lastError?.isNotEmpty ?? false)
                   Text(
                     subscription.lastError!,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.error),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.error,
+                    ),
                   ),
               ],
             ),

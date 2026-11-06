@@ -1,4 +1,3 @@
-
 /// 本地音频库内单个子来源（如 nhk16 / forvo）的偏好：名字 + 是否启用。
 ///
 /// 一个本地音频库（Yomitan Local Audio SQLite）的 `entries.source` 列可有多个
@@ -22,8 +21,10 @@ class LocalAudioSourcePref {
   LocalAudioSourcePref copyWith({bool? enabled}) =>
       LocalAudioSourcePref(name: name, enabled: enabled ?? this.enabled);
 
-  Map<String, dynamic> toJson() =>
-      <String, dynamic>{'name': name, 'enabled': enabled};
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'name': name,
+    'enabled': enabled,
+  };
 
   @override
   bool operator ==(Object other) =>

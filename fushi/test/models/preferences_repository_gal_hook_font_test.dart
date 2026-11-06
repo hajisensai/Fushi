@@ -30,7 +30,8 @@ void main() {
     expect(
       PreferencesRepository.galHookTextFontSizeDefault,
       kGalHookTextFontSize,
-      reason: '旧公式是 30 * clamp(140/140, 0.9, 2.5) = 30；两者必须一致，'
+      reason:
+          '旧公式是 30 * clamp(140/140, 0.9, 2.5) = 30；两者必须一致，'
           '否则没拖过浮窗的老用户升级后会看到字号突变',
     );
     expect(repo.galHookTextFontSize, kGalHookTextFontSize);
@@ -44,21 +45,29 @@ void main() {
   test('写入端按 [min, max] 钳位', () async {
     await repo.setGalHookTextFontSize(9999);
     expect(
-        repo.galHookTextFontSize, PreferencesRepository.galHookTextFontSizeMax);
+      repo.galHookTextFontSize,
+      PreferencesRepository.galHookTextFontSizeMax,
+    );
 
     await repo.setGalHookTextFontSize(-1);
     expect(
-        repo.galHookTextFontSize, PreferencesRepository.galHookTextFontSizeMin);
+      repo.galHookTextFontSize,
+      PreferencesRepository.galHookTextFontSizeMin,
+    );
   });
 
   test('读取端也钳位：绕过 setter 写进来的越界脏值不会漏出去', () async {
     await repo.setPref('gal_hook_text_font_size', 500.0);
     expect(
-        repo.galHookTextFontSize, PreferencesRepository.galHookTextFontSizeMax);
+      repo.galHookTextFontSize,
+      PreferencesRepository.galHookTextFontSizeMax,
+    );
 
     await repo.setPref('gal_hook_text_font_size', 1.0);
     expect(
-        repo.galHookTextFontSize, PreferencesRepository.galHookTextFontSizeMin);
+      repo.galHookTextFontSize,
+      PreferencesRepository.galHookTextFontSizeMin,
+    );
   });
 
   test('非 double 的历史脏值不炸：int 收下、非数字回落默认', () async {
@@ -134,22 +143,34 @@ void main() {
     await repo.setGalHookTextPadding(999);
     await repo.setGalHookTextCornerRadius(999);
 
-    expect(repo.galHookTextLetterSpacing,
-        PreferencesRepository.galHookTextLetterSpacingMax);
-    expect(repo.galHookTextLineHeight,
-        PreferencesRepository.galHookTextLineHeightMin);
-    expect(repo.galHookTextBackgroundOpacity, 1);
-    expect(repo.galHookTextOutlineWidth,
-        PreferencesRepository.galHookTextOutlineWidthMin);
     expect(
-        repo.galHookTextPadding, PreferencesRepository.galHookTextPaddingMax);
-    expect(repo.galHookTextCornerRadius,
-        PreferencesRepository.galHookTextCornerRadiusMax);
+      repo.galHookTextLetterSpacing,
+      PreferencesRepository.galHookTextLetterSpacingMax,
+    );
+    expect(
+      repo.galHookTextLineHeight,
+      PreferencesRepository.galHookTextLineHeightMin,
+    );
+    expect(repo.galHookTextBackgroundOpacity, 1);
+    expect(
+      repo.galHookTextOutlineWidth,
+      PreferencesRepository.galHookTextOutlineWidthMin,
+    );
+    expect(
+      repo.galHookTextPadding,
+      PreferencesRepository.galHookTextPaddingMax,
+    );
+    expect(
+      repo.galHookTextCornerRadius,
+      PreferencesRepository.galHookTextCornerRadiusMax,
+    );
 
     await repo.setPref('gal_hook_text_outline_width', 999.0);
     await repo.setPref('gal_hook_text_alignment', 'right');
-    expect(repo.galHookTextOutlineWidth,
-        PreferencesRepository.galHookTextOutlineWidthMax);
+    expect(
+      repo.galHookTextOutlineWidth,
+      PreferencesRepository.galHookTextOutlineWidthMax,
+    );
     expect(repo.galHookTextAlignment, 'center');
   });
 }

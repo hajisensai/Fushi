@@ -84,7 +84,8 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: '这些行仍以旧名 Hibiki 对外报身份，改用 fushiUserAgent(<组件名>)：\n'
+      reason:
+          '这些行仍以旧名 Hibiki 对外报身份，改用 fushiUserAgent(<组件名>)：\n'
           '${offenders.join('\n')}',
     );
   });

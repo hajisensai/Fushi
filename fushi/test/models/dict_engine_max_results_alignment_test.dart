@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// BUG-1307 守卫：交给 C++ 引擎的结果上限必须**等于**本次真正要消费的词头预算
@@ -19,8 +18,9 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 ///    `buildPopupJsonFromLookup` 的输出（含 `bestLength`）逐字不变——这是「可以
 ///    降上限」的全部依据。
 /// 2. **load-more 不被缓存击穿**：引擎原始结果缓存的键必须带上限。
-/// 3. **接线守卫**：`app_model.dart` 真的把 `effectiveMaxTerms` 传给了引擎，
-///    且 FFI 缓存读写走的是带上限的键。
+/// 3. **接线守卫**：`app_model.dart` 真的把 `effectiveMaxTerms` 传给了引擎
+///    （经后台查词请求 `FushiLookupRequest.maxResults`），且后台查词 isolate 的
+///    FFI 缓存读写走的是带同一个上限的键。
 void main() {
   FushiLookupResult makeResult({
     required String matched,
@@ -87,31 +87,41 @@ void main() {
           maximumTerms: maxTerms,
         );
 
-        expect(fromCapped.entries.length, fromFull.entries.length,
-            reason: '条目数必须不变');
+        expect(
+          fromCapped.entries.length,
+          fromFull.entries.length,
+          reason: '条目数必须不变',
+        );
         for (int i = 0; i < fromFull.entries.length; i++) {
-          expect(fromCapped.entries[i].dictionaryName,
-              fromFull.entries[i].dictionaryName);
+          expect(
+            fromCapped.entries[i].dictionaryName,
+            fromFull.entries[i].dictionaryName,
+          );
           expect(fromCapped.entries[i].word, fromFull.entries[i].word);
           expect(fromCapped.entries[i].reading, fromFull.entries[i].reading);
           expect(fromCapped.entries[i].meaning, fromFull.entries[i].meaning);
         }
         // bestLength 是用户可见的整词高亮长度（global_lookup_controller）。
-        expect(fromCapped.bestLength, fromFull.bestLength,
-            reason: 'bestLength 变了会让横幅高亮跨度变化');
+        expect(
+          fromCapped.bestLength,
+          fromFull.bestLength,
+          reason: 'bestLength 变了会让横幅高亮跨度变化',
+        );
       });
 
       test('maxTerms=$maxTerms：popupJson 逐字节一致', () {
         final List<FushiLookupResult> full = engineResults(count: 200);
         expect(
           buildPopupJsonFromLookup(
-              results: full.take(maxTerms).toList(),
-              maximumTerms: maxTerms,
-              hiddenDictionaries: const <String>{}),
+            results: full.take(maxTerms).toList(),
+            maximumTerms: maxTerms,
+            hiddenDictionaries: const <String>{},
+          ),
           buildPopupJsonFromLookup(
-              results: full,
-              maximumTerms: maxTerms,
-              hiddenDictionaries: const <String>{}),
+            results: full,
+            maximumTerms: maxTerms,
+            hiddenDictionaries: const <String>{},
+          ),
         );
       });
     }
@@ -146,8 +156,31 @@ void main() {
 
     test('键格式 len:term/maxResults，term.length 用 UTF-16 code units', () {
       expect(buildFfiLookupCacheKey(term: '図書館', maxResults: 10), '3:図書館/10');
-      expect(buildFfiLookupCacheKey(term: '\u{2000B}', maxResults: 1),
-          '2:\u{2000B}/1');
+      expect(
+        buildFfiLookupCacheKey(term: '\u{2000B}', maxResults: 1),
+        '2:\u{2000B}/1',
+      );
+    });
+
+    test('键按引擎扫描窗口（前 17 码点）取，窗口外的余文不进键', () {
+      // 阅读器传的是「光标到句尾」的整段余文：同一位置、句尾不同的两次查词，引擎
+      // 结果完全相同（lookup.cpp 只看 scan_window + 窗口后一个码点）。
+      const String head = '一二三四五六七八九十壱弐参四伍六七';
+      expect(head.runes.length, 17);
+      expect(
+        buildFfiLookupCacheKey(term: '$head八九', maxResults: 10),
+        buildFfiLookupCacheKey(term: '$head十', maxResults: 10),
+      );
+      expect(
+        buildFfiLookupCacheKey(term: '$head八九', maxResults: 10),
+        isNot(
+          buildFfiLookupCacheKey(
+            term: '${head.substring(0, 16)}X',
+            maxResults: 10,
+          ),
+        ),
+        reason: '窗口内（含第 17 个码点）任何差异都必须进键',
+      );
     });
 
     test('load-more 的新上限不会命中首查的短结果集', () {
@@ -156,18 +189,28 @@ void main() {
           <String, List<FushiLookupResult>>{};
       cache[buildFfiLookupCacheKey(term: '図書館', maxResults: 10)] =
           engineResults(count: 10);
-      expect(cache[buildFfiLookupCacheKey(term: '図書館', maxResults: 20)], isNull,
-          reason: '若命中，load-more 拿不到新条目、allLoaded 会提前为 true');
+      expect(
+        cache[buildFfiLookupCacheKey(term: '図書館', maxResults: 20)],
+        isNull,
+        reason: '若命中，load-more 拿不到新条目、allLoaded 会提前为 true',
+      );
     });
   });
 
   group('BUG-1307 ③ 接线守卫：app_model 真的把词头预算传给引擎', () {
     late String source;
+    late String worker;
 
     setUpAll(() {
       final File f = File('lib/src/models/app_model.dart');
       expect(f.existsSync(), isTrue, reason: '守卫目标文件必须存在：${f.path}');
       source = f.readAsStringSync();
+      // 原生 lookup 与原始结果缓存现在都在后台查词 isolate 里。
+      final File w = File(
+        '../packages/fushi_dictionary/lib/src/engine/background_lookup.dart',
+      );
+      expect(w.existsSync(), isTrue, reason: '守卫目标文件必须存在：${w.path}');
+      worker = w.readAsStringSync();
     });
 
     /// 引擎入口现在有两条（源码出现顺序）：
@@ -186,7 +229,7 @@ void main() {
 
     test('每个引擎调用点的 maxResults 都是该路径本次消费的词头预算', () {
       final RegExp call = RegExp(
-        r'FushiDicts\.instance\.lookup\(\s*searchTerm,\s*maxResults:\s*([A-Za-z0-9_]+)\s*,',
+        r'FushiLookupRequest\(\s*text:\s*searchTerm,\s*maxResults:\s*([A-Za-z0-9_]+)\s*,',
         multiLine: true,
       );
       final List<String> budgets = call
@@ -196,35 +239,56 @@ void main() {
       // 逐点列名（而不是「至少一个」）：新增第三条查词路径必须来这里登记，顺带把
       // 「传硬编码 200」挡在门外——数字字面量虽然也能被 `[A-Za-z0-9_]+` 捕获，
       // 但绝不会等于登记表里的任何一个变量名。
-      expect(budgets, engineBudgets,
-          reason: 'BUG-1307：上限必须等于本次消费的词头预算，不得是硬编码常量');
+      expect(
+        budgets,
+        engineBudgets,
+        reason: 'BUG-1307：上限必须等于本次消费的词头预算，不得是硬编码常量',
+      );
     });
 
-    test('每条路径的 FFI 缓存键上限与它自己的引擎上限同源', () {
-      final RegExp key = RegExp(
-        r'buildFfiLookupCacheKey\(\s*term:\s*searchTerm,\s*maxResults:\s*([A-Za-z0-9_]+),',
-        multiLine: true,
-      );
-      final List<String> budgets = key
-          .allMatches(source)
-          .map((RegExpMatch m) => m.group(1)!)
-          .toList(growable: false);
+    test('后台 FFI 缓存键上限与交给引擎的上限同源（都是 request.maxResults）', () {
       // 键里的上限一旦与引擎上限脱钩，load-more 就会命中首查的短结果集
-      // （下一组用例守的正是这个后果）。两条路径按同样顺序出现，逐条同源。
-      expect(budgets, engineBudgets, reason: '缓存键的上限必须与同一路径交给引擎的上限是同一个变量');
+      // （上一组用例守的正是这个后果）。
+      expect(
+        RegExp(
+          r'buildFfiLookupCacheKey\(\s*term:\s*request\.text,\s*maxResults:\s*request\.maxResults,',
+        ).hasMatch(worker),
+        isTrue,
+        reason: '缓存键必须用请求的上限',
+      );
+      expect(
+        RegExp(
+          r'_lookupWith\(\s*bindings,\s*handle,\s*request\.text,\s*maxResults:\s*request\.maxResults,',
+        ).hasMatch(worker),
+        isTrue,
+        reason: '交给引擎的上限必须是同一个请求上限',
+      );
     });
 
     test('不再存在 maximumDictionarySearchResults 这个独立上限常量', () {
-      expect(source.contains('maximumDictionarySearchResults'), isFalse,
-          reason: '独立的 200 常量已被删除；恢复它就是恢复 20 倍白解压');
+      expect(
+        source.contains('maximumDictionarySearchResults'),
+        isFalse,
+        reason: '独立的 200 常量已被删除；恢复它就是恢复 20 倍白解压',
+      );
     });
 
-    test('FFI 缓存读写都走带上限的 ffiCacheKey', () {
+    test('FFI 缓存读写都走带上限的 cacheKey', () {
       expect(
-          source.contains('dictRepo.getCachedFfiLookup(ffiCacheKey)'), isTrue,
-          reason: '读 FFI 缓存必须用带上限的键，否则 load-more 被短结果集击穿');
-      expect(source.contains('dictRepo.cacheFfiLookup(ffiCacheKey,'), isTrue,
-          reason: '写 FFI 缓存必须用带上限的键');
+        worker.contains('cache?.get(cacheKey)'),
+        isTrue,
+        reason: '读 FFI 缓存必须用带上限的键，否则 load-more 被短结果集击穿',
+      );
+      expect(
+        worker.contains('cache?.put(cacheKey, ffiResults,'),
+        isTrue,
+        reason: '写 FFI 缓存必须用带上限的键',
+      );
+      expect(
+        source.contains('FushiDicts.instance.lookup('),
+        isFalse,
+        reason: '查词热路径不得再在 UI isolate 上同步调引擎',
+      );
     });
   });
 }

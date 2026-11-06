@@ -1,7 +1,10 @@
 import 'dart:typed_data';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart'
+    show AudiobookPlayerController;
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 
@@ -260,6 +263,143 @@ void main() {
       c.load(items(), position: const LyricsBookPosition(3, 0));
       c.showAt(9);
       expect(c.shown, 1);
+    });
+  });
+
+  // 反馈 yR5QF92EHO / BUG-4065：卡的弹出与收起必须成对。旧实现只有「停留结束」
+  // 会收卡，图片暂停 0 秒 / 跳着经过插图 / 窗口不可见时卡永久留在左下角。
+  group('LyricsIllustrationController 插图卡自动收起', () {
+    List<LyricsIllustration> items() => <LyricsIllustration>[
+      _item('a', 1, 0),
+      _item('b', 2, 0),
+      _item('c', 5, 1200),
+    ];
+
+    LyricsIllustrationController revealed() {
+      final LyricsIllustrationController c = LyricsIllustrationController()
+        ..load(
+          items(),
+          position: const LyricsBookPosition(3, 10),
+          audioPosition: const Duration(minutes: 30),
+        );
+      expect(
+        c.observe(
+          const LyricsBookPosition(5, 1300),
+          audioPosition: const Duration(minutes: 30, seconds: 9),
+        ),
+        isTrue,
+      );
+      expect(c.cardVisible, isTrue);
+      return c;
+    }
+
+    test('没有停留：到展示时长自动收卡，插图位仍留缩略图', () {
+      fakeAsync((FakeAsync async) {
+        final LyricsIllustrationController c = revealed();
+        int notified = 0;
+        c.addListener(() => notified++);
+        async.elapse(
+          lyricsIllustrationCardDisplayDuration(0) -
+              const Duration(milliseconds: 1),
+        );
+        expect(c.cardVisible, isTrue);
+        async.elapse(const Duration(milliseconds: 1));
+        expect(c.cardVisible, isFalse);
+        expect(c.shown, 2, reason: '只收卡，插图位不回封面');
+        expect(notified, 1);
+        expect(c.debugCardAutoClosePending, isFalse);
+      });
+    });
+
+    test('展示时长跟「图片暂停」秒数走：0 秒用打开停留的默认秒数', () {
+      expect(
+        lyricsIllustrationCardDisplayDuration(12),
+        const Duration(seconds: 12),
+      );
+      expect(
+        lyricsIllustrationCardDisplayDuration(0),
+        const Duration(seconds: AudiobookPlayerController.imagePauseOnSec),
+      );
+    });
+
+    test('设了图片暂停秒数：没进停留的卡按该秒数收起（不是固定 5 秒）', () {
+      fakeAsync((FakeAsync async) {
+        final ValueNotifier<int> pause = ValueNotifier<int>(12);
+        addTearDown(pause.dispose);
+        final LyricsIllustrationController c = LyricsIllustrationController()
+          ..imagePauseSec = pause
+          ..load(
+            items(),
+            position: const LyricsBookPosition(3, 10),
+            audioPosition: const Duration(minutes: 30),
+          );
+        expect(
+          c.observe(
+            const LyricsBookPosition(5, 1300),
+            audioPosition: const Duration(minutes: 30, seconds: 9),
+          ),
+          isTrue,
+        );
+        async.elapse(const Duration(seconds: 11));
+        expect(c.cardVisible, isTrue, reason: '12 秒的停留设置下 11 秒时卡还在');
+        async.elapse(const Duration(seconds: 1));
+        expect(c.cardVisible, isFalse);
+        expect(c.shown, 2);
+      });
+    });
+
+    test('停留接管（holdCardOpen）后不再按展示时长收卡', () {
+      fakeAsync((FakeAsync async) {
+        final LyricsIllustrationController c = revealed()..holdCardOpen();
+        async.elapse(lyricsIllustrationCardDisplayDuration(0) * 3);
+        expect(c.cardVisible, isTrue);
+        // 停留结束由调用方收卡。
+        c.closeCard();
+        expect(c.cardVisible, isFalse);
+      });
+    });
+
+    test('用户翻看插图 / 手动关卡 / 回封面 / 重新装载都作废计时', () {
+      fakeAsync((FakeAsync async) {
+        final LyricsIllustrationController browsing = revealed()..showAt(0);
+        expect(browsing.debugCardAutoClosePending, isFalse);
+        async.elapse(lyricsIllustrationCardDisplayDuration(0) * 2);
+        expect(browsing.cardVisible, isTrue, reason: '用户接手后留到自己关');
+
+        final LyricsIllustrationController closed = revealed()..closeCard();
+        expect(closed.debugCardAutoClosePending, isFalse);
+
+        final LyricsIllustrationController dismissed = revealed()..dismiss();
+        expect(dismissed.debugCardAutoClosePending, isFalse);
+
+        final LyricsIllustrationController reloaded = revealed()
+          ..load(items(), position: const LyricsBookPosition(0, 0));
+        expect(reloaded.debugCardAutoClosePending, isFalse);
+
+        final LyricsIllustrationController disposed = revealed();
+        disposed.dispose();
+        expect(disposed.debugCardAutoClosePending, isFalse);
+        expect(async.pendingTimers, isEmpty);
+      });
+    });
+
+    test('红点模式（不自动弹卡）不起计时', () {
+      fakeAsync((FakeAsync async) {
+        final LyricsIllustrationController c = LyricsIllustrationController()
+          ..autoOpenCard = false
+          ..load(
+            items(),
+            position: const LyricsBookPosition(3, 10),
+            audioPosition: const Duration(minutes: 30),
+          );
+        c.observe(
+          const LyricsBookPosition(5, 1300),
+          audioPosition: const Duration(minutes: 30, seconds: 9),
+        );
+        expect(c.shown, 2);
+        expect(c.cardVisible, isFalse);
+        expect(c.debugCardAutoClosePending, isFalse);
+      });
     });
   });
 

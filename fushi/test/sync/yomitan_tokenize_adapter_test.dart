@@ -1,17 +1,17 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
 void main() {
   group('buildYomitanTokenizeResponse', () {
     test('wraps each segment in its own array (yomitan 2D content)', () {
-      List<String> fakeTokenizer(String t) => ['日本語', 'は', '難しい'];
-      String fakeReading(String w) => w == '日本語' ? 'にほんご' : '';
-
       final out = buildYomitanTokenizeResponse(
         text: '日本語は難しい',
         index: 0,
-        tokenize: fakeTokenizer,
-        readingOf: fakeReading,
+        segments: <TokenizedSegment>[
+          (text: '日本語', reading: 'にほんご'),
+          (text: 'は', reading: ''),
+          (text: '難しい', reading: ''),
+        ],
       );
 
       expect(out['id'], 'scan');
@@ -32,8 +32,8 @@ void main() {
       final out = buildYomitanTokenizeResponse(
         text: '',
         index: 2,
-        tokenize: (String t) => <String>[],
-        readingOf: (String w) => '',
+        // 空文本不看 segments：一律空 content。
+        segments: <TokenizedSegment>[(text: 'x', reading: '')],
       );
       expect(out['index'], 2);
       expect(out['content'], <dynamic>[]);

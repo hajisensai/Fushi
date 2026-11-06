@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 源码守卫（BUG-070）：有声书拖动倍速在桌面端（media_kit / libmpv）闪退。
 ///
@@ -35,8 +35,9 @@ void main() {
 
     // 配置必须在 ensureInitialized() 之前（pitch 在 Player 创建时读取，
     // 设置必须先于任何播放器构造）。
-    final int pitchIdx =
-        src.indexOf(RegExp(r'JustAudioMediaKit\.pitch\s*=\s*false'));
+    final int pitchIdx = src.indexOf(
+      RegExp(r'JustAudioMediaKit\.pitch\s*=\s*false'),
+    );
     final int ensureIdx = src.indexOf('JustAudioMediaKit.ensureInitialized()');
     expect(pitchIdx, greaterThanOrEqualTo(0));
     expect(ensureIdx, greaterThanOrEqualTo(0));

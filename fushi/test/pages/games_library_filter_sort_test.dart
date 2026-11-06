@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_library_query.dart';
@@ -16,7 +16,8 @@ import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
 import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 import '../helpers/test_platform_services.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -34,13 +35,13 @@ void main() {
   });
 
   Future<AppModel> buildModel() async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
-    final Directory tmpDir =
-        Directory.systemTemp.createTempSync('fushi_games_toolbar_');
+    final Directory tmpDir = Directory.systemTemp.createTempSync(
+      'fushi_games_toolbar_',
+    );
     addTearDown(() {
       try {
         tmpDir.deleteSync(recursive: true);
@@ -48,7 +49,9 @@ void main() {
     });
     final AppModel appModel = AppModel(testPlatformServices())
       ..wireLocalAudioForTesting(
-          prefsRepo: prefsRepo, databaseDirectory: tmpDir)
+        prefsRepo: prefsRepo,
+        databaseDirectory: tmpDir,
+      )
       ..wireDatabaseForTesting(db);
 
     await appModel.setGalgames(<GalgameEntry>[
@@ -90,9 +93,9 @@ void main() {
   /// 游戏进合集后网格改为 CustomScrollView 分区（合集横排行 + 散卡 SliverGrid），
   /// 祖先随之从 GridView 换成 CustomScrollView，语义不变。
   Finder cardTitle(String title) => find.descendant(
-        of: find.byType(CustomScrollView),
-        matching: find.text(title),
-      );
+    of: find.byType(CustomScrollView),
+    matching: find.text(title),
+  );
 
   Future<void> pumpPage(WidgetTester tester, AppModel appModel) async {
     navKey = GlobalKey<NavigatorState>();
@@ -167,7 +170,8 @@ void main() {
     await tester.pumpAndSettle();
     // 卡片封面上的状态角标也写着「在玩」：筛选面板在最上层，取最后一个。
     await tester.tap(
-        find.text(galgamePlayStatusLabel(GalgamePlayStatus.playing)).last);
+      find.text(galgamePlayStatusLabel(GalgamePlayStatus.playing)).last,
+    );
     await tester.pumpAndSettle();
     navKey.currentState!.pop();
     await tester.pumpAndSettle();
@@ -176,14 +180,14 @@ void main() {
     expect(cardTitle('贝塔物语'), findsNothing);
 
     // 筛选偏好持久化（下次进页面还在）。
-    final GalgameLibraryView saved =
-        GalgameLibraryView.decode(appModel.galgameLibraryView);
+    final GalgameLibraryView saved = GalgameLibraryView.decode(
+      appModel.galgameLibraryView,
+    );
     expect(saved.status, GalgamePlayStatus.playing);
   });
 
   // 2026-10 体验优化：窄屏工具条两行（搜索独占一行），刮削 / 排序收进溢出菜单。
-  testWidgets('窄屏：搜索框独占一行，排序经溢出菜单仍可切换',
-      (WidgetTester tester) async {
+  testWidgets('窄屏：搜索框独占一行，排序经溢出菜单仍可切换', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(400, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -203,8 +207,9 @@ void main() {
     expect(find.byIcon(FushiIcons.sort), findsNothing);
 
     Future<void> pickSortFromOverflow() async {
-      await tester
-          .tap(find.byKey(const ValueKey<String>('games_toolbar_overflow')));
+      await tester.tap(
+        find.byKey(const ValueKey<String>('games_toolbar_overflow')),
+      );
       await tester.pumpAndSettle();
       expect(find.text(t.scrape_all), findsOneWidget);
       await tester.tap(find.text(t.game_sort_name).last);

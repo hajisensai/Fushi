@@ -59,10 +59,10 @@ class DictResourceMaterializeResult {
   /// 三个集合都空：输入为空时的快捷返回。
   static const DictResourceMaterializeResult empty =
       DictResourceMaterializeResult(
-    ready: <String>[],
-    pending: <String>[],
-    failed: <String, String>{},
-  );
+        ready: <String>[],
+        pending: <String>[],
+        failed: <String, String>{},
+      );
 }
 
 /// 在后台 isolate 里对 [dictDirs] 逐目录做触读物化探测，最多等 [budget]。

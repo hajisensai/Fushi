@@ -103,7 +103,8 @@ class _FakeAnkiConnectService extends AnkiConnectService {
   /// 过的，只有 HTTP 被换掉。
   @override
   Future<List<AnkiConnectBatchResult>> requestMulti(
-      List<AnkiConnectAction> actions) async {
+    List<AnkiConnectAction> actions,
+  ) async {
     if (actions.isEmpty) return const <AnkiConnectBatchResult>[];
     roundTrips.add(actions.first.action);
     final List<AnkiConnectBatchResult> out = <AnkiConnectBatchResult>[];
@@ -149,7 +150,9 @@ class _FakeAnkiConnectService extends AnkiConnectService {
 
   @override
   Future<void> updateModelTemplates(
-      String modelName, List<AnkiCardTemplate> tmpls) async {
+    String modelName,
+    List<AnkiCardTemplate> tmpls,
+  ) async {
     _templates[modelName] = tmpls;
     templateWrites.add(modelName);
   }
@@ -183,8 +186,9 @@ void main() {
   });
 
   void writeMedia(String name, List<int> bytes) {
-    File('${mediaDir.path}${Platform.pathSeparator}$name')
-        .writeAsBytesSync(Uint8List.fromList(bytes));
+    File(
+      '${mediaDir.path}${Platform.pathSeparator}$name',
+    ).writeAsBytesSync(Uint8List.fromList(bytes));
   }
 
   bool mediaExists(String name) =>
@@ -212,8 +216,11 @@ void main() {
     final String all = buf.toString();
     for (final String name in allNames) {
       if (!textReferencesMediaName(all, name)) continue;
-      expect(mediaExists(name), isTrue,
-          reason: '仍被引用的媒体 $name 不在媒体目录里（卡片会显示问号方框）');
+      expect(
+        mediaExists(name),
+        isTrue,
+        reason: '仍被引用的媒体 $name 不在媒体目录里（卡片会显示问号方框）',
+      );
     }
   }
 
@@ -244,8 +251,11 @@ void main() {
     expect(mediaExists('a.jpg'), isTrue);
     expect(service.notes[1]!['Front'], '<img src="a.jpg">');
     expect(service.notes[2]!['Front'], '<img src="other.jpg">');
-    expectEveryReferenceResolves(
-        service, <String>['a.jpg', 'bbbb.jpg', 'other.jpg']);
+    expectEveryReferenceResolves(service, <String>[
+      'a.jpg',
+      'bbbb.jpg',
+      'other.jpg',
+    ]);
   });
 
   test('大小相同但字节不同 → 不成组、绝不删', () async {
@@ -292,13 +302,85 @@ void main() {
     expect(service.notes[1]!['Front'], '<img src="bbbb.jpg">');
   });
 
+  group('超过 1 MiB 的媒体走流式哈希 / 流式逐字节复核', () {
+    // 1 MiB + 3：跨过整读分界与 1 MiB 分段边界，末尾 3 字节落在第二段。
+    final List<int> big = List<int>.generate(
+      (1 << 20) + 3,
+      (int i) => (i * 131 + 17) & 0xff,
+    );
+    List<int> withLast(int value) => <int>[...big]..[big.length - 1] = value;
+
+    test('字节相同 → 成组并删副本', () async {
+      writeMedia('a.mp4', big);
+      writeMedia('bbbb.mp4', big);
+      final _FakeAnkiConnectService service = _FakeAnkiConnectService(
+        mediaDirPath: mediaDir.path,
+        notes: <int, Map<String, String>>{
+          1: <String, String>{'Front': '[sound:bbbb.mp4]'},
+        },
+      );
+      final AnkiMediaDedupReport? report = await AnkiConnectRepository(
+        service: service,
+      ).runMediaDedup();
+
+      expect(report!.deletions.single.filename, 'bbbb.mp4');
+      expect(report.deletions.single.bytes, big.length);
+      expect(service.deleted, <String>['bbbb.mp4']);
+      expect(service.notes[1]!['Front'], '[sound:a.mp4]');
+    });
+
+    test('只差最后一个字节 → 哈希不同、不成组', () async {
+      writeMedia('a.mp4', big);
+      writeMedia('b.mp4', withLast(big.last ^ 0xff));
+      final _FakeAnkiConnectService service = _FakeAnkiConnectService(
+        mediaDirPath: mediaDir.path,
+        notes: <int, Map<String, String>>{},
+      );
+      final AnkiMediaDedupReport? report = await AnkiConnectRepository(
+        service: service,
+      ).runMediaDedup();
+
+      expect(report!.groupCount, 0);
+      expect(service.deleted, isEmpty);
+    });
+
+    for (final (String label, List<int> Function() mutated)
+        in <(String, List<int> Function())>[
+          ('第二段末字节被改', () => withLast(big.last ^ 0xff)),
+          ('被截短', () => big.sublist(0, big.length - 1)),
+          ('被加长', () => <int>[...big, 0]),
+        ]) {
+      test('计划之后副本$label → 流式复核挡住删除', () async {
+        writeMedia('a.mp4', big);
+        writeMedia('bbbb.mp4', big);
+        final _FakeAnkiConnectService service = _FakeAnkiConnectService(
+          mediaDirPath: mediaDir.path,
+          notes: <int, Map<String, String>>{
+            1: <String, String>{'Front': '[sound:bbbb.mp4]'},
+          },
+          onFindNotes: () async => writeMedia('bbbb.mp4', mutated()),
+        );
+        final AnkiMediaDedupReport? report = await AnkiConnectRepository(
+          service: service,
+        ).runMediaDedup();
+
+        expect(report!.deletions, isEmpty);
+        expect(report.skipped, 1);
+        expect(service.deleted, isEmpty);
+        expect(mediaExists('bbbb.mp4'), isTrue);
+        expect(service.notes[1]!['Front'], '[sound:bbbb.mp4]');
+      });
+    }
+  });
+
   test('必修①：媒体文件内部的 url() 引用挡住删除（不静默删掉在用字体）', () async {
     // `_x.css` 里的 `url(font.woff2)` 既不在笔记字段、也不在卡模板/styling
     // 里——只扫那三处会判定「无引用」，把仍在用的字体删掉。
     writeMedia('_font.woff2', <int>[5, 5, 5, 5]);
     writeMedia('font.woff2', <int>[5, 5, 5, 5]);
-    File('${mediaDir.path}${Platform.pathSeparator}_x.css')
-        .writeAsStringSync('@font-face { src: url(font.woff2); }');
+    File(
+      '${mediaDir.path}${Platform.pathSeparator}_x.css',
+    ).writeAsStringSync('@font-face { src: url(font.woff2); }');
     final _FakeAnkiConnectService service = _FakeAnkiConnectService(
       mediaDirPath: mediaDir.path,
       notes: <int, Map<String, String>>{},
@@ -333,7 +415,8 @@ void main() {
     final AnkiConnectRepository repo = AnkiConnectRepository(service: service);
     final String shaBefore = lapisCssSha256(css);
     await repo.updateSettings(
-        (AnkiSettings s) => s.copyWith(lapisAppliedCssSha: shaBefore));
+      (AnkiSettings s) => s.copyWith(lapisAppliedCssSha: shaBefore),
+    );
 
     final AnkiMediaDedupReport? report = await repo.runMediaDedup();
 
@@ -346,8 +429,10 @@ void main() {
     // 一次失败的去重而永久停手。
     final AnkiSettings after = await repo.loadSettings();
     expect(after.lapisAppliedCssSha, shaBefore);
-    expect(lapisCssSha256(service.styling[LapisNoteType.modelName]!),
-        after.lapisAppliedCssSha);
+    expect(
+      lapisCssSha256(service.styling[LapisNoteType.modelName]!),
+      after.lapisAppliedCssSha,
+    );
   });
 
   test('必修②：styling 真被改写时指纹跟着对齐（自动迁移不退化成 foreignEdit）', () async {
@@ -360,17 +445,22 @@ void main() {
       styling: <String, String>{LapisNoteType.modelName: css},
     );
     final AnkiConnectRepository repo = AnkiConnectRepository(service: service);
-    await repo.updateSettings((AnkiSettings s) =>
-        s.copyWith(lapisAppliedCssSha: lapisCssSha256(css)));
+    await repo.updateSettings(
+      (AnkiSettings s) => s.copyWith(lapisAppliedCssSha: lapisCssSha256(css)),
+    );
 
     final AnkiMediaDedupReport? report = await repo.runMediaDedup();
 
     expect(report!.deletions, hasLength(1));
-    expect(service.styling[LapisNoteType.modelName],
-        'body { background: url(a.jpg); }');
+    expect(
+      service.styling[LapisNoteType.modelName],
+      'body { background: url(a.jpg); }',
+    );
     final AnkiSettings after = await repo.loadSettings();
-    expect(after.lapisAppliedCssSha,
-        lapisCssSha256(service.styling[LapisNoteType.modelName]!));
+    expect(
+      after.lapisAppliedCssSha,
+      lapisCssSha256(service.styling[LapisNoteType.modelName]!),
+    );
     expectEveryReferenceResolves(service, <String>['a.jpg', 'bbbb.jpg']);
   });
 
@@ -386,7 +476,8 @@ void main() {
     );
     final AnkiConnectRepository repo = AnkiConnectRepository(service: service);
     await repo.updateSettings(
-        (AnkiSettings s) => s.copyWith(lapisAppliedCssSha: 'stale-sha'));
+      (AnkiSettings s) => s.copyWith(lapisAppliedCssSha: 'stale-sha'),
+    );
 
     await repo.runMediaDedup();
 
@@ -453,8 +544,10 @@ void main() {
 
     expect(report!.deletions.single.filename, 'lib.js');
     expect(report.modelsRewritten, 1);
-    expect(service._templates['Basic']!.single.front,
-        '<script src="_lib.js"></script>');
+    expect(
+      service._templates['Basic']!.single.front,
+      '<script src="_lib.js"></script>',
+    );
     expect(mediaExists('lib.js'), isFalse);
     expectEveryReferenceResolves(service, <String>['_lib.js', 'lib.js']);
   });
@@ -480,8 +573,9 @@ void main() {
       onProgress: (AnkiMediaDedupProgress p) {
         if (p.stage == AnkiMediaDedupStage.hashing &&
             p.currentFile == 'ghost2.bin') {
-          final File f =
-              File('${mediaDir.path}${Platform.pathSeparator}ghost2.bin');
+          final File f = File(
+            '${mediaDir.path}${Platform.pathSeparator}ghost2.bin',
+          );
           if (f.existsSync()) f.deleteSync();
         }
       },
@@ -490,8 +584,9 @@ void main() {
     expect(report, isNotNull);
     expect(report!.cancelled, isFalse);
     // 消失的 ghost2 不进组：ghost1 安然无恙，正常组照常去重。
-    expect(report.deletions.map((MediaDedupDeletion d) => d.filename),
-        <String>['bbbb.jpg']);
+    expect(report.deletions.map((MediaDedupDeletion d) => d.filename), <String>[
+      'bbbb.jpg',
+    ]);
     expect(mediaExists('ghost1.bin'), isTrue);
     expect(service.deleted, <String>['bbbb.jpg']);
   });
@@ -505,9 +600,9 @@ void main() {
         1: <String, String>{'Front': '<img src="bbbb.jpg">'},
       },
       // 哈希算完之后把副本删掉：复核读不到 → 保守跳过。
-      onFindNotes: () async =>
-          File('${mediaDir.path}${Platform.pathSeparator}bbbb.jpg')
-              .deleteSync(),
+      onFindNotes: () async => File(
+        '${mediaDir.path}${Platform.pathSeparator}bbbb.jpg',
+      ).deleteSync(),
     );
     final AnkiConnectRepository repo = AnkiConnectRepository(service: service);
 
@@ -555,8 +650,10 @@ void main() {
     expect(survivors, groups - kAnkiMediaDedupBatchSize);
     expect(
       report.bytesSaved,
-      report.deletions
-          .fold<int>(0, (int sum, MediaDedupDeletion d) => sum + d.bytes),
+      report.deletions.fold<int>(
+        0,
+        (int sum, MediaDedupDeletion d) => sum + d.bytes,
+      ),
     );
     // 未处理批次的笔记字段仍指向副本（没有被提前改写）。
     final int untouched = notes.values
@@ -565,45 +662,55 @@ void main() {
     expect(untouched, groups - kAnkiMediaDedupBatchSize);
   });
 
-  test('BUG-1263：进度按 scanning → hashing → indexing → resolving 推进且计数自洽',
-      () async {
-    writeMedia('a.jpg', <int>[1, 2, 3]);
-    writeMedia('bbbb.jpg', <int>[1, 2, 3]);
-    final _FakeAnkiConnectService service = _FakeAnkiConnectService(
-      mediaDirPath: mediaDir.path,
-      notes: <int, Map<String, String>>{
-        1: <String, String>{'Front': '<img src="bbbb.jpg">'},
-      },
-    );
-    final AnkiConnectRepository repo = AnkiConnectRepository(service: service);
-    final List<AnkiMediaDedupProgress> events = <AnkiMediaDedupProgress>[];
+  test(
+    'BUG-1263：进度按 scanning → hashing → indexing → resolving 推进且计数自洽',
+    () async {
+      writeMedia('a.jpg', <int>[1, 2, 3]);
+      writeMedia('bbbb.jpg', <int>[1, 2, 3]);
+      final _FakeAnkiConnectService service = _FakeAnkiConnectService(
+        mediaDirPath: mediaDir.path,
+        notes: <int, Map<String, String>>{
+          1: <String, String>{'Front': '<img src="bbbb.jpg">'},
+        },
+      );
+      final AnkiConnectRepository repo = AnkiConnectRepository(
+        service: service,
+      );
+      final List<AnkiMediaDedupProgress> events = <AnkiMediaDedupProgress>[];
 
-    await repo.runMediaDedup(onProgress: events.add);
+      await repo.runMediaDedup(onProgress: events.add);
 
-    final List<AnkiMediaDedupStage> stages =
-        events.map((AnkiMediaDedupProgress p) => p.stage).toList();
-    // 阶段只前进不回退。
-    int rank(AnkiMediaDedupStage s) => AnkiMediaDedupStage.values.indexOf(s);
-    for (int i = 1; i < stages.length; i++) {
-      expect(rank(stages[i]), greaterThanOrEqualTo(rank(stages[i - 1])),
-          reason: '阶段回退：${stages[i - 1]} -> ${stages[i]}');
-    }
-    // 哈希阶段覆盖两个大小撞车候选。
-    final AnkiMediaDedupProgress lastHash = events.lastWhere(
-        (AnkiMediaDedupProgress p) => p.stage == AnkiMediaDedupStage.hashing);
-    expect(lastHash.total, 2);
-    // BUG-2824：对照表阶段按笔记计数，收尾一次 1/1。
-    final AnkiMediaDedupProgress lastIndex = events.lastWhere(
-        (AnkiMediaDedupProgress p) => p.stage == AnkiMediaDedupStage.indexing);
-    expect(lastIndex.done, 1);
-    expect(lastIndex.total, 1);
-    // 末次事件是 resolving 完成态：1/1，已释放 3 字节。
-    final AnkiMediaDedupProgress last = events.last;
-    expect(last.stage, AnkiMediaDedupStage.resolving);
-    expect(last.done, 1);
-    expect(last.total, 1);
-    expect(last.bytesFreed, 3);
-  });
+      final List<AnkiMediaDedupStage> stages = events
+          .map((AnkiMediaDedupProgress p) => p.stage)
+          .toList();
+      // 阶段只前进不回退。
+      int rank(AnkiMediaDedupStage s) => AnkiMediaDedupStage.values.indexOf(s);
+      for (int i = 1; i < stages.length; i++) {
+        expect(
+          rank(stages[i]),
+          greaterThanOrEqualTo(rank(stages[i - 1])),
+          reason: '阶段回退：${stages[i - 1]} -> ${stages[i]}',
+        );
+      }
+      // 哈希阶段覆盖两个大小撞车候选。
+      final AnkiMediaDedupProgress lastHash = events.lastWhere(
+        (AnkiMediaDedupProgress p) => p.stage == AnkiMediaDedupStage.hashing,
+      );
+      expect(lastHash.total, 2);
+      // BUG-2824：对照表阶段按笔记计数，收尾一次 1/1。
+      final AnkiMediaDedupProgress lastIndex = events.lastWhere(
+        (AnkiMediaDedupProgress p) => p.stage == AnkiMediaDedupStage.indexing,
+      );
+      expect(lastIndex.done, 1);
+      expect(lastIndex.total, 1);
+      // 末次事件是 resolving 完成态：1/1，已释放 3 字节。
+      final AnkiMediaDedupProgress last = events.last;
+      expect(last.stage, AnkiMediaDedupStage.resolving);
+      expect(last.done, 1);
+      expect(last.total, 1);
+      expect(last.bytesFreed, 3);
+    },
+  );
 
   test('journal 记下改写前的原值与删除条目（出事能还原）', () async {
     writeMedia('a.jpg', <int>[1, 2, 3]);
@@ -618,15 +725,19 @@ void main() {
     final List<Map<String, dynamic>> journal = <Map<String, dynamic>>[];
 
     await repo.runMediaDedup(
-        onJournal: (Map<String, dynamic> e) async => journal.add(e));
+      onJournal: (Map<String, dynamic> e) async => journal.add(e),
+    );
 
-    final Map<String, dynamic> noteEntry = journal
-        .firstWhere((Map<String, dynamic> e) => e['type'] == 'noteFields');
+    final Map<String, dynamic> noteEntry = journal.firstWhere(
+      (Map<String, dynamic> e) => e['type'] == 'noteFields',
+    );
     expect(noteEntry['noteId'], 1);
-    expect(
-        noteEntry['before'], <String, String>{'Front': '<img src="bbbb.jpg">'});
-    final Map<String, dynamic> deleteEntry =
-        journal.firstWhere((Map<String, dynamic> e) => e['type'] == 'delete');
+    expect(noteEntry['before'], <String, String>{
+      'Front': '<img src="bbbb.jpg">',
+    });
+    final Map<String, dynamic> deleteEntry = journal.firstWhere(
+      (Map<String, dynamic> e) => e['type'] == 'delete',
+    );
     expect(deleteEntry['filename'], 'bbbb.jpg');
     expect(deleteEntry['canonical'], 'a.jpg');
     expect(deleteEntry['bytes'], 3);

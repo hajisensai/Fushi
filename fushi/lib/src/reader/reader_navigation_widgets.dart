@@ -4,9 +4,18 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/reader/reader_panel_kit.dart';
+import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart'
+    show FushiJumpProgressMarks;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 阅读器「导航」侧板（目录 / 收藏 / 搜索）的专用视觉件。共享件（页签、进度条、
@@ -169,9 +178,7 @@ class ReaderTocRow extends StatelessWidget {
                 builder: (BuildContext context, double s, Widget? child) =>
                     Transform.scale(scale: s, child: child),
                 child: ReaderShapeBadge(
-                  icon: glass
-                      ? FushiIcons.play
-                      : FushiIcons.readingMode,
+                  icon: glass ? FushiIcons.play : FushiIcons.readingMode,
                   size: glass ? 26 : 32,
                   shape: ReaderBadgeShape.cookie4,
                   iconSize: glass ? 18 : 17,
@@ -308,8 +315,13 @@ class ReaderNavProgressHero extends StatelessWidget {
     this.caption,
     this.compact = false,
     this.footer,
+    this.jumpMarks,
     super.key,
   });
+
+  /// 「跳转记录」在全书进度上的落点（0~1，返回点 / 前进点），画在全书进度条上、
+  /// 只看不点。null = 不画。
+  final ({List<double> back, List<double> forward})? jumpMarks;
 
   final double? fraction;
   final String? chapter;
@@ -377,7 +389,7 @@ class ReaderNavProgressHero extends StatelessWidget {
             ),
           );
 
-    final Widget? bar = f == null
+    final Widget? progressBar = f == null
         ? null
         : ReaderPanelProgress(
             key: const ValueKey<String>('reader_nav_progress_bar'),
@@ -388,6 +400,31 @@ class ReaderNavProgressHero extends StatelessWidget {
                 : eink
                 ? cs.outlineVariant
                 : cs.onPrimaryContainer.withValues(alpha: 0.16),
+          );
+    final ({List<double> back, List<double> forward})? marks = jumpMarks;
+    // 跳转刻度比 4dp 的进度条高：上下溢出画（Clip.none），不改进度条占的高度，
+    // 刻度出现 / 消失不推挤下方内容。
+    final Widget? bar =
+        progressBar == null ||
+            marks == null ||
+            (marks.back.isEmpty && marks.forward.isEmpty)
+        ? progressBar
+        : Stack(
+            clipBehavior: Clip.none,
+            children: <Widget>[
+              progressBar,
+              Positioned(
+                left: 0,
+                right: 0,
+                top: -5,
+                bottom: -5,
+                child: FushiJumpProgressMarks(
+                  back: marks.back,
+                  forward: marks.forward,
+                  tickHeight: 14,
+                ),
+              ),
+            ],
           );
 
     final Widget chapterText = Text(
@@ -549,6 +586,8 @@ class _ReadoutChip extends StatelessWidget {
   }
 }
 
+/// 目录面板书头的小封面：光面书皮材质简化档（用户 2026-10-26：圆角 + 内
+/// 描边 + 轻光泽，不画投影），墨水屏退回描边框。
 class _HeroCover extends StatelessWidget {
   const _HeroCover({required this.path});
 
@@ -556,22 +595,14 @@ class _HeroCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.18),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: SizedBox(
-          width: 52,
-          height: 74,
+    return SizedBox(
+      width: 52,
+      height: 74,
+      child: ShelfCoverMaterialScope(
+        material: ShelfCoverMaterial.glossyBook,
+        child: ShelfCoverFrame(
+          density: ShelfCoverDensity.compact,
+          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
           child: Image.file(
             File(path),
             fit: BoxFit.cover,

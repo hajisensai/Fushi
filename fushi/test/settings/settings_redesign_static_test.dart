@@ -47,8 +47,10 @@ void main() {
       'AppModel appModel',
       'WidgetRef ref',
     ],
-    'lib/src/settings/settings_destination.dart': <String>[
+    'lib/src/settings/settings_destination_id.dart': <String>[
       'enum SettingsDestinationId',
+    ],
+    'lib/src/settings/settings_destination.dart': <String>[
       'sealed class SettingsItem',
       'class SettingsSwitchItem',
       'class SettingsSegmentedItem',
@@ -296,7 +298,11 @@ void main() {
     );
     final String schemaSource = readSettingsSchemaCombined();
     final String syncSource = maskComments(readSyncSettingsSchemaSource());
-    final String combined = '$destinationSource\n$schemaSource\n$syncSource';
+    final String destinationIdSource = readNormalizedSource(
+      'lib/src/settings/settings_destination_id.dart',
+    );
+    final String combined =
+        '$destinationSource\n$destinationIdSource\n$schemaSource\n$syncSource';
 
     for (final String token in <String>[
       'SettingsDestinationId.appearance',
@@ -352,10 +358,7 @@ void main() {
     // 阅读页只许以「正文」作用域跳进同一个字体库（#2024 正文字体切换），不许
     // 另起字体目录 / 用途列表。
     expect(
-      readingSource.replaceAll(
-        'CustomFontsPage(target: FontTarget.body)',
-        '',
-      ),
+      readingSource.replaceAll('CustomFontsPage(target: FontTarget.body)', ''),
       isNot(contains('CustomFontsPage')),
     );
     expect(readingSource, isNot(contains('font_catalog')));
@@ -792,8 +795,14 @@ void main() {
     expect(shared, contains('kSettingsPickerDefaultWidth'));
     expect(shared, contains('kSettingsPickerMinInlineWidth'));
     // 紧凑档（SettingsCompactRowsScope）的「值 ▾」是自尺寸控件，不参与 flex。
-    expect(shared, contains('final bool below = !cupertino && controlBelow && !compact;'));
-    expect(shared, contains('trailingFlexible: !cupertino && !below && !compact'));
+    expect(
+      shared,
+      contains('final bool below = !cupertino && controlBelow && !compact;'),
+    );
+    expect(
+      shared,
+      contains('trailingFlexible: !cupertino && !below && !compact'),
+    );
     expect(
       containsIdentifierCall(shared, 'LayoutBuilder'),
       isTrue,

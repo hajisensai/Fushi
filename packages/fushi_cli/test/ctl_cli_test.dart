@@ -247,6 +247,12 @@ void main() {
   test('没有命令 → 用法错误', () async {
     expect(await run(const <String>[]), kCliExitUsage);
   });
+
+  test('mcp：没给配对令牌 → 64，且不拉起 app、stdout 不写东西', () async {
+    expect(await run(const <String>['mcp']), kCliExitUsage);
+    expect('$out', isEmpty);
+    expect('$err', contains(kMcpTokenEnv));
+  });
 }
 
 CtlRequestSpec _lsBooks(CtlCommandContext c) =>

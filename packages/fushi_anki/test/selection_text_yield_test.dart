@@ -24,11 +24,10 @@ void main() {
   AnkiSettings settingsWith({
     required String? noteTypeName,
     required Map<String, String> fieldMappings,
-  }) =>
-      AnkiSettings(
-        selectedNoteTypeName: noteTypeName,
-        fieldMappings: fieldMappings,
-      );
+  }) => AnkiSettings(
+    selectedNoteTypeName: noteTypeName,
+    fieldMappings: fieldMappings,
+  );
 
   const Map<String, String> lapisLike = <String, String>{
     'SelectionText': '{popup-selection-text}',
@@ -59,8 +58,10 @@ void main() {
 
   group('SelectionText 让位：三条判据缺一不可', () {
     test('Lapis + 高亮落地 + 映了 glossary → 让位（释义字段照常带内容）', () {
-      final Map<String, String> fields =
-          render(noteTypeName: 'Lapis', highlighted: true);
+      final Map<String, String> fields = render(
+        noteTypeName: 'Lapis',
+        highlighted: true,
+      );
       // 渲染成空的字段在「新建」语义下本就不进 map。
       expect(fields.containsKey('SelectionText'), isFalse);
       expect(fields['Glossary'], kGlossary);
@@ -113,8 +114,11 @@ void main() {
             'MainDefinition': marker,
           },
         );
-        expect(fields.containsKey('SelectionText'), isFalse,
-            reason: '$marker 渲染出来的也是带高亮的释义 HTML');
+        expect(
+          fields.containsKey('SelectionText'),
+          isFalse,
+          reason: '$marker 渲染出来的也是带高亮的释义 HTML',
+        );
       }
     });
   });
@@ -140,8 +144,10 @@ void main() {
     test('媒体二次渲染必须透传这个标志（16 字段漂移守卫）', () {
       // renderMediaPayload 手写重建整个 payload：漏抄一个字段，让位判据就在
       // 「带媒体的制卡」这条路径上静默失效，而不带媒体的路径照常——最难查的那种。
-      final Map<String, String> fields =
-          render(noteTypeName: 'Lapis', highlighted: true);
+      final Map<String, String> fields = render(
+        noteTypeName: 'Lapis',
+        highlighted: true,
+      );
       expect(fields.containsKey('SelectionText'), isFalse);
     });
   });
@@ -155,8 +161,7 @@ class _TestRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   Future<bool> isDuplicate(String expression, String reading) =>
@@ -173,14 +178,13 @@ class _TestRepo extends BaseAnkiRepository {
     required AnkiSettings settings,
     required AnkiMiningPayload payload,
     required AnkiMiningContext context,
-  }) =>
-      renderMediaPayload(
-        settings: settings,
-        payload: payload,
-        context: context,
-        coverRef: null,
-        sentenceAudioRef: null,
-        processedAudio: '',
-        dictionaryMediaTags: const <String, String>{},
-      );
+  }) => renderMediaPayload(
+    settings: settings,
+    payload: payload,
+    context: context,
+    coverRef: null,
+    sentenceAudioRef: null,
+    processedAudio: '',
+    dictionaryMediaTags: const <String, String>{},
+  );
 }

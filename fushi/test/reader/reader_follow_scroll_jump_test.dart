@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2466：连续模式听书跟随滚动跨过一个视口以上必须瞬时落地（smooth 补间会把途中
 /// 所有页 arrive 进阅读账本 = 字数虚增 / 字/时爆表）；一个视口之内保持 TODO-825 的
@@ -35,16 +35,14 @@ void main() {
       'test/reader/reader_follow_scroll_jump_behavior_test.js',
     );
     expect(jsTest.existsSync(), isTrue);
-    final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[
-          jsTest.path,
-        ],
-        workingDirectory: Directory.current.path);
+    final ProcessResult result = await Process.run(nodeExe, <String>[
+      jsTest.path,
+    ], workingDirectory: Directory.current.path);
     expect(
       result.exitCode,
       0,
-      reason: 'follow scroll JS behavior test failed.\n'
+      reason:
+          'follow scroll JS behavior test failed.\n'
           'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
     );
     expect(
@@ -55,8 +53,9 @@ void main() {
 }
 
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

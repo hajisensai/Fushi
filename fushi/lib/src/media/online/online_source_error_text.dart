@@ -12,7 +12,8 @@ library;
 import 'dart:async';
 import 'dart:io';
 
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// HTTP 状态码：`HTTP 404`、`HTTP error 503`、`STORE_HTTP_404`、`HTTP: 500`。
 ///

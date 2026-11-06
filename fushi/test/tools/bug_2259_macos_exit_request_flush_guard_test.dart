@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2259 守卫：macOS 的「退出应用」必须跑退出 flush。
 ///
@@ -35,7 +35,8 @@ void main() {
       expect(
         at,
         greaterThan(-1),
-        reason: '没有 exit-request 监听 ⇒ ⌘Q / 菜单退出 / Dock 退出全都不 flush，'
+        reason:
+            '没有 exit-request 监听 ⇒ ⌘Q / 菜单退出 / Dock 退出全都不 flush，'
             '阅读位置与有声书进度停在最后一次去抖落库（BUG-2259 回归）',
       );
       expect(
@@ -58,11 +59,12 @@ void main() {
         'Future<AppExitResponse> _handleExitRequested() async {',
       );
       expect(at, greaterThan(-1), reason: '回调改名了，守卫需同步更新');
-      final String body = src.substring(at, at + 400);
+      final String body = _methodBody(src, src.indexOf('{', at));
       expect(
         body.contains('await _flushAndExitForWindowClose()'),
         isTrue,
-        reason: '退出请求必须复用关窗口那条链（几何落盘 + ExitFlushRegistry + 关书同步 '
+        reason:
+            '退出请求必须复用关窗口那条链（几何落盘 + ExitFlushRegistry + 关书同步 '
             'drain + close database），否则「关窗口能保住的数据，⌘Q 保不住」又会成立',
       );
       expect(
@@ -76,10 +78,32 @@ void main() {
       final int at = src.indexOf('void dispose() {');
       expect(at, greaterThan(-1));
       expect(
-        src.substring(at, at + 500).contains('_exitRequestListener?.dispose()'),
+        _methodBody(
+          src,
+          src.indexOf('{', at),
+        ).contains('_exitRequestListener?.dispose()'),
         isTrue,
         reason: '不注销会把监听器留在 binding 上（热重载 / 重建后累积）',
       );
     });
   });
+}
+
+/// 从 [open]（方法签名里那个 `{` 的下标）起按花括号配平截出整个方法体。
+///
+/// 用固定字符窗口（「签名后 500 字符」）去找方法体里的某一行，会在别人往方法体前面
+/// 插几行无关清理时误报——#2819 在 `dispose()` 前段加了 `_widgetSnapshots.dispose()`，
+/// 注销语句本身没动就被挤出了窗口。按配平截出的方法体只随方法边界变，不随行数变。
+String _methodBody(String src, int open) {
+  int depth = 0;
+  for (int i = open; i < src.length; i++) {
+    final String c = src[i];
+    if (c == '{') {
+      depth++;
+    } else if (c == '}') {
+      depth--;
+      if (depth == 0) return src.substring(open, i + 1);
+    }
+  }
+  fail('方法体花括号不配平（从下标 $open 起），守卫需同步更新');
 }

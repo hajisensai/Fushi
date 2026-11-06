@@ -12,19 +12,21 @@ mixin _FushiDbUpdateFeed on _$FushiDatabase {
   /// 已读的条目每轮检查都会重新变红、重新弹通知。「已存在就不动」把这两个特殊
   /// 情况一起消掉，也让投递方不必先查一次再决定写不写。
   Future<bool> insertUpdateFeedEntry(UpdateFeedEntriesCompanion entry) async {
-    final UpdateFeedEntryRow? inserted = await into(updateFeedEntries)
-        .insertReturningOrNull(entry, mode: InsertMode.insertOrIgnore);
+    final UpdateFeedEntryRow? inserted = await into(
+      updateFeedEntries,
+    ).insertReturningOrNull(entry, mode: InsertMode.insertOrIgnore);
     return inserted != null;
   }
 
   /// 未读条目数，按域分组。红点只数这个；域没有未读时**键不出现**（不是 0）。
   Future<Map<String, int>> unseenUpdateFeedCountsByKind() async {
     final Expression<int> count = updateFeedEntries.entryId.count();
-    final List<TypedResult> rows = await (selectOnly(updateFeedEntries)
-          ..addColumns(<Expression<Object>>[updateFeedEntries.kind, count])
-          ..where(updateFeedEntries.seenAt.isNull())
-          ..groupBy(<Expression<Object>>[updateFeedEntries.kind]))
-        .get();
+    final List<TypedResult> rows =
+        await (selectOnly(updateFeedEntries)
+              ..addColumns(<Expression<Object>>[updateFeedEntries.kind, count])
+              ..where(updateFeedEntries.seenAt.isNull())
+              ..groupBy(<Expression<Object>>[updateFeedEntries.kind]))
+            .get();
     return <String, int>{
       for (final TypedResult row in rows)
         row.read(updateFeedEntries.kind)!: row.read(count) ?? 0,
@@ -39,7 +41,7 @@ mixin _FushiDbUpdateFeed on _$FushiDatabase {
     int limit = 200,
   }) {
     final SimpleSelectStatement<$UpdateFeedEntriesTable, UpdateFeedEntryRow>
-        query = select(updateFeedEntries);
+    query = select(updateFeedEntries);
     if (kinds.isNotEmpty) {
       query.where((t) => t.kind.isIn(kinds));
     }
@@ -48,8 +50,8 @@ mixin _FushiDbUpdateFeed on _$FushiDatabase {
     }
     query
       ..orderBy(<OrderingTerm Function($UpdateFeedEntriesTable)>[
-        (t) => OrderingTerm(
-            expression: t.discoveredAt, mode: OrderingMode.desc),
+        (t) =>
+            OrderingTerm(expression: t.discoveredAt, mode: OrderingMode.desc),
         (t) => OrderingTerm(expression: t.entryId),
       ])
       ..limit(limit);
@@ -57,9 +59,9 @@ mixin _FushiDbUpdateFeed on _$FushiDatabase {
   }
 
   /// 按身份取一条（系统通知点击回流用：通知载荷只带 entryId，落点从这里还原）。
-  Future<UpdateFeedEntryRow?> getUpdateFeedEntry(String entryId) =>
-      (select(updateFeedEntries)..where((t) => t.entryId.equals(entryId)))
-          .getSingleOrNull();
+  Future<UpdateFeedEntryRow?> getUpdateFeedEntry(String entryId) => (select(
+    updateFeedEntries,
+  )..where((t) => t.entryId.equals(entryId))).getSingleOrNull();
 
   /// 把指定条目标记为已读（幂等：已读的行不再改写 seenAt，保留第一次看见的时刻）。
   Future<int> markUpdateFeedEntriesSeen(
@@ -103,8 +105,10 @@ mixin _FushiDbUpdateFeed on _$FushiDatabase {
   /// 清掉**已读且早于** [seenBefore] 的条目。未读的一条不动——用户还没看见的提醒
   /// 不能因为「太老」被悄悄抹掉（订阅的番半年没看，那条新集提醒依然有效）。
   Future<int> pruneSeenUpdateFeedEntries({required int seenBefore}) =>
-      (delete(updateFeedEntries)
-            ..where((t) => t.seenAt.isNotNull() & t.seenAt.isSmallerThanValue(seenBefore)))
+      (delete(updateFeedEntries)..where(
+            (t) =>
+                t.seenAt.isNotNull() & t.seenAt.isSmallerThanValue(seenBefore),
+          ))
           .go();
 
   /// 「更新流变了」的信号流（不带行）。长驻页面的 initState 订阅必须用它而不是裸
@@ -115,14 +119,14 @@ mixin _FushiDbUpdateFeed on _$FushiDatabase {
     StreamSubscription<void>? updatesSub;
     controller = StreamController<void>(
       onListen: () {
-        updatesSub = tableUpdates(
-          TableUpdateQuery
-              .onAllTables(<ResultSetImplementation<dynamic, dynamic>>[
-            updateFeedEntries,
-          ]),
-        ).listen((_) {
-          if (!controller.isClosed) controller.add(null);
-        });
+        updatesSub =
+            tableUpdates(
+              TableUpdateQuery.onAllTables(
+                <ResultSetImplementation<dynamic, dynamic>>[updateFeedEntries],
+              ),
+            ).listen((_) {
+              if (!controller.isClosed) controller.add(null);
+            });
       },
       onCancel: () async {
         await updatesSub?.cancel();

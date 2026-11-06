@@ -53,7 +53,13 @@ import 'package:fushi_engine/stats/stat_facts.dart'
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
 /// 本书某个统计日的阅读量（迷你柱状图的一根柱子）。
 typedef ReaderBookDayStat = ({String dateKey, int chars, int ms});
@@ -114,8 +120,8 @@ ReaderBookStatTotals summarizeReaderBookStats(
   final List<String> weekKeys = window.lastDayKeys(7);
   final Map<String, ({int chars, int ms})> week =
       <String, ({int chars, int ms})>{
-    for (final String key in weekKeys) key: (chars: 0, ms: 0),
-  };
+        for (final String key in weekKeys) key: (chars: 0, ms: 0),
+      };
   for (final StatFact f in dailyBooks) {
     if (!statFactBelongsToBook(f, bookKey: bookKey, title: title)) continue;
     allChars += f.chars;
@@ -166,8 +172,9 @@ double? readerFinishCph({
   required StudySessionTotals session,
   required ReaderBookStatTotals book,
 }) {
-  final double? sessionCph =
-      session.chars > 0 ? computeCph(session.chars, session.durationMs) : null;
+  final double? sessionCph = session.chars > 0
+      ? computeCph(session.chars, session.durationMs)
+      : null;
   if (sessionCph != null && sessionCph > 0) return sessionCph;
   final double? allCph = computeCph(book.allChars, book.allMs);
   return (allCph != null && allCph > 0) ? allCph : null;
@@ -585,9 +592,7 @@ class _SessionHero extends StatelessWidget {
             runSpacing: 12,
             children: <Widget>[
               ReaderStatNumber(
-                key: const ValueKey<String>(
-                  'fushi_reader_stats_session_chars',
-                ),
+                key: const ValueKey<String>('fushi_reader_stats_session_chars'),
                 value: formatGroupedInt(session.chars),
                 unit: charsUnit,
                 color: onSurface,
@@ -627,10 +632,12 @@ class _SessionPauseButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String tooltip =
-        active ? t.reader_stats_clock_pause : t.reader_stats_clock_resume;
-    final IconData icon =
-        active ? Icons.pause_rounded : Icons.play_arrow_rounded;
+    final String tooltip = active
+        ? t.reader_stats_clock_pause
+        : t.reader_stats_clock_resume;
+    final IconData icon = active
+        ? Icons.pause_rounded
+        : Icons.play_arrow_rounded;
     if (isGlassDesign(context)) {
       return FushiPressScale(
         child: FushiIconButtonControl.filled(
@@ -834,8 +841,8 @@ class _MetricTile extends StatelessWidget {
     final Color label = glass
         ? appleColorsOf(context).secondaryLabel
         : (tinted
-            ? fg.withValues(alpha: 0.75)
-            : theme.colorScheme.onSurfaceVariant);
+              ? fg.withValues(alpha: 0.75)
+              : theme.colorScheme.onSurfaceVariant);
     return ReaderPanelCard(
       tone: tone,
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
@@ -856,9 +863,7 @@ class _MetricTile extends StatelessWidget {
                 color: fg,
                 fontWeight: FontWeight.w700,
                 height: 1.1,
-                fontFeatures: const <FontFeature>[
-                  FontFeature.tabularFigures(),
-                ],
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
               ),
             ),
           ),
@@ -963,8 +968,9 @@ class _PositionRow extends StatelessWidget {
         ? appleColorsOf(context).secondaryLabel
         : fg.withValues(alpha: 0.75);
     final bool tertiaryCard = !glass && tone == ReaderPanelCardTone.tertiary;
-    final Color? progressColor =
-        tertiaryCard ? theme.colorScheme.tertiary : null;
+    final Color? progressColor = tertiaryCard
+        ? theme.colorScheme.tertiary
+        : null;
     // 轨道取卡面前景的淡色：secondaryContainer 在 tertiaryContainer 卡面上几乎
     // 看不见（2026-10-09 反馈截图：只剩一截悬空的波浪）。
     final Color? trackColor = tertiaryCard ? fg.withValues(alpha: 0.16) : null;

@@ -65,15 +65,10 @@ class EpubGenerator {
     '少年は光に導かれるまま歩き続けた。やがて、大きな湖にたどり着いた。湖面に映る二つの月が、静かに揺れていた。',
   ];
 
-  static const _shortTexts = [
-    '朝の光。',
-    '風が吹く。',
-    '鳥が鳴いた。',
-    '花が咲いた。',
-    '雨が止んだ。',
-  ];
+  static const _shortTexts = ['朝の光。', '風が吹く。', '鳥が鳴いた。', '花が咲いた。', '雨が止んだ。'];
 
-  static const _longText = '彼女は長い間、窓の外を見つめていた。街を歩く人々、走り去る車、風に揺れる街路樹。'
+  static const _longText =
+      '彼女は長い間、窓の外を見つめていた。街を歩く人々、走り去る車、風に揺れる街路樹。'
       'すべてが日常の一部であり、特別なことは何もなかった。しかし、今日は何かが違った。'
       '空気の匂いが変わったのか、光の色が変わったのか、それとも自分自身が変わったのか。'
       '彼女にはわからなかった。ただ、胸の奥で何かが動いたような気がした。'
@@ -89,39 +84,47 @@ class EpubGenerator {
     files['OEBPS/toc.ncx'] = _utf8(_buildNcx());
 
     // Chapter 1: Standard Japanese paragraphs (420 markers)
-    files['OEBPS/chapter_01_standard.xhtml'] = _utf8(_buildChapter(
-        '第一章　標準テスト', _generateStandard(standardChapterMarkerCount)));
+    files['OEBPS/chapter_01_standard.xhtml'] = _utf8(
+      _buildChapter('第一章　標準テスト', _generateStandard(standardChapterMarkerCount)),
+    );
 
     // Chapter 2: Very short (5 markers, tests 1-2 page scenarios)
-    files['OEBPS/chapter_02_short.xhtml'] =
-        _utf8(_buildChapter('第二章　短章テスト', _generateShort(5)));
+    files['OEBPS/chapter_02_short.xhtml'] = _utf8(
+      _buildChapter('第二章　短章テスト', _generateShort(5)),
+    );
 
     // Chapter 3: Mixed images + text (50 markers + inline SVG)
-    files['OEBPS/chapter_03_images.xhtml'] =
-        _utf8(_buildChapter('第三章　画像混在テスト', _generateWithImages(50)));
+    files['OEBPS/chapter_03_images.xhtml'] = _utf8(
+      _buildChapter('第三章　画像混在テスト', _generateWithImages(50)),
+    );
 
     // Chapter 4: Heavy ruby/furigana (100 markers)
-    files['OEBPS/chapter_04_ruby.xhtml'] =
-        _utf8(_buildChapter('第四章　振り仮名テスト', _generateWithRuby(100)));
+    files['OEBPS/chapter_04_ruby.xhtml'] = _utf8(
+      _buildChapter('第四章　振り仮名テスト', _generateWithRuby(100)),
+    );
 
     // Chapter 5: Vertical-optimized (100 markers with vertical-friendly content)
-    files['OEBPS/chapter_05_vertical.xhtml'] =
-        _utf8(_buildChapter('第五章　縦書きテスト', _generateStandard(100)));
+    files['OEBPS/chapter_05_vertical.xhtml'] = _utf8(
+      _buildChapter('第五章　縦書きテスト', _generateStandard(100)),
+    );
 
     // Chapter 6: Mixed elements - headings, lists, blockquotes (80 markers)
-    files['OEBPS/chapter_06_mixed.xhtml'] =
-        _utf8(_buildChapter('第六章　混合要素テスト', _generateMixed(80)));
+    files['OEBPS/chapter_06_mixed.xhtml'] = _utf8(
+      _buildChapter('第六章　混合要素テスト', _generateMixed(80)),
+    );
 
     // Chapter 7: Long chapter (500 markers)
-    files['OEBPS/chapter_07_long.xhtml'] =
-        _utf8(_buildChapter('第七章　長文テスト', _generateStandard(500)));
+    files['OEBPS/chapter_07_long.xhtml'] = _utf8(
+      _buildChapter('第七章　長文テスト', _generateStandard(500)),
+    );
 
     // Chapter 8: JIS mono-ruby (rb/rtc group ruby, 120 markers). Mirrors the
     // user's TODO-1308 book form (<ruby><rb>貫</rb><rb>禄</rb><rtc><rt>かん</rt>
     // <rt>ろく</rt></rtc></ruby>) so favorite/jump landing can be measured on the
     // exact DOM shape where base chars live in <rb> and furigana in <rtc><rt>.
-    files['OEBPS/chapter_08_monoruby.xhtml'] =
-        _utf8(_buildChapter('第八章　連番振り仮名テスト', _generateWithMonoRuby(120)));
+    files['OEBPS/chapter_08_monoruby.xhtml'] = _utf8(
+      _buildChapter('第八章　連番振り仮名テスト', _generateWithMonoRuby(120)),
+    );
 
     if (withRealImages) {
       const TestImageGenerator gen = TestImageGenerator();
@@ -129,23 +132,27 @@ class EpubGenerator {
       final StringBuffer photoOnly = StringBuffer();
       for (int i = 1; i <= photoOnlyCount; i++) {
         files['OEBPS/images/photo_$i.png'] = gen.pngBytes(seed: seed++);
-        photoOnly
-            .writeln('  <div class="illust"><img src="images/photo_$i.png" '
-                'alt="挿絵$i"/></div>');
+        photoOnly.writeln(
+          '  <div class="illust"><img src="images/photo_$i.png" '
+          'alt="挿絵$i"/></div>',
+        );
       }
-      files['OEBPS/chapter_09_photo_only.xhtml'] =
-          _utf8(_buildChapter(realImageTitles[0], photoOnly.toString()));
+      files['OEBPS/chapter_09_photo_only.xhtml'] = _utf8(
+        _buildChapter(realImageTitles[0], photoOnly.toString()),
+      );
 
       final StringBuffer photoText = StringBuffer();
       for (int i = 1; i <= photoTextCount; i++) {
         files['OEBPS/images/inline_$i.png'] = gen.pngBytes(seed: seed++);
-        photoText
-            .writeln('  <div class="illust"><img src="images/inline_$i.png" '
-                'alt="挿絵$i"/></div>');
+        photoText.writeln(
+          '  <div class="illust"><img src="images/inline_$i.png" '
+          'alt="挿絵$i"/></div>',
+        );
         photoText.write(_generateStandard(25));
       }
-      files['OEBPS/chapter_10_photo_text.xhtml'] =
-          _utf8(_buildChapter(realImageTitles[1], photoText.toString()));
+      files['OEBPS/chapter_10_photo_text.xhtml'] = _utf8(
+        _buildChapter(realImageTitles[1], photoText.toString()),
+      );
     }
 
     return _buildZip(files);
@@ -179,11 +186,12 @@ class EpubGenerator {
       buf.writeln('  <p id="m$id">【M$id】$text</p>');
       if (i % 5 == 0) {
         buf.writeln(
-            '  <svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" '
-            'viewBox="0 0 200 150">'
-            '<rect width="200" height="150" fill="#ddd"/>'
-            '<text x="100" y="75" text-anchor="middle" '
-            'font-size="14" fill="#666">Image $i</text></svg>');
+          '  <svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" '
+          'viewBox="0 0 200 150">'
+          '<rect width="200" height="150" fill="#ddd"/>'
+          '<text x="100" y="75" text-anchor="middle" '
+          'font-size="14" fill="#666">Image $i</text></svg>',
+        );
       }
     }
     return buf.toString();
@@ -206,12 +214,14 @@ class EpubGenerator {
     for (int i = 1; i <= count; i++) {
       final id = i.toString().padLeft(3, '0');
       final pair = rubyPairs[(i - 1) % rubyPairs.length];
-      buf.writeln('  <p id="m$id">【M$id】'
-          '<ruby>${pair[0]}<rt>${pair[1]}</rt></ruby>'
-          'の中で、彼は新しい'
-          '<ruby>${rubyPairs[(i + 2) % rubyPairs.length][0]}'
-          '<rt>${rubyPairs[(i + 2) % rubyPairs.length][1]}</rt></ruby>'
-          'を見つけた。それは彼の人生を変える出来事だった。</p>');
+      buf.writeln(
+        '  <p id="m$id">【M$id】'
+        '<ruby>${pair[0]}<rt>${pair[1]}</rt></ruby>'
+        'の中で、彼は新しい'
+        '<ruby>${rubyPairs[(i + 2) % rubyPairs.length][0]}'
+        '<rt>${rubyPairs[(i + 2) % rubyPairs.length][1]}</rt></ruby>'
+        'を見つけた。それは彼の人生を変える出来事だった。</p>',
+      );
     }
     return buf.toString();
   }
@@ -238,10 +248,12 @@ class EpubGenerator {
       final readings = _splitReadingForBases(pair[1], bases.length);
       final rb = bases.map((b) => '<rb>$b</rb>').join();
       final rt = readings.map((r) => '<rt>$r</rt>').join();
-      buf.writeln('  <p id="m$id">【M$id】彼の'
-          '<ruby>$rb<rtc>$rt</rtc></ruby>'
-          'は、周囲の誰もが認めるところだった。年月を重ねるごとに、'
-          'その姿はいっそう際立っていった。</p>');
+      buf.writeln(
+        '  <p id="m$id">【M$id】彼の'
+        '<ruby>$rb<rtc>$rt</rtc></ruby>'
+        'は、周囲の誰もが認めるところだった。年月を重ねるごとに、'
+        'その姿はいっそう際立っていった。</p>',
+      );
     }
     return buf.toString();
   }
@@ -276,17 +288,23 @@ class EpubGenerator {
       }
 
       if (marker % 10 == 3) {
-        buf.writeln('  <blockquote><p id="m$id">【M$id】'
-            '「${_jpTexts[(marker - 1) % _jpTexts.length]}」</p></blockquote>');
+        buf.writeln(
+          '  <blockquote><p id="m$id">【M$id】'
+          '「${_jpTexts[(marker - 1) % _jpTexts.length]}」</p></blockquote>',
+        );
       } else if (marker % 10 == 5) {
         buf.writeln('  <ul>');
-        buf.writeln('    <li><p id="m$id">【M$id】'
-            '${_shortTexts[(marker - 1) % _shortTexts.length]}</p></li>');
+        buf.writeln(
+          '    <li><p id="m$id">【M$id】'
+          '${_shortTexts[(marker - 1) % _shortTexts.length]}</p></li>',
+        );
         marker++;
         if (marker <= count) {
           final id2 = marker.toString().padLeft(3, '0');
-          buf.writeln('    <li><p id="m$id2">【M$id2】'
-              '${_shortTexts[(marker - 1) % _shortTexts.length]}</p></li>');
+          buf.writeln(
+            '    <li><p id="m$id2">【M$id2】'
+            '${_shortTexts[(marker - 1) % _shortTexts.length]}</p></li>',
+          );
         }
         buf.writeln('  </ul>');
       } else if (marker % 10 == 8) {
@@ -317,16 +335,16 @@ $body
   }
 
   List<String> get _chapterFiles => <String>[
-        'chapter_01_standard',
-        'chapter_02_short',
-        'chapter_03_images',
-        'chapter_04_ruby',
-        'chapter_05_vertical',
-        'chapter_06_mixed',
-        'chapter_07_long',
-        'chapter_08_monoruby',
-        if (withRealImages) ...realImageChapters,
-      ];
+    'chapter_01_standard',
+    'chapter_02_short',
+    'chapter_03_images',
+    'chapter_04_ruby',
+    'chapter_05_vertical',
+    'chapter_06_mixed',
+    'chapter_07_long',
+    'chapter_08_monoruby',
+    if (withRealImages) ...realImageChapters,
+  ];
 
   String _buildOpf() {
     final chapters = _chapterFiles;
@@ -341,8 +359,11 @@ $body
               'media-type="image/png"/>',
     ];
     final items = <String>[
-      ...chapters.map((c) => '    <item id="$c" href="$c.xhtml" '
-          'media-type="application/xhtml+xml"/>'),
+      ...chapters.map(
+        (c) =>
+            '    <item id="$c" href="$c.xhtml" '
+            'media-type="application/xhtml+xml"/>',
+      ),
       ...imageItems,
     ].join('\n');
     final refs = chapters.map((c) => '    <itemref idref="$c"/>').join('\n');
@@ -451,8 +472,9 @@ svg { display: block; margin: 1em auto; max-width: 100%; }
       buf.add(nameBytes);
       buf.add(data);
 
-      centralEntries
-          .add(_CentralEntry(nameBytes, data.length, _crc32(data), offset));
+      centralEntries.add(
+        _CentralEntry(nameBytes, data.length, _crc32(data), offset),
+      );
     }
 
     final centralStart = buf.length;
@@ -493,8 +515,12 @@ svg { display: block; margin: 1em auto; max-width: 100%; }
 
   Uint8List _u16(int v) => Uint8List.fromList([v & 0xFF, (v >> 8) & 0xFF]);
 
-  Uint8List _u32(int v) => Uint8List.fromList(
-      [v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF, (v >> 24) & 0xFF]);
+  Uint8List _u32(int v) => Uint8List.fromList([
+    v & 0xFF,
+    (v >> 8) & 0xFF,
+    (v >> 16) & 0xFF,
+    (v >> 24) & 0xFF,
+  ]);
 
   int _crc32(Uint8List data) {
     int crc = 0xFFFFFFFF;

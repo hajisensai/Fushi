@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 
@@ -343,11 +343,9 @@ void main() {
 
       final StatFacts forB = await loadStatFacts(db, profileId: b);
       expect(forB.daily, isEmpty, reason: 'legacy 日行不归 B');
-      expect(
-        forB.legacyActivity.map((e) => e.eventType).toList(),
-        <String>[kActivityAdded],
-        reason: '库事件（导入）不分 Profile，学习行（read）只给归属 Profile',
-      );
+      expect(forB.legacyActivity.map((e) => e.eventType).toList(), <String>[
+        kActivityAdded,
+      ], reason: '库事件（导入）不分 Profile，学习行（read）只给归属 Profile');
     });
 
     test('别的 Profile 的「清空全部阅读统计」不连带删 legacy 历史', () async {

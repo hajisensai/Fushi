@@ -23,9 +23,9 @@ void main() {
     }
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
-      calls.add(call);
-      return true;
-    });
+          calls.add(call);
+          return true;
+        });
 
     final bool ok = await WindowCaptionChannel.setWindowIcon('C:/x/icon.png');
 
@@ -40,9 +40,9 @@ void main() {
     }
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
-      calls.add(call);
-      return true;
-    });
+          calls.add(call);
+          return true;
+        });
 
     final bool ok = await WindowCaptionChannel.setWindowIcon('/tmp/icon.png');
 

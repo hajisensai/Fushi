@@ -11,7 +11,14 @@ import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 两个合集详情页（视频剧集列表 [MediaCollectionDetailPage] 与书架网格

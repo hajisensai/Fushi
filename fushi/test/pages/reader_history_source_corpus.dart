@@ -18,10 +18,8 @@ const String kReaderHistoryPartDir =
     'lib/src/pages/implementations/reader_history';
 
 /// 主壳 + 磁盘上全部 `*.part.dart`（按路径排序，保证跨机器/跨次运行顺序确定）。
-List<String> readerHistoryFiles() => partCorpusFiles(
-      shell: _readerHistoryShell,
-      partDir: kReaderHistoryPartDir,
-    );
+List<String> readerHistoryFiles() =>
+    partCorpusFiles(shell: _readerHistoryShell, partDir: kReaderHistoryPartDir);
 
 /// 读「书架页合并语料」：主壳 + 全部 part 文件拼成单个字符串，供静态守卫切片/断言。
 String readReaderHistorySource() => readPartCorpus(readerHistoryFiles());

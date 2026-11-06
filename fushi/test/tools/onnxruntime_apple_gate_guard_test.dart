@@ -21,7 +21,7 @@
 
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import '../helpers/workspace_pubspec.dart';
 
@@ -48,10 +48,57 @@ bool _declaresPlatform(String platformsSection, String name) {
   return pattern.hasMatch(platformsSection);
 }
 
-/// 从 pbxproj 里取某个部署目标 build setting 的全部取值（去重）。
+/// pbxproj 里一个 XCBuildConfiguration 块是否属于主屏小组件扩展
+/// （FushiWidgets.appex）。扩展的部署目标由 WidgetKit API 决定（iOS 17 /
+/// macOS 14），与 Runner 和 pod 下限无关，不受下面「恰为下限」的约束。
+bool _isWidgetExtensionConfig(String block) =>
+    block.contains('/* FushiWidgets.xcconfig */');
+
+/// 按 XCBuildConfiguration 块拆 pbxproj，返回 (是否小组件扩展, 块文本)。
+List<(bool, String)> _buildConfigurations(String pbxproj) {
+  final List<(bool, String)> blocks = <(bool, String)>[];
+  final List<String> parts = pbxproj.split('isa = XCBuildConfiguration;');
+  for (final String part in parts.skip(1)) {
+    final int end = part.indexOf('name = ');
+    final String block = end < 0 ? part : part.substring(0, end);
+    blocks.add((_isWidgetExtensionConfig(block), block));
+  }
+  return blocks;
+}
+
+/// 从 pbxproj 里取某个部署目标 build setting 的全部取值（去重），只看 Runner
+/// 工程自身的 configuration（排除小组件扩展）。
 Set<String> _deploymentTargets(String pbxproj, String key) {
-  final matches = RegExp('$key = ([^;]+);').allMatches(pbxproj);
-  return matches.map((m) => m.group(1)!.trim()).toSet();
+  final RegExp pattern = RegExp('$key = ([^;]+);');
+  return <String>{
+    for (final (bool widget, String block) in _buildConfigurations(pbxproj))
+      if (!widget)
+        for (final RegExpMatch m in pattern.allMatches(block))
+          m.group(1)!.trim(),
+  };
+}
+
+/// 小组件扩展的部署目标（去重）。
+Set<String> _widgetDeploymentTargets(String pbxproj, String key) {
+  final RegExp pattern = RegExp('$key = ([^;]+);');
+  return <String>{
+    for (final (bool widget, String block) in _buildConfigurations(pbxproj))
+      if (widget)
+        for (final RegExpMatch m in pattern.allMatches(block))
+          m.group(1)!.trim(),
+  };
+}
+
+/// 点分版本号比较：a >= b。
+bool _versionAtLeast(String a, String b) {
+  final List<int> x = a.split('.').map(int.parse).toList();
+  final List<int> y = b.split('.').map(int.parse).toList();
+  for (int i = 0; i < 3; i++) {
+    final int xi = i < x.length ? x[i] : 0;
+    final int yi = i < y.length ? y[i] : 0;
+    if (xi != yi) return xi > yi;
+  }
+  return true;
 }
 
 void main() {
@@ -217,6 +264,24 @@ void main() {
             'macOS 部署目标必须全部恰为 $kMacosFloor（Debug/Profile/Release 三份），'
             '实测为 $macosTargets',
       );
+
+      // 小组件扩展另钉自己的目标，但不得低于 App 的下限（扩展跑在同一台设备上、
+      // 由同一个 App 内嵌，低于宿主下限没有意义且会掩盖误改）。
+      for (final (String project, String key, String floor)
+          in <(String, String, String)>[
+            (iosProject, 'IPHONEOS_DEPLOYMENT_TARGET', kIosFloor),
+            (macosProject, 'MACOSX_DEPLOYMENT_TARGET', kMacosFloor),
+          ]) {
+        final Set<String> widget = _widgetDeploymentTargets(project, key);
+        expect(widget, isNotEmpty, reason: '$key：找不到小组件扩展的部署目标');
+        for (final String v in widget) {
+          expect(
+            _versionAtLeast(v, floor),
+            isTrue,
+            reason: '小组件扩展 $key=$v 低于 App 下限 $floor',
+          );
+        }
+      }
     });
   });
 }

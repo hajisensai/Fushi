@@ -1,4 +1,7 @@
-import 'package:flutter/gestures.dart' show kPrimaryButton, kTouchSlop;
+import 'dart:async';
+
+import 'package:flutter/gestures.dart'
+    show kPressTimeout, kPrimaryButton, kTouchSlop;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -26,6 +29,7 @@ class FushiPressScale extends StatefulWidget {
     super.key,
     this.enabled = true,
     this.scale = FushiMotion.pressScale,
+    this.behavior = HitTestBehavior.deferToChild,
   });
 
   final Widget child;
@@ -36,8 +40,36 @@ class FushiPressScale extends StatefulWidget {
   /// 按下时的缩放倍数。
   final double scale;
 
+  /// 旁观指针的 [Listener] 的命中行为。内容整张包在 `IgnorePointer` 里、由外层
+  /// 统一接管手势的格子（拖排网格）要传 [HitTestBehavior.opaque]，否则子树不可
+  /// 命中、这一层永远收不到按下。
+  final HitTestBehavior behavior;
+
   @override
   State<FushiPressScale> createState() => _FushiPressScaleState();
+
+  /// 「按下确认」脉冲计数：子树里的封面扫光（`ShelfCoverSheen`）看到它变化就
+  /// 扫一遍光，让轻触 / 长按与桌面悬停有同一份光面反馈（触屏没有悬停）。
+  ///
+  /// 值是本层与所有祖先 [FushiPressScale] 的脉冲之和：卡片整张包在
+  /// `IgnorePointer` 里、按压由外层格子代收时（合集拖排网格），卡片内层那份
+  /// 收不到指针，靠这个和把外层的脉冲透传下去。没有祖先时为 0。
+  static int pulseOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<_FushiPressPulseScope>()
+          ?.pulse ??
+      0;
+}
+
+/// [FushiPressScale.pulseOf] 的载体。
+class _FushiPressPulseScope extends InheritedWidget {
+  const _FushiPressPulseScope({required this.pulse, required super.child});
+
+  final int pulse;
+
+  @override
+  bool updateShouldNotify(_FushiPressPulseScope oldWidget) =>
+      oldWidget.pulse != pulse;
 }
 
 class _FushiPressScaleState extends State<FushiPressScale>
@@ -68,14 +100,33 @@ class _FushiPressScaleState extends State<FushiPressScale>
   /// `Null check operator used on a null value`（ufzhkidhLr）。
   FushiSpringSpec? _releaseSpring;
 
+  /// 本层发出的「按下确认」脉冲数，见 [FushiPressScale.pulseOf]。
+  int _pulse = 0;
+
+  /// 本次按下是否已经发过脉冲（一次按下只扫一遍光）。
+  bool _pulsedThisPress = false;
+
+  /// 按住满 [kPressTimeout] 才确认是「按这张卡」而不是滚动起手——与
+  /// `InkWell` / `TapGestureRecognizer` 的按下判定同一个时限，竖滑书架时手指下
+  /// 的封面不会闪光。
+  Timer? _confirmTimer;
+
   @override
   void dispose() {
     // 销毁后到达的 pointerUp / pointerCancel 在 _release 里因 _downPosition == null
     // 直接返回，不会再碰已 dispose 的控制器或 context。
     _downPosition = null;
     _releaseSpring = null;
+    _confirmTimer?.cancel();
+    _confirmTimer = null;
     _press.dispose();
     super.dispose();
+  }
+
+  void _emitPulse() {
+    if (!mounted || _pulsedThisPress) return;
+    _pulsedThisPress = true;
+    setState(() => _pulse++);
   }
 
   void _onDown(PointerDownEvent event) {
@@ -84,6 +135,9 @@ class _FushiPressScaleState extends State<FushiPressScale>
     final FushiSpringSpec spring = context.fushiMotion.spatialFast;
     _downPosition = event.position;
     _releaseSpring = spring;
+    _pulsedThisPress = false;
+    _confirmTimer?.cancel();
+    _confirmTimer = Timer(kPressTimeout, _emitPulse);
     _press.fushiSpringTo(widget.scale, spring);
   }
 
@@ -93,11 +147,16 @@ class _FushiPressScaleState extends State<FushiPressScale>
     if ((event.position - origin).distance > kTouchSlop) _release();
   }
 
-  void _release() {
+  /// [tapped] = 原地松手（不是滑走 / 被取消）：按住不足 [kPressTimeout] 的快速
+  /// 轻触在这里补发脉冲。
+  void _release({bool tapped = false}) {
     if (_downPosition == null) return;
     final FushiSpringSpec? spring = _releaseSpring;
     _downPosition = null;
     _releaseSpring = null;
+    _confirmTimer?.cancel();
+    _confirmTimer = null;
+    if (tapped) _emitPulse();
     if (spring != null) _press.fushiSpringTo(1, spring);
   }
 
@@ -105,11 +164,18 @@ class _FushiPressScaleState extends State<FushiPressScale>
   Widget build(BuildContext context) {
     if (!widget.enabled || !fushiMotionEnabled(context)) return widget.child;
     return Listener(
+      behavior: widget.behavior,
       onPointerDown: _onDown,
       onPointerMove: _onMove,
-      onPointerUp: (_) => _release(),
+      onPointerUp: (_) => _release(tapped: true),
       onPointerCancel: (_) => _release(),
-      child: ScaleTransition(scale: _press, child: widget.child),
+      child: ScaleTransition(
+        scale: _press,
+        child: _FushiPressPulseScope(
+          pulse: FushiPressScale.pulseOf(context) + _pulse,
+          child: widget.child,
+        ),
+      ),
     );
   }
 }

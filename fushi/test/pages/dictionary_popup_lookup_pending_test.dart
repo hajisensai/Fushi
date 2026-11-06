@@ -4,12 +4,13 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
+import '../helpers/source_guard.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 停驻的热槽页里加载动画无限循环（Windows WebView2 停驻仍 `IsVisible(true)`、文档仍
@@ -97,7 +98,8 @@ Widget _host({
                   keepWebViewWarm: true,
                   webViewKey: _webViewKey,
                   onDismiss: () {},
-                  onTextSelected: (String _, Rect __) {},
+                  onTextSelected:
+                      (String _, Rect __, List<Object?> ___, String ____) {},
                   onLinkClick: (String _, Rect __) {},
                   onMineEntry: (Map<String, String> _) async =>
                       const MinePopupResult(),
@@ -132,43 +134,56 @@ void main() {
     WidgetTester tester,
   ) async {
     // 停驻空闲（seed）：占位单例，层在屏外。
-    await tester.pumpWidget(_host(
-      visible: false,
-      isSearching: false,
-      result: kPopupSearchingPlaceholderResult,
-    ));
+    await tester.pumpWidget(
+      _host(
+        visible: false,
+        isSearching: false,
+        result: kPopupSearchingPlaceholderResult,
+      ),
+    );
     expect(_injectedPending(tester), false);
     final State<DictionaryPopupWebView>? seeded = _webViewKey.currentState;
 
     // 复用热槽激活查词：结果对象仍是同一个占位单例，只有查询状态与可见性在变。
-    await tester.pumpWidget(_host(
-      visible: true,
-      isSearching: true,
-      result: kPopupSearchingPlaceholderResult,
-    ));
+    await tester.pumpWidget(
+      _host(
+        visible: true,
+        isSearching: true,
+        result: kPopupSearchingPlaceholderResult,
+      ),
+    );
     expect(_injectedPending(tester), true);
-    expect(identical(_webViewKey.currentState, seeded), true,
-        reason: '同一个热槽 WebView，靠 lookupPending 独立比较触发重推');
+    expect(
+      identical(_webViewKey.currentState, seeded),
+      true,
+      reason: '同一个热槽 WebView，靠 lookupPending 独立比较触发重推',
+    );
 
-    await tester.pumpWidget(_host(visible: true, isSearching: false, result: hit));
+    await tester.pumpWidget(
+      _host(visible: true, isSearching: false, result: hit),
+    );
     expect(_injectedPending(tester), false, reason: '结果到达即 pending=false');
 
-    await tester.pumpWidget(_host(
-      visible: false,
-      isSearching: false,
-      result: kPopupSearchingPlaceholderResult,
-    ));
+    await tester.pumpWidget(
+      _host(
+        visible: false,
+        isSearching: false,
+        result: kPopupSearchingPlaceholderResult,
+      ),
+    );
     expect(_injectedPending(tester), false, reason: '关栈复位回停驻空闲');
   });
 
   testWidgets('查询中但层被挪到屏外（对话框 / 就绪才显示）：pending=false', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(_host(
-      visible: false,
-      isSearching: true,
-      result: kPopupSearchingPlaceholderResult,
-    ));
+    await tester.pumpWidget(
+      _host(
+        visible: false,
+        isSearching: true,
+        result: kPopupSearchingPlaceholderResult,
+      ),
+    );
     expect(_injectedPending(tester), false);
   });
 
@@ -182,10 +197,7 @@ void main() {
       buildPopupEntriesJs(kPopupSearchingPlaceholderResult, pending: true),
       contains('window.lookupPending = true;'),
     );
-    expect(
-      buildPopupEntriesJs(hit),
-      contains('window.lookupPending = false;'),
-    );
+    expect(buildPopupEntriesJs(hit), contains('window.lookupPending = false;'));
   });
 
   // BUG-3274：换词时隐藏的热槽层先收到搜索期占位（pending=false），popup.js 曾把它画成
@@ -201,13 +213,29 @@ void main() {
       contains('window.lookupIdle = false;'),
       reason: '真实结果（含查完为空）不是空闲占位',
     );
-    final String webView = File(
-      'lib/src/pages/implementations/dictionary_popup_webview.dart',
-    ).readAsStringSync();
+    // 掩注释 + 折叠空白：只钉语义，不钉 `dart format` 的换行与尾逗号。
+    final String webView = compactCode(
+      File(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      ).readAsStringSync(),
+    );
     expect(
       webView,
-      contains('idle: identical(widget.result, kPopupSearchingPlaceholderResult)'),
+      matches(
+        RegExp(
+          r'identical\(widget\.result,kPopupSearchingPlaceholderResult,?\);',
+        ),
+      ),
       reason: 'in-app 推送必须按占位单例身份下发 lookupIdle',
+    );
+    // P1-B：字面量与拦截取回两条投递路径都必须带上同一个 idle（缺一条就会在大结果
+    // 时退回 BUG-3274 的假空态）。
+    expect(
+      RegExp(r'idle:idle[,)]').allMatches(webView).length,
+      greaterThanOrEqualTo(2),
+      reason:
+          '字面量（buildPopupEntriesJs）与取回（buildPopupFetchedEntriesJs）'
+          '两条路径都要下发 lookupIdle',
     );
   });
 }

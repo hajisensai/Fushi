@@ -28,7 +28,13 @@ Directory ttsRenderJobWorkDir(Directory workRoot, String jobId) =>
 
 enum TtsRenderJobStatus { queued, running, done, failed, cancelled }
 
-enum TtsRenderJobPhase { planning, synthesizing, encoding, verifying, importing }
+enum TtsRenderJobPhase {
+  planning,
+  synthesizing,
+  encoding,
+  verifying,
+  importing,
+}
 
 /// 校对标出的一句（语音识别结果与原文差得远）。
 class TtsRenderFlag {
@@ -48,10 +54,10 @@ class TtsRenderFlag {
   final String heard;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'i': sentence,
-        's': similarity,
-        'h': heard,
-      };
+    'i': sentence,
+    's': similarity,
+    'h': heard,
+  };
 
   static TtsRenderFlag? fromJson(Object? raw) {
     if (raw is! Map) return null;
@@ -132,33 +138,33 @@ class TtsRenderJob {
       status == TtsRenderJobStatus.cancelled;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'id': id,
-        'bookKey': bookKey,
-        'title': title,
-        'presetId': presetId,
-        'sections': sections,
-        'verify': verify,
-        'regenerate': regenerate,
-        'pause': pausePreset,
-        'loudnorm': normalizeLoudness,
-        'loudnessSkipped': loudnessSkipped,
-        'createdAt': createdAt,
-        'updatedAt': updatedAt,
-        'status': status.name,
-        'phase': phase?.name,
-        'done': done,
-        'total': total,
-        'error': error,
-        'flags': <Object?>[for (final TtsRenderFlag f in flags) f.toJson()],
-        'verified': verified,
-      };
+    'id': id,
+    'bookKey': bookKey,
+    'title': title,
+    'presetId': presetId,
+    'sections': sections,
+    'verify': verify,
+    'regenerate': regenerate,
+    'pause': pausePreset,
+    'loudnorm': normalizeLoudness,
+    'loudnessSkipped': loudnessSkipped,
+    'createdAt': createdAt,
+    'updatedAt': updatedAt,
+    'status': status.name,
+    'phase': phase?.name,
+    'done': done,
+    'total': total,
+    'error': error,
+    'flags': <Object?>[for (final TtsRenderFlag f in flags) f.toJson()],
+    'verified': verified,
+  };
 
   static TtsRenderJob fromJson(Map<String, Object?> json) {
     List<int> ints(Object? raw) => <int>[
-          if (raw is List)
-            for (final Object? v in raw)
-              if (v is int) v,
-        ];
+      if (raw is List)
+        for (final Object? v in raw)
+          if (v is int) v,
+    ];
     T byName<T extends Enum>(List<T> values, Object? raw, T fallback) {
       for (final T v in values) {
         if (v.name == raw) return v;
@@ -187,11 +193,7 @@ class TtsRenderJob {
       ),
       phase: phase == null
           ? null
-          : byName(
-              TtsRenderJobPhase.values,
-              phase,
-              TtsRenderJobPhase.planning,
-            ),
+          : byName(TtsRenderJobPhase.values, phase, TtsRenderJobPhase.planning),
       done: (json['done'] as int?) ?? 0,
       total: (json['total'] as int?) ?? 0,
       error: json['error'] as String?,
@@ -244,16 +246,14 @@ class TtsRenderFailure implements Exception {
   final String? detail;
 
   @override
-  String toString() =>
-      detail == null ? 'TtsRenderFailure($code)' : 'TtsRenderFailure($code: $detail)';
+  String toString() => detail == null
+      ? 'TtsRenderFailure($code)'
+      : 'TtsRenderFailure($code: $detail)';
 }
 
 /// 进度回报：阶段 + 本阶段完成 / 总数。
-typedef TtsRenderProgress = void Function(
-  TtsRenderJobPhase phase,
-  int done,
-  int total,
-);
+typedef TtsRenderProgress =
+    void Function(TtsRenderJobPhase phase, int done, int total);
 
 /// 制作端口：跑完返回校对结果（没校对返回 null）。
 abstract interface class TtsRenderRunner {
@@ -270,10 +270,10 @@ class TtsRenderQueue extends EngineChangeNotifier {
     required Directory workRoot,
     required TtsRenderRunner runner,
     DateTime Function()? now,
-  })  : _store = store,
-        _workRoot = workRoot,
-        _runner = runner,
-        _now = now ?? DateTime.now;
+  }) : _store = store,
+       _workRoot = workRoot,
+       _runner = runner,
+       _now = now ?? DateTime.now;
 
   final File _store;
 
@@ -485,20 +485,20 @@ class TtsRenderQueue extends EngineChangeNotifier {
     await _persist();
     notifyListeners();
     try {
-      final ({bool verified, List<TtsRenderFlag> flags}) result =
-          await _runner.run(
-        job,
-        onProgress: (TtsRenderJobPhase phase, int done, int total) {
-          final bool phaseChanged = job.phase != phase;
-          job
-            ..phase = phase
-            ..done = done
-            ..total = total;
-          if (phaseChanged) unawaited(_persist());
-          notifyListeners();
-        },
-        cancel: cancel,
-      );
+      final ({bool verified, List<TtsRenderFlag> flags}) result = await _runner
+          .run(
+            job,
+            onProgress: (TtsRenderJobPhase phase, int done, int total) {
+              final bool phaseChanged = job.phase != phase;
+              job
+                ..phase = phase
+                ..done = done
+                ..total = total;
+              if (phaseChanged) unawaited(_persist());
+              notifyListeners();
+            },
+            cancel: cancel,
+          );
       job
         ..verified = result.verified
         ..flags = result.flags;

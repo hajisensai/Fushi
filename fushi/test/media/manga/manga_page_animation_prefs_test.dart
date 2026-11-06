@@ -44,10 +44,12 @@ void main() {
       expect(prefs.mangaReaderPreferences.animateTransitions, isTrue);
     });
 
-    test('新增取值 cover 可存可读，未知落盘值读出 slide', () async {
+    test('新增取值 cover / curl 可存可读，未知落盘值读出 slide', () async {
       await prefs.setMangaPageAnimation('cover');
       expect(prefs.mangaPageAnimation, 'cover');
-      await prefs.setPref('manga_page_animation', 'curl');
+      await prefs.setMangaPageAnimation('curl');
+      expect(prefs.mangaPageAnimation, 'curl');
+      await prefs.setPref('manga_page_animation', 'flip');
       expect(prefs.mangaPageAnimation, 'slide');
     });
 

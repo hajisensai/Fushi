@@ -392,62 +392,57 @@ class FushiMarquee extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      var span = TextSpan(
-        text: text,
-        style: style,
-      );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        var span = TextSpan(text: text, style: style);
 
-      var tp = TextPainter(
-        maxLines: 1,
-        textAlign: TextAlign.left,
-        textDirection: TextDirection.ltr,
-        text: span,
-      );
-
-      tp.layout(maxWidth: constraints.maxWidth);
-
-      if (tp.didExceedMaxLines) {
-        return SizedBox(
-          height: tp.height,
-          width: constraints.maxWidth,
-          child: Marquee(
-            text: text,
-            style: style,
-            textScaleFactor: textScaleFactor,
-            textDirection: textDirection,
-            scrollAxis: scrollAxis,
-            crossAxisAlignment: crossAxisAlignment,
-            blankSpace: blankSpace,
-            velocity: velocity,
-            startAfter: startAfter,
-            pauseAfterRound: pauseAfterRound,
-            numberOfRounds: numberOfRounds,
-            showFadingOnlyWhenScrolling: showFadingOnlyWhenScrolling,
-            fadingEdgeStartFraction: fadingEdgeStartFraction,
-            fadingEdgeEndFraction: fadingEdgeEndFraction,
-            startPadding: startPadding,
-            accelerationDuration: accelerationDuration,
-            accelerationCurve: accelerationCurve,
-            decelerationDuration: decelerationDuration,
-            decelerationCurve: decelerationCurve,
-            onDone: onDone,
-          ),
+        var tp = TextPainter(
+          maxLines: 1,
+          textAlign: TextAlign.left,
+          textDirection: TextDirection.ltr,
+          text: span,
         );
-      } else {
-        return SizedBox(
-          width: constraints.maxWidth,
-          child: Align(
-            // Remember for RTL
-            alignment: Alignment.centerLeft,
-            child: Text(
-              text,
+
+        tp.layout(maxWidth: constraints.maxWidth);
+
+        if (tp.didExceedMaxLines) {
+          return SizedBox(
+            height: tp.height,
+            width: constraints.maxWidth,
+            child: Marquee(
+              text: text,
               style: style,
-              textAlign: TextAlign.left,
+              textScaleFactor: textScaleFactor,
+              textDirection: textDirection,
+              scrollAxis: scrollAxis,
+              crossAxisAlignment: crossAxisAlignment,
+              blankSpace: blankSpace,
+              velocity: velocity,
+              startAfter: startAfter,
+              pauseAfterRound: pauseAfterRound,
+              numberOfRounds: numberOfRounds,
+              showFadingOnlyWhenScrolling: showFadingOnlyWhenScrolling,
+              fadingEdgeStartFraction: fadingEdgeStartFraction,
+              fadingEdgeEndFraction: fadingEdgeEndFraction,
+              startPadding: startPadding,
+              accelerationDuration: accelerationDuration,
+              accelerationCurve: accelerationCurve,
+              decelerationDuration: decelerationDuration,
+              decelerationCurve: decelerationCurve,
+              onDone: onDone,
             ),
-          ),
-        );
-      }
-    });
+          );
+        } else {
+          return SizedBox(
+            width: constraints.maxWidth,
+            child: Align(
+              // Remember for RTL
+              alignment: Alignment.centerLeft,
+              child: Text(text, style: style, textAlign: TextAlign.left),
+            ),
+          );
+        }
+      },
+    );
   }
 }

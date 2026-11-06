@@ -1,8 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
+import 'dart:typed_data';
 
-import 'package:basic_utils/basic_utils.dart' hide Digest;
 import 'package:crypto/crypto.dart';
+import 'package:fushi_compute/fushi_compute.dart';
+import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 /// host 自身的 TLS 身份：一对 EC P-256 密钥 + 自签证书，落盘 PEM。
@@ -18,8 +22,13 @@ class FushiTlsIdentity {
   final String fingerprintSha256;
 }
 
-/// 用 basic_utils（纯 Dart：pointycastle + asn1lib，无原生）生成自签
-/// EC P-256 证书 + 私钥 PEM 的纯函数封装。私钥以 PKCS#8 PEM 输出。
+/// 生成自签 EC P-256 证书 + PKCS#8 私钥 PEM 的纯函数封装。
+///
+/// DER 在这里手工拼，签名走 native/fushi_compute（`ffc_crypto_p256_sign_sha256`，RFC 6979
+/// 确定性 k）。字节布局与原 basic_utils 5.7.0（`X509Utils.generateSelfSignedCertificate` /
+/// `CryptoUtils.encodePrivateEcdsaKeyToPkcs8`）逐字节一致——包括它的非标准细节：签名算法
+/// 带 `NULL` 参数、IP 也编码成 dNSName、CN 用 PrintableString、证书 PEM 行间是 `\r\n`。
+/// 固定向量见 packages/fushi_compute/test/crypto/crypto_vectors_v2.json。
 class FushiSelfSignedCertGenerator {
   FushiSelfSignedCertGenerator._();
 
@@ -27,7 +36,7 @@ class FushiSelfSignedCertGenerator {
   ///
   /// * [commonName]：写进 CN 的设备标识（deviceId / 设备名）。
   /// * [sanIpAddresses]：写进 subjectAltName 的所有本机 IPv4（应含 127.0.0.1）。
-  ///   basic_utils 把 SAN 一律编码为 dNSName，IP 串只为兼容/调试展示，真正的
+  ///   与旧实现一样把 SAN 一律编码为 dNSName，IP 串只为兼容/调试展示，真正的
   ///   身份校验走 client 侧指纹钉扎，不依赖 SAN/hostname 匹配。
   /// * [validity]：证书有效期，默认 30 年（按用户决策；指纹钉扎不依赖到期）。
   static ({String certificatePem, String privateKeyPem}) generate({
@@ -35,33 +44,14 @@ class FushiSelfSignedCertGenerator {
     required List<String> sanIpAddresses,
     Duration validity = const Duration(days: 365 * 30),
   }) {
-    final AsymmetricKeyPair<PublicKey, PrivateKey> pair =
-        CryptoUtils.generateEcKeyPair(curve: 'prime256v1');
-    final privateKey = pair.privateKey as ECPrivateKey;
-    final publicKey = pair.publicKey as ECPublicKey;
-
-    // BUG-3196：CN 与 SAN 里的名字必须是 ASCII（asn1lib 按 PrintableString /
-    // IA5String 编码，遇到非 ASCII 直接抛 `Invalid argument (string): Contains
-    // invalid characters.`）。Windows 计算机名可以是中文（「大祥老师的电脑」），
-    // 原样写进来就让主机服务一开就失败。身份校验走指纹钉扎，名字只是标签，归一即可。
+    // BUG-3196：CN 与 SAN 里的名字必须是 ASCII（PrintableString / dNSName）。Windows
+    // 计算机名可以是中文（「大祥老师的电脑」），身份校验走指纹钉扎，名字只是标签，归一即可。
     final String safeName = tlsSafeCommonName(commonName);
-    final dn = <String, String>{'CN': safeName};
-    final sans = <String>[
-      safeName,
-      ...sanIpAddresses,
-    ];
+    final List<String> sans = <String>[safeName, ...sanIpAddresses];
 
-    final String csrPem = X509Utils.generateEccCsrPem(
-      dn,
-      privateKey,
-      publicKey,
-      san: sans,
-    );
-
-    // basic_utils 用 ASN1UtcTime 编码 notAfter（YYMMDD，2 位年）。UTCTime 只能
-    // 表示 1950-2049：notAfter >= 2050 会被 RFC 5280 滑窗解释成 19xx（"已过期"）。
-    // 指纹钉扎不看到期，但为不产出对标准校验器/调试糊弄的证书，把 notAfter
-    // 上限钳到 2049-12-31。请求 30 年从 notBefore 起算若越过 2049 即取边界。
+    // notAfter 用 UTCTime（YYMMDD，2 位年），只能表示 1950-2049：>= 2050 会被 RFC 5280
+    // 滑窗解释成 19xx（"已过期"）。指纹钉扎不看到期，但为不产出对标准校验器/调试糊弄的
+    // 证书，把 notAfter 上限钳到 2049-12-31。请求 30 年从 notBefore 起算若越过 2049 即取边界。
     final DateTime notBefore = DateTime.now().toUtc();
     final DateTime requestedNotAfter = notBefore.add(validity);
     final DateTime utcTimeCeiling = DateTime.utc(2049, 12, 31, 23, 59, 59);
@@ -70,18 +60,176 @@ class FushiSelfSignedCertGenerator {
         : requestedNotAfter;
     final int days = notAfter.difference(notBefore).inDays;
 
-    final String certificatePem = X509Utils.generateSelfSignedCertificate(
-      privateKey,
-      csrPem,
-      days,
+    final ({Uint8List tbsDer, String certificatePem, String privateKeyPem})
+    generated = build(
+      privateKey: LeaderboardIdentity.generate().privateKey,
+      commonName: safeName,
       sans: sans,
       notBefore: notBefore,
+      days: days,
     );
+    return (
+      certificatePem: generated.certificatePem,
+      privateKeyPem: generated.privateKeyPem,
+    );
+  }
 
+  /// 确定性构造（给定私钥 / 时间 / 名字）。[commonName] / [sans] 须已是 ASCII。
+  @visibleForTesting
+  static ({Uint8List tbsDer, String certificatePem, String privateKeyPem})
+  build({
+    required Uint8List privateKey,
+    required String commonName,
+    required List<String> sans,
+    required DateTime notBefore,
+    required int days,
+  }) {
+    final FushiComputeCrypto crypto = FushiComputeCrypto.instance;
+    final Uint8List point = crypto.p256PublicKey(privateKey);
+    final Uint8List name = _der(0x30, <List<int>>[
+      _der(0x31, <List<int>>[
+        _der(0x30, <List<int>>[
+          _oidCommonName,
+          _der(0x13, <List<int>>[ascii.encode(commonName)]),
+        ]),
+      ]),
+    ]);
+    final Uint8List algorithm = _der(0x30, <List<int>>[
+      _oidEcPublicKey,
+      _oidPrime256v1,
+    ]);
+    final Uint8List publicKeyBits = _der(0x03, <List<int>>[
+      const <int>[0x00],
+      point,
+    ]);
+    final Uint8List sanList = _der(0x30, <List<int>>[
+      for (final String san in sans) _der(0x82, <List<int>>[ascii.encode(san)]),
+    ]);
+    final Uint8List tbs = _der(0x30, <List<int>>[
+      _der(0xa0, <List<int>>[
+        _derInteger(const <int>[2]),
+      ]),
+      _derInteger(const <int>[1]),
+      _sigAlg,
+      name,
+      _der(0x30, <List<int>>[
+        _utcTime(notBefore),
+        _utcTime(notBefore.add(Duration(days: days))),
+      ]),
+      name,
+      _der(0x30, <List<int>>[algorithm, publicKeyBits]),
+      _der(0xa3, <List<int>>[
+        _der(0x30, <List<int>>[
+          _der(0x30, <List<int>>[
+            _oidSubjectAltName,
+            _der(0x04, <List<int>>[sanList]),
+          ]),
+        ]),
+      ]),
+    ]);
+    final Uint8List sig = crypto.p256SignSha256(privateKey, tbs);
+    final Uint8List cert = _der(0x30, <List<int>>[
+      tbs,
+      _sigAlg,
+      _der(0x03, <List<int>>[
+        const <int>[0x00],
+        _der(0x30, <List<int>>[
+          _derInteger(sig.sublist(0, 32)),
+          _derInteger(sig.sublist(32)),
+        ]),
+      ]),
+    ]);
+    final String certBase64 = base64.encode(cert);
+    final List<String> lines = <String>[
+      for (int i = 0; i < certBase64.length; i += 64)
+        certBase64.substring(i, min(i + 64, certBase64.length)),
+    ];
+    final String certificatePem =
+        '-----BEGIN CERTIFICATE-----\n${lines.join('\r\n')}\n'
+        '-----END CERTIFICATE-----';
+
+    // PKCS#8 PrivateKeyInfo { 0, {ecPublicKey, prime256v1}, OCTET STRING ECPrivateKey
+    // { 1, d, [1] publicKey } }（ECPrivateKey 里不带 [0] 曲线参数，与旧实现同）。
+    final Uint8List pkcs8 = _der(0x30, <List<int>>[
+      _derInteger(const <int>[0]),
+      algorithm,
+      _der(0x04, <List<int>>[
+        _der(0x30, <List<int>>[
+          _derInteger(const <int>[1]),
+          _der(0x04, <List<int>>[privateKey]),
+          _der(0xa1, <List<int>>[publicKeyBits]),
+        ]),
+      ]),
+    ]);
+    final String keyBase64 = base64
+        .encode(pkcs8)
+        .replaceAllMapped(RegExp(r'.{64}'), (Match m) => '${m.group(0)}\n');
     final String privateKeyPem =
-        CryptoUtils.encodePrivateEcdsaKeyToPkcs8(privateKey);
+        '-----BEGIN PRIVATE KEY-----\n$keyBase64\n-----END PRIVATE KEY-----';
+    return (
+      tbsDer: tbs,
+      certificatePem: certificatePem,
+      privateKeyPem: privateKeyPem,
+    );
+  }
 
-    return (certificatePem: certificatePem, privateKeyPem: privateKeyPem);
+  // OID 2.5.4.3 / 1.2.840.10045.2.1 / 1.2.840.10045.3.1.7 / 2.5.29.17，以及
+  // ecdsa-with-SHA256（1.2.840.10045.4.3.2）后跟 NULL 参数的 AlgorithmIdentifier。
+  static const List<int> _oidCommonName = <int>[0x06, 0x03, 0x55, 0x04, 0x03];
+  static const List<int> _oidEcPublicKey = <int>[
+    0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, //
+  ];
+  static const List<int> _oidPrime256v1 = <int>[
+    0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, //
+  ];
+  static const List<int> _oidSubjectAltName = <int>[
+    0x06, 0x03, 0x55, 0x1d, 0x11, //
+  ];
+  static const List<int> _sigAlg = <int>[
+    0x30, 0x0c, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02, //
+    0x05, 0x00,
+  ];
+
+  /// DER TLV：[tag] + 定长长度 + [parts] 拼接。
+  static Uint8List _der(int tag, List<List<int>> parts) {
+    final BytesBuilder body = BytesBuilder(copy: false);
+    for (final List<int> part in parts) {
+      body.add(part);
+    }
+    final int length = body.length;
+    final BytesBuilder out = BytesBuilder(copy: false)..addByte(tag);
+    if (length < 0x80) {
+      out.addByte(length);
+    } else if (length < 0x100) {
+      out.add(<int>[0x81, length]);
+    } else {
+      out.add(<int>[0x82, length >> 8, length & 0xff]);
+    }
+    out.add(body.takeBytes());
+    return out.takeBytes();
+  }
+
+  /// 无符号大端整数 → DER INTEGER（去前导 0，最高位为 1 时补一个 0）。
+  static Uint8List _derInteger(List<int> unsigned) {
+    int start = 0;
+    while (start < unsigned.length - 1 && unsigned[start] == 0) {
+      start++;
+    }
+    final List<int> trimmed = unsigned.sublist(start);
+    return _der(0x02, <List<int>>[
+      if (trimmed[0] & 0x80 != 0) const <int>[0x00],
+      trimmed,
+    ]);
+  }
+
+  /// UTCTime `YYMMDDHHMMSSZ`（UTC）。
+  static Uint8List _utcTime(DateTime time) {
+    final DateTime t = time.toUtc();
+    String two(int v) => v.toString().padLeft(2, '0');
+    final String text =
+        '${two(t.year % 100)}${two(t.month)}${two(t.day)}'
+        '${two(t.hour)}${two(t.minute)}${two(t.second)}Z';
+    return _der(0x17, <List<int>>[ascii.encode(text)]);
   }
 }
 
@@ -148,9 +296,9 @@ class FushiTlsIdentityStore {
 
     final ({String certificatePem, String privateKeyPem}) generated =
         FushiSelfSignedCertGenerator.generate(
-      commonName: commonName,
-      sanIpAddresses: ipv4,
-    );
+          commonName: commonName,
+          sanIpAddresses: ipv4,
+        );
 
     // 私钥先写内容再 chmod 0600（POSIX 有效，Windows 无操作，靠 app 私有目录 + NTFS ACL）。
     final keyFile = File(_keyPath);

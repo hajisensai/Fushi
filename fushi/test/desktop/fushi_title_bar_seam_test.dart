@@ -94,7 +94,10 @@ void main() {
   }
 
   /// 顶栏最后一行与页面第一行在 [x] 处的像素。
-  Future<(Color, Color)> seamPixels(WidgetTester tester, {double x = 440}) async {
+  Future<(Color, Color)> seamPixels(
+    WidgetTester tester, {
+    double x = 440,
+  }) async {
     final RenderRepaintBoundary boundary =
         shot.currentContext!.findRenderObject()! as RenderRepaintBoundary;
     final ByteData bytes = (await tester.runAsync(() async {
@@ -119,11 +122,10 @@ void main() {
     return (at(x.toInt(), h - 1), at(x.toInt(), h));
   }
 
-  int channelDelta(Color a, Color b) => <double>[
-    (a.r - b.r).abs(),
-    (a.g - b.g).abs(),
-    (a.b - b.b).abs(),
-  ].map((double d) => (d * 255).round()).reduce((int x, int y) => x > y ? x : y);
+  int channelDelta(Color a, Color b) =>
+      <double>[(a.r - b.r).abs(), (a.g - b.g).abs(), (a.b - b.b).abs()]
+          .map((double d) => (d * 255).round())
+          .reduce((int x, int y) => x > y ? x : y);
 
   Future<void> expectNoSeam(WidgetTester tester, String why) async {
     final (Color bar, Color page) = await seamPixels(tester);
@@ -142,9 +144,7 @@ void main() {
       await expectNoSeam(tester, '默认页');
     });
 
-    testWidgets('${label(t)}：带顶栏的页面滚动前后与顶栏无缝', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('${label(t)}：带顶栏的页面滚动前后与顶栏无缝', (WidgetTester tester) async {
       await pumpShell(
         tester,
         t,
@@ -223,11 +223,10 @@ void main() {
   }
 
   testWidgets('对话框里的 MD3 顶栏滚动不改窗口顶栏', (WidgetTester tester) async {
-    await pumpShell(
-      tester,
-      (apple: false, brightness: Brightness.light),
-      const Scaffold(body: SizedBox.expand()),
-    );
+    await pumpShell(tester, (
+      apple: false,
+      brightness: Brightness.light,
+    ), const Scaffold(body: SizedBox.expand()));
     showDialog<void>(
       context: navigatorKey.currentContext!,
       builder: (_) => Center(

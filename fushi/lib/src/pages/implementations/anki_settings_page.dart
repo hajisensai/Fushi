@@ -3,11 +3,24 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsFieldDef, SrsNoteTypeView;
@@ -22,6 +35,7 @@ import 'package:path_provider/path_provider.dart' show getTemporaryDirectory;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/anki/anki_settings_actions.dart';
 import 'package:fushi/src/anki/lapis_backup_retention.dart';
+import 'package:fushi/src/anki/mining_media_quality_labels.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
 import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -41,9 +55,14 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
+import 'package:fushi/src/mining/sentence_audio_source_text.dart';
+import 'package:fushi_engine/mining/sentence_audio_source.dart'
+    show SentenceAudioSourcePick;
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/profile/profile_selector.dart';
+import 'package:fushi/src/settings/settings_schema_widgets.dart'
+    show SettingsSectionFooter;
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart'
     show kSrsBuiltinFushiCardKey, srsBuiltinNoteTypeSpec;
@@ -61,7 +80,9 @@ enum AnkiSettingsPanel { connection, lapis, maintenance, fields, media }
 /// `SettingsCustomItem.rows` 逐行渲染（每行一个 [AnkiSettingsBody]，与同组的子页
 /// 入口行同一分段规则）；哪些行出现由 schema 侧的 `ankiSectionRowsFor` 决定。
 enum AnkiSectionRow {
-  target,
+  /// 「制卡到 Fushi 互联服务端」：与互联设置里那一项同一个偏好。开着时卡片落在
+  /// 服务端的 Anki，本机的牌组 / 笔记类型不参与——所以排在「Anki」分组第一行。
+  mineToServer,
   profile,
   fetch,
   createLapis,
@@ -73,16 +94,32 @@ enum AnkiSectionRow {
   duplicateScope,
   backupImport,
   batchMining,
+  queueUndelivered,
   pendingLanding,
   pendingMines,
+
+  // 两种目标都生效的分组（「卡片内容」「制卡提示」「默认标签」）：排在「Anki」分组
+  // 之后，由 schema 各自成组。
+  allowDuplicates,
+  overwriteScope,
+  compactGlossaries,
+  noticeSuccess,
+  noticeDuplicate,
+  globalTags,
+  tags,
+  tagIncludeFushi,
+  tagIncludeCategory,
+  tagBookName,
+  tagNestTitleUnderCategory,
+  tagCharPosition,
 }
 
-/// 设置 › 制卡的正文（2026-10-16 重做）：Fushi 复习是主路径，正文依次是
-/// 「Fushi 复习」分组（目标行 + 复习牌组 / 笔记类型 / 字段映射 / 卡面入口）、两边都
-/// 生效的「卡片内容」与「默认标签」；Anki 的目标切换与全部 Anki 专属设置收在 schema
-/// 的「Anki」折叠分组（当前发往 Anki 时默认展开）。
+/// 设置 › 制卡的正文：只有挖词目标切换条与「Fushi 复习」分组（目标为复习时）。
+/// 当前目标的 Anki 配置、以及两种目标都生效的「卡片内容」「制卡提示」「默认标签」
+/// 都是 schema 分组（settings_schema_card_creation.dart），Anki 分组紧跟在正文之后
+/// （2026-10-31 重排：此前通用分组在正文里、排在 Anki 配置前面）。
 ///
-/// [panel] 非空 = 子页正文；[row] 非空 = 「Anki」分组里的一行。
+/// [panel] 非空 = 子页正文；[row] 非空 = schema 分组里的一行（见 [AnkiSectionRow]）。
 /// 正文自身不滚动，由设置宿主或子页提供滚动容器。
 class AnkiSettingsBody extends ConsumerStatefulWidget {
   const AnkiSettingsBody({super.key, this.panel, this.row})
@@ -95,9 +132,9 @@ class AnkiSettingsBody extends ConsumerStatefulWidget {
   ConsumerState<AnkiSettingsBody> createState() => _AnkiSettingsBodyState();
 }
 
-/// 片段格式选项的文案。五端随包 ffmpeg 都带 libvpx-vp9 + libopus（桌面 ffmpeg-min、
-/// Android AAR、iOS xcframework），两档 WebM 在各端都能内嵌；AV1 只有桌面有 SVT-AV1，
-/// 移动端按 [MiningClipFormat.encodeAttempts] 降级 VP9——文案本身已写明「仅桌面端」。
+/// 片段格式选项的文案。五端随包的统一 FFmpeg（tool/ffmpeg-unified）都带 libvpx-vp9 +
+/// SVT-AV1 + libopus，三档在各端都编得出；[MiningClipFormat.encodeAttempts] 的降级只给
+/// 用户自带的外部 ffmpeg 兜底。
 @visibleForTesting
 String miningClipFormatLabel(MiningClipFormat format) => switch (format) {
   MiningClipFormat.webmVp9 => t.mining_clip_format_webm_vp9,
@@ -185,6 +222,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     if (widget.row == AnkiSectionRow.backupImport && Platform.isIOS) {
       unawaited(_loadAnkiBackupImportedCount());
     }
+    // 重排入口的门控要的是「连着的那一端此刻能不能重排」：新版 AnkiConnect 禁止
+    // 直接写 due，没有原生 scheduling.repositionNewCards 就不能重排。探测一次网络
+    // 往返，只在真要画这两行时发起。
+    if (widget.row == null ||
+        widget.row == AnkiSectionRow.reposition ||
+        widget.row == AnkiSectionRow.autoReposition) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(ankiViewModelProvider.notifier).probeDeckReposition();
+      });
+    }
     if (widget.row != null) return;
     if (widget.panel != null && widget.panel != AnkiSettingsPanel.maintenance) {
       return;
@@ -202,7 +250,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   Widget build(BuildContext context) {
     final uiState = ref.watch(ankiViewModelProvider);
     final vm = ref.read(ankiViewModelProvider.notifier);
-    final settings = uiState.settings;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     if (widget.panel != null) {
@@ -246,135 +293,105 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // 挖词目标：与「下载」的后端选择同一形态——一个分组、一条分段条，脚注说明
+          // 当前目标；选中哪个，下面才展开哪个的设置。
           enter(
-            'card_section_srs',
-            AdaptiveSettingsSection(
-              title: t.srs_mining_target_srs,
+            'card_section_target',
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                SettingsSearchTarget(
-                  id: 'card_creation.anki.srs_mining_target',
-                  child: _buildSrsTargetRow(
-                    srsEnabled: srsEnabled,
-                    toReview: toReview,
-                  ),
+                AdaptiveSettingsSection(
+                  title: t.srs_mining_target_title,
+                  children: <Widget>[
+                    SettingsSearchTarget(
+                      id: 'card_creation.anki.srs_mining_target',
+                      child: _buildMiningTargetStrip(
+                        tokens,
+                        srsEnabled: srsEnabled,
+                        toReview: toReview,
+                      ),
+                    ),
+                  ],
                 ),
-                if (toReview) ..._buildSrsMiningRows(),
-              ],
-            ),
-          ),
-          // 两种目标都生效的卡片内容项（SRS 制卡复用 AnkiNoteComposer：查重放行、
-          // ✓ 覆写范围、紧凑释义都读同一份设置）。只对 Anki 成立的「查重范围」在
-          // 「Anki」分组。
-          enter(
-            'card_section_content',
-            AdaptiveSettingsSection(
-              title: t.card_creation_section_content,
-              children: [
-                SettingsSearchTarget(
-                  id: 'card_creation.anki.allow_duplicates',
-                  child: _buildAllowDuplicatesRow(settings, vm),
-                ),
-                // TODO-614：「覆写已制卡片」范围——再点 ✓ 时改旧卡还是建新卡；复习
-                // 覆写同样按它（全部 = 按查重找到的笔记都能覆写）。
-                SettingsSearchTarget(
-                  id: 'card_creation.anki.overwrite_scope',
-                  child: _buildOverwriteScopePicker(settings, vm),
-                ),
-                SettingsSearchTarget(
-                  id: 'card_creation.anki.compact_glossaries',
-                  child: _buildCompactGlossariesRow(settings, vm),
+                SettingsSectionFooter(
+                  toReview ? t.card_target_srs_hint : t.card_target_anki_hint,
                 ),
               ],
             ),
           ),
-          // 默认标签区（TODO-135）：「自动给卡片加什么标签」的开关并到一处，与目标
-          // 无关——SRS 制卡同样经 buildNoteTags 打这些标签。
-          enter(
-            'anki_section_tags',
-            AdaptiveSettingsSection(
-              title: t.anki_tag_default_section,
-              children: [
-                SettingsSearchTarget(
-                  id: 'card_creation.anki.tags',
-                  child: _buildTagsInput(settings, vm),
-                ),
-                SettingsSearchTarget(
-                  id: 'card_creation.anki.tag_include_hibiki',
-                  child: AdaptiveSettingsSwitchRow(
-                    title: t.anki_tag_include_fushi,
-                    subtitle: t.anki_tag_include_fushi_hint,
-                    value: settings.tagIncludeHibiki,
-                    onChanged: vm.updateTagIncludeHibiki,
+          if (toReview)
+            enter(
+              'card_section_srs',
+              AdaptiveSettingsSection(
+                title: t.srs_mining_target_srs,
+                children: <Widget>[
+                  ..._buildSrsMiningRows(),
+                  // 后台制卡（反馈 Rl00Di264R）：制卡入队立即返回，卡片在后台依次写进
+                  // 复习。装饰链每次制卡现读这个偏好，改完即生效。
+                  SettingsSearchTarget(
+                    id: 'card_creation.srs.background_mining',
+                    child: AdaptiveSettingsSwitchRow(
+                      icon: FushiIcons.checklist,
+                      showIcon: true,
+                      title: t.srs_mining_background_title,
+                      subtitle: t.srs_mining_background_hint,
+                      value: appModel.srsMiningBackground,
+                      onChanged: (bool v) async {
+                        await appModel.setSrsMiningBackground(v);
+                        if (mounted) setState(() {});
+                      },
+                    ),
                   ),
-                ),
-                SettingsSearchTarget(
-                  id: 'card_creation.anki.tag_include_category',
-                  child: AdaptiveSettingsSwitchRow(
-                    title: t.anki_tag_include_category,
-                    subtitle: t.anki_tag_include_category_hint,
-                    value: settings.tagIncludeCategory,
-                    onChanged: vm.updateTagIncludeCategory,
-                  ),
-                ),
-                SettingsSearchTarget(
-                  id: 'card_creation.anki.tag_book_name',
-                  child: AdaptiveSettingsSwitchRow(
-                    title: t.auto_add_book_name_to_tags,
-                    icon: FushiIcons.tag,
-                    value: appModel.autoAddBookNameToTags,
-                    onChanged: (bool value) {
-                      appModel.toggleAutoAddBookNameToTags();
-                      setState(() {});
-                    },
-                  ),
-                ),
-                // 制卡所在字符数标签（`chars_12345`）：只有小说阅读器会注入，但开关与
-                // 其余标签开关同区——用户找「卡片带哪些标签」只会来这里找。
-                AdaptiveSettingsSwitchRow(
-                  title: t.auto_add_char_position_to_tags,
-                  subtitle: t.auto_add_char_position_to_tags_hint,
-                  icon: FushiIcons.pin,
-                  value: appModel.autoAddCharPositionToTags,
-                  onChanged: (bool value) {
-                    appModel.toggleAutoAddCharPositionToTags();
-                    setState(() {});
-                  },
-                ),
-              ],
+                  // 切到 Fushi 复习之前排队等发往 Anki 的卡：有才显示。由本分组按
+                  // 张数决定入不入列，末行才拿得到组尾圆角（#ZWr6B6u_RM）。
+                  if (pendingMineCountOf(ref) > 0)
+                    const SettingsSearchTarget(
+                      id: 'card_creation.anki.pending_mines',
+                      child: PendingMinesEntryRow(),
+                    ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
   }
 
-  /// 「Fushi 复习」分组的首行：复习模块关着时是「开启 Fushi 复习」入口（确认一次：
-  /// 开模块 + 改目标）；开着时是单选目标行。当前发往 Anki 时副标题如实写明，并指向
-  /// 下方「Anki」分组——这是状态说明，不是推广。
-  Widget _buildSrsTargetRow({
+  /// 挖词目标分段条（Fushi 复习 / Anki）。复习模块关着时选「Fushi 复习」先确认一次：
+  /// 开模块 + 改目标（[_enableFushiReview]）；取消则仍是 Anki。
+  Widget _buildMiningTargetStrip(
+    FushiDesignTokens tokens, {
     required bool srsEnabled,
     required bool toReview,
   }) {
-    if (!srsEnabled) {
-      return AdaptiveSettingsNavigationRow(
-        key: const ValueKey<String>('card-target-srs-enable'),
-        title: t.card_target_srs_enable,
-        subtitle: t.card_target_srs_hint,
-        icon: FushiIcons.repeat,
-        showIcon: true,
-        onTap: () => unawaited(_enableFushiReview()),
-      );
-    }
-    return CardTargetRow(
-      key: const ValueKey<String>('card-target-srs'),
-      title: t.card_target_srs_title,
-      subtitle: toReview
-          ? t.card_target_srs_hint
-          : t.card_target_anki_current_note,
-      icon: FushiIcons.repeat,
-      selected: toReview,
-      onSelect: () => unawaited(
-        ref.read(appProvider).setSrsMiningTarget(SrsMiningTarget.srs),
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.rowHorizontal,
+        vertical: tokens.spacing.gap,
+      ),
+      child: FushiSegmentedStrip<SrsMiningTarget>(
+        key: const ValueKey<String>('card-target-switch'),
+        segments: <ButtonSegment<SrsMiningTarget>>[
+          ButtonSegment<SrsMiningTarget>(
+            value: SrsMiningTarget.srs,
+            icon: const Icon(FushiIcons.repeat),
+            label: Text(t.srs_mining_target_srs),
+          ),
+          ButtonSegment<SrsMiningTarget>(
+            value: SrsMiningTarget.anki,
+            icon: const Icon(FushiIcons.ankiCard),
+            label: Text(t.srs_mining_target_anki),
+          ),
+        ],
+        selected: toReview ? SrsMiningTarget.srs : SrsMiningTarget.anki,
+        onChanged: (SrsMiningTarget target) {
+          if (target == SrsMiningTarget.srs && !srsEnabled) {
+            unawaited(_enableFushiReview());
+            return;
+          }
+          unawaited(ref.read(appProvider).setSrsMiningTarget(target));
+        },
       ),
     );
   }
@@ -403,22 +420,19 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   ) {
     final AnkiSettings settings = uiState.settings;
     return switch (row) {
-      AnkiSectionRow.target => SettingsSearchTarget(
-        id: 'card_creation.anki.target',
-        child: CardTargetRow(
-          key: const ValueKey<String>('card-target-anki'),
-          title: t.card_target_anki_title,
-          subtitle: t.card_target_anki_hint,
-          icon: FushiIcons.ankiCard,
-          selected: !ref.watch(srsMiningToReviewProvider),
-          // 复习模块关着时 Anki 是唯一目标：只标状态，不给切换。
-          onSelect: ref.watch(srsModuleEnabledProvider)
-              ? () => unawaited(
-                  ref
-                      .read(appProvider)
-                      .setSrsMiningTarget(SrsMiningTarget.anki),
-                )
-              : null,
+      // 与互联设置里的同一个开关（id 不同：那边是 interconnect.mine_to_server）。
+      AnkiSectionRow.mineToServer => SettingsSearchTarget(
+        id: 'card_creation.anki.mine_to_server',
+        child: AdaptiveSettingsSwitchRow(
+          icon: FushiIcons.devices,
+          showIcon: true,
+          title: t.anki_mine_to_server,
+          subtitle: t.anki_mine_to_server_hint,
+          value: appModel.mineToServerEnabled,
+          onChanged: (bool value) async {
+            await appModel.setMineToServer(value);
+            if (mounted) setState(() {});
+          },
         ),
       ),
       // showIcon 与同组的刷新 / Lapis 行一致，左栏图标对齐。
@@ -490,16 +504,132 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           onChanged: (bool v) => vm.setBatchMiningEnabled(v),
         ),
       ),
+      AnkiSectionRow.queueUndelivered => SettingsSearchTarget(
+        id: 'card_creation.anki.queue_undelivered_mines',
+        child: AdaptiveSettingsSwitchRow(
+          icon: FushiIcons.cloudUpload,
+          showIcon: true,
+          title: t.anki_queue_undelivered_mines_title,
+          subtitle: t.anki_queue_undelivered_mines_hint,
+          value: settings.queueUndeliveredMinesEnabled,
+          onChanged: (bool v) => vm.setQueueUndeliveredMinesEnabled(v),
+        ),
+      ),
       AnkiSectionRow.pendingLanding => const SettingsSearchTarget(
         id: 'card_creation.anki.pending_mine_landing',
         child: PendingMineLandingSwitchRow(),
       ),
       // 待发制卡队列：不受「Anki 已配置」门控——恰恰是连不上 Anki 的时候卡会攒在
       // 这里。切到 Fushi 复习前攒下的待发卡片仍要发往 Anki：队列非空时照旧露出。
-      AnkiSectionRow.pendingMines => SettingsSearchTarget(
+      // 批量制卡与「连不上时暂存」都关着（默认）时，新卡不会进队列：空队列不露出
+      // （入不入列由 schema 的 [ankiDeliveryRowsFor] 决定）。
+      AnkiSectionRow.pendingMines => const SettingsSearchTarget(
         id: 'card_creation.anki.pending_mines',
-        child: PendingMinesEntryRow(
-          hideWhenEmpty: ref.watch(srsMiningToReviewProvider),
+        child: PendingMinesEntryRow(),
+      ),
+      // 「卡片内容」：两种目标都生效（SRS 制卡复用 AnkiNoteComposer：查重放行、✓ 覆写
+      // 范围、紧凑释义都读同一份设置）。只对 Anki 成立的「查重范围」在「Anki」分组。
+      AnkiSectionRow.allowDuplicates => SettingsSearchTarget(
+        id: 'card_creation.anki.allow_duplicates',
+        child: _buildAllowDuplicatesRow(settings, vm),
+      ),
+      // TODO-614：「覆写已制卡片」范围——再点 ✓ 时改旧卡还是建新卡；复习覆写同样按它
+      // （全部 = 按查重找到的笔记都能覆写）。
+      AnkiSectionRow.overwriteScope => SettingsSearchTarget(
+        id: 'card_creation.anki.overwrite_scope',
+        child: _buildOverwriteScopePicker(settings, vm),
+      ),
+      AnkiSectionRow.compactGlossaries => SettingsSearchTarget(
+        id: 'card_creation.anki.compact_glossaries',
+        child: _buildCompactGlossariesRow(settings, vm),
+      ),
+      // 「制卡提示」：制卡结果 toast 的开关组，两种目标都生效（toast 出口只有
+      // FushiToast.showMine 一处）。失败与「成功但缺音频」不受开关影响。
+      AnkiSectionRow.noticeSuccess => SettingsSearchTarget(
+        id: 'card_creation.notice.success',
+        child: AdaptiveSettingsSwitchRow(
+          title: t.card_creation_notice_success,
+          subtitle: t.card_creation_notice_success_hint,
+          value: appModel.mineNoticeSuccess,
+          onChanged: (bool value) async {
+            await appModel.setMineNoticeSuccess(value);
+            if (mounted) setState(() {});
+          },
+        ),
+      ),
+      AnkiSectionRow.noticeDuplicate => SettingsSearchTarget(
+        id: 'card_creation.notice.duplicate',
+        child: AdaptiveSettingsSwitchRow(
+          title: t.card_creation_notice_duplicate,
+          subtitle: t.card_creation_notice_duplicate_hint,
+          value: appModel.mineNoticeDuplicate,
+          onChanged: (bool value) async {
+            await appModel.setMineNoticeDuplicate(value);
+            if (mounted) setState(() {});
+          },
+        ),
+      ),
+      // 「默认标签」（TODO-135）：与目标无关——SRS 制卡同样经 buildNoteTags 打这些标签。
+      AnkiSectionRow.globalTags => SettingsSearchTarget(
+        id: 'card_creation.anki.global_tags',
+        child: _buildGlobalTagsInput(settings, vm),
+      ),
+      AnkiSectionRow.tags => SettingsSearchTarget(
+        id: 'card_creation.anki.tags',
+        child: _buildTagsInput(settings, vm),
+      ),
+      AnkiSectionRow.tagIncludeFushi => SettingsSearchTarget(
+        id: 'card_creation.anki.tag_include_hibiki',
+        child: AdaptiveSettingsSwitchRow(
+          title: t.anki_tag_include_fushi,
+          subtitle: t.anki_tag_include_fushi_hint,
+          value: settings.tagIncludeHibiki,
+          onChanged: vm.updateTagIncludeHibiki,
+        ),
+      ),
+      AnkiSectionRow.tagIncludeCategory => SettingsSearchTarget(
+        id: 'card_creation.anki.tag_include_category',
+        child: AdaptiveSettingsSwitchRow(
+          title: t.anki_tag_include_category,
+          subtitle: t.anki_tag_include_category_hint,
+          value: settings.tagIncludeCategory,
+          onChanged: vm.updateTagIncludeCategory,
+        ),
+      ),
+      AnkiSectionRow.tagNestTitleUnderCategory => SettingsSearchTarget(
+        id: 'card_creation.anki.tag_nest_title_under_category',
+        child: AdaptiveSettingsSwitchRow(
+          title: t.anki_tag_nest_title_under_category,
+          subtitle: t.anki_tag_nest_title_under_category_hint,
+          value: settings.tagNestTitleUnderCategory,
+          onChanged: vm.updateTagNestTitleUnderCategory,
+        ),
+      ),
+      AnkiSectionRow.tagBookName => SettingsSearchTarget(
+        id: 'card_creation.anki.tag_book_name',
+        child: AdaptiveSettingsSwitchRow(
+          title: t.auto_add_book_name_to_tags,
+          icon: FushiIcons.tag,
+          value: appModel.autoAddBookNameToTags,
+          onChanged: (bool value) {
+            appModel.toggleAutoAddBookNameToTags();
+            setState(() {});
+          },
+        ),
+      ),
+      // 制卡位置写进 MiscInfo（反馈 MhQHXQI-sB，原 `chars_12345` 标签）：只有小说阅读器
+      // 会注入；行在「卡片内容」分组，id 沿用旧名作 reveal 锚点。
+      AnkiSectionRow.tagCharPosition => SettingsSearchTarget(
+        id: 'card_creation.anki.tag_char_position',
+        child: AdaptiveSettingsSwitchRow(
+          title: t.anki_char_position_misc_info,
+          subtitle: t.anki_char_position_misc_info_hint,
+          icon: FushiIcons.pin,
+          value: appModel.autoAddCharPositionToTags,
+          onChanged: (bool value) {
+            appModel.toggleAutoAddCharPositionToTags();
+            setState(() {});
+          },
         ),
       ),
     };
@@ -662,6 +792,34 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           ),
         ),
       ),
+      // 新卡按词频重排：复习层同样支持（读写卡片的新卡位置），弹窗里选的是复习牌组。
+      ..._buildSrsRepositionRows(choices),
+    ];
+  }
+
+  /// 「Fushi 复习」分组里的手动重排。行本身与 Anki 目标时同一套（同一个 reveal target id，
+  /// 两种目标下只出现一处）。
+  List<Widget> _buildSrsRepositionRows(SrsMiningChoices choices) {
+    final AnkiViewModel vm = ref.read(ankiViewModelProvider.notifier);
+    // 下拉项的 id 只是键（重排按牌组全名取卡），用下标即可。
+    final List<AnkiDeck> decks = <AnkiDeck>[
+      for (int i = 0; i < choices.decks.length; i++)
+        AnkiDeck(id: i, name: choices.decks[i].$2),
+    ];
+    final int initial = choices.decks.indexWhere(
+      ((String, String) d) => d.$1 == choices.resolved.deckId,
+    );
+    return <Widget>[
+      // 没有「制卡后自动重排」：复习出卡直接按卡上的词频名次排（牌组设置「新卡顺序」），
+      // 手动重排只为「按位置」的牌组与没有名次的卡写位置。
+      SettingsSearchTarget(
+        id: 'card_creation.anki.reposition',
+        child: _buildDeckRepositionRow(
+          vm,
+          decks: decks,
+          initialDeckId: initial < 0 ? null : initial,
+        ),
+      ),
     ];
   }
 
@@ -680,10 +838,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        // 不装 Anki、由 Fushi 直接同步到 AnkiWeb / 自建服务器；本机没带
+        // 常用的 AnkiConnect 配置在最上面；不装 Anki、由 Fushi 直接同步到 AnkiWeb /
+        // 自建服务器的高级功能（默认折叠、启用前警告）排在后面。本机没带
         // fushi-anki-sync 时这一节不渲染。
-        const AnkiSyncClientSection(),
         _buildAnkiConnectSection(uiState, vm, settings),
+        const AnkiSyncClientSection(),
       ],
     );
   }
@@ -1072,6 +1231,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             },
           ),
         ),
+        // 反馈 pNF2ZL7Kfc：视频卡句子音频从哪里取（当前播放音轨 / 中置声道 / 指定音轨）。
+        SettingsSearchTarget(
+          id: 'card_creation.anki.video_mining_audio_source',
+          child: _buildVideoMiningAudioSourcePicker(),
+        ),
         SettingsSearchTarget(
           id: 'card_creation.anki.video_mining_image_mode',
           child: _buildVideoMiningImageModePicker(),
@@ -1086,6 +1250,20 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         SettingsSearchTarget(
           id: 'card_creation.anki.video_mining_animated_format',
           child: _buildVideoMiningAnimatedFormatPicker(),
+        ),
+        // 反馈 ZxyIMK-C5V：动图在 Anki 里默认无限循环；打开后与视频片段一样只播一遍。
+        // 视频 cue 动图与 galgame 窗口动图共用，所以不分平台、不随格式隐藏。
+        SettingsSearchTarget(
+          id: 'card_creation.anki.mining_animated_play_once',
+          child: AdaptiveSettingsSwitchRow(
+            title: t.mining_animated_play_once,
+            subtitle: t.mining_animated_play_once_hint,
+            value: appModel.miningAnimatedPlayOnce,
+            onChanged: (bool value) async {
+              await appModel.setMiningAnimatedPlayOnce(value);
+              if (mounted) setState(() {});
+            },
+          ),
         ),
         SettingsSearchTarget(
           id: 'card_creation.anki.video_mining_still_format',
@@ -1120,20 +1298,16 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// TODO-1650 图片/GIF 清晰度滑块（4 档 0..3，透传 [AppModel.miningImageQuality]）。
   /// 只管截图分辨率/质量 + GIF 帧率/宽度；满档=最高（截图原图直通，GIF 封顶）。滑块值即档位下标，
   /// `divisions/step=1` 让它按档吸附，`readout`/`label` 显示当前档名。
+  ///
+  /// 副标题首行给出当前档的具体参数（截图长边 / GIF 宽度与帧率），用户不用猜
+  /// 「省流」「高清」到底多清楚（反馈 28v5dFPrr0）。
   Widget _buildMiningImageQualityRow() {
-    final List<String> labels = <String>[
-      t.mining_image_quality_thrift,
-      t.mining_image_quality_standard,
-      t.mining_image_quality_hd,
-      // BUG-1039：满档过去叫「原片」，但它对 GIF 已不是源分辨率/源帧率（见
-      // [MiningMediaCompression.imageTiers]），只有截图仍是原图直通——名不副实，
-      // 改叫「最高」：只承诺是滑块顶格，不承诺具体保真度。
-      t.mining_image_quality_max,
-    ];
+    final List<String> labels = miningImageQualityTierNames();
     final int tier = appModel.miningImageQuality.clamp(0, labels.length - 1);
     return AdaptiveSettingsSliderRow(
       title: t.mining_image_quality,
-      subtitle: t.mining_image_quality_hint,
+      subtitle:
+          '${miningImageQualityTierDetail(tier)}\n${t.mining_image_quality_hint}',
       icon: FushiIcons.image,
       value: tier.toDouble(),
       min: 0,
@@ -1152,17 +1326,12 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// TODO-1650 音频质量滑块（3 档 0..2，透传 [AppModel.miningAudioQuality]）。只管句子/cue
   /// 音频声道 + 比特率；满档=最高（立体声 192k）。
   Widget _buildMiningAudioQualityRow() {
-    final List<String> labels = <String>[
-      t.mining_audio_quality_standard,
-      t.mining_audio_quality_high,
-      // BUG-1039：满档过去也叫「原片」，但 192k 立体声 AAC 是有损重编码、不是原片；
-      // 与图片滑块统一改叫「最高」（只承诺是滑块顶格）。
-      t.mining_audio_quality_max,
-    ];
+    final List<String> labels = miningAudioQualityTierNames();
     final int tier = appModel.miningAudioQuality.clamp(0, labels.length - 1);
     return AdaptiveSettingsSliderRow(
       title: t.mining_audio_quality,
-      subtitle: t.mining_audio_quality_hint,
+      subtitle:
+          '${miningAudioQualityTierDetail(tier)}\n${t.mining_audio_quality_hint}',
       icon: FushiIcons.audio,
       value: tier.toDouble(),
       min: 0,
@@ -1244,6 +1413,32 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       onChanged: (VideoMiningImageMode mode) {
         appModel.setVideoMiningImageMode(mode);
         setState(_resetClipSupportProbe);
+      },
+    );
+  }
+
+  /// 视频制卡句子音频来源（反馈 pNF2ZL7Kfc）：当前播放音轨（默认 = 改动前）/ 多声道的
+  /// 中置声道（人声）/ 指定第 N 条音轨。某个视频没有所选来源时制卡回退当前播放音轨并
+  /// OSD 提示。高级制卡对话框可只对这一张卡临时改，不动这里。透传
+  /// [AppModel.videoMiningAudioSource]。
+  Widget _buildVideoMiningAudioSourcePicker() {
+    return AdaptiveSettingsPickerRow<SentenceAudioSourcePick>(
+      title: t.video_mining_audio_source,
+      subtitle: t.video_mining_audio_source_hint,
+      icon: FushiIcons.audio,
+      controlBelow: true,
+      selected: appModel.videoMiningAudioSource,
+      options: <AdaptiveSettingsPickerOption<SentenceAudioSourcePick>>[
+        for (final SentenceAudioSourcePick pick
+            in sentenceAudioSourceSettingChoices())
+          AdaptiveSettingsPickerOption<SentenceAudioSourcePick>(
+            value: pick,
+            label: sentenceAudioSourceLabel(pick),
+          ),
+      ],
+      onChanged: (SentenceAudioSourcePick value) async {
+        await appModel.setVideoMiningAudioSource(value);
+        if (mounted) setState(() {});
       },
     );
   }
@@ -2156,44 +2351,70 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       AnkiNoteTypePickerRow(settings: settings, viewModel: vm);
 
   /// 「按词频重排新卡」入口。只有 AnkiConnect 有卡片级读写；其它后端把行
-  /// 置灰并说明原因，而不是隐藏——隐藏会让用户以为功能不存在。
-  Widget _buildDeckRepositionRow(AnkiViewModel vm) {
-    final bool supported = vm.supportsDeckReposition;
+  /// 置灰并说明原因，而不是隐藏——隐藏会让用户以为功能不存在。连着的
+  /// AnkiConnect 没有原生重排接口时同样置灰，并说明要换哪种版本。
+  Widget _buildDeckRepositionRow(
+    AnkiViewModel vm, {
+    List<AnkiDeck>? decks,
+    int? initialDeckId,
+  }) {
+    // watch：探测结论（AnkiUiState.deckRepositionAvailable）回来后重画这一行。
+    ref.watch(ankiViewModelProvider);
+    final bool supported = vm.canRepositionDeck;
     return AdaptiveSettingsRow(
       icon: FushiIcons.sort,
       showIcon: true,
       title: t.anki_reposition_title,
       subtitle: supported
           ? t.anki_reposition_hint
-          : t.anki_reposition_unsupported,
+          : _repositionUnavailableReason(vm),
       subtitleMaxLines: 3,
-      onTap: supported ? () => _openDeckReposition(vm) : null,
+      onTap: supported
+          ? () => _openDeckReposition(
+              vm,
+              decks: decks,
+              initialDeckId: initialDeckId,
+            )
+          : null,
     );
   }
 
   /// 「制卡后自动重排」开关。与上面那行同样的支持判据：不支持的后端置灰而
   /// 不隐藏，否则用户会以为这功能不存在。
   Widget _buildAutoRepositionRow(AnkiSettings settings, AnkiViewModel vm) {
-    final bool supported = vm.supportsDeckReposition;
+    ref.watch(ankiViewModelProvider);
+    final bool supported = vm.canAutoReposition;
     return AdaptiveSettingsSwitchRow(
       icon: FushiIcons.sync,
       showIcon: true,
       title: t.anki_reposition_auto_title,
       subtitle: supported
           ? t.anki_reposition_auto_hint
-          : t.anki_reposition_unsupported,
+          : _repositionUnavailableReason(vm),
       value: supported && settings.autoRepositionEnabled,
       onChanged: supported ? (bool v) => vm.setAutoRepositionEnabled(v) : null,
     );
   }
 
-  Future<void> _openDeckReposition(AnkiViewModel vm) {
+  /// 重排入口置灰时的原因：后端类型不支持，还是连着的 AnkiConnect 版本缺原生接口。
+  String _repositionUnavailableReason(AnkiViewModel vm) =>
+      vm.deckRepositionBlockedByBackend
+      ? t.anki_reposition_ankiconnect_unsupported
+      : t.anki_reposition_unsupported;
+
+  Future<void> _openDeckReposition(
+    AnkiViewModel vm, {
+    List<AnkiDeck>? decks,
+    int? initialDeckId,
+  }) {
     // 隐藏的词频词典根本不进引擎（AppModel.bucketDictPaths），列表只给已装载的。
     final List<String> loaded = loadedFrequencyDictionaryNames(appModel);
     return showAnkiDeckRepositionDialog(
       context,
       viewModel: vm,
       loadedFrequencyDictionaries: loaded,
+      decks: decks,
+      initialDeckId: initialDeckId,
     );
   }
 
@@ -2247,12 +2468,29 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   Widget _buildTagsInput(AnkiSettings settings, AnkiViewModel vm) {
     return AdaptiveSettingsRow(
       title: t.anki_tags,
+      subtitle: t.anki_tags_profile_hint,
       controlBelow: true,
       trailing: AdaptiveSettingsTextField(
         initialValue: settings.tags,
         labelText: t.anki_tags,
         hintText: t.anki_tags_hint,
         onChanged: (v) => vm.updateTags(v),
+      ),
+    );
+  }
+
+  /// 反馈 ORHr4_WDOy：所有 Profile 共用的标签，与上面按 Profile 的那一行叠加
+  /// （[AnkiSettings.noteTags]）。
+  Widget _buildGlobalTagsInput(AnkiSettings settings, AnkiViewModel vm) {
+    return AdaptiveSettingsRow(
+      title: t.anki_tags_global,
+      subtitle: t.anki_tags_global_hint,
+      controlBelow: true,
+      trailing: AdaptiveSettingsTextField(
+        initialValue: settings.globalTags,
+        labelText: t.anki_tags_global,
+        hintText: t.anki_tags_hint,
+        onChanged: (v) => vm.updateGlobalTags(v),
       ),
     );
   }
@@ -2424,6 +2662,8 @@ String _ankiHandlebarBaseLabel(String option) {
       return t.handlebar_selected_glossary;
     case '{popup-selection-text}':
       return t.handlebar_popup_selection_text;
+    case '{popup-selection-html}':
+      return t.handlebar_popup_selection_html;
     case '{sentence}':
       return t.handlebar_sentence;
     case '{cue-sentence}':
@@ -2601,49 +2841,6 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// 制卡目标的单选行（「发往 Fushi 复习」/「发往 Anki」）：左栏图标 + 标题 / 说明 +
-/// 行尾单选钮。两行分在「Fushi 复习」与「Anki」两个分组里，同一时刻只有一行选中。
-/// [onSelect] 为 null = 只标状态不给切换（复习模块关着时 Anki 是唯一目标）。
-class CardTargetRow extends StatelessWidget {
-  const CardTargetRow({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.selected,
-    required this.onSelect,
-    super.key,
-  });
-
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback? onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    final VoidCallback? select = selected ? null : onSelect;
-    return Semantics(
-      selected: selected,
-      inMutuallyExclusiveGroup: true,
-      child: AdaptiveSettingsRow(
-        title: title,
-        subtitle: selected ? '${t.card_target_current} · $subtitle' : subtitle,
-        icon: icon,
-        showIcon: true,
-        trailing: ExcludeSemantics(
-          child: FushiRadio<bool>(
-            value: true,
-            groupValue: selected,
-            onChanged: (bool? _) => select?.call(),
-          ),
-        ),
-        onTap: select,
       ),
     );
   }

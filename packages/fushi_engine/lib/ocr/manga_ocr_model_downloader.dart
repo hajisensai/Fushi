@@ -22,10 +22,10 @@ class MangaOcrModelDownloader {
     List<String> Function(MangaOcrModelFile file)? urlCandidates,
     int progressByteInterval = kMangaOcrDownloadProgressInterval,
   }) : _inner = ModelFileDownloader(
-          createClient: createClient,
-          urlCandidates: _adaptUrlCandidates(urlCandidates),
-          progressByteInterval: progressByteInterval,
-        );
+         createClient: createClient,
+         urlCandidates: _adaptUrlCandidates(urlCandidates),
+         progressByteInterval: progressByteInterval,
+       );
 
   final ModelFileDownloader _inner;
 

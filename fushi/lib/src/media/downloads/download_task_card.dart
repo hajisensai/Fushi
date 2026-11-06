@@ -3,7 +3,16 @@ import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
 /// 任务卡的状态色调（M3E：下载中 primary、暂停中性、完成 tertiary、出错 error
 /// tonal；Apple 落到强调色 / 系统绿 / 系统红 / 次级灰）。
@@ -108,6 +117,7 @@ class DownloadTaskCard extends StatefulWidget {
     this.menuActions = const <DownloadTaskMenuAction>[],
     this.method,
     this.externalSource = false,
+    this.summary,
     super.key,
   });
 
@@ -131,6 +141,9 @@ class DownloadTaskCard extends StatefulWidget {
 
   /// 内容来自第三方站点：方式标签旁多一枚「外部来源」。
   final bool externalSource;
+
+  /// 折叠时也显示的摘要（进度条下方），如转录任务的阶段轨；null = 不画。
+  final Widget? summary;
 
   @override
   State<DownloadTaskCard> createState() => _DownloadTaskCardState();
@@ -351,6 +364,16 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
               ),
               child: _buildProgress(context, progress, tone),
             ),
+          if (widget.summary != null)
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                0,
+                tokens.spacing.card,
+                tokens.spacing.gap,
+              ),
+              child: widget.summary,
+            ),
           // 展开详情：spatial 弹簧撑开 / 收起高度（墨水屏与减弱动态效果下瞬时）。
           // 降级时 duration 为零，直接换子树、不经 AnimatedSize：零时长下
           // RenderAnimatedSize 在自己的 performLayout 里 forward() 会同步走完
@@ -383,9 +406,7 @@ class _MetricChip extends StatelessWidget {
     final Widget chip = Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: glass
-            ? appleColorsOf(context).fill
-            : cs.surfaceContainerHighest,
+        color: glass ? appleColorsOf(context).fill : cs.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(FushiM3eShape.small),
       ),
       child: Row(

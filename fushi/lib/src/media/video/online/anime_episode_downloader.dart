@@ -33,10 +33,10 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
-import 'package:pointycastle/export.dart';
 
 import 'package:fushi/src/sync/remote_video_client.dart'
     show RemoteDownloadCancelled;
@@ -54,16 +54,96 @@ const Duration kAnimeEpisodeIdleConnectionTimeout = Duration(seconds: 15);
 /// 直链续传的验证器侧车后缀（`<dest>.part.validator`）。
 const String kAnimeDirectValidatorSuffix = '.part.validator';
 
-/// 一集下载在 [dest] 旁可能留下的半成品 / 断点文件（直链 `.part` + 验证器侧车、
-/// HLS 分片流 + 断点记录、转封装中间件）。下载中心「放弃」要一并删掉——
-/// `InterconnectDownloadManager.discard` 按同一份清单删（测试以本函数为准比对）。
-List<File> animeEpisodeDownloadLeftovers(File dest) => <File>[
-  File('${dest.path}.part'),
-  File('${dest.path}$kAnimeDirectValidatorSuffix'),
-  File('${dest.path}.hls.part'),
-  File('${dest.path}.hls.progress'),
-  File('${dest.path}.remux.mp4'),
+/// DASH 分离流合成下载（[AnimeEpisodeDownloader.downloadWithExternalAudio]）的
+/// 画面分量后缀：`<dest>.video`。
+const String kAnimeVideoComponentSuffix = '.video';
+
+/// 外挂音轨分量后缀：`<dest>.audio<N>`。
+String animeAudioComponentSuffix(int index) => '.audio$index';
+
+/// 合成中间件后缀：`<dest>.mux.mkv`。
+const String kAnimeMuxSuffix = '.mux.mkv';
+
+/// 已下完的分量旁的「流身份」侧车（`<component>.done`）：记下这份完整字节来自哪条
+/// 流（直链的 ETag / Last-Modified / 总长，或 HLS 流指纹），续传重跑时校验通过才
+/// 复用，不通过才删掉重下（与 `.part.validator` 同口径）。
+const String kAnimeComponentDoneSuffix = '.done';
+
+/// 单个下载目标（成品或分量）旁 [AnimeEpisodeDownloader.download] 会派生的断点文件。
+const List<String> _kAnimeDerivedSuffixes = <String>[
+  '.part',
+  kAnimeDirectValidatorSuffix,
+  '.hls.part',
+  '.hls.progress',
+  '.remux.mp4',
 ];
+
+/// 一集下载在 [dest] 旁可能留下的半成品 / 断点文件：直链 `.part` + 验证器侧车、
+/// HLS 分片流 + 断点记录、转封装中间件；DASH 分离流还有画面分量 `.video`、
+/// [audioComponents] 条外挂音轨分量 `.audioN`（各自带上述派生文件与 `.done` 侧车）
+/// 以及合成中间件 `.mux.mkv`。
+///
+/// 下载中心「放弃」时音轨条数已不可知，实际删除走按文件名判定的
+/// [deleteAnimeEpisodeDownloadLeftovers]（[isAnimeEpisodeDownloadLeftoverName] 与
+/// 本清单同一套后缀，测试按本清单比对）。
+List<File> animeEpisodeDownloadLeftovers(File dest, {int audioComponents = 0}) {
+  List<File> derived(String path) => <File>[
+    for (final String suffix in _kAnimeDerivedSuffixes) File('$path$suffix'),
+  ];
+  List<File> component(String path) => <File>[
+    File(path),
+    File('$path$kAnimeComponentDoneSuffix'),
+    ...derived(path),
+  ];
+  return <File>[
+    ...derived(dest.path),
+    File('${dest.path}$kAnimeMuxSuffix'),
+    ...component('${dest.path}$kAnimeVideoComponentSuffix'),
+    for (int i = 0; i < audioComponents; i++)
+      ...component('${dest.path}${animeAudioComponentSuffix(i)}'),
+  ];
+}
+
+final RegExp _kAnimeLeftoverTail = RegExp(
+  r'^(?:\.mux\.mkv'
+  r'|(?:\.video|\.audio\d+)(?:\.done)?'
+  r'|(?:\.video|\.audio\d+)?'
+  r'(?:\.part|\.part\.validator|\.hls\.part|\.hls\.progress|\.remux\.mp4))$',
+);
+
+/// [fileName] 是不是成品名为 [destName] 的一集下载留下的半成品（见
+/// [animeEpisodeDownloadLeftovers]）。成品本身不算。
+bool isAnimeEpisodeDownloadLeftoverName(String destName, String fileName) {
+  if (fileName.length <= destName.length || !fileName.startsWith(destName)) {
+    return false;
+  }
+  return _kAnimeLeftoverTail.hasMatch(fileName.substring(destName.length));
+}
+
+/// 删掉 [dest] 旁一集下载留下的全部半成品（音轨分量条数不定，按文件名判定）。
+/// 返回是否真的删了文件。单个文件删失败只记 debug 日志，继续删其余的。
+Future<bool> deleteAnimeEpisodeDownloadLeftovers(File dest) async {
+  final Directory parent = dest.parent;
+  if (!await parent.exists()) return false;
+  final String destName = dest.uri.pathSegments.isEmpty
+      ? dest.path
+      : dest.uri.pathSegments.last;
+  bool deleted = false;
+  await for (final FileSystemEntity entity in parent.list(followLinks: false)) {
+    if (entity is! File) continue;
+    final String name = entity.uri.pathSegments.last;
+    if (!isAnimeEpisodeDownloadLeftoverName(destName, name)) continue;
+    try {
+      await entity.delete();
+      deleted = true;
+    } on Object catch (error) {
+      debugPrint(
+        '[anime-download] leftover ${entity.path} delete failed: $error',
+      );
+    }
+  }
+  return deleted;
+}
 
 /// 直链续传的验证器（落 `<dest>.part.validator`，与 `.part` 配对）：上一次响应的
 /// ETag / Last-Modified / 总长。
@@ -332,18 +412,12 @@ Uint8List hlsSequenceIv(int sequence) {
   return iv;
 }
 
-/// AES-128-CBC + PKCS7 解一个分片。
-Uint8List decryptHlsSegment(Uint8List data, Uint8List key, Uint8List iv) {
-  final PaddedBlockCipher cipher =
-      PaddedBlockCipherImpl(PKCS7Padding(), CBCBlockCipher(AESEngine()))..init(
-        false,
-        PaddedBlockCipherParameters<CipherParameters, CipherParameters?>(
-          ParametersWithIV<KeyParameter>(KeyParameter(key), iv),
-          null,
-        ),
-      );
-  return cipher.process(data);
-}
+/// AES-128-CBC + PKCS7 解一个分片（native/fushi_compute，整片一次 FFI 调用）。
+///
+/// 原生库是硬依赖：缺失时抛 [FushiComputeUnavailableError]。长度不是块长整数倍 /
+/// key、IV 长度非法 / 填充非法抛 [ArgumentError]（与原 pointycastle 实现同形态）。
+Uint8List decryptHlsSegment(Uint8List data, Uint8List key, Uint8List iv) =>
+    FushiComputeCrypto.instance.aesCbcPkcs7Decrypt(data, key, iv);
 
 /// 分片的真实媒体字节：图片伪装前缀剥掉（BUG-2609），其余原样。
 Uint8List unwrapHlsSegmentPayload(Uint8List bytes) {
@@ -351,6 +425,66 @@ Uint8List unwrapHlsSegmentPayload(Uint8List bytes) {
   final int? offset = disguisedMediaPayloadOffset(bytes);
   if (offset == null || offset <= 0) return bytes;
   return Uint8List.sublistView(bytes, offset);
+}
+
+/// 一份已下完的分量字节来自哪条流：直链用响应验证器（ETag / Last-Modified / 总长），
+/// HLS 用流指纹（[hlsStreamFingerprint]，不含签名 query，换签名不算换流）。落在
+/// `<component>.done` 侧车，重跑时与现取的流身份比对，一致才复用完整分量。
+@immutable
+class AnimeComponentIdentity {
+  const AnimeComponentIdentity.direct(DirectStreamValidator this.direct)
+    : hlsStream = null;
+  const AnimeComponentIdentity.hls(String this.hlsStream) : direct = null;
+
+  final DirectStreamValidator? direct;
+  final String? hlsStream;
+
+  String encode() => jsonEncode(<String, Object?>{
+    if (hlsStream != null) 'hls': hlsStream,
+    if (direct != null) 'direct': jsonDecode(direct!.encode()),
+  });
+
+  /// 坏 JSON / 空身份返回 null，**绝不抛**（当作没有侧车 → 不复用）。
+  static AnimeComponentIdentity? tryParse(String raw) {
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map<String, Object?>) return null;
+      final Object? hls = decoded['hls'];
+      if (hls is String && hls.isNotEmpty) {
+        return AnimeComponentIdentity.hls(hls);
+      }
+      final Object? direct = decoded['direct'];
+      if (direct is! Map<String, Object?>) return null;
+      final DirectStreamValidator? validator = DirectStreamValidator.tryParse(
+        jsonEncode(direct),
+      );
+      if (validator == null || validator.isEmpty) return null;
+      return AnimeComponentIdentity.direct(validator);
+    } on Object {
+      return null;
+    }
+  }
+
+  /// 是否同一份字节：HLS 比指纹；直链两边都有的字段逐一比对，任一不同即不是，
+  /// **一个可比字段都没有也算不是**（宁可重下，也不拿来路不明的分量去合成）。
+  bool matches(AnimeComponentIdentity other) {
+    final String? stream = hlsStream;
+    if (stream != null) return stream == other.hlsStream;
+    final DirectStreamValidator? mine = direct;
+    final DirectStreamValidator? theirs = other.direct;
+    if (mine == null || theirs == null) return false;
+    int compared = 0;
+    bool same<T>(T? a, T? b) {
+      if (a == null || b == null) return true;
+      compared++;
+      return a == b;
+    }
+
+    if (!same<String>(mine.etag, theirs.etag)) return false;
+    if (!same<String>(mine.lastModified, theirs.lastModified)) return false;
+    if (!same<int>(mine.totalBytes, theirs.totalBytes)) return false;
+    return compared > 0;
+  }
 }
 
 typedef AnimeEpisodeHttpClientFactory = HttpClient Function();
@@ -384,6 +518,26 @@ class AnimeEpisodeDownloader {
     void Function(int received, int? total)? onBytes,
     Future<void>? cancelSignal,
   }) async {
+    await _downloadIdentified(
+      url: url,
+      headers: headers,
+      dest: dest,
+      onProgress: onProgress,
+      onBytes: onBytes,
+      cancelSignal: cancelSignal,
+    );
+  }
+
+  /// [download] 的本体：下完后返回这份字节的流身份（直链响应的验证器 / HLS 流指纹；
+  /// 直链一个验证器都没给时为 null），供分量的 `.done` 侧车落盘。
+  Future<AnimeComponentIdentity?> _downloadIdentified({
+    required String url,
+    required Map<String, String> headers,
+    required File dest,
+    void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
+  }) async {
     final HttpClient client = _httpClientFactory();
     // 连不上要快速失败：工厂（createAppHttpClient）一般已经设了连接超时，没设的
     // （测试 / 别的工厂）补上同一个默认值。
@@ -396,30 +550,11 @@ class AnimeEpisodeDownloader {
         client.close(force: true);
       }),
     );
+    AnimeComponentIdentity? identity;
     try {
       await dest.parent.create(recursive: true);
       if (looksLikeHlsUrl(url)) {
-        await _downloadHls(
-          client,
-          Uri.parse(url),
-          headers,
-          dest,
-          onProgress: onProgress,
-          isCancelled: () => cancelled,
-        );
-      } else {
-        await _downloadDirect(
-          client,
-          url,
-          headers,
-          dest,
-          onProgress: onProgress,
-          onBytes: onBytes,
-        );
-        // 有的 hoster 的 m3u8 地址没有后缀：下回来的其实是播放列表文本，按内容认出
-        // 来就改走分片下载（播放列表很小，这一趟白下的代价可以忽略）。
-        if (await _isPlaylistFile(dest)) {
-          await dest.delete();
+        identity = AnimeComponentIdentity.hls(
           await _downloadHls(
             client,
             Uri.parse(url),
@@ -427,6 +562,33 @@ class AnimeEpisodeDownloader {
             dest,
             onProgress: onProgress,
             isCancelled: () => cancelled,
+          ),
+        );
+      } else {
+        final DirectStreamValidator? validator = await _downloadDirect(
+          client,
+          url,
+          headers,
+          dest,
+          onProgress: onProgress,
+          onBytes: onBytes,
+        );
+        identity = validator == null || validator.isEmpty
+            ? null
+            : AnimeComponentIdentity.direct(validator);
+        // 有的 hoster 的 m3u8 地址没有后缀：下回来的其实是播放列表文本，按内容认出
+        // 来就改走分片下载（播放列表很小，这一趟白下的代价可以忽略）。
+        if (await _isPlaylistFile(dest)) {
+          await dest.delete();
+          identity = AnimeComponentIdentity.hls(
+            await _downloadHls(
+              client,
+              Uri.parse(url),
+              headers,
+              dest,
+              onProgress: onProgress,
+              isCancelled: () => cancelled,
+            ),
           );
         }
       }
@@ -437,9 +599,318 @@ class AnimeEpisodeDownloader {
       client.close(force: true);
     }
     if (cancelled) throw const RemoteDownloadCancelled();
+    return identity;
   }
 
-  Future<void> _downloadDirect(
+  /// DASH 分离流（EXlaIL2eKQ）：画面流 + 扩展给的外挂音轨各自下载（直链 / HLS 同
+  /// [download]，各自 `.part` 断点续传），再本地 `ffmpeg -c copy` 合成一个文件。
+  ///
+  /// 映射顺序：画面、画面自带音轨（若有，`0:a?`）、外挂音轨按序——与播放时
+  /// `audio-add ... auto` 的默认选轨一致：自带原声的流仍默认放原声，纯视频流默认
+  /// 放第一条外挂音频。输出用 Matroska（任意编码组合都装得下；mpv 按内容识别
+  /// 容器，不看扩展名）。
+  ///
+  /// 外挂音轨既可能是 DASH 分离流的**唯一音频**，也可能是流自带原声之外的**替代
+  /// 配音**：画面下完后用 ffprobe 看它有没有自带音轨。单条外挂音轨下载失败一律跳过
+  /// 并记错误日志；只有画面没有（或探不出有）自带音轨、而外挂音轨又一条都没下成时
+  /// 才如实抛出第一条的错误——留一个无声视频当「下载成功」正是本问题本身，而一条
+  /// 替代配音 403 不该让整集带原声的下载失败。合成失败同样如实抛错。
+  ///
+  /// 暂停 / 续传：每个下完的分量旁落 `.done` 流身份侧车（[AnimeComponentIdentity]），
+  /// 重跑时现取一次流身份（直链 `Range: bytes=0-0` 只读响应头 / HLS 取播放列表）比对，
+  /// 一致就复用完整分量，不一致（换了画质 / 线路 / 源站换了文件）或比不出来才删掉
+  /// 重下；未下完的 `.part` 仍由 [download] 按验证器续传。
+  Future<void> downloadWithExternalAudio({
+    required String url,
+    required List<String> audioUrls,
+    required Map<String, String> headers,
+    required File dest,
+    void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
+  }) async {
+    if (audioUrls.isEmpty) {
+      await download(
+        url: url,
+        headers: headers,
+        dest: dest,
+        onProgress: onProgress,
+        onBytes: onBytes,
+        cancelSignal: cancelSignal,
+      );
+      return;
+    }
+    bool cancelled = false;
+    unawaited(cancelSignal?.then((_) => cancelled = true));
+    final File video = File('${dest.path}$kAnimeVideoComponentSuffix');
+    final List<File> audios = <File>[
+      for (int i = 0; i < audioUrls.length; i++)
+        File('${dest.path}${animeAudioComponentSuffix(i)}'),
+    ];
+    const double videoShare = 0.8;
+    final double audioShare = (0.95 - videoShare) / audioUrls.length;
+    await _downloadComponent(
+      url: url,
+      headers: headers,
+      component: video,
+      onProgress: onProgress == null
+          ? null
+          : (double value) => onProgress(value * videoShare),
+      onBytes: onBytes,
+      cancelSignal: cancelSignal,
+    );
+    final bool? videoHasAudio = await _probeHasAudioStream(video);
+    final List<File> ready = <File>[];
+    Object? firstError;
+    StackTrace? firstStack;
+    for (int i = 0; i < audioUrls.length; i++) {
+      final double base = videoShare + audioShare * i;
+      try {
+        await _downloadComponent(
+          url: audioUrls[i],
+          headers: headers,
+          component: audios[i],
+          onProgress: onProgress == null
+              ? null
+              : (double value) => onProgress(base + value * audioShare),
+          cancelSignal: cancelSignal,
+        );
+        ready.add(audios[i]);
+      } on RemoteDownloadCancelled {
+        rethrow;
+      } on Object catch (error, stack) {
+        if (cancelled) throw const RemoteDownloadCancelled();
+        firstError ??= error;
+        firstStack ??= stack;
+        ErrorLogService.instance.log(
+          'AnimeEpisodeDownloader.externalAudioTrack',
+          StateError(
+            'external audio track $i of ${dest.path} failed, skipped '
+            '(video has own audio: ${videoHasAudio ?? 'unknown'}): $error',
+          ),
+          stack,
+        );
+      }
+    }
+    if (ready.isEmpty && videoHasAudio != true) {
+      // 画面没有自带音轨（或探不出来）、外挂音频又一条都没下成：成品只会是无声视频。
+      Error.throwWithStackTrace(firstError!, firstStack!);
+    }
+    final File muxed = File('${dest.path}$kAnimeMuxSuffix');
+    if (await muxed.exists()) await muxed.delete();
+    final FfmpegRunResult result = await _ffmpeg().run(
+      buildExternalAudioMuxArgs(
+        videoPath: video.path,
+        audioPaths: <String>[for (final File f in ready) f.path],
+        outputPath: muxed.path,
+      ),
+      const Duration(minutes: 30),
+    );
+    if (result.returnCode != 0 ||
+        !await muxed.exists() ||
+        await muxed.length() == 0) {
+      if (await muxed.exists()) await muxed.delete();
+      final String output = result.output;
+      // 已下完的分量与 `.done` 侧车留着：重试直接复用，放弃时由
+      // [deleteAnimeEpisodeDownloadLeftovers] 一并删掉。
+      throw StateError(
+        'ffmpeg mux of separate audio for ${dest.path} failed '
+        '(exit ${result.returnCode}): '
+        '${output.length > 2000 ? output.substring(output.length - 2000) : output}',
+      );
+    }
+    if (await dest.exists()) await dest.delete();
+    await muxed.rename(dest.path);
+    // 分量、`.done` 侧车、跳过的音轨留下的 `.part` 等全部清掉。
+    await deleteAnimeEpisodeDownloadLeftovers(dest);
+    onProgress?.call(1.0);
+  }
+
+  /// 下一个分量：已有完整分量且 `.done` 侧车的流身份与现取的一致就直接复用；否则
+  /// 删掉完整分量（`.part` 留给 [download] 按验证器续传）重下，下完落新侧车。
+  Future<void> _downloadComponent({
+    required String url,
+    required Map<String, String> headers,
+    required File component,
+    void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
+  }) async {
+    final File done = File('${component.path}$kAnimeComponentDoneSuffix');
+    if (await component.exists()) {
+      final AnimeComponentIdentity? stored = await _readComponentIdentity(done);
+      if (stored != null &&
+          await _componentLengthPlausible(component, stored)) {
+        final AnimeComponentIdentity? now = await _probeIdentity(
+          url,
+          headers,
+          stored,
+          cancelSignal,
+        );
+        if (now != null && stored.matches(now)) {
+          onProgress?.call(1.0);
+          return;
+        }
+      }
+      await component.delete();
+    }
+    await _deleteQuietly(done);
+    final AnimeComponentIdentity? identity = await _downloadIdentified(
+      url: url,
+      headers: headers,
+      dest: component,
+      onProgress: onProgress,
+      onBytes: onBytes,
+      cancelSignal: cancelSignal,
+    );
+    if (identity == null) return; // 比不出身份：下次重跑照常重下。
+    try {
+      await done.writeAsString(identity.encode(), flush: true);
+    } on Object catch (error) {
+      debugPrint('[anime-download] component identity write failed: $error');
+    }
+  }
+
+  static Future<AnimeComponentIdentity?> _readComponentIdentity(
+    File file,
+  ) async {
+    try {
+      if (!await file.exists()) return null;
+      return AnimeComponentIdentity.tryParse(await file.readAsString());
+    } on Object {
+      return null;
+    }
+  }
+
+  /// 直链分量的长度必须等于侧车记下的总长（被截断 / 被改过的分量不复用）。
+  static Future<bool> _componentLengthPlausible(
+    File component,
+    AnimeComponentIdentity stored,
+  ) async {
+    final int length = await component.length();
+    if (length == 0) return false;
+    final int? total = stored.direct?.totalBytes;
+    return total == null || total == length;
+  }
+
+  /// 现取一次 [url] 的流身份（与 [stored] 同类）：HLS 取播放列表算指纹；直链发
+  /// `Range: bytes=0-0` 只读响应头。网络失败 / 非 2xx / 一个验证器都没有返回 null
+  /// （比不出来 → 不复用）；取消如实抛 [RemoteDownloadCancelled]。
+  Future<AnimeComponentIdentity?> _probeIdentity(
+    String url,
+    Map<String, String> headers,
+    AnimeComponentIdentity stored,
+    Future<void>? cancelSignal,
+  ) async {
+    final HttpClient client = _httpClientFactory();
+    client.connectionTimeout ??= kAppHttpConnectionTimeout;
+    client.idleTimeout = kAnimeEpisodeIdleConnectionTimeout;
+    bool cancelled = false;
+    unawaited(
+      cancelSignal?.then((_) {
+        cancelled = true;
+        client.close(force: true);
+      }),
+    );
+    try {
+      final Uri uri = Uri.parse(url);
+      if (stored.hlsStream != null) {
+        final ({HlsMediaPlaylist playlist, Uri uri}) media =
+            await _loadMediaPlaylist(client, uri, headers);
+        return AnimeComponentIdentity.hls(
+          hlsStreamFingerprint(media.uri, media.playlist),
+        );
+      }
+      final ResumableDownloadResponse response = await _open(
+        client,
+        uri,
+        <String, String>{...headers, HttpHeaders.rangeHeader: 'bytes=0-0'},
+      ).timeout(stallTimeout);
+      await _abandon(response);
+      final int status = response.statusCode;
+      if (status != HttpStatus.partialContent && status != HttpStatus.ok) {
+        return null;
+      }
+      final int? total = status == HttpStatus.partialContent
+          ? DirectStreamValidator._contentRangeTotal(
+              response.header(HttpHeaders.contentRangeHeader),
+            )
+          : int.tryParse(
+              response.header(HttpHeaders.contentLengthHeader) ?? '',
+            );
+      final String? etag = response.header(HttpHeaders.etagHeader);
+      final String? modified = response.header(HttpHeaders.lastModifiedHeader);
+      final DirectStreamValidator validator = DirectStreamValidator(
+        etag: etag == null || etag.isEmpty ? null : etag,
+        lastModified: modified == null || modified.isEmpty ? null : modified,
+        totalBytes: total,
+      );
+      return validator.isEmpty
+          ? null
+          : AnimeComponentIdentity.direct(validator);
+    } on Object catch (error) {
+      if (cancelled) throw const RemoteDownloadCancelled();
+      debugPrint('[anime-download] component identity probe failed: $error');
+      return null;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// 画面分量有没有自带音轨（ffprobe 列音频流）。探不出来（缺 ffprobe / 超时 /
+  /// 非 0 退出）返回 null——调用方把「不知道」当「可能没有」处理。
+  Future<bool?> _probeHasAudioStream(File video) async {
+    try {
+      final FfmpegRunResult result = await _ffmpeg().runProbe(<String>[
+        '-v',
+        'error',
+        '-select_streams',
+        'a',
+        '-show_entries',
+        'stream=index',
+        '-of',
+        'csv=p=0',
+        video.path,
+      ], const Duration(seconds: 30));
+      if (result.returnCode != 0) return null;
+      return result.output.trim().isNotEmpty;
+    } on Object catch (error) {
+      debugPrint('[anime-download] audio stream probe failed: $error');
+      return null;
+    }
+  }
+
+  /// 纯函数：画面 + 外挂音轨的 `ffmpeg -c copy` 合成参数（见
+  /// [downloadWithExternalAudio]）。
+  @visibleForTesting
+  static List<String> buildExternalAudioMuxArgs({
+    required String videoPath,
+    required List<String> audioPaths,
+    required String outputPath,
+  }) {
+    return <String>[
+      '-hide_banner',
+      '-y',
+      '-i',
+      videoPath,
+      for (final String audio in audioPaths) ...<String>['-i', audio],
+      '-map',
+      '0:v',
+      '-map',
+      '0:a?',
+      for (int i = 0; i < audioPaths.length; i++) ...<String>[
+        '-map',
+        '${i + 1}:a',
+      ],
+      '-c',
+      'copy',
+      '-f',
+      'matroska',
+      outputPath,
+    ];
+  }
+
+  Future<DirectStreamValidator?> _downloadDirect(
     HttpClient client,
     String url,
     Map<String, String> headers,
@@ -455,6 +926,7 @@ class AnimeEpisodeDownloader {
       // 宁可从 0 重下，也不冒把两条流拼成坏片的险。
       await part.delete();
     }
+    DirectStreamValidator? latest;
     final ResumableDownloader downloader = ResumableDownloader(
       url: url,
       destination: dest,
@@ -486,14 +958,13 @@ class AnimeEpisodeDownloader {
       },
       onMeta: (ResumableDownloadMetaInfo meta) {
         // 本次响应的验证器落侧车（与 .part 配对），供中断后下一次续传比对。
-        _writeValidatorSync(
-          validatorFile,
-          DirectStreamValidator(
-            etag: meta.etag,
-            lastModified: meta.lastModified,
-            totalBytes: meta.totalBytes,
-          ),
+        final DirectStreamValidator validator = DirectStreamValidator(
+          etag: meta.etag,
+          lastModified: meta.lastModified,
+          totalBytes: meta.totalBytes,
         );
+        latest = validator;
+        _writeValidatorSync(validatorFile, validator);
       },
       onProgress: (int received, int? total) {
         onBytes?.call(received, total);
@@ -506,6 +977,7 @@ class AnimeEpisodeDownloader {
       // 下完（part 已换名成 dest）清侧车；失败 / 中断保留（与 .part 配对供续传）。
       if (!await part.exists()) await _deleteQuietly(validatorFile);
     }
+    return latest;
   }
 
   static Future<DirectStreamValidator?> _readValidator(File file) async {
@@ -640,7 +1112,7 @@ class AnimeEpisodeDownloader {
     throw const AnimeEpisodeDownloadUnsupported('HLS master nesting too deep');
   }
 
-  Future<void> _downloadHls(
+  Future<String> _downloadHls(
     HttpClient client,
     Uri uri,
     Map<String, String> headers,
@@ -727,6 +1199,7 @@ class AnimeEpisodeDownloader {
     }
     await _finishHls(part, dest, fragmented: playlist.isFragmentedMp4);
     if (await progressFile.exists()) await progressFile.delete();
+    return fingerprint;
   }
 
   /// 分片流 → mp4：`-c copy` 转封装（TS 里的 ADTS AAC 要 `aac_adtstoasc`）。

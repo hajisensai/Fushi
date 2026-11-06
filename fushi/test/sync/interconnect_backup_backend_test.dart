@@ -35,8 +35,11 @@ void main() {
       );
 
       expect(await repo.getBackendType(), SyncBackendType.fushiServer);
-      expect(await repo.isFtpTlsEnabled(), isFalse,
-          reason: 'FTP 专属的 TLS 标记不该在切走后残留');
+      expect(
+        await repo.isFtpTlsEnabled(),
+        isFalse,
+        reason: 'FTP 专属的 TLS 标记不该在切走后残留',
+      );
     });
 
     test('非 FTP 起点不误动 FTP TLS 标记', () async {

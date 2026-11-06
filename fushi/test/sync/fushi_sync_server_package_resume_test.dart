@@ -98,15 +98,20 @@ void main() {
       expect(etag, isNotNull, reason: '包端点必须带强验证器供 If-Range 续传');
       expect(lib.exportCalls, 1);
 
-      final _Res resumed = await get(path, extra: <String, String>{
-        'Range': 'bytes=8-',
-        'If-Range': etag!,
-      });
+      final _Res resumed = await get(
+        path,
+        extra: <String, String>{'Range': 'bytes=8-', 'If-Range': etag!},
+      );
       expect(resumed.status, 206);
-      expect(resumed.headers['content-range'],
-          'bytes 8-${first.body.length - 1}/${first.body.length}');
-      expect(resumed.body, first.body.sublist(8),
-          reason: '续传字节必须与首次 200 同源（同一份缓存文件）');
+      expect(
+        resumed.headers['content-range'],
+        'bytes 8-${first.body.length - 1}/${first.body.length}',
+      );
+      expect(
+        resumed.body,
+        first.body.sublist(8),
+        reason: '续传字节必须与首次 200 同源（同一份缓存文件）',
+      );
       expect(lib.exportCalls, 1, reason: 'TTL 内续传绝不重跑导出器——重打包字节不稳定，重跑即拼接损坏');
     });
 
@@ -115,16 +120,20 @@ void main() {
       final _Res first = await get(path);
       expect(first.status, 200);
 
-      final _Res stale = await get(path, extra: <String, String>{
-        'Range': 'bytes=8-',
-        'If-Range': '"pkg-stale-mismatch"',
-      });
+      final _Res stale = await get(
+        path,
+        extra: <String, String>{
+          'Range': 'bytes=8-',
+          'If-Range': '"pkg-stale-mismatch"',
+        },
+      );
       expect(stale.status, 200, reason: '验证器过期 → 整包重发');
       expect(stale.body, first.body);
 
-      final _Res blind = await get(path, extra: <String, String>{
-        'Range': 'bytes=8-',
-      });
+      final _Res blind = await get(
+        path,
+        extra: <String, String>{'Range': 'bytes=8-'},
+      );
       expect(blind.status, 200, reason: '包字节可能换代，缺 If-Range 的盲 Range 必须拒绝续传');
       expect(blind.body, first.body);
     });
@@ -137,8 +146,9 @@ void main() {
 
   group('ExportPackageCache', () {
     test('TTL 内命中同一文件；过期重导出且 ETag 换代', () async {
-      final ExportPackageCache cache =
-          ExportPackageCache(ttl: Duration.zero); // 立即过期
+      final ExportPackageCache cache = ExportPackageCache(
+        ttl: Duration.zero,
+      ); // 立即过期
       addTearDown(cache.dispose);
       int gen = 0;
       Future<File> export() async {
@@ -150,14 +160,18 @@ void main() {
       }
 
       final File a = await cache.obtain('dict', 'x', export);
-      final String etagA = ExportPackageCache.etagFor(a);
+      final String etagA = await ExportPackageCache.etagFor(a);
       final File b = await cache.obtain('dict', 'x', export);
       expect(gen, 2, reason: 'ttl=0：第二次 obtain 必须重导出');
-      expect(ExportPackageCache.etagFor(b), isNot(etagA),
-          reason: '字节换代 ⇒ ETag 必变（否则旧 .part 会被误续传）');
+      expect(
+        await ExportPackageCache.etagFor(b),
+        isNot(etagA),
+        reason: '字节换代 ⇒ ETag 必变（否则旧 .part 会被误续传）',
+      );
 
-      final ExportPackageCache fresh =
-          ExportPackageCache(ttl: const Duration(minutes: 5));
+      final ExportPackageCache fresh = ExportPackageCache(
+        ttl: const Duration(minutes: 5),
+      );
       addTearDown(fresh.dispose);
       gen = 0;
       final File c1 = await fresh.obtain('dict', 'x', export);
@@ -179,8 +193,9 @@ void main() {
       await server.start();
       addTearDown(server.stop);
 
-      final FushiDatabase clientDb =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase clientDb = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(clientDb.close);
       final SyncRepository repo = SyncRepository(clientDb);
       await repo.setFushiClientUrls(<FushiClientUrl>[
@@ -188,7 +203,8 @@ void main() {
       ]);
       await repo.setFushiClientToken(token);
       final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
-          (String url, String tok) async => true);
+        (String url, String tok) async => true,
+      );
       await backend.restoreAuth(repo);
 
       final SyncRunReport report = SyncRunReport();
@@ -201,6 +217,7 @@ void main() {
         syncStats: false,
         syncAudioBookPosition: false,
         syncContent: false,
+        syncMangaContent: false,
         syncAudioBookFiles: false,
         syncDictionary: false,
       ).syncCollectionsLiveForTest(report, backend);
@@ -208,7 +225,8 @@ void main() {
       expect(
         report.errors.any((String e) => e.contains('no collections endpoint')),
         isTrue,
-        reason: '老 host 缺合集端点必须留痕（错误日志 + 手动同步失败计数），'
+        reason:
+            '老 host 缺合集端点必须留痕（错误日志 + 手动同步失败计数），'
             '不得静默跳过让用户只看见「合集没同步」',
       );
     });

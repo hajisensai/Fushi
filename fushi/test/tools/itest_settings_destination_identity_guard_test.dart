@@ -29,14 +29,14 @@ import '../helpers/source_guard.dart';
 ///   ② 必须有「打开前目标不该已经在显示」的前置条件，否则身份判据在宽屏首帧
 ///      对第一分类同样恒真。
 void main() {
-  final File itest =
-      File('integration_test/navigation_stability_test.dart');
+  final File itest = File('integration_test/navigation_stability_test.dart');
 
   test('the navigation-stability itest exists where the guard expects it', () {
     expect(
       itest.existsSync(),
       isTrue,
-      reason: '守卫的扫描目标不在了；文件被挪走/改名时必须同步改这里，'
+      reason:
+          '守卫的扫描目标不在了；文件被挪走/改名时必须同步改这里，'
           '否则守卫会静默变成零断言',
     );
   });
@@ -53,7 +53,8 @@ void main() {
     expect(
       code,
       contains('widget is SettingsDetailPage && widget.destination?.id == id'),
-      reason: '窄屏必须按推栈详情页自带的 destination.id 判身份；'
+      reason:
+          '窄屏必须按推栈详情页自带的 destination.id 判身份；'
           '子页 destination 为 null，所以只能用 `?.`',
     );
     // 用 `!` 把空断掉会有两种坏结局：子页一进来就运行期崩，或者有人为了不崩
@@ -103,7 +104,8 @@ void main() {
     expect(
       code,
       contains('requireTransition: false'),
-      reason: '循环前的 priming（以及连开同一分类的深路由）必须显式豁免，'
+      reason:
+          '循环前的 priming（以及连开同一分类的深路由）必须显式豁免，'
           '而不是把前置条件整条删掉',
     );
   });

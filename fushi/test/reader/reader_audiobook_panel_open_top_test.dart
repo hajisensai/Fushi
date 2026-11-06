@@ -177,11 +177,7 @@ void main() {
       ))
         if (s.position.axis == Axis.vertical) s,
     ];
-    expect(
-      vertical,
-      hasLength(1),
-      reason: '面板里只能有章节列表这一个竖向滚动（不得再嵌外层滚动）',
-    );
+    expect(vertical, hasLength(1), reason: '面板里只能有章节列表这一个竖向滚动（不得再嵌外层滚动）');
     expect(vertical.single, same(chapters));
 
     // 定位键在「章节」分组标题旁，先把它滚进章节列表视野里再点。

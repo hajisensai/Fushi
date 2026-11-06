@@ -36,16 +36,16 @@ bool magpieUpscalingWorthShowing(MagpieUpscalingReport report) =>
 /// 才敢说「已开启」。**不拿意图冒充结果。**
 String magpieUpscalingStatusLabel(MagpieUpscalingReport report) =>
     switch (report.status) {
-      MagpieUpscalingStatus.active => report.scalingActive
-          ? t.game_upscaling_status_active
-          : t.game_upscaling_status_manual,
+      MagpieUpscalingStatus.active =>
+        report.scalingActive
+            ? t.game_upscaling_status_active
+            : t.game_upscaling_status_manual,
       MagpieUpscalingStatus.hotkeyOnly => t.game_upscaling_status_manual,
       MagpieUpscalingStatus.unavailable => t.game_upscaling_status_unavailable,
       MagpieUpscalingStatus.failed => t.game_upscaling_status_failed,
       MagpieUpscalingStatus.idle ||
       MagpieUpscalingStatus.disabled ||
-      MagpieUpscalingStatus.preparing =>
-        t.game_upscaling_status_unavailable,
+      MagpieUpscalingStatus.preparing => t.game_upscaling_status_unavailable,
     };
 
 /// 「我该做什么」。返回 null 表示确实没有比状态本身更有用的话可说 —— 此时 UI 就只显示
@@ -80,11 +80,10 @@ String? magpieUpscalingActionHint(MagpieUpscalingReport report) {
 /// - 首次初始化 → 下次就好了，**这是最常见的一条**，也是「装完第一次没反应」的真身；
 /// - 已有别的 Magpie 在跑 → 永远不会自己好，得知道是我们有意不碰它；
 /// - 其余（上游改了配置格式等）→ 说不出所以然，就只给通用处置，不瞎解释。
-String _hintForSkip(MagpieUpscalingReport report) =>
-    switch (report.profileSkipReason) {
-      MagpieProfileSkipReason.bootstrapFailed =>
-        t.game_upscaling_hint_first_run,
-      MagpieProfileSkipReason.externalInstance =>
-        t.game_upscaling_hint_external,
-      _ => t.game_upscaling_hint_manual,
-    };
+String _hintForSkip(
+  MagpieUpscalingReport report,
+) => switch (report.profileSkipReason) {
+  MagpieProfileSkipReason.bootstrapFailed => t.game_upscaling_hint_first_run,
+  MagpieProfileSkipReason.externalInstance => t.game_upscaling_hint_external,
+  _ => t.game_upscaling_hint_manual,
+};

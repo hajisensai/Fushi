@@ -90,8 +90,9 @@ class BangumiMetadataAdapter implements GalgameMetadataAdapter {
         source: source,
       );
     }
-    final GalgameMetadataDraft draft =
-        parseBangumiSubject(Map<Object?, Object?>.from(decoded));
+    final GalgameMetadataDraft draft = parseBangumiSubject(
+      Map<Object?, Object?>.from(decoded),
+    );
     return draft.isEmpty && draft.externalId == null ? null : draft;
   }
 
@@ -246,15 +247,17 @@ List<SourceCandidate> parseBangumiSearchResults(
     if (id == null) {
       continue; // 没 ID 就无法 fetchById，这条候选没用。
     }
-    out.add(SourceCandidate(
-      source: GalgameMetadataSource.bgm,
-      externalId: id,
-      name: draftString(subject['name']),
-      nameCn: draftString(subject['name_cn']),
-      coverUrl: bangumiCoverUrl(subject),
-      releaseDate: draftDate(subject['date']),
-      summary: summaryExcerpt(subject['summary']),
-    ));
+    out.add(
+      SourceCandidate(
+        source: GalgameMetadataSource.bgm,
+        externalId: id,
+        name: draftString(subject['name']),
+        nameCn: draftString(subject['name_cn']),
+        coverUrl: bangumiCoverUrl(subject),
+        releaseDate: draftDate(subject['date']),
+        summary: summaryExcerpt(subject['summary']),
+      ),
+    );
     if (out.length >= limit) {
       break;
     }

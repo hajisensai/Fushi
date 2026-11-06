@@ -13,7 +13,8 @@ import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_compose_page.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:http/http.dart' as http;
@@ -48,7 +49,7 @@ void main() {
       supportRoot: () async => root,
       client: board.feedbackClient,
       meta: () async => <String, Object?>{},
-      logText: () => '',
+      logText: ({required bool includeDebugLog}) => '',
       logEncoder: (String s) => Uint8List.fromList(utf8.encode(s)),
     );
     // 一个容器跨多次 pumpWidget：页面关掉再打开时服务不随 ProviderScope 一起被 dispose。
@@ -92,6 +93,27 @@ void main() {
     }
   }
 
+  /// 等页面已排进草稿存储串行队列的读写全部走完（调用前那次落盘必须已经发起）。
+  ///
+  /// 等的是队列本身，不轮询文件、也不设真实时间上限——轮询会撞上写到一半的目录，
+  /// 上限在机器一忙时会提前放弃。完成回调挂在测试 zone 里：写的后续微任务只在
+  /// pump 时冲刷，在真实 zone 里干等它会永远挂住。不推进假时钟。
+  Future<void> drainDraftWrites(WidgetTester tester) async {
+    bool drained = false;
+    unawaited(
+      service
+          .draftStore()
+          .then((FeedbackDraftStore store) => store.idle)
+          .then((_) => drained = true),
+    );
+    while (!drained) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump();
+    }
+  }
+
   Future<FeedbackComposeDraft?> readDraft(WidgetTester tester) async => tester
       .runAsync<FeedbackComposeDraft?>(() => FeedbackDraftStore(root).read());
 
@@ -115,10 +137,18 @@ void main() {
     );
     await settle(tester, () => true);
     await tester.tap(key('feedback-category-suggestion'));
+    await tester.pump();
+    // 反馈 SDN2yTecu9 / LmIRnau_Fa：建议默认不带日志、不带自动截图（截图可一键附上）。
+    expect(
+      tester.widget<FushiSwitchListTile>(key('feedback-include-logs')).value,
+      isFalse,
+    );
+    expect(shotCount(), 0);
     await tester.enterText(key('feedback-title'), '想要深色图标');
     await tester.enterText(key('feedback-body'), '写了一半');
     await tester.enterText(key('feedback-contact'), 'tg @me');
-    await tester.tap(key('feedback-include-logs'));
+    await tester.tap(key('feedback-attach-auto-shot'));
+    await tester.pump();
     await tester.tap(key('feedback-paste-image'));
     await settle(tester, () => shotCount() == 2);
     expect(shotCount(), 2);
@@ -160,6 +190,10 @@ void main() {
     expect(find.text('想要深色图标'), findsOneWidget);
     expect(find.text('写了一半'), findsOneWidget);
     expect(find.text('tg @me'), findsOneWidget);
+    // 草稿是「建议」：本次的自动截图不自动接上，而是给出「附上当时画面」。
+    expect(shotCount(), 2);
+    await tester.tap(key('feedback-attach-auto-shot'));
+    await tester.pump();
     expect(shotCount(), 3);
     expect(
       tester
@@ -221,8 +255,10 @@ void main() {
     // 内容变了：失焦照常立刻落盘。
     await tester.enterText(key('feedback-body'), '写了一半，又补一句');
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    // 整份重写是「删旧目录 → 改名新目录」两步：等新草稿真落地再读，别读在两步之间。
-    await settle(tester, () => !marker.existsSync() && draftOnDisk());
+    // 整份重写是「删旧目录 → 改名新目录」两步，且删旧目录是逐个文件删：轮询文件
+    // （「记号没了 + draft.json 还在」）在 Linux 上会命中删到一半的旧目录，读到空草稿。
+    // 等写队列本身走完再读。
+    await drainDraftWrites(tester);
     expect(marker.existsSync(), isFalse);
     expect((await readDraft(tester))!.body, '写了一半，又补一句');
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
@@ -247,22 +283,7 @@ void main() {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     // 不推进假时钟（防抖定时器不会触发），只等真实 IO 走完：落盘只能来自进后台。
-    // 等的是草稿存储的串行写队列本身（进后台那次写已经排在里面），不轮询文件、也不
-    // 设真实时间上限——机器一忙就会提前放弃。完成回调挂在测试 zone 里：那次写的
-    // 后续微任务只在 pump 时冲刷，在真实 zone 里干等它会永远挂住。
-    bool written = false;
-    unawaited(
-      service
-          .draftStore()
-          .then((FeedbackDraftStore store) => store.idle)
-          .then((_) => written = true),
-    );
-    while (!written) {
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 10)),
-      );
-      await tester.pump();
-    }
+    await drainDraftWrites(tester);
     expect((await readDraft(tester))!.body, '第一句，第二句');
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);

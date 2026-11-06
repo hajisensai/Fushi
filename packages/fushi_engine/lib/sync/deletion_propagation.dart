@@ -13,10 +13,7 @@ import 'package:fushi_core/fushi_core.dart' show fnv1a32Utf16PairHex;
 /// - [keepLocalOnly]：只删本机，不写传播墓碑——其他设备保留（仍走本机原有防复活语义）。
 /// - [syncEverywhere]：写 `sync_deletion_tombstones` 墓碑并在同步时发布到远端标记，
 ///   其他设备同步时读到标记 → 逐条确认 → 也删（见 [computeDeletionPropagation]）。
-enum DeleteScope {
-  keepLocalOnly,
-  syncEverywhere,
-}
+enum DeleteScope { keepLocalOnly, syncEverywhere }
 
 /// 用户在删除确认框里做出的完整决定：传播范围 + 本地原件 + 统计事实。
 ///
@@ -52,7 +49,8 @@ class DeleteDecision {
   int get hashCode => Object.hash(scope, deleteLocalFiles, deleteStatistics);
 
   @override
-  String toString() => 'DeleteDecision(${scope.name}, '
+  String toString() =>
+      'DeleteDecision(${scope.name}, '
       'deleteLocalFiles: $deleteLocalFiles, '
       'deleteStatistics: $deleteStatistics)';
 }
@@ -126,8 +124,46 @@ typedef DeletionTombstoneEntries = Map<String, Map<String, int>>;
 bool tombstoneAppliesTo({
   required int deletedAt,
   required int? presentSinceAt,
-}) =>
-    presentSinceAt == null || deletedAt > presentSinceAt;
+}) => presentSinceAt == null || deletedAt > presentSinceAt;
+
+/// 「把本端这条推给对端」是否被对端的删除墓碑否决（反馈 Et3pmRzo0k）。
+///
+/// 自动同步的内容推送是「本端有 ∧ 对端无 → 推过去」。对端「无」有两种完全不同的来历：
+/// 对端从来没有过，或者对端**有过、被「从所有设备删除」删掉了**。后者推过去等于替用户
+/// 撤销那次删除——对端导入时还会顺手清掉自己的墓碑（重新入库的通用语义），删除意图就此
+/// 蒸发，连带第三台设备也收不到。
+///
+/// 判据与删除确认候选完全同源（[tombstoneAppliesTo]）：[peerTombstones] 里 [mediaTypes]
+/// 任一种对 [itemKeys] 任一个键有墓碑，且该墓碑管得着本端这条（本端存在起始时刻
+/// [presentSinceAt] 早于删除，或时刻未知）→ 否决。删除**之后**才在本端重新加入的条目
+/// （[presentSinceAt] >= deletedAt）不被否决：那是一次新的加入意图，推过去、让对端清掉
+/// 旧墓碑才是对的。
+///
+/// 多个 [mediaTypes]：同一身份可能被不同种类的墓碑覆盖（有声书与它的 EPUB 共享 bookKey，
+/// 删书会连带删掉有声书却只立 `book` 墓碑）。多个 [itemKeys]：同一本书在对端可能按别名
+/// 落地（见 `aliasPeerBookTombstones`）。
+bool peerTombstoneVetoesPush({
+  required DeletionTombstoneEntries peerTombstones,
+  required Iterable<String> mediaTypes,
+  required Iterable<String> itemKeys,
+  required int? presentSinceAt,
+}) {
+  for (final String mt in mediaTypes) {
+    final Map<String, int>? byKey = peerTombstones[mt];
+    if (byKey == null) continue;
+    for (final String key in itemKeys) {
+      final int? deletedAt = byKey[key];
+      if (deletedAt == null) continue;
+      if (tombstoneAppliesTo(
+        deletedAt: deletedAt,
+        presentSinceAt: presentSinceAt,
+      )) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 /// 纯函数：给定两端删除墓碑与两端当前在库条目，算出双向删除传播候选。
 ///
@@ -159,14 +195,18 @@ List<DeletionPropagationCandidate> computeDeletionPropagation({
         in (localTombstones[mt] ?? const <String, int>{}).entries) {
       if (!remoteHere.containsKey(e.key)) continue;
       if (!tombstoneAppliesTo(
-          deletedAt: e.value, presentSinceAt: remoteHere[e.key])) {
+        deletedAt: e.value,
+        presentSinceAt: remoteHere[e.key],
+      )) {
         continue;
       }
-      out.add(DeletionPropagationCandidate(
-        mediaType: mt,
-        itemKey: e.key,
-        direction: DeletionPropagationDirection.deleteRemote,
-      ));
+      out.add(
+        DeletionPropagationCandidate(
+          mediaType: mt,
+          itemKey: e.key,
+          direction: DeletionPropagationDirection.deleteRemote,
+        ),
+      );
     }
     final Map<String, int?> localHere =
         localPresent[mt] ?? const <String, int?>{};
@@ -174,14 +214,18 @@ List<DeletionPropagationCandidate> computeDeletionPropagation({
         in (remoteTombstones[mt] ?? const <String, int>{}).entries) {
       if (!localHere.containsKey(e.key)) continue;
       if (!tombstoneAppliesTo(
-          deletedAt: e.value, presentSinceAt: localHere[e.key])) {
+        deletedAt: e.value,
+        presentSinceAt: localHere[e.key],
+      )) {
         continue;
       }
-      out.add(DeletionPropagationCandidate(
-        mediaType: mt,
-        itemKey: e.key,
-        direction: DeletionPropagationDirection.deleteLocal,
-      ));
+      out.add(
+        DeletionPropagationCandidate(
+          mediaType: mt,
+          itemKey: e.key,
+          direction: DeletionPropagationDirection.deleteLocal,
+        ),
+      );
     }
   }
   out.sort((DeletionPropagationCandidate a, DeletionPropagationCandidate b) {
@@ -208,16 +252,19 @@ String deletionTombstoneAssetName(String mediaType, String itemKey) {
 
 /// 一条删除墓碑标记的 JSON 载荷。
 Map<String, Object?> deletionTombstoneJson(
-        String mediaType, String itemKey, int deletedAt) =>
-    <String, Object?>{
-      'mediaType': mediaType,
-      'itemKey': itemKey,
-      'deletedAt': deletedAt,
-    };
+  String mediaType,
+  String itemKey,
+  int deletedAt,
+) => <String, Object?>{
+  'mediaType': mediaType,
+  'itemKey': itemKey,
+  'deletedAt': deletedAt,
+};
 
 /// 解析一条删除墓碑标记 JSON → (mediaType, itemKey, deletedAt)；非法返回 null（安全降级）。
 ({String mediaType, String itemKey, int deletedAt})? parseDeletionTombstoneJson(
-    Object? json) {
+  Object? json,
+) {
   if (json is! Map) return null;
   final String mediaType = json['mediaType']?.toString() ?? '';
   final String itemKey = json['itemKey']?.toString() ?? '';
@@ -233,7 +280,7 @@ Map<String, Object?> deletionTombstoneJson(
 /// 解析 `favoriteword` 删除墓碑的 itemKey（= `FushiDatabase.favoriteWordItemKey` 的
 /// NUL 连接串 `expression\u0000reading\u0000sourceType`）。非法（段数≠3）返回 null。
 ({String expression, String reading, String sourceType})?
-    parseFavoriteWordItemKey(String key) {
+parseFavoriteWordItemKey(String key) {
   final List<String> parts = key.split('\u0000');
   if (parts.length != 3) return null;
   return (expression: parts[0], reading: parts[1], sourceType: parts[2]);

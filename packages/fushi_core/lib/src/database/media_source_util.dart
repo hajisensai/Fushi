@@ -1,13 +1,16 @@
 // TODO-817 / TODO-1274 网络/本地来源库纯函数工具：路径归一化、默认显示名、
 // 来源连接配置编解码。
 //
-// 🔴 凭据红线：本文件的 config 编解码 **绝不裸存明文密码**。本地来源 config 恒空；
+// 🔴 凭据红线：本文件的 config 编解码 **绝不裸存明文密码**。本地来源 config 只在
+// iOS 上带一条安全作用域书签（[kSourceConfigIosBookmarkKey]，见下），其余平台恒空；
 // 网络来源（SFTP/FTP）的 configJson 只存**非敏感连接参数**（host/port/username/useTls），
 // 密码/私钥经 SourceLibraryCredentialStore 以 base64 单独落 Preferences（键
 // `media_source_secret_<id>`），绝不进入 configJson。[encodeSourceConfig] 以允许键
 // 白名单强制这条红线：即使调用方误传 password/privateKey 也会被丢弃。
 
 import 'dart:convert';
+
+import 'package:path/path.dart' as p;
 
 /// 归一化来源根路径：
 /// - 本地（transport=='local'）：统一正斜杠分隔符、去掉末尾斜杠（盘符根如 `C:/` 保留）。
@@ -36,12 +39,25 @@ String normalizeSourceRootPath(String raw, {required String transport}) {
   return result;
 }
 
+/// 音乐曲目路径的比较键（`music_tracks.path_key`，schema v145）：同一个文件不管拼成哪种
+/// 写法都得到同一个键。全仓比较曲目 / 音频路径只用这一个函数（扫描落库认旧行、存量迁移、
+/// 音乐来源规划），不各写一份。
+///
+/// 就是宿主平台的 [p.Context.canonicalize]：Windows 上统一分隔符并转小写（文件系统大小写
+/// 不敏感），POSIX 只做词法归一。**依赖平台**：键与曲库同在本机生成、只在本机比较
+/// （曲目表设备本地、不进备份），迁移回填也跑在同一台设备上；[context] 只给测试锁定
+/// 两种平台的口径用。曲目路径恒为绝对路径（相对路径会被拼上当前目录，不该出现）。
+String musicTrackPathKey(String path, {p.Context? context}) =>
+    (context ?? p.context).canonicalize(path);
+
 /// 取归一化后路径的末段作为默认显示名（文件夹名）。
 /// - 末段为空（如根路径）时回退整段。
 /// - 纯函数，不触磁盘。
 String defaultLabelFromRoot(String rootPath, {required String transport}) {
-  final String normalized =
-      normalizeSourceRootPath(rootPath, transport: transport);
+  final String normalized = normalizeSourceRootPath(
+    rootPath,
+    transport: transport,
+  );
   if (normalized.isEmpty) {
     return normalized;
   }
@@ -62,7 +78,34 @@ const Set<String> kSourceConfigAllowedKeys = <String>{
   'useTls',
   // AList / OpenList 站点根（`https://od.example.com`）；非敏感，条目地址由它派生。
   'baseUrl',
+  kSourceConfigIosBookmarkKey,
 };
+
+/// iOS 本地来源的安全作用域书签（`URL.bookmarkData()` 的 base64）所在的 configJson 键。
+///
+/// 为什么能进 configJson（凭据红线不变）：书签不是口令——它只是「用户在系统文件
+/// 选择器里亲手选过这个文件夹」这件事的凭证，只对**本 app、本设备**有效，换设备 /
+/// 卸载重装即失效，用户删掉文件夹或撤销授权也失效；泄露出去别的进程用不了。所以它
+/// 与 host/port 同属「来源怎么连」的非敏感参数，而**不**与密码 / 私钥混放（那两样
+/// 仍只在 SourceLibraryCredentialStore）。iOS 上没有它，沙盒外文件夹 `dart:io` 一个
+/// 字节都读不到（BUG-2786）；其它平台从不写这个键。
+const String kSourceConfigIosBookmarkKey = 'iosBookmark';
+
+/// 取 configJson 里的 iOS 安全作用域书签；没有 / 空串 / 非字符串 → null。
+String? sourceBookmarkFromConfig(String? configJson) {
+  final Object? value = decodeSourceConfig(
+    configJson,
+  )[kSourceConfigIosBookmarkKey];
+  return value is String && value.isNotEmpty ? value : null;
+}
+
+/// 把 [bookmark] 写进（或替换）configJson 里的书签键，其余已有键原样保留；
+/// 结果仍经 [encodeSourceConfig] 的白名单。
+String? configWithSourceBookmark(String? configJson, String bookmark) =>
+    encodeSourceConfig(<String, Object?>{
+      ...decodeSourceConfig(configJson),
+      kSourceConfigIosBookmarkKey: bookmark,
+    });
 
 /// 把来源连接参数编码为 configJson 字符串。
 ///
@@ -97,10 +140,8 @@ Map<String, Object?> decodeSourceConfig(String? configJson) {
     final Object? decoded = jsonDecode(configJson);
     if (decoded is Map) {
       return decoded.map<String, Object?>(
-        (Object? key, Object? value) => MapEntry<String, Object?>(
-          key.toString(),
-          value,
-        ),
+        (Object? key, Object? value) =>
+            MapEntry<String, Object?>(key.toString(), value),
       );
     }
   } catch (_) {

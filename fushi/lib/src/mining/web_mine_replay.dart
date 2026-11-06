@@ -14,20 +14,42 @@ abstract interface class WebMineReplayHost {
 
   /// 当前画面（PNG）。可捕获环境下含视频区；失败回 null。
   Future<Uint8List?> screenshot();
+
+  /// 动图 / 片段用的一帧（JPEG：比 PNG 编码快、体积小，逐帧采样扛得住）。失败回 null。
+  Future<Uint8List?> frame();
+}
+
+/// 重放期间采到的一帧：[atMs] = 距观测到开播（t0）的墙钟毫秒，与音频回取窗同一时基。
+class WebMineReplayFrame {
+  const WebMineReplayFrame({required this.bytes, required this.atMs});
+
+  final Uint8List bytes;
+  final int atMs;
 }
 
 /// 一句重放抓到的媒体。[audio] 是已编码容器字节（引擎逐字节写盘，绝不能是裸 PCM），
 /// [cover] 是 PNG 截图；缺哪个哪个为 null，[warnings] 说明原因（进队列行的 error 列）。
+///
+/// [frames] 是开了 [WebMineReplayRunner.captureFrames] 时的帧序列（动图 / 音画片段的
+/// 画面来源）。[audioLeadMs] = 音频比 t0 早开始多少毫秒（回取窗起点 = t0 - lead），
+/// [clipDurationMs] = 片段总长（有音频时 = 回取窗长度）：合片段时帧时间轴整体后移
+/// lead 才与音频对齐。
 class WebMineReplayCapture {
   const WebMineReplayCapture({
     required this.audio,
     required this.cover,
     required this.warnings,
+    this.frames = const <WebMineReplayFrame>[],
+    this.audioLeadMs = 0,
+    this.clipDurationMs = 0,
   });
 
   final Uint8List? audio;
   final Uint8List? cover;
   final List<String> warnings;
+  final List<WebMineReplayFrame> frames;
+  final int audioLeadMs;
+  final int clipDurationMs;
 }
 
 /// 网页播放器自动制卡的逐句重放：seek 到 cue 前 [preRollMs] → 播 → cue 中点截帧 →
@@ -50,6 +72,9 @@ class WebMineReplayRunner {
     this.pollMs = 100,
     this.seekTimeoutMs = 8000,
     this.playTimeoutMs = 5000,
+    this.captureFrames = false,
+    this.frameIntervalMs = 125,
+    this.maxFrames = 240,
   }) : _sleep = sleep ?? ((Duration d) => Future<void>.delayed(d)),
        _now = now ?? DateTime.now;
 
@@ -67,6 +92,15 @@ class WebMineReplayRunner {
   final int pollMs;
   final int seekTimeoutMs;
   final int playTimeoutMs;
+
+  /// 播放期间连续采帧（制卡图片模式是动图 / 音画片段时开）。关着只截中点一张封面。
+  final bool captureFrames;
+
+  /// 采帧间隔（≈ 8 fps；截帧本身的耗时计入间隔，帧率尽力而为）。
+  final int frameIntervalMs;
+
+  /// 单句帧数上限（30 s × 8 fps），防长句把内存吃光。
+  final int maxFrames;
 
   final Future<void> Function(Duration d) _sleep;
   final DateTime Function() _now;
@@ -107,6 +141,8 @@ class WebMineReplayRunner {
     final DateTime t0 = _now();
 
     Uint8List? cover;
+    final List<WebMineReplayFrame> frames = <WebMineReplayFrame>[];
+    int nextFrameAtMs = 0;
     final int midMs = cueStartMs + (endMs - cueStartMs) ~/ 2;
     final int deadline = _playDeadlineMs(cueStartMs, endMs);
     final DateTime hardStop = t0.add(Duration(milliseconds: deadline));
@@ -121,20 +157,39 @@ class WebMineReplayRunner {
         reachedEnd = true;
         break;
       }
-      await _sleep(Duration(milliseconds: pollMs));
+      int waitMs = pollMs;
+      if (captureFrames && frames.length < maxFrames) {
+        final int at = _now().difference(t0).inMilliseconds;
+        if (at >= nextFrameAtMs) {
+          final Uint8List? shot = await host.frame();
+          if (shot != null && shot.isNotEmpty) {
+            frames.add(WebMineReplayFrame(bytes: shot, atMs: at));
+          }
+          nextFrameAtMs = at + frameIntervalMs;
+        }
+        // 轮询节拍贴着下一帧走（固定 100 ms 一拍会把 125 ms 间隔拖成 200 ms）。
+        final int untilNext =
+            nextFrameAtMs - _now().difference(t0).inMilliseconds;
+        waitMs = untilNext.clamp(1, pollMs);
+      }
+      await _sleep(Duration(milliseconds: waitMs));
     }
+    if (captureFrames && frames.length < 2) warnings.add('frames_insufficient');
     await host.pause();
     if (!reachedEnd) warnings.add('cue_end_timeout');
     // 中点没轮到（cue 极短 / 位置轮询跳过）就在暂停处补一张。
     cover ??= await host.screenshot();
 
     Uint8List? audio;
+    int audioLeadMs = 0;
+    int clipDurationMs = _now().difference(t0).inMilliseconds;
     final GalAudioSource? src = audioSource;
     if (src == null) {
       warnings.add('loopback_unavailable');
     } else {
       final int elapsed = _now().difference(t0).inMilliseconds;
       final int backMs = (elapsed + 150).clamp(500, kMaxBackMs);
+      audioLeadMs = backMs - elapsed;
       GalAudioSlice? slice;
       try {
         slice = await src.grabRecent(backMs);
@@ -150,10 +205,19 @@ class WebMineReplayRunner {
         if (audio == null || audio.isEmpty) {
           audio = null;
           warnings.add('audio_encode_failed');
+        } else {
+          clipDurationMs = backMs;
         }
       }
     }
-    return WebMineReplayCapture(audio: audio, cover: cover, warnings: warnings);
+    return WebMineReplayCapture(
+      audio: audio,
+      cover: cover,
+      warnings: warnings,
+      frames: frames,
+      audioLeadMs: audio == null ? 0 : audioLeadMs,
+      clipDurationMs: clipDurationMs,
+    );
   }
 
   Future<bool> _waitUntil(bool Function() done, int timeoutMs) async {

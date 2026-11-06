@@ -32,17 +32,19 @@ Future<void> _pumpConstrained(
   double fontSize = 20,
 }) async {
   final VideoPlayerController c = _controllerWithCue(text);
-  await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      body: Center(
-        child: SizedBox(
-          width: width,
-          height: 600,
-          child: VideoSubtitleOverlay(controller: c, fontSize: fontSize),
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: width,
+            height: 600,
+            child: VideoSubtitleOverlay(controller: c, fontSize: fontSize),
+          ),
         ),
       ),
     ),
-  ));
+  );
   await tester.pump();
 }
 
@@ -51,7 +53,9 @@ Future<void> _pumpConstrained(
 List<String> _visualLines(WidgetTester tester) {
   final Iterable<Element> elements = find
       .descendant(
-          of: find.byType(VideoSubtitleOverlay), matching: find.byType(Text))
+        of: find.byType(VideoSubtitleOverlay),
+        matching: find.byType(Text),
+      )
       .evaluate();
   final List<({double dy, double dx, String ch})> glyphs =
       <({double dy, double dx, String ch})>[];
@@ -86,8 +90,11 @@ List<String> _visualLines(WidgetTester tester) {
 /// 把 [text] 逐 grapheme 分组后映射回子串，便于断言可读。
 List<String> _groupStrings(String text) {
   final List<String> chars = text.characters.toList(growable: false);
-  final List<int> indices =
-      List<int>.generate(chars.length, (int i) => i, growable: false);
+  final List<int> indices = List<int>.generate(
+    chars.length,
+    (int i) => i,
+    growable: false,
+  );
   return groupSubtitleGraphemesForWrap(chars, indices)
       .map((List<int> g) => g.map((int i) => chars[i]).join())
       .toList(growable: false);
@@ -114,15 +121,19 @@ void main() {
       expect(reassembled, text.split(' '), reason: '断行只能发生在空格处，单词不得被拆开');
     });
 
-    testWidgets('CJK 句：无空格仍逐字可断（≈libass WrapStyle 1）',
-        (WidgetTester tester) async {
+    testWidgets('CJK 句：无空格仍逐字可断（≈libass WrapStyle 1）', (
+      WidgetTester tester,
+    ) async {
       const String text = 'こんにちは世界です';
       // 20px × 9 字 = 180px；容器 110px（可用 ~86px = 4 字）→ 至少 3 行。
       await _pumpConstrained(tester, text, width: 110);
 
       final List<String> lines = _visualLines(tester);
-      expect(lines.length, greaterThan(1),
-          reason: 'CJK 无空格行必须仍能逐字断行，不得因分组退化成整行溢出');
+      expect(
+        lines.length,
+        greaterThan(1),
+        reason: 'CJK 无空格行必须仍能逐字断行，不得因分组退化成整行溢出',
+      );
       expect(lines.join(), text, reason: '所有字符按原顺序在场');
     });
   });
@@ -133,8 +144,10 @@ void main() {
     });
 
     test('词内标点（撇号/连字符）不拆词', () {
-      expect(_groupStrings("it's state-of-art"),
-          <String>["it's ", 'state-of-art']);
+      expect(_groupStrings("it's state-of-art"), <String>[
+        "it's ",
+        'state-of-art',
+      ]);
     });
 
     test('CJK 逐字成组，混排时拉丁词仍整组', () {

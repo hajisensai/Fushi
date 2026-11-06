@@ -41,19 +41,25 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
     // 命中（BUG-1637）。空 identity（异常行）跳过不进集合。
     final Map<String, RemoteAudiobookInfo> hostById =
         <String, RemoteAudiobookInfo>{
-      for (final RemoteAudiobookInfo info
-          in await backend.listRemoteAudiobooks())
-        if (info.identity.isNotEmpty) info.identity: info,
-    };
+          for (final RemoteAudiobookInfo info
+              in await backend.listRemoteAudiobooks())
+            if (info.identity.isNotEmpty) info.identity: info,
+        };
     if (hostById.isEmpty) return;
 
+    final InterconnectPlaybackPositionSync sync =
+        InterconnectPlaybackPositionSync(
+          db: _db,
+          backend: backend,
+          kind: PlaybackPositionKind.audiobook,
+        );
     await _syncPositionsLive(
       report,
-      sync: InterconnectPlaybackPositionSync(
-        db: _db,
-        backend: backend,
-        kind: PlaybackPositionKind.audiobook,
-      ),
+      sync: sync,
+      // 与 [InterconnectPlaybackPositionSync.localPosition] 同口径，读上面已取来
+      // 的偏好快照，零查询。
+      localFromSnapshot: (String identity) =>
+          sync.localPositionFromPrefs(identity, prefs: allPrefs),
       errorLabel: 'live audiobook progress',
       localKeys: localKeys,
       hostKeys: hostById.keys.toSet(),
@@ -82,23 +88,43 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
       final RemoteAudiobookInfo? info = hostById[identity];
       if (info == null) continue;
       try {
-        final int localDelay =
-            await _db.getPrefTyped<int>(audiobookDelayPrefKey(identity), 0);
-        final int localAt =
-            await _db.getPrefTyped<int>(audiobookDelayAtPrefKey(identity), 0);
+        // 快照里两端调轴戳相等（既不推也不写回）→ 跳过，免每本每轮 2 次偏好
+        // 查询；否则照旧重读本地再判定、落地（快照只用来跳过，从不用来写）。
+        final String? snapshotAtRaw =
+            allPrefs[audiobookDelayAtPrefKey(identity)];
+        final int snapshotAt = snapshotAtRaw == null
+            ? 0
+            : PrefCodec.decode<int>(snapshotAtRaw, 0);
+        if (snapshotAt == info.delayUpdatedAtMs) continue;
+        final int localDelay = await _db.getPrefTyped<int>(
+          audiobookDelayPrefKey(identity),
+          0,
+        );
+        final int localAt = await _db.getPrefTyped<int>(
+          audiobookDelayAtPrefKey(identity),
+          0,
+        );
         if (localAt > info.delayUpdatedAtMs) {
           try {
             await backend.putRemoteAudiobookDelay(
-                identity, localDelay, localAt);
+              identity,
+              localDelay,
+              localAt,
+            );
           } catch (e) {
             debugPrint(
-                '[SyncOrchestrator] audiobook delay push "$identity" failed: $e');
+              '[SyncOrchestrator] audiobook delay push "$identity" failed: $e',
+            );
           }
         } else if (info.delayUpdatedAtMs > localAt) {
           await _db.setPrefTyped<int>(
-              audiobookDelayPrefKey(identity), info.delayMs);
+            audiobookDelayPrefKey(identity),
+            info.delayMs,
+          );
           await _db.setPrefTyped<int>(
-              audiobookDelayAtPrefKey(identity), info.delayUpdatedAtMs);
+            audiobookDelayAtPrefKey(identity),
+            info.delayUpdatedAtMs,
+          );
         }
       } catch (e) {
         report.noteError('live audiobook delay "$identity"', e);
@@ -126,8 +152,10 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
     SyncRunReport report,
     InterconnectSyncBackend backend,
   ) async {
-    final List<RemoteAudiobookInfo> remoteAudiobooks =
-        await backend.listRemoteAudiobooks();
+    // 列举远端要走网络：先换掉上一阶段最后一本书的进度行（见 [_emitPhaseStart]）。
+    _emitPhaseStart(SyncPhase.audiobooks);
+    final List<RemoteAudiobookInfo> remoteAudiobooks = await backend
+        .listRemoteAudiobooks();
     final List<AudiobookRow> localAudiobooks = await _db.getAllAudiobooks();
     final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
 
@@ -140,7 +168,9 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
     final Set<String> localKeys = <String>{};
     for (final AudiobookRow ab in localAudiobooks) {
       if (await audiobookAudioIsIntact(
-          audioPathsJson: ab.audioPathsJson, audioRoot: ab.audioRoot)) {
+        audioPathsJson: ab.audioPathsJson,
+        audioRoot: ab.audioRoot,
+      )) {
         localKeys.add(ab.bookKey);
       }
     }
@@ -183,19 +213,59 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
         if (localBookKeys.contains(key)) key,
     ];
 
-    final int total = diff.toPush.length + toPullAudioOnly.length;
+    // 删除意图先于推送（反馈 Et3pmRzo0k，同 [_syncBooksContentLive]）：host 上被「从
+    // 所有设备删除」的有声书——或它所属的书（删书只立 `book` 墓碑，却连带删掉 host 的
+    // 有声书）——本机删除前就有的那份不推。存在起始时刻取 srt 行的 localAddedAt：
+    // srt-backed 有声书推送必有 srt 行（下方缺了就跳过），删有声书 / 删书都连它一起删，
+    // 重新导入才会新建，正好是「本机这份从什么时候起有」。读墓碑失败 → 本轮不推
+    // （拉取照常）。
+    final List<({String key, SrtBookRow? srt})> toPush =
+        <({String key, SrtBookRow? srt})>[];
+    if (diff.toPush.isNotEmpty) {
+      final DeletionTombstoneEntries? hostTombstones =
+          await _loadHostPushVetoTombstones(
+            report,
+            backend,
+            'live push audiobooks',
+          );
+      if (hostTombstones != null) {
+        for (final String key in diff.toPush) {
+          final SrtBookRow? srt = await _db.getSrtBookByBookKey(key);
+          if (_hostVetoesPush(
+            hostTombstones,
+            kinds: const <SyncTombstoneKind>[
+              SyncTombstoneKind.audiobook,
+              SyncTombstoneKind.book,
+            ],
+            itemKeys: <String>[key],
+            presentSinceAt: srt?.localAddedAt,
+          )) {
+            continue;
+          }
+          toPush.add((key: key, srt: srt));
+        }
+      }
+    }
+
+    final int total = toPush.length + toPullAudioOnly.length;
     int index = 0;
 
     // ── Push：本端独有 → 打包并上传 ─────────────────────────────────────────
-    for (final String key in diff.toPush) {
-      _emit(SyncPhase.audiobooks,
-          itemIndex: index, itemTotal: total, title: key);
+    for (final ({String key, SrtBookRow? srt}) item in toPush) {
+      final String key = item.key;
+      _emit(
+        SyncPhase.audiobooks,
+        itemIndex: index,
+        itemTotal: total,
+        title: key,
+      );
       File? tmp;
       try {
-        final SrtBookRow? srt = await _db.getSrtBookByBookKey(key);
+        final SrtBookRow? srt = item.srt;
         if (srt == null) {
-          report.errors
-              .add('live push audiobook "$key": srtBook not found, skipping');
+          report.errors.add(
+            'live push audiobook "$key": srtBook not found, skipping',
+          );
           index++;
           continue;
         }
@@ -208,9 +278,15 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
         await backend.putRemoteAudiobook(
           key,
           tmp,
-          onProgress: (double f, [int? b]) => _emit(SyncPhase.audiobooks,
-              itemIndex: index, itemTotal: total, title: key,
-              fileFraction: f, fileBytes: b),
+          presentSinceAt: srt.localAddedAt,
+          onProgress: (double f, [int? b]) => _emit(
+            SyncPhase.audiobooks,
+            itemIndex: index,
+            itemTotal: total,
+            title: key,
+            fileFraction: f,
+            fileBytes: b,
+          ),
         );
         report.audiobooksExported++;
       } catch (e) {
@@ -223,17 +299,26 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
 
     // ── Pull A（场景B）：远端有、本端有书但缺音频 → 下载并解包落盘 ────────────
     for (final String key in toPullAudioOnly) {
-      _emit(SyncPhase.audiobooks,
-          itemIndex: index, itemTotal: total, title: key);
+      _emit(
+        SyncPhase.audiobooks,
+        itemIndex: index,
+        itemTotal: total,
+        title: key,
+      );
       File? tmp;
       try {
-        tmp = _tmpFile('.fushiaudio');
+        tmp = resumableTmpFile('audiobook', key, '.fushiaudio');
         await backend.getRemoteAudiobook(
           key,
           tmp,
-          onProgress: (double f, [int? b]) => _emit(SyncPhase.audiobooks,
-              itemIndex: index, itemTotal: total, title: key,
-              fileFraction: f, fileBytes: b),
+          onProgress: (double f, [int? b]) => _emit(
+            SyncPhase.audiobooks,
+            itemIndex: index,
+            itemTotal: total,
+            title: key,
+            fileFraction: f,
+            fileBytes: b,
+          ),
         );
         // 用本地 EPUB 的 bookKey 作 override：远端 key 已等于本地 EPUB 的 bookKey
         // （toPull 已由 localBookKeys 筛过），显式 override 保写入行与 EPUB 可配对。

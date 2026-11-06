@@ -70,8 +70,11 @@ void main() {
       final TextStyle noStyle = styles.last; // 「の」
       for (final TextStyle s in styles) {
         expect(s.fontFamily, noStyle.fontFamily, reason: '同句字符 fontFamily 应一致');
-        expect(s.fontFamilyFallback, noStyle.fontFamilyFallback,
-            reason: '同句字符 fontFamilyFallback 链应一致');
+        expect(
+          s.fontFamilyFallback,
+          noStyle.fontFamilyFallback,
+          reason: '同句字符 fontFamilyFallback 链应一致',
+        );
       }
     });
 
@@ -84,8 +87,11 @@ void main() {
       // 至少要含覆盖各平台的若干日文系统字体名（引擎按平台忽略不存在的项）。
       // 不强求精确清单，但必须含 Win 与 Apple 平台的代表字体，否则该平台仍走默认 fallback。
       expect(fallback, contains('Yu Gothic'), reason: 'Windows 缺日文 fallback');
-      expect(fallback, contains('Hiragino Sans'),
-          reason: 'macOS/iOS 缺日文 fallback');
+      expect(
+        fallback,
+        contains('Hiragino Sans'),
+        reason: 'macOS/iOS 缺日文 fallback',
+      );
       expect(
         fallback.any((String f) => f.contains('Noto Sans')),
         isTrue,
@@ -141,10 +147,7 @@ void main() {
       // TODO-864 向后兼容：videoSubtitle target 不被 body-seed，未设时
       // subtitleFontFamily 为 null → overlay 走平台默认字体 + CJK 回退链。
       final VideoPlayerController c = _controllerWithCue('の');
-      await _pump(
-        tester,
-        VideoSubtitleOverlay(controller: c),
-      );
+      await _pump(tester, VideoSubtitleOverlay(controller: c));
       final Text txt = _fillTextOf(tester, 'の');
       expect(txt.style!.fontFamily, isNull);
       expect(txt.style!.fontFamilyFallback, isNotEmpty);

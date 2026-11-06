@@ -14,7 +14,8 @@ import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/discovery/sources/alist_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/audiobookshelf_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
@@ -26,6 +27,7 @@ class DiscoveryProbeOutcome {
     required this.ok,
     required this.message,
     this.count,
+    this.resolvedUrl,
   });
 
   final bool ok;
@@ -35,6 +37,13 @@ class DiscoveryProbeOutcome {
 
   /// 成功时根目录的条目数 / 有声书库数。
   final int? count;
+
+  /// OPDS：用户填的地址不是目录、按已知端点探测打通的那条（BUG-3526）；
+  /// 原地址本身可用时为 null。调用方负责写回配置。
+  ///
+  /// Kavita 这类路径里带 key 的端点，这里是占位形态（`kOpdsApiKeyPlaceholder`），
+  /// 不含 key 明文——写回配置、控制通道列表都只见占位段，请求时才展开。
+  final Uri? resolvedUrl;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'ok': ok,
@@ -55,19 +64,39 @@ Future<DiscoveryProbeOutcome> probeOpdsServer(OpdsServerConfig config) async {
       const DiscoveryRequest(kind: DiscoveryMediaKind.novel),
     );
     final int count = page.items.isEmpty ? 0 : page.items.single.entries.length;
+    final Uri? resolved = source.resolvedCatalogUrl;
+    final bool moved =
+        resolved != null && resolved.toString() != config.catalogUrl.toString();
     return DiscoveryProbeOutcome(
       ok: true,
-      message: t.discovery_opds_test_ok(count: count),
+      message: moved
+          ? t.discovery_opds_test_ok_resolved(count: count)
+          : t.discovery_opds_test_ok(count: count),
       count: count,
+      resolvedUrl: moved ? resolved : null,
     );
   } on ExternalProviderFailure catch (failure) {
     return DiscoveryProbeOutcome(
       ok: false,
-      message: t.discovery_opds_test_failed(reason: failure.message),
+      message: opdsProbeFailureMessage(failure),
     );
   } finally {
     source.close();
   }
+}
+
+/// OPDS 连接测试失败的给人看的结论。
+///
+/// 两种最常见的配错单独给本地化说明，其余沿用脱敏后的协议层原因：
+/// - 地址是网页（Komga 根地址回 200 HTML，BUG-3526）；
+/// - 凭据被拒（Komga 的账号是登录邮箱、API key 走单独字段，BUG-3521）。
+String opdsProbeFailureMessage(ExternalProviderFailure failure) {
+  if (failure is OpdsWebPageFailure) return t.discovery_opds_test_web_page;
+  if (failure.kind == ExternalProviderFailureKind.unauthorized ||
+      failure.kind == ExternalProviderFailureKind.forbidden) {
+    return t.discovery_opds_test_unauthorized;
+  }
+  return t.discovery_opds_test_failed(reason: failure.message);
 }
 
 /// AList 连接自检：真列一次根目录（游客 / 账号同一条 `fs/list`）。
@@ -133,6 +162,28 @@ Future<AudiobookshelfConnectOutcome> connectAudiobookshelfServer(
   );
   String resolvedUser = currentTokens == null ? username : config.username;
   try {
+    if (currentTokens == null) {
+      // 先问一句免鉴权的 /status：地址填错（对面不是 ABS）和「只开了 OpenID、没有
+      // 账号密码登录」这两种情况，用一句能照着改的话报出来，而不是登录失败的 401。
+      // 只对**明确**的信号下结论；超时 / 404 / 网络错误交给后面的登录去报。
+      final ({AudiobookshelfServerStatus? status, bool notAbs}) probe =
+          await _probeStatus(api);
+      final AudiobookshelfServerStatus? status = probe.status;
+      if (probe.notAbs) {
+        return AudiobookshelfConnectOutcome(
+          ok: false,
+          message: t.discovery_audiobookshelf_not_abs,
+          username: resolvedUser,
+        );
+      }
+      if (status != null && !useApiKey && !status.supportsPasswordLogin) {
+        return AudiobookshelfConnectOutcome(
+          ok: false,
+          message: t.discovery_audiobookshelf_sso_only_hint,
+          username: resolvedUser,
+        );
+      }
+    }
     if (useApiKey) {
       resolvedUser = (await api.me()).username;
     } else if (currentTokens == null) {
@@ -158,5 +209,20 @@ Future<AudiobookshelfConnectOutcome> connectAudiobookshelfServer(
     );
   } finally {
     api.close();
+  }
+}
+
+/// `/status` 探测：[status] 非空 = 确认是 ABS；[notAbs] = 对面明确不是 ABS（响应
+/// 不是 ABS 的状态载荷）。两者都假 = 没结论（超时 / 404 / 网络错误）。
+Future<({AudiobookshelfServerStatus? status, bool notAbs})> _probeStatus(
+  AudiobookshelfApi api,
+) async {
+  try {
+    return (status: await api.status(), notAbs: false);
+  } on ExternalProviderFailure catch (failure) {
+    return (
+      status: null,
+      notAbs: failure.kind == ExternalProviderFailureKind.invalidResponse,
+    );
   }
 }

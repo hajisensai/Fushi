@@ -21,17 +21,15 @@ void main() {
       expect(
         f!.path,
         r'C:\Users\u\AppData\Local\Fushi\crashdumps\hang_watchdog.log',
-        reason: '必须与 crash dump 同目录（诊断区「崩溃转储」页一处打包）、'
+        reason:
+            '必须与 crash dump 同目录（诊断区「崩溃转储」页一处打包）、'
             '文件名与 hang_watchdog.cpp 硬钉一致',
       );
     });
 
     test('非 Windows / LOCALAPPDATA 缺失 → null', () {
       expect(
-        HangWatchdogLog.resolveLogFile(
-          isWindows: false,
-          localAppData: r'C:\x',
-        ),
+        HangWatchdogLog.resolveLogFile(isWindows: false, localAppData: r'C:\x'),
         isNull,
       );
       expect(
@@ -94,12 +92,21 @@ void main() {
 
     test('hang_watchdog.cpp 写 hang-*.dmp 与 hang_watchdog.log 到 crashdumps', () {
       final String src = watchdog.readAsStringSync();
-      expect(src, contains('WriteProcessMinidump(L"hang"'),
-          reason: 'dump 前缀 hang 与崩溃 dump（hibiki）在同目录区分');
-      expect(src, contains(r'L"\\hang_watchdog.log"'),
-          reason: '日志文件名必须与 HangWatchdogLog._relativePath 硬钉一致');
-      expect(src, contains('IsHungAppWindow('),
-          reason: '停泵判据用系统 IsHungAppWindow，不自造跨线程 SendMessage');
+      expect(
+        src,
+        contains('WriteProcessMinidump(L"hang"'),
+        reason: 'dump 前缀 hang 与崩溃 dump（hibiki）在同目录区分',
+      );
+      expect(
+        src,
+        contains(r'L"\\hang_watchdog.log"'),
+        reason: '日志文件名必须与 HangWatchdogLog._relativePath 硬钉一致',
+      );
+      expect(
+        src,
+        contains('IsHungAppWindow('),
+        reason: '停泵判据用系统 IsHungAppWindow，不自造跨线程 SendMessage',
+      );
       expect(src, contains('IsDebuggerPresent()'), reason: '调试器断点不是卡死，必须跳过');
     });
 

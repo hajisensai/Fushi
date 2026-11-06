@@ -6,17 +6,19 @@ import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
     show BrowserVideoSample;
 import 'package:fushi/src/sync/extension_font_api.dart';
+import 'package:fushi/src/sync/extension_profile_api.dart';
+import 'package:fushi/src/sync/fushi_api_access_policy.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
+import 'package:fushi/src/sync/fushi_extension_api_core.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
-/// 持有并按需启停 [FushiApiServer]。tokenizer/readingResolver 注入解耦 FFI。
+/// 持有并按需启停 [FushiApiServer]。tokenizer（带读音的分词）注入解耦 FFI。
 /// BUG-530：注入挖词/历史 service，让浏览器扩展的 `/api/mine` + `/api/lookup/dictionary`
 /// 在这个（扩展被自动配置指向的）server 上真正可用。
 class FushiApiServerManager {
   FushiApiServerManager({
     required FushiRemoteLookupService lookupService,
     required Tokenizer tokenizer,
-    required ReadingResolver readingResolver,
     FushiRemoteMiningService? miningService,
     FushiRemoteHistoryService? historyService,
     RemoteThemeColorsProvider? themeColorsProvider,
@@ -30,17 +32,17 @@ class FushiApiServerManager {
     void Function(BrowserVideoSample sample)? onExtensionStudy,
     ExtensionFavoriteHandler? onExtensionFavorite,
     void Function()? onExtensionSeen,
-    void Function()? onLookupActivity,
     void Function(String build, String? version)? onExtensionReport,
     Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
     String Function()? extensionTestPageProvider,
     ExtensionFontApi? fontApi,
     SrsExtensionApi? Function()? srsApiProvider,
+    ExtensionProfileApi? profileApi,
+    FushiExtensionApiCore? extensionApiCore,
   }) : _lookup = lookupService,
        _mining = miningService,
        _history = historyService,
        _tokenizer = tokenizer,
-       _readingResolver = readingResolver,
        _themeColorsProvider = themeColorsProvider,
        _audioSourcesProvider = audioSourcesProvider,
        _autoReadOnLookupProvider = autoReadOnLookupProvider,
@@ -52,18 +54,18 @@ class FushiApiServerManager {
        _onExtensionStudy = onExtensionStudy,
        _onExtensionFavorite = onExtensionFavorite,
        _onExtensionSeen = onExtensionSeen,
-       _onLookupActivity = onLookupActivity,
        _onExtensionReport = onExtensionReport,
        _subtitleRegistryProvider = subtitleRegistryProvider,
        _extensionTestPageProvider = extensionTestPageProvider,
        _fontApi = fontApi,
-       _srsApiProvider = srsApiProvider;
+       _srsApiProvider = srsApiProvider,
+       _profileApi = profileApi,
+       _extensionApiCore = extensionApiCore;
 
   final FushiRemoteLookupService _lookup;
   final FushiRemoteMiningService? _mining;
   final FushiRemoteHistoryService? _history;
   final Tokenizer _tokenizer;
-  final ReadingResolver _readingResolver;
   // BUG-530：主题 CSS 变量供给器，透传给 [FushiApiServer]，随查词响应下发给扩展弹窗。
   final RemoteThemeColorsProvider? _themeColorsProvider;
   // 单词音频：已启用音频源供给器，透传给 [FushiApiServer]，随查词响应下发给扩展。
@@ -85,9 +87,6 @@ class FushiApiServerManager {
   final ExtensionFavoriteHandler? _onExtensionFavorite;
   // 浏览器扩展连接探活回调，透传给 [FushiApiServer]（app 侧记录 last-seen）。
   final void Function()? _onExtensionSeen;
-  // TODO-2936：查词/制卡活动回调，透传给 [FushiApiServer]（app 侧应用「浏览器」
-  // 媒体类型的 Profile 绑定）。
-  final void Function()? _onLookupActivity;
   // BUG-1079：扩展自报版本回调，透传给 [FushiApiServer]（app 侧记录浏览器中实际
   // 加载的 build，与内置指纹比对给出更新提示）。
   final void Function(String build, String? version)? _onExtensionReport;
@@ -100,6 +99,11 @@ class FushiApiServerManager {
   final ExtensionFontApi? _fontApi;
   // 复习（SRS）扩展端点供给器，透传给 [FushiApiServer]（模块关着时回 null → 404）。
   final SrsExtensionApi? Function()? _srsApiProvider;
+  // 反馈 biLEesNqWb：扩展手动选配置，透传给 [FushiApiServer]。
+  final ExtensionProfileApi? _profileApi;
+  // 浏览器扩展端点核心（与 app 内浏览器共用同一实例），透传给 [FushiApiServer]；
+  // null 时 server 用上面那批 sink / 供给器自建一个。
+  final FushiExtensionApiCore? _extensionApiCore;
 
   FushiApiServer? _server;
 
@@ -117,7 +121,11 @@ class FushiApiServerManager {
   bool get isRunning => _server?.isRunning ?? false;
   int? get port => _server?.port;
 
-  Future<void> start({required int port, required String apiKey}) async {
+  Future<void> start({
+    required int port,
+    required String apiKey,
+    FushiApiAccessPolicy accessPolicy = FushiApiAccessPolicy.localOnly,
+  }) async {
     if (_server != null) return;
     final FushiApiServer server = FushiApiServer(
       port: port,
@@ -125,7 +133,6 @@ class FushiApiServerManager {
       miningService: _mining,
       historyService: _history,
       tokenizer: _tokenizer,
-      readingResolver: _readingResolver,
       themeColorsProvider: _themeColorsProvider,
       audioSourcesProvider: _audioSourcesProvider,
       autoReadOnLookupProvider: _autoReadOnLookupProvider,
@@ -137,15 +144,16 @@ class FushiApiServerManager {
       onExtensionStudy: _onExtensionStudy,
       onExtensionFavorite: _onExtensionFavorite,
       onExtensionSeen: _onExtensionSeen,
-      onLookupActivity: _onLookupActivity,
       onExtensionReport: _onExtensionReport,
       subtitleRegistryProvider: _subtitleRegistryProvider,
       extensionTestPageProvider: _extensionTestPageProvider,
       fontApi: _fontApi,
       srsApiProvider: _srsApiProvider,
+      profileApi: _profileApi,
       apiKey: apiKey.isEmpty ? null : apiKey,
-      allowLan: true,
+      accessPolicy: accessPolicy,
       ankiConnectEndpoint: _ankiConnectEndpoint,
+      extensionApiCore: _extensionApiCore,
     );
     // 先登记再 await 绑端口：绑定是 I/O、会让出事件循环，启动期间（app 冷启动时
     // SRS runtime 恰在这段空档里注入 AnkiConnect 端点）的 setter 必须能推到这台

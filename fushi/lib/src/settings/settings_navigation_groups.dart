@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 
 /// 一级导航分组固定展开，分区内部的展开策略与此无关。
 enum SettingsNavigationGroupId {
@@ -37,6 +38,7 @@ SettingsNavigationGroupId settingsNavigationGroupFor(
   SettingsDestinationId.reading ||
   SettingsDestinationId.manga ||
   SettingsDestinationId.video ||
+  SettingsDestinationId.music ||
   SettingsDestinationId.game ||
   SettingsDestinationId.mediaTracking => SettingsNavigationGroupId.content,
   SettingsDestinationId.lookup ||
@@ -44,12 +46,14 @@ SettingsNavigationGroupId settingsNavigationGroupFor(
   SettingsDestinationId.models => SettingsNavigationGroupId.learning,
   SettingsDestinationId.downloads ||
   SettingsDestinationId.services ||
+  SettingsDestinationId.localServices ||
   SettingsDestinationId.ai => SettingsNavigationGroupId.connections,
   SettingsDestinationId.profiles ||
   SettingsDestinationId.syncBackup ||
   SettingsDestinationId.interconnect ||
   SettingsDestinationId.storage => SettingsNavigationGroupId.data,
   SettingsDestinationId.system ||
+  SettingsDestinationId.widgets ||
   SettingsDestinationId.readerQuickSettings ||
   SettingsDestinationId.videoQuickSettings ||
   SettingsDestinationId.appIcon ||

@@ -38,13 +38,14 @@ void main() {
     required _RecordingLoopback loopback,
     required DateTime Function() now,
     Duration loopbackFreezeDelay = const Duration(milliseconds: 20),
-  }) =>
-      GalHookSessionController(
-        textService: service,
-        isWindows: true,
-        targetWow64Probe: (_) async => false,
-        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
-        engineSourceFactory: ({
+    Duration loopbackLineMax = const Duration(seconds: 30),
+  }) => GalHookSessionController(
+    textService: service,
+    isWindows: true,
+    targetWow64Probe: (_) async => false,
+    injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+    engineSourceFactory:
+        ({
           required int targetPid,
           required String? launchExe,
           required String injectorPath,
@@ -57,15 +58,15 @@ void main() {
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
           String? contentLanguage,
-        }) =>
-            engine,
-        loopbackSourceFactory: () => loopback,
-        textPollInterval: const Duration(milliseconds: 5),
-        loopbackFreezeDelay: loopbackFreezeDelay,
-        now: now,
-        endpointListenable: endpoints,
-        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
-      );
+        }) => engine,
+    loopbackSourceFactory: () => loopback,
+    textPollInterval: const Duration(milliseconds: 5),
+    loopbackFreezeDelay: loopbackFreezeDelay,
+    loopbackLineMax: loopbackLineMax,
+    now: now,
+    endpointListenable: endpoints,
+    endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+  );
 
   test('BUG-1100 引擎 PCM 晚到时把降级的 Loopback 升格回引擎，且不重放台词', () async {
     final TexthookerService service = TexthookerService.test();
@@ -133,8 +134,10 @@ void main() {
 
   test('BUG-1100 降级原因必须有人话文案，不再把内部代码甩给用户', () {
     expect(galHookFallbackLabel('engine_pcm_unavailable'), isNotNull);
-    expect(galHookFallbackLabel('engine_pcm_unavailable'),
-        isNot('engine_pcm_unavailable'));
+    expect(
+      galHookFallbackLabel('engine_pcm_unavailable'),
+      isNot('engine_pcm_unavailable'),
+    );
     expect(galHookFallbackLabel('all_audio_sources_failed'), isNotNull);
     expect(galHookFallbackLabel('window_not_found'), isNotNull);
     expect(galHookFallbackLabel('engine_attach_failed'), isNotNull);
@@ -168,7 +171,8 @@ void main() {
     expect(
       _routesThroughFallbackLabel(sink.name),
       isTrue,
-      reason: '状态卡必须先翻译降级原因，翻不到才回退内部代码；'
+      reason:
+          '状态卡必须先翻译降级原因，翻不到才回退内部代码；'
           '现在它把内部代码直接交给了 `${sink.name}(...)`，'
           '而这个调用既不是 $_kFallbackLabel，也不是 '
           '$_kFailureTextPath 里任何一个会先查翻译表的共享入口',
@@ -215,11 +219,9 @@ void main() {
     );
 
     await waitUntil(() => loopback.backMsCalls.isNotEmpty);
-    expect(
-      loopback.backMsCalls,
-      <int>[150 + 1000],
-      reason: '窗口必须等价于 [t0-preRoll, t0+delay]：延后 delay 再回取 delay+preRoll',
-    );
+    expect(loopback.backMsCalls, <int>[
+      150 + 1000,
+    ], reason: '窗口必须等价于 [t0-preRoll, t0+delay]：延后 delay 再回取 delay+preRoll');
     expect(service.entries.single.audioBackend, 'system_loopback');
     expect(
       service.entries.single.audioStatus,
@@ -278,10 +280,135 @@ void main() {
       hasLength(1),
       reason: '制卡就是「现在就要这段声音」，必须提前收束而不是白等满窗口',
     );
+    expect(loopback.backMsCalls.single, 2500 + 1000, reason: '提前收束按真实已等待时长回取');
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('长句 loopback：下一句到达时按真实时长定稿上一句，不再定格在 4s+1s', () async {
+    // 用户报：句子长的卡音频被截在约 5 秒（4s 冻结 + 1s 预卷），短句完整。
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    DateTime clock = DateTime(2020, 1, 1, 12);
+    final _FakeEngine engine = _FakeEngine(
+      lines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 1000,
+          text: '三位一体説を三角形という図形を使って証明する試みだけど',
+          threadId: 5,
+          hookName: 'fake',
+        ),
+      ],
+    );
+    final _RecordingLoopback loopback = _RecordingLoopback(sizedByBackMs: true);
+    final GalHookSessionController controller = build(
+      service: service,
+      endpoints: endpoints,
+      engine: engine,
+      loopback: loopback,
+      now: () => clock,
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
+    );
+    await controller.selectTextThread(5);
+    await waitUntil(() => loopback.backMsCalls.isNotEmpty);
+    expect(loopback.backMsCalls, <int>[20 + 1000], reason: '暂定冻结照旧先给一份');
+    final String firstId = service.entries.single.id;
+
+    // 这句念了 9 秒，玩家才推进到下一句。
+    clock = clock.add(const Duration(seconds: 9));
+    engine.enqueue(
+      const GalHookedLine(
+        seq: 2,
+        timestampMs: 10000,
+        text: '次の台詞',
+        threadId: 5,
+        hookName: 'fake',
+      ),
+    );
+    await waitUntil(() => loopback.backMsCalls.contains(9000 + 1000));
+    await waitUntil(() => service.entryById(firstId)?.audioDurationMs == 10000);
     expect(
-      loopback.backMsCalls.single,
-      2500 + 1000,
-      reason: '提前收束按真实已等待时长回取',
+      service.entryById(firstId)?.audioDurationMs,
+      10000,
+      reason: '上一句的右界是下一句到达：取 [t0-preRoll, 下一句]，不是固定的 4s+1s',
+    );
+
+    // BUG-1101 的不变量：已被下一句取代的行，过多久再制卡都不能再回取「现在」的混音。
+    clock = clock.add(const Duration(seconds: 7));
+    final int callsBeforeMine = loopback.backMsCalls
+        .where((int b) => b > 10000)
+        .length;
+    final TexthookerLineEntry first = service.entryById(firstId)!;
+    await controller.captureAudioBytes(
+      lineId: firstId,
+      sentence: first.text,
+      outputExtension: 'aac',
+    );
+    expect(
+      loopback.backMsCalls.where((int b) => b > 10000).length,
+      callsBeforeMine,
+      reason: '历史行窗口已定稿，制卡只能复用，不得把后面几句的声音配给它',
+    );
+    expect(service.entryById(firstId)?.audioDurationMs, 10000);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('长句 loopback：停在一句上很久再制卡，取到整段而不是暂定冻结那 5 秒', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    DateTime clock = DateTime(2020, 1, 1, 12);
+    final _FakeEngine engine = _FakeEngine(
+      lines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 1000,
+          text: '長い台詞で単語を調べてから制カードする',
+          threadId: 5,
+          hookName: 'fake',
+        ),
+      ],
+    );
+    final _RecordingLoopback loopback = _RecordingLoopback(sizedByBackMs: true);
+    final GalHookSessionController controller = build(
+      service: service,
+      endpoints: endpoints,
+      engine: engine,
+      loopback: loopback,
+      now: () => clock,
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
+    );
+    await controller.selectTextThread(5);
+    await waitUntil(() => loopback.backMsCalls.isNotEmpty);
+    final TexthookerLineEntry line = service.entries.single;
+
+    clock = clock.add(const Duration(seconds: 12));
+    final Stopwatch waited = Stopwatch()..start();
+    await controller.captureAudioBytes(
+      lineId: line.id,
+      sentence: line.text,
+      outputExtension: 'aac',
+    );
+    waited.stop();
+    expect(
+      loopback.backMsCalls.last,
+      12000 + 1000,
+      reason: '续张中的窗口在制卡时按真实已等待时长收束',
+    );
+    expect(service.entryById(line.id)?.audioDurationMs, 13000);
+    expect(
+      waited.elapsed,
+      lessThan(const Duration(seconds: 3)),
+      reason: '续张不该让制卡干等到上限',
     );
 
     await controller.close();
@@ -308,9 +435,15 @@ void main() {
     final String panel = File(
       'lib/src/mining/gal_audio_tracks_panel.dart',
     ).readAsStringSync();
-    // 「可选性」这个量本身必须由**后端**算出来。
+    // 「可选性」这个量本身必须由**后端**算出来。比的是折叠空白、去掉 dart format
+    // 补的尾逗号后的表达式：钉语义，不钉换行。
+    final String? selectionExpr = initializerExpression(
+      panel,
+      'selectionEffective',
+    );
+    expect(selectionExpr, isNotNull, reason: 'selectionEffective 改名了：守卫失去锚点');
     expect(
-      initializerExpression(panel, 'selectionEffective'),
+      compactCode(selectionExpr!).replaceAll(',)', ')'),
       'galTrackSelectionAffectsCapture(state.audioBackend)',
       reason: '解释/禁用判据必须是后端，不能再是 audioTracks.isEmpty',
     );
@@ -323,7 +456,8 @@ void main() {
     expect(
       hintExpr!.trimLeft().startsWith('selectionEffective'),
       isTrue,
-      reason: '列表空不空只能决定末梢文案；先决条件必须是后端 —— '
+      reason:
+          '列表空不空只能决定末梢文案；先决条件必须是后端 —— '
           '反过来就是 BUG-1102 里整套死控件照常渲染的成因',
     );
     // TODO-2727：下面两条原本是 `panel.contains('selectable: selectionEffective')`
@@ -335,45 +469,75 @@ void main() {
     // 改成问「这个值被交给了谁」：轨行拿到的 selectable 就是后端判据本身，
     // 「设为语音轨」那个按钮的 enabled 必须同时受 selectable 与 excluded 约束。
     final int tileAt = maskComments(panel).indexOf('GalTrackTile(');
-    expect(tileAt, greaterThanOrEqualTo(0),
-        reason: 'GalTrackTile 改名了：守卫锚点必须跟着改，不能静默失效');
-    final EnclosingCall tile =
-        enclosingCall(panel, tileAt + 'GalTrackTile('.length);
+    expect(
+      tileAt,
+      greaterThanOrEqualTo(0),
+      reason: 'GalTrackTile 改名了：守卫锚点必须跟着改，不能静默失效',
+    );
+    final EnclosingCall tile = enclosingCall(
+      panel,
+      tileAt + 'GalTrackTile('.length,
+    );
     expect(tile.name, 'GalTrackTile');
-    expect(namedArgumentValues(tile.text, 'selectable'),
-        <String>['selectionEffective'],
-        reason: '轨行的可选性必须直接来自后端判据 selectionEffective');
+    expect(namedArgumentValues(tile.text, 'selectable'), <String>[
+      'selectionEffective',
+    ], reason: '轨行的可选性必须直接来自后端判据 selectionEffective');
 
     // 「设为语音轨」按钮：用 onTap 认它是哪一个（语义锚），再看它的 enabled 判据。
-    final EnclosingCall selectButton =
-        enclosingCallOf(panel, 'onTap: onSelect');
-    final List<String> enabled =
-        namedArgumentValues(selectButton.text, 'enabled');
+    final EnclosingCall selectButton = enclosingCallOf(
+      panel,
+      'onTap: onSelect',
+    );
+    final List<String> enabled = namedArgumentValues(
+      selectButton.text,
+      'enabled',
+    );
     expect(enabled, hasLength(1), reason: '「设为语音轨」按钮必须显式声明 enabled，缺省即恒可点');
-    expect(containsIdentifier(enabled.single, 'selectable'), isTrue,
-        reason: '非引擎 PCM 后端必须禁用「选为语音轨」');
-    expect(containsIdentifier(enabled.single, 'excluded'), isTrue,
-        reason: '已排除为 BGM 的轨不得再被选成语音轨');
-    expect(panel.contains('t.game_track_silent_at_cue'), isTrue,
-        reason: '此刻没有声音的轨必须标注，而不是和可用轨长一个样');
+    expect(
+      containsIdentifier(enabled.single, 'selectable'),
+      isTrue,
+      reason: '非引擎 PCM 后端必须禁用「选为语音轨」',
+    );
+    expect(
+      containsIdentifier(enabled.single, 'excluded'),
+      isTrue,
+      reason: '已排除为 BGM 的轨不得再被选成语音轨',
+    );
+    expect(
+      panel.contains('t.game_track_silent_at_cue'),
+      isTrue,
+      reason: '此刻没有声音的轨必须标注，而不是和可用轨长一个样',
+    );
     // BUG-1165：判据不得再用 clipCount——native 的 clip_count 是全环累计，一条轨
     // 能被列出就至少有 1 个片段，`clipCount <= 0` 恒假，置灰从来没生效过。
-    expect(panel.contains('track.clipCount <= 0'), isFalse,
-        reason: 'clipCount 是全环累计，拿它判「此刻有没有声音」恒为假');
-    expect(panel.contains('final bool silent = track.isSilentAtCue'), isTrue,
-        reason: '静音判据必须走文本时刻窗能量（与试听抓取用同一个窗）');
+    expect(
+      panel.contains('track.clipCount <= 0'),
+      isFalse,
+      reason: 'clipCount 是全环累计，拿它判「此刻有没有声音」恒为假',
+    );
+    expect(
+      panel.contains('final bool silent = track.isSilentAtCue'),
+      isTrue,
+      reason: '静音判据必须走文本时刻窗能量（与试听抓取用同一个窗）',
+    );
     expect(panel.contains('t.game_tracks_pcm_only_hint'), isTrue);
     final String page = File(
       'lib/src/pages/implementations/game_diagnostics_page.dart',
     ).readAsStringSync();
-    expect(page.contains('GalAudioTracksPanel('), isTrue,
-        reason: '诊断页必须消费共享面板，不得另写一份轨列表');
+    expect(
+      page.contains('GalAudioTracksPanel('),
+      isTrue,
+      reason: '诊断页必须消费共享面板，不得另写一份轨列表',
+    );
 
     final String workbench = File(
       'lib/src/pages/implementations/texthooker_page.dart',
     ).readAsStringSync();
-    expect(workbench.contains('_session.setTrackExcluded'), isTrue,
-        reason: '捕获工作台逐句选轨弹窗必须能直接把 BGM 轨加入排除集合');
+    expect(
+      workbench.contains('_session.setTrackExcluded'),
+      isTrue,
+      reason: '捕获工作台逐句选轨弹窗必须能直接把 BGM 轨加入排除集合',
+    );
     expect(workbench.contains('t.game_track_exclude_bgm'), isTrue);
     expect(workbench.contains('t.game_track_restore'), isTrue);
   });
@@ -417,8 +581,9 @@ void main() {
     expect(line.audioResourceId, isNotNull, reason: '前提：自动链路已配上资源语音');
 
     expect(await controller.setLineVoiceTrack(line.id, 0xABC), isTrue);
-    expect(engine.utteranceSourcePtrs, <int>[0xABC],
-        reason: '必须按用户选的轨重抓，且不经过自动选源的 exclude 集合');
+    expect(engine.utteranceSourcePtrs, <int>[
+      0xABC,
+    ], reason: '必须按用户选的轨重抓，且不经过自动选源的 exclude 集合');
     expect(controller.debugLineVoiceSourcePtr(line.id), 0xABC);
 
     final TexthookerLineEntry overridden = service.entries.single;
@@ -490,12 +655,16 @@ void main() {
     engine.utteranceTimestamps.clear();
     engine.utteranceSourcePtrs.clear();
 
-    final GalTrackPreview? preview =
-        await controller.exportLineTrackPreview(first.id, 0xABC);
+    final GalTrackPreview? preview = await controller.exportLineTrackPreview(
+      first.id,
+      0xABC,
+    );
     expect(preview, isNotNull);
     expect(await controller.setLineVoiceTrack(first.id, 0xABC), isTrue);
-    expect(engine.utteranceTimestamps, <int>[4321, 4321],
-        reason: '试听若偷用最新句 9876，用户会听见声音但确认当前句时却得到无音轨');
+    expect(engine.utteranceTimestamps, <int>[
+      4321,
+      4321,
+    ], reason: '试听若偷用最新句 9876，用户会听见声音但确认当前句时却得到无音轨');
     expect(engine.utteranceSourcePtrs, <int>[0xABC, 0xABC]);
     final String? previewPath = preview?.filePath;
     if (previewPath != null) {
@@ -533,14 +702,20 @@ void main() {
     // ② 环容量常量的**值**必须等于 native 的真相源。
     //    这是跨语言契约，只有两边一起读才守得住；旧写法钉一行 Dart 字面量 + 一句
     //    中文注释，native 那边把 kRingSeconds 改成 30 时它一动不动。
-    final String? capacity =
-        initializerExpression(src, '_loopbackRingCapacityMs');
+    final String? capacity = initializerExpression(
+      src,
+      '_loopbackRingCapacityMs',
+    );
     expect(capacity, isNotNull, reason: '环容量常量改名了：守卫失去锚点，先修锚点再谈断言');
     final File nativeFile = File('windows/runner/audio_loopback_capture.cpp');
-    expect(nativeFile.existsSync(), isTrue,
-        reason: 'native loopback 采集源不在了：跨语言契约的真相源必须先修');
-    final RegExpMatch? ring = RegExp(r'kRingSeconds\s*=\s*(\d+)')
-        .firstMatch(maskComments(nativeFile.readAsStringSync()));
+    expect(
+      nativeFile.existsSync(),
+      isTrue,
+      reason: 'native loopback 采集源不在了：跨语言契约的真相源必须先修',
+    );
+    final RegExpMatch? ring = RegExp(
+      r'kRingSeconds\s*=\s*(\d+)',
+    ).firstMatch(maskComments(nativeFile.readAsStringSync()));
     expect(ring, isNotNull, reason: 'native kRingSeconds 改名了：Dart 侧上限失去依据');
     expect(
       int.parse(capacity!),
@@ -569,8 +744,11 @@ void main() {
     // ④ 补录窗口是自己的时长常量，且不由环容量换算而来。
     final String? window = initializerExpression(src, '_recaptureWindow');
     expect(window, isNotNull, reason: '补录窗口常量改名了：守卫失去锚点');
-    expect(containsIdentifierCall(window!, 'Duration'), isTrue,
-        reason: '补录窗口必须是自己的时长常量，不再由回取上限换算而来');
+    expect(
+      containsIdentifierCall(window!, 'Duration'),
+      isTrue,
+      reason: '补录窗口必须是自己的时长常量，不再由回取上限换算而来',
+    );
     expect(
       containsIdentifier(window, '_loopbackRingCapacityMs'),
       isFalse,
@@ -615,13 +793,15 @@ void main() {
     expect(controller.isRecapturing, isTrue);
 
     // 玩家翻页：新台词到达 = 这句已经过去了，补录窗口没有继续开着的理由。
-    engine.enqueue(const GalHookedLine(
-      seq: 2,
-      timestampMs: 2000,
-      text: '二句目',
-      threadId: 5,
-      hookName: 'fake',
-    ));
+    engine.enqueue(
+      const GalHookedLine(
+        seq: 2,
+        timestampMs: 2000,
+        text: '二句目',
+        threadId: 5,
+        hookName: 'fake',
+      ),
+    );
     await waitUntil(() => !controller.isRecapturing);
     expect(controller.isRecapturing, isFalse);
     expect(controller.recapturingLineId, isNull);
@@ -636,33 +816,39 @@ void main() {
       required double energy,
       int clips = 5,
       int clipsAtCue = -1,
-    }) =>
-        GalAudioTrack(
-          sourcePtr: 0x1234,
-          format: PcmFormat(
-            sampleRate: 48000,
-            channels: 2,
-            bitsPerSample: bits,
-            isFloat: bits == 32,
-          ),
-          avgBytes: 1024,
-          avgEnergy: energy,
-          orderIndex: 0,
-          clipCount: clips,
-          clipCountAtCue: clipsAtCue,
-        );
+    }) => GalAudioTrack(
+      sourcePtr: 0x1234,
+      format: PcmFormat(
+        sampleRate: 48000,
+        channels: 2,
+        bitsPerSample: bits,
+        isFloat: bits == 32,
+      ),
+      avgBytes: 1024,
+      avgEnergy: energy,
+      orderIndex: 0,
+      clipCount: clips,
+      clipCountAtCue: clipsAtCue,
+    );
 
     // 新 runner：时刻窗片段数是唯一判据，与位深、与能量都无关。
     expect(track(bits: 16, energy: -1, clipsAtCue: 0).isSilentAtCue, isTrue);
     expect(
-        track(bits: 16, energy: 120.5, clipsAtCue: 3).isSilentAtCue, isFalse);
+      track(bits: 16, energy: 120.5, clipsAtCue: 3).isSilentAtCue,
+      isFalse,
+    );
     // 非 16-bit 轨 native 算不出能量（恒 -1），但窗内确实有段 = 此刻在响，不得置灰。
     expect(track(bits: 32, energy: -1, clipsAtCue: 4).isSilentAtCue, isFalse);
-    expect(track(bits: 32, energy: -1, clipsAtCue: 0).isSilentAtCue, isTrue,
-        reason: '有了片段数，非 16-bit 轨也能被正确判定为此刻静音');
+    expect(
+      track(bits: 32, energy: -1, clipsAtCue: 0).isSilentAtCue,
+      isTrue,
+      reason: '有了片段数，非 16-bit 轨也能被正确判定为此刻静音',
+    );
     // clipCount 是全环累计、恒 >= 1，绝不参与判据（原实现就栽在这）。
-    expect(track(bits: 16, energy: 9, clips: 99, clipsAtCue: 0).isSilentAtCue,
-        isTrue);
+    expect(
+      track(bits: 16, energy: 9, clips: 99, clipsAtCue: 0).isSilentAtCue,
+      isTrue,
+    );
 
     // 老 runner 不发该字段（-1 = 未知）：退回能量判据，且只对 16-bit 下结论——
     // 宁可不置灰也不误伤非 16-bit 的可用轨。
@@ -705,10 +891,14 @@ String _sessionOverviewCardSource() {
   final File file = File('lib/src/pages/implementations/texthooker_page.dart');
   expect(file.existsSync(), isTrue, reason: '会话卡源文件不在了？守卫失去锚点，先修路径再谈断言');
   final String src = file.readAsStringSync();
-  final int start =
-      maskCommentsAndStrings(src).indexOf('class _SessionOverviewCard');
-  expect(start, greaterThanOrEqualTo(0),
-      reason: '_SessionOverviewCard 改名了：守卫锚点必须跟着改，不能静默失效');
+  final int start = maskCommentsAndStrings(
+    src,
+  ).indexOf('class _SessionOverviewCard');
+  expect(
+    start,
+    greaterThanOrEqualTo(0),
+    reason: '_SessionOverviewCard 改名了：守卫锚点必须跟着改，不能静默失效',
+  );
   return balancedBlockFrom(src, start, what: '_SessionOverviewCard');
 }
 
@@ -741,8 +931,8 @@ class _FakeEngine extends EngineHookGalAudioSource {
     this.rawVoice = false,
     this.pairedCandidate = false,
     this.utterance,
-  })  : _pending = List<GalHookedLine>.of(lines),
-        super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
+  }) : _pending = List<GalHookedLine>.of(lines),
+       super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
 
   final List<GalHookedLine> _pending;
   final bool rawVoice;
@@ -812,8 +1002,7 @@ class _FakeEngine extends EngineHookGalAudioSource {
     int tolMs = 8000,
     int? sourcePtr,
     List<int>? exclude,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<List<GalAudioTrack>> listAudioTracks(int tsMs) async =>
@@ -824,8 +1013,7 @@ class _FakeEngine extends EngineHookGalAudioSource {
     int textTsMs, {
     int? textEventId,
     bool allowLatestSessionFallback = true,
-  }) =>
-      pairedCandidate ? 'fake-$textTsMs.ogg' : null;
+  }) => pairedCandidate ? 'fake-$textTsMs.ogg' : null;
 
   @override
   Future<Uint8List?> grabPairedVoiceBytes(
@@ -853,6 +1041,12 @@ class _FakeEngine extends EngineHookGalAudioSource {
 
 /// 记录每次 `grabRecent` 的回取长度，用来断言窗口而不是只断言「调了没」。
 class _RecordingLoopback extends LoopbackGalAudioSource {
+  _RecordingLoopback({this.sizedByBackMs = false});
+
+  /// true = 返回恰好 backMs 长、恒定幅度（尾部裁剪不会动它）的 PCM，用来断言窗口长度
+  /// 真的落进了行缓存；false = 旧的固定 1024 字节。
+  final bool sizedByBackMs;
+
   int startCalls = 0;
   int stopCalls = 0;
   final List<int> backMsCalls = <int>[];
@@ -876,6 +1070,20 @@ class _RecordingLoopback extends LoopbackGalAudioSource {
   @override
   Future<GalAudioSlice?> grabRecent(int backMs) async {
     backMsCalls.add(backMs);
+    if (sizedByBackMs) {
+      const PcmFormat format = PcmFormat(
+        sampleRate: 44100,
+        channels: 2,
+        bitsPerSample: 16,
+        isFloat: false,
+      );
+      return GalAudioSlice(
+        pcm: Uint8List.fromList(
+          List<int>.filled(backMs * format.byteRate ~/ 1000, 40),
+        ),
+        format: format,
+      );
+    }
     return GalAudioSlice(
       pcm: Uint8List.fromList(List<int>.filled(1024, 5)),
       format: const PcmFormat(

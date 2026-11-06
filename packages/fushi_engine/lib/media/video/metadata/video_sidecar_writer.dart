@@ -87,37 +87,42 @@ class SidecarWriteResult {
 
   bool get didWrite => status == SidecarWriteStatus.written;
   bool get isFailure => switch (status) {
-        SidecarWriteStatus.rejectedOutsideRoot ||
-        SidecarWriteStatus.rejectedSymbolicLink ||
-        SidecarWriteStatus.rejectedInvalidTarget ||
-        SidecarWriteStatus.failed =>
-          true,
-        _ => false,
-      };
+    SidecarWriteStatus.rejectedOutsideRoot ||
+    SidecarWriteStatus.rejectedSymbolicLink ||
+    SidecarWriteStatus.rejectedInvalidTarget ||
+    SidecarWriteStatus.failed => true,
+    _ => false,
+  };
 }
 
 /// 一个批次的逐项可诊断摘要。
 class SidecarWriteSummary {
   SidecarWriteSummary(List<SidecarWriteResult> results)
-      : results = List<SidecarWriteResult>.unmodifiable(results);
+    : results = List<SidecarWriteResult>.unmodifiable(results);
 
   final List<SidecarWriteResult> results;
 
   int get writtenCount =>
       results.where((SidecarWriteResult value) => value.didWrite).length;
   int get unchangedCount => results
-      .where((SidecarWriteResult value) =>
-          value.status == SidecarWriteStatus.unchanged)
+      .where(
+        (SidecarWriteResult value) =>
+            value.status == SidecarWriteStatus.unchanged,
+      )
       .length;
   int get protectedCount => results
-      .where((SidecarWriteResult value) =>
-          value.status == SidecarWriteStatus.protectedExisting ||
-          value.status == SidecarWriteStatus.protectedModified)
+      .where(
+        (SidecarWriteResult value) =>
+            value.status == SidecarWriteStatus.protectedExisting ||
+            value.status == SidecarWriteStatus.protectedModified,
+      )
       .length;
   int get skippedCount => results
-      .where((SidecarWriteResult value) =>
-          value.status == SidecarWriteStatus.skippedByPolicy ||
-          value.status == SidecarWriteStatus.skippedExisting)
+      .where(
+        (SidecarWriteResult value) =>
+            value.status == SidecarWriteStatus.skippedByPolicy ||
+            value.status == SidecarWriteStatus.skippedExisting,
+      )
       .length;
   int get failureCount =>
       results.where((SidecarWriteResult value) => value.isFailure).length;
@@ -255,12 +260,14 @@ class VideoSidecarWriter {
 
     Object? artifactStoreError;
     try {
-      await artifactStore.upsert(SidecarArtifactRecord(
-        path: target,
-        sha256: desiredHash,
-        generatorVersion: generatorVersion,
-        writtenAt: DateTime.now().toUtc(),
-      ));
+      await artifactStore.upsert(
+        SidecarArtifactRecord(
+          path: target,
+          sha256: desiredHash,
+          generatorVersion: generatorVersion,
+          writtenAt: DateTime.now().toUtc(),
+        ),
+      );
     } on Object catch (error) {
       artifactStoreError = error;
     }
@@ -287,8 +294,9 @@ class VideoSidecarWriter {
         '来源根目录不存在',
       );
     }
-    final String realRoot =
-        p.normalize(await rootDirectory.resolveSymbolicLinks());
+    final String realRoot = p.normalize(
+      await rootDirectory.resolveSymbolicLinks(),
+    );
     final Directory parent = Directory(p.dirname(target));
     if (!await parent.exists()) {
       throw const _SidecarValidationException(
@@ -304,8 +312,10 @@ class VideoSidecarWriter {
       );
     }
 
-    final FileSystemEntityType type =
-        await FileSystemEntity.type(target, followLinks: false);
+    final FileSystemEntityType type = await FileSystemEntity.type(
+      target,
+      followLinks: false,
+    );
     if (type == FileSystemEntityType.link) {
       throw const _SidecarValidationException(
         SidecarWriteStatus.rejectedSymbolicLink,
@@ -351,8 +361,9 @@ class VideoSidecarWriter {
     }
 
     try {
-      final RandomAccessFile handle =
-          await temporary.open(mode: FileMode.write);
+      final RandomAccessFile handle = await temporary.open(
+        mode: FileMode.write,
+      );
       try {
         await handle.writeFrom(bytes);
         await handle.flush();

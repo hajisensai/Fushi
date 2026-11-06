@@ -75,21 +75,31 @@ void main() {
   group('LanguageUtils.isCodePointInRange', () {
     test('returns true for code point within range', () {
       expect(
-          LanguageUtils.isCodePointInRange(0x3041, [0x3040, 0x309f]), isTrue);
+        LanguageUtils.isCodePointInRange(0x3041, [0x3040, 0x309f]),
+        isTrue,
+      );
     });
 
     test('returns true for code point at range boundaries', () {
       expect(
-          LanguageUtils.isCodePointInRange(0x3040, [0x3040, 0x309f]), isTrue);
+        LanguageUtils.isCodePointInRange(0x3040, [0x3040, 0x309f]),
+        isTrue,
+      );
       expect(
-          LanguageUtils.isCodePointInRange(0x309f, [0x3040, 0x309f]), isTrue);
+        LanguageUtils.isCodePointInRange(0x309f, [0x3040, 0x309f]),
+        isTrue,
+      );
     });
 
     test('returns false for code point outside range', () {
       expect(
-          LanguageUtils.isCodePointInRange(0x3000, [0x3040, 0x309f]), isFalse);
+        LanguageUtils.isCodePointInRange(0x3000, [0x3040, 0x309f]),
+        isFalse,
+      );
       expect(
-          LanguageUtils.isCodePointInRange(0x30a0, [0x3040, 0x309f]), isFalse);
+        LanguageUtils.isCodePointInRange(0x30a0, [0x3040, 0x309f]),
+        isFalse,
+      );
     });
   });
 
@@ -97,26 +107,20 @@ void main() {
     test('returns true when in any range', () {
       // Katakana range
       expect(
-        LanguageUtils.isCodePointInRanges(
-          0x30a1,
-          [
-            [0x3040, 0x309f],
-            [0x30a0, 0x30ff]
-          ],
-        ),
+        LanguageUtils.isCodePointInRanges(0x30a1, [
+          [0x3040, 0x309f],
+          [0x30a0, 0x30ff],
+        ]),
         isTrue,
       );
     });
 
     test('returns false when in no range', () {
       expect(
-        LanguageUtils.isCodePointInRanges(
-          0x4e00,
-          [
-            [0x3040, 0x309f],
-            [0x30a0, 0x30ff]
-          ],
-        ),
+        LanguageUtils.isCodePointInRanges(0x4e00, [
+          [0x3040, 0x309f],
+          [0x30a0, 0x30ff],
+        ]),
         isFalse,
       );
     });
@@ -143,18 +147,24 @@ void main() {
   });
 
   group('LanguageUtils.getFuriganaKanaSegments', () {
-    test('identical text and reading produce single segment with empty ruby',
-        () {
-      final segments =
-          LanguageUtils.getFuriganaKanaSegments(text: 'あいう', reading: 'あいう');
-      expect(segments, hasLength(1));
-      expect(segments[0].text, 'あいう');
-      expect(segments[0].ruby, '');
-    });
+    test(
+      'identical text and reading produce single segment with empty ruby',
+      () {
+        final segments = LanguageUtils.getFuriganaKanaSegments(
+          text: 'あいう',
+          reading: 'あいう',
+        );
+        expect(segments, hasLength(1));
+        expect(segments[0].text, 'あいう');
+        expect(segments[0].ruby, '');
+      },
+    );
 
     test('different text and reading produce segment with ruby', () {
-      final segments =
-          LanguageUtils.getFuriganaKanaSegments(text: 'アイ', reading: 'あい');
+      final segments = LanguageUtils.getFuriganaKanaSegments(
+        text: 'アイ',
+        reading: 'あい',
+      );
       expect(segments, hasLength(1));
       expect(segments[0].text, 'アイ');
       expect(segments[0].ruby, 'あい');

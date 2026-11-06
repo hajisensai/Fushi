@@ -129,7 +129,8 @@ class MihonMangaPageRef extends OnlineMangaPageRef {
   String? get sourceUrl => page.resolvedUrl;
 }
 
-/// 源补丁（quirk）产出的裸 https 页：URL 自带签名，只需 Referer（BUG-2514）。
+/// 裸 http(s) 页：源补丁（quirk）产出的签名 URL（BUG-2514），以及网页漫画
+/// （[OnlineMangaRuntimeKind.web]）扫出来的图。
 ///
 /// 与 [MihonMangaPageRef] 的区别是**不经**扩展的 OkHttp——这些页根本不是扩展
 /// 解析出来的，扩展对它们一无所知。
@@ -138,12 +139,17 @@ class HttpMangaPageRef extends OnlineMangaPageRef {
     required super.index,
     required this.url,
     required this.referer,
+    this.headers = const <String, String>{},
   });
 
   final String url;
 
-  /// 源站 baseUrl（不带尾斜杠），作为 Referer。
+  /// 源站 baseUrl（不带尾斜杠），作为 Referer。空串 = 不带 Referer。
   final String referer;
+
+  /// 额外请求头（网页漫画：同站 Cookie、扫图 WebView 的 User-Agent、站点规则
+  /// 要求的头）。quirk 页不用，恒为空。
+  final Map<String, String> headers;
 
   @override
   String? get sourceUrl => url;
@@ -166,6 +172,52 @@ class InterconnectMangaPageRef extends OnlineMangaPageRef {
   /// 章节式在线漫画的章目录摘要（BUG-2474）；null = 单卷本地漫画，页走
   /// `/pages/<i>`，非 null 走 `/chapters/<digest>/pages/<i>`。
   final String? chapterDigest;
+}
+
+/// Kavita 服务器：服务器配置 id + Kavita chapterId + 页序（0 起）。
+///
+/// **不带**图片 URL：Kavita 的 `/api/Reader/image` 认 `apiKey` 查询参数，URL 本身
+/// 就是长期凭据，所以 [sourceUrl] 恒 null（它会被写进下载 sidecar），取图时再经
+/// 服务器配置现拼。
+class KavitaMangaPageRef extends OnlineMangaPageRef {
+  const KavitaMangaPageRef({
+    required super.index,
+    required this.serverConfigId,
+    required this.chapterId,
+    required this.page,
+  });
+
+  final String serverConfigId;
+  final int chapterId;
+
+  /// Kavita 侧页序（0 起，通常与 [index] 相同）。
+  final int page;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'index': index,
+    'serverConfigId': serverConfigId,
+    'chapterId': chapterId,
+    'page': page,
+  };
+
+  static KavitaMangaPageRef? fromJson(Map<String, Object?> json) {
+    final int? index = (json['index'] as num?)?.toInt();
+    final int? chapterId = (json['chapterId'] as num?)?.toInt();
+    final int? page = (json['page'] as num?)?.toInt();
+    final String serverConfigId = json['serverConfigId']?.toString() ?? '';
+    if (index == null ||
+        chapterId == null ||
+        page == null ||
+        serverConfigId.isEmpty) {
+      return null;
+    }
+    return KavitaMangaPageRef(
+      index: index,
+      serverConfigId: serverConfigId,
+      chapterId: chapterId,
+      page: page,
+    );
+  }
 }
 
 /// 把「某个在线漫画运行时」收成书架侧需要的几件事。

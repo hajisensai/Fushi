@@ -1,7 +1,7 @@
 // 安装统计：客户端每天一次的心跳与开发者处理台的统计数据（表结构见 migrations/0011_install_stats.sql、
 // 0013_install_verified.sql）。
 //
-//   POST /v1/ping  {installId, version, platform, channel} → 204
+//   POST /v1/ping  {installId, version, platform, channel, locale?, arch?, osVersion?, source?} → 204
 //                  + 可选安装证明头 X-Fushi-Install-Key / -Time / -Sig / -Pow（见下）
 //
 // installId（2026-10-17 起，客户端 fushi_engine/lib/leaderboard/install_identity.dart）：
@@ -27,6 +27,12 @@
 // ①冒充不了已有安装（没有私钥签不出它的 id）②每造一个新 id 都要付钥匙生成 + PoW + 每 IP 限流的代价。
 // 旧随机 id → 新 id 不做关联：旧 id 没有任何持有证明，接受「旧 → 新」声明等于让任何人把任意旧轨迹
 // 嫁接到自己名下；旧 id 只在 2.10.0-debug 的心跳里存在过一天量级，按保留期自然过期。
+//
+// 地区与设备维度（迁移 0017）：country 取 Cloudflare 按连接 IP 判出的两位国家 / 地区码（request.cf.country，
+// 只存这两位码，城市 / 经纬度 / ASN 不落库）；locale（App 界面语言，BCP 47）、arch（宿主 CPU 架构）、
+// osVersion（系统大版本）、source（安装来源类别）是客户端可选上报的粗粒度枚举，旧客户端不发记 NULL。
+// 服务端只校验形状不校验取值表，新架构 / 新来源不必先升级 Worker。它们跟版本 / 平台一样按「当天第一次
+// 心跳」记，统计页按近 30 天活跃安装分组。
 //
 // 服务端不存 IP：限流靠 Workers Rate Limiting binding（worker.js 里按 IP 过 AUTH_LIMITER），不落 D1。
 // 心跳的处理顺序（recordPing）：先做证明的**无状态**检查（头齐全、id == fp(公钥)、时效、PoW，纯 CPU、
@@ -55,6 +61,18 @@ export const INSTALL_LIMITS = {
   dailyRows: 30,
   /** 版本分布最多列多少个版本。 */
   topVersions: 20,
+  /** 国家 / 地区分布最多列多少个。 */
+  topCountries: 60,
+  /** 界面语言分布最多列多少个（客户端只有 17 种界面语言，留余量给地区变体）。 */
+  topLocales: 30,
+  /** 架构 / 系统版本 / 安装来源分布各最多列多少行（按平台 × 取值）。 */
+  topDimension: 40,
+  /** 留存表列多少个新增日（按首次心跳的 UTC 日）。 */
+  retentionCohorts: 60,
+  /** 版本升级进度表列多少个最近出现的版本。 */
+  adoptionVersions: 15,
+  /** 分国家日活趋势列多少个国家（其余并进「其它」）。 */
+  trendCountries: 8,
   /** 反馈详情里同一安装的其它反馈最多列多少条。 */
   relatedFeedback: 20,
 };
@@ -161,6 +179,46 @@ export async function verifyInstallProof(env, request, installId, bodyBytes, now
   return true;
 }
 const VERSION_RE = /^[A-Za-z0-9.+-]{1,64}$/;
+/** BCP 47 的够用子集：语言 2–3 字母 + 至多两个子标签（文字 / 地区），如 zh-Hant-TW、pt-BR。 */
+const LOCALE_RE = /^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8}){0,2}$/;
+/** Cloudflare 的国家码：ISO 3166-1 alpha-2，另有 T1（Tor）/ XX（未知）。 */
+const COUNTRY_RE = /^[A-Z][A-Z0-9]$/;
+/** 客户端上报的设备维度：只校验形状（小写枚举词 / 版本记号），不校验取值表。 */
+const DIMENSION_RE = {
+  arch: /^[a-z0-9_]{1,16}$/,
+  osVersion: /^[A-Za-z0-9._-]{1,32}$/,
+  source: /^[a-z_]{1,24}$/,
+};
+
+/** 可选维度字段：没带 / null → null；带了但形状不对 → 400 bad_<field>。 */
+function optionalDimension(body, field) {
+  const v = body[field];
+  if (v === undefined || v === null) return null;
+  if (typeof v !== 'string' || !DIMENSION_RE[field].test(v)) {
+    throw new HttpError(400, `bad_${field.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)}`);
+  }
+  return v;
+}
+
+/** request.cf.country → 两位大写码；本地 / 测试环境没有 cf 或值不合法 → null。 */
+export function requestCountry(request) {
+  const c = request?.cf?.country;
+  return typeof c === 'string' && COUNTRY_RE.test(c) ? c : null;
+}
+
+/**
+ * 心跳里的界面语言：没带 / null → null；带了但不是字符串或形状不对 → 400 bad_locale。
+ * 规范成「语言小写、文字首字母大写、地区大写」，下划线改连字符（zh_cn → zh-CN）。
+ */
+export function normalizeLocale(v) {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== 'string' || !LOCALE_RE.test(v)) throw new HttpError(400, 'bad_locale');
+  return v.split(/[-_]/).map((part, i) => {
+    if (i === 0) return part.toLowerCase();
+    if (part.length === 4 && /^[A-Za-z]+$/.test(part)) return part[0].toUpperCase() + part.slice(1).toLowerCase();
+    return part.length === 2 ? part.toUpperCase() : part;
+  }).join('-');
+}
 
 /** 合法的 installId（小写 UUID v4）原样返回，否则 null。 */
 export function normalizeInstallId(v) {
@@ -174,7 +232,16 @@ export function normalizePing(body) {
   if (typeof body.version !== 'string' || !VERSION_RE.test(body.version)) throw new HttpError(400, 'bad_version');
   if (!PING_PLATFORMS.includes(body.platform)) throw new HttpError(400, 'bad_platform');
   if (!PING_CHANNELS.includes(body.channel)) throw new HttpError(400, 'bad_channel');
-  return { installId, version: body.version, platform: body.platform, channel: body.channel };
+  return {
+    installId,
+    version: body.version,
+    platform: body.platform,
+    channel: body.channel,
+    locale: normalizeLocale(body.locale),
+    arch: optionalDimension(body, 'arch'),
+    osVersion: optionalDimension(body, 'osVersion'),
+    source: optionalDimension(body, 'source'),
+  };
 }
 
 /**
@@ -190,23 +257,33 @@ export async function recordPing(env, request, bodyBytes, body, now) {
   if (seen && (seen.verified === 1 || !proof)) return;
   if (proof) await completeInstallProof(env, request, proof, bodyBytes);
   const verified = proof ? 1 : 0;
+  const country = requestCountry(request);
   await spend(env, 'ping', 1, now);
   // 未验证的心跳不改写已验证的行（DO UPDATE 的 WHERE）；已验证的心跳可以把同 id 的未验证行升级。
   await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO install_days (day, install_id, platform, channel, version, verified)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+      `INSERT INTO install_days
+         (day, install_id, platform, channel, version, verified, country, locale, arch, os_version, source)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
        ON CONFLICT (day, install_id) DO UPDATE SET
-         platform = ?3, channel = ?4, version = ?5, verified = ?6
+         platform = ?3, channel = ?4, version = ?5, verified = ?6, country = ?7, locale = ?8,
+         arch = ?9, os_version = ?10, source = ?11
        WHERE ?6 > install_days.verified`,
-    ).bind(day, p.installId, p.platform, p.channel, p.version, verified),
+    ).bind(day, p.installId, p.platform, p.channel, p.version, verified, country, p.locale,
+      p.arch, p.osVersion, p.source),
     env.DB.prepare(
-      `INSERT INTO installs (install_id, first_seen, last_seen, platform, channel, version, verified)
-       VALUES (?1, ?2, ?2, ?3, ?4, ?5, ?6)
+      // 维度这次拿不到（本地开发无 cf、旧客户端不发、设备信息读失败）就保留上次的值。
+      `INSERT INTO installs
+         (install_id, first_seen, last_seen, platform, channel, version, verified, country, locale, arch, os_version, source)
+       VALUES (?1, ?2, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
        ON CONFLICT (install_id) DO UPDATE SET
-         last_seen = MAX(last_seen, ?2), platform = ?3, channel = ?4, version = ?5, verified = ?6
+         last_seen = MAX(last_seen, ?2), platform = ?3, channel = ?4, version = ?5, verified = ?6,
+         country = COALESCE(?7, installs.country), locale = COALESCE(?8, installs.locale),
+         arch = COALESCE(?9, installs.arch), os_version = COALESCE(?10, installs.os_version),
+         source = COALESCE(?11, installs.source)
        WHERE ?6 >= installs.verified`,
-    ).bind(p.installId, now, p.platform, p.channel, p.version, verified),
+    ).bind(p.installId, now, p.platform, p.channel, p.version, verified, country, p.locale,
+      p.arch, p.osVersion, p.source),
   ]);
 }
 
@@ -223,7 +300,10 @@ function countBy(rows, key) {
 
 /**
  * 统计页数据。日活按 UTC 日；「活跃安装」= 窗口内至少发过一次心跳的安装。
- * 版本 / 平台 / 通道分布取近 30 天活跃安装各自最近一次上报的值。
+ * 版本 / 平台 / 通道 / 国家地区 / 界面语言 / 架构 / 系统版本 / 安装来源分布取近 30 天活跃安装各自
+ * 最近一次上报的值（0017 新增的维度为 NULL 的归成 null：0017 之前的记录、没有 cf 的请求、旧客户端）。
+ * 架构 / 系统版本 / 安装来源按平台分开（Android 的 arm 与 Windows 的 arm 不是一回事）。
+ * 另有留存（retention）、版本升级进度（adoption）、分国家日活趋势（countryTrend），见各自函数。
  *
  * 默认口径只数**已验证**安装（verified = 1，出示了安装证明）：未验证的心跳只来自 2.10.0-debug
  * 的旧客户端或自报伪造，混进去会让刷量直接抬高主数字。未验证的另给一组计数（unverified），
@@ -250,6 +330,10 @@ export async function installStats(env, now) {
     `SELECT ${col}, COUNT(*) AS n FROM installs WHERE last_seen >= ?1 AND verified = 1
      GROUP BY ${col} ORDER BY n DESC, ${col} LIMIT ${limit}`,
   ).bind(activeSince).all()).results, col);
+  const distByPlatform = async (col) => (await env.DB.prepare(
+    `SELECT platform, ${col} AS value, COUNT(*) AS n FROM installs WHERE last_seen >= ?1 AND verified = 1
+     GROUP BY platform, ${col} ORDER BY n DESC, platform, ${col} LIMIT ${INSTALL_LIMITS.topDimension}`,
+  ).bind(activeSince).all()).results.map((r) => ({ platform: r.platform, value: r.value, n: r.n }));
   const totalOf = async (verified) => (await env.DB.prepare(
     'SELECT COUNT(*) AS n FROM installs WHERE verified = ?1',
   ).bind(verified).first()).n;
@@ -276,7 +360,110 @@ export async function installStats(env, now) {
     platforms: await dist('platform', PING_PLATFORMS.length),
     channels: await dist('channel', PING_CHANNELS.length),
     versions: await dist('version', INSTALL_LIMITS.topVersions),
+    countries: await dist('country', INSTALL_LIMITS.topCountries),
+    locales: await dist('locale', INSTALL_LIMITS.topLocales),
+    archs: await distByPlatform('arch'),
+    osVersions: await distByPlatform('os_version'),
+    sources: await distByPlatform('source'),
+    retention: await retentionCohorts(env, now),
+    adoption: await versionAdoption(env, now),
+    countryTrend: await countryTrend(env, now),
   };
+}
+
+/** 留存窗口：[首日 + from, 首日 + to] 里任何一天有已验证心跳即算留存。 */
+export const RETENTION_WINDOWS = [
+  { key: 'd1', from: 1, to: 1 },
+  { key: 'd7', from: 7, to: 13 },
+  { key: 'd30', from: 30, to: 59 },
+];
+
+function addDays(day, n) {
+  return utcDateKey(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS);
+}
+
+/**
+ * 按首次心跳的 UTC 日分组的留存：每组新增数与次日 / 第 7–13 天 / 第 30–59 天仍有已验证心跳的安装数。
+ * 窗口还没完整过去（窗口末日 ≥ 今天）的格子给 null，不拿半截数据冒充比例。
+ * 记录起始那天（最早的心跳日）的「新增」混着统计上线前就在用的存量安装，标 seeded。
+ */
+export async function retentionCohorts(env, now) {
+  const today = utcDateKey(now);
+  const since = Date.parse(`${addDays(today, -(INSTALL_LIMITS.retentionCohorts - 1))}T00:00:00Z`);
+  const exists = (w) => `SUM(EXISTS (SELECT 1 FROM install_days d WHERE d.install_id = c.install_id
+      AND d.verified = 1 AND d.day BETWEEN date(c.day, '+${w.from} day') AND date(c.day, '+${w.to} day'))) AS ${w.key}`;
+  const rows = (await env.DB.prepare(
+    `SELECT c.day, COUNT(*) AS n, ${RETENTION_WINDOWS.map(exists).join(', ')}
+     FROM (SELECT install_id, strftime('%Y-%m-%d', first_seen / 1000, 'unixepoch') AS day
+           FROM installs WHERE verified = 1 AND first_seen >= ?1) c
+     GROUP BY c.day ORDER BY c.day DESC`,
+  ).bind(since).all()).results;
+  const first = (await env.DB.prepare('SELECT MIN(day) AS day FROM install_days WHERE verified = 1').first())?.day;
+  return rows.map((r) => ({
+    day: r.day,
+    n: r.n,
+    seeded: r.day === first,
+    ...Object.fromEntries(RETENTION_WINDOWS.map((w) => [w.key, addDays(r.day, w.to) < today ? r[w.key] : null])),
+  }));
+}
+
+/** 版本串的发布轨道：'' = 正式，'beta' / 'debug' = 预发布；认不出 → null。 */
+function versionTrack(v) {
+  const m = VERSION_PARTS_RE.exec(String(v || '').trim().replace(/\+.*$/, ''));
+  return m ? (m[4] || '') : null;
+}
+
+/**
+ * 版本升级进度：最近出现的若干版本，各自在「同一发布轨道的近 7 日活跃已验证安装」里有多少已装到
+ * 该版本或更新（reached，判据同 versionIncludes）、多少正好停在这个版本（exact）。
+ * firstDay 是该版本第一次出现在已验证心跳里的日子（≈ 发布日），用来读「发布几天后覆盖了多少」。
+ */
+export async function versionAdoption(env, now) {
+  const versions = (await env.DB.prepare(
+    `SELECT version, MIN(day) AS first_day FROM install_days WHERE verified = 1
+     GROUP BY version HAVING MAX(day) >= ?1 ORDER BY first_day DESC, version DESC LIMIT ?2`,
+  ).bind(utcDateKey(now - 29 * DAY_MS), INSTALL_LIMITS.adoptionVersions).all()).results;
+  const active = (await env.DB.prepare(
+    'SELECT version FROM installs WHERE verified = 1 AND last_seen >= ?1',
+  ).bind(now - 7 * DAY_MS).all()).results;
+  const strip = (v) => String(v || '').trim().replace(/\+.*$/, '');
+  return versions.map((v) => {
+    const track = versionTrack(v.version);
+    const peers = track === null ? [] : active.filter((a) => versionTrack(a.version) === track);
+    return {
+      version: v.version,
+      firstDay: v.first_day,
+      track,
+      peers: peers.length,
+      reached: peers.filter((a) => versionIncludes(a.version, v.version) === true).length,
+      exact: peers.filter((a) => strip(a.version) === strip(v.version)).length,
+    };
+  });
+}
+
+/**
+ * 分国家日活趋势：近 dailyRows 天里已验证日活最多的 trendCountries 个国家（含 null = 未记录），
+ * 每天各自的日活，其余国家并进 other。
+ */
+export async function countryTrend(env, now) {
+  const since = utcDateKey(now - (INSTALL_LIMITS.dailyRows - 1) * DAY_MS);
+  const top = (await env.DB.prepare(
+    `SELECT country, COUNT(*) AS n FROM install_days WHERE verified = 1 AND day >= ?1
+     GROUP BY country ORDER BY n DESC, country LIMIT ?2`,
+  ).bind(since, INSTALL_LIMITS.trendCountries).all()).results.map((r) => r.country);
+  const cells = (await env.DB.prepare(
+    `SELECT day, country, COUNT(*) AS n FROM install_days WHERE verified = 1 AND day >= ?1
+     GROUP BY day, country`,
+  ).bind(since).all()).results;
+  const days = new Map();
+  for (const c of cells) {
+    if (!days.has(c.day)) days.set(c.day, { day: c.day, counts: top.map(() => 0), other: 0 });
+    const row = days.get(c.day);
+    const i = top.indexOf(c.country);
+    if (i >= 0) row.counts[i] += c.n;
+    else row.other += c.n;
+  }
+  return { countries: top, days: [...days.values()].sort((a, b) => (a.day < b.day ? 1 : -1)) };
 }
 
 const VERSION_PARTS_RE = /^(\d+)\.(\d+)\.(\d+)(?:-(beta|debug)\.(\d+))?$/;
@@ -340,6 +527,11 @@ export async function installTrail(env, installId, feedbackId, feedbackVerified 
         platform: install.platform,
         channel: install.channel,
         version: install.version,
+        country: install.country ?? null,
+        locale: install.locale ?? null,
+        arch: install.arch ?? null,
+        osVersion: install.os_version ?? null,
+        source: install.source ?? null,
       }
       : null,
     versions: versions.map((v) => ({ version: v.version, firstDay: v.first_day, lastDay: v.last_day })),

@@ -76,7 +76,7 @@ void main() {
     );
     expect(
       body,
-      contains('ReaderResourceSanitizer.injectReaderHead('),
+      contains('ReaderResourceSanitizer.buildChapterHtmlBytes('),
       reason: 'head injection must go through the unit-tested helper',
     );
     expect(

@@ -21,7 +21,13 @@ import 'package:fushi/src/pages/implementations/feedback/feedback_detail_page.da
 import 'package:fushi/src/pages/implementations/feedback/feedback_dev_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_tag.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
@@ -130,6 +136,9 @@ class _Server {
   /// 提交正文前几次回 503（测「重试同一次提交带同一个幂等键」）。
   int submitFailures = 0;
 
+  /// 非空时，补传附件（PUT .../attachments/:slot）先等它放行（测上传进行中的详情页）。
+  Completer<void>? putGate;
+
   /// fixfixfix0 挂着的修复：调试版 android 已发布（详情 / 进度 / 处理台同一份）。
   Map<String, dynamic> fix = <String, dynamic>{
     'sha': '0123456789abcdef0123456789abcdef01234567',
@@ -187,6 +196,9 @@ class _Server {
   Future<http.Response> handle(http.Request r) async {
     requests.add(r);
     final String path = r.url.path;
+    if (r.method == 'PUT' && path.contains('/attachments/')) {
+      await putGate?.future;
+    }
     if (path == '/v1/dev/feedback') {
       final String q = r.url.queryParameters['q'] ?? '';
       await devListGates[q]?.future;
@@ -496,7 +508,7 @@ void main() {
     supportRoot: () async => root,
     client: b.feedbackClient,
     meta: () async => <String, Object?>{'platform': 'test'},
-    logText: () => 'log',
+    logText: ({required bool includeDebugLog}) => 'log',
     logEncoder: (String s) =>
         Uint8List.fromList(<int>[0x1f, 0x8b, ...utf8.encode(s)]),
   );
@@ -807,6 +819,29 @@ void main() {
 
     await tester.tap(
       find.byKey(const ValueKey<String>('feedback-category-suggestion')),
+    );
+    await tester.pump();
+    // 反馈 SDN2yTecu9 / LmIRnau_Fa：换成「建议」后默认不带日志、自动截图退回成
+    // 「附上当时画面」；用户手动加回来的照常上传。
+    expect(find.byKey(const ValueKey<String>('feedback-shot-0')), findsNothing);
+    expect(
+      tester
+          .widget<FushiSwitchListTile>(
+            find.byKey(const ValueKey<String>('feedback-include-logs')),
+          )
+          .value,
+      isFalse,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('feedback-attach-auto-shot')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('feedback-include-logs')),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('feedback-shot-0')),
+      findsOneWidget,
     );
     await tester.enterText(
       find.byKey(const ValueKey<String>('feedback-title')),
@@ -1999,6 +2034,85 @@ void main() {
     expect(put.bodyBytes, <int>[9]);
     expect(put.headers['X-Fushi-Ticket'], 'old-ticket');
     await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('feedback-detail-pending')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('反馈人详情：追加截图上传进行中显示「正在上传」，不显示「没上传成功」与重试（#aiRZmYl5zS）', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    await tester.runAsync(() async {
+      await seedOld();
+      // 补传窗口内的本机回执：详情页才给追加入口。
+      await FeedbackTicketStore(root).write(<FeedbackTicket>[
+        FeedbackTicket(
+          id: 'oldoldold0',
+          ticket: 'old-ticket',
+          title: '旧反馈',
+          category: FeedbackCategory.bug,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          status: FeedbackStatus.open,
+          updatedAt: 100,
+          seenAt: 100,
+        ),
+      ]);
+    });
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    await tester.runAsync(f.load);
+    await tester.pumpWidget(
+      wrap(b, f, const FeedbackDetailPage(feedbackId: 'oldoldold0')),
+    );
+    final Finder addShot = find.byKey(
+      const ValueKey<String>('feedback-detail-add-shot'),
+    );
+    await settleIo(tester, () => addShot.evaluate().isNotEmpty);
+    expect(addShot, findsOneWidget);
+
+    final Completer<void> gate = Completer<void>();
+    server.putGate = gate;
+    // 与「追加截图」按钮选完图之后同一条路（选图本身是平台通道，这里直接交字节）。
+    late Future<FeedbackRetryResult> adding;
+    await tester.runAsync(() async {
+      adding = f.addScreenshots(
+        'oldoldold0',
+        <Uint8List>[_kOnePixelPng],
+        usedSlots: const <String>{'s0', 'log'},
+      );
+    });
+    await settleIo(
+      tester,
+      () => server.requests.any((http.Request r) => r.method == 'PUT'),
+    );
+    expect(f.pendingSlots('oldoldold0'), <String>{'s1'});
+    expect(
+      find.byKey(const ValueKey<String>('feedback-detail-uploading')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('feedback-detail-pending')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('feedback-detail-retry')),
+      findsNothing,
+    );
+
+    gate.complete();
+    late FeedbackRetryResult r;
+    await tester.runAsync(() async => r = await adding);
+    await settleIo(tester, () => !f.attachInFlight('oldoldold0'));
+    expect(r.uploaded, 1);
+    expect(r.remaining, 0);
+    expect(f.pendingSlots('oldoldold0'), isEmpty);
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('feedback-detail-uploading')),
+      findsNothing,
+    );
     expect(
       find.byKey(const ValueKey<String>('feedback-detail-pending')),
       findsNothing,

@@ -2,7 +2,9 @@
 // player response（见下方注释与 resolveYoutubeSource）。dart format 会把多行 import 的
 // `show VideoController` 换行，令行内 `// ignore` 锚点失效，故用 file 级抑制。
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async' show TimeoutException;
 import 'dart:convert' show jsonDecode;
+import 'dart:io' show HandshakeException, HttpException, SocketException;
 
 import 'package:html_unescape/html_unescape.dart';
 import 'package:http/http.dart' as http;
@@ -125,9 +127,12 @@ bool isYoutubeUrl(String url) {
   final Uri? u = Uri.tryParse(url.trim());
   if (u == null || !u.hasScheme) return false;
   final String host = u.host.toLowerCase();
-  return host.endsWith('youtube.com') ||
+  // 按域名边界比：裸 endsWith 会把 notyoutube.com 之类的别家主机认成 YouTube。
+  bool isDomainOrSub(String domain) =>
+      host == domain || host.endsWith('.$domain');
+  return isDomainOrSub('youtube.com') ||
       host == 'youtu.be' ||
-      host.endsWith('youtube-nocookie.com');
+      isDomainOrSub('youtube-nocookie.com');
 }
 
 /// 纯函数：从任意 YouTube URL 写法解出 canonical 11 位 videoId；无法解析返回 null。
@@ -165,10 +170,10 @@ String youtubeThumbnailUrl(String videoId) =>
 /// 配合 [resolveBestThumbnailUrl] 逐个探测存在性、取首个可用者：高清缺失自动退次高，
 /// 收益是导入封面尽量取到无黑边的高清图，且绝不因 maxres 404 落到无封面。纯函数，便于单测。
 List<String> youtubeThumbnailCandidates(String videoId) => <String>[
-      'https://i.ytimg.com/vi/$videoId/maxresdefault.jpg',
-      'https://i.ytimg.com/vi/$videoId/sddefault.jpg',
-      youtubeThumbnailUrl(videoId),
-    ];
+  'https://i.ytimg.com/vi/$videoId/maxresdefault.jpg',
+  'https://i.ytimg.com/vi/$videoId/sddefault.jpg',
+  youtubeThumbnailUrl(videoId),
+];
 
 /// TODO-1314（C7）：按 [youtubeThumbnailCandidates] 降序探测缩略图存在性，返回**首个可用**的
 /// URL；全部探测失败仍返回 [youtubeThumbnailUrl]（hqdefault 恒存在，= 旧行为，绝不无封面）。
@@ -193,8 +198,9 @@ Future<String> resolveBestThumbnailUrl(
 /// i.ytimg.com 对不存在的 `maxresdefault` 返回 404、存在则 200，故 HEAD 状态码即可判定。
 Future<bool> _thumbnailExistsViaHead(http.Client client, String url) async {
   try {
-    final http.Response res =
-        await client.head(Uri.parse(url)).timeout(const Duration(seconds: 6));
+    final http.Response res = await client
+        .head(Uri.parse(url))
+        .timeout(const Duration(seconds: 6));
     return res.statusCode >= 200 && res.statusCode < 300;
   } catch (_) {
     return false;
@@ -229,8 +235,9 @@ Future<YoutubeMetadata> resolveYoutubeMetadata(
   // 用完关闭。把「videos.get 拿标题」（需真网络、外部契约）与「缩略图探测」（可离线注入）解耦。
   http.Client? thumbnailProbeClient,
 }) async {
-  final yt.YoutubeExplode client =
-      yt.YoutubeExplode(_createYoutubeHttpClient());
+  final yt.YoutubeExplode client = yt.YoutubeExplode(
+    _createYoutubeHttpClient(),
+  );
   try {
     final yt.Video video = await client.videos.get(url).timeout(timeout);
     // TODO-1314（C7）：多分辨率缩略图回退——HEAD 探测 maxres→sd→hq，取首个可用者作导入封面
@@ -247,6 +254,57 @@ Future<YoutubeMetadata> resolveYoutubeMetadata(
     } finally {
       if (thumbnailProbeClient == null) probeClient.close();
     }
+  } finally {
+    client.close();
+  }
+}
+
+/// YouTube 搜索的一条结果（音乐 MV 在线绑定用，音乐方案 §8.3 第 3 条）。只是候选：
+/// 调用方按置信度筛、用户确认后才绑定。
+class YoutubeSearchHit {
+  const YoutubeSearchHit({
+    required this.videoId,
+    required this.title,
+    required this.channelName,
+    required this.channelId,
+    this.duration,
+  });
+
+  final String videoId;
+  final String title;
+  final String channelName;
+  final String channelId;
+  final Duration? duration;
+
+  String get url => 'https://www.youtube.com/watch?v=$videoId';
+}
+
+/// IO：按关键词搜 YouTube 视频（首页 ≈20 条，取前 [limit] 条）。与 [resolveYoutubeSource]
+/// 同一个出站装配（`createAppHttpIoClient`，BUG-1498），用完关闭。
+Future<List<YoutubeSearchHit>> searchYoutubeVideos(
+  String query, {
+  int limit = 10,
+  Duration timeout = const Duration(seconds: 20),
+}) async {
+  final String q = query.trim();
+  if (q.isEmpty) return const <YoutubeSearchHit>[];
+  final yt.YoutubeExplode client = yt.YoutubeExplode(
+    _createYoutubeHttpClient(),
+  );
+  try {
+    final yt.VideoSearchList list = await client.search
+        .search(q)
+        .timeout(timeout);
+    return <YoutubeSearchHit>[
+      for (final yt.Video v in list.take(limit))
+        YoutubeSearchHit(
+          videoId: v.id.value,
+          title: v.title,
+          channelName: v.author,
+          channelId: v.channelId.value,
+          duration: v.duration,
+        ),
+    ];
   } finally {
     client.close();
   }
@@ -298,8 +356,15 @@ List<AudioCue> _parseSrv1TimedText(String content, String bookKey) {
         .convert((m.group(3) ?? '').replaceAll(RegExp(r'<[^>]+>'), ''))
         .trim();
     if (raw.isEmpty) continue;
-    cues.add(_cue(bookKey, index, raw, (start * 1000).round(),
-        ((start + dur) * 1000).round()));
+    cues.add(
+      _cue(
+        bookKey,
+        index,
+        raw,
+        (start * 1000).round(),
+        ((start + dur) * 1000).round(),
+      ),
+    );
     index++;
   }
   return cues;
@@ -339,8 +404,9 @@ Map<String, dynamic> serializeYoutubeCaptionTracks(
 ) {
   final List<Map<String, dynamic>> out = <Map<String, dynamic>>[];
   for (int i = 0; i < tracks.length; i++) {
-    final List<AudioCue> cues =
-        i < cuesPerTrack.length ? cuesPerTrack[i] : const <AudioCue>[];
+    final List<AudioCue> cues = i < cuesPerTrack.length
+        ? cuesPerTrack[i]
+        : const <AudioCue>[];
     if (cues.isEmpty) continue;
     final YoutubeCaptionTrack t = tracks[i];
     out.add(<String, dynamic>{
@@ -369,14 +435,19 @@ Future<Map<String, dynamic>> resolveYoutubeCaptionsForExtension(
   String preferLang = 'ja',
   int maxTracks = 8,
 }) async {
-  final List<YoutubeCaptionTrack> all =
-      await resolveYoutubeCaptionTracks(url, preferLang: preferLang);
-  final List<YoutubeCaptionTrack> tracks =
-      all.length > maxTracks ? all.sublist(0, maxTracks) : all;
+  final List<YoutubeCaptionTrack> all = await resolveYoutubeCaptionTracks(
+    url,
+    preferLang: preferLang,
+  );
+  final List<YoutubeCaptionTrack> tracks = all.length > maxTracks
+      ? all.sublist(0, maxTracks)
+      : all;
   if (tracks.isEmpty) return <String, dynamic>{'tracks': <dynamic>[]};
   final List<List<AudioCue>> cues = await Future.wait(
-    tracks.map((YoutubeCaptionTrack t) =>
-        resolveYoutubeCaptionCues(t, bookKey: 'yt:ext')),
+    tracks.map(
+      (YoutubeCaptionTrack t) =>
+          resolveYoutubeCaptionCues(t, bookKey: 'yt:ext'),
+    ),
   );
   return serializeYoutubeCaptionTracks(tracks, cues);
 }
@@ -415,12 +486,12 @@ Future<Map<String, dynamic>> resolveYoutubeCaptionsForExtension(
 /// 3~7s、URL 无 `n`/签名需解密。故把它放到链首，其余 client 原样保留作兜底。
 final List<yt.YoutubeApiClient> kYoutubeManifestClientFallback =
     <yt.YoutubeApiClient>[
-  kYoutubeVisionOsClient,
-  yt.YoutubeApiClient.androidVr,
-  yt.YoutubeApiClient.android,
-  yt.YoutubeApiClient.ios,
-  yt.YoutubeApiClient.tv,
-];
+      kYoutubeVisionOsClient,
+      yt.YoutubeApiClient.androidVr,
+      yt.YoutubeApiClient.android,
+      yt.YoutubeApiClient.ios,
+      yt.YoutubeApiClient.tv,
+    ];
 
 /// visionOS client 的 innertube context `client.userAgent`（BUG-2526）。youtube_explode 用它
 /// 发 player 请求（[yt.YoutubeApiClient] 的 `userAgent` 字段由其 `VideoController` 读作
@@ -441,21 +512,23 @@ const String kYoutubeVisionOsUserAgent =
 /// 取流时由 [youtubeClientWithVisitorData] 派生出带 `sw.js_data` visitorData 的副本再发
 /// （见 [kYoutubeVisitorIdentityClients]）。BUG-2946 前身份来自 watch page，那一步是整条
 /// 兜底链的单点。
-const yt.YoutubeApiClient kYoutubeVisionOsClient =
-    yt.YoutubeApiClient(<String, dynamic>{
-  'context': <String, dynamic>{
-    'client': <String, dynamic>{
-      'clientName': 'VISIONOS',
-      'clientVersion': '1.02',
-      'deviceMake': 'Apple',
-      'deviceModel': 'RealityDevice17,1',
-      'userAgent': kYoutubeVisionOsUserAgent,
-      'osName': 'visionOS',
-      'osVersion': '26.5.23O471',
-      'hl': 'en',
+const yt.YoutubeApiClient kYoutubeVisionOsClient = yt.YoutubeApiClient(
+  <String, dynamic>{
+    'context': <String, dynamic>{
+      'client': <String, dynamic>{
+        'clientName': 'VISIONOS',
+        'clientVersion': '1.02',
+        'deviceMake': 'Apple',
+        'deviceModel': 'RealityDevice17,1',
+        'userAgent': kYoutubeVisionOsUserAgent,
+        'osName': 'visionOS',
+        'osVersion': '26.5.23O471',
+        'hl': 'en',
+      },
     },
   },
-}, 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false');
+  'https://www.youtube.com/youtubei/v1/player?prettyPrint=false',
+);
 
 /// BUG-2946：player 请求要先带上 visitor 身份才不被判 bot 的 client（按引用相等）。
 ///
@@ -496,11 +569,12 @@ String parseYoutubeVisitorData(String body) {
 Future<String> fetchYoutubeVisitorData(
   yt.YoutubeHttpClient http, {
   String userAgent = kYoutubeVisionOsUserAgent,
-}) async =>
-    parseYoutubeVisitorData(await http.getString(
-      kYoutubeVisitorDataUrl,
-      headers: <String, String>{'User-Agent': userAgent},
-    ));
+}) async => parseYoutubeVisitorData(
+  await http.getString(
+    kYoutubeVisitorDataUrl,
+    headers: <String, String>{'User-Agent': userAgent},
+  ),
+);
 
 /// 纯函数：派生带 visitor 身份的 client 副本——`context.client.visitorData` + 请求头
 /// `X-Goog-Visitor-Id`（与 youtube_explode 带 watch page 时发的两处一致）。[base] 不被修改。
@@ -509,10 +583,11 @@ yt.YoutubeApiClient youtubeClientWithVisitorData(
   String visitorData,
 ) {
   final Map<String, dynamic> context = Map<String, dynamic>.from(
-      base.payload['context'] as Map<String, dynamic>);
-  context['client'] =
-      Map<String, dynamic>.from(context['client'] as Map<String, dynamic>)
-        ..['visitorData'] = visitorData;
+    base.payload['context'] as Map<String, dynamic>,
+  );
+  context['client'] = Map<String, dynamic>.from(
+    context['client'] as Map<String, dynamic>,
+  )..['visitorData'] = visitorData;
   return yt.YoutubeApiClient(
     <String, dynamic>{...base.payload, 'context': context},
     base.apiUrl,
@@ -538,7 +613,7 @@ const Duration kYoutubePerClientManifestTimeout = Duration(seconds: 13);
 /// 这个不变式不再可能悄悄破掉。
 final Duration kYoutubeResolveTimeout =
     kYoutubePerClientManifestTimeout * kYoutubeManifestClientFallback.length +
-        const Duration(seconds: 3);
+    const Duration(seconds: 3);
 
 /// TODO-1365（BUG-678）：YouTube 分离流的**回放 User-Agent 必须与 youtube_explode 铸造 +
 /// 校验该流所用的 UA 完全一致**。[yt.YoutubeApiClient.androidVr] 的 innertube context 不带
@@ -554,15 +629,16 @@ final Duration kYoutubeResolveTimeout =
 /// null 兜底：极端情况下 youtube_explode 默认头缺 `user-agent` 时退到内联完整 Chrome UA。
 final String kYoutubeStreamReplayUserAgent =
     yt.YoutubeHttpClient.defaultHeaders['user-agent'] ??
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-            '(KHTML, like Gecko) Chrome/96.0.4664.18 Safari/537.36';
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+        '(KHTML, like Gecko) Chrome/96.0.4664.18 Safari/537.36';
 
 /// 纯函数：YouTube 分离流的回放 header（TODO-1365）。回放 UA 必须与 youtube_explode 铸流 UA
 /// 一致，见 [kYoutubeStreamReplayUserAgent]。播放页据此设 libmpv `http-header-fields`
 /// （video 主流经 `Media.httpHeaders`、audio-add 副音轨经全局属性继承）；制卡 ffmpeg 经
 /// `-user_agent` 复用同一常量（desktop_audio_clipper）。
-Map<String, String> youtubeStreamReplayHeaders() =>
-    <String, String>{'User-Agent': kYoutubeStreamReplayUserAgent};
+Map<String, String> youtubeStreamReplayHeaders() => <String, String>{
+  'User-Agent': kYoutubeStreamReplayUserAgent,
+};
 
 /// A1（TODO-1307）：按 [ytClients] 顺序**逐个**取 manifest，首个拿到非空流的 client 即
 /// 返回。**不合并多 client 流**——youtube_explode 的 [StreamClient.getManifest] 传多个
@@ -605,27 +681,90 @@ Future<yt.StreamManifest> _getManifestWithClientFallback(
         requireWatchPage: false,
       );
 
-  final List<String> failures = <String>[];
+  final List<YoutubeClientFailure> failures = <YoutubeClientFailure>[];
   for (final yt.YoutubeApiClient api in ytClients) {
     try {
-      final yt.StreamManifest manifest =
-          await fetch(api).timeout(perClientTimeout);
+      final yt.StreamManifest manifest = await fetch(
+        api,
+      ).timeout(perClientTimeout);
       if (manifest.streams.isNotEmpty) return manifest;
-      failures.add('${youtubeClientName(api)}: no streams');
+      failures.add(YoutubeClientFailure(youtubeClientName(api), null));
     } catch (e) {
       // 单 client 失败（403 / 无流 / 限流 / 取身份失败 / 本 client 超时）：记下、试下一个
       // 兜底 client（非致命）。超时（[TimeoutException]）与其它失败同路径，快速切下一个。
-      failures
-          .add('${youtubeClientName(api)}: ${e.toString().split('\n').first}');
+      failures.add(YoutubeClientFailure(youtubeClientName(api), e));
     }
   }
   if (failures.isEmpty) {
     throw StateError('youtube manifest: empty client fallback list');
   }
-  throw StateError(
-    'youtube manifest failed for all clients ($videoId): '
-    '${failures.join('; ')}',
-  );
+  throw YoutubeManifestException(videoId.value, failures);
+}
+
+/// 兜底链上一个 client 的失败（[error] 为 null = 该 client 回了空流表）。
+class YoutubeClientFailure {
+  const YoutubeClientFailure(this.client, this.error);
+
+  /// innertube clientName（[youtubeClientName]）。
+  final String client;
+
+  /// 原始异常（保留类型，供调用方分型）；null = 无流。
+  final Object? error;
+
+  /// 传输层失败：连不上 / 握手失败 / 本 client 超时——请求根本没拿到 YouTube 的回答。
+  ///
+  /// 典型成因是出口问题（没走代理、DNS 被污染），不是视频不可用。Android 上没接系统
+  /// Wi-Fi 代理时每个 client 都是 13 s 超时，旧实现把整串包成 StateError
+  /// 「youtube manifest failed …」，被播放页的子串判据误标成「视频不可用」。
+  bool get isTransport {
+    final Object? e = error;
+    return e is TimeoutException ||
+        e is SocketException ||
+        e is HandshakeException ||
+        e is HttpException ||
+        e is http.ClientException;
+  }
+
+  /// YouTube 明确拒绝播放这个视频本身（需购买 / 不可用 / 已删除），与出口、限流无关。
+  bool get isPermanentlyUnavailable {
+    final Object? e = error;
+    return e is yt.VideoRequiresPurchaseException ||
+        e is yt.VideoUnavailableException;
+  }
+
+  @override
+  String toString() {
+    final Object? e = error;
+    if (e == null) return '$client: no streams';
+    return '$client: ${e.runtimeType}: ${e.toString().split('\n').first}';
+  }
+}
+
+/// 兜底链全部 client 失败。逐 client 保留原始异常（[failures]），toString 逐个列出
+/// 「client: 异常类型: 首行」，进错误日志即可看出是出口问题（全是
+/// [YoutubeClientFailure.isTransport]）还是 YouTube 拒绝（unplayable / 403 / 判 bot）。
+class YoutubeManifestException implements Exception {
+  const YoutubeManifestException(this.videoId, this.failures);
+
+  final String videoId;
+  final List<YoutubeClientFailure> failures;
+
+  /// 每个 client 都死在传输层（连不上 / 超时）。
+  bool get isTransportFailure =>
+      failures.isNotEmpty &&
+      failures.every((YoutubeClientFailure f) => f.isTransport);
+
+  /// 每个 client 都明确回答「这个视频放不了」：需购买（付费电影 / 会员专享）或已删除 /
+  /// 私享 / 不可用（EMI05fe8RJ）。同一视频再解析多少次结果都一样，调用方应按永久失败处理。
+  /// 混入任一传输层 / 判 bot / 空流表的失败都不算——那些可能换个时间就好了。
+  bool get isPermanentlyUnavailable =>
+      failures.isNotEmpty &&
+      failures.every((YoutubeClientFailure f) => f.isPermanentlyUnavailable);
+
+  @override
+  String toString() =>
+      'youtube manifest failed for all clients ($videoId): '
+      '${failures.join('; ')}';
 }
 
 /// 测试入口：用注入的 [http]（如 `MockClient`）离线驱动真实兜底链（BUG-2946 回归测试）。
@@ -653,7 +792,8 @@ Future<yt.StreamManifest> getYoutubeManifestWithClientFallback(
 /// innertube clientName（日志里区分兜底链各成员；5 个 client 有 4 个 apiUrl 相同）。
 String youtubeClientName(yt.YoutubeApiClient api) =>
     ((api.payload['context'] as Map<String, dynamic>?)?['client']
-        as Map<String, dynamic>?)?['clientName'] as String? ??
+            as Map<String, dynamic>?)?['clientName']
+        as String? ??
     api.apiUrl;
 
 /// IO：用 youtube_explode 解析可播放流 URL + 日文字幕（无则空）+ 标题。
@@ -723,8 +863,12 @@ Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
     title = '';
   }
   // A1（TODO-1307）：androidVr 首选、失败才回落 ios/tv（[_getManifestWithClientFallback]）。
-  final yt.StreamManifest manifest =
-      await _getManifestWithClientFallback(client, http, videoId, ytClients);
+  final yt.StreamManifest manifest = await _getManifestWithClientFallback(
+    client,
+    http,
+    videoId,
+    ytClients,
+  );
   // 优先「video-only（编码优先 avc1>vp9>av01，≤1080p 最高清）+ 最高码率 audio-only」分离流；两者齐备才用，
   // 否则回落 muxed（YouTube 把 muxed 限 ≤360p，故仅作最后兜底）。
   String streamUrl;
@@ -797,8 +941,9 @@ T pickPlaybackVideoStream<T>(
   if (streams.isEmpty) {
     throw StateError('pickPlaybackVideoStream: empty stream list');
   }
-  final List<T> capped =
-      streams.where((T s) => heightOf(s) <= maxHeight).toList();
+  final List<T> capped = streams
+      .where((T s) => heightOf(s) <= maxHeight)
+      .toList();
   if (capped.isEmpty) {
     // 全部 >maxHeight：退最低清（宁流畅勿卡死）。
     return (streams.toList()
@@ -806,8 +951,9 @@ T pickPlaybackVideoStream<T>(
         .first;
   }
   capped.sort((T a, T b) {
-    final int byCodec = youtubeVideoCodecPriority(codecOf(a))
-        .compareTo(youtubeVideoCodecPriority(codecOf(b)));
+    final int byCodec = youtubeVideoCodecPriority(
+      codecOf(a),
+    ).compareTo(youtubeVideoCodecPriority(codecOf(b)));
     if (byCodec != 0) return byCodec;
     final int byHeight = heightOf(b).compareTo(heightOf(a)); // 分辨率降序
     if (byHeight != 0) return byHeight;
@@ -822,8 +968,10 @@ T pickPlaybackVideoStream<T>(
 /// 画质目标（[pickVideoStreamForTargetHeight]，画质菜单同语义、可达 1440p/4K）。命中
 /// throttled（异常，ANDROID_VR 正常不 throttled）时告警。
 String _pickPlaybackVideoUrl(yt.StreamManifest manifest, int? targetHeight) {
-  final yt.VideoOnlyStreamInfo chosen =
-      _pickPlaybackVideoStreamInfo(manifest, targetHeight);
+  final yt.VideoOnlyStreamInfo chosen = _pickPlaybackVideoStreamInfo(
+    manifest,
+    targetHeight,
+  );
   if (chosen.isThrottled) {
     fushiDebugPrint(
       '[fushi][youtube] 选中的播放流 isThrottled=true（异常，缓冲可能慢）：'
@@ -903,8 +1051,9 @@ List<T> dedupeVideoStreamsByHeight<T>(
       best[h] = s;
       continue;
     }
-    final int byCodec = youtubeVideoCodecPriority(codecOf(s))
-        .compareTo(youtubeVideoCodecPriority(codecOf(cur)));
+    final int byCodec = youtubeVideoCodecPriority(
+      codecOf(s),
+    ).compareTo(youtubeVideoCodecPriority(codecOf(cur)));
     if (byCodec < 0) {
       best[h] = s; // 更优编码。
     } else if (byCodec == 0 && !throttledOf(s) && throttledOf(cur)) {
@@ -955,8 +1104,12 @@ Future<YoutubeVariantSet> _resolveYoutubeVideoVariantsInner(
   int? playbackTargetHeight,
 ) async {
   final yt.VideoId videoId = yt.VideoId(url);
-  final yt.StreamManifest manifest =
-      await _getManifestWithClientFallback(client, http, videoId, ytClients);
+  final yt.StreamManifest manifest = await _getManifestWithClientFallback(
+    client,
+    http,
+    videoId,
+    ytClients,
+  );
   // 无分离流（仅 muxed ≤360p）：无多档可选，返回空集（播放页回退无 YouTube 画质菜单）。
   if (manifest.videoOnly.isEmpty || manifest.audioOnly.isEmpty) {
     return const YoutubeVariantSet(
@@ -967,11 +1120,11 @@ Future<YoutubeVariantSet> _resolveYoutubeVideoVariantsInner(
   }
   final List<yt.VideoOnlyStreamInfo> deduped =
       dedupeVideoStreamsByHeight<yt.VideoOnlyStreamInfo>(
-    manifest.videoOnly.toList(),
-    heightOf: (yt.VideoOnlyStreamInfo s) => s.videoResolution.height,
-    codecOf: (yt.VideoOnlyStreamInfo s) => s.videoCodec,
-    throttledOf: (yt.VideoOnlyStreamInfo s) => s.isThrottled,
-  );
+        manifest.videoOnly.toList(),
+        heightOf: (yt.VideoOnlyStreamInfo s) => s.videoResolution.height,
+        codecOf: (yt.VideoOnlyStreamInfo s) => s.videoCodec,
+        throttledOf: (yt.VideoOnlyStreamInfo s) => s.isThrottled,
+      );
   final List<YoutubeVideoVariant> variants = <YoutubeVideoVariant>[
     for (final yt.VideoOnlyStreamInfo s in deduped)
       YoutubeVideoVariant(
@@ -984,10 +1137,13 @@ Future<YoutubeVariantSet> _resolveYoutubeVideoVariantsInner(
   // 「自动」档 = 初始播放选择（默认策略 [pickPlaybackVideoStream]：avc1 优先、≤1080p
   // 最高清；有显式画质目标时 [pickVideoStreamForTargetHeight]：≤目标 的最高档），按高度
   // 回找它在去重表里的下标，供画质菜单「自动」项与初始高亮对齐。
-  final yt.VideoOnlyStreamInfo chosen =
-      _pickPlaybackVideoStreamInfo(manifest, playbackTargetHeight);
+  final yt.VideoOnlyStreamInfo chosen = _pickPlaybackVideoStreamInfo(
+    manifest,
+    playbackTargetHeight,
+  );
   int defaultIndex = variants.indexWhere(
-      (YoutubeVideoVariant v) => v.height == chosen.videoResolution.height);
+    (YoutubeVideoVariant v) => v.height == chosen.videoResolution.height,
+  );
   if (defaultIndex < 0) defaultIndex = 0;
   return YoutubeVariantSet(
     variants: variants,
@@ -1005,8 +1161,10 @@ String? _pickMiningVideoUrl(yt.StreamManifest manifest) {
   }
   if (manifest.videoOnly.isNotEmpty) {
     final List<yt.VideoOnlyStreamInfo> sorted = manifest.videoOnly.toList()
-      ..sort((yt.VideoOnlyStreamInfo a, yt.VideoOnlyStreamInfo b) =>
-          a.bitrate.compareTo(b.bitrate));
+      ..sort(
+        (yt.VideoOnlyStreamInfo a, yt.VideoOnlyStreamInfo b) =>
+            a.bitrate.compareTo(b.bitrate),
+      );
     return sorted.first.url.toString();
   }
   return null;
@@ -1050,7 +1208,8 @@ class YoutubeCaptionTrack {
   /// 稳定 key：字幕轨选择器高亮判定 + `_currentSubtitleSource` 编码 + per-track cue 缓存键。
   /// 形如 `youtube:captions:ja:human` / `youtube:captions:ja:asr` /
   /// `youtube:captions:ja:human:tl=zh`。同一视频内唯一（源语言+人工/ASR+翻译目标共同区分）。
-  String get trackKey => 'youtube:captions:$languageCode:'
+  String get trackKey =>
+      'youtube:captions:$languageCode:'
       '${isAutoGenerated ? 'asr' : 'human'}'
       '${translateToCode != null ? ':tl=$translateToCode' : ''}';
 
@@ -1058,21 +1217,25 @@ class YoutubeCaptionTrack {
   /// 翻译变体再补 `tlang=`（YouTube 机翻）。
   String get cueDownloadUrl {
     final Uri raw = Uri.parse(baseUrl);
-    return raw.replace(queryParameters: <String, String>{
-      ...raw.queryParameters,
-      'fmt': 'srv1',
-      if (translateToCode != null) 'tlang': translateToCode!,
-    }).toString();
+    return raw
+        .replace(
+          queryParameters: <String, String>{
+            ...raw.queryParameters,
+            'fmt': 'srv1',
+            if (translateToCode != null) 'tlang': translateToCode!,
+          },
+        )
+        .toString();
   }
 
   /// 派生一条以本轨为源、翻成 [code] 的 autoTranslate 变体。
   YoutubeCaptionTrack translatedTo(String code) => YoutubeCaptionTrack(
-        baseUrl: baseUrl,
-        languageCode: languageCode,
-        languageName: languageName,
-        isAutoGenerated: isAutoGenerated,
-        translateToCode: code,
-      );
+    baseUrl: baseUrl,
+    languageCode: languageCode,
+    languageName: languageName,
+    isAutoGenerated: isAutoGenerated,
+    translateToCode: code,
+  );
 }
 
 /// 语言主码 → 母语写法显示名（BUG-1289）。表外回退原码大写，见 [youtubeCaptionLanguageLabel]。
@@ -1125,7 +1288,8 @@ String youtubeCaptionLanguageLabel(YoutubeCaptionTrack track) {
   final int dash = code.indexOf('-');
   final String primary = (dash < 0 ? code : code.substring(0, dash));
   final String region = dash < 0 ? '' : code.substring(dash + 1);
-  final String base = _kYoutubeCaptionLanguageNames[primary.toLowerCase()] ??
+  final String base =
+      _kYoutubeCaptionLanguageNames[primary.toLowerCase()] ??
       primary.toUpperCase();
   return region.isEmpty ? base : '$base (${region.toUpperCase()})';
 }
@@ -1174,9 +1338,9 @@ List<YoutubeCaptionTrack> orderYoutubeCaptionTracks(
 
   final List<({YoutubeCaptionTrack track, int rank, int index})> decorated =
       <({YoutubeCaptionTrack track, int rank, int index})>[
-    for (int i = 0; i < tracks.length; i++)
-      (track: tracks[i], rank: rankOf(tracks[i]), index: i),
-  ];
+        for (int i = 0; i < tracks.length; i++)
+          (track: tracks[i], rank: rankOf(tracks[i]), index: i),
+      ];
   decorated.sort((a, b) {
     final int byRank = a.rank.compareTo(b.rank);
     return byRank != 0 ? byRank : a.index.compareTo(b.index);
@@ -1191,8 +1355,10 @@ YoutubeCaptionTrack? pickBestYoutubeCaptionTrack(
   required String preferLang,
 }) {
   if (tracks.isEmpty) return null;
-  final List<YoutubeCaptionTrack> ordered =
-      orderYoutubeCaptionTracks(tracks, preferLang: preferLang);
+  final List<YoutubeCaptionTrack> ordered = orderYoutubeCaptionTracks(
+    tracks,
+    preferLang: preferLang,
+  );
   for (final YoutubeCaptionTrack t in ordered) {
     if (!t.isTranslated) return t;
   }
@@ -1218,8 +1384,10 @@ List<YoutubeCaptionTrack> withAutoTranslateVariant(
   }
   if (source == null) return ordered;
   if (captionLanguageMatches(source.languageCode, translateTo)) return ordered;
-  final bool hasNativeOriginal = ordered.any((YoutubeCaptionTrack t) =>
-      !t.isTranslated && captionLanguageMatches(t.languageCode, translateTo));
+  final bool hasNativeOriginal = ordered.any(
+    (YoutubeCaptionTrack t) =>
+        !t.isTranslated && captionLanguageMatches(t.languageCode, translateTo),
+  );
   if (hasNativeOriginal) return ordered;
   return <YoutubeCaptionTrack>[...ordered, source.translatedTo(translateTo)];
 }
@@ -1243,8 +1411,10 @@ Future<List<YoutubeCaptionTrack>> resolveYoutubeCaptionTracks(
     return const <YoutubeCaptionTrack>[];
   }
   final List<YoutubeCaptionTrack> raw = await _fetchCaptionTracks(videoId);
-  final List<YoutubeCaptionTrack> ordered =
-      orderYoutubeCaptionTracks(raw, preferLang: preferLang);
+  final List<YoutubeCaptionTrack> ordered = orderYoutubeCaptionTracks(
+    raw,
+    preferLang: preferLang,
+  );
   return withAutoTranslateVariant(ordered, translateTo: autoTranslateTo);
 }
 
@@ -1329,17 +1499,20 @@ Future<List<YoutubeCaptionTrack>> _fetchCaptionTracksWithClient(
 ) async {
   final yt.YoutubeHttpClient http = _createYoutubeHttpClient();
   try {
-    final PlayerResponse response =
-        await VideoController(http).getPlayerResponse(id, api);
+    final PlayerResponse response = await VideoController(
+      http,
+    ).getPlayerResponse(id, api);
     final List<YoutubeCaptionTrack> out = <YoutubeCaptionTrack>[];
     for (final ClosedCaptionTrack t in response.closedCaptionTrack) {
       try {
-        out.add(YoutubeCaptionTrack(
-          baseUrl: t.url,
-          languageCode: t.languageCode,
-          languageName: t.languageName ?? t.languageCode,
-          isAutoGenerated: t.autoGenerated,
-        ));
+        out.add(
+          YoutubeCaptionTrack(
+            baseUrl: t.url,
+            languageCode: t.languageCode,
+            languageName: t.languageName ?? t.languageCode,
+            isAutoGenerated: t.autoGenerated,
+          ),
+        );
       } catch (_) {
         // 单轨字段缺失：跳过（不让一条坏轨令整个字幕轨选择器落空）。
       }
@@ -1382,8 +1555,10 @@ Future<List<AudioCue>> _resolveBestCaptionCues(
   String preferLang,
 ) async {
   final List<YoutubeCaptionTrack> tracks = await _fetchCaptionTracks(id);
-  final YoutubeCaptionTrack? best =
-      pickBestYoutubeCaptionTrack(tracks, preferLang: preferLang);
+  final YoutubeCaptionTrack? best = pickBestYoutubeCaptionTrack(
+    tracks,
+    preferLang: preferLang,
+  );
   if (best == null) return const <AudioCue>[];
   return resolveYoutubeCaptionCues(best, bookKey: bookKey);
 }

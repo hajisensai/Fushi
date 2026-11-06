@@ -10,17 +10,17 @@ import 'dictionary_format.dart';
 
 class MdictFormat extends DictionaryFormat {
   MdictFormat._privateConstructor()
-      : super(
-          uniqueKey: 'mdict',
-          name: 'MDict Dictionary',
-          icon: Icons.menu_book_rounded,
-          allowedExtensions: const ['zip', 'mdx'],
-          isTextFormat: false,
-          fileType: FileType.any,
-          prepareDirectory: prepareDirectoryMdictFormat,
-          prepareName: prepareNameMdictFormat,
-          prepareEntries: _prepareEntriesMdictStub,
-        );
+    : super(
+        uniqueKey: 'mdict',
+        name: 'MDict Dictionary',
+        icon: Icons.menu_book_rounded,
+        allowedExtensions: const ['zip', 'mdx'],
+        isTextFormat: false,
+        fileType: FileType.any,
+        prepareDirectory: prepareDirectoryMdictFormat,
+        prepareName: prepareNameMdictFormat,
+        prepareEntries: _prepareEntriesMdictStub,
+      );
 
   static MdictFormat get instance => _instance;
   static final MdictFormat _instance = MdictFormat._privateConstructor();
@@ -53,8 +53,9 @@ Future<void> prepareDirectoryMdictFormat(PrepareDirectoryParams params) async {
     );
   } else if (ext == '.mdx') {
     params.resourceDirectory.createSync(recursive: true);
-    params.file.copySync(path.join(
-        params.resourceDirectory.path, path.basename(params.file.path)));
+    params.file.copySync(
+      path.join(params.resourceDirectory.path, path.basename(params.file.path)),
+    );
   }
 
   final mdxFile = _findFileByExtension(params.resourceDirectory, '.mdx');

@@ -56,10 +56,10 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     Directory? resourceDirectory,
     http.Client? httpClient,
     MihonCookieJar? cookieJar,
-  })  : resourceDirectory = resourceDirectory ?? _defaultResourceDirectory(),
-        _processContainment = MihonChildProcessContainment.platform(),
-        _http = httpClient ?? http.Client(),
-        _cookies = cookieJar ?? MihonCookieJar.shared;
+  }) : resourceDirectory = resourceDirectory ?? _defaultResourceDirectory(),
+       _processContainment = MihonChildProcessContainment.platform(),
+       _http = httpClient ?? http.Client(),
+       _cookies = cookieJar ?? MihonCookieJar.shared;
 
   final Directory dataDirectory;
   final Directory resourceDirectory;
@@ -99,13 +99,13 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   }
 
   Map<String, String> get _headers => <String, String>{
-        'Authorization': 'Bearer $_token',
-        // NanoHTTPD 2.3.1 falls back to US-ASCII when a request content type
-        // omits its charset. Mihon manga URLs commonly contain CJK text, so
-        // omitting this parameter corrupts those URLs into U+FFFD on the
-        // bridge round trip and makes otherwise valid detail pages return 404.
-        'Content-Type': 'application/json; charset=utf-8',
-      };
+    'Authorization': 'Bearer $_token',
+    // NanoHTTPD 2.3.1 falls back to US-ASCII when a request content type
+    // omits its charset. Mihon manga URLs commonly contain CJK text, so
+    // omitting this parameter corrupts those URLs into U+FFFD on the
+    // bridge round trip and makes otherwise valid detail pages return 404.
+    'Content-Type': 'application/json; charset=utf-8',
+  };
 
   /// [_headers] 再加上 [source] 站点的登录 cookie。
   ///
@@ -250,14 +250,13 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     MihonSource source,
     MihonPage page, {
     List<MihonPreference> preferences = const <MihonPreference>[],
-  }) =>
-      fetchImageRequest(
-        extension,
-        source,
-        page,
-        requestId: 'direct-${_imageRequestSequence++}',
-        preferences: preferences,
-      );
+  }) => fetchImageRequest(
+    extension,
+    source,
+    page,
+    requestId: 'direct-${_imageRequestSequence++}',
+    preferences: preferences,
+  );
 
   @override
   Future<Uint8List> fetchImageRequest(
@@ -331,8 +330,9 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         'url': url,
         'preferences': mihonBridgePreferences(source, preferences),
       });
-    final http.StreamedResponse response =
-        await _http.send(request).timeout(kMihonSourceImageHeaderTimeout);
+    final http.StreamedResponse response = await _http
+        .send(request)
+        .timeout(kMihonSourceImageHeaderTimeout);
     // 封面/图片请求往往比 `/dalvik` 更频繁，先撞上会话续期的通常正是它们；
     // 只注入不回收，等于把这条链路上换发的新 cookie 全丢掉。
     await _absorbResponseCookies(source, response.headers);
@@ -553,11 +553,11 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         .transform(const Utf8Decoder(allowMalformed: true))
         .transform(const LineSplitter())
         .listen((String line) {
-      log.write(line);
-      if (announced.isCompleted) return;
-      final int? port = _parseReadyPort(line);
-      if (port != null) announced.complete(port);
-    });
+          log.write(line);
+          if (announced.isCompleted) return;
+          final int? port = _parseReadyPort(line);
+          if (port != null) announced.complete(port);
+        });
     process.stderr
         .transform(const Utf8Decoder(allowMalformed: true))
         .transform(const LineSplitter())
@@ -831,8 +831,9 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   String _javaExecutablePath() {
     // macOS 版只出 Apple Silicon（arm64），bundle 里只有这一份 JVM 镜像
     // （tool/mihon/build_desktop_runtime.sh）；Intel Mac 不再支持。
-    final String runtimeName =
-        Platform.isMacOS ? 'runtime-macos-arm64' : 'runtime';
+    final String runtimeName = Platform.isMacOS
+        ? 'runtime-macos-arm64'
+        : 'runtime';
     return p.join(
       resourceDirectory.path,
       runtimeName,

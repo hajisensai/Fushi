@@ -6,6 +6,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audiobook_m4b_export_flow.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart'
     show ImportDropZoneCard, ImportMatchOptionsCard, ImportProgressCard;
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
@@ -14,6 +15,7 @@ import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
         finalizeAlignedCues,
         loadEpubSectionsInBackground,
         parseCuesForFormat;
+import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 import 'package:fushi/src/media/import/audiobook_health_summary.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
@@ -35,7 +37,21 @@ import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/local_file_delete_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 有声书导入/移除对话框。
 ///
@@ -109,6 +125,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   Audiobook? _existing;
   bool _existingLoaded = false;
+
+  /// 「导出有声书」进行中与进度（null = 不定进度）。
+  bool _exporting = false;
+  double? _exportProgress;
   Future<AudiobookHealth>? _healthFuture;
 
   int _searchWindow = EpubSrtMatcher.defaultSearchWindow;
@@ -276,7 +296,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
               ),
               adaptiveDialogAction(
                 context: context,
-                onPressed: importing
+                onPressed: importing || _exporting
                     ? null
                     : () => _enterReplaceSubtitleMode(existing),
                 child: Text(t.audio_panel_pick_new_subtitle),
@@ -284,7 +304,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
               adaptiveDialogAction(
                 context: context,
                 isDestructiveAction: true,
-                onPressed: importing ? null : () => _removeAudiobook(existing),
+                onPressed: importing || _exporting
+                    ? null
+                    : () => _removeAudiobook(existing),
                 child: Text(t.audiobook_delete),
               ),
             ],
@@ -341,13 +363,69 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
                 ),
               ),
             ],
+            SizedBox(height: tokens.spacing.gap),
+            _buildExportSection(),
           ],
         );
       },
     );
   }
 
-  /// 只有挂了 ttu book 且 alignmentFormat 属于 matcher 管线（srt/lrc/vtt/ass）
+  /// 「导出有声书」：整本导出成带章节 / 封面 / 字幕的 M4B。任何已附加的有声书都能
+  /// 导出（不只 TTS 制作的），所以出口放在这里，离开制作页后也找得到。
+  Widget _buildExportSection() {
+    final double inset = FushiDesignTokens.of(context).spacing.rowHorizontal;
+    return AdaptiveSettingsSection(
+      key: const ValueKey<String>('audiobook-attached-export'),
+      children: <Widget>[
+        AdaptiveSettingsRow(
+          key: const ValueKey<String>('audiobook-attached-export-run'),
+          icon: FushiIcons.download,
+          showIcon: true,
+          title: t.audiobook_studio_export,
+          subtitle: _exporting
+              ? t.audiobook_studio_export_running
+              : t.audiobook_studio_export_hint,
+          onTap: _exporting || importing ? null : () => unawaited(_export()),
+        ),
+        if (_exporting)
+          Padding(
+            key: const ValueKey<String>('audiobook-attached-export-progress'),
+            padding: EdgeInsets.fromLTRB(inset, 0, inset, 12),
+            child: FushiLinearProgressIndicator(value: _exportProgress),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _export() async {
+    if (_exporting) return;
+    try {
+      await runAudiobookM4bExport(
+        database: widget.repo.database,
+        bookKey: widget.bookKey,
+        onStart: () {
+          if (!mounted) return;
+          setState(() {
+            _exporting = true;
+            _exportProgress = null;
+          });
+        },
+        onProgress: (double progress) {
+          if (mounted) setState(() => _exportProgress = progress);
+        },
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _exporting = false;
+          _exportProgress = null;
+        });
+      }
+    }
+  }
+
+  /// 只有挂了 ttu book 且 alignmentFormat 属于 matcher 管线（有声书字幕格式）
   /// 才显示重跑入口。SMIL/JSON 走信任文件锚点，与 searchWindow 无关。
   /// unrun 状态也允许重跑 — 历史脏记录的书借此给它跑一次。
   bool _canReMatch(Audiobook ab, AudiobookHealth health) {
@@ -660,13 +738,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     }
   }
 
-  static const Set<String> _alignmentExtensions = {
+  /// 有声书字幕格式（matcher 管线）+ smil / json 锚点格式。
+  static const Set<String> _alignmentExtensions = <String>{
+    ...kAudiobookSubtitleExtensions,
     'smil',
-    'srt',
-    'lrc',
-    'vtt',
-    'ass',
-    'ssa',
     'json',
   };
 
@@ -742,9 +817,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     final String? path = _alignmentPath;
     if (path == null) return const <AudioCue>[];
     final String ext = path.split('.').last.toLowerCase();
-    // probe 口径与 matcher 管线一致：仅 srt/lrc/vtt/ass；其余（含 ssa/smil/json/
-    // 未知扩展名）返回空——与收敛前的显式四分支 + default 空返回逐位等价
-    // （公共函数 default 落 SRT，故必须先用 supportedFormats 门控）。
+    // probe 口径与 matcher 管线一致：只认有声书字幕格式；其余（smil/json/未知
+    // 扩展名）返回空（公共函数 default 落 SRT，故必须先用 supportedFormats 门控）。
     if (!SubtitleRematch.supportedFormats.contains(ext)) {
       return const <AudioCue>[];
     }
@@ -778,10 +852,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       return;
     }
 
-    debugPrint(
-      '[fushi-audiobook] doImport bookKey.len=${widget.bookKey.length} '
-      'hash=${widget.bookKey.hashCode} key=${widget.bookKey}',
-    );
     setState(() => importing = true);
     reportProgress(0, '');
 
@@ -876,7 +946,11 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       String? alignmentFormat;
       if (persistedAlignment != null) {
         final String ext = persistedAlignment.split('.').last.toLowerCase();
-        const Set<String> cueFormats = {'smil', 'srt', 'lrc', 'vtt', 'ass'};
+        // 手抄成 smil/srt/lrc/vtt/ass 时漏了 ssa：换成 .ssa 字幕会被记成 json 格式。
+        const Set<String> cueFormats = <String>{
+          'smil',
+          ...kAudiobookSubtitleExtensions,
+        };
         alignmentFormat = cueFormats.contains(ext) ? ext : 'json';
         await widget.repo.replaceAlignment(
           bookKey: widget.bookKey,
@@ -931,10 +1005,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         // With multiple audio files that cuts sentence audio from the wrong file.
         // SMIL/JSON already map files/fragments themselves, so skip them. Probe
         // per-file durations and rebind each cue to its real file + local time.
-        const Set<String> singleTimelineFormats = {'srt', 'lrc', 'vtt', 'ass'};
         if (persistedPaths.length > 1 &&
             persistedAlignment != null &&
-            singleTimelineFormats.contains(alignmentFormat)) {
+            kAudiobookSubtitleExtensions.contains(alignmentFormat)) {
           final List<int> durationsMs =
               await AudiobookStorage.probeAudioDurationsMs(persistedPaths);
           if (durationsMs.length == persistedPaths.length &&
@@ -1119,14 +1192,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     bool useFragmentHealth = false;
     String formatLabel = format;
 
-    const Set<String> subtitleFormats = <String>{
-      'srt',
-      'lrc',
-      'vtt',
-      'ass',
-      'ssa',
-    };
-    if (subtitleFormats.contains(format)) {
+    if (kAudiobookSubtitleExtensions.contains(format)) {
       // 四个字幕分支收敛到公共 parseCuesForFormat：按文件扩展名分派，与原
       // 显式分支逐字节等价（持久化副本保留原 basename/扩展名，见
       // AudiobookStorage.persistFileWithProgress 的碰撞改名逻辑）。
@@ -1206,7 +1272,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   }
 
   Future<void> _removeAudiobook(Audiobook ab) async {
-    debugPrint('AudiobookImportDialog: remove tapped for ${widget.bookKey}');
     final AppModel appModel = ProviderScope.containerOf(
       context,
       listen: false,
@@ -1234,7 +1299,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           ? t.delete_local_files_audio_desc
           : null,
     );
-    debugPrint('AudiobookImportDialog: decision=$decision');
     if (decision == null) return;
 
     try {

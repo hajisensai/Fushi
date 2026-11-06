@@ -7,6 +7,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
+import 'package:fushi_engine/media/audiobook/asr_cue_post_host.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_text_coverage.dart';
 import 'package:fushi_engine/media/audiobook/subtitle_rematch_policy.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle.dart'
@@ -18,6 +20,25 @@ import 'package:meta/meta.dart';
 /// 是给用户看的步骤文案（service 不持有 i18n，文案由调用方喂）。
 typedef AudiobookAlignmentProgress =
     void Function(double fraction, String message);
+
+/// 对齐落库走到了哪一步（[alignAndPersistAudiobook] 的 `onStep`）。与
+/// [AudiobookAlignmentProgress] 的 fraction 不同，这里**不给数值**：匹配器在 isolate
+/// 里一次跑完、中途不报进度，各步的 fraction 只是排版用的固定刻度，UI 要的是
+/// 「现在在干什么」——[readingText] .. [finishing] 是「匹配正文」，[persisting] /
+/// [saving] 是「入库」。
+enum AudiobookAlignmentStep {
+  readingText,
+  parsingSubtitle,
+  matching,
+  finishing,
+  persisting,
+  saving,
+  done,
+}
+
+/// [AudiobookAlignmentStep] 回调；[detail] 是正在复制的文件名（[persisting] 时）。
+typedef AudiobookAlignmentStepCallback =
+    void Function(AudiobookAlignmentStep step, {String? detail});
 
 /// 对齐 / 重新导入在**写盘之前**的检查点上发现已被取消。
 ///
@@ -42,6 +63,7 @@ class AudiobookAlignmentResult {
     required this.health,
     required this.cueCount,
     required this.persistedAudioPaths,
+    this.coverage,
   });
 
   /// 对齐健康度（matcher 命中率 / notApplicable / failed）。
@@ -52,6 +74,9 @@ class AudiobookAlignmentResult {
 
   /// 落盘后的音频绝对路径（复制导入后位于持久目录；可空）。
   final List<String> persistedAudioPaths;
+
+  /// 正文覆盖情况（见 [AudiobookTextCoverage]）；没跑匹配器时 null。
+  final AudiobookTextCoverage? coverage;
 }
 
 /// 解析步骤的可注入文案集合，使 service 不依赖 i18n（t.*）。各字段对应原
@@ -86,7 +111,7 @@ class AudiobookAlignmentMessages {
 /// （probe / matcher）与 [SasayakiRematch]（弹窗 probe / 重跑）五个调用点共用；
 /// 解析异常由各调用方按自身语义 try/catch，此处不吞。
 /// 把转录产物旁边的逐 token 时间 sidecar 挂到从同一份 SRT 解析出来的 [cues] 上，
-/// 供匹配后按正文句界重切（[resegmentCuesBySentence]）。
+/// 供匹配后按正文句界重切（[finalizeAlignedCues] 第 1 步）。
 ///
 /// 一条都没挂上时返回 false。**四种情况都算没挂**：不是转录产物、sidecar 缺失、
 /// sidecar 读不动、**行数与 cue 数不符**。
@@ -146,7 +171,9 @@ String preferredTranscriptExportPath(String srtPath) {
 ///
 /// 1. 有逐 token 时间 → 命中 cue 按正文句界重切（cue 列表与匹配结果一起换新）；
 /// 2. 字幕是设备端转录产物 → 命中 cue 的听写文本换成正文原文（阅读器按 cue 文本
-///    在 DOM 里重定位，听写差会让高亮漂移；未命中的保留听写）；
+///    在 DOM 里重定位，听写差会让高亮漂移；未命中的保留听写），再把句界吸到转录时
+///    写下的能量包络的真实停顿上、并回句内短碎片、留跟读显示余量
+///    （[postProcessTranscribedCues]，算法在上游 fushi-subtitles）；
 /// 3. 匹配结果编进 cue；
 /// 4. 转录产物把对齐后的 cue 另写成 [kAsrAlignedTranscriptFileName]，供「导出
 ///    SRT」优先拷——之前替换后的文本只活在 DB 里，用户导出拿到的永远是没标点的
@@ -156,6 +183,13 @@ String preferredTranscriptExportPath(String srtPath) {
 ///    （人物介绍页念的「趣味」）会被它在 2000 字窗口里匹配到后文、游标一跳过去，
 ///    其后整本正文全部失配（春物 2 卷整本 Hoshi 口径覆盖 3% → 只放命中 99.7%）。
 ///    未命中的 cue 写进 [kAsrSpeechTranscriptFileName]，DB 里照旧全部保留。
+///
+/// 1–2 步（整书重切的打包 / 编辑距离对齐 FFI / 结果组装、换正文、读能量包络与吸附）
+/// 整段放在一个后台 isolate 里跑（与匹配器的 `EpubCueMatcher.matchInIsolate` 同一种
+/// `Isolate.run`；fushi_compute 在工作 isolate 里按同一套规则自行加载），大书不在 UI
+/// isolate 上卡帧。cue 与匹配结果是纯数据，拷过去、算完经 `Isolate.exit` 交回：返回的
+/// cue 是新对象，调用方一律用返回值（对话框据此换掉自己持有的列表内容）。两步都不需要
+/// （不是转录产物、没有 token 时间）时不派发，原列表原样返回。
 Future<({List<AudioCue> cues, MatchResult result})> finalizeAlignedCues({
   required List<EpubSection> sections,
   required List<AudioCue> cues,
@@ -163,34 +197,32 @@ Future<({List<AudioCue> cues, MatchResult result})> finalizeAlignedCues({
   required String subtitlePath,
   required bool hasTokenTiming,
 }) async {
-  if (hasTokenTiming) {
-    final CueResegmentResult resegmented = resegmentCuesBySentence(
-      sections: sections,
-      cues: cues,
-      result: result,
-    );
-    cues = resegmented.cues;
-    result = resegmented.result;
-  }
   final bool asrGenerated = AsrTranscriptionService.isAsrGeneratedSubtitlePath(
     subtitlePath,
   );
-  if (asrGenerated) {
-    replaceMatchedCueTextWithBookText(
-      sections: sections,
-      cues: cues,
-      result: result,
-    );
-    // 句界吸到真实停顿上：转录时顺手写下的能量包络（旧任务没有就跳过）。
-    final Int8List? energy = readAsrEnergyTimeline(
-      Directory(p.dirname(subtitlePath)),
-    );
-    if (energy != null) {
-      const CueEnergySnapper snapper = CueEnergySnapper();
-      final int moved = snapper.snap(cues, energy);
-      final int edges = snapper.refineEdges(cues, energy);
+  if (hasTokenTiming || asrGenerated) {
+    final AlignedCueComputation computed =
+        await _computeAlignedCuesInBackground(
+          AlignedCueRequest(
+            sections: sections,
+            cues: cues,
+            result: result,
+            subtitlePath: subtitlePath,
+            hasTokenTiming: hasTokenTiming,
+            asrGenerated: asrGenerated,
+          ),
+        );
+    debugLastAlignedCueIsolate = computed.isolateName;
+    cues = computed.cues;
+    result = computed.result;
+    final CueResegmentStats? stats = computed.resegmentStats;
+    if (stats != null) fushiDebugPrint('[fushi-import] resegment: $stats');
+    if (computed.snappedBoundaries != null) {
       fushiDebugPrint(
-        '[fushi-import] energy snap: $moved boundaries, $edges edges',
+        '[fushi-import] energy snap: ${computed.snappedBoundaries} '
+        'boundaries, ${computed.refinedEdges} edges, '
+        '${computed.mergedFragments} fragments merged, '
+        '${computed.displayMargins} margin edges',
       );
     }
   }
@@ -216,6 +248,11 @@ Future<({List<AudioCue> cues, MatchResult result})> finalizeAlignedCues({
       } else if (speechFile.existsSync()) {
         await speechFile.delete();
       }
+      // 转录弹层再打开时显示「上次匹配」的覆盖情况。
+      await writeAsrCoverageSidecar(
+        subtitlePath,
+        computeAudiobookTextCoverage(sections: sections, result: result),
+      );
     } catch (e, stack) {
       engineLog.log('AudiobookAlignmentService.writeAlignedSrt', e, stack);
     }
@@ -243,20 +280,134 @@ String serializeAudioCuesToSrt(List<AudioCue> cues) {
   return sb.toString();
 }
 
-/// 转录产物的命中 cue 按正文句界重切（见 `CueSentenceResegmenter`）；三个
-/// 匹配入口共用这一处，统计打进日志便于真机对照。
-CueResegmentResult resegmentCuesBySentence({
-  required List<EpubSection> sections,
-  required List<AudioCue> cues,
-  required MatchResult result,
-}) {
-  final CueResegmentResult out = const CueSentenceResegmenter().resegment(
-    sections: sections,
+/// [finalizeAlignedCues] 送进后台 isolate 的输入（全是可跨 isolate 拷贝的纯数据）。
+@visibleForTesting
+class AlignedCueRequest {
+  const AlignedCueRequest({
+    required this.sections,
+    required this.cues,
+    required this.result,
+    required this.subtitlePath,
+    required this.hasTokenTiming,
+    required this.asrGenerated,
+  });
+
+  final List<EpubSection> sections;
+  final List<AudioCue> cues;
+  final MatchResult result;
+
+  /// 转录产物 SRT 路径：能量包络在它的同目录。
+  final String subtitlePath;
+  final bool hasTokenTiming;
+  final bool asrGenerated;
+}
+
+/// 后台 isolate 算完交回的结果；日志由调用方 isolate 打（工作 isolate 里没有宿主装配的
+/// `fushiDebugPrint`）。
+@visibleForTesting
+class AlignedCueComputation {
+  const AlignedCueComputation({
+    required this.cues,
+    required this.result,
+    required this.isolateName,
+    this.resegmentStats,
+    this.snappedBoundaries,
+    this.refinedEdges,
+    this.mergedFragments,
+    this.displayMargins,
+  });
+
+  final List<AudioCue> cues;
+  final MatchResult result;
+
+  /// 实际执行计算的 isolate 的 debugName（测试据此确认计算不在调用方 isolate 上）。
+  final String isolateName;
+
+  /// 做了重切时的统计。
+  final CueResegmentStats? resegmentStats;
+
+  /// 做了能量吸附时移动的句界数 / 修整的首尾数。
+  final int? snappedBoundaries;
+  final int? refinedEdges;
+
+  /// 设备端转录产物并回相邻 cue 的句内碎片数（[postProcessTranscribedCues]）。
+  final int? mergedFragments;
+
+  /// 跟读显示余量动过的边数（[postProcessTranscribedCues]）。
+  final int? displayMargins;
+}
+
+/// [finalizeAlignedCues] 的后台 isolate debugName。
+@visibleForTesting
+const String kAlignedCueIsolateName = 'fushi-aligned-cue-finish';
+
+/// 最近一次 [finalizeAlignedCues] 的重切 / 吸附实际在哪个 isolate 上跑（debugName）；
+/// 只给测试观测「计算经后台入口」用。
+@visibleForTesting
+String? debugLastAlignedCueIsolate;
+
+/// 单独成函数：交给 `Isolate.run` 的闭包只捕获 [request]，不把调用方的其它局部变量
+/// 一起拷过 isolate 边界。
+Future<AlignedCueComputation> _computeAlignedCuesInBackground(
+  AlignedCueRequest request,
+) => Isolate.run(
+  () => computeAlignedCues(request),
+  debugName: kAlignedCueIsolateName,
+);
+
+/// [finalizeAlignedCues] 第 1–2 步的计算本体（同步）：生产路径只在后台 isolate 里调它。
+/// 测试直接调用以对拍。
+@visibleForTesting
+AlignedCueComputation computeAlignedCues(AlignedCueRequest request) {
+  List<AudioCue> cues = request.cues;
+  MatchResult result = request.result;
+  CueResegmentStats? stats;
+  if (request.hasTokenTiming) {
+    // 转录产物的命中 cue 按正文句界重切（见 `CueSentenceResegmenter`）。
+    final CueResegmentResult resegmented = const CueSentenceResegmenter()
+        .resegment(sections: request.sections, cues: cues, result: result);
+    cues = resegmented.cues;
+    result = resegmented.result;
+    stats = resegmented.stats;
+  }
+  int? moved;
+  int? edges;
+  int? fragments;
+  int? margins;
+  if (request.asrGenerated) {
+    replaceMatchedCueTextWithBookText(
+      sections: request.sections,
+      cues: cues,
+      result: result,
+    );
+    // 后处理（算法在上游 fushi-subtitles，见 asr_cue_post_host.dart）：句界吸到转录时顺手
+    // 写下的能量包络的真实停顿上（旧任务没有包络就只做合并）→ 句内短碎片（「何か、」
+    // 「おかしい。」）并回一条 → 按语速留跟读余量（快档贴声音，慢 / 正常档前后多留一两百毫秒）。
+    final Int8List? energy = readAsrEnergyTimeline(
+      Directory(p.dirname(request.subtitlePath)),
+    );
+    final TranscribedCuePostResult post = postProcessTranscribedCues(
+      cues: cues,
+      result: result,
+      energy: energy,
+    );
+    cues = post.cues;
+    result = post.result;
+    moved = post.snappedBoundaries;
+    edges = post.refinedEdges;
+    fragments = post.mergedFragments;
+    margins = post.displayMarginEdges;
+  }
+  return AlignedCueComputation(
     cues: cues,
     result: result,
+    isolateName: Isolate.current.debugName ?? '',
+    resegmentStats: stats,
+    snappedBoundaries: moved,
+    refinedEdges: edges,
+    mergedFragments: fragments,
+    displayMargins: margins,
   );
-  fushiDebugPrint('[fushi-import] resegment: ${out.stats}');
-  return out;
 }
 
 List<EpubSection> epubSectionsFromExtractDir(String extractDir) {
@@ -341,6 +492,9 @@ Future<List<AudioCue>> parseCuesForFormat(
 /// 由 [finalizeAlignedCues] 自行判定），命中 cue 的文本落库前换成正文原文。
 ///
 /// 入参均为已就位的本地绝对路径（[subtitlePath] 必给；[audioPaths] 可空）。
+/// [copyAudio] 为 false 时是引用导入（`AudiobookStorage.syncAudioFiles` 的
+/// `copy: false`）：音频留在原处、库里记原始绝对路径——服务端有声书库根用它，
+/// 不把整个库根再拷一份进数据目录。
 /// [autoWindow] / [searchWindow] / [similarityThreshold] 与对话框同名字段语义
 /// 一致。[onProgress] 替代 reportProgress，[messages] 注入步骤文案；二者皆可
 /// 省略（扫描器不需要 UI 进度）。返回 [AudiobookAlignmentResult]。
@@ -357,16 +511,21 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   String? author,
   required String subtitlePath,
   List<String> audioPaths = const <String>[],
+  bool copyAudio = true,
   bool autoWindow = true,
   int searchWindow = EpubSrtMatcher.defaultSearchWindow,
   double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
   AudiobookAlignmentProgress? onProgress,
   AudiobookAlignmentMessages messages = const AudiobookAlignmentMessages(),
   bool Function()? isCancelled,
+  AudiobookAlignmentStepCallback? onStep,
 }) async {
   void report(double f, String m) => onProgress?.call(f, m);
+  void step(AudiobookAlignmentStep s, {String? detail}) =>
+      onStep?.call(s, detail: detail);
 
   throwIfAlignmentCancelled(isCancelled);
+  step(AudiobookAlignmentStep.readingText);
   report(0.35, messages.readingIdb);
   List<EpubSection> sections = const <EpubSection>[];
   try {
@@ -378,6 +537,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
     fushiDebugPrint('[fushi-import] parseFromExtracted failed: $e');
   }
   throwIfAlignmentCancelled(isCancelled);
+  step(AudiobookAlignmentStep.parsingSubtitle);
   report(0.45, messages.parsing);
   final String ext = subtitlePath.split('.').last.toLowerCase();
   List<AudioCue> cues = await parseCuesForFormat(
@@ -388,9 +548,11 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   // 转录产物：把 sidecar 里的逐 token 时间挂上（非产物 / 缺失时 false）。
   final bool hasTokenTiming = await attachAsrCueTokenTiming(cues, subtitlePath);
   AudiobookHealth health;
+  AudiobookTextCoverage? coverage;
   final bool runMatcher = SubtitleRematchPolicy.supportedFormats.contains(ext);
   throwIfAlignmentCancelled(isCancelled);
   if (runMatcher && sections.isNotEmpty && cues.isNotEmpty) {
+    step(AudiobookAlignmentStep.matching);
     report(0.55, messages.matching);
     MatchResult? matchResult;
     int chosenWindow = searchWindow;
@@ -411,6 +573,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
       searchWindow: chosenWindow,
       similarityThreshold: similarityThreshold,
     );
+    step(AudiobookAlignmentStep.finishing);
     final ({List<AudioCue> cues, MatchResult result}) finalized =
         await finalizeAlignedCues(
           sections: sections,
@@ -421,6 +584,15 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
         );
     cues = finalized.cues;
     matchResult = finalized.result;
+    try {
+      coverage = computeAudiobookTextCoverage(
+        sections: sections,
+        result: matchResult,
+      );
+    } catch (e, stack) {
+      // 覆盖率只是展示用的读数，算不出来不能挡住落库。
+      engineLog.log('AudiobookAlignmentService.coverage', e, stack);
+    }
     final int pct = (matchResult.matchRate * 100).round();
     health = AudiobookHealth.fromRatePct(
       ratePct: pct,
@@ -440,6 +612,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
 
   // 最后一个检查点：之后是提交阶段（同步持久目录 + 写库），不再中断。
   throwIfAlignmentCancelled(isCancelled);
+  step(AudiobookAlignmentStep.persisting, detail: p.basename(subtitlePath));
   report(0.8, messages.persisting);
   final Directory persistDir = await AudiobookStorage.ensurePersistDir(bookKey);
   final String persistedSrt = await AudiobookStorage.persistFileWithProgress(
@@ -455,9 +628,14 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
       await AudiobookStorage.syncAudioFiles(
         persistDir,
         audioPaths,
-        onFile: (String name) => report(0.85, messages._copying(name)),
+        copy: copyAudio,
+        onFile: (String name) {
+          step(AudiobookAlignmentStep.persisting, detail: name);
+          report(0.85, messages._copying(name));
+        },
       );
 
+  step(AudiobookAlignmentStep.saving);
   report(0.9, messages.saving);
   // 窄写入：一次只说一件事，没有整行入口可以误清别的列（BUG-1678）。
   await audiobookRepo.replaceAlignment(
@@ -482,11 +660,13 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   );
   await audiobookRepo.saveCues(bookKey: bookKey, cues: cues);
   await audiobookRepo.updateHealthOverlay(bookKey: bookKey, health: health);
+  step(AudiobookAlignmentStep.done);
   report(1, messages.done);
 
   return AudiobookAlignmentResult(
     health: health,
     cueCount: cues.length,
     persistedAudioPaths: persistedAudioPaths,
+    coverage: coverage,
   );
 }

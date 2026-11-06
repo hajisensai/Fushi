@@ -1,0 +1,168 @@
+{
+  "note": "网页小说正文提取回归向量。inputs/ 里 syosetu_* / kakuyomu_* / jjwxc_* 是真实页面快照（2026-10-19 抓取，tools/trim_fixtures.py 裁到前若干段、抹掉会话串；晋江保持 GB18030 原编码）；synthetic_* 是按站点结构手写的合成页（正文为测试自写）。mirror.example 的用例把真实页面放到规则表之外的主机上，验证通用算法（readability / 密度兜底）。cargo test 与 packages/fushi_web_core 的 Dart FFI 测试跑同一份。",
+  "cases": [
+    {
+      "file": "syosetu_n9669bk_1.html",
+      "url": "https://ncode.syosetu.com/n9669bk/1/",
+      "expect": {
+        "title": "プロローグ",
+        "workTitle": "無職転生　- 異世界行ったら本気だす -",
+        "author": "理不尽な孫の手",
+        "lang": "ja",
+        "siteRule": "syosetu",
+        "method": "site",
+        "charset": "utf-8",
+        "workKey": "ncode.syosetu.com/n9669bk",
+        "next": "https://ncode.syosetu.com/n9669bk/2/",
+        "prev": null,
+        "toc": "https://ncode.syosetu.com/n9669bk/",
+        "excerptPrefix": "俺は34歳住所不定無職。",
+        "minChars": 200,
+        "xhtmlContains": ["<p>　俺は34歳住所不定無職。</p>", "<p><br/></p>"],
+        "xhtmlNotContains": ["ログイン", "次へ", "目次", "script", "gnshbrequest"]
+      }
+    },
+    {
+      "file": "syosetu_n9669bk_10.html",
+      "url": "https://ncode.syosetu.com/n9669bk/10/",
+      "expect": {
+        "title": "第九話「緊急家族会議」",
+        "lang": "ja",
+        "siteRule": "syosetu",
+        "method": "site",
+        "workKey": "ncode.syosetu.com/n9669bk",
+        "next": "https://ncode.syosetu.com/n9669bk/11/",
+        "prev": "https://ncode.syosetu.com/n9669bk/9/",
+        "toc": "https://ncode.syosetu.com/n9669bk/",
+        "excerptPrefix": "ゼニスの妊娠がわかった。",
+        "minChars": 150,
+        "xhtmlContains": ["<ruby>御神体<rp>(</rp><rt>パンツ</rt><rp>)</rp></ruby>"],
+        "xhtmlNotContains": ["ログイン", "次へ"]
+      }
+    },
+    {
+      "file": "kakuyomu_1177354054881165840_ep.html",
+      "url": "https://kakuyomu.jp/works/1177354054881165840/episodes/1177354054881168184",
+      "expect": {
+        "title": "第一章　だが断る",
+        "workTitle": "慎重勇者　~この勇者が俺ＴＵＥＥＥくせに慎重すぎる~",
+        "author": null,
+        "lang": "ja",
+        "siteRule": "kakuyomu",
+        "method": "site",
+        "workKey": "kakuyomu.jp/works/1177354054881165840",
+        "next": "https://kakuyomu.jp/works/1177354054881165840/episodes/1177354054881168409",
+        "prev": "https://kakuyomu.jp/works/1177354054881165840/episodes/1177354054881165876",
+        "toc": "https://kakuyomu.jp/works/1177354054881165840",
+        "excerptPrefix": "観音開きの扉を開くと",
+        "minChars": 400,
+        "xhtmlContains": ["<p><br/></p>"],
+        "xhtmlNotContains": ["応援", "カクヨム", "script"]
+      }
+    },
+    {
+      "file": "jjwxc_2456_2.html",
+      "url": "https://www.jjwxc.net/onebook.php?novelid=2456&chapterid=2",
+      "expect": {
+        "title": "第二章",
+        "workTitle": "何以笙箫默(全文地址见内)",
+        "author": "顾漫",
+        "lang": "zh",
+        "siteRule": "jjwxc",
+        "method": "site",
+        "charset": "gb18030",
+        "workKey": "jjwxc.net?novelid=2456",
+        "next": "https://www.jjwxc.net/onebook.php?novelid=2456&chapterid=3",
+        "prev": "https://www.jjwxc.net/onebook.php?novelid=2456&chapterid=1",
+        "excerptPrefix": "夕阳西下，彩霞满天。",
+        "minChars": 380,
+        "xhtmlContains": ["<p>　　夕阳西下，彩霞满天。</p>"],
+        "xhtmlNotContains": ["插入书签", "投诉", "添加书签", "推荐给朋友"]
+      }
+    },
+    {
+      "file": "synthetic_hameln_like.html",
+      "url": "https://syosetu.org/novel/12345/2.html",
+      "expect": {
+        "title": "第2話　雨の駅",
+        "workTitle": "合成テスト作品",
+        "author": "テスト作者",
+        "lang": "ja",
+        "siteRule": "hameln",
+        "method": "site",
+        "workKey": "syosetu.org/novel/12345",
+        "next": "https://syosetu.org/novel/12345/3.html",
+        "prev": "https://syosetu.org/novel/12345/1.html",
+        "toc": "https://syosetu.org/novel/12345/",
+        "excerptPrefix": "改札を抜けると",
+        "minChars": 60,
+        "xhtmlContains": ["<ruby><rb>少年</rb><rp>(</rp><rt>しょうねん</rt><rp>)</rp></ruby>", "<p><br/></p>"],
+        "xhtmlNotContains": ["前書き", "後書き", "感想", "広告"]
+      }
+    },
+    {
+      "file": "synthetic_zh_generic.html",
+      "url": "https://zh.example/book/321/12.html",
+      "expect": {
+        "title": "第十二章 夜行列车",
+        "workTitle": "合成测试小说",
+        "author": "测试作者",
+        "lang": "zh",
+        "siteRule": null,
+        "method": "readability",
+        "workKey": "zh.example/book/321",
+        "next": "https://zh.example/book/321/13.html",
+        "prev": "https://zh.example/book/321/11.html",
+        "toc": "https://zh.example/book/321/",
+        "excerptPrefix": "列车在夜色中穿过山谷",
+        "minChars": 140,
+        "xhtmlContains": ["橘子很凉"],
+        "xhtmlNotContains": ["最新域名", "红包", "上一章", "关于我们"]
+      }
+    },
+    {
+      "file": "syosetu_n9669bk_10.html",
+      "url": "https://mirror.example/n9669bk/10/",
+      "expect": {
+        "title": "第九話「緊急家族会議」",
+        "lang": "ja",
+        "siteRule": null,
+        "workKey": "mirror.example/n9669bk",
+        "next": "https://mirror.example/n9669bk/11/",
+        "prev": "https://mirror.example/n9669bk/9/",
+        "excerptPrefix": "ゼニスの妊娠がわかった。",
+        "minChars": 150,
+        "xhtmlContains": ["<ruby>御神体<rp>(</rp><rt>パンツ</rt><rp>)</rp></ruby>"],
+        "xhtmlNotContains": ["ログイン", "次へ"]
+      }
+    },
+    {
+      "file": "kakuyomu_1177354054881165840_ep.html",
+      "url": "https://mirror.example/works/1/episodes/2",
+      "expect": {
+        "title": "第一章　だが断る",
+        "lang": "ja",
+        "siteRule": null,
+        "excerptPrefix": "観音開きの扉を開くと",
+        "minChars": 400,
+        "xhtmlNotContains": ["応援", "script"]
+      }
+    },
+    {
+      "file": "jjwxc_2456_2.html",
+      "url": "https://mirror.example/onebook.php?novelid=2456&chapterid=2",
+      "expect": {
+        "title": "第二章",
+        "lang": "zh",
+        "siteRule": null,
+        "charset": "gb18030",
+        "workKey": "mirror.example/?novelid=2456",
+        "next": "https://mirror.example/onebook.php?novelid=2456&chapterid=3",
+        "prev": "https://mirror.example/onebook.php?novelid=2456&chapterid=1",
+        "excerptPrefix": "夕阳西下，彩霞满天。",
+        "minChars": 380,
+        "xhtmlNotContains": ["插入书签", "投诉"]
+      }
+    }
+  ]
+}

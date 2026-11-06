@@ -52,6 +52,23 @@ class WebMineQueueStore {
         .get();
   }
 
+  /// 有待办的书，按各自最早一条待办的入队顺序（后台空闲自动制卡逐本跑）。
+  Future<List<String>> pendingBookUids() async {
+    final List<WebMineQueueRow> rows =
+        await (db.select(db.webMineQueue)
+              ..where(
+                ($WebMineQueueTable t) =>
+                    t.status.equals(WebMineQueueStatus.pending),
+              )
+              ..orderBy(<OrderingTerm Function($WebMineQueueTable)>[
+                ($WebMineQueueTable t) => OrderingTerm.asc(t.id),
+              ]))
+            .get();
+    return <String>{
+      for (final WebMineQueueRow row in rows) row.bookUid,
+    }.toList();
+  }
+
   Future<int> pendingCount(String bookUid) async =>
       (await pending(bookUid)).length;
 

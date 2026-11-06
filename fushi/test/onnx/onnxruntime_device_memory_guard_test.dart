@@ -14,8 +14,9 @@ File _asrCoreFile(String relative) {
   Directory current = Directory.current.absolute;
   File? config;
   while (true) {
-    final File candidate =
-        File('${current.path}/.dart_tool/package_config.json');
+    final File candidate = File(
+      '${current.path}/.dart_tool/package_config.json',
+    );
     if (candidate.existsSync()) {
       config = candidate;
       break;
@@ -67,8 +68,9 @@ void main() {
 
   test('Windows 插件实现了 getDeviceMemoryInfo 并真去问 DXGI', () {
     final String plugin = maskComments(
-      File('$vendored/windows/flutter_onnxruntime_plugin.cpp')
-          .readAsStringSync(),
+      File(
+        '$vendored/windows/flutter_onnxruntime_plugin.cpp',
+      ).readAsStringSync(),
     );
     expect(plugin, contains('"getDeviceMemoryInfo"'));
     expect(plugin, contains('QueryDeviceMemoryInfo('));
@@ -77,8 +79,9 @@ void main() {
     );
     expect(dxgi, contains('QueryVideoMemoryInfo('));
     expect(dxgi, contains('DXGI_MEMORY_SEGMENT_GROUP_LOCAL'));
-    final String cmake =
-        File('$vendored/windows/CMakeLists.txt').readAsStringSync();
+    final String cmake = File(
+      '$vendored/windows/CMakeLists.txt',
+    ).readAsStringSync();
     expect(cmake, contains('src/dxgi_memory.cc'));
     expect(
       cmake,
@@ -90,21 +93,24 @@ void main() {
   test('Dart 侧从平台接口到 barrel 都暴露 getDeviceMemoryInfo', () {
     expect(
       maskComments(
-        File('$vendored/lib/src/flutter_onnxruntime_platform_interface.dart')
-            .readAsStringSync(),
+        File(
+          '$vendored/lib/src/flutter_onnxruntime_platform_interface.dart',
+        ).readAsStringSync(),
       ),
       contains('getDeviceMemoryInfo('),
     );
     expect(
       maskComments(
-        File('$vendored/lib/src/flutter_onnxruntime_method_channel.dart')
-            .readAsStringSync(),
+        File(
+          '$vendored/lib/src/flutter_onnxruntime_method_channel.dart',
+        ).readAsStringSync(),
       ),
       contains("'getDeviceMemoryInfo'"),
     );
     expect(
       maskComments(
-          File('$vendored/lib/src/onnxruntime.dart').readAsStringSync()),
+        File('$vendored/lib/src/onnxruntime.dart').readAsStringSync(),
+      ),
       contains('class OrtDeviceMemoryInfo'),
     );
     expect(
@@ -116,8 +122,9 @@ void main() {
 
   test('应用侧消费者真的用它选桶', () {
     final String ort = maskComments(
-      File('${root.path}/fushi/lib/src/onnx/onnx_inference_ort.dart')
-          .readAsStringSync(),
+      File(
+        '${root.path}/fushi/lib/src/onnx/onnx_inference_ort.dart',
+      ).readAsStringSync(),
     );
     expect(ort, contains('getDeviceMemoryInfo('));
     // 消费方（按显存预算选静态桶）已经随 ASR 算法层搬进了 `fushi_asr_core` 包。
@@ -127,8 +134,11 @@ void main() {
     // 断了。所以改成经 `package_config.json` 解析到包的真实位置再扫，git 依赖
     // 与本地 path override 两种装法都能找到。
     final File engineFile = _asrCoreFile('lib/src/asr/asr_engine.dart');
-    expect(engineFile.existsSync(), isTrue,
-        reason: '找不到 fushi_asr_core 的 asr_engine.dart：${engineFile.path}');
+    expect(
+      engineFile.existsSync(),
+      isTrue,
+      reason: '找不到 fushi_asr_core 的 asr_engine.dart：${engineFile.path}',
+    );
     final String engine = maskComments(engineFile.readAsStringSync());
     expect(engine, contains('deviceMemoryBudgetBytes('));
     expect(engine, contains('asrEncoderBucketsForBudget('));

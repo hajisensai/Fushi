@@ -3,7 +3,15 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
 /// TODO-959：桌面「数据存储位置」整目录迁移期间的全屏遮罩内容。
 ///
@@ -40,8 +48,9 @@ class DataRootMigrationView extends StatelessWidget {
     final ColorScheme cs = Theme.of(context).colorScheme;
     if (failure != null) return _buildFailure(context, cs, failure!);
     final ({int copied, int total})? p = progress;
-    final double? fraction =
-        p != null && p.total > 0 ? p.copied / p.total : null;
+    final double? fraction = p != null && p.total > 0
+        ? p.copied / p.total
+        : null;
     final FushiTypography type = context.fushiType;
     // 遮罩没有导航，不挂页头：全屏 Scaffold 只承担不透明底色（splash 色 / surface）。
     return Scaffold(
@@ -174,7 +183,8 @@ class DataRootMigrationView extends StatelessWidget {
                         // 跟卡片实际配对前景（Apple 淡染底时是系统红，
                         // 不是 onErrorContainer）；墨水屏无配对色回落原值。
                         style: type.bodyMedium.copyWith(
-                          color: fushiCardToneColors(
+                          color:
+                              fushiCardToneColors(
                                 context,
                                 FushiCardTone.error,
                               )?.onContainer ??

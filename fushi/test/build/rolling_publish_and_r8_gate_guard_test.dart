@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫两条 2026-09-30 的 CI 修正，松了都是静默的：
 ///

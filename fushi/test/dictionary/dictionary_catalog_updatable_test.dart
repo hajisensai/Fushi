@@ -73,7 +73,8 @@ void main() {
       expect(tkm.isCatalogUpdatable, isFalse);
 
       final RecommendedDictionary? grammar = byPrefix(
-          'Nihongo-Bunkei-Jiten'); // HuangAntimony releases (非 yomidevs)
+        'Nihongo-Bunkei-Jiten',
+      ); // HuangAntimony releases (非 yomidevs)
       expect(grammar, isNotNull);
       expect(grammar!.indexUrl, isNull);
 
@@ -100,7 +101,9 @@ void main() {
           : <String, String>{'downloadUrl': rec.url};
       final Map<String, String> metadata =
           DictionaryImportManager.mergeSourceMetadata(
-              fromIndex, sourceOverride);
+            fromIndex,
+            sourceOverride,
+          );
       return Dictionary(
         name: rec.name,
         formatKey: 'yomichan',
@@ -116,8 +119,11 @@ void main() {
         rec: rec,
         fromIndex: <String, String>{'revision': 'JMdict.2026-07-01'},
       );
-      expect(d.isUpdatable, isTrue,
-          reason: '修复前此处恒 false（初装 gate 空档）——修复后由 catalog 权威回填置真');
+      expect(
+        d.isUpdatable,
+        isTrue,
+        reason: '修复前此处恒 false（初装 gate 空档）——修复后由 catalog 权威回填置真',
+      );
       expect(d.indexUrl, endsWith('JMdict_english.json'));
       expect(d.downloadUrl, rec.url);
       expect(d.revision, 'JMdict.2026-07-01');
@@ -129,8 +135,9 @@ void main() {
         fromIndex: <String, String>{'revision': '2026.06.10'},
       );
       final List<Dictionary> installed = <Dictionary>[d];
-      final bool hasUpdatable =
-          installed.where((Dictionary x) => x.isUpdatable).isNotEmpty;
+      final bool hasUpdatable = installed
+          .where((Dictionary x) => x.isUpdatable)
+          .isNotEmpty;
       expect(hasUpdatable, isTrue);
       expect(
         shouldAutoUpdateDictionaries(
@@ -141,20 +148,23 @@ void main() {
           isBusy: false,
         ),
         isTrue,
-        reason: '有可更新词典 + 从未更新 → 应触发自动更新；修复前 hasUpdatable 恒 false '
+        reason:
+            '有可更新词典 + 从未更新 → 应触发自动更新；修复前 hasUpdatable 恒 false '
             '导致此处恒 false，功能死。',
       );
     });
 
-    test(
-        '无分离 index 端点的来源（TheKanjiMap）只回填 downloadUrl，'
+    test('无分离 index 端点的来源（TheKanjiMap）只回填 downloadUrl，'
         '包不声明 → isUpdatable==false（不误标）', () {
       final Dictionary d = importedDict(
         rec: byPrefix('TheKanjiMap')!,
         fromIndex: <String, String>{'revision': 'thekanjimap_x'},
       );
-      expect(d.isUpdatable, isFalse,
-          reason: '无独立 index 端点的来源不应被 catalog 标为可更新');
+      expect(
+        d.isUpdatable,
+        isFalse,
+        reason: '无独立 index 端点的来源不应被 catalog 标为可更新',
+      );
       expect(d.downloadUrl, isNotEmpty);
       expect(d.indexUrl, isEmpty);
     });

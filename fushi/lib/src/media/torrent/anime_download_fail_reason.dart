@@ -6,8 +6,9 @@ import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart'
 /// 任务行要显示的失败原因（BUG-2775）：自动入库被挡下的原因码翻译成用户能照着
 /// 做的文案；其余（旧任务、下载/网络诊断文本）原样返回。
 String describeAnimeDownloadFailReason(String reason) {
-  final DiscoveryImportBlocker? blocker =
-      parseAnimeDownloadBlockedFailReason(reason);
+  final DiscoveryImportBlocker? blocker = parseAnimeDownloadBlockedFailReason(
+    reason,
+  );
   if (blocker == null) return reason;
   switch (blocker) {
     case DiscoveryImportBlocker.unknownFileType:

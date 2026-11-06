@@ -50,8 +50,7 @@ class _FakeFilePicker extends FilePicker {
     bool withReadStream = false,
     bool lockParentWindow = false,
     bool readSequential = false,
-  }) async =>
-      result;
+  }) async => result;
 }
 
 /// 复刻四个调用点的真实用法：**先就地 sort，再判空**。
@@ -158,26 +157,38 @@ void main() {
 
   group('源码守卫：picker 不得交出不可变集合', () {
     test('real_path_directory_picker.dart 里没有任何 const 集合字面量', () {
-      final File file =
-          File('lib/src/media/import/real_path_directory_picker.dart');
-      expect(file.existsSync(), isTrue,
-          reason: '守卫的扫描目标没了（文件改名/挪窝）：先修扫描路径，别删守卫');
+      final File file = File(
+        'lib/src/media/import/real_path_directory_picker.dart',
+      );
+      expect(
+        file.existsSync(),
+        isTrue,
+        reason: '守卫的扫描目标没了（文件改名/挪窝）：先修扫描路径，别删守卫',
+      );
 
       // 必须用共享的等长掩码原语（手写的按行剥离既漏块注释，又会让「把断言
       // 字面量塞进注释」骗过守卫，见 test/tools/source_guard_adoption_test.dart）。
       final String code = maskComments(file.readAsStringSync());
 
       // 锚点哨兵：单文件守卫的塌陷形态就是「读到了别的东西却照样绿」。
-      expect(code, contains('Future<List<String>> pickRealFilePaths('),
-          reason: '扫到的不是那个 picker：守卫已经瞎了');
-      expect(code, contains('Future<List<String>> _fallbackPickFiles('),
-          reason: '扫到的不是那个 picker：守卫已经瞎了');
+      expect(
+        code,
+        contains('Future<List<String>> pickRealFilePaths('),
+        reason: '扫到的不是那个 picker：守卫已经瞎了',
+      );
+      expect(
+        code,
+        contains('Future<List<String>> _fallbackPickFiles('),
+        reason: '扫到的不是那个 picker：守卫已经瞎了',
+      );
 
       // `const []` / `const <String>[]` / `const {}` / `const <String>{}` 全禁。
       // 这个文件是一层薄薄的选择器门面，它交出去的每个集合都会被调用方就地
       // sort / add；这里不留「哪些 const 是安全的」这种特例判断，一律不许有。
-      final RegExp constCollection =
-          RegExp(r'const\s*(<[^>\n]*>)?\s*[\[{]', multiLine: true);
+      final RegExp constCollection = RegExp(
+        r'const\s*(<[^>\n]*>)?\s*[\[{]',
+        multiLine: true,
+      );
       final List<String> offenders = <String>[];
       for (final RegExpMatch m in constCollection.allMatches(code)) {
         final int lineNo =
@@ -188,7 +199,8 @@ void main() {
       expect(
         offenders,
         isEmpty,
-        reason: 'BUG-1574：这个文件交出去的集合会被调用方就地 sort（books.part.dart 的 '
+        reason:
+            'BUG-1574：这个文件交出去的集合会被调用方就地 sort（books.part.dart 的 '
             'paths.sort / audiobook.part.dart 的 ..sort 级联 / 两个导入对话框），'
             'Dart 常量集合是 Unmodifiable*，sort 与 add 无条件抛 UnsupportedError，'
             '空集合照抛。返回可增长集合，别为了省一次分配改回去：\n'

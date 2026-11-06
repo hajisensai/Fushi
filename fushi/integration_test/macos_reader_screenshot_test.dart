@@ -23,8 +23,9 @@ import 'helpers/library_fixture.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('macOS reader renders inside the default-auto MD3 shell',
-      (tester) async {
+  testWidgets('macOS reader renders inside the default-auto MD3 shell', (
+    tester,
+  ) async {
     await launchFushiTestApp();
     // Same as the sibling macOS harnesses: swallow the app-background
     // UpdateChecker network errors (this build Mac has no GitHub reachability,
@@ -70,9 +71,11 @@ void main() {
     expect(find.byKey(webViewKey), findsOneWidget, reason: 'reader WebView');
 
     const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
-    for (int i = 0;
-        i < 120 && find.byKey(contentReadyKey).evaluate().isEmpty;
-        i++) {
+    for (
+      int i = 0;
+      i < 120 && find.byKey(contentReadyKey).evaluate().isEmpty;
+      i++
+    ) {
       await tester.pump(const Duration(milliseconds: 500));
     }
     // Give the WebView a moment to paint the first page even if the ready marker
@@ -80,7 +83,9 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
 
     await _captureLargestBoundary(
-        tester, '${Directory.systemTemp.path}/macos_reader.png');
+      tester,
+      '${Directory.systemTemp.path}/macos_reader.png',
+    );
     debugPrint('[test] captured macos_reader');
   });
 }

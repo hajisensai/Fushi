@@ -28,6 +28,10 @@ struct SiglusMessageProfile {
   // The message ABI alone does not prove the resource key's archive/member
   // mapping. A separate resource-path proof is required before enabling audio.
   bool voice_key_resource_mapping_proved = false;
+  // Plain-frame code inlines the surface lookup and wrapper body into the
+  // message entry, which then calls Scenario itself: there is no wrapper frame
+  // and message_surface_return_rva/surface_wrapper_rva stay zero.
+  bool direct_scenario_call = false;
 };
 
 namespace siglus_message {
@@ -69,6 +73,28 @@ inline constexpr Signature kPrepare{
 inline constexpr size_t kPrepareClearLayoutOffset = 27u;
 inline constexpr size_t kPrepareSecondClearLayoutOffset = 91u;
 inline constexpr size_t kPrepareClearAllOffset = 123u;
+// Plain-frame code generation (the Gameexe design size at +0x64/+0x68 family).
+// Same owner layout and caller-cleaned ECX=owner/EDX=position entry; EBX holds
+// the position. The surface/wrapper body is inlined and calls Scenario directly
+// with ECX=surface and the by-value text string as its first argument.
+inline constexpr Signature kPlainMessageEdi{
+    "55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 00 00 00 00 50 83 EC 44 A1 ?? ?? ?? ?? 33 C5 89 45 F0 53 56 57 50 8D 45 F4 64 A3 00 00 00 00 8B DA 8B F9 C7 45 FC 00 00 00 00 85 FF"};
+inline constexpr Signature kPlainDirectSurface{
+    "8B 87 E0 01 00 00 85 C0 0F 88 ?? ?? ?? ?? 8B 8F 2C 02 00 00 B8 93 24 49 92 2B 8F 28 02 00 00 F7 E9 03 D1 8B 8F E0 01 00 00 C1 FA 08 8B C2 C1 E8 1F 03 C2 3B C1 7E ?? 69 F1 C0 01 00 00 03 B7 28 02 00 00 80 BE A4 01 00 00 00 75 12 83 BE 7C 01 00 00 01 75 09 8B 46 50 01 86 E4 00 00 00 8D 45 D8 8B CE 50 8D 45 10 50 E8 ?? ?? ?? ?? 80 BE A4 01 00 00 00 75 11 C7 86 7C 01 00 00 00 00 00 00 C6 86 A4 01 00 00 01"};
+inline constexpr size_t kPlainDirectScenarioCallOffset = 104u;
+inline constexpr Signature kPlainVoiceEntry{
+    "55 8B EC 83 EC 0C 53 8B C1 8B DA 89 45 F8 56 57 85 C0"};
+// ECX restored from its entry save; EBX is the original EDX request key.
+inline constexpr Signature kPlainVoiceWrite{
+    "8B 4D F8 8A 45 FF 88 81 FC 01 00 00 A1 ?? ?? ?? ?? 89 99 F8 01 00 00 81 C1 EC 01 00 00"};
+// The compiler merged both clear-layout branches into one call site.
+inline constexpr Signature kPlainPrepare{
+    "51 56 8B F1 57 80 BE D4 01 00 00 00 0F 85 ?? ?? ?? ?? 80 BE D8 01 00 00 00 74 27 E8 ?? ?? ?? ?? 8B 3D ?? ?? ?? ?? 8D 87 FC 02 00 00 C7 40 10 00 00 00 00 83 78 14 08 72 02 8B 00 33 C9 66 89 08 EB 1E 83 BE B8 01 00 00 00 7E 0F 6A 00 E8 ?? ?? ?? ?? 84 C0 75 04 8B CE EB C1 8B 3D ?? ?? ?? ?? 8B CE E8 ?? ?? ?? ??"};
+inline constexpr size_t kPlainPrepareClearLayoutOffset = 27u;
+inline constexpr size_t kPlainPrepareClearAllOffset = 98u;
+static_assert(kPlainDirectSurface.bytes[kPlainDirectScenarioCallOffset] == 0xe8u);
+static_assert(kPlainPrepare.bytes[kPlainPrepareClearLayoutOffset] == 0xe8u);
+static_assert(kPlainPrepare.bytes[kPlainPrepareClearAllOffset] == 0xe8u);
 static_assert(kSurfaceEsi.bytes[kSurfaceCallOffset] == 0xe8u);
 static_assert(kSurfaceEdi.bytes[kSurfaceCallOffset] == 0xe8u);
 static_assert(kWrapper.bytes[kWrapperCallOffset] == 0xe8u);
@@ -114,6 +140,70 @@ inline uint32_t CountDirectCalls(const exact_lookup::LoadedPeImage& image,
   }
   return count;
 }
+// Plain-frame message ABI. The Scenario proof reuses the same plain-frame
+// signatures that admitted the lookup family, so the message and lookup layers
+// can never disagree about which code generation this image is.
+inline bool ResolvePlainFrameMessageProfile(
+    const exact_lookup::LoadedPeImage& image,
+    const SiglusLookupProfile& admitted_scenario, SiglusMessageProfile* out) {
+  using siglus_family::Unique;
+  using siglus_family::UniqueWithin;
+  uintptr_t message = 0, surface = 0, voice = 0, voice_write = 0;
+  uintptr_t prepare = 0, clear_layout = 0, clear_all = 0;
+  uintptr_t message_exit = 0, voice_exit = 0, ignored = 0;
+  if (!Unique(image, kPlainMessageEdi.pattern(), &message) ||
+      !NullExit(image, message + kPlainMessageEdi.bytes.size(), message,
+                &message_exit) ||
+      !MatchAt(image, message_exit, kMessageCleanup.pattern()) ||
+      !Unique(image, kPlainDirectSurface.pattern(), &surface) ||
+      surface < message || surface >= message_exit ||
+      kPlainDirectSurface.bytes.size() > message_exit - surface ||
+      !Unique(image, kPlainVoiceEntry.pattern(), &voice) ||
+      !NullExit(image, voice + kPlainVoiceEntry.bytes.size(), voice,
+                &voice_exit) ||
+      !MatchAt(image, voice_exit, kVoiceReturn.pattern()) ||
+      !Unique(image, kPlainVoiceWrite.pattern(), &voice_write) ||
+      voice_write < voice || voice_write >= voice_exit ||
+      kPlainVoiceWrite.bytes.size() > voice_exit - voice_write ||
+      !Unique(image, kPlainPrepare.pattern(), &prepare) ||
+      !Unique(image, kClearLayout.pattern(), &clear_layout) ||
+      !Unique(image, kClearAll.pattern(), &clear_all)) return false;
+
+  const uintptr_t scenario = admitted_scenario.exact_text_rva;
+  uintptr_t scenario_tail = 0, scenario_end = 0;
+  const uintptr_t scenario_return =
+      surface + kPlainDirectScenarioCallOffset + 5u;
+  if (!Unique(image, siglus_family::kPlainScenarioEntryTail.pattern(),
+              &scenario_tail) ||
+      scenario_tail != scenario + 5u ||
+      !siglus_family::OriginalOrExternalDetour(image, scenario) ||
+      !UniqueWithin(image, scenario,
+                    siglus_family::BoundedFunctionEnd(image, scenario, 0x1000u),
+                    siglus_family::kScenarioReturn.pattern(), &scenario_end) ||
+      !UniqueWithin(image, scenario, scenario_end,
+                    siglus_family::kPlainScenarioStringAbi.pattern(), &ignored) ||
+      !exact_lookup::MatchesRel32CallEndingAt(image, scenario_return, scenario) ||
+      CountDirectCalls(image, message, message_exit, scenario) != 1u ||
+      !exact_lookup::MatchesRel32CallEndingAt(
+          image, prepare + kPlainPrepareClearLayoutOffset + 5u, clear_layout) ||
+      !exact_lookup::MatchesRel32CallEndingAt(
+          image, prepare + kPlainPrepareClearAllOffset + 5u, clear_all)) return false;
+
+  out->message_entry_rva = message;
+  out->scenario_return_rva = scenario_return;
+  out->direct_scenario_call = true;
+  out->voice_entry_rva = voice;
+  out->prepare_entry_rva = prepare;
+  out->clear_layout_rva = clear_layout;
+  out->clear_all_rva = clear_all;
+  out->owner_register = SiglusMessageOwnerRegister::kEdi;
+  out->owner_voice_key_offset = 0x1f8u;
+  out->owner_surface_index_offset = 0x1e0u;
+  out->owner_surface_begin_offset = 0x228u;
+  out->owner_surface_end_offset = 0x22cu;
+  out->surface_stride = 0x1c0u;
+  return true;
+}
 }  // namespace siglus_message
 
 inline bool ResolveSiglusMessageProfile(
@@ -130,6 +220,12 @@ inline bool ResolveSiglusMessageProfile(
       admitted_scenario.pe_machine != IMAGE_FILE_MACHINE_I386 ||
       admitted_scenario.pointer_bits != 32u ||
       admitted_scenario.exact_text_rva == 0u) return false;
+  if (admitted_scenario.input_entry_abi == SiglusInputEntryAbi::kPlainFrame) {
+    if (ResolvePlainFrameMessageProfile(image, admitted_scenario, out))
+      return true;
+    *out = {};
+    return false;
+  }
 
   uintptr_t message = 0, surface = 0, wrapper = 0, voice = 0, voice_write = 0;
   uintptr_t prepare = 0, clear_layout = 0, clear_all = 0;

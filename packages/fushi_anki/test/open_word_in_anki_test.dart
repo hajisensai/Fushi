@@ -160,14 +160,18 @@ void main() {
   AnkiConnectRepository repoWith(http.Client client) {
     AnkiConnectRepository.resetDuplicateCheckCooldown();
     return AnkiConnectRepository(
-      service:
-          AnkiConnectService(host: '127.0.0.1', port: 8765, client: client),
+      service: AnkiConnectService(
+        host: '127.0.0.1',
+        port: 8765,
+        client: client,
+      ),
     );
   }
 
   String queryOf(List<Map<String, dynamic>> sink, String action) =>
       (sink.singleWhere(
-                  (Map<String, dynamic> b) => b['action'] == action)['params']
+                (Map<String, dynamic> b) => b['action'] == action,
+              )['params']
               as Map)['query']
           .toString();
 
@@ -196,10 +200,7 @@ void main() {
       // 同一台假机上，画 ✓ 的判据说「已制卡」。
       expect(await repo.isDuplicate(kWord, ''), isTrue);
       // ↗ 必须给出一致的答案。旧实现（findNotes 按字段名 + nid:）在这里恒 noMatch。
-      expect(
-        await repo.openWordInAnki(kWord, ''),
-        AnkiOpenWordOutcome.opened,
-      );
+      expect(await repo.openWordInAnki(kWord, ''), AnkiOpenWordOutcome.opened);
     });
 
     test('交给浏览器的那一句只有 nid:——词和卡组名都不进查询串', () async {
@@ -274,8 +275,9 @@ void main() {
       await installSettings();
       final sink = <Map<String, dynamic>>[];
       expect(
-        await repoWith(crossModelHost(sink, guiBrowseReturnsNull: true))
-            .openWordInAnki(kWord, ''),
+        await repoWith(
+          crossModelHost(sink, guiBrowseReturnsNull: true),
+        ).openWordInAnki(kWord, ''),
         AnkiOpenWordOutcome.opened,
       );
       // 浏览器该开的还是开了：请求确实发出去了。
@@ -292,8 +294,9 @@ void main() {
       await installSettings();
       final sink = <Map<String, dynamic>>[];
       expect(
-        await repoWith(crossModelHost(sink, guiBrowseReturnsEmpty: true))
-            .openWordInAnki(kWord, ''),
+        await repoWith(
+          crossModelHost(sink, guiBrowseReturnsEmpty: true),
+        ).openWordInAnki(kWord, ''),
         AnkiOpenWordOutcome.opened,
       );
     });
@@ -321,8 +324,9 @@ void main() {
       await installSettings();
       final sink = <Map<String, dynamic>>[];
       expect(
-        await repoWith(crossModelHost(sink, transportFails: true))
-            .openWordInAnki(kWord, ''),
+        await repoWith(
+          crossModelHost(sink, transportFails: true),
+        ).openWordInAnki(kWord, ''),
         AnkiOpenWordOutcome.failed,
       );
     });
@@ -501,10 +505,9 @@ void main() {
     });
 
     test('打开失败 → failed（不冒充成功）', () async {
-      final _IdOnlyRepo repo = _IdOnlyRepo(
-        const <MinedNoteRef>[MinedNoteRef(noteId: 7)],
-        openSucceeds: false,
-      );
+      final _IdOnlyRepo repo = _IdOnlyRepo(const <MinedNoteRef>[
+        MinedNoteRef(noteId: 7),
+      ], openSucceeds: false);
       expect(await repo.openWordInAnki('語', ''), AnkiOpenWordOutcome.failed);
     });
   });
@@ -520,8 +523,9 @@ class _IdOnlyRepo extends BaseAnkiRepository {
 
   @override
   Future<List<MinedNoteRef>> findMatchingNotes(
-          String expression, String reading) async =>
-      matches;
+    String expression,
+    String reading,
+  ) async => matches;
 
   @override
   Future<bool> openNoteInAnki(int noteId) async {
@@ -536,8 +540,7 @@ class _IdOnlyRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      const MineOutcome.success();
+  }) async => const MineOutcome.success();
   @override
   Future<bool> isDuplicate(String expression, String reading) async => true;
   @override

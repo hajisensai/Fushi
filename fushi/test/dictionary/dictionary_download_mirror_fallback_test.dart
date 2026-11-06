@@ -81,8 +81,7 @@ void main() {
       );
     });
 
-    test(
-        'huggingface 不展开——公共 GitHub 镜像对它实测一律 403，'
+    test('huggingface 不展开——公共 GitHub 镜像对它实测一律 403，'
         'hf-mirror 对 /datasets/.../resolve/ 是 308 跳回原站', () {
       installDictionaryUrlCandidatesResolver();
       const String url =
@@ -99,15 +98,15 @@ void main() {
 
   group('失败归因', () {
     DioError dioError(DioErrorType type, {int? status}) => DioError(
-          requestOptions: RequestOptions(path: '/x'),
-          type: type,
-          response: status == null
-              ? null
-              : Response<void>(
-                  requestOptions: RequestOptions(path: '/x'),
-                  statusCode: status,
-                ),
-        );
+      requestOptions: RequestOptions(path: '/x'),
+      type: type,
+      response: status == null
+          ? null
+          : Response<void>(
+              requestOptions: RequestOptions(path: '/x'),
+              statusCode: status,
+            ),
+    );
 
     test('连接超时 / 停顿超时 / 连接错误各自归位', () {
       expect(

@@ -8,21 +8,32 @@
 /// - [SrsMiningAnkiRepository]：`ankiRepositoryProvider` 装饰链最外层。只有复习模块
 ///   开着且目标是「Fushi 复习」时才包这一层（见 anki_view_model.dart），模块关着时链上
 ///   根本没有它。
+///
+/// 「后台制卡」（[SrsMiningAnkiRepository] 的 `backgroundMining`，反馈 Rl00Di264R）：制卡请求
+/// 用待发队列同一套冻结 / 还原（[ForwardedMinePayloadBuilder] → [withMaterializedMiningContext]）
+/// 搬进进程级串行队列，入队即回 [MineOutcome.queued]，随后在后台依次写进复习；后台结果
+/// （失败 / 重复 / 音频缺失）经 [SrsBackgroundMineReporter] 交给装配处提示。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_new_card_positions.dart';
+import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/anki/delegating_anki_repository.dart';
+import 'package:fushi/src/anki/forwarded_mine_codec.dart';
+import 'package:fushi/src/mining/serial_job_queue.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
 
@@ -80,7 +91,25 @@ SrsSourceRef srsSourceRefFromMiningContext(AnkiMiningContext context) {
           endMs: end,
           title: title,
         );
+      case CardSourceKind.game:
+        return SrsSourceRef(SrsSourceKind.game, <String, Object?>{
+          'gameId': link.uid,
+          if (title != null) 'title': title,
+        });
+      case CardSourceKind.music:
+        return SrsSourceRef.media(
+          kind: SrsSourceKind.music,
+          mediaKey: link.uid,
+          startMs: context.clipStartMs ?? link.startMs ?? 0,
+          endMs: context.clipEndMs ?? link.endMs,
+          title: title,
+        );
     }
+  }
+  // 外部网页（app 内浏览器制卡）：没有库内定位时按网址记出处。
+  final Uri? webUrl = AnkiHandlebarRenderer.webSourceUrlOf(context.sourceUrl);
+  if (webUrl != null) {
+    return SrsSourceRef.web(webUrl.toString(), title: title);
   }
   if (context.source == AnkiMiningSource.game) {
     return SrsSourceRef(SrsSourceKind.game, <String, Object?>{
@@ -134,14 +163,29 @@ class SrsResolvedMiningDestination {
 
 /// 把偏好解析成落地位置：选中的牌组 / 笔记类型不存在（被删）时回落默认牌组 / Lapis。
 /// 没有字段的笔记类型做不出卡，同样回落 Lapis。
+///
+/// [requestedDeckName]：「高级制卡」为这一张卡选的牌组（[MiningRequestOverrides.deckName]，
+/// 复习牌组的「父::子」全名，对话框列的就是全名）。按全名在现存牌组里命中就用它，
+/// 不改偏好；命中不了（对端发来的名字 / 牌组刚被改名删掉）回落偏好里的牌组，不新建
+/// 牌组——与 Anki 后端 `resolveTargetDeck` 同口径（反馈 0h0e_6fqhY：此前 SRS 路径
+/// 完全不读这个覆写，对话框里的牌组选择是摆设）。
 Future<SrsResolvedMiningDestination> resolveSrsMiningDestination(
   SrsDbStore store,
-  SrsMiningDestination destination,
-) async {
+  SrsMiningDestination destination, {
+  String? requestedDeckName,
+}) async {
   final SrsDeckTree tree = await store.deckTree();
+  final String requested = requestedDeckName?.trim() ?? '';
+  final String? requestedId = requested.isEmpty
+      ? null
+      : tree.decks
+            .map((SrsDeckView d) => d.id)
+            .where((String id) => tree.fullName(id) == requested)
+            .firstOrNull;
   final bool wantsDeck = destination.deckId.isNotEmpty;
   final bool deckExists = wantsDeck && tree[destination.deckId] != null;
-  final String deckId = deckExists ? destination.deckId : store.defaultDeckId;
+  final String deckId =
+      requestedId ?? (deckExists ? destination.deckId : store.defaultDeckId);
 
   SrsNoteTypeView? noteType;
   bool noteTypeFellBack = false;
@@ -163,7 +207,7 @@ Future<SrsResolvedMiningDestination> resolveSrsMiningDestination(
     deckId: deckId,
     deckName: tree[deckId] == null ? null : tree.fullName(deckId),
     noteType: noteType,
-    deckFellBack: wantsDeck && !deckExists,
+    deckFellBack: requestedId == null && wantsDeck && !deckExists,
     noteTypeFellBack: noteTypeFellBack,
   );
 }
@@ -184,12 +228,38 @@ Map<String, String> srsEffectiveFieldMappings(
     f.id: stored?[f.id] ?? srsGuessFieldMapping(f.name) ?? '',
 };
 
+/// 制卡时字段实际用的映射（fieldId → 制卡占位符）：内置类型（[builtinKey] 非空）固定用各自的
+/// 默认映射（按字段键定位，不受改名影响）；其它类型走 [srsEffectiveFieldMappings]。
+/// 制卡与字段说明页（「制卡时自动填入什么」）共用这一处。
+Map<String, String> srsMiningFieldMappingsFor({
+  SrsNoteTypeView? type,
+  required String? builtinKey,
+  required String profileUid,
+  Map<String, String>? stored,
+}) {
+  final SrsBuiltinNoteTypeSpec? builtin = srsBuiltinNoteTypeSpec(builtinKey);
+  if (builtin != null) {
+    return <String, String>{
+      for (final MapEntry<String, String> e
+          in builtin.defaultFieldMappings.entries)
+        srsBuiltinFieldId(profileUid, builtin.key, e.key): e.value,
+    };
+  }
+  return type == null
+      ? const <String, String>{}
+      : srsEffectiveFieldMappings(type, stored);
+}
+
 /// 字段名归一：小写、去掉空白与常见分隔符（`Expression Audio` = `expression_audio`）。
 String _normalizeFieldName(String name) =>
     name.toLowerCase().replaceAll(RegExp(r'[\s_\-\.:/·・（）()\[\]【】「」]'), '');
 
-/// Lapis 字段按归一名索引。
+/// Lapis 字段按归一名索引；Fushi 卡片改名后的字段（`Term` / `Media` / `Source` …，
+/// [FushiCardFields]）一并收进来，导入的 Fushi 导出包（非内置）也能按名字认出。
 final Map<String, String> _lapisByNormalizedName = <String, String>{
+  for (final MapEntry<String, String> e
+      in FushiCardNoteType.defaultFieldMappings.entries)
+    _normalizeFieldName(e.key): e.value,
   for (final MapEntry<String, String> e
       in LapisNoteType.defaultFieldMappings.entries)
     _normalizeFieldName(e.key): e.value,
@@ -355,7 +425,7 @@ class SrsMiner with AnkiNoteComposer {
     );
     final String key = q.termKey;
     if (key.isEmpty) return const <SrsNoteCacheRow>[];
-    final FushiDatabase db = store.db;
+    final SrsDatabase db = store.db;
     final List<SrsNoteCacheRow> rows =
         await (db.select(db.srsNotesCache)..where(
               (n) =>
@@ -426,7 +496,7 @@ class SrsMiner with AnkiNoteComposer {
 
   /// 字段里出现 [sourceId] 的现存笔记（只是候选：调用方再解析 href 确认身份）。
   Future<List<String>> sourceNoteCandidates(String sourceId) async {
-    final FushiDatabase db = store.db;
+    final SrsDatabase db = store.db;
     final query = db.selectOnly(db.srsFieldEdits, distinct: true)
       ..addColumns(<Expression<Object>>[db.srsFieldEdits.entityId])
       ..where(
@@ -446,23 +516,41 @@ class SrsMiner with AnkiNoteComposer {
   bool _isLapis(SrsNoteTypeView? type) =>
       type == null || type.id == store.lapisNoteTypeId;
 
+  /// [type] 制卡时实际用的字段映射（fieldId → 制卡占位符），同 [_mappingFor]。
+  Map<String, String> miningFieldMappingsFor(SrsNoteTypeView type) =>
+      _mappingFor(type);
+
   /// 笔记类型 → 渲染用的字段映射（键 = fieldId）。内置类型（Lapis、Fushi 卡片）固定用
   /// 各自的默认映射（按字段键定位，不受改名影响）；其它类型用按类型存的映射。
-  Map<String, String> _mappingFor(SrsNoteTypeView? type) {
-    final SrsBuiltinNoteTypeSpec? builtin = _isLapis(type)
-        ? srsBuiltinNoteTypeSpec(kSrsBuiltinLapisKey)
-        : srsBuiltinNoteTypeSpec(type!.builtinKey);
+  Map<String, String> _mappingFor(SrsNoteTypeView? type) => _isLapis(type)
+      ? srsMiningFieldMappingsFor(
+          builtinKey: kSrsBuiltinLapisKey,
+          profileUid: store.profileUid,
+        )
+      : srsMiningFieldMappingsFor(
+          type: type,
+          builtinKey: type!.builtinKey,
+          profileUid: store.profileUid,
+          stored: destination.fieldMappingsByType[type.id],
+        );
+
+  /// [type] 的 fieldId → 字段名，给共享渲染里**按字段名**判定的规则用（制卡位置落
+  /// MiscInfo，[AnkiNoteComposer.charPositionTargetField]）：SRS 的映射键是 fieldId，
+  /// 不换回名字就永远匹配不上。内置类型（Lapis、Fushi 卡片）给字段键（`MiscInfo` /
+  /// `Source`，与映射同源、不受用户改名影响）；其它类型给字段名。
+  Map<String, String> _fieldNamesFor(SrsNoteTypeView? type) {
+    final SrsBuiltinNoteTypeSpec? builtin = srsBuiltinNoteTypeSpec(
+      _isLapis(type) ? kSrsBuiltinLapisKey : type!.builtinKey,
+    );
     if (builtin != null) {
       return <String, String>{
-        for (final MapEntry<String, String> e
-            in builtin.defaultFieldMappings.entries)
-          srsBuiltinFieldId(store.profileUid, builtin.key, e.key): e.value,
+        for (final String fieldKey in builtin.defaultFieldMappings.keys)
+          srsBuiltinFieldId(store.profileUid, builtin.key, fieldKey): fieldKey,
       };
     }
-    return srsEffectiveFieldMappings(
-      type!,
-      destination.fieldMappingsByType[type.id],
-    );
+    return <String, String>{
+      for (final SrsFieldDef f in type!.fields) f.id: f.name,
+    };
   }
 
   /// 同一套渲染（媒体存进 [media]，字段键 = fieldId）。标签、紧凑释义等其余设置
@@ -483,17 +571,18 @@ class SrsMiner with AnkiNoteComposer {
     payload: payload,
     context: context,
     keepEmpty: keepEmpty,
+    fieldNames: _fieldNamesFor(noteType),
   );
 
   List<String> _buildTags(AnkiSettings settings, AnkiMiningContext context) =>
       buildNoteTags(
-        settings.tags,
+        settings.noteTags,
         source: context.source,
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,
+        nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
         titleTag: context.bookTitleTag,
         collectionTag: context.collectionTag,
-        charPositionTag: context.charPositionTag,
       );
 
   static MineOutcome? _parse(
@@ -514,6 +603,23 @@ class SrsMiner with AnkiNoteComposer {
         stackTrace: stack,
       );
     }
+  }
+
+  /// 这张卡将落进的牌组全名（与 [mine] 同一套解析：「高级制卡」覆写 → 偏好 → 默认牌组）。
+  /// 后台制卡入队时给提示用；解析不出名字（载荷坏了 / 牌组树里没有）为空串。
+  Future<String> destinationDeckName(String rawPayloadJson) async {
+    String? requested;
+    _parse(
+      rawPayloadJson,
+      (AnkiMiningPayload p) => requested = p.overrides?.deckName,
+    );
+    final SrsResolvedMiningDestination target =
+        await resolveSrsMiningDestination(
+          store,
+          destination,
+          requestedDeckName: requested,
+        );
+    return target.deckName ?? '';
   }
 
   Future<MineOutcome> mine({
@@ -550,7 +656,11 @@ class SrsMiner with AnkiNoteComposer {
     }
 
     final SrsResolvedMiningDestination target =
-        await resolveSrsMiningDestination(store, destination);
+        await resolveSrsMiningDestination(
+          store,
+          destination,
+          requestedDeckName: payload.overrides?.deckName,
+        );
     final SrsNoteTypeView? noteType = target.noteType;
     final RenderedMinedFields rendered = await _renderFor(
       settings: settings,
@@ -628,6 +738,7 @@ class SrsMiner with AnkiNoteComposer {
       if (fields.values.every((String v) => v.trim().isEmpty)) {
         return MineOutcome.failure(
           'All fields are empty — refusing to clear an existing card.',
+          errorCode: AnkiErrorCode.allFieldsEmpty,
         );
       }
       await store.updateNote(
@@ -635,7 +746,8 @@ class SrsMiner with AnkiNoteComposer {
         fieldsById: fields,
         tags: <String>{...note.tags, ..._buildTags(settings, context)}.toList(),
       );
-      if (context.sourceLink != null) {
+      if (context.sourceLink != null ||
+          AnkiHandlebarRenderer.webSourceUrlOf(context.sourceUrl) != null) {
         await store.editFields(SrsEntityKind.note, noteId, <String, Object?>{
           SrsFieldKeys.noteSource: srsSourceRefFromMiningContext(
             context,
@@ -688,37 +800,45 @@ class SrsMiner with AnkiNoteComposer {
     };
   }
 
+  /// 单词音频引用（`data:` URI / 本地路径 / 公网 URL，即 `resolveLookupAudioUrl` 解析出、
+  /// 制卡载荷 `audio` 里带的那种）落成文件、存进 SRS 媒体：成功给存储名（字段里写
+  /// `[sound:<名>]`），下载非 200 / 网络错误给可见失败原因，空引用 / 本地文件缺失为 none。
+  /// 制卡（[_render]）与「补全单词音频」（srs_word_audio_backfill.dart）共用这一处。
+  Future<AudioFetchOutcome> storeWordAudio(String ref) async {
+    if (ref.isEmpty) return const AudioFetchOutcome.none();
+    final AnkiLocalAudio local = await materializeAnkiWordAudio(
+      ref,
+      httpFailureReason: audioFetchHttpFailureReason,
+      errorReason: audioFetchErrorReason,
+    );
+    final String? failure = local.failureReason;
+    if (failure != null) return AudioFetchOutcome.failed(failure);
+    final File? file = local.file;
+    if (file == null) return const AudioFetchOutcome.none();
+    final String? name = await _storeMediaFile(file.path);
+    return name == null
+        ? const AudioFetchOutcome.none()
+        : AudioFetchOutcome.stored(name);
+  }
+
+  /// 本地文件存进 SRS 媒体（文件不存在 / 读不了时为 null）。
+  Future<String?> _storeMediaFile(String path) async {
+    try {
+      return await media.storeFile(File(path), name: p.basename(path));
+    } on FileSystemException {
+      return null;
+    }
+  }
+
   /// 与 Anki 同步客户端同一形状：四路媒体并发准备，交给 [renderMediaPayload] 统一渲染。
   Future<RenderedMinedFields> _render({
     required AnkiSettings settings,
     required AnkiMiningPayload payload,
     required AnkiMiningContext context,
+    required Map<String, String> fieldNames,
     bool keepEmpty = false,
   }) async {
-    Future<String?> addFile(String path) async {
-      try {
-        return await media.storeFile(File(path), name: p.basename(path));
-      } on FileSystemException {
-        return null;
-      }
-    }
-
-    Future<AudioFetchOutcome> wordAudio() async {
-      if (payload.audio.isEmpty) return const AudioFetchOutcome.none();
-      final AnkiLocalAudio local = await materializeAnkiWordAudio(
-        payload.audio,
-        httpFailureReason: audioFetchHttpFailureReason,
-        errorReason: audioFetchErrorReason,
-      );
-      final String? failure = local.failureReason;
-      if (failure != null) return AudioFetchOutcome.failed(failure);
-      final File? file = local.file;
-      if (file == null) return const AudioFetchOutcome.none();
-      final String? name = await addFile(file.path);
-      return name == null
-          ? const AudioFetchOutcome.none()
-          : AudioFetchOutcome.stored(name);
-    }
+    Future<String?> addFile(String path) => _storeMediaFile(path);
 
     Future<String?> dictionaryMedia(DictionaryMedia m) async {
       final String name = ankiDictionaryMediaCacheFilename(
@@ -737,7 +857,7 @@ class SrsMiner with AnkiNoteComposer {
       context.sentenceAudioPath != null && !context.synchronizedVideo
           ? addFile(context.sentenceAudioPath!)
           : Future<String?>.value(),
-      wordAudio(),
+      storeWordAudio(payload.audio),
       buildDictionaryMediaTags(payload.dictionaryMedia, dictionaryMedia),
     ]);
     final String? cover = results[0] as String?;
@@ -753,6 +873,7 @@ class SrsMiner with AnkiNoteComposer {
       dictionaryMediaTags: results[3]! as Map<String, String>,
       audioWarning: audio.failureReason,
       keepEmpty: keepEmpty,
+      fieldNames: fieldNames,
     );
   }
 }
@@ -763,6 +884,11 @@ typedef SrsMinerResolver = Future<SrsMiner?> Function();
 /// 打开一条 SRS 笔记的编辑页（导航器不可用时返回 false）。
 typedef SrsNoteOpener = Future<bool> Function(String noteId);
 
+/// 一张后台制卡写完（或没写成）后的结果：[expression] 是提示用的词条（取不到用句子），
+/// [outcome] 是那次写入的真实结果（成功 / 重复 / 失败）。
+typedef SrsBackgroundMineReporter =
+    void Function(String expression, MineOutcome outcome);
+
 /// `ankiRepositoryProvider` 装饰链里的 SRS 层（见文件头）。挖词目标 = Fushi 复习时
 /// 制卡链路上**会写卡或依赖 Anki 连接**的操作一律走复习，不再碰 Anki：
 ///
@@ -770,9 +896,12 @@ typedef SrsNoteOpener = Future<bool> Function(String noteId);
 ///   整数句柄 = [SrsIds.ankiNumericId]（与 AnkiConnect 兼容端点同一个派生）。
 /// - 「回到出处改卡」：先在复习里找带这个出处的笔记；复习里没有才交给 Anki——出处
 ///   链接可能来自切换前制进 Anki 的卡，那张卡本来就在 Anki 里。
-/// - Anki 专属能力（建笔记类型 / 牌组、改模板样式、媒体去重、新卡重排、同步片段
-///   模板探测）：在此模式下关闭（能力位为 false / 明确报不可用），设置页对应入口
-///   已隐藏。
+/// - 新卡按词频重排：走复习（[listNewCards] / [setNewCardPositions] 读写卡片的
+///   新卡位置，见 [SrsDbStore.newCardsInDeck]），只有手动重排。复习不需要制卡后自动重排：
+///   牌组「新卡顺序 = 按词频」时出卡直接按卡上的词频名次排；手动重排写的位置用于
+///   「新卡顺序 = 按位置」的牌组，以及按词频时没有名次的卡。
+/// - Anki 专属能力（建笔记类型 / 牌组、改模板样式、媒体去重、同步片段模板探测）：
+///   在此模式下关闭（能力位为 false / 明确报不可用），设置页对应入口已隐藏。
 /// - 只读写本机偏好的设置读写（loadSettings / saveSettings / updateSettings /
 ///   readSettingsJson）照旧委托：标签、允许重复等共用设置就存在那里。
 /// - fetchConfiguration：照旧委托（只读 Anki 的牌组 / 笔记类型清单，不写任何东西；
@@ -783,12 +912,49 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     required SrsMinerResolver miner,
     SrsNoteOpener? openNote,
     void Function()? onCardsAdded,
+    bool Function()? backgroundMining,
+    SrsBackgroundMineReporter? onBackgroundOutcome,
+    ForwardedMinePayloadBuilder? payloadBuilder,
   }) : _miner = miner,
        _openNote = openNote,
-       _onCardsAdded = onCardsAdded;
+       _onCardsAdded = onCardsAdded,
+       _backgroundMining = backgroundMining,
+       _onBackgroundOutcome = onBackgroundOutcome,
+       _payloadBuilder = payloadBuilder ?? ForwardedMinePayloadBuilder();
 
   final SrsMinerResolver _miner;
   final SrsNoteOpener? _openNote;
+
+  /// 「后台制卡」开关，每次制卡现读（改完立即生效，不必重建装饰链）。null = 恒同步
+  /// （互联主机替对端制卡、浏览器扩展：对端要的是确定的结果，不能回「已入队」）。
+  final bool Function()? _backgroundMining;
+
+  /// 后台写入的结果出口（装配处弹提示）。成功同样回调：音频缺失要提示。
+  final SrsBackgroundMineReporter? _onBackgroundOutcome;
+
+  /// 冻结请求：与待发队列 / 互联转发同一个打包器（媒体全读成字节）。
+  final ForwardedMinePayloadBuilder _payloadBuilder;
+
+  /// 后台写入队列：进程级（provider 重建会换掉仓库实例，已入队的卡不能跟着丢、
+  /// 也不能两条队列并发写同一个库），串行、永不毒化（[SerialJobQueue]）。
+  static SerialJobQueue _backgroundQueue = SerialJobQueue();
+
+  /// 测试用：直接拿到后台队列（在它前面插一个挂起的任务，验证「入队即返回」）。
+  @visibleForTesting
+  static SerialJobQueue get debugBackgroundQueue => _backgroundQueue;
+
+  /// 测试用：等已入队的后台写入全部结束。
+  @visibleForTesting
+  static Future<void> debugBackgroundIdle() => _backgroundQueue.enqueue<void>(
+    () async {},
+    buildFailure: (Object error, StackTrace stack) {},
+  );
+
+  /// 测试用：换一条新的后台队列（上一个用例挂住的任务不串到下一个）。
+  @visibleForTesting
+  static void debugResetBackgroundQueue() {
+    _backgroundQueue = SerialJobQueue();
+  }
 
   /// 制卡成功写进复习后调用（装配处递增 `srsRevisionProvider`，牌组列表与首页
   /// 复习条的计数随之重读）。
@@ -823,6 +989,17 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
   }) async {
     final SrsMiner? miner = await _miner();
     if (miner == null) return MineOutcome.failure(_unavailable);
+    if (_backgroundMining?.call() ?? false) {
+      return _enqueueBackground(miner, rawPayloadJson, context);
+    }
+    return _mineNow(miner, rawPayloadJson, context);
+  }
+
+  Future<MineOutcome> _mineNow(
+    SrsMiner miner,
+    String rawPayloadJson,
+    AnkiMiningContext context,
+  ) async {
     final MineOutcome outcome = await miner.mine(
       settings: await inner.loadSettings(),
       rawPayloadJson: rawPayloadJson,
@@ -830,6 +1007,75 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     );
     if (outcome.result == MineResult.success) _onCardsAdded?.call();
     return outcome;
+  }
+
+  /// 后台制卡：冻结 → 入队 → 立即回 [MineOutcome.queued]。
+  ///
+  /// 冻结必须在返回前完成（与待发队列同一条约束）：调用方在 [mineEntry] 返回后就清理
+  /// 临时封面 / 句子音频。冻结失败不假装入队，原样报失败。制卡器在入队这一刻取定：
+  /// 卡落进点「制卡」时那份配置的复习，排队期间切 Profile 不改道。
+  ///
+  /// 后台那一步与同步制卡是同一个 [SrsMiner.mine]（查重、落点解析、首字段为空拒建都在
+  /// 那里），只是结果改由 [_onBackgroundOutcome] 交出去——连续挖同一个词时第二张在
+  /// 后台被判重复，同样会被提示，而不是静默丢掉。
+  Future<MineOutcome> _enqueueBackground(
+    SrsMiner miner,
+    String rawPayloadJson,
+    AnkiMiningContext context,
+  ) async {
+    final ForwardedMinePayload payload;
+    final String deckName;
+    try {
+      payload = await _payloadBuilder.build(
+        rawPayloadJson: rawPayloadJson,
+        context: context,
+      );
+      deckName = await miner.destinationDeckName(rawPayloadJson);
+    } catch (e, stack) {
+      return MineOutcome.failure(
+        'Fushi review: could not queue the card: $e',
+        error: e,
+        stackTrace: stack,
+      );
+    }
+    final String expression = _displayExpression(rawPayloadJson, context);
+    unawaited(
+      _backgroundQueue
+          .enqueue<MineOutcome>(
+            () => withMaterializedMiningContext<MineOutcome>(
+              payload,
+              (String raw, AnkiMiningContext ctx) => _mineNow(miner, raw, ctx),
+            ),
+            buildFailure: (Object e, StackTrace stack) => MineOutcome.failure(
+              'Fushi review: $e',
+              error: e,
+              stackTrace: stack,
+            ),
+          )
+          // 结果出口（提示）自身抛的异常不在这里吞：照常进 zone 的未处理错误（错误日志）。
+          .then(
+            (MineOutcome outcome) =>
+                _onBackgroundOutcome?.call(expression, outcome),
+          ),
+    );
+    return MineOutcome.queued(deckName: deckName);
+  }
+
+  /// 提示用的词条：取 fields 的 expression，取不到用句子（与待发队列列表同口径）。
+  static String _displayExpression(
+    String rawPayloadJson,
+    AnkiMiningContext context,
+  ) {
+    try {
+      final Object? json = jsonDecode(rawPayloadJson);
+      if (json is Map) {
+        final String expression = (json['expression'] as String?)?.trim() ?? '';
+        if (expression.isNotEmpty) return expression;
+      }
+    } on FormatException {
+      // 载荷坏了：后台那一步会按「载荷解析失败」报出来，这里只取句子。
+    }
+    return context.sentence.trim();
   }
 
   @override
@@ -931,6 +1177,21 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
   @override
   Future<bool> forgetMinedCard(String expression) async => false;
 
+  /// 反馈 JNyykxvuY9：删复习笔记走 `SrsDbStore.deleteNote`（Rust 核心记一条删除
+  /// 操作，经复习同步 v2 成为墓碑传到各设备），不是物理删行。
+  @override
+  bool get canDeleteMinedNotes => true;
+
+  @override
+  Future<bool> deleteMinedNote(int noteId) async {
+    final SrsMiner miner = await _requireMiner();
+    final String? id = await _noteIdOf(miner, noteId);
+    if (id == null) return false;
+    await miner.store.deleteNote(id);
+    _onCardsAdded?.call();
+    return true;
+  }
+
   /// 只返回明确已不在复习里的句柄（复习不可用时返回空集：不知道 ≠ 已删）。
   @override
   Future<Set<int>> findDeletedNotes(Set<int> noteIds) async {
@@ -943,6 +1204,14 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
   }
 
   // ------------------------------------------------------------ 打开笔记
+
+  /// BUG-3790：笔记住在 Fushi 复习里，界面不能再说「Anki」。
+  @override
+  MinedNoteHome get minedNoteHome => MinedNoteHome.fushiReview;
+
+  /// 打开走装配处注入的复习笔记打开器；没注入就打不开。
+  @override
+  bool get canOpenMinedNote => _openNote != null;
 
   @override
   Future<bool> openNoteInAnki(int noteId) async {
@@ -1115,19 +1384,145 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     bool Function()? shouldCancel,
   }) async => null;
 
-  @override
-  bool get supportsDeckReposition => false;
+  // ------------------------------------------------------------ 新卡按词频重排
 
   @override
-  Future<List<AnkiCardInfo>> listNewCards(String deckName) async =>
-      throw UnsupportedError(
-        'Anki deck reposition is off while mining into Fushi review.',
-      );
+  bool get supportsDeckReposition => true;
 
+  /// 重排写的是本机复习库（[SrsDbStore]），没有「连着的那一端此刻能不能写」这回事：
+  /// 恒为 true。**必须与 [supportsDeckReposition] 成对覆盖**——基类
+  /// [DelegatingAnkiRepository] 把探测委派给 inner（Anki 后端），不覆盖就会拿
+  /// AnkiConnect / AnkiDroid 的能力来判复习，复习下重排被误判为不支持（BUG-4122）。
+  @override
+  Future<bool> probeDeckReposition() async => true;
+
+  /// 复习出卡按牌组「新卡顺序」直接读卡上的词频名次，刚挖的卡立刻就在对的位置：不需要
+  /// 制卡后改写新卡位置（那样每挖一个词都要同步一批位置修改记录）。
+  @override
+  bool get supportsAutoReposition => false;
+
+  /// [deckName]（复习牌组全名，含子牌组）里的新卡，形状对齐 AnkiConnect `cardsInfo`：
+  /// 整数 id = [SrsIds.ankiNumericId]，`due` = 此刻的出卡位置（从没排过的卡是临时编号，
+  /// `hasStoredPosition` 为 false），`fields` 只给重排取 rank 用的三种角色（见
+  /// [srsRepositionRoleFields]）。
+  @override
+  Future<List<AnkiCardInfo>> listNewCards(String deckName) async {
+    final SrsMiner miner = await _requireMiner();
+    final List<SrsNewCardEntry> entries = await miner.store.newCardsInDeck(
+      deckName,
+    );
+    final Map<String, Map<String, String>> mappingByType =
+        <String, Map<String, String>>{};
+    return <AnkiCardInfo>[
+      for (final SrsNewCardEntry e in entries)
+        AnkiCardInfo(
+          cardId: SrsIds.ankiNumericId(e.card.id),
+          noteId: SrsIds.ankiNumericId(e.note.id),
+          ord: e.ord,
+          due: e.position,
+          hasStoredPosition: e.card.newPosition != null,
+          type: 0,
+          queue: e.card.suspended ? -1 : 0,
+          modelName: e.noteType.name,
+          deckName: deckName,
+          fields: srsRepositionRoleFields(
+            e.note,
+            e.noteType,
+            mappingByType.putIfAbsent(
+              e.noteType.id,
+              () => miner.miningFieldMappingsFor(e.noteType),
+            ),
+          ),
+        ),
+    ];
+  }
+
+  /// 写回前重校验只要 id：只读卡片缓存的 ID 列，不读笔记、不物化。
+  @override
+  Future<Set<int>> newCardIdsIn(String deckName) async {
+    final SrsMiner miner = await _requireMiner();
+    return <int>{
+      for (final String id in await miner.store.newCardIdsInDeck(deckName))
+        SrsIds.ankiNumericId(id),
+    };
+  }
+
+  /// 复习的新卡位置只是排序键、每改一张就是一条要同步的修改记录：只移动必须移动的卡
+  /// （[srsMinimalMovePositions]），不像 Anki 那样每次连续重编 1..N。
+  @override
+  List<int> assignNewCardPositions(List<AnkiCardInfo> ordered) =>
+      srsMinimalMovePositions(<int?>[
+        for (final AnkiCardInfo c in ordered)
+          c.hasStoredPosition ? c.due : null,
+      ]);
+
+  /// 写回新卡位置。此刻已不是新卡（学过了 / 删了）或找不到的卡记进 failures、不写。
   @override
   Future<AnkiCardDueWriteResult> setNewCardPositions(
     List<AnkiCardDueUpdate> updates,
-  ) async => throw UnsupportedError(
-    'Anki deck reposition is off while mining into Fushi review.',
-  );
+  ) async {
+    if (updates.isEmpty) {
+      return const AnkiCardDueWriteResult(
+        written: 0,
+        failures: <int, String>{},
+      );
+    }
+    final SrsMiner miner = await _requireMiner();
+    final Map<String, int> positions = <String, int>{};
+    final Map<String, int> handleOf = <String, int>{};
+    final Map<int, String> failures = <int, String>{};
+    final List<String?> ids = await miner.store.cardIdsForAnkiNumericIds(<int>[
+      for (final AnkiCardDueUpdate u in updates) u.cardId,
+    ]);
+    for (int i = 0; i < updates.length; i++) {
+      final AnkiCardDueUpdate u = updates[i];
+      final String? id = ids[i];
+      if (id == null) {
+        failures[u.cardId] = 'card not found in Fushi review';
+        continue;
+      }
+      positions[id] = u.due;
+      handleOf[id] = u.cardId;
+    }
+    final Set<String> accepted = await miner.store.setNewCardPositions(
+      positions,
+    );
+    for (final String id in positions.keys) {
+      if (!accepted.contains(id)) {
+        failures[handleOf[id]!] = 'card is no longer new';
+      }
+    }
+    return AnkiCardDueWriteResult(written: accepted.length, failures: failures);
+  }
+}
+
+/// 重排取 rank 用的字段：按这条笔记的类型**实际制卡用的映射**（[mapping]，fieldId →
+/// 制卡占位符）找出表达式 / 读音 / 词频序三种角色落在哪个字段，以 Lapis 字段名
+/// （`Expression` / `ExpressionReading` / `FreqSort`）交出去。`resolveNoteFieldRoles`
+/// 的 Lapis 兜底按这些名字认，于是内置类型改过字段名、自建类型字段叫「正面 / 单词」
+/// 都能认出词形，而不是落到「第一个字段」或整批判无词频。表达式没有映射时退到
+/// 类型的词形字段，再退到第一个字段。
+Map<String, String> srsRepositionRoleFields(
+  SrsNoteView note,
+  SrsNoteTypeView noteType,
+  Map<String, String> mapping,
+) {
+  String? byToken(String token) {
+    for (final SrsFieldDef f in noteType.fields) {
+      if ((mapping[f.id] ?? '').contains(token)) return f.id;
+    }
+    return null;
+  }
+
+  final String? expression =
+      byToken('{expression}') ??
+      noteType.termFieldId ??
+      noteType.fields.firstOrNull?.id;
+  final String? reading = byToken('{reading}');
+  final String? rank = byToken('{frequency-harmonic-rank}');
+  return <String, String>{
+    'Expression': expression == null ? '' : note.field(expression),
+    if (reading != null) 'ExpressionReading': note.field(reading),
+    if (rank != null) 'FreqSort': note.field(rank),
+  };
 }

@@ -2,8 +2,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/media_type.dart';
+import 'package:fushi/src/media/types/reader_media_type.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/media_source_picker_dialog_page.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -18,9 +20,7 @@ class PickerTestAppModel extends AppModel {
   Locale get appLocale => const Locale('en');
 
   @override
-  MediaSource getCurrentSourceForMediaType({
-    required MediaType mediaType,
-  }) {
+  MediaSource getCurrentSourceForMediaType({required MediaType mediaType}) {
     return mediaSources[mediaType]!.values.first;
   }
 
@@ -36,14 +36,9 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  Widget buildApp({
-    required AppModel appModel,
-    required Widget home,
-  }) {
+  Widget buildApp({required AppModel appModel, required Widget home}) {
     return ProviderScope(
-      overrides: [
-        appProvider.overrideWith((ref) => appModel),
-      ],
+      overrides: [appProvider.overrideWith((ref) => appModel)],
       child: TranslationProvider(
         child: MaterialApp(
           builder: (context, child) => child ?? const SizedBox.shrink(),
@@ -65,9 +60,7 @@ void main() {
     await tester.pumpWidget(
       buildApp(
         appModel: appModel,
-        home: MediaSourcePickerDialogPage(
-          mediaType: ReaderMediaType.instance,
-        ),
+        home: MediaSourcePickerDialogPage(mediaType: ReaderMediaType.instance),
       ),
     );
 

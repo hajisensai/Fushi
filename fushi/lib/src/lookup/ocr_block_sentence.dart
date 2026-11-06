@@ -139,3 +139,9 @@ String? ocrBlockSentenceAt(
   if (sentence.isEmpty || sentence.length > maxLength) return null;
   return sentence;
 }
+
+/// 没有所属块、只有被点那一行 [line] 时（拍照查词 / iOS 截屏识字的系统 OCR 只给行）
+/// 的制卡句子：行里包含 UTF-16 下标 [index] 那个字的那一句，截不出时回落为整行
+/// （BUG-2900 口径）。
+String ocrSentenceInLine(String line, int index) =>
+    ocrBlockSentenceAt(line, index) ?? line.trim();

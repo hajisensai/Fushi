@@ -1,0 +1,1797 @@
+/// 「AI 助手」对话界面（spec `docs/specs/2026-10-26-ai-operations-agent-design.md`
+/// §5、§6.2、§6.4）：整页、手机半屏浮层、桌面靠边侧栏三种外壳共用
+/// [AiAgentConversation]，渲染同一个 [AiAgentController] 的会话——从浮层展开成
+/// 整页不丢对话。
+///
+/// 条目按 [AgentEntry] 渲染：写操作带「改前 → 改后」与「撤销」；不可逆 / 装扩展
+/// 的确认卡片只能在这里点（模型代答不了）；候选卡片交给用户点选。
+library;
+
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:fushi_engine/ai/agent/agent_session.dart';
+import 'package:fushi_engine/ai/agent/agent_tool.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:intl/intl.dart' show Intl, NumberFormat;
+import 'package:material_ui/material_ui.dart';
+
+import 'package:fushi/src/ai/agent/ai_agent_controller.dart';
+import 'package:fushi/src/ai/agent/ai_agent_conversation_controller.dart';
+import 'package:fushi/src/ai/agent/remote_ai_agent_session.dart';
+import 'package:fushi/src/sync/interconnect_assistant_client.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_engine/sync/assistant/host_assistant.dart';
+import 'package:fushi_engine/sync/assistant/video_acquisition_assistant_host.dart'
+    show
+        kHostAssistantReasonDisabled,
+        kHostAssistantReasonNoProvider,
+        kHostAssistantReasonNotReady;
+import 'package:fushi/src/ai/agent/ai_agent_in_process_ops.dart';
+import 'package:fushi/src/models/preferences_repository.dart'
+    show kAiAgentExecutorLocal, kAiAgentExecutorRemote;
+import 'package:fushi/src/ocr/screen_ocr_language.dart';
+import 'package:fushi/src/ocr/screen_text_capture.dart'
+    show screenTextCaptureSupported;
+import 'package:fushi/src/ops/app_op_context.dart';
+import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
+    show aiFailureText;
+import 'package:fushi/src/pages/implementations/ai_agent_screen_text.dart';
+import 'package:fushi/src/pages/implementations/ai_agent_sessions.dart';
+import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show fushiFloatingPillDecoration;
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+/// 侧栏 / 浮层判宽阈值：宽于它的窗口用靠边侧栏，窄的用底部半屏面板。
+const double kAiAgentSidePanelBreakpoint = 840;
+
+/// 浮层 / 侧栏里对话区可用高度低于它（横屏手机弹出软键盘时只剩 130~175dp）就进
+/// 「紧凑」排版：藏掉标题栏和上下文 chip，只留对话列表 + 输入栏。否则标题栏 + chip
+/// 把高度吃光，输入框被裁掉，用户既输入不了也滚不动。
+const double kAiAgentTightHeight = 200;
+
+/// 紧凑排版里上下文 / 屏幕附件 chip 收进输入行左侧，最多占输入行宽度的这个比例，
+/// 剩下的留给输入框。
+const double kAiAgentTightAttachmentWidthFactor = 0.4;
+
+/// 装扩展类操作（D9）：确认卡片换成「要安装这个扩展吗？」的标题。
+final RegExp _kExtensionInstallOp = RegExp(
+  r'^online\.(extension\.(install|update)\w*|repo\.add)$',
+);
+
+/// 打开 AI 助手（悬浮球「AI」、首页卡片、快捷键共用这一个入口）。
+///
+/// 没指派提供商时不开会话、不发请求：提示并引导去「设置 › 模型 › LLM」
+/// （BUG-2694 的约定）。窄屏弹底部半屏面板，宽屏从右侧滑出侧栏。
+Future<void> openAiAgent(
+  BuildContext context, {
+  AgentUiContext? uiContext,
+}) async {
+  final _AiAgentResolution? resolution = await _resolveAiAgentConversation(
+    context,
+  );
+  if (resolution == null || !context.mounted) return;
+  if (MediaQuery.sizeOf(context).width >= kAiAgentSidePanelBreakpoint) {
+    await _showSidePanel(context, resolution, uiContext);
+    return;
+  }
+  await adaptiveModalSheet<void>(
+    context: context,
+    expandable: true,
+    builder: (BuildContext sheetContext) => SizedBox(
+      height: MediaQuery.sizeOf(sheetContext).height * 0.55,
+      child: _AiAgentExecutorSwitcher(
+        initial: resolution,
+        builder:
+            (
+              BuildContext _,
+              AiAgentConversationController controller,
+              _AiAgentExecutorToggle? toggle,
+            ) => AiAgentConversation(
+              controller: controller,
+              uiContext: uiContext,
+              compact: true,
+              onSwitchExecutor: toggle?.onSwitch,
+              switchExecutorTooltip: toggle?.tooltip,
+              onExpand: () {
+                Navigator.of(sheetContext).pop();
+                unawaited(pushAiAgentPage(context, uiContext: uiContext));
+              },
+            ),
+      ),
+    ),
+  );
+}
+
+/// 整页（浮层右上角「展开成整页」也走这里）。
+Future<void> pushAiAgentPage(
+  BuildContext context, {
+  AgentUiContext? uiContext,
+}) async {
+  final _AiAgentResolution? resolution = await _resolveAiAgentConversation(
+    context,
+  );
+  if (resolution == null || !context.mounted) return;
+  await Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (BuildContext _) => _AiAgentExecutorSwitcher(
+        initial: resolution,
+        builder:
+            (
+              BuildContext _,
+              AiAgentConversationController controller,
+              _AiAgentExecutorToggle? toggle,
+            ) => AiAgentPage(
+              controller: controller,
+              uiContext: uiContext,
+              onSwitchExecutor: toggle?.onSwitch,
+              switchExecutorTooltip: toggle?.tooltip,
+            ),
+      ),
+    ),
+  );
+}
+
+/// 一次解析的结果：用哪个控制器；本机配了 AI、又有已配对的「下载执行设备」时界面上
+/// 出「本地 AI / 远端 AI」切换（[canSwitch]，BUG-4067）。
+class _AiAgentResolution {
+  const _AiAgentResolution(
+    this.controller, {
+    required this.canSwitch,
+    this.remoteLabel,
+  });
+
+  final AiAgentConversationController controller;
+  final bool canSwitch;
+
+  /// 执行设备的名字（切换按钮的提示文字用）。
+  final String? remoteLabel;
+}
+
+/// 本机还是远端（spec §6.5）——**只在这里决定**，[openAiAgent] / [pushAiAgentPage] /
+/// 界面上的「本地 AI / 远端 AI」切换共用：
+///
+/// - 用户在界面上选过（偏好 `ai_agent_executor`）就按选的来；[executor] 非空 = 此刻
+///   切换要的那一边（切换失败时返回 null，调用方保持现状）；
+/// - 没选过：本机给「AI 助手」指派了提供商 → 本机会话；否则「下载执行设备」（与 AI
+///   下视频远端同一个设置）指向一台已配对设备、且它宣告了 `agent` → 整场会话交给它
+///   跑（复用正在用的那场，浮层 / 整页不丢对话）；
+/// - 远端连不上 / 开不了 → 如实报原因。本机没配 AI 时**不**退回本机；本机配了 AI、
+///   只是上次选了远端时开本机那场（切换按钮还在，用户能再切）；
+/// - 都没有 → 保持现状：引导去「设置 › 模型 › LLM」，不发任何请求。
+Future<_AiAgentResolution?> _resolveAiAgentConversation(
+  BuildContext context, {
+  String? executor,
+}) async {
+  final AiAgentController? local = AiAgentController.instanceOrNull;
+  if (local == null) return null;
+  final opContext = appOpContext;
+  final String url =
+      opContext?.appModel.prefsRepo.downloadExecutionHostUrl ?? '';
+  SyncRepository? repo;
+  FushiClientUrl? paired;
+  if (opContext != null && url.isNotEmpty) {
+    repo = SyncRepository(opContext.appModel.database);
+    // 解绑 / 停用了那台设备：偏好停在死地址上，按「没设执行设备」处理（与下载
+    // 入口 resolveDownloadExecution 同一判据）。
+    paired = interconnectPeerRepresentativeOf(
+      await repo.getFushiClientUrls(),
+      url,
+    );
+  }
+  if (!context.mounted) return null;
+  final bool localReady = local.hasProvider;
+  final String? remoteLabel = paired == null ? null : paired.deviceName ?? url;
+  final bool canSwitch = localReady && paired != null;
+  final String wanted =
+      executor ?? opContext?.appModel.prefsRepo.aiAgentExecutor ?? '';
+
+  Future<_AiAgentResolution?> openLocal() async {
+    if (!localReady) {
+      await _guideToProviderSettings(context);
+      return null;
+    }
+    await local.syncWithActiveProfile();
+    return _AiAgentResolution(
+      local,
+      canSwitch: canSwitch,
+      remoteLabel: remoteLabel,
+    );
+  }
+
+  final bool useRemote =
+      paired != null &&
+      wanted != kAiAgentExecutorLocal &&
+      (wanted == kAiAgentExecutorRemote || !localReady);
+  if (!useRemote) {
+    if (executor == kAiAgentExecutorRemote) {
+      // 要切到远端，可执行设备已经解绑了。
+      _showAiAgentMessage(
+        context,
+        t.ai_agent_remote_unreachable(device: remoteLabel ?? url),
+      );
+      return null;
+    }
+    return openLocal();
+  }
+  final RemoteAiAgentSession? remote = await _openRemoteAiAgent(
+    context,
+    repo: repo!,
+    url: url,
+    deviceLabel: remoteLabel!,
+    locale: opContext!.appModel.appLocale.toLanguageTag(),
+  );
+  if (!context.mounted) return null;
+  if (remote != null) {
+    return _AiAgentResolution(
+      remote,
+      canSwitch: canSwitch,
+      remoteLabel: remoteLabel,
+    );
+  }
+  // 原因已经报过了。界面上要切过去的：保持现状；入口打开的：本机能用就开本机。
+  if (executor != null || !localReady) return null;
+  return openLocal();
+}
+
+/// 在「下载执行设备」上开（或复用）一场远端会话；开不了时提示原因、返回 null。
+Future<RemoteAiAgentSession?> _openRemoteAiAgent(
+  BuildContext context, {
+  required SyncRepository repo,
+  required String url,
+  required String deviceLabel,
+  required String locale,
+}) async {
+  final RemoteAiAgentSession? existing = RemoteAiAgentSession.active;
+  if (existing != null && existing.isUsable && existing.target.baseUrl == url) {
+    return existing;
+  }
+  existing?.dispose();
+  final InterconnectAssistantClient client = InterconnectAssistantClient(
+    repo: repo,
+  );
+  final HostAssistantTarget? target = await client.probeUrl(url);
+  if (!context.mounted) return null;
+  if (target == null) {
+    _showAiAgentMessage(
+      context,
+      t.ai_agent_remote_unreachable(device: deviceLabel),
+    );
+    return null;
+  }
+  if (!target.supports(kHostAssistantFeatureAgent)) {
+    _showAiAgentMessage(
+      context,
+      _remoteBlockedText(
+        target.label,
+        target.reasonFor(kHostAssistantFeatureAgent),
+      ),
+    );
+    return null;
+  }
+  try {
+    final RemoteAiAgentSession session = await RemoteAiAgentSession.open(
+      client: client,
+      target: target,
+      locale: locale,
+    );
+    if (!context.mounted) {
+      session.dispose();
+      return null;
+    }
+    RemoteAiAgentSession.active = session;
+    return session;
+  } on HostAssistantException catch (error) {
+    if (context.mounted) {
+      _showAiAgentMessage(
+        context,
+        error.code == 'http_409'
+            ? _remoteBlockedText(
+                target.label,
+                error.detail ?? kHostAssistantReasonNotReady,
+              )
+            : t.ai_agent_remote_unreachable(device: target.label),
+      );
+    }
+    return null;
+  } on Object {
+    if (context.mounted) {
+      _showAiAgentMessage(
+        context,
+        t.ai_agent_remote_unreachable(device: target.label),
+      );
+    }
+    return null;
+  }
+}
+
+/// 「本地 AI / 远端 AI」切换按钮要的东西。
+class _AiAgentExecutorToggle {
+  const _AiAgentExecutorToggle({required this.onSwitch, required this.tooltip});
+
+  /// null = 正在切换（按钮暂时不可点）。
+  final VoidCallback? onSwitch;
+  final String tooltip;
+}
+
+/// 「本地 AI」「远端 AI」切换的外壳（BUG-4067）：持有当前控制器，切换时重新解析
+/// 另一边、记住用户的选择（偏好 `ai_agent_executor`），对话区淡入淡出换成另一边的
+/// 那场。切走的那一边不关：本机会话是单例，远端会话留在 [RemoteAiAgentSession.active]，
+/// 切回来接着说。切换失败（远端连不上）原因已提示，保持现状。
+class _AiAgentExecutorSwitcher extends StatefulWidget {
+  const _AiAgentExecutorSwitcher({
+    required this.initial,
+    required this.builder,
+  });
+
+  final _AiAgentResolution initial;
+  final Widget Function(
+    BuildContext context,
+    AiAgentConversationController controller,
+    _AiAgentExecutorToggle? toggle,
+  )
+  builder;
+
+  @override
+  State<_AiAgentExecutorSwitcher> createState() =>
+      _AiAgentExecutorSwitcherState();
+}
+
+class _AiAgentExecutorSwitcherState extends State<_AiAgentExecutorSwitcher> {
+  late AiAgentConversationController _controller = widget.initial.controller;
+  bool _switching = false;
+
+  bool get _remote => _controller.executorLabel != null;
+
+  Future<void> _switch() async {
+    if (_switching) return;
+    setState(() => _switching = true);
+    final String target = _remote
+        ? kAiAgentExecutorLocal
+        : kAiAgentExecutorRemote;
+    final _AiAgentResolution? next = await _resolveAiAgentConversation(
+      context,
+      executor: target,
+    );
+    if (next != null) {
+      await appOpContext?.appModel.prefsRepo.setAiAgentExecutor(target);
+    }
+    if (!mounted) return;
+    setState(() {
+      _switching = false;
+      if (next != null) _controller = next.controller;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final _AiAgentExecutorToggle? toggle = widget.initial.canSwitch
+        ? _AiAgentExecutorToggle(
+            onSwitch: _switching ? null : () => unawaited(_switch()),
+            tooltip: _remote
+                ? t.ai_agent_executor_use_local
+                : t.ai_agent_executor_use_remote(
+                    device: widget.initial.remoteLabel ?? '',
+                  ),
+          )
+        : null;
+    return AnimatedSwitcher(
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      switchInCurve: FushiMotion.enter,
+      switchOutCurve: FushiMotion.exit,
+      child: KeyedSubtree(
+        key: ObjectKey(_controller),
+        child: widget.builder(context, _controller, toggle),
+      ),
+    );
+  }
+}
+
+String _remoteBlockedText(String device, String reason) => switch (reason) {
+  kHostAssistantReasonNoProvider => t.ai_agent_remote_no_provider(
+    device: device,
+  ),
+  kHostAssistantReasonNotReady => t.ai_agent_remote_not_ready(device: device),
+  kHostAssistantReasonDisabled => t.ai_agent_remote_disabled(device: device),
+  _ => t.ai_agent_remote_unsupported(device: device),
+};
+
+void _showAiAgentMessage(BuildContext context, String message) {
+  final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(context);
+  if (messenger == null) {
+    FushiToast.show(msg: message);
+    return;
+  }
+  messenger.showSnackBar(
+    FushiSnackBar(content: Text(message), duration: const Duration(seconds: 6)),
+  );
+}
+
+Future<void> _guideToProviderSettings(BuildContext context) async {
+  final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(context);
+  if (messenger == null) {
+    FushiToast.show(msg: t.ai_agent_no_provider);
+    return;
+  }
+  messenger.showSnackBar(
+    FushiSnackBar(
+      content: Text(t.ai_agent_no_provider),
+      duration: const Duration(seconds: 8),
+      action: SnackBarAction(
+        label: t.ai_agent_open_settings,
+        onPressed: () {
+          final opContext = appOpContext;
+          if (opContext != null) {
+            unawaited(
+              openAiAgentSettingsRow(opContext, kAiAgentProviderSettingsItem),
+            );
+          } else {
+            unawaited(pushAiSettingsPage(context));
+          }
+        },
+      ),
+    ),
+  );
+}
+
+Future<void> _showSidePanel(
+  BuildContext context,
+  _AiAgentResolution resolution,
+  AgentUiContext? uiContext,
+) {
+  return showGeneralDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+    barrierColor: Colors.black.withValues(alpha: 0.12),
+    transitionDuration: fushiMotionDuration(context, FushiMotion.medium),
+    pageBuilder:
+        (
+          BuildContext dialogContext,
+          Animation<double> animation,
+          Animation<double> secondaryAnimation,
+        ) {
+          final ColorScheme scheme = Theme.of(dialogContext).colorScheme;
+          // 软键盘把面板整块抬到键盘上方（对话框路由不会自己让位）。
+          final double keyboard = MediaQuery.viewInsetsOf(dialogContext).bottom;
+          return Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: AnimatedPadding(
+              duration: fushiMotionDuration(dialogContext, FushiMotion.short),
+              curve: FushiMotion.standard,
+              padding: EdgeInsets.all(12) + EdgeInsets.only(bottom: keyboard),
+              child: Material(
+                color: scheme.surfaceContainerLow,
+                elevation: 6,
+                borderRadius: FushiBorderRadius.dialog,
+                clipBehavior: Clip.antiAlias,
+                child: SizedBox(
+                  width: 440,
+                  height: double.infinity,
+                  child: _AiAgentExecutorSwitcher(
+                    initial: resolution,
+                    builder:
+                        (
+                          BuildContext _,
+                          AiAgentConversationController controller,
+                          _AiAgentExecutorToggle? toggle,
+                        ) => AiAgentConversation(
+                          controller: controller,
+                          uiContext: uiContext,
+                          compact: true,
+                          onSwitchExecutor: toggle?.onSwitch,
+                          switchExecutorTooltip: toggle?.tooltip,
+                          onExpand: () {
+                            Navigator.of(dialogContext).pop();
+                            unawaited(
+                              pushAiAgentPage(context, uiContext: uiContext),
+                            );
+                          },
+                        ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+    transitionBuilder:
+        (
+          BuildContext context,
+          Animation<double> animation,
+          Animation<double> secondaryAnimation,
+          Widget child,
+        ) {
+          final Animation<double> curved = CurvedAnimation(
+            parent: animation,
+            curve: FushiMotion.enter,
+            reverseCurve: FushiMotion.exit,
+          );
+          final bool rtl = Directionality.of(context) == TextDirection.rtl;
+          return FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: Offset(rtl ? -0.12 : 0.12, 0),
+                end: Offset.zero,
+              ).animate(curved),
+              child: child,
+            ),
+          );
+        },
+  );
+}
+
+/// 会话列表常驻在整页左侧的宽度（窗口宽于 [kAiAgentSidePanelBreakpoint] 时）。
+const double kAiAgentSessionsColumnWidth = 300;
+
+/// 「会话」按钮（弹出会话列表）。
+const ValueKey<String> kAiAgentSessionsButtonKey = ValueKey<String>(
+  'ai-agent-sessions',
+);
+
+/// 「本地 AI / 远端 AI」切换按钮（BUG-4067）。
+const ValueKey<String> kAiAgentExecutorSwitchKey = ValueKey<String>(
+  'ai-agent-executor-switch',
+);
+
+/// 整页外壳。宽屏把会话列表常驻在对话左侧；窄屏在页头放「会话」按钮弹出列表。
+/// 执行设备是老版本、没有会话历史时（[AiAgentConversationController.sessionLibrary]
+/// 为 null）两者都不出现。
+class AiAgentPage extends StatelessWidget {
+  const AiAgentPage({
+    required this.controller,
+    this.uiContext,
+    this.onSwitchExecutor,
+    this.switchExecutorTooltip,
+    super.key,
+  });
+
+  final AiAgentConversationController controller;
+  final AgentUiContext? uiContext;
+
+  /// 「本地 AI / 远端 AI」切换；null（[switchExecutorTooltip] 也为 null）= 不出按钮，
+  /// 只有 [switchExecutorTooltip] = 正在切换。
+  final VoidCallback? onSwitchExecutor;
+  final String? switchExecutorTooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final AiAgentSessionLibrary? library = controller.sessionLibrary;
+    final bool sideList =
+        library != null &&
+        MediaQuery.sizeOf(context).width >= kAiAgentSidePanelBreakpoint;
+    return FushiPageScaffold(
+      title: t.ai_agent_title,
+      actions: <Widget>[
+        if (switchExecutorTooltip != null)
+          ListenableBuilder(
+            listenable: controller,
+            builder: (BuildContext _, Widget? _) => FushiIconButtonControl(
+              key: kAiAgentExecutorSwitchKey,
+              tooltip: switchExecutorTooltip,
+              // 一轮跑着时不切（与「新对话」同一判据）。
+              onPressed: controller.running ? null : onSwitchExecutor,
+              icon: const FushiIcon(FushiIcons.devices),
+            ),
+          ),
+        if (library != null && !sideList)
+          FushiIconButtonControl(
+            key: kAiAgentSessionsButtonKey,
+            tooltip: t.ai_agent_sessions_title,
+            onPressed: () =>
+                unawaited(showAiAgentSessionsSheet(context, library)),
+            icon: const FushiIcon(FushiIcons.history),
+          ),
+      ],
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: Builder(
+          builder: (BuildContext bodyContext) {
+            final Widget conversation = AiAgentConversation(
+              controller: controller,
+              uiContext: uiContext,
+            );
+            return Padding(
+              padding: EdgeInsets.only(
+                top: MediaQuery.paddingOf(bodyContext).top,
+              ),
+              child: sideList
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        SizedBox(
+                          width: kAiAgentSessionsColumnWidth,
+                          child: AiAgentSessionList(library: library),
+                        ),
+                        const FushiVerticalDivider(width: 1),
+                        Expanded(child: conversation),
+                      ],
+                    )
+                  : conversation,
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// 对话本体：顶栏（紧凑外壳才有）+ 条目列表 + 输入栏。
+class AiAgentConversation extends StatefulWidget {
+  const AiAgentConversation({
+    required this.controller,
+    this.uiContext,
+    this.compact = false,
+    this.onExpand,
+    this.onSwitchExecutor,
+    this.switchExecutorTooltip,
+    super.key,
+  });
+
+  final AiAgentConversationController controller;
+
+  /// 「本地 AI / 远端 AI」切换（紧凑顶栏里的按钮，整页由 [AiAgentPage] 的页头承担）。
+  /// [switchExecutorTooltip] 为 null = 不出按钮；[onSwitchExecutor] 为 null = 正在切换。
+  final VoidCallback? onSwitchExecutor;
+  final String? switchExecutorTooltip;
+
+  /// 打开时所在的页面 / 条目（悬浮球按场景带上，spec §6.4），随每句话注入。
+  final AgentUiContext? uiContext;
+
+  /// 浮层 / 侧栏：自带一行紧凑顶栏（整页由页头承担标题）。
+  final bool compact;
+
+  /// 「展开成整页」；null = 已是整页。
+  final VoidCallback? onExpand;
+
+  /// 此刻挂着几个对话界面（浮层 / 侧栏 / 整页）。全局快捷键据此不再叠开第二层
+  /// （见 `openAiAgentFromShortcut`）。
+  static int get openCount => _openCount;
+  static int _openCount = 0;
+
+  @override
+  State<AiAgentConversation> createState() => _AiAgentConversationState();
+}
+
+class _AiAgentConversationState extends State<AiAgentConversation> {
+  final TextEditingController _input = TextEditingController();
+  final FocusNode _inputFocus = FocusNode(debugLabel: 'ai-agent-input');
+  final ScrollController _scroll = ScrollController();
+
+  /// 用户点掉了上下文 chip：这一场不再带页面上下文。
+  bool _contextDropped = false;
+
+  /// 正在撤销的条目（按钮转圈、防连点）。
+  final Set<String> _undoing = <String>{};
+
+  /// 「附上屏幕文字」（§6.4）：附上的文字只跟下一句走。
+  final AiAgentScreenTextAttachment _screenText = AiAgentScreenTextAttachment(
+    language: () =>
+        appOpContext?.appModel.prefsRepo.screenOcrLanguage ??
+        kScreenOcrFallbackLanguage,
+  );
+
+  AiAgentConversationController get _controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    AiAgentConversation._openCount++;
+    _controller.addListener(_onChanged);
+  }
+
+  @override
+  void dispose() {
+    AiAgentConversation._openCount--;
+    _screenText.dispose();
+    _controller.removeListener(_onChanged);
+    _input.dispose();
+    _inputFocus.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _onChanged() {
+    if (!mounted) return;
+    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      unawaited(
+        _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.standard,
+        ),
+      );
+    });
+  }
+
+  AgentUiContext? get _activeContext =>
+      _contextDropped ? null : widget.uiContext;
+
+  Future<void> _send() async {
+    final String text = _input.text.trim();
+    if (text.isEmpty || _controller.running) return;
+    _input.clear();
+    final AiAgentScreenAttachments attached = _screenText.take();
+    try {
+      await _controller.send(
+        text,
+        context: aiAgentContextWithScreenText(_activeContext, attached.text),
+        // 截图只在模型能收图时附上；发送前模型换成了不能收图的，图就不发。
+        images: _controller.acceptsImages
+            ? aiAgentImagesFor(attached.image)
+            : const [],
+      );
+    } on StateError {
+      if (mounted) await _guideToProviderSettings(context);
+    }
+    if (mounted) _inputFocus.requestFocus();
+  }
+
+  Future<void> _undo(AgentEntry entry) async {
+    if (!_undoing.add(entry.id)) return;
+    setState(() {});
+    final AgentUndoResult result = await _controller.undoEntry(entry.id);
+    _undoing.remove(entry.id);
+    if (!mounted) return;
+    setState(() {});
+    final String? message = switch (result.status) {
+      AgentUndoStatus.done => null,
+      AgentUndoStatus.superseded => t.ai_agent_superseded,
+      AgentUndoStatus.failed || AgentUndoStatus.notUndoable =>
+        t.ai_agent_undo_failed(reason: result.message ?? result.status.name),
+    };
+    if (message != null) FushiToast.show(msg: message);
+  }
+
+  Future<void> _undoAll() async {
+    final List<AgentUndoResult> results = await _controller.undoAll();
+    if (!mounted) return;
+    final int superseded = results
+        .where((AgentUndoResult r) => r.status == AgentUndoStatus.superseded)
+        .length;
+    if (superseded > 0) FushiToast.show(msg: t.ai_agent_superseded);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final List<AgentEntry> entries = _controller.entries;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool tight =
+            widget.compact && constraints.maxHeight < kAiAgentTightHeight;
+        return _conversationColumn(context, tokens, entries, tight: tight);
+      },
+    );
+  }
+
+  Widget _conversationColumn(
+    BuildContext context,
+    FushiDesignTokens tokens,
+    List<AgentEntry> entries, {
+    required bool tight,
+  }) {
+    return Column(
+      children: <Widget>[
+        if (widget.compact && !tight) _compactHeader(context),
+        if (!widget.compact && _controller.executorLabel != null)
+          _executorBar(context),
+        if (!widget.compact &&
+            (_controller.undoableCount > 0 || _controller.totalTokens > 0))
+          _summaryBar(context),
+        Expanded(
+          child: ListView(
+            key: const ValueKey<String>('ai-agent-transcript'),
+            controller: _scroll,
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              tokens.spacing.gap,
+              tokens.spacing.page,
+              tokens.spacing.gap,
+            ),
+            children: <Widget>[
+              if (entries.isEmpty) _emptyState(context),
+              for (final AgentEntry entry in entries) _entry(context, entry),
+              if (_controller.running && !_awaitingUser)
+                FushiStaggeredEntrance(
+                  index: 0,
+                  child: Padding(
+                    padding: EdgeInsets.only(top: tokens.spacing.gap),
+                    child: const FushiLinearProgressIndicator(
+                      key: ValueKey<String>('ai-agent-busy'),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        _composer(context, tight: tight),
+      ],
+    );
+  }
+
+  bool get _awaitingUser =>
+      _controller.awaitingConfirm || _controller.awaitingChoice;
+
+  Widget _compactHeader(BuildContext context) {
+    final int undoable = _controller.undoableCount;
+    final String? executor = _controller.executorLabel;
+    return Padding(
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 8, 0),
+      child: Row(
+        children: <Widget>[
+          const FushiIcon(FushiIcons.aiAssistant, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  t.ai_agent_title,
+                  style: context.fushiType.titleMediumEmphasized,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (executor != null)
+                  Text(
+                    t.ai_video_acquire_remote_executor(device: executor),
+                    key: const ValueKey<String>('ai-agent-executor'),
+                    style: Theme.of(context).textTheme.bodySmall,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ?_usageText(context, Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+          ),
+          if (undoable > 0)
+            FushiTextButton(
+              key: const ValueKey<String>('ai-agent-undo-all'),
+              onPressed: () => unawaited(_undoAll()),
+              child: Text(t.ai_agent_undo_all(n: '$undoable')),
+            ),
+          if (widget.switchExecutorTooltip != null)
+            FushiIconButtonControl(
+              key: kAiAgentExecutorSwitchKey,
+              tooltip: widget.switchExecutorTooltip,
+              onPressed: _controller.running ? null : widget.onSwitchExecutor,
+              icon: const FushiIcon(FushiIcons.devices),
+            ),
+          ?_sessionsButton(context),
+          FushiIconButtonControl(
+            key: const ValueKey<String>('ai-agent-new-session'),
+            tooltip: t.ai_agent_new_session,
+            onPressed: _controller.running
+                ? null
+                : () => unawaited(_controller.newSession()),
+            icon: const FushiIcon(FushiIcons.add),
+          ),
+          if (widget.onExpand != null)
+            FushiIconButtonControl(
+              key: const ValueKey<String>('ai-agent-expand'),
+              tooltip: t.ai_agent_expand,
+              onPressed: widget.onExpand,
+              icon: const FushiIcon(FushiIcons.openInNew),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 浮层 / 侧栏顶栏的「会话」按钮：弹出会话列表（执行设备没有会话历史时不出现）。
+  Widget? _sessionsButton(BuildContext context) {
+    final AiAgentSessionLibrary? library = _controller.sessionLibrary;
+    if (library == null) return null;
+    return FushiIconButtonControl(
+      key: kAiAgentSessionsButtonKey,
+      tooltip: t.ai_agent_sessions_title,
+      onPressed: () => unawaited(showAiAgentSessionsSheet(context, library)),
+      icon: const FushiIcon(FushiIcons.history),
+    );
+  }
+
+  /// 整页：远端执行时在顶部写明「在 <设备> 上执行」。
+  Widget _executorBar(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.page,
+        0,
+      ),
+      child: Text(
+        t.ai_video_acquire_remote_executor(
+          device: _controller.executorLabel ?? '',
+        ),
+        key: const ValueKey<String>('ai-agent-executor'),
+        style: Theme.of(context).textTheme.bodyMedium,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  /// 整页顶部：本场改动数 + 用量 / 费用，「全部撤销」与「新对话」。
+  Widget _summaryBar(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final int undoable = _controller.undoableCount;
+    final TextStyle? style = Theme.of(context).textTheme.bodyMedium;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.page,
+        0,
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                if (undoable > 0)
+                  Text(
+                    t.ai_agent_session_summary(n: '$undoable'),
+                    style: style,
+                  ),
+                ?_usageText(context, style),
+              ],
+            ),
+          ),
+          if (undoable > 0)
+            FushiTextButton(
+              key: const ValueKey<String>('ai-agent-undo-all'),
+              onPressed: () => unawaited(_undoAll()),
+              child: Text(t.ai_agent_undo_all(n: '$undoable')),
+            ),
+          FushiIconButtonControl(
+            key: const ValueKey<String>('ai-agent-new-session'),
+            tooltip: t.ai_agent_new_session,
+            onPressed: _controller.running
+                ? null
+                : () => unawaited(_controller.newSession()),
+            icon: const FushiIcon(FushiIcons.add),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 本场用量：「12,345 tokens · 约 $0.0123」，悬停 / 长按看输入 / 输出 / 缓存分项。
+  /// 还没发过请求时为 null。费用只在执行设备的提供商填了单价时出现。
+  Widget? _usageText(BuildContext context, TextStyle? style) {
+    final int total = _controller.totalTokens;
+    if (total <= 0) return null;
+    final String locale = Intl.getCurrentLocale();
+    final NumberFormat count = NumberFormat.decimalPattern(locale);
+    final AiChatUsage usage = _controller.usage;
+    final List<String> parts = <String>[
+      t.ai_agent_tokens(n: count.format(total)),
+      for (final MapEntry<String, double> cost in _controller.cost.entries)
+        t.ai_agent_cost(
+          amount: NumberFormat.simpleCurrency(
+            locale: locale,
+            name: cost.key,
+            // 一场对话常常不到一分钱：小额多留几位，不显示成 $0.00。
+            decimalDigits: cost.value < 1 ? 4 : 2,
+          ).format(cost.value),
+        ),
+    ];
+    return FushiTooltip(
+      message: t.ai_agent_usage_breakdown(
+        input: count.format(usage.inputTokens ?? 0),
+        output: count.format(usage.outputTokens ?? 0),
+        cacheRead: count.format(usage.cacheReadTokens ?? 0),
+        cacheWrite: count.format(usage.cacheWriteTokens ?? 0),
+      ),
+      child: Text(
+        parts.join(' · '),
+        key: const ValueKey<String>('ai-agent-usage'),
+        style: style?.copyWith(color: fushiNeutralSecondaryForeground(context)),
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  Widget _emptyState(BuildContext context) {
+    return FushiStaggeredEntrance(
+      index: 0,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 16, bottom: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const FushiListLeadingIcon(
+                  FushiIcons.ai,
+                  shape: FushiLeadingShape.cookie,
+                  tone: FushiCardTone.primary,
+                  size: 48,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    t.ai_agent_empty_title,
+                    style: context.fushiType.titleLargeEmphasized,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _entry(BuildContext context, AgentEntry entry) => switch (entry.kind) {
+    AgentEntryKind.user => _bubble(
+      context,
+      entry.text,
+      fromUser: true,
+      withImage: entry.imageCount > 0,
+    ),
+    AgentEntryKind.assistant => _bubble(context, entry.text, fromUser: false),
+    AgentEntryKind.toolCall => _toolCard(context, entry),
+    AgentEntryKind.confirm => _confirmCard(context, entry),
+    AgentEntryKind.choice => _choiceCard(context, entry),
+    AgentEntryKind.notice => _notice(context, entry),
+  };
+
+  /// 聊天气泡（与「AI 下视频」同一套配色：MD3 primaryContainer / surfaceContainerHigh，
+  /// Apple 强调色 / secondaryFill，墨水屏描边）。模型的回复按 Markdown 渲染（模型
+  /// 几乎都用 `**粗体**` / 列表 / 引用排版），用户自己说的话原样显示。
+  Widget _bubble(
+    BuildContext context,
+    String text, {
+    required bool fromUser,
+    bool withImage = false,
+  }) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool glass = isGlassDesign(context);
+    final bool eink = isEinkTheme(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    final Color fill = eink
+        ? scheme.surface
+        : glass
+        ? (fromUser ? apple.accent : apple.secondaryFill)
+        : (fromUser ? scheme.primaryContainer : scheme.surfaceContainerHigh);
+    final Color foreground = eink
+        ? scheme.onSurface
+        : glass
+        ? (fromUser ? apple.onAccent : apple.label)
+        : (fromUser ? scheme.onPrimaryContainer : scheme.onSurface);
+    const Radius big = Radius.circular(22);
+    const Radius tail = Radius.circular(6);
+    return FushiStaggeredEntrance(
+      index: 0,
+      child: Align(
+        alignment: fromUser
+            ? AlignmentDirectional.centerEnd
+            : AlignmentDirectional.centerStart,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: fill,
+                borderRadius: BorderRadiusDirectional.only(
+                  topStart: big,
+                  topEnd: big,
+                  bottomStart: fromUser ? big : tail,
+                  bottomEnd: fromUser ? tail : big,
+                ),
+                border: eink ? Border.all(color: scheme.onSurface) : null,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 9,
+                ),
+                child: fromUser
+                    ? _userText(context, text, foreground, withImage)
+                    : AiAgentMarkdown(text: text, color: foreground),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _userText(
+    BuildContext context,
+    String text,
+    Color foreground,
+    bool withImage,
+  ) {
+    final TextTheme theme = Theme.of(context).textTheme;
+    final Widget body = SelectableText(
+      text,
+      style: theme.bodyLarge?.copyWith(color: foreground, height: 1.35),
+    );
+    if (!withImage) return body;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            FushiIcon(FushiIcons.image, size: 14, color: foreground),
+            const SizedBox(width: 4),
+            Text(
+              t.ai_agent_message_image_attached,
+              style: theme.labelMedium?.copyWith(color: foreground),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        body,
+      ],
+    );
+  }
+
+  /// 一次工具调用：图标 + 操作 id + 状态 / 改前改后；可撤销的带「撤销」。
+  Widget _toolCard(BuildContext context, AgentEntry entry) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme text = Theme.of(context).textTheme;
+    final (IconData icon, Color color) = switch (entry.status) {
+      AgentEntryStatus.running => (FushiIcons.sync, scheme.primary),
+      AgentEntryStatus.done => (FushiIcons.check, scheme.primary),
+      AgentEntryStatus.undone ||
+      AgentEntryStatus.superseded => (FushiIcons.undo, scheme.outline),
+      AgentEntryStatus.declined => (FushiIcons.close, scheme.outline),
+      _ => (FushiIcons.error, scheme.error),
+    };
+    final String status = switch (entry.status) {
+      AgentEntryStatus.running => t.ai_agent_tool_running,
+      AgentEntryStatus.undone => t.ai_agent_undone,
+      AgentEntryStatus.superseded => t.ai_agent_superseded,
+      AgentEntryStatus.declined => t.ai_agent_tool_declined,
+      AgentEntryStatus.failed
+          when entry.errorCode == AgentStopCode.interrupted =>
+        t.ai_agent_tool_interrupted,
+      AgentEntryStatus.failed => t.ai_agent_tool_failed(
+        code: entry.errorCode ?? '',
+      ),
+      _ =>
+        entry.before != null || entry.after != null
+            ? '${entry.before ?? '∅'} → ${entry.after ?? '∅'}'
+            : '',
+    };
+    final bool undoing = _undoing.contains(entry.id);
+    final bool taskRunning = entry.taskState == 'running';
+    return FushiStaggeredEntrance(
+      index: 0,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: FushiCard(
+          key: ValueKey<String>('ai-agent-tool-${entry.id}'),
+          padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 4, 8),
+          pressScale: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  FushiIcon(icon, size: 18, color: color),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          entry.toolName ?? '',
+                          style: text.labelLarge,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (status.isNotEmpty)
+                          Text(
+                            status,
+                            style: text.bodySmall,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (entry.resultPreview != null || entry.arguments.isNotEmpty)
+                    FushiIconButtonControl(
+                      tooltip: t.ai_agent_details,
+                      onPressed: () => unawaited(_showDetails(context, entry)),
+                      icon: const FushiIcon(FushiIcons.info, size: 18),
+                    ),
+                  if (entry.canUndo)
+                    FushiTextButton(
+                      key: ValueKey<String>('ai-agent-undo-${entry.id}'),
+                      onPressed: undoing ? null : () => unawaited(_undo(entry)),
+                      child: Text(t.ai_agent_undo),
+                    ),
+                ],
+              ),
+              // 长任务还在跑：卡片底部一条不定进度条，结束后自动续一轮（spec §6.1）。
+              FushiAnimatedSize(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                curve: FushiMotion.standard,
+                child: taskRunning
+                    ? Padding(
+                        padding: const EdgeInsetsDirectional.only(
+                          top: 6,
+                          end: 8,
+                        ),
+                        child: FushiLinearProgressIndicator(
+                          key: ValueKey<String>('ai-agent-task-${entry.id}'),
+                        ),
+                      )
+                    : const SizedBox(width: double.infinity),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showDetails(BuildContext context, AgentEntry entry) {
+    const JsonEncoder pretty = JsonEncoder.withIndent('  ');
+    return adaptiveModalSheet<void>(
+      context: context,
+      builder: (BuildContext sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: SelectableText(
+            '${entry.toolName}\n\n'
+            '${pretty.convert(entry.arguments)}'
+            '${entry.resultPreview == null ? '' : '\n\n${entry.resultPreview}'}',
+            style: Theme.of(
+              sheetContext,
+            ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 确认卡片：写清后果，只有用户点了「执行」运行时才注入表态参数。
+  Widget _confirmCard(BuildContext context, AgentEntry entry) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme text = Theme.of(context).textTheme;
+    final bool install = _kExtensionInstallOp.hasMatch(entry.toolName ?? '');
+    final bool irreversible = entry.risk == AgentToolRisk.irreversible;
+    final bool pending =
+        entry.status == AgentEntryStatus.pending &&
+        _controller.awaitingConfirm &&
+        identical(_lastPending(AgentEntryKind.confirm), entry);
+    return FushiStaggeredEntrance(
+      index: 0,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: FushiCard(
+          key: ValueKey<String>('ai-agent-confirm-${entry.id}'),
+          pressScale: false,
+          tone: FushiCardTone.primary,
+          borderColor: irreversible ? scheme.error : null,
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                install
+                    ? t.ai_agent_confirm_install_title
+                    : t.ai_agent_confirm_title,
+                style: text.titleSmall,
+              ),
+              const SizedBox(height: 6),
+              Text(entry.toolName ?? '', style: text.labelLarge),
+              for (final MapEntry<String, Object?> arg
+                  in entry.arguments.entries)
+                Text(
+                  '${arg.key}: ${arg.value is String ? arg.value : jsonEncode(arg.value)}',
+                  style: text.bodySmall,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              const SizedBox(height: 6),
+              Text(
+                irreversible
+                    ? t.ai_agent_confirm_irreversible
+                    : t.ai_agent_confirm_undoable,
+                style: text.bodySmall?.copyWith(
+                  color: irreversible ? scheme.error : null,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (pending)
+                Wrap(
+                  spacing: 8,
+                  children: <Widget>[
+                    FushiFilledButton(
+                      key: const ValueKey<String>('ai-agent-confirm-approve'),
+                      onPressed: () => _controller.answerConfirm(true),
+                      child: Text(t.ai_agent_confirm_approve),
+                    ),
+                    FushiTextButton(
+                      key: const ValueKey<String>('ai-agent-confirm-decline'),
+                      onPressed: () => _controller.answerConfirm(false),
+                      child: Text(t.ai_agent_confirm_decline),
+                    ),
+                  ],
+                )
+              else
+                Text(
+                  entry.status == AgentEntryStatus.approved
+                      ? t.ai_agent_confirm_approved
+                      : entry.errorCode == AgentStopCode.interrupted
+                      ? t.ai_agent_confirm_interrupted
+                      : t.ai_agent_confirm_declined,
+                  style: text.labelMedium,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 候选卡片（`ui.ask_choice`）：用户点选比模型猜更可靠（spec §6.2）。
+  Widget _choiceCard(BuildContext context, AgentEntry entry) {
+    final TextTheme text = Theme.of(context).textTheme;
+    final bool pending =
+        entry.status == AgentEntryStatus.pending &&
+        _controller.awaitingChoice &&
+        identical(_lastPending(AgentEntryKind.choice), entry);
+    String labelOf(String? id) {
+      for (final AgentChoiceOption o in entry.options) {
+        if (o.id == id) return o.label;
+      }
+      return id ?? '';
+    }
+
+    return FushiStaggeredEntrance(
+      index: 0,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            if (entry.text.isNotEmpty)
+              _bubble(context, entry.text, fromUser: false),
+            const SizedBox(height: 6),
+            if (pending)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: <Widget>[
+                  // 选项是整行可换行的条目而不是 chip：chip 只排一行，字幕文件名、
+                  // 作品名这类长标签会被裁掉右半截、看不出区别。
+                  for (final AgentChoiceOption option in entry.options)
+                    _AgentChoiceOptionTile(
+                      key: ValueKey<String>('ai-agent-choice-${option.id}'),
+                      option: option,
+                      onPressed: () => _controller.answerChoice(option.id),
+                    ),
+                  FushiActionChipControl(
+                    key: const ValueKey<String>('ai-agent-choice-cancel'),
+                    avatar: const FushiIcon(FushiIcons.close, size: 16),
+                    label: Text(t.ai_agent_choice_cancel),
+                    onPressed: () => _controller.answerChoice(null),
+                  ),
+                ],
+              )
+            else
+              Text(
+                entry.errorCode == AgentStopCode.interrupted
+                    ? t.ai_agent_confirm_interrupted
+                    : entry.selected == null
+                    ? t.ai_agent_choice_cancel
+                    : t.ai_agent_choice_picked(label: labelOf(entry.selected)),
+                style: text.labelMedium,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  AgentEntry? _lastPending(AgentEntryKind kind) {
+    final List<AgentEntry> entries = _controller.entries;
+    for (int i = entries.length - 1; i >= 0; i--) {
+      if (entries[i].kind == kind) return entries[i];
+    }
+    return null;
+  }
+
+  Widget _notice(BuildContext context, AgentEntry entry) {
+    final String message = switch (entry.errorCode) {
+      AgentStopCode.toolLimit => t.ai_agent_stop_tool_limit,
+      AgentStopCode.repeatedFailure => t.ai_agent_stop_repeated_failure,
+      AgentStopCode.tokenBudget => t.ai_agent_stop_token_budget,
+      AgentStopCode.llmError => t.ai_agent_stop_llm_error(
+        reason: aiFailureText(entry.text),
+      ),
+      AgentStopCode.cancelled => t.ai_agent_stop_cancelled,
+      kAiAgentRemoteUnavailableCode => t.ai_agent_remote_lost,
+      AgentStopCode.taskFinished =>
+        entry.status == AgentEntryStatus.done
+            ? t.ai_agent_task_done(
+                op: entry.toolName ?? '',
+                summary: entry.text,
+              )
+            : t.ai_agent_task_failed(
+                op: entry.toolName ?? '',
+                summary: entry.text,
+              ),
+      _ => entry.text,
+    };
+    return FushiStaggeredEntrance(
+      index: 0,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Center(
+          child: Text(
+            message,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.outline,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 输入栏（上下文 chip + 输入框 + 发送 / 停止）。
+  ///
+  /// MD3 下是**一层**悬浮面板：chip、输入框、按钮都直接放在面板上，输入框不再另套
+  /// 一层不同底色的圆角框（面板套面板显得臃肿），按钮贴底对齐（多行输入时不悬在
+  /// 中间）。Apple / 墨水屏没有外层面板，输入框自己带底色 / 描边。
+  Widget _composer(BuildContext context, {bool tight = false}) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool glass = isGlassDesign(context);
+    final bool eink = isEinkTheme(context);
+    final bool panel = !glass && !eink;
+    final bool running = _controller.running;
+    final bool acceptsImages = _controller.acceptsImages;
+    final AgentUiContext? uiContext = _activeContext;
+    final String? contextTitle =
+        uiContext?.itemTitle ?? _contextPageLabel(uiContext?.page);
+    final Widget field = FushiTextFieldControl(
+      key: const ValueKey<String>('ai-agent-input'),
+      controller: _input,
+      focusNode: _inputFocus,
+      enabled: !running,
+      autofocus: true,
+      minLines: 1,
+      maxLines: 4,
+      textInputAction: TextInputAction.send,
+      onSubmitted: (_) => unawaited(_send()),
+      style: Theme.of(context).textTheme.bodyLarge,
+      decoration: InputDecoration(
+        hintText: t.ai_agent_input_hint,
+        // 提示语只占一行：默认跟随 maxLines（4），输入框一变窄（紧凑排版里与
+        // 上下文 chip 同行）提示语就折成多行把输入栏撑高、挤掉对话区。
+        hintMaxLines: 1,
+        border: InputBorder.none,
+        filled: false,
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: panel ? 8 : 20,
+          vertical: 14,
+        ),
+      ),
+    );
+    // 这条消息要带的页面上下文。点掉 = 这一场不再带上下文（唯一的查看 / 移除
+    // 入口，紧凑排版里也不能藏）。
+    final Widget? contextChip = contextTitle == null
+        ? null
+        : FushiInputChip(
+            key: const ValueKey<String>('ai-agent-context-chip'),
+            label: Text(
+              t.ai_agent_context_chip(title: contextTitle),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            // 紧凑排版里 chip 与输入框同行：不额外撑 48dp 触控外框，免得把输入行
+            // 撑高、再挤掉对话区。
+            dense: tight,
+            onDeleted: () => setState(() => _contextDropped = true),
+          );
+    Widget buildRow(double? tightWidth) => Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: <Widget>[
+        // 浮层 / 侧栏才有：截图时把面板藏掉就露出下面的页面；整页外壳下面也是
+        // 不透明路由，截不到别的。
+        if (widget.compact &&
+            (screenTextCaptureSupported || acceptsImages)) ...<Widget>[
+          AiAgentScreenTextButton(
+            attachment: _screenText,
+            enabled: !running,
+            keepImage: acceptsImages,
+          ),
+          if (!panel) SizedBox(width: tokens.spacing.gap / 2),
+        ] else if (panel)
+          const SizedBox(width: 12),
+        // 紧凑排版没有 chip 行：上下文 chip 与屏幕附件 chip 收进输入行左侧一条，
+        // 最多占行宽的 [kAiAgentTightAttachmentWidthFactor]，上下文标题省略号截断，
+        // 删除键始终可见。
+        if (tightWidth != null)
+          ConstrainedBox(
+            key: const ValueKey<String>('ai-agent-inline-attachments'),
+            constraints: BoxConstraints(
+              maxWidth: tightWidth * kAiAgentTightAttachmentWidthFactor,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  if (contextChip != null) Flexible(child: contextChip),
+                  AiAgentScreenTextChip(attachment: _screenText),
+                ],
+              ),
+            ),
+          ),
+        Expanded(
+          child: panel
+              ? field
+              : DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: eink ? scheme.surface : scheme.surfaceContainerHigh,
+                    borderRadius: FushiBorderRadius.dialog,
+                    border: eink ? Border.all(color: scheme.onSurface) : null,
+                  ),
+                  child: field,
+                ),
+        ),
+        SizedBox(width: panel ? 4 : tokens.spacing.gap),
+        if (running)
+          FushiIconButtonControl(
+            key: const ValueKey<String>('ai-agent-stop'),
+            tooltip: t.ai_agent_stop,
+            onPressed: _controller.cancel,
+            icon: const FushiIcon(FushiIcons.stop),
+          )
+        else
+          FushiIconButtonControl.filled(
+            key: const ValueKey<String>('ai-agent-send'),
+            tooltip: t.ai_agent_send,
+            onPressed: () => unawaited(_send()),
+            icon: FushiIcon(
+              glass ? CupertinoIcons.arrow_up : FushiIcons.forward,
+            ),
+          ),
+      ],
+    );
+    // 两种排法共用同一个 LayoutBuilder → Row 结构：键盘弹起正是切进紧凑排版的
+    // 时刻，若外层结构随之变化，输入框会被重建、丢焦点收键盘。
+    final Widget row = LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) =>
+          buildRow(tight ? constraints.maxWidth : null),
+    );
+    final Widget body = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Padding(
+          padding: panel
+              ? const EdgeInsets.fromLTRB(6, 4, 6, 0)
+              : EdgeInsets.zero,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (!tight) AiAgentScreenTextChip(attachment: _screenText),
+              if (contextChip != null && !tight)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2, left: 4),
+                  child: contextChip,
+                ),
+            ],
+          ),
+        ),
+        row,
+      ],
+    );
+    final EdgeInsets outer = EdgeInsets.fromLTRB(
+      tokens.spacing.page,
+      tokens.spacing.gap,
+      tokens.spacing.page,
+      tokens.spacing.gap + bottomSafeInsetOf(context),
+    );
+    if (!panel) return Padding(padding: outer, child: body);
+    return Padding(
+      padding: outer,
+      child: DecoratedBox(
+        decoration: fushiFloatingPillDecoration(
+          context,
+          color: scheme.surfaceContainerHigh,
+          shape: const RoundedRectangleBorder(
+            borderRadius: FushiBorderRadius.dialog,
+          ),
+        ),
+        child: Padding(padding: const EdgeInsets.all(4), child: body),
+      ),
+    );
+  }
+
+  /// 上下文 chip 里的页面名：库页页头「问 AI」给的是内部页面键，换成用户看得懂
+  /// 的页面标题；认不出的键原样显示。
+  static String? _contextPageLabel(String? page) => switch (page) {
+    null => null,
+    'books' => t.books,
+    'manga_library' => t.manga_library,
+    'video_library' => t.nav_video,
+    'games_library' => t.nav_game,
+    final String other => other,
+  };
+}
+
+/// 模型回复的 Markdown 渲染（粗体 / 列表 / 引用 / 代码 / 链接）。可选中复制；
+/// 链接在外部浏览器打开。字号、行高与用户气泡一致，颜色跟随气泡前景色。
+class AiAgentMarkdown extends StatelessWidget {
+  const AiAgentMarkdown({required this.text, required this.color, super.key});
+
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextTheme theme = Theme.of(context).textTheme;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextStyle? body = theme.bodyLarge?.copyWith(
+      color: color,
+      height: 1.35,
+    );
+    return MarkdownBody(
+      data: text,
+      selectable: true,
+      // flutter_markdown 0.6.23 在 selectable 时会无条件解引用
+      // onSelectionChanged!，不传则选中文本即崩（TODO-966，与更新日志页同一约定）。
+      onSelectionChanged:
+          (
+            String? text,
+            TextSelection selection,
+            SelectionChangedCause? cause,
+          ) {},
+      onTapLink: (String _, String? href, String _) {
+        final Uri? uri = href == null ? null : Uri.tryParse(href);
+        if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) {
+          return;
+        }
+        unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
+      },
+      // 只给要改的样式：flutter_markdown 自己把它并到回退样式表上（回退样式表
+      // 读的是 LegacyDesignCompatibility 桥出来的旧主题），这里不必碰旧 SDK 类型。
+      styleSheet: MarkdownStyleSheet(
+        p: body,
+        listBullet: body,
+        strong: const TextStyle(fontWeight: FontWeight.w700),
+        em: const TextStyle(fontStyle: FontStyle.italic),
+        a: TextStyle(color: color, decoration: TextDecoration.underline),
+        h1: theme.titleLarge?.copyWith(color: color),
+        h2: theme.titleMedium?.copyWith(color: color),
+        h3: theme.titleSmall?.copyWith(color: color),
+        code: theme.bodyMedium?.copyWith(
+          color: color,
+          fontFamily: 'monospace',
+          backgroundColor: scheme.surfaceContainerHighest,
+        ),
+        codeblockDecoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          borderRadius: FushiBorderRadius.card,
+        ),
+        blockquote: body,
+        blockquoteDecoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(color: scheme.outlineVariant, width: 3),
+          ),
+        ),
+        blockquotePadding: const EdgeInsets.only(left: 10),
+        pPadding: EdgeInsets.zero,
+        blockSpacing: 8,
+      ),
+    );
+  }
+}
+
+/// 候选卡里的一个选项：整行宽、标签与说明完整换行**不截断**（文件名之间常只差
+/// 结尾几个字，截掉就分不清；超长无空格的串按字符折行，不会横向溢出）。
+class _AgentChoiceOptionTile extends StatelessWidget {
+  const _AgentChoiceOptionTile({
+    required this.option,
+    required this.onPressed,
+    super.key,
+  });
+
+  final AgentChoiceOption option;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme text = Theme.of(context).textTheme;
+    final bool eink = isEinkTheme(context);
+    final bool glass = isGlassDesign(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    final Color fill = eink
+        ? scheme.surface
+        : glass
+        ? apple.secondaryFill
+        : scheme.surfaceContainerHigh;
+    final Color foreground = glass && !eink ? apple.label : scheme.onSurface;
+    final String? detail = option.detail;
+    const BorderRadius radius = FushiM3eShape.cardRadius;
+    return FushiPressScale(
+      child: Material(
+        color: fill,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: eink ? BorderSide(color: scheme.outline) : BorderSide.none,
+        ),
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onPressed,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: 48,
+              minWidth: double.infinity,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    option.label,
+                    style: text.bodyMedium?.copyWith(color: foreground),
+                  ),
+                  if (detail != null && detail.isNotEmpty)
+                    Text(
+                      detail,
+                      style: text.labelSmall?.copyWith(
+                        color: glass && !eink
+                            ? apple.secondaryLabel
+                            : scheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

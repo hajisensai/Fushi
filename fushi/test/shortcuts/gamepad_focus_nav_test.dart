@@ -29,8 +29,9 @@ void main() {
     return tester.element(find.byType(Scaffold));
   }
 
-  testWidgets('bootstraps onto the first focusable when nothing is focused',
-      (tester) async {
+  testWidgets('bootstraps onto the first focusable when nothing is focused', (
+    tester,
+  ) async {
     final nodes = List.generate(3, (i) => FocusNode(debugLabel: 'n$i'));
     addTearDown(() {
       for (final n in nodes) {
@@ -43,34 +44,40 @@ void main() {
     gamepadMoveFocusInDirection(ctx, TraversalDirection.down);
     await tester.pump();
 
-    expect(nodes[0].hasPrimaryFocus, isTrue,
-        reason: 'first directional press with nothing focused lands on n0');
+    expect(
+      nodes[0].hasPrimaryFocus,
+      isTrue,
+      reason: 'first directional press with nothing focused lands on n0',
+    );
   });
 
-  testWidgets('uses FushiFocusController when a focus root is available',
-      (WidgetTester tester) async {
+  testWidgets('uses FushiFocusController when a focus root is available', (
+    WidgetTester tester,
+  ) async {
     final FocusNode raw = FocusNode(debugLabel: 'raw-unregistered');
     final FocusNode target = FocusNode(debugLabel: 'registered-target');
     addTearDown(raw.dispose);
     addTearDown(target.dispose);
 
-    await tester.pumpWidget(MaterialApp(
-      home: FushiFocusRoot(
-        child: Column(
-          children: <Widget>[
-            Focus(
-              focusNode: raw,
-              child: const SizedBox(width: 80, height: 60),
-            ),
-            FushiFocusTarget(
-              id: const FushiFocusId('registered-target'),
-              focusNode: target,
-              child: const SizedBox(width: 80, height: 60),
-            ),
-          ],
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FushiFocusRoot(
+          child: Column(
+            children: <Widget>[
+              Focus(
+                focusNode: raw,
+                child: const SizedBox(width: 80, height: 60),
+              ),
+              FushiFocusTarget(
+                id: const FushiFocusId('registered-target'),
+                focusNode: target,
+                child: const SizedBox(width: 80, height: 60),
+              ),
+            ],
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     final BuildContext context = tester.element(find.byType(Column));
@@ -89,8 +96,9 @@ void main() {
     );
   });
 
-  testWidgets('moves geometrically down then up between stacked controls',
-      (tester) async {
+  testWidgets('moves geometrically down then up between stacked controls', (
+    tester,
+  ) async {
     final nodes = List.generate(3, (i) => FocusNode(debugLabel: 'n$i'));
     addTearDown(() {
       for (final n in nodes) {
@@ -112,89 +120,103 @@ void main() {
   });
 
   testWidgets(
-      'a focused skip-traversal wrapper is bypassed onto a real control',
-      (tester) async {
-    // Mirrors the home page: a full-page Focus that only sinks shortcut keys
-    // (skipTraversal) must never keep focus when navigating — the press jumps
-    // to the first real control so the ring lands on something specific.
-    final wrapper = FocusNode(debugLabel: 'wrapper');
-    final real = FocusNode(debugLabel: 'real');
-    addTearDown(wrapper.dispose);
-    addTearDown(real.dispose);
+    'a focused skip-traversal wrapper is bypassed onto a real control',
+    (tester) async {
+      // Mirrors the home page: a full-page Focus that only sinks shortcut keys
+      // (skipTraversal) must never keep focus when navigating — the press jumps
+      // to the first real control so the ring lands on something specific.
+      final wrapper = FocusNode(debugLabel: 'wrapper');
+      final real = FocusNode(debugLabel: 'real');
+      addTearDown(wrapper.dispose);
+      addTearDown(real.dispose);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Focus(
-            focusNode: wrapper,
-            skipTraversal: true,
-            child: Focus(
-              focusNode: real,
-              child: const SizedBox(width: 80, height: 80),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Focus(
+              focusNode: wrapper,
+              skipTraversal: true,
+              child: Focus(
+                focusNode: real,
+                child: const SizedBox(width: 80, height: 80),
+              ),
             ),
           ),
         ),
-      ),
-    );
-    final ctx = tester.element(find.byType(Scaffold));
+      );
+      final ctx = tester.element(find.byType(Scaffold));
 
-    wrapper.requestFocus();
-    await tester.pump();
-    expect(wrapper.hasPrimaryFocus, isTrue);
+      wrapper.requestFocus();
+      await tester.pump();
+      expect(wrapper.hasPrimaryFocus, isTrue);
 
-    gamepadMoveFocusInDirection(ctx, TraversalDirection.down);
-    await tester.pump();
-    expect(real.hasPrimaryFocus, isTrue,
-        reason: 'a press from the skip-traversal wrapper lands on the control');
-  });
+      gamepadMoveFocusInDirection(ctx, TraversalDirection.down);
+      await tester.pump();
+      expect(
+        real.hasPrimaryFocus,
+        isTrue,
+        reason: 'a press from the skip-traversal wrapper lands on the control',
+      );
+    },
+  );
 
   testWidgets(
-      'reading-order fallback: a blocked direction advances via next/previous',
-      (tester) async {
-    // A horizontal row has no vertical neighbours, so up/down fail
-    // geometrically and must fall back to previous/next focus (predictable,
-    // never a random jump).
-    final left = FocusNode(debugLabel: 'left');
-    final right = FocusNode(debugLabel: 'right');
-    addTearDown(left.dispose);
-    addTearDown(right.dispose);
+    'reading-order fallback: a blocked direction advances via next/previous',
+    (tester) async {
+      // A horizontal row has no vertical neighbours, so up/down fail
+      // geometrically and must fall back to previous/next focus (predictable,
+      // never a random jump).
+      final left = FocusNode(debugLabel: 'left');
+      final right = FocusNode(debugLabel: 'right');
+      addTearDown(left.dispose);
+      addTearDown(right.dispose);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Row(
-            children: <Widget>[
-              Focus(
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Row(
+              children: <Widget>[
+                Focus(
                   focusNode: left,
-                  child: const SizedBox(width: 80, height: 80)),
-              Focus(
+                  child: const SizedBox(width: 80, height: 80),
+                ),
+                Focus(
                   focusNode: right,
-                  child: const SizedBox(width: 80, height: 80)),
-            ],
+                  child: const SizedBox(width: 80, height: 80),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-    );
-    final ctx = tester.element(find.byType(Scaffold));
+      );
+      final ctx = tester.element(find.byType(Scaffold));
 
-    left.requestFocus();
-    await tester.pump();
+      left.requestFocus();
+      await tester.pump();
 
-    // "down" has no vertical target → reading-order next → right.
-    gamepadMoveFocusInDirection(ctx, TraversalDirection.down);
-    await tester.pump();
-    expect(right.hasPrimaryFocus, isTrue,
-        reason: 'blocked down falls back to nextFocus');
+      // "down" has no vertical target → reading-order next → right.
+      gamepadMoveFocusInDirection(ctx, TraversalDirection.down);
+      await tester.pump();
+      expect(
+        right.hasPrimaryFocus,
+        isTrue,
+        reason: 'blocked down falls back to nextFocus',
+      );
 
-    // "up" has no vertical target → reading-order previous → left.
-    gamepadMoveFocusInDirection(ctx, TraversalDirection.up);
-    await tester.pump();
-    expect(left.hasPrimaryFocus, isTrue,
-        reason: 'blocked up falls back to previousFocus');
-  });
+      // "up" has no vertical target → reading-order previous → left.
+      gamepadMoveFocusInDirection(ctx, TraversalDirection.up);
+      await tester.pump();
+      expect(
+        left.hasPrimaryFocus,
+        isTrue,
+        reason: 'blocked up falls back to previousFocus',
+      );
+    },
+  );
 
-  testWidgets('focus root moves geometrically in a two-column grid',
-      (WidgetTester tester) async {
+  testWidgets('focus root moves geometrically in a two-column grid', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: FushiFocusRoot(
@@ -210,10 +232,7 @@ void main() {
               ])
                 FushiFocusTarget(
                   id: FushiFocusId(id),
-                  child: TextButton(
-                    onPressed: () {},
-                    child: Text(id),
-                  ),
+                  child: TextButton(onPressed: () {}, child: Text(id)),
                 ),
             ],
           ),
@@ -223,8 +242,9 @@ void main() {
     await tester.pump();
 
     final BuildContext context = tester.element(find.byType(GridView));
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(context);
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
+      context,
+    );
 
     expect(controller.requestById(const FushiFocusId('top-left')), isTrue);
     await tester.pump();
@@ -235,7 +255,8 @@ void main() {
     expect(
       controller.activeId,
       const FushiFocusId('bottom-left'),
-      reason: 'D-pad down in a shelf grid must move to the row below, not the '
+      reason:
+          'D-pad down in a shelf grid must move to the row below, not the '
           'next item in reading order',
     );
 
@@ -250,80 +271,88 @@ void main() {
     expect(
       controller.activeId,
       const FushiFocusId('bottom-right'),
-      reason: 'D-pad down at the grid edge must stop instead of sliding '
+      reason:
+          'D-pad down at the grid edge must stop instead of sliding '
           'sideways through reading order',
     );
   });
 
   testWidgets(
-      'down lands on the immediately-next row even when it does not align '
-      'horizontally (settings 主题 swatch row is not skipped)',
-      (WidgetTester tester) async {
-    // Reproduces the appearance settings layout: a RIGHT-aligned segmented
-    // control (设计系统), then a LEFT-aligned theme-swatch row (主题), then
-    // another RIGHT-aligned segmented control (深色模式). Pressing down from
-    // the top control must step to the immediately-next row (the left-aligned
-    // swatch), NOT skip it to the next right-aligned control just because that
-    // one happens to overlap horizontally with the source.
-    await tester.pumpWidget(
-      MaterialApp(
-        home: FushiFocusRoot(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              for (final ({String id, Alignment align}) row
-                  in <({String id, Alignment align})>[
-                (id: 'top-right', align: Alignment.centerRight),
-                (id: 'mid-left', align: Alignment.centerLeft),
-                (id: 'bottom-right', align: Alignment.centerRight),
-              ])
-                Align(
-                  alignment: row.align,
-                  child: FushiFocusTarget(
-                    id: FushiFocusId(row.id),
-                    child: TextButton(
-                      onPressed: () {},
-                      child: Text(row.id),
+    'down lands on the immediately-next row even when it does not align '
+    'horizontally (settings 主题 swatch row is not skipped)',
+    (WidgetTester tester) async {
+      // Reproduces the appearance settings layout: a RIGHT-aligned segmented
+      // control (设计系统), then a LEFT-aligned theme-swatch row (主题), then
+      // another RIGHT-aligned segmented control (深色模式). Pressing down from
+      // the top control must step to the immediately-next row (the left-aligned
+      // swatch), NOT skip it to the next right-aligned control just because that
+      // one happens to overlap horizontally with the source.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: FushiFocusRoot(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                for (final ({String id, Alignment align}) row
+                    in <({String id, Alignment align})>[
+                      (id: 'top-right', align: Alignment.centerRight),
+                      (id: 'mid-left', align: Alignment.centerLeft),
+                      (id: 'bottom-right', align: Alignment.centerRight),
+                    ])
+                  Align(
+                    alignment: row.align,
+                    child: FushiFocusTarget(
+                      id: FushiFocusId(row.id),
+                      child: TextButton(onPressed: () {}, child: Text(row.id)),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    final BuildContext context = tester.element(find.byType(Column));
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(context);
+      final BuildContext context = tester.element(find.byType(Column));
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
+        context,
+      );
 
-    expect(controller.requestById(const FushiFocusId('top-right')), isTrue);
-    await tester.pump();
+      expect(controller.requestById(const FushiFocusId('top-right')), isTrue);
+      await tester.pump();
 
-    expect(controller.move(FushiFocusDirection.down), isTrue);
-    await tester.pump();
+      expect(controller.move(FushiFocusDirection.down), isTrue);
+      await tester.pump();
 
-    expect(
-      controller.activeId,
-      const FushiFocusId('mid-left'),
-      reason: 'down must land on the immediately-next row, not skip the '
-          'left-aligned swatch row to the next right-aligned control',
-    );
+      expect(
+        controller.activeId,
+        const FushiFocusId('mid-left'),
+        reason:
+            'down must land on the immediately-next row, not skip the '
+            'left-aligned swatch row to the next right-aligned control',
+      );
 
-    expect(controller.move(FushiFocusDirection.down), isTrue);
-    await tester.pump();
-    expect(controller.activeId, const FushiFocusId('bottom-right'),
-        reason: 'a further down continues to the last row');
+      expect(controller.move(FushiFocusDirection.down), isTrue);
+      await tester.pump();
+      expect(
+        controller.activeId,
+        const FushiFocusId('bottom-right'),
+        reason: 'a further down continues to the last row',
+      );
 
-    expect(controller.move(FushiFocusDirection.up), isTrue);
-    await tester.pump();
-    expect(controller.activeId, const FushiFocusId('mid-left'),
-        reason: 'up is symmetric: it must not skip the swatch row either');
-  });
+      expect(controller.move(FushiFocusDirection.up), isTrue);
+      await tester.pump();
+      expect(
+        controller.activeId,
+        const FushiFocusId('mid-left'),
+        reason: 'up is symmetric: it must not skip the swatch row either',
+      );
+    },
+  );
 
-  testWidgets('gamepad escapes a focus root edge to sibling controls',
-      (WidgetTester tester) async {
+  testWidgets('gamepad escapes a focus root edge to sibling controls', (
+    WidgetTester tester,
+  ) async {
     final FocusNode rail = FocusNode(debugLabel: 'rail');
     addTearDown(rail.dispose);
 
@@ -350,10 +379,7 @@ void main() {
                       ])
                         FushiFocusTarget(
                           id: FushiFocusId(id),
-                          child: TextButton(
-                            onPressed: () {},
-                            child: Text(id),
-                          ),
+                          child: TextButton(onPressed: () {}, child: Text(id)),
                         ),
                     ],
                   ),
@@ -367,8 +393,9 @@ void main() {
     await tester.pump();
 
     final BuildContext context = tester.element(find.byType(GridView));
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(context);
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
+      context,
+    );
 
     expect(controller.requestById(const FushiFocusId('top-left')), isTrue);
     await tester.pump();
@@ -380,13 +407,18 @@ void main() {
     await tester.pump();
 
     expect(moved, isTrue);
-    expect(rail.hasPrimaryFocus, isTrue,
-        reason: 'left from the shelf edge must leave the book grid and focus '
-            'the side navigation layer');
+    expect(
+      rail.hasPrimaryFocus,
+      isTrue,
+      reason:
+          'left from the shelf edge must leave the book grid and focus '
+          'the side navigation layer',
+    );
   });
 
-  testWidgets('gamepad escapes a focus root top edge to top controls',
-      (WidgetTester tester) async {
+  testWidgets('gamepad escapes a focus root top edge to top controls', (
+    WidgetTester tester,
+  ) async {
     final FocusNode top = FocusNode(debugLabel: 'top');
     addTearDown(top.dispose);
 
@@ -413,10 +445,7 @@ void main() {
                       ])
                         FushiFocusTarget(
                           id: FushiFocusId(id),
-                          child: TextButton(
-                            onPressed: () {},
-                            child: Text(id),
-                          ),
+                          child: TextButton(onPressed: () {}, child: Text(id)),
                         ),
                     ],
                   ),
@@ -430,8 +459,9 @@ void main() {
     await tester.pump();
 
     final BuildContext context = tester.element(find.byType(GridView));
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(context);
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
+      context,
+    );
 
     expect(controller.requestById(const FushiFocusId('top-left')), isTrue);
     await tester.pump();
@@ -443,13 +473,18 @@ void main() {
     await tester.pump();
 
     expect(moved, isTrue);
-    expect(top.hasPrimaryFocus, isTrue,
-        reason: 'up from the shelf top edge must leave the book grid and focus '
-            'the top options layer');
+    expect(
+      top.hasPrimaryFocus,
+      isTrue,
+      reason:
+          'up from the shelf top edge must leave the book grid and focus '
+          'the top options layer',
+    );
   });
 
-  testWidgets('gamepad does not reading-order slide at a focus root edge',
-      (WidgetTester tester) async {
+  testWidgets('gamepad does not reading-order slide at a focus root edge', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: FushiFocusRoot(
@@ -465,10 +500,7 @@ void main() {
               ])
                 FushiFocusTarget(
                   id: FushiFocusId(id),
-                  child: TextButton(
-                    onPressed: () {},
-                    child: Text(id),
-                  ),
+                  child: TextButton(onPressed: () {}, child: Text(id)),
                 ),
             ],
           ),
@@ -478,8 +510,9 @@ void main() {
     await tester.pump();
 
     final BuildContext context = tester.element(find.byType(GridView));
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(context);
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
+      context,
+    );
 
     expect(controller.requestById(const FushiFocusId('bottom-right')), isTrue);
     // Settle the reveal: focusing bottom-right centres it, scrolling the grid
@@ -494,137 +527,172 @@ void main() {
     await tester.pump();
 
     expect(moved, isFalse);
-    expect(controller.activeId, const FushiFocusId('bottom-right'),
-        reason: 'down at the bottom edge must not turn into a sideways '
-            'reading-order move inside the shelf');
-  });
-
-  testWidgets(
-      'D-pad edge takeover scrolls the focused list when no target in direction',
-      (WidgetTester tester) async {
-    // One registered target at the top of a long scroll view: down has no
-    // lower focus target, so the gamepad must take over and scroll the list
-    // instead of dead-ending.
-    final ScrollController scrollCtrl = ScrollController();
-    addTearDown(scrollCtrl.dispose);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: FushiFocusRoot(
-          child: SingleChildScrollView(
-            controller: scrollCtrl,
-            child: Column(
-              children: <Widget>[
-                FushiFocusTarget(
-                  id: const FushiFocusId('only-target'),
-                  child: const SizedBox(
-                      width: 200, height: 80, child: Text('only')),
-                ),
-                for (int i = 0; i < 40; i++)
-                  SizedBox(width: 200, height: 80, child: Text('filler $i')),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.pump();
-
-    final BuildContext context =
-        tester.element(find.byType(SingleChildScrollView));
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(context);
-    expect(controller.requestById(const FushiFocusId('only-target')), isTrue);
-    await tester.pumpAndSettle();
-
-    final double before = scrollCtrl.offset;
-    final bool moved =
-        gamepadMoveFocusInDirection(context, TraversalDirection.down);
-    expect(moved, isTrue,
-        reason: 'down with no lower target takes over and scrolls');
-    await tester.pumpAndSettle();
-    expect(scrollCtrl.offset, greaterThan(before),
-        reason: 'the focused list scrolled ~0.8 viewport down');
-  });
-
-  testWidgets(
-      'D-pad edge takeover returns false at the scroll extent (no dead loop)',
-      (WidgetTester tester) async {
-    final ScrollController scrollCtrl = ScrollController();
-    addTearDown(scrollCtrl.dispose);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: FushiFocusRoot(
-          child: SingleChildScrollView(
-            controller: scrollCtrl,
-            child: Column(
-              children: <Widget>[
-                FushiFocusTarget(
-                  id: const FushiFocusId('only-target'),
-                  child: const SizedBox(
-                      width: 200, height: 80, child: Text('only')),
-                ),
-                for (int i = 0; i < 40; i++)
-                  SizedBox(width: 200, height: 80, child: Text('filler $i')),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.pump();
-
-    final BuildContext context =
-        tester.element(find.byType(SingleChildScrollView));
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(context);
-    expect(controller.requestById(const FushiFocusId('only-target')), isTrue);
-    await tester.pumpAndSettle();
-
-    scrollCtrl.jumpTo(scrollCtrl.position.maxScrollExtent);
-    await tester.pump();
-
-    final bool moved =
-        gamepadMoveFocusInDirection(context, TraversalDirection.down);
-    expect(moved, isFalse,
-        reason:
-            'already at the bottom: edge takeover must not report movement');
     expect(
-        scrollCtrl.offset, closeTo(scrollCtrl.position.maxScrollExtent, 0.5));
+      controller.activeId,
+      const FushiFocusId('bottom-right'),
+      reason:
+          'down at the bottom edge must not turn into a sideways '
+          'reading-order move inside the shelf',
+    );
   });
 
   testWidgets(
-      'focus recovers from the ring-less fallback once targets appear '
+    'D-pad edge takeover scrolls the focused list when no target in direction',
+    (WidgetTester tester) async {
+      // One registered target at the top of a long scroll view: down has no
+      // lower focus target, so the gamepad must take over and scroll the list
+      // instead of dead-ending.
+      final ScrollController scrollCtrl = ScrollController();
+      addTearDown(scrollCtrl.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: FushiFocusRoot(
+            child: SingleChildScrollView(
+              controller: scrollCtrl,
+              child: Column(
+                children: <Widget>[
+                  FushiFocusTarget(
+                    id: const FushiFocusId('only-target'),
+                    child: const SizedBox(
+                      width: 200,
+                      height: 80,
+                      child: Text('only'),
+                    ),
+                  ),
+                  for (int i = 0; i < 40; i++)
+                    SizedBox(width: 200, height: 80, child: Text('filler $i')),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final BuildContext context = tester.element(
+        find.byType(SingleChildScrollView),
+      );
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
+        context,
+      );
+      expect(controller.requestById(const FushiFocusId('only-target')), isTrue);
+      await tester.pumpAndSettle();
+
+      final double before = scrollCtrl.offset;
+      final bool moved = gamepadMoveFocusInDirection(
+        context,
+        TraversalDirection.down,
+      );
+      expect(
+        moved,
+        isTrue,
+        reason: 'down with no lower target takes over and scrolls',
+      );
+      await tester.pumpAndSettle();
+      expect(
+        scrollCtrl.offset,
+        greaterThan(before),
+        reason: 'the focused list scrolled ~0.8 viewport down',
+      );
+    },
+  );
+
+  testWidgets(
+    'D-pad edge takeover returns false at the scroll extent (no dead loop)',
+    (WidgetTester tester) async {
+      final ScrollController scrollCtrl = ScrollController();
+      addTearDown(scrollCtrl.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: FushiFocusRoot(
+            child: SingleChildScrollView(
+              controller: scrollCtrl,
+              child: Column(
+                children: <Widget>[
+                  FushiFocusTarget(
+                    id: const FushiFocusId('only-target'),
+                    child: const SizedBox(
+                      width: 200,
+                      height: 80,
+                      child: Text('only'),
+                    ),
+                  ),
+                  for (int i = 0; i < 40; i++)
+                    SizedBox(width: 200, height: 80, child: Text('filler $i')),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final BuildContext context = tester.element(
+        find.byType(SingleChildScrollView),
+      );
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
+        context,
+      );
+      expect(controller.requestById(const FushiFocusId('only-target')), isTrue);
+      await tester.pumpAndSettle();
+
+      scrollCtrl.jumpTo(scrollCtrl.position.maxScrollExtent);
+      await tester.pump();
+
+      final bool moved = gamepadMoveFocusInDirection(
+        context,
+        TraversalDirection.down,
+      );
+      expect(
+        moved,
+        isFalse,
+        reason: 'already at the bottom: edge takeover must not report movement',
+      );
+      expect(
+        scrollCtrl.offset,
+        closeTo(scrollCtrl.position.maxScrollExtent, 0.5),
+      );
+    },
+  );
+
+  testWidgets('focus recovers from the ring-less fallback once targets appear '
       '(empty tab → content loaded)', (WidgetTester tester) async {
     final ValueNotifier<bool> hasContent = ValueNotifier<bool>(false);
     addTearDown(hasContent.dispose);
-    await tester.pumpWidget(MaterialApp(
-      home: FushiFocusRoot(
-        child: ValueListenableBuilder<bool>(
-          valueListenable: hasContent,
-          builder: (BuildContext c, bool ready, _) => Column(
-            children: <Widget>[
-              if (ready)
-                FushiFocusTarget(
-                  id: const FushiFocusId('loaded'),
-                  child: const SizedBox(width: 80, height: 60),
-                )
-              else
-                const SizedBox(width: 80, height: 60), // nothing focusable
-            ],
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FushiFocusRoot(
+          child: ValueListenableBuilder<bool>(
+            valueListenable: hasContent,
+            builder: (BuildContext c, bool ready, _) => Column(
+              children: <Widget>[
+                if (ready)
+                  FushiFocusTarget(
+                    id: const FushiFocusId('loaded'),
+                    child: const SizedBox(width: 80, height: 60),
+                  )
+                else
+                  const SizedBox(width: 80, height: 60), // nothing focusable
+              ],
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     final BuildContext context = tester.element(find.byType(Column));
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(context);
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
+      context,
+    );
 
     // Empty tab: ensureFocus settles on the ring-less fallback (nothing real).
     controller.ensureFocus();
     await tester.pump();
-    expect(controller.fallbackNode.hasPrimaryFocus, isTrue,
-        reason: 'no targets yet → fallback');
+    expect(
+      controller.fallbackNode.hasPrimaryFocus,
+      isTrue,
+      reason: 'no targets yet → fallback',
+    );
 
     // Content loads → its registration repairs focus onto the real target
     // instead of stranding the cursor ring-less on the fallback.
@@ -632,7 +700,10 @@ void main() {
     await tester.pump(); // build + register
     await tester.pump(); // post-frame scheduleRepair → ensureFocus
     expect(controller.fallbackNode.hasPrimaryFocus, isFalse);
-    expect(controller.activeId, const FushiFocusId('loaded'),
-        reason: 'focus re-homed onto the newly loaded target');
+    expect(
+      controller.activeId,
+      const FushiFocusId('loaded'),
+      reason: 'focus re-homed onto the newly loaded target',
+    );
   });
 }

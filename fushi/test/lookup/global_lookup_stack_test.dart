@@ -66,28 +66,38 @@ void main() {
   group('pushLookupFrame', () {
     test('push frame with results pushed', () {
       final GlobalLookupStack s0 = GlobalLookupStack.empty;
-      final GlobalLookupStack s1 =
-          pushLookupFrame(s0, frame(rt, resultCount: 2));
+      final GlobalLookupStack s1 = pushLookupFrame(
+        s0,
+        frame(rt, resultCount: 2),
+      );
       expect(idsOf(s1), <String>[rt]);
-      final GlobalLookupStack s2 =
-          pushLookupFrame(s1, frame(ch, parentIndex: 0, resultCount: 1));
+      final GlobalLookupStack s2 = pushLookupFrame(
+        s1,
+        frame(ch, parentIndex: 0, resultCount: 1),
+      );
       expect(idsOf(s2), <String>[rt, ch]);
     });
 
     test('no results not pushed original unchanged', () {
       final GlobalLookupStack s1 = stackOf(<String>[rt]);
-      final GlobalLookupStack s2 =
-          pushLookupFrame(s1, frame(em, parentIndex: 0, resultCount: 0));
+      final GlobalLookupStack s2 = pushLookupFrame(
+        s1,
+        frame(em, parentIndex: 0, resultCount: 0),
+      );
       expect(idsOf(s2), <String>[rt]);
-      final GlobalLookupStack s3 =
-          pushLookupFrame(GlobalLookupStack.empty, frame(em, resultCount: 0));
+      final GlobalLookupStack s3 = pushLookupFrame(
+        GlobalLookupStack.empty,
+        frame(em, resultCount: 0),
+      );
       expect(s3.isEmpty, isTrue);
     });
 
     test('immutability push does not mutate original', () {
       final GlobalLookupStack s1 = stackOf(<String>[rt]);
-      final GlobalLookupStack s2 =
-          pushLookupFrame(s1, frame(ch, parentIndex: 0));
+      final GlobalLookupStack s2 = pushLookupFrame(
+        s1,
+        frame(ch, parentIndex: 0),
+      );
       expect(s1.length, 1);
       expect(s2.length, 2);
       expect(identical(s1, s2), isFalse);
@@ -218,24 +228,30 @@ void main() {
   group('closeChildPopupsForScrolledParent scroll reselect cuts children', () {
     test('root only parent already last identity no bump', () {
       final GlobalLookupStack s = stackOf(<String>[rt]);
-      final GlobalLookupStack scrolled =
-          closeChildPopupsForScrolledParent(s, 0);
+      final GlobalLookupStack scrolled = closeChildPopupsForScrolledParent(
+        s,
+        0,
+      );
       expect(identical(scrolled, s), isTrue);
       expect(scrolled.frames.single.clearSelectionSignal, 0);
     });
 
     test('parent with child scrolled cut child bump parent signal', () {
       final GlobalLookupStack s = stackOf(<String>[rt, ch]);
-      final GlobalLookupStack scrolled =
-          closeChildPopupsForScrolledParent(s, 0);
+      final GlobalLookupStack scrolled = closeChildPopupsForScrolledParent(
+        s,
+        0,
+      );
       expect(idsOf(scrolled), <String>[rt]);
       expect(scrolled.frames.single.clearSelectionSignal, 1);
     });
 
     test('deep middle scrolled cut all its children', () {
       final GlobalLookupStack s = stackOf(<String>[rt, ch, gr]);
-      final GlobalLookupStack scrolled =
-          closeChildPopupsForScrolledParent(s, 1);
+      final GlobalLookupStack scrolled = closeChildPopupsForScrolledParent(
+        s,
+        1,
+      );
       expect(idsOf(scrolled), <String>[rt, ch]);
       expect(
         scrolled.frames
@@ -271,8 +287,9 @@ void main() {
 
     test('GlobalLookupFrame copyWith does not mutate original', () {
       final GlobalLookupFrame f = frame(rt, clearSelectionSignal: 2);
-      final GlobalLookupFrame g =
-          f.copyWith(clearSelectionSignal: f.clearSelectionSignal + 1);
+      final GlobalLookupFrame g = f.copyWith(
+        clearSelectionSignal: f.clearSelectionSignal + 1,
+      );
       expect(f.clearSelectionSignal, 2);
       expect(g.clearSelectionSignal, 3);
       expect(g.id, rt);

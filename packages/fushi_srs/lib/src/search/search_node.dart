@@ -1,10 +1,9 @@
 /// Anki 搜索语法子集的语法树、错误类型与求值对象接口。
 ///
-/// 解析见 `search_parser.dart`（照 rslib `search/parser.rs`），求值见
-/// `search_matcher.dart`（语义照 rslib `search/sqlwriter.rs`）。
+/// 解析见 `search_parser.dart`（照 rslib `search/parser.rs`）；求值在原生内核
+/// native/fushi_fsrs/src/search.rs（语义照 rslib `search/sqlwriter.rs`，正则用与 Anki 相同的
+/// Rust `regex` crate），Dart 入口 `search_corpus.dart`。
 library;
-
-import 'search_text.dart';
 
 /// 解析失败的类别。
 enum SrsSearchErrorKind {
@@ -13,6 +12,9 @@ enum SrsSearchErrorKind {
 
   /// 合法的 Anki 语法，但本子集不支持（如 `rated:`、`prop:ease`、`nc:`）。
   unsupported,
+
+  /// 求值用的原生内核（native/fushi_fsrs）不可用或拒收了数据：与查询本身无关。
+  unavailable,
 }
 
 /// 搜索无法按 Anki 语义求值时抛出——**绝不静默退化成空集或全集**：查重靠
@@ -27,84 +29,6 @@ class SrsSearchUnsupported implements Exception {
 
   @override
   String toString() => 'SrsSearchUnsupported(${kind.name}): $reason [$query]';
-}
-
-/// 被求值的一张卡（连同它所属的笔记）。求值不碰数据库，全部取自这里。
-///
-/// findNotes 语义 = 「笔记的任一张卡命中」，由调用方对每张卡求值后归并。
-abstract interface class SrsSearchSubject {
-  /// 牌组全路径，层级用 `::` 分隔（`日本語::語彙`）。
-  String get deckName;
-
-  /// 笔记类型名。
-  String get noteTypeName;
-
-  /// 字段名 → 字段值（原始 HTML），按笔记类型的字段顺序。
-  Map<String, String> get fields;
-
-  /// 标签（层级标签用 `::`，如 `verb::ichidan`）。
-  List<String> get tags;
-
-  /// `is:new`：从未学过。
-  bool get isNew;
-
-  /// `is:learn`：学习中或重学中（Anki：type ∈ {learn, relearn}）。
-  bool get isLearn;
-
-  /// `is:review`：复习卡或重学中（Anki：type ∈ {review, relearn}）。
-  bool get isReview;
-
-  /// `is:due`：今天到期（复习 / 跨日学习 due ≤ 今天，或学习中 due ≤ 现在 + 提前量）。
-  bool get isDue;
-
-  /// `is:suspended`：已暂停。
-  bool get isSuspended;
-
-  /// 笔记 id（53 位以内整数）。
-  int get noteId;
-
-  /// 卡片 id（53 位以内整数）。
-  int get cardId;
-
-  /// 卡片加入那天的排程日序号（与 [todayDayIndex] 同一套日界）。
-  int get addedDayIndex;
-
-  /// 今天的排程日序号。
-  int get todayDayIndex;
-
-  /// `flag:N`：旗标（0 = 无，1–7 与 Anki 同序）。
-  int get flag;
-
-  /// `is:buried`：被手动搁置、还没到解除那天。
-  bool get isBuried;
-
-  /// `card:N`：卡片序号，从 1 起（普通笔记 = 模板序号 + 1；填空 = 填空编号）。
-  int get cardOrdinal;
-
-  /// `card:名`：模板名。
-  String get templateName;
-
-  /// `prop:ivl`：当前间隔（天；新卡 / 学习中为 0，与 Anki 的 `c.ivl` 同口径）。
-  int get intervalDays;
-
-  /// `prop:due`：距今天的到期天数（复习卡 = 到期日 - 今天；学习中 = 到期时刻减明天日界
-  /// 按天截断）；新卡没有到期日，返回 null（不命中任何 `prop:due`）。
-  int? get dueInDays;
-
-  /// `prop:reps`：复习次数。
-  int get reps;
-
-  /// `prop:lapses`：遗忘次数。
-  int get lapses;
-
-  /// `prop:s`：FSRS 稳定性（天）；没有记忆状态返回 null。
-  double? get stability;
-
-  /// `prop:d`：FSRS 难度（内核原值 1–10）；没有记忆状态返回 null。
-  double? get difficulty;
-
-  /// `edited:N`：笔记最后一次改动那天的排程日序号。
-  int get editedDayIndex;
 }
 
 /// 搜索语法树。叶子节点里的文本保留 Anki 的通配转义（`\*` `\_` `\\`），
@@ -133,74 +57,52 @@ final class SrsSearchNot extends SrsSearchNode {
   final SrsSearchNode child;
 }
 
-/// `re:正则`：在全部字段原文（0x1f 连接）里做正则搜索，默认不区分大小写。
+/// `re:正则`：在全部字段原文（0x1f 连接，同 rslib 的 `n.flds`）里做正则搜索，默认不区分大小写
+/// （rslib：在正则前加 `(?i)`）。[source] 是查询里的原文，[pattern] 是解掉 `\"` 后交给正则引擎的。
 final class SrsSearchRegex extends SrsSearchNode {
-  SrsSearchRegex(this.source, this.pattern);
+  const SrsSearchRegex(this.source, this.pattern);
   final String source;
-  final RegExp pattern;
+  final String pattern;
 }
 
 /// `字段名:re:正则`：字段名通配；值按正则在字段原文里搜索（不锚定，默认不区分大小写）。
 final class SrsSearchFieldRegex extends SrsSearchNode {
-  SrsSearchFieldRegex(this.field, this.source, this.pattern)
-    : fieldPattern = ankiGlobRegExp(field);
+  const SrsSearchFieldRegex(this.field, this.source, this.pattern);
   final String field;
   final String source;
-  final RegExp pattern;
-  final RegExp fieldPattern;
+  final String pattern;
 }
 
 /// 裸词：在全部字段（原文）里做包含匹配，支持 `*` / `_`。
 final class SrsSearchText extends SrsSearchNode {
-  SrsSearchText(this.text) : pattern = ankiGlobRegExp(text, anchored: false);
+  const SrsSearchText(this.text);
   final String text;
-  final RegExp pattern;
 }
 
-/// `字段名:值`：字段名不区分大小写、可通配；值整值匹配、可通配。
+/// `字段名:值`：字段名不区分大小写、可通配；值整值匹配、可通配（去 HTML 后或原文命中都算）。
 final class SrsSearchField extends SrsSearchNode {
-  SrsSearchField(this.field, this.text)
-    : fieldPattern = ankiGlobRegExp(field),
-      valuePattern = ankiGlobRegExp(text);
+  const SrsSearchField(this.field, this.text);
   final String field;
   final String text;
-  final RegExp fieldPattern;
-  final RegExp valuePattern;
 }
 
 /// `deck:名`：匹配该牌组及其全部子牌组；`deck:*` 匹配全部。
 final class SrsSearchDeck extends SrsSearchNode {
-  SrsSearchDeck(this.deck)
-    : pattern = deck == '*'
-          ? null
-          : RegExp(
-              '^${ankiGlobToRegExpSource(deck)}(?:\$|::)',
-              caseSensitive: false,
-              unicode: true,
-              dotAll: true,
-            );
+  const SrsSearchDeck(this.deck);
   final String deck;
-  final RegExp? pattern;
 }
 
 /// `note:笔记类型名`。
 final class SrsSearchNoteType extends SrsSearchNode {
-  SrsSearchNoteType(this.name) : pattern = ankiGlobRegExp(name);
+  const SrsSearchNoteType(this.name);
   final String name;
-  final RegExp pattern;
 }
 
 /// `tag:标签`：匹配该标签及其子标签（`tag:a` 命中 `a`、`a::b`，不命中 `ab`）；
-/// `tag:none` 无标签；`tag:*` 全部。
+/// `tag:none` 无标签；`tag:*` 全部。通配 `_` / `*` 只匹配非空白。
 final class SrsSearchTag extends SrsSearchNode {
-  SrsSearchTag(this.tag)
-    : pattern = RegExp(
-        ' ${ankiGlobToRegExpSource(tag, wildcard: r'\S')}(?:::| )',
-        caseSensitive: false,
-        unicode: true,
-      );
+  const SrsSearchTag(this.tag);
   final String tag;
-  final RegExp pattern;
 }
 
 enum SrsSearchCardState { isNew, learn, review, due, suspended, buried }
@@ -238,13 +140,10 @@ final class SrsSearchFlag extends SrsSearchNode {
 
 /// `card:N`（从 1 起的卡片序号）或 `card:模板名`（通配）。
 final class SrsSearchCardTemplate extends SrsSearchNode {
-  SrsSearchCardTemplate.ordinal(int this.ordinal) : name = null, pattern = null;
-  SrsSearchCardTemplate.named(String this.name)
-    : ordinal = null,
-      pattern = ankiGlobRegExp(name);
+  const SrsSearchCardTemplate.ordinal(int this.ordinal) : name = null;
+  const SrsSearchCardTemplate.named(String this.name) : ordinal = null;
   final int? ordinal;
   final String? name;
-  final RegExp? pattern;
 }
 
 /// `edited:N`：最近 N 天（含今天）改过内容的笔记；N 至少为 1。
@@ -272,6 +171,43 @@ enum SrsSearchProperty {
 
   /// `d`：FSRS 难度，0–1（Anki 口径：(内核难度 - 1) / 9）。
   difficulty,
+
+  /// `r`：此刻的 FSRS 可提取度，0–1（小数；只在浏览会话里有值，见 native/fushi_fsrs/src/store/browse.rs）。
+  retrievability,
+}
+
+/// `rated:N` / `rated:N:E`：最近 N 天内（含今天）作答过（[rating] 非 null 时还要那次评分为它，1..4）。
+/// 只在浏览会话里求值（内核按有效复习投影换成卡 id 集合）。
+final class SrsSearchRated extends SrsSearchNode {
+  const SrsSearchRated(this.days, [this.rating]);
+  final int days;
+  final int? rating;
+}
+
+/// `is:emptyfield`：笔记的排序字段（第一个字段）去 HTML、trim 后为空。只在浏览会话里求值。
+final class SrsSearchEmptyField extends SrsSearchNode {
+  const SrsSearchEmptyField();
+}
+
+/// `is:dupe`：同笔记类型下首字段查重规范形相同（且非空）的笔记有两条以上。只在浏览会话里求值。
+final class SrsSearchDuplicate extends SrsSearchNode {
+  const SrsSearchDuplicate();
+}
+
+/// `has:` 的媒体种类。
+enum SrsSearchMedia { audio, image }
+
+/// `has:audio` / `has:image`：笔记任一字段原文含 `[sound:` / `<img`。
+final class SrsSearchHasMedia extends SrsSearchNode {
+  const SrsSearchHasMedia(this.media);
+  final SrsSearchMedia media;
+}
+
+/// `src:none` / `src:<kind>` / `src:<出处键>`（值里有 `:` 就是出处键，整值相等）：笔记出处。[value] 已解掉全部
+/// 转义（含通配转义：这里没有通配）。只在浏览会话里求值。
+final class SrsSearchSource extends SrsSearchNode {
+  const SrsSearchSource(this.value);
+  final String value;
 }
 
 /// `prop:` 的比较符。

@@ -64,17 +64,22 @@ class HostSubscriptionCreateRequest {
       throw const FormatException('mode must be oneShot or ongoing');
     }
     final String subtitlePolicy = opt('subtitlePolicy') ?? 'bestEffort';
-    if (!const <String>{'none', 'bestEffort', 'required'}
-        .contains(subtitlePolicy)) {
+    if (!const <String>{
+      'none',
+      'bestEffort',
+      'required',
+    }.contains(subtitlePolicy)) {
       throw const FormatException(
-          'subtitlePolicy must be none / bestEffort / required');
+        'subtitlePolicy must be none / bestEffort / required',
+      );
     }
     final String? metadataProvider = opt('metadataProvider');
     final String? externalId = opt('externalId');
     // 表级 CHECK：两者同为 NULL 或同非 NULL。
     if ((metadataProvider == null) != (externalId == null)) {
       throw const FormatException(
-          'metadataProvider and externalId must be given together');
+        'metadataProvider and externalId must be given together',
+      );
     }
     final Object? filter = json['filterJson'];
     return HostSubscriptionCreateRequest(
@@ -137,7 +142,8 @@ abstract interface class HostSubscriptionHost {
   Future<Map<String, Map<String, int>>> itemCounts();
 
   Future<VideoDownloadSubscriptionRow> create(
-      HostSubscriptionCreateRequest request);
+    HostSubscriptionCreateRequest request,
+  );
 
   Future<void> setEnabled(String subscriptionId, bool enabled);
 
@@ -152,30 +158,29 @@ abstract interface class HostSubscriptionHost {
 Map<String, Object?> videoDownloadSubscriptionToWire(
   VideoDownloadSubscriptionRow row, {
   Map<String, int>? itemCounts,
-}) =>
-    <String, Object?>{
-      'subscriptionId': row.subscriptionId,
-      'title': row.title,
-      'searchQuery': row.searchQuery,
-      'mediaKind': row.mediaKind,
-      'mode': row.mode,
-      'resourceProvider': row.resourceProvider,
-      'metadataProvider': row.metadataProvider,
-      'externalId': row.externalId,
-      'discoveryCategory': row.discoveryCategory,
-      'year': row.year,
-      'season': row.season,
-      'coverUrl': row.coverUrl,
-      'startAfterEpisode': row.startAfterEpisode,
-      'subtitlePolicy': row.subtitlePolicy,
-      'enabled': row.enabled,
-      'nextCheckAt': row.nextCheckAt,
-      'lastCheckedAt': row.lastCheckedAt,
-      'lastMatchedAt': row.lastMatchedAt,
-      'fulfilledAt': row.fulfilledAt,
-      'retryCount': row.retryCount,
-      'lastError': row.lastError,
-      'createdAt': row.createdAt,
-      'updatedAt': row.updatedAt,
-      if (itemCounts != null) 'itemCounts': itemCounts,
-    };
+}) => <String, Object?>{
+  'subscriptionId': row.subscriptionId,
+  'title': row.title,
+  'searchQuery': row.searchQuery,
+  'mediaKind': row.mediaKind,
+  'mode': row.mode,
+  'resourceProvider': row.resourceProvider,
+  'metadataProvider': row.metadataProvider,
+  'externalId': row.externalId,
+  'discoveryCategory': row.discoveryCategory,
+  'year': row.year,
+  'season': row.season,
+  'coverUrl': row.coverUrl,
+  'startAfterEpisode': row.startAfterEpisode,
+  'subtitlePolicy': row.subtitlePolicy,
+  'enabled': row.enabled,
+  'nextCheckAt': row.nextCheckAt,
+  'lastCheckedAt': row.lastCheckedAt,
+  'lastMatchedAt': row.lastMatchedAt,
+  'fulfilledAt': row.fulfilledAt,
+  'retryCount': row.retryCount,
+  'lastError': row.lastError,
+  'createdAt': row.createdAt,
+  'updatedAt': row.updatedAt,
+  if (itemCounts != null) 'itemCounts': itemCounts,
+};

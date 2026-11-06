@@ -465,7 +465,9 @@ function loadSidePanel(storedSettings, tabReply, lookupReply) {
         return {
           query(_q, cb) { cb([{ id: 7, title: '测试页' }]); },
           get(_id, cb) { cb({ id: 7, title: '测试页' }); },
-          sendMessage(_tabId, message, cb) {
+          // chrome.tabs.sendMessage(tabId, message, options?, callback?)：侧边栏带 {frameId:0}。
+          sendMessage(_tabId, message, opts, cb) {
+            if (typeof opts === 'function') cb = opts;
             tabMessages.push(message);
             if (cb) cb(tabReply ? tabReply(message) : undefined);
           },
@@ -750,4 +752,42 @@ test('面板内渲染路径同样自动朗读（两个表面不得漂开）', as
   await flush();
   assert.ok(h.runtimeMessages.some((m) => m && m.type === 'lookupAudio'),
     '面板内渲染路径没有自动朗读（页面弹窗有、这边没有=同一个开关两个表面行为漂开）');
+});
+
+// 原文自带振假名：侧栏取词（selection.js 把 `[{s,e,r}]` 放在 selection.rubyReadings）随词一起
+// 交给宿主页 / 面板内查词请求；只用来源自带的读音。
+function withRubySelection(h) {
+  h.windowObj.fushiSelection.selectFromPosition = function () {
+    this.selection = { text: '忙しい', rubyReadings: [{ s: 0, e: 1, r: 'せわ' }] };
+    return '忙しい';
+  };
+}
+
+test('点字幕词带原文振假名：交给宿主页的消息携带 ruby', async () => {
+  const h = loadSidePanel({}, OK_REPLY);
+  await flush();
+  withRubySelection(h);
+  h.clickCueWord('忙しい');
+  await flush();
+  const shown = h.tabMessages.filter((m) => m && m.type === 'fushiSubtitleSidePanelShowLookup');
+  assert.strictEqual(shown.length, 1);
+  assert.strictEqual(shown[0].term, '忙しい');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(shown[0].ruby)), [{ s: 0, e: 1, r: 'せわ' }]);
+});
+
+test('面板内查词：lookup 请求同样携带 ruby；无 ruby 的词不带该字段', async () => {
+  const h = loadSidePanel({ subtitleLookupOnPage: false }, OK_REPLY);
+  await flush();
+  withRubySelection(h);
+  h.clickCueWord('忙しい');
+  await flush();
+  const lookups = h.runtimeMessages.filter((m) => m && m.type === 'lookup');
+  assert.strictEqual(lookups.length, 1);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(lookups[0].ruby)), [{ s: 0, e: 1, r: 'せわ' }]);
+
+  h.lookup('世界');
+  await flush();
+  const plain = h.runtimeMessages.filter((m) => m && m.type === 'lookup' && m.term === '世界');
+  assert.strictEqual(plain.length, 1);
+  assert.ok(!('ruby' in plain[0]), '没有原文振假名时不得带 ruby 字段');
 });

@@ -49,16 +49,22 @@ void main() {
       await tester.pumpWidget(wrap(1));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(titleParagraph(tester).maxLines, 1,
-          reason: 'FushiListItem 默认 titleMaxLines:1（截断根因）');
+      expect(
+        titleParagraph(tester).maxLines,
+        1,
+        reason: 'FushiListItem 默认 titleMaxLines:1（截断根因）',
+      );
 
       // 修复值（2）——第二行放行。
       await tester.pumpWidget(wrap(2));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       final RenderParagraph twoLine = titleParagraph(tester);
-      expect(twoLine.maxLines, 2,
-          reason: 'titleMaxLines: 2 必须真透传到标题，才能让长标签换行而非省略');
+      expect(
+        twoLine.maxLines,
+        2,
+        reason: 'titleMaxLines: 2 必须真透传到标题，才能让长标签换行而非省略',
+      );
 
       // 用标题的真实样式在「单行放不下」的净宽内验证截断被两行救回（字体无关：
       // 净宽由该字体自身的单行度量派生）。
@@ -85,10 +91,16 @@ void main() {
         return exceeded;
       }
 
-      expect(exceedsAt(1), isTrue,
-          reason: '窄净宽内单行放不下「布局与显示」——默认 1 会 ellipsis 截断');
-      expect(exceedsAt(2), isFalse,
-          reason: '两行能完整显示「布局与显示」——titleMaxLines: 2 即修复');
+      expect(
+        exceedsAt(1),
+        isTrue,
+        reason: '窄净宽内单行放不下「布局与显示」——默认 1 会 ellipsis 截断',
+      );
+      expect(
+        exceedsAt(2),
+        isFalse,
+        reason: '两行能完整显示「布局与显示」——titleMaxLines: 2 即修复',
+      );
     },
   );
 }

@@ -201,6 +201,16 @@ public class InAppWebViewClient extends WebViewClient {
   @Override
   public void onPageStarted(WebView view, String url, Bitmap favicon) {
     final InAppWebView webView = (InAppWebView) view;
+    // Fushi patch (bridge lock): onPageStarted only fires for main-frame, cross-document
+    // navigations, so a new top-level document starts unlocked again. See PATCHES.md.
+    if (webView.javaScriptBridgeInterface != null) {
+      webView.javaScriptBridgeInterface.fushiResetBridgeLock();
+    }
+    // Fushi patch (BUG-4180, see PATCHES.md): the selection the floating context menu belongs to
+    // went away with the old document, which fires no selectionchange, so close it here.
+    if (webView.floatingContextMenu != null) {
+      webView.hideContextMenu();
+    }
     webView.isLoading = true;
     webView.disposeWebMessageChannels();
     webView.userContentController.resetContentWorlds();

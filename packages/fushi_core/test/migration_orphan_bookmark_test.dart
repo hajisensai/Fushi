@@ -136,49 +136,71 @@ CREATE TABLE preferences (
 }
 
 void main() {
-  test('orphan legacy bookmark prefs are skipped, not aborting the upgrade',
-      () async {
-    final FushiDatabase db = _openPreV16WithLegacyBookmarkPrefs();
-    addTearDown(db.close);
+  test(
+    'orphan legacy bookmark prefs are skipped, not aborting the upgrade',
+    () async {
+      final FushiDatabase db = _openPreV16WithLegacyBookmarkPrefs();
+      addTearDown(db.close);
 
-    // Must NOT throw on the orphan FK target (the regression this guards).
-    await db.migrateLegacyBookmarkPreferences();
+      // Must NOT throw on the orphan FK target (the regression this guards).
+      await db.migrateLegacyBookmarkPreferences();
 
-    // ── real bookmark imported, orphan rows skipped ──────────────────────
-    final QueryRow total = await db
-        .customSelect('SELECT COUNT(*) AS c FROM bookmarks')
-        .getSingle();
-    expect(total.read<int>('c'), 1,
-        reason: 'only the real (ttuBookId=1) bookmark imports; both '
-            'ttuBookId=999 orphans are skipped');
+      // ── real bookmark imported, orphan rows skipped ──────────────────────
+      final QueryRow total = await db
+          .customSelect('SELECT COUNT(*) AS c FROM bookmarks')
+          .getSingle();
+      expect(
+        total.read<int>('c'),
+        1,
+        reason:
+            'only the real (ttuBookId=1) bookmark imports; both '
+            'ttuBookId=999 orphans are skipped',
+      );
 
-    final QueryRow real = await db
-        .customSelect(
-          "SELECT label, ttu_book_id FROM bookmarks WHERE ttu_book_id = 1",
-        )
-        .getSingle();
-    expect(real.read<String>('label'), 'real-bm');
+      final QueryRow real = await db
+          .customSelect(
+            "SELECT label, ttu_book_id FROM bookmarks WHERE ttu_book_id = 1",
+          )
+          .getSingle();
+      expect(real.read<String>('label'), 'real-bm');
 
-    final QueryRow orphanCount = await db
-        .customSelect(
-          'SELECT COUNT(*) AS c FROM bookmarks WHERE ttu_book_id = 999',
-        )
-        .getSingle();
-    expect(orphanCount.read<int>('c'), 0,
-        reason: 'orphan ttu_book_id never inserted');
+      final QueryRow orphanCount = await db
+          .customSelect(
+            'SELECT COUNT(*) AS c FROM bookmarks WHERE ttu_book_id = 999',
+          )
+          .getSingle();
+      expect(
+        orphanCount.read<int>('c'),
+        0,
+        reason: 'orphan ttu_book_id never inserted',
+      );
 
-    // ── every legacy bookmarks_<int> key drained, unrelated pref kept ────
-    expect(await db.getPref('bookmarks_1'), isNull,
-        reason: 'drained legacy key removed');
-    expect(await db.getPref('bookmarks_999'), isNull,
-        reason: 'pure-orphan legacy key still removed (not left dangling)');
-    expect(await db.getPref('reader_font_size'), '18',
-        reason: 'unrelated prefs untouched');
+      // ── every legacy bookmarks_<int> key drained, unrelated pref kept ────
+      expect(
+        await db.getPref('bookmarks_1'),
+        isNull,
+        reason: 'drained legacy key removed',
+      );
+      expect(
+        await db.getPref('bookmarks_999'),
+        isNull,
+        reason: 'pure-orphan legacy key still removed (not left dangling)',
+      );
+      expect(
+        await db.getPref('reader_font_size'),
+        '18',
+        reason: 'unrelated prefs untouched',
+      );
 
-    // ── FK integrity intact: the skip kept the relation graph consistent ──
-    final List<QueryRow> violations =
-        await db.customSelect('PRAGMA foreign_key_check').get();
-    expect(violations, isEmpty,
-        reason: 'no dangling bookmark FK after the orphan skip');
-  });
+      // ── FK integrity intact: the skip kept the relation graph consistent ──
+      final List<QueryRow> violations = await db
+          .customSelect('PRAGMA foreign_key_check')
+          .get();
+      expect(
+        violations,
+        isEmpty,
+        reason: 'no dangling bookmark FK after the orphan skip',
+      );
+    },
+  );
 }

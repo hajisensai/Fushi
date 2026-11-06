@@ -12,17 +12,24 @@ import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/pages/implementations/library_online_sources_view.dart';
+import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
+import 'package:fushi/src/pages/shared/fushi_header_search_keys.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart'
-    show FushiHeaderSearchKeys, fushiVisibleHeaderSearch;
+    show fushiVisibleHeaderSearch;
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
 import 'package:fushi/src/utils/components/section_visibility.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/library_section_tab.dart';
+import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
 
 /// 视频专用分区壳。
 ///
@@ -56,6 +63,7 @@ class VideoLibraryShell extends StatefulWidget {
     required this.onLibraryChanged,
     this.loadPendingScrapeWorks,
     this.refreshPendingScrapeWorks,
+    this.pendingScrapeChangedSignal,
     this.localLibraryPageBuilder,
     this.mediaServerServersLoader,
     this.mediaServerPageBuilder,
@@ -86,6 +94,9 @@ class VideoLibraryShell extends StatefulWidget {
   /// 刮削结果变化后只读重算待确认清单（见 [HomeVideoPage]，BUG-3072）。
   final Future<List<VideoPendingScrapeWork>> Function()?
   refreshPendingScrapeWorks;
+
+  /// 待确认清单在刮削之外变了（忽略 / 撤销忽略，见 [HomeVideoPage]）。
+  final Listenable? pendingScrapeChangedSignal;
 
   /// 允许宿主测试替换本地库叶子；生产环境保持 null，使用 [HomeVideoPage]。
   final Widget Function(
@@ -124,8 +135,17 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
   VideoLibrarySection _section = VideoLibrarySection.home;
   VideoLibrarySection _localSection = VideoLibrarySection.home;
 
-  /// 「在线源」组上次停留的分区（来源 / 扩展），点组页签回到这里。
-  VideoLibrarySection _onlineSection = VideoLibrarySection.onlineSources;
+  /// 「媒体库」组上次停留的分区（首页 / 系列 / 全部视频 / 媒体服务器），点组
+  /// 页签回到这里。
+  VideoLibrarySection _librarySection = VideoLibrarySection.home;
+
+  /// 「在线」组上次停留的分区（发现 / 来源 / 扩展），点组页签回到这里；null =
+  /// 还没进过，取组内第一个。网页视频站点 2026-10-19 搬去「网页」模块
+  /// （`WebHubPage`）。
+  VideoLibrarySection? _onlineSection;
+
+  /// 进导入页之前停留的分区：再点一次导入钮回到这里。
+  VideoLibrarySection _beforeImport = VideoLibrarySection.home;
   bool _mediaServersVisited = false;
   bool _sourcesVisited = false;
 
@@ -156,6 +176,15 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
     // 换了分区，新页面从顶部开始：工具栏回来。
     _chrome.resetToTop();
     setState(() {
+      if (value == VideoLibrarySection.sources) _beforeImport = _section;
+      switch (_groupOf(value)) {
+        case LibrarySectionGroup.library:
+          _librarySection = value;
+        case LibrarySectionGroup.online:
+          _onlineSection = value;
+        case null:
+          break;
+      }
       _section = value;
       if (value == VideoLibrarySection.home ||
           value == VideoLibrarySection.series ||
@@ -166,10 +195,6 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         _mediaServersVisited = true;
       }
       if (value == VideoLibrarySection.sources) _sourcesVisited = true;
-      if (value == VideoLibrarySection.onlineSources ||
-          value == VideoLibrarySection.extensions) {
-        _onlineSection = value;
-      }
       if (value == VideoLibrarySection.discover ||
           value == VideoLibrarySection.onlineSources ||
           value == VideoLibrarySection.extensions) {
@@ -178,23 +203,38 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
     });
   }
 
-  /// 顶栏某组页签此刻代表的分区：组内上次停留的那个。
-  VideoLibrarySection _activeSectionOf(_VideoSectionGroup group) =>
-      switch (group) {
-        _VideoSectionGroup.library => _localSection,
-        _VideoSectionGroup.discover => VideoLibrarySection.discover,
-        _VideoSectionGroup.mediaServers => VideoLibrarySection.mediaServers,
-        _VideoSectionGroup.online => _onlineSection,
-        _VideoSectionGroup.import => VideoLibrarySection.sources,
-      };
+  /// 顶栏某组页签此刻代表的分区：组内上次停留的那个（还没进过或已下线时取组内
+  /// 第一个）。
+  VideoLibrarySection _activeSectionOf(
+    LibrarySectionGroup group,
+    List<LibrarySectionTab<VideoLibrarySection>> members,
+  ) {
+    final VideoLibrarySection? last = switch (group) {
+      LibrarySectionGroup.library => _librarySection,
+      LibrarySectionGroup.online => _onlineSection,
+    };
+    return members.any(
+          (LibrarySectionTab<VideoLibrarySection> tab) => tab.value == last,
+        )
+        ? last!
+        : members.first.value;
+  }
 
-  String _groupLabel(_VideoSectionGroup group) => switch (group) {
-    _VideoSectionGroup.library => t.library_view_media,
-    _VideoSectionGroup.discover => t.library_view_discover,
-    _VideoSectionGroup.mediaServers => t.video_library_media_servers,
-    _VideoSectionGroup.online => t.media_import_segment_sources,
-    _VideoSectionGroup.import => t.library_view_import,
+  String _groupLabel(
+    LibrarySectionGroup group,
+    List<LibrarySectionTab<VideoLibrarySection>> members,
+  ) => switch (group) {
+    LibrarySectionGroup.library => t.library_view_media,
+    LibrarySectionGroup.online =>
+      members.length == 1 ? members.single.label : t.library_view_online,
   };
+
+  /// 导入钮：不在导入页时进去，在导入页时回到进来前的分区。
+  void _toggleImport() => _select(
+    _section == VideoLibrarySection.sources
+        ? _beforeImport
+        : VideoLibrarySection.sources,
+  );
 
   bool get _showsLocalLibrary => switch (_section) {
     VideoLibrarySection.home ||
@@ -253,17 +293,17 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
             value: VideoLibrarySection.allVideos,
             label: t.video_library_all_videos,
           ),
-          // 发现紧跟本地库视图（2026-10-05 用户要求与媒体服务器对调）；媒体服务器
-          // 是用户自己的远端库，排在发现之后；随后是来源 / 扩展，最后是管理类分区。
+          // 媒体服务器是用户自己的远端库，归「媒体库」组、排在本地视图之后；
+          // 发现 / 来源 / 扩展归「在线」组；导入是工具栏右端的按钮。
+          LibrarySectionTab<VideoLibrarySection>(
+            value: VideoLibrarySection.mediaServers,
+            label: t.video_library_media_servers,
+          ),
           if (StoreRestrictedCapability.externalDiscovery.isAvailable)
             LibrarySectionTab<VideoLibrarySection>(
               value: VideoLibrarySection.discover,
               label: t.library_view_discover,
             ),
-          LibrarySectionTab<VideoLibrarySection>(
-            value: VideoLibrarySection.mediaServers,
-            label: t.video_library_media_servers,
-          ),
           if (online)
             LibrarySectionTab<VideoLibrarySection>(
               value: VideoLibrarySection.onlineSources,
@@ -279,94 +319,138 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
             label: t.library_view_import,
           ),
         ];
-    // 顶栏只放分组（2026-10-14 用户截图「视频库顶部过多，移动端体验很差」）：
-    // 八个平级分区压成五组，组内多个分区（媒体库 = 首页 / 系列 / 全部视频；
-    // 在线源 = 来源 / 扩展）由顶栏下方的二级胶囊切换。每组页签的值就是该组
-    // 「当前 / 上次停留」的分区，点组页签即回到组内上次的位置，选中判据仍是
+    // 顶栏只放两组（2026-10-30 用户拍板方案 D，见 [LibrarySectionGroup]）：
+    // 媒体库 = 首页 / 系列 / 全部视频 / 媒体服务器，在线 = 发现 / 来源 / 扩展，
+    // 组内由顶栏下方的二级胶囊切换；导入是工具栏右端的按钮。每组页签的值就是
+    // 该组「当前 / 上次停留」的分区，点组页签即回到组内上次的位置，选中判据仍是
     // `_section`，横滑顺序仍是上面的扁平分区表。
     final List<LibrarySectionTab<VideoLibrarySection>> groupTabs =
-        <LibrarySectionTab<VideoLibrarySection>>[
-          for (final _VideoSectionGroup group in _VideoSectionGroup.values)
-            if (tabs.any(
-              (LibrarySectionTab<VideoLibrarySection> tab) =>
-                  _groupOf(tab.value) == group,
-            ))
-              LibrarySectionTab<VideoLibrarySection>(
-                value: _activeSectionOf(group),
-                label: _groupLabel(group),
-              ),
-        ];
-    final _VideoSectionGroup currentGroup = _groupOf(_section);
+        <LibrarySectionTab<VideoLibrarySection>>[];
+    for (final LibrarySectionGroup group in LibrarySectionGroup.values) {
+      final List<LibrarySectionTab<VideoLibrarySection>> members =
+          <LibrarySectionTab<VideoLibrarySection>>[
+            for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
+              if (_groupOf(tab.value) == group) tab,
+          ];
+      if (members.isEmpty) continue;
+      groupTabs.add(
+        LibrarySectionTab<VideoLibrarySection>(
+          value: _groupOf(_section) == group
+              ? _section
+              : _activeSectionOf(group, members),
+          label: _groupLabel(group, members),
+          // 组页签的值随组内停留的分区变，顺序身份认组。
+          orderId: group.name,
+        ),
+      );
+    }
+    final LibrarySectionGroup? currentGroup = _groupOf(_section);
     final List<LibrarySectionTab<VideoLibrarySection>> subTabs =
-        <LibrarySectionTab<VideoLibrarySection>>[
-          for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
-            if (_groupOf(tab.value) == currentGroup) tab,
-        ];
-    final Widget navigation = LibrarySectionTabs<VideoLibrarySection>(
-      tabs: groupTabs,
-      selected: _section,
-      onChanged: _select,
-      focusIdPrefix: 'video-library-view',
-      floating: true,
-    );
+        currentGroup == null
+        ? const <LibrarySectionTab<VideoLibrarySection>>[]
+        : <LibrarySectionTab<VideoLibrarySection>>[
+            for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
+              if (_groupOf(tab.value) == currentGroup) tab,
+          ];
+    // 一级只剩一组（iOS 合规门下没有在线分区）时不画胶囊、改放该组名的标题
+    // 胶囊（媒体库）；停在导入页时高亮「媒体库」组（导入管理的就是本地库）。
+    final Widget navigation = groupTabs.length < 2
+        ? FushiFloatingChromeSoloTitle(
+            title: groupTabs.isEmpty ? '' : groupTabs.single.label,
+          )
+        : LibrarySectionTabs<VideoLibrarySection>(
+            tabs: groupTabs,
+            selected: currentGroup == null ? groupTabs.first.value : _section,
+            onChanged: _select,
+            focusIdPrefix: 'video-library-view',
+            floating: true,
+          );
     // 保留外壳给本 tab 的页面名（页头据它判断「标题已由外壳画出」），只把动作槽
     // 换成壳自己的，动作改由浮动动作组画。
-    return FushiShellTitleScope(
-      title: FushiShellTitleScope.maybeTitleOf(context) ?? t.nav_video,
-      actionsSlot: _actionsSlot,
-      child: FushiHeaderSearchKeys(
-        // Ctrl+F / `/` 展开当前视图的页头搜索，展开时 Esc 先清空再收起
-        // （焦点在页签、动作或内容上都认）。
-        resolve: () => fushiVisibleHeaderSearch(_actionsSlot),
-        child: FushiFloatingChromeScope(
-          controller: _chrome,
-          // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
-          // 滚不动」的根因是收起改了视口高度，见 [FushiFloatingChromeOverlay]）。
-          child: FushiFloatingChromeOverlay(
-            chrome: FushiFloatingChromeBar(
-              tabs: navigation,
-              slot: _actionsSlot,
-            ),
-            child: NotificationListener<ScrollNotification>(
-              onNotification: _onScroll,
-              child: SectionSwipeNavigator<VideoLibrarySection>(
-                sections: <VideoLibrarySection>[
-                  for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
-                    tab.value,
-                ],
-                selected: _section,
-                onSelect: _select,
-                // 二级胶囊行叠在页面上、与顶栏同一份显隐（嵌套的
-                // [FushiFloatingChromeOverlay] 读同一个作用域，内层页面的顶部
-                // 让位自动累加两行），收放不改页面视口。
-                child: FushiFloatingChromeOverlay(
-                  chrome: subTabs.length < 2
-                      ? const SizedBox.shrink()
-                      : Padding(
-                          // 与顶栏胶囊、页面内容同一条页边；顶上 8 + 顶栏底边 4
-                          // = 两级页签之间 12（同浏览页二级内容域）。
-                          padding: EdgeInsets.fromLTRB(
-                            FushiDesignTokens.of(context).spacing.page,
-                            FushiDesignTokens.of(context).spacing.gap,
-                            FushiDesignTokens.of(context).spacing.page,
-                            FushiDesignTokens.of(context).spacing.gap,
-                          ),
-                          child: Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: LibrarySectionTabs<VideoLibrarySection>(
-                              // 换组即换一份页签（段数与段值都变），不复用旧
-                              // controller。
-                              key: ValueKey<_VideoSectionGroup>(currentGroup),
-                              tabs: subTabs,
-                              selected: _section,
-                              onChanged: _select,
-                              focusIdPrefix: 'video-library-subview',
-                              secondary: true,
-                              floating: true,
+    //
+    // 对子树暴露与通用库页壳同一个「切到某视图」能力：「来源」空态的「浏览扩展」
+    // 经它就地切到本页「扩展」，而不是再 push 一页。只声明本壳真有的在线分区。
+    return MediaLibraryShellScope(
+      kinds: <MediaLibraryViewKind>{
+        if (online) MediaLibraryViewKind.onlineSources,
+        if (online) MediaLibraryViewKind.extensions,
+      },
+      select: _selectViewKind,
+      child: FushiShellTitleScope(
+        title: FushiShellTitleScope.maybeTitleOf(context) ?? t.nav_video,
+        actionsSlot: _actionsSlot,
+        child: FushiHeaderSearchKeys(
+          // Ctrl+F / `/` 展开当前视图的页头搜索，展开时 Esc 先清空再收起
+          // （焦点在页签、动作或内容上都认）。
+          resolve: () => fushiVisibleHeaderSearch(_actionsSlot),
+          child: FushiFloatingChromeScope(
+            controller: _chrome,
+            // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
+            // 滚不动」的根因是收起改了视口高度，见 [FushiFloatingChromeOverlay]）。
+            child: FushiFloatingChromeOverlay(
+              chrome: FushiFloatingChromeBar(
+                tabs: navigation,
+                slot: _actionsSlot,
+                trailing: libraryImportChromeButton(
+                  selected: _section == VideoLibrarySection.sources,
+                  onTap: _toggleImport,
+                  focusIdPrefix: 'video-library-view',
+                ),
+              ),
+              child: NotificationListener<ScrollNotification>(
+                onNotification: _onScroll,
+                child: SectionSwipeNavigator<VideoLibrarySection>(
+                  // 导入不是页签，只在停在导入页时留在序里（从它滑回相邻分区）。
+                  sections: <VideoLibrarySection>[
+                    for (final LibrarySectionTab<VideoLibrarySection> tab
+                        in tabs)
+                      if (tab.value != VideoLibrarySection.sources ||
+                          _section == VideoLibrarySection.sources)
+                        tab.value,
+                  ],
+                  selected: _section,
+                  onSelect: _select,
+                  // 二级胶囊行叠在页面上、与顶栏同一份显隐（嵌套的
+                  // [FushiFloatingChromeOverlay] 读同一个作用域，内层页面的顶部
+                  // 让位自动累加两行），收放不改页面视口。
+                  child: FushiFloatingChromeOverlay(
+                    // 二级下划线页签贴着顶栏，不再隔 8（见 nestedGap）。
+                    nestedGap: 0,
+                    opaqueChrome: true,
+                    chrome: subTabs.length < 2
+                        ? const SizedBox.shrink()
+                        : Padding(
+                            // 与顶栏胶囊、页面内容同一条页边；两级页签之间的 12
+                            // 由嵌套层统一给（[kFushiFloatingChromeGap] + 顶栏
+                            // 底边 4），这里不再叠竖向留白。
+                            padding: EdgeInsets.symmetric(
+                              horizontal: FushiDesignTokens.of(
+                                context,
+                              ).spacing.page,
+                            ),
+                            child: Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: LibrarySectionTabs<VideoLibrarySection>(
+                                // 换组即换一份页签（段数与段值都变），不复用旧
+                                // controller。
+                                key: ValueKey<LibrarySectionGroup?>(
+                                  currentGroup,
+                                ),
+                                tabs: subTabs,
+                                selected: _section,
+                                onChanged: _select,
+                                focusIdPrefix: 'video-library-subview',
+                                secondary: true,
+                                // 二级用 M3 secondary tabs（文字 + 横贯下划线），不再是第二枚浮动胶囊：
+                                // 与一级按钮组胶囊拉开层级（2026-10-30 用户拍板方案 B）。
+                                // 反馈 ndQ5eXLcqp：自定义页签顺序落在组内的
+                                // 二级胶囊上（一级恒为两组）。
+                                orderKey: 'video-${currentGroup?.name}',
+                              ),
                             ),
                           ),
-                        ),
-                  child: _buildSections(navigation),
+                    child: _buildSections(navigation),
+                  ),
                 ),
               ),
             ),
@@ -374,6 +458,19 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         ),
       ),
     );
+  }
+
+  /// [MediaLibraryShellScope.select] 的落地：库页视图种类 → 本壳分区。只认本壳
+  /// 声明进 `kinds` 的在线分区，其它种类静默忽略（与通用壳同一契约）。
+  void _selectViewKind(MediaLibraryViewKind kind) {
+    switch (kind) {
+      case MediaLibraryViewKind.onlineSources:
+        _select(VideoLibrarySection.onlineSources);
+      case MediaLibraryViewKind.extensions:
+        _select(VideoLibrarySection.extensions);
+      default:
+        break;
+    }
   }
 
   Widget _buildSections(Widget navigation) {
@@ -408,6 +505,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                       loadPendingScrapeWorks: widget.loadPendingScrapeWorks,
                       refreshPendingScrapeWorks:
                           widget.refreshPendingScrapeWorks,
+                      pendingScrapeChangedSignal:
+                          widget.pendingScrapeChangedSignal,
                       onOpenSources: () => _select(VideoLibrarySection.sources),
                     ),
               ),
@@ -539,16 +638,14 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
       };
 }
 
-/// 视频库顶栏的分组（顺序即顶栏顺序）。
-enum _VideoSectionGroup { library, discover, mediaServers, online, import }
-
-_VideoSectionGroup _groupOf(VideoLibrarySection section) => switch (section) {
+/// 视频分区所属的一级分组（见 [LibrarySectionGroup]）；导入不属于任何组。
+LibrarySectionGroup? _groupOf(VideoLibrarySection section) => switch (section) {
   VideoLibrarySection.home ||
   VideoLibrarySection.series ||
-  VideoLibrarySection.allVideos => _VideoSectionGroup.library,
-  VideoLibrarySection.discover => _VideoSectionGroup.discover,
-  VideoLibrarySection.mediaServers => _VideoSectionGroup.mediaServers,
+  VideoLibrarySection.allVideos ||
+  VideoLibrarySection.mediaServers => LibrarySectionGroup.library,
+  VideoLibrarySection.discover ||
   VideoLibrarySection.onlineSources ||
-  VideoLibrarySection.extensions => _VideoSectionGroup.online,
-  VideoLibrarySection.sources => _VideoSectionGroup.import,
+  VideoLibrarySection.extensions => LibrarySectionGroup.online,
+  VideoLibrarySection.sources => null,
 };

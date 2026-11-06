@@ -4,7 +4,9 @@ library;
 enum VideoManualIdentitySource { mal, tmdbMovie, tmdbTv }
 
 String videoManualIdentityQuery(
-    String input, VideoManualIdentitySource source) {
+  String input,
+  VideoManualIdentitySource source,
+) {
   final String query = input.trim();
   final String prefix = switch (source) {
     VideoManualIdentitySource.mal => 'mal',
@@ -14,8 +16,9 @@ String videoManualIdentityQuery(
   if (RegExp(r'^[0-9]+$').hasMatch(query) && (int.tryParse(query) ?? 0) > 0) {
     return '$prefix=$query';
   }
-  final Uri? uri =
-      Uri.tryParse(query.contains('://') ? query : 'https://$query');
+  final Uri? uri = Uri.tryParse(
+    query.contains('://') ? query : 'https://$query',
+  );
   if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http')) {
     throw const FormatException('Invalid work ID');
   }

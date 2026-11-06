@@ -51,11 +51,13 @@ Future<Map<String, dynamic>> buildRemoteSubtitleSearchResponse(
   Map<String, dynamic> body, {
   required Future<VideoSubtitleRegistry?> Function() registryProvider,
   required void Function(String handle, VideoSubtitleCandidate candidate)
-      rememberCandidate,
+  rememberCandidate,
   Set<String>? restrictToProviderIds,
 }) async {
-  final List<VideoSubtitleProvider> providers =
-      _selectProviders(await registryProvider(), restrictToProviderIds);
+  final List<VideoSubtitleProvider> providers = _selectProviders(
+    await registryProvider(),
+    restrictToProviderIds,
+  );
   if (providers.isEmpty) {
     return <String, dynamic>{
       'ok': false,
@@ -79,8 +81,8 @@ Future<Map<String, dynamic>> buildRemoteSubtitleSearchResponse(
     anime: rawAnime is bool ? rawAnime : null,
     languages: rawLanguages is List
         ? rawLanguages
-            .map((Object? value) => value?.toString().trim() ?? '')
-            .where((String value) => value.isNotEmpty)
+              .map((Object? value) => value?.toString().trim() ?? '')
+              .where((String value) => value.isNotEmpty)
         : const <String>[],
   );
   // anilistId 只在扩展将来能认出作品身份时才有值；registry 的请求模型把它挂在
@@ -140,8 +142,10 @@ Future<Map<String, dynamic>> buildRemoteSubtitleFetchResponse(
   Set<String>? restrictToProviderIds,
 }) async {
   final VideoSubtitleRegistry? registry = await registryProvider();
-  final List<VideoSubtitleProvider> providers =
-      _selectProviders(registry, restrictToProviderIds);
+  final List<VideoSubtitleProvider> providers = _selectProviders(
+    registry,
+    restrictToProviderIds,
+  );
   if (registry == null || providers.isEmpty) {
     return <String, dynamic>{
       'ok': false,
@@ -149,8 +153,9 @@ Future<Map<String, dynamic>> buildRemoteSubtitleFetchResponse(
     };
   }
   final String handle = body['handle']?.toString() ?? '';
-  final VideoSubtitleCandidate? candidate =
-      handle.isEmpty ? null : resolveCandidate(handle);
+  final VideoSubtitleCandidate? candidate = handle.isEmpty
+      ? null
+      : resolveCandidate(handle);
   if (candidate == null ||
       (restrictToProviderIds != null &&
           !restrictToProviderIds.contains(candidate.providerId))) {
@@ -164,8 +169,9 @@ Future<Map<String, dynamic>> buildRemoteSubtitleFetchResponse(
       return <String, dynamic>{'ok': false, 'error': 'download-failed'};
     }
     final String content = await decodeTextBytes(bytes);
-    final String fileName =
-        download.fileName.isNotEmpty ? download.fileName : candidate.fileName;
+    final String fileName = download.fileName.isNotEmpty
+        ? download.fileName
+        : candidate.fileName;
     final Map<String, dynamic> parsed = buildParsedSubtitleResponse(
       filename: fileName,
       content: content,
@@ -173,18 +179,19 @@ Future<Map<String, dynamic>> buildRemoteSubtitleFetchResponse(
     return <String, dynamic>{
       'ok': parsed['error'] == null,
       'filename': fileName,
-      'language':
-          download.language.isNotEmpty ? download.language : candidate.language,
+      'language': download.language.isNotEmpty
+          ? download.language
+          : candidate.language,
       'provider': candidate.providerId,
       ...parsed,
     };
   } on Object catch (error) {
     final ExternalProviderFailure failure =
         ExternalProviderFailure.fromException(
-      providerId: candidate.providerId,
-      operation: 'download',
-      error: error,
-    );
+          providerId: candidate.providerId,
+          operation: 'download',
+          error: error,
+        );
     return <String, dynamic>{
       'ok': false,
       'error': _failureError(failure, operation: 'download'),
@@ -228,17 +235,17 @@ String _entryNameOf(VideoSubtitleCandidate candidate) {
 /// 全灭时对外报哪一条：鉴权/限流这类**用户能动手修**的原因优先于泛泛的不可用。
 ExternalProviderFailure _worstFailure(List<ExternalProviderFailure> failures) {
   int rank(ExternalProviderFailure failure) => switch (failure.kind) {
-        ExternalProviderFailureKind.unauthorized ||
-        ExternalProviderFailureKind.forbidden =>
-          0,
-        ExternalProviderFailureKind.rateLimited ||
-        ExternalProviderFailureKind.quotaExceeded =>
-          1,
-        _ => 2,
-      };
+    ExternalProviderFailureKind.unauthorized ||
+    ExternalProviderFailureKind.forbidden => 0,
+    ExternalProviderFailureKind.rateLimited ||
+    ExternalProviderFailureKind.quotaExceeded => 1,
+    _ => 2,
+  };
   final List<ExternalProviderFailure> sorted = failures.toList()
-    ..sort((ExternalProviderFailure a, ExternalProviderFailure b) =>
-        rank(a).compareTo(rank(b)));
+    ..sort(
+      (ExternalProviderFailure a, ExternalProviderFailure b) =>
+          rank(a).compareTo(rank(b)),
+    );
   return sorted.first;
 }
 
@@ -247,26 +254,22 @@ ExternalProviderFailure _worstFailure(List<ExternalProviderFailure> failures) {
 String _failureError(
   ExternalProviderFailure failure, {
   required String operation,
-}) =>
-    switch (failure.kind) {
-      ExternalProviderFailureKind.unauthorized ||
-      ExternalProviderFailureKind.forbidden =>
-        'unauthorized',
-      ExternalProviderFailureKind.rateLimited ||
-      ExternalProviderFailureKind.quotaExceeded =>
-        'rate-limited',
-      _ => operation == 'download' ? 'download-failed' : 'unavailable',
-    };
+}) => switch (failure.kind) {
+  ExternalProviderFailureKind.unauthorized ||
+  ExternalProviderFailureKind.forbidden => 'unauthorized',
+  ExternalProviderFailureKind.rateLimited ||
+  ExternalProviderFailureKind.quotaExceeded => 'rate-limited',
+  _ => operation == 'download' ? 'download-failed' : 'unavailable',
+};
 
 List<Map<String, dynamic>> _failuresPayload(
   List<ExternalProviderFailure> failures, {
   required String operation,
-}) =>
-    <Map<String, dynamic>>[
-      for (final ExternalProviderFailure failure in failures)
-        <String, dynamic>{
-          'provider': failure.providerId,
-          'error': _failureError(failure, operation: operation),
-          if (failure.statusCode != null) 'status': failure.statusCode,
-        },
-    ];
+}) => <Map<String, dynamic>>[
+  for (final ExternalProviderFailure failure in failures)
+    <String, dynamic>{
+      'provider': failure.providerId,
+      'error': _failureError(failure, operation: operation),
+      if (failure.statusCode != null) 'status': failure.statusCode,
+    },
+];

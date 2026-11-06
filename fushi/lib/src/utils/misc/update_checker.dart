@@ -16,7 +16,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -27,6 +27,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/platform/mobile/android_download_keep_alive.dart';
 import 'package:fushi/src/platform/mobile/download_keep_alive_hub.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/mac_update_handoff.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
@@ -38,7 +39,20 @@ import 'package:fushi/src/utils/net/github_mirrors.dart';
 // `src/utils/net/app_proxy.dart`（BUG-1348）：part 契约禁止 part 内 import，而同步层也要
 // 用同一套代理出口，故它不能再住在 net part 里。这里不单独 import——utils.dart 已经
 // re-export 它（再写一条会触发 unnecessary_import，CI 把 warning 当致命）。
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/misc/update_check_cache.dart';
+import 'package:fushi_engine/utils/misc/safe_file_name.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 
 part 'update_checker_net.dart';
 part 'update_checker_download.dart';

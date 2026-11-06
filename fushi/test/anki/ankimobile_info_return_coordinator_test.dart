@@ -379,10 +379,9 @@ void main() {
       // 开了「制卡到已配对设备」是两层：自动重排(互联(本地))。
       expect(
         resolveAnkiMobileRepository(
-          wrap(RemoteMiningAnkiRepository(
-            local: local,
-            client: _NoopMineSender(),
-          )),
+          wrap(
+            RemoteMiningAnkiRepository(local: local, client: _NoopMineSender()),
+          ),
         ),
         same(local),
       );
@@ -431,10 +430,14 @@ void main() {
       expect(minesOnLocalAnkiMobile(queue(wrap(local))), isTrue);
       expect(
         minesOnLocalAnkiMobile(
-          queue(wrap(RemoteMiningAnkiRepository(
-            local: local,
-            client: _NoopMineSender(),
-          ))),
+          queue(
+            wrap(
+              RemoteMiningAnkiRepository(
+                local: local,
+                client: _NoopMineSender(),
+              ),
+            ),
+          ),
         ),
         isFalse,
       );
@@ -443,13 +446,14 @@ void main() {
     // 源码守卫：lib/src/anki 下每个「包着另一个 BaseAnkiRepository」的包装类都必须
     // 在解包器里登记，否则新加一层包装就会把 iOS 回传链再次静默切断。
     test('每个仓库包装类都在 resolveAnkiMobileRepository 里登记', () {
-      final RegExp classRe =
-          RegExp(r'class\s+(\w+)\s+extends\s+BaseAnkiRepository\b');
-      final RegExp innerFieldRe =
-          RegExp(r'final\s+BaseAnkiRepository\s+_\w+;');
+      final RegExp classRe = RegExp(
+        r'class\s+(\w+)\s+extends\s+BaseAnkiRepository\b',
+      );
+      final RegExp innerFieldRe = RegExp(r'final\s+BaseAnkiRepository\s+_\w+;');
       final List<String> wrappers = <String>[];
-      for (final FileSystemEntity entity
-          in Directory('lib/src/anki').listSync()) {
+      for (final FileSystemEntity entity in Directory(
+        'lib/src/anki',
+      ).listSync()) {
         if (entity is! File || !entity.path.endsWith('.dart')) continue;
         final String src = entity.readAsStringSync();
         for (final RegExpMatch m in classRe.allMatches(src)) {
@@ -457,8 +461,10 @@ void main() {
           if (name == 'AnkiMobileRepository') continue;
           final int bodyStart = m.end;
           final int bodyEnd = src.indexOf(RegExp(r'\nclass\s'), bodyStart);
-          final String body =
-              src.substring(bodyStart, bodyEnd < 0 ? src.length : bodyEnd);
+          final String body = src.substring(
+            bodyStart,
+            bodyEnd < 0 ? src.length : bodyEnd,
+          );
           if (innerFieldRe.hasMatch(body)) wrappers.add(name);
         }
       }
@@ -472,13 +478,17 @@ void main() {
         reason: '扫描面自检：两种已知包装必须被扫出来，否则守卫空转',
       );
 
-      final String resolver = File('lib/src/anki/ankimobile_repository.dart')
-          .readAsStringSync();
-      final int fnStart =
-          resolver.indexOf('AnkiMobileRepository? resolveAnkiMobileRepository(');
+      final String resolver = File(
+        'lib/src/anki/ankimobile_repository.dart',
+      ).readAsStringSync();
+      final int fnStart = resolver.indexOf(
+        'AnkiMobileRepository? resolveAnkiMobileRepository(',
+      );
       expect(fnStart, greaterThan(-1));
-      final String fnBody =
-          resolver.substring(fnStart, resolver.indexOf('\n}\n', fnStart));
+      final String fnBody = resolver.substring(
+        fnStart,
+        resolver.indexOf('\n}\n', fnStart),
+      );
       for (final String wrapper in wrappers) {
         expect(
           fnBody,

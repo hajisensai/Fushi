@@ -1,0 +1,12 @@
+## BUG-3960 · srs-restore-legacy-original-time
+- **报告**：2026-11-02（用户：同步历史「按时刻恢复」预演 10-25 要删整库、10-27 预演 208 s 且要跑两遍）
+- **真实性**：✅ 真 bug。根因 `native/fushi_fsrs/src/store/sync2/timeline.rs:20`（旧 `vv_at`）只按操作墙钟 `wall <= t` 截断；v1→v2 迁移把旧库全部历史包成迁移那一刻的新操作，墙钟一律是迁移时刻，于是迁移前的任意时刻都把整库算成「之后才建的」→ 删除整库（用户库副本预演 10-25：removed 15250 / fields 16938）。同文件 `timeline.rs:96` 起的 `created_after` 只看身份操作，迁移来的身份操作没有自己的原始时刻，同样被判成之后新建。
+- **[x] ① 已修复** — `timeline.rs` 把截断点从版本向量换成 `Cut`：操作的有效时刻 = min(墙钟, 原始时刻)；迁移来的修改用 `LegacyStamp.hlc` 的物理时刻，复习日志用 `LogBody.at`；迁移来的身份操作没有可信原始时刻，不猜——实体是否「在该时刻已存在」改为「身份操作或任一内容修改在截断内」（`has_content_in`）。还原点（checkpoint）目标仍按因果截断。
+  - 性能：预演慢的根因是 `value_at` 对每个寄存器两次重新物化——当前值也重放、且每条历史修改都走 `edit_row`，迁移设备的原生操作落进 `mod.rs:381` `legacy_closure` 的「逐条并到 s 为止」分支，每次扫一遍设备操作（实测单次约 1.75 s）；外加 `srs_history_page.dart` 恢复预览对两种「撤回复习」选择各预演一次。修法：当前值直接读投影 `srs_field_edits`；历史修改先按 edit id 取投影行，取不到才 `edit_row`；截断一次扫描完成；Dart 只预演一次（撤回复习那份），不撤回的数字由 `SrsRestorePlanView.withoutReviews()` 推出。
+  - 用户库副本（只读，11-02 01:18 拷贝）前后对比（修前 = PR #2772 内核、不撤回复习；修后 = 本修复、撤回复习）：
+    - 11-01 21:40：修前 fields 44 / revived 12 / tags 19，19.6 s；修后 fields 44 / removed 0 / revived 12 / tags 19 / reviews 60，10.2 s
+    - 10-30：修前 fields 50 / removed 21，21.4 s；修后 fields 50 / removed 21 / reviews 75，10.6 s
+    - 10-27：修前 fields 6003 / removed 78，208 s；修后 fields 253 / removed 48 / revived 12 / tags 39 / reviews 477，8.7 s
+    - 10-25：修前 removed 15250 / fields 16938（删整库）；修后 fields 276 / removed 60 / revived 12 / tags 100 / reviews 513，10.7 s
+- **[x] ② 已加自动化测试** — `native/fushi_fsrs/src/store/sync2/tests_timeline.rs` `restore_cuts_migrated_history_at_its_original_time`（迁移来的修改 / 日志按原始时刻截断；迁移前的时刻不删迁移来的实体；旧截断下该测试红：removed 3）；`fushi/test/srs/srs_history_page_test.dart`「恢复预览只预演一次」。
+- **备注**：依赖 PR #2770（v19 迁移 writer ctx）与 PR #2772（BUG-3959）。未在真 app 里点恢复验证，只在库副本上只读预演。

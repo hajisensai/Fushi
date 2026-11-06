@@ -144,7 +144,15 @@ function loadContentAndFireShift(options) {
     // 与 Flutter app 同款 vendor/selection.js 的最小行为桩：命中一个字、扩成一个词。
     fushiSelection: {
       getCharacterAtPoint: () => ({ node: { textContent: '世界です', nodeType: 3 }, offset: 0 }),
-      selectFromPosition: () => '世界',
+      // options.selection：模拟真 selection.js 选词后留下的 selection（含 rubyReadings）。
+      selection: null,
+      selectFromPosition() {
+        if (options.selection) {
+          this.selection = options.selection;
+          return options.selection.text;
+        }
+        return '世界';
+      },
       getSelectionRect: () => ({ x: 100, y: 100, width: 20, height: 16 }),
       highlightSelection: () => ({ x: 100, y: 100, width: 20, height: 16 }),
       clearSelection() {},
@@ -158,6 +166,7 @@ function loadContentAndFireShift(options) {
 
   return {
     docListeners,
+    winListeners,
     sent,
     dataset,
     nowRef,
@@ -415,4 +424,276 @@ test('BUG-1024 截止时间内仍拦截在途重复查词（防洪未退化）',
     1,
     '截止时间内不应放行第二次查词（在途闸防洪失效）',
   );
+});
+
+// 原文自带振假名随查词带给 app（selection.js 选词后把 `[{s,e,r}]` 放在
+// fushiSelection.selection.rubyReadings，以 selection.text 为坐标系）。只用来源自带的读音。
+test('Shift 悬停：选区带 rubyReadings 时 lookup 消息携带 ruby（对齐到 term）', () => {
+  const h = loadContentAndFireShift({
+    selection: { text: '忙しい', rubyReadings: [{ s: 0, e: 1, r: 'せわ' }] },
+  });
+  fireShiftLookup(h.docListeners, 300, 400);
+  const lookups = h.sent.filter((m) => m && m.type === 'lookup');
+  assert.strictEqual(lookups.length, 1);
+  assert.strictEqual(lookups[0].term, '忙しい');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(lookups[0].ruby)), [{ s: 0, e: 1, r: 'せわ' }]);
+});
+
+// 同词去重的「同词」= 词 + 原文振假名：同写作「忙しい」，一处 ruby 标「せわ」、一处没有，
+// 引擎排出的候选不同，不能被当成「还在同一个词上」吞掉。
+test('Shift 悬停同词去重把 ruby 算进身份：同字不同 ruby 重查，同字同 ruby 仍去重', () => {
+  const options = {
+    selection: { text: '忙しい', rubyReadings: [{ s: 0, e: 1, r: 'せわ' }] },
+  };
+  const h = loadContentAndFireShift(options);
+  const lookups = () => h.sent.filter((m) => m && m.type === 'lookup');
+  const hover = (x) => {
+    for (const fn of h.docListeners.mousemove) fn({ shiftKey: true, clientX: x, clientY: 400 });
+  };
+  hover(300);
+  assert.strictEqual(lookups().length, 1);
+
+  // 同一个字、同一组 ruby：仍是同一个查词身份，不重发。
+  hover(340);
+  assert.strictEqual(lookups().length, 1, '同字同 ruby 必须继续去重');
+
+  // 移到另一处没有 ruby 的「忙しい」：查词身份变了，必须重查。
+  options.selection = { text: '忙しい' };
+  hover(380);
+  assert.strictEqual(lookups().length, 2, '同字不同 ruby 被当成同词吞掉，读音排序失效');
+  assert.ok(!('ruby' in lookups()[1]));
+
+  // 再回到带「せわ」的那处：又换了身份，照样重查。
+  options.selection = { text: '忙しい', rubyReadings: [{ s: 0, e: 1, r: 'せわ' }] };
+  hover(420);
+  assert.strictEqual(lookups().length, 3);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(lookups()[2].ruby)), [{ s: 0, e: 1, r: 'せわ' }]);
+});
+
+test('fushiLookupKey：无 ruby 时等于词本身（旧去重语义不变），有 ruby 时带上区间与读音', () => {
+  const { windowObj } = loadContentAndFireShift();
+  assert.strictEqual(windowObj.fushiLookupKey('忙しい', null), '忙しい');
+  assert.strictEqual(windowObj.fushiLookupKey('忙しい', []), '忙しい');
+  assert.notStrictEqual(
+    windowObj.fushiLookupKey('忙しい', [{ s: 0, e: 1, r: 'せわ' }]),
+    windowObj.fushiLookupKey('忙しい', [{ s: 0, e: 1, r: 'いそが' }]),
+  );
+});
+
+test('没有 rubyReadings / 空数组 时 lookup 消息不带 ruby 字段（旧消息形态不变）', () => {
+  for (const selection of [{ text: '忙しい' }, { text: '忙しい', rubyReadings: [] }]) {
+    const h = loadContentAndFireShift({ selection });
+    fireShiftLookup(h.docListeners, 300, 400);
+    const lookups = h.sent.filter((m) => m && m.type === 'lookup');
+    assert.strictEqual(lookups.length, 1);
+    assert.ok(!('ruby' in lookups[0]), 'ruby 为空时不得出现在消息里');
+  }
+});
+
+test('点击查词（fushiLookupAtPoint）同样携带 ruby', () => {
+  const h = loadContentAndFireShift({
+    selection: { text: '忙しい', rubyReadings: [{ s: 0, e: 1, r: 'せわ' }] },
+  });
+  h.windowObj.fushiLookupAtPoint(300, 400, null);
+  const lookups = h.sent.filter((m) => m && m.type === 'lookup');
+  assert.strictEqual(lookups.length, 1);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(lookups[0].ruby)), [{ s: 0, e: 1, r: 'せわ' }]);
+});
+
+test('fushiAlignLookupRuby：按裁掉的句首空白平移，越界 / 畸形丢弃，term 不是原文前缀整份不用', () => {
+  const { windowObj } = loadContentAndFireShift();
+  const align = (raw, term, ruby) => {
+    const out = windowObj.fushiAlignLookupRuby(raw, term, ruby);
+    return out === null ? null : JSON.parse(JSON.stringify(out));
+  };
+  assert.deepStrictEqual(align('  忙しい', '忙しい', [{ s: 2, e: 3, r: ' せわ ' }]), [{ s: 0, e: 1, r: 'せわ' }]);
+  // term 被截短：落在截掉部分的段丢弃。
+  assert.deepStrictEqual(
+    align('忙しい日々', '忙しい', [{ s: 0, e: 1, r: 'せわ' }, { s: 3, e: 5, r: 'ひび' }]),
+    [{ s: 0, e: 1, r: 'せわ' }],
+  );
+  assert.strictEqual(align('忙しい', '忙しい', [{ s: 0, e: 0, r: 'x' }, { s: 'a', e: 1, r: 'x' }, { s: 0, e: 1, r: '' }, null]), null);
+  assert.strictEqual(align('忙しい', '楽しい', [{ s: 0, e: 1, r: 'せわ' }]), null);
+  assert.strictEqual(align('忙しい', '忙しい', undefined), null);
+});
+
+test('侧栏把词交回页面：ruby 按侧栏 term 的 trim 对齐后随 lookup 发出', () => {
+  const h = loadContentAndFireShift();
+  h.windowObj.fushiShowLookupFromSidePanel(' 忙しい ', null, 0, [{ s: 1, e: 2, r: 'せわ' }]);
+  const lookups = h.sent.filter((m) => m && m.type === 'lookup');
+  assert.strictEqual(lookups.length, 1);
+  assert.strictEqual(lookups[0].term, '忙しい');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(lookups[0].ruby)), [{ s: 0, e: 1, r: 'せわ' }]);
+});
+
+// 反馈 pBDjgW3T4v：鼠标已经停在词上时直接按 Shift 要立即查词，不要求再晃一下鼠标（对齐
+// Yomitan / Hachidori 的 modifier-on-keydown）。keydown 用 window 捕获阶段 mousemove 记下的
+// 最后指针位置，绕过 4px 位移阈值，其余门控与 mousemove 入口共用。
+function movePointer(h, x, y) {
+  for (const fn of h.winListeners.mousemove || []) fn({ clientX: x, clientY: y, target: {} });
+  for (const fn of h.docListeners.mousemove) fn({ shiftKey: false, clientX: x, clientY: y, buttons: 0 });
+}
+function pressShift(h, extra) {
+  const ev = Object.assign({ key: 'Shift', shiftKey: true, repeat: false, target: {} }, extra || {});
+  for (const fn of h.docListeners.keydown || []) fn(ev);
+}
+function releaseShift(h) {
+  for (const fn of h.docListeners.keyup || []) fn({ key: 'Shift', shiftKey: false, target: {} });
+}
+const shiftLookups = (h) => h.sent.filter((m) => m && m.type === 'lookup');
+
+test('pBDjgW3T4v 鼠标静止按下 Shift：用最后指针位置立即查词', () => {
+  const h = loadContentAndFireShift();
+  movePointer(h, 300, 400);
+  assert.strictEqual(shiftLookups(h).length, 0, '不按 Shift 移动不查词');
+  pressShift(h);
+  assert.strictEqual(shiftLookups(h).length, 1, '静止按 Shift 必须立即发出查词');
+  assert.strictEqual(shiftLookups(h)[0].term, '世界');
+  assert.strictEqual(h.dataset.fushiMove, '300,400', '必须用最后已知的指针坐标扫');
+});
+
+test('pBDjgW3T4v 按住 Shift 的自动连发不重复查；松开再按同词可重查', () => {
+  const h = loadContentAndFireShift();
+  movePointer(h, 300, 400);
+  pressShift(h);
+  h.nowRef.value += 60000; // 越过在途闸截止时间，只看去重 / repeat 门控
+  pressShift(h, { repeat: true });
+  assert.strictEqual(shiftLookups(h).length, 1, 'keydown 自动连发不得重复查词');
+  pressShift(h);
+  assert.strictEqual(shiftLookups(h).length, 1, '没松开 Shift 时同词去重仍生效');
+  releaseShift(h);
+  pressShift(h);
+  assert.strictEqual(shiftLookups(h).length, 2, '松开 Shift 必须复位同词去重，鼠标不动再按可重查');
+});
+
+test('pBDjgW3T4v 没见过指针 / 焦点在输入框 / 组合键 / 总开关关闭时按 Shift 不查词', () => {
+  const fresh = loadContentAndFireShift();
+  pressShift(fresh);
+  assert.strictEqual(shiftLookups(fresh).length, 0, '没有已知指针位置不得扫');
+
+  const editing = loadContentAndFireShift();
+  movePointer(editing, 300, 400);
+  pressShift(editing, { target: { nodeType: 1, tagName: 'INPUT', parentElement: null } });
+  pressShift(editing, {
+    target: { nodeType: 1, tagName: 'DIV', isContentEditable: true, parentElement: null },
+  });
+  assert.strictEqual(shiftLookups(editing).length, 0, '在输入框里按 Shift（打大写）不得查词');
+
+  const combo = loadContentAndFireShift();
+  movePointer(combo, 300, 400);
+  pressShift(combo, { ctrlKey: true });
+  pressShift(combo, { key: 'a' });
+  assert.strictEqual(shiftLookups(combo).length, 0, 'Ctrl+Shift 组合键 / 非 Shift 键不得查词');
+
+  const off = loadContentAndFireShift({ stored: { shiftHoverLookup: false } });
+  movePointer(off, 300, 400);
+  pressShift(off);
+  assert.strictEqual(shiftLookups(off).length, 0, '关掉 Shift 悬停查词后按 Shift 也不得查词');
+});
+
+test('pBDjgW3T4v 在途期间按 Shift 记为待补查，不另发请求', () => {
+  const h = loadContentAndFireShift({ respond: false });
+  fireShiftLookup(h.docListeners, 300, 400);
+  assert.strictEqual(shiftLookups(h).length, 1);
+  movePointer(h, 500, 600);
+  h.nowRef.value += 100;
+  pressShift(h);
+  assert.strictEqual(shiftLookups(h).length, 1, '在途闸必须同样拦住 keydown 入口');
+});
+
+// ── 反馈 ulS75hVkAK：悬停查词的触发键可在设置里换（storage.scanModifier，对齐 Yomitan scan modifier）──
+test('scanModifier=ctrl：Ctrl 悬停 / 静止按 Ctrl 查词，Shift 不再触发', () => {
+  const h = loadContentAndFireShift({ stored: { scanModifier: 'ctrl' } });
+  for (const fn of h.docListeners.mousemove) fn({ shiftKey: true, clientX: 300, clientY: 400, buttons: 0 });
+  assert.strictEqual(shiftLookups(h).length, 0, '换成 Ctrl 后 Shift 悬停不得查词');
+  for (const fn of h.docListeners.mousemove) fn({ ctrlKey: true, clientX: 300, clientY: 400, buttons: 0 });
+  assert.strictEqual(shiftLookups(h).length, 1, 'Ctrl 悬停必须查词');
+
+  const k = loadContentAndFireShift({ stored: { scanModifier: 'ctrl' } });
+  movePointer(k, 300, 400);
+  pressShift(k);
+  assert.strictEqual(shiftLookups(k).length, 0, '静止按 Shift 不查（触发键是 Ctrl）');
+  pressShift(k, { key: 'Control', shiftKey: false, ctrlKey: true });
+  assert.strictEqual(shiftLookups(k).length, 1, '静止按 Ctrl 立即查词');
+  k.nowRef.value += 60000;
+  for (const fn of k.docListeners.keyup || []) fn({ key: 'Control', ctrlKey: false, target: {} });
+  pressShift(k, { key: 'Control', shiftKey: true, ctrlKey: true });
+  assert.strictEqual(shiftLookups(k).length, 1, 'Ctrl+Shift 组合不算查词');
+  pressShift(k, { key: 'Control', shiftKey: false, ctrlKey: true });
+  assert.strictEqual(shiftLookups(k).length, 2, '松开 Ctrl 复位同词去重，再按可重查');
+});
+
+test('scanModifier=none：不按键悬停即查词；没有可按的键（keydown 不触发）', () => {
+  const h = loadContentAndFireShift({ stored: { scanModifier: 'none' } });
+  for (const fn of h.docListeners.mousemove) fn({ clientX: 300, clientY: 400, buttons: 0 });
+  assert.strictEqual(shiftLookups(h).length, 1);
+  const k = loadContentAndFireShift({ stored: { scanModifier: 'none' } });
+  for (const fn of k.winListeners.mousemove || []) fn({ clientX: 300, clientY: 400, target: {} });
+  pressShift(k);
+  assert.strictEqual(shiftLookups(k).length, 0);
+});
+
+test('scanModifier 经 storage.onChanged 热切换；未知值回落 Shift', () => {
+  const h = loadContentAndFireShift();
+  for (const listener of h.storageListeners) listener({ scanModifier: { newValue: 'alt' } }, 'local');
+  for (const fn of h.docListeners.mousemove) fn({ shiftKey: true, clientX: 300, clientY: 400, buttons: 0 });
+  assert.strictEqual(shiftLookups(h).length, 0);
+  for (const fn of h.docListeners.mousemove) fn({ altKey: true, clientX: 300, clientY: 400, buttons: 0 });
+  assert.strictEqual(shiftLookups(h).length, 1);
+
+  const bogus = loadContentAndFireShift({ stored: { scanModifier: 'hyper' } });
+  fireShiftLookup(bogus.docListeners, 300, 400);
+  assert.strictEqual(shiftLookups(bogus).length, 1, '未知值按 Shift');
+});
+
+test('弹窗内嵌套查词经 window.__fushiScanModifierHeld 认同一个触发键', () => {
+  const h = loadContentAndFireShift({ stored: { scanModifier: 'alt' } });
+  assert.strictEqual(typeof h.windowObj.__fushiScanModifierHeld, 'function');
+  assert.strictEqual(h.windowObj.__fushiScanModifierHeld({ altKey: true }), true);
+  assert.strictEqual(h.windowObj.__fushiScanModifierHeld({ shiftKey: true }), false);
+  const popup = fs.readFileSync(path.join(__dirname, 'vendor', 'popup.js'), 'utf8');
+  assert.match(popup, /typeof window\.__fushiScanModifierHeld === 'function'\s*\? window\.__fushiScanModifierHeld\(e\) : e\.shiftKey/);
+});
+
+test('side-panel.js 的触发键判定副本与 content.js 逐例同义', () => {
+  function extract(src, name) {
+    const start = src.indexOf('function ' + name + '(');
+    assert.ok(start >= 0, name + ' 不见了');
+    let depth = 0;
+    for (let i = src.indexOf('{', start); i < src.length; i++) {
+      if (src[i] === '{') depth++;
+      else if (src[i] === '}' && --depth === 0) return src.slice(start, i + 1);
+    }
+    throw new Error('unbalanced ' + name);
+  }
+  const names = ['fushiNormalizeScanModifier', 'fushiScanModifierHeld', 'fushiScanModifierKeydown', 'fushiScanModifierKeyup'];
+  const table = "var FUSHI_SCAN_MODIFIER_KEYS = { shift: 'Shift', ctrl: 'Control', alt: 'Alt', meta: 'Meta' };\n";
+  const contentSrc = fs.readFileSync(CONTENT, 'utf8');
+  const panelSrc = fs.readFileSync(path.join(__dirname, 'side-panel.js'), 'utf8');
+  assert.match(contentSrc, /const FUSHI_SCAN_MODIFIER_KEYS = Object\.freeze\(\{ shift: 'Shift', ctrl: 'Control', alt: 'Alt', meta: 'Meta' \}\);/);
+  assert.match(panelSrc, /var FUSHI_SCAN_MODIFIER_KEYS = \{ shift: 'Shift', ctrl: 'Control', alt: 'Alt', meta: 'Meta' \};/);
+  const a = vm.createContext({});
+  const b = vm.createContext({});
+  vm.runInContext(table + names.map((n) => extract(contentSrc, n)).join('\n'), a);
+  vm.runInContext(table + names.map((n) => extract(panelSrc, n)).join('\n'), b);
+  const mods = ['shift', 'ctrl', 'alt', 'meta', 'none', 'bogus', undefined];
+  const keys = ['Shift', 'Control', 'Alt', 'Meta', 'a'];
+  for (const mod of mods) {
+    assert.strictEqual(a.fushiNormalizeScanModifier(mod), b.fushiNormalizeScanModifier(mod));
+    for (let bits = 0; bits < 16; bits++) {
+      const flags = { shiftKey: !!(bits & 1), ctrlKey: !!(bits & 2), altKey: !!(bits & 4), metaKey: !!(bits & 8) };
+      assert.strictEqual(a.fushiScanModifierHeld(flags, mod), b.fushiScanModifierHeld(flags, mod));
+      for (const key of keys) {
+        for (const repeat of [false, true]) {
+          const ev = Object.assign({ key, repeat }, flags);
+          assert.strictEqual(a.fushiScanModifierKeydown(ev, mod), b.fushiScanModifierKeydown(ev, mod), JSON.stringify([mod, ev]));
+          assert.strictEqual(a.fushiScanModifierKeyup(ev, mod), b.fushiScanModifierKeyup(ev, mod));
+        }
+      }
+    }
+  }
+  // 抽样语义：ctrl 模式只认 Control 单按。
+  assert.strictEqual(a.fushiScanModifierKeydown({ key: 'Control', ctrlKey: true }, 'ctrl'), true);
+  assert.strictEqual(a.fushiScanModifierKeydown({ key: 'Control', ctrlKey: true, shiftKey: true }, 'ctrl'), false);
+  assert.strictEqual(a.fushiScanModifierHeld({}, 'none'), true);
 });

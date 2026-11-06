@@ -95,6 +95,7 @@ import com.pichillilorenzo.flutter_inappwebview_android.webview.ContextMenuSetti
 import com.pichillilorenzo.flutter_inappwebview_android.webview.InAppWebViewInterface;
 import com.pichillilorenzo.flutter_inappwebview_android.webview.JavaScriptBridgeInterface;
 import com.pichillilorenzo.flutter_inappwebview_android.webview.WebViewChannelDelegate;
+import com.pichillilorenzo.flutter_inappwebview_android.webview.WebViewProfileManager;
 import com.pichillilorenzo.flutter_inappwebview_android.webview.web_message.WebMessageChannel;
 import com.pichillilorenzo.flutter_inappwebview_android.webview.web_message.WebMessageListener;
 
@@ -388,11 +389,16 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
     settings.setSaveFormData(customSettings.saveFormData);
     if (customSettings.incognito)
       setIncognito(true);
+    // Fushi: Hybrid Composition never gets a hardware layer. The WebView is a
+    // real View in a hardware-accelerated window, so LAYER_TYPE_NONE still
+    // renders on the GPU; LAYER_TYPE_HARDWARE (upstream's mapping of the
+    // default `hardwareAcceleration = true`) only adds a full-size offscreen
+    // layer that is redrawn every frame while the page scrolls or animates.
+    // Measured on a 120 Hz tablet: RenderThread 13.6 ms -> 8.0 ms per frame,
+    // browser scrolling 55 -> 74-82 fps, janky frames 9% -> 0.3%.
+    // `hardwareAcceleration` is kept for API compatibility and ignored here.
     if (customSettings.useHybridComposition) {
-      if (customSettings.hardwareAcceleration)
-        setLayerType(View.LAYER_TYPE_HARDWARE, null);
-      else
-        setLayerType(View.LAYER_TYPE_NONE, null);
+      setLayerType(View.LAYER_TYPE_NONE, null);
     }
     if (customSettings.regexToCancelSubFramesLoading != null) {
       regexToCancelSubFramesLoadingCompiled = Pattern.compile(customSettings.regexToCancelSubFramesLoading);
@@ -559,6 +565,25 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
     });
   }
 
+  /**
+   * Fushi: cache this WebView in a hardware layer while its content is static
+   * and something else animates on top of it (the in-app dictionary popup over
+   * the reader). Without a layer, every frame of the popup re-runs the
+   * WebView's whole draw functor even though its pixels did not change (popup
+   * scrolling measured 80 -> 61 fps on a 120 Hz tablet). Callers must turn it
+   * off again as soon as the WebView itself scrolls or animates: a layer on a
+   * changing page is redrawn every frame (the reason prepare() pins
+   * LAYER_TYPE_NONE). Only meaningful under Hybrid Composition; returns
+   * whether the layer type was applied.
+   */
+  public boolean setStaticLayer(boolean enabled) {
+    if (customSettings == null || !customSettings.useHybridComposition) {
+      return false;
+    }
+    setLayerType(enabled ? View.LAYER_TYPE_HARDWARE : View.LAYER_TYPE_NONE, null);
+    return true;
+  }
+
   public void prepareAndAddUserScripts() {
     userContentController.addPluginScript(PromisePolyfillJS.PROMISE_POLYFILL_JS_PLUGIN_SCRIPT);
     userContentController.addPluginScript(JavaScriptBridgeJS.JAVASCRIPT_BRIDGE_JS_PLUGIN_SCRIPT);
@@ -579,6 +604,10 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
     if (!customSettings.useHybridComposition) {
       userContentController.addPluginScript(PluginScriptsUtil.CHECK_GLOBAL_KEY_DOWN_EVENT_TO_HIDE_CONTEXT_MENU_JS_PLUGIN_SCRIPT);
     }
+    // Fushi patch (BUG-4180, see PATCHES.md): in every composition mode the floating context
+    // menu closes when the page's text selection ends. Hybrid composition has no other
+    // selection-driven close path (the poll task and the keydown script above are texture-only).
+    userContentController.addPluginScript(PluginScriptsUtil.FUSHI_HIDE_CONTEXT_MENU_ON_SELECTION_END_JS_PLUGIN_SCRIPT);
     this.userContentController.addUserOnlyScripts(this.initialUserOnlyScripts);
   }
 
@@ -1021,14 +1050,9 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
     if (newSettingsMap.get("incognito") != null && customSettings.incognito != newCustomSettings.incognito)
       setIncognito(newCustomSettings.incognito);
 
-    if (customSettings.useHybridComposition) {
-      if (newSettingsMap.get("hardwareAcceleration") != null && customSettings.hardwareAcceleration != newCustomSettings.hardwareAcceleration) {
-        if (newCustomSettings.hardwareAcceleration)
-          setLayerType(View.LAYER_TYPE_HARDWARE, null);
-        else
-          setLayerType(View.LAYER_TYPE_NONE, null);
-      }
-    }
+    // Fushi: `hardwareAcceleration` no longer switches the layer type (see the
+    // LAYER_TYPE_NONE note in prepare()); changing it at runtime is a no-op.
+    // A static layer is requested explicitly with setStaticLayer().
 
     if (newSettingsMap.get("regexToCancelSubFramesLoading") != null && (customSettings.regexToCancelSubFramesLoading == null ||
             !customSettings.regexToCancelSubFramesLoading.equals(newCustomSettings.regexToCancelSubFramesLoading))) {
@@ -2094,8 +2118,29 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
     loadUrl("about:blank");
   }
 
+  // Hibiki patch: the named profile this view was attached to (see
+  // WebViewProfileManager). Released once, after the view's native side is
+  // gone, so that ending an incognito session while its last view is being torn
+  // down acts only after that view can no longer write cookies / storage.
+  // dispose() only schedules destroy() (about:blank onPageFinished), and
+  // Chromium's AwContents.destroy() itself only marks the view destroyed and
+  // *posts* destroyNatives() to the UI-thread handler; posting the release to
+  // the same (main) looper afterwards queues it behind that message (FIFO).
+  @Nullable
+  public String profileName;
+
   @Override
   public void destroy() {
     super.destroy();
+    final String released = profileName;
+    profileName = null;
+    if (released != null) {
+      new Handler(Looper.getMainLooper()).post(new Runnable() {
+        @Override
+        public void run() {
+          WebViewProfileManager.release(released);
+        }
+      });
+    }
   }
 }

@@ -37,16 +37,15 @@ LookupMiningCounterRow _counter({
   required int lookups,
   required int mines,
   String bookKey = 'book-1',
-}) =>
-    LookupMiningCounterRow(
-      id: 0,
-      bookKey: bookKey,
-      title: 'Book',
-      sourceType: 'reader',
-      dateKey: dateKey,
-      lookupCount: lookups,
-      mineCount: mines,
-    );
+}) => LookupMiningCounterRow(
+  id: 0,
+  bookKey: bookKey,
+  title: 'Book',
+  sourceType: 'reader',
+  dateKey: dateKey,
+  lookupCount: lookups,
+  mineCount: mines,
+);
 
 void main() {
   group('summarizeReaderBookStats', () {
@@ -412,9 +411,7 @@ void main() {
     });
 
     for (final double width in <double>[320, 400, 420, 600]) {
-      testWidgets('宽 $width 不溢出（窄底板 / 右侧栏 / 宽底板）', (
-        WidgetTester tester,
-      ) async {
+      testWidgets('宽 $width 不溢出（窄底板 / 右侧栏 / 宽底板）', (WidgetTester tester) async {
         await pumpSheet(tester, width: width);
         expect(tester.takeException(), isNull);
         await disposeSheet(tester);

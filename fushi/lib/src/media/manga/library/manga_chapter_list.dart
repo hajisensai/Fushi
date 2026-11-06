@@ -12,7 +12,12 @@ import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
     show OnlineMangaSiblingSource, OnlineMangaSourceLanguageScope;
 import 'package:fushi/src/media/online/online_source_error_text.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 
 /// 一章在「先下载再读」语义下的状态（设计稿 2026-09-12 §5）。
 enum _ChapterDownloadState {
@@ -121,7 +126,9 @@ class MangaChapterList extends StatelessWidget {
 
   /// OCR 状态位（BUG-2481）：正在识别的那一章 + 页进度，以及排队中的章。
   final String? ocrRunningChapterKey;
-  final ({int done, int total})? ocrProgress;
+
+  /// [uploading] = 远程引擎还在上传页图（计数是已上传页数，BUG-3605）。
+  final ({int done, int total, bool uploading})? ocrProgress;
   final Set<String> ocrQueuedChapterKeys;
 
   /// 空章节列表的解释（BUG-2510）：该源只取哪种语言的章 + 同扩展其它语言的源。
@@ -383,7 +390,13 @@ class MangaChapterList extends StatelessWidget {
         ),
         _ChapterDownloadState.notDownloaded => t.manga_chapter_not_downloaded,
       },
-      if (chapter.key == ocrRunningChapterKey)
+      if (chapter.key == ocrRunningChapterKey &&
+          (ocrProgress?.uploading ?? false))
+        t.manga_remote_ocr_uploading(
+          done: ocrProgress?.done ?? 0,
+          total: ocrProgress?.total ?? 0,
+        )
+      else if (chapter.key == ocrRunningChapterKey)
         t.manga_chapter_ocr_status_running(
           done: '${ocrProgress?.done ?? 0}',
           total: '${ocrProgress?.total ?? 0}',

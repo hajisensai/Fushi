@@ -1,8 +1,11 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
-import 'package:fushi/creator.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/creator/enhancement.dart';
+import 'package:fushi/src/creator/export_field_search.dart';
+import 'package:fushi/src/creator/field.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
 
 /// A special kind of field that has a special widget at the top of the creator.
 /// For example, the audio field has a media player that can be controlled
@@ -42,9 +45,7 @@ abstract class ImageExportField extends Field
 
   /// Clears this field's data. The state refresh afterwards is not performed
   /// here and should be performed by the invocation of the clear field button.
-  void clearFieldState({
-    required CreatorModel creatorModel,
-  }) {
+  void clearFieldState({required CreatorModel creatorModel}) {
     _exportFile = null;
     _imageSuggestions = null;
     _indexNotifier.value = 0;
@@ -71,18 +72,20 @@ abstract class ImageExportField extends Field
 
     if (creatorModel.scrollController.hasClients &&
         cause == EnhancementTriggerCause.manual) {
-      creatorModel.scrollController
-          .jumpTo(creatorModel.scrollController.position.minScrollExtent);
+      creatorModel.scrollController.jumpTo(
+        creatorModel.scrollController.position.minScrollExtent,
+      );
     }
 
     carouselKey = UniqueKey();
 
     /// Show loading state.
     setSearching(
-        appModel: appModel,
-        creatorModel: creatorModel,
-        isSearching: true,
-        searchTerm: searchTerm);
+      appModel: appModel,
+      creatorModel: creatorModel,
+      isSearching: true,
+      searchTerm: searchTerm,
+    );
     try {
       List<NetworkToFileImage> images = await generateImages();
 
@@ -124,9 +127,7 @@ abstract class ImageExportField extends Field
     if (images.isEmpty ||
         newSelectedSuggestionIndex < 0 ||
         newSelectedSuggestionIndex >= images.length) {
-      clearFieldState(
-        creatorModel: creatorModel,
-      );
+      clearFieldState(creatorModel: creatorModel);
       return;
     }
 
@@ -141,9 +142,7 @@ abstract class ImageExportField extends Field
 
   /// Change the index of the selected search suggestion and update the state
   /// of the image picker.
-  void setSelectedSearchSuggestion({
-    required int index,
-  }) {
+  void setSelectedSearchSuggestion({required int index}) {
     if (index == -1) {
       _exportFile = null;
     } else {

@@ -400,7 +400,7 @@ void main() {
     ).readAsStringSync();
     final int start = source.indexOf('Widget _buildMobileLayout()');
     expect(start, isNonNegative);
-    final int end = source.indexOf('AdaptiveNavFab? _shellPageFab()', start);
+    final int end = source.indexOf('bool _shellFabHostedByBar = false;', start);
     expect(end, greaterThan(start));
     final String body = source.substring(start, end);
     expect(

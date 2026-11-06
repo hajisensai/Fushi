@@ -22,6 +22,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
@@ -96,14 +97,14 @@ class MangaOcrHostJob {
   Completer<void>? runCompleted;
 
   Map<String, Object?> toStatusJson() => <String, Object?>{
-        'jobId': id,
-        'state': state.name,
-        'pagesUploaded': pagesUploaded,
-        'pagesDone': pagesDone,
-        'pagesTotal': pagesTotal > 0 ? pagesTotal : (pagesExpected ?? 0),
-        if (model != null) 'model': model,
-        if (error != null) 'error': error,
-      };
+    'jobId': id,
+    'state': state.name,
+    'pagesUploaded': pagesUploaded,
+    'pagesDone': pagesDone,
+    'pagesTotal': pagesTotal > 0 ? pagesTotal : (pagesExpected ?? 0),
+    if (model != null) 'model': model,
+    if (error != null) 'error': error,
+  };
 }
 
 /// host 侧任务管理器：任务表 + 串行单并发执行队列 + TTL 清理。
@@ -117,11 +118,11 @@ class MangaOcrHostJobManager {
         const <String, MangaOcrService>{},
     DateTime Function()? now,
     Duration jobTtl = const Duration(hours: 1),
-  })  : _service = service,
-        _modelServices = modelServices,
-        _jobRoot = jobRoot,
-        _now = now ?? DateTime.now,
-        _jobTtl = jobTtl;
+  }) : _service = service,
+       _modelServices = modelServices,
+       _jobRoot = jobRoot,
+       _now = now ?? DateTime.now,
+       _jobTtl = jobTtl;
 
   /// host 自己当前选择的模型（client 不点名时用它）。
   final MangaOcrService _service;
@@ -219,8 +220,10 @@ class MangaOcrHostJobManager {
         ? 'job_$id'
         : 'vol_${_stableSlug(volumeTitle.trim())}';
     // 同名卷已有未完结任务在用该目录：本任务另开独立目录，互不踩踏。
-    final bool dirBusy = _jobs.values.any((MangaOcrHostJob j) =>
-        !j.state.isTerminal && p.basename(j.dir.path) == dirName);
+    final bool dirBusy = _jobs.values.any(
+      (MangaOcrHostJob j) =>
+          !j.state.isTerminal && p.basename(j.dir.path) == dirName,
+    );
     if (dirBusy) {
       dirName = '${dirName}_$id';
     }
@@ -299,36 +302,36 @@ class MangaOcrHostJobManager {
     job.subscription = _serviceFor(job)
         .ocrFolder(imageDirPath: job.dir.path, volumeTitle: job.volumeTitle)
         .listen(
-      (MangaOcrVolumeEvent event) {
-        job.touchedAt = _now();
-        if (event.finished) {
-          job.resultPath = event.mangaJsonPath;
-          job.pagesDone = event.pagesTotal;
-          job.pagesTotal = event.pagesTotal;
-          job.state = MangaOcrHostJobState.done;
-        } else {
-          job.pagesDone = event.pagesDone;
-          job.pagesTotal = event.pagesTotal;
-        }
-      },
-      onError: (Object e) {
-        job.touchedAt = _now();
-        if (job.state == MangaOcrHostJobState.running) {
-          job.state = MangaOcrHostJobState.error;
-          job.error = '$e';
-        }
-        finish();
-      },
-      onDone: () {
-        // 流收尾但没发 finished（服务侧静默取消等罕见路径）：不留永久 running。
-        if (job.state == MangaOcrHostJobState.running) {
-          job.state = MangaOcrHostJobState.error;
-          job.error = 'OCR stream ended without result';
-        }
-        finish();
-      },
-      cancelOnError: true,
-    );
+          (MangaOcrVolumeEvent event) {
+            job.touchedAt = _now();
+            if (event.finished) {
+              job.resultPath = event.mangaJsonPath;
+              job.pagesDone = event.pagesTotal;
+              job.pagesTotal = event.pagesTotal;
+              job.state = MangaOcrHostJobState.done;
+            } else {
+              job.pagesDone = event.pagesDone;
+              job.pagesTotal = event.pagesTotal;
+            }
+          },
+          onError: (Object e) {
+            job.touchedAt = _now();
+            if (job.state == MangaOcrHostJobState.running) {
+              job.state = MangaOcrHostJobState.error;
+              job.error = '$e';
+            }
+            finish();
+          },
+          onDone: () {
+            // 流收尾但没发 finished（服务侧静默取消等罕见路径）：不留永久 running。
+            if (job.state == MangaOcrHostJobState.running) {
+              job.state = MangaOcrHostJobState.error;
+              job.error = 'OCR stream ended without result';
+            }
+            finish();
+          },
+          cancelOnError: true,
+        );
     await completed.future;
     job.subscription = null;
     job.runCompleted = null;
@@ -353,8 +356,9 @@ class MangaOcrHostJobManager {
     _jobs.remove(job.id);
     try {
       if (job.dir.existsSync()) {
-        for (final FileSystemEntity entity
-            in job.dir.listSync(followLinks: false)) {
+        for (final FileSystemEntity entity in job.dir.listSync(
+          followLinks: false,
+        )) {
           if (p.basename(entity.path) == kMangaOcrOutDirName) continue;
           entity.deleteSync(recursive: true);
         }
@@ -380,9 +384,11 @@ class MangaOcrHostJobManager {
   void _housekeep() {
     final DateTime cutoff = _now().subtract(_jobTtl);
     final List<MangaOcrHostJob> expired = _jobs.values
-        .where((MangaOcrHostJob j) =>
-            j.state != MangaOcrHostJobState.running &&
-            j.touchedAt.isBefore(cutoff))
+        .where(
+          (MangaOcrHostJob j) =>
+              j.state != MangaOcrHostJobState.running &&
+              j.touchedAt.isBefore(cutoff),
+        )
         .toList(growable: false);
     for (final MangaOcrHostJob job in expired) {
       _jobs.remove(job.id);
@@ -399,8 +405,9 @@ class MangaOcrHostJobManager {
       final Set<String> live = _jobs.values
           .map((MangaOcrHostJob j) => p.canonicalize(j.dir.path))
           .toSet();
-      for (final FileSystemEntity entity
-          in _jobRoot.listSync(followLinks: false)) {
+      for (final FileSystemEntity entity in _jobRoot.listSync(
+        followLinks: false,
+      )) {
         if (entity is! Directory) continue;
         if (live.contains(p.canonicalize(entity.path))) continue;
         final DateTime mtime = entity.statSync().modified;
@@ -538,12 +545,16 @@ Future<shelf.Response> handleMangaOcrRequest(
     final int? index = int.tryParse(parts[2]);
     if (index == null || index < 0) return _ocrError(400, 'bad_index');
     final String name = request.url.queryParameters['name'] ?? '';
-    final List<int> bytes = <int>[
-      for (final List<int> chunk in await request.read().toList()) ...chunk,
-    ];
+    // 整页图片（MB 级）按块攒进 BytesBuilder，不展开成逐字节装箱的 List<int>。
+    final BytesBuilder body = BytesBuilder(copy: false);
+    await request.read().forEach(body.add);
+    final Uint8List bytes = body.takeBytes();
     if (bytes.isEmpty) return _ocrError(400, 'empty_body');
-    final String? refusal =
-        await manager.uploadPage(job, name: name, bytes: bytes);
+    final String? refusal = await manager.uploadPage(
+      job,
+      name: name,
+      bytes: bytes,
+    );
     if (refusal != null) return _ocrError(400, refusal);
     return _ocrJson(<String, Object?>{'ok': true, 'index': index});
   }
@@ -552,17 +563,13 @@ Future<shelf.Response> handleMangaOcrRequest(
 }
 
 shelf.Response _ocrJson(Map<String, Object?> body) => shelf.Response.ok(
-      jsonEncode(body),
-      headers: <String, String>{
-        'Content-Type': 'application/json; charset=utf-8',
-      },
-    );
+  jsonEncode(body),
+  headers: <String, String>{'Content-Type': 'application/json; charset=utf-8'},
+);
 
 /// 机器可读错误：`{error: <code>}`，client 按 code 映射本地化文案。
 shelf.Response _ocrError(int status, String code) => shelf.Response(
-      status,
-      body: jsonEncode(<String, String>{'error': code}),
-      headers: <String, String>{
-        'Content-Type': 'application/json; charset=utf-8',
-      },
-    );
+  status,
+  body: jsonEncode(<String, String>{'error': code}),
+  headers: <String, String>{'Content-Type': 'application/json; charset=utf-8'},
+);

@@ -91,8 +91,9 @@ class _VideoSpecsPanelState extends State<VideoSpecsPanel> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     final List<(String, String)> rows = <(String, String)>[
-      for (final (VideoSpecField field, String value)
-          in videoSpecsFields(facts))
+      for (final (VideoSpecField field, String value) in videoSpecsFields(
+        facts,
+      ))
         (
           switch (field) {
             VideoSpecField.resolution => t.video_specs_resolution,
@@ -108,16 +109,20 @@ class _VideoSpecsPanelState extends State<VideoSpecsPanel> {
         ),
     ];
 
-    final List<TrackDisplay> audio =
-        facts.audioTracks.map(audioTrackDisplay).toList();
-    final List<TrackDisplay> subtitles =
-        facts.subtitleTracks.map(subtitleTrackDisplay).toList();
+    final List<TrackDisplay> audio = facts.audioTracks
+        .map(audioTrackDisplay)
+        .toList();
+    final List<TrackDisplay> subtitles = facts.subtitleTracks
+        .map(subtitleTrackDisplay)
+        .toList();
 
     if (rows.isEmpty && audio.isEmpty && subtitles.isEmpty) {
       return const SizedBox.shrink();
     }
 
+    // 按内容收高：作对话框内容（FushiAlertDialog 的滚动外壳）时有界高度下也不撑满。
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         if (widget.showTitle) ...<Widget>[
@@ -303,10 +308,11 @@ class _VideoSpecsInlineLineState extends State<VideoSpecsInlineLine> {
           summary,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: widget.style ??
+          style:
+              widget.style ??
               Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
         );
       },
     );

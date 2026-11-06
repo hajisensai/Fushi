@@ -48,65 +48,84 @@ void main() {
       '}\n',
     );
     final RegExp foregroundCall = RegExp(r'windowManager\.(show|focus)\s*\(');
-    expect(foregroundCall.hasMatch(stripped), isTrue,
-        reason: 'stripDartComments must not swallow real windowManager calls.');
-  });
-
-  test('only DesktopLookupService may call windowManager show/focus directly',
-      () {
-    final RegExp foregroundCall = RegExp(r'windowManager\.(show|focus)\s*\(');
-    final List<String> offenders = <String>[];
-    int scanned = 0;
-    for (final File entity
-        in Directory('lib/src').listSync(recursive: true).whereType<File>()) {
-      if (!entity.path.endsWith('.dart')) continue;
-      scanned++;
-      final String normalized = entity.path.replaceAll('\\', '/');
-      // 先剥除注释，只对真实代码跑守卫正则——文档/行/块注释里的示例文字不算违规。
-      final String source = stripDartComments(entity.readAsStringSync());
-      if (!foregroundCall.hasMatch(source)) continue;
-      if (!normalized.endsWith('sync/desktop_lookup_service.dart')) {
-        offenders.add(normalized);
-      }
-    }
-
-    expectScanScale(scanned,
-        what: 'lib/src 下的 .dart', atLeast: 750, measured: 930);
-
     expect(
-      offenders,
-      isEmpty,
-      reason:
-          'Windows foreground/taskbar attention must stay behind DesktopLookupService.',
-    );
-  });
-
-  test('DesktopLookupService uses Windows foreground guard before show/focus',
-      () {
-    final String service = read('lib/src/sync/desktop_lookup_service.dart');
-    final int bringStart = service.indexOf(
-      'Future<void> bringPendingLookupToFront()',
-    );
-    final int focusHelperStart =
-        service.indexOf('Future<bool> _isFushiForeground()');
-    expect(bringStart, isNonNegative);
-    expect(focusHelperStart, isNonNegative);
-    final String bringBody = service.substring(bringStart, focusHelperStart);
-
-    expect(bringBody.contains('DesktopForegroundGuard.isHiddenWindowsRunner'),
-        isTrue);
-    expect(bringBody.contains('await _isFushiForeground()'), isTrue);
-    expect(
-      bringBody.indexOf('await _isFushiForeground()') <
-          bringBody.indexOf('windowManager.show()'),
+      foregroundCall.hasMatch(stripped),
       isTrue,
-      reason: 'Foreground guard must run before show/focus.',
+      reason: 'stripDartComments must not swallow real windowManager calls.',
     );
-    expect(service.contains('isForegroundOwnedByCurrentProcess()'), isTrue);
-    expect(service.contains('isForegroundOwnedByFushiAppFamily()'), isTrue,
-        reason: 'Foreground guard must also treat Fushi popup/app-family '
-            'windows as internal copies.');
   });
+
+  test(
+    'only DesktopLookupService may call windowManager show/focus directly',
+    () {
+      final RegExp foregroundCall = RegExp(r'windowManager\.(show|focus)\s*\(');
+      final List<String> offenders = <String>[];
+      int scanned = 0;
+      for (final File entity in Directory(
+        'lib/src',
+      ).listSync(recursive: true).whereType<File>()) {
+        if (!entity.path.endsWith('.dart')) continue;
+        scanned++;
+        final String normalized = entity.path.replaceAll('\\', '/');
+        // 先剥除注释，只对真实代码跑守卫正则——文档/行/块注释里的示例文字不算违规。
+        final String source = stripDartComments(entity.readAsStringSync());
+        if (!foregroundCall.hasMatch(source)) continue;
+        if (!normalized.endsWith('sync/desktop_lookup_service.dart')) {
+          offenders.add(normalized);
+        }
+      }
+
+      expectScanScale(
+        scanned,
+        what: 'lib/src 下的 .dart',
+        atLeast: 750,
+        measured: 930,
+      );
+
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            'Windows foreground/taskbar attention must stay behind DesktopLookupService.',
+      );
+    },
+  );
+
+  test(
+    'DesktopLookupService uses Windows foreground guard before show/focus',
+    () {
+      final String service = read('lib/src/sync/desktop_lookup_service.dart');
+      final int bringStart = service.indexOf(
+        'Future<void> bringPendingLookupToFront()',
+      );
+      final int focusHelperStart = service.indexOf(
+        'Future<bool> _isFushiForeground()',
+      );
+      expect(bringStart, isNonNegative);
+      expect(focusHelperStart, isNonNegative);
+      final String bringBody = service.substring(bringStart, focusHelperStart);
+
+      expect(
+        bringBody.contains('DesktopForegroundGuard.isHiddenWindowsRunner'),
+        isTrue,
+      );
+      expect(bringBody.contains('await _isFushiForeground()'), isTrue);
+      expect(
+        bringBody.indexOf('await _isFushiForeground()') <
+            bringBody.indexOf('windowManager.show()'),
+        isTrue,
+        reason: 'Foreground guard must run before show/focus.',
+      );
+      expect(service.contains('isForegroundOwnedByCurrentProcess()'), isTrue);
+      expect(
+        service.contains('isForegroundOwnedByFushiAppFamily()'),
+        isTrue,
+        reason:
+            'Foreground guard must also treat Fushi popup/app-family '
+            'windows as internal copies.',
+      );
+    },
+  );
 
   test('hidden Windows runner is toolwindow/noactivate and off-screen', () {
     final String runner = read('windows/runner/win32_window.cpp');
@@ -122,10 +141,7 @@ void main() {
 
   test('main window does not reclaim focus when a lookup popup activates', () {
     final String runner = read('windows/runner/win32_window.cpp');
-    final String handler = methodBody(
-      runner,
-      'Win32Window::MessageHandler(',
-    );
+    final String handler = methodBody(runner, 'Win32Window::MessageHandler(');
     final String activateCase = maskCommentsAndStrings(
       switchCaseBody(
         handler,
@@ -137,7 +153,8 @@ void main() {
     expect(
       activateCase.contains('ShouldRestoreChildFocus('),
       isTrue,
-      reason: 'The lookup panel drag/resize activates an auxiliary Fushi '
+      reason:
+          'The lookup panel drag/resize activates an auxiliary Fushi '
           'window. The main window must ignore its WA_INACTIVE notification '
           'instead of reclaiming focus and jumping to the foreground.',
     );
@@ -146,12 +163,16 @@ void main() {
       1,
       reason: 'Keep main-window focus restoration behind the activation guard.',
     );
-    expect(activateCase.contains('IsWindow(child_content_)'), isTrue,
-        reason: 'A destroyed Flutter child HWND must not receive focus.');
+    expect(
+      activateCase.contains('IsWindow(child_content_)'),
+      isTrue,
+      reason: 'A destroyed Flutter child HWND must not receive focus.',
+    );
     expect(
       activateCase.contains('GetParent(child_content_) == hwnd'),
       isTrue,
-      reason: 'HWND values are recycled; the live child must still belong to '
+      reason:
+          'HWND values are recycled; the live child must still belong to '
           'this exact main window.',
     );
 
@@ -161,13 +182,13 @@ void main() {
     expect(
       destroyBody.contains('child_content_ = nullptr;'),
       isTrue,
-      reason: 'Destroy must clear the borrowed Flutter child handle before '
+      reason:
+          'Destroy must clear the borrowed Flutter child handle before '
           'subclass/controller teardown can dispatch reentrant messages.',
     );
   });
 
-  test(
-      'floating lyric window stays noactivate/shownoactivate and off the '
+  test('floating lyric window stays noactivate/shownoactivate and off the '
       'taskbar', () {
     final String cpp = read('windows/runner/floating_lyric_window.cpp');
     final int createWindow = cpp.indexOf('CreateWindowExW(');
@@ -186,42 +207,63 @@ void main() {
     // Alt-Tab entry. (The clipboard text window, the only instance that used
     // to opt into WS_EX_APPWINDOW, was removed together with desktop clipboard
     // lookup.)
-    expect(createBlock.contains('WS_EX_TOOLWINDOW'), isTrue,
-        reason: 'CreateWindowExW must keep the strip off the taskbar.');
-    expect(cpp.contains('WS_EX_APPWINDOW'), isFalse,
-        reason: 'no FloatingLyricWindow instance may re-enter the taskbar.');
+    expect(
+      createBlock.contains('WS_EX_TOOLWINDOW'),
+      isTrue,
+      reason: 'CreateWindowExW must keep the strip off the taskbar.',
+    );
+    expect(
+      cpp.contains('WS_EX_APPWINDOW'),
+      isFalse,
+      reason: 'no FloatingLyricWindow instance may re-enter the taskbar.',
+    );
   });
 
   // TODO-615 方案A：原生 runner 必须提供主动熄灭任务栏高亮的能力
   // （FlashWindowEx + FLASHW_STOP），不再靠堆 if 守卫掩盖前台判据抖动漏判。
   test(
-      'native window provides clearTaskbarFlash via FlashWindowEx(FLASHW_STOP)',
-      () {
-    final String cpp = read('windows/runner/flutter_window.cpp');
-    expect(cpp.contains('clearTaskbarFlash'), isTrue,
-        reason: 'native caption channel must handle clearTaskbarFlash.');
-    expect(cpp.contains('FlashWindowEx'), isTrue,
-        reason: 'clearTaskbarFlash must call FlashWindowEx.');
-    expect(cpp.contains('FLASHW_STOP'), isTrue,
-        reason: 'clearing the flash must use FLASHW_STOP.');
-    // The clear must operate on the main window handle (GetHandle()).
-    final int branch = cpp.indexOf('clearTaskbarFlash');
-    final int flash = cpp.indexOf('FlashWindowEx', branch);
-    expect(branch, isNonNegative);
-    expect(flash, isNonNegative);
-    expect(cpp.substring(branch, flash).contains('GetHandle()'), isTrue,
-        reason: 'taskbar flash clear must target the main window handle.');
-  });
+    'native window provides clearTaskbarFlash via FlashWindowEx(FLASHW_STOP)',
+    () {
+      final String cpp = read('windows/runner/flutter_window.cpp');
+      expect(
+        cpp.contains('clearTaskbarFlash'),
+        isTrue,
+        reason: 'native caption channel must handle clearTaskbarFlash.',
+      );
+      expect(
+        cpp.contains('FlashWindowEx'),
+        isTrue,
+        reason: 'clearTaskbarFlash must call FlashWindowEx.',
+      );
+      expect(
+        cpp.contains('FLASHW_STOP'),
+        isTrue,
+        reason: 'clearing the flash must use FLASHW_STOP.',
+      );
+      // The clear must operate on the main window handle (GetHandle()).
+      final int branch = cpp.indexOf('clearTaskbarFlash');
+      final int flash = cpp.indexOf('FlashWindowEx', branch);
+      expect(branch, isNonNegative);
+      expect(flash, isNonNegative);
+      expect(
+        cpp.substring(branch, flash).contains('GetHandle()'),
+        isTrue,
+        reason: 'taskbar flash clear must target the main window handle.',
+      );
+    },
+  );
 
   // TODO-615：Dart 侧熄灭任务栏高亮只允许经 WindowCaptionChannel.clearTaskbarFlash
   // 单一封装下发，禁止其它文件各自起一份 channel 调用或方法名（消除重复路径）。
   test('Dart taskbar-flash clear stays behind WindowCaptionChannel', () {
-    final RegExp invokeFlash =
-        RegExp(r"invokeMethod<[^>]*>\(\s*'clearTaskbarFlash'");
+    final RegExp invokeFlash = RegExp(
+      r"invokeMethod<[^>]*>\(\s*'clearTaskbarFlash'",
+    );
     final List<String> offenders = <String>[];
     int scanned = 0;
-    for (final File entity
-        in Directory('lib/src').listSync(recursive: true).whereType<File>()) {
+    for (final File entity in Directory(
+      'lib/src',
+    ).listSync(recursive: true).whereType<File>()) {
       if (!entity.path.endsWith('.dart')) continue;
       scanned++;
       final String normalized = entity.path.replaceAll('\\', '/');
@@ -231,48 +273,69 @@ void main() {
         offenders.add(normalized);
       }
     }
-    expectScanScale(scanned,
-        what: 'lib/src 下的 .dart', atLeast: 750, measured: 930);
-    expect(offenders, isEmpty,
-        reason: 'Only WindowCaptionChannel may invoke clearTaskbarFlash on the '
-            'app.fushi/window channel.');
+    expectScanScale(
+      scanned,
+      what: 'lib/src 下的 .dart',
+      atLeast: 750,
+      measured: 930,
+    );
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'Only WindowCaptionChannel may invoke clearTaskbarFlash on the '
+          'app.fushi/window channel.',
+    );
   });
 
   // TODO-615：bringPendingLookupToFront 唤前台路径必须主动 clearTaskbarFlash——
   // 已前台 early-return 前清一次（覆盖前台判据抖动漏判残留），唤前台路径尾部再清
   // 一次（覆盖 always-on-top）。两处都经 WindowCaptionChannel 单一封装。
-  test('bringPendingLookupToFront clears taskbar flash on the foreground path',
-      () {
-    final String service = read('lib/src/sync/desktop_lookup_service.dart');
-    final int bringStart = service.indexOf(
-      'Future<void> bringPendingLookupToFront()',
-    );
-    final int focusHelperStart =
-        service.indexOf('Future<bool> _isFushiForeground()');
-    expect(bringStart, isNonNegative);
-    expect(focusHelperStart, isNonNegative);
-    final String bringBody = service.substring(bringStart, focusHelperStart);
+  test(
+    'bringPendingLookupToFront clears taskbar flash on the foreground path',
+    () {
+      final String service = read('lib/src/sync/desktop_lookup_service.dart');
+      final int bringStart = service.indexOf(
+        'Future<void> bringPendingLookupToFront()',
+      );
+      final int focusHelperStart = service.indexOf(
+        'Future<bool> _isFushiForeground()',
+      );
+      expect(bringStart, isNonNegative);
+      expect(focusHelperStart, isNonNegative);
+      final String bringBody = service.substring(bringStart, focusHelperStart);
 
-    // clearTaskbarFlash must be invoked through WindowCaptionChannel.
-    expect(
-      'WindowCaptionChannel.clearTaskbarFlash()'.allMatches(bringBody).length,
-      2,
-      reason: 'foreground path must clear the flash both before the '
-          'already-foreground early-return and at the tail (always-on-top).',
-    );
-    // The already-foreground clear must sit before show/focus (it runs on the
-    // early-return path that never reaches show); the tail clear after.
-    final int show = bringBody.indexOf('windowManager.show()');
-    final int firstClear =
-        bringBody.indexOf('WindowCaptionChannel.clearTaskbarFlash()');
-    final int lastClear =
-        bringBody.lastIndexOf('WindowCaptionChannel.clearTaskbarFlash()');
-    expect(show, isNonNegative);
-    expect(firstClear, isNonNegative);
-    expect(firstClear < show, isTrue,
-        reason: 'already-foreground path clears flash before show/focus '
-            '(on its early-return path).');
-    expect(lastClear > show, isTrue,
-        reason: 'foreground path clears flash again after show/focus.');
-  });
+      // clearTaskbarFlash must be invoked through WindowCaptionChannel.
+      expect(
+        'WindowCaptionChannel.clearTaskbarFlash()'.allMatches(bringBody).length,
+        2,
+        reason:
+            'foreground path must clear the flash both before the '
+            'already-foreground early-return and at the tail (always-on-top).',
+      );
+      // The already-foreground clear must sit before show/focus (it runs on the
+      // early-return path that never reaches show); the tail clear after.
+      final int show = bringBody.indexOf('windowManager.show()');
+      final int firstClear = bringBody.indexOf(
+        'WindowCaptionChannel.clearTaskbarFlash()',
+      );
+      final int lastClear = bringBody.lastIndexOf(
+        'WindowCaptionChannel.clearTaskbarFlash()',
+      );
+      expect(show, isNonNegative);
+      expect(firstClear, isNonNegative);
+      expect(
+        firstClear < show,
+        isTrue,
+        reason:
+            'already-foreground path clears flash before show/focus '
+            '(on its early-return path).',
+      );
+      expect(
+        lastClear > show,
+        isTrue,
+        reason: 'foreground path clears flash again after show/focus.',
+      );
+    },
+  );
 }

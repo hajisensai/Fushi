@@ -48,25 +48,24 @@ void _expectUsesKey(String code, String key, {required String reason}) {
 void main() {
   group('书（EPUB / 漫画 / PDF / SRT 有声书）', () {
     test('两类书卡菜单都有一级「重命名」', () {
-      final String shelf =
-          _read('lib/src/pages/implementations/reader_fushi_history_page.dart');
+      final String shelf = _read(
+        'lib/src/pages/implementations/reader_fushi_history_page.dart',
+      );
       _expectUsesKey(
         shelf,
         'book_rename',
         reason: 'EPUB 书卡菜单缺「重命名」——改名又只剩「编辑信息」里那两层',
       );
-      final String srt =
-          _read('lib/src/pages/implementations/reader_history/books.part.dart');
-      _expectUsesKey(
-        srt,
-        'book_rename',
-        reason: 'SRT / 有声书卡菜单缺「重命名」',
+      final String srt = _read(
+        'lib/src/pages/implementations/reader_history/books.part.dart',
       );
+      _expectUsesKey(srt, 'book_rename', reason: 'SRT / 有声书卡菜单缺「重命名」');
     });
 
     test('落的是显示名覆盖层，绝不写 title 列', () {
-      final String shelf =
-          _read('lib/src/pages/implementations/reader_fushi_history_page.dart');
+      final String shelf = _read(
+        'lib/src/pages/implementations/reader_fushi_history_page.dart',
+      );
       final String body = methodBody(shelf, 'Future<void> _renameBook(');
 
       expect(
@@ -94,8 +93,9 @@ void main() {
     });
 
     test('改名后让书架重读，而不是只 refreshTab', () {
-      final String shelf =
-          _read('lib/src/pages/implementations/reader_fushi_history_page.dart');
+      final String shelf = _read(
+        'lib/src/pages/implementations/reader_fushi_history_page.dart',
+      );
       final String body = methodBody(shelf, 'Future<void> _renameBook(');
       // BUG-1018 同款：书架的响应式源按 key 集合去重，纯覆盖层写入不会重发，
       // 只 refreshTab 会拿旧缓存 MediaItem 重绘 → 看着像「没保存」。
@@ -107,8 +107,9 @@ void main() {
     });
 
     test('初值取当前显示名，不是原始 title', () {
-      final String shelf =
-          _read('lib/src/pages/implementations/reader_fushi_history_page.dart');
+      final String shelf = _read(
+        'lib/src/pages/implementations/reader_fushi_history_page.dart',
+      );
       final String body = methodBody(shelf, 'Future<void> _renameBook(');
       // 取 item.title 的话，改过一次名的书再开改名框会闪回原名，用户以为改名丢了。
       expect(
@@ -121,8 +122,9 @@ void main() {
 
   group('扫描根 / 媒体源库', () {
     test('有改名入口，且落 label 列', () {
-      final String view =
-          _read('lib/src/pages/implementations/media_sources_view.dart');
+      final String view = _read(
+        'lib/src/pages/implementations/media_sources_view.dart',
+      );
       _expectUsesKey(view, 'media_source_rename', reason: '扫描根行缺改名按钮');
 
       final String body = methodBody(view, 'Future<void> _rename(');
@@ -131,18 +133,15 @@ void main() {
         isTrue,
         reason: '扫描根改名走 label 列——身份是自增 id，改名不牵动扫描/凭据/归属',
       );
-      expect(
-        body.contains('_load()'),
-        isTrue,
-        reason: '改完要重载列表，否则还显示旧名',
-      );
+      expect(body.contains('_load()'), isTrue, reason: '改完要重载列表，否则还显示旧名');
     });
   });
 
   group('词典', () {
     test('有改名入口，且落 display_name 覆盖列', () {
-      final String page =
-          _read('lib/src/pages/implementations/dictionary_dialog_page.dart');
+      final String page = _read(
+        'lib/src/pages/implementations/dictionary_dialog_page.dart',
+      );
       _expectUsesKey(page, 'dict_rename', reason: '词典行缺改名按钮');
 
       final String body = methodBody(page, 'Future<void> _renameDictionary(');
@@ -154,8 +153,9 @@ void main() {
     });
 
     test('列表显示走 effectiveDisplayName', () {
-      final String page =
-          _read('lib/src/pages/implementations/dictionary_dialog_page.dart');
+      final String page = _read(
+        'lib/src/pages/implementations/dictionary_dialog_page.dart',
+      );
       expect(
         page.contains('dictionary.effectiveDisplayName'),
         isTrue,
@@ -164,8 +164,9 @@ void main() {
     });
 
     test('重导 / 在线更新继承显示名', () {
-      final String importer =
-          _read('lib/src/models/dictionary_import_manager.dart');
+      final String importer = _read(
+        'lib/src/models/dictionary_import_manager.dart',
+      );
       // 两条导入路径（目录导入 / 文件导入+强制覆盖）各有一处 persistDictionary，
       // 少继承一处就是「在线更新一次名字打回原形」。
       expect(
@@ -176,7 +177,9 @@ void main() {
     });
 
     test('存储占用：翻译 label 但 id 保持真名', () {
-      final String service = _read('lib/src/storage/storage_usage_service.dart');
+      final String service = _read(
+        'lib/src/storage/storage_usage_service.dart',
+      );
       // id 是删除路由主键（settings_schema_storage 按它找磁盘目录），翻译了会
       // 删不掉 / 删错目录。
       expect(
@@ -216,15 +219,12 @@ void main() {
     });
 
     test('原语自己管 trim / 空名 / controller 生命周期', () {
-      final String dialog =
-          _read('lib/src/pages/implementations/name_input_dialog.dart');
+      final String dialog = _read(
+        'lib/src/pages/implementations/name_input_dialog.dart',
+      );
       final String submit = methodBody(dialog, 'void _submit()');
       expect(submit.contains('.trim()'), isTrue, reason: '必须裁空白');
-      expect(
-        submit.contains('isEmpty'),
-        isTrue,
-        reason: '空名不提交——调用方因此不必各自判空',
-      );
+      expect(submit.contains('isEmpty'), isTrue, reason: '空名不提交——调用方因此不必各自判空');
       // 视频那份旧实现在 `await showDialog` 返回后立刻 dispose，那时弹窗还没拆完
       // （游戏改名踩过同一个坑并留了注释）。原语把 controller 交给 State 持有。
       expect(
@@ -235,8 +235,9 @@ void main() {
     });
 
     test('视频改名不再是裸 AlertDialog', () {
-      final String video =
-          _read('lib/src/pages/implementations/home_video_page.dart');
+      final String video = _read(
+        'lib/src/pages/implementations/home_video_page.dart',
+      );
       final String body = methodBody(video, 'Future<void> _renameVideo(');
       expect(
         body.contains('AlertDialog'),

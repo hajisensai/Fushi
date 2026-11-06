@@ -23,14 +23,15 @@ void main() {
   late Directory platformSupport;
 
   String nested() => p.joinAll(<String>[
-        platformDocuments.path,
-        ...AppPaths.defaultDocumentsChildSegments,
-      ]);
+    platformDocuments.path,
+    ...AppPaths.defaultDocumentsChildSegments,
+  ]);
 
   /// 制造「这台机器上已经有一个跑过的安装」的痕迹：support 根下有主库文件。
   void writeExistingDatabase() {
-    File(p.join(platformSupport.path, 'hibiki.db'))
-        .writeAsStringSync('not a real sqlite file, only its presence matters');
+    File(
+      p.join(platformSupport.path, 'hibiki.db'),
+    ).writeAsStringSync('not a real sqlite file, only its presence matters');
   }
 
   setUp(() {
@@ -47,19 +48,19 @@ void main() {
 
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (MethodCall call) async {
-        switch (call.method) {
-          case 'getApplicationDocumentsDirectory':
-            return platformDocuments.path;
-          case 'getApplicationSupportDirectory':
-            return platformSupport.path;
-          case 'getTemporaryDirectory':
-            return p.join(tmp.path, 'systemp');
-        }
-        return null;
-      },
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (MethodCall call) async {
+            switch (call.method) {
+              case 'getApplicationDocumentsDirectory':
+                return platformDocuments.path;
+              case 'getApplicationSupportDirectory':
+                return platformSupport.path;
+              case 'getTemporaryDirectory':
+                return p.join(tmp.path, 'systemp');
+            }
+            return null;
+          },
+        );
   });
 
   tearDown(() {
@@ -67,9 +68,9 @@ void main() {
     AppPaths.debugResetDocumentsLayoutCache();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      null,
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          null,
+        );
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 
@@ -80,10 +81,14 @@ void main() {
 
       expect(root.path, equals(nested()));
       // 核心断言：16 个目录的父不再是用户文档根本身。
-      expect((await AppPaths.audiobooksDirectory()).path,
-          equals(p.join(nested(), 'audiobooks')));
-      expect((await AppPaths.epubBooksDirectory()).path,
-          isNot(equals(p.join(platformDocuments.path, 'fushi_books'))));
+      expect(
+        (await AppPaths.audiobooksDirectory()).path,
+        equals(p.join(nested(), 'audiobooks')),
+      );
+      expect(
+        (await AppPaths.epubBooksDirectory()).path,
+        isNot(equals(p.join(platformDocuments.path, 'fushi_books'))),
+      );
     });
 
     test('老安装（support 下有 hibiki.db）→ 保持扁平布局，一个字节都不搬', () async {
@@ -93,10 +98,14 @@ void main() {
 
       expect(root.path, equals(platformDocuments.path));
       // 老用户的每个派生点都必须与升级前逐字节一致。
-      expect((await AppPaths.audiobooksDirectory()).path,
-          equals(p.join(platformDocuments.path, 'audiobooks')));
-      expect((await AppPaths.epubBooksDirectory()).path,
-          equals(p.join(platformDocuments.path, 'fushi_books')));
+      expect(
+        (await AppPaths.audiobooksDirectory()).path,
+        equals(p.join(platformDocuments.path, 'audiobooks')),
+      );
+      expect(
+        (await AppPaths.epubBooksDirectory()).path,
+        equals(p.join(platformDocuments.path, 'fushi_books')),
+      );
     });
 
     test('判定结果固化进 prefs（新装写 nested）', () async {
@@ -104,7 +113,9 @@ void main() {
 
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       expect(
-          prefs.getString(AppPaths.documentsLayoutPrefKey), equals('nested'));
+        prefs.getString(AppPaths.documentsLayoutPrefKey),
+        equals('nested'),
+      );
     });
 
     test('判定结果固化进 prefs（老装写 flat）', () async {

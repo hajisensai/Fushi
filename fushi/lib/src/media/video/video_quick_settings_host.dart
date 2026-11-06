@@ -10,6 +10,7 @@ import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/media/video/video_immersive_control_layout.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
@@ -60,6 +61,7 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     this.onEnterSubtitleDragAdjust,
     this.onEnterSubtitleDelayBar,
     this.onSubtitleObscureRevealChanged,
+    this.onSecondarySubtitleObscureRevealChanged,
     this.onRespectAssStyleChanged,
     required this.onAsbConfigChanged,
     required this.onMpvConfigChanged,
@@ -71,15 +73,17 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     required this.onLockWindowAspectRatioChanged,
     required this.onVideoFitModeChanged,
     this.onHdrOutputModeChanged,
+    this.onYoutubeQualityChanged,
     required this.onImmersiveModeChanged,
     required this.controlLayout,
     this.onControlLayoutChanged,
     this.customActionBindings,
     this.onCustomActionBindingsChanged,
+    this.immersiveControlLayout,
+    this.onImmersiveControlLayoutChanged,
     this.qualityOptionCount = 0,
     this.qualityCurrentLabel,
     this.onOpenQuality,
-    this.onSwitchToSkiaRenderer,
     this.onDanmakuEnabledChanged,
     this.onDanmakuOnlineEnabledChanged,
     this.onDanmakuMaxActiveChanged,
@@ -151,9 +155,9 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
 
   // ── 字幕遮蔽 / 外观（页面持久化 + overlay 即时刷新 / 实时预览）───────────
   final Future<void> Function(VideoSubtitleObscureMode mode)
-      onSetSubtitleObscureMode;
+  onSetSubtitleObscureMode;
   final Future<void> Function(VideoSubtitleObscureMode mode)
-      onSetSecondarySubtitleObscureMode;
+  onSetSecondarySubtitleObscureMode;
 
   /// 页面当前生效的字幕样式（含拖动中的预览态），schema 滑条以它为权威值回显。
   final VideoSubtitleStyle Function() subtitleStyle;
@@ -173,6 +177,10 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   /// 遮蔽态「悬停 / 点击临时显形」总闸的页面通道：写偏好 + 立刻重建 overlay。null =
   /// 无播放器场景（全局设置页），由 schema 直接写 [AppModel]。
   final Future<void> Function(bool value)? onSubtitleObscureRevealChanged;
+
+  /// 副字幕「临时显形」开关的页面通道，语义同 [onSubtitleObscureRevealChanged]。
+  final Future<void> Function(bool value)?
+  onSecondarySubtitleObscureRevealChanged;
   final Future<void> Function(bool value)? onRespectAssStyleChanged;
 
   // ── 手势/播放行为 JSON pref（页面持久化 + 即时生效）──────────────────────
@@ -197,7 +205,8 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     VideoShaderTier tier,
     bool highQuality,
     List<String> enabledNames,
-  ) onSelectShaderTier;
+  )
+  onSelectShaderTier;
   final Future<void> Function(String dir)? onMpvShaderDirChanged;
 
   // ── 画面/窗口/沉浸（页面持久化 + 重建 Video / 原生窗口联动）──────────────
@@ -209,23 +218,34 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   /// 让播放器控制器当场重判是否切宿主窗。null = 无播放器场景走 AppModel 落盘。
   final Future<void> Function(VideoHdrOutputMode mode)? onHdrOutputModeChanged;
 
+  /// 「YouTube 画质」目标高度（0 = 自动）：页面落盘 + 网页档当场下发给站点播放器。
+  /// null = 无播放器场景走 AppModel 落盘（下次打开生效）。
+  final Future<void> Function(int height)? onYoutubeQualityChanged;
+
   // ── 控制条 9 槽位布局 ─────────────────────────────────────────────────────
   final VideoControlLayout Function() controlLayout;
   final Future<void> Function(VideoControlLayout layout)?
-      onControlLayoutChanged;
+  onControlLayoutChanged;
 
   /// 自定义「快捷键 1..4」按钮当前绑定的动作（活值 getter，与 [controlLayout] 同款）。
   final VideoCustomActionBindings Function()? customActionBindings;
 
   /// 改绑「快捷键 N」后落盘 + 实时生效。null = 编辑器不提供改绑入口。
   final Future<void> Function(VideoCustomActionBindings bindings)?
-      onCustomActionBindingsChanged;
+  onCustomActionBindingsChanged;
 
-  // ── HLS 画质入口 / Skia 降级入口（仅特定流/机型出现）─────────────────────
+  /// 沉浸布局（锁定后屏幕左右侧栏的按钮）当前值，活值 getter。null = 宿主不提供沉浸
+  /// 布局编辑（编辑器行不出现，设置页回落 AppModel 读写）。
+  final VideoImmersiveControlLayout Function()? immersiveControlLayout;
+
+  /// 改沉浸布局后落盘 + 实时生效；null 参数 = 恢复默认（回到按普通布局派生）。
+  final Future<void> Function(VideoImmersiveControlLayout? layout)?
+  onImmersiveControlLayoutChanged;
+
+  // ── HLS 画质入口（仅特定流出现）─────────────────────────────────────────
   final int qualityOptionCount;
   final String? qualityCurrentLabel;
   final VoidCallback? onOpenQuality;
-  final VoidCallback? onSwitchToSkiaRenderer;
 
   // ── 弹幕（页面持久化 + 弹幕层即时刷新 / 实时预览）────────────────────────
   final Future<void> Function(bool value)? onDanmakuEnabledChanged;

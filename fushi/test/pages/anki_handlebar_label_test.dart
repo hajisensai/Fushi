@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/anki_settings_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 /// TODO-843：占位符友好标签映射守卫。
@@ -76,8 +76,11 @@ void main() {
       final String label = ankiHandlebarLabel(alias);
       expect(label, isNotEmpty);
       expect(label, isNot(equals(alias)), reason: '$alias 不该退化成裸字面量');
-      expect(label, isNot(equals(t.handlebar_deprecated_label(label: ''))),
-          reason: '$alias 只剩弃用标记、丢了本体标签');
+      expect(
+        label,
+        isNot(equals(t.handlebar_deprecated_label(label: ''))),
+        reason: '$alias 只剩弃用标记、丢了本体标签',
+      );
     }
   });
 

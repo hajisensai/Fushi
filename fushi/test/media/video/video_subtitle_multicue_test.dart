@@ -36,8 +36,10 @@ void main() {
 
       // 重叠区：两条都活动（核心修复）。
       c.debugUpdateCueForPosition(2500);
-      expect(c.activeCues.map((AudioCue e) => e.text).toList(),
-          <String>['X', 'Y']);
+      expect(c.activeCues.map((AudioCue e) => e.text).toList(), <String>[
+        'X',
+        'Y',
+      ]);
 
       // cue0 已结束(>3000)：activeCues 仍非空（cue1 还在）——旧实现此刻会因 findCueIndex
       // 越过 cue0.end 而 overlay 清空/切换闪烁。
@@ -70,8 +72,10 @@ void main() {
       expect(c.secondaryActiveCues, isEmpty);
       // pos 2000：副字幕活动。
       c.debugUpdateCueForPosition(2000);
-      expect(c.secondaryActiveCues.map((AudioCue e) => e.text).toList(),
-          <String>['副']);
+      expect(
+        c.secondaryActiveCues.map((AudioCue e) => e.text).toList(),
+        <String>['副'],
+      );
       // 主字幕不受副字幕影响。
       expect(c.currentCue?.text, '主');
 
@@ -168,8 +172,9 @@ void main() {
       expect(hit.graphemeIndex, 0);
     });
 
-    testWidgets('单主字幕、无副字幕：结构退化为单字幕盒（无 Stack 包裹，历史几何不变)',
-        (WidgetTester tester) async {
+    testWidgets('单主字幕、无副字幕：结构退化为单字幕盒（无 Stack 包裹，历史几何不变)', (
+      WidgetTester tester,
+    ) async {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
       c.setCues(<AudioCue>[_cue('A', 0, 5000)]);

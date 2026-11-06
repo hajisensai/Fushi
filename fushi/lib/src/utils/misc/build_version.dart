@@ -35,8 +35,9 @@ library;
 ///
 /// 没注入时（本地 `flutter run`、`flutter test`、以及**这次改动之前**发布的所有
 /// 历史版本）为空串。空串必须当「未知」处理，绝不能当版本号参与比较。
-const String kFushiBuildVersionDefine =
-    String.fromEnvironment('FUSHI_BUILD_VERSION');
+const String kFushiBuildVersionDefine = String.fromEnvironment(
+  'FUSHI_BUILD_VERSION',
+);
 
 /// 运行中这份 Dart 代码的版本；未注入时返回 `null`（未知，不是 `0.0.0`）。
 ///
@@ -65,5 +66,4 @@ String? normalizeFushiBuildVersion(String rawDefine) {
 String resolveCurrentAppVersion(
   String executableVersion, {
   String runningCodeVersionDefine = kFushiBuildVersionDefine,
-}) =>
-    normalizeFushiBuildVersion(runningCodeVersionDefine) ?? executableVersion;
+}) => normalizeFushiBuildVersion(runningCodeVersionDefine) ?? executableVersion;

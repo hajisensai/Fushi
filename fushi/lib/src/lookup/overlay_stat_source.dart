@@ -32,8 +32,8 @@ String statSourceTypeForGameKey(String? activityGameKey) =>
 /// 语义不同（那一列还有 audiobook / lyrics），故按列各取各的常量，不共用字面量。
 String minedSentenceSourceForGameKey(String? activityGameKey) =>
     _isGameSurface(activityGameKey)
-        ? kFavoriteSentenceSourceGame
-        : kFavoriteSentenceSourceBook;
+    ? kFavoriteSentenceSourceGame
+    : kFavoriteSentenceSourceBook;
 
 /// app 外查词 / 制卡的统计来源：有归属的 galgame 会话在跑时算游戏域，否则算书域。
 ///
@@ -48,8 +48,32 @@ String overlayStatSourceType() =>
 /// [overlayStatSourceType] 的收藏句 / 制卡句值域版本（`addMinedSentence` 的
 /// `source` 参数用它，那一列不是 `StatSourceKind` 值域）。
 String overlayMinedSentenceSource() => minedSentenceSourceForGameKey(
-      GalHookSessionController.instance.activityGameKey,
-    );
+  GalHookSessionController.instance.activityGameKey,
+);
+
+/// 制卡历史行的游戏出处（`mined_sentences.book_key` = `galgames.id` + 显示名快照）：
+/// 只有游戏域（[_isGameSurface]）才给，书域返回 null——与 [overlayMinedSentenceSource]
+/// 同一判据，来源值与出处身份不会一个说游戏一个说书。
+({String gameId, String? title})? minedSentenceGameOriginFor({
+  required String? activityGameKey,
+  required String? activityGameTitle,
+}) {
+  if (!_isGameSurface(activityGameKey)) return null;
+  final String? title = activityGameTitle?.trim();
+  return (
+    gameId: activityGameKey!,
+    title: title == null || title.isEmpty ? null : title,
+  );
+}
+
+/// [minedSentenceGameOriginFor] 的会话级包装（读 [GalHookSessionController.instance]）。
+({String gameId, String? title})? overlayMinedSentenceGameOrigin() {
+  final GalHookSessionController session = GalHookSessionController.instance;
+  return minedSentenceGameOriginFor(
+    activityGameKey: session.activityGameKey,
+    activityGameTitle: session.activityGameTitle,
+  );
+}
 
 /// app 外浮窗的收藏词读 / 切换（`favoriteCheck` / `favoriteEntry` 两个桥共用）。
 /// 返回**切换后**的收藏态；[toggle] 为 false 时只读、不写。

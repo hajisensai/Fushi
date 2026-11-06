@@ -19,11 +19,14 @@ import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
 class AdminServer {
+  /// [api]：与远端 AI 助手共用的那一份 admin API（`serve` 里建一份，两边状态一致，
+  /// 例如模型下载中的去重）；不给就自建。
   AdminServer({
     required this.ctx,
     required this.token,
     this.securityContext,
-  }) : _api = AdminApi(ctx);
+    AdminApi? api,
+  }) : _api = api ?? AdminApi(ctx);
 
   final AdminContext ctx;
   final String token;
@@ -55,20 +58,23 @@ class AdminServer {
     await s?.close(force: true);
   }
 
-  static shelf.Handler _noCache(shelf.Handler inner) => (shelf.Request request) async {
+  static shelf.Handler _noCache(shelf.Handler inner) =>
+      (shelf.Request request) async {
         final shelf.Response response = await inner(request);
-        return response.change(headers: <String, String>{
-          'Cache-Control': 'no-store',
-          'X-Content-Type-Options': 'nosniff',
-          'X-Frame-Options': 'DENY',
-        });
+        return response.change(
+          headers: <String, String>{
+            'Cache-Control': 'no-store',
+            'X-Content-Type-Options': 'nosniff',
+            'X-Frame-Options': 'DENY',
+          },
+        );
       };
 
   bool _authorized(shelf.Request request) => adminRequestAuthorized(
-        authorization: request.headers['authorization'],
-        cookie: request.headers['cookie'],
-        token: token,
-      );
+    authorization: request.headers['authorization'],
+    cookie: request.headers['cookie'],
+    token: token,
+  );
 
   static bool _constantTimeEquals(String a, String b) =>
       adminConstantTimeEquals(a, b);
@@ -79,16 +85,24 @@ class AdminServer {
 
     if (method == 'POST' && path == '/login') return _login(request);
     if (method == 'POST' && path == '/logout') {
-      return shelf.Response.found('/', headers: <String, String>{
-        'Set-Cookie': 'fushi_admin=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict',
-      });
+      return shelf.Response.found(
+        '/',
+        headers: <String, String>{
+          'Set-Cookie':
+              'fushi_admin=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict',
+        },
+      );
     }
 
     if (path.startsWith('/api/admin/')) {
       if (!_authorized(request)) {
-        return shelf.Response(401,
-            body: jsonEncode(const <String, Object?>{'error': 'unauthorized'}),
-            headers: const <String, String>{'Content-Type': 'application/json; charset=utf-8'});
+        return shelf.Response(
+          401,
+          body: jsonEncode(const <String, Object?>{'error': 'unauthorized'}),
+          headers: const <String, String>{
+            'Content-Type': 'application/json; charset=utf-8',
+          },
+        );
       }
       return _api.handle(request);
     }
@@ -96,7 +110,9 @@ class AdminServer {
     if (method == 'GET' && (path == '/' || path == '/index.html')) {
       return shelf.Response.ok(
         _authorized(request) ? adminWebUiHtml : adminLoginHtml,
-        headers: const <String, String>{'Content-Type': 'text/html; charset=utf-8'},
+        headers: const <String, String>{
+          'Content-Type': 'text/html; charset=utf-8',
+        },
       );
     }
     return shelf.Response.notFound('not found');
@@ -110,15 +126,25 @@ class AdminServer {
       // 失败故意慢一拍：单管理员 token 没有锁定策略，靠这一点抬高暴力成本。
       await Future<void>.delayed(const Duration(milliseconds: 800));
       return shelf.Response.ok(
-        adminLoginHtml.replaceFirst('<!--error-->', '<p class="err">Token 不正确</p>'),
-        headers: const <String, String>{'Content-Type': 'text/html; charset=utf-8'},
+        adminLoginHtml.replaceFirst(
+          '<!--error-->',
+          '<p class="err">Token 不正确</p>',
+        ),
+        headers: const <String, String>{
+          'Content-Type': 'text/html; charset=utf-8',
+        },
       );
     }
-    return shelf.Response.found('/', headers: <String, String>{
-      // 与 adminRequestAuthorized 成对：写侧编码、读侧解码只有这一份真相。
-      'Set-Cookie':
-          adminSetCookieValue(token, secure: securityContext != null),
-    });
+    return shelf.Response.found(
+      '/',
+      headers: <String, String>{
+        // 与 adminRequestAuthorized 成对：写侧编码、读侧解码只有这一份真相。
+        'Set-Cookie': adminSetCookieValue(
+          token,
+          secure: securityContext != null,
+        ),
+      },
+    );
   }
 }
 

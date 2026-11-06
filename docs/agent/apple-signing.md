@@ -62,6 +62,7 @@ MethodChannel 前缀已同批切到 `app.fushi.reader/*`（Dart 真相源
 | `IOS_DIST_CERT_P12_BASE64` | Apple Distribution 证书 + 私钥的 p12，base64 单行 | iOS |
 | `IOS_DIST_CERT_P12_PASSWORD` | 上面 p12 的导出口令 | iOS |
 | `IOS_PROVISIONING_PROFILE_BASE64` | App Store 描述文件，base64 单行 | iOS |
+| `IOS_WIDGETS_PROVISIONING_PROFILE_BASE64` | 主屏小组件扩展 `app.fushi.reader.widgets` 的 App Store 描述文件（可选，见「主屏小组件」） | iOS |
 | `MACOS_DEVELOPER_ID_P12_BASE64` | Developer ID Application 证书 + 私钥的 p12 | macOS |
 | `MACOS_DEVELOPER_ID_P12_PASSWORD` | 上面 p12 的导出口令 | macOS |
 
@@ -137,17 +138,15 @@ Actions → **Build Desktop and Apple Release Artifacts** → Run workflow：
 手动 dispatch：beta / formal 直接上传；debug 只在 `testflight_only=true` 时上传（手动重发
 一个普通 debug 不会顺手传）。
 
-### debug 包约每三次上一次 TestFlight
+### debug 包每次 push 都上 TestFlight
 
-push 触发的 debug 通道（`develop` / `main` push）**约每三次传一次**：发布序列（= 构建号 =
-commit 计数，`tool/release_sequence.sh`）能被 3 整除的那次 push，ios job 在未签名 IPA 之外
-再做一趟签名构建 + `altool` 上传（2026-09-16 用户拍板「发三次调试版触发一次 TestFlight」）。
-不每次都传，是因为 push 一天 5~13 次，全传会让 App Store Connect 的处理排队压后真正想发的
-beta、TestFlight 列表被 debug 构建淹掉（每个挂 90 天）、每条 push 再多一趟 15 分钟签名构建。
-用发布序列而不是 run 号：本仓不变式是 run 号永远不当序列（`tool/check_release_policy.ps1`
-整个禁用 `GITHUB_RUN_NUMBER` / `github.run_number`），而且这样从 TestFlight 的构建号就能看出
-哪次是自动传的。每次 push 涨的 commit 数不固定，所以是「约」每三次；哪次会传，看 ios job
-「Resolve Apple signing mode」那一行 `debug push, build N ...` 的日志。
+`develop` push 触发的 debug 通道**每次都传**：ios job 在未签名 IPA 之外
+再做一趟签名构建 + `altool` 上传（2026-11-02 用户拍板「改成每次 ci 自动推 tf，不用每次看」，
+取代 09-16 的「发布序列能被 3 整除才传」）。构建号 = 发布序列（commit 计数，
+`tool/release_sequence.sh`，不是 run 号——`tool/check_release_policy.ps1` 整个禁用
+`GITHUB_RUN_NUMBER` / `github.run_number`），沿 develop 每次 push 单调递增。`main` 的 push 不传（门里钉 `$GITHUB_REF = refs/heads/develop`）：main 的 commit 数远低于 develop，序列落在已传号段下面，快进到 develop 上已传过的 sha 时序列相同必撞 409 DUPLICATE。代价：每条 push 多一趟约 15
+分钟签名构建，TestFlight 列表里 debug 构建变多（每个挂 90 天）。被后续 push 顶掉的 pending run
+不传，由更新的那轮传。日志见 ios job「Resolve Apple signing mode」那一行 `debug push, build N ...`。
 
 debug 包在 TestFlight 里的短版本与 beta 相同（Apple 只收三段），靠构建号和 app 内
 `FUSHI_BUILD_VERSION`（`2.x.y-debug.<seq>`）区分。构建号是 commit 计数 + 地板、沿 develop
@@ -155,11 +154,11 @@ debug 包在 TestFlight 里的短版本与 beta 相同（Apple 只收三段）�
 时，构建号会比已传的 debug 小、altool 拒收——beta 一律从 develop 头发。
 
 缺任一 Apple 密钥时 push 门直接关闭（fork 照常绿）；`testflight_only=true` 的 dispatch 缺密钥
-则红，不允许「绿着跳过」。想在两次自动上传之间手动补传一份 debug：Run workflow →
+则红，不允许「绿着跳过」。想手动补传一份 debug（同一 sha 上 push 已传过会撞构建号被拒）：Run workflow →
 `channel=debug` + `testflight_only=true`（只跑 ios job 的签名 + 上传，其余全跳）。
 
 （09-14 ~ 09-16 曾有过定时通道 `testflight-debug.yml`：每 8 小时用 `tool/asc_latest_build_number.sh`
-查一次 App Store Connect、有新提交才 dispatch。改为按次数后已连同脚本一起撤掉；别把它加
+查一次 App Store Connect、有新提交才 dispatch。改为 push 门直接传后已连同脚本一起撤掉；别把它加
 回来，两条节律并存会重复上传。守卫 `apple_signing_workflow_guard_test.dart` 钉着「不得回潮」。）
 
 上传后 App Store Connect 处理通常 5–30 分钟，之后才出现在测试员列表里。
@@ -169,10 +168,9 @@ debug 包在 TestFlight 里的短版本与 beta 相同（Apple 只收三段）�
 Release 里挂的 `fushi-<版本>-ios.ipa` **仍然是未签名包**，走的还是原来的
 `flutter build ios --release --no-codesign` + 手工打 Payload。老用户用 AltStore /
 Sideloadly 自签侧载的就是它，换成 App Store 签名包会直接打断他们。TestFlight 用的是
-另外一次签名构建（手动 beta/formal，或每第三次 debug push），产物不进 Release 资产。
+另外一次签名构建（手动 beta/formal，或每次 develop debug push），产物不进 Release 资产。
 
-代价是这种 run 下 iOS 会构建两次。可以接受：手动 beta/formal 本来就不频繁，debug 也只有
-三分之一的 push 多这一趟。
+代价是这种 run 下 iOS 会构建两次（每条 develop debug push 都多这一趟，2026-11-02 用户接受）。
 
 ## 实现要点（改之前先读）
 
@@ -274,6 +272,65 @@ com.apple.security.cs.disable-library-validation
 **将来如果引入自研加密（比如端到端加密的互联同步），必须回头改这个值并补交年度
 自分类报告。**
 
+## 主屏小组件（App Group）
+
+iOS 的主屏 / 锁屏小组件、灵动岛（Live Activity）、控制中心控件，以及 macOS 的小组件，都住在
+扩展 `FushiWidgets.appex`（bundle `app.fushi.reader.widgets`）里。它和主 app 靠 **App Group**
+共享主 app 写的快照（`<group>/home_widgets/snapshot.json` + `covers/`）：Dart 的
+`WidgetSnapshotPublisher` 把与 Android **同一份** JSON 经 `app.fushi.reader/widgets` 的
+`updateSnapshot` 推给原生，`FushiHomeWidgets.swift` 的 `FushiWidgetSnapshotSink` 缩略封面、落盘、
+重载时间线（契约见 [android-widgets.md](android-widgets.md)「Apple (WidgetKit)」）。工程里的 target 由
+`fushi/tool/apple/widgets_target.rb add ios|macos` 生成，源码在 `fushi/apple/HomeWidgets/`。
+
+**iOS 一次性配置（Apple Developer 后台；2026-11-04 用户已配好 App Group、App ID、两份描述文件与
+`IOS_WIDGETS_PROVISIONING_PROFILE_BASE64`，CI 按此签扩展）**，缺任何一步，CI 都会**摘掉扩展**（`widgets_target.rb
+strip ios`）再签，TestFlight 照常上传、只是没有小组件，job 打一条 notice，不会红：
+
+1. Identifiers → App Groups → **+** → `group.app.fushi.reader`。
+2. Identifiers → `app.fushi.reader` → 勾 **App Groups** → Configure 选中上面的组 → Save。
+3. Identifiers → **+** → App IDs → `app.fushi.reader.widgets`（Explicit），同样勾 App Groups、选同一个组。
+4. 重新生成主 app 的 App Store 描述文件（勾了 capability 之后，旧描述文件里没有这个组），再给
+   `app.fushi.reader.widgets` 新建一份 App Store 描述文件（同一张 Apple Distribution 证书）。
+5. `tool/apple_signing_secrets.sh --ios-profile <主> --ios-widgets-profile <扩展> …`：校验两份
+   描述文件都带这个组，写入 `IOS_PROVISIONING_PROFILE_BASE64` 和
+   `IOS_WIDGETS_PROVISIONING_PROFILE_BASE64`。
+
+**CI 怎么判**（`release-desktop.yml`「Install provisioning profile and signing xcconfig」）：
+`Runner.entitlements` 里的每一项都只在描述文件本身带它时才签进去，和 `aps-environment` 同一套
+规矩——描述文件没有的项先从 runner 上的副本里 `PlistBuddy Delete` 掉，剩下至少一项才接入
+`CODE_SIGN_ENTITLEMENTS`（守卫 `ios_entitlements_profile_gating_guard_test.dart`、
+`feedback_push_wiring_guard_test.dart`）。扩展的 `FushiWidgets.entitlements` 同一规则，对照的是扩展
+自己那份描述文件。两份描述文件都带 App Group 时才保留这项，往 `ios/Flutter/FushiWidgets.xcconfig`
+追加扩展自己的手动签名，并在 ExportOptions 里登记扩展的描述文件；缺任何一份就删掉这项并把扩展
+target 整个摘掉（`tool/apple/widgets_target.rb strip ios`）。
+
+扩展 target 在 `project.pbxproj` 里**不得在 target 级写签名设置**（`CODE_SIGN_STYLE` /
+`PROVISIONING_PROFILE_SPECIFIER` / `DEVELOPMENT_TEAM` / `CODE_SIGN_IDENTITY`），与 Runner 一样：
+target 级优先于 base configuration，写了 `CODE_SIGN_STYLE = Automatic` 就会盖掉 CI 追加到
+`FushiWidgets.xcconfig` 的 `Manual`，签名构建报「FushiWidgets is automatically signed, but
+provisioning profile … has been manually specified」（守卫 `apple_widgets_signing_guard_test.dart`）。
+
+**build_only 也签**：手动 dispatch 带 `build_only=true` 且 Apple 密钥齐全时，ios job 照常构建签名
+App Store IPA（signing 步骤的 `signed` 输出），只作为 run artifact 留着，**不传** TestFlight
+（`testflight` job 只认 `testflight` 输出）。发正式版前先跑一次 build_only，就能把描述文件 /
+扩展签名 / ExportOptions 这段链路验掉。
+
+**未签名侧载 IPA** 里带着扩展。侧载工具重签时会给扩展另起一个 App ID；免费账号每周只能建
+10 个，扩展会多占一个。没有 App Group 时，小组件只显示「打开 Fushi 一次」，不影响主 app。
+
+**模拟器**不按描述文件核对，所以 `Debug.xcconfig` / `Release.xcconfig` /
+`FushiWidgets.xcconfig` 用 `CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]` 无条件接入
+（守卫只禁止无条件的 `CODE_SIGN_ENTITLEMENTS =`）。
+
+**macOS 不需要后台配置**：Developer ID 下，带 Team ID 前缀的组（`<TEAM>.app.fushi.reader`）
+不要描述文件。macOS 的难点在重签：前面几轮 `codesign --deep --sign -` 和 Developer ID 逐个
+Mach-O 的重签都**不带 entitlements**，扩展会丢掉 `app-sandbox`，而 WidgetKit 不加载不在沙盒里的
+扩展。所以两条签名路径都要在签外层之前调用 `tool/apple/macos_widgets_sign.sh appex …`，带回
+沙盒与 App Group；外层 entitlements 由同一个脚本展开 `$(FUSHI_APP_GROUP)` 生成（codesign 不展开
+Xcode 变量）。脚本先用 `plutil -convert xml1` 重新序列化（丢掉 XML 注释）再替换、查残留 `$(`，
+所以 entitlements 注释里可以照常写 `$(TeamIdentifierPrefix)` 这类说明。运行时 app 和扩展各自读**自己签进去的** application-groups
+（`FushiAppGroup.identifier`），Info.plist 里的值只是 ad-hoc 构建的兜底。
+
 ## APNs 推送密钥（反馈回复推送）
 
 开发者在反馈处理台回复 / 改状态后，排行榜 Worker（`services/leaderboard/src/feedback_push.js`）
@@ -288,10 +345,14 @@ com.apple.security.cs.disable-library-validation
 2. **重新生成 App Store 描述文件**（勾了 capability 之后旧描述文件里没有 `aps-environment`）：
    Profiles → 原来那份 `IOS_APP_STORE` 描述文件 → Edit → Save → 下载，然后照「仓库 Secrets
    清单」重写 `IOS_PROVISIONING_PROFILE_BASE64`（`tool/apple_signing_secrets.sh`）。
-   `release-desktop.yml` 解出描述文件时发现它带 `aps-environment`，才往 `Release.xcconfig` 追加
-   `CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements`（值取描述文件里的，App Store 描述文件
-   是 `production`）；不带就照旧不接入——**描述文件没开 Push 却签进 aps-environment，codesign
-   会直接失败**，所以这一步不能写死在工程里。
+   `release-desktop.yml` 解出描述文件后对 `Runner.entitlements` 里的**每一项**逐个对照：
+   描述文件授予了才保留（`aps-environment` 的值取描述文件里的，App Store 描述文件是
+   `production`），没授予就在 runner 上把那一项删掉；至少剩一项才往 `Release.xcconfig` 追加
+   `CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements`——**描述文件没授予的 entitlement 签进去，
+   codesign 会直接失败**，所以这一步不能写死在工程里。同一机制也管
+   `com.apple.developer.kernel.extended-virtual-addressing`（BUG-4013，App ID 勾
+   「Extended Virtual Addressing」后同样要重新生成描述文件；缺失时 CI 打 warning）。守卫：
+   `fushi/test/build/ios_entitlements_profile_gating_guard_test.dart`。
 3. Keys → **+** → 勾 **Apple Push Notifications service (APNs)** → 下载 `AuthKey_<KEYID>.p8`
    （**只能下一次**，丢了只能作废重建）。记下 Key ID 与 Team ID（10 位）。一把 Auth Key
    对团队下所有 App、sandbox 与 production 都有效，不像旧的 .p12 推送证书一年一换。
@@ -308,7 +369,7 @@ $W secret put APNS_BUNDLE_ID --config wrangler.toml   # app.fushi.reader
 $W secret put APNS_ENV       --config wrangler.toml   # production（见下）
 ```
 
-部署前先应用迁移 `0010_feedback_push_tokens.sql`（Actions 部署勾 `apply_migrations`）。
+部署前先应用迁移 `0010_feedback_push_tokens.sql`（Actions 部署会自动先迁移）。
 
 ### sandbox 与 production
 
@@ -323,6 +384,32 @@ $W secret put APNS_ENV       --config wrangler.toml   # production（见下）
 `FUSHI_APS_ENVIRONMENT` 默认 `development`），并临时把一个测试 Worker 的 `APNS_ENV` 设成 `sandbox`。
 
 GitHub Release 里的未签名 ipa（AltStore / Sideloadly 侧载）没有推送能力，照旧走后台检查。
+
+## MusicKit 密钥（Apple Music API developer token）
+
+Apple Music API（`api.music.apple.com`）每个请求都要 `Authorization: Bearer <developer token>`，
+token 是用 Media Services 密钥签的 ES256 JWT。**私钥只放在排行榜 Worker 的 secret 里**，由
+`GET /v1/musickit/token`（`services/leaderboard/src/musickit.js`）代签一天有效的 token 发给 App；
+私钥不进 App 包、不进 git、不进 GitHub secrets（随包分发等于公开，只能作废重建）。
+
+| 项 | 值 |
+|---|---|
+| 密钥名 | Fushi MusicKit（Keys → Media Services：MusicKit、ShazamKit、Apple Music Feed） |
+| Key ID | `687L35A8T2` |
+| Team ID | `8N35BLYGL5`（与签名证书同一团队；2026-10-31 用真 token 调 catalog search 实测 200） |
+| `.p8` | 只能下一次；原件在维护者本机，丢了就在 Keys 里作废重建、重写下面三个 secret |
+
+```bash
+W="node services/leaderboard/node_modules/wrangler/bin/wrangler.js"
+$W secret put MUSICKIT_KEY_P8  --config services/leaderboard/wrangler.toml < AuthKey_687L35A8T2.p8
+printf 687L35A8T2 | $W secret put MUSICKIT_KEY_ID  --config services/leaderboard/wrangler.toml
+printf 8N35BLYGL5 | $W secret put MUSICKIT_TEAM_ID --config services/leaderboard/wrangler.toml
+```
+
+三项缺任何一项，接口回 `503 musickit_not_configured`，其它接口不受影响。验证：
+`curl https://rank.fushi.moe/v1/musickit/token` 拿到 token 后，带它调
+`https://api.music.apple.com/v1/catalog/jp/search?term=yoasobi&types=albums&limit=1` 应为 200
+（Team ID / Key ID 填错是 401）。
 
 ## 排障
 

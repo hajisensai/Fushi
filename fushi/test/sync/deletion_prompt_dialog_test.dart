@@ -15,37 +15,43 @@ void main() {
       TranslationProvider(child: MaterialApp(home: child));
 
   List<DeletionCandidateView> twoViews() => <DeletionCandidateView>[
-        const DeletionCandidateView(
-          candidate: DeletionPropagationCandidate(
-            mediaType: 'book',
-            itemKey: 'k1',
-            direction: DeletionPropagationDirection.deleteLocal,
-          ),
-          title: 'Book One',
-        ),
-        const DeletionCandidateView(
-          candidate: DeletionPropagationCandidate(
-            mediaType: 'video',
-            itemKey: 'k2',
-            direction: DeletionPropagationDirection.deleteLocal,
-          ),
-          title: 'Video Two',
-        ),
-      ];
+    const DeletionCandidateView(
+      candidate: DeletionPropagationCandidate(
+        mediaType: 'book',
+        itemKey: 'k1',
+        direction: DeletionPropagationDirection.deleteLocal,
+      ),
+      title: 'Book One',
+    ),
+    const DeletionCandidateView(
+      candidate: DeletionPropagationCandidate(
+        mediaType: 'video',
+        itemKey: 'k2',
+        direction: DeletionPropagationDirection.deleteLocal,
+      ),
+      title: 'Video Two',
+    ),
+  ];
 
   testWidgets('默认全选 → 删除选中返回全部候选', (WidgetTester tester) async {
     List<DeletionPropagationCandidate>? result;
-    await tester.pumpWidget(host(Builder(builder: (BuildContext ctx) {
-      return TextButton(
-        onPressed: () async {
-          result = await showDialog<List<DeletionPropagationCandidate>>(
-            context: ctx,
-            builder: (_) => DeletionPromptDialog(views: twoViews()),
-          );
-        },
-        child: const Text('open'),
-      );
-    })));
+    await tester.pumpWidget(
+      host(
+        Builder(
+          builder: (BuildContext ctx) {
+            return TextButton(
+              onPressed: () async {
+                result = await showDialog<List<DeletionPropagationCandidate>>(
+                  context: ctx,
+                  builder: (_) => DeletionPromptDialog(views: twoViews()),
+                );
+              },
+              child: const Text('open'),
+            );
+          },
+        ),
+      ),
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
@@ -62,18 +68,24 @@ void main() {
   testWidgets('取消 → 返回 null', (WidgetTester tester) async {
     List<DeletionPropagationCandidate>? result;
     bool ran = false;
-    await tester.pumpWidget(host(Builder(builder: (BuildContext ctx) {
-      return TextButton(
-        onPressed: () async {
-          result = await showDialog<List<DeletionPropagationCandidate>>(
-            context: ctx,
-            builder: (_) => DeletionPromptDialog(views: twoViews()),
-          );
-          ran = true;
-        },
-        child: const Text('open'),
-      );
-    })));
+    await tester.pumpWidget(
+      host(
+        Builder(
+          builder: (BuildContext ctx) {
+            return TextButton(
+              onPressed: () async {
+                result = await showDialog<List<DeletionPropagationCandidate>>(
+                  context: ctx,
+                  builder: (_) => DeletionPromptDialog(views: twoViews()),
+                );
+                ran = true;
+              },
+              child: const Text('open'),
+            );
+          },
+        ),
+      ),
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.dialog_cancel));
@@ -85,17 +97,23 @@ void main() {
 
   testWidgets('取消勾选一条 → 删除选中不含该条', (WidgetTester tester) async {
     List<DeletionPropagationCandidate>? result;
-    await tester.pumpWidget(host(Builder(builder: (BuildContext ctx) {
-      return TextButton(
-        onPressed: () async {
-          result = await showDialog<List<DeletionPropagationCandidate>>(
-            context: ctx,
-            builder: (_) => DeletionPromptDialog(views: twoViews()),
-          );
-        },
-        child: const Text('open'),
-      );
-    })));
+    await tester.pumpWidget(
+      host(
+        Builder(
+          builder: (BuildContext ctx) {
+            return TextButton(
+              onPressed: () async {
+                result = await showDialog<List<DeletionPropagationCandidate>>(
+                  context: ctx,
+                  builder: (_) => DeletionPromptDialog(views: twoViews()),
+                );
+              },
+              child: const Text('open'),
+            );
+          },
+        ),
+      ),
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 

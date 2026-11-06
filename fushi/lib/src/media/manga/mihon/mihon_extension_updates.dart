@@ -48,8 +48,8 @@ List<MihonExtensionUpdate> mihonExtensionUpdates({
 }) {
   final Map<String, MangaExtensionRow> installedByPackage =
       <String, MangaExtensionRow>{
-    for (final MangaExtensionRow row in installed) row.packageName: row,
-  };
+        for (final MangaExtensionRow row in installed) row.packageName: row,
+      };
   final Map<String, MihonExtensionUpdate> best =
       <String, MihonExtensionUpdate>{};
   for (final MihonAvailableExtension candidate in available) {
@@ -64,8 +64,10 @@ List<MihonExtensionUpdate> mihonExtensionUpdates({
             candidate.extensionVersionCode) {
       continue;
     }
-    best[candidate.packageName] =
-        MihonExtensionUpdate(available: candidate, installed: row);
+    best[candidate.packageName] = MihonExtensionUpdate(
+      available: candidate,
+      installed: row,
+    );
   }
   return best.values.toList(growable: false);
 }

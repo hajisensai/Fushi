@@ -1,0 +1,6 @@
+format=srt quality=line effects=false lang=- title=- artist=- agents=[]
+L 1000-3500 agent=- role=Main style=-
+  S 1000-3500 Sweep "沈むように"
+  T und "像沉没一般"
+L 4000-6000 agent=- role=Main style=-
+  S 4000-6000 Sweep "溶けてゆくように"

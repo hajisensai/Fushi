@@ -17,35 +17,38 @@ import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 /// per-peer token 与 host 共享 token 天生不同（Problem ③）却都能鉴权。
 void main() {
   test('LAN 免PIN 配对 → per-peer token（≠共享）+ 指纹 → 测试连接成功', () async {
-    final Directory tempDir =
-        Directory.systemTemp.createTempSync('fushi_e2e_lan_pair');
+    final Directory tempDir = Directory.systemTemp.createTempSync(
+      'fushi_e2e_lan_pair',
+    );
     final ({String certificatePem, String privateKeyPem}) gen =
         FushiSelfSignedCertGenerator.generate(
-      commonName: 'hibiki-e2e',
-      sanIpAddresses: <String>['127.0.0.1'],
+          commonName: 'hibiki-e2e',
+          sanIpAddresses: <String>['127.0.0.1'],
+        );
+    final String fingerprint = FushiTlsIdentityStore.fingerprintOf(
+      gen.certificatePem,
     );
-    final String fingerprint =
-        FushiTlsIdentityStore.fingerprintOf(gen.certificatePem);
     final SecurityContext serverCtx = SecurityContext()
       ..useCertificateChainBytes(gen.certificatePem.codeUnits)
       ..usePrivateKeyBytes(gen.privateKeyPem.codeUnits);
 
     const String sharedToken = 'host-shared-token';
     final Set<String> peerTokens = <String>{};
-    final FushiSyncServer server = FushiSyncServer(
-      syncDataDir: tempDir.path,
-      port: 0,
-      token: sharedToken,
-      allowLan: true,
-      securityContext: serverCtx,
-      hostFingerprint: fingerprint,
-    )
-      ..onPairRequest = ((FushiPairRequest r) async => true)
-      ..lanRequiresPinProvider = (() async => false)
-      ..onPeerPaired = ((FushiPairedPeerRegistration reg) async {
-        peerTokens.add(reg.token);
-      })
-      ..pairedPeerTokensProvider = (() async => peerTokens);
+    final FushiSyncServer server =
+        FushiSyncServer(
+            syncDataDir: tempDir.path,
+            port: 0,
+            token: sharedToken,
+            allowLan: true,
+            securityContext: serverCtx,
+            hostFingerprint: fingerprint,
+          )
+          ..onPairRequest = ((FushiPairRequest r) async => true)
+          ..lanRequiresPinProvider = (() async => false)
+          ..onPeerPaired = ((FushiPairedPeerRegistration reg) async {
+            peerTokens.add(reg.token);
+          })
+          ..pairedPeerTokensProvider = (() async => peerTokens);
     await server.start();
     final String baseUrl = 'https://127.0.0.1:${server.port}';
 
@@ -63,10 +66,16 @@ void main() {
       expect(outcome, isA<FushiPairV2Success>(), reason: 'LAN 免PIN 配对应成功');
       final String perPeerToken = (outcome as FushiPairV2Success).token;
       // Problem ③：per-peer token 与 host 共享 token 天生不同（设计），且被 host 受理。
-      expect(perPeerToken, isNot(sharedToken),
-          reason: 'client 显示的是 host 按本设备签发的专属 token，≠ host 共享 token');
-      expect(peerTokens.contains(perPeerToken), isTrue,
-          reason: 'host 应已把该 per-peer token 落库并受理鉴权');
+      expect(
+        perPeerToken,
+        isNot(sharedToken),
+        reason: 'client 显示的是 host 按本设备签发的专属 token，≠ host 共享 token',
+      );
+      expect(
+        peerTokens.contains(perPeerToken),
+        isTrue,
+        reason: 'host 应已把该 per-peer token 落库并受理鉴权',
+      );
 
       // Step 3：Problem ①——「测试连接」用「存下的 per-peer token + host 指纹」必须通。
       await InterconnectSyncBackend.instance.testConnection(

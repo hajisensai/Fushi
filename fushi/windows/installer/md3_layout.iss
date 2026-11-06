@@ -24,6 +24,36 @@ begin
     LabelControl.Font.Color := Md3OnSurface;
 end;
 
+{ 按钮宽度按**当前语言**的文字量出来，不写死：德语「Durchsuchen…」「Abbrechen」
+  在固定 84/64 px 里会被裁掉（#2716）。量字用与按钮相同的字体与字号（见
+  Md3PrepareButton），只建一个不可见的测量标签，不触碰任何按钮的 Handle。
+  MinWidth 保住中英文原来的视觉宽度。 }
+function Md3ButtonWidth(const Captions: array of String; MinWidth: Integer): Integer;
+var
+  Probe: TNewStaticText;
+  Index, Needed: Integer;
+begin
+  Result := MinWidth;
+  Probe := TNewStaticText.Create(WizardForm);
+  try
+    Probe.Visible := False;
+    Probe.AutoSize := True;
+    Probe.WordWrap := False;
+    Probe.Font.Name := Md3UiFontName(WizardForm.Font.Name);
+    Probe.Font.Size := 9;
+    Probe.Parent := WizardForm;
+    for Index := 0 to GetArrayLength(Captions) - 1 do
+    begin
+      Probe.Caption := Captions[Index];
+      Needed := Probe.Width + ScaleX(32);
+      if Needed > Result then
+        Result := Needed;
+    end;
+  finally
+    Probe.Free;
+  end;
+end;
+
 { Keep the native path editor, including autocomplete, selection and validation.
   The container adds padding without clipping the editor's selection or glyphs.
   Do not request any Handle here: hidden notebook pages must stay uncreated. }
@@ -43,7 +73,9 @@ begin
   Container.ParentBackground := False;
   Container.BevelOuter := bvNone;
   Container.Color := Md3SurfaceContainer;
-  Container.SetBounds(0, Top, WizardForm.InnerNotebook.Width - ScaleX(96), ScaleY(56));
+  Browse.Width := Md3ButtonWidth([Browse.Caption], ScaleX(84));
+  Container.SetBounds(0, Top,
+    WizardForm.InnerNotebook.Width - Browse.Width - ScaleX(12), ScaleY(56));
   Container.TabOrder := Order;
   Container.TabStop := False;
 
@@ -69,7 +101,7 @@ begin
   Edit.Text := SavedText;
 
   Browse.SetBounds(Container.Width + ScaleX(12), Top + ScaleY(12),
-    ScaleX(84), ScaleY(32));
+    Browse.Width, ScaleY(32));
   Md3PrepareButton(Browse);
 end;
 
@@ -79,24 +111,41 @@ begin
   DataRootPage.Surface.Color := Md3Surface;
   Md3Text(DataRootPage.SubCaptionLabel, 10, True);
   DataRootPage.SubCaptionLabel.SetBounds(0, 0, DataRootPage.SurfaceWidth, ScaleY(60));
-  DataRootPage.PromptLabels[0].Caption := '数据存储位置';
+  DataRootPage.PromptLabels[0].Caption := CustomMessage('FushiDataRootLabel');
   Md3PathField(DataRootPage.Edits[0], DataRootPage.Buttons[0],
     DataRootPage.PromptLabels[0], ScaleY(84));
 end;
 
 procedure Md3FitPathField(Edit: TEdit; Browse: TNewButton);
+var
+  Container: TWinControl;
+  RowWidth: Integer;
 begin
   { Notebook pages acquire their final client width when activated. Fit both
     native fields from that page, not from its earlier construction bounds. }
-  Edit.Parent.Width := Edit.Parent.Parent.ClientWidth - ScaleX(96);
-  Edit.Width := Edit.Parent.Width - ScaleX(32);
-  Browse.Left := Edit.Parent.Width + ScaleX(12);
+  Container := Edit.Parent;
+  RowWidth := Container.Parent.ClientWidth;
+  Container.Width := RowWidth - Browse.Width - ScaleX(12);
+  Edit.Width := Container.Width - ScaleX(32);
+  { RTL 语言（arabic）下 Inno 只在窗体 Show 时把控件坐标镜像一次；这里在 Show
+    之后重排，坐标必须自己镜像，否则「浏览」按钮按 LTR 坐标落到窗口外（#2716）。
+    ControlsFlipped 只在镜像已经发生后为真；尚未 Show 时给 LTR 坐标，交给 Inno 翻。 }
+  if WizardForm.ControlsFlipped then
+  begin
+    Container.Left := RowWidth - Container.Width;
+    Browse.Left := Container.Left - ScaleX(12) - Browse.Width;
+  end
+  else
+  begin
+    Container.Left := 0;
+    Browse.Left := Container.Width + ScaleX(12);
+  end;
   Md3StyleSurface(TPanel(Edit.Parent), 10);
 end;
 
 procedure ApplyMd3Chrome();
 var
-  BodyWidth, FooterTop, PageIndex: Integer;
+  BodyWidth, FooterTop, PageIndex, NextWidth, BackWidth: Integer;
 begin
   WizardForm.ClientWidth := ScaleX(592);
   WizardForm.ClientHeight := ScaleY(440);
@@ -123,7 +172,7 @@ begin
   Md3StepLabel.SetBounds(ScaleX(32), ScaleY(20), BodyWidth - ScaleX(64), ScaleY(18));
   Md3Text(Md3StepLabel, 9, True);
   Md3StepLabel.Font.Color := Md3Primary;
-  Md3StepLabel.Caption := 'FUSHI  /  安装向导';
+  Md3StepLabel.Caption := 'FUSHI  /  ' + CustomMessage('FushiStepWizard');
 
   Md3Text(WizardForm.PageNameLabel, 20, False);
   WizardForm.PageNameLabel.SetBounds(ScaleX(32), ScaleY(43),
@@ -135,12 +184,16 @@ begin
   WizardForm.WizardSmallBitmapImage.SetBounds(WizardForm.ClientWidth - ScaleX(80),
     ScaleY(24), ScaleX(48), ScaleY(48));
 
-  WizardForm.NextButton.SetBounds(WizardForm.ClientWidth - ScaleX(128),
-    FooterTop + ScaleY(20), ScaleX(96), ScaleY(32));
-  WizardForm.BackButton.SetBounds(WizardForm.NextButton.Left - ScaleX(96),
-    WizardForm.NextButton.Top, ScaleX(84), ScaleY(32));
+  { 主按钮在向导里会换成「安装」「完成」，宽度按三者里最长的取，翻页时不跳。 }
+  NextWidth := Md3ButtonWidth([SetupMessage(msgButtonNext),
+    SetupMessage(msgButtonInstall), SetupMessage(msgButtonFinish)], ScaleX(96));
+  WizardForm.NextButton.SetBounds(WizardForm.ClientWidth - ScaleX(32) - NextWidth,
+    FooterTop + ScaleY(20), NextWidth, ScaleY(32));
+  BackWidth := Md3ButtonWidth([SetupMessage(msgButtonBack)], ScaleX(84));
+  WizardForm.BackButton.SetBounds(WizardForm.NextButton.Left - ScaleX(12) - BackWidth,
+    WizardForm.NextButton.Top, BackWidth, ScaleY(32));
   WizardForm.CancelButton.SetBounds(ScaleX(32), WizardForm.NextButton.Top,
-    ScaleX(64), ScaleY(32));
+    Md3ButtonWidth([SetupMessage(msgButtonCancel)], ScaleX(64)), ScaleY(32));
 
   { Do not materialize hidden editors or the summary during initialization.
     Inno remains responsible for the paths and complete summary contents. }
@@ -152,7 +205,7 @@ begin
   WizardForm.SelectDirBitmapImage.Visible := False;
   Md3Text(WizardForm.SelectDirLabel, 10, True);
   WizardForm.SelectDirLabel.SetBounds(0, 0, BodyWidth, ScaleY(30));
-  WizardForm.SelectDirBrowseLabel.Caption := '安装位置';
+  WizardForm.SelectDirBrowseLabel.Caption := CustomMessage('FushiInstallLocationLabel');
   Md3PathField(WizardForm.DirEdit, WizardForm.DirBrowseButton,
     WizardForm.SelectDirBrowseLabel, ScaleY(52));
   Md3Text(WizardForm.DiskSpaceLabel, 9, True);
@@ -184,26 +237,26 @@ begin
     DataPageID := DataRootPage.ID;
   if CurPageID = wpSelectDir then
   begin
-    Md3StepLabel.Caption := 'FUSHI  /  程序位置';
+    Md3StepLabel.Caption := 'FUSHI  /  ' + CustomMessage('FushiStepProgram');
     Md3FitPathField(WizardForm.DirEdit, WizardForm.DirBrowseButton);
     Md3StyleButton(WizardForm.DirBrowseButton, False);
   end
   else if CurPageID = DataPageID then
   begin
-    Md3StepLabel.Caption := 'FUSHI  /  数据位置';
+    Md3StepLabel.Caption := 'FUSHI  /  ' + CustomMessage('FushiStepData');
     Md3FitPathField(DataRootPage.Edits[0], DataRootPage.Buttons[0]);
     Md3StyleButton(DataRootPage.Buttons[0], False);
   end
   else if CurPageID = wpSelectTasks then
   begin
-    Md3StepLabel.Caption := 'FUSHI  /  使用偏好';
+    Md3StepLabel.Caption := 'FUSHI  /  ' + CustomMessage('FushiStepPreferences');
     WizardForm.TasksList.SetBounds(0, ScaleY(44), WizardForm.SelectTasksPage.ClientWidth,
       WizardForm.SelectTasksPage.ClientHeight - ScaleY(44));
     Md3StyleTasks(WizardForm.TasksList);
   end
   else if CurPageID = wpReady then
   begin
-    Md3StepLabel.Caption := 'FUSHI  /  确认设置';
+    Md3StepLabel.Caption := 'FUSHI  /  ' + CustomMessage('FushiStepReady');
     { UpdateReadyPage has finished before CurPageChanged (Inno 6.7). Preserve
       its complete text across VCL handle recreation; do not instantiate a
       styled scrolling control on a hidden notebook page. }
@@ -234,9 +287,9 @@ begin
     Md3StyleSurface(Md3SummaryCard, 12);
   end
   else if CurPageID = wpInstalling then
-    Md3StepLabel.Caption := 'FUSHI  /  正在安装'
+    Md3StepLabel.Caption := 'FUSHI  /  ' + CustomMessage('FushiStepInstalling')
   else
-    Md3StepLabel.Caption := 'FUSHI  /  安装向导';
+    Md3StepLabel.Caption := 'FUSHI  /  ' + CustomMessage('FushiStepWizard');
 end;
 
 procedure DeinitializeSetup();

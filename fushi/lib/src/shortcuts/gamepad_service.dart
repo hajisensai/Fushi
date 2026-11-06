@@ -13,6 +13,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
 import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
+import 'package:fushi/src/shortcuts/focus_navigation_shortcuts.dart';
 import 'package:fushi/src/shortcuts/global_external_lookup_route.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/page_scroll_shortcuts.dart';
@@ -135,10 +136,7 @@ class GamepadLongPressIntent extends Intent {
 /// Dispatches a normalized gamepad [button] to the [GamepadButtonIntent]
 /// handler nearest [context]. Returns true only when a focused page/widget
 /// explicitly consumes the button.
-bool dispatchGamepadButtonIntent(
-  BuildContext context,
-  GamepadButton button,
-) {
+bool dispatchGamepadButtonIntent(BuildContext context, GamepadButton button) {
   return Actions.maybeInvoke<GamepadButtonIntent>(
         context,
         GamepadButtonIntent(button),
@@ -310,6 +308,12 @@ class GamepadFrameBits {
 ///   1. [GamepadButtonIntent] → the active page's registry-resolved action;
 ///   2. else A → [ActivateIntent], B → global back (maybePop),
 ///      D-pad → directional focus (same as arrow keys).
+/// 手柄导航活动计数：手柄按键 / 摇杆 / 长按派发进 app 时 +1（键盘不计）。
+/// 桌面手柄走 [GamepadService] 轮询直接 `Actions.maybeInvoke`，**不产生
+/// KeyEvent**，只听 `HardwareKeyboard` 的「有人在操作」判断（如歌词底栏自动
+/// 隐藏）会漏掉手柄——订阅这个。
+final ValueNotifier<int> gamepadInputActivity = ValueNotifier<int>(0);
+
 class GamepadService {
   GamepadService({
     required this.navigatorKey,
@@ -366,8 +370,9 @@ class GamepadService {
   /// exposes (`packages/gamepads_windows`). Used ONLY to query
   /// [gameInputBackendAvailable]; normalized controller input still flows
   /// through the `gamepads` package abstraction (`_PluginGamepadPoller`).
-  static const MethodChannel _windowsGamepadChannel =
-      MethodChannel('xyz.luan/gamepads');
+  static const MethodChannel _windowsGamepadChannel = MethodChannel(
+    'xyz.luan/gamepads',
+  );
 
   /// TODO-1223: whether the platform's controller backend is actually usable.
   ///
@@ -386,8 +391,9 @@ class GamepadService {
   static Future<bool> gameInputBackendAvailable() async {
     if (!Platform.isWindows) return true;
     try {
-      final bool? available =
-          await _windowsGamepadChannel.invokeMethod<bool>('gameInputAvailable');
+      final bool? available = await _windowsGamepadChannel.invokeMethod<bool>(
+        'gameInputAvailable',
+      );
       return available ?? true;
     } on MissingPluginException {
       // Plugin not registered (should not happen on Windows) — do not nag.
@@ -490,9 +496,10 @@ class GamepadService {
     if (tryGlobalExternalLookupGamepadButton(registry, button)) return;
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
-    _setHighlightForHardwareNav();
+    _onGamepadNav();
 
-    final bool handled = Actions.maybeInvoke<GamepadButtonIntent>(
+    final bool handled =
+        Actions.maybeInvoke<GamepadButtonIntent>(
           ctx,
           GamepadButtonIntent(button),
         ) ==
@@ -510,43 +517,52 @@ class GamepadService {
     // (statistics/logs) which has no focus geometry for D-pad edge takeover.
     if (_tryScrollPage(ctx, button)) return;
 
+    // TODO-700 T1：不再裸判 B 键。按钮由注册表解析成全局 ShortcutAction.globalBack
+    // 时才返回（默认绑 B），用户把「返回」改绑到别的键也照样生效（约束3/5）。页面自己的
+    // globalBack（home）已在上面的 GamepadButtonIntent 分派里消费，这里只兜未自解析
+    // 的页面。globalBack 住在 universal scope（全 app 唯一的「返回上一级」）。
+    // 排在焦点导航之前：与键盘 wrapper 同序（页面 → 返回上一级 → 焦点导航）。
+    if (registry?.resolveGamepad(button, scope: ShortcutScope.universal) ==
+        ShortcutAction.globalBack) {
+      // BUG-2953：查词浮层自带导航层里开着菜单时只关菜单（菜单不在根栈上）。
+      if (LookupOverlayNavigator.popActiveMenu()) return;
+      navigatorKey.currentState?.maybePop();
+      return;
+    }
+
+    // 焦点导航（scope 枚举名 gamepad，设置页「焦点导航」；TODO-700 T6 + 反馈
+    // bjPjRHsaUy）：页面没消费的按钮按注册表解析成移焦 / 确认。**任何**按钮都能绑
+    // ——此前只有 dpad 四个按钮会查这张表，用户把 LT 之类绑成「焦点左移」按下去
+    // 什么都不发生。页面专属键先在上面的 GamepadButtonIntent 里消费（阅读器 dpad 左右
+    // = 翻页、视频 dpad 左右 = seek），这里永远是兜底，与键盘同一套优先级。
+    final ShortcutAction? focusAction = registry?.resolveGamepad(
+      button,
+      scope: ShortcutScope.gamepad,
+    );
+    final TraversalDirection? focusDirection = focusNavigationDirectionOf(
+      focusAction,
+    );
+    if (focusDirection != null) {
+      gamepadMoveFocusInDirection(ctx, focusDirection);
+      return;
+    }
+    if (focusAction == ShortcutAction.focusActivate) {
+      Actions.maybeInvoke<ActivateIntent>(ctx, const ActivateIntent());
+      return;
+    }
+
+    // 未绑定到任何焦点动作时的内建回退（Never break userspace）：A 仍确认、dpad 仍
+    // 按物理方向移焦——用户把 dpad 改绑走 / 清空也不会让手柄整个失去导航能力。
     switch (button) {
       case GamepadButton.a:
         Actions.maybeInvoke<ActivateIntent>(ctx, const ActivateIntent());
-        return;
-      case GamepadButton.b:
-        // TODO-700 T1：B 不再裸 maybePop。仅当注册表把 B 解析成全局
-        // ShortcutAction.globalBack 时才返回，否则无操作（与其它未绑定按钮一致），
-        // 使「返回」键可改键（约束3/5）。页面自己的 globalBack（home）已在上面的
-        // GamepadButtonIntent 分派里消费，这里只兜未自解析的页面。
-        // globalBack 现在住在 universal scope（全 app 唯一的「返回上一级」，退书 /
-        // 退漫画 / 退视频 / 退设置页共用一个配置项），故解析 scope 随之改变；
-        // 行为不变：命中才 pop，未绑定仍是无操作。
-        if (registry?.resolveGamepad(button, scope: ShortcutScope.universal) ==
-            ShortcutAction.globalBack) {
-          // BUG-2953：查词浮层自带导航层里开着菜单时只关菜单（菜单不在根栈上）。
-          if (LookupOverlayNavigator.popActiveMenu()) return;
-          navigatorKey.currentState?.maybePop();
-        }
         return;
       case GamepadButton.dpadUp:
       case GamepadButton.dpadDown:
       case GamepadButton.dpadLeft:
       case GamepadButton.dpadRight:
-        // TODO-700 T6: the D-pad is a BINDABLE trigger (gamepad scope). Page-
-        // owned bindings (reader page-turn, etc.) were already consumed by the
-        // GamepadButtonIntent dispatch above. Here we resolve the press against
-        // the standalone `gamepad` scope: its DEFAULT maps each dpad* button to
-        // the matching [ShortcutAction.dpad*] direction-action → generic
-        // directional focus movement. If the user rebinds the button to a
-        // different dpad direction-action, focus follows THAT direction; if the
-        // button is unbound in the gamepad scope, fall back to the physical
-        // direction so nothing breaks (约束: Never break userspace).
-        final TraversalDirection dir =
-            _dpadFocusDirection(button) ?? _dpadDirectionOf(button)!;
-        gamepadMoveFocusInDirection(ctx, dir);
+        gamepadMoveFocusInDirection(ctx, _dpadDirectionOf(button)!);
         return;
-
       default:
         return;
     }
@@ -566,29 +582,6 @@ class GamepadService {
     );
   }
 
-  /// TODO-700 T6: the focus direction a D-pad press should move, resolved through
-  /// the rebindable `gamepad` scope. Maps the registry-resolved
-  /// [ShortcutAction.dpadUp]/[ShortcutAction.dpadDown]/[ShortcutAction.dpadLeft]/
-  /// [ShortcutAction.dpadRight] back to a [TraversalDirection]. Null when the
-  /// button is unbound in the gamepad scope (caller falls back to the physical
-  /// direction) or no registry is wired (tests).
-  TraversalDirection? _dpadFocusDirection(GamepadButton button) {
-    final ShortcutAction? action =
-        registry?.resolveGamepad(button, scope: ShortcutScope.gamepad);
-    switch (action) {
-      case ShortcutAction.dpadUp:
-        return TraversalDirection.up;
-      case ShortcutAction.dpadDown:
-        return TraversalDirection.down;
-      case ShortcutAction.dpadLeft:
-        return TraversalDirection.left;
-      case ShortcutAction.dpadRight:
-        return TraversalDirection.right;
-      default:
-        return null;
-    }
-  }
-
   /// TODO-700 T6: the LEFT STICK channel. Fixed, generic directional FOCUS
   /// movement only — it NEVER enters the dictionary cursor, looks a word up, or
   /// consults the registry (用户否决「动摇杆自动查词」). The stick just moves the
@@ -600,7 +593,7 @@ class GamepadService {
     if (GalIngameLookupGamepadRoute.current != null) return;
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
-    _setHighlightForHardwareNav();
+    _onGamepadNav();
     gamepadMoveFocusInDirection(ctx, dir);
   }
 
@@ -614,7 +607,7 @@ class GamepadService {
     // P5：游戏内卡片可见时右摇杆滚动卡片内容（独占路由优先）。
     final DictionaryPopupGamepadHooks? hooks =
         GalIngameLookupGamepadRoute.current ??
-            DictionaryPopupGamepadRegistry.current;
+        DictionaryPopupGamepadRegistry.current;
     if (hooks == null) return;
     unawaited(hooks.scrollBy(dyNorm * _kRightStickScrollPxPerTick));
   }
@@ -649,8 +642,9 @@ class GamepadService {
     if (GalIngameLookupGamepadRoute.current != null) return;
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
-    _setHighlightForHardwareNav();
-    final bool handled = Actions.maybeInvoke<GamepadLongPressIntent>(
+    _onGamepadNav();
+    final bool handled =
+        Actions.maybeInvoke<GamepadLongPressIntent>(
           ctx,
           GamepadLongPressIntent(button),
         ) ==
@@ -674,6 +668,12 @@ class GamepadService {
   void _setHighlightForHardwareNav() {
     FocusManager.instance.highlightStrategy =
         FocusHighlightStrategy.alwaysTraditional;
+  }
+
+  /// 手柄按键 / 摇杆 / 长按进入 app 派发：点亮焦点环并发出 [gamepadInputActivity]。
+  void _onGamepadNav() {
+    _setHighlightForHardwareNav();
+    gamepadInputActivity.value++;
   }
 
   void _onPointerGlobal(PointerEvent event) {
@@ -889,8 +889,9 @@ bool gamepadMoveFocusInDirection(
   BuildContext context,
   TraversalDirection direction,
 ) {
-  final FushiFocusController? controller =
-      FushiFocusRoot.maybeControllerOf(context);
+  final FushiFocusController? controller = FushiFocusRoot.maybeControllerOf(
+    context,
+  );
   if (controller != null) {
     if (controller.move(fushiFocusDirectionFromTraversal(direction))) {
       return true;
@@ -943,9 +944,13 @@ bool gamepadMoveFocusInDirection(
 ///
 /// 文本框聚焦的情形由调用方先用 [focusedEditableText] 排除，这里不重复判。
 bool arrowKeyClaimedByFocus(
-    BuildContext context, TraversalDirection direction) {
-  final FushiFocusController? controller =
-      FushiFocusRoot.maybeControllerOf(context, listen: false);
+  BuildContext context,
+  TraversalDirection direction,
+) {
+  final FushiFocusController? controller = FushiFocusRoot.maybeControllerOf(
+    context,
+    listen: false,
+  );
   if (controller != null && controller.hasFocusableTargets) {
     return gamepadMoveFocusInDirection(context, direction);
   }

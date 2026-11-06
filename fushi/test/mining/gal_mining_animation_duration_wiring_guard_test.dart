@@ -21,13 +21,13 @@ void main() {
       'lib/src/mining/gal_hook_mining_coordinator.dart',
     ).readAsStringSync();
 
-    // 生产分支（未注入捕获器）直接调 captureWindowGifBytes；替身分支走 _captureGif。
-    // 必须从 `_captureGifUsesDefault` 那个分支往后找：文件里更靠前的那处
-    // `captureWindowGifBytes(` 是 `_defaultCaptureGif` 的二参数适配，本来就没有时长。
+    // 生产分支（未注入捕获器）在采样阶段调 sampleWindowAnimationFrames（编码在收尾
+    // 阶段，反馈 U9k4hlYaNZ）；替身分支走 _captureGif。必须从 `_captureGifUsesDefault`
+    // 那个分支往后找。
     final String body = maskComments(src);
     final int branch = body.indexOf('if (_captureGifUsesDefault)');
     expect(branch, greaterThan(0), reason: '生产/替身分流点消失了，守卫的锚点已失效');
-    const String anchor = 'captureWindowGifBytes(';
+    const String anchor = 'sampleWindowAnimationFrames(';
     final int callStart = body.indexOf(anchor, branch);
     expect(callStart, greaterThan(branch));
     final EnclosingCall call = enclosingCall(src, callStart + anchor.length);
@@ -45,10 +45,14 @@ void main() {
 
     // 该变量的来源：等音频字节回来后，从行条目读 audioDurationMs。三样缺一不可，
     // 少了 audioFuture 就是没等音频、少了 audioDurationMs 就是没读时长。
-    final int declaration =
-        body.indexOf('final Future<Duration?> targetDuration');
-    expect(declaration, greaterThan(0),
-        reason: 'targetDuration 必须由音频 Future 派生，不能是外部传入的任意值');
+    final int declaration = body.indexOf(
+      'final Future<Duration?> targetDuration',
+    );
+    expect(
+      declaration,
+      greaterThan(0),
+      reason: 'targetDuration 必须由音频 Future 派生，不能是外部传入的任意值',
+    );
     final String derivation = body.substring(
       declaration,
       body.indexOf(anchor, declaration),

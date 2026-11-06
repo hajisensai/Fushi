@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 // Load only function definitions through the AST: never execute the runner's
 // main body or enumerate/modify real processes in this fixture.
 const String _ownershipFixture = r'''
@@ -143,36 +145,47 @@ void main() {
       ]) {
         expect(script, contains(marker), reason: 'Missing evidence: $marker');
       }
-      expect(script, contains('Get-CimInstance Win32_Process'),
-          reason: 'Evidence must include process Path and CommandLine.');
-      expect(script, contains('MainWindowTitle'),
-          reason: 'Evidence must include window title when available.');
+      expect(
+        script,
+        contains('Get-CimInstance Win32_Process'),
+        reason: 'Evidence must include process Path and CommandLine.',
+      );
+      expect(
+        script,
+        contains('MainWindowTitle'),
+        reason: 'Evidence must include window title when available.',
+      );
     });
 
-    test('runs with isolated test root, app data, logs, and WebView2 profile',
-        () {
-      expect(script, contains('FUSHI_TEST_ROOT'));
-      expect(script, contains('FUSHI_TEST_RUN_ID'));
-      expect(script, contains('FUSHI_WEBVIEW2_USER_DATA_FOLDER'));
-      expect(script, contains('--dart-define=FUSHI_TEST_ROOT='));
-      expect(script, contains('--dart-define=FUSHI_TEST_RUN_ID='));
-      expect(script, contains('APPDATA'));
-      expect(script, contains('LOCALAPPDATA'));
-      expect(script, contains('TEMP'));
-      expect(script, contains('TMP'));
-      expect(script, contains('USERPROFILE'));
-    });
+    test(
+      'runs with isolated test root, app data, logs, and WebView2 profile',
+      () {
+        expect(script, contains('FUSHI_TEST_ROOT'));
+        expect(script, contains('FUSHI_TEST_RUN_ID'));
+        expect(script, contains('FUSHI_WEBVIEW2_USER_DATA_FOLDER'));
+        expect(script, contains('--dart-define=FUSHI_TEST_ROOT='));
+        expect(script, contains('--dart-define=FUSHI_TEST_RUN_ID='));
+        expect(script, contains('APPDATA'));
+        expect(script, contains('LOCALAPPDATA'));
+        expect(script, contains('TEMP'));
+        expect(script, contains('TMP'));
+        expect(script, contains('USERPROFILE'));
+      },
+    );
 
     test('app startup honors the isolated test root for app data and logs', () {
       // TODO-935 E0：三个数据根的 fushiTestDirectory 隔离判定收敛到唯一入口
       // AppPaths（lib/src/storage/app_paths.dart）；app_model 不再各自直连，改在启动期
       // 经 AppPaths.resolve() 委托解析。守卫据此校验「隔离契约仍在、且走单一入口」。
-      final String appPaths =
-          File('lib/src/storage/app_paths.dart').readAsStringSync();
-      final String appModel =
-          File('lib/src/models/app_model.dart').readAsStringSync();
-      final String errorLog =
-          File('lib/src/utils/misc/error_log_service.dart').readAsStringSync();
+      final String appPaths = File(
+        'lib/src/storage/app_paths.dart',
+      ).readAsStringSync();
+      final String appModel = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
+      final String errorLog = File(
+        'lib/src/utils/misc/error_log_service.dart',
+      ).readAsStringSync();
 
       // 三根的测试隔离判定落在 AppPaths 单一入口。
       expect(appPaths, contains("fushiTestDirectory('temp'"));
@@ -180,14 +193,44 @@ void main() {
       expect(appPaths, contains("fushiTestDirectory('app-support'"));
       // 启动期 app_model 经 AppPaths.resolve() 接上隔离根（不绕过单一入口）。
       expect(appModel, contains('AppPaths.resolve('));
-      // 日志服务仍独立 honor 隔离的 documents 根。
-      expect(errorLog, contains("fushiTestDirectory('app-documents'"));
+      // 日志服务 honor 隔离的 documents 根。4w_veZGiQ7 起诊断文件不再直落平台
+      // Documents 根，日志目录统一经 AppPaths.diagnosticsDirectory() 解析；隔离契约
+      // 随之下沉到该入口：测试分支必须是函数体里的第一道判定（先于生产分支的
+      // 解析 + 旧诊断文件搬迁），且日志服务不得绕开它自己直连平台目录。
+      expect(
+        containsCodeLine(errorLog, 'AppPaths.diagnosticsDirectory()'),
+        isTrue,
+        reason:
+            'ErrorLogService.init 必须经 AppPaths.diagnosticsDirectory() 取日志目录',
+      );
+      expect(
+        maskComments(errorLog),
+        isNot(contains('getApplicationDocumentsDirectory')),
+        reason: '日志服务直连平台 Documents 会绕过测试隔离根',
+      );
+      final String diagnosticsBody = methodBody(
+        appPaths,
+        'static Future<Directory> diagnosticsDirectory()',
+      );
+      final int testBranch = diagnosticsBody.indexOf(
+        "fushiTestDirectory('app-documents')",
+      );
+      final int productionBranch = diagnosticsBody.indexOf(
+        '_resolveDiagnosticsDirectory()',
+      );
+      expect(testBranch, greaterThanOrEqualTo(0));
+      expect(productionBranch, greaterThan(testBranch));
+      expect(
+        diagnosticsBody.indexOf('if (test != null) return test;'),
+        allOf(greaterThan(testBranch), lessThan(productionBranch)),
+        reason: '隔离根命中时必须直接返回，不能落进生产解析 / 搬迁分支',
+      );
     });
 
-    test('native logs and WebView2 profile use test-only isolation env vars',
-        () {
-      final String crashDump =
-          File('windows/runner/crash_dump.cpp').readAsStringSync();
+    test('native logs and WebView2 profile use test-only isolation env vars', () {
+      final String crashDump = File(
+        'windows/runner/crash_dump.cpp',
+      ).readAsStringSync();
       final String wgcLog = File(
         '../packages/flutter_inappwebview_windows/windows/utils/wgc_log.cpp',
       ).readAsStringSync();

@@ -176,11 +176,13 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
   function paged(position = 0, pageSize = 100) {
     delete reader.scrollToChapterEnd;
     body.scrollLeft = body.scrollTop = position;
-    const context = {vertical, scrollEl: body, physicalMaxScroll: 200, pageSize};
+    // Mirrors production getScrollContext, including its turn axis ('y' for the
+    // vertical single strip, 'x' for horizontal; 'xr' is the foldable spread).
+    const context = {vertical, axis: vertical ? 'y' : 'x', scrollEl: body, physicalMaxScroll: 200, pageSize};
     Object.assign(reader, {getScrollContext: () => context,
       paginationMetrics: {minScroll: 0, maxScroll: 200}, pageStepPosition: x => x});
     for (const name of ['getPagePosition', 'lockRootViewport', 'assignPagePosition',
-      'setPagePosition', '_setPagePositionNow', 'paginate']) reader[name] = fn('pagination', name);
+      'setPagePosition', '_setPagePositionNow', 'adjacentPageStep', 'paginate']) reader[name] = fn('pagination', name);
     // 沙箱里没有 C / startViewTransition：效果恒为无，turnPageAnimated 退回瞬时
     // setPagePosition，与动画前的落点 / 清选区语义逐字一致。
     for (const name of ['pageTurnEffect', 'isEinkMode', 'pageTurnAnimationSupported',
@@ -220,10 +222,13 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
     };
     Object.assign(reader, {screen, screens: [0, 1].map(i => ({render: () => new Element('screen-' + i)})),
       currentScreenIndex: index, revealComplete: true, revealSpeed: 0, nativeSelectionActive: false,
-      clearRevealTimer() {}, clearCurrentSentenceAudioScreenTargets() {}, centerScreenInk() {},
+      clearRevealTimer() {}, clearRevealRange() {}, clearCurrentSentenceAudioScreenTargets() {}, centerScreenInk() {},
       setupReaderImages() {}, buildNodeOffsets() {}, applyCurrentScreenHighlights() {},
-      refreshSentenceAudioCuePresentation() {}});
-    for (const name of ['paginate', 'renderScreen', 'completeCurrentReveal']) reader[name] = fn('vn', name);
+      refreshSentenceAudioCuePresentation() {}, sentenceAudioCues: []});
+    // renderScreen 换屏后会预包本屏句子音频（BUG-3776）：用生产实现，夹具没有句子音频
+    // （sentenceAudioCues 为空），它按生产语义直接返回、不动 DOM。
+    for (const name of ['paginate', 'renderScreen', 'completeCurrentReveal',
+      'prewrapScreenSentenceAudioCues']) reader[name] = fn('vn', name);
     return text;
   }
   return {window, doc, html, body, native, highlights, stats, reader, selection, start, end,
@@ -482,7 +487,8 @@ for (const writingMode of ['horizontal-tb', 'vertical-rl', 'vertical-lr']) {
         const f = fixture({continuous: false, writingMode}); const ctx = f.paged(100);
         for (const name of ['contentFirstPageScroll', 'contentLastPageScroll', 'alignToPage',
           'scrollToProgressPaged', 'scrollToCharOffset', 'alignToFragmentTarget',
-          '_alignRangeToPage', '_settleAndNotify']) f.reader[name] = f.fn('pagination', name);
+          '_alignRangeToPage', '_settleAndNotify', 'turnSpan', 'pagedAxisOf'])
+          f.reader[name] = f.fn('pagination', name);
         // Geometry only: the target is on the preceding page; all navigation,
         // landing, drag validity and cleanup are the current production methods.
         f.reader.getRect = () => ({top: -100, left: -100});

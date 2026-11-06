@@ -12,7 +12,9 @@ const String kFushiCardTemplateSourceDir = 'templates/fushi_card';
 
 String _rawLiteral(String name, String content) {
   if (content.contains("'''")) {
-    throw StateError('$name contains a triple quote; cannot embed as raw string');
+    throw StateError(
+      '$name contains a triple quote; cannot embed as raw string',
+    );
   }
   return "const String $name = r'''$content''';\n";
 }

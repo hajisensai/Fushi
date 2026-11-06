@@ -1,0 +1,6 @@
+## BUG-3635 · gal-text-process-quotes-drops-narration
+- **报告**：2026-10-20（用户：galgame 文本处理开「只保留「」内的文本」会把旁白也清掉；「」一般是对话用的，旁白没有。对照 LunaTranslator 的「过滤「」以外的字符」，并补基础步骤、换默认值）
+- **真实性**：✅ 真 bug。`fushi/lib/src/mining/galgame_text_process.dart` 的 `_keepJapaneseQuotes` 在没匹配到「」时返回空串，hook poll 路径（`gal_hook_session_controller.dart` `_processSelectedThreadText`）据此把旁白整行丢弃。LunaTranslator `myutils/post.py` `_remove_not_in_ja_bracket` 是 `re.findall(r"「[^」]*」")`，没匹配到就原样返回整行，匹配到时保留「」本身（`こなみ「…」` → `「…」`）。
+- **[x] ① 已修复** — 「」步骤按 Luna 的语义改（只去掉「」外的人名等，旁白原样保留，文案换新 key）；同轮对齐 Luna 的另外几处：花括号步骤支持 `{漢字:かな}` 与 `{tag}…{/tag}`，且 `{漢字/かな}` / `{漢字:かな}` **不像 Luna 那样丢读音**，而是转成 `｜漢字《かな》` 交给 `parseRubyMarkup` 画在文字上方（该解析器不认花括号，原先开这一步读音直接丢失；用户 2026-10-20 指出），去重复字符的自动分析从 gcd 改成游程众数（gcd 一遇到只画了一遍的标点就退成 1、整步失效），过滤换行先丢空行再拼。新增默认管线 `kGalDefaultTextProcessPipeline`：Luna 预处理页的步骤全集与顺序，默认只开「花括号注音转振假名」「过滤换行符」；没存过管线的游戏直接用它，与默认相同则不落盘，显式删光存 `[]`。编辑页加「恢复默认」，「添加步骤」从默认表取初值，AI 建议已存在的种类时就地打开那一步。
+- **[x] ② 已加自动化测试** — `fushi/test/mining/galgame_text_process_test.dart`（旁白保留回归、Luna 文档原例、默认管线组）、`fushi/test/mining/gal_text_process_pipeline_wiring_test.dart`（默认不写盘、删光写 `[]` 读回空）、`fushi/test/pages/gal_text_process_editor_test.dart`（恢复默认、AI 就地合并）。
+- **备注**：存过管线的游戏不会自动换成新默认表，需在编辑页点「恢复默认」。新增的 4 个文案 key 只译了 en / zh-CN / zh-HK / ja，其余 13 种语言暂为英文。

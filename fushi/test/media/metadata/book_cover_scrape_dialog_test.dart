@@ -17,27 +17,27 @@ void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
   Widget wrap(Widget child) => TranslationProvider(
-        child: MaterialApp(home: Scaffold(body: child)),
-      );
+    child: MaterialApp(home: Scaffold(body: child)),
+  );
 
   BookMetadataScraper scraperReturning(String body) => BookMetadataScraper(
-        client: MockClient(
-          (http.Request req) async => http.Response.bytes(
-            utf8.encode(body),
-            200,
-            headers: const <String, String>{'content-type': 'application/json'},
-          ),
-        ),
-      );
+    client: MockClient(
+      (http.Request req) async => http.Response.bytes(
+        utf8.encode(body),
+        200,
+        headers: const <String, String>{'content-type': 'application/json'},
+      ),
+    ),
+  );
 
   testWidgets('预填标题自动搜索 → 候选渲染', (WidgetTester tester) async {
     final BookMetadataScraper scraper = scraperReturning(
       '{"data":[{"id":1,"name":"Yotsuba to!","name_cn":"四叶妹妹！",'
       '"images":{"large":"https://i/l.jpg"},"date":"2003-08-10"}]}',
     );
-    await tester.pumpWidget(wrap(
-      BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper),
-    ));
+    await tester.pumpWidget(
+      wrap(BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper)),
+    );
     await tester.pumpAndSettle();
 
     // 搜索框预填初始查询。
@@ -50,9 +50,11 @@ void main() {
 
   testWidgets('空结果显示空状态文案', (WidgetTester tester) async {
     final BookMetadataScraper scraper = scraperReturning('{"data":[]}');
-    await tester.pumpWidget(wrap(
-      BookCoverScrapeDialog(initialQuery: 'zzzz', scraperOverride: scraper),
-    ));
+    await tester.pumpWidget(
+      wrap(
+        BookCoverScrapeDialog(initialQuery: 'zzzz', scraperOverride: scraper),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text(t.book_scrape_empty), findsOneWidget);
@@ -71,16 +73,18 @@ void main() {
           throw http.ClientException('network down');
         }
         return http.Response.bytes(
-          utf8.encode('{"data":[{"id":1,"name":"Yotsuba to!",'
-              '"images":{"large":"https://i/l.jpg"}}]}'),
+          utf8.encode(
+            '{"data":[{"id":1,"name":"Yotsuba to!",'
+            '"images":{"large":"https://i/l.jpg"}}]}',
+          ),
           200,
           headers: const <String, String>{'content-type': 'application/json'},
         );
       }),
     );
-    await tester.pumpWidget(wrap(
-      BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper),
-    ));
+    await tester.pumpWidget(
+      wrap(BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper)),
+    );
     await tester.pumpAndSettle();
 
     // 失败态：错误行可见，不是「无匹配」空态。
@@ -98,36 +102,40 @@ void main() {
   testWidgets('BUG-1176 搜索失败带可行动原因 + 落错误日志', (WidgetTester tester) async {
     final BookMetadataScraper scraper = BookMetadataScraper(
       client: MockClient(
-          (http.Request req) async => throw http.ClientException('down')),
+        (http.Request req) async => throw http.ClientException('down'),
+      ),
     );
     final int logsBefore = ErrorLogService.instance.entries.length;
 
-    await tester.pumpWidget(wrap(
-      BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper),
-    ));
+    await tester.pumpWidget(
+      wrap(BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper)),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text(t.book_scrape_search_failed), findsOneWidget);
     // 没拿到可用响应 → 「检查网络后重试」。
     expect(find.text(t.scrape_reason_network), findsOneWidget);
-    final List<ErrorLogEntry> added =
-        ErrorLogService.instance.entries.sublist(logsBefore);
+    final List<ErrorLogEntry> added = ErrorLogService.instance.entries.sublist(
+      logsBefore,
+    );
     expect(
-      added
-          .any((ErrorLogEntry e) => e.source == 'BookCoverScrapeDialog.search'),
+      added.any(
+        (ErrorLogEntry e) => e.source == 'BookCoverScrapeDialog.search',
+      ),
       isTrue,
     );
   });
 
-  testWidgets('BUG-1176 源站 HTTP 500 给出「源站报错」而非「检查网络」',
-      (WidgetTester tester) async {
+  testWidgets('BUG-1176 源站 HTTP 500 给出「源站报错」而非「检查网络」', (
+    WidgetTester tester,
+  ) async {
     final BookMetadataScraper scraper = BookMetadataScraper(
       client: MockClient((http.Request req) async => http.Response('', 500)),
     );
 
-    await tester.pumpWidget(wrap(
-      BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper),
-    ));
+    await tester.pumpWidget(
+      wrap(BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper)),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text(t.book_scrape_search_failed), findsOneWidget);
@@ -156,13 +164,15 @@ void main() {
     });
 
     final BookMetadataScraper scraper = BookMetadataScraper(
-      client: MockClient((http.Request req) async =>
-          throw http.ClientException("Failed host lookup: 'api.bgm.tv'")),
+      client: MockClient(
+        (http.Request req) async =>
+            throw http.ClientException("Failed host lookup: 'api.bgm.tv'"),
+      ),
     );
 
-    await tester.pumpWidget(wrap(
-      BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper),
-    ));
+    await tester.pumpWidget(
+      wrap(BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper)),
+    );
     await tester.pumpAndSettle();
 
     // 折叠原因仍在（可行动指引不被详情取代）。
@@ -173,10 +183,13 @@ void main() {
 
     // 一键展开后底层原因（主机名）可见，并出现复制上报入口。
     await tester.tap(
-        find.byKey(const ValueKey<String>('scrape_failure_detail_toggle')));
+      find.byKey(const ValueKey<String>('scrape_failure_detail_toggle')),
+    );
     await tester.pumpAndSettle();
-    final Finder detailFinder = find.byWidgetPredicate((Widget w) =>
-        w is SelectableText && (w.data ?? '').contains('api.bgm.tv'));
+    final Finder detailFinder = find.byWidgetPredicate(
+      (Widget w) =>
+          w is SelectableText && (w.data ?? '').contains('api.bgm.tv'),
+    );
     expect(detailFinder, findsOneWidget);
     expect(find.text(t.copy_error), findsOneWidget);
 
@@ -197,18 +210,20 @@ void main() {
       client: MockClient((http.Request req) async => http.Response('', 500)),
     );
 
-    await tester.pumpWidget(wrap(
-      BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper),
-    ));
+    await tester.pumpWidget(
+      wrap(BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper)),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text(t.scrape_reason_server), findsOneWidget);
     await tester.tap(
-        find.byKey(const ValueKey<String>('scrape_failure_detail_toggle')));
+      find.byKey(const ValueKey<String>('scrape_failure_detail_toggle')),
+    );
     await tester.pumpAndSettle();
     expect(
       find.byWidgetPredicate(
-          (Widget w) => w is SelectableText && (w.data ?? '').contains('500')),
+        (Widget w) => w is SelectableText && (w.data ?? '').contains('500'),
+      ),
       findsOneWidget,
     );
   });

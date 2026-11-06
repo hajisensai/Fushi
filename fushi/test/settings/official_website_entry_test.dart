@@ -22,29 +22,29 @@ void main() {
     launchedUrls.clear();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/url_launcher'),
-      (MethodCall call) async {
-        if (call.method == 'launch') {
-          final Map<Object?, Object?> args =
-              Map<Object?, Object?>.from(call.arguments as Map);
-          launchedUrls.add(args['url'] as String);
-        }
-        return true;
-      },
-    );
+          const MethodChannel('plugins.flutter.io/url_launcher'),
+          (MethodCall call) async {
+            if (call.method == 'launch') {
+              final Map<Object?, Object?> args = Map<Object?, Object?>.from(
+                call.arguments as Map,
+              );
+              launchedUrls.add(args['url'] as String);
+            }
+            return true;
+          },
+        );
   });
 
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/url_launcher'),
-      null,
-    );
+          const MethodChannel('plugins.flutter.io/url_launcher'),
+          null,
+        );
   });
 
   SettingsActionItem actionItem(String id) {
-    return buildSystemDestination()
-        .sections
+    return buildSystemDestination().sections
         .expand((SettingsSection s) => s.items)
         .whereType<SettingsActionItem>()
         .firstWhere((SettingsActionItem i) => i.id == id);
@@ -76,6 +76,16 @@ void main() {
 
     expect(launchedUrls, <String>[kGitHubSponsorsUrl]);
     expect(kGitHubSponsorsUrl, 'https://github.com/sponsors/hajisensai');
+  });
+
+  test('system.ko_fi opens the Ko-fi page, not GitHub Sponsors', () async {
+    final SettingsActionItem koFi = actionItem('system.ko_fi');
+    expect(koFi.title, t.options_ko_fi);
+
+    await koFi.onTap(_StubSettingsContext());
+
+    expect(launchedUrls, <String>[kKoFiUrl]);
+    expect(kKoFiUrl, 'https://ko-fi.com/hajisensai');
   });
 
   test('openOfficialDownloadPage 落在下载页，而不是首页', () async {

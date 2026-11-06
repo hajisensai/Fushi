@@ -54,11 +54,12 @@ void main() {
       );
       addTearDown(client.close);
 
-      final MihonStoreFetchResult result =
-          await client.fetchStore('https://repo.example/index.json');
+      final MihonStoreFetchResult result = await client.fetchStore(
+        'https://repo.example/index.json',
+      );
       final MihonStore store = result.store!;
-      final List<MihonAvailableExtension> extensions =
-          await client.fetchExtensions(store);
+      final List<MihonAvailableExtension> extensions = await client
+          .fetchExtensions(store);
 
       expect(store.format, MihonStoreFormat.currentJson);
       expect(store.signingKey, 'AA:BB');
@@ -88,8 +89,9 @@ void main() {
         _varintField(7, 1),
         _bytesField(8, source),
       ]);
-      final Uint8List extensionList =
-          _message(<List<int>>[_bytesField(1, extension)]);
+      final Uint8List extensionList = _message(<List<int>>[
+        _bytesField(1, extension),
+      ]);
       final Uint8List repository = _message(<List<int>>[
         _stringField(1, 'Proto repository'),
         _stringField(2, 'Proto'),
@@ -104,8 +106,9 @@ void main() {
       );
       addTearDown(client.close);
 
-      final MihonStore store =
-          (await client.fetchStore('https://repo.example/index.proto')).store!;
+      final MihonStore store = (await client.fetchStore(
+        'https://repo.example/index.proto',
+      )).store!;
       final MihonAvailableExtension extensionResult =
           (await client.fetchExtensions(store)).single;
 
@@ -119,40 +122,49 @@ void main() {
         client: MockClient((http.Request request) async {
           if (request.url.path.endsWith('/repo.json')) {
             return http.Response.bytes(
-              gzip.encode(utf8.encode(jsonEncode(<String, Object?>{
-                'meta': <String, Object?>{
-                  'name': 'Legacy repository',
-                  'shortName': 'Legacy',
-                  'signingKeyFingerprint': '',
-                },
-              }))),
+              gzip.encode(
+                utf8.encode(
+                  jsonEncode(<String, Object?>{
+                    'meta': <String, Object?>{
+                      'name': 'Legacy repository',
+                      'shortName': 'Legacy',
+                      'signingKeyFingerprint': '',
+                    },
+                  }),
+                ),
+              ),
               HttpStatus.ok,
             );
           }
           return http.Response.bytes(
-            gzip.encode(utf8.encode(jsonEncode(<Object?>[
-              <String, Object?>{
-                'name': 'Tachiyomi: Legacy fixture',
-                'pkg': 'org.example.legacy',
-                'apk': 'legacy.apk',
-                'lang': 'en',
-                'code': 3,
-                'version': '1.4.3',
-                'nsfw': 0,
-                'sources': <Object?>[],
-              },
-            ]))),
+            gzip.encode(
+              utf8.encode(
+                jsonEncode(<Object?>[
+                  <String, Object?>{
+                    'name': 'Tachiyomi: Legacy fixture',
+                    'pkg': 'org.example.legacy',
+                    'apk': 'legacy.apk',
+                    'lang': 'en',
+                    'code': 3,
+                    'version': '1.4.3',
+                    'nsfw': 0,
+                    'sources': <Object?>[],
+                  },
+                ]),
+              ),
+            ),
             HttpStatus.ok,
           );
         }),
       );
       addTearDown(client.close);
 
-      final MihonStore store =
-          (await client.fetchStore('https://legacy.example/index.min.json'))
-              .store!;
-      final MihonAvailableExtension extension =
-          (await client.fetchExtensions(store)).single;
+      final MihonStore store = (await client.fetchStore(
+        'https://legacy.example/index.min.json',
+      )).store!;
+      final MihonAvailableExtension extension = (await client.fetchExtensions(
+        store,
+      )).single;
 
       expect(store.format, MihonStoreFormat.legacy);
       expect(extension.name, 'Legacy fixture');
@@ -189,9 +201,7 @@ void main() {
           (http.Request request) async => http.Response(
             '',
             HttpStatus.found,
-            headers: <String, String>{
-              'location': 'http://repo.example/final',
-            },
+            headers: <String, String>{'location': 'http://repo.example/final'},
           ),
         ),
       );
@@ -200,7 +210,10 @@ void main() {
         downgraded.fetchStore('https://repo.example/start'),
         throwsA(
           isA<MihonRuntimeException>().having(
-              (MihonRuntimeException e) => e.code, 'code', 'INSECURE_URL'),
+            (MihonRuntimeException e) => e.code,
+            'code',
+            'INSECURE_URL',
+          ),
         ),
       );
     });
@@ -223,7 +236,10 @@ void main() {
         client.fetchStore('https://repo.example/index.json'),
         throwsA(
           isA<MihonRuntimeException>().having(
-              (MihonRuntimeException e) => e.code, 'code', 'INVALID_STORE'),
+            (MihonRuntimeException e) => e.code,
+            'code',
+            'INVALID_STORE',
+          ),
         ),
       );
     });
@@ -339,11 +355,11 @@ void main() {
       );
       addTearDown(client.close);
 
-      final MihonStore store =
-          (await client.fetchStore('https://legacy.example/index.min.json'))
-              .store!;
-      final List<MihonAvailableExtension> extensions =
-          await client.fetchExtensions(store);
+      final MihonStore store = (await client.fetchStore(
+        'https://legacy.example/index.min.json',
+      )).store!;
+      final List<MihonAvailableExtension> extensions = await client
+          .fetchExtensions(store);
 
       expect(store.format, MihonStoreFormat.currentJson);
       expect(store.indexUrl, 'https://legacy.example/index.json');
@@ -463,56 +479,60 @@ void main() {
       expect(requested, <String>[direct, firstMirror]);
     });
 
-    test('http.ClientException from IOClient also counts as transport failure',
-        () async {
-      final List<String> requested = <String>[];
-      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
-        client: MockClient((http.Request request) async {
-          requested.add(request.url.toString());
-          if (request.url.toString() == direct) {
-            throw http.ClientException('connection closed', request.url);
-          }
-          return http.Response(repository, HttpStatus.ok);
-        }),
-      );
-      addTearDown(client.close);
-
-      expect(
-        (await client.fetchStore(direct)).store!.name,
-        'Mirrored repository',
-      );
-      expect(requested, <String>[direct, firstMirror]);
-    });
-
-    test('a mirror that answers 404 is skipped, the next mirror still serves',
-        () async {
-      // 公共 gh 代理对存在的资源乱返 404/403 是常态：镜像的 HTTP 错误只是
-      // 「换下一个」，不能像直连 404 那样被当成权威结论。
-      const String secondMirror = 'https://gh-proxy.com/$direct';
-      final List<String> requested = <String>[];
-      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
-        client: MockClient((http.Request request) async {
-          requested.add(request.url.toString());
-          if (request.url.toString() == direct) {
-            throw const SocketException('HTTP connection timed out');
-          }
-          if (request.url.toString() == firstMirror) {
-            return http.Response('', HttpStatus.notFound);
-          }
-          if (request.url.toString() == secondMirror) {
+    test(
+      'http.ClientException from IOClient also counts as transport failure',
+      () async {
+        final List<String> requested = <String>[];
+        final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+          client: MockClient((http.Request request) async {
+            requested.add(request.url.toString());
+            if (request.url.toString() == direct) {
+              throw http.ClientException('connection closed', request.url);
+            }
             return http.Response(repository, HttpStatus.ok);
-          }
-          fail('unexpected request ${request.url}');
-        }),
-      );
-      addTearDown(client.close);
+          }),
+        );
+        addTearDown(client.close);
 
-      expect(
-        (await client.fetchStore(direct)).store!.name,
-        'Mirrored repository',
-      );
-      expect(requested, <String>[direct, firstMirror, secondMirror]);
-    });
+        expect(
+          (await client.fetchStore(direct)).store!.name,
+          'Mirrored repository',
+        );
+        expect(requested, <String>[direct, firstMirror]);
+      },
+    );
+
+    test(
+      'a mirror that answers 404 is skipped, the next mirror still serves',
+      () async {
+        // 公共 gh 代理对存在的资源乱返 404/403 是常态：镜像的 HTTP 错误只是
+        // 「换下一个」，不能像直连 404 那样被当成权威结论。
+        const String secondMirror = 'https://gh-proxy.com/$direct';
+        final List<String> requested = <String>[];
+        final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+          client: MockClient((http.Request request) async {
+            requested.add(request.url.toString());
+            if (request.url.toString() == direct) {
+              throw const SocketException('HTTP connection timed out');
+            }
+            if (request.url.toString() == firstMirror) {
+              return http.Response('', HttpStatus.notFound);
+            }
+            if (request.url.toString() == secondMirror) {
+              return http.Response(repository, HttpStatus.ok);
+            }
+            fail('unexpected request ${request.url}');
+          }),
+        );
+        addTearDown(client.close);
+
+        expect(
+          (await client.fetchStore(direct)).store!.name,
+          'Mirrored repository',
+        );
+        expect(requested, <String>[direct, firstMirror, secondMirror]);
+      },
+    );
 
     test('direct 404 is final — mirrors are never asked', () async {
       final List<String> requested = <String>[];
@@ -537,51 +557,55 @@ void main() {
       expect(requested, <String>[direct]);
     });
 
-    test('non-GitHub host has no mirrors: failure propagates after 1 request',
-        () async {
-      int requests = 0;
-      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
-        client: MockClient((http.Request request) async {
-          requests += 1;
-          throw const SocketException('unreachable');
-        }),
-      );
-      addTearDown(client.close);
+    test(
+      'non-GitHub host has no mirrors: failure propagates after 1 request',
+      () async {
+        int requests = 0;
+        final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+          client: MockClient((http.Request request) async {
+            requests += 1;
+            throw const SocketException('unreachable');
+          }),
+        );
+        addTearDown(client.close);
 
-      await expectLater(
-        client.fetchStore('https://repo.example/index.json'),
-        throwsA(isA<SocketException>()),
-      );
-      expect(requests, 1);
-    });
+        await expectLater(
+          client.fetchStore('https://repo.example/index.json'),
+          throwsA(isA<SocketException>()),
+        );
+        expect(requests, 1);
+      },
+    );
 
-    test('every candidate down → the direct error is rethrown, not the last',
-        () async {
-      final List<String> requested = <String>[];
-      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
-        client: MockClient((http.Request request) async {
-          requested.add(request.url.toString());
-          if (request.url.toString() == direct) {
-            throw const SocketException('direct timed out');
-          }
-          throw SocketException('Failed host lookup: ${request.url.host}');
-        }),
-      );
-      addTearDown(client.close);
+    test(
+      'every candidate down → the direct error is rethrown, not the last',
+      () async {
+        final List<String> requested = <String>[];
+        final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+          client: MockClient((http.Request request) async {
+            requested.add(request.url.toString());
+            if (request.url.toString() == direct) {
+              throw const SocketException('direct timed out');
+            }
+            throw SocketException('Failed host lookup: ${request.url.host}');
+          }),
+        );
+        addTearDown(client.close);
 
-      await expectLater(
-        client.fetchStore(direct),
-        throwsA(
-          isA<SocketException>().having(
-            (SocketException e) => e.message,
-            'message',
-            'direct timed out',
+        await expectLater(
+          client.fetchStore(direct),
+          throwsA(
+            isA<SocketException>().having(
+              (SocketException e) => e.message,
+              'message',
+              'direct timed out',
+            ),
           ),
-        ),
-      );
-      expect(requested.length, 1 + kGitHubMirrorPrefixes.length);
-      expect(requested.first, direct);
-    });
+        );
+        expect(requested.length, 1 + kGitHubMirrorPrefixes.length);
+        expect(requested.first, direct);
+      },
+    );
 
     test('the total fetch budget stops the mirror walk early', () async {
       final List<String> requested = <String>[];
@@ -616,8 +640,7 @@ void main() {
     test('预算按「一次操作」计，不是每次取数各起一份', () async {
       // 一次 `fetchStore` 会顺着 index.min.json → repo.json 走两段独立取数。
       // 预算若在每次 `_get` 入口重开，全阻断网络下用户要等的是 预算 × 取数次数。
-      const String indexMin =
-          'https://github.com/o/r/raw/repo/index.min.json';
+      const String indexMin = 'https://github.com/o/r/raw/repo/index.min.json';
       final List<String> requested = <String>[];
       Duration elapsed = Duration.zero;
       final MihonExtensionStoreClient client = MihonExtensionStoreClient(
@@ -646,40 +669,42 @@ void main() {
       expect(requested.length, 3);
     });
 
-    test('302 hop to raw.githubusercontent.com gets its own fallback',
-        () async {
-      const String rawDirect =
-          'https://raw.githubusercontent.com/o/r/repo/index.json';
-      const String rawMirror = 'https://ghfast.top/$rawDirect';
-      final List<String> requested = <String>[];
-      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
-        client: MockClient((http.Request request) async {
-          requested.add(request.url.toString());
-          switch (request.url.toString()) {
-            case direct:
-              return http.Response(
-                '',
-                HttpStatus.found,
-                headers: <String, String>{
-                  HttpHeaders.locationHeader: rawDirect,
-                },
-              );
-            case rawDirect:
-              throw TimeoutException('no bytes');
-            case rawMirror:
-              return http.Response(repository, HttpStatus.ok);
-          }
-          fail('unexpected request ${request.url}');
-        }),
-      );
-      addTearDown(client.close);
+    test(
+      '302 hop to raw.githubusercontent.com gets its own fallback',
+      () async {
+        const String rawDirect =
+            'https://raw.githubusercontent.com/o/r/repo/index.json';
+        const String rawMirror = 'https://ghfast.top/$rawDirect';
+        final List<String> requested = <String>[];
+        final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+          client: MockClient((http.Request request) async {
+            requested.add(request.url.toString());
+            switch (request.url.toString()) {
+              case direct:
+                return http.Response(
+                  '',
+                  HttpStatus.found,
+                  headers: <String, String>{
+                    HttpHeaders.locationHeader: rawDirect,
+                  },
+                );
+              case rawDirect:
+                throw TimeoutException('no bytes');
+              case rawMirror:
+                return http.Response(repository, HttpStatus.ok);
+            }
+            fail('unexpected request ${request.url}');
+          }),
+        );
+        addTearDown(client.close);
 
-      expect(
-        (await client.fetchStore(direct)).store!.name,
-        'Mirrored repository',
-      );
-      expect(requested, <String>[direct, rawDirect, rawMirror]);
-    });
+        expect(
+          (await client.fetchStore(direct)).store!.name,
+          'Mirrored repository',
+        );
+        expect(requested, <String>[direct, rawDirect, rawMirror]);
+      },
+    );
 
     test('镜像返回 200 + HTML 错误页 → 换下一个候选，不是整轮结束', () async {
       // 公共 gh 代理限流时的常见形态。判据留在 `_get` 之外（旧实现）时：
@@ -733,8 +758,7 @@ void main() {
     });
 
     test('扩展列表同样在候选循环内判内容可用性', () async {
-      const String listDirect =
-          'https://github.com/o/r/raw/repo/index.json';
+      const String listDirect = 'https://github.com/o/r/raw/repo/index.json';
       const String listMirror = 'https://ghfast.top/$listDirect';
       final MihonStore store = MihonStore(
         indexUrl: direct,
@@ -854,15 +878,15 @@ List<int> _stringField(int number, String value) =>
     _bytesField(number, utf8.encode(value));
 
 List<int> _bytesField(int number, List<int> value) => <int>[
-      ..._varint((number << 3) | 2),
-      ..._varint(value.length),
-      ...value,
-    ];
+  ..._varint((number << 3) | 2),
+  ..._varint(value.length),
+  ...value,
+];
 
 List<int> _varintField(int number, int value) => <int>[
-      ..._varint(number << 3),
-      ..._varint(value),
-    ];
+  ..._varint(number << 3),
+  ..._varint(value),
+];
 
 List<int> _varint(int value) {
   final List<int> result = <int>[];
@@ -877,12 +901,20 @@ List<int> _varint(int value) {
 }
 
 /// 最小合法 APK：ZIP 本地文件头魔数 `PK\x03\x04`。
-final Uint8List _apkBytes = Uint8List.fromList(<int>[0x50, 0x4b, 0x03, 0x04, 1, 2, 3]);
+final Uint8List _apkBytes = Uint8List.fromList(<int>[
+  0x50,
+  0x4b,
+  0x03,
+  0x04,
+  1,
+  2,
+  3,
+]);
 
 /// 假单调计时器工厂：每次调用捕获当前 [now] 作为原点，返回「从原点到现在」。
 /// 逐字对齐生产实现（每份预算一只新 [Stopwatch]），否则「预算重开」这种回归
 /// 在测试里看起来和共享预算一模一样。
 MihonElapsedClockFactory _fakeClockFactory(Duration Function() now) => () {
-      final Duration origin = now();
-      return () => now() - origin;
-    };
+  final Duration origin = now();
+  return () => now() - origin;
+};

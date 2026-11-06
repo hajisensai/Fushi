@@ -12,7 +12,7 @@ import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/source_review_session.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -78,11 +78,11 @@ Future<bool> _focusControl(FocusDriver driver, Finder target) =>
 class _ViewerRepository extends BaseAnkiRepository {
   @override
   Future<Map<String, String>?> noteFields(int noteId) async => <String, String>{
-        'Expression': '全員参加',
-        'ExpressionReading': 'ぜんいんさんか',
-        'Sentence': 'それ 全員参加 ですか？',
-        'MainDefinition': '全員が参加すること。',
-      };
+    'Expression': '全員参加',
+    'ExpressionReading': 'ぜんいんさんか',
+    'Sentence': 'それ 全員参加 ですか？',
+    'MainDefinition': '全員が参加すること。',
+  };
   @override
   Future<AnkiFetchResult> fetchConfiguration() async =>
       const AnkiFetchResult.error('unused');
@@ -90,8 +90,7 @@ class _ViewerRepository extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      MineOutcome.failure('unused');
+  }) async => MineOutcome.failure('unused');
   @override
   Future<bool> isDuplicate(String expression, String reading) async => true;
   @override
@@ -136,8 +135,9 @@ void main() {
         'media_open_history',
       );
       final int statsBefore = await _count(model.database, 'study_segments');
-      final WidgetRef ref = tester.element(find.byType(FushiReaderApp))
-          as ConsumerStatefulElement;
+      final WidgetRef ref =
+          tester.element(find.byType(FushiReaderApp))
+              as ConsumerStatefulElement;
       final CardSourceLink link = CardSourceLink(
         kind: CardSourceKind.book,
         uid: book.uid,
@@ -230,8 +230,8 @@ void main() {
         }),
       );
       expect(closed, isTrue);
-      final ReaderPositionRow continued =
-          (await model.database.getReaderPosition(book.uid))!;
+      final ReaderPositionRow continued = (await model.database
+          .getReaderPosition(book.uid))!;
       expect(continued.updatedAt, greaterThan(before.updatedAt));
       expect(continued.charOffset, isNot(before.charOffset));
       debugPrint('[source-itest] continue persisted position; checking dialog');
@@ -240,14 +240,14 @@ void main() {
       // real app's dialog/focus host. The repository is an isolated UI fixture.
       final Future<AnkiMinedCardActionResult> dialog =
           showAnkiMinedCardActionSheet(
-        context: model.navigatorKey.currentContext!,
-        matches: const <MinedNoteRef>[
-          MinedNoteRef(noteId: 1, preview: '全員参加'),
-        ],
-        repo: _ViewerRepository(),
-        mineNew: () async => (ankiConnect: false, noteId: null),
-        overwrite: (int id) async => (ankiConnect: true, noteId: id),
-      );
+            context: model.navigatorKey.currentContext!,
+            matches: const <MinedNoteRef>[
+              MinedNoteRef(noteId: 1, preview: '全員参加'),
+            ],
+            repo: _ViewerRepository(),
+            mineNew: () async => (ankiConnect: false, noteId: null),
+            overwrite: (int id) async => (ankiConnect: true, noteId: id),
+          );
       await _until(
         tester,
         () => find.text(t.anki_mined_card_title).evaluate().isNotEmpty,

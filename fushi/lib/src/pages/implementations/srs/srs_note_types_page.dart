@@ -10,20 +10,33 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_legacy_lapis_migration_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_type_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
-import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 名字校验结果 → 提示文案（笔记类型名 / 字段名 / 模板名共用）。
 String? srsNameProblemText(SrsNameProblem? p) => switch (p) {
@@ -85,6 +98,9 @@ class _SrsNoteTypesPageState extends ConsumerState<SrsNoteTypesPage> {
   List<SrsNoteTypeView> _types = const <SrsNoteTypeView>[];
   Map<String, int> _counts = const <String, int>{};
 
+  /// 「迁移旧 Lapis 到新模板」入口的角标：可迁移 + 待补迁的笔记数（0 = 不显示入口）。
+  int _lapisPending = 0;
+
   @override
   void initState() {
     super.initState();
@@ -96,11 +112,14 @@ class _SrsNoteTypesPageState extends ConsumerState<SrsNoteTypesPage> {
     if (store == null) return;
     final List<SrsNoteTypeView> types = await store.noteTypes();
     final Map<String, int> counts = await store.noteCountsByType();
+    final ({int migratable, int backfill}) pending = await store
+        .legacyLapisPendingCounts();
     if (!mounted) return;
     setState(() {
       _store = store;
       _types = types;
       _counts = counts;
+      _lapisPending = pending.migratable + pending.backfill;
       _loading = false;
     });
   }
@@ -119,11 +138,9 @@ class _SrsNoteTypesPageState extends ConsumerState<SrsNoteTypesPage> {
       );
 
   Future<void> _open(SrsNoteTypeView type) async {
-    await Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => SrsNoteTypeEditorPage(noteTypeId: type.id),
-      ),
+    await srsPushPage<void>(
+      context,
+      (_) => SrsNoteTypeEditorPage(noteTypeId: type.id),
     );
     if (mounted) await _afterWrite();
   }
@@ -258,12 +275,13 @@ class _SrsNoteTypesPageState extends ConsumerState<SrsNoteTypesPage> {
           () => openSrsCardAppearancePage(context),
         );
       case _TypeAction.migrateToFushiCard:
-        srsRunLogged('SrsNoteTypes.migrate', () async {
-          if (await showSrsMigrateToFushiCardFlow(context) && mounted) {
-            await _afterWrite();
-          }
-        });
+        srsRunLogged('SrsNoteTypes.migrate', _openLapisMigration);
     }
+  }
+
+  Future<void> _openLapisMigration() async {
+    await openSrsLegacyLapisMigrationPage(context);
+    if (mounted) await _afterWrite();
   }
 
   FushiToolbarItem get _addItem => FushiToolbarItem(
@@ -330,6 +348,26 @@ class _SrsNoteTypesPageState extends ConsumerState<SrsNoteTypesPage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsDbStore store = _store!;
     final List<Widget> items = <Widget>[
+      if (_lapisPending > 0)
+        Padding(
+          padding: EdgeInsets.only(bottom: tokens.spacing.gap * 1.5),
+          // FushiCard 自带按压缩放（pressScale 默认开）。
+          child: FushiCard(
+            key: const ValueKey<String>('srs-note-types-lapis-migration'),
+            tone: FushiCardTone.primary,
+            padding: EdgeInsets.zero,
+            onTap: () =>
+                srsRunLogged('SrsNoteTypes.lapis', _openLapisMigration),
+            child: FushiListItem(
+              leading: const FushiListLeadingIcon(FushiIcons.swap),
+              title: Text(t.srs_lapis_migration_title),
+              subtitle: Text(
+                t.srs_lapis_migration_entry_summary(n: _lapisPending),
+              ),
+              trailing: const FushiIcon(FushiIcons.chevronRight),
+            ),
+          ),
+        ),
       if (_types.isEmpty)
         Center(
           child: FushiPlaceholderMessage(
@@ -450,7 +488,7 @@ class _TypeRow extends StatelessWidget {
                           value: _TypeAction.appearance,
                           child: Text(t.srs_card_appearance_title),
                         ),
-                      if (type.builtinKey == kSrsBuiltinLapisKey && notes > 0)
+                      if (srsDetectLapisVariant(type) != null && notes > 0)
                         PopupMenuItem<_TypeAction>(
                           key: const ValueKey<String>('srs-note-types-migrate'),
                           value: _TypeAction.migrateToFushiCard,

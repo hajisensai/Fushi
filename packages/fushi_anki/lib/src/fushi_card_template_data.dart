@@ -9,12 +9,13 @@ const String kFushiCardFrontTemplate = r'''<!--
   外观由 Fushi 宿主经 --fushi-srs-* 变量与 fushi-srs-* 类名注入；在 Anki 里没有宿主，按默认外观显示。
 -->
 <div class="fc fc-front" lang="ja">
-  {{#FreqSort}}<div class="fc-front-freq"><span class="fc-chip fc-chip--freq">{{FreqSort}}</span></div>{{/FreqSort}}
+  {{#FrequencyRank}}<div class="fc-front-freq" data-fc-block="frequency"><span class="fc-chip fc-chip--freq">{{FrequencyRank}}</span></div>{{/FrequencyRank}}
 
+  <div class="fc-front-prompt" data-fc-block="prompt">
   {{^IsSentenceCard}}{{^IsWordAndSentenceCard}}{{^IsClickCard}}{{^IsAudioCard}}
   <div class="fc-front-term">
-    <div class="fc-term fc-term--hero fc-term--plain">{{Expression}}</div>
-    {{#ExpressionFurigana}}<div class="fc-term fc-term--hero fc-term--ruby">{{furigana:ExpressionFurigana}}</div>{{/ExpressionFurigana}}
+    <div class="fc-term fc-term--hero fc-term--plain">{{Term}}</div>
+    {{#TermFurigana}}<div class="fc-term fc-term--hero fc-term--ruby">{{furigana:TermFurigana}}</div>{{/TermFurigana}}
     <div class="fc-front-pitch">{{PitchPosition}}</div>
   </div>
   {{/IsAudioCard}}{{/IsClickCard}}{{/IsWordAndSentenceCard}}{{/IsSentenceCard}}
@@ -25,8 +26,8 @@ const String kFushiCardFrontTemplate = r'''<!--
 
   {{#IsWordAndSentenceCard}}
   <div class="fc-front-term">
-    <div class="fc-term fc-term--hero fc-term--plain">{{Expression}}</div>
-    {{#ExpressionFurigana}}<div class="fc-term fc-term--hero fc-term--ruby">{{furigana:ExpressionFurigana}}</div>{{/ExpressionFurigana}}
+    <div class="fc-term fc-term--hero fc-term--plain">{{Term}}</div>
+    {{#TermFurigana}}<div class="fc-term fc-term--hero fc-term--ruby">{{furigana:TermFurigana}}</div>{{/TermFurigana}}
     <div class="fc-front-pitch">{{PitchPosition}}</div>
   </div>
   <div class="fc-front-context">{{kanji:Sentence}}</div>
@@ -34,7 +35,7 @@ const String kFushiCardFrontTemplate = r'''<!--
 
   {{#IsClickCard}}
   <div class="fc-click" role="button" tabindex="0">
-    <div class="fc-term fc-term--hero fc-click-term">{{Expression}}</div>
+    <div class="fc-term fc-term--hero fc-click-term">{{Term}}</div>
     <div class="fc-front-sentence fc-click-sentence">{{kanji:Sentence}}</div>
   </div>
   {{/IsClickCard}}
@@ -44,12 +45,13 @@ const String kFushiCardFrontTemplate = r'''<!--
     <div class="fc-front-sentence fc-front-sentence--masked">{{kanji:Sentence}}</div>
     <div class="fc-audio fc-audio--large">
       {{#SentenceAudio}}{{SentenceAudio}}{{/SentenceAudio}}
-      {{^SentenceAudio}}{{ExpressionAudio}}{{/SentenceAudio}}
+      {{^SentenceAudio}}{{TermAudio}}{{/SentenceAudio}}
     </div>
   </div>
   {{/IsAudioCard}}
+  </div>
 
-  {{#Hint}}<div class="fc-hint">{{Hint}}</div>{{/Hint}}
+  {{#Hint}}<div class="fc-hint" data-fc-block="hint">{{Hint}}</div>{{/Hint}}
 </div>
 
 <script>
@@ -79,28 +81,28 @@ const String kFushiCardBackTemplate = r'''<!--
   Fushi 卡片 · 背面。字段名与 Lapis 逐字一致；唯一的扩展字段 SentenceTranslation（为空时整块不出现）。
   版式按卡面宽度自适应：窄（手机）单栏、宽（≥720px，电脑 / 平板横屏）左栏词条 + 例句、右栏释义
   （宿主可用 fushi-srs-layout-wide / -narrow 强制）。
-  脚本只做四件事：音调图、释义按词典分组 / 去重、折叠与版式随外观 / 宽度更新、图片放大；脚本不跑时卡面照常可读。
+  脚本只做五件事：音调图、释义按词典分组 / 去重、词频明细按词典合并、折叠与版式随外观 / 宽度更新、图片放大；脚本不跑时卡面照常可读。
   音调解析与分类改写自 Lapis v1.7.0（donkuri/lapis，GPL-3.0）。
 -->
 <div class="fc fc-back" lang="ja">
   <div class="fc-aside">
     <header class="fc-head">
       <div class="fc-head-main">
-        <div class="fc-term">{{#ExpressionFurigana}}{{furigana:ExpressionFurigana}}{{/ExpressionFurigana}}{{^ExpressionFurigana}}{{Expression}}{{/ExpressionFurigana}}</div>
-        <div class="fc-reading-row">
-          <span class="fc-reading">{{#ExpressionFurigana}}{{kana:ExpressionFurigana}}{{/ExpressionFurigana}}{{^ExpressionFurigana}}{{ExpressionReading}}{{/ExpressionFurigana}}</span>
+        <div class="fc-term" data-fc-block="term">{{#TermFurigana}}{{furigana:TermFurigana}}{{/TermFurigana}}{{^TermFurigana}}{{Term}}{{/TermFurigana}}</div>
+        <div class="fc-reading-row" data-fc-block="reading">
+          <span class="fc-reading">{{#TermFurigana}}{{kana:TermFurigana}}{{/TermFurigana}}{{^TermFurigana}}{{TermReading}}{{/TermFurigana}}</span>
           {{#PitchPosition}}<span class="fc-pitch-tags">{{PitchPosition}}</span>{{/PitchPosition}}
-          {{#ExpressionAudio}}<span class="fc-audio">{{ExpressionAudio}}</span>{{/ExpressionAudio}}
-          {{#FreqSort}}<span class="fc-chip fc-chip--freq">{{FreqSort}}</span>{{/FreqSort}}
+          {{#TermAudio}}<span class="fc-audio">{{TermAudio}}</span>{{/TermAudio}}
+          {{#FrequencyRank}}<span class="fc-chip fc-chip--freq">{{FrequencyRank}}</span>{{/FrequencyRank}}
         </div>
       </div>
-      {{#Picture}}<figure class="fc-picture {{Tags}}">{{Picture}}</figure>{{/Picture}}
+      {{#Media}}<figure class="fc-media {{Tags}}" data-fc-block="picture">{{Media}}</figure>{{/Media}}
     </header>
 
     {{#Sentence}}
-    <section class="fc-sentence-block">
+    <section class="fc-sentence-block" data-fc-block="sentence">
       <div class="fc-sentence-body">
-        <div class="fc-sentence">{{#SentenceFurigana}}{{furigana:SentenceFurigana}}{{/SentenceFurigana}}{{^SentenceFurigana}}{{furigana:Sentence}}{{/SentenceFurigana}}</div>
+        <div class="fc-sentence">{{furigana:Sentence}}</div>
         {{#SentenceTranslation}}<div class="fc-translation" lang="">{{SentenceTranslation}}</div>{{/SentenceTranslation}}
       </div>
       {{#SentenceAudio}}<span class="fc-audio">{{SentenceAudio}}</span>{{/SentenceAudio}}
@@ -108,9 +110,9 @@ const String kFushiCardBackTemplate = r'''<!--
     {{/Sentence}}
   </div>
 
-  <section class="fc-defs">
-    {{#SelectionText}}<blockquote class="fc-selection">{{SelectionText}}</blockquote>{{/SelectionText}}
-    {{#DefinitionPicture}}<div class="fc-def-picture">{{DefinitionPicture}}</div>{{/DefinitionPicture}}
+  <section class="fc-defs" data-fc-block="definitions">
+    {{#LookupSelection}}<blockquote class="fc-selection">{{LookupSelection}}</blockquote>{{/LookupSelection}}
+    {{#DefinitionMedia}}<div class="fc-def-media">{{DefinitionMedia}}</div>{{/DefinitionMedia}}
     {{#MainDefinition}}<div class="fc-gloss fc-gloss--main">{{MainDefinition}}</div>{{/MainDefinition}}
     {{#Glossary}}
     <details class="fc-more"{{^MainDefinition}} open{{/MainDefinition}}>
@@ -122,17 +124,17 @@ const String kFushiCardBackTemplate = r'''<!--
 
   <footer class="fc-foot">
     {{#Frequency}}
-    <section class="fc-meta-row fc-meta-row--freq">
+    <section class="fc-meta-row fc-meta-row--freq" data-fc-block="frequency">
       <span class="fc-meta-label fc-meta-label--freq"></span>
       <div class="fc-freq-list">{{Frequency}}</div>
     </section>
     {{/Frequency}}
-    {{#MiscInfo}}
-    <section class="fc-meta-row fc-meta-row--source">
+    {{#Source}}
+    <section class="fc-meta-row fc-meta-row--source" data-fc-block="source">
       <span class="fc-meta-label fc-meta-label--source"></span>
-      <div class="fc-source">{{MiscInfo}}</div>
+      <div class="fc-source">{{Source}}</div>
     </section>
-    {{/MiscInfo}}
+    {{/Source}}
   </footer>
 
   <span class="fc-src" data-fc="pitch-categories" hidden>{{text:PitchCategories}}</span>
@@ -300,13 +302,33 @@ const String kFushiCardBackTemplate = r'''<!--
       more.querySelector(".fc-more-count").textContent = String(count);
     }
 
+    /* ---------- 词频明细：同一词典的多个值（普通形 + 假名形等）合成一项 ----------
+       制卡写的是「一个值一个 <li>词典名: 值</li>」；按最后一个「: 」切出词典名（名字可带冒号）。
+       与原生卡面 srsFrequencyGroups、查词弹窗的分组一致。 */
+    function groupFrequency() {
+      var seen = {};
+      root.querySelectorAll(".fc-freq-list li").forEach(function (li) {
+        var text = li.textContent.trim();
+        var cut = text.lastIndexOf(": ");
+        if (cut <= 0 || cut + 2 >= text.length) return;
+        var dict = text.slice(0, cut).trim();
+        var value = text.slice(cut + 2).trim();
+        var first = seen[dict];
+        if (!first) { seen[dict] = { li: li, values: [value] }; return; }
+        if (!first.values.includes(value)) first.values.push(value);
+        first.li.textContent = dict + ": " + first.values.join(", ");
+        li.remove();
+      });
+    }
+
     /* ---------- 折叠与版式：随外观（全部释义默认展开）与卡面宽度更新 ----------
-       默认：主释义展开；「全部释义」收起（没有主释义时展开）。其中的词典分组：宽屏、只有一部
-       词典、或宿主要求「默认展开」时展开；窄屏收成一列词典名，点哪部开哪部（折叠层级更强），
-       但没有主释义时第一部照样展开。
+       默认：主释义展开；「全部释义」收起（没有主释义时展开）。其中的词典分组与查词弹窗同形：
+       宽屏、只有一部词典、或宿主要求「默认展开」时展开；窄屏收成一列可折叠的词典标题，
+       点哪部开哪部，但没有主释义时第一部照样展开。
        只在这两个条件真的变了时重排，用户手动开合过的不被覆盖。 */
     function applyLayout() {
-      var expanded = hostHas("fushi-srs-gloss-expanded");
+      /* 宿主外观「全部释义默认展开」，或释义区块自己的选项（区块布局里设，导出到 Anki 同样生效）。 */
+    var expanded = hostHas("fushi-srs-gloss-expanded") || !!root.querySelector('[data-fc-opt-expand="1"]');
       var wide = isWide();
       root.classList.toggle("fc-layout-wide", wide);
       var aside = root.querySelector(".fc-aside");
@@ -315,8 +337,7 @@ const String kFushiCardBackTemplate = r'''<!--
         aside.classList.toggle("fc-aside--sticky", wide && aside.offsetHeight < window.innerHeight - 48);
       }
       updateClamp();
-      var full = hostHas("fushi-srs-full-gloss");
-      var key = (expanded ? "e" : "c") + (wide ? "w" : "n") + (full ? "f" : "");
+      var key = (expanded ? "e" : "c") + (wide ? "w" : "n");
       if (root.__fcLayoutKey === key) return;
       root.__fcLayoutKey = key;
       var main = root.querySelector(".fc-gloss--main");
@@ -324,50 +345,11 @@ const String kFushiCardBackTemplate = r'''<!--
       if (more) {
         more.open = expanded || !main;
         var groups = more.querySelectorAll(".fc-dict");
-        var tabs = !wide && !full && groups.length > 1;
-        /* 页签模式下每部都展开（一次只显示选中的那部）；否则沿用逐部折叠：
-           没有主释义时第一部词典就是主释义，窄屏也展开它。 */
+        /* 没有主释义时第一部词典就是主释义，窄屏也展开它。 */
         groups.forEach(function (g, i) {
-          g.open = tabs || expanded || wide || groups.length === 1 || (i === 0 && !main);
-        });
-        setTabs(more, tabs);
-      }
-    }
-
-    /* ---------- 窄屏：词典页签 ----------
-       「全部释义」里每部词典一张卡、各自折叠时，二三十部词典光标题行就排出一千多像素。
-       窄屏改成页签：上方一排可换行的词典名 chip，下方只显示选中的那一部（默认第一部，
-       点 chip 切换，一次点按就看到任意一部的全文）。宽屏照旧逐部展开。 */
-    function setTabs(more, on) {
-      var dicts = more.querySelector(".fc-dicts");
-      if (!dicts) return;
-      var bar = more.querySelector(".fc-dict-tabs");
-      more.classList.toggle("fc-tabs-on", on);
-      if (!on) return;
-      var groups = Array.prototype.slice.call(dicts.querySelectorAll(":scope > .fc-dict"));
-      if (!bar) {
-        bar = document.createElement("div");
-        bar.className = "fc-dict-tabs";
-        bar.setAttribute("role", "tablist");
-        groups.forEach(function (g, i) {
-          var b = document.createElement("button");
-          b.type = "button";
-          b.className = "fc-dict-tab";
-          b.setAttribute("role", "tab");
-          b.textContent = g.getAttribute("data-fc-dict") || String(i + 1);
-          b.addEventListener("click", function () { select(i); });
-          bar.appendChild(b);
-        });
-        dicts.parentNode.insertBefore(bar, dicts);
-      }
-      function select(i) {
-        groups.forEach(function (g, j) {
-          g.classList.toggle("fc-dict--active", i === j);
-          bar.children[j].setAttribute("aria-selected", i === j ? "true" : "false");
+          g.open = expanded || wide || groups.length === 1 || (i === 0 && !main);
         });
       }
-      var current = groups.findIndex(function (g) { return g.classList.contains("fc-dict--active"); });
-      select(current < 0 ? 0 : current);
     }
 
     /* ---------- 窄屏：主释义过长时收到约半屏，一次点按看全文 ---------- */
@@ -401,7 +383,11 @@ const String kFushiCardBackTemplate = r'''<!--
 
     /* ---------- 图片：点按放大，再点关闭；加载完重算左栏能否吸顶 ---------- */
     function setUpLightbox() {
-      var imgs = root.querySelectorAll(".fc-picture img, .fc-def-picture img");
+      /* 视频片段（制卡写进 Media 的 <video>）尺寸要等元数据到了才知道，同样重算 */
+      root.querySelectorAll(".fc-media video, .fc-def-media video").forEach(function (v) {
+        if (v.readyState < 1) v.addEventListener("loadedmetadata", applyLayout, { once: true });
+      });
+      var imgs = root.querySelectorAll(".fc-media img, .fc-def-media img");
       if (!imgs.length) return;
       imgs.forEach(function (img) {
         if (!img.complete) img.addEventListener("load", applyLayout, { once: true });
@@ -424,7 +410,7 @@ const String kFushiCardBackTemplate = r'''<!--
       });
     }
 
-    [drawPitch, setUpGlossary, applyLayout, setUpLightbox].forEach(function (step) {
+    [drawPitch, setUpGlossary, groupFrequency, applyLayout, setUpLightbox].forEach(function (step) {
       try { step(); } catch (e) { if (window.console) console.error(e); }
     });
   })();
@@ -603,7 +589,8 @@ const String kFushiCardStylingCss = r'''/*
   text-decoration: none;
 }
 
-.fc img {
+.fc img,
+.fc video {
   filter: var(--fc-image-filter);
 }
 
@@ -984,40 +971,55 @@ const String kFushiCardStylingCss = r'''/*
 .fc-pitch-num[data-type="odaka"] { background: var(--fc-pitch-odaka); }
 .fc-pitch-num[data-type="kifuku"] { background: var(--fc-pitch-kifuku); }
 
-/* 图片：窄屏是标题区右上角的紧凑方形缩略图（裁切填满），不挤占词条行；点按放大看全图 */
-.fc-picture {
+/* 图片：窄屏是标题区右上角的紧凑缩略图，按原比例完整显示（书封等竖图不裁切），
+   限高限宽不挤占词条行；点按放大看全图。Media 也可能是视频片段（<video>，视频制卡默认）
+   或动图（GIF / WebP / AVIF 都是 <img>）：视频与图片同一套尺寸 / 圆角 / 打码规则，
+   但不放大（控制条本身就要点按） */
+.fc-media {
   flex: 0 0 auto;
-  width: var(--fc-thumb);
-  height: var(--fc-thumb);
+  max-width: calc(var(--fc-thumb) * 1.5);
   margin: 0;
 }
 
-.fc-picture img {
+.fc-media img,
+.fc-media video {
   display: block;
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: calc(var(--fc-thumb) * 1.4);
   border-radius: var(--fc-radius-small);
-  object-fit: cover;
   cursor: zoom-in;
   transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
 }
 
+.fc-media video {
+  cursor: auto;
+  background: #000;
+}
+
 @media (hover: hover) {
-  .fc-picture img:hover,
-  .fc-def-picture img:hover {
+  .fc-media img:hover,
+  .fc-def-media img:hover {
     transform: scale(1.03);
   }
 }
 
-.fc-picture.nsfw img,
-.fc-picture.NSFW img,
-.fc-picture.Nsfw img {
+.fc-media.nsfw img,
+.fc-media.NSFW img,
+.fc-media.Nsfw img,
+.fc-media.nsfw video,
+.fc-media.NSFW video,
+.fc-media.Nsfw video {
   filter: blur(14px) var(--fc-image-filter);
 }
 
-.fc-picture.nsfw img:hover,
-.fc-picture.NSFW img:hover,
-.fc-picture.Nsfw img:hover {
+.fc-media.nsfw img:hover,
+.fc-media.NSFW img:hover,
+.fc-media.Nsfw img:hover,
+.fc-media.nsfw video:hover,
+.fc-media.NSFW video:hover,
+.fc-media.Nsfw video:hover {
   filter: var(--fc-image-filter);
 }
 
@@ -1048,7 +1050,7 @@ const String kFushiCardStylingCss = r'''/*
   border-radius: 2px;
 }
 
-/* 例句注音默认悬停 / 点按显示（Lapis 的 "hover"），宿主挂 fushi-srs-sentence-furigana 常显 */
+/* 例句字段自带的注音悬停 / 点按显示（Lapis 的 "hover"） */
 .fc-sentence rt {
   font-size: 0.5em;
   color: var(--fc-fg-muted);
@@ -1057,8 +1059,7 @@ const String kFushiCardStylingCss = r'''/*
 }
 
 .fc-sentence:hover rt,
-.fc-sentence:active rt,
-.fushi-srs-sentence-furigana .fc-sentence rt {
+.fc-sentence:active rt {
   opacity: 1;
 }
 
@@ -1090,7 +1091,8 @@ const String kFushiCardStylingCss = r'''/*
   font-size: var(--fc-size-gloss);
 }
 
-.fc-def-picture img {
+.fc-def-media img,
+.fc-def-media video {
   max-width: 100%;
   max-height: 200px;
   border-radius: var(--fc-radius-small);
@@ -1212,6 +1214,70 @@ const String kFushiCardStylingCss = r'''/*
 
 .fc-meta-label--freq::before { content: var(--fc-label-frequency); }
 .fc-meta-label--source::before { content: var(--fc-label-source); }
+/* 区块布局里改了标签文字的词频 / 来源：标签写在元素里，不再用默认标签。 */
+.fc-meta-label--custom::before { content: none; }
+
+/* ---------- 自定义区块（区块布局里加的「字段区块」「HTML 区块」） ----------
+   字段区块：一个字段 + 显示样式（正文 / 标签 / 引用卡片 / 小字）+ 可选标题。 */
+.fc-front-prompt {
+  display: contents;
+}
+
+.fc-field {
+  min-width: 0;
+}
+
+.fc-front .fc-field {
+  max-width: 34em;
+}
+
+.fc-field-title {
+  margin-bottom: 4px;
+  color: var(--fc-fg-muted);
+  font-family: var(--fc-font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.fc-field--body .fc-field-body {
+  font-size: var(--fc-size-body);
+  line-height: var(--fc-lh-body);
+}
+
+.fc-field--quote {
+  padding: calc(var(--fc-pad) - 2px) var(--fc-pad);
+  border-radius: var(--fc-radius);
+  background: var(--fc-surface-1);
+}
+
+.fc-field--quote .fc-field-body {
+  font-size: var(--fc-size-body);
+  line-height: var(--fc-lh-body);
+}
+
+.fc-field--tag .fc-field-body {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--fc-surface-2);
+  color: var(--fc-fg-muted);
+  font-family: var(--fc-font-ui);
+  font-size: 13px;
+}
+
+.fc-field--small .fc-field-body {
+  color: var(--fc-fg-muted);
+  font-family: var(--fc-font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.fc-html {
+  min-width: 0;
+}
 
 .fc-freq-list ul {
   display: flex;
@@ -1235,12 +1301,20 @@ const String kFushiCardStylingCss = r'''/*
 }
 
 /* 区块显隐（宿主类名；Anki 里全显示） */
-.fushi-srs-hide-picture .fc-picture,
-.fushi-srs-hide-picture .fc-def-picture,
+.fushi-srs-hide-picture .fc-media,
+.fushi-srs-hide-picture .fc-def-media,
 .fushi-srs-hide-translation .fc-translation,
 .fushi-srs-hide-frequency .fc-meta-row--freq,
 .fushi-srs-hide-frequency .fc-back .fc-chip--freq,
 .fushi-srs-hide-source .fc-meta-row--source {
+  display: none;
+}
+
+/* 词频跟随查词的「词频聚合」（宿主类 fushi-srs-freq-aggregate）：聚合且有平均值时只留读音行的
+   平均值，否则只留按词典合并的明细区，两者不同时出现（与原生卡面同一规则）。宿主类挂在 body 与
+   卡面根节点上；Anki 里没有宿主类 = 明细。 */
+.fushi-srs-freq-aggregate .fc-back:has(.fc-reading-row .fc-chip--freq) .fc-meta-row--freq,
+body:not(.fushi-srs-freq-aggregate) .fc-back:has(.fc-meta-row--freq) .fc-reading-row .fc-chip--freq {
   display: none;
 }
 
@@ -1263,7 +1337,8 @@ const String kFushiCardStylingCss = r'''/*
   }
 
   /* 左栏图片在矮视口里收小（点按仍可放大），词条 + 例句尽量留在首屏。 */
-  .fc-back.fc-layout-wide .fc-picture img {
+  .fc-back.fc-layout-wide .fc-media img,
+  .fc-back.fc-layout-wide .fc-media video {
     max-height: 120px;
   }
 }
@@ -1301,59 +1376,6 @@ const String kFushiCardStylingCss = r'''/*
 
 .fc-clamp-toggle[hidden],
 .fushi-srs-full-gloss .fc-clamp-toggle {
-  display: none;
-}
-
-.fc-dict-tabs {
-  display: none;
-}
-
-.fc-tabs-on > .fc-gloss .fc-dict-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.fc-dict-tab {
-  min-height: 34px;
-  max-width: 100%;
-  padding: 0 12px;
-  border: 1px solid var(--fc-outline);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--fc-fg-muted);
-  font-family: var(--fc-font-ui);
-  font-size: 13px;
-  line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-}
-
-.fc-dict-tab[aria-selected="true"] {
-  border-color: transparent;
-  background: var(--fc-secondary-container);
-  color: var(--fc-on-secondary-container);
-}
-
-@media (pointer: coarse) {
-  .fc-dict-tab {
-    min-height: 40px;
-  }
-}
-
-.fc-tabs-on .fc-dict:not(.fc-dict--active) {
-  display: none;
-}
-
-.fc-tabs-on .fc-dict--active {
-  border-radius: var(--fc-radius);
-  padding-top: calc(var(--fc-pad) - 4px);
-}
-
-.fc-tabs-on .fc-dict--active > .fc-dict-label {
   display: none;
 }
 
@@ -1415,13 +1437,14 @@ const String kFushiCardStylingCss = r'''/*
   gap: var(--fc-gap);
 }
 
-.fc-layout-wide .fc-picture {
+.fc-layout-wide .fc-media {
   width: auto;
   height: auto;
   max-width: 100%;
 }
 
-.fc-layout-wide .fc-picture img {
+.fc-layout-wide .fc-media img,
+.fc-layout-wide .fc-media video {
   width: auto;
   height: auto;
   max-width: 100%;

@@ -20,6 +20,7 @@
 //   无歧义，不需要这层保险。
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
 
 /// 一段注音：`ruby` 注在纯文本 [RubyMarkupText.text] 的 `[start, start+length)` 上方。
 /// 下标单位是 UTF-16 code unit（与 Dart `String` 下标、DirectWrite `textPosition` 同单位）。
@@ -39,10 +40,10 @@ class RubySpan {
 
   /// MethodChannel 载荷（native 侧按同名字段解包，见 windows/runner/flutter_window.cpp）。
   Map<String, Object?> toChannelMap() => <String, Object?>{
-        'start': start,
-        'length': length,
-        'ruby': ruby,
-      };
+    'start': start,
+    'length': length,
+    'ruby': ruby,
+  };
 
   @override
   bool operator ==(Object other) =>
@@ -123,8 +124,8 @@ class RubyMarkupText {
 
 /// 注音区间 → MethodChannel 载荷；空列表返回 `null`，让调用方直接省掉该字段，
 /// native 因此完全走老渲染路径。
-List<Map<String, Object?>>? rubySpansToChannel(List<RubySpan> spans) => spans
-        .isEmpty
+List<Map<String, Object?>>? rubySpansToChannel(List<RubySpan> spans) =>
+    spans.isEmpty
     ? null
     : spans.map((RubySpan span) => span.toChannelMap()).toList(growable: false);
 
@@ -167,8 +168,9 @@ final RegExp _rtElementPattern = RegExp(
 
 /// `<rふる>震</r>`：注音写在标签里、基准是标签内容。截图里 WITCH ON THE HOLY NIGHT
 /// 用的就是这一种，BGI/Ethornell 系的 `<R…>…</R>` 同形。
-final RegExp _taggedRubyPattern =
-    RegExp(r'<[rR]\s*([^<>]*?)\s*>([^<>]*)</[rR]\s*>');
+final RegExp _taggedRubyPattern = RegExp(
+  r'<[rR]\s*([^<>]*?)\s*>([^<>]*)</[rR]\s*>',
+);
 
 /// 青空文庫式显式形：`｜震《ふる》`（全角竖线，也兼容 ASCII `|`）。有竖线定界，
 /// 基准范围无歧义。
@@ -307,7 +309,7 @@ RubyMarkupText parseRubyMarkup(String raw) {
   while (i < raw.length) {
     final int unit = raw.codeUnitAt(i);
 
-    if (unit == 0x3C /* < */) {
+    if (unit == 0x3C /* < */ ) {
       final _Consumed? consumed =
           _tryHtmlRuby(raw, i) ?? _tryTaggedRuby(raw, i);
       if (consumed != null) {
@@ -315,16 +317,17 @@ RubyMarkupText parseRubyMarkup(String raw) {
         i = consumed.next;
         continue;
       }
-    } else if (unit == 0xFF5C /* ｜ */ || unit == 0x7C /* | */) {
+    } else if (unit == 0xFF5C /* ｜ */ || unit == 0x7C /* | */ ) {
       final _Consumed? consumed = _tryPipeAozora(raw, i);
       if (consumed != null) {
         emit(consumed.units);
         i = consumed.next;
         continue;
       }
-    } else if (unit == 0x300A /* 《 */ || unit == 0x5B /* [ */) {
-      final RegExp pattern =
-          unit == 0x300A ? _bareAozoraPattern : _bracketReadingPattern;
+    } else if (unit == 0x300A /* 《 */ || unit == 0x5B /* [ */ ) {
+      final RegExp pattern = unit == 0x300A
+          ? _bareAozoraPattern
+          : _bracketReadingPattern;
       final Match? match = pattern.matchAsPrefix(raw, i);
       final String reading = match?.group(1) ?? '';
       if (match != null &&
@@ -348,4 +351,28 @@ RubyMarkupText parseRubyMarkup(String raw) {
   // 注意不能在 spans 为空时直接返回 raw：`<ruby>` 里 `<rt>` 为空这类输入会剥掉标记
   // 却不产生注音，此时 out 已经与 raw 不同，返回 raw 等于把标记又塞回正文。
   return RubyMarkupText(text: String.fromCharCodes(out), spans: spans);
+}
+
+/// 把整行 [spans]（坐标系 = 整行文本）换成查询串 `[queryStart, queryStart+queryLength)`
+/// 的 [FushiRubySpan]（坐标系 = 查询串）。基字必须完整落在查询串内，被查询起点或
+/// 终点截断的丢弃；空读音丢弃。只搬运来源自带的读音，不推断。
+List<FushiRubySpan> rubySpansForQuery(
+  List<RubySpan> spans,
+  int queryStart,
+  int queryLength,
+) {
+  if (spans.isEmpty || queryLength <= 0) return const <FushiRubySpan>[];
+  final int queryEnd = queryStart + queryLength;
+  return <FushiRubySpan>[
+    for (final RubySpan s in spans)
+      if (s.length > 0 &&
+          s.start >= queryStart &&
+          s.end <= queryEnd &&
+          s.ruby.trim().isNotEmpty)
+        FushiRubySpan(
+          start: s.start - queryStart,
+          end: s.end - queryStart,
+          reading: s.ruby.trim(),
+        ),
+  ];
 }

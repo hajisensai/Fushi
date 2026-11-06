@@ -31,8 +31,8 @@ class MihonCoverCache {
     this.maxAge = const Duration(days: kMangaCoverCacheDefaultMaxAgeDays),
     this.retryBackoff = kCoverFetchRetryBackoff,
     this.retryWait = retryWaitReal,
-  })  : assert(maxEntries > 0),
-        assert(maxBytes > 0);
+  }) : assert(maxEntries > 0),
+       assert(maxBytes > 0);
 
   final Directory directory;
   final int maxEntries;
@@ -257,7 +257,6 @@ String mihonCoverCacheKey({
   required String extensionPackage,
   required String sourceId,
   required String url,
-}) =>
-    sha256
-        .convert(utf8.encode('$extensionPackage\u0000$sourceId\u0000$url'))
-        .toString();
+}) => sha256
+    .convert(utf8.encode('$extensionPackage\u0000$sourceId\u0000$url'))
+    .toString();

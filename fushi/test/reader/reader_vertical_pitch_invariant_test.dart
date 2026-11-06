@@ -48,13 +48,13 @@ void main() {
             const double mb = 0;
             final double columnWidth =
                 ReaderContentStyles.verticalColumnContentHeight(
-              viewportHeightPx: viewportV,
-              fontSizePx: f,
-              marginTopPx: mt,
-              marginBottomPx: mb,
-              chromeTopInsetPx: cT,
-              chromeBottomInsetPx: cB,
-            );
+                  viewportHeightPx: viewportV,
+                  fontSizePx: f,
+                  marginTopPx: mt,
+                  marginBottomPx: mb,
+                  chromeTopInsetPx: cT,
+                  chromeBottomInsetPx: cB,
+                );
             final double contentBox = jsContentBox(
               v: viewportV,
               f: f,
@@ -63,10 +63,13 @@ void main() {
               cT: cT,
               cB: cB,
             );
-            expect(columnWidth, contentBox,
-                reason:
-                    'F=$f cT=$cT cB=$cB: CSS column-width 必须等于 JS contentBox，'
-                    '否则 pageStep≠realPitch 复活跳章');
+            expect(
+              columnWidth,
+              contentBox,
+              reason:
+                  'F=$f cT=$cT cB=$cB: CSS column-width 必须等于 JS contentBox，'
+                  '否则 pageStep≠realPitch 复活跳章',
+            );
           }
         }
       }
@@ -76,21 +79,15 @@ void main() {
       for (final double f in const <double>[12, 22, 96, 128]) {
         final double columnWidth =
             ReaderContentStyles.verticalColumnContentHeight(
-          viewportHeightPx: viewportV,
-          fontSizePx: f,
-          marginTopPx: 0,
-          marginBottomPx: 0,
-          chromeTopInsetPx: 0,
-          chromeBottomInsetPx: 0,
-        );
-        final double pageStep = jsContentBox(
-              v: viewportV,
-              f: f,
-              mt: 0,
-              mb: 0,
-              cT: 0,
-              cB: 0,
-            ) +
+              viewportHeightPx: viewportV,
+              fontSizePx: f,
+              marginTopPx: 0,
+              marginBottomPx: 0,
+              chromeTopInsetPx: 0,
+              chromeBottomInsetPx: 0,
+            );
+        final double pageStep =
+            jsContentBox(v: viewportV, f: f, mt: 0, mb: 0, cT: 0, cB: 0) +
             gapPx;
         final double realPitch = columnWidth + gapPx;
         expect(pageStep, realPitch, reason: 'F=$f: pageStep 必须等于真实列周期');
@@ -104,19 +101,23 @@ void main() {
           for (final double cB in const <double>[0, 24, 48, 96]) {
             final double columnWidth =
                 ReaderContentStyles.verticalColumnContentHeight(
-              viewportHeightPx: viewportV,
-              fontSizePx: f,
-              marginTopPx: 0,
-              marginBottomPx: 0,
-              chromeTopInsetPx: cT,
-              chromeBottomInsetPx: cB,
-            );
+                  viewportHeightPx: viewportV,
+                  fontSizePx: f,
+                  marginTopPx: 0,
+                  marginBottomPx: 0,
+                  chromeTopInsetPx: cT,
+                  chromeBottomInsetPx: cB,
+                );
             final double columnBottomEdge = cT + columnWidth;
             final double viewportBottomUsable = viewportV - cB;
             final double leak = columnBottomEdge - viewportBottomUsable;
-            expect(leak, 0,
-                reason: 'F=$f cT=$cT cB=$cB: 漏出量必须恒等于 0（列底边贴底栏上沿，'
-                    '既不漏字也不空一条 F），不随 F/cT/cB 漂移');
+            expect(
+              leak,
+              0,
+              reason:
+                  'F=$f cT=$cT cB=$cB: 漏出量必须恒等于 0（列底边贴底栏上沿，'
+                  '既不漏字也不空一条 F），不随 F/cT/cB 漂移',
+            );
           }
         }
       }
@@ -131,8 +132,11 @@ void main() {
         final double badColumnWidth =
             (viewportV + bottomOverlapO) - f - cT - cB;
         final double leak = (cT + badColumnWidth) - (viewportV - cB);
-        expect(leak, bottomOverlapO - f,
-            reason: 'F=$f: 旧基准漏出量 = O−F（证明根因），F<22 时为正即漏字');
+        expect(
+          leak,
+          bottomOverlapO - f,
+          reason: 'F=$f: 旧基准漏出量 = O−F（证明根因），F<22 时为正即漏字',
+        );
       }
       // F=12 漏 10px、F=22 恰好 0（默认字号巧合不漏）、F>22 反而负（藏字）。
       expect(bottomOverlapO - 12, 10);
@@ -154,11 +158,18 @@ void main() {
           marginBottomVh: 0,
           fontSizePx: f,
         );
-        expect(css.startsWith('max(${f}px, calc('), isTrue,
-            reason: 'F=$f: 竖排 column-width 必须以 max(<F>px, calc(...)) 地板开头，'
-                '否则坍塌区列宽被钳 0 → 列叠印（TODO-743 回退）');
-        expect(css.endsWith('))'), isTrue,
-            reason: 'F=$f: max(...) 必须正确闭合（地板 + calc 两参数）');
+        expect(
+          css.startsWith('max(${f}px, calc('),
+          isTrue,
+          reason:
+              'F=$f: 竖排 column-width 必须以 max(<F>px, calc(...)) 地板开头，'
+              '否则坍塌区列宽被钳 0 → 列叠印（TODO-743 回退）',
+        );
+        expect(
+          css.endsWith('))'),
+          isTrue,
+          reason: 'F=$f: max(...) 必须正确闭合（地板 + calc 两参数）',
+        );
       }
     });
 
@@ -171,8 +182,11 @@ void main() {
       const double cB = 200;
       // 先证明这确实是坍塌区：裸代数 < 0（甚至 < fontSize）。
       const double bare = smallV - 0 - 0 - f - cT - cB;
-      expect(bare, lessThan(0),
-          reason: '看板 case D 必须裸代数为负（cT+cB+F 越过 V），才考验地板');
+      expect(
+        bare,
+        lessThan(0),
+        reason: '看板 case D 必须裸代数为负（cT+cB+F 越过 V），才考验地板',
+      );
       final double floored = ReaderContentStyles.verticalColumnContentHeight(
         viewportHeightPx: smallV,
         fontSizePx: f,
@@ -195,17 +209,23 @@ void main() {
             for (final double cB in const <double>[0, 96, 200, 260]) {
               final double floored =
                   ReaderContentStyles.verticalColumnContentHeight(
-                viewportHeightPx: v,
-                fontSizePx: f,
-                marginTopPx: 0,
-                marginBottomPx: 0,
-                chromeTopInsetPx: cT,
-                chromeBottomInsetPx: cB,
+                    viewportHeightPx: v,
+                    fontSizePx: f,
+                    marginTopPx: 0,
+                    marginBottomPx: 0,
+                    chromeTopInsetPx: cT,
+                    chromeBottomInsetPx: cB,
+                  );
+              expect(
+                floored,
+                greaterThanOrEqualTo(f),
+                reason: 'V=$v f=$f cT=$cT cB=$cB: 列宽必须 ≥ 字号地板',
               );
-              expect(floored, greaterThanOrEqualTo(f),
-                  reason: 'V=$v f=$f cT=$cT cB=$cB: 列宽必须 ≥ 字号地板');
-              expect(floored, greaterThan(0),
-                  reason: 'V=$v f=$f cT=$cT cB=$cB: 列宽必须 > 0（绝不坍塌到 0）');
+              expect(
+                floored,
+                greaterThan(0),
+                reason: 'V=$v f=$f cT=$cT cB=$cB: 列宽必须 > 0（绝不坍塌到 0）',
+              );
             }
           }
         }
@@ -219,17 +239,21 @@ void main() {
           for (final double cB in const <double>[0, 24, 48, 96]) {
             final double floored =
                 ReaderContentStyles.verticalColumnContentHeight(
-              viewportHeightPx: viewportV,
-              fontSizePx: f,
-              marginTopPx: 0,
-              marginBottomPx: 0,
-              chromeTopInsetPx: cT,
-              chromeBottomInsetPx: cB,
-            );
+                  viewportHeightPx: viewportV,
+                  fontSizePx: f,
+                  marginTopPx: 0,
+                  marginBottomPx: 0,
+                  chromeTopInsetPx: cT,
+                  chromeBottomInsetPx: cB,
+                );
             final double bare = viewportV - cT - cB;
-            expect(floored, bare,
-                reason: 'V=$viewportV f=$f cT=$cT cB=$cB: 宽裕视口下地板不应改变值'
-                    '（max 取裸代数），保不变式 1/2 零行为变化');
+            expect(
+              floored,
+              bare,
+              reason:
+                  'V=$viewportV f=$f cT=$cT cB=$cB: 宽裕视口下地板不应改变值'
+                  '（max 取裸代数），保不变式 1/2 零行为变化',
+            );
           }
         }
       }

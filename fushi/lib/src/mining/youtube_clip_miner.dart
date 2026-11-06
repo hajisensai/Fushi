@@ -43,10 +43,11 @@ class YoutubeClipMiner {
     YoutubeStreamRelay? relay,
     DateTime Function()? now,
     this.ttl = const Duration(minutes: 3),
-  })  : _resolve = resolve ??
-            ((String url) => resolveYoutubeSource(url, withCaptions: false)),
-        _relay = relay ?? relayYoutubeStreamUrl,
-        _now = now ?? DateTime.now;
+  }) : _resolve =
+           resolve ??
+           ((String url) => resolveYoutubeSource(url, withCaptions: false)),
+       _relay = relay ?? relayYoutubeStreamUrl,
+       _now = now ?? DateTime.now;
 
   final YoutubeResolver _resolve;
 
@@ -69,8 +70,10 @@ class YoutubeClipMiner {
     final YoutubeResolvedSource src = await _resolvedFor(videoId);
     return YoutubeClipRequest(
       // GIF/帧从低分辨率挖矿流（miningVideoUrl，无则回落播放流）。
-      mediaSource:
-          await _relay(src.miningVideoUrl ?? src.streamUrl, src.httpHeaders),
+      mediaSource: await _relay(
+        src.miningVideoUrl ?? src.streamUrl,
+        src.httpHeaders,
+      ),
       // muxed 挖矿流自带音轨 → audioSource=null（引擎从视频源抽音频）；分离流 → audio-only URL。
       // **分离音轨不走中继**：引擎按 `audioSourceNeedsRangeMaterialization` 只认
       // googlevideo host 才走 TODO-1314 的 `range=` 查询参数分片整段物化（那一路不受
@@ -91,14 +94,20 @@ class YoutubeClipMiner {
     final DateTime t = _now();
     final _CachedSource? hit = _cache[videoId];
     if (hit != null && t.difference(hit.at) < ttl) return hit.future;
-    final Future<YoutubeResolvedSource> fut =
-        _resolve('https://www.youtube.com/watch?v=$videoId');
+    final Future<YoutubeResolvedSource> fut = _resolve(
+      'https://www.youtube.com/watch?v=$videoId',
+    );
     _cache[videoId] = _CachedSource(fut, t);
     // 失败即从缓存剔除（否则 TTL 内都返回同一个 rejected future，卡住重试）。这个独立监听器
     // 自己吞掉清理分支的错误（不 rethrow），调用方仍从 await fut 拿到原始异常。
-    unawaited(fut.then<void>((_) {}, onError: (Object e, StackTrace s) {
-      if (identical(_cache[videoId]?.future, fut)) _cache.remove(videoId);
-    }));
+    unawaited(
+      fut.then<void>(
+        (_) {},
+        onError: (Object e, StackTrace s) {
+          if (identical(_cache[videoId]?.future, fut)) _cache.remove(videoId);
+        },
+      ),
+    );
     return fut;
   }
 }

@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -101,5 +101,16 @@ void main() {
       'a': '',
       'b': '1',
     });
+  });
+
+  test('pendingBookUids：只列有待办的书，按各自最早待办的入队顺序去重', () async {
+    final int a1 = await enqueue('book-a', 1000);
+    await enqueue('book-b', 2000);
+    await enqueue('book-a', 3000);
+    final int c1 = await enqueue('book-c', 4000);
+    await store.markDone(c1, noteId: 1);
+    expect(await store.pendingBookUids(), <String>['book-a', 'book-b']);
+    await store.markFailed(a1, 'x');
+    expect(await store.pendingBookUids(), <String>['book-b', 'book-a']);
   });
 }

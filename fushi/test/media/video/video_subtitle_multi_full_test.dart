@@ -44,21 +44,24 @@ AudioCue _cue(String t, SubtitleVAlign? v, {int s = 0, int e = 8000}) =>
           : SubtitleMarkup(
               plainText: t,
               spans: const <SubtitleSpan>[],
-              anchor: SubtitleAnchor(v, SubtitleHAlign.center))
+              anchor: SubtitleAnchor(v, SubtitleHAlign.center),
+            )
       ..startMs = s
       ..endMs = e
       ..audioFileIndex = 0;
 
 Future<void> _pump(WidgetTester tester, VideoPlayerController c) async {
-  await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      body: SizedBox(
-        width: 800,
-        height: 450,
-        child: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: 800,
+          height: 450,
+          child: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+        ),
       ),
     ),
-  ));
+  );
   await tester.pump();
 }
 
@@ -67,10 +70,13 @@ double _dy(WidgetTester tester, String label) =>
 
 void main() {
   group('BUG-684 主字幕同锚点不同 MarginV 各就其位（不再裹挟成一列）', () {
-    testWidgets('OP 标题 + 两行歌词按 MarginV 竖直分离（不挤成一列）',
-        (WidgetTester tester) async {
-      final List<AudioCue> cues =
-          AssParser.parseString(content: _assOp, bookKey: 'b');
+    testWidgets('OP 标题 + 两行歌词按 MarginV 竖直分离（不挤成一列）', (
+      WidgetTester tester,
+    ) async {
+      final List<AudioCue> cues = AssParser.parseString(
+        content: _assOp,
+        bookKey: 'b',
+      );
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
       c.setCues(cues);
@@ -86,14 +92,18 @@ void main() {
       final double dlg = _dy(tester, '4'); // 底部
       expect(top, greaterThan(title), reason: 'MarginV 更大的歌词行应在标题下方');
       expect(bot, greaterThan(top), reason: 'MarginV 最大的歌词行最低');
-      expect(top - title, greaterThan(25),
-          reason: 'MarginV 差应转成真实竖直间距，而非裹在一个 Column 里贴着排');
+      expect(
+        top - title,
+        greaterThan(25),
+        reason: 'MarginV 差应转成真实竖直间距，而非裹在一个 Column 里贴着排',
+      );
       expect(bot - top, greaterThan(25));
       expect(dlg, greaterThan(225), reason: 'an2 对白仍在下半屏');
     });
 
-    testWidgets('底部对白自带小 MarginV 不把字幕拽到用户基线以下（单调抬升，无回归）',
-        (WidgetTester tester) async {
+    testWidgets('底部对白自带小 MarginV 不把字幕拽到用户基线以下（单调抬升，无回归）', (
+      WidgetTester tester,
+    ) async {
       final AudioCue withMargin = AudioCue()
         ..bookKey = 'b'
         ..chapterHref = 'c'
@@ -104,7 +114,9 @@ void main() {
           plainText: 'A',
           spans: const <SubtitleSpan>[],
           anchor: const SubtitleAnchor(
-              SubtitleVAlign.bottom, SubtitleHAlign.center),
+            SubtitleVAlign.bottom,
+            SubtitleHAlign.center,
+          ),
           cueStyle: const SubtitleCueStyle(marginV: 40),
           playResY: 1080,
         )
@@ -124,8 +136,11 @@ void main() {
       c2.debugUpdateCueForPosition(1000);
       await _pump(tester, c2);
       final double noMv = _dy(tester, 'A');
-      expect((withMv - noMv).abs(), lessThan(1.0),
-          reason: '小 MarginV 不得把底部对白降到用户基线以下');
+      expect(
+        (withMv - noMv).abs(),
+        lessThan(1.0),
+        reason: '小 MarginV 不得把底部对白降到用户基线以下',
+      );
     });
   });
 
@@ -137,12 +152,16 @@ void main() {
       c.setSecondaryCues(<AudioCue>[_cue('副', SubtitleVAlign.bottom)]);
       c.debugUpdateCueForPosition(1000);
       await _pump(tester, c);
-      expect(_dy(tester, '副'), lessThan(_dy(tester, '主')),
-          reason: '自带底部的副字幕仍置顶避让，不撞主字幕底部对白');
+      expect(
+        _dy(tester, '副'),
+        lessThan(_dy(tester, '主')),
+        reason: '自带底部的副字幕仍置顶避让，不撞主字幕底部对白',
+      );
     });
 
-    testWidgets('副字幕纯 SRT（无 markup）→ 置顶（保 TODO-1312 语义）',
-        (WidgetTester tester) async {
+    testWidgets('副字幕纯 SRT（无 markup）→ 置顶（保 TODO-1312 语义）', (
+      WidgetTester tester,
+    ) async {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
       c.setCues(<AudioCue>[_cue('主', null)]);

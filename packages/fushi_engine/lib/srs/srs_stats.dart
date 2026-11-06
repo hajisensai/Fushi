@@ -1,8 +1,9 @@
 /// 复习（SRS）统计的数据面：把复习日志与卡片缓存归一成统计用的扁平记录，再由
 /// 纯函数聚合出统计中心「复习」分区的每一块（对齐 Anki 2.1.50+ 统计页）。
 ///
-/// - 只读 SRS 自己的数据（`srs_review_logs` / `srs_cards_cache` / 笔记），按 profile；
-///   不碰学习统计域的 `study_segments`（那是阅读 / 观看 / 游戏的时长事实表）。
+/// - 只读 SRS 自己的数据（有效复习投影 `srs_stat_reviews` / `srs_cards_cache` / 笔记），按
+///   profile；不碰学习统计域的 `study_segments`（那是阅读 / 观看 / 游戏的时长事实表）。统计
+///   中心总览要的复习时长由 `loadStatFacts(includeReviews:)` 读同一张投影表合并（BUG-3771）。
 /// - 「今天」与日序号一律走 SRS 的 [SrsDayContext]（翻日时刻 + UTC 偏移，与复习页、
 ///   牌组计数同一口径），不走统计页的 dateKey。
 /// - 复习 = 有效的评分日志（被 undo 撤销的、被判与原生日志等价的导入日志都不算，
@@ -88,6 +89,7 @@ class SrsStatCard {
     this.addedDay = 0,
     this.label = '',
     this.desiredRetention = 0.8,
+    this.byRecall = false,
   });
 
   final String id;
@@ -124,6 +126,11 @@ class SrsStatCard {
 
   /// 所在牌组的目标保留率。
   final double desiredRetention;
+
+  /// 复习卡按 RWKV-Instant 排队（所在牌组是 RWKV 且 RWKV 可用）：此刻回忆率降到目标时出现，
+  /// 存下的到期日不代表什么时候复习——未来到期 / 逾期 / 负担不计它（[SrsFutureDue.byRecall]），
+  /// [retrievability] 是 RWKV 的。
+  final bool byRecall;
 
   bool get isReview =>
       state == SrsStatCardState.young || state == SrsStatCardState.mature;
@@ -240,6 +247,31 @@ class SrsTodayStats {
   int kind(SrsStatReviewKind k) => byKind[k] ?? 0;
 }
 
+/// RWKV 牌组的复习卡此刻的情况（[SrsStatsData.rwkvNow]）：全是测量，不是预测。
+/// RWKV 不知道一张卡哪天到期（每答一题模型状态都在变），所以这些卡不进 [SrsFutureDue]。
+class SrsRwkvNow {
+  const SrsRwkvNow({
+    required this.total,
+    required this.due,
+    required this.near,
+    required this.dailyAverage,
+  });
+
+  /// 按 R 排队的复习卡（[SrsStatCard.byRecall]，未暂停、归 Fushi 排程）。
+  final int total;
+
+  /// 此刻 R ≤ 所在牌组目标保留率：现在就会出（与出卡同一口径）。
+  final int due;
+
+  /// R 高出目标保留率不到 [nearMargin]：接下来最先出的卡。
+  final int near;
+
+  /// 过去 30 天（含今天）这些卡每天实际复习的张数。
+  final double dailyAverage;
+
+  static const double nearMargin = 0.05;
+}
+
 /// 未来到期预测。
 class SrsFutureDue {
   const SrsFutureDue({
@@ -248,7 +280,11 @@ class SrsFutureDue {
     required this.youngPerDay,
     required this.daily,
     required this.dailyLoad,
+    this.byRecall = 0,
   });
+
+  /// 不计在内的复习卡：按 RWKV-Instant 排队（[SrsStatCard.byRecall]），没有有意义的到期日。
+  final int byRecall;
 
   /// 逾期（到期日早于今天）的复习卡数。
   final int overdue;
@@ -563,9 +599,14 @@ class SrsStatsData {
     final List<int> perDay = List<int>.filled(n, 0);
     final List<int> young = List<int>.filled(n, 0);
     int overdue = 0;
+    int byRecall = 0;
     double load = 0;
     for (final SrsStatCard c in cards) {
       if (!c.fushiScheduled || c.suspended) continue;
+      if (c.byRecall && c.isReview) {
+        byRecall++;
+        continue;
+      }
       int? offset;
       bool isYoung = true;
       switch (c.state) {
@@ -596,6 +637,61 @@ class SrsStatsData {
       youngPerDay: young,
       daily: true,
       dailyLoad: load,
+      byRecall: byRecall,
+    );
+  }
+
+  /// RWKV 牌组复习卡此刻的情况；范围里没有按 R 排队的复习卡时为 null。
+  SrsRwkvNow? get rwkvNow => _queueShape.rwkvNow;
+
+  /// 有没有按到期日排队、会进 [futureDue] 的卡（学习中的卡、FSRS 牌组的复习卡）。
+  /// 范围里只有 RWKV 复习卡时未来到期图是空的，统计页不显示它。
+  bool get hasDueDateCards => _queueShape.hasDueDateCards;
+
+  /// [rwkvNow] 与 [hasDueDateCards]：一趟遍历卡片、只扫近 30 天的复习，按这份数据记住（统计页每次 build
+  /// 都读它们，以前一次 build 全量扫两遍卡片加一遍复习）。数据是不可变快照，换范围 / 牌组是新对象。
+  late final ({SrsRwkvNow? rwkvNow, bool hasDueDateCards}) _queueShape =
+      _computeQueueShape();
+
+  ({SrsRwkvNow? rwkvNow, bool hasDueDateCards}) _computeQueueShape() {
+    final Set<String> ids = <String>{};
+    int due = 0;
+    int near = 0;
+    bool dueDate = false;
+    for (final SrsStatCard c in cards) {
+      if (!c.fushiScheduled || c.suspended) continue;
+      if (!(c.byRecall && c.isReview)) {
+        if (c.state != SrsStatCardState.newCard) dueDate = true;
+        continue;
+      }
+      ids.add(c.id);
+      final double? r = c.retrievability;
+      if (r == null || !r.isFinite) continue;
+      if (r <= c.desiredRetention) {
+        due++;
+      } else if (r <= c.desiredRetention + SrsRwkvNow.nearMargin) {
+        near++;
+      }
+    }
+    if (ids.isEmpty) return (rwkvNow: null, hasDueDateCards: dueDate);
+    int reviewed = 0;
+    // [reviews] 按时刻升序：从尾部往前扫，远离 30 天窗口就停（日序号按各条作答时的 UTC 偏移算，
+    // 与时刻不严格同序，留两天余量）。
+    for (int i = reviews.length - 1; i >= 0; i--) {
+      final SrsStatReview r = reviews[i];
+      if (r.day <= today - 32) break;
+      if (r.day > today - 30 && r.day <= today && ids.contains(r.cardId)) {
+        reviewed++;
+      }
+    }
+    return (
+      rwkvNow: SrsRwkvNow(
+        total: ids.length,
+        due: due,
+        near: near,
+        dailyAverage: reviewed / 30,
+      ),
+      hasDueDateCards: dueDate,
     );
   }
 
@@ -603,7 +699,9 @@ class SrsStatsData {
   int furthestDueOffset() {
     int far = 30;
     for (final SrsStatCard c in cards) {
-      if (!c.fushiScheduled || c.suspended || !c.isReview) continue;
+      if (!c.fushiScheduled || c.suspended || !c.isReview || c.byRecall) {
+        continue;
+      }
       final int off = (c.dueDay ?? today) - today + 1;
       if (off > far) far = off;
     }
@@ -986,70 +1084,81 @@ SrsHistogram srsUnitHistogram(List<double> values, {required int bins}) {
   );
 }
 
-/// 一张卡的有效日志 → 统计复习记录 + 成熟变化。[history] 用 [SrsCardHistory]
-/// 判有效（undo 撤销 / 等价导入都已排除）。
+/// 一条有效日志在统计里的投影（与日界无关的那部分；落在 srs.db 的 `srs_stat_reviews`，一条日志一行，
+/// 由 Rust `history::stats_from_json` 在缓存刷新时产出，见 `SrsDbStore._refreshStatProjection`）。
+///
+/// 日序号、小时、「提前复习」都依赖读方的日界口径，读时由 [srsStatsFromProjection] 算；
+/// 这里只留原始时刻、写入时的 UTC 偏移和「上一条有效结果的到期日」。分类 [kind] 依赖前序
+/// 有效状态，只能在按整张卡的有效历史重放时定，所以在投影里存死。
+class SrsStatProjection {
+  const SrsStatProjection({
+    required this.logId,
+    required this.cardId,
+    required this.occurredAt,
+    this.utcOffsetMin = 0,
+    this.rating,
+    this.kind = SrsStatReviewKind.newCard,
+    this.durationMs = 0,
+    this.prevDueDay,
+    this.maturityDelta = 0,
+  });
+
+  final String logId;
+
+  /// 归属卡（卡自己可见就是它自己；不可见（或已无缓存行）的前身卡归继承它历史的可见卡，见 `SrsStatReviews`）。
+  final String cardId;
+  final int occurredAt;
+  final int utcOffsetMin;
+
+  /// 1..4；null = 不是统计复习，只是成熟状态变化（[maturityDelta] ≠ 0）。
+  final int? rating;
+  final SrsStatReviewKind kind;
+  final int durationMs;
+
+  /// 按到期日排的复习卡复习：上一条有效结果的到期日（> 当天 = 提前复习）；其余 null。
+  final int? prevDueDay;
+
+  /// +1 = 这条之后变成熟，−1 = 掉出成熟，0 = 不变。
+  final int maturityDelta;
+
+  bool get isReview => rating != null;
+}
+
+/// 投影 → 统计复习记录 + 成熟变化，日序号 / 小时 / 提前复习按 [day] 的口径算。
 ({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})
-srsStatsFromHistory(SrsCardHistory history, SrsDayContext day) {
+srsStatsFromProjection(
+  Iterable<SrsStatProjection> projection,
+  SrsDayContext day,
+) {
   final List<SrsStatReview> reviews = <SrsStatReview>[];
   final List<SrsStatMaturityEvent> maturity = <SrsStatMaturityEvent>[];
-  SrsScheduleResult prev = SrsScheduleResult.initial;
-  bool prevMature = false;
-  for (final SrsReviewLog l in history.effective) {
-    final int dayIndex = day.dayIndexOf(l.occurredAt);
-    final int? rating = l.rating;
-    if (l.kind == SrsLogKind.review &&
-        rating != null &&
-        rating >= 1 &&
-        rating <= 4) {
-      final SrsStatReviewKind? kind = switch (l.reviewType) {
-        SrsReviewType.learn =>
-          prev.queue == SrsQueue.newCard
-              ? SrsStatReviewKind.newCard
-              : SrsStatReviewKind.learn,
-        SrsReviewType.review =>
-          prev.scheduledDays >= kSrsMatureIntervalDays
-              ? SrsStatReviewKind.mature
-              : SrsStatReviewKind.young,
-        SrsReviewType.relearn => SrsStatReviewKind.relearn,
-        SrsReviewType.filtered => SrsStatReviewKind.filtered,
-        _ => null,
-      };
-      if (kind != null) {
-        final int offsetMs = l.utcOffsetMin * 60000;
-        reviews.add(
-          SrsStatReview(
-            cardId: l.cardId,
-            at: l.occurredAt,
-            day: dayIndex,
-            hour: ((l.occurredAt + offsetMs) % _dayMs) ~/ _hourMs,
-            rating: rating,
-            kind: kind,
-            durationMs: math.max(0, l.durationMs),
-            early:
-                l.reviewType == SrsReviewType.review &&
-                prev.queue == SrsQueue.review &&
-                prev.dueDay != null &&
-                prev.dueDay! > dayIndex,
-          ),
-        );
-      }
-    }
-    final SrsScheduleResult? res = l.result;
-    if (res == null) continue;
-    final bool mature =
-        res.queue == SrsQueue.review &&
-        res.scheduledDays >= kSrsMatureIntervalDays;
-    if (mature != prevMature) {
-      maturity.add(
-        SrsStatMaturityEvent(
-          cardId: l.cardId,
+  for (final SrsStatProjection p in projection) {
+    final int dayIndex = day.dayIndexOf(p.occurredAt);
+    final int? rating = p.rating;
+    if (rating != null) {
+      final int offsetMs = p.utcOffsetMin * 60000;
+      reviews.add(
+        SrsStatReview(
+          cardId: p.cardId,
+          at: p.occurredAt,
           day: dayIndex,
-          delta: mature ? 1 : -1,
+          hour: ((p.occurredAt + offsetMs) % _dayMs) ~/ _hourMs,
+          rating: rating,
+          kind: p.kind,
+          durationMs: p.durationMs,
+          early: p.prevDueDay != null && p.prevDueDay! > dayIndex,
         ),
       );
-      prevMature = mature;
     }
-    prev = res;
+    if (p.maturityDelta != 0) {
+      maturity.add(
+        SrsStatMaturityEvent(
+          cardId: p.cardId,
+          day: dayIndex,
+          delta: p.maturityDelta,
+        ),
+      );
+    }
   }
   return (reviews: reviews, maturity: maturity);
 }

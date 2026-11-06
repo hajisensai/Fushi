@@ -8,9 +8,16 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:multi_value_listenable_builder/multi_value_listenable_builder.dart';
-import 'package:fushi/creator.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/creator/audio_export_field.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 
 /// Base class for audio creator fields (term audio and sentence audio).
 /// Contains all shared audio-player logic so concrete subclasses only need
@@ -26,10 +33,12 @@ abstract class BaseAudioField extends AudioExportField {
 
   AudioPlayer _audioPlayer = AudioPlayer();
 
-  final ValueNotifier<Duration> _positionNotifier =
-      ValueNotifier<Duration>(Duration.zero);
-  final ValueNotifier<Duration?> _durationNotifier =
-      ValueNotifier<Duration>(Duration.zero);
+  final ValueNotifier<Duration> _positionNotifier = ValueNotifier<Duration>(
+    Duration.zero,
+  );
+  final ValueNotifier<Duration?> _durationNotifier = ValueNotifier<Duration>(
+    Duration.zero,
+  );
   final ValueNotifier<PlayerState?> _playerStateNotifier =
       ValueNotifier<PlayerState?>(null);
 
@@ -108,9 +117,11 @@ abstract class BaseAudioField extends AudioExportField {
   /// Set up audio for new file.
   Future<void> initialiseAudio(File file) {
     final int generation = ++_audioLoadGeneration;
-    _audioLoadQueue = _audioLoadQueue.catchError((Object e) {
-      debugPrint('[creator-audio] previous load failed: $e');
-    }).then((_) => _replaceAudioPlayer(file, generation));
+    _audioLoadQueue = _audioLoadQueue
+        .catchError((Object e) {
+          debugPrint('[creator-audio] previous load failed: $e');
+        })
+        .then((_) => _replaceAudioPlayer(file, generation));
     return _audioLoadQueue;
   }
 
@@ -173,9 +184,7 @@ abstract class BaseAudioField extends AudioExportField {
   /// Clears this field's data. The state refresh afterwards is not performed
   /// here and should be performed by the invocation of the clear field button.
   @override
-  void clearFieldState({
-    required CreatorModel creatorModel,
-  }) {
+  void clearFieldState({required CreatorModel creatorModel}) {
     unawaited(_audioPlayer.stop());
     super.clearFieldState(creatorModel: creatorModel);
   }
@@ -183,9 +192,7 @@ abstract class BaseAudioField extends AudioExportField {
   /// Build the play/pause button.
   Widget buildPlayButton() {
     return MultiValueListenableBuilder(
-      valueListenables: [
-        _playerStateNotifier,
-      ],
+      valueListenables: [_playerStateNotifier],
       builder: (context, values, _) {
         PlayerState? playerState = values.elementAt(0);
 
@@ -229,8 +236,9 @@ abstract class BaseAudioField extends AudioExportField {
               );
 
               _noisySub?.cancel();
-              _noisySub =
-                  session.becomingNoisyEventStream.listen((event) async {
+              _noisySub = session.becomingNoisyEventStream.listen((
+                event,
+              ) async {
                 await _audioPlayer.pause();
                 session?.setActive(false);
               });
@@ -319,12 +327,13 @@ abstract class BaseAudioField extends AudioExportField {
 
         return Expanded(
           child: gamepadSeekableSlider(
-              value: sliderValue <= max ? sliderValue : 0.0,
-              max: max,
-              step: 5000, // gamepad D-pad Left/Right = seek ±5s
-              onChanged: (progress) {
-                _audioPlayer.seek(Duration(milliseconds: progress.floor()));
-              }),
+            value: sliderValue <= max ? sliderValue : 0.0,
+            max: max,
+            step: 5000, // gamepad D-pad Left/Right = seek ±5s
+            onChanged: (progress) {
+              _audioPlayer.seek(Duration(milliseconds: progress.floor()));
+            },
+          ),
         );
       },
     );
@@ -357,9 +366,11 @@ abstract class BaseAudioField extends AudioExportField {
   @override
   void onCreatorClose() {
     _audioLoadGeneration++;
-    _audioLoadQueue = _audioLoadQueue.catchError((Object e) {
-      debugPrint('[creator-audio] pending load failed on close: $e');
-    }).then((_) => _disposeAudioPlayer());
+    _audioLoadQueue = _audioLoadQueue
+        .catchError((Object e) {
+          debugPrint('[creator-audio] pending load failed on close: $e');
+        })
+        .then((_) => _disposeAudioPlayer());
     unawaited(_audioLoadQueue);
   }
 }

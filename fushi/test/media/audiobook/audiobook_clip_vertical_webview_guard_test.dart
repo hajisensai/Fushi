@@ -13,15 +13,15 @@ import '../../helpers/source_guard.dart';
 /// JPEG image2 ffmpeg pipeline; horizontal keeps the Flutter raster path.
 void main() {
   AudiobookClipTextLayout verticalLayout() => computeClipTextLayout(
-        textLength: 10,
-        baseFontSize: 40,
-        vertical: true,
-        lineHeight: 1.6,
-        background: const Color(0xFF101010),
-        foreground: const Color(0xFFF0F0F0),
-        // Opaque red so the highlight rgba is deterministic in the HTML.
-        highlight: const Color(0xFFFF0000),
-      );
+    textLength: 10,
+    baseFontSize: 40,
+    vertical: true,
+    lineHeight: 1.6,
+    background: const Color(0xFF101010),
+    foreground: const Color(0xFFF0F0F0),
+    // Opaque red so the highlight rgba is deterministic in the HTML.
+    highlight: const Color(0xFFFF0000),
+  );
 
   test('buildAudiobookClipVerticalHtml uses reader vertical-rl typography', () {
     final String html = buildAudiobookClipVerticalHtml(
@@ -45,24 +45,24 @@ void main() {
   });
 
   test(
-      'vertical HTML paints the current sentence with the sentenceAudioHighlight highlight',
-      () {
-    final String html = buildAudiobookClipVerticalHtml(
-      segments: const <AudiobookClipTextSegment>[
-        AudiobookClipTextSegment(text: 'あ'),
-      ],
-      layout: verticalLayout(),
-    );
-    // Highlight class is the sasayaki backing; opaque red => rgba(255,0,0,1.00).
-    expect(html.contains('.clip-cue.current'), isTrue);
-    expect(html.contains('rgba(255,0,0,1.00)'), isTrue);
-  });
+    'vertical HTML paints the current sentence with the sentenceAudioHighlight highlight',
+    () {
+      final String html = buildAudiobookClipVerticalHtml(
+        segments: const <AudiobookClipTextSegment>[
+          AudiobookClipTextSegment(text: 'あ'),
+        ],
+        layout: verticalLayout(),
+      );
+      // Highlight class is the sasayaki backing; opaque red => rgba(255,0,0,1.00).
+      expect(html.contains('.clip-cue.current'), isTrue);
+      expect(html.contains('rgba(255,0,0,1.00)'), isTrue);
+    },
+  );
 
   // BUG-808：逐句高亮不得改变盒子占位尺寸，否则 vertical-rl 流里高亮句被撑大、挤动
   // 后续所有句 → 整段文字逐帧重新排版抖动。守卫：基础 `.clip-cue` 常驻 padding，
   // `.current` 只换 background-color、绝不再单独加 padding（与 Flutter 横排路径同原则）。
-  test(
-      'BUG-808: base .clip-cue carries padding, .current only swaps bg '
+  test('BUG-808: base .clip-cue carries padding, .current only swaps bg '
       '(no reflow)', () {
     final String html = buildAudiobookClipVerticalHtml(
       segments: const <AudiobookClipTextSegment>[
@@ -72,20 +72,29 @@ void main() {
       layout: verticalLayout(),
     );
     // 基础 cue 规则常驻 padding（高亮前后盒子恒等）。
-    final RegExp baseRule =
-        RegExp(r'\.clip-cue\s*\{([^}]*)\}', multiLine: true);
+    final RegExp baseRule = RegExp(
+      r'\.clip-cue\s*\{([^}]*)\}',
+      multiLine: true,
+    );
     final Match? base = baseRule.firstMatch(html);
     expect(base, isNotNull, reason: 'base .clip-cue rule must exist');
-    expect(base!.group(1)!.contains('padding'), isTrue,
-        reason: 'every cue must reserve the same padding up-front');
+    expect(
+      base!.group(1)!.contains('padding'),
+      isTrue,
+      reason: 'every cue must reserve the same padding up-front',
+    );
     // 高亮规则只改 background-color，不含 padding（否则撑大盒子导致 reflow）。
-    final RegExp currentRule =
-        RegExp(r'\.clip-cue\.current\s*\{([^}]*)\}', multiLine: true);
+    final RegExp currentRule = RegExp(
+      r'\.clip-cue\.current\s*\{([^}]*)\}',
+      multiLine: true,
+    );
     final Match? current = currentRule.firstMatch(html);
     expect(current, isNotNull);
-    expect(current!.group(1)!.contains('padding'), isFalse,
-        reason:
-            'highlight must not add padding (would reflow vertical-rl flow)');
+    expect(
+      current!.group(1)!.contains('padding'),
+      isFalse,
+      reason: 'highlight must not add padding (would reflow vertical-rl flow)',
+    );
     expect(current.group(1)!.contains('background-color'), isTrue);
   });
 
@@ -100,8 +109,7 @@ void main() {
     expect(html.contains('<b>'), isFalse);
   });
 
-  test(
-      'source guard: renderer uses headless WebView + takeScreenshot, logs '
+  test('source guard: renderer uses headless WebView + takeScreenshot, logs '
       'failures (no silent swallow)', () {
     final String code = File(
       'lib/src/media/audiobook/audiobook_clip_webview_render.dart',
@@ -118,20 +126,22 @@ void main() {
     );
   });
 
-  test(
-      'source guard: Flutter clip card no longer rotates vertical (RotatedBox '
+  test('source guard: Flutter clip card no longer rotates vertical (RotatedBox '
       'gone)', () {
     final String code = File(
       'lib/src/media/audiobook/audiobook_clip_text_render.dart',
     ).readAsStringSync();
-    expect(code.contains('RotatedBox('), isFalse,
-        reason: 'vertical must go through the WebView path, not a 90deg block '
-            'rotation (unreadable)');
+    expect(
+      code.contains('RotatedBox('),
+      isFalse,
+      reason:
+          'vertical must go through the WebView path, not a 90deg block '
+          'rotation (unreadable)',
+    );
     expect(code.contains('quarterTurns'), isFalse);
   });
 
-  test(
-      'source guard: caller routes vertical to the WebView renderers, '
+  test('source guard: caller routes vertical to the WebView renderers, '
       'horizontal to Flutter raster, both feed the JPEG pipeline', () {
     final String code = File(
       'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
@@ -154,11 +164,17 @@ void main() {
       'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
     ).readAsStringSync();
     expect(code.contains("videoExt = 'mp4'"), isTrue);
-    expect(code.contains("'mov'"), isFalse,
-        reason: 'output must be .mp4, never MJPEG/.mov again');
+    expect(
+      code.contains("'mov'"),
+      isFalse,
+      reason: 'output must be .mp4, never MJPEG/.mov again',
+    );
     expect(code.contains(r"File('$base.$videoExt')"), isTrue);
-    expect(code.contains(r"File('$base.mov')"), isFalse,
-        reason: 'output container must follow the codec, not hardcode .mov');
+    expect(
+      code.contains(r"File('$base.mov')"),
+      isFalse,
+      reason: 'output container must follow the codec, not hardcode .mov',
+    );
   });
 
   // TODO-2357 契约反转：移动端 ffmpeg-kit 重编入 libx264 后，编码器**不再有平台分支**。
@@ -172,14 +188,22 @@ void main() {
     final String src = File(
       'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
     ).readAsStringSync().replaceAll('\r\n', '\n');
-    final String body =
-        methodBody(src, 'Future<void> _runAudiobookClipPipeline({');
+    final String body = methodBody(
+      src,
+      'Future<void> _runAudiobookClipPipeline({',
+    );
 
     // 编码器开关及其透传必须彻底消失。
-    expect(RegExp(r'\buseH264\b').hasMatch(body), isFalse,
-        reason: 'TODO-2357：编码器平台开关已消除，重新出现即说明分支被加回来了');
-    expect(RegExp(r'\bh264\s*:').hasMatch(body), isFalse,
-        reason: '合成参数表不再接受 h264 开关，透传实参必须一并删除');
+    expect(
+      RegExp(r'\buseH264\b').hasMatch(body),
+      isFalse,
+      reason: 'TODO-2357：编码器平台开关已消除，重新出现即说明分支被加回来了',
+    );
+    expect(
+      RegExp(r'\bh264\s*:').hasMatch(body),
+      isFalse,
+      reason: '合成参数表不再接受 h264 开关，透传实参必须一并删除',
+    );
 
     // isDesktop 仍存在，但只准用于产物落盘/清理，不得再参与编码器选择。
     final RegExp isDesktopDecl = RegExp(r'\bbool\s+isDesktop\s*=\s*([^;]+);');
@@ -191,22 +215,28 @@ void main() {
       'Platform.isMacOS',
       'Platform.isLinux',
     ]) {
-      expect(desktopRhs, contains(platform),
-          reason: 'isDesktop 必须由真实平台判据推出（它仍决定存盘 vs 系统分享）');
+      expect(
+        desktopRhs,
+        contains(platform),
+        reason: 'isDesktop 必须由真实平台判据推出（它仍决定存盘 vs 系统分享）',
+      );
     }
 
     // 参数表本体：必须是单一常量列表，且不含任何条件分支。
-    final String exportSrc =
-        File('lib/src/media/audiobook/audiobook_clip_export.dart')
-            .readAsStringSync()
-            .replaceAll('\r\n', '\n');
+    final String exportSrc = File(
+      'lib/src/media/audiobook/audiobook_clip_export.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
     expect(
       exportSrc.contains('const List<String> _clipVideoCodecArgs = <String>['),
       isTrue,
-      reason: '编码器参数表必须是单一 const 列表——一旦退回带参函数，'
+      reason:
+          '编码器参数表必须是单一 const 列表——一旦退回带参函数，'
           '平台分支就有地方藏了',
     );
-    expect(exportSrc.contains("'mpeg4'"), isFalse,
-        reason: 'mpeg4 规格上限低于 1080×1920，会静默产出解不了的文件，不得回流');
+    expect(
+      exportSrc.contains("'mpeg4'"),
+      isFalse,
+      reason: 'mpeg4 规格上限低于 1080×1920，会静默产出解不了的文件，不得回流',
+    );
   });
 }

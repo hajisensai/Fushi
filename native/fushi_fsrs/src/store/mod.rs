@@ -1,0 +1,2083 @@
+//! SRS 事件库：Rust 独占的 `srs.db`（docs/specs/2026-10-23-srs-rust-store.md）。
+//!
+//! 一条写连接 + 两条读连接，各在一把 Mutex 里：写命令 = 写连接上的一个事务（这把锁就是 SRS 的
+//! 写锁），读命令走读连接上的 WAL 快照，不被长写挡住；Drift 执行器在事务外的查询走它自己的只读连接池
+//! （[SrsCore::snapshot_select]，store/read_pool.rs：并发的查询各占一条、互不排队），也不与 Rust 的读命令
+//! （备份 `VACUUM INTO`、投影扫描）互相排队。对象可以从任意线程 / isolate 调用。
+//!
+//! 关闭（[SrsCore::close]）与在途调用互斥：它先后拿读、写两把锁再丢掉连接，所以会等别的线程手上
+//! 的命令跑完；之后的命令（含另开只读会话 [SrsCore::read_session]）一律报「已关闭」。还没结束的只读
+//! 会话一并失效：在途的那次读跑完后连接随即关掉，之后经它的调用同样报「已关闭」——close 返回时
+//! 本对象打开过的 srs.db 连接一条不剩（Windows 下关库后文件可删可改名）。C ABI 的句柄是
+//! 句柄表里的编号、调用期间握一份 `Arc`（见 [ffi]），结构体在最后一份引用放掉时释放。
+//!
+//! 只打开 `srs.db`、它的备份快照副本或自己生成的临时文件；绝不打开主库 `fushi.db`（同一进程里
+//! Drift 那份 SQLite 与这里自带的一份同开一个文件，会在 POSIX 平台上互相清掉文件锁）。
+
+pub(crate) mod browse;
+pub mod bulk;
+pub(crate) mod caches;
+pub(crate) mod compact;
+pub mod ffi;
+pub(crate) mod ids;
+mod mem_budget;
+mod profile_data;
+mod projections;
+#[cfg(test)]
+mod projections_scan_tests;
+pub(crate) mod queue;
+mod read_pool;
+pub mod rows;
+pub mod schema;
+pub(crate) mod slim;
+pub mod study;
+pub mod sync2;
+
+use std::ops::{Deref, DerefMut};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::time::Duration;
+
+use rusqlite::types::{Value, ValueRef};
+use rusqlite::{Connection, OpenFlags};
+
+const LEGACY_KEY: &str = "legacy_import";
+
+/// 已关闭的库上任何命令的错误文本（Dart 侧按它认「已关闭」）。
+pub(crate) const CLOSED: &str = "srs store is closed";
+
+/// 备份快照的目标卷空间不够（[SrsCore::snapshot_into]）：错误文本前缀，后面是 `{"need","free"}`。
+pub const SNAPSHOT_NO_SPACE: &str = "srs.db snapshot needs more free disk space: ";
+
+pub struct SrsCore {
+    // 字段按声明顺序析构：只读连接先关，写连接最后关。最后一个关闭的连接负责把 WAL 并回主文件
+    // 并删掉 -wal；只读连接做不了，让它最后关会把整段 WAL 留在磁盘上（拷库 / 换库时丢数据）。
+    // `None` = 已关闭（[SrsCore::close]）。
+    reader: Mutex<Option<Connection>>,
+    /// Drift 执行器事务外查询专用的只读连接池（[SrsCore::snapshot_select]）。
+    drift_readers: read_pool::ReadPool,
+    /// Drift 写那一路（顺序执行器，`ffsrs_store_exec` mode 2）在事务外的查询专用的一条只读连接（[SrsCore::select]）。
+    /// 不从 [SrsCore::drift_readers] 借：Dart 查询道的 worker 数等于池上限，几条长读就能把池借满，写 isolate 上的
+    /// 查询若去池里等连接，排在它后面的所有写都跟着等（PR 2771 审查）。写那一路一次只跑一条语句，一条连接就不会等。
+    drift_write_reader: Mutex<Option<Connection>>,
+    writer: Mutex<Option<Connection>>,
+    /// Drift 在写连接上开着事务（它用 BEGIN / SAVEPOINT 语句经 [SrsCore::exec] 开关）。每条经 [SrsCore::exec] /
+    /// [SrsCore::exec_batch] 跑完的语句之后按写连接的 autocommit 状态更新；只有这两个入口能让事务跨命令留着
+    /// （Rust 自己的写命令在一次调用里提交或回滚），所以写锁空闲时它与写连接的状态一致。开着时 Drift 的查询与
+    /// 只读命令都留在写连接上（看得见事务里未提交的行），否则走读连接的 WAL 快照。
+    drift_tx: AtomicBool,
+    /// 旧库搬迁的事务开着（写连接上挂着一个 BEGIN）：别的写命令一律拒绝。
+    legacy_open: AtomicBool,
+    /// 库文件路径（[SrsCore::read_session] 另开只读连接用）。
+    path: PathBuf,
+    /// 开过的只读会话（弱引用）：[SrsCore::close] 逐个关掉还没结束的。只在持读锁时登记，close 先拿
+    /// 读锁，所以不会漏掉一个正在开的会话。
+    sessions: Mutex<Vec<Weak<ReadSession>>>,
+    /// 分批收段的阶段（[sync2::transport::IngestPhase]：没有 / 会话开着 / 收尾刷缓存中）。只经
+    /// [SrsCore::set_ingest_phase] 转换。
+    ingest: Mutex<sync2::transport::IngestPhase>,
+    /// 有写入在等写锁，正在投的收段那一片尽快收（[SrsCore::sync2_ingest_yield]）。
+    ingest_yield: AtomicBool,
+    /// [SrsCore] `ingest` 不是 `Idle` 时为真：写连接放回时不还页缓存（[trim_idle_cache]），每 150 ms 一片的投递与
+    /// 收尾的各块就不反复从盘上读回同一批索引页。它只是阶段的无锁镜像（写连接守卫析构时不能去拿会话锁），只由
+    /// [SrsCore::set_ingest_phase] 与阶段一起写，不单独置位；会话怎么结束（收尾刷完、出错作废、Dart 收手发
+    /// `ingest_end`、删 profile）页缓存就随之放掉，不靠下一轮碰巧收尾。
+    ingest_holds_cache: AtomicBool,
+    /// Dart 的批量写入（`bulkWrites`：导入包、大批改写）进行中：写连接放回时不还页缓存，批与批之间不从盘上重读同一批
+    /// 索引页（`bulk_cache` 命令置位 / 清除，[SrsCore::set_bulk_holds_cache]）。结束后下一次放回照常收回。
+    bulk_holds_cache: AtomicBool,
+    /// 写连接页缓存上限的自适应状态（store/mem_budget.rs）：取写连接时按可用内存重算。
+    writer_cache: Mutex<mem_budget::WriterCache>,
+    /// 库里可能有进行中的新设备收段通道（store/sync2/channel.rs，`sync2_boot` 有行）：打开时按已提交的表置、开通道
+    /// 时置位，做完通道后写连接不在事务里时按表重置。为假时分发器不必拿写锁查通道（只读命令不排在写锁后面）。
+    /// 只能多不能少：库只由这一个 [SrsCore] 打开写（别的进程 / 实例开同一个库不在这个约定里）。
+    channel_live: AtomicBool,
+    /// 常驻复习队列（store/queue.rs）：写连接上的触发器记下写过的卡 / 日志，`study` 按 profile 增量排队。
+    study_hub: Arc<queue::StudyHub>,
+    /// 浏览页与 AnkiConnect 共用的常驻会话（store/browse.rs，按 profile）：搜索语料、列数据随写入增量更新；
+    /// 按持有者登记，最后一个持有者释放才关。
+    browse: Mutex<browse::Sessions>,
+    /// 测试钩子：收段预处理拿完公钥、开始解码之前调用（测预处理不持写锁）。
+    #[cfg(test)]
+    #[allow(clippy::type_complexity)]
+    pub(crate) ingest_prepare_hook: Mutex<Option<Box<dyn Fn() + Send>>>,
+    /// 测试钩子：收段的一片投递完、提交之前（还持着写锁、事务没结束）调用，参数是这个库本身。
+    #[cfg(test)]
+    #[allow(clippy::type_complexity)]
+    pub(crate) ingest_commit_hook: Mutex<Option<Box<dyn Fn(&SrsCore) + Send>>>,
+    /// 存活计数（[live_cores]）：构造时 +1、结构体真正释放时 -1。放最后：连接都关完才减。
+    _live: LiveCore,
+}
+
+/// 进程内还没释放的 [SrsCore] 个数（含已从句柄表摘掉、在途调用还握着 `Arc` 的）。
+static LIVE_CORES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// [SrsCore] 的存活令牌：内存诊断（`ffsrs_store_diag_counts`）看「退役的库是否还驻留」。
+struct LiveCore;
+
+impl LiveCore {
+    fn new() -> Self {
+        LIVE_CORES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Self
+    }
+}
+
+impl Drop for LiveCore {
+    fn drop(&mut self) {
+        LIVE_CORES.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// 进程内还没释放的 [SrsCore] 个数。
+pub fn live_cores() -> usize {
+    LIVE_CORES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// 一条独立的只读连接 + 一个读事务（[SrsCore::read_session]）：整段读取看到开会话那一刻的快照，
+/// 不占 [SrsCore] 自己的读 / 写连接。[ReadSession::close]（或析构）回滚并关闭；所属的库关闭时也一并
+/// 关闭（[SrsCore::close]），之后的查询报「已关闭」。可以跨线程共享：连接在一把锁里，关闭会等在途查询跑完。
+pub struct ReadSession {
+    // `None` = 已关闭。
+    conn: Mutex<Option<Connection>>,
+}
+
+/// 打开着的一条连接（[SrsCore::reader] / [SrsCore::writer]），持有它就持有那把锁。写连接的守卫带着常驻复习队列：
+/// 释放时写连接已回到 autocommit（事务提交或回滚完）就把触发器记下的「未提交」id 挪成「已提交」（store/queue.rs）。
+/// 这一步晚于 COMMIT 对别的连接可见，且没法与 COMMIT 原子：SQLite 的 commit hook 在提交可见之前调（提前挪会让读快照
+/// 取走 id 却看不到提交 → 永远漏读），提交之后才有的回调与这里一样晚。所以正确性不靠挪的时机：排队的读路径连
+/// 「未提交」的 id 一起重读（只读不清，store/queue.rs `with_session`），这里只负责尽早把它们挪成可清的。
+pub(crate) struct Conn<'a>(
+    MutexGuard<'a, Option<Connection>>,
+    Option<&'a queue::StudyHub>,
+    Option<&'a AtomicBool>,
+    /// 批量写入期间留着页缓存（[SrsCore] `bulk_holds_cache`）。
+    Option<&'a AtomicBool>,
+);
+
+impl<'a> Conn<'a> {
+    fn of(guard: MutexGuard<'a, Option<Connection>>) -> Result<Self, String> {
+        Self::with_hub(guard, None)
+    }
+
+    fn with_hub(
+        guard: MutexGuard<'a, Option<Connection>>,
+        hub: Option<&'a queue::StudyHub>,
+    ) -> Result<Self, String> {
+        if guard.is_none() {
+            return Err(CLOSED.to_string());
+        }
+        Ok(Self(guard, hub, None, None))
+    }
+}
+
+/// 命令之间一条连接留着的页缓存上限。一条命令里照样能用满 `cache_size`（64 MB：收段后的缓存刷新这类大写事务
+/// 靠它不反复换页，压到 8 MB 实测端到端慢约 20%）；命令结束（守卫放锁）时还超过这个数，就把能丢的页还掉，
+/// 大命令跑完不常驻几十 MB。
+const IDLE_CACHE_BYTES: i32 = 8 * 1024 * 1024;
+
+/// 一条命令跑完、连接放回时：页缓存超过 [IDLE_CACHE_BYTES] 就把能丢的页还掉。
+pub(crate) fn trim_idle_cache(c: &Connection) {
+    let (mut used, mut high) = (0, 0);
+    // SAFETY: 句柄属于调用方独占着的这条连接，只读一项统计。
+    let rc = unsafe {
+        rusqlite::ffi::sqlite3_db_status(
+            c.handle(),
+            rusqlite::ffi::SQLITE_DBSTATUS_CACHE_USED,
+            &mut used,
+            &mut high,
+            0,
+        )
+    };
+    if rc == rusqlite::ffi::SQLITE_OK && used > IDLE_CACHE_BYTES {
+        let _ = c.release_memory();
+    }
+}
+
+/// [SrsCore::snapshot_select] 拒绝的语句（不是能放到只读连接上的查询）的错误文本：Dart 侧据此把它改发写连接那一路。
+pub const NOT_SNAPSHOT: &str = "srs: not a snapshot query";
+
+impl Drop for Conn<'_> {
+    fn drop(&mut self) {
+        let Some(c) = self.0.as_ref() else { return };
+        if let Some(hub) = self.1 {
+            if c.is_autocommit() {
+                hub.settle();
+            }
+        }
+        // 收段会话开着 / 收尾刷缓存中 / 批量写入期间留着页缓存（[SrsCore] `ingest_holds_cache` / `bulk_holds_cache`）。
+        let held = |h: Option<&AtomicBool>| {
+            h.is_some_and(|h| h.load(std::sync::atomic::Ordering::Relaxed))
+        };
+        if !held(self.2) && !held(self.3) {
+            trim_idle_cache(c);
+        }
+    }
+}
+
+impl Deref for Conn<'_> {
+    type Target = Connection;
+
+    fn deref(&self) -> &Connection {
+        self.0
+            .as_ref()
+            .expect("Conn::of checked the connection is open")
+    }
+}
+
+impl DerefMut for Conn<'_> {
+    fn deref_mut(&mut self) -> &mut Connection {
+        self.0
+            .as_mut()
+            .expect("Conn::of checked the connection is open")
+    }
+}
+
+impl ReadSession {
+    /// 在会话的读事务里跑一条只读语句；结果编码同 [SrsCore::debug_query]（首行是列名）。
+    pub fn query(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
+        let conn = Conn::of(
+            self.conn
+                .lock()
+                .map_err(|_| "srs read session poisoned".to_string())?,
+        )?;
+        let out = query_rows(&conn, sql, params);
+        #[cfg(feature = "id_audit")]
+        ids::audit::take(&conn, sql)?;
+        out
+    }
+
+    /// 回滚读事务并关闭连接（幂等）。会等别的线程上在途的查询跑完；之后的查询报「已关闭」。
+    pub fn close(&self) {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner()).take();
+        drop(conn);
+    }
+}
+
+/// [sql] 是不是能放到读连接上跑的查询：第一个关键字（跳过空白与注释）是 SELECT / WITH / VALUES。
+/// 是否真的只读另由 SQLite 判（[SrsCore::select]）；这里先排除 PRAGMA 与事务控制语句——SQLite 把 BEGIN /
+/// SAVEPOINT 也判为只读，放到读连接上会在那条连接上开一个不会结束的事务。
+fn snapshot_query(sql: &str) -> bool {
+    let mut rest = sql;
+    loop {
+        rest = rest.trim_start();
+        if let Some(r) = rest.strip_prefix("--") {
+            rest = r.find('\n').map_or("", |i| &r[i + 1..]);
+        } else if let Some(r) = rest.strip_prefix("/*") {
+            rest = r.find("*/").map_or("", |i| &r[i + 2..]);
+        } else {
+            break;
+        }
+    }
+    let word: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphabetic())
+        .collect();
+    ["SELECT", "WITH", "VALUES"]
+        .iter()
+        .any(|k| word.eq_ignore_ascii_case(k))
+}
+
+/// 一条只读语句的结果页：首行列名，其后每行一组值（rows.rs 编码）。写语句一律拒绝。
+fn query_rows(conn: &Connection, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    if !stmt.readonly() {
+        return Err("only read-only statements are allowed here".into());
+    }
+    let names: Vec<Value> = stmt
+        .column_names()
+        .iter()
+        .map(|n| Value::Text((*n).to_string()))
+        .collect();
+    let n = names.len();
+    let id_cols = ids::id_columns(&stmt);
+    let mut out: Vec<Vec<Value>> = vec![names];
+    let mut q = stmt
+        .query(rusqlite::params_from_iter(params.iter()))
+        .map_err(|e| e.to_string())?;
+    while let Some(row) = q.next().map_err(|e| e.to_string())? {
+        let mut vals = Vec::with_capacity(n);
+        for i in 0..n {
+            let v = row.get_ref(i).map_err(|e| e.to_string())?;
+            vals.push(match ids::outward(&id_cols, i, v) {
+                Some(t) => Value::Text(t),
+                None => v.into(),
+            });
+        }
+        out.push(vals);
+    }
+    Ok(rows::encode(n, &out))
+}
+
+/// 测试构建：关库时查 ID 绑定审计（store/ids.rs `audit`）。
+#[cfg(test)]
+impl Drop for SrsCore {
+    fn drop(&mut self) {
+        if let Ok(w) = self.writer() {
+            ids::audit::check_stored(&w);
+        }
+        ids::audit::check();
+    }
+}
+
+/// [read_pool::ReadPool] 的开连接函数：只读打开、配置同读连接。
+fn open_drift_reader(path: &Path) -> Result<Connection, String> {
+    let conn = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|e| format!("open drift reader {}: {e}", path.display()))?;
+    configure(&conn)?;
+    #[cfg(any(test, feature = "id_audit"))]
+    let conn = ids::audit::installed(conn);
+    Ok(conn)
+}
+
+/// 一条连接在 mmap 预算里的角色（BUG-4013）。SQLite 的 mmap 是**每条连接各映射一份**主库文件：写连接 + 读连接
+/// + 读连接池（至多 [read_pool::READERS_MAX] 条）+ 写那一路的只读连接 + 读会话，每条至多 256 MB 的**虚拟地址**（物理
+/// 页是系统文件缓存，各连接共享、干净可回收，不是每条连接真占 256 MB 内存）。
+///
+/// 64 位进程（含 iOS，配合 extended-virtual-addressing）地址空间远大于此，全部连接照旧映射：关掉 mmap 反而让每条
+/// 连接把页拷进私有页缓存（cache_size 64 MB/条，真占内存）并多一次拷贝，是负优化。只有 32 位进程（Android
+/// armeabi-v7a，整个进程约 3 GB 地址空间）6–7 × 256 MB 放不下：那里次要连接不映射，只保留写连接与常驻读连接。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum MmapRole {
+    /// 写连接、常驻读连接。
+    Primary,
+    /// 读连接池、写那一路的只读连接、读会话、快照整理。
+    Secondary,
+}
+
+/// 单条连接的 mmap 上限（字节）。
+pub(crate) const MMAP_BYTES: i64 = 268_435_456;
+
+/// [role] 这条连接在本平台上的 mmap_size。
+pub(crate) fn mmap_size_for(role: MmapRole) -> i64 {
+    match role {
+        MmapRole::Primary => MMAP_BYTES,
+        MmapRole::Secondary if cfg!(target_pointer_width = "32") => 0,
+        MmapRole::Secondary => MMAP_BYTES,
+    }
+}
+
+fn configure(conn: &Connection) -> Result<(), String> {
+    configure_as(conn, MmapRole::Secondary)
+}
+
+fn configure_as(conn: &Connection, role: MmapRole) -> Result<(), String> {
+    conn.busy_timeout(Duration::from_millis(5000))
+        .map_err(|e| e.to_string())?;
+    // 摘要桶触发器用的 SQL 函数（store/sync2/digest.rs，审查 S-7）：三张投影表的每次写入都经它们增减桶值。
+    sync2::digest::register(conn).map_err(|e| e.to_string())?;
+    // ID 列编码（store/ids.rs）：`srs_id` / `srs_idt`，Rust 与 Dart 的 SQL 都用。
+    ids::register(conn).map_err(|e| e.to_string())?;
+    slim::register(conn).map_err(|e| e.to_string())?;
+    // mmap + 64 MB 页缓存：缓存刷新 / 历史这类一次读几万行日志的命令，默认 2 MB 页缓存下每页一次
+    // 系统调用（3000 笔记 / 6.6 万条日志实测读取 320–400 ms → 158 ms）。mmap 只占虚拟地址，
+    // 上限 256 MB；WAL 模式下 SQLite 照常处理。哪些连接映射见 [MmapRole]。
+    conn.execute_batch(&format!(
+        "PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = OFF; \
+         PRAGMA mmap_size = {}; PRAGMA cache_size = -65536;",
+        mmap_size_for(role)
+    ))
+    .map_err(|e| e.to_string())
+}
+
+impl SrsCore {
+    /// 打开（不存在就建）。建表 / 升级在写连接上一个事务里做完才开读连接。
+    pub fn open(path: &Path) -> Result<Self, String> {
+        Self::open_with_free_space(path, compact::free_bytes)
+    }
+
+    /// [open]，库所在卷的空闲空间由 [free] 给（测试注入）：升级前空间不够就不升级、报
+    /// [schema::UPGRADE_NO_SPACE]（库不动）。
+    pub(crate) fn open_with_free_space(
+        path: &Path,
+        free: impl Fn(&Path) -> Option<u64>,
+    ) -> Result<Self, String> {
+        // 升级阶梯整表重建 / 建索引、整理、快照的排序溢出都落临时文件：Android 上宿主必须先给进程级临时目录。
+        compact::require_temp_dir()?;
+        let open_writer = || -> Result<Connection, String> {
+            #[allow(unused_mut)]
+            let mut writer = Connection::open_with_flags(
+                path,
+                OpenFlags::SQLITE_OPEN_READ_WRITE
+                    | OpenFlags::SQLITE_OPEN_CREATE
+                    | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            )
+            .map_err(|e| format!("open {}: {e}", path.display()))?;
+            configure_as(&writer, MmapRole::Primary)?;
+            #[cfg(any(test, feature = "id_audit"))]
+            ids::audit::install(&mut writer);
+            // 新库建表前定成 INCREMENTAL：升级腾出的页以后原地收缩（store/compact.rs），不用整库重写。老库上这句只
+            // 是记下「下次整库重写时改成 INCREMENTAL」，由 compact 的重写换文件那一步落实。
+            writer
+                .execute_batch("PRAGMA auto_vacuum = INCREMENTAL;")
+                .map_err(|e| e.to_string())?;
+            let mode: String = writer
+                .query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))
+                .map_err(|e| e.to_string())?;
+            if !mode.eq_ignore_ascii_case("wal") {
+                return Err(format!("srs.db journal_mode is {mode}, expected wal"));
+            }
+            Ok(writer)
+        };
+        let mut writer = open_writer()?;
+        schema::check_upgrade_space(&writer, free(path))?;
+        schema::migrate(&mut writer)?;
+        // 格式升级后的一次性整理（读连接还没开；空间不够 / 失败都不影响打开，下次再试）。重写换文件时会换掉写连接。
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis() as i64);
+        let writer = compact::run(writer, path, free(path), now, &open_writer)?;
+        let channel_live: bool = writer
+            .query_row("SELECT EXISTS (SELECT 1 FROM sync2_boot)", [], |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        let study_hub = Arc::new(queue::StudyHub::default());
+        queue::StudyHub::install(&study_hub, &writer)?;
+        let reader = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|e| format!("open reader {}: {e}", path.display()))?;
+        configure_as(&reader, MmapRole::Primary)?;
+        #[cfg(any(test, feature = "id_audit"))]
+        let reader = ids::audit::installed(reader);
+        let drift_readers =
+            read_pool::ReadPool::new(path, read_pool::read_concurrency(), open_drift_reader)?;
+        let drift_write_reader = open_drift_reader(path)?;
+        Ok(Self {
+            writer: Mutex::new(Some(writer)),
+            reader: Mutex::new(Some(reader)),
+            drift_readers,
+            drift_write_reader: Mutex::new(Some(drift_write_reader)),
+            drift_tx: AtomicBool::new(false),
+            legacy_open: AtomicBool::new(false),
+            path: path.to_path_buf(),
+            sessions: Mutex::new(Vec::new()),
+            ingest: Mutex::new(sync2::transport::IngestPhase::Idle),
+            ingest_yield: AtomicBool::new(false),
+            ingest_holds_cache: AtomicBool::new(false),
+            bulk_holds_cache: AtomicBool::new(false),
+            writer_cache: Mutex::new(mem_budget::WriterCache::new()),
+            channel_live: AtomicBool::new(channel_live),
+            study_hub,
+            browse: Mutex::new(browse::Sessions::default()),
+            #[cfg(test)]
+            ingest_prepare_hook: Mutex::new(None),
+            #[cfg(test)]
+            ingest_commit_hook: Mutex::new(None),
+            _live: LiveCore::new(),
+        })
+    }
+
+    pub(crate) fn writer(&self) -> Result<Conn<'_>, String> {
+        let mut w = Conn::with_hub(
+            self.writer
+                .lock()
+                .map_err(|_| "srs writer poisoned".to_string())?,
+            Some(&self.study_hub),
+        )?;
+        w.2 = Some(&self.ingest_holds_cache);
+        w.3 = Some(&self.bulk_holds_cache);
+        self.tune_writer_cache(&w);
+        Ok(w)
+    }
+
+    /// 写连接页缓存上限按可用内存重算（至多每 [mem_budget::RECHECK] 一次，store/mem_budget.rs）。调低时 SQLite 当场
+    /// 还掉超出的页。设不上（库正被关）不影响这次命令。
+    fn tune_writer_cache(&self, w: &Connection) {
+        let Ok(mut st) = self.writer_cache.lock() else {
+            return;
+        };
+        if let Some(kib) = st.due(std::time::Instant::now(), mem_budget::available_bytes) {
+            if w.execute_batch(&format!("PRAGMA cache_size = -{kib}"))
+                .is_err()
+            {
+                st.checked = None;
+            }
+        }
+    }
+
+    /// 批量写入开始 / 结束（Dart `bulkWrites` 的最外层）：期间写连接放回时留着页缓存。
+    pub fn set_bulk_holds_cache(&self, on: bool) {
+        self.bulk_holds_cache.store(on, Ordering::Relaxed);
+    }
+
+    /// 写连接此刻的页缓存上限（KiB），测试 / 诊断用。
+    #[cfg(test)]
+    pub(crate) fn writer_cache_kib(&self) -> i64 {
+        self.writer_cache.lock().map(|s| s.kib).unwrap_or(0)
+    }
+
+    /// 收段阶段唯一的转换入口：把 [slot]（持着 `ingest` 锁拿到的）换成 [next]，同时写下写连接放回时看的镜像
+    /// （`ingest_holds_cache`），返回旧阶段。
+    pub(crate) fn set_ingest_phase(
+        &self,
+        slot: &mut sync2::transport::IngestPhase,
+        next: sync2::transport::IngestPhase,
+    ) -> sync2::transport::IngestPhase {
+        self.ingest_holds_cache.store(
+            !matches!(next, sync2::transport::IngestPhase::Idle),
+            Ordering::Relaxed,
+        );
+        std::mem::replace(slot, next)
+    }
+
+    /// 收段阶段的锁。
+    pub(crate) fn ingest_phase(
+        &self,
+    ) -> Result<MutexGuard<'_, sync2::transport::IngestPhase>, String> {
+        self.ingest
+            .lock()
+            .map_err(|_| "ingest session poisoned".to_owned())
+    }
+
+    pub(crate) fn reader(&self) -> Result<Conn<'_>, String> {
+        Conn::of(
+            self.reader
+                .lock()
+                .map_err(|_| "srs reader poisoned".to_string())?,
+        )
+    }
+
+    /// 写连接上是否挂着跨命令的事务（Drift 的事务或旧库搬迁）：挂着时只读命令也必须在写连接上读，
+    /// 才看得见那笔事务里未提交的行。
+    fn writer_tx_open(&self) -> bool {
+        self.drift_tx.load(Ordering::SeqCst) || self.legacy_open.load(Ordering::SeqCst)
+    }
+
+    /// 只读命令的连接选择：写连接上挂着事务（[SrsCore::writer_tx_open]）时在写连接的 SAVEPOINT 里读（嵌在那笔
+    /// 事务里，看得见未提交的行，结束时 RELEASE 不改动任何东西）；否则在读连接上的一个读事务里读（整段同一份
+    /// 已提交快照，不排写锁）。读连接是只读打开的：[f] 里混进写语句会直接报错，不会悄悄写到别处。
+    pub(crate) fn read_visible<T>(
+        &self,
+        f: impl FnOnce(&Connection) -> Result<T, String>,
+    ) -> Result<T, String> {
+        self.read_visible_tx(|c, _| f(c))
+    }
+
+    /// [SrsCore::read_visible]，并告诉 [f] 它是不是在写连接上还没结束的事务里读（true = 看得见未提交的行）。
+    pub(crate) fn read_visible_tx<T>(
+        &self,
+        f: impl FnOnce(&Connection, bool) -> Result<T, String>,
+    ) -> Result<T, String> {
+        if self.writer_tx_open() {
+            let w = self.writer()?;
+            return sync2::in_savepoint(&w, |c| f(c, true));
+        }
+        let r = self.reader()?;
+        r.execute_batch("BEGIN").map_err(|e| e.to_string())?;
+        let out = f(&r, false);
+        r.execute_batch("ROLLBACK").map_err(|e| e.to_string())?;
+        out
+    }
+
+    /// 关闭全部连接（幂等）：读连接、还没结束的只读会话、写连接。每一条都先拿它的锁再丢，所以会等
+    /// 其它线程上在途的命令 / 会话查询跑完，关闭返回时库文件已没有打开的句柄（覆盖恢复要删换
+    /// srs.db）。写连接最后关：最后关的连接负责把 WAL 并回主文件并删掉 -wal。之后的命令与会话查询
+    /// 一律报「已关闭」。
+    pub fn close(&self) {
+        // 先关读连接：此后 read_session 报已关闭，下面拿到的会话清单就是全部。
+        let reader = self.reader.lock().unwrap_or_else(|e| e.into_inner()).take();
+        drop(reader);
+        // 等在途的 Drift 事务外查询把连接放回（放回即关）。
+        self.drift_readers.close();
+        // 写那一路的事务外查询连接：拿锁即等在途的那条查询跑完。
+        let drift_write_reader = self
+            .drift_write_reader
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        drop(drift_write_reader);
+        let sessions =
+            std::mem::take(&mut *self.sessions.lock().unwrap_or_else(|e| e.into_inner()));
+        for s in sessions.iter().filter_map(Weak::upgrade) {
+            s.close();
+        }
+        let writer = self.writer.lock().unwrap_or_else(|e| e.into_inner()).take();
+        drop(writer);
+    }
+
+    fn meta(conn: &Connection, key: &str) -> Result<Option<String>, String> {
+        match conn.query_row("SELECT value FROM srs_meta WHERE key = ?1", [key], |r| {
+            r.get(0)
+        }) {
+            Ok(v) => Ok(Some(v)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    fn set_meta(conn: &Connection, key: &str, value: &str) -> Result<(), String> {
+        conn.execute(
+            "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [key, value],
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+    }
+
+    // ------------------------------------------------------------ 旧库搬迁（§3）
+
+    /// 旧主库里的 SRS 数据是否已搬进来（或确认没有要搬的）。
+    pub fn legacy_imported(&self) -> Result<bool, String> {
+        let w = self.writer()?;
+        Ok(Self::meta(&w, LEGACY_KEY)?.is_some())
+    }
+
+    /// 开搬迁事务：清空 9 张表（未写标记的库里不该有东西；上一次搬到一半崩溃时 SQLite 已回滚）。
+    pub fn legacy_begin(&self) -> Result<(), String> {
+        let w = self.writer()?;
+        if Self::meta(&w, LEGACY_KEY)?.is_some() {
+            return Err("legacy store already imported".into());
+        }
+        if self.legacy_open.swap(true, Ordering::SeqCst) {
+            return Err("legacy import already in progress".into());
+        }
+        let mut sql = String::from("BEGIN IMMEDIATE;");
+        for t in schema::TABLES {
+            sql.push_str(&format!("DELETE FROM {};", t.name));
+        }
+        if let Err(e) = w.execute_batch(&sql) {
+            let _ = w.execute_batch("ROLLBACK");
+            self.legacy_open.store(false, Ordering::SeqCst);
+            return Err(e.to_string());
+        }
+        Ok(())
+    }
+
+    /// 写一页旧表行（列序 = [schema::TABLES] 里该表的列序）。
+    pub fn legacy_page(&self, table: &str, page: &[u8]) -> Result<usize, String> {
+        if !self.legacy_open.load(Ordering::SeqCst) {
+            return Err("legacy import not started".into());
+        }
+        let t = schema::table(table).ok_or_else(|| format!("unknown srs table {table}"))?;
+        let (n_cols, rows) = rows::decode(page)?;
+        if n_cols != t.columns.len() && !rows.is_empty() {
+            return Err(format!(
+                "{table}: page has {n_cols} columns, expected {}",
+                t.columns.len()
+            ));
+        }
+        let w = self.writer()?;
+        // ID 列编码（store/ids.rs）：旧库搬来的是文本。
+        let id_cols = ids::COLUMNS
+            .iter()
+            .find(|(n, _)| *n == t.name)
+            .map_or(&[][..], |(_, c)| *c);
+        let place = |i: usize| {
+            if id_cols.contains(&t.columns[i]) {
+                format!("srs_id(?{})", i + 1)
+            } else {
+                format!("?{}", i + 1)
+            }
+        };
+        // 投影的 `json` 是生成列（store/slim.rs）：写 `jslim`，按同一行的列值瘦存。
+        let (names, marks): (Vec<String>, Vec<String>) = (0..t.columns.len())
+            .map(|i| match slim::insert_column(t.name, t.columns, i, place) {
+                Some((name, expr)) => (name.to_owned(), expr),
+                None => (t.columns[i].to_owned(), place(i)),
+            })
+            .unzip();
+        let sql = format!(
+            "INSERT INTO {} ({}) VALUES ({})",
+            t.name,
+            names.join(", "),
+            marks.join(", ")
+        );
+        let mut stmt = w.prepare_cached(&sql).map_err(|e| e.to_string())?;
+        for row in &rows {
+            stmt.execute(rusqlite::params_from_iter(row.iter()))
+                .map_err(|e| format!("{table}: {e}"))?;
+        }
+        Ok(rows.len())
+    }
+
+    /// 写标记并提交。
+    pub fn legacy_commit(&self) -> Result<(), String> {
+        if !self.legacy_open.load(Ordering::SeqCst) {
+            return Err("legacy import not started".into());
+        }
+        let w = self.writer()?;
+        // 旧表形态没有 v13 的 `anki_id` 列：搬进来的缓存行在同一笔事务里补算。
+        let result = schema::backfill_anki_ids(&w)
+            .and_then(|_| Self::set_meta(&w, LEGACY_KEY, "1"))
+            .and_then(|_| w.execute_batch("COMMIT").map_err(|e| e.to_string()));
+        if result.is_err() {
+            let _ = w.execute_batch("ROLLBACK");
+        }
+        self.legacy_open.store(false, Ordering::SeqCst);
+        result
+    }
+
+    pub fn legacy_abort(&self) -> Result<(), String> {
+        if !self.legacy_open.swap(false, Ordering::SeqCst) {
+            return Ok(());
+        }
+        let w = self.writer()?;
+        w.execute_batch("ROLLBACK").map_err(|e| e.to_string())
+    }
+
+    /// 主库里本来就没有 SRS 表（新装）：直接写标记。
+    pub fn legacy_mark_none(&self) -> Result<(), String> {
+        let w = self.writer()?;
+        Self::set_meta(&w, LEGACY_KEY, "0")
+    }
+
+    // ------------------------------------------------------------ 备份快照
+
+    /// `VACUUM INTO` 一份一致快照（读连接上做：不挡写）。`strip_device_local` 时在快照里清空
+    /// 6 张设备本地表（本机状态、发件箱元信息、留存批次、三张缓存），与通用备份的规则一致；
+    /// 同步 v2 的本机身份（`sync2_self`、切段点、各位置进度、因果缓冲）也剥掉：从备份恢复出来的库是
+    /// 一台新设备，打开时生成新身份，旧身份按普通远端设备续收（设计 §7.3 的预防）。
+    ///
+    /// 快照一律写成 `auto_vacuum = INCREMENTAL`（源库是老的 NONE 也一样）：剥表后原地收空空闲链表，不再对快照整库
+    /// `VACUUM`（那是第二次整份重写：磁盘峰值翻倍、耗时翻倍）。写之前按「有效数据 + [compact::MARGIN]」查目标所在卷
+    /// 的空闲空间，不够就报 [SNAPSHOT_NO_SPACE]（一个字节都不写），不让它写到一半变成 SQLITE_FULL。
+    pub fn snapshot_into(&self, target: &Path, strip_device_local: bool) -> Result<(), String> {
+        self.snapshot_into_with_free_space(target, strip_device_local, compact::free_bytes)
+    }
+
+    /// [snapshot_into]，目标所在卷的空闲空间由 [free] 给（测试注入）。
+    pub(crate) fn snapshot_into_with_free_space(
+        &self,
+        target: &Path,
+        strip_device_local: bool,
+        free: impl Fn(&Path) -> Option<u64>,
+    ) -> Result<(), String> {
+        if target.exists() {
+            return Err(format!("{} already exists", target.display()));
+        }
+        let target_str = target
+            .to_str()
+            .ok_or_else(|| "snapshot path is not UTF-8".to_string())?;
+        {
+            let r = self.reader()?;
+            let pragma = |name: &str| -> Result<u64, String> {
+                r.query_row(&format!("PRAGMA {name}"), [], |row| row.get::<_, i64>(0))
+                    .map(|v| v.max(0) as u64)
+                    .map_err(|e| e.to_string())
+            };
+            let live = pragma("page_size")?
+                * pragma("page_count")?.saturating_sub(pragma("freelist_count")?);
+            let need = live.saturating_add(compact::MARGIN);
+            if let Some(free) = free(target).filter(|&f| f < need) {
+                return Err(format!(
+                    "{SNAPSHOT_NO_SPACE}{}",
+                    serde_json::json!({"need": need, "free": free})
+                ));
+            }
+            // 源库是老的 NONE：只记下「下一次 VACUUM 用 INCREMENTAL」（连接上的 nextAutovac；NONE 改 INCREMENTAL 在
+            // 已建好的库上不写文件头，所以只读连接上也能设），VACUUM INTO 按它建目标文件。源库已是 INCREMENTAL / FULL
+            // 时目标随源库，不用设——那时这条 PRAGMA 会去写文件头，只读的读连接上直接报错。
+            if pragma("auto_vacuum")? == 0 {
+                r.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;")
+                    .map_err(|e| e.to_string())?;
+            }
+            r.execute("VACUUM INTO ?1", [target_str])
+                .map_err(|e| e.to_string())?;
+        }
+        if strip_device_local {
+            let snap = Connection::open(target).map_err(|e| e.to_string())?;
+            configure(&snap)?;
+            snap.execute_batch(
+                // srs_event_local 不删：它的 server_time 是迁移来的旧修改记录 / 外来带戳事件的排序键（S），
+                // 删了恢复出来的设备会按另一种顺序解寄存器、与其它设备分叉。发件箱列早已无人读写。
+                "BEGIN; UPDATE srs_event_local SET outbox_seq = NULL; DELETE FROM srs_local_state; \
+                 DELETE FROM srs_sent_batches; DELETE FROM srs_notes_cache; \
+                 DELETE FROM srs_cards_cache; DELETE FROM srs_stat_reviews; \
+                 DELETE FROM srs_meta WHERE key = 'legacy_import'; \
+                 DELETE FROM sync2_self; DELETE FROM sync2_pending; DELETE FROM sync2_segments; \
+                 DELETE FROM sync2_locations; DELETE FROM sync2_rewrites; DELETE FROM sync2_obsolete; \
+                 DELETE FROM srs_meta WHERE key LIKE 'sync2_digest/%'; \
+                 COMMIT;",
+            )
+            .map_err(|e| e.to_string())?;
+            // 收回清掉的页，不整库重写：快照建成时是 INCREMENTAL（见上）就原地收缩、一直 step 到空闲链表清空
+            // （compact::incremental_vacuum；只 step 一次只收 1–2 页）；FULL 在上面的 COMMIT 时已自动收掉。
+            let auto: i64 = snap
+                .query_row("PRAGMA auto_vacuum", [], |r| r.get(0))
+                .map_err(|e| e.to_string())?;
+            match auto {
+                2 => compact::incremental_vacuum(&snap, None).map_err(|e| e.to_string())?,
+                1 => {}
+                _ => {
+                    return Err(format!(
+                        "snapshot auto_vacuum is {auto}, expected INCREMENTAL"
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // ------------------------------------------------------------ Drift 执行器（§5 过渡层）
+
+    /// 在写连接上执行一条语句（Drift `QueryDelegate` 的写语句与 `runCustom` 的后端；事务由 Drift 用 BEGIN /
+    /// COMMIT / SAVEPOINT 语句经这里开关，同一条连接上的 Rust 命令看得见事务里未提交的行）。跑完按写连接的
+    /// autocommit 状态记下 Drift 事务是否开着（[SrsCore::select] 据此选连接）。
+    ///
+    /// 返回页：查询 = 首行列名 + 结果行；其它 = 一行 `[变更行数, last_insert_rowid]`。
+    pub fn exec(&self, sql: &str, params: &[Value], select: bool) -> Result<Vec<u8>, String> {
+        if self.legacy_open.load(Ordering::SeqCst) {
+            return Err("legacy import in progress".into());
+        }
+        let w = self.writer()?;
+        let out = Self::exec_on(&w, sql, params, select);
+        self.drift_tx.store(!w.is_autocommit(), Ordering::SeqCst);
+        #[cfg(feature = "id_audit")]
+        ids::audit::take(&w, sql)?;
+        out
+    }
+
+    /// Drift 写连接那一路的查询（`ffsrs_store_exec` mode 2：事务里的查询、`RETURNING`、PRAGMA、内联执行器）：
+    /// Drift 事务开着（[SrsCore::writer_tx_open]）时在写连接上跑，看得见那笔事务里未提交的行；否则只读查询走
+    /// 写那一路专用的只读连接（[SrsCore::drift_write_reader]，不进查询道的连接池、不在池上限上等），不排写锁（Rust
+    /// 的长写命令、收段投递进行中照样能读），读到的是此刻已提交的数据。
+    ///
+    /// 写后立即读成立：Drift 的写语句（autocommit）与 COMMIT 都在 [SrsCore::exec] 返回前提交完；读连接每条语句
+    /// 自成一个读事务（语句跑完即复位，不留跨调用的读事务），开读事务时取最新的 WAL 尾，所以 Dart 等到写返回后
+    /// 再发的查询一定看得见它。Rust 写命令同理（返回前提交）。
+    ///
+    /// 走读连接的只有以 SELECT / WITH / VALUES 开头且 SQLite 判为只读的语句：`… RETURNING` 这类写语句、PRAGMA
+    /// （读的是写连接自己的设置，如 `wal_autocheckpoint`）、事务控制语句（SQLite 把 BEGIN 也判为只读）一律留在
+    /// 写连接上。返回页同 [SrsCore::exec] 的查询。
+    pub fn select(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
+        if self.legacy_open.load(Ordering::SeqCst) {
+            return Err("legacy import in progress".into());
+        }
+        if !self.writer_tx_open() {
+            let done = {
+                let guard = self
+                    .drift_write_reader
+                    .lock()
+                    .map_err(|_| "srs drift write reader poisoned".to_string())?;
+                let r = guard.as_ref().ok_or_else(|| CLOSED.to_string())?;
+                let out = Self::snapshot_on(r, sql, params);
+                // 常驻的这条只读连接和 Conn / 读连接池放回时同一约定：查询之间页缓存收到 IDLE_CACHE_BYTES 以内，
+                // 写那一路做过一次大读后不常驻最多 64 MB（cache_size）。
+                trim_idle_cache(r);
+                out
+            };
+            match done {
+                Err(e) if e == NOT_SNAPSHOT => {}
+                done => return done,
+            }
+        }
+        self.exec(sql, params, true)
+    }
+
+    /// Drift 事务外查询的并发上限（只读连接池的连接数上限，store/read_pool.rs `read_concurrency`）：Dart 侧
+    /// 查询道的 worker 数取它（`ffsrs_store_read_concurrency`），两边不各写一份常量。
+    pub fn read_concurrency(&self) -> usize {
+        self.drift_readers.cap()
+    }
+
+    /// 只读连接池眼下开着的连接数（空闲 + 借出），内存诊断用。
+    pub fn pooled_readers(&self) -> usize {
+        self.drift_readers.live()
+    }
+
+    /// 库文件与 `-wal` 的当前字节数（拿不到记 0），内存 / 存储诊断用。
+    pub fn file_sizes(&self) -> (u64, u64) {
+        let len = |p: &Path| std::fs::metadata(p).map_or(0, |m| m.len());
+        let mut wal = self.path.clone().into_os_string();
+        wal.push("-wal");
+        (len(&self.path), len(Path::new(&wal)))
+    }
+
+    /// Drift 事务**外**的查询（`ffsrs_store_exec` mode 3，Dart 读查询那一路）：一律在只读连接池
+    /// （store/read_pool.rs）里借一条连接执行，不看 Drift 事务开没开、不碰写连接——事务外的读本来就只该看已提交
+    /// 的数据；并发的查询各占一条连接并行执行。语句不是以 SELECT / WITH / VALUES 开头、或 SQLite 判为非只读，
+    /// 报 [NOT_SNAPSHOT]（不执行），由调用方改走写连接那一路（[SrsCore::select]）。
+    pub fn snapshot_select(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
+        if self.legacy_open.load(Ordering::SeqCst) {
+            return Err("legacy import in progress".into());
+        }
+        if !snapshot_query(sql) {
+            return Err(NOT_SNAPSHOT.into());
+        }
+        let r = self.drift_readers.get()?;
+        Self::snapshot_on(&r, sql, params)
+    }
+
+    /// 在只读连接 [r] 上执行一条事务外查询；不是 SQLite 判为只读的查询报 [NOT_SNAPSHOT]（不执行）。
+    fn snapshot_on(r: &Connection, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
+        if !snapshot_query(sql) {
+            return Err(NOT_SNAPSHOT.into());
+        }
+        let readonly = r
+            .prepare_cached(sql)
+            .map_err(|e| format!("{e} in {sql}"))?
+            .readonly();
+        if !readonly {
+            return Err(NOT_SNAPSHOT.into());
+        }
+        let out = Self::exec_on(r, sql, params, true);
+        #[cfg(feature = "id_audit")]
+        ids::audit::take(r, sql)?;
+        out
+    }
+
+    fn exec_on(
+        conn: &Connection,
+        sql: &str,
+        params: &[Value],
+        select: bool,
+    ) -> Result<Vec<u8>, String> {
+        let mut stmt = conn
+            .prepare_cached(sql)
+            .map_err(|e| format!("{e} in {sql}"))?;
+        if !select {
+            let changes = stmt
+                .execute(rusqlite::params_from_iter(params.iter()))
+                .map_err(|e| format!("{e} in {sql}"))?;
+            return Ok(rows::encode(
+                2,
+                &[vec![
+                    Value::Integer(changes as i64),
+                    Value::Integer(conn.last_insert_rowid()),
+                ]],
+            ));
+        }
+        let n = stmt.column_count();
+        let names: Vec<Value> = stmt
+            .column_names()
+            .iter()
+            .map(|c| Value::Text((*c).to_string()))
+            .collect();
+        let id_cols = ids::id_columns(&stmt);
+        let mut out = Vec::with_capacity(4096);
+        out.extend_from_slice(&0u32.to_le_bytes());
+        out.extend_from_slice(&(n as u32).to_le_bytes());
+        for v in &names {
+            rows::push_value(&mut out, v.into());
+        }
+        let mut count: u32 = 1;
+        let mut q = stmt
+            .query(rusqlite::params_from_iter(params.iter()))
+            .map_err(|e| format!("{e} in {sql}"))?;
+        while let Some(row) = q.next().map_err(|e| e.to_string())? {
+            for i in 0..n {
+                let v = row.get_ref(i).map_err(|e| e.to_string())?;
+                match ids::outward(&id_cols, i, v) {
+                    Some(t) => rows::push_value(&mut out, ValueRef::Text(t.as_bytes())),
+                    None => rows::push_value(&mut out, v),
+                }
+            }
+            count += 1;
+        }
+        out[0..4].copy_from_slice(&count.to_le_bytes());
+        Ok(out)
+    }
+
+    /// Drift 的批量语句：`statements[i]` 配若干组参数，按给定顺序执行（调用方已在事务里）。
+    pub fn exec_batch(
+        &self,
+        statements: &[&str],
+        applications: &[(usize, Vec<Value>)],
+    ) -> Result<(), String> {
+        if self.legacy_open.load(Ordering::SeqCst) {
+            return Err("legacy import in progress".into());
+        }
+        let w = self.writer()?;
+        let run = || -> Result<(), String> {
+            for (index, args) in applications {
+                let sql = statements
+                    .get(*index)
+                    .ok_or_else(|| format!("batch statement index {index} out of range"))?;
+                let mut stmt = w.prepare_cached(sql).map_err(|e| format!("{e} in {sql}"))?;
+                stmt.execute(rusqlite::params_from_iter(args.iter()))
+                    .map_err(|e| format!("{e} in {sql}"))?;
+            }
+            Ok(())
+        };
+        let out = run();
+        self.drift_tx.store(!w.is_autocommit(), Ordering::SeqCst);
+        #[cfg(feature = "id_audit")]
+        ids::audit::take(&w, "")?;
+        out
+    }
+
+    /// 写连接当前是否在事务里（Drift 打开时校验、测试用）。
+    pub fn in_transaction(&self) -> Result<bool, String> {
+        Ok(!self.writer()?.is_autocommit())
+    }
+
+    // ------------------------------------------------------------ 直读命令
+
+    /// 卡片历史的当前状态，直接从写连接读日志（看得见 Drift 事务里未提交的行）：
+    /// `groups[g]` 是第 g 份历史的血统（自己 + 全部前身的卡 ID）。输出布局同
+    /// `history::encode_states`。日志原文与服务器时刻一条 JOIN 取出，不跨 isolate、不回 Dart。
+    pub fn history_states(&self, groups: &[Vec<String>]) -> Result<Vec<u8>, String> {
+        let logs = self.writer_logs(groups)?;
+        let empty: Vec<LogRow> = Vec::new();
+        let mut states = Vec::with_capacity(groups.len());
+        for g in groups {
+            let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
+            for c in g {
+                for (j, s, cols) in logs.get(c).unwrap_or(&empty) {
+                    stored.push((j, *s, cols.as_ref()));
+                }
+            }
+            states.push(crate::history::state_from_stored(&stored)?);
+        }
+        Ok(crate::history::encode_states(&states))
+    }
+
+    /// 有效复习投影（`srs_stat_reviews` 的行），同样直读写连接：`groups[g]` 是第 g 个归属组（归属卡在前，
+    /// 再列出归它的前身卡），日志合在一起按 [crate::history::stats_from_json] 投影。归属由 Dart 按血统与
+    /// 可见性定（`SrsDbStore._refreshStatProjection`）。
+    ///
+    /// 输出是一页行（`rows::encode`，9 列）：归属组下标, logId, occurredAt, utcOffsetMin, rating|NULL,
+    /// kind, durationMs, prevDueDay|NULL, maturityDelta。
+    pub fn stat_projection(&self, groups: &[Vec<String>]) -> Result<Vec<u8>, String> {
+        let logs = self.writer_logs(groups)?;
+        let empty: Vec<LogRow> = Vec::new();
+        let mut out: Vec<Vec<Value>> = Vec::new();
+        let opt = |v: Option<i64>| v.map_or(Value::Null, Value::Integer);
+        for (gi, g) in groups.iter().enumerate() {
+            let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
+            for c in g {
+                for (j, s, cols) in logs.get(c).unwrap_or(&empty) {
+                    stored.push((j, *s, cols.as_ref()));
+                }
+            }
+            for r in crate::history::stats_from_stored(&stored)? {
+                out.push(vec![
+                    Value::Integer(gi as i64),
+                    Value::Text(r.log_id),
+                    Value::Integer(r.occurred_at),
+                    Value::Integer(r.utc_off),
+                    opt(r.rating),
+                    Value::Integer(r.kind),
+                    Value::Integer(r.dur),
+                    opt(r.prev_due_day),
+                    Value::Integer(r.maturity_delta),
+                ]);
+            }
+        }
+        Ok(rows::encode(9, &out))
+    }
+
+    /// 这些组里全部卡的日志（[LogRow]：存储值 + 服务器时刻 + 列；写连接，一条 JOIN 按块取）。
+    fn writer_logs(
+        &self,
+        groups: &[Vec<String>],
+    ) -> Result<std::collections::HashMap<String, Vec<LogRow>>, String> {
+        let w = self.writer()?;
+        logs_of(&w, groups)
+    }
+
+    // ------------------------------------------------------------ 测试 / 诊断
+
+    /// 在读连接上跑一条只读 SQL，结果按 [rows] 编码；第一行是列名（文本）。只给测试与诊断用：
+    /// 产品代码一律走粗粒度命令。
+    pub fn debug_query(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
+        query_rows(&*self.reader()?, sql, params)
+    }
+
+    /// 另开一条只读连接、开读事务并先读一次（快照在第一次读时才定下）：返回时快照已定，之后本库的
+    /// 新写入都不在里面。备份读快照用（后台 isolate 里分页读二三十秒，不占读 / 写连接）。
+    ///
+    /// 开会话期间持读连接的锁：与 [SrsCore::close]（先拿读锁）互斥，库已关闭就报「已关闭」，不会按路径
+    /// 把关库后可能已被删换的库文件重新打开。会话开好之后与本对象无关，关库不结束它。
+    pub fn read_session(&self) -> Result<Arc<ReadSession>, String> {
+        let _open = self.reader()?;
+        let conn = Connection::open_with_flags(
+            &self.path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|e| format!("open read session {}: {e}", self.path.display()))?;
+        configure(&conn)?;
+        #[cfg(any(test, feature = "id_audit"))]
+        let conn = ids::audit::installed(conn);
+        conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
+        conn.query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| {
+            r.get::<_, i64>(0)
+        })
+        .map_err(|e| e.to_string())?;
+        self.register_session(conn)
+    }
+
+    /// 把 [conn] 包成只读会话并登记（[SrsCore::close] 逐个关掉）。调用方持读连接的锁。
+    fn register_session(&self, conn: Connection) -> Result<Arc<ReadSession>, String> {
+        let session = Arc::new(ReadSession {
+            conn: Mutex::new(Some(conn)),
+        });
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| "srs sessions poisoned".to_string())?;
+        sessions.retain(|w| w.strong_count() > 0);
+        sessions.push(Arc::downgrade(&session));
+        Ok(session)
+    }
+
+    /// 把 WAL 并回主库（PASSIVE），在一条单独开的连接上做：不占写连接，并回期间本机作答照常写入（SQLite 的
+    /// checkpoint 锁与写锁互不相干，PASSIVE 也不等读者）。大批写入暂停自动 checkpoint 之后收尾用（Dart
+    /// `SrsDbStore.bulkWrites`）：在写连接上并回几十 MB 的 WAL 要几百毫秒，那期间所有写入都排在它后面。
+    /// 这条连接登记成会话，库关闭时等它做完再关。返回 `{busy, log, checkpointed}`（`PRAGMA wal_checkpoint` 的三列）。
+    pub fn wal_checkpoint(&self) -> Result<serde_json::Value, String> {
+        let session = {
+            let _open = self.reader()?;
+            let conn = Connection::open_with_flags(
+                &self.path,
+                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            )
+            .map_err(|e| format!("open checkpoint connection {}: {e}", self.path.display()))?;
+            conn.busy_timeout(Duration::from_millis(5000))
+                .map_err(|e| e.to_string())?;
+            let session = Arc::new(ReadSession {
+                conn: Mutex::new(Some(conn)),
+            });
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| "srs sessions poisoned".to_string())?;
+            sessions.retain(|w| w.strong_count() > 0);
+            sessions.push(Arc::downgrade(&session));
+            session
+        };
+        let out = {
+            let guard = session
+                .conn
+                .lock()
+                .map_err(|_| "srs checkpoint connection poisoned".to_string())?;
+            let conn = guard.as_ref().ok_or(CLOSED)?;
+            conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
+            })
+            .map_err(|e| e.to_string())
+        };
+        session.close();
+        let (busy, log, checkpointed) = out?;
+        Ok(serde_json::json!({"busy": busy != 0, "log": log, "checkpointed": checkpointed}))
+    }
+}
+
+/// 这些组里全部卡的日志原文 + 服务器时刻（[conn] 上一条 JOIN 按块取；写连接看得见 Drift 事务里未提交的行）。
+/// [logs_of] 的一条：(存储值, 服务器时刻, 瘦存时的列)。读 `jslim` + 列（store/slim.rs `LOG_READ`），不经逐行
+/// 拼回的 `json`。
+pub(crate) type LogRow = (String, Option<i64>, Option<crate::history::LogCols>);
+
+pub(crate) fn logs_of(
+    conn: &rusqlite::Connection,
+    groups: &[Vec<String>],
+) -> Result<std::collections::HashMap<String, Vec<LogRow>>, String> {
+    let mut wanted: Vec<&str> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for g in groups {
+        for c in g {
+            if seen.insert(c.as_str()) {
+                wanted.push(c.as_str());
+            }
+        }
+    }
+    let mut logs: std::collections::HashMap<String, Vec<LogRow>> =
+        std::collections::HashMap::with_capacity(wanted.len());
+    for chunk in wanted.chunks(500) {
+        let marks = vec!["srs_id(?)"; chunk.len()].join(", ");
+        let sql = format!(
+            "SELECT srs_idt(l.card_id) AS card_id, e.server_time, {} FROM srs_review_logs l                  LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks})",
+            slim::LOG_READ
+        );
+        let mut stmt = conn.prepare_cached(&sql).map_err(|e| e.to_string())?;
+        let mut q = stmt
+            .query(rusqlite::params_from_iter(chunk.iter()))
+            .map_err(|e| e.to_string())?;
+        while let Some(row) = q.next().map_err(|e| e.to_string())? {
+            let card: String = row.get(0).map_err(|e| e.to_string())?;
+            let st: Option<i64> = row.get(1).map_err(|e| e.to_string())?;
+            let (json, cols) = slim::log_row(row, 2).map_err(|e| e.to_string())?;
+            logs.entry(card).or_default().push((json, st, cols));
+        }
+    }
+    Ok(logs)
+}
+
+#[cfg(test)]
+mod tests_v15_upgrade;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "ffsrs_store_{}_{}_{}",
+            name,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("srs.db")
+    }
+
+    fn count(core: &SrsCore, table: &str) -> i64 {
+        core.reader()
+            .unwrap()
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+            .unwrap()
+    }
+
+    /// 关闭与在途调用互斥：另一线程正拿着读连接时 close 等它跑完；之后的命令报已关闭，文件可删。
+    /// （回归：拥有者关库时后台 isolate 的命令还在跑，原来直接 free 结构体 → use-after-free。）
+    #[test]
+    fn close_waits_for_in_flight_calls_and_rejects_later_ones() {
+        use std::sync::{Arc, Barrier};
+        use std::time::Instant;
+
+        let p = temp("close_inflight");
+        let core = Arc::new(SrsCore::open(&p).unwrap());
+        let started = Arc::new(Barrier::new(2));
+        let worker = {
+            let core = Arc::clone(&core);
+            let started = Arc::clone(&started);
+            std::thread::spawn(move || {
+                let conn = core.reader().unwrap();
+                started.wait();
+                std::thread::sleep(Duration::from_millis(300));
+                conn.query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| {
+                    r.get::<_, i64>(0)
+                })
+                .unwrap()
+            })
+        };
+        started.wait();
+        let t0 = Instant::now();
+        core.close();
+        assert!(
+            t0.elapsed() >= Duration::from_millis(200),
+            "close returned while another thread was still using the reader"
+        );
+        assert!(worker.join().unwrap() > 0);
+        assert_eq!(core.reader().err().as_deref(), Some("srs store is closed"));
+        assert_eq!(core.writer().err().as_deref(), Some("srs store is closed"));
+        assert!(core.debug_query("SELECT 1", &[]).is_err());
+        core.close();
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+        // 关库后另开只读会话同样报已关闭，不按路径把（已删掉的）库文件重新打开。
+        assert_eq!(core.read_session().err().as_deref(), Some(CLOSED));
+        assert!(!p.exists(), "read_session reopened srs.db after close");
+    }
+
+    /// 关库让还没结束的只读会话失效：在途的会话查询跑完 close 才返回，之后会话查询报已关闭，
+    /// close 返回时库文件已无打开的连接（Windows 下可删 / 改名）。
+    #[test]
+    fn close_ends_open_read_sessions_and_releases_the_file() {
+        use std::sync::Barrier;
+        use std::time::Instant;
+
+        let p = temp("close_sessions");
+        let core = Arc::new(SrsCore::open(&p).unwrap());
+        let idle = core.read_session().unwrap();
+        let busy = core.read_session().unwrap();
+        let started = Arc::new(Barrier::new(2));
+        let worker = {
+            let (busy, started) = (Arc::clone(&busy), Arc::clone(&started));
+            std::thread::spawn(move || {
+                // 拿着会话的锁做一次慢读，close 必须等它。
+                let guard = busy.conn.lock().unwrap();
+                started.wait();
+                std::thread::sleep(Duration::from_millis(300));
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| {
+                        r.get::<_, i64>(0)
+                    })
+                    .unwrap()
+            })
+        };
+        started.wait();
+        let t0 = Instant::now();
+        core.close();
+        assert!(
+            t0.elapsed() >= Duration::from_millis(200),
+            "close returned while a read session query was still running"
+        );
+        assert!(worker.join().unwrap() > 0);
+        for s in [&idle, &busy] {
+            assert_eq!(s.query("SELECT 1", &[]).err().as_deref(), Some(CLOSED));
+        }
+        // 会话对象还活着，但连接都没了：库文件能改名、能删。
+        let moved = p.with_file_name("srs.moved.db");
+        std::fs::rename(&p, &moved).unwrap();
+        std::fs::remove_file(&moved).unwrap();
+        idle.close();
+        drop((idle, busy));
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn open_creates_schema_and_is_idempotent() {
+        let p = temp("open");
+        {
+            let core = SrsCore::open(&p).unwrap();
+            assert!(!core.legacy_imported().unwrap());
+            for t in schema::TABLES {
+                assert_eq!(count(&core, t.name), 0);
+            }
+        }
+        let core = SrsCore::open(&p).unwrap();
+        let idx: i64 = core
+            .reader()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name LIKE 'idx_srs_%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        // v1–v8 的 14 条 + v9 的 6 条队列 / 计数 / 日志索引 + v13 的 2 条 AnkiConnect 数字 id 索引 + v15 的查重索引，
+        // 减去 v16 去掉的 idx_srs_review_logs_profile_time，加 v25 的按作品出卡索引。
+        assert_eq!(idx, 23);
+    }
+
+    #[test]
+    fn schema_v1_database_upgrades_to_v2_indexes() {
+        let p = temp("schema_v1");
+        {
+            let core = SrsCore::open(&p).unwrap();
+            core.writer()
+                .unwrap()
+                .execute_batch(
+                    "DROP INDEX idx_srs_field_edits_profile_register; DROP INDEX idx_srs_notes_cache_type; \
+                     DROP INDEX idx_srs_notes_cache_pending; UPDATE srs_meta SET value = '1' WHERE key = 'schema';",
+                )
+                .unwrap();
+        }
+        let core = SrsCore::open(&p).unwrap();
+        let r = core.reader().unwrap();
+        let n: i64 = r
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN \
+                 ('idx_srs_field_edits_profile_register','idx_srs_notes_cache_type','idx_srs_notes_cache_pending')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 3);
+        let v: String = r
+            .query_row(
+                "SELECT value FROM srs_meta WHERE key = 'schema'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(v, schema::SCHEMA_VERSION.to_string());
+    }
+
+    #[test]
+    fn legacy_import_roundtrip_and_rollback() {
+        let p = temp("legacy");
+        let core = SrsCore::open(&p).unwrap();
+        let page = rows::encode(
+            3,
+            &[
+                vec![
+                    Value::Text("e1".into()),
+                    Value::Text("p".into()),
+                    Value::Text("{}".into()),
+                ],
+                vec![
+                    Value::Text("e2".into()),
+                    Value::Text("p".into()),
+                    Value::Text("{\"a\":1}".into()),
+                ],
+            ],
+        );
+        core.legacy_begin().unwrap();
+        assert_eq!(core.legacy_page("srs_unknown_events", &page).unwrap(), 2);
+        core.legacy_abort().unwrap();
+        assert_eq!(count(&core, "srs_unknown_events"), 0);
+        assert!(!core.legacy_imported().unwrap());
+
+        core.legacy_begin().unwrap();
+        core.legacy_page("srs_unknown_events", &page).unwrap();
+        assert!(core.legacy_page("srs_nope", &page).is_err());
+        let bad_cols = rows::encode(2, &[vec![Value::Text("x".into()), Value::Null]]);
+        assert!(core.legacy_page("srs_unknown_events", &bad_cols).is_err());
+        core.legacy_commit().unwrap();
+        assert!(core.legacy_imported().unwrap());
+        assert_eq!(count(&core, "srs_unknown_events"), 2);
+        assert!(core.legacy_begin().is_err());
+    }
+
+    #[test]
+    fn snapshot_strips_device_local_tables() {
+        let p = temp("snap");
+        let core = SrsCore::open(&p).unwrap();
+        core.legacy_begin().unwrap();
+        // 本机状态占几百页：剥掉后腾出的页要真的从快照文件里收掉。
+        let big = format!("{{\"pad\":\"{}\"}}", "x".repeat(4000));
+        let local: Vec<Vec<Value>> = (0..300)
+            .map(|i| vec![Value::Text(format!("p{i}")), Value::Text(big.clone())])
+            .collect();
+        core.legacy_page("srs_local_state", &rows::encode(2, &local))
+            .unwrap();
+        core.legacy_page(
+            "srs_unknown_events",
+            &rows::encode(
+                3,
+                &[vec![
+                    Value::Text("e".into()),
+                    Value::Text("p".into()),
+                    Value::Text("{}".into()),
+                ]],
+            ),
+        )
+        .unwrap();
+        core.legacy_commit().unwrap();
+        let snap = p.with_file_name("snap.db");
+        core.snapshot_into(&snap, true).unwrap();
+        let whole = p.with_file_name("whole.db");
+        core.snapshot_into(&whole, false).unwrap();
+        {
+            let raw = Connection::open(&snap).unwrap();
+            let pragma = |n: &str| {
+                raw.query_row(&format!("PRAGMA {n}"), [], |r| r.get::<_, i64>(0))
+                    .unwrap()
+            };
+            assert_eq!(pragma("auto_vacuum"), 2, "new databases are INCREMENTAL");
+            assert_eq!(pragma("freelist_count"), 0, "stripped pages reclaimed");
+        }
+        let (snap_len, whole_len) = (
+            std::fs::metadata(&snap).unwrap().len(),
+            std::fs::metadata(&whole).unwrap().len(),
+        );
+        assert!(
+            snap_len + 200 * 4096 < whole_len,
+            "stripped {snap_len} vs whole {whole_len}"
+        );
+        let s = SrsCore::open(&snap).unwrap();
+        assert_eq!(count(&s, "srs_local_state"), 0);
+        assert_eq!(count(&s, "srs_unknown_events"), 1);
+        assert!(!s.legacy_imported().unwrap());
+    }
+
+    /// 老库（`auto_vacuum = NONE`，整理改版之前建的）做快照：快照文件照样建成 INCREMENTAL、剥表后原地收空，不对快照
+    /// 整库 VACUUM（第二次整份重写）；源库本身不被改动。空间不够「有效数据 + 余量」就报 [SNAPSHOT_NO_SPACE]，目标
+    /// 一个字节都不写。
+    #[test]
+    fn snapshot_of_legacy_db_is_incremental_and_checks_free_space() {
+        let p = temp("snap-legacy");
+        {
+            let core = SrsCore::open(&p).unwrap();
+            core.legacy_begin().unwrap();
+            let big = format!("{{\"pad\":\"{}\"}}", "x".repeat(4000));
+            let local: Vec<Vec<Value>> = (0..300)
+                .map(|i| vec![Value::Text(format!("p{i}")), Value::Text(big.clone())])
+                .collect();
+            core.legacy_page("srs_local_state", &rows::encode(2, &local))
+                .unwrap();
+            core.legacy_commit().unwrap();
+        }
+        {
+            let raw = Connection::open(&p).unwrap();
+            ids::register(&raw).unwrap();
+            slim::register(&raw).unwrap();
+            sync2::digest::register(&raw).unwrap();
+            raw.execute_batch("PRAGMA auto_vacuum = NONE; VACUUM;")
+                .unwrap();
+        }
+        let core = SrsCore::open(&p).unwrap();
+        let src_auto = |core: &SrsCore| {
+            core.reader()
+                .unwrap()
+                .query_row("PRAGMA auto_vacuum", [], |r| r.get::<_, i64>(0))
+                .unwrap()
+        };
+        assert_eq!(src_auto(&core), 0, "source is a legacy NONE database");
+
+        let (live, page) = {
+            let r = core.reader().unwrap();
+            let pragma = |n: &str| {
+                r.query_row(&format!("PRAGMA {n}"), [], |row| row.get::<_, i64>(0))
+                    .unwrap() as u64
+            };
+            (
+                pragma("page_size") * (pragma("page_count") - pragma("freelist_count")),
+                pragma("page_size"),
+            )
+        };
+        let short = p.with_file_name("short.db");
+        let err = core
+            .snapshot_into_with_free_space(&short, true, |_| Some(live + compact::MARGIN - 1))
+            .unwrap_err();
+        assert!(err.starts_with(SNAPSHOT_NO_SPACE), "{err}");
+        let detail: serde_json::Value =
+            serde_json::from_str(&err[SNAPSHOT_NO_SPACE.len()..]).unwrap();
+        assert_eq!(detail["need"], live + compact::MARGIN);
+        assert!(
+            !short.exists(),
+            "nothing written when there is not enough room"
+        );
+
+        let snap = p.with_file_name("snap-legacy.db");
+        core.snapshot_into_with_free_space(&snap, true, |_| Some(live + compact::MARGIN))
+            .unwrap();
+        {
+            let raw = Connection::open(&snap).unwrap();
+            let pragma = |n: &str| {
+                raw.query_row(&format!("PRAGMA {n}"), [], |r| r.get::<_, i64>(0))
+                    .unwrap()
+            };
+            assert_eq!(
+                pragma("auto_vacuum"),
+                2,
+                "snapshot of a legacy db is INCREMENTAL"
+            );
+            assert_eq!(
+                pragma("freelist_count"),
+                0,
+                "stripped pages reclaimed in place"
+            );
+        }
+        assert!(
+            std::fs::metadata(&snap).unwrap().len() + 200 * page < live,
+            "stripped snapshot is smaller"
+        );
+        assert_eq!(src_auto(&core), 0, "source database untouched");
+        let s = SrsCore::open(&snap).unwrap();
+        assert_eq!(count(&s, "srs_local_state"), 0);
+    }
+
+    #[test]
+    fn read_session_reads_one_snapshot_and_rejects_writes() {
+        let p = temp("session");
+        let core = SrsCore::open(&p).unwrap();
+        core.legacy_mark_none().unwrap();
+        let ins = |id: &str| {
+            core.writer()
+                .unwrap()
+                .execute(
+                    "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?1), 'p', '{}')",
+                    [id],
+                )
+                .unwrap();
+        };
+        ins("e1");
+        let s = core.read_session().unwrap();
+        ins("e2");
+        let count = |s: &ReadSession| {
+            let (_, rows) = rows::decode(
+                &s.query("SELECT COUNT(*) AS c FROM srs_unknown_events", &[])
+                    .unwrap(),
+            )
+            .unwrap();
+            rows[1][0].clone()
+        };
+        assert_eq!(count(&s), Value::Integer(1), "会话开始之后的写入不在快照里");
+        assert!(s.query("DELETE FROM srs_unknown_events", &[]).is_err());
+        drop(s);
+        assert_eq!(count(&core.read_session().unwrap()), Value::Integer(2));
+    }
+
+    #[test]
+    fn debug_query_rejects_writes_and_encodes_header() {
+        let p = temp("dbg");
+        let core = SrsCore::open(&p).unwrap();
+        assert!(core.debug_query("DELETE FROM srs_meta", &[]).is_err());
+        let out = core
+            .debug_query(
+                "SELECT key, value FROM srs_meta WHERE key = ?1",
+                &[Value::Text("schema".into())],
+            )
+            .unwrap();
+        let (cols, rows) = rows::decode(&out).unwrap();
+        assert_eq!(cols, 2);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0][0], Value::Text("key".into()));
+        assert_eq!(rows[1][1], Value::Text(schema::SCHEMA_VERSION.to_string()));
+    }
+}
+
+#[cfg(test)]
+mod exec_tests {
+    use super::*;
+
+    #[test]
+    fn exec_select_insert_and_transactions() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_exec_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("srs.db");
+        let _ = std::fs::remove_file(&p);
+        let core = SrsCore::open(&p).unwrap();
+        core.legacy_mark_none().unwrap();
+        core.exec("BEGIN", &[], false).unwrap();
+        assert!(core.in_transaction().unwrap());
+        let r = core
+            .exec(
+                "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?1), srs_id(?2), ?3)",
+                &[Value::Text("a".into()), Value::Text("p".into()), Value::Text("{}".into())],
+                false,
+            )
+            .unwrap();
+        let (_, rows) = rows::decode(&r).unwrap();
+        assert_eq!(rows[0][0], Value::Integer(1));
+        // 同一条连接，事务里看得见。
+        let s = core
+            .exec(
+                "SELECT srs_idt(id) AS id FROM srs_unknown_events",
+                &[],
+                true,
+            )
+            .unwrap();
+        let (cols, rows) = rows::decode(&s).unwrap();
+        assert_eq!(cols, 1);
+        assert_eq!(rows.len(), 2);
+        core.exec("ROLLBACK", &[], false).unwrap();
+        assert!(!core.in_transaction().unwrap());
+        core.exec_batch(
+            &["INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?), 'p', '{}')"],
+            &[(0, vec![Value::Text("b".into())]), (0, vec![Value::Text("c".into())])],
+        )
+        .unwrap();
+        let s = core
+            .exec("SELECT COUNT(*) FROM srs_unknown_events", &[], true)
+            .unwrap();
+        let (_, rows) = rows::decode(&s).unwrap();
+        assert_eq!(rows[1][0], Value::Integer(2));
+        assert!(core.exec("SELECT nope", &[], true).is_err());
+    }
+}
+
+#[cfg(test)]
+mod read_routing_tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    fn open(name: &str) -> SrsCore {
+        let dir = std::env::temp_dir().join(format!("ffsrs_route_{name}_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("srs.db");
+        let _ = std::fs::remove_file(&p);
+        let _ = std::fs::remove_file(dir.join("srs.db-wal"));
+        let core = SrsCore::open(&p).unwrap();
+        core.legacy_mark_none().unwrap();
+        core
+    }
+
+    fn insert(core: &SrsCore, id: &str) {
+        core.exec(
+            "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?1), 'p', '{}')",
+            &[Value::Text(id.into())],
+            false,
+        )
+        .unwrap();
+    }
+
+    fn scalar(page: &[u8]) -> Value {
+        let (_, rows) = rows::decode(page).unwrap();
+        rows[1][0].clone()
+    }
+
+    fn count(core: &SrsCore) -> Value {
+        scalar(
+            &core
+                .select("SELECT COUNT(*) FROM srs_unknown_events", &[])
+                .unwrap(),
+        )
+    }
+
+    /// `last_insert_rowid()` 是每条连接自己的：写连接上刚插过行就非 0，读连接上恒为 0。用它看查询落在哪条连接上。
+    fn on_writer(core: &SrsCore) -> bool {
+        scalar(&core.select("SELECT last_insert_rowid()", &[]).unwrap()) != Value::Integer(0)
+    }
+
+    fn cache_used(c: &Connection) -> i32 {
+        let (mut used, mut high) = (0, 0);
+        // SAFETY: 测试独占这条连接，只读一项统计。
+        let rc = unsafe {
+            rusqlite::ffi::sqlite3_db_status(
+                c.handle(),
+                rusqlite::ffi::SQLITE_DBSTATUS_CACHE_USED,
+                &mut used,
+                &mut high,
+                0,
+            )
+        };
+        assert_eq!(rc, rusqlite::ffi::SQLITE_OK);
+        used
+    }
+
+    /// 写那一路的常驻只读连接（drift_write_reader）和 Conn / 读连接池同一约定：一条大查询跑完，页缓存收到
+    /// IDLE_CACHE_BYTES（8 MB）以内，不常驻到 cache_size（64 MB）。对照：同样的查询在一条不收缓存的只读连接上
+    /// 跑完会留 8 MB 以上，证明这条查询确实把缓存撑过了上限。
+    #[test]
+    fn select_trims_the_write_path_reader_cache_after_a_large_read() {
+        let core = open("write_reader_trim");
+        core.writer()
+            .unwrap()
+            .execute_batch(
+                // 不自动 checkpoint：行留在 WAL 里。主文件里的页走 mmap、不占页缓存；WAL 里的帧（以及超出 mmap
+                // 256 MB 的部分）才读进页缓存——那正是一条连接会常驻几十 MB 的情形。
+                "PRAGMA wal_autocheckpoint = 0;
+                 CREATE TABLE cache_probe (b BLOB);
+                 INSERT INTO cache_probe SELECT randomblob(3500) FROM
+                   (WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 6000) SELECT x FROM c);",
+            )
+            .unwrap();
+        let scan = "SELECT COUNT(*) FROM cache_probe WHERE b IS NOT NULL";
+        let control = open_drift_reader(&core.path).unwrap();
+        let n: i64 = control.query_row(scan, [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 6000);
+        assert!(
+            cache_used(&control) > IDLE_CACHE_BYTES,
+            "scan did not grow an untrimmed page cache past the idle cap ({} bytes)",
+            cache_used(&control)
+        );
+        assert_eq!(
+            scalar(&core.select(scan, &[]).unwrap()),
+            Value::Integer(6000)
+        );
+        core.writer()
+            .unwrap()
+            .execute_batch("PRAGMA wal_autocheckpoint = 1000")
+            .unwrap();
+        let guard = core.drift_write_reader.lock().unwrap();
+        let used = cache_used(guard.as_ref().unwrap());
+        assert!(
+            used <= IDLE_CACHE_BYTES,
+            "write-path reader kept {used} bytes of page cache after select"
+        );
+    }
+
+    /// BUG-4013：SQLite 每条连接各映射一份主库文件。只有常驻写连接 / 读连接按 [MMAP_BYTES] 映射；读连接池、写那一路
+    /// 的只读连接等次要连接只在 32 位进程上不映射（合计地址占用从 6–7 × 256 MB 收到 2 × 256 MB），64 位（含 iOS）照旧。
+    #[test]
+    fn only_primary_connections_reserve_mmap_address_space_on_32_bit() {
+        let core = open("mmap_roles");
+        let mmap =
+            |c: &Connection| -> i64 { c.query_row("PRAGMA mmap_size", [], |r| r.get(0)).unwrap() };
+        assert_eq!(mmap(&core.writer().unwrap()), MMAP_BYTES);
+        assert_eq!(mmap(&core.reader().unwrap()), MMAP_BYTES);
+        let expected_secondary = if cfg!(target_pointer_width = "32") {
+            0
+        } else {
+            MMAP_BYTES
+        };
+        assert_eq!(mmap_size_for(MmapRole::Secondary), expected_secondary);
+        assert_eq!(
+            mmap(&open_drift_reader(&core.path).unwrap()),
+            expected_secondary
+        );
+        let guard = core.drift_write_reader.lock().unwrap();
+        assert_eq!(mmap(guard.as_ref().unwrap()), expected_secondary);
+    }
+
+    #[test]
+    fn snapshot_query_admits_only_plain_queries() {
+        for q in [
+            "SELECT 1",
+            "  select 1",
+            "WITH x AS (SELECT 1) SELECT * FROM x",
+            "VALUES (1)",
+            "-- c\nSELECT 1",
+            "/* c */ SELECT 1",
+        ] {
+            assert!(snapshot_query(q), "{q}");
+        }
+        for q in [
+            "BEGIN",
+            "BEGIN TRANSACTION",
+            "SAVEPOINT s1",
+            "COMMIT",
+            "ROLLBACK",
+            "PRAGMA wal_autocheckpoint",
+            "INSERT INTO t VALUES (1)",
+            "",
+            "-- only a comment",
+        ] {
+            assert!(!snapshot_query(q), "{q}");
+        }
+    }
+
+    /// Drift 事务外：查询走读连接的已提交快照——写后立即读得到；一笔 Rust 写命令攥着写锁、事务还没提交时，
+    /// 查询不排队（在写锁释放前就返回）也读不到那笔未提交的行；那笔提交后立刻读得到。
+    #[test]
+    fn select_outside_a_drift_transaction_reads_the_committed_snapshot_without_the_write_lock() {
+        let core = Arc::new(open("outside"));
+        insert(&core, "a");
+        // 写后立即读（read-your-writes）：autocommit 写在 exec 返回前已提交，读连接新开的读事务看得见。
+        assert_eq!(count(&core), Value::Integer(1));
+        assert!(
+            !on_writer(&core),
+            "out-of-transaction query ran on the writer"
+        );
+        // 另一条线程攥着写锁、开着一笔没提交的写事务（Rust 写命令的形态：in_savepoint 在 autocommit 连接上自成事务）。
+        let (held_tx, held_rx) = mpsc::channel::<()>();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let writer = {
+            let core = Arc::clone(&core);
+            std::thread::spawn(move || {
+                let w = core.writer().unwrap();
+                in_savepoint_for_test(&w, || {
+                    w.execute("INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES ('dirty', 'p', '{}')", [])
+                        .unwrap();
+                    held_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                });
+            })
+        };
+        held_rx.recv().unwrap();
+        let (done_tx, done_rx) = mpsc::channel::<Value>();
+        let reader = {
+            let core = Arc::clone(&core);
+            std::thread::spawn(move || done_tx.send(count(&core)).unwrap())
+        };
+        // 写锁仍被攥着：查询必须自己返回（不等写锁），且看不到未提交的行。
+        let seen = done_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("query waited for the write lock");
+        assert_eq!(seen, Value::Integer(1), "read an uncommitted row");
+        reader.join().unwrap();
+        release_tx.send(()).unwrap();
+        writer.join().unwrap();
+        // 那笔提交了：下一条查询立刻看得见。
+        assert_eq!(count(&core), Value::Integer(2));
+    }
+
+    fn in_savepoint_for_test(conn: &Connection, body: impl FnOnce()) {
+        conn.execute_batch("SAVEPOINT t").unwrap();
+        body();
+        conn.execute_batch("RELEASE t").unwrap();
+    }
+
+    /// Drift 事务内（BEGIN 经 runCustom = exec(select) 开）：查询留在写连接上，同事务读得到刚写的未提交行；
+    /// 同一时刻读连接上的只读命令只看已提交的；回滚后查询回到读连接，未提交的行消失。嵌套 SAVEPOINT 同样。
+    #[test]
+    fn select_inside_a_drift_transaction_sees_its_uncommitted_rows() {
+        let core = open("inside");
+        insert(&core, "a");
+        core.exec("BEGIN TRANSACTION", &[], true).unwrap();
+        insert(&core, "b");
+        assert_eq!(
+            count(&core),
+            Value::Integer(2),
+            "transaction did not see its own write"
+        );
+        assert!(on_writer(&core), "in-transaction query left the writer");
+        // 事务外的读（读连接上的 Rust 只读命令 / 诊断查询）不读脏数据。
+        assert_eq!(
+            scalar(
+                &core
+                    .debug_query("SELECT COUNT(*) FROM srs_unknown_events", &[])
+                    .unwrap()
+            ),
+            Value::Integer(1)
+        );
+        assert_eq!(
+            core.read_visible(|c| c
+                .query_row("SELECT COUNT(*) FROM srs_unknown_events", [], |r| r
+                    .get::<_, i64>(0))
+                .map_err(|e| e.to_string()))
+                .unwrap(),
+            2,
+            "a read-only command inside the Drift transaction must read on the writer"
+        );
+        core.exec("SAVEPOINT s1", &[], true).unwrap();
+        insert(&core, "c");
+        assert_eq!(count(&core), Value::Integer(3));
+        core.exec("ROLLBACK TO s1", &[], true).unwrap();
+        core.exec("RELEASE s1", &[], true).unwrap();
+        assert_eq!(count(&core), Value::Integer(2));
+        core.exec("ROLLBACK TRANSACTION", &[], true).unwrap();
+        assert!(!core.in_transaction().unwrap());
+        assert_eq!(count(&core), Value::Integer(1));
+        assert!(!on_writer(&core));
+        core.exec("BEGIN TRANSACTION", &[], true).unwrap();
+        insert(&core, "d");
+        core.exec("COMMIT TRANSACTION", &[], true).unwrap();
+        assert_eq!(
+            count(&core),
+            Value::Integer(2),
+            "committed Drift transaction not visible to the next query"
+        );
+        assert!(!on_writer(&core));
+        // 批量语句里出错、事务没了：路由跟着写连接的真实状态走。
+        core.exec("BEGIN TRANSACTION", &[], true).unwrap();
+        assert!(
+            core.exec_batch(
+                &["COMMIT", "INSERT INTO nope VALUES (1)"],
+                &[(0, vec![]), (1, vec![])]
+            )
+            .is_err()
+        );
+        assert!(!core.in_transaction().unwrap());
+        assert!(!on_writer(&core));
+    }
+
+    /// 留在写连接上的「查询」：PRAGMA 读写连接自己的设置；`… RETURNING` 是写语句。
+    #[test]
+    fn pragmas_and_returning_stay_on_the_writer() {
+        let core = open("pragma");
+        core.exec("PRAGMA wal_autocheckpoint = 0", &[], true)
+            .unwrap();
+        assert_eq!(
+            scalar(&core.select("PRAGMA wal_autocheckpoint", &[]).unwrap()),
+            Value::Integer(0)
+        );
+        core.exec("PRAGMA wal_autocheckpoint = 1000", &[], true)
+            .unwrap();
+        let page = core
+            .select("INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES ('r', 'p', '{}') RETURNING id", &[])
+            .unwrap();
+        assert_eq!(scalar(&page), Value::Text("r".into()));
+        assert_eq!(count(&core), Value::Integer(1));
+    }
+}
+
+#[cfg(test)]
+mod direct_tests {
+    use super::*;
+
+    #[test]
+    fn history_states_reads_uncommitted_logs_on_the_writer() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_hist_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("srs.db");
+        let _ = std::fs::remove_file(&p);
+        let core = SrsCore::open(&p).unwrap();
+        core.legacy_mark_none().unwrap();
+        // 没有日志：新卡状态。
+        let empty = core.history_states(&[vec!["c1".into()]]).unwrap();
+        let expect_new =
+            crate::history::encode_states(&[crate::history::state_from_json(&[], &[]).unwrap()]);
+        assert_eq!(empty, expect_new);
+        core.exec("BEGIN", &[], false).unwrap();
+        core.exec(
+            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, \
+             review_type, origin, duration_ms, jslim) VALUES ('x', 'p', 'c1', 'k', NULL, 0, 'r', 'o', 0, 'not json')",
+            &[],
+            false,
+        )
+        .unwrap();
+        // 事务里新插的那行（坏 JSON）被读到了 → 解析报错。
+        assert!(core.history_states(&[vec!["c1".into()]]).is_err());
+        core.exec("ROLLBACK", &[], false).unwrap();
+        assert_eq!(
+            core.history_states(&[vec!["c1".into()]]).unwrap(),
+            expect_new
+        );
+    }
+
+    fn log(id: &str, card: &str, ms: i64, rtype: &str, rating: i64, res: &str) -> String {
+        format!(
+            r#"{{"id":"{id}","p":"p","card":"{card}","kind":"review","hlc":"{ms}:0:w","at":{ms},"rtype":"{rtype}","rating":{rating},"dur":1500,"utcOff":540,"res":{res}}}"#
+        )
+    }
+
+    #[test]
+    fn stat_projection_classifies_on_the_merged_history_of_the_owner_group() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_stat_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("srs.db");
+        let _ = std::fs::remove_file(&p);
+        let core = SrsCore::open(&p).unwrap();
+        core.legacy_mark_none().unwrap();
+        let day = 86_400_000;
+        let mature = r#"{"queue":"review","ivl":30,"dueDay":100}"#;
+        let a = log("a", "old", day, "learn", 3, mature);
+        let b = log(
+            "b",
+            "c1",
+            2 * day,
+            "review",
+            3,
+            r#"{"queue":"review","ivl":5,"dueDay":105}"#,
+        );
+        let c = log("c", "c1", 3 * day, "review", 1, mature);
+        let undo = r#"{"id":"u","p":"p","card":"c1","kind":"undo","hlc":"260000000:0:w","at":260000000,"revokes":"c"}"#;
+        for (id, card, json) in [
+            ("a", "old", a.as_str()),
+            ("b", "c1", b.as_str()),
+            ("c", "c1", c.as_str()),
+            ("u", "c1", undo),
+        ] {
+            core.exec(
+                "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, \
+                 review_type, origin, duration_ms, jslim) VALUES (srs_id(?1), 'p', srs_id(?2), 'k', NULL, 0, 'r', 'o', 0, ?3)",
+                &[Value::Text(id.into()), Value::Text(card.into()), Value::Text(json.into())],
+                false,
+            )
+            .unwrap();
+        }
+        let page = core
+            .stat_projection(&[vec!["c1".into(), "old".into()]])
+            .unwrap();
+        let (cols, rows) = rows::decode(&page).unwrap();
+        assert_eq!(cols, 9);
+        let row = |id: &str, at: i64, rating: i64, kind: i64, prev: Value, delta: i64| {
+            vec![
+                Value::Integer(0),
+                Value::Text(id.into()),
+                Value::Integer(at),
+                Value::Integer(540),
+                Value::Integer(rating),
+                Value::Integer(kind),
+                Value::Integer(1500),
+                prev,
+                Value::Integer(delta),
+            ]
+        };
+        assert_eq!(
+            rows,
+            vec![
+                // 前身卡的学习：新卡，学完即成熟。
+                row("a", day, 3, 0, Value::Null, 1),
+                // 本卡：前序（合并历史里前身那条）已是 30 天间隔 → 成熟复习，带上一条到期日；掉出成熟。
+                row("b", 2 * day, 3, 3, Value::Integer(100), -1),
+                // 被撤销的那条不在。
+            ]
+        );
+    }
+}
+
+#[cfg(test)]
+mod close_tests {
+    use super::*;
+
+    #[test]
+    fn closing_folds_the_wal_back_into_the_main_file() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_close_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("srs.db");
+        let _ = std::fs::remove_file(&p);
+        {
+            let core = SrsCore::open(&p).unwrap();
+            core.legacy_mark_none().unwrap();
+            core.exec(
+                "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES ('a', 'p', '{}')",
+                &[],
+                false,
+            )
+            .unwrap();
+        }
+        assert!(
+            !p.with_file_name("srs.db-wal").exists(),
+            "WAL left behind after close"
+        );
+        // 只拷主文件也拿得到数据。
+        let copy = dir.join("copy.db");
+        std::fs::copy(&p, &copy).unwrap();
+        let c = SrsCore::open(&copy).unwrap();
+        let n: i64 = c
+            .reader()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM srs_unknown_events", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
+    }
+}

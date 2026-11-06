@@ -310,10 +310,34 @@ void main() {
     expect(m.installed, isEmpty);
     expect(m.pluginFile(plugin.id).existsSync(), isFalse);
     expect(
-      Directory('${root.path}/storage').listSync(),
-      isEmpty,
-      reason: '卸载要连插件的 @libs/storage 一起删。',
+      File('${root.path}/storage/yomou.syosetu.json').existsSync(),
+      isTrue,
+      reason: '卸载默认保留插件的 @libs/storage（登录态），重装即接回（spec §5.2）。',
     );
+  });
+
+  test('卸载保留存储 → 重装接回；clearData=true 才连存储一起删', () async {
+    final FakeLnReaderRuntime runtime = FakeLnReaderRuntime();
+    final LnReaderManager m = await ready(runtime: runtime);
+    final LnReaderRepoPlugin plugin = m.available.firstWhere(
+      (LnReaderRepoPlugin p) => p.id == 'yomou.syosetu',
+    );
+    await m.install(plugin);
+    await m.persistStorage(plugin.id, <String, Object?>{'token': 'x'});
+    await m.uninstall(m.installed.single);
+    final File storage = File('${root.path}/storage/yomou.syosetu.json');
+    expect(storage.existsSync(), isTrue);
+
+    await m.install(plugin);
+    await m.load(m.installed.single);
+    expect(runtime.loaded, <String>['yomou.syosetu']);
+    expect(runtime.loadedStorage['yomou.syosetu'], <String, Object?>{
+      'token': 'x',
+    }, reason: '重装后装载时把卸载前的登录态接回运行时');
+
+    await m.uninstall(m.installed.single, clearData: true);
+    expect(m.installed, isEmpty);
+    expect(storage.existsSync(), isFalse);
   });
 
   test('插件存储随装载送进运行时；插件 id 不能逃出根目录', () async {

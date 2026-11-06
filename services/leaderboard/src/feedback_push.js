@@ -24,7 +24,7 @@
 // 成本：登记扣 write_rows 预算并按单条反馈每小时限次；每次处理最多 tokensPerFeedback 个出站
 // 请求（远低于 Workers Free 每请求 50 个子请求的上限）。APNs 本身免费。
 
-import { HttpError, b64urlEncode, hex, sha256 } from './util.js';
+import { HttpError, b64urlEncode, hex, pemToDer, sha256 } from './util.js';
 import { spend } from './budget.js';
 import { HOUR, hit } from './ratelimit.js';
 
@@ -142,14 +142,6 @@ export function apnsConfig(env) {
     console.log('apns: push not configured (APNS_KEY_P8 / APNS_KEY_ID / APNS_TEAM_ID / APNS_BUNDLE_ID / APNS_ENV=sandbox|production); skipping feedback pushes');
   }
   return null;
-}
-
-function pemToDer(pem) {
-  const b64 = String(pem).replace(/-----(BEGIN|END)[^-]*-----/g, '').replace(/\s+/g, '');
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
 }
 
 /**

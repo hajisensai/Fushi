@@ -39,8 +39,9 @@ class LrcParser {
   static final RegExp _metaTag = RegExp(r'^\[([a-zA-Z]+):[^\]]*\]$');
 
   /// 时间码（每个时间标签都要跑，编译一次）。
-  static final RegExp _fullTimecodeRe =
-      RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$');
+  static final RegExp _fullTimecodeRe = RegExp(
+    r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$',
+  );
   static final RegExp _shortTimecodeRe = RegExp(r'^(\d+):(\d{2})\.(\d{1,3})$');
 
   /// 读取 [lrcFile] 并返回 [AudioCue] 列表。
@@ -76,15 +77,21 @@ class LrcParser {
     int audioFileIndex = 0,
   }) {
     // 移除 UTF-8 BOM
-    final String stripped =
-        content.startsWith('\uFEFF') ? content.substring(1) : content;
+    final String stripped = content.startsWith('\uFEFF')
+        ? content.substring(1)
+        : content;
 
-    final List<String> lines =
-        stripped.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
+    final List<String> lines = stripped
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .split('\n');
 
     // 第一步：收集所有 (startMs, text) 原始对
     final List<(int, String)> rawCues = [];
 
+    // 先收齐带时间标签的行（时间标签与去掉时间标签后的文本），整份一次剥离行内标签。
+    final List<List<RegExpMatch>> lineTags = <List<RegExpMatch>>[];
+    final List<String> lineTexts = <String>[];
     for (final String line in lines) {
       final String trimmed = line.trim();
       if (trimmed.isEmpty) continue;
@@ -93,18 +100,24 @@ class LrcParser {
       if (_metaTag.hasMatch(trimmed)) continue;
 
       // 找出本行全部时间标签
-      final Iterable<RegExpMatch> tagMatches = _timedTag.allMatches(trimmed);
+      final List<RegExpMatch> tagMatches = _timedTag
+          .allMatches(trimmed)
+          .toList();
       if (tagMatches.isEmpty) continue;
 
       // 将所有时间标签从行中移除，剩余部分即为文本
-      String rawText = trimmed.replaceAll(_timedTag, '');
-      // 再剥离增强 LRC 词级时间标签 <MM:SS.xx>（与 HTML 标签同形，
-      // 共享 [stripHtmlTags]）
-      rawText = stripHtmlTags(rawText);
+      lineTags.add(tagMatches);
+      lineTexts.add(trimmed.replaceAll(_timedTag, ''));
+    }
+    // 再剥离增强 LRC 词级时间标签 <MM:SS.xx>（与 HTML 标签同形，共享
+    // [stripHtmlTagsBatch]）：增强 LRC 每行都带，整份一次 FFI，不逐行跨边界。
+    final List<String> strippedTexts = stripHtmlTagsBatch(lineTexts);
 
+    for (int l = 0; l < lineTags.length; l++) {
+      final String rawText = strippedTexts[l];
       if (rawText.isEmpty) continue;
 
-      for (final RegExpMatch m in tagMatches) {
+      for (final RegExpMatch m in lineTags[l]) {
         final int? ms = _parseTimecodeToMs(m.group(1)!);
         if (ms != null) {
           rawCues.add((ms, rawText));
@@ -116,7 +129,8 @@ class LrcParser {
 
     // 第二步：按 startMs 排序
     rawCues.sort(
-        (final (int, String) a, final (int, String) b) => a.$1.compareTo(b.$1));
+      (final (int, String) a, final (int, String) b) => a.$1.compareTo(b.$1),
+    );
 
     // 第三步：计算 endMs，构造 AudioCue 列表
     final List<AudioCue> cues = [];

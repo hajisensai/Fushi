@@ -16,7 +16,7 @@ behavior.
 
 Set `FUSHI_LIBMPV_ANDROID_DIR` to the absolute artifact directory, or pass
 `-PfushiLibmpvAndroidDir=/absolute/path` to Gradle. The directory must contain
-`full-arm64-v8a.jar`, `full-armeabi-v7a.jar`, `full-x86_64.jar`, `full-x86.jar`,
+`full-arm64-v8a.jar`, `full-armeabi-v7a.jar`, `full-x86_64.jar` (libmpv only; FFmpeg comes from the unified FFmpegKitNext AAR),
 and `sha256.json` mapping each filename to its lowercase SHA-256. Missing ABIs,
 missing native libraries, and checksum mismatches stop the build; they never
 silently fall back to old binaries.

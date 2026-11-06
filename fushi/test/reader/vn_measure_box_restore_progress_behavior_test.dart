@@ -24,14 +24,19 @@ import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 void main() {
   test('VN 行为级：量尺盒宽高 important / restore 0.99 落末屏 / fragment 失效回退进度', () {
     final String shell = ReaderVisualNovelScripts.vnShellScript();
-    final Directory temp =
-        Directory.systemTemp.createTempSync('fushi-vn-measure-restore-js-');
+    final Directory temp = Directory.systemTemp.createTempSync(
+      'fushi-vn-measure-restore-js-',
+    );
     final File payload = File('${temp.path}/payload.json')
       ..writeAsStringSync(jsonEncode(<String, String>{'shell': shell}));
-    final File runner =
-        File('test/reader/vn_measure_box_restore_progress_behavior_test.js');
-    expect(runner.existsSync(), isTrue,
-        reason: 'behavior harness ${runner.path} must exist');
+    final File runner = File(
+      'test/reader/vn_measure_box_restore_progress_behavior_test.js',
+    );
+    expect(
+      runner.existsSync(),
+      isTrue,
+      reason: 'behavior harness ${runner.path} must exist',
+    );
     late final ProcessResult result;
     try {
       result = Process.runSync(
@@ -46,7 +51,8 @@ void main() {
     expect(
       result.exitCode,
       0,
-      reason: 'VN measure/restore behavior runner failed:\n'
+      reason:
+          'VN measure/restore behavior runner failed:\n'
           'stdout=${result.stdout}\nstderr=${result.stderr}',
     );
     expect(result.stdout.toString().trim(), 'OK');
@@ -56,22 +62,35 @@ void main() {
     final String shell = ReaderVisualNovelScripts.vnShellScript();
     // restoreProgress 与 renderInitialScreen 是宿主恢复口径的两条入口，都必须吃
     // 0.99 = 章末 的约定；calculateProgress 往返（refit / 样式重锚）保持进度锚查找。
-    final int restoreAt =
-        shell.indexOf('restoreProgress: async function(progress) {');
+    final int restoreAt = shell.indexOf(
+      'restoreProgress: async function(progress) {',
+    );
     expect(restoreAt, greaterThan(-1));
-    final String restoreBody =
-        shell.substring(restoreAt, shell.indexOf('\n  },', restoreAt));
+    final String restoreBody = shell.substring(
+      restoreAt,
+      shell.indexOf('\n  },', restoreAt),
+    );
     expect(
-        restoreBody, contains('this.screenIndexForRestoreProgress(progress)'));
+      restoreBody,
+      contains('this.screenIndexForRestoreProgress(progress)'),
+    );
     expect(
-        restoreBody, isNot(contains('this.screenIndexForProgress(progress)')));
+      restoreBody,
+      isNot(contains('this.screenIndexForProgress(progress)')),
+    );
     final int initialAt = shell.indexOf('renderInitialScreen: function() {');
     expect(initialAt, greaterThan(-1));
-    final String initialBody =
-        shell.substring(initialAt, shell.indexOf('\n  },', initialAt));
-    expect(initialBody,
-        contains('this.screenIndexForRestoreProgress(this.initialProgress)'));
+    final String initialBody = shell.substring(
+      initialAt,
+      shell.indexOf('\n  },', initialAt),
+    );
     expect(
-        shell, contains('if (target >= 0.99) return this.screens.length - 1;'));
+      initialBody,
+      contains('this.screenIndexForRestoreProgress(this.initialProgress)'),
+    );
+    expect(
+      shell,
+      contains('if (target >= 0.99) return this.screens.length - 1;'),
+    );
   });
 }

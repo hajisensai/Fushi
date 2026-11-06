@@ -20,8 +20,8 @@ AudioCue _cue(int sentence, int startMs, String text) => AudioCue()
   ..audioFileIndex = 0;
 
 Widget _wrap(Widget child) => MaterialApp(
-      home: Scaffold(body: Stack(children: <Widget>[child])),
-    );
+  home: Scaffold(body: Stack(children: <Widget>[child])),
+);
 
 int _rowCount(WidgetTester tester) =>
     tester.widgetList<Text>(find.byType(Text)).where((Text w) {
@@ -30,8 +30,9 @@ int _rowCount(WidgetTester tester) =>
     }).length;
 
 void main() {
-  testWidgets('特效叠加重复行（同 start 同文本 ×2）在列表里折叠成一行；双语文本不同各占一行',
-      (WidgetTester tester) async {
+  testWidgets('特效叠加重复行（同 start 同文本 ×2）在列表里折叠成一行；双语文本不同各占一行', (
+    WidgetTester tester,
+  ) async {
     final VideoPlayerController controller = VideoPlayerController();
     addTearDown(controller.dispose);
     // 复现第一张图：1:40 处 ZH / JP / JP / ZH —— 每语言各被特效层复制一遍。
@@ -43,18 +44,22 @@ void main() {
       _cue(3, t, 'CH line'),
     ]);
 
-    await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-      controller: controller,
-      onTapCue: (_) {},
-      onClose: () {},
-      onCopyCue: (_) => true,
-      onFavoriteCue: (_) async {},
-      isCueFavorited: (_) => false,
-      colorScheme: const ColorScheme.dark(),
-      title: 'Subtitle list',
-      emptyHint: 'empty',
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        VideoSubtitleJumpPanel(
+          layout: VideoSubtitleListLayout.classic,
+          controller: controller,
+          onTapCue: (_) {},
+          onClose: () {},
+          onCopyCue: (_) => true,
+          onFavoriteCue: (_) async {},
+          isCueFavorited: (_) => false,
+          colorScheme: const ColorScheme.dark(),
+          title: 'Subtitle list',
+          emptyHint: 'empty',
+        ),
+      ),
+    );
 
     // 各文本只渲染一行（折叠前是各 2 行）。
     expect(find.text('CH line'), findsOneWidget);
@@ -74,18 +79,22 @@ void main() {
     ]);
     AudioCue? tapped;
 
-    await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-      controller: controller,
-      onTapCue: (AudioCue cue) => tapped = cue,
-      onClose: () {},
-      onCopyCue: (_) => true,
-      onFavoriteCue: (_) async {},
-      isCueFavorited: (_) => false,
-      colorScheme: const ColorScheme.dark(),
-      title: 'Subtitle list',
-      emptyHint: 'empty',
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        VideoSubtitleJumpPanel(
+          layout: VideoSubtitleListLayout.classic,
+          controller: controller,
+          onTapCue: (AudioCue cue) => tapped = cue,
+          onClose: () {},
+          onCopyCue: (_) => true,
+          onFavoriteCue: (_) async {},
+          isCueFavorited: (_) => false,
+          colorScheme: const ColorScheme.dark(),
+          title: 'Subtitle list',
+          emptyHint: 'empty',
+        ),
+      ),
+    );
 
     await tester.tap(find.text('JP line'));
     await tester.pump();
@@ -107,18 +116,22 @@ void main() {
     // 让当前句定位到重叠区（多条同刻活跃，currentCueIndex 可能取到重复项）。
     controller.debugUpdateCueForPosition(t + 500);
 
-    await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-      controller: controller,
-      onTapCue: (_) {},
-      onClose: () {},
-      onCopyCue: (_) => true,
-      onFavoriteCue: (_) async {},
-      isCueFavorited: (_) => false,
-      colorScheme: const ColorScheme.dark(),
-      title: 'Subtitle list',
-      emptyHint: 'empty',
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        VideoSubtitleJumpPanel(
+          layout: VideoSubtitleListLayout.classic,
+          controller: controller,
+          onTapCue: (_) {},
+          onClose: () {},
+          onCopyCue: (_) => true,
+          onFavoriteCue: (_) async {},
+          isCueFavorited: (_) => false,
+          colorScheme: const ColorScheme.dark(),
+          title: 'Subtitle list',
+          emptyHint: 'empty',
+        ),
+      ),
+    );
     await tester.pump();
 
     // 列表仍是 2 行、无异常（渲染不因当前句是重复项而崩）。

@@ -26,30 +26,48 @@ void expectPartManifestMatchesDisk({
   required String shellPath,
   required String partDirPath,
 }) {
-  expect(manifest.first, shellPath,
-      reason: '主壳必须恒在语料首位——多份守卫断言 build 域内 widget 的相对顺序');
+  expect(
+    manifest.first,
+    shellPath,
+    reason: '主壳必须恒在语料首位——多份守卫断言 build 域内 widget 的相对顺序',
+  );
 
   final List<String> parts = manifest.skip(1).toList();
-  expect(parts, isNotEmpty,
-      reason: '$partDirPath 一个 part 都没进语料——语料只剩主壳时，'
-          '所有落在 part 里的负向断言都会真空通过');
-  expect(parts, orderedEquals(<String>[...parts]..sort()),
-      reason: '清单必须按路径排序，否则语料内容随文件系统枚举顺序漂移，'
-          '「同一份代码两次运行结果不同」的守卫等于没有');
+  expect(
+    parts,
+    isNotEmpty,
+    reason:
+        '$partDirPath 一个 part 都没进语料——语料只剩主壳时，'
+        '所有落在 part 里的负向断言都会真空通过',
+  );
+  expect(
+    parts,
+    orderedEquals(<String>[...parts]..sort()),
+    reason:
+        '清单必须按路径排序，否则语料内容随文件系统枚举顺序漂移，'
+        '「同一份代码两次运行结果不同」的守卫等于没有',
+  );
 
   final Directory dir = Directory(partDirPath);
-  expect(dir.existsSync(), isTrue,
-      reason: '$partDirPath 不存在——part 目录被搬走了，语料及其全部消费方守卫需同步更新');
+  expect(
+    dir.existsSync(),
+    isTrue,
+    reason: '$partDirPath 不存在——part 目录被搬走了，语料及其全部消费方守卫需同步更新',
+  );
   final Set<String> onDisk = dir
       .listSync(followLinks: false)
       .map((FileSystemEntity e) => e.path.replaceAll(r'\', '/'))
       .where(FileSystemEntity.isFileSync)
       .where((String p) => p.endsWith('.dart'))
       .toSet();
-  expect(parts.toSet(), onDisk,
-      reason: '磁盘上的 part 与语料清单必须一一对应——漏一个，落在它里面的负向断言'
-          '（isNot(contains(...))）就会真空通过。'
-          '若新文件不叫 *.part.dart，生产侧的后缀过滤会静默跳过它，同样算漏。');
+  expect(
+    parts.toSet(),
+    onDisk,
+    reason:
+        '磁盘上的 part 与语料清单必须一一对应——漏一个，落在它里面的负向断言'
+        '（isNot(contains(...))）就会真空通过。'
+        '若新文件不叫 *.part.dart，生产侧的后缀过滤会静默跳过它，同样算漏。',
+  );
 }
 
 /// 清单里的每个文件，内容都真的进了 [corpus]（不只是路径进了清单）。
@@ -67,7 +85,10 @@ void expectPartContentsInCorpus({
         .split('\n')
         .reduce((String a, String b) => b.length > a.length ? b : a);
     expect(fingerprint.trim(), isNotEmpty, reason: '$path 是空文件？');
-    expect(corpus, contains(fingerprint),
-        reason: '$path 的内容不在合并语料里——路径进了清单，但读取环节把它丢了');
+    expect(
+      corpus,
+      contains(fingerprint),
+      reason: '$path 的内容不在合并语料里——路径进了清单，但读取环节把它丢了',
+    );
   }
 }

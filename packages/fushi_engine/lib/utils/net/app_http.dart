@@ -61,10 +61,22 @@ HttpClient createAppHttpClient({
 }
 
 /// [createAppHttpClient] 的 `package:http` 包装：裸 `http.Client()` 的逐点替换目标。
+///
+/// [configure] 在包装前改装底层 [HttpClient]（例如联网搜索抓页换 `connectionFactory`
+/// 按已校验地址建连）：改装仍从装好代理与连接超时的 client 出发，调用方不必另起裸
+/// `IOClient(`。
 http.Client createAppHttpIoClient({
   Duration? connectionTimeout = kAppHttpConnectionTimeout,
-}) =>
-    IOClient(createAppHttpClient(connectionTimeout: connectionTimeout));
+  void Function(HttpClient client)? configure,
+}) => IOClient(
+  createAppHttpClient(connectionTimeout: connectionTimeout)
+    .._configureWith(configure),
+);
+
+extension on HttpClient {
+  void _configureWith(void Function(HttpClient client)? configure) =>
+      configure?.call(this);
+}
 
 /// 建一个走应用代理出口的 [Dio]：裸 `Dio()` / `Dio(BaseOptions(...))` 的替换目标。
 ///
@@ -76,8 +88,9 @@ Dio createAppDio({
   Duration? connectionTimeout = kAppHttpConnectionTimeout,
 }) {
   final Dio dio = options == null ? Dio() : Dio(options);
-  final HttpClient httpClient =
-      createAppHttpClient(connectionTimeout: connectionTimeout);
+  final HttpClient httpClient = createAppHttpClient(
+    connectionTimeout: connectionTimeout,
+  );
   dio.httpClientAdapter = IOHttpClientAdapter(
     onHttpClientCreate: (HttpClient _) => httpClient,
   );

@@ -29,7 +29,8 @@ void main() {
   // Realistic chapter fragment: a paragraph mixing plain kanji, mono-ruby
   // (separate base+rt pairs — the 熟語 the user screenshotted), group ruby, and
   // a single ruby. Enough text so vertical columns actually form.
-  const String html = '<!DOCTYPE html><html><head><meta charset="utf-8">'
+  const String html =
+      '<!DOCTYPE html><html><head><meta charset="utf-8">'
       '</head><body>'
       '<p id="para">'
       'それは<ruby id="mono">貫<rt>かん</rt>禄<rt>ろく</rt></ruby>のある'
@@ -95,8 +96,9 @@ void main() {
 })();
 ''';
 
-  testWidgets('vertical-rl ruby annotation alignment under real reader CSS',
-      (WidgetTester tester) async {
+  testWidgets('vertical-rl ruby annotation alignment under real reader CSS', (
+    WidgetTester tester,
+  ) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final ReaderSettings settings = ReaderSettings(db);
@@ -106,21 +108,24 @@ void main() {
     final Completer<void> ready = Completer<void>();
     InAppWebViewController? ctrl;
 
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: SizedBox(
-          width: 800,
-          height: 600,
-          child: InAppWebView(
-            initialData: InAppWebViewInitialData(data: html),
-            onLoadStop: (InAppWebViewController controller, WebUri? url) async {
-              ctrl = controller;
-              if (!ready.isCompleted) ready.complete();
-            },
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 800,
+            height: 600,
+            child: InAppWebView(
+              initialData: InAppWebViewInitialData(data: html),
+              onLoadStop:
+                  (InAppWebViewController controller, WebUri? url) async {
+                    ctrl = controller;
+                    if (!ready.isCompleted) ready.complete();
+                  },
+            ),
           ),
         ),
       ),
-    ));
+    );
 
     for (int i = 0; i < 150 && !ready.isCompleted; i++) {
       await tester.pump(const Duration(milliseconds: 100));
@@ -130,41 +135,50 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
 
     Future<void> injectCss(String css) async {
-      await controller.evaluateJavascript(source: '''
+      await controller.evaluateJavascript(
+        source:
+            '''
         (function () {
           var s = document.getElementById('fushi-probe-style');
           if (!s) { s = document.createElement('style'); s.id = 'fushi-probe-style';
             document.head.appendChild(s); }
           s.textContent = ${jsonEncode(css)};
         })();
-      ''');
+      ''',
+      );
     }
 
     // Simulates the BOOK's own stylesheet: a second <style> appended AFTER the
     // reader style, so equal-specificity / !important book rules win the cascade
     // (real EPUBs ship CSS that can override the reader's ruby rules).
     Future<void> injectBookCss(String css) async {
-      await controller.evaluateJavascript(source: '''
+      await controller.evaluateJavascript(
+        source:
+            '''
         (function () {
           var s = document.getElementById('fushi-book-style');
           if (!s) { s = document.createElement('style'); s.id = 'fushi-book-style';
             document.head.appendChild(s); }
           s.textContent = ${jsonEncode(css)};
         })();
-      ''');
+      ''',
+      );
     }
 
     Future<Map<String, dynamic>> probe(String label) async {
       // force layout to settle
       await controller.evaluateJavascript(
-          source: 'void document.body.offsetHeight;');
+        source: 'void document.body.offsetHeight;',
+      );
       await tester.pump(const Duration(milliseconds: 400));
       final Object? raw = await controller.evaluateJavascript(source: probeJs);
       final Map<String, dynamic> m =
           jsonDecode(raw.toString()) as Map<String, dynamic>;
       debugPrint('[ruby-probe] === $label ===');
-      debugPrint('[ruby-probe] writingMode=${m['writingMode']} '
-          'rtFontSize=${m['rtFontSize']}');
+      debugPrint(
+        '[ruby-probe] writingMode=${m['writingMode']} '
+        'rtFontSize=${m['rtFontSize']}',
+      );
       for (final String key in <String>['mono', 'group', 'single', 'mono2']) {
         final Map<String, dynamic>? g = m[key] as Map<String, dynamic>?;
         if (g == null) continue;
@@ -174,9 +188,11 @@ void main() {
           final Map<String, dynamic>? base =
               pr['base'] as Map<String, dynamic>?;
           final Map<String, dynamic> rt = pr['rt'] as Map<String, dynamic>;
-          debugPrint('[ruby-probe] $key base="${base?['text']}" '
-              'rt="${rt['text']}" dx=${_f(pr['dx'])} dy=${_f(pr['dy'])} '
-              'dyRatio=${_f(pr['dyRatio'])} rtRightOfBase=${pr['rtRightOfBase']}');
+          debugPrint(
+            '[ruby-probe] $key base="${base?['text']}" '
+            'rt="${rt['text']}" dx=${_f(pr['dx'])} dy=${_f(pr['dy'])} '
+            'dyRatio=${_f(pr['dyRatio'])} rtRightOfBase=${pr['rtRightOfBase']}',
+          );
         }
       }
       return m;
@@ -185,8 +201,9 @@ void main() {
     // Variant A: FULL real reader CSS, continuous vertical.
     await settings.setViewMode('continuous');
     await injectCss(ReaderContentStyles.css(settings: settings));
-    final Map<String, dynamic> full =
-        await probe('FULL reader CSS (continuous vertical-rl)');
+    final Map<String, dynamic> full = await probe(
+      'FULL reader CSS (continuous vertical-rl)',
+    );
 
     // Variant B: FULL real reader CSS, paginated vertical.
     await settings.setViewMode('paginated');
@@ -220,12 +237,14 @@ void main() {
 
     // Variant K: book overrides ruby-align / ruby-position.
     await injectBookCss(
-        'ruby{ruby-align:space-between!important;ruby-position:under!important;}');
+      'ruby{ruby-align:space-between!important;ruby-position:under!important;}',
+    );
     await probe('BOOK: ruby-align:space-between; ruby-position:under');
 
     // Variant L: book sets rt vertical-align / line-height (legacy furigana CSS).
     await injectBookCss(
-        'rt{vertical-align:top!important;line-height:1!important;}');
+      'rt{vertical-align:top!important;line-height:1!important;}',
+    );
     await probe('BOOK: rt{vertical-align:top; line-height:1}');
 
     // ── FIX VERIFICATION: the reader style is injected LAST in <head> (after
@@ -234,7 +253,9 @@ void main() {
     // book's display override. This helper appends the candidate fix as a fresh
     // <style> AFTER the book style, mirroring the real injection order. ──
     Future<void> injectFixLast(String css) async {
-      await controller.evaluateJavascript(source: '''
+      await controller.evaluateJavascript(
+        source:
+            '''
         (function () {
           var old = document.getElementById('fushi-fix-style');
           if (old) old.remove();
@@ -243,7 +264,8 @@ void main() {
           s.textContent = ${jsonEncode(css)};
           document.head.appendChild(s);
         })();
-      ''');
+      ''',
+      );
     }
 
     // The fix ships in ReaderContentStyles.css itself (forced ruby/rt/rp
@@ -255,14 +277,16 @@ void main() {
     await injectCss(readerCss);
     await injectBookCss('ruby,rt{display:inline-block!important;}');
     await injectFixLast(readerCss);
-    final Map<String, dynamic> fixed1 =
-        await probe('FIX: ruby,rt{display:inline-block} + reader CSS last');
+    final Map<String, dynamic> fixed1 = await probe(
+      'FIX: ruby,rt{display:inline-block} + reader CSS last',
+    );
 
     // Variant N: rt-only override + real reader CSS last.
     await injectBookCss('rt{display:inline-block!important;}');
     await injectFixLast(readerCss);
-    final Map<String, dynamic> fixed2 =
-        await probe('FIX: rt{display:inline-block} + reader CSS last');
+    final Map<String, dynamic> fixed2 = await probe(
+      'FIX: rt{display:inline-block} + reader CSS last',
+    );
 
     // Clear the book + fix stylesheets for the clean-control assertion below.
     await injectFixLast('');
@@ -283,22 +307,28 @@ void main() {
         final num? dyRatio = pr['dyRatio'] as num?;
         final bool rtRight = pr['rtRightOfBase'] == true;
         final Map<String, dynamic>? base = pr['base'] as Map<String, dynamic>?;
-        final String rtText =
-            (pr['rt'] as Map<String, dynamic>)['text'].toString();
+        final String rtText = (pr['rt'] as Map<String, dynamic>)['text']
+            .toString();
         if (dyRatio == null) continue;
         if (!rtRight) {
-          failures
-              .add('$key rt="$rtText": not right of base (dx=${_f(pr['dx'])})');
+          failures.add(
+            '$key rt="$rtText": not right of base (dx=${_f(pr['dx'])})',
+          );
         }
         if (dyRatio.abs() >= 0.35) {
-          failures.add('$key base="${base?['text']}" rt="$rtText": '
-              'annotation shifted along column dyRatio=${_f(dyRatio)}');
+          failures.add(
+            '$key base="${base?['text']}" rt="$rtText": '
+            'annotation shifted along column dyRatio=${_f(dyRatio)}',
+          );
         }
       }
     }
     debugPrint('[ruby-probe] failures=${failures.length}: $failures');
-    expect(failures, isEmpty,
-        reason: 'vertical-rl furigana misaligned: ${failures.join("; ")}');
+    expect(
+      failures,
+      isEmpty,
+      reason: 'vertical-rl furigana misaligned: ${failures.join("; ")}',
+    );
 
     // The candidate fix must restore alignment even when the book breaks the
     // ruby display: every measured pair aligns (|dyRatio| < 0.35) and stays to
@@ -312,11 +342,13 @@ void main() {
           final Map<String, dynamic> pr = p as Map<String, dynamic>;
           final num? dyRatio = pr['dyRatio'] as num?;
           if (dyRatio == null) continue;
-          final String rtText =
-              (pr['rt'] as Map<String, dynamic>)['text'].toString();
+          final String rtText = (pr['rt'] as Map<String, dynamic>)['text']
+              .toString();
           if (pr['rtRightOfBase'] != true || dyRatio.abs() >= 0.35) {
-            bad.add('$tag $key rt="$rtText" dyRatio=${_f(dyRatio)} '
-                'rtRight=${pr['rtRightOfBase']}');
+            bad.add(
+              '$tag $key rt="$rtText" dyRatio=${_f(dyRatio)} '
+              'rtRight=${pr['rtRightOfBase']}',
+            );
           }
         }
       }
@@ -328,10 +360,13 @@ void main() {
       ...checkAligned(fixed2, 'FIX-N'),
     ];
     debugPrint('[ruby-probe] fixFailures=${fixFailures.length}: $fixFailures');
-    expect(fixFailures, isEmpty,
-        reason:
-            'candidate ruby-display fix failed to restore vertical furigana '
-            'alignment against book display override: ${fixFailures.join("; ")}');
+    expect(
+      fixFailures,
+      isEmpty,
+      reason:
+          'candidate ruby-display fix failed to restore vertical furigana '
+          'alignment against book display override: ${fixFailures.join("; ")}',
+    );
   });
 }
 

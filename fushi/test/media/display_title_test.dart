@@ -1,6 +1,8 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/media.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
@@ -45,15 +47,9 @@ void main() {
       final String id = ReaderFushiSource.mediaIdentifierFor(bookKey);
       addTearDown(() => setOverride(id, null));
 
-      expect(
-        displayTitleForBook(bookKey: bookKey, rawTitle: '原名'),
-        '原名',
-      );
+      expect(displayTitleForBook(bookKey: bookKey, rawTitle: '原名'), '原名');
       await setOverride(id, '新名A');
-      expect(
-        displayTitleForBook(bookKey: bookKey, rawTitle: '原名'),
-        '新名A',
-      );
+      expect(displayTitleForBook(bookKey: bookKey, rawTitle: '原名'), '新名A');
     });
 
     test('srtUid 通道：standalone SRT 身份独立解析', () async {
@@ -94,10 +90,7 @@ void main() {
       addTearDown(() => setOverride(id, null));
       await setOverride(id, '新名C');
 
-      expect(
-        displayTitleForBook(item: itemFor(id), rawTitle: 'RAW'),
-        '新名C',
-      );
+      expect(displayTitleForBook(item: itemFor(id), rawTitle: 'RAW'), '新名C');
       // canEdit:false → getOverrideTitleFromMediaItem 静默返 null → 回落
       // item.title。合成 MediaItem 必须 canEdit:true 的契约由此锁死。
       expect(
@@ -116,8 +109,9 @@ void main() {
 
   group('displayTitleForVideo', () {
     test('显式 no-op：raw 列值即显示名（视频改名直写列）', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       await db.upsertVideoBook(
         VideoBooksCompanion.insert(

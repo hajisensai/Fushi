@@ -10,13 +10,12 @@ import 'golden_test_helpers.dart';
 void main() {
   group('FushiMarquee golden', () {
     testWidgets('short text fits without scrolling', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiMarquee(
-          text: 'Short',
-          style: TextStyle(fontSize: 16),
+      await tester.pumpWidget(
+        buildGoldenApp(
+          const FushiMarquee(text: 'Short', style: TextStyle(fontSize: 16)),
+          size: const Size(300, 40),
         ),
-        size: const Size(300, 40),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(
@@ -26,13 +25,12 @@ void main() {
     });
 
     testWidgets('Japanese text fits at adequate width', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiMarquee(
-          text: '吾輩は猫',
-          style: TextStyle(fontSize: 16),
+      await tester.pumpWidget(
+        buildGoldenApp(
+          const FushiMarquee(text: '吾輩は猫', style: TextStyle(fontSize: 16)),
+          size: const Size(300, 40),
         ),
-        size: const Size(300, 40),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(
@@ -42,17 +40,19 @@ void main() {
     });
 
     testWidgets('with custom style non-overflow', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiMarquee(
-          text: 'Styled',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Colors.deepPurple,
+      await tester.pumpWidget(
+        buildGoldenApp(
+          const FushiMarquee(
+            text: 'Styled',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.deepPurple,
+            ),
           ),
+          size: const Size(300, 50),
         ),
-        size: const Size(300, 50),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(
@@ -62,14 +62,16 @@ void main() {
     });
 
     testWidgets('dark theme non-overflow', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiMarquee(
-          text: 'Dark mode',
-          style: TextStyle(fontSize: 16, color: Colors.white),
+      await tester.pumpWidget(
+        buildGoldenApp(
+          const FushiMarquee(
+            text: 'Dark mode',
+            style: TextStyle(fontSize: 16, color: Colors.white),
+          ),
+          theme: ThemeData.dark(useMaterial3: true),
+          size: const Size(300, 40),
         ),
-        theme: ThemeData.dark(useMaterial3: true),
-        size: const Size(300, 40),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(

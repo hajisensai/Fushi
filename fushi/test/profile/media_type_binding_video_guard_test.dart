@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-1063 / BUG-512 source-scan guard: the "media type bindings" settings
 /// list (profile_management_page.dart) must include `video`, and the video
@@ -29,8 +29,11 @@ void main() {
   );
 
   test('media-type binding UI lists video alongside the other media types', () {
-    expect(bindingUi.existsSync(), isTrue,
-        reason: 'TODO-1063 binding UI lives in this file');
+    expect(
+      bindingUi.existsSync(),
+      isTrue,
+      reason: 'TODO-1063 binding UI lives in this file',
+    );
     final String src = bindingUi.readAsStringSync();
 
     // All five bindable media-type kinds must be present as binding rows.
@@ -51,7 +54,8 @@ void main() {
         src.contains('_buildMediaTypeRow(') &&
             src.contains('ProfileMediaKind.$mediaType'),
         isTrue,
-        reason: 'binding row for "$mediaType" missing — video (TODO-1063) or a '
+        reason:
+            'binding row for "$mediaType" missing — video (TODO-1063) or a '
             'sibling type was dropped from the media-type binding list',
       );
     }
@@ -70,13 +74,13 @@ void main() {
 
     // Guard against dead UI: opening a video must resolve the video binding.
     // (TODO-2936: the resolve+compare+switch tail is converged into
-    // ProfileViewModel.autoApplyBinding; the page delegates to it.)
+    // ProfileViewModel.enterWorkSession; the page delegates to it.)
     expect(
-      src.contains('autoApplyBinding(') &&
+      src.contains('enterWorkSession(') &&
           src.contains('mediaType: ProfileMediaKind.video'),
       isTrue,
       reason:
-          'video page must call autoApplyBinding(mediaType: ProfileMediaKind'
+          'video page must call enterWorkSession(mediaType: ProfileMediaKind'
           '.video) so the media-type binding actually takes effect (else it '
           'is dead UI)',
     );

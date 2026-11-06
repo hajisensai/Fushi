@@ -44,10 +44,18 @@ void main() {
 
     test('StatTrendPoint.cph folds sub-threshold samples to 0 for charts', () {
       final StatTrendPoint dirty = StatTrendPoint(
-          bucketKey: '2026-07-25', label: '07-25', chars: 11000, ms: 25000);
+        bucketKey: '2026-07-25',
+        label: '07-25',
+        chars: 11000,
+        ms: 25000,
+      );
       expect(dirty.cph, 0);
       final StatTrendPoint ok = StatTrendPoint(
-          bucketKey: '2026-07-24', label: '07-24', chars: 3600, ms: 3600000);
+        bucketKey: '2026-07-24',
+        label: '07-24',
+        chars: 3600,
+        ms: 3600000,
+      );
       expect(ok.cph, closeTo(3600, 0.001));
     });
   });
@@ -94,8 +102,10 @@ void main() {
     ];
 
     test('daily granularity keeps every day', () {
-      final List<StatTrendPoint> pts =
-          aggregateTrend(daily, StatTrendGranularity.daily);
+      final List<StatTrendPoint> pts = aggregateTrend(
+        daily,
+        StatTrendGranularity.daily,
+      );
       expect(pts.length, 3);
       expect(pts[0].chars, 100);
       expect(pts[0].label, '06-15');
@@ -103,8 +113,10 @@ void main() {
     });
 
     test('weekly granularity buckets by ISO week, sorted ascending', () {
-      final List<StatTrendPoint> pts =
-          aggregateTrend(daily, StatTrendGranularity.weekly);
+      final List<StatTrendPoint> pts = aggregateTrend(
+        daily,
+        StatTrendGranularity.weekly,
+      );
       expect(pts.length, 2);
       expect(pts[0].bucketKey, '2026-W25');
       expect(pts[0].chars, 300); // 100 + 200
@@ -120,8 +132,10 @@ void main() {
         _day('2026-06-01', 20, 0),
         _day('2026-06-15', 30, 0),
       ];
-      final List<StatTrendPoint> pts =
-          aggregateTrend(twoMonths, StatTrendGranularity.monthly);
+      final List<StatTrendPoint> pts = aggregateTrend(
+        twoMonths,
+        StatTrendGranularity.monthly,
+      );
       expect(pts.length, 2);
       expect(pts[0].bucketKey, '2026-05');
       expect(pts[0].chars, 10);
@@ -131,15 +145,19 @@ void main() {
     });
 
     test('cph getter on trend point uses aggregated chars/ms', () {
-      final List<StatTrendPoint> pts =
-          aggregateTrend(daily, StatTrendGranularity.weekly);
+      final List<StatTrendPoint> pts = aggregateTrend(
+        daily,
+        StatTrendGranularity.weekly,
+      );
       // W25: 300 字 / 2 小时 = 150 cph。
       expect(pts[0].cph, closeTo(150, 0.001));
     });
 
     test('empty input yields empty', () {
-      expect(aggregateTrend(<StatDayData>[], StatTrendGranularity.weekly),
-          isEmpty);
+      expect(
+        aggregateTrend(<StatDayData>[], StatTrendGranularity.weekly),
+        isEmpty,
+      );
     });
   });
 
@@ -181,15 +199,22 @@ void main() {
     });
 
     test('no anomalies when all values are similar', () {
-      final List<bool> flags =
-          detectAnomalies(<double>[100, 101, 99, 100, 102]);
+      final List<bool> flags = detectAnomalies(<double>[
+        100,
+        101,
+        99,
+        100,
+        102,
+      ]);
       expect(flags.every((bool b) => !b), isTrue);
     });
 
     test('too few non-zero samples -> no flags', () {
       // 只有 2 个非零样本，不足 3 -> 全 false。
-      expect(detectAnomalies(<double>[0, 5, 0, 9000]).every((bool b) => !b),
-          isTrue);
+      expect(
+        detectAnomalies(<double>[0, 5, 0, 9000]).every((bool b) => !b),
+        isTrue,
+      );
     });
 
     test('zero values never flagged as anomalies', () {
@@ -200,7 +225,9 @@ void main() {
 
     test('all-zero yields all false without crashing', () {
       expect(
-          detectAnomalies(<double>[0, 0, 0, 0]).every((bool b) => !b), isTrue);
+        detectAnomalies(<double>[0, 0, 0, 0]).every((bool b) => !b),
+        isTrue,
+      );
     });
   });
 

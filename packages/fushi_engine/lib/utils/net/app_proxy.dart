@@ -103,6 +103,15 @@ String _effectiveProxyMode(String proxy) {
   return (mode: _effectiveProxyMode(proxy), proxy: proxy);
 }
 
+/// 进程级代理裁决的公开读法：此刻生效的模式（[kProxyModeAuto] /
+/// [kProxyModeDirect] / [kProxyModeManual]）与手填地址原串。
+///
+/// 给不走 `HttpClient` 的出站（iOS 系统后台 `URLSession` 等原生传输）用：它们装不上
+/// [applyAppProxy] 的 `findProxy` 闭包，只能拿裁决结果自己翻译成平台配置。与
+/// [applyAppProxy] 读的是同一份裁决，不另立判据。
+({String mode, String proxy}) resolveAppProxyDecision() =>
+    _resolveProxyDecision(null);
+
 void _installManualProxyCredentials(
   HttpClient client, {
   String? legacyUserProxy,
@@ -114,30 +123,52 @@ void _installManualProxyCredentials(
   final Set<String> attempted = <String>{};
   client.authenticateProxy =
       (String host, int port, String scheme, String? realm) async {
-        if (_resolveProxyDecision(legacyUserProxy).mode != kProxyModeManual) {
-          return false;
-        }
         // 只支持 Basic。塞 Basic 凭据去应付 Digest challenge，findCredentials 永远
         // 匹配不到，同样进无限环。
         if (scheme.toLowerCase() != 'basic') return false;
-        final String username = appUserProxyUsernameReader();
-        if (username.isEmpty) return false;
-        final String? endpoint = normalizeUserProxyHostPort(
-          _resolveProxyDecision(legacyUserProxy).proxy,
-        );
-        if (endpoint == null ||
-            endpoint.toLowerCase() != '$host:$port'.toLowerCase()) {
-          return false;
-        }
+        final ({String username, String password})? credentials =
+            appManualProxyBasicCredentials(
+              host,
+              port,
+              legacyUserProxy: legacyUserProxy,
+            );
+        if (credentials == null) return false;
         if (!attempted.add('$host:$port|$scheme|${realm ?? ''}')) return false;
         client.addProxyCredentials(
           host,
           port,
           realm ?? '',
-          HttpClientBasicCredentials(username, appUserProxyPasswordReader()),
+          HttpClientBasicCredentials(
+            credentials.username,
+            credentials.password,
+          ),
         );
         return true;
       };
+}
+
+/// 手填代理的 Basic 凭据：此刻是手动模式、填了用户名、且 [host]:[port] 正是手填的那个
+/// 代理时返回；否则 null（自动 / 直连模式、没填用户名、问的是别的代理）。
+///
+/// [HttpClient] 经 `authenticateProxy` 用它；自己发 `CONNECT` 建隧道的调用方（联网搜索
+/// 抓页按已校验地址建连，`web_search.dart`）也用它，凭据判据只有这一份。
+({String username, String password})? appManualProxyBasicCredentials(
+  String host,
+  int port, {
+  String? legacyUserProxy,
+}) {
+  final ({String mode, String proxy}) decision = _resolveProxyDecision(
+    legacyUserProxy,
+  );
+  if (decision.mode != kProxyModeManual) return null;
+  final String username = appUserProxyUsernameReader();
+  if (username.isEmpty) return null;
+  final String? endpoint = normalizeUserProxyHostPort(decision.proxy);
+  if (endpoint == null ||
+      endpoint.toLowerCase() != '$host:$port'.toLowerCase()) {
+    return null;
+  }
+  return (username: username, password: appUserProxyPasswordReader());
 }
 
 /// **纯函数（TODO-871/862）**：把用户手填的「自定义更新代理」原始串归一成
@@ -282,13 +313,69 @@ bool _hasEnvProxy(Map<String, String> environment) =>
       return lower == 'https_proxy' || lower == 'http_proxy';
     });
 
-/// 按平台读 GUI 系统代理（Windows 注册表 / macOS scutil / Linux gsettings）。
-/// 其余平台返回空 map。
+/// 移动端（Android）的系统代理读取器，由宿主经平台通道装配
+/// （[installPlatformSystemProxyReader]）。
+///
+/// 纯 Dart 引擎读不到移动端的系统代理：Android 的 Wi-Fi「代理：手动」只进
+/// `ConnectivityManager` / JVM 系统属性，Dart `HttpClient` 不认它。不装这个读取器，
+/// 自动模式在 Android 上恒为 DIRECT——WebView（走系统代理）能打开 YouTube，而同一台
+/// 设备上 Dart 侧的 YouTube 解析、刮削、字幕下载一律直连超时。
+Future<Map<String, String>> Function()? _platformSystemProxyReader;
+
+/// 宿主装配移动端系统代理读取器（返回 `findProxyFromEnvironment` 用的 environment
+/// 片段：`https_proxy` / `http_proxy` / `no_proxy`）。桌面三平台有原生读取，不调用它。
+void installPlatformSystemProxyReader(
+  Future<Map<String, String>> Function()? reader,
+) {
+  _platformSystemProxyReader = reader;
+}
+
+/// 纯函数：Android `ProxyInfo`（host / port / exclusionList）→ environment 片段。
+///
+/// host 为空或 port 不在 1..65535 → 空 map（= 系统没配代理）。`exclusionList` 是
+/// 逗号分隔的主机模式（`localhost,*.lan`），换成 `no_proxy` 的后缀写法（`*.lan` →
+/// `.lan`）；本机 / 局域网目标另有 [isDirectProxyTarget] 闸门兜底。
+Map<String, String> androidSystemProxyEnvironment({
+  required String? host,
+  required int? port,
+  String? exclusionList,
+}) {
+  final String h = host?.trim() ?? '';
+  if (h.isEmpty || port == null || port <= 0 || port > 65535) {
+    return const <String, String>{};
+  }
+  final String hostPort = h.contains(':') && !h.startsWith('[')
+      ? '[$h]:$port'
+      : '$h:$port';
+  final Map<String, String> env = _buildProxyEnv(
+    https: hostPort,
+    http: hostPort,
+  );
+  final List<String> noProxy = <String>[
+    for (final String raw in (exclusionList ?? '').split(RegExp('[,|]')))
+      if (raw.trim().isNotEmpty)
+        raw.trim().startsWith('*.') ? raw.trim().substring(1) : raw.trim(),
+  ];
+  if (noProxy.isNotEmpty) env['no_proxy'] = noProxy.join(',');
+  return env;
+}
+
+/// 按平台读 GUI 系统代理（Windows 注册表 / macOS scutil / Linux gsettings /
+/// 移动端经 [installPlatformSystemProxyReader] 装配的平台通道）。读不到返回空 map。
 Future<Map<String, String>> resolveSystemProxyEnvironment() async {
   if (Platform.isWindows) return readWindowsSystemProxyEnvironmentSync();
   if (Platform.isMacOS) return resolveMacSystemProxyEnvironment();
   if (Platform.isLinux) return resolveLinuxSystemProxyEnvironment();
-  return const <String, String>{};
+  final Future<Map<String, String>> Function()? reader =
+      _platformSystemProxyReader;
+  if (reader == null) return const <String, String>{};
+  try {
+    return await reader();
+  } catch (e) {
+    // 约定不抛（与桌面各 resolve* 一致）：读取失败 = 不补系统代理。
+    fushiDebugPrint('[AppProxy] platform system proxy read failed: $e');
+    return const <String, String>{};
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -531,6 +618,60 @@ String? resolveAppProxyHostPort() =>
   return (username: username, password: appUserProxyPasswordReader());
 }
 
+/// 给**只吃一个代理 URL** 的外部 HTTP 客户端（制卡 / 导出用的 ffmpeg `-http_proxy`）
+/// 翻译同一份代理裁决：[uri] 该走的 HTTP 代理，形如 `http://[user:pass@]host:port`；
+/// 直连 → `proxyUrl == null`。
+///
+/// 反馈 vhW6OpRy2H：浏览器扩展 YouTube 制卡时，句子音频先经 Dart（已接本层）按 range
+/// 物化，失败再由 ffmpeg 直接读 googlevideo——而 ffmpeg 那一程从来不知道 app 的代理设置，
+/// 用户在 app 里配好的代理只覆盖了一半，墙内 / 网络受限时两程一起失败，整张卡中止。
+/// 这里不另立判据：地址取 [resolveAppProxyDirective] 的首选 `PROXY`，凭据取
+/// [resolveAppProxyCredentials]（只有手动模式有），与 Dart 出站逐 URI 同答案（本机 /
+/// 局域网、`no_proxy`、直连模式一律直连）。用户名密码按 URL userinfo 百分号编码，
+/// ffmpeg 的 httpauth 会先解码再做 Basic。
+///
+/// **SOCKS 不假装支持**：本层的裁决本身只有 HTTP 代理（Dart `HttpClient` 不会 SOCKS，
+/// 手动模式也只收 `host:port` 的 HTTP 代理）。唯一能混进 SOCKS 的是自动模式下用户自己
+/// 设的环境变量（`https_proxy=socks5://…`）——Dart 会剥掉 scheme 当 HTTP 代理用，ffmpeg
+/// 的 `-http_proxy` 只认 `http://`。这种情况返回 `socksUnsupported=true`、不给 URL，由调用方
+/// 记诊断并直连，而不是把一个 SOCKS 端点当 HTTP 代理塞给 ffmpeg 换来一个更难懂的错误。
+({String? proxyUrl, bool socksUnsupported}) resolveAppProxyUrlForExternalClient(
+  Uri uri,
+) {
+  final String? hostPort = proxyHostPortFromDirective(
+    resolveAppProxyDirective(uri),
+  );
+  if (hostPort == null) return (proxyUrl: null, socksUnsupported: false);
+  if (_resolveProxyDecision(null).mode == kProxyModeAuto &&
+      envProxySchemeIsSocks(uri, Platform.environment)) {
+    return (proxyUrl: null, socksUnsupported: true);
+  }
+  final ({String username, String password})? credentials =
+      resolveAppProxyCredentials(uri);
+  final String userInfo = credentials == null
+      ? ''
+      : '${Uri.encodeComponent(credentials.username)}:'
+            '${Uri.encodeComponent(credentials.password)}@';
+  return (proxyUrl: 'http://$userInfo$hostPort', socksUnsupported: false);
+}
+
+/// 自动模式下 Dart 会为 [uri] 采用的那条环境变量代理是不是 SOCKS（`socks://` /
+/// `socks4://` / `socks5://` / `socks5h://`）。查找顺序与
+/// `HttpClient.findProxyFromEnvironment` 一致：http 目标看 `http_proxy` / `HTTP_PROXY`，
+/// https 目标看 `https_proxy` / `HTTPS_PROXY`。
+@visibleForTesting
+bool envProxySchemeIsSocks(Uri uri, Map<String, String> environment) {
+  final List<String> keys = uri.scheme == 'https'
+      ? const <String>['https_proxy', 'HTTPS_PROXY']
+      : const <String>['http_proxy', 'HTTP_PROXY'];
+  for (final String key in keys) {
+    final String value = (environment[key] ?? '').trim();
+    if (value.isEmpty) continue;
+    return value.toLowerCase().startsWith('socks');
+  }
+  return false;
+}
+
 final Uri _kPublicProbeUri = Uri.parse('https://example.com/');
 
 /// P2P（torrent）传输该用的代理：开关关 → null（直连，**默认**）；开 → 与
@@ -725,9 +866,7 @@ Future<Map<String, String>> resolveMacSystemProxyEnvironment() async {
       stdout,
     );
     if (pacDowngraded) {
-      fushiDebugPrint(
-        '[AppProxy] 检测到 macOS PAC 自动代理，降级直连（不解析 PAC）',
-      );
+      fushiDebugPrint('[AppProxy] 检测到 macOS PAC 自动代理，降级直连（不解析 PAC）');
     }
     return proxy;
   } catch (e) {
@@ -836,9 +975,7 @@ Future<Map<String, String>> resolveLinuxSystemProxyEnvironment() async {
       httpPort: httpPort,
     );
     if (pacDowngraded) {
-      fushiDebugPrint(
-        '[AppProxy] 检测到 Linux PAC 自动代理，降级直连（不解析 PAC）',
-      );
+      fushiDebugPrint('[AppProxy] 检测到 Linux PAC 自动代理，降级直连（不解析 PAC）');
     }
     return proxy;
   } catch (e) {

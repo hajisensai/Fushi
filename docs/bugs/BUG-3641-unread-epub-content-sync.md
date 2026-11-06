@@ -1,0 +1,15 @@
+## BUG-3641 · 未读 EPUB 因无阅读进度被同步跳过，云端只有元数据
+- **报告**：2026-10-20（用户：一台设备导入 17 卷、读到第 2 卷；同步后另一台只看到前两卷，其余显示只有云端数据且无书可下载）
+- **真实性**：✅ 真 bug。基线 `32dfae0c` 的 `fushi/lib/src/sync/sync_manager.dart:365–400` 在进度冲突或双方无记录 / 进度相同时提前返回；`:784–786` 只在进度导出分支调用内容上传。因此已经创建书文件夹与元数据，并不意味着 EPUB 已上传。
+- **[x] ① 已修复** — 将进度处理提取为 `_syncBookProgress`，先应用原有进度决策，再由 `_syncBookOnce` 在 `syncContent && !importOnly` 时独立补传缺失 EPUB / 原有内容文件。可变的标签、CSS、漫画阅读设置 sidecar 提取为 `_exportBookMetadata`，仍仅在导出进度路径写入，避免补传文件覆盖冲突 / 导入路径的远端元数据。提交：本修复提交。
+- **[x] ② 已增加自动化测试** — `fushi/test/sync/sync_manager_content_upload_test.dart`：真实 EPUB ZIP 字节、未读、相同进度、远端仅元数据、冲突及指纹 / 基线不变、导入进度、仅导入、关闭上传、已有内容与重试去重、sidecar 隔离、正常导出 sidecar、上传失败返回错误并保留冲突指纹、进度先落地；快照已含 EPUB 时不增加内容探针，快照仅含元数据时仍实时检查。共 22 个用例。同步更新 `webdav_metadata_in_book_folder_guard_test.dart`，继续守住进度与内容使用同一书文件夹的契约。
+- **验证**：`git diff --check` 通过；Linux 原生 ZIP 依赖构建成功。依赖初始化因工具链尝试访问遥测端点被执行环境拒绝；设置官方 Flutter / Dart 遥测抑制环境变量后仍被拒绝，已停止重试。因此针对性测试、修复前失败复现与全量 analyze 均尚未运行，不宣称通过。
+- **备注**：不迁移、删除或改写用户云端书库。升级后需在持有完整本地 EPUB 的设备开启「上传书籍文件」并再同步，缺失文件才会补齐。真实双设备 / 原始 17 卷场景尚未设备复测，不能将模拟后端测试当成真机验收。PDF、在线小说占位书等原有排除判据保持不变。
+- **合入前补的同类根因（2026-10-21，集成审查）**：
+  - sidecar：只随导出写 → 未读书的 EPUB 补上了，下载端（`importRemoteBookFolder`）却读不到标签 / CSS / 漫画阅读设置。补缺路径改为远端缺哪个写哪个、已有的不覆盖（`_exportBookMetadata` 的 `skip`）。
+  - 互联文件箱：单本同步路径（退出书 / 对比弹窗）把互联的 syncContent 传进 `SyncManager`，补缺会把 EPUB / 音频 PUT 进 host 从不读回的文件箱。门收进 `SyncManager`（`!_fileBoxIsClientOwned`），导出方向的 sidecar 同门。
+  - 开销：无快照（WebDAV / FTP / OneDrive / 单本路径）时每本每轮逐文件探针 → 改为每本列一次目录；在线漫画占位书先判 `hasExportableMangaContent` 再碰远端。
+  - 失败语义：内容失败把已落地的导入 / 导出改判成 skipped + error（对比弹窗「用远端」进度已落地却报失败）→ 新增 `SyncBookResult.contentError`，进度结果照实，编排器把它计入报告错误。
+  - 书文件夹原始有声书音频：无任何读取方（下载端只认 `.epub` / `.fushiaudio`），删除这段上传；有声书走 `.fushiaudio` 包。
+  - 云端 `.fushiaudio` 推送只看行在不在 → 改用 `audiobookAudioIsIntact`（同互联 BUG-2551），断链音频不再被打成零音频包推上云后永不补传。
+  - 测试：`sync_manager_content_upload_test.dart` 改为断言新失败语义并加 3 例（sidecar 补缺不覆盖 / 无快照一次列目录 / 不传原始音频）；新增 `sync_manager_interconnect_file_box_gate_test.dart`（去掉门变异实测转红）；`cloud_manga_content_sync_test.dart` 假后端补 `listChildren`。本地已跑：上述测试、修复前变异（旧实现 12 例真红）、全量 analyze。

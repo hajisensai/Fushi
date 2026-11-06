@@ -8,7 +8,10 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// 「Fushi 互联」在漫画「来源」一节里的一行（与 [MokuroMoeSourceRow] 同构、同级）。
 ///
@@ -77,12 +80,12 @@ class _InterconnectMangaSourceRowState
         trailing: const FushiIcon(FushiIcons.chevronRight),
         onTap: enabled
             ? () => Navigator.of(context).push(
-                  adaptivePageRoute<void>(
-                    context: context,
-                    builder: (BuildContext context) =>
-                        const InterconnectMangaBrowsePage(),
-                  ),
-                )
+                adaptivePageRoute<void>(
+                  context: context,
+                  builder: (BuildContext context) =>
+                      const InterconnectMangaBrowsePage(),
+                ),
+              )
             : null,
       ),
     );

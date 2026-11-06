@@ -26,18 +26,23 @@ void main() {
     // 定位 _handlePairV2 的响应构造，断言它返回 sessionId/pinRequired/hostNonce，
     // 且整个 v2 响应 map 字面不含 "'pin'"（PIN 字段名）。
     // 定位方法定义（带签名）而非路由里的调用点——两处都出现符号名。
-    final int v2Idx =
-        src.indexOf('Future<shelf.Response> _handlePairV2(shelf.Request');
+    final int v2Idx = src.indexOf(
+      'Future<shelf.Response> _handlePairV2(shelf.Request',
+    );
     expect(v2Idx, isNonNegative, reason: '应存在 _handlePairV2 方法定义');
-    final int confirmIdx =
-        src.indexOf('Future<shelf.Response> _handlePairConfirm(shelf.Request');
+    final int confirmIdx = src.indexOf(
+      'Future<shelf.Response> _handlePairConfirm(shelf.Request',
+    );
     expect(confirmIdx, isNonNegative);
     expect(confirmIdx > v2Idx, isTrue);
     // 截取 v2 创建会话方法体（到下一个方法 _handlePairConfirm 前）。
     final String v2Body = src.substring(v2Idx, confirmIdx);
     // 响应里不得把 PIN 写进 body：禁止出现 "'pin':" 作为 JSON key。
-    expect(v2Body.contains("'pin':"), isFalse,
-        reason: 'pair/v2 响应绝不能含 PIN 明文字段。');
+    expect(
+      v2Body.contains("'pin':"),
+      isFalse,
+      reason: 'pair/v2 响应绝不能含 PIN 明文字段。',
+    );
     // 正向白名单：确实返回这三个字段。
     expect(v2Body.contains("'sessionId'"), isTrue);
     expect(v2Body.contains("'pinRequired'"), isTrue);
@@ -61,9 +66,7 @@ void main() {
     for (final File entity in <Directory>[
       Directory('lib/src/sync'),
       Directory('../packages/fushi_engine/lib/sync'),
-    ].expand((Directory d) => d
-        .listSync(recursive: true)
-        .whereType<File>())) {
+    ].expand((Directory d) => d.listSync(recursive: true).whereType<File>())) {
       if (!entity.path.endsWith('.dart')) continue;
       final String normalized = entity.path.replaceAll('\\', '/');
       final String source = _stripComments(entity.readAsStringSync());
@@ -82,11 +85,16 @@ void main() {
 
   test('协议核心不持有/不打印任何明文 PIN 出网调用', () {
     final String src = _stripComments(
-        File('../packages/fushi_engine/lib/sync/pairing/fushi_pairing_protocol.dart')
-            .readAsStringSync());
+      File(
+        '../packages/fushi_engine/lib/sync/pairing/fushi_pairing_protocol.dart',
+      ).readAsStringSync(),
+    );
     // computePinProof 把 PIN 作为 HMAC key（不可逆），断言它确实经 Hmac 处理。
-    expect(src.contains('Hmac(sha256'), isTrue,
-        reason: 'pinProof 必须经 HMAC-SHA256 计算，PIN 不可逆地参与。');
+    expect(
+      src.contains('Hmac(sha256'),
+      isTrue,
+      reason: 'pinProof 必须经 HMAC-SHA256 计算，PIN 不可逆地参与。',
+    );
     // 不得把 pin 直接 jsonEncode 出去。
     expect(RegExp(r'jsonEncode\s*\([^;]*\bpin\b').hasMatch(src), isFalse);
   });

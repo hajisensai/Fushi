@@ -473,7 +473,14 @@ class LnReaderManager extends ChangeNotifier {
     }
   }
 
-  Future<void> uninstall(LnReaderInstalledPlugin plugin) async {
+  /// 卸载：删插件代码与登记。插件的 `@libs/storage`（登录态 / token）默认**保留**，
+  /// 重装同一插件即接回——与 Mihon / Aniyomi 卸载默认保留源偏好同一口径（spec
+  /// 2026-10-26 §5.2「卸载扩展：保留扩展数据，撤销即重装并接回」）。[clearData]
+  /// 为 true 时一并删存储（清数据也有独立入口 [clearData]）。
+  Future<void> uninstall(
+    LnReaderInstalledPlugin plugin, {
+    bool clearData = false,
+  }) async {
     _installed = <LnReaderInstalledPlugin>[
       for (final LnReaderInstalledPlugin other in _installed)
         if (other.id != plugin.id) other,
@@ -483,7 +490,7 @@ class LnReaderManager extends ChangeNotifier {
     await runtime.forget(plugin.id);
     for (final File file in <File>[
       pluginFile(plugin.id),
-      _storageFile(plugin.id),
+      if (clearData) _storageFile(plugin.id),
     ]) {
       if (await file.exists()) await file.delete();
     }

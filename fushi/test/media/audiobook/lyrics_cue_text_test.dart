@@ -93,7 +93,11 @@ void main() {
   group('lyrics line keeps sentence punctuation from the book', () {
     String line(String body, String sentence) {
       final EpubBook book = _book(<String>[body]);
-      final String norm = AudioTextNormalizer.normalize(body);
+      // 按章纯文本归一化（与 matcher 同坐标）：直接归一化 HTML 会把 `<br/>` 的
+      // 「br」当成有读音的字，其后的下标整体偏移。
+      final String norm = AudioTextNormalizer.normalize(
+        book.chapterPlainTextWithRuby(0).text,
+      );
       final String target = AudioTextNormalizer.normalize(sentence);
       final int start = norm.indexOf(target);
       expect(start, greaterThanOrEqualTo(0), reason: sentence);
@@ -127,6 +131,47 @@ void main() {
         expect(line('本当か！？「次だ」', '次だ'), '「次だ」');
       },
     );
+
+    // 用户 2026-10-18 报「歌词模式会吞掉很多符号引号破折号」：旧白名单没有破折号，
+    // 补到「――」就停，连带丢掉它后面的闭引号。
+    test('dash before the closing quote keeps both', () {
+      expect(line('<p>「待って――」</p><p>次だ</p>', '待って'), '「待って――」');
+      expect(line('「待って……――」次だ', '待って'), '「待って……――」');
+    });
+
+    test('line-initial dash belongs to the line it opens', () {
+      expect(line('<p>前だ。</p><p>――「誰だ」</p>', '誰だ'), '――「誰だ」');
+      expect(line('<p>前だ。</p><p>――誰だ</p>', '前だ'), '前だ。');
+      expect(line('<p>前だ。</p><p>――誰だ</p>', '誰だ'), '――誰だ');
+    });
+
+    // PR #2315 审查：段落之间夹一段只有符号的段落（场景分隔「◇」）时，前后两行
+    // 曾共用缝隙里第一个段落边界当切点，下一行显示成「◇「誰だ」」。前一行止于
+    // 第一个段落边界、后一行起于最后一个，中间整段符号谁都不认领。
+    test('symbol-only paragraph between two lines is claimed by neither', () {
+      const String body = '<p>前だ。</p><p>◇</p><p>「誰だ」</p>';
+      expect(line(body, '前だ'), '前だ。');
+      expect(line(body, '誰だ'), '「誰だ」');
+      const String stars = '<p>前だ。</p><p>＊＊＊</p><p>――誰だ</p>';
+      expect(line(stars, '前だ'), '前だ。');
+      expect(line(stars, '誰だ'), '――誰だ');
+    });
+
+    test('other symbols: 〝〟 quotes, ・ and full-width dash', () {
+      expect(line('〝誰だ〟と問う', '誰だ'), '〝誰だ〟');
+      expect(line('前だ・次だ', '前だ'), '前だ・');
+      expect(line('彼—走った', '彼'), '彼—');
+    });
+
+    test('adjacent cues split a symbol-only gap without loss or overlap', () {
+      const String body = '<p>それは――「本当か」……。</p><p>「いや」</p>';
+      final List<String> parts = <String>[
+        line(body, 'それは'),
+        line(body, '本当か'),
+        line(body, 'いや'),
+      ];
+      expect(parts, <String>['それは――', '「本当か」……。', '「いや」']);
+    });
   });
 
   test(

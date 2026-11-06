@@ -59,13 +59,14 @@ List<String> _scanRoots(Directory root) {
   final List<String> roots = <String>['fushi/lib', 'fushi/test'];
 
   final Directory packages = Directory('${root.path}/packages');
-  final List<String> names = packages
-      .listSync(followLinks: false)
-      .whereType<Directory>()
-      .map((Directory d) => d.path.split(RegExp(r'[/\\]')).last)
-      .where((String n) => !_vendoredPackages.contains(n))
-      .toList()
-    ..sort();
+  final List<String> names =
+      packages
+          .listSync(followLinks: false)
+          .whereType<Directory>()
+          .map((Directory d) => d.path.split(RegExp(r'[/\\]')).last)
+          .where((String n) => !_vendoredPackages.contains(n))
+          .toList()
+        ..sort();
 
   for (final String name in names) {
     for (final String sub in const <String>['lib', 'test']) {
@@ -92,8 +93,10 @@ void main() {
       final Directory dir = Directory('${root.path}/$rel');
       if (!dir.existsSync()) continue;
 
-      for (final FileSystemEntity entity
-          in dir.listSync(recursive: true, followLinks: false)) {
+      for (final FileSystemEntity entity in dir.listSync(
+        recursive: true,
+        followLinks: false,
+      )) {
         if (entity is! File) continue;
         if (!entity.path.endsWith('.dart')) continue;
         scanned++;
@@ -113,16 +116,25 @@ void main() {
         .where((String r) => r.startsWith('packages/'))
         .map((String r) => r.split('/')[1])
         .toSet();
-    expectScanScale(scannedPackages.length,
-        what: 'packages/ 下枚举到的非 vendored 包', atLeast: 5, measured: 6);
+    expectScanScale(
+      scannedPackages.length,
+      what: 'packages/ 下枚举到的非 vendored 包',
+      atLeast: 5,
+      measured: 6,
+    );
 
-    expectScanScale(scanned,
-        what: '${scanRoots.length} 个扫描根下的 .dart', atLeast: 3600, measured: 4589);
+    expectScanScale(
+      scanned,
+      what: '${scanRoots.length} 个扫描根下的 .dart',
+      atLeast: 3600,
+      measured: 4589,
+    );
 
     expect(
       offenders,
       isEmpty,
-      reason: '以下文件含裸 NUL 字节，会被 git 判为 binary、无法三方合并（合并时会'
+      reason:
+          '以下文件含裸 NUL 字节，会被 git 判为 binary、无法三方合并（合并时会'
           '静默丢弃对方改动）。请改用 Dart 的 4 位十六进制 Unicode 转义写法——'
           '运行时逐字节等价，但文件保持纯文本：\n${offenders.join('\n')}',
     );

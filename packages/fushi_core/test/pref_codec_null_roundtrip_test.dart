@@ -35,22 +35,26 @@ void main() {
       expect(readBack, isNot('null'));
     });
 
-    test('a genuine user title "null" is still preserved as the string "null"',
-        () {
-      // The user is allowed to name a book literally "null"; that must NOT be
-      // conflated with a cleared (Dart null) override.
-      final String stored = PrefCodec.encode('null');
-      expect(stored, 's:null');
-      expect(PrefCodec.decodeUntyped(stored), 'null');
-      expect(PrefCodec.decode<String?>(stored, null), 'null');
-    });
+    test(
+      'a genuine user title "null" is still preserved as the string "null"',
+      () {
+        // The user is allowed to name a book literally "null"; that must NOT be
+        // conflated with a cleared (Dart null) override.
+        final String stored = PrefCodec.encode('null');
+        expect(stored, 's:null');
+        expect(PrefCodec.decodeUntyped(stored), 'null');
+        expect(PrefCodec.decode<String?>(stored, null), 'null');
+      },
+    );
 
-    test('decode<String> (non-nullable) falls back to default on stored null',
-        () {
-      // Non-nullable contract must never receive a null; it gets the default.
-      final String stored = PrefCodec.encode(null);
-      expect(PrefCodec.decode<String>(stored, 'fallback'), 'fallback');
-    });
+    test(
+      'decode<String> (non-nullable) falls back to default on stored null',
+      () {
+        // Non-nullable contract must never receive a null; it gets the default.
+        final String stored = PrefCodec.encode(null);
+        expect(PrefCodec.decode<String>(stored, 'fallback'), 'fallback');
+      },
+    );
   });
 
   group('PrefCodec non-null round-trips still hold', () {
@@ -81,8 +85,10 @@ void main() {
         PrefCodec.decode<List<String>>(PrefCodec.encode(src), <String>[]),
         <String>['a', 'b'],
       );
-      expect(
-          PrefCodec.decodeUntyped(PrefCodec.encode(src)), <String>['a', 'b']);
+      expect(PrefCodec.decodeUntyped(PrefCodec.encode(src)), <String>[
+        'a',
+        'b',
+      ]);
     });
   });
 
@@ -96,14 +102,16 @@ void main() {
       expect(PrefCodec.decodeUntyped('hello'), 'hello');
     });
 
-    test('legacy s:null (written before the fix) still reads as literal string',
-        () {
-      // Backward compatibility: pre-fix databases may hold 's:null'. We do not
-      // migrate them here; they decode to the string 'null' exactly as before,
-      // so behaviour for existing rows is unchanged (no data corruption). New
-      // writes use 'z:' and never produce this again.
-      expect(PrefCodec.decodeUntyped('s:null'), 'null');
-    });
+    test(
+      'legacy s:null (written before the fix) still reads as literal string',
+      () {
+        // Backward compatibility: pre-fix databases may hold 's:null'. We do not
+        // migrate them here; they decode to the string 'null' exactly as before,
+        // so behaviour for existing rows is unchanged (no data corruption). New
+        // writes use 'z:' and never produce this again.
+        expect(PrefCodec.decodeUntyped('s:null'), 'null');
+      },
+    );
 
     test('unknown tag falls through to heuristic, not swallowed as null', () {
       // 'q:' is not a known tag; must be treated as untagged legacy raw.

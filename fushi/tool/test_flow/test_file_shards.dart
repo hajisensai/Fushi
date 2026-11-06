@@ -57,3 +57,26 @@ List<String> selectTestFileShard(
   selected.sort();
   return selected;
 }
+
+/// Splits [files] (kept in order) into the fewest contiguous batches of at most
+/// [maxPerBatch] files, sized as evenly as possible.
+///
+/// Used with `--experimental-faster-testing`, where every suite of one
+/// `flutter test` run is an isolate in a single process: a suite that leaves a
+/// timer, socket or server open keeps its isolate (and heap) alive until the
+/// process exits, so the cost of every leak accumulates over the run. Running a
+/// shard as a few fresh processes bounds that, at the price of one extra
+/// compile per batch.
+List<List<String>> splitIntoBatches(List<String> files, int maxPerBatch) {
+  if (maxPerBatch < 1) throw ArgumentError.value(maxPerBatch, 'maxPerBatch');
+  if (files.isEmpty) return <List<String>>[];
+  final int count = (files.length + maxPerBatch - 1) ~/ maxPerBatch;
+  final List<List<String>> batches = <List<String>>[];
+  int start = 0;
+  for (int i = 0; i < count; i++) {
+    final int size = (files.length - start) ~/ (count - i);
+    batches.add(files.sublist(start, start + size));
+    start += size;
+  }
+  return batches;
+}

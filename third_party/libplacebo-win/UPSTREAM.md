@@ -28,6 +28,11 @@ meson setup build --buildtype=release --prefer-static -Ddefault_library=shared \
 
 - `libplacebo-360.dll` — 唯一 DLL；shaderc、spirv-cross 及 GCC / C++ / winpthread 运行时均静态链入
 
+DLL 本身**不入 git**（2026-11-01 起）：`tool/vendored_binaries.json` 钉 sha256，资产在 `vendored-binaries`
+release，`python3 tool/vendored_binaries.py fetch --group windows`（Windows：`tool/vendored_binaries.ps1`；
+bootstrap / CI 自动跑）按原路径取回。升级时 `register` + `publish` 后只提交清单、`SHA256SUMS` 与头文件，
+见 `docs/agent/build.md`「vendored 二进制」。
+
 MSYS2 的 `shaderc_combined.pc` 和 `spirv-cross-c-shared.pc` 不会列全静态传递依赖。构建脚本在临时
 `PKG_CONFIG_PATH` 中提供同名覆盖：shaderc 补齐 glslang / SPIRV-Tools，spirv-cross 补齐各静态 backend；
 不修改 libplacebo 上游源码。构建末尾以 `ldd` 拒绝任何 `/mingw64/` 依赖，并用 `objdump` 检查消费端所需导出。

@@ -44,12 +44,9 @@ void main() {
     final EditableText editable = tester.widget<EditableText>(
       find.byType(EditableText),
     );
-    expect(
-        editable.hintLocales,
-        <Locale>[
-          const Locale('ja'),
-        ],
-        reason: '组件层就没传下去，后面 dumpsys 也不可能看到');
+    expect(editable.hintLocales, <Locale>[
+      const Locale('ja'),
+    ], reason: '组件层就没传下去，后面 dumpsys 也不可能看到');
 
     focusNode.requestFocus();
     await tester.pumpAndSettle();

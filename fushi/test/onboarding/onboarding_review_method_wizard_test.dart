@@ -15,8 +15,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -194,6 +194,100 @@ void main() {
     await tester.tap(find.text(t.onboarding_action_next));
     await _settle(tester);
     expect(find.text(t.onboarding_step_anki_title), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 10));
+  });
+
+  // 不学外语的用户：欢迎步选「只看书、看番、听书」，功能步里查词 / 制卡预先取消，
+  // 走完向导时查词、制卡、复习三个模块都关，词典 / 制卡 / 复习相关步骤一个不出。
+  testWidgets('只看媒体：查词 / 制卡 / 复习模块关，相关步骤全部跳过', (WidgetTester tester) async {
+    final _HostAppModel app = await _pumpWizard(tester);
+    expect(find.text(t.onboarding_purpose_title), findsOneWidget);
+    await tester.tap(find.text(t.onboarding_purpose_media_title));
+    await _settle(tester);
+
+    await tester.tap(find.text(t.onboarding_action_next));
+    await _settle(tester);
+    expect(find.text(t.onboarding_features_title), findsOneWidget);
+    bool tileSelected(String title) => tester
+        .widgetList<OnboardingFeatureTile>(find.byType(OnboardingFeatureTile))
+        .firstWhere((OnboardingFeatureTile tile) => tile.title == title)
+        .selected;
+    expect(tileSelected(t.settings_destination_card_creation), isFalse);
+    expect(tileSelected(t.onboarding_feature_pack), isFalse);
+    expect(tileSelected(t.onboarding_feature_books), isTrue);
+
+    final List<String> rest = await _nextUntil(
+      tester,
+      t.onboarding_finish_title,
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    expect(app.moduleEnabled(ModuleId.lookup), isFalse);
+    expect(app.moduleEnabled(ModuleId.cardCreation), isFalse);
+    expect(app.moduleEnabled(ModuleId.srs), isFalse);
+    expect(app.moduleEnabled(ModuleId.books), isTrue);
+    expect(rest, isNot(contains(t.onboarding_step_pack_title)));
+    expect(rest, isNot(contains(t.onboarding_review_method_title)));
+    expect(rest, isNot(contains(t.onboarding_srs_title)));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 10));
+  });
+
+  // 反馈 VtbEJzUEYL：功能步「接下来配置」一节落在视口外，用户看不到就按了下一步。
+  // 正文下方还有没看到的内容时，主按钮是「往下看」：按一下往下翻、不换步；翻到底
+  // 才变回「下一步」。
+  testWidgets('正文没看完时主按钮先往下翻，翻到底才换步', (WidgetTester tester) async {
+    await _pumpWizard(tester);
+    tester.view.physicalSize = const Size(1280, 560);
+    await _settle(tester);
+    final Finder next = find.byKey(const ValueKey<String>('onboarding_next'));
+    Finder label(String text) =>
+        find.descendant(of: next, matching: find.text(text));
+
+    for (
+      int i = 0;
+      i < 12 && find.text(t.onboarding_features_title).evaluate().isEmpty;
+      i++
+    ) {
+      await tester.tap(next);
+      await _settle(tester);
+    }
+    expect(find.text(t.onboarding_features_title), findsOneWidget);
+    expect(label(t.onboarding_action_scroll_more), findsOneWidget);
+    ScrollPosition body() => tester
+        .stateList<ScrollableState>(find.byType(Scrollable))
+        .map((ScrollableState s) => s.position)
+        .firstWhere(
+          (ScrollPosition p) =>
+              p.axis == Axis.vertical && p.maxScrollExtent > 0,
+        );
+    expect(body().pixels, 0);
+    expect(body().extentAfter, greaterThan(kOnboardingMoreBelowSlop));
+
+    int presses = 0;
+    while (label(t.onboarding_action_scroll_more).evaluate().isNotEmpty) {
+      await tester.tap(next);
+      await _settle(tester);
+      presses++;
+      expect(presses, lessThan(10), reason: '一直翻不到底');
+    }
+    expect(presses, greaterThan(0));
+    // 一直停在功能步：被翻的始终是同一个正文（最大滚动范围就是功能步的），
+    // 而且已经翻到底。
+    expect(body().pixels, body().maxScrollExtent);
+    expect(body().extentAfter, lessThanOrEqualTo(kOnboardingMoreBelowSlop));
+    expect(label(t.onboarding_action_next), findsOneWidget);
+
+    await tester.tap(next);
+    await _settle(tester);
+    // 翻到底之后「下一步」才真的换步。
+    expect(find.text(t.onboarding_features_setup_title), findsNothing);
+    expect(find.text(t.onboarding_features_title), findsNothing);
+    expect(find.byType(OnboardingStepHero), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 10));

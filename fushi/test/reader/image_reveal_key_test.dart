@@ -11,7 +11,8 @@ void main() {
     test('fushi.local https 绝对 URL 剥 /epub/ 得相对路径', () {
       expect(
         ImageRevealKey.normalize(
-            'https://fushi.local/epub/OEBPS/images/foo.jpg'),
+          'https://fushi.local/epub/OEBPS/images/foo.jpg',
+        ),
         'OEBPS/images/foo.jpg',
       );
     });
@@ -19,7 +20,8 @@ void main() {
     test('percent 编码解码（%20 → 空格），与磁盘真实文件名对齐', () {
       expect(
         ImageRevealKey.normalize(
-            'https://fushi.local/epub/OEBPS/images/foo%20bar.jpg'),
+          'https://fushi.local/epub/OEBPS/images/foo%20bar.jpg',
+        ),
         'OEBPS/images/foo bar.jpg',
       );
     });
@@ -32,14 +34,17 @@ void main() {
     });
 
     test('已是相对路径原样归一（改造后的 JS 常态）', () {
-      expect(ImageRevealKey.normalize('OEBPS/images/foo.jpg'),
-          'OEBPS/images/foo.jpg');
+      expect(
+        ImageRevealKey.normalize('OEBPS/images/foo.jpg'),
+        'OEBPS/images/foo.jpg',
+      );
     });
 
     test('../ 折叠到规范相对路径', () {
       expect(
         ImageRevealKey.normalize(
-            'https://fushi.local/epub/OEBPS/text/../images/x.jpg'),
+          'https://fushi.local/epub/OEBPS/text/../images/x.jpg',
+        ),
         'OEBPS/images/x.jpg',
       );
     });
@@ -49,8 +54,10 @@ void main() {
     });
 
     test('反斜杠归一为正斜杠', () {
-      expect(ImageRevealKey.normalize(r'OEBPS\images\foo.jpg'),
-          'OEBPS/images/foo.jpg');
+      expect(
+        ImageRevealKey.normalize(r'OEBPS\images\foo.jpg'),
+        'OEBPS/images/foo.jpg',
+      );
     });
   });
 
@@ -86,7 +93,10 @@ void main() {
     test('总开关关 → 从不遮罩（图片库始终原图）', () {
       expect(
         ImageRevealKey.shouldBlur(
-            blurEnabled: false, revealKey: 'x', revealed: <String>{}),
+          blurEnabled: false,
+          revealKey: 'x',
+          revealed: <String>{},
+        ),
         isFalse,
       );
     });
@@ -94,7 +104,10 @@ void main() {
     test('已揭开 → 不遮罩（双向同步：DB 已含即不遮）', () {
       expect(
         ImageRevealKey.shouldBlur(
-            blurEnabled: true, revealKey: 'x', revealed: <String>{'x'}),
+          blurEnabled: true,
+          revealKey: 'x',
+          revealed: <String>{'x'},
+        ),
         isFalse,
       );
     });
@@ -102,7 +115,10 @@ void main() {
     test('开 + 未揭 → 遮罩', () {
       expect(
         ImageRevealKey.shouldBlur(
-            blurEnabled: true, revealKey: 'x', revealed: <String>{}),
+          blurEnabled: true,
+          revealKey: 'x',
+          revealed: <String>{},
+        ),
         isTrue,
       );
     });
@@ -110,7 +126,10 @@ void main() {
     test('无归一 key → 不遮罩（不参与防剧透）', () {
       expect(
         ImageRevealKey.shouldBlur(
-            blurEnabled: true, revealKey: null, revealed: <String>{}),
+          blurEnabled: true,
+          revealKey: null,
+          revealed: <String>{},
+        ),
         isFalse,
       );
     });

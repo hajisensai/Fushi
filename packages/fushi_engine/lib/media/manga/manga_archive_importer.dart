@@ -2,20 +2,46 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:archive/archive_io.dart';
+import 'package:archive/archive_io.dart' hide ZLibDecoder;
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_archive_extractor.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 const int _maximumArchiveExpandedBytes = 2 * 1024 * 1024 * 1024;
+
+/// 单个页图条目解压后的上限。
+///
+/// 真实漫画页即便是 600 dpi 的跨页 PNG / 无损 WebP 也在几十 MB 量级；256 MB 给足
+/// 余量，同时不让单个条目独吞 2 GB 总预算——超过它的「页」在下游解码 / 生成封面
+/// 时本来也会把内存打爆，不是能读的页。
+const int _maximumArchiveEntryBytes = 256 * 1024 * 1024;
 const int _maximumMokuroBytes = 64 * 1024 * 1024;
+
+/// zip 分支解压的字节上限（按**实际解出**的字节计，不按中央目录声明的大小）。
+///
+/// 生产路径一律用默认值；可注入只是为了让测试用小上限证明「超限立即中止」，
+/// 而不必真的造几 GB 的包。
+class MangaArchiveExtractionLimits {
+  const MangaArchiveExtractionLimits({
+    this.maxTotalBytes = _maximumArchiveExpandedBytes,
+    this.maxEntryBytes = _maximumArchiveEntryBytes,
+  });
+
+  /// 一次导入里所有解出条目（页图 + 包内 `.mokuro`）的实际字节总和上限。
+  final int maxTotalBytes;
+
+  /// 单个页图条目的实际字节上限（包内 `.mokuro` 另受 64 MB 清单上限约束）。
+  final int maxEntryBytes;
+}
 
 class _MokuroSource {
   const _MokuroSource({
@@ -54,11 +80,17 @@ class _ArchivePageSet {
 
 /// 流式打开的 zip：[archive] 的条目内容惰性读自 [input]，所以 [input] 必须活到
 /// 最后一次 `.content` 之后；[close] 关句柄并释放缓冲。
+///
+/// [headers] 把条目（以它的 `rawContent` 对象身份为键——`ArchiveFile` 构造时直接
+/// 借用 `ZipFile.rawContent`，是同一个对象）映射回中央目录记录：流式解压要的本地
+/// 头偏移 / 压缩方法 / 压缩大小 / 加密位只在那里，`ArchiveFile` 不公开它们。
 class _OpenedArchive {
-  _OpenedArchive(this.archive, this.input);
+  _OpenedArchive(this.path, this.archive, this.input, this.headers);
 
+  final String path;
   final Archive archive;
   final InputFileStream input;
+  final Map<InputStreamBase, ZipFileHeader> headers;
 
   void close() {
     archive.clearSync();
@@ -74,8 +106,9 @@ class _OpenedArchive {
 class _ArchiveImageIndex {
   _ArchiveImageIndex(List<ArchiveFile> images) {
     for (final ArchiveFile image in images) {
-      final String normalized =
-          MangaArchiveImporter._normalizeArchiveName(image.name);
+      final String normalized = MangaArchiveImporter._normalizeArchiveName(
+        image.name,
+      );
       (exact[normalized] ??= <ArchiveFile>[]).add(image);
       (folded[normalized.toLowerCase()] ??= <ArchiveFile>[]).add(image);
     }
@@ -90,6 +123,48 @@ const Set<String> _kSevenZipMangaArchiveExtensions = <String>{
   '.cbr',
   '.cb7',
 };
+
+/// 走 `package:archive` ZIP 容器分支的扩展名（带点、小写）：只有这一路读包内 /
+/// 包旁的 `.mokuro` 文字层，7-Zip 分支不读（见 [MangaArchiveImporter.importArchive]）。
+const Set<String> kMangaZipContainerExtensions = <String>{
+  '.cbz',
+  '.zip',
+  '.epub',
+};
+
+/// [MangaArchiveImporter.importArchive] 能把它当「一整卷」导入的单文件扩展名
+/// （带点、小写）。app 的手动导入载体表、来源库扫描与无头服务端库扫描都从这里取，
+/// 不各自手抄——此前来源库扫描只抄了 `rar` / `cbr` / `cb7`，漫画来源里的
+/// `.cbz` / `.zip` 卷全被静默跳过。
+///
+/// `.zip` / `.epub` 光看扩展名分不清是不是页图包（词典包 / 文字书同形），批量
+/// 收录前必须先过 [MangaArchiveImporter.looksLikeImageArchive]。
+const Set<String> kMangaArchiveFileExtensions = <String>{
+  ...kMangaZipContainerExtensions,
+  ..._kSevenZipMangaArchiveExtensions,
+};
+
+/// [archivePath] 旁边可能的 `.mokuro` sidecar 路径：`book.mokuro`（换扩展名）与
+/// `book.cbz.mokuro`（追加扩展名，少数工具这么写），精确同名，不做模糊匹配——
+/// 否则一个批量目录会把第 1 卷绑到相邻第 2 卷的 manifest 上。
+///
+/// 只对 [kMangaZipContainerExtensions] 有意义。导入器自己按这份列表找 sidecar；
+/// 扫描规划层用同一份列表把这些 `.mokuro` 划给包、不再另当一卷导入，两边才不会
+/// 一边说「它属于包」一边又没读到它。[context] 给网络来源传 `p.url`。
+List<String> mangaArchiveMokuroSidecarPaths(
+  String archivePath, {
+  p.Context? context,
+}) {
+  final p.Context ctx = context ?? p.context;
+  final List<String> paths = <String>[];
+  for (final String candidate in <String>[
+    ctx.setExtension(archivePath, '.mokuro'),
+    '$archivePath.mokuro',
+  ]) {
+    if (!paths.contains(candidate)) paths.add(candidate);
+  }
+  return paths;
+}
 
 /// Yomitan/Yomichan 词典包的**结构**标记：包根下的数据库文件名前缀。
 ///
@@ -119,11 +194,11 @@ class MangaSevenZipExtractor {
   MangaSevenZipExtractor({
     DiscoveryProcessRunner? runProcess,
     String? sevenZipOverride,
-  })  : _runProcess = runProcess ?? Process.run,
-        _locator = DiscoveryArchiveExtractor(
-          runProcess: runProcess,
-          sevenZipOverride: sevenZipOverride,
-        );
+  }) : _runProcess = runProcess ?? Process.run,
+       _locator = DiscoveryArchiveExtractor(
+         runProcess: runProcess,
+         sevenZipOverride: sevenZipOverride,
+       );
 
   final DiscoveryProcessRunner _runProcess;
   final DiscoveryArchiveExtractor _locator;
@@ -200,8 +275,9 @@ class MangaSevenZipExtractor {
       }
       final String attributes = fields['Attributes'] ?? '';
       if (attributes.toUpperCase().contains('D')) continue;
-      final String extension =
-          p.posix.extension(entryPath.replaceAll('\\', '/')).toLowerCase();
+      final String extension = p.posix
+          .extension(entryPath.replaceAll('\\', '/'))
+          .toLowerCase();
       if (!kMangaImageExtensions.contains(extension)) continue;
       final int? size = int.tryParse(fields['Size'] ?? '');
       if (size == null || size < 0) {
@@ -343,9 +419,11 @@ abstract final class MangaArchiveImporter {
     void Function(int done, int total)? onProgress,
     int? sourceId,
     MangaSevenZipExtractor? sevenZipExtractor,
+    MangaArchiveExtractionLimits limits = const MangaArchiveExtractionLimits(),
   }) async {
     final String extension = p.extension(archivePath).toLowerCase();
     _OpenedArchive? opened;
+    _ZipEntryStreamer? streamer;
     final Directory staging = await Directory.systemTemp.createTemp(
       'fushi_manga_archive_',
     );
@@ -359,14 +437,19 @@ abstract final class MangaArchiveImporter {
       } else {
         opened = _open(archivePath);
         final Archive archive = opened.archive;
+        // 中央目录声明的大小只能当**快速预检**：它可以谎报（声明 1 KB、实际
+        // inflate 出几 GB）。真正的上限在 [_ZipEntryStreamer] 里按实际解出的
+        // 字节强制执行，条目也是边解边写盘、不整条进内存。
         int expandedBytes = 0;
         for (final ArchiveFile entry in archive) {
           _validateEntry(entry);
           expandedBytes += entry.size;
-          if (expandedBytes > _maximumArchiveExpandedBytes) {
+          if (expandedBytes > limits.maxTotalBytes) {
             throw const MangaImportException('Manga archive is too large');
           }
         }
+        final _ZipEntryStreamer entries = streamer =
+            await _ZipEntryStreamer.open(opened, limits);
 
         // A Mokuro CBZ/ZIP is still an image archive, but its `.mokuro` member
         // is the authoritative selectable-text layer. The old path discarded
@@ -386,12 +469,13 @@ abstract final class MangaArchiveImporter {
         // 解出来的 `Archive`，而 RAR/CBR/CB7 走上面的 7-Zip 分支、根本没有 `Archive`
         // 对象。把它放在分支外对可空 `archive` 做隐式判断只会把「7z 包里的 mokuro
         // 不被识别」这个能力空洞伪装成已支持（见 docs/bugs/BUG-2018）。
-        final _MokuroArchiveCandidate? mokuro = _findMokuroCandidate(
+        final _MokuroArchiveCandidate? mokuro = await _findMokuroCandidate(
           archive,
           archivePath,
+          entries,
         );
         if (mokuro != null) {
-          await _extractMokuroCandidate(mokuro, staging);
+          await _extractMokuroCandidate(mokuro, staging, entries);
           final File manifest = File(
             p.join(
               staging.path,
@@ -415,18 +499,22 @@ abstract final class MangaArchiveImporter {
           epubExtraction = await Directory.systemTemp.createTemp(
             'fushi_manga_epub_',
           );
+          // BUG-3845：SVG 内容文档作 spine 的固定版式漫画也要收成页（与
+          // [_looksLikeImageEpub] 同一解析口径，判得成就导得进）。
           final EpubBook book = EpubParser.parseSyncFromPath(
             archivePath,
             epubExtraction.path,
+            includeSvgSpineDocuments: true,
           );
-          if (!_isPureImageEpub(book)) {
-            throw const MangaImportException(
-              'EPUB contains readable text pages and is not a pure image manga',
+          final String? rejection = _pureImageEpubRejection(book);
+          if (rejection != null) {
+            throw MangaImportException(
+              'EPUB is not a pure image manga: $rejection',
             );
           }
           await _copyEpubPages(book, staging);
         } else {
-          await _extractArchiveImages(archive, staging);
+          await _extractArchiveImages(archive, staging, entries);
         }
       }
 
@@ -441,6 +529,11 @@ abstract final class MangaArchiveImporter {
         sourceId: sourceId,
       );
     } finally {
+      // 先关源包句柄（中途抛出时正在写的页文件句柄已在
+      // [_ZipEntryStreamer.extractToFile] 自己的 finally 里关掉），再删 staging：
+      // 超限 / 损坏中止时写了一半的页随 staging 一起删掉，Windows 上也不会因句柄
+      // 未关而删不掉。
+      await streamer?.close();
       opened?.close();
       if (staging.existsSync()) {
         await staging.delete(recursive: true);
@@ -455,6 +548,7 @@ abstract final class MangaArchiveImporter {
   static Future<void> _extractArchiveImages(
     Archive archive,
     Directory staging,
+    _ZipEntryStreamer entries,
   ) async {
     int imageCount = 0;
     for (final ArchiveFile entry in archive) {
@@ -471,7 +565,7 @@ abstract final class MangaArchiveImporter {
           .toList();
       final File output = File(p.joinAll(<String>[staging.path, ...segments]));
       await output.parent.create(recursive: true);
-      await output.writeAsBytes(_verifiedContent(entry), flush: true);
+      await entries.extractToFile(entry, output);
       imageCount += 1;
     }
     if (imageCount == 0) {
@@ -479,10 +573,11 @@ abstract final class MangaArchiveImporter {
     }
   }
 
-  static _MokuroArchiveCandidate? _findMokuroCandidate(
+  static Future<_MokuroArchiveCandidate?> _findMokuroCandidate(
     Archive archive,
     String archivePath,
-  ) {
+    _ZipEntryStreamer entries,
+  ) async {
     final String archiveStem = p.basenameWithoutExtension(archivePath);
     final List<_MokuroSource> sources = <_MokuroSource>[];
     bool foundMokuro = false;
@@ -490,12 +585,13 @@ abstract final class MangaArchiveImporter {
       if (!entry.isFile || p.extension(entry.name).toLowerCase() != '.mokuro') {
         continue;
       }
-      final Object? content = entry.content;
-      if (content is! List<int>) continue;
-      if (content.length > _maximumMokuroBytes) continue;
-      // 清单 JSON 也做 CRC：坏清单会让页匹配整体失败，早点当「不是候选」跳过。
-      final int? expectedCrc = entry.crc32;
-      if (expectedCrc != null && getCrc32(content) != expectedCrc) continue;
+      // 清单 JSON 同样流式读、按实际字节封顶 64 MB，并核对 CRC 与声明大小：超限 /
+      // 坏清单会让页匹配整体失败，早点当「不是候选」跳过（与原先的 CRC 跳过同义）。
+      final Uint8List? content = await entries.readManifest(
+        entry,
+        _maximumMokuroBytes,
+      );
+      if (content == null) continue;
       final String normalizedName = _normalizeArchiveName(entry.name);
       final List<String> nameSegments = normalizedName.split('/');
       if (nameSegments.any(
@@ -529,10 +625,9 @@ abstract final class MangaArchiveImporter {
     // sidecars are considered, so a batch directory cannot bind vol. 1 to a
     // neighbouring vol. 2 manifest. Also accept `book.cbz.mokuro`, used by a
     // few tools that append rather than replace the extension.
-    final List<String> sidecarPaths = <String>[
-      p.setExtension(archivePath, '.mokuro'),
-      '$archivePath.mokuro',
-    ];
+    final List<String> sidecarPaths = mangaArchiveMokuroSidecarPaths(
+      archivePath,
+    );
     final Set<String> seenSidecars = <String>{};
     for (final String sidecarPath in sidecarPaths) {
       if (!seenSidecars.add(p.normalize(sidecarPath))) continue;
@@ -712,6 +807,7 @@ abstract final class MangaArchiveImporter {
   static Future<void> _extractMokuroCandidate(
     _MokuroArchiveCandidate candidate,
     Directory staging,
+    _ZipEntryStreamer entries,
   ) async {
     for (int index = 0; index < candidate.payload.images.length; index++) {
       final MokuroImage page = candidate.payload.images[index];
@@ -730,30 +826,8 @@ abstract final class MangaArchiveImporter {
       }
       final File output = MangaImporter.mokuroPageFile(staging.path, page.url);
       await output.parent.create(recursive: true);
-      await output.writeAsBytes(_verifiedContent(entry), flush: true);
+      await entries.extractToFile(entry, output);
     }
-  }
-
-  /// 条目内容 + CRC32 校验。
-  ///
-  /// 流式打开（[_open]）只读中央目录、不 `verify`，整包 CRC 校验随之消失；这里在
-  /// 真正要写盘的条目上补回来——字节已经在内存里，CRC 是零额外 IO 的纯计算，而
-  /// 探测路径（只看条目名）仍然不用为一个坏包白解压整包。CRC 不符 = 传输截断 /
-  /// 位翻转的坏页，宁可整次导入失败也不把垃圾页写进书。
-  static List<int> _verifiedContent(ArchiveFile entry) {
-    final Object? content = entry.content;
-    if (content is! List<int>) {
-      throw MangaImportException(
-        'Could not extract manga page: ${entry.name}',
-      );
-    }
-    final int? expected = entry.crc32;
-    if (expected != null && getCrc32(content) != expected) {
-      throw MangaImportException(
-        'Corrupt manga archive entry (CRC mismatch): ${entry.name}',
-      );
-    }
-    return content;
   }
 
   /// `img_path` 是否含 `..` 段（与 [MangaStorage.sanitizeRelSegments] 同判据，
@@ -803,6 +877,7 @@ abstract final class MangaArchiveImporter {
         }
       }
       if (imageCount == 0) {
+        _logEpubRejection(archivePath, 'no image entries in the archive');
         return false;
       }
       // 中央目录看完就关：下面的整包解析自己再开一次文件。
@@ -811,12 +886,20 @@ abstract final class MangaArchiveImporter {
       extraction = Directory.systemTemp.createTempSync(
         'fushi_manga_epub_probe_',
       );
+      // BUG-3845：spine 直接是 SVG 内容文档（每页 `<svg><image>`）的漫画，默认
+      // 书籍口径会把每项都跳过、整本 0 章；漫画只取页图，SVG 项照收。
       final EpubBook book = EpubParser.parseSyncFromPath(
         archivePath,
         extraction.path,
+        includeSvgSpineDocuments: true,
       );
-      return _isPureImageEpub(book);
-    } catch (_) {
+      final String? rejection = _pureImageEpubRejection(book);
+      if (rejection != null) _logEpubRejection(archivePath, rejection);
+      return rejection == null;
+    } catch (e) {
+      // OjZ-K53WBY：此前这里静默 false，用户只看到「不是漫画」，反馈里没有任何
+      // 可定位的线索（解析失败？哪一页有文字？哪张图扩展名不认？）。
+      _logEpubRejection(archivePath, 'probe failed: $e');
       return false;
     } finally {
       opened?.close();
@@ -827,26 +910,44 @@ abstract final class MangaArchiveImporter {
     }
   }
 
-  static bool _isPureImageEpub(EpubBook book) {
+  static bool _isPureImageEpub(EpubBook book) =>
+      _pureImageEpubRejection(book) == null;
+
+  /// 纯图片 EPUB 判定的**否决理由**（null = 是纯图片漫画）。与 [_isPureImageEpub]
+  /// 同一判据，只是把「为什么不是」说出来，供诊断日志用（OjZ-K53WBY）。
+  static String? _pureImageEpubRejection(EpubBook book) {
     final List<int> contentChapters = <int>[
       for (int index = 0; index < book.chapters.length; index++)
         if (book.chapters[index].linear && !book.chapters[index].isNav) index,
     ];
-    if (contentChapters.isEmpty) return false;
+    if (contentChapters.isEmpty) {
+      return 'no linear non-nav spine chapters '
+          '(${book.chapters.length} chapters total)';
+    }
     for (final int index in contentChapters) {
-      if (!book.isImageOnlyChapter(index)) return false;
+      final String chapterHref = book.chapters[index].href;
+      if (!book.isImageOnlyChapter(index)) {
+        return 'chapter #$index $chapterHref is not image-only (has text)';
+      }
       final List<String> refs = book.chapterImageSrcs(index);
-      if (refs.isEmpty) return false;
+      if (refs.isEmpty) return 'chapter #$index $chapterHref has no image';
       for (final String ref in refs) {
-        final String href = resolveImageHref(book.chapters[index].href, ref);
-        if (!kMangaImageExtensions.contains(
-          p.extension(normalizeHref(href)).toLowerCase(),
-        )) {
-          return false;
+        final String href = resolveImageHref(chapterHref, ref);
+        final String extension = p.extension(normalizeHref(href)).toLowerCase();
+        if (!kMangaImageExtensions.contains(extension)) {
+          return 'chapter #$index $chapterHref references non-page image '
+              '$href (extension "$extension")';
         }
       }
     }
-    return true;
+    return null;
+  }
+
+  static void _logEpubRejection(String archivePath, String reason) {
+    engineLog.logDiagnostic(
+      'MangaArchiveImporter',
+      'EPUB not recognised as image manga: ${p.basename(archivePath)}: $reason',
+    );
   }
 
   static Future<void> _copyEpubPages(EpubBook book, Directory staging) async {
@@ -901,7 +1002,15 @@ abstract final class MangaArchiveImporter {
     }
     final InputFileStream input = InputFileStream(archivePath);
     try {
-      return _OpenedArchive(ZipDecoder().decodeBuffer(input), input);
+      final ZipDecoder decoder = ZipDecoder();
+      final Archive archive = decoder.decodeBuffer(input);
+      final Map<InputStreamBase, ZipFileHeader> headers =
+          Map<InputStreamBase, ZipFileHeader>.identity();
+      for (final ZipFileHeader header in decoder.directory.fileHeaders) {
+        final InputStreamBase? raw = header.file?.rawContent;
+        if (raw != null) headers[raw] = header;
+      }
+      return _OpenedArchive(archivePath, archive, input, headers);
     } catch (_) {
       input.closeSync();
       rethrow;
@@ -918,4 +1027,271 @@ abstract final class MangaArchiveImporter {
       throw MangaImportException('Unsafe manga archive entry: ${entry.name}');
     }
   }
+}
+
+/// 条目内容与 zip 记录不符（大小 / CRC / deflate 流损坏）。仍是
+/// [MangaImportException]：页图路径照常让整次导入失败；只有读 `.mokuro` 清单时
+/// 被 [_ZipEntryStreamer.readManifest] 识别成「这份清单不是候选」。
+class _CorruptZipEntry extends MangaImportException {
+  const _CorruptZipEntry(super.message);
+}
+
+/// 按条目流式解压 zip：自己从源文件读原始压缩数据，method 0 直接拷、method 8 走
+/// `dart:io` 的 raw inflate 分块转换，边解边计数、边算 CRC、边写盘。
+///
+/// `package:archive` 3.x 的 `ArchiveFile.content` 会把整条 inflate 进内存，且它的
+/// 解压长度只受中央目录**声明**的大小约束——声明可以谎报，于是一个 1 KB 声明的
+/// 条目能在内存里涨到几 GB。这里的上限全部按**实际解出的字节**执行：
+///
+/// * 实际字节一超过声明大小就中止（声明本身已被要求 ≤ 单条上限），所以单条在
+///   内存里最多是一个 inflate 分片的产出（[_inflateSliceBytes] × 最大压缩比
+///   ≈ 8 MB），之后立即写盘；
+/// * 所有条目累计的实际字节受 [MangaArchiveExtractionLimits.maxTotalBytes] 约束；
+/// * 解完后实际字节必须**等于**声明大小、CRC32 必须一致，否则按损坏包报错。
+///
+/// CRC 用 Rust 内核的 [ffcCrc32]，按分片整块续算（每个输出分片一次 FFI 调用，
+/// 不逐字节跨 FFI）。
+class _ZipEntryStreamer {
+  _ZipEntryStreamer._(
+    this._opened,
+    this._source,
+    this._sourceLength,
+    this._limits,
+  );
+
+  /// 每次从源文件读的原始压缩字节数。
+  static const int _readBufferBytes = 64 * 1024;
+
+  /// 每次喂给 inflater 的压缩字节数。deflate 最大压缩比约 1032:1，一个 8 KB 分片
+  /// 最多同步产出约 8 MB，这就是两次写盘之间内存里最多攒下的解压字节。
+  static const int _inflateSliceBytes = 8 * 1024;
+
+  static const int _localHeaderSignature = 0x04034b50;
+  static const int _localHeaderBytes = 30;
+
+  final _OpenedArchive _opened;
+  final RandomAccessFile _source;
+  final int _sourceLength;
+  final MangaArchiveExtractionLimits _limits;
+
+  /// 本次导入已经实际解出的字节数（跨条目累计）。
+  int _expandedBytes = 0;
+
+  static Future<_ZipEntryStreamer> open(
+    _OpenedArchive opened,
+    MangaArchiveExtractionLimits limits,
+  ) async {
+    final RandomAccessFile source = await File(opened.path).open();
+    try {
+      return _ZipEntryStreamer._(opened, source, await source.length(), limits);
+    } catch (_) {
+      await source.close();
+      rethrow;
+    }
+  }
+
+  Future<void> close() => _source.close();
+
+  /// 把 [entry] 流式解到 [output]。中途任何失败都会先关掉 [output] 的句柄再抛出；
+  /// 写了一半的文件由调用方随 staging 目录一起删除。
+  Future<void> extractToFile(ArchiveFile entry, File output) async {
+    final RandomAccessFile sink = await output.open(mode: FileMode.writeOnly);
+    try {
+      await _stream(
+        entry,
+        _limits.maxEntryBytes,
+        (Uint8List chunk) => sink.writeFrom(chunk),
+      );
+      await sink.flush();
+    } finally {
+      await sink.close();
+    }
+  }
+
+  /// 把 `.mokuro` 清单读进内存（≤ [maxBytes]）。声明超限、内容与记录不符时返回
+  /// null（「不是候选」）；不支持的压缩 / 加密、总量超限照常抛出。
+  Future<Uint8List?> readManifest(ArchiveFile entry, int maxBytes) async {
+    if (entry.size > maxBytes) return null;
+    final BytesBuilder bytes = BytesBuilder(copy: false);
+    try {
+      await _stream(entry, maxBytes, (Uint8List chunk) async {
+        bytes.add(chunk);
+      });
+    } on _CorruptZipEntry {
+      return null;
+    }
+    return bytes.takeBytes();
+  }
+
+  Future<void> _stream(
+    ArchiveFile entry,
+    int entryLimit,
+    Future<void> Function(Uint8List chunk) onChunk,
+  ) async {
+    final String name = entry.name;
+    final InputStreamBase? raw = entry.rawContent;
+    final ZipFileHeader? header = raw == null ? null : _opened.headers[raw];
+    final int? compressedSize = header?.compressedSize;
+    final int? localHeaderOffset = header?.localHeaderOffset;
+    if (header == null || compressedSize == null || localHeaderOffset == null) {
+      throw MangaImportException('Could not locate manga archive entry: $name');
+    }
+    if ((header.generalPurposeBitFlag & 0x1) != 0 ||
+        ((header.file?.flags ?? 0) & 0x1) != 0) {
+      throw MangaImportException(
+        'Unsupported manga archive entry (encrypted): $name',
+      );
+    }
+    final int method = header.compressionMethod;
+    if (method != ZipFile.zipCompressionStore &&
+        method != ZipFile.zipCompressionDeflate) {
+      throw MangaImportException(
+        'Unsupported manga archive entry (compression method $method): $name',
+      );
+    }
+
+    // 声明大小先过一遍上限：诚实的超大条目不必白解。谎报的条目由下面按实际
+    // 字节的检查兜住。
+    final int declared = entry.size;
+    if (declared > entryLimit) {
+      throw MangaImportException(
+        'Manga archive entry is too large: $name '
+        '(declares $declared bytes, limit $entryLimit)',
+      );
+    }
+    _ensureWithinTotal(_expandedBytes + declared);
+
+    final int dataStart = await _dataStart(localHeaderOffset, name);
+    if (compressedSize < 0 || dataStart + compressedSize > _sourceLength) {
+      throw _CorruptZipEntry(
+        'Corrupt manga archive entry (truncated data): $name',
+      );
+    }
+
+    int produced = 0;
+    int crc = 0;
+    final List<Uint8List> pending = <Uint8List>[];
+    void accept(List<int> chunk) {
+      produced += chunk.length;
+      if (produced > declared) {
+        throw _CorruptZipEntry(
+          'Corrupt manga archive entry (expands beyond its declared '
+          '$declared bytes): $name',
+        );
+      }
+      _ensureWithinTotal(_expandedBytes + produced);
+      pending.add(chunk is Uint8List ? chunk : Uint8List.fromList(chunk));
+    }
+
+    Future<void> drain() async {
+      for (final Uint8List chunk in pending) {
+        crc = ffcCrc32(chunk, crc);
+        await onChunk(chunk);
+      }
+      pending.clear();
+    }
+
+    final ByteConversionSink? inflater = method == ZipFile.zipCompressionDeflate
+        ? ZLibDecoder(raw: true).startChunkedConversion(_ChunkSink(accept))
+        : null;
+    final Uint8List buffer = Uint8List(_readBufferBytes);
+    int remaining = compressedSize;
+    await _source.setPosition(dataStart);
+    try {
+      while (remaining > 0) {
+        final int want = remaining < buffer.length ? remaining : buffer.length;
+        final int read = await _source.readInto(buffer, 0, want);
+        if (read <= 0) {
+          throw _CorruptZipEntry(
+            'Corrupt manga archive entry (truncated data): $name',
+          );
+        }
+        remaining -= read;
+        if (inflater == null) {
+          accept(Uint8List.fromList(Uint8List.sublistView(buffer, 0, read)));
+          await drain();
+          continue;
+        }
+        for (int offset = 0; offset < read; offset += _inflateSliceBytes) {
+          final int end = offset + _inflateSliceBytes < read
+              ? offset + _inflateSliceBytes
+              : read;
+          inflater.addSlice(buffer, offset, end, false);
+          await drain();
+        }
+      }
+      inflater?.close();
+      await drain();
+    } on FormatException catch (error) {
+      // dart:io 的 inflater 对坏 deflate 流抛 `FormatException: Filter error`。
+      throw _CorruptZipEntry(
+        'Corrupt manga archive entry (bad deflate data: ${error.message}): '
+        '$name',
+      );
+    }
+
+    if (produced != declared) {
+      throw _CorruptZipEntry(
+        'Corrupt manga archive entry (size mismatch: declares $declared bytes, '
+        'contains $produced): $name',
+      );
+    }
+    final int? expectedCrc = entry.crc32;
+    if (expectedCrc != null && crc != expectedCrc) {
+      throw _CorruptZipEntry(
+        'Corrupt manga archive entry (CRC mismatch): $name',
+      );
+    }
+    _expandedBytes += produced;
+  }
+
+  void _ensureWithinTotal(int bytes) {
+    if (bytes > _limits.maxTotalBytes) {
+      throw MangaImportException(
+        'Manga archive is too large (expands beyond '
+        '${_limits.maxTotalBytes} bytes)',
+      );
+    }
+  }
+
+  /// 本地文件头之后、压缩数据开始处的偏移。文件名 / extra 长度以本地头为准
+  /// （与 `package:archive` 的 `ZipFile` 读法一致，它们可以与中央目录不同）。
+  Future<int> _dataStart(int localHeaderOffset, String name) async {
+    if (localHeaderOffset < 0 ||
+        localHeaderOffset + _localHeaderBytes > _sourceLength) {
+      throw _CorruptZipEntry(
+        'Corrupt manga archive entry (bad local header offset): $name',
+      );
+    }
+    await _source.setPosition(localHeaderOffset);
+    final Uint8List bytes = await _source.read(_localHeaderBytes);
+    if (bytes.length != _localHeaderBytes) {
+      throw _CorruptZipEntry(
+        'Corrupt manga archive entry (truncated local header): $name',
+      );
+    }
+    final ByteData view = ByteData.sublistView(bytes);
+    if (view.getUint32(0, Endian.little) != _localHeaderSignature) {
+      throw _CorruptZipEntry(
+        'Corrupt manga archive entry (bad local header signature): $name',
+      );
+    }
+    final int nameLength = view.getUint16(26, Endian.little);
+    final int extraLength = view.getUint16(28, Endian.little);
+    return localHeaderOffset + _localHeaderBytes + nameLength + extraLength;
+  }
+}
+
+/// 把 inflater 的每个输出分片同步交给 [_onChunk]（它可以抛异常，从而在超限的
+/// 那一片当场中止 inflate）。
+class _ChunkSink implements Sink<List<int>> {
+  _ChunkSink(this._onChunk);
+
+  final void Function(List<int> chunk) _onChunk;
+
+  @override
+  void add(List<int> chunk) => _onChunk(chunk);
+
+  @override
+  void close() {}
 }

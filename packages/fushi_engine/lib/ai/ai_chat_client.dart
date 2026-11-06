@@ -1,8 +1,9 @@
 /// AI 提供商的调用层：一次性问答 + 模型列表。
 ///
 /// 三种 wire 协议（OpenAI 兼容 / Anthropic Messages / Gemini generateContent）在
-/// 这里分派，上层只面对 [AiChatClient.complete]。**不做流式**：本仓当前的 AI 用途
-/// 是「生成一条规则/一段配置」这种短请求，流式只会把 UI 状态机复杂化。
+/// 这里分派，上层只面对 [AiChatClient.complete]（一次性问答）与 [AiChatClient.chat]
+/// （带原生 tool calling 的一轮对话，AI 助手的 agent loop 用）。**不做流式**：本仓
+/// 当前的 AI 用途是「生成一条规则/一段配置」这种短请求，流式只会把 UI 状态机复杂化。
 ///
 /// 出站一律经 `createAppHttpIoClient()`——裸 `http.Client()` 既绕过应用代理与连接
 /// 超时（代理环境下会出现「浏览器能开、app 里连不上」这种自相矛盾的结果），也会被
@@ -10,10 +11,13 @@
 library;
 
 import 'dart:convert';
+import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:fushi_engine/ai/ai_key_rotation.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_rate_limiter.dart';
+import 'package:fushi_engine/ai/ai_relay.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
 
@@ -44,8 +48,313 @@ const Duration kAiChatRetryBaseDelay = Duration(seconds: 2);
 /// 直接报失败——那不是抖动，是额度没了。
 const Duration kAiChatMaxRetryWait = Duration(seconds: 60);
 
+/// [AiChatClient.transcribeAudio] 一次请求的整体时限：上传一个音频分片（低码率
+/// 十分钟约 2–3 MB，慢速移动网络要几十秒）再加服务端解码。
+const Duration kAiTranscriptionRequestTimeout = Duration(minutes: 5);
+
+/// 提供商协议没有语音转录端点（只有 OpenAI 兼容协议有 `/audio/transcriptions`）。
+const String kAiTranscriptionUnsupportedProtocol = 'unsupported_protocol';
+
+/// multipart 表单分隔串：随机 32 位十六进制，撞上音频字节的概率可忽略。
+String aiMultipartBoundary() {
+  final math.Random random = math.Random.secure();
+  final StringBuffer sb = StringBuffer('----fushi');
+  for (int i = 0; i < 32; i++) {
+    sb.write(random.nextInt(16).toRadixString(16));
+  }
+  return sb.toString();
+}
+
+/// 手拼 `multipart/form-data` 请求体（RFC 7578）：普通字段按 [fields] 顺序（允许
+/// 同名重复——`http.MultipartRequest.fields` 是 Map，装不下 OpenAI 的
+/// `timestamp_granularities[]` 数组写法），最后一个文件字段。
+List<int> encodeAiMultipartForm({
+  required String boundary,
+  required List<(String, String)> fields,
+  required String fileField,
+  required String fileName,
+  required String fileContentType,
+  required List<int> fileBytes,
+}) {
+  final BytesBuilder out = BytesBuilder(copy: false);
+  void line(String text) => out.add(utf8.encode('$text\r\n'));
+  String quote(String value) =>
+      value.replaceAll('\r', ' ').replaceAll('\n', ' ').replaceAll('"', '%22');
+  for (final (String name, String value) in fields) {
+    line('--$boundary');
+    line('Content-Disposition: form-data; name="${quote(name)}"');
+    line('');
+    line(value);
+  }
+  line('--$boundary');
+  line(
+    'Content-Disposition: form-data; name="${quote(fileField)}"; '
+    'filename="${quote(fileName)}"',
+  );
+  line('Content-Type: $fileContentType');
+  line('');
+  out.add(fileBytes);
+  out.add(utf8.encode('\r\n--$boundary--\r\n'));
+  return out.takeBytes();
+}
+
+/// 一次应答报告的 token 用量。
+///
+/// 每个字段都可空：null = 这家没报这一项（**不是 0**）。四项互不重叠——
+/// [inputTokens] 是**没走缓存**的输入：
+/// - Anthropic：`input_tokens` / `output_tokens` / `cache_read_input_tokens` /
+///   `cache_creation_input_tokens`，本来就分开报；
+/// - OpenAI 兼容：`prompt_tokens` 含命中缓存的部分，有
+///   `prompt_tokens_details.cached_tokens`（OpenAI）或 `prompt_cache_hit_tokens`
+///   （DeepSeek）时减掉它记进 [cacheReadTokens]；都没有时 [inputTokens] 就是
+///   `prompt_tokens`、[cacheReadTokens] 为 null。没有「缓存写入」的概念，
+///   [cacheWriteTokens] 恒 null；
+/// - Gemini：`usageMetadata.promptTokenCount` 同样含 `cachedContentTokenCount`，
+///   照上面减；[outputTokens] = `candidatesTokenCount` + `thoughtsTokenCount`
+///   （思考按输出计费）。
+class AiChatUsage {
+  const AiChatUsage({
+    this.inputTokens,
+    this.outputTokens,
+    this.cacheReadTokens,
+    this.cacheWriteTokens,
+  });
+
+  factory AiChatUsage.fromJson(Map<String, Object?> json) => AiChatUsage(
+    inputTokens: _jsonInt(json['input']),
+    outputTokens: _jsonInt(json['output']),
+    cacheReadTokens: _jsonInt(json['cacheRead']),
+    cacheWriteTokens: _jsonInt(json['cacheWrite']),
+  );
+
+  final int? inputTokens;
+  final int? outputTokens;
+  final int? cacheReadTokens;
+  final int? cacheWriteTokens;
+
+  /// 四项全为 null（应答里有 usage 段但一个认得的字段都没有）。
+  bool get isEmpty =>
+      inputTokens == null &&
+      outputTokens == null &&
+      cacheReadTokens == null &&
+      cacheWriteTokens == null;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    if (inputTokens != null) 'input': inputTokens,
+    if (outputTokens != null) 'output': outputTokens,
+    if (cacheReadTokens != null) 'cacheRead': cacheReadTokens,
+    if (cacheWriteTokens != null) 'cacheWrite': cacheWriteTokens,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is AiChatUsage &&
+      other.inputTokens == inputTokens &&
+      other.outputTokens == outputTokens &&
+      other.cacheReadTokens == cacheReadTokens &&
+      other.cacheWriteTokens == cacheWriteTokens;
+
+  @override
+  int get hashCode =>
+      Object.hash(inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens);
+
+  @override
+  String toString() => 'AiChatUsage(${toJson()})';
+}
+
+int? _jsonInt(Object? value) => switch (value) {
+  final int v when v >= 0 => v,
+  final double v when v.isFinite && v >= 0 => v.round(),
+  _ => null,
+};
+
+/// [AiChatClient.completeWithUsage] 的结果：正文 + 用量（取不到为 null）。
+class AiChatCompletion {
+  const AiChatCompletion({required this.text, this.usage, this.stopReason});
+
+  final String text;
+  final AiChatUsage? usage;
+
+  /// 原样的停止原因（同 [AiChatTurn.stopReason]）；应答里没有时为 null。
+  final String? stopReason;
+
+  /// 输出撞上 `max_tokens` 被截断：[text] 只是回复的前半截。原样重发同一请求只会
+  /// 在同一处再截一次，调用方要缩小这次要的输出（只问剩下的 / 接着往下写）。
+  bool get truncated => isAiChatStopTruncated(stopReason);
+}
+
+/// 三家协议「输出到上限被截断」的停止原因：OpenAI `length`、Anthropic
+/// `max_tokens`、Gemini `MAX_TOKENS`。
+bool isAiChatStopTruncated(String? stopReason) => switch (stopReason) {
+  'length' || 'max_tokens' || 'MAX_TOKENS' => true,
+  _ => false,
+};
+
+/// 一个给模型调用的工具。[parameters] 是 JSON Schema（object 类型）。
+///
+/// 三家协议共用这一份描述：OpenAI 包成 `{type: function, function: {...}}`、
+/// Anthropic 叫 `input_schema`、Gemini 放进 `functionDeclarations` 并先经
+/// [sanitizeGeminiToolSchema] 去掉它不认的关键字。
+class AiChatToolSpec {
+  const AiChatToolSpec({
+    required this.name,
+    required this.description,
+    required this.parameters,
+  });
+
+  final String name;
+  final String description;
+  final Map<String, Object?> parameters;
+}
+
+/// 模型发起的一次工具调用。
+class AiChatToolCall {
+  const AiChatToolCall({
+    required this.id,
+    required this.name,
+    required this.arguments,
+    this.providerMeta = const <String, Object?>{},
+  });
+
+  /// OpenAI / Anthropic 用服务端给的 id；Gemini 没给 id 时本地按本轮序号生成
+  /// `call_<序号>`（Gemini 回传结果按 [name] 对应，不需要 id）。
+  final String id;
+  final String name;
+
+  /// 解析好的参数。OpenAI 的 `arguments` 是 JSON 字符串，解析失败（或不是对象）
+  /// 时给 `{'_raw': 原串}`——坏参数交给执行层当一次失败的工具调用回报给模型，
+  /// 不在这里抛掉整轮。
+  final Map<String, Object?> arguments;
+
+  /// 回传给同一家时需要原样带回的不透明字段（如 Gemini 的 `thoughtSignature`）。
+  final Map<String, Object?> providerMeta;
+}
+
+/// [AiChatClient.chat] 的结果：一轮应答的正文 + 工具调用 + 用量。
+class AiChatTurn {
+  const AiChatTurn({
+    required this.text,
+    required this.toolCalls,
+    this.usage,
+    this.stopReason,
+  });
+
+  /// 可为空串（只调工具时）。
+  final String text;
+  final List<AiChatToolCall> toolCalls;
+  final AiChatUsage? usage;
+
+  /// 原样的 `finish_reason`（OpenAI）/ `stop_reason`（Anthropic）/
+  /// `finishReason`（Gemini）；应答里没有时为 null。
+  final String? stopReason;
+
+  bool get hasToolCalls => toolCalls.isNotEmpty;
+}
+
+/// Gemini `functionDeclarations[].parameters` 不认的 JSON Schema 关键字。
+///
+/// Gemini 只收 OpenAPI 3 schema 的一个子集，带上这些键整个请求 400。
+const Set<String> _kGeminiUnsupportedSchemaKeys = <String>{
+  'additionalProperties',
+  r'$schema',
+  r'$id',
+  r'$comment',
+  'default',
+  'examples',
+};
+
+/// 把一份 JSON Schema 净化成 Gemini 认的形状：递归去掉
+/// [_kGeminiUnsupportedSchemaKeys]。
+///
+/// 只剥 **schema 关键字**：`properties` 底下的键是参数名（参数完全可以叫
+/// `default`），只递归它们的值；`items` / `anyOf` / `oneOf` / `allOf` 的元素按
+/// 子 schema 递归。只对 Gemini 用，另两家原样发。
+Map<String, Object?> sanitizeGeminiToolSchema(Map<Object?, Object?> schema) {
+  Object? sub(Object? value) =>
+      value is Map ? sanitizeGeminiToolSchema(value) : value;
+  final Map<String, Object?> out = <String, Object?>{};
+  for (final MapEntry<Object?, Object?> e in schema.entries) {
+    final Object? key = e.key;
+    if (key is! String || _kGeminiUnsupportedSchemaKeys.contains(key)) {
+      continue;
+    }
+    final Object? value = e.value;
+    out[key] = switch (key) {
+      'properties' when value is Map => <String, Object?>{
+        for (final MapEntry<Object?, Object?> p in value.entries)
+          '${p.key}': sub(p.value),
+      },
+      'items' => value is List ? value.map(sub).toList() : sub(value),
+      'anyOf' ||
+      'oneOf' ||
+      'allOf' when value is List => value.map(sub).toList(),
+      _ => value,
+    };
+  }
+  return out;
+}
+
+/// 按协议从应答体里取用量；没有 usage 段或一个认得的字段都没有时为 null。
+AiChatUsage? parseAiChatUsage(
+  AiWireProtocol protocol,
+  Map<Object?, Object?> body,
+) {
+  final AiChatUsage usage;
+  switch (protocol) {
+    case AiWireProtocol.anthropicMessages:
+      final Object? u = body['usage'];
+      if (u is! Map) return null;
+      usage = AiChatUsage(
+        inputTokens: _jsonInt(u['input_tokens']),
+        outputTokens: _jsonInt(u['output_tokens']),
+        cacheReadTokens: _jsonInt(u['cache_read_input_tokens']),
+        cacheWriteTokens: _jsonInt(u['cache_creation_input_tokens']),
+      );
+    case AiWireProtocol.openAiCompatible:
+      final Object? u = body['usage'];
+      if (u is! Map) return null;
+      final int? prompt = _jsonInt(u['prompt_tokens']);
+      final Object? details = u['prompt_tokens_details'];
+      final int? cached =
+          (details is Map ? _jsonInt(details['cached_tokens']) : null) ??
+          _jsonInt(u['prompt_cache_hit_tokens']);
+      usage = AiChatUsage(
+        inputTokens: prompt == null
+            ? _jsonInt(u['prompt_cache_miss_tokens'])
+            : cached == null
+            ? prompt
+            : (prompt - cached).clamp(0, prompt),
+        outputTokens: _jsonInt(u['completion_tokens']),
+        cacheReadTokens: cached,
+      );
+    case AiWireProtocol.geminiGenerateContent:
+      final Object? u = body['usageMetadata'];
+      if (u is! Map) return null;
+      final int? prompt = _jsonInt(u['promptTokenCount']);
+      final int? cached = _jsonInt(u['cachedContentTokenCount']);
+      final int? candidates = _jsonInt(u['candidatesTokenCount']);
+      final int? thoughts = _jsonInt(u['thoughtsTokenCount']);
+      usage = AiChatUsage(
+        inputTokens: prompt == null
+            ? null
+            : cached == null
+            ? prompt
+            : (prompt - cached).clamp(0, prompt),
+        outputTokens: candidates == null && thoughts == null
+            ? null
+            : (candidates ?? 0) + (thoughts ?? 0),
+        cacheReadTokens: cached,
+      );
+  }
+  return usage.isEmpty ? null : usage;
+}
+
 /// 调用失败。[message] 是**已脱敏**的短文案，可以直接进 UI——绝不含 API Key、
 /// 完整 URL 或响应体原文（后两者都可能回显凭据）。
+/// 2xx 应答里只有 `error`、没有应答本体（端点不对 / 兼容层拒绝）的失败短码，
+/// 见 [AiChatClient] 的 `_postChat`。
+const String kAiEndpointErrorCode = 'endpoint_error';
+
 class AiChatFailure implements Exception {
   const AiChatFailure(this.message, {this.retryAfter});
 
@@ -88,24 +397,82 @@ class AiChatImage {
 
 /// 一条对话消息。
 class AiChatMessage {
-  const AiChatMessage.system(this.content)
+  /// [cacheable]：这段 system 是调用方保证**逐字稳定**的前缀（同一批任务的每次请求
+  /// 都一样），值得让提供商缓存。Anthropic 协议据此给这一块挂
+  /// `cache_control: {type: ephemeral}`（显式断点，Anthropic 不会自己缓存）；
+  /// OpenAI 兼容 / DeepSeek / Gemini 按请求前缀自动缓存，不需要标记——只要前缀稳定。
+  const AiChatMessage.system(this.content, {this.cacheable = false})
     : role = 'system',
-      images = const <AiChatImage>[];
+      images = const <AiChatImage>[],
+      toolCalls = const <AiChatToolCall>[],
+      toolCallId = null,
+      toolName = null,
+      isError = false;
 
   /// [images] 只对 user 消息有意义：三家协议都只在用户回合收图。
   const AiChatMessage.user(this.content, {this.images = const <AiChatImage>[]})
-    : role = 'user';
+    : role = 'user',
+      cacheable = false,
+      toolCalls = const <AiChatToolCall>[],
+      toolCallId = null,
+      toolName = null,
+      isError = false;
   const AiChatMessage.assistant(this.content)
     : role = 'assistant',
-      images = const <AiChatImage>[];
+      images = const <AiChatImage>[],
+      cacheable = false,
+      toolCalls = const <AiChatToolCall>[],
+      toolCallId = null,
+      toolName = null,
+      isError = false;
 
+  /// 模型上一轮发起了工具调用的那条 assistant 消息（原样回放进历史）。
+  /// [content] 是同一轮的正文，可为空串。
+  const AiChatMessage.assistantToolCalls(this.content, this.toolCalls)
+    : role = 'assistant',
+      images = const <AiChatImage>[],
+      cacheable = false,
+      toolCallId = null,
+      toolName = null,
+      isError = false;
+
+  /// 一次工具调用的执行结果。[toolCallId] 对应 [AiChatToolCall.id]（OpenAI /
+  /// Anthropic 按它配对），[toolName] 对应 [AiChatToolCall.name]（Gemini 按名配对）。
+  /// [isError]：执行失败，Anthropic 发 `is_error: true`，Gemini 在 response 里带
+  /// `error: true`；OpenAI 协议没有对应字段，失败信息只在 [content] 里。
+  const AiChatMessage.toolResult({
+    required String this.toolCallId,
+    required String this.toolName,
+    required this.content,
+    this.isError = false,
+  }) : role = 'tool',
+       images = const <AiChatImage>[],
+       cacheable = false,
+       toolCalls = const <AiChatToolCall>[];
+
+  /// `system` / `user` / `assistant` / `tool`。
   final String role;
   final String content;
 
   /// 附图；非空时按各协议的多模态形状发（文字段在图之后）。
   final List<AiChatImage> images;
 
+  /// 只对 system 消息有意义，见 [AiChatMessage.system]。
+  final bool cacheable;
+
+  /// 只对 [AiChatMessage.assistantToolCalls] 非空。
+  final List<AiChatToolCall> toolCalls;
+
+  /// 以下三项只对 [AiChatMessage.toolResult] 有意义。
+  final String? toolCallId;
+  final String? toolName;
+  final bool isError;
+
   bool get isSystem => role == 'system';
+
+  bool get isToolResult => role == 'tool';
+
+  bool get hasToolCalls => toolCalls.isNotEmpty;
 }
 
 /// 按 [AiProviderConfig.protocol] 分派的调用客户端。
@@ -123,7 +490,9 @@ class AiChatClient {
     AiKeyHealthStore? healthStore,
     DateTime Function()? clock,
     AiRateLimiter? rateLimiter,
+    AiRelayTransport? relayTransport,
   }) : _client = client ?? createAppHttpIoClient(),
+       _relayTransport = relayTransport,
        _ownsClient = client == null,
        _healthStore = healthStore,
        _clock = clock ?? DateTime.now,
@@ -131,6 +500,32 @@ class AiChatClient {
 
   final http.Client _client;
   final bool _ownsClient;
+
+  /// 「互联主机」提供商（[AiProviderConfig.relay]）的出口；null = 现取全局装配点
+  /// [aiRelayTransport]（app 在配对表可读之后才装上，客户端可能比那更早建）。
+  final AiRelayTransport? _relayTransport;
+
+  /// 互联主机提供商的一次调用：整个请求交给主机，限频 / key 轮换 / 临时性失败退避
+  /// 都在主机上做（本机没有 key，也看不见主机那家的限额），这里不再叠一层重试——
+  /// 重试一次就是让主机把一次花钱的补全重跑一遍。
+  Future<AiChatTurn> _relay(
+    AiProviderConfig provider,
+    AiRelayMode mode, {
+    List<AiChatMessage> messages = const <AiChatMessage>[],
+    List<AiChatToolSpec> tools = const <AiChatToolSpec>[],
+    int maxTokens = 2048,
+  }) {
+    if (_closed) throw const AiChatFailure('cancelled');
+    return sendAiRelayRequest(
+      provider: provider,
+      mode: mode,
+      messages: messages,
+      tools: tools,
+      maxTokens: maxTokens,
+      transport: _relayTransport,
+    );
+  }
+
   final AiKeyHealthStore? _healthStore;
   final DateTime Function() _clock;
 
@@ -166,13 +561,45 @@ class AiChatClient {
   /// 并发在途的其它请求一起避让，不接着撞墙。要等超过 [kAiChatMaxRetryWait]、或
   /// 客户端已 [close]，不再重试、原样抛出（还在排队时被关抛 `cancelled`）。
   /// 鉴权 / 4xx / 坏回复重试也一样，直接抛。
+  ///
+  /// 只要正文的调用方用这个；要记账（token 用量）的用 [completeWithUsage]。
   Future<String> complete({
+    required AiProviderConfig provider,
+    required List<AiChatMessage> messages,
+    int maxTokens = 2048,
+  }) async => (await completeWithUsage(
+    provider: provider,
+    messages: messages,
+    maxTokens: maxTokens,
+  )).text;
+
+  /// 同 [complete]，另外带回这次应答报告的 token 用量（[AiChatCompletion.usage]）。
+  ///
+  /// 失败语义与 [complete] 完全一致（空正文同样抛 `empty_response`）。应答里没有
+  /// 用量字段时 `usage` 为 null——**不是 0**：费用统计要把它当「未知」单独计数。
+  Future<AiChatCompletion> completeWithUsage({
     required AiProviderConfig provider,
     required List<AiChatMessage> messages,
     int maxTokens = 2048,
   }) async {
     if (!provider.isUsable) {
       throw const AiChatFailure('provider_not_configured');
+    }
+    if (provider.isInterconnectHost) {
+      final AiChatTurn turn = await _relay(
+        provider,
+        AiRelayMode.complete,
+        messages: messages,
+        maxTokens: maxTokens,
+      );
+      if (turn.text.trim().isEmpty) {
+        throw const AiChatFailure('empty_response');
+      }
+      return AiChatCompletion(
+        text: turn.text,
+        usage: turn.usage,
+        stopReason: turn.stopReason,
+      );
     }
     final Map<Object?, Object?> body = await _withRetry(
       provider,
@@ -186,7 +613,80 @@ class AiChatClient {
     if (text == null || text.trim().isEmpty) {
       throw const AiChatFailure('empty_response');
     }
-    return text;
+    return AiChatCompletion(
+      text: text,
+      usage: parseAiChatUsage(provider.protocol, body),
+      stopReason: _stopReason(provider.protocol, body),
+    );
+  }
+
+  /// 一轮带工具的对话：发 [messages]（可含 [AiChatMessage.assistantToolCalls] /
+  /// [AiChatMessage.toolResult] 回放的历史）与 [tools]，拿回正文 + 工具调用。
+  ///
+  /// 发送路径与 [completeWithUsage] 完全同一条（限频、key 轮换、临时性失败退避）。
+  /// [tools] 为空时请求体与 [complete] 逐字相同。不发 `tool_choice`，由模型自己决定
+  /// 调不调工具。
+  ///
+  /// 只调工具、没有正文是合法的一轮；正文为空（或只有空白）**且**没有工具调用时抛
+  /// `empty_response`。是否该给这家发 [tools] 由调用方问
+  /// [AiProviderConfig.supportsToolCalling]，这里不拦。
+  Future<AiChatTurn> chat({
+    required AiProviderConfig provider,
+    required List<AiChatMessage> messages,
+    List<AiChatToolSpec> tools = const <AiChatToolSpec>[],
+    int maxTokens = 4096,
+  }) async {
+    if (!provider.isUsable) {
+      throw const AiChatFailure('provider_not_configured');
+    }
+    if (provider.isInterconnectHost) {
+      final AiChatTurn turn = await _relay(
+        provider,
+        AiRelayMode.chat,
+        messages: messages,
+        tools: tools,
+        maxTokens: maxTokens,
+      );
+      if (turn.text.trim().isEmpty && turn.toolCalls.isEmpty) {
+        throw const AiChatFailure('empty_response');
+      }
+      return turn;
+    }
+    final Map<Object?, Object?> body = await _withRetry(
+      provider,
+      (String key) => _postChat(provider, key, messages, maxTokens, tools),
+    );
+    final (
+      String? text,
+      List<AiChatToolCall> calls,
+      String? stop,
+    ) = switch (provider.protocol) {
+      AiWireProtocol.openAiCompatible => (
+        _openAiText(body),
+        _openAiToolCalls(body),
+        _stopReason(provider.protocol, body),
+      ),
+      AiWireProtocol.anthropicMessages => (
+        _anthropicText(body),
+        _anthropicToolCalls(body),
+        _stopReason(provider.protocol, body),
+      ),
+      AiWireProtocol.geminiGenerateContent => (
+        _geminiText(body),
+        _geminiToolCalls(body),
+        _stopReason(provider.protocol, body),
+      ),
+    };
+    final String content = text ?? '';
+    if (content.trim().isEmpty && calls.isEmpty) {
+      throw const AiChatFailure('empty_response');
+    }
+    return AiChatTurn(
+      text: content,
+      toolCalls: List<AiChatToolCall>.unmodifiable(calls),
+      usage: parseAiChatUsage(provider.protocol, body),
+      stopReason: stop,
+    );
   }
 
   /// 「测试连接」：对**所配模型**发一次最小 chat 请求。
@@ -209,6 +709,12 @@ class AiChatClient {
   /// 刷新）。至少一把通过即成功；全部是换 key 类失败时抛最后一个真实错误；与 key
   /// 无关的失败（网络 / 5xx / 坏回复 / 模型不对）立即原样抛出。
   Future<void> ping(AiProviderConfig provider) async {
+    // 互联主机提供商：由主机对它那家真发一次最小请求（主机逐把 key 测，结果落主机
+    // 的健康记录）；模型名在主机上，本机不要求填。
+    if (provider.isInterconnectHost) {
+      await _relay(provider, AiRelayMode.ping);
+      return;
+    }
     if (provider.model.trim().isEmpty) {
       throw const AiChatFailure('provider_not_configured');
     }
@@ -251,8 +757,18 @@ class AiChatClient {
   ///
   /// 存在的理由：内置预设里的默认模型名**必然过时**（厂商迭代比本 app 发版快），
   /// 把用户钉死在一个写死的字符串上迟早变成「开箱即 404」。
-  Future<List<String>> listModels(AiProviderConfig provider) =>
-      _withKeyRotation(provider, (String key) => _listModels(provider, key));
+  ///
+  /// 互联主机提供商没有模型列表可拉（选的是主机上的一家提供商，不是模型）：抛
+  /// [kAiRelayOperationUnsupported]。
+  Future<List<String>> listModels(AiProviderConfig provider) async {
+    if (provider.isInterconnectHost) {
+      throw const AiChatFailure(kAiRelayOperationUnsupported);
+    }
+    return _withKeyRotation(
+      provider,
+      (String key) => _listModels(provider, key),
+    );
+  }
 
   Future<List<String>> _listModels(
     AiProviderConfig provider,
@@ -292,6 +808,96 @@ class AiChatClient {
     }
     models.sort();
     return List<String>.unmodifiable(models);
+  }
+
+  /// 云端语音转录：一段音频发到 OpenAI 兼容的 `POST {baseUrl}/audio/transcriptions`
+  /// （OpenAI Whisper、Groq 等），返回解码后的 `verbose_json` 应答（含 `segments`，
+  /// 端点支持时还有逐词 `words`）。模型名取 [AiProviderConfig.model]——给转录用的
+  /// 那家提供商填的就是 Whisper 模型（如 Groq 的 `whisper-large-v3`）。
+  ///
+  /// 与 [completeWithUsage] 同一套 key 轮换、限频与临时性失败退避（[_withRetry]），
+  /// 失败同样只抛脱敏短码。只有 OpenAI 兼容协议有这个端点，其余协议抛
+  /// `unsupported_protocol`。单次上传大小由调用方控制（Groq 免费档 25 MB）。
+  ///
+  /// [language]：ISO-639 语言码（`ja` / `en` …），不传由服务端自动识别。
+  /// [prompt]：Whisper 的提示文本（专名 / 文风示例），不传就不发。
+  Future<Map<Object?, Object?>> transcribeAudio({
+    required AiProviderConfig provider,
+    required List<int> audioBytes,
+    required String fileName,
+    required String contentType,
+    String? language,
+    String? prompt,
+  }) async {
+    // 互联主机提供商只转发对话补全；音频转录整段交给主机有现成的任务通道（ASR
+    // 任务），不在这里另开一条上传音频的路。
+    if (provider.isInterconnectHost) {
+      throw const AiChatFailure(kAiRelayOperationUnsupported);
+    }
+    if (provider.protocol != AiWireProtocol.openAiCompatible) {
+      throw const AiChatFailure(kAiTranscriptionUnsupportedProtocol);
+    }
+    if (!provider.isUsable) {
+      throw const AiChatFailure('provider_not_configured');
+    }
+    return _withRetry(
+      provider,
+      (String key) => _postTranscription(
+        provider,
+        key,
+        audioBytes: audioBytes,
+        fileName: fileName,
+        contentType: contentType,
+        language: language,
+        prompt: prompt,
+      ),
+    );
+  }
+
+  Future<Map<Object?, Object?>> _postTranscription(
+    AiProviderConfig provider,
+    String key, {
+    required List<int> audioBytes,
+    required String fileName,
+    required String contentType,
+    String? language,
+    String? prompt,
+  }) async {
+    final String boundary = aiMultipartBoundary();
+    final List<int> body = encodeAiMultipartForm(
+      boundary: boundary,
+      fields: <(String, String)>[
+        ('model', provider.model.trim()),
+        ('response_format', 'verbose_json'),
+        // 同名字段要发两次（OpenAI 的数组写法）：Map 装不下，所以表单手拼。
+        ('timestamp_granularities[]', 'segment'),
+        ('timestamp_granularities[]', 'word'),
+        ('temperature', '0'),
+        if (language != null && language.trim().isNotEmpty)
+          ('language', language.trim()),
+        if (prompt != null && prompt.trim().isNotEmpty)
+          ('prompt', prompt.trim()),
+      ],
+      fileField: 'file',
+      fileName: fileName,
+      fileContentType: contentType,
+      fileBytes: audioBytes,
+    );
+    final Map<String, String> headers = _headers(provider, key)
+      ..['content-type'] = 'multipart/form-data; boundary=$boundary';
+    final http.Response response = await _send(
+      () => _client.post(
+        _resolve(provider.baseUrl, 'audio/transcriptions'),
+        headers: headers,
+        body: body,
+      ),
+      timeout: kAiTranscriptionRequestTimeout,
+    );
+    final Object? decoded = _decodeBody(response);
+    if (decoded is! Map) {
+      throw const AiChatFailure('bad_response');
+    }
+    return decoded;
   }
 
   // -------------------------------------------------------------------------
@@ -416,27 +1022,30 @@ class AiChatClient {
   // -------------------------------------------------------------------------
 
   /// 按协议发一次 chat 请求，返回解码后的应答对象（不解释正文）。
+  ///
+  /// [tools] 为空时三家的请求体都不带工具字段，与没有 tool calling 之前逐字相同。
   Future<Map<Object?, Object?>> _postChat(
     AiProviderConfig provider,
     String key,
     List<AiChatMessage> messages,
-    int maxTokens,
-  ) async {
+    int maxTokens, [
+    List<AiChatToolSpec> tools = const <AiChatToolSpec>[],
+  ]) async {
     final (Uri uri, Map<String, Object?> payload) = switch (provider.protocol) {
       AiWireProtocol.openAiCompatible => (
         _resolve(provider.baseUrl, 'chat/completions'),
-        _openAiPayload(provider, messages, maxTokens),
+        _openAiPayload(provider, messages, maxTokens, tools),
       ),
       AiWireProtocol.anthropicMessages => (
         _resolve(provider.baseUrl, 'v1/messages'),
-        _anthropicPayload(provider, messages, maxTokens),
+        _anthropicPayload(provider, messages, maxTokens, tools),
       ),
       AiWireProtocol.geminiGenerateContent => (
         _resolve(
           provider.baseUrl,
           'models/${provider.model}:generateContent',
         ).replace(queryParameters: <String, String>{'key': key}),
-        _geminiPayload(messages, maxTokens),
+        _geminiPayload(messages, maxTokens, tools),
       ),
     };
     final http.Response response = await _send(
@@ -450,6 +1059,19 @@ class AiChatClient {
     if (body is! Map) {
       throw const AiChatFailure('bad_response');
     }
+    // 2xx 却是一份错误体、没有应答本体：LM Studio 对它不认识的路径回
+    // `200 {"error":"Unexpected endpoint or method. (POST /chat/completions)"}`
+    // （base URL 少了 `/v1` 时就是这样）。当成功解析只会报「AI 没有返回内容」，
+    // 用户无从下手；单独报 `endpoint_error`，界面提示检查接口地址（反馈
+    // GewyVIt5oo）。短码不带服务端原文（可能含路径等）。
+    final String replyKey = switch (provider.protocol) {
+      AiWireProtocol.openAiCompatible => 'choices',
+      AiWireProtocol.anthropicMessages => 'content',
+      AiWireProtocol.geminiGenerateContent => 'candidates',
+    };
+    if (body[replyKey] == null && body['error'] != null) {
+      throw const AiChatFailure(kAiEndpointErrorCode);
+    }
     return body;
   }
 
@@ -457,28 +1079,66 @@ class AiChatClient {
     AiProviderConfig provider,
     List<AiChatMessage> messages,
     int maxTokens,
+    List<AiChatToolSpec> tools,
   ) => <String, Object?>{
     'model': provider.model,
     'messages': <Map<String, Object?>>[
       for (final AiChatMessage m in messages)
-        <String, Object?>{
-          'role': m.role,
-          // 无图时仍发纯字符串：大量兼容端点（含部分本地服务）不认 content 数组。
-          'content': m.images.isEmpty
-              ? m.content
-              : <Map<String, Object?>>[
-                  for (final AiChatImage image in m.images)
-                    <String, Object?>{
-                      'type': 'image_url',
-                      'image_url': <String, String>{
-                        'url':
-                            'data:${image.mimeType};base64,${image.base64Data}',
+        if (m.isToolResult)
+          <String, Object?>{
+            'role': 'tool',
+            'tool_call_id': m.toolCallId,
+            'content': m.content,
+          }
+        else if (m.hasToolCalls)
+          <String, Object?>{
+            'role': 'assistant',
+            // 只调工具时正文发 null：部分兼容端点不收空串 content 的 assistant 消息。
+            'content': m.content.isEmpty ? null : m.content,
+            'tool_calls': <Map<String, Object?>>[
+              for (final AiChatToolCall call in m.toolCalls)
+                <String, Object?>{
+                  'id': call.id,
+                  'type': 'function',
+                  'function': <String, Object?>{
+                    'name': call.name,
+                    'arguments': jsonEncode(call.arguments),
+                  },
+                },
+            ],
+          }
+        else
+          <String, Object?>{
+            'role': m.role,
+            // 无图时仍发纯字符串：大量兼容端点（含部分本地服务）不认 content 数组。
+            'content': m.images.isEmpty
+                ? m.content
+                : <Map<String, Object?>>[
+                    for (final AiChatImage image in m.images)
+                      <String, Object?>{
+                        'type': 'image_url',
+                        'image_url': <String, String>{
+                          'url':
+                              'data:${image.mimeType};base64,${image.base64Data}',
+                        },
                       },
-                    },
-                  <String, Object?>{'type': 'text', 'text': m.content},
-                ],
-        },
+                    <String, Object?>{'type': 'text', 'text': m.content},
+                  ],
+          },
     ],
+    // 不发 tool_choice：默认 auto，由模型决定调不调工具。
+    if (tools.isNotEmpty)
+      'tools': <Map<String, Object?>>[
+        for (final AiChatToolSpec tool in tools)
+          <String, Object?>{
+            'type': 'function',
+            'function': <String, Object?>{
+              'name': tool.name,
+              'description': tool.description,
+              'parameters': tool.parameters,
+            },
+          },
+      ],
     // OpenAI 官方的推理模型（o 系列 / gpt-5 系列）拒收 `max_tokens`、只认
     // `max_completion_tokens`（官方其余模型两者都认）；大量兼容端点却只认前者。
     _usesMaxCompletionTokens(provider.baseUrl)
@@ -501,40 +1161,98 @@ class AiChatClient {
     AiProviderConfig provider,
     List<AiChatMessage> messages,
     int maxTokens,
+    List<AiChatToolSpec> tools,
   ) {
     // Anthropic 把 system 提到顶层，不放进 messages 数组。
     final String system = _systemText(messages);
     return <String, Object?>{
       'model': provider.model,
       'max_tokens': maxTokens,
-      if (system.isNotEmpty) 'system': system,
-      'messages': <Map<String, Object?>>[
-        for (final AiChatMessage m in messages)
-          if (!m.isSystem)
+      if (system.isNotEmpty) 'system': _anthropicSystem(messages, system),
+      'messages': _anthropicMessages(messages),
+      if (tools.isNotEmpty)
+        'tools': <Map<String, Object?>>[
+          for (int i = 0; i < tools.length; i++)
             <String, Object?>{
-              'role': m.role,
-              'content': m.images.isEmpty
-                  ? m.content
-                  : <Map<String, Object?>>[
-                      for (final AiChatImage image in m.images)
-                        <String, Object?>{
-                          'type': 'image',
-                          'source': <String, String>{
-                            'type': 'base64',
-                            'media_type': image.mimeType,
-                            'data': image.base64Data,
-                          },
-                        },
-                      <String, Object?>{'type': 'text', 'text': m.content},
-                    ],
+              'name': tools[i].name,
+              'description': tools[i].description,
+              'input_schema': tools[i].parameters,
+              // 工具定义是逐字稳定的前缀（排在 system 之前），断点挂在最后一个
+              // 工具上，整份工具表进缓存。
+              if (i == tools.length - 1)
+                'cache_control': const <String, String>{'type': 'ephemeral'},
             },
-      ],
+        ],
     };
+  }
+
+  /// Anthropic 的 messages 数组：普通消息形状与以往逐字相同；工具调用回放成
+  /// `tool_use` 块；**连续的** tool result 合进同一条 user 消息（Anthropic 要求
+  /// user / assistant 严格交替，一轮多个工具调用的结果必须在同一条里回）。
+  static List<Map<String, Object?>> _anthropicMessages(
+    List<AiChatMessage> messages,
+  ) {
+    final List<Map<String, Object?>> out = <Map<String, Object?>>[];
+    List<Map<String, Object?>>? pendingResults;
+    for (final AiChatMessage m in messages) {
+      if (m.isSystem) continue;
+      if (m.isToolResult) {
+        if (pendingResults == null) {
+          pendingResults = <Map<String, Object?>>[];
+          out.add(<String, Object?>{'role': 'user', 'content': pendingResults});
+        }
+        pendingResults.add(<String, Object?>{
+          'type': 'tool_result',
+          'tool_use_id': m.toolCallId,
+          'content': m.content,
+          if (m.isError) 'is_error': true,
+        });
+        continue;
+      }
+      pendingResults = null;
+      if (m.hasToolCalls) {
+        out.add(<String, Object?>{
+          'role': 'assistant',
+          'content': <Map<String, Object?>>[
+            // Anthropic 拒收空文本块，只调工具时不带 text 块。
+            if (m.content.isNotEmpty)
+              <String, Object?>{'type': 'text', 'text': m.content},
+            for (final AiChatToolCall call in m.toolCalls)
+              <String, Object?>{
+                'type': 'tool_use',
+                'id': call.id,
+                'name': call.name,
+                'input': call.arguments,
+              },
+          ],
+        });
+        continue;
+      }
+      out.add(<String, Object?>{
+        'role': m.role,
+        'content': m.images.isEmpty
+            ? m.content
+            : <Map<String, Object?>>[
+                for (final AiChatImage image in m.images)
+                  <String, Object?>{
+                    'type': 'image',
+                    'source': <String, String>{
+                      'type': 'base64',
+                      'media_type': image.mimeType,
+                      'data': image.base64Data,
+                    },
+                  },
+                <String, Object?>{'type': 'text', 'text': m.content},
+              ],
+      });
+    }
+    return out;
   }
 
   Map<String, Object?> _geminiPayload(
     List<AiChatMessage> messages,
     int maxTokens,
+    List<AiChatToolSpec> tools,
   ) {
     final String system = _systemText(messages);
     return <String, Object?>{
@@ -544,26 +1262,116 @@ class AiChatClient {
             <String, String>{'text': system},
           ],
         },
-      'contents': <Map<String, Object?>>[
-        for (final AiChatMessage m in messages)
-          if (!m.isSystem)
-            <String, Object?>{
-              // Gemini 管 assistant 叫 model。
-              'role': m.role == 'assistant' ? 'model' : 'user',
-              'parts': <Map<String, Object?>>[
-                for (final AiChatImage image in m.images)
-                  <String, Object?>{
-                    'inline_data': <String, String>{
-                      'mime_type': image.mimeType,
-                      'data': image.base64Data,
-                    },
-                  },
-                <String, Object?>{'text': m.content},
-              ],
-            },
-      ],
+      'contents': _geminiContents(messages),
+      if (tools.isNotEmpty)
+        'tools': <Map<String, Object?>>[
+          <String, Object?>{
+            'functionDeclarations': <Map<String, Object?>>[
+              for (final AiChatToolSpec tool in tools)
+                <String, Object?>{
+                  'name': tool.name,
+                  'description': tool.description,
+                  'parameters': sanitizeGeminiToolSchema(tool.parameters),
+                },
+            ],
+          },
+        ],
       'generationConfig': <String, Object?>{'maxOutputTokens': maxTokens},
     };
+  }
+
+  /// Gemini 的 contents：普通消息形状与以往逐字相同；工具调用回放成 model 回合的
+  /// `functionCall` part（带回 `thoughtSignature`——Gemini 思考模型缺了它会拒收
+  /// 回放的工具调用）；连续的 tool result 合进同一条 user 回合的
+  /// `functionResponse` part（按 name 配对）。
+  static List<Map<String, Object?>> _geminiContents(
+    List<AiChatMessage> messages,
+  ) {
+    final List<Map<String, Object?>> out = <Map<String, Object?>>[];
+    List<Map<String, Object?>>? pendingResults;
+    for (final AiChatMessage m in messages) {
+      if (m.isSystem) continue;
+      if (m.isToolResult) {
+        if (pendingResults == null) {
+          pendingResults = <Map<String, Object?>>[];
+          out.add(<String, Object?>{'role': 'user', 'parts': pendingResults});
+        }
+        pendingResults.add(<String, Object?>{
+          'functionResponse': <String, Object?>{
+            'name': m.toolName,
+            'response': <String, Object?>{
+              'content': m.content,
+              if (m.isError) 'error': true,
+            },
+          },
+        });
+        continue;
+      }
+      pendingResults = null;
+      if (m.hasToolCalls) {
+        out.add(<String, Object?>{
+          'role': 'model',
+          'parts': <Map<String, Object?>>[
+            if (m.content.isNotEmpty) <String, Object?>{'text': m.content},
+            for (final AiChatToolCall call in m.toolCalls)
+              <String, Object?>{
+                'functionCall': <String, Object?>{
+                  'name': call.name,
+                  'args': call.arguments,
+                },
+                if (call.providerMeta['thoughtSignature'] != null)
+                  'thoughtSignature': call.providerMeta['thoughtSignature'],
+              },
+          ],
+        });
+        continue;
+      }
+      out.add(<String, Object?>{
+        // Gemini 管 assistant 叫 model。
+        'role': m.role == 'assistant' ? 'model' : 'user',
+        'parts': <Map<String, Object?>>[
+          for (final AiChatImage image in m.images)
+            <String, Object?>{
+              'inline_data': <String, String>{
+                'mime_type': image.mimeType,
+                'data': image.base64Data,
+              },
+            },
+          <String, Object?>{'text': m.content},
+        ],
+      });
+    }
+    return out;
+  }
+
+  /// Anthropic 的顶层 `system`：没有 [AiChatMessage.cacheable] 段时仍是纯字符串
+  /// （与以往逐字相同）；有时改成文本块数组，每条 system 一块，**最后一个**可缓存块
+  /// 挂 `cache_control: {type: ephemeral}`——缓存命中按前缀算，最后一个断点之前的
+  /// 全部内容都在缓存里，多挂只会占掉每次请求 4 个断点的名额。
+  ///
+  /// 低于模型的最小可缓存长度（512~4096 token，按模型）时 Anthropic 静默不缓存、
+  /// 不报错，所以这里不必判长度。
+  static Object _anthropicSystem(List<AiChatMessage> messages, String joined) {
+    final List<AiChatMessage> parts = <AiChatMessage>[
+      for (final AiChatMessage m in messages)
+        if (m.isSystem && m.content.isNotEmpty) m,
+    ];
+    final int lastCacheable = parts.lastIndexWhere(
+      (AiChatMessage m) => m.cacheable,
+    );
+    if (lastCacheable < 0) return joined;
+    return <Map<String, Object?>>[
+      for (int i = 0; i < parts.length; i++)
+        <String, Object?>{
+          'type': 'text',
+          // 与纯字符串形态同一口径：块之间原本以空行相接。
+          'text': i + 1 < parts.length
+              ? '${parts[i].content}\n\n'
+              : parts[i].content,
+          if (i == lastCacheable)
+            'cache_control': const <String, String>{'type': 'ephemeral'},
+        },
+    ];
   }
 
   static String _systemText(List<AiChatMessage> messages) => messages
@@ -611,6 +1419,140 @@ class AiChatClient {
       }
     }
     return text.toString();
+  }
+
+  /// `choices[0]`；形状不对为 null。
+  static Map<Object?, Object?>? _openAiFirstChoice(Map<Object?, Object?> body) {
+    final Object? choices = body['choices'];
+    if (choices is! List || choices.isEmpty) return null;
+    final Object? first = choices.first;
+    return first is Map ? first : null;
+  }
+
+  static String? _stopReason(
+    AiWireProtocol protocol,
+    Map<Object?, Object?> body,
+  ) => switch (protocol) {
+    AiWireProtocol.openAiCompatible => _openAiStopReason(body),
+    AiWireProtocol.anthropicMessages =>
+      body['stop_reason'] is String ? body['stop_reason'] as String : null,
+    AiWireProtocol.geminiGenerateContent => _geminiStopReason(body),
+  };
+
+  static String? _openAiStopReason(Map<Object?, Object?> body) {
+    final Object? reason = _openAiFirstChoice(body)?['finish_reason'];
+    return reason is String ? reason : null;
+  }
+
+  /// `choices[0].message.tool_calls`；`arguments` 是 JSON 字符串（个别兼容端点
+  /// 直接给对象，也认）。
+  static List<AiChatToolCall> _openAiToolCalls(Map<Object?, Object?> body) {
+    final Object? message = _openAiFirstChoice(body)?['message'];
+    if (message is! Map) return const <AiChatToolCall>[];
+    final Object? raw = message['tool_calls'];
+    if (raw is! List) return const <AiChatToolCall>[];
+    final List<AiChatToolCall> calls = <AiChatToolCall>[];
+    for (final Object? entry in raw) {
+      if (entry is! Map) continue;
+      final Object? function = entry['function'];
+      if (function is! Map) continue;
+      final Object? name = function['name'];
+      if (name is! String || name.isEmpty) continue;
+      final Object? id = entry['id'];
+      calls.add(
+        AiChatToolCall(
+          id: id is String && id.isNotEmpty ? id : 'call_${calls.length}',
+          name: name,
+          arguments: _decodeToolArguments(function['arguments']),
+        ),
+      );
+    }
+    return calls;
+  }
+
+  /// OpenAI 的 `arguments`：空串 / 缺失 = 无参数；不是 JSON 对象时给
+  /// `{'_raw': 原串}`，不抛。
+  static Map<String, Object?> _decodeToolArguments(Object? raw) {
+    if (raw is Map) return raw.cast<String, Object?>();
+    if (raw is! String || raw.trim().isEmpty) return <String, Object?>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is Map) return decoded.cast<String, Object?>();
+    } on FormatException {
+      // 落到下面的 _raw。
+    }
+    return <String, Object?>{'_raw': raw};
+  }
+
+  static List<AiChatToolCall> _anthropicToolCalls(Map<Object?, Object?> body) {
+    final Object? content = body['content'];
+    if (content is! List) return const <AiChatToolCall>[];
+    final List<AiChatToolCall> calls = <AiChatToolCall>[];
+    for (final Object? block in content) {
+      if (block is! Map || block['type'] != 'tool_use') continue;
+      final Object? name = block['name'];
+      if (name is! String || name.isEmpty) continue;
+      final Object? id = block['id'];
+      final Object? input = block['input'];
+      calls.add(
+        AiChatToolCall(
+          id: id is String && id.isNotEmpty ? id : 'call_${calls.length}',
+          name: name,
+          arguments: input is Map
+              ? input.cast<String, Object?>()
+              : <String, Object?>{},
+        ),
+      );
+    }
+    return calls;
+  }
+
+  static Map<Object?, Object?>? _geminiFirstCandidate(
+    Map<Object?, Object?> body,
+  ) {
+    final Object? candidates = body['candidates'];
+    if (candidates is! List || candidates.isEmpty) return null;
+    final Object? first = candidates.first;
+    return first is Map ? first : null;
+  }
+
+  static String? _geminiStopReason(Map<Object?, Object?> body) {
+    final Object? reason = _geminiFirstCandidate(body)?['finishReason'];
+    return reason is String ? reason : null;
+  }
+
+  /// `candidates[0].content.parts[*].functionCall`；同一 part 上的
+  /// `thoughtSignature` 记进 [AiChatToolCall.providerMeta]，回放时原样带回。
+  /// Gemini 不一定给 id（新版本才有 `functionCall.id`），没有就按本轮序号生成。
+  static List<AiChatToolCall> _geminiToolCalls(Map<Object?, Object?> body) {
+    final Object? content = _geminiFirstCandidate(body)?['content'];
+    if (content is! Map) return const <AiChatToolCall>[];
+    final Object? parts = content['parts'];
+    if (parts is! List) return const <AiChatToolCall>[];
+    final List<AiChatToolCall> calls = <AiChatToolCall>[];
+    for (final Object? part in parts) {
+      if (part is! Map) continue;
+      final Object? call = part['functionCall'];
+      if (call is! Map) continue;
+      final Object? name = call['name'];
+      if (name is! String || name.isEmpty) continue;
+      final Object? id = call['id'];
+      final Object? args = call['args'];
+      final Object? signature = part['thoughtSignature'];
+      calls.add(
+        AiChatToolCall(
+          id: id is String && id.isNotEmpty ? id : 'call_${calls.length}',
+          name: name,
+          arguments: args is Map
+              ? args.cast<String, Object?>()
+              : <String, Object?>{},
+          providerMeta: <String, Object?>{
+            if (signature != null) 'thoughtSignature': signature,
+          },
+        ),
+      );
+    }
+    return calls;
   }
 
   // -------------------------------------------------------------------------
@@ -733,10 +1675,13 @@ class AiChatClient {
     return byHealth != null && byHealth.isAfter(byReply) ? byHealth : byReply;
   }
 
-  Future<http.Response> _send(Future<http.Response> Function() send) async {
+  Future<http.Response> _send(
+    Future<http.Response> Function() send, {
+    Duration timeout = kAiChatRequestTimeout,
+  }) async {
     final http.Response response;
     try {
-      response = await send().timeout(kAiChatRequestTimeout);
+      response = await send().timeout(timeout);
     } catch (_) {
       // 原始异常可能带完整 URL（含 Gemini 的 ?key=），绝不透出。
       throw const AiChatFailure('network_error');
@@ -821,6 +1766,33 @@ const List<String> _kQuotaMarkers = <String>[
   '欠费',
 ];
 
+/// 请求超出模型上下文窗口的失败短码（反馈 GewyVIt5oo：本地小上下文模型被 AI 助手
+/// 的系统提示 + 对话撑爆）。界面据此提示调大服务端上下文长度或开新对话，而不是
+/// 只报一个看不懂的 `http_400`。不是临时性失败：原样重发还是超长。
+const String kAiContextOverflowCode = 'context_overflow';
+
+/// 上下文超长的特征词（小写比较）：
+/// - OpenAI / 兼容层：`context_length_exceeded`、「maximum context length」；
+/// - llama.cpp server：「the request exceeds the available context size」；
+/// - LM Studio：「…context length of only 4096 tokens」「context the overflows」；
+/// - Ollama / vLLM：「context window」「n_ctx」；Anthropic：「prompt is too long」；
+/// - Gemini：「exceeds the maximum number of tokens」。
+///
+/// 只认 400 / 413 / 422 / 500：OpenAI 的 TPM 限流是 429「Request too large … tokens
+/// per min」，那是限流不是窗口，交给 `rate_limited`。
+const List<String> _kContextOverflowMarkers = <String>[
+  'context_length_exceeded',
+  'context length',
+  'context size',
+  'context window',
+  'maximum context',
+  'context the overflows',
+  'context overflow',
+  'n_ctx',
+  'prompt is too long',
+  'maximum number of tokens',
+];
+
 /// key 本身无效的特征词：Gemini 对坏 key 回的是 **400** `API_KEY_INVALID`
 /// （「API key not valid」），只看状态码认不出是鉴权问题。
 const List<String> _kInvalidKeyMarkers = <String>[
@@ -835,6 +1807,7 @@ const List<String> _kInvalidKeyMarkers = <String>[
 ///
 /// - 402，或 400/403/429 且体里有余额特征词 → `quota_exhausted`（换 key 重试）；
 /// - 401 / 403，或 400 且体里有坏 key 特征词 → `unauthorized`（换 key 重试）；
+/// - 400/413/422/500 且体里有上下文超长特征词 → [kAiContextOverflowCode]（不重试）；
 /// - 429 → `rate_limited`，带上 `Retry-After`（换 key 重试，这把按它冷却）；
 /// - 其余 → `http_<状态码>`（与 key 无关，不换 key）。
 ///
@@ -864,6 +1837,13 @@ AiChatFailure classifyAiHttpFailure({
       statusCode == 403 ||
       (statusCode == 400 && has(_kInvalidKeyMarkers))) {
     return const AiChatFailure('unauthorized');
+  }
+  if ((statusCode == 400 ||
+          statusCode == 413 ||
+          statusCode == 422 ||
+          statusCode == 500) &&
+      has(_kContextOverflowMarkers)) {
+    return const AiChatFailure(kAiContextOverflowCode);
   }
   if (statusCode == 429) {
     return AiChatFailure(

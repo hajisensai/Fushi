@@ -33,8 +33,9 @@ const String _kPdfPath = String.fromEnvironment(
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('PDF 导入 → format=pdf 行 → 书架路由 reader_pdf → 渲染非空白',
-      (WidgetTester tester) async {
+  testWidgets('PDF 导入 → format=pdf 行 → 书架路由 reader_pdf → 渲染非空白', (
+    WidgetTester tester,
+  ) async {
     final File pdfFile = File(_kPdfPath);
     if (!pdfFile.existsSync()) {
       markTestSkipped('Phase 1 PDF 不存在，跳过：$_kPdfPath');
@@ -42,8 +43,9 @@ void main() {
     }
 
     // 隔离 DB + 存储根，避免碰真实用户库（用内存库 + 临时 fushi_books 根）。
-    final Directory tmpRoot =
-        Directory.systemTemp.createTempSync('fushi_pdf_phase1_');
+    final Directory tmpRoot = Directory.systemTemp.createTempSync(
+      'fushi_pdf_phase1_',
+    );
     addTearDown(() {
       try {
         if (tmpRoot.existsSync()) tmpRoot.deleteSync(recursive: true);
@@ -53,8 +55,7 @@ void main() {
     addTearDown(() => EpubStorage.debugBaseDirectoryOverride = null);
 
     // ignore: invalid_use_of_visible_for_testing_member
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     // ── 导入 ────────────────────────────────────────────────────────────
@@ -73,10 +74,15 @@ void main() {
     expect(row.chapterCount, greaterThan(0), reason: 'chapterCount=页数应>0');
     expect(row.epubPath, PdfImporter.kPdfFileName, reason: 'epubPath=PDF 文件名');
     final String pdfDiskPath = p.join(row.extractDir, row.epubPath);
-    expect(File(pdfDiskPath).existsSync(), isTrue,
-        reason: 'PDF 应被拷进书目录，阅读器据此还原路径');
-    debugPrint('[pdf-phase1] row.format=${row.format} '
-        'pages=${row.chapterCount} pdf=$pdfDiskPath cover=${row.coverPath}');
+    expect(
+      File(pdfDiskPath).existsSync(),
+      isTrue,
+      reason: 'PDF 应被拷进书目录，阅读器据此还原路径',
+    );
+    debugPrint(
+      '[pdf-phase1] row.format=${row.format} '
+      'pages=${row.chapterCount} pdf=$pdfDiskPath cover=${row.coverPath}',
+    );
 
     // ── 封面（首页栅格化）落盘 ──────────────────────────────────────────
     if (row.coverPath != null) {
@@ -89,8 +95,11 @@ void main() {
     // （不拉全 AppModel/pdfrx 组件帧——离屏 GPU 帧回读不可靠；Phase 0 spike 已证
     //   pdfrx 在 Windows 栅格化 prince.pdf 非空白。这里只确认 Phase 1 落库→路径还原
     //   这条新链打通，渲染由 spike 覆盖。）
-    expect(File(pdfDiskPath).lengthSync(), greaterThan(0),
-        reason: '拷入的 PDF 副本非空，ReaderPdfPage 可加载');
+    expect(
+      File(pdfDiskPath).lengthSync(),
+      greaterThan(0),
+      reason: '拷入的 PDF 副本非空，ReaderPdfPage 可加载',
+    );
 
     debugPrint('[pdf-phase1] PASS: import→row(format=pdf)→disk path resolved');
   });

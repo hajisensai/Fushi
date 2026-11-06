@@ -95,8 +95,11 @@ void main() {
     await built.db.close();
 
     final Archive archive = await readZip(zip);
-    expect(archive.findFile('dictionaryResources/JMdict/index.bin'), isNotNull,
-        reason: '有文件的词典必须照常进包');
+    expect(
+      archive.findFile('dictionaryResources/JMdict/index.bin'),
+      isNotNull,
+      reason: '有文件的词典必须照常进包',
+    );
     expect(
       archive.findFile('dictionaryResources/Daijirin/index.bin'),
       isNotNull,
@@ -117,8 +120,11 @@ void main() {
     final Archive archive = await readZip(zip);
     expect(archive.findFile('dictionaryResources/JMdict/index.bin'), isNotNull);
     expect(
-      archive.files.any((ArchiveFile f) =>
-          f.name.contains('import_temp') || f.name.contains('.pending_delete')),
+      archive.files.any(
+        (ArchiveFile f) =>
+            f.name.contains('import_temp') ||
+            f.name.contains('.pending_delete'),
+      ),
       isFalse,
       reason: '整棵树无差别打包会把半个下载包和待删目录一起塞进备份',
     );
@@ -191,13 +197,14 @@ void main() {
       onDisk: <String>['JMdict', 'Daijirin'],
       inDb: <String>['JMdict', 'Daijirin', 'GoneDict'],
     );
-    final BackupContentSummary summary =
-        await built.service.summarizeLiveContent();
+    final BackupContentSummary summary = await built.service
+        .summarizeLiveContent();
     await built.db.close();
     expect(
       summary.counts[BackupCategory.dictionary],
       2,
-      reason: '旧实现数 dictionary_metadata 行数（3），与打包判据不同源，'
+      reason:
+          '旧实现数 dictionary_metadata 行数（3），与打包判据不同源，'
           '于是勾选框写着 3、导出后 0 本，用户完全无从察觉',
     );
   });

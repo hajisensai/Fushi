@@ -11,7 +11,7 @@
 // 这里用 MockClient 离线重现「watch page 降级」这一外部状态，驱动真实兜底链。
 import 'dart:convert';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
@@ -27,51 +27,56 @@ const String _streamUrl =
 const String _degradedWatchPage =
     '<html><body><div id="player"></div></body></html>';
 
-String _swJsData(String visitor) => ")]}'${jsonEncode(<Object?>[
+String _swJsData(String visitor) =>
+    ")]}'${jsonEncode(<Object?>[
+      <Object?>[
+        null,
+        null,
+        <Object?>[
           <Object?>[
-            null,
-            null,
-            <Object?>[
-              <Object?>[
-                <Object?>[for (int i = 0; i < 13; i++) null, visitor],
-              ],
-            ],
+            <Object?>[for (int i = 0; i < 13; i++) null, visitor],
           ],
-        ])}";
+        ],
+      ],
+    ])}";
 
 String _playerOk() => jsonEncode(<String, Object?>{
-      'playabilityStatus': <String, Object?>{'status': 'OK'},
-      'videoDetails': <String, Object?>{'videoId': _videoId},
-      'streamingData': <String, Object?>{
-        'adaptiveFormats': <Object?>[
-          <String, Object?>{
-            'itag': 251,
-            'url': _streamUrl,
-            'mimeType': 'audio/webm; codecs="opus"',
-            'bitrate': 140000,
-            'averageBitrate': 130000,
-            'contentLength': '3433755',
-            'audioQuality': 'AUDIO_QUALITY_MEDIUM',
-            'audioSampleRate': '48000',
-            'audioChannels': 2,
-          },
-        ],
+  'playabilityStatus': <String, Object?>{'status': 'OK'},
+  'videoDetails': <String, Object?>{'videoId': _videoId},
+  'streamingData': <String, Object?>{
+    'adaptiveFormats': <Object?>[
+      <String, Object?>{
+        'itag': 251,
+        'url': _streamUrl,
+        'mimeType': 'audio/webm; codecs="opus"',
+        'bitrate': 140000,
+        'averageBitrate': 130000,
+        'contentLength': '3433755',
+        'audioQuality': 'AUDIO_QUALITY_MEDIUM',
+        'audioSampleRate': '48000',
+        'audioChannels': 2,
       },
-    });
+    ],
+  },
+});
 
 String _playerBot() => jsonEncode(<String, Object?>{
-      'playabilityStatus': <String, Object?>{
-        'status': 'LOGIN_REQUIRED',
-        'reason': "Sign in to confirm you're not a bot",
-      },
-    });
+  'playabilityStatus': <String, Object?>{
+    'status': 'LOGIN_REQUIRED',
+    'reason': "Sign in to confirm you're not a bot",
+  },
+});
 
 /// youtube_explode 校验响应时读 `response.request!`，MockClient 默认不填，这里补上。
 MockClient _mockClient(Future<http.Response> Function(http.Request) handler) =>
     MockClient((http.Request req) async {
       final http.Response r = await handler(req);
-      return http.Response.bytes(r.bodyBytes, r.statusCode,
-          headers: r.headers, request: req);
+      return http.Response.bytes(
+        r.bodyBytes,
+        r.statusCode,
+        headers: r.headers,
+        request: req,
+      );
     });
 
 /// 记录每个请求的 MockClient：watch page 降级；VISIONOS 只有带 visitor 身份才出流。
@@ -92,10 +97,12 @@ class _Recorder {
     if (u.path == '/youtubei/v1/player') {
       final Map<String, dynamic> body =
           jsonDecode(req.body) as Map<String, dynamic>;
-      final Map<String, dynamic> c = (body['context']
-          as Map<String, dynamic>)['client'] as Map<String, dynamic>;
+      final Map<String, dynamic> c =
+          (body['context'] as Map<String, dynamic>)['client']
+              as Map<String, dynamic>;
       final bool vision = c['clientName'] == 'VISIONOS';
-      final bool hasIdentity = c['visitorData'] == _visitor &&
+      final bool hasIdentity =
+          c['visitorData'] == _visitor &&
           req.headers['X-Goog-Visitor-Id'] == _visitor;
       return http.Response(
         vision && hasIdentity ? _playerOk() : _playerBot(),
@@ -118,10 +125,10 @@ void main() {
         final _Recorder rec = _Recorder();
         final yt.StreamManifest manifest =
             await getYoutubeManifestWithClientFallback(
-          yt.YoutubeHttpClient(rec.client),
-          _videoId,
-          kYoutubeManifestClientFallback,
-        );
+              yt.YoutubeHttpClient(rec.client),
+              _videoId,
+              kYoutubeManifestClientFallback,
+            );
         expect(manifest.audioOnly.single.url.toString(), _streamUrl);
         expect(rec.touchedWatchPage, isFalse);
         // 身份只取一次。
@@ -146,8 +153,8 @@ void main() {
           kYoutubeManifestClientFallback,
         ),
         throwsA(
-          isA<StateError>().having(
-            (StateError e) => e.message,
+          isA<YoutubeManifestException>().having(
+            (YoutubeManifestException e) => e.toString(),
             'message',
             allOf(<Matcher>[
               contains(_videoId),
@@ -167,7 +174,8 @@ void main() {
         if (req.url.path == '/youtubei/v1/player') {
           final Map<String, dynamic> c =
               ((jsonDecode(req.body) as Map<String, dynamic>)['context']
-                  as Map<String, dynamic>)['client'] as Map<String, dynamic>;
+                      as Map<String, dynamic>)['client']
+                  as Map<String, dynamic>;
           playerClients.add(c['clientName'] as String);
         }
         return http.Response(_playerBot(), 200);
@@ -178,7 +186,7 @@ void main() {
           _videoId,
           kYoutubeManifestClientFallback,
         ),
-        throwsA(isA<StateError>()),
+        throwsA(isA<YoutubeManifestException>()),
       );
       expect(playerClients, isNot(contains('VISIONOS')));
       expect(playerClients, containsAll(<String>['ANDROID_VR', 'ANDROID']));
@@ -204,15 +212,17 @@ void main() {
         kYoutubeVisionOsClient,
         'v1',
       );
-      final Map<String, dynamic> client = (derived.payload['context']
-          as Map<String, dynamic>)['client'] as Map<String, dynamic>;
+      final Map<String, dynamic> client =
+          (derived.payload['context'] as Map<String, dynamic>)['client']
+              as Map<String, dynamic>;
       expect(client['visitorData'], 'v1');
       expect(client['clientName'], 'VISIONOS');
       expect(derived.headers['X-Goog-Visitor-Id'], 'v1');
       expect(derived.apiUrl, kYoutubeVisionOsClient.apiUrl);
       final Map<String, dynamic> template =
           (kYoutubeVisionOsClient.payload['context']
-              as Map<String, dynamic>)['client'] as Map<String, dynamic>;
+                  as Map<String, dynamic>)['client']
+              as Map<String, dynamic>;
       expect(template.containsKey('visitorData'), isFalse);
       expect(kYoutubeVisionOsClient.headers, isEmpty);
     });

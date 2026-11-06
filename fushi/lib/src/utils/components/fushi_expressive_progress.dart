@@ -1,15 +1,17 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' show lerpDouble;
+
+import 'package:flutter/foundation.dart' show listEquals;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
-// Material 3 Expressive（2025-05）的进度与加载指示，自绘实现。
+// Material 3 Expressive（2025-05）的进度与加载指示。
 //
-// Flutter 3.44 内核只带了 Expressive 的配色变体，没有 Expressive 组件（波浪
+// material_ui 1.8～1.10 只带了 Expressive 的形状引擎（[MaterialShapes] /
+// [RoundedPolygon] / [MaterialShapeBorder]），没有 Expressive 进度组件（波浪
 // 进度条 / LoadingIndicator），所以这里按 M3 Expressive 规格自绘，只给 MD3
 // 设计系统用（Apple 设计系统走 iOS / macOS 形态，见 glass/fushi_glass_feedback）：
 //
@@ -19,10 +21,12 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 //   直线，与已填段之间留缝，尾端一个停止点。不定态是两段波浪沿轨道滑动。
 // - [FushiWavyCircularProgress]：圆形进度。波浪绕环一周（振幅 1.6、波长约
 //   15），确定态带缝 + 直线底环；不定态是一段长度呼吸、整体旋转的波浪弧。
-// - [FushiExpressiveLoadingIndicator]：不定态「加载」——主色形状在圆角多边形
-//   之间连续变形并旋转（软圆 → 7 瓣饼干 → 五边形 → 胶囊 → 9 瓣饼干 → 太阳），
-//   可选 primaryContainer 圆底（contained）。变形 = 两个形状按同一组 N 个角度
-//   采样极径后逐点插值，节拍用带回弹的弹簧感曲线。
+// - [FushiExpressiveLoadingIndicator]：不定态「加载」——主色形状在官方
+//   [MaterialShapes] 之间连续变形并旋转（与 Compose M3E LoadingIndicator 默认
+//   序列一致：软爆裂 → 9 瓣饼干 → 五边形 → 胶囊 → 太阳 → 4 瓣饼干 → 椭圆），
+//   可选 primaryContainer 圆底（contained）。变形走 [MaterialShapeBorder] 的
+//   lerp（曲线配对按形状对全局缓存，每帧只插值三次贝塞尔），节拍用带回弹的
+//   弹簧感曲线。
 //
 // 每个控件只有一个 AnimationController，画在 RepaintBoundary 里；确定态只在
 // 值变化后的 [kWavyProgressFlowSettle] 内跑（静止进度条零帧开销）；系统「减少
@@ -679,70 +683,246 @@ class _WavyCircularPainter extends CustomPainter {
 }
 
 // ---------------------------------------------------------------------------
+// 分段圆环
+// ---------------------------------------------------------------------------
+
+/// 多任务分段进度环：一圈按 [values] 的个数切成等长弧段（段间留缝），每段是
+/// 一项任务自己的进度；只有一段时就是整圈（与 [FushiWavyCircularProgress] 的
+/// 确定态同形）。
+///
+/// - MD3：已填部分是波浪（振幅 1.6、波长约 15，两端收平），未填部分是直线轨道；
+///   某段为 null（不定态）时，一小截波浪在该段内来回滑动。
+/// - Apple：细圆头弧、不画波浪；不定态段画成半透明满段（同
+///   [FushiAppleLinearProgress] 静止不定态）、不跑动画。
+///
+/// 外框 [size] × [size]，环贴外框内沿画（没有内边距），中心留给调用方叠图标。
+/// [colors] 与 [values] 一一对应。墨水屏调用方先过 `einkSafeProgressValue`
+/// 把不定态钉成 0（不跑往复动画）。
+class FushiSegmentedProgressRing extends StatefulWidget {
+  const FushiSegmentedProgressRing({
+    super.key,
+    required this.values,
+    required this.colors,
+    required this.trackColor,
+    this.size = 40,
+    this.strokeWidth = 3,
+    this.semanticsLabel,
+  }) : assert(values.length == colors.length);
+
+  final List<double?> values;
+  final List<Color> colors;
+  final Color trackColor;
+  final double size;
+  final double strokeWidth;
+  final String? semanticsLabel;
+
+  @override
+  State<FushiSegmentedProgressRing> createState() =>
+      _FushiSegmentedProgressRingState();
+}
+
+class _FushiSegmentedProgressRingState extends State<FushiSegmentedProgressRing>
+    with
+        SingleTickerProviderStateMixin<FushiSegmentedProgressRing>,
+        _RepeatingTicker<FushiSegmentedProgressRing> {
+  // 不定态的滑块一个来回 2.4 秒；确定态同一个控制器推波形相位。
+  @override
+  Duration get tickerPeriod => const Duration(milliseconds: 2400);
+
+  // 任一段不定 → 一直跑；全部确定时把各段之和当「值」，任一段推进即流动。
+  @override
+  double? get progressValue {
+    double sum = 0;
+    for (final double? v in widget.values) {
+      if (v == null) return null;
+      sum += v;
+    }
+    return sum;
+  }
+
+  @override
+  bool wantsAnimation(BuildContext context) =>
+      _motionAllowed(context) && !isGlassDesign(context);
+
+  @override
+  Widget build(BuildContext context) {
+    final bool apple = isGlassDesign(context);
+    final bool motion = _motionAllowed(context) && !apple;
+    return Semantics(
+      label: widget.semanticsLabel,
+      child: SizedBox.square(
+        dimension: widget.size,
+        child: RepaintBoundary(
+          child: CustomPaint(
+            painter: _SegmentedRingPainter(
+              progress: ticker,
+              values: widget.values,
+              colors: widget.colors,
+              trackColor: widget.trackColor,
+              strokeWidth: apple
+                  ? math.min(widget.strokeWidth, widget.size <= 28 ? 2 : 3)
+                  : widget.strokeWidth,
+              wavy: motion,
+              animateIndeterminate: motion,
+              clockwise: Directionality.of(context) != TextDirection.rtl,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SegmentedRingPainter extends CustomPainter {
+  _SegmentedRingPainter({
+    required this.progress,
+    required this.values,
+    required this.colors,
+    required this.trackColor,
+    required this.strokeWidth,
+    required this.wavy,
+    required this.animateIndeterminate,
+    required this.clockwise,
+  }) : super(repaint: progress);
+
+  final Animation<double>? progress;
+  final List<double?> values;
+  final List<Color> colors;
+  final Color trackColor;
+  final double strokeWidth;
+  final bool wavy;
+  final bool animateIndeterminate;
+  final bool clockwise;
+
+  /// 不定态滑块占所在段的比例。
+  static const double _chunk = 0.35;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final int n = values.length;
+    final double side = math.min(size.width, size.height);
+    if (n == 0 || side <= 0) return;
+    final double amp = wavy ? 1.6 * (side / 40).clamp(0.0, 1.0) : 0;
+    final Offset c = size.center(Offset.zero);
+    final double radius = side / 2 - strokeWidth / 2 - amp;
+    if (radius <= 0) return;
+    final int waves = math.max(3, (2 * math.pi * radius / 15).round());
+    final double t = progress?.value ?? 0;
+    final double phase = t * 2 * math.pi;
+    final double dir = clockwise ? 1 : -1;
+    // 缝（含两侧圆头）换算成弧度；段间缝与段内「已填 / 轨道」缝同宽。
+    final double gap = (strokeWidth + 3) / radius;
+    final double segment = n == 1 ? 2 * math.pi : (2 * math.pi - n * gap) / n;
+    if (segment <= 0) return;
+    final Rect rect = Rect.fromCircle(center: c, radius: radius);
+    final Paint stroked = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    void waveArc(double start, double sweep, double a, Color color) {
+      if (sweep <= 0) return;
+      final Path path = Path();
+      final int steps = math.max(8, (sweep * radius).ceil());
+      for (int i = 0; i <= steps; i++) {
+        final double theta = start + sweep * i / steps;
+        final double r = radius + a * math.sin(waves * theta - phase);
+        final double angle = -math.pi / 2 + dir * theta;
+        final Offset p = c + Offset(math.cos(angle), math.sin(angle)) * r;
+        if (i == 0) {
+          path.moveTo(p.dx, p.dy);
+        } else {
+          path.lineTo(p.dx, p.dy);
+        }
+      }
+      canvas.drawPath(path, stroked..color = color);
+    }
+
+    void trackArc(double start, double end, Color color) {
+      if (end - start <= 0) return;
+      canvas.drawArc(
+        rect,
+        -math.pi / 2 + dir * start,
+        dir * (end - start),
+        false,
+        stroked..color = color,
+      );
+    }
+
+    for (int i = 0; i < n; i++) {
+      // 第一段从 12 点（偏半个缝）起；单段整圈时尾端留一个缝给轨道收口。
+      final double start = n == 1 ? 0 : i * (segment + gap) + gap / 2;
+      final double end = n == 1 ? 2 * math.pi - gap : start + segment;
+      final double usable = end - start;
+      final Color color = colors[i];
+      final double? v = values[i];
+      if (v != null) {
+        final double value = v.clamp(0.0, 1.0);
+        final double filled = (n == 1 ? 2 * math.pi : usable) * value;
+        waveArc(
+          start,
+          math.min(filled, usable),
+          amp * _amplitudeEase(value),
+          color,
+        );
+        trackArc(value <= 0 ? start : start + filled + gap, end, trackColor);
+        continue;
+      }
+      if (!animateIndeterminate) {
+        trackArc(start, end, color.withValues(alpha: color.a * 0.5));
+        continue;
+      }
+      // 不定态：一截波浪在段内往返（余弦缓动，两端停顿自然）。
+      final double chunk = usable * _chunk;
+      final double travel = 0.5 - 0.5 * math.cos(2 * math.pi * t);
+      final double s = start + (usable - chunk) * travel;
+      trackArc(start, s - gap, trackColor);
+      waveArc(s, chunk, amp, color);
+      trackArc(s + chunk + gap, end, trackColor);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SegmentedRingPainter oldDelegate) =>
+      !listEquals(oldDelegate.values, values) ||
+      !listEquals(oldDelegate.colors, colors) ||
+      oldDelegate.trackColor != trackColor ||
+      oldDelegate.strokeWidth != strokeWidth ||
+      oldDelegate.wavy != wavy ||
+      oldDelegate.animateIndeterminate != animateIndeterminate ||
+      oldDelegate.clockwise != clockwise ||
+      oldDelegate.progress != progress;
+}
+
+// ---------------------------------------------------------------------------
 // LoadingIndicator
 // ---------------------------------------------------------------------------
 
-/// 变形形状：极径函数 r(θ)（未归一化，绘制前按最大极径归一）。
-typedef _PolarShape = double Function(double theta);
-
-/// 圆角正 [n] 边形：正多边形的极径与圆按 [roundness] 混合（越大越圆）。
-_PolarShape _roundedPolygon(int n, double roundness) {
-  final double sector = 2 * math.pi / n;
-  return (double theta) {
-    final double local = (theta % sector) - sector / 2;
-    final double polygon = math.cos(sector / 2) / math.cos(local);
-    return lerpDouble(polygon, 1, roundness)!;
-  };
-}
-
-/// [n] 瓣「饼干」：圆上叠 [depth] 深的余弦起伏。
-_PolarShape _cookie(int n, double depth) =>
-    (double theta) => 1 + depth * math.cos(n * theta);
-
-/// 胶囊（横向体育场形，长宽比约 1 : 0.62）。
-double _pill(double theta) {
-  const double a = 1.0;
-  const double b = 0.62;
-  // 超椭圆近似体育场形：|x/a|^4 + |y/b|^4 = 1。
-  final double c = math.cos(theta).abs();
-  final double s = math.sin(theta).abs();
-  return 1 / math.pow(math.pow(c / a, 4) + math.pow(s / b, 4), 0.25);
-}
-
-/// M3 Expressive 默认 LoadingIndicator 的形状序列。
-final List<_PolarShape> _kLoadingShapes = <_PolarShape>[
-  (double _) => 1, // 软圆
-  _cookie(7, 0.09), // 7 瓣饼干
-  _roundedPolygon(5, 0.32), // 圆角五边形
-  _pill, // 胶囊
-  _cookie(9, 0.07), // 9 瓣饼干
-  _cookie(12, 0.06), // 太阳（细密起伏）
-];
-
-/// 采样点数：两个形状按同一组角度采样后逐点插值。
-const int _kShapeSamples = 144;
-
-List<double> _sampleShape(_PolarShape shape) {
-  final List<double> radii = List<double>.generate(
-    _kShapeSamples,
-    (int i) => shape(2 * math.pi * i / _kShapeSamples),
-  );
-  final double maxR = radii.reduce(math.max);
-  return <double>[for (final double r in radii) r / maxR];
-}
-
-final List<List<double>> _kSampledShapes = <List<double>>[
-  for (final _PolarShape s in _kLoadingShapes) _sampleShape(s),
+/// M3 Expressive 默认 LoadingIndicator 的形状序列（官方 [MaterialShapes]，与
+/// Compose `LoadingIndicatorDefaults.IndeterminateIndicatorPolygons` 同序）。
+/// 包成 [MaterialShapeBorder] 后相邻两项 lerp 即形变；配对结果由
+/// [MaterialShapeBorder] 按形状对缓存，所有指示器共用。
+final List<MaterialShapeBorder> _kLoadingShapes = <MaterialShapeBorder>[
+  for (final RoundedPolygon shape in <RoundedPolygon>[
+    MaterialShapes.softBurst,
+    MaterialShapes.cookie9Sided,
+    MaterialShapes.pentagon,
+    MaterialShapes.pill,
+    MaterialShapes.sunny,
+    MaterialShapes.cookie4Sided,
+    MaterialShapes.oval,
+  ])
+    MaterialShapeBorder(shape: shape),
 ];
 
 /// 弹簧感节拍：快速冲过目标再回落（阻尼回弹）。
 const Curve _kMorphCurve = Cubic(0.34, 1.45, 0.64, 1);
 
 /// M3 Expressive LoadingIndicator（不定态「加载」，区别于进度环）：主色形状
-/// 在圆角多边形之间连续变形并旋转。[contained] 为 true 时铺 primaryContainer
+/// 在官方 [MaterialShapes] 之间连续变形并旋转。[contained] 为 true 时铺 primaryContainer
 /// 圆底、形状用 onPrimaryContainer。默认外框 48，形状占 38/48。
 ///
-/// 系统「减少动态效果」时停在静止的 7 瓣饼干形，不动画。
+/// 系统「减少动态效果」时停在静止的软爆裂形（序列首项），不动画。
 class FushiExpressiveLoadingIndicator extends StatefulWidget {
   const FushiExpressiveLoadingIndicator({
     super.key,
@@ -774,7 +954,7 @@ class _FushiExpressiveLoadingIndicatorState
 
   @override
   Duration get tickerPeriod =>
-      Duration(milliseconds: _morphMs * _kSampledShapes.length);
+      Duration(milliseconds: _morphMs * _kLoadingShapes.length);
 
   // 「加载」恒为不定态，一直变形。
   @override
@@ -848,39 +1028,42 @@ class _MorphPainter extends CustomPainter {
     }
     // 形状占 38/48；contained 时再收一点，给圆底留边。
     final double radius = side / 2 * (container != null ? 0.66 : 0.79);
-    final int n = _kSampledShapes.length;
+    final int n = _kLoadingShapes.length;
     final double t = animate ? (progress?.value ?? 0) : 0;
     final double steps = t * n;
     final int index = steps.floor() % n;
     final double local = steps - steps.floor();
-    // 每段前 70% 时间变形、后 30% 停留，变形用弹簧感曲线（可略越过目标）。
+    // 每段前 70% 时间变形、后 30% 停留，变形用弹簧感曲线（可略越过目标，
+    // 官方 Morph 允许略出 [0, 1] 的回弹值）。
     final double morph = animate
         ? _kMorphCurve.transform((local / 0.7).clamp(0.0, 1.0))
         : 0;
-    final List<double> from = _kSampledShapes[animate ? index : 1];
-    final List<double> to = _kSampledShapes[(index + 1) % n];
-    // 整体匀速慢转 + 每次变形额外转 90°（同样带弹簧感），一轮转回原位。
+    final ShapeBorder shape = animate
+        ? ShapeBorder.lerp(
+            _kLoadingShapes[index],
+            _kLoadingShapes[(index + 1) % n],
+            morph,
+          )!
+        : _kLoadingShapes.first;
+    // 整体匀速慢转一圈 + 每次变形额外转 4π/n（≈ 规范的 90°，同样带弹簧感）；
+    // 一轮合计 3 整圈，ticker 回绕时角度连续。
     final double rotation = animate
-        ? 2 * math.pi * t + (index + morph) * (math.pi / 2)
+        ? 2 * math.pi * t + (index + morph) * (4 * math.pi / n)
         : 0;
-    final Path path = Path();
-    for (int i = 0; i < _kShapeSamples; i++) {
-      final double r = lerpDouble(from[i], to[i], morph)! * radius;
-      final double angle = 2 * math.pi * i / _kShapeSamples + rotation;
-      final Offset p = c + Offset(math.cos(angle), math.sin(angle)) * r;
-      if (i == 0) {
-        path.moveTo(p.dx, p.dy);
-      } else {
-        path.lineTo(p.dx, p.dy);
-      }
-    }
-    path.close();
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = color
-        ..isAntiAlias = true,
+    final Path path = shape.getOuterPath(
+      Rect.fromCircle(center: Offset.zero, radius: radius),
     );
+    canvas
+      ..save()
+      ..translate(c.dx, c.dy)
+      ..rotate(rotation)
+      ..drawPath(
+        path,
+        Paint()
+          ..color = color
+          ..isAntiAlias = true,
+      )
+      ..restore();
   }
 
   @override

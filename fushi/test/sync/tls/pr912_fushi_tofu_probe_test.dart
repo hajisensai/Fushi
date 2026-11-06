@@ -60,8 +60,10 @@ void main() {
       // connect 阶段——握手阶段无人计时，本用例会一直挂到测试框架超时。
       final ServerSocket server = await ServerSocket.bind('127.0.0.1', 0);
       final List<Socket> accepted = <Socket>[];
-      final StreamSubscription<Socket> sub =
-          server.listen(accepted.add, onError: (Object _) {});
+      final StreamSubscription<Socket> sub = server.listen(
+        accepted.add,
+        onError: (Object _) {},
+      );
       try {
         final FushiTofuOutcome outcome = await FushiTofuProbe.probeFingerprint(
           '127.0.0.1',
@@ -154,8 +156,9 @@ void main() {
 
   group('源码不变式', () {
     test('TOFU 探测不得再把超时交给 SecureSocket.connect 的 timeout: 参数', () {
-      final String src =
-          File('../packages/fushi_engine/lib/sync/tls/fushi_tofu_probe.dart').readAsStringSync();
+      final String src = File(
+        '../packages/fushi_engine/lib/sync/tls/fushi_tofu_probe.dart',
+      ).readAsStringSync();
       // 锚点字面量：.timeout( / timeout: timeout / unawaited( / destroy()
       expect(
         containsCodeLine(src, '.timeout('),
@@ -205,8 +208,9 @@ void main() {
       final String probe = File(
         '../packages/fushi_engine/lib/sync/pairing/discovered_pairing_probe.dart',
       ).readAsStringSync();
-      final String tofu =
-          File('../packages/fushi_engine/lib/sync/tls/fushi_tofu_probe.dart').readAsStringSync();
+      final String tofu = File(
+        '../packages/fushi_engine/lib/sync/tls/fushi_tofu_probe.dart',
+      ).readAsStringSync();
       // 锚点标识符：fetchFushiPing / probeDiscoveredPairingEndpoint /
       // captureFingerprint（末者在 probe 里仍是**测试注入缝的参数名**，所以只对
       // tofu 文件断言它不再是个入口）。

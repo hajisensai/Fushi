@@ -2,12 +2,15 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_models.dart';
 import 'package:fushi/src/settings/settings_schema_appearance.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
 import 'package:fushi/src/settings/settings_schema_downloads.dart';
 import 'package:fushi/src/settings/settings_schema_floating_ball.dart';
 import 'package:fushi/src/settings/settings_schema_game.dart';
+import 'package:fushi/src/settings/settings_schema_music.dart';
+import 'package:fushi/src/settings/settings_schema_local_services.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart';
 import 'package:fushi/src/settings/settings_schema_manga.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
@@ -18,9 +21,9 @@ import 'package:fushi/src/settings/settings_schema_reading.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/settings/settings_schema_storage.dart';
 import 'package:fushi/src/settings/settings_schema_system.dart';
+import 'package:fushi/src/settings/settings_schema_home_widgets.dart';
 import 'package:fushi/src/settings/settings_schema_video.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
-import 'package:fushi/utils.dart';
 
 /// 记忆化的 schema 快照：整棵声明树 + 两张按 [ReaderPlacement] / [VideoPlacement]
 /// 投影出来的分组表（后两者惰性算，用到才付钱）。
@@ -81,6 +84,12 @@ void resetSettingsSchemaCache() {
 List<SettingsDestination> buildSettingsSchema(SettingsContext context) =>
     _schemaSnapshot().destinations;
 
+/// 同 [buildSettingsSchema]，给只看**结构**、不求值任何可见性的调用方（控制通道按
+/// 「同一配置里有凭据 + 地址」判定哪些项模型不可写，见
+/// `ops/ctl_settings_credential_endpoints.dart`；守卫测试同一份枚举）。
+List<SettingsDestination> settingsSchemaDestinations() =>
+    _schemaSnapshot().destinations;
+
 /// 全部一级分类的声明树。**locale 之外不得依赖任何运行期状态**——见
 /// [_SettingsSchemaCache] 的「为什么可以缓存」；新增分类若需要读动态状态，写进 item
 /// 闭包，不要写在这里（有源码守卫 `settings_schema_cache_test.dart` 钉零参调用）。
@@ -92,6 +101,7 @@ List<SettingsDestination> _buildDestinations() {
     buildReadingDestination(),
     buildMangaDestination(),
     buildVideoDestination(),
+    buildMusicDestination(),
     buildGameDestination(),
     if (kMediaTrackingEnabled) buildMediaTrackingDestination(),
     buildLookupDestination(),
@@ -99,10 +109,12 @@ List<SettingsDestination> _buildDestinations() {
     buildModelsDestination(),
     buildDownloadsDestination(),
     buildServicesDestination(),
+    buildLocalServicesDestination(),
     buildProfilesDestination(),
     buildSyncBackupDestination(),
     buildInterconnectDestination(),
     buildStorageDestination(),
+    buildWidgetsDestination(),
     buildSystemDestination(),
   ]);
 }

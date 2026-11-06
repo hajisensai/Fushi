@@ -1,16 +1,16 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/media_type.dart';
+import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
 
 /// Media type that encapsulates dictionary search results.
 class DictionaryMediaType extends MediaType {
   /// Initialise this media type.
   DictionaryMediaType._privateConstructor()
-      : super(
-          uniqueKey: 'dictionary_media_type',
-          icon: Icons.auto_stories_rounded,
-          outlinedIcon: Icons.auto_stories_outlined,
-        );
+    : super(
+        uniqueKey: 'dictionary_media_type',
+        icon: Icons.auto_stories_rounded,
+        outlinedIcon: Icons.auto_stories_outlined,
+      );
 
   /// Get the singleton instance of this media type.
   static DictionaryMediaType get instance => _instance;

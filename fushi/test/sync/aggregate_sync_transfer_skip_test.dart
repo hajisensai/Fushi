@@ -30,9 +30,8 @@ Future<FushiDatabase> _freshDb(String prefix) async {
 
 /// 在 [FakeAssetStore] 外面加上版本标记（每次写入 +1）与下载计数。
 class _RevisionedStore extends FakeAssetStore {
-  _RevisionedStore({this.reportRevisions = true});
+  _RevisionedStore({super.reportRevisions = true});
 
-  final bool reportRevisions;
   final Map<String, int> _versions = <String, int>{};
   final List<String> downloads = <String>[];
 

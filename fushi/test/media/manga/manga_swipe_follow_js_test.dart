@@ -97,6 +97,8 @@ function _applyCanvas(){}
 function _currentPageIsWide(){ return false; }
 function _flashPageChange(){}
 function _retryFailedPagesWhere(){}
+let zoomResets=0;
+function _resetZoomForNewPage(){ zoomResets++; }
 let turns=[], taps=0, dart=null;
 function _bridge(){ return {callHandler:(n,d)=>{
   if(n!=='onMangaTurn') return undefined;
@@ -304,19 +306,61 @@ assert.deepEqual(turns,['next'],'松手判定照旧');
     );
   });
 
-  test('跟手开关关 / 淡入淡出 / 无动画：拖动中页面不动，松手沿用固定阈值', () async {
+  test('跟手开关关：拖动中页面不动，松手沿用固定阈值', () async {
     await runJs(
       harness('''
 centerAt(1);
-for (const setup of [()=>{FOLLOW_DRAG=false;}, ()=>{PAGE_ANIM='fade';}, ()=>{PAGE_ANIM='none';}]) {
-  FOLLOW_DRAG=true; PAGE_ANIM='slide'; turns=[];
-  setup();
-  down(200,600);
-  for(let i=1;i<=10;i++) move(200+i*8,600,40);
-  assert.equal(tx(),BASE,'不跟手');
-  up(280,600);
-  assert.deepEqual(turns,['next'],'80px ≥ 72px 旧阈值');
-}
+FOLLOW_DRAG=false;
+down(200,600);
+for(let i=1;i<=10;i++) move(200+i*8,600,40);
+assert.equal(tx(),BASE,'不跟手');
+up(280,600);
+assert.deepEqual(turns,['next'],'80px ≥ 72px 旧阈值');
+'''),
+    );
+  });
+
+  // BUG-3624：跟手与翻页效果无关（对齐 Mihon）。无动画 = 墨水屏 / 系统「减弱动态
+  // 效果」/ 旧版关过「页面切换动画」的用户，此前拖动全程页面不动。
+  test('无动画也逐像素跟手；提交后瞬时落位，没过阈值瞬时回位', () async {
+    await runJs(
+      harness('''
+centerAt(1);
+PAGE_ANIM='none';
+down(200,600);
+for(let i=1;i<=10;i++){ move(200+i*15,600); assert.equal(tx()-BASE,i*15,'第 '+i+' 步跟手'); }
+up(350,600);
+assert.deepEqual(turns,['next']);
+window.__mangaApplyTranslate(3);
+assert.equal(tx(),-412,'无动画：从手指位置瞬时落到目标');
+assert.equal(root.style.transition,'');
+turns=[];
+down(200,600);
+for(let i=1;i<=9;i++) move(200+i*10,600,100);
+assert.equal(tx(),-412+90,'慢拖照样跟手');
+up(290,600);
+assert.deepEqual(turns,[]);
+assert.equal(tx(),-412,'没过阈值：瞬时回位');
+'''),
+    );
+  });
+
+  test('淡入淡出也跟手；被拖过的翻页按平移收尾，不再叠一段淡出', () async {
+    await runJs(
+      harness('''
+centerAt(1);
+PAGE_ANIM='fade';
+let settled=null;
+dart=()=>new Promise(r=>{ settled=r; });
+down(200,600);
+for(let i=1;i<=10;i++) move(200+i*15,600);
+assert.equal(tx(),BASE+150,'跟手');
+up(350,600);
+window.__mangaApplyTranslate(3);
+settled();
+assert.equal(tx(),-412);
+assert.equal(msOf(root),Math.round(220*262/412),'从松手位置平移收尾');
+assert.notEqual(root.style.opacity,'0','没有淡出');
 '''),
     );
   });
@@ -453,6 +497,57 @@ later(300,()=>{
   assert.equal(vp.children.length,0);
   assert.equal(tx(),-1236);
 });
+'''),
+    );
+  });
+
+  // 反馈 8HxGrnNy3x：换到另一跨页复位缩放；原地重放（窗口就绪 / resize 重投影
+  // 调到同一跨页）不能把用户正在看的放大清掉。
+  test('换页才复位缩放：翻到别的跨页复位一次，原地重放不复位', () async {
+    await runJs(
+      harness('''
+PAGE_ANIM='none';
+window.__mangaApplyTranslate(2);
+assert.equal(zoomResets,0,'同一跨页重放不复位');
+window.__mangaApplyTranslate(3);
+assert.equal(zoomResets,1,'翻页复位');
+window.__mangaApplyTranslate(1);
+assert.equal(zoomResets,2,'跳页同样复位');
+'''),
+    );
+  });
+
+  // PR #2799 审查：卷页预览只挪 strip，不记翻页账；回卷撤销不能把原页的缩放 /
+  // 半页状态打回默认，翻页副作用只在提交（__mangaApplyTranslate）时跑一次。
+  test('卷页预览 / 回卷不跑翻页副作用，提交时只跑一次', () async {
+    await runJs(
+      harness('''
+PAGE_ANIM='curl';
+PAGE_HALF=1;
+const serial0=TURN_SERIAL;
+assert.equal(window.__mangaCurlPreview(3),true);
+assert.equal(tx(),-412,'strip 瞬时落到目标跨页');
+assert.equal(root.style.transition,'','落位后还原过渡');
+assert.equal(CURRENT,2,'预览不改语义真值 CURRENT');
+assert.equal(PAGE_HALF,1);
+assert.equal(TURN_SERIAL,serial0);
+assert.equal(zoomResets,0,'预览不复位缩放');
+window.__mangaCurlRevert();
+assert.equal(tx(),BASE,'回卷挪回原跨页');
+assert.equal(CURRENT,2);
+assert.equal(PAGE_HALF,1,'回卷不动半页状态');
+assert.equal(zoomResets,0,'回卷不把原页缩放打回默认');
+assert.equal(TURN_SERIAL,serial0);
+// 再预览一次并提交：副作用恰好一次。
+window.__mangaCurlPreview(3);
+window.__mangaApplyTranslate(3);
+assert.equal(CURRENT,3);
+assert.equal(tx(),-412);
+assert.equal(zoomResets,1,'提交时复位一次');
+assert.equal(TURN_SERIAL,serial0+1);
+// 不在已加载窗口里的跨页：不预览，交回 Dart 普通翻页。
+assert.equal(window.__mangaCurlPreview(9),false);
+assert.equal(tx(),-412);
 '''),
     );
   });

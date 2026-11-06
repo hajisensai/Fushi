@@ -4,8 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'support/test_app_launcher.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/home_tab.dart';
+import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 
 import 'helpers/focus_driver.dart';
@@ -25,43 +26,58 @@ import 'test_helpers.dart';
 /// 嵌套查词浮层虽是同一个 [DictionaryPopupWebView] 组件，但真机实测二者**结论不
 /// 通用**——结果区收得到指针、浮层收不到。浮层挂在根 Overlay 且外面多套了
 /// Visibility / 入场淡入 / 滑关 Listener，命中链不同。浮层侧的守卫需另写，别拿本
-/// 用例的绿当成「浮层也能点」。
+/// 用例的绿当成「浮层也能点」。iOS 浮层侧见 `ios_popup_real_touch_itest.dart`（真触摸）。
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('dictionary WebView controls are reachable by real hit-testing',
-      (WidgetTester tester) async {
+  testWidgets('dictionary WebView controls are reachable by real hit-testing', (
+    WidgetTester tester,
+  ) async {
     await launchFushiTestApp();
 
-    expect(await waitForHome(tester), isTrue,
-        reason: 'Home must render before probing the dictionary WebView');
+    expect(
+      await waitForHome(tester),
+      isTrue,
+      reason: 'Home must render before probing the dictionary WebView',
+    );
     await tester.pump(const Duration(seconds: 2));
 
     await enableFocusNavigation(tester);
     final FocusDriver driver = FocusDriver(tester);
 
-    expect(await seedDictionary(tester), isTrue,
-        reason: 'generated popup-action fixture must be installed');
+    expect(
+      await seedDictionary(tester),
+      isTrue,
+      reason: 'generated popup-action fixture must be installed',
+    );
 
     final Finder dictionaryTab = findNavTargetForTab(HomeTab.dictionaries);
-    expect(await driver.focusWidget(dictionaryTab), isTrue,
-        reason: 'Dictionary tab must be reachable by focus');
+    expect(
+      await driver.focusWidget(dictionaryTab),
+      isTrue,
+      reason: 'Dictionary tab must be reachable by focus',
+    );
     await driver.activate();
     await tester.pump(const Duration(seconds: 3));
 
     final Element anyElement = tester.element(find.byType(Scaffold).first);
-    final AppModel appModel =
-        ProviderScope.containerOf(anyElement).read(appProvider);
+    final AppModel appModel = ProviderScope.containerOf(
+      anyElement,
+    ).read(appProvider);
     debugPrint('[hittest-probe] appUiScale=${appModel.appUiScale}');
 
-    final HomeDictionarySearchDebug searchDebug = tester
-        .state(find.byType(HomeDictionaryPage)) as HomeDictionarySearchDebug;
+    final HomeDictionarySearchDebug searchDebug =
+        tester.state(find.byType(HomeDictionaryPage))
+            as HomeDictionarySearchDebug;
     await searchDebug.debugSearch('testword', writeHistory: false);
     await tester.pump(const Duration(seconds: 5));
 
     final Finder webViewFinder = find.byType(DictionaryPopupWebView);
-    expect(webViewFinder, findsWidgets,
-        reason: 'dictionary result WebView must be mounted after a search');
+    expect(
+      webViewFinder,
+      findsWidgets,
+      reason: 'dictionary result WebView must be mounted after a search',
+    );
     final DictionaryPopupWebViewState webView =
         tester.state(webViewFinder.first) as DictionaryPopupWebViewState;
 
@@ -120,8 +136,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 250));
       final dynamic raw = await webView.debugEval(probeSource);
       if (raw is Map && raw['favorite'] is Map) {
-        final Map<Object?, Object?> favorite =
-            (raw['favorite'] as Map).cast<Object?, Object?>();
+        final Map<Object?, Object?> favorite = (raw['favorite'] as Map)
+            .cast<Object?, Object?>();
         if (favorite['present'] == true) {
           probe = raw.cast<Object?, Object?>();
           break;
@@ -130,8 +146,11 @@ void main() {
     }
 
     debugPrint('[hittest-probe] $probe');
-    expect(probe, isNotNull,
-        reason: 'dictionary WebView must render the favorite control');
+    expect(
+      probe,
+      isNotNull,
+      reason: 'dictionary WebView must render the favorite control',
+    );
 
     // A3: force a non-1 document zoom only after renderPopup/settings have
     // settled. The visual content box plus body padding must still occupy
@@ -148,34 +167,46 @@ void main() {
     expect(
       (probe['viewportHeight']! as num).toDouble(),
       greaterThan(0),
-      reason: 'WKWebView 视口高为 0 时 DOM 命中测试整体落空，真实点击点不到任何'
+      reason:
+          'WKWebView 视口高为 0 时 DOM 命中测试整体落空，真实点击点不到任何'
           '元素（JS 直接 .click() 仍会成功，故旧测试测不出）',
     );
     expect((probe['zoom']! as num).toDouble(), closeTo(1.5, 0.01));
     final double zoom = (probe['zoom']! as num).toDouble();
     final double visualOuterWidth =
         (probe['containerWidth']! as num).toDouble() +
-            ((probe['bodyPaddingLeft']! as num).toDouble() +
-                    (probe['bodyPaddingRight']! as num).toDouble()) *
-                zoom;
+        ((probe['bodyPaddingLeft']! as num).toDouble() +
+                (probe['bodyPaddingRight']! as num).toDouble()) *
+            zoom;
     expect(
       visualOuterWidth,
       closeTo((probe['viewportWidth']! as num).toDouble(), 2),
-      reason: 'non-1 zoom must not inflate the popup container beyond the '
+      reason:
+          'non-1 zoom must not inflate the popup container beyond the '
           'Flutter viewport',
     );
 
     for (final String key in <String>['favorite', 'mine']) {
-      final Map<Object?, Object?> control =
-          (probe[key]! as Map).cast<Object?, Object?>();
+      final Map<Object?, Object?> control = (probe[key]! as Map)
+          .cast<Object?, Object?>();
       expect(control['present'], isTrue, reason: '$key 按钮必须存在');
-      expect(control['pointerEvents'], isNot('none'),
-          reason: '$key 按钮的 pointer-events 被关掉则永远收不到点击');
-      expect(control['inViewport'], isTrue,
-          reason: '$key 按钮中心必须落在视口内，否则真实点击不可达：$control');
-      expect(control['hitIsSelf'], isTrue,
-          reason: '$key 按钮中心的命中结果必须是它自己（被遮挡或视口塌陷都会失败）：'
-              '$control');
+      expect(
+        control['pointerEvents'],
+        isNot('none'),
+        reason: '$key 按钮的 pointer-events 被关掉则永远收不到点击',
+      );
+      expect(
+        control['inViewport'],
+        isTrue,
+        reason: '$key 按钮中心必须落在视口内，否则真实点击不可达：$control',
+      );
+      expect(
+        control['hitIsSelf'],
+        isTrue,
+        reason:
+            '$key 按钮中心的命中结果必须是它自己（被遮挡或视口塌陷都会失败）：'
+            '$control',
+      );
     }
   });
 }

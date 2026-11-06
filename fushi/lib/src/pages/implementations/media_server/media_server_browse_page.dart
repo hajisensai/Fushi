@@ -4,8 +4,6 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_server_list_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
-import 'package:fushi/src/settings/settings_detail_page.dart';
-import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
     show ShortcutBindingScope;
 import 'package:fushi/src/shortcuts/gamepad_forwarding_action.dart';
@@ -17,12 +15,39 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart'
     show ModuleRootAwayReporter;
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 export 'package:fushi/src/pages/implementations/media_server/media_server_server_list_view.dart'
     show MediaServerEntry;
 export 'package:fushi/src/pages/implementations/media_server/media_server_session.dart'
     show MediaServerPlayHandler, MediaServerPlayRequest;
+
+/// 媒体服务器播放出口的生产缺省：根 Navigator push
+/// `VideoFushiPage.neutralizedRemote`。分区页与发现详情页「获取途径」的媒体服务器
+/// 渠道共用这一份，播放页的剧集面板口径不会分叉。返回的 Future 在播放页退回来时完成。
+Future<void> pushMediaServerPlayer(
+  BuildContext context,
+  MediaServerPlayRequest request, {
+  required VideoBookRepository repo,
+}) async {
+  await Navigator.of(context, rootNavigator: true).push<void>(
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (_) => VideoFushiPage.neutralizedRemote(
+        info: request.info,
+        repo: repo,
+        client: request.browser.playbackClient,
+        // 与 home_video_page._openRemote 同口径：多于一个成员才建剧集面板。
+        remoteCollectionMembers: request.hasCollection ? request.members : null,
+        initialEpisodeIndex: request.hasCollection
+            ? request.initialIndex
+            : null,
+      ),
+    ),
+  );
+}
 
 /// 视频页「媒体服务器」分区：服务器列表 → 服务器首页 → 库网格 / 搜索 / 详情 → 播放。
 ///
@@ -108,23 +133,7 @@ class _MediaServerBrowsePageState extends State<MediaServerBrowsePage> {
       await injected(context, request);
       return;
     }
-    await Navigator.of(context, rootNavigator: true).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => VideoFushiPage.neutralizedRemote(
-          info: request.info,
-          repo: widget.repo,
-          client: request.browser.playbackClient,
-          // 与 home_video_page._openRemote 同口径：多于一个成员才建剧集面板。
-          remoteCollectionMembers: request.hasCollection
-              ? request.members
-              : null,
-          initialEpisodeIndex: request.hasCollection
-              ? request.initialIndex
-              : null,
-        ),
-      ),
-    );
+    await pushMediaServerPlayer(context, request, repo: widget.repo);
   }
 
   void _openSettings() {
@@ -133,12 +142,7 @@ class _MediaServerBrowsePageState extends State<MediaServerBrowsePage> {
       injected();
       return;
     }
-    Navigator.of(context, rootNavigator: true).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) =>
-            SettingsDetailPage(destination: buildServicesDestination()),
-      ),
-    );
+    openMediaServerSettings(context);
   }
 
   /// 嵌套栈能退一层就退，并报告是否退了。

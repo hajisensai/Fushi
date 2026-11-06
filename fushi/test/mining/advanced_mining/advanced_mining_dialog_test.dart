@@ -5,10 +5,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_dialog.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_manga_panels.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_sections.dart'
+    show formatAdvancedMiningStepSize;
 import 'package:fushi/src/mining/advanced_mining/manga_crop_selector.dart';
+import 'package:fushi/src/stats/study_cover_tracker.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -34,6 +38,7 @@ void main() {
     WidgetTester tester,
     AdvancedMiningCapabilities caps, {
     Size size = const Size(1400, 900),
+    List<NavigatorObserver> observers = const <NavigatorObserver>[],
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
@@ -43,6 +48,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         navigatorKey: navKey,
+        navigatorObservers: observers,
         home: Scaffold(
           body: Builder(
             builder: (BuildContext ctx) => Center(
@@ -152,6 +158,38 @@ void main() {
       expect(crop.left, closeTo(0.55, 1e-9));
       expect(crop.pageIndex, 46);
     });
+  });
+
+  group('BUG-3994：高级制卡属于阅读，盖在学习页上不停学习计时', () {
+    for (final (String name, Size size) in <(String, Size)>[
+      ('宽屏对话框', const Size(1400, 900)),
+      ('手机底部面板', const Size(390, 844)),
+    ]) {
+      testWidgets(name, (WidgetTester tester) async {
+        final StudyCoverTracker tracker = StudyCoverTracker();
+        final List<bool> changes = <bool>[];
+        late final StudyCoverWatch watch;
+        watch = StudyCoverWatch(
+          tracker: tracker,
+          onChanged: () => changes.add(watch.covered),
+        );
+        addTearDown(watch.dispose);
+        await open(
+          tester,
+          host.videoPage(),
+          size: size,
+          observers: <NavigatorObserver>[tracker],
+        );
+        expect(find.text(t.popup_advanced_mining_title), findsOneWidget);
+        // 学习页 = 首页路由；高级制卡是压在它上面的唯一一条路由。
+        expect(tracker.debugStack, hasLength(2));
+        watch.attach(tracker.debugStack.first);
+        expect(isStudyClockTransparent(tracker.debugStack.last), isTrue);
+        expect(tracker.covers(tracker.debugStack.first), isFalse);
+        expect(watch.covered, isFalse);
+        expect(changes, isEmpty);
+      });
+    }
   });
 
   group('窄屏', () {
@@ -317,6 +355,33 @@ void main() {
       expect(host.confirms.single.audioEndDeltaMs, 250);
     });
 
+    testWidgets('换步长 0.1s（反馈 3_VB7kAeHj）：按钮按新步长挪，偏移进覆盖项', (
+      WidgetTester tester,
+    ) async {
+      await open(tester, host.videoPage());
+      await tester.ensureVisible(find.text('0.1s').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('0.1s').last);
+      await tester.pumpAndSettle();
+      expect(find.text('+0.25s'), findsNothing);
+      await tester.ensureVisible(find.text('+0.1s').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('+0.1s').last);
+      await tester.pumpAndSettle();
+      expect(host.describeCalls.last, <int>[0, 100]);
+      await confirm(tester);
+      expect(host.confirms.single.audioEndDeltaMs, 100);
+    });
+
+    test('步长文案去尾零', () {
+      expect(formatAdvancedMiningStepSize(50), '0.05s');
+      expect(formatAdvancedMiningStepSize(100), '0.1s');
+      expect(formatAdvancedMiningStepSize(250), '0.25s');
+      expect(formatAdvancedMiningStepSize(1000), '1s');
+      expect(normalizeAdvancedMiningAudioNudgeStepMs(123), 250);
+      expect(normalizeAdvancedMiningAudioNudgeStepMs(null), 250);
+    });
+
     testWidgets('换卡组 + 设为默认：先持久化默认再制卡', (WidgetTester tester) async {
       await open(tester, host.videoPage());
       await tester.tap(find.text('日语::挖矿').first);
@@ -385,6 +450,25 @@ void main() {
       expect(host.setContextCalls.last, <int>[1, 1]);
       expect(host.stopCalls, 1);
       expect(host.confirms, isEmpty);
+    });
+
+    testWidgets('BUG-3814：试听播完按钮自动回到「试听」，再点一次就重新播', (
+      WidgetTester tester,
+    ) async {
+      await open(tester, host.videoPage());
+      await tester.tap(find.byTooltip(t.popup_ctx_preview_audio).first);
+      await tester.pumpAndSettle();
+      expect(find.byTooltip(t.popup_ctx_preview_stop), findsWidgets);
+
+      host.playbacks.single.finish(RangePlaybackEnd.reachedEnd);
+      await tester.pumpAndSettle();
+      expect(find.byTooltip(t.popup_ctx_preview_stop), findsNothing);
+
+      await tester.tap(find.byTooltip(t.popup_ctx_preview_audio).first);
+      await tester.pumpAndSettle();
+      expect(host.previewCalls, hasLength(2), reason: '一次点击就重新试听');
+      expect(host.stopCalls, 0);
+      expect(find.byTooltip(t.popup_ctx_preview_stop), findsWidgets);
     });
 
     testWidgets('× 最外侧句 = 少要一句；中间句 = 删除线 + 恢复', (WidgetTester tester) async {

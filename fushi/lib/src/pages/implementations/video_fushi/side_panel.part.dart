@@ -209,7 +209,9 @@ extension _VideoSidePanel on _VideoFushiPageState {
   List<_VideoSidePanelKind> _videoPanelSwitcherKinds() {
     return <_VideoSidePanelKind>[
       _VideoSidePanelKind.subtitle,
-      _VideoSidePanelKind.audio,
+      // 网页档的音轨只有站点上报了才有（目前只有 Netflix）。
+      if (!_webMode || (_controller?.audioTracks.isNotEmpty ?? false))
+        _VideoSidePanelKind.audio,
       if (_hasChapters) _VideoSidePanelKind.chapters,
       if (_qualityCurrentLabel != null || _isYoutubeStream)
         _VideoSidePanelKind.quality,

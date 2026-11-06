@@ -214,4 +214,87 @@ void main() {
     expect(logged.single, isNot(contains(secret)));
     expect(logged.single, contains('[native-proxy]'));
   });
+
+  group('「打不开」诊断带上中继知道的上游原因（反馈 VgLO1PVFjj）', () {
+    setUp(clearNativeUpstreamFailuresForTesting);
+    tearDown(clearNativeUpstreamFailuresForTesting);
+
+    Future<String> relayGet(String url) async {
+      final Socket socket = await Socket.connect(
+        relay.endpoint.host,
+        relay.endpoint.port,
+      );
+      addTearDown(socket.destroy);
+      final Uri target = Uri.parse(url);
+      socket.write(
+        'GET $url HTTP/1.1\r\n'
+        'Host: ${target.host}:${target.port}\r\n'
+        'Proxy-Authorization: ${auth()}\r\n'
+        'Connection: close\r\n'
+        '\r\n',
+      );
+      return utf8.decoder
+          .bind(socket)
+          .join()
+          .timeout(const Duration(seconds: 30));
+    }
+
+    test('上游连不上：mpv 只说 Failed to open，诊断里有真实异常', () async {
+      final ServerSocket closed = await ServerSocket.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      final int deadPort = closed.port;
+      await closed.close();
+      final String url = 'http://localhost:$deadPort/seg-1.image?sig=abc';
+
+      expect(await relayGet(url), startsWith('HTTP/1.1 502'));
+
+      // mpv 原句：地址后面紧跟句号。
+      final String diagnosis = nativeOpenFailureDiagnosis(
+        'Failed to open $url.',
+      );
+      expect(diagnosis, startsWith('lastPlayerError=Failed to open $url.'));
+      expect(diagnosis, contains('relayUpstream='));
+      expect(diagnosis, contains('SocketException'));
+    });
+
+    test('上游回 4xx 记成状态码，同一原点后来取成功就清掉', () async {
+      int status = HttpStatus.forbidden;
+      final HttpServer origin = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(() => origin.close(force: true));
+      origin.listen((HttpRequest request) async {
+        request.response.statusCode = status;
+        request.response.write('x');
+        await request.response.close();
+      });
+      final String url = 'http://localhost:${origin.port}/seg.ts';
+
+      expect(await relayGet(url), startsWith('HTTP/1.1 403'));
+      expect(nativeUpstreamFailureFor(url), 'upstream HTTP 403');
+      expect(
+        nativeOpenFailureDiagnosis('Failed to open $url.'),
+        endsWith('relayUpstream=upstream HTTP 403'),
+      );
+
+      status = HttpStatus.ok;
+      expect(await relayGet(url), startsWith('HTTP/1.1 200'));
+      expect(nativeUpstreamFailureFor(url), isNull);
+      expect(
+        nativeOpenFailureDiagnosis('Failed to open $url.'),
+        'lastPlayerError=Failed to open $url.',
+      );
+    });
+
+    test('没有地址或没有记录时诊断与旧格式一致', () {
+      expect(nativeOpenFailureDiagnosis(null), 'lastPlayerError=<none>');
+      expect(
+        nativeOpenFailureDiagnosis('Error decoding audio.'),
+        'lastPlayerError=Error decoding audio.',
+      );
+    });
+  });
 }

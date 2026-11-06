@@ -29,13 +29,18 @@ AudioCue _cue(String text, int startMs, int endMs) => AudioCue()
 Finder get _revealHotZone => find.byKey(const Key('video-subtitle-reveal'));
 
 Future<void> _pumpAt(
-    WidgetTester tester, VideoPlayerController c, int posMs) async {
+  WidgetTester tester,
+  VideoPlayerController c,
+  int posMs,
+) async {
   c.debugUpdateCueForPosition(posMs);
-  await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      body: VideoSubtitleOverlay(controller: c, blurEnabled: true),
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(controller: c, blurEnabled: true),
+      ),
     ),
-  ));
+  );
   await tester.pump();
 }
 
@@ -64,7 +69,10 @@ void main() {
     // ④ 下一条字幕 B：必须重新模糊——揭开热区应再次出现。
     // 回归前：_revealed 锁死 true，B 直接清晰（此断言 findsOneWidget 失败）。
     await _pumpAt(tester, c, 5000);
-    expect(_revealHotZone, findsOneWidget,
-        reason: 'BUG-1068：鼠标未回到字幕上，B 应恢复模糊而非残留 A 的显形态');
+    expect(
+      _revealHotZone,
+      findsOneWidget,
+      reason: 'BUG-1068：鼠标未回到字幕上，B 应恢复模糊而非残留 A 的显形态',
+    );
   });
 }

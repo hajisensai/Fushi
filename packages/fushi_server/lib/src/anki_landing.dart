@@ -202,8 +202,10 @@ class ServerAnkiLanding {
 
   /// 直接落一张卡（互联对端经 `/api/mine*` 发来的制卡请求）：与落地队列同一条渲染 /
   /// 查重 / 写库链路、同一份服务端 Anki 设置，只是不经待发队列。
-  Future<MineOutcome> mineCard(String rawPayloadJson, AnkiMiningContext context) =>
-      _mine(rawPayloadJson, context);
+  Future<MineOutcome> mineCard(
+    String rawPayloadJson,
+    AnkiMiningContext context,
+  ) => _mine(rawPayloadJson, context);
 
   Future<MineOutcome> _mine(String raw, AnkiMiningContext context) async {
     final AnkiSyncMiner? miner = _miner;
@@ -214,8 +216,9 @@ class ServerAnkiLanding {
       );
     }
     final AnkiSettings current = settings;
-    // 所选笔记类型的字段一个都没映射（刚登录、或刚换了笔记类型而旧映射的字段名对不上）：
-    // 卡一张都渲染不出来。算「没配置」（留着等配置），不算失败。
+    // 笔记类型还不知道（没登录 / 没刷新），或所选笔记类型的字段一个都没映射：卡一张都
+    // 渲染不出来，算「没配置」（留着等配置），不算失败。后一种从持久化读回时已被
+    // `AnkiSettings.fromJson` 按字段名补上默认映射，这里只兜住内存里直接构造的设置。
     final AnkiNoteType? noteType = miner.selectedNoteType(current);
     if (noteType == null ||
         noteType.fields.every(

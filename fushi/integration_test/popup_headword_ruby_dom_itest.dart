@@ -27,30 +27,36 @@ void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('BUG-1098: 纯汉字词头的注音在真 WebView 里有 em 预留、不被顶部裁切',
-      (WidgetTester tester) async {
+  testWidgets('BUG-1098: 纯汉字词头的注音在真 WebView 里有 em 预留、不被顶部裁切', (
+    WidgetTester tester,
+  ) async {
     final String popupJs = await rootBundle.loadString('assets/popup/popup.js');
-    final String popupCss =
-        await rootBundle.loadString('assets/popup/popup.css');
-    final String dictMediaJs =
-        await rootBundle.loadString('assets/popup/dict-media.js');
+    final String popupCss = await rootBundle.loadString(
+      'assets/popup/popup.css',
+    );
+    final String dictMediaJs = await rootBundle.loadString(
+      'assets/popup/dict-media.js',
+    );
 
     final Completer<InAppWebViewController> ready =
         Completer<InAppWebViewController>();
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: InAppWebView(
-          initialData: InAppWebViewInitialData(
-            data: '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
-                '<body><div class="overlay"></div>'
-                '<div id="entries-container"></div></body></html>',
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: InAppWebView(
+            initialData: InAppWebViewInitialData(
+              data:
+                  '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
+                  '<body><div class="overlay"></div>'
+                  '<div id="entries-container"></div></body></html>',
+            ),
+            onLoadStop: (InAppWebViewController controller, WebUri? url) {
+              if (!ready.isCompleted) ready.complete(controller);
+            },
           ),
-          onLoadStop: (InAppWebViewController controller, WebUri? url) {
-            if (!ready.isCompleted) ready.complete(controller);
-          },
         ),
       ),
-    ));
+    );
     for (int i = 0; i < 150 && !ready.isCompleted; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -58,19 +64,24 @@ void main() {
     final InAppWebViewController controller = await ready.future;
 
     // popup.js 的桥调用在无宿主时会抛，先桩掉（与 desktop_reader_css_dom 同款）。
-    await controller.evaluateJavascript(source: '''
+    await controller.evaluateJavascript(
+      source: '''
       window.flutter_inappwebview = {
         callHandler: function() { return Promise.resolve(true); }
       };
-    ''');
+    ''',
+    );
     // alias 必须与加载在同一次 eval 里，否则后续 eval 拿不到顶层函数。
     await controller.evaluateJavascript(
-      source: '$dictMediaJs\n$popupJs\n'
+      source:
+          '$dictMediaJs\n$popupJs\n'
           'window.__t = { buildFuriganaEl: buildFuriganaEl, '
           'postProcessRuby: postProcessRuby };',
     );
 
-    final Object? raw = await controller.evaluateJavascript(source: '''
+    final Object? raw = await controller.evaluateJavascript(
+      source:
+          '''
       (function() {
         try {
           if (typeof window.__t.buildFuriganaEl !== 'function' ||
@@ -154,7 +165,8 @@ void main() {
           });
         }
       })();
-    ''');
+    ''',
+    );
     await tester.pump(const Duration(seconds: 1));
     await takeScreenshot(binding, 'bug1098_headword_ruby_dom');
 
@@ -164,33 +176,54 @@ void main() {
     expect(g['error'], isNull, reason: '生产 popup.js 必须能在 WebView2 里跑起来');
 
     // ① 先证明这就是受害形状（单段 → 套 .expression-scroll → 滚动容器）。
-    expect(g['needsScroll'], isTrue,
-        reason: '気配/けはい 必须是单段带注音（才会套 .expression-scroll）');
+    expect(
+      g['needsScroll'],
+      isTrue,
+      reason: '気配/けはい 必须是单段带注音（才会套 .expression-scroll）',
+    );
     expect(g['hasScrollWrapper'], isTrue);
     expect(g['boxOverflowX'], 'auto');
-    expect(g['boxOverflowY'], isNot('visible'),
-        reason: '一轴非 visible → 另一轴 computed 成 auto，该盒确实是滚动容器；'
-            '顶部溢出永远够不到（scrollTop 不能为负）');
+    expect(
+      g['boxOverflowY'],
+      isNot('visible'),
+      reason:
+          '一轴非 visible → 另一轴 computed 成 auto，该盒确实是滚动容器；'
+          '顶部溢出永远够不到（scrollTop 不能为负）',
+    );
 
     // ② 词头真的进了 postProcessRuby（per-base 单元）。
-    expect(g['unitCount'], 1,
-        reason: '単段词头 = 一个 per-base .ruby-unit（気配 是一个 base）');
+    expect(
+      g['unitCount'],
+      1,
+      reason: '単段词头 = 一个 per-base .ruby-unit（気配 是一个 base）',
+    );
     expect(g['nestedUnits'], 0, reason: '幂等门：二次处理不得套出嵌套 .ruby-unit');
-    expect(g['unitsAfterTwice'], g['unitCount'],
-        reason: 'renderPopup 对首词条走两遍，单元数不得增加');
+    expect(
+      g['unitsAfterTwice'],
+      g['unitCount'],
+      reason: 'renderPopup 对首词条走两遍，单元数不得增加',
+    );
 
     // ③ 预留是 em padding-top（zoom 免疫），rt 绝对定位在预留里。
-    final double expressionFont =
-        _px(g['expressionFontSize'], 'expressionFontSize');
+    final double expressionFont = _px(
+      g['expressionFontSize'],
+      'expressionFontSize',
+    );
     final double unitPad = _px(g['unitPaddingTop'], 'unitPaddingTop');
     final double rtFont = _px(g['rtFontSize'], 'rtFontSize');
     expect(g['rtPosition'], 'absolute');
     expect(_px(g['rtTopStyle'], 'rtTopStyle'), closeTo(0, 0.5));
     expect(unitPad, greaterThan(0), reason: '词头必须拿到纵向预留（修复前是 0）');
-    expect(unitPad / expressionFont, closeTo(0.55, 0.02),
-        reason: '预留是 0.55em，随字号等比（不是硬编码 px）');
-    expect(rtFont / expressionFont, closeTo(0.5, 0.02),
-        reason: 'rt 是 0.5em；.expression 26px 时 = 旧的硬编码 13px，像素不变');
+    expect(
+      unitPad / expressionFont,
+      closeTo(0.55, 0.02),
+      reason: '预留是 0.55em，随字号等比（不是硬编码 px）',
+    );
+    expect(
+      rtFont / expressionFont,
+      closeTo(0.5, 0.02),
+      reason: 'rt 是 0.5em；.expression 26px 时 = 旧的硬编码 13px，像素不变',
+    );
 
     // ④ 核心断言：注音没有被滚动容器顶部裁掉。
     final double boxTop = _num(g['boxTop']);
@@ -198,18 +231,25 @@ void main() {
     final double rtHeight = _num(g['rtHeight']);
     expect(rtHeight, greaterThan(0), reason: '注音必须真占高度（不是被压扁成 0）');
     expect(g['boxScrollTop'], 0);
-    expect(rtTop, greaterThanOrEqualTo(boxTop - 0.5),
-        reason: '注音顶 ($rtTop) 不得越过滚动容器顶 ($boxTop)——越过 = 永久被裁');
-    expect(_num(g['rtBottom']),
-        lessThanOrEqualTo(_num(g['boxHeight']) + boxTop + 0.5),
-        reason: '注音整块落在容器内');
+    expect(
+      rtTop,
+      greaterThanOrEqualTo(boxTop - 0.5),
+      reason: '注音顶 ($rtTop) 不得越过滚动容器顶 ($boxTop)——越过 = 永久被裁',
+    );
+    expect(
+      _num(g['rtBottom']),
+      lessThanOrEqualTo(_num(g['boxHeight']) + boxTop + 0.5),
+      reason: '注音整块落在容器内',
+    );
 
     // ⑤ 回归对照：修复前的裸 rt 是溢出到容器顶之上的（证明这个探针能抓到 bug）。
     final Object? rawRtTop = g['rawRtTop'];
     final Object? boxTopBefore = g['boxTopBefore'];
     if (rawRtTop is num && boxTopBefore is num) {
-      debugPrint('[BUG-1098] pre-postProcess rawRtTop=$rawRtTop '
-          'boxTop=$boxTopBefore delta=${rawRtTop - boxTopBefore}');
+      debugPrint(
+        '[BUG-1098] pre-postProcess rawRtTop=$rawRtTop '
+        'boxTop=$boxTopBefore delta=${rawRtTop - boxTopBefore}',
+      );
     }
   });
 }

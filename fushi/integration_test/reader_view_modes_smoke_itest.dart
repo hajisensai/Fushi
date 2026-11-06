@@ -514,8 +514,7 @@ Future<void> _runCombo(
           'return { active: !!(c && c.isActive && c.isActive()), '
           "ch: c && c.node ? c.node.textContent.substr(c.offset, 1) : '' }; })())",
         );
-        if (RegExp(r'[ぁ-ヿ一-鿿]')
-            .hasMatch(caretAt['ch'] as String? ?? '')) {
+        if (RegExp(r'[ぁ-ヿ一-鿿]').hasMatch(caretAt['ch'] as String? ?? '')) {
           break;
         }
         await tester.sendKeyEvent(LogicalKeyboardKey.tab);
@@ -534,9 +533,12 @@ Future<void> _runCombo(
         () => ReaderFushiPage.debugCaretSurface?.call() == 'popup',
         polls: 80,
       );
-      r.evidence['surfaceAfterLookup'] =
-          ReaderFushiPage.debugCaretSurface?.call();
-      r.check(popup, 'caret lookup never handed the caret to a dictionary popup');
+      r.evidence['surfaceAfterLookup'] = ReaderFushiPage.debugCaretSurface
+          ?.call();
+      r.check(
+        popup,
+        'caret lookup never handed the caret to a dictionary popup',
+      );
       if (popup) {
         String popupText = '';
         for (int i = 0; i < 40 && popupText.isEmpty; i++) {
@@ -555,7 +557,8 @@ Future<void> _runCombo(
           () => ReaderFushiPage.debugCaretSurface?.call() != 'popup',
           polls: 40,
         );
-        r.evidence['surfaceAfterEsc'] = ReaderFushiPage.debugCaretSurface?.call();
+        r.evidence['surfaceAfterEsc'] = ReaderFushiPage.debugCaretSurface
+            ?.call();
         r.check(closed, 'Esc did not close the dictionary popup');
       }
       // 退出正文光标，别把焦点状态带进下一组合。

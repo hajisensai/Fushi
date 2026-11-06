@@ -20,6 +20,7 @@ using namespace fushi_voice_hook;
 SiglusGlyphLayoutFn g_orig_SiglusGlyphLayout = nullptr;
 SiglusEightArgGlyphLayoutFn g_orig_SiglusEightArgGlyphLayout = nullptr;
 SiglusLegacyGlyphLayoutFn g_orig_SiglusLegacyGlyphLayout = nullptr;
+SiglusNineArgGlyphLayoutFn g_orig_SiglusNineArgGlyphLayout = nullptr;
 std::atomic<bool> g_siglus_lookup_capture_enabled{false};
 SiglusLookupProfile test_profile;
 SiglusGlyphRecord published;
@@ -110,6 +111,29 @@ __declspec(noinline) uint8_t CallEightArg() {
   __asm mov before, esp
   const uint8_t result = callback(expected_self, nullptr, args[0],args[1],
       args[2],args[3],args[4],args[5],args[6],args[7]);
+  __asm mov after, esp
+  assert(before == after);
+  return result;
+}
+
+uint8_t __stdcall OriginalNineArg(void* self, uintptr_t a1, uintptr_t a2,
+    uintptr_t a3, uintptr_t a4, uintptr_t a5, uintptr_t a6, uintptr_t a7,
+    uintptr_t a8) {
+  assert(self == expected_self);
+  const uintptr_t observed[] = {a1,a2,a3,a4,a5,a6,a7,a8};
+  assert(memcmp(observed, args, sizeof(observed)) == 0);
+  ++original_calls;
+  return original_result;
+}
+
+// The nine-argument walker passes its origin in arguments 8/9 (a7/a8 here).
+__declspec(noinline) uint8_t CallNineArg(uintptr_t origin_x = args[6],
+                                         uintptr_t origin_y = args[7]) {
+  SiglusNineArgGlyphLayoutFn volatile callback = &Detour_SiglusNineArgGlyphLayout;
+  uintptr_t before = 0, after = 0;
+  __asm mov before, esp
+  const uint8_t result = callback(expected_self, args[0],args[1],args[2],
+      args[3],args[4],args[5],origin_x,origin_y);
   __asm mov after, esp
   assert(before == after);
   return result;
@@ -213,5 +237,35 @@ int main() {
   test_profile.glyph_abi = SiglusGlyphLayoutAbi::kStackSixteenArguments;
   CaptureSiglusLookupGlyph(record, 1, caller + 0x100, test_profile.glyph_abi);
   assert(publications == 5); // The selection caller is a ten-argument site.
+
+  // Nine-argument family: callee cleanup of 0x24, AL preserved, and the
+  // position is the line-local offset plus the walker's origin arguments.
+  test_profile.selection_glyph_return_rva = 0;
+  test_profile.glyph_abi = SiglusGlyphLayoutAbi::kStackNineArguments;
+  assert(CallNineArg() == 0 && original_calls == 12291);
+  g_orig_SiglusNineArgGlyphLayout = &OriginalNineArg;
+  original_result = 0xa5;
+  for (int i = 0; i < 1024; ++i) assert(CallNineArg() == 0xa5);
+  assert(original_calls == 12291 + 1024 && publications == 5);
+  Put(record, 0x14, int32_t{60});
+  Put(record, 0x18, int32_t{0});
+  CaptureSiglusNineArgLookupGlyph(record, 1, caller, 180, 520);
+  assert(publications == 6 && published.x == 240 && published.y == 520 &&
+         published.extent == 30 && published.code_unit == 0x3042);
+  CaptureSiglusLookupGlyph(record, 1, caller, test_profile.glyph_abi);
+  assert(publications == 6); // No origin, no position: generic decode refuses.
+  CaptureSiglusNineArgLookupGlyph(record, 1, caller + 1, 180, 520);
+  CaptureSiglusNineArgLookupGlyph(record, 0, caller, 180, 520);
+  CaptureSiglusNineArgLookupGlyph(record, 1, caller, 1260, 520);  // Off design.
+  CaptureSiglusNineArgLookupGlyph(record, 1, caller, -61, 520);
+  CaptureSiglusNineArgLookupGlyph(record, 1, caller, 0x7fffffff, 520);
+  glyph_owned = false;
+  CaptureSiglusNineArgLookupGlyph(record, 1, caller, 180, 520);
+  glyph_owned = true;
+  CaptureSiglusNineArgLookupGlyph(reinterpret_cast<void*>(1), 1, caller, 180, 520);
+  assert(publications == 6);
+  test_profile.glyph_abi = SiglusGlyphLayoutAbi::kStackSixteenArguments;
+  CaptureSiglusNineArgLookupGlyph(record, 1, caller, 180, 520);
+  assert(publications == 6); // The callback is bound to its own ABI.
   std::puts("Siglus x86 ABI: argument bits, AL, stack cleanup and capture gates passed");
 }

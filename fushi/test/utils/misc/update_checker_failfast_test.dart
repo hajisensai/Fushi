@@ -13,63 +13,91 @@ import 'package:fushi/src/utils/misc/update_checker.dart';
 // the first byte still gets 8s/segment (TODO-808: was 15s) so a slow-but-alive
 // source is not killed.
 // Direction 2: cancellation token, candidate loop breaks early at each boundary.
+//
+// Timing: these guards used to measure the real 5s / 8s timeouts against
+// wall-clock thresholds ("< 15s"), which went red under machine load (28-53s
+// observed). They now inject a tiny first-byte timeout and a huge body timeout
+// via [debugUpdateDownloadTimeoutsOverride]. A regression (serial fallback
+// waiting on the body timeout, or on the real 5s/8s constants instead of the
+// injected first-byte timeout) waits >= 5s per dead candidate, so with two
+// candidates its elapsed time is >= 10s *by construction* -- load can only
+// make it slower. The fail-fast path costs 2 x 100ms plus I/O (~1s measured on
+// a loaded machine), so "< 10s" leaves ~9s for load instead of a tight budget.
+const UpdateDownloadTimeouts _fastFirstByte = UpdateDownloadTimeouts(
+  firstByte: Duration(milliseconds: 100),
+  body: Duration(seconds: 60),
+);
+
+/// Lower bound of any regressed run over the two dead candidates below.
+const Duration _regressionFloor = Duration(seconds: 10);
+
 void main() {
-  group('Direction 1 serial fallback fail-fast (5s first byte, no 15s pileup)',
-      () {
+  test('production fail-fast timeouts: 5s first byte, 8s per body segment', () {
+    expect(
+      UpdateDownloadTimeouts.standard.firstByte,
+      const Duration(seconds: 5),
+    );
+    expect(UpdateDownloadTimeouts.standard.body, const Duration(seconds: 8));
+  });
+
+  group('Direction 1 serial fallback fail-fast '
+      '(first-byte timeout, no body pileup)', () {
     late Directory updatesDir;
 
     setUp(() async {
       updatesDir = await Directory.systemTemp.createTemp('fushi-update-ff');
+      debugUpdateDownloadTimeoutsOverride = _fastFirstByte;
     });
 
     tearDown(() async {
+      debugUpdateDownloadTimeoutsOverride = null;
       if (updatesDir.existsSync()) {
         await _deleteDirectoryWithRetry(updatesDir);
       }
     });
 
-    test(
-      'all-dead (TCP up, never first byte): serial fallback < 15s (was 30s)',
-      () async {
-        final List<int> payload = _payload();
-        final UpdateAsset asset = _asset(payload);
-        final String direct = asset.url;
-        final String mirror = 'https://mirror.example/$direct';
+    test('all-dead (TCP up, never first byte): '
+        'each candidate dies on the first-byte timeout', () async {
+      final List<int> payload = _payload();
+      final UpdateAsset asset = _asset(payload);
+      final String direct = asset.url;
+      final String mirror = 'https://mirror.example/$direct';
 
-        var openCount = 0;
-        final Stopwatch sw = Stopwatch()..start();
-        Object? thrown;
-        try {
-          await downloadUpdateAsset(
-            asset: asset,
-            version: '1.0.0',
-            updatesDir: updatesDir,
-            candidateUrls: <String>[direct, mirror],
-            connectionCount: 1,
-            minSegmentBytes: _minSeg,
-            openUrl: (Uri _, Map<String, String> __) {
-              openCount += 1;
-              return Completer<UpdateDownloadResponse>().future;
-            },
-          );
-        } catch (e) {
-          thrown = e;
-        }
-        sw.stop();
-
-        expect(thrown, isNotNull, reason: 'all-dead must fail-fast, not hang');
-        expect(openCount, 2, reason: 'each of 2 candidates requested once');
-        expect(
-          sw.elapsed,
-          lessThan(const Duration(seconds: 15)),
-          reason: 'serial fallback 5s first-byte: 2 candidates ~10s, under 30s',
+      var openCount = 0;
+      final Stopwatch sw = Stopwatch()..start();
+      Object? thrown;
+      try {
+        await downloadUpdateAsset(
+          asset: asset,
+          version: '1.0.0',
+          updatesDir: updatesDir,
+          candidateUrls: <String>[direct, mirror],
+          connectionCount: 1,
+          minSegmentBytes: _minSeg,
+          openUrl: (Uri _, Map<String, String> __) {
+            openCount += 1;
+            return Completer<UpdateDownloadResponse>().future;
+          },
         );
-      },
-      timeout: const Timeout(Duration(seconds: 60)),
-    );
+      } catch (e) {
+        thrown = e;
+      }
+      sw.stop();
+
+      expect(thrown, isNotNull, reason: 'all-dead must fail-fast, not hang');
+      expect(openCount, 2, reason: 'each of 2 candidates requested once');
+      expect(
+        sw.elapsed,
+        lessThan(_regressionFloor),
+        reason:
+            'injected 100ms first-byte timeout: 2 dead candidates take '
+            '~0.2s plus I/O; a fallback waiting on the real 5s/8s constants '
+            'or the 60s body timeout needs >= 10s by construction',
+      );
+    }, timeout: const Timeout(Duration(minutes: 3)));
 
     test(
-      'segmented all-dead (connectionCount>1, race + probe) < 40s',
+      'segmented all-dead (connectionCount>1, race + probe) fails fast',
       () async {
         final List<int> payload = _payload();
         final UpdateAsset asset = _asset(payload);
@@ -97,15 +125,18 @@ void main() {
         expect(thrown, isNotNull);
         expect(
           sw.elapsed,
-          lessThan(const Duration(seconds: 40)),
-          reason: 'race + probe + single fallback all use 5s first-byte (~25s)',
+          lessThan(_regressionFloor),
+          reason:
+              'race + probe + single fallback all use the (injected 100ms) '
+              'first-byte timeout; a fallback on the real constants or the '
+              'body timeout needs >= 10s by construction',
         );
       },
-      timeout: const Timeout(Duration(seconds: 90)),
+      timeout: const Timeout(Duration(minutes: 3)),
     );
 
     test(
-      'slow body not killed: first byte arrives, chunks 4s apart (< 8s), ok',
+      'slow body not killed: chunk gap > first-byte timeout, < body timeout',
       () async {
         final List<int> payload = _payload();
         final UpdateAsset asset = _asset(payload);
@@ -118,122 +149,143 @@ void main() {
           connectionCount: 1,
           minSegmentBytes: _minSeg,
           openUrl: (Uri _, Map<String, String> __) async =>
-              _slowBodyResponse(payload, gapMs: 4000),
+              _slowBodyResponse(payload, gapMs: 400),
         );
 
-        expect(await file.readAsBytes(), payload,
-            reason: 'slow body (4s/chunk < 8s per-attempt) must not be killed');
+        expect(
+          await file.readAsBytes(),
+          payload,
+          reason:
+              'after the first byte only the body timeout applies: a '
+              '400ms chunk gap (> 100ms first-byte, < 60s body) must not be '
+              'killed',
+        );
       },
-      timeout: const Timeout(Duration(seconds: 60)),
+      timeout: const Timeout(Duration(minutes: 3)),
     );
   });
 
-  group('Direction 2 cancellation token (early break at candidate boundary)',
-      () {
-    late Directory updatesDir;
+  group(
+    'Direction 2 cancellation token (early break at candidate boundary)',
+    () {
+      late Directory updatesDir;
 
-    setUp(() async {
-      updatesDir =
-          await Directory.systemTemp.createTemp('fushi-update-cancel');
-    });
-
-    tearDown(() async {
-      if (updatesDir.existsSync()) {
-        await _deleteDirectoryWithRetry(updatesDir);
-      }
-    });
-
-    test('cancelled before download => throws immediately, no request sent',
-        () async {
-      final List<int> payload = _payload();
-      final UpdateAsset asset = _asset(payload);
-      final UpdateDownloadCancellation cancellation =
-          UpdateDownloadCancellation()..cancel();
-
-      var openCount = 0;
-      Object? thrown;
-      try {
-        await downloadUpdateAsset(
-          asset: asset,
-          version: '1.0.0',
-          updatesDir: updatesDir,
-          candidateUrls: <String>[asset.url, 'https://m.example/${asset.url}'],
-          connectionCount: 1,
-          minSegmentBytes: _minSeg,
-          openUrl: (Uri _, Map<String, String> __) async {
-            openCount += 1;
-            return _slowBodyResponse(payload, gapMs: 0);
-          },
-          cancellation: cancellation,
+      setUp(() async {
+        updatesDir = await Directory.systemTemp.createTemp(
+          'fushi-update-cancel',
         );
-      } catch (e) {
-        thrown = e;
-      }
+      });
 
-      expect(thrown, isA<UpdateDownloadCancelledException>());
-      expect(openCount, 0, reason: 'cancelled => break before any request');
-    });
+      tearDown(() async {
+        if (updatesDir.existsSync()) {
+          await _deleteDirectoryWithRetry(updatesDir);
+        }
+      });
 
-    test('cancel after first candidate fails => second candidate skipped',
+      test(
+        'cancelled before download => throws immediately, no request sent',
         () async {
-      final List<int> payload = _payload();
-      final UpdateAsset asset = _asset(payload);
-      final String direct = asset.url;
-      final String mirror = 'https://m.example/$direct';
-      final UpdateDownloadCancellation cancellation =
-          UpdateDownloadCancellation();
+          final List<int> payload = _payload();
+          final UpdateAsset asset = _asset(payload);
+          final UpdateDownloadCancellation cancellation =
+              UpdateDownloadCancellation()..cancel();
 
-      final List<String> attemptedHosts = <String>[];
-      Object? thrown;
-      try {
-        await downloadUpdateAsset(
-          asset: asset,
-          version: '1.0.0',
-          updatesDir: updatesDir,
-          candidateUrls: <String>[direct, mirror],
-          connectionCount: 1,
-          minSegmentBytes: _minSeg,
-          openUrl: (Uri uri, Map<String, String> __) async {
-            attemptedHosts.add(uri.host);
-            cancellation.cancel();
-            throw const SocketException('dead source');
-          },
-          cancellation: cancellation,
-        );
-      } catch (e) {
-        thrown = e;
-      }
+          var openCount = 0;
+          Object? thrown;
+          try {
+            await downloadUpdateAsset(
+              asset: asset,
+              version: '1.0.0',
+              updatesDir: updatesDir,
+              candidateUrls: <String>[
+                asset.url,
+                'https://m.example/${asset.url}',
+              ],
+              connectionCount: 1,
+              minSegmentBytes: _minSeg,
+              openUrl: (Uri _, Map<String, String> __) async {
+                openCount += 1;
+                return _slowBodyResponse(payload, gapMs: 0);
+              },
+              cancellation: cancellation,
+            );
+          } catch (e) {
+            thrown = e;
+          }
 
-      expect(thrown, isA<UpdateDownloadCancelledException>(),
-          reason: 'whole run ends with the cancellation exception');
-      expect(attemptedHosts, <String>['github.com'],
-          reason: 'only first candidate tried; second cut off after cancel');
-    });
-
-    test(
-        'no cancel => downloads whole file (token does not affect normal path)',
-        () async {
-      final List<int> payload = _payload();
-      final UpdateAsset asset = _asset(payload);
-      final UpdateDownloadCancellation cancellation =
-          UpdateDownloadCancellation();
-
-      final File file = await downloadUpdateAsset(
-        asset: asset,
-        version: '1.0.0',
-        updatesDir: updatesDir,
-        candidateUrls: <String>[asset.url],
-        connectionCount: 1,
-        minSegmentBytes: _minSeg,
-        openUrl: (Uri _, Map<String, String> __) async =>
-            _slowBodyResponse(payload, gapMs: 0),
-        cancellation: cancellation,
+          expect(thrown, isA<UpdateDownloadCancelledException>());
+          expect(openCount, 0, reason: 'cancelled => break before any request');
+        },
       );
 
-      expect(await file.readAsBytes(), payload);
-      expect(cancellation.isCancelled, isFalse);
-    });
-  });
+      test(
+        'cancel after first candidate fails => second candidate skipped',
+        () async {
+          final List<int> payload = _payload();
+          final UpdateAsset asset = _asset(payload);
+          final String direct = asset.url;
+          final String mirror = 'https://m.example/$direct';
+          final UpdateDownloadCancellation cancellation =
+              UpdateDownloadCancellation();
+
+          final List<String> attemptedHosts = <String>[];
+          Object? thrown;
+          try {
+            await downloadUpdateAsset(
+              asset: asset,
+              version: '1.0.0',
+              updatesDir: updatesDir,
+              candidateUrls: <String>[direct, mirror],
+              connectionCount: 1,
+              minSegmentBytes: _minSeg,
+              openUrl: (Uri uri, Map<String, String> __) async {
+                attemptedHosts.add(uri.host);
+                cancellation.cancel();
+                throw const SocketException('dead source');
+              },
+              cancellation: cancellation,
+            );
+          } catch (e) {
+            thrown = e;
+          }
+
+          expect(
+            thrown,
+            isA<UpdateDownloadCancelledException>(),
+            reason: 'whole run ends with the cancellation exception',
+          );
+          expect(attemptedHosts, <String>[
+            'github.com',
+          ], reason: 'only first candidate tried; second cut off after cancel');
+        },
+      );
+
+      test(
+        'no cancel => downloads whole file (token does not affect normal path)',
+        () async {
+          final List<int> payload = _payload();
+          final UpdateAsset asset = _asset(payload);
+          final UpdateDownloadCancellation cancellation =
+              UpdateDownloadCancellation();
+
+          final File file = await downloadUpdateAsset(
+            asset: asset,
+            version: '1.0.0',
+            updatesDir: updatesDir,
+            candidateUrls: <String>[asset.url],
+            connectionCount: 1,
+            minSegmentBytes: _minSeg,
+            openUrl: (Uri _, Map<String, String> __) async =>
+                _slowBodyResponse(payload, gapMs: 0),
+            cancellation: cancellation,
+          );
+
+          expect(await file.readAsBytes(), payload);
+          expect(cancellation.isCancelled, isFalse);
+        },
+      );
+    },
+  );
 }
 
 // ---- helpers ----
@@ -241,20 +293,22 @@ void main() {
 const int _minSeg = 2;
 
 UpdateAsset _asset(List<int> payload) => UpdateAsset(
-      name: 'hibiki-1.0.0-windows-setup.exe',
-      url:
-          'https://github.com/hajisensai/hibiki/releases/download/v1.0.0/hibiki-1.0.0-windows-setup.exe',
-      sizeBytes: payload.length,
-      sha256Digest: _sha256Hex(payload),
-    );
+  name: 'hibiki-1.0.0-windows-setup.exe',
+  url:
+      'https://github.com/hajisensai/hibiki/releases/download/v1.0.0/hibiki-1.0.0-windows-setup.exe',
+  sizeBytes: payload.length,
+  sha256Digest: _sha256Hex(payload),
+);
 
 List<int> _payload() =>
     List<int>.generate(16, (int i) => (i * 11 + 3) & 0xFF, growable: false);
 
 // 200 full-file response: body in two chunks, gapMs apart (for the
-// "slow body but < 15s => not killed" guard).
-UpdateDownloadResponse _slowBodyResponse(List<int> payload,
-    {required int gapMs}) {
+// "slow body but < body timeout => not killed" guard).
+UpdateDownloadResponse _slowBodyResponse(
+  List<int> payload, {
+  required int gapMs,
+}) {
   final StreamController<List<int>> controller = StreamController<List<int>>();
   final int half = payload.length ~/ 2;
   Future<void>(() async {

@@ -6,7 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/lookup_popup_size_preview.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -194,8 +194,8 @@ void main() {
         expect(width.max, kLookupPopupMaxWidth);
         expect(height.min, kLookupPopupMinHeight);
         expect(height.max, kLookupPopupMaxHeight);
-        expect(width.value(sctx), 400, reason: '默认宽 400');
-        expect(height.value(sctx), 360, reason: '默认高 360');
+        expect(width.value(sctx), kLookupPopupDefaultWidth, reason: '默认宽');
+        expect(height.value(sctx), kLookupPopupDefaultHeight, reason: '默认高');
 
         width.onChanged(sctx, 620);
         height.onChanged(sctx, 480);
@@ -341,14 +341,14 @@ void main() {
     };
     const List<double> widths = <double>[
       kLookupPopupMinWidth,
-      400,
+      kLookupPopupDefaultWidth,
       800,
       1200,
       kLookupPopupMaxWidth,
     ];
     const List<double> heights = <double>[
       kLookupPopupMinHeight,
-      360,
+      kLookupPopupDefaultHeight,
       800,
       kLookupPopupMaxHeight,
     ];

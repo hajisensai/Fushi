@@ -68,10 +68,7 @@ void main() {
     });
 
     test('非 String 类型 → 空串', () {
-      expect(
-        ReaderSelectionScripts.nativeSelectionTextFromResult(42),
-        isEmpty,
-      );
+      expect(ReaderSelectionScripts.nativeSelectionTextFromResult(42), isEmpty);
     });
   });
 }

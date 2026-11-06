@@ -1,0 +1,2276 @@
+//! srs.db 的 C ABI（Dart 绑定：packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart）。
+//!
+//! 约定与 lib.rs 其余部分相同：返回 i32 状态（0 成功，负数失败），失败时 `*error_out` 是新分配的
+//! C 字符串（用 `ffsrs_free_string` 释放）；Rust 分配的字节用 `ffsrs_free_bytes` 释放；panic 一律
+//! 接住转成 -100。
+//!
+//! 库句柄（[SrsCoreHandle]）**不是指针**，是句柄表里的一个编号：Dart 把句柄地址交给后台 isolate
+//! （`SrsCore.fromAddress`），拥有者关库时那边可能还在调用、甚至之后才调用。每次调用先在句柄表里
+//! 取出一份 `Arc<SrsCore>` 再干活，关库把它从表里摘掉：在途调用手上那份让结构体活到它跑完，之后
+//! 再来的调用查不到编号、报「已关闭」，最后一份引用放掉时结构体真正释放。编号单调递增不复用，
+//! 旧句柄不会误指到后来打开的库。只读会话句柄（[ReadSessionHandle]）同理，另一张表；会话随所属的库
+//! 关闭而失效（连接关掉、之后报「已关闭」），表项留到 [ffsrs_store_read_end]。线程安全，可在任意
+//! isolate 上用。
+
+use std::collections::BTreeMap;
+use std::ffi::{CString, c_char};
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+
+use super::{CLOSED, ReadSession, SrsCore};
+
+pub const STORE_OK: i32 = 0;
+pub const STORE_ERROR: i32 = -1;
+pub const STORE_BAD_ARGUMENT: i32 = -2;
+/// 打开时库要升级而所在卷空间不够（[super::schema::UPGRADE_NO_SPACE]，错误文本后面是 `{"need","free","from","to"}`）：
+/// 库没动，腾出空间后再打开。
+pub const STORE_NO_SPACE: i32 = -3;
+pub const STORE_PANIC: i32 = -100;
+
+fn set_error(error_out: *mut *mut c_char, message: &str) {
+    if !error_out.is_null() {
+        let text = CString::new(message.replace('\0', " ")).unwrap_or_default();
+        unsafe { *error_out = text.into_raw() };
+    }
+}
+
+fn bytes<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
+    if len == 0 {
+        Some(&[])
+    } else if ptr.is_null() {
+        None
+    } else {
+        Some(unsafe { std::slice::from_raw_parts(ptr, len) })
+    }
+}
+
+fn utf8<'a>(ptr: *const u8, len: usize) -> Result<&'a str, String> {
+    let b = bytes(ptr, len).ok_or_else(|| "null string".to_string())?;
+    std::str::from_utf8(b).map_err(|e| e.to_string())
+}
+
+/// 库句柄的不透明类型：C 侧只见一个 `void*`，值是 [HANDLES] 里的编号，从不解引用。
+pub enum SrsCoreHandle {}
+
+/// 打开着的库：编号 → 共享引用。只在取 / 放引用的一瞬间持锁，命令本身不在锁里跑。
+static HANDLES: Mutex<BTreeMap<usize, Arc<SrsCore>>> = Mutex::new(BTreeMap::new());
+
+/// 只读会话句柄的不透明类型：值是 [SESSIONS] 里的编号，从不解引用。
+pub enum ReadSessionHandle {}
+
+/// 没结束的只读会话：编号 → 共享引用（同 [HANDLES]，只在取 / 放引用时持锁）。
+static SESSIONS: Mutex<BTreeMap<usize, Arc<ReadSession>>> = Mutex::new(BTreeMap::new());
+
+/// 下一个句柄编号（0 留给 NULL；库与会话共用，单调递增，不复用）。
+static NEXT_HANDLE: AtomicUsize = AtomicUsize::new(1);
+
+fn sessions() -> std::sync::MutexGuard<'static, BTreeMap<usize, Arc<ReadSession>>> {
+    SESSIONS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// 跑一段带会话句柄的操作（已结束 / 从没开过 = 「已关闭」）。
+fn run_session(
+    session: *const ReadSessionHandle,
+    error_out: *mut *mut c_char,
+    body: impl FnOnce(&ReadSession) -> Result<(), String>,
+) -> i32 {
+    if session.is_null() {
+        set_error(error_out, "null srs handle");
+        return STORE_BAD_ARGUMENT;
+    }
+    let found = sessions().get(&(session as usize)).cloned();
+    let Some(s) = found else {
+        set_error(error_out, CLOSED);
+        return STORE_ERROR;
+    };
+    run(Arc::as_ptr(&s), error_out, body)
+}
+
+fn handles() -> std::sync::MutexGuard<'static, BTreeMap<usize, Arc<SrsCore>>> {
+    // 锁里只有 BTreeMap 的增删查，不跑用户代码；就算哪次 panic 毒化了锁，表本身也完好。
+    HANDLES.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn register(core: SrsCore) -> *mut SrsCoreHandle {
+    let id = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
+    handles().insert(id, Arc::new(core));
+    id as *mut SrsCoreHandle
+}
+
+/// 取出句柄对应的库（已关闭 / 从没打开过 = None）。
+fn resolve(core: *const SrsCoreHandle) -> Option<Arc<SrsCore>> {
+    handles().get(&(core as usize)).cloned()
+}
+
+/// 跑一段带库句柄的操作：调用期间手上握着一份 `Arc`，关库不会把结构体从脚下释放掉。
+fn run_core(
+    core: *const SrsCoreHandle,
+    error_out: *mut *mut c_char,
+    body: impl FnOnce(&SrsCore) -> Result<(), String>,
+) -> i32 {
+    if core.is_null() {
+        set_error(error_out, "null srs handle");
+        return STORE_BAD_ARGUMENT;
+    }
+    let Some(c) = resolve(core) else {
+        set_error(error_out, CLOSED);
+        return STORE_ERROR;
+    };
+    run(Arc::as_ptr(&c), error_out, body)
+}
+
+/// 跑一段带句柄（[SrsCore] / [ReadSession]）的操作，统一处理空指针、错误与 panic。
+fn run<T>(
+    core: *const T,
+    error_out: *mut *mut c_char,
+    body: impl FnOnce(&T) -> Result<(), String>,
+) -> i32 {
+    if core.is_null() {
+        set_error(error_out, "null srs handle");
+        return STORE_BAD_ARGUMENT;
+    }
+    let core = unsafe { &*core };
+    match catch_unwind(AssertUnwindSafe(|| body(core))) {
+        Ok(Ok(())) => STORE_OK,
+        Ok(Err(e)) => {
+            set_error(error_out, &e);
+            STORE_ERROR
+        }
+        Err(_) => {
+            set_error(error_out, "panic in srs store");
+            STORE_PANIC
+        }
+    }
+}
+
+fn hand_out(buf: Vec<u8>, out: *mut *mut u8, out_len: *mut usize) {
+    let boxed = buf.into_boxed_slice();
+    unsafe {
+        *out_len = boxed.len();
+        *out = Box::into_raw(boxed) as *mut u8;
+    }
+}
+
+/// 设进程级 SQLite 临时目录（[super::compact::use_temp_dir]）：大排序 / 整理 / 快照的溢出文件落在这里。整个进程只设
+/// 一次，必须在打开任何 srs.db 之前；再传同一个目录是空操作，传别的目录报错。Android 上不设就打不开库（没有平台默认
+/// 临时目录），宿主传 app 的 cache 目录。
+#[no_mangle]
+pub extern "C" fn ffsrs_set_temp_dir(
+    path: *const u8,
+    path_len: usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<(), String> {
+        super::compact::use_temp_dir(Path::new(utf8(path, path_len)?))
+    }));
+    match outcome {
+        Ok(Ok(())) => STORE_OK,
+        Ok(Err(e)) => {
+            set_error(error_out, &e);
+            STORE_ERROR
+        }
+        Err(_) => {
+            set_error(error_out, "panic in srs set temp dir");
+            STORE_PANIC
+        }
+    }
+}
+
+/// 打开 / 新建 srs.db。成功写 `*core_out`；用 [ffsrs_store_close] 关闭。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_open(
+    path: *const u8,
+    path_len: usize,
+    core_out: *mut *mut SrsCoreHandle,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    if core_out.is_null() {
+        set_error(error_out, "null core_out");
+        return STORE_BAD_ARGUMENT;
+    }
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<SrsCore, String> {
+        SrsCore::open(Path::new(utf8(path, path_len)?))
+    }));
+    match outcome {
+        Ok(Ok(core)) => {
+            unsafe { *core_out = register(core) };
+            STORE_OK
+        }
+        Ok(Err(e)) => {
+            set_error(error_out, &e);
+            if e.starts_with(super::schema::UPGRADE_NO_SPACE) {
+                STORE_NO_SPACE
+            } else {
+                STORE_ERROR
+            }
+        }
+        Err(_) => {
+            set_error(error_out, "panic in srs store open");
+            STORE_PANIC
+        }
+    }
+}
+
+/// 关闭（NULL 无操作，重复关闭无操作）：把句柄从句柄表里摘掉，等在途命令跑完再关两条连接；之后经这个
+/// 句柄的命令一律报「已关闭」。结构体在最后一个在途调用放掉引用时释放（通常就在这里）。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_close(core: *mut SrsCoreHandle) {
+    if core.is_null() {
+        return;
+    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        // 先摘再关（摘的时候不等连接锁）：摘掉之后新来的调用查不到编号，close 只需等已经在途的那些。
+        let removed = handles().remove(&(core as usize));
+        if let Some(c) = removed {
+            c.close();
+        }
+    }));
+}
+
+/// `*out` = 1 已搬迁（或确认没有可搬的），0 未搬迁。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_legacy_state(
+    core: *const SrsCoreHandle,
+    out: *mut i32,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    if out.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run_core(core, error_out, |c| {
+        let v = c.legacy_imported()?;
+        unsafe { *out = v as i32 };
+        Ok(())
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn ffsrs_store_legacy_begin(
+    core: *const SrsCoreHandle,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    run_core(core, error_out, |c| c.legacy_begin())
+}
+
+/// 一页旧表行（rows.rs 编码）。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_legacy_page(
+    core: *const SrsCoreHandle,
+    table: *const u8,
+    table_len: usize,
+    page: *const u8,
+    page_len: usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    run_core(core, error_out, |c| {
+        let t = utf8(table, table_len)?;
+        let p = bytes(page, page_len).ok_or("null page")?;
+        c.legacy_page(t, p).map(|_| ())
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn ffsrs_store_legacy_commit(
+    core: *const SrsCoreHandle,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    run_core(core, error_out, |c| c.legacy_commit())
+}
+
+#[no_mangle]
+pub extern "C" fn ffsrs_store_legacy_abort(
+    core: *const SrsCoreHandle,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    run_core(core, error_out, |c| c.legacy_abort())
+}
+
+#[no_mangle]
+pub extern "C" fn ffsrs_store_legacy_mark_none(
+    core: *const SrsCoreHandle,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    run_core(core, error_out, |c| c.legacy_mark_none())
+}
+
+/// `VACUUM INTO` 一份快照；`strip_device_local != 0` 时清空设备本地表。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_snapshot(
+    core: *const SrsCoreHandle,
+    path: *const u8,
+    path_len: usize,
+    strip_device_local: i32,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    run_core(core, error_out, |c| {
+        c.snapshot_into(Path::new(utf8(path, path_len)?), strip_device_local != 0)
+    })
+}
+
+/// 只读调试查询（测试 / 诊断）。参数是一行 rows.rs 编码的页（列数 = 参数个数，可为空页）。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_debug_query(
+    core: *const SrsCoreHandle,
+    sql: *const u8,
+    sql_len: usize,
+    params: *const u8,
+    params_len: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    if out.is_null() || out_len.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run_core(core, error_out, |c| {
+        let s = utf8(sql, sql_len)?;
+        let p = bytes(params, params_len).ok_or("null params")?;
+        let values = if p.is_empty() {
+            Vec::new()
+        } else {
+            let (_, mut rows) = super::rows::decode(p)?;
+            if rows.len() > 1 {
+                return Err("params page must hold at most one row".into());
+            }
+            rows.pop().unwrap_or_default()
+        };
+        hand_out(c.debug_query(s, &values)?, out, out_len);
+        Ok(())
+    })
+}
+
+/// 只读会话（`SrsCore::read_session`）：另开一条只读连接、开读事务并定下快照。成功写 `*session_out`；
+/// 用 [ffsrs_store_read_end] 结束（回滚并关闭）。会话可以在别的线程 / isolate 上用，但同一时刻只许一个调用。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_read_begin(
+    core: *const SrsCoreHandle,
+    session_out: *mut *mut ReadSessionHandle,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    if session_out.is_null() {
+        set_error(error_out, "null session_out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run_core(core, error_out, |c| {
+        let s = c.read_session()?;
+        let id = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
+        sessions().insert(id, s);
+        unsafe { *session_out = id as *mut ReadSessionHandle };
+        Ok(())
+    })
+}
+
+/// 在只读会话的读事务里跑一条只读语句。参数页 / 结果编码同 [ffsrs_store_debug_query]。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_read_query(
+    session: *const ReadSessionHandle,
+    sql: *const u8,
+    sql_len: usize,
+    params: *const u8,
+    params_len: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    if out.is_null() || out_len.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run_session(session, error_out, |r| {
+        let s = utf8(sql, sql_len)?;
+        let values = one_row(bytes(params, params_len).ok_or("null params")?)?;
+        hand_out(r.query(s, &values)?, out, out_len);
+        Ok(())
+    })
+}
+
+/// 结束只读会话（NULL 无操作，重复结束无操作）：从表里摘掉、等在途查询跑完后回滚并关连接；之后经这个
+/// 句柄的查询报「已关闭」。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_read_end(session: *mut ReadSessionHandle) {
+    if session.is_null() {
+        return;
+    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let removed = sessions().remove(&(session as usize));
+        if let Some(s) = removed {
+            s.close();
+        }
+    }));
+}
+
+fn one_row(page: &[u8]) -> Result<Vec<rusqlite::types::Value>, String> {
+    if page.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (_, mut rows) = super::rows::decode(page)?;
+    if rows.len() > 1 {
+        return Err("params page must hold at most one row".into());
+    }
+    Ok(rows.pop().unwrap_or_default())
+}
+
+/// Drift 执行器：执行一条语句。`select`：0 = 写语句（写连接，返回一行 `[变更行数, last_insert_rowid]`）；
+/// 1 = 写连接上的语句、返回结果行（`runCustom`：事务控制、PRAGMA）；2 = Drift 的查询（`runSelect`，
+/// [SrsCore::select]：Drift 事务外的只读查询走读连接的快照）；3 = Drift 事务外的查询（[SrsCore::snapshot_select]：
+/// 只读连接池，可并发；不是只读查询报 `NOT_SNAPSHOT`）。1 / 2 / 3 返回「列名行 + 结果行」；缓冲区用
+/// `ffsrs_free_bytes` 释放。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_exec(
+    core: *const SrsCoreHandle,
+    sql: *const u8,
+    sql_len: usize,
+    params: *const u8,
+    params_len: usize,
+    select: i32,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    if out.is_null() || out_len.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run_core(core, error_out, |c| {
+        let s = utf8(sql, sql_len)?;
+        let values = one_row(bytes(params, params_len).ok_or("null params")?)?;
+        let page = match select {
+            0 => c.exec(s, &values, false)?,
+            1 => c.exec(s, &values, true)?,
+            2 => c.select(s, &values)?,
+            3 => c.snapshot_select(s, &values)?,
+            m => return Err(format!("unknown exec mode {m}")),
+        };
+        hand_out(page, out, out_len);
+        Ok(())
+    })
+}
+
+/// Drift 批量语句。`statements` 是单列文本页（每行一条 SQL）；`applications` 是两列页：
+/// `[语句下标 i64, 参数页 blob]`（参数页是一行的 rows.rs 页，可为空字节）。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_exec_batch(
+    core: *const SrsCoreHandle,
+    statements: *const u8,
+    statements_len: usize,
+    applications: *const u8,
+    applications_len: usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    use rusqlite::types::Value;
+    run_core(core, error_out, |c| {
+        let (_, stmt_rows) =
+            super::rows::decode(bytes(statements, statements_len).ok_or("null statements")?)?;
+        let mut sqls: Vec<String> = Vec::with_capacity(stmt_rows.len());
+        for r in stmt_rows {
+            match r.into_iter().next() {
+                Some(Value::Text(t)) => sqls.push(t),
+                _ => return Err("statement page row must be one text value".into()),
+            }
+        }
+        let (_, app_rows) =
+            super::rows::decode(bytes(applications, applications_len).ok_or("null applications")?)?;
+        let mut apps: Vec<(usize, Vec<Value>)> = Vec::with_capacity(app_rows.len());
+        for r in app_rows {
+            let mut it = r.into_iter();
+            let index = match it.next() {
+                Some(Value::Integer(i)) if i >= 0 => i as usize,
+                _ => return Err("application row needs a statement index".into()),
+            };
+            let args = match it.next() {
+                Some(Value::Blob(b)) => one_row(&b)?,
+                Some(Value::Null) | None => Vec::new(),
+                _ => return Err("application args must be a blob".into()),
+            };
+            apps.push((index, args));
+        }
+        let refs: Vec<&str> = sqls.iter().map(String::as_str).collect();
+        c.exec_batch(&refs, &apps)
+    })
+}
+
+/// [ffsrs_store_diag_counts] 写出的项数。
+pub const DIAG_COUNT_LEN: usize = 8;
+
+/// 进程级内存诊断计数（不需要句柄，任意线程可调）：按序写 `out[0..min(n, DIAG_COUNT_LEN)]`，返回写了几项。
+/// `[句柄表里打开着的库, 还没释放的 SrsCore（含已关、在途调用还握着的）, 没结束的只读会话,
+///   各库只读连接池开着的连接总数, 本库内置 SQLite 的堆用量字节, 其高水位字节,
+///   打开着的库文件总字节, 它们的 `-wal` 总字节]`。
+/// 用途：移动端内存耗尽闪退（BUG-4075）的取证面包屑看「退役的库还驻留没有 / 连接与 SQLite 页缓存占多少」。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_diag_counts(out: *mut i64, n: usize) -> usize {
+    if out.is_null() || n == 0 {
+        return 0;
+    }
+    catch_unwind(AssertUnwindSafe(|| {
+        let (open, readers, cores) = {
+            let table = handles();
+            let readers: usize = table.values().map(|c| c.pooled_readers()).sum();
+            let cores: Vec<Arc<SrsCore>> = table.values().cloned().collect();
+            (table.len(), readers, cores)
+        };
+        // stat 在句柄表锁外做：慢盘上也不挡别的线程取句柄。
+        let (db, wal) = cores
+            .iter()
+            .map(|c| c.file_sizes())
+            .fold((0u64, 0u64), |(d, w), (a, b)| (d + a, w + b));
+        drop(cores);
+        let values: [i64; DIAG_COUNT_LEN] = [
+            open as i64,
+            super::live_cores() as i64,
+            sessions().len() as i64,
+            readers as i64,
+            unsafe { rusqlite::ffi::sqlite3_memory_used() },
+            unsafe { rusqlite::ffi::sqlite3_memory_highwater(0) },
+            db as i64,
+            wal as i64,
+        ];
+        let k = n.min(DIAG_COUNT_LEN);
+        let dst = unsafe { std::slice::from_raw_parts_mut(out, k) };
+        dst.copy_from_slice(&values[..k]);
+        k
+    }))
+    .unwrap_or(0)
+}
+
+/// `*out` = Drift 事务外查询的并发上限（只读连接池的连接数上限，`SrsCore::read_concurrency`）：Dart 侧查询道的
+/// worker 数取它。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_read_concurrency(
+    core: *const SrsCoreHandle,
+    out: *mut i32,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    if out.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run_core(core, error_out, |c| {
+        unsafe { *out = c.read_concurrency() as i32 };
+        Ok(())
+    })
+}
+
+/// `*out` = 1 写连接在事务里。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_in_transaction(
+    core: *const SrsCoreHandle,
+    out: *mut i32,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    if out.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run_core(core, error_out, |c| {
+        let v = c.in_transaction()?;
+        unsafe { *out = v as i32 };
+        Ok(())
+    })
+}
+
+/// 卡片历史的当前状态（直读写连接）。`groups` 是两列页 `[历史下标 i64, 卡 ID 文本]`，共
+/// `n_groups` 份历史；输出布局同 `ffsrs_history_states`，用 `ffsrs_free_bytes` 释放。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_history_states(
+    core: *const SrsCoreHandle,
+    groups: *const u8,
+    groups_len: usize,
+    n_groups: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    use rusqlite::types::Value;
+    if out.is_null() || out_len.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run_core(core, error_out, |c| {
+        let (_, rows) = super::rows::decode(bytes(groups, groups_len).ok_or("null groups")?)?;
+        let mut lineages: Vec<Vec<String>> = vec![Vec::new(); n_groups];
+        for r in rows {
+            let mut it = r.into_iter();
+            match (it.next(), it.next()) {
+                (Some(Value::Integer(g)), Some(Value::Text(card)))
+                    if g >= 0 && (g as usize) < n_groups =>
+                {
+                    lineages[g as usize].push(card)
+                }
+                _ => return Err("bad history group row".into()),
+            }
+        }
+        hand_out(c.history_states(&lineages)?, out, out_len);
+        Ok(())
+    })
+}
+
+/// 有效复习投影（直读写连接）。`groups` 同 [ffsrs_store_history_states]（两列页 `[组下标, 卡 ID]`），
+/// 每组是一个归属组（归属卡 + 归它的前身卡）；输出是 9 列行页（见 `SrsCore::stat_projection`），
+/// 用 `ffsrs_free_bytes` 释放。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_stat_projection(
+    core: *const SrsCoreHandle,
+    groups: *const u8,
+    groups_len: usize,
+    n_groups: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    if out.is_null() || out_len.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run_core(core, error_out, |c| {
+        let lineages = decode_groups(bytes(groups, groups_len).ok_or("null groups")?, n_groups)?;
+        hand_out(c.stat_projection(&lineages)?, out, out_len);
+        Ok(())
+    })
+}
+
+/// 两列页 `[组下标 i64, 卡 ID 文本]` → 每组的卡 ID（组内保持页里的顺序）。
+fn decode_groups(page: &[u8], n_groups: usize) -> Result<Vec<Vec<String>>, String> {
+    use rusqlite::types::Value;
+    let (_, rows) = super::rows::decode(page)?;
+    let mut groups: Vec<Vec<String>> = vec![Vec::new(); n_groups];
+    for r in rows {
+        let mut it = r.into_iter();
+        match (it.next(), it.next()) {
+            (Some(Value::Integer(g)), Some(Value::Text(card)))
+                if g >= 0 && (g as usize) < n_groups =>
+            {
+                groups[g as usize].push(card)
+            }
+            _ => return Err("bad history group row".into()),
+        }
+    }
+    Ok(groups)
+}
+
+// ---------------------------------------------------------------- P6 直读命令（store/projections.rs）
+
+/// 命令的输入页：两列 `[下标 i64, 文本]`。下标 g ≥ 0 = 第 g 份历史的血统里的一张卡；-1 = profile uid。
+fn lineage_page(
+    page: &[u8],
+    n_groups: usize,
+) -> Result<(Vec<Vec<String>>, Option<String>), String> {
+    use rusqlite::types::Value;
+    let (_, rows) = super::rows::decode(page)?;
+    let mut lineages: Vec<Vec<String>> = vec![Vec::new(); n_groups];
+    let mut profile = None;
+    for r in rows {
+        let mut it = r.into_iter();
+        match (it.next(), it.next()) {
+            (Some(Value::Integer(-1)), Some(Value::Text(p))) => profile = Some(p),
+            (Some(Value::Integer(g)), Some(Value::Text(card)))
+                if g >= 0 && (g as usize) < n_groups =>
+            {
+                lineages[g as usize].push(card)
+            }
+            _ => return Err("bad lineage row".into()),
+        }
+    }
+    Ok((lineages, profile))
+}
+
+fn ints<'a>(ptr: *const i64, n: usize) -> Option<&'a [i64]> {
+    if n == 0 {
+        Some(&[])
+    } else if ptr.is_null() {
+        None
+    } else {
+        Some(unsafe { std::slice::from_raw_parts(ptr, n) })
+    }
+}
+
+/// 统一的命令外壳：输入页 + i64 参数，输出 Rust 分配的字节（`ffsrs_free_bytes` 释放）。
+#[allow(clippy::too_many_arguments)]
+fn command(
+    core: *const SrsCoreHandle,
+    page: *const u8,
+    page_len: usize,
+    args: *const i64,
+    n_args: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+    body: impl FnOnce(&SrsCore, &[u8], &[i64]) -> Result<Vec<u8>, String>,
+) -> i32 {
+    if out.is_null() || out_len.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run_core(core, error_out, |c| {
+        let page = bytes(page, page_len).ok_or("null page")?;
+        let args = ints(args, n_args).ok_or("null args")?;
+        hand_out(body(c, page, args)?, out, out_len);
+        Ok(())
+    })
+}
+
+fn arg(args: &[i64], k: usize) -> Result<i64, String> {
+    args.get(k)
+        .copied()
+        .ok_or_else(|| format!("missing argument {k}"))
+}
+
+fn day_of(args: &[i64], k: usize) -> Result<crate::projection::Day, String> {
+    Ok(crate::projection::Day {
+        utc_offset_min: arg(args, k)?,
+        rollover_hour: arg(args, k + 1)?,
+    })
+}
+
+fn group_count(args: &[i64]) -> Result<usize, String> {
+    usize::try_from(arg(args, 0)?).map_err(|_| "negative group count".to_string())
+}
+
+/// 优化器训练集（`SrsCore::optimizer_items`）。`args = [n_groups, alg, utcOffsetMin, rolloverHour, 卡数字 id × n_groups]`。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_optimizer_items(
+    core: *const SrsCoreHandle,
+    page: *const u8,
+    page_len: usize,
+    args: *const i64,
+    n_args: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    command(
+        core,
+        page,
+        page_len,
+        args,
+        n_args,
+        out,
+        out_len,
+        error_out,
+        |c, page, args| {
+            let n = group_count(args)?;
+            let (lineages, _) = lineage_page(page, n)?;
+            let alg = crate::projection::Alg::from_code(arg(args, 1)?)?;
+            let ids = args.get(4..4 + n).ok_or("missing card ids")?;
+            c.optimizer_items(&lineages, ids, alg, &day_of(args, 2)?)
+        },
+    )
+}
+
+/// RWKV 回放行。mode 0 = 逐卡（`SrsCore::rwkv_cards`）：`args = [n_groups, 0, utcOffsetMin, rolloverHour, 0,
+/// 数字 id × 4·n_groups]`；mode 1 = 回放（`SrsCore::rwkv_replay`，页里要有 profile 行）：`args = [n_groups, 1,
+/// utcOffsetMin, rolloverHour, since, rebaseSince|NONE, rowsFrom|NONE, 数字 id × 4·n_groups]`（NONE = i64::MIN，
+/// rebaseSince 为 NONE = 全量）。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_rwkv_rows(
+    core: *const SrsCoreHandle,
+    page: *const u8,
+    page_len: usize,
+    args: *const i64,
+    n_args: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    command(
+        core,
+        page,
+        page_len,
+        args,
+        n_args,
+        out,
+        out_len,
+        error_out,
+        |c, page, args| {
+            let n = group_count(args)?;
+            let (lineages, profile) = lineage_page(page, n)?;
+            let day = day_of(args, 2)?;
+            let opt = |v: i64| (v != crate::history::NONE_I64).then_some(v);
+            match arg(args, 1)? {
+                0 => c.rwkv_cards(
+                    &lineages,
+                    args.get(5..5 + 4 * n).ok_or("missing rwkv ids")?,
+                    &day,
+                ),
+                1 => c.rwkv_replay(
+                    profile.as_deref().ok_or("missing profile")?,
+                    &lineages,
+                    args.get(7..7 + 4 * n).ok_or("missing rwkv ids")?,
+                    &day,
+                    arg(args, 4)?,
+                    crate::store::projections::RwkvRange {
+                        rebase_since: opt(arg(args, 5)?),
+                        rows_from: opt(arg(args, 6)?),
+                    },
+                ),
+                m => Err(format!("unknown rwkv mode {m}")),
+            }
+        },
+    )
+}
+
+/// RWKV 对齐的日志指纹与尾巴（`SrsCore::rwkv_log_tail`）。页 = profile 行；
+/// `args = [since, with_rows, incremental?]`（第三个省略 = 0，整表计数）。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_rwkv_log_tail(
+    core: *const SrsCoreHandle,
+    page: *const u8,
+    page_len: usize,
+    args: *const i64,
+    n_args: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    command(
+        core,
+        page,
+        page_len,
+        args,
+        n_args,
+        out,
+        out_len,
+        error_out,
+        |c, page, args| {
+            let (_, profile) = lineage_page(page, 0)?;
+            c.rwkv_log_tail(
+                profile.as_deref().ok_or("missing profile")?,
+                arg(args, 0)?,
+                arg(args, 1)? != 0,
+                args.get(2).copied().unwrap_or(0) != 0,
+            )
+        },
+    )
+}
+
+// ---------------------------------------------------------------- 同步 v2（store/sync2）
+
+/// 分帧字节块：`u32 n`，再 n 个 `u32 len + 字节`（小端）。空输入 = 0 块。
+///
+/// 这里是唯一一次复制：输入缓冲属于 Dart（调用返回就释放），收段会话要把段留到投递，所以拷成自己的；之后一路
+/// 按所有权移交（`ingest_prepare` / `ingest_batch` 直接接走），不再复制（审查 S-9）。
+fn frames(b: &[u8]) -> Result<Vec<Vec<u8>>, String> {
+    if b.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut at = 0usize;
+    let mut take = |n: usize| -> Result<&[u8], String> {
+        let end = at.checked_add(n).ok_or("frame overflow")?;
+        if end > b.len() {
+            return Err("truncated frames".into());
+        }
+        let s = &b[at..end];
+        at = end;
+        Ok(s)
+    };
+    let n = u32::from_le_bytes(take(4)?.try_into().map_err(|_| "frames")?) as usize;
+    let mut out = Vec::with_capacity(n.min(1 << 16));
+    for _ in 0..n {
+        let len = u32::from_le_bytes(take(4)?.try_into().map_err(|_| "frames")?) as usize;
+        out.push(take(len)?.to_vec());
+    }
+    Ok(out)
+}
+
+fn push_frame(out: &mut Vec<u8>, b: &[u8]) {
+    out.extend_from_slice(&(b.len() as u32).to_le_bytes());
+    out.extend_from_slice(b);
+}
+
+fn key32(v: &serde_json::Value) -> Result<Option<[u8; 32]>, String> {
+    match v.as_str() {
+        None => Ok(None),
+        Some(h) if h.len() == 64 => {
+            let mut k = [0u8; 32];
+            for (i, x) in k.iter_mut().enumerate() {
+                *x = u8::from_str_radix(&h[2 * i..2 * i + 2], 16).map_err(|e| e.to_string())?;
+            }
+            Ok(Some(k))
+        }
+        Some(_) => Err("bad collection key".into()),
+    }
+}
+
+pub(crate) fn sync2_dispatch(
+    c: &SrsCore,
+    req: &serde_json::Value,
+    blobs: &mut Vec<Vec<u8>>,
+    files: &mut Vec<(String, Vec<u8>)>,
+) -> Result<serde_json::Value, String> {
+    use serde_json::{Value, json};
+    let s = |k: &str| {
+        req.get(k)
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("sync2: missing {k}"))
+    };
+    let i = |k: &str| {
+        req.get(k)
+            .and_then(Value::as_i64)
+            .ok_or_else(|| format!("sync2: missing {k}"))
+    };
+    // 不针对单个 profile 的命令（store/profile_data.rs 找无主数据；WAL 并回）。
+    match s("op")? {
+        "profile_uids" => return c.profile_uids(),
+        "orphan_sweep_done" => return c.orphan_sweep_done(i("now")?),
+        // 不占写连接的 WAL 并回（store/mod.rs）：大批写入收尾用。
+        "wal_checkpoint" => return c.wal_checkpoint(),
+        // 批量写入开始 / 结束（Dart `bulkWrites`）：期间写连接放回时留着页缓存（store/mem_budget.rs）。只置标志，不拿写锁。
+        "bulk_cache" => {
+            c.set_bulk_holds_cache(req.get("on") == Some(&Value::Bool(true)));
+            return Ok(json!({}));
+        }
+        // 有写入在等写锁：正在投的收段那一片尽快收（只置一个标志，等锁的一侧直接同步调）。
+        "ingest_yield" => {
+            c.sync2_ingest_yield();
+            return Ok(json!({}));
+        }
+        _ => {}
+    }
+    let profile = s("profile")?;
+    let op = s("op")?;
+    // 新设备收段通道（store/sync2/channel.rs）没做完时，投影里还缺已收下的操作：要改投影 / 读完整投影的命令先把它
+    // 按片做完。收段命令自己推进通道；其余只读或不碰投影的命令照常。没有通道时只读内存标记，不拿写锁。
+    if !CHANNEL_TRANSPARENT.contains(&op) {
+        c.sync2_channel_settle(profile)?;
+    }
+    // 改投影的命令：同一次调用里接着刷新本机缓存行（store/caches.rs），Dart 只收写过哪些笔记 / 卡。缓存配置
+    // （内置笔记类型的代码默认值、默认牌组）只有 Dart 知道，随命令带来；缺了是调用方的 bug，不跳过刷新。
+    // 按制卡标签补出处列（Dart 缓存修订号 9；只改笔记缓存的两列，不算缓存写入，不要缓存配置）。
+    if op == "backfill_tag_sources" {
+        let w = c.writer()?;
+        let n = crate::store::sync2::in_savepoint(&w, |conn| {
+            crate::store::caches::backfill_tag_sources(conn, profile)
+        })?;
+        return Ok(json!({"filled": n}));
+    }
+    // 补出处分组键列（srs.db v25 / Dart 缓存修订号 10；只改笔记缓存的这一列，不算缓存写入，不要缓存配置）。
+    if op == "backfill_source_keys" {
+        let w = c.writer()?;
+        let n = crate::store::sync2::in_savepoint(&w, |conn| {
+            crate::store::caches::backfill_source_keys(conn, profile)
+        })?;
+        return Ok(json!({"filled": n}));
+    }
+    if PROJECTING_OPS.contains(&op)
+        || op == "refresh_caches"
+        || op == "rebuild_caches"
+        || op == "backfill_dupe_norms"
+    {
+        let cfg = crate::store::caches::CacheConfig::parse(
+            req.get("caches").ok_or("sync2: missing caches")?,
+        )?;
+        let mut v = match op {
+            "refresh_caches" => json!({}),
+            // srs.db v15 的老行补 `dupe_norm`（只改这一列，不算缓存写入：不进 Dart 的缓存变更日志）。
+            "backfill_dupe_norms" => {
+                let w = c.writer()?;
+                let n = crate::store::sync2::in_savepoint(&w, |conn| {
+                    crate::store::caches::backfill_dupe_norms(conn, profile, &cfg)
+                })?;
+                return Ok(json!({"filled": n}));
+            }
+            "rebuild_caches" => {
+                let w = c.writer()?;
+                let written = crate::store::sync2::in_savepoint(&w, |conn| {
+                    crate::store::caches::rebuild(conn, profile, &cfg)
+                })?;
+                return Ok(json!({"cache": written.to_json()}));
+            }
+            // 分批收段的一片：本机已有缓存行的在这一片的事务里当场刷新，新实体记进待刷新集合等收尾
+            // （transport.rs `defer_cache_refresh`），这里不再刷。一次投一片（默认按时间切、有写入排队就让出；测试用
+            // `sliceOps` 按条数切、`sliceMs` 改时间上限）；结果 `more` 为真 Dart 放开写锁再调。`localState`：Dart 的
+            // 本机状态行，与这一片同一笔事务写下（收段不套 Drift 事务，见 `sync2_ingest_commit_persisting`）。
+            "ingest_commit" => {
+                let now = req
+                    .get("now")
+                    .and_then(Value::as_i64)
+                    .ok_or("sync2: missing now")?;
+                let local_state = req.get("localState").and_then(Value::as_str);
+                let (r, written) = c.sync2_ingest_commit_cached(
+                    profile,
+                    now,
+                    slice_budget(c, req),
+                    local_state,
+                    Some(&cfg),
+                )?;
+                let mut v: Value = serde_json::from_str(&r).map_err(|e| e.to_string())?;
+                if let Some(m) = v.as_object_mut() {
+                    m.insert("cache".to_owned(), written.to_json());
+                }
+                return Ok(v);
+            }
+            _ => sync2_command(c, op, profile, req, blobs, files)?,
+        };
+        let mut dirty = crate::store::caches::Dirty::of_projection(&v);
+        // 收尾（重放放完之后）：按块刷新各片记下的缓存，还有剩的就回报 `more`，Dart 放开写锁后用 `replay_pending` 接着刷。
+        let drain =
+            matches!(op, "ingest_finish" | "replay_pending") && v["more"] != Value::Bool(true);
+        if op == "refresh_caches" {
+            let ids = |k: &str, into: &mut std::collections::BTreeSet<String>| {
+                for x in req.get(k).and_then(Value::as_array).into_iter().flatten() {
+                    if let Some(id) = x.as_str() {
+                        into.insert(id.to_owned());
+                    }
+                }
+            };
+            ids("notes", &mut dirty.notes);
+            ids("cards", &mut dirty.cards);
+            ids("noteTypes", &mut dirty.note_types);
+            dirty.all_notes = req["allNotes"] == Value::Bool(true);
+            dirty.all_stats = req["allStats"] == Value::Bool(true);
+        }
+        let w = c.writer()?;
+        let mut cache_more = false;
+        let written = crate::store::sync2::in_savepoint(&w, |conn| {
+            if drain {
+                let (pending, _) = crate::store::sync2::transport::take_cache_pending(
+                    conn,
+                    profile,
+                    CACHE_PENDING_CHUNK,
+                )?;
+                dirty.merge(pending);
+            }
+            let written =
+                crate::store::caches::refresh(conn, profile, &cfg, std::mem::take(&mut dirty))?;
+            if drain {
+                // 笔记刷新已整行重算过的卡不再单独刷一遍（之后的卡块里）。
+                crate::store::sync2::transport::settle_refreshed_cards(
+                    conn,
+                    profile,
+                    &written.cards,
+                )?;
+                cache_more = crate::store::sync2::transport::cache_is_pending(conn, profile)?;
+            }
+            Ok(written)
+        })?;
+        if cache_more {
+            v["more"] = Value::Bool(true);
+        } else if drain {
+            // 收尾收完：收尾阶段结束，这次放回写连接起照常还页缓存。
+            c.sync2_ingest_drained(profile)?;
+        }
+        // 本机作答：落库、刷新缓存之后接着在同一条写连接上排队（下一张 + 牌组计数，store/study.rs），复习页一次
+        // 评分一次命令。看得见这笔还没提交的写入。
+        let study = match req.get("study").filter(|s| s.is_object()) {
+            Some(s) => Some(crate::store::study::study(
+                &w,
+                &c.study_hub,
+                true,
+                profile,
+                s,
+            )?),
+            None => None,
+        };
+        if let Some(m) = v.as_object_mut() {
+            m.insert("cache".to_owned(), written.to_json());
+            if let Some(s) = study {
+                m.insert("study".to_owned(), s);
+            }
+        }
+        return Ok(v);
+    }
+    sync2_command(c, op, profile, req, blobs, files)
+}
+
+/// 收段 / 重放的一片：默认按时间切、有写入排队就让出；测试用 `sliceOps` 按条数切、`sliceMs` 改时间上限。
+fn slice_budget<'a>(
+    c: &'a SrsCore,
+    req: &serde_json::Value,
+) -> crate::store::sync2::transport::CommitBudget<'a> {
+    use crate::store::sync2::transport::CommitBudget;
+    use serde_json::Value;
+    match (
+        req.get("sliceOps").and_then(Value::as_u64),
+        req.get("sliceMs").and_then(Value::as_u64),
+    ) {
+        (Some(n), _) => CommitBudget::ops(n as usize),
+        (None, Some(ms)) => {
+            CommitBudget::slice_within(c.ingest_yield_flag(), std::time::Duration::from_millis(ms))
+        }
+        (None, None) => CommitBudget::slice(c.ingest_yield_flag()),
+    }
+}
+
+/// 收尾时一次命令最多刷新多少个待刷新实体（笔记类型 / 笔记 / 卡）：一块的锁内时间与重放的一片同量级，排队的
+/// 作答只等这一块。
+#[cfg(any(not(test), srs_probe))]
+const CACHE_PENDING_CHUNK: usize = 512;
+/// 测试里压到很小：笔记与它的卡、前身与后继落在不同的块里（tests_cache_pending.rs）。冷启动探针
+/// （bootstrap_probe.rs，`--cfg srs_probe` 构建）用生产值。
+#[cfg(all(test, not(srs_probe)))]
+const CACHE_PENDING_CHUNK: usize = 5;
+
+/// 新设备收段通道没做完时不必先做完它的命令（[sync2_dispatch]）：收段命令本身（推进通道）、只读命令（读到的投影
+/// 与逐条投递收段途中一样不全，收尾后一致），以及不碰投影的传输记账 / 加解密。不在表里的一律先做完通道——漏列只多
+/// 花时间，不会错。`digest` / `digest_buckets` 不在表里：摘要按已应用的版本向量发布，投影不全时算出来的会被别的
+/// 设备当成分歧（没有通道时它们照样只走读连接：分发器只读内存标记，见 `SrsCore::sync2_channel_settle`）。
+///
+/// 每条命令都必须显式登记在这张表或 [CHANNEL_SETTLES] 里（`every_command_declares_its_channel_policy` 按
+/// [sync2_dispatch] / [sync2_command] 的匹配臂逐条核对）：新增命令时必须想一遍它要不要完整投影，不会悄悄落进默认。
+const CHANNEL_TRANSPARENT: &[&str] = &[
+    "identity",
+    "device_info",
+    "device_hint",
+    "channel_settle",
+    "open_v1",
+    "plan",
+    "ingest_begin",
+    "ingest_batch",
+    "ingest_prepare",
+    "ingest_commit",
+    "ingest_finish",
+    "ingest_end",
+    "replay_pending",
+    "status",
+    "legacy_dots",
+    "conflicts",
+    "checkpoints",
+    "history",
+    "study",
+    "card_columns",
+    "stats_bundle",
+    "anki_resolve",
+    "anki_notes_info",
+    "lineages",
+    "preview",
+    "browse_query",
+    "browse_rows",
+    "browse_ids",
+    "browse_targets",
+    "browse_close",
+    "anki_find",
+    "anki_dupes",
+    "anki_tags",
+    "browse_stats",
+    "browse_counts",
+    "browse_sources",
+    "outbox",
+    "outbox_ack",
+    "head",
+    "relay_outbox",
+    "obsolete_ack",
+    "relay_ack",
+    "media_known",
+    "profile_footprint",
+    "profile_purge",
+    "derive_key",
+    "seal",
+    "open",
+    "seal_file",
+    "open_file",
+    "refresh_caches",
+    "rebuild_caches",
+];
+
+/// 改投影的 v2 命令（结果带 `marks`）：分发器在同一次调用里刷新缓存行；`ingest_commit` 在投递的事务里自己刷
+/// （只刷本机已有缓存行的，新实体记待刷新）。
+/// 通道没做完时要先做完它的命令（改投影、读完整投影、在投影上记账的）。分发器只看 [CHANNEL_TRANSPARENT]（不在那张表
+/// 里的一律先做完）；这张表只为登记完整（见上）。
+#[cfg_attr(not(test), allow(dead_code))]
+const CHANNEL_SETTLES: &[&str] = &[
+    "apply",
+    "retire",
+    "dedup",
+    "migrate",
+    "replay_all",
+    "ingest",
+    "rotate",
+    "export",
+    "import",
+    "digest",
+    "digest_buckets",
+    "media_record",
+    "media_hash",
+    "media_scan",
+    "media_landed",
+    "media_bind_unbound",
+    "media_doomed",
+    "resolve",
+    "purge",
+    "checkpoint",
+    "plan_restore",
+    "restore",
+    "backfill_dupe_norms",
+    "backfill_tag_sources",
+    "backfill_source_keys",
+];
+
+const PROJECTING_OPS: &[&str] = &[
+    "apply",
+    "retire",
+    "ingest",
+    "ingest_batch",
+    "ingest_commit",
+    "ingest_finish",
+    "replay_pending",
+    "import",
+    "resolve",
+    "purge",
+    "checkpoint",
+    "restore",
+    "dedup",
+];
+
+fn sync2_command(
+    c: &SrsCore,
+    op: &str,
+    profile: &str,
+    req: &serde_json::Value,
+    blobs: &mut Vec<Vec<u8>>,
+    files: &mut Vec<(String, Vec<u8>)>,
+) -> Result<serde_json::Value, String> {
+    use serde_json::{Value, json};
+    let s = |k: &str| {
+        req.get(k)
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("sync2: missing {k}"))
+    };
+    let i = |k: &str| {
+        req.get(k)
+            .and_then(Value::as_i64)
+            .ok_or_else(|| format!("sync2: missing {k}"))
+    };
+    let parse = |t: String| serde_json::from_str::<Value>(&t).map_err(|e| e.to_string());
+    Ok(match op {
+        "identity" => {
+            let mut v = c.sync2_identity(profile, i("now")?)?;
+            // 有没做完的收段通道（上次 App 在收段途中退出）：Dart 记下，开 Drift 事务前先 `channel_settle`。
+            v["channel"] = json!(c.sync2_channel_active(profile)?);
+            v
+        }
+        // 把没做完的收段通道按片做完（store/sync2/channel.rs `settle`，每片一个事务）。Dart 在开 Drift 事务之前发：
+        // 事务里的命令要先做完通道时只能整段塞进那笔事务。
+        "channel_settle" => {
+            c.sync2_channel_settle(profile)?;
+            json!({})
+        }
+        "apply" => {
+            let input = std::str::from_utf8(blobs.first().ok_or("apply: missing input")?)
+                .map_err(|e| e.to_string())?;
+            parse(c.sync2_apply_local(profile, i("now")?, input)?)?
+        }
+        "migrate" => {
+            c.sync2_migrate(profile, i("now")?, req.get("limit").and_then(Value::as_u64))?
+        }
+        // 存量重复流收敛作业推进一步（store/sync2/dedup.rs，一个事务）；`done` 为假就再发。
+        "dedup" => c.sync2_dedup(profile, i("now")?)?,
+        "replay_all" => json!(c.sync2_replay_all(profile)?),
+        // 排队：牌组计数 + 出卡（store/study.rs），只读快照。
+        "study" => c.study(profile, req)?,
+        // 列式批量读（store/bulk.rs），只读快照：卡片缓存行、统计页三张表、AnkiConnect 数字 id 反查。
+        "card_columns" => {
+            files.push((
+                "columns".to_owned(),
+                c.read_visible(|conn| crate::store::bulk::card_columns(conn, profile, req))?,
+            ));
+            json!({})
+        }
+        "stats_bundle" => {
+            c.read_visible(|conn| crate::store::bulk::stats_bundle(conn, profile, files))?
+        }
+        "anki_resolve" => {
+            c.read_visible(|conn| crate::store::bulk::anki_resolve(conn, profile, req))?
+        }
+        "anki_notes_info" => {
+            c.read_visible(|conn| crate::store::bulk::anki_notes_info(conn, profile, req))?
+        }
+        // 卡片浏览的常驻会话（store/browse.rs）：查询（筛选 + 排序）、取行、取行 id、批量目标、关闭；AnkiConnect 的
+        // 搜索 / 查重 / 标签走同一个会话。
+        "browse_query" | "browse_rows" | "browse_ids" | "browse_targets" | "browse_close"
+        | "anki_find" | "anki_dupes" | "anki_tags" | "browse_stats" | "browse_counts"
+        | "browse_sources" => c.browse(op, profile, req, files)?,
+        // 一组卡各自的血统（自己 + 全部前身，store/caches.rs `lineage_ids`）：卡片历史用。看得见本机写事务里未提交的行。
+        "lineages" => {
+            let cards: Vec<String> = req
+                .get("cards")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect();
+            json!(c.read_visible(|conn| crate::store::caches::lineage_ids(conn, &cards))?)
+        }
+        "preview" => c.sync2_preview(
+            profile,
+            s("card")?,
+            req.get("note").and_then(Value::as_str),
+            i("now")?,
+            i("utcOff")?,
+            i("rollover")?,
+        )?,
+        // 分批发件：一批上传完用 outbox_ack 交回 segments 推进水位，more 为真再取下一批（store/sync2/transport.rs）。
+        "outbox" => {
+            let max_bytes = req
+                .get("maxBytes")
+                .and_then(Value::as_u64)
+                .unwrap_or(crate::store::sync2::transport::OUTBOX_BATCH_BYTES);
+            let max_segments = req
+                .get("maxSegments")
+                .and_then(Value::as_u64)
+                .map_or(crate::store::sync2::transport::OUTBOX_BATCH_SEGMENTS, |n| {
+                    n as usize
+                });
+            // `present`（可选，一轮的第一批带）：位置上 `devices/<本机>/` 的文件名。水位以下却不在的本机段先登记重传
+            // （作者自检，transport.rs `sync2_audit_own`），这一批起照当前切法补传。
+            let audited = match req.get("present").and_then(Value::as_array) {
+                Some(names) => {
+                    let present: std::collections::BTreeSet<String> = names
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect();
+                    c.sync2_audit_own(profile, s("location")?, &present)?
+                }
+                None => 0,
+            };
+            // `archive`：归档位置（Dart 位置配置），副本收敛换下的段不重写（transport.rs `sync2_outbox_to`）。
+            let archive = req.get("archive") == Some(&Value::Bool(true));
+            let batch = c.sync2_outbox_to(
+                profile,
+                s("location")?,
+                key32(&req["key"])?,
+                max_bytes.max(1),
+                max_segments.max(1),
+                archive,
+            )?;
+            *files = batch.files;
+            json!({"upto": batch.upto, "more": batch.more, "segments": batch.segments, "audited": audited})
+        }
+        "outbox_ack" => {
+            let segments: Vec<(u64, u64)> = req
+                .get("segments")
+                .and_then(Value::as_array)
+                .ok_or("sync2: missing segments")?
+                .iter()
+                .map(|p| {
+                    match p.as_array().map(|x| {
+                        (
+                            x.first().and_then(Value::as_u64),
+                            x.get(1).and_then(Value::as_u64),
+                        )
+                    }) {
+                        Some((Some(a), Some(b))) => Ok((a, b)),
+                        _ => Err("sync2: bad segment pair".to_string()),
+                    }
+                })
+                .collect::<Result<_, _>>()?;
+            let (accepted, uploaded) = c.sync2_outbox_ack(profile, s("location")?, &segments)?;
+            json!({"accepted": accepted, "uploaded": uploaded})
+        }
+        // `skipUnchangedMs`：内容与上次写出的相同且未到期时不写（见 `sync2_head_if_changed`），回 `unchanged` + 上次的路径。
+        "head" => {
+            let skip = req.get("skipUnchangedMs").and_then(Value::as_i64);
+            match c.sync2_head_if_changed(
+                profile,
+                s("location")?,
+                i("upto")? as u64,
+                i("now")?,
+                skip,
+            )? {
+                crate::store::sync2::transport::HeadWrite::Written {
+                    path,
+                    bytes,
+                    gen,
+                    obsolete,
+                } => {
+                    files.push((path, bytes));
+                    json!({"gen": gen, "delete": obsolete})
+                }
+                crate::store::sync2::transport::HeadWrite::Unchanged { path, obsolete } => {
+                    json!({"unchanged": true, "path": path, "delete": obsolete})
+                }
+                // 要引用的段还有没传到这个位置的（发件确认后被合并改切）：不写，Dart 按「改切」结束这一轮。
+                crate::store::sync2::transport::HeadWrite::Recut => json!({"recut": true}),
+            }
+        }
+        // `location`：这些 head 所在位置的进度身份（记下位置上有谁的哪些段，转发用，store/sync2/relay.rs）。
+        // `readOnly`：只在读连接上算（Dart 不进写锁调）；要往库里记东西时回 `needsWrite`，Dart 再进写锁调一次（审查 S-8）。
+        "plan" if req["readOnly"] == Value::Bool(true) => {
+            match c.sync2_plan_read_only(
+                profile,
+                blobs,
+                req.get("location").and_then(Value::as_str),
+            )? {
+                Some(v) => v,
+                None => json!({"needsWrite": true}),
+            }
+        }
+        "plan" => c.sync2_plan_at(profile, blobs, req.get("location").and_then(Value::as_str))?,
+        // 转发（store/sync2/relay.rs）：本机持有、这个位置缺的别的设备的段（转发件）与 head 原文；传完 relay_ack。
+        "relay_outbox" => {
+            let max_bytes = req
+                .get("maxBytes")
+                .and_then(Value::as_u64)
+                .unwrap_or(crate::store::sync2::transport::OUTBOX_BATCH_BYTES);
+            let batch = c.sync2_relay_outbox(
+                profile,
+                s("location")?,
+                key32(&req["key"])?,
+                max_bytes.max(1),
+            )?;
+            *files = batch.files;
+            json!({"more": batch.more})
+        }
+        // 两段式删除：`head` / `relay_ack` 给的待删清单里 Dart 已经删掉（归档位置：按策略不删）的那些，内核移除记录。
+        "obsolete_ack" => {
+            let deleted: Vec<String> = req
+                .get("deleted")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default();
+            json!({"removed": c.sync2_obsolete_ack(profile, s("location")?, &deleted)?})
+        }
+        "relay_ack" => {
+            let paths: Vec<String> = req
+                .get("paths")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default();
+            c.sync2_relay_ack(profile, s("location")?, &paths)?
+        }
+        "ingest" => parse(c.sync2_ingest(profile, blobs, key32(&req["key"])?, i("now")?)?)?,
+        "ingest_begin" => c.sync2_ingest_begin(profile)?,
+        // 段的字节交给会话持有（不再复制一份，审查 S-9）。
+        "ingest_batch" => parse(c.sync2_ingest_batch(
+            profile,
+            std::mem::take(blobs),
+            key32(&req["key"])?,
+            i("now")?,
+        )?)?,
+        // 拆开的一批：prepare 在写锁外解码验签（Dart 侧也不进写锁），commit 在写锁里投递。
+        "ingest_prepare" => {
+            c.sync2_ingest_prepare(profile, std::mem::take(blobs), key32(&req["key"])?)?
+        }
+        // `ingest_commit` 带缓存配置，在 [sync2_dispatch] 里处理。
+        // 一轮中途收手 / 出错：放掉收段会话与留着的页缓存（srs_sync2_round.dart 的 finally）。
+        "ingest_end" => c.sync2_ingest_end(profile)?,
+        // 收尾：换身份 + 重放各片记下的待重放卡（按片，`more` 为真 Dart 放开写锁后用 replay_pending 接着放，审查 S-4）。
+        "ingest_finish" => parse(c.sync2_ingest_finish_persisting(
+            profile,
+            i("now")?,
+            slice_budget(c, req),
+            req.get("localState").and_then(Value::as_str),
+        )?)?,
+        "replay_pending" => parse(c.sync2_replay_pending_persisting(
+            profile,
+            slice_budget(c, req),
+            req.get("localState").and_then(Value::as_str),
+        )?)?,
+        "rotate" => c.sync2_rotate(profile, i("now")?)?,
+        "export" => {
+            files.push(("export.fushisrs".to_owned(), c.sync2_export(profile)?));
+            json!({})
+        }
+        "import" => parse(c.sync2_import(
+            profile,
+            blobs.first().ok_or("import: missing file")?,
+            i("now")?,
+        )?)?,
+        // 加密位置上的媒体（设计 §9：网盘只见密文和文件大小）：XChaCha20-Poly1305，AAD 绑定文件名，
+        // 换名 / 换内容即解密失败。段的加解密在 outbox / ingest 里，这里只给媒体用。
+        "seal" | "open" => {
+            let key = crate::sync2::keys::CollectionKey(
+                key32(&req["key"])?.ok_or("seal/open: missing key")?,
+            );
+            let aad = format!("fushi-srs-media:{}", s("name")?);
+            let input = blobs.first().ok_or("seal/open: missing input")?;
+            // 分块流式格式（sync2/media_seal.rs，审查 S-9）。
+            if op == "seal" {
+                files.push((
+                    "sealed".to_owned(),
+                    crate::sync2::media_seal::seal_bytes(&key, input, aad.as_bytes())?,
+                ));
+            } else {
+                files.push((
+                    "plain".to_owned(),
+                    crate::sync2::media_seal::open_bytes(&key, input, aad.as_bytes())?,
+                ));
+            }
+            json!({})
+        }
+        // v1 位置上按名字存的整份封装（S-9 之前的格式）：只有一次性迁移（srs_location_migration.dart）读它。
+        "open_v1" => {
+            let key = crate::sync2::keys::CollectionKey(
+                key32(&req["key"])?.ok_or("open_v1: missing key")?,
+            );
+            let aad = format!("fushi-srs-media:{}", s("name")?);
+            let input = blobs.first().ok_or("open_v1: missing input")?;
+            match crate::sync2::media_seal::open_v1(&key, input, aad.as_bytes()) {
+                Some(plain) => {
+                    files.push(("plain".to_owned(), plain));
+                    json!({})
+                }
+                None => json!({"failure": "unauthenticated"}),
+            }
+        }
+        // 文件到文件的流式封 / 解（大媒体不整份进内存；审查 S-9）：返回明文的字节数与 sha256（内容寻址核对用，
+        // 不必再读一遍文件）。目标先写同目录临时文件再改名；解不开不留目标。解不开（不是本机读写出错）不算命令失败：
+        // 回 `{"failure": "unauthenticated" | "corrupt"}`（media_seal.rs [OpenError]），媒体对账据此决定记不记可疑。
+        "seal_file" | "open_file" => {
+            use crate::sync2::media_seal::OpenError;
+            let key = crate::sync2::keys::CollectionKey(
+                key32(&req["key"])?.ok_or("seal/open: missing key")?,
+            );
+            let aad = format!("fushi-srs-media:{}", s("name")?);
+            let (src, dst) = (
+                std::path::Path::new(s("src")?),
+                std::path::Path::new(s("dst")?),
+            );
+            let done = if op == "seal_file" {
+                crate::sync2::media_seal::seal_file(&key, src, dst, aad.as_bytes())?
+            } else {
+                match crate::sync2::media_seal::open_file(&key, src, dst, aad.as_bytes()) {
+                    Ok(done) => done,
+                    Err(OpenError::Unauthenticated) => {
+                        return Ok(json!({"failure": "unauthenticated"}));
+                    }
+                    Err(OpenError::Corrupt) => return Ok(json!({"failure": "corrupt"})),
+                    Err(e @ OpenError::Io(_)) => return Err(e.into()),
+                }
+            };
+            let sha: String = done.sha256.iter().map(|b| format!("{b:02x}")).collect();
+            json!({"sha256": sha, "bytes": done.plain_len})
+        }
+        "digest" => match req.get("minIntervalMs").and_then(Value::as_i64) {
+            Some(ms) => c.sync2_digest_due(profile, i("now")?, Some(ms))?,
+            None => c.sync2_digest(profile)?,
+        },
+        "status" => c.sync2_status(profile)?,
+        // 设备可识别（store/sync2/devices.rs）：本机型号 / 版本 / 平台 / 昵称（给了哪个改哪个，没变不进写锁）；没有自报名字
+        // 的设备的补充名（互联 host 认出上传者）。
+        "device_info" => c.sync2_device_info(profile, req, i("now")?)?,
+        "device_hint" => c.sync2_device_hint(s("device")?, s("hint")?)?,
+        // 停用 / 取消停用一台设备，紧接着投一遍缓冲（因它卡住的操作不再等它），同一次调用里刷新缓存（[PROJECTING_OPS]）。
+        "retire" => {
+            let retire = req["retire"] != Value::Bool(false);
+            let mut v = c.sync2_retire(profile, s("device")?, retire, i("now")?)?;
+            let drained: Value =
+                serde_json::from_str(&c.sync2_ingest(profile, &[], None, i("now")?)?)
+                    .map_err(|e| e.to_string())?;
+            if let (Some(m), Value::Object(d)) = (v.as_object_mut(), drained) {
+                m.extend(d);
+            }
+            v
+        }
+        // 操作日志里带旧 dot 的修改记录（档案合并判断目标里是否已有同一批记录，BUG-4011）。
+        "legacy_dots" => c.sync2_legacy_dots(profile)?,
+        // 摘要各桶（读连接；两台设备摘要不同时定位不一致的 ID 范围，审查 S-7）。
+        "digest_buckets" => c.sync2_digest_buckets(profile)?,
+        // 位置媒体目录的已知内容 / 记下事实（store/sync2/media.rs）：媒体对账读日志投影，不列目录。
+        "media_known" => c.sync2_media_known(profile, s("location")?)?,
+        "media_record" => {
+            let names = |k: &str| -> Vec<String> {
+                req.get(k)
+                    .and_then(Value::as_array)
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            c.sync2_media_record_with_suspect(
+                profile,
+                s("location")?,
+                &names("present"),
+                &names("absent"),
+                &names("suspect"),
+                req["seeded"] == Value::Bool(true),
+                i("now")?,
+            )?
+        }
+        // 内容寻址媒体（store/sync2/media.rs，审查 S-3）：本机文件 → 内容 / 该下载什么；下载落地后对齐；清理哪些内容。
+        "media_hash" | "media_scan" => {
+            let names: Vec<String> = req
+                .get("names")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default();
+            if op == "media_hash" {
+                c.sync2_media_hash(profile, s("root")?, &names)?
+            } else {
+                let mut files = std::collections::HashMap::new();
+                for f in req
+                    .get("files")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    let name = f
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .ok_or("media_scan: missing name")?;
+                    let sha = f
+                        .get("sha")
+                        .and_then(Value::as_str)
+                        .and_then(super::sync2::media::unhex32)
+                        .ok_or("media_scan: bad sha")?;
+                    let n = |k: &str| {
+                        f.get(k)
+                            .and_then(Value::as_i64)
+                            .ok_or(format!("media_scan: missing {k}"))
+                    };
+                    files.insert(name.to_owned(), (n("size")?, n("mtime")?, sha));
+                }
+                c.sync2_media_scan(profile, &names, &files, i("now")?)?
+            }
+        }
+        "media_landed" => {
+            let mut items = Vec::new();
+            for it in req
+                .get("items")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                let name = it
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .ok_or("media_landed: missing name")?;
+                let sha = it
+                    .get("sha")
+                    .and_then(Value::as_str)
+                    .and_then(super::sync2::media::unhex32)
+                    .ok_or("media_landed: bad sha")?;
+                items.push((name.to_owned(), sha));
+            }
+            c.sync2_media_landed(profile, s("root")?, &items, i("now")?)?
+        }
+        // 迁移 v1 位置时按名字存的旧媒体：名字还没有绑定的绑到它的内容（`items: [{name, sha, size}]`，调用方已按内容算过
+        // sha256）。已经有绑定的不动（不管指向什么）。返回 `{"appended": n, "bound": [名字…]}`。
+        "media_bind_unbound" => {
+            let mut items = Vec::new();
+            for it in req
+                .get("items")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                let name = it
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .ok_or("media_bind_unbound: missing name")?;
+                let sha = it
+                    .get("sha")
+                    .and_then(Value::as_str)
+                    .and_then(super::sync2::media::unhex32)
+                    .ok_or("media_bind_unbound: bad sha")?;
+                let size = it
+                    .get("size")
+                    .and_then(Value::as_i64)
+                    .ok_or("media_bind_unbound: missing size")?;
+                items.push((name.to_owned(), sha, size));
+            }
+            c.sync2_media_bind_unbound(profile, &items, i("now")?)?
+        }
+        "media_doomed" => {
+            let names = |k: &str| -> Vec<String> {
+                req.get(k)
+                    .and_then(Value::as_array)
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            c.sync2_media_doomed(profile, &names("expired"), &names("live"))?
+        }
+        // 删 profile 的级联清理（store/profile_data.rs）：确认框的规模、一个事务里删光本机数据。
+        "profile_footprint" => c.profile_footprint(profile)?,
+        "profile_purge" => c.profile_purge(profile)?,
+        "conflicts" => c.sync2_conflicts(profile)?,
+        "resolve" => c.sync2_resolve(
+            profile,
+            s("conflict")?,
+            req["delete"] == Value::Bool(true),
+            i("now")?,
+        )?,
+        "purge" => c.sync2_purge(profile, s("kind")?, s("entity")?, i("now")?)?,
+        "checkpoint" => c.sync2_checkpoint(profile, s("name")?, s("reason")?, i("now")?)?,
+        "checkpoints" => c.sync2_checkpoints(profile)?,
+        "history" => c.sync2_history(profile, s("kind")?, s("entity")?)?,
+        "plan_restore" | "restore" => {
+            // 恢复到还原点（`checkpoint: {device, seq}`，按它的因果截断）或某个时刻（`at`）。
+            let to = match req.get("checkpoint") {
+                Some(cp) if cp.is_object() => {
+                    crate::store::sync2::timeline::RestoreTarget::Checkpoint(
+                        crate::sync2::vv::OpId {
+                            device: crate::sync2::id::Id::parse(
+                                cp["device"].as_str().ok_or("checkpoint.device")?,
+                            )
+                            .ok_or("bad checkpoint device")?,
+                            seq: cp["seq"].as_u64().ok_or("checkpoint.seq")?,
+                        },
+                    )
+                }
+                _ => crate::store::sync2::timeline::RestoreTarget::At(i("at")?),
+            };
+            let retract = req["retract"] == Value::Bool(true);
+            if op == "plan_restore" {
+                c.sync2_plan_restore(profile, &to, retract, i("now")?)?
+            } else {
+                c.sync2_restore(profile, &to, retract, i("now")?)?
+            }
+        }
+        "derive_key" => {
+            let salt_hex = s("salt")?;
+            let salt: Vec<u8> = (0..salt_hex.len() / 2)
+                .map(|k| u8::from_str_radix(&salt_hex[2 * k..2 * k + 2], 16))
+                .collect::<Result<_, _>>()
+                .map_err(|e| e.to_string())?;
+            let params = crate::sync2::keys::KdfParams::checked(i("m")?, i("t")?, i("p")?)?;
+            let k = crate::sync2::keys::CollectionKey::derive(
+                s("passphrase")?.as_bytes(),
+                &salt,
+                params,
+            )?;
+            json!({"key": k.0.iter().map(|b| format!("{b:02x}")).collect::<String>()})
+        }
+        other => return Err(format!("unknown sync2 op {other}")),
+    })
+}
+
+/// 同步 v2 的唯一入口（粗粒度命令，设计 §11；命令表见 `sync2_dispatch`）。请求是 JSON
+/// `{"op": ..., "profile": ..., ...}`；[blobs] 是分帧字节块（段 / head 文件，或 `apply` 的事件数组 JSON）。
+/// 输出 = `u32 json_len + JSON`，再接 `u32 n` 与 n 组分帧的 `(相对路径, 字节)`（发件 / 写 head 才有）。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_sync2(
+    core: *const SrsCoreHandle,
+    request: *const u8,
+    request_len: usize,
+    blobs: *const u8,
+    blobs_len: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    if out.is_null() || out_len.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run_core(core, error_out, |c| {
+        let req: serde_json::Value = serde_json::from_str(utf8(request, request_len)?)
+            .map_err(|e| format!("bad sync2 request: {e}"))?;
+        let mut blobs = frames(bytes(blobs, blobs_len).ok_or("null blobs")?)?;
+        let mut files = Vec::new();
+        let result = sync2_dispatch(c, &req, &mut blobs, &mut files)?;
+        let text = serde_json::to_vec(&result).map_err(|e| e.to_string())?;
+        let mut buf = Vec::with_capacity(text.len() + 8);
+        buf.extend_from_slice(&(text.len() as u32).to_le_bytes());
+        buf.extend_from_slice(&text);
+        buf.extend_from_slice(&(files.len() as u32).to_le_bytes());
+        for (p, b) in &files {
+            push_frame(&mut buf, p.as_bytes());
+            push_frame(&mut buf, b);
+        }
+        hand_out(buf, out, out_len);
+        Ok(())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::CString;
+    use std::path::PathBuf;
+    use std::ptr::{null, null_mut};
+    use std::sync::{Barrier, Weak};
+
+    fn temp(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "ffsrs_store_ffi_{}_{}_{}",
+            name,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("srs.db")
+    }
+
+    fn open(p: &Path) -> *mut SrsCoreHandle {
+        let path = p.to_str().unwrap().as_bytes();
+        let mut core: *mut SrsCoreHandle = null_mut();
+        let mut err: *mut c_char = null_mut();
+        assert_eq!(
+            ffsrs_store_open(path.as_ptr(), path.len(), &mut core, &mut err),
+            STORE_OK
+        );
+        assert!(!core.is_null());
+        core
+    }
+
+    /// 取走错误文本（并释放）。
+    fn take(err: *mut c_char) -> String {
+        assert!(!err.is_null(), "no error message");
+        unsafe { CString::from_raw(err) }.into_string().unwrap()
+    }
+
+    /// 结构体还活着（只看引用计数，不碰内容）。
+    fn alive(weak: &Weak<SrsCore>) -> bool {
+        weak.strong_count() > 0
+    }
+
+    /// 内存诊断计数：空 / 零长度不写；按 n 截断、不越界；开着库时句柄、存活库、连接池与 SQLite 堆都有数，
+    /// 高水位不低于当前用量。别的测试并行开关库，只断言下界。
+    #[test]
+    fn diag_counts_report_open_cores_and_respect_the_buffer_length() {
+        assert_eq!(ffsrs_store_diag_counts(null_mut(), DIAG_COUNT_LEN), 0);
+        let mut one = [-7i64; 1];
+        assert_eq!(ffsrs_store_diag_counts(one.as_mut_ptr(), 0), 0);
+        assert_eq!(one, [-7]);
+
+        let p = temp("diag");
+        let h = open(&p);
+        let mut out = [-7i64; DIAG_COUNT_LEN + 2];
+        assert_eq!(
+            ffsrs_store_diag_counts(out.as_mut_ptr(), out.len()),
+            DIAG_COUNT_LEN
+        );
+        assert_eq!(
+            &out[DIAG_COUNT_LEN..],
+            &[-7, -7],
+            "must not write past the counts"
+        );
+        assert!(out[0] >= 1, "open handles {out:?}");
+        assert!(out[1] >= 1, "live cores {out:?}");
+        assert!(out[3] >= 1, "pooled readers {out:?}");
+        assert!(out[4] > 0, "sqlite memory used {out:?}");
+        assert!(out[5] >= out[4], "highwater below current use {out:?}");
+        assert!(out[6] > 0, "open db bytes {out:?}");
+        assert!(out[7] >= 0, "wal bytes {out:?}");
+
+        let mut two = [-7i64; 3];
+        assert_eq!(ffsrs_store_diag_counts(two.as_mut_ptr(), 2), 2);
+        assert_eq!(two[2], -7);
+
+        // 关掉之后在途调用还握着的那份照样算存活：退役的库驻留就是要看的东西。
+        let held = resolve(h).unwrap();
+        ffsrs_store_close(h);
+        assert!(super::super::live_cores() >= 1);
+        drop(held);
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+    }
+
+    /// 关库后经旧句柄的每个入口都报「已关闭」（不 UAF、不按路径把库重新打开）；重复关闭无操作；
+    /// 关库后结构体随即释放（回归：#2540 的修法让每开一次库泄漏一个结构体）。
+    #[test]
+    fn closed_handle_rejects_every_entry_point_and_frees_the_core() {
+        let p = temp("closed");
+        let h = open(&p);
+        let weak = Arc::downgrade(&resolve(h).unwrap());
+        ffsrs_store_close(h);
+        assert!(
+            !alive(&weak),
+            "closing the last reference must free the core"
+        );
+        ffsrs_store_close(h);
+        // 关库后 srs.db 可删（覆盖恢复）；之后任何入口都不许把它重新建出来。
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+
+        let h = h as *const SrsCoreHandle;
+        let mut out: *mut u8 = null_mut();
+        let mut out_len: usize = 0;
+        let mut flag: i32 = 0;
+        let mut session: *mut ReadSessionHandle = null_mut();
+        let (o, ol, f, s) = (
+            &mut out as *mut *mut u8,
+            &mut out_len as *mut usize,
+            &mut flag as *mut i32,
+            &mut session as *mut *mut ReadSessionHandle,
+        );
+        let sql: &[u8] = b"SELECT 1";
+        let snap: &[u8] = b"snap.db";
+        let req: &[u8] = br#"{"op":"status","profile":"p"}"#;
+        let args = [0i64; 4];
+        let a = args.as_ptr();
+        type Call<'a> = (&'static str, Box<dyn Fn(*mut *mut c_char) -> i32 + 'a>);
+        let calls: Vec<Call<'_>> = vec![
+            (
+                "legacy_state",
+                Box::new(|e| ffsrs_store_legacy_state(h, f, e)),
+            ),
+            ("legacy_begin", Box::new(|e| ffsrs_store_legacy_begin(h, e))),
+            (
+                "legacy_page",
+                Box::new(|e| ffsrs_store_legacy_page(h, sql.as_ptr(), 1, null(), 0, e)),
+            ),
+            (
+                "legacy_commit",
+                Box::new(|e| ffsrs_store_legacy_commit(h, e)),
+            ),
+            ("legacy_abort", Box::new(|e| ffsrs_store_legacy_abort(h, e))),
+            (
+                "legacy_mark_none",
+                Box::new(|e| ffsrs_store_legacy_mark_none(h, e)),
+            ),
+            (
+                "snapshot",
+                Box::new(|e| ffsrs_store_snapshot(h, snap.as_ptr(), snap.len(), 0, e)),
+            ),
+            (
+                "debug_query",
+                Box::new(|e| {
+                    ffsrs_store_debug_query(h, sql.as_ptr(), sql.len(), null(), 0, o, ol, e)
+                }),
+            ),
+            ("read_begin", Box::new(|e| ffsrs_store_read_begin(h, s, e))),
+            (
+                "exec",
+                Box::new(|e| ffsrs_store_exec(h, sql.as_ptr(), sql.len(), null(), 0, 1, o, ol, e)),
+            ),
+            (
+                "exec_batch",
+                Box::new(|e| ffsrs_store_exec_batch(h, null(), 0, null(), 0, e)),
+            ),
+            (
+                "in_transaction",
+                Box::new(|e| ffsrs_store_in_transaction(h, f, e)),
+            ),
+            (
+                "history_states",
+                Box::new(|e| ffsrs_store_history_states(h, null(), 0, 0, o, ol, e)),
+            ),
+            (
+                "stat_projection",
+                Box::new(|e| ffsrs_store_stat_projection(h, null(), 0, 0, o, ol, e)),
+            ),
+            (
+                "optimizer_items",
+                Box::new(|e| ffsrs_store_optimizer_items(h, null(), 0, a, 4, o, ol, e)),
+            ),
+            (
+                "rwkv_rows",
+                Box::new(|e| ffsrs_store_rwkv_rows(h, null(), 0, a, 4, o, ol, e)),
+            ),
+            (
+                "rwkv_log_tail",
+                Box::new(|e| ffsrs_store_rwkv_log_tail(h, null(), 0, a, 4, o, ol, e)),
+            ),
+            (
+                "sync2",
+                Box::new(|e| ffsrs_store_sync2(h, req.as_ptr(), req.len(), null(), 0, o, ol, e)),
+            ),
+        ];
+        assert_eq!(calls.len(), 18);
+        for (name, call) in &calls {
+            let mut err: *mut c_char = null_mut();
+            assert_eq!(call(&mut err), STORE_ERROR, "{name}");
+            assert_eq!(take(err), CLOSED, "{name}");
+        }
+        drop(calls);
+        assert!(out.is_null() && session.is_null());
+        assert!(
+            !p.exists(),
+            "a call on a closed store reopened srs.db by path"
+        );
+    }
+
+    /// 在途命令期间关库：close 立即把句柄摘掉，在途调用手上那份引用让结构体活到它返回（不 UAF），
+    /// 它返回后结构体才释放（不泄漏）；在途调用之后再碰连接得到「已关闭」，别的调用也一律「已关闭」。
+    #[test]
+    fn close_during_an_in_flight_command_neither_frees_under_it_nor_leaks() {
+        let p = temp("inflight");
+        let h = open(&p);
+        let weak = Arc::downgrade(&resolve(h).unwrap());
+        let entered = Arc::new(Barrier::new(2));
+        let closed = Arc::new(Barrier::new(2));
+        let worker = {
+            let (entered, closed) = (Arc::clone(&entered), Arc::clone(&closed));
+            let id = h as usize;
+            std::thread::spawn(move || {
+                let mut err: *mut c_char = null_mut();
+                let rc = run_core(id as *const SrsCoreHandle, &mut err, |c| {
+                    c.debug_query("SELECT 1", &[])?;
+                    entered.wait();
+                    closed.wait();
+                    // 拥有者已经关库：结构体还在（这里拿它的锁不是 UAF），连接已经没了。
+                    c.debug_query("SELECT 1", &[]).map(|_| ())
+                });
+                (rc, take(err))
+            })
+        };
+        entered.wait();
+        ffsrs_store_close(h);
+        assert!(alive(&weak), "the in-flight call must keep the core alive");
+        let mut err: *mut c_char = null_mut();
+        let mut flag = 0;
+        assert_eq!(
+            ffsrs_store_in_transaction(h, &mut flag, &mut err),
+            STORE_ERROR
+        );
+        assert_eq!(take(err), CLOSED);
+        closed.wait();
+        let (rc, msg) = worker.join().unwrap();
+        assert_eq!((rc, msg.as_str()), (STORE_ERROR, CLOSED));
+        assert!(
+            !alive(&weak),
+            "the core must be freed once the last in-flight call returns"
+        );
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+    }
+
+    /// 压力：多线程不停跑命令时关库，每个调用不是成功就是「已关闭」，最后结构体释放。
+    #[test]
+    fn concurrent_commands_racing_close_only_see_ok_or_closed() {
+        let p = temp("race");
+        let h = open(&p);
+        let weak = Arc::downgrade(&resolve(h).unwrap());
+        let start = Arc::new(Barrier::new(5));
+        let workers: Vec<_> = (0..4)
+            .map(|_| {
+                let start = Arc::clone(&start);
+                let id = h as usize;
+                std::thread::spawn(move || {
+                    start.wait();
+                    let h = id as *const SrsCoreHandle;
+                    let sql: &[u8] = b"SELECT COUNT(*) FROM sqlite_master";
+                    let mut ok = 0usize;
+                    loop {
+                        let mut out: *mut u8 = null_mut();
+                        let mut out_len = 0usize;
+                        let mut err: *mut c_char = null_mut();
+                        let rc = ffsrs_store_debug_query(
+                            h,
+                            sql.as_ptr(),
+                            sql.len(),
+                            null(),
+                            0,
+                            &mut out,
+                            &mut out_len,
+                            &mut err,
+                        );
+                        if rc == STORE_OK {
+                            crate::ffsrs_free_bytes(out, out_len);
+                            ok += 1;
+                            continue;
+                        }
+                        let msg = take(err);
+                        assert_eq!((rc, msg.as_str()), (STORE_ERROR, CLOSED));
+                        return ok;
+                    }
+                })
+            })
+            .collect();
+        start.wait();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        ffsrs_store_close(h);
+        let done: usize = workers.into_iter().map(|w| w.join().unwrap()).sum();
+        assert!(done > 0);
+        assert!(!alive(&weak));
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+    }
+
+    /// 经 C ABI：开会话 → 关库 → 会话查询报已关闭，库文件可改名 / 删除；read_end 之后同样报已关闭，
+    /// 重复 read_end 无操作。
+    #[test]
+    fn closing_the_store_invalidates_its_read_sessions() {
+        let p = temp("sessions");
+        let h = open(&p);
+        let mut session: *mut ReadSessionHandle = null_mut();
+        let mut err: *mut c_char = null_mut();
+        assert_eq!(ffsrs_store_read_begin(h, &mut session, &mut err), STORE_OK);
+        assert!(!session.is_null());
+        let sql: &[u8] = b"SELECT COUNT(*) FROM sqlite_master";
+        let query = |s: *const ReadSessionHandle| -> (i32, Option<String>) {
+            let mut out: *mut u8 = null_mut();
+            let mut out_len = 0usize;
+            let mut err: *mut c_char = null_mut();
+            let rc = ffsrs_store_read_query(
+                s,
+                sql.as_ptr(),
+                sql.len(),
+                null(),
+                0,
+                &mut out,
+                &mut out_len,
+                &mut err,
+            );
+            if rc == STORE_OK {
+                crate::ffsrs_free_bytes(out, out_len);
+                (rc, None)
+            } else {
+                (rc, Some(take(err)))
+            }
+        };
+        assert_eq!(query(session), (STORE_OK, None));
+
+        ffsrs_store_close(h);
+        assert_eq!(query(session), (STORE_ERROR, Some(CLOSED.to_string())));
+        // 会话还没 read_end，但它的连接已经关了：库文件能改名、能删（Windows 下有打开的句柄就不行）。
+        let moved = p.with_file_name("srs.moved.db");
+        std::fs::rename(&p, &moved).unwrap();
+        std::fs::remove_file(&moved).unwrap();
+
+        ffsrs_store_read_end(session);
+        assert_eq!(query(session), (STORE_ERROR, Some(CLOSED.to_string())));
+        ffsrs_store_read_end(session);
+        assert!(sessions().get(&(session as usize)).is_none());
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+    }
+
+    /// 会话查询在途时关库：close 等那次查询跑完（不 UAF、不在查询中途关连接），之后的查询报已关闭。
+    #[test]
+    fn close_waits_for_an_in_flight_read_session_query() {
+        let p = temp("session_inflight");
+        let h = open(&p);
+        let mut session: *mut ReadSessionHandle = null_mut();
+        let mut err: *mut c_char = null_mut();
+        assert_eq!(ffsrs_store_read_begin(h, &mut session, &mut err), STORE_OK);
+        let entered = Arc::new(Barrier::new(2));
+        let worker = {
+            let entered = Arc::clone(&entered);
+            let id = session as usize;
+            std::thread::spawn(move || {
+                let mut err: *mut c_char = null_mut();
+                let rc = run_session(id as *const ReadSessionHandle, &mut err, |s| {
+                    let guard = s.conn.lock().unwrap();
+                    entered.wait();
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                    guard
+                        .as_ref()
+                        .ok_or_else(|| "closed under the query".to_string())?
+                        .query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| {
+                            r.get::<_, i64>(0)
+                        })
+                        .map(|_| ())
+                        .map_err(|e| e.to_string())
+                });
+                (rc, if err.is_null() { None } else { Some(take(err)) })
+            })
+        };
+        entered.wait();
+        let t0 = std::time::Instant::now();
+        ffsrs_store_close(h);
+        assert!(
+            t0.elapsed() >= std::time::Duration::from_millis(200),
+            "close did not wait for the session query"
+        );
+        assert_eq!(worker.join().unwrap(), (STORE_OK, None));
+        std::fs::remove_file(&p).unwrap();
+        ffsrs_store_read_end(session);
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+    }
+
+    /// 新设备收段通道：每条 v2 命令都显式声明「通道没做完时要不要先做完」（[CHANNEL_TRANSPARENT] / [CHANNEL_SETTLES]
+    /// 恰好一张）。按源码里 [sync2_dispatch] 与 [sync2_command] 顶层匹配臂的命令名逐条核对：新增命令没登记就红。
+    #[test]
+    fn every_command_declares_its_channel_policy() {
+        // 检出可能是 CRLF（Windows 工作区）：统一成 LF 再按行解析。
+        let src = include_str!("ffi.rs").replace("\r\n", "\n");
+        let src = src.as_str();
+        let body = |start: &str| -> &str {
+            let from = src.find(start).unwrap_or_else(|| panic!("missing {start}"));
+            let rest = &src[from..];
+            &rest[..rest.find("\n}\n").expect("function end")]
+        };
+        let mut ops = std::collections::BTreeSet::new();
+        for start in ["pub(crate) fn sync2_dispatch(", "fn sync2_command("] {
+            let lines: Vec<&str> = body(start).lines().collect();
+            let mut next = 0;
+            while next < lines.len() {
+                let line = lines[next];
+                next += 1;
+                // 顶层匹配臂：8 个空格缩进、以命令名字面量开头（`"a" | "b" [if ...] =>`）；分发器里的命令名比较同样收进来。
+                // 分发器里改投影命令的 `match op`（12 个空格缩进：`ingest_commit` / `rebuild_caches` 等在那里直接处理）也算。
+                let top =
+                    line.strip_prefix("        \"").is_some() && !line.starts_with("         ");
+                let projecting = start.starts_with("pub(crate) fn sync2_dispatch(")
+                    && line.strip_prefix("            \"").is_some()
+                    && !line.starts_with("             ");
+                // rustfmt 把放不下一行的 `"a" | "b" | ...` 折成同缩进的 `| "c" ... =>` 续行：拼回一整条臂头再解析。
+                let mut joined = line.to_owned();
+                if top || projecting {
+                    let cont = if top {
+                        "        | \""
+                    } else {
+                        "            | \""
+                    };
+                    while !joined.contains("=>")
+                        && next < lines.len()
+                        && lines[next].starts_with(cont)
+                    {
+                        joined.push(' ');
+                        joined.push_str(lines[next]);
+                        next += 1;
+                    }
+                }
+                let arm = (top || projecting) && joined.contains("=>");
+                let compared = line.contains("op == \"");
+                if !(arm || compared) {
+                    continue;
+                }
+                let head = if arm {
+                    joined.split("=>").next().unwrap()
+                } else {
+                    line
+                };
+                for (i, part) in head.split('"').enumerate() {
+                    if i % 2 == 1
+                        && !part.is_empty()
+                        && part
+                            .chars()
+                            .all(|ch| ch.is_ascii_lowercase() || ch == '_' || ch.is_ascii_digit())
+                    {
+                        ops.insert(part.to_owned());
+                    }
+                }
+            }
+        }
+        // 不针对单个 profile 的命令在分发器开头就返回，不碰通道。
+        for global in [
+            "profile_uids",
+            "orphan_sweep_done",
+            "wal_checkpoint",
+            "bulk_cache",
+            "ingest_yield",
+        ] {
+            assert!(
+                ops.remove(global),
+                "{global} is no longer a profile-less command"
+            );
+        }
+        assert!(ops.len() > 50, "parsed too few commands: {ops:?}");
+        for op in &ops {
+            let (t, s) = (
+                CHANNEL_TRANSPARENT.contains(&op.as_str()),
+                CHANNEL_SETTLES.contains(&op.as_str()),
+            );
+            assert!(
+                t ^ s,
+                "sync2 command `{op}` must be listed in exactly one of CHANNEL_TRANSPARENT / CHANNEL_SETTLES (transparent {t}, settles {s})"
+            );
+        }
+        for listed in CHANNEL_TRANSPARENT.iter().chain(CHANNEL_SETTLES.iter()) {
+            assert!(
+                ops.contains(*listed),
+                "`{listed}` is listed but no longer a command"
+            );
+        }
+    }
+}

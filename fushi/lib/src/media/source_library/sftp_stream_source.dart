@@ -15,6 +15,7 @@
 library;
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
@@ -71,7 +72,8 @@ String sftpSourceUrlOf(String remotePath, String urlRoot) {
         ? '$urlRoot$_sftpRelativeMarker'
         : '$urlRoot$_sftpRelativeMarker/$remotePath';
   }
-  final bool collides = remotePath == _sftpRelativeMarker ||
+  final bool collides =
+      remotePath == _sftpRelativeMarker ||
       remotePath.startsWith('$_sftpRelativeMarker/') ||
       remotePath.startsWith('//');
   return collides ? '$urlRoot/$remotePath' : '$urlRoot$remotePath';
@@ -80,7 +82,7 @@ String sftpSourceUrlOf(String remotePath, String urlRoot) {
 /// 扫描期的命名空间换装：对外一律是 `sftp://` 地址，对内转回远端路径交给 [inner]。
 ///
 /// 只给视频来源用——书 / 漫画是下载后复制进库的，库里不存远端地址，换不换没有区别。
-class SftpUrlNamespaceFileSystem implements SourceFileSystem {
+class SftpUrlNamespaceFileSystem implements SourceFileSystem, SourceByteReader {
   SftpUrlNamespaceFileSystem(this.inner, {required this.urlRoot});
 
   final SourceFileSystem inner;
@@ -97,17 +99,34 @@ class SftpUrlNamespaceFileSystem implements SourceFileSystem {
   Future<List<SourceFileEntry>> listFiles(
     String dirPath, {
     bool recursive = false,
-  }) async =>
-      <SourceFileEntry>[
-        for (final SourceFileEntry e
-            in await inner.listFiles(_remote(dirPath), recursive: recursive))
-          SourceFileEntry(
-            name: e.name,
-            path: sftpSourceUrlOf(e.path, urlRoot),
-            isDirectory: e.isDirectory,
-            sizeBytes: e.sizeBytes,
-          ),
-      ];
+  }) async => <SourceFileEntry>[
+    for (final SourceFileEntry e in await inner.listFiles(
+      _remote(dirPath),
+      recursive: recursive,
+    ))
+      SourceFileEntry(
+        name: e.name,
+        path: sftpSourceUrlOf(e.path, urlRoot),
+        isDirectory: e.isDirectory,
+        sizeBytes: e.sizeBytes,
+        modifiedAt: e.modifiedAt,
+        etag: e.etag,
+      ),
+  ];
+
+  SourceByteReader get _bytes {
+    final SourceFileSystem fs = inner;
+    if (fs is SourceByteReader) return fs as SourceByteReader;
+    throw UnsupportedError('${fs.runtimeType} cannot read bytes');
+  }
+
+  @override
+  Future<Uint8List> readRange(String filePath, int offset, int length) =>
+      _bytes.readRange(_remote(filePath), offset, length);
+
+  @override
+  Future<Uint8List> readBytes(String filePath) =>
+      _bytes.readBytes(_remote(filePath));
 
   @override
   Future<List<String>> listSiblingNames(String filePath) =>
@@ -145,12 +164,8 @@ class SftpSourceRangeReader implements SyncAssetRangeReader {
       throw StateError('SFTP stream reader was closed');
     }
     try {
-      final ({
-        int totalBytes,
-        int start,
-        int end,
-        Stream<List<int>> bytes
-      }) range = await fs.openSftpRange(assetId, start: start, end: end);
+      final ({int totalBytes, int start, int end, Stream<List<int>> bytes})
+      range = await fs.openSftpRange(assetId, start: start, end: end);
       return SyncAssetRange(
         start: range.start,
         end: range.end,
@@ -170,9 +185,9 @@ class SftpStreamUrlResolver implements StreamUrlResolver {
     required this.urlRoot,
     required NetworkSourceFileSystem fs,
     Future<CloudVideoStreamRelay> Function()? relay,
-  })  : _fs = fs,
-        _reader = SftpSourceRangeReader(fs),
-        _relay = relay ?? CloudVideoStreamRelay.instance;
+  }) : _fs = fs,
+       _reader = SftpSourceRangeReader(fs),
+       _relay = relay ?? CloudVideoStreamRelay.instance;
 
   final int sourceId;
   final String urlRoot;

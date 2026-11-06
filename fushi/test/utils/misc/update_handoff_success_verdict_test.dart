@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';
 
 /// BUG-1786 ③：握手凭什么说「更新成功」。
@@ -62,9 +62,9 @@ void main() {
 
     final WindowsUpdateHandoffResult? result =
         await WindowsUpdateHandoff.reconcile(
-      markerFile: marker,
-      currentVersion: '2.2.1',
-    );
+          markerFile: marker,
+          currentVersion: '2.2.1',
+        );
 
     expect(result, isNotNull);
     expect(
@@ -86,9 +86,9 @@ void main() {
 
     final WindowsUpdateHandoffResult? result =
         await WindowsUpdateHandoff.reconcile(
-      markerFile: marker,
-      currentVersion: '2.2.1',
-    );
+          markerFile: marker,
+          currentVersion: '2.2.1',
+        );
 
     expect(result, isNotNull);
     expect(result!.status, WindowsUpdateHandoffStatus.installed);
@@ -104,9 +104,9 @@ void main() {
 
     final WindowsUpdateHandoffResult? result =
         await WindowsUpdateHandoff.reconcile(
-      markerFile: marker,
-      currentVersion: '2.2.1',
-    );
+          markerFile: marker,
+          currentVersion: '2.2.1',
+        );
 
     expect(result, isNotNull);
     expect(

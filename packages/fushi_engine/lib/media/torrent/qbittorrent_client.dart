@@ -14,18 +14,24 @@ String normalizeQbBaseUrl(String raw) {
   return base;
 }
 
-/// 从 `set-cookie` 响应头提取 `SID=<token>`。纯函数，容错：没有 SID 返回 null。
+/// 从 `set-cookie` 响应头提取 qBittorrent 会话 cookie，返回可原样回传的
+/// `<名>=<值>` 对。纯函数，容错：没有会话 cookie 返回 null。
+///
+/// cookie 名随版本变：4.1~5.1 叫 `SID`；5.2 起把 WebUI 端口拼进名字
+/// （`QBT_SID_<端口>`，同机多实例不再互相顶掉会话）。名字只能从响应里读，
+/// 不能按配置的地址猜端口——反代 / 端口映射后对外端口与 qb 自己的端口不同。
 ///
 /// `package:http` 会把多个 `Set-Cookie` 头用 `, ` 连成一个字符串，所以这里按
-/// 边界正则找 `SID=`，兼容多 cookie 串与属性尾巴（`; path=/` 等）。
-String? extractSidCookie(String? setCookieHeader) {
+/// 边界正则找，兼容多 cookie 串与属性尾巴（`; path=/` 等）。
+String? extractSessionCookie(String? setCookieHeader) {
   if (setCookieHeader == null || setCookieHeader.isEmpty) return null;
   final RegExpMatch? match = RegExp(
-    r'(?:^|[\s,;])SID=([^;,\s]+)',
+    r'(?:^|[\s,;])((?:QBT_SID_\d+)|SID)=([^;,\s]+)',
   ).firstMatch(setCookieHeader);
-  final String? sid = match?.group(1);
-  if (sid == null || sid.isEmpty) return null;
-  return sid;
+  final String? name = match?.group(1);
+  final String? value = match?.group(2);
+  if (name == null || value == null || value.isEmpty) return null;
+  return '$name=$value';
 }
 
 /// 「无返回体的动作接口成功了吗」——同时覆盖 qBittorrent 4.1~5.1 与 5.2+。
@@ -56,7 +62,7 @@ String? classifyQbLoginFailure(int statusCode, String body) {
   if (statusCode == 403) {
     return trimmed.toLowerCase().contains('banned')
         ? 'IP banned by qBittorrent after too many failed logins '
-            '(unban: restart qBittorrent or wait, default 1 hour)'
+              '(unban: restart qBittorrent or wait, default 1 hour)'
         : 'HTTP 403${trimmed.isEmpty ? '' : ': $trimmed'}';
   }
   if (statusCode == 401) return 'login rejected (wrong username/password)';
@@ -91,7 +97,8 @@ bool isQbAddAccepted(int statusCode, String body) {
     if (decoded is! Map<String, dynamic>) return false;
     final Object? success = decoded['success_count'];
     final Object? pending = decoded['pending_count'];
-    final int added = (success is num ? success.toInt() : 0) +
+    final int added =
+        (success is num ? success.toInt() : 0) +
         (pending is num ? pending.toInt() : 0);
     return added > 0;
   } on FormatException {
@@ -111,32 +118,38 @@ List<TorrentSnapshot> parseQbTorrentInfos(String body) {
       if (e is! Map) continue;
       final dynamic hash = e['hash'];
       if (hash is! String || hash.isEmpty) continue;
-      out.add(TorrentSnapshot(
-        hash: hash,
-        name: e['name'] is String ? e['name'] as String : '',
-        progress: e['progress'] is num ? (e['progress'] as num).toDouble() : 0,
-        state: e['state'] is String ? e['state'] as String : '',
-        savePath: e['save_path'] is String ? e['save_path'] as String : '',
-        contentPath:
-            e['content_path'] is String ? e['content_path'] as String : '',
-        amountLeft: e['amount_left'] is int ? e['amount_left'] as int : -1,
-        totalSizeBytes: e['total_size'] is int ? e['total_size'] as int : -1,
-        // BUG-1294：qb 一直返回这些字段，此前解析时被丢弃。
-        downRateBps: e['dlspeed'] is int ? e['dlspeed'] as int : 0,
-        upRateBps: e['upspeed'] is int ? e['upspeed'] as int : 0,
-        downloadedBytes: e['downloaded'] is int ? e['downloaded'] as int : 0,
-        uploadedBytes: e['uploaded'] is int ? e['uploaded'] as int : 0,
-        numPeers: (e['num_seeds'] is int ? e['num_seeds'] as int : 0) +
-            (e['num_leechs'] is int ? e['num_leechs'] as int : 0),
-        // TODO-2482：详情页拆分字段；缺字段/非 int 一律 -1（= 未提供）。
-        // [numPeers] 保持「seeds+leechs 合并」的旧语义不变。
-        numSeeds: _qbInt(e, 'num_seeds'),
-        numLeechs: _qbInt(e, 'num_leechs'),
-        swarmSeeds: _qbInt(e, 'num_complete'),
-        swarmLeechs: _qbInt(e, 'num_incomplete'),
-        activeDurationSeconds: _qbInt(e, 'time_active'),
-        seedingDurationSeconds: _qbInt(e, 'seeding_time'),
-      ));
+      out.add(
+        TorrentSnapshot(
+          hash: hash,
+          name: e['name'] is String ? e['name'] as String : '',
+          progress: e['progress'] is num
+              ? (e['progress'] as num).toDouble()
+              : 0,
+          state: e['state'] is String ? e['state'] as String : '',
+          savePath: e['save_path'] is String ? e['save_path'] as String : '',
+          contentPath: e['content_path'] is String
+              ? e['content_path'] as String
+              : '',
+          amountLeft: e['amount_left'] is int ? e['amount_left'] as int : -1,
+          totalSizeBytes: e['total_size'] is int ? e['total_size'] as int : -1,
+          // BUG-1294：qb 一直返回这些字段，此前解析时被丢弃。
+          downRateBps: e['dlspeed'] is int ? e['dlspeed'] as int : 0,
+          upRateBps: e['upspeed'] is int ? e['upspeed'] as int : 0,
+          downloadedBytes: e['downloaded'] is int ? e['downloaded'] as int : 0,
+          uploadedBytes: e['uploaded'] is int ? e['uploaded'] as int : 0,
+          numPeers:
+              (e['num_seeds'] is int ? e['num_seeds'] as int : 0) +
+              (e['num_leechs'] is int ? e['num_leechs'] as int : 0),
+          // TODO-2482：详情页拆分字段；缺字段/非 int 一律 -1（= 未提供）。
+          // [numPeers] 保持「seeds+leechs 合并」的旧语义不变。
+          numSeeds: _qbInt(e, 'num_seeds'),
+          numLeechs: _qbInt(e, 'num_leechs'),
+          swarmSeeds: _qbInt(e, 'num_complete'),
+          swarmLeechs: _qbInt(e, 'num_incomplete'),
+          activeDurationSeconds: _qbInt(e, 'time_active'),
+          seedingDurationSeconds: _qbInt(e, 'seeding_time'),
+        ),
+      );
     }
     return out;
   } catch (_) {
@@ -160,8 +173,9 @@ List<TorrentFileEntry> parseQbTorrentFiles(String body) {
         TorrentFileEntry(
           name: name,
           size: e['size'] is int ? e['size'] as int : 0,
-          progress:
-              e['progress'] is num ? (e['progress'] as num).toDouble() : 0,
+          progress: e['progress'] is num
+              ? (e['progress'] as num).toDouble()
+              : 0,
           index: e['index'] is int ? e['index'] as int : -1,
         ),
       );
@@ -208,17 +222,21 @@ List<TorrentPeerDetail> parseQbTorrentPeers(String body) {
           address = key;
         }
       }
-      out.add(TorrentPeerDetail(
-        address: address,
-        port: port,
-        client: e['client'] is String ? e['client'] as String : '',
-        progress: e['progress'] is num ? (e['progress'] as num).toDouble() : 0,
-        downSpeedBps: _qbInt(e, 'dl_speed', fallback: 0),
-        upSpeedBps: _qbInt(e, 'up_speed', fallback: 0),
-        downloadedBytes: _qbInt(e, 'downloaded', fallback: 0),
-        uploadedBytes: _qbInt(e, 'uploaded', fallback: 0),
-        flags: e['flags'] is String ? e['flags'] as String : '',
-      ));
+      out.add(
+        TorrentPeerDetail(
+          address: address,
+          port: port,
+          client: e['client'] is String ? e['client'] as String : '',
+          progress: e['progress'] is num
+              ? (e['progress'] as num).toDouble()
+              : 0,
+          downSpeedBps: _qbInt(e, 'dl_speed', fallback: 0),
+          upSpeedBps: _qbInt(e, 'up_speed', fallback: 0),
+          downloadedBytes: _qbInt(e, 'downloaded', fallback: 0),
+          uploadedBytes: _qbInt(e, 'uploaded', fallback: 0),
+          flags: e['flags'] is String ? e['flags'] as String : '',
+        ),
+      );
     }
     return out;
   } catch (_) {
@@ -263,17 +281,19 @@ List<TorrentTrackerDetail> parseQbTrackers(String body) {
       if (url is! String || url.isEmpty) continue;
       final int tier = _qbInt(e, 'tier', fallback: 0);
       final bool pseudo = tier < 0;
-      out.add(TorrentTrackerDetail(
-        url: url,
-        tier: pseudo ? 0 : tier,
-        status: pseudo
-            ? TorrentTrackerStatus.disabled
-            : _qbTrackerStatus(_qbInt(e, 'status', fallback: 1)),
-        seeds: _qbInt(e, 'num_seeds'),
-        leeches: _qbInt(e, 'num_leeches'),
-        downloaded: _qbInt(e, 'num_downloaded'),
-        message: e['msg'] is String ? e['msg'] as String : '',
-      ));
+      out.add(
+        TorrentTrackerDetail(
+          url: url,
+          tier: pseudo ? 0 : tier,
+          status: pseudo
+              ? TorrentTrackerStatus.disabled
+              : _qbTrackerStatus(_qbInt(e, 'status', fallback: 1)),
+          seeds: _qbInt(e, 'num_seeds'),
+          leeches: _qbInt(e, 'num_leeches'),
+          downloaded: _qbInt(e, 'num_downloaded'),
+          message: e['msg'] is String ? e['msg'] as String : '',
+        ),
+      );
     }
     return out;
   } catch (_) {
@@ -335,8 +355,10 @@ List<TorrentFilePriority>? parseQbFilePriorities(String body) {
     final dynamic json = jsonDecode(body);
     if (json is! List) return null;
     final int n = json.length;
-    final List<TorrentFilePriority> out =
-        List<TorrentFilePriority>.filled(n, TorrentFilePriority.normal);
+    final List<TorrentFilePriority> out = List<TorrentFilePriority>.filled(
+      n,
+      TorrentFilePriority.normal,
+    );
     int position = 0;
     for (final dynamic e in json) {
       int index = position;
@@ -359,7 +381,7 @@ List<TorrentFilePriority>? parseQbFilePriorities(String body) {
 /// qBittorrent WebUI API v2 客户端（qBittorrent v4.1+）。
 ///
 /// 认证模型：`POST /api/v2/auth/login`（form + 强制 `Referer` 头）拿
-/// `SID` cookie，之后所有请求带 `Cookie: SID=<token>`；遇 403（会话过期）
+/// 会话 cookie（`SID` / 5.2+ 的 `QBT_SID_<端口>`），之后所有请求原样带回；遇 403（会话过期）
 /// 自动重新登录一次并重试该请求。所有网络方法容错：异常/失败一律返回
 /// null / false / 空列表，绝不抛。
 class QBittorrentClient {
@@ -369,8 +391,8 @@ class QBittorrentClient {
     required this.password,
     http.Client? client,
     this.requestTimeout = const Duration(seconds: 10),
-  })  : baseUrl = normalizeQbBaseUrl(baseUrl),
-        _client = client ?? http.Client();
+  }) : baseUrl = normalizeQbBaseUrl(baseUrl),
+       _client = client ?? http.Client();
 
   /// 归一化后的 WebUI 地址（无尾部 `/`），如 `http://127.0.0.1:8080`。
   final String baseUrl;
@@ -379,7 +401,7 @@ class QBittorrentClient {
   final http.Client _client;
   final Duration requestTimeout;
 
-  /// 当前会话 cookie；null = 尚未登录或已失效。
+  /// 当前会话 cookie（`<名>=<值>`，见 [extractSessionCookie]）；null = 尚未登录或已失效。
   String? _sid;
 
   /// qBittorrent 开着「对本地主机的客户端跳过身份验证」时，登录接口仍校验
@@ -393,25 +415,28 @@ class QBittorrentClient {
   String? get lastFailure => _lastFailure;
   String? _lastFailure;
 
-  /// 登录并缓存 SID cookie。成功返回 true；凭据错误/网络异常返回 false
+  /// 登录并缓存会话 cookie。成功返回 true；凭据错误/网络异常返回 false
   /// （原因落 [lastFailure]）。
   Future<bool> login() async {
     _sid = null;
     try {
-      final http.Response res = await _client.post(
-        Uri.parse('$baseUrl/api/v2/auth/login'),
-        // qBittorrent 强制校验 Referer 与 Host 一致，否则 401。
-        headers: <String, String>{'Referer': baseUrl},
-        body: <String, String>{'username': username, 'password': password},
-      ).timeout(requestTimeout);
+      final http.Response res = await _client
+          .post(
+            Uri.parse('$baseUrl/api/v2/auth/login'),
+            // qBittorrent 强制校验 Referer 与 Host 一致，否则 401。
+            headers: <String, String>{'Referer': baseUrl},
+            body: <String, String>{'username': username, 'password': password},
+          )
+          .timeout(requestTimeout);
       final String? failure = classifyQbLoginFailure(res.statusCode, res.body);
       if (failure != null) {
         _lastFailure = failure;
         return false;
       }
-      _sid = extractSidCookie(res.headers['set-cookie']);
+      _sid = extractSessionCookie(res.headers['set-cookie']);
       if (_sid == null) {
-        _lastFailure = 'login ok but no SID cookie in response';
+        _lastFailure =
+            'login ok but no session cookie (SID / QBT_SID_<port>) in response';
         return false;
       }
       _lastFailure = null;
@@ -426,10 +451,12 @@ class QBittorrentClient {
   /// 认证）时可用。成功则清空 [lastFailure]（连接本身是通的）。
   Future<bool> _probeAnonymous() async {
     try {
-      final http.Response res = await _client.get(
-        Uri.parse('$baseUrl/api/v2/app/version'),
-        headers: <String, String>{'Referer': baseUrl},
-      ).timeout(requestTimeout);
+      final http.Response res = await _client
+          .get(
+            Uri.parse('$baseUrl/api/v2/app/version'),
+            headers: <String, String>{'Referer': baseUrl},
+          )
+          .timeout(requestTimeout);
       if (res.statusCode == 200 && res.body.trim().isNotEmpty) {
         _lastFailure = null;
         return true;
@@ -749,15 +776,19 @@ class QBittorrentClient {
   /// 注意 portMappings 恒为空：qb API 只暴露 UPnP **开关**，拿不到映射
   /// **结果**，伪造一条「成功」是撒谎，UI 对外接 qb 不渲染该行。
   Future<TorrentSessionStatusInfo?> fetchSessionStatus() async {
-    final http.Response? infoRes =
-        await _request('GET', '/api/v2/transfer/info');
+    final http.Response? infoRes = await _request(
+      'GET',
+      '/api/v2/transfer/info',
+    );
     final TorrentSessionStatusInfo? transfer =
         (infoRes != null && infoRes.statusCode == 200)
-            ? parseQbTransferInfo(infoRes.body)
-            : null;
+        ? parseQbTransferInfo(infoRes.body)
+        : null;
     Map<dynamic, dynamic>? prefs;
-    final http.Response? prefRes =
-        await _request('GET', '/api/v2/app/preferences');
+    final http.Response? prefRes = await _request(
+      'GET',
+      '/api/v2/app/preferences',
+    );
     if (prefRes != null && prefRes.statusCode == 200) {
       try {
         final dynamic json = jsonDecode(prefRes.body);
@@ -772,8 +803,9 @@ class QBittorrentClient {
       dhtNodes: transfer?.dhtNodes ?? -1,
       lsdEnabled: prefs?['lsd'] is bool ? prefs!['lsd'] as bool : null,
       pexEnabled: prefs?['pex'] is bool ? prefs!['pex'] as bool : null,
-      listenPort:
-          prefs?['listen_port'] is int ? prefs!['listen_port'] as int : 0,
+      listenPort: prefs?['listen_port'] is int
+          ? prefs!['listen_port'] as int
+          : 0,
       downRateBps: transfer?.downRateBps ?? -1,
       upRateBps: transfer?.upRateBps ?? -1,
     );
@@ -841,7 +873,7 @@ class QBittorrentClient {
     return _anonymousOk;
   }
 
-  /// 发一次裸请求（带 SID cookie 与 Referer）。
+  /// 发一次裸请求（带会话 cookie 与 Referer）。
   Future<http.Response> _send(
     String method,
     String path, {
@@ -856,7 +888,7 @@ class QBittorrentClient {
     }
     final Map<String, String> headers = <String, String>{
       'Referer': baseUrl,
-      if (_sid != null) 'Cookie': 'SID=$_sid',
+      if (_sid != null) 'Cookie': _sid!,
     };
     if (method == 'POST') {
       if (torrentBytes != null) {
@@ -870,8 +902,9 @@ class QBittorrentClient {
               filename: _safeTorrentFileName(torrentFileName),
             ),
           );
-        final http.StreamedResponse streamed =
-            await _client.send(request).timeout(requestTimeout);
+        final http.StreamedResponse streamed = await _client
+            .send(request)
+            .timeout(requestTimeout);
         return http.Response.fromStream(streamed);
       }
       return _client

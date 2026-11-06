@@ -18,7 +18,12 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 
 class UpdatesDashboardBanner extends StatefulWidget {
   const UpdatesDashboardBanner({super.key, required this.service});
@@ -179,8 +184,8 @@ class _UpdatesDashboardBannerState extends State<UpdatesDashboardBanner> {
 
   /// 「番剧新集 3 · 漫画新章 12」——按域列未读数，用户一眼看出是哪类更新。
   String _summary() => <String>[
-        for (final UpdateFeedKind kind in UpdateFeedKind.values)
-          if ((_counts[kind] ?? 0) > 0)
-            '${updateFeedKindLabel(kind)} ${_counts[kind]}',
-      ].join(' · ');
+    for (final UpdateFeedKind kind in UpdateFeedKind.values)
+      if ((_counts[kind] ?? 0) > 0)
+        '${updateFeedKindLabel(kind)} ${_counts[kind]}',
+  ].join(' · ');
 }

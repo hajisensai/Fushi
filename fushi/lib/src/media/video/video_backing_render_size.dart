@@ -21,9 +21,8 @@ import 'package:media_kit_video/media_kit_video.dart' show VideoController;
 /// 丢过去）是必须的：mpv 会在给定尺寸里保持比例、自己补黑边，比例一旦不等于片源，
 /// 黑边会被烤进纹理，Flutter 侧的 `cover` / `fill` 就会连黑边一起裁 / 拉。
 ///
-/// 为什么只在 macOS：Windows 走 ANGLE 共享纹理 + HDR 直通宿主窗（另一条链路，改渲染
-/// 尺寸会牵动 `HdrHostRectReporter` 的矩形契约），移动端拿不到同等收益却要为软件渲染
-/// 多付 CPU。本次用户要的就是 mac 端。
+/// 为什么只在 macOS：Windows 的 ANGLE 共享纹理链路没有验证过按物理像素渲染，移动端
+/// 拿不到同等收益却要为软件渲染多付 CPU。本次用户要的就是 mac 端。
 ///
 /// 尺寸变化必经防抖：拖窗口会连发几十帧不同尺寸，每帧重建纹理就是卡顿。
 class VideoBackingRenderSize extends StatefulWidget {
@@ -83,8 +82,8 @@ class _VideoBackingRenderSizeState extends State<VideoBackingRenderSize> {
       widget.controller
           .setSize(width: target?.width.round(), height: target?.height.round())
           .catchError((Object e) {
-        debugPrint('[Fushi] video backing render size skipped: $e');
-      }),
+            debugPrint('[Fushi] video backing render size skipped: $e');
+          }),
     );
   }
 
@@ -152,8 +151,7 @@ Size? resolveVideoBackingRenderSize({
   final double scale = switch (fit) {
     BoxFit.contain ||
     BoxFit.scaleDown ||
-    BoxFit.none =>
-      math.min(scaleW, scaleH),
+    BoxFit.none => math.min(scaleW, scaleH),
     _ => math.max(scaleW, scaleH),
   };
   if (scale <= 0) return null;

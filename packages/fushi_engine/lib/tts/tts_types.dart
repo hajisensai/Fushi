@@ -151,12 +151,41 @@ enum TtsFailureCode {
 }
 
 class TtsFailure implements Exception {
-  const TtsFailure(this.code, [this.detail]);
+  const TtsFailure(this.code, [this.detail])
+    : retryAfter = null,
+      _transient = null;
+
+  /// 带重试提示的失败：[retryAfter] 来自服务端 `Retry-After`；[transient] 覆盖按
+  /// 错误码的默认判定（如「200 但音频为空」归 badResponse，却是服务端偶发）。
+  const TtsFailure.withRetry(
+    this.code, {
+    this.detail,
+    this.retryAfter,
+    bool? transient,
+  }) : _transient = transient;
 
   final TtsFailureCode code;
 
   /// 只放可公开的诊断（HTTP 状态码等），绝不放响应正文或密钥。
   final String? detail;
+
+  /// 服务端要求的最短等待（HTTP `Retry-After`）。
+  final Duration? retryAfter;
+
+  final bool? _transient;
+
+  /// 是否是外部服务 / 网络的临时失败（同一请求过一会儿重发多半能成）。
+  /// `ttsWithRetry` 只重试这一类；鉴权、文本被拒、未配置、不支持一律否。
+  bool get isTransient =>
+      _transient ??
+      switch (code) {
+        TtsFailureCode.network ||
+        TtsFailureCode.timeout ||
+        TtsFailureCode.rateLimited ||
+        TtsFailureCode.serverError ||
+        TtsFailureCode.busy => true,
+        _ => false,
+      };
 
   @override
   String toString() => detail == null

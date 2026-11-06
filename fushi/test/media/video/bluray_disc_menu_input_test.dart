@@ -17,10 +17,11 @@ void main() {
       blurayMenuKeyAction(LogicalKeyboardKey.enter),
       blurayMenuGamepadAction(GamepadButton.a),
     );
-    expect(
-      blurayMenuKeyAction(LogicalKeyboardKey.escape),
-      blurayMenuGamepadAction(GamepadButton.b),
-    );
+    // Esc / B belong to the disc session (bar / exit), not to the disc; the
+    // disc's own Return is Backspace.
+    expect(blurayMenuKeyAction(LogicalKeyboardKey.escape), isNull);
+    expect(blurayMenuGamepadAction(GamepadButton.b), isNull);
+    expect(blurayMenuKeyAction(LogicalKeyboardKey.backspace), 'prev');
     expect(blurayMenuKeyAction(LogicalKeyboardKey.keyA), isNull);
     expect(blurayMenuGamepadAction(GamepadButton.start), 'menu');
     expect(blurayMenuGamepadAction(GamepadButton.select), 'popup');

@@ -79,11 +79,14 @@ void main() {
         expect(
           platform.checked,
           contains(Permission.storage),
-          reason: 'API < 30 必须查 storage，而不是恒 restricted 的 '
+          reason:
+              'API < 30 必须查 storage，而不是恒 restricted 的 '
               'manageExternalStorage',
         );
-        expect(platform.checked,
-            isNot(contains(Permission.manageExternalStorage)));
+        expect(
+          platform.checked,
+          isNot(contains(Permission.manageExternalStorage)),
+        );
       });
 
       test('API $sdk 上未授予 storage → 查询侧返回未授权', () async {
@@ -93,8 +96,7 @@ void main() {
       });
     }
 
-    test(
-        'API 29（分区存储中间态）仍以 storage 为准：manageExternalStorage 在 29 上'
+    test('API 29（分区存储中间态）仍以 storage 为准：manageExternalStorage 在 29 上'
         '无法被授予，storage 是该系统唯一可得的外部存储权限', () async {
       platform.sdkInt = 29;
       // 即便平台把 manageExternalStorage 标进 granted 集合，真实设备上 29 也
@@ -155,11 +157,12 @@ void main() {
 
       expect(await serviceFor(33).requestExternalStoragePermission(), isFalse);
       expect(
-          platform.requested,
-          containsAllInOrder(<Permission>[
-            Permission.manageExternalStorage,
-            Permission.storage,
-          ]));
+        platform.requested,
+        containsAllInOrder(<Permission>[
+          Permission.manageExternalStorage,
+          Permission.storage,
+        ]),
+      );
     });
 
     // 根因形状是「两侧对同一件事给出不同答案」。这条把整张 SDK × 授权矩阵
@@ -172,18 +175,21 @@ void main() {
         <Permission>{Permission.storage, Permission.manageExternalStorage},
       }) {
         test(
-            'API $sdk / 已授 ${preGranted.map((Permission p) => p.value).toList()}'
-            ' → 申请侧返回值与查询侧一致', () async {
-          platform.sdkInt = sdk;
-          platform.granted.addAll(preGranted);
-          final AndroidPermissionService service = serviceFor(sdk);
+          'API $sdk / 已授 ${preGranted.map((Permission p) => p.value).toList()}'
+          ' → 申请侧返回值与查询侧一致',
+          () async {
+            platform.sdkInt = sdk;
+            platform.granted.addAll(preGranted);
+            final AndroidPermissionService service = serviceFor(sdk);
 
-          final bool requestAnswer =
-              await service.requestExternalStoragePermission();
-          final bool queryAnswer = await service.hasExternalStoragePermission();
+            final bool requestAnswer = await service
+                .requestExternalStoragePermission();
+            final bool queryAnswer = await service
+                .hasExternalStoragePermission();
 
-          expect(requestAnswer, queryAnswer);
-        });
+            expect(requestAnswer, queryAnswer);
+          },
+        );
       }
     }
   });

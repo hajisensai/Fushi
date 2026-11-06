@@ -52,11 +52,11 @@ class _UnsupportedOcrService implements MangaOcrService {
 
   @override
   Future<MangaOcrModelStatus> modelStatus() async => const MangaOcrModelStatus(
-        detectorReady: false,
-        recognizerReady: false,
-        diskBytes: 0,
-        totalBytes: 1,
-      );
+    detectorReady: false,
+    recognizerReady: false,
+    diskBytes: 0,
+    totalBytes: 1,
+  );
 
   @override
   Stream<MangaOcrDownloadEvent> downloadModels() =>
@@ -70,8 +70,7 @@ class _UnsupportedOcrService implements MangaOcrService {
     required String imageDirPath,
     String? volumeTitle,
     int startPage = 0,
-  }) =>
-      const Stream<MangaOcrVolumeEvent>.empty();
+  }) => const Stream<MangaOcrVolumeEvent>.empty();
 }
 
 class _FakeRemoteRunner implements MangaOcrRemoteRunner {
@@ -87,8 +86,7 @@ class _FakeRemoteRunner implements MangaOcrRemoteRunner {
     required MangaOcrRemoteTarget target,
     required String imageDirPath,
     String? volumeTitle,
-  }) =>
-      const Stream<MangaOcrRemoteEvent>.empty();
+  }) => const Stream<MangaOcrRemoteEvent>.empty();
 }
 
 const MangaOcrRemoteTarget _capableTarget = MangaOcrRemoteTarget(
@@ -125,7 +123,9 @@ void main() {
   });
 
   Future<EpubBookRow> seedMangaBook() async {
-    await db.into(db.epubBooks).insert(
+    await db
+        .into(db.epubBooks)
+        .insert(
           EpubBooksCompanion.insert(
             bookKey: 'manga1',
             title: '巻一',
@@ -171,13 +171,12 @@ void main() {
   }
 
   MangaOcrWizardEngines mountedEngines(WidgetTester tester) => tester
-      .widget<MangaOcrWizardDialog>(
-        find.byType(MangaOcrWizardDialog),
-      )
+      .widget<MangaOcrWizardDialog>(find.byType(MangaOcrWizardDialog))
       .engines;
 
-  testWidgets('① 阅读器入口（openBookOcr）：有可用 host 时「配对主机」选项出现',
-      (WidgetTester tester) async {
+  testWidgets('① 阅读器入口（openBookOcr）：有可用 host 时「配对主机」选项出现', (
+    WidgetTester tester,
+  ) async {
     final EpubBookRow book = await seedMangaBook();
     final _FakeRemoteRunner remote = _FakeRemoteRunner(target: _capableTarget);
     await pumpHost(tester, (BuildContext ctx) async {
@@ -216,23 +215,29 @@ void main() {
     });
 
     expect(find.text(t.manga_remote_ocr_engine), findsOneWidget);
-    final FushiSegmentedButton<MangaOcrEngineId> selector =
-        tester.widget<FushiSegmentedButton<MangaOcrEngineId>>(
+    final FushiSegmentedButton<MangaOcrEngineId> selector = tester
+        .widget<FushiSegmentedButton<MangaOcrEngineId>>(
           find.byType(FushiSegmentedButton<MangaOcrEngineId>),
         );
     final ButtonSegment<MangaOcrEngineId> remoteSegment = selector.segments
-        .singleWhere((ButtonSegment<MangaOcrEngineId> segment) =>
-            segment.value == MangaOcrEngineId.pairedHost);
-    expect(remoteSegment.enabled, isFalse,
-        reason: '无可用 host 时保留分段以承载持久化选择，但必须不可触发');
+        .singleWhere(
+          (ButtonSegment<MangaOcrEngineId> segment) =>
+              segment.value == MangaOcrEngineId.pairedHost,
+        );
+    expect(
+      remoteSegment.enabled,
+      isFalse,
+      reason: '无可用 host 时保留分段以承载持久化选择，但必须不可触发',
+    );
     // runner 仍在，只是 probe 没有找到可用 host。
     expect(mountedEngines(tester).remoteRunner, same(remote));
     // Lens 全平台可用，引擎区不该退化成「无可用引擎」。
     expect(find.text(t.manga_ocr_engine_none), findsNothing);
   });
 
-  testWidgets('③ 导入向导入口（openOcrImportWizard）：依赖集与阅读器入口同构',
-      (WidgetTester tester) async {
+  testWidgets('③ 导入向导入口（openOcrImportWizard）：依赖集与阅读器入口同构', (
+    WidgetTester tester,
+  ) async {
     final _FakeRemoteRunner remote = _FakeRemoteRunner(target: _capableTarget);
     await pumpHost(tester, (BuildContext ctx) async {
       await MangaModule.openOcrImportWizard(
@@ -250,8 +255,9 @@ void main() {
     expect(engines.initialEnginePreference, appModel.mangaOcrEnginePreference);
   });
 
-  testWidgets('④a externalRunner 的 desktop 三元是有意差异：非桌面无外部 CLI',
-      (WidgetTester tester) async {
+  testWidgets('④a externalRunner 的 desktop 三元是有意差异：非桌面无外部 CLI', (
+    WidgetTester tester,
+  ) async {
     final EpubBookRow book = await seedMangaBook();
     final _FakeRemoteRunner remote = _FakeRemoteRunner(target: _capableTarget);
     await pumpHost(tester, (BuildContext ctx) async {
@@ -264,12 +270,16 @@ void main() {
         desktopOverride: false,
       );
     });
-    expect(mountedEngines(tester).externalRunner, isNull,
-        reason: '非桌面没有外部 mokuro CLI');
+    expect(
+      mountedEngines(tester).externalRunner,
+      isNull,
+      reason: '非桌面没有外部 mokuro CLI',
+    );
   });
 
-  testWidgets('④b externalRunner 的 desktop 三元是有意差异：桌面仍提供外部 CLI',
-      (WidgetTester tester) async {
+  testWidgets('④b externalRunner 的 desktop 三元是有意差异：桌面仍提供外部 CLI', (
+    WidgetTester tester,
+  ) async {
     final _FakeRemoteRunner remote = _FakeRemoteRunner(target: _capableTarget);
     await pumpHost(tester, (BuildContext ctx) async {
       await MangaModule.openOcrImportWizard(
@@ -279,7 +289,10 @@ void main() {
         desktopOverride: true,
       );
     });
-    expect(mountedEngines(tester).externalRunner, isNotNull,
-        reason: '桌面必须仍提供外部 mokuro CLI 后备');
+    expect(
+      mountedEngines(tester).externalRunner,
+      isNotNull,
+      reason: '桌面必须仍提供外部 mokuro CLI 后备',
+    );
   });
 }

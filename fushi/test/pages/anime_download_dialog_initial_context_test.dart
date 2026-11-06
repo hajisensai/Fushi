@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
@@ -50,8 +51,11 @@ void main() {
         headers: <String, String>{'content-type': 'application/json'},
       );
     }
-    return http.Response('[]', 200,
-        headers: <String, String>{'content-type': 'application/json'});
+    return http.Response(
+      '[]',
+      200,
+      headers: <String, String>{'content-type': 'application/json'},
+    );
   }
 
   setUp(requestedUrls.clear);
@@ -88,8 +92,9 @@ void main() {
       .widgetList<TextField>(glassUnwrapAll<TextField>(find.byType(TextField)))
       .map((TextField f) => f.controller?.text ?? '');
 
-  testWidgets('initialMedia + initialEpisode → 直达选种段并预填合集名/集号',
-      (WidgetTester tester) async {
+  testWidgets('initialMedia + initialEpisode → 直达选种段并预填合集名/集号', (
+    WidgetTester tester,
+  ) async {
     await pumpDialog(
       tester,
       initialMedia: const AniListMedia(id: 42, romaji: 'My Show'),
@@ -138,8 +143,11 @@ void main() {
     await pumpDialog(tester);
 
     expect(fieldTexts(tester), isNot(contains('My Show')));
-    expect(fieldTexts(tester).every((String s) => s.isEmpty), isTrue,
-        reason: '无初始上下文时不得预填任何输入框');
+    expect(
+      fieldTexts(tester).every((String s) => s.isEmpty),
+      isTrue,
+      reason: '无初始上下文时不得预填任何输入框',
+    );
   });
 }
 
@@ -161,6 +169,18 @@ class _MemPlanStore extends AnimeDownloadPlanStore {
 class _FakeAppModel extends AppModel {
   _FakeAppModel(this._httpHandler) : super(testPlatformServices());
 
+  // Fushi 不内置 BT 站：番剧选种走用户添加的 Nyaa 式站点。
+  @override
+  List<BtSiteConfig> get btSites => <BtSiteConfig>[
+    BtSiteConfig(
+      id: 'test-anime-site',
+      baseUrl: Uri.parse('https://nyaa.si'),
+      format: BtSiteFormat.nyaa,
+      domains: const <BtSiteDomain>{BtSiteDomain.anime},
+      nyaaCategories: const <BtSiteDomain, String>{BtSiteDomain.anime: '1_0'},
+    ),
+  ];
+
   final Future<http.Response> Function(http.Request request) _httpHandler;
   final _MemPlanStore store = _MemPlanStore();
 
@@ -169,9 +189,9 @@ class _FakeAppModel extends AppModel {
 
   @override
   QbConnectionConfig? get qbConnectionConfig => const QbConnectionConfig(
-        backend: QbConnectionConfig.backendQbittorrent,
-        baseUrl: 'http://127.0.0.1:1',
-      );
+    backend: QbConnectionConfig.backendQbittorrent,
+    baseUrl: 'http://127.0.0.1:1',
+  );
 
   @override
   bool get torrentUploadIntroShown => true;

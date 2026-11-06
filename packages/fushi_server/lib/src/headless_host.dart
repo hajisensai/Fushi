@@ -14,17 +14,35 @@ import 'dart:io';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary_core.dart' show FushiDicts;
 import 'package:drift/drift.dart' show Value;
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
+import 'package:fushi_asr_core/asr_core.dart' as asr show AsrAudioProfile;
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
+import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show VideoSubtitleBackfillReport;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
+    show videoSubtitleJobsRootUnder;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
+import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
+import 'package:fushi_engine/sync/assistant/agent_assistant_host.dart';
+import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/host_jobs/file_content_hash_cache.dart';
+import 'package:fushi_engine/sync/host_jobs/host_audiobook_inputs.dart';
+import 'package:fushi_engine/sync/host_jobs/host_input_matcher.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:fushi_engine/sync/interconnect_graphic_subtitle_export.dart';
@@ -37,17 +55,23 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi_server/src/anki_landing.dart';
+import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/admin/admin_ops.dart';
+import 'package:fushi_server/src/agent_host.dart';
 import 'package:fushi_server/src/assistant_host.dart';
 import 'package:fushi_server/src/dictionary_host.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/lan_advertiser.dart';
+import 'package:fushi_server/src/leaderboard_link_host.dart';
 import 'package:fushi_server/src/profile_hub.dart';
 import 'package:fushi_server/src/remote_mining_host.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
+import 'package:fushi_server/src/server_subtitle_backfill.dart';
+import 'package:fushi_server/src/server_subtitle_providers.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
 
@@ -87,10 +111,14 @@ class HeadlessHost {
     required this.identity,
     bool Function()? p2pAvailable,
     ServerDictionaryHost? dictionaryHost,
-  })  : _config = config,
-        _injectedDictionaryHost = dictionaryHost,
-        _p2pAvailable =
-            p2pAvailable ?? (() => InterconnectP2pRuntime.isAvailable);
+    VideoSubtitleRegistry Function()? subtitleRegistryFactory,
+  }) : _config = config,
+       _injectedDictionaryHost = dictionaryHost,
+       _subtitleRegistryFactory =
+           subtitleRegistryFactory ??
+           (() => buildServerSubtitleRegistry(prefs)),
+       _p2pAvailable =
+           p2pAvailable ?? (() => InterconnectP2pRuntime.isAvailable);
 
   ServerConfig _config;
 
@@ -101,6 +129,10 @@ class HeadlessHost {
 
   /// 原生 libfushi_p2p 是否可用（测试可注入）。
   final bool Function() _p2pAvailable;
+
+  /// 在线字幕来源（下载管线字幕阶段 + 单视频补字幕）。生产 =
+  /// [buildServerSubtitleRegistry]：只装偏好开着且有 key 的来源；测试注入假来源。
+  final VideoSubtitleRegistry Function() _subtitleRegistryFactory;
   final ServerPaths paths;
   final FushiDatabase db;
   final ServerPrefs prefs;
@@ -110,12 +142,18 @@ class HeadlessHost {
 
   /// 运行中的互联 server（未启动为 null）；admin API 经它进程内代调互联接口。
   FushiSyncServer? get syncServer => _server;
+
+  /// 进程内调 admin API 的入口（`serve` 建好 admin API 后接上）。远端 AI 助手会话的
+  /// 工具集就是服务端描述的 admin 操作，没接上时能力位报 `not_ready`。
+  AdminDispatch? adminDispatch;
   LanAdvertiser? _advertiser;
   InterconnectP2pRuntime? _p2p;
   MangaOcrServiceImpl? _ocrService;
-  Map<String, MangaOcrServiceImpl> _ocrModelServices = const <String, MangaOcrServiceImpl>{};
+  Map<String, MangaOcrServiceImpl> _ocrModelServices =
+      const <String, MangaOcrServiceImpl>{};
   HostJobManager? _jobs;
   ServerDownloadHost? _downloads;
+  ServerAgentHistoryPruner? _agentHistoryPruner;
   ServerAnkiLanding? _anki;
   ServerVideoScrape? _videoScrape;
 
@@ -123,6 +161,11 @@ class HeadlessHost {
   final ServerDictionaryHost? _injectedDictionaryHost;
   ServerDictionaryHost? _dictionaries;
   final _AsyncMutex _mutex = _AsyncMutex();
+
+  /// 同步状态域的窄锁（对应 app 的 `runExclusiveWithSyncStateApply`）：对端聚合 /
+  /// 合集 / 进度与播放位置这类单行读-比较-写只彼此互斥，不排在 [_mutex] 罩着的
+  /// 书 / 视频大文件导入后面——那样对端 15s 内拿不到响应就判超时。
+  final _AsyncMutex _syncStateMutex = _AsyncMutex();
 
   /// 互联「配置文件」寄存处（对端推来 / 拉走的配置方案；WebUI 列表与指定也走它）。
   late final ServerProfileHub profiles = ServerProfileHub(
@@ -183,9 +226,9 @@ class HeadlessHost {
 
     SecurityContext? securityContext;
     if (config.tls) {
-      final FushiTlsIdentity tlsIdentity =
-          await FushiTlsIdentityStore(dataDir: paths.syncData.path)
-              .loadOrCreate();
+      final FushiTlsIdentity tlsIdentity = await FushiTlsIdentityStore(
+        dataDir: paths.syncData.path,
+      ).loadOrCreate();
       securityContext = SecurityContext()
         ..useCertificateChainBytes(utf8.encode(tlsIdentity.certificatePem))
         ..usePrivateKeyBytes(utf8.encode(tlsIdentity.privateKeyPem));
@@ -212,10 +255,37 @@ class HeadlessHost {
     // 通用任务（第 1 期：ASR）。任务目录持久化，重启可续。
     final HostJobManager jobs = HostJobManager(
       jobRoot: paths.hostJobs,
+      // 对端交来的有声书转录：本机库里已有内容相同（SHA-256）的音频就不必上传。
+      inputMatcher: HostInputMatcher(
+        candidates: () => hostAudiobookInputCandidates(db),
+        // 纯派生缓存放 `<data_dir>/tmp`，不进 support 根。
+        cache: FileContentHashCache(store: contentHashCacheFile(paths.temp)),
+      ),
       runners: <HostJobRunner>[
         AsrHostJobRunner(
-          serviceFactory: createServerAsrTranscriptionService,
+          serviceFactory: (asr.AsrAudioProfile profile) =>
+              createServerAsrTranscriptionService(audioProfile: profile),
           resolveVideoPath: _resolveVideoPath,
+        ),
+        // 视频日语字幕管线（MOSS / 滑窗识别 + AI 校对 + 导出）。AI 用配置 `ai:` 段那一家
+        // （ServerAiSettings 把字幕校对指给它）；管线缓存与 `subgen` 命令共用一个根。
+        VideoSubtitleHostJobRunner(
+          resolveRecognizer:
+              (
+                VideoSubtitleSegmenterMode mode,
+                MossBackendPreference mossBackend,
+                VideoSubtitleLanguage language,
+              ) => resolveServerVideoSubtitleRecognizer(
+                mode: mode,
+                mossBackend: mossBackend,
+                language: language,
+              ),
+          pipelineJobsRoot: videoSubtitleJobsRootUnder(paths.support),
+          database: () => db,
+          resolveVideoPath: _resolveVideoPath,
+          aiSettings: () => ServerAiSettings(() => config.ai),
+          mossStatus: (MossBackendPreference backend) =>
+              mossProvisionStatus(backend: backend),
         ),
       ],
     );
@@ -227,6 +297,8 @@ class HeadlessHost {
       db: db,
       prefs: prefs,
       config: () => config,
+      // 刮完下载来的作品 → 给仍缺字幕的分集补字幕（与 app 下载管线同一个钩子）。
+      onWorkScraped: subtitleBackfill.onWorkScraped,
     );
     _videoScrape = videoScrape;
 
@@ -238,14 +310,29 @@ class HeadlessHost {
       prefs: prefs,
       identity: identity,
       scrape: videoScrape,
+      // 字幕语言现读配置（WebUI 改完，下一次重建管线生效）。
+      subtitleLanguage: () => config.subtitleLanguage,
+      subtitleRegistryFactory: _subtitleRegistryFactory,
     );
     await downloads.start();
     _downloads = downloads;
+    // 下载那一刻没搜到字幕的分集，过几小时再找（与 app 同：随下载管线起）。
+    if (downloads.configured) subtitleBackfill.startRetryLoop();
+
+    // AI 助手存档（远端会话 + 操作记录）按保留期清：服务端常驻，起来清一次、之后定时清。
+    final ServerAgentHistoryPruner agentHistoryPruner =
+        ServerAgentHistoryPruner(db);
+    _agentHistoryPruner = agentHistoryPruner;
+    await agentHistoryPruner.start();
 
     // 词典引擎：原生库随包（bin/../lib/libfushidicts_ffi.so）或 FUSHI_DICTS_LIB 指定；
     // 加载不了只留痕，服务端照常起，词典退回纯存储中转。
-    final ServerDictionaryHost dictionaries = _injectedDictionaryHost ??
-        ServerDictionaryHost(db: db, dictionaryResourceRoot: paths.dictionaryResources);
+    final ServerDictionaryHost dictionaries =
+        _injectedDictionaryHost ??
+        ServerDictionaryHost(
+          db: db,
+          dictionaryResourceRoot: paths.dictionaryResources,
+        );
     _dictionaries = dictionaries;
     if (!await dictionaries.start()) {
       engineLog.logDiagnostic(
@@ -267,53 +354,97 @@ class HeadlessHost {
     _anki = anki;
 
     _loopbackOnly = _isLoopbackBind(config.bind);
-    final FushiSyncServer server = FushiSyncServer(
-      syncDataDir: paths.syncData.path,
-      port: config.port,
-      token: identity.hostToken,
-      allowLan: !_loopbackOnly,
-      libraryService: buildLibraryService(),
-      mangaOcrJobs: ocrJobs,
-      hostJobs: jobs,
-      downloads: downloads,
-      subscriptions: downloads.subscriptions,
-      securityContext: securityContext,
-      hostFingerprint: _hostFingerprint,
-      deviceName: config.deviceName,
-      // 无头服务端的 host 偏好读侧（「允许为对端转码视频」等），与 app 侧同一张
-      // `preferences` 表、同一份默认值。
-      prefs: prefs,
-      // 「AI 下视频」助手会话：手机把下载执行设备设成服务端时整场在这里跑。没配
-      // `ai:` 段时能力位如实报 no_provider（路由照挂，客户端好区分「不懂」与「没配」）。
-      assistant: createServerAssistantHost(config: () => config, prefs: prefs, db: db, downloads: downloads),
-      // 互联查词 / 查词历史 / 词典媒体：装了词典引擎才接线。
-      remoteLookupService: dictionaries.available ? ServerRemoteLookupService(dictionaries) : null,
-      historyService: dictionaries.available ? ServerRemoteHistoryService(db) : null,
-      dictionaryMediaProvider: dictionaries.available ? dictionaries.mediaFile : null,
-      dictionaryStylesProvider: dictionaries.available ? dictionaries.styles : null,
-      // 互联制卡（/api/mine、/api/mine/forward、/api/duplicate、/api/anki/*）：落到
-      // 本机 Anki 同步客户端库，需要随包的 fushi-anki-sync。
-      miningService: anki.available ? ServerRemoteMiningService.forLanding(anki, dictionaries: dictionaries) : null,
-      // 游戏串流需要 Windows 桌面 app 与正在跑的游戏，服务端恒不提供：不注入，
-      // 路由回 501 unsupported、capabilities 报 `gameStream: false`。
-      gameStreamService: null,
-    )
-      ..onPairRequest = _approvePairing
-      ..onPairPinGenerated = _generatePin
-      ..onPairSessionResolved = _clearPendingPairing
-      // 这里与下面公网地址的 provider 都读 [config] getter：WebUI 改完即生效。
-      ..lanRequiresPinProvider = (() async => config.lanRequiresPin)
-      ..onPeerPaired = _persistPairedPeer
-      ..pairedPeerTokensProvider = _loadPairedPeerTokens
-      // 地址集：与 LAN 广播同一个设备 id；公网 / 反代地址与 app 同一个偏好键。
-      ..hostId = identity.deviceId
-      ..publicUrlsProvider = (() async => config.publicUrls)
-      // 图形字幕（PGS / VobSub / DVB）整轨回传：与 app 当 host 同一份引擎实现（抽轨走
-      // 引擎 ffmpeg 后端解析——配置里的 ffmpeg 路径 / `FUSHI_FFMPEG` / PATH），缓存落
-      // 服务端自己的临时目录。
-      ..graphicSubtitleTrackExporter = InterconnectGraphicSubtitleExporter(
-        cacheDir: Directory(p.join(paths.temp.path, 'graphic_sub_tracks')),
-      ).export;
+    final FushiSyncServer server =
+        FushiSyncServer(
+            syncDataDir: paths.syncData.path,
+            port: config.port,
+            token: identity.hostToken,
+            allowLan: !_loopbackOnly,
+            libraryService: buildLibraryService(),
+            mangaOcrJobs: ocrJobs,
+            // 截屏识字（Steam Deck 游戏内识字插件）：用默认本地模型，常驻会话空闲 5 分钟关。
+            screenOcr: ScreenOcrHost(
+              service: ocrService,
+              workDir: Directory(p.join(paths.temp.path, 'screen_ocr')),
+            ),
+            hostJobs: jobs,
+            downloads: downloads,
+            subscriptions: downloads.subscriptions,
+            securityContext: securityContext,
+            hostFingerprint: _hostFingerprint,
+            deviceName: config.deviceName,
+            // 无头服务端的 host 偏好读侧（「允许为对端转码视频」等），与 app 侧同一张
+            // `preferences` 表、同一份默认值。
+            prefs: prefs,
+            // 「AI 下视频」助手会话：手机把下载执行设备设成服务端时整场在这里跑。没配
+            // `ai:` 段时能力位如实报 no_provider（路由照挂，客户端好区分「不懂」与「没配」）。
+            // 另有整场「AI 助手」会话（feature `agent`）：工具集是服务端自己描述的 admin
+            // 操作，模型同样来自 `ai:` 段，记账与撤销落服务端库。
+            assistant: CompositeHostAssistantProvider(
+              <String, HostAssistantProvider>{
+                // 第一个放 AI 下视频：老客户端只认顶层 reason，它取第一个 feature 的。
+                kHostAssistantFeatureVideoAcquire: createServerAssistantHost(
+                  config: () => config,
+                  prefs: prefs,
+                  db: db,
+                  downloads: downloads,
+                ),
+                kHostAssistantFeatureAgent: createServerAgentAssistantHost(
+                  config: () => config,
+                  db: db,
+                  dispatch: () => adminDispatch,
+                ),
+              },
+            ),
+            // 互联查词 / 查词历史 / 词典媒体：装了词典引擎才接线。
+            remoteLookupService: dictionaries.available
+                ? ServerRemoteLookupService(dictionaries)
+                : null,
+            historyService: dictionaries.available
+                ? ServerRemoteHistoryService(db)
+                : null,
+            dictionaryMediaProvider: dictionaries.available
+                ? dictionaries.mediaFile
+                : null,
+            dictionaryStylesProvider: dictionaries.available
+                ? dictionaries.styles
+                : null,
+            // 互联制卡（/api/mine、/api/mine/forward、/api/duplicate、/api/anki/*）：落到
+            // 本机 Anki 同步客户端库，需要随包的 fushi-anki-sync。
+            miningService: anki.available
+                ? ServerRemoteMiningService.forLanding(
+                    anki,
+                    dictionaries: dictionaries,
+                  )
+                : null,
+            // 游戏串流需要 Windows 桌面 app 与正在跑的游戏，服务端恒不提供：不注入，
+            // 路由回 501 unsupported、capabilities 报 `gameStream: false`。
+            gameStreamService: null,
+          )
+          ..onPairRequest = _approvePairing
+          ..onPairPinGenerated = _generatePin
+          ..onPairSessionResolved = _clearPendingPairing
+          // 这里与下面公网地址的 provider 都读 [config] getter：WebUI 改完即生效。
+          ..lanRequiresPinProvider = (() async => config.lanRequiresPin)
+          ..onPeerPaired = _persistPairedPeer
+          ..pairedPeerTokensProvider = _loadPairedPeerTokens
+          // 地址集：与 LAN 广播同一个设备 id；公网 / 反代地址与 app 同一个偏好键。
+          ..hostId = identity.deviceId
+          ..publicUrlsProvider = (() async => config.publicUrls)
+          // 「我的设备」跟随本机 Fushi 账户自动登录（见 leaderboard_link_host.dart）。
+          ..leaderboardLinkHost = buildLeaderboardLinkHost()
+          // 图形字幕（PGS / VobSub / DVB）整轨回传：与 app 当 host 同一份引擎实现（抽轨走
+          // 引擎 ffmpeg 后端解析——配置里的 ffmpeg 路径 / `FUSHI_FFMPEG` / PATH），缓存落
+          // 服务端自己的临时目录。
+          ..graphicSubtitleTrackExporter = InterconnectGraphicSubtitleExporter(
+            cacheDir: Directory(p.join(paths.temp.path, 'graphic_sub_tracks')),
+          ).export
+          // 「立即给这个视频补字幕」：与 app 当 host 同一个引擎服务（身份取已落库的刮削
+          // 结论，只补缺的，不覆盖已有字幕）。
+          ..videoSubtitleBackfill = backfillVideoSubtitle
+          // 「互联主机」AI 提供商：已配对设备用本服务端 `ai:` 段配的提供商（key 不出本机）；
+          // 开关是 preferences 表里的 interconnect_ai_relay_enabled（缺省开）。
+          ..aiRelaySettings = (() => ServerAiSettings(() => config.ai));
     try {
       await server.start();
     } catch (_) {
@@ -361,10 +492,13 @@ class HeadlessHost {
 
   Future<void> _serializeP2p(Future<void> Function() op) {
     final Future<void> next = _p2pOps.then((_) => op());
-    _p2pOps = next.then<void>((_) {}, onError: (Object e, StackTrace st) {
-      _p2pLastError = '$e';
-      engineLog.log('HeadlessHost.p2p', e, st);
-    });
+    _p2pOps = next.then<void>(
+      (_) {},
+      onError: (Object e, StackTrace st) {
+        _p2pLastError = '$e';
+        engineLog.log('HeadlessHost.p2p', e, st);
+      },
+    );
     return _p2pOps;
   }
 
@@ -375,50 +509,50 @@ class HeadlessHost {
 
   /// 开：起端点 → 信任区监听口 → iroh 入站转发 → 地址集带上 `p2p://`。
   Future<void> _attachP2p(FushiSyncServer server) => _serializeP2p(() async {
-        if (!_p2pWanted(server) || _p2pListening) return;
-        if (!_p2pAvailable()) {
-          engineLog.logDiagnostic(
-            'HeadlessHost',
-            'p2p: true 但没找到 libfushi_p2p（放在 bin/../lib/ 或设 FUSHI_P2P_LIB），P2P 隧道未启用',
-          );
-          return;
-        }
-        _p2pLastError = null;
-        final InterconnectP2pRuntime runtime = _p2p ??= InterconnectP2pRuntime(
-          loadSecret: () async =>
-              prefs.getPref(kInterconnectP2pSecretPref) as String?,
-          saveSecret: (String secret) =>
-              prefs.setPref(kInterconnectP2pSecretPref, secret),
-          // 实时读：换中继时 [_detachP2p] 关掉旧端点，下一次 ensure 按新值重建。
-          loadRelayUrls: () async => config.p2pRelays,
-        );
-        final InterconnectP2pNode? node = await runtime.ensure();
-        if (node == null) {
-          _p2pLastError = 'P2P 端点启动失败（详见日志）';
-          return;
-        }
-        final int port = await server.startP2pListener();
-        // 先挂身份解析器再放流量进来：限流按隧道对端 NodeId 分桶。查当前 node
-        // 而不是捕获这一个——换中继会重建端点。
-        server.p2pPeerResolver = (int p) => runtime.current?.hostPeer(p);
-        node.hostListen(port);
-        server.extraAddressesProvider =
-            () => runtime.hostAddresses(tls: server.usesTls);
-        _p2pListening = true;
-        engineLog.logDiagnostic('HeadlessHost', 'p2p node ${node.nodeId}');
-      });
+    if (!_p2pWanted(server) || _p2pListening) return;
+    if (!_p2pAvailable()) {
+      engineLog.logDiagnostic(
+        'HeadlessHost',
+        'p2p: true 但没找到 libfushi_p2p（放在 bin/../lib/ 或设 FUSHI_P2P_LIB），P2P 隧道未启用',
+      );
+      return;
+    }
+    _p2pLastError = null;
+    final InterconnectP2pRuntime runtime = _p2p ??= InterconnectP2pRuntime(
+      loadSecret: () async =>
+          prefs.getPref(kInterconnectP2pSecretPref) as String?,
+      saveSecret: (String secret) =>
+          prefs.setPref(kInterconnectP2pSecretPref, secret),
+      // 实时读：换中继时 [_detachP2p] 关掉旧端点，下一次 ensure 按新值重建。
+      loadRelayUrls: () async => config.p2pRelays,
+    );
+    final InterconnectP2pNode? node = await runtime.ensure();
+    if (node == null) {
+      _p2pLastError = 'P2P 端点启动失败（详见日志）';
+      return;
+    }
+    final int port = await server.startP2pListener();
+    // 先挂身份解析器再放流量进来：限流按隧道对端 NodeId 分桶。查当前 node
+    // 而不是捕获这一个——换中继会重建端点。
+    server.p2pPeerResolver = (int p) => runtime.current?.hostPeer(p);
+    node.hostListen(port);
+    server.extraAddressesProvider = () =>
+        runtime.hostAddresses(tls: server.usesTls);
+    _p2pListening = true;
+    engineLog.logDiagnostic('HeadlessHost', 'p2p node ${node.nodeId}');
+  });
 
   /// 关：停 iroh 入站 → 摘地址集 → 关信任区监听口 → 关端点（关掉才不再连公共
   /// 中继；NodeId 不变，私钥持久）。对未挂载的状态幂等。
   Future<void> _detachP2p(FushiSyncServer server) => _serializeP2p(() async {
-        _p2pListening = false;
-        final InterconnectP2pRuntime? runtime = _p2p;
-        runtime?.current?.hostStop();
-        server.extraAddressesProvider = null;
-        server.p2pPeerResolver = null;
-        await server.stopP2pListener();
-        await runtime?.dispose();
-      });
+    _p2pListening = false;
+    final InterconnectP2pRuntime? runtime = _p2p;
+    runtime?.current?.hostStop();
+    server.extraAddressesProvider = null;
+    server.p2pPeerResolver = null;
+    await server.stopP2pListener();
+    await runtime?.dispose();
+  });
 
   /// 运行中改配置（WebUI）：内存配置换新，「远程可达」三项即时生效——公网地址
   /// 由 provider 实时读；P2P 开关与中继变更在正在跑的 host 上挂载 / 卸载 / 重建
@@ -452,16 +586,17 @@ class HeadlessHost {
     // 拨号提示（home relay / 直连地址）从地址集里的 `p2p://` 反解，与对端看到的一致。
     final String? p2pUrl = active
         ? runtime!
-            .hostAddresses(tls: _server?.usesTls ?? false)
-            .map((InterconnectHostAddress a) => a.url)
-            .firstOrNull
+              .hostAddresses(tls: _server?.usesTls ?? false)
+              .map((InterconnectHostAddress a) => a.url)
+              .firstOrNull
         : null;
     final ({
       String nodeId,
       bool tls,
       String? relayUrl,
       List<String> directAddrs,
-    })? hints = p2pUrl == null ? null : parseInterconnectP2pUrl(p2pUrl);
+    })?
+    hints = p2pUrl == null ? null : parseInterconnectP2pUrl(p2pUrl);
     return <String, Object?>{
       'available': p2pAvailable,
       'enabled': config.p2p,
@@ -502,6 +637,9 @@ class HeadlessHost {
   /// 停下载管线（含订阅检查，等在途的一轮落地）再关刮削：正常停机与启动半途失败
   /// 共用。
   Future<void> _stopPipelines() async {
+    await subtitleBackfill.stop();
+    _agentHistoryPruner?.stop();
+    _agentHistoryPruner = null;
     final ServerDownloadHost? downloads = _downloads;
     _downloads = null;
     await downloads?.stop();
@@ -549,14 +687,20 @@ class HeadlessHost {
   }
 
   Future<void> _persistPairedPeer(
-      FushiPairedPeerRegistration registration) async {
-    await db.upsertPairedPeer(FushiPairedPeersCompanion.insert(
-      peerId: registration.peerId,
-      token: registration.token,
-      pairedAtMs: DateTime.now().millisecondsSinceEpoch,
-      deviceName: Value<String?>(registration.deviceName),
-      lastSeenIp: Value<String?>(registration.remoteAddress),
-    ));
+    FushiPairedPeerRegistration registration,
+  ) async {
+    await db.upsertPairedPeer(
+      FushiPairedPeersCompanion.insert(
+        peerId: registration.peerId,
+        token: registration.token,
+        pairedAtMs: DateTime.now().millisecondsSinceEpoch,
+        deviceName: Value<String?>(registration.deviceName),
+        lastSeenIp: Value<String?>(registration.remoteAddress),
+      ),
+    );
+    // 设备钥匙指纹与「我的设备」按本次会话显式重写（与 app 同一份实现）。无头审批不授予
+    // 「我的设备」，所以这里只会清掉旧标记、记下指纹，供管理员之后手动标记。
+    await InterconnectOwnerDeviceStore(db).recordPairing(registration);
     _server?.invalidatePeerTokenCache();
     engineLog.logDiagnostic(
       'HeadlessHost',
@@ -569,12 +713,37 @@ class HeadlessHost {
     return peers.map((FushiPairedPeerRow r) => r.token).toSet();
   }
 
+  /// 补字幕（单视频 / 刮削后 / 下载后缺字幕重试）的装配，见 server_subtitle_backfill.dart。
+  late final ServerSubtitleBackfill subtitleBackfill = ServerSubtitleBackfill(
+    db: db,
+    prefs: prefs,
+    config: () => config,
+    registryFactory: _subtitleRegistryFactory,
+  );
+
+  /// 给库里一个视频补一条字幕（互联 `POST /api/library/videos/<id>/subtitle/backfill`）。
+  /// 视频不存在返回 null（路由 404）；一家字幕来源都没配时回 `unavailable`。
+  Future<VideoSubtitleBackfillReport?> backfillVideoSubtitle(
+    String videoId, {
+    String? language,
+  }) => subtitleBackfill.backfillVideo(videoId, language: language);
+
+  /// 「跟随已配对设备自动登录」的 host 侧装配（[start] 用；测试也直接拿它挂到自建的 TLS
+  /// [FushiSyncServer] 上）。总闸现读 [config]，账户每次请求现读激活 Profile 的账户文件。
+  ServerLeaderboardLinkHost buildLeaderboardLinkHost() =>
+      ServerLeaderboardLinkHost(
+        db: db,
+        supportRoot: paths.support,
+        enabled: () => config.leaderboardLink,
+      );
+
   /// `asr` 任务的 `videoId` → host 库里的视频文件（分集 0）。
   Future<String?> _resolveVideoPath(String videoId) async {
-    final VideoBookRow? row = await VideoBookRepository(db).getByBookUid(videoId);
+    final VideoBookRow? row = await VideoBookRepository(
+      db,
+    ).getByBookUid(videoId);
     if (row == null) return null;
-    final File f = File(row.videoPath);
-    return await f.exists() ? f.path : null;
+    return await hasLocalMediaFile(row.videoPath) ? row.videoPath : null;
   }
 
   // ── 库服务 ────────────────────────────────────────────────────────────
@@ -590,56 +759,56 @@ class HeadlessHost {
   /// 互联 host 的库服务装配（[start] 用；测试也直接拿它挂到自建的 TLS
   /// [FushiSyncServer] 上驱动端点，免得起整套下载 / ASR / 局域网广播）。
   LocalLibraryHostService buildLibraryService() => LocalLibraryHostService(
+    db: db,
+    dictionaryResourceRoot: paths.dictionaryResources,
+    packages: SyncAssetPackageService(db: db),
+    // 导入 / 删除词典后按 DB 重载引擎（没装引擎时是空操作，只改 DB 与目录）。
+    refreshDictionaryCache: () async => _dictionaries?.refresh(),
+    runExclusive: _mutex.run,
+    runSyncStateExclusive: _syncStateMutex.run,
+    importBookFromFile: (File bookFile) async {
+      if (await isMangaPackage(bookFile)) {
+        return importMangaPackageFile(
+          db: db,
+          file: bookFile,
+          title: p.basenameWithoutExtension(bookFile.path),
+        );
+      }
+      return EpubImporter.importFromPath(
         db: db,
-        dictionaryResourceRoot: paths.dictionaryResources,
-        packages: SyncAssetPackageService(db: db),
-        // 导入 / 删除词典后按 DB 重载引擎（没装引擎时是空操作，只改 DB 与目录）。
-        refreshDictionaryCache: () async => _dictionaries?.refresh(),
-        runExclusive: _mutex.run,
-        importBookFromFile: (File bookFile) async {
-          if (await isMangaPackage(bookFile)) {
-            return importMangaPackageFile(
-              db: db,
-              file: bookFile,
-              title: p.basenameWithoutExtension(bookFile.path),
-            );
-          }
-          return EpubImporter.importFromPath(
-            db: db,
-            filePath: bookFile.path,
-            fileName: p.basename(bookFile.path),
-          );
-        },
-        localAudioStagingDir: paths.temp,
-        // 以前三件都没接：清单恒空、推送传完才抛 UnsupportedError（BUG-2815）。
-        localAudioEntriesProvider: () => localAudio.entries,
-        onLocalAudioImported: localAudio.importPackage,
-        removeLocalAudioEntry: localAudio.remove,
-        audioDatabaseRoot: Directory(p.join(paths.documents.path, 'audiobooks')),
-        videoSubtitleLangCode: config.subtitleLanguage,
-        // 客户端经互联发起的重刮 / 手动指定身份 / 分集排序：以前这里没接，
-        // 这些请求在服务端恒返回空结果或 notPlanned。
-        scrapeController: () async => _videoScrape?.controller,
-        uploadedVideoRoot: Directory(p.join(paths.documents.path, 'remote_videos')),
-        extractVideoCover: (
-                {required String videoPath, required String bookUid}) =>
-            extractVideoCover(videoPath: videoPath, bookUid: bookUid),
-        // 互联「配置文件」搬运：服务端只寄存、不 apply（见 ServerProfileHub）。开关每次
-        // 现读配置（`profile_transfer`，默认关），WebUI 改完即生效；关着时端点回 403。
-        isProfileTransferEnabled: () async => config.profileTransfer,
-        exportActiveProfileJson: profiles.exportShared,
-        importProfileJson: profiles.importJson,
-        // 书名覆盖：服务端没有 MediaSource 内存缓存，只写 DB（LWW 判据同 app）。
-        adoptOverrideTitle: ({
+        filePath: bookFile.path,
+        fileName: p.basename(bookFile.path),
+      );
+    },
+    localAudioStagingDir: paths.temp,
+    // 以前三件都没接：清单恒空、推送传完才抛 UnsupportedError（BUG-2815）。
+    localAudioEntriesProvider: () => localAudio.entries,
+    onLocalAudioImported: localAudio.importPackage,
+    removeLocalAudioEntry: localAudio.remove,
+    audioDatabaseRoot: Directory(p.join(paths.documents.path, 'audiobooks')),
+    videoSubtitleLangCode: config.subtitleLanguage,
+    // 客户端经互联发起的重刮 / 手动指定身份 / 分集排序：以前这里没接，
+    // 这些请求在服务端恒返回空结果或 notPlanned。
+    scrapeController: () async => _videoScrape?.controller,
+    uploadedVideoRoot: Directory(p.join(paths.documents.path, 'remote_videos')),
+    extractVideoCover: ({required String videoPath, required String bookUid}) =>
+        extractVideoCover(videoPath: videoPath, bookUid: bookUid),
+    // 互联「配置文件」搬运：服务端只寄存、不 apply（见 ServerProfileHub）。开关每次
+    // 现读配置（`profile_transfer`，默认关），WebUI 改完即生效；关着时端点回 403。
+    isProfileTransferEnabled: () async => config.profileTransfer,
+    exportActiveProfileJson: profiles.exportShared,
+    importProfileJson: profiles.importJson,
+    // 书名覆盖：服务端没有 MediaSource 内存缓存，只写 DB（LWW 判据同 app）。
+    adoptOverrideTitle:
+        ({
           required String bookKey,
           required String title,
           required int updatedAt,
-        }) =>
-            adoptOverrideTitleInDb(
-              db,
-              bookKey: bookKey,
-              title: title,
-              updatedAt: updatedAt,
-            ),
-      );
+        }) => adoptOverrideTitleInDb(
+          db,
+          bookKey: bookKey,
+          title: title,
+          updatedAt: updatedAt,
+        ),
+  );
 }

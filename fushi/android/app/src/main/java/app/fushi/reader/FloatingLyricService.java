@@ -354,13 +354,11 @@ public class FloatingLyricService extends BaseFloatingService {
 
         int index = getCharIndexAt(localX, localY);
 
-        // Route into the Flutter popup (PopupDictFlutterActivity), not the
-        // deactivated native PopupDictActivity. The Flutter popup segments the
-        // tapped word from charIndex (no whole-sentence head-match) and renders
-        // a tap-to-lookup word card with no forced search keyboard — matching
-        // every other lookup surface. The 0.5.0 Kotlin rewrite migrated the
-        // system PROCESS_TEXT entry points but left this strip pointing at the
-        // old native Activity (BUG-214).
+        // Route into the Flutter popup (PopupDictFlutterActivity). It segments
+        // the tapped word from charIndex (no whole-sentence head-match) and
+        // renders a tap-to-lookup word card with no forced search keyboard —
+        // matching every other lookup surface (BUG-214; the old native popup
+        // Activity has since been removed).
         Intent intent = new Intent(this, PopupDictFlutterActivity.class);
         intent.putExtra(Intent.EXTRA_PROCESS_TEXT, currentText);
         intent.putExtra(PopupDictFlutterActivity.EXTRA_CHAR_INDEX, index);

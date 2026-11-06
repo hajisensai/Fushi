@@ -14,7 +14,14 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/library_section_tab.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 /// 视频设置面板是否走手机紧凑档（窗口最短边 < 600：手机竖屏与横屏）。紧凑档左右
 /// 留白收到 16、整块面板收一档密度与字号（[videoQuickSettingsCompactTheme]）。
@@ -115,8 +122,12 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
   /// 按钮直接把面板开在对应分类。
   late String? _subPage = widget.initialCategory;
 
-  /// 用户在面板内切过分类：此后切换时内容错峰进场（首次打开不放）。
-  bool _categorySwitched = false;
+  /// 面板首帧已出：此后**新挂载**的分类页错峰进场（首次打开那一页不放，由面板
+  /// 外壳的滑入承担动效）。只在帧后置位、不 setState：进场与否由每页挂载时
+  /// [_CategoryPageEntrance] 定一次。以前是切页**落定后** setState 翻开关，已经滑进
+  /// 来、看得见的那页再被整页重播一次进场——首次从「播放」切「画质增强」时列表
+  /// 闪一下重建（Zc-iEbsImS）。
+  bool _firstFrameShown = false;
 
   /// 页签与下方分页共用的 controller（与阅读器「阅读设置」侧板同一形态）：点页签
   /// 与左右横滑切页走同一条路，横滑时指示条跟手。分组不止一个时才有。
@@ -159,6 +170,9 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _firstFrameShown = true,
+    );
     // TODO-1350：直接开在「字幕」分类（如「字幕轨」按钮驱动 initialCategory=='subtitle'）时，
     // 挂载即触发一次字幕源加载回调（延后到帧后，避免在 initState 阶段同步触发父页 setState）。
     if (widget.initialCategory == 'subtitle') {
@@ -204,10 +218,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
   /// （TODO-1350），统一两个入口，避免「切到字幕分类却没加载字幕轨」的入口遗漏。
   void _selectSubPage(String id) {
     final bool enteringSubtitle = id == 'subtitle' && _subPage != 'subtitle';
-    setState(() {
-      _subPage = id;
-      _categorySwitched = true;
-    });
+    setState(() => _subPage = id);
     if (enteringSubtitle) {
       widget.host.onSubtitleCategoryShown?.call();
     }
@@ -244,27 +255,24 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
               end: tabsInset,
               top: compact ? 0 : tokens.spacing.gap,
             ),
-            child: Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: LibrarySectionTabs<String>.controlled(
-                key: const ValueKey<String>('video-settings-tabs'),
-                tabs: <LibrarySectionTab<String>>[
-                  for (final ({String id, String label}) cat in _categories())
-                    LibrarySectionTab<String>(
-                      value: cat.id,
-                      label: cat.label,
-                      // 稳定 key：测试 / 焦点驱动靠 id 命中分类（不依赖标签文案）。
-                      labelKey: ValueKey<String>(
-                        'video-settings-cat-${cat.id}',
-                      ),
-                    ),
-                ],
-                controller: tabController,
-                focusIdPrefix: 'video-settings-tab',
-                // 放不下时横向滚动（选中段自动滚入可见区），不收进「更多」菜单：七个
-                // 分类都是一级入口，横滑一下就能看到。
-                fill: false,
-              ),
+            child: LibrarySectionTabs<String>.controlled(
+              key: const ValueKey<String>('video-settings-tabs'),
+              tabs: <LibrarySectionTab<String>>[
+                for (final ({String id, String label}) cat in _categories())
+                  LibrarySectionTab<String>(
+                    value: cat.id,
+                    label: cat.label,
+                    // 稳定 key：测试 / 焦点驱动靠 id 命中分类（不依赖标签文案）。
+                    labelKey: ValueKey<String>('video-settings-cat-${cat.id}'),
+                  ),
+              ],
+              controller: tabController,
+              focusIdPrefix: 'video-settings-tab',
+              // 摆得下时铺满面板宽度、各段等分（2026-10-30 用户「顶部栏改为全宽」）；
+              // 放不下时退回横向滚动（选中段自动滚入可见区），不收进「更多」菜单：
+              // 七个分类都是一级入口，横滑一下就能看到。
+              fill: true,
+              overflowMenu: false,
             ),
           ),
         if (isEinkTheme(context))
@@ -322,9 +330,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
           // 行首图标着色（M3E 色调色块，随分组错开），与面板着色方案一起
           // 让设置页不再是一片灰。
           child: SettingsTonalIconsScope(
-            child: FushiEntranceScope(
-              enabled: _categorySwitched,
-              replayKey: id,
+            child: _CategoryPageEntrance(
+              animate: _firstFrameShown,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -614,4 +621,25 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
     final VideoGroup? group = _groupFor(page);
     return group == null ? '' : _groupTitle(group);
   }
+}
+
+/// 一个分类页的进场窗口：是否错峰进场在**本页挂载时**定一次，之后不再变——
+/// [FushiEntranceScope.enabled] 一翻就会把已可见的内容整页重播（Zc-iEbsImS）。
+class _CategoryPageEntrance extends StatefulWidget {
+  const _CategoryPageEntrance({required this.animate, required this.child});
+
+  /// 挂载那一刻是否放进场；后续 rebuild 传入的新值被忽略。
+  final bool animate;
+  final Widget child;
+
+  @override
+  State<_CategoryPageEntrance> createState() => _CategoryPageEntranceState();
+}
+
+class _CategoryPageEntranceState extends State<_CategoryPageEntrance> {
+  late final bool _animate = widget.animate;
+
+  @override
+  Widget build(BuildContext context) =>
+      FushiEntranceScope(enabled: _animate, child: widget.child);
 }

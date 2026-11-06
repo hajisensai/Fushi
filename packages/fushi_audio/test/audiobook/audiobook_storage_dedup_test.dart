@@ -10,8 +10,9 @@ import 'package:path/path.dart' as p;
 void main() {
   test('persistFileWithProgress dedupes colliding basenames instead of '
       'overwriting', () async {
-    final Directory tmp =
-        await Directory.systemTemp.createTemp('fushi_persist_test_');
+    final Directory tmp = await Directory.systemTemp.createTemp(
+      'fushi_persist_test_',
+    );
     addTearDown(() => tmp.delete(recursive: true));
 
     final Directory persistDir = Directory(p.join(tmp.path, 'persist'))
@@ -24,10 +25,14 @@ void main() {
     final File b = File(p.join(disc2.path, '01.m4a'))
       ..writeAsStringSync('BBBBBB');
 
-    final String destA =
-        await AudiobookStorage.persistFileWithProgress(a, persistDir);
-    final String destB =
-        await AudiobookStorage.persistFileWithProgress(b, persistDir);
+    final String destA = await AudiobookStorage.persistFileWithProgress(
+      a,
+      persistDir,
+    );
+    final String destB = await AudiobookStorage.persistFileWithProgress(
+      b,
+      persistDir,
+    );
 
     // Distinct destinations, both present, content preserved (no overwrite).
     expect(destA, isNot(equals(destB)));

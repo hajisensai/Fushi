@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show QueryRow;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
@@ -119,7 +119,7 @@ void main() {
         isMainProcess: false,
       );
       addTearDown(migrated.close);
-      expect(migrated.schemaVersion, 118);
+      expect(migrated.schemaVersion, 146);
 
       expect(
         await migrated

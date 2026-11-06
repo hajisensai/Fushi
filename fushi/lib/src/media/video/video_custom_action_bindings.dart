@@ -68,7 +68,8 @@ class VideoCustomActionBindings {
     final List<ShortcutAction?> next = List<ShortcutAction?>.of(_actions);
     next[slotIndex] = action;
     return VideoCustomActionBindings._(
-        List<ShortcutAction?>.unmodifiable(next));
+      List<ShortcutAction?>.unmodifiable(next),
+    );
   }
 
   /// 序列化：逗号分隔的动作 key，空槽位写空串（如 `video_next_subtitle,,,`）。

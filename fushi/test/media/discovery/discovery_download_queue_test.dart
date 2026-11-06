@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
@@ -74,10 +74,7 @@ void main() {
     );
     addTearDown(queue.dispose);
 
-    expect(
-      queue.enqueue(_item('1'), destinationDir: tempDir.path),
-      isTrue,
-    );
+    expect(queue.enqueue(_item('1'), destinationDir: tempDir.path), isTrue);
     await _waitFor(() => queue.tasks.single.isFinished);
 
     final DiscoveryDownloadTask task = queue.tasks.single;
@@ -87,6 +84,60 @@ void main() {
     expect(importedFiles.single, task.filePath);
     expect(task.importOutcome?.summary, 'ok');
     expect(queue.importedCount, 1);
+  });
+
+  test('随附文件（字幕 / EPUB）与主文件一起落盘并记入任务；下不下来的跳过', () async {
+    final List<String> opened = <String>[];
+    final DiscoveryDownloadQueue queue = DiscoveryDownloadQueue(
+      resolvePayload: (DiscoveryResourceItem item) async =>
+          const DiscoveryHttpPayload(
+            url: 'https://example.com/a.mp3',
+            fileName: 'a.mp3',
+            companions: <DiscoveryCompanionFile>[
+              DiscoveryCompanionFile(
+                url: 'https://example.com/a.srt',
+                fileName: 'a.srt',
+              ),
+              DiscoveryCompanionFile(
+                url: 'https://example.com/gone.epub',
+                fileName: 'a.epub',
+              ),
+            ],
+          ),
+      importer: (DiscoveryDownloadTask task, File file) async =>
+          const DiscoveryImportOutcome(importedCount: 1),
+      openOverride: (Uri uri, Map<String, String> headers) async {
+        opened.add(uri.path);
+        if (uri.path.endsWith('gone.epub')) {
+          return ResumableDownloadResponse.bytes(
+            statusCode: 404,
+            body: const <int>[],
+            headers: const <String, String>{},
+          );
+        }
+        return okBytes(utf8.encode(uri.path));
+      },
+    );
+    addTearDown(queue.dispose);
+
+    queue.enqueue(
+      DiscoveryResourceItem(
+        sourceId: 'src',
+        title: 't',
+        id: 'x',
+        kind: DiscoveryMediaKind.audiobook,
+        payloadKind: DiscoveryPayloadKind.httpFile,
+      ),
+      destinationDir: tempDir.path,
+    );
+    await _waitFor(() => queue.tasks.single.isFinished);
+
+    final DiscoveryDownloadTask task = queue.tasks.single;
+    expect(task.status, DiscoveryDownloadStatus.done);
+    expect(task.filePath, endsWith('a.mp3'));
+    expect(task.companionPaths, hasLength(1));
+    expect(task.companionPaths.single, endsWith('a.srt'));
+    expect(await File(task.companionPaths.single).readAsString(), '/a.srt');
   });
 
   // BUG-2649：Calibre OPDS 的 `<link length>` 是库里原文件体积，下载时服务端
@@ -129,10 +180,7 @@ void main() {
     );
     addTearDown(queue.dispose);
 
-    expect(
-      queue.enqueue(_item('1'), destinationDir: tempDir.path),
-      isTrue,
-    );
+    expect(queue.enqueue(_item('1'), destinationDir: tempDir.path), isTrue);
     expect(
       queue.enqueue(_item('1'), destinationDir: tempDir.path),
       isFalse,
@@ -156,7 +204,8 @@ void main() {
 
     gate.complete();
     await _waitFor(
-        () => queue.tasks.every((DiscoveryDownloadTask t) => t.isFinished));
+      () => queue.tasks.every((DiscoveryDownloadTask t) => t.isFinished),
+    );
     expect(started.length, 2);
   });
 
@@ -395,8 +444,9 @@ void main() {
 
     // 收尾仍以 `_running` 身份认领这次执行 → 执行位释放，第二个任务跑完。
     gate.complete();
-    await _waitFor(() => queue.tasks.single.status ==
-        DiscoveryDownloadStatus.done);
+    await _waitFor(
+      () => queue.tasks.single.status == DiscoveryDownloadStatus.done,
+    );
     expect(queue.runningTask, isNull);
   });
 

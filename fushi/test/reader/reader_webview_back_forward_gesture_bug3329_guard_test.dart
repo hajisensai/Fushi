@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-3356：iOS 上阅读器左缘横滑（用户习惯的侧滑返回）把正文跳走。
 ///
@@ -29,11 +29,30 @@ void main() {
   const Map<String, String> exempt = <String, String>{
     'lib/src/pages/implementations/web_video_fushi_page.dart':
         '浏览器类页面：历史就是用户的网页导航，后退手势合理',
+    'lib/src/media/video/web_video_session.dart':
+        '原生播放器页网页档的站点 WebView（Windows WebView2）：历史是用户在站点里的导航',
+    'lib/src/media/video/web_video_browser_settings.dart':
+        '原生播放器页网页档站点 WebView 的设置（会话 WebView 的 initialSettings 由这里构造）：历史是用户在站点里的导航',
+    // #2500 把 WebView 从 fushi_web_browser_page.dart 拆进每标签页视图；加载失败页是
+    // Flutter 侧状态、阅读模式就地换 body，都不往 WebView 历史压条目。
+    'lib/src/web_browser/tab_view/web_browser_tab_view.dart':
+        '浏览器模块（通用 app 内浏览器）的标签页 WebView：历史就是用户的网页导航，后退手势合理',
+    'lib/src/media/manga/web/web_comic_scanner.dart':
+        '网页漫画章节扫描用 HeadlessInAppWebView，不可见、无手势',
+    'lib/src/media/novel/web/web_novel_page_fetcher.dart':
+        '网页小说取页用 HeadlessInAppWebView，不可见、无手势',
     'lib/src/media/manga/cookie/cloudflare_challenge_page.dart':
         '浏览器类页面（站点验证），历史对应真实网页跳转',
     'lib/src/media/manga/mihon/mihon_web_login_page.dart':
         '浏览器类页面（站点登录），历史对应真实网页跳转',
+    'lib/src/pages/implementations/music/music_plugin_login.dart':
+        '浏览器类页面（音乐插件网页登录），历史对应真实网页跳转',
     'lib/src/media/novel/online/lnreader_runtime.dart': '无头运行时 WebView，不可见、无手势',
+    // 这里只有共用的 appleMusicWebViewSettings()：MusicKit 桥是 HeadlessInAppWebView；
+    // 登录页的桥页面只加载一次、无可见内容，Apple ID 弹窗是独立 windowId 的 WebView，
+    // 历史对应真实网页跳转。
+    'lib/src/media/music/apple_music/apple_music_web_bridge.dart':
+        'MusicKit 桥 / 登录页共用设置：桥页面只加载一次（无头或无可见内容），登录弹窗历史对应真实网页跳转',
     'lib/src/media/audiobook/audiobook_clip_webview_render.dart':
         '离屏渲染用 WebView，不可见、无手势',
     'lib/src/pages/implementations/dictionary_popup_webview.dart':

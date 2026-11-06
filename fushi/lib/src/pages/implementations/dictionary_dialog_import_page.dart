@@ -1,8 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:multi_value_listenable_builder/multi_value_listenable_builder.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_progress_dialog_content.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// The content of the dialog used for showing dictionary import progress when
 /// importing a dictionary from the dictionary menu. See the
@@ -64,8 +66,8 @@ class _DictionaryDialogImportPageState
 
         final String header =
             currentCount != null && totalCount != null && totalCount != 1
-                ? '${t.import_in_progress}\n$currentCount / $totalCount'
-                : t.import_in_progress;
+            ? '${t.import_in_progress}\n$currentCount / $totalCount'
+            : t.import_in_progress;
 
         return DictionaryProgressDialogContent(
           header: header,

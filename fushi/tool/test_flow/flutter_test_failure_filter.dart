@@ -16,6 +16,30 @@ class FlutterTestRunSummary {
   /// Number of non-hidden `testDone` events observed.
   final int testsCompleted;
 
+  /// One verdict over several sequential `flutter test` runs (batches): green
+  /// only when every batch reached `done: success`; a batch without a verdict
+  /// makes the whole run verdict-less, a failed one makes it failed.
+  static FlutterTestRunSummary merge(List<FlutterTestRunSummary> runs) {
+    bool? success = runs.isNotEmpty;
+    for (final FlutterTestRunSummary run in runs) {
+      if (run.success == null) {
+        success = null;
+        break;
+      }
+      if (run.success == false) success = false;
+    }
+    return FlutterTestRunSummary(
+      errors: <FlutterTestErrorEvent>[
+        for (final FlutterTestRunSummary run in runs) ...run.errors,
+      ],
+      success: success,
+      testsCompleted: runs.fold<int>(
+        0,
+        (int sum, FlutterTestRunSummary run) => sum + run.testsCompleted,
+      ),
+    );
+  }
+
   /// Why this run must not be reported as green, or `null` when it is green.
   ///
   /// A run only passes when the reporter reached `done: success` *and* at
@@ -69,8 +93,9 @@ String? resolveFlutterTestVerdictFailure({
   required FlutterTestRunSummary summary,
   int minimumTests = 1,
 }) {
-  final String? summaryFailure =
-      summary.failureReason(minimumTests: minimumTests);
+  final String? summaryFailure = summary.failureReason(
+    minimumTests: minimumTests,
+  );
   if (flutterExitCode != 0) {
     return 'flutter test exited with $flutterExitCode. '
         '${summaryFailure ?? 'See the stderr log for the underlying error.'}';
@@ -103,10 +128,7 @@ class FlutterTestErrorEvent {
 }
 
 class _TestInfo {
-  const _TestInfo({
-    required this.name,
-    required this.suiteId,
-  });
+  const _TestInfo({required this.name, required this.suiteId});
 
   final String name;
   final int? suiteId;
@@ -157,7 +179,8 @@ FlutterTestRunSummary parseFlutterTestJsonEvents(Iterable<String> lines) {
         }
       case 'testDone':
         final Object? testId = decoded['testID'];
-        final bool hidden = decoded['hidden'] == true ||
+        final bool hidden =
+            decoded['hidden'] == true ||
             (testId is int && hiddenTestIds.contains(testId));
         if (!hidden) {
           testsCompleted++;
@@ -172,11 +195,13 @@ FlutterTestRunSummary parseFlutterTestJsonEvents(Iterable<String> lines) {
           (printsByTest[testId] ??= <String>[]).add(message);
         }
       case 'error':
-        rawErrors.add(_RawErrorEvent(
-          testId: decoded['testID'] is int ? decoded['testID'] as int : null,
-          error: (decoded['error'] as String?) ?? '<no error message>',
-          stackTrace: (decoded['stackTrace'] as String?) ?? '',
-        ));
+        rawErrors.add(
+          _RawErrorEvent(
+            testId: decoded['testID'] is int ? decoded['testID'] as int : null,
+            error: (decoded['error'] as String?) ?? '<no error message>',
+            stackTrace: (decoded['stackTrace'] as String?) ?? '',
+          ),
+        );
       case 'done':
         success = decoded['success'] as bool?;
     }
@@ -293,8 +318,9 @@ String _indentLimitedTail(String value, int maxLines) {
 
 String _indentLimited(String value, int maxLines) {
   final List<String> lines = value.trimRight().split('\n');
-  final int visibleCount =
-      lines.length < maxLines ? lines.length : maxLines.clamp(0, lines.length);
+  final int visibleCount = lines.length < maxLines
+      ? lines.length
+      : maxLines.clamp(0, lines.length);
   final StringBuffer buffer = StringBuffer();
   for (final String line in lines.take(visibleCount)) {
     buffer.writeln('  ${line.trimRight()}');

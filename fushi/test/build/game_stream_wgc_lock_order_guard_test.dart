@@ -12,7 +12,7 @@
 //      带着设备锁来拿 frame_mutex_）。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 取类内（两格缩进）方法体：从签名到第一个两格缩进的闭合花括号。
 String methodBody(String source, String signature) {
@@ -32,7 +32,10 @@ void main() {
   const String frameLock = 'std::lock_guard<std::mutex> lock(frame_mutex_);';
 
   test('① 设备开启多线程保护并保存 ID3D11Multithread', () {
-    final String setup = methodBody(capture, 'std::string SetupCaptureLocked() {');
+    final String setup = methodBody(
+      capture,
+      'std::string SetupCaptureLocked() {',
+    );
     expect(setup.contains('d3d_.As(&multithread_)'), isTrue);
     expect(
       setup.contains('multithread_->SetMultithreadProtected(TRUE);'),
@@ -99,7 +102,10 @@ void main() {
   });
 
   test('③ StartCapture 在 frame_mutex_ 之外调用', () {
-    final String setup = methodBody(capture, 'std::string SetupCaptureLocked() {');
+    final String setup = methodBody(
+      capture,
+      'std::string SetupCaptureLocked() {',
+    );
     expect(
       setup.contains('StartCapture()'),
       isFalse,

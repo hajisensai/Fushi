@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('游戏首页不再各挂统计入口（已收敛到首页 dashboard）', () {
@@ -11,8 +11,11 @@ void main() {
       'lib/src/pages/implementations/home_game_page.dart',
     ]) {
       final String source = File(path).readAsStringSync();
-      expect(source, isNot(contains('statistics_center_page.dart')),
-          reason: path);
+      expect(
+        source,
+        isNot(contains('statistics_center_page.dart')),
+        reason: path,
+      );
       expect(source, isNot(contains('StatisticsCenterPage(')), reason: path);
     }
   });

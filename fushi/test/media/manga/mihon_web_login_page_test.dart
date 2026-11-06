@@ -39,9 +39,10 @@ void main() {
   /// 挂起页面并返回 pop 结果（null = 还没 pop）。
   Future<bool?> pumpLogin(
     WidgetTester tester, {
-    required MihonCookieJar? store,
+    required MangaCookieJar? store,
     required Future<List<Cookie>> Function(WebUri url) cookieReader,
     Uri? baseUrl,
+    bool browserImportAvailable = true,
     Future<void> Function(Uri url)? openExternal,
     Future<bool> Function(BrowserSiteCookie cookie)? cookieWriter,
   }) async {
@@ -61,6 +62,7 @@ void main() {
                     environmentFactory: () async => null,
                     openExternal: openExternal,
                     cookieWriter: cookieWriter,
+                    browserImportAvailable: browserImportAvailable,
                     webViewBuilder: (_) =>
                         const SizedBox(key: ValueKey<String>('stub-webview')),
                   ),
@@ -180,6 +182,29 @@ void main() {
       'session=abc',
     );
     expect(find.byKey(const ValueKey<String>('stub-webview')), findsNothing);
+  });
+
+  testWidgets('普通 MangaCookieJar（小说源的 jar）同样按整站导出并关页', (
+    WidgetTester tester,
+  ) async {
+    final MangaCookieJar store = MangaCookieJar(
+      File('${directory.path}/novel-cookies.json'),
+    );
+    await pumpLogin(
+      tester,
+      store: store,
+      baseUrl: Uri.parse('https://syosetu.com'),
+      cookieReader: (WebUri url) async => <Cookie>[
+        browserCookie('ses', value: 'signed-in', domain: '.syosetu.com'),
+        browserCookie('tracker', domain: '.ads.example'),
+      ],
+    );
+    await tapDone(tester);
+    expect(find.byKey(const ValueKey<String>('stub-webview')), findsNothing);
+    final List<MangaCookie> saved = store.cookiesForSite('syosetu.com');
+    expect(saved.map((MangaCookie c) => '${c.name}=${c.value}'), <String>[
+      'ses=signed-in',
+    ]);
   });
 
   testWidgets('子域 cookie 保留真实域，并随整站一起交给运行时', (WidgetTester tester) async {
@@ -386,7 +411,11 @@ void main() {
     ]) {
       final Finder finder = find.byKey(ValueKey<String>(key));
       expect(finder, findsOneWidget, reason: key);
-      expect(tester.widget<IconButton>(glassUnwrap<IconButton>(finder)).onPressed, isNull, reason: key);
+      expect(
+        tester.widget<IconButton>(glassUnwrap<IconButton>(finder)).onPressed,
+        isNull,
+        reason: key,
+      );
     }
     // 地址栏显示当前地址。
     expect(find.text('https://bookwalker.jp'), findsOneWidget);
@@ -426,14 +455,23 @@ void main() {
           BrowserCookieImportGate.pending;
       expect(request, isNotNull);
       expect(request!.host, 'bookwalker.jp');
-      // 按钮变禁用（不能重复登记），状态文字先是「还没收到」。
+      // 按钮变禁用（不能重复登记），下方是共用的可取消等待状态条。
       expect(
         tester
-            .widget<OutlinedButton>(glassUnwrap<OutlinedButton>(find.byKey(const ValueKey<String>('mihon_login_import_browser'))),)
+            .widget<OutlinedButton>(
+              glassUnwrap<OutlinedButton>(
+                find.byKey(
+                  const ValueKey<String>('mihon_login_import_browser'),
+                ),
+              ),
+            )
             .onPressed,
         isNull,
       );
-      expect(find.text(t.mihon_source_login_import_none), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('browser-login-import-waiting')),
+        findsOneWidget,
+      );
 
       // 扩展回传（含一条第三方域，必须被挡）。送达 → 写 jar 是真实文件 IO，
       // 整段放进 runAsync，fake zone 里等不到 dart:io 的完成事件。
@@ -452,6 +490,20 @@ void main() {
                   .toList(),
         );
         expect(accepted, isTrue);
+        // 一次登记只导一次：收下第一批就撤登记，同一 nonce 再送被拒。
+        expect(BrowserCookieImportGate.pending, isNull);
+        expect(
+          BrowserCookieImportGate.deliver(
+            nonce: request.nonce,
+            host: 'bookwalker.jp',
+            cookies: <BrowserSiteCookie>[
+              BrowserSiteCookie.fromJson(
+                _browserCookie('session', '.bookwalker.jp'),
+              )!,
+            ],
+          ),
+          isFalse,
+        );
       });
       // 写 jar 的每一步 IO 续体都排在 fake zone 里：与 tapDone 同一节奏，
       // 真实等待 + pump 交替，直到状态文字出现。
@@ -495,6 +547,21 @@ void main() {
       expect(readWebView, isFalse, reason: '会话已从浏览器来，不再导出 WebView');
       expect(find.byKey(const ValueKey<String>('stub-webview')), findsNothing);
       expect(BrowserCookieImportGate.pending, isNull, reason: '关页即撤登记');
+    });
+
+    testWidgets('持有 jar 但平台没有浏览器扩展（移动端小说源）：没有导入按钮', (
+      WidgetTester tester,
+    ) async {
+      await pumpLogin(
+        tester,
+        store: MangaCookieJar(File('${directory.path}/novel-cookies.json')),
+        cookieReader: (WebUri url) async => const <Cookie>[],
+        browserImportAvailable: false,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('mihon_login_import_browser')),
+        findsNothing,
+      );
     });
 
     testWidgets('jar 为 null（Android）没有导入按钮', (WidgetTester tester) async {

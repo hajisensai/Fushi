@@ -30,9 +30,7 @@ Future<Route<dynamic>?> _pushAdaptiveRoute(
         platform: platform,
         extensions: designSystem == null
             ? const <ThemeExtension<dynamic>>[]
-            : <ThemeExtension<dynamic>>[
-                FushiDesignSystemTheme(designSystem),
-              ],
+            : <ThemeExtension<dynamic>>[FushiDesignSystemTheme(designSystem)],
       ),
       home: Builder(
         builder: (BuildContext context) => TextButton(
@@ -177,8 +175,11 @@ void main() {
         platform: platform,
         designSystem: FushiDesignSystem.auto,
       );
-      expect(autoRoute, isA<MaterialPageRoute<void>>(),
-          reason: '$platform auto');
+      expect(
+        autoRoute,
+        isA<MaterialPageRoute<void>>(),
+        reason: '$platform auto',
+      );
 
       final Route<dynamic>? missingRoute = await _pushAdaptiveRoute(
         tester,

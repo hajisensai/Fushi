@@ -21,30 +21,28 @@ void main() {
   group('resolveMineSentence (pure) — BUG-730', () {
     test('empty JS field -> falls back to the surface sentence context', () {
       expect(
-        resolveMineSentence(
-          <String, String>{'expression': '勝負'},
-          '今日は真剣勝負だ。',
-        ),
+        resolveMineSentence(<String, String>{'expression': '勝負'}, '今日は真剣勝負だ。'),
         '今日は真剣勝負だ。',
         reason: 'JS 不发 sentence 时，制卡句子必须回落到剪贴板/UIA 捕获的句子',
       );
     });
 
-    test('missing JS field key -> falls back to the surface sentence context',
-        () {
-      expect(
-        resolveMineSentence(const <String, String>{}, 'クリップボード全文'),
-        'クリップボード全文',
-        reason: 'sentence 键缺席（当前 JS 现状）也必须回落，而不是空句',
-      );
-    });
+    test(
+      'missing JS field key -> falls back to the surface sentence context',
+      () {
+        expect(
+          resolveMineSentence(const <String, String>{}, 'クリップボード全文'),
+          'クリップボード全文',
+          reason: 'sentence 键缺席（当前 JS 现状）也必须回落，而不是空句',
+        );
+      },
+    );
 
     test('non-empty JS field wins over the fallback (future-proof)', () {
       expect(
-        resolveMineSentence(
-          <String, String>{'sentence': 'JS が送った文'},
-          'クリップボード全文',
-        ),
+        resolveMineSentence(<String, String>{
+          'sentence': 'JS が送った文',
+        }, 'クリップボード全文'),
         'JS が送った文',
         reason: '若 JS 将来真发 sentence，尊重它，不被 context 覆盖',
       );
@@ -59,10 +57,14 @@ void main() {
     String read(String p) => File(p).readAsStringSync();
 
     test('mine + overwrite resolve the sentence via the shared fallback', () {
-      final String handlers =
-          read('lib/src/lookup/overlay_bridge_handlers.dart');
-      expect(handlers.contains('String sentenceContext = '), isTrue,
-          reason: 'maybeHandleOverlayDeferredBridge 必须暴露 sentenceContext');
+      final String handlers = read(
+        'lib/src/lookup/overlay_bridge_handlers.dart',
+      );
+      expect(
+        handlers.contains('String sentenceContext = '),
+        isTrue,
+        reason: 'maybeHandleOverlayDeferredBridge 必须暴露 sentenceContext',
+      );
       // 制卡与覆写两条路径都必须经共享 resolver（否则句子又回到恒空）。
       expect(
         'resolveMineSentence('.allMatches(handlers).length >= 2,
@@ -70,8 +72,11 @@ void main() {
         reason: '_mineEntry 与 _updateEntry 都必须用 resolveMineSentence 兜底句子',
       );
       // 制卡历史行必须用解析后的句子（不再 fields[\'sentence\'] 恒空）。
-      expect(handlers.contains('sentence: sentence,'), isTrue,
-          reason: '制卡卡片 AnkiMiningContext 用解析后的 sentence');
+      expect(
+        handlers.contains('sentence: sentence,'),
+        isTrue,
+        reason: '制卡卡片 AnkiMiningContext 用解析后的 sentence',
+      );
     });
 
     test('overlay surface passes its captured _currentSentence', () {

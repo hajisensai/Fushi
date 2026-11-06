@@ -42,15 +42,15 @@ void main() {
       bool? result;
       final Future<bool> f = c
           .waitForSubtitleTrackCount(
-        currentRealCount: () => count,
-        changes: changes.stream,
-        minTrackCount: 2, // streamIndex=1 → 需要第 2 条就绪。
-        timeout: const Duration(seconds: 5),
-      )
+            currentRealCount: () => count,
+            changes: changes.stream,
+            minTrackCount: 2, // streamIndex=1 → 需要第 2 条就绪。
+            timeout: const Duration(seconds: 5),
+          )
           .then((bool r) {
-        result = r;
-        return r;
-      });
+            result = r;
+            return r;
+          });
 
       // 目标第 2 条尚未解析出：绝不能提前完成（旧实现在此已越界放弃）。
       await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -76,8 +76,11 @@ void main() {
         minTrackCount: 2,
         timeout: const Duration(milliseconds: 100),
       );
-      expect(ready, isFalse,
-          reason: '超时上界内目标轨未就绪 → false，由调用方按 real.length 判越界');
+      expect(
+        ready,
+        isFalse,
+        reason: '超时上界内目标轨未就绪 → false，由调用方按 real.length 判越界',
+      );
     });
 
     test('check-then-subscribe 竞态：订阅后立即复读闭合（无后续事件也完成）', () async {
@@ -113,15 +116,15 @@ void main() {
       bool? result;
       final Future<bool> f = c
           .waitForSubtitleTrackCount(
-        currentRealCount: () => count,
-        changes: changes.stream,
-        minTrackCount: 3, // 选第 3 条（streamIndex=2）。
-        timeout: const Duration(seconds: 5),
-      )
+            currentRealCount: () => count,
+            changes: changes.stream,
+            minTrackCount: 3, // 选第 3 条（streamIndex=2）。
+            timeout: const Duration(seconds: 5),
+          )
           .then((bool r) {
-        result = r;
-        return r;
-      });
+            result = r;
+            return r;
+          });
 
       count = 2;
       changes.add(null);

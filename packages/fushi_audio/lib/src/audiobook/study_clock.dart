@@ -200,20 +200,20 @@ class StudyClock {
     Future<String> Function()? deviceId,
     DateTime Function()? now,
     String Function()? uidFactory,
-  })  : assert(
-          accrual == StudyAccrual.wallClock ||
-              (isActive == null && idleTimeout == null),
-          '显式记账模式下活跃态 / 空闲门无意义：时长全由 addActiveMs 决定',
-        ),
-        _mediaKind = mediaKind,
-        _mediaKey = mediaKey,
-        _title = title,
-        _format = format,
-        _tick = tick,
-        _sink = sink ?? database.upsertStudySegment,
-        _deviceId = deviceId ?? database.getOrCreateStudyDeviceId,
-        _now = now ?? DateTime.now,
-        _uidFactory = uidFactory ?? FushiDatabase.newStudySegmentUid;
+  }) : assert(
+         accrual == StudyAccrual.wallClock ||
+             (isActive == null && idleTimeout == null),
+         '显式记账模式下活跃态 / 空闲门无意义：时长全由 addActiveMs 决定',
+       ),
+       _mediaKind = mediaKind,
+       _mediaKey = mediaKey,
+       _title = title,
+       _format = format,
+       _tick = tick,
+       _sink = sink ?? database.upsertStudySegment,
+       _deviceId = deviceId ?? database.getOrCreateStudyDeviceId,
+       _now = now ?? DateTime.now,
+       _uidFactory = uidFactory ?? FushiDatabase.newStudySegmentUid;
 
   final String _mediaKind;
   final String _mediaKey;
@@ -300,7 +300,7 @@ class StudyClock {
       return (
         durationMs: _sessionDurationMs,
         chars: _sessionChars,
-        active: false
+        active: false,
       );
     }
     if (accrual == StudyAccrual.explicit) {

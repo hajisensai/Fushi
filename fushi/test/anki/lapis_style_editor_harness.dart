@@ -69,21 +69,21 @@ Future<EditorSession> pumpEditor(
 
   final Future<void> pushed = Navigator.of(hostContext)
       .push<LapisVisualEditorResult>(
-    MaterialPageRoute<LapisVisualEditorResult>(
-      builder: (_) => LapisStyleEditorPage(
-        initialCustomCss: initialCustomCss,
-        fontScalePercent: 100,
-        noteTypeFields: noteTypeFields,
-        initialFieldMappings: initialFieldMappings,
-        initialBlocks: initialBlocks,
-        pickHandlebar: pickHandlebar,
-        previewBuilder: (_, __, ___) => const SizedBox.expand(),
-      ),
-    ),
-  )
+        MaterialPageRoute<LapisVisualEditorResult>(
+          builder: (_) => LapisStyleEditorPage(
+            initialCustomCss: initialCustomCss,
+            fontScalePercent: 100,
+            noteTypeFields: noteTypeFields,
+            initialFieldMappings: initialFieldMappings,
+            initialBlocks: initialBlocks,
+            pickHandlebar: pickHandlebar,
+            previewBuilder: (_, __, ___) => const SizedBox.expand(),
+          ),
+        ),
+      )
       .then((LapisVisualEditorResult? value) {
-    onResult?.call(value);
-  });
+        onResult?.call(value);
+      });
   await tester.pumpAndSettle();
   return EditorSession(pushed);
 }

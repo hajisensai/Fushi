@@ -37,8 +37,9 @@ void main() {
   final String code = maskCssComments(css);
 
   /// 粗切成 `选择器 { 声明 }`。@media 等嵌套块的外层不会以 rt 结尾，内层规则照样能被切出来。
-  final Iterable<RegExpMatch> rules =
-      RegExp(r'([^{}]+)\{([^{}]*)\}').allMatches(code);
+  final Iterable<RegExpMatch> rules = RegExp(
+    r'([^{}]+)\{([^{}]*)\}',
+  ).allMatches(code);
 
   /// 这条规则的目标元素是不是 <rt>（逗号分组里任意一支的最后一个 compound 是 rt）。
   bool targetsRt(String selector) => selector
@@ -59,19 +60,24 @@ void main() {
     return rule.firstMatch(code)?.group(1);
   }
 
-  test(
-      '注音盒 .ruby-rt 自带 em 缩放（绝对定位盒的 strut 来自它自己的 font-size，'
+  test('注音盒 .ruby-rt 自带 em 缩放（绝对定位盒的 strut 来自它自己的 font-size，'
       'BUG-1487）', () {
     final String? body = bodyOfSelector('.ruby-rt');
-    expect(body, isNotNull,
-        reason: 'popup.css 必须为 glossary 面把 .ruby-rt 作用域化——注音的定位与尺寸都在它身上');
-    expect(fontSizeOf(body!), matches(RegExp(r'^[\d.]+em$')),
-        reason: '注音盒的字号必须以 em 表达——它要跟着 popupContentZoom 等比缩放（BUG-363）；'
-            '具体倍率是可调的产品值（BUG-1655 已从 0.5em 调到 0.6em），这里只锁单位');
+    expect(
+      body,
+      isNotNull,
+      reason: 'popup.css 必须为 glossary 面把 .ruby-rt 作用域化——注音的定位与尺寸都在它身上',
+    );
+    expect(
+      fontSizeOf(body!),
+      matches(RegExp(r'^[\d.]+em$')),
+      reason:
+          '注音盒的字号必须以 em 表达——它要跟着 popupContentZoom 等比缩放（BUG-363）；'
+          '具体倍率是可调的产品值（BUG-1655 已从 0.5em 调到 0.6em），这里只锁单位',
+    );
   });
 
-  test(
-      '注音的缩放恰好施加一次：任何会落到被包裹 <rt> 上的字号，都必须有 '
+  test('注音的缩放恰好施加一次：任何会落到被包裹 <rt> 上的字号，都必须有 '
       '.ruby-rt 内的归一化规则抵消', () {
     // 会落到「被 .ruby-rt 包裹的 rt」身上的字号声明。用 `ruby > rt` 限定的不算——那个子代
     // 组合器只匹配 bare markup（包裹后恒为 ruby > .ruby-unit > .ruby-rt > rt）。
@@ -109,7 +115,8 @@ void main() {
     expect(
       normalised,
       isTrue,
-      reason: 'popup.css 里这些字号声明会落到被 .ruby-rt 包裹的 <rt> 上，与注音盒自己的 em '
+      reason:
+          'popup.css 里这些字号声明会落到被 .ruby-rt 包裹的 <rt> 上，与注音盒自己的 em '
           '缩放相乘（0.6em x 0.6em = 0.36em），同时让 .ruby-reserve 按全尺寸预留宽度把汉字撑开：\n'
           '  ${reachesWrappedRt.join('\n  ')}\n'
           '必须保留 `:where(…) .ruby-rt rt { font-size: 1em }` 这类归一化规则把盒子那层 em '
@@ -119,47 +126,70 @@ void main() {
   });
 
   test(
-      'bare markup 仍有与注音盒同值的 fallback：postProcessRuby 只走 '
-      '`.glossary-content ruby, .expression ruby`，.glossary-group 下的裸 ruby 到不了',
-      () {
-    final String? body = bodyOfSelector('rt') ?? bodyOfSelector('ruby > rt');
-    expect(body, isNotNull,
-        reason: 'popup.css 必须保留一条命中未包裹 <rt> 的字号 fallback，否则 postProcessRuby '
+    'bare markup 仍有与注音盒同值的 fallback：postProcessRuby 只走 '
+    '`.glossary-content ruby, .expression ruby`，.glossary-group 下的裸 ruby 到不了',
+    () {
+      final String? body = bodyOfSelector('rt') ?? bodyOfSelector('ruby > rt');
+      expect(
+        body,
+        isNotNull,
+        reason:
+            'popup.css 必须保留一条命中未包裹 <rt> 的字号 fallback，否则 postProcessRuby '
             '没走到的裸 <ruby>（.glossary-group 下非 .glossary-content 的结构化内容）注音会按 '
-            '1em 渲染，和正文一样大');
-    expect(fontSizeOf(body!), equals(fontSizeOf(bodyOfSelector('.ruby-rt')!)),
-        reason: 'bare fallback 的字号必须与注音盒一致，包裹与未包裹两种结构渲染尺寸才一致');
-  });
+            '1em 渲染，和正文一样大',
+      );
+      expect(
+        fontSizeOf(body!),
+        equals(fontSizeOf(bodyOfSelector('.ruby-rt')!)),
+        reason: 'bare fallback 的字号必须与注音盒一致，包裹与未包裹两种结构渲染尺寸才一致',
+      );
+    },
+  );
 
-  test(
-      '.ruby-unit 的上方预留带容得下注音盒（放大振假名时必须同步抬高，'
+  test('.ruby-unit 的上方预留带容得下注音盒（放大振假名时必须同步抬高，'
       '否则注音顶出预留带撞上一行 BUG-108/363）', () {
     final String? unit = bodyOfSelector('.ruby-unit');
     expect(unit, isNotNull, reason: 'popup.css 必须为 glossary 面作用域化 .ruby-unit');
-    final String? band =
-        RegExp(r'padding-top\s*:\s*([\d.]+)em').firstMatch(unit!)?.group(1);
-    expect(band, isNotNull,
-        reason: '预留必须内生于单元且以 em 表达，才能随 popupContentZoom 等比缩放');
+    final String? band = RegExp(
+      r'padding-top\s*:\s*([\d.]+)em',
+    ).firstMatch(unit!)?.group(1);
+    expect(
+      band,
+      isNotNull,
+      reason: '预留必须内生于单元且以 em 表达，才能随 popupContentZoom 等比缩放',
+    );
     final String? boxSize = fontSizeOf(bodyOfSelector('.ruby-rt')!);
     final double? boxEm = double.tryParse(
-        RegExp(r'^([\d.]+)em$').firstMatch(boxSize ?? '')?.group(1) ?? '');
+      RegExp(r'^([\d.]+)em$').firstMatch(boxSize ?? '')?.group(1) ?? '',
+    );
     expect(boxEm, isNotNull, reason: '注音盒字号必须是 em');
-    expect(double.parse(band!), greaterThanOrEqualTo(boxEm!),
-        reason: '注音盒 line-height:1，所以它占满自身字号的高度；预留带 ${band}em 必须 >= '
-            '注音盒 ${boxEm}em，否则注音会顶出预留带、撞上上一行文字。调大振假名时'
-            '这两个值必须一起调（BUG-1655: 0.6em 盒 / 0.66em 带）');
+    expect(
+      double.parse(band!),
+      greaterThanOrEqualTo(boxEm!),
+      reason:
+          '注音盒 line-height:1，所以它占满自身字号的高度；预留带 ${band}em 必须 >= '
+          '注音盒 ${boxEm}em，否则注音会顶出预留带、撞上上一行文字。调大振假名时'
+          '这两个值必须一起调（BUG-1655: 0.6em 盒 / 0.66em 带）',
+    );
   });
 
   test('.ruby-reserve 与注音盒同字号但必须脱离正文横向排版（BUG-1778）', () {
     final String? reserve = bodyOfSelector('.ruby-reserve');
-    expect(reserve, isNotNull,
-        reason: 'popup.css 必须为 glossary 面作用域化 .ruby-reserve');
-    final String reserveBody = reserve!;
-    expect(RegExp(r'position\s*:\s*absolute').hasMatch(reserveBody), isTrue,
-        reason: '孪生体若留在 inline flow，会按长注音宽度撑开一个汉字并拉散正文');
     expect(
-        fontSizeOf(reserveBody),
-        equals(fontSizeOf(bodyOfSelector('.ruby-rt')!)),
-        reason: '脱离排版后的孪生体仍与注音盒保持同一 em 尺寸，避免 DOM 几何语义漂移');
+      reserve,
+      isNotNull,
+      reason: 'popup.css 必须为 glossary 面作用域化 .ruby-reserve',
+    );
+    final String reserveBody = reserve!;
+    expect(
+      RegExp(r'position\s*:\s*absolute').hasMatch(reserveBody),
+      isTrue,
+      reason: '孪生体若留在 inline flow，会按长注音宽度撑开一个汉字并拉散正文',
+    );
+    expect(
+      fontSizeOf(reserveBody),
+      equals(fontSizeOf(bodyOfSelector('.ruby-rt')!)),
+      reason: '脱离排版后的孪生体仍与注音盒保持同一 em 尺寸，避免 DOM 几何语义漂移',
+    );
   });
 }

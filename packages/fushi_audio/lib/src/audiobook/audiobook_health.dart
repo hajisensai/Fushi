@@ -70,8 +70,10 @@ class AudiobookHealth {
     );
   }
 
-  factory AudiobookHealth.notApplicable(
-      {String? reason, DateTime? measuredAt}) {
+  factory AudiobookHealth.notApplicable({
+    String? reason,
+    DateTime? measuredAt,
+  }) {
     return AudiobookHealth(
       kind: HealthKind.notApplicable,
       reason: reason,
@@ -79,8 +81,10 @@ class AudiobookHealth {
     );
   }
 
-  factory AudiobookHealth.failed(
-      {required String reason, DateTime? measuredAt}) {
+  factory AudiobookHealth.failed({
+    required String reason,
+    DateTime? measuredAt,
+  }) {
     return AudiobookHealth(
       kind: HealthKind.failed,
       ratePct: 0,
@@ -142,8 +146,9 @@ class AudiobookHealth {
       orElse: () => HealthKind.unrun,
     );
     final int? rawPct = ab.matchRatePct;
-    final int? pct =
-        (rawPct == null || rawPct < 0 || rawPct > 100) ? null : rawPct;
+    final int? pct = (rawPct == null || rawPct < 0 || rawPct > 100)
+        ? null
+        : rawPct;
     return AudiobookHealth(
       kind: kind,
       ratePct: pct,

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:audio_service/audio_service.dart' as ag;
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
@@ -182,8 +183,265 @@ void main() {
     });
   });
 
+  group('跨章过渡期间歌词层跟着声音走（R1）', () {
+    test('后台跨章卡住：播放所在句照常按 tick 推进并 notify，正文跟随句冻结', () async {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(0),
+        _cue(1000),
+        _cue(2000, section: 13),
+        _cue(3000, section: 13),
+        _cue(4000, section: 13),
+      ];
+      final AudiobookPlayerController c = await _playingController(
+        cues: cues,
+        allBook: true,
+      );
+      int crossRequests = 0;
+      c.onCrossChapter = (_) => crossRequests++;
+
+      // 播进第 13 章：发起跨章，正文 WebView 在后台迟迟完不成。
+      c.debugUpdateCueForPosition(2500);
+      expect(c.chapterTransitionHeldForTesting, isTrue);
+      expect(crossRequests, 1);
+      expect(c.lyricsCueAllBookIdx, 2);
+
+      int notifies = 0;
+      c.addListener(() => notifies++);
+      c.debugUpdateCueForPosition(3500);
+      expect(notifies, 1, reason: '换句要叫醒 reader 同步歌词层（旧码：守卫里裸 return）');
+      expect(c.lyricsCueAllBookIdx, 3);
+      expect(c.currentCue?.startMs, 2000, reason: '正文跟随句在跨章期间仍冻结（否则重复请求跨章）');
+
+      c.debugUpdateCueForPosition(3700);
+      expect(notifies, 1, reason: '同一句内的 tick 不 notify');
+      c.debugUpdateCueForPosition(4200);
+      expect(notifies, 2);
+      expect(c.lyricsCueAllBookIdx, 4);
+      expect(crossRequests, 1, reason: '跨章只请求一次');
+      c.dispose();
+    });
+
+    // BUG-4202：跨章过渡期间 reader 装完新章会重灌同一份整书 cue；旧码 setAllBookCues
+    // 把播放所在句清成 -1，歌词层退回冻结的正文跟随句（高亮往回跳一下）。
+    test('跨章过渡中重灌同一份整书 cue：播放所在句保住，不退回冻结的跟随句', () async {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(0),
+        _cue(1000),
+        _cue(2000, section: 13),
+        _cue(3000, section: 13),
+        _cue(4000, section: 13),
+      ];
+      final AudiobookPlayerController c = await _playingController(
+        cues: cues,
+        allBook: true,
+      );
+      c.debugUpdateCueForPosition(2500);
+      c.debugUpdateCueForPosition(4200);
+      expect(c.chapterTransitionHeldForTesting, isTrue);
+      expect(c.lyricsCueAllBookIdx, 4);
+      expect(c.currentCue?.startMs, 2000, reason: '前提：正文跟随句冻结');
+
+      // reader 装完第 13 章：_injectAudiobookBridge 重灌章 cue + 整书 cue（新列表、同元素）。
+      c.setChapterCues(cues);
+      c.setAllBookCues(cues);
+      expect(c.lyricsCueAllBookIdx, 4, reason: '旧码：-1 → 退回跟随句 2');
+      c.dispose();
+    });
+
+    test('不在跨章过渡中：歌词层与正文跟随句同源', () async {
+      final AudiobookPlayerController c = await _playingController(
+        allBook: true,
+      );
+      expect(c.lyricsCueAllBookIdx, c.allBookCueIdx);
+      expect(c.lyricsCueAllBookIdx, 1);
+      c.dispose();
+    });
+  });
+
+  group('后台不做图片停留（D）', () {
+    test('生命周期 → 可见性：只有 hidden / paused / detached 算看不见', () {
+      expect(readerVisibleForLifecycleState(AppLifecycleState.resumed), isTrue);
+      expect(
+        readerVisibleForLifecycleState(AppLifecycleState.inactive),
+        isTrue,
+      );
+      expect(readerVisibleForLifecycleState(AppLifecycleState.hidden), isFalse);
+      expect(readerVisibleForLifecycleState(AppLifecycleState.paused), isFalse);
+      expect(
+        readerVisibleForLifecycleState(AppLifecycleState.detached),
+        isFalse,
+      );
+    });
+
+    test('BUG-3891：插图停留秒数可自定义（不再只有 0/5/10/15），超上限夹住并持久', () async {
+      final AudiobookPlayerController c = await _playingController();
+      final List<int> persisted = <int>[];
+      c.onImagePausePersist = (int sec) async => persisted.add(sec);
+
+      c.setImagePauseSec(37);
+      expect(c.imagePauseSec.value, 37, reason: '旧实现夹到 15，自定义秒数被吃掉');
+      c.setImagePauseSec(999);
+      expect(c.imagePauseSec.value, AudiobookPlayerController.maxImagePauseSec);
+      c.setImagePauseSec(-3);
+      expect(c.imagePauseSec.value, 0);
+      expect(persisted, <int>[
+        37,
+        AudiobookPlayerController.maxImagePauseSec,
+        0,
+      ]);
+
+      c.setImagePauseSec(37);
+      c.triggerImagePause();
+      await pumpEventQueue();
+      expect(c.isImagePaused, isTrue, reason: '自定义秒数照常驱动插图停留');
+      expect(c.isPlaying, isFalse);
+      c.dispose();
+    });
+
+    test('BUG-3891：默认关，从关往上调一档直接到 5 秒，往下逐秒减到关', () {
+      expect(AudiobookPlayerController.imagePauseOnSec, 5);
+      // 步进器从 0 报 1：打开即 5 秒。
+      expect(AudiobookPlayerController.imagePauseStepped(0, 1), 5);
+      // 开着时照常 ±1。
+      expect(AudiobookPlayerController.imagePauseStepped(5, 6), 6);
+      expect(AudiobookPlayerController.imagePauseStepped(5, 4), 4);
+      expect(AudiobookPlayerController.imagePauseStepped(1, 0), 0);
+      // 关着往下仍是关。
+      expect(AudiobookPlayerController.imagePauseStepped(0, 0), 0);
+    });
+
+    test('新建控制器（没载入过书）插图停留是关', () {
+      _installFakeAudioPlatform();
+      final AudiobookPlayerController c = AudiobookPlayerController();
+      expect(c.imagePauseSec.value, 0);
+      c.dispose();
+    });
+
+    test('看不见时同 DOM 插图不停留：照常播放', () async {
+      final AudiobookPlayerController c = await _playingController();
+      c.setImagePauseSec(5);
+      c.setReaderVisible(false);
+
+      c.triggerImagePause();
+      await pumpEventQueue();
+
+      expect(c.isImagePaused, isFalse);
+      expect(c.isPlaying, isTrue, reason: '后台暂停后 App 被挂起，恢复用的 Timer 永不触发');
+      c.dispose();
+    });
+
+    test('看不见时整章插图不停留：立即返回、不暂停', () async {
+      final AudiobookPlayerController c = await _playingController();
+      c.setImagePauseSec(5);
+      c.setReaderVisible(false);
+
+      await c.awaitImageChapterPause().timeout(const Duration(seconds: 1));
+
+      expect(c.isImagePaused, isFalse);
+      expect(c.isPlaying, isTrue);
+      c.dispose();
+    });
+
+    test('停留中切到后台：立即结束停留并恢复播放', () async {
+      final AudiobookPlayerController c = await _playingController();
+      c.setImagePauseSec(5);
+      c.triggerImagePause();
+      await pumpEventQueue();
+      expect(c.isImagePaused, isTrue, reason: '前提：前台照常停留');
+      expect(c.isPlaying, isFalse);
+
+      c.setReaderVisible(false);
+      await pumpEventQueue();
+
+      expect(c.isImagePaused, isFalse);
+      expect(c.isPlaying, isTrue);
+      c.dispose();
+    });
+
+    test('整章插图停留中切到后台：停留返回（跨章序列能走完）并恢复播放', () async {
+      final AudiobookPlayerController c = await _playingController();
+      c.setImagePauseSec(5);
+      bool returned = false;
+      unawaited(c.awaitImageChapterPause().then((_) => returned = true));
+      await pumpEventQueue();
+      expect(c.isImagePaused, isTrue, reason: '前提：前台照常停留');
+
+      c.setReaderVisible(false);
+      await pumpEventQueue();
+
+      expect(returned, isTrue);
+      expect(c.isImagePaused, isFalse);
+      expect(c.isPlaying, isTrue);
+      c.dispose();
+    });
+  });
+
   group('装配守卫', () {
     String read(String path) => File(path).readAsStringSync();
+
+    test('生命周期把阅读器可见性喂给控制器（D）', () {
+      final String src = read(
+        'lib/src/pages/implementations/reader_fushi_page.dart',
+      ).replaceAll('\r\n', '\n');
+      final int start = src.indexOf('void didChangeAppLifecycleState(');
+      final int end = src.indexOf('\n  }\n', start);
+      expect(
+        src.substring(start, end),
+        contains(
+          'setReaderVisible(\n      readerVisibleForLifecycleState(state)',
+        ),
+      );
+    });
+
+    test('回前台按当前位置重推歌词层快照；歌词文档变可见同样重推（R2）', () {
+      final String page = read(
+        'lib/src/pages/implementations/reader_fushi_page.dart',
+      ).replaceAll('\r\n', '\n');
+      final int start = page.indexOf('void didChangeAppLifecycleState(');
+      final int resumed = page.indexOf(
+        'state == AppLifecycleState.resumed',
+        start,
+      );
+      final int end = page.indexOf('\n  }\n', resumed);
+      expect(
+        page.substring(resumed, end),
+        contains('_resyncLyricsOverlayToAudio()'),
+      );
+      final String lyrics = read(
+        'lib/src/pages/implementations/reader_fushi/lyrics.part.dart',
+      ).replaceAll('\r\n', '\n');
+      final int handler = lyrics.indexOf("handlerName: 'onLyricsVisible'");
+      expect(handler, greaterThan(-1));
+      expect(
+        lyrics.substring(handler, lyrics.indexOf('\n        );', handler)),
+        contains('_resyncLyricsOverlayToAudio()'),
+      );
+      final int sync = lyrics.indexOf('void _syncLyricsOverlayCue(');
+      final String body = lyrics.substring(
+        sync,
+        lyrics.indexOf('\n  }\n', sync),
+      );
+      expect(body, contains('controller.lyricsCueAllBookIdx'), reason: 'R1');
+      expect(
+        body,
+        contains('DateTime.now().millisecondsSinceEpoch'),
+        reason: '扫过进度带发送时刻，JS 执行晚了自己补延迟',
+      );
+    });
+
+    test('控制器订阅播放器平台错误并记日志（F）', () {
+      final String src = read(
+        'lib/src/media/audiobook/audiobook_controller.dart',
+      );
+      final int start = src.indexOf('void _startPositionTracking()');
+      final String body = src.substring(
+        start,
+        src.indexOf('void _updateCurrentCue(', start),
+      );
+      expect(body, contains('_player.playbackEventStream.listen('));
+      expect(body, contains('onError:'));
+      expect(body, contains('ErrorLogService.instance.log('));
+    });
 
     test('回前台（resumed）在第一帧后按跟随意图重投影', () {
       final String src = read(
@@ -248,7 +506,11 @@ void main() {
 }
 
 /// 播放中、跟随开、按过播放、cue 落在 reader 当前章（不触发跨章）的控制器。
-Future<AudiobookPlayerController> _playingController() async {
+/// [allBook] 同时把 [cues] 设成整书 cue（歌词层用）。
+Future<AudiobookPlayerController> _playingController({
+  List<AudioCue>? cues,
+  bool allBook = false,
+}) async {
   _installFakeAudioPlatform();
   final AudiobookPlayerController c = AudiobookPlayerController();
   final File audioFile = File(
@@ -260,7 +522,10 @@ Future<AudiobookPlayerController> _playingController() async {
   });
   await c.load(audiobook: _audiobook(), audioFiles: <File>[audioFile]);
   c.onPositionWrite = (String uid, int ms) async {};
-  c.setChapterCues(<AudioCue>[_cue(0), _cue(1000), _cue(2000)]);
+  final List<AudioCue> chapterCues =
+      cues ?? <AudioCue>[_cue(0), _cue(1000), _cue(2000)];
+  c.setChapterCues(chapterCues);
+  if (allBook) c.setAllBookCues(chapterCues);
   c.getCurrentReaderSection = () => 12;
   c.onCrossChapter = (_) {};
   await c.play();
@@ -272,14 +537,14 @@ Future<AudiobookPlayerController> _playingController() async {
   return c;
 }
 
-AudioCue _cue(int startMs) {
+AudioCue _cue(int startMs, {int section = 12}) {
   return AudioCue()
     ..id = null
     ..bookKey = 'book'
-    ..chapterHref = 'chapter-12'
+    ..chapterHref = 'chapter-$section'
     ..sentenceIndex = startMs ~/ 1000
     ..textFragmentId = SubtitleRematchCodec.encodeHit(
-      sectionIndex: 12,
+      sectionIndex: section,
       normCharStart: startMs ~/ 100,
       normCharEnd: startMs ~/ 100 + 5,
     )

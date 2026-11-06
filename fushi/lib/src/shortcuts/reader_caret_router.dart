@@ -63,8 +63,10 @@ class ReaderCaretRouter {
 
   /// Meaning of a keyboard key *while the cursor is active*; null = not a cursor
   /// key, leave it to the existing reader handling.
-  static CaretAction? decideKeyboard(LogicalKeyboardKey key,
-      {required bool shift}) {
+  static CaretAction? decideKeyboard(
+    LogicalKeyboardKey key, {
+    required bool shift,
+  }) {
     if (key == LogicalKeyboardKey.tab) {
       return shift ? CaretAction.stepBackward : CaretAction.stepForward;
     }
@@ -140,8 +142,7 @@ class ReaderCaretRouter {
     LogicalKeyboardKey key, {
     bool focusNavEnabled = true,
     Set<LogicalKeyboardKey>? enterKeys,
-  }) =>
-      focusNavEnabled && (enterKeys ?? _defaultEnterKeys).contains(key);
+  }) => focusNavEnabled && (enterKeys ?? _defaultEnterKeys).contains(key);
 
   /// Whether a gamepad button should ENTER the cursor when it is inactive.
   ///

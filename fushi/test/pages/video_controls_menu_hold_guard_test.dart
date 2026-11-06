@@ -17,7 +17,7 @@ import 'video_fushi_page_source_corpus.dart';
 ///
 /// 修复：fork 两端各加 `holdVisible`（`ValueListenable<bool>`），为 true 时指针离开与
 /// 自动隐藏 Timer 都不收控制条，放开时按 hover 重新倒计时；视频页把
-/// [VideoControlBar.onMenuOpenChanged] 接到 `_controlsHeldByMenu`，再把它装进两端
+/// [VideoControlBar.onMenuOpenChanged] 接到 `_controlsHeld`，再把它装进两端
 /// theme 的 `holdVisible`。
 ///
 /// 三层守卫：
@@ -25,7 +25,7 @@ import 'video_fushi_page_source_corpus.dart';
 ///    （fork 的 media_kit 控制条需要 libmpv，headless 跑不了，只能证明触发机制本身）。
 /// ② fork 源码守卫：`holdVisible` 字段 / 构造 / copyWith、绑定解绑、MouseRegion
 ///    onExit 与每个自动隐藏 Timer 都先看 `_held`。
-/// ③ 页面源码守卫：两端 theme 装配 `holdVisible: _controlsHeldByMenu`，每条
+/// ③ 页面源码守卫：两端 theme 装配 `holdVisible: _controlsHeld`，每条
 ///    `VideoControlBar` 都接了 `onMenuOpenChanged` 与 `singleActionButtonBuilder`。
 void main() {
   group('机制：从控制条弹出菜单会让底下的 MouseRegion onExit', () {
@@ -146,23 +146,17 @@ void main() {
     late String src;
     setUpAll(() => src = readVideoFushiSource());
 
-    test('两端 theme 都装配 holdVisible: _controlsHeldByMenu', () {
+    test('两端 theme 都装配 holdVisible: _controlsHeld', () {
       final String desktop = methodBody(
         src,
         'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(',
       );
-      expect(
-        containsCodeLine(desktop, 'holdVisible: _controlsHeldByMenu,'),
-        isTrue,
-      );
+      expect(containsCodeLine(desktop, 'holdVisible: _controlsHeld,'), isTrue);
       final String mobile = methodBody(
         src,
         'MaterialVideoControlsThemeData _mobileControlsTheme(',
       );
-      expect(
-        containsCodeLine(mobile, 'holdVisible: _controlsHeldByMenu,'),
-        isTrue,
-      );
+      expect(containsCodeLine(mobile, 'holdVisible: _controlsHeld,'), isTrue);
     });
 
     test('每条 VideoControlBar 都接了菜单开关回调与单项按钮', () {

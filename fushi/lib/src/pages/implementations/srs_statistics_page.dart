@@ -13,7 +13,16 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_dropdown.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
@@ -55,6 +64,13 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
   bool _failed = false;
   bool _dateSymbolsReady = false;
 
+  /// 正在装载（装载期间又来的刷新信号只记一笔，装完再跑一次，不并发重跑整份统计）。
+  bool _inFlight = false;
+  bool _again = false;
+
+  /// 上次装载用的库（换 profile / 重开库时整份重读）。
+  SrsDbStore? _loadedStore;
+
   SrsStatsRange _range = SrsStatsRange.month;
   String _deckId = '';
   bool _futureCumulative = false;
@@ -73,7 +89,38 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_load()));
   }
 
+  /// [srsRevisionProvider] 的一跳：只有会改变统计结果的事件落了库（[SrsDbStore.statsFingerprint] 变了）才重读。
+  /// 以前任何写（牌组收起 / 展开、同步空轮、媒体、去重跳过的制卡…）都整份重跑统计。
+  Future<void> _onRevision() async {
+    if (await _needsReload()) await _load();
+  }
+
+  Future<bool> _needsReload() async {
+    final SrsStatsBundle? b = _bundle;
+    final SrsDbStore? loaded = _loadedStore;
+    if (b == null || loaded == null) return true;
+    final SrsDbStore? store = await ref.read(srsStoreProvider.future);
+    if (!identical(store, loaded)) return true;
+    return store!.statsFingerprint != b.fingerprint;
+  }
+
   Future<void> _load() async {
+    if (_inFlight) {
+      _again = true;
+      return;
+    }
+    _inFlight = true;
+    try {
+      do {
+        _again = false;
+        await _loadOnce();
+      } while (_again && mounted);
+    } finally {
+      _inFlight = false;
+    }
+  }
+
+  Future<void> _loadOnce() async {
     SrsDbStore? store;
     try {
       store = await ref.read(srsStoreProvider.future);
@@ -90,6 +137,7 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
       if (!mounted) return;
       setState(() {
         _bundle = bundle;
+        _loadedStore = store;
         _loading = false;
         _unavailable = false;
         _failed = false;
@@ -219,7 +267,10 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<int>(srsRevisionProvider, (int? a, int b) => unawaited(_load()));
+    ref.listen<int>(
+      srsRevisionProvider,
+      (int? a, int b) => unawaited(_onRevision()),
+    );
     ref.listen<AsyncValue<SrsDbStore?>>(srsStoreProvider, (
       AsyncValue<SrsDbStore?>? a,
       AsyncValue<SrsDbStore?> b,
@@ -275,7 +326,10 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     final List<_Section> sections = empty
         ? <_Section>[]
         : <_Section>[
-            _Section(_futureSection(data, colors), 3.2),
+            if (data.rwkvNow case final SrsRwkvNow now)
+              _Section(_rwkvNowSection(now), 1.6),
+            if (data.hasDueDateCards || data.rwkvNow == null)
+              _Section(_futureSection(data, colors), 3.2),
             _Section(_calendarSection(data), 2.6),
             _Section(_reviewsSection(data, colors), 3.6),
             _Section(_cardCountSection(data, colors), 3),
@@ -599,6 +653,28 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     SrsStatsRange.all => data.furthestDueOffset(),
   };
 
+  /// RWKV 牌组：此刻该复习 / 接近目标线的张数与过去 30 天日均（都是测量，RWKV 不预测到期日）。
+  Widget _rwkvNowSection(SrsRwkvNow now) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return StatSectionCard(
+      key: const ValueKey<String>('srs-stats-rwkv-now'),
+      title: t.srs_stats_rwkv_now_title,
+      icon: FushiIcons.trendingUp,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _statLine(<(String, String)>[
+            (t.srs_stats_rwkv_now_due, '${now.due}'),
+            (t.srs_stats_rwkv_now_near, '${now.near}'),
+            (t.srs_stats_rwkv_now_avg, _decimal(now.dailyAverage)),
+          ]),
+          SizedBox(height: tokens.spacing.gap),
+          Text(t.srs_stats_rwkv_now_hint, style: context.fushiType.bodySmall),
+        ],
+      ),
+    );
+  }
+
   Widget _futureSection(SrsStatsData data, SrsStatColors colors) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsFutureDue f = data.futureDue(_futureDays(data));
@@ -684,6 +760,14 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
             (t.srs_stats_future_load, _decimal(f.dailyLoad)),
             (t.srs_stats_future_overdue, '${f.overdue}'),
           ]),
+          if (f.byRecall > 0) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap),
+            Text(
+              t.srs_stats_future_due_by_recall(n: f.byRecall),
+              key: const ValueKey<String>('srs-stats-future-by-recall'),
+              style: context.fushiType.bodySmall,
+            ),
+          ],
           SizedBox(height: tokens.spacing.card),
           if (_futureCumulative)
             SrsLineChart(
@@ -1174,6 +1258,7 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     SrsSourceKind.onlineNovel => t.srs_stats_source_online_novel,
     SrsSourceKind.onlineVideo => t.srs_stats_source_online_video,
     SrsSourceKind.game => t.srs_stats_source_game,
+    SrsSourceKind.music => t.srs_stats_source_music,
     SrsSourceKind.web => t.srs_stats_source_web,
     SrsSourceKind.manual => t.srs_stats_source_manual,
     SrsSourceKind.anki => t.srs_stats_source_anki,
@@ -1187,6 +1272,7 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     SrsSourceKind.video || SrsSourceKind.onlineVideo => FushiIcons.video,
     SrsSourceKind.audiobook => FushiIcons.audiobook,
     SrsSourceKind.game => FushiIcons.games,
+    SrsSourceKind.music => FushiIcons.music,
     SrsSourceKind.web => FushiIcons.globe,
     SrsSourceKind.anki => FushiIcons.ankiCard,
     _ => FushiIcons.edit,

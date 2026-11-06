@@ -104,7 +104,7 @@ void main() {
       40,
       (int i) => '定義の行 ${i + 1}：とても長い説明文がここに続きます。',
     ).join('<br>');
-    for (int i = 0; i < 12; i++) {
+    for (int i = 0; i < 24; i++) {
       await store.createNote(
         noteTypeId: store.lapisNoteTypeId,
         createdAt: 1700000000000 + i,
@@ -181,41 +181,6 @@ void main() {
       fail('$label: 10 s 内没等到新内容首帧；收到 ${painted.sublist(from)}');
     }
 
-    final List<double> flips = <double>[];
-    final List<double> nexts = <double>[];
-    for (int n = 0; n < 10; n++) {
-      flips.add(
-        await step(
-          LogicalKeyboardKey.space,
-          (String t) => t.contains('意味'),
-          'flip#$n',
-        ),
-      );
-      await _pumpFor(tester, const Duration(milliseconds: 400));
-      if (n == 0) {
-        final Uint8List? png = await controller.takeScreenshot();
-        if (png != null) {
-          final String path =
-              '${observeScreenshotDir().path}/srs-face-answer-scrollbar.png';
-          await File(path).writeAsBytes(png, flush: true);
-          debugPrint('[srs-face-probe] screenshot $path');
-        }
-        // 抓图（CapturePreview）不含滚动条：滚动条实际占位宽度与样式直接量。
-        final Object? metrics = await controller.evaluateJavascript(
-          source: _scrollMetricsScript,
-        );
-        debugPrint('[srs-face-probe] scrollbar $metrics');
-      }
-      nexts.add(
-        await step(
-          LogicalKeyboardKey.digit3,
-          (String t) => !t.contains('意味') && t.isNotEmpty,
-          'next#$n',
-        ),
-      );
-      await _pumpFor(tester, const Duration(milliseconds: 400));
-    }
-
     String stats(List<double> v) {
       final List<double> s = List<double>.of(v)..sort();
       final double mean = v.reduce((double a, double b) => a + b) / v.length;
@@ -224,8 +189,51 @@ void main() {
           'min=${s.first.toStringAsFixed(1)} max=${s.last.toStringAsFixed(1)} ms';
     }
 
-    debugPrint('[srs-face-probe] FLIP ${stats(flips)}');
-    debugPrint('[srs-face-probe] NEXT ${stats(nexts)}');
-    debugPrint('[srs-face-probe] RAW flips=$flips nexts=$nexts');
+    // 两轮：设计系统样式覆盖关（= 模板原样、零注入）/ 开，各 10 张。
+    for (final bool skin in <bool>[false, true]) {
+      await appModel.setSrsCardAppearance(
+        appModel.srsCardAppearance.copyWith(designSkin: skin),
+      );
+      await _pumpFor(tester, const Duration(milliseconds: 600));
+      final String mode = skin ? 'skin-on' : 'skin-off';
+      final List<double> flips = <double>[];
+      final List<double> nexts = <double>[];
+      for (int n = 0; n < 10; n++) {
+        flips.add(
+          await step(
+            LogicalKeyboardKey.space,
+            (String t) => t.contains('意味'),
+            '$mode flip#$n',
+          ),
+        );
+        await _pumpFor(tester, const Duration(milliseconds: 400));
+        if (n == 0 && !skin) {
+          final Uint8List? png = await controller.takeScreenshot();
+          if (png != null) {
+            final String path =
+                '${observeScreenshotDir().path}/srs-face-answer-scrollbar.png';
+            await File(path).writeAsBytes(png, flush: true);
+            debugPrint('[srs-face-probe] screenshot $path');
+          }
+          // 抓图（CapturePreview）不含滚动条：滚动条实际占位宽度与样式直接量。
+          final Object? metrics = await controller.evaluateJavascript(
+            source: _scrollMetricsScript,
+          );
+          debugPrint('[srs-face-probe] scrollbar $metrics');
+        }
+        nexts.add(
+          await step(
+            LogicalKeyboardKey.digit3,
+            (String t) => !t.contains('意味') && t.isNotEmpty,
+            '$mode next#$n',
+          ),
+        );
+        await _pumpFor(tester, const Duration(milliseconds: 400));
+      }
+
+      debugPrint('[srs-face-probe] $mode FLIP ${stats(flips)}');
+      debugPrint('[srs-face-probe] $mode NEXT ${stats(nexts)}');
+      debugPrint('[srs-face-probe] $mode RAW flips=$flips nexts=$nexts');
+    }
   });
 }

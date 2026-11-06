@@ -22,8 +22,10 @@ List<String> parseEnumerationGuards(String fastWorkflowMarkdown) {
   final String section = end == null
       ? fastWorkflowMarkdown.substring(start)
       : fastWorkflowMarkdown.substring(start, start + 1 + end.start);
-  final RegExp row =
-      RegExp(r'^\| `(test/[^`]+_test\.dart)` \|', multiLine: true);
+  final RegExp row = RegExp(
+    r'^\| `(test/[^`]+_test\.dart)` \|',
+    multiLine: true,
+  );
   return row.allMatches(section).map((Match m) => m.group(1)!).toSet().toList()
     ..sort();
 }
@@ -32,11 +34,13 @@ List<String> parseEnumerationGuards(String fastWorkflowMarkdown) {
 /// scans. When it does not (docs / workflows / native only), the batch is
 /// skipped: the few batch guards whose scan root is outside the Dart trees name
 /// that root by path literal, so tests_for_changes still selects them.
-bool touchesDartTrees(Iterable<String> changed) => changed.any((String c) =>
-    c.startsWith('fushi/lib/') ||
-    c.startsWith('fushi/test/') ||
-    c.startsWith('fushi/integration_test/') ||
-    RegExp(r'^packages/[^/]+/(lib|test)/').hasMatch(c));
+bool touchesDartTrees(Iterable<String> changed) => changed.any(
+  (String c) =>
+      c.startsWith('fushi/lib/') ||
+      c.startsWith('fushi/test/') ||
+      c.startsWith('fushi/integration_test/') ||
+      RegExp(r'^packages/[^/]+/(lib|test)/').hasMatch(c),
+);
 
 /// Budget mode (the default) for path-literal matching: [changed] triggers
 /// [ref] only when [ref] IS that file, or a directory with at most
@@ -140,8 +144,10 @@ String _normalize(String path) {
 
 /// `part of '<uri>';` target in [source], or null.
 String? partOfTarget(String source) {
-  final Match? m = RegExp(r'''^part of ['"]([^'"]+)['"];''', multiLine: true)
-      .firstMatch(source);
+  final Match? m = RegExp(
+    r'''^part of ['"]([^'"]+)['"];''',
+    multiLine: true,
+  ).firstMatch(source);
   return m?.group(1);
 }
 
@@ -178,10 +184,12 @@ Set<String> directImpactTests({
   for (final MapEntry<String, String> t in testSources.entries) {
     final String src = t.value;
     if (sameNameTests.contains(t.key.split('/').last) ||
-        importKeys
-            .any((String k) => src.contains("'$k'") || src.contains('"$k"')) ||
-        helperNames
-            .any((String h) => src.contains("/$h'") || src.contains("'$h'"))) {
+        importKeys.any(
+          (String k) => src.contains("'$k'") || src.contains('"$k"'),
+        ) ||
+        helperNames.any(
+          (String h) => src.contains("/$h'") || src.contains("'$h'"),
+        )) {
       out.add(t.key);
     }
   }
@@ -190,26 +198,30 @@ Set<String> directImpactTests({
 
 /// Packages under packages/ touched by [changed] whose tests CI runs.
 Set<String> changedTestablePackages(Iterable<String> changed) => <String>{
-      for (final String c in changed)
-        if (c.startsWith('packages/') && c.split('/').length > 2)
-          c.split('/')[1],
-    }..removeAll(kCiSkippedPackages);
+  for (final String c in changed)
+    if (c.startsWith('packages/') && c.split('/').length > 2) c.split('/')[1],
+}..removeAll(kCiSkippedPackages);
 
 /// Whether the JS behaviour suites CI runs in the build job are affected.
-bool touchesJsSuites(Iterable<String> changed) => changed.any((String c) =>
-    c.startsWith('test/js/') ||
-    c.startsWith('tools/browser-extension/') ||
-    c.startsWith('fushi/assets/') ||
-    c.endsWith('.js') ||
-    c.endsWith('.mjs'));
+bool touchesJsSuites(Iterable<String> changed) => changed.any(
+  (String c) =>
+      c.startsWith('test/js/') ||
+      c.startsWith('tools/browser-extension/') ||
+      c.startsWith('fushi/assets/') ||
+      c.endsWith('.js') ||
+      c.endsWith('.mjs'),
+);
 
 /// Splits test paths into batches whose joined length stays under [maxChars]:
 /// `flutter.bat` goes through cmd.exe on Windows (8191-char command line; the
 /// rest of the flutter test invocation fits in the remaining ~690 chars).
 /// [maxFiles] > 0 also caps each batch's file count, so a long selection is run
 /// as several `flutter test` calls with the machine gate re-checked in between.
-List<List<String>> chunkByCommandLength(List<String> paths,
-    {int maxChars = 7500, int maxFiles = 0}) {
+List<List<String>> chunkByCommandLength(
+  List<String> paths, {
+  int maxChars = 7500,
+  int maxFiles = 0,
+}) {
   final List<List<String>> batches = <List<String>>[];
   List<String> cur = <String>[];
   int len = 0;

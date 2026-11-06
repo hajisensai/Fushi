@@ -14,8 +14,8 @@
 library;
 
 import 'package:fushi/src/models/module_id.dart';
-import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
-import 'package:fushi/src/settings/settings_destination.dart'
+import 'package:fushi/src/models/home_tab.dart' show HomeTab;
+import 'package:fushi/src/settings/settings_destination_id.dart'
     show SettingsDestinationId;
 import 'package:fushi/src/shortcuts/shortcut_action.dart' show ShortcutScope;
 import 'package:fushi_core/fushi_core.dart' show MediaKind;
@@ -30,11 +30,12 @@ ModuleId? moduleOfHomeTab(HomeTab tab) => switch (tab) {
   HomeTab.books => ModuleId.books,
   HomeTab.manga => ModuleId.manga,
   HomeTab.video => ModuleId.video,
+  HomeTab.music => ModuleId.music,
   HomeTab.browse => ModuleId.browse,
   HomeTab.dictionaries => ModuleId.lookup,
   HomeTab.srs => ModuleId.srs,
   HomeTab.games => ModuleId.games,
-  HomeTab.browserExtension => ModuleId.browserExtension,
+  HomeTab.web => ModuleId.web,
 };
 
 /// 某个顶层 tab 此刻是否可达。`_selectTab` / 任何「点了要跳过去」的入口渲染判据
@@ -49,11 +50,12 @@ HomeTab? homeTabOfModule(ModuleId module) => switch (module) {
   ModuleId.books => HomeTab.books,
   ModuleId.manga => HomeTab.manga,
   ModuleId.video => HomeTab.video,
+  ModuleId.music => HomeTab.music,
   ModuleId.browse => HomeTab.browse,
   ModuleId.lookup => HomeTab.dictionaries,
   ModuleId.srs => HomeTab.srs,
   ModuleId.games => HomeTab.games,
-  ModuleId.browserExtension => HomeTab.browserExtension,
+  ModuleId.web => HomeTab.web,
   ModuleId.listening ||
   ModuleId.cardCreation ||
   ModuleId.services ||
@@ -101,6 +103,11 @@ ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.profiles => null,
   SettingsDestinationId.reading => null,
   SettingsDestinationId.lookup => null,
+  // 本机服务（Fushi API）刻意不挂模块门：它同时服务浏览器扩展、yomitan-api 客户端与
+  // 复习的 AnkiConnect 端点，移动端同样可用（见 app_model 启动处同款说明）。
+  SettingsDestinationId.localServices => null,
+  // 主屏幕小组件设置是设备级（Android 桌面），按平台而非模块门控。
+  SettingsDestinationId.widgets => null,
   SettingsDestinationId.storage => null,
   SettingsDestinationId.system => null,
   SettingsDestinationId.readerQuickSettings => null,
@@ -112,6 +119,7 @@ ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.models => null,
   SettingsDestinationId.manga => ModuleId.manga,
   SettingsDestinationId.video => ModuleId.video,
+  SettingsDestinationId.music => ModuleId.music,
   SettingsDestinationId.cardCreation => ModuleId.cardCreation,
   SettingsDestinationId.downloads => ModuleId.browse,
   SettingsDestinationId.game => ModuleId.games,
@@ -161,11 +169,17 @@ ModuleId? moduleOfShortcutScope(ShortcutScope scope) => switch (scope) {
   ShortcutScope.home => null,
   ShortcutScope.gamepad => null,
   ShortcutScope.dictionaryPopup => null,
+  // app 内浏览器不只从「浏览器」模块（WebHubPage）进入：视频站点入口在拿不到底层
+  // 合成时也改用它打开站点（video_fushi/web_source.part.dart）。跟着 web 模块藏起
+  // 来就会出现「浏览器能用、快捷键却没处改」，故与 dictionaryPopup 同判恒在。
+  ShortcutScope.webBrowser => null,
   ShortcutScope.globalExternal => ModuleId.lookup,
   ShortcutScope.reader => ModuleId.books,
   ShortcutScope.audiobook => ModuleId.listening,
   ShortcutScope.manga => ModuleId.manga,
   ShortcutScope.video => ModuleId.video,
+  ShortcutScope.music => ModuleId.music,
+  ShortcutScope.srsReview => ModuleId.srs,
 };
 
 bool isShortcutScopeVisible(ShortcutScope scope, ModuleVisibility visibility) =>

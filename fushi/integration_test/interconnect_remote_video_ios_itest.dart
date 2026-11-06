@@ -386,7 +386,8 @@ class _SingleClipLibraryService implements FushiLibraryHostService {
   ];
 
   @override
-  Future<bool> videoExists(String id) async => id == _videoId;
+  Future<bool> videoExists(String id, {int episodeIndex = 0}) async =>
+      id == _videoId;
 
   @override
   Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async =>

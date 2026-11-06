@@ -1,0 +1,45 @@
+# Restore the prebuilt third-party binaries that are no longer committed.
+#
+# Why (2026-11-01): libmpv / ANGLE / libplacebo / FFmpegKit / bluray-menu jars /
+# LunaHook / jogamp used to be committed, and every rebuild added 20-45 MB to
+# history. They now live as assets of the `vendored-binaries` GitHub release
+# (prerelease, never Latest; tag anchored on a parentless commit) and are
+# gitignored at their original paths. tool/vendored_binaries.json pins path /
+# size / sha256 / URL; tool/vendored_binaries.py puts the exact bytes back, so
+# every consumer (CMake MD5 checks, Gradle, podspecs, Makefiles, galgame /
+# Mihon scripts, unit tests) is unchanged.
+#
+# Run it right after actions/checkout in every job that builds or tests
+# something reading those files. Groups (see the manifest): windows, galgame,
+# mihon, android, ios, macos, or `all` (unit tests read every one of them).
+#
+# Deliberately no actions/cache: the assets download from GitHub's own CDN in
+# seconds, while a per-group cache of ~0.5 GB per manifest revision would eat
+# the repo's 10 GB Actions cache quota (fushi/test/build/workflow_cache_quota_guard_test.dart).
+# Guard: fushi/test/build/vendored_binaries_manifest_guard_test.dart.
+name: Fetch vendored binaries
+description: Download the gitignored prebuilt third-party binaries listed in tool/vendored_binaries.json and verify their sha256.
+inputs:
+  groups:
+    description: Space-separated manifest groups (windows galgame mihon android ios macos) or `all`.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Fetch vendored binaries (${{ inputs.groups }})
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        VENDORED_GROUPS: ${{ inputs.groups }}
+      run: |
+        set -euo pipefail
+        # Windows runners may lack a python3 alias; every runner image has Python 3.
+        py=python3
+        if ! python3 -c '' >/dev/null 2>&1; then py=python; fi
+        args=()
+        for group in $VENDORED_GROUPS; do args+=(--group "$group"); done
+        if [ "${#args[@]}" -eq 0 ]; then
+          echo "::error title=fetch-vendored-binaries::input 'groups' is empty"
+          exit 1
+        fi
+        "$py" tool/vendored_binaries.py fetch "${args[@]}"

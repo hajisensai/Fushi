@@ -10,6 +10,8 @@
 library;
 
 import 'package:fushi_asr_core/asr_core.dart';
+import 'package:fushi_engine/asr/cloud_whisper_transcription_service.dart'
+    show kCloudWhisperEngineId;
 
 import 'package:fushi/src/asr_host/apple_speech_transcription_service.dart';
 import 'package:fushi/src/asr_host/asr_model_catalog.dart';
@@ -18,16 +20,19 @@ import 'package:fushi/src/asr_host/asr_model_catalog.dart';
 class AsrEngineOption {
   const AsrEngineOption({required this.id, required this.label, this.pack});
 
-  /// [AsrModelPack.id]，或系统语音的保留 id [kAppleSpeechEngineId]。
+  /// [AsrModelPack.id]，或保留 id：系统语音 [kAppleSpeechEngineId]、云端转录
+  /// [kCloudWhisperEngineId]。
   final String id;
 
   /// 给用户看的名字。
   final String label;
 
-  /// ONNX 包（系统语音项为 null）。
+  /// ONNX 包（系统语音 / 云端转录项为 null）。
   final AsrModelPack? pack;
 
-  bool get isSystemSpeech => pack == null;
+  bool get isSystemSpeech => id == kAppleSpeechEngineId;
+
+  bool get isCloud => id == kCloudWhisperEngineId;
 }
 
 /// 这门语言在这种素材上能选哪些引擎。
@@ -41,12 +46,16 @@ class AsrEngineOption {
 ///
 /// [profile]：弹层服务的素材（视频 / 有声书）。只服务另一种素材的包不列出来——
 /// 列出来就是一个选了也不会生效的项。
+///
+/// [cloudLabel] 非 null 时最后多一项云端转录（宿主接了云端服务才传；没在 AI 设置里
+/// 指派提供商时仍列出，选中后弹层说清去哪里配，而不是让这条路无从发现）。
 List<AsrEngineOption> asrEngineOptions({
   required AsrLanguage language,
   required AsrModelRegistry registry,
   required bool systemSpeechAvailable,
   required String systemSpeechLabel,
   AsrAudioProfile profile = AsrAudioProfile.cleanSpeech,
+  String? cloudLabel,
 }) {
   return <AsrEngineOption>[
     for (final AsrModelPack pack in asrModelChoicesFor(
@@ -64,6 +73,8 @@ List<AsrEngineOption> asrEngineOptions({
       ),
     if (systemSpeechAvailable)
       AsrEngineOption(id: kAppleSpeechEngineId, label: systemSpeechLabel),
+    if (cloudLabel != null)
+      AsrEngineOption(id: kCloudWhisperEngineId, label: cloudLabel),
   ];
 }
 

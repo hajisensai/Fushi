@@ -36,7 +36,8 @@ int requireManifestVersion(
   }
   if (version > currentVersion) {
     throw FormatException(
-        '$label: version $version is newer than supported $currentVersion');
+      '$label: version $version is newer than supported $currentVersion',
+    );
   }
   return version;
 }

@@ -11,8 +11,5 @@ MacosThemeData fushiMacosThemeFromColorScheme(
   final MacosThemeData base = brightness == Brightness.dark
       ? MacosThemeData.dark()
       : MacosThemeData.light();
-  return base.copyWith(
-    primaryColor: cs.primary,
-    canvasColor: cs.surface,
-  );
+  return base.copyWith(primaryColor: cs.primary, canvasColor: cs.surface);
 }

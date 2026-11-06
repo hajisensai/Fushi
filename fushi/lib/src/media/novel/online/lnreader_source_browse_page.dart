@@ -5,15 +5,25 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
 import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
 import 'package:fushi/src/media/novel/online/lnreader_cloudflare_action.dart';
+import 'package:fushi/src/media/novel/online/lnreader_web_login.dart';
 import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_novel_detail_page.dart';
 import 'package:fushi/src/media/online/online_source_browse_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 一个小说源（LNReader 插件）的浏览页：热门 / 最新 / 搜索 + 筛选 + 封面网格。
 ///
@@ -148,6 +158,10 @@ class _LnReaderCatalog extends OnlineSourceCatalog<LnReaderNovelItem> {
   @override
   String titleOf(LnReaderNovelItem item) => item.name;
 
+  /// 小说 = 光面书皮（与书架同材质）。
+  @override
+  ShelfCoverMaterial get coverMaterial => ShelfCoverMaterial.glossyBook;
+
   @override
   Widget buildCover(BuildContext context, LnReaderNovelItem item) =>
       LnReaderCover(
@@ -180,10 +194,30 @@ class _LnReaderCatalog extends OnlineSourceCatalog<LnReaderNovelItem> {
     BuildContext context, {
     required Object? error,
     required Future<void> Function() onVerified,
-  }) => LnReaderCloudflareAction(
-    cloudflare: manager.cloudflare,
-    pluginId: plugin.id,
-    onVerified: () => unawaited(onVerified()),
+  }) => Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    // 只放真要显示的按钮：零尺寸子项照样占 spacing，会把登录按钮挤偏。
+    children: <Widget>[
+      if (LnReaderCloudflareAction.shows(manager.cloudflare, plugin.id))
+        LnReaderCloudflareAction(
+          cloudflare: manager.cloudflare,
+          pluginId: plugin.id,
+          onVerified: () => unawaited(onVerified()),
+        ),
+      // 出错与空结果都给登录（[verifyOnEmpty] 同理）：LNReader 插件撞上要登录的
+      // 站点时多半不抛错、只回空列表，区分不出「真没有」还是「没登录看不到」。
+      if (lnReaderLoginTarget(
+            cloudflare: manager.cloudflare,
+            site: plugin.site,
+          ) !=
+          null)
+        LnReaderLoginAction(
+          manager: manager,
+          plugin: plugin,
+          onLoggedIn: onVerified,
+        ),
+    ],
   );
 }
 

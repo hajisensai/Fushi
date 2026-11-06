@@ -8,7 +8,8 @@ import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_view.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 
 /// mokuro.moe「在线目录」对话框（O1）：薄壳——外框 chrome 与 footer 动作按钮
 /// 在此，浏览/搜索/选卷/入队的全部状态与内容体在 [MokuroMoeCatalogView]
@@ -77,27 +78,36 @@ class _MokuroMoeCatalogDialogState extends State<MokuroMoeCatalogDialog> {
         onClose: _close,
         snapshotNotifier: _snapshot,
       ),
-      builder: (BuildContext context, MokuroMoeCatalogSnapshot snapshot,
-          Widget? body) {
-        return ImportDialogFrame(
-          leadingIcon: FushiIcons.cloudDownload,
-          title: snapshot.seriesName ?? t.manga_online_catalog_title,
-          // BUG-1184：正文原先是死的 560×440。宽度会被对话框约束钳住（无害），但**高度**
-          // 440 是硬的——矮窗口 / 手机横屏下超出对话框可用高度就直接溢出。改为不超过屏高
-          // 的六成，宽屏行为不变。
-          body: SizedBox(
-            width: 560,
-            height: math.min(440.0, MediaQuery.sizeOf(context).height * 0.6),
-            child: body,
-          ),
-          actions: _buildActions(context, snapshot),
-        );
-      },
+      builder:
+          (
+            BuildContext context,
+            MokuroMoeCatalogSnapshot snapshot,
+            Widget? body,
+          ) {
+            return ImportDialogFrame(
+              leadingIcon: FushiIcons.cloudDownload,
+              title: snapshot.seriesName ?? t.manga_online_catalog_title,
+              // BUG-1184：正文原先是死的 560×440。宽度会被对话框约束钳住（无害），但**高度**
+              // 440 是硬的——矮窗口 / 手机横屏下超出对话框可用高度就直接溢出。改为不超过屏高
+              // 的六成，宽屏行为不变。
+              body: SizedBox(
+                width: 560,
+                height: math.min(
+                  440.0,
+                  MediaQuery.sizeOf(context).height * 0.6,
+                ),
+                child: body,
+              ),
+              actions: _buildActions(context, snapshot),
+            );
+          },
     );
   }
 
   List<Widget> _buildActions(
-      BuildContext context, MokuroMoeCatalogSnapshot snapshot) {
+    BuildContext context,
+    MokuroMoeCatalogSnapshot snapshot,
+  ) {
     if (!snapshot.inSeriesStage) {
       return <Widget>[
         adaptiveDialogAction(

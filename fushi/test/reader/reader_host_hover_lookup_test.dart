@@ -303,7 +303,8 @@ void main() {
         RegExp(
           r'void _hostHoverLookupAt\(\s*Offset local,\s*\{required bool hoverAutoLookup\}\s*\)'
           r'[\s\S]*?_hostHoverGate\.shouldLookup\([\s\S]*?'
-          r'shiftPressed:\s*HardwareKeyboard\.instance\.isShiftPressed[\s\S]*?'
+          r'shiftPressed:\s*ReaderFushiSource\.instance\.hoverLookupModifier\s*'
+          r'\.isPressed\(\)[\s\S]*?'
           r'hoverAutoLookup:\s*hoverAutoLookup[\s\S]*?'
           r'_selectTextAt\(local\.dx, local\.dy, fromHover: true\);',
         ).hasMatch(src),

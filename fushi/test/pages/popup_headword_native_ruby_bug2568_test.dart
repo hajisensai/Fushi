@@ -33,40 +33,59 @@ void main() {
   final String js = File('assets/popup/popup.js').readAsStringSync();
 
   String? ruleBody(String selector) => RegExp(
-        '(?:^|\n)${RegExp.escape(selector)}\\s*\\{([^}]*)\\}',
-      ).firstMatch(css)?.group(1);
+    '(?:^|\n)${RegExp.escape(selector)}\\s*\\{([^}]*)\\}',
+  ).firstMatch(css)?.group(1);
 
   test('词头走原生 ruby：`.expression ruby` 声明 display: ruby', () {
     final String? body = ruleBody('.expression ruby');
-    expect(body, isNotNull,
-        reason: '词头必须显式声明自己是 ruby 容器；缺了它，任何一条把 <ruby> 改成 '
-            'inline-block 的规则都会让 Blink 退回「注音起始对齐悬在基字上方」');
-    expect(RegExp(r'display\s*:\s*ruby\b').hasMatch(body!), isTrue,
-        reason: '`display: ruby` 是原生 ruby 几何的开关');
+    expect(
+      body,
+      isNotNull,
+      reason:
+          '词头必须显式声明自己是 ruby 容器；缺了它，任何一条把 <ruby> 改成 '
+          'inline-block 的规则都会让 Blink 退回「注音起始对齐悬在基字上方」',
+    );
+    expect(
+      RegExp(r'display\s*:\s*ruby\b').hasMatch(body!),
+      isTrue,
+      reason: '`display: ruby` 是原生 ruby 几何的开关',
+    );
   });
 
   test('共享的 glossary ruby 规则不得再把 .expression 纳入作用域', () {
     // 这组 `:where(...)` 规则实现的是紧凑基字 + 绝对定位注音盒（BUG-345/722/1778/
     // 1898）。词头一旦回到这个作用域，基字就不再被撑开，读音重新单侧悬出。
-    final Iterable<RegExpMatch> shared =
-        RegExp(r':where\(([^)]*)\)').allMatches(css);
+    final Iterable<RegExpMatch> shared = RegExp(
+      r':where\(([^)]*)\)',
+    ).allMatches(css);
     final List<String> leaked = <String>[
       for (final RegExpMatch m in shared)
         if (m.group(1)!.contains('glossary-content') &&
             m.group(1)!.contains('.expression'))
           m.group(0)!,
     ];
-    expect(leaked, isEmpty,
-        reason: '词头与释义体要的几何不同（BUG-2568 vs BUG-345/1778），作用域必须分开：\n'
-            '  ${leaked.join('\n  ')}');
+    expect(
+      leaked,
+      isEmpty,
+      reason:
+          '词头与释义体要的几何不同（BUG-2568 vs BUG-345/1778），作用域必须分开：\n'
+          '  ${leaked.join('\n  ')}',
+    );
   });
 
   test('postProcessRuby 不再包裹词头 ruby', () {
-    expect(js.contains("querySelectorAll('.glossary-content ruby')"), isTrue,
-        reason: 'postProcessRuby 的 per-base 单元只服务释义体');
-    expect(js.contains('.expression ruby\')'), isFalse,
-        reason: '词头 ruby 一旦被包进 .ruby-unit/.ruby-rt，就又变成「紧凑基字 + 悬出读音」'
-            '（BUG-2568）；词头要的是引擎原生的 ruby 布局');
+    expect(
+      js.contains("querySelectorAll('.glossary-content ruby')"),
+      isTrue,
+      reason: 'postProcessRuby 的 per-base 单元只服务释义体',
+    );
+    expect(
+      js.contains('.expression ruby\')'),
+      isFalse,
+      reason:
+          '词头 ruby 一旦被包进 .ruby-unit/.ruby-rt，就又变成「紧凑基字 + 悬出读音」'
+          '（BUG-2568）；词头要的是引擎原生的 ruby 布局',
+    );
   });
 
   test('词头注音字号用子代组合器限定，绝不会与注音盒的 em 相乘', () {
@@ -84,7 +103,8 @@ void main() {
     expect(
       RegExp(r'font-size\s*:\s*([\d.]+)em').firstMatch(body)!.group(1),
       equals(
-          RegExp(r'font-size\s*:\s*([\d.]+)em').firstMatch(shared!)!.group(1)),
+        RegExp(r'font-size\s*:\s*([\d.]+)em').firstMatch(shared!)!.group(1),
+      ),
       reason: '词头与释义体的振假名尺寸是同一个产品值（BUG-1655 的 0.6em），调一个必须调另一个',
     );
   });

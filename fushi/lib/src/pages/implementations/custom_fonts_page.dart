@@ -3,9 +3,10 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi_engine/media/media_pref_keys.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
@@ -20,14 +21,36 @@ import 'package:fushi/src/reader/font_download_service.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/media_search_text.dart';
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/net/github_mirrors.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
+import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:path/path.dart' as p;
@@ -278,25 +301,29 @@ class RecommendedFont {
   final String description;
 }
 
-// 下载源顺序：直链单文件 CDN 优先，Google Fonts 打包接口垫底。
+// 下载源（反馈 f4ybrMM0mP：iOS 中国大陆网络「无法获取推荐字体」）：一律由
+// [gitHubRepoFileUrls] 从 google/fonts 仓库路径生成——jsDelivr 四个独立 CDN 节点
+// → GitHub 加速镜像前缀（[kGitHubMirrorPrefixes]，与更新检查 / 词典 / 着色器同一份
+// 名单）→ raw 直连兜底。以前每款只手写 jsDelivr 主域 + raw + Google 打包接口三条：
+// raw 在大陆直连被重置、Google 接口早已只回网页 HTML（必败），等于只有 jsDelivr
+// 一个节点能用，它一抖整批就失败。
 //
-// `https://fonts.google.com/download?family=X` 现在返回的是网站 SPA 的
-// text/html（不再是 zip），对「下载单个字体文件」这条路径已失效——它只会
-// 命中 `_isValidFontFile` 校验失败后回退到镜像。所以把能直接吐字体文件的
-// jsDelivr / GitHub raw 直链排在前面，Google 接口仅作最后兜底。
-//
-// jsDelivr 对整个包 >50MB 的目录会整目录 403（例如 notoserifsc），这类只能
-// 走 GitHub raw；GitHub raw 无此限制，对 CJK 大字体统一补一条兜底直链。
+// jsDelivr 对整个包 >50MB 的目录会整目录 403（例如 notoserifsc），这类
+// `viaJsDelivr: false` 只走镜像与 raw。
+List<String> _googleFontUrls(String repoPath, {bool viaJsDelivr = true}) =>
+    gitHubRepoFileUrls(
+      repoPath,
+      repo: 'google/fonts',
+      ref: 'main',
+      viaJsDelivr: viaJsDelivr,
+    );
+
 List<RecommendedFont> get recommendedFontsCatalog => [
   // ── 推荐首选 ──
   RecommendedFont(
     name: 'Klee One',
     nameJa: 'クレー One',
-    urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/kleeone/KleeOne-Regular.ttf',
-      'https://raw.githubusercontent.com/google/fonts/main/ofl/kleeone/KleeOne-Regular.ttf',
-      'https://fonts.google.com/download?family=Klee+One',
-    ],
+    urls: _googleFontUrls('ofl/kleeone/KleeOne-Regular.ttf'),
     license: 'OFL 1.1',
     description: t.font_desc_klee_one,
   ),
@@ -304,66 +331,45 @@ List<RecommendedFont> get recommendedFontsCatalog => [
   RecommendedFont(
     name: 'Noto Sans JP',
     nameJa: 'Noto Sans 日本語',
-    urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf',
-      'https://raw.githubusercontent.com/google/fonts/main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf',
-      'https://fonts.google.com/download?family=Noto+Sans+JP',
-    ],
+    urls: _googleFontUrls('ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf'),
     license: 'OFL 1.1',
     description: t.font_desc_noto_sans_jp,
   ),
   RecommendedFont(
     name: 'Noto Serif JP',
     nameJa: 'Noto Serif 日本語',
-    urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf',
-      'https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf',
-      'https://fonts.google.com/download?family=Noto+Serif+JP',
-    ],
+    urls: _googleFontUrls('ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf'),
     license: 'OFL 1.1',
     description: t.font_desc_noto_serif_jp,
   ),
   RecommendedFont(
     name: 'Noto Sans SC',
     nameJa: 'Noto Sans 简体中文',
-    urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
-      'https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
-      'https://fonts.google.com/download?family=Noto+Sans+SC',
-    ],
+    urls: _googleFontUrls('ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf'),
     license: 'OFL 1.1',
     description: t.font_desc_noto_sans_sc,
   ),
   RecommendedFont(
     name: 'Noto Serif SC',
     nameJa: 'Noto Serif 简体中文',
-    // jsDelivr 整目录 >50MB → notoserifsc 直接 403，只能走 GitHub raw。
-    urls: [
-      'https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf',
-      'https://fonts.google.com/download?family=Noto+Serif+SC',
-    ],
+    urls: _googleFontUrls(
+      'ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf',
+      viaJsDelivr: false,
+    ),
     license: 'OFL 1.1',
     description: t.font_desc_noto_serif_sc,
   ),
   RecommendedFont(
     name: 'Noto Sans TC',
     nameJa: 'Noto Sans 繁體中文',
-    urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf',
-      'https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf',
-      'https://fonts.google.com/download?family=Noto+Sans+TC',
-    ],
+    urls: _googleFontUrls('ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf'),
     license: 'OFL 1.1',
     description: t.font_desc_noto_sans_tc,
   ),
   RecommendedFont(
     name: 'Noto Serif TC',
     nameJa: 'Noto Serif 繁體中文',
-    urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notoseriftc/NotoSerifTC%5Bwght%5D.ttf',
-      'https://raw.githubusercontent.com/google/fonts/main/ofl/notoseriftc/NotoSerifTC%5Bwght%5D.ttf',
-      'https://fonts.google.com/download?family=Noto+Serif+TC',
-    ],
+    urls: _googleFontUrls('ofl/notoseriftc/NotoSerifTC%5Bwght%5D.ttf'),
     license: 'OFL 1.1',
     description: t.font_desc_noto_serif_tc,
   ),
@@ -371,60 +377,42 @@ List<RecommendedFont> get recommendedFontsCatalog => [
   RecommendedFont(
     name: 'Shippori Mincho',
     nameJa: 'しっぽり明朝',
-    urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/shipporimincho/ShipporiMincho-Regular.ttf',
-      'https://fonts.google.com/download?family=Shippori+Mincho',
-    ],
+    urls: _googleFontUrls('ofl/shipporimincho/ShipporiMincho-Regular.ttf'),
     license: 'OFL 1.1',
     description: t.font_desc_shippori_mincho,
   ),
   RecommendedFont(
     name: 'Zen Old Mincho',
     nameJa: '禅オールド明朝',
-    urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenoldmincho/ZenOldMincho-Regular.ttf',
-      'https://fonts.google.com/download?family=Zen+Old+Mincho',
-    ],
+    urls: _googleFontUrls('ofl/zenoldmincho/ZenOldMincho-Regular.ttf'),
     license: 'OFL 1.1',
     description: t.font_desc_zen_old_mincho,
   ),
   RecommendedFont(
     name: 'Zen Maru Gothic',
     nameJa: '禅丸ゴシック',
-    urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenmarugothic/ZenMaruGothic-Regular.ttf',
-      'https://fonts.google.com/download?family=Zen+Maru+Gothic',
-    ],
+    urls: _googleFontUrls('ofl/zenmarugothic/ZenMaruGothic-Regular.ttf'),
     license: 'OFL 1.1',
     description: t.font_desc_zen_maru_gothic,
   ),
   RecommendedFont(
     name: 'M PLUS Rounded 1c',
     nameJa: 'M PLUS Rounded 1c',
-    urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/mplusrounded1c/MPLUSRounded1c-Regular.ttf',
-      'https://fonts.google.com/download?family=M+PLUS+Rounded+1c',
-    ],
+    urls: _googleFontUrls('ofl/mplusrounded1c/MPLUSRounded1c-Regular.ttf'),
     license: 'OFL 1.1',
     description: t.font_desc_mplus_rounded_1c,
   ),
   RecommendedFont(
     name: 'Hina Mincho',
     nameJa: 'ひな明朝',
-    urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/hinamincho/HinaMincho-Regular.ttf',
-      'https://fonts.google.com/download?family=Hina+Mincho',
-    ],
+    urls: _googleFontUrls('ofl/hinamincho/HinaMincho-Regular.ttf'),
     license: 'OFL 1.1',
     description: t.font_desc_hina_mincho,
   ),
   RecommendedFont(
     name: 'Zen Kaku Gothic New',
     nameJa: '禅角ゴシック New',
-    urls: [
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenkakugothicnew/ZenKakuGothicNew-Regular.ttf',
-      'https://fonts.google.com/download?family=Zen+Kaku+Gothic+New',
-    ],
+    urls: _googleFontUrls('ofl/zenkakugothicnew/ZenKakuGothicNew-Regular.ttf'),
     license: 'OFL 1.1',
     description: t.font_desc_zen_kaku_gothic_new,
   ),
@@ -818,7 +806,10 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
       if (result.cancelled) return;
       if (result.error != null) {
         FushiToast.show(
-          msg: '${t.custom_fonts_download_failed}: ${result.error}',
+          msg: result.unreachable
+              ? '${t.custom_fonts_download_failed}\n'
+                    '${t.custom_fonts_download_unreachable_hint}'
+              : '${t.custom_fonts_download_failed}: ${result.error}',
           toastLength: Toast.LENGTH_LONG,
           severity: ToastSeverity.error,
         );
@@ -885,7 +876,8 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
       );
     }
     int imported = 0;
-    int failed = 0;
+    final List<String> failedNames = <String>[];
+    bool anyUnreachable = false;
     bool cancelled = false;
     try {
       for (int i = 0; i < fonts.length; i++) {
@@ -905,7 +897,8 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
           break;
         }
         if (result.error != null || result.importedCount == 0) {
-          failed++;
+          failedNames.add(font.name);
+          if (result.unreachable) anyUnreachable = true;
           continue;
         }
         imported += result.importedCount;
@@ -920,9 +913,15 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
           severity: ToastSeverity.success,
         );
       }
-      if (failed > 0) {
+      if (failedNames.isNotEmpty) {
+        // 说清是哪几款失败；全是「连不上下载源」时给出能做的事（配代理 / 手动
+        // 导入），而不是只丢一个失败计数（反馈 f4ybrMM0mP）。
+        final String names = failedNames.join(', ');
         FushiToast.show(
-          msg: '${t.custom_fonts_download_failed}: $failed',
+          msg: anyUnreachable
+              ? '${t.custom_fonts_download_failed}: $names\n'
+                    '${t.custom_fonts_download_unreachable_hint}'
+              : '${t.custom_fonts_download_failed}: $names',
           toastLength: Toast.LENGTH_LONG,
           severity: ToastSeverity.error,
         );

@@ -9,7 +9,7 @@
 // 情况一律折叠成一个 `null`，只剩一句话可说。本文件钉住三者必须分开，以及
 // 判定顺序。
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/pages/implementations/downloads_resource_gap.dart';
 
@@ -35,7 +35,8 @@ void main() {
       expect(
         gap,
         isA<DownloadsResourceNoManagedSource>(),
-        reason: 'BUG-1706 的用户现场：后端配置完好，缺的只是本地视频文件夹。'
+        reason:
+            'BUG-1706 的用户现场：后端配置完好，缺的只是本地视频文件夹。'
             '报成「请先配置下载后端」会把用户支到一个没问题的页面。',
       );
       expect(gap, isNot(isA<DownloadsResourceNoBackend>()));
@@ -75,7 +76,8 @@ void main() {
       expect(
         (gap! as DownloadsResourceNoBackend).detail,
         videoDownloadEmbeddedBackendUnavailableMessage,
-        reason: '用户已经配过后端了，只说「请先配置」等于没说；'
+        reason:
+            '用户已经配过后端了，只说「请先配置」等于没说；'
             '得把后端自己报的原因端到他面前。',
       );
     });

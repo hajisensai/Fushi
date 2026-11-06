@@ -6,8 +6,10 @@ import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
@@ -51,7 +53,8 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
 
   @override
   Future<OnlineMangaRefreshResult> refresh(
-          OnlineMangaLibraryEntry entry) async =>
+    OnlineMangaLibraryEntry entry,
+  ) async =>
       OnlineMangaRefreshResult(series: entry.series, chapters: entry.chapters);
 
   @override
@@ -80,13 +83,14 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
 
   @override
   Future<List<int>> fetchCover(
-          OnlineMangaLibraryEntry entry, String url) async =>
-      <int>[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    OnlineMangaLibraryEntry entry,
+    String url,
+  ) async => <int>[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 }
 
 class _MangaTestAppModel extends AppModel {
   _MangaTestAppModel(this._db, this._library, this._temp)
-      : super(testPlatformServices());
+    : super(testPlatformServices());
 
   final FushiDatabase _db;
   final OnlineMangaLibraryService _library;
@@ -99,11 +103,18 @@ class _MangaTestAppModel extends AppModel {
   @override
   FushiDatabase get database => _db;
 
+  /// 跳转记录顶栏图标订阅的是 [PreferencesRepository] 本身
+  /// （`JumpHistoryPrefsListenable.fromRepository`），不经可覆写的 AppModel getter：
+  /// 给一份建在同一内存库上的真实偏好仓库（未加载 = 全部出厂默认）。
+  late final PreferencesRepository _prefs = PreferencesRepository(_db);
+
+  @override
+  PreferencesRepository get prefsRepo => _prefs;
+
   @override
   OnlineMangaLibraryService onlineMangaLibraryService(
     OnlineMangaRuntimeKind runtime,
-  ) =>
-      _library;
+  ) => _library;
 
   @override
   bool get lowMemoryMode => false;
@@ -140,6 +151,11 @@ class _MangaTestAppModel extends AppModel {
   // 固定顶栏：测试默认要看得见栏里的按钮（悬浮态默认收起）。
   @override
   bool get mangaChromeFloating => false;
+
+  // 工具栏布局走 prefsRepo（测试里为 null）：给出厂布局。
+  @override
+  MangaControlLayout mangaControlLayoutFor({required bool compact}) =>
+      MangaControlLayout.defaults;
   @override
   bool get mangaVolumeKeyPaging => false;
 
@@ -158,29 +174,29 @@ class _MangaTestAppModel extends AppModel {
 }
 
 Widget _harness(AppModel appModel, String bookKey) => ProviderScope(
-      overrides: <Override>[
-        platformServicesProvider.overrideWithValue(testPlatformServices()),
-        appProvider.overrideWith((ref) => appModel),
-      ],
-      child: TranslationProvider(
-        child: MaterialApp(
-          builder: (BuildContext context, Widget? child) =>
-              child ?? const SizedBox.shrink(),
-          home: MangaFushiPage(item: _item(bookKey), bookKey: bookKey),
-        ),
-      ),
-    );
+  overrides: <Override>[
+    platformServicesProvider.overrideWithValue(testPlatformServices()),
+    appProvider.overrideWith((ref) => appModel),
+  ],
+  child: TranslationProvider(
+    child: MaterialApp(
+      builder: (BuildContext context, Widget? child) =>
+          child ?? const SizedBox.shrink(),
+      home: MangaFushiPage(item: _item(bookKey), bookKey: bookKey),
+    ),
+  ),
+);
 
 MediaItem _item(String bookKey) => MediaItem(
-      mediaIdentifier: 'fushi://book/$bookKey',
-      mediaSourceIdentifier: 'reader_manga',
-      title: 'Test Manga',
-      mediaTypeIdentifier: 'reader',
-      position: 0,
-      duration: 1,
-      canDelete: false,
-      canEdit: true,
-    );
+  mediaIdentifier: 'fushi://book/$bookKey',
+  mediaSourceIdentifier: 'reader_manga',
+  title: 'Test Manga',
+  mediaTypeIdentifier: 'reader',
+  position: 0,
+  duration: 1,
+  canDelete: false,
+  canEdit: true,
+);
 
 const List<OnlineMangaChapter> _chapters = <OnlineMangaChapter>[
   OnlineMangaChapter(
@@ -198,16 +214,16 @@ const List<OnlineMangaChapter> _chapters = <OnlineMangaChapter>[
 ];
 
 OnlineMangaLibraryEntry _entry() => const OnlineMangaLibraryEntry(
-      runtime: OnlineMangaRuntimeKind.mihon,
-      extensionPackage: 'org.example.fixture',
-      sourceId: '1',
-      series: OnlineMangaSeries(
-        key: '/series/fixture',
-        title: 'Fixture series',
-        raw: <String, Object?>{'url': '/series/fixture'},
-      ),
-      chapters: _chapters,
-    );
+  runtime: OnlineMangaRuntimeKind.mihon,
+  extensionPackage: 'org.example.fixture',
+  sourceId: '1',
+  series: OnlineMangaSeries(
+    key: '/series/fixture',
+    title: 'Fixture series',
+    raw: <String, Object?>{'url': '/series/fixture'},
+  ),
+  chapters: _chapters,
+);
 
 Future<void> _writeDownloadedChapter(String bookDir, String chapterKey) async {
   final Directory chapterDir = mangaChapterDirectory(bookDir, chapterKey);
@@ -215,8 +231,8 @@ Future<void> _writeDownloadedChapter(String bookDir, String chapterKey) async {
   await images.create(recursive: true);
   await File(p.join(images.path, 'page-000001.jpg')).writeAsBytes(<int>[1]);
   await File(p.join(images.path, 'page-000002.jpg')).writeAsBytes(<int>[2]);
-  await mangaChapterJsonFile(chapterDir).writeAsString(jsonEncode(
-    <String, Object?>{
+  await mangaChapterJsonFile(chapterDir).writeAsString(
+    jsonEncode(<String, Object?>{
       'pages': <Map<String, Object?>>[
         <String, Object?>{
           'url': 'images/page-000001.jpg',
@@ -231,8 +247,8 @@ Future<void> _writeDownloadedChapter(String bookDir, String chapterKey) async {
           'blocks': <Object?>[],
         },
       ],
-    },
-  ));
+    }),
+  );
 }
 
 Future<void> _pumpUntil(WidgetTester tester, Finder finder) async {
@@ -272,8 +288,7 @@ void main() {
     tester.view.physicalSize = const Size(600, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
-    final _MangaTestAppModel appModel =
-        _MangaTestAppModel(db, library, root);
+    final _MangaTestAppModel appModel = _MangaTestAppModel(db, library, root);
 
     late String bookKey;
     await tester.runAsync(() async {
@@ -290,16 +305,19 @@ void main() {
     });
     await tester.pump();
 
-    expect(find.byKey(const ValueKey<String>('manga_content_ready')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('manga_content_ready')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey<String>('manga_chapter_not_downloaded')),
       findsNothing,
     );
     expect(adapter.resolveCalls, 0, reason: '已下载的章不打源');
     // 章节选择器入口只有书架在线条目才有。
-    final Finder chapters =
-        find.byKey(const ValueKey<String>('manga_reader_chapters'));
+    final Finder chapters = find.byKey(
+      const ValueKey<String>('manga_reader_chapters'),
+    );
     expect(chapters, findsOneWidget);
     // 章节按钮在底部悬浮工具栏的导航组里（拇指区，优先级仅次于快捷设置）。
     expect(
@@ -322,11 +340,15 @@ void main() {
     // 侧栏进场是 M3E 弹簧（[FushiMotion.long]，落位前有轻微过冲）：推满整段
     // 转场再量位置，否则读到的是过冲中的瞬时 left。
     await tester.pump(FushiMotion.long + const Duration(milliseconds: 50));
-    expect(find.byKey(const ValueKey<String>('manga_reader_chapter_drawer')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('manga_reader_chapter_drawer')),
+      findsOneWidget,
+    );
     expect(
       tester
-          .getRect(find.byKey(const ValueKey<String>('fushi_reader_side_sheet')))
+          .getRect(
+            find.byKey(const ValueKey<String>('fushi_reader_side_sheet')),
+          )
           .left,
       0,
       reason: '章节目录从左侧打开',
@@ -335,20 +357,20 @@ void main() {
     // 打开即记「选了这一章」。
     final EpubBookRow after = (await db.getEpubBook(bookKey))!;
     expect(
-      OnlineMangaLibraryEntry.tryParse(after.sourceMetadata)!
-          .currentChapter
-          ?.key,
+      OnlineMangaLibraryEntry.tryParse(
+        after.sourceMetadata,
+      )!.currentChapter?.key,
       '/chapter/1',
     );
   });
 
-  testWidgets('在线条目 + 当前章未下载且直读失败 → 「本章未下载」态：入队按钮在、返回键在',
-      (WidgetTester tester) async {
+  testWidgets('在线条目 + 当前章未下载且直读失败 → 「本章未下载」态：入队按钮在、返回键在', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(600, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
-    final _MangaTestAppModel appModel =
-        _MangaTestAppModel(db, library, root);
+    final _MangaTestAppModel appModel = _MangaTestAppModel(db, library, root);
 
     late String bookKey;
     await tester.runAsync(() async {
@@ -366,11 +388,15 @@ void main() {
       find.byKey(const ValueKey<String>('manga_chapter_not_downloaded')),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey<String>('manga_content_ready')),
-        findsNothing);
-    expect(find.byKey(const ValueKey<String>('manga_reader_back_button')),
-        findsOneWidget,
-        reason: '出口不随内容存亡');
+    expect(
+      find.byKey(const ValueKey<String>('manga_content_ready')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('manga_reader_back_button')),
+      findsOneWidget,
+      reason: '出口不随内容存亡',
+    );
     expect(
       find.byKey(const ValueKey<String>('manga_reader_enqueue_download')),
       findsOneWidget,
@@ -394,14 +420,14 @@ void main() {
     expect(job!.status, MangaDownloadJobStatus.queued);
   });
 
-  testWidgets('在线条目 + 当前章未下载 → 在线直读：不入队、不落章目录、不给 OCR 入口',
-      (WidgetTester tester) async {
+  testWidgets('在线条目 + 当前章未下载 → 在线直读：不入队、不落章目录、不给 OCR 入口', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(600, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
     adapter.serve = true;
-    final _MangaTestAppModel appModel =
-        _MangaTestAppModel(db, library, root);
+    final _MangaTestAppModel appModel = _MangaTestAppModel(db, library, root);
 
     late String bookKey;
     late String bookDir;
@@ -417,8 +443,10 @@ void main() {
     });
     await tester.pump();
 
-    expect(find.byKey(const ValueKey<String>('manga_content_ready')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('manga_content_ready')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey<String>('manga_chapter_not_downloaded')),
       findsNothing,
@@ -447,9 +475,9 @@ void main() {
     );
     // 开读即记「选了这一章」。
     expect(
-      OnlineMangaLibraryEntry.tryParse(after.sourceMetadata)!
-          .currentChapter
-          ?.key,
+      OnlineMangaLibraryEntry.tryParse(
+        after.sourceMetadata,
+      )!.currentChapter?.key,
       '/chapter/1',
     );
   });
@@ -464,7 +492,8 @@ void main() {
     expect(
       source,
       contains(
-          'bool get _noChapterOcr => _chapterNotDownloaded || _streamingChapter;'),
+        'bool get _noChapterOcr => _chapterNotDownloaded || _streamingChapter;',
+      ),
     );
     for (final String head in <String>[
       'bool get _showManualVolumeOcrAction =>',
@@ -498,6 +527,9 @@ void main() {
       greaterThan(streamingReturn),
       reason: '整卷缓存恢复必须在直读分支 return 之后',
     );
-    expect(rest.indexOf('_maybeStartVolumeOcr()'), greaterThan(streamingReturn));
+    expect(
+      rest.indexOf('_maybeStartVolumeOcr()'),
+      greaterThan(streamingReturn),
+    );
   });
 }

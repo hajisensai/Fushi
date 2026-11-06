@@ -3,20 +3,16 @@ import 'package:drift/native.dart';
 import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-Future<Set<String>> _columnNames(
-  FushiDatabase db,
-  String table,
-) async {
-  final List<QueryRow> rows =
-      await db.customSelect('PRAGMA table_info($table)').get();
+Future<Set<String>> _columnNames(FushiDatabase db, String table) async {
+  final List<QueryRow> rows = await db
+      .customSelect('PRAGMA table_info($table)')
+      .get();
   return rows.map((QueryRow row) => row.read<String>('name')).toSet();
 }
 
 Future<Set<String>> _indexNames(FushiDatabase db) async {
   final List<QueryRow> rows = await db
-      .customSelect(
-        "SELECT name FROM sqlite_master WHERE type = 'index'",
-      )
+      .customSelect("SELECT name FROM sqlite_master WHERE type = 'index'")
       .get();
   return rows.map((QueryRow row) => row.read<String>('name')).toSet();
 }

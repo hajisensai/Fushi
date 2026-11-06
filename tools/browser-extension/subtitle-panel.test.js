@@ -94,7 +94,9 @@ function loadController(options = {}) {
       },
     },
   };
-  vm.runInNewContext(source, sandbox, { filename: 'subtitle-panel.js' });
+  vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'subtitle-adapters.js'), 'utf8'), sandbox, { filename: 'subtitle-adapters.js' }); // manifest：先于 subtitle-panel.js（共享轨判据）
+  vm.runInContext(source, sandbox, { filename: 'subtitle-panel.js' });
 
   function message(payload) {
     let response;

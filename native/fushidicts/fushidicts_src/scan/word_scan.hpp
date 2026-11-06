@@ -14,3 +14,8 @@
 // CJK 汉字/假名/谚文不属于该类 → 它们之间所有切点照旧合法（日语逐码点，零变化）。
 // 以空白结尾的前缀属冗余（更短的去空白前缀已覆盖），一并丢弃。
 std::vector<std::string> scan_candidates(const std::string& text, std::size_t scan_length);
+
+// 空格分词类字母（拉丁/西里尔/希腊/阿拉伯/希伯来/亚美尼亚/格鲁吉亚）：上面「切点不得落在两个
+// 这类字母之间」的同一判据。语料词元化（tokenize.hpp 的 tokenize_corpus）也用它决定未命中时
+// 整串跳过，而不是从词中间起查。
+bool is_space_delimited_letter(char32_t c);

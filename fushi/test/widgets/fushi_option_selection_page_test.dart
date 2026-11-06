@@ -22,8 +22,9 @@ List<FushiOptionSelectionOption<String>> _langs() =>
     ];
 
 void main() {
-  testWidgets('selected entry shows a check; tapping another pops its value',
-      (WidgetTester tester) async {
+  testWidgets('selected entry shows a check; tapping another pops its value', (
+    WidgetTester tester,
+  ) async {
     String? popped = 'SENTINEL';
     await tester.pumpWidget(
       _harness(
@@ -58,13 +59,15 @@ void main() {
     expect(popped, 'en-US');
   });
 
-  testWidgets('never renders a search field, even for long option sets',
-      (WidgetTester tester) async {
+  testWidgets('never renders a search field, even for long option sets', (
+    WidgetTester tester,
+  ) async {
     final List<FushiOptionSelectionOption<int>> many =
         List<FushiOptionSelectionOption<int>>.generate(
-      20,
-      (int i) => FushiOptionSelectionOption<int>(value: i, label: 'Item $i'),
-    );
+          20,
+          (int i) =>
+              FushiOptionSelectionOption<int>(value: i, label: 'Item $i'),
+        );
     await tester.pumpWidget(
       _harness(
         FushiOptionSelectionPage<int>(

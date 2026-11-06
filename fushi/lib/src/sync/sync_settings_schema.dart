@@ -8,11 +8,12 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show MethodChannel, PlatformException;
-import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/migration_page.dart';
 import 'package:fushi/src/pages/implementations/game_stream_join_page.dart';
+import 'package:fushi/src/pages/implementations/interconnect_download_tasks_page.dart';
 import 'package:fushi/src/pages/implementations/migration_import_page.dart';
 import 'package:fushi/src/pages/implementations/external_reader_import_page.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
@@ -21,6 +22,7 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart'
     show buildLookupDestination;
@@ -33,6 +35,7 @@ import 'package:fushi/src/storage/macos_data_root_access.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart'
     show BackupMergePreview;
 import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi/src/sync/backup_archive_name.dart';
 import 'package:fushi/src/sync/backup_validating_overlay_route.dart';
 import 'package:fushi/src/sync/desktop_oauth.dart'
     show DesktopOAuthLaunch, DesktopOAuthLaunchObserver;
@@ -86,7 +89,27 @@ import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi/src/sync/webdav_sync_backend.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_reorder_drag_listener.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_platform/fushi_platform.dart';
@@ -133,9 +156,22 @@ SettingsDestination buildSyncBackupDestination() {
         presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.sync_section_method,
         items: <SettingsItem>[
+          // 云备份通道总开关（与「Fushi 互联」页的 interconnect.enabled 对称）。关掉 =
+          // 本设备不再跑任何云同步（常规 / 复习 / 资产传输 / 云端占位卡），但后端选择与
+          // 账号凭据原样保留——只想留互联的用户不必为此退出云盘账号。
+          SettingsSwitchItem(
+            id: 'sync.cloud_enabled',
+            title: t.sync_cloud_enable,
+            subtitle: t.sync_cloud_enable_hint,
+            icon: FushiIcons.cloud,
+            value: (SettingsContext ctx) => _syncSettings(ctx).cloudSyncEnabled,
+            onChanged: (SettingsContext ctx, bool value) =>
+                _syncSettings(ctx).setCloudSyncEnabled(value),
+          ),
           SettingsCustomItem(
             id: 'sync.mode',
             icon: FushiIcons.cloud,
+            visible: _cloudSyncOn,
             builder: (SettingsContext ctx) =>
                 _BackendSelectorWidget(settingsContext: ctx),
           ),
@@ -143,6 +179,7 @@ SettingsDestination buildSyncBackupDestination() {
             id: 'sync.account_status',
             icon: FushiIcons.account,
             visible: (SettingsContext ctx) =>
+                _cloudSyncOn(ctx) &&
                 isOAuthSyncBackend(_syncSettings(ctx).backendType),
             builder: (SettingsContext ctx) =>
                 _SyncAccountWidget(settingsContext: ctx),
@@ -156,6 +193,7 @@ SettingsDestination buildSyncBackupDestination() {
             subtitle: t.sync_server_settings_hint,
             icon: FushiIcons.server,
             visible: (SettingsContext ctx) =>
+                _cloudSyncOn(ctx) &&
                 hasServerSettings(_syncSettings(ctx).backendType),
             child: _buildSyncServerSettingsPage,
           ),
@@ -167,6 +205,7 @@ SettingsDestination buildSyncBackupDestination() {
             subtitle: t.interconnect_moved_note,
             icon: FushiIcons.devices,
             visible: (SettingsContext ctx) =>
+                _cloudSyncOn(ctx) &&
                 _syncSettings(ctx).backendType == SyncBackendType.fushiServer,
           ),
         ],
@@ -191,6 +230,39 @@ SettingsDestination buildSyncBackupDestination() {
               ).setSyncStatsEnabled(value);
             },
           ),
+          // 设备级「同步浏览历史」（默认关）：云备份与互联两条通道共用，本机作互联
+          // host 时也按它决定发不发 / 收不收历史，所以不设 visible 门控。历史不跟
+          // 「同步统计 / 共享收藏夹」走——浏览轨迹的隐私分量远高于收藏。
+          SettingsSwitchItem(
+            id: 'sync.web_history',
+            title: t.sync_web_history,
+            subtitle: t.sync_web_history_hint,
+            icon: FushiIcons.globe,
+            value: (SettingsContext ctx) => _syncSettings(ctx).syncWebHistory,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).syncWebHistory = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setWebHistorySyncEnabled(value);
+            },
+          ),
+          // 设备级「同步设置」（反馈 AWp-0BtDDv，默认关）：可移植的偏好设置随云备份与
+          // 互联两条通道同步，不可移植项（本机路径 / 窗口 / 平台专属 / 外部工具连接）
+          // 的判定在 PortableSettingsPolicy。两条通道共用，同上不设 visible 门控。
+          SettingsSwitchItem(
+            id: 'sync.settings',
+            title: t.sync_settings_sync,
+            subtitle: t.sync_settings_sync_hint,
+            icon: FushiIcons.settings,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).syncPortableSettings,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).syncPortableSettings = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setSettingsSyncEnabled(value);
+            },
+          ),
           // 「上传X文件」三个开关都是 OUTBOUND：把本机资产推给**云备份**后端。BUG-988
           // 起互联通道不再复用这套共享开关——互联的内容上传由「上传到互联对端」分项开关
           // 单独控制（见 buildInterconnectDestination），二者互不牵连。故这三个开关只在
@@ -204,6 +276,7 @@ SettingsDestination buildSyncBackupDestination() {
             subtitle: t.sync_content_warning,
             icon: FushiIcons.books,
             visible: (SettingsContext ctx) =>
+                _cloudSyncOn(ctx) &&
                 _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             value: (SettingsContext ctx) => _syncSettings(ctx).syncContent,
             onChanged: (SettingsContext ctx, bool value) async {
@@ -213,12 +286,31 @@ SettingsDestination buildSyncBackupDestination() {
               ).setSyncContentEnabled(value);
             },
           ),
+          // 漫画与书籍分开（所有者 2026-10-21）：漫画卷体积大，独立 opt-in；未设置过时
+          // 继承「上传书籍文件」（见 SyncRepository.isSyncMangaContentEnabled）。
+          SettingsSwitchItem(
+            id: 'sync.manga_content',
+            title: t.sync_manga_content,
+            subtitle: t.sync_manga_content_warning,
+            icon: FushiIcons.manga,
+            visible: (SettingsContext ctx) =>
+                _cloudSyncOn(ctx) &&
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
+            value: (SettingsContext ctx) => _syncSettings(ctx).syncMangaContent,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).syncMangaContent = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setSyncMangaContentEnabled(value);
+            },
+          ),
           SettingsSwitchItem(
             id: 'sync.audiobook_files',
             title: t.sync_audiobook_files,
             subtitle: t.sync_audiobook_files_warning,
             icon: FushiIcons.audiobook,
             visible: (SettingsContext ctx) =>
+                _cloudSyncOn(ctx) &&
                 _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             value: (SettingsContext ctx) =>
                 _syncSettings(ctx).syncAudioBookFiles,
@@ -240,6 +332,7 @@ SettingsDestination buildSyncBackupDestination() {
             subtitle: t.sync_video_files_warning,
             icon: FushiIcons.video,
             visible: (SettingsContext ctx) =>
+                _cloudSyncOn(ctx) &&
                 _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             value: (SettingsContext ctx) => _syncSettings(ctx).syncVideoFiles,
             onChanged: (SettingsContext ctx, bool value) async {
@@ -266,6 +359,9 @@ SettingsDestination buildSyncBackupDestination() {
           SettingsSwitchItem(
             id: 'sync.auto_sync',
             title: t.sync_auto_sync,
+            // 反馈 5nWEirdCs2：本开关只管云同步通道；互联通道的自动同步在互联页单独
+            // 一个开关（默认开），见 interconnect.auto_sync。
+            subtitle: t.sync_auto_sync_cloud_hint,
             icon: FushiIcons.sync,
             // Auto-sync is an OUTBOUND switch: it triggers app-open/background/
             // book-close pushes through the resolved backend. Outbound only
@@ -274,7 +370,8 @@ SettingsDestination buildSyncBackupDestination() {
             // A cloud backend keeps its outbound regardless of hosting — hiding
             // on host identity alone blanked Google Drive users' toggle
             // (BUG-1088).
-            visible: (SettingsContext ctx) => !_cloudOutboundUnavailable(ctx),
+            visible: (SettingsContext ctx) =>
+                _cloudSyncOn(ctx) && !_cloudOutboundUnavailable(ctx),
             value: (SettingsContext ctx) => _syncSettings(ctx).autoSync,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).autoSync = value;
@@ -338,6 +435,8 @@ SettingsDestination buildSyncBackupDestination() {
       SettingsSection(
         id: 'sync.assets.section',
         presentation: SettingsSectionPresentation.alwaysExpanded,
+        // 资产传输只走云备份通道（见 runManualAssetTransfer），云通道关着整节无意义。
+        visible: _cloudSyncOn,
         title: t.sync_section_assets,
         items: <SettingsItem>[
           // 一次性告知，排在传输动作之前：升级前开着那两个自动同步开关的存量用户，
@@ -412,6 +511,22 @@ SettingsDestination buildSyncBackupDestination() {
             icon: FushiIcons.download,
             builder: (SettingsContext ctx) =>
                 _BackupImportWidget(settingsContext: ctx),
+          ),
+          // 合并导入默认「只添加内容、不动本机设置」；开了这项才把备份里的可移植设置
+          // 按修改时刻并进来（反馈 AWp-0BtDDv，默认关）。覆盖导入有自己的「导入设置」。
+          SettingsSwitchItem(
+            id: 'sync.backup_merge_settings',
+            title: t.backup_merge_import_settings,
+            subtitle: t.backup_merge_import_settings_hint,
+            icon: FushiIcons.settings,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).backupMergeSettings,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).backupMergeSettings = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setBackupMergeSettingsEnabled(value);
+            },
           ),
           // 第三方阅读器（Hoshi Reader iOS / Android）的 `.hoshi` 书库备份：
           // 书 + 阅读位置 + 统计。五端都给——备份文件本身跨端通用。
@@ -623,6 +738,23 @@ SettingsDestination buildInterconnectDestination() {
             icon: FushiIcons.devices,
             child: _buildInterconnectDevicesPage,
           ),
+          // 反馈 _sZllpFQWm / BUG-3698：从配对设备下到本机的任务（暂停 / 继续 / 取消）。
+          // 这类任务此前只在「浏览 → 下载」里列出，iOS 没有浏览模块就无处可停；
+          // 互联下载不是商店受限能力，这里不挂任何合规门，五端都在。
+          SettingsActionItem(
+            id: 'interconnect.download_tasks',
+            title: t.interconnect_download_tasks_title,
+            subtitle: t.interconnect_download_tasks_hint,
+            icon: FushiIcons.download,
+            cli: const SettingsCliAction.unsupported(
+              '互联下载任务是本机 app 内存里的传输队列（暂停 / 继续 / 取消要作用在正在跑的'
+              '传输上），只能在 app 里管理',
+            ),
+            onTap: (SettingsContext ctx) => pushSettingsPage(
+              ctx,
+              (BuildContext context) => const InterconnectDownloadTasksPage(),
+            ),
+          ),
           SettingsActionItem(
             id: 'interconnect.game_stream',
             title: t.game_stream_join,
@@ -643,6 +775,14 @@ SettingsDestination buildInterconnectDestination() {
                     ctx.appModel.prefsRepo.gameStreamLookupLayout,
                 writeLookupLayout:
                     ctx.appModel.prefsRepo.setGameStreamLookupLayout,
+                readButtonProfile: () =>
+                    ctx.appModel.prefsRepo.gameStreamButtonProfile,
+                writeButtonProfile:
+                    ctx.appModel.prefsRepo.setGameStreamButtonProfile,
+                readSecondScreen: () =>
+                    ctx.appModel.prefsRepo.gameStreamSecondScreen,
+                writeSecondScreen:
+                    ctx.appModel.prefsRepo.setGameStreamSecondScreen,
               ),
             ),
           ),
@@ -672,6 +812,20 @@ SettingsDestination buildInterconnectDestination() {
               await SyncRepository(
                 ctx.appModel.database,
               ).setInterconnectSyncContentEnabled(value);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'interconnect.upload_manga_content',
+            title: t.interconnect_upload_manga_content,
+            subtitle: t.interconnect_upload_manga_content_hint,
+            icon: FushiIcons.manga,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectSyncMangaContent,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectSyncMangaContent = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectSyncMangaContentEnabled(value);
             },
           ),
           // BUG-2494：互联通道自己一行显式的上传/下载动作，跑在
@@ -786,6 +940,44 @@ SettingsDestination buildInterconnectDestination() {
               await SyncRepository(
                 ctx.appModel.database,
               ).setInterconnectSyncFavoritesEnabled(value);
+            },
+          ),
+          // 反馈 5nWEirdCs2（所有者拍板方案 A）：上面两项（以及书/视频进度、合集等）
+          // 只在「一轮同步」里与对端合并。拆开关前轮次由同步分类那个默认关的全局「自动
+          // 同步」驱动，互联页的「双向合并、默认开启」于是是句空话。现在互联通道有自己
+          // 的自动同步开关（默认开，老用户按旧开关迁移，见
+          // SyncRepository.isInterconnectAutoSyncEnabled），与上面两项同区：它就是
+          // 「这些内容什么时候合并」的答案。不是镜像——同步分类那个只管云通道。
+          SettingsSwitchItem(
+            id: 'interconnect.auto_sync',
+            title: t.interconnect_auto_sync,
+            subtitle: t.interconnect_auto_sync_hint,
+            icon: FushiIcons.sync,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectAutoSync,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectAutoSync = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectAutoSyncEnabled(value);
+            },
+          ),
+          // 反馈 VNz9dsLeIy：复习数据自己的自动同步（默认开）。上面两个开关只管常规同步轮次，复习数据
+          // 另有几处后台触发（常规同步通道之后的复习步骤、复习后的推送、互联快速通道、本机作为主机收到
+          // 写入）——关掉这一项就只剩牌组列表「立即同步」与进复习页的节流同步。复习模块开着才显示。
+          SettingsSwitchItem(
+            id: 'sync.srs_auto_sync',
+            title: t.srs_sync_auto,
+            subtitle: t.srs_sync_auto_hint,
+            icon: FushiIcons.cloudSync,
+            visible: (SettingsContext ctx) =>
+                ctx.appModel.moduleVisibility.isEnabled(ModuleId.srs),
+            value: (SettingsContext ctx) => _syncSettings(ctx).srsAutoSync,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).srsAutoSync = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setSrsAutoSyncEnabled(value);
             },
           ),
         ],
@@ -1016,6 +1208,20 @@ SettingsDestination _buildInterconnectHostPage() {
               );
             },
           ),
+          // 「互联主机」AI 提供商（反馈 M8KvhMTHVS）：已配对设备把补全交给本机，用本机的
+          // 提供商执行，key 不出本机。默认开，与「AI 下视频 / AI 助手整场交给主机办」同一
+          // 口径（那两条已默认花本机 AI 额度）；对端不发请求就一次也不调。
+          SettingsSwitchItem(
+            id: 'interconnect.ai_relay_host',
+            title: t.interconnect_ai_relay_host_toggle,
+            subtitle: t.interconnect_ai_relay_host_toggle_desc,
+            icon: FushiIcons.ai,
+            value: (SettingsContext ctx) =>
+                ctx.appModel.prefsRepo.interconnectAiRelayEnabled,
+            onChanged: (SettingsContext ctx, bool value) async {
+              await ctx.appModel.prefsRepo.setInterconnectAiRelayEnabled(value);
+            },
+          ),
           // 游戏串流「从库里启动」许可。默认关：开了就等于允许已配对设备在本机起
           // 游戏进程，必须是主机主人的显式意愿；端点另有 HTTPS + 已配对 peer token
           // 两道门。只在有本地游戏库的 Windows 上出现。
@@ -1185,6 +1391,10 @@ bool _cloudOutboundUnavailable(SettingsContext ctx) =>
     _syncSettings(ctx).backendType == SyncBackendType.fushiServer &&
     _isHostingInterconnect(ctx);
 
+/// 云备份通道总开关（`sync.cloud_enabled`）开着。关着时云通道专属的配置 / 上传 /
+/// 自动同步 / 资产传输行全部隐藏——它们在这台设备上已经不会生效。
+bool _cloudSyncOn(SettingsContext ctx) => _syncSettings(ctx).cloudSyncEnabled;
+
 _SyncSettingsState _syncSettings(SettingsContext ctx) {
   final AppModel owner = ctx.appModel;
   if (_activeSyncState == null || !identical(_activeSyncOwner, owner)) {
@@ -1221,13 +1431,33 @@ class _SyncSettingsState {
   /// 互联总开关（独立于 [backendType] 云备份后端选择）。为 true 时互联作为一条独立
   /// 通道运行，与云备份并存（不再是互斥的 backendType==fushiServer 单选）。
   bool interconnectEnabled = false;
+
+  /// 云备份通道总开关（`sync.cloud_enabled`，默认开），与 [interconnectEnabled] 对称。
+  bool cloudSyncEnabled = true;
+
+  /// 云同步通道的自动同步（`sync.auto_sync`，默认关）。
   bool autoSync = false;
+
+  /// 互联通道的自动同步（`interconnect.auto_sync`，默认开，反馈 5nWEirdCs2）。
+  bool interconnectAutoSync = true;
+
+  /// 复习数据的自动同步（`sync.srs_auto_sync`，默认开，反馈 VNz9dsLeIy）。
+  bool srsAutoSync = true;
   bool syncStats = true;
+  bool syncWebHistory = false;
+
+  /// 设备级「同步设置」（`sync.settings`，默认关，AWp-0BtDDv）。
+  bool syncPortableSettings = false;
+
+  /// 合并导入时包含可移植设置（`sync.backup_merge_settings`，默认关，AWp-0BtDDv）。
+  bool backupMergeSettings = false;
   bool syncContent = false;
+  bool syncMangaContent = false;
   bool syncAudioBookFiles = false;
   bool syncVideoFiles = false;
   // BUG-988：互联通道专属的「上传内容到对端」开关，独立于上面的云备份 sync* 开关。
   bool interconnectSyncContent = false;
+  bool interconnectSyncMangaContent = false;
   bool interconnectSyncAudioBookFiles = false;
   bool interconnectSyncVideoFiles = false;
   // 互联专属的「共享统计 / 共享收藏夹」（双向合并，非上传）。默认 true = 拆开关前
@@ -1311,6 +1541,15 @@ class _SyncSettingsState {
     _settingsContext.refresh();
   }
 
+  /// 切换云备份通道总开关并持久化，随后刷新可见性谓词（云通道专属各行门控于此）。
+  /// 关闭只停用通道，不登出、不清后端选择与凭据。
+  Future<void> setCloudSyncEnabled(bool value) async {
+    if (cloudSyncEnabled == value) return;
+    cloudSyncEnabled = value;
+    await _repo.setCloudSyncEnabled(value);
+    _settingsContext.refresh();
+  }
+
   /// 别处（库页来源视图）改了互联总开关：回 preferences 读真值，不同就更新内存态
   /// 并刷新可见性谓词。**只信真值不信广播载荷**，故本页自己写的那次会在这里读到
   /// 相同值、直接 no-op（BUG-1560）。
@@ -1340,12 +1579,21 @@ class _SyncSettingsState {
     try {
       backendType = await _repo.getBackendType();
       interconnectEnabled = await _repo.isInterconnectEnabled();
+      cloudSyncEnabled = await _repo.isCloudSyncEnabled();
       autoSync = await _repo.isAutoSyncEnabled();
+      interconnectAutoSync = await _repo.isInterconnectAutoSyncEnabled();
+      srsAutoSync = await _repo.isSrsAutoSyncEnabled();
       syncStats = await _repo.isSyncStatsEnabled();
+      syncWebHistory = await _repo.isWebHistorySyncEnabled();
+      syncPortableSettings = await _repo.isSettingsSyncEnabled();
+      backupMergeSettings = await _repo.isBackupMergeSettingsEnabled();
       syncContent = await _repo.isSyncContentEnabled();
+      syncMangaContent = await _repo.isSyncMangaContentEnabled();
       syncAudioBookFiles = await _repo.isSyncAudioBookFilesEnabled();
       syncVideoFiles = await _repo.isSyncVideoFilesEnabled();
       interconnectSyncContent = await _repo.isInterconnectSyncContentEnabled();
+      interconnectSyncMangaContent = await _repo
+          .isInterconnectSyncMangaContentEnabled();
       interconnectSyncAudioBookFiles = await _repo
           .isInterconnectSyncAudioBookFilesEnabled();
       interconnectSyncVideoFiles = await _repo

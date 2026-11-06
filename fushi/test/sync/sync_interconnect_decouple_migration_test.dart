@@ -82,8 +82,11 @@ void main() {
       // 下次启动再跑迁移。
       await repo.migrateInterconnectBackendToToggle();
 
-      expect(await repo.getBackendType(), SyncBackendType.fushiServer,
-          reason: '用户主动选的备份后端必须活过重启');
+      expect(
+        await repo.getBackendType(),
+        SyncBackendType.fushiServer,
+        reason: '用户主动选的备份后端必须活过重启',
+      );
       expect(await repo.isInterconnectEnabled(), isTrue);
     });
 

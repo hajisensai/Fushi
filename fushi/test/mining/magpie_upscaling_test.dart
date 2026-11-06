@@ -25,18 +25,17 @@ Map<String, dynamic> baseConfig({
   int defaultScalingMode = 2,
   int scalingModeCount = 7,
   List<Map<String, dynamic>> extraProfiles = const <Map<String, dynamic>>[],
-}) =>
-    <String, dynamic>{
-      'theme': 2,
-      'scalingModes': List<Map<String, dynamic>>.generate(
-        scalingModeCount,
-        (int i) => <String, dynamic>{'name': 'mode$i'},
-      ),
-      'profiles': <Map<String, dynamic>>[
-        <String, dynamic>{'scalingMode': defaultScalingMode},
-        ...extraProfiles,
-      ],
-    };
+}) => <String, dynamic>{
+  'theme': 2,
+  'scalingModes': List<Map<String, dynamic>>.generate(
+    scalingModeCount,
+    (int i) => <String, dynamic>{'name': 'mode$i'},
+  ),
+  'profiles': <Map<String, dynamic>>[
+    <String, dynamic>{'scalingMode': defaultScalingMode},
+    ...extraProfiles,
+  ],
+};
 
 const MagpieWindowIdentity kGame = MagpieWindowIdentity(
   executablePath: r'D:\Games\Sakura\sakura.exe',
@@ -47,10 +46,7 @@ const String kFushiExe = r'C:\Program Files\Fushi\Fushi.exe';
 
 /// 假 Win32 桥：完全不碰 FFI，任意平台可跑。
 class FakeBridge implements MagpieWin32Bridge {
-  FakeBridge({
-    this.identity = kGame,
-    this.running = false,
-  });
+  FakeBridge({this.identity = kGame, this.running = false});
 
   MagpieWindowIdentity? identity;
   bool running;
@@ -183,8 +179,10 @@ void main() {
     });
 
     test('持久化串是稳定字面量，不是 enum.name / index', () {
-      expect(magpieUpscalingModeToKey(MagpieUpscalingMode.installedOnly),
-          'installed_only');
+      expect(
+        magpieUpscalingModeToKey(MagpieUpscalingMode.installedOnly),
+        'installed_only',
+      );
       expect(magpieUpscalingModeToKey(MagpieUpscalingMode.auto), 'auto');
       expect(magpieUpscalingModeToKey(MagpieUpscalingMode.off), 'off');
     });
@@ -268,11 +266,11 @@ void main() {
       for (final int bad in <int>[-1, 99]) {
         final MagpieProfileWriteResult result =
             magpieConfigWithAutoScaleProfile(
-          config: baseConfig(defaultScalingMode: bad),
-          identity: kGame,
-          profileName: 'x',
-          fushiExecutablePath: kFushiExe,
-        );
+              config: baseConfig(defaultScalingMode: bad),
+              identity: kGame,
+              profileName: 'x',
+              fushiExecutablePath: kFushiExe,
+            );
         final List<Object?> profiles =
             result.config!['profiles']! as List<Object?>;
         expect((profiles[1]! as Map<Object?, Object?>)['scalingMode'], 0);
@@ -281,25 +279,28 @@ void main() {
 
     test('已有同身份 profile → 只翻 autoScale，用户其余设置一律不动', () {
       final MagpieProfileWriteResult result = magpieConfigWithAutoScaleProfile(
-        config: baseConfig(extraProfiles: <Map<String, dynamic>>[
-          <String, dynamic>{
-            'name': '用户自己建的',
-            'packaged': false,
-            'pathRule': kGame.executablePath,
-            'classNameRule': kGame.windowClassName,
-            'autoScale': 0,
-            'scalingMode': 5,
-            'cursorScaling': 4,
-            '3DGameMode': true,
-          },
-        ]),
+        config: baseConfig(
+          extraProfiles: <Map<String, dynamic>>[
+            <String, dynamic>{
+              'name': '用户自己建的',
+              'packaged': false,
+              'pathRule': kGame.executablePath,
+              'classNameRule': kGame.windowClassName,
+              'autoScale': 0,
+              'scalingMode': 5,
+              'cursorScaling': 4,
+              '3DGameMode': true,
+            },
+          ],
+        ),
         identity: kGame,
         profileName: 'Fushi: sakura.exe',
         fushiExecutablePath: kFushiExe,
       );
       expect(result.applied, isTrue);
-      final Map<Object?, Object?> entry = (result.config!['profiles']!
-          as List<Object?>)[1]! as Map<Object?, Object?>;
+      final Map<Object?, Object?> entry =
+          (result.config!['profiles']! as List<Object?>)[1]!
+              as Map<Object?, Object?>;
       expect(entry['autoScale'], 1);
       // 名字没被改成我们的、其余字段原样保留。
       expect(entry['name'], '用户自己建的');
@@ -353,7 +354,7 @@ void main() {
       for (final Object? bad in <Object?>[
         null,
         <Object?>[],
-        <Object?>['x']
+        <Object?>['x'],
       ]) {
         final Map<String, dynamic> config = baseConfig();
         if (bad == null) {
@@ -374,8 +375,7 @@ void main() {
       }
     });
 
-    test(
-        '窗口身份不全 → missingWindowIdentity（空 pathRule/classNameRule 会让'
+    test('窗口身份不全 → missingWindowIdentity（空 pathRule/classNameRule 会让'
         ' Magpie 整条丢弃）', () {
       const List<MagpieWindowIdentity> broken = <MagpieWindowIdentity>[
         MagpieWindowIdentity(executablePath: '', windowClassName: 'A'),
@@ -410,15 +410,17 @@ void main() {
 
     test('已有等价且已启用的 profile → alreadySatisfied，不重复追加', () {
       final MagpieProfileWriteResult result = magpieConfigWithAutoScaleProfile(
-        config: baseConfig(extraProfiles: <Map<String, dynamic>>[
-          <String, dynamic>{
-            'name': 'x',
-            'packaged': false,
-            'pathRule': kGame.executablePath,
-            'classNameRule': kGame.windowClassName,
-            'autoScale': 1,
-          },
-        ]),
+        config: baseConfig(
+          extraProfiles: <Map<String, dynamic>>[
+            <String, dynamic>{
+              'name': 'x',
+              'packaged': false,
+              'pathRule': kGame.executablePath,
+              'classNameRule': kGame.windowClassName,
+              'autoScale': 1,
+            },
+          ],
+        ),
         identity: kGame,
         profileName: 'x',
         fushiExecutablePath: kFushiExe,
@@ -431,15 +433,17 @@ void main() {
   group('🔴 身份匹配必须与 Magpie 逐字节一致', () {
     test('类名不同 → 视作不同 profile（Magpie 先比 classNameRule 再比 pathRule）', () {
       final MagpieProfileWriteResult result = magpieConfigWithAutoScaleProfile(
-        config: baseConfig(extraProfiles: <Map<String, dynamic>>[
-          <String, dynamic>{
-            'name': 'other',
-            'packaged': false,
-            'pathRule': kGame.executablePath,
-            'classNameRule': '另一个类名',
-            'autoScale': 1,
-          },
-        ]),
+        config: baseConfig(
+          extraProfiles: <Map<String, dynamic>>[
+            <String, dynamic>{
+              'name': 'other',
+              'packaged': false,
+              'pathRule': kGame.executablePath,
+              'classNameRule': '另一个类名',
+              'autoScale': 1,
+            },
+          ],
+        ),
         identity: kGame,
         profileName: 'x',
         fushiExecutablePath: kFushiExe,
@@ -451,15 +455,17 @@ void main() {
 
     test('路径大小写不同 → 视作不同 profile（Magpie 用裸 wstring==，无 _wcsicmp）', () {
       final MagpieProfileWriteResult result = magpieConfigWithAutoScaleProfile(
-        config: baseConfig(extraProfiles: <Map<String, dynamic>>[
-          <String, dynamic>{
-            'name': 'other',
-            'packaged': false,
-            'pathRule': kGame.executablePath.toUpperCase(),
-            'classNameRule': kGame.windowClassName,
-            'autoScale': 1,
-          },
-        ]),
+        config: baseConfig(
+          extraProfiles: <Map<String, dynamic>>[
+            <String, dynamic>{
+              'name': 'other',
+              'packaged': false,
+              'pathRule': kGame.executablePath.toUpperCase(),
+              'classNameRule': kGame.windowClassName,
+              'autoScale': 1,
+            },
+          ],
+        ),
         identity: kGame,
         profileName: 'x',
         fushiExecutablePath: kFushiExe,
@@ -470,15 +476,17 @@ void main() {
 
     test('packaged 为 true 的条目永远不匹配（那是 AUMID 不是路径）', () {
       final MagpieProfileWriteResult result = magpieConfigWithAutoScaleProfile(
-        config: baseConfig(extraProfiles: <Map<String, dynamic>>[
-          <String, dynamic>{
-            'name': 'uwp',
-            'packaged': true,
-            'pathRule': kGame.executablePath,
-            'classNameRule': kGame.windowClassName,
-            'autoScale': 1,
-          },
-        ]),
+        config: baseConfig(
+          extraProfiles: <Map<String, dynamic>>[
+            <String, dynamic>{
+              'name': 'uwp',
+              'packaged': true,
+              'pathRule': kGame.executablePath,
+              'classNameRule': kGame.windowClassName,
+              'autoScale': 1,
+            },
+          ],
+        ),
         identity: kGame,
         profileName: 'x',
         fushiExecutablePath: kFushiExe,
@@ -522,8 +530,9 @@ void main() {
         identity: kGame,
       );
       expect(off.applied, isTrue);
-      final Map<Object?, Object?> entry = (off.config!['profiles']!
-          as List<Object?>)[1]! as Map<Object?, Object?>;
+      final Map<Object?, Object?> entry =
+          (off.config!['profiles']! as List<Object?>)[1]!
+              as Map<Object?, Object?>;
       expect(entry['autoScale'], 0);
       // profile 本身保留（用户下次还能看见 / 手动改），只是不再自动缩放。
       expect(entry['pathRule'], kGame.executablePath);
@@ -542,8 +551,10 @@ void main() {
     test('profiles 结构坏掉 → schemaMismatch，不抛', () {
       final Map<String, dynamic> config = baseConfig()..remove('profiles');
       expect(
-        magpieConfigWithAutoScaleDisabled(config: config, identity: kGame)
-            .skipReason,
+        magpieConfigWithAutoScaleDisabled(
+          config: config,
+          identity: kGame,
+        ).skipReason,
         MagpieProfileSkipReason.schemaMismatch,
       );
     });
@@ -578,24 +589,23 @@ void main() {
       bool isWindows = true,
       bool launchThrows = true,
       Duration bootstrapTimeout = const Duration(milliseconds: 600),
-    }) =>
-        MagpieUpscalingService(
-          modeReader: () => mode,
-          bridge: bridge ?? FakeBridge(),
-          configPathOverride: configPath,
-          fushiExecutablePath: kFushiExe,
-          isWindowsOverride: isWindows,
-          bootstrapTimeout: bootstrapTimeout,
-          processLauncher: (String exe, List<String> args) async {
-            launched?.add('$exe ${args.join(' ')}');
-            if (launchThrows) {
-              throw const ProcessException('magpie', <String>[], 'fake', 0);
-            }
-            final FakeProcessHandle handle = FakeProcessHandle();
-            handles?.add(handle);
-            return handle;
-          },
-        );
+    }) => MagpieUpscalingService(
+      modeReader: () => mode,
+      bridge: bridge ?? FakeBridge(),
+      configPathOverride: configPath,
+      fushiExecutablePath: kFushiExe,
+      isWindowsOverride: isWindows,
+      bootstrapTimeout: bootstrapTimeout,
+      processLauncher: (String exe, List<String> args) async {
+        launched?.add('$exe ${args.join(' ')}');
+        if (launchThrows) {
+          throw const ProcessException('magpie', <String>[], 'fake', 0);
+        }
+        final FakeProcessHandle handle = FakeProcessHandle();
+        handles?.add(handle);
+        return handle;
+      },
+    );
 
     test('off → disabled，什么都不碰（不读配置、不起进程）', () async {
       final List<String> launched = <String>[];
@@ -661,8 +671,10 @@ void main() {
       // BUG-1292：`auto` 承诺「用内置的那份」，随包归档缺失就是**安装包不完整**，
       // 不是「这台机器暂时没这个功能」。降级成 unavailable 会把交付错误伪装成常态。
       expect(service.report.status, MagpieUpscalingStatus.failed);
-      expect(service.report.failureReason,
-          MagpieUpscalingFailureReason.bundleMissing);
+      expect(
+        service.report.failureReason,
+        MagpieUpscalingFailureReason.bundleMissing,
+      );
     });
 
     test('会话结束是幂等的空操作（从没启动过超分时）', () async {
@@ -765,13 +777,12 @@ void main() {
       MagpieProfileSkipReason? skip,
       MagpieUpscalingFailureReason? failure,
       bool scaling = false,
-    }) =>
-        MagpieUpscalingReport(
-          status: status,
-          profileSkipReason: skip,
-          failureReason: failure,
-          scalingActive: scaling,
-        );
+    }) => MagpieUpscalingReport(
+      status: status,
+      profileSkipReason: skip,
+      failureReason: failure,
+      scalingActive: scaling,
+    );
 
     test('用户自己关掉 / 没在跑 → 整行不显示（不制造噪音）', () {
       expect(
@@ -795,20 +806,26 @@ void main() {
         MagpieUpscalingStatus.unavailable,
         MagpieUpscalingStatus.failed,
       ]) {
-        expect(magpieUpscalingWorthShowing(report(status)), isTrue,
-            reason: '$status 应该显示');
+        expect(
+          magpieUpscalingWorthShowing(report(status)),
+          isTrue,
+          reason: '$status 应该显示',
+        );
       }
     });
 
     test('🔴 任何状态的文案都不含内部枚举名（BUG-1100 的教训）', () {
       // 把所有内部标识符列出来，挨个确认它们不会出现在用户看到的字符串里。
       final List<String> internal = <String>[
-        ...MagpieUpscalingStatus.values
-            .map((MagpieUpscalingStatus e) => e.name),
-        ...MagpieProfileSkipReason.values
-            .map((MagpieProfileSkipReason e) => e.name),
-        ...MagpieUpscalingFailureReason.values
-            .map((MagpieUpscalingFailureReason e) => e.name),
+        ...MagpieUpscalingStatus.values.map(
+          (MagpieUpscalingStatus e) => e.name,
+        ),
+        ...MagpieProfileSkipReason.values.map(
+          (MagpieProfileSkipReason e) => e.name,
+        ),
+        ...MagpieUpscalingFailureReason.values.map(
+          (MagpieUpscalingFailureReason e) => e.name,
+        ),
         'MagpieUpscalingStatus',
         'MagpieProfileSkipReason',
         'MagpieUpscalingFailureReason',
@@ -819,15 +836,18 @@ void main() {
       for (final MagpieUpscalingStatus status in MagpieUpscalingStatus.values) {
         for (final MagpieProfileSkipReason? skip in <MagpieProfileSkipReason?>[
           null,
-          ...MagpieProfileSkipReason.values
+          ...MagpieProfileSkipReason.values,
         ]) {
           for (final MagpieUpscalingFailureReason? failure
               in <MagpieUpscalingFailureReason?>[
-            null,
-            ...MagpieUpscalingFailureReason.values
-          ]) {
-            final MagpieUpscalingReport r =
-                report(status, skip: skip, failure: failure);
+                null,
+                ...MagpieUpscalingFailureReason.values,
+              ]) {
+            final MagpieUpscalingReport r = report(
+              status,
+              skip: skip,
+              failure: failure,
+            );
             final String text =
                 '${magpieUpscalingStatusLabel(r)} ${magpieUpscalingActionHint(r) ?? ''}';
             expect(text.trim(), isNotEmpty);
@@ -863,28 +883,36 @@ void main() {
     });
 
     test('首次初始化失败 → 给「下次就自动了」的专属处置，而不是通用话', () {
-      final String? firstRun = magpieUpscalingActionHint(report(
-        MagpieUpscalingStatus.hotkeyOnly,
-        skip: MagpieProfileSkipReason.bootstrapFailed,
-      ));
-      final String? generic = magpieUpscalingActionHint(report(
-        MagpieUpscalingStatus.hotkeyOnly,
-        skip: MagpieProfileSkipReason.schemaMismatch,
-      ));
+      final String? firstRun = magpieUpscalingActionHint(
+        report(
+          MagpieUpscalingStatus.hotkeyOnly,
+          skip: MagpieProfileSkipReason.bootstrapFailed,
+        ),
+      );
+      final String? generic = magpieUpscalingActionHint(
+        report(
+          MagpieUpscalingStatus.hotkeyOnly,
+          skip: MagpieProfileSkipReason.schemaMismatch,
+        ),
+      );
       expect(firstRun, isNotNull);
       expect(generic, isNotNull);
       expect(firstRun, isNot(generic), reason: '「第一次要先初始化」和「上游改了格式」对用户是两回事');
     });
 
     test('别人的 Magpie 开着 → 专属处置（这种情况永远不会自己好）', () {
-      final String? external = magpieUpscalingActionHint(report(
-        MagpieUpscalingStatus.hotkeyOnly,
-        skip: MagpieProfileSkipReason.externalInstance,
-      ));
-      final String? generic = magpieUpscalingActionHint(report(
-        MagpieUpscalingStatus.hotkeyOnly,
-        skip: MagpieProfileSkipReason.schemaMismatch,
-      ));
+      final String? external = magpieUpscalingActionHint(
+        report(
+          MagpieUpscalingStatus.hotkeyOnly,
+          skip: MagpieProfileSkipReason.externalInstance,
+        ),
+      );
+      final String? generic = magpieUpscalingActionHint(
+        report(
+          MagpieUpscalingStatus.hotkeyOnly,
+          skip: MagpieProfileSkipReason.schemaMismatch,
+        ),
+      );
       expect(external, isNotNull);
       expect(external, isNot(generic));
     });
@@ -903,12 +931,17 @@ void main() {
     });
 
     test('真的在缩放 → 状态与「还没开始」区分得开，且不再催用户按热键', () {
-      final MagpieUpscalingReport on =
-          report(MagpieUpscalingStatus.active, scaling: true);
-      final MagpieUpscalingReport pending =
-          report(MagpieUpscalingStatus.active);
-      expect(magpieUpscalingStatusLabel(on),
-          isNot(magpieUpscalingStatusLabel(pending)));
+      final MagpieUpscalingReport on = report(
+        MagpieUpscalingStatus.active,
+        scaling: true,
+      );
+      final MagpieUpscalingReport pending = report(
+        MagpieUpscalingStatus.active,
+      );
+      expect(
+        magpieUpscalingStatusLabel(on),
+        isNot(magpieUpscalingStatusLabel(pending)),
+      );
       expect(magpieUpscalingActionHint(on), isNull);
       expect(magpieUpscalingActionHint(pending), isNotNull);
     });
@@ -921,41 +954,48 @@ void main() {
       int autoScale = kMagpieAutoScaleFullscreen,
       List<Map<String, dynamic>> alsoUserProfiles =
           const <Map<String, dynamic>>[],
-    }) =>
-        baseConfig(extraProfiles: <Map<String, dynamic>>[
-          <String, dynamic>{
-            'name': name,
-            'packaged': false,
-            'pathRule': kGame.executablePath,
-            'classNameRule': kGame.windowClassName,
-            'autoScale': autoScale,
-            'scalingMode': 0,
-          },
-          ...alsoUserProfiles,
-        ]);
+    }) => baseConfig(
+      extraProfiles: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'name': name,
+          'packaged': false,
+          'pathRule': kGame.executablePath,
+          'classNameRule': kGame.windowClassName,
+          'autoScale': autoScale,
+          'scalingMode': 0,
+        },
+        ...alsoUserProfiles,
+      ],
+    );
 
     test('按名字前缀批量关，用户自己的 profile 一个字段都不碰', () {
-      final Map<String, dynamic> config =
-          orphanConfig(alsoUserProfiles: <Map<String, dynamic>>[
-        <String, dynamic>{
-          'name': 'My own game',
-          'packaged': false,
-          'pathRule': r'D:\Games\other.exe',
-          'classNameRule': 'OtherClass',
-          'autoScale': kMagpieAutoScaleFullscreen,
-          'scalingMode': 3,
-        },
-      ]);
+      final Map<String, dynamic> config = orphanConfig(
+        alsoUserProfiles: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'name': 'My own game',
+            'packaged': false,
+            'pathRule': r'D:\Games\other.exe',
+            'classNameRule': 'OtherClass',
+            'autoScale': kMagpieAutoScaleFullscreen,
+            'scalingMode': 3,
+          },
+        ],
+      );
       final MagpieProfileWriteResult result =
           magpieConfigWithFushiAutoScaleCleared(config: config);
       expect(result.applied, isTrue);
       final List<Object?> profiles =
           result.config!['profiles']! as List<Object?>;
-      expect((profiles[1]! as Map<Object?, Object?>)['autoScale'],
-          kMagpieAutoScaleDisabled);
+      expect(
+        (profiles[1]! as Map<Object?, Object?>)['autoScale'],
+        kMagpieAutoScaleDisabled,
+      );
       final Map<Object?, Object?> user = profiles[2]! as Map<Object?, Object?>;
-      expect(user['autoScale'], kMagpieAutoScaleFullscreen,
-          reason: '用户自己建的 profile 不是我们的孤儿，绝不许动');
+      expect(
+        user['autoScale'],
+        kMagpieAutoScaleFullscreen,
+        reason: '用户自己建的 profile 不是我们的孤儿，绝不许动',
+      );
       expect(user['scalingMode'], 3);
     });
 
@@ -996,25 +1036,26 @@ void main() {
 
     group('W2-5 旧前缀就地改名迁移', () {
       test("'Hibiki: X' -> 'Fushi: X'，其余字段与用户 profile 一字节不动", () {
-        final Map<String, dynamic> config =
-            baseConfig(extraProfiles: <Map<String, dynamic>>[
-          <String, dynamic>{
-            'name': 'Hibiki: sakura.exe',
-            'packaged': false,
-            'pathRule': kGame.executablePath,
-            'classNameRule': kGame.windowClassName,
-            'autoScale': kMagpieAutoScaleFullscreen,
-            'scalingMode': 2,
-          },
-          <String, dynamic>{
-            'name': 'My own game',
-            'packaged': false,
-            'pathRule': r'D:\Games\other.exe',
-            'classNameRule': 'OtherClass',
-            'autoScale': kMagpieAutoScaleFullscreen,
-            'scalingMode': 3,
-          },
-        ]);
+        final Map<String, dynamic> config = baseConfig(
+          extraProfiles: <Map<String, dynamic>>[
+            <String, dynamic>{
+              'name': 'Hibiki: sakura.exe',
+              'packaged': false,
+              'pathRule': kGame.executablePath,
+              'classNameRule': kGame.windowClassName,
+              'autoScale': kMagpieAutoScaleFullscreen,
+              'scalingMode': 2,
+            },
+            <String, dynamic>{
+              'name': 'My own game',
+              'packaged': false,
+              'pathRule': r'D:\Games\other.exe',
+              'classNameRule': 'OtherClass',
+              'autoScale': kMagpieAutoScaleFullscreen,
+              'scalingMode': 3,
+            },
+          ],
+        );
         final MagpieProfileWriteResult result =
             magpieConfigWithLegacyProfilePrefixRenamed(config: config);
         expect(result.applied, isTrue);
@@ -1023,8 +1064,11 @@ void main() {
         final Map<Object?, Object?> renamed =
             profiles[1]! as Map<Object?, Object?>;
         expect(renamed['name'], 'Fushi: sakura.exe');
-        expect(renamed['autoScale'], kMagpieAutoScaleFullscreen,
-            reason: '改名迁移只动 name，autoScale 归清零函数管');
+        expect(
+          renamed['autoScale'],
+          kMagpieAutoScaleFullscreen,
+          reason: '改名迁移只动 name，autoScale 归清零函数管',
+        );
         expect(renamed['scalingMode'], 2);
         final Map<Object?, Object?> user =
             profiles[2]! as Map<Object?, Object?>;
@@ -1060,17 +1104,22 @@ void main() {
       });
 
       test('对账合成序：旧前缀孤儿先改名、再被新前缀清零', () {
-        final Map<String, dynamic> config =
-            orphanConfig(name: 'Hibiki: sakura.exe');
+        final Map<String, dynamic> config = orphanConfig(
+          name: 'Hibiki: sakura.exe',
+        );
         final MagpieProfileWriteResult renamed =
             magpieConfigWithLegacyProfilePrefixRenamed(config: config);
         expect(renamed.applied, isTrue);
         final MagpieProfileWriteResult cleared =
             magpieConfigWithFushiAutoScaleCleared(config: renamed.config!);
-        expect(cleared.applied, isTrue,
-            reason: '改名后的条目必须仍被孤儿清零认出（哪一代前缀写的孤儿都要关回去）');
-        final Map<Object?, Object?> entry = (cleared.config!['profiles']!
-            as List<Object?>)[1]! as Map<Object?, Object?>;
+        expect(
+          cleared.applied,
+          isTrue,
+          reason: '改名后的条目必须仍被孤儿清零认出（哪一代前缀写的孤儿都要关回去）',
+        );
+        final Map<Object?, Object?> entry =
+            (cleared.config!['profiles']! as List<Object?>)[1]!
+                as Map<Object?, Object?>;
         expect(entry['name'], 'Fushi: sakura.exe');
         expect(entry['autoScale'], kMagpieAutoScaleDisabled);
       });
@@ -1095,17 +1144,16 @@ void main() {
         required FakeBridge bridge,
         bool bundledRunning = false,
         bool isWindows = true,
-      }) =>
-          MagpieUpscalingService(
-            modeReader: () => MagpieUpscalingMode.off,
-            bridge: bridge,
-            configPathOverride: configPath,
-            fushiExecutablePath: kFushiExe,
-            isWindowsOverride: isWindows,
-            bundledMagpieRunningProbe: () => bundledRunning,
-            processLauncher: (String exe, List<String> args) async =>
-                throw StateError('对账绝不许起进程'),
-          );
+      }) => MagpieUpscalingService(
+        modeReader: () => MagpieUpscalingMode.off,
+        bridge: bridge,
+        configPathOverride: configPath,
+        fushiExecutablePath: kFushiExe,
+        isWindowsOverride: isWindows,
+        bundledMagpieRunningProbe: () => bundledRunning,
+        processLauncher: (String exe, List<String> args) async =>
+            throw StateError('对账绝不许起进程'),
+      );
 
       void writeConfig(Map<String, dynamic> config) {
         File(configPath)
@@ -1114,9 +1162,9 @@ void main() {
       }
 
       int autoScaleOfOrphan() {
-        final Map<String, dynamic> config = jsonDecode(
-          File(configPath).readAsStringSync(),
-        ) as Map<String, dynamic>;
+        final Map<String, dynamic> config =
+            jsonDecode(File(configPath).readAsStringSync())
+                as Map<String, dynamic>;
         final List<Object?> profiles = config['profiles']! as List<Object?>;
         return (profiles[1]! as Map<Object?, Object?>)['autoScale']! as int;
       }
@@ -1132,8 +1180,10 @@ void main() {
         writeConfig(orphanConfig());
         final FakeBridge bridge = FakeBridge(running: true);
         // 两条正向证据齐了：互斥体在 + 我们的 exe 映像被占用。
-        final MagpieUpscalingService service =
-            build(bridge: bridge, bundledRunning: true);
+        final MagpieUpscalingService service = build(
+          bridge: bridge,
+          bundledRunning: true,
+        );
         // 广播之后互斥体立刻消失，模拟它真的退了（不然要等满宽限）。
         bridge.onQuit = () => bridge.running = false;
         await service.reconcileOrphansOnStartup();
@@ -1154,16 +1204,20 @@ void main() {
         writeConfig(baseConfig());
         final String before = File(configPath).readAsStringSync();
         final FakeBridge bridge = FakeBridge(running: true);
-        await build(bridge: bridge, bundledRunning: true)
-            .reconcileOrphansOnStartup();
+        await build(
+          bridge: bridge,
+          bundledRunning: true,
+        ).reconcileOrphansOnStartup();
         expect(bridge.quitBroadcasts, 0);
         expect(File(configPath).readAsStringSync(), before);
       });
 
       test('非 Windows / 没有配置文件 -> 空操作，不抛', () async {
         final FakeBridge bridge = FakeBridge(running: true);
-        await build(bridge: bridge, isWindows: false)
-            .reconcileOrphansOnStartup();
+        await build(
+          bridge: bridge,
+          isWindows: false,
+        ).reconcileOrphansOnStartup();
         expect(bridge.quitBroadcasts, 0);
         // 配置文件压根不存在。
         await build(bridge: bridge).reconcileOrphansOnStartup();
@@ -1221,32 +1275,47 @@ void main() {
     });
 
     test('预热必须排在「写 profile」之前（否则第一局永远没有 scalingModes 可用）', () {
-      final int bootstrapIndex =
-          serviceSource.indexOf('await _ensureConfigMaterialized();');
-      final int applyIndex =
-          serviceSource.indexOf('await _applyAutoScaleProfile(hwnd);');
-      expect(bootstrapIndex, greaterThan(0),
-          reason: '预热步骤被删掉了 —— 首次使用会退回「装完没反应」');
+      final int bootstrapIndex = serviceSource.indexOf(
+        'await _ensureConfigMaterialized();',
+      );
+      final int applyIndex = serviceSource.indexOf(
+        'await _applyAutoScaleProfile(hwnd);',
+      );
+      expect(
+        bootstrapIndex,
+        greaterThan(0),
+        reason: '预热步骤被删掉了 —— 首次使用会退回「装完没反应」',
+      );
       expect(applyIndex, greaterThan(0));
       expect(bootstrapIndex, lessThan(applyIndex));
     });
 
     test('预热起的进程必须被收掉（不能留游离 Magpie 顶掉单实例互斥体）', () {
-      final int bootstrapIndex =
-          serviceSource.indexOf('Future<void> _ensureConfigMaterialized()');
+      final int bootstrapIndex = serviceSource.indexOf(
+        'Future<void> _ensureConfigMaterialized()',
+      );
       expect(bootstrapIndex, greaterThan(0));
       final int endIndex = serviceSource.indexOf(
-          'Future<void> _waitForConfig()', bootstrapIndex);
+        'Future<void> _waitForConfig()',
+        bootstrapIndex,
+      );
       final String body = serviceSource.substring(bootstrapIndex, endIndex);
-      expect(body.contains('_waitForExit(warmup)'), isTrue,
-          reason: '预热实例必须等它真的退出');
-      expect(body.contains('finally'), isTrue,
-          reason: '收尾必须在 finally 里，超时/异常都不能漏掉进程');
+      expect(
+        body.contains('_waitForExit(warmup)'),
+        isTrue,
+        reason: '预热实例必须等它真的退出',
+      );
+      expect(
+        body.contains('finally'),
+        isTrue,
+        reason: '收尾必须在 finally 里，超时/异常都不能漏掉进程',
+      );
     });
 
     test('配置必须在拉起 Magpie 之前写（Magpie 只在启动时读一次，无文件监视）', () {
-      final int applyIndex =
-          serviceSource.indexOf('_applyAutoScaleProfile(hwnd)');
+      final int applyIndex = serviceSource.indexOf(
+        '_applyAutoScaleProfile(hwnd)',
+      );
       final int launchIndex = serviceSource.indexOf('_processLauncher(exe');
       expect(applyIndex, greaterThan(0));
       expect(launchIndex, greaterThan(0));
@@ -1280,22 +1349,29 @@ void main() {
       // 这条守卫钉的是 PR#430 审查判定的根因：开挂在状态跃迁、关挂在方法调用点，
       // 于是早退分支漏关、keepBinding 吃掉开边沿、正常退出留孤儿。修法是把两边
       // 都收进 _syncMagpieUpscaling 一个函数，判据是 magpieUpscalingTargetHwnd。
-      expect(sessionSource.contains('static int? magpieUpscalingTargetHwnd('),
-          isTrue,
-          reason: '共同判据必须是可单测的纯函数');
+      expect(
+        sessionSource.contains('static int? magpieUpscalingTargetHwnd('),
+        isTrue,
+        reason: '共同判据必须是可单测的纯函数',
+      );
       expect(sessionSource.contains('  void _syncMagpieUpscaling() {'), isTrue);
-      final int setStateIndex =
-          sessionSource.indexOf('void _setState(GalHookSessionState next) {');
+      final int setStateIndex = sessionSource.indexOf(
+        'void _setState(GalHookSessionState next) {',
+      );
       expect(setStateIndex, greaterThan(0));
-      expect(sessionSource.indexOf('_syncMagpieUpscaling();', setStateIndex),
-          greaterThan(setStateIndex),
-          reason: '_setState 必须调对齐函数，而不是自己挑一侧挂钩');
+      expect(
+        sessionSource.indexOf('_syncMagpieUpscaling();', setStateIndex),
+        greaterThan(setStateIndex),
+        reason: '_setState 必须调对齐函数，而不是自己挑一侧挂钩',
+      );
 
       // 关的挂钩只能出现在对齐函数与退出收尾里，不许散回 stopCapture。
-      final int stopCaptureIndex =
-          sessionSource.indexOf('Future<void> stopCapture(');
-      final int stopCaptureEnd =
-          sessionSource.indexOf('static bool sameTrackMembership(');
+      final int stopCaptureIndex = sessionSource.indexOf(
+        'Future<void> stopCapture(',
+      );
+      final int stopCaptureEnd = sessionSource.indexOf(
+        'static bool sameTrackMembership(',
+      );
       expect(stopCaptureIndex, greaterThan(0));
       expect(stopCaptureEnd, greaterThan(stopCaptureIndex));
       expect(
@@ -1314,23 +1390,33 @@ void main() {
       // 顺带留住句柄好注销）并被 dart format 折了行，原来那串单行字面量早就不存在
       // 了，但登记一直在注入点上。切**方法体**而不是「从 attachIndex 往后找」——
       // 后者会把方法外面别处的登记（_playTrackerExitFlush 就在下面不远）也算成数。
-      final String attachBody =
-          methodBody(sessionSource, 'void attachMagpieUpscaling(');
+      final String attachBody = methodBody(
+        sessionSource,
+        'void attachMagpieUpscaling(',
+      );
       expect(
         attachBody,
-        matches(RegExp(r'ExitFlushRegistry\.instance\.register\('
-            r'\s*shutdownMagpieUpscaling\s*,?\s*\)')),
+        matches(
+          RegExp(
+            r'ExitFlushRegistry\.instance\.register\('
+            r'\s*shutdownMagpieUpscaling\s*,?\s*\)',
+          ),
+        ),
         reason: '登记必须就在注入点上，放到调用方就会有人漏掉',
       );
-      expect(sessionSource.contains('ExitFlushRegistry.instance.unregister('),
-          isTrue,
-          reason: 'close 必须注销，否则留悬垂闭包');
+      expect(
+        sessionSource.contains('ExitFlushRegistry.instance.unregister('),
+        isTrue,
+        reason: 'close 必须注销，否则留悬垂闭包',
+      );
     });
 
     test('退出路径的 QUIT 宽限必须小于退出链单来源上限（2s）', () {
-      expect(kMagpieExitQuitGrace.inMilliseconds,
-          lessThan(ExitFlushRegistry.perCallbackTimeout.inMilliseconds),
-          reason: '等得比注册表还久 = 超时放行 + exit(0)，进程照样留成孤儿');
+      expect(
+        kMagpieExitQuitGrace.inMilliseconds,
+        lessThan(ExitFlushRegistry.perCallbackTimeout.inMilliseconds),
+        reason: '等得比注册表还久 = 超时放行 + exit(0)，进程照样留成孤儿',
+      );
       expect(kMagpieExitQuitGrace, lessThan(kMagpieQuitGrace));
     });
 
@@ -1345,19 +1431,18 @@ void main() {
     });
 
     test('BUG-1292 契约：正式包缺 Magpie 必须进入 failed，不得伪装成 unavailable', () {
-      final int missingCase =
-          serviceSource.indexOf('case MagpieInstallResult.bundleMissing:');
-      final int invalidCase =
-          serviceSource.indexOf('case MagpieInstallResult.verificationFailed:');
+      final int missingCase = serviceSource.indexOf(
+        'case MagpieInstallResult.bundleMissing:',
+      );
+      final int invalidCase = serviceSource.indexOf(
+        'case MagpieInstallResult.verificationFailed:',
+      );
       expect(missingCase, greaterThan(0));
       expect(invalidCase, greaterThan(missingCase));
 
       final String branch = serviceSource.substring(missingCase, invalidCase);
       expect(branch, contains('status: MagpieUpscalingStatus.failed'));
-      expect(
-        branch,
-        contains('MagpieUpscalingFailureReason.bundleMissing'),
-      );
+      expect(branch, contains('MagpieUpscalingFailureReason.bundleMissing'));
       expect(branch, isNot(contains('MagpieUpscalingStatus.unavailable')));
     });
   });

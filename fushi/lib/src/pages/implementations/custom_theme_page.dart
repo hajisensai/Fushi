@@ -3,11 +3,14 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
+import 'package:fushi/src/ai/ai_saved_prompt_picker.dart';
+import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/pages.dart';
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart'
     show FushiRichTooltip;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
@@ -25,7 +28,26 @@ import 'package:fushi/src/models/theme_notifier.dart'
     show isAchromaticSeed, kCustomThemeDefaultSeed;
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
     show aiFailureText;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:material_color_utilities/material_color_utilities.dart' as mcu;
 
 /// 自定义主题编辑页里可改的颜色「角色」——按用户看得见的用途命名，不按 Material
@@ -804,7 +826,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
               ? const RoundedRectangleBorder(
                   borderRadius: FushiM3eShape.smallRadius,
                 )
-              : const FushiCookieBorder(lobes: 9),
+              : MaterialShapeBorder(shape: MaterialShapes.cookie9Sided),
         ),
         child: FushiIcon(
           FushiIcons.ai,
@@ -867,6 +889,11 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                     textInputAction: TextInputAction.send,
                     onSubmitted: (_) => unawaited(_runAi()),
                   ),
+                ),
+                AiSavedPromptButton(
+                  scene: AiPromptScene.theme,
+                  controller: _aiRequestController,
+                  enabled: !_aiBusy,
                 ),
                 SizedBox(width: gap),
                 FushiFilledButton.icon(
@@ -1323,7 +1350,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
 
   /// hero 卡（M3E primaryContainer 饱和色块）：主题色块 + 大号可内联编辑的
   /// 名称（TODO-930 M2：可留空，留空显示本地化默认名「自定义 N」，决策 3）；
-  /// 下面一排按钮组（导入 / 分享 / 更多）+ 预览明暗分段控件。
+  /// 下面一排按钮组（导入 / 分享 / 删除 / 更多）+ 预览明暗分段控件。
   Widget _buildHeaderCard() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SettingsKitStyle style = SettingsKitStyle.of(context);
@@ -1370,8 +1397,10 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                     icon: const FushiIcon(FushiIcons.share),
                     label: Text(t.share_theme),
                   ),
-                  // AI 关 + 草稿 = 菜单里一项都没有，整颗不渲染。
-                  if (_aiVisible || !_isDraft) _buildMoreMenu(),
+                  // 草稿还没进列表，没有东西可删（BUG-1841），不出现。
+                  if (!_isDraft) _buildDeleteButton(),
+                  // 菜单里只剩「让 AI 帮忙」：AI 关时整颗不渲染。
+                  if (_aiVisible) _buildMoreMenu(),
                 ],
               ),
               _buildBrightnessToggle(),
@@ -1382,24 +1411,31 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     );
   }
 
-  /// 「更多」：让 AI 帮忙（跳到 AI 卡）/ 删除主题（草稿没有东西可删，不出现，
-  /// BUG-1841：草稿还没进列表，也不该借删除去改全局主题键）。
-  Widget _buildMoreMenu() {
-    final bool apple = isGlassDesign(context);
-    final Color destructive = apple
+  /// 「删除主题」：与导入 / 分享同级平铺（反馈 cvT5hHWF95），error / destructive
+  /// 色调；点击先走 [_confirmDelete] 的确认弹窗。草稿不渲染（BUG-1841：草稿还
+  /// 没进列表，也不该借删除去改全局主题键）。宽度不够时由外层 Wrap 整体换行。
+  Widget _buildDeleteButton() {
+    final Color destructive = isGlassDesign(context)
         ? appleColorsOf(context).destructive
         : Theme.of(context).colorScheme.error;
-    Widget item(IconData icon, String label, {Color? color}) => Row(
+    return FushiFilledButton.tonalIcon(
+      key: const ValueKey<String>('custom-theme-delete'),
+      onPressed: () => unawaited(_confirmDelete()),
+      style: FilledButton.styleFrom(foregroundColor: destructive),
+      icon: const FushiIcon(FushiIcons.delete),
+      label: Text(t.delete_custom_theme),
+    );
+  }
+
+  /// 「更多」：让 AI 帮忙（跳到 AI 卡）。
+  Widget _buildMoreMenu() {
+    final bool apple = isGlassDesign(context);
+    Widget item(IconData icon, String label) => Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        FushiIcon(icon, size: 20, color: color),
+        FushiIcon(icon, size: 20),
         const SizedBox(width: 12),
-        Flexible(
-          child: Text(
-            label,
-            style: color == null ? null : TextStyle(color: color),
-          ),
-        ),
+        Flexible(child: Text(label)),
       ],
     );
     return FushiPopupMenuButton<String>(
@@ -1407,29 +1443,13 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       tooltip: t.common_more_actions,
       icon: FushiIcon(apple ? FushiIcons.moreHoriz : FushiIcons.more),
       onSelected: (String value) {
-        switch (value) {
-          case 'ai':
-            _focusAiCard();
-          case 'delete':
-            unawaited(_confirmDelete());
-        }
+        if (value == 'ai') _focusAiCard();
       },
       itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-        if (_aiVisible)
-          PopupMenuItem<String>(
-            value: 'ai',
-            child: item(FushiIcons.ai, t.ai_assist_section),
-          ),
-        if (!_isDraft)
-          PopupMenuItem<String>(
-            key: const ValueKey<String>('custom-theme-delete'),
-            value: 'delete',
-            child: item(
-              FushiIcons.delete,
-              t.delete_custom_theme,
-              color: destructive,
-            ),
-          ),
+        PopupMenuItem<String>(
+          value: 'ai',
+          child: item(FushiIcons.ai, t.ai_assist_section),
+        ),
       ],
     );
   }

@@ -7,6 +7,12 @@
 ///   2. 同名条目 = 同一家族的多个字重文件：家族名只进链一次、每个文件各一条
 ///      `@font-face`（真实字重），导入时按字体 `name` 表的家族名命名让它们落成同名。
 /// 最后一组在真 Chromium 里验证这两条 CSS 真的改变了字面选择与合成行为。
+///
+/// 只在非 macOS 宿主上跑：被验证的是 Chromium WebView（Windows WebView2 / Android）
+/// 的字体栈，CSS 也按 `TargetPlatform.windows` 生成。macOS 上 Fushi 的弹窗走 WebKit，
+/// 而 macOS 版 Chrome 用 CoreText 后端，700 的请求即使落到 600 字面也照样合成加粗
+/// （实测墨量 10642 vs 8122）——那个组合不对应任何产品路径，不是这里要钉的行为。
+@TestOn('!mac-os')
 library;
 
 import 'dart:convert';

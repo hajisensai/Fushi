@@ -212,6 +212,7 @@ test('弹窗内滚轮行为不变：preventDefault + 滚 shadow host，不碰 wi
     target: inner,
     composedPath() { return [inner, host]; },
     preventDefault() { prevented = true; },
+    stopPropagation() {},
   };
   for (const r of wheelListenersOf(host)) r.fn(evt);
   assert.strictEqual(prevented, true, '弹窗内滚轮必须 preventDefault（接管滚动）');
@@ -221,6 +222,30 @@ test('弹窗内滚轮行为不变：preventDefault + 滚 shadow host，不碰 wi
   assert.ok(step > 0 && step <= 120,
       '滚动步长必须是缩放/钳制后的值，got ' + step);
   assert.strictEqual(windowScrollBy.length, 0, '弹窗内滚轮不得滚宿主页 window');
+});
+
+test('弹窗内不接管的滚轮（Ctrl / 横滚）也不冒泡到宿主页（反馈 UIF7NkYCjL）', () => {
+  // b 站播放器在祖先上监听 wheel 调音量：弹窗早退放行原生滚动时，事件不能继续冒到站点。
+  const { sandbox, windowObj } = loadWorld();
+  sandbox.fushiEnsureContainer();
+  const host = windowObj.__fushiRoot.host;
+  const inner = { nodeType: 1, parentElement: null };
+  for (const extra of [{ ctrlKey: true, deltaX: 0 }, { ctrlKey: false, deltaX: 400 }]) {
+    let prevented = false;
+    let stopped = false;
+    const evt = {
+      deltaY: 100,
+      deltaMode: 0,
+      ...extra,
+      target: inner,
+      composedPath() { return [inner, host]; },
+      preventDefault() { prevented = true; },
+      stopPropagation() { stopped = true; },
+    };
+    for (const r of wheelListenersOf(host)) r.fn(evt);
+    assert.strictEqual(stopped, true, '弹窗内滚轮必须截住向宿主页的冒泡');
+    assert.strictEqual(prevented, false, '不接管的滚轮不得 preventDefault（原生滚动照常）');
+  }
 });
 
 test('fushiRemoveContainer 随弹窗卸载 wheel 监听', () => {

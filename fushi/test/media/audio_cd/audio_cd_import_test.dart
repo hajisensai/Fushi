@@ -250,30 +250,27 @@ void main() {
         .map((File f) => p.basename(f.path))
         .toList();
 
-    test(
-      'cancelling during the last track still hands back nothing, even when '
-      'the backend cannot abort the encode',
-      () async {
-        // 旧实现：循环只在轨之间看取消，最后一轨编完循环自然结束，取消后的结果照常
-        // 交出去导入。
-        final AudioCdRipCancellation cancel = AudioCdRipCancellation();
-        final _CancelDuringRunFfmpeg ffmpeg = _CancelDuringRunFfmpeg(
-          cancel,
-          cancelOnCall: 3,
-        );
-        expect(
-          await ripAudioCd(
-            discPath: mount.path,
-            layout: AudioCdLayout.macCddafs,
-            outputRoot: out,
-            ffmpeg: ffmpeg,
-            cancellation: cancel,
-          ),
-          isNull,
-        );
-        expect(ffmpeg.calls, hasLength(3));
-      },
-    );
+    test('cancelling during the last track still hands back nothing, even when '
+        'the backend cannot abort the encode', () async {
+      // 旧实现：循环只在轨之间看取消，最后一轨编完循环自然结束，取消后的结果照常
+      // 交出去导入。
+      final AudioCdRipCancellation cancel = AudioCdRipCancellation();
+      final _CancelDuringRunFfmpeg ffmpeg = _CancelDuringRunFfmpeg(
+        cancel,
+        cancelOnCall: 3,
+      );
+      expect(
+        await ripAudioCd(
+          discPath: mount.path,
+          layout: AudioCdLayout.macCddafs,
+          outputRoot: out,
+          ffmpeg: ffmpeg,
+          cancellation: cancel,
+        ),
+        isNull,
+      );
+      expect(ffmpeg.calls, hasLength(3));
+    });
 
     test(
       'cancelling mid-encode kills the encoder and leaves no .part',

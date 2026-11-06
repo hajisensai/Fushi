@@ -1,20 +1,21 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/enhancement.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
 
 /// An enhancement used effectively as a shortcut for clearing the contents
 /// of a [CreatorModel] pertaining to a certain field.
 class ClearFieldEnhancement extends Enhancement {
   /// Initialise this enhancement with the hardset parameters.
   ClearFieldEnhancement({required super.field})
-      : super(
-          uniqueKey: key,
-          label: 'Clear Field',
-          description: 'Quickly empty the content of a field.',
-          icon: Icons.clear,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Clear Field',
+        description: 'Quickly empty the content of a field.',
+        icon: Icons.clear,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].
@@ -32,10 +33,6 @@ class ClearFieldEnhancement extends Enhancement {
     required CreatorModel creatorModel,
     required EnhancementTriggerCause cause,
   }) async {
-    creatorModel.clearField(
-      field,
-      overrideLocks: true,
-      savedTags: '',
-    );
+    creatorModel.clearField(field, overrideLocks: true, savedTags: '');
   }
 }

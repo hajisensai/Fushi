@@ -1,4 +1,5 @@
 import CoreText
+import MetricKit
 import UIKit
 import UserNotifications
 import Flutter
@@ -131,7 +132,27 @@ final class FushiRemotePush {
     // （flutter_local_notifications 的本地通知），我们的远程推送在下面两个 override 里
     // 先认领。必须在 didFinishLaunching 返回前设好，冷启动的那次点击才收得到。
     UNUserNotificationCenter.current().delegate = self
+    // MetricKit 崩溃诊断：系统在下次启动后交付上次的 MXCrashDiagnostic，落盘给 Dart
+    // previous_exit_log.dart 摘要进错误日志（Dart 接不到的原生崩溃 / 被系统杀）。
+    FushiCrashDiagnostics.shared.start()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  /// 后台 URLSession 下完（app 已挂起 / 被回收）时系统把 app 唤醒到后台交付，
+  /// 见 FushiBackgroundDownload.swift。
+  override func application(
+    _ application: UIApplication,
+    handleEventsForBackgroundURLSession identifier: String,
+    completionHandler: @escaping () -> Void
+  ) {
+    if FushiBackgroundDownload.shared.handleEvents(
+      identifier: identifier, completionHandler: completionHandler)
+    {
+      return
+    }
+    super.application(
+      application, handleEventsForBackgroundURLSession: identifier,
+      completionHandler: completionHandler)
   }
 
   override func application(
@@ -208,6 +229,9 @@ final class FushiRemotePush {
   }
 
   private func installChannels(binaryMessenger: FlutterBinaryMessenger) {
+    // BUG-4072：本次引擎有没有界面（后台拉起跑 main() 的会话不算前台闪退）。放第一个：
+    // Dart 在 main() 最早期就问。Android 半边是 packages/fushi_launch_presence 插件。
+    FushiLaunchPresence.register(binaryMessenger: binaryMessenger)
     // 系统自带 OCR（Vision）。Dart 侧与 Android 侧早就在了，这半边一直空着——
     // 没注册时 Dart 收到 MissingPluginException，isAvailable() 返回 false，引擎
     // 选项就静默不出现（system_ocr_channel.dart 的注释把这条定为「当前事实」）。
@@ -215,14 +239,27 @@ final class FushiRemotePush {
     // 系统语音转录（iOS 26 的 SpeechAnalyzer）。老系统上原生侧应答「不支持」，
     // Dart 侧据此不把这个引擎放进下拉。
     FushiSpeechTranscriber.register(binaryMessenger: binaryMessenger)
+    // 系统语音（AVSpeechSynthesizer 合成到 WAV）：朗读声音的「系统语音」与制卡发音
+    // 兜底。只实现 ttsToFile / getVoices，见 FushiSystemTts.swift。
+    FushiSystemTts.register(binaryMessenger: binaryMessenger)
     // 复制图片到剪贴板（视频截图 / 阅读器内联图）。与 macOS 同一份实现，
     // 方法名与入参逐字对齐 Windows 那份 CF_DIB 实现。
     FushiClipboardImage.register(binaryMessenger: binaryMessenger)
     // 全局悬浮球的 iOS 半边：截本 app 窗口给 OCR + App Intent 查词投递
     // （docs/specs/2026-09-28-floating-ball.md）。
     FushiFloatingBall.register(binaryMessenger: binaryMessenger)
+    // 音乐输出：AVAudioSession 首选采样率（Dart 契约 music_platform_output.dart）。
+    MusicOutputChannel.register(binaryMessenger: binaryMessenger)
+    // Apple Music 官方集成：MusicKit 授权 / 订阅 / 整曲播放（apple/FushiAppleMusic.swift，
+    // docs/specs/2026-10-31-apple-music-musickit.md）。与 macOS 同一份实现。
+    FushiAppleMusic.register(binaryMessenger: binaryMessenger)
+    // 词典包后台下载（系统后台 URLSession）+ 下载保活（beginBackgroundTask），BUG-3887。
+    FushiBackgroundDownload.register(binaryMessenger: binaryMessenger)
+    FushiDownloadKeepAlive.register(binaryMessenger: binaryMessenger)
     // 反馈回复的 APNs 远程推送（见文件顶部 FushiRemotePush）。
     FushiRemotePush.shared.install(binaryMessenger: binaryMessenger)
+    // 主屏小组件快照 + Live Activity（灵动岛）+ 小组件按钮回调（FushiHomeWidgets.swift）。
+    FushiHomeWidgets.shared.install(binaryMessenger: binaryMessenger)
     // 查词输入框的输入法语言。install 必须在任何输入框成为第一响应者之前完成——
     // `textInputMode` 是在 becomeFirstResponder **之前**被读的。
     let imeInstalled = LookupImeLanguage.install()
@@ -648,5 +685,135 @@ final class FushiRemotePush {
     let task = ankiMobileMediaBackgroundTask
     ankiMobileMediaBackgroundTask = .invalid
     UIApplication.shared.endBackgroundTask(task)
+  }
+}
+
+/// MetricKit 崩溃诊断订阅（iOS 14+；本工程最低 15.1，iOS 15 起系统在下次启动后交付上次
+/// 的诊断）。每条 `MXCrashDiagnostic` 的 JSON 落到 `Documents/metrickit/`（与 path_provider
+/// 的 getApplicationDocumentsDirectory 同一目录），由 Dart `previous_exit_log.dart` 摘要
+/// （异常类型 / 信号 / 终止原因 / 崩溃线程前若干帧）进错误日志后删除。单条截到 256 KB，
+/// 目录只留最近 10 条，不让诊断无界堆积。
+final class FushiCrashDiagnostics: NSObject, MXMetricManagerSubscriber {
+  static let shared = FushiCrashDiagnostics()
+
+  private static let maxBytes = 256 * 1024
+  private static let maxFiles = 10
+
+  func start() {
+    MXMetricManager.shared.add(self)
+  }
+
+  func didReceive(_ payloads: [MXDiagnosticPayload]) {
+    guard
+      let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+    else { return }
+    let dir = docs.appendingPathComponent("metrickit", isDirectory: true)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    for payload in payloads {
+      for crash in payload.crashDiagnostics ?? [] {
+        var data = crash.jsonRepresentation()
+        if data.count > FushiCrashDiagnostics.maxBytes {
+          // BUG-4102：超限的几乎总是「全部线程」的调用树（内存耗尽时几十条线程各一棵），而 Dart
+          // 摘要（previous_exit_log.dart summarizeMetricKitCrash）只读崩溃线程那一棵。先只丢别的
+          // 线程；只剩崩溃线程仍超限才退到元数据——以前一超限就整棵丢，崩溃线程与机型 / 系统 /
+          // 构建号一起没了，报告只剩「app=x(null) os=null device=null」。
+          if let slim = FushiCrashDiagnostics.attributedThreadOnly(data),
+            slim.count <= FushiCrashDiagnostics.maxBytes
+          {
+            data = slim
+          } else {
+            let md = crash.metaData
+            let meta: [String: Any] = [
+              "appVersion": crash.applicationVersion,
+              "appBuildVersion": md.applicationBuildVersion,
+              "osVersion": md.osVersion,
+              "deviceType": md.deviceType,
+              "platformArchitecture": md.platformArchitecture,
+              "exceptionType": crash.exceptionType?.intValue ?? -1,
+              "exceptionCode": crash.exceptionCode?.intValue ?? -1,
+              "signal": crash.signal?.intValue ?? -1,
+              "terminationReason": crash.terminationReason ?? "",
+              "virtualMemoryRegionInfo": crash.virtualMemoryRegionInfo ?? "",
+              "callStackTreeDropped": data.count,
+            ]
+            data =
+              (try? JSONSerialization.data(withJSONObject: ["diagnosticMetaData": meta]))
+              ?? Data()
+          }
+        }
+        let stamp = Int(payload.timeStampEnd.timeIntervalSince1970 * 1000)
+        let name = "crash-\(stamp)-\(UUID().uuidString.prefix(8)).json"
+        try? data.write(to: dir.appendingPathComponent(name), options: .atomic)
+      }
+    }
+    prune(dir)
+  }
+
+  /// 只留崩溃线程（`threadAttributed == true`）的调用树，其余线程丢掉，并记下丢了几条
+  /// （`callStacksDropped`）；元数据原样保留。解析不了返回 nil。
+  static func attributedThreadOnly(_ data: Data) -> Data? {
+    guard var root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+      var tree = root["callStackTree"] as? [String: Any],
+      let stacks = tree["callStacks"] as? [[String: Any]]
+    else { return nil }
+    let kept = stacks.filter { ($0["threadAttributed"] as? Bool) == true }
+    tree["callStacks"] = kept
+    tree["callStacksDropped"] = stacks.count - kept.count
+    root["callStackTree"] = tree
+    return try? JSONSerialization.data(withJSONObject: root)
+  }
+
+  private func prune(_ dir: URL) {
+    guard
+      let files = try? FileManager.default.contentsOfDirectory(
+        at: dir, includingPropertiesForKeys: nil)
+    else { return }
+    let sorted = files.filter { $0.pathExtension == "json" }
+      .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    if sorted.count <= FushiCrashDiagnostics.maxFiles { return }
+    for url in sorted.prefix(sorted.count - FushiCrashDiagnostics.maxFiles) {
+      try? FileManager.default.removeItem(at: url)
+    }
+  }
+}
+
+/// BUG-4072：告诉 Dart 本次跑 `main()` 的引擎有没有界面。系统后台拉起（BGTask
+/// `app.fushi.feedback-reply-check`、后台刷新、推送、音频）时引擎照样跑 `main()`，但收不到
+/// 前台生命周期；会话标记据此记 `headless`，进程之后在后台被回收不再判成「启动即闪退」。
+/// 判据偏向「有界面」：app 不在后台，或已有前台（含 foregroundInactive）场景，都算有界面——
+/// 宁可把无界面误记成有界面（退回旧行为），也不把真正的启动闪退记成无界面。
+/// 通道契约：packages/fushi_launch_presence/lib/fushi_launch_presence.dart。
+enum FushiLaunchPresence {
+  static let channelName = "app.fushi.reader/launch_presence"
+
+  static func register(binaryMessenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(name: channelName, binaryMessenger: binaryMessenger)
+    channel.setMethodCallHandler { call, result in
+      guard call.method == "query" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      result(query())
+    }
+  }
+
+  static func query() -> [String: Any] {
+    let app = UIApplication.shared
+    let state: String
+    switch app.applicationState {
+    case .active: state = "active"
+    case .inactive: state = "inactive"
+    case .background: state = "background"
+    @unknown default: state = "unknown"
+    }
+    let foregroundScene = app.connectedScenes.contains {
+      $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive
+    }
+    let hasUi = app.applicationState != .background || foregroundScene
+    return [
+      "hasUi": hasUi,
+      "detail":
+        "applicationState=\(state) scenes=\(app.connectedScenes.count) foregroundScene=\(foregroundScene)",
+    ]
   }
 }

@@ -9,12 +9,13 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart'
 
 /// 系统全局查词冷启动占位：旧实现在别的 app 画面正中裸画大转圈、且加载期间关不掉。
 void main() {
-  final ColorScheme cs =
-      ColorScheme.fromSeed(seedColor: const Color(0xFF1F4959));
+  final ColorScheme cs = ColorScheme.fromSeed(
+    seedColor: const Color(0xFF1F4959),
+  );
 
   Widget wrap(Widget child) => MaterialApp(
-        home: Scaffold(backgroundColor: Colors.transparent, body: child),
-      );
+    home: Scaffold(backgroundColor: Colors.transparent, body: child),
+  );
 
   // 胶囊里的进度条走共享的 FushiLinearProgressIndicator（表达式进度），
   // 不再是裸 LinearProgressIndicator。
@@ -25,10 +26,9 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(wrap(PopupDictionaryLoadingView(
-      colorScheme: cs,
-      onDismiss: () {},
-    )));
+    await tester.pumpWidget(
+      wrap(PopupDictionaryLoadingView(colorScheme: cs, onDismiss: () {})),
+    );
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(pill(), findsNothing);
 
@@ -44,11 +44,15 @@ void main() {
 
   testWidgets('加载期间点外面即关窗（onDismiss）', (WidgetTester tester) async {
     int dismissed = 0;
-    await tester.pumpWidget(wrap(PopupDictionaryLoadingView(
-      colorScheme: cs,
-      onDismiss: () => dismissed++,
-      revealDelay: Duration.zero,
-    )));
+    await tester.pumpWidget(
+      wrap(
+        PopupDictionaryLoadingView(
+          colorScheme: cs,
+          onDismiss: () => dismissed++,
+          revealDelay: Duration.zero,
+        ),
+      ),
+    );
     await tester.tapAt(const Offset(20, 500));
     expect(dismissed, 1);
   });
@@ -59,19 +63,26 @@ void main() {
     addTearDown(tester.view.reset);
 
     const Rect glyph = Rect.fromLTWH(40, 600, 24, 24);
-    await tester.pumpWidget(wrap(PopupDictionaryLoadingView(
-      colorScheme: cs,
-      onDismiss: () {},
-      anchorRect: glyph,
-      revealDelay: Duration.zero,
-    )));
+    await tester.pumpWidget(
+      wrap(
+        PopupDictionaryLoadingView(
+          colorScheme: cs,
+          onDismiss: () {},
+          anchorRect: glyph,
+          revealDelay: Duration.zero,
+        ),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 300));
 
     final Rect card = tester.getRect(find.byType(Material).last);
     expect(card.size, kPopupLoadingPillSize);
     expect(card.overlaps(glyph), isFalse, reason: '不得遮住被查字');
-    expect((card.center.dy - glyph.center.dy).abs(), lessThan(120),
-        reason: '应贴在被查字附近，而不是屏幕正中');
+    expect(
+      (card.center.dy - glyph.center.dy).abs(),
+      lessThan(120),
+      reason: '应贴在被查字附近，而不是屏幕正中',
+    );
   });
 
   test('popup_main 的未初始化分支接的是 PopupDictionaryLoadingView，不再裸转圈', () {

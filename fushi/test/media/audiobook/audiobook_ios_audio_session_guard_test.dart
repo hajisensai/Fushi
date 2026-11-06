@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('audiobook playback configures iOS audio session as playback', () {
@@ -11,7 +11,8 @@ void main() {
     expect(
       source,
       contains('AVAudioSessionCategory.playback'),
-      reason: 'iOS audiobook playback must use the playback category so it '
+      reason:
+          'iOS audiobook playback must use the playback category so it '
           'does not go silent under the system silent switch.',
     );
     expect(

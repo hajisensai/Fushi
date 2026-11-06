@@ -5,13 +5,14 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show ReaderFushiPage;
-import 'package:fushi/src/reader/reader_settings_ia.dart' show ReaderSettingsTab;
+import 'package:fushi/src/reader/reader_settings_ia.dart'
+    show ReaderSettingsTab;
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
     show FushiSlider;
-import 'package:fushi/utils.dart' show FushiGlassMaterial;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:flutter/services.dart';
@@ -135,7 +136,9 @@ void main() {
             );
             Future<void> goTab(ReaderSettingsTab which) async {
               if (tab(which).evaluate().isEmpty) return;
-              await tester.tap(tab(which).first); // itest-tap-allow: perf probe times the real touch path
+              await tester.tap(
+                tab(which).first,
+              ); // itest-tap-allow: perf probe times the real touch path
               await _settle(tester, 900);
             }
 
@@ -184,9 +187,13 @@ void main() {
               await _settle(tester, 500);
               await _measure(tester, '$tag fontstep', budgetMs, () async {
                 for (int i = 0; i < 3; i++) {
-                  await tester.tap(plus.first); // itest-tap-allow: perf probe times the real touch path
+                  await tester.tap(
+                    plus.first,
+                  ); // itest-tap-allow: perf probe times the real touch path
                   await _settle(tester, 600);
-                  await tester.tap(minus.first); // itest-tap-allow: perf probe times the real touch path
+                  await tester.tap(
+                    minus.first,
+                  ); // itest-tap-allow: perf probe times the real touch path
                   await _settle(tester, 600);
                 }
               });

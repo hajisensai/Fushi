@@ -28,21 +28,12 @@ public final class PreferenceKeys {
     public static final String FILE_SPLASH = "hibiki_splash";
 
     /**
-     * Prefs file used by {@code MainActivity} for render-backend selection
-     * (TODO-1232 A3). Read in {@code getFlutterShellArgs} BEFORE the Flutter
-     * engine is created, so it must be a plain native SharedPreferences file
-     * that this app fully owns -- not the shared_preferences plugin's store.
+     * Legacy render-backend prefs file (TODO-1232 A3). The whole app runs on
+     * Impeller with no Skia fallback; MainActivity deletes this file at startup
+     * ({@code deleteSharedPreferences}), so the stale choice left by older versions
+     * is dropped once and later launches find nothing to delete.
      */
     public static final String FILE_RENDER = "hibiki_render";
-
-    /**
-     * When {@code true}, MainActivity appends {@code --enable-impeller=false} to
-     * the Flutter shell args at launch, forcing the Skia rendering backend
-     * instead of Impeller. Used to diagnose the Mali-G76 "video plays but stays
-     * black" case (TODO-1232): if Skia renders the frame, the external-texture
-     * composition under Impeller is implicated.
-     */
-    public static final String RENDER_IMPELLER_DISABLED = "impellerDisabled";
 
     // ── BaseFloatingService position keys ────────────────────────────────────
 
@@ -98,13 +89,9 @@ public final class PreferenceKeys {
 
     /**
      * Prefs file holding the user's lookup input-method language. Written by the
-     * Flutter side through {@code ChannelNames.LOOKUP_IME}; read by the two
-     * lookup surfaces whose search box is a native EditText
-     * ({@code FloatingDictService}, {@code PopupDictActivity}) — those cannot
-     * take Flutter's {@code hintLocales} parameter.
-     *
-     * Its own file rather than the floating-dict one: both of those surfaces
-     * need it, and one of them is an Activity that owns no floating-window prefs.
+     * Flutter side through {@code ChannelNames.LOOKUP_IME}; read by the lookup
+     * surface whose search box is a native EditText ({@code FloatingDictService})
+     * — it cannot take Flutter's {@code hintLocales} parameter.
      */
     public static final String FILE_LOOKUP_IME = "lookup_ime_prefs";
 

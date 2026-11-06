@@ -315,7 +315,7 @@ void main() {
       final Directory dir = Directory.systemTemp.createTempSync('fushi_tts_');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String out = '${dir.path}/term.wav';
-      final String? result = await ttsToFileDesktop(
+      final String result = await ttsToFileDesktop(
         text: '日本語',
         outputPath: out,
       );

@@ -4,12 +4,28 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/audio_energy_probe.dart';
 import 'package:fushi/src/media/video/subtitle_delay_input_debounce.dart';
+import 'package:fushi/src/media/video/subtitle_delay_slider_range.dart';
 import 'package:fushi/src/media/video/subtitle_waveform_painter.dart';
 import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_focusable.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 
 /// 字幕对轴的「音频波形」入口面板（TODO-1051 阶段B；TODO-1207 改为按钮触发的放大可交互视图）。
 ///
@@ -251,8 +267,9 @@ class _SubtitleWaveformAlignPanelState
                     Text(
                       hint,
                       style: context.fushiType.bodySmall.copyWith(
-                        color:
-                            _probeUnavailable ? cs.error : cs.onSurfaceVariant,
+                        color: _probeUnavailable
+                            ? cs.error
+                            : cs.onSurfaceVariant,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -396,8 +413,9 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   double _zoom = 1.0;
 
   /// 数值输入框控制器（与滑条 / 步进共享同一权威 [_delayMs]，经 [_commit] 同步）。
-  late final TextEditingController _delayController =
-      TextEditingController(text: '${widget.initialDelayMs}');
+  late final TextEditingController _delayController = TextEditingController(
+    text: '${widget.initialDelayMs}',
+  );
 
   /// 数值输入框「边键入边生效」去抖（BUG-918）：原字段只在 [onSubmitted]（Enter）提交、
   /// 无 [onChanged]，用户报「不按回车不更新、backspace 没反应」。改为键入即去抖 350ms 后
@@ -405,11 +423,11 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   /// （原两处逐行拷贝已抽出）。
   late final SubtitleDelayInputDebounce _delayInput =
       SubtitleDelayInputDebounce(
-    controller: _delayController,
-    isMounted: () => mounted,
-    currentDelayMs: () => _delayMs,
-    commit: _commit,
-  );
+        controller: _delayController,
+        isMounted: () => mounted,
+        currentDelayMs: () => _delayMs,
+        commit: _commit,
+      );
 
   final ScrollController _scrollController = ScrollController();
 
@@ -424,10 +442,9 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   /// 放大波形区高度（逻辑像素）。
   static const double _waveHeight = 200.0;
 
-  /// 调轴细调滑条范围（正负 10 秒）与 clamp 上界（正负 600 秒），与
-  /// [VideoQuickSettingsSheet] / VideoPlayerController 一致。
-  static const int _sliderRangeMs = 10000;
-  static const int _clampMs = 600000;
+  /// 调轴 clamp 上界（正负 600 秒），与 VideoPlayerController 一致；滑条范围与调轴行
+  /// 同一条扩展规则（[subtitleDelaySliderRangeMs]）。
+  static const int _clampMs = kSubtitleDelayClampMs;
 
   /// TODO-1244：波形下方 cue 文本条**单 lane 时**的高度（逻辑像素）。BUG-1729 起条带
   /// 高度随实际 lane 数伸缩：1 lane 保持此值观感不变，多 lane 每行 [_multiLaneHeight]。
@@ -450,9 +467,13 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   static const double _cullMarginPx = 400.0;
 
   /// 降采样波形桶缓存：桶数只随缩放/视口宽变化，不随滚动/延迟变化。按目标桶数 memo，
-  /// 避免每次滚动 setState 都对整条包络重算降采样（[downsampleEnergyEnvelope] 是 O(n)）。
+  /// 避免每次滚动 setState 都对整条包络重算降采样（[FfcEnergyEnvelope.downsample] 是 O(n)）。
   int _cachedBucketCount = -1;
   List<double> _cachedBuckets = const <double>[];
+
+  /// [_bucketsFor] 用的线性振幅包络（原生内存，随 State 释放）与它对应的 dB 源。
+  FfcEnergyEnvelope? _envelope;
+  List<double>? _envelopeSource;
 
   /// 播放条平滑刷新（根因修复「播放条更新太慢」）：`VideoPlayerController` 只在字幕**换句**
   /// 时 `notifyListeners`（`_syncCueForPosition` 的 `changed` 判据），播放头/列表若只靠它重绘
@@ -665,12 +686,19 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     return out;
   }
 
-  /// 按目标桶数 memo 的降采样波形桶（见 [_cachedBucketCount]）。
+  /// 按目标桶数 memo 的降采样波形桶（见 [_cachedBucketCount]）。包络换了（按引用判）就
+  /// 重建 [_envelope]、作废桶缓存；dB → 振幅只在重建时算一遍，改宽度只重跑降采样。
   List<double> _bucketsFor(int targetBuckets) {
+    final List<double> raw = widget.rawEnvelope;
+    FfcEnergyEnvelope? envelope = _envelope;
+    if (envelope == null || !identical(raw, _envelopeSource)) {
+      _envelopeSource = raw;
+      _envelope = envelope = FfcEnergyEnvelope.fromDb(raw);
+      _cachedBucketCount = -1;
+    }
     if (targetBuckets == _cachedBucketCount) return _cachedBuckets;
     _cachedBucketCount = targetBuckets;
-    _cachedBuckets =
-        downsampleEnergyEnvelope(widget.rawEnvelope, targetBuckets);
+    _cachedBuckets = envelope.downsample(targetBuckets);
     return _cachedBuckets;
   }
 
@@ -864,11 +892,16 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
       spacing: 16,
       runSpacing: 6,
       children: <Widget>[
-        item(cs.primary.withValues(alpha: 0.55),
-            t.video_subtitle_waveform_legend_energy),
+        item(
+          cs.primary.withValues(alpha: 0.55),
+          t.video_subtitle_waveform_legend_energy,
+        ),
         item(cs.secondary, t.video_subtitle_waveform_legend_cue, line: true),
-        item(cs.tertiary, t.video_subtitle_waveform_legend_playhead,
-            line: true),
+        item(
+          cs.tertiary,
+          t.video_subtitle_waveform_legend_playhead,
+          line: true,
+        ),
       ],
     );
   }
@@ -882,14 +915,18 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final ThemeData theme = Theme.of(context);
-        final double viewWidth =
-            constraints.maxWidth.isFinite ? constraints.maxWidth : 600.0;
+        final double viewWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : 600.0;
         final double naturalWidth = widget.windowEndMs * _basePxPerMs * _zoom;
         // 内容至少铺满视图宽（短片不留大片空白），否则按时间密度展开可滚动。
-        final double contentWidth =
-            naturalWidth < viewWidth ? viewWidth : naturalWidth;
-        final int targetBuckets =
-            (contentWidth / _barSlotPx).floor().clamp(1, 400000);
+        final double contentWidth = naturalWidth < viewWidth
+            ? viewWidth
+            : naturalWidth;
+        final int targetBuckets = (contentWidth / _barSlotPx).floor().clamp(
+          1,
+          400000,
+        );
         final List<double> buckets = _bucketsFor(targetBuckets);
         final List<int> boundaries = _cueBoundariesMs;
 
@@ -939,8 +976,9 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
         for (final CueStripSlot? slot in cueSlots) {
           if (slot != null && slot.lane >= laneCount) laneCount = slot.lane + 1;
         }
-        final double laneHeight =
-            laneCount <= 1 ? _stripHeight : _multiLaneHeight;
+        final double laneHeight = laneCount <= 1
+            ? _stripHeight
+            : _multiLaneHeight;
         final double stripHeight = laneCount * laneHeight;
 
         final Widget strip = _buildCueStrip(
@@ -1039,8 +1077,9 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     required double laneHeight,
     required double stripHeight,
   }) {
-    final double viewLeft =
-        _scrollController.hasClients ? _scrollController.offset : 0.0;
+    final double viewLeft = _scrollController.hasClients
+        ? _scrollController.offset
+        : 0.0;
     final double viewRight = viewLeft + viewportWidth;
     // 矮行（多 lane）里两行文本放不下，降为一行。
     final int chipMaxLines = laneHeight >= _stripHeight ? 2 : 1;
@@ -1054,20 +1093,22 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           slot.left > viewRight + _cullMarginPx) {
         continue;
       }
-      chips.add(Positioned(
-        left: slot.left,
-        top: slot.lane * laneHeight,
-        height: laneHeight,
-        width: slot.width,
-        child: _buildCueChip(
-          theme,
-          cs,
-          widget.cues[i],
-          widget.cues[i].text.trim(),
-          delayMs,
-          maxLines: chipMaxLines,
+      chips.add(
+        Positioned(
+          left: slot.left,
+          top: slot.lane * laneHeight,
+          height: laneHeight,
+          width: slot.width,
+          child: _buildCueChip(
+            theme,
+            cs,
+            widget.cues[i],
+            widget.cues[i].text.trim(),
+            delayMs,
+            maxLines: chipMaxLines,
+          ),
         ),
-      ));
+      );
     }
     final Widget stripBody = SizedBox(
       width: contentWidth,
@@ -1100,7 +1141,8 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           final double next = base + details.delta.dx * msPerPx;
           _cueDragMsPrecise = next;
           setState(
-              () => _dragMs = next.round().clamp(-_clampMs, _clampMs).toInt());
+            () => _dragMs = next.round().clamp(-_clampMs, _clampMs).toInt(),
+          );
         },
         onHorizontalDragEnd: (DragEndDetails _) {
           final int? preview = _dragMs;
@@ -1291,7 +1333,9 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
                             : null,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10.0, vertical: 6.0),
+                            horizontal: 10.0,
+                            vertical: 6.0,
+                          ),
                           child: Row(
                             children: <Widget>[
                               if (canPlay)
@@ -1313,10 +1357,10 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
                                   _formatTime(cue.startMs),
                                   style: context.fushiType.labelSmall.tabular
                                       .copyWith(
-                                    color: active
-                                        ? cs.onSecondaryContainer
-                                        : cs.onSurfaceVariant,
-                                  ),
+                                        color: active
+                                            ? cs.onSecondaryContainer
+                                            : cs.onSurfaceVariant,
+                                      ),
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -1360,7 +1404,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: FushiIconButtonControl.filledTonal(
-        size: FushiIconButtonSize.s,
+        size: ButtonSizeVariant.small,
         tooltip: tooltip,
         icon: FushiIcon(icon),
         onPressed: onPressed,
@@ -1405,11 +1449,16 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
 
   /// 底部调轴控件条（自动对轴 / 滑条 / 步进 / 归零 / 数值输入）：写回上方权威 `_delayMs`。
   Widget _buildDelayControls(
-      ThemeData theme, ColorScheme cs, FushiDesignTokens tokens) {
+    ThemeData theme,
+    ColorScheme cs,
+    FushiDesignTokens tokens,
+  ) {
     final int shownMs = _dragMs ?? _delayMs;
     final String label = '${shownMs >= 0 ? '+' : ''}$shownMs ms';
-    final double sliderValue =
-        shownMs.clamp(-_sliderRangeMs, _sliderRangeMs).toDouble();
+    final int sliderRangeMs = subtitleDelaySliderRangeMs(_delayMs);
+    final double sliderValue = shownMs
+        .clamp(-sliderRangeMs, sliderRangeMs)
+        .toDouble();
     final double gap = tokens.spacing.gap;
 
     // TODO-1316：波形对轴视图内的「自动对轴」按钮（复用上方权威 onAutoAlign 逻辑，不重写
@@ -1502,13 +1551,13 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               FushiIconButtonControl(
-                size: FushiIconButtonSize.s,
+                size: ButtonSizeVariant.small,
                 tooltip: t.video_subtitle_prev_cue_align,
                 icon: const FushiIcon(FushiIcons.skipPrevious),
                 onPressed: () => _snapDelayToCue(next: false),
               ),
               FushiIconButtonControl(
-                size: FushiIconButtonSize.s,
+                size: ButtonSizeVariant.small,
                 tooltip: t.video_subtitle_next_cue_align,
                 icon: const FushiIcon(FushiIcons.skipNext),
                 onPressed: () => _snapDelayToCue(next: true),
@@ -1522,14 +1571,14 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (autoAlignButton != null) autoAlignButton,
-        // 细调滑条（正负 10s）：拖动只本地预览，松手才落盘+实时生效。走 adaptiveSlider
+        // 细调滑条（范围随当前值扩展）：拖动只本地预览，松手才落盘+实时生效。走 adaptiveSlider
         // 修全局 UI-scale 下裸 Slider 值指示器水平钳制错位（TODO-742 同款）。
         adaptiveSlider(
           context: context,
           value: sliderValue,
-          min: -_sliderRangeMs.toDouble(),
-          max: _sliderRangeMs.toDouble(),
-          divisions: _sliderRangeMs ~/ 50,
+          min: -sliderRangeMs.toDouble(),
+          max: sliderRangeMs.toDouble(),
+          divisions: subtitleDelaySliderDivisions(sliderRangeMs),
           label: label,
           onChanged: (double v) => setState(() => _dragMs = v.round()),
           onChangeEnd: (double v) {
@@ -1595,8 +1644,10 @@ List<CueStripSlot?> layoutCueStripChips({
   required double minChipWidth,
   required int maxLanes,
 }) {
-  final List<CueStripSlot?> slots =
-      List<CueStripSlot?>.filled(cues.length, null);
+  final List<CueStripSlot?> slots = List<CueStripSlot?>.filled(
+    cues.length,
+    null,
+  );
   // 第一遍：像素几何（与渲染逐像素一致的 clamp 规则）。
   final List<double> lefts = List<double>.filled(cues.length, 0);
   final List<double> widths = List<double>.filled(cues.length, 0);

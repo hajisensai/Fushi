@@ -68,23 +68,31 @@ void main() {
           const PlaylistEntry(title: 'EP0', path: _kEp0),
           const PlaylistEntry(title: 'EP1', path: _kEp1),
         ];
-        final String json =
-            jsonEncode(episodes.map((PlaylistEntry e) => e.toJson()).toList());
-        await repo.saveVideoBook(VideoBooksCompanion(
-          bookUid: const Value(_kBookUid),
-          title: const Value('itest pos restore'),
-          videoPath: Value(_kEp0),
-          playlistJson: Value(json),
-          currentEpisode: const Value(0),
-        ));
+        final String json = jsonEncode(
+          episodes.map((PlaylistEntry e) => e.toJson()).toList(),
+        );
+        await repo.saveVideoBook(
+          VideoBooksCompanion(
+            bookUid: const Value(_kBookUid),
+            title: const Value('itest pos restore'),
+            videoPath: Value(_kEp0),
+            playlistJson: Value(json),
+            currentEpisode: const Value(0),
+          ),
+        );
 
-        final NavigatorState navigator =
-            tester.state<NavigatorState>(find.byType(Navigator).first);
+        final NavigatorState navigator = tester.state<NavigatorState>(
+          find.byType(Navigator).first,
+        );
 
         // ── ① 打开 → 真实播放数秒 → 经 PopScope pop 处理器退出 ──────────────
-        unawaited(navigator.push<void>(MaterialPageRoute<void>(
-          builder: (_) => VideoFushiPage(bookUid: _kBookUid, repo: repo),
-        )));
+        unawaited(
+          navigator.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => VideoFushiPage(bookUid: _kBookUid, repo: repo),
+            ),
+          ),
+        );
 
         // 等 load() 实例化原生 player（控制器就绪 = debugPositionMs 非 null）。桌面
         // media_kit 控制条 hover 才显图标，故用 controller 状态判就绪，不依赖图标。
@@ -92,7 +100,9 @@ void main() {
           final Iterable<Element> els = find.byType(VideoFushiPage).evaluate();
           if (els.isEmpty) return null;
           return tester.state<State<VideoFushiPage>>(
-              find.byType(VideoFushiPage)) as VideoFushiTestHooks;
+                find.byType(VideoFushiPage),
+              )
+              as VideoFushiTestHooks;
         }
 
         bool ready = false;
@@ -113,8 +123,11 @@ void main() {
           await tester.pump(const Duration(milliseconds: 125));
         }
         final int playedMs = hooks.debugPositionMs ?? 0;
-        expect(playedMs, greaterThan(1500),
-            reason: '真实播放应前进超过 1.5s，实测=$playedMs');
+        expect(
+          playedMs,
+          greaterThan(1500),
+          reason: '真实播放应前进超过 1.5s，实测=$playedMs',
+        );
 
         // 退出：走页面 PopScope 的 pop 处理器（修复点——退出前 await flushPosition）。
         await navigator.maybePop();
@@ -123,8 +136,11 @@ void main() {
           await tester.pump(const Duration(milliseconds: 100));
           if (find.byType(VideoFushiPage).evaluate().isEmpty) break;
         }
-        expect(find.byType(VideoFushiPage), findsNothing,
-            reason: '退出后视频页应已 pop');
+        expect(
+          find.byType(VideoFushiPage),
+          findsNothing,
+          reason: '退出后视频页应已 pop',
+        );
 
         // 退出后 DB 应记下刚才播放到的位置（容许整秒节流与 flush 之间的 ~1s 容差）。
         final VideoBookRow? afterExit = await repo.getByBookUid(_kBookUid);
@@ -132,14 +148,22 @@ void main() {
             jsonDecode(afterExit!.playlistJson!) as List<dynamic>;
         final int savedPos =
             (savedRaw[0] as Map<String, dynamic>)['positionMs'] as int;
-        expect(savedPos, greaterThan(1000),
-            reason: '退出前必须把播放位置 flush 落库，实测 savedPos=$savedPos '
-                '(playedMs=$playedMs)');
+        expect(
+          savedPos,
+          greaterThan(1000),
+          reason:
+              '退出前必须把播放位置 flush 落库，实测 savedPos=$savedPos '
+              '(playedMs=$playedMs)',
+        );
 
         // ── ② 重新打开 → 断言 seek 到上次位置（续播，不从头）──────────────────
-        unawaited(navigator.push<void>(MaterialPageRoute<void>(
-          builder: (_) => VideoFushiPage(bookUid: _kBookUid, repo: repo),
-        )));
+        unawaited(
+          navigator.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => VideoFushiPage(bookUid: _kBookUid, repo: repo),
+            ),
+          ),
+        );
         bool ready2 = false;
         for (int i = 0; i < 60; i++) {
           await tester.pump(const Duration(milliseconds: 250));
@@ -160,9 +184,11 @@ void main() {
           restored = readHooks()?.debugPositionMs ?? 0;
           if (restored > 1000) break;
         }
-        expect(restored, greaterThan(1000),
-            reason:
-                '重开应 seek 回上次位置 (savedPos=$savedPos)，实测 restored=$restored');
+        expect(
+          restored,
+          greaterThan(1000),
+          reason: '重开应 seek 回上次位置 (savedPos=$savedPos)，实测 restored=$restored',
+        );
 
         // 清场。
         await navigator.maybePop();

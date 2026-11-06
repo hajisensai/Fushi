@@ -282,17 +282,3 @@ done:
   os << ']';
   return os.str();
 }
-
-std::string build_styles_json(DictionaryQuery& query) {
-  auto styles = query.get_styles();
-  std::ostringstream os;
-  os << '{';
-  for (size_t i = 0; i < styles.size(); i++) {
-    if (i > 0) os << ',';
-    json_escape(os, styles[i].dict_name);
-    os << ':';
-    json_escape(os, styles[i].styles);
-  }
-  os << '}';
-  return os.str();
-}

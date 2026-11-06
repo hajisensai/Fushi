@@ -98,19 +98,22 @@ List<OcrRect> planOcrPageTiles(
     for (int row = 0; row < rows; row++)
       for (int column = 0; column < columns; column++)
         OcrRect(
-          left:
-              column == 0 ? 0 : (column * tileWidth - overlapX).floorToDouble(),
+          left: column == 0
+              ? 0
+              : (column * tileWidth - overlapX).floorToDouble(),
           top: row == 0 ? 0 : (row * tileHeight - overlapY).floorToDouble(),
           right: column == columns - 1
               ? width.toDouble()
-              : ((column + 1) * tileWidth + overlapX)
-                  .ceilToDouble()
-                  .clamp(0, width.toDouble()),
+              : ((column + 1) * tileWidth + overlapX).ceilToDouble().clamp(
+                  0,
+                  width.toDouble(),
+                ),
           bottom: row == rows - 1
               ? height.toDouble()
-              : ((row + 1) * tileHeight + overlapY)
-                  .ceilToDouble()
-                  .clamp(0, height.toDouble()),
+              : ((row + 1) * tileHeight + overlapY).ceilToDouble().clamp(
+                  0,
+                  height.toDouble(),
+                ),
         ),
   ];
 }
@@ -146,12 +149,14 @@ List<OcrTextLine> mergeTiledOcrLines(
     if (!candidate.clipped) {
       return false;
     }
-    return pending.any((_TiledLine other) =>
-        !identical(other, candidate) &&
-        !other.clipped &&
-        other.line.tile != candidate.line.tile &&
-        _intersection(other.line.rect, candidate.line.rect) >=
-            0.5 * candidate.line.rect.area);
+    return pending.any(
+      (_TiledLine other) =>
+          !identical(other, candidate) &&
+          !other.clipped &&
+          other.line.tile != candidate.line.tile &&
+          _intersection(other.line.rect, candidate.line.rect) >=
+              0.5 * candidate.line.rect.area,
+    );
   });
 
   // 2. 跨切线拼接。拼出来的行可能还要和第三片再拼（极长的列），所以迭代到不动。
@@ -214,8 +219,10 @@ class _TiledLine {
     final OcrRect rect = line.rect;
     // 容差取一个字宽：切边上的半个字 Vision 往往干脆不报，读到的截断行会停在
     // 切边前一个字的位置，只按像素贴边判会漏掉这种截断。
-    final double margin =
-        math.max(6.0, math.min(rect.width, rect.height) * 1.0);
+    final double margin = math.max(
+      6.0,
+      math.min(rect.width, rect.height) * 1.0,
+    );
     return _TiledLine(
       line,
       clipTop: tile.top > 0 && rect.top - tile.top <= margin,
@@ -251,8 +258,9 @@ _TiledLine? _stitch(_TiledLine first, _TiledLine second) {
   final double crossOverlap = alongY
       ? math.min(a.right, b.right) - math.max(a.left, b.left)
       : math.min(a.bottom, b.bottom) - math.max(a.top, b.top);
-  final double crossMin =
-      alongY ? math.min(a.width, b.width) : math.min(a.height, b.height);
+  final double crossMin = alongY
+      ? math.min(a.width, b.width)
+      : math.min(a.height, b.height);
   if (crossMin <= 0 || crossOverlap < 0.5 * crossMin) {
     return null;
   }
@@ -381,8 +389,9 @@ String stitchOcrLineText(
 List<OcrTextLine> _dedupeOcrLines(List<OcrTextLine> lines) {
   final List<int> byLength = List<int>.generate(lines.length, (int i) => i)
     ..sort((int x, int y) {
-      final int length =
-          lines[y].text.runes.length.compareTo(lines[x].text.runes.length);
+      final int length = lines[y].text.runes.length.compareTo(
+        lines[x].text.runes.length,
+      );
       return length != 0 ? length : x.compareTo(y);
     });
   final List<int> kept = <int>[];
@@ -406,9 +415,13 @@ List<OcrTextLine> _dedupeOcrLines(List<OcrTextLine> lines) {
 }
 
 double _intersection(OcrRect a, OcrRect b) {
-  final double width =
-      math.max(0, math.min(a.right, b.right) - math.max(a.left, b.left));
-  final double height =
-      math.max(0, math.min(a.bottom, b.bottom) - math.max(a.top, b.top));
+  final double width = math.max(
+    0,
+    math.min(a.right, b.right) - math.max(a.left, b.left),
+  );
+  final double height = math.max(
+    0,
+    math.min(a.bottom, b.bottom) - math.max(a.top, b.top),
+  );
   return width * height;
 }

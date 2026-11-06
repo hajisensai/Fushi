@@ -1,0 +1,14 @@
+## BUG-3864 · 复习页空格翻到答案面后键盘失灵（Windows，未复现）
+- **报告**：2026-10-28（用户反馈，Windows 桌面）：「空格背卡，总是会在显示答案的时候失灵。需要鼠标点一下 fushi 才行。」
+- **真实性**：❌ 未复现（Windows 真 runner 实测 + widget 测试都不出现）。不勾 ① ②。
+  - 代码路径：`_onKey`（`fushi/lib/src/pages/implementations/srs/srs_review_page.dart` 键盘段）在复习页自己的 `Focus(autofocus)` 上；翻面 `_showAnswer` 只 `setState(_showingAnswer = true)` + 自动播放，不重建整面 WebView（`SrsWebCardFace` 同一平台视图经 `SrsCardFaceSync` 用 JS 原地换内容），原生 Fushi 卡面的释义 WebView 用 GlobalKey 从正面 Offstage 预热位换父（`srs_fushi_card_view.dart` `_defsKey`），平台视图的 `Focus(autofocus: true)` 不会再次请求。翻面这一刻没有任何焦点节点被销毁或抢走。
+  - Windows 实测（`fushi/integration_test/srs_review_reveal_os_focus_itest.dart`，`GetGUIThreadInfo.hwndFocus` 读 OS 焦点、`PostMessage` 向焦点窗真投空格，翻面后再投空格评「良好」）：
+    - 隐藏 runner，原生 Fushi 卡 / 整面 WebView 卡 × 指针静止 / 指针停在卡面中央，卡上带真实音频（翻面自动播放走 media_kit）：共 64 轮，OS 焦点恒为 `FLUTTERVIEW`、Flutter primary 恒为 `srs-review`，每一下空格都生效。
+    - 主窗在真前台、焦点闸门按真实前台判据工作（`-Visible -DartDefine SRS_REVEAL_FOREGROUND=true`，关掉隐藏 runner 豁免）：8 轮，`fgMain=true gateOpen=true`，全部生效。
+    - 唯一两次「没翻面」：日志里同一时刻出现引擎同步来的 `KeyDownEvent Control Left synth=true`（本机键盘上真按着 Ctrl），`_onKey` 按设计把 Ctrl+空格放行不翻面——测试环境干扰，不是缺陷。
+  - widget 测试（`fushi/test/srs/srs_review_feedback_test.dart` BUG-3864 组）：卡面换成模拟 Windows 平台视图的替身（`Focus(autofocus)` + 指针按下抢焦），原生 / 整面两种卡 × 起手无操作 / 先鼠标点「显示答案」/ 先点卡面，连续空格翻面 + 评分、数字键评分全部生效，焦点始终在复习页子树内。
+- **[ ] ① 未修复** — 未复现，无根因可修。
+- **[ ] ② 未加自动化测试** — 已加回归钉子锁住现行行为（不是复现测试）：`fushi/test/srs/srs_review_feedback_test.dart`（BUG-3864 组 6 例）+ 手动 Windows 探针 `fushi/integration_test/srs_review_reveal_os_focus_itest.dart`。
+- **备注**：
+  - 与 BUG-3704（评分后下一张空格失灵）同属「复习页空格失灵」，那条的真实原因也一直未定位到；这次把「翻面」时机单独排除了。
+  - 仍未覆盖、可作下一步排查方向（均为推测，未证实是用户场景）：① 查词弹窗开着时空格 / 数字键按设计被 `SrsCardLookupController.guardKey` 吞掉——用户开了「悬停即查词」或 Shift 悬停，指针停在卡面上时翻面后可能弹出查词，点一下关掉弹窗才恢复，与「鼠标点一下才行」吻合；② 本机输入法（中文 IME）状态；③ 用户实际卡片模板（Anki 导入模板里的 `<input>` / 自定义脚本）。需要用户提供：卡片类型（Fushi 卡 / Anki 导入）、是否开了悬停查词、失灵时屏上是否有查词弹窗或加载占位。

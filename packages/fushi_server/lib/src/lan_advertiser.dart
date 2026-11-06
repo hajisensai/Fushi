@@ -39,19 +39,40 @@ class LanAdvertiser {
     ];
     final List<List<String>> candidates = <List<String>>[
       if (Platform.isLinux)
-        <String>['avahi-publish', '-s', deviceName, serviceType, '$port', ...txt],
+        <String>[
+          'avahi-publish',
+          '-s',
+          deviceName,
+          serviceType,
+          '$port',
+          ...txt,
+        ],
       if (Platform.isMacOS)
-        <String>['dns-sd', '-R', deviceName, serviceType, 'local', '$port', ...txt],
+        <String>[
+          'dns-sd',
+          '-R',
+          deviceName,
+          serviceType,
+          'local',
+          '$port',
+          ...txt,
+        ],
     ];
     for (final List<String> cmd in candidates) {
       try {
         _process = await Process.start(cmd.first, cmd.sublist(1));
         _process!.stderr.drain<void>();
         _process!.stdout.drain<void>();
-        engineLog.logDiagnostic('LanAdvertiser', 'advertising via ${cmd.first}');
+        engineLog.logDiagnostic(
+          'LanAdvertiser',
+          'advertising via ${cmd.first}',
+        );
         return;
       } on ProcessException catch (e) {
-        engineLog.logDiagnostic('LanAdvertiser', '${cmd.first} unavailable: ${e.message}');
+        engineLog.logDiagnostic(
+          'LanAdvertiser',
+          '${cmd.first} unavailable: ${e.message}',
+        );
       }
     }
     engineLog.logDiagnostic(

@@ -86,8 +86,10 @@ class RemoteLibraryCache {
     Duration? ttl,
     bool forceRefresh = false,
   }) {
-    final _CacheSlot slot =
-        _slots.putIfAbsent(_slotKey(sourceId, key), () => _CacheSlot());
+    final _CacheSlot slot = _slots.putIfAbsent(
+      _slotKey(sourceId, key),
+      () => _CacheSlot(),
+    );
 
     if (!forceRefresh) {
       final Future<Object?>? inFlight = slot.inFlight;
@@ -115,20 +117,23 @@ class RemoteLibraryCache {
     slot.inFlight = shared;
     slot.inFlightStartedAtMs = _nowMs();
 
-    return future.then<T>((T value) {
-      // 期间发生过 forceRefresh / invalidate → 本次结果已过时，丢弃写入但仍返回给
-      // 自己的调用方（它要的就是这次取数的结果）。
-      if (slot.generation == generation) {
-        slot.value = value;
-        slot.hasValue = true;
-        slot.fetchedAtMs = _nowMs();
-        slot.inFlight = null;
-      }
-      return value;
-    }, onError: (Object error, StackTrace stack) {
-      if (slot.generation == generation) slot.inFlight = null;
-      Error.throwWithStackTrace(error, stack);
-    });
+    return future.then<T>(
+      (T value) {
+        // 期间发生过 forceRefresh / invalidate → 本次结果已过时，丢弃写入但仍返回给
+        // 自己的调用方（它要的就是这次取数的结果）。
+        if (slot.generation == generation) {
+          slot.value = value;
+          slot.hasValue = true;
+          slot.fetchedAtMs = _nowMs();
+          slot.inFlight = null;
+        }
+        return value;
+      },
+      onError: (Object error, StackTrace stack) {
+        if (slot.generation == generation) slot.inFlight = null;
+        Error.throwWithStackTrace(error, stack);
+      },
+    );
   }
 
   /// 槽的联合定位符。竖线做分隔符：来源身份（[kInterconnectRemoteLibrarySourceId] /
@@ -188,7 +193,8 @@ class RemoteLibraryCache {
   }) {
     final _CacheSlot? slot = _slots[_slotKey(sourceId, key)];
     if (slot == null || !slot.hasValue) return null;
-    if (maxAge != null && _nowMs() - slot.fetchedAtMs >= maxAge.inMilliseconds) {
+    if (maxAge != null &&
+        _nowMs() - slot.fetchedAtMs >= maxAge.inMilliseconds) {
       return null;
     }
     return slot.value as T?;

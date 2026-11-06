@@ -46,19 +46,19 @@ class MiningDraftSentence {
 
   /// 换一份手改文本（保留原句、音频区间与移除状态）。[edited] 传 null 还原成原句。
   MiningDraftSentence withEditedSentence(String? edited) => MiningDraftSentence(
-        sentence: sentence,
-        audioRange: audioRange,
-        editedSentence: edited,
-        removed: removed,
-      );
+    sentence: sentence,
+    audioRange: audioRange,
+    editedSentence: edited,
+    removed: removed,
+  );
 
   /// 换一份移除状态（保留原句、手改文本与音频区间）。
   MiningDraftSentence withRemoved(bool value) => MiningDraftSentence(
-        sentence: sentence,
-        audioRange: audioRange,
-        editedSentence: editedSentence,
-        removed: value,
-      );
+    sentence: sentence,
+    audioRange: audioRange,
+    editedSentence: editedSentence,
+    removed: value,
+  );
 }
 
 /// 会话级「查词窗口多句合一制卡」草稿缓冲（TODO-393 句子上下文再设计）。
@@ -124,9 +124,10 @@ class MiningSentenceDraft {
   int get length => _prev.length + _next.length;
 
   /// 真正会进卡片的上下文句条数（[length] 去掉被移除的）。弹窗角标用它。
-  int get keptLength => <MiningDraftSentence>[..._prev, ..._next]
-      .where((MiningDraftSentence e) => !e.removed)
-      .length;
+  int get keptLength => <MiningDraftSentence>[
+    ..._prev,
+    ..._next,
+  ].where((MiningDraftSentence e) => !e.removed).length;
 
   /// 整体设置上下文：[prev]（上 N 句，阅读顺序）与 [next]（下 N 句，阅读顺序）。
   /// 空白/纯空格句被过滤（不污染计数与合并文本）。**整体替换**当前上下文——
@@ -151,8 +152,9 @@ class MiningSentenceDraft {
   MiningDraftSentence _withStoredEdit(MiningDraftSentence entry) {
     final String key = entry.sentence.trim();
     final String? stored = _contextEdits[key];
-    final MiningDraftSentence edited =
-        stored == null ? entry : entry.withEditedSentence(stored);
+    final MiningDraftSentence edited = stored == null
+        ? entry
+        : entry.withEditedSentence(stored);
     return _removedContext.contains(key) ? edited.withRemoved(true) : edited;
   }
 
@@ -176,8 +178,9 @@ class MiningSentenceDraft {
     } else {
       _removedContext.remove(key);
     }
-    final List<MiningDraftSentence> updated =
-        List<MiningDraftSentence>.of(list);
+    final List<MiningDraftSentence> updated = List<MiningDraftSentence>.of(
+      list,
+    );
     updated[index] = entry.withRemoved(removed);
     if (prevDir) {
       _prev = updated;
@@ -218,8 +221,9 @@ class MiningSentenceDraft {
     } else {
       _contextEdits[key] = trimmed;
     }
-    final List<MiningDraftSentence> updated =
-        List<MiningDraftSentence>.of(list);
+    final List<MiningDraftSentence> updated = List<MiningDraftSentence>.of(
+      list,
+    );
     updated[index] = entry.withEditedSentence(restore ? null : trimmed);
     if (prevDir) {
       _prev = updated;
@@ -286,10 +290,12 @@ Map<String, Object?> buildSentenceContextPreview({
   int? currentOffset,
 }) {
   final List<String> prev = <String>[
-    for (final MiningDraftSentence e in draft.prevSentences) e.effectiveSentence,
+    for (final MiningDraftSentence e in draft.prevSentences)
+      e.effectiveSentence,
   ];
   final List<String> next = <String>[
-    for (final MiningDraftSentence e in draft.nextSentences) e.effectiveSentence,
+    for (final MiningDraftSentence e in draft.nextSentences)
+      e.effectiveSentence,
   ];
   // 当前句被手改过就吐改后的文本，并把 offset 置空：偏移是按**原句**算的，套到改后
   // 的文本上会把高亮划在错的位置；置空后消费方回退 indexOf（弹窗侧与卡片渲染

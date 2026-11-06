@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// Source-scan guard: the lyrics-mode focus caret stays wired into the reader
@@ -22,10 +22,14 @@ void main() {
     // video 面时当场红，可语义一点没坏——锚点把「值域快照」误当成了不变量。
     // 改成解析值集合后做 containsAll：新增面不再误伤，删掉 lyrics /
     // 把枚举搬走仍然当场红。
-    final Match? decl =
-        RegExp(r'enum\s+CaretSurface\s*\{([^}]*)\}').firstMatch(controller);
-    expect(decl, isNotNull,
-        reason: 'CaretSurface 枚举必须声明在共享的 dictionary_caret_controller.dart 里');
+    final Match? decl = RegExp(
+      r'enum\s+CaretSurface\s*\{([^}]*)\}',
+    ).firstMatch(controller);
+    expect(
+      decl,
+      isNotNull,
+      reason: 'CaretSurface 枚举必须声明在共享的 dictionary_caret_controller.dart 里',
+    );
     final Set<String> values = decl!
         .group(1)!
         .split(',')

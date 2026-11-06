@@ -91,10 +91,10 @@ class MediaHandleRegistry {
     if (keys.isEmpty) return;
     final List<MediaHandleReleaseCallback> matched =
         <MediaHandleReleaseCallback>[
-      for (final MapEntry<MediaHandleReleaseCallback, String? Function()?> e
-          in _callbacks.entries.toList(growable: false))
-        if (_holdsAny(e.value, keys)) e.key,
-    ];
+          for (final MapEntry<MediaHandleReleaseCallback, String? Function()?> e
+              in _callbacks.entries.toList(growable: false))
+            if (_holdsAny(e.value, keys)) e.key,
+        ];
     for (final MediaHandleReleaseCallback callback in matched) {
       _callbacks.remove(callback);
     }

@@ -121,14 +121,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.1.25"
-  basic_utils:
-    dependency: transitive
-    description:
-      name: basic_utils
-      sha256: "2064b21d3c41ed7654bc82cc476fd65542e04d60059b74d5eed490a4da08fc6c"
-      url: "https://pub.dev"
-    source: hosted
-    version: "5.7.0"
   bonsoir:
     dependency: transitive
     description:
@@ -185,14 +177,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.1"
-  brotli:
-    dependency: transitive
-    description:
-      name: brotli
-      sha256: "7f891558ed779aab2bed874f0a36b8123f9ff3f19cf6efbee89e18ed294945ae"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.6.0"
   build:
     dependency: transitive
     description:
@@ -436,10 +420,10 @@ packages:
     dependency: transitive
     description:
       name: cupertino_ui
-      sha256: "8e14acc2817ff469b925b0e275ab85ecc6c769621360dd0af1331c47f916e247"
+      sha256: "369e39a1c5c030a6212589c3da1809920b1c2cfade7b02aade7695bfa4b88c3a"
       url: "https://pub.dev"
     source: hosted
-    version: "1.1.3"
+    version: "1.1.6"
   dart_style:
     dependency: transitive
     description:
@@ -598,21 +582,20 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "13.0.0"
-  ffmpeg_kit_flutter:
+  ffmpeg_kit_next_flutter:
     dependency: "direct overridden"
     description:
-      path: "third_party/ffmpeg_kit_flutter"
+      path: "third_party/ffmpeg_kit_next_flutter"
       relative: true
     source: path
-    version: "6.0.3"
-  ffmpeg_kit_flutter_platform_interface:
-    dependency: transitive
+    version: "9.0.0"
+  ffmpeg_kit_next_flutter_platform_interface:
+    dependency: "direct overridden"
     description:
-      name: ffmpeg_kit_flutter_platform_interface
-      sha256: addf046ae44e190ad0101b2fde2ad909a3cd08a2a109f6106d2f7048b7abedee
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.1"
+      path: "third_party/ffmpeg_kit_next_flutter_platform_interface"
+      relative: true
+    source: path
+    version: "0.3.0"
   file:
     dependency: transitive
     description:
@@ -873,6 +856,54 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.6"
+  flutter_secure_storage:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage
+      sha256: fe638107c5f69119156ada2db5a57734385fac3f64430bd7252a00d3ead2ca4b
+      url: "https://pub.dev"
+    source: hosted
+    version: "10.3.4"
+  flutter_secure_storage_darwin:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_darwin
+      sha256: "82329fa5cdf343773b1b6897dea959105a29f092454259edff92f9f6637e8149"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.2"
+  flutter_secure_storage_linux:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_linux
+      sha256: caa75bd78f017422912e3a904933113b2428eb79f981ac37acd2dd2a700458ea
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.3"
+  flutter_secure_storage_platform_interface:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_platform_interface
+      sha256: "64951127f001f546891c86f414972bf49ef2c4c8a4c92c65f5790cc0c9100045"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.1"
+  flutter_secure_storage_web:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_web
+      sha256: "073a62b3aeb866ab4ce795f960413948e51e5a42a9b0c8333b6daf5bb3208a1c"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.1"
+  flutter_secure_storage_windows:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_windows
+      sha256: "3b7c8e068875dfd46719ff57c90d8c459c87f2302ed6b00ff006b3c9fcad1613"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.1.0"
   flutter_staggered_grid_view:
     dependency: transitive
     description:
@@ -940,8 +971,8 @@ packages:
     dependency: "direct overridden"
     description:
       path: "packages/asr_core"
-      ref: "0c5878a856be72c7439f166a3144c0c4c6a998a7"
-      resolved-ref: "0c5878a856be72c7439f166a3144c0c4c6a998a7"
+      ref: "1fce08d74d543f6640bc1c06a223d5f808521b2e"
+      resolved-ref: "1fce08d74d543f6640bc1c06a223d5f808521b2e"
       url: "https://github.com/hajisensai/fushi-subtitles.git"
     source: git
     version: "0.1.0"
@@ -949,8 +980,8 @@ packages:
     dependency: transitive
     description:
       path: "packages/asr_onnx_ffi"
-      ref: "0c5878a856be72c7439f166a3144c0c4c6a998a7"
-      resolved-ref: "0c5878a856be72c7439f166a3144c0c4c6a998a7"
+      ref: "1fce08d74d543f6640bc1c06a223d5f808521b2e"
+      resolved-ref: "1fce08d74d543f6640bc1c06a223d5f808521b2e"
       url: "https://github.com/hajisensai/fushi-subtitles.git"
     source: git
     version: "0.1.0"
@@ -958,11 +989,19 @@ packages:
     dependency: transitive
     description:
       path: "packages/asr_subtitles"
-      ref: "0c5878a856be72c7439f166a3144c0c4c6a998a7"
-      resolved-ref: "0c5878a856be72c7439f166a3144c0c4c6a998a7"
+      ref: "1fce08d74d543f6640bc1c06a223d5f808521b2e"
+      resolved-ref: "1fce08d74d543f6640bc1c06a223d5f808521b2e"
       url: "https://github.com/hajisensai/fushi-subtitles.git"
     source: git
     version: "0.1.0"
+  gal:
+    dependency: transitive
+    description:
+      name: gal
+      sha256: f71e79840fe023a21f2f949771375444b6efcd34b9e625d5f4f5504971380a77
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.3.3"
   gamepads:
     dependency: transitive
     description:
@@ -1452,10 +1491,10 @@ packages:
     dependency: transitive
     description:
       name: material_ui
-      sha256: "27ea1af251a79728ee63068417f2ab469d294931a9bb8366ba8b85b0ef839060"
+      sha256: a30f5d0625b6b83770f53ca3f7aafd6fd9d147cb3853f54a70668541046fe5d6
       url: "https://pub.dev"
     source: hosted
-    version: "1.7.0"
+    version: "1.10.0"
   media_kit:
     dependency: transitive
     description:
@@ -2239,14 +2278,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.5.2"
-  sqlite3_flutter_libs:
-    dependency: transitive
-    description:
-      name: sqlite3_flutter_libs
-      sha256: eeb9e3a45207649076b808f8a5a74d68770d0b7f26ccef6d5f43106eee5375ad
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.5.42"
   sqlparser:
     dependency: transitive
     description:

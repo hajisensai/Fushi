@@ -10,6 +10,7 @@
 #include <bcrypt.h>
 
 #include <algorithm>
+#include <atomic>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -50,6 +51,14 @@ struct ReaderState {
   std::mutex mutex;
   HANDLE mapping = nullptr;
   SharedHeader* header = nullptr;
+  // 反馈 -AynHxzwNe（左键偶发穿透）— 映射寿命锁。WH_MOUSE_LL 回调发布覆盖窗口护盾
+  // 只需要「header 此刻有效」，不需要 [mutex]：护盾请求的写者互斥靠共享内存里 seq 的
+  // write-in-progress CAS。此前回调 try_lock [mutex]，而平台线程持 [mutex] 做 PCM
+  // 拷贝（GrabRecent / GrabClipNear / GrabUtterance）、写查词帧位图、PollText 等
+  // 毫秒级工作——撞上就发布失败、fail-open，这一下左键漏给采样型引擎，表现为「点查词
+  // 窗口任何位置都偶发跳文本」。映射只在 Open / Close 时变，回调改拿共享锁（只在
+  // 正在开 / 关段时才拿不到），header 的赋值与解除映射在这把锁的独占模式下进行。
+  SRWLOCK mapping_lifetime = SRWLOCK_INIT;
   uint32_t pid = 0;
   // ── v14 查词通道游标（与上面同一把锁）───────────────────────────────────────
   // 三个游标都在 Open 时对齐到「现在」而不是 0：会话重开时把注入侧遗留的旧 hit
@@ -353,8 +362,10 @@ void ResetLookupCursorsLocked(ReaderState& st, const SharedHeader* h) {
 // 解除映射、清句柄。调用方持锁。
 void CloseLocked(ReaderState& st) {
   if (st.header != nullptr) {
+    AcquireSRWLockExclusive(&st.mapping_lifetime);
     UnmapViewOfFile(st.header);
     st.header = nullptr;
+    ReleaseSRWLockExclusive(&st.mapping_lifetime);
   }
   if (st.mapping != nullptr) {
     CloseHandle(st.mapping);
@@ -679,6 +690,10 @@ struct LookupPumpState {
   VoiceHookLookupAdmission admission;
   bool admission_digest_pending = false;
   HWND hwnd = nullptr;
+  // 点击唤醒（见 [EnsureLookupWake]）：本会话 pid 对应的命名事件与它的线程池等待。
+  HANDLE wake_event = nullptr;
+  HANDLE wake_wait = nullptr;
+  uint32_t wake_pid = 0;
   bool timer_running = false;
   // 当前 WM_TIMER 的周期。记着它才能在两档节拍间切换时判断"要不要重设"——
   // 同 id 的 SetTimer 会替换既有定时器，但每拍都无脑重设等于永远推迟第一次触发。
@@ -690,6 +705,61 @@ LookupPumpState& Pump() {
   return pump;
 }
 
+// ── 点击唤醒 ──────────────────────────────────────────────────────────────────
+// 定时器之外的第二个泵入口：hook 每发布一次点击（submit hit）就 SetEvent 这个命名
+// 事件（voice_hook_ipc.h 的 LookupWakeEventName），线程池里的等待一醒就往泵窗口投
+// 一条消息，平台线程立刻跑一次 [PumpLookupOnce]——点击不再平均多等半拍、最坏一整拍
+// 16ms。定时器原样保留：输入环、准入、截图确认都还靠它，hook 打不开事件时它也是
+// 唯一的入口，所以唤醒只会让读到点击更早，不会改变任何结果。
+constexpr UINT kLookupWakeMessage = WM_APP + 0x31;
+// 线程池回调只读这个句柄投消息（PostMessage 不阻塞、可跨线程），不碰泵状态。
+std::atomic<HWND> g_lookup_wake_target{nullptr};
+
+void CALLBACK OnLookupWake(PVOID /*context*/, BOOLEAN /*timed_out*/) {
+  const HWND target = g_lookup_wake_target.load(std::memory_order_acquire);
+  if (target != nullptr) PostMessageW(target, kLookupWakeMessage, 0, 0);
+}
+
+void StopLookupWake() {
+  LookupPumpState& pump = Pump();
+  g_lookup_wake_target.store(nullptr, std::memory_order_release);
+  if (pump.wake_wait != nullptr) {
+    // INVALID_HANDLE_VALUE：等在途回调跑完再返回。回调只 PostMessage，不会反过来
+    // 等平台线程，这里阻塞不会死锁。
+    UnregisterWaitEx(pump.wake_wait, INVALID_HANDLE_VALUE);
+    pump.wake_wait = nullptr;
+  }
+  if (pump.wake_event != nullptr) {
+    CloseHandle(pump.wake_event);
+    pump.wake_event = nullptr;
+  }
+  pump.wake_pid = 0;
+}
+
+void EnsureLookupWake(uint32_t pid) {
+  LookupPumpState& pump = Pump();
+  if (pid == 0 || pump.hwnd == nullptr) {
+    StopLookupWake();
+    return;
+  }
+  if (pump.wake_pid == pid && pump.wake_wait != nullptr) return;
+  StopLookupWake();
+  // 自动复位：连点几下只合并成「至少再泵一次」，泵本来就是 latest-wins。
+  pump.wake_event = CreateEventW(
+      nullptr, FALSE, FALSE,
+      fushi_voice_hook::LookupWakeEventName(static_cast<DWORD>(pid)).c_str());
+  if (pump.wake_event == nullptr) return;
+  g_lookup_wake_target.store(pump.hwnd, std::memory_order_release);
+  if (!RegisterWaitForSingleObject(&pump.wake_wait, pump.wake_event,
+                                   OnLookupWake, nullptr, INFINITE,
+                                   WT_EXECUTEINWAITTHREAD)) {
+    pump.wake_wait = nullptr;
+    StopLookupWake();
+    return;
+  }
+  pump.wake_pid = pid;
+}
+
 void StopLookupPump() {
   LookupPumpState& pump = Pump();
   if (pump.hwnd != nullptr && pump.timer_running) {
@@ -697,6 +767,7 @@ void StopLookupPump() {
   }
   pump.timer_running = false;
   pump.timer_interval_ms = 0;
+  StopLookupWake();
 }
 
 flutter::EncodableValue LookupErrorMap(VoiceHookLookupError error) {
@@ -768,6 +839,10 @@ flutter::EncodableValue LookupHitMap(const VoiceHookLookupHit& hit) {
        flutter::EncodableValue(hit.client_w)},
       {flutter::EncodableValue("clientH"),
        flutter::EncodableValue(hit.client_h)},
+      {flutter::EncodableValue("publishQpcUs"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.publish_qpc_us))},
+      {flutter::EncodableValue("dispatchQpcUs"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.dispatch_qpc_us))},
       {flutter::EncodableValue("submit"), flutter::EncodableValue(hit.submit)},
   });
 }
@@ -872,6 +947,7 @@ void PumpLookupOnce() {
     // 查词开始之前就知道。量不到就留 0，host 退回画布口径（保守但不越界）。
     fushi::game_client_extent::QueryGameClientExtent(
         reader.CurrentPid(), &hit.client_w, &hit.client_h);
+    hit.dispatch_qpc_us = fushi_voice_hook::QpcMicrosNow();
     pump.channel->InvokeMethod(
         "onGalLookupHit",
         std::make_unique<flutter::EncodableValue>(LookupHitMap(hit)));
@@ -894,6 +970,14 @@ LRESULT CALLBACK LookupPumpProc(HWND hwnd, UINT message, WPARAM wparam,
                                 LPARAM lparam) {
   if (message == WM_TIMER && wparam == kLookupPumpTimerId) {
     PumpLookupOnce();
+    return 0;
+  }
+  if (message == kLookupWakeMessage) {
+    // 只在跟手节拍下响应：查词没开时泵只报准入，点击本来就不该被消费。
+    const LookupPumpState& pump = Pump();
+    if (pump.timer_running && pump.timer_interval_ms == kLookupPumpIntervalMs) {
+      PumpLookupOnce();
+    }
     return 0;
   }
   return DefWindowProcW(hwnd, message, wparam, lparam);
@@ -954,6 +1038,7 @@ void SyncLookupPump() {
       reader.PeekLookupGate(true) == VoiceHookLookupError::kNone
           ? kLookupPumpIntervalMs
           : kLookupAdmissionPumpIntervalMs);
+  EnsureLookupWake(reader.CurrentPid());
 }
 
 int64_t ReadLookupInt(const flutter::MethodCall<flutter::EncodableValue>& call,
@@ -1373,7 +1458,9 @@ VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
     return out;
   }
   st.mapping = mapping;
+  AcquireSRWLockExclusive(&st.mapping_lifetime);
   st.header = header;
+  ReleaseSRWLockExclusive(&st.mapping_lifetime);
   st.pid = pid;
   // v14：查词游标对齐到「现在」。不这么做，会话重开时注入侧遗留的旧 hit 会被当成
   // 新命中重放，用户会看到一张莫名其妙的卡片弹出来。
@@ -1797,8 +1884,9 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
   }
 
   // 拼接选定源在 [下界, ts+forward_ms] 的段；静音判据用该源峰值能量的 8%。
+  // 无下一句时前向上限是 kUtteranceMaxForwardMs（旧值 6000 会把长句截在 6 秒）。
   //
-  // BUG-1475：forward_ms 缺省仍是 6000（旧行为逐字等价）。调用方给出 end_ts_ms
+  // BUG-1475：调用方给出 end_ts_ms
   // （下一句的时间戳）时收窄到那里——封口 grab 要拿回已进环、时间戳**严格早于**
   // 下一句的那点尾巴，同时保住 BUG-1109「不把下一句的段拼进上一句」的不变量。
   //
@@ -1807,14 +1895,8 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
   // 缓冲，实测比文本 hook 早 219ms 灌进 1500ms 音频），固定 200ms 回看会把整句的开头
   // 整块丢掉。判据见 voice_hook_utterance_window.h：只对「明显快于实时写入」的段回退，
   // 实时写入的混音 / BGM 源逐字节维持旧行为。
-  int64_t forward_ms = 6000;
-  if (end_ts_ms != 0 && end_ts_ms > ts_ms) {
-    forward_ms = std::min<int64_t>(
-        forward_ms, static_cast<int64_t>(end_ts_ms - ts_ms));
-  } else if (end_ts_ms != 0) {
-    // 下一句时间戳不晚于本句：拿不到任何合法的前向窗口，退化为只取本句时刻附近。
-    forward_ms = 0;
-  }
+  const int64_t forward_ms = fushi_voice_hook::UtteranceForwardMs(
+      static_cast<int64_t>(ts_ms), static_cast<int64_t>(end_ts_ms));
   // 选定源的段（按提交顺序）喂给下界推算：valid 本身就是 seq 升序。
   std::vector<fushi_voice_hook::UtteranceClipTiming> timings;
   timings.reserve(valid.size());
@@ -2317,12 +2399,34 @@ uint32_t VoiceHookReader::PublishLookupShieldTransaction(
       transaction_id, active_buttons, allow_risk);
 }
 
+namespace {
+// 映射寿命锁的共享端（见 ReaderState::mapping_lifetime）。只在 Open / Close 正在
+// 进行时拿不到；拿到期间 st.header 不会被解除映射。
+class MappingLifetimeShared {
+ public:
+  explicit MappingLifetimeShared(ReaderState& st)
+      : lock_(&st.mapping_lifetime),
+        owned_(TryAcquireSRWLockShared(lock_) != FALSE) {}
+  ~MappingLifetimeShared() {
+    if (owned_) ReleaseSRWLockShared(lock_);
+  }
+  MappingLifetimeShared(const MappingLifetimeShared&) = delete;
+  MappingLifetimeShared& operator=(const MappingLifetimeShared&) = delete;
+  bool owned() const { return owned_; }
+
+ private:
+  SRWLOCK* lock_;
+  bool owned_;
+};
+}  // namespace
+
 uint32_t VoiceHookReader::TryPublishOverlayClickShieldTransaction(
     HWND game, uint64_t transaction_id, bool down) {
   if (game == nullptr || transaction_id == 0) return 0;
   ReaderState& st = State();
-  std::unique_lock<std::mutex> lock(st.mutex, std::try_to_lock);
-  if (!lock.owns_lock() ||
+  // 不拿 [mutex]：见 ReaderState::mapping_lifetime（左键偶发穿透的根因）。
+  MappingLifetimeShared mapping(st);
+  if (!mapping.owned() ||
       LookupGateLocked(st.header, false) != VoiceHookLookupError::kNone) {
     return 0;
   }
@@ -2340,8 +2444,8 @@ bool VoiceHookReader::OverlayClickShieldTransactionOrphaned(
     HWND game, uint64_t transaction_id) {
   if (game == nullptr || transaction_id == 0) return true;
   ReaderState& st = State();
-  std::unique_lock<std::mutex> lock(st.mutex, std::try_to_lock);
-  if (!lock.owns_lock()) return false;
+  MappingLifetimeShared mapping(st);
+  if (!mapping.owned()) return false;
   if (LookupGateLocked(st.header, false) != VoiceHookLookupError::kNone) {
     return true;
   }
@@ -2574,6 +2678,7 @@ bool VoiceHookReader::PollLookupHit(VoiceHookLookupHit* out) {
     hit.view_w = slot->view_w;
     hit.view_h = slot->view_h;
     hit.submit = (slot->flags & fushi_voice_hook::kLookupHitFlagSubmit) != 0;
+    hit.publish_qpc_us = slot->publish_qpc_us;
     const uint32_t line_bytes = slot->line_bytes;
     if (line_bytes == 0 || line_bytes > fushi_voice_hook::kLookupLineBytes) {
       continue;

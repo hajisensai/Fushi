@@ -36,7 +36,7 @@ void main() {
     for (final String base in <String>[
       'video/E01',
       'video/fresh',
-      'video/E01 (2)'
+      'video/E01 (2)',
     ]) {
       expect(
         coreUniqueVideoBookUid(base, taken),

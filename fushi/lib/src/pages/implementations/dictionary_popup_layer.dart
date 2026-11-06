@@ -4,8 +4,17 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/foundation.dart' show ValueListenable, listEquals;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/media/video/underlay_composition.dart'
+    show UnderlayInputRegion;
+import 'package:fushi/src/lookup/effective_lookup_size.dart'
+    show
+        kLookupPopupDefaultHeight,
+        kLookupPopupDefaultWidth,
+        kLookupPopupMinHeight,
+        kLookupPopupMinWidth;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
@@ -17,8 +26,19 @@ import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
     show dispatchClaimedMouseAction;
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/lookup/swipe_dismiss_wrapper.dart';
+import 'package:fushi/src/utils/misc/swipe_dismiss_threshold.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 // BUG-2953：根 Overlay 查词浮层的自带导航层；宿主经本文件取用，故此处 re-export。
 export 'package:fushi/src/lookup/lookup_overlay_navigator.dart'
@@ -32,10 +52,10 @@ Rect calcPopupPosition({
   required Rect selectionRect,
   required Size screen,
   double padding = 6.0,
-  double maxWidth = 360.0,
-  // 默认与单一真相源（preferences_repository.defaultPopupMaxHeight=360）对齐；
-  // 两个真实调用方都显式传 appModel.popupMaxHeight，此默认仅兜底/测试用。
-  double maxHeight = 360.0,
+  double maxWidth = kLookupPopupDefaultWidth,
+  // 默认与单一真相源（kLookupPopupDefaultWidth/Height）对齐；两个真实调用方都显式
+  // 传 appModel.popupMaxWidth/Height，此默认仅兜底/测试用。
+  double maxHeight = kLookupPopupDefaultHeight,
   double bottomReserve = 0.0,
   double topReserve = 0.0,
 
@@ -264,6 +284,76 @@ Rect resolvePopupRect({
   );
 }
 
+/// BUG-3604：在「优先避让的大矩形」[preferred] 与「被点字形」[fallback] 之间选弹窗锚点。
+///
+/// 漫画把弹窗锚到整句 OCR 分组的并集矩形（[preferred]），为的是让弹窗落在气泡外、
+/// 不压住正在读的那句话。可分组矩形可以大到占满（放大后甚至超出）整屏：OCR 把一整张
+/// 资料表 / 一大段旁白并成一句时，并集上下（竖排是左右）都没有空间。
+/// [calcPopupPosition] 的「绝不覆盖选区」（BUG-098）此时只能把弹窗压到所剩空间——空间
+/// 为负就被压成 0 高 / 0 宽的一条，用户看到的是弹窗「跑到屏幕外」、只剩边角的拖拽把手。
+///
+/// 判据：按 [preferred] 摆出的弹窗被压到低于最小可用尺寸（[minPopupHeight] /
+/// [minPopupWidth]，各自再不超过当前最大尺寸与屏幕可用空间）即视为避让失败，改锚到
+/// [fallback]（被点的那个字）——字形矩形很小，四周总有空间，弹窗完整落在屏内、只是
+/// 可能盖住同一气泡里的其它字。避让成功时原样返回 [preferred]，既有行为不变。
+/// 底部固定模式忽略选区，不需要选。
+///
+/// 最小可用尺寸默认就是弹窗系统自己的下限（[kLookupPopupMinWidth] /
+/// [kLookupPopupMinHeight]，宿主再乘界面大小）：内容自适应收高、拖拽把手与设置滑杆都
+/// 不会让弹窗小于它。反馈 9VPd0p5d0V 的未放大截图里，资料表并集上方只剩约 130 高，
+/// 旧阈值 120 判它「放得下」，弹窗被推到屏顶、只露出顶栏和词头、离被点的词半屏远
+/// ——比弹窗系统自己允许的最小尺寸还小的结果不能算避让成功。
+Rect choosePopupAnchorRect({
+  required Rect preferred,
+  required Rect? fallback,
+  required Size screen,
+  required bool bottomDocked,
+  required double maxWidth,
+  required double maxHeight,
+  double padding = 6.0,
+  double bottomReserve = 0.0,
+  double topReserve = 0.0,
+  bool verticalWriting = false,
+  double minPopupWidth = kLookupPopupMinWidth,
+  double minPopupHeight = kLookupPopupMinHeight,
+}) {
+  if (fallback == null || bottomDocked || fallback == preferred) {
+    return preferred;
+  }
+  final Rect placed = resolvePopupRect(
+    selectionRect: preferred,
+    screen: screen,
+    bottomDocked: false,
+    maxWidth: maxWidth,
+    maxHeight: maxHeight,
+    padding: padding,
+    bottomReserve: bottomReserve,
+    topReserve: topReserve,
+    verticalWriting: verticalWriting,
+  );
+  // 「放得下」的上限：屏幕本身（减边距与预留）或用户最大尺寸比最小阈值还小时，以它们
+  // 为准，免得小屏 / 小尺寸设置下把正常结果误判成避让失败。
+  final double horizontalInset = padding.clamp(0, screen.width / 2);
+  final double usableWidth = math.max(0, screen.width - horizontalInset * 2);
+  final double usableHeight = math.max(
+    0,
+    screen.height - bottomReserve - topReserve - padding * 2,
+  );
+  final double widthFloor = math.min(
+    minPopupWidth,
+    math.min(maxWidth, usableWidth),
+  );
+  final double heightFloor = math.min(
+    minPopupHeight,
+    math.min(maxHeight, usableHeight),
+  );
+  const double epsilon = 0.5;
+  final bool squeezed =
+      placed.width + epsilon < widthFloor ||
+      placed.height + epsilon < heightFloor;
+  return squeezed ? fallback : preferred;
+}
+
 /// BUG-1651：根据 WebView 内容高度与当前视口高度的差值，求下一帧弹窗总高度。
 ///
 /// `currentPopupHeight` 是包含 Flutter 顶栏/header 的外壳高度；JS 上报的两个值只属于
@@ -347,6 +437,55 @@ Rect anchorPopupTopLeft({
   return Rect.fromLTWH(left, top, width, height);
 }
 
+/// BUG-3685：所在路由「是否栈顶」变化的探针。
+///
+/// 查词浮层挂在根 Overlay、跨路由生存（[DictionaryPageMixin.lookupOwnerRoute]），它
+/// 读路由栈顶状态的那一刻只在自己 build 时；而别的路由压上来 / 退下去时没有任何东西
+/// 让那个 entry 重建。把本探针放进宿主路由的子树：它经 `ModalRoute.isCurrentOf`
+/// 订阅路由作用域，栈顶状态一变 [onChanged] 就被调用，宿主据此刷新浮层 entry。
+///
+/// [onChanged] 在依赖变化的 build 阶段触发，宿主须把实际刷新排到帧后（与浮层同步的
+/// 既有 post-frame 收口一致），不能在回调里同步 setState。[child] 原样透传、不重建。
+class LookupOwnerRouteProbe extends StatefulWidget {
+  const LookupOwnerRouteProbe({
+    required this.onChanged,
+    required this.child,
+    super.key,
+  });
+
+  final VoidCallback onChanged;
+  final Widget child;
+
+  @override
+  State<LookupOwnerRouteProbe> createState() => _LookupOwnerRouteProbeState();
+}
+
+class _LookupOwnerRouteProbeState extends State<LookupOwnerRouteProbe> {
+  bool? _wasCurrent;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bool? isCurrent = ModalRoute.isCurrentOf(context);
+    if (isCurrent == _wasCurrent) return;
+    final bool firstReport = _wasCurrent == null;
+    _wasCurrent = isCurrent;
+    if (!firstReport) widget.onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
+/// 反馈 vXYKPudf7U：查词浮层空态标题。知道查的是哪个词就写进去（「没有找到「BEENSO」的
+/// 结果」一眼暴露取词出错），查询词为空（纯符号被清洗掉）退回通用文案。
+String dictionaryPopupNoResultsMessage(String? searchTerm) {
+  final String term = searchTerm?.trim() ?? '';
+  return term.isEmpty
+      ? t.no_search_results
+      : t.dictionary_popup_no_results_term(term: term);
+}
+
 /// 查词浮层的整屏 dismiss barrier（点浮层外面关栈）这一帧要不要挂。
 ///
 /// 三个走**根 Overlay** 的表面（视频页 / 首页词典页 / texthooker）各写一份这条件，
@@ -392,6 +531,88 @@ bool shouldShowLookupDismissBarrier({
 Widget lookupOverlayHitClaim({required Widget child}) =>
     Listener(behavior: HitTestBehavior.opaque, child: child);
 
+/// P1-A（2026-10-20）：把**一层**查词弹窗直接绑到 [controller] 上——controller 一
+/// notify，这一层就地重建，不必等宿主整页 `setState`。
+///
+/// 为什么需要它：视频页 / 首页词典 / texthooker 等 mixin 宿主把弹窗栈挂在**根
+/// Overlay** 的 entry 里，旧链路是「结果到达 → 宿主整页 setState → 宿主 build 尾部
+/// post-frame 回调 `markNeedsBuild` 根 Overlay entry → 下一帧才推结果」：每次查词先白
+/// 重建一遍整个视频页，结果还晚一帧。阅读器（`BaseSourcePageState.buildDictionary`）
+/// 早就用 `AnimatedBuilder` 监听 controller；这里给 mixin 家族同一个订阅点，而且做在
+/// mixin 内部——宿主一行都不用改。
+///
+/// 只认「[entry] 仍在栈内」时的通知：被裁掉 / 清栈的那一层**保持上一次的子树**，
+/// 交给宿主下一次重建把它摘掉或把它的 WebView 键搬进停驻层（BUG-2039 ③ 靠同一把
+/// GlobalKey 搬家保温）。若这里抢先改画别的东西，WebView element 会在宿主重建前被销毁，
+/// 停驻 realm 就退化成冷建。条目在栈里的下标在其存活期内不变（栈只从尾部裁、从尾部压），
+/// 所以 [builder] 捕获的下标始终有效。
+///
+/// 自身是 [StatefulWidget]，夹在 [Stack] 与 [builder] 返回的 [Positioned] 之间合法
+/// （ParentDataWidget 只要求中间没有 RenderObjectWidget）。BUG-941 的 entry 身份 key
+/// 挂在它身上（它才是 Stack 的直接子项）。
+class DictionaryPopupEntryBinding extends StatefulWidget {
+  const DictionaryPopupEntryBinding({
+    super.key,
+    required this.controller,
+    required this.entry,
+    required this.builder,
+  });
+
+  final DictionaryPopupController controller;
+  final DictionaryPopupEntry entry;
+
+  /// 产出这一层（[Positioned]）的构造器；每次 controller 变化（[entry] 仍在栈内）
+  /// 与宿主重建时调用，读的是 controller / entry 的当前状态。
+  final Widget Function() builder;
+
+  @override
+  State<DictionaryPopupEntryBinding> createState() =>
+      _DictionaryPopupEntryBindingState();
+}
+
+class _DictionaryPopupEntryBindingState
+    extends State<DictionaryPopupEntryBinding> {
+  Widget? _lastBuilt;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onControllerChanged);
+  }
+
+  @override
+  void didUpdateWidget(DictionaryPopupEntryBinding oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller.removeListener(_onControllerChanged);
+      widget.controller.addListener(_onControllerChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onControllerChanged);
+    super.dispose();
+  }
+
+  void _onControllerChanged() {
+    if (!mounted) return;
+    if (!widget.controller.entries.contains(widget.entry)) return;
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 宿主重建时本层若已离栈（同一帧里先 notify 后重建的窗口），沿用上一次的子树，
+    // 理由见类注释；宿主这一轮重建本来就不会再带上它。
+    if (_lastBuilt != null &&
+        !widget.controller.entries.contains(widget.entry)) {
+      return _lastBuilt!;
+    }
+    return _lastBuilt = widget.builder();
+  }
+}
+
 /// 把一个弹窗层 [child] 按 [pos] 摆放；隐藏层（[visible]=false，即 BUG-094 常驻热槽 /
 /// TODO-058 挂起冷层）停到屏幕右外侧 `(screen.width + 8, 0)` 继续预热。
 ///
@@ -402,6 +623,10 @@ Widget lookupOverlayHitClaim({required Widget child}) =>
 /// base_source_page._buildPopupLayer 与 dictionary_page_mixin.buildNestedPopupLayer
 /// 此前各写一份此 parking + Visibility 几何（BUG-135 的 `parked ? width+8` 改一处忘另
 /// 一处即漂移），收口于此；两宿主各自的 [DictionaryPopupLayer] 回调差异留在各自方法。
+///
+/// [onEntranceSettled]：本层入场淡入是否已走完、在屏上满不透明（隐藏即回 false）。
+/// 宿主据此把本层记进更下层的 [occluders]——见 [DictionaryPopupEntry.entranceSettled]。
+/// 回调一律在帧末（post-frame）发出，宿主可直接 setState。
 Widget parkedPopupLayer({
   Key? key,
   required Rect pos,
@@ -410,6 +635,7 @@ Widget parkedPopupLayer({
   required Widget child,
   double entranceStartProgress = 0.0,
   List<Rect> occluders = const <Rect>[],
+  ValueChanged<bool>? onEntranceSettled,
 }) {
   return Positioned(
     key: key,
@@ -431,6 +657,7 @@ Widget parkedPopupLayer({
         child: _PopupEntranceFade(
           visible: visible,
           startProgress: entranceStartProgress,
+          onSettledChanged: onEntranceSettled,
           child: visible && occluders.isNotEmpty
               ? PopupOccluderClip(
                   layerRect: pos,
@@ -567,7 +794,13 @@ Widget parkedRealmPopupLayer({
       isDark: isDark,
       overrideFillColor: overrideFillColor,
       onDismiss: () {},
-      onTextSelected: (String text, Rect localRect) {},
+      onTextSelected:
+          (
+            String text,
+            Rect localRect,
+            List<FushiRubySpan> rubySpans,
+            String contextSentence,
+          ) {},
       onLinkClick: (String query, Rect localRect) {},
       onMineEntry: (Map<String, String> fields) async =>
           const MinePopupResult(),
@@ -654,8 +887,7 @@ Widget popupEntranceFade({required Widget child}) =>
 /// `transition:opacity 200ms ease-out` + 双 gate 翻 `opacity 0→1` 做平滑淡入；app 内
 /// 各表面（阅读器 / 视频 / 首页 / 安卓独立窗）此前经 [parkedPopupLayer] 的 [Visibility]
 /// **硬切**出现，观感生硬且冷路径显得慢。此包装器把「隐藏→可见」补成
-/// [_kSlideDuration] / easeOut 淡入，与 app 外及本层既有的 swipe 滑出淡出（同一常量 /
-/// 曲线）三处统一。
+/// [_kSlideDuration] / easeOut 淡入，与 app 外覆盖窗的淡入同时长 / 曲线。
 ///
 /// 关键：[ImplicitlyAnimatedWidget] 首帧取目标值不补间，故不能只写
 /// `AnimatedOpacity(opacity: visible ? 1 : 0)`——首次挂载即 `visible:true` 的
@@ -667,10 +899,14 @@ class _PopupEntranceFade extends StatefulWidget {
     required this.visible,
     required this.child,
     this.startProgress = 0.0,
+    this.onSettledChanged,
   });
 
   final bool visible;
   final Widget child;
+
+  /// 「本层满不透明在屏上」翻转时回报（见 [parkedPopupLayer] 的 onEntranceSettled）。
+  final ValueChanged<bool>? onSettledChanged;
 
   /// 进入可见态时从这个进度（0..1，见 [popupEntranceProgressAfter]）开始淡入。
   final double startProgress;
@@ -687,15 +923,42 @@ class _PopupEntranceFadeState extends State<_PopupEntranceFade>
   late final AnimationController _progress;
   late final Animation<double> _opacity;
 
+  /// 最近一次 build 是否墨水屏（淡入归零 = 一可见即满不透明）。
+  bool _eink = false;
+
+  /// 已回报给 [_PopupEntranceFade.onSettledChanged] 的值；null = 还没回报过。
+  bool? _reportedSettled;
+  bool _settledReportScheduled = false;
+
   @override
   void initState() {
     super.initState();
-    _progress = AnimationController(vsync: this, duration: _kSlideDuration);
+    _progress = AnimationController(vsync: this, duration: _kSlideDuration)
+      ..addStatusListener((AnimationStatus _) => _scheduleSettledReport());
     _opacity = CurvedAnimation(
       parent: _progress,
       curve: FushiSpringCurve.effects,
     );
     if (widget.visible) _enterVisible();
+    _scheduleSettledReport();
+  }
+
+  /// 本层此刻是否满不透明地画在屏上。
+  bool get _settled => widget.visible && (_eink || _progress.isCompleted);
+
+  /// 把 [_settled] 的翻转回报给宿主。状态可能在 build 期间变（didUpdateWidget 里复位
+  /// 进度、首帧即满进度），那时宿主不能 setState，所以统一挪到本帧帧末发出。
+  void _scheduleSettledReport() {
+    if (widget.onSettledChanged == null || _settledReportScheduled) return;
+    _settledReportScheduled = true;
+    SchedulerBinding.instance.addPostFrameCallback((Duration _) {
+      _settledReportScheduled = false;
+      if (!mounted) return;
+      final bool settled = _settled;
+      if (settled == _reportedSettled) return;
+      _reportedSettled = settled;
+      widget.onSettledChanged?.call(settled);
+    });
   }
 
   @override
@@ -706,6 +969,7 @@ class _PopupEntranceFadeState extends State<_PopupEntranceFade>
     } else if (!widget.visible && oldWidget.visible) {
       _progress.value = 0.0; // 隐藏即复位，避免下次瞬间满不透明。
     }
+    _scheduleSettledReport();
   }
 
   /// 从 [_PopupEntranceFade.startProgress] 接着往 1 走；首个可见帧就是这个进度，
@@ -724,12 +988,17 @@ class _PopupEntranceFadeState extends State<_PopupEntranceFade>
 
   @override
   Widget build(BuildContext context) {
+    final bool eink = isEinkTheme(context);
+    if (eink != _eink) {
+      _eink = eink;
+      _scheduleSettledReport();
+    }
     return FadeTransition(
       // 墨水屏模式：淡入归零为瞬时显示——慢刷新屏上 0→1 补间是一段灰阶残影，
       // 且弹窗「先出壳后出内容」的观感在 e-ink 上尤其糟。
       opacity: !widget.visible
           ? kAlwaysDismissedAnimation
-          : (isEinkTheme(context) ? kAlwaysCompleteAnimation : _opacity),
+          : (eink ? kAlwaysCompleteAnimation : _opacity),
       child: widget.child,
     );
   }
@@ -883,6 +1152,8 @@ BoxConstraints dictionaryPopupTopActionConstraints() {
 /// A−/A+ / Ctrl+滚轮改的就是词典字号），夹到 [0.8, 1.5]：再小点不中，再大顶栏会吃掉
 /// 正文高度。弹窗处在界面缩放中和器之下（净缩放 1），界面大小只能由这里乘进来——此前
 /// 只有阅读器 header 自己乘了界面大小，左右两簇没乘，于是中间的收藏按钮与两侧大小不一。
+/// 反馈 2jGkpD-iD6：[appUiScale] 传的是弹窗生效缩放 `AppModel.popupUiScale`（界面大小 ×
+/// 弹窗缩放系数），与正文 zoom 同源。
 double dictionaryPopupTopBarScale({
   required double appUiScale,
   required double dictionaryFontSize,
@@ -1061,6 +1332,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onQueueOverwrite,
     this.onOpenInAnki,
     this.onUpdateEntry,
+    this.isSessionOnScreen,
     this.onFavoriteEntry,
     this.onFavoriteCheck,
     this.onAppendSentence,
@@ -1084,6 +1356,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.overlayWidget,
     this.isDark = false,
     this.overrideFillColor,
+    this.coverFillColor,
     this.showBorder = true,
     this.bottomDocked = false,
     this.webViewOverflowHeight = 0,
@@ -1120,8 +1393,9 @@ class DictionaryPopupLayer extends StatelessWidget {
   final bool keepWebViewWarm;
 
   /// 顶栏是否给出「制卡目标」按钮（[DictionaryPopupMiningTargetButton]：切配置 /
-  /// 牌组）。只有真能制卡的宿主（制卡模块开着）才开；默认关，app 外覆盖窗、停驻
-  /// 热槽等不制卡的层不出现，也不去碰 Anki / 配置 provider。
+  /// 牌组）。只有真能制卡的宿主（制卡模块开着）才开：in-app 三车道与应用外独立查词窗
+  /// （`popup_dictionary_page.dart`，Anki 设置迁 Drift 后跨进程一致，fiwDIpFep7）。
+  /// 默认关，停驻热槽等不制卡的层不出现，也不去碰 Anki / 配置 provider。
   final bool showMiningTargetSwitch;
 
   /// TODO-869：本层弹窗是否有子（后代）弹窗。透传给 [DictionaryPopupWebView] 注入
@@ -1130,7 +1404,7 @@ class DictionaryPopupLayer extends StatelessWidget {
   final bool hasChildPopup;
   final GlobalKey<DictionaryPopupWebViewState> webViewKey;
   final VoidCallback onDismiss;
-  final void Function(String text, Rect localRect) onTextSelected;
+  final DictionaryTextSelected onTextSelected;
   final void Function(String query, Rect localRect) onLinkClick;
 
   /// 制卡（「+」按钮）回调。**可空**：宿主没有制卡能力（或「制卡」功能模块被关掉）
@@ -1152,6 +1426,12 @@ class DictionaryPopupLayer extends StatelessWidget {
   )?
   onUpdateEntry;
 
+  /// BUG-3652 续：这一层此刻是否仍在屏上（宿主模型真值，通常是
+  /// `controller.isEntryOnScreen(entry)`）。透传给 [DictionaryPopupWebView]：制卡失败
+  /// 回包回来时弹窗已不在，原因就改由宿主 toast，而不是交给一个没人看的弹窗。null =
+  /// 挂载期间一直在屏上。
+  final bool Function()? isSessionOnScreen;
+
   /// 查重（词条渲染时问 Anki「这张卡已经有了吗」）。**可空**：与 [onMineEntry] 同
   /// 进同退——制卡不可用时传 null，弹窗既不画 ✓ 也不发查重探测。
   final Future<bool> Function(String expression, String reading)?
@@ -1165,7 +1445,13 @@ class DictionaryPopupLayer extends StatelessWidget {
 
   /// TODO-1007/1008：点 ✓（卡已存在）弹操作选择（覆写/新增重复卡/查看·在 Anki 中打开），
   /// 命中多张让用户选。透传给 [DictionaryPopupWebView]。null 时回退旧两态行为。
-  final Future<MinePopupResult> Function(Map<String, String> fields)?
+  ///
+  /// `openChooser`：用户用的是「管理」手势（右键 / 长按 ✓），宿主必须弹选择单；单击时
+  /// 为 false，「允许重复」开着就直接新增（`ankiMinedTapMinesNewDirectly`）。
+  final Future<MinePopupResult> Function(
+    Map<String, String> fields, {
+    bool openChooser,
+  })?
   onMinedCardAction;
 
   /// BUG-3492：卡还在后台写入时的覆盖请求（排队、落地后自动覆盖），透传给
@@ -1226,6 +1512,11 @@ class DictionaryPopupLayer extends StatelessWidget {
   final Widget? overlayWidget;
   final bool isDark;
   final Color? overrideFillColor;
+
+  /// 搜索中 / 真实空结果盖板的底色；缺省按 [overrideFillColor] 推导。面板本身透明
+  /// 的宿主（app 外查词窗基础层，卡片底色由外层画）必须显式给一个不透明色：盖板
+  /// 透明 = 没盖住热槽 WebView，popup.js 自己画的「未找到」会和 Flutter 占位叠成两份。
+  final Color? coverFillColor;
   final bool showBorder;
   final bool swipeDismissible;
 
@@ -1354,9 +1645,11 @@ class DictionaryPopupLayer extends StatelessWidget {
     // secondarySystemGroupedBackground 材质色）。搜索中 / 空结果的不透明盖板要与
     // 玻璃同色系，否则深色下是一块纯黑（systemGroupedBackground）压在 #1C1C1E
     // 玻璃上，切换时闪一下。MD3 不变。
-    final Color coverColor = overrideFillColor == null && isGlassDesign(context)
-        ? appleColorsOf(context).secondaryGroupedBackground
-        : fillColor;
+    final Color coverColor =
+        coverFillColor ??
+        (overrideFillColor == null && isGlassDesign(context)
+            ? appleColorsOf(context).secondaryGroupedBackground
+            : fillColor);
 
     final Widget? topBar = _buildTopBar(context);
     final Widget body = _buildContent(context, coverColor);
@@ -1421,11 +1714,11 @@ class DictionaryPopupLayer extends StatelessWidget {
     // 可滑区自然恢复到整窗（含顶栏 + 正文外余白），与 805 前体验一致。受
     // [enableSwipeToClose] 门控（关时只 onTap 如旧）；阈值/灵敏度与顶栏 wrapper、716
     // barrier 同源（[swipeDismissThreshold] + [dismissSwipeSensitivity]）。双向水平
-    // （左右皆可，对齐手机 `_dragX.abs()`）。顶栏原 wrapper 保留（冗余但无害）。
+    // （左右皆可）。顶栏原 wrapper 保留（冗余但无害）。
     //
     // 仅有顶栏的层让本吸收层兼管「弹窗本体横拖关」（[bodySwipe]=true）；无顶栏的层
-    // （popup_dictionary_page 嵌套返回层）仍交给下方整窗 [SwipeDismissWrapper]（保留其
-    // 横滑动画反馈），本层只 onTap 吸收命中，避免两条路径同时触发 [onDismiss] 双关。
+    // （popup_dictionary_page 嵌套返回层）仍交给下方整窗 [SwipeDismissWrapper]，本层只
+    // onTap 吸收命中，避免两条路径同时触发 [onDismiss] 双关。
     // BUG-2770：正文检测器本身只认触摸类指针，门控跟触摸开关走——此前跟鼠标开关
     // （[_swipeActive]）一起关，Windows/Linux 默认触屏也滑不关，属误伤。
     final bool bodySwipe = _touchSwipeActive && topBar != null;
@@ -1437,8 +1730,12 @@ class DictionaryPopupLayer extends StatelessWidget {
 
     final Widget shell = topBar != null ? content : _wrapSwipeDismiss(content);
 
-    return _maybeWrapHostKeyInput(
-      _maybeWrapHostPointerInput(_maybeWrapResizeGrip(shell)),
+    // 底层合成的网页档（视频站点）里查词框画在 WebView2 子窗口上面：登记成输入区，
+    // 否则点击全落进网页（underlay_composition.dart）。
+    return UnderlayInputRegion(
+      child: _maybeWrapHostKeyInput(
+        _maybeWrapHostPointerInput(_maybeWrapResizeGrip(shell)),
+      ),
     );
   }
 
@@ -1902,6 +2199,7 @@ class DictionaryPopupLayer extends StatelessWidget {
               onLinkClick: onLinkClick,
               onMineEntry: onMineEntry,
               onUpdateEntry: onUpdateEntry,
+              isSessionOnScreen: isSessionOnScreen,
               onDuplicateCheck: onDuplicateCheck,
               onOverwriteTargetNoteId: onOverwriteTargetNoteId,
               onMinedCardAction: onMinedCardAction,
@@ -1971,11 +2269,13 @@ class DictionaryPopupLayer extends StatelessWidget {
     // （[FushiPlaceholderMessage] 同一实现，带弹入动效）。宿主把空结果层收成
     // `kLookupPopupEmptyHeight`（见 DictionaryPopupEntry.layoutAutoFitHeight），不再
     // 是一整块最大高度的空面板。
+    // 反馈 vXYKPudf7U：空态写明查的是哪个词——取词结果和读者以为点中的词对不上
+    // （漫画 OCR 粘词、点到词中间）时，一眼能看出问题在取词而不在词典。
     return Center(
       child: SingleChildScrollView(
         child: FushiPlaceholderMessage(
           icon: FushiIcons.searchOff,
-          message: t.no_search_results,
+          message: dictionaryPopupNoResultsMessage(result?.searchTerm),
           detail: t.settings_search_empty_hint,
         ),
       ),
@@ -2006,25 +2306,17 @@ class DictionaryPopupLayer extends StatelessWidget {
 /// BUG-1242：这里不能再注册 Flutter `HorizontalDragGestureRecognizer`。Windows
 /// `CustomPlatformView` 的触摸通过 raw pointer 注入 WebView2；父层横拖识别器一旦把稍带
 /// 横向抖动的纵向滚动赢进 gesture arena，平台视图会收到 cancel，表现就是查词结果滑好几次
-/// 才偶尔响应。改用不参与竞技场的 raw [Listener] 旁路观察触摸轨迹：只有明确横向主导后
-/// 才更新退场动画，纵向轨迹永不取消 WebView 的原生滚动。
+/// 才偶尔响应。改用不参与竞技场的 raw [Listener] 旁路观察触摸轨迹：只有明确横向主导才算
+/// 滑关候选，纵向轨迹永不取消 WebView 的原生滚动。
 ///
-/// 当 [enableSwipeToClose] 为真时，明确横向触摸拖动
-/// 期间 [Transform.translate] 实时跟手（[_dragX]）+ 随位移淡出；松手时按累计 dx 是否过
+/// 当 [enableSwipeToClose] 为真时，明确横向的触摸拖动在**抬手**时按累计 dx 是否过
 /// [swipeDismissThreshold]（灵敏度取 [dismissSwipeSensitivity]，与顶栏 wrapper / 716
-/// barrier 同源）分流——
-///   * 过阈值：用 [AnimationController] 从当前 [_dragX] 朝拖动方向补间滑出屏外
-///     （位移 = 卡片宽 + [_kSlideOutMargin]）+ 淡出，[_kSlideDuration] / easeOut，
-///     **动画完成回调里**才调 [onDismiss]（关一层）——宿主在弹窗已滑出不可见之后才移除，
-///     用户看到顺滑滑走而非瞬时消失。
-///   * 未过阈值：补间弹回原位（spring-back）。
-/// 双向水平（[_dragX].abs()，对齐手机）。鼠标拖选不参与本体滑关（顶栏仍有专用
-/// [SwipeDismissWrapper]），避免正文框选触发退场。
+/// barrier 同源）判定：过了直接 [onDismiss]（关一层，与点 × 同一条路径），没过什么都不做。
+/// 双向水平（左右皆可）。鼠标拖选不参与本体滑关，避免正文框选触发关闭。
 ///
-/// TODO-890 复用复位：reader 复用同一槽位（[Visibility] 保留、换新 child）时，
-/// [didUpdateWidget] 监测 child 身份变化并复位 [AnimationController] / [_dragX]，
-/// 否则复用后的弹窗卡在「已滑出 opacity 0」不可见（镜像 [SwipeDismissWrapper] 的
-/// `_dismissing` + `didUpdateWidget` 复位契约）。
+/// 用户 2026-11-06：拖动期间弹窗**一动不动**，不再跟手平移 / 淡出 / 补间滑出。Android
+/// 混合合成下那段跟手平移只挪了原生 WebView，Flutter 画的顶栏和卡框原地不动，看起来是
+/// 「正文在框里横着滚」（录屏），让人以为弹窗能左右滚动。见 [SwipeDismissWrapper]。
 class _BodySwipeDismissDetector extends StatefulWidget {
   const _BodySwipeDismissDetector({
     required this.enableSwipeToClose,
@@ -2041,31 +2333,10 @@ class _BodySwipeDismissDetector extends StatefulWidget {
       _BodySwipeDismissDetectorState();
 }
 
-/// TODO-890：滑出/弹回补间时长与曲线（plan 决策点：200ms easeOut，出场与弹回同曲线）。
+/// 弹窗入场淡入时长（[_PopupEntrance]）。
 const Duration _kSlideDuration = Duration(milliseconds: 200);
 
-/// TODO-890：滑出目标位移 = 卡片宽 + 该边距，保证弹窗矩形完全移出可视区（plan 决策点：
-/// 用卡片宽而非整屏宽，避免大屏上动画过慢）。
-const double _kSlideOutMargin = 24.0;
-
-class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  /// 当前水平位移（px）。跟手期由拖动累计；松手补间期由 [_controller] 在
-  /// [_dragStartX]→[_dragTargetX] 间插值驱动。
-  double _dragX = 0;
-
-  /// 跟手期的卡片宽度（[LayoutBuilder] 提供），决定滑出目标位移与淡出归一分母。
-  double _layerWidth = 0;
-
-  /// 补间起止位移（松手时定）。
-  double _dragStartX = 0;
-  double _dragTargetX = 0;
-
-  /// 过阈值滑出补间是否在进行——完成时调 [onDismiss]（弹回补间不调）。
-  bool _dismissing = false;
-
+class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector> {
   /// 当前仍按下的可触摸指针。出现第二根指针后，本轮手势永久失效，直到所有指针
   /// 都抬起；不能在其中一根抬起后把剩余指针重新解释成一次新的单指横滑。
   final Set<int> _activePointers = <int>{};
@@ -2078,72 +2349,8 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
   double get _threshold =>
       swipeDismissThreshold(ReaderFushiSource.instance.dismissSwipeSensitivity);
 
-  /// 用户关掉「弹窗关闭动画」= 整条滑关不画（[popupSwipeDismissIsInstant]）：跟手期
-  /// 不重绘、不位移，抬手过阈值当帧关。**用时取值**，理由同 [_applyDismissDuration]。
-  bool get _instant => popupSwipeDismissIsInstant();
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: _kSlideDuration)
-      ..addListener(_onTick)
-      ..addStatusListener(_onStatus);
-  }
-
-  /// 滑出/弹回补间的时长**用时取值**，不缓存（`Duration.zero` 的 forward 立即
-  /// complete，onDismiss 时序不变，只是不再画补间帧）。
-  ///
-  /// 曾经写在 `didChangeDependencies` 里，但那只在**依赖**（这里是 `Theme`）变化时
-  /// 重跑：用户在设置里翻「弹窗关闭动画」只触发 rebuild、不触发
-  /// `didChangeDependencies`，控制器会一直留着上一次的 200ms，表现成「关了没用」的
-  /// 空开关。取值改在每次启动补间前一刻，两条来源（用户开关 / 墨水屏）都当场生效。
-  void _applyDismissDuration() {
-    _controller.duration = popupDismissAnimationDuration(
-      context,
-      _kSlideDuration,
-    );
-  }
-
-  @override
-  void didUpdateWidget(_BodySwipeDismissDetector oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // 复用同一槽位换新 child：复位退场态，否则复用后的弹窗卡在「已滑出 opacity 0」。
-    if (_dismissing && !identical(oldWidget.child, widget.child)) {
-      _controller.stop();
-      _dismissing = false;
-      _dragX = 0;
-      _dragStartX = 0;
-      _dragTargetX = 0;
-      if (mounted) setState(() {});
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _onTick() {
-    final double next =
-        _dragStartX + (_dragTargetX - _dragStartX) * _controller.value;
-    if (next != _dragX && mounted) {
-      setState(() => _dragX = next);
-    }
-  }
-
-  void _onStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed && _dismissing) {
-      // 弹窗已滑出屏外、不可见——此刻才真正关一层（避免 dismiss 与动画竞争）。
-      widget.onDismiss();
-    }
-  }
-
   void _onPointerDown(PointerDownEvent event) {
-    if (!widget.enableSwipeToClose ||
-        (event.kind != PointerDeviceKind.touch &&
-            event.kind != PointerDeviceKind.stylus &&
-            event.kind != PointerDeviceKind.invertedStylus)) {
+    if (!widget.enableSwipeToClose || !isTouchLikePointer(event.kind)) {
       return;
     }
     _activePointers.add(event.pointer);
@@ -2151,98 +2358,43 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
       // BUG-1242：第二根指针必须立即取消第一根的 dismiss tracking。旧实现直接
       // return，第一根之后的 move/up 仍可越过阈值关闭弹窗。
       _clearTrackedPointer();
-      _springBack();
       return;
     }
     _trackedPointer = event.pointer;
     _pointerStart = event.position;
     _pointerIsHorizontal = null;
-    _controller.stop();
-    _dismissing = false;
-    setState(() => _dragX = 0);
   }
 
   void _onPointerMove(PointerMoveEvent event) {
     if (event.pointer != _trackedPointer || _pointerStart == null) return;
+    if (_pointerIsHorizontal != null) return;
     final Offset delta = event.position - _pointerStart!;
-    if (_pointerIsHorizontal == null) {
-      if (delta.distanceSquared < 64) return;
-      // 强横向意图才滑关。其余轨迹固定判为正文滚动，后续即使偏回横向也不反抢。
-      _pointerIsHorizontal = delta.dx.abs() > delta.dy.abs() * 1.5;
-    }
-    if (_pointerIsHorizontal != true) return;
-    // instant：跟手期一帧都不重画（[build] 也不挂 Transform/Opacity），弹窗按住不动；
-    // 判定所需的累计位移在抬手时由 [_onPointerUp] 从指针位置重算，不依赖 [_dragX]。
-    if (_instant) return;
-    setState(() => _dragX = delta.dx);
+    if (delta.distanceSquared < 64) return;
+    // 强横向意图才滑关。其余轨迹固定判为正文滚动，后续即使偏回横向也不反抢。
+    _pointerIsHorizontal = delta.dx.abs() > delta.dy.abs() * 1.5;
   }
 
   void _onPointerUp(PointerUpEvent event) {
     _activePointers.remove(event.pointer);
     if (event.pointer != _trackedPointer) return;
-    final bool shouldFinish = _pointerIsHorizontal == true;
-    // instant 下 [_dragX] 恒 0（跟手期不更新），累计位移只能从起点重算。
+    final bool horizontal = _pointerIsHorizontal == true;
     final double accumulated = _pointerStart == null
-        ? _dragX
+        ? 0
         : event.position.dx - _pointerStart!.dx;
     _clearTrackedPointer();
-    if (!shouldFinish) return;
-    if (_instant) {
-      // 抬手当帧判定：过阈值直接关（无滑出补间），没过什么都不用做（弹窗没动过）。
-      if (accumulated.abs() > _threshold) widget.onDismiss();
-      return;
-    }
-    _finishHorizontalDrag();
+    if (horizontal && accumulated.abs() > _threshold) widget.onDismiss();
   }
 
   void _onPointerCancel(PointerCancelEvent event) {
     _activePointers.remove(event.pointer);
     if (event.pointer != _trackedPointer) return;
-    final bool shouldSpringBack = _pointerIsHorizontal == true;
     _clearTrackedPointer();
-    if (shouldSpringBack) {
-      _springBack();
-    }
   }
 
   void _clearTrackedPointer() {
     _trackedPointer = null;
     _pointerStart = null;
     _pointerIsHorizontal = null;
-  }
-
-  void _finishHorizontalDrag() {
-    _applyDismissDuration();
-    final double accumulated = _dragX;
-    // 双向水平：左右皆可，对齐手机 `_dragX.abs()`。
-    if (accumulated.abs() > _threshold) {
-      // 过阈值：朝拖动方向补间滑出屏外（卡片宽 + 边距），完成回调里再 onDismiss。
-      final double width = _layerWidth > 0 ? _layerWidth : accumulated.abs();
-      _dragStartX = accumulated;
-      _dragTargetX =
-          (accumulated.isNegative ? -1.0 : 1.0) * (width + _kSlideOutMargin);
-      _dismissing = true;
-      _controller
-        ..reset()
-        ..animateTo(1.0, curve: FushiSpringCurve.effects);
-    } else {
-      _springBack();
-    }
-  }
-
-  void _springBack() {
-    // instant：跟手期没位移过，没有可弹回的距离，也不该起一次 0→0 的补间。
-    if (_instant) {
-      if (_dragX != 0 && mounted) setState(() => _dragX = 0);
-      return;
-    }
-    _applyDismissDuration();
-    _dragStartX = _dragX;
-    _dragTargetX = 0;
-    _dismissing = false;
-    _controller
-      ..reset()
-      ..animateTo(1.0, curve: FushiSpringCurve.effects);
   }
 
   @override
@@ -2253,28 +2405,7 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
       onPointerMove: _onPointerMove,
       onPointerUp: _onPointerUp,
       onPointerCancel: _onPointerCancel,
-      child: widget.enableSwipeToClose && !_instant
-          ? LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                if (constraints.maxWidth.isFinite) {
-                  _layerWidth = constraints.maxWidth;
-                }
-                final double width = _layerWidth > 0 ? _layerWidth : 1.0;
-                // 跟手淡出：位移越大越淡，最低 0.3（与 SwipeDismissWrapper 同手感）；
-                // 滑出补间末段（_dragTargetX = width + margin）自然趋近 0。
-                final double opacity = _dismissing
-                    ? (1 - (_dragX.abs() / (width + _kSlideOutMargin))).clamp(
-                        0.0,
-                        1.0,
-                      )
-                    : (1 - (_dragX.abs() / width) * 0.7).clamp(0.3, 1.0);
-                return Transform.translate(
-                  offset: Offset(_dragX, 0),
-                  child: Opacity(opacity: opacity, child: widget.child),
-                );
-              },
-            )
-          : widget.child,
+      child: widget.child,
     );
   }
 }

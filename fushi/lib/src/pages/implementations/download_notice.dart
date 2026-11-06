@@ -3,6 +3,9 @@
 /// - [DownloadNoticeKind.p2p]：BT / 磁力下载前。海外用户不知道浏览页的下载是
 ///   BT 还是直链、要不要挂 VPN。说明只讲技术事实：内容来自其他用户、IP 对同
 ///   种子的人可见、开了上传才会上传（内置引擎默认关上传）、请遵守当地法律。
+///   正文上方另有一块醒目的法律风险警示（[DownloadNoticeKind.legalWarning]：在
+///   部分国家 / 地区下载或分享受版权保护的内容可能违法、风险自负），2026-11
+///   海外用户反馈「只说请遵守法律、没直说可能违法」后加。
 /// - [DownloadNoticeKind.gameResource]：从第三方游戏资源站（真红小站、内置
 ///   AList 等）下载前。资源不是 Fushi 提供的；压缩包 / 安装程序可能含恶意软件，
 ///   建议先查毒再解压运行；请遵守当地法律与版权规定。
@@ -20,6 +23,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
@@ -42,6 +46,12 @@ enum DownloadNoticeKind {
   String get body => switch (this) {
     DownloadNoticeKind.p2p => t.download_p2p_notice_body,
     DownloadNoticeKind.gameResource => t.download_game_notice_body,
+  };
+
+  /// 正文上方醒目的法律风险警示；null = 这种说明没有单独警示。
+  String? get legalWarning => switch (this) {
+    DownloadNoticeKind.p2p => t.download_p2p_notice_legal_warning,
+    DownloadNoticeKind.gameResource => null,
   };
 
   IconData get icon => switch (this) {
@@ -101,6 +111,7 @@ class _DownloadNoticeDialogState extends State<DownloadNoticeDialog> {
   @override
   Widget build(BuildContext context) {
     final DownloadNoticeKind kind = widget.kind;
+    final String? legalWarning = kind.legalWarning;
     return FushiAlertDialog(
       key: ValueKey<String>('download-notice-${kind.name}'),
       icon: FushiDialogHeroIcon(icon: kind.icon, tone: FushiHeroTone.tertiary),
@@ -112,6 +123,14 @@ class _DownloadNoticeDialogState extends State<DownloadNoticeDialog> {
         children: <Widget>[
           Align(alignment: AlignmentDirectional.centerStart, child: _tags()),
           const SizedBox(height: 12),
+          if (legalWarning != null) ...<Widget>[
+            FushiInlineNotice(
+              key: const ValueKey<String>('download-notice-legal-warning'),
+              severity: FushiNoticeSeverity.warning,
+              message: legalWarning,
+            ),
+            const SizedBox(height: 12),
+          ],
           Text(kind.body),
           const SizedBox(height: 8),
           FushiCheckboxListTile(

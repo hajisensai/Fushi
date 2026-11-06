@@ -12,7 +12,14 @@ import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart'
     show showDownloadTaskDeleteConfirm;
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/engine_listenable.dart';
 
 /// 「下载」页任务 tab 的发现页直链下载区：渲染 [DiscoveryDownloadQueue] 的任务

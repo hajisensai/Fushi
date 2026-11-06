@@ -1,7 +1,14 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 /// 删除目标的种类。删除确认框据此逐项披露「会删什么 / 会保留什么」，不再由各调用点
 /// 手写一句笼统正文。
@@ -155,9 +162,7 @@ DeletionDisclosure buildDeletionDisclosure({
       //   2) AudiobookStorage.deletePersistDir(bookKey) 递归删整个持久化目录。
       // 书本身、解压目录、阅读进度都不动。
       return DeletionDisclosure(
-        willDelete: <String>[
-          t.delete_disclosure_audiobook_files,
-        ],
+        willDelete: <String>[t.delete_disclosure_audiobook_files],
         willKeep: <String>[
           t.delete_disclosure_audiobook_book_kept,
           t.delete_disclosure_audio_source_files,
@@ -200,14 +205,18 @@ class DeleteScopeUnavailableNote extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            FushiIcon(FushiIcons.devices,
-                size: 18, color: colors.onSurfaceVariant),
+            FushiIcon(
+              FushiIcons.devices,
+              size: 18,
+              color: colors.onSurfaceVariant,
+            ),
             SizedBox(width: tokens.spacing.gap),
             Expanded(
               child: Text(
                 t.delete_scope_no_channel,
-                style: tokens.type.listSubtitle
-                    .copyWith(color: colors.onSurfaceVariant),
+                style: tokens.type.listSubtitle.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
               ),
             ),
           ],
@@ -274,12 +283,12 @@ class DeleteLocalFilesRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => DeleteConfirmCheckboxRow(
-        title: t.delete_local_files,
-        subtitle: subtitle,
-        value: value,
-        onChanged: onChanged,
-        destructive: true,
-      );
+    title: t.delete_local_files,
+    subtitle: subtitle,
+    value: value,
+    onChanged: onChanged,
+    destructive: true,
+  );
 }
 
 /// 「同时删除统计数据」勾选行。
@@ -287,9 +296,8 @@ class DeleteLocalFilesRow extends StatelessWidget {
 /// [subtitle] 与 [DeleteLocalFilesRow] 同样**必填**：删掉的统计在各域口径不同
 /// （视频是观看时长/字幕字数/查词计数），没有一句通用说明能同时成立。
 ///
-/// 它**不进**「记住这些选择」：那一行记的是「这台设备上删东西时的惯常选择」，而
-/// 统计删除按媒体身份立碑、其他设备同步后也跟着删，没有撤销——这种事不该因为上次
-/// 勾过就默认勾上。
+/// 它**不沿用**上次的勾选状态（同步 / 本地文件两项会沿用）：统计删除按媒体身份
+/// 立碑、其他设备同步后也跟着删，没有撤销——这种事不该因为上次勾过就默认勾上。
 class DeleteStatisticsRow extends StatelessWidget {
   const DeleteStatisticsRow({
     required this.value,
@@ -304,31 +312,12 @@ class DeleteStatisticsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => DeleteConfirmCheckboxRow(
-        title: t.delete_statistics,
-        subtitle: subtitle,
-        value: value,
-        onChanged: onChanged,
-        destructive: true,
-      );
-}
-
-/// 删除确认框的「记住这些选择」行。它只控制两个删除选项下次的默认值，不会跳过确认框。
-class DeleteRememberChoicesRow extends StatelessWidget {
-  const DeleteRememberChoicesRow({
-    required this.value,
-    required this.onChanged,
-    super.key,
-  });
-
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) => DeleteConfirmCheckboxRow(
-        title: t.delete_choices_remember,
-        value: value,
-        onChanged: onChanged,
-      );
+    title: t.delete_statistics,
+    subtitle: subtitle,
+    value: value,
+    onChanged: onChanged,
+    destructive: true,
+  );
 }
 
 /// 把 [DeletionDisclosure] 渲染成确认框里的「会被删除 / 会被保留」两段列表。
@@ -372,8 +361,9 @@ class DeletionDisclosureView extends StatelessWidget {
                 Flexible(
                   child: Text(
                     label,
-                    style: context.fushiType.labelLargeEmphasized
-                        .copyWith(color: fg),
+                    style: context.fushiType.labelLargeEmphasized.copyWith(
+                      color: fg,
+                    ),
                   ),
                 ),
               ],

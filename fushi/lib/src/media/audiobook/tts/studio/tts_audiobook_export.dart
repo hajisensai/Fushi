@@ -22,7 +22,6 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_encode.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_mix.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 导出失败。[code]：`export_unsupported`（本机 ffmpeg 缺能力 / 音频格式不一致，
@@ -268,12 +267,12 @@ const Set<String> _mp4FamilyExtensions = <String>{
 /// 导出 [bookKey] 的有声书为 [outputPath]（建议 `.m4b`），返回输出路径。旁边写
 /// 同名 `.srt`。[onProgress] 报 0..1。
 Future<String> exportTtsAudiobookM4b({
-  required AppModel appModel,
+  required FushiDatabase database,
   required String bookKey,
   required String outputPath,
   required void Function(double progress) onProgress,
 }) async {
-  final FushiDatabase db = appModel.database;
+  final FushiDatabase db = database;
   final EpubBookRow? row = await db.getEpubBook(bookKey);
   if (row == null) {
     throw const AudiobookExportFailure('export_failed', 'book not found');

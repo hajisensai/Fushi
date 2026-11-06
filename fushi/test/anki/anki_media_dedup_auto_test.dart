@@ -21,8 +21,11 @@ class _TempDirRunner extends AnkiMediaDedupRunner {
 }
 
 class _FakeRepo extends BaseAnkiRepository {
-  _FakeRepo(
-      {required this.settings, this.deletions = 1, this.cancelled = false});
+  _FakeRepo({
+    required this.settings,
+    this.deletions = 1,
+    this.cancelled = false,
+  });
 
   AnkiSettings settings;
 
@@ -64,7 +67,10 @@ class _FakeRepo extends BaseAnkiRepository {
       deletions: <MediaDedupDeletion>[
         for (int i = 0; i < deletions; i++)
           MediaDedupDeletion(
-              filename: 'dupe$i.jpg', canonical: 'keep.jpg', bytes: 1024),
+            filename: 'dupe$i.jpg',
+            canonical: 'keep.jpg',
+            bytes: 1024,
+          ),
       ],
       notesRewritten: 0,
       modelsRewritten: 0,
@@ -81,8 +87,7 @@ class _FakeRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      MineOutcome.failure('unused');
+  }) async => MineOutcome.failure('unused');
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
@@ -114,8 +119,10 @@ void main() {
     expect(fresh.mediaDedupAutoDelete, isFalse);
 
     final _FakeRepo repo = _FakeRepo(settings: fresh);
-    final AnkiMediaDedupAutoOutcome? outcome =
-        await _TempDirRunner(repo, dir).maybeAutoRunOnStartup();
+    final AnkiMediaDedupAutoOutcome? outcome = await _TempDirRunner(
+      repo,
+      dir,
+    ).maybeAutoRunOnStartup();
 
     expect(outcome, isNull);
     expect(repo.dedupCalls, isEmpty);
@@ -132,8 +139,10 @@ void main() {
       settings: const AnkiSettings(mediaDedupAutoEnabled: true),
     );
 
-    final AnkiMediaDedupAutoOutcome? outcome =
-        await _TempDirRunner(repo, dir).maybeAutoRunOnStartup();
+    final AnkiMediaDedupAutoOutcome? outcome = await _TempDirRunner(
+      repo,
+      dir,
+    ).maybeAutoRunOnStartup();
 
     expect(outcome, isNotNull);
     expect(outcome!.applied, isNull, reason: '没确认就不许删');
@@ -151,8 +160,10 @@ void main() {
       deletions: 0,
     );
 
-    final AnkiMediaDedupAutoOutcome? outcome =
-        await _TempDirRunner(repo, dir).maybeAutoRunOnStartup();
+    final AnkiMediaDedupAutoOutcome? outcome = await _TempDirRunner(
+      repo,
+      dir,
+    ).maybeAutoRunOnStartup();
 
     expect(outcome!.needsConfirmation, isFalse);
     expect(outcome.applied, isNull);
@@ -167,8 +178,10 @@ void main() {
       ),
     );
 
-    final AnkiMediaDedupAutoOutcome? outcome =
-        await _TempDirRunner(repo, dir).maybeAutoRunOnStartup();
+    final AnkiMediaDedupAutoOutcome? outcome = await _TempDirRunner(
+      repo,
+      dir,
+    ).maybeAutoRunOnStartup();
 
     expect(outcome!.applied, isNotNull);
     expect(outcome.needsConfirmation, isFalse);
@@ -200,23 +213,24 @@ void main() {
     final DateTime now = DateTime.utc(2026, 7, 27, 12);
 
     test('从未扫过 → 跑', () {
-      expect(
-        shouldRunAutoMediaDedupScan(lastScanAtMs: null, now: now),
-        isTrue,
-      );
+      expect(shouldRunAutoMediaDedupScan(lastScanAtMs: null, now: now), isTrue);
     });
 
     test('正好到间隔 → 跑；差 1 毫秒 → 不跑', () {
       final DateTime exactly = now.subtract(kAnkiMediaDedupAutoInterval);
       expect(
         shouldRunAutoMediaDedupScan(
-            lastScanAtMs: exactly.millisecondsSinceEpoch, now: now),
+          lastScanAtMs: exactly.millisecondsSinceEpoch,
+          now: now,
+        ),
         isTrue,
       );
       final DateTime tooSoon = exactly.add(const Duration(milliseconds: 1));
       expect(
         shouldRunAutoMediaDedupScan(
-            lastScanAtMs: tooSoon.millisecondsSinceEpoch, now: now),
+          lastScanAtMs: tooSoon.millisecondsSinceEpoch,
+          now: now,
+        ),
         isFalse,
       );
     });
@@ -229,8 +243,10 @@ void main() {
         ),
       );
 
-      final AnkiMediaDedupAutoOutcome? outcome =
-          await _TempDirRunner(repo, dir).maybeAutoRunOnStartup(now: now);
+      final AnkiMediaDedupAutoOutcome? outcome = await _TempDirRunner(
+        repo,
+        dir,
+      ).maybeAutoRunOnStartup(now: now);
 
       expect(outcome, isNull);
       expect(repo.dedupCalls, isEmpty);
@@ -238,11 +254,15 @@ void main() {
   });
 
   test('BUG-1263：取消的真删轮不推进时间戳（下次自动扫描照常到期）', () async {
-    final _FakeRepo repo =
-        _FakeRepo(settings: const AnkiSettings(), cancelled: true);
+    final _FakeRepo repo = _FakeRepo(
+      settings: const AnkiSettings(),
+      cancelled: true,
+    );
 
-    final AnkiMediaDedupReport? report = await _TempDirRunner(repo, dir)
-        .runNow(dryRun: false, onProgress: (AnkiMediaDedupProgress p) {});
+    final AnkiMediaDedupReport? report = await _TempDirRunner(
+      repo,
+      dir,
+    ).runNow(dryRun: false, onProgress: (AnkiMediaDedupProgress p) {});
 
     expect(report!.cancelled, isTrue);
     expect(repo.settings.lastMediaDedupAtMs, isNull);
@@ -263,10 +283,12 @@ void main() {
   });
 
   test('源码守卫：启动自动路径本身不得直接真删', () {
-    final String source =
-        File('lib/src/pages/implementations/home_page.dart').readAsStringSync();
-    final int autoStart =
-        source.indexOf('Future<void> _maybeAutoDedupAnkiMedia');
+    final String source = File(
+      'lib/src/pages/implementations/home_page.dart',
+    ).readAsStringSync();
+    final int autoStart = source.indexOf(
+      'Future<void> _maybeAutoDedupAnkiMedia',
+    );
     final int reviewStart = source.indexOf('Future<void> _reviewAutoDedupPlan');
     expect(autoStart, greaterThan(0));
     expect(reviewStart, greaterThan(autoStart));

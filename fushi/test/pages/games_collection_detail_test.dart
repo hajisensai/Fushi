@@ -7,7 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/galgame_poster_card.dart';
 
 /// 游戏进合集：通用合集网格详情页（[MediaCollectionGridDetailPage]）加载 'game'
 /// 成员的 widget 测试。
@@ -25,12 +26,12 @@ void main() {
   });
 
   GalgameEntry entry(String id, String name) => GalgameEntry(
-        id: id,
-        name: name,
-        exePath: 'Z:\\missing\\$id.exe',
-        workdir: r'Z:\missing',
-        addedAt: DateTime(2026),
-      );
+    id: id,
+    name: name,
+    exePath: 'Z:\\missing\\$id.exe',
+    workdir: r'Z:\missing',
+    addedAt: DateTime(2026),
+  );
 
   test('buildGameCollectionMemberCard：查找/越界/孤儿三态', () {
     final List<GalgameEntry> games = <GalgameEntry>[entry('g1', 'ATRI')];
@@ -63,8 +64,7 @@ void main() {
   });
 
   testWidgets('合集详情页渲染 game 成员卡；孤儿与书成员被跳过', (WidgetTester tester) async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final int c = await db.createMediaCollection('ネコぱら全集');
     await db.addToCollection(c, MediaKind.game, 'g1');
@@ -79,16 +79,16 @@ void main() {
           home: MediaCollectionGridDetailPage(
             database: db,
             collection: collection,
-            memberCardBuilder: (
-              String mediaType,
-              String entryKey, {
-              VoidCallback? onRemoveFromCollection,
-            }) =>
-                buildGameCollectionMemberCard(
-              games: games,
-              mediaType: mediaType,
-              entryKey: entryKey,
-            ),
+            memberCardBuilder:
+                (
+                  String mediaType,
+                  String entryKey, {
+                  VoidCallback? onRemoveFromCollection,
+                }) => buildGameCollectionMemberCard(
+                  games: games,
+                  mediaType: mediaType,
+                  entryKey: entryKey,
+                ),
             onChanged: () {},
           ),
         ),

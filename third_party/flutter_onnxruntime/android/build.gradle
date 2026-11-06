@@ -47,7 +47,10 @@ android {
         testImplementation("org.jetbrains.kotlin:kotlin-test")
         testImplementation("org.mockito:mockito-core:5.0.0")
         implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
-        implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.23.0'
+        // 1.28.0, not 1.23.0: 1.23.x runs KleidiAI SME2 kernels on SME-only CPUs
+        // (Snapdragon 8 Elite Gen 5) -> SIGILL in OrtSession.run (BUG-3636). Not 1.29+:
+        // those official packages send telemetry by default. See PATCHES.md delta 14.
+        implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.28.0'
     }
 
     testOptions {

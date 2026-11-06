@@ -1,0 +1,10 @@
+## BUG-3616 · 串流游玩时游戏留在主机后台，游玩时长整场记 0
+- **报告**：2026-10-19（用户：应用内反馈 CztByzrsZP，Windows 主机 + iPad 接收端）
+- **真实性**：✅ 真 bug。iPad 串流玩 Windows 主机上的「交响乐之雨」后，统计总览当天时长 0 分钟，「最近沉浸」里 10-17 16:17→17:52 那条只有 2.4 万字没有时长；前几天有的条目带时长（主机本地玩的那几场）、有的没有（串流）。
+  - 游戏域两条写入面结算时机不同：字数经 `StudyClock` 即时落 `study_segments`（`fushi/lib/src/mining/gal_hook_session_controller.dart:1141`，显式模式只喂字数、段时长恒 0）；时长只由 `GalgamePlaySessionMachine` 在会话结束时写一行 `galgame_sessions`。所以「有字数无时长」= 那场 hook 抓到了台词，但游玩计时器没结算出任何一行。
+  - 计时器默认 `playtime` 语义只在**主机前台窗口属于游戏进程组**时累加（`fushi/lib/src/mining/galgame_play_tracker.dart:262`），不足 `kMinSessionSeconds`（60 s）整场丢弃（同文件 `:354`）。
+  - 串流默认 `GameStreamInputFocus.background`（`packages/fushi_engine/lib/sync/game_stream/game_stream_protocol.dart:195`）：WGC 捕获被遮挡的窗口、输入只投递到该 HWND，游戏按设计留在主机后台（`fushi/lib/src/sync/game_stream_host.dart:593`）。玩家人在 iPad 前，主机前台是 Fushi 或别的窗口 → `activeSeconds` 恒 0 → 结算被门槛丢弃 → 当天 `galgame_sessions` 无行，总览时长 0，会话流里只剩字数段。
+  - 串流路径确实走到了结算点（游戏退出 / 换游戏 / app 关闭都会 `_stopPlayTracker`，串流用的是同一个 `launchGame`），问题不在结算点，而在结算时累计值为 0。
+- **[x] ① 已修复** — 给计时器加「远端在场」输入：`GalgamePlaySessionMachine.setRemotePresence` / `GalgamePlayTracker.remotePresent`（`galgame_play_tracker.dart`），在场期间与「前台是本游戏」取或计时，同一秒不双计；`GalHookSessionController.setRemotePlayPresence`（`gal_hook_session_controller.dart:4045`）转给当前计时器、之后新起的计时器起步带上；唯一写入方 `FushiSyncServerController._syncGameStreamPlayPresence`（`fushi/lib/src/sync/fushi_server_controller.dart:229`）：串流宿主 `connected`（WebRTC 对端已连上）且会话未终止、绑定着游戏窗口时为真，所有拆串流路径经 `_detachGameStreamTexthooker` 清零。`FushiGameStreamHost` 新增 `connected` getter，并在接收端掉线（Disconnected）时也通知监听者（原来只在连上时通知）。主机本地游玩的前台语义不变。
+- **[x] ② 已加自动化测试** — `fushi/test/mining/galgame_play_tracker_test.dart`（状态机：在场计时 / 取或不双计 / 断开停计；外壳 start 前设置带入状态机）；`fushi/test/mining/gal_hook_session_controller_test.dart`（真控制器 + 真计时器 + 内存 DB：主机前台非游戏时不计、置在场后累计过门槛并落一行 `galgame_sessions`、断开后冻结；在场先于启动设置时新计时器继承）。
+- **备注**：串流宿主 WebRTC 连接态 → 在场的接线（`fushi_server_controller.dart`）没有单测覆盖（需要真 WebRTC 对端），**待真机复测**：iPad 串流玩 ≥1 分钟后退出游戏，统计总览当天应有时长、「最近沉浸」该条显示分钟数。已经发生的那几场（没写 `galgame_sessions` 的）无法补回。

@@ -65,9 +65,13 @@ void main() {
     _controller(tester).ensureFocus();
     await tester.pumpAndSettle();
 
-    expect(_anyRowFocused(tester), isFalse,
-        reason: '主窗不在前台，被动修复不该请求焦点 —— 真机上这一步等于把主界面'
-            '抢到用户的游戏 / 浏览器前面（BUG-1619）');
+    expect(
+      _anyRowFocused(tester),
+      isFalse,
+      reason:
+          '主窗不在前台，被动修复不该请求焦点 —— 真机上这一步等于把主界面'
+          '抢到用户的游戏 / 浏览器前面（BUG-1619）',
+    );
   });
 
   testWidgets('主窗在前台时被动修复照常落焦点', (WidgetTester tester) async {
@@ -79,9 +83,13 @@ void main() {
     _controller(tester).ensureFocus();
     await tester.pumpAndSettle();
 
-    expect(_anyRowFocused(tester), isTrue,
-        reason: '主窗自己在前台时被动修复必须照旧 home 焦点，否则键盘 / 手柄'
-            '导航进不去（TODO-900 回归）');
+    expect(
+      _anyRowFocused(tester),
+      isTrue,
+      reason:
+          '主窗自己在前台时被动修复必须照旧 home 焦点，否则键盘 / 手柄'
+          '导航进不去（TODO-900 回归）',
+    );
   });
 
   testWidgets('后台期间被挡下的修复，在主窗回到前台后补上', (WidgetTester tester) async {
@@ -100,7 +108,10 @@ void main() {
     FocusManager.instance.rootScope.requestFocus(FocusNode());
     await tester.pumpAndSettle();
 
-    expect(_anyRowFocused(tester), isTrue,
-        reason: '欠下的修复没补上 = 用户切回主窗后整页没有焦点、快捷键全死');
+    expect(
+      _anyRowFocused(tester),
+      isTrue,
+      reason: '欠下的修复没补上 = 用户切回主窗后整页没有焦点、快捷键全死',
+    );
   });
 }

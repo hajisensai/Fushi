@@ -107,7 +107,7 @@ class _LandscapeCoverImageState extends State<LandscapeCoverImage>
               errorBuilder: widget.errorBuilder == null
                   ? null
                   : (BuildContext context, Object _, StackTrace? __) =>
-                      widget.errorBuilder!(context),
+                        widget.errorBuilder!(context),
             ),
             ...widget.overlays,
           ],
@@ -132,7 +132,7 @@ class _LandscapeCoverImageState extends State<LandscapeCoverImage>
               errorBuilder: widget.errorBuilder == null
                   ? null
                   : (BuildContext context, Object _, StackTrace? __) =>
-                      widget.errorBuilder!(context),
+                        widget.errorBuilder!(context),
             ),
           ),
         ],

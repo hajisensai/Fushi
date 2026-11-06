@@ -8,7 +8,8 @@ const window = { CSS: {}, getSelection: () => null };
 const document = { elementFromPoint: () => null, createRange: () => ({
   setStart() {}, setEnd() {}, getClientRects: () => [],
 }) };
-vm.runInNewContext(source, { window, document, CSS: { highlights: { set() {}, delete() {} } }, Highlight: function() {} });
+// 浏览器全局 Node：highlightSelection 自 BUG-3665（d71855469d）起经 isVerticalTextNode 读 Node.TEXT_NODE。
+vm.runInNewContext(source, { window, document, Node: { ELEMENT_NODE: 1, TEXT_NODE: 3 }, CSS: { highlights: { set() {}, delete() {} } }, Highlight: function() {} });
 const s = window.fushiSelection;
 const text = (textContent) => ({ textContent, parentElement: { closest: () => null } });
 let hit, lookups = 0;

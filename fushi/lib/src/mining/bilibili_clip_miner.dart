@@ -158,8 +158,9 @@ BilibiliPlayStreams? parseBilibiliPgcPlayurlResponse(String body) {
   final Object? decoded = _tryDecodeJson(body);
   if (decoded is! Map) return null;
   if (decoded['code'] != 0) return null;
-  final Object? payload =
-      decoded['result'] is Map ? decoded['result'] : decoded['data'];
+  final Object? payload = decoded['result'] is Map
+      ? decoded['result']
+      : decoded['data'];
   if (payload is! Map) return null;
   return _playStreamsFrom(payload);
 }
@@ -226,8 +227,8 @@ class BilibiliClipMiner {
     BilibiliJsonFetcher? fetchJson,
     DateTime Function()? now,
     this.ttl = const Duration(minutes: 3),
-  })  : _fetchJson = fetchJson ?? _defaultFetchJson,
-        _now = now ?? DateTime.now;
+  }) : _fetchJson = fetchJson ?? _defaultFetchJson,
+       _now = now ?? DateTime.now;
 
   final BilibiliJsonFetcher _fetchJson;
   final DateTime Function() _now;
@@ -264,6 +265,10 @@ class BilibiliClipMiner {
 
   /// 番剧（PGC）制卡：音轨已由**扩展在页面主世界里**解析好，这里只挑流 + 组装，不发网络请求。
   ///
+  /// 稿件也走这里（反馈 Atbl_kOuZK）：扩展在页面里取回的 `x/player/playurl` 响应体顶层键是
+  /// `data`，[parseBilibiliPgcPlayurlResponse] 两个键都认。服务端匿名请求会被 B 站风控
+  /// HTTP 412，页面自己的请求带着用户会话不会。
+  ///
   /// 与 [buildRequest] 的差别只有「身份从哪来」：番剧没有 bvid、没有分 P（`ep_id` 本身就是
   /// 分集），标题也只有扩展带上来的页面标题——它就是用户此刻看到的那个。
   /// 响应体里没有可裁音轨（未登录 / 大会员过期 / 接口改版）时抛 [StateError]，由调用方收敛成
@@ -277,8 +282,9 @@ class BilibiliClipMiner {
     String? cueSentence,
     String? documentTitle,
   }) {
-    final BilibiliPlayStreams? streams =
-        parseBilibiliPgcPlayurlResponse(playurlBody);
+    final BilibiliPlayStreams? streams = parseBilibiliPgcPlayurlResponse(
+      playurlBody,
+    );
     if (streams == null) {
       throw StateError('bilibili pgc playurl has no DASH audio');
     }
@@ -304,31 +310,41 @@ class BilibiliClipMiner {
     _cache[key] = _CachedStreams(fut, t);
     // 失败即从缓存剔除（否则 TTL 内都返回同一个 rejected future，卡住重试）。这个独立监听器
     // 自己吞掉清理分支的错误（不 rethrow），调用方仍从 await fut 拿到原始异常。
-    unawaited(fut.then<void>((_) {}, onError: (Object e, StackTrace s) {
-      if (identical(_cache[key]?.future, fut)) _cache.remove(key);
-    }));
+    unawaited(
+      fut.then<void>(
+        (_) {},
+        onError: (Object e, StackTrace s) {
+          if (identical(_cache[key]?.future, fut)) _cache.remove(key);
+        },
+      ),
+    );
     return fut;
   }
 
   Future<_ResolvedBilibili> _resolveNow(String bvid, int page) async {
-    final String? viewBody = await _fetchJson(Uri.parse(
-        'https://api.bilibili.com/x/web-interface/view?bvid=$bvid'));
+    final String? viewBody = await _fetchJson(
+      Uri.parse('https://api.bilibili.com/x/web-interface/view?bvid=$bvid'),
+    );
     if (viewBody == null) {
       throw StateError('bilibili view request failed (bvid=$bvid)');
     }
-    final BilibiliVideoIdentity? identity =
-        parseBilibiliViewResponse(viewBody, page: page);
+    final BilibiliVideoIdentity? identity = parseBilibiliViewResponse(
+      viewBody,
+      page: page,
+    );
     if (identity == null) {
       throw StateError('bilibili view unparsable (bvid=$bvid, p=$page)');
     }
-    final String? playBody = await _fetchJson(Uri.parse(
+    final String? playBody = await _fetchJson(
+      Uri.parse(
         'https://api.bilibili.com/x/player/playurl?bvid=$bvid'
-        '&cid=${identity.cid}&fnval=$_kBilibiliDashFnval&fourk=1'));
+        '&cid=${identity.cid}&fnval=$_kBilibiliDashFnval&fourk=1',
+      ),
+    );
     if (playBody == null) {
       throw StateError('bilibili playurl request failed (bvid=$bvid)');
     }
-    final BilibiliPlayStreams? streams =
-        parseBilibiliPlayurlResponse(playBody);
+    final BilibiliPlayStreams? streams = parseBilibiliPlayurlResponse(playBody);
     if (streams == null) {
       throw StateError('bilibili playurl has no DASH audio (bvid=$bvid)');
     }
@@ -336,22 +352,40 @@ class BilibiliClipMiner {
   }
 }
 
+/// B 站接口回了非 200。带上状态码往上抛：412 是风控拦了这台机器的匿名请求（反馈
+/// Atbl_kOuZK），与「网络不通」「视频不存在」是三件事，错误日志里必须分得开。
+class BilibiliApiHttpException implements Exception {
+  const BilibiliApiHttpException(this.statusCode, this.path);
+
+  final int statusCode;
+  final String path;
+
+  @override
+  String toString() => 'bilibili API HTTP $statusCode ($path)';
+}
+
 Future<String?> _defaultFetchJson(Uri uri) async {
   final http.Client client = createAppHttpIoClient();
+  final http.Response res;
   try {
-    final http.Response res = await client.get(uri, headers: <String, String>{
-      'User-Agent': kBilibiliApiUserAgent,
-      'Referer': _kBilibiliApiReferer,
-    });
-    if (res.statusCode != 200) return null;
-    // B 站 API 是 UTF-8；用 bodyBytes 显式解码，避免 http 包按 content-type 猜成 latin1
-    // 把中文标题变成乱码（那会一路进到 Anki 的视频名字段）。
-    return utf8.decode(res.bodyBytes, allowMalformed: true);
+    res = await client.get(
+      uri,
+      headers: <String, String>{
+        'User-Agent': kBilibiliApiUserAgent,
+        'Referer': _kBilibiliApiReferer,
+      },
+    );
   } catch (_) {
-    return null;
-  } finally {
     client.close();
+    return null;
   }
+  client.close();
+  if (res.statusCode != 200) {
+    throw BilibiliApiHttpException(res.statusCode, uri.path);
+  }
+  // B 站 API 是 UTF-8；用 bodyBytes 显式解码，避免 http 包按 content-type 猜成 latin1
+  // 把中文标题变成乱码（那会一路进到 Anki 的视频名字段）。
+  return utf8.decode(res.bodyBytes, allowMalformed: true);
 }
 
 Object? _tryDecodeJson(String body) {

@@ -4,12 +4,13 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/src/settings/settings_search.dart';
@@ -40,8 +41,7 @@ void main() {
       // openSettingsSearchEntry，主页点搜索结果时必须经它走。
       expect(home, contains('openSettingsSearchEntry('));
       expect(
-        File('lib/src/settings/settings_search_sheet.dart')
-            .readAsStringSync(),
+        File('lib/src/settings/settings_search_sheet.dart').readAsStringSync(),
         contains('SettingsSearchReveal.pendingItemId = entry.hasRevealTarget'),
       );
     });

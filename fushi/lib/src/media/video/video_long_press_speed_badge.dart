@@ -64,8 +64,10 @@ class VideoLongPressSpeedBadge extends StatelessWidget {
         translation: const Offset(-0.5, -1.8),
         child: apple
             ? VideoGlassHud(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 9,
+                ),
                 child: content,
               )
             : DecoratedBox(
@@ -74,8 +76,10 @@ class VideoLongPressSpeedBadge extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
                   child: content,
                 ),
               ),

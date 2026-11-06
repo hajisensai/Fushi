@@ -137,29 +137,27 @@ void main() {
     return log;
   }
 
-  testWidgets(
-    '页级键盘通道在焦点不精确落在视频节点时仍触发播放/暂停（修复）',
-    (WidgetTester tester) async {
-      expect(
-        await pumpAndCollect(tester, pageLevelChannel: true),
-        <ShortcutAction>[ShortcutAction.videoTogglePlayPause],
-        reason: '焦点落在视频页子树任意节点上时，裸空格必须先被页级通道解析成 '
-            'videoTogglePlayPause，永不下沉到全局 DoNothingIntent',
-      );
-    },
-  );
+  testWidgets('页级键盘通道在焦点不精确落在视频节点时仍触发播放/暂停（修复）', (WidgetTester tester) async {
+    expect(
+      await pumpAndCollect(tester, pageLevelChannel: true),
+      <ShortcutAction>[ShortcutAction.videoTogglePlayPause],
+      reason:
+          '焦点落在视频页子树任意节点上时，裸空格必须先被页级通道解析成 '
+          'videoTogglePlayPause，永不下沉到全局 DoNothingIntent',
+    );
+  });
 
-  testWidgets(
-    '负向对照：没有页级通道时裸空格被全局 DoNothingIntent 吞掉（复现回归）',
-    (WidgetTester tester) async {
-      expect(
-        await pumpAndCollect(tester, pageLevelChannel: false),
-        isEmpty,
-        reason: '撤掉页级通道即回归 c152fcd91：裸空格被全局中和层吞掉，'
-            '视频「按了没反应」',
-      );
-    },
-  );
+  testWidgets('负向对照：没有页级通道时裸空格被全局 DoNothingIntent 吞掉（复现回归）', (
+    WidgetTester tester,
+  ) async {
+    expect(
+      await pumpAndCollect(tester, pageLevelChannel: false),
+      isEmpty,
+      reason:
+          '撤掉页级通道即回归 c152fcd91：裸空格被全局中和层吞掉，'
+          '视频「按了没反应」',
+    );
+  });
 
   /// BUG-1864 的真实拓扑复刻：**全屏是推到根 navigator 的独立路由**，页面 Scaffold
   /// 不在它的祖先链上。路由内容里挂真的 [PanelFocusScope]——它正是剧集轨 / 侧栏
@@ -186,26 +184,23 @@ void main() {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
 
     Widget withChannel(Widget child) => Focus(
-          canRequestFocus: false,
-          skipTraversal: true,
-          onKeyEvent: videoKeyboardChannel(
-            registry: defaults(),
-            log: log,
-            // 面板开着 —— 但空格不是焦点导航键，不该受让位影响。
-            videoNavigablePanelOpen: true,
-          ),
-          child: child,
-        );
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: videoKeyboardChannel(
+        registry: defaults(),
+        log: log,
+        // 面板开着 —— 但空格不是焦点导航键，不该受让位影响。
+        videoNavigablePanelOpen: true,
+      ),
+      child: child,
+    );
 
     Widget panel() => PanelFocusScope(
-          visible: true,
-          child: Material(
-            child: TextButton(
-              onPressed: () {},
-              child: const Text('面板里的按钮'),
-            ),
-          ),
-        );
+      visible: true,
+      child: Material(
+        child: TextButton(onPressed: () {}, child: const Text('面板里的按钮')),
+      ),
+    );
 
     // 面板住在哪：进全屏时住在路由里（Scaffold 只剩空壳），不进全屏时就住在 Scaffold。
     Widget scaffoldBody = enterFullscreen ? const SizedBox.expand() : panel();
@@ -226,9 +221,8 @@ void main() {
           PageRouteBuilder<void>(
             transitionDuration: Duration.zero,
             reverseTransitionDuration: Duration.zero,
-            pageBuilder: (_, __, ___) => mount == _ChannelMount.route
-                ? withChannel(panel())
-                : panel(),
+            pageBuilder: (_, __, ___) =>
+                mount == _ChannelMount.route ? withChannel(panel()) : panel(),
           ),
         ),
       );
@@ -248,55 +242,55 @@ void main() {
     return log;
   }
 
-  testWidgets(
-    'BUG-1864：全屏路由内面板持焦时裸空格仍触发播放/暂停（修复）',
-    (WidgetTester tester) async {
-      expect(
-        await pumpFullscreenRouteAndCollect(tester, mount: _ChannelMount.route),
-        <ShortcutAction>[ShortcutAction.videoTogglePlayPause],
-        reason: '键盘通道挂到窗口/全屏共用的 wrapper 后，全屏下打开字幕列表'
-            '（PanelFocusScope 抢焦）按空格必须照常播放/暂停',
-      );
-    },
-  );
+  testWidgets('BUG-1864：全屏路由内面板持焦时裸空格仍触发播放/暂停（修复）', (
+    WidgetTester tester,
+  ) async {
+    expect(
+      await pumpFullscreenRouteAndCollect(tester, mount: _ChannelMount.route),
+      <ShortcutAction>[ShortcutAction.videoTogglePlayPause],
+      reason:
+          '键盘通道挂到窗口/全屏共用的 wrapper 后，全屏下打开字幕列表'
+          '（PanelFocusScope 抢焦）按空格必须照常播放/暂停',
+    );
+  });
 
-  testWidgets(
-    'BUG-1864 负向对照：同一份通道挂在 Scaffold 上时全屏路由够不到它（真拓扑）',
-    (WidgetTester tester) async {
-      expect(
-        await pumpFullscreenRouteAndCollect(
-          tester,
-          mount: _ChannelMount.scaffold,
-        ),
-        isEmpty,
-        reason: '通道接线完全相同，只是挂在页面 Scaffold 上——而全屏是推到根 navigator '
-            '的独立路由，Scaffold 不在它的祖先链上。裸空格因此一路冒到全局 '
-            '_neutralizeBareSpace 被吞，「按了没反应」= BUG-1864 原样复现',
-      );
-    },
-  );
+  testWidgets('BUG-1864 负向对照：同一份通道挂在 Scaffold 上时全屏路由够不到它（真拓扑）', (
+    WidgetTester tester,
+  ) async {
+    expect(
+      await pumpFullscreenRouteAndCollect(
+        tester,
+        mount: _ChannelMount.scaffold,
+      ),
+      isEmpty,
+      reason:
+          '通道接线完全相同，只是挂在页面 Scaffold 上——而全屏是推到根 navigator '
+          '的独立路由，Scaffold 不在它的祖先链上。裸空格因此一路冒到全局 '
+          '_neutralizeBareSpace 被吞，「按了没反应」= BUG-1864 原样复现',
+    );
+  });
 
-  testWidgets(
-    'BUG-1864 活性自证：同一个 Scaffold 挂载在不进全屏时必须产出非空',
-    (WidgetTester tester) async {
-      expect(
-        await pumpFullscreenRouteAndCollect(
-          tester,
-          mount: _ChannelMount.scaffold,
-          enterFullscreen: false,
-        ),
-        <ShortcutAction>[ShortcutAction.videoTogglePlayPause],
-        reason: '这条一旦也变成空，上面那条负向用例的「空 log」就不再是「够不到通道」'
-            '的证据，而只是「这套装置本来就产不出东西」——负向对照必须自带活性证明',
-      );
-    },
-  );
+  testWidgets('BUG-1864 活性自证：同一个 Scaffold 挂载在不进全屏时必须产出非空', (
+    WidgetTester tester,
+  ) async {
+    expect(
+      await pumpFullscreenRouteAndCollect(
+        tester,
+        mount: _ChannelMount.scaffold,
+        enterFullscreen: false,
+      ),
+      <ShortcutAction>[ShortcutAction.videoTogglePlayPause],
+      reason:
+          '这条一旦也变成空，上面那条负向用例的「空 log」就不再是「够不到通道」'
+          '的证据，而只是「这套装置本来就产不出东西」——负向对照必须自带活性证明',
+    );
+  });
 
   /// 方案 D 的另一半：整张表上提到页级之后，**方向键**在面板持焦时必须让位给通用焦点
   /// 遍历，否则用户一开字幕列表就再也用不了上下键选行（方向键在注册表里绑着 seek /
   /// 音量）。这是手柄侧 `isVideoPanelFocusNavButton` 的键盘对应物。
   Future<({List<ShortcutAction> log, bool focusMoved})>
-      pumpPanelArrowAndCollect(
+  pumpPanelArrowAndCollect(
     WidgetTester tester, {
     required bool videoNavigablePanelOpen,
   }) async {
@@ -348,17 +342,23 @@ void main() {
     final ({List<ShortcutAction> log, bool focusMoved}) r =
         await pumpPanelArrowAndCollect(tester, videoNavigablePanelOpen: true);
     expect(r.log, isEmpty, reason: '面板持焦时裸 ↓ 不得被解析成 videoVolumeDown');
-    expect(r.focusMoved, isTrue,
-        reason: '不消费 → 冒泡到 WidgetsApp 的 DirectionalFocusIntent，焦点应移到下一行');
+    expect(
+      r.focusMoved,
+      isTrue,
+      reason: '不消费 → 冒泡到 WidgetsApp 的 DirectionalFocusIntent，焦点应移到下一行',
+    );
   });
 
   testWidgets('负向对照：没有面板时裸方向键照常调音量、焦点不动', (WidgetTester tester) async {
     final ({List<ShortcutAction> log, bool focusMoved}) r =
-        await pumpPanelArrowAndCollect(
-            tester, videoNavigablePanelOpen: false);
-    expect(r.log, <ShortcutAction>[ShortcutAction.videoVolumeDown],
-        reason: '没有面板时方向键仍是视频动作——让位判据必须真的由面板态驱动，'
-            '而不是无条件放行（那等于把方向键从视频快捷键里删掉）');
+        await pumpPanelArrowAndCollect(tester, videoNavigablePanelOpen: false);
+    expect(
+      r.log,
+      <ShortcutAction>[ShortcutAction.videoVolumeDown],
+      reason:
+          '没有面板时方向键仍是视频动作——让位判据必须真的由面板态驱动，'
+          '而不是无条件放行（那等于把方向键从视频快捷键里删掉）',
+    );
     expect(r.focusMoved, isFalse, reason: '被消费掉就不该再触发焦点遍历');
   });
 
@@ -370,22 +370,35 @@ void main() {
     // 方法体里任意一个 2 空格缩进的闭合花括号（switch 的 case 体、闭包）截断在中途，
     // 后面的断言就在**残缺窗口**上跑，红绿都不代表实现。
     final String body = methodBody(src, 'bool _handleVideoKeyboardShortcut(');
-    expect(containsIdentifierCall(body, 'resolveVideoKeyboardShortcut'), isTrue,
-        reason: '判据必须走生产纯函数，页面不得另写一份键位解析');
-    expect(containsIdentifierCall(body, 'videoActionCallbacks'), isTrue,
-        reason: '执行体必须与手柄通道共用 videoActionCallbacks，两条通道行为才一致');
-    expect(containsCodeLine(body, '_videoNavigablePanelOpen'), isTrue,
-        reason: '面板态必须喂进判决，否则方向键在面板里不会让位给焦点遍历');
-    expect(containsCodeLine(body, '_videoFocusNode.hasPrimaryFocus'), isTrue,
-        reason: '画面持焦是 videoEnterCaret 放行判据 + 面板让位前提的共同输入，不能省');
     expect(
-        containsCodeLine(
-            body, 'hasEditableFocus: focusedEditableText() != null'),
-        isTrue,
-        reason: 'BUG-962：文本框持焦判据必须真的接进判决输入。纯函数那半是对的，'
-            '页面不喂这个参数就等于没有——而现在**整张表**都过这条通道，'
-            '它一坏就是在 mpv.conf / 弹幕规则框里打 f 直接切全屏，'
-            '不再是旧实现那样「最多打不出空格」');
+      containsIdentifierCall(body, 'resolveVideoKeyboardShortcut'),
+      isTrue,
+      reason: '判据必须走生产纯函数，页面不得另写一份键位解析',
+    );
+    expect(
+      containsIdentifierCall(body, 'videoActionCallbacks'),
+      isTrue,
+      reason: '执行体必须与手柄通道共用 videoActionCallbacks，两条通道行为才一致',
+    );
+    expect(
+      containsCodeLine(body, '_videoNavigablePanelOpen'),
+      isTrue,
+      reason: '面板态必须喂进判决，否则方向键在面板里不会让位给焦点遍历',
+    );
+    expect(
+      containsCodeLine(body, '_videoFocusNode.hasPrimaryFocus'),
+      isTrue,
+      reason: '画面持焦是 videoEnterCaret 放行判据 + 面板让位前提的共同输入，不能省',
+    );
+    expect(
+      containsCodeLine(body, 'hasEditableFocus: focusedEditableText() != null'),
+      isTrue,
+      reason:
+          'BUG-962：文本框持焦判据必须真的接进判决输入。纯函数那半是对的，'
+          '页面不喂这个参数就等于没有——而现在**整张表**都过这条通道，'
+          '它一坏就是在 mpv.conf / 弹幕规则框里打 f 直接切全屏，'
+          '不再是旧实现那样「最多打不出空格」',
+    );
 
     // ①' 加载态可达性：controller 的必要性必须落在**执行点**，不得在入口把整条通道
     // 关掉。整条关掉时 `_controller == null`（转圈 / 资源缺失）下连 globalBack 都不再
@@ -394,48 +407,73 @@ void main() {
     final String masked = maskComments(body);
     final int resolveAt = masked.indexOf('resolveVideoKeyboardShortcut(');
     final int escapeAt = masked.indexOf('_handleVideoEscapeAction()');
-    final int nullGate =
-        masked.indexOf('if (controller == null) return false;');
-    expect(nullGate, greaterThanOrEqualTo(0),
-        reason: '需要 controller 的动作仍必须有一道门，不能解析出来就直接空指针');
-    expect(resolveAt, lessThan(nullGate),
-        reason: '解析必须无条件先做：controller 门提到 resolve 之前 = 加载态整条通道关闭');
-    expect(escapeAt, greaterThanOrEqualTo(0),
-        reason: 'globalBack 的执行体必须能在没有 controller 时单独调到'
-            '（_handleVideoEscapeAction，整表里唯一不碰播放器的动作）');
-    expect(escapeAt, lessThan(nullGate),
-        reason: 'globalBack 分流必须排在 controller 门之前，否则加载态 Esc 仍走不到'
-            '本页退出阶梯');
+    final int nullGate = masked.indexOf(
+      'if (controller == null) return false;',
+    );
+    expect(
+      nullGate,
+      greaterThanOrEqualTo(0),
+      reason: '需要 controller 的动作仍必须有一道门，不能解析出来就直接空指针',
+    );
+    expect(
+      resolveAt,
+      lessThan(nullGate),
+      reason: '解析必须无条件先做：controller 门提到 resolve 之前 = 加载态整条通道关闭',
+    );
+    expect(
+      escapeAt,
+      greaterThanOrEqualTo(0),
+      reason:
+          'globalBack 的执行体必须能在没有 controller 时单独调到'
+          '（_handleVideoEscapeAction，整表里唯一不碰播放器的动作）',
+    );
+    expect(
+      escapeAt,
+      lessThan(nullGate),
+      reason:
+          'globalBack 分流必须排在 controller 门之前，否则加载态 Esc 仍走不到'
+          '本页退出阶梯',
+    );
 
     // ② 挂载点必须是 [_wrapVideoGamepadControls]——窗口 build() 与全屏路由
     // pageBuilder 的**唯一共同外层**。挂在 _buildScaffold 上时全屏路由（推到根
     // navigator 的独立路由）根本没有这层（BUG-1864）。
     final String wrapper = methodBody(src, 'Widget _wrapVideoGamepadControls(');
-    expect(containsCodeLine(wrapper, '_handleVideoKeyboardShortcut(event)'),
-        isTrue,
-        reason: '键盘通道必须挂在窗口/全屏共用的 _wrapVideoGamepadControls 内，'
-            '否则全屏路径没有快捷键（BUG-1864 回归）');
+    expect(
+      containsCodeLine(wrapper, '_handleVideoKeyboardShortcut(event)'),
+      isTrue,
+      reason:
+          '键盘通道必须挂在窗口/全屏共用的 _wrapVideoGamepadControls 内，'
+          '否则全屏路径没有快捷键（BUG-1864 回归）',
+    );
 
     // ③ 全屏路由的 pageBuilder 必须真的走这个 wrapper（BUG-697 已确立的边界）。
     // 窗口由括号配对给出（[namedArgumentValues]），不再是 `substring(at, at + 200)`
     // 那种定长窗口——包装器名字一变长、实参多折一行，定长窗口就凭空变假。
     final List<String> pageBuilders = namedArgumentValues(src, 'pageBuilder');
-    expect(pageBuilders, hasLength(1),
-        reason: '合并语料里应当只有全屏路由这一个 pageBuilder；多出一个说明有第二条'
-            '全屏路径，本守卫钉不住它');
-    expect(containsIdentifierCall(pageBuilders.single,
-            '_wrapVideoGamepadControls'),
-        isTrue,
-        reason: '全屏路由内容必须包进同一个 _wrapVideoGamepadControls，'
-            '窗口与全屏的键盘/手柄语义才一致');
+    expect(
+      pageBuilders,
+      hasLength(1),
+      reason:
+          '合并语料里应当只有全屏路由这一个 pageBuilder；多出一个说明有第二条'
+          '全屏路径，本守卫钉不住它',
+    );
+    expect(
+      containsIdentifierCall(pageBuilders.single, '_wrapVideoGamepadControls'),
+      isTrue,
+      reason:
+          '全屏路由内容必须包进同一个 _wrapVideoGamepadControls，'
+          '窗口与全屏的键盘/手柄语义才一致',
+    );
 
     // ④ 按住倍速的 keyup 边沿必须排在主通道之前——主通道只看按下 / 重复沿，松开沿
     // 只有 _handleHoldSpeedKey 认；顺序反了就永远卡在加速态。注释必须先剥掉：这段
     // wrapper 的注释里逐字提到了两个方法名。
     final String maskedWrapper = maskComments(wrapper);
     final int holdAt = maskedWrapper.indexOf('_handleHoldSpeedKey(event)');
-    final int mainAt =
-        maskedWrapper.indexOf('_handleVideoKeyboardShortcut(event)');
+    final int mainAt = maskedWrapper.indexOf(
+      '_handleVideoKeyboardShortcut(event)',
+    );
     expect(holdAt, greaterThanOrEqualTo(0), reason: 'wrapper 里缺按住倍速分支');
     expect(holdAt, lessThan(mainAt), reason: '按住倍速必须排在主通道之前');
   });

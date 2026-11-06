@@ -33,8 +33,11 @@ void main() {
       expect(spaceBridge, contains("if (e.shiftKey) mods += 'Shift+';"));
       expect(spaceBridge, contains("if (e.altKey) mods += 'Alt+';"));
       expect(spaceBridge, contains("if (e.metaKey) mods += 'Meta+';"));
-      expect(spaceBridge, isNot(contains('e.ctrlKey || e.shiftKey')),
-          reason: '旧的「有修饰键就整体放行」分支必须消失，否则组合键绑定仍然死');
+      expect(
+        spaceBridge,
+        isNot(contains('e.ctrlKey || e.shiftKey')),
+        reason: '旧的「有修饰键就整体放行」分支必须消失，否则组合键绑定仍然死',
+      );
     });
 
     test('放行 IME 组字（否则破坏日文输入）', () {
@@ -48,10 +51,14 @@ void main() {
     });
 
     test('只拦声明的键（token 表按 handler 挂在 window 上，可热更新）', () {
-      expect(spaceBridge,
-          contains("window['__fushiKeyBridgeKeys_onSpaceKey'] = [' ']"));
-      expect(spaceBridge,
-          contains("window['__fushiKeyBridgeKeys_onSpaceKey'] || []"));
+      expect(
+        spaceBridge,
+        contains("window['__fushiKeyBridgeKeys_onSpaceKey'] = [' ']"),
+      );
+      expect(
+        spaceBridge,
+        contains("window['__fushiKeyBridgeKeys_onSpaceKey'] || []"),
+      );
     });
 
     test('e.key 与 e.code 双通道（注册表 token 用 DOM code 命名）', () {
@@ -67,22 +74,30 @@ void main() {
         keys: const <String>['ArrowLeft', 'ArrowRight', ' '],
       );
       expect(
-          multi,
-          contains(
-              "window['__fushiKeyBridgeKeys_onMangaKey'] = ['ArrowLeft', 'ArrowRight', ' ']"));
+        multi,
+        contains(
+          "window['__fushiKeyBridgeKeys_onMangaKey'] = ['ArrowLeft', 'ArrowRight', ' ']",
+        ),
+      );
       expect(multi, contains("callHandler('onMangaKey', _hit)"));
     });
 
     test('默认转发长按（阅读器语义），forwardRepeats:false 时丢弃', () {
-      expect(spaceBridge, isNot(contains('e.repeat')),
-          reason: '默认不加 repeat 门，保持阅读器既有连发行为');
+      expect(
+        spaceBridge,
+        isNot(contains('e.repeat')),
+        reason: '默认不加 repeat 门，保持阅读器既有连发行为',
+      );
       final String noRepeat = webViewKeyBridgeScript(
         handlerName: 'onMangaNavigationKey',
         keys: const <String>['ArrowLeft'],
         forwardRepeats: false,
       );
-      expect(noRepeat, contains('if (e.repeat) return;'),
-          reason: '漫画要「按住方向键不堆翻页风暴」');
+      expect(
+        noRepeat,
+        contains('if (e.repeat) return;'),
+        reason: '漫画要「按住方向键不堆翻页风暴」',
+      );
     });
 
     test('stopPropagation 可选，默认不独占', () {
@@ -98,15 +113,19 @@ void main() {
     test('幂等安装守卫按 handlerName 派生（宿主可反复注入）', () {
       // 漫画每次换加载窗口都重新 evaluate 一次；没有守卫就会叠加 listener，
       // 一次按键回传多次 → 翻页翻两页。
-      expect(spaceBridge,
-          contains("window['__fushiKeyBridgeInstalled_onSpaceKey']"));
+      expect(
+        spaceBridge,
+        contains("window['__fushiKeyBridgeInstalled_onSpaceKey']"),
+      );
       final String other = webViewKeyBridgeScript(
         handlerName: 'onMangaNavigationKey',
         keys: const <String>['ArrowLeft'],
       );
-      expect(other,
-          contains("window['__fushiKeyBridgeInstalled_onMangaNavigationKey']"),
-          reason: 'flag 必须按 handler 区分，否则同文档里两份桥互相把对方挡掉');
+      expect(
+        other,
+        contains("window['__fushiKeyBridgeInstalled_onMangaNavigationKey']"),
+        reason: 'flag 必须按 handler 区分，否则同文档里两份桥互相把对方挡掉',
+      );
     });
 
     test('键名里的引号 / 反斜杠被转义（不产生语法坏掉的 JS）', () {
@@ -114,8 +133,10 @@ void main() {
         handlerName: 'onWeird',
         keys: const <String>["'", r'\'],
       );
-      expect(weird,
-          contains(r"window['__fushiKeyBridgeKeys_onWeird'] = ['\'', '\\']"));
+      expect(
+        weird,
+        contains(r"window['__fushiKeyBridgeKeys_onWeird'] = ['\'', '\\']"),
+      );
     });
 
     test('键表槽按 handlerName 派生，装在 window 上（可热更新且互不覆盖）', () {
@@ -131,15 +152,20 @@ void main() {
       );
       expect(spaceBridge.trimRight(), endsWith('})();'));
       final int open = spaceBridge.indexOf('(function () {');
-      final int decl =
-          spaceBridge.indexOf("window['__fushiKeyBridgeKeys_onSpaceKey'] =");
-      final int install =
-          spaceBridge.indexOf("window['__fushiKeyBridgeInstalled_onSpaceKey']");
+      final int decl = spaceBridge.indexOf(
+        "window['__fushiKeyBridgeKeys_onSpaceKey'] =",
+      );
+      final int install = spaceBridge.indexOf(
+        "window['__fushiKeyBridgeInstalled_onSpaceKey']",
+      );
       final int close = spaceBridge.lastIndexOf('})();');
       expect(decl, greaterThan(open));
       expect(decl, lessThan(close), reason: '键表赋值必须落在 IIFE 体内');
-      expect(decl, lessThan(install),
-          reason: '键表必须在幂等 return 之前赋值，否则第二次注入换不掉表');
+      expect(
+        decl,
+        lessThan(install),
+        reason: '键表必须在幂等 return 之前赋值，否则第二次注入换不掉表',
+      );
     });
 
     test('同一 document 注入两份桥时，两份键表互不覆盖', () {
@@ -154,21 +180,31 @@ void main() {
       );
       final String both = '$reader\n$manga';
       expect(
-          both, contains("window['__fushiKeyBridgeKeys_onSpaceKey'] = [' ']"));
+        both,
+        contains("window['__fushiKeyBridgeKeys_onSpaceKey'] = [' ']"),
+      );
       expect(
-          both,
-          contains(
-              "window['__fushiKeyBridgeKeys_onMangaKey'] = ['ArrowLeft', 'ArrowRight']"));
-      expect('(function () {'.allMatches(both).length, 2,
-          reason: '每份桥各自一个 IIFE');
+        both,
+        contains(
+          "window['__fushiKeyBridgeKeys_onMangaKey'] = ['ArrowLeft', 'ArrowRight']",
+        ),
+      );
+      expect(
+        '(function () {'.allMatches(both).length,
+        2,
+        reason: '每份桥各自一个 IIFE',
+      );
       expect('})();'.allMatches(both).length, 2);
     });
 
     test('鼠标监听按 installMouseListeners 生成（默认宿主零变化）', () {
       // 弹窗必须恒装鼠标 listener：用户「现在没绑鼠标键、之后才绑上」时，表会从空
       // 变非空，listener 却只装一次——所以开关不能挂在 mouseButtons 是否为空上。
-      expect(spaceBridge, isNot(contains("addEventListener('mousedown'")),
-          reason: '只用键盘的老宿主不得平白多出鼠标监听');
+      expect(
+        spaceBridge,
+        isNot(contains("addEventListener('mousedown'")),
+        reason: '只用键盘的老宿主不得平白多出鼠标监听',
+      );
 
       final String withMouse = webViewKeyBridgeScript(
         handlerName: 'hostInputToken',
@@ -176,16 +212,26 @@ void main() {
         installMouseListeners: true,
       );
       expect(withMouse, contains("addEventListener('mousedown'"));
-      expect(withMouse,
-          contains("callHandler('hostInputToken', 'Mouse' + e.button)"));
+      expect(
+        withMouse,
+        contains("callHandler('hostInputToken', 'Mouse' + e.button)"),
+      );
       expect(withMouse, contains('e.button === 0'), reason: '左键是选词/查词，绝不能被桥抢走');
-      expect(withMouse, contains("addEventListener('auxclick'"),
-          reason: '侧键要压掉浏览器历史导航默认行为');
-      expect(withMouse, contains("addEventListener('contextmenu'"),
-          reason: '绑到右键时要压掉原生菜单');
-      expect(withMouse,
-          contains("window['__fushiKeyBridgeButtons_hostInputToken'] = []"),
-          reason: '未声明按钮时仍要下发空表，用于清掉热槽上残留的旧表');
+      expect(
+        withMouse,
+        contains("addEventListener('auxclick'"),
+        reason: '侧键要压掉浏览器历史导航默认行为',
+      );
+      expect(
+        withMouse,
+        contains("addEventListener('contextmenu'"),
+        reason: '绑到右键时要压掉原生菜单',
+      );
+      expect(
+        withMouse,
+        contains("window['__fushiKeyBridgeButtons_hostInputToken'] = []"),
+        reason: '未声明按钮时仍要下发空表，用于清掉热槽上残留的旧表',
+      );
     });
   });
 }

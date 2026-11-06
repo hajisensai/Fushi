@@ -11,7 +11,7 @@
 #   pack   zip the staged overlay (pdbs included) and print artifacts.json
 #
 # Example (everything):
-#   tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-1
+#   tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-2
 #
 # Requirements: Visual Studio 2022 with the C++ workload (+ ATL; a BuildTools
 # install that has ATL can be pointed at with -AtlDir), a Windows 10/11 SDK,
@@ -142,6 +142,14 @@ if ($Steps -contains 'sync') {
 
 if ($Steps -contains 'patch') {
   Invoke-Patch $flutter (Join-Path $patchDir 'engine-hdr-output.patch')
+  # Applies on top of the HDR patch (shares egl::Manager / FlutterWindowsView).
+  Invoke-Patch $flutter (Join-Path $patchDir 'engine-underlay-composition.patch')
+  # Applies on top of both: carries the HDR output onto the Impeller path
+  # (Fushi renders with Impeller on every platform, no Skia fallback).
+  Invoke-Patch $flutter (Join-Path $patchDir 'engine-impeller-hdr.patch')
+  # Applies on top of all three: keyed-mutex synchronized external textures
+  # (ExternalTextureD3d copies under IDXGIKeyedMutex, BUG-3888).
+  Invoke-Patch $flutter (Join-Path $patchDir 'engine-d3d-keyed-mutex.patch')
   Invoke-Patch (Join-Path $src 'flutter\third_party\angle') (Join-Path $patchDir 'angle-scrgb-swapchain.patch')
 }
 

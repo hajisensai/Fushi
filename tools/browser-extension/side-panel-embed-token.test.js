@@ -92,8 +92,10 @@ async function loadEmbedPanel(opts) {
           },
           onActivated: { addListener() {} },
           onUpdated: { addListener() {} },
-          sendMessage(tabId, msg, cb) {
-            tabSends.push({ tabId: tabId, msg: msg });
+          // chrome.tabs.sendMessage(tabId, message, options?, callback?)：侧边栏带 {frameId:0}。
+          sendMessage(tabId, msg, opts, cb) {
+            if (typeof opts === 'function') cb = opts;
+            tabSends.push({ tabId: tabId, msg: msg, opts: typeof opts === 'function' ? undefined : opts });
             if (cb) cb({ ok: true, data: {} });
             return Promise.resolve({ ok: true });
           },

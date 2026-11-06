@@ -11,13 +11,8 @@ void main() {
       final DateTime t = DateTime.utc(2026, 10, 11, 12, 3, 27);
       final String gec = EdgeTtsClientIdentity.secMsGec(t);
       expect(gec, matches(RegExp(r'^[0-9A-F]{64}$')));
-      final int windowStart = DateTime.utc(
-        2026,
-        10,
-        11,
-        12,
-        0,
-      ).millisecondsSinceEpoch ~/ 1000;
+      final int windowStart =
+          DateTime.utc(2026, 10, 11, 12, 0).millisecondsSinceEpoch ~/ 1000;
       final int ticks = (windowStart + 11644473600) * 10000000;
       final String expected = sha256
           .convert(
@@ -61,14 +56,15 @@ void main() {
   group('locateTtsWordBoundaries', () {
     test('maps words sequentially to UTF-16 offsets', () {
       const String text = '今日は、いい天気ですね。いい日だ。';
-      final List<TtsBoundary> b = locateTtsWordBoundaries(text, const <
-        ({String text, int offsetMs, int durationMs})
-      >[
-        (text: '今日', offsetMs: 0, durationMs: 300),
-        (text: 'いい', offsetMs: 400, durationMs: 200),
-        (text: '天気', offsetMs: 600, durationMs: 300),
-        (text: 'いい', offsetMs: 1500, durationMs: 200),
-      ]);
+      final List<TtsBoundary> b = locateTtsWordBoundaries(
+        text,
+        const <({String text, int offsetMs, int durationMs})>[
+          (text: '今日', offsetMs: 0, durationMs: 300),
+          (text: 'いい', offsetMs: 400, durationMs: 200),
+          (text: '天気', offsetMs: 600, durationMs: 300),
+          (text: 'いい', offsetMs: 1500, durationMs: 200),
+        ],
+      );
       expect(b.map((TtsBoundary x) => x.textOffset), <int>[0, 4, 6, 12]);
       expect(b.map((TtsBoundary x) => x.textLength), <int>[2, 2, 2, 2]);
       expect(b.map((TtsBoundary x) => x.offsetMs), <int>[0, 400, 600, 1500]);
@@ -77,33 +73,38 @@ void main() {
 
     test('skips unknown and empty words without moving the cursor', () {
       const String text = '第3章が始まる';
-      final List<TtsBoundary> b = locateTtsWordBoundaries(text, const <
-        ({String text, int offsetMs, int durationMs})
-      >[
-        (text: '第', offsetMs: 0, durationMs: 100),
-        (text: 'さん', offsetMs: 100, durationMs: 100), // 读法改写
-        (text: '', offsetMs: 150, durationMs: 0),
-        (text: '章', offsetMs: 200, durationMs: 100),
-        (text: '始まる', offsetMs: 400, durationMs: 300),
-      ]);
+      final List<TtsBoundary> b = locateTtsWordBoundaries(
+        text,
+        const <({String text, int offsetMs, int durationMs})>[
+          (text: '第', offsetMs: 0, durationMs: 100),
+          (text: 'さん', offsetMs: 100, durationMs: 100), // 读法改写
+          (text: '', offsetMs: 150, durationMs: 0),
+          (text: '章', offsetMs: 200, durationMs: 100),
+          (text: '始まる', offsetMs: 400, durationMs: 300),
+        ],
+      );
       expect(b.map((TtsBoundary x) => x.textOffset), <int>[0, 2, 4]);
       expect(b.map((TtsBoundary x) => x.offsetMs), <int>[0, 200, 400]);
     });
 
     test('does not match words before the cursor', () {
-      final List<TtsBoundary> b = locateTtsWordBoundaries('AB', const <
-        ({String text, int offsetMs, int durationMs})
-      >[
-        (text: 'B', offsetMs: 0, durationMs: 1),
-        (text: 'A', offsetMs: 1, durationMs: 1),
-      ]);
+      final List<TtsBoundary> b = locateTtsWordBoundaries(
+        'AB',
+        const <({String text, int offsetMs, int durationMs})>[
+          (text: 'B', offsetMs: 0, durationMs: 1),
+          (text: 'A', offsetMs: 1, durationMs: 1),
+        ],
+      );
       expect(b.map((TtsBoundary x) => x.textOffset), <int>[1]);
     });
 
     test('handles surrogate pairs in UTF-16 units', () {
-      final List<TtsBoundary> b = locateTtsWordBoundaries('😀猫', const <
-        ({String text, int offsetMs, int durationMs})
-      >[(text: '猫', offsetMs: 0, durationMs: 1)]);
+      final List<TtsBoundary> b = locateTtsWordBoundaries(
+        '😀猫',
+        const <({String text, int offsetMs, int durationMs})>[
+          (text: '猫', offsetMs: 0, durationMs: 1),
+        ],
+      );
       expect(b.single.textOffset, 2);
     });
   });
@@ -124,7 +125,11 @@ void main() {
           'LocalName': '圭太',
         },
         <String, Object?>{'ShortName': 'x-NoLocale'},
-        <String, Object?>{'ShortName': 'en-US-X', 'Locale': 'en-US', 'Gender': 1},
+        <String, Object?>{
+          'ShortName': 'en-US-X',
+          'Locale': 'en-US',
+          'Gender': 1,
+        },
         'junk',
       ];
       final voices = parseMicrosoftVoiceList(raw);

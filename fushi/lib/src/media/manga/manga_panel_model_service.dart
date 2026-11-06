@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:fushi/src/media/manga/manga_panel_detector.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/manga/panel_detection.dart';
 import 'package:fushi_engine/media/manga/panel_model_manifest.dart';
@@ -145,10 +145,7 @@ Future<PanelDetector?> createMangaPanelDetector() async {
   );
 }
 
-Future<String> _sha256(File file) async {
-  final Digest digest = await sha256.bind(file.openRead()).first;
-  return digest.toString();
-}
+Future<String> _sha256(File file) => ffcSha256File(file.path);
 
 void installMangaPanelDetectorFactory() {
   mangaPanelDetectorFactory = createMangaPanelDetector;

@@ -1,33 +1,21 @@
 #include "fushidicts/lookup.hpp"
 
 #include <utf8.h>
-#include <zstd.h>
 
 #include <algorithm>
 #include <climits>
-#include <glaze/glaze.hpp>
 #include <map>
 #include <optional>
 #include <ranges>
-#include <sstream>
-#include <tuple>
 #include <unordered_map>
 
 #include "scan/mixed_orthography.hpp"
+#include "scan/ruby_reading.hpp"
 #include "scan/word_scan.hpp"
 #include "text_processor/text_processor.hpp"
+#include "util/redirect_glossary.hpp"
 
 namespace {
-std::vector<std::string> split_whitespace(const std::string& str) {
-  std::vector<std::string> result;
-  std::istringstream iss(str);
-  std::string token;
-  while (iss >> token) {
-    result.push_back(std::move(token));
-  }
-  return result;
-}
-
 // 上游 909c854 revert 了 4975788 的向量比较（作者自己否掉的实验：每次比较
 // 分配+排序一个 vector，partial_sort 下纯浪费）；后随 bc62d2b 演化为 optional +
 // 方向感知（Descending 时取该词典内最大值而非最小值）。
@@ -63,40 +51,13 @@ std::optional<int> get_freq_value_for_dict(const TermResult& term, std::string_v
 // 只会在弹窗里变成被 isRedirectGlossary 滤空的卡片——这正是 BUG-2853 的症状（高亮
 // 到了 `instead of`，卡片却只剩 `instead`）。与正文混排的自指标签（OALDPE10 的
 // `["give up", ["Redirected from give up"]]` + 释义，BUG-2566）不动。
-struct DictionaryRedirect {
-  std::string form_of;
-  std::vector<std::string> rules;
-};
-
-// 纯重定向记录的 glossary 很短（目标词头 + 一两条 rule 文本），先读 zstd 帧头里
-// 的原始大小做门槛：正常释义一条都不解压，只有小记录才解压 + 解析。
-constexpr unsigned long long kMaxRedirectGlossaryBytes = 1024;
-
-// 帧头里的原始大小过了门槛才值得解压（不解压，只读 zstd 帧头）。
-bool may_be_redirect_glossary(const GlossaryEntry& g) {
-  if (g.compressed_data == nullptr || g.compressed_size == 0) return false;
-  const unsigned long long raw_size = ZSTD_getFrameContentSize(g.compressed_data, g.compressed_size);
-  return raw_size != ZSTD_CONTENTSIZE_ERROR && raw_size != ZSTD_CONTENTSIZE_UNKNOWN &&
-         raw_size <= kMaxRedirectGlossaryBytes;
-}
-
-// 整条 glossary 都是 `[formOf, [rule, ...]]` 项时返回这些项，否则 nullopt。
-std::optional<std::vector<DictionaryRedirect>> parse_redirect_glossary(const std::string& json) {
-  // 廉价前置判据：必须以 `[[` 开头（容许空白），文本 / structured-content 都在这里出局。
-  std::size_t i = json.find_first_not_of(" \t\r\n");
-  if (i == std::string::npos || json[i] != '[') return std::nullopt;
-  i = json.find_first_not_of(" \t\r\n", i + 1);
-  if (i == std::string::npos || json[i] != '[') return std::nullopt;
-
-  std::vector<std::tuple<std::string, std::vector<std::string>>> items;
-  if (glz::read_json(items, json) || items.empty()) return std::nullopt;
-  std::vector<DictionaryRedirect> redirects;
-  redirects.reserve(items.size());
-  for (auto& [form_of, rules] : items) {
-    if (form_of.empty()) return std::nullopt;
-    redirects.push_back({.form_of = std::move(form_of), .rules = std::move(rules)});
-  }
-  return redirects;
+//
+// 判据（原始大小门槛 + `[[` 前置 + 整体解析）在 util/redirect_glossary.hpp 只写一次，
+// 导入端打标与迁移扫描共用。所属词典经 sidecar 确认无重定向（dict_redirect_free）时
+// 整条检测跳过：既不读帧头也不解压——冷页下这一步原本要把每个候选命中的每条
+// glossary 所在页都缺页读进来，而它们大多数随后被去重 / 截断丢掉、根本不会 materialize。
+bool redirect_check_needed(const GlossaryEntry& g) {
+  return !g.dict_redirect_free && fushi::redirect_glossary::may_be_redirect(g.compressed_data, g.compressed_size);
 }
 
 bool matches_primary_reading(const TermResult& term, std::string_view primary_reading) {
@@ -191,7 +152,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   // 候选前缀由词边界感知的扫描器生成（对齐 Yomitan searchResolution）：
   // 空格分词语言不在单词中间切断，CJK 仍逐码点。详见 scan/word_scan.hpp。
   for (const std::string& search_str : scan_candidates(lookup_string, scan_length)) {
-    auto processor_results = text_processor::process(search_str);
+    auto processor_results = text_processor::process(search_str, options.chinese_simp_to_trad);
     for (auto& variant : processor_results) {
       auto deinflection_results = deinflector_.deinflect(variant.text);
 
@@ -204,8 +165,8 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
                              const std::vector<TransformGroup>& trace, bool follow) {
         for (auto& term : terms) {
           std::erase_if(term.glossaries, [&](const GlossaryEntry& g) {
-            if (!may_be_redirect_glossary(g)) return false;
-            auto redirects = parse_redirect_glossary(
+            if (!redirect_check_needed(g)) return false;
+            auto redirects = fushi::redirect_glossary::parse(
                 DictionaryQuery::decompress_glossary(g.compressed_data, g.compressed_size, g.zstd_dict));
             if (!redirects) return false;
             if (follow) {
@@ -346,8 +307,10 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   // dictionary with a genuinely distinct inflected entry keeps it (different
   // blob).
   auto same_blob = [](const GlossaryEntry& x, const GlossaryEntry& y) {
-    return x.compressed_data == y.compressed_data && x.compressed_size == y.compressed_size &&
-           x.dict_name == y.dict_name;
+    // 按 blob 身份（来源文件 + 偏移）判等，不比指针：32 位窗口映射下同一 blob 可能
+    // 落在不同窗口（BUG-4013）；64 位整份映射时两者等价。
+    return x.compressed_source == y.compressed_source && x.compressed_offset == y.compressed_offset &&
+           x.compressed_size == y.compressed_size && x.dict_name == y.dict_name;
   };
   for (auto& r : results) {
     // Only an untransformed direct expression hit can be a redirect alias.
@@ -376,6 +339,14 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   // the surviving results carry byte-identical frequency data.
   for (auto& r : results) {
     query_.enrich_freq(r.term);
+  }
+
+  // 原文振假名一致度每条只算一次（比较器里会被反复比较）。
+  const ruby_reading::Matcher ruby_matcher(options.ruby_readings);
+  if (!ruby_matcher.empty()) {
+    for (auto& r : results) {
+      r.ruby_agreement = ruby_matcher.agreement(r.matched, r.term.expression, r.term.reading);
+    }
   }
 
   // 上游 bc62d2b：排序选项解析。Auto = 既有比较器（按注册顺序遍历全部 freq 词典，
@@ -425,6 +396,13 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
         auto len_b = utf8::distance(b.matched.begin(), b.matched.end());
         if (len_a != len_b) {
           return len_a > len_b;
+        }
+
+        // 原文 ruby：只在同匹配长度之内起作用（最长匹配决定高亮与制卡词形，ruby 不跨
+        // 长度挪结果），压过变形步数与频率——`<ruby>忙<rt>せわ</rt></ruby>しい` 的
+        // せわしい 排在高频的 いそがしい 前面。无 ruby 时两边恒 0，此档恒平。
+        if (a.ruby_agreement != b.ruby_agreement) {
+          return a.ruby_agreement > b.ruby_agreement;
         }
 
         auto steps_a = a.preprocessor_steps;
@@ -481,6 +459,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   // Pitch is not read by the comparator, so it waits until after the resize:
   // only the <=max_results terms the user actually receives get enriched
   // (BUG-1304).
+  if (!options.materialize) return results;
   for (auto& r : results) {
     query_.enrich_pitch(r.term);
     query_.materialize(r.term);
@@ -494,7 +473,7 @@ void Lookup::filter_by_pos(std::vector<TermResult>& terms, const DeinflectionRes
     return;
   }
   std::erase_if(terms, [&](const TermResult& term) {
-    auto dict_conditions = deinflector_.pos_to_conditions(split_whitespace(term.rules));
+    auto dict_conditions = deinflector_.rules_to_conditions(term.rules);
     return (dict_conditions & d.conditions) == 0;
   });
 }

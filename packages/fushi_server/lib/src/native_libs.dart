@@ -11,8 +11,10 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 /// 候选目录（按优先级）：可执行文件同级 → `../lib`（bundle）→ 当前目录。
-List<String> bundledLibraryCandidates(String bareName,
-    {String? executablePath}) {
+List<String> bundledLibraryCandidates(
+  String bareName, {
+  String? executablePath,
+}) {
   final String exe = executablePath ?? Platform.resolvedExecutable;
   final String binDir = p.dirname(exe);
   return <String>[
@@ -24,8 +26,10 @@ List<String> bundledLibraryCandidates(String bareName,
 
 /// 第一个存在的候选；都不存在 → null。
 String? locateBundledLibrary(String bareName, {String? executablePath}) {
-  for (final String candidate
-      in bundledLibraryCandidates(bareName, executablePath: executablePath)) {
+  for (final String candidate in bundledLibraryCandidates(
+    bareName,
+    executablePath: executablePath,
+  )) {
     if (File(candidate).existsSync()) return candidate;
   }
   return null;

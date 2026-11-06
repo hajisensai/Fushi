@@ -1,16 +1,19 @@
-// 浏览页的领域层：快照 + 搜索 + 排序 + 笔记模式；批量操作一个批次落库、可同步、可撤销。
+// 浏览页的领域层：常驻原生会话的搜索 + 排序 + 笔记模式；批量操作一个批次落库、可同步、可撤销。
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
+import 'package:fushi_anki/fushi_anki_core.dart' show ankiStripHtml;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_browse_ops.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
+import 'support/srs_sync2_peers.dart';
+import 'support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 /// 确定性假引擎（同 srs_db_store_test.dart）。
 class _FakeEngine implements FsrsEngine {
@@ -80,46 +83,20 @@ class _FakeEngine implements FsrsEngine {
   @override
   List<double> computeParameters({
     required SrsAlgorithm algorithm,
-    required List<List<SrsFsrsReview>> items,
-    List<int>? cardIds,
+    required SrsFsrsTrainingSet items,
     SrsOptimizerControl? control,
   }) => defaultParams(algorithm);
   @override
   SrsEvaluation evaluateTimeSeries({
     required SrsAlgorithm algorithm,
-    required List<List<SrsFsrsReview>> items,
+    required SrsFsrsTrainingSet items,
   }) => const SrsEvaluation(logLoss: 0.3, rmseBins: 0.1);
   @override
   SrsEvaluation evaluate({
     required SrsAlgorithm algorithm,
     required List<double> params,
-    required List<List<SrsFsrsReview>> items,
+    required SrsFsrsTrainingSet items,
   }) => const SrsEvaluation(logLoss: 0.3, rmseBins: 0.1);
-}
-
-class _Dir implements SrsSyncDirectory {
-  _Dir(this.now);
-  final int Function() now;
-  final Map<String, Map<String, Uint8List>> files =
-      <String, Map<String, Uint8List>>{};
-  @override
-  Future<List<String>> listWriters() async => files.keys.toList()..sort();
-  @override
-  Future<List<String>?> listFiles(String w) async => files[w]?.keys.toList();
-  @override
-  Future<Uint8List?> read(String w, String n) async => files[w]?[n];
-  @override
-  Future<void> write(String w, String n, Uint8List b) async =>
-      (files[w] ??= <String, Uint8List>{})[n] = b;
-  @override
-  Future<void> delete(String w, String n) async => files[w]?.remove(n);
-  @override
-  Future<void> deleteWriter(String w) async => files.remove(w);
-  @override
-  Future<int?> serverTime(String w) async {
-    await write(w, srsProbeName, Uint8List(0));
-    return now();
-  }
 }
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000b7';
@@ -127,27 +104,21 @@ const String kProfile = '01928c3e-0000-7000-8000-0000000000b7';
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   int t = DateTime.utc(2026, 10, 14, 12).millisecondsSinceEpoch;
-  final List<FushiDatabase> dbs = <FushiDatabase>[];
 
   setUp(() => t = DateTime.utc(2026, 10, 14, 12).millisecondsSinceEpoch);
-  tearDown(() async {
-    for (final FushiDatabase db in dbs) {
-      await db.close();
-    }
-    dbs.clear();
-  });
+  tearDown(() async {});
 
   Future<SrsDbStore> device(String id) async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    dbs.add(db);
+    final SrsStorage srsStorage = await openTestSrsStorage();
     return SrsDbStore.open(
-      db: db,
+      db: srsStorage.db,
+      core: srsStorage.core,
       profileUid: kProfile,
       deviceId: id,
       engine: const _FakeEngine(),
       trustedClock: SrsTrustedClock(
         wallClockMs: () => t,
-        monotonicMs: () => t,
+        bootClockMs: () => t,
         bootId: 'boot-$id',
       ),
     );
@@ -174,11 +145,29 @@ void main() {
   Future<String> cardOf(SrsDbStore s, String noteId) async =>
       (await s.cardsOfNote(noteId)).single.id;
 
-  List<String> exprs(List<SrsBrowseItem> items) => <String>[
-    for (final SrsBrowseItem i in items) i.primary.sortText,
+  List<String> exprs(List<SrsBrowseRow> rows) => <String>[
+    for (final SrsBrowseRow r in rows) r.sortText,
   ];
 
-  group('快照：搜索 + 排序', () {
+  /// 在会话上查一次，取出全部行。
+  Future<List<SrsBrowseRow>> rowsOf(
+    SrsBrowseSession b, {
+    String query = '',
+    SrsBrowseSort sort = const SrsBrowseSort(),
+    SrsBrowseMode mode = SrsBrowseMode.cards,
+  }) async => (await b.query(query: query, sort: sort, mode: mode)).all();
+
+  /// 新开一个会话查一次（查完关掉）。
+  Future<List<SrsBrowseRow>> fresh(SrsDbStore s, {String query = ''}) async {
+    final SrsBrowseSession b = SrsBrowseSession(s);
+    try {
+      return await rowsOf(b, query: query);
+    } finally {
+      await b.close();
+    }
+  }
+
+  group('会话：搜索 + 排序', () {
     test('字段限定 / 通配 / 正则 / 标签 / 状态 / prop', () async {
       final SrsDbStore s = await device('a');
       final String a = await add(
@@ -195,9 +184,11 @@ void main() {
       t += 86400000 * 4;
       await s.answer(ca, 1);
 
-      final SrsBrowseSnapshot snap = await SrsBrowseSnapshot.load(s);
-      List<String> q(String query) => exprs(
-        snap.query(
+      final SrsBrowseSession snap = SrsBrowseSession(s);
+      addTearDown(snap.close);
+      Future<List<String>> q(String query) async => exprs(
+        await rowsOf(
+          snap,
           query: query,
           sort: const SrsBrowseSort(
             column: SrsBrowseSortColumn.created,
@@ -205,24 +196,172 @@ void main() {
           ),
         ),
       );
-      expect(q(''), <String>['食べる', '飲む', '走る']);
-      expect(q('MainDefinition:to*'), <String>['食べる', '飲む', '走る']);
-      expect(q('MainDefinition:"to drink"'), <String>['飲む']);
-      expect(q('mainDefinition:*r*'), <String>['飲む', '走る']);
-      expect(q('Expression:走る'), <String>['走る'], reason: '字段比较先去 HTML');
-      expect(q(r'Expression:re:^<b>'), <String>['走る'], reason: 're: 看原文');
-      expect(q('tag:n5 -tag:verb'), <String>['食べる']);
-      expect(q('is:new'), <String>['飲む', '走る']);
-      expect(q('-is:new'), <String>['食べる']);
-      expect(q('prop:reps=2 prop:lapses=1'), <String>['食べる']);
-      expect(q('prop:d>0.8'), <String>['食べる']);
-      expect(q('note:Lapis*'), hasLength(3));
-      expect(q('deck:*'), hasLength(3));
-      expect(
-        () => snap.query(query: 'prop:ease>2'),
+      expect(await q(''), <String>['食べる', '飲む', '走る']);
+      expect(await q('MainDefinition:to*'), <String>['食べる', '飲む', '走る']);
+      expect(await q('MainDefinition:"to drink"'), <String>['飲む']);
+      expect(await q('mainDefinition:*r*'), <String>['飲む', '走る']);
+      expect(await q('Expression:走る'), <String>['走る'], reason: '字段比较先去 HTML');
+      expect(await q(r'Expression:re:^<b>'), <String>['走る'], reason: 're: 看原文');
+      expect(await q('tag:n5 -tag:verb'), <String>['食べる']);
+      expect(await q('is:new'), <String>['飲む', '走る']);
+      expect(await q('-is:new'), <String>['食べる']);
+      expect(await q('prop:reps=2 prop:lapses=1'), <String>['食べる']);
+      expect(await q('prop:d>0.8'), <String>['食べる']);
+      expect(await q('note:Lapis*'), hasLength(3));
+      expect(await q('deck:*'), hasLength(3));
+      // 未限定字段的文本 / 正则：全部字段按笔记连续传进内核。
+      expect(await q('drink'), <String>['飲む']);
+      expect(await q('"re:to (eat|run)"'), <String>['食べる', '走る']);
+      // 笔记都是 4 天前建的、之后没改过（复习不算改笔记）：最后改动时刻按需装载。
+      expect(await q('edited:1'), isEmpty);
+      expect(await q('edited:5'), hasLength(3));
+      await expectLater(
+        snap.query(query: 'prop:ease>2'),
         throwsA(isA<SrsSearchUnsupported>()),
       );
-      expect(snap.fieldNames, contains('MainDefinition'));
+      expect(
+        srsBrowseFieldNames(await s.noteTypes()),
+        contains('MainDefinition'),
+      );
+    });
+
+    test('新列 / 新搜索词 / counts / sources 的解码（spec 2026-11-04 §2）', () async {
+      final SrsDbStore s = await device('a');
+      Future<String> addAt(
+        String expr,
+        String definition,
+        SrsSourceRef? source,
+      ) async {
+        final String id = await s.createNote(
+          noteTypeId: s.lapisNoteTypeId,
+          fieldsById: <String, String>{
+            srsLapisFieldId(kProfile, 'Expression'): expr,
+            srsLapisFieldId(kProfile, 'MainDefinition'): definition,
+          },
+          source: source,
+        );
+        t += 1000;
+        return id;
+      }
+
+      final String a = await addAt(
+        '食べる',
+        '<b>to eat</b> [sound:taberu.mp3]<img src="taberu.png">',
+        SrsSourceRef.book(bookKey: 'bk', sectionIndex: 2, charStart: 9),
+      );
+      await addAt(
+        '飲む',
+        'to drink',
+        SrsSourceRef.book(
+          bookKey: 'bk',
+          sectionIndex: 5,
+          charStart: 0,
+          title: '本',
+        ),
+      );
+      await addAt('走る', '', null);
+      await addAt('<i>食べる</i>', 'dup', null);
+      await s.answer(await cardOf(s, a), 4);
+      t += 86400000 * 2;
+
+      final SrsBrowseSession b = SrsBrowseSession(s);
+      addTearDown(b.close);
+      final SrsBrowseResult res = await b.query(
+        sort: const SrsBrowseSort(
+          column: SrsBrowseSortColumn.created,
+          ascending: true,
+        ),
+      );
+      final List<SrsBrowseRow> rows = await res.all();
+      expect(exprs(rows), <String>['食べる', '飲む', '走る', '食べる']);
+      final SrsBrowseRow ra = rows[0];
+      expect(ra.fieldPreview, contains('to eat'));
+      expect(ra.fieldPreviewNames, hasLength(ra.fieldPreview.length));
+      expect(
+        ra.fieldPreviewNames[ra.fieldPreview.indexOf('to eat')],
+        'MainDefinition',
+        reason: '摘要带着来源字段名（表格原地改按它写回）',
+      );
+      expect(ra.imageRef, 'taberu.png');
+      expect(ra.audioRef, 'taberu.mp3');
+      expect(ra.sourceKey, 'book:bk');
+      expect(ra.sourceKind, SrsSourceKind.book);
+      expect(ra.source?.data['section'], 2);
+      expect(ra.intervalDays, isNotNull);
+      expect(ra.difficulty, isNotNull);
+      expect(ra.retention, isNotNull);
+      expect(ra.retention!, inInclusiveRange(0.0, 1.0));
+      expect(ra.lastReviewAt, isNotNull);
+      expect(ra.modifiedAt, greaterThanOrEqualTo(ra.addedAt));
+      final SrsBrowseRow rb = rows[1];
+      expect(rb.sourceKey, 'book:bk', reason: '章节不进键');
+      expect(rb.source?.title, '本');
+      expect(rb.intervalDays, isNull);
+      expect(rb.retention, isNull);
+      expect(rb.lastReviewAt, isNull);
+      expect(rb.imageRef, isNull);
+      expect(rows[2].sourceKey, isNull);
+      expect(rows[2].sourceData, isNull);
+      expect(rows[2].fieldPreview, isNot(contains('')));
+
+      expect(
+        await b.counts(<String>[
+          '',
+          'src:book',
+          srsSourceQuery('book:bk'),
+          srsSourceQuery(null),
+          'has:audio',
+          'has:image',
+          'rated:1',
+          'rated:7:4',
+          'rated:7:1',
+          'prop:r>0',
+          'is:dupe',
+          'prop:ease>2',
+          '(',
+          '"re:("',
+        ]),
+        <int>[4, 2, 2, 2, 1, 1, 0, 1, 0, 1, 2, -1, -1, -1],
+      );
+      expect(
+        await b.counts(<String>['src:book'], mode: SrsBrowseMode.notes),
+        <int>[2],
+      );
+      expect(exprs(await rowsOf(b, query: 'src:none')), <String>['食べる', '走る']);
+
+      final List<SrsBrowseRow> byR = await rowsOf(
+        b,
+        sort: const SrsBrowseSort(column: SrsBrowseSortColumn.retention),
+      );
+      expect(byR.first.cardId, ra.cardId, reason: '没有保持率的排最后');
+
+      // 按出处排（表格按出处分组）：同一作品挨着，没有出处的在最后。
+      final List<SrsBrowseRow> bySource = await rowsOf(
+        b,
+        sort: const SrsBrowseSort(
+          column: SrsBrowseSortColumn.source,
+          ascending: true,
+        ),
+      );
+      expect(
+        <String?>[for (final SrsBrowseRow r in bySource) r.sourceKey],
+        <String?>['book:bk', 'book:bk', null, null],
+      );
+
+      final List<SrsBrowseSourceGroup> groups = await res.sources();
+      expect(
+        <String?>[for (final SrsBrowseSourceGroup g in groups) g.key],
+        <String?>['book:bk', null],
+      );
+      expect(groups[0].count, 2);
+      expect(groups[0].kind, SrsSourceKind.book);
+      expect(groups[0].preview, <int>[0, 1]);
+      expect(groups[0].source?.title, '本', reason: '代表出处取最近添加的那条');
+      expect(groups[0].latestAddedAt, rb.addedAt);
+      expect(groups[1].count, 2);
+      expect(groups[1].preview, <int>[2, 3]);
+      expect(groups[1].data, isNull);
+      expect(groups[0].deckIds, <String>[ra.deckId]);
     });
 
     test('排序：排序字段 / 指定字段 / 到期 / 复习次数 / 修改时间，升降序', () async {
@@ -235,10 +374,12 @@ void main() {
       t += 1000;
       await s.updateNote(b, tags: <String>['touched']);
 
-      final SrsBrowseSnapshot snap = await SrsBrowseSnapshot.load(s);
-      List<String> sorted(SrsBrowseSort sort) => exprs(snap.query(sort: sort));
+      final SrsBrowseSession snap = SrsBrowseSession(s);
+      addTearDown(snap.close);
+      Future<List<String>> sorted(SrsBrowseSort sort) async =>
+          exprs(await rowsOf(snap, sort: sort));
       expect(
-        sorted(
+        await sorted(
           const SrsBrowseSort(
             column: SrsBrowseSortColumn.sortField,
             ascending: true,
@@ -247,11 +388,13 @@ void main() {
         <String>['a', 'b', 'c'],
       );
       expect(
-        sorted(const SrsBrowseSort(column: SrsBrowseSortColumn.sortField)),
+        await sorted(
+          const SrsBrowseSort(column: SrsBrowseSortColumn.sortField),
+        ),
         <String>['c', 'b', 'a'],
       );
       expect(
-        sorted(
+        await sorted(
           const SrsBrowseSort(
             column: SrsBrowseSortColumn.field,
             fieldName: 'maindefinition',
@@ -260,36 +403,60 @@ void main() {
         ),
         <String>['a', 'c', 'b'],
       );
+      // 同一字段反向：读过的字段值复用。
       expect(
-        sorted(const SrsBrowseSort(column: SrsBrowseSortColumn.created)),
+        await sorted(
+          const SrsBrowseSort(
+            column: SrsBrowseSortColumn.field,
+            fieldName: 'MainDefinition',
+          ),
+        ),
+        <String>['b', 'c', 'a'],
+      );
+      // 笔记类型没有这个字段：值为 null，排在最后（保持自然顺序）。
+      expect(
+        await sorted(
+          const SrsBrowseSort(
+            column: SrsBrowseSortColumn.field,
+            fieldName: 'NoSuchField',
+          ),
+        ),
+        <String>['b', 'a', 'c'],
+      );
+      expect(
+        await sorted(const SrsBrowseSort(column: SrsBrowseSortColumn.created)),
         <String>['c', 'a', 'b'],
       );
       // 到期：复习卡按到期日（a 评「简单」间隔更长 → 更晚），新卡排最后。
       expect(
-        sorted(
+        await sorted(
           const SrsBrowseSort(column: SrsBrowseSortColumn.due, ascending: true),
         ),
         <String>['b', 'a', 'c'],
       );
       // 修改时间：最后改的是 a（标签）。
       expect(
-        sorted(const SrsBrowseSort(column: SrsBrowseSortColumn.modified)).first,
+        (await sorted(
+          const SrsBrowseSort(column: SrsBrowseSortColumn.modified),
+        )).first,
         'a',
       );
       // 难度：新卡没有值，升降序都排最后。
       for (final bool asc in <bool>[true, false]) {
         expect(
-          sorted(
+          (await sorted(
             SrsBrowseSort(
               column: SrsBrowseSortColumn.difficulty,
               ascending: asc,
             ),
-          ).last,
+          )).last,
           'c',
         );
       }
       expect(
-        sorted(const SrsBrowseSort(column: SrsBrowseSortColumn.reps)).last,
+        (await sorted(
+          const SrsBrowseSort(column: SrsBrowseSortColumn.reps),
+        )).last,
         'c',
       );
     });
@@ -298,12 +465,18 @@ void main() {
       final SrsDbStore s = await device('a');
       await add(s, '食べる');
       await add(s, '飲む');
-      final SrsBrowseSnapshot snap = await SrsBrowseSnapshot.load(s);
-      final List<SrsBrowseItem> notes = snap.query(mode: SrsBrowseMode.notes);
+      final SrsBrowseSession snap = SrsBrowseSession(s);
+      addTearDown(snap.close);
+      final SrsBrowseResult r = await snap.query(mode: SrsBrowseMode.notes);
+      final List<SrsBrowseRow> notes = await r.all();
       expect(notes, hasLength(2));
-      for (final SrsBrowseItem i in notes) {
-        expect(i.cards, isNotEmpty);
-        expect(i.cards.every((c) => c.note.id == i.noteId), isTrue);
+      for (final SrsBrowseRow i in notes) {
+        expect(i.cardCount, 1);
+        final SrsBrowseTargets tg = await r.targets(<String>[i.noteId]);
+        expect(tg.noteIds, <String>[i.noteId]);
+        expect(tg.cardIds, <String>[
+          for (final c in await s.cardsOfNote(i.noteId)) c.id,
+        ]);
       }
     });
 
@@ -311,20 +484,26 @@ void main() {
       final SrsDbStore s = await device('a');
       await add(s, 'a*b_c"d:e');
       await add(s, 'aBBc');
-      final SrsBrowseSnapshot snap = await SrsBrowseSnapshot.load(s);
+      final SrsBrowseSession snap = SrsBrowseSession(s);
+      addTearDown(snap.close);
       expect(srsFieldContainsQuery('Expression', '  '), '');
       expect(
         exprs(
-          snap.query(query: srsFieldContainsQuery('Expression', '*b_c"d:')),
+          await rowsOf(
+            snap,
+            query: srsFieldContainsQuery('Expression', '*b_c"d:'),
+          ),
         ),
         <String>['a*b_c"d:e'],
       );
       expect(
-        exprs(snap.query(query: srsFieldContainsQuery('expression', 'bb'))),
+        exprs(
+          await rowsOf(snap, query: srsFieldContainsQuery('expression', 'bb')),
+        ),
         <String>['aBBc'],
       );
       expect(
-        snap.query(query: srsFieldContainsQuery('Expression', 'b_c')),
+        await rowsOf(snap, query: srsFieldContainsQuery('Expression', 'b_c')),
         hasLength(1),
         reason: '_ 是字面量，不是单字符通配',
       );
@@ -335,7 +514,106 @@ void main() {
       final String a = await add(s, '食べる');
       await add(s, '飲む');
       await s.deleteNote(a);
-      expect(exprs((await SrsBrowseSnapshot.load(s)).query()), <String>['飲む']);
+      expect(exprs(await fresh(s)), <String>['飲む']);
+    });
+
+    test('行数据与笔记视图一致；笔记模式的命中 = 卡片模式命中卡所属的笔记', () async {
+      final SrsDbStore s = await device('a');
+      final List<String> ids = <String>[];
+      for (int i = 0; i < 30; i++) {
+        ids.add(
+          await add(
+            s,
+            i.isEven ? '<i>語$i</i>' : '単語$i',
+            definition: 'meaning ${i % 7} <b>bold$i</b>',
+            tags: <String>['t${i % 3}', if (i % 5 == 0) 'five'],
+          ),
+        );
+      }
+      for (int i = 0; i < 30; i += 4) {
+        await s.answer(await cardOf(s, ids[i]), 1 + i % 4);
+      }
+      t += 86400000 * 3;
+      for (int i = 1; i < 30; i += 6) {
+        await s.updateNote(
+          ids[i],
+          fieldsById: <String, String>{
+            srsLapisFieldId(kProfile, 'MainDefinition'): 'edited $i',
+          },
+        );
+        t += 1000;
+      }
+      await s.updateNote(ids[2], tags: <String>['retagged']);
+
+      final SrsBrowseSession b = SrsBrowseSession(s);
+      addTearDown(b.close);
+      final List<SrsNoteTypeView> types = await s.noteTypes();
+      final Map<String, SrsNoteView> views = <String, SrsNoteView>{
+        for (final SrsNoteView n in await allNotesOf(s))
+          if (n.deletedAt == null) n.id: n,
+      };
+      final List<SrsBrowseRow> all = await rowsOf(b);
+      expect(all, hasLength(30));
+      for (final SrsBrowseRow r in all) {
+        final SrsNoteView v = views[r.noteId]!;
+        final SrsNoteTypeView type = types.firstWhere(
+          (SrsNoteTypeView t) => t.id == v.noteTypeId,
+        );
+        expect(
+          r.sortText,
+          ankiStripHtml(v.field(type.fields.first.id)).trim(),
+          reason: r.noteId,
+        );
+        expect(r.tags, v.tags);
+        expect(r.noteTypeName, type.name);
+      }
+
+      for (final String query in <String>[
+        '',
+        'MainDefinition:*edited*',
+        'Expression:語1*',
+        'bold1',
+        'meaning 3 -tag:t0',
+        're:<i>語2',
+        'MainDefinition:re:^edited',
+        'tag:five or tag:retagged',
+        'edited:1',
+        'edited:1 MainDefinition:*bold*',
+        '-is:new',
+        'prop:reps>0',
+      ]) {
+        for (final SrsBrowseSortColumn col in SrsBrowseSortColumn.values) {
+          for (final bool asc in <bool>[true, false]) {
+            final SrsBrowseSort sort = SrsBrowseSort(
+              column: col,
+              ascending: asc,
+              fieldName: 'MainDefinition',
+            );
+            final List<SrsBrowseRow> cards = await rowsOf(
+              b,
+              query: query,
+              sort: sort,
+            );
+            final List<SrsBrowseRow> notes = await rowsOf(
+              b,
+              query: query,
+              sort: sort,
+              mode: SrsBrowseMode.notes,
+            );
+            expect(
+              <String>{for (final SrsBrowseRow r in notes) r.noteId},
+              <String>{for (final SrsBrowseRow r in cards) r.noteId},
+              reason: '$query / ${col.name} asc=$asc',
+            );
+            expect(notes, hasLength(notes.map((r) => r.noteId).toSet().length));
+          }
+        }
+      }
+      expect(
+        exprs(await rowsOf(b, query: 'edited:1')),
+        hasLength(6),
+        reason: '5 条改字段 + 1 条改标签',
+      );
     });
   });
 
@@ -348,23 +626,23 @@ void main() {
           await cardOf(a, await add(a, e)),
       ];
       await a.setSuspended(cards[0], true);
-      final int before = (await a.unpublishedEvents()).length;
+      final int before = (await a.sync2Status())['ops']! as int;
       final SrsBatchOutcome out = await srsBatchSetSuspended(
         a,
         cards,
         suspended: true,
       );
       expect(out.changed, 2, reason: '已暂停的那张不再写');
-      expect((await a.unpublishedEvents()).length, before + 2);
+      expect((await a.sync2Status())['ops'], before + 2, reason: '两张卡各一条操作');
       for (final SrsCardCacheRow r in await a.cardRows(cards)) {
         expect(r.suspended, isTrue);
       }
 
-      final _Dir dir = _Dir(() => t);
-      for (int i = 0; i < 3; i++) {
-        await SrsSyncEngine(directory: dir, replica: a).syncOnce();
-        await SrsSyncEngine(directory: dir, replica: b).syncOnce();
-      }
+      await srsSyncPeers(
+        <SrsDbStore>[a, b],
+        SrsMemoryLocationStore(),
+        rounds: 3,
+      );
       for (final SrsCardCacheRow r in await b.cardRows(cards)) {
         expect(r.suspended, isTrue, reason: '批量写的是普通修改记录，照常同步');
       }
@@ -392,38 +670,30 @@ void main() {
         buried: true,
       );
       expect(bury.changed, 2);
-      final SrsBrowseSnapshot snap = await SrsBrowseSnapshot.load(s);
-      expect(snap.query(query: 'is:buried'), hasLength(2));
+      // 同一个会话：写入后按 id 增量重读，结果与新开会话一致。
+      final SrsBrowseSession snap = SrsBrowseSession(s);
+      addTearDown(snap.close);
+      expect(await rowsOf(snap, query: 'is:buried'), hasLength(2));
       await bury.revert!(s);
-      expect(
-        (await SrsBrowseSnapshot.load(s)).query(query: 'is:buried'),
-        isEmpty,
-      );
+      expect(await rowsOf(snap, query: 'is:buried'), isEmpty);
+      expect(await fresh(s, query: 'is:buried'), isEmpty);
 
       final SrsBatchOutcome flag = await srsBatchSetFlag(s, cards, 4);
       expect(flag.changed, 2);
-      expect(
-        (await SrsBrowseSnapshot.load(s)).query(query: 'flag:4'),
-        hasLength(2),
-      );
+      expect(await rowsOf(snap, query: 'flag:4'), hasLength(2));
+      expect(await fresh(s, query: 'flag:4'), hasLength(2));
       await flag.revert!(s);
-      expect(
-        (await SrsBrowseSnapshot.load(s)).query(query: 'flag:0'),
-        hasLength(2),
-      );
+      expect(await rowsOf(snap, query: 'flag:0'), hasLength(2));
+      expect(await fresh(s, query: 'flag:0'), hasLength(2));
 
       final String deck = await s.createDeck('Other');
       final SrsBatchOutcome move = await srsBatchMoveCards(s, cards, deck);
       expect(move.changed, 2);
-      expect(
-        (await SrsBrowseSnapshot.load(s)).query(query: 'deck:Other'),
-        hasLength(2),
-      );
+      expect(await rowsOf(snap, query: 'deck:Other'), hasLength(2));
+      expect(await fresh(s, query: 'deck:Other'), hasLength(2));
       await move.revert!(s);
-      expect(
-        (await SrsBrowseSnapshot.load(s)).query(query: 'deck:Other'),
-        isEmpty,
-      );
+      expect(await rowsOf(snap, query: 'deck:Other'), isEmpty);
+      expect(await fresh(s, query: 'deck:Other'), isEmpty);
     });
 
     test('加 / 删标签（不区分大小写、去重），撤销', () async {
@@ -461,10 +731,10 @@ void main() {
         n2,
       ]);
       expect(del.changed, 2);
-      expect((await SrsBrowseSnapshot.load(s)).cards, isEmpty);
+      expect(await fresh(s), isEmpty);
       t += 1000;
       await del.revert!(s);
-      expect((await SrsBrowseSnapshot.load(s)).cards, hasLength(2));
+      expect(await fresh(s), hasLength(2));
     });
 
     test('重置为新卡 / 设置到期日：一批日志，撤销 = 撤那批日志；已被后续复习覆盖的撤不掉', () async {

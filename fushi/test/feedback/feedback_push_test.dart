@@ -1,5 +1,6 @@
 // iOS 远程推送（feedback_push.dart）：令牌登记对齐（开关 / 权限 / 结案 / 换令牌）、被推送
-// 覆盖的反馈不再由本机路径重复提醒、原生半边与 CI 签名接线。
+// 覆盖的反馈不再由本机路径重复提醒。原生半边与 CI 签名接线的源码扫描在
+// feedback_push_wiring_guard_test.dart（守卫 job 跑；本文件要真 fushi_compute 库，归单测 job）。
 
 import 'dart:async';
 import 'dart:convert';
@@ -436,84 +437,6 @@ void main() {
       expect(requests, isEmpty);
       expect((await n.check(force: true)).unseen, 1);
       expect(requests, hasLength(1));
-    });
-  });
-
-  group('原生 / 签名接线', () {
-    test('channel 名与方法 Dart / Swift 逐字一致；自己的推送先认领、别的交还 super', () {
-      final String swift = File(
-        'ios/Runner/AppDelegate.swift',
-      ).readAsStringSync();
-      expect(swift, contains('"$kRemotePushChannel"'));
-      for (final String m in <String>[
-        '"register"',
-        '"takeLaunchFeedbackId"',
-        '"onTap"',
-        '"onForegroundPush"',
-      ]) {
-        expect(swift, contains(m));
-      }
-      expect(swift, contains('FushiRemotePush.shared.install('));
-      expect(
-        swift,
-        contains('UNUserNotificationCenter.current().delegate = self'),
-      );
-      expect(
-        swift,
-        contains('didRegisterForRemoteNotificationsWithDeviceToken'),
-      );
-      expect(
-        swift,
-        contains('didFailToRegisterForRemoteNotificationsWithError'),
-      );
-      // 两个委托回调都要把非反馈推送交还 super（flutter_local_notifications 靠它）。
-      expect('super.userNotificationCenter('.allMatches(swift).length, 2);
-      // 载荷键与服务端 pushPayload 一致。
-      expect(swift, contains('userInfo["fushi"]'));
-      expect(swift, contains('fushi["feedback"]'));
-      final String server = File(
-        '../services/leaderboard/src/feedback_push.js',
-      ).readAsStringSync();
-      expect(server, contains('fushi: { feedback: feedbackId }'));
-    });
-
-    test('aps-environment entitlement 只在描述文件带 Push 时才接入构建', () {
-      final String ent = File(
-        'ios/Runner/Runner.entitlements',
-      ).readAsStringSync();
-      expect(ent, contains('<key>aps-environment</key>'));
-      expect(ent, contains(r'$(FUSHI_APS_ENVIRONMENT)'));
-      expect(
-        File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync(),
-        isNot(contains('CODE_SIGN_ENTITLEMENTS')),
-        reason: '无条件接入会让没开 Push 的描述文件签名失败（TestFlight 整条断）',
-      );
-      final RegExp assignment = RegExp(
-        r'^\s*CODE_SIGN_ENTITLEMENTS\s*=',
-        multiLine: true,
-      );
-      for (final String cfg in <String>['Debug', 'Release']) {
-        expect(
-          assignment.hasMatch(
-            File('ios/Flutter/$cfg.xcconfig').readAsStringSync(),
-          ),
-          isFalse,
-          reason: '$cfg.xcconfig 不得无条件接入 entitlements',
-        );
-      }
-      final String wf = File(
-        '../.github/workflows/release-desktop.yml',
-      ).readAsStringSync();
-      final int probe = wf.indexOf(':Entitlements:aps-environment');
-      final int wire = wf.indexOf(
-        'CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements',
-      );
-      expect(probe, isNonNegative);
-      expect(wire, greaterThan(probe));
-      expect(
-        wf.substring(probe, wire),
-        contains(r'if [ -n "$APS_ENV" ]; then'),
-      );
     });
   });
 }

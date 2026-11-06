@@ -42,6 +42,14 @@ SrsReviewLog _log({
           : const SrsScheduleResult(queue: SrsQueue.review, dueDay: 1)),
 );
 
+/// 「恢复到备份时间点」照抄状态的 manual 日志（判据在 native/fushi_fsrs/src/projection.rs
+/// `is_restore_state`；测试只用它断言恢复计划写出的日志形状）。
+bool _isRestoreState(SrsReviewLog l) =>
+    l.kind == SrsLogKind.manual &&
+    l.result != null &&
+    l.extra[srsRestoreLogExtraKey] != null &&
+    !(l.result!.queue == SrsQueue.newCard && l.result!.reps == 0);
+
 void main() {
   group('确定性 ID', () {
     test('UUIDv5 与 RFC 测试向量一致', () {
@@ -295,7 +303,7 @@ void main() {
       final SrsMemoryInput input = srsCollectMemoryInput(
         SrsCardHistory(<SrsReviewLog>[a, anchor, b]),
         algorithm: SrsAlgorithm.fsrs7,
-        dayIndexOf: kDayCtx.dayIndexOf,
+        day: kDayCtx,
       );
       expect(input.complete, isTrue);
       expect(input.reviews.map((SrsFsrsReview r) => r.deltaDays), <double>[
@@ -305,7 +313,7 @@ void main() {
       final SrsMemoryInput six = srsCollectMemoryInput(
         SrsCardHistory(<SrsReviewLog>[a, anchor, b]),
         algorithm: SrsAlgorithm.fsrs6,
-        dayIndexOf: kDayCtx.dayIndexOf,
+        day: kDayCtx,
       );
       expect(
         six.reviews.last.deltaDays,
@@ -336,7 +344,7 @@ void main() {
       final SrsMemoryInput input = srsCollectMemoryInput(
         SrsCardHistory(<SrsReviewLog>[anchor, r]),
         algorithm: SrsAlgorithm.fsrs7,
-        dayIndexOf: kDayCtx.dayIndexOf,
+        day: kDayCtx,
       );
       expect(input.complete, isFalse);
       expect(input.sm2Start, isNotNull);
@@ -368,7 +376,7 @@ void main() {
       final SrsMemoryInput input = srsCollectMemoryInput(
         SrsCardHistory(<SrsReviewLog>[a, reset, b]),
         algorithm: SrsAlgorithm.fsrs7,
-        dayIndexOf: kDayCtx.dayIndexOf,
+        day: kDayCtx,
       );
       expect(input.reviews.map((SrsFsrsReview r) => r.rating), <int>[4]);
     });
@@ -393,6 +401,7 @@ void main() {
           rating: r,
           config: const SrsSchedulingConfig(),
           ctx: ctx(() => now),
+          rwkvQueued: false,
         );
         logs.add(l);
         return l;
@@ -410,6 +419,46 @@ void main() {
       expect(grad.result!.reps, 3);
       expect(grad.result!.dueDay, greaterThan(kDayCtx.dayIndexOf(now)));
     });
+
+    test(
+      '日志 alg 记实际排程的算法：RWKV 牌组只有由 RWKV-Instant 排队时记 rwkv，没有 RWKV 运行时（无头宿主）记 FSRS-7',
+      () {
+        const SrsSchedulingConfig rwkvDeck = SrsSchedulingConfig(
+          algorithm: SrsAlgorithm.rwkv,
+        );
+        SrsReviewLog rate({required bool rwkvQueued}) => ops.answer(
+          cardId: 'card',
+          history: SrsCardHistory(const <SrsReviewLog>[]),
+          rating: 3,
+          config: rwkvDeck,
+          ctx: ctx(() => kT0),
+          rwkvQueued: rwkvQueued,
+        );
+        final SrsReviewLog headless = rate(rwkvQueued: false);
+        expect(headless.algorithm, SrsAlgorithm.fsrs7.wire);
+        expect(
+          headless.paramsHash,
+          srsParamsHash(SrsAlgorithm.fsrs7, rwkvDeck.params),
+        );
+        expect(rate(rwkvQueued: true).algorithm, SrsAlgorithm.rwkv.wire);
+        // FSRS 牌组与 rwkvQueued 无关。
+        expect(
+          ops
+              .answer(
+                cardId: 'card',
+                history: SrsCardHistory(const <SrsReviewLog>[]),
+                rating: 3,
+                config: const SrsSchedulingConfig(
+                  algorithm: SrsAlgorithm.fsrs6,
+                ),
+                ctx: ctx(() => kT0),
+                rwkvQueued: true,
+              )
+              .algorithm,
+          SrsAlgorithm.fsrs6.wire,
+        );
+      },
+    );
 
     test('elapsed = 评分时刻 − lastReviewedAt：中间导入 / 改期不改变它（13 天的例子）', () {
       const int oct1 = kT0;
@@ -484,6 +533,9 @@ void main() {
         10,
       ]);
       expect(srsSanitizeSteps(<double>[5, 1440], <double>[1]), <double>[5]);
+      // 空 = 不用步长（Anki 预设留空、设置页留空），不回落默认。
+      expect(srsSanitizeSteps(<double>[], <double>[1, 10]), isEmpty);
+      expect(srsValidateSteps(<double>[]), isTrue);
     });
 
     test('撤销只允许最后一条有效日志', () {
@@ -533,36 +585,28 @@ void main() {
     });
   });
 
-  group('新卡预算', () {
-    test('数据不足按上限 × 10；超 2 倍预算暂停；中间按比例', () {
-      SrsNewCardBudget b = srsComputeNewCardBudget(
-        newPerDayLimit: 20,
-        dueReviews: 100,
-        reviewsPerDayLast30: <int>[50],
+  // 新卡预算的计算规则在 Rust 排队内核（native/fushi_fsrs/src/store/study.rs 的
+  // budget_matches_dart_rules / budget_follows_the_new_card_plan），这里只测牌组上的值对象。
+  group('新卡计划', () {
+    test('新卡计划值对象：缺省 / 坏值回落，越界夹住，往返不变', () {
+      expect(SrsNewCardPlan.fromValue(null), const SrsNewCardPlan());
+      expect(
+        SrsNewCardPlan.fromValue(<String, Object?>{
+          'auto': 'x',
+          'budget': 5,
+          'boost': 99999,
+        }),
+        const SrsNewCardPlan(
+          budgetPercent: SrsNewCardPlan.minBudgetPercent,
+          boostPercent: SrsNewCardPlan.maxBoostPercent,
+        ),
       );
-      expect(b.allowed, 20);
-      b = srsComputeNewCardBudget(
-        newPerDayLimit: 20,
-        dueReviews: 401,
-        reviewsPerDayLast30: <int>[50],
+      const SrsNewCardPlan p = SrsNewCardPlan(
+        autoLoad: false,
+        budgetPercent: 200,
+        boostPercent: 30,
       );
-      expect(b.reason, SrsNewCardBudgetReason.paused);
-      b = srsComputeNewCardBudget(
-        newPerDayLimit: 20,
-        dueReviews: 300,
-        reviewsPerDayLast30: <int>[50],
-      );
-      expect(b.reason, SrsNewCardBudgetReason.reduced);
-      expect(b.allowed, 10);
-      b = srsComputeNewCardBudget(
-        newPerDayLimit: 20,
-        dueReviews: 250,
-        reviewsPerDayLast30: <int>[
-          for (int i = 0; i < 30; i++) i.isEven ? 300 : 0,
-        ],
-      );
-      expect(b.reviewBudget, 450, reason: '只按有复习的天平均');
-      expect(b.allowed, 20);
+      expect(SrsNewCardPlan.fromValue(p.toValue()), p);
     });
   });
 
@@ -648,16 +692,22 @@ void main() {
         hlc: const Hlc(1, 0, 'w'),
         timeSource: SrsTimeSource.wall,
       );
-      final SrsNoteTypeView v = SrsNoteTypeView.materialize(
-        const SrsEntityRecord(
-          id: nt,
-          profileUid: kP,
-          kind: SrsEntityKind.noteType,
-          payload: <String, Object?>{'ankiNum': 1, 'builtin': 'lapis'},
-        ),
-        SrsEntityEdits.build(<SrsFieldEdit>[rename]),
-        builtin: builtin,
-      );
+      final SrsNoteTypeView v = srsMaterializeNoteTypes(
+        <(SrsEntitySource, SrsBuiltinNoteType?)>[
+          (
+            SrsEntitySource.record(
+              const SrsEntityRecord(
+                id: nt,
+                profileUid: kP,
+                kind: SrsEntityKind.noteType,
+                payload: <String, Object?>{'ankiNum': 1, 'builtin': 'lapis'},
+              ),
+              <SrsEditItem>[SrsEditItem.of(rename, null)],
+            ),
+            builtin,
+          ),
+        ],
+      ).single;
       expect(v.fields.map((SrsFieldDef f) => f.name), <String>[
         'Expression',
         '例句',
@@ -701,15 +751,19 @@ void main() {
               timeSource: SrsTimeSource.wall,
             ),
         ];
-        return SrsDeckView.materialize(
-          SrsEntityRecord(
-            id: id,
-            profileUid: kP,
-            kind: SrsEntityKind.deck,
-            payload: const <String, Object?>{},
+        return srsMaterializeDecks(<SrsEntitySource>[
+          SrsEntitySource.record(
+            SrsEntityRecord(
+              id: id,
+              profileUid: kP,
+              kind: SrsEntityKind.deck,
+              payload: const <String, Object?>{},
+            ),
+            <SrsEditItem>[
+              for (final SrsFieldEdit x in e) SrsEditItem.of(x, null),
+            ],
           ),
-          SrsEntityEdits.build(e),
-        );
+        ]).single;
       }
 
       final SrsDeckTree cyc = SrsDeckTree(<SrsDeckView>[
@@ -755,11 +809,8 @@ void main() {
     List<(int, double)> shape(SrsMemoryInput m) => <(int, double)>[
       for (final SrsFsrsReview r in m.reviews) (r.rating, r.deltaDays),
     ];
-    SrsMemoryInput memory(SrsCardHistory h) => srsCollectMemoryInput(
-      h,
-      algorithm: SrsAlgorithm.fsrs7,
-      dayIndexOf: kDayCtx.dayIndexOf,
-    );
+    SrsMemoryInput memory(SrsCardHistory h) =>
+        srsCollectMemoryInput(h, algorithm: SrsAlgorithm.fsrs7, day: kDayCtx);
 
     test('被撤销的是备份时有效历史的尾巴：重放副本，有效历史与备份逐条同构、不需要 ③′', () {
       final SrsReviewLog r1 = _log(
@@ -811,7 +862,7 @@ void main() {
       expect(after.state, backup.state);
       expect(srsSameEffectiveShape(after.effective, backup.effective), isTrue);
       // 不靠 ③′：没有任何一条是「照抄状态」日志，旧版本按原规则算出的记忆输入与备份时相同。
-      expect(after.all.any(srsIsRestoreState), isFalse);
+      expect(after.all.any(_isRestoreState), isFalse);
       expect(shape(memory(after)), shape(memory(backup)));
       expect(memory(after).complete, memory(backup).complete);
     });
@@ -855,7 +906,7 @@ void main() {
       );
       expect(plan, hasLength(1));
       expect(plan.single.kind, SrsLogKind.manual);
-      expect(srsIsRestoreState(plan.single), isTrue);
+      expect(_isRestoreState(plan.single), isTrue);
       expect(plan.single.result, imp.result);
     });
 

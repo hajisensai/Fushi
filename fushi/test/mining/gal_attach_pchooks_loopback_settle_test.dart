@@ -56,21 +56,22 @@ void main() {
         targetWow64Probe: (_) async => false,
         targetImagePathProbe: (_) => imagePath,
         injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
-        engineSourceFactory: ({
-          required int targetPid,
-          required String? launchExe,
-          required String injectorPath,
-          required bool lunaPcHooks,
-          int? lunaCodepage,
-          List<String> launchArguments = const <String>[],
-          String launchWorkdir = '',
-          GalJapaneseLocaleMode japaneseLocaleMode =
-              kGalDefaultJapaneseLocaleMode,
-          String? contentLanguage,
-        }) {
-          seen = lunaPcHooks;
-          return engine;
-        },
+        engineSourceFactory:
+            ({
+              required int targetPid,
+              required String? launchExe,
+              required String injectorPath,
+              required bool lunaPcHooks,
+              int? lunaCodepage,
+              List<String> launchArguments = const <String>[],
+              String launchWorkdir = '',
+              GalJapaneseLocaleMode japaneseLocaleMode =
+                  kGalDefaultJapaneseLocaleMode,
+              String? contentLanguage,
+            }) {
+              seen = lunaPcHooks;
+              return engine;
+            },
         loopbackSourceFactory: () => _QuietLoopback(),
         textPollInterval: const Duration(milliseconds: 5),
         endpointListenable: endpoints,
@@ -125,12 +126,14 @@ void main() {
 
   /// 建一条「文本 + Loopback」会话并送进一句台词，回报 lineId。
   Future<
-      ({
-        GalHookSessionController controller,
-        TexthookerService service,
-        ChangeNotifier endpoints,
-        String lineId,
-      })> startVoicedLoopbackSession({
+    ({
+      GalHookSessionController controller,
+      TexthookerService service,
+      ChangeNotifier endpoints,
+      String lineId,
+    })
+  >
+  startVoicedLoopbackSession({
     required _ProportionalLoopback loopback,
     required Duration freezeDelay,
     required String text,
@@ -154,19 +157,19 @@ void main() {
       targetWow64Probe: (_) async => false,
       targetImagePathProbe: (_) => null,
       injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
-      engineSourceFactory: ({
-        required int targetPid,
-        required String? launchExe,
-        required String injectorPath,
-        required bool lunaPcHooks,
-        int? lunaCodepage,
-        List<String> launchArguments = const <String>[],
-        String launchWorkdir = '',
-        GalJapaneseLocaleMode japaneseLocaleMode =
-            kGalDefaultJapaneseLocaleMode,
-        String? contentLanguage,
-      }) =>
-          engine,
+      engineSourceFactory:
+          ({
+            required int targetPid,
+            required String? launchExe,
+            required String injectorPath,
+            required bool lunaPcHooks,
+            int? lunaCodepage,
+            List<String> launchArguments = const <String>[],
+            String launchWorkdir = '',
+            GalJapaneseLocaleMode japaneseLocaleMode =
+                kGalDefaultJapaneseLocaleMode,
+            String? contentLanguage,
+          }) => engine,
       loopbackSourceFactory: () => loopback,
       textPollInterval: const Duration(milliseconds: 5),
       loopbackFreezeDelay: freezeDelay,
@@ -215,8 +218,10 @@ void main() {
     // 新契约：制卡在队列之外等冻结窗口到点，第一次回取就是完整窗口。
     expect(
       loopback.backMsCalls.first,
-      fullBackMs,
-      reason: '制卡必须等这句语音的冻结窗口到点，而不是按已等时长拿半句',
+      greaterThanOrEqualTo(fullBackMs),
+      reason:
+          '制卡必须等这句语音的冻结窗口到点，而不是按已等时长拿半句'
+          '（BUG-3575：之后窗口续张，制卡时刻还可能再收束到「现在」，只会更长）',
     );
     expect(
       waited.elapsedMilliseconds,
@@ -230,17 +235,19 @@ void main() {
     );
 
     await waitUntil(
-      () => session.service.entries.single.audioDurationMs == fullBackMs,
+      () => (session.service.entries.single.audioDurationMs ?? 0) >= fullBackMs,
       ticks: 400,
     );
-    expect(session.service.entries.single.audioDurationMs, fullBackMs);
+    expect(
+      session.service.entries.single.audioDurationMs,
+      greaterThanOrEqualTo(fullBackMs),
+    );
 
     await session.controller.close();
     session.endpoints.dispose();
   });
 
-  test(
-      'BUG-2127 §2.4 game_resource 行先 pending 排了冻结、后被资源匹配提升：'
+  test('BUG-2127 §2.4 game_resource 行先 pending 排了冻结、后被资源匹配提升：'
       '制卡零等待取整段原件，不触发那段被丢弃的 loopback 冻结', () async {
     // 冻结窗故意设大：若制卡仍为「已被撤销/终将丢弃」的冻结窗干等，用例会耗到 4s+，
     // 断言 elapsed < 1500ms 会把回归钉红。
@@ -265,19 +272,19 @@ void main() {
       targetWow64Probe: (_) async => false,
       targetImagePathProbe: (_) => null,
       injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
-      engineSourceFactory: ({
-        required int targetPid,
-        required String? launchExe,
-        required String injectorPath,
-        required bool lunaPcHooks,
-        int? lunaCodepage,
-        List<String> launchArguments = const <String>[],
-        String launchWorkdir = '',
-        GalJapaneseLocaleMode japaneseLocaleMode =
-            kGalDefaultJapaneseLocaleMode,
-        String? contentLanguage,
-      }) =>
-          engine,
+      engineSourceFactory:
+          ({
+            required int targetPid,
+            required String? launchExe,
+            required String injectorPath,
+            required bool lunaPcHooks,
+            int? lunaCodepage,
+            List<String> launchArguments = const <String>[],
+            String launchWorkdir = '',
+            GalJapaneseLocaleMode japaneseLocaleMode =
+                kGalDefaultJapaneseLocaleMode,
+            String? contentLanguage,
+          }) => engine,
       loopbackSourceFactory: () => loopback,
       textPollInterval: const Duration(milliseconds: 5),
       loopbackFreezeDelay: freezeDelay,
@@ -338,7 +345,7 @@ void main() {
     endpoints.dispose();
   });
 
-  test('BUG-2127 冻结已到点的历史行：制卡不再多等', () async {
+  test('BUG-2127 冻结已到点、仍是当前句：制卡不多等，按「现在」收束续张一次', () async {
     const Duration freezeDelay = Duration(milliseconds: 100);
     final _ProportionalLoopback loopback = _ProportionalLoopback();
     final session = await startVoicedLoopbackSession(
@@ -361,8 +368,11 @@ void main() {
       lessThan(1000),
       reason: '窗口已到点就没有可等的东西，制卡立即入队',
     );
-    // 已冻结的切片直接复用，不需要再回取。
-    expect(loopback.backMsCalls.length, callsBefore);
+    // BUG-3575：暂定冻结之后窗口仍在续张（下一句还没到），制卡按真实已等待时长再收束
+    // 一次——玩家停在这句上念完长句再制卡，拿到的不能是 4s 冻结那份。下一句到达后
+    // 的历史行不再回取，见 gal_audio_degrade_track_test.dart 的长句用例。
+    expect(loopback.backMsCalls.length, callsBefore + 1);
+    expect(loopback.backMsCalls.last, greaterThanOrEqualTo(100 + 1000));
 
     await session.controller.close();
     session.endpoints.dispose();
@@ -373,8 +383,8 @@ void main() {
 /// 正是用户「LE 启动 → fushi 捕获窗口」那条链。
 class _AttachEngine extends EngineHookGalAudioSource {
   _AttachEngine({List<GalHookedLine> lines = const <GalHookedLine>[]})
-      : _pending = List<GalHookedLine>.of(lines),
-        super(targetPid: 0, launchExe: null, injectorPath: 'fake.exe');
+    : _pending = List<GalHookedLine>.of(lines),
+      super(targetPid: 0, launchExe: null, injectorPath: 'fake.exe');
 
   final List<GalHookedLine> _pending;
 
@@ -416,8 +426,7 @@ class _AttachEngine extends EngineHookGalAudioSource {
     int? sourcePtr,
     List<int>? exclude,
     int? endTsMs,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<GalAudioSlice?> grabClipNear(
@@ -426,8 +435,7 @@ class _AttachEngine extends EngineHookGalAudioSource {
     int? sourcePtr,
     List<int>? exclude,
     int? endTsMs,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<List<GalAudioTrack>> listAudioTracks(int tsMs) async =>
@@ -438,8 +446,7 @@ class _AttachEngine extends EngineHookGalAudioSource {
     int textTsMs, {
     int? textEventId,
     bool allowLatestSessionFallback = true,
-  }) =>
-      null;
+  }) => null;
 
   @override
   Future<Uint8List?> grabPairedVoiceBytes(
@@ -448,8 +455,7 @@ class _AttachEngine extends EngineHookGalAudioSource {
     int? textEventId,
     String? resourceId,
     bool allowLatestSessionFallback = true,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<void> pruneVoiceDump({
@@ -466,8 +472,8 @@ class _AttachEngine extends EngineHookGalAudioSource {
 /// 时先 pending + 排冻结，随后被资源匹配提升。
 class _LateResourceEngine extends EngineHookGalAudioSource {
   _LateResourceEngine({List<GalHookedLine> lines = const <GalHookedLine>[]})
-      : _pending = List<GalHookedLine>.of(lines),
-        super(targetPid: 0, launchExe: null, injectorPath: 'fake.exe');
+    : _pending = List<GalHookedLine>.of(lines),
+      super(targetPid: 0, launchExe: null, injectorPath: 'fake.exe');
 
   final List<GalHookedLine> _pending;
   bool _resourceRevealed = false;
@@ -513,8 +519,7 @@ class _LateResourceEngine extends EngineHookGalAudioSource {
     int? sourcePtr,
     List<int>? exclude,
     int? endTsMs,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<GalAudioSlice?> grabClipNear(
@@ -523,8 +528,7 @@ class _LateResourceEngine extends EngineHookGalAudioSource {
     int? sourcePtr,
     List<int>? exclude,
     int? endTsMs,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<List<GalAudioTrack>> listAudioTracks(int tsMs) async =>
@@ -535,8 +539,7 @@ class _LateResourceEngine extends EngineHookGalAudioSource {
     int textTsMs, {
     int? textEventId,
     bool allowLatestSessionFallback = true,
-  }) =>
-      _resourceRevealed ? 'res-$textEventId' : null;
+  }) => _resourceRevealed ? 'res-$textEventId' : null;
 
   @override
   Future<Uint8List?> grabPairedVoiceBytes(
@@ -545,10 +548,9 @@ class _LateResourceEngine extends EngineHookGalAudioSource {
     int? textEventId,
     String? resourceId,
     bool allowLatestSessionFallback = true,
-  }) async =>
-      _resourceRevealed
-          ? Uint8List.fromList(const <int>[0x4F, 0x67, 0x67, 0x53]) // "OggS"
-          : null;
+  }) async => _resourceRevealed
+      ? Uint8List.fromList(const <int>[0x4F, 0x67, 0x67, 0x53]) // "OggS"
+      : null;
 
   @override
   Future<void> pruneVoiceDump({
@@ -564,11 +566,11 @@ class _LateResourceEngine extends EngineHookGalAudioSource {
 class _QuietLoopback extends LoopbackGalAudioSource {
   @override
   Future<PcmFormat?> start() async => const PcmFormat(
-        sampleRate: 44100,
-        channels: 2,
-        bitsPerSample: 16,
-        isFloat: false,
-      );
+    sampleRate: 44100,
+    channels: 2,
+    bitsPerSample: 16,
+    isFloat: false,
+  );
 
   @override
   Future<void> stop() async {}

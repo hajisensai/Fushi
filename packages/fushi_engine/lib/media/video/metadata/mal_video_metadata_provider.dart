@@ -10,6 +10,10 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 
+/// [MalVideoMetadataProvider.maxCharacterDetailFetches] 的默认值：每部作品最多给
+/// 8 个主要角色取 Jikan 角色详情（日文原名）。
+const int kMalMaxCharacterDetailFetches = 8;
+
 /// Endpoints whose optional credits could not be loaded for this work.
 const String malIncompleteCreditEndpointsKey =
     'mal_incomplete_credit_endpoints';
@@ -41,6 +45,17 @@ class MalRelation {
   final int malId;
 }
 
+/// MAL 上一部动画的原作条目（漫画 / 轻小说，Jikan `type == manga`）。
+class MalSourceMaterial {
+  const MalSourceMaterial({required this.malId, required this.name});
+
+  /// MAL manga id。
+  final int malId;
+
+  /// Jikan 给的条目名（MAL 默认标题，多为罗马字 / 原文）。
+  final String name;
+}
+
 /// [MalVideoMetadataProvider.fetchRelatedWorks] 的结果。
 class MalRelatedWorks {
   const MalRelatedWorks({
@@ -66,12 +81,14 @@ class MalVideoMetadataProvider
     VideoMetadataHttpClient? transport,
     this.endpoint = 'https://api.jikan.moe/v4',
     this.language = kFallbackVideoMetadataLocale,
+    this.followOriginalLanguage = false,
+    this.maxCharacterDetailFetches = kMalMaxCharacterDetailFetches,
     MalVideoMetadataRequestGate? requestGate,
-  })  : assert(client == null || transport == null),
-        _transport = transport ??
-            VideoMetadataHttpClient(client: client, maxAttempts: 1),
-        _ownsTransport = transport == null,
-        _gate = requestGate ?? sharedRequestGate {
+  }) : assert(client == null || transport == null),
+       _transport =
+           transport ?? VideoMetadataHttpClient(client: client, maxAttempts: 1),
+       _ownsTransport = transport == null,
+       _gate = requestGate ?? sharedRequestGate {
     if (_transport.maxAttempts != 1) {
       throw ArgumentError('MAL transport must use maxAttempts: 1');
     }
@@ -93,8 +110,19 @@ class MalVideoMetadataProvider
   /// 资料语言走而标题恒日文，就是「刮削不同语言」的来源。
   final String language;
 
-  /// [language] 的主子标签（`zh-CN` → `zh`）。
-  String get _titleLanguage => VideoMetadataLanguages(language).primarySubtag;
+  /// 每部作品最多给几个**主要角色**（Jikan `role == "Main"`、有日语声优）取
+  /// `/characters/{id}` 详情拿日文原名 `name_kanji`。0 = 不取。见
+  /// [kMalMaxCharacterDetailFetches]。
+  final int maxCharacterDetailFetches;
+
+  /// true = 标题取作品原文（资料语言留空，BUG-4056）。Jikan 没有语言字段，
+  /// `title_japanese` 就是原文标题（中 / 韩动画也是原文字），所以按 `ja` 选。
+  final bool followOriginalLanguage;
+
+  /// [language] 的主子标签（`zh-CN` → `zh`）；跟随原语言时恒 `ja`（原文标题）。
+  String get _titleLanguage => followOriginalLanguage
+      ? 'ja'
+      : VideoMetadataLanguages(language).primarySubtag;
 
   @override
   VideoMetadataProviderKind get providerKind => VideoMetadataProviderKind.mal;
@@ -103,7 +131,8 @@ class MalVideoMetadataProvider
 
   @override
   Future<List<VideoMetadataWork>> search(
-      VideoMetadataSearchRequest request) async {
+    VideoMetadataSearchRequest request,
+  ) async {
     final Map<String, Object?> payload = await _get('anime', <String, String>{
       'q': request.title,
       'limit': '${request.limit.clamp(1, 25)}',
@@ -134,12 +163,21 @@ class MalVideoMetadataProvider
     final VideoMetadataWork? work = _work(item);
     if (work == null) return null;
     final List<String> incomplete = <String>[];
-    final Map<String, Object?> characters =
-        await _optionalCredits(id, 'characters', incomplete);
-    final Map<String, Object?> staff =
-        await _optionalCredits(id, 'staff', incomplete);
+    final Map<String, Object?> characters = await _optionalCredits(
+      id,
+      'characters',
+      incomplete,
+    );
+    final Map<String, Object?> staff = await _optionalCredits(
+      id,
+      'staff',
+      incomplete,
+    );
+    final Map<String, String> kanjiNames = await _mainCharacterKanjiNames(
+      characters,
+    );
     return work.copyWith(
-      credits: _credits(characters, staff),
+      credits: _credits(characters, staff, kanjiNames),
       rawPayload: <String, Object?>{
         ...item,
         if (incomplete.isNotEmpty) malIncompleteCreditEndpointsKey: incomplete,
@@ -151,7 +189,8 @@ class MalVideoMetadataProvider
   /// 走同一个 `full` 缓存，不多打请求。
   @override
   Future<List<VideoMetadataLookup>> fetchPrequels(
-      VideoMetadataLookup lookup) async {
+    VideoMetadataLookup lookup,
+  ) async {
     final String id = _id(lookup);
     final Map<String, Object?> payload;
     try {
@@ -213,6 +252,37 @@ class MalVideoMetadataProvider
     );
   }
 
+  /// 一部作品在 MAL 上的**原作**：`anime/{id}/full` 里 `relations[].relation ==
+  /// "Adaptation"` 且 `entry.type == "manga"` 的条目（Jikan 把漫画与轻小说都归
+  /// `manga`）。与 [fetchRelatedWorks] 同一请求、同一缓存；只回 MAL id 与名字——
+  /// Jikan 的关联条目不带 ISBN，本地书只能按标题对（作品图谱推断，中等判据）。
+  /// 404 → 空。
+  Future<List<MalSourceMaterial>> fetchSourceMaterial(String malId) async {
+    final int? id = int.tryParse(malId.trim());
+    if (id == null || id <= 0) return const <MalSourceMaterial>[];
+    final Map<String, Object?> payload;
+    try {
+      payload = await _get('anime/$id/full');
+    } on VideoMetadataNetworkException catch (error) {
+      if (error.statusCode == 404) return const <MalSourceMaterial>[];
+      rethrow;
+    }
+    final Map<String, Object?>? item = metadataObject(payload['data']);
+    return <MalSourceMaterial>[
+      for (final Object? node in metadataList(item?['relations']))
+        if (metadataObject(node) case final Map<String, Object?> relation)
+          if (metadataString(relation['relation'])?.toLowerCase() ==
+              'adaptation')
+            for (final Object? entryNode in metadataList(relation['entry']))
+              if (metadataObject(entryNode)
+                  case final Map<String, Object?> entry)
+                if (metadataString(entry['type'])?.toLowerCase() == 'manga')
+                  if (metadataInt(entry['mal_id']) case final int sourceId)
+                    if (metadataString(entry['name']) case final String name)
+                      MalSourceMaterial(malId: sourceId, name: name),
+    ];
+  }
+
   Future<Map<String, Object?>> _optionalCredits(
     String id,
     String endpoint,
@@ -226,28 +296,83 @@ class MalVideoMetadataProvider
     }
   }
 
+  /// 主要角色的日文原名（角色 MAL id → `name_kanji`）。
+  ///
+  /// Jikan v4 `/anime/{id}/characters` 的角色对象只有 `mal_id / url / images /
+  /// name`（罗马音），`name_kanji` 只在 `/characters/{id}` 详情里（Jikan OpenAPI
+  /// `anime_characters` 与 `character` 两个 schema）。逐个角色取详情要一条请求
+  /// 一个角色，而本闸门是全局 1.1 s 一条（Jikan 60 req/min），所以只取**主要角色**
+  /// 且有上限 [maxCharacterDetailFetches]：一部作品最多多花约 9 秒。配角的日文写法
+  /// 由专名表生成阶段的百科资料补。
+  ///
+  /// 这是锦上添花的字段：任何一条失败都不影响作品与演职员表（不记进
+  /// [malIncompleteCreditEndpointsKey]）。单个角色 4xx（下架 / 不存在）跳过继续；
+  /// 限流用尽或连不上就停下，不把整次刮削拖进冷却。
+  Future<Map<String, String>> _mainCharacterKanjiNames(
+    Map<String, Object?> characters,
+  ) async {
+    final List<String> ids = <String>[];
+    for (final Object? node in metadataList(characters['data'])) {
+      if (ids.length >= maxCharacterDetailFetches) break;
+      final Map<String, Object?>? item = metadataObject(node);
+      if (metadataString(item?['role'])?.toLowerCase() != 'main') continue;
+      final bool hasJapaneseVoice = metadataList(item?['voice_actors']).any(
+        (Object? actor) =>
+            metadataString(metadataObject(actor)?['language']) == 'Japanese',
+      );
+      if (!hasJapaneseVoice) continue;
+      final int? characterId = metadataInt(
+        metadataObject(item?['character'])?['mal_id'],
+      );
+      if (characterId == null || ids.contains('$characterId')) continue;
+      ids.add('$characterId');
+    }
+    final Map<String, String> names = <String, String>{};
+    for (final String characterId in ids) {
+      try {
+        final Map<String, Object?> payload = await _get(
+          'characters/$characterId',
+        );
+        final String? kanji = metadataString(
+          metadataObject(payload['data'])?['name_kanji'],
+        );
+        if (kanji != null) names[characterId] = kanji;
+      } on VideoMetadataNetworkException catch (error) {
+        final int? status = error.statusCode;
+        final bool perCharacterMiss =
+            status != null && status >= 400 && status < 500 && status != 429;
+        if (!perCharacterMiss) break;
+      }
+    }
+    return names;
+  }
+
   @override
   Future<List<VideoMetadataSeason>> fetchSeasons(
-      VideoMetadataLookup lookup) async {
+    VideoMetadataLookup lookup,
+  ) async {
     final VideoMetadataWork? work = await fetchWork(lookup);
     if (work == null || work.kind == VideoMetadataMediaKind.movie) {
       return const <VideoMetadataSeason>[];
     }
     return <VideoMetadataSeason>[
       VideoMetadataSeason(
-          seasonNumber: 1,
-          title: work.title,
-          airDate: work.premiered,
-          year: work.year,
-          episodeCount: work.episodeCount,
-          ids: work.ids,
-          images: work.images)
+        seasonNumber: 1,
+        title: work.title,
+        airDate: work.premiered,
+        year: work.year,
+        episodeCount: work.episodeCount,
+        ids: work.ids,
+        images: work.images,
+      ),
     ];
   }
 
   @override
-  Future<List<VideoMetadataEpisode>> fetchEpisodes(VideoMetadataLookup lookup,
-      {required int seasonNumber}) async {
+  Future<List<VideoMetadataEpisode>> fetchEpisodes(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+  }) async {
     final String id = _id(lookup);
     // MAL assigns a separate work identity to each season. The resolver remaps
     // this source season to the explicitly bound local season.
@@ -256,9 +381,11 @@ class MalVideoMetadataProvider
     }
     final Map<int, VideoMetadataEpisode> episodes =
         <int, VideoMetadataEpisode>{};
-    for (int page = 1;; page++) {
-      final Map<String, Object?> payload =
-          await _get('anime/$id/episodes', <String, String>{'page': '$page'});
+    for (int page = 1; ; page++) {
+      final Map<String, Object?> payload = await _get(
+        'anime/$id/episodes',
+        <String, String>{'page': '$page'},
+      );
       for (final Object? node in metadataList(payload['data'])) {
         final Map<String, Object?>? item = metadataObject(node);
         final int? number = metadataInt(item?['mal_id']);
@@ -274,34 +401,41 @@ class MalVideoMetadataProvider
         }
         final String? aired = _date(item['aired']);
         episodes[number] = VideoMetadataEpisode(
-            seasonNumber: 1,
-            episodeNumber: number,
-            absoluteNumber: number,
-            title: title,
-            airDate: aired,
-            year: metadataYear(aired),
-            // MAL episode votes use a five-point scale; work scores use ten.
-            rating: metadataDouble(item['score']) == null
-                ? null
-                : metadataDouble(item['score'])! * 2,
-            ids: <VideoMetadataId>[
-              VideoMetadataId(
-                  type: 'mal_episode', value: '$id/$number', isDefault: true)
-            ]);
+          seasonNumber: 1,
+          episodeNumber: number,
+          absoluteNumber: number,
+          title: title,
+          airDate: aired,
+          year: metadataYear(aired),
+          // MAL episode votes use a five-point scale; work scores use ten.
+          rating: metadataDouble(item['score']) == null
+              ? null
+              : metadataDouble(item['score'])! * 2,
+          ids: <VideoMetadataId>[
+            VideoMetadataId(
+              type: 'mal_episode',
+              value: '$id/$number',
+              isDefault: true,
+            ),
+          ],
+        );
       }
       if (metadataBool(
-              metadataObject(payload['pagination'])?['has_next_page']) !=
+            metadataObject(payload['pagination'])?['has_next_page'],
+          ) !=
           true) {
         break;
       }
       if (page >= 100) {
         throw const VideoMetadataNetworkException(
-            'MAL episode pagination exceeds 100 pages');
+          'MAL episode pagination exceeds 100 pages',
+        );
       }
     }
-    return episodes.values.toList()
-      ..sort((VideoMetadataEpisode a, VideoMetadataEpisode b) =>
-          a.episodeNumber.compareTo(b.episodeNumber));
+    return episodes.values.toList()..sort(
+      (VideoMetadataEpisode a, VideoMetadataEpisode b) =>
+          a.episodeNumber.compareTo(b.episodeNumber),
+    );
   }
 
   /// 按资料语言在 MAL 的三种标题里选一个：本语言有就用本语言；`en` 缺英文名时
@@ -312,12 +446,11 @@ class MalVideoMetadataProvider
     required String? japanese,
     required String? english,
     required String? romaji,
-  }) =>
-      switch (_titleLanguage) {
-        'ja' => japanese ?? romaji ?? english,
-        'en' => english ?? romaji ?? japanese,
-        _ => japanese ?? romaji ?? english,
-      };
+  }) => switch (_titleLanguage) {
+    'ja' => japanese ?? romaji ?? english,
+    'en' => english ?? romaji ?? japanese,
+    _ => japanese ?? romaji ?? english,
+  };
 
   VideoMetadataWork? _work(Map<String, Object?> item) {
     final int? id = metadataInt(item['mal_id']);
@@ -330,94 +463,108 @@ class MalVideoMetadataProvider
     final String? premiered = _date(metadataObject(item['aired'])?['from']);
     final String? cover = _image(item);
     return VideoMetadataWork(
-        provider: providerKind,
-        kind: metadataString(item['type']) == 'Movie'
-            ? VideoMetadataMediaKind.movie
-            : VideoMetadataMediaKind.tv,
-        title: title,
-        originalTitle: metadataString(item['title_japanese']),
-        // 三种标题全部进别名池（选中的那个被过滤掉）：exact gate 比的是
-        // title / originalTitle / aliases，标题按语言换了，匹配面不能跟着缩。
-        aliases: metadataUniqueStrings(<String?>[
-          metadataString(item['title_japanese']),
-          metadataString(item['title']),
-          metadataString(item['title_english']),
-          for (final Object? node in metadataList(item['titles']))
-            metadataString(metadataObject(node)?['title']),
-          for (final Object? node in metadataList(item['title_synonyms']))
-            metadataString(node),
-        ]).where((String alias) => alias != title).toList(),
-        // Jikan 的 `title` 是 MAL 默认标题（日本作品即罗马音）。
-        romajiTitle: metadataString(item['title']),
-        englishTitle: metadataString(item['title_english']),
-        year: metadataInt(item['year']) ?? metadataYear(premiered),
-        premiered: premiered,
-        endDate: _date(metadataObject(item['aired'])?['to']),
-        // Jikan `status`：`Currently Airing` / `Finished Airing` / `Not yet aired`，
-        // 原串落 status，读取侧用 VideoAiringStatus 归一；老 payload 没有 status
-        // 时退到布尔 `airing`。
-        status: metadataString(item['status']) ??
-            (metadataBool(item['airing']) == true ? 'Currently Airing' : null),
-        // 不填 originalLanguage：Jikan 没有语言字段，MAL 也收录中 / 韩动画，
-        // 硬填 ja 会压过音轨 tag 给出的真实原语言。
-        plot: metadataStripHtml(metadataString(item['synopsis'])),
-        rating: metadataDouble(item['score']),
-        ratingVotes: metadataInt(item['scored_by']),
-        // Jikan `rating`：`G - All Ages` … `Rx - Hentai`。成人向作品补 TMDB 时要
-        // 带 include_adult（见 VideoMetadataSearchRequest.includeAdult）。
-        contentRating: metadataString(item['rating']),
-        episodeCount: metadataInt(item['episodes']),
-        runtimeMinutes: _minutes(metadataString(item['duration'])),
-        genres: _names(item['genres']),
-        studios: _names(item['studios']),
-        ids: <VideoMetadataId>[
-          VideoMetadataId(type: 'mal', value: '$id', isDefault: true)
-        ],
-        images: <VideoMetadataImage>[
-          if (cover != null)
-            VideoMetadataImage(
-                kind: VideoMetadataImageKind.cover,
-                url: cover,
-                provider: providerKind)
-        ]);
+      provider: providerKind,
+      kind: metadataString(item['type']) == 'Movie'
+          ? VideoMetadataMediaKind.movie
+          : VideoMetadataMediaKind.tv,
+      title: title,
+      originalTitle: metadataString(item['title_japanese']),
+      // 三种标题全部进别名池（选中的那个被过滤掉）：exact gate 比的是
+      // title / originalTitle / aliases，标题按语言换了，匹配面不能跟着缩。
+      aliases: metadataUniqueStrings(<String?>[
+        metadataString(item['title_japanese']),
+        metadataString(item['title']),
+        metadataString(item['title_english']),
+        for (final Object? node in metadataList(item['titles']))
+          metadataString(metadataObject(node)?['title']),
+        for (final Object? node in metadataList(item['title_synonyms']))
+          metadataString(node),
+      ]).where((String alias) => alias != title).toList(),
+      // Jikan 的 `title` 是 MAL 默认标题（日本作品即罗马音）。
+      romajiTitle: metadataString(item['title']),
+      englishTitle: metadataString(item['title_english']),
+      year: metadataInt(item['year']) ?? metadataYear(premiered),
+      premiered: premiered,
+      endDate: _date(metadataObject(item['aired'])?['to']),
+      // Jikan `status`：`Currently Airing` / `Finished Airing` / `Not yet aired`，
+      // 原串落 status，读取侧用 VideoAiringStatus 归一；老 payload 没有 status
+      // 时退到布尔 `airing`。
+      status:
+          metadataString(item['status']) ??
+          (metadataBool(item['airing']) == true ? 'Currently Airing' : null),
+      // 不填 originalLanguage：Jikan 没有语言字段，MAL 也收录中 / 韩动画，
+      // 硬填 ja 会压过音轨 tag 给出的真实原语言。
+      plot: metadataStripHtml(metadataString(item['synopsis'])),
+      rating: metadataDouble(item['score']),
+      ratingVotes: metadataInt(item['scored_by']),
+      // Jikan `rating`：`G - All Ages` … `Rx - Hentai`。成人向作品补 TMDB 时要
+      // 带 include_adult（见 VideoMetadataSearchRequest.includeAdult）。
+      contentRating: metadataString(item['rating']),
+      episodeCount: metadataInt(item['episodes']),
+      runtimeMinutes: _minutes(metadataString(item['duration'])),
+      genres: _names(item['genres']),
+      studios: _names(item['studios']),
+      ids: <VideoMetadataId>[
+        VideoMetadataId(type: 'mal', value: '$id', isDefault: true),
+      ],
+      images: <VideoMetadataImage>[
+        if (cover != null)
+          VideoMetadataImage(
+            kind: VideoMetadataImageKind.cover,
+            url: cover,
+            provider: providerKind,
+          ),
+      ],
+    );
   }
 
   List<VideoMetadataCredit> _credits(
-      Map<String, Object?> characters, Map<String, Object?> staff) {
+    Map<String, Object?> characters,
+    Map<String, Object?> staff,
+    Map<String, String> kanjiNames,
+  ) {
     final List<VideoMetadataCredit> credits = <VideoMetadataCredit>[];
     for (final Object? node in metadataList(characters['data'])) {
       final Map<String, Object?>? item = metadataObject(node);
-      final Map<String, Object?>? character =
-          metadataObject(item?['character']);
+      final Map<String, Object?>? character = metadataObject(
+        item?['character'],
+      );
       final String? name = metadataString(character?['name']);
       if (item == null || character == null || name == null) continue;
       final String? characterId = metadataInt(character['mal_id'])?.toString();
       for (final Object? actorNode in metadataList(item['voice_actors'])) {
         final Map<String, Object?>? actor = metadataObject(actorNode);
         if (metadataString(actor?['language']) != 'Japanese') continue;
-        final VideoMetadataPerson? person =
-            _person(metadataObject(actor?['person']));
+        final VideoMetadataPerson? person = _person(
+          metadataObject(actor?['person']),
+        );
         if (person == null) continue;
-        credits.add(VideoMetadataCredit(
+        credits.add(
+          VideoMetadataCredit(
             kind: VideoMetadataCreditKind.voiceActor,
             person: person,
             character: VideoMetadataCharacter(
-                id: characterId,
-                name: name,
-                imageUrl: _image(character),
-                ids: <VideoMetadataId>[
-                  if (characterId != null)
-                    VideoMetadataId(type: 'mal', value: characterId)
-                ]),
+              id: characterId,
+              name: name,
+              originalName: kanjiNames[characterId],
+              imageUrl: _image(character),
+              ids: <VideoMetadataId>[
+                if (characterId != null)
+                  VideoMetadataId(type: 'mal', value: characterId),
+              ],
+            ),
             language: 'ja',
             roleName: name,
-            order: credits.length));
+            order: credits.length,
+          ),
+        );
       }
     }
     for (final Object? node in metadataList(staff['data'])) {
       final Map<String, Object?>? item = metadataObject(node);
-      final VideoMetadataPerson? person =
-          _person(metadataObject(item?['person']));
+      final VideoMetadataPerson? person = _person(
+        metadataObject(item?['person']),
+      );
       if (person == null) continue;
       for (final Object? position in metadataList(item?['positions'])) {
         final String? job = metadataString(position);
@@ -425,13 +572,19 @@ class MalVideoMetadataProvider
         final VideoMetadataCreditKind? kind = lower.contains('director')
             ? VideoMetadataCreditKind.director
             : lower.contains('script') ||
-                    lower.contains('screenplay') ||
-                    lower.contains('series composition')
-                ? VideoMetadataCreditKind.writer
-                : null;
+                  lower.contains('screenplay') ||
+                  lower.contains('series composition')
+            ? VideoMetadataCreditKind.writer
+            : null;
         if (kind != null) {
-          credits.add(VideoMetadataCredit(
-              kind: kind, person: person, job: job, order: credits.length));
+          credits.add(
+            VideoMetadataCredit(
+              kind: kind,
+              person: person,
+              job: job,
+              order: credits.length,
+            ),
+          );
         }
       }
     }
@@ -443,12 +596,13 @@ class MalVideoMetadataProvider
     if (item == null || name == null) return null;
     final String? id = metadataInt(item['mal_id'])?.toString();
     return VideoMetadataPerson(
-        id: id,
-        name: name,
-        profileUrl: _image(item),
-        ids: <VideoMetadataId>[
-          if (id != null) VideoMetadataId(type: 'mal', value: id)
-        ]);
+      id: id,
+      name: name,
+      profileUrl: _image(item),
+      ids: <VideoMetadataId>[
+        if (id != null) VideoMetadataId(type: 'mal', value: id),
+      ],
+    );
   }
 
   /// MAL 对没有图的人物 / 角色 / 作品**不返回 null**，而是给站点占位图
@@ -459,22 +613,29 @@ class MalVideoMetadataProvider
   String? _image(Map<String, Object?> item) {
     final Map<String, Object?>? images = metadataObject(item['images']);
     final Map<String, Object?>? jpg = metadataObject(images?['jpg']);
-    final String? url = metadataString(jpg?['large_image_url']) ??
+    final String? url =
+        metadataString(jpg?['large_image_url']) ??
         metadataString(jpg?['image_url']);
     return url == null || isMalPlaceholderImageUrl(url) ? null : url;
   }
 
-  List<String> _names(Object? items) =>
-      metadataUniqueStrings(metadataList(items).map(
-          (Object? node) => metadataString(metadataObject(node)?['name'])));
+  List<String> _names(Object? items) => metadataUniqueStrings(
+    metadataList(
+      items,
+    ).map((Object? node) => metadataString(metadataObject(node)?['name'])),
+  );
   String? _date(Object? value) => metadataString(value)?.split('T').first;
   int? _minutes(String? duration) {
     if (duration == null) return null;
-    final int hours = int.tryParse(
-            RegExp(r'(\d+)\s*hr').firstMatch(duration)?.group(1) ?? '') ??
+    final int hours =
+        int.tryParse(
+          RegExp(r'(\d+)\s*hr').firstMatch(duration)?.group(1) ?? '',
+        ) ??
         0;
-    final int minutes = int.tryParse(
-            RegExp(r'(\d+)\s*min').firstMatch(duration)?.group(1) ?? '') ??
+    final int minutes =
+        int.tryParse(
+          RegExp(r'(\d+)\s*min').firstMatch(duration)?.group(1) ?? '',
+        ) ??
         0;
     return hours + minutes == 0 ? null : hours * 60 + minutes;
   }
@@ -488,14 +649,17 @@ class MalVideoMetadataProvider
   }
 
   Future<Map<String, Object?>> _get(String path, [Map<String, String>? query]) {
-    final Uri uri =
-        Uri.parse('${endpoint.replaceFirst(RegExp(r'/+$'), '')}/$path')
-            .replace(queryParameters: query);
+    final Uri uri = Uri.parse(
+      '${endpoint.replaceFirst(RegExp(r'/+$'), '')}/$path',
+    ).replace(queryParameters: query);
     return _gate.get(
-        uri.toString(),
-        () => _transport.get(uri,
-            operation: 'MAL $path',
-            headers: const <String, String>{'Accept': 'application/json'}));
+      uri.toString(),
+      () => _transport.get(
+        uri,
+        operation: 'MAL $path',
+        headers: const <String, String>{'Accept': 'application/json'},
+      ),
+    );
   }
 
   @override
@@ -513,17 +677,17 @@ class MalVideoMetadataProvider
 /// 一个 429 会同时炸出「演职员不完整 / 第 N 季拉取失败 / 季集 0 集」三条警告，
 /// 而下一个请求其实已经在冷却后正常通过（BUG-2595）。
 class MalVideoMetadataRequestGate {
-  MalVideoMetadataRequestGate(
-      {VideoMetadataNow? now,
-      VideoMetadataRetrySleep? sleep,
-      this.interval = const Duration(milliseconds: 1100),
-      this.cacheTtl = const Duration(hours: 1),
-      this.maxRateLimitRetries = 2,
-      this.maxTransientRetries = 2,
-      this.transientBackoff = const Duration(seconds: 2),
-      this.unreachableCooldown = const Duration(minutes: 2)})
-      : _now = now ?? DateTime.now,
-        _sleep = sleep ?? Future<void>.delayed;
+  MalVideoMetadataRequestGate({
+    VideoMetadataNow? now,
+    VideoMetadataRetrySleep? sleep,
+    this.interval = const Duration(milliseconds: 1100),
+    this.cacheTtl = const Duration(hours: 1),
+    this.maxRateLimitRetries = 2,
+    this.maxTransientRetries = 2,
+    this.transientBackoff = const Duration(seconds: 2),
+    this.unreachableCooldown = const Duration(minutes: 2),
+  }) : _now = now ?? DateTime.now,
+       _sleep = sleep ?? Future<void>.delayed;
   final VideoMetadataNow _now;
   final VideoMetadataRetrySleep _sleep;
   final Duration interval;
@@ -556,7 +720,9 @@ class MalVideoMetadataRequestGate {
   final Map<String, Future<String>> _pending = <String, Future<String>>{};
 
   Future<Map<String, Object?>> get(
-      String key, Future<VideoMetadataHttpResponse> Function() request) async {
+    String key,
+    Future<VideoMetadataHttpResponse> Function() request,
+  ) async {
     final ({DateTime expires, String body})? cached = _cache[key];
     if (cached != null && cached.expires.isAfter(_now())) {
       return jsonDecode(cached.body) as Map<String, Object?>;
@@ -571,7 +737,9 @@ class MalVideoMetadataRequestGate {
   }
 
   Future<String> _load(
-      String key, Future<VideoMetadataHttpResponse> Function() request) async {
+    String key,
+    Future<VideoMetadataHttpResponse> Function() request,
+  ) async {
     final Completer<String> result = Completer<String>();
     _queue = _queue.then((_) async {
       int rateLimitRetries = 0;
@@ -594,8 +762,9 @@ class MalVideoMetadataRequestGate {
           response.decodeJsonObject(operation: 'MAL');
           _unreachableUntil = null;
           _cache.removeWhere(
-              (String _, ({DateTime expires, String body}) entry) =>
-                  !entry.expires.isAfter(_now()));
+            (String _, ({DateTime expires, String body}) entry) =>
+                !entry.expires.isAfter(_now()),
+          );
           if (_cache.length >= 256) _cache.remove(_cache.keys.first);
           _cache[key] = (expires: _now().add(cacheTtl), body: response.body);
           result.complete(response.body);
@@ -605,8 +774,9 @@ class MalVideoMetadataRequestGate {
               error.statusCode == 429) {
             // 冷却是全局的：队列里后面的请求同样要等；本请求在冷却期满后
             // 原样重发。
-            final DateTime cooldown =
-                _now().add(error.retryAfter ?? const Duration(seconds: 60));
+            final DateTime cooldown = _now().add(
+              error.retryAfter ?? const Duration(seconds: 60),
+            );
             if (_nextStart == null || cooldown.isAfter(_nextStart!)) {
               _nextStart = cooldown;
             }

@@ -41,10 +41,10 @@ class _WavProvider extends TtsProvider {
 
   @override
   TtsCapabilities get capabilities => const TtsCapabilities(
-        timing: TtsTimingGranularity.sentence,
-        online: false,
-        needsCredential: false,
-      );
+    timing: TtsTimingGranularity.sentence,
+    online: false,
+    needsCredential: false,
+  );
 
   @override
   Future<TtsResult> synthesize(
@@ -83,15 +83,18 @@ void main() {
   });
 
   test('a request waits for synthesis and serves the cached WAV', () async {
-    final TtsSentenceAudioSource source =
-        TtsSentenceAudioSource(scheduler: scheduler, index: 1);
+    final TtsSentenceAudioSource source = TtsSentenceAudioSource(
+      scheduler: scheduler,
+      index: 1,
+    );
     final StreamAudioResponse full = await source.request();
     expect(full.contentType, 'audio/wav');
     expect(full.sourceLength, 44 + 32000);
     expect(full.contentLength, 44 + 32000);
     expect(full.offset, 0);
-    final List<int> bytes =
-        (await full.stream.toList()).expand((List<int> c) => c).toList();
+    final List<int> bytes = (await full.stream.toList())
+        .expand((List<int> c) => c)
+        .toList();
     expect(bytes.length, 44 + 32000);
     // 被请求的第 1 句 + 光标所在第 0 句的预取。
     expect(provider.calls, 2);
@@ -99,13 +102,16 @@ void main() {
   });
 
   test('range requests return exactly the requested bytes', () async {
-    final TtsSentenceAudioSource source =
-        TtsSentenceAudioSource(scheduler: scheduler, index: 0);
+    final TtsSentenceAudioSource source = TtsSentenceAudioSource(
+      scheduler: scheduler,
+      index: 0,
+    );
     final StreamAudioResponse part = await source.request(100, 200);
     expect(part.offset, 100);
     expect(part.contentLength, 100);
-    final List<int> bytes =
-        (await part.stream.toList()).expand((List<int> c) => c).toList();
+    final List<int> bytes = (await part.stream.toList())
+        .expand((List<int> c) => c)
+        .toList();
     expect(bytes.first, (100 - 44) & 0xFF);
     expect(bytes, hasLength(100));
     // 第二次请求命中缓存，不再合成。

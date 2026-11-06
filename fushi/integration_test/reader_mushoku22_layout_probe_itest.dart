@@ -536,7 +536,8 @@ void main() {
                   final Map<String, dynamic> rb =
                       jsonDecode((await runJs(_rubyJs)) as String)
                           as Map<String, dynamic>;
-                  rubyLine = ' plain=${rb['plain']}(n=${rb['plainN']}) '
+                  rubyLine =
+                      ' plain=${rb['plain']}(n=${rb['plainN']}) '
                       'ruby=${rb['ruby']}(n=${rb['rubyN']}) delta=${rb['delta']} '
                       'plainExtra=${rb['plainExtra']} rubyExtra=${rb['rubyExtra']} '
                       'firstRubyExtra=${rb['firstRubyExtra']}'

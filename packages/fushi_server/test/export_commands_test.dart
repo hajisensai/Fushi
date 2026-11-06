@@ -35,17 +35,35 @@ void main() {
     paths = ServerPaths(dataDir);
     await paths.ensureLayout();
     final FushiDatabase db = FushiDatabase(paths.support.path);
-    await db.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(name: 'JMdict', formatKey: 'yomichan', order: 0));
-    final Directory res = Directory(p.join(paths.dictionaryResources.path, 'JMdict'));
+    await db.upsertDictionaryMeta(
+      DictionaryMetadataCompanion.insert(
+        name: 'JMdict',
+        formatKey: 'yomichan',
+        order: 0,
+      ),
+    );
+    final Directory res = Directory(
+      p.join(paths.dictionaryResources.path, 'JMdict'),
+    );
     await res.create(recursive: true);
     await File(p.join(res.path, 'styles.css')).writeAsString('.x{}');
     // 本地音频库：登记格式与 app LocalAudioManager 同形（偏好 local_audio_dbs）。
     final File audioDb = File(p.join(paths.support.path, 'local_audio_1.db'));
-    await audioDb.writeAsBytes(<int>[...utf8.encode('SQLite format 3'), 0, ...List<int>.filled(84, 0)]);
+    await audioDb.writeAsBytes(<int>[
+      ...utf8.encode('SQLite format 3'),
+      0,
+      ...List<int>.filled(84, 0),
+    ]);
     final ServerPrefs prefs = ServerPrefs(db);
     await prefs.setPref(
       LocalAudioLibraryStore.entriesPrefKey,
-      jsonEncode(<Object?>[LocalAudioDbEntry(path: audioDb.path, displayName: 'NHK', enabled: true).toJson()]),
+      jsonEncode(<Object?>[
+        LocalAudioDbEntry(
+          path: audioDb.path,
+          displayName: 'NHK',
+          enabled: true,
+        ).toJson(),
+      ]),
     );
     await db.close();
     out = StringBuffer();
@@ -69,8 +87,13 @@ void main() {
 
   test('dictionary：导出的包能被引擎导回另一个库', () async {
     final String target = p.join(tmp.path, 'out', 'JMdict.fushidict');
-    expect(await export(<String>['dictionary', 'JMdict', '-o', target, '--json']), 0, reason: err.toString());
-    final Map<String, Object?> r = jsonDecode(out.toString()) as Map<String, Object?>;
+    expect(
+      await export(<String>['dictionary', 'JMdict', '-o', target, '--json']),
+      0,
+      reason: err.toString(),
+    );
+    final Map<String, Object?> r =
+        jsonDecode(out.toString()) as Map<String, Object?>;
     expect(r['kind'], 'dictionary');
     expect(r['file'], target);
     expect(r['bytes'], greaterThan(0));
@@ -78,18 +101,33 @@ void main() {
     final Directory other = await Directory(p.join(tmp.path, 'other')).create();
     final FushiDatabase otherDb = FushiDatabase(other.path);
     final Directory otherRoot = Directory(p.join(other.path, 'dicts'));
-    await SyncAssetPackageService(
-      db: otherDb,
-    ).importDictionaryPackage(packageFile: File(target), dictionaryResourceRoot: otherRoot);
-    expect((await otherDb.getAllDictionaryMetadata()).map((DictionaryMetaRow m) => m.name), contains('JMdict'));
-    expect(await File(p.join(otherRoot.path, 'JMdict', 'styles.css')).readAsString(), '.x{}');
+    await SyncAssetPackageService(db: otherDb).importDictionaryPackage(
+      packageFile: File(target),
+      dictionaryResourceRoot: otherRoot,
+    );
+    expect(
+      (await otherDb.getAllDictionaryMetadata()).map(
+        (DictionaryMetaRow m) => m.name,
+      ),
+      contains('JMdict'),
+    );
+    expect(
+      await File(p.join(otherRoot.path, 'JMdict', 'styles.css')).readAsString(),
+      '.x{}',
+    );
     await otherDb.close();
   });
 
   test('local-audio：包内带 .db 与 manifest', () async {
     final String target = p.join(tmp.path, 'NHK.fushiaudiolib');
-    expect(await export(<String>['local-audio', 'NHK', '-o', target]), 0, reason: err.toString());
-    final Archive zip = ZipDecoder().decodeBytes(await File(target).readAsBytes());
+    expect(
+      await export(<String>['local-audio', 'NHK', '-o', target]),
+      0,
+      reason: err.toString(),
+    );
+    final Archive zip = ZipDecoder().decodeBytes(
+      await File(target).readAsBytes(),
+    );
     expect(
       zip.files.map((ArchiveFile f) => f.name),
       containsAll(<String>['manifest.json', 'resources/local_audio_1.db']),
@@ -98,21 +136,57 @@ void main() {
   });
 
   test('找不到资产 = 66', () async {
-    expect(await export(<String>['dictionary', 'nope', '-o', p.join(tmp.path, 'a')]), 66);
-    expect(await export(<String>['audiobook', 'nope', '-o', p.join(tmp.path, 'b')]), 66);
-    expect(await export(<String>['local-audio', 'nope', '-o', p.join(tmp.path, 'c')]), 66);
+    expect(
+      await export(<String>['dictionary', 'nope', '-o', p.join(tmp.path, 'a')]),
+      66,
+    );
+    expect(
+      await export(<String>['audiobook', 'nope', '-o', p.join(tmp.path, 'b')]),
+      66,
+    );
+    expect(
+      await export(<String>[
+        'local-audio',
+        'nope',
+        '-o',
+        p.join(tmp.path, 'c'),
+      ]),
+      66,
+    );
     expect(err.toString(), contains('nope'));
   });
 
   test('输出已存在 = 1，--force 覆盖', () async {
     final File target = File(p.join(tmp.path, 'exists.fushidict'));
     await target.writeAsString('old');
-    expect(await export(<String>['dictionary', 'JMdict', '-o', target.path]), 1);
+    expect(
+      await export(<String>['dictionary', 'JMdict', '-o', target.path]),
+      1,
+    );
     expect(await target.readAsString(), 'old');
     // --force 但源不存在：旧文件不能被先删掉。
-    expect(await export(<String>['dictionary', 'nope', '-o', target.path, '--force']), 66);
+    expect(
+      await export(<String>[
+        'dictionary',
+        'nope',
+        '-o',
+        target.path,
+        '--force',
+      ]),
+      66,
+    );
     expect(await target.readAsString(), 'old');
-    expect(await export(<String>['dictionary', 'JMdict', '-o', target.path, '--force']), 0, reason: err.toString());
+    expect(
+      await export(<String>[
+        'dictionary',
+        'JMdict',
+        '-o',
+        target.path,
+        '--force',
+      ]),
+      0,
+      reason: err.toString(),
+    );
     expect(await target.length(), greaterThan(3));
   });
 

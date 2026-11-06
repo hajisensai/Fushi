@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -27,7 +28,16 @@ import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/stats/study_clock_run_gate.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 
 /// PDF 阅读器页面（Phase 1 渲染 / Phase 2 点选查词 / Phase 3 页码进度 / Phase 4 制卡）。
@@ -112,8 +122,25 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   /// 任何会话时长字段——旧的 `_sessionReadingMs` / `_sessionStartTime` 形态整个消失。
   StudyClock? _studyClock;
 
+  /// 学习计时门（与 PDF 阅读器共用一份判据，[StudyClockRunGate]）：在前台（BUG-892
+  /// 切屏暂停）且没被根导航上的路由压住（整页 / 对话框 / 侧板 / 菜单，BUG-3994：此前
+  /// 本页只看生命周期，开着整页 SRS / 设置 / 反馈中心也照计）才走。
+  late final StudyClockRunGate _studyClockGate = StudyClockRunGate.forClock(
+    () => _studyClock,
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _studyClockGate.attach(ModalRoute.of(context));
+  }
+
   /// 无文本层（扫描图 PDF）只提示一次。
   bool _noTextLayerNotified = false;
+
+  /// 顶栏 + 翻页胶囊是否显示。点页面外背景、或页内空白 / 图片（没命中字）时翻转，
+  /// 点到字照旧查词——与小说阅读器「点空白唤 / 收 chrome」同一手感。
+  bool _chromeVisible = true;
 
   /// PDF 自带目录（outline），懒加载一次；空列表 = 已加载但该 PDF 无目录。
   List<PdfOutlineNode>? _outline;
@@ -151,6 +178,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     // `db.close()` 互等。关书不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），
     // detach 只停表，攒下的写和最后的位置一起交给退出汇合点统一 await。
     // 时钟为空 = 本页从没开始计时，整段跳过。
+    _studyClockGate.dispose();
     _studyClock?.detach();
     ExitFlushRegistry.instance.defer(_flushPosition);
     super.dispose();
@@ -169,11 +197,12 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
         state == AppLifecycleState.inactive) {
       // 切屏 / 进后台自动暂停阅读计时（BUG-892）：stop 先结算失焦瞬间的部分窗口再
       // 封段落库；顺序同 EPUB 侧。
-      unawaited(_studyClock?.stop());
+      _studyClockGate.setLifecycleStopped(true);
       unawaited(_flushPosition());
     } else if (state == AppLifecycleState.resumed) {
       // BUG-892 / BUG-1052: 后台那段靠「时钟停着」丢弃，不再重锚墙钟基准。
-      _studyClock?.start();
+      // 仍被路由盖着时不续表（BUG-3994）。
+      _studyClockGate.setLifecycleStopped(false);
     }
   }
 
@@ -229,7 +258,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
           ErrorLogService.instance.log('StudyClock.write(pdf)', e, st),
       deferWrite: ExitFlushRegistry.instance.defer,
     );
-    _studyClock!.start();
+    // 建表时已在后台 / 已被盖住就不起表（BUG-3994）。
+    _studyClockGate.sync();
     return _PdfBookLoad(path: path, row: row);
   }
 
@@ -278,8 +308,11 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
           charOffset: 0,
         );
       } catch (e, stack) {
-        ErrorLogService.instance
-            .log('ReaderPdfPage._persistPosition', e, stack);
+        ErrorLogService.instance.log(
+          'ReaderPdfPage._persistPosition',
+          e,
+          stack,
+        );
       }
     }
     // 翻到最后一页 → 幂等写「已读完」（判据用总页数，PDF 无 chapters）。
@@ -319,8 +352,11 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       _pageTextCache[pageIndex] = text;
       return text;
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('ReaderPdfPage.loadStructuredText', e, stack);
+      ErrorLogService.instance.log(
+        'ReaderPdfPage.loadStructuredText',
+        e,
+        stack,
+      );
       return null;
     }
   }
@@ -330,8 +366,11 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   /// [documentPosition] 是 pdfrx 的**文档坐标**（整册布局空间，未缩放）。流程：
   /// 文档点 → 命中页 → 页内 PDF 坐标 → 最近字符索引 → 从该字符起取子串当查询词 →
   /// 字符矩形换算成屏幕矩形当弹窗锚点。
-  Future<void> _lookupAtDocumentPosition(Offset documentPosition) async {
-    if (!_pdfController.isReady) return;
+  ///
+  /// 返回是否命中了字（发起了查词）；false = 点在空白 / 图片 / 无文本层页上，
+  /// 调用方据此切换 chrome 显隐。
+  Future<bool> _lookupAtDocumentPosition(Offset documentPosition) async {
+    if (!_pdfController.isReady) return false;
     final PdfPageLayout layout = _pdfController.layout;
     final List<PdfPage> pages = _pdfController.pages;
 
@@ -341,10 +380,10 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
 
       final PdfPage page = pages[i];
       final PdfPageText? text = await _pageText(i, page);
-      if (!mounted) return;
+      if (!mounted) return false;
       if (text == null || text.charRects.isEmpty) {
         _notifyNoTextLayer();
-        return;
+        return false;
       }
 
       // 文档坐标 → 页内 PDF 坐标（原点左下、Y 轴向上、单位 point）。
@@ -353,7 +392,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
           .toPdfPoint(page: page, scaledPageSize: pageRect.size);
 
       final int? charIndex = _closestCharIndex(text.charRects, pt);
-      if (charIndex == null) return; // 点在空白/图片上：不查词，也不关栈。
+      if (charIndex == null) return false; // 点在空白/图片上：不查词，也不关栈。
 
       await _lookupFromChar(
         page: page,
@@ -361,9 +400,25 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
         text: text,
         charIndex: charIndex,
       );
-      return;
+      return true;
     }
+    return false;
   }
+
+  /// 正文单击：命中字就查词，否则翻转 chrome 显隐。
+  Future<void> _onDocumentTap(Offset documentPosition) async {
+    final bool lookedUp = await _lookupAtDocumentPosition(documentPosition);
+    if (lookedUp || !mounted) return;
+    _toggleChrome();
+  }
+
+  void _toggleChrome() {
+    setState(() => _chromeVisible = !_chromeVisible);
+  }
+
+  /// chrome 实际是否显示：文档未就绪（加载中 / 文件丢失）时没有可点的正文去唤回
+  /// 顶栏，而返回键是 iOS 上唯一出口（`canPop: false` 关了侧滑），此时恒显示。
+  bool get _chromeShown => _chromeVisible || !_pdfController.isReady;
 
   /// 在 [charRects] 里找命中（或容差内最近）的字符索引；超出容差返回 null。
   static int? _closestCharIndex(List<PdfRect> charRects, PdfPoint pt) {
@@ -407,10 +462,14 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     // PDF 的 fullText 在**视觉换行**处普遍带 \n/\r，而换行是分句符——直接分句会把每个
     // 视觉行切成一句，制卡拿到半截话。这里用**等长替换**把 \n/\r 换成空格（1 字符换
     // 1 字符，charIndex 与 charRects 的索引对齐**完全不变**），只让句读标点决定句子边界。
-    final String flattened =
-        fullText.replaceAll('\n', ' ').replaceAll('\r', ' ');
-    final SentenceExtractionResult extracted =
-        extractSentenceAt(flattened, charIndex, 1);
+    final String flattened = fullText
+        .replaceAll('\n', ' ')
+        .replaceAll('\r', ' ');
+    final SentenceExtractionResult extracted = extractSentenceAt(
+      flattened,
+      charIndex,
+      1,
+    );
     _lastSentence = extracted.sentence.trim();
     _lastSentenceOffset = extracted.selStart;
     if (_lastSentence.isNotEmpty) {
@@ -444,10 +503,14 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     required Rect pageRect,
     required PdfRect charRect,
   }) {
-    final Rect documentRect =
-        charRect.toRectInDocument(page: page, pageRect: pageRect);
-    final Rect? localRect =
-        _pdfController.doc2local.rectToLocal(context, documentRect);
+    final Rect documentRect = charRect.toRectInDocument(
+      page: page,
+      pageRect: pageRect,
+    );
+    final Rect? localRect = _pdfController.doc2local.rectToLocal(
+      context,
+      documentRect,
+    );
     if (localRect == null) return null;
     final RenderBox? box = _pdfController.renderBox;
     if (box == null) return null;
@@ -457,8 +520,10 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
 
   void _highlightMatchedTerm(PdfPageText text, int charIndex, int length) {
     try {
-      final int endIndex =
-          math.min(charIndex + length - 1, text.charRects.length - 1);
+      final int endIndex = math.min(
+        charIndex + length - 1,
+        text.charRects.length - 1,
+      );
       if (endIndex < charIndex) return;
       unawaited(
         _pdfController.textSelectionDelegate.setTextSelectionPointRange(
@@ -504,7 +569,9 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       );
       if (!mounted) return;
       FushiToast.show(
-          msg: t.pdf_bookmark_added, severity: ToastSeverity.success);
+        msg: t.pdf_bookmark_added,
+        severity: ToastSeverity.success,
+      );
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderPdfPage.addBookmark', e, stack);
     }
@@ -516,8 +583,9 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     List<Bookmark> bookmarks;
     try {
       // legacyBookKey：`bookmarks_<bookKey>` 遗留偏好一次性迁进 DB（键换 uid）。
-      bookmarks = await BookmarkRepository(appModel.database)
-          .getBookmarks(bookUid, legacyBookKey: widget.bookKey);
+      bookmarks = await BookmarkRepository(
+        appModel.database,
+      ).getBookmarks(bookUid, legacyBookKey: widget.bookKey);
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderPdfPage.getBookmarks', e, stack);
       return;
@@ -543,8 +611,11 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
           try {
             await BookmarkRepository(appModel.database).removeBookmarkById(id);
           } catch (e, stack) {
-            ErrorLogService.instance
-                .log('ReaderPdfPage.removeBookmark', e, stack);
+            ErrorLogService.instance.log(
+              'ReaderPdfPage.removeBookmark',
+              e,
+              stack,
+            );
           }
         },
       ),
@@ -596,8 +667,9 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     Directory? tempDir;
     try {
-      final String sentence =
-          _lastSentence.isNotEmpty ? _lastSentence : (fields['sentence'] ?? '');
+      final String sentence = _lastSentence.isNotEmpty
+          ? _lastSentence
+          : (fields['sentence'] ?? '');
 
       // 当前页栅格化成临时 PNG 当卡图；失败则无图落卡（不阻断制卡）。
       String? coverPath;
@@ -632,11 +704,21 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       if (described.record) {
         unawaited(_recordMinedCount());
       }
-      FushiToast.showMine(msg: described.message, status: described.status);
       if (described.success) {
+        FushiToast.showMine(
+          msg: described.message,
+          status: described.status,
+          // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
+          action: minedCardUndoToastAction(
+            repo,
+            outcome,
+            expression: fields['expression'],
+          ),
+        );
         return MinePopupResult.mined(outcome);
       }
-      return MinePopupResult.failed(outcome);
+      // 失败原因交给弹窗就地说，不另弹 toast（见 MinePopupResult.message）。
+      return MinePopupResult.failed(outcome, message: described.message);
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderPdfPage.onMineFromPopup', e, stack);
       return const MinePopupResult();
@@ -703,8 +785,9 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     int width,
     int height,
   ) async {
-    final ui.ImmutableBuffer buffer =
-        await ui.ImmutableBuffer.fromUint8List(bgra);
+    final ui.ImmutableBuffer buffer = await ui.ImmutableBuffer.fromUint8List(
+      bgra,
+    );
     final ui.ImageDescriptor descriptor = ui.ImageDescriptor.raw(
       buffer,
       width: width,
@@ -715,8 +798,9 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     final ui.FrameInfo frame = await codec.getNextFrame();
     final ui.Image image = frame.image;
     try {
-      final ByteData? png =
-          await image.toByteData(format: ui.ImageByteFormat.png);
+      final ByteData? png = await image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
       return png?.buffer.asUint8List();
     } finally {
       image.dispose();
@@ -779,38 +863,42 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
         child: AnimatedBuilder(
           animation: _pdfController,
           builder: (BuildContext context, Widget? child) {
-            return FushiFloatingTopBar(
-              leading: <FushiToolbarItem>[
-                FushiToolbarItem(
-                  key: const ValueKey<String>('pdf_back'),
-                  icon: FushiIcons.back,
-                  label: t.back,
-                  onPressed: () => unawaited(Navigator.of(context).maybePop()),
-                ),
-              ],
-              title: title,
-              subtitle: _pageIndicatorText() ?? '',
-              titleTooltip: t.pdf_outline,
-              onTitleTap: () => unawaited(_showOutline()),
-              actions: <List<FushiToolbarItem>>[
-                <FushiToolbarItem>[
+            return FushiChromeReveal(
+              visible: _chromeShown,
+              child: FushiFloatingTopBar(
+                leading: <FushiToolbarItem>[
                   FushiToolbarItem(
-                    icon: FushiIcons.bookmarkAdd,
-                    label: t.pdf_bookmarks,
-                    onPressed: () => unawaited(_addBookmarkAtCurrentPage()),
-                  ),
-                  FushiToolbarItem(
-                    icon: FushiIcons.bookmark,
-                    label: t.pdf_bookmarks,
-                    onPressed: () => unawaited(_showBookmarks()),
-                  ),
-                  FushiToolbarItem(
-                    icon: FushiIcons.listView,
-                    label: t.pdf_outline,
-                    onPressed: () => unawaited(_showOutline()),
+                    key: const ValueKey<String>('pdf_back'),
+                    icon: FushiIcons.back,
+                    label: t.back,
+                    onPressed: () =>
+                        unawaited(Navigator.of(context).maybePop()),
                   ),
                 ],
-              ],
+                title: title,
+                subtitle: _pageIndicatorText() ?? '',
+                titleTooltip: t.pdf_outline,
+                onTitleTap: () => unawaited(_showOutline()),
+                actions: <List<FushiToolbarItem>>[
+                  <FushiToolbarItem>[
+                    FushiToolbarItem(
+                      icon: FushiIcons.bookmarkAdd,
+                      label: t.pdf_bookmarks,
+                      onPressed: () => unawaited(_addBookmarkAtCurrentPage()),
+                    ),
+                    FushiToolbarItem(
+                      icon: FushiIcons.bookmark,
+                      label: t.pdf_bookmarks,
+                      onPressed: () => unawaited(_showBookmarks()),
+                    ),
+                    FushiToolbarItem(
+                      icon: FushiIcons.listView,
+                      label: t.pdf_outline,
+                      onPressed: () => unawaited(_showOutline()),
+                    ),
+                  ],
+                ],
+              ),
             );
           },
         ),
@@ -821,8 +909,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   /// 拖动页码滑块时的预览页（1 起）；松手才真正跳页，null = 未在拖动。
   double? _scrubPage;
 
-  /// 底部悬浮翻页胶囊：上一页 / M3E 页码滑块 / 下一页。文档未就绪或只有一页时
-  /// 收起（弹簧下沉）。
+  /// 底部悬浮翻页胶囊：上一页 / M3E 页码滑块 / 下一页。文档未就绪、只有一页或
+  /// 用户点空白收起 chrome 时收起（弹簧下沉）。
   Widget _buildFloatingPager() {
     final EdgeInsets viewPadding = MediaQuery.viewPaddingOf(context);
     return Positioned(
@@ -837,7 +925,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
             final bool ready = _pdfController.isReady;
             final int pageCount = ready ? _pdfController.pageCount : 0;
             final int page = (ready ? _pdfController.pageNumber : null) ?? 1;
-            final bool show = ready && pageCount > 1;
+            final bool show = ready && pageCount > 1 && _chromeVisible;
             return FushiChromeReveal(
               visible: show,
               from: AxisDirection.down,
@@ -856,10 +944,10 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
                                 onPressed: page <= 1
                                     ? null
                                     : () => unawaited(
-                                          _pdfController.goToPage(
-                                            pageNumber: page - 1,
-                                          ),
+                                        _pdfController.goToPage(
+                                          pageNumber: page - 1,
                                         ),
+                                      ),
                               ),
                               Expanded(
                                 child: FushiSlider(
@@ -889,10 +977,10 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
                                 onPressed: page >= pageCount
                                     ? null
                                     : () => unawaited(
-                                          _pdfController.goToPage(
-                                            pageNumber: page + 1,
-                                          ),
+                                        _pdfController.goToPage(
+                                          pageNumber: page + 1,
                                         ),
+                                      ),
                               ),
                             ],
                           ),
@@ -933,17 +1021,22 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
             backgroundColor: const Color(0xFF3A3A3A),
             onViewerReady: (_, __) => _onViewerReady(),
             onPageChanged: _onPageChanged,
-            // 单击正文即查词；返回 true 吃掉 tap，阻止 pdfrx 默认清选区行为。
-            onGeneralTap: (
-              BuildContext context,
-              PdfViewerController controller,
-              PdfViewerGeneralTapHandlerDetails details,
-            ) {
-              if (details.type != PdfViewerGeneralTapType.tap) return false;
-              if (details.tapOn == PdfViewerPart.background) return false;
-              unawaited(_lookupAtDocumentPosition(details.documentPosition));
-              return true;
-            },
+            // 单击正文即查词（没命中字则切换 chrome）；点页面外背景切换 chrome。
+            // 返回 true 吃掉 tap，阻止 pdfrx 默认清选区行为。
+            onGeneralTap:
+                (
+                  BuildContext context,
+                  PdfViewerController controller,
+                  PdfViewerGeneralTapHandlerDetails details,
+                ) {
+                  if (details.type != PdfViewerGeneralTapType.tap) return false;
+                  if (details.tapOn == PdfViewerPart.background) {
+                    _toggleChrome();
+                    return false;
+                  }
+                  unawaited(_onDocumentTap(details.documentPosition));
+                  return true;
+                },
           ),
         );
       },

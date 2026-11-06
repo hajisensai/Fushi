@@ -15,11 +15,11 @@ void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
   Widget harness(_FakeSession session) => TranslationProvider(
-        child: MaterialApp(
-          locale: const Locale('zh', 'CN'),
-          home: AiVideoAcquisitionPage(service: session, executorLabel: 'PC'),
-        ),
-      );
+    child: MaterialApp(
+      locale: const Locale('zh', 'CN'),
+      home: AiVideoAcquisitionPage(service: session, executorLabel: 'PC'),
+    ),
+  );
 
   testWidgets('标题下显示执行设备；版本 chip 用视图里的标签；点选原样发给会话', (
     WidgetTester tester,
@@ -98,10 +98,10 @@ void main() {
     await tester.pumpWidget(harness(session));
 
     Checkbox remember() => tester.widget<Checkbox>(
-          glassUnwrap<Checkbox>(
-            find.byKey(const ValueKey<String>('ai-video-acquire-remember')),
-          ),
-        );
+      glassUnwrap<Checkbox>(
+        find.byKey(const ValueKey<String>('ai-video-acquire-remember')),
+      ),
+    );
     expect(remember().value, isTrue);
     await tester.tap(
       find.byKey(const ValueKey<String>('ai-video-acquire-remember')),
@@ -183,21 +183,11 @@ VideoAcquisitionView _resourceQuestion({
 }
 
 VideoAcquisitionView _qualityQuestion() => const VideoAcquisitionView(
-      stage: VideoAcquisitionStage.collectingSlots,
-      transcript: <VideoAcquisitionMessage>[
-        VideoAcquisitionUserMessage('Show'),
-        VideoAcquisitionAssistantMessage(
-          VideoAcquisitionSay(VideoAcquisitionSayKind.question),
-          question: VideoAcquisitionQuestion(
-            slot: VideoAcquisitionSlot.quality,
-            rememberToggle: true,
-            options: <VideoAcquisitionOption>[
-              VideoAcquisitionOption(id: '1080p'),
-              VideoAcquisitionOption(id: '720p'),
-            ],
-          ),
-        ),
-      ],
+  stage: VideoAcquisitionStage.collectingSlots,
+  transcript: <VideoAcquisitionMessage>[
+    VideoAcquisitionUserMessage('Show'),
+    VideoAcquisitionAssistantMessage(
+      VideoAcquisitionSay(VideoAcquisitionSayKind.question),
       question: VideoAcquisitionQuestion(
         slot: VideoAcquisitionSlot.quality,
         rememberToggle: true,
@@ -206,7 +196,17 @@ VideoAcquisitionView _qualityQuestion() => const VideoAcquisitionView(
           VideoAcquisitionOption(id: '720p'),
         ],
       ),
-    );
+    ),
+  ],
+  question: VideoAcquisitionQuestion(
+    slot: VideoAcquisitionSlot.quality,
+    rememberToggle: true,
+    options: <VideoAcquisitionOption>[
+      VideoAcquisitionOption(id: '1080p'),
+      VideoAcquisitionOption(id: '720p'),
+    ],
+  ),
+);
 
 class _FakeSession implements VideoAcquisitionSession {
   _FakeSession(this._view);
@@ -235,8 +235,7 @@ class _FakeSession implements VideoAcquisitionSession {
     VideoAcquisitionSlot slot,
     String optionId, {
     bool? remember,
-  }) async =>
-      actions.add('choose:${slot.name}:$optionId:$remember');
+  }) async => actions.add('choose:${slot.name}:$optionId:$remember');
 
   @override
   Future<void> confirm() async => actions.add('confirm');

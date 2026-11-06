@@ -19,8 +19,9 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('同一 family：第一个文件坏掉不得让第二个文件不被尝试', () async {
-    final Directory dir =
-        await Directory.systemTemp.createTemp('font_inflight_');
+    final Directory dir = await Directory.systemTemp.createTemp(
+      'font_inflight_',
+    );
     addTearDown(() => dir.delete(recursive: true));
 
     // `.woff` 走 FontDecoder.woffToSfnt，垃圾字节必定解不出 sfnt → 确定性失败，
@@ -30,22 +31,30 @@ void main() {
 
     // 真字体：仓库自带的 Material Symbols（flutter test 的 cwd 是 fushi/ 包根）。
     const String good = 'assets/fonts/MaterialSymbolsRounded.ttf';
-    expect(File(good).existsSync(), isTrue,
-        reason: '测试依赖这份随包字体存在；它被挪走时本用例必须显式失败');
+    expect(
+      File(good).existsSync(),
+      isTrue,
+      reason: '测试依赖这份随包字体存在；它被挪走时本用例必须显式失败',
+    );
 
     // family 名带时间戳：`_loadedFamilies` 是进程级静态表，复用名字会让第二次
     // 运行在入口就短路，用例退化成恒真。
     final String family =
         'InflightProbe${DateTime.now().microsecondsSinceEpoch}';
 
-    final List<String> families =
-        await AppFontLoader.resolveAndLoadAll(<Map<String, dynamic>>[
-      <String, dynamic>{'name': family, 'path': broken.path},
-      <String, dynamic>{'name': family, 'path': good},
-    ]);
+    final List<String> families = await AppFontLoader.resolveAndLoadAll(
+      <Map<String, dynamic>>[
+        <String, dynamic>{'name': family, 'path': broken.path},
+        <String, dynamic>{'name': family, 'path': good},
+      ],
+    );
 
-    expect(families, <String>[family],
-        reason: '第一个条目失败只说明那个文件不行；第二个同名条目必须照常被尝试，'
-            '否则整个 family 因为一个坏文件而不可用');
+    expect(
+      families,
+      <String>[family],
+      reason:
+          '第一个条目失败只说明那个文件不行；第二个同名条目必须照常被尝试，'
+          '否则整个 family 因为一个坏文件而不可用',
+    );
   });
 }

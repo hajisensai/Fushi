@@ -5,7 +5,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
@@ -111,14 +111,19 @@ void main() {
       // 行为断言证不了「中途没有不存在窗口」（测不到崩溃时刻），只能钉源码。
       final File source = File('lib/src/media/manga/manga_json_writeback.dart');
       final String body = source.readAsStringSync();
-      final int start = body.indexOf('Future<void> writeMangaJsonAtomically(');
+      // 返回落盘后的 payload（并进了 PDF 文字层），签名随之从 Future<void> 改成
+      // Future<MokuroPayload>。
+      final int start = body.indexOf(
+        'Future<MokuroPayload> writeMangaJsonAtomically(',
+      );
       expect(start, greaterThan(0));
       final int end = body.indexOf('\n}', start);
       expect(end, greaterThan(start));
       expect(
         body.substring(start, end),
         isNot(contains('.delete()')),
-        reason: 'rename 已能覆盖已存在目标（Windows 实测 RENAME_OVER_EXISTING: OK）；'
+        reason:
+            'rename 已能覆盖已存在目标（Windows 实测 RENAME_OVER_EXISTING: OK）；'
             '先 delete 再 rename 会开出一个目标不存在的窗口',
       );
     });
@@ -146,7 +151,8 @@ void main() {
           expect(
             preceding,
             contains('runExclusiveOnMangaJson'),
-            reason: '$path 偏移 $at 处的落盘不在 per-path 写锁内：'
+            reason:
+                '$path 偏移 $at 处的落盘不在 per-path 写锁内：'
                 '与另一写者交叠会整份覆写、吞掉对方刚落盘的改动',
           );
           at = body.indexOf('writeMangaJsonAtomically(', at + 1);
@@ -155,11 +161,10 @@ void main() {
     });
 
     test('删章目录（连带其 manga.json）也在锁内', () {
-      final String body =
-          File('lib/src/media/manga/library/manga_chapter_storage.dart')
-              .readAsStringSync();
-      final int start =
-          body.indexOf('Future<void> deleteChapterDownload(');
+      final String body = File(
+        'lib/src/media/manga/library/manga_chapter_storage.dart',
+      ).readAsStringSync();
+      final int start = body.indexOf('Future<void> deleteChapterDownload(');
       expect(start, greaterThan(0));
       final int end = body.indexOf('\nFuture<', start + 1);
       final String fn = body.substring(start, end > start ? end : body.length);
@@ -171,9 +176,9 @@ void main() {
     });
 
     test('阅读器页不再写书根 manga.json（写侧只剩下载服务 / 向导 / 注册表）', () {
-      final String body =
-          File('lib/src/media/manga/reader/manga_fushi_page.dart')
-              .readAsStringSync();
+      final String body = File(
+        'lib/src/media/manga/reader/manga_fushi_page.dart',
+      ).readAsStringSync();
       expect(body, isNot(contains('writeMangaJsonAtomically(')));
     });
 
@@ -181,9 +186,9 @@ void main() {
       // 只钉阅读器页：它对书根 manga.json 的写全部应经本模块。向导那边还留着一处
       // 合法的 mangaPayloadToJson——写的是 `manga_ocr_out/` 里的 OCR 中间产物，
       // 与书根 manga.json 不同路径，不在这把锁的语义范围内。
-      final String body =
-          File('lib/src/media/manga/reader/manga_fushi_page.dart')
-              .readAsStringSync();
+      final String body = File(
+        'lib/src/media/manga/reader/manga_fushi_page.dart',
+      ).readAsStringSync();
       expect(
         body,
         isNot(contains('mangaPayloadToJson(')),
@@ -192,9 +197,9 @@ void main() {
     });
 
     test('向导对书根 manga.json 的落盘经本模块（其余 mangaPayloadToJson 是 OCR 中间产物）', () {
-      final String body =
-          File('lib/src/media/manga/manga_ocr_wizard_dialog.dart')
-              .readAsStringSync();
+      final String body = File(
+        'lib/src/media/manga/manga_ocr_wizard_dialog.dart',
+      ).readAsStringSync();
       final int at = body.indexOf('MangaStorage.kMangaJsonFileName');
       expect(at, greaterThan(0));
       // 书根 manga.json 的那处落盘必须紧跟锁 + 原子写，而不是自己拼 .tmp。
@@ -228,12 +233,15 @@ void main() {
       final File a = _writeTempMangaJson();
       final File b = _writeTempMangaJson();
       final Completer<void> holdA = Completer<void>();
-      final Future<void> first =
-          runExclusiveOnMangaJson<void>(a.path, () => holdA.future);
-      // b 的临界区不该等 a 释放。
-      await runExclusiveOnMangaJson<void>(b.path, () async {}).timeout(
-        const Duration(seconds: 2),
+      final Future<void> first = runExclusiveOnMangaJson<void>(
+        a.path,
+        () => holdA.future,
       );
+      // b 的临界区不该等 a 释放。
+      await runExclusiveOnMangaJson<void>(
+        b.path,
+        () async {},
+      ).timeout(const Duration(seconds: 2));
       holdA.complete();
       await first;
     });
@@ -251,8 +259,10 @@ void main() {
           _block(const MokuroRect.fromLTRB(0, 0, 50, 50), 'replaced'),
         ],
       );
-      final MokuroPayload edited =
-          MokuroPayload(images: images, ocr: baseline.ocr);
+      final MokuroPayload edited = MokuroPayload(
+        images: images,
+        ocr: baseline.ocr,
+      );
       await Future.wait(<Future<void>>[
         runExclusiveOnMangaJson<void>(
           file.path,

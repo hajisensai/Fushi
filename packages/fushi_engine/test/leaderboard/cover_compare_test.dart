@@ -68,10 +68,21 @@ void main() {
       final CoverSimilarity s = compareCoverBytes(genuine, e.value)!;
       print('other ${e.key}: $s');
       expect(s.sameImage, isFalse, reason: '${e.key}: $s');
-      expect(s.detailNcc, lessThan(0.4), reason: e.key);
+      // forged.jpg 例外：旧的 package:image 解码器遇到夹断直接抛（按「候选解不开 = 不符」），
+      // 原生解码器（zune-jpeg，2026-10-18 起）和 libjpeg 一样完整解出显示的那张图——不是 A，
+      // 细节项 0.45，照样远低于阈值。
+      expect(
+        s.detailNcc,
+        lessThan(e.key == 'forged.jpg' ? kCoverConfirmMinDetailNcc : 0.4),
+        reason: e.key,
+      );
     }
-    // 夹断藏质量的伪造让 Dart 的 JPEG 解码器直接抛异常：按「候选解不开 = 不符」处理，不崩。
-    expect(coverSignature(different['forged.jpg']!), isNull);
+    // 夹断藏质量的伪造：解出来的是另一张图，不是 A。
+    final CoverSimilarity forged = compareCoverBytes(
+      genuine,
+      different['forged.jpg']!,
+    )!;
+    expect(forged.ncc, lessThan(kCoverConfirmMinNcc));
   });
 
   test('只看 NCC 不够：老实伪造的 NCC 已到 0.93，靠细节项拉开', () {

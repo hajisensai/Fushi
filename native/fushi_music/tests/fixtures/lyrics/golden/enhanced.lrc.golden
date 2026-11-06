@@ -1,0 +1,13 @@
+format=lrc quality=word effects=false lang=- title=- artist=- agents=[]
+L 10000-12200 agent=- role=Main style=-
+  S 10000-10400 Sweep "Never "
+  S 10400-10900 Sweep "gonna "
+  S 10900-11300 Sweep "give "
+  S 11300-11600 Sweep "you "
+  S 11600-12200 Sweep "up"
+L 12500-14800 agent=- role=Main style=-
+  S 12500-12900 Sweep "Never "
+  S 12900-13400 Sweep "gonna "
+  S 13400-13700 Sweep "let "
+  S 13700-14000 Sweep "you "
+  S 14000-14800 Sweep "down"

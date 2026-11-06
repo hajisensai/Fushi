@@ -1,7 +1,13 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/scraper/episode_rename.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 「按刮削重命名各集」确认弹窗（TODO-2491 UI）：逐行旧名 → 新名对照 + 勾选，
 /// 支持全选/取消。裸 [AlertDialog]、默认动作 = 不改（关掉/返回键零写入）。
@@ -131,9 +137,9 @@ class _EpisodeRenameConfirmDialogState
           onPressed: _checked.isEmpty
               ? null
               : () => Navigator.of(context).pop(<EpisodeRenameProposal>[
-                    for (final EpisodeRenameProposal p in widget.proposals)
-                      if (_checked.contains(p.bookUid)) p,
-                  ]),
+                  for (final EpisodeRenameProposal p in widget.proposals)
+                    if (_checked.contains(p.bookUid)) p,
+                ]),
           child: Text(t.collection_episode_rename_apply(n: _checked.length)),
         ),
       ],

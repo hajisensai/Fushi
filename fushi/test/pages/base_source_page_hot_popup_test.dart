@@ -2,8 +2,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -12,7 +12,7 @@ import '../helpers/popup_mining_target_overrides.dart';
 
 class HotPopupTestAppModel extends AppModel {
   HotPopupTestAppModel({this.lowMemory = false})
-      : super(testPlatformServices());
+    : super(testPlatformServices());
 
   final bool lowMemory;
 
@@ -105,9 +105,7 @@ Widget buildHotPopupTestApp({
     child: TranslationProvider(
       child: MaterialApp(
         builder: (context, child) => child ?? const SizedBox.shrink(),
-        home: Scaffold(
-          body: HotPopupHostPage(key: hostKey),
-        ),
+        home: Scaffold(body: HotPopupHostPage(key: hostKey)),
       ),
     ),
   );
@@ -133,8 +131,9 @@ void main() {
 
     expect(find.byType(DictionaryPopupLayer), findsOneWidget);
 
-    final DictionaryPopupLayer firstLayer =
-        tester.widget(find.byType(DictionaryPopupLayer));
+    final DictionaryPopupLayer firstLayer = tester.widget(
+      find.byType(DictionaryPopupLayer),
+    );
 
     hostKey.currentState!.clearDictionaryResult();
     await tester.pump();
@@ -152,8 +151,9 @@ void main() {
     expect(find.byType(DictionaryPopupLayer), findsOneWidget);
     expect(hostKey.currentState!.dictionaryPopupShown, isTrue);
 
-    final DictionaryPopupLayer secondLayer =
-        tester.widget(find.byType(DictionaryPopupLayer));
+    final DictionaryPopupLayer secondLayer = tester.widget(
+      find.byType(DictionaryPopupLayer),
+    );
     expect(secondLayer.webViewKey, same(firstLayer.webViewKey));
   });
 

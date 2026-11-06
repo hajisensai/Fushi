@@ -33,8 +33,8 @@ import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 typedef AnkiAutoRepositionFailureReporter =
     void Function(String deckName, Object error, StackTrace? stack);
 
-/// 写回时有卡被 AnkiConnect 拒绝（`setSpecificValueOfCard` 把失败写在
-/// `result` 里而不是抛异常），带上失败数与第一条原因供错误日志使用。
+/// 写回时有卡被 AnkiConnect 拒绝（原生 `scheduling.repositionNewCards` 逐条报告，
+/// 一条失败不抛整批），带上失败数与第一条原因供错误日志使用。
 @immutable
 class AnkiAutoRepositionWriteFailures implements Exception {
   const AnkiAutoRepositionWriteFailures({
@@ -85,11 +85,11 @@ class AnkiAutoRepositionScheduler {
     AnkiAutoRepositionFailureReporter? onFailure,
     Duration debounce = kDefaultDebounce,
     int keepSnapshots = AnkiDeckRepositionRunner.kDefaultAutoSnapshots,
-  })  : _runner = runner,
-        _loadSettings = loadSettings,
-        _onFailure = onFailure,
-        _debounce = debounce,
-        _keepSnapshots = keepSnapshots;
+  }) : _runner = runner,
+       _loadSettings = loadSettings,
+       _onFailure = onFailure,
+       _debounce = debounce,
+       _keepSnapshots = keepSnapshots;
 
   /// 默认防抖窗口。够长到把「连着挖十个词」合成一批，又短到用户切回 Anki
   /// 时位置已经排好。
@@ -183,7 +183,7 @@ class AnkiAutoRepositionScheduler {
       // 每张新卡都发一条 update（位置 = 1..N），所以只要牌组里有新卡，
       // `updates` 就永远非空。用它当判据等于「每批制卡都把整个牌组的位置重写
       // 一遍、并写一份全量快照」——挖一个词就给 2000 张卡发 2000 条
-      // setSpecificValueOfCard，哪怕排完与原来一模一样。
+      // 重排写入，哪怕排完与原来一模一样。
       if (plan.changed == 0) return;
 
       // 词典来源下一张都没查到词频 = 这次重排没有任何排序依据，`planCardPositions`
@@ -200,8 +200,10 @@ class AnkiAutoRepositionScheduler {
       // apply 一旦开始就让它跑完，即使中途 dispose：它是一批位置写入，
       // 半途停下留下的是「排了一半」的队列，比写完更糟。
       if (_disposed) return;
-      final AnkiRepositionOutcome outcome =
-          await _runner.apply(plan, auto: true);
+      final AnkiRepositionOutcome outcome = await _runner.apply(
+        plan,
+        auto: true,
+      );
       onRunForTesting?.call(
         AnkiAutoRepositionRun(
           deckName: deckName,
@@ -224,6 +226,11 @@ class AnkiAutoRepositionScheduler {
       await _runner.pruneSnapshots(keep: _keepSnapshots);
     } on AnkiRepositionCancelled {
       // 自动路径没有取消按钮，走到这里只可能是 runner 内部的兜底；不打扰用户。
+      return;
+    } on AnkiRepositionUnsupportedException {
+      // 连着的 AnkiConnect 没有原生重排接口：plan 在读卡前就挡下，一张都没写。
+      // 这不是一次失败，是能力缺失——设置页的开关已置灰并写明原因，每挖一张卡
+      // 弹一次「自动重排失败」只会是噪音。
       return;
     } catch (e, stack) {
       debugPrint('AnkiAutoRepositionScheduler: $deckName failed: $e\n$stack');

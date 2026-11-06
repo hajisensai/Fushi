@@ -1,0 +1,14 @@
+## BUG-3760 · SRS 自动备份读快照时占着主数据库连接；备份媒体池整份复制
+- **报告**：2026-10-23（BUG-3579 收尾清单 E 的剩余两项：「自动备份占着数据库连接」「媒体池改硬链接」）
+- **真实性**：✅ 真问题。
+  - 连接：`SrsBackupStore.create`（`packages/fushi_engine/lib/srs/srs_backup_store.dart`）把整份快照放在主连接的一个 drift 事务里分页读，真实库（30 万条复习日志）约 25 s；drift 单连接，这期间主连接上的一切语句都排在后面。BUG-3579 只做了「复习界面在用时不开始、读到一半叫停」，读的时候照样占着连接（比如在复习以外的 SRS 页面、或别的模块查库时）。
+  - 媒体池：`_captureMedia` 把每个媒体文件 `copy` 进 `srs_backups/media/<sha256>`，媒体在磁盘上占两份。
+- **[x] ① 已修复** —
+  - 新增 `packages/fushi_engine/lib/srs/srs_backup_snapshot.dart`：快照读取（规范行 / 服务器时间 / 计数）抽成与连接无关的函数（`SrsSqlSelect`），`SrsDbStore` 的同名方法委托过去。库在文件上时 `SrsBackupSnapshotReader` 在后台 isolate 开一条独立只读连接（库是 WAL，读事务拿开事务那一刻的快照）；在写锁 `runExclusive` 里取变化指纹并等后台拿到快照，锁一放开主连接就照常读写，快照与指纹一致（所有改指纹的写入都在写锁里提交）。叫停经端口通知后台，读完当前页回滚、关连接。内存库（测试）退回主连接事务。
+  - 媒体池：入池与恢复都先试硬链接（`packages/fushi_engine/lib/platform/file_hard_link.dart`：Windows `CreateHardLinkW`、其它平台 libc `link()`），跨卷 / 文件系统不支持时退回复制；旧版本复制进池的文件在下一次备份时换成链接（媒体索引记 `linked`，之后不再重链）。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/srs/srs_backup_snapshot_test.dart`（真实文件库：内容 / 计数 / 指纹与主连接读的一致；快照拿到后主连接写入不受阻且不进快照；叫停回滚不留文件；开不了库原样报错）；`packages/fushi_engine/test/srs/srs_backup_media_link_test.dart`（入池 / 旧复制件转换 / 恢复都是硬链接，原地追加判定）。
+- **备注**：
+  - **取舍**：硬链接后池里那份不再是独立副本。app 内所有媒体写入都是「先写临时文件再改名」（换新文件，不影响池），但媒体文件被原地改写（外部工具编辑、磁盘损坏）时池里那份一起坏；导出 / 恢复的内容哈希校验能发现，不能救回。`srs_backup_restore_test.dart` 里「同名同大小内容不同」一条原来用原地改写模拟，已改成 app 的写法。
+  - 备份期间有人做 `wal_checkpoint(TRUNCATE)`（删书 / 删视频后）会等后台读连接，最多 5 s busy 超时；以前是所有语句等 25 s。
+  - 「备份占用空间」仍把链接的池文件按全尺寸计（Dart 读不到链接数）。
+  - 未在用户真实库 / Android / iOS 上实测：Android 上 `link()` 若被 SELinux 拒绝会自动退回复制。

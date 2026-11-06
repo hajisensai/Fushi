@@ -18,6 +18,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart'
     show kWebVideoPlayerEnabled;
+import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/pages/implementations/web_video_fushi_page.dart';
@@ -56,9 +57,16 @@ void main() {
         await tester.pump(const Duration(seconds: 2));
         final AppModel appModel = await readyAppModel(tester);
         final VideoBookRepository repo = VideoBookRepository(appModel.database);
+        // 本测试验的是内置网页播放器页：显式钉内置档（没选过档时，打了底层合成补丁的
+        // 引擎会默认 4K 窗口档、在原生播放器页里播，那条路由 web_video_underlay_itest 验）。
+        await appModel.prefsRepo.setPref(
+          kWebVideoHostingPrefKey,
+          WebVideoHosting.builtin.name,
+        );
 
-        final NavigatorState nav =
-            tester.state<NavigatorState>(find.byType(Navigator).first);
+        final NavigatorState nav = tester.state<NavigatorState>(
+          find.byType(Navigator).first,
+        );
         final Future<Object?> dialogResult = nav.push<Object?>(
           MaterialPageRoute<Object?>(
             builder: (_) => Scaffold(body: VideoImportDialog(repo: repo)),
@@ -68,8 +76,9 @@ void main() {
 
         // 流 URL 输入框（keyboardType=url 的第一个）→ 填 watch URL → 提交（onSubmitted
         // 与「导入」按钮走同一个 _doImport）。
-        final Finder urlField = find.byWidgetPredicate((Widget w) =>
-            w is TextField && w.keyboardType == TextInputType.url);
+        final Finder urlField = find.byWidgetPredicate(
+          (Widget w) => w is TextField && w.keyboardType == TextInputType.url,
+        );
         for (int i = 0; i < 20 && urlField.evaluate().isEmpty; i++) {
           await tester.pump(const Duration(milliseconds: 250));
         }
@@ -80,10 +89,12 @@ void main() {
 
         Object? bookUid;
         bool popped = false;
-        unawaited(dialogResult.then((Object? v) {
-          bookUid = v;
-          popped = true;
-        }));
+        unawaited(
+          dialogResult.then((Object? v) {
+            bookUid = v;
+            popped = true;
+          }),
+        );
         for (int i = 0; i < 120 && !popped; i++) {
           await tester.pump(const Duration(milliseconds: 500));
         }
@@ -92,17 +103,25 @@ void main() {
         final VideoBookRow? row = await repo.getByBookUid(uid);
         expect(row, isNotNull, reason: '流媒体书应已落库');
         expect(row!.videoPath, _kUrl);
-        debugPrint('[yt-import] imported uid=$uid title="${row.title}" '
-            'cover=${row.coverPath}');
+        debugPrint(
+          '[yt-import] imported uid=$uid title="${row.title}" '
+          'cover=${row.coverPath}',
+        );
 
         // 打开：与书架点卡同一入口；Windows 上分流到网页播放器并显示视频标题。
-        unawaited(nav.push<void>(MaterialPageRoute<void>(
-          builder: (_) => VideoFushiPage.neutralized(bookUid: uid, repo: repo),
-        )));
+        unawaited(
+          nav.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  VideoFushiPage.neutralized(bookUid: uid, repo: repo),
+            ),
+          ),
+        );
         bool titled = false;
         for (int i = 0; i < 20 && !titled; i++) {
           await tester.pump(const Duration(seconds: 1));
-          titled = find.byType(WebVideoFushiPage).evaluate().isNotEmpty &&
+          titled =
+              find.byType(WebVideoFushiPage).evaluate().isNotEmpty &&
               find.textContaining(row.title).evaluate().isNotEmpty;
         }
         await captureFlutterFrame(tester, 'yt-import-open');

@@ -104,13 +104,19 @@ void main() {
     });
 
     test('databaseSnapshotMainFileName 返回实际命中的库名（存储页标题用它）', () {
-      expect(databaseSnapshotMainFileName('fushi.db.corrupt-bak-1.db'),
-          'fushi.db');
       expect(
-          databaseSnapshotMainFileName('hibiki.db-wal.bak.v20.1'), 'hibiki.db');
+        databaseSnapshotMainFileName('fushi.db.corrupt-bak-1.db'),
+        'fushi.db',
+      );
+      expect(
+        databaseSnapshotMainFileName('hibiki.db-wal.bak.v20.1'),
+        'hibiki.db',
+      );
       expect(databaseSnapshotMainFileName('fushi.db'), isNull);
       expect(
-          databaseSnapshotMainFileName('fushi.db.sync-preserve.json'), isNull);
+        databaseSnapshotMainFileName('fushi.db.sync-preserve.json'),
+        isNull,
+      );
     });
   });
 
@@ -118,10 +124,14 @@ void main() {
     test('sidecar 在 ⇒ 被它拥有的 pre-*.bak 不可删；sidecar 不在 ⇒ 才可删', () {
       const String preRestore = 'fushi.db.pre-restore.bak';
       const String preMerge = 'fushi.db.pre-merge.bak';
-      expect(databaseSnapshotOwnerFileName(preRestore),
-          'fushi.db.sync-preserve.json');
-      expect(databaseSnapshotOwnerFileName(preMerge),
-          'fushi.db.merge-preserve.json');
+      expect(
+        databaseSnapshotOwnerFileName(preRestore),
+        'fushi.db.sync-preserve.json',
+      );
+      expect(
+        databaseSnapshotOwnerFileName(preMerge),
+        'fushi.db.merge-preserve.json',
+      );
 
       expect(
         isDeletableDatabaseSnapshot(preRestore, <String>{
@@ -132,8 +142,10 @@ void main() {
         isFalse,
       );
       expect(
-        isDeletableDatabaseSnapshot(
-            preRestore, <String>{'fushi.db', preRestore}),
+        isDeletableDatabaseSnapshot(preRestore, <String>{
+          'fushi.db',
+          preRestore,
+        }),
         isTrue,
       );
       // merge 侧同理，且两条流程互不干扰（merge sidecar 不管 pre-restore.bak）。
@@ -215,8 +227,10 @@ void main() {
 
     test('待恢复的 pre-restore.bak：sidecar 在时不列不删，sidecar 走后才清掉', () async {
       final File live = put('fushi.db', 'LIVE');
-      final File sidecar =
-          put('fushi.db.sync-preserve.json', '{"mode":"prefs"}');
+      final File sidecar = put(
+        'fushi.db.sync-preserve.json',
+        '{"mode":"prefs"}',
+      );
       final File bak = put('fushi.db.pre-restore.bak', 'BAK');
 
       // sidecar 还在 = 下次启动要靠这两个文件补完 device-local 表 replay。
@@ -255,34 +269,30 @@ void main() {
       expect((await deleteDatabaseSnapshotFiles(tmp)).deleted, isEmpty);
     });
 
-    test(
-      '单个文件被占用不中止整批：其余照删，失败原样回报',
-      () async {
-        final File snap1 = put('fushi.db.corrupt-bak-1.db');
-        final File locked = put('fushi.db.corrupt-bak-2.db');
-        final File snap3 = put('fushi.db.corrupt-bak-3.db');
-        // Windows 上 Defender / 索引器占住某个副本是常态：持一个写句柄就能
-        // 复现「这一个删不掉」。POSIX 允许 unlink 已打开的文件，制造不出同样
-        // 的失败，故只在 Windows 上跑（真实故障面也只在 Windows）。
-        final RandomAccessFile handle = locked.openSync(mode: FileMode.append);
-        final DatabaseSnapshotDeletionResult result;
-        try {
-          result = await deleteDatabaseSnapshotFiles(tmp);
-        } finally {
-          handle.closeSync();
-        }
+    test('单个文件被占用不中止整批：其余照删，失败原样回报', () async {
+      final File snap1 = put('fushi.db.corrupt-bak-1.db');
+      final File locked = put('fushi.db.corrupt-bak-2.db');
+      final File snap3 = put('fushi.db.corrupt-bak-3.db');
+      // Windows 上 Defender / 索引器占住某个副本是常态：持一个写句柄就能
+      // 复现「这一个删不掉」。POSIX 允许 unlink 已打开的文件，制造不出同样
+      // 的失败，故只在 Windows 上跑（真实故障面也只在 Windows）。
+      final RandomAccessFile handle = locked.openSync(mode: FileMode.append);
+      final DatabaseSnapshotDeletionResult result;
+      try {
+        result = await deleteDatabaseSnapshotFiles(tmp);
+      } finally {
+        handle.closeSync();
+      }
 
-        // 关键不变式：一个失败没有把后面的文件也拖下水。
-        expect(result.deleted.toSet(), <String>{snap1.path, snap3.path});
-        expect(snap1.existsSync(), isFalse);
-        expect(snap3.existsSync(), isFalse);
-        expect(result.hasFailures, isTrue);
-        expect(result.failures.keys, <String>[locked.path]);
-        expect(result.failures[locked.path], isNotEmpty);
-        expect(locked.existsSync(), isTrue);
-      },
-      skip: Platform.isWindows ? false : '只有 Windows 能用文件锁复现「删不掉」',
-    );
+      // 关键不变式：一个失败没有把后面的文件也拖下水。
+      expect(result.deleted.toSet(), <String>{snap1.path, snap3.path});
+      expect(snap1.existsSync(), isFalse);
+      expect(snap3.existsSync(), isFalse);
+      expect(result.hasFailures, isTrue);
+      expect(result.failures.keys, <String>[locked.path]);
+      expect(result.failures[locked.path], isNotEmpty);
+      expect(locked.existsSync(), isTrue);
+    }, skip: Platform.isWindows ? false : '只有 Windows 能用文件锁复现「删不掉」');
 
     test('support 根不存在 → 空集，不抛', () async {
       final Directory missing = Directory(p.join(tmp.path, 'nope'));

@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_text_join.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 /// 把一页所有 mokuro block 渲染成绝对定位的透明 `<p class="ocr-box">` 层。
@@ -234,13 +235,16 @@ List<({int group, String sentence})> _mangaBlockSentenceAssignments(
     indices.sort(
       (int a, int b) => _compareMangaBlockReadingOrder(blocks[a], blocks[b]),
     );
-    final String sentence = indices
-        .where((int index) => !rubyBlocks.contains(index))
-        .map((int index) => _mangaBlockText(blocks[index]))
-        .join();
+    final String sentence = mangaJoinOcrText(
+      indices
+          .where((int index) => !rubyBlocks.contains(index))
+          .map((int index) => _mangaBlockText(blocks[index])),
+    );
     final String fallback = sentence.isNotEmpty
         ? sentence
-        : indices.map((int index) => _mangaBlockText(blocks[index])).join();
+        : mangaJoinOcrText(
+            indices.map((int index) => _mangaBlockText(blocks[index])),
+          );
     for (final int index in indices) {
       result[index] = (group: groupIndex, sentence: fallback);
     }
@@ -249,7 +253,7 @@ List<({int group, String sentence})> _mangaBlockSentenceAssignments(
   return result.cast<({int group, String sentence})>();
 }
 
-String _mangaBlockText(MokuroBlock block) => block.lines.join();
+String _mangaBlockText(MokuroBlock block) => mangaJoinOcrText(block.lines);
 
 bool _mangaKanaOnly(String text) =>
     text.isNotEmpty &&
@@ -588,9 +592,34 @@ String _mangaCharacterRegionsHtml({
   final double parentWidth = parent.width <= 0 ? 1 : parent.width;
   final double parentHeight = parent.height <= 0 ? 1 : parent.height;
   final StringBuffer buffer = StringBuffer();
+  // 各行在 [sentence] 里的分界（UTF-16）：行与行直接拼接，行尾不带空格。
+  final List<int> lineBreaks = <int>[];
+  int lineEnd = 0;
+  for (int i = 0; i < block.lines.length - 1; i++) {
+    lineEnd += block.lines[i].length;
+    lineBreaks.add(lineEnd);
+  }
+  int? previousEnd;
   // [regions] comes from [mangaEffectiveTextRegions]: every range is already
   // known to lie inside the sentence, so nothing is filtered here.
   for (final MangaOcrTextRegion region in regions) {
+    // 反馈 vXYKPudf7U：区域只覆盖可见字，词间空格与换行不在任何区域里——原样逐字输出
+    // 会让 DOM 正文成为 `BEENSOLONGSINCE…`，取词一路扫过词界，拉丁文整串查不到。
+    // 两个区域之间夹着空白或拉丁文行界时，补一个纯空白文本节点：阅读器取词脚本把它
+    // 当词界（BUG-3453 的 hasSkippedWhitespaceBetween），且它在两个绝对定位的字格之间
+    // 按 CSS 空白折叠不占版面、不成命中区。
+    final int? gapStart = previousEnd;
+    if (gapStart != null &&
+        region.utf16Start >= gapStart &&
+        _mangaRegionsHaveWordGap(
+          sentence,
+          gapStart,
+          region.utf16Start,
+          lineBreaks,
+        )) {
+      buffer.write(' ');
+    }
+    previousEnd = region.utf16End;
     final MokuroRect r = region.rectangle;
     final double leftPct = ((r.left - parent.left) / parentWidth) * 100;
     final double topPct = ((r.top - parent.top) / parentHeight) * 100;
@@ -615,6 +644,32 @@ String _mangaCharacterRegionsHtml({
     );
   }
   return buffer.toString();
+}
+
+final RegExp _mangaWhitespace = RegExp(r'\s');
+
+/// [sentence] 里相邻两个字格区域之间（`[start, end)`）是否有词界：夹着空白，或跨过一个
+/// 拉丁文行界（[mangaOcrNeedsWordGap]）。
+bool _mangaRegionsHaveWordGap(
+  String sentence,
+  int start,
+  int end,
+  List<int> lineBreaks,
+) {
+  if (_mangaWhitespace.hasMatch(sentence.substring(start, end))) {
+    return true;
+  }
+  for (final int lineBreak in lineBreaks) {
+    if (lineBreak >= start &&
+        lineBreak <= end &&
+        mangaOcrNeedsWordGap(
+          sentence.substring(0, lineBreak),
+          sentence.substring(lineBreak),
+        )) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /// 一整页：底图 `<img pointer-events:none>` + 上层 OCR 框。
@@ -747,6 +802,7 @@ String mangaWindowDocument(
   int currentSpread = 0,
   double restoreFraction = 0,
   int zoomPercent = 100,
+  int? restZoomPercent,
   int documentGeneration = 0,
   Set<int>? ocrPageIndices,
   int zoomMinPercent = kMangaZoomMinPercent,
@@ -775,6 +831,8 @@ String mangaWindowDocument(
   String zoomStartPosition = 'automatic',
   MangaReaderPreferences? readerPreferences,
   String? readingModeLabel,
+  // 悬停查词按住的键在 MouseEvent 上的字段名（HoverLookupModifier.jsEventFlag）。
+  String hoverKey = 'shiftKey',
   // 折叠屏书本姿态：双页之间留出的铰链缝（逻辑像素，见 fushiHingeGutterPx）。0 = 无缝。
   double spreadGutterPx = 0,
 }) {
@@ -805,9 +863,13 @@ String mangaWindowDocument(
   // that only know spread/webtoon continue to work.
   final bool isVerticalPaged = mode == MangaReadingMode.pagedVertical;
   final bool isWebtoon = mode.isWebtoon || isVerticalPaged;
-  final bool hasGaps = readerPreferences == null
+  // 长条漫的页间距只由阅读模式决定：「条漫」无缝拼接、「带间距长条漫」留间距
+  // （与 Mihon 两种长条模式同义）。此前两种模式都只看 showPageGaps，而它默认开，
+  // 于是「条漫」每页之间都露出一条背景色横带——切片发布的韩漫满屏黑线。
+  // showPageGaps 只管纵向分页（翻页步进之间的空隙，见 _layoutSource）。
+  final bool hasGaps = mode.isWebtoon
       ? mode.hasGaps
-      : preferences.showPageGaps;
+      : readerPreferences != null && preferences.showPageGaps;
   // spread 容器本身始终按 LTR 的几何顺序排列，保证 offsetLeft 是稳定的
   // 0/100vw/200vw；RTL 只施加到每个 spread 内部，让双页视觉页序反转。
   // 若把 direction:rtl 放在根 strip 上，Chromium 会把 wrapper 的 RTL 起点偏移
@@ -975,7 +1037,10 @@ String mangaWindowDocument(
       'container-type:inline-size;overflow:hidden;}'
       '.manga-page img{display:block;width:100%;height:100%;'
       'object-fit:contain;-webkit-user-drag:none;user-drag:none;}'
-      '.manga-source img{filter:${mangaImageFilterCss(preferences)};}'
+      // 全为恒等值时写 none：哪怕 invert(0)…saturate(1) 也会让每张页图走一次滤镜
+      // 离屏渲染，长条漫的超高页图（数万像素高）会把滤镜面撑过纹理上限画成空白，
+      // 滚动时逐帧重做滤镜也是卡顿的大头。
+      '.manga-source img{filter:${mangaImageFilterIsIdentity(preferences) ? 'none' : mangaImageFilterCss(preferences)};}'
       // 取页失败的页：中央一个重试符号（点它 / 翻到它会重新请求，见 _retryPageImage）。
       '.manga-page[data-load-failed="1"] .manga-source::before{content:"\\21BB";'
       'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);'
@@ -1020,10 +1085,19 @@ String mangaWindowDocument(
       '<script>$inlineSelectionJs</script>'
       '<script>'
       'window.__mangaDocumentGeneration=$documentGeneration;'
-      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged)}'
+      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged)}'
       '</script>'
       '</body></html>';
 }
+
+/// Whether [mangaImageFilterCss] would leave every pixel unchanged.
+bool mangaImageFilterIsIdentity(MangaReaderPreferences preferences) =>
+    !preferences.invertColors &&
+    !preferences.grayscale &&
+    !preferences.einkMode &&
+    preferences.brightness.clamp(-100, 100) == 0 &&
+    preferences.contrast.clamp(0, 200) == 100 &&
+    preferences.saturation.clamp(0, 200) == 100;
 
 /// CSS filters affect the bitmap only; OCR hit boxes retain their source geometry.
 String mangaImageFilterCss(MangaReaderPreferences preferences) =>
@@ -1061,6 +1135,8 @@ String _rootTransitionCss(
   switch (animation) {
     case PageTurnAnimation.none:
     case PageTurnAnimation.cover:
+    // 卷页画在 Flutter 覆盖层（page_curl.dart），JS 只做瞬时落位。
+    case PageTurnAnimation.curl:
       return '';
     case PageTurnAnimation.slide:
       return 'transition:transform ${speed.durationMs}ms $kMangaPageTurnEasing;';
@@ -1071,11 +1147,13 @@ String _rootTransitionCss(
 }
 
 String _mangaGestureJs({
+  String hoverKey = 'shiftKey',
   required bool isWebtoon,
   required bool rtl,
   required int currentSpread,
   required double restoreFraction,
   required int zoomPercent,
+  required int restZoomPercent,
   required int zoomMinPercent,
   required int zoomMaxPercent,
   required int zoomSensitivity,
@@ -1124,9 +1202,26 @@ String _mangaGestureJs({
   // ── canvas zoom/pan ──
   var ZOOM_MIN = ${disableZoomOut ? 1.0 : zoomMinPercent / 100.0};
   var ZOOM_MAX = ${zoomMaxPercent / 100.0};
+  // 反馈 EjyFnomM6w（墨水屏放大看句子后常缩过头 / 误翻页）的三项设置：
+  // ZOOM_OUT_LIMIT  'fit_height' = 最多缩到整页高度撑满视口（见 _zoomFloor）；
+  // QUICK_ZOOM_GESTURE 'double_tap' / 'two_finger_tap' = 一下缩回 QUICK_ZOOM_TARGET
+  //   （'fit_height' / 'fit_width'，见 _quickZoom）；'off' = 双击照旧 100% ↔ 2×。
+  var ZOOM_OUT_LIMIT = '${preferences.zoomOutLimit}';
+  var QUICK_ZOOM_GESTURE = '${preferences.quickZoomGesture}';
+  var QUICK_ZOOM_TARGET = '${preferences.quickZoomTarget}';
   // 灵敏度倍率（设置项，100% = 基准）。
   var ZOOM_SENS = ${zoomSensitivity / 100.0};
   var ZOOM = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, ${zoomPercent / 100.0}));
+  // 静止倍率（BUG-3634）：阅读器**自己**把页面放到的倍率——设置里的默认缩放、
+  // 宽页切半 / 宽页自动放大的适配、分镜聚焦。用户捏合 / 双击 / Ctrl+滚轮 /
+  // 右键菜单 ± 放大不改它。超出它就是「用户放大在看细节」，此时点左右热区
+  // 不翻页（见 _onTap）。默认值必须来自偏好而不是 ZOOM：跨窗口重建文档时
+  // ZOOM 带的是会话倍率，用它当基准会让放大态在重建后又能点翻页。
+  var ZOOM_REST_DEFAULT = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, ${restZoomPercent / 100.0}));
+  var ZOOM_REST = ZOOM_REST_DEFAULT;
+  function _userZoomedIn(){
+    return ZOOM > Math.max(1, ZOOM_REST) + 0.01;
+  }
   var SPLIT_WIDE = $splitWidePages;
   var ROTATE_WIDE = $rotateWidePages;
   var AUTO_ZOOM_WIDE = $autoZoomWidePages;
@@ -1163,6 +1258,18 @@ String _mangaGestureJs({
     else if ('${scaleType.key}' === 'original') fit = 1;
     var scaleX = fit, scaleY = fit;
     if (!IS_WEBTOON && '${scaleType.key}' === 'stretch') { scaleX = sx; scaleY = sy; }
+    // 长条漫页缝：页高按宽度比例算出来是小数像素，页与页的交界落在物理像素中间，
+    // 两张图的边缘各被抗锯齿掉半个像素，底色从缝里透出来——就是那条横贯的黑线。
+    // 页高对齐到物理像素，并让无间距的后一页向上压住前一页一个物理像素：滚动偏移
+    // 是小数时交界仍会落在像素中间，有这一像素的重叠，底色就永远透不出来。
+    if (IS_WEBTOON && !IS_VERTICAL_PAGED && !rotated) {
+      var dpr = window.devicePixelRatio || 1;
+      scaleY = Math.max(1, Math.round(vh * scaleY * dpr)) / dpr / vh;
+      var prevPage = page.previousElementSibling;
+      var gapped = prevPage &&
+          parseFloat(getComputedStyle(prevPage).marginBottom) > 0;
+      page.style.marginTop = prevPage && !gapped ? (-1 / dpr) + 'px' : '';
+    }
     page.style.width = (vw * scaleX) + 'px';
     page.style.height = (vh * scaleY) + 'px';
     // A short vertical page keeps its true hit-test frame. Empty space between
@@ -1251,19 +1358,47 @@ String _mangaGestureJs({
     var ph = Number(page.getAttribute('data-ph') || 1);
     return pw > ph * 1.15;
   }
+  // 宽页自动放大的记账：{from: 放大前倍率, to: 自动放大到的倍率}，null = 没在放大。
+  var AUTO_ZOOM = null;
+  // 快速缩回落定的倍率（适应页宽 / 页高）；null = 没有持有。之后任何缩放改动都让
+  // ZOOM 不再等于它，换页时据此判断「整页适配仍是读者当前的状态」。
+  var QUICK_FIT_ZOOM = null;
   function _applyWidePolicy(){
     if (SPLIT_WIDE && !ROTATE_WIDE && !IS_WEBTOON && _currentPageIsWide()) {
       _applyPageHalf(); return;
     }
+    // 快速缩回落定的整页状态跨页保持（见 _resetZoomForNewPage）：静止倍率跟着它，
+    // 否则新页上的适应倍率会被当成「放大看细节」，点热区翻不了页。
+    ZOOM_REST = QUICK_FIT_ZOOM !== null
+        ? Math.max(ZOOM_REST_DEFAULT, QUICK_FIT_ZOOM) : ZOOM_REST_DEFAULT;
     if(SPLIT_ACTIVE){
       SPLIT_ACTIVE=false;
-      ZOOM=_clampZoom(${zoomPercent / 100.0});
+      // 离开切半的宽页回默认缩放；不用文档初值 zoomPercent——那是重建文档时带的
+      // 会话倍率，可能是上一页残留的放大。
+      ZOOM=ZOOM_REST_DEFAULT;
       _recenterPan();_applyCanvas();
     }
-    if (!AUTO_ZOOM_WIDE || ! _currentPageIsWide()) return;
+    var autoWide = AUTO_ZOOM_WIDE && _currentPageIsWide();
+    // 宽页自动放大只属于那一页：翻离时倍率仍是自动放大的值（用户没再动过）就
+    // 还原。此前放大会一直带到后面的普通页上，把它们裁掉，而且静止倍率回到
+    // 默认后，这份残留会被当成「用户放大」，点热区翻不了页。
+    if (AUTO_ZOOM && !autoWide) {
+      if (Math.abs(ZOOM - AUTO_ZOOM.to) < 0.0005) {
+        ZOOM = AUTO_ZOOM.from;
+        if (ZOOM <= 1) { _recenterPan(); } else { _clampPan(); }
+        _applyCanvas();
+      }
+      AUTO_ZOOM = null;
+    }
+    if (!autoWide) return;
     var page = document.querySelector('.manga-page[data-spread="'+CURRENT+'"]');
     if (!page || !(page.offsetWidth > 0)) return;
-    ZOOM = Math.min(ZOOM_MAX, Math.max(ZOOM, window.innerWidth / page.offsetWidth));
+    var fitWide = Math.min(ZOOM_MAX, window.innerWidth / page.offsetWidth);
+    ZOOM_REST = Math.max(ZOOM_REST, fitWide);
+    if (fitWide > ZOOM) {
+      if (AUTO_ZOOM) { AUTO_ZOOM.to = fitWide; } else { AUTO_ZOOM = {from: ZOOM, to: fitWide}; }
+      ZOOM = fitWide;
+    }
     _clampPan();
     _applyCanvas();
   }
@@ -1279,14 +1414,47 @@ String _mangaGestureJs({
     page.style.clipPath=physicalHalf===0 ? 'inset(0 50% 0 0)' : 'inset(0 0 0 50%)';
     var halfWidth=page.offsetWidth/2;
     ZOOM=_clampZoom(Math.min(window.innerWidth/halfWidth,window.innerHeight/page.offsetHeight));
+    ZOOM_REST=ZOOM;
     var pageLeft=page.offsetLeft-spread.offsetLeft;
     PAN_X=(window.innerWidth-halfWidth*ZOOM)/2-(pageLeft+physicalHalf*halfWidth)*ZOOM;
     PAN_Y=(window.innerHeight-page.offsetHeight*ZOOM)/2-page.offsetTop*ZOOM;
     _applyCanvas();
   }
-  _recenterPan();
-  if (!IS_WEBTOON && '$zoomStartPosition' === 'left') PAN_X = 0;
-  if (!IS_WEBTOON && '$zoomStartPosition' === 'right') PAN_X = window.innerWidth * (1 - ZOOM);
+  // 起始平移：页面从哪一侧开始看（设置「缩放起始位置」）。文档加载与换页复位共用。
+  function _applyStartPan(){
+    _recenterPan();
+    if (!IS_WEBTOON && '$zoomStartPosition' === 'left') PAN_X = 0;
+    if (!IS_WEBTOON && '$zoomStartPosition' === 'right') PAN_X = window.innerWidth * (1 - ZOOM);
+  }
+  // 换页复位（反馈 8HxGrnNy3x，所有者定为默认行为、无开关）：翻到另一跨页时，
+  // 用户捏合 / 双击 / 滚轮 / 右键菜单带出的倍率与平移不跟到新页，回到默认缩放 +
+  // 起始位置。宽页切半 / 宽页自动放大随后由 _applyWidePolicy 按新页重新套用。
+  // 倍率变了才回报 Dart：会话倍率 _zoomPercent 是重建文档时的初值，不同步的话
+  // 下次跨窗口重建又把放大带回来。
+  //
+  // 例外：倍率是「快速缩回」落定的适应页宽 / 页高（反馈 EjyFnomM6w，持续的阅读
+  // 状态）且之后没再动过缩放时，按新页重新适应，不打回默认——两条反馈各管各的：
+  // 捏合出来的放大不跟页，选定的整页适配跟页。复位落点同样受缩小下限约束。
+  // target 是将要显示的跨页：调用点在 CURRENT 更新之前，适配要量新页。
+  function _resetZoomForNewPage(target){
+    _cancelDoubleTapZoom();
+    var before = ZOOM;
+    var keepFit = QUICK_FIT_ZOOM !== null && Math.abs(ZOOM - QUICK_FIT_ZOOM) < 0.01;
+    QUICK_FIT_ZOOM = null;
+    ZOOM = _clampZoom(ZOOM_REST_DEFAULT);
+    if (keepFit) {
+      var fit = _fitZoomFor(QUICK_ZOOM_TARGET, _contentLocalRect(target));
+      if (fit > 0 && isFinite(fit)) { ZOOM = _clampZoom(fit); QUICK_FIT_ZOOM = ZOOM; }
+    }
+    ZOOM_REST = Math.max(ZOOM_REST_DEFAULT, ZOOM);
+    AUTO_ZOOM = null;
+    _applyStartPan();
+    _applyCanvas();
+    if (Math.abs(ZOOM - before) <= 0.0005) return;
+    var b = _bridge();
+    if (b) b.callHandler('onMangaZoomChanged', Math.round(ZOOM * 100));
+  }
+  _applyStartPan();
   var rightDrag = null;
   // ── 临时合成层提升（BUG-1759）──
   // will-change:transform 一旦常驻，Chromium 就把该层的栅格化尺度钉成只升不降：
@@ -1310,7 +1478,41 @@ String _mangaGestureJs({
       'translate(' + PAN_X + 'px,' + PAN_Y + 'px) scale(' + ZOOM + ')';
   }
   function _clampZoom(z){
-    return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+    return Math.min(ZOOM_MAX, Math.max(_zoomFloor(), z));
+  }
+  // 当前跨页内容（一页或两页）在 #manga-canvas 本地坐标里的外接框（未乘 ZOOM）。
+  // 用 getBoundingClientRect 而不是 offset* 现算：旋转宽页、裁边、跨页平移都已
+  // 落进去，屏幕坐标减平移再除倍率就是本地坐标。没有可见页时返回 null。
+  function _contentLocalRect(spread){
+    if (spread === undefined) spread = CURRENT;
+    var pages = document.querySelectorAll('.manga-page[data-spread="'+spread+'"]');
+    var l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+    for (var i = 0; i < pages.length; i++) {
+      var rc = pages[i].getBoundingClientRect();
+      if (!(rc.width > 0 && rc.height > 0)) continue;
+      l = Math.min(l, rc.left); t = Math.min(t, rc.top);
+      r = Math.max(r, rc.right); b = Math.max(b, rc.bottom);
+    }
+    if (!(r > l && b > t) || !(ZOOM > 0)) return null;
+    return {l: (l - PAN_X) / ZOOM, t: (t - PAN_Y) / ZOOM,
+            r: (r - PAN_X) / ZOOM, b: (b - PAN_Y) / ZOOM};
+  }
+  // 让当前跨页沿 axis（'fit_height' / 'fit_width'）正好撑满视口的倍率；算不出时 0。
+  function _fitZoomFor(axis, rect){
+    rect = rect || _contentLocalRect();
+    if (!rect) return 0;
+    return axis === 'fit_width'
+        ? (window.innerWidth || 0) / (rect.r - rect.l)
+        : (window.innerHeight || 0) / (rect.b - rect.t);
+  }
+  // 缩小下限：设置里的最小倍率；「最多缩到适应页高」时再抬到页高撑满视口的倍率。
+  // 只抬到 1 为止——页面在默认适配下已经比视口矮（宽页 / 横屏）时，下限就是默认
+  // 适配本身，不为凑页高把页面强行放大裁掉两边。条漫没有「一页」，不设。
+  function _zoomFloor(){
+    if (ZOOM_OUT_LIMIT !== 'fit_height' || IS_WEBTOON) return ZOOM_MIN;
+    var fit = _fitZoomFor('fit_height');
+    if (!(fit > 0) || !isFinite(fit)) return ZOOM_MIN;
+    return Math.max(ZOOM_MIN, Math.min(1, ZOOM_MAX, fit));
   }
   // 以 (ax, ay) 屏幕点为锚缩放到 next：锚点下的图像内容保持不动。缩到 <=1 时回中，
   // 因为此时整页已完全放得下，任何残留平移都只是把页面推出视口。
@@ -1339,11 +1541,13 @@ String _mangaGestureJs({
   }
   // 动画缩放到 target（以 (x, y) 为锚）。收尾把 ZOOM 钉到 target 本身：_zoomAbout
   // 对 <0.0005 的差值是 no-op，不钉的话「回到正常比例」会停在 99.97% 这类值上。
-  function _animateZoomTo(target,x,y){
+  // after：落定后、回报 Dart 之前再摆一次位（快速缩回用它把页面摆正）。
+  function _animateZoomTo(target,x,y,after){
     _cancelDoubleTapZoom();
     target=_clampZoom(target);
     function settle(){
       if(ZOOM!==target){ZOOM=target;if(ZOOM<=1)_recenterPan();_applyCanvas();}
+      if(after)after();
       var b=_bridge();if(b)b.callHandler('onMangaZoomChanged',Math.round(ZOOM*100));
     }
     if(!${animateDoubleTap && !preferences.einkMode}){_zoomAbout(target,x,y,true);settle();return;}
@@ -1361,8 +1565,53 @@ String _mangaGestureJs({
   // 双击：不在正常比例（100%）就一击回到正常比例——缩小到贴合以下也一样；
   // 正好在 100% 才放大到 2×。旧判据 ZOOM>1.01 让缩小态双击先跳 2×，要再双击
   // 一次才回得来，用户只能靠无级捏合去「凑」100%。
+  // 快速缩回手势选了双击：不在目标倍率就一击缩回目标（适应页高 / 页宽），已在
+  // 目标上才放大一倍——与默认的「不在 100% 就回 100%」同一形状，只是落点换成目标。
   function _doubleTapZoom(x,y){
+    if(QUICK_ZOOM_GESTURE==='double_tap'){
+      var fit=_quickZoomFit();
+      if(fit){
+        if(Math.abs(ZOOM-fit.zoom)>0.01){_quickZoomTo(fit);return;}
+        _animateZoomTo(ZOOM*2,x,y);
+        return;
+      }
+    }
     _animateZoomTo(Math.abs(ZOOM-1)>0.01 ? 1 : 2,x,y);
+  }
+  // 快速缩回的目标：{zoom, rect}；条漫 / 算不出版面时 null（手势照旧）。
+  function _quickZoomFit(){
+    if(IS_WEBTOON)return null;
+    var rect=_contentLocalRect();
+    if(!rect)return null;
+    var zoom=_fitZoomFor(QUICK_ZOOM_TARGET,rect);
+    if(!(zoom>0)||!isFinite(zoom))return null;
+    return {zoom:_clampZoom(zoom),rect:rect};
+  }
+  // 缩到目标倍率并把跨页摆正：放得下的方向居中；放不下的方向从起读处开始——
+  // 适应页宽时页面比视口高，从页顶看；适应页高时宽页比视口宽，从阅读方向的
+  // 起始侧看。目标倍率记成静止倍率：缩回来的就是读者要的「整页」状态，点热区
+  // 照常翻页，不算「放大看细节」。
+  function _quickZoomTo(fit){
+    var rect=fit.rect;
+    var cx=PAN_X+(rect.l+rect.r)/2*ZOOM, cy=PAN_Y+(rect.t+rect.b)/2*ZOOM;
+    _animateZoomTo(fit.zoom,cx,cy,function(){
+      ZOOM_REST=Math.max(ZOOM_REST_DEFAULT,ZOOM);
+      QUICK_FIT_ZOOM=ZOOM;
+      if(ZOOM<=1){_recenterPan();_applyCanvas();return;}
+      var vw=window.innerWidth,vh=window.innerHeight;
+      var cw=(rect.r-rect.l)*ZOOM,ch=(rect.b-rect.t)*ZOOM;
+      PAN_X=cw<=vw+0.5 ? vw/2-(rect.l+rect.r)/2*ZOOM
+          : (IS_RTL ? vw-rect.r*ZOOM : -rect.l*ZOOM);
+      PAN_Y=ch<=vh+0.5 ? vh/2-(rect.t+rect.b)/2*ZOOM : -rect.t*ZOOM;
+      _clampPan();
+      _applyCanvas();
+    });
+  }
+  function _quickZoom(){
+    var fit=_quickZoomFit();
+    if(!fit)return false;
+    _quickZoomTo(fit);
+    return true;
   }
   // 捏合结束吸附：落在正常比例 ±ZOOM_SNAP 内就收回正好 100%（并回中）。
   // 无级捏合人手凑不准 100%，残留的 95%/104% 既不贴合、也不触发放大态平移。
@@ -1461,7 +1710,10 @@ String _mangaGestureJs({
       }
     }
   }
-  function _animMs(){ return PAGE_ANIM === 'none' ? 0 : PAGE_ANIM_MS; }
+  // 卷页画在 Flutter 覆盖层（page_curl.dart）：JS 侧的落位一律瞬时。
+  function _animMs(){
+    return (PAGE_ANIM === 'none' || PAGE_ANIM === 'curl') ? 0 : PAGE_ANIM_MS;
+  }
   function _spreadEl(i){
     var root = document.getElementById('manga-root');
     return root ? root.querySelector('.manga-spread[data-spread="'+i+'"]') : null;
@@ -1626,6 +1878,50 @@ String _mangaGestureJs({
     var root = document.getElementById('manga-root');
     if (root) root.style.transition = '';
   }
+  // 卷页预览（Flutter 覆盖层，page_curl.dart）：只把 strip 瞬时挪到目标跨页的像素
+  // 位置，不改 CURRENT / PAGE_HALF，不跑任何翻页副作用（TURN_SERIAL / 重试失败页 /
+  // 闪屏 / 换页复位缩放与 onMangaZoomChanged）——那些只在提交时由
+  // __mangaApplyTranslate 跑一次；回卷撤销也就不会把原页的缩放 / 适配状态打回默认。
+  // 目标跨页不在已加载窗口里返回 false（Dart 交回普通翻页重载窗口）。
+  function _curlPlaceStrip(i){
+    var root = document.getElementById('manga-root');
+    var el = _spreadEl(i);
+    if (!root || !el) return false;
+    var prevTransition = root.style.transition;
+    root.style.transition = 'none';
+    root.style.transform = 'translateX(' + (-el.offsetLeft) + 'px)';
+    void root.offsetHeight;
+    root.style.transition = prevTransition;
+    return true;
+  }
+  window.__mangaCurlPreview = function(target){
+    _finishPageAnim();
+    _dropDragHandoff();
+    if (!_curlPlaceStrip(target)) return false;
+    _warmNeighbours(target);
+    return true;
+  };
+  window.__mangaCurlRevert = function(){
+    _curlPlaceStrip(CURRENT);
+  };
+  // 卷页的纸面：跨页 i 的页图（一页或两页）在视口里的外接框，按视口比例
+  // [l, t, r, b] 返回；黑边不是纸，不跟着卷。.manga-page 的盒子就是页图本身
+  // （_layoutSource 按页图比例定宽高，没有内部信箱留白）。量不到返回 null。
+  window.__mangaCurlPaperRect = function(i){
+    var pages = document.querySelectorAll('.manga-page[data-spread="'+i+'"]');
+    var w = window.innerWidth || 1, h = window.innerHeight || 1;
+    var l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+    for (var k = 0; k < pages.length; k++) {
+      var rc = pages[k].getBoundingClientRect();
+      if (!(rc.width > 0 && rc.height > 0)) continue;
+      l = Math.min(l, rc.left); t = Math.min(t, rc.top);
+      r = Math.max(r, rc.right); b = Math.max(b, rc.bottom);
+    }
+    l = Math.max(0, l); t = Math.max(0, t);
+    r = Math.min(w, r); b = Math.min(h, b);
+    if (!(r > l && b > t)) return null;
+    return [l / w, t / h, r / w, b / h];
+  };
   window.__mangaApplyTranslate = function(target){
     TURN_SERIAL++;
     // 翻到含失败页的跨页 = 读者要看它：重取一次。
@@ -1639,6 +1935,7 @@ String _mangaGestureJs({
     _finishPageAnim();
     if(target !== from) _flashPageChange();
     if(target!==from) PAGE_HALF=target<from ? 1 : 0;
+    if(target!==from) _resetZoomForNewPage(target);
     CURRENT = target;
     var ms = _animMs();
     var dist = Math.abs(target - from);
@@ -1657,7 +1954,9 @@ String _mangaGestureJs({
       return;
     }
     _hintWillChange(root, ms + 120);
-    if (PAGE_ANIM === 'fade') { _fadeTurn(ms); return; }
+    // 被拖动过的翻页按平移收尾（页面已经跟着手指走了一截）；淡入淡出只给点按 /
+    // 按键这类没有拖动的翻页。
+    if (PAGE_ANIM === 'fade' && !handoff) { _fadeTurn(ms); return; }
     // 覆盖：宽页切半态降为平移（翻的视图是同一跨页的半边）。
     if (PAGE_ANIM === 'cover' && !SPLIT_ACTIVE) {
       var coverMs = ms;
@@ -1732,6 +2031,9 @@ String _mangaGestureJs({
     var page = document.querySelector('.manga-page[data-spread="'+target+'"]');
     if (!page) return;
     var from = CURRENT;
+    // 纵向分页的换页同样复位缩放；条漫是一整条连续长图，缩放属于整条，不复位。
+    // 必须在下面按 ZOOM 换算滚动目标之前。
+    if (IS_VERTICAL_PAGED && target !== from) _resetZoomForNewPage(target);
     CURRENT = target;
     RESTORE_FRACTION = fraction || 0;
     // offsetTop/offsetHeight 是布局坐标；#manga-canvas 被 scale(ZOOM) 后
@@ -1782,6 +2084,8 @@ String _mangaGestureJs({
     var vh = window.innerHeight;
     var fit = Math.min(vw / pw, vh / ph);
     var nextZoom = _clampZoom(Math.max(1, Math.min(ZOOM_MAX, fit * 0.90)));
+    // 分镜聚焦是阅读器自己放大的：点热区照常走下一格分镜。
+    ZOOM_REST = nextZoom;
     if (IS_WEBTOON) {
       var localX = (cx - PAN_X) / ZOOM;
       var localY = (window.scrollY + cy) / ZOOM;
@@ -1848,6 +2152,12 @@ String _mangaGestureJs({
     panDrag.lastY = e.clientY;
     panDrag.lastT = pnow;
     panDrag.vy = pdy / pdt * 1000;
+    // 松手速度取最近约 100ms 的位移 / 时间（见 _releaseVelocity）：只看最后一次
+    // pointermove 时，两次事件间隔 1~2ms 的抖动会把速度放大成离谱值或压成 0，
+    // 惯性一会儿飞很远、一会儿根本不滑——「滑动有卡顿感」的一半来源。
+    var ps = panDrag.samples;
+    ps.push({t: e.timeStamp, y: e.clientY});
+    while (ps.length > 2 && e.timeStamp - ps[0].t > 100) ps.shift();
     _panBy(pdx, pdy);
     _swipeMove(e.clientX, e.clientY);
   }, {passive: false});
@@ -1996,16 +2306,45 @@ String _mangaGestureJs({
   // 平移吃掉的那段），1:1 跟随；松手由 _end 的阈值决定交给 Dart 翻页还是回弹。
   // 拖动中关掉 root 的 transition（否则每一帧都在追一段 ease-out，永远慢半拍），
   // 翻页 / 回弹动画都从手指停下的位置接着走。
-  // 跟手只在设置开着、效果是有位移的 slide / cover 时生效（_followActive）；
+  // 跟手只看设置开关（_followActive），**与翻页动画无关**（BUG-3624，对齐 Mihon：
+  // ViewPager 的拖动永远跟手，「页面切换动画」只管点按 / 按键翻页）。此前跟手
+  // 绑在 slide / cover 上：选了「无 / 淡入淡出」、墨水屏、系统「减弱动态效果」，
+  // 或旧版关过「页面切换动画」被迁移成「无」的用户，拖动全程页面纹丝不动、
+  // 松手才跳——这正是「不跟手」。动画只决定松手后怎么落位：无动画瞬时落位，
+  // 淡入淡出在被拖过之后按平移收尾（手指已经把页面拖走一截，再淡出是两段动作）。
   // 「覆盖」跟手时动的是克隆层（见 _coverDrag），朝没有相邻跨页的方向拖按
   // FOLLOW_EDGE_DAMPING 阻尼，松手回弹，跨章仍交给 Dart。
   // swipe：null = 没有在跟的手势；axis 在越过 SWIPE_SLOP 后锁定为 'x' / 'y'。
   var SWIPE_SLOP = 8;
   var swipe = null;
   var swipeToken = 0;
+  // 「放大时拖过边缘翻页」（反馈 EjyFnomM6w）：关掉后，用户放大看细节时拖到边缘
+  // 只是贴边，余量不再交给翻页、页面也不跟手——放大看句子时手一滑就翻走是那位
+  // 墨水屏用户的原话。未放大 / 只是默认倍率时照常滑动翻页。
+  var ZOOMED_EDGE_TURN = ${preferences.zoomedEdgeTurn};
+  function _zoomedEdgeTurnBlocked(){
+    return !ZOOMED_EDGE_TURN && !IS_WEBTOON && _userZoomedIn();
+  }
   function _followActive(){
-    return FOLLOW_DRAG && !IS_WEBTOON && _animMs() > 0 &&
-        (PAGE_ANIM === 'slide' || PAGE_ANIM === 'cover');
+    return FOLLOW_DRAG && !IS_WEBTOON;
+  }
+  // 卷页跟手：手指位置（视口比例）转发给 Dart 的 onPageCurlDrag，纸面由 Flutter 覆盖层
+  // 画，跨页由 Dart 经 __mangaApplyTranslate 瞬时预览。phase: start / move / end / cancel。
+  function _curlSend(phase, x, y, velocity){
+    var b = _bridge();
+    if (!b) return;
+    var w = window.innerWidth || 1, h = window.innerHeight || 1;
+    b.callHandler('onPageCurlDrag', phase, x / w, y / h, (velocity || 0) / w,
+        sx / w, sy / h);
+  }
+  var _curlMoveRaf = 0, _curlLastX = 0, _curlLastY = 0;
+  function _curlMove(x, y){
+    _curlLastX = x; _curlLastY = y;
+    if (_curlMoveRaf) return;
+    _curlMoveRaf = requestAnimationFrame(function(){
+      _curlMoveRaf = 0;
+      if (swipe && swipe.curl) _curlSend('move', _curlLastX, _curlLastY, 0);
+    });
   }
   function _start(x, y){
     has = true; sx = x; sy = y; st = Date.now(); spx = PAN_X;
@@ -2013,7 +2352,7 @@ String _mangaGestureJs({
     _finishPageAnim();
     _dropDragHandoff();
     swipe = {axis: null, base: null, vx: 0, lastX: x, lastT: st, x: 0,
-      cover: null, follow: _followActive()};
+      cover: null, follow: _followActive() && !_zoomedEdgeTurnBlocked()};
   }
   function _swipeMove(x, y){
     if (!has || !swipe || IS_WEBTOON) return;
@@ -2028,6 +2367,12 @@ String _mangaGestureJs({
     // 宽页切半（SPLIT_ACTIVE）的翻页是同一跨页内的视图变换，平移整条 strip
     // 露出的是相邻跨页、不是另一半——这种页不跟手，保持松手判定。
     if (swipe.axis !== 'x' || SPLIT_ACTIVE || !swipe.follow) return;
+    if (swipe.curl) { _curlMove(x, y); return; }
+    if (PAGE_ANIM === 'curl' && ZOOM <= 1.01 && swipe.base === null) {
+      swipe.curl = true;
+      _curlSend('start', x, y, 0);
+      return;
+    }
     var root = document.getElementById('manga-root');
     if (!root) return;
     if (swipe.base === null) {
@@ -2093,6 +2438,7 @@ String _mangaGestureJs({
   function _swipeRelease(turning, instant){
     var s = swipe;
     swipe = null;
+    if (s && s.curl) { _curlSend('cancel', 0, 0, 0); return null; }
     if (!s || s.base === null) return null;
     var root = document.getElementById('manga-root');
     if (!root) return null;
@@ -2168,17 +2514,30 @@ String _mangaGestureJs({
   window.__mangaPanBy = function(fx, fy){
     _panBy(-window.innerWidth * fx, -window.innerHeight * fy);
   };
-  // 惯性：每秒衰减到 0.2%，低于 40px/s 停。阈值挡掉松手时的微抖动，
-  // 否则每次抬手都会看到一小段无意的漂移。
+  // 松手速度（px/s，向下拖为正）：最近约 100ms 窗口内的平均速度。手指停住
+  // 超过 50ms 再抬起视为「按住后松开」，不带惯性。
+  function _releaseVelocity(drag, upT){
+    var ps = drag.samples;
+    if (!ps || ps.length < 2) return drag.vy;
+    var last = ps[ps.length - 1];
+    if (upT - last.t > 50) return 0;
+    var first = ps[0];
+    var span = last.t - first.t;
+    if (span < 8) return drag.vy;
+    return (last.y - first.y) / span * 1000;
+  }
+  // 惯性：时间常数约 330ms（每秒衰减到 5%），滑行距离约为松手速度 × 0.33s，
+  // 接近系统原生滚动的手感；旧值（每秒衰减到 0.2%，时间常数 160ms）一甩就
+  // 急刹，读长条漫要不停地反复拨。低于 40px/s 停，阈值挡掉松手时的微抖动。
   function _startFlick(vy){
     if (!IS_WEBTOON || Math.abs(vy) < 80) return;
     flickVy = vy;
-    var last = Date.now();
-    var step = function(){
-      var now = Date.now();
-      var dt = Math.min(64, Math.max(1, now - last));
+    var last = null;
+    var step = function(now){
+      if (typeof now !== 'number') now = Date.now();
+      var dt = last === null ? 16 : Math.min(64, Math.max(1, now - last));
       last = now;
-      flickVy *= Math.pow(0.002, dt / 1000);
+      flickVy *= Math.pow(0.05, dt / 1000);
       if (Math.abs(flickVy) < 40) { _stopFlick(); return; }
       window.scrollBy(0, -flickVy * dt / 1000);
       flickRaf = requestAnimationFrame(step);
@@ -2186,6 +2545,18 @@ String _mangaGestureJs({
     flickRaf = requestAnimationFrame(step);
   }
   var pinch = null;
+  // 双指点按（快速缩回手势之一）：两指先后落下、在 TWO_TAP_MS 内抬起，指距与中点
+  // 都几乎没动、倍率没被捏动——它和捏合共用触点表与 pinch 记账，只在第一根手指
+  // 抬起（捏合结束）时分流。没选这个手势时一律按捏合处理（吸附 100%）。
+  var TWO_TAP_MS = 300, TWO_TAP_SLOP = 24;
+  function _isTwoFingerTap(p){
+    if (QUICK_ZOOM_GESTURE !== 'two_finger_tap' || IS_WEBTOON || !p) return false;
+    if (!(p.t0 > 0) || Date.now() - p.t0 > TWO_TAP_MS) return false;
+    var dx = p.cx - p.cx0, dy = p.cy - p.cy0;
+    if (dx * dx + dy * dy > TWO_TAP_SLOP * TWO_TAP_SLOP) return false;
+    if (p.span > TWO_TAP_SLOP) return false;
+    return !(Math.abs(ZOOM - p.zoom) > PINCH_NOOP);
+  }
   // 捏合结束后要吞掉配对的松手事件，否则手指抬起会被 _end 判成 swipe 翻页。
   // （注意：本注释随文档注入 WebView，不得出现松手事件的字面名——
   // manga_overlay_html_test 的 C1 不变式按该字面量计数，全文档恰好允许一个。）
@@ -2274,7 +2645,7 @@ String _mangaGestureJs({
   // pointer distance so a stationary cursor does not repeat the same lookup.
   var shiftHoverX = -1, shiftHoverY = -1;
   document.addEventListener('mousemove', function(e){
-    if (!e.shiftKey && !${preferences.lookupOnHover}) { shiftHoverX = -1; shiftHoverY = -1; return; }
+    if (!e.$hoverKey && !${preferences.lookupOnHover}) { shiftHoverX = -1; shiftHoverY = -1; return; }
     var dx = e.clientX - shiftHoverX, dy = e.clientY - shiftHoverY;
     if (shiftHoverX >= 0 && dx * dx + dy * dy < 16) return;
     shiftHoverX = e.clientX; shiftHoverY = e.clientY;
@@ -2337,11 +2708,28 @@ String _mangaGestureJs({
   var DBL_MS = ${doubleTapAnimationMs.clamp(100, 600)}, DBL_SLOP = 30;
   var lastTapT = 0, lastTapX = 0, lastTapY = 0;
   var pendingEmptyTap = null;
+  // 双击窗口按「第一击松手 → 第二击**按下**」计（反馈 IDF2uWUvlf，与 Android
+  // GestureDetector 的 DOUBLE_TAP_TIMEOUT 同口径）。此前只在第二击**松手**时判，
+  // 窗口里还得塞下第二击按住的那 ~100ms，挂起的 onTapEmpty 定时器又是从第一击
+  // 松手起算——手指还按在屏上它就先发了，悬浮栏被切出来、双击缩放落空，只有
+  // 快速三击（第二、三击凑成一对）才偶尔放大。第二击按下时落在挂起窗口内且离
+  // 第一击够近，就当场取消挂起的单击并武装双击，松手时直接缩放。
+  var dblArmed = false;
+  function _armDoubleTapOnDown(x, y){
+    dblArmed = false;
+    if (pendingEmptyTap === null) return;
+    var dx = x - lastTapX, dy = y - lastTapY;
+    if ((dx * dx + dy * dy) > DBL_SLOP * DBL_SLOP) return;
+    _cancelPendingEmptyTap();
+    dblArmed = true;
+  }
   function _consumeDoubleTap(x, y){
     var now = Date.now();
     var dx = x - lastTapX, dy = y - lastTapY;
-    var isDouble = (now - lastTapT) <= DBL_MS &&
-        (dx * dx + dy * dy) <= DBL_SLOP * DBL_SLOP;
+    var armed = dblArmed;
+    dblArmed = false;
+    var isDouble = armed || ((now - lastTapT) <= DBL_MS &&
+        (dx * dx + dy * dy) <= DBL_SLOP * DBL_SLOP);
     if (isDouble) { lastTapT = 0; return true; }
     lastTapT = now; lastTapX = x; lastTapY = y;
     return false;
@@ -2362,6 +2750,12 @@ String _mangaGestureJs({
     if (!b) return;
     if (_selectOcrChar(x, y, false)) return;
     var zone = _tapZoneTurn(x, y);
+    // 放大看细节时点左右不翻页（BUG-3634）：此时画面只露出页面的一块，热区
+    // 是按视口划的，点哪都可能落进翻页区，读者只想点一下收起工具栏或双击
+    // 缩回，却被翻走。放大态这一击落到下面的空白点语义（双击缩回 / 切悬浮栏）；
+    // 翻页靠贴边后继续拖（_end 的平移余量判据）。webtoon 的热区是纵向滚一屏，
+    // 放大后仍是导航，照常生效。
+    if (zone && !IS_WEBTOON && _userZoomedIn()) zone = null;
     if (zone) {
       if (IS_WEBTOON) { _tapScroll(zone === 'next' ? 1 : -1); return; }
       b.callHandler('onMangaTurn', zone);
@@ -2391,6 +2785,13 @@ String _mangaGestureJs({
     // 只能是 tap，直接走 tap 路径（不丢选词）。
     if (!has) { _swipeRelease(false); _onTap(x, y); return; }
     has = false;
+    // 卷页跟手：提交 / 回卷由 Dart 控制器按同一组阈值判，这里只交出松手。
+    if (swipe && swipe.curl) {
+      var curlSwipe = swipe;
+      swipe = null;
+      _curlSend('end', x, y, curlSwipe.vx / 1000);
+      return;
+    }
     var dx = x - sx, dy = y - sy, el = Date.now() - st;
     var ax = Math.abs(dx), ay = Math.abs(dy);
     // 松手瞬时速度（最后一段 pointermove，px/s）：跟手之后手势的意图看的是
@@ -2419,7 +2820,7 @@ String _mangaGestureJs({
       commit = aux >= 72 || (aux >= 36 && vel >= 900);
     }
     if (!IS_WEBTOON && ax > ay && (ux > 0) === (dx > 0) && !flingBack &&
-        commit) {
+        commit && !_zoomedEdgeTurnBlocked()) {
       var settle = _swipeRelease(true);
       var b = _bridge();
       if (!b) { if (settle) settle(); return; }
@@ -2442,6 +2843,72 @@ String _mangaGestureJs({
       if (ax < 20 && ay < 20 && el < 500) _onTap(x, y);
     }
   }
+  // 触屏长按页图 → Dart 弹全局图片动作面板（保存 / 分享，image_actions_sheet.dart），
+  // 作用于**被按住的那一页**（条漫 / 双页模式下命中的那页，不是当前跨页）。
+  // 漫画页的触屏手势里长按原本是空的：单击 = OCR 查词 / 热区翻页 / 空白切栏，
+  // 双击 = 缩放，拖动 = 翻页 / 平移 / 条漫滚动，双指 = 捏合；按住超过 500ms 的
+  // 松手本来就不算单击（_end 的 el < 500），所以长按不抢任何已有功能。
+  // 鼠标走右键菜单（onMangaContextMenu），这里只认触摸主触点。
+  // 取消判据：移动超过 LONG_PRESS_SLOP、第二指落下（捏合）、松手 / 被系统夺走。
+  // 触发后本次按压作废：跟手回弹、挂起的空白单击与双击武装清掉，松手不再走
+  // 单击 / swipe 路径。
+  var LONG_PRESS_MS = 500, LONG_PRESS_SLOP = 10;
+  var longPress = null, longPressFired = null;
+  function _mangaPageIndexAt(x, y){
+    var stack = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [];
+    for (var i = 0; i < stack.length; i++) {
+      var el = stack[i];
+      var page = el.closest ? el.closest('.manga-page') : null;
+      // 翻页动画的克隆层摘掉了 data-page，不认；加载失败页没有图可存。
+      if (!page || !page.hasAttribute('data-page')) continue;
+      if (page.getAttribute('data-load-failed') === '1') return null;
+      var index = Number(page.getAttribute('data-page'));
+      return isFinite(index) && index >= 0 ? index : null;
+    }
+    return null;
+  }
+  function _cancelLongPress(){
+    if (longPress) { clearTimeout(longPress.timer); longPress = null; }
+  }
+  function _armLongPress(e){
+    _cancelLongPress();
+    longPressFired = null;
+    if (e.pointerType !== 'touch' || !e.isPrimary) return;
+    var lp = {id: e.pointerId, x: e.clientX, y: e.clientY, timer: null};
+    lp.timer = setTimeout(function(){
+      if (longPress === lp) _fireLongPress();
+    }, LONG_PRESS_MS);
+    longPress = lp;
+  }
+  function _moveLongPress(e){
+    if (!longPress || longPress.id !== e.pointerId) return;
+    var dx = e.clientX - longPress.x, dy = e.clientY - longPress.y;
+    if (dx * dx + dy * dy > LONG_PRESS_SLOP * LONG_PRESS_SLOP) _cancelLongPress();
+  }
+  function _fireLongPress(){
+    var lp = longPress;
+    longPress = null;
+    if (!lp || pinch || pinchGuard) return;
+    var page = _mangaPageIndexAt(lp.x, lp.y);
+    if (page === null) return;
+    longPressFired = lp.id;
+    has = false;
+    _swipeRelease(false);
+    panDrag = null;
+    _cancelPendingEmptyTap();
+    dblArmed = false;
+    var b = _bridge();
+    if (b) b.callHandler('onMangaPageLongPress', JSON.stringify({page: page}));
+  }
+  // 松手时：本指已触发长按就吞掉这次松手（返回 true）。
+  function _consumeLongPressRelease(id){
+    _cancelLongPress();
+    if (longPressFired !== null && longPressFired === id) {
+      longPressFired = null;
+      return true;
+    }
+    return false;
+  }
   document.addEventListener('pointerdown', function(e){
     if (e.pointerType === 'touch') {
       // 触点表只靠「松手 / 取消」事件删条目，而这两个事件不保证到得了 document：
@@ -2460,9 +2927,12 @@ String _mangaGestureJs({
       var g = _pinchGeom();
       if (g && g.dist > 0) {
         // 第二指落下：进入捏合，取消已经开始的单指 swipe 计时与拖动。
-        pinch = {dist: g.dist, zoom: ZOOM, cx: g.cx, cy: g.cy};
+        // t0 / cx0 / cy0 / span：双指点按判定（_isTwoFingerTap）用的起点与指距变化。
+        pinch = {dist: g.dist, zoom: ZOOM, cx: g.cx, cy: g.cy,
+          t0: Date.now(), cx0: g.cx, cy0: g.cy, dist0: g.dist, span: 0};
         pinchGuard = true;
         has = false;
+        _cancelLongPress();
         // 跟到一半的页面立即复位（不播回弹），捏合从静止的当前跨页开始。
         _swipeRelease(false, true);
         panDrag = null;
@@ -2484,12 +2954,16 @@ String _mangaGestureJs({
     _stopScrollAnim();
     panDrag = {
       id: e.pointerId, lastX: e.clientX, lastY: e.clientY,
-      lastT: Date.now(), vy: 0, touch: e.pointerType === 'touch'
+      lastT: Date.now(), vy: 0, touch: e.pointerType === 'touch',
+      samples: [{t: e.timeStamp, y: e.clientY}]
     };
+    _armDoubleTapOnDown(e.clientX, e.clientY);
+    _armLongPress(e);
     _start(e.clientX, e.clientY);
   }, {passive: true});
   document.addEventListener('pointermove', function(e){
     if (e.pointerType !== 'touch') return;
+    _moveLongPress(e);
     if (!touchPts[e.pointerId]) return;
     touchPts[e.pointerId] = {x: e.clientX, y: e.clientY};
     if (!pinch) return;
@@ -2498,6 +2972,9 @@ String _mangaGestureJs({
     e.preventDefault();
     pinch.cx = g.cx;
     pinch.cy = g.cy;
+    if (pinch.dist0) {
+      pinch.span = Math.max(pinch.span, Math.abs(g.dist - pinch.dist0));
+    }
     _zoomAbout(
       pinch.zoom * Math.pow(g.dist / pinch.dist, ZOOM_SENS),
       g.cx,
@@ -2507,6 +2984,10 @@ String _mangaGestureJs({
   document.addEventListener('pointerup', function(e){
     var drag = (panDrag && panDrag.id === e.pointerId) ? panDrag : null;
     if (drag) panDrag = null;
+    if (_consumeLongPressRelease(e.pointerId)) {
+      if (e.pointerType === 'touch') delete touchPts[e.pointerId];
+      return;
+    }
     if (e.pointerType === 'touch') {
       delete touchPts[e.pointerId];
       if (pinch) {
@@ -2516,7 +2997,16 @@ String _mangaGestureJs({
         if (Object.keys(touchPts).length < 2) {
           var lastPinch = pinch;
           pinch = null;
-          _snapPinchZoom(lastPinch.cx, lastPinch.cy, lastPinch.zoom);
+          if (_isTwoFingerTap(lastPinch)) {
+            // 双指点按 = 快速缩回。两指搭上时的几像素抖动可能已经让倍率动了
+            // 一丝，先退回起点倍率（不回报），再从那里缩回目标。
+            if (ZOOM !== lastPinch.zoom) {
+              _zoomAbout(lastPinch.zoom, lastPinch.cx, lastPinch.cy, true);
+            }
+            _quickZoom();
+          } else {
+            _snapPinchZoom(lastPinch.cx, lastPinch.cy, lastPinch.zoom);
+          }
         } else {
           // 三指及以上抬起一指：参与几何的那一对换了人，按新的一对重定基准，
           // 否则新指距 / 旧基准的比值会让倍率瞬间跳变。起点倍率保留，吸附判据
@@ -2534,7 +3024,7 @@ String _mangaGestureJs({
         if (Object.keys(touchPts).length === 0) pinchGuard = false;
         return;
       }
-      if (drag && drag.touch) _startFlick(drag.vy);
+      if (drag && drag.touch) _startFlick(_releaseVelocity(drag, e.timeStamp));
     }
     if (e.button === 2) {
       var drag = rightDrag;
@@ -2556,6 +3046,7 @@ String _mangaGestureJs({
   // 注意：本注释随文档注入 WebView，不能出现松手事件的字面名——
   // manga_overlay_html_test 的 C1 不变式按该字面量计数，恰好允许一个。
   document.addEventListener('pointercancel', function(e){
+    _consumeLongPressRelease(e.pointerId);
     if (panDrag && panDrag.id === e.pointerId) {
       panDrag = null;
       // 系统夺走指针：跟到一半的页面不能挂在半路，回弹到当前跨页。

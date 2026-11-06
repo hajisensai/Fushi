@@ -56,8 +56,9 @@ void main() {
   double dx(WidgetTester tester, IconData icon) =>
       tester.getCenter(find.byIcon(icon)).dx;
 
-  testWidgets('playback prev/play/next keep natural order when NOT reversed',
-      (tester) async {
+  testWidgets('playback prev/play/next keep natural order when NOT reversed', (
+    tester,
+  ) async {
     final controller = AudiobookPlayerController();
     addTearDown(controller.dispose);
     await _pumpBar(tester, reversed: false, controller: controller);
@@ -73,8 +74,9 @@ void main() {
     expect(next, lessThan(tune));
   });
 
-  testWidgets('reversed mirrors the bar but NOT the prev/play/next direction',
-      (tester) async {
+  testWidgets('reversed mirrors the bar but NOT the prev/play/next direction', (
+    tester,
+  ) async {
     final controller = AudiobookPlayerController();
     addTearDown(controller.dispose);
     await _pumpBar(tester, reversed: true, controller: controller);
@@ -85,33 +87,38 @@ void main() {
     final double tune = dx(tester, FushiIcons.settings);
 
     // 三联键内部方向保持自然：⏮ 仍在 ⏯ 左、⏯ 仍在 ⏭ 左。
-    expect(prev, lessThan(play),
-        reason: 'rewind/prev must stay left of play even when reversed');
-    expect(play, lessThan(next),
-        reason: 'next must stay right of play even when reversed');
+    expect(
+      prev,
+      lessThan(play),
+      reason: 'rewind/prev must stay left of play even when reversed',
+    );
+    expect(
+      play,
+      lessThan(next),
+      reason: 'next must stay right of play even when reversed',
+    );
     // 整体布局已镜像：设置簇（⚙）移到播放组左侧。
-    expect(tune, lessThan(prev),
-        reason: 'reversed bar mirrors layout: settings cluster goes left');
+    expect(
+      tune,
+      lessThan(prev),
+      reason: 'reversed bar mirrors layout: settings cluster goes left',
+    );
   });
 
   // ── TODO-830：功能反转维度（invertSkip）────────────────────────────────
 
   /// 焦点驱动激活：Tab 走到目标按钮后用 Enter 确认（禁 tap / 坐标点击）。
-  Future<void> focusAndActivate(
-    WidgetTester tester,
-    IconData icon,
-  ) async {
-    final FocusNode node = Focus.of(
-      tester.element(find.byIcon(icon)),
-    );
+  Future<void> focusAndActivate(WidgetTester tester, IconData icon) async {
+    final FocusNode node = Focus.of(tester.element(find.byIcon(icon)));
     node.requestFocus();
     await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pump();
   }
 
-  testWidgets('invertSkip:false — left key triggers prevCue, right next',
-      (tester) async {
+  testWidgets('invertSkip:false — left key triggers prevCue, right next', (
+    tester,
+  ) async {
     final _SpyController controller = _SpyController();
     addTearDown(controller.dispose);
     await _pumpBar(tester, reversed: false, controller: controller);
@@ -126,46 +133,67 @@ void main() {
   });
 
   testWidgets(
-      'invertSkip:true — left key shows skip_next icon and triggers nextCue; '
-      'right shows skip_previous and triggers prevCue', (tester) async {
-    final _SpyController controller = _SpyController();
-    addTearDown(controller.dispose);
-    await _pumpBar(tester,
-        reversed: false, controller: controller, invertSkip: true);
+    'invertSkip:true — left key shows skip_next icon and triggers nextCue; '
+    'right shows skip_previous and triggers prevCue',
+    (tester) async {
+      final _SpyController controller = _SpyController();
+      addTearDown(controller.dispose);
+      await _pumpBar(
+        tester,
+        reversed: false,
+        controller: controller,
+        invertSkip: true,
+      );
 
-    // 图标也互换：屏幕左侧（id=audiobook_prev）现在显示 skip_next，
-    // 屏幕右侧（id=audiobook_next）显示 skip_previous。
-    final double leftIconDx = dx(tester, FushiIcons.skipNext);
-    final double rightIconDx = dx(tester, FushiIcons.skipPrevious);
-    expect(leftIconDx, lessThan(rightIconDx),
-        reason: 'invertSkip swaps icons: skip_next now sits on the left side');
+      // 图标也互换：屏幕左侧（id=audiobook_prev）现在显示 skip_next，
+      // 屏幕右侧（id=audiobook_next）显示 skip_previous。
+      final double leftIconDx = dx(tester, FushiIcons.skipNext);
+      final double rightIconDx = dx(tester, FushiIcons.skipPrevious);
+      expect(
+        leftIconDx,
+        lessThan(rightIconDx),
+        reason: 'invertSkip swaps icons: skip_next now sits on the left side',
+      );
 
-    // 屏幕左侧（现 skip_next 图标）激活调 skipToNextCue。
-    await focusAndActivate(tester, FushiIcons.skipNext);
-    expect(controller.calls, <String>['nextCue']);
+      // 屏幕左侧（现 skip_next 图标）激活调 skipToNextCue。
+      await focusAndActivate(tester, FushiIcons.skipNext);
+      expect(controller.calls, <String>['nextCue']);
 
-    // 屏幕右侧（现 skip_previous 图标）激活调 skipToPrevCue。
-    await focusAndActivate(tester, FushiIcons.skipPrevious);
-    expect(controller.calls, <String>['nextCue', 'prevCue']);
-  });
+      // 屏幕右侧（现 skip_previous 图标）激活调 skipToPrevCue。
+      await focusAndActivate(tester, FushiIcons.skipPrevious);
+      expect(controller.calls, <String>['nextCue', 'prevCue']);
+    },
+  );
 
   testWidgets(
-      'reversed:true && invertSkip:false — position mirrors, function does NOT '
-      '(BUG-021 not regressed by the new orthogonal flag)', (tester) async {
-    final _SpyController controller = _SpyController();
-    addTearDown(controller.dispose);
-    await _pumpBar(tester,
-        reversed: true, controller: controller, invertSkip: false);
+    'reversed:true && invertSkip:false — position mirrors, function does NOT '
+    '(BUG-021 not regressed by the new orthogonal flag)',
+    (tester) async {
+      final _SpyController controller = _SpyController();
+      addTearDown(controller.dispose);
+      await _pumpBar(
+        tester,
+        reversed: true,
+        controller: controller,
+        invertSkip: false,
+      );
 
-    // 位置镜像但功能不反转：skip_previous 仍调 prevCue。
-    await focusAndActivate(tester, FushiIcons.skipPrevious);
-    expect(controller.calls, <String>['prevCue'],
+      // 位置镜像但功能不反转：skip_previous 仍调 prevCue。
+      await focusAndActivate(tester, FushiIcons.skipPrevious);
+      expect(
+        controller.calls,
+        <String>['prevCue'],
         reason:
-            'reversed only mirrors layout; prev key must still call prevCue');
+            'reversed only mirrors layout; prev key must still call prevCue',
+      );
 
-    await focusAndActivate(tester, FushiIcons.skipNext);
-    expect(controller.calls, <String>['prevCue', 'nextCue'],
+      await focusAndActivate(tester, FushiIcons.skipNext);
+      expect(
+        controller.calls,
+        <String>['prevCue', 'nextCue'],
         reason:
-            'reversed only mirrors layout; next key must still call nextCue');
-  });
+            'reversed only mirrors layout; next key must still call nextCue',
+      );
+    },
+  );
 }

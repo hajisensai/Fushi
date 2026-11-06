@@ -24,7 +24,8 @@ class CopyFeedback extends StatefulWidget {
     BuildContext context,
     bool copied,
     VoidCallback markCopied,
-  ) builder;
+  )
+  builder;
 
   /// ✓ 状态维持时长。
   final Duration duration;
@@ -43,10 +44,7 @@ class _CopyFeedbackState extends State<CopyFeedback> {
     // 再加一层 `if (!mounted) return` 是与那道门互为冗余的第二道——两道都在时，
     // 删掉任意一道测试都照样绿（谁都钉不住），砍到只剩一道反而让 dispose 里的
     // cancel 变成可被变异测试杀掉的真断言。
-    _resetTimer = Timer(
-      widget.duration,
-      () => setState(() => _copied = false),
-    );
+    _resetTimer = Timer(widget.duration, () => setState(() => _copied = false));
     if (!_copied) setState(() => _copied = true);
   }
 

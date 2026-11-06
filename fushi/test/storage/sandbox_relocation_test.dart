@@ -30,26 +30,19 @@ void main() {
       String storedPath = stored,
       String currentDocumentsRoot = newRoot,
       required Set<String> onDisk,
-    }) =>
-        SandboxRelocation.deriveOldRootFromPath(
-          storedPath: storedPath,
-          currentDocumentsRoot: currentDocumentsRoot,
-          exists: onDisk.contains,
-        );
+    }) => SandboxRelocation.deriveOldRootFromPath(
+      storedPath: storedPath,
+      currentDocumentsRoot: currentDocumentsRoot,
+      exists: onDisk.contains,
+    );
 
     test('容器 UUID 变了：旧路径没了、新路径在 → 反推出旧根', () {
-      expect(
-        derive(onDisk: <String>{'$newRoot/fushi_books/言の葉の庭'}),
-        oldRoot,
-      );
+      expect(derive(onDisk: <String>{'$newRoot/fushi_books/言の葉の庭'}), oldRoot);
     });
 
     test('旧路径还在 → 根没坏，不重基', () {
       expect(
-        derive(onDisk: <String>{
-          stored,
-          '$newRoot/fushi_books/言の葉の庭',
-        }),
+        derive(onDisk: <String>{stored, '$newRoot/fushi_books/言の葉の庭'}),
         isNull,
         reason: '老路径仍可达就说明根没被挪走，此时改写只会把好数据改坏',
       );
@@ -120,20 +113,23 @@ void main() {
     /// 造一个「容器被挪走」的现场：书的文件只在**新**根下存在，库里记的却是
     /// **旧**根 —— 这正是 iOS 更新后用户看到的状态。
     Future<String> seedMovedBook() async {
-      final Directory moved =
-          Directory(p.join(newRoot.path, 'fushi_books', 'book1'));
+      final Directory moved = Directory(
+        p.join(newRoot.path, 'fushi_books', 'book1'),
+      );
       moved.createSync(recursive: true);
       File(p.join(moved.path, 'manga.json')).writeAsStringSync('{}');
       final String staleDir = p.join(oldRoot.path, 'fushi_books', 'book1');
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'book1',
-        title: '言の葉の庭',
-        epubPath: 'manga.json',
-        extractDir: staleDir,
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'book1',
+          title: '言の葉の庭',
+          epubPath: 'manga.json',
+          extractDir: staleDir,
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
       return staleDir;
     }
 
@@ -155,10 +151,10 @@ void main() {
 
       final SandboxRelocationOutcome outcome =
           await SandboxRelocation.reconcile(
-        db: db,
-        documentsRoot: newRoot.path,
-        supportRoot: p.join(sandbox.path, 'BBBB-2222', 'Support'),
-      );
+            db: db,
+            documentsRoot: newRoot.path,
+            supportRoot: p.join(sandbox.path, 'BBBB-2222', 'Support'),
+          );
 
       expect(outcome.rebased, isTrue);
       expect(outcome.source, SandboxRelocationSource.derivedFromData);
@@ -190,13 +186,15 @@ void main() {
       );
 
       // 再挪一次容器（把文件搬到第三个根），这次台账里有精确旧根。
-      final Directory thirdRoot =
-          Directory(p.join(sandbox.path, 'CCCC-3333', 'Documents'))
-            ..createSync(recursive: true);
-      Directory(p.join(thirdRoot.path, 'fushi_books', 'book1'))
-          .createSync(recursive: true);
-      File(p.join(thirdRoot.path, 'fushi_books', 'book1', 'manga.json'))
-          .writeAsStringSync('{}');
+      final Directory thirdRoot = Directory(
+        p.join(sandbox.path, 'CCCC-3333', 'Documents'),
+      )..createSync(recursive: true);
+      Directory(
+        p.join(thirdRoot.path, 'fushi_books', 'book1'),
+      ).createSync(recursive: true);
+      File(
+        p.join(thirdRoot.path, 'fushi_books', 'book1', 'manga.json'),
+      ).writeAsStringSync('{}');
 
       final SandboxRelocationOutcome second = await SandboxRelocation.reconcile(
         db: db,
@@ -212,18 +210,20 @@ void main() {
     });
 
     test('根没变 → 一个字节都不改，只记台账', () async {
-      final Directory live =
-          Directory(p.join(newRoot.path, 'fushi_books', 'book1'))
-            ..createSync(recursive: true);
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'book1',
-        title: 'stable',
-        epubPath: 'manga.json',
-        extractDir: live.path,
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+      final Directory live = Directory(
+        p.join(newRoot.path, 'fushi_books', 'book1'),
+      )..createSync(recursive: true);
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'book1',
+          title: 'stable',
+          epubPath: 'manga.json',
+          extractDir: live.path,
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
 
       final SandboxRelocationOutcome first = await SandboxRelocation.reconcile(
         db: db,
@@ -245,10 +245,10 @@ void main() {
     test('全新安装（库是空的）→ 无事发生，不炸', () async {
       final SandboxRelocationOutcome outcome =
           await SandboxRelocation.reconcile(
-        db: db,
-        documentsRoot: newRoot.path,
-        supportRoot: p.join(sandbox.path, 'BBBB-2222', 'Support'),
-      );
+            db: db,
+            documentsRoot: newRoot.path,
+            supportRoot: p.join(sandbox.path, 'BBBB-2222', 'Support'),
+          );
       expect(outcome.rebased, isFalse);
       expect(outcome.error, isNull);
       expect(
@@ -259,18 +259,20 @@ void main() {
 
     test('外部路径在重基中原样不动', () async {
       await seedMovedBook();
-      final Directory external =
-          Directory(p.join(sandbox.path, 'external', 'nas'))
-            ..createSync(recursive: true);
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'external1',
-        title: 'external',
-        epubPath: 'x.epub',
-        extractDir: external.path,
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+      final Directory external = Directory(
+        p.join(sandbox.path, 'external', 'nas'),
+      )..createSync(recursive: true);
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'external1',
+          title: 'external',
+          epubPath: 'x.epub',
+          extractDir: external.path,
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
 
       await SandboxRelocation.reconcile(
         db: db,
@@ -278,8 +280,9 @@ void main() {
         supportRoot: p.join(sandbox.path, 'BBBB-2222', 'Support'),
       );
 
-      final EpubBookRow kept = (await db.getAllEpubBooks())
-          .firstWhere((EpubBookRow r) => r.bookKey == 'external1');
+      final EpubBookRow kept = (await db.getAllEpubBooks()).firstWhere(
+        (EpubBookRow r) => r.bookKey == 'external1',
+      );
       expect(
         kept.extractDir,
         external.path,
@@ -293,33 +296,37 @@ void main() {
       // 真正要守的形状是**位于旧根之内、但不属于 Fushi 顶层项**的路径：用户把
       // 外部媒体库放在数据根旁边，它就长这样。
       await seedMovedBook();
-      final Directory foreign =
-          Directory(p.join(oldRoot.path, 'MyNasLibrary', 'anime'))
-            ..createSync(recursive: true);
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'foreign1',
-        title: 'foreign',
-        epubPath: 'x.epub',
-        extractDir: foreign.path,
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+      final Directory foreign = Directory(
+        p.join(oldRoot.path, 'MyNasLibrary', 'anime'),
+      )..createSync(recursive: true);
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'foreign1',
+          title: 'foreign',
+          epubPath: 'x.epub',
+          extractDir: foreign.path,
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
 
       final SandboxRelocationOutcome outcome =
           await SandboxRelocation.reconcile(
-        db: db,
-        documentsRoot: newRoot.path,
-        supportRoot: p.join(sandbox.path, 'BBBB-2222', 'Support'),
-      );
+            db: db,
+            documentsRoot: newRoot.path,
+            supportRoot: p.join(sandbox.path, 'BBBB-2222', 'Support'),
+          );
       expect(outcome.rebased, isTrue, reason: '本轮确实发生了重基，断言才有意义');
 
-      final EpubBookRow kept = (await db.getAllEpubBooks())
-          .firstWhere((EpubBookRow r) => r.bookKey == 'foreign1');
+      final EpubBookRow kept = (await db.getAllEpubBooks()).firstWhere(
+        (EpubBookRow r) => r.bookKey == 'foreign1',
+      );
       expect(
         kept.extractDir,
         foreign.path,
-        reason: 'MyNasLibrary 不是 Fushi 的顶层项，重基不该碰它 —— '
+        reason:
+            'MyNasLibrary 不是 Fushi 的顶层项，重基不该碰它 —— '
             'scopeTopLevelNames 传 null 时这里会被一起改写',
       );
     });
@@ -330,27 +337,31 @@ void main() {
       // 就会把已经正确的 `<新根>/fushi_books/book1` 再前缀一遍。
       final Directory nested = Directory(p.join(oldRoot.path, 'Hibiki', 'data'))
         ..createSync(recursive: true);
-      final Directory live =
-          Directory(p.join(nested.path, 'fushi_books', 'book1'))
-            ..createSync(recursive: true);
+      final Directory live = Directory(
+        p.join(nested.path, 'fushi_books', 'book1'),
+      )..createSync(recursive: true);
       await db.setPref(
-          SandboxRelocation.lastDocumentsRootPrefKey, oldRoot.path);
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'nested1',
-        title: 'nested',
-        epubPath: 'x.epub',
-        extractDir: live.path,
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+        SandboxRelocation.lastDocumentsRootPrefKey,
+        oldRoot.path,
+      );
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'nested1',
+          title: 'nested',
+          epubPath: 'x.epub',
+          extractDir: live.path,
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
 
       final SandboxRelocationOutcome outcome =
           await SandboxRelocation.reconcile(
-        db: db,
-        documentsRoot: nested.path,
-        supportRoot: p.join(sandbox.path, 'BBBB-2222', 'Support'),
-      );
+            db: db,
+            documentsRoot: nested.path,
+            supportRoot: p.join(sandbox.path, 'BBBB-2222', 'Support'),
+          );
 
       expect(outcome.rebased, isFalse, reason: '嵌套根不是容器漂移，不该重基');
       expect(

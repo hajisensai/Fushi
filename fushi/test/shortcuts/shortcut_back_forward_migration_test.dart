@@ -50,7 +50,9 @@ void main() {
     registry.loadFromJsonString(oldV1Snapshot(), TargetPlatform.windows);
     expect(
       hasGamepad(
-          registry.bindingsFor(ShortcutAction.globalBack), GamepadButton.b),
+        registry.bindingsFor(ShortcutAction.globalBack),
+        GamepadButton.b,
+      ),
       isTrue,
       reason: '老用户没动过返回键 → 迁移必须补回 B，否则纯手柄退不了书',
     );
@@ -60,13 +62,17 @@ void main() {
     final FushiShortcutRegistry registry = FushiShortcutRegistry();
     registry.loadFromJsonString(oldV1Snapshot(), TargetPlatform.windows);
     expect(
-      hasGamepad(registry.bindingsFor(ShortcutAction.audiobookPrevSentence),
-          GamepadButton.b),
+      hasGamepad(
+        registry.bindingsFor(ShortcutAction.audiobookPrevSentence),
+        GamepadButton.b,
+      ),
       isTrue,
     );
     expect(
-      hasGamepad(registry.bindingsFor(ShortcutAction.audiobookNextSentence),
-          GamepadButton.x),
+      hasGamepad(
+        registry.bindingsFor(ShortcutAction.audiobookNextSentence),
+        GamepadButton.x,
+      ),
       isTrue,
     );
   });
@@ -82,8 +88,9 @@ void main() {
       ).toJson(),
     });
     registry.loadFromJsonString(snapshot, TargetPlatform.windows);
-    final ShortcutBindingSet back =
-        registry.bindingsFor(ShortcutAction.globalBack);
+    final ShortcutBindingSet back = registry.bindingsFor(
+      ShortcutAction.globalBack,
+    );
     expect(
       back.keyboardBindings.map((InputBinding b) => b.key),
       contains(LogicalKeyboardKey.keyB),
@@ -112,8 +119,10 @@ void main() {
     });
     registry.loadFromJsonString(snapshot, TargetPlatform.macOS);
     expect(
-      hasGamepad(registry.bindingsFor(ShortcutAction.audiobookPrevSentence),
-          GamepadButton.b),
+      hasGamepad(
+        registry.bindingsFor(ShortcutAction.audiobookPrevSentence),
+        GamepadButton.b,
+      ),
       isTrue,
       reason: 'macOS 键盘默认随平台变体，untouched 判据须用当前平台默认键盘',
     );

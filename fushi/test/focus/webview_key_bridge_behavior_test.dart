@@ -19,14 +19,19 @@ void main() {
       final String? nodeExe = _resolveNode();
       if (nodeExe == null) {
         markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
+          'node not found on PATH; skipping JS behavior execution',
+        );
         return;
       }
 
-      final File harness =
-          File('test/focus/webview_key_bridge_behavior_test.js');
-      expect(harness.existsSync(), isTrue,
-          reason: 'behavior harness ${harness.path} must exist');
+      final File harness = File(
+        'test/focus/webview_key_bridge_behavior_test.js',
+      );
+      expect(
+        harness.existsSync(),
+        isTrue,
+        reason: 'behavior harness ${harness.path} must exist',
+      );
 
       // 生成各用例的真实脚本——与生产注入走的是同一个生成函数，不是手抄的副本。
       //
@@ -57,29 +62,33 @@ void main() {
         ),
       };
 
-      final Directory tmp =
-          Directory.systemTemp.createTempSync('fushi_bridge_behavior_');
+      final Directory tmp = Directory.systemTemp.createTempSync(
+        'fushi_bridge_behavior_',
+      );
       addTearDown(() {
         if (tmp.existsSync()) tmp.deleteSync(recursive: true);
       });
-      final File payload =
-          File('${tmp.path}${Platform.pathSeparator}bridge.json')
-            ..writeAsStringSync(jsonEncode(scripts));
+      final File payload = File(
+        '${tmp.path}${Platform.pathSeparator}bridge.json',
+      )..writeAsStringSync(jsonEncode(scripts));
 
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[harness.path, payload.path],
-        workingDirectory: Directory.current.path,
-      );
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        harness.path,
+        payload.path,
+      ], workingDirectory: Directory.current.path);
 
       expect(
         result.exitCode,
         0,
-        reason: 'popup input bridge behavior test failed.\n'
+        reason:
+            'popup input bridge behavior test failed.\n'
             'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
-      expect(result.stdout.toString(), contains('all assertions passed'),
-          reason: 'behavior harness must reach its success marker');
+      expect(
+        result.stdout.toString(),
+        contains('all assertions passed'),
+        reason: 'behavior harness must reach its success marker',
+      );
     },
   );
 }

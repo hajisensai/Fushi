@@ -14,6 +14,8 @@
 
 [![下載最新版本](https://img.shields.io/badge/%E2%AC%87%20%E4%B8%8B%E8%BC%89%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![加入 Discord 社群](https://img.shields.io/badge/%E5%8A%A0%E5%85%A5%20Discord%20%E7%A4%BE%E7%BE%A4-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
+[![贊助 Fushi](https://img.shields.io/badge/%E8%B4%8A%E5%8A%A9%20Fushi-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/hajisensai)
+[![在 Ko-fi 贊助](https://img.shields.io/badge/%E5%9C%A8%20Ko-fi%20%E8%B4%8A%E5%8A%A9-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/hajisensai)
 
 </div>
 
@@ -136,9 +138,9 @@ Fushi 將匯入的書籍、詞典、字型、有聲書資料、影片、閱讀�
 
 - **同步**：Google Drive / OneDrive / Dropbox 走 OAuth 登入；WebDAV / FTP / SFTP / Fushi Server 使用你提供的伺服器位址與憑據。Fushi Interconnect 在已配對裝置間直連（區域網路、IPv6、組網或公網位址），直連全部失敗時退到端到端的 iroh P2P 隧道；配對連結一律先彈出確認。
 - **Anki**：製卡只與 AnkiDroid 或你設定的 AnkiConnect 位址通訊。
-- **使用統計**：桌面端與 Android 每天最多一次，向 fushi.moe 傳送隨機安裝 ID、App 版本、平台與更新通道，用於統計活躍使用者；不含帳戶、書庫或閱讀資料，伺服端不存 IP。可在更新設定裡關閉「傳送使用統計」。iOS 不傳送。
+- **使用統計**：桌面端與 Android 每天最多一次，向 fushi.moe 傳送安裝 ID（由系統機器識別碼單向雜湊得出，重新安裝不變；識別碼原值不上傳）、App 版本、平台與更新通道，用於統計活躍使用者；不含帳戶、書庫或閱讀資料，伺服端不存 IP。可在更新設定裡關閉「傳送使用統計」。iOS 不傳送。
 - **僅在你主動操作時**：日誌上傳（首次需確認同意）、應用內回饋、排行榜（預設關閉；開啟並同意後才上傳書架標題與進度）。
-- **漫畫 OCR**：預設引擎是 Google Lens，會把頁面圖片傳給 Google；想讓圖片留在本機，請在設定裡改用裝置端模型或系統 OCR。
+- **漫畫 OCR**：預設引擎是裝置端 CTC 模型，頁面圖片留在本機（首次需在設定裡下載模型）；Google Lens 需手動選用，會把頁面圖片傳給 Google。
 - **AI 功能**：只向你設定並指派給該功能的 LLM 提供者發送請求；未指派時不傳送任何請求。
 - **第三方服務**：中繼資料、字幕與線上來源功能只在使用時存取[內容來源與整合](#內容來源與整合)中列出的服務。
 

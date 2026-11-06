@@ -10,6 +10,10 @@ import '../helpers/source_guard.dart';
 /// iOS 版按 App Store 审核指南剔除三类能力：内置外部发现源与各库页的发现视图、
 /// 在线漫画源宿主（Mihon / mokuro.moe）、下载中心。
 ///
+/// 用户自己填地址的服务器（OPDS / AList / Kavita / Audiobookshelf / 媒体服务器）
+/// **不在**这条边界里（2026-10-27 用户拍板，`userConfiguredServersAvailableOn`）：
+/// 守卫两头都钉——它们在 iOS 上可用，而内置源 / 扩展宿主 / 下载中心仍然受限。
+///
 /// 这组守卫钉的是**合规边界不会被悄悄改回来**。它比一般的行为测试更需要存在，
 /// 因为这条边界的失效是**静默**的：漏掉任何一处，本地五个平台照样全绿、CI 照样
 /// 全绿，代价要等到上架被拒才出现，而被拒的那一处从代码里根本看不出它本该属于
@@ -45,6 +49,38 @@ void main() {
           reason:
               '${capability.name} 只对 iOS 关闭，'
               '其余平台不走商店分发，不受这条边界约束。',
+        );
+      }
+    });
+
+    test('用户自配服务器在 iOS 上保留，且不是一类受限能力', () {
+      expect(userConfiguredServersAvailableOn(isIOS: true), isTrue);
+      expect(userConfiguredServersAvailableOn(isIOS: false), isTrue);
+      expect(
+        compactCode(read('lib/src/models/store_compliance.dart')),
+        contains(
+          'booluserConfiguredServersAvailableOn({requiredboolisIOS})=>true;',
+        ),
+        reason: '判据只写在 store_compliance.dart 这一处。',
+      );
+    });
+
+    test('内置源 / 扩展宿主 / 下载中心在 iOS 上仍然受限（放开用户服务器时不变）', () {
+      // 逐个点名，而不是只靠上面「遍历全部枚举值」：有人把某个值从枚举里删掉、
+      // 改成恒 true 的独立判据（照用户服务器那样「放开」）时，遍历测试照样绿。
+      for (final StoreRestrictedCapability capability
+          in <StoreRestrictedCapability>[
+            StoreRestrictedCapability.externalDiscovery,
+            StoreRestrictedCapability.onlineMangaSource,
+            StoreRestrictedCapability.onlineVideoSource,
+            StoreRestrictedCapability.onlineNovelSource,
+            StoreRestrictedCapability.onlineMusicSource,
+            StoreRestrictedCapability.downloads,
+          ]) {
+        expect(
+          capability.availableOn(isIOS: true),
+          isFalse,
+          reason: '${capability.name} 必须在 iOS 上继续缺席。',
         );
       }
     });
@@ -135,10 +171,14 @@ void main() {
       expect(
         reader,
         contains(
-          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)'
+          'if(StoreRestrictedCapability.externalDiscovery.isAvailable||'
+          'userServerDiscoverViewAvailable(appModel.mediaDiscoveryService,'
+          '_bookDiscoveryKinds,))'
           'MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,',
         ),
-        reason: '书架「发现」视图必须挂在外部发现合规门后。',
+        reason:
+            '书架「发现」视图必须挂在外部发现合规门后；iOS 上只为用户自配服务器'
+            '（注册表此时只登记用户服务器源）出现。',
       );
       expect(
         reader,
@@ -164,10 +204,50 @@ void main() {
       expect(
         manga,
         contains(
-          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)'
+          'finalboolbuiltInDiscover='
+          'StoreRestrictedCapability.externalDiscovery.isAvailable;',
+        ),
+        reason: '漫画内置发现源只问外部发现合规门。',
+      );
+      expect(
+        manga,
+        contains(
+          'if(builtInDiscover||userServerDiscover)'
           'MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,',
         ),
-        reason: '漫画「发现」（AniList 榜单 / 来源热门 / mokuro.moe）必须挂在合规门后。',
+        reason: '漫画「发现」只有一个视图（BUG-1710），挂在合规门或用户服务器门后。',
+      );
+      expect(
+        manga,
+        contains(
+          'builder:(BuildContextcontext,Widgetnavigation)=>'
+          'builtInDiscover?Consumer(builder:(BuildContextcontext,WidgetRefref,Widget?_)=>'
+          'MangaDiscoveryPage(',
+        ),
+        reason: '漫画「发现」（AniList 榜单 / 来源热门 / mokuro.moe）只在合规门开时构建。',
+      );
+      expect(
+        manga,
+        contains(
+          'finalbooluserServerDiscover='
+          '!builtInDiscover&&ref.watch(appProvider.select((AppModelappModel)=>'
+          'userServerDiscoverViewAvailable(appModel.mediaDiscoveryService,'
+          '_userServerKinds,),),);',
+        ),
+        reason: 'iOS 的漫画发现视图只在没有内置源时、为用户服务器出现。',
+      );
+      expect(
+        manga,
+        contains(':MediaDiscoveryPage(kinds:_userServerKinds,'),
+        reason:
+            'iOS 的漫画发现视图只能是统一发现页（只列注册表里的用户服务器源），'
+            '不能是带 AniList 榜单 / Mihon 热门 / mokuro.moe 的 MangaDiscoveryPage。',
+      );
+      expect(
+        compactCode(
+          read('lib/src/media/discovery/user_server_discovery_view.dart'),
+        ),
+        contains('=>userConfiguredServersAvailable&&kinds.any('),
       );
       for (final String kind in <String>['onlineSources', 'extensions']) {
         expect(
@@ -238,11 +318,23 @@ void main() {
       const String discoverGate =
           'if(StoreRestrictedCapability.externalDiscovery.isAvailable)';
       expectAllGated(game, 'GameSection.discover,', discoverGate);
-      for (final String source in <String>[reader, manga]) {
+      {
+        const String entry =
+            'MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,';
         expectAllGated(
-          source,
-          'MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,',
-          discoverGate,
+          reader,
+          entry,
+          'if(StoreRestrictedCapability.externalDiscovery.isAvailable||'
+          'userServerDiscoverViewAvailable(appModel.mediaDiscoveryService,'
+          '_bookDiscoveryKinds,))',
+        );
+        // 漫画：恰一处发现入口（BUG-1710），过内置发现门或用户服务器门。
+        expect(entry.allMatches(manga).length, 1, reason: '漫画库页应恰有一处发现入口');
+        expect(
+          'if(builtInDiscover||userServerDiscover)$entry'
+              .allMatches(manga)
+              .length,
+          1,
         );
       }
       expectAllGated(
@@ -301,7 +393,7 @@ void main() {
       );
     });
 
-    test('发现源注册表在 iOS 上一个源都不登记', () {
+    test('发现源注册表在 iOS 上只登记用户自配服务器源，内置源一个都不登记', () {
       // 判据落在建注册表的那一处，而不是各个源自己判——源是列表字面量里的元素，
       // 逐个加判据只要漏掉一个就是漏掉一整个内容索引站。
       final String appModel = compactCode(
@@ -310,11 +402,89 @@ void main() {
       expect(
         appModel,
         contains(
-          'if(!StoreRestrictedCapability.externalDiscovery.isAvailable){'
+          'finalboolbuiltInSources='
+          'StoreRestrictedCapability.externalDiscovery.isAvailable;'
+          'finalbooluserServerSources='
+          'userConfiguredServersAvailable&&isPreferencesReady;'
           'return_mediaDiscoveryService=MediaDiscoveryService('
-          'sources:const<MediaDiscoverySource>[],);}',
+          'sources:<MediaDiscoverySource>['
+          'if(builtInSources)..._builtInDiscoverySources(),'
+          'if(userServerSources)..._userServerDiscoverySources(),],);',
         ),
-        reason: '空注册表必须在内置源列表**之前**返回。',
+        reason: '两类源分别过各自判据，且只在这一处组装。',
+      );
+      String body(String name) {
+        final int start = appModel.indexOf(
+          'List<MediaDiscoverySource>$name()=>',
+        );
+        expect(start, greaterThanOrEqualTo(0), reason: '找不到 $name');
+        return appModel.substring(start, appModel.indexOf('];', start));
+      }
+
+      final String builtIn = body('_builtInDiscoverySources');
+      final String userServers = body('_userServerDiscoverySources');
+      // 内置 / 预置源（含唯一的预置地址 erogame.space）与 BT 站只在内置那半边。
+      for (final String needle in <String>[
+        'CoreAudioDiscoverySource(',
+        'nyaaDiscoverySourcesForBtSites(',
+        "baseUrl:'https://alist.erogame.space'",
+        'ShinnkuDiscoverySource(',
+      ]) {
+        expect(builtIn, contains(needle));
+        expect(
+          userServers,
+          isNot(contains(needle)),
+          reason: '$needle 是内置源 / 种子索引，不得进 iOS 也登记的用户服务器半边。',
+        );
+      }
+      for (final String needle in <String>[
+        'OpdsDiscoverySource(',
+        'AListDiscoverySource.fromConfig(',
+        'AudiobookshelfDiscoverySource(',
+      ]) {
+        expect(userServers, contains(needle));
+        expect(builtIn, isNot(contains(needle)));
+      }
+      // 用户服务器半边不预填任何地址：源只从用户的偏好列表展开。
+      expect(userServers, isNot(contains('https://')));
+      expect(userServers, isNot(contains('http://')));
+    });
+
+    test('Kavita / Audiobookshelf 的下载到本机问用户服务器判据，不挂下载中心的门', () {
+      expect(
+        compactCode(
+          read('lib/src/media/manga/download/online_manga_download_gate.dart'),
+        ),
+        contains(
+          'OnlineMangaRuntimeKind.kavita=>isIOS==null?'
+          'userConfiguredServersAvailable:'
+          'userConfiguredServersAvailableOn(isIOS:isIOS),',
+        ),
+      );
+      expect(
+        compactCode(
+          read(
+            'lib/src/pages/implementations/kavita/kavita_book_series_page.dart',
+          ),
+        ),
+        contains('finalboolcanDownload=userConfiguredServersAvailable;'),
+      );
+      final String abs = compactCode(
+        read(
+          'lib/src/pages/implementations/audiobookshelf/'
+          'audiobookshelf_item_page.dart',
+        ),
+      );
+      expect(abs, isNot(contains('StoreRestrictedCapability.downloads')));
+      expect(
+        'if(userConfiguredServersAvailable)'.allMatches(abs).length,
+        2,
+        reason: '整本下载与单集下载两个入口都问用户服务器判据。',
+      );
+      // 下载中心本体（控制通道入队）仍挂 downloads 门。
+      expect(
+        compactCode(read('lib/src/ops/ctl_download_support.dart')),
+        contains('if(!StoreRestrictedCapability.downloads.isAvailable){'),
       );
     });
 
@@ -351,10 +521,13 @@ void main() {
       );
       // 刮削链路（给已入库文件补作品资料）与「站上有什么可看」不是一回事，
       // 两者共用本类只是因为查的是同一批 API。门错了会把刮削一起关掉。
+      // 尾逗号由 `dart format` 按行宽决定加不加，不属于语义，用 `,?` 放过。
       expect(
         source,
-        contains(
-          'metadataProviders:<VideoMetadataProvider>[...catalog.providers,anilist,],',
+        matches(
+          RegExp(
+            r'metadataProviders:<VideoMetadataProvider>\[\.\.\.catalog\.providers,anilist,?\],',
+          ),
         ),
         reason: 'metadata provider 不受发现门约束。',
       );
@@ -423,6 +596,51 @@ void main() {
       );
     });
 
+    test('用户自配服务器的设置页住常显的「媒体服务器」节，不在 iOS 隐藏的「资源」节', () {
+      final String schema = compactCode(
+        read('lib/src/settings/settings_schema_services.dart'),
+      );
+      final int resources = schema.indexOf("id:'services.resources'");
+      final int metadata = schema.indexOf("id:'services.metadata'");
+      final int media = schema.indexOf("id:'services.media'");
+      expect(resources, greaterThanOrEqualTo(0));
+      expect(metadata, greaterThan(resources));
+      expect(media, greaterThan(metadata));
+      final String resourcesSection = schema.substring(resources, metadata);
+      final String mediaSection = schema.substring(media);
+      for (final String id in <String>[
+        'services.opds_servers',
+        'services.alist_sites',
+        'services.kavita_servers',
+        'services.audiobookshelf_servers',
+      ]) {
+        expect(resourcesSection, isNot(contains("id:'$id'")), reason: id);
+        expect(mediaSection, contains("id:'$id'"), reason: id);
+      }
+      // 内置发现来源开关仍在 iOS 隐藏的「资源」节。
+      expect(resourcesSection, contains("id:'services.discovery_sources'"));
+      final String ctl = compactCode(
+        read('lib/src/ops/ctl_settings_body_discovery.dart'),
+      );
+      expect(
+        ctl,
+        contains(
+          'bool_userServersAvailable(SettingsContext_)=>'
+          'userConfiguredServersAvailable;',
+        ),
+      );
+      expect(
+        'visible:_userServersAvailable,'.allMatches(ctl).length,
+        3,
+        reason: 'OPDS / AList / ABS 三个控制通道页都问用户服务器判据。',
+      );
+      expect(
+        'visible:_discoveryAvailable,'.allMatches(ctl).length,
+        1,
+        reason: '只剩内置发现来源开关过外部发现门。',
+      );
+    });
+
     test('漫画在线源三节（浏览模块）由 onlineMangaSource 门控', () {
       // 2026-09-27 起漫画在线源从「来源」导入视图拆进 MangaOnlineSourcesView，
       // 只由「浏览」模块挂载；导入视图只剩本地来源。
@@ -460,6 +678,130 @@ void main() {
         // MangaOnlineSourcesView 自己换成「不可用」说明（上面几条断言钉的就是它）。
         reason: '浏览页签是否出现漫画域也问同一道合规门。',
       );
+    });
+
+    test('网页漫画（浏览器上的「用 Fushi 阅读本章」）由 onlineMangaSource 门控，'
+        '通用浏览器本身不过门', () {
+      // 判据只写在 webComicReaderActionAvailable 一处；浏览器页与运行时适配器
+      // 都只问它 / 同一道门，不写 Platform.isIOS。浏览器页的入口是「浏览器」模块
+      // （五端都有），所以门必须落在页内的漫画动作上，而不是入口上。
+      final String launch = compactCode(
+        read('lib/src/media/manga/web/web_comic_reader_launch.dart'),
+      );
+      expect(
+        launch,
+        contains(
+          'boolwebComicReaderActionAvailable()=>'
+          'StoreRestrictedCapability.onlineMangaSource.isAvailable;',
+        ),
+      );
+      // 浏览器的「阅读本章」是一个功能插件（WebComicFeature）：扫图执行器整条只在
+      // 合规门开时建，插件的 available 由它是否为 null 决定，浏览页不装不可用的插件。
+      final String comic = compactCode(
+        read('lib/src/web_browser/tab_view/features/web_comic_feature.dart'),
+      );
+      expect(
+        comic,
+        contains(
+          '_scanDriver=webComicReaderActionAvailable()?WebComicScanDriver():null',
+        ),
+        reason: '扫图执行器整条只在合规门开时装。',
+      );
+      expect(comic, contains('boolgetavailable=>_scanDriver!=null;'));
+      expect(comic, isNot(contains('Platform.isIOS')));
+      final String features = compactCode(
+        read('lib/src/web_browser/features/web_browser_features.dart'),
+      );
+      expect(
+        features,
+        contains('WebComicFeature(ref:ref,pageContent:pageContent)'),
+      );
+      expect(
+        features,
+        contains('.where((WebBrowserFeaturef)=>f.available)'),
+        reason: '装配点只保留 available 的插件。',
+      );
+      final String browser = compactCode(
+        read('lib/src/pages/implementations/fushi_web_browser_page.dart'),
+      );
+      expect(
+        browser,
+        contains('webBrowserSitesOf(appModel.prefsRepo.webBrowserSitesJson)'),
+        reason: '浏览器不预置任何站点（含漫画站），iOS 上自然也没有漫画来源。',
+      );
+      expect(browser, isNot(contains('Platform.isIOS')));
+      final String adapter = compactCode(
+        read('lib/src/media/manga/web/web_comic_runtime_adapter.dart'),
+      );
+      expect(
+        adapter,
+        contains(
+          'boolgetisSupportedOnThisPlatform=>'
+          'StoreRestrictedCapability.onlineMangaSource.isAvailable;',
+        ),
+      );
+      // 阅读器（manga_fushi_page）与下载服务直接调适配器取页，不经作品页的
+      // isSupportedOnThisPlatform 判断；网页漫画书会随备份 / 同步落到 iOS，所以门
+      // 必须落在适配器自己的每个联网入口上。
+      expect(
+        adapter,
+        contains('void_ensureSupported(){if(isSupportedOnThisPlatform)return;'),
+      );
+      for (final String entry in <String>[
+        'requiredOnlineMangaChapterchapter,})async{_ensureSupported();',
+        'fetchChapterPage(OnlineMangaPageRefpage)async{_ensureSupported();',
+        'Stringurl,)async{_ensureSupported();',
+      ]) {
+        expect(adapter, contains(entry), reason: '网页漫画适配器的联网入口必须先过合规门：$entry');
+      }
+    });
+
+    test('网页小说（浏览器上的「用 Fushi 阅读（小说）」与追更）由 onlineNovelSource 门控，'
+        '通用浏览器本身不过门', () {
+      // 判据只写在 webNovelReaderActionAvailable 一处（web_novel_gate.dart）；浏览器页
+      // 的动作、开书前补「下一章」占位、阅读器的按需取章都只问它，不写 Platform.isIOS。
+      final String gate = compactCode(
+        read('lib/src/media/novel/web/web_novel_gate.dart'),
+      );
+      expect(
+        gate,
+        contains(
+          'boolwebNovelReaderActionAvailable()=>'
+          'StoreRestrictedCapability.onlineNovelSource.isAvailable;',
+        ),
+      );
+      // 浏览器上的小说动作是功能插件（WebNovelFeature），available 即合规门。
+      final String novel = compactCode(
+        read('lib/src/web_browser/tab_view/features/web_novel_feature.dart'),
+      );
+      expect(
+        novel,
+        contains('_novelAvailable=webNovelReaderActionAvailable();'),
+        reason: '小说动作整条只在合规门开时装。',
+      );
+      expect(novel, contains('boolgetavailable=>_novelAvailable;'));
+      expect(novel, contains('if(!_novelAvailable||'));
+      expect(novel, isNot(contains('Platform.isIOS')));
+      expect(
+        compactCode(
+          read('lib/src/web_browser/features/web_browser_features.dart'),
+        ),
+        contains('WebNovelFeature(ref:ref,pageContent:pageContent)'),
+      );
+      final String library = compactCode(
+        read('lib/src/media/novel/web/web_novel_library.dart'),
+      );
+      expect(
+        library,
+        contains('if(row==null||!webNovelReaderActionAvailable())returnnull;'),
+        reason: '快照会随备份恢复到 iOS：开书不得因此联网取下一章。',
+      );
+      expect(
+        library,
+        contains('if(!webNovelReaderActionAvailable())returnfalse;'),
+        reason: '开书前补「下一章」占位同样过门。',
+      );
+      expect(library, isNot(contains('Platform.isIOS')));
     });
 
     test('视频在线源三段（Aniyomi，浏览模块）由 onlineVideoSource 门控', () {
@@ -617,6 +959,94 @@ void main() {
     });
   });
 
+  group('音乐在线音源插件（onlineMusicSource）', () {
+    test('门只写在 music_plugin_gate.dart，消费端都只问它', () {
+      final String gate = compactCode(
+        read('lib/src/media/music/plugin/music_plugin_gate.dart'),
+      );
+      expect(
+        gate,
+        contains(
+          'boolgetisMusicPluginSourcesAvailable=>'
+          'StoreRestrictedCapability.onlineMusicSource.isAvailable&&'
+          'MusicPluginManager.isSupported;',
+        ),
+      );
+      expect(gate, isNot(contains('Platform.isIOS')));
+      // 设置 › 音乐 › 插件音源：整节 visible 走门（分类正文 / 主从详情 / 搜索索引三条路径共用）。
+      expect(
+        compactCode(read('lib/src/settings/settings_schema_music.dart')),
+        contains(
+          'title:t.music_plugins_title,visible:(_)=>isMusicPluginSourcesAvailable,',
+        ),
+      );
+      // 「来源」页「添加」菜单里的插件管理入口：门没过时不出现（旧的服务器清单页已删，
+      // 插件管理入口只剩这里与设置页）。
+      expect(
+        compactCode(
+          read('lib/src/pages/implementations/music/music_sources_page.dart'),
+        ),
+        contains(
+          // compactCode 去掉了全部空白，期望串也不能带空格。
+          "if(isMusicPluginSourcesAvailable)item('music_sources_add_plugin',",
+        ),
+      );
+      // 音乐页的推荐 / 合并搜索 / 我的歌单 / 「来源」页：在线来源统一经
+      // loadMusicOnlineSources 读取，插件列表只在门后读取。
+      expect(
+        compactCode(
+          read('lib/src/pages/implementations/music/music_sources_page.dart'),
+        ),
+        contains(
+          'if(isMusicPluginSourcesAvailable){'
+          'for(finalInstalledMusicPluginpinawaitapp.musicPluginManager.list()){',
+        ),
+      );
+      expect(
+        compactCode(
+          read('lib/src/pages/implementations/music/music_library_page.dart'),
+        ),
+        allOf(
+          contains('awaitloadOrderedMusicOnlineSources(_app);'),
+          isNot(contains('musicPluginManager.list()')),
+        ),
+      );
+      // 插件曲目的播放项会随队列 / 历史恢复到 iOS：取流装配点与歌词来源都挂在门后，没装配时
+      // resolveMusicPluginStream 按不可播放处理。
+      final String app = compactCode(read('lib/src/models/app_model.dart'));
+      expect(
+        app,
+        contains('if(isMusicPluginSourcesAvailable){musicPluginPlaybackHost='),
+      );
+      expect(app, contains('pluginLyrics:isMusicPluginSourcesAvailable?'));
+      expect(
+        compactCode(read('lib/src/media/music/plugin/music_plugins.dart')),
+        contains(
+          'if(ref==null||host==null){throwconstMusicPluginStreamUnavailable(',
+        ),
+      );
+    });
+
+    test('iOS 伞形静态库不编入插件运行时（JS 引擎）', () {
+      expect(
+        read('../native/fushi_ios_umbrella/Cargo.toml'),
+        contains(
+          'fushi_music = { path = "../fushi_music", default-features = false }',
+        ),
+      );
+      final String crate = read('../native/fushi_music/Cargo.toml');
+      expect(crate, contains('default = ["plugin"]'));
+      expect(
+        crate,
+        contains(
+          'rquickjs = { version = "0.14", default-features = false, '
+          'features = ["parallel"], optional = true }',
+        ),
+        reason: 'JS 引擎只能经 plugin 特性带入。',
+      );
+    });
+  });
+
   group('Aidoku 已从本仓整体移除', () {
     test('Dart 功能层（运行时 / 仓库 / 安装包 / 源浏览）不再存在', () {
       expect(
@@ -627,13 +1057,14 @@ void main() {
             '第三方 WASM 源」这条能力接回来，必须先过 onlineMangaSource 合规门。',
       );
       final List<String> offenders = <String>[
-        for (final FileSystemEntity entity
-            in Directory('lib').listSync(recursive: true))
+        for (final FileSystemEntity entity in Directory(
+          'lib',
+        ).listSync(recursive: true))
           if (entity is File &&
               entity.path.endsWith('.dart') &&
-              entity
-                  .readAsStringSync()
-                  .contains('package:fushi/src/media/manga/aidoku/'))
+              entity.readAsStringSync().contains(
+                'package:fushi/src/media/manga/aidoku/',
+              ))
             entity.path,
       ];
       expect(offenders, isEmpty);
@@ -726,6 +1157,57 @@ void main() {
         File('../native/aidoku_runtime/src/main.rs').existsSync(),
         isFalse,
       );
+    });
+  });
+
+  group('外部打赏入口由 externalDonation 门控', () {
+    test('设置页的 GitHub Sponsors / Ko-fi 两项都委托 externalDonation', () {
+      final String schema = compactCode(
+        read('lib/src/settings/settings_schema_system.dart'),
+      );
+      for (final String id in <String>[
+        'system.github_sponsors',
+        'system.ko_fi',
+      ]) {
+        final int start = schema.indexOf("id:'$id',");
+        expect(start, greaterThanOrEqualTo(0), reason: '找不到 $id');
+        final int end = schema.indexOf('SettingsActionItem(', start);
+        final String item = schema.substring(
+          start,
+          end < 0 ? schema.length : end,
+        );
+        expect(
+          item,
+          contains(
+            'visible:(_)=>StoreRestrictedCapability.externalDonation.isAvailable,',
+          ),
+          reason: '$id 在 iOS 上会触发 App Store 3.1.1 拒审（外部打赏）。',
+        );
+      }
+    });
+
+    test('外部打赏链接常量只在设置 schema 里被引用（新入口必须过同一道门）', () {
+      final List<String> offenders = <String>[];
+      for (final FileSystemEntity e in Directory(
+        'lib',
+      ).listSync(recursive: true)) {
+        if (e is! File || !e.path.endsWith('.dart')) continue;
+        final String normalized = e.path.replaceAll(r'\', '/');
+        if (normalized.endsWith('lib/src/utils/misc/official_links.dart') ||
+            normalized.endsWith(
+              'lib/src/settings/settings_schema_system.dart',
+            )) {
+          continue;
+        }
+        final String src = e.readAsStringSync();
+        if (src.contains('kGitHubSponsorsUrl') ||
+            src.contains('kKoFiUrl') ||
+            src.contains('ko-fi.com') ||
+            src.contains('github.com/sponsors')) {
+          offenders.add(normalized);
+        }
+      }
+      expect(offenders, isEmpty);
     });
   });
 

@@ -2,8 +2,8 @@
 /// MP3）。concat demuxer 只按第一个文件建解码器，后面换了编码 / 采样率 / 声道就会
 /// 解成杂音，所以一章的流参数不一致时，先把不合规的句转成统一的中间文件再拼。
 ///
-/// 中间格式：16-bit PCM 装在 QuickTime（`.mov`）里——桌面 ffmpeg-min 没有 wav 封装器，
-/// 但有 `pcm_s16le` 编码器与 mov 封装器。无损（最后只做一次 AAC 编码），时长就是样本
+/// 中间格式：16-bit PCM 装在 QuickTime（`.mov`）里——旧桌面 ffmpeg-min 没有 wav 封装器，
+/// 只有 `pcm_s16le` 编码器与 mov 封装器（统一 FFmpeg 已含 wav，此中间格式历史原因保留）。无损（最后只做一次 AAC 编码），时长就是样本
 /// 数（`mdhd` 的 timescale = 采样率），cue 时间按实测时长取，不会漂。
 ///
 /// concat 只看编码参数不看容器：已经是「目标 PCM 参数」的 WAV 原样参与拼接，只有不合

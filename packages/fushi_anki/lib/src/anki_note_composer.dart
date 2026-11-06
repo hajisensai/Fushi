@@ -7,8 +7,9 @@ import 'package:meta/meta.dart';
 import 'anki_compact_glossaries.dart';
 import 'anki_glossary_css.dart';
 import 'anki_models.dart';
+import 'fushi_card_fields.dart';
 import 'lapis_note_type.dart';
-import 'lapis_preset.dart';
+import 'note_type_preset.dart';
 
 /// TODO-779：单词远程音频获取的结果载体。两 backend 的远程音频路径
 /// （`_storeRemoteAudio` / `_addRemoteAudio`）共用，把过去只能返回的裸 ref
@@ -335,7 +336,7 @@ mixin AnkiNoteComposer {
               (t) => t.name == current.selectedNoteTypeName,
             )
           : null) ??
-      noteTypes.firstWhereOrNull(LapisPreset.matches) ??
+      NoteTypePresets.preferred(noteTypes) ??
       noteTypes.first;
 
   @protected
@@ -343,22 +344,31 @@ mixin AnkiNoteComposer {
     AnkiNoteType selectedNoteType,
     AnkiSettings current,
   ) {
-    if (LapisPreset.matches(selectedNoteType) &&
-        !_currentSelectionMatchesLapis(current)) {
-      return LapisPreset.applyDefaults(selectedNoteType, {});
+    if (NoteTypePresets.hasPreset(selectedNoteType) &&
+        !_currentSelectionHasPreset(current)) {
+      return NoteTypePresets.applyDefaults(selectedNoteType, {});
     }
-    return current.fieldMappings;
+    // 现有映射一个字段都不属于选中的笔记类型（空表，或留着上一个笔记类型的字段名）：
+    // 原样沿用 = 每张卡都是空卡。按字段名补默认映射。
+    // Fushi 卡片 9 个字段改过名：映射偏好里还是旧名（或 Anki 里的笔记类型还是旧名）时，
+    // 先把键对到笔记类型实际的字段名上，用户配置不丢。
+    return NoteTypePresets.applyDefaults(
+      selectedNoteType,
+      FushiCardFields.alignToFields(
+        current.fieldMappings,
+        selectedNoteType.fields,
+      ),
+    );
   }
 
-  bool _currentSelectionMatchesLapis(AnkiSettings current) {
+  bool _currentSelectionHasPreset(AnkiSettings current) {
     final matched = current.availableNoteTypes.firstWhereOrNull(
       (t) =>
           t.id == current.selectedNoteTypeId ||
           t.name == current.selectedNoteTypeName,
     );
-    if (matched != null) return LapisPreset.matches(matched);
-    return current.selectedNoteTypeName?.toLowerCase().contains('lapis') ??
-        false;
+    if (matched != null) return NoteTypePresets.hasPreset(matched);
+    return NoteTypePresets.nameHasPreset(current.selectedNoteTypeName);
   }
 
   // ── note tags：两 backend 共用（杜绝两份漂移） ──────────────────
@@ -379,23 +389,9 @@ mixin AnkiNoteComposer {
   /// `video` 的旧卡不迁移不重写。
   static const String gameTag = 'game';
 
-  /// 「制卡所在字符数」标签的前缀（`chars_12345`）。下划线而非 `::`：Anki 里
-  /// `chars::12345` 会在标签树下堆出成千上万个一次性子节点，而扁平 `chars_12345`
-  /// 既能被 `tag:chars_*` 整体检索，也能按字面量排序看出制卡是在书的哪一段。
-  static const String charPositionTagPrefix = 'chars_';
-
-  /// 把制卡时的**全书绝对学习字数位置**格式化成单个 Anki tag（`chars_12345`）。
-  ///
-  /// 口径是 `countStudyChars`（全仓唯一计字口径，见 `stats/study_char_count.dart`），
-  /// 与阅读进度条分子、`study_segments.chars` 同一根数轴——所以卡片上的数字和用户在
-  /// 状态行看到的「已读字数」是同一个数，能直接对上。
-  ///
-  /// [absoluteChars] 为 `null` / 负数时返回 `null`：那是「锚点没取到」（章字数还没算完、
-  /// JS 拿不到 caret），不是「在第 0 字」。宁可不打标签，也不打一个 `chars_0` 冒充书首。
-  static String? formatCharPositionTag(int? absoluteChars) {
-    if (absoluteChars == null || absoluteChars < 0) return null;
-    return '$charPositionTagPrefix$absoluteChars';
-  }
+  /// 音乐模块（歌词制卡）的分类标签（所有者 2026-10-24）。仅决定新制卡默认标签，
+  /// 此前打成 `book` 的旧音乐卡不迁移不重写。
+  static const String musicTag = 'music';
 
   /// 把制卡来源类别映射成分类标签；`null`（未指定来源）时返回 `null`（不追加）。
   static String? _categoryTagForSource(AnkiMiningSource? source) {
@@ -406,6 +402,8 @@ mixin AnkiNoteComposer {
         return videoTag;
       case AnkiMiningSource.game:
         return gameTag;
+      case AnkiMiningSource.music:
+        return musicTag;
       case null:
         return null;
     }
@@ -415,8 +413,8 @@ mixin AnkiNoteComposer {
   /// **追加** [fushiTag] 与 [source] 对应的分类标签后去重（保序）。
   ///
   /// - 追加而非覆盖：用户已配置的 tag 全部保留，只是按开关额外多 `fushi` + 分类标签。
-  /// - 顺序：用户 tag → `fushi` → 分类标签（`book`/`video`/`game`）。
-  /// - 去重：用户若已手动配置了 `fushi`/`book`/`video`/`game`，不会出现两个。
+  /// - 顺序：用户 tag → `fushi` → 分类标签（`book`/`video`/`game`/`music`）。
+  /// - 去重：用户若已手动配置了 `fushi`/`book`/`video`/`game`/`music`，不会出现两个。
   /// - [includeHibiki]（TODO-117 开关）为 `false` 时不追加 `fushi`。
   /// - [includeCategory]（TODO-117 开关）为 `false` 时不追加分类标签；为 `true` 但
   ///   [source] 为 `null`（未指定来源，如独立查词/悬浮窗）时本就没有分类标签可加。
@@ -426,19 +424,24 @@ mixin AnkiNoteComposer {
   /// - [collectionTag]（同「自动添加书名到标签」开关）非空时追加**已清洗的合集/系列名
   ///   标签**（去重后）：视频=播放列表系列名，书籍=所属合集名。与 [titleTag] 并列，二者
   ///   字面量不同则各成一个 tag，相同时由 [seen] 去重合并。
-  /// - [charPositionTag]（「自动添加制卡位置到标签」开关）非空时追加**制卡所在字符数
-  ///   标签**（`chars_12345`，由 [formatCharPositionTag] 产出）：小说阅读器制卡时这张
-  ///   卡在全书第几个学习字处制的。只有书籍来源会注入；开关关闭或锚点取不到时为 `null`。
-  /// - 两 backend（AnkiConnect / AnkiDroid）共用同一逻辑，避免一端漏加或漂移。
+  /// - 制卡位置**不进标签**（反馈 MhQHXQI-sB）：它写进 MiscInfo 字段，见
+  ///   [charPositionTargetField] / [buildMinedFields]。
+  /// - [nestTitleUnderCategory]（「作品名标签挂在分类下」开关，默认关）为 `true` 且
+  ///   [source] 有分类时，[titleTag] / [collectionTag] 输出为 Anki 层级标签
+  ///   `<分类>::<作品名>`（如 `video::<番名>`，同 GameSentenceMiner 的 `game::<名>`），
+  ///   Anki 标签树里作品名挂在分类下。与 [includeCategory] 互不依赖：后者只管要不要
+  ///   **另外**单独打一个分类标签。[source] 为 `null`（无分类）时照旧输出平级作品名。
+  /// - 所有后端（AnkiConnect / AnkiDroid / AnkiMobile / Anki 同步）与 SRS 制卡共用
+  ///   同一逻辑，避免一端漏加或漂移。
   @protected
   List<String> buildNoteTags(
     String userTags, {
     AnkiMiningSource? source,
     bool includeHibiki = true,
     bool includeCategory = true,
+    bool nestTitleUnderCategory = false,
     String? titleTag,
     String? collectionTag,
-    String? charPositionTag,
   }) {
     final seen = <String>{};
     final result = <String>[];
@@ -454,24 +457,94 @@ mixin AnkiNoteComposer {
     // TODO-681 / BUG-393：「自动添加书名到标签」开启时调用方注入已清洗书名/番名标签
     // （书籍/视频同语义）。去重 [seen] 保证：经卡片创建器 `TagsField` 走 [userTags] 已带过
     // 同一标题标签时不会重复追加（两处清洗规则同源故字面量相同）。
-    final clean = sanitizeTitleTag(titleTag);
+    final String? titleParent = nestTitleUnderCategory
+        ? _categoryTagForSource(source)
+        : null;
+    String? nested(String? tag) =>
+        tag == null || titleParent == null ? tag : '$titleParent::$tag';
+    final clean = nested(sanitizeTitleTag(titleTag));
     if (clean != null && seen.add(clean)) result.add(clean);
     // 合集/系列名标签（与 titleTag 同「自动添加书名到标签」开关）：视频=播放列表系列名、
     // 书籍=所属合集名。调用方读开关 + 取合集名 + 清洗后注入；与书名标签并列，字面量相同时
     // 由 [seen] 去重合并（如单视频合集名==剧集名时不重复追加）。
-    final cleanCollection = sanitizeTitleTag(collectionTag);
+    final cleanCollection = nested(sanitizeTitleTag(collectionTag));
     if (cleanCollection != null && seen.add(cleanCollection)) {
       result.add(cleanCollection);
     }
-    // 制卡所在字符数标签（`chars_12345`）：排在最后，因为它是这批 tag 里唯一**每张卡
-    // 都不同**的——放前面会把 Anki 标签列表里稳定的那几个挤到看不见的地方。同样过
-    // [sanitizeTitleTag]：字面量本该由 [formatCharPositionTag] 产出（无空白），但互联
-    // 转发端送来的值是外部输入，带空格会被 Anki 拆成两个垃圾 tag。
-    final cleanCharPosition = sanitizeTitleTag(charPositionTag);
-    if (cleanCharPosition != null && seen.add(cleanCharPosition)) {
-      result.add(cleanCharPosition);
-    }
     return result;
+  }
+
+  /// [AnkiMiningContext.charPositionText]（制卡位置）写进哪个字段；`null` = 不写。
+  ///
+  /// 反馈 MhQHXQI-sB：制卡位置原先是一卡一个的 `chars_12345` 标签，把 Anki 标签列表
+  /// 撑爆；位置属于「这张卡从哪来」的来源信息，和出处链接 / 片段时间同住 MiscInfo。
+  ///
+  /// - Lapis：恒为 `MiscInfo`（Lapis 官方字段，卡背「Misc info」折叠块里显示），用户
+  ///   映射里没列这个字段也照写——Lapis 一定有它。
+  /// - 其它笔记类型：映射里第一个 **MiscInfo 等价字段**——名字（忽略大小写）是
+  ///   `MiscInfo`（Lapis 系 / Senren 的 `miscInfo`）或 `Source`（Fushi 卡片改名后的
+  ///   MiscInfo，见 [FushiCardFields.source]，也是用户自建类型里放出处的惯用名）。
+  ///   只认映射里有的：用户没映射的字段我们不知道它是不是真在笔记类型里。
+  /// - 都没有：不写。不猜一个别的字段塞进去——写进 Sentence / Glossary 会污染卡面。
+  ///
+  /// [mappedFields] 是映射的**键**，返回值也是其中一个键（调用方按键写 `fields`）。
+  /// [fieldNames] 把键换成真实字段名：Anki 后端的键就是字段名，传 `null`；Fushi 复习
+  /// （SRS）的键是 fieldId（`SrsIds.field`），由它传 fieldId → 字段名（内置类型给字段键
+  /// `MiscInfo` / `Source`，自建类型给字段名），否则按名字永远匹配不上、位置被静默丢掉。
+  static String? charPositionTargetField({
+    required Iterable<String> mappedFields,
+    required String? noteTypeName,
+    Map<String, String>? fieldNames,
+  }) {
+    final String miscInfo = FushiCardFields.legacyNameOf(
+      FushiCardFields.source,
+    );
+    String nameOf(String key) => fieldNames?[key] ?? key;
+    if (noteTypeName == LapisNoteType.modelName) {
+      for (final String key in mappedFields) {
+        if (nameOf(key) == miscInfo) return key;
+      }
+      // 键即字段名（Anki）：Lapis 一定有 MiscInfo，映射里没列也照写。键是 fieldId 时
+      // 不能拿字段名冒充键——那个键不在映射里，写进去也会被调用方按映射过滤掉。
+      return fieldNames == null ? miscInfo : null;
+    }
+    final Set<String> equivalents = <String>{
+      miscInfo.toLowerCase(),
+      FushiCardFields.source.toLowerCase(),
+    };
+    for (final String key in mappedFields) {
+      if (equivalents.contains(nameOf(key).toLowerCase())) return key;
+    }
+    return null;
+  }
+
+  /// 把制卡位置追加进 [fields] 里 [charPositionTargetField] 选中的字段（原地修改）。
+  ///
+  /// - 追加在渲染值之后，`<br>` 分隔（MiscInfo 是 HTML 字段，出处链接后另起一行）；
+  ///   字段渲染为空时就只有位置本身。
+  /// - 位置文本 HTML 转义：互联转发端送来的是外部输入，不能把标签带进卡面。
+  /// - 用户在「高级制卡」里手改过目标字段（[manualFields] 有非空值）时不追加：预览已经
+  ///   带上位置，用户改完的就是最终值，再追加一次会重复。
+  static void appendCharPosition({
+    required Map<String, String> fields,
+    required String? charPositionText,
+    required Iterable<String> mappedFields,
+    required String? noteTypeName,
+    required Map<String, String> manualFields,
+    Map<String, String>? fieldNames,
+  }) {
+    final String position = charPositionText?.trim() ?? '';
+    if (position.isEmpty) return;
+    final String? target = charPositionTargetField(
+      mappedFields: mappedFields,
+      noteTypeName: noteTypeName,
+      fieldNames: fieldNames,
+    );
+    if (target == null) return;
+    if ((manualFields[target] ?? '').trim().isNotEmpty) return;
+    final String escaped = const HtmlEscape().convert(position);
+    final String existing = fields[target] ?? '';
+    fields[target] = existing.isEmpty ? escaped : '$existing<br>$escaped';
   }
 
   /// 把任意标题字符串清洗成**单个合法 Anki tag**：Anki tag 以空白分隔，故空格 / Tab
@@ -524,6 +597,9 @@ mixin AnkiNoteComposer {
   ) async {
     final tags = <String, String>{};
     for (final m in media) {
+      // 没有占位符就没有可替换的位置；空键进映射会让 buildMinedFields 的
+      // `replaceAll('', ref)` 把媒体名插进字段每个字符之间，整张卡变乱码。
+      if (m.filename.isEmpty) continue;
       final ref = await storeBareRef(m);
       if (ref != null && ref.isNotEmpty) {
         tags[m.filename] = ref;
@@ -574,6 +650,8 @@ mixin AnkiNoteComposer {
     required Map<String, String> dictionaryMediaTags,
     String? noteTypeName,
     bool keepEmpty = false,
+    bool keepDictionaryMediaPlaceholders = false,
+    Map<String, String>? fieldNames,
   }) {
     final bool yieldSelectionText = shouldYieldSelectionText(
       payload: payload,
@@ -581,17 +659,29 @@ mixin AnkiNoteComposer {
       fieldMappings: fieldMappings,
     );
     final fields = <String, String>{};
+    // 「高级制卡」里手改过的字段（反馈 -K86qlwBg6）：整段替换该字段的渲染结果，只对
+    // 映射里有的字段生效。手写内容不是占位符模板，不走 handlebar 渲染；但它是从
+    // [previewMinedFields] 的预填值改出来的，里面的词典媒体占位符（`fushi_dict_N`）
+    // 照常换成本次真正落进 Anki 的媒体引用——不然改了一个字的释义就丢了外字图片。
+    final Map<String, String> edited =
+        payload.overrides?.fieldValues ?? const <String, String>{};
     for (final entry in fieldMappings.entries) {
-      var value = AnkiHandlebarRenderer.render(
-        entry.value,
-        payload,
-        context,
-        yieldSelectionText: yieldSelectionText,
-      );
+      final String? manual = edited[entry.key];
+      var value = manual != null && manual.trim().isNotEmpty
+          ? manual
+          : AnkiHandlebarRenderer.render(
+              entry.value,
+              payload,
+              context,
+              yieldSelectionText: yieldSelectionText,
+            );
       for (final mediaEntry in dictionaryMediaTags.entries) {
         value = value.replaceAll(mediaEntry.key, mediaEntry.value);
       }
-      value = degradeUnresolvedDictionaryMedia(value);
+      // 预览（[previewMinedFields]）保留占位符：它要原样回到确认后的这一步再替换。
+      if (!keepDictionaryMediaPlaceholders) {
+        value = degradeUnresolvedDictionaryMedia(value);
+      }
       // 旧格式（仍带 gloss-* class）释义的外字中和兜底；新导出不命中门控，原样通过。
       value = normalizeAnkiDictionaryHtml(value);
       // 判空与写入用同一个 trim 口径。此前判空 trim、写入却是原值，于是一个字段里
@@ -604,6 +694,14 @@ mixin AnkiNoteComposer {
         fields[entry.key] = trimmed;
       }
     }
+    appendCharPosition(
+      fields: fields,
+      charPositionText: context.charPositionText,
+      mappedFields: fieldMappings.keys,
+      noteTypeName: noteTypeName,
+      manualFields: edited,
+      fieldNames: fieldNames,
+    );
     return fields;
   }
 
@@ -687,8 +785,13 @@ mixin AnkiNoteComposer {
   ) {
     if (noteType.fields.isEmpty) return rendered;
     final Set<String> known = noteType.fields.toSet();
+    // 渲染键用新名而 Anki 里的笔记类型还是旧名（或反过来）时，按别名对上再过滤。
+    final Map<String, String> aligned = FushiCardFields.alignToFields(
+      rendered,
+      noteType.fields,
+    );
     return <String, String>{
-      for (final MapEntry<String, String> e in rendered.entries)
+      for (final MapEntry<String, String> e in aligned.entries)
         if (known.contains(e.key)) e.key: e.value,
     };
   }
@@ -745,6 +848,45 @@ mixin AnkiNoteComposer {
         .replaceAll('&amp;', '&');
   }
 
+  /// 落卡时才生成、预览里拿不到真值的占位符：媒体（卡图 / 片段 / 句子音频 / 单词音频）
+  /// 与制卡那一刻才定下来的语境（出处链接、片段时间窗、标题）。
+  static const List<String> lateBoundPlaceholders = <String>[
+    '{audio}',
+    '{card-video}',
+    '{card-image}',
+    '{book-cover}',
+    '{video-clip}',
+    '{sentence-audio}',
+    '{source-link}',
+    '{clip-timestamp}',
+    '{document-title}',
+  ];
+
+  /// [template] 里有 [lateBoundPlaceholders]：这个字段只能在落卡时生成，「高级制卡」
+  /// 里不给手改（手改等于把媒体 / 语境冻结成预览时的空值）。
+  static bool isLateBoundTemplate(String template) =>
+      lateBoundPlaceholders.any(template.contains);
+
+  /// 「高级制卡」字段预填（反馈 -K86qlwBg6）：与落卡**同一条**
+  /// [renderMediaPayload] → [buildMinedFields] 管线渲染，只是媒体引用一律空（它们在
+  /// 确认后才生成），词典媒体占位符原样保留（确认后由落卡路径替换，见
+  /// [buildMinedFields] 的手改分支）。返回映射里每个字段（空值也在）。
+  Map<String, String> previewMinedFields({
+    required AnkiSettings settings,
+    required AnkiMiningPayload payload,
+    required AnkiMiningContext context,
+  }) => renderMediaPayload(
+    settings: settings,
+    payload: payload,
+    context: context,
+    coverRef: null,
+    sentenceAudioRef: null,
+    processedAudio: '',
+    dictionaryMediaTags: const <String, String>{},
+    keepEmpty: true,
+    keepDictionaryMediaPlaceholders: true,
+  ).fields;
+
   /// 用已备好的媒体引用把 [payload] + [context] 组装成最终渲染结果。
   ///
   /// 两 backend 的差异只在「媒体引用怎么准备」（AnkiConnect 远程上传后内联
@@ -754,6 +896,9 @@ mixin AnkiNoteComposer {
   ///
   /// [coverRef] / [sasayakiRef] / [processedAudio] 均须是**已格式化**的最终
   /// 引用（`<img src>` / `[sound:]`；无则 null / 空串）。
+  ///
+  /// [fieldNames]：映射键不是字段名时（SRS 的键是 fieldId）的键 → 字段名，见
+  /// [charPositionTargetField]；Anki 后端传 `null`。
   @protected
   RenderedMinedFields renderMediaPayload({
     required AnkiSettings settings,
@@ -765,6 +910,8 @@ mixin AnkiNoteComposer {
     required Map<String, String> dictionaryMediaTags,
     String? audioWarning,
     bool keepEmpty = false,
+    bool keepDictionaryMediaPlaceholders = false,
+    Map<String, String>? fieldNames,
   }) {
     // A muxed video owns sentence playback. Keep only one native sound tag:
     // Lapis renders Picture three times, but SentenceAudio is interpolated once
@@ -861,10 +1008,13 @@ mixin AnkiNoteComposer {
       pitchCategories: payload.pitchCategories,
       phoneticTranscriptions: payload.phoneticTranscriptions,
       popupSelectionText: payload.popupSelectionText,
+      popupSelectionHtml: payload.popupSelectionHtml,
       glossarySelectionHighlighted: payload.glossarySelectionHighlighted,
       audio: processedAudio,
       selectedDictionary: payload.selectedDictionary,
       dictionaryMedia: payload.dictionaryMedia,
+      // 「高级制卡」的手改字段要跟到渲染那一步（buildMinedFields 读它）。
+      overrides: payload.overrides,
     );
 
     return RenderedMinedFields(
@@ -875,6 +1025,8 @@ mixin AnkiNoteComposer {
         dictionaryMediaTags: dictionaryMediaTags,
         noteTypeName: settings.selectedNoteTypeName,
         keepEmpty: keepEmpty,
+        keepDictionaryMediaPlaceholders: keepDictionaryMediaPlaceholders,
+        fieldNames: fieldNames,
       ),
       audioWarning: audioWarning,
     );

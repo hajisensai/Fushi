@@ -36,8 +36,9 @@ void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('Reader char caret: enter / move / writing-mode / lookup / ring',
-      (WidgetTester tester) async {
+  testWidgets('Reader char caret: enter / move / writing-mode / lookup / ring', (
+    WidgetTester tester,
+  ) async {
     final List<FlutterErrorDetails> errors = [];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
     FlutterError.onError = (FlutterErrorDetails details) {
@@ -65,8 +66,11 @@ void main() {
       final navTargets = findPrimaryNavigationTargets();
       if (navTargets.isNotEmpty) {
         final bool focusedTab = await driver.focusWidget(navTargets.first);
-        expect(focusedTab, isTrue,
-            reason: 'Books tab must be reachable by focus');
+        expect(
+          focusedTab,
+          isTrue,
+          reason: 'Books tab must be reachable by focus',
+        );
         await driver.activate();
         await tester.pumpAndSettle();
       }
@@ -79,12 +83,18 @@ void main() {
       for (int i = 0; i < 40 && seededEntry.evaluate().isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 500));
       }
-      expect(seededEntry, findsOneWidget,
-          reason: 'freshly seeded paginated book must appear on the shelf');
+      expect(
+        seededEntry,
+        findsOneWidget,
+        reason: 'freshly seeded paginated book must appear on the shelf',
+      );
 
       final bool focusedBook = await driver.focusWidget(seededEntry);
-      expect(focusedBook, isTrue,
-          reason: 'Book card must be reachable by focus');
+      expect(
+        focusedBook,
+        isTrue,
+        reason: 'Book card must be reachable by focus',
+      );
       await driver.activate();
       await tester.pump(const Duration(seconds: 3));
 
@@ -108,8 +118,11 @@ void main() {
       await tester.pump(const Duration(seconds: 3));
 
       final eval = ReaderFushiPage.debugEvaluateJavascript;
-      expect(eval, isNotNull,
-          reason: 'Reader debug JS hook must be set (debug/profile build).');
+      expect(
+        eval,
+        isNotNull,
+        reason: 'Reader debug JS hook must be set (debug/profile build).',
+      );
 
       // The caret module is injected by the reader setup script.
       final caretType = (await eval!('typeof window.fushiCaret')).toString();
@@ -127,15 +140,17 @@ void main() {
       }
 
       Future<String> ringDisplay() async => (await eval(
-            "(function(){var r=document.getElementById('fushi-caret-ring');"
-            "return r?(r.style.display||'block'):'none';})()",
-          ))
-              .toString();
+        "(function(){var r=document.getElementById('fushi-caret-ring');"
+        "return r?(r.style.display||'block'):'none';})()",
+      )).toString();
 
       // ── enter() lands on a visible character ──────────────────────────
       final enterRaw = await eval(ReaderCaretScripts.enterInvocation());
-      expect(ReaderCaretScripts.moveStatus(enterRaw), 'moved',
-          reason: 'enter() must land on a visible character');
+      expect(
+        ReaderCaretScripts.moveStatus(enterRaw),
+        'moved',
+        reason: 'enter() must land on a visible character',
+      );
       final start = await sig();
       debugPrint('[CARET] enter sig=$start ring=${await ringDisplay()}');
       expect(start['active'], isTrue);
@@ -144,24 +159,34 @@ void main() {
 
       // ── forward / backward round-trip ─────────────────────────────────
       final fwd = ReaderCaretScripts.moveStatus(
-          await eval(ReaderCaretScripts.moveInvocation('forward')));
-      expect(fwd == 'moved' || fwd == 'pageForward', isTrue,
-          reason: 'forward must advance or turn the page (got $fwd)');
+        await eval(ReaderCaretScripts.moveInvocation('forward')),
+      );
+      expect(
+        fwd == 'moved' || fwd == 'pageForward',
+        isTrue,
+        reason: 'forward must advance or turn the page (got $fwd)',
+      );
       final afterFwd = await sig();
-      expect(afterFwd['off'] != start['off'] || afterFwd['len'] != start['len'],
-          isTrue,
-          reason: 'forward must change the caret position');
+      expect(
+        afterFwd['off'] != start['off'] || afterFwd['len'] != start['len'],
+        isTrue,
+        reason: 'forward must change the caret position',
+      );
 
       // Only assert a clean round-trip when forward stayed on the same page
       // (a page turn re-anchors to the page edge, which is not reversible 1:1).
       if (fwd == 'moved') {
         final back = ReaderCaretScripts.moveStatus(
-            await eval(ReaderCaretScripts.moveInvocation('backward')));
+          await eval(ReaderCaretScripts.moveInvocation('backward')),
+        );
         expect(back == 'moved' || back == 'pageBackward', isTrue);
         if (back == 'moved') {
           final afterBack = await sig();
-          expect(afterBack['off'], start['off'],
-              reason: 'forward then backward returns to the same character');
+          expect(
+            afterBack['off'],
+            start['off'],
+            reason: 'forward then backward returns to the same character',
+          );
           expect(afterBack['ch'], start['ch']);
         }
       }
@@ -182,24 +207,35 @@ void main() {
       final String retreatKey = vertical ? 'up' : 'left';
       final axisStart = await sig();
       final adv = ReaderCaretScripts.moveStatus(
-          await eval(ReaderCaretScripts.moveInvocation(advanceKey)));
-      expect(adv == 'moved' || adv == 'pageForward', isTrue,
-          reason: '$advanceKey must advance the caret in '
-              '${vertical ? "vertical-rl" : "horizontal"} mode (got $adv)');
+        await eval(ReaderCaretScripts.moveInvocation(advanceKey)),
+      );
+      expect(
+        adv == 'moved' || adv == 'pageForward',
+        isTrue,
+        reason:
+            '$advanceKey must advance the caret in '
+            '${vertical ? "vertical-rl" : "horizontal"} mode (got $adv)',
+      );
       if (adv == 'moved') {
         final afterAdv = await sig();
         expect(
-            afterAdv['off'] != axisStart['off'] ||
-                afterAdv['len'] != axisStart['len'],
-            isTrue,
-            reason: 'advance key must change the caret position');
+          afterAdv['off'] != axisStart['off'] ||
+              afterAdv['len'] != axisStart['len'],
+          isTrue,
+          reason: 'advance key must change the caret position',
+        );
         final ret = ReaderCaretScripts.moveStatus(
-            await eval(ReaderCaretScripts.moveInvocation(retreatKey)));
+          await eval(ReaderCaretScripts.moveInvocation(retreatKey)),
+        );
         if (ret == 'moved') {
           final afterRet = await sig();
-          expect(afterRet['off'], axisStart['off'],
-              reason: '$retreatKey must reverse $advanceKey '
-                  '(writing-mode reading axis)');
+          expect(
+            afterRet['off'],
+            axisStart['off'],
+            reason:
+                '$retreatKey must reverse $advanceKey '
+                '(writing-mode reading axis)',
+          );
           expect(afterRet['ch'], axisStart['ch']);
         }
       }
@@ -208,11 +244,16 @@ void main() {
       // valid statuses, none throws.
       final String lineKey = vertical ? 'left' : 'down';
       final lineStatus = ReaderCaretScripts.moveStatus(
-          await eval(ReaderCaretScripts.moveInvocation(lineKey)));
+        await eval(ReaderCaretScripts.moveInvocation(lineKey)),
+      );
       debugPrint('[CARET] line-move ($lineKey) status=$lineStatus');
       expect(
-        const <String>['moved', 'pageForward', 'pageBackward', 'blocked']
-            .contains(lineStatus),
+        const <String>[
+          'moved',
+          'pageForward',
+          'pageBackward',
+          'blocked',
+        ].contains(lineStatus),
         isTrue,
         reason: 'line-move must return a known status',
       );
@@ -230,28 +271,38 @@ void main() {
       );
       debugPrint('[CARET] lookup at char=$caretChar');
       final lookupOk = await eval(ReaderCaretScripts.lookupInvocation());
-      expect(lookupOk == true, isTrue,
-          reason: 'lookup() must select the word at the caret '
-              '(char=$caretChar)');
+      expect(
+        lookupOk == true,
+        isTrue,
+        reason:
+            'lookup() must select the word at the caret '
+            '(char=$caretChar)',
+      );
       final selText = await eval(
         'JSON.stringify(window.fushiSelection && window.fushiSelection.selection'
         ' ? window.fushiSelection.selection.text : null)',
       );
       final decodedSel = jsonDecode(selText as String);
       debugPrint('[CARET] lookup selection=$decodedSel');
-      expect(decodedSel, isNotNull,
-          reason: 'caret lookup must populate fushiSelection (tap pipeline)');
+      expect(
+        decodedSel,
+        isNotNull,
+        reason: 'caret lookup must populate fushiSelection (tap pipeline)',
+      );
 
       // ── activate() — the A/Enter "context click" — routes plain text to the
       // same lookup on the real WebView (a hyperlink would instead navigate, a
       // control would be clicked). The caret is on a content kanji here.
       await eval(ReaderCaretScripts.reanchorInvocation('forward'));
-      final activateResult =
-          (await eval(ReaderCaretScripts.activateInvocation())).toString();
+      final activateResult = (await eval(
+        ReaderCaretScripts.activateInvocation(),
+      )).toString();
       debugPrint('[CARET] activate result=$activateResult');
-      expect(activateResult, 'lookup',
-          reason:
-              'A/Enter on plain text must context-click into a word lookup');
+      expect(
+        activateResult,
+        'lookup',
+        reason: 'A/Enter on plain text must context-click into a word lookup',
+      );
 
       // ── exit() hides the ring ─────────────────────────────────────────
       await eval(ReaderCaretScripts.exitInvocation());
@@ -268,8 +319,10 @@ void main() {
       // extra Escape into the reader. (If the popup never dismisses, the Enter
       // below would dismiss it instead of entering the cursor, so this guards the
       // following assertion against a misattributed failure.)
-      bool popupDismissed =
-          find.byType(DictionaryPopupWebView).evaluate().isEmpty;
+      bool popupDismissed = find
+          .byType(DictionaryPopupWebView)
+          .evaluate()
+          .isEmpty;
       for (int attempt = 0; attempt < 6 && !popupDismissed; attempt++) {
         if (find.byType(DictionaryPopupWebView).evaluate().isEmpty) {
           popupDismissed = true;
@@ -287,8 +340,11 @@ void main() {
           }
         }
       }
-      expect(popupDismissed, isTrue,
-          reason: 'the eval-lookup popup must dismiss before the key path');
+      expect(
+        popupDismissed,
+        isTrue,
+        reason: 'the eval-lookup popup must dismiss before the key path',
+      );
       // Let onAllPopupsDismissed return Flutter focus to the reading content
       // before the key path, so Enter enters the cursor (not a chrome button).
       await tester.pump(const Duration(milliseconds: 500));
@@ -316,14 +372,20 @@ void main() {
         }
       }
       debugPrint('[CARET] active after Flutter Enter=$activeAfterEnter');
-      expect(activeAfterEnter, isTrue,
-          reason: 'Flutter Enter must enter the cursor via _handleKeyEvent');
+      expect(
+        activeAfterEnter,
+        isTrue,
+        reason: 'Flutter Enter must enter the cursor via _handleKeyEvent',
+      );
 
       // Confirm the cursor is active right before the leaving Escape, so the
       // poll below tests a real active→inactive transition rather than passing
       // trivially on an already-inactive cursor.
-      expect((await eval('window.fushiCaret.isActive()')) == true, isTrue,
-          reason: 'cursor must be active before the leaving Escape');
+      expect(
+        (await eval('window.fushiCaret.isActive()')) == true,
+        isTrue,
+        reason: 'cursor must be active before the leaving Escape',
+      );
       // Escape leaves the cursor. The earlier eval-lookup can leave a dictionary
       // result showing; the correct B/Esc order is "Escape closes the popup
       // first, then a further Escape leaves the cursor" (see _caretDismissOrExit:
@@ -340,13 +402,17 @@ void main() {
           }
         }
       }
-      expect(inactiveAfterEscape, isTrue,
-          reason: 'Escape must leave the cursor');
+      expect(
+        inactiveAfterEscape,
+        isTrue,
+        reason: 'Escape must leave the cursor',
+      );
 
       await takeScreenshot(binding, 'caret_keypath_verified');
 
-      final NavigatorState nav =
-          Navigator.of(tester.element(find.byType(Scaffold).first));
+      final NavigatorState nav = Navigator.of(
+        tester.element(find.byType(Scaffold).first),
+      );
       nav.pop();
       await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
@@ -367,8 +433,11 @@ Future<String> _seedTestBook(WidgetTester tester) async {
   for (int i = 0; i < 120 && !appModel.isInitialised; i++) {
     await tester.pump(const Duration(milliseconds: 500));
   }
-  expect(appModel.isInitialised, isTrue,
-      reason: 'AppModel must be initialised before importing a book');
+  expect(
+    appModel.isInitialised,
+    isTrue,
+    reason: 'AppModel must be initialised before importing a book',
+  );
 
   final Uint8List bytes = EpubGenerator().generate();
   final String bookKey = await EpubImporter.import(

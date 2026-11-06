@@ -51,3 +51,19 @@ Future<String> resolveInterconnectDeviceName(
   }
   return kGenericInterconnectDeviceName;
 }
+
+/// 已配对对端自报名字的人读部分：去掉 [resolveInterconnectDeviceName] 加的品牌前缀（`Fushi · iPhone` → `iPhone`；
+/// 改名前的 `Hibiki · ` 同样去掉）。只剩品牌词时原样返回。
+String interconnectPeerDisplayName(String advertised) {
+  final String v = advertised.trim();
+  for (final String brand in <String>[
+    kGenericInterconnectDeviceName,
+    'Hibiki',
+  ]) {
+    final String prefix = '$brand · ';
+    if (v.startsWith(prefix) && v.length > prefix.length) {
+      return v.substring(prefix.length).trim();
+    }
+  }
+  return v;
+}

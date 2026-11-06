@@ -264,6 +264,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
     AnkiMobileBackgroundTaskHandler? endMediaImportBackgroundTask,
     AnkiMobileInfoReturnCoordinator? infoReturnCoordinator,
     AnkiMobileMinedLedger? minedLedger,
+    super.settingsStore,
   }) : _openUrl = openUrl ?? _openExternalUrl,
        _minedLedger = minedLedger ?? AnkiMobileMinedLedger.instance,
        _infoReturnCoordinator =
@@ -565,17 +566,18 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         return MineOutcome.failure(
           'All fields are empty — refusing to create a blank card. '
           'Check your note type field mappings.',
+          errorCode: AnkiErrorCode.allFieldsEmpty,
         );
       }
 
       final tags = buildNoteTags(
-        settings.tags,
+        settings.noteTags,
         source: context.source,
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,
+        nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
         titleTag: context.bookTitleTag,
         collectionTag: context.collectionTag,
-        charPositionTag: context.charPositionTag,
       );
       // `x-success` 是 AnkiMobile「卡已经加进去了」的权威信号（手册：use to
       // automatically return to another app **after the note is added**），带回的
@@ -691,10 +693,13 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       pitchCategories: payload.pitchCategories,
       phoneticTranscriptions: payload.phoneticTranscriptions,
       popupSelectionText: payload.popupSelectionText,
+      popupSelectionHtml: payload.popupSelectionHtml,
       glossarySelectionHighlighted: payload.glossarySelectionHighlighted,
       audio: audio.fieldValue,
       selectedDictionary: payload.selectedDictionary,
       dictionaryMedia: payload.dictionaryMedia,
+      // 「高级制卡」的手改字段要跟到渲染那一步（buildMinedFields 读它）。
+      overrides: payload.overrides,
     );
 
     return RenderedMinedFields(

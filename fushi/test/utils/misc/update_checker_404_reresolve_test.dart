@@ -43,121 +43,132 @@ void main() {
         isFalse,
       );
       expect(
-        isStaleAssetDownloadFailure(
-          const UpdateDownloadCancelledException(),
-        ),
+        isStaleAssetDownloadFailure(const UpdateDownloadCancelledException()),
         isFalse,
       );
     });
   });
 
   group('downloadAssetWithStaleRetry', () {
-    test('404 on stale url → re-resolves manifest → retries new url once',
-        () async {
-      const String oldUrl =
-          'https://github.com/o/r/releases/download/debug-rolling/hibiki-0.1-debug.6421-a.apk';
-      const String newUrl =
-          'https://github.com/o/r/releases/download/debug-rolling/hibiki-0.1-debug.6425-b.apk';
-      final File expected = File('${Directory.systemTemp.path}/ok.apk');
+    test(
+      '404 on stale url → re-resolves manifest → retries new url once',
+      () async {
+        const String oldUrl =
+            'https://github.com/o/r/releases/download/debug-rolling/hibiki-0.1-debug.6421-a.apk';
+        const String newUrl =
+            'https://github.com/o/r/releases/download/debug-rolling/hibiki-0.1-debug.6425-b.apk';
+        final File expected = File('${Directory.systemTemp.path}/ok.apk');
 
-      final List<String> downloadedUrls = <String>[];
-      var reResolveCalls = 0;
+        final List<String> downloadedUrls = <String>[];
+        var reResolveCalls = 0;
 
-      final File result = await UpdateChecker.downloadAssetWithStaleRetry(
-        asset: assetFor(oldUrl),
-        download: (UpdateAsset target) async {
-          downloadedUrls.add(target.url);
-          if (target.url == oldUrl) {
-            // Simulate the pruned asset: server returns 404.
-            throw const HttpException('download failed (404): $oldUrl');
-          }
-          return expected;
-        },
-        reResolveAsset: () async {
-          reResolveCalls++;
-          return assetFor(newUrl);
-        },
-      );
-
-      expect(result.path, expected.path);
-      // Old url attempted, then exactly the new url — one retry, no loop.
-      expect(downloadedUrls, <String>[oldUrl, newUrl]);
-      expect(reResolveCalls, 1, reason: 're-resolve must happen exactly once');
-    });
-
-    test('404 then re-resolve still 404 → bubbles the original error',
-        () async {
-      const String oldUrl = 'https://x/old.apk';
-      const String newUrl = 'https://x/new.apk';
-
-      final List<String> downloadedUrls = <String>[];
-      var reResolveCalls = 0;
-
-      await expectLater(
-        UpdateChecker.downloadAssetWithStaleRetry(
+        final File result = await UpdateChecker.downloadAssetWithStaleRetry(
           asset: assetFor(oldUrl),
           download: (UpdateAsset target) async {
             downloadedUrls.add(target.url);
-            throw HttpException('download failed (404): ${target.url}');
+            if (target.url == oldUrl) {
+              // Simulate the pruned asset: server returns 404.
+              throw const HttpException('download failed (404): $oldUrl');
+            }
+            return expected;
           },
           reResolveAsset: () async {
             reResolveCalls++;
             return assetFor(newUrl);
           },
-        ),
-        throwsA(isA<HttpException>()),
-      );
+        );
 
-      // Both urls attempted (retry happened) but re-resolve only once.
-      expect(downloadedUrls, <String>[oldUrl, newUrl]);
-      expect(reResolveCalls, 1);
-    });
+        expect(result.path, expected.path);
+        // Old url attempted, then exactly the new url — one retry, no loop.
+        expect(downloadedUrls, <String>[oldUrl, newUrl]);
+        expect(
+          reResolveCalls,
+          1,
+          reason: 're-resolve must happen exactly once',
+        );
+      },
+    );
 
-    test('re-resolve returns same url → no retry, original error bubbles',
-        () async {
-      const String url = 'https://x/same.apk';
-      final List<String> downloadedUrls = <String>[];
-      var reResolveCalls = 0;
+    test(
+      '404 then re-resolve still 404 → bubbles the original error',
+      () async {
+        const String oldUrl = 'https://x/old.apk';
+        const String newUrl = 'https://x/new.apk';
 
-      await expectLater(
-        UpdateChecker.downloadAssetWithStaleRetry(
-          asset: assetFor(url),
-          download: (UpdateAsset target) async {
-            downloadedUrls.add(target.url);
-            throw HttpException('download failed (404): ${target.url}');
-          },
-          reResolveAsset: () async {
-            reResolveCalls++;
-            return assetFor(url); // Same url — nothing new to retry.
-          },
-        ),
-        throwsA(isA<HttpException>()),
-      );
+        final List<String> downloadedUrls = <String>[];
+        var reResolveCalls = 0;
 
-      expect(downloadedUrls, <String>[url],
-          reason: 'no retry on unchanged url');
-      expect(reResolveCalls, 1);
-    });
+        await expectLater(
+          UpdateChecker.downloadAssetWithStaleRetry(
+            asset: assetFor(oldUrl),
+            download: (UpdateAsset target) async {
+              downloadedUrls.add(target.url);
+              throw HttpException('download failed (404): ${target.url}');
+            },
+            reResolveAsset: () async {
+              reResolveCalls++;
+              return assetFor(newUrl);
+            },
+          ),
+          throwsA(isA<HttpException>()),
+        );
 
-    test('re-resolve returns null → no retry, original error bubbles',
-        () async {
-      const String url = 'https://x/gone.apk';
-      final List<String> downloadedUrls = <String>[];
+        // Both urls attempted (retry happened) but re-resolve only once.
+        expect(downloadedUrls, <String>[oldUrl, newUrl]);
+        expect(reResolveCalls, 1);
+      },
+    );
 
-      await expectLater(
-        UpdateChecker.downloadAssetWithStaleRetry(
-          asset: assetFor(url),
-          download: (UpdateAsset target) async {
-            downloadedUrls.add(target.url);
-            throw HttpException('download failed (404): ${target.url}');
-          },
-          reResolveAsset: () async => null,
-        ),
-        throwsA(isA<HttpException>()),
-      );
+    test(
+      're-resolve returns same url → no retry, original error bubbles',
+      () async {
+        const String url = 'https://x/same.apk';
+        final List<String> downloadedUrls = <String>[];
+        var reResolveCalls = 0;
 
-      expect(downloadedUrls, <String>[url]);
-    });
+        await expectLater(
+          UpdateChecker.downloadAssetWithStaleRetry(
+            asset: assetFor(url),
+            download: (UpdateAsset target) async {
+              downloadedUrls.add(target.url);
+              throw HttpException('download failed (404): ${target.url}');
+            },
+            reResolveAsset: () async {
+              reResolveCalls++;
+              return assetFor(url); // Same url — nothing new to retry.
+            },
+          ),
+          throwsA(isA<HttpException>()),
+        );
+
+        expect(downloadedUrls, <String>[
+          url,
+        ], reason: 'no retry on unchanged url');
+        expect(reResolveCalls, 1);
+      },
+    );
+
+    test(
+      're-resolve returns null → no retry, original error bubbles',
+      () async {
+        const String url = 'https://x/gone.apk';
+        final List<String> downloadedUrls = <String>[];
+
+        await expectLater(
+          UpdateChecker.downloadAssetWithStaleRetry(
+            asset: assetFor(url),
+            download: (UpdateAsset target) async {
+              downloadedUrls.add(target.url);
+              throw HttpException('download failed (404): ${target.url}');
+            },
+            reResolveAsset: () async => null,
+          ),
+          throwsA(isA<HttpException>()),
+        );
+
+        expect(downloadedUrls, <String>[url]);
+      },
+    );
 
     test('non-404 failure bubbles without re-resolve', () async {
       const String url = 'https://x/net.apk';

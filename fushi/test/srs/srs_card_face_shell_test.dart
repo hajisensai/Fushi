@@ -198,6 +198,53 @@ void main() {
       expect(shellReloads, 1, reason: '连续第二次失败不再重载');
       expect(calls, 2);
     });
+
+    test('BUG-3579：调用没执行（返回 null）不算已下发，下次整份重发', () async {
+      final List<Object?> results = <Object?>[null, true];
+      final List<String> sent = <String>[];
+      final SrsCardFaceSync s = SrsCardFaceSync(
+        evaluate: (String source) async {
+          sent.add(source);
+          return results.removeAt(0);
+        },
+        reloadShell: () => shellReloads++,
+      );
+      s.shellLoaded();
+      s.update(doc());
+      await Future<void>.delayed(Duration.zero);
+      s.update(doc());
+      await Future<void>.delayed(Duration.zero);
+      expect(sent, hasLength(2), reason: '同一份内容在第一次没上屏后重发');
+      expect(sent.last, contains('__fushiSrsSetCard'));
+      expect(sent.last, contains('__fushiSrsSetTheme'));
+    });
+
+    test('BUG-3579：某一步在页内抛错，后面的换卡照常执行，错误文本带回宿主', () async {
+      final String code =
+          'globalThis.window = globalThis;'
+          'window.__fushiSrsSetCard = function(){};'
+          'var ran = 0;'
+          'var r = ${srsCardFaceCallsScript(<String>['throw new Error("boom");', 'ran++;'])};'
+          'console.log(JSON.stringify({r: r, ran: ran}));';
+      final Directory dir = Directory.systemTemp.createTempSync('srs-calls-');
+      try {
+        final File script = File('${dir.path}/calls.js')
+          ..writeAsStringSync(code);
+        final ProcessResult result = await Process.run(
+          'node',
+          <String>[script.path],
+          runInShell: Platform.isWindows,
+          stdoutEncoding: utf8,
+        );
+        expect(result.exitCode, 0, reason: '${result.stderr}');
+        final Map<String, dynamic> out =
+            jsonDecode('${result.stdout}'.trim()) as Map<String, dynamic>;
+        expect(out['ran'], 1);
+        expect(out['r'], contains('boom'));
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
+    });
   });
 
   group('外壳 HTML / 主题样式', () {
@@ -212,6 +259,8 @@ void main() {
         ),
       );
       expect(shell, contains('id="fushi-card-root"'));
+      // 卡片内容的直接父节点是 Anki reviewer 的 #qa（导入模板按它写脚本）。
+      expect(shell, contains('<div id="qa"></div></div></body>'));
       expect(shell, contains('class="card nightMode night_mode"'));
       expect(shell, contains(kSrsPlaySoundHandler));
       expect(shell, contains('__fushiSrsSetCard'));
@@ -238,12 +287,14 @@ void main() {
       expect(identical(srsExtractCardStyles(plain).body, plain), isTrue);
     });
 
-    test('卡面内容做媒体改写与 lang 包裹', () {
+    test('卡面内容做媒体改写；lang 挂到 #qa 上、不包裹正文（Anki DOM 契约）', () {
       final SrsCardFaceDocument d = doc(
         body: '<img src="a.png">[sound:b.mp3]',
         css: '.card{background:url(bg.jpg)}',
       );
-      expect(d.bodyHtml, startsWith('<div lang="ja">'));
+      expect(d.bodyHtml, startsWith('<img '));
+      expect(d.lang, 'ja');
+      expect(d.fullCardScript, contains(',"ja");'));
       expect(d.bodyHtml, contains('src="${prefix}a.png"'));
       expect(d.bodyHtml, contains('data-sound="b.mp3"'));
       expect(d.cardCss, contains('url("${prefix}bg.jpg")'));
@@ -584,7 +635,7 @@ $body
       }
     }
 
-    test('来源链接交给宿主；其它链接只拦导航；页内锚点放行', () async {
+    test('来源链接交给宿主；外链拦下导航后交宿主用系统浏览器打开（#16）；页内锚点放行', () async {
       await runJs(
         harness(r'''
 const p = el('p', {}, body);
@@ -593,7 +644,7 @@ const span = el('span', {}, src);
 assert.equal(fire('click', {target: span}), true);
 assert.deepEqual(calls, [['onSrsSourceLink', 'fushi://source?v=1&kind=book']]);
 assert.equal(fire('click', {target: el('a', {href: 'https://example.com/'}, p)}), true);
-assert.equal(calls.length, 1, '其它链接不交给宿主');
+assert.deepEqual(calls[1], ['onSrsCardLink', {kind: 'external', href: 'https://example.com/'}]);
 assert.equal(fire('click', {target: el('a', {href: '#top'}, p)}), false);
 assert.equal(fire('click', {target: p}), false);
 '''),

@@ -97,9 +97,11 @@ int? _linuxTotalMemoryMb() {
 int? _windowsTotalMemoryMb() {
   // MEMORYSTATUSEX：dwLength(4) dwMemoryLoad(4) ullTotalPhys(8) ...；共 64 字节。
   final DynamicLibrary k32 = DynamicLibrary.open('kernel32.dll');
-  final int Function(Pointer<Uint8>) globalMemoryStatusEx = k32.lookupFunction<
-      Int32 Function(Pointer<Uint8>),
-      int Function(Pointer<Uint8>)>('GlobalMemoryStatusEx');
+  final int Function(Pointer<Uint8>) globalMemoryStatusEx = k32
+      .lookupFunction<
+        Int32 Function(Pointer<Uint8>),
+        int Function(Pointer<Uint8>)
+      >('GlobalMemoryStatusEx');
   final Pointer<Uint8> buf = calloc<Uint8>(64);
   try {
     buf.cast<Uint32>().value = 64; // dwLength
@@ -115,12 +117,29 @@ int? _windowsTotalMemoryMb() {
 int? _sysctlTotalMemoryMb() {
   final DynamicLibrary libc = DynamicLibrary.process();
   final int Function(
-          Pointer<Utf8>, Pointer<Uint64>, Pointer<Uint64>, Pointer<Void>, int)
-      sysctlbyname = libc.lookupFunction<
-          Int32 Function(Pointer<Utf8>, Pointer<Uint64>, Pointer<Uint64>,
-              Pointer<Void>, IntPtr),
-          int Function(Pointer<Utf8>, Pointer<Uint64>, Pointer<Uint64>,
-              Pointer<Void>, int)>('sysctlbyname');
+    Pointer<Utf8>,
+    Pointer<Uint64>,
+    Pointer<Uint64>,
+    Pointer<Void>,
+    int,
+  )
+  sysctlbyname = libc
+      .lookupFunction<
+        Int32 Function(
+          Pointer<Utf8>,
+          Pointer<Uint64>,
+          Pointer<Uint64>,
+          Pointer<Void>,
+          IntPtr,
+        ),
+        int Function(
+          Pointer<Utf8>,
+          Pointer<Uint64>,
+          Pointer<Uint64>,
+          Pointer<Void>,
+          int,
+        )
+      >('sysctlbyname');
   final Pointer<Utf8> name = 'hw.memsize'.toNativeUtf8();
   final Pointer<Uint64> out = calloc<Uint64>();
   final Pointer<Uint64> size = calloc<Uint64>()..value = 8;

@@ -54,9 +54,10 @@ class _FakeHttpClient implements HttpClient {
   void close({bool force = false}) {}
 
   @override
-  noSuchMethod(Invocation invocation) =>
-      throw UnimplementedError('unexpected HttpClient method: '
-          '${invocation.memberName}');
+  noSuchMethod(Invocation invocation) => throw UnimplementedError(
+    'unexpected HttpClient method: '
+    '${invocation.memberName}',
+  );
 }
 
 class _FakeHttpClientRequest implements HttpClientRequest {
@@ -68,9 +69,10 @@ class _FakeHttpClientRequest implements HttpClientRequest {
   Future<HttpClientResponse> close() async => _response;
 
   @override
-  noSuchMethod(Invocation invocation) =>
-      throw UnimplementedError('unexpected HttpClientRequest method: '
-          '${invocation.memberName}');
+  noSuchMethod(Invocation invocation) => throw UnimplementedError(
+    'unexpected HttpClientRequest method: '
+    '${invocation.memberName}',
+  );
 }
 
 class _FakeHttpClientResponse extends Stream<List<int>>
@@ -95,18 +97,18 @@ class _FakeHttpClientResponse extends Stream<List<int>>
     Function? onError,
     void Function()? onDone,
     bool? cancelOnError,
-  }) =>
-      Stream<List<int>>.fromIterable(<List<int>>[body]).listen(
-        onData,
-        onError: onError,
-        onDone: onDone,
-        cancelOnError: cancelOnError,
-      );
+  }) => Stream<List<int>>.fromIterable(<List<int>>[body]).listen(
+    onData,
+    onError: onError,
+    onDone: onDone,
+    cancelOnError: cancelOnError,
+  );
 
   @override
-  noSuchMethod(Invocation invocation) =>
-      throw UnimplementedError('unexpected HttpClientResponse method: '
-          '${invocation.memberName}');
+  noSuchMethod(Invocation invocation) => throw UnimplementedError(
+    'unexpected HttpClientResponse method: '
+    '${invocation.memberName}',
+  );
 }
 
 class _FakeHttpHeaders implements HttpHeaders {
@@ -118,9 +120,10 @@ class _FakeHttpHeaders implements HttpHeaders {
   ContentType? get contentType => _contentType;
 
   @override
-  noSuchMethod(Invocation invocation) =>
-      throw UnimplementedError('unexpected HttpHeaders method: '
-          '${invocation.memberName}');
+  noSuchMethod(Invocation invocation) => throw UnimplementedError(
+    'unexpected HttpHeaders method: '
+    '${invocation.memberName}',
+  );
 }
 
 // ── AnkiConnect fake service (records storeMediaFile / addNote) ───────────────
@@ -182,22 +185,18 @@ class _ConfiguredAnkiRepository extends AnkiRepository {
 }
 
 AnkiSettings _settings() => AnkiSettings(
-      selectedDeckId: 1,
-      selectedNoteTypeId: 2,
-      availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
-      availableNoteTypes: const <AnkiNoteType>[
-        AnkiNoteType(
-          id: 2,
-          name: 'Fushi',
-          fields: <String>['Expression', 'Audio'],
-        ),
-      ],
-      fieldMappings: const <String, String>{
-        'Expression': '{expression}',
-        'Audio': '{audio}',
-      },
-      allowDupes: true,
-    );
+  selectedDeckId: 1,
+  selectedNoteTypeId: 2,
+  availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
+  availableNoteTypes: const <AnkiNoteType>[
+    AnkiNoteType(id: 2, name: 'Fushi', fields: <String>['Expression', 'Audio']),
+  ],
+  fieldMappings: const <String, String>{
+    'Expression': '{expression}',
+    'Audio': '{audio}',
+  },
+  allowDupes: true,
+);
 
 /// Payload whose `audio` field is a remote URL, so the repo takes the
 /// remoteUrl branch of `_storeRemoteAudio` / `_addRemoteAudio`.
@@ -210,41 +209,48 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('AnkiConnect: remote audio failure is surfaced, never embedded', () {
-    test('non-200 → success card + audioWarning with HTTP code & URL, no media',
-        () async {
-      await HttpOverrides.runZoned(
-        () async {
-          final service = _RecordingAnkiConnectService();
-          final repo = _ConfiguredAnkiConnectRepository(
-            service: service,
-            settings: _settings(),
-          );
+    test(
+      'non-200 → success card + audioWarning with HTTP code & URL, no media',
+      () async {
+        await HttpOverrides.runZoned(
+          () async {
+            final service = _RecordingAnkiConnectService();
+            final repo = _ConfiguredAnkiConnectRepository(
+              service: service,
+              settings: _settings(),
+            );
 
-          final outcome = await repo.mineEntry(
-            rawPayloadJson: _payloadWithRemoteAudio,
-            context: const AnkiMiningContext(sentence: 's'),
-          );
+            final outcome = await repo.mineEntry(
+              rawPayloadJson: _payloadWithRemoteAudio,
+              context: const AnkiMiningContext(sentence: 's'),
+            );
 
-          // Card still created.
-          expect(outcome.result, MineResult.success);
-          // Failure is visible: carries HTTP code + URL.
-          expect(outcome.audioWarning, isNotNull);
-          expect(outcome.audioWarning, contains('404'));
-          expect(outcome.audioWarning, contains('https://dict.example/a.mp3'));
-          // HBK-AUDIT-019: the error body was NOT written as media.
-          expect(service.storedFilenames, isEmpty);
-          // The Audio field rendered to nothing (no [sound:]).
-          expect(service.lastAddedFields?['Audio'] ?? '',
-              isNot(contains('[sound:')));
-        },
-        createHttpClient: (_) => _FakeHttpClient(
-          statusCode: 404,
-          body: const <int>[60, 104, 116, 109, 108, 62], // "<html>"
-          contentType: ContentType.html,
-          throwOnConnect: null,
-        ),
-      );
-    });
+            // Card still created.
+            expect(outcome.result, MineResult.success);
+            // Failure is visible: carries HTTP code + URL.
+            expect(outcome.audioWarning, isNotNull);
+            expect(outcome.audioWarning, contains('404'));
+            expect(
+              outcome.audioWarning,
+              contains('https://dict.example/a.mp3'),
+            );
+            // HBK-AUDIT-019: the error body was NOT written as media.
+            expect(service.storedFilenames, isEmpty);
+            // The Audio field rendered to nothing (no [sound:]).
+            expect(
+              service.lastAddedFields?['Audio'] ?? '',
+              isNot(contains('[sound:')),
+            );
+          },
+          createHttpClient: (_) => _FakeHttpClient(
+            statusCode: 404,
+            body: const <int>[60, 104, 116, 109, 108, 62], // "<html>"
+            contentType: ContentType.html,
+            throwOnConnect: null,
+          ),
+        );
+      },
+    );
 
     test('thrown connection error → success card + audioWarning', () async {
       await HttpOverrides.runZoned(
@@ -325,52 +331,57 @@ void main() {
     void mockDroidChannel({required Object? addNoteReturn}) {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(_droidChannel, (MethodCall call) async {
-        switch (call.method) {
-          case 'checkForDuplicates':
-            return false;
-          case 'addNote':
-            return addNoteReturn;
-          case 'addFileToMedia':
-            // If reached on the non-200 path, the test that asserts no media
-            // store would still pass (we assert via the warning + field), but
-            // returning a filename keeps the success path realistic.
-            final args = Map<String, dynamic>.from(call.arguments as Map);
-            return args['preferredName'] ?? 'stored.mp3';
-          default:
-            return null;
-        }
-      });
+            switch (call.method) {
+              case 'checkForDuplicates':
+                return false;
+              case 'addNote':
+                return addNoteReturn;
+              case 'addFileToMedia':
+                // If reached on the non-200 path, the test that asserts no media
+                // store would still pass (we assert via the warning + field), but
+                // returning a filename keeps the success path realistic.
+                final args = Map<String, dynamic>.from(call.arguments as Map);
+                return args['preferredName'] ?? 'stored.mp3';
+              default:
+                return null;
+            }
+          });
       addTearDown(() {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(_droidChannel, null);
       });
     }
 
-    test('non-200 → success card + audioWarning with HTTP code & URL',
-        () async {
-      await HttpOverrides.runZoned(
-        () async {
-          mockDroidChannel(addNoteReturn: 1654000000123);
-          final repo = _ConfiguredAnkiRepository(_settings());
+    test(
+      'non-200 → success card + audioWarning with HTTP code & URL',
+      () async {
+        await HttpOverrides.runZoned(
+          () async {
+            mockDroidChannel(addNoteReturn: 1654000000123);
+            final repo = _ConfiguredAnkiRepository(_settings());
 
-          final outcome = await repo.mineEntry(
-            rawPayloadJson: _payloadWithRemoteAudio,
-            context: const AnkiMiningContext(sentence: 's'),
-          );
+            final outcome = await repo.mineEntry(
+              rawPayloadJson: _payloadWithRemoteAudio,
+              context: const AnkiMiningContext(sentence: 's'),
+            );
 
-          expect(outcome.result, MineResult.success);
-          expect(outcome.audioWarning, isNotNull);
-          expect(outcome.audioWarning, contains('500'));
-          expect(outcome.audioWarning, contains('https://dict.example/a.mp3'));
-        },
-        createHttpClient: (_) => _FakeHttpClient(
-          statusCode: 500,
-          body: const <int>[60, 33], // "<!"
-          contentType: ContentType.html,
-          throwOnConnect: null,
-        ),
-      );
-    });
+            expect(outcome.result, MineResult.success);
+            expect(outcome.audioWarning, isNotNull);
+            expect(outcome.audioWarning, contains('500'));
+            expect(
+              outcome.audioWarning,
+              contains('https://dict.example/a.mp3'),
+            );
+          },
+          createHttpClient: (_) => _FakeHttpClient(
+            statusCode: 500,
+            body: const <int>[60, 33], // "<!"
+            contentType: ContentType.html,
+            throwOnConnect: null,
+          ),
+        );
+      },
+    );
 
     test('no audio in payload → audioWarning null', () async {
       mockDroidChannel(addNoteReturn: 1654000000123);

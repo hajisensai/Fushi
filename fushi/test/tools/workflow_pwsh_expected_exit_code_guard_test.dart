@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：PowerShell 步骤里**有意期待非零退出码**的原生命令，步骤末尾必须显式 `exit 0`。
 ///

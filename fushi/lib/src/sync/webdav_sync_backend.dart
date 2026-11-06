@@ -104,8 +104,11 @@ class WebDavSyncBackend extends SyncBackend
         await _ops!.movePath(legacyPath, path);
         return path;
       },
-      onRenameError: (Object e, StackTrace st) => ErrorLogService.instance
-          .log('WebDavSyncBackend.migrateLegacyRoot', e, st),
+      onRenameError: (Object e, StackTrace st) => ErrorLogService.instance.log(
+        'WebDavSyncBackend.migrateLegacyRoot',
+        e,
+        st,
+      ),
     );
     if (existing != null) {
       rootFolderIdCache = existing;
@@ -138,8 +141,10 @@ class WebDavSyncBackend extends SyncBackend
     required String? fileId,
     required TtuProgress progress,
   }) async {
-    final fileName =
-        progressFileName(progress.lastBookmarkModified, progress.progress);
+    final fileName = progressFileName(
+      progress.lastBookmarkModified,
+      progress.progress,
+    );
     await _ops!.uploadJson(folderId, fileName, progress.toJson());
     // Upload-then-delete: remove the old file only after the new one is safely
     // uploaded, so a failed upload never destroys the only copy (HBK-AUDIT-048).
@@ -153,8 +158,11 @@ class WebDavSyncBackend extends SyncBackend
     required List<TtuStatistics> stats,
   }) async {
     final fileName = statisticsFileName(stats);
-    await _ops!
-        .uploadJson(folderId, fileName, stats.map((s) => s.toJson()).toList());
+    await _ops!.uploadJson(
+      folderId,
+      fileName,
+      stats.map((s) => s.toJson()).toList(),
+    );
     // Upload-then-delete (HBK-AUDIT-048).
     if (fileId != null) await _ops!.deleteFile(fileId);
   }
@@ -166,7 +174,9 @@ class WebDavSyncBackend extends SyncBackend
     required TtuAudioBook audioBook,
   }) async {
     final fileName = audioBookFileName(
-        audioBook.lastAudioBookModified, audioBook.playbackPositionSec);
+      audioBook.lastAudioBookModified,
+      audioBook.playbackPositionSec,
+    );
     await _ops!.uploadJson(folderId, fileName, audioBook.toJson());
     // Upload-then-delete (HBK-AUDIT-048).
     if (fileId != null) await _ops!.deleteFile(fileId);
@@ -187,12 +197,16 @@ class WebDavSyncBackend extends SyncBackend
     request.headers.set('Content-Type', WebDavOps.guessContentType(fileName));
     request.headers.set('Content-Length', '$length');
     int bytesUploaded = 0;
-    await request.addStream(file.openRead().map((chunk) {
-      bytesUploaded += chunk.length;
-      onProgress?.call(
-          length > 0 ? bytesUploaded / length : 0, bytesUploaded);
-      return chunk;
-    }));
+    await request.addStream(
+      file.openRead().map((chunk) {
+        bytesUploaded += chunk.length;
+        onProgress?.call(
+          length > 0 ? bytesUploaded / length : 0,
+          bytesUploaded,
+        );
+        return chunk;
+      }),
+    );
     final response = await request.close();
     await response.drain<void>();
     _ops!.checkStatus(response.statusCode, 'PUT $path');
@@ -254,13 +268,15 @@ class WebDavSyncBackend extends SyncBackend
     final entries = await _ops!.propfindChildren(namespaceId);
     return entries
         .where((e) => e.href != namespaceId)
-        .map((e) => AssetEntry(
-              id: e.href,
-              name: _stripTrailingSlash(e.displayName),
-              isFolder: e.isCollection,
-              revision: e.isCollection ? null : e.etag,
-              modifiedAt: e.modifiedAt,
-            ))
+        .map(
+          (e) => AssetEntry(
+            id: e.href,
+            name: _stripTrailingSlash(e.displayName),
+            isFolder: e.isCollection,
+            revision: e.isCollection ? null : e.etag,
+            modifiedAt: e.modifiedAt,
+          ),
+        )
         .toList();
   }
 

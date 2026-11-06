@@ -40,13 +40,7 @@ class StatRingPainter extends CustomPainter {
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;
     // 从 12 点方向（-90°）顺时针。
-    canvas.drawArc(
-      rect,
-      -math.pi / 2,
-      2 * math.pi * clamped,
-      false,
-      arcPaint,
-    );
+    canvas.drawArc(rect, -math.pi / 2, 2 * math.pi * clamped, false, arcPaint);
   }
 
   @override

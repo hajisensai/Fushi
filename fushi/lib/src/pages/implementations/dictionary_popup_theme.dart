@@ -84,9 +84,7 @@ DictionaryPopupTheme resolveDictionaryPopupTheme({
     // 与歌词页同一配方：app 明暗的 Apple 主题 → 深色档（app 已是深色时原样）。
     final ThemeData dark = FushiAppleDarkTier.darkTierOf(
       buildFushiThemeData(
-        scheme: buildColorScheme(
-          einkDark ? Brightness.dark : Brightness.light,
-        ),
+        scheme: buildColorScheme(einkDark ? Brightness.dark : Brightness.light),
         textTheme: textTheme,
         designSystem: designSystem,
         glass: glass,

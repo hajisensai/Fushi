@@ -146,8 +146,11 @@ void main() {
         final int writeAt = schema.indexOf(pair[0]);
         final int pushAt = schema.indexOf(pair[1]);
         expect(writeAt, isNonNegative, reason: '找不到 ${pair[0]}');
-        expect(pushAt, greaterThan(writeAt),
-            reason: '${pair[1]} 必须排在 ${pair[0]} 之后。');
+        expect(
+          pushAt,
+          greaterThan(writeAt),
+          reason: '${pair[1]} 必须排在 ${pair[0]} 之后。',
+        );
       }
     });
   });
@@ -157,23 +160,30 @@ void main() {
 
     setUpAll(() {
       channel = maskComments(
-        File('lib/src/platform/gal_hook_text_overlay_channel.dart')
-            .readAsStringSync(),
+        File(
+          'lib/src/platform/gal_hook_text_overlay_channel.dart',
+        ).readAsStringSync(),
       );
     });
 
     test('clickLookupEnabled 不再是硬编码的 true', () {
-      expect(channel.contains("'clickLookupEnabled': true"), isFalse,
-          reason: 'native 侧一直支持这个开关，缺的就是 Dart 这一层——写死 true 等于'
-              '设置里永远没有它。');
+      expect(
+        channel.contains("'clickLookupEnabled': true"),
+        isFalse,
+        reason:
+            'native 侧一直支持这个开关，缺的就是 Dart 这一层——写死 true 等于'
+            '设置里永远没有它。',
+      );
       expect(channel, contains("'clickLookupEnabled': clickLookupEnabled"));
     });
 
     test('三个新字段随会话下发', () {
       expect(channel, contains("'lookupTrigger': lookupTrigger"));
       expect(channel, contains("'toolbarAutoHide': toolbarAutoHide"));
-      expect(channel,
-          contains("'passThroughBlocksMouse': passThroughBlocksMouse"));
+      expect(
+        channel,
+        contains("'passThroughBlocksMouse': passThroughBlocksMouse"),
+      );
     });
   });
 
@@ -188,15 +198,19 @@ void main() {
 
     test('① hook 台词模式一律不在正文窗里画工具栏（两副长相收敛成一副）', () {
       expect(
-          window, contains('const bool draw_body_toolbar = !hook_text_mode_;'),
-          reason: '此前是 !(hook_text_mode_ && pass_through_)：穿透关时画正文内的'
-              '全窗宽长条，穿透开时才用独立短药丸 —— 同一个功能栏两副长相。');
+        window,
+        contains('const bool draw_body_toolbar = !hook_text_mode_;'),
+        reason:
+            '此前是 !(hook_text_mode_ && pass_through_)：穿透关时画正文内的'
+            '全窗宽长条，穿透开时才用独立短药丸 —— 同一个功能栏两副长相。',
+      );
     });
 
     test('① 正文里的按钮命中一起撤掉（否则是一排看不见却点得中的幽灵按钮）', () {
       expect(
-          cppBody(window, 'std::string FloatingLyricWindow::ControlActionAt'),
-          contains('if (hook_text_mode_ || !hovered_)'));
+        cppBody(window, 'std::string FloatingLyricWindow::ControlActionAt'),
+        contains('if (hook_text_mode_ || !hovered_)'),
+      );
     });
 
     test('① 工具条窗不再以 pass_through_ 为条件', () {
@@ -208,9 +222,13 @@ void main() {
     });
 
     test('② 自动隐藏是真隐藏，不是降 alpha', () {
-      final String body =
-          cppBody(window, 'bool FloatingLyricWindow::ApplyToolbarVisibility');
-      final int branchAt = body.indexOf('ToolbarAutoHideActive() && !toolbar_revealed_');
+      final String body = cppBody(
+        window,
+        'bool FloatingLyricWindow::ApplyToolbarVisibility',
+      );
+      final int branchAt = body.indexOf(
+        'ToolbarAutoHideActive() && !toolbar_revealed_',
+      );
       expect(branchAt, isNonNegative);
       // **必须只在自动隐藏那一支里取 Hide()**：函数上面还有一个「不是 hook 台词
       // 模式 / 不可见」的 early-return，它也调 Hide()。整段 contains 会被那一处顶着
@@ -218,46 +236,74 @@ void main() {
       // 用例的 reason 说的恰恰就是「不许降 alpha」。
       final int branchEnd = body.indexOf('  }', branchAt);
       expect(branchEnd, greaterThan(branchAt));
-      expect(body.substring(branchAt, branchEnd),
-          contains('pass_through_toolbar_.Hide()'),
-          reason: '这个窗口盖在游戏上，留一条低 alpha 的催化带 = 一直偷着游戏那块'
-              '区域，正是用户抱怨的「穿透不彻底」。');
+      expect(
+        body.substring(branchAt, branchEnd),
+        contains('pass_through_toolbar_.Hide()'),
+        reason:
+            '这个窗口盖在游戏上，留一条低 alpha 的催化带 = 一直偷着游戏那块'
+            '区域，正是用户抱怨的「穿透不彻底」。',
+      );
     });
 
     test('② 穿透态一律不自动隐藏（工具条是那时唯一的逃生口）', () {
-      final String body =
-          cppBody(window, 'bool FloatingLyricWindow::ToolbarAutoHideActive');
-      expect(body, contains('toolbar_auto_hide_ && !pass_through_'),
-          reason: '穿透时正文窗不吃点击，工具条是屏幕上唯一还能点的东西 —— '
-              'BUG-951/PR#460 把「永远可点、没有状态可竞争」写成了不变式，'
-              '让一张 120ms 的轮询表有权 SW_HIDE 它就是把它变回可竞争状态。');
+      final String body = cppBody(
+        window,
+        'bool FloatingLyricWindow::ToolbarAutoHideActive',
+      );
+      expect(
+        body,
+        contains('toolbar_auto_hide_ && !pass_through_'),
+        reason:
+            '穿透时正文窗不吃点击，工具条是屏幕上唯一还能点的东西 —— '
+            'BUG-951/PR#460 把「永远可点、没有状态可竞争」写成了不变式，'
+            '让一张 120ms 的轮询表有权 SW_HIDE 它就是把它变回可竞争状态。',
+      );
 
       // 判据必须真的被两个消费点用上，否则改了这个函数也白改。
-      final String apply =
-          cppBody(window, 'bool FloatingLyricWindow::ApplyToolbarVisibility');
+      final String apply = cppBody(
+        window,
+        'bool FloatingLyricWindow::ApplyToolbarVisibility',
+      );
       expect(apply, contains('ToolbarAutoHideActive()'));
-      final String update =
-          cppBody(window, 'void FloatingLyricWindow::UpdateToolbarReveal');
+      final String update = cppBody(
+        window,
+        'void FloatingLyricWindow::UpdateToolbarReveal',
+      );
       expect(update, contains('ToolbarAutoHideActive()'));
     });
 
     test('② Show 失败必须回滚 toolbar_revealed_，否则工具条再也回不来', () {
-      final String body =
-          cppBody(window, 'void FloatingLyricWindow::UpdateToolbarReveal');
-      expect(body, contains('if (!ApplyToolbarVisibility()) {'),
-          reason: '返回值不能丢：false = 期望显示却没能上屏');
+      final String body = cppBody(
+        window,
+        'void FloatingLyricWindow::UpdateToolbarReveal',
+      );
+      expect(
+        body,
+        contains('if (!ApplyToolbarVisibility()) {'),
+        reason: '返回值不能丢：false = 期望显示却没能上屏',
+      );
       final int failAt = body.indexOf('if (!ApplyToolbarVisibility()) {');
-      expect(body.substring(failAt), contains('toolbar_revealed_ = !want;'),
-          reason: '不回滚的话 toolbar_revealed_ 已是 true 而窗口不在屏幕上，'
-              '下一拍 want == toolbar_revealed_ 直接早退 —— 逃生口永久消失');
+      expect(
+        body.substring(failAt),
+        contains('toolbar_revealed_ = !want;'),
+        reason:
+            '不回滚的话 toolbar_revealed_ 已是 true 而窗口不在屏幕上，'
+            '下一拍 want == toolbar_revealed_ 直接早退 —— 逃生口永久消失',
+      );
     });
 
     test('② 揭示区包含工具条矩形，不只是正文窗', () {
       final String body = cppBody(
-          window, 'bool FloatingLyricWindow::CursorInToolbarRevealZone');
-      expect(body, contains('ComputePassThroughToolbarLayout()'),
-          reason: '工具条画在正文窗上沿之上；只圈正文窗的话，鼠标一往工具条方向移'
-              '就被判成「离开」，工具条会在指针到达之前先消失。');
+        window,
+        'bool FloatingLyricWindow::CursorInToolbarRevealZone',
+      );
+      expect(
+        body,
+        contains('ComputePassThroughToolbarLayout()'),
+        reason:
+            '工具条画在正文窗上沿之上；只圈正文窗的话，鼠标一往工具条方向移'
+            '就被判成「离开」，工具条会在指针到达之前先消失。',
+      );
       expect(body, contains('InflateRect'));
     });
 
@@ -265,20 +311,27 @@ void main() {
       expect(window, contains('kToolbarRevealTimerId'));
       final int hideAt = window.indexOf('void FloatingLyricWindow::Hide()');
       expect(hideAt, isNonNegative);
-      expect(window.substring(hideAt, hideAt + 1400),
-          contains('StopToolbarRevealPolling()'),
-          reason: '隐藏后表留着就是后台空转（与悬停轮询同一条纪律）。');
+      expect(
+        window.substring(hideAt, hideAt + 1400),
+        contains('StopToolbarRevealPolling()'),
+        reason: '隐藏后表留着就是后台空转（与悬停轮询同一条纪律）。',
+      );
     });
 
     test('② 切进穿透时先把工具条亮出来（它是唯一的回退入口）', () {
-      final String body =
-          cppBody(window, 'void FloatingLyricWindow::ApplyPassThroughExStyle');
+      final String body = cppBody(
+        window,
+        'void FloatingLyricWindow::ApplyPassThroughExStyle',
+      );
       final int revealAt = body.indexOf('toolbar_revealed_ = true;');
       final int refuseAt = body.indexOf('ApplyToolbarVisibility()');
       expect(revealAt, isNonNegative, reason: '自动隐藏 + 穿透 = 用户可能找不到关掉穿透的按钮。');
       expect(refuseAt, greaterThan(revealAt));
-      expect(body, contains('on_pass_through_(false)'),
-          reason: '工具条上不了屏就必须拒绝开启穿透，而不是把用户困住。');
+      expect(
+        body,
+        contains('on_pass_through_(false)'),
+        reason: '工具条上不了屏就必须拒绝开启穿透，而不是把用户困住。',
+      );
     });
 
     test('③ 左键查词受触发方式门控', () {
@@ -293,12 +346,17 @@ void main() {
       expect(window, contains('case WM_MBUTTONUP:'));
       expect(window, contains('case WM_XBUTTONUP:'));
       final int at = window.indexOf('case WM_MBUTTONUP:');
-      final String body =
-          window.substring(at, window.indexOf('case WM_NCHITTEST:', at));
+      final String body = window.substring(
+        at,
+        window.indexOf('case WM_NCHITTEST:', at),
+      );
       expect(body, contains('lookup_trigger_ == 1'));
       expect(body, contains('lookup_trigger_ == 2'));
-      expect(body, contains('DispatchLookupAt('),
-          reason: '走与左键完全相同的出口，「查到什么、制卡拿到哪句」不因触发键而变。');
+      expect(
+        body,
+        contains('DispatchLookupAt('),
+        reason: '走与左键完全相同的出口，「查到什么、制卡拿到哪句」不因触发键而变。',
+      );
       expect(body, contains('click_lookup_enabled_'), reason: '总开关关掉时任何键都不该查。');
     });
 
@@ -306,7 +364,8 @@ void main() {
       expect(
         window,
         contains(
-            'hook_text_mode_ && pass_through_ && passthrough_blocks_mouse_'),
+          'hook_text_mode_ && pass_through_ && passthrough_blocks_mouse_',
+        ),
         reason: '关掉后行盒内也是真 alpha 0，整窗对游戏彻底透明。',
       );
     });
@@ -323,8 +382,9 @@ void main() {
     late String flutterWindow;
 
     setUpAll(() {
-      flutterWindow =
-          maskComments(runnerFile('flutter_window.cpp').readAsStringSync());
+      flutterWindow = maskComments(
+        runnerFile('flutter_window.cpp').readAsStringSync(),
+      );
     });
 
     test('三个 live setter 都接上了', () {
@@ -335,12 +395,18 @@ void main() {
 
     test('show 载荷读得到四项', () {
       expect(flutterWindow, contains('IntFromValue(args, "lookupTrigger", 0)'));
-      expect(flutterWindow,
-          contains('BoolFromValue(args, "toolbarAutoHide", true)'));
-      expect(flutterWindow,
-          contains('BoolFromValue(args, "passThroughBlocksMouse", true)'));
-      expect(flutterWindow,
-          contains('BoolFromValue(args, "clickLookupEnabled", true)'));
+      expect(
+        flutterWindow,
+        contains('BoolFromValue(args, "toolbarAutoHide", true)'),
+      );
+      expect(
+        flutterWindow,
+        contains('BoolFromValue(args, "passThroughBlocksMouse", true)'),
+      );
+      expect(
+        flutterWindow,
+        contains('BoolFromValue(args, "clickLookupEnabled", true)'),
+      );
     });
   });
 }

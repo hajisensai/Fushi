@@ -44,7 +44,10 @@ Dialogue: 0,0:00:01.00,0:00:05.00,Default,,0,0,0,,そうだね\Nまた明日
 ''';
 
 List<AudioCue> _parse(String bookKey) => AssParser.parseString(
-    content: _kAss, bookKey: bookKey, includeDrawings: true);
+  content: _kAss,
+  bookKey: bookKey,
+  includeDrawings: true,
+);
 
 const double _kFontSize = 40;
 
@@ -73,37 +76,41 @@ Future<void> _pump(
   tester.view.physicalSize = const Size(1280, 720);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      backgroundColor: Colors.black,
-      body: RepaintBoundary(
-        key: _boundary,
-        child: SizedBox(
-          width: 1280,
-          height: 720,
-          child: VideoSubtitleOverlay(
-            controller: c,
-            blurEnabled: blur,
-            subtitleHidden: hide,
-            secondaryBlurEnabled: secondaryBlur,
-            respectAssStyle: respect,
-            textColor: Colors.white,
-            fontSize: _kFontSize,
-            shadowThickness: 2,
-            onCharTap: (String a, int b, Rect r, AudioCue cue) {},
-            onHoverChanged: (_) {},
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        backgroundColor: Colors.black,
+        body: RepaintBoundary(
+          key: _boundary,
+          child: SizedBox(
+            width: 1280,
+            height: 720,
+            child: VideoSubtitleOverlay(
+              controller: c,
+              blurEnabled: blur,
+              subtitleHidden: hide,
+              secondaryBlurEnabled: secondaryBlur,
+              respectAssStyle: respect,
+              textColor: Colors.white,
+              fontSize: _kFontSize,
+              shadowThickness: 2,
+              onCharTap: (String a, int b, Rect r, AudioCue cue) {},
+              onHoverChanged: (_) {},
+            ),
           ),
         ),
       ),
     ),
-  ));
+  );
   await tester.pump(const Duration(milliseconds: 16));
 }
 
 /// 字幕树里所有字形 [Text]（不含任何别的文本）。
 List<Element> _glyphs() => find
     .descendant(
-        of: find.byType(VideoSubtitleOverlay), matching: find.byType(Text))
+      of: find.byType(VideoSubtitleOverlay),
+      matching: find.byType(Text),
+    )
     .evaluate()
     .toList();
 
@@ -160,16 +167,20 @@ Future<int> _crispBrightPixels(WidgetTester tester) async {
 void main() {
   for (final bool respect in <bool>[false, true]) {
     group('respectAssStyle=$respect', () {
-      testWidgets('播放中 + 模糊：每个字形都在遮蔽模糊之下，像素里无清晰亮字',
-          (WidgetTester tester) async {
+      testWidgets('播放中 + 模糊：每个字形都在遮蔽模糊之下，像素里无清晰亮字', (
+        WidgetTester tester,
+      ) async {
         final VideoPlayerController c = _controller();
         addTearDown(c.dispose);
         await _pump(tester, c, respect: respect, blur: true);
 
         final List<Element> glyphs = _glyphs();
         expect(glyphs, isNotEmpty);
-        expect(glyphs.where((Element e) => !_underObscureBlur(e)), isEmpty,
-            reason: '有字形漏在遮蔽模糊之外 = 用户看到的清晰字幕');
+        expect(
+          glyphs.where((Element e) => !_underObscureBlur(e)),
+          isEmpty,
+          reason: '有字形漏在遮蔽模糊之外 = 用户看到的清晰字幕',
+        );
         expect(await _crispBrightPixels(tester), 0);
       });
 
@@ -206,23 +217,33 @@ void main() {
         addTearDown(c.dispose);
         await _pump(tester, c, respect: respect, blur: true);
 
-        final TestGesture mouse =
-            await tester.createGesture(kind: PointerDeviceKind.mouse);
+        final TestGesture mouse = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
         await mouse.addPointer(location: const Offset(1270, 10));
         addTearDown(mouse.removePointer);
         await tester.pump();
-        expect(_glyphs().where((Element e) => !_underObscureBlur(e)), isEmpty,
-            reason: '指针在画面角落：不应显形');
+        expect(
+          _glyphs().where((Element e) => !_underObscureBlur(e)),
+          isEmpty,
+          reason: '指针在画面角落：不应显形',
+        );
 
         await mouse.moveTo(tester.getCenter(find.text('そ').first));
         await tester.pump();
-        expect(_glyphs().where(_underObscureBlur), isEmpty,
-            reason: '悬停显形：该层整层揭开');
+        expect(
+          _glyphs().where(_underObscureBlur),
+          isEmpty,
+          reason: '悬停显形：该层整层揭开',
+        );
 
         await mouse.moveTo(const Offset(1270, 10));
         await tester.pump();
-        expect(_glyphs().where((Element e) => !_underObscureBlur(e)), isEmpty,
-            reason: '移开即复原遮蔽');
+        expect(
+          _glyphs().where((Element e) => !_underObscureBlur(e)),
+          isEmpty,
+          reason: '移开即复原遮蔽',
+        );
       });
 
       testWidgets('副字幕模糊与主字幕对称（主不遮、副遮）', (WidgetTester tester) async {

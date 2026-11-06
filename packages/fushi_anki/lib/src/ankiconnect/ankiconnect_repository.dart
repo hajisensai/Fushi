@@ -4,8 +4,8 @@ import 'dart:io';
 import 'dart:math' show min;
 
 import 'package:collection/collection.dart';
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 
 import '../anki_media_dedup.dart';
 import '../anki_media_naming.dart';
@@ -134,8 +134,8 @@ class _MediaUploadCoordinator {
 /// peer. Files that existed before this attempt are never deletion candidates.
 class _MediaUploadTransaction {
   _MediaUploadTransaction(this.service)
-      : coordinator = _mediaUploadCoordinators[service] ??=
-            _MediaUploadCoordinator(service);
+    : coordinator = _mediaUploadCoordinators[service] ??=
+          _MediaUploadCoordinator(service);
 
   final AnkiConnectService service;
   final _MediaUploadCoordinator coordinator;
@@ -147,15 +147,14 @@ class _MediaUploadTransaction {
   Future<void> upload({
     required String filename,
     required Future<void> Function() write,
-  }) =>
-      _uploads[filename] ??= _upload(filename: filename, write: write);
+  }) => _uploads[filename] ??= _upload(filename: filename, write: write);
 
   Future<void> _upload({
     required String filename,
     required Future<void> Function() write,
   }) async {
-    final bool existedBefore = await (_existenceChecks[filename] ??=
-        service.mediaFileExists(filename));
+    final bool existedBefore = await (_existenceChecks[filename] ??= service
+        .mediaFileExists(filename));
     if (!existedBefore) {
       // Register before the write: a lost storeMediaFile response may still
       // mean Anki committed the file, so the failure path must try to remove it.
@@ -247,8 +246,8 @@ class _DedupPlan {
 }
 
 class AnkiConnectRepository extends BaseAnkiRepository {
-  AnkiConnectRepository({AnkiConnectService? service})
-      : _fixedService = service;
+  AnkiConnectRepository({AnkiConnectService? service, super.settingsStore})
+    : _fixedService = service;
 
   final AnkiConnectService? _fixedService;
   AnkiConnectService? _cachedService;
@@ -440,7 +439,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final AnkiDeck? deck = resolveTargetDeck(settings, payload);
     if (deck == null) return const MineOutcome.notConfigured();
 
-    final noteType = settings.availableNoteTypes.firstWhereOrNull(
+    final noteType =
+        settings.availableNoteTypes.firstWhereOrNull(
           (t) => t.id == settings.selectedNoteTypeId,
         ) ??
         (settings.selectedNoteTypeName != null
@@ -468,18 +468,16 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       // the user's configured tags (de-duped, order preserved) via the shared
       // base helper, so both backends behave identically.
       final tags = buildNoteTags(
-        settings.tags,
+        settings.noteTags,
         source: context.source,
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,
+        nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
         // TODO-681 / BUG-393：调用方按「自动添加书名到标签」开关注入已清洗书名/番名标签
         // （书籍/视频同语义）；关闭或无标题时为 null，buildNoteTags 不追加。
         titleTag: context.bookTitleTag,
         // 合集/系列名标签（同上开关）：视频=播放列表系列名、书籍=所属合集名；不属合集时 null。
         collectionTag: context.collectionTag,
-        // 制卡所在字符数标签（`chars_12345`）：小说阅读器按「自动添加制卡位置到标签」
-        // 开关注入；其它来源与开关关闭时为 null，buildNoteTags 不追加。
-        charPositionTag: context.charPositionTag,
       );
 
       // `fields` only holds entries that rendered to a non-empty value; if it is
@@ -490,14 +488,18 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         return MineOutcome.failure(
           'All fields are empty — refusing to create a blank card. '
           'Check your note type field mappings.',
+          errorCode: AnkiErrorCode.allFieldsEmpty,
         );
       }
       // BUG-1900：字段名必须与**当前**笔记类型求交后再送出。AnkiDroid 后端一直是按
       // `noteType.fields` 的位置取值（`ankidroid/anki_repository.dart` 的 fieldArray），
       // 天然免疫；AnkiConnect 这条路把 map 原样丢给服务端，名字不认识就被静默丢弃。
       final Map<String, String> outgoing = fieldsForNoteType(noteType, fields);
-      final MineOutcome? rejected =
-          preflightNoteFields(noteType, fields, outgoing);
+      final MineOutcome? rejected = preflightNoteFields(
+        noteType,
+        fields,
+        outgoing,
+      );
       if (rejected != null) {
         await mediaTransaction.rollback();
         return rejected;
@@ -788,19 +790,20 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         return MineOutcome.failure(
           'All fields are empty — refusing to clear an existing card. '
           'Check your note type field mappings.',
+          errorCode: AnkiErrorCode.allFieldsEmpty,
         );
       }
 
       // BUG-2606：与 [mineEntry] 同一组标签、同一个 helper——覆盖后的卡不该比新制
       // 的少 `fushi` / 分类 / 书名标签。
       final List<String> tags = buildNoteTags(
-        settings.tags,
+        settings.noteTags,
         source: context.source,
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,
+        nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
         titleTag: context.bookTitleTag,
         collectionTag: context.collectionTag,
-        charPositionTag: context.charPositionTag,
       );
 
       try {
@@ -897,7 +900,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       _duplicateCheckUnreachableUntil = null;
     }
     final settings = await loadSettings();
-    final deck = settings.availableDecks.firstWhereOrNull(
+    final deck =
+        settings.availableDecks.firstWhereOrNull(
           (d) => d.id == settings.selectedDeckId,
         ) ??
         (settings.selectedDeckName != null
@@ -939,8 +943,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           fieldName: noteType.fields.first,
           fieldValue: expression,
           scope: settings.duplicateScope,
-        ))
-            .isNotEmpty;
+        )).isNotEmpty;
       }
       // 拿到应答即证明主机活着，立刻解除冷却（不必等窗口自然到期）。
       _duplicateCheckUnreachableUntil = null;
@@ -971,7 +974,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final settings = await loadSettings();
     if (settings.overwriteScope != AnkiOverwriteScope.all) return null;
     if (expression.isEmpty) return null;
-    final deck = settings.availableDecks.firstWhereOrNull(
+    final deck =
+        settings.availableDecks.firstWhereOrNull(
           (d) => d.id == settings.selectedDeckId,
         ) ??
         (settings.selectedDeckName != null
@@ -1012,7 +1016,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   ) async {
     if (expression.isEmpty) return const <MinedNoteRef>[];
     final settings = await loadSettings();
-    final deck = settings.availableDecks.firstWhereOrNull(
+    final deck =
+        settings.availableDecks.firstWhereOrNull(
           (d) => d.id == settings.selectedDeckId,
         ) ??
         (settings.selectedDeckName != null
@@ -1081,8 +1086,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     if (noteIds.isEmpty) return const <int>{};
     try {
       final service = await _getService();
-      final Map<int, Map<String, String>> infos =
-          await service.notesInfoMany(noteIds.toList()..sort());
+      final Map<int, Map<String, String>> infos = await service.notesInfoMany(
+        noteIds.toList()..sort(),
+      );
       return noteIds.where((int id) => !infos.containsKey(id)).toSet();
     } catch (e, stack) {
       debugPrint('AnkiConnectRepository.findDeletedNotes: $e');
@@ -1105,12 +1111,29 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   // AnkiConnect），而不是「exe 叫 anki.exe」——新版 Anki 的 anki.exe 只是启动器，
   // 真正持有窗口的是 venv 里的 pythonw.exe，按名字找必然落空、整套让渡空转。
   @override
+  bool get canOpenMinedNote => true;
+
+  @override
+  Future<bool> deleteMinedNote(int noteId) async {
+    final AnkiConnectService service = await _getService();
+    // `deleteNotes` 不回「原本在不在」：先问一次，删一张已经不在的 note 报 false，
+    // 界面据此说「卡已经不在了」而不是「已删除」。
+    if (await service.notesInfo(noteId) == null) return false;
+    await service.deleteNotes(<int>[noteId]);
+    return true;
+  }
+
+  @override
+  bool get canDeleteMinedNotes => true;
+
+  @override
   Future<bool> openNoteInAnki(int noteId) async {
     try {
       final service = await _getService();
       final int? ankiPid = ankiConnectHostIsLoopback(service.host)
           ? AnkiDesktopForeground.grantForegroundToAnki(
-              ankiConnectPort: service.port)
+              ankiConnectPort: service.port,
+            )
           : null;
       await service.guiBrowse(noteId);
       await AnkiDesktopForeground.raiseAnkiWindow(ankiPid);
@@ -1147,7 +1170,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     if (expression.isEmpty) return AnkiOpenWordOutcome.failed;
     try {
       final settings = await loadSettings();
-      final deck = settings.availableDecks.firstWhereOrNull(
+      final deck =
+          settings.availableDecks.firstWhereOrNull(
             (d) => d.id == settings.selectedDeckId,
           ) ??
           (settings.selectedDeckName != null
@@ -1174,7 +1198,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       if (browseQuery.isEmpty) return AnkiOpenWordOutcome.noMatch;
       final int? ankiPid = ankiConnectHostIsLoopback(service.host)
           ? AnkiDesktopForeground.grantForegroundToAnki(
-              ankiConnectPort: service.port)
+              ankiConnectPort: service.port,
+            )
           : null;
       // 返回值**一概不读**：命中与否已经由上一步的 `findNotes` 定死，这里只是
       // 「打开」。旧版 AnkiConnect 的 `guiBrowse` 只回 null、新版回 card id 列表，
@@ -1255,6 +1280,14 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   @override
   bool get supportsDeckReposition => true;
 
+  /// 问这台 AnkiConnect 有没有可用的原生 `scheduling.repositionNewCards`。
+  /// `api.describe` 带整份 schema（几百 KB），走长任务预算。
+  @override
+  Future<bool> probeDeckReposition() async {
+    final AnkiConnectService service = await _getLongTaskService();
+    return service.supportsNativeRepositionNewCards();
+  }
+
   @override
   Future<List<AnkiCardInfo>> listNewCards(String deckName) async {
     // 整牌组规模：`cardsInfo` 每张卡都带渲染好的问答 HTML，实测一批 200 张就有
@@ -1268,11 +1301,12 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final List<int> ids = await service.findCards(query);
     if (ids.isEmpty) return const <AnkiCardInfo>[];
     final List<AnkiCardInfo> cards = await service.cardsInfo(ids);
-    // 搜索串已经限定 is:new，这里再按 type 二次校验：查询与写回之间用户可能
-    // 刚学了几张，复习卡的 due 是日期，绝不能当位置写。
+    // 搜索串已经限定 is:new 且排除暂停 / 搁置，这里再按 type + queue 二次校验：
+    // 查询与写回之间用户可能刚学了几张（复习卡的 due 是日期，绝不能当位置写），
+    // 或刚暂停 / 搁置了几张（原生接口对它们回 invalidState，圈进计划就是必败）。
     return <AnkiCardInfo>[
       for (final AnkiCardInfo c in cards)
-        if (c.isNew) c,
+        if (c.isNew && c.queue == 0) c,
     ];
   }
 
@@ -1287,12 +1321,17 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       );
     }
     final AnkiConnectService service = await _getLongTaskService();
-    final List<AnkiConnectBatchResult> results =
-        await service.setCardsDueMany(updates);
+    // 写之前当场再确认一次能力：新版 AnkiConnect（26.10.11.0 起）的旧协议禁止写
+    // `due`，没有原生接口就一张都不写——绝不退回 `setSpecificValueOfCard`。
+    if (!await service.supportsNativeRepositionNewCards()) {
+      throw const AnkiRepositionUnsupportedException();
+    }
+    final List<AnkiConnectBatchResult> results = await service
+        .repositionNewCards(updates);
     final Map<int, String> failures = <int, String>{};
     int written = 0;
     for (int i = 0; i < results.length; i++) {
-      final String? failure = ankiSetSpecificValueFailure(results[i]);
+      final String? failure = results[i].error;
       if (failure != null) {
         failures[updates[i].cardId] = failure;
       } else {
@@ -1394,8 +1433,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         ),
       );
       try {
-        final Uint8List bytes = await _mediaFile(mediaDir, name).readAsBytes();
-        nameToHash[name] = crypto.sha256.convert(bytes).toString();
+        final File file = _mediaFile(mediaDir, name);
+        nameToHash[name] = _readsWhole(sizes[name]!)
+            ? ffcSha256Bytes(await file.readAsBytes())
+            : await ffcSha256File(file.path);
       } on FileSystemException {
         // 消失的文件不进哈希表 → 不进任何组。
       }
@@ -1431,29 +1472,71 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     return out;
   }
 
-  /// 删除前的最后一道闸：把副本与保留份**逐字节**比一遍。
+  /// 删除前的最后一道闸：把副本与保留份**逐字节**比一遍（比较在 Rust 里做）。
   ///
   /// 哈希已经是全文件 sha256，这一步兜的是「扫描完到删除前文件被改动」的时间
   /// 差，以及任何哈希实现被换弱时的兜底。读不到（含 exists 判断后被删走的
   /// TOCTOU）或有一个字节不同就绝不删，也绝不抛异常中止整轮（BUG-1262）。
+  ///
+  /// [scannedSize] 只用来选读法（小文件整读、大文件两路 1 MiB 流式，不把两份
+  /// 视频整读进内存）；真正的长度以此刻的文件为准，长度不同即不同。
   Future<bool> _mediaBytesIdentical(
     Directory mediaDir,
     String a,
-    String b,
-  ) async {
-    final Uint8List ba;
-    final Uint8List bb;
+    String b, {
+    required int scannedSize,
+  }) async {
+    final File fa = _mediaFile(mediaDir, a);
+    final File fb = _mediaFile(mediaDir, b);
     try {
-      ba = await _mediaFile(mediaDir, a).readAsBytes();
-      bb = await _mediaFile(mediaDir, b).readAsBytes();
+      if (_readsWhole(scannedSize)) {
+        return ffcBytesEqual(await fa.readAsBytes(), await fb.readAsBytes());
+      }
+      final RandomAccessFile ra = await fa.open();
+      try {
+        final RandomAccessFile rb = await fb.open();
+        try {
+          if (await ra.length() != await rb.length()) return false;
+          final Uint8List ba = Uint8List(_wholeReadLimit);
+          final Uint8List bb = Uint8List(_wholeReadLimit);
+          while (true) {
+            final int na = await _readFully(ra, ba);
+            final int nb = await _readFully(rb, bb);
+            if (na != nb) return false;
+            if (na == 0) return true;
+            if (!ffcBytesEqual(
+              Uint8List.sublistView(ba, 0, na),
+              Uint8List.sublistView(bb, 0, nb),
+            )) {
+              return false;
+            }
+          }
+        } finally {
+          await rb.close();
+        }
+      } finally {
+        await ra.close();
+      }
     } on FileSystemException {
       return false;
     }
-    if (ba.length != bb.length) return false;
-    for (int i = 0; i < ba.length; i++) {
-      if (ba[i] != bb[i]) return false;
+  }
+
+  /// 媒体去重的读法分界：不超过它的文件整读一次（异步 IO 次数最少，基准见
+  /// benchmark/media_hash_benchmark.dart），更大的按这么大一块流式读。
+  static const int _wholeReadLimit = 1 << 20;
+
+  static bool _readsWhole(int size) => size <= _wholeReadLimit;
+
+  /// 读满 [buffer]（或读到文件尾），返回实际读到的字节数；0 = 已到文件尾。
+  static Future<int> _readFully(RandomAccessFile file, Uint8List buffer) async {
+    int filled = 0;
+    while (filled < buffer.length) {
+      final int n = await file.readInto(buffer, filled);
+      if (n == 0) break;
+      filled += n;
     }
-    return true;
+    return filled;
   }
 
   /// styling 被去重改写后，把 Lapis 客制化指纹跟着对齐。
@@ -1591,14 +1674,21 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       final Map<int, Map<String, String>> fields = await service.notesInfoMany(
         chunk,
       );
+      final List<int> read = <int>[];
       for (final int id in chunk) {
-        final Map<String, String>? noteFields = fields[id];
-        if (noteFields == null) {
+        if (fields.containsKey(id)) {
+          read.add(id);
+        } else {
           unread.add(id);
-          continue;
         }
-        for (final String name in matcher.namesInAll(noteFields.values)) {
-          (index[name] ??= <int>[]).add(id);
+      }
+      // 整批笔记一次原生调用扫完（逐条调用的 FFI 往返在十万字级字段上不划算）。
+      final List<Set<String>> names = matcher.namesInEach(<Iterable<String>>[
+        for (final int id in read) fields[id]!.values,
+      ]);
+      for (int i = 0; i < read.length; i++) {
+        for (final String name in names[i]) {
+          (index[name] ??= <int>[]).add(read[i]);
         }
       }
     }
@@ -1671,8 +1761,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     if (hits.any((int id) => !fields.containsKey(id))) return names.toSet();
     final MediaNameMatcher matcher = MediaNameMatcher(names);
     return <String>{
-      for (final Map<String, String> f in fields.values)
-        ...matcher.namesInAll(f.values),
+      for (final Set<String> hit in matcher.namesInEach(<Iterable<String>>[
+        for (final Map<String, String> f in fields.values) f.values,
+      ]))
+        ...hit,
     };
   }
 
@@ -1729,7 +1821,12 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       }
 
       // 字节级复核：与保留份必须逐字节相同才允许进入删除路径。
-      if (!await _mediaBytesIdentical(mediaDir, c.dupe, c.canonical)) {
+      if (!await _mediaBytesIdentical(
+        mediaDir,
+        c.dupe,
+        c.canonical,
+        scannedSize: sizes[c.dupe] ?? 0,
+      )) {
         onSkipped();
         continue;
       }
@@ -1802,8 +1899,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
 
     if (updates.isEmpty) return <int>{};
-    final List<AnkiConnectBatchResult> results =
-        await service.updateNoteFieldsMany(updates);
+    final List<AnkiConnectBatchResult> results = await service
+        .updateNoteFieldsMany(updates);
     final Set<int> written = <int>{};
     for (int i = 0; i < updates.length; i++) {
       // 写失败的笔记不算「已改写」。副本到底能不能删由随后的复核检索说了算
@@ -2002,9 +2099,11 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           );
     if (references == null) return cancelledBeforeResolving(groups.length);
 
-    for (int start = 0;
-        start < candidates.length;
-        start += kAnkiMediaDedupBatchSize) {
+    for (
+      int start = 0;
+      start < candidates.length;
+      start += kAnkiMediaDedupBatchSize
+    ) {
       // 取消在**批边界**生效：一批要么完整处理、要么完全没动，绝不半截。
       // （旧实现是副本边界；批量化把粒度换成了速度，见
       // [kAnkiMediaDedupBatchSize] 的取舍说明。）
@@ -2104,10 +2203,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           'bytes': plan.deletion.bytes,
         });
       }
-      final List<AnkiConnectBatchResult> deleteResults =
-          await service.deleteMediaFiles(
-        <String>[for (final _DedupPlan p in clean) p.candidate.dupe],
-      );
+      final List<AnkiConnectBatchResult> deleteResults = await service
+          .deleteMediaFiles(<String>[
+            for (final _DedupPlan p in clean) p.candidate.dupe,
+          ]);
       for (int i = 0; i < clean.length; i++) {
         // 批内单条失败只影响它自己：引用已经改指保留份，文件没删掉不会产生
         // 悬空引用，按「跳过」如实计数即可。

@@ -7,10 +7,25 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart'
     as discovery;
-import 'package:fushi/src/pages/implementations/airing_calendar_page.dart';
+import 'package:fushi/src/media/video/airing_calendar_loader.dart';
+import 'package:fushi/src/pages/implementations/discovery/airing_today_shelf.dart';
 import 'package:fushi/src/pages/implementations/discovery/discovery_widgets.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
         FushiFloatingChromeInsetSpacer,
@@ -18,6 +33,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         FushiFloatingChromeOverlay,
         FushiFloatingChromeScope;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 
 /// Aggregated discovery port consumed by the page. Implementations may fan a
 /// request out to TMDB and AniList, but the UI receives one redacted
@@ -27,7 +43,7 @@ abstract interface class VideoDiscoveryController {
   Future<ProviderBatchResult<discovery.VideoDiscoveryPage>> load(
     discovery.VideoDiscoveryRequest request, {
     void Function(ProviderBatchResult<discovery.VideoDiscoveryPage> partial)?
-        onProgress,
+    onProgress,
   });
 
   /// [ExternalProviderFailure.providerId] -> 用户可见来源名。
@@ -48,7 +64,7 @@ class EmptyVideoDiscoveryController implements VideoDiscoveryController {
   Future<ProviderBatchResult<discovery.VideoDiscoveryPage>> load(
     discovery.VideoDiscoveryRequest request, {
     void Function(ProviderBatchResult<discovery.VideoDiscoveryPage> partial)?
-        onProgress,
+    onProgress,
   }) async {
     return ProviderBatchResult<discovery.VideoDiscoveryPage>.success(
       <discovery.VideoDiscoveryPage>[
@@ -62,8 +78,8 @@ class EmptyVideoDiscoveryController implements VideoDiscoveryController {
   }
 }
 
-typedef VideoDiscoveryImageResolver = ImageProvider? Function(
-    discovery.VideoDiscoveryItem item, bool landscape);
+typedef VideoDiscoveryImageResolver =
+    ImageProvider? Function(discovery.VideoDiscoveryItem item, bool landscape);
 
 class VideoDiscoveryPage extends StatefulWidget {
   const VideoDiscoveryPage({
@@ -276,14 +292,15 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     if (_hasActiveSearchOrFilter) {
       final ProviderBatchResult<discovery.VideoDiscoveryPage> result =
           await _safeLoad(
-        _request(page: 1),
-        onProgress: (ProviderBatchResult<discovery.VideoDiscoveryPage> part) {
-          if (!mounted || generation != _generation) return;
-          final _FlattenedDiscoveryBatch flattened = _flatten(part);
-          if (flattened.items.isEmpty) return;
-          setState(() => _works = flattened.items);
-        },
-      );
+            _request(page: 1),
+            onProgress:
+                (ProviderBatchResult<discovery.VideoDiscoveryPage> part) {
+                  if (!mounted || generation != _generation) return;
+                  final _FlattenedDiscoveryBatch flattened = _flatten(part);
+                  if (flattened.items.isEmpty) return;
+                  setState(() => _works = flattened.items);
+                },
+          );
       if (!mounted || generation != _generation) return;
       final _FlattenedDiscoveryBatch flattened = _flatten(result);
       setState(() {
@@ -300,25 +317,25 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
 
     final List<ProviderBatchResult<discovery.VideoDiscoveryPage>> results =
         await Future.wait(
-      <Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>>[
-        _safeLoad(
-          _request(
-            page: 1,
-            feed: discovery.VideoDiscoveryFeed.trending,
-            pageSize: 12,
-          ),
-        ),
-        _safeLoad(
-          _request(
-            page: 1,
-            category: discovery.VideoDiscoveryCategory.anime,
-            feed: discovery.VideoDiscoveryFeed.airing,
-            pageSize: 12,
-          ),
-        ),
-        _safeLoad(_request(page: 1)),
-      ],
-    );
+          <Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>>[
+            _safeLoad(
+              _request(
+                page: 1,
+                feed: discovery.VideoDiscoveryFeed.trending,
+                pageSize: 12,
+              ),
+            ),
+            _safeLoad(
+              _request(
+                page: 1,
+                category: discovery.VideoDiscoveryCategory.anime,
+                feed: discovery.VideoDiscoveryFeed.airing,
+                pageSize: 12,
+              ),
+            ),
+            _safeLoad(_request(page: 1)),
+          ],
+        );
     if (!mounted || generation != _generation) return;
     final _FlattenedDiscoveryBatch popular = _flatten(results[0]);
     final _FlattenedDiscoveryBatch anime = _flatten(results[1]);
@@ -439,7 +456,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   Future<ProviderBatchResult<discovery.VideoDiscoveryPage>> _safeLoad(
     discovery.VideoDiscoveryRequest request, {
     void Function(ProviderBatchResult<discovery.VideoDiscoveryPage> partial)?
-        onProgress,
+    onProgress,
   }) async {
     try {
       return await _controller.load(request, onProgress: onProgress);
@@ -494,46 +511,33 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     // 不在外壳里时 [FushiFloatingChromeOverlay] 退化成原来的竖排。
     final bool floating = FushiFloatingChromeScope.maybeOf(context) != null;
     final Widget body = _buildBody();
-    return DesktopContentLayout(
-      kind: DesktopContentKind.readerShelf,
-      child: FushiFloatingChromeOverlay(
-        chrome: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            if (_headerVisible) _buildHeader(),
-            _buildControls(),
-          ],
+    // 库页材质（2026-10-25 定版）：视频发现的卡片与视频库同为光面海报。
+    return ShelfCoverMaterialScope(
+      material: ShelfCoverMaterial.glossyPoster,
+      child: DesktopContentLayout(
+        kind: DesktopContentKind.readerShelf,
+        child: FushiFloatingChromeOverlay(
+          chrome: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (_headerVisible) _buildHeader(),
+              _buildControls(),
+            ],
+          ),
+          child: floating ? body : DiscoveryScrollTopFade(child: body),
         ),
-        child: floating ? body : DiscoveryScrollTopFade(child: body),
       ),
     );
   }
 
-  /// 页头只在独立页面（非 embedded、非 Cupertino）渲染；不渲染时页头上的入口
-  /// （放送日历）改放进搜索行，否则浏览页里的视频发现就没有日历入口了。
+  /// 页头只在独立页面（非 embedded、非 Cupertino）渲染。放送日历不再是页头 /
+  /// 搜索行上的图标按钮（2026-10-20 用户：「藏太深了」），改成正文里的「今日
+  /// 放送」小模块（[AiringTodayShelf]），三种宽度、embedded 与否都在同一处。
   bool get _headerVisible => !widget.embedded && !isCupertinoPlatform(context);
-
-  /// 放送日历（2026-08-21 迁入发现页）：条目直达发现详情，同一套 actions。
-  void _openCalendar() {
-    Navigator.push<void>(
-      context,
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => AiringCalendarPage(actions: widget.actions),
-      ),
-    );
-  }
 
   Widget _buildHeader() {
     final List<Widget> actions = <Widget>[
-      FushiIconButton(
-        key: const ValueKey<String>('video-discovery-open-calendar'),
-        icon: Icons.calendar_month_outlined,
-        tooltip: t.download_airing_calendar_title,
-        label: t.download_airing_calendar_title,
-        onTap: _openCalendar,
-      ),
       if (widget.actions.onOpenDownloads != null)
         FushiIconButton(
           key: const ValueKey<String>('video-discovery-open-downloads'),
@@ -610,33 +614,14 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                       onPressed: () => onAiAcquire(_searchController.text),
                       icon: const FushiIcon(Icons.auto_awesome_outlined),
                     );
-              // 放送日历：页头不渲染时（embedded 于浏览页 / Cupertino）页头那颗
-              // 按钮看不见，同一个 key 挪到搜索行，三种宽度下都可达。
-              final Widget? calendarEntry = _headerVisible
-                  ? null
-                  : FushiIconButtonControl.filledTonal(
-                      constraints: const BoxConstraints(
-                        minWidth: kFushiSearchFieldHeight,
-                        minHeight: kFushiSearchFieldHeight,
-                      ),
-                      key: const ValueKey<String>(
-                        'video-discovery-open-calendar',
-                      ),
-                      tooltip: t.download_airing_calendar_title,
-                      onPressed: _openCalendar,
-                      icon: const FushiIcon(Icons.calendar_month_outlined),
-                    );
               final List<Widget> trailing = <Widget>[
-                for (final Widget entry in <Widget?>[
-                  calendarEntry,
-                  aiEntry,
-                ].whereType<Widget>()) ...<Widget>[
+                if (aiEntry != null) ...<Widget>[
                   SizedBox(width: tokens.spacing.gap),
-                  entry,
+                  aiEntry,
                 ],
               ];
               // 窄屏：搜索框独占一整行（四个控件挤一行时搜索提示被截成「搜索
-              // 电影…」，2026-10-04 用户截图）；日历 / AI / 筛选入口不再单占一行
+              // 电影…」，2026-10-04 用户截图）；AI / 筛选入口不再单占一行
               // （那一行左半边恒空，白占一行纵向空间，2026-10-05 用户截图），
               // 并进下面分类 chip 行的行尾、与排序同排。
               if (compact) return search;
@@ -662,9 +647,9 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                       children: <Widget>[
                         for (final discovery.VideoDiscoveryCategory? category
                             in <discovery.VideoDiscoveryCategory?>[
-                          null,
-                          ...discovery.VideoDiscoveryCategory.values,
-                        ]) ...<Widget>[
+                              null,
+                              ...discovery.VideoDiscoveryCategory.values,
+                            ]) ...<Widget>[
                           FushiSelectableChip(
                             key: ValueKey<String>(
                               'video-discovery-category-${category?.name ?? 'all'}',
@@ -719,28 +704,19 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     );
   }
 
-  /// 窄屏分类 chip 行行尾的入口：放送日历（页头不渲染时）/ AI 下视频（宿主
-  /// 接线时）/ 高级筛选面板。宽屏下前两个在搜索行、筛选控件直接铺在 chip 行里。
+  /// 窄屏分类 chip 行行尾的入口：AI 下视频（宿主接线时）/ 高级筛选面板。宽屏下
+  /// AI 入口在搜索行、筛选控件直接铺在 chip 行里。
   List<Widget> _compactEntries(FushiDesignTokens tokens) {
     const BoxConstraints size = BoxConstraints(
       minWidth: kFushiSearchFieldHeight,
       minHeight: kFushiSearchFieldHeight,
     );
     final ValueChanged<String?>? onAiAcquire = widget.actions.onAiAcquire;
-    final int activeFilters = (_year != 0 ? 1 : 0) +
+    final int activeFilters =
+        (_year != 0 ? 1 : 0) +
         (_region.isNotEmpty ? 1 : 0) +
         (_genre.isNotEmpty ? 1 : 0);
     return <Widget>[
-      if (!_headerVisible) ...<Widget>[
-        SizedBox(width: tokens.spacing.gap),
-        FushiIconButtonControl.filledTonal(
-          constraints: size,
-          key: const ValueKey<String>('video-discovery-open-calendar'),
-          tooltip: t.download_airing_calendar_title,
-          onPressed: _openCalendar,
-          icon: const FushiIcon(Icons.calendar_month_outlined),
-        ),
-      ],
       if (onAiAcquire != null) ...<Widget>[
         SizedBox(width: tokens.spacing.gap),
         FushiIconButtonControl.filledTonal(
@@ -865,8 +841,9 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
 
   /// 筛选触发器（[_filterButton] = MD3 FushiCard）的圆角：交给
   /// [FushiPopupMenuButton] 让悬停 / 按压状态层与卡片同形。
-  static const BorderRadius _kFilterTriggerRadius =
-      BorderRadius.all(Radius.circular(kFushiMd3CardRadius));
+  static const BorderRadius _kFilterTriggerRadius = BorderRadius.all(
+    Radius.circular(kFushiMd3CardRadius),
+  );
 
   Widget _buildYearField({int? value, ValueChanged<int>? onChanged}) {
     final int selected = value ?? _year;
@@ -899,7 +876,8 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       borderRadius: _kFilterTriggerRadius,
       tooltip: t.video_work_countries,
       initialValue: selected,
-      onSelected: onChanged ??
+      onSelected:
+          onChanged ??
           (String value) {
             setState(() => _region = value);
             unawaited(_reload());
@@ -924,7 +902,8 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       borderRadius: _kFilterTriggerRadius,
       tooltip: t.video_work_genres,
       initialValue: selected,
-      onSelected: onChanged ??
+      onSelected:
+          onChanged ??
           (String value) {
             setState(() => _genre = value);
             unawaited(_reload());
@@ -986,12 +965,14 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     final ColorScheme colors = Theme.of(context).colorScheme;
     // Apple：筛选下拉是无描边的灰阶填充胶囊，选中态整颗换强调色（iOS 26
     // 筛选胶囊）；MD3 保留描边方块 + selected 底。
-    final FushiAppleColors? apple =
-        isGlassDesign(context) ? appleColorsOf(context) : null;
+    final FushiAppleColors? apple = isGlassDesign(context)
+        ? appleColorsOf(context)
+        : null;
     // Apple：筛选弹出按钮是控件层的无色透明液态玻璃胶囊（不铺 systemFill
     // 灰底），激活态换更亮的透明底 + 强调色字（与库页筛选下拉同口径）。
-    final Color? appleForeground =
-        apple == null ? null : (active ? apple.accent : apple.label);
+    final Color? appleForeground = apple == null
+        ? null
+        : (active ? apple.accent : apple.label);
     final Widget card = SizedBox(
       height: _filterControlHeight,
       child: FushiCard(
@@ -1045,15 +1026,15 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
             LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) =>
                   DiscoveryShelf(
-                title: t.video_discovery_hot,
-                loading: true,
-                shape: DiscoveryCoverShape.landscape,
-                titleMaxLines: 1,
-                itemWidth: _shelfItemWidth(constraints.maxWidth),
-                itemCount: 0,
-                itemBuilder: (BuildContext context, int index) =>
-                    const SizedBox.shrink(),
-              ),
+                    title: t.video_discovery_hot,
+                    loading: true,
+                    shape: DiscoveryCoverShape.landscape,
+                    titleMaxLines: 1,
+                    itemWidth: _shelfItemWidth(constraints.maxWidth),
+                    itemCount: 0,
+                    itemBuilder: (BuildContext context, int index) =>
+                        const SizedBox.shrink(),
+                  ),
             ),
           ],
         ),
@@ -1076,8 +1057,17 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
 
     final bool searchMode = _hasActiveSearchOrFilter;
     final List<discovery.VideoDiscoveryItem> heroItems = _heroItems;
-    final List<discovery.VideoDiscoveryItem> popularRest =
-        _popular.sublist(heroItems.length);
+    final List<discovery.VideoDiscoveryItem> popularRest = _popular.sublist(
+      heroItems.length,
+    );
+    final AiringCalendarLoader? airingLoader =
+        widget.actions.loadAiringCalendar;
+    // 「今日放送」小模块：今天播出的番剧横滑小卡，标题行进完整放送日历。
+    // 优先级仅次于 Hero 轮播（用户 2026-10-20）：紧跟轮播、排在热门行之前。
+    // 搜索 / 筛选态收起（与 Hero、本季动画同口径）；宿主没接取数端口时不渲染。
+    final Widget? airingToday = !searchMode && airingLoader != null
+        ? AiringTodayShelf(loader: airingLoader, actions: widget.actions)
+        : null;
     return CustomScrollView(
       key: const PageStorageKey<String>('video-discovery-scroll'),
       controller: _scrollController,
@@ -1107,6 +1097,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                       _buildHero(heroItems[index]),
                   onPageChanged: _hydrateHeroAround,
                 ),
+                ?airingToday,
                 if (popularRest.isNotEmpty)
                   _DiscoveryShelf(
                     title: t.video_discovery_hot,
@@ -1117,6 +1108,9 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
               ],
             ),
           ),
+        // 没有 Hero 轮播时「今日放送」单独成段，仍在最前。
+        if (heroItems.isEmpty && airingToday != null)
+          SliverToBoxAdapter(child: airingToday),
         if (!searchMode && _seasonalAnime.isNotEmpty)
           SliverToBoxAdapter(
             child: _DiscoveryShelf(
@@ -1166,14 +1160,14 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
               itemCount: _works.length,
               itemBuilder: (BuildContext context, int index) =>
                   FushiStaggeredEntrance(
-                index: index,
-                child: _DiscoveryMediaCard(
-                  item: _works[index],
-                  landscape: false,
-                  imageResolver: widget.imageResolver,
-                  onTap: () => _openItem(_works[index]),
-                ),
-              ),
+                    index: index,
+                    child: _DiscoveryMediaCard(
+                      item: _works[index],
+                      landscape: false,
+                      imageResolver: widget.imageResolver,
+                      onTap: () => _openItem(_works[index]),
+                    ),
+                  ),
             ),
           ),
         // 玻璃设计下首页 extendBody，悬浮导航胶囊的高度并进了 MediaQuery 底部
@@ -1193,9 +1187,10 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     final bool hasBackdrop = item.backdropUrl?.trim().isNotEmpty == true;
     final ImageProvider? backdrop = hasBackdrop
         ? widget.imageResolver?.call(item, true) ??
-            _networkImage(item.backdropUrl)
+              _networkImage(item.backdropUrl)
         : null;
-    final ImageProvider? poster = widget.imageResolver?.call(item, false) ??
+    final ImageProvider? poster =
+        widget.imageResolver?.call(item, false) ??
         _networkImage(item.posterUrl);
     return DiscoveryHeroBanner(
       key: ValueKey<String>(
@@ -1267,8 +1262,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       'Thriller',
       'War',
       'Western',
-    }.toList()
-      ..sort();
+    }.toList()..sort();
     return result;
   }
 
@@ -1281,13 +1275,12 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       };
 
   String _sortLabel(discovery.VideoDiscoverySort sort) => switch (sort) {
-        discovery.VideoDiscoverySort.relevance => t.search,
-        discovery.VideoDiscoverySort.popularity =>
-          t.video_discovery_sort_popularity,
-        discovery.VideoDiscoverySort.rating => t.video_discovery_sort_rating,
-        discovery.VideoDiscoverySort.releaseDate =>
-          t.video_discovery_sort_release,
-      };
+    discovery.VideoDiscoverySort.relevance => t.search,
+    discovery.VideoDiscoverySort.popularity =>
+      t.video_discovery_sort_popularity,
+    discovery.VideoDiscoverySort.rating => t.video_discovery_sort_rating,
+    discovery.VideoDiscoverySort.releaseDate => t.video_discovery_sort_release,
+  };
 }
 
 /// 横滑行卡宽：手机 240、平板 / 桌面 280（16:9 横卡）。
@@ -1295,12 +1288,11 @@ double _shelfItemWidth(double width) => width < 600 ? 240 : 280;
 
 String _videoDiscoveryCategoryLabel(
   discovery.VideoDiscoveryCategory category,
-) =>
-    switch (category) {
-      discovery.VideoDiscoveryCategory.movie => t.collection_relation_movie,
-      discovery.VideoDiscoveryCategory.tv => t.series,
-      discovery.VideoDiscoveryCategory.anime => t.media_tracking_anime,
-    };
+) => switch (category) {
+  discovery.VideoDiscoveryCategory.movie => t.collection_relation_movie,
+  discovery.VideoDiscoveryCategory.tv => t.series,
+  discovery.VideoDiscoveryCategory.anime => t.media_tracking_anime,
+};
 
 ImageProvider? _networkImage(String? url) {
   final String value = url?.trim() ?? '';
@@ -1329,6 +1321,7 @@ class _DiscoveryShelf extends StatelessWidget {
         context,
         title: title,
         itemCount: items.length,
+        material: ShelfCoverMaterial.glossyPoster,
         itemBuilder: (BuildContext context, int index) => _DiscoveryMediaCard(
           item: items[index],
           landscape: false,
@@ -1363,8 +1356,8 @@ class _DiscoveryShelf extends StatelessWidget {
   }
 }
 
-/// 发现卡：共享 [DiscoveryCoverCard]（封面 + 下方标题 / 年份·类型），评分压在
-/// 封面右上角的 [CoverBadge]。
+/// 发现卡：共享 [DiscoveryCoverCard]（光面海报 + 下方标题 / 副行）。封面上不压
+/// 角标：评分带星进副行最前（「★ 8.4 · 2026 · 动画」）。
 class _DiscoveryMediaCard extends StatelessWidget {
   const _DiscoveryMediaCard({
     required this.item,
@@ -1391,18 +1384,11 @@ class _DiscoveryMediaCard extends StatelessWidget {
       key: ValueKey<String>('video-discovery-card-$stableId'),
       focusId: FushiFocusId('video-discovery-card-$stableId'),
       title: item.reference.title,
-      subtitle: _metadata(),
+      subtitle: _metadata(score),
+      leadingIcon: score == null ? null : Icons.star_rounded,
       shape: shape,
       titleMaxLines: landscape ? 1 : 2,
       onTap: onTap,
-      badges: <Widget>[
-        if (score != null)
-          CoverBadge(
-            icon: Icons.star_rounded,
-            iconSize: 12,
-            label: score.toStringAsFixed(1),
-          ),
-      ],
       cover: DiscoveryImageCover(
         image: image,
         shape: shape,
@@ -1411,16 +1397,18 @@ class _DiscoveryMediaCard extends StatelessWidget {
     );
   }
 
-  String _metadata() => <String>[
-        if (item.reference.year != null) '${item.reference.year}',
-        _videoDiscoveryCategoryLabel(item.reference.discoveryCategory),
-      ].join(' · ');
+  String _metadata(double? score) => <String>[
+    if (score != null) score.toStringAsFixed(1),
+    if (item.reference.year != null) '${item.reference.year}',
+    _videoDiscoveryCategoryLabel(item.reference.discoveryCategory),
+  ].join(' · ');
 
   ImageProvider? _defaultImage(
     discovery.VideoDiscoveryItem item,
     bool landscape,
   ) {
-    final String value = (landscape
+    final String value =
+        (landscape
                 ? item.backdropUrl ?? item.posterUrl
                 : item.posterUrl ?? item.backdropUrl)
             ?.trim() ??

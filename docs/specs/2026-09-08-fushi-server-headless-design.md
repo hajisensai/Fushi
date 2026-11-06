@@ -103,6 +103,7 @@ Flutter SDK（构建工具链），运行时二进制不含 Flutter**。服务�
 
 ```
 POST   /api/jobs                       {kind, params}          → {jobId}
+POST   /api/jobs/<id>/inputs/match     {files:[{name,sha256,size}]} → {matched:[name], pending}
 PUT    /api/jobs/<id>/input/<name>     body=bytes              上传输入
 POST   /api/jobs/<id>/start
 GET    /api/jobs/<id>                  {state, progress, message, kind}
@@ -117,6 +118,19 @@ GET    /api/jobs                       列表（admin）
 `<support>/host_jobs/<id>/`。能力位 `jobs.kinds: [asr]`。`kind=asr` 参数：
 `{source: {upload|videoId|path}, language, model, align?: {epubUpload}}`。
 `/api/ocr/job/*` **不迁移**到通用协议（冻结面）。
+
+输入复用（2026-10-31，反馈 j-LhVnQ6hL）：host 宣告 `jobs.inputMatch: "sha256"` 时，
+客户端先发输入的内容哈希清单（`inputs/match`），host 在本机有声书库会播的音频里找
+**SHA-256 相同**的文件（大小只用来缩小要算哈希的范围；不按文件名 / 书 ID / 时长
+判），命中的不上传、runner 直接读 host 本地路径。哈希两端都按 `(路径, 大小, 修改
+时刻)` 缓存（`FileContentHashCache`，纯派生数据：app 落平台缓存目录、服务端落
+`<data_dir>/tmp`，不进 support 根，不随备份 / 更改数据位置搬走）。匹配请求**只查
+缓存、不在请求里读文件**：大小吻合但没缓存的候选排进 host 后台逐个预热，应答带
+`pending: true`，客户端按轮询节奏再问直到 `pending` 为假（2026-10-31 审查：此前在
+请求里同步算冷文件哈希，慢盘大文件超过客户端 30 s 请求超时，整个转录失败）。匹配是
+可选优化：应答出错 / 超时 / 断连一律当没命中、照旧上传。host 开跑前按缓存核对、跑完整份重读核对；
+内容变了任务以 `host_input_changed` 失败，客户端整份上传重跑一次。上传名为
+`<定宽序号>_<文件名>`，runner 按名字顺序转全部输入。
 
 ### 3.5 身份与鉴权
 
@@ -169,7 +183,9 @@ WebUI / admin API 用独立 admin token（首次启动生成写入配置文件�
    - `HeadlessLibraryHostService implements FushiLibraryHostService`：
      videos（列表/封面/流/字幕/断点）、books（epub 导入 + 进度）、activity /
      aggregate / collections 走既有纯 Dart 服务；dictionaries / localaudio /
-     audiobooks 第 0 期返回空集（能力位不宣告）。
+     audiobooks 第 0 期返回空集（能力位不宣告）。（后续更新：有声书已由引擎
+     `LocalLibraryHostService`（`audiobooks.part.dart`）托管，服务端直接复用；
+     2026-10-28 起扫描根支持 `kind: audiobook`，见下文「仍不做」。）
    - `HeadlessLibraryScanner`：遍历 `libraries[]`，视频经 `VideoBookRepository`
      upsert + ffmpeg 封面 + 刮削协调器；epub 经 `epub_importer`。
    - mDNS：`avahi-publish` 子进程；无 avahi 打 warning。
@@ -247,10 +263,10 @@ Android / iOS / macOS 装服务端；`/api/ocr/job` 迁通用协议。
 第 5 批已根治的旧偏差：订阅进 host、漫画目录扫描、`ffmpeg` 配置项生效、Linux `.so` 静态链、专用发布——不再列。仍成立的：
 
 - **订阅的「实例接管」判据没有变成第二套**：订阅行落 host 的表、后端四元组由 host 用自己的 `_identity()` 覆写，客户端只传内容身份；host 管线的 `_validateBackendBinding` 与 app 侧同一段代码。代价是**客户端搜到的 provider 必须在 host 上也注册了**（能力位 `providers` 报清单，客户端提交前校验、host 再校验一次 400 `provider_unavailable`）。Torznab indexer 配置与停用清单 host 侧读同一张 `preferences` 表；2026-09-30 起 WebUI「订阅」页有编辑面（`GET|PUT /api/admin/resource-indexers`，读写都走引擎 `video_resource_prefs.dart`，与 app 同一编码），保存后 `ServerDownloadHost.reloadResourceIndexers()` 整套重建 registry + 管线 + 订阅服务（与 app `reloadVideoDownloadPipelineRuntime` 同形，torrent 后端不动），互联 server 捕获的订阅面是转发对象，能力位 `providers` 与在场校验随之更新，不需重启。
-- **漫画根只认 `.mokuro` 卷与纯页图目录**：cbz / cbr / cb7 / pdf 不扫（压缩包导入器 `MangaArchiveImporter` 已在引擎、代下载已在用，但扫描器没有接；rar 需外部 7-Zip、pdf 需 app 侧栅格化）。
+- **漫画根不收 PDF**：`.mokuro` 卷、单文件卷（cbz / zip / cbr / rar / cb7，经引擎 `MangaArchiveImporter`；rar 系需外部 7-Zip）与纯页图目录都扫；PDF 要 app 侧 pdfium 栅格化，服务端没有这条能力。
 - **Linux 桌面版 Fushi 的内置引擎只在本机构建时随包**：runner CMake 已 copy-if-present `native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so`（与服务端同一份静态 `.so`，`build_linux_so.sh` 产出）进 `bundle/lib/`，`EmbeddedTorrentEngine` 在 Linux 先按 `<exe>/lib/` 绝对路径加载（守卫 `fushi/test/build/linux_torrent_bundle_guard_test.dart`）；缺了回退外接 qBittorrent。但**没有任何 CI / 发布流水线构建 Linux app**（所有者 2026-09-30 拍板，守卫 `multiplatform_pr_gating_guard_test.dart` 禁 `flutter build linux`），所以流水线侧取回 `.so` 的步骤不做；哪天恢复 Linux app 发布，构建前从 native artifact store 取 `names.sh linux` 的 `torrent` 件即可，不必重编。
 - **WebUI 没有浏览器级自动化测试**：内联 JS 过 `node --check`，API 面走真进程 HTTP 冒烟；页面交互靠人工。
-- **audiobooks 库服务仍返回空集**（第 0 期既定），有声书不经 host 托管。
+- **有声书已经 host 托管**（引擎 `LocalLibraryHostService` 的 `audiobooks.part.dart`，第 0 期「返回空集」已过时）；此前缺的是**扫描根**：服务端只能靠代下载或离线 `audiobook align` 入库有声书。2026-10-28 起 `libraries[].kind: audiobook`（每个含音频的目录一本，可带 EPUB / 字幕，音频原地引用）。只有音频的书仍不导入——扫描与代下载都不自动排 ASR，原因见 `docs/agent/server-parity-gaps.md`。音乐库根刻意延后，同见该文档。
 - **发布链路（2026-09-14 改为独立仓 `hajisensai/fushi-server` 回调本仓 `workflow_call`）**：首个 beta 由那边 `release.yml` dispatch 触发；结果见该仓 Releases。
 
 ### 验证证据（本机 Windows）

@@ -14,6 +14,8 @@
 
 [![Neueste Version herunterladen](https://img.shields.io/badge/%E2%AC%87%20Neueste%20Version%20herunterladen-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Discord beitreten](https://img.shields.io/badge/Discord%20beitreten-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor%20on%20GitHub-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/hajisensai)
+[![Support on Ko-fi](https://img.shields.io/badge/Support%20on%20Ko-fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/hajisensai)
 
 </div>
 
@@ -136,9 +138,9 @@ Fushi speichert importierte Bücher, Wörterbücher, Schriften, Hörbuchdaten, V
 
 - **Sync** — Google Drive / OneDrive / Dropbox verwenden eine OAuth-Anmeldung; WebDAV / FTP / SFTP / Fushi Server verwenden die von dir angegebene Serveradresse und Zugangsdaten. Fushi Interconnect verbindet gekoppelte Geräte direkt (LAN, IPv6, Overlay-Netzwerke oder öffentliche Adressen) und weicht auf einen Ende-zu-Ende-iroh-P2P-Tunnel aus, wenn keine direkte Route funktioniert; Kopplungslinks verlangen stets eine Bestätigung.
 - **Anki** — die Kartenerstellung kommuniziert mit AnkiDroid oder der von dir konfigurierten AnkiConnect-Adresse.
-- **Nutzungsstatistiken** — einmal täglich senden Desktop- und Android-Builds eine zufällige Installations-ID, die App-Version, die Plattform und den Update-Kanal an fushi.moe, um aktive Nutzer zu zählen; Konto-, Bibliotheks- oder Lesedaten sind nicht enthalten und IP-Adressen werden nicht gespeichert. Mit *Nutzungsstatistiken teilen* in den Update-Einstellungen lässt sich das abschalten. iOS-Builds senden nichts davon.
+- **Nutzungsstatistiken** — einmal täglich senden Desktop- und Android-Builds eine aus dem Gerät abgeleitete Installations-ID (bleibt bei Neuinstallation gleich), die App-Version, die Plattform und den Update-Kanal an fushi.moe, um aktive Nutzer zu zählen; Konto-, Bibliotheks- oder Lesedaten sind nicht enthalten und IP-Adressen werden nicht gespeichert. Mit *Nutzungsstatistiken teilen* in den Update-Einstellungen lässt sich das abschalten. iOS-Builds senden nichts davon.
 - **Nur auf deine Anfrage** — Log-Upload (nach einer einmaligen Einwilligungsabfrage), In-App-Feedback und die Bestenliste (standardmäßig aus; lädt die Titel deiner Bibliothek und deinen Fortschritt erst hoch, nachdem du zugestimmt hast).
-- **Manga-OCR** — die Standard-Engine ist Google Lens, die das Seitenbild an Google sendet; wechsle in den Einstellungen zum Modell auf dem Gerät oder zur System-OCR, um Bilder lokal zu halten.
+- **Manga-OCR** — die Standard-Engine ist das CTC-Modell auf dem Gerät, Seitenbilder bleiben also lokal (einmalig in den Einstellungen herunterladen); Google Lens ist optional und sendet das Seitenbild an Google.
 - **KI-Funktionen** — Anfragen gehen nur an den LLM-Anbieter, den du konfigurierst und einer Funktion zuweist; ohne zugewiesenen Anbieter wird nichts gesendet.
 - **Drittanbieterdienste** — Metadaten-, Untertitel- und Online-Quellen-Funktionen kontaktieren die unter [Inhaltsquellen und Integrationen](#inhaltsquellen-und-integrationen) aufgeführten Dienste nur, wenn du sie verwendest.
 

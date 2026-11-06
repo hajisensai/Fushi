@@ -26,6 +26,12 @@ const String kUpdateNotificationChannelId = 'fushi_updates';
 /// 换一个应用身份，已发出的通知与用户的通知设置一起失联。
 const String kWindowsNotificationGuid = '4f6a1c2e-8b3d-4a91-9c27-2d5b8e0f7a13';
 
+/// Android 状态栏小图标：单色白海兔剪影（`res/drawable/ic_stat_fushi.xml`，
+/// 由 `tool/android/gen_notification_icon.py` 从启动图标生成）。不能用
+/// `@mipmap/ic_launcher`：系统只取 alpha 画小图标，彩色启动图标会被剪影成
+/// 一团黑块。
+const String kAndroidNotificationSmallIcon = '@drawable/ic_stat_fushi';
+
 /// Windows toast 头部图标：随包 Flutter 资产（构建期已在 `data/flutter_assets`
 /// 下，五端同一张）。不传给插件就没有 `IconUri`，头部只剩文字。
 const String kWindowsNotificationIconAsset = 'assets/meta/icon.png';
@@ -55,7 +61,8 @@ UpdateNotificationResponse decodeNotificationResponse(
       );
     }
   }
-  final bool isAction = response.notificationResponseType ==
+  final bool isAction =
+      response.notificationResponseType ==
       NotificationResponseType.selectedNotificationAction;
   return UpdateNotificationResponse(
     payload: raw,
@@ -70,8 +77,8 @@ class LocalUpdateNotifier implements UpdateNotifier {
     this.onResponse,
     FlutterLocalNotificationsPlugin? plugin,
     String? windowsIconPath,
-  })  : _plugin = plugin ?? FlutterLocalNotificationsPlugin(),
-        _windowsIconPath = windowsIconPath;
+  }) : _plugin = plugin ?? FlutterLocalNotificationsPlugin(),
+       _windowsIconPath = windowsIconPath;
 
   /// 通知里显示的应用名 + Windows 的 AUMID 名。
   final String appName;
@@ -122,11 +129,11 @@ class LocalUpdateNotifier implements UpdateNotifier {
   /// 通知渲染器把这种混合分隔符的 `IconUri` 当坏路径——头部只剩文字、没有图标
   /// （BUG-2487 / BUG-2499 两边各撞到一次）；纯反斜杠才出图标。
   static String bundledAssetPath(String asset) => p.joinAll(<String>[
-        p.dirname(Platform.resolvedExecutable),
-        'data',
-        'flutter_assets',
-        ...asset.split('/'),
-      ]);
+    p.dirname(Platform.resolvedExecutable),
+    'data',
+    'flutter_assets',
+    ...asset.split('/'),
+  ]);
 
   @override
   Future<bool> ensureReady() async {
@@ -158,8 +165,8 @@ class LocalUpdateNotifier implements UpdateNotifier {
     if (!await ensureReady()) return;
     if (onResponse == null) return;
     try {
-      final NotificationAppLaunchDetails? details =
-          await _plugin.getNotificationAppLaunchDetails();
+      final NotificationAppLaunchDetails? details = await _plugin
+          .getNotificationAppLaunchDetails();
       final NotificationResponse? response = details?.notificationResponse;
       if (details?.didNotificationLaunchApp == true && response != null) {
         _dispatch(response);
@@ -172,7 +179,9 @@ class LocalUpdateNotifier implements UpdateNotifier {
   Future<bool> _initialise() async {
     final bool? initialised = await _plugin.initialize(
       settings: InitializationSettings(
-        android: const AndroidInitializationSettings('@mipmap/ic_launcher'),
+        android: const AndroidInitializationSettings(
+          kAndroidNotificationSmallIcon,
+        ),
         iOS: const DarwinInitializationSettings(
           requestAlertPermission: false,
           requestBadgePermission: false,
@@ -217,19 +226,22 @@ class LocalUpdateNotifier implements UpdateNotifier {
           // 设置里的应用通知总开关。null = 平台实现缺席，按不允许处理。
           final bool? enabled = await _plugin
               .resolvePlatformSpecificImplementation<
-                  AndroidFlutterLocalNotificationsPlugin>()
+                AndroidFlutterLocalNotificationsPlugin
+              >()
               ?.areNotificationsEnabled();
           return enabled ?? false;
         case TargetPlatform.iOS:
           final NotificationsEnabledOptions? options = await _plugin
               .resolvePlatformSpecificImplementation<
-                  IOSFlutterLocalNotificationsPlugin>()
+                IOSFlutterLocalNotificationsPlugin
+              >()
               ?.checkPermissions();
           return options?.isEnabled ?? false;
         case TargetPlatform.macOS:
           final NotificationsEnabledOptions? options = await _plugin
               .resolvePlatformSpecificImplementation<
-                  MacOSFlutterLocalNotificationsPlugin>()
+                MacOSFlutterLocalNotificationsPlugin
+              >()
               ?.checkPermissions();
           return options?.isEnabled ?? false;
         case TargetPlatform.linux:
@@ -253,9 +265,10 @@ class LocalUpdateNotifier implements UpdateNotifier {
     try {
       switch (defaultTargetPlatform) {
         case TargetPlatform.android:
-          final AndroidFlutterLocalNotificationsPlugin? android =
-              _plugin.resolvePlatformSpecificImplementation<
-                  AndroidFlutterLocalNotificationsPlugin>();
+          final AndroidFlutterLocalNotificationsPlugin? android = _plugin
+              .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin
+              >();
           if (android == null) return false;
           // 插件在 API < 33 上直接回 areNotificationsEnabled（非 null）；null 只
           // 出现在平台实现缺席时——那就交给查询侧，两边同一口径。
@@ -265,13 +278,15 @@ class LocalUpdateNotifier implements UpdateNotifier {
         case TargetPlatform.iOS:
           final bool? granted = await _plugin
               .resolvePlatformSpecificImplementation<
-                  IOSFlutterLocalNotificationsPlugin>()
+                IOSFlutterLocalNotificationsPlugin
+              >()
               ?.requestPermissions(alert: true, badge: true, sound: false);
           return granted ?? false;
         case TargetPlatform.macOS:
           final bool? granted = await _plugin
               .resolvePlatformSpecificImplementation<
-                  MacOSFlutterLocalNotificationsPlugin>()
+                MacOSFlutterLocalNotificationsPlugin
+              >()
               ?.requestPermissions(alert: true, badge: true, sound: false);
           return granted ?? false;
         case TargetPlatform.linux:
@@ -409,8 +424,7 @@ class LocalUpdateNotifier implements UpdateNotifier {
   @visibleForTesting
   WindowsNotificationDetails windowsDetailsForTesting(
     UpdateNotification notification,
-  ) =>
-      _windowsDetails(notification);
+  ) => _windowsDetails(notification);
 
   WindowsNotificationDetails _windowsDetails(UpdateNotification notification) {
     final String? image = _existingImage(notification);

@@ -22,8 +22,7 @@ void main() {
     expect(src, contains('_popup.truncateTo(index + 1)'));
   });
 
-  test(
-      'BUG-051: nested popup layers render full-size (not the reader '
+  test('BUG-051: nested popup layers render full-size (not the reader '
       'float-near-selection sub-card)', () {
     final String src = File(pagePath).readAsStringSync();
     // app 外查词窗口已是约束卡片：下钻层必须满卡渲染（Positioned.fill），
@@ -32,8 +31,11 @@ void main() {
     expect(src, contains('Positioned.fill'));
     // 裸子串会被**以该名结尾**的更长标识符命中：仓内真实存在私有的
     // `_buildNestedPopupLayer(`，本页哪天自己落一个同名私有 helper 就假红。
-    expect(containsIdentifierCall(src, 'buildNestedPopupLayer'), isFalse,
-        reason: '下钻层改为满卡渲染，不再复用阅读器的贴选区小浮卡');
+    expect(
+      containsIdentifierCall(src, 'buildNestedPopupLayer'),
+      isFalse,
+      reason: '下钻层改为满卡渲染，不再复用阅读器的贴选区小浮卡',
+    );
     expect(src, isNot(contains('calcPopupPosition')), reason: '满卡渲染无需按选区定位');
     // 嵌套层不透明铺满盖住下层（base 透明，nested 用词典色/页面色）。
     expect(src, contains('swipeDismissible: !isBase'));
@@ -41,21 +43,25 @@ void main() {
   });
 
   test(
-      'TODO-496: popup host swipe-to-close stays on chrome, not the WebView body',
-      () {
-    final String src = File(pagePath).readAsStringSync();
-    // The old outer-card wrapper put the WebView body under the same Listener
-    // as swipe-to-close. That made text selection indistinguishable from a
-    // dismiss gesture. The popup host may wrap its search/chrome row, while
-    // DictionaryPopupLayer handles child layer chrome separately.
-    expect(src, contains('_buildSwipeChrome'));
-    expect(src, isNot(contains('child: card')));
-    expect(src, contains('ReaderFushiSource.instance.enableSwipeToClose'));
-    // BUG-2770：鼠标滑关关（Windows/Linux 默认）时 chrome 行仍按触摸开关挂
-    // touchOnly 横滑，嵌套层也把触摸半边传给 DictionaryPopupLayer。
-    expect(src, contains('ReaderFushiSource.instance.enableTouchSwipeToClose'));
-    expect(src, contains('touchOnly: !mouseSwipe'));
-    expect(src, contains('enableTouchSwipeToClose:'));
-    expect(src, contains('() => _popAt(index)'));
-  });
+    'TODO-496: popup host swipe-to-close stays on chrome, not the WebView body',
+    () {
+      final String src = File(pagePath).readAsStringSync();
+      // The old outer-card wrapper put the WebView body under the same Listener
+      // as swipe-to-close. That made text selection indistinguishable from a
+      // dismiss gesture. The popup host may wrap its search/chrome row, while
+      // DictionaryPopupLayer handles child layer chrome separately.
+      expect(src, contains('_buildSwipeChrome'));
+      expect(src, isNot(contains('child: card')));
+      expect(src, contains('ReaderFushiSource.instance.enableSwipeToClose'));
+      // BUG-2770：鼠标滑关关（Windows/Linux 默认）时 chrome 行仍按触摸开关挂
+      // touchOnly 横滑，嵌套层也把触摸半边传给 DictionaryPopupLayer。
+      expect(
+        src,
+        contains('ReaderFushiSource.instance.enableTouchSwipeToClose'),
+      );
+      expect(src, contains('touchOnly: !mouseSwipe'));
+      expect(src, contains('enableTouchSwipeToClose:'));
+      expect(src, contains('() => _popAt(index)'));
+    },
+  );
 }

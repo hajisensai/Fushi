@@ -20,8 +20,13 @@ final Pointer<Void> _fakeSession = Pointer<Void>.fromAddress(0xF00D);
 
 /// 最近一次进入 C ABI 的入参记录。
 class _Call {
-  const _Call(this.symbol, this.downloadBps, this.uploadBps,
-      this.connectionsLimit, this.limitLocalPeers);
+  const _Call(
+    this.symbol,
+    this.downloadBps,
+    this.uploadBps,
+    this.connectionsLimit,
+    this.limitLocalPeers,
+  );
 
   final String symbol;
   final int downloadBps;
@@ -32,30 +37,46 @@ class _Call {
   final int? limitLocalPeers;
 
   @override
-  String toString() => '$symbol(d=$downloadBps, u=$uploadBps, '
+  String toString() =>
+      '$symbol(d=$downloadBps, u=$uploadBps, '
       'c=$connectionsLimit, lan=$limitLocalPeers)';
 }
 
 _Call? _lastCall;
 
 int _fakeApplyLimits(
-    Pointer<Void> session, int download, int upload, int connections) {
+  Pointer<Void> session,
+  int download,
+  int upload,
+  int connections,
+) {
   _lastCall = _Call('ht_apply_limits', download, upload, connections, null);
   return 1;
 }
 
-int _fakeApplyLimitsEx(Pointer<Void> session, int download, int upload,
-    int connections, int limitLocalPeers) {
+int _fakeApplyLimitsEx(
+  Pointer<Void> session,
+  int download,
+  int upload,
+  int connections,
+  int limitLocalPeers,
+) {
   _lastCall = _Call(
-      'ht_apply_limits_ex', download, upload, connections, limitLocalPeers);
+    'ht_apply_limits_ex',
+    download,
+    upload,
+    connections,
+    limitLocalPeers,
+  );
   return 1;
 }
 
 /// 返回伪 session 指针的 ht_session_create。用 Pointer<Void> 做返回值需要
 /// 一个能被 FFI 表达的形式，这里直接用地址整数转换。
 Pointer<Void> _fakeSessionCreatePtr(
-        Pointer<Char> listenInterfaces, int enableDht) =>
-    _fakeSession;
+  Pointer<Char> listenInterfaces,
+  int enableDht,
+) => _fakeSession;
 
 /// 构造一组只实现本测试所需符号的假绑定。
 ///
@@ -66,8 +87,8 @@ FushiTorrentBindings _fakeBindings({required bool withEx}) {
     switch (symbol) {
       case 'ht_session_create':
         return Pointer.fromFunction<Pointer<Void> Function(Pointer<Char>, Int)>(
-                _fakeSessionCreatePtr)
-            .cast<T>();
+          _fakeSessionCreatePtr,
+        ).cast<T>();
       case 'ht_apply_limits':
         return Pointer.fromFunction<Int Function(Pointer<Void>, Int, Int, Int)>(
           _fakeApplyLimits,
@@ -78,10 +99,9 @@ FushiTorrentBindings _fakeBindings({required bool withEx}) {
           throw ArgumentError("Failed to lookup symbol '$symbol'");
         }
         return Pointer.fromFunction<
-            Int Function(Pointer<Void>, Int, Int, Int, Int)>(
-          _fakeApplyLimitsEx,
-          0,
-        ).cast<T>();
+              Int Function(Pointer<Void>, Int, Int, Int, Int)
+            >(_fakeApplyLimitsEx, 0)
+            .cast<T>();
     }
     throw ArgumentError("Failed to lookup symbol '$symbol'");
   }
@@ -90,8 +110,9 @@ FushiTorrentBindings _fakeBindings({required bool withEx}) {
 }
 
 EmbeddedTorrentSession _session({required bool withEx}) {
-  final EmbeddedTorrentEngine engine =
-      EmbeddedTorrentEngine.fromBindings(_fakeBindings(withEx: withEx));
+  final EmbeddedTorrentEngine engine = EmbeddedTorrentEngine.fromBindings(
+    _fakeBindings(withEx: withEx),
+  );
   final EmbeddedTorrentSession? s = EmbeddedTorrentSession.open(engine);
   expect(s, isNotNull, reason: 'fake ht_session_create must yield a handle');
   return s!;
@@ -102,8 +123,9 @@ void main() {
 
   group('applyLimits → local peer class flag', () {
     test('默认（开关关）走 _ex 且 limit_local_peers = 0', () {
-      final bool ok = _session(withEx: true)
-          .applyLimits(downloadBps: 4096, uploadBps: 2048);
+      final bool ok = _session(
+        withEx: true,
+      ).applyLimits(downloadBps: 4096, uploadBps: 2048);
 
       expect(ok, isTrue);
       expect(_lastCall!.symbol, 'ht_apply_limits_ex');
@@ -131,8 +153,9 @@ void main() {
     });
 
     test('速率归一化：<=0 一律下发 0（不限），不会漏成负数', () {
-      _session(withEx: true)
-          .applyLimits(downloadBps: -1, limitLocalPeers: true);
+      _session(
+        withEx: true,
+      ).applyLimits(downloadBps: -1, limitLocalPeers: true);
 
       expect(_lastCall!.downloadBps, lessThanOrEqualTo(0));
       expect(_lastCall!.limitLocalPeers, 1);
@@ -146,8 +169,9 @@ void main() {
     });
 
     test('不崩：退回老入口，全局限速照常应用', () {
-      final bool ok = _session(withEx: false)
-          .applyLimits(downloadBps: 4096, uploadBps: 2048);
+      final bool ok = _session(
+        withEx: false,
+      ).applyLimits(downloadBps: 4096, uploadBps: 2048);
 
       expect(ok, isTrue, reason: '没要求限局域网时，老 DLL 完全能满足');
       expect(_lastCall!.symbol, 'ht_apply_limits');
@@ -155,8 +179,9 @@ void main() {
     });
 
     test('要求限局域网但库不支持 → 返回 false，绝不假装成功', () {
-      final bool ok = _session(withEx: false)
-          .applyLimits(downloadBps: 4096, limitLocalPeers: true);
+      final bool ok = _session(
+        withEx: false,
+      ).applyLimits(downloadBps: 4096, limitLocalPeers: true);
 
       expect(ok, isFalse);
       expect(_lastCall!.symbol, 'ht_apply_limits');

@@ -28,11 +28,8 @@ import 'package:fushi/src/utils/components/fushi_focus_ring.dart';
 void main() {
   /// 渲染：哨兵 Focus（记录上冒到此处的方向键 KeyDown）→ FushiFocusRoot/Ring →
   /// wrapWithGlobalNavigation → 一列受管目标（无页级方向键处理器）。
-  Future<
-      ({
-        FushiFocusController controller,
-        List<LogicalKeyboardKey> sentinel
-      })> pump(
+  Future<({FushiFocusController controller, List<LogicalKeyboardKey> sentinel})>
+  pump(
     WidgetTester tester,
     GlobalKey<NavigatorState> navKey, {
     required List<FushiFocusId> ids,
@@ -40,16 +37,15 @@ void main() {
   }) async {
     late FushiFocusController controller;
     final List<LogicalKeyboardKey> sentinel = <LogicalKeyboardKey>[];
-    final FocusNode sentinelNode =
-        FocusNode(debugLabel: 'sentinel', skipTraversal: true);
+    final FocusNode sentinelNode = FocusNode(
+      debugLabel: 'sentinel',
+      skipTraversal: true,
+    );
     addTearDown(sentinelNode.dispose);
 
     final List<Widget> targets = <Widget>[
       for (final FushiFocusId id in ids)
-        FushiFocusTarget(
-          id: id,
-          child: const SizedBox(width: 120, height: 40),
-        ),
+        FushiFocusTarget(id: id, child: const SizedBox(width: 120, height: 40)),
     ];
 
     await tester.pumpWidget(
@@ -96,8 +92,9 @@ void main() {
   const FushiFocusId b = FushiFocusId('b');
   const FushiFocusId c = FushiFocusId('c');
 
-  testWidgets('BUG-263: 受管目标上方向键「按下」被 wrapper 消费，不再上冒到框架引擎',
-      (WidgetTester tester) async {
+  testWidgets('BUG-263: 受管目标上方向键「按下」被 wrapper 消费，不再上冒到框架引擎', (
+    WidgetTester tester,
+  ) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
     final result = await pump(tester, navKey, ids: <FushiFocusId>[a, b, c]);
     result.controller.requestById(a);
@@ -109,11 +106,18 @@ void main() {
 
     // 决定性断言：wrapper 在按下边沿消费了方向键，哨兵（其祖先）收不到——
     // 修复前 wrapper 在按下边沿 `ignored`，方向键上冒到哨兵 + 框架引擎。
-    expect(result.sentinel, isEmpty,
-        reason: '按下边沿必须被全局 wrapper 消费，不得上冒到框架 '
-            'DirectionalFocusAction（修复前会上冒，哨兵收到）');
-    expect(result.controller.activeId, b,
-        reason: '按下经 wrapper 的 Fushi 焦点引擎移焦一格');
+    expect(
+      result.sentinel,
+      isEmpty,
+      reason:
+          '按下边沿必须被全局 wrapper 消费，不得上冒到框架 '
+          'DirectionalFocusAction（修复前会上冒，哨兵收到）',
+    );
+    expect(
+      result.controller.activeId,
+      b,
+      reason: '按下经 wrapper 的 Fushi 焦点引擎移焦一格',
+    );
 
     await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
   });
@@ -130,15 +134,19 @@ void main() {
 
     await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
-    expect(result.controller.activeId, c,
-        reason: '重复经同一 wrapper 引擎继续移焦——与按下同源，不分裂');
+    expect(
+      result.controller.activeId,
+      c,
+      reason: '重复经同一 wrapper 引擎继续移焦——与按下同源，不分裂',
+    );
     expect(result.sentinel, isEmpty, reason: '按下与重复都被 wrapper 消费，框架引擎从不介入');
 
     await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
   });
 
-  testWidgets('BUG-263: 焦点导航关闭时 wrapper 不接管方向键，按下照常上冒（原生遍历兜底）',
-      (WidgetTester tester) async {
+  testWidgets('BUG-263: 焦点导航关闭时 wrapper 不接管方向键，按下照常上冒（原生遍历兜底）', (
+    WidgetTester tester,
+  ) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
     final result = await pump(
       tester,
@@ -154,8 +162,11 @@ void main() {
 
     // 关闭时整块方向键分支不挂，wrapper 不消费——方向键照常上冒到哨兵/框架，
     // 回退到 Flutter 原生遍历（BUG-161/196 裁定：关态停自定义焦点导航）。
-    expect(result.sentinel, contains(LogicalKeyboardKey.arrowDown),
-        reason: '焦点导航关闭：wrapper 不消费方向键，按下边沿照常上冒');
+    expect(
+      result.sentinel,
+      contains(LogicalKeyboardKey.arrowDown),
+      reason: '焦点导航关闭：wrapper 不消费方向键，按下边沿照常上冒',
+    );
 
     await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
   });

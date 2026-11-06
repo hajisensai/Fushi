@@ -26,7 +26,8 @@ void main() {
     Object? error,
     String? rawBody,
   }) {
-    final String responseBody = rawBody ??
+    final String responseBody =
+        rawBody ??
         jsonEncode(<String, Object?>{'result': result, 'error': error});
     final client = MockClient((http.Request request) async {
       sink.add(request);
@@ -37,7 +38,8 @@ void main() {
       );
     });
     return body(
-        AnkiConnectService(host: '127.0.0.1', port: 8765, client: client));
+      AnkiConnectService(host: '127.0.0.1', port: 8765, client: client),
+    );
   }
 
   Map<String, dynamic> bodyOf(http.Request request) =>
@@ -60,8 +62,11 @@ void main() {
   group('request envelope', () {
     test('posts to the configured host/port over http', () async {
       final issued = <http.Request>[];
-      await withMock((s) => s.getDeckNames(),
-          sink: issued, result: const <String>[]);
+      await withMock(
+        (s) => s.getDeckNames(),
+        sink: issued,
+        result: const <String>[],
+      );
 
       expect(issued.single.method, 'POST');
       final Uri url = issued.single.url;
@@ -96,19 +101,27 @@ void main() {
       expect(issued.single.url.port, 443);
     });
 
-    test('requests use a short connection to avoid stale pooled sockets',
-        () async {
-      final issued = <http.Request>[];
-      await withMock((s) => s.getDeckNames(),
-          sink: issued, result: const <String>[]);
+    test(
+      'requests use a short connection to avoid stale pooled sockets',
+      () async {
+        final issued = <http.Request>[];
+        await withMock(
+          (s) => s.getDeckNames(),
+          sink: issued,
+          result: const <String>[],
+        );
 
-      expect(issued.single.headers['Connection'], 'close');
-    });
+        expect(issued.single.headers['Connection'], 'close');
+      },
+    );
 
     test('every call carries action + version 6', () async {
       final issued = <http.Request>[];
-      await withMock((s) => s.getModelNames(),
-          sink: issued, result: const <String>[]);
+      await withMock(
+        (s) => s.getModelNames(),
+        sink: issued,
+        result: const <String>[],
+      );
 
       final body = bodyOf(issued.single);
       expect(body['action'], 'modelNames');
@@ -117,15 +130,21 @@ void main() {
 
     test('omits params when none are supplied', () async {
       final issued = <http.Request>[];
-      await withMock((s) => s.getDeckNames(),
-          sink: issued, result: const <String>[]);
+      await withMock(
+        (s) => s.getDeckNames(),
+        sink: issued,
+        result: const <String>[],
+      );
       expect(bodyOf(issued.single).containsKey('params'), isFalse);
     });
 
     test('includes params when supplied', () async {
       final issued = <http.Request>[];
-      await withMock((s) => s.getModelFields('Basic'),
-          sink: issued, result: const <String>[]);
+      await withMock(
+        (s) => s.getModelFields('Basic'),
+        sink: issued,
+        result: const <String>[],
+      );
       final body = bodyOf(issued.single);
       expect(body['action'], 'modelFieldNames');
       expect(body['params'], <String, dynamic>{'modelName': 'Basic'});
@@ -135,23 +154,32 @@ void main() {
   group('result parsing', () {
     test('getDeckNames returns the result list as strings', () async {
       final issued = <http.Request>[];
-      final decks = await withMock((s) => s.getDeckNames(),
-          sink: issued, result: <String>['Default', '日本語']);
+      final decks = await withMock(
+        (s) => s.getDeckNames(),
+        sink: issued,
+        result: <String>['Default', '日本語'],
+      );
       expect(decks, <String>['Default', '日本語']);
     });
 
     test('getModelFields returns the field list', () async {
       final issued = <http.Request>[];
-      final fields = await withMock((s) => s.getModelFields('Basic'),
-          sink: issued, result: <String>['Front', 'Back', 'Reading']);
+      final fields = await withMock(
+        (s) => s.getModelFields('Basic'),
+        sink: issued,
+        result: <String>['Front', 'Back', 'Reading'],
+      );
       expect(fields, <String>['Front', 'Back', 'Reading']);
     });
 
     test('a list-typed action throws when the result is not a list', () async {
       final issued = <http.Request>[];
       expect(
-        () => withMock((s) => s.getDeckNames(),
-            sink: issued, result: 'not a list'),
+        () => withMock(
+          (s) => s.getDeckNames(),
+          sink: issued,
+          result: 'not a list',
+        ),
         throwsA(isA<AnkiConnectException>()),
       );
     });
@@ -161,29 +189,51 @@ void main() {
     test('non-200 HTTP status throws AnkiConnectException', () async {
       final issued = <http.Request>[];
       expect(
-        () => withMock((s) => s.getDeckNames(),
-            sink: issued, status: 500, result: null),
-        throwsA(isA<AnkiConnectException>()
-            .having((e) => e.message, 'message', contains('500'))),
+        () => withMock(
+          (s) => s.getDeckNames(),
+          sink: issued,
+          status: 500,
+          result: null,
+        ),
+        throwsA(
+          isA<AnkiConnectException>().having(
+            (e) => e.message,
+            'message',
+            contains('500'),
+          ),
+        ),
       );
     });
 
-    test('a non-null error field throws AnkiConnectException with its text',
-        () async {
-      final issued = <http.Request>[];
-      expect(
-        () => withMock((s) => s.getModelNames(),
-            sink: issued, error: 'collection is not available'),
-        throwsA(isA<AnkiConnectException>().having(
-            (e) => e.message, 'message', 'collection is not available')),
-      );
-    });
+    test(
+      'a non-null error field throws AnkiConnectException with its text',
+      () async {
+        final issued = <http.Request>[];
+        expect(
+          () => withMock(
+            (s) => s.getModelNames(),
+            sink: issued,
+            error: 'collection is not available',
+          ),
+          throwsA(
+            isA<AnkiConnectException>().having(
+              (e) => e.message,
+              'message',
+              'collection is not available',
+            ),
+          ),
+        );
+      },
+    );
 
     test('a non-JSON body throws AnkiConnectException', () async {
       final issued = <http.Request>[];
       expect(
-        () => withMock((s) => s.getDeckNames(),
-            sink: issued, rawBody: 'not json at all'),
+        () => withMock(
+          (s) => s.getDeckNames(),
+          sink: issued,
+          rawBody: 'not json at all',
+        ),
         throwsA(isA<AnkiConnectException>()),
       );
     });
@@ -201,8 +251,11 @@ void main() {
       // an AnkiConnect `error` field) as a "Cannot connect" message rather than
       // returning the raw text, but the underlying message is still included.
       final issued = <http.Request>[];
-      final String? message = await withMock((s) => s.checkConnection(),
-          sink: issued, error: 'unauthorized');
+      final String? message = await withMock(
+        (s) => s.checkConnection(),
+        sink: issued,
+        error: 'unauthorized',
+      );
       expect(message, isNotNull);
       expect(message, contains('unauthorized'));
     });
@@ -231,7 +284,10 @@ void main() {
       final issued = <http.Request>[];
       await withMock(
         (s) => s.findNotesByField(
-            deckName: 'Mining', fieldName: 'Expression', fieldValue: '勉強'),
+          deckName: 'Mining',
+          fieldName: 'Expression',
+          fieldValue: '勉強',
+        ),
         sink: issued,
         result: const <int>[],
       );
@@ -244,12 +300,17 @@ void main() {
       final issued = <http.Request>[];
       await withMock(
         (s) => s.findNotesByField(
-            deckName: 'Mining', fieldName: 'Expression', fieldValue: 'a"b'),
+          deckName: 'Mining',
+          fieldName: 'Expression',
+          fieldValue: 'a"b',
+        ),
         sink: issued,
         result: const <int>[],
       );
-      expect((bodyOf(issued.single)['params'] as Map)['query'],
-          r'deck:"Mining" "Expression:a\"b"');
+      expect(
+        (bodyOf(issued.single)['params'] as Map)['query'],
+        r'deck:"Mining" "Expression:a\"b"',
+      );
     });
   });
 
@@ -271,7 +332,8 @@ void main() {
       final body = bodyOf(issued.single);
       expect(body['action'], 'canAddNotesWithErrorDetail');
       final note =
-          ((body['params'] as Map)['notes'] as List).single as Map<String, Object?>;
+          ((body['params'] as Map)['notes'] as List).single
+              as Map<String, Object?>;
       expect(note['deckName'], 'Mining');
       expect(note['modelName'], 'Lapis');
       // 只发第一字段：Anki 的判重只看它，其余字段不影响判定。
@@ -357,8 +419,10 @@ void main() {
       final note = (body['params'] as Map)['note'] as Map;
       expect(note['deckName'], 'Mining');
       expect(note['modelName'], 'Lapis');
-      expect(note['fields'],
-          <String, dynamic>{'Expression': '勉強', 'Reading': 'べんきょう'});
+      expect(note['fields'], <String, dynamic>{
+        'Expression': '勉強',
+        'Reading': 'べんきょう',
+      });
       expect(note['tags'], <String>['fushi', 'mined']);
       expect(note['options'], <String, dynamic>{
         'allowDuplicate': true,
@@ -442,32 +506,33 @@ void main() {
       expect(params['data'], 'QUJD');
     });
 
-    test('mediaFileExists uses an exact-name getMediaFilesNames query',
-        () async {
-      final issued = <http.Request>[];
-      final bool exists = await withMock(
-        (s) => s.mediaFileExists('fushi_cover_abc.gif'),
-        sink: issued,
-        result: <String>[
-          'fushi_cover_abc.gif',
-          'fushi_cover_abc.gif.bak',
-        ],
-      );
-      final body = bodyOf(issued.single);
-      expect(body['action'], 'getMediaFilesNames');
-      expect((body['params'] as Map)['pattern'], 'fushi_cover_abc.gif');
-      expect(exists, isTrue);
-    });
+    test(
+      'mediaFileExists uses an exact-name getMediaFilesNames query',
+      () async {
+        final issued = <http.Request>[];
+        final bool exists = await withMock(
+          (s) => s.mediaFileExists('fushi_cover_abc.gif'),
+          sink: issued,
+          result: <String>['fushi_cover_abc.gif', 'fushi_cover_abc.gif.bak'],
+        );
+        final body = bodyOf(issued.single);
+        expect(body['action'], 'getMediaFilesNames');
+        expect((body['params'] as Map)['pattern'], 'fushi_cover_abc.gif');
+        expect(exists, isTrue);
+      },
+    );
 
-    test('mediaFileExists does not accept a neighbouring glob result',
-        () async {
-      final bool exists = await withMock(
-        (s) => s.mediaFileExists('fushi_cover_abc.gif'),
-        sink: <http.Request>[],
-        result: <String>['fushi_cover_abc.gif.bak'],
-      );
-      expect(exists, isFalse);
-    });
+    test(
+      'mediaFileExists does not accept a neighbouring glob result',
+      () async {
+        final bool exists = await withMock(
+          (s) => s.mediaFileExists('fushi_cover_abc.gif'),
+          sink: <http.Request>[],
+          result: <String>['fushi_cover_abc.gif.bak'],
+        );
+        expect(exists, isFalse);
+      },
+    );
   });
 
   group('api key', () {
@@ -479,15 +544,20 @@ void main() {
       final client = MockClient((http.Request request) async {
         issued.add(request);
         return http.Response(
-          jsonEncode(
-              <String, Object?>{'result': const <String>[], 'error': null}),
+          jsonEncode(<String, Object?>{
+            'result': const <String>[],
+            'error': null,
+          }),
           200,
           headers: <String, String>{'content-type': 'application/json'},
         );
       });
       await AnkiConnectService(
-              host: '127.0.0.1', port: 8765, apiKey: apiKey, client: client)
-          .getDeckNames();
+        host: '127.0.0.1',
+        port: 8765,
+        apiKey: apiKey,
+        client: client,
+      ).getDeckNames();
       return jsonDecode(issued.single.body) as Map<String, dynamic>;
     }
 
@@ -539,39 +609,46 @@ void main() {
     }
 
     Future<T> run<T>(
-        http.Client client, Future<T> Function(AnkiConnectService) body) {
+      http.Client client,
+      Future<T> Function(AnkiConnectService) body,
+    ) {
       return body(
-          AnkiConnectService(host: '127.0.0.1', port: 8765, client: client));
+        AnkiConnectService(host: '127.0.0.1', port: 8765, client: client),
+      );
     }
 
-    test('default transport tags a failed connection before HTTP delivery',
-        () async {
-      final ServerSocket reservation =
-          await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-      final int closedPort = reservation.port;
-      await reservation.close();
-      final AnkiConnectService service = AnkiConnectService(
-        host: InternetAddress.loopbackIPv4.address,
-        port: closedPort,
-        timeout: const Duration(seconds: 1),
-        connectionTimeout: const Duration(milliseconds: 200),
-      );
+    test(
+      'default transport tags a failed connection before HTTP delivery',
+      () async {
+        final ServerSocket reservation = await ServerSocket.bind(
+          InternetAddress.loopbackIPv4,
+          0,
+        );
+        final int closedPort = reservation.port;
+        await reservation.close();
+        final AnkiConnectService service = AnkiConnectService(
+          host: InternetAddress.loopbackIPv4.address,
+          port: closedPort,
+          timeout: const Duration(seconds: 1),
+          connectionTimeout: const Duration(milliseconds: 200),
+        );
 
-      await expectLater(
-        service.addNote(
-          deckName: 'D',
-          modelName: 'M',
-          fields: const <String, String>{'F': 'v'},
-        ),
-        throwsA(
-          isA<AnkiConnectPreDeliveryException>().having(
-            (AnkiConnectPreDeliveryException e) => e.cause,
-            'cause',
-            isA<SocketException>(),
+        await expectLater(
+          service.addNote(
+            deckName: 'D',
+            modelName: 'M',
+            fields: const <String, String>{'F': 'v'},
           ),
-        ),
-      );
-    });
+          throwsA(
+            isA<AnkiConnectPreDeliveryException>().having(
+              (AnkiConnectPreDeliveryException e) => e.cause,
+              'cause',
+              isA<SocketException>(),
+            ),
+          ),
+        );
+      },
+    );
 
     test('retries on errno-coded connection drop (osError path)', () async {
       // Mirrors package:http's _ClientSocketException: implements both
@@ -596,8 +673,9 @@ void main() {
       final f = flakyClient(
         failTimes: 1,
         exception: http.ClientException(
-            'ClientException with SocketException: Write failed '
-            '(OS Error: ..., errno = 10053), address = localhost, port = 4392'),
+          'ClientException with SocketException: Write failed '
+          '(OS Error: ..., errno = 10053), address = localhost, port = 4392',
+        ),
       );
       final decks = await run(f.client, (s) => s.getDeckNames());
       expect(f.attempts.length, 2);
@@ -623,8 +701,11 @@ void main() {
         run(f.client, (s) => s.getDeckNames()),
         throwsA(isA<http.ClientException>()),
       );
-      expect(f.attempts.length, 2,
-          reason: 'initial + one retry, then surfaces');
+      expect(
+        f.attempts.length,
+        2,
+        reason: 'initial + one retry, then surfaces',
+      );
     });
 
     test('does NOT retry a non-connection-drop client error', () async {
@@ -633,7 +714,8 @@ void main() {
       final f = flakyClient(
         failTimes: 99,
         exception: http.ClientException(
-            'Connection closed before full header was received'),
+          'Connection closed before full header was received',
+        ),
       );
       await expectLater(
         run(f.client, (s) => s.getDeckNames()),
@@ -642,8 +724,7 @@ void main() {
       expect(f.attempts.length, 1);
     });
 
-    test('retries addNote on a transport-tagged pre-delivery failure',
-        () async {
+    test('retries addNote on a transport-tagged pre-delivery failure', () async {
       // A phase-aware transport may tag a failure before it starts the request
       // stream. The tag, not "Write failed" text or errno, makes one retry safe.
       final f = flakyClient(
@@ -667,131 +748,131 @@ void main() {
       expect(id, 555);
     });
 
-    test('pre-delivery connection timeout retries safely, then surfaces',
-        () async {
-      final f = flakyClient(
-        failTimes: 99,
-        exception: AnkiConnectPreDeliveryException(
-          'connection establishment timed out',
-          Uri.parse('http://127.0.0.1:8765'),
-          TimeoutException('connect deadline exceeded'),
-        ),
-      );
-      await expectLater(
-        run(
-          f.client,
-          (s) => s.addNote(
-            deckName: 'D',
-            modelName: 'M',
-            fields: const <String, String>{'F': 'v'},
+    test(
+      'pre-delivery connection timeout retries safely, then surfaces',
+      () async {
+        final f = flakyClient(
+          failTimes: 99,
+          exception: AnkiConnectPreDeliveryException(
+            'connection establishment timed out',
+            Uri.parse('http://127.0.0.1:8765'),
+            TimeoutException('connect deadline exceeded'),
           ),
-        ),
-        throwsA(
-          isA<AnkiConnectPreDeliveryException>().having(
-            (AnkiConnectPreDeliveryException e) => e.cause,
-            'cause',
-            isA<TimeoutException>(),
+        );
+        await expectLater(
+          run(
+            f.client,
+            (s) => s.addNote(
+              deckName: 'D',
+              modelName: 'M',
+              fields: const <String, String>{'F': 'v'},
+            ),
           ),
-        ),
-      );
-      expect(
-        f.attempts.length,
-        2,
-        reason: 'connect timeout is pre-delivery, so one retry is safe',
-      );
-    });
+          throwsA(
+            isA<AnkiConnectPreDeliveryException>().having(
+              (AnkiConnectPreDeliveryException e) => e.cause,
+              'cause',
+              isA<TimeoutException>(),
+            ),
+          ),
+        );
+        expect(
+          f.attempts.length,
+          2,
+          reason: 'connect timeout is pre-delivery, so one retry is safe',
+        );
+      },
+    );
 
-    test('delivery-ambiguous addNote timeout is commit-unknown, no retry',
-        () async {
-      final f = flakyClient(
-        failTimes: 99,
-        exception: TimeoutException('response deadline exceeded'),
-      );
-      await expectLater(
-        run(
-          f.client,
-          (s) => s.addNote(
-            deckName: 'D',
-            modelName: 'M',
-            fields: const <String, String>{'F': 'v'},
+    test(
+      'delivery-ambiguous addNote timeout is commit-unknown, no retry',
+      () async {
+        final f = flakyClient(
+          failTimes: 99,
+          exception: TimeoutException('response deadline exceeded'),
+        );
+        await expectLater(
+          run(
+            f.client,
+            (s) => s.addNote(
+              deckName: 'D',
+              modelName: 'M',
+              fields: const <String, String>{'F': 'v'},
+            ),
           ),
-        ),
-        throwsA(
-          isA<AnkiConnectCommitUnknownException>()
-              .having((e) => e.action, 'action', 'addNote')
-              .having(
-                (e) => e.cause,
-                'cause',
-                isA<TimeoutException>(),
-              ),
-        ),
-      );
-      expect(
-        f.attempts.length,
-        1,
-        reason: 'an overall response timeout may follow a committed addNote',
-      );
-    });
+          throwsA(
+            isA<AnkiConnectCommitUnknownException>()
+                .having((e) => e.action, 'action', 'addNote')
+                .having((e) => e.cause, 'cause', isA<TimeoutException>()),
+          ),
+        );
+        expect(
+          f.attempts.length,
+          1,
+          reason: 'an overall response timeout may follow a committed addNote',
+        );
+      },
+    );
 
-    test('delivered-body socket timeout is commit-unknown despite connect text',
-        () async {
-      final _DrainThenSocketTimeoutClient client =
-          _DrainThenSocketTimeoutClient();
-      await expectLater(
-        run(
-          client,
-          (s) => s.addNote(
-            deckName: 'D',
-            modelName: 'M',
-            fields: const <String, String>{'F': 'v'},
+    test(
+      'delivered-body socket timeout is commit-unknown despite connect text',
+      () async {
+        final _DrainThenSocketTimeoutClient client =
+            _DrainThenSocketTimeoutClient();
+        await expectLater(
+          run(
+            client,
+            (s) => s.addNote(
+              deckName: 'D',
+              modelName: 'M',
+              fields: const <String, String>{'F': 'v'},
+            ),
           ),
-        ),
-        throwsA(
-          isA<AnkiConnectCommitUnknownException>()
-              .having((e) => e.action, 'action', 'addNote')
-              .having(
-                (e) => e.cause,
-                'cause',
-                isA<_FakeClientSocketException>(),
-              ),
-        ),
-      );
-      expect(
-        client.attempts,
-        1,
-        reason: 'public socket type/text/errno cannot prove pre-delivery',
-      );
-    });
+          throwsA(
+            isA<AnkiConnectCommitUnknownException>()
+                .having((e) => e.action, 'action', 'addNote')
+                .having(
+                  (e) => e.cause,
+                  'cause',
+                  isA<_FakeClientSocketException>(),
+                ),
+          ),
+        );
+        expect(
+          client.attempts,
+          1,
+          reason: 'public socket type/text/errno cannot prove pre-delivery',
+        );
+      },
+    );
 
-    test('delivered-body plain ClientException text is commit-unknown',
-        () async {
-      final _DrainThenPlainClientTimeoutClient client =
-          _DrainThenPlainClientTimeoutClient();
-      await expectLater(
-        run(
-          client,
-          (s) => s.addNote(
-            deckName: 'D',
-            modelName: 'M',
-            fields: const <String, String>{'F': 'v'},
+    test(
+      'delivered-body plain ClientException text is commit-unknown',
+      () async {
+        final _DrainThenPlainClientTimeoutClient client =
+            _DrainThenPlainClientTimeoutClient();
+        await expectLater(
+          run(
+            client,
+            (s) => s.addNote(
+              deckName: 'D',
+              modelName: 'M',
+              fields: const <String, String>{'F': 'v'},
+            ),
           ),
-        ),
-        throwsA(
-          isA<AnkiConnectCommitUnknownException>()
-              .having((e) => e.action, 'action', 'addNote')
-              .having(
-                (e) => e.cause,
-                'cause',
-                isA<http.ClientException>(),
-              ),
-        ),
-      );
-      expect(
-        client.attempts,
-        1,
-        reason: 'ClientException text cannot prove a connect-phase failure',
-      );
-    });
+          throwsA(
+            isA<AnkiConnectCommitUnknownException>()
+                .having((e) => e.action, 'action', 'addNote')
+                .having((e) => e.cause, 'cause', isA<http.ClientException>()),
+          ),
+        );
+        expect(
+          client.attempts,
+          1,
+          reason: 'ClientException text cannot prove a connect-phase failure',
+        );
+      },
+    );
 
     test('delivered-body bare SocketException is commit-unknown', () async {
       final _DrainThenBareSocketTimeoutClient client =
@@ -808,11 +889,7 @@ void main() {
         throwsA(
           isA<AnkiConnectCommitUnknownException>()
               .having((e) => e.action, 'action', 'addNote')
-              .having(
-                (e) => e.cause,
-                'cause',
-                isA<SocketException>(),
-              ),
+              .having((e) => e.cause, 'cause', isA<SocketException>()),
         ),
       );
       expect(
@@ -824,26 +901,29 @@ void main() {
 
     final List<(String, Object)> taggedRetryResponseFailures =
         <(String, Object)>[
-      (
-        'bare SocketException',
-        const SocketException(
-          'Connection timed out',
-          osError: OSError('Connection timed out', 10060),
-        ),
-      ),
-      ('bare TimeoutException', TimeoutException('response deadline exceeded')),
-      (
-        'plain ClientException with connect text',
-        http.ClientException('Connection timed out'),
-      ),
-      (
-        'ClientException+SocketException with connect text and errno',
-        _FakeClientSocketException(
-          'Connection timed out',
-          osError: const OSError('Connection timed out', 10060),
-        ),
-      ),
-    ];
+          (
+            'bare SocketException',
+            const SocketException(
+              'Connection timed out',
+              osError: OSError('Connection timed out', 10060),
+            ),
+          ),
+          (
+            'bare TimeoutException',
+            TimeoutException('response deadline exceeded'),
+          ),
+          (
+            'plain ClientException with connect text',
+            http.ClientException('Connection timed out'),
+          ),
+          (
+            'ClientException+SocketException with connect text and errno',
+            _FakeClientSocketException(
+              'Connection timed out',
+              osError: const OSError('Connection timed out', 10060),
+            ),
+          ),
+        ];
     for (final (String label, Object failure) in taggedRetryResponseFailures) {
       test('tagged first failure then $label is commit-unknown', () async {
         final _TaggedThenAmbiguousFailureClient client =
@@ -872,46 +952,59 @@ void main() {
     }
 
     test(
-        'classifies response-phase addNote reset as unknown commit without retry',
-        () async {
-      // A "Connection reset" without a write signature could mean the write
-      // succeeded and Anki already created the note before the read dropped —
-      // re-sending could duplicate. Must not retry; callers need to reconcile
-      // against Anki instead of treating this as an ordinary failure.
-      final f = flakyClient(
-        failTimes: 99,
-        exception: http.ClientException('Connection reset by peer'),
-      );
-      await expectLater(
-        run(
+      'classifies response-phase addNote reset as unknown commit without retry',
+      () async {
+        // A "Connection reset" without a write signature could mean the write
+        // succeeded and Anki already created the note before the read dropped —
+        // re-sending could duplicate. Must not retry; callers need to reconcile
+        // against Anki instead of treating this as an ordinary failure.
+        final f = flakyClient(
+          failTimes: 99,
+          exception: http.ClientException('Connection reset by peer'),
+        );
+        await expectLater(
+          run(
             f.client,
             (s) => s.addNote(
-                  deckName: 'D',
-                  modelName: 'M',
-                  fields: const <String, String>{'F': 'v'},
-                )),
-        throwsA(isA<AnkiConnectCommitUnknownException>()
-            .having((e) => e.action, 'action', 'addNote')),
-      );
-      expect(f.attempts.length, 1,
-          reason: 'response-phase drop on addNote is never blindly retried');
-    });
+              deckName: 'D',
+              modelName: 'M',
+              fields: const <String, String>{'F': 'v'},
+            ),
+          ),
+          throwsA(
+            isA<AnkiConnectCommitUnknownException>().having(
+              (e) => e.action,
+              'action',
+              'addNote',
+            ),
+          ),
+        );
+        expect(
+          f.attempts.length,
+          1,
+          reason: 'response-phase drop on addNote is never blindly retried',
+        );
+      },
+    );
 
-    test('retries the idempotent storeMediaFile on a connection drop',
-        () async {
-      // storeMediaFile overwrites by filename — re-sending is harmless, so it
-      // is retried like the read actions.
-      final f = flakyClient(
-        failTimes: 1,
-        exception: http.ClientException('Broken pipe'),
-        okResult: 'fushi_audio_abc.mp3',
-      );
-      await run(
+    test(
+      'retries the idempotent storeMediaFile on a connection drop',
+      () async {
+        // storeMediaFile overwrites by filename — re-sending is harmless, so it
+        // is retried like the read actions.
+        final f = flakyClient(
+          failTimes: 1,
+          exception: http.ClientException('Broken pipe'),
+          okResult: 'fushi_audio_abc.mp3',
+        );
+        await run(
           f.client,
           (s) =>
-              s.storeMediaFile(filename: 'fushi_audio_abc.mp3', data: 'QUJD'));
-      expect(f.attempts.length, 2);
-    });
+              s.storeMediaFile(filename: 'fushi_audio_abc.mp3', data: 'QUJD'),
+        );
+        expect(f.attempts.length, 2);
+      },
+    );
   });
 }
 
@@ -934,7 +1027,8 @@ class _FakeClientSocketException
   final int? port = null;
 
   @override
-  String toString() => 'ClientException with SocketException: $message'
+  String toString() =>
+      'ClientException with SocketException: $message'
       '${osError != null ? ' ($osError)' : ''}';
 }
 

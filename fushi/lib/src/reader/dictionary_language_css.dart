@@ -49,12 +49,7 @@ class DictionaryLanguageEntry {
 ///
 /// `:lang(zh)` 按 BCP-47 前缀匹配，会一并命中 `zh-Hant` / `zh-CN`，所以繁体规则
 /// 必须**写在简体之后**（同特异性，后写胜出），否则繁体子树会被简体规则接管。
-const List<String> _kLangRules = <String>[
-  'ja',
-  'ko',
-  'zh',
-  'zh-Hant',
-];
+const List<String> _kLangRules = <String>['ja', 'ko', 'zh', 'zh-Hant'];
 
 /// 生成注入查词弹窗的字体 CSS。
 ///

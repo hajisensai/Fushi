@@ -14,7 +14,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:http/http.dart' show ClientException, Response;
 import 'package:http/testing.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';

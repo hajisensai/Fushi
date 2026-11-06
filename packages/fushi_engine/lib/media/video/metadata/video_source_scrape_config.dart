@@ -53,10 +53,10 @@ const String kVideoMetadataPrimaryProviderPref =
 /// （Bangumi / Douban / AniList / Fanart）只是历史身份兼容，不可选。
 const List<VideoMetadataProviderKind> kSelectableVideoMetadataProviders =
     <VideoMetadataProviderKind>[
-  VideoMetadataProviderKind.anidb,
-  VideoMetadataProviderKind.mal,
-  VideoMetadataProviderKind.tmdb,
-];
+      VideoMetadataProviderKind.anidb,
+      VideoMetadataProviderKind.mal,
+      VideoMetadataProviderKind.tmdb,
+    ];
 
 /// 默认主源（Shoko 形态）。
 const VideoMetadataProviderKind kDefaultVideoMetadataPrimaryProvider =
@@ -64,11 +64,9 @@ const VideoMetadataProviderKind kDefaultVideoMetadataPrimaryProvider =
 
 /// 把偏好值 / `provider_override` 列值解析成可选主源；非法或历史值（如旧
 /// `bangumi` override）返回 `null`，由调用方回落到全局默认。
-VideoMetadataProviderKind? parseSelectableVideoMetadataProvider(
-  String? value,
-) {
-  final VideoMetadataProviderKind? kind =
-      VideoMetadataProviderKind.values.asNameMap()[value?.trim()];
+VideoMetadataProviderKind? parseSelectableVideoMetadataProvider(String? value) {
+  final VideoMetadataProviderKind? kind = VideoMetadataProviderKind.values
+      .asNameMap()[value?.trim()];
   return kind != null && kSelectableVideoMetadataProviders.contains(kind)
       ? kind
       : null;
@@ -78,13 +76,12 @@ VideoMetadataProviderKind? parseSelectableVideoMetadataProvider(
 /// MAL ↔ TMDB 互为兜底；其它历史主源没有兜底。
 VideoMetadataProviderKind? videoMetadataFallbackProvider(
   VideoMetadataProviderKind primary,
-) =>
-    switch (primary) {
-      VideoMetadataProviderKind.anidb => VideoMetadataProviderKind.tmdb,
-      VideoMetadataProviderKind.mal => VideoMetadataProviderKind.tmdb,
-      VideoMetadataProviderKind.tmdb => VideoMetadataProviderKind.mal,
-      _ => null,
-    };
+) => switch (primary) {
+  VideoMetadataProviderKind.anidb => VideoMetadataProviderKind.tmdb,
+  VideoMetadataProviderKind.mal => VideoMetadataProviderKind.tmdb,
+  VideoMetadataProviderKind.tmdb => VideoMetadataProviderKind.mal,
+  _ => null,
+};
 
 /// AniDB HTTP API 要求注册过的正整数 client version。
 ///
@@ -107,6 +104,7 @@ class VideoSourceScrapeGlobalConfig {
     this.anidbUsername = '',
     this.anidbPassword = '',
     this.locale = kFallbackVideoMetadataLocale,
+    this.followsWorkOriginalLanguage = false,
     this.primaryProvider = kDefaultVideoMetadataPrimaryProvider,
     this.identifierWords = ScrapeIdentifierWords.empty,
     this.maxCovers = kVideoMetadataDefaultMaxImages,
@@ -133,6 +131,7 @@ class VideoSourceScrapeGlobalConfig {
   final VideoMetadataProviderKind primaryProvider;
 
   final String tmdbApiKey;
+
   /// AniDB **UDP** 应用身份（哈希识别 / 登录）。客户端名留空时是随包的
   /// `fushiplayer`（只登记了 UDP）。
   final String anidbClientName;
@@ -148,18 +147,18 @@ class VideoSourceScrapeGlobalConfig {
   /// 本快照有没有一对可以拿去请求 AniDB HTTP API 的身份（设置页状态用）。
   /// 只看配置；AniDB 运行期拒绝（302 闩）/ 封禁由 provider 自己判。
   bool get anidbHttpClientConfigured => AniDbAppClientIdentity(
-        name: anidbHttpClientName,
-        version: anidbHttpClientVersion,
-      ).isUsable;
+    name: anidbHttpClientName,
+    version: anidbHttpClientVersion,
+  ).isUsable;
   final bool hashEnabled;
   final String anidbUsername;
   final String anidbPassword;
   AnidbUdpConfig get anidbUdpConfig => AnidbUdpConfig(
-        username: anidbUsername,
-        password: anidbPassword,
-        clientName: anidbClientName,
-        clientVersion: anidbClientVersion ?? 0,
-      );
+    username: anidbUsername,
+    password: anidbPassword,
+    clientName: anidbClientName,
+    clientVersion: anidbClientVersion ?? 0,
+  );
 
   /// 哈希识别在本快照下会不会真的跑：开关打开且 UDP 凭据 / 客户端身份完整，
   /// 与协调器里 `AnidbHashIdentityService` 的 `enabled` + `isConfigured` 同一判据。
@@ -176,22 +175,23 @@ class VideoSourceScrapeGlobalConfig {
   /// `hashEnabled` / 用户名 / 密码，用户填好 AniDB 账号后仍复用旧协调器，
   /// 旧协调器里的 `AnidbHashIdentityService` 还是构建时那份「未配置」快照。
   String get runtimeFingerprint => <Object>[
-        tmdbApiKey,
-        anidbClientName,
-        anidbClientVersion ?? 0,
-        anidbHttpClientName,
-        anidbHttpClientVersion ?? 0,
-        hashEnabled,
-        anidbUsername,
-        anidbPassword,
-        locale,
-        primaryProvider.name,
-        identifierWords.source,
-        maxCovers,
-        maxBackdrops,
-        maxLogos,
-        downloadStaffImages,
-      ].join('\u0000');
+    tmdbApiKey,
+    anidbClientName,
+    anidbClientVersion ?? 0,
+    anidbHttpClientName,
+    anidbHttpClientVersion ?? 0,
+    hashEnabled,
+    anidbUsername,
+    anidbPassword,
+    locale,
+    followsWorkOriginalLanguage,
+    primaryProvider.name,
+    identifierWords.source,
+    maxCovers,
+    maxBackdrops,
+    maxLogos,
+    downloadStaffImages,
+  ].join('\u0000');
 
   /// 本批次的**全局**资料语言（BCP-47）。来源级 `metadata_locale` 可覆盖，所以
   /// 消费端一律从**有效** locale 派生语言参数（`VideoSourceScrapeCoordinator._locale`
@@ -204,12 +204,25 @@ class VideoSourceScrapeGlobalConfig {
   /// 什么都没改。
   final String locale;
 
+  /// 用户没显式设过资料语言（[kVideoMetadataLocalePref] 留空）→ 每部作品按它
+  /// **自己的原语言**刮（BUG-4056：日本动画拿日文标题 / 简介 / 海报，不因界面是
+  /// 中文就变中文资料）。此时 [locale] 只是「原语言未知」时的兜底与非刮削用途
+  /// （发现页、AI 提示语）的语言，不是刮削语言。
+  ///
+  /// 来源级 `metadata_locale` 显式覆盖时不跟随原语言（见协调器
+  /// `_EffectiveSourceSettings`）。各 provider 怎么取原语言见
+  /// `VideoMetadataProviderRegistry.production` 的 `followOriginalLanguage`。
+  final bool followsWorkOriginalLanguage;
+
   /// 标题候选的用户预处理词表（屏蔽 / 替换 / 集偏移）。解析失败的行已在
   /// 构造时丢弃，只有可用的规则会进到这里。
   final ScrapeIdentifierWords identifierWords;
 
   /// [uiLocaleTag] 是**界面语言**（app 侧 `AppModel.appLocale.toLanguageTag()`）；
-  /// 用户没显式设过资料语言时就用它。此前这里回落到写死的 `zh-CN`，等于让每个
+  /// 用户没显式设过资料语言时，刮削按作品原语言走（[followsWorkOriginalLanguage]，
+  /// BUG-4056），界面语言只作原语言未知时的兜底。[emptyLocaleFollowsWorkOriginal]
+  /// = false 时（无头服务端：`uiLocaleTag` 是管理员显式配的 `metadata_locale`）
+  /// 留空就直接用 [uiLocaleTag]，不跟随原语言。此前这里回落到写死的 `zh-CN`，等于让每个
   /// 德语、韩语、阿拉伯语用户默认拉中文简介和中文海报——app 出 17 种语言，没有
   /// 哪种语言配当隐含默认值。
   ///
@@ -221,23 +234,27 @@ class VideoSourceScrapeGlobalConfig {
     PrefStore preferences, {
     required String resolvedTmdbApiKey,
     required String uiLocaleTag,
+    bool emptyLocaleFollowsWorkOriginal = true,
     AniDbAppClientIdentity bundledAniDbClient = kBundledAniDbClient,
     AniDbAppClientIdentity bundledAniDbHttpClient = kBundledAniDbHttpClient,
   }) {
     String read(String key, [String fallback = '']) =>
         (preferences.getPref(key, defaultValue: fallback) as String).trim();
     int readLimit(String key) {
-      final Object? raw =
-          preferences.getPref(key, defaultValue: kVideoMetadataDefaultMaxImages);
+      final Object? raw = preferences.getPref(
+        key,
+        defaultValue: kVideoMetadataDefaultMaxImages,
+      );
       final int value = raw is int
           ? raw
           : int.tryParse('$raw') ?? kVideoMetadataDefaultMaxImages;
       return value < 0 ? kVideoMetadataDefaultMaxImages : value;
     }
+
     final String uiLocale = uiLocaleTag.trim().isEmpty
         ? kFallbackVideoMetadataLocale
         : uiLocaleTag.trim();
-    final String locale = read(kVideoMetadataLocalePref, uiLocale);
+    final String locale = read(kVideoMetadataLocalePref);
     final AniDbAppClients clients = resolveAniDbAppClients(
       customName: read(kVideoMetadataAniDbClientNamePref),
       customVersion: parseAniDbClientVersion(
@@ -252,14 +269,19 @@ class VideoSourceScrapeGlobalConfig {
       anidbClientVersion: clients.udp.version,
       anidbHttpClientName: clients.http.name,
       anidbHttpClientVersion: clients.http.version,
-      hashEnabled: preferences.getPref(kVideoAniDbHashEnabledPref,
-          defaultValue: false) as bool,
+      hashEnabled:
+          preferences.getPref(kVideoAniDbHashEnabledPref, defaultValue: false)
+              as bool,
       anidbUsername: read(kVideoAniDbUsernamePref),
       // Password whitespace is significant; do not apply the display-string trimmer.
-      anidbPassword: preferences.getPref(kVideoAniDbPasswordPref,
-          defaultValue: '') as String,
+      anidbPassword:
+          preferences.getPref(kVideoAniDbPasswordPref, defaultValue: '')
+              as String,
       locale: locale.isEmpty ? uiLocale : locale,
-      primaryProvider: parseSelectableVideoMetadataProvider(
+      followsWorkOriginalLanguage:
+          locale.isEmpty && emptyLocaleFollowsWorkOriginal,
+      primaryProvider:
+          parseSelectableVideoMetadataProvider(
             read(kVideoMetadataPrimaryProviderPref),
           ) ??
           kDefaultVideoMetadataPrimaryProvider,
@@ -271,8 +293,12 @@ class VideoSourceScrapeGlobalConfig {
       maxCovers: readLimit(kVideoMetadataMaxCoversPref),
       maxBackdrops: readLimit(kVideoMetadataMaxBackdropsPref),
       maxLogos: readLimit(kVideoMetadataMaxLogosPref),
-      downloadStaffImages: preferences.getPref(kVideoMetadataStaffImagesPref,
-          defaultValue: false) as bool,
+      downloadStaffImages:
+          preferences.getPref(
+                kVideoMetadataStaffImagesPref,
+                defaultValue: false,
+              )
+              as bool,
     );
   }
 }

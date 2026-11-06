@@ -38,8 +38,7 @@ class _PerBookBackend implements SyncBackend {
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) async =>
-      'folder/$bookTitle';
+  }) async => 'folder/$bookTitle';
 
   @override
   Future<SyncFileTrio> listSyncFiles(String folderId) async {
@@ -55,8 +54,9 @@ class _PerBookBackend implements SyncBackend {
   Future<TtuProgress> getProgressFile(String fileId) async {
     final String title = fileId.substring('id-'.length);
     final String name = remote[title]!;
-    final List<String> parts =
-        name.substring(0, name.length - '.json'.length).split('_');
+    final List<String> parts = name
+        .substring(0, name.length - '.json'.length)
+        .split('_');
     return TtuProgress(
       dataId: 0,
       exploredCharCount: (double.parse(parts[4]) * 1000).round(),
@@ -115,23 +115,27 @@ Future<void> _seedBook(
   int? baseline,
 }) async {
   // v82：insertEpubBook 单点自动生成 uid；reader_positions 键随之换 uid。
-  await db.insertEpubBook(EpubBooksCompanion.insert(
-    bookKey: 'key-$title',
-    title: title,
-    epubPath: '/tmp/$title.epub',
-    extractDir: '/tmp/$title',
-    chapterCount: 1,
-    chaptersJson: '[{"title":"c1","characters":1000}]',
-    importedAt: 1,
-  ));
+  await db.insertEpubBook(
+    EpubBooksCompanion.insert(
+      bookKey: 'key-$title',
+      title: title,
+      epubPath: '/tmp/$title.epub',
+      extractDir: '/tmp/$title',
+      chapterCount: 1,
+      chaptersJson: '[{"title":"c1","characters":1000}]',
+      importedAt: 1,
+    ),
+  );
   if (updatedAt != null) {
     final String bookUid = (await db.resolveEpubBookUid('key-$title'))!;
-    await db.upsertReaderPosition(ReaderPositionsCompanion(
-      bookUid: Value<String>(bookUid),
-      sectionIndex: const Value<int>(0),
-      normCharOffset: Value<int>(normCharOffset),
-      updatedAt: Value<int>(updatedAt),
-    ));
+    await db.upsertReaderPosition(
+      ReaderPositionsCompanion(
+        bookUid: Value<String>(bookUid),
+        sectionIndex: const Value<int>(0),
+        normCharOffset: Value<int>(normCharOffset),
+        updatedAt: Value<int>(updatedAt),
+      ),
+    );
   }
   if (baseline != null) {
     await db.setSyncBaseline(title, 'progress', baseline);
@@ -142,17 +146,16 @@ Future<List<SyncBookResult>> _run(
   FushiDatabase db,
   SyncBackend backend, {
   RemoteListingSnapshot? listing,
-}) =>
-    SyncManager(db: db, backend: backend).syncAllBooks(
-      syncStats: false,
-      statsSyncMode: StatisticsSyncMode.merge,
-      syncAudioBook: false,
-      listing: listing,
-    );
+}) => SyncManager(db: db, backend: backend).syncAllBooks(
+  syncStats: false,
+  statsSyncMode: StatisticsSyncMode.merge,
+  syncAudioBook: false,
+  listing: listing,
+);
 
 /// 同一场景跑两遍：一遍喂快照、一遍逐本列举，返回两边的方向序列。
 Future<({List<SyncResult> viaSnapshot, List<SyncResult> viaPerBook, int calls})>
-    _bothPaths(
+_bothPaths(
   Map<String, String?> remote,
   Future<void> Function(FushiDatabase db) seed,
 ) async {
@@ -160,8 +163,11 @@ Future<({List<SyncResult> viaSnapshot, List<SyncResult> viaPerBook, int calls})>
   addTearDown(dbA.close);
   await seed(dbA);
   final _PerBookBackend backendA = _PerBookBackend(remote);
-  final List<SyncBookResult> a =
-      await _run(dbA, backendA, listing: _snapshotOf(remote));
+  final List<SyncBookResult> a = await _run(
+    dbA,
+    backendA,
+    listing: _snapshotOf(remote),
+  );
 
   final FushiDatabase dbB = _testDb();
   addTearDown(dbB.close);
@@ -178,10 +184,9 @@ Future<({List<SyncResult> viaSnapshot, List<SyncResult> viaPerBook, int calls})>
 
 void main() {
   test('双方一致：两条路都判 synced，快照路零列举请求', () async {
-    final r = await _bothPaths(
-      <String, String?>{'Book A': 'progress_1_6_1000_0.5.json'},
-      (FushiDatabase db) => _seedBook(db, title: 'Book A', updatedAt: 1000),
-    );
+    final r = await _bothPaths(<String, String?>{
+      'Book A': 'progress_1_6_1000_0.5.json',
+    }, (FushiDatabase db) => _seedBook(db, title: 'Book A', updatedAt: 1000));
     expect(r.viaSnapshot, r.viaPerBook);
     expect(r.viaSnapshot, <SyncResult>[SyncResult.synced]);
     expect(r.calls, 0, reason: '这正是改动前每本书都要付的那次往返');
@@ -190,11 +195,13 @@ void main() {
   test('本地更新：两条路都判 exported', () async {
     final r = await _bothPaths(
       <String, String?>{'Book A': 'progress_1_6_1000_0.5.json'},
-      (FushiDatabase db) => _seedBook(db,
-          title: 'Book A',
-          updatedAt: 2000,
-          normCharOffset: 6000,
-          baseline: 1000),
+      (FushiDatabase db) => _seedBook(
+        db,
+        title: 'Book A',
+        updatedAt: 2000,
+        normCharOffset: 6000,
+        baseline: 1000,
+      ),
     );
     expect(r.viaSnapshot, r.viaPerBook);
     expect(r.viaSnapshot, <SyncResult>[SyncResult.exported]);
@@ -212,19 +219,17 @@ void main() {
   });
 
   test('远端没有 progress：两条路都判 exported', () async {
-    final r = await _bothPaths(
-      <String, String?>{'Book A': null},
-      (FushiDatabase db) => _seedBook(db, title: 'Book A', updatedAt: 1000),
-    );
+    final r = await _bothPaths(<String, String?>{
+      'Book A': null,
+    }, (FushiDatabase db) => _seedBook(db, title: 'Book A', updatedAt: 1000));
     expect(r.viaSnapshot, r.viaPerBook);
     expect(r.viaSnapshot, <SyncResult>[SyncResult.exported]);
   });
 
   test('两边都没有进度：两条路都判 synced', () async {
-    final r = await _bothPaths(
-      <String, String?>{'Book A': null},
-      (FushiDatabase db) => _seedBook(db, title: 'Book A'),
-    );
+    final r = await _bothPaths(<String, String?>{
+      'Book A': null,
+    }, (FushiDatabase db) => _seedBook(db, title: 'Book A'));
     expect(r.viaSnapshot, r.viaPerBook);
     expect(r.viaSnapshot, <SyncResult>[SyncResult.synced]);
   });
@@ -236,8 +241,9 @@ void main() {
           _seedBook(db, title: 'Book A', updatedAt: 1000, normCharOffset: 9000),
     );
     expect(r.viaSnapshot, r.viaPerBook);
-    expect(r.viaSnapshot, <SyncResult>[SyncResult.exported],
-        reason: '同一毫秒，本地读得更远 → 本地胜出');
+    expect(r.viaSnapshot, <SyncResult>[
+      SyncResult.exported,
+    ], reason: '同一毫秒，本地读得更远 → 本地胜出');
   });
 
   test('快照里没有这本书（远端全新）：两条路都判 exported，不会被当成一致', () async {
@@ -247,8 +253,11 @@ void main() {
     addTearDown(dbA.close);
     await _seedBook(dbA, title: 'Book A', updatedAt: 1000);
     final _PerBookBackend backendA = _PerBookBackend(<String, String?>{});
-    final List<SyncBookResult> a =
-        await _run(dbA, backendA, listing: RemoteListingBuilder().build());
+    final List<SyncBookResult> a = await _run(
+      dbA,
+      backendA,
+      listing: RemoteListingBuilder().build(),
+    );
 
     final FushiDatabase dbB = _testDb();
     addTearDown(dbB.close);
@@ -270,13 +279,19 @@ void main() {
     };
     final r = await _bothPaths(remote, (FushiDatabase db) async {
       await _seedBook(db, title: 'Same', updatedAt: 1000, baseline: 1000);
-      await _seedBook(db,
-          title: 'LocalNewer',
-          updatedAt: 2000,
-          normCharOffset: 6000,
-          baseline: 1000);
-      await _seedBook(db,
-          title: 'RemoteNewer', updatedAt: 1000, baseline: 1000);
+      await _seedBook(
+        db,
+        title: 'LocalNewer',
+        updatedAt: 2000,
+        normCharOffset: 6000,
+        baseline: 1000,
+      );
+      await _seedBook(
+        db,
+        title: 'RemoteNewer',
+        updatedAt: 1000,
+        baseline: 1000,
+      );
       await _seedBook(db, title: 'RemoteMissing', updatedAt: 1000);
     });
 
@@ -291,10 +306,9 @@ void main() {
   });
 
   test('无共同祖先且双边分叉：两条路都判 conflict（快照不会把冲突吞成一致）', () async {
-    final r = await _bothPaths(
-      <String, String?>{'Book A': 'progress_1_6_9000_0.9.json'},
-      (FushiDatabase db) => _seedBook(db, title: 'Book A', updatedAt: 1000),
-    );
+    final r = await _bothPaths(<String, String?>{
+      'Book A': 'progress_1_6_9000_0.9.json',
+    }, (FushiDatabase db) => _seedBook(db, title: 'Book A', updatedAt: 1000));
     expect(r.viaSnapshot, r.viaPerBook);
     expect(r.viaSnapshot, <SyncResult>[SyncResult.conflict]);
   });

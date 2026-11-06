@@ -69,7 +69,7 @@ SrsFieldKind srsFieldKindOf(String name, String value, {bool toggle = false}) {
   if (hasImg && _onlyImages(v)) return SrsFieldKind.image;
   if (hasSound && _onlySounds(v)) return SrsFieldKind.audio;
   if (v.isEmpty) {
-    if (_nameHas(name, const <String>['picture', 'image', 'photo'])) {
+    if (_nameHas(name, const <String>['picture', 'image', 'photo', 'media'])) {
       return SrsFieldKind.image;
     }
     if (_nameHas(name, const <String>['audio', 'sound'])) {

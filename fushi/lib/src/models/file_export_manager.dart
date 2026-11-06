@@ -6,8 +6,8 @@ class FileExportManager {
   FileExportManager({
     required Directory exportDirectory,
     required Directory alternateExportDirectory,
-  })  : _exportDirectory = exportDirectory,
-        _alternateExportDirectory = alternateExportDirectory;
+  }) : _exportDirectory = exportDirectory,
+       _alternateExportDirectory = alternateExportDirectory;
 
   final Directory _exportDirectory;
   final Directory _alternateExportDirectory;

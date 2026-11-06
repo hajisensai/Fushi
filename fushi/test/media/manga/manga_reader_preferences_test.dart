@@ -6,24 +6,24 @@ void main() {
   test('Mangatan controls round-trip and clamp untrusted persisted values', () {
     final MangaReaderPreferences value =
         MangaReaderPreferences.fromJson(<String, Object?>{
-      'automaticBackground': true,
-      'webtoonDoubleTapZoom': false,
-      'showPageGaps': false,
-      'autoScroll': true,
-      'autoScrollSpeed': 999,
-      'readerHideThreshold': -5,
-      'einkMode': true,
-      'lookupOnHover': true,
-      'showOcrBoxes': true,
-      'brightness': -500,
-      'contrast': 900,
-      'saturation': double.nan,
-      'customColorFilter': true,
-      'colorFilterColor': '#a0F15b',
-      'colorFilterOpacity': 200,
-      'ocrTrigger': 'manual',
-      'parallelOcrTasks': 9,
-    });
+          'automaticBackground': true,
+          'webtoonDoubleTapZoom': false,
+          'showPageGaps': false,
+          'autoScroll': true,
+          'autoScrollSpeed': 999,
+          'readerHideThreshold': -5,
+          'einkMode': true,
+          'lookupOnHover': true,
+          'showOcrBoxes': true,
+          'brightness': -500,
+          'contrast': 900,
+          'saturation': double.nan,
+          'customColorFilter': true,
+          'colorFilterColor': '#a0F15b',
+          'colorFilterOpacity': 200,
+          'ocrTrigger': 'manual',
+          'parallelOcrTasks': 9,
+        });
     expect(value.autoScrollSpeed, 200);
     expect(value.readerHideThreshold, 0);
     expect(value.brightness, -100);
@@ -36,12 +36,12 @@ void main() {
       MangaReaderPreferences.fromJson(value.toJson()).toJson(),
       value.toJson(),
     );
-    final MangaReaderPreferences resolved =
-        value.copyWithJson(<String, Object?>{
-      'colorFilterColor': '#fff;display:none',
-      'ocrTrigger': 'eager',
-      'autoScrollSpeed': double.infinity,
-    });
+    final MangaReaderPreferences resolved = value
+        .copyWithJson(<String, Object?>{
+          'colorFilterColor': '#fff;display:none',
+          'ocrTrigger': 'eager',
+          'autoScrollSpeed': double.infinity,
+        });
     expect(resolved.colorFilterColor, '#a0F15b');
     expect(resolved.ocrTrigger, 'manual');
     expect(resolved.autoScrollSpeed, 200);
@@ -84,11 +84,11 @@ void main() {
     );
     final MangaReaderPreferences resolved =
         MangaReaderPreferences.resolve(global, <String, Object?>{
-      'longStripSidePadding': 12,
-      'showPageNumber': true,
-      'scaleType': 'unknown',
-      'direction': 42,
-    });
+          'longStripSidePadding': 12,
+          'showPageNumber': true,
+          'scaleType': 'unknown',
+          'direction': 42,
+        });
     expect(resolved.mode, MangaReadingMode.webtoonGaps);
     expect(resolved.scaleType, MangaScaleType.fitWidth);
     expect(resolved.direction, 'ltr');
@@ -118,29 +118,35 @@ void main() {
     );
   });
 
-  test('downloadAhead defaults on and legacy chapter keys still round-trip',
-      () {
-    expect(const MangaReaderPreferences().downloadAhead, isTrue);
-    expect(
-      MangaReaderPreferences.fromJson(const <String, Object?>{}).downloadAhead,
-      isTrue,
-    );
-    // skipFiltered / alwaysShowChapterTransition 已不在面板上，但旧覆盖 JSON
-    // 里的值必须原样保留，不能被当成未知键丢掉。
-    final MangaReaderPreferences resolved = MangaReaderPreferences.resolve(
-        const MangaReaderPreferences(), <String, Object?>{
-      'downloadAhead': false,
-      'skipFiltered': false,
-      'alwaysShowChapterTransition': false,
-    });
-    expect(resolved.downloadAhead, isFalse);
-    expect(resolved.skipFiltered, isFalse);
-    expect(resolved.alwaysShowChapterTransition, isFalse);
-    expect(
-      MangaReaderPreferences.normalizedOverride(<String, Object?>{
-        'downloadAhead': 'yes',
-      }),
-      isEmpty,
-    );
-  });
+  test(
+    'downloadAhead defaults on and legacy chapter keys still round-trip',
+    () {
+      expect(const MangaReaderPreferences().downloadAhead, isTrue);
+      expect(
+        MangaReaderPreferences.fromJson(
+          const <String, Object?>{},
+        ).downloadAhead,
+        isTrue,
+      );
+      // skipFiltered / alwaysShowChapterTransition 已不在面板上，但旧覆盖 JSON
+      // 里的值必须原样保留，不能被当成未知键丢掉。
+      final MangaReaderPreferences resolved = MangaReaderPreferences.resolve(
+        const MangaReaderPreferences(),
+        <String, Object?>{
+          'downloadAhead': false,
+          'skipFiltered': false,
+          'alwaysShowChapterTransition': false,
+        },
+      );
+      expect(resolved.downloadAhead, isFalse);
+      expect(resolved.skipFiltered, isFalse);
+      expect(resolved.alwaysShowChapterTransition, isFalse);
+      expect(
+        MangaReaderPreferences.normalizedOverride(<String, Object?>{
+          'downloadAhead': 'yes',
+        }),
+        isEmpty,
+      );
+    },
+  );
 }

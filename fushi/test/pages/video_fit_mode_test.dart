@@ -9,9 +9,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'video_fushi_page_source_corpus.dart';
 
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 void main() {
@@ -92,13 +90,20 @@ void main() {
     // 随 fullscreen 域搬到 fullscreen.part.dart，故改读合并语料；窗口侧 Video 仍在主壳。
     final String src = readVideoFushiSource();
     // Windowed + fullscreen both go through the mapping helper.
-    final int mappedFitCount =
-        'fit: videoFitModeToBoxFit(_videoFitMode)'.allMatches(src).length;
-    expect(mappedFitCount, greaterThanOrEqualTo(2),
-        reason: 'windowed + fullscreen Video must both map fit from the pref');
+    final int mappedFitCount = 'fit: videoFitModeToBoxFit(_videoFitMode)'
+        .allMatches(src)
+        .length;
+    expect(
+      mappedFitCount,
+      greaterThanOrEqualTo(2),
+      reason: 'windowed + fullscreen Video must both map fit from the pref',
+    );
     // The old hard-coded windowed cover line is gone.
-    expect(src, isNot(contains('fit: BoxFit.cover')),
-        reason: 'windowed fit must no longer be hard-coded to cover');
+    expect(
+      src,
+      isNot(contains('fit: BoxFit.cover')),
+      reason: 'windowed fit must no longer be hard-coded to cover',
+    );
     // Pref read on init + setter for the picker callback.
     expect(src, contains('appModel.videoFitMode'));
     expect(src, contains('_setVideoFitMode'));

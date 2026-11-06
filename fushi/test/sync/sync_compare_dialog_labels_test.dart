@@ -79,8 +79,7 @@ class _FakeSyncBackend implements SyncBackend {
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) async =>
-      remoteBooks[bookTitle]?.folderId ?? 'folder-$bookTitle';
+  }) async => remoteBooks[bookTitle]?.folderId ?? 'folder-$bookTitle';
 
   @override
   Future<String> ensureNamespace(String name) async => name;
@@ -104,8 +103,10 @@ class _FakeSyncBackend implements SyncBackend {
   }
 
   @override
-  void restoreCache(
-      {String? rootFolderId, Map<String, String>? titleToFolderId}) {
+  void restoreCache({
+    String? rootFolderId,
+    Map<String, String>? titleToFolderId,
+  }) {
     _cachedRoot = rootFolderId;
     if (titleToFolderId != null) _cachedFolders.addAll(titleToFolderId);
   }
@@ -142,34 +143,31 @@ class _FakeSyncBackend implements SyncBackend {
     required String folderId,
     required String? fileId,
     required List<TtuStatistics> stats,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> updateAudioBookFile({
     required String folderId,
     required String? fileId,
     required TtuAudioBook audioBook,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> uploadContentFile({
     required String folderId,
     required String fileName,
     required File file,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<SyncFileRef?> findContentFile(
-          String folderId, String fileName) async =>
-      throw UnimplementedError();
+    String folderId,
+    String fileName,
+  ) async => throw UnimplementedError();
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) async =>
       throw UnimplementedError();
@@ -180,13 +178,18 @@ class _FakeSyncBackend implements SyncBackend {
   Future<String> ensureFolder(String parentId, String name) async =>
       throw UnimplementedError();
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
-  Future<void> getAsset(String assetId, File destination,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
   Future<Object?> getJsonAsset(String assetId) async =>
       throw UnimplementedError();
@@ -225,15 +228,17 @@ class _RemoteBook {
 }
 
 Future<EpubBookRow> _seedBook(FushiDatabase db, String title) async {
-  await db.insertEpubBook(EpubBooksCompanion.insert(
-    bookKey: title,
-    title: title,
-    epubPath: '/fake/$title.epub',
-    extractDir: '/fake/$title',
-    chapterCount: 1,
-    chaptersJson: _chaptersJson,
-    importedAt: DateTime.now().millisecondsSinceEpoch,
-  ));
+  await db.insertEpubBook(
+    EpubBooksCompanion.insert(
+      bookKey: title,
+      title: title,
+      epubPath: '/fake/$title.epub',
+      extractDir: '/fake/$title',
+      chapterCount: 1,
+      chaptersJson: _chaptersJson,
+      importedAt: DateTime.now().millisecondsSinceEpoch,
+    ),
+  );
   return (await db.getAllEpubBooks()).firstWhere((b) => b.title == title);
 }
 
@@ -244,12 +249,14 @@ Future<void> _seedPosition(
   required double fraction,
 }) async {
   final int normOffset = (fraction * 10000).round();
-  await db.upsertReaderPosition(ReaderPositionsCompanion(
-    bookUid: Value(bookUid),
-    sectionIndex: const Value(0),
-    normCharOffset: Value(normOffset),
-    updatedAt: Value(updatedAt),
-  ));
+  await db.upsertReaderPosition(
+    ReaderPositionsCompanion(
+      bookUid: Value(bookUid),
+      sectionIndex: const Value(0),
+      normCharOffset: Value(normOffset),
+      updatedAt: Value(updatedAt),
+    ),
+  );
 }
 
 // Seeds one book whose local and remote both diverged from base (a conflict),
@@ -308,51 +315,64 @@ void main() {
   });
 
   testWidgets(
-      'footer uses sync_compare_close (not shared dialog_done) and tapping it '
-      'only pops, no sync runs', (WidgetTester tester) async {
-    final FushiDatabase db = _memDb();
-    addTearDown(db.close);
-    final _FakeSyncBackend fake = await _seedConflict(db);
+    'footer uses sync_compare_close (not shared dialog_done) and tapping it '
+    'only pops, no sync runs',
+    (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final _FakeSyncBackend fake = await _seedConflict(db);
 
-    await _pumpDialog(tester, db, fake);
+      await _pumpDialog(tester, db, fake);
 
-    // Dialog is up with a conflict entry.
-    expect(find.text(t.sync_compare_conflicts), findsOneWidget);
-    // The dismiss button reads the new dedicated close key, not dialog_done.
-    expect(find.text(t.sync_compare_close), findsOneWidget);
-    expect(find.text(t.dialog_done), findsNothing);
+      // Dialog is up with a conflict entry.
+      expect(find.text(t.sync_compare_conflicts), findsOneWidget);
+      // The dismiss button reads the new dedicated close key, not dialog_done.
+      expect(find.text(t.sync_compare_close), findsOneWidget);
+      expect(find.text(t.dialog_done), findsNothing);
 
-    // Tapping Close pops the dialog and runs NO sync (no export captured).
-    await tester.tap(find.text(t.sync_compare_close));
-    await tester.pumpAndSettle();
-    expect(find.text(t.sync_compare_conflicts), findsNothing,
-        reason: 'Close must pop the compare dialog');
-    expect(fake.exportedByFolder, isEmpty,
-        reason: 'Close is a pure dismiss, it must not trigger a sync');
-  });
+      // Tapping Close pops the dialog and runs NO sync (no export captured).
+      await tester.tap(find.text(t.sync_compare_close));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(t.sync_compare_conflicts),
+        findsNothing,
+        reason: 'Close must pop the compare dialog',
+      );
+      expect(
+        fake.exportedByFolder,
+        isEmpty,
+        reason: 'Close is a pure dismiss, it must not trigger a sync',
+      );
+    },
+  );
 
   testWidgets(
-      'primary action reads sync_compare_apply(count) and tapping it runs '
-      '_applyChoices (an export)', (WidgetTester tester) async {
-    final FushiDatabase db = _memDb();
-    addTearDown(db.close);
-    final _FakeSyncBackend fake = await _seedConflict(db);
+    'primary action reads sync_compare_apply(count) and tapping it runs '
+    '_applyChoices (an export)',
+    (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final _FakeSyncBackend fake = await _seedConflict(db);
 
-    await _pumpDialog(tester, db, fake);
+      await _pumpDialog(tester, db, fake);
 
-    // Resolve the conflict (use local, export direction) so Apply is enabled
-    // and its count reflects the single actionable entry.
-    await tester.tap(find.text(t.sync_compare_use_local).first);
-    await tester.pumpAndSettle();
+      // Resolve the conflict (use local, export direction) so Apply is enabled
+      // and its count reflects the single actionable entry.
+      await tester.tap(find.text(t.sync_compare_use_local).first);
+      await tester.pumpAndSettle();
 
-    // The primary button carries the sync_compare_apply key (value Sync now).
-    expect(find.text(t.sync_compare_apply(count: 1)), findsOneWidget);
+      // The primary button carries the sync_compare_apply key (value Sync now).
+      expect(find.text(t.sync_compare_apply(count: 1)), findsOneWidget);
 
-    await tester.tap(find.text(t.sync_compare_apply(count: 1)));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text(t.sync_compare_apply(count: 1)));
+      await tester.pumpAndSettle();
 
-    // _applyChoices truly ran: the conflict folder progress was exported.
-    expect(fake.exportedByFolder.keys, contains('folderA'),
-        reason: 'Sync now must trigger _applyChoices (the manual export)');
-  });
+      // _applyChoices truly ran: the conflict folder progress was exported.
+      expect(
+        fake.exportedByFolder.keys,
+        contains('folderA'),
+        reason: 'Sync now must trigger _applyChoices (the manual export)',
+      );
+    },
+  );
 }

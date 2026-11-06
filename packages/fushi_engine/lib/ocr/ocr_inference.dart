@@ -9,7 +9,8 @@
 library;
 
 import 'package:fushi_asr_core/asr_core.dart';
-import 'package:fushi_asr_core/asr_core.dart' as onnx
+import 'package:fushi_asr_core/asr_core.dart'
+    as onnx
     show isLocalOnnxRuntimeAvailable;
 // 只放行共享 ONNX 抽象那几个名字，**不要整份 re-export**：fushi_asr_core 里还有模型
 // 清单、目录占用测量、日志出口这些与 OCR 无关的顶层符号，整份放出去会和本仓同名
@@ -216,9 +217,7 @@ Map<String, OcrTensor> resolveOcrSessionInputs({
   required List<String> sessionInputNames,
 }) {
   if (inputs.length == 1 && sessionInputNames.length == 1) {
-    return <String, OcrTensor>{
-      sessionInputNames.single: inputs.values.single,
-    };
+    return <String, OcrTensor>{sessionInputNames.single: inputs.values.single};
   }
   final Map<String, OcrTensor> resolved = <String, OcrTensor>{};
   for (final String sessionName in sessionInputNames) {

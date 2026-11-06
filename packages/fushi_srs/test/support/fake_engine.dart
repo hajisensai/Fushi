@@ -81,15 +81,14 @@ class FakeFsrsEngine implements FsrsEngine {
   @override
   List<double> computeParameters({
     required SrsAlgorithm algorithm,
-    required List<List<SrsFsrsReview>> items,
-    List<int>? cardIds,
+    required SrsFsrsTrainingSet items,
     SrsOptimizerControl? control,
   }) => List<double>.filled(algorithm.paramCount, items.length.toDouble());
 
   @override
   SrsEvaluation evaluateTimeSeries({
     required SrsAlgorithm algorithm,
-    required List<List<SrsFsrsReview>> items,
+    required SrsFsrsTrainingSet items,
   }) => SrsEvaluation(
     logLoss: algorithm == SrsAlgorithm.fsrs7 ? 0.3 : 0.4,
     rmseBins: 0.1,
@@ -99,6 +98,6 @@ class FakeFsrsEngine implements FsrsEngine {
   SrsEvaluation evaluate({
     required SrsAlgorithm algorithm,
     required List<double> params,
-    required List<List<SrsFsrsReview>> items,
+    required SrsFsrsTrainingSet items,
   }) => const SrsEvaluation(logLoss: 0.35, rmseBins: 0.1);
 }

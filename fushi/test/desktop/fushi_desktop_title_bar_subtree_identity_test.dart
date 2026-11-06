@@ -23,26 +23,33 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   final Object owner = Object();
+  final TargetPlatform Function() savedHostPlatform =
+      FushiDesktopTitleBar.debugHostPlatform;
 
   setUp(() {
+    // 顶边 resize 把手 / 窗口按钮按**宿主窗口平台**分（macOS 由 AppKit 自己拥有
+    // resize 边框、用系统红绿灯）。默认钉 Windows 宿主，否则同一用例在 macOS
+    // 开发机上走另一条分支；macOS 宿主的契约见文件末尾专门的用例。
+    FushiDesktopTitleBar.debugHostPlatform = () => TargetPlatform.windows;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('window_manager'), (
-      MethodCall call,
-    ) async {
-      switch (call.method) {
-        case 'isMaximized':
-        case 'isFullScreen':
-        case 'isFocused':
-          return false;
-        default:
-          return null;
-      }
-    });
+          MethodCall call,
+        ) async {
+          switch (call.method) {
+            case 'isMaximized':
+            case 'isFullScreen':
+            case 'isFocused':
+              return false;
+            default:
+              return null;
+          }
+        });
   });
 
   tearDown(() {
     // 静态 owner 集合是进程级的，用例之间必须归零，否则会污染后续用例。
     FushiDesktopTitleBar.setContentFullscreen(owner: owner, enabled: false);
+    FushiDesktopTitleBar.debugHostPlatform = savedHostPlatform;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('window_manager'), null);
   });
@@ -75,7 +82,8 @@ void main() {
         before,
       ),
       isTrue,
-      reason: '进全屏时标题栏下方子树被重建了——全局快捷键 Focus 节点与焦点控制器'
+      reason:
+          '进全屏时标题栏下方子树被重建了——全局快捷键 Focus 节点与焦点控制器'
           '（都没有 key）会一起销毁重建，焦点必然丢失。',
     );
     expect(before.node.hasFocus, isTrue, reason: '进全屏后焦点必须仍在原处');
@@ -116,7 +124,8 @@ void main() {
         ResizeEdge.top,
         ResizeEdge.topRight,
       ],
-      reason: 'window_manager 的 TitleBarStyle.hidden 只吃掉顶边，顶边三个 resize '
+      reason:
+          'window_manager 的 TitleBarStyle.hidden 只吃掉顶边，顶边三个 resize '
           '把手必须由 Flutter 侧补。',
     );
     // 顶栏可见。
@@ -133,6 +142,42 @@ void main() {
     expect(area().enableResizeEdges, isEmpty, reason: '全屏时不得留任何 resize 命中区。');
     // 顶栏隐藏。
     expect(find.byKey(FushiDesktopTitleBar.closeButtonKey), findsNothing);
+  });
+
+  testWidgets('macOS 宿主：resize 边框恒零命中区（AppKit 自己拥有），不画自绘窗口按钮', (
+    WidgetTester tester,
+  ) async {
+    FushiDesktopTitleBar.debugHostPlatform = () => TargetPlatform.macOS;
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: FushiDesktopTitleBar(
+          title: Text('Fushi'),
+          child: _SubtreeProbe(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    DragToResizeArea area() =>
+        tester.widget<DragToResizeArea>(find.byType(DragToResizeArea));
+
+    expect(
+      area().enableResizeEdges,
+      isEmpty,
+      reason:
+          'window_manager 的 macOS 插件没有 startResizing，挂上把手一点就抛 '
+          'MissingPluginException。',
+    );
+    expect(
+      find.byKey(FushiDesktopTitleBar.closeButtonKey),
+      findsNothing,
+      reason: 'macOS 用系统红绿灯，不画 Windows 那组窗口按钮。',
+    );
+
+    FushiDesktopTitleBar.setContentFullscreen(owner: owner, enabled: true);
+    await tester.pump();
+    expect(find.byType(DragToResizeArea), findsOneWidget);
+    expect(area().enableResizeEdges, isEmpty);
   });
 }
 

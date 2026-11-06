@@ -42,8 +42,9 @@ void main() {
 
 void registerVideoDiscoveryDownloadPipelineTests() {
   test('发现资源完整进入下载、整理、字幕、导入和精确刮削闭环', () async {
-    final Directory sandbox =
-        await Directory.systemTemp.createTemp('fushi-video-pipeline-itest-');
+    final Directory sandbox = await Directory.systemTemp.createTemp(
+      'fushi-video-pipeline-itest-',
+    );
     final Directory incoming = Directory(p.join(sandbox.path, 'incoming'));
     final Directory library = Directory(p.join(sandbox.path, 'library'));
     await incoming.create(recursive: true);
@@ -53,19 +54,22 @@ void registerVideoDiscoveryDownloadPipelineTests() {
     await downloaded1.writeAsBytes(<int>[1, 2, 3, 4], flush: true);
     await downloaded2.writeAsBytes(<int>[5, 6, 7, 8], flush: true);
 
-    final _TrackingDatabase database =
-        _TrackingDatabase(NativeDatabase.memory());
+    final _TrackingDatabase database = _TrackingDatabase(
+      NativeDatabase.memory(),
+    );
     final _ResourceProvider resourceProvider = _ResourceProvider();
-    final VideoResourceRegistry resourceRegistry =
-        VideoResourceRegistry(<VideoResourceProvider>[resourceProvider]);
+    final VideoResourceRegistry resourceRegistry = VideoResourceRegistry(
+      <VideoResourceProvider>[resourceProvider],
+    );
     final _SubtitleProvider subtitleProvider = _SubtitleProvider();
-    final VideoSubtitleRegistry subtitleRegistry =
-        VideoSubtitleRegistry(<VideoSubtitleProvider>[subtitleProvider]);
+    final VideoSubtitleRegistry subtitleRegistry = VideoSubtitleRegistry(
+      <VideoSubtitleProvider>[subtitleProvider],
+    );
     final _MetadataProvider metadataProvider = _MetadataProvider();
     final VideoMetadataProviderRegistry metadataRegistry =
         VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-      metadataProvider,
-    ]);
+          metadataProvider,
+        ]);
     late final VideoSourceScrapeCoordinator scrapeCoordinator;
     late final VideoDownloadPipelineService pipeline;
     try {
@@ -152,24 +156,34 @@ void registerVideoDiscoveryDownloadPipelineTests() {
       expect(resourceProvider.resolveCalls, 1);
       expect(subtitleProvider.searchCalls, 2);
       expect(subtitleProvider.downloadCalls, 2);
-      expect(metadataProvider.searchCalls, 1,
-          reason: 'AniList 发现身份只作交叉引用，不得越过 AniDB 标题门控');
+      expect(
+        metadataProvider.searchCalls,
+        1,
+        reason: 'AniList 发现身份只作交叉引用，不得越过 AniDB 标题门控',
+      );
       expect(metadataProvider.fetchCalls, 1);
-      expect(database.videoLibraryRefreshCalls, 2,
-          reason: '导入后与元数据应用后各刷新一次当前视频库');
+      expect(
+        database.videoLibraryRefreshCalls,
+        2,
+        reason: '导入后与元数据应用后各刷新一次当前视频库',
+      );
 
-      final File video = File(p.join(
-        library.path,
-        'Show (2026)',
-        'Season 01',
-        'Show (2026) - S01E01.mkv',
-      ));
+      final File video = File(
+        p.join(
+          library.path,
+          'Show (2026)',
+          'Season 01',
+          'Show (2026) - S01E01.mkv',
+        ),
+      );
       final File subtitle = File(p.setExtension(video.path, '.zh-cn.srt'));
       expect(await downloaded1.exists(), isFalse);
       expect(await downloaded2.exists(), isFalse);
       expect(await video.readAsBytes(), <int>[1, 2, 3, 4]);
-      expect(await subtitle.readAsString(),
-          '1\n00:00:00,000 --> 00:00:01,000\n字幕\n');
+      expect(
+        await subtitle.readAsString(),
+        '1\n00:00:00,000 --> 00:00:01,000\n字幕\n',
+      );
 
       final List<VideoBookRow> books = await database.allVideoBooks();
       expect(books, hasLength(2));
@@ -177,10 +191,12 @@ void registerVideoDiscoveryDownloadPipelineTests() {
         (VideoBookRow row) => row.videoPath == video.path,
       );
       expect(
-          books.every((VideoBookRow row) => row.sourceId == sourceId), isTrue);
+        books.every((VideoBookRow row) => row.sourceId == sourceId),
+        isTrue,
+      );
       expect(firstBook.subtitleSource, subtitle.path);
-      final List<VideoDownloadJobFileRow> jobFiles =
-          await database.getVideoDownloadJobFiles(jobId);
+      final List<VideoDownloadJobFileRow> jobFiles = await database
+          .getVideoDownloadJobFiles(jobId);
       expect(jobFiles, hasLength(2));
       expect(
         jobFiles.every(
@@ -193,8 +209,8 @@ void registerVideoDiscoveryDownloadPipelineTests() {
         jobFiles.map((VideoDownloadJobFileRow row) => row.finalAbsolutePath),
         contains(video.path),
       );
-      final List<VideoDownloadJobSubtitleRow> subtitles =
-          await database.getVideoDownloadJobSubtitles(jobId);
+      final List<VideoDownloadJobSubtitleRow> subtitles = await database
+          .getVideoDownloadJobSubtitles(jobId);
       expect(subtitles, hasLength(2));
       expect(
         subtitles.every(
@@ -208,40 +224,31 @@ void registerVideoDiscoveryDownloadPipelineTests() {
         contains(subtitle.path),
       );
 
-      final File showNfo =
-          File(p.join(library.path, 'Show (2026)', 'tvshow.nfo'));
-      final File seasonNfo = File(p.join(
-        library.path,
-        'Show (2026)',
-        'Season 01',
-        'season.nfo',
-      ));
+      final File showNfo = File(
+        p.join(library.path, 'Show (2026)', 'tvshow.nfo'),
+      );
+      final File seasonNfo = File(
+        p.join(library.path, 'Show (2026)', 'Season 01', 'season.nfo'),
+      );
       final File episodeNfo = File(p.setExtension(video.path, '.nfo'));
       expect(await showNfo.exists(), isTrue);
       expect(await seasonNfo.exists(), isTrue);
       expect(await episodeNfo.exists(), isTrue);
       expect(await episodeNfo.readAsString(), contains('<title>Pilot</title>'));
-      final VideoMetadataWorkRow? metadata =
-          await database.getVideoMetadataWorkByCollection(
-        completed.collectionId!,
-      );
+      final VideoMetadataWorkRow? metadata = await database
+          .getVideoMetadataWorkByCollection(completed.collectionId!);
       expect(metadata?.title, 'Show');
-      final List<VideoMetadataProviderIdentityRow> identities =
-          await database.getVideoMetadataProviderIdentities(
-        workId: metadata!.id,
-      );
+      final List<VideoMetadataProviderIdentityRow> identities = await database
+          .getVideoMetadataProviderIdentities(workId: metadata!.id);
       expect(
         identities.map(
           (VideoMetadataProviderIdentityRow row) =>
               '${row.provider}:${row.externalId}:${row.isPrimary}',
         ),
-        unorderedEquals(<String>[
-          'anidb:100:true',
-          'anilist:100:false',
-        ]),
+        unorderedEquals(<String>['anidb:100:true', 'anilist:100:false']),
       );
-      final List<VideoSourceScrapeRunRow> scrapeRuns =
-          await database.getVideoSourceScrapeRuns(sourceId: sourceId);
+      final List<VideoSourceScrapeRunRow> scrapeRuns = await database
+          .getVideoSourceScrapeRuns(sourceId: sourceId);
       expect(scrapeRuns.single.scope, 'work');
       expect(scrapeRuns.single.status, 'completed');
     } finally {
@@ -290,15 +297,15 @@ class _TrackingDatabase extends FushiDatabase {
 
 class _ResourceCandidate extends VideoResourceCandidate {
   _ResourceCandidate()
-      : super(
-          providerId: 'nyaa',
-          providerInstanceId: 'integration',
-          remoteId: 'release-1',
-          title: 'Show S01E01',
-          providerPriority: 0,
-          infoHash: _torrentHash,
-          trusted: true,
-        );
+    : super(
+        providerId: 'nyaa',
+        providerInstanceId: 'integration',
+        remoteId: 'release-1',
+        title: 'Show S01E01',
+        providerPriority: 0,
+        infoHash: _torrentHash,
+        trusted: true,
+      );
 }
 
 class _ResourceProvider implements VideoResourceProvider {
@@ -343,15 +350,15 @@ class _ResourceProvider implements VideoResourceProvider {
 
 class _SubtitleCandidate extends VideoSubtitleCandidate {
   _SubtitleCandidate(int episode)
-      : super(
-          providerId: 'jimaku',
-          remoteId: 'subtitle-$episode',
-          fileName: 'Show.S01E${episode.toString().padLeft(2, '0')}.zh-cn.srt',
-          language: 'zh-cn',
-          providerPriority: 0,
-          season: 1,
-          episode: episode,
-        );
+    : super(
+        providerId: 'jimaku',
+        remoteId: 'subtitle-$episode',
+        fileName: 'Show.S01E${episode.toString().padLeft(2, '0')}.zh-cn.srt',
+        language: 'zh-cn',
+        providerPriority: 0,
+        season: 1,
+        episode: episode,
+      );
 }
 
 class _SubtitleProvider implements VideoSubtitleProvider {
@@ -483,10 +490,12 @@ class _MovingTorrentBackend implements TorrentBackend {
     }
     for (final MapEntry<int, String> entry in originalRelativePaths.entries) {
       final File source = File(p.join(incomingRoot.path, entry.value));
-      final File target = File(p.joinAll(<String>[
-        libraryRoot.path,
-        ...currentRelativePaths[entry.key]!.split('/'),
-      ]));
+      final File target = File(
+        p.joinAll(<String>[
+          libraryRoot.path,
+          ...currentRelativePaths[entry.key]!.split('/'),
+        ]),
+      );
       await target.parent.create(recursive: true);
       await source.rename(target.path);
     }
@@ -502,27 +511,22 @@ class _MetadataProvider implements VideoMetadataProvider {
   int fetchCalls = 0;
 
   VideoMetadataWork get work => VideoMetadataWork(
-        provider: VideoMetadataProviderKind.anidb,
-        kind: VideoMetadataMediaKind.tv,
-        title: 'Show',
-        year: 2026,
-        seasonCount: 1,
-        episodeCount: 2,
-        ids: const <VideoMetadataId>[
-          VideoMetadataId(type: 'anidb', value: '100', isDefault: true),
-        ],
-        seasons: <VideoMetadataSeason>[
-          VideoMetadataSeason(
-            seasonNumber: 1,
-            title: 'Season 1',
-            episodeCount: 2,
-          ),
-        ],
-      );
+    provider: VideoMetadataProviderKind.anidb,
+    kind: VideoMetadataMediaKind.tv,
+    title: 'Show',
+    year: 2026,
+    seasonCount: 1,
+    episodeCount: 2,
+    ids: const <VideoMetadataId>[
+      VideoMetadataId(type: 'anidb', value: '100', isDefault: true),
+    ],
+    seasons: <VideoMetadataSeason>[
+      VideoMetadataSeason(seasonNumber: 1, title: 'Season 1', episodeCount: 2),
+    ],
+  );
 
   @override
-  VideoMetadataProviderKind get providerKind =>
-      VideoMetadataProviderKind.anidb;
+  VideoMetadataProviderKind get providerKind => VideoMetadataProviderKind.anidb;
 
   @override
   bool get isAvailable => true;
@@ -544,32 +548,30 @@ class _MetadataProvider implements VideoMetadataProvider {
   @override
   Future<List<VideoMetadataSeason>> fetchSeasons(
     VideoMetadataLookup lookup,
-  ) async =>
-      work.seasons;
+  ) async => work.seasons;
 
   @override
   Future<List<VideoMetadataEpisode>> fetchEpisodes(
     VideoMetadataLookup lookup, {
     required int seasonNumber,
-  }) async =>
-      <VideoMetadataEpisode>[
-        VideoMetadataEpisode(
-          seasonNumber: 1,
-          episodeNumber: 1,
-          title: 'Pilot',
-          ids: const <VideoMetadataId>[
-            VideoMetadataId(type: 'anidb', value: '100-1'),
-          ],
-        ),
-        VideoMetadataEpisode(
-          seasonNumber: 1,
-          episodeNumber: 2,
-          title: 'Second',
-          ids: const <VideoMetadataId>[
-            VideoMetadataId(type: 'anidb', value: '100-2'),
-          ],
-        ),
-      ];
+  }) async => <VideoMetadataEpisode>[
+    VideoMetadataEpisode(
+      seasonNumber: 1,
+      episodeNumber: 1,
+      title: 'Pilot',
+      ids: const <VideoMetadataId>[
+        VideoMetadataId(type: 'anidb', value: '100-1'),
+      ],
+    ),
+    VideoMetadataEpisode(
+      seasonNumber: 1,
+      episodeNumber: 2,
+      title: 'Second',
+      ids: const <VideoMetadataId>[
+        VideoMetadataId(type: 'anidb', value: '100-2'),
+      ],
+    ),
+  ];
 
   @override
   void close() {}

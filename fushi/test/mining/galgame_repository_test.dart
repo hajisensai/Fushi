@@ -105,8 +105,10 @@ void main() {
       final GalgameEntry entry = galgameEntryFromRow(
         row(customDataJson: const GalgameCustomData(name: '我的名字').encode()),
         sources: <GalgameSourceRow>[
-          sourceRow(GalgameMetadataSource.bgm,
-              const GalgameMetadataDraft(nameCn: '中文名')),
+          sourceRow(
+            GalgameMetadataSource.bgm,
+            const GalgameMetadataDraft(nameCn: '中文名'),
+          ),
         ],
       );
       expect(entry.displayName, '我的名字');
@@ -128,8 +130,10 @@ void main() {
     });
 
     test('游玩聚合落到视图字段', () {
-      final GalgameEntry entry =
-          galgameEntryFromRow(row(), playTotals: (7200, 3, 1750000000000));
+      final GalgameEntry entry = galgameEntryFromRow(
+        row(),
+        playTotals: (7200, 3, 1750000000000),
+      );
       expect(entry.totalPlaySeconds, 7200);
       expect(entry.sessionCount, 3);
       expect(entry.lastPlayedMs, 1750000000000);
@@ -143,8 +147,9 @@ void main() {
         customData: const GalgameCustomData(userRating: 9),
         playStatus: GalgamePlayStatus.playing,
       );
-      final GalgamesCompanion companion2 =
-          galgamesCompanionFromEntry(withCustom);
+      final GalgamesCompanion companion2 = galgamesCompanionFromEntry(
+        withCustom,
+      );
       expect(companion2.customDataJson.value, contains('userRating'));
       expect(companion2.playStatus.value, 3);
     });
@@ -168,12 +173,12 @@ void main() {
     tearDown(() => db.close());
 
     GalgameEntry newEntry(String id, {String name = 'game'}) => GalgameEntry(
-          id: id,
-          name: name,
-          exePath: 'Z:${id}game.exe',
-          workdir: 'Z:$id',
-          addedAt: DateTime(2026, 1, int.parse(id.substring(1))),
-        );
+      id: id,
+      name: name,
+      exePath: 'Z:${id}game.exe',
+      workdir: 'Z:$id',
+      addedAt: DateTime(2026, 1, int.parse(id.substring(1))),
+    );
 
     test('setGames 整表覆写：缺失 id 视为删除', () async {
       await repo.setGames(<GalgameEntry>[newEntry('g1'), newEntry('g2')]);
@@ -183,27 +188,31 @@ void main() {
       expect(repo.games.map((GalgameEntry g) => g.id), <String>['g2']);
     });
 
-    test('addAll / remove / setPlayStatus / setCustomData / setCoverPath',
-        () async {
-      await repo.addAll(<GalgameEntry>[newEntry('g1')]);
-      expect(repo.byId('g1'), isNotNull);
+    test(
+      'addAll / remove / setPlayStatus / setCustomData / setCoverPath',
+      () async {
+        await repo.addAll(<GalgameEntry>[newEntry('g1')]);
+        expect(repo.byId('g1'), isNotNull);
 
-      await repo.setPlayStatus('g1', GalgamePlayStatus.playing);
-      expect(repo.byId('g1')!.playStatus, GalgamePlayStatus.playing);
+        await repo.setPlayStatus('g1', GalgamePlayStatus.playing);
+        expect(repo.byId('g1')!.playStatus, GalgamePlayStatus.playing);
 
-      await repo.setCustomData(
-          'g1', const GalgameCustomData(name: '改名', userRating: 8.5));
-      expect(repo.byId('g1')!.displayName, '改名');
-      expect(repo.byId('g1')!.userRating, 8.5);
+        await repo.setCustomData(
+          'g1',
+          const GalgameCustomData(name: '改名', userRating: 8.5),
+        );
+        expect(repo.byId('g1')!.displayName, '改名');
+        expect(repo.byId('g1')!.userRating, 8.5);
 
-      await repo.setCoverPath('g1', r'Z:\cover.png');
-      expect(repo.byId('g1')!.coverPath, r'Z:\cover.png');
-      await repo.setCoverPath('g1', '');
-      expect(repo.byId('g1')!.coverPath, isNull);
+        await repo.setCoverPath('g1', r'Z:\cover.png');
+        expect(repo.byId('g1')!.coverPath, r'Z:\cover.png');
+        await repo.setCoverPath('g1', '');
+        expect(repo.byId('g1')!.coverPath, isNull);
 
-      await repo.remove('g1');
-      expect(repo.games, isEmpty);
-    });
+        await repo.remove('g1');
+        expect(repo.games, isEmpty);
+      },
+    );
 
     test('saveScrapeResult 落源快照 + 回写主显示源与发行日', () async {
       await repo.addAll(<GalgameEntry>[newEntry('g1')]);
@@ -286,8 +295,9 @@ void main() {
       await repo.remove('g1');
 
       // 混合合集：g1 引用行消失，成员数从 2 回到 1（不虚高）。
-      final List<MediaCollectionItemRow> rest =
-          await db.getCollectionItems(mixed);
+      final List<MediaCollectionItemRow> rest = await db.getCollectionItems(
+        mixed,
+      );
       expect(
         rest.map((MediaCollectionItemRow m) => m.entryKey).toList(),
         <String>['g2'],
@@ -305,15 +315,16 @@ void main() {
       await repo.setGames(<GalgameEntry>[newEntry('g2')]);
 
       expect(
-        (await db.getCollectionItems(c))
-            .map((MediaCollectionItemRow m) => m.entryKey)
-            .toList(),
+        (await db.getCollectionItems(
+          c,
+        )).map((MediaCollectionItemRow m) => m.entryKey).toList(),
         <String>['g2'],
       );
       // 全库无任何 g1 孤儿引用。
       expect(
-        (await db.getAllCollectionItems())
-            .where((MediaCollectionItemRow m) => m.entryKey == 'g1'),
+        (await db.getAllCollectionItems()).where(
+          (MediaCollectionItemRow m) => m.entryKey == 'g1',
+        ),
         isEmpty,
       );
     });

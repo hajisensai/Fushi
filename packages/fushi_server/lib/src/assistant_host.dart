@@ -34,11 +34,13 @@ import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/server_prefs.dart';
+import 'package:fushi_server/src/server_subtitle_providers.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
 
 /// 每系列字幕语言记忆的偏好键（与 app `PreferencesRepository.jimakuPreferredLanguages`
-/// 同一个键、同一种 JSON map 形状；服务端管线当前没接字幕 registry，先记下不丢）。
-const String kServerSeriesSubtitleLanguagesPref = 'jimaku_pref_langs';
+/// 同一个键、同一种 JSON map 形状）。下载管线字幕阶段按它排首选（见
+/// `server_subtitle_providers.dart` 的 [serverDownloadSubtitleLanguageResolver]）。
+const String kServerSeriesSubtitleLanguagesPref = kSeriesSubtitleLanguagesPref;
 
 /// 服务端会话要用的下载面。生产是 [ServerDownloadHost]，测试注入假管线。
 abstract interface class ServerAssistantDownloads {
@@ -68,7 +70,10 @@ class _DownloadHostAdapter implements ServerAssistantDownloads {
 
 /// 一场会话的发现端口：搜作品 / 拉详情 / 找系列 + 会话结束时释放。
 typedef ServerDiscoveryPorts = ({
-  Future<ProviderBatchResult<VideoDiscoveryPage>> Function(VideoDiscoveryRequest request) search,
+  Future<ProviderBatchResult<VideoDiscoveryPage>> Function(
+    VideoDiscoveryRequest request,
+  )
+  search,
   VideoDiscoveryService? service,
   void Function() release,
 });
@@ -100,14 +105,14 @@ VideoAcquisitionAssistantHost createServerAssistantHost({
   required ServerPrefs prefs,
   required FushiDatabase db,
   required ServerDownloadHost downloads,
-}) =>
-    createServerAssistantHostWith(
-      config: config,
-      prefs: prefs,
-      db: db,
-      downloads: _DownloadHostAdapter(downloads),
-      discovery: (String locale) => productionServerDiscovery(prefs: prefs, config: config(), locale: locale),
-    );
+}) => createServerAssistantHostWith(
+  config: config,
+  prefs: prefs,
+  db: db,
+  downloads: _DownloadHostAdapter(downloads),
+  discovery: (String locale) =>
+      productionServerDiscovery(prefs: prefs, config: config(), locale: locale),
+);
 
 /// 同 [createServerAssistantHost]，下载面与发现可注入（测试用）。
 VideoAcquisitionAssistantHost createServerAssistantHostWith({
@@ -121,8 +126,12 @@ VideoAcquisitionAssistantHost createServerAssistantHostWith({
 
   Future<String?> blocker() async {
     // 先判 AI：没指派时连下载面都不必看，更不会走到任何 AI 调用。
-    if (resolveVideoAcquireAiProvider(aiSettings) == null) return kHostAssistantReasonNoProvider;
-    if (downloads.pipeline == null || downloads.registry == null || await downloads.downloadSource() == null) {
+    if (resolveVideoAcquireAiProvider(aiSettings) == null) {
+      return kHostAssistantReasonNoProvider;
+    }
+    if (downloads.pipeline == null ||
+        downloads.registry == null ||
+        await downloads.downloadSource() == null) {
       return kHostAssistantReasonNotReady;
     }
     return null;
@@ -138,7 +147,9 @@ VideoAcquisitionAssistantHost createServerAssistantHostWith({
       if (pipeline == null || registry == null || source == null) {
         throw const HostAssistantUnavailable(kHostAssistantReasonNotReady);
       }
-      final String speakerLocale = locale.isEmpty ? config().metadataLocale : locale;
+      final String speakerLocale = locale.isEmpty
+          ? config().metadataLocale
+          : locale;
       final ServerDiscoveryPorts found = discovery(speakerLocale);
       final List<MediaSourceRow> sources = <MediaSourceRow>[source];
       final VideoAcquisitionService service = createHostVideoAcquisitionService(
@@ -157,9 +168,11 @@ VideoAcquisitionAssistantHost createServerAssistantHostWith({
         pipeline: pipeline,
         sources: sources,
         backendTarget: () async => downloads.backendTarget(),
-        persistPreference: (VideoAcquisitionPreference preference, String value) =>
-            prefs.setPref(videoAcquisitionPreferenceKey(preference), value),
-        setSeriesSubtitleLanguage: (String seriesKey, String code) => _rememberSeriesSubtitleLanguage(prefs, seriesKey, code),
+        persistPreference:
+            (VideoAcquisitionPreference preference, String value) =>
+                prefs.setPref(videoAcquisitionPreferenceKey(preference), value),
+        setSeriesSubtitleLanguage: (String seriesKey, String code) =>
+            _rememberSeriesSubtitleLanguage(prefs, seriesKey, code),
         checkSubscriptionsNow: downloads.checkSubscriptionsNow,
       );
       return (service: service, release: found.release);
@@ -167,9 +180,15 @@ VideoAcquisitionAssistantHost createServerAssistantHostWith({
   );
 }
 
-Future<void> _rememberSeriesSubtitleLanguage(PrefStore prefs, String seriesKey, String code) async {
+Future<void> _rememberSeriesSubtitleLanguage(
+  PrefStore prefs,
+  String seriesKey,
+  String code,
+) async {
   final Map<String, String> map = <String, String>{};
-  final String raw = prefs.getPref(kServerSeriesSubtitleLanguagesPref, defaultValue: '') as String;
+  final String raw =
+      prefs.getPref(kServerSeriesSubtitleLanguagesPref, defaultValue: '')
+          as String;
   if (raw.isNotEmpty) {
     try {
       final Object? decoded = jsonDecode(raw);

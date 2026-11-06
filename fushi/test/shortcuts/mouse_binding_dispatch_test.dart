@@ -152,19 +152,15 @@ void main() {
     }
 
     testWidgets('内层执行后外层让路：同一次按下只派发一次', (WidgetTester tester) async {
-      expect(
-        await pumpNested(tester, innerExecutes: true),
-        <String>['inner'],
-        reason: '没有仲裁的话这里是 [inner, outer] —— 绑「返回上一级」的侧键一键退两级',
-      );
+      expect(await pumpNested(tester, innerExecutes: true), <String>[
+        'inner',
+      ], reason: '没有仲裁的话这里是 [inner, outer] —— 绑「返回上一级」的侧键一键退两级');
     });
 
     testWidgets('内层解析到却没执行时，外层照常接手', (WidgetTester tester) async {
-      expect(
-        await pumpNested(tester, innerExecutes: false),
-        <String>['outer'],
-        reason: '等价于键盘的「ignored 继续冒泡」；抢先认领会让外层合法绑定被白白吃掉',
-      );
+      expect(await pumpNested(tester, innerExecutes: false), <String>[
+        'outer',
+      ], reason: '等价于键盘的「ignored 继续冒泡」；抢先认领会让外层合法绑定被白白吃掉');
     });
 
     testWidgets('两次独立按下互不影响（认领按 pointer id，不是全局一次性）', (

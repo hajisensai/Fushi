@@ -39,11 +39,7 @@ class StatKpiItem {
 /// 使每张卡都有足够内宽把数字完整显示。列宽在每一排内经 `Expanded` 均分，视觉与
 /// 旧版一致，只是换行。
 class StatKpiStrip extends StatelessWidget {
-  const StatKpiStrip({
-    required this.items,
-    super.key,
-    this.minTileWidth = 150,
-  });
+  const StatKpiStrip({required this.items, super.key, this.minTileWidth = 150});
 
   final List<StatKpiItem> items;
 
@@ -67,8 +63,9 @@ class StatKpiStrip extends StatelessWidget {
         final int columns = _columnsFor(constraints.maxWidth);
         final List<Widget> rows = <Widget>[];
         for (int start = 0; start < items.length; start += columns) {
-          final int end =
-              (start + columns) < items.length ? start + columns : items.length;
+          final int end = (start + columns) < items.length
+              ? start + columns
+              : items.length;
           final List<Widget> cells = <Widget>[];
           for (int i = start; i < end; i++) {
             if (i > start) cells.add(SizedBox(width: gap));
@@ -80,12 +77,14 @@ class StatKpiStrip extends StatelessWidget {
             cells.add(const Expanded(child: SizedBox.shrink()));
           }
           if (rows.isNotEmpty) rows.add(SizedBox(height: gap));
-          rows.add(IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: cells,
+          rows.add(
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: cells,
+              ),
             ),
-          ));
+          );
         }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -114,9 +113,9 @@ class StatKpiStrip extends StatelessWidget {
               maxLines: 1,
               softWrap: false,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: scheme.onSurface,
-                    fontWeight: FontWeight.bold,
-                  ),
+                color: scheme.onSurface,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           if (item.delta != null) ...<Widget>[
@@ -131,11 +130,11 @@ class StatKpiStrip extends StatelessWidget {
                 maxLines: 1,
                 softWrap: false,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: item.deltaUp
-                          ? statChartColorsOf(context).up
-                          : statChartColorsOf(context).down,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  color: item.deltaUp
+                      ? statChartColorsOf(context).up
+                      : statChartColorsOf(context).down,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
@@ -144,10 +143,9 @@ class StatKpiStrip extends StatelessWidget {
             item.label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: scheme.onSurfaceVariant),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ],
       ),

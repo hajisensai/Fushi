@@ -59,39 +59,50 @@ const String kNyaaNoResultsHtml = '''
 String nyaaSearchHtml(Iterable<NyaaHtmlRow> rows) {
   final StringBuffer sb = StringBuffer()
     ..writeln('<!doctype html><html><body>')
-    ..writeln('<table class="table table-bordered table-hover table-striped '
-        'torrent-list"><tbody>');
+    ..writeln(
+      '<table class="table table-bordered table-hover table-striped '
+      'torrent-list"><tbody>',
+    );
   for (final NyaaHtmlRow row in rows) {
     final String id = row.id ?? row.infoHash.substring(0, 8);
-    final String title =
-        const HtmlEscape(HtmlEscapeMode.attribute).convert(row.title);
+    final String title = const HtmlEscape(
+      HtmlEscapeMode.attribute,
+    ).convert(row.title);
     // remake 盖过 trusted：nyaa 模板的行 class 优先级 deleted > hidden > remake
     // > trusted，trusted 用户发的 remake 只显示 danger。
     final String rowClass = row.remake
         ? 'danger'
         : row.trusted
-            ? 'success'
-            : 'default';
+        ? 'success'
+        : 'default';
     sb
       ..writeln('  <tr class="$rowClass">')
-      ..writeln('    <td><a href="/?c=${row.categoryId}" title="cat">'
-          '<img src="/static/img/icons/x.png" alt="cat"></a></td>')
+      ..writeln(
+        '    <td><a href="/?c=${row.categoryId}" title="cat">'
+        '<img src="/static/img/icons/x.png" alt="cat"></a></td>',
+      )
       ..write('    <td colspan="2">');
     if (row.commentCount > 0) {
       final String plural = row.commentCount > 1 ? 's' : '';
-      sb.write('<a href="/view/$id#comments" class="comments" '
-          'title="${row.commentCount} comment$plural">'
-          '<i class="fa fa-comments-o"></i>${row.commentCount}</a>\n');
+      sb.write(
+        '<a href="/view/$id#comments" class="comments" '
+        'title="${row.commentCount} comment$plural">'
+        '<i class="fa fa-comments-o"></i>${row.commentCount}</a>\n',
+      );
     }
     sb
       ..writeln('<a href="/view/$id" title="$title">$title</a></td>')
-      ..writeln('    <td class="text-center">'
-          '<a href="/download/$id.torrent"><i class="fa fa-download"></i></a>'
-          '<a href="magnet:?xt=urn:btih:${row.infoHash}&amp;dn=x">'
-          '<i class="fa fa-magnet"></i></a></td>')
+      ..writeln(
+        '    <td class="text-center">'
+        '<a href="/download/$id.torrent"><i class="fa fa-download"></i></a>'
+        '<a href="magnet:?xt=urn:btih:${row.infoHash}&amp;dn=x">'
+        '<i class="fa fa-magnet"></i></a></td>',
+      )
       ..writeln('    <td class="text-center">${row.size}</td>')
-      ..writeln('    <td class="text-center" '
-          'data-timestamp="${row.timestampSeconds}">2023-11-14 22:13</td>')
+      ..writeln(
+        '    <td class="text-center" '
+        'data-timestamp="${row.timestampSeconds}">2023-11-14 22:13</td>',
+      )
       ..writeln('    <td class="text-center">${row.seeders}</td>')
       ..writeln('    <td class="text-center">${row.leechers}</td>')
       ..writeln('    <td class="text-center">${row.downloads}</td>')

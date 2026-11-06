@@ -15,8 +15,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
@@ -41,6 +42,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import '../srs/srs_test_support.dart' show SrsTestEngine, openSrsTestStorage;
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -157,16 +160,21 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
+    // 空库首页会在最上面挂新手引导卡，窄列下把复习条挤出首屏；本文件只测复习条。
+    await prefs.setOnboardingHomeCardDismissed(value: true);
     storeDir = Directory.systemTemp.createTempSync('fushi_srs_home');
     platformServices = testPlatformServices();
     appModel = AppModel(platformServices)
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
+    final SrsStorage srs = await openSrsTestStorage();
     store = await SrsDbStore.open(
-      db: db,
+      db: srs.db,
+      core: srs.core,
       profileUid: _kProfile,
       deviceId: 'test-device',
-      engine: null,
+      // 「今日」一行的用例要真的答卡（测试 FSRS 引擎，与其它 SRS 页测试同一份）。
+      engine: const SrsTestEngine(),
     );
   });
 
@@ -330,7 +338,20 @@ void main() {
         final String child = await store.createDeck('一巻', parentId: parent);
         await addNote('走る', deckId: child);
       });
-      await tester.pumpWidget(app(dashboard(), apple: apple));
+      // 首页与牌组列表挂在同一个 ProviderScope 里换页：两个 scope 都覆盖成同一个
+      // [appModel] 时，各自卸载都会 dispose 它一次（ChangeNotifierProvider 拥有它）。
+      final ValueNotifier<Widget> page = ValueNotifier<Widget>(dashboard());
+      addTearDown(page.dispose);
+      await tester.pumpWidget(
+        app(
+          ValueListenableBuilder<Widget>(
+            valueListenable: page,
+            builder: (BuildContext context, Widget current, Widget? _) =>
+                current,
+          ),
+          apple: apple,
+        ),
+      );
       await settle(tester);
       final SrsCountTriple home = tester.widget<SrsCountTriple>(
         find.descendant(of: panel, matching: find.byType(SrsCountTriple)),
@@ -340,8 +361,7 @@ void main() {
       final List<SrsDeckSummary> decks = (await tester.runAsync(
         store.deckSummaries,
       ))!;
-      await unmount(tester);
-      await tester.pumpWidget(app(const SrsDeckListPage(), apple: apple));
+      page.value = const SrsDeckListPage();
       await settle(tester);
       int sumNew = 0, sumLearn = 0, sumReview = 0;
       for (final SrsDeckSummary d in decks.where(
@@ -402,6 +422,59 @@ void main() {
       expect(panel, findsOneWidget);
       expect(find.text(t.home_srs_panel_done), findsOneWidget);
       expect(start, findsNothing);
+      await unmount(tester);
+    });
+
+    testWidgets('$ds · 「今日」一行：今天已复习张数 · 用时 · 正确率，与统计口径同一数据源', (
+      WidgetTester tester,
+    ) async {
+      useSize(tester, const Size(420, 900));
+      final List<String> cards = <String>[];
+      await tester.runAsync(() async {
+        await useSrs(target: SrsMiningTarget.srs);
+        for (final String w in <String>['食べる', '飲む', '走る']) {
+          final String note = await store.createNote(
+            noteTypeId: store.lapisNoteTypeId,
+            fieldsById: <String, String>{
+              srsLapisFieldId(_kProfile, 'Expression'): w,
+              srsLapisFieldId(_kProfile, 'MainDefinition'): 'meaning',
+            },
+          );
+          cards.add((await store.cardsOfNote(note)).first.id);
+        }
+      });
+      await tester.pumpWidget(app(dashboard(), apple: apple));
+      await settle(tester);
+      final Finder today = find.descendant(
+        of: panel,
+        matching: find.byKey(const ValueKey<String>('home-srs-panel-today')),
+      );
+      // 还没复习：0 张、没有正确率。
+      expect(
+        tester.widget<Text>(today).data,
+        homeSrsTodayLine(SrsTodayReviewSummary.empty),
+      );
+      expect(tester.widget<Text>(today).data, isNot(contains('%')));
+
+      await tester.runAsync(() async {
+        await store.answer(cards[0], 3, durationMs: 70000);
+        await store.answer(cards[1], 1, durationMs: 5000);
+      });
+      final ProviderContainer container = ProviderScope.containerOf(
+        tester.element(panel),
+      );
+      container.read(srsRevisionProvider.notifier).state++;
+      await settle(tester);
+      final SrsTodayReviewSummary summary = (await tester.runAsync(
+        store.todayReviewSummary,
+      ))!;
+      expect(summary.count, 2);
+      expect(summary.again, 1);
+      final String line = tester.widget<Text>(today).data!;
+      expect(line, homeSrsTodayLine(summary));
+      expect(line, contains('2'));
+      expect(line, contains('50%'));
+      expect(tester.takeException(), isNull);
       await unmount(tester);
     });
 

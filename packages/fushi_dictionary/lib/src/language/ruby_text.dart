@@ -22,14 +22,13 @@ class RubyTextData {
     TextStyle? style,
     TextStyle? rubyStyle,
     TextDirection? textDirection,
-  }) =>
-      RubyTextData(
-        text ?? this.text,
-        ruby: ruby ?? this.ruby,
-        style: style ?? this.style,
-        rubyStyle: rubyStyle ?? this.rubyStyle,
-        textDirection: textDirection ?? this.textDirection,
-      );
+  }) => RubyTextData(
+    text ?? this.text,
+    ruby: ruby ?? this.ruby,
+    style: style ?? this.style,
+    rubyStyle: rubyStyle ?? this.rubyStyle,
+    textDirection: textDirection ?? this.textDirection,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -46,11 +45,7 @@ class RubyTextData {
 }
 
 class _RubySpanWidget extends StatelessWidget {
-  const _RubySpanWidget(
-    this.data, {
-    this.indexStyle,
-    this.indexAction,
-  });
+  const _RubySpanWidget(this.data, {this.indexStyle, this.indexAction});
 
   final RubyTextData data;
   final TextStyle Function(int, String)? indexStyle;
@@ -66,8 +61,9 @@ class _RubySpanWidget extends StatelessWidget {
       effectiveTextStyle = defaultTextStyle.merge(effectiveTextStyle);
     }
     if (boldTextOverride) {
-      effectiveTextStyle = effectiveTextStyle
-          .merge(const TextStyle(fontWeight: FontWeight.bold));
+      effectiveTextStyle = effectiveTextStyle.merge(
+        const TextStyle(fontWeight: FontWeight.bold),
+      );
     }
     assert(effectiveTextStyle.fontSize != null, 'must have a font size.');
     final defaultRubyTextStyle = effectiveTextStyle.merge(
@@ -76,12 +72,14 @@ class _RubySpanWidget extends StatelessWidget {
 
     var effectiveRubyTextStyle = data.rubyStyle;
     if (effectiveRubyTextStyle == null || effectiveRubyTextStyle.inherit) {
-      effectiveRubyTextStyle =
-          defaultRubyTextStyle.merge(effectiveRubyTextStyle);
+      effectiveRubyTextStyle = defaultRubyTextStyle.merge(
+        effectiveRubyTextStyle,
+      );
     }
     if (boldTextOverride) {
-      effectiveRubyTextStyle = effectiveRubyTextStyle
-          .merge(const TextStyle(fontWeight: FontWeight.bold));
+      effectiveRubyTextStyle = effectiveRubyTextStyle.merge(
+        const TextStyle(fontWeight: FontWeight.bold),
+      );
     }
 
     final ruby = data.ruby;
@@ -104,12 +102,14 @@ class _RubySpanWidget extends StatelessWidget {
 
       if (textWidth > rubyWidth) {
         final newLetterSpacing = (textWidth - rubyWidth) / ruby.length;
-        effectiveRubyTextStyle = effectiveRubyTextStyle
-            .merge(TextStyle(letterSpacing: newLetterSpacing));
+        effectiveRubyTextStyle = effectiveRubyTextStyle.merge(
+          TextStyle(letterSpacing: newLetterSpacing),
+        );
       } else {
         final newLetterSpacing = (rubyWidth - textWidth) / text.length;
-        effectiveTextStyle = effectiveTextStyle
-            .merge(TextStyle(letterSpacing: newLetterSpacing));
+        effectiveTextStyle = effectiveTextStyle.merge(
+          TextStyle(letterSpacing: newLetterSpacing),
+        );
       }
     }
 
@@ -132,8 +132,9 @@ class _RubySpanWidget extends StatelessWidget {
             final charStr = String.fromCharCodes(character.runes);
             return TextSpan(
               text: charStr,
-              style:
-                  effectiveTextStyle!.merge(indexStyle?.call(index, charStr)),
+              style: effectiveTextStyle!.merge(
+                indexStyle?.call(index, charStr),
+              ),
               recognizer: TapGestureRecognizer()
                 ..onTapDown = (details) {
                   indexAction?.call(index, charStr);
@@ -180,29 +181,29 @@ class RubyText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Text.rich(
-        TextSpan(
-          children: data
-              .map<InlineSpan>(
-                (RubyTextData d) => WidgetSpan(
-                  child: _RubySpanWidget(
-                    d.copyWith(
-                      style: style,
-                      rubyStyle: rubyStyle,
-                      textDirection: textDirection,
-                    ),
-                    indexAction: indexAction,
-                    indexStyle: indexStyle,
-                  ),
+    TextSpan(
+      children: data
+          .map<InlineSpan>(
+            (RubyTextData d) => WidgetSpan(
+              child: _RubySpanWidget(
+                d.copyWith(
+                  style: style,
+                  rubyStyle: rubyStyle,
+                  textDirection: textDirection,
                 ),
-              )
-              .toList(),
-        ),
-        textAlign: textAlign,
-        textDirection: textDirection,
-        softWrap: softWrap,
-        overflow: overflow,
-        maxLines: maxLines,
-      );
+                indexAction: indexAction,
+                indexStyle: indexStyle,
+              ),
+            ),
+          )
+          .toList(),
+    ),
+    textAlign: textAlign,
+    textDirection: textDirection,
+    softWrap: softWrap,
+    overflow: overflow,
+    maxLines: maxLines,
+  );
 }
 
 double _measurementWidth(

@@ -7,8 +7,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -26,8 +27,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_remote_book_dl_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_remote_book_dl_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -54,8 +56,9 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    final Directory storeDir =
-        Directory.systemTemp.createTempSync('fushi_remote_book_dl_store');
+    final Directory storeDir = Directory.systemTemp.createTempSync(
+      'fushi_remote_book_dl_store',
+    );
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
@@ -67,31 +70,30 @@ void main() {
   });
 
   Widget buildApp({required RemoteBookClient client}) => ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-          fushiBooksProvider.overrideWith(
-            (ref, language) =>
-                Future<List<MediaItem>>.value(const <MediaItem>[]),
-          ),
-          srtBooksProvider.overrideWith(
-            (ref) => Future<List<SrtBook>>.value(const <SrtBook>[]),
-          ),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            builder: (BuildContext context, Widget? child) =>
-                child ?? const SizedBox.shrink(),
-            home: Scaffold(
-              body: ReaderFushiHistoryPage(
-                remoteBookClientLoader: () async => client,
-                remoteBookDownloadDestination: (RemoteBookInfo book) async =>
-                    File('${pathProviderDir.path}/${book.title.hashCode}.epub'),
-                remoteBookImporter: (File file) async => null,
-              ),
-            ),
+    overrides: <Override>[
+      appProvider.overrideWith((ref) => appModel),
+      fushiBooksProvider.overrideWith(
+        (ref, language) => Future<List<MediaItem>>.value(const <MediaItem>[]),
+      ),
+      srtBooksProvider.overrideWith(
+        (ref) => Future<List<SrtBook>>.value(const <SrtBook>[]),
+      ),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        builder: (BuildContext context, Widget? child) =>
+            child ?? const SizedBox.shrink(),
+        home: Scaffold(
+          body: ReaderFushiHistoryPage(
+            remoteBookClientLoader: () async => client,
+            remoteBookDownloadDestination: (RemoteBookInfo book) async =>
+                File('${pathProviderDir.path}/${book.title.hashCode}.epub'),
+            remoteBookImporter: (File file) async => null,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   String safeKey(String title) =>
       sanitizeTtuFilename(title).replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
@@ -99,24 +101,29 @@ void main() {
   testWidgets('#6 远端与本地同 bookKey 的书在配对区被去重隐藏', (WidgetTester tester) async {
     // 本地已有「Dup Book」（同 bookKey）。
     final String key = sanitizeTtuFilename('Dup Book');
-    final Directory extractDir =
-        Directory('${pathProviderDir.path}/dup_extract')..createSync();
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: key,
-      title: 'Dup Book',
-      epubPath: '${extractDir.path}/x.epub',
-      extractDir: extractDir.path,
-      chapterCount: 1,
-      chaptersJson: '["a"]',
-      importedAt: 0,
-    ));
+    final Directory extractDir = Directory(
+      '${pathProviderDir.path}/dup_extract',
+    )..createSync();
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: key,
+        title: 'Dup Book',
+        epubPath: '${extractDir.path}/x.epub',
+        extractDir: extractDir.path,
+        chapterCount: 1,
+        chaptersJson: '["a"]',
+        importedAt: 0,
+      ),
+    );
 
-    await tester.pumpWidget(buildApp(
-      client: _ListFakeRemoteBookClient(<RemoteBookInfo>[
-        const RemoteBookInfo(title: 'Dup Book', hasContent: true),
-        const RemoteBookInfo(title: 'Only Remote Book', hasContent: true),
-      ]),
-    ));
+    await tester.pumpWidget(
+      buildApp(
+        client: _ListFakeRemoteBookClient(<RemoteBookInfo>[
+          const RemoteBookInfo(title: 'Dup Book', hasContent: true),
+          const RemoteBookInfo(title: 'Only Remote Book', hasContent: true),
+        ]),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -125,7 +132,8 @@ void main() {
     );
     expect(
       find.byKey(
-          ValueKey<String>('remote_book_card_${safeKey('Only Remote Book')}')),
+        ValueKey<String>('remote_book_card_${safeKey('Only Remote Book')}'),
+      ),
       findsOneWidget,
     );
   });
@@ -136,7 +144,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final String key = safeKey('Gated Book');
-    await tester.tap(find.byKey(ValueKey<String>('remote_book_download_$key')));
+    await tester.tap(find.byKey(ValueKey<String>('remote_book_card_$key')));
     await tester.pump();
     await tester.pump();
 
@@ -145,8 +153,9 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.byKey(ValueKey<String>('remote_book_download_$key')),
+      find.byKey(ValueKey<String>('remote_book_cloud_badge_$key')),
       findsNothing,
+      reason: '下载中副行换成百分比，不再是「☁ 未下载」',
     );
 
     client.completer.complete();
@@ -200,8 +209,8 @@ class _GatedFakeRemoteBookClient implements RemoteBookClient {
 
   @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async => <RemoteBookInfo>[
-        const RemoteBookInfo(title: 'Gated Book', hasContent: true),
-      ];
+    const RemoteBookInfo(title: 'Gated Book', hasContent: true),
+  ];
 
   @override
   Future<void> getRemoteBook(

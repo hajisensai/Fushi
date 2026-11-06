@@ -105,9 +105,9 @@ double videoSubtitleControlsReserve({
   final double hotzoneBottom = isDesktop
       ? buttonBarHeight - seekBarBottomButtonBarOverlap
       : bottomChromeBaseline +
-          bottomSystemInset +
-          buttonBarHeight +
-          seekBarButtonGap;
+            bottomSystemInset +
+            buttonBarHeight +
+            seekBarButtonGap;
   // 热区上缘 + 呼吸间距：字幕命中区整体骑在进度条整段可点区上方，不与 seek 命中区重叠
   // （BUG-901 移动 / BUG-1224 桌面）。
   return hotzoneBottom + seekBarContainerHeight + subtitleBreathingGap;
@@ -198,8 +198,7 @@ EdgeInsets videoControlsChromeInsets({
   required EdgeInsets systemPadding,
   EdgeInsets? themePadding,
 }) {
-  return themePadding ??
-      (isFullscreenRoute ? systemPadding : EdgeInsets.zero);
+  return themePadding ?? (isFullscreenRoute ? systemPadding : EdgeInsets.zero);
 }
 
 /// 字幕字号的**屏幕自适应因子**（TODO-1199）。
@@ -279,6 +278,10 @@ SubtitleLayerVAnchor? resolveLayerForcedAnchor({
   return null;
 }
 
+/// 字幕**文字**的默认颜色：固定白（TODO-051）。旧数据 `textColor == null` 也解析成它
+/// （[VideoSubtitleStyle.resolveTextColor]，#2312），不跟随 App 主题。
+const Color kDefaultSubtitleTextColor = Color(0xFFFFFFFF);
+
 /// 字幕背景盒的**默认底色**（TODO-1059 方案A）：固定半透明黑，而非跟随
 /// `ColorScheme.surface`。
 ///
@@ -340,8 +343,10 @@ final ValueNotifier<VideoSubtitleStyle?> videoSubtitleStyleDraft =
 /// black outline/shadow so it stays readable on any video regardless of the
 /// active app theme (TODO-051). Weight and shadow thickness stay nullable so the
 /// default thickness can follow the global UI size, while explicit user choices
-/// remain fixed. [textColor]/[shadowColor] left null means "follow the theme"
-/// (legacy data persisted before TODO-051), resolved via [resolveTextColor] /
+/// remain fixed. [textColor] left null (legacy data persisted before TODO-051)
+/// resolves to the fixed white [kDefaultSubtitleTextColor] via [resolveTextColor]
+/// — subtitles sit on the video, not on the app surface, so they never follow
+/// the theme (#2312). [shadowColor] left null follows the theme shadow via
 /// [resolveShadowColor]. [backgroundColor] left null means "use the fixed
 /// [kDefaultSubtitleBackgroundColor] translucent black" (TODO-1059 方案A), NOT
 /// the theme surface — so a light theme no longer washes the subtitle box pale.
@@ -410,7 +415,7 @@ class VideoSubtitleStyle {
   /// field; the dynamic dodge takes the lower bound on top of it).
   static const VideoSubtitleStyle defaults = VideoSubtitleStyle(
     fontSize: 36,
-    textColor: Color(0xFFFFFFFF),
+    textColor: kDefaultSubtitleTextColor,
     fontWeight: null,
     // 黑 @ 0.9 alpha（抄 Niratan `.black.opacity(0.9)`）：柔和投影而非纯黑硬边。
     shadowColor: Color(0xE6000000),
@@ -507,7 +512,11 @@ class VideoSubtitleStyle {
     );
   }
 
-  Color resolveTextColor(Color themeColor) => textColor ?? themeColor;
+  /// 文字色：null（TODO-051 之前落盘的旧数据）解析为固定白 [kDefaultSubtitleTextColor]，
+  /// **不再跟随 App 主题**（#2312）。字幕画在视频画面上而不是 App 表面上，跟随主题意味着
+  /// 浅色主题下黑字压画面、主题随系统昼夜切换时字幕忽白忽黑；开着「尊重字幕自带样式」时
+  /// ASS 主色把它盖住，一关就暴露。持久化值原样保留（null 不被改写），只改解析。
+  Color resolveTextColor() => textColor ?? kDefaultSubtitleTextColor;
   Color resolveShadowColor(Color themeColor) => shadowColor ?? themeColor;
   Color resolveBackgroundColor(Color themeColor) =>
       backgroundColor ?? themeColor;
@@ -529,24 +538,24 @@ class VideoSubtitleStyle {
   }
 
   static String encode(VideoSubtitleStyle s) => jsonEncode(<String, dynamic>{
-        '_v': 2,
-        'fontSize': s.fontSize,
-        'textColor': s.textColor?.toARGB32(),
-        'fontWeight': s.fontWeight,
-        'shadowColor': s.shadowColor?.toARGB32(),
-        'shadowThickness': s.shadowThickness,
-        'backgroundColor': s.backgroundColor?.toARGB32(),
-        'backgroundOpacity': s.backgroundOpacity,
-        'bottomPadding': s.bottomPadding,
-        // null（从未单独调过副字幕位置）也照写：decode 侧 null → 继续跟随主字幕。
-        'secondaryBottomPadding': s.secondaryBottomPadding,
-        // 锚定（TODO-2838）：主层枚举名字符串（'bottom'/'top'）；副层 null（自动
-        // 对侧）也照写，decode 侧 null → 继续自动。
-        'mainAnchor': s.mainAnchor.name,
-        'secondaryAnchor': s.secondaryAnchor?.name,
-        'outlineColor': s.outlineColor?.toARGB32(),
-        'outlineThickness': s.outlineThickness,
-      });
+    '_v': 2,
+    'fontSize': s.fontSize,
+    'textColor': s.textColor?.toARGB32(),
+    'fontWeight': s.fontWeight,
+    'shadowColor': s.shadowColor?.toARGB32(),
+    'shadowThickness': s.shadowThickness,
+    'backgroundColor': s.backgroundColor?.toARGB32(),
+    'backgroundOpacity': s.backgroundOpacity,
+    'bottomPadding': s.bottomPadding,
+    // null（从未单独调过副字幕位置）也照写：decode 侧 null → 继续跟随主字幕。
+    'secondaryBottomPadding': s.secondaryBottomPadding,
+    // 锚定（TODO-2838）：主层枚举名字符串（'bottom'/'top'）；副层 null（自动
+    // 对侧）也照写，decode 侧 null → 继续自动。
+    'mainAnchor': s.mainAnchor.name,
+    'secondaryAnchor': s.secondaryAnchor?.name,
+    'outlineColor': s.outlineColor?.toARGB32(),
+    'outlineThickness': s.outlineThickness,
+  });
 
   static VideoSubtitleStyle decode(String? json) {
     if (json == null || json.isEmpty) return defaults;
@@ -607,14 +616,16 @@ class VideoSubtitleStyle {
           d['backgroundOpacity'],
           defaults.backgroundOpacity,
         ).clamp(0.0, 1.0),
-        bottomPadding: num2d(d['bottomPadding'], defaults.bottomPadding)
-            .clamp(0, kVideoSubtitleMaxPadding),
+        bottomPadding: num2d(
+          d['bottomPadding'],
+          defaults.bottomPadding,
+        ).clamp(0, kVideoSubtitleMaxPadding),
         // 缺字段（旧数据）/ 非数字 → null = 副字幕继续跟随主字幕位置（旧外观不变）。
         secondaryBottomPadding: d['secondaryBottomPadding'] is num
             ? (d['secondaryBottomPadding'] as num)
-                .toDouble()
-                .clamp(0, kVideoSubtitleMaxPadding)
-                .toDouble()
+                  .toDouble()
+                  .clamp(0, kVideoSubtitleMaxPadding)
+                  .toDouble()
             : null,
         // 锚定（TODO-2838）：缺字段（旧数据）/ 未知值 → 主层底锚、副层自动（对侧），
         // 旧外观像素级不变。
@@ -623,9 +634,10 @@ class VideoSubtitleStyle {
         secondaryAnchor: _decodeAnchor(d['secondaryAnchor']),
         // 描边（#xif6-gtSz7）：缺字段（旧数据）→ 无描边、默认色，外观不变。
         outlineColor: outlineArgb == null ? null : Color(outlineArgb),
-        outlineThickness: num2d(d['outlineThickness'], 0)
-            .clamp(0, kVideoSubtitleMaxOutline)
-            .toDouble(),
+        outlineThickness: num2d(
+          d['outlineThickness'],
+          0,
+        ).clamp(0, kVideoSubtitleMaxOutline).toDouble(),
       );
     } catch (_) {
       return defaults;
@@ -634,10 +646,10 @@ class VideoSubtitleStyle {
 
   /// JSON 里的锚定字符串 → 枚举；未知/非字符串返回 null（调用方决定回退语义）。
   static SubtitleLayerVAnchor? _decodeAnchor(Object? v) => switch (v) {
-        'top' => SubtitleLayerVAnchor.top,
-        'bottom' => SubtitleLayerVAnchor.bottom,
-        _ => null,
-      };
+    'top' => SubtitleLayerVAnchor.top,
+    'bottom' => SubtitleLayerVAnchor.bottom,
+    _ => null,
+  };
 
   static double _normalizeUiScale(double uiScale) {
     return FushiAppUiScale.normalize(uiScale);
@@ -762,11 +774,19 @@ EdgeInsets videoTopBarMargin({
   required EdgeInsets systemPadding,
   required EdgeInsets systemViewPadding,
   required bool systemBarsVisible,
+  double desktopCaptionInset = 0,
 }) {
   return EdgeInsets.only(
     left: math.max(16.0, math.max(systemPadding.left, systemViewPadding.left)),
-    right:
-        math.max(16.0, math.max(systemPadding.right, systemViewPadding.right)),
-    top: systemBarsVisible ? systemViewPadding.top : 0.0,
+    right: math.max(
+      16.0,
+      math.max(systemPadding.right, systemViewPadding.right),
+    ),
+    // 桌面自绘顶栏在播放页悬停才浮出、画面铺满整窗：顶栏胶囊仍排在窗口按钮
+    // 下面，不被浮出的按钮压住（[desktopCaptionInset]，用户 2026-10-30）。
+    top: math.max(
+      systemBarsVisible ? systemViewPadding.top : 0.0,
+      desktopCaptionInset,
+    ),
   );
 }

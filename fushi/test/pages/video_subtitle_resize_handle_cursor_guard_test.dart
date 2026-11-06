@@ -30,27 +30,38 @@ void main() {
     });
 
     test('主壳声明 _pointerOverSubtitleResizeHandle 标志', () {
-      expect(src.contains('bool _pointerOverSubtitleResizeHandle = false;'),
-          isTrue,
-          reason: '需有「指针是否在把手上」的标志，供 _forceRevealOsCursorForPanel 让位');
+      expect(
+        src.contains('bool _pointerOverSubtitleResizeHandle = false;'),
+        isTrue,
+        reason: '需有「指针是否在把手上」的标志，供 _forceRevealOsCursorForPanel 让位',
+      );
     });
 
     test('_forceRevealOsCursorForPanel 悬在把手上时提前返回（不原生强设 basic）', () {
-      final int start =
-          src.indexOf('void _forceRevealOsCursorForPanel(int device) {');
+      final int start = src.indexOf(
+        'void _forceRevealOsCursorForPanel(int device) {',
+      );
       expect(start, greaterThanOrEqualTo(0), reason: '应有直发 OS 光标通道的 helper');
       final int end = src.indexOf('\n  }', start) + 4;
       expect(end, greaterThan(start));
       final String body = src.substring(start, end);
 
-      final int guardIdx =
-          body.indexOf('if (_pointerOverSubtitleResizeHandle) return;');
-      expect(guardIdx, greaterThanOrEqualTo(0),
-          reason: '把手上必须让位：提前 return，不再原生强设 basic');
-      final int invokeIdx =
-          body.indexOf('SystemChannels.mouseCursor.invokeMethod');
-      expect(invokeIdx, greaterThan(guardIdx),
-          reason: '让位门控必须在原生 activateSystemCursor 之前（否则仍会先盖掉 resize 光标）');
+      final int guardIdx = body.indexOf(
+        'if (_pointerOverSubtitleResizeHandle) return;',
+      );
+      expect(
+        guardIdx,
+        greaterThanOrEqualTo(0),
+        reason: '把手上必须让位：提前 return，不再原生强设 basic',
+      );
+      final int invokeIdx = body.indexOf(
+        'SystemChannels.mouseCursor.invokeMethod',
+      );
+      expect(
+        invokeIdx,
+        greaterThan(guardIdx),
+        reason: '让位门控必须在原生 activateSystemCursor 之前（否则仍会先盖掉 resize 光标）',
+      );
     });
 
     test('_subtitleListResizeHandle 保留 resize 光标且 enter/exit 翻标志', () {
@@ -60,12 +71,20 @@ void main() {
       final String body = src.substring(start, end > start ? end : src.length);
 
       expect(
-          body.contains('cursor: SystemMouseCursors.resizeLeftRight'), isTrue,
-          reason: '把手 MouseRegion 必须声明 resizeLeftRight（左右箭头）光标');
-      expect(body.contains('_pointerOverSubtitleResizeHandle = true'), isTrue,
-          reason: 'onEnter 必须置标志真，让 _forceRevealOsCursorForPanel 让位');
-      expect(body.contains('_pointerOverSubtitleResizeHandle = false'), isTrue,
-          reason: 'onExit 必须复位标志，面板其余区域仍走 basic 唤回缓解');
+        body.contains('cursor: SystemMouseCursors.resizeLeftRight'),
+        isTrue,
+        reason: '把手 MouseRegion 必须声明 resizeLeftRight（左右箭头）光标',
+      );
+      expect(
+        body.contains('_pointerOverSubtitleResizeHandle = true'),
+        isTrue,
+        reason: 'onEnter 必须置标志真，让 _forceRevealOsCursorForPanel 让位',
+      );
+      expect(
+        body.contains('_pointerOverSubtitleResizeHandle = false'),
+        isTrue,
+        reason: 'onExit 必须复位标志，面板其余区域仍走 basic 唤回缓解',
+      );
       expect(body.contains('onEnter:'), isTrue, reason: '需接线 onEnter 置标志');
       expect(body.contains('onExit:'), isTrue, reason: '需接线 onExit 复位标志');
     });
@@ -75,8 +94,9 @@ void main() {
   // ——把手 MouseRegion（叠在面板之上、声明 resizeLeftRight）能在 MouseTracker 解析中胜过外层
   // 声明式 basic 包裹层。真正被质疑的「原生每帧强设 basic 是否已让位」仅 Windows 真机可验。
   group('行为：同构布局下把手上光标解析为 resizeLeftRight（BUG-930·headless 对真机零增益）', () {
-    testWidgets('把手叠在面板左缘、外层声明 basic：把手上光标 = resizeLeftRight',
-        (WidgetTester tester) async {
+    testWidgets('把手叠在面板左缘、外层声明 basic：把手上光标 = resizeLeftRight', (
+      WidgetTester tester,
+    ) async {
       const double panelWidth = 300;
       bool overHandle = false;
 
@@ -127,8 +147,9 @@ void main() {
         ),
       );
 
-      final TestGesture gesture =
-          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      final TestGesture gesture = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
       addTearDown(gesture.removePointer);
 
       String kind(MouseCursor c) =>
@@ -148,10 +169,16 @@ void main() {
       // 把手上（面板左缘 8px 内）：把手 MouseRegion（更靠前）解析出 resizeLeftRight。
       await gesture.moveTo(Offset(panelLeft + 4, size.height / 2));
       await tester.pump();
-      expect(overHandle, isTrue,
-          reason: '进把手应翻标志（真码据此让 _forceRevealOsCursorForPanel 让位）');
-      expect(kind(active()), 'resizeLeftRight',
-          reason: '把手上框架层光标必须解析为 resizeLeftRight（叠在面板之上、胜过外层 basic）');
+      expect(
+        overHandle,
+        isTrue,
+        reason: '进把手应翻标志（真码据此让 _forceRevealOsCursorForPanel 让位）',
+      );
+      expect(
+        kind(active()),
+        'resizeLeftRight',
+        reason: '把手上框架层光标必须解析为 resizeLeftRight（叠在面板之上、胜过外层 basic）',
+      );
 
       // 收尾：移出所有 region，复位 cursor session 防跨测试泄漏。
       await gesture.moveTo(const Offset(-100, -100));

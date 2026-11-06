@@ -4,6 +4,8 @@ import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart'
+    show calcPopupPosition, choosePopupAnchorRect;
 import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
 
@@ -128,8 +130,9 @@ void main() {
     });
 
     test('双页 spread 精确解析命中页图片，不取 spread 首页', () async {
-      final Directory root =
-          await Directory.systemTemp.createTemp('fushi-mining-page-');
+      final Directory root = await Directory.systemTemp.createTemp(
+        'fushi-mining-page-',
+      );
       addTearDown(() async {
         if (await root.exists()) await root.delete(recursive: true);
       });
@@ -170,6 +173,143 @@ void main() {
     });
   });
 
+  // BUG-3604（反馈 9VPd0p5d0V，Android 363x792）：漫画把弹窗锚到整句 OCR 分组的并集。
+  // 资料表 / 大段旁白被并成一句、再放大后，并集上下都超出屏幕——按它避让只剩负空间，
+  // 弹窗被压成 0 高挤到屏顶，只露出拖拽把手。
+  group('BUG-3604：整句并集放不下弹窗时退回贴被点字形', () {
+    const Size screen = Size(363, 792);
+    const double maxWidth = 480;
+    const double maxHeight = 480;
+    // 放大后的资料表：并集从屏幕上方一直延伸到屏幕下方。
+    const Map<String, dynamic> zoomedGroup = <String, dynamic>{
+      'x': 0.0,
+      'y': -320.0,
+      'width': 363.0,
+      'height': 1500.0,
+    };
+    // 被点的「独占欲」首字。
+    const Map<String, dynamic> glyph = <String, dynamic>{
+      'x': 300.0,
+      'y': 396.0,
+      'width': 15.0,
+      'height': 16.0,
+    };
+
+    Rect place(Rect anchor, bool vertical) => calcPopupPosition(
+      selectionRect: anchor,
+      screen: screen,
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
+      verticalWriting: vertical,
+    );
+
+    Future<Rect> dispatch(
+      Map<String, dynamic> payload, {
+      bool withChooser = true,
+    }) async {
+      Rect? captured;
+      await dispatchMangaSelection(
+        ReaderSelectionData.fromJson(payload),
+        fallbackScreen: screen,
+        selectPageForMining: (_) async {},
+        setSentence: (_) {},
+        search: (_, Rect rect, __) async => captured = rect,
+        chooseAnchor: withChooser
+            ? (Rect groupRect, Rect? glyphRect, bool vertical) =>
+                  choosePopupAnchorRect(
+                    preferred: groupRect,
+                    fallback: glyphRect,
+                    screen: screen,
+                    bottomDocked: false,
+                    maxWidth: maxWidth,
+                    maxHeight: maxHeight,
+                    verticalWriting: vertical,
+                  )
+            : null,
+      );
+      return captured!;
+    }
+
+    void expectUsableOnScreen(Rect popup) {
+      expect(popup.left, greaterThanOrEqualTo(0));
+      expect(popup.top, greaterThanOrEqualTo(0));
+      expect(popup.right, lessThanOrEqualTo(screen.width));
+      expect(popup.bottom, lessThanOrEqualTo(screen.height));
+      expect(popup.height, greaterThanOrEqualTo(120));
+      expect(popup.width, greaterThanOrEqualTo(200));
+    }
+
+    test('复现：只按并集避让时弹窗被压成 0 高（用户看到的「跑到屏幕外」）', () async {
+      final Rect anchor = await dispatch(<String, dynamic>{
+        'text': '独占欲',
+        'sentence': '高め、無自覚 独占欲',
+        'rect': zoomedGroup,
+        'glyphRect': glyph,
+      }, withChooser: false);
+      expect(place(anchor, false).height, lessThan(1));
+    });
+
+    test('横排：并集四周放不下 → 锚到被点字形，弹窗完整可用且不盖字', () async {
+      final Rect anchor = await dispatch(<String, dynamic>{
+        'text': '独占欲',
+        'sentence': '高め、無自覚 独占欲',
+        'rect': zoomedGroup,
+        'glyphRect': glyph,
+      });
+      expect(anchor, const Rect.fromLTWH(300, 396, 15, 16));
+      final Rect popup = place(anchor, false);
+      expectUsableOnScreen(popup);
+      expect(popup.overlaps(anchor), isFalse);
+    });
+
+    test('竖排：并集左右都没有空间时同样退回字形', () async {
+      final Rect anchor = await dispatch(<String, dynamic>{
+        'text': '独占欲',
+        'sentence': '独占欲',
+        'verticalWriting': true,
+        'rect': <String, dynamic>{
+          'x': -200.0,
+          'y': -100.0,
+          'width': 800.0,
+          'height': 1000.0,
+        },
+        'glyphRect': glyph,
+      });
+      expect(anchor, const Rect.fromLTWH(300, 396, 15, 16));
+      expectUsableOnScreen(place(anchor, true));
+    });
+
+    test('并集旁放得下时仍按并集避让（既有气泡避让行为不变）', () async {
+      // 普通对白气泡：并集在屏幕下半，上方空间足够整高弹窗。
+      final Rect anchor = await dispatch(<String, dynamic>{
+        'text': '世界',
+        'sentence': 'この世界は美しい。',
+        'rect': <String, dynamic>{
+          'x': 40.0,
+          'y': 520.0,
+          'width': 200.0,
+          'height': 120.0,
+        },
+        'glyphRect': <String, dynamic>{
+          'x': 60.0,
+          'y': 540.0,
+          'width': 14.0,
+          'height': 14.0,
+        },
+      });
+      expect(anchor, const Rect.fromLTWH(40, 520, 200, 120));
+    });
+
+    test('payload 不带 glyphRect（EPUB / 旧 payload）时原样用 rect', () async {
+      final Rect anchor = await dispatch(<String, dynamic>{
+        'text': '独占欲',
+        'sentence': '独占欲',
+        'rect': zoomedGroup,
+      });
+      expect(anchor, const Rect.fromLTWH(0, -320, 363, 1500));
+    });
+  });
+
   // 收敛不变式守卫（ERRATA H2/C1）：选区 handler / pointerup 监听全工程唯一，
   // 防串框契约——漫画页与 EPUB 阅读器各自恰好一个 onTextSelected 注册点。
   group('选词路径收敛不变式（ERRATA H2/C1）', () {
@@ -179,11 +319,16 @@ void main() {
       );
       expect(page.existsSync(), isTrue);
       final String src = page.readAsStringSync();
-      final int handlerCount =
-          "handlerName: 'onTextSelected'".allMatches(src).length;
-      expect(handlerCount, 1,
-          reason: '漫画页是其 onTextSelected handler 的唯一所有者；'
-              '恰好一处注册（多注册会把同一 payload 双发查词）');
+      final int handlerCount = "handlerName: 'onTextSelected'"
+          .allMatches(src)
+          .length;
+      expect(
+        handlerCount,
+        1,
+        reason:
+            '漫画页是其 onTextSelected handler 的唯一所有者；'
+            '恰好一处注册（多注册会把同一 payload 双发查词）',
+      );
     });
 
     test('漫画页绝不再挂第二个 pointerup JS 监听', () {
@@ -201,9 +346,7 @@ void main() {
         'lib/src/media/manga/reader/manga_fushi_page.dart',
       ).readAsStringSync();
       expect(
-        src.contains(
-          'bool get popupVerticalWriting => _popupVerticalWriting;',
-        ),
+        src.contains('bool get popupVerticalWriting => _popupVerticalWriting;'),
         isTrue,
       );
       expect(
@@ -229,16 +372,17 @@ void main() {
     });
 
     test('唯一 pointerup 监听只在 manga_overlay_html，且选词调用显式传 maxLength', () {
-      final File overlay = File(
-        'lib/src/media/manga/manga_overlay_html.dart',
-      );
+      final File overlay = File('lib/src/media/manga/manga_overlay_html.dart');
       expect(overlay.existsSync(), isTrue);
       final String src = overlay.readAsStringSync();
       final int pointerupCount =
           'addEventListener("pointerup"'.allMatches(src).length +
-              "addEventListener('pointerup'".allMatches(src).length;
-      expect(pointerupCount, 1,
-          reason: 'manga_overlay_html.dart 必须持有唯一的 pointerup 监听');
+          "addEventListener('pointerup'".allMatches(src).length;
+      expect(
+        pointerupCount,
+        1,
+        reason: 'manga_overlay_html.dart 必须持有唯一的 pointerup 监听',
+      );
       // 这条守卫防的是「选词调用漏传 maxLength → 扫描循环 gate `< undefined`
       // 恒假 → text 恒空 → onTextSelected 永不触发」。
       //
@@ -253,10 +397,16 @@ void main() {
       final RegExp selectRe = RegExp(
         r'selection\.selectFromPosition\(\s*node\s*,\s*0\s*,\s*40\s*,\s*x\s*,\s*y\s*,\s*fromHover\s*\)',
       );
-      expect(selectRe.allMatches(src).length, 1,
-          reason: '选词必须是唯一调用点，且显式传 maxLength=40');
-      expect(src.contains('fushiSelection.selectText('), isFalse,
-          reason: '旧的按坐标猜节点入口已下线，不得复活成第二条选词路径');
+      expect(
+        selectRe.allMatches(src).length,
+        1,
+        reason: '选词必须是唯一调用点，且显式传 maxLength=40',
+      );
+      expect(
+        src.contains('fushiSelection.selectText('),
+        isFalse,
+        reason: '旧的按坐标猜节点入口已下线，不得复活成第二条选词路径',
+      );
     });
   });
 }

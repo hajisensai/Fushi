@@ -80,6 +80,10 @@ constexpr UINT kLowLevelMouseAttachedGlyphAbortMessage = WM_APP + 0x57;
 // path. The attached surface uses this only to re-run its ordinary admission
 // path after the full down/up and sampled-input tail are neutral.
 constexpr UINT kLowLevelMouseAttachedGlyphRearmMessage = WM_APP + 0x58;
+// 反馈 4c0IeCpSjb — 游戏内查词卡在屏时 WH_KEYBOARD_LL 吞掉了一次 Ctrl+C（见
+// lookup_keyboard_shield.h）。热键在 LL 钩子之后处理、已收不到，钩子线程改投这条消息
+// 让卡片走它原生的「复制选区」出口。wparam / lparam 不用。
+constexpr UINT kLowLevelKeyboardCopyMessage = WM_APP + 0x59;
 
 // 打包/解包屏幕坐标（x64 下 WPARAM 为 64 位；坐标可为负，故按 uint32 位模式搬运）。
 WPARAM PackMouseHookPoint(int x, int y);

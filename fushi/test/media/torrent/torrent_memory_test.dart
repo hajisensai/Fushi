@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/torrent/torrent_memory.dart';
 
 void main() {
@@ -57,7 +57,8 @@ void main() {
 
   group('parseProcMeminfoMemTotalMb', () {
     test('parses MemTotal kB → MB', () {
-      const String meminfo = 'MemTotal:       16305512 kB\n'
+      const String meminfo =
+          'MemTotal:       16305512 kB\n'
           'MemFree:         1234567 kB\n';
       expect(parseProcMeminfoMemTotalMb(meminfo), 16305512 ~/ 1024);
     });

@@ -8,6 +8,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/redirect_headers.dart';
 import 'package:fushi/src/utils/net/transient_fetch_retry.dart';
 
 /// 走应用代理出口的网络图片 provider（BUG-1715）。
@@ -41,16 +42,15 @@ class AppHttpImage extends ImageProvider<AppHttpImage> {
   ImageStreamCompleter loadImage(
     AppHttpImage key,
     ImageDecoderCallback decode,
-  ) =>
-      MultiFrameImageStreamCompleter(
-        codec: _loadCodec(key, decode),
-        scale: key.scale,
-        debugLabel: key.url,
-        informationCollector: () => <DiagnosticsNode>[
-          DiagnosticsProperty<ImageProvider>('Image provider', this),
-          DiagnosticsProperty<String>('URL', key.url),
-        ],
-      );
+  ) => MultiFrameImageStreamCompleter(
+    codec: _loadCodec(key, decode),
+    scale: key.scale,
+    debugLabel: key.url,
+    informationCollector: () => <DiagnosticsNode>[
+      DiagnosticsProperty<ImageProvider>('Image provider', this),
+      DiagnosticsProperty<String>('URL', key.url),
+    ],
+  );
 
   Future<ui.Codec> _loadCodec(
     AppHttpImage key,
@@ -100,17 +100,17 @@ class AppHttpImage extends ImageProvider<AppHttpImage> {
 
   @override
   int get hashCode => Object.hash(
-        url,
-        scale,
-        headers == null
-            ? null
-            : Object.hashAllUnordered(
-                headers!.entries.map(
-                  (MapEntry<String, String> entry) =>
-                      Object.hash(entry.key, entry.value),
-                ),
-              ),
-      );
+    url,
+    scale,
+    headers == null
+        ? null
+        : Object.hashAllUnordered(
+            headers!.entries.map(
+              (MapEntry<String, String> entry) =>
+                  Object.hash(entry.key, entry.value),
+            ),
+          ),
+  );
 
   @override
   String toString() =>
@@ -131,15 +131,43 @@ class AppCachedHttpImage extends CachedNetworkImageProvider {
 }
 
 /// 与原默认缓存共享磁盘命名空间，已有封面无需重新下载。
+///
+/// 元数据仓库（`repo`）默认交给 flutter_cache_manager 按**宿主平台**选：
+/// Android / iOS / macOS 是 sqflite 的 `CacheObjectProvider`（与原默认缓存同一个
+/// 库文件），其余平台是 `JsonCacheInfoRepository`。生产里必须保持这个默认，否则
+/// 与 [DefaultCacheManager] 共享的命名空间会裂成两份索引。
+///
+/// 但 `flutter test` 跑在宿主 VM 上：macOS 宿主的 `Platform.isMacOS` 为真，库会
+/// 去开 sqflite 平台插件，而测试进程里没有这个插件（「databaseFactory not
+/// initialized」）。所以单例首次构造前可经 [debugRepositoryOverride] 注入仓库，
+/// 由测试装配（`test/flutter_test_config.dart`）统一换成与宿主无关的实现。
 class AppImageCacheManager extends CacheManager with ImageCacheManager {
-  AppImageCacheManager._()
-      : super(
-          Config(DefaultCacheManager.key, fileService: AppImageFileService()),
-        );
+  AppImageCacheManager._(CacheInfoRepository? repo)
+    : super(
+        // Config 的 repo 形参不可空（缺省才走平台默认），所以按有无注入分两种构造。
+        repo == null
+            ? Config(
+                DefaultCacheManager.key,
+                fileService: AppImageFileService(),
+              )
+            : Config(
+                DefaultCacheManager.key,
+                repo: repo,
+                fileService: AppImageFileService(),
+              ),
+      );
 
-  static final AppImageCacheManager _instance = AppImageCacheManager._();
+  static AppImageCacheManager? _instance;
 
-  factory AppImageCacheManager() => _instance;
+  /// 单例首次构造时用它造元数据仓库（入参为数据库名）；`null` = 库的平台默认。
+  /// 只在测试装配里设置，且必须早于第一次 `AppImageCacheManager()`。
+  @visibleForTesting
+  static CacheInfoRepository Function(String databaseName)?
+  debugRepositoryOverride;
+
+  factory AppImageCacheManager() => _instance ??= AppImageCacheManager._(
+    debugRepositoryOverride?.call(DefaultCacheManager.key),
+  );
 }
 
 /// 磁盘缓存图片的首响应 / 正文空闲超时（BUG-2450）。
@@ -164,10 +192,7 @@ class AppImageFileService extends FileService {
   final RetryWait retryWait;
 
   @override
-  Future<FileServiceResponse> get(
-    String url, {
-    Map<String, String>? headers,
-  }) =>
+  Future<FileServiceResponse> get(String url, {Map<String, String>? headers}) =>
       retryTransient<FileServiceResponse>(
         () => _getOnce(url, headers: headers),
         backoff: retryBackoff,
@@ -180,10 +205,33 @@ class AppImageFileService extends FileService {
   }) async {
     final http.Client client = createAppHttpIoClient();
     try {
-      final http.Request request = http.Request('GET', Uri.parse(url));
-      if (headers != null) request.headers.addAll(headers);
-      final http.StreamedResponse response =
-          await client.send(request).timeout(kAppImageHeaderTimeout);
+      // 重定向逐跳手动跟随：封面请求可能带私有目录的凭据头（OPDS 的
+      // `X-API-Key`，BUG-3535 / BUG-3521），而 dart:io 自动跟随跨 origin 只剥
+      // `Authorization` / `Cookie`，其它凭据头会被原样转发给 302 指向的 CDN。
+      Uri current = Uri.parse(url);
+      Map<String, String> currentHeaders = headers ?? const <String, String>{};
+      http.Request request;
+      http.StreamedResponse response;
+      for (int hop = 0; ; hop++) {
+        request = http.Request('GET', current)..followRedirects = false;
+        request.headers.addAll(currentHeaders);
+        response = await client.send(request).timeout(kAppImageHeaderTimeout);
+        final String? location = response.headers['location'];
+        if (!isFollowableRedirectStatus(response.statusCode) ||
+            location == null ||
+            location.trim().isEmpty ||
+            hop >= kMaxManualRedirects) {
+          break;
+        }
+        await response.stream.listen(null).cancel();
+        final Uri next = current.resolve(location.trim());
+        currentHeaders = headersForRedirectHop(
+          currentHeaders,
+          from: current,
+          to: next,
+        );
+        current = next;
+      }
       // CacheManager 仅消费 200/202 正文，304 与错误响应须主动释放连接。
       final bool hasImage =
           response.statusCode == 200 || response.statusCode == 202;
@@ -204,7 +252,9 @@ class AppImageFileService extends FileService {
         http.StreamedResponse(
           hasImage
               ? _closeAfter(
-                  response.stream.timeout(kAppImageIdleTimeout), client)
+                  response.stream.timeout(kAppImageIdleTimeout),
+                  client,
+                )
               : const Stream<List<int>>.empty(),
           response.statusCode,
           headers: response.headers,

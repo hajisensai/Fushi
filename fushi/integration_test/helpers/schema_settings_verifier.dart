@@ -25,7 +25,8 @@ class ItemVerdict {
       reached && changed && persisted && effectVerified && restored;
 
   @override
-  String toString() => '[$controlType] $id '
+  String toString() =>
+      '[$controlType] $id '
       'reached=$reached changed=$changed persisted=$persisted '
       'effect=$effectVerified restored=$restored '
       '${isPass ? "PASS" : "FAIL"}${note.isEmpty ? "" : " — $note"}';

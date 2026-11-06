@@ -1,4 +1,5 @@
 import 'package:drift/native.dart';
+import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -7,6 +8,8 @@ import 'package:fushi/src/media/collections/collection_member_view.dart'
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show collectionDetailSortPrefKey, kCollectionDetailManualSortValue;
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/utils/components/library_reorder.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 书籍合集详情页（[MediaCollectionGridDetailPage]）网格拖排 + 长按/右键上下文菜单
@@ -101,8 +104,13 @@ void main() {
     final Offset target = tester.getCenter(
       find.byKey(const ValueKey<String>('member-k3')),
     );
-    final TestGesture gesture = await tester.startGesture(start);
-    await tester.pump(const Duration(milliseconds: 600)); // 越过长按阈值
+    // 触屏长按现在直接弹菜单（与库页同一时机），拖排走鼠标按住即拖；触屏拖排
+    // 经菜单「排序」进入排序模式，见下方排序模式用例。
+    final TestGesture gesture = await tester.startGesture(
+      start,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
     await gesture.moveTo(Offset.lerp(start, target, 0.6)!);
     await tester.pump();
     await gesture.moveTo(target);
@@ -158,11 +166,12 @@ void main() {
     );
   });
 
-  testWidgets('继续阅读随 memberInfoRefresh 重算：读完另一本回来，目标换成最近在读的那本'
+  testWidgets('hero 随 memberInfoRefresh 重算：读了另一本回来，整体进度跟着变'
       '（4h4uGUck4k）', (WidgetTester tester) async {
+    // hero 的「继续」按钮已砍（2026-10-28）；重算链路仍由整体进度钉住。
     useDesktopView(tester);
     final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
-    final Map<String, int> lastRead = <String, int>{'k1': 200, 'k2': 100};
+    final Map<String, double> progress = <String, double>{'k1': 0.3};
     final ChangeNotifier refresh = ChangeNotifier();
     addTearDown(refresh.dispose);
     await tester.pumpWidget(
@@ -177,7 +186,7 @@ void main() {
             memberInfoOf: (String mediaType, String entryKey) =>
                 CollectionMemberInfo(
                   title: 'T-$entryKey',
-                  lastReadAt: lastRead[entryKey],
+                  progress: progress[entryKey],
                 ),
             memberInfoRefresh: refresh,
           ),
@@ -185,20 +194,22 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('T-k1'), findsWidgets);
+    final Finder percent = find.byKey(
+      const ValueKey<String>('collection_detail_hero_percent'),
+    );
+    expect(tester.widget<Text>(percent).data, '10%');
 
     // 在阅读器里读了 k2（详情页压在阅读器之下，没有任何重建）；回来后调用方通知。
-    lastRead['k2'] = 300;
+    progress['k2'] = 0.6;
     // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
     refresh.notifyListeners();
     await tester.pumpAndSettle();
 
     expect(
-      find.textContaining('T-k2'),
-      findsWidgets,
-      reason: '继续阅读目标应换成最近在读的 k2',
+      tester.widget<Text>(percent).data,
+      '30%',
+      reason: '整体进度应随 memberInfoRefresh 重算',
     );
-    expect(find.textContaining('T-k1'), findsNothing);
   });
 
   testWidgets('菜单「打开」真回调 onOpenMember', (WidgetTester tester) async {
@@ -281,8 +292,11 @@ void main() {
     final Offset target = tester.getCenter(
       find.byKey(const ValueKey<String>('member-k5')),
     );
-    final TestGesture gesture = await tester.startGesture(start);
-    await tester.pump(const Duration(milliseconds: 600)); // 长按起拖
+    final TestGesture gesture = await tester.startGesture(
+      start,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
     await gesture.moveTo(Offset.lerp(start, target, 0.6)!);
     await tester.pump();
     await gesture.moveTo(target);
@@ -480,6 +494,120 @@ void main() {
     );
   });
 
+  group('长按与库页一致 + 触屏排序模式', () {
+    testWidgets('触屏长按到时即弹成员菜单（不等松手），菜单里有「排序」', (WidgetTester tester) async {
+      useDesktopView(tester);
+      final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
+      await tester.pumpWidget(wrapPage(s.col, s.db, onOpenMember: (_, __) {}));
+      await tester.pumpAndSettle();
+
+      final TestGesture press = await tester.startGesture(
+        tester.getCenter(find.byKey(const ValueKey<String>('member-k2'))),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump(const Duration(milliseconds: 400));
+      // 手指还按着：菜单已经出来。
+      expect(find.text(t.collection_remove_member), findsOneWidget);
+      expect(find.text(t.library_reorder_action), findsOneWidget);
+      await press.up();
+      await tester.pumpAndSettle();
+      expect(find.text(t.collection_remove_member), findsOneWidget);
+    });
+
+    testWidgets('菜单「排序」进入排序模式：触屏按住即拖、落盘，「完成」退出', (WidgetTester tester) async {
+      useDesktopView(tester);
+      final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
+      await tester.pumpWidget(wrapPage(s.col, s.db, onOpenMember: (_, __) {}));
+      await tester.pumpAndSettle();
+
+      await tester.longPress(find.byKey(const ValueKey<String>('member-k1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.library_reorder_action));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('library_reorder_bar')),
+        findsOneWidget,
+      );
+
+      final Offset start = tester.getCenter(
+        find.byKey(const ValueKey<String>('member-k1')),
+      );
+      final Offset target = tester.getCenter(
+        find.byKey(const ValueKey<String>('member-k3')),
+      );
+      final TestGesture gesture = await tester.startGesture(start);
+      await tester.pump(const Duration(milliseconds: 150));
+      await gesture.moveTo(Offset.lerp(start, target, 0.6)!);
+      await tester.pump();
+      await gesture.moveTo(target);
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(
+        (await s.db.getCollectionItems(
+          s.col.id,
+        )).map((MediaCollectionItemRow r) => r.entryKey).toList(),
+        <String>['k2', 'k3', 'k1'],
+      );
+      expect(
+        find.text(t.collection_remove_member),
+        findsNothing,
+        reason: '排序模式下长按不弹菜单',
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('library_reorder_done')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('library_reorder_bar')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('成员菜单交给调用方构建时，「排序」入口指向本页', (WidgetTester tester) async {
+      useDesktopView(tester);
+      final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
+      VoidCallback? entry;
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            home: MediaCollectionGridDetailPage(
+              database: s.db,
+              collection: s.col,
+              memberCardBuilder: cardBuilder,
+              onShowMemberMenu:
+                  (
+                    String mediaType,
+                    String entryKey, {
+                    required VoidCallback onRemoveFromCollection,
+                  }) async {
+                    // 调用方（库页）用自己的 context 弹菜单：同步派发期间读到的
+                    // 必须是合集页的入口。
+                    entry = libraryReorderEntryOf(
+                      tester.element(find.byType(MaterialApp)),
+                    );
+                  },
+              onChanged: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.longPress(find.byKey(const ValueKey<String>('member-k2')));
+      await tester.pumpAndSettle();
+      expect(entry, isNotNull);
+      entry!();
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('library_reorder_bar')),
+        findsOneWidget,
+      );
+    });
+  });
+
   group('iPad 合集反馈（2026-10-18）', () {
     /// 四卷合集、默认排序（卷号，非手动序 → 走非拖排网格）。
     Future<({FushiDatabase db, MediaCollectionRow col})> seedSeries() async {
@@ -545,20 +673,15 @@ void main() {
       expect(percent.data, '50%');
     });
 
-    testWidgets('读完第二卷后「继续」指向最后读的第二卷，不回落第一卷', (WidgetTester tester) async {
+    testWidgets('hero 不再有「继续」按钮（2026-10-28 砍掉，点成员卡读）', (
+      WidgetTester tester,
+    ) async {
       useDesktopView(tester);
       await tester.pumpWidget(seriesPage(await seedSeries()));
       await tester.pumpAndSettle();
 
-      final Finder button = find.byKey(
-        const ValueKey<String>('collection_detail_continue'),
-      );
       expect(
-        find.descendant(of: button, matching: find.textContaining('T-k2')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: button, matching: find.textContaining('T-k1')),
+        find.byKey(const ValueKey<String>('collection_detail_continue')),
         findsNothing,
       );
     });
@@ -586,6 +709,95 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(opened, <String>['k4']);
+    });
+
+    testWidgets('默认卷号排序下也能拖：拖完按显示序落盘并切到手动序', (WidgetTester tester) async {
+      // 用户实报「合集不能拖动排序」：默认排序是卷号，此前只有手动序才进拖排网格。
+      useDesktopView(tester);
+      final ({FushiDatabase db, MediaCollectionRow col}) s = await seedSeries();
+      await tester.pumpWidget(seriesPage(s));
+      await tester.pumpAndSettle();
+
+      final Offset start = tester.getCenter(
+        find.byKey(const ValueKey<String>('member-k1')),
+      );
+      final Offset target = tester.getCenter(
+        find.byKey(const ValueKey<String>('member-k3')),
+      );
+      final TestGesture gesture = await tester.startGesture(
+        start,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      await gesture.moveTo(Offset.lerp(start, target, 0.6)!);
+      await tester.pump();
+      await gesture.moveTo(target);
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(
+        (await s.db.getCollectionItems(
+          s.col.id,
+        )).map((MediaCollectionItemRow r) => r.entryKey).toList(),
+        // 卷号序下显示为 k3、k4、T-k1、T-k2（k3 / k4 无标题信息，按键名排在
+        // 「T-」前）；k1 拖到 k3 的格子 → 按拖完的**显示序**落盘。
+        <String>['k1', 'k3', 'k4', 'k2'],
+      );
+      expect(
+        await s.db.getPref(collectionDetailSortPrefKey(s.col.id)),
+        kCollectionDetailManualSortValue,
+        reason: '拖过一次即记为手动序，下次进来仍是拖完的顺序',
+      );
+    });
+
+    testWidgets('成员右键把指针锚点交给库页菜单，长按不给（右键菜单 / 长按抽屉分流）', (
+      WidgetTester tester,
+    ) async {
+      useDesktopView(tester);
+      final List<Offset?> anchors = <Offset?>[];
+      final ({FushiDatabase db, MediaCollectionRow col}) s = await seedSeries();
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            home: MediaCollectionGridDetailPage(
+              database: s.db,
+              collection: s.col,
+              memberCardBuilder: cardBuilder,
+              onOpenMember: (_, __) {},
+              onShowMemberMenu:
+                  (
+                    String mediaType,
+                    String entryKey, {
+                    required VoidCallback onRemoveFromCollection,
+                  }) async => anchors.add(activeContextMenuAnchor),
+              onChanged: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final Offset k2 = tester.getCenter(
+        find.byKey(const ValueKey<String>('member-k2')),
+      );
+      final TestGesture mouse = await tester.startGesture(
+        k2,
+        kind: PointerDeviceKind.mouse,
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pump();
+      await mouse.up();
+      await tester.pumpAndSettle();
+
+      final TestGesture touch = await tester.startGesture(k2);
+      await tester.pump(const Duration(milliseconds: 600));
+      await touch.up();
+      await tester.pumpAndSettle();
+
+      expect(anchors, hasLength(2));
+      expect(anchors[0], isNotNull, reason: '右键要弹在指针处');
+      expect(anchors[1], isNull, reason: '长按走抽屉 / 对话框');
     });
 
     testWidgets('顶栏不再有与 hero「编辑标签」重复的标签按钮', (WidgetTester tester) async {

@@ -12,6 +12,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -22,60 +23,127 @@ import 'package:fushi_anki/fushi_anki_core.dart'
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_pull_first.dart'
+    show kSrsPullBeforeMergeBudget;
+import 'package:fushi_engine/srs/srs_profile_link.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart'
+    show SrsSync2Report;
+import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_tab.dart';
-import 'package:fushi/src/pages/implementations/home_page.dart'
-    show homeShellTabNotifier;
+import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart'
+    show
+        SrsProfileConflictAdopt,
+        SrsProfileConflictChoice,
+        SrsProfileConflictKeepSeparate,
+        showSrsProfileConflictDialog;
+import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
-import 'package:fushi/src/srs/srs_backup.dart';
+import 'package:fushi/src/srs/srs_legacy_backup_cleanup.dart';
+import 'package:fushi/src/srs/srs_directory_key.dart';
+import 'package:fushi/src/srs/srs_interconnect_watch.dart';
+import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
+import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi_engine/srs/srs_op_ledger.dart';
 
 /// 模块开着时的常驻装配（见文件头）；关着时为 null。
-final Provider<SrsAppRuntime?> srsAppRuntimeProvider = Provider<SrsAppRuntime?>(
-  (Ref ref) {
-    if (!ref.watch(srsModuleEnabledProvider)) return null;
-    final AppModel app = ref.read(appProvider);
-    final SrsAppRuntime runtime = SrsAppRuntime(
-      app: app,
-      readStore: () async {
-        try {
-          return await ref.read(srsStoreProvider.future);
-        } catch (e, stack) {
-          ErrorLogService.instance.log('SrsAppRuntime.readStore', e, stack);
-          return null;
-        }
+final Provider<SrsAppRuntime?>
+srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
+  if (!ref.watch(srsModuleEnabledProvider)) return null;
+  final AppModel app = ref.read(appProvider);
+  final SrsRevisionOrigin revisionOrigin = SrsRevisionOrigin();
+  late final SrsAppRuntime runtime;
+  runtime = SrsAppRuntime(
+    app: app,
+    readStore: () async {
+      try {
+        return await ref.read(srsStoreProvider.future);
+      } catch (e, stack) {
+        ErrorLogService.instance.log('SrsAppRuntime.readStore', e, stack);
+        return null;
+      }
+    },
+    readMedia: () async {
+      try {
+        return await ref.read(srsMediaStoreProvider.future);
+      } catch (e, stack) {
+        ErrorLogService.instance.log('SrsAppRuntime.readMedia', e, stack);
+        return null;
+      }
+    },
+    engine: () => ref.read(srsEngineProvider),
+    bumpRevision: () => ref.read(srsRevisionProvider.notifier).state++,
+    bumpPulledRevision: () {
+      revisionOrigin.bumpPulled(ref.read(srsRevisionProvider.notifier));
+      // BUG-4075 取证：修订号「同步拉入」的一跳（本机写入的一跳在下面 listenSrsLocalWrites 里记）。
+      SrsOpLedger.mark('rev:pulled');
+    },
+    // 同步前的 profile 关联（铁律 E）：采用目录里已有的 uid 后按新身份重开 store。
+    profileLinker: SrsDbProfileLinker(
+      db: app.database,
+      activeProfileId: () async {
+        final int id = ref.read(profileViewModelProvider).activeProfileId;
+        return id > 0 ? id : app.database.resolveActiveProfileId();
       },
-      readMedia: () async {
-        try {
-          return await ref.read(srsMediaStoreProvider.future);
-        } catch (e, stack) {
-          ErrorLogService.instance.log('SrsAppRuntime.readMedia', e, stack);
-          return null;
-        }
+      reopenStore: () async {
+        ref.invalidate(srsStoreProvider);
+        return ref.read(srsStoreProvider.future);
       },
-      engine: () => ref.read(srsEngineProvider),
-      bumpRevision: () => ref.read(srsRevisionProvider.notifier).state++,
-      backup: ref.read(srsBackupControllerProvider),
-    );
-    // 自动备份：库有变动（本机写 / 同步进来）就看一眼要不要备份（见 srs_backup.dart）。
-    ref.listen<int>(
-      srsRevisionProvider,
-      (int? previous, int next) => runtime.backup.onDataChanged(),
-    );
-    runtime.install();
-    ref.onDispose(runtime.dispose);
-    return runtime;
-  },
-);
+      mediaRoot: () async =>
+          SrsMediaStore.mediaRootFor(await ref.read(srsSupportRootProvider)()),
+      onError: ErrorLogService.instance.log,
+      // 并入之前先把目标 uid 已有的数据收进来（BUG-4011：合并沿用目标里已有的写入者，不再改名造出第二份）。
+      // 并入总在一轮同步 / [SrsSyncScheduler.adoptProfile] 的 [_serially] 里：只从正在跑的那条通道和本机目录 /
+      // 文件夹位置收，不再去取通道锁。
+      pullBeforeMerge: (SrsDbStore target, SyncAssetStore? within) =>
+          runtime.sync.pullInto(
+            target,
+            budget: kSrsPullBeforeMergeBudget,
+            purpose: 'merge',
+            within: within,
+            channels: false,
+          ),
+    ),
+  );
+  // 旧库迁移推迟到首次同步确认之后（BUG-4011）：store 打开时不迁移（srs_providers.dart `deferMigration`），
+  // 由调度器在确认后的第一轮上传之前先收一轮再迁移（[SrsSyncScheduler.ensureMigrated]）。
+  // 本机写了复习数据：去抖后经互联快速通道推一轮（设计 §6.3）。同步拉进来的变更不触发
+  // （反馈 I1Bg6uMZ32：拉入 → 修订号 +1 → 又推一轮同步，见 [SrsRevisionOrigin]）。
+  // BUG-4075 取证：修订号每跳一次按来源记一笔（`rev:local` 本机写入 / `rev:pulled` 同步拉入，后者在
+  // bumpPulledRevision 里记）：停在复习页不动时它跳不跳、跳多少次、是谁在跳，直接看内存采样里的 marks。
+  // 不另挂直接 listen 修订号的监听：那样分不出来源（srs_revision_origin_test 接线守卫）。
+  listenSrsLocalWrites(ref, revisionOrigin, () {
+    SrsOpLedger.mark('rev:local');
+    runtime.localPush.trigger();
+  });
+  // 复习页的评分 / 撤销等只发这个信号（不叫醒被盖住的列表，见 srsLocalWriteProvider）。
+  ref.listen<int>(
+    srsLocalWriteProvider,
+    (int? previous, int next) => runtime.localPush.trigger(),
+  );
+  // RWKV 排程服务随模块常驻（store.rwkv 由它装配；对象很轻，重活按需启动）。
+  ref.listen<AsyncValue<Object?>>(
+    srsRwkvServiceProvider,
+    (AsyncValue<Object?>? previous, AsyncValue<Object?> next) {},
+    fireImmediately: true,
+  );
+  runtime.install();
+  ref.onDispose(runtime.dispose);
+  return runtime;
+});
 
 /// 把 [srsAppRuntimeProvider] 挂到根容器上保活（main.dart 在 initialise 之后调一次）。
 void installSrsAppRuntime(ProviderContainer container) {
@@ -93,23 +161,26 @@ class SrsAppRuntime {
     required Future<SrsMediaStore?> Function() readMedia,
     required FsrsEngine? Function() engine,
     required void Function() bumpRevision,
-    required this.backup,
-  }) : _readStore = readStore,
+    required void Function() bumpPulledRevision,
+    SrsProfileLinker? profileLinker,
+  }) : _profileLinker = profileLinker,
+       _readStore = readStore,
        _readMedia = readMedia,
        _engine = engine,
-       _bumpRevision = bumpRevision;
+       _bumpRevision = bumpRevision,
+       _bumpPulledRevision = bumpPulledRevision;
 
   final AppModel app;
   final Future<SrsDbStore?> Function() _readStore;
   final Future<SrsMediaStore?> Function() _readMedia;
   final FsrsEngine? Function() _engine;
+
+  /// 本机写入（自动优化应用了新参数）：界面重读 + 推给别的设备。
   final void Function() _bumpRevision;
 
-  /// 自动备份（离开复习页、库有变动时触发；见 srs_backup.dart）。
-  final SrsBackupController backup;
-
-  /// 上一次看到的复习页数量（从 >0 回到 0 = 离开复习页）。
-  int _reviewSessions = 0;
+  /// 同步拉进了别的设备的变更：界面重读，不再推送（[SrsRevisionOrigin]）。
+  final void Function() _bumpPulledRevision;
+  final SrsProfileLinker? _profileLinker;
 
   late final SrsSyncScheduler sync = SrsSyncScheduler(
     readStore: _readStore,
@@ -118,10 +189,93 @@ class SrsAppRuntime {
           db: app.database,
           body: (SyncBackend backend) => body(backend),
         ),
-    onDataChanged: _bumpRevision,
+    directoryKeyOf: (SyncAssetStore backend) =>
+        srsDirectoryKeyOf(backend, SyncRepository(app.database)),
+    localDirectories: _localDirectories,
+    folderLocations: () async => app.srsFolderLocations,
+    profileLinker: _profileLinker,
+    onDataChanged: _bumpPulledRevision,
     onNotice: _showSyncNotice,
     readMediaRoot: () async => (await _readMedia())?.root,
+    // 库关着（备份恢复 / 数据根迁移 / 退出）时不开新一轮；重开后自动恢复。
+    canRun: () => app.isInitialised,
+    // 首次 v2 同步要用户确认一次（复习页弹窗，见 ensureSrsFirstSyncConfirmed）。
+    firstSyncConfirmed: () => app.srsSync2MergeConfirmed,
+    // 本机作为 host 发布了新数据：唤醒连着它的设备（长轮询 /api/srs/changes）。
+    onLocalDirectoryPublished: app.syncServerController.notifySrsChanged,
+    // 每个位置的端到端加密密钥（设备本地凭据；同步与历史页里开 / 输入口令）。
+    locationKey: (String id) => app.srsLocationKeys[id],
+    onEncryptionEnabled: app.setSrsLocationKey,
+    // 设置 › 同步「自动同步复习数据」（反馈 VNz9dsLeIy）：关掉后只剩手动同步与进复习页的节流同步。
+    autoSyncEnabled: () => SyncRepository(app.database).isSrsAutoSyncEnabled(),
+    // 同步与历史页「存储位置」上逐个关掉的通道位置（只停复习同步，通道本身照常）。
+    locationDisabled: (String id) => app.srsDisabledLocations.contains(id),
   );
+
+  /// 互联快速通道（srs_interconnect_watch.dart）：长轮询所连 host，有新数据立刻同步这一条通道。
+  ///
+  /// 与常规同步的互斥（反馈 XDV7Mzc2gw）：`ready`（`restoreAuth` 改单例后端的凭据 / 会话）与 `onChange` 的一轮
+  /// 都在 [runExclusiveWithSync] 里跑，和常规同步、推送串行。长轮询请求本身**不**拿锁：它一挂就是 25 s，拿锁
+  /// 会把常规同步挡住；它只读已解析好的会话发一个独立请求、不改共享状态（会话在锁里的 `ready` 之后才可能被
+  /// 常规同步换掉，换掉时这条请求失败，走 watcher 自己的退避重连）。
+  late final SrsInterconnectWatcher interconnectWatch = SrsInterconnectWatcher(
+    // 快速通道是自动同步：开关关着时不挂长轮询（watcher 空闲重查时会再问，打开后自动恢复）。
+    ready: () => runExclusiveWithSync(
+      () async => await _interconnectReady() && await sync.isAutoSyncEnabled(),
+    ),
+    wait: InterconnectSyncBackend.instance.waitSrsChanges,
+    onChange: () => runExclusiveWithSync(() async {
+      await sync.autoSyncWithBackend(InterconnectSyncBackend.instance);
+    }),
+    // host 重新可达：推送不必再等退避期满。
+    onReachable: () => localPush.resetBackoff(),
+  );
+
+  /// 本机变动后去抖推送：连着互联 host 就同步那条通道；本机自己是 host 就跑本机目录（唤醒连它的设备）。
+  /// 推送失败按指数退避（[SrsLocalPush]），不再每答一张卡就探测一轮死地址。
+  /// 复习页开着时按最长等待批量推（[kSrsLocalPushMaxWait]，审查 S-8），离开复习页 / 进后台立即推。
+  late final SrsLocalPush localPush = SrsLocalPush(
+    push: _pushInterconnect,
+    batching: () => srsActiveReviewSessions.value > 0,
+  );
+
+  /// 下一次推送是 app 正要进后台时的那一次（[_onLifecycle]）：放过前台检查，只这一次。
+  bool _pushOnLeave = false;
+
+  Future<bool> _interconnectReady({bool allowBackground = false}) async {
+    if (!app.isInitialised || !app.srsSync2MergeConfirmed) return false;
+    final AppLifecycleState? state = WidgetsBinding.instance.lifecycleState;
+    if (!allowBackground &&
+        state != null &&
+        state != AppLifecycleState.resumed) {
+      return false;
+    }
+    final SyncRepository repo = SyncRepository(app.database);
+    if (!await repo.isInterconnectEnabled()) return false;
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
+    await backend.restoreAuth(repo);
+    return backend.isAuthenticated;
+  }
+
+  /// 返回互联这一步是否推成（[SrsLocalPush] 的退避依据）；失败照常记日志。
+  Future<bool> _pushInterconnect() async {
+    final bool leaving = _pushOnLeave;
+    _pushOnLeave = false;
+    try {
+      return await sync.autoPush(
+        () async => await _interconnectReady(allowBackground: leaving)
+            ? InterconnectSyncBackend.instance
+            : null,
+        exclusive: runExclusiveWithSync,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsAppRuntime.pushInterconnect', e, stack);
+      return false;
+    }
+  }
+
+  /// 关库前等 SRS 同步收尾（登记到 [AppModel.addDatabaseCloseQuiescer]）。
+  late final Future<void> Function() _quiesceSync = sync.quiesce;
 
   late final SrsOptimizationScheduler optimizer = SrsOptimizationScheduler(
     readStore: _readStore,
@@ -144,7 +298,54 @@ class SrsAppRuntime {
   late final SyncChannelPostRunHook _postRunHook = _postRun;
 
   Future<void> _postRun(SyncBackend backend) async {
-    await sync.syncWithBackend(backend);
+    final SrsSync2Report? r = await sync.autoSyncWithBackend(backend);
+    // 常规同步经互联跑通了一轮：host 可达，推送不必再等退避期满。
+    if (backend is InterconnectSyncBackend && r != null && r.error == null) {
+      localPush.resetBackoff();
+    }
+  }
+
+  /// 本机开着互联服务时，客户端经互联写进来的同步目录（host 自己不是任何一条通道的客户端，
+  /// 不在这里同步，它的复习数据就到不了连它的设备、也读不到它们的）。目录身份与客户端看到的
+  /// hostId 相同（host 的 hostId 就是本机设备 id）。
+  Future<List<SrsLocalDirectory>> _localDirectories() async {
+    final Directory? root = app.syncServerController.clientSyncRoot;
+    if (root == null) return const <SrsLocalDirectory>[];
+    final String hostId = await SyncRepository(
+      app.database,
+    ).getOrCreateDeviceId();
+    return <SrsLocalDirectory>[
+      SrsLocalDirectory(
+        directoryKey: srsInterconnectDirectoryKey(hostId),
+        store: LocalDirectoryAssetStore(root),
+      ),
+    ];
+  }
+
+  StreamSubscription<String>? _hostWrites;
+  StreamSubscription<({String path, String peerName})>? _hostUploads;
+
+  /// 本进程里已交给内核的补充名（设备 → 名字），每个段一次 PUT，不必每次都过 FFI。
+  final Map<String, String> _hintedDevices = <String, String>{};
+
+  /// 已配对对端直接写了某台设备自己的段：用对端名给这台设备补名字（老版本没有自报名字时同步页 / 冲突中心显示它）。
+  void _onHostClientUpload(({String path, String peerName}) u) {
+    final String? device = srsHostUploadedSegmentDevice(u.path);
+    if (device == null || _hintedDevices[device] == u.peerName) return;
+    _hintedDevices[device] = u.peerName;
+    unawaited(() async {
+      try {
+        await (await _readStore())?.sync2DeviceHint(device, u.peerName);
+      } catch (e, stack) {
+        _hintedDevices.remove(device);
+        ErrorLogService.instance.log('SrsAppRuntime.deviceHint', e, stack);
+      }
+    }());
+  }
+
+  /// 已配对设备往本机 host 的 SRS 目录写了文件（只看 SRS 命名空间，书 / 视频等同步不触发）。
+  void _onHostClientWrite(String relativePath) {
+    if (srsIsHostSrsPath(relativePath)) sync.notifyLocalDirectoryWritten();
   }
 
   /// AnkiConnect 兼容端点的本实例 id（防自环）。
@@ -158,6 +359,12 @@ class SrsAppRuntime {
       readStore: _readStore,
       openNote: (String noteId) => srsPushNoteEditor(navigator(), noteId),
       openBrowse: () => srsPushBrowse(navigator()),
+      remoteStore: SrsRemoteStoreService(
+        readStore: _readStore,
+        readMedia: (String name) async => (await _readMedia())?.load(name),
+        // 已配对设备的远程写入与本机写入一样：本机界面重读，互联推送照常发出。
+        onWrite: _bumpRevision,
+      ),
     );
     fushiAnkiConnectCompatInstanceId = instanceId;
     final SrsAnkiConnectEndpoint endpoint = buildAnkiConnectEndpoint();
@@ -168,9 +375,22 @@ class SrsAppRuntime {
     srsActiveReviewSessions.addListener(_onReviewSessionsChanged);
     _lifecycle = AppLifecycleListener(onStateChange: _onLifecycle);
     optimizer.start();
-    _reviewSessions = srsActiveReviewSessions.value;
-    // 启动时看一次：上次退出前的改动还没备份、且已满间隔就补一份。
-    backup.onDataChanged();
+    app.addDatabaseCloseQuiescer(_quiesceSync);
+    _hostWrites = app.syncServerController.clientSyncWrites.listen(
+      _onHostClientWrite,
+    );
+    _hostUploads = app.syncServerController.clientUploads.listen(
+      _onHostClientUpload,
+    );
+    interconnectWatch.start();
+    // 旧版定时备份已由同步 v2 的时间线 / 归档 / 手动导出取代：本机旧备份文件（仍可经「导入」恢复）从升级后
+    // 第一次看到起留 30 天再清（起算时刻持久化在目录里的标记文件，见 srs_legacy_backup_cleanup.dart）。
+    unawaited(
+      srsCleanupLegacyBackups().catchError((Object e, StackTrace stack) {
+        ErrorLogService.instance.log('srsCleanupLegacyBackups', e, stack);
+        return 0;
+      }),
+    );
   }
 
   void dispose() {
@@ -181,12 +401,26 @@ class SrsAppRuntime {
     _lifecycle?.dispose();
     _lifecycle = null;
     optimizer.dispose();
+    app.removeDatabaseCloseQuiescer(_quiesceSync);
+    unawaited(_hostWrites?.cancel());
+    _hostWrites = null;
+    unawaited(_hostUploads?.cancel());
+    _hostUploads = null;
+    interconnectWatch.stop();
+    localPush.dispose();
     sync.dispose();
     if (identical(syncChannelPostRunHook, _postRunHook)) {
       syncChannelPostRunHook = null;
     }
     if (identical(app.srsAnkiConnectEndpoint, _endpoint)) {
       app.srsAnkiConnectEndpoint = null;
+    }
+    if (_endpoint case final SrsAnkiConnectEndpoint endpoint) {
+      unawaited(
+        endpoint.handler.close().catchError((Object e, StackTrace stack) {
+          ErrorLogService.instance.log('SrsAnkiConnect.close', e, stack);
+        }),
+      );
     }
     _endpoint = null;
     if (fushiAnkiConnectCompatInstanceId == instanceId) {
@@ -211,9 +445,9 @@ class SrsAppRuntime {
           return key.isEmpty ? null : key;
         },
         onSync: () => unawaited(
-          sync.syncNow().catchError((Object e, StackTrace stack) {
+          syncNow().catchError((Object e, StackTrace stack) {
             ErrorLogService.instance.log('SrsAnkiConnect.sync', e, stack);
-            return 0;
+            return const SrsSyncNowResult(ran: 0);
           }),
         ),
         onGuiBrowse: (String? query, List<String> cardIds) async {
@@ -231,11 +465,16 @@ class SrsAppRuntime {
     );
   }
 
-  /// 牌组列表「立即同步」：对所有已认证通道跑一轮。返回跑过的通道数（0 = 没配置）。
-  Future<int> syncNow() => sync.syncNow();
+  /// 牌组列表「立即同步」：对所有已认证通道跑一轮（结果区分没配置 / 失败 / 成功）。
+  /// 用户手动同步也清掉推送的失败退避（用户明说「现在就同步」）。
+  Future<SrsSyncNowResult> syncNow() {
+    localPush.resetBackoff();
+    return sync.syncNow();
+  }
 
   void _onHomeTabChanged() {
     if (homeShellTabNotifier.value != HomeTab.srs) return;
+    _maybeShowProfileConflict(tabEntry: true);
     unawaited(
       sync.syncThrottled().catchError((Object e, StackTrace stack) {
         ErrorLogService.instance.log('SrsAppRuntime.tabSync', e, stack);
@@ -247,13 +486,21 @@ class SrsAppRuntime {
   void _onReviewSessionsChanged() {
     final int now = srsActiveReviewSessions.value;
     if (now > 0) optimizer.cancel();
-    // 离开复习页：有变动就立即备份一份（不等间隔）。
-    if (now == 0 && _reviewSessions > 0) backup.onLeftReview();
-    _reviewSessions = now;
+    // 离开复习页：复习中攒着的变动立即推（审查 S-8）。
+    if (now == 0) localPush.flush();
   }
 
   void _onLifecycle(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) optimizer.cancel();
+    // 正在进后台：待推的立即推（之后前台检查会挡住推送，后台也可能很快被挂起）。
+    if ((state == AppLifecycleState.inactive ||
+            state == AppLifecycleState.hidden) &&
+        localPush.pending) {
+      _pushOnLeave = true;
+      localPush.flush();
+    }
+    // 回到前台：快速通道马上重新挂上（不等空闲重查的间隔）。
+    if (state == AppLifecycleState.resumed) interconnectWatch.nudge();
   }
 
   /// 自动优化的空闲判据：app 在前台、不在复习页。
@@ -264,12 +511,94 @@ class SrsAppRuntime {
   }
 
   void _showSyncNotice(SrsSyncNotice notice) {
-    FushiToast.show(
-      msg: switch (notice) {
-        SrsSyncNotice.backendUnsupported => t.srs_sync_backend_unsupported,
-        SrsSyncNotice.clockSkew => t.srs_sync_clock_skew,
-      },
-      severity: ToastSeverity.warning,
-    );
+    final String msg;
+    switch (notice) {
+      case SrsSyncNotice.profileNotLinked:
+        // 冲突要用户拿主意，不是一闪而过的 toast：进复习页时弹窗（见 [_maybeShowProfileConflict]）。
+        _pendingConflict = sync.profileConflict;
+        _maybeShowProfileConflict();
+        return;
+      case SrsSyncNotice.backendUnsupported:
+        msg = t.srs_sync_backend_unsupported;
+      case SrsSyncNotice.clockSkew:
+        msg = t.srs_sync_clock_skew;
+      case SrsSyncNotice.awaitingConfirm:
+        msg = t.srs_sync_awaiting_confirm;
+    }
+    FushiToast.show(msg: msg, severity: ToastSeverity.warning);
+  }
+
+  /// 偏好：用户选了「保持分开」的 profile 冲突（[SrsProfileConflict.ignoreKey] 列表）。
+  static const String kIgnoredProfileConflictsPrefKey =
+      'srs_sync_ignored_profile_conflicts';
+
+  /// 检出、还没给用户看（或用户选了「稍后」）的 profile 冲突。
+  SrsProfileConflict? _pendingConflict;
+
+  /// 用户选了「稍后」的那个冲突（[SrsProfileConflict.ignoreKey]）：重判出同一个冲突时不当场再弹，等下次进复习页。
+  String? _deferredConflictKey;
+  bool _conflictDialogOpen = false;
+
+  List<String> _ignoredConflicts() {
+    if (!app.isPreferencesReady) return const <String>[];
+    final Object? raw = app.prefsRepo.getPref(kIgnoredProfileConflictsPrefKey);
+    return raw is List
+        ? <String>[for (final Object? x in raw) '$x']
+        : const <String>[];
+  }
+
+  /// 有待处理的冲突、用户此刻在复习页（在用复习时才打扰）、没被忽略过：弹窗。[tabEntry] = 用户刚进复习页：
+  /// 「稍后」过的冲突只在这时再问，同步后台重判出来时不当场再弹。
+  void _maybeShowProfileConflict({bool tabEntry = false}) {
+    final SrsProfileConflict? conflict = _pendingConflict;
+    if (conflict == null || _conflictDialogOpen) return;
+    if (_ignoredConflicts().contains(conflict.ignoreKey)) {
+      _pendingConflict = null;
+      return;
+    }
+    if (homeShellTabNotifier.value != HomeTab.srs) return;
+    if (!tabEntry && conflict.ignoreKey == _deferredConflictKey) return;
+    final BuildContext? context = app.navigatorKey.currentContext;
+    if (context == null) return;
+    _pendingConflict = null;
+    _conflictDialogOpen = true;
+    unawaited(() async {
+      try {
+        final SrsProfileConflictChoice? choice =
+            await showSrsProfileConflictDialog(context, conflict);
+        switch (choice) {
+          case null:
+            // 稍后：留着，下次进复习页再问（期间重判出新的冲突以新的为准）。
+            _pendingConflict ??= conflict;
+            _deferredConflictKey = conflict.ignoreKey;
+            return;
+          case SrsProfileConflictKeepSeparate():
+            if (!app.isPreferencesReady) return;
+            await app.prefsRepo.setPref(
+              kIgnoredProfileConflictsPrefKey,
+              <String>[..._ignoredConflicts(), conflict.ignoreKey],
+            );
+          case SrsProfileConflictAdopt(:final String uid):
+            FushiToast.show(msg: t.srs_sync_profile_conflict_done);
+            try {
+              await sync.adoptProfile(conflict, uid);
+            } catch (e, stack) {
+              ErrorLogService.instance.log(
+                'SrsAppRuntime.adoptProfile',
+                e,
+                stack,
+              );
+              FushiToast.show(
+                msg: t.srs_sync_profile_conflict_failed,
+                severity: ToastSeverity.error,
+              );
+            }
+        }
+      } catch (e, stack) {
+        ErrorLogService.instance.log('SrsAppRuntime.profileConflict', e, stack);
+      } finally {
+        _conflictDialogOpen = false;
+      }
+    }());
   }
 }

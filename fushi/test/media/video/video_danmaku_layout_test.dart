@@ -8,11 +8,11 @@ import 'package:fushi/src/media/video/video_danmaku_source.dart';
 import 'package:fushi/src/media/video/video_danmaku_text_metrics.dart';
 
 VideoDanmakuItem _item(int startMs, String text) => VideoDanmakuItem(
-      startMs: startMs,
-      text: text,
-      mode: VideoDanmakuMode.scroll,
-      colorArgb: 0xFFFFFFFF,
-    );
+  startMs: startMs,
+  text: text,
+  mode: VideoDanmakuMode.scroll,
+  colorArgb: 0xFFFFFFFF,
+);
 
 VideoDanmakuItem _itemMode(int startMs, String text, VideoDanmakuMode mode) =>
     VideoDanmakuItem(
@@ -33,8 +33,9 @@ List<VideoDanmakuItem> _referenceActive(
   final List<VideoDanmakuItem> result = <VideoDanmakuItem>[];
   for (final VideoDanmakuItem item in items) {
     final int elapsed = positionMs - item.startMs;
-    final int durationMs =
-        item.mode == VideoDanmakuMode.scroll ? scrollMs : fixedMs;
+    final int durationMs = item.mode == VideoDanmakuMode.scroll
+        ? scrollMs
+        : fixedMs;
     if (elapsed < 0 || elapsed > durationMs) continue;
     result.add(item);
   }
@@ -60,8 +61,11 @@ void main() {
     const Size viewport = Size(400, 200);
     const int scrollMs = 8000;
 
-    VideoDanmakuLayoutEntry entryAt(String text, int positionMs,
-        {double fontScale = 1.0}) {
+    VideoDanmakuLayoutEntry entryAt(
+      String text,
+      int positionMs, {
+      double fontScale = 1.0,
+    }) {
       return VideoDanmakuLayout()
           .layout(
             items: <VideoDanmakuItem>[_item(0, text)],
@@ -78,16 +82,14 @@ void main() {
     test('scroll danmaku is fully off-screen on the last frame it renders', () {
       // 短、中、长三档：旧实现按「每字 18px 且封顶 720px」估宽，长弹幕在右半截
       // 仍可见时就被判过期，表现为走到一半突然消失。
-      for (final String text in <String>[
-        'あ',
-        '短いコメント',
-        'とても長いコメントです' * 6,
-      ]) {
+      for (final String text in <String>['あ', '短いコメント', 'とても長いコメントです' * 6]) {
         final VideoDanmakuLayoutEntry entry = entryAt(text, scrollMs);
         // 右边缘用**独立测得**的宽度算，不用 entry.width——否则几何一旦退回估算，
         // 断言基准会跟着一起偏，守卫自洽成一句废话。
-        final double renderedWidth =
-            VideoDanmakuTextMetrics.shared.widthOf(text, 1.0);
+        final double renderedWidth = VideoDanmakuTextMetrics.shared.widthOf(
+          text,
+          1.0,
+        );
         expect(
           entry.position.dx + renderedWidth,
           lessThanOrEqualTo(0.0),
@@ -97,16 +99,18 @@ void main() {
       }
     });
 
-    test('scroll danmaku still overlaps the viewport one frame before expiry',
-        () {
-      // 反向守卫：不能靠「提前很久就把弹幕推出屏外」蒙混过关——退场必须刚好衔接。
-      final VideoDanmakuLayoutEntry entry = entryAt('短いコメント', scrollMs - 100);
-      expect(
-        entry.position.dx + entry.width,
-        greaterThan(0.0),
-        reason: '尚未过期时弹幕仍应与视口有交集，退场时刻要与过期时刻严丝合缝',
-      );
-    });
+    test(
+      'scroll danmaku still overlaps the viewport one frame before expiry',
+      () {
+        // 反向守卫：不能靠「提前很久就把弹幕推出屏外」蒙混过关——退场必须刚好衔接。
+        final VideoDanmakuLayoutEntry entry = entryAt('短いコメント', scrollMs - 100);
+        expect(
+          entry.position.dx + entry.width,
+          greaterThan(0.0),
+          reason: '尚未过期时弹幕仍应与视口有交集，退场时刻要与过期时刻严丝合缝',
+        );
+      },
+    );
 
     test('scroll danmaku never fades out inside the viewport', () {
       for (int positionMs = 0; positionMs <= scrollMs; positionMs += 100) {
@@ -197,37 +201,41 @@ void main() {
       expect(snapshot.droppedForDensity, greaterThan(0));
     });
 
-    test('rebuilds from playback position after seek without stale entries',
-        () {
-      final List<VideoDanmakuItem> items = <VideoDanmakuItem>[
-        _item(0, 'opening'),
-        _item(10000, 'after seek'),
-      ];
+    test(
+      'rebuilds from playback position after seek without stale entries',
+      () {
+        final List<VideoDanmakuItem> items = <VideoDanmakuItem>[
+          _item(0, 'opening'),
+          _item(10000, 'after seek'),
+        ];
 
-      final VideoDanmakuLayoutSnapshot beforeSeek = VideoDanmakuLayout().layout(
-        items: items,
-        positionMs: 1000,
-        viewportSize: const Size(400, 160),
-        maxActive: 10,
-        maxLanes: 4,
-      );
-      expect(
-        beforeSeek.entries.map((VideoDanmakuLayoutEntry e) => e.item.text),
-        <String>['opening'],
-      );
+        final VideoDanmakuLayoutSnapshot beforeSeek = VideoDanmakuLayout()
+            .layout(
+              items: items,
+              positionMs: 1000,
+              viewportSize: const Size(400, 160),
+              maxActive: 10,
+              maxLanes: 4,
+            );
+        expect(
+          beforeSeek.entries.map((VideoDanmakuLayoutEntry e) => e.item.text),
+          <String>['opening'],
+        );
 
-      final VideoDanmakuLayoutSnapshot afterSeek = VideoDanmakuLayout().layout(
-        items: items,
-        positionMs: 10500,
-        viewportSize: const Size(400, 160),
-        maxActive: 10,
-        maxLanes: 4,
-      );
-      expect(
-        afterSeek.entries.map((VideoDanmakuLayoutEntry e) => e.item.text),
-        <String>['after seek'],
-      );
-    });
+        final VideoDanmakuLayoutSnapshot afterSeek = VideoDanmakuLayout()
+            .layout(
+              items: items,
+              positionMs: 10500,
+              viewportSize: const Size(400, 160),
+              maxActive: 10,
+              maxLanes: 4,
+            );
+        expect(
+          afterSeek.entries.map((VideoDanmakuLayoutEntry e) => e.item.text),
+          <String>['after seek'],
+        );
+      },
+    );
 
     test('areaFraction shrinks the vertical band danmaku occupy', () {
       final List<VideoDanmakuItem> items = <VideoDanmakuItem>[
@@ -278,61 +286,68 @@ void main() {
     List<VideoDanmakuItem> layoutActive(
       List<VideoDanmakuItem> items,
       int positionMs,
-    ) =>
-        VideoDanmakuLayout()
-            .layout(
-              items: items,
-              positionMs: positionMs,
-              viewportSize: const Size(800, 400),
-              maxActive: kMaxVideoDanmakuActive,
-              maxLanes: 200,
-            )
-            .entries
-            .map((VideoDanmakuLayoutEntry e) => e.item)
-            .toList();
+    ) => VideoDanmakuLayout()
+        .layout(
+          items: items,
+          positionMs: positionMs,
+          viewportSize: const Size(800, 400),
+          maxActive: kMaxVideoDanmakuActive,
+          maxLanes: 200,
+        )
+        .entries
+        .map((VideoDanmakuLayoutEntry e) => e.item)
+        .toList();
 
-    test('binary-search active set equals full-scan reference across sweep',
-        () {
-      // 升序、混合模式（scroll/top/bottom 时长不同，验证下界仍逐条精确判定）。
-      final List<VideoDanmakuItem> items = <VideoDanmakuItem>[
-        _itemMode(0, 's0', VideoDanmakuMode.scroll),
-        _itemMode(1000, 't1', VideoDanmakuMode.top),
-        _itemMode(1000, 'b1', VideoDanmakuMode.bottom),
-        _itemMode(3000, 's3', VideoDanmakuMode.scroll),
-        _itemMode(5000, 't5', VideoDanmakuMode.top),
-        _itemMode(5000, 's5', VideoDanmakuMode.scroll),
-        _itemMode(9000, 's9', VideoDanmakuMode.scroll),
-        _itemMode(12000, 'b12', VideoDanmakuMode.bottom),
-        _itemMode(12000, 's12', VideoDanmakuMode.scroll),
-        _itemMode(20000, 's20', VideoDanmakuMode.scroll),
-      ];
-      for (int positionMs = -500; positionMs <= 30000; positionMs += 250) {
-        final List<VideoDanmakuItem> reference = _referenceActive(
-          items,
-          positionMs,
-          scrollMs: scrollMs,
-          fixedMs: fixedMs,
-        );
-        expect(
-          _keys(layoutActive(items, positionMs)),
-          _keys(reference),
-          reason: '二分活动集在 positionMs=$positionMs 处与全量扫描不一致',
-        );
-      }
-    });
+    test(
+      'binary-search active set equals full-scan reference across sweep',
+      () {
+        // 升序、混合模式（scroll/top/bottom 时长不同，验证下界仍逐条精确判定）。
+        final List<VideoDanmakuItem> items = <VideoDanmakuItem>[
+          _itemMode(0, 's0', VideoDanmakuMode.scroll),
+          _itemMode(1000, 't1', VideoDanmakuMode.top),
+          _itemMode(1000, 'b1', VideoDanmakuMode.bottom),
+          _itemMode(3000, 's3', VideoDanmakuMode.scroll),
+          _itemMode(5000, 't5', VideoDanmakuMode.top),
+          _itemMode(5000, 's5', VideoDanmakuMode.scroll),
+          _itemMode(9000, 's9', VideoDanmakuMode.scroll),
+          _itemMode(12000, 'b12', VideoDanmakuMode.bottom),
+          _itemMode(12000, 's12', VideoDanmakuMode.scroll),
+          _itemMode(20000, 's20', VideoDanmakuMode.scroll),
+        ];
+        for (int positionMs = -500; positionMs <= 30000; positionMs += 250) {
+          final List<VideoDanmakuItem> reference = _referenceActive(
+            items,
+            positionMs,
+            scrollMs: scrollMs,
+            fixedMs: fixedMs,
+          );
+          expect(
+            _keys(layoutActive(items, positionMs)),
+            _keys(reference),
+            reason: '二分活动集在 positionMs=$positionMs 处与全量扫描不一致',
+          );
+        }
+      },
+    );
 
     test('binary-search equivalence holds on edge inputs', () {
       // 空列表。
       expect(layoutActive(const <VideoDanmakuItem>[], 1000), isEmpty);
       // 单条：窗口内 / 窗口外（过早、过晚）。
       final List<VideoDanmakuItem> one = <VideoDanmakuItem>[
-        _item(5000, 'solo')
+        _item(5000, 'solo'),
       ];
       for (final int positionMs in <int>[0, 4999, 5000, 9000, 13000, 13001]) {
         expect(
           _keys(layoutActive(one, positionMs)),
-          _keys(_referenceActive(one, positionMs,
-              scrollMs: scrollMs, fixedMs: fixedMs)),
+          _keys(
+            _referenceActive(
+              one,
+              positionMs,
+              scrollMs: scrollMs,
+              fixedMs: fixedMs,
+            ),
+          ),
           reason: '单条 positionMs=$positionMs',
         );
       }
@@ -350,7 +365,8 @@ void main() {
 
   group('VideoDanmakuSource (BUG-907 缺陷 B)', () {
     test('parseBilibiliDanmakuXml maps p-attr and mode correctly', () {
-      const String xml = '<i>'
+      const String xml =
+          '<i>'
           '<d p="1.5,1,25,16777215,0,0,0,0">hello</d>'
           '<d p="3,5,25,16711680,0,0,0,0">pinned top</d>'
           '<d p="2,4,25,255,0,0,0,0">pinned bottom</d>'
@@ -358,33 +374,38 @@ void main() {
       final List<VideoDanmakuItem> items = parseBilibiliDanmakuXml(xml);
       expect(items, hasLength(3));
       // 解析后按 startMs 升序（二分优化的前置契约）。
-      expect(
-        items.map((VideoDanmakuItem e) => e.startMs).toList(),
-        <int>[1500, 2000, 3000],
+      expect(items.map((VideoDanmakuItem e) => e.startMs).toList(), <int>[
+        1500,
+        2000,
+        3000,
+      ]);
+      final VideoDanmakuItem scroll = items.firstWhere(
+        (VideoDanmakuItem e) => e.text == 'hello',
       );
-      final VideoDanmakuItem scroll =
-          items.firstWhere((VideoDanmakuItem e) => e.text == 'hello');
       expect(scroll.mode, VideoDanmakuMode.scroll);
-      final VideoDanmakuItem top =
-          items.firstWhere((VideoDanmakuItem e) => e.text == 'pinned top');
+      final VideoDanmakuItem top = items.firstWhere(
+        (VideoDanmakuItem e) => e.text == 'pinned top',
+      );
       expect(top.mode, VideoDanmakuMode.top);
-      final VideoDanmakuItem bottom =
-          items.firstWhere((VideoDanmakuItem e) => e.text == 'pinned bottom');
+      final VideoDanmakuItem bottom = items.firstWhere(
+        (VideoDanmakuItem e) => e.text == 'pinned bottom',
+      );
       expect(bottom.mode, VideoDanmakuMode.bottom);
     });
 
     test('parseDandanplayDanmakuJson maps comments correctly', () {
-      const String json = '{"comments":['
+      const String json =
+          '{"comments":['
           '{"p":"2.5,1,16777215","m":"first"},'
           '{"p":"1.0,1,16777215","m":"second"}'
           ']}';
       final List<VideoDanmakuItem> items = parseDandanplayDanmakuJson(json);
       expect(items, hasLength(2));
       // 升序排序：second(1000) 在前，first(2500) 在后。
-      expect(
-        items.map((VideoDanmakuItem e) => e.startMs).toList(),
-        <int>[1000, 2500],
-      );
+      expect(items.map((VideoDanmakuItem e) => e.startMs).toList(), <int>[
+        1000,
+        2500,
+      ]);
       expect(items.first.text, 'second');
       expect(items.first.mode, VideoDanmakuMode.scroll);
     });

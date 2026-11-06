@@ -11,13 +11,16 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_control_layout_editor.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 
 SettingsDestination buildFloatingBallDestination() {
   return SettingsDestination(
@@ -70,6 +73,66 @@ SettingsDestination buildFloatingBallDestination() {
                 }
                 await FloatingBallChannel.requestOverlayPermission();
               }
+            },
+            defaultValue: false,
+          ),
+          SettingsSegmentedItem<FloatingBallTapAction>(
+            id: 'floating_ball.tap_action',
+            title: t.floating_ball_tap_action,
+            subtitle: t.floating_ball_tap_action_hint,
+            icon: FushiIcons.touch,
+            // 只有 Android 原生系统球实现了「点球直接执行、长按展开」。
+            visible: (SettingsContext c) =>
+                Platform.isAndroid && _prefs(c).floatingBallSystem,
+            options: <SettingsSegmentOption<FloatingBallTapAction>>[
+              SettingsSegmentOption<FloatingBallTapAction>(
+                value: FloatingBallTapAction.expand,
+                label: t.floating_ball_tap_action_expand,
+              ),
+              SettingsSegmentOption<FloatingBallTapAction>(
+                value: FloatingBallTapAction.clipboard,
+                label: t.floating_ball_action_clipboard,
+              ),
+              SettingsSegmentOption<FloatingBallTapAction>(
+                value: FloatingBallTapAction.screenOcr,
+                label: t.floating_ball_action_screen_ocr,
+              ),
+              SettingsSegmentOption<FloatingBallTapAction>(
+                value: FloatingBallTapAction.ai,
+                label: t.floating_ball_action_ai,
+              ),
+            ],
+            selected: (SettingsContext c) => _prefs(c).floatingBallTapAction,
+            onChanged: (SettingsContext c, FloatingBallTapAction value) async {
+              await _prefs(c).setFloatingBallTapAction(value);
+              c.refresh();
+            },
+            defaultValue: FloatingBallTapAction.fallback,
+          ),
+          // 反馈 Gz7z6Y6Mbr：截屏识字 / 拍照查词制卡带所点文本块的截图（默认开）。
+          SettingsSwitchItem(
+            id: 'floating_ball.screen_ocr_card_image',
+            title: t.screen_ocr_card_image,
+            subtitle: t.screen_ocr_card_image_hint,
+            icon: FushiIcons.image,
+            value: (SettingsContext c) => _prefs(c).screenOcrCardImage,
+            onChanged: (SettingsContext c, bool value) async {
+              await _prefs(c).setScreenOcrCardImage(value);
+              c.refresh();
+            },
+            defaultValue: true,
+          ),
+          // 反馈 9bdhVTgq3A / LHyeNKyYjH：Android 截屏识字只确认一次（默认关）。
+          SettingsSwitchItem(
+            id: 'floating_ball.screen_ocr_keep_session',
+            title: t.screen_ocr_keep_session,
+            subtitle: t.screen_ocr_keep_session_hint,
+            icon: FushiIcons.cast,
+            visible: (SettingsContext c) => Platform.isAndroid,
+            value: (SettingsContext c) => _prefs(c).screenOcrKeepCaptureSession,
+            onChanged: (SettingsContext c, bool value) async {
+              await _prefs(c).setScreenOcrKeepCaptureSession(value);
+              c.refresh();
             },
             defaultValue: false,
           ),
@@ -150,6 +213,20 @@ SettingsSection _buttonsSection(FloatingBallScope scope) {
         : SettingsSectionPresentation.expanded,
     visible: (SettingsContext c) => _scopeVisible(c, scope),
     items: <SettingsItem>[
+      // 应用外球固定的「打开 Fushi」：习惯切屏回来的人可以关掉（反馈 9bdhVTgq3A）。
+      // 不进按钮列表的持久化值：它在菜单里的位置固定（关闭之下），原生按开关增删。
+      if (scope == FloatingBallScope.system)
+        SettingsSwitchItem(
+          id: 'floating_ball.system.open_app',
+          title: t.floating_ball_action_open_app,
+          icon: FushiIcons.openInNew,
+          value: (SettingsContext c) => _prefs(c).floatingBallSystemOpenApp,
+          onChanged: (SettingsContext c, bool value) async {
+            await _prefs(c).setFloatingBallSystemOpenApp(value);
+            c.refresh();
+          },
+          defaultValue: true,
+        ),
       for (final String id in scope.catalog)
         SettingsSwitchItem(
           id: 'floating_ball.${scope.storageValue}.$id',
@@ -210,6 +287,7 @@ bool _buttonAvailable(SettingsContext c, FloatingBallScope scope, String id) {
         lookupModuleEnabled: c.appModel.moduleVisibility.isEnabled(
           ModuleId.lookup,
         ),
+        globalLookupSupported: GlobalLookupController.isSupported,
       );
 }
 
@@ -234,7 +312,10 @@ String _buttonLabel(FloatingBallScope scope, String id) {
       FloatingBallGlobalAction.screenOcr => t.floating_ball_action_screen_ocr,
       FloatingBallGlobalAction.cameraOcr => t.floating_ball_action_camera_ocr,
       FloatingBallGlobalAction.sync => t.sync_now,
+      FloatingBallGlobalAction.switchProfile =>
+        t.floating_ball_action_switch_profile,
       FloatingBallGlobalAction.feedback => t.feedback_title,
+      FloatingBallGlobalAction.ai => t.floating_ball_action_ai,
     };
   }
   if (scope == FloatingBallScope.reader) {
@@ -271,7 +352,9 @@ IconData _buttonIcon(FloatingBallScope scope, String id) {
       FloatingBallGlobalAction.screenOcr => FushiIcons.ocr,
       FloatingBallGlobalAction.cameraOcr => Icons.photo_camera_outlined,
       FloatingBallGlobalAction.sync => FushiIcons.sync,
+      FloatingBallGlobalAction.switchProfile => FushiIcons.profiles,
       FloatingBallGlobalAction.feedback => FushiIcons.forum,
+      FloatingBallGlobalAction.ai => FushiIcons.aiAssistant,
     };
   }
   if (scope == FloatingBallScope.reader) {

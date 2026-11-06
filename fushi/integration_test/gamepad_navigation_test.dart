@@ -4,7 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'support/test_app_launcher.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart';
 
 import 'test_helpers.dart';
 
@@ -37,8 +38,9 @@ import 'test_helpers.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('directional keys traverse the home; gameButtonB pops',
-      (WidgetTester tester) async {
+  testWidgets('directional keys traverse the home; gameButtonB pops', (
+    WidgetTester tester,
+  ) async {
     await launchFushiTestApp();
 
     final bool homeReady = await waitForHome(tester);
@@ -65,26 +67,36 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       seen.add(FocusManager.instance.primaryFocus);
     }
-    expect(seen.length, greaterThan(1),
-        reason: 'directional keys must move focus across distinct home '
-            'widgets (the UI is gamepad-traversable without taps)');
+    expect(
+      seen.length,
+      greaterThan(1),
+      reason:
+          'directional keys must move focus across distinct home '
+          'widgets (the UI is gamepad-traversable without taps)',
+    );
 
     // ── gameButtonB pops a pushed route via the global pop intent ──
     final NavigatorState navigator = Navigator.of(
       tester.element(find.byType(HomePage).first),
     );
-    navigator.push(MaterialPageRoute<void>(
-      builder: (_) => const ShortcutSettingsPage(),
-    ));
+    navigator.push(
+      MaterialPageRoute<void>(builder: (_) => const ShortcutSettingsPage()),
+    );
     await tester.pump(const Duration(seconds: 1));
-    expect(find.byType(ShortcutSettingsPage), findsOneWidget,
-        reason: 'a route is pushed to be popped by gamepad B');
+    expect(
+      find.byType(ShortcutSettingsPage),
+      findsOneWidget,
+      reason: 'a route is pushed to be popped by gamepad B',
+    );
 
     await tester.sendKeyEvent(LogicalKeyboardKey.gameButtonB);
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(seconds: 1));
-    expect(find.byType(ShortcutSettingsPage), findsNothing,
-        reason: 'gameButtonB must pop the route via FushiPopIntent');
+    expect(
+      find.byType(ShortcutSettingsPage),
+      findsNothing,
+      reason: 'gameButtonB must pop the route via FushiPopIntent',
+    );
     expect(find.byType(HomePage), findsOneWidget);
   });
 }

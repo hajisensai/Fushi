@@ -97,8 +97,9 @@ void main() {
         await evidence.captureWidgetTree(tester, 'flow-verified');
         await evidence.flush();
 
-        final NavigatorState nav =
-            Navigator.of(tester.element(find.byType(Scaffold).first));
+        final NavigatorState nav = Navigator.of(
+          tester.element(find.byType(Scaffold).first),
+        );
         nav.pop();
         await tester.pump(const Duration(seconds: 2));
         await tester.pumpAndSettle();
@@ -157,10 +158,16 @@ Future<void> _ensureLookupDictionary(
   }
   await tester.pump(const Duration(seconds: 1));
 
-  expect(await _hasLookupEntry(appModel, _testword, _testwordGloss), isTrue,
-      reason: 'fixture dictionary must resolve $_testword');
-  expect(await _hasLookupEntry(appModel, _cat, _catGloss), isTrue,
-      reason: 'fixture dictionary must resolve $_cat');
+  expect(
+    await _hasLookupEntry(appModel, _testword, _testwordGloss),
+    isTrue,
+    reason: 'fixture dictionary must resolve $_testword',
+  );
+  expect(
+    await _hasLookupEntry(appModel, _cat, _catGloss),
+    isTrue,
+    reason: 'fixture dictionary must resolve $_cat',
+  );
 }
 
 Future<bool> _hasLookupEntry(
@@ -172,10 +179,12 @@ Future<bool> _hasLookupEntry(
     searchTerm: term,
     searchWithWildcards: false,
   );
-  if (result.entries.any((entry) =>
-      entry.word == term &&
-      (entry.meaning.contains(expectedGloss) ||
-          entry.dictionaryName == 'FushiGeneratedTestDict'))) {
+  if (result.entries.any(
+    (entry) =>
+        entry.word == term &&
+        (entry.meaning.contains(expectedGloss) ||
+            entry.dictionaryName == 'FushiGeneratedTestDict'),
+  )) {
     return true;
   }
   return result.popupJson?.contains(expectedGloss) ?? false;
@@ -188,8 +197,9 @@ Future<void> _openSeededBook(
 ) async {
   final List<Finder> navTargets = findPrimaryNavigationTargets();
   expect(navTargets, isNotEmpty, reason: 'primary navigation must be present');
-  final bool focusedBooks =
-      await driver.focusWidget(findNavTargetForTab(HomeTab.books));
+  final bool focusedBooks = await driver.focusWidget(
+    findNavTargetForTab(HomeTab.books),
+  );
   expect(focusedBooks, isTrue, reason: 'Books tab must be reachable by focus');
   await driver.activate();
   await tester.pump(const Duration(milliseconds: 500));
@@ -208,8 +218,11 @@ Future<void> _openSeededBook(
     await openBookViaProductionPath(tester, bookKey);
     return;
   }
-  expect(seededEntry, findsOneWidget,
-      reason: 'seeded Computer Use EPUB must appear on the shelf');
+  expect(
+    seededEntry,
+    findsOneWidget,
+    reason: 'seeded Computer Use EPUB must appear on the shelf',
+  );
 
   final bool focusedBook = await driver.focusWidget(seededEntry);
   expect(focusedBook, isTrue, reason: 'seeded book must be focus reachable');
@@ -222,8 +235,11 @@ Future<void> _openSeededBook(
       isTrue,
       reason: 'seeded book must expose a concrete shelf Focus node',
     );
-    expect(await driver.activateIntent(), isTrue,
-        reason: 'seeded book focus must expose ActivateIntent');
+    expect(
+      await driver.activateIntent(),
+      isTrue,
+      reason: 'seeded book focus must expose ActivateIntent',
+    );
   }
   await tester.pump(const Duration(seconds: 3));
 }
@@ -251,18 +267,26 @@ Future<Future<dynamic> Function(String source)> _waitForReaderReady(
   );
 
   const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
-  for (int i = 0;
-      i < 140 && find.byKey(contentReadyKey).evaluate().isEmpty;
-      i++) {
+  for (
+    int i = 0;
+    i < 140 && find.byKey(contentReadyKey).evaluate().isEmpty;
+    i++
+  ) {
     await tester.pump(const Duration(milliseconds: 500));
   }
-  expect(find.byKey(contentReadyKey), findsOneWidget,
-      reason: 'Reader content must become ready');
+  expect(
+    find.byKey(contentReadyKey),
+    findsOneWidget,
+    reason: 'Reader content must become ready',
+  );
   await tester.pump(const Duration(seconds: 3));
 
   final eval = ReaderFushiPage.debugEvaluateJavascript;
-  expect(eval, isNotNull,
-      reason: 'Reader debug JS hook must be available in integration runs');
+  expect(
+    eval,
+    isNotNull,
+    reason: 'Reader debug JS hook must be available in integration runs',
+  );
   final ReaderPageSnapshot readyState = await _readPageState(eval!);
   evidence.recordPageSnapshot('reader-ready', readyState);
   evidence.recordCheck(
@@ -271,8 +295,11 @@ Future<Future<dynamic> Function(String source)> _waitForReaderReady(
     details: readyState.toJson(),
   );
   expect(readyState.ready, isTrue, reason: 'reader JS state must be ready');
-  expect(readyState.bodyTextLength, greaterThan(0),
-      reason: 'reader body text must be non-empty after content_ready');
+  expect(
+    readyState.bodyTextLength,
+    greaterThan(0),
+    reason: 'reader body text must be non-empty after content_ready',
+  );
   await evidence.captureWidgetTree(tester, 'reader-ready');
   await evidence.recordScreenshot(binding, 'reader_cu_content_ready');
   return eval;
@@ -388,12 +415,19 @@ Future<void> _runPageTurnStress(
   ReaderPageSnapshot state = await _readPageState(eval);
   evidence.recordPageSnapshot('page-start', state);
   expect(state.ready, isTrue, reason: 'window.fushiReader must be ready');
-  expect(state.bodyTextLength, greaterThan(0),
-      reason: 'reader must not be blank before page stress');
+  expect(
+    state.bodyTextLength,
+    greaterThan(0),
+    reason: 'reader must not be blank before page stress',
+  );
   if (state.currentPage != null && state.totalPages != null) {
-    expect(state.totalPages! - state.currentPage!, greaterThanOrEqualTo(25),
-        reason: 'fixture chapter must have enough pages for 20 forward + '
-            '5 backward user-key turns');
+    expect(
+      state.totalPages! - state.currentPage!,
+      greaterThanOrEqualTo(25),
+      reason:
+          'fixture chapter must have enough pages for 20 forward + '
+          '5 backward user-key turns',
+    );
   }
   debugPrint('[CU] page start: $state');
 
@@ -424,9 +458,13 @@ Future<void> _runPageTurnStress(
   evidence.recordPageSnapshot('page-after-5-backward', state);
   debugPrint('[CU] page after 5 backward turns: $state');
 
-  expect(state.isBefore(afterForward), isTrue,
-      reason: 'five readerPageBackward key presses must move back from the '
-          '20-forward point');
+  expect(
+    state.isBefore(afterForward),
+    isTrue,
+    reason:
+        'five readerPageBackward key presses must move back from the '
+        '20-forward point',
+  );
   evidence.recordCheck(
     'continuous_page_turns_stable',
     passed: state.isBefore(afterForward) && state.bodyTextLength > 0,
@@ -452,8 +490,10 @@ Future<ReaderPageSnapshot> _sendPageTurnAndWait(
 }) async {
   _focusReaderSurface(tester);
   await tester.pump(const Duration(milliseconds: 50));
-  debugPrint('[CU] send $label key=${key.debugName} shift=$shift '
-      'input=${_debugInputState()}');
+  debugPrint(
+    '[CU] send $label key=${key.debugName} shift=$shift '
+    'input=${_debugInputState()}',
+  );
   await _sendUserKeyEvent(tester, key, shift: shift);
   debugPrint('[CU] sent $label input=${_debugInputState()}');
   ReaderPageSnapshot latest = before;
@@ -461,16 +501,20 @@ Future<ReaderPageSnapshot> _sendPageTurnAndWait(
     await tester.pump(const Duration(milliseconds: 150));
     latest = await _readPageState(eval);
     if (forward ? latest.isAfter(before) : latest.isBefore(before)) {
-      final ReaderPageSnapshot settled =
-          await _waitForPageTurnSettle(tester, eval, latest);
+      final ReaderPageSnapshot settled = await _waitForPageTurnSettle(
+        tester,
+        eval,
+        latest,
+      );
       debugPrint('[CU] page $label -> $settled');
       return settled;
     }
   }
   fail(
-      'Page key did not produce ${forward ? "readerPageForward" : "readerPageBackward"} '
-      'state change for $label. input=${_debugInputState()} '
-      'before=$before latest=$latest');
+    'Page key did not produce ${forward ? "readerPageForward" : "readerPageBackward"} '
+    'state change for $label. input=${_debugInputState()} '
+    'before=$before latest=$latest',
+  );
 }
 
 String _debugInputState() {
@@ -603,13 +647,18 @@ Future<void> _runRepeatedLookupStress(
     );
     debugPrint('[CU] lookup round ${i + 1}: popup=$popup');
 
-    expect(popup.signature == previousSignature, isFalse,
-        reason: 'lookup round ${i + 1} must not reuse previous popup result');
+    expect(
+      popup.signature == previousSignature,
+      isFalse,
+      reason: 'lookup round ${i + 1} must not reuse previous popup result',
+    );
     previousSignature = popup.signature;
     if (i == 0 || i == rounds.length - 1) {
       await evidence.captureWidgetTree(tester, 'popup-round-${i + 1}');
       await evidence.recordScreenshot(
-          binding, 'reader_cu_popup_round_${i + 1}');
+        binding,
+        'reader_cu_popup_round_${i + 1}',
+      );
     }
 
     await _closePopupAndReturnToReader(
@@ -717,7 +766,8 @@ Future<PopupSnapshot> _waitForPopupResult(
     }
   }
   fail(
-      'Popup did not load expected result for "$expectedTerm". latest=$latest');
+    'Popup did not load expected result for "$expectedTerm". latest=$latest',
+  );
 }
 
 const String _popupSnapshotJs = r'''
@@ -780,10 +830,11 @@ Future<void> _closePopupAndReturnToReader(
     }
     if (popupGone) break;
   }
-  final String surface =
-      ReaderFushiPage.debugCaretSurface?.call() ?? 'unknown';
-  fail('Escape did not close the visible dictionary popup and return focus '
-      'to reader caret. popupGone=$popupGone surface=$surface');
+  final String surface = ReaderFushiPage.debugCaretSurface?.call() ?? 'unknown';
+  fail(
+    'Escape did not close the visible dictionary popup and return focus '
+    'to reader caret. popupGone=$popupGone surface=$surface',
+  );
 }
 
 Future<bool> _hasVisibleTopPopup() async {
@@ -1010,16 +1061,19 @@ class PopupSnapshot {
   String get payload => jsonEncode(entries);
 
   String get signature {
-    final String expressions =
-        entries.map((entry) => entry['expression']?.toString() ?? '').join('|');
+    final String expressions = entries
+        .map((entry) => entry['expression']?.toString() ?? '')
+        .join('|');
     return '$expressions\n$payload\n$body';
   }
 
   bool containsTerm(String term) {
-    return entries.any((entry) =>
-            entry['expression'] == term ||
-            entry['matched'] == term ||
-            entry['reading'] == term) ||
+    return entries.any(
+          (entry) =>
+              entry['expression'] == term ||
+              entry['matched'] == term ||
+              entry['reading'] == term,
+        ) ||
         body.contains(term) ||
         payload.contains(term);
   }
@@ -1043,8 +1097,9 @@ class PopupSnapshot {
 
   @override
   String toString() {
-    final expressions =
-        entries.map((entry) => entry['expression']?.toString()).join(',');
+    final expressions = entries
+        .map((entry) => entry['expression']?.toString())
+        .join(',');
     return 'PopupSnapshot(ready=$readyState, render=$renderType, '
         'caret=$caretType, entries=$expressions, glossaryCount=$glossaryCount, '
         'container=${containerWidth}x$containerHeight)';
@@ -1069,8 +1124,9 @@ class ComputerUseEvidence {
     if (p.basename(base.path) == 'isolated-root') {
       base = base.parent;
     }
-    final Directory directory =
-        Directory(p.join(base.path, 'computer-use', taskName));
+    final Directory directory = Directory(
+      p.join(base.path, 'computer-use', taskName),
+    );
     directory.createSync(recursive: true);
     return ComputerUseEvidence._(directory);
   }
@@ -1133,10 +1189,7 @@ class ComputerUseEvidence {
     String name,
   ) async {
     final int saved = await takeScreenshot(binding, name);
-    screenshots.add(<String, Object?>{
-      'name': name,
-      'saved': saved == 1,
-    });
+    screenshots.add(<String, Object?>{'name': name, 'saved': saved == 1});
   }
 
   Future<void> captureWidgetTree(WidgetTester tester, String stage) async {
@@ -1191,9 +1244,9 @@ class ComputerUseEvidence {
     for (final Map<String, Object?> check in checks) {
       final String id = check['id']?.toString() ?? '';
       final bool passed = check['passed'] == true;
-      final String details = jsonEncode(check['details'])
-          .replaceAll('|', r'\|')
-          .replaceAll('\n', ' ');
+      final String details = jsonEncode(
+        check['details'],
+      ).replaceAll('|', r'\|').replaceAll('\n', ' ');
       buffer.writeln('| `$id` | ${passed ? 'PASS' : 'FAIL'} | `$details` |');
     }
     buffer

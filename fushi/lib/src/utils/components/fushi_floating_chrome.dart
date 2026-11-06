@@ -517,11 +517,25 @@ class FushiFloatingChromeOverlay extends StatefulWidget {
   const FushiFloatingChromeOverlay({
     required this.chrome,
     required this.child,
+    this.nestedGap = kFushiFloatingChromeGap,
+    this.opaqueChrome = false,
     super.key,
   });
 
   final Widget chrome;
   final Widget child;
+
+  /// 嵌套时本层与上一层之间的间距（本层为空时不算）。默认
+  /// [kFushiFloatingChromeGap]；库页的二级下划线页签没有底色、自带行内留白，
+  /// 传 0 贴着顶栏（2026-10-30 用户嫌缝大）。
+  final double nestedGap;
+
+  /// 工具行自己没有底面（库页二级下划线页签）时为 true：只要本层此刻有内容，
+  /// 整摞工具区（最外层顶栏 + 各嵌套行）的顶部遮罩一律改成页面底色实底、只在
+  /// 最下沿渐隐一次——内容滚到下面时文字不落在半透明薄纱 + 封面上，也不会一段
+  /// 薄纱一段实底拼成两截（2026-10-30 用户截图「顶部白雾」「有点违和」）。
+  /// 胶囊类工具行自带表面，保持 false。
+  final bool opaqueChrome;
 
   @override
   State<FushiFloatingChromeOverlay> createState() =>
@@ -565,6 +579,40 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
   /// 但它必须盖到页面自己那几行工具（搜索框、标签行）的下沿，否则那几行背后整片
   /// 透出内容。
   final ValueNotifier<double> _nestedReach = ValueNotifier<double>(0);
+
+  /// 只在最外层有意义：整摞工具区里是否有一层要求实底（[FushiFloatingChromeOverlay
+  /// .opaqueChrome] 且此刻有内容、且在可见子树里）。各层的遮罩都读最外层这一份。
+  final ValueNotifier<bool> _opaqueStack = ValueNotifier<bool>(false);
+  final Set<_FushiFloatingChromeOverlayState> _opaqueLayers =
+      <_FushiFloatingChromeOverlayState>{};
+
+  _FushiFloatingChromeOverlayState get _root {
+    _FushiFloatingChromeOverlayState layer = this;
+    while (layer._parent != null) {
+      layer = layer._parent!;
+    }
+    return layer;
+  }
+
+  void _setOpaqueLayer(_FushiFloatingChromeOverlayState layer, bool on) {
+    if (on) {
+      _opaqueLayers.add(layer);
+    } else {
+      _opaqueLayers.remove(layer);
+    }
+    _opaqueStack.value = _opaqueLayers.isNotEmpty;
+  }
+
+  /// 把「本层要不要实底」报给最外层；构建期不能改外层的通知值，推到帧末。
+  void _reportOpaque() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _root._setOpaqueLayer(
+        this,
+        widget.opaqueChrome && _active && _chromeHeight > 0,
+      );
+    });
+  }
 
   double? _globalTop() {
     final RenderObject? box = context.findRenderObject();
@@ -646,6 +694,7 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
     _parent = context
         .findAncestorStateOfType<_FushiFloatingChromeOverlayState>();
     _active = TickerMode.of(context);
+    _reportOpaque();
     final FushiFloatingChromeController? controller =
         FushiFloatingChromeScope.maybeOf(context);
     _controller = controller;
@@ -678,12 +727,15 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
     _fade?.dispose();
     _visibleBottom.dispose();
     _nestedReach.dispose();
+    _opaqueStack.dispose();
     // 卸载期间不能让外层重建（树已锁定）：下一帧再把本层从外层的遮罩范围里摘掉。
     final _FushiFloatingChromeOverlayState? parent = _parent;
     if (parent != null) {
+      final _FushiFloatingChromeOverlayState root = _root;
       WidgetsBinding.instance
         ..addPostFrameCallback((_) {
           if (parent.mounted) parent._setNestedBottom(this, null);
+          if (root.mounted) root._setOpaqueLayer(this, false);
         })
         ..ensureVisualUpdate();
     }
@@ -691,8 +743,15 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
   }
 
   void _onChromeHeight(double height) {
-    if (!mounted || height == _chromeHeight) return;
-    setState(() => _chromeHeight = height);
+    // 嵌套层与上一层之间的 [kFushiFloatingChromeGap] 只在本层真有内容时才算：
+    // 本层为空（如库页当前组只有一个视图、不画二级胶囊）时不占高度，否则内容
+    // 顶上平白多出一条缝。
+    final double next = _parent != null && height > 0
+        ? height + widget.nestedGap
+        : height;
+    if (!mounted || next == _chromeHeight) return;
+    setState(() => _chromeHeight = next);
+    _reportOpaque();
   }
 
   @override
@@ -734,17 +793,22 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
       onFocusChange: (bool focused) {
         if (focused) controller.show();
       },
-      child: FushiHeightReporter(
-        onHeight: _onChromeHeight,
-        // 嵌套工具行（页面自己的搜索 / 筛选行）与上一层页签胶囊之间统一隔
-        // [kFushiFloatingChromeGap]（加上外壳工具栏底边的 4 合计 12，M3E 组
-        // 间距），不再各页自己凑、贴在一起。
-        child: nested
-            ? Padding(
-                padding: const EdgeInsets.only(top: kFushiFloatingChromeGap),
-                child: widget.chrome,
-              )
-            : widget.chrome,
+      // 嵌套工具行（页面自己的搜索 / 筛选行）与上一层页签胶囊之间统一隔
+      // [kFushiFloatingChromeGap]（加上外壳工具栏底边的 4 合计 12，M3E 组
+      // 间距），不再各页自己凑、贴在一起；本层为空时不隔（见 [_onChromeHeight]）。
+      // 量的是工具行本身，间距在外面加，树形恒定。
+      child: Padding(
+        padding: EdgeInsets.only(
+          top: nested && _chromeHeight > 0 ? widget.nestedGap : 0,
+        ),
+        child: FushiHeightReporter(
+          onHeight: _onChromeHeight,
+          // 顶层胶囊行整体缩到 [kFushiFloatingCapsuleScale]；嵌套的二级行（下划线
+          // 页签 / 搜索筛选行）不是浮动胶囊，不缩。
+          child: nested
+              ? widget.chrome
+              : FushiCapsuleScale(child: widget.chrome),
+        ),
       ),
     );
     return Stack(
@@ -766,13 +830,15 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
           ),
         ),
         // 顶部渐隐遮罩 + 工具区：同一弹簧驱动。遮罩只盖「此刻看得见的工具区」
-        // 再往下渐隐一段，收起后只剩顶边一条柔和淡出——不再有整块实色底带把
-        // 内容齐刷刷切掉。胶囊自己有表面色与投影，不靠底色遮挡内容。
+        // 再往下渐隐一段；工具区完全收起时遮罩也随弹簧整体淡出、不留任何底色
+        // 带（反馈 03cff3908u / Sb7jHbNO43，见下方 Positioned 处的说明）。胶囊
+        // 自己有表面色与投影，不靠底色遮挡内容。
         AnimatedBuilder(
           animation: Listenable.merge(<Listenable>[
             spring.animation,
             fade.animation,
             _nestedReach,
+            _root._opaqueStack,
           ]),
           child: chrome,
           builder: (BuildContext context, Widget? chrome) {
@@ -780,6 +846,7 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
             final double shown = value.clamp(0.0, 1.0);
             // effects 弹簧临界阻尼不过冲；clamp 只吸收收敛容差。
             final double opacity = fade.value.clamp(0.0, 1.0);
+            final bool opaque = _root._opaqueStack.value;
             final bool hidden = opacity <= 0.001 && shown <= 0.001;
             // BUG-3338：本层遮罩的起点 / 终点（本层坐标）。嵌套层从外层此刻的
             // 可见下沿起画（BUG-3283），外层画到本层可见下沿；两者在接缝处必须
@@ -822,7 +889,17 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                   top: scrimTop,
                   left: 0,
                   right: 0,
-                  child: nested && shown <= 0.001
+                  // 嵌套层本身为空（库页当前组不画二级页签）时也不画：外层已经
+                  // 在自己下沿收尾渐隐，这里再从 0.72 起画一段会与之叠成一道
+                  // 更浓的白边（2026-10-30 用户截图「白雾」）。
+                  //
+                  // 最外层同理：遮罩只为「看得见的工具区」垫底，整段不透明度乘同一
+                  // 弹簧的显隐。曾经收起后仍从视口顶边画一段页面底色（让位区
+                  // `outer` 实色 + [kFushiTopFadeExtent] 渐隐）——让位区里此时已
+                  // 没有任何可见工具（MD3 库页的外壳标题条是收起态），这条纯色带
+                  // 只会盖住页面背景装饰，成了「下滑后顶部一条白边」（2026-11
+                  // 用户截图，反馈 03cff3908u / Sb7jHbNO43）。
+                  child: shown <= 0.001 || (nested && _chromeHeight <= 0)
                       ? const SizedBox.shrink()
                       : AnimatedOpacity(
                           opacity: controller.contentUnderTop ? 1 : 0,
@@ -830,15 +907,25 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                             context,
                             FushiMotion.short,
                           ),
-                          child: FushiTopFadeScrim(
-                            solidHeight: scrimSeam - scrimTop,
-                            fadeExtent: continuesBelow
-                                ? 0
-                                : kFushiTopFadeExtent,
-                            topOpacity: nested
-                                ? kFushiTopScrimOverlayOpacity
-                                : 1,
-                            shoulderOpacity: kFushiTopScrimOverlayOpacity,
+                          child: Opacity(
+                            opacity: nested ? 1 : shown,
+                            child: FushiTopFadeScrim(
+                              solidHeight: scrimSeam - scrimTop,
+                              fadeExtent: continuesBelow
+                                  ? 0
+                                  : kFushiTopFadeExtent,
+                              // 整摞要实底（见 [FushiFloatingChromeOverlay
+                              // .opaqueChrome]）时每层都是页面底色实底，只在最下沿
+                              // 渐隐；否则沿用顶端实色 → 薄纱。
+                              topOpacity: opaque
+                                  ? 1
+                                  : nested
+                                  ? kFushiTopScrimOverlayOpacity
+                                  : 1,
+                              shoulderOpacity: opaque
+                                  ? 1
+                                  : kFushiTopScrimOverlayOpacity,
+                            ),
                           ),
                         ),
                 ),
@@ -1346,9 +1433,13 @@ class _FloatingActionsBody extends StatelessWidget {
       // 不再各自带玻璃底。不再外套 56 高的悬浮面（玻璃叠玻璃两圈折射边、
       // 比工具栏高一截）。放不下时与 MD3 同一套判据逐颗收进 ⋯，全收仍不够才
       // 横滑兜底；横滑视口不裁投影。
+      final FushiShellHeaderActions shellActions =
+          actions as FushiShellHeaderActions;
       return FushiShellHeaderActions(
-        actions: (actions as FushiShellHeaderActions).actions,
+        actions: shellActions.actions,
         appleFloating: true,
+        search: shellActions.search,
+        menuAnchor: shellActions.menuAnchor,
       );
     } else if (actions is FushiShellHeaderActions) {
       // MD3（M3E）：外壳动作组自己就把图标收进一枚 56 高的按钮组胶囊（与页签
@@ -1430,12 +1521,33 @@ class FushiShellInlineTitle extends InheritedWidget {
       enabled != oldWidget.enabled;
 }
 
+/// 库页壳一级只剩一组、不画分区页签时，页签位置改放的标题胶囊（iOS 合规门下
+/// 书 / 漫画 / 视频库只剩「书架 / 媒体库」，左上角原本整块空着，2026-10-31）。
+/// 宽窗外壳已经把页面名画进本行（[FushiShellInlineTitle]）时不再重复。
+class FushiFloatingChromeSoloTitle extends StatelessWidget {
+  const FushiFloatingChromeSoloTitle({required this.title, super.key});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    if (title.isEmpty || FushiShellInlineTitle.of(context)) {
+      return const SizedBox.shrink();
+    }
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: FushiPageChromeTitle(title: Text(title)),
+    );
+  }
+}
+
 class FushiFloatingChromeBar extends StatefulWidget {
   const FushiFloatingChromeBar({
     required this.tabs,
     required this.slot,
     this.padding,
     this.leading,
+    this.trailing,
     super.key,
   });
 
@@ -1446,6 +1558,10 @@ class FushiFloatingChromeBar extends StatefulWidget {
   /// 页签胶囊左边的前导（独立 push 进来的页面的返回键，一枚圆胶囊）；与
   /// 页签胶囊同一行、间距 [kFushiFloatingChromeGap]。
   final Widget? leading;
+
+  /// 动作组右边的一枚圆胶囊（库页壳的「导入」入口，见 `libraryImportChromeButton`）；
+  /// 与动作组同一行、间距 [kFushiFloatingChromeGap]，不随动作组收进「⋯」。
+  final Widget? trailing;
 
   @override
   State<FushiFloatingChromeBar> createState() => _FushiFloatingChromeBarState();
@@ -1466,8 +1582,12 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
     });
   }
 
+  // 顶部浮动胶囊统一按 [kFushiFloatingCapsuleScale] 缩（外层已缩过时不叠加）。
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      FushiCapsuleScale(child: _buildChrome(context));
+
+  Widget _buildChrome(BuildContext context) {
     final Widget? leading = widget.leading;
     final EdgeInsetsGeometry? padding = widget.padding;
     // 首页外壳把页面名交给本行画（[FushiShellInlineTitle]，宽窗 M3E 库页）：
@@ -1516,13 +1636,21 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
               ? 0
               : (inlineTitle ? maxTitle : kFushiPageChromeExtent) +
                     kFushiFloatingChromeGap;
+          final Widget? trailing = widget.trailing;
+          final double trailReserve = trailing == null
+              ? 0
+              : kFushiPageChromeExtent + kFushiFloatingChromeGap;
           final double maxActions = constraints.maxWidth.isFinite
               ? math.max(
-                  math.max(minActions, constraints.maxWidth / 2),
+                  math.max(
+                    minActions,
+                    (constraints.maxWidth - trailReserve) / 2,
+                  ),
                   tabsNatural == null
                       ? 0
                       : constraints.maxWidth -
                             leadReserve -
+                            trailReserve -
                             tabsNatural -
                             kFushiFloatingChromeGap,
                 )
@@ -1552,6 +1680,10 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
                   constraints: BoxConstraints(maxWidth: maxActions),
                   child: FushiFloatingActionsPill(slot: widget.slot),
                 ),
+                if (trailing != null) ...<Widget>[
+                  const SizedBox(width: kFushiFloatingChromeGap),
+                  trailing,
+                ],
               ],
             ),
           );

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/mining/galgame_system_ui_filter.dart';
 
 /// galgame 文本 hook「系统 UI 文字 vs 台词」过滤守卫（[isGalgameSystemUiLine]）。
@@ -67,8 +67,11 @@ void main() {
     final File controller = File(
       'lib/src/mining/gal_hook_session_controller.dart',
     );
-    expect(controller.existsSync(), isTrue,
-        reason: '找不到 gal_hook_session_controller.dart，路径变更请更新本守卫');
+    expect(
+      controller.existsSync(),
+      isTrue,
+      reason: '找不到 gal_hook_session_controller.dart，路径变更请更新本守卫',
+    );
     final String src = controller.readAsStringSync();
     expect(
       src.contains('isGalgameSystemUiLine(line.text)'),

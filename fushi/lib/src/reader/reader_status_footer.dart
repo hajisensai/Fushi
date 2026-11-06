@@ -7,7 +7,8 @@ import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
 
 import 'package:fushi/src/reader/reader_chrome_floating.dart'
     show kTopProgressFontSize;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 
 /// 各平台共用的阅读器底部状态行。
 ///
@@ -49,8 +50,7 @@ const double kReaderStatusFooterFloatingBottomGap = 8;
 double readerStatusFooterPaintedHeight({
   required bool floating,
   double height = kReaderStatusFooterHeight,
-}) =>
-    floating ? height + kReaderStatusFooterFloatingBottomGap : height;
+}) => floating ? height + kReaderStatusFooterFloatingBottomGap : height;
 
 /// 状态行文字字号，与顶部进度 pill 同源（12）。
 const double kReaderStatusFooterFontSize = kTopProgressFontSize;
@@ -70,8 +70,7 @@ bool readerStatusFooterEnabled({
   required bool lyricsMode,
   required bool showTimer,
   required bool showProgress,
-}) =>
-    !lyricsMode && (showTimer || showProgress);
+}) => !lyricsMode && (showTimer || showProgress);
 
 /// 状态行是否已被底栏**吸收**：挤压态底栏占位（[bottomChromeReserve] > 0）且宽屏把
 /// 同一串读数并进了底栏右端（[inlineStatus]，[ReaderStatusInline]）。
@@ -89,8 +88,7 @@ bool readerStatusFooterAbsorbedByBar({
   required bool inlineStatus,
   required double bottomChromeReserve,
   bool floatingBarPainted = false,
-}) =>
-    inlineStatus && (bottomChromeReserve > 0 || floatingBarPainted);
+}) => inlineStatus && (bottomChromeReserve > 0 || floatingBarPainted);
 
 /// 状态行的底部预留高：启用、未被底栏吸收（[absorbedByBar]，见
 /// [readerStatusFooterAbsorbedByBar]）且**非悬浮**时占 [footerHeight]，否则 0。
@@ -103,8 +101,7 @@ double readerStatusFooterReserve({
   required double footerHeight,
   bool absorbedByBar = false,
   bool floating = false,
-}) =>
-    enabled && !absorbedByBar && !floating ? footerHeight : 0;
+}) => enabled && !absorbedByBar && !floating ? footerHeight : 0;
 
 /// 状态行是否此刻绘制：启用、首屏已就绪、未被底栏吸收；悬浮态额外随
 /// [transientVisible]（与 `bottomBarVisible` 同一唤出 / 收起真值）。
@@ -127,8 +124,7 @@ bool readerProgressEdgeLineVisible({
   required bool footerVisible,
   required bool showProgress,
   required bool hasTotal,
-}) =>
-    floating && !footerVisible && showProgress && hasTotal;
+}) => floating && !footerVisible && showProgress && hasTotal;
 
 /// 屏底细进度线高度（逻辑 px）。
 const double kReaderProgressEdgeLineHeight = 2;
@@ -153,8 +149,7 @@ bool readerPlaybackStatusInline({
   required bool landscape,
   required double width,
   double minWidth = kReaderStatusInlineMinWidth,
-}) =>
-    enabled && landscape && width >= minWidth;
+}) => enabled && landscape && width >= minWidth;
 
 /// 状态行里进度条的宽 / 高（逻辑 px）。
 const double kReaderStatusProgressTrackWidth = 72;
@@ -178,8 +173,7 @@ double? readerProgressRatio({required int? current, required int? total}) {
 double readerStatusFooterBandHeight({
   required double footerReserve,
   required double bottomInset,
-}) =>
-    math.max(footerReserve, bottomInset);
+}) => math.max(footerReserve, bottomInset);
 
 /// 每小时字数（四舍五入到整数）。时长或字数为 0 时返回 0，不做「不足 1 分钟无值」的
 /// 统计口径门槛（那是统计页 `computeCph` 的事）：状态行开局就要显示 `0 / h`。
@@ -276,8 +270,9 @@ class ReaderStudyClockButton extends StatelessWidget {
         style: IconButton.styleFrom(
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
-        tooltip:
-            active ? t.reader_stats_clock_pause : t.reader_stats_clock_resume,
+        tooltip: active
+            ? t.reader_stats_clock_pause
+            : t.reader_stats_clock_resume,
         onPressed: onPressed,
       ),
     );
@@ -431,22 +426,38 @@ class ReaderStatusFooter extends StatefulWidget {
   State<ReaderStatusFooter> createState() => _ReaderStatusFooterState();
 }
 
-class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
+/// 状态行秒表的周期刷新（[ReaderStatusFooter] / [ReaderStatusInline] 共用）。
+///
+/// 秒表 tick 只在文案真的变了才重建：计时暂停 / 失焦期间读数不动，不白重建。计时器
+/// 只在所在子树看得见（[TickerMode] 开）时跑：被歌词覆盖层或别的路由盖住时停
+/// （BUG-4126）。恢复时 TickerMode 翻转让 [didChangeDependencies] 重跑、随后照常
+/// build，build 直接读 `sessionTotals()`，当帧就是现值。
+mixin _TrackerTickRefresh<T extends StatefulWidget> on State<T> {
   Timer? _ticker;
   String? _lastTracker;
 
+  Duration get trackerTick;
+  bool get trackerShown;
+  StudySessionTotals trackerTotals();
+
   @override
-  void initState() {
-    super.initState();
-    // 秒表 tick 只在文案真的变了才重建：计时暂停 / 失焦期间读数不动，不白重建。
-    _ticker = Timer.periodic(widget.tick, (_) {
-      if (!mounted) return;
-      // 计时器读数隐藏时这一层没有随秒变化的内容，秒表 tick 不必重建。
-      if (!widget.showTimer) return;
-      final String tracker = readerTrackerLabel(widget.sessionTotals());
-      if (tracker == _lastTracker) return;
-      setState(() => _lastTracker = tracker);
-    });
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (TickerMode.valuesOf(context).enabled) {
+      _ticker ??= Timer.periodic(trackerTick, (_) => _onTrackerTick());
+    } else {
+      _ticker?.cancel();
+      _ticker = null;
+    }
+  }
+
+  void _onTrackerTick() {
+    if (!mounted) return;
+    // 计时器读数隐藏时这一层没有随秒变化的内容，秒表 tick 不必重建。
+    if (!trackerShown) return;
+    final String tracker = readerTrackerLabel(trackerTotals());
+    if (tracker == _lastTracker) return;
+    setState(() => _lastTracker = tracker);
   }
 
   @override
@@ -454,6 +465,18 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
     _ticker?.cancel();
     super.dispose();
   }
+}
+
+class _ReaderStatusFooterState extends State<ReaderStatusFooter>
+    with _TrackerTickRefresh<ReaderStatusFooter> {
+  @override
+  Duration get trackerTick => widget.tick;
+
+  @override
+  bool get trackerShown => widget.showTimer;
+
+  @override
+  StudySessionTotals trackerTotals() => widget.sessionTotals();
 
   /// 状态行里可点的一段（计时块 / 进度数字）。命中区**撑满整条行高**：裸文字 + 14px
   /// 图标的行盒只有十几 px 高，指针（尤其手指）要精确戳中那一行才有反应；撑满后整条
@@ -515,72 +538,45 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
             // Expanded 的进度段挤到左角。窄屏保护不变——追踪块仍最多占 40% 宽、
             // 两段都 ellipsis，谁放不下谁先省略，行永远不溢出。
             child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-              final Widget row = Row(
-                mainAxisSize:
-                    widget.floating ? MainAxisSize.min : MainAxisSize.max,
-                mainAxisAlignment: widget.centered
-                    ? MainAxisAlignment.center
-                    : MainAxisAlignment.end,
-                children: <Widget>[
-                  if (widget.showTimer)
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth:
-                            constraints.maxWidth * (progress == null ? 1 : .4),
-                      ),
-                      child: _hitTarget(
-                        onTap: widget.onTapTracker,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            // 图标本身就是停 / 续表的按钮（[ReaderStudyClockButton]）；
-                            // 外面那层 [_hitTarget] 仍在，点读数文字也照停——28px 行里
-                            // 一颗 28px 的按钮命中区仍嫌小，多一条路不多。
-                            ReaderStudyClockButton(
-                              key: const ValueKey<String>(
-                                  'fushi_status_clock_toggle'),
-                              active: totals.active,
-                              color: muted,
-                              onPressed: widget.onTapTracker,
-                            ),
-                            const SizedBox(width: 2),
-                            Flexible(
-                              child: Text(
-                                readerTrackerLabel(totals),
-                                key: const ValueKey<String>(
-                                    'fushi_status_tracker'),
-                                style: style,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final Widget row = Row(
+                  mainAxisSize: widget.floating
+                      ? MainAxisSize.min
+                      : MainAxisSize.max,
+                  mainAxisAlignment: widget.centered
+                      ? MainAxisAlignment.center
+                      : MainAxisAlignment.end,
+                  children: <Widget>[
+                    if (widget.showTimer)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth:
+                              constraints.maxWidth *
+                              (progress == null ? 1 : .4),
                         ),
-                      ),
-                    ),
-                  if (progress != null)
-                    Flexible(
-                      child: Padding(
-                        padding: EdgeInsets.only(
-                            left: widget.showTimer ? 8 : 0),
                         child: _hitTarget(
-                          onTap: widget.onTapProgress,
+                          onTap: widget.onTapTracker,
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: <Widget>[
-                              ReaderStatusProgressTrack(
+                              // 图标本身就是停 / 续表的按钮（[ReaderStudyClockButton]）；
+                              // 外面那层 [_hitTarget] 仍在，点读数文字也照停——28px 行里
+                              // 一颗 28px 的按钮命中区仍嫌小，多一条路不多。
+                              ReaderStudyClockButton(
                                 key: const ValueKey<String>(
-                                    'fushi_status_progress_track'),
-                                ratio: ratio!,
+                                  'fushi_status_clock_toggle',
+                                ),
+                                active: totals.active,
                                 color: muted,
+                                onPressed: widget.onTapTracker,
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 2),
                               Flexible(
                                 child: Text(
-                                  progress,
+                                  readerTrackerLabel(totals),
                                   key: const ValueKey<String>(
-                                      'fushi_status_progress'),
+                                    'fushi_status_tracker',
+                                  ),
                                   style: style,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -590,34 +586,69 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
                           ),
                         ),
                       ),
-                    ),
-                ],
-              );
-              if (!widget.floating) return row;
-              return Align(
-                alignment: widget.centered
-                    ? Alignment.center
-                    : AlignmentDirectional.centerEnd,
-                child: DecoratedBox(
-                  key: const ValueKey<String>('fushi_status_footer_pill'),
-                  decoration: ShapeDecoration(
-                    color: widget.backgroundColor,
-                    shape: const StadiumBorder(),
-                    shadows: <BoxShadow>[
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.12),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
+                    if (progress != null)
+                      Flexible(
+                        child: Padding(
+                          padding: EdgeInsets.only(
+                            left: widget.showTimer ? 8 : 0,
+                          ),
+                          child: _hitTarget(
+                            onTap: widget.onTapProgress,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                ReaderStatusProgressTrack(
+                                  key: const ValueKey<String>(
+                                    'fushi_status_progress_track',
+                                  ),
+                                  ratio: ratio!,
+                                  color: muted,
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    progress,
+                                    key: const ValueKey<String>(
+                                      'fushi_status_progress',
+                                    ),
+                                    style: style,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                    ],
+                  ],
+                );
+                if (!widget.floating) return row;
+                return Align(
+                  alignment: widget.centered
+                      ? Alignment.center
+                      : AlignmentDirectional.centerEnd,
+                  child: DecoratedBox(
+                    key: const ValueKey<String>('fushi_status_footer_pill'),
+                    decoration: ShapeDecoration(
+                      color: widget.backgroundColor,
+                      shape: const StadiumBorder(),
+                      shadows: <BoxShadow>[
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.12),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: row,
+                    ),
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: row,
-                  ),
-                ),
-              );
-            }),
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -658,28 +689,16 @@ class ReaderStatusInline extends StatefulWidget {
   State<ReaderStatusInline> createState() => _ReaderStatusInlineState();
 }
 
-class _ReaderStatusInlineState extends State<ReaderStatusInline> {
-  Timer? _ticker;
-  String? _lastTracker;
+class _ReaderStatusInlineState extends State<ReaderStatusInline>
+    with _TrackerTickRefresh<ReaderStatusInline> {
+  @override
+  Duration get trackerTick => widget.tick;
 
   @override
-  void initState() {
-    super.initState();
-    _ticker = Timer.periodic(widget.tick, (_) {
-      if (!mounted) return;
-      // 计时器读数隐藏时这一层没有随秒变化的内容，秒表 tick 不必重建。
-      if (!widget.showTimer) return;
-      final String tracker = readerTrackerLabel(widget.sessionTotals());
-      if (tracker == _lastTracker) return;
-      setState(() => _lastTracker = tracker);
-    });
-  }
+  bool get trackerShown => widget.showTimer;
 
   @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
-  }
+  StudySessionTotals trackerTotals() => widget.sessionTotals();
 
   @override
   Widget build(BuildContext context) {

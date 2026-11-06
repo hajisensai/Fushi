@@ -2,23 +2,39 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart'
+    show FushiRubySpan, shiftRubySpans;
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
+import 'package:fushi/src/lookup/effective_lookup_size.dart'
+    show kLookupPopupDefaultWidth;
 import 'package:fushi/src/lookup/ocr_block_sentence.dart';
-import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
-    show resolveMineSentence;
+import 'package:fushi/src/lookup/source_line_sentence.dart';
+import 'package:fushi/src/lookup/source_lookup_sentence.dart'
+    show withFallbackMiningSentence;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_mining_target.dart'
+    show DictionaryPopupMiningTargetButton;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/misc/popup_channel.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/lookup/swipe_dismiss_wrapper.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 class PopupDictionaryPage extends ConsumerStatefulWidget {
   const PopupDictionaryPage({
@@ -27,6 +43,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
     this.sourceCharIndex = -1,
     this.sourceBlock,
     this.sourceBlockOffset = -1,
+    this.cardImage,
     this.anchorRect,
     this.subtitleWindowRect,
     this.closeInApp,
@@ -49,6 +66,10 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
   /// 不再只剩被点的那一行；否则回落为整行（BUG-2900）。
   final String? sourceBlock;
   final int sourceBlockOffset;
+
+  /// 反馈 Gz7z6Y6Mbr：截屏识字这次点字的卡图来源（定格帧文件 + 文本块），制卡时裁成
+  /// 卡图（[DictionaryPageMixin.miningCardImage]）。其它入口为 null。
+  final ScreenOcrCardImage? cardImage;
 
   /// TODO-872：app 外悬浮字幕条点字传来的「被查字屏幕矩形」（逻辑像素，与本全屏查词
   /// 窗同坐标系）。非空 → 卡片贴被查字旁定位（[computeFloatingLyricPopupRect]）；为 null
@@ -124,6 +145,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   @override
   AppModel get mixinAppModel => appModel;
+
+  @override
+  ScreenOcrCardImage? get miningCardImage => widget.cardImage;
 
   @override
   ThemeData get mixinTheme => Theme.of(context);
@@ -293,6 +317,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // 源文本条点字发起的「扫描查词」（Yomitan 式）。非空时本条与搜索框都**不动**：
     // 变的只有下方那份结果和条上的高亮跨度，锚点就是被点的那个字素簇。
     SourceLookupScan? scan,
+    // 释义里点词带来的来源振假名，以 [query] 为坐标系（下面随句首空白平移）。
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    // 释义里点词时被点处那一句（反馈 TnKWBi4C-9），嵌套层制卡的例句。
+    String contextSentence = '',
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
@@ -324,6 +352,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       // 独立查词窗是整窗卡片（非贴选区小浮卡），搜索期保持卡片显示、空白由
       // DictionaryPopupLayer 的加载盖板兜住——不走「搜索期隐藏 + anchored 占位卡」。
       revealWhileSearching: true,
+      rubySpans: shiftRubySpans(
+        rubySpans,
+        leadingStrip: query.length - query.trimLeft().length,
+        length: trimmed.length,
+      ),
+      contextSentence: contextSentence,
     );
     if (!mounted || highlightGeneration != _sourceHighlightGeneration) return;
     setState(() {
@@ -435,17 +469,14 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 基础层原地跳到释义里的别的词（链接 / 词头 / 汉字）后，当前词条不再出自这行，同样
   /// 不补；判据是「基础层当前查询串**等于**最近一次出自这行的查询串」
   /// （[_sourceLineQuery]），后退回原词条时自然又成立。
-  Map<String, String> _withSourceSentence(Map<String, String> fields) {
-    if (_sourceSentence.isEmpty || _sourceLineQuery.isEmpty) return fields;
-    final String baseTerm = _popup.entries.isEmpty
-        ? ''
-        : _popup.entries.first.searchTerm.trim();
-    if (baseTerm != _sourceLineQuery) return fields;
-    return <String, String>{
-      ...fields,
-      'sentence': resolveMineSentence(fields, _sourceSentence),
-    };
-  }
+  Map<String, String> _withSourceSentence(Map<String, String> fields) =>
+      withSourceLineSentence(
+        fields,
+        layerIndex: 0,
+        baseTerm: _popup.entries.isEmpty ? '' : _popup.entries.first.searchTerm,
+        sourceQuery: _sourceLineQuery,
+        sentence: _sourceSentence,
+      );
 
   Future<MinePopupResult> _mineBaseEntry(Map<String, String> fields) =>
       onMineEntry(_withSourceSentence(fields));
@@ -500,11 +531,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   /// TODO-1352: 外部悬浮查词窗最大宽度 = 用户的 popupMaxWidth（与书内 / 首页查词弹窗
   /// 同一真值，取消旧的硬编码 480）。appModel 未初始化时（如 widget 测试直接渲染卡片、
-  /// prefsRepo 尚未装配）回退到默认 400（= PreferencesRepository.defaultPopupMaxWidth），
+  /// prefsRepo 尚未装配）回退到默认宽度（[kLookupPopupDefaultWidth]），
   /// 不触碰 prefsRepo 避免空解引用；生产路径仅在 isInitialised 后才有内容可查，回退窗口
   /// 无内容、观感无影响。
-  double get _externalPopupMaxWidth =>
-      appModel.isInitialised ? appModel.popupMaxWidth : 400.0;
+  double get _externalPopupMaxWidth => appModel.isInitialised
+      ? appModel.popupMaxWidth
+      : kLookupPopupDefaultWidth;
 
   /// TODO-872：anchorRect 为 null → 原 [Alignment.topCenter] 贴顶（**零变化**）；
   /// 非空 → 用 [computeFloatingLyricPopupRect] 算出贴被查字旁的矩形，[Positioned] 定位。
@@ -574,6 +606,13 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     );
   }
 
+  /// 整张查词卡的不透明底色：外层卡片与基础层盖板（[DictionaryPopupLayer.coverFillColor]）
+  /// 共用这一个值。
+  Color _cardColor(FushiDesignTokens tokens) =>
+      (appModel.overrideDictionaryColor ?? tokens.surfaces.page).withValues(
+        alpha: 1.0,
+      );
+
   Widget _buildCard(FushiDesignTokens tokens) {
     // M3E 顶部区域（MD3 设计系统；Apple 与墨水屏维持各自原样）：关闭钮并进搜索栏
     // 同一枚 tonal 胶囊，顶栏与源文本条之间不再画硬分隔线、改用间距区分，源文本条
@@ -586,9 +625,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     final bool floatingSurface =
         m3e &&
         (platform == TargetPlatform.android || platform == TargetPlatform.iOS);
+    final Widget? miningTarget = _buildMiningTargetButton();
     final Widget card = FushiPopupSurface(
-      color: (appModel.overrideDictionaryColor ?? tokens.surfaces.page)
-          .withValues(alpha: 1.0),
+      color: _cardColor(tokens),
       // 独立的系统查词浮窗：Apple 下玻璃采不到窗口背后的其它 app，画不透明面板。
       standaloneWindow: true,
       showBorder: !floatingSurface,
@@ -600,12 +639,13 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
           // 直接 [_close]（无滑出动画），不会因 X 落在可滑区里被横拖手势误判/连带播放滑动
           // 特效。横滑只裹搜索栏本体（拖它仍可滑出关闭，那是滑动这一触发行为本身的动画）。
           if (widget.showSearchBar && m3e)
-            _buildM3eSearchToolbar(tokens)
+            _buildM3eSearchToolbar(tokens, miningTarget)
           else if (widget.showSearchBar)
             Row(
               children: <Widget>[
                 _buildCloseButton(),
                 Expanded(child: _buildSwipeChrome(_buildSearchBar())),
+                if (miningTarget != null) miningTarget,
               ],
             )
           else
@@ -615,6 +655,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
             Row(
               children: <Widget>[
                 Expanded(child: _buildSwipeChrome(const SizedBox(height: 36))),
+                if (miningTarget != null) miningTarget,
                 _buildCloseButton(),
               ],
             ),
@@ -655,7 +696,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 形态，取代旧的「光秃的 × + 一枚独立搜索胶囊」。关闭钮仍在
   /// [SwipeDismissWrapper] 之外（TODO-951 症状B：点 × 直接关、不连带滑出动画），
   /// 横滑只裹搜索输入区；关闭钮套 [FushiPressScale] 带按压弹簧。
-  Widget _buildM3eSearchToolbar(FushiDesignTokens tokens) {
+  Widget _buildM3eSearchToolbar(
+    FushiDesignTokens tokens,
+    Widget? miningTarget,
+  ) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
       child: DecoratedBox(
@@ -670,6 +714,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
             children: <Widget>[
               FushiPressScale(child: _buildCloseButton()),
               Expanded(child: _buildSwipeChrome(_buildSearchBar())),
+              if (miningTarget != null) FushiPressScale(child: miningTarget),
             ],
           ),
         ),
@@ -702,6 +747,25 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       onClose: null,
       onSubmit: _onSearchSubmit,
       hintLocales: appModel.lookupImeHintLocales,
+    );
+  }
+
+  /// 用户建议 #fiwDIpFep7：应用外查词也能就地切配置 / 牌组，与 in-app 宿主同一判据（随制卡
+  /// 模块开关）。Anki 设置已迁进 Drift、热复用路径按 prefs_version 失效 Anki 派生状态
+  /// （BUG-3683），本进程（Android `:popup` / 悬浮词典引擎）与主 app 读写同一行。本窗口的
+  /// 结果恒来自本机（没有 resourceSource），不需要 in-app 那条「远端结果不显示」的排除。
+  ///
+  /// 放在搜索条 / 关闭行上（在横滑区之外，点它不会连带滑动判定），而不是层顶栏：基础层
+  /// 的层顶栏整条不画（BUG-3731）。制卡模块关着时返回 null。
+  Widget? _buildMiningTargetButton() {
+    if (!appModel.moduleVisibility.isEnabled(ModuleId.cardCreation)) {
+      return null;
+    }
+    return DictionaryPopupMiningTargetButton(
+      constraints: BoxConstraints.tightFor(
+        width: _CompactPopupCloseButton.height,
+        height: _CompactPopupCloseButton.height,
+      ),
     );
   }
 
@@ -786,7 +850,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       hasChildPopup: index < _popup.entries.length - 1,
       isDark: isDark,
       topBarScale: dictionaryPopupTopBarScale(
-        appUiScale: appModel.appUiScale,
+        appUiScale: appModel.popupUiScale,
         dictionaryFontSize: appModel.dictionaryFontSize,
       ),
       showBorder: false,
@@ -798,6 +862,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       overrideFillColor: isBase
           ? Colors.transparent
           : (appModel.overrideDictionaryColor ?? tokens.surfaces.page),
+      // 基础层面板透明（整卡由外层画），盖板却必须不透明：否则热槽 WebView 里
+      // popup.js 自画的「未找到」透出来，与 Flutter 占位叠成两份。
+      coverFillColor: isBase ? _cardColor(tokens) : null,
       onDismiss: isBase ? _close : () => _popAt(index),
       onClose: isBase ? null : () => _popAt(index),
       onBack: null,
@@ -821,20 +888,41 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       onScrolledToBottom: entry.allLoaded
           ? null
           : () => loadMoreForEntry(entry: entry, controller: _popup),
-      onTextSelected: (text, localRect) {
+      onTextSelected: (text, localRect, rubySpans, contextSentence) {
         if (_popup.entries.length > index + 1) {
           setState(() => _popup.truncateTo(index + 1));
         }
-        _pushSearch(text, localRect);
+        _pushSearch(
+          text,
+          localRect,
+          rubySpans: rubySpans,
+          contextSentence: contextSentence,
+        );
       },
       // 词头 / 交叉引用链接 / 汉字（onLinkClick 通道）：**原地跳转**而不是叠一层
       // 满卡子层——对齐 Hoshi Reader iOS（同一个 WebView 换内容，← → 在历史页间
       // 来回）。释义正文点词（onTextSelected）仍叠子层。
       onLinkClick: (query, localRect) => _navigateInPlace(index, entry, query),
-      onMineEntry: isBase ? _mineBaseEntry : onMineEntry,
-      onUpdateEntry: isBase ? _updateBaseEntry : onUpdateEntry,
+      // 嵌套层的词从释义正文点出来：例句是被点处那一句（反馈 TnKWBi4C-9）。
+      onMineEntry: isBase
+          ? _mineBaseEntry
+          : (Map<String, String> fields) => onMineEntry(
+              withFallbackMiningSentence(fields, entry.contextSentence),
+            ),
+      onUpdateEntry: isBase
+          ? _updateBaseEntry
+          : (int noteId, Map<String, String> fields) => onUpdateEntry(
+              noteId,
+              withFallbackMiningSentence(fields, entry.contextSentence),
+            ),
+      // BUG-3652 续：制卡失败回包回来时这一层已关 / 停驻，原因就改由宿主 toast。
+      isSessionOnScreen: () => _popup.isEntryOnScreen(entry),
       onDuplicateCheck: checkDuplicate,
       onOverwriteTargetNoteId: findOverwriteTargetNoteId,
+      // 制卡目标切换不放层顶栏：基础层没有 header / 关闭 / 返回 / 历史，层顶栏整条不画，
+      // 按钮跟着消失（BUG-3731）。本窗口在自己的搜索条上给一颗（[_buildMiningTargetButton]），
+      // 基础层与嵌套层共用，不在子层顶栏里重复出现。
+      showMiningTargetSwitch: false,
     );
 
     // TODO-951 症状C：可见层满卡渲染（BUG-051）；隐藏层（常驻热槽 / 挂起冷层）交给共享

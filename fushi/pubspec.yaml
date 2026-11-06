@@ -2,7 +2,7 @@ name: fushi
 resolution: workspace
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 3.0.1+1356
+version: 3.3.0+1368
 environment:
   sdk: ">=3.8.0 <4.0.0"
   flutter: "^3.47.0"
@@ -18,7 +18,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 0c5878a856be72c7439f166a3144c0c4c6a998a7
+      ref: 1fce08d74d543f6640bc1c06a223d5f808521b2e
   # 字幕重定时（拿 ASR 转录当参照修好已有字幕的时间轴）。与 fushi_asr_core 同仓同 sha。
   #
   # 只依赖 fushi_asr_core，**不含** ONNX 后端：算法那半边住在 fushi_asr 包里的话会
@@ -28,10 +28,9 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_subtitles
-      ref: 0c5878a856be72c7439f166a3144c0c4c6a998a7
+      ref: 1fce08d74d543f6640bc1c06a223d5f808521b2e
   archive: ^3.6.1
   async_zip: ^0.1.0
-  basic_utils: ^5.7.0
   audio_service: ^0.18.9
   audio_session: ^0.1.13
   cached_network_image: ^3.4.1
@@ -45,8 +44,8 @@ dependencies:
   # （tool/migrate_design_widgets.sh）。lib/ 下禁止再 import
   # package:flutter/material.dart / cupertino.dart（守卫
   # test/build/design_widgets_import_guard_test.dart）。
-  cupertino_ui: ^1.1.3
-  material_ui: ^1.7.0
+  cupertino_ui: ^1.1.6
+  material_ui: ^1.10.0
   liquid_glass_widgets: ^1.8.1
   crop_image: ^1.0.4
   desktop_drop: ^0.5.0
@@ -60,6 +59,9 @@ dependencies:
   fading_edge_scrollview: ^3.0.0
   file_picker: ^8.0.0
   float_column: ^4.0.3
+  # 长按图片「保存图片」写进系统相册（Android MediaStore / iOS Photos）。
+  # 只在移动端调用；桌面端走另存为对话框（lib/src/utils/misc/image_file_saver.dart）。
+  gal: ^2.3.1
   # Cross-platform game controllers (GameInput / GameController / evdev).
   # BUILD PREREQ: the Windows backend (gamepads_windows) #includes <GameInput.h>,
   # which ships only in Windows SDK >= 10.0.26100 — every Windows build
@@ -82,10 +84,25 @@ dependencies:
     path: ../packages/fushi_anki
   fushi_srs:
     path: ../packages/fushi_srs
+  fushi_compute:
+    path: ../packages/fushi_compute
+  # 音乐胖核心（native/fushi_music：曲库扫描 / 标签 / CUE），硬依赖、没有 Dart 回退。
+  fushi_music:
+    path: ../packages/fushi_music
+  # 语料胖核心（native/fushi_corpus：「我库里的例句」倒排索引），硬依赖、没有 Dart 回退。
+  fushi_corpus:
+    path: ../packages/fushi_corpus
+  # 网页广告 / 跟踪拦截（adblock-rust FFI + 过滤列表管理），WebView 接线在 lib/src/web_adblock/。
+  fushi_web_core:
+    path: ../packages/fushi_web_core
   fushi_audio:
     path: ../packages/fushi_audio
   fushi_platform:
     path: ../packages/fushi_platform
+  # BUG-4072：告诉 Dart 本次引擎有没有界面（Android 插件注册到每个引擎，含 audio_service
+  # 无界面拉起的那个；iOS 在 AppDelegate 答）。会话标记据此记 headless。
+  fushi_launch_presence:
+    path: ../packages/fushi_launch_presence
   fushi_torrent:
     path: ../packages/fushi_torrent
   google_sign_in: ^6.2.2
@@ -100,6 +117,10 @@ dependencies:
   flutter_exit_app: ^1.0.5
   flutter_html: ^3.0.0
   flutter_inappwebview: ^6.1.5
+  # 直接依赖 Android 实现包只为用它的 Hibiki 补丁 API `AndroidWebViewProfile`
+  # （无痕标签页的独立 WebView Profile，见 third_party/flutter_inappwebview_android/
+  # PATCHES.md）；解析仍走根 pubspec 的 path override。
+  flutter_inappwebview_android: ^1.1.3
   # Linux WebView 后端（WPE WebKit）。6.1.5 的 flutter_inappwebview 不 endorse
   # Linux，必须由 app 直接依赖实现包才会注册；vendored 原因见该包 pubspec 顶部。
   flutter_inappwebview_linux:
@@ -111,6 +132,10 @@ dependencies:
   # （Windows 走 flutter_local_notifications_windows 的 WinRT toast）。
   flutter_local_notifications: ^20.1.0
   flutter_riverpod: ^2.3.6
+  # 平台安全存储（iOS / macOS Keychain、Android Keystore、Linux libsecret）：只放音乐插件
+  # 凭据保险库的数据密钥（lib/src/media/music/plugin/music_plugin_vault_key.dart）。Windows
+  # 不用它（保险库密钥在 Rust 侧走 DPAPI）。钉确定版本：密钥存取语义变了会让所有插件掉登录。
+  flutter_secure_storage: 10.3.4
   # WebRTC 游戏串流（Windows 主机；五端都可当接收端）。
   # 钉精确版本，不用 caret：WGC 客户区采集的入口只在
   # ci/patches/hosted/flutter_webrtc-1.6.2+hotfix.3/ 那份补丁里，而补丁目录按
@@ -120,7 +145,6 @@ dependencies:
   flutter_staggered_grid_view: ^0.7.0
   fluttertoast: ^8.2.1
   drift: ">=2.33.0 <2.34.0"
-  sqlite3_flutter_libs: ^0.5.28
   sqlite3: ">=3.4.0 <4.0.0"
   ffi: ^2.1.3
   gap: ^3.0.1
@@ -172,8 +196,6 @@ dependencies:
   ftpconnect: ^2.0.10
   dartssh2: ^2.9.0
   crypto: ^3.0.0
-  # BUG-2514：comico magazine_comic 根 URL 的 AES-CBC 解密（basic_utils 已带入，这里只是显式声明）。
-  pointycastle: ^3.9.1
   meta: ^1.9.0
   transparent_image: ^2.0.1
   url_launcher: ^6.0.20
@@ -186,16 +208,14 @@ dependencies:
   # lib/src/feedback/feedback_reply_background.dart）。桌面不用它（运行中定时检查）。
   workmanager: ^0.10.10
   record: 6.0.0
-  brotli: ^0.6.0
   bonsoir: ^7.1.1
   media_kit: ^1.2.6
   media_kit_video: ^2.0.1
   media_kit_libs_video: ^1.0.7
-  # 移动端 ffmpeg：用「自编」的 ffmpeg-kit（arthenica 源码 + NDK r25 重编最小变体），
-  # 替代崩溃的第三方预编译 ffmpeg-kit 变体（其 libffmpegkit_abidetect.so 在
-  # Android 16/API 36 上 JNI_OnLoad 返回非法版本，启动即崩，BUG-122）。vendored 包见
-  # dependency_overrides 的 ffmpeg_kit_flutter（android 用 third_party 自编 AAR）。
-  ffmpeg_kit_flutter: ^6.0.3
+  # 移动端 ffmpeg：统一 FFmpeg（tool/ffmpeg-unified，FFmpeg 9.0.1）的进程内命令
+  # 运行器 FFmpegKitNext。播放器 libmpv 链接同一份 FFmpeg 库，制卡与播放能力一致。
+  # vendored 包见根 pubspec 的 dependency_overrides（third_party/ffmpeg_kit_next_flutter）。
+  ffmpeg_kit_next_flutter: ^9.0.0
   web_socket_channel: ^3.0.0
   # 漫画内置 OCR：ONNX Runtime 五平台绑定（检测 RT-DETR + 识别 manga-ocr）。
   # 选型见 lib/src/ocr/；EP 策略（CUDA/DirectML/CoreML/CPU）在 ocr_inference.dart。
@@ -205,6 +225,10 @@ dependencies:
   window_manager: ^0.5.1
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.4.2
+  # Pointer.asTypedList 的唯一入口（绕开 Dart JIT 去优化物化视图的崩溃，见包内注释）。
+  fushi_ffi_view:
+    path: ../packages/fushi_ffi_view
+
 dev_dependencies:
   # BUG-3003: native hot-restart regression waits for worker IsolateExit events.
   vm_service: ^15.1.0
@@ -230,6 +254,10 @@ dev_dependencies:
   flutter_lints: ^2.0.1
   flutter_native_splash: ^2.2.8
   fake_async: ^1.3.1
+  # 2026-11-05：import 闭包不碰 dart:ui 的测试用 package:test 写，heavy 本机用
+  # `dart test` 跑（单 VM，约 0.8 GB；flutter test 起步 3.3 GB）。守卫
+  # test/build/pure_dart_test_import_guard_test.dart。
+  test: ^1.24.0
   flutter_test:
     sdk: flutter
   integration_test:
@@ -252,17 +280,30 @@ flutter:
     # 内置网页播放器（WebView2 站点播放）主世界胶水；站点 bridge / 字幕 provider 复用
     # 上面的扩展镜像（同一份文件，见 lib/src/media/video/web_video_bridge.dart）。
     - assets/web_video/
+    - assets/web_browser/
+    # 网页漫画：注入漫画站章节页的扫图脚本 + 站点规则（lib/src/media/manga/web/）。
+    - assets/web_comic/
     - assets/gamepad/xbox/
     - assets/gamepad/playstation/
     - assets/gamepad/switch/
     - assets/fonts/
     - assets/licenses/
+    # 原生依赖（Rust crate + C/C++ 库）许可汇编，tool/native_licenses.dart 生成。
+    - assets/licenses/native/
     # 小说在线源（LNReader 插件）宿主：lnreader_libs.js 由 tool/lnreader/ 重建。
     - assets/lnreader/
     - assets/meta/
     - assets/popup/
     - assets/transforms/
     - assets/transforms/i18n/
+
+  # 片段着色器（Impeller 编译期转 SPIR-V / MSL / GLSL）。
+  # panorama_backdrop：首页「媒体库全景」的星空 + 中心光晕（lib/src/media/panorama/）。
+  # music_backdrop_pixi：歌词页 Pixi 流体背景（music_lyrics_backdrop.dart）。
+  shaders:
+    - shaders/panorama_backdrop.frag
+    - shaders/music_backdrop_pixi.frag
+    - shaders/page_curl.frag
 
   # M3E 语义图标（lib/src/utils/fushi_icons.dart）：Material Symbols Rounded 可变字体
   # 的子集，由 tool/icons/gen_fushi_symbols.py 生成。线框 / 实心各一个字族——选中态在

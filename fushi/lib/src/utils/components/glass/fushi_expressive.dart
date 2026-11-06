@@ -7,6 +7,7 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_segment_widths.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 
 // Material 3 Expressive（Google 2025-05，Android 16）的按钮动效：Flutter 3.44
@@ -17,7 +18,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 //   按下弹到小圆角，松手弹回；toggle 选中态常驻方圆角。
 // - [FushiConnectedButtonGroup]：连接式按钮组（MD3 的 SegmentedButton）。段间
 //   2px 缝、外端全圆角、内侧小圆角，选中段弹成全胶囊，按下的段变宽、邻段让出。
-// - [FushiButtonGroup]：标准按钮组。一排按钮，按下的变宽、邻居被挤窄。
+// - [FushiButtonGroup]：标准按钮组。一排按钮，按下的变宽、邻居只让出富余（不折行）。
 //
 // 弹簧取 M3 Expressive 的 motion scheme（[FushiSprings]，唯一真相源在
 // fushi_motion_tokens.dart）：按压用 spatial fast（刚度 800、阻尼比 0.6），选中
@@ -40,58 +41,6 @@ bool fushiExpressiveMotionEnabled(BuildContext context) {
   if (isEinkTheme(context)) return false;
   return !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
 }
-
-/// M3 Expressive 图标按钮尺寸档：XS 32 / S 40（默认）/ M 56 / L 96 / XL 136。
-enum FushiIconButtonSize { xs, s, m, l, xl }
-
-/// M3 Expressive 图标按钮宽度变体：窄 / 默认（正方）/ 宽。
-enum FushiIconButtonWidth { narrow, standard, wide }
-
-/// M3 Expressive 图标按钮形状：圆（默认）/ 方（圆角 12）。
-enum FushiIconButtonShape { round, square }
-
-/// 图标按钮的容器尺寸（M3 Expressive 规格表：XS 28/32/40×32、S 32/40/52×40、
-/// M 48/56/72×56、L 64/96/128×96、XL 104/136/184×136，依次为窄 / 默认 / 宽）。
-Size fushiExpressiveIconButtonExtent(
-  FushiIconButtonSize size,
-  FushiIconButtonWidth width,
-) {
-  final (
-    double narrow,
-    double standard,
-    double wide,
-    double height,
-  ) = switch (size) {
-    FushiIconButtonSize.xs => (28, 32, 40, 32),
-    FushiIconButtonSize.s => (32, 40, 52, 40),
-    FushiIconButtonSize.m => (48, 56, 72, 56),
-    FushiIconButtonSize.l => (64, 96, 128, 96),
-    FushiIconButtonSize.xl => (104, 136, 184, 136),
-  };
-  return Size(switch (width) {
-    FushiIconButtonWidth.narrow => narrow,
-    FushiIconButtonWidth.standard => standard,
-    FushiIconButtonWidth.wide => wide,
-  }, height);
-}
-
-/// 图标按钮的图标尺寸：XS 20，S / M 24，L 32，XL 40。
-double fushiExpressiveIconSize(FushiIconButtonSize size) => switch (size) {
-  FushiIconButtonSize.xs => 20,
-  FushiIconButtonSize.s || FushiIconButtonSize.m => 24,
-  FushiIconButtonSize.l => 32,
-  FushiIconButtonSize.xl => 40,
-};
-
-/// 图标按钮方形 / 选中态的圆角与按下圆角（Compose `IconButton*Tokens`：
-/// XS / S 12→8，M 16→12，L / XL 28→16）。
-({double square, double pressed}) fushiExpressiveIconButtonRadii(
-  FushiIconButtonSize size,
-) => switch (size) {
-  FushiIconButtonSize.xs || FushiIconButtonSize.s => (square: 12, pressed: 8),
-  FushiIconButtonSize.m => (square: 16, pressed: 12),
-  FushiIconButtonSize.l || FushiIconButtonSize.xl => (square: 28, pressed: 16),
-};
 
 /// 一个由弹簧驱动的标量（0 = 静止，1 = 目标态）。重定向时带着当前速度续上，
 /// 快速连点不会「跳帧回零」——这是弹簧比定时曲线更顺的原因。
@@ -138,6 +87,175 @@ class FushiSpring {
   }
 
   void dispose() => _controller.dispose();
+}
+
+/// M3E 图标按钮各尺寸档的方形 / 按下圆角（与官方 M3E [IconButton] 默认样式
+/// 同表：xSmall / small 12→8，medium 16→12，large / xLarge 28→16）。
+({double square, double pressed}) fushiExpressiveIconButtonRadii(
+  ButtonSizeVariant size,
+) => switch (size) {
+  ButtonSizeVariant.xSmall ||
+  ButtonSizeVariant.small => (square: 12, pressed: 8),
+  ButtonSizeVariant.medium => (square: 16, pressed: 12),
+  ButtonSizeVariant.large ||
+  ButtonSizeVariant.xLarge => (square: 28, pressed: 16),
+};
+
+/// 标准图标按钮选中态的浅色底（用户 2026-10-23 拍板保留）：官方 M3E 标准
+/// toggle 选中只把图标染 primary、不加容器，选中与否不好认；这里在官方按钮上
+/// 只给**选中态**叠 secondaryContainer 底 + onSecondaryContainer 图标与 state
+/// layer，其余状态解析为 null、交回官方默认。[foreground] 为 false 时（调用方
+/// 显式给了图标色）不覆盖前景。
+ButtonStyle fushiSelectedTonalIconButtonStyle(
+  ColorScheme cs, {
+  bool foreground = true,
+}) {
+  bool on(Set<WidgetState> states) =>
+      states.contains(WidgetState.selected) &&
+      !states.contains(WidgetState.disabled);
+  return ButtonStyle(
+    backgroundColor: WidgetStateProperty.resolveWith<Color?>(
+      (Set<WidgetState> states) => on(states) ? cs.secondaryContainer : null,
+    ),
+    foregroundColor: foreground
+        ? WidgetStateProperty.resolveWith<Color?>(
+            (Set<WidgetState> states) =>
+                on(states) ? cs.onSecondaryContainer : null,
+          )
+        : null,
+    overlayColor: WidgetStateProperty.resolveWith<Color?>((
+      Set<WidgetState> states,
+    ) {
+      if (!on(states)) return null;
+      if (states.contains(WidgetState.pressed) ||
+          states.contains(WidgetState.focused)) {
+        return cs.onSecondaryContainer.withValues(alpha: 0.10);
+      }
+      if (states.contains(WidgetState.hovered)) {
+        return cs.onSecondaryContainer.withValues(alpha: 0.08);
+      }
+      return null;
+    }),
+  );
+}
+
+/// 在官方 M3E [IconButton] 上补齐 M3E 弹簧形变。
+///
+/// material_ui 1.8～1.10 的官方 M3E IconButton 只给出各状态的目标形状（round：静止
+/// 胶囊、选中方圆角；square：静止方圆角、选中胶囊；按下统一收到小圆角），状态
+/// 之间是 200 ms 定时补间（`kThemeChangeDuration`），没有 M3E 的 spatial 弹簧。
+/// 这里经官方按钮自己的 [WidgetStatesController] 读 pressed、[selected] 由调用方
+/// 给，用 [FushiSpring] 在**官方同一组目标形状**之间插值，结果作为固定 shape
+/// 交回官方按钮（animationDuration 归零，盖掉官方补间）。官方自带弹簧后删掉这层。
+///
+/// 减少动画 / 墨水屏下 [builder] 收到的 springStyle 为 null：直接用官方状态形状。
+class FushiIconButtonSpring extends StatefulWidget {
+  const FushiIconButtonSpring({
+    super.key,
+    required this.size,
+    required this.shapeVariant,
+    required this.selected,
+    required this.builder,
+  });
+
+  final ButtonSizeVariant size;
+  final ButtonShapeVariant shapeVariant;
+  final bool selected;
+  final Widget Function(
+    BuildContext context,
+    WidgetStatesController states,
+    ButtonStyle? springStyle,
+  )
+  builder;
+
+  @override
+  State<FushiIconButtonSpring> createState() => _FushiIconButtonSpringState();
+}
+
+class _FushiIconButtonSpringState extends State<FushiIconButtonSpring>
+    with TickerProviderStateMixin {
+  final WidgetStatesController _states = WidgetStatesController();
+
+  /// 0 = 静止，1 = 按下（fast spatial 弹簧，快速连点带速度续上）。
+  late final FushiSpring _press = FushiSpring(vsync: this);
+
+  /// 0 = 未选，1 = 选中（default spatial 弹簧）。
+  late final FushiSpring _select = FushiSpring(
+    vsync: this,
+    initial: widget.selected ? 1 : 0,
+    spring: fushiExpressiveDefaultSpatial,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _states.addListener(_onStates);
+  }
+
+  void _onStates() {
+    if (!mounted) return;
+    _press.animateTo(
+      _states.value.contains(WidgetState.pressed) ? 1 : 0,
+      animate: fushiExpressiveMotionEnabled(context),
+    );
+  }
+
+  @override
+  void didUpdateWidget(FushiIconButtonSpring oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selected != widget.selected) {
+      _select.animateTo(
+        widget.selected ? 1 : 0,
+        animate: fushiExpressiveMotionEnabled(context),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _states
+      ..removeListener(_onStates)
+      ..dispose();
+    _press.dispose();
+    _select.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!fushiExpressiveMotionEnabled(context)) {
+      return widget.builder(context, _states, null);
+    }
+    final ({double square, double pressed}) radii =
+        fushiExpressiveIconButtonRadii(widget.size);
+    final bool round = widget.shapeVariant == ButtonShapeVariant.round;
+    return AnimatedBuilder(
+      animation: Listenable.merge(<Listenable>[
+        _press.animation,
+        _select.animation,
+      ]),
+      builder: (BuildContext context, Widget? _) {
+        final double press = _press.value.clamp(0.0, 1.0);
+        final double select = _select.value.clamp(0.0, 1.0);
+        // 静止形状的胶囊度：round 未选 = 胶囊、选中 = 方圆角；square 反之。
+        final double restPill = round ? 1 - select : select;
+        final double pill = restPill * (1 - press);
+        final OutlinedBorder shape = FushiMorphBorder(
+          radius: lerpDouble(radii.square, radii.pressed, press)!,
+          startPill: pill,
+          endPill: pill,
+        );
+        return widget.builder(
+          context,
+          _states,
+          ButtonStyle(
+            shape: WidgetStatePropertyAll<OutlinedBorder>(shape),
+            animationDuration: Duration.zero,
+          ),
+        );
+      },
+    );
+  }
 }
 
 /// 可在「固定圆角」与「全胶囊」之间连续插值的按钮外形。[startPill] /
@@ -470,7 +588,8 @@ class _FushiPressMorphState extends State<FushiPressMorph>
 
 // ---------------------------------------------------------------------------
 // 挤压排布：一排子项，按下的那个按比例变宽，宽度从相邻项匀出（总宽不变，
-// 组的外框不抖）。连接式按钮组与标准按钮组共用。
+// 组的外框不抖）。只给标准按钮组用；分段（连接式按钮组）的段宽走
+// [FushiSegmentRow] / [fushiSegmentWidths]，不在这里另写一份等宽逻辑（BUG-4205）。
 // ---------------------------------------------------------------------------
 
 class _FushiSqueezeParentData extends ContainerBoxParentData<RenderBox> {}
@@ -480,7 +599,6 @@ class _FushiSqueezeRow extends MultiChildRenderObjectWidget {
     required this.press,
     required this.growFactor,
     required this.gap,
-    required this.equalExtents,
     required this.expand,
     required super.children,
   });
@@ -488,7 +606,6 @@ class _FushiSqueezeRow extends MultiChildRenderObjectWidget {
   final List<double> press;
   final double growFactor;
   final double gap;
-  final bool equalExtents;
   final bool expand;
 
   @override
@@ -496,7 +613,6 @@ class _FushiSqueezeRow extends MultiChildRenderObjectWidget {
     press: press,
     growFactor: growFactor,
     gap: gap,
-    equalExtents: equalExtents,
     expand: expand,
     textDirection: Directionality.of(context),
   );
@@ -510,7 +626,6 @@ class _FushiSqueezeRow extends MultiChildRenderObjectWidget {
       ..press = press
       ..growFactor = growFactor
       ..gap = gap
-      ..equalExtents = equalExtents
       ..expand = expand
       ..textDirection = Directionality.of(context);
   }
@@ -524,13 +639,11 @@ class _RenderFushiSqueeze extends RenderBox
     required List<double> press,
     required double growFactor,
     required double gap,
-    required bool equalExtents,
     required bool expand,
     required TextDirection textDirection,
   }) : _press = press,
        _growFactor = growFactor,
        _gap = gap,
-       _equalExtents = equalExtents,
        _expand = expand,
        _textDirection = textDirection;
 
@@ -552,13 +665,6 @@ class _RenderFushiSqueeze extends RenderBox
   set gap(double value) {
     if (_gap == value) return;
     _gap = value;
-    markNeedsLayout();
-  }
-
-  bool _equalExtents;
-  set equalExtents(bool value) {
-    if (_equalExtents == value) return;
-    _equalExtents = value;
     markNeedsLayout();
   }
 
@@ -598,10 +704,9 @@ class _RenderFushiSqueeze extends RenderBox
   double _intrinsicMain(double height, double Function(RenderBox) measure) {
     final List<RenderBox> children = _children;
     if (children.isEmpty) return 0;
-    final List<double> sizes = children.map(measure).toList();
-    final double content = _equalExtents
-        ? sizes.reduce(math.max) * sizes.length
-        : sizes.fold<double>(0, (double a, double b) => a + b);
+    final double content = children
+        .map(measure)
+        .fold<double>(0, (double a, double b) => a + b);
     return content + _gaps(children.length);
   }
 
@@ -640,18 +745,20 @@ class _RenderFushiSqueeze extends RenderBox
   double? computeDistanceToActualBaseline(TextBaseline baseline) =>
       defaultComputeDistanceToHighestActualBaseline(baseline);
 
-  /// 各子项的最终宽度：基准宽（等宽 = 最宽者；否则各自的最大固有宽，受约束
-  /// 时按比例缩放 / 撑满），再按按下进度把宽度从邻居匀给按下的那个。
+  /// 各子项的最终宽度：基准宽（各自的最大固有宽，受约束时按比例缩放 /
+  /// 撑满），再按按下进度把宽度从邻居匀给按下的那个。
+  ///
+  /// 邻居只让出「超出自身单行固有宽」的那部分富余（反馈 orCq_DE1i7：按下
+  /// 「更多」把「分享主题」挤到比单行还窄，文字折成两行、按钮高度跳变）。
+  /// 按自然宽排布的组没有富余，按下只剩按钮自身的形变，不再挤压邻居；撑满
+  /// 整行（[expand]）这类有富余的组照常挤压，但永远不会挤到折行。
   List<double> _widths(BoxConstraints constraints, List<RenderBox> children) {
     final int n = children.length;
     final double gaps = _gaps(n);
-    List<double> base = children
+    final List<double> natural = children
         .map((RenderBox c) => c.getMaxIntrinsicWidth(double.infinity))
         .toList();
-    if (_equalExtents) {
-      final double widest = base.reduce(math.max);
-      base = List<double>.filled(n, widest);
-    }
+    List<double> base = List<double>.of(natural);
     final double content = base.fold<double>(0, (double a, double b) => a + b);
     double? targetContent;
     if (constraints.hasBoundedWidth &&
@@ -677,10 +784,17 @@ class _RenderFushiSqueeze extends RenderBox
         if (i < n - 1) i + 1,
       ];
       if (neighbours.isEmpty) continue;
-      final double grow = _growFactor * base[i] * p;
+      final List<double> spare = <double>[
+        for (final int j in neighbours) math.max(0.0, widths[j] - natural[j]),
+      ];
+      final double totalSpare = spare.fold<double>(0, (double a, double b) {
+        return a + b;
+      });
+      if (totalSpare <= 0) continue;
+      final double grow = math.min(_growFactor * base[i] * p, totalSpare);
       widths[i] += grow;
-      for (final int j in neighbours) {
-        widths[j] -= grow / neighbours.length;
+      for (int k = 0; k < neighbours.length; k++) {
+        widths[neighbours[k]] -= grow * spare[k] / totalSpare;
       }
     }
     return widths.map((double w) => math.max(0.0, w)).toList();
@@ -706,19 +820,6 @@ class _RenderFushiSqueeze extends RenderBox
       (double a, Size s) => math.max(a, s.height),
     );
     height = math.max(height, constraints.minHeight);
-    if (_equalExtents) {
-      // 连接式按钮组的段必须等高（图标段与文字段的固有高可能差一两像素）。
-      for (int i = 0; i < children.length; i++) {
-        if (sizes[i].height == height) continue;
-        final BoxConstraints cc = BoxConstraints.tightFor(
-          width: widths[i],
-          height: height,
-        );
-        sizes[i] = dry
-            ? children[i].getDryLayout(cc)
-            : _layoutChild(children[i], cc);
-      }
-    }
     final double width =
         widths.fold<double>(0, (double a, double b) => a + b) +
         _gaps(children.length);
@@ -785,12 +886,17 @@ const double _kConnectedCheckPadding = 4;
 /// （default spatial 弹簧）并填 primary + onPrimary + 对勾（M3 Expressive
 /// 连接式组用的是 filled toggle：选中 primary；secondaryContainer 与未选的
 /// 底同为浅色，两段读成两颗互不相干的淡色胶囊），未选
-/// surfaceContainerHighest + onSurface；高 40（紧凑密度 32）；各段等宽，宽度
-/// 按「最宽标签 + 两侧对勾槽」预留，对勾在文字左侧的槽里淡入，**文字在按压与
+/// surfaceContainerHighest + onSurface；高 40（紧凑密度 32）。段宽由
+/// [FushiSegmentRow]（[fushiSegmentWidths]）分配：放得下时各段等宽，宽度按
+/// 「最宽标签 + 两侧对勾槽」预留，对勾在文字左侧的槽里淡入，**文字在按压与
 /// 选中切换前后都原地不动**（用户 2026-10-06：字体库「日文 / 中文 / 西文」点完
-/// 文字左右跳）。连接式组不做标准按钮组那种按下变宽：段等宽、文字居中，按下的
-/// 段一变宽，它和邻段的文字中心都跟着挪；按压反馈只靠状态层。调用方 style 的颜色 / 字体 /
-/// 内边距 / 密度照用，shape 与 side 由组决定（与 SegmentedButton 一样不下发到段）。
+/// 文字左右跳）；放不下时按内容分宽 → 收对勾槽 → 只压最宽段折行，不再整体等比
+/// 缩窄把最长段先截断（反馈 GaI5uPQEbF / BUG-4205）。连接式组不做标准按钮组那种
+/// 按下变宽：文字居中，按下的段一变宽，它和邻段的文字中心都跟着挪；按压反馈只靠
+/// 状态层。调用方 style 的颜色 / 字体 / 内边距 / 密度照用，shape 与 side 由组决定
+/// （与 SegmentedButton 一样不下发到段；墨水屏下组给每段补 outline 描边）。
+/// 墨水屏也走本组（主题 segmentedButtonTheme 的反色填充照用），不再退回原生
+/// [SegmentedButton] 的等宽段。
 class FushiConnectedButtonGroup<T> extends StatefulWidget {
   const FushiConnectedButtonGroup({
     super.key,
@@ -994,6 +1100,14 @@ class _FushiConnectedButtonGroupState<T>
         segTheme.style?.backgroundColor != null;
     final bool customPadding =
         callerStyle.padding != null || segTheme.style?.padding != null;
+    // 墨水屏：未选段的底色就是页面底色，段的边界只能靠描边（原生
+    // SegmentedButton 的 outline 同理）。
+    final BorderSide? einkSide =
+        isEinkTheme(context) &&
+            callerStyle.side == null &&
+            segTheme.style?.side == null
+        ? BorderSide(color: cs.outline)
+        : null;
     final Widget? selectedIcon = widget.showSelectedIcon
         ? widget.selectedIcon ??
               segTheme.selectedIcon ??
@@ -1053,6 +1167,11 @@ class _FushiConnectedButtonGroupState<T>
             // 形状 / 底色都由弹簧逐帧给出，Material 的隐式补间会叠出拖影。
             animationDuration: Duration.zero,
           );
+          if (einkSide != null) {
+            style = style.copyWith(
+              side: WidgetStatePropertyAll<BorderSide?>(einkSide),
+            );
+          }
           if (!customBackground) {
             style = style.copyWith(
               backgroundColor: WidgetStatePropertyAll<Color?>(
@@ -1108,15 +1227,22 @@ class _FushiConnectedButtonGroupState<T>
       for (int i = 0; i < n; i++) segmentFor(i),
     ];
 
+    // 对勾段两侧各一个对勾槽，放不下时先收它（[_CheckSlotRow]），再压文字。
+    final double checkSlots = 2 * (iconExtent + _kConnectedIconGap);
     Widget group;
     if (horizontal) {
-      // 不挤压（growFactor 0）：等宽段里文字居中，按下变宽会让文字跟着挪。
-      group = _FushiSqueezeRow(
-        press: List<double>.filled(n, 0),
-        growFactor: 0,
+      // 不挤压：段里文字居中，按下变宽会让文字跟着挪。
+      group = FushiSegmentRow(
+        extras: <double>[
+          for (final ButtonSegment<T> s in widget.segments)
+            // 与 segmentFor 同一判据：有对勾、且没有段自带的前置图标。
+            selectedIcon != null && (s.label == null || s.icon == null)
+                ? checkSlots
+                : 0,
+        ],
+        extrasInIntrinsic: true,
         gap: _kConnectedGap,
-        equalExtents: true,
-        expand: widget.expandedInsets != null,
+        fill: widget.expandedInsets != null,
         children: segments,
       );
     } else {
@@ -1216,8 +1342,8 @@ class _ConnectedSegmentContent extends StatelessWidget {
         ],
       );
     }
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    return _CheckSlotRow(
+      slot: slot,
       children: <Widget>[
         // 左槽：对勾贴文字一侧；未选时不建对勾（树里只有选中段带对勾图标）。
         SizedBox(
@@ -1241,11 +1367,217 @@ class _ConnectedSegmentContent extends StatelessWidget {
                   ),
                 ),
         ),
-        Flexible(child: label),
+        label,
         // 右侧对称空槽：让文字恒在段正中。
         SizedBox(width: slot, height: iconExtent),
       ],
     );
+  }
+}
+
+/// 「对勾槽 + 文字 + 对称空槽」三段排布（[_ConnectedSegmentContent]）：宽度
+/// 够时两槽满宽、文字居中；段被 [FushiSegmentRow] 压窄时**先对称收两槽**，
+/// 文字保持单行自然宽，两槽收到 0 后才压文字（折行）。槽被收窄时左槽内容
+/// （对勾）裁在槽内，不压到文字上。
+///
+/// 固有宽：最大 = 文字最大固有宽 + 2 × [slot]（放得下时与旧 Row 一致）；最小 =
+/// 文字最小固有宽（槽可收掉）。
+class _CheckSlotRow extends MultiChildRenderObjectWidget {
+  const _CheckSlotRow({required this.slot, required super.children})
+    : assert(children.length == 3);
+
+  final double slot;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderCheckSlotRow(
+    slot: slot,
+    textDirection: Directionality.of(context),
+  );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderCheckSlotRow renderObject,
+  ) {
+    renderObject
+      ..slot = slot
+      ..textDirection = Directionality.of(context);
+  }
+}
+
+class _CheckSlotParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderCheckSlotRow extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _CheckSlotParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _CheckSlotParentData> {
+  _RenderCheckSlotRow({
+    required double slot,
+    required TextDirection textDirection,
+  }) : _slot = slot,
+       _textDirection = textDirection;
+
+  double _slot;
+  set slot(double value) {
+    if (value == _slot) return;
+    _slot = value;
+    markNeedsLayout();
+  }
+
+  TextDirection _textDirection;
+  set textDirection(TextDirection value) {
+    if (value == _textDirection) return;
+    _textDirection = value;
+    markNeedsLayout();
+  }
+
+  final LayerHandle<ClipRectLayer> _clip = LayerHandle<ClipRectLayer>();
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _CheckSlotParentData) {
+      child.parentData = _CheckSlotParentData();
+    }
+  }
+
+  RenderBox get _lead => firstChild!;
+  RenderBox get _label => childAfter(firstChild!)!;
+  RenderBox get _trail => lastChild!;
+
+  /// 给定可用宽时每个槽的宽：文字单行自然宽之外的富余对称分给两槽，至多 [_slot]。
+  double _slotFor(double maxWidth) {
+    if (!maxWidth.isFinite) return _slot;
+    final double label = _label.getMaxIntrinsicWidth(double.infinity);
+    return ((maxWidth - label) / 2).clamp(0.0, _slot);
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) =>
+      _label.getMinIntrinsicWidth(height);
+
+  @override
+  double computeMaxIntrinsicWidth(double height) =>
+      _label.getMaxIntrinsicWidth(height) + 2 * _slot;
+
+  double _intrinsicHeight(double width, double Function(RenderBox, double) m) {
+    final double s = _slotFor(width);
+    final double labelWidth = width.isFinite
+        ? math.max(0.0, width - 2 * s)
+        : double.infinity;
+    return <double>[
+      m(_lead, s),
+      m(_label, labelWidth),
+      m(_trail, s),
+    ].reduce(math.max);
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) => _intrinsicHeight(
+    width,
+    (RenderBox c, double w) => c.getMinIntrinsicHeight(w),
+  );
+
+  @override
+  double computeMaxIntrinsicHeight(double width) => _intrinsicHeight(
+    width,
+    (RenderBox c, double w) => c.getMaxIntrinsicHeight(w),
+  );
+
+  @override
+  double? computeDistanceToActualBaseline(TextBaseline baseline) =>
+      defaultComputeDistanceToHighestActualBaseline(baseline);
+
+  Size _layout(BoxConstraints constraints, {required bool dry}) {
+    final double s = _slotFor(constraints.maxWidth);
+    final BoxConstraints slotConstraints = BoxConstraints(
+      minWidth: s,
+      maxWidth: s,
+      maxHeight: constraints.maxHeight,
+    );
+    final BoxConstraints labelConstraints = BoxConstraints(
+      maxWidth: constraints.hasBoundedWidth
+          ? math.max(0.0, constraints.maxWidth - 2 * s)
+          : double.infinity,
+      maxHeight: constraints.maxHeight,
+    );
+    Size measure(RenderBox c, BoxConstraints cc) {
+      if (dry) return c.getDryLayout(cc);
+      c.layout(cc, parentUsesSize: true);
+      return c.size;
+    }
+
+    final Size lead = measure(_lead, slotConstraints);
+    final Size label = measure(_label, labelConstraints);
+    final Size trail = measure(_trail, slotConstraints);
+    final Size size = constraints.constrain(
+      Size(
+        lead.width + label.width + trail.width,
+        math.max(label.height, math.max(lead.height, trail.height)),
+      ),
+    );
+    if (!dry) {
+      final bool rtl = _textDirection == TextDirection.rtl;
+      final double content = lead.width + label.width + trail.width;
+      double x = (size.width - content) / 2;
+      for (final (RenderBox c, Size sz) in <(RenderBox, Size)>[
+        (_lead, lead),
+        (_label, label),
+        (_trail, trail),
+      ]) {
+        final double dx = rtl ? size.width - x - sz.width : x;
+        (c.parentData! as _CheckSlotParentData).offset = Offset(
+          dx,
+          (size.height - sz.height) / 2,
+        );
+        x += sz.width;
+      }
+    }
+    return size;
+  }
+
+  @override
+  Size computeDryLayout(covariant BoxConstraints constraints) =>
+      _layout(constraints, dry: true);
+
+  @override
+  void performLayout() {
+    size = _layout(constraints, dry: false);
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final RenderBox lead = _lead;
+    final Offset leadOffset =
+        offset + (lead.parentData! as _CheckSlotParentData).offset;
+    if (lead.size.width < _slot) {
+      // 槽被收窄：对勾裁在槽内，不压到文字上。
+      _clip.layer = context.pushClipRect(
+        needsCompositing,
+        leadOffset,
+        Offset.zero & lead.size,
+        (PaintingContext context, Offset o) => context.paintChild(lead, o),
+        oldLayer: _clip.layer,
+      );
+    } else {
+      _clip.layer = null;
+      context.paintChild(lead, leadOffset);
+    }
+    for (final RenderBox c in <RenderBox>[_label, _trail]) {
+      context.paintChild(
+        c,
+        offset + (c.parentData! as _CheckSlotParentData).offset,
+      );
+    }
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
+
+  @override
+  void dispose() {
+    _clip.layer = null;
+    super.dispose();
   }
 }
 
@@ -1254,7 +1586,8 @@ class _ConnectedSegmentContent extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 /// 一排并列按钮。MD3 下是 M3 Expressive 标准按钮组：按下的按钮变宽
-/// （+[growFactor]），相邻按钮被挤窄让出同样的宽度（fast spatial 弹簧），
+/// （至多 +[growFactor]），宽度只从相邻按钮「超出单行固有宽」的富余里匀出
+/// ——邻居永远不会被挤到折行；没有富余（按自然宽排布）就不挤（fast spatial 弹簧），
 /// 子按钮本身（FushiFilledButton 等）再各自做按压变形；Apple 设计系统下就是
 /// 间距 [spacing] 的普通 Row，不挤压。
 ///
@@ -1322,7 +1655,6 @@ class _FushiButtonGroupState extends State<FushiButtonGroup>
         press: List<double>.filled(widget.children.length, 0),
         growFactor: 0,
         gap: widget.spacing,
-        equalExtents: false,
         expand: false,
         children: widget.children,
       );
@@ -1346,7 +1678,6 @@ class _FushiButtonGroupState extends State<FushiButtonGroup>
         press: _press.map((FushiSpring s) => s.value).toList(),
         growFactor: widget.growFactor,
         gap: widget.spacing,
-        equalExtents: false,
         expand: widget.expanded,
         children: items,
       ),

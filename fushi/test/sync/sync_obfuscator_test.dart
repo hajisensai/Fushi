@@ -1,28 +1,22 @@
+import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/sync/sync_obfuscator.dart';
 
-/// 把分块的字节流收集回单个 [Uint8List]，便于断言。
-Future<Uint8List> _collect(Stream<List<int>> stream) async {
-  final builder = BytesBuilder(copy: false);
-  await for (final chunk in stream) {
-    builder.add(chunk);
-  }
-  return builder.toBytes();
-}
-
-/// 用任意 [chunkSizes] 把 [data] 切成分块流，模拟真实文件读取的不规则分块。
-Stream<List<int>> _chunked(List<int> data, List<int> chunkSizes) async* {
-  var offset = 0;
-  var i = 0;
-  while (offset < data.length) {
-    final size =
-        chunkSizes.isEmpty ? data.length : chunkSizes[i % chunkSizes.length];
-    final end = (offset + size).clamp(0, data.length);
-    yield Uint8List.fromList(data.sublist(offset, end));
-    offset = end;
-    i++;
+/// 在临时目录里写 [data] 到 `in`，跑 [op]（`in` → `out`），返回 `out` 的字节。
+Future<Uint8List> _viaFiles(
+  List<int> data,
+  Future<void> Function(File source, File destination) op,
+) async {
+  final dir = await Directory.systemTemp.createTemp('sync_obf_test_');
+  try {
+    final src = File('${dir.path}/in')..writeAsBytesSync(data);
+    final dst = File('${dir.path}/out');
+    await op(src, dst);
+    return dst.readAsBytesSync();
+  } finally {
+    await dir.delete(recursive: true);
   }
 }
 
@@ -59,47 +53,60 @@ void main() {
 
     test('boundary lengths around 32-byte keystream period round-trip', () {
       for (final n in [1, 31, 32, 33, 63, 64, 65]) {
-        final data =
-            Uint8List.fromList(List<int>.generate(n, (i) => (i * 13) & 0xFF));
+        final data = Uint8List.fromList(
+          List<int>.generate(n, (i) => (i * 13) & 0xFF),
+        );
         final ob = SyncObfuscator.obfuscateBytes(data);
         expect(SyncObfuscator.deobfuscateBytes(ob), data, reason: 'n=$n');
       }
     });
   });
 
-  group('SyncObfuscator stream round-trip (global offset preserved)', () {
-    test('round-trips regardless of obfuscate vs deobfuscate chunk boundaries',
-        () async {
-      final data = List<int>.generate(50000, (i) => (i * 17 + 3) & 0xFF);
-      // 混淆用一组分块边界，反混淆用另一组——验证全局 offset 与分块无关。
-      final ob = await _collect(
-        SyncObfuscator.obfuscateStream(_chunked(data, [1, 7, 4096, 33, 65535])),
+  group('SyncObfuscator file round-trip (native, whole file)', () {
+    test('multi-chunk file round-trips and equals bytes output', () async {
+      // > 1 MiB：跨 Rust 侧读块边界。
+      final data = Uint8List.fromList(
+        List<int>.generate(3 * 1024 * 1024 + 77, (i) => (i * 17 + 3) & 0xFF),
       );
-      final back = await _collect(
-        SyncObfuscator.deobfuscateStream(_chunked(ob, [3, 5000, 1, 99])),
-      );
-      expect(back, Uint8List.fromList(data));
+      final ob = await _viaFiles(data, SyncObfuscator.obfuscateFile);
+      expect(ob, SyncObfuscator.obfuscateBytes(data));
+      final back = await _viaFiles(ob, SyncObfuscator.deobfuscateFile);
+      expect(back, data);
     });
 
-    test('stream output equals bytes output for same payload', () async {
-      final data =
-          Uint8List.fromList(List<int>.generate(1000, (i) => (i * 7) & 0xFF));
-      final viaBytes = SyncObfuscator.obfuscateBytes(data);
-      final viaStream = await _collect(
-        SyncObfuscator.obfuscateStream(Stream<List<int>>.value(data)),
-      );
-      expect(viaStream, viaBytes);
-    });
-
-    test('empty stream still emits magic header only', () async {
-      final ob = await _collect(
-        SyncObfuscator.obfuscateStream(const Stream<List<int>>.empty()),
-      );
-      expect(ob.length, SyncObfuscator.magicHeaderLength);
-      final back = await _collect(
-        SyncObfuscator.deobfuscateStream(Stream<List<int>>.value(ob)),
-      );
+    test('empty file still gets magic header only', () async {
+      final ob = await _viaFiles(const <int>[], SyncObfuscator.obfuscateFile);
+      expect(ob, SyncObfuscator.magicHeader);
+      final back = await _viaFiles(ob, SyncObfuscator.deobfuscateFile);
       expect(back, isEmpty);
+    });
+
+    test('destination is truncated, not appended', () async {
+      final dir = await Directory.systemTemp.createTemp('sync_obf_test_');
+      try {
+        final src = File('${dir.path}/in')..writeAsBytesSync([1, 2, 3]);
+        final dst = File('${dir.path}/out')
+          ..writeAsBytesSync(List<int>.filled(100, 9));
+        await SyncObfuscator.obfuscateFile(src, dst);
+        expect(dst.lengthSync(), SyncObfuscator.magicHeaderLength + 3);
+      } finally {
+        await dir.delete(recursive: true);
+      }
+    });
+
+    test('missing source throws FileSystemException', () async {
+      final dir = await Directory.systemTemp.createTemp('sync_obf_test_');
+      try {
+        await expectLater(
+          SyncObfuscator.deobfuscateFile(
+            File('${dir.path}/missing'),
+            File('${dir.path}/out'),
+          ),
+          throwsA(isA<FileSystemException>()),
+        );
+      } finally {
+        await dir.delete(recursive: true);
+      }
     });
   });
 
@@ -123,31 +130,31 @@ void main() {
       expect(SyncObfuscator.deobfuscateBytes(tiny), tiny);
     });
 
-    test('deobfuscateStream passes through legacy plaintext stream', () async {
+    test('deobfuscateFile copies legacy plaintext unchanged', () async {
       final legacy = List<int>.generate(5000, (i) => (i * 11) & 0xFF);
-      final back = await _collect(
-        SyncObfuscator.deobfuscateStream(_chunked(legacy, [1, 13, 4096])),
-      );
+      final back = await _viaFiles(legacy, SyncObfuscator.deobfuscateFile);
       expect(back, Uint8List.fromList(legacy));
     });
 
-    test('deobfuscateStream handles legacy plaintext shorter than header',
-        () async {
-      final tiny = [9, 8, 7];
-      final back = await _collect(
-        SyncObfuscator.deobfuscateStream(Stream<List<int>>.value(tiny)),
-      );
-      expect(back, Uint8List.fromList(tiny));
-    });
+    test(
+      'deobfuscateFile copies legacy plaintext shorter than header',
+      () async {
+        final tiny = [9, 8, 7];
+        final back = await _viaFiles(tiny, SyncObfuscator.deobfuscateFile);
+        expect(back, Uint8List.fromList(tiny));
+      },
+    );
   });
 
   group('SyncObfuscator random access (deobfuscateBodyAt)', () {
     // 按 64 位字长 XOR 的实现必须与整文件逐字节还原逐字节一致：覆盖全部 32 种
     // 相位、8 字节边界两侧的长度，以及非 Uint8List 的输入（网络分块可能是普通 List）。
     final plain = Uint8List.fromList(
-        List<int>.generate(4096 + 77, (i) => (i * 131 + 17) & 0xFF));
-    final body = SyncObfuscator.obfuscateBytes(plain)
-        .sublist(SyncObfuscator.magicHeaderLength);
+      List<int>.generate(4096 + 77, (i) => (i * 131 + 17) & 0xFF),
+    );
+    final body = SyncObfuscator.obfuscateBytes(
+      plain,
+    ).sublist(SyncObfuscator.magicHeaderLength);
 
     test('any offset / length restores the plaintext slice', () {
       for (var offset = 0; offset < 64; offset++) {

@@ -43,49 +43,74 @@ void main() {
     final ArchiveFile dbFile = archive.findFile('fushi.db')!;
     final Directory dir = Directory(p.join(work.path, 'exdb${seq++}'))
       ..createSync(recursive: true);
-    File(p.join(dir.path, 'fushi.db'))
-        .writeAsBytesSync(dbFile.content as List<int>);
+    File(
+      p.join(dir.path, 'fushi.db'),
+    ).writeAsBytesSync(dbFile.content as List<int>);
     return FushiDatabase(dir.path);
   }
 
   Future<int> tableCount(FushiDatabase db, String table) async =>
       (await db.customSelect('SELECT COUNT(*) c FROM $table').getSingle())
-          .data['c'] as int;
+              .data['c']
+          as int;
 
   Future<int> prefCount(FushiDatabase db, String key) async =>
-      (await db.customSelect('SELECT COUNT(*) c FROM preferences WHERE key = ?',
-              variables: <Variable<Object>>[Variable<String>(key)]).getSingle())
-          .data['c'] as int;
+      (await db
+                  .customSelect(
+                    'SELECT COUNT(*) c FROM preferences WHERE key = ?',
+                    variables: <Variable<Object>>[Variable<String>(key)],
+                  )
+                  .getSingle())
+              .data['c']
+          as int;
 
   Future<String?> prefRaw(FushiDatabase db, String key) async {
-    final rows = await db.customSelect(
-        'SELECT value v FROM preferences WHERE key = ?',
-        variables: <Variable<Object>>[Variable<String>(key)]).get();
+    final rows = await db
+        .customSelect(
+          'SELECT value v FROM preferences WHERE key = ?',
+          variables: <Variable<Object>>[Variable<String>(key)],
+        )
+        .get();
     if (rows.isEmpty) return null;
     return rows.first.read<String?>('v');
   }
 
   /// Seeds an in-memory source device carrying every personal item, plus a
   /// throwaway db dir the export copy is VACUUMed into.
-  Future<({BackupService service, FushiDatabase db})> buildSensitiveSource(
-      {String favMarker = 'srcfav'}) async {
+  Future<({BackupService service, FushiDatabase db})> buildSensitiveSource({
+    String favMarker = 'srcfav',
+  }) async {
     final String dbDir = p.join(src.path, 'db');
     Directory(dbDir).createSync(recursive: true);
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: 'Bk',
-      title: 'Bk',
-      epubPath: 'x',
-      extractDir: 'y',
-      chapterCount: 1,
-      chaptersJson: '["c"]',
-      importedAt: 0,
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'Bk',
+        title: 'Bk',
+        epubPath: 'x',
+        extractDir: 'y',
+        chapterCount: 1,
+        chaptersJson: '["c"]',
+        importedAt: 0,
+      ),
+    );
     // Device-local: LAN pairing (with plaintext token) + sync baseline.
-    await db.upsertPairedPeer(FushiPairedPeersCompanion.insert(
-        peerId: 'peer-1', token: 'SECRET_PAIR_TOKEN', pairedAtMs: 1));
-    await db.into(db.syncBaselines).insert(SyncBaselinesCompanion.insert(
-        assetKey: 'Bk', dimension: 'progress', baseVersion: 7));
+    await db.upsertPairedPeer(
+      FushiPairedPeersCompanion.insert(
+        peerId: 'peer-1',
+        token: 'SECRET_PAIR_TOKEN',
+        pairedAtMs: 1,
+      ),
+    );
+    await db
+        .into(db.syncBaselines)
+        .insert(
+          SyncBaselinesCompanion.insert(
+            assetKey: 'Bk',
+            dimension: 'progress',
+            baseVersion: 7,
+          ),
+        );
     await db.upsertMangaExtensionStore(
       MangaExtensionStoresCompanion.insert(
         indexUrl: 'https://repo.example/index.json',
@@ -139,18 +164,22 @@ void main() {
     );
     // Content-registry prefs, each owned by a content category.
     await db.setPref(
-        'favorite_sentences',
-        jsonEncode(<Map<String, Object?>>[
-          <String, Object?>{'id': favMarker, 'text': 'a sentence'}
-        ]));
-    await db.setPref('src:reader_fushi:font_catalog',
-        jsonEncode(<String, Object?>{'version': 1, 'fonts': <Object?>[]}));
+      'favorite_sentences',
+      jsonEncode(<Map<String, Object?>>[
+        <String, Object?>{'id': favMarker, 'text': 'a sentence'},
+      ]),
+    );
+    await db.setPref(
+      'src:reader_fushi:font_catalog',
+      jsonEncode(<String, Object?>{'version': 1, 'fonts': <Object?>[]}),
+    );
     await db.setPref('src:reader_fushi:custom_fonts', jsonEncode(<Object?>[]));
     await db.setPref(
-        'local_audio_dbs',
-        jsonEncode(<Map<String, Object?>>[
-          <String, Object?>{'path': r'D:\HIBIKI\support\local_audio_1.db'}
-        ]));
+      'local_audio_dbs',
+      jsonEncode(<Map<String, Object?>>[
+        <String, Object?>{'path': r'D:\HIBIKI\support\local_audio_1.db'},
+      ]),
+    );
     // Stored the way PreferencesRepository writes it: a PrefCodec `j:`-tagged
     // JSON list, so the export-side B-filter can parse & filter its entries.
     await db.setPref(
@@ -172,8 +201,11 @@ void main() {
     await db.setPref('sync_content_enabled', PrefCodec.encode(true));
     await db.setPref('sync_auto_enabled', PrefCodec.encode(true));
 
-    final BackupService service =
-        BackupService(db: db, dbDirectory: dbDir, appVersion: '1.0.0');
+    final BackupService service = BackupService(
+      db: db,
+      dbDirectory: dbDir,
+      appVersion: '1.0.0',
+    );
     return (service: service, db: db);
   }
 
@@ -181,8 +213,7 @@ void main() {
       BackupCategory.values.toSet()..remove(c);
 
   group('export sanitization', () {
-    test(
-        'device-local pairing token + sync baselines never travel (even with '
+    test('device-local pairing token + sync baselines never travel (even with '
         'all categories)', () async {
       final built = await buildSensitiveSource();
       final String zip = p.join(work.path, 'all.zip');
@@ -191,10 +222,16 @@ void main() {
 
       final FushiDatabase ex = await openBackupDb(zip);
       addTearDown(ex.close);
-      expect(await tableCount(ex, 'fushi_paired_peers'), 0,
-          reason: 'LAN pairing token must never leave the device');
-      expect(await tableCount(ex, 'sync_baselines'), 0,
-          reason: 'sync baselines are device-local causality');
+      expect(
+        await tableCount(ex, 'fushi_paired_peers'),
+        0,
+        reason: 'LAN pairing token must never leave the device',
+      );
+      expect(
+        await tableCount(ex, 'sync_baselines'),
+        0,
+        reason: 'sync baselines are device-local causality',
+      );
       for (final String table in <String>[
         'manga_extension_stores',
         'manga_extensions',
@@ -210,24 +247,30 @@ void main() {
       }
     });
 
-    test('favorites follow books: unticking books strips favorite_sentences',
-        () async {
-      final built = await buildSensitiveSource();
-      final String zip = p.join(work.path, 'nobooks.zip');
-      await built.service
-          .createBackup(zip, categories: allExcept(BackupCategory.books));
-      await built.db.close();
+    test(
+      'favorites follow books: unticking books strips favorite_sentences',
+      () async {
+        final built = await buildSensitiveSource();
+        final String zip = p.join(work.path, 'nobooks.zip');
+        await built.service.createBackup(
+          zip,
+          categories: allExcept(BackupCategory.books),
+        );
+        await built.db.close();
 
-      final FushiDatabase ex = await openBackupDb(zip);
-      addTearDown(ex.close);
-      expect(await prefCount(ex, 'favorite_sentences'), 0);
-    });
+        final FushiDatabase ex = await openBackupDb(zip);
+        addTearDown(ex.close);
+        expect(await prefCount(ex, 'favorite_sentences'), 0);
+      },
+    );
 
     test('favorites survive when books ticked', () async {
       final built = await buildSensitiveSource();
       final String zip = p.join(work.path, 'books.zip');
-      await built.service.createBackup(zip,
-          categories: <BackupCategory>{BackupCategory.books});
+      await built.service.createBackup(
+        zip,
+        categories: <BackupCategory>{BackupCategory.books},
+      );
       await built.db.close();
 
       final FushiDatabase ex = await openBackupDb(zip);
@@ -235,27 +278,32 @@ void main() {
       expect(await prefCount(ex, 'favorite_sentences'), 1);
     });
 
-    test('font registry follows fonts: unticking fonts strips catalog + legacy',
-        () async {
-      final built = await buildSensitiveSource();
-      final String zip = p.join(work.path, 'nofonts.zip');
-      await built.service
-          .createBackup(zip, categories: allExcept(BackupCategory.fonts));
-      await built.db.close();
-
-      final FushiDatabase ex = await openBackupDb(zip);
-      addTearDown(ex.close);
-      expect(await prefCount(ex, 'src:reader_fushi:font_catalog'), 0);
-      expect(await prefCount(ex, 'src:reader_fushi:custom_fonts'), 0);
-    });
-
     test(
-        'local-audio registry follows localAudio; audio_source_configs keeps '
+      'font registry follows fonts: unticking fonts strips catalog + legacy',
+      () async {
+        final built = await buildSensitiveSource();
+        final String zip = p.join(work.path, 'nofonts.zip');
+        await built.service.createBackup(
+          zip,
+          categories: allExcept(BackupCategory.fonts),
+        );
+        await built.db.close();
+
+        final FushiDatabase ex = await openBackupDb(zip);
+        addTearDown(ex.close);
+        expect(await prefCount(ex, 'src:reader_fushi:font_catalog'), 0);
+        expect(await prefCount(ex, 'src:reader_fushi:custom_fonts'), 0);
+      },
+    );
+
+    test('local-audio registry follows localAudio; audio_source_configs keeps '
         'only remote entries (option B)', () async {
       final built = await buildSensitiveSource();
       final String zip = p.join(work.path, 'noaudio.zip');
-      await built.service
-          .createBackup(zip, categories: allExcept(BackupCategory.localAudio));
+      await built.service.createBackup(
+        zip,
+        categories: allExcept(BackupCategory.localAudio),
+      );
       await built.db.close();
 
       final FushiDatabase ex = await openBackupDb(zip);
@@ -270,25 +318,31 @@ void main() {
       expect((entries.single as Map)['kind'], 'fushiRemote');
     });
 
-    test('sync toggles follow settings: unticking settings strips them',
-        () async {
-      final built = await buildSensitiveSource();
-      final String zip = p.join(work.path, 'nosettings.zip');
-      await built.service
-          .createBackup(zip, categories: allExcept(BackupCategory.settings));
-      await built.db.close();
+    test(
+      'sync toggles follow settings: unticking settings strips them',
+      () async {
+        final built = await buildSensitiveSource();
+        final String zip = p.join(work.path, 'nosettings.zip');
+        await built.service.createBackup(
+          zip,
+          categories: allExcept(BackupCategory.settings),
+        );
+        await built.db.close();
 
-      final FushiDatabase ex = await openBackupDb(zip);
-      addTearDown(ex.close);
-      expect(await prefCount(ex, 'sync_content_enabled'), 0);
-      expect(await prefCount(ex, 'sync_auto_enabled'), 0);
-    });
+        final FushiDatabase ex = await openBackupDb(zip);
+        addTearDown(ex.close);
+        expect(await prefCount(ex, 'sync_content_enabled'), 0);
+        expect(await prefCount(ex, 'sync_auto_enabled'), 0);
+      },
+    );
 
     test('sync toggles survive when settings ticked', () async {
       final built = await buildSensitiveSource();
       final String zip = p.join(work.path, 'withsettings.zip');
-      await built.service.createBackup(zip,
-          categories: <BackupCategory>{BackupCategory.settings});
+      await built.service.createBackup(
+        zip,
+        categories: <BackupCategory>{BackupCategory.settings},
+      );
       await built.db.close();
 
       final FushiDatabase ex = await openBackupDb(zip);
@@ -310,18 +364,26 @@ void main() {
 
     /// Seeds an on-disk current device DB carrying its OWN pairing + favorites,
     /// then overwrite-imports [zip]. Returns the re-opened current DB.
-    Future<FushiDatabase> seedAndImport(String zip,
-        {required Set<BackupCategory> importCats}) async {
+    Future<FushiDatabase> seedAndImport(
+      String zip, {
+      required Set<BackupCategory> importCats,
+    }) async {
       final String curDbDir = p.join(work.path, 'cur${seq++}', 'support');
       Directory(curDbDir).createSync(recursive: true);
       final FushiDatabase cur0 = FushiDatabase(curDbDir);
-      await cur0.upsertPairedPeer(FushiPairedPeersCompanion.insert(
-          peerId: 'mydev', token: 'MY_DEVICE_TOKEN', pairedAtMs: 9));
+      await cur0.upsertPairedPeer(
+        FushiPairedPeersCompanion.insert(
+          peerId: 'mydev',
+          token: 'MY_DEVICE_TOKEN',
+          pairedAtMs: 9,
+        ),
+      );
       await cur0.setPref(
-          'favorite_sentences',
-          jsonEncode(<Map<String, Object?>>[
-            <String, Object?>{'id': 'mine', 'text': 'my own sentence'}
-          ]));
+        'favorite_sentences',
+        jsonEncode(<Map<String, Object?>>[
+          <String, Object?>{'id': 'mine', 'text': 'my own sentence'},
+        ]),
+      );
       await cur0.close();
 
       await BackupRestoreService.restoreBackup(
@@ -333,46 +395,62 @@ void main() {
       return FushiDatabase(curDbDir);
     }
 
-    test(
-        'device pairing (token) survives an overwrite import of a normal '
+    test('device pairing (token) survives an overwrite import of a normal '
         'backup', () async {
       final String zip = await buildBackup(null);
-      final FushiDatabase cur =
-          await seedAndImport(zip, importCats: BackupCategory.values.toSet());
+      final FushiDatabase cur = await seedAndImport(
+        zip,
+        importCats: BackupCategory.values.toSet(),
+      );
       addTearDown(cur.close);
       final rows = await cur
           .customSelect('SELECT peer_id, token FROM fushi_paired_peers')
           .get();
       expect(rows.length, 1);
       expect(rows.single.read<String>('peer_id'), 'mydev');
-      expect(rows.single.read<String>('token'), 'MY_DEVICE_TOKEN',
-          reason: 'restored from this device bak, not the (empty) backup');
+      expect(
+        rows.single.read<String>('token'),
+        'MY_DEVICE_TOKEN',
+        reason: 'restored from this device bak, not the (empty) backup',
+      );
     });
 
     test('books-excluded backup does not wipe this device favorites', () async {
       final String zip = await buildBackup(allExcept(BackupCategory.books));
-      final FushiDatabase cur =
-          await seedAndImport(zip, importCats: BackupCategory.values.toSet());
+      final FushiDatabase cur = await seedAndImport(
+        zip,
+        importCats: BackupCategory.values.toSet(),
+      );
       addTearDown(cur.close);
       final String? raw = await prefRaw(cur, 'favorite_sentences');
       expect(raw, isNotNull);
-      expect(raw!.contains('mine'), isTrue,
-          reason: 'device favorites preserved from bak');
-      expect(raw.contains('srcfav'), isFalse,
-          reason: 'the excluded backup carried no favorites');
+      expect(
+        raw!.contains('mine'),
+        isTrue,
+        reason: 'device favorites preserved from bak',
+      );
+      expect(
+        raw.contains('srcfav'),
+        isFalse,
+        reason: 'the excluded backup carried no favorites',
+      );
     });
 
-    test(
-        'full backup (books ticked) overwrites favorites with the backup '
+    test('full backup (books ticked) overwrites favorites with the backup '
         'copy (normal migration unchanged)', () async {
       final String zip = await buildBackup(null);
-      final FushiDatabase cur =
-          await seedAndImport(zip, importCats: BackupCategory.values.toSet());
+      final FushiDatabase cur = await seedAndImport(
+        zip,
+        importCats: BackupCategory.values.toSet(),
+      );
       addTearDown(cur.close);
       final String? raw = await prefRaw(cur, 'favorite_sentences');
       expect(raw, isNotNull);
-      expect(raw!.contains('srcfav'), isTrue,
-          reason: 'backup favorites win in overwrite when books included');
+      expect(
+        raw!.contains('srcfav'),
+        isTrue,
+        reason: 'backup favorites win in overwrite when books included',
+      );
     });
   });
 }

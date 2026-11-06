@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 import 'package:characters/characters.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -7,8 +8,10 @@ import 'package:remove_emoji/remove_emoji.dart';
 
 void main() {
   final RegExp emojiRegex = RegExp(RemoveEmoji().getRegexString());
-  final RegExp punctuationRegex =
-      RegExp(r'^[\p{P}\p{S}]+|[\p{P}\p{S}]+$', unicode: true);
+  final RegExp punctuationRegex = RegExp(
+    r'^[\p{P}\p{S}]+|[\p{P}\p{S}]+$',
+    unicode: true,
+  );
   final RegExp loneSurrogateRegex = RegExp(
     '[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]',
   );
@@ -22,15 +25,18 @@ void main() {
   }
 
   String normalize(String input) => normalizeSearchTerm(
-        input,
-        emojiRegex: emojiRegex,
-        punctuationRegex: punctuationRegex,
-        loneSurrogateRegex: loneSurrogateRegex,
-      );
+    input,
+    emojiRegex: emojiRegex,
+    punctuationRegex: punctuationRegex,
+    loneSurrogateRegex: loneSurrogateRegex,
+  );
 
   void expectEquivalent(String input) {
-    expect(normalize(input), legacyNormalize(input),
-        reason: 'normalizeSearchTerm must equal legacy 4-step inline');
+    expect(
+      normalize(input),
+      legacyNormalize(input),
+      reason: 'normalizeSearchTerm must equal legacy 4-step inline',
+    );
   }
 
   group('normalizeSearchTerm query cleanup (byte-exact vs legacy inline)', () {
@@ -122,7 +128,9 @@ void main() {
 
     test('empty term key', () {
       expect(
-          buildSearchCacheKey(term: '', maxTerms: 0, maxResults: 0), '0:/0/0');
+        buildSearchCacheKey(term: '', maxTerms: 0, maxResults: 0),
+        '0:/0/0',
+      );
     });
 
     test('term with slash/colon not escaped', () {
@@ -140,7 +148,7 @@ void main() {
         '',
         'a/b',
         '\u{2000B}',
-        'long word here'
+        'long word here',
       ]) {
         expect(
           buildSearchCacheKey(term: term, maxTerms: 8, maxResults: 32),
@@ -186,9 +194,13 @@ void main() {
 
     test('mode not freq|pitch -> null', () {
       expect(
-          decodeDictTypeFromBlobHeader(blob(exprLen: 3, mode: 'term')), null);
+        decodeDictTypeFromBlobHeader(blob(exprLen: 3, mode: 'term')),
+        null,
+      );
       expect(
-          decodeDictTypeFromBlobHeader(blob(exprLen: 0, mode: 'kanji')), null);
+        decodeDictTypeFromBlobHeader(blob(exprLen: 0, mode: 'kanji')),
+        null,
+      );
     });
 
     test('non-zero exprLen locates modeLen at offset 3+exprLen', () {
@@ -204,12 +216,14 @@ void main() {
     test('flag != 0x01 -> null', () {
       expect(
         decodeDictTypeFromBlobHeader(
-            blob(flag: 0x00, exprLen: 0, mode: 'freq')),
+          blob(flag: 0x00, exprLen: 0, mode: 'freq'),
+        ),
         null,
       );
       expect(
         decodeDictTypeFromBlobHeader(
-            blob(flag: 0xFF, exprLen: 0, mode: 'pitch')),
+          blob(flag: 0xFF, exprLen: 0, mode: 'pitch'),
+        ),
         null,
       );
     });
@@ -227,11 +241,17 @@ void main() {
 
     test('mode bytes truncated at EOF: take remainder', () {
       final b = <int>[0x01, 0x00, 0x00, 0x04, ...'fre'.codeUnits];
-      expect(decodeDictTypeFromBlobHeader(b), null,
-          reason: 'truncated to fre != freq -> null');
+      expect(
+        decodeDictTypeFromBlobHeader(b),
+        null,
+        reason: 'truncated to fre != freq -> null',
+      );
       final liar = <int>[0x01, 0x00, 0x00, 0x0A, ...'freq'.codeUnits];
-      expect(decodeDictTypeFromBlobHeader(liar), DictionaryType.frequency,
-          reason: 'matches raf.readSync returning only remaining bytes');
+      expect(
+        decodeDictTypeFromBlobHeader(liar),
+        DictionaryType.frequency,
+        reason: 'matches raf.readSync returning only remaining bytes',
+      );
     });
 
     test('mode starts exactly at EOF -> empty -> null', () {
@@ -274,9 +294,107 @@ void main() {
       ]) {
         final int leadUnits = lead(s);
         final int removedTotal = s.length - normalize(s).length;
-        expect(leadUnits, removedTotal,
-            reason: '「$s」句首剥离长度须等于归一化移除总量（无句尾标点样本）');
+        expect(
+          leadUnits,
+          removedTotal,
+          reason: '「$s」句首剥离长度须等于归一化移除总量（无句尾标点样本）',
+        );
       }
+    });
+  });
+  group('中文查词简体→繁體回落的 Dart 侧开关', () {
+    test('isChineseLanguageTag 只认中文系标签', () {
+      for (final String tag in <String>[
+        'zh',
+        'zh-Hans',
+        'zh_CN',
+        'zh-Hant-TW',
+        'ZH-hk',
+        ' zh ',
+        'yue',
+      ]) {
+        expect(isChineseLanguageTag(tag), isTrue, reason: tag);
+      }
+      for (final String? tag in <String?>[
+        null,
+        '',
+        '  ',
+        'ja',
+        'ko',
+        'en-US',
+        'zhx',
+      ]) {
+        expect(isChineseLanguageTag(tag), isFalse, reason: '$tag');
+      }
+    });
+
+    test('判据：语言已知只看语言；未知时看启用词典里有没有中文词典（反馈 3FY6vTqwV-）', () {
+      const DictionaryLookupFilters withZh = DictionaryLookupFilters(
+        hiddenDictionaryNames: <String>{},
+        termDictionaryOrder: <String>['ABC', 'DrEye'],
+        hasChineseTermDictionary: true,
+      );
+      const DictionaryLookupFilters withoutZh = DictionaryLookupFilters(
+        hiddenDictionaryNames: <String>{},
+        termDictionaryOrder: <String>['JMdict'],
+      );
+      // 首页 / 查词页：没有媒体页登记语言、默认内容语言出厂为空。此前恒为 false。
+      for (final String? unknown in <String?>[null, '', '  ']) {
+        expect(
+          lookupUsesChineseScriptVariants(
+            lookupLanguage: unknown,
+            filters: withZh,
+          ),
+          isTrue,
+          reason: '语言未知 + 装了中文词典 → 展开简繁（"$unknown"）',
+        );
+        expect(
+          lookupUsesChineseScriptVariants(
+            lookupLanguage: unknown,
+            filters: withoutZh,
+          ),
+          isFalse,
+          reason: '语言未知 + 没有中文词典 → 不动查询（"$unknown"）',
+        );
+      }
+      // 语言已知：只看语言，词典集合不改变结论。
+      expect(
+        lookupUsesChineseScriptVariants(lookupLanguage: 'ja', filters: withZh),
+        isFalse,
+        reason: '日语书里查词不因装了中文词典而多出简繁变体',
+      );
+      expect(
+        lookupUsesChineseScriptVariants(
+          lookupLanguage: 'zh-Hant',
+          filters: withoutZh,
+        ),
+        isTrue,
+      );
+    });
+
+    test('缓存键：关着时与旧格式逐字相同，开着时带 /zh 后缀不与之共用', () {
+      expect(
+        buildSearchCacheKey(term: '这个', maxTerms: 8, maxResults: 8),
+        '2:这个/8/8',
+      );
+      expect(
+        buildSearchCacheKey(
+          term: '这个',
+          maxTerms: 8,
+          maxResults: 8,
+          chineseSimpToTrad: true,
+        ),
+        '2:这个/8/8/zh',
+      );
+      expect(buildFfiLookupCacheKey(term: '这个', maxResults: 8), '2:这个/8');
+      expect(
+        buildFfiLookupCacheKey(
+          term: '这个',
+          maxResults: 8,
+          chineseSimpToTrad: true,
+        ),
+        '2:这个/8/zh',
+      );
     });
   });
 }

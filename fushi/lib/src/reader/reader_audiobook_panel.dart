@@ -22,10 +22,13 @@ import 'package:fushi/src/media/audiobook/tts/tts_read_along.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_quick_switch.dart';
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
+import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart'
+    show JumpProgressMarksPainter;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/jump_history.dart' show JumpSource;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:path/path.dart' as p;
 
@@ -33,7 +36,16 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
     show TtuTocEntry;
 import 'package:fushi/src/reader/ttu_toc_flatten.dart'
     show resolveCurrentTocEntry;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 
 /// 「信息卡固定 + tab 内容独立滚动」形态所需的最小可用高度（dp）。
 ///
@@ -77,8 +89,14 @@ class ReaderAudiobookPanel extends StatefulWidget {
     this.onOpenTtsVoices,
     this.onSwitchTtsVoice,
     this.cueStudyOffset,
+    this.jumpMarks,
     this.tick = const Duration(seconds: 1),
   });
+
+  /// 「跳转记录」在全书时间轴上的落点（0~1，返回点 / 前进点），画在整书进度条
+  /// 的轨道上、只看不点。每次 build 现取（面板开着时也会发生跳转）；null 或刻度
+  /// 设置关闭时不画。
+  final ({List<double> back, List<double> forward}) Function()? jumpMarks;
 
   final AudiobookPlayerController? controller;
   final List<TtuTocEntry> toc;
@@ -464,13 +482,17 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
               when ms > 0 && ms < durMs)
             ms / durMs,
     ];
+    final ({List<double> back, List<double> forward}) jumps =
+        widget.jumpMarks?.call() ??
+        (back: const <double>[], forward: const <double>[]);
+    final ColorScheme scheme = theme.colorScheme;
     final ButtonStyle flat = IconButton.styleFrom(foregroundColor: fg);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         // M3E：粗轨道滑块（S 档 24，竖条把手、按下变窄、拖动时时间气泡），章节刻度
-        // 画在同一条轨道上；Apple 保持细轨道 iOS 滑块。
+        // 与跳转落点刻度画在同一条轨道上；Apple 保持细轨道 iOS 滑块。
         Builder(
           builder: (BuildContext context) {
             final SliderThemeData base = SliderTheme.of(context);
@@ -480,6 +502,11 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                     trackShape: ReaderAudiobookChapterTrackShape(
                       fractions: ticks,
                       tickColor: fg.withValues(alpha: 0.55),
+                      jumpBack: jumps.back,
+                      jumpForward: jumps.forward,
+                      jumpBackColor: scheme.tertiary,
+                      jumpForwardColor: scheme.secondary,
+                      jumpHaloColor: scheme.surface,
                     ),
                     thumbShape: const RoundSliderThumbShape(
                       enabledThumbRadius: 7,
@@ -499,6 +526,11 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                         tickColor: theme.colorScheme.primaryContainer
                             .withValues(alpha: 0.9),
                         inner: const GappedSliderTrackShape(),
+                        jumpBack: jumps.back,
+                        jumpForward: jumps.forward,
+                        jumpBackColor: scheme.tertiary,
+                        jumpForwardColor: scheme.secondary,
+                        jumpHaloColor: scheme.surface,
                       ),
                       thumbShape: const HandleThumbShape(),
                       showValueIndicator: ShowValueIndicator.onDrag,
@@ -1060,72 +1092,85 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
             GlobalKey currentRowKey,
             VoidCallback revealCurrent,
           ) {
-            final NullableIndexedWidgetBuilder itemBuilder = fushiStaggeredItemBuilder((
-              BuildContext context,
-              int index,
-            ) {
-              if (index < lead.length) return lead[index];
-              if (index < leadCount) {
-                return ReaderPanelSectionLabel(
-                  t.reader_audiobook_tab_chapters,
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(
-                        '${widget.toc.length}',
-                        style: theme.textTheme.labelMedium,
+            final NullableIndexedWidgetBuilder itemBuilder =
+                fushiStaggeredItemBuilder((BuildContext context, int index) {
+                  if (index < lead.length) return lead[index];
+                  if (index < leadCount) {
+                    return ReaderPanelSectionLabel(
+                      t.reader_audiobook_tab_chapters,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Text(
+                            '${widget.toc.length}',
+                            style: theme.textTheme.labelMedium,
+                          ),
+                          FushiIconButtonControl(
+                            key: const ValueKey<String>(
+                              'fushi_audiobook_reveal_current_chapter',
+                            ),
+                            tooltip: t.reader_audiobook_current_chapter,
+                            constraints: const BoxConstraints(
+                              minWidth: 48,
+                              minHeight: 48,
+                            ),
+                            onPressed: currentEntry < 0 ? null : revealCurrent,
+                            icon: const FushiIcon(FushiIcons.myLocation),
+                          ),
+                        ],
                       ),
-                      FushiIconButtonControl(
-                        key: const ValueKey<String>(
-                          'fushi_audiobook_reveal_current_chapter',
-                        ),
-                        tooltip: t.reader_audiobook_current_chapter,
-                        constraints: const BoxConstraints(
-                          minWidth: 48,
-                          minHeight: 48,
-                        ),
-                        onPressed: currentEntry < 0 ? null : revealCurrent,
-                        icon: const FushiIcon(FushiIcons.myLocation),
-                      ),
-                    ],
-                  ),
-                );
-              }
-              final int i = index - leadCount;
-              final TtuTocEntry entry = widget.toc[i];
-              final int? startMs = starts[i];
-              final int? dms = durationFor(i);
-              final String? subtitle = <String>[
-                if (i == currentEntry) t.reader_audiobook_current_chapter,
-                if (dms != null) _formatDuration(Duration(milliseconds: dms)),
-              ].join(' · ').let((String s) => s.isEmpty ? null : s);
-              return ReaderPanelListItem(
-                key: i == currentEntry ? currentRowKey : null,
-                title: entry.label,
-                subtitle: subtitle,
-                current: i == currentEntry,
-                trailing: Text(
-                  startMs == null
-                      ? '—'
-                      : _formatDuration(Duration(milliseconds: startMs)),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontFeatures: const <FontFeature>[
-                      FontFeature.tabularFigures(),
-                    ],
-                  ),
-                ),
-                onTap: () async {
-                  Navigator.of(context).pop();
-                  await widget.onJumpSection(entry.index, entry.fragment);
-                  final AudioCue? first = ctrl == null
-                      ? null
-                      : _entryStartCue(ctrl, i);
-                  if (ctrl != null && first != null) {
-                    await ctrl.skipToCue(first);
+                    );
                   }
-                },
-              );
-            });
+                  final int i = index - leadCount;
+                  final TtuTocEntry entry = widget.toc[i];
+                  final int? startMs = starts[i];
+                  final int? dms = durationFor(i);
+                  final String? subtitle = <String>[
+                    if (i == currentEntry) t.reader_audiobook_current_chapter,
+                    if (dms != null)
+                      _formatDuration(Duration(milliseconds: dms)),
+                  ].join(' · ').let((String s) => s.isEmpty ? null : s);
+                  return ReaderPanelListItem(
+                    key: i == currentEntry ? currentRowKey : null,
+                    title: entry.label,
+                    subtitle: subtitle,
+                    current: i == currentEntry,
+                    trailing: Text(
+                      startMs == null
+                          ? '—'
+                          : _formatDuration(Duration(milliseconds: startMs)),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontFeatures: const <FontFeature>[
+                          FontFeature.tabularFigures(),
+                        ],
+                      ),
+                    ),
+                    onTap: () async {
+                      Navigator.of(context).pop();
+                      final AudioCue? first = ctrl == null
+                          ? null
+                          : _entryStartCue(ctrl, i);
+                      if (ctrl == null || first == null) {
+                        await widget.onJumpSection(entry.index, entry.fragment);
+                        return;
+                      }
+                      // BUG-3798：跳章 + 定音频是一次操作。跳章在飞期间音频还在旧章往下播，
+                      // 换句就解除手动导航护栏；新章一落地按旧章的句子判跨章，把 reader 拽回
+                      // 旧章（回弹）。先登记「音频马上由本处定位」，在那次 seek 发出前不发
+                      // 自动跨章；seek 由本处负责跳章，也不再替它发一次。
+                      ctrl.holdCrossChapterUntilCallerSeek();
+                      try {
+                        await widget.onJumpSection(entry.index, entry.fragment);
+                      } finally {
+                        await ctrl.skipToCue(
+                          first,
+                          callerPositionsReader: true,
+                          jumpSource: JumpSource.chapter,
+                        );
+                      }
+                    },
+                  );
+                });
             final int count = leadCount + widget.toc.length;
             const Key listKey = ValueKey<String>('fushi_audiobook_chapters');
             if (header == null) {
@@ -1301,17 +1346,36 @@ class _AudiobookChapterListState extends State<_AudiobookChapterList> {
 /// 对不上，刻度整体被往中间压、离两端越远偏得越多，拇指走到章首时和刻度错开。
 /// 非离散 slider 的拇指中心就是 `trackRect.left + value * trackRect.width`，刻度
 /// 用同一公式即与进度恒对齐。
+///
+/// 「跳转记录」的返回点 / 前进点（[jumpBack] / [jumpForward]）也画在这条
+/// trackRect 上（与 [JumpProgressMarksPainter] 同一套刻度外观），理由同上：
+/// 叠一层同宽盒子对不齐 slider 的轨道内缩。
 class ReaderAudiobookChapterTrackShape extends SliderTrackShape {
   const ReaderAudiobookChapterTrackShape({
     required this.fractions,
     required this.tickColor,
     this.inner = const RoundedRectSliderTrackShape(),
+    this.jumpBack = const <double>[],
+    this.jumpForward = const <double>[],
+    this.jumpBackColor = const Color(0x00000000),
+    this.jumpForwardColor = const Color(0x00000000),
+    this.jumpHaloColor = const Color(0x00000000),
   });
 
   /// 章首在全书时间轴上的位置（0~1，已去掉两端）。
   final List<double> fractions;
   final Color tickColor;
   final SliderTrackShape inner;
+
+  /// 跳转落点（0~1）：返回点 / 前进点。
+  final List<double> jumpBack;
+  final List<double> jumpForward;
+  final Color jumpBackColor;
+  final Color jumpForwardColor;
+  final Color jumpHaloColor;
+
+  /// 跳转刻度的高度（比轨道高，压在已播放填充上也看得见）。
+  static const double jumpTickHeight = 16;
 
   /// 刻度 x 坐标：与非离散 slider 的拇指中心同一公式。
   static double tickX(Rect trackRect, double fraction, TextDirection dir) {
@@ -1362,7 +1426,7 @@ class ReaderAudiobookChapterTrackShape extends SliderTrackShape {
       isDiscrete: isDiscrete,
       textDirection: textDirection,
     );
-    if (fractions.isEmpty) return;
+    if (fractions.isEmpty && jumpBack.isEmpty && jumpForward.isEmpty) return;
     final Rect trackRect = getPreferredRect(
       parentBox: parentBox,
       offset: offset,
@@ -1370,13 +1434,39 @@ class ReaderAudiobookChapterTrackShape extends SliderTrackShape {
       isEnabled: isEnabled,
       isDiscrete: isDiscrete,
     );
+    _paintChapterTicks(context.canvas, trackRect, textDirection);
+    if (jumpBack.isEmpty && jumpForward.isEmpty) return;
+    List<double> directed(List<double> fs) => <double>[
+      for (final double f in fs) textDirection == TextDirection.rtl ? 1 - f : f,
+    ];
+    final Canvas canvas = context.canvas;
+    canvas.save();
+    canvas.translate(trackRect.left, trackRect.center.dy - jumpTickHeight / 2);
+    JumpProgressMarksPainter(
+      back: directed(jumpBack),
+      forward: directed(jumpForward),
+      backColor: jumpBackColor,
+      forwardColor: jumpForwardColor,
+      haloColor: jumpHaloColor,
+      tickWidth: 3,
+      tickHeight: jumpTickHeight,
+    ).paint(canvas, Size(trackRect.width, jumpTickHeight));
+    canvas.restore();
+  }
+
+  void _paintChapterTicks(
+    Canvas canvas,
+    Rect trackRect,
+    TextDirection textDirection,
+  ) {
+    if (fractions.isEmpty) return;
     final double half = trackRect.height / 2 + 3;
     final Paint paint = Paint()
       ..color = tickColor
       ..strokeWidth = 1.5;
     for (final double f in fractions) {
       final double x = tickX(trackRect, f, textDirection);
-      context.canvas.drawLine(
+      canvas.drawLine(
         Offset(x, trackRect.center.dy - half),
         Offset(x, trackRect.center.dy + half),
         paint,

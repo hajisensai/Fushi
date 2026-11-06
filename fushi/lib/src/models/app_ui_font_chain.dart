@@ -81,8 +81,10 @@ List<String> appUiFontChain({
     if (trimmed.isNotEmpty) chain.add(trimmed);
   }
 
-  final Map<CjkScript, List<String>> fonts =
-      cjkFontsFor(platform, CjkFontStyle.sansSerif);
+  final Map<CjkScript, List<String>> fonts = cjkFontsFor(
+    platform,
+    CjkFontStyle.sansSerif,
+  );
   final CjkScript? uiScript = cjkScriptForLocale(locale);
   if (uiScript != null) {
     chain.addAll(fonts[uiScript]!);

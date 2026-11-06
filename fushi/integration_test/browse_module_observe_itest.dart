@@ -2,7 +2,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/implementations/browse_page.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
 
 import 'helpers/library_fixture.dart';
 import 'helpers/observe_capture.dart';
@@ -48,7 +49,10 @@ void main() {
 
     HomePage.debugSelectTab?.call(HomeTab.video);
     await tester.pump(const Duration(seconds: 3));
-    final ObserveShot video = await captureFlutterFrame(tester, 'video-library');
+    final ObserveShot video = await captureFlutterFrame(
+      tester,
+      'video-library',
+    );
     expect(video.saved, isTrue);
     debugPrint('[browse-probe] video texts: ${visibleTexts(tester)}');
   });

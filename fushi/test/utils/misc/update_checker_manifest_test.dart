@@ -25,7 +25,8 @@ String _manifestJson({
     'prerelease': prerelease,
     'notes': notes,
     if (releaseSequence != null) 'releaseSequence': releaseSequence,
-    'assets': assets ??
+    'assets':
+        assets ??
         <Map<String, dynamic>>[
           <String, dynamic>{
             'name': 'fushi-0.10.1-arm64-v8a.apk',
@@ -60,24 +61,21 @@ void main() {
         kDebugManifestUrl,
         'https://raw.githubusercontent.com/hajisensai/fushi/update-manifest/latest-debug-fushi.json',
       );
-      expect(
-        manifestUrlsForChannel(UpdateChannel.beta),
-        const <String, String>{
-          'hajisensai/fushi':
-              'https://raw.githubusercontent.com/hajisensai/fushi/update-manifest/latest-beta-fushi.json',
-          'hajisensai/hibiki':
-              'https://raw.githubusercontent.com/hajisensai/hibiki/update-manifest/latest-beta-fushi.json',
-        },
-      );
-      expect(
-        manifestUrlsForChannel(UpdateChannel.debug),
-        const <String, String>{
-          'hajisensai/fushi':
-              'https://raw.githubusercontent.com/hajisensai/fushi/update-manifest/latest-debug-fushi.json',
-          'hajisensai/hibiki':
-              'https://raw.githubusercontent.com/hajisensai/hibiki/update-manifest/latest-debug-fushi.json',
-        },
-      );
+      expect(manifestUrlsForChannel(UpdateChannel.beta), const <String, String>{
+        'hajisensai/fushi':
+            'https://raw.githubusercontent.com/hajisensai/fushi/update-manifest/latest-beta-fushi.json',
+        'hajisensai/hibiki':
+            'https://raw.githubusercontent.com/hajisensai/hibiki/update-manifest/latest-beta-fushi.json',
+      });
+      expect(manifestUrlsForChannel(UpdateChannel.debug), const <
+        String,
+        String
+      >{
+        'hajisensai/fushi':
+            'https://raw.githubusercontent.com/hajisensai/fushi/update-manifest/latest-debug-fushi.json',
+        'hajisensai/hibiki':
+            'https://raw.githubusercontent.com/hajisensai/hibiki/update-manifest/latest-debug-fushi.json',
+      });
     });
 
     test('stable now uses latest-stable.json manifest (BUG-846 谁后用谁)', () {
@@ -88,23 +86,23 @@ void main() {
         kStableManifestUrl,
         'https://raw.githubusercontent.com/hajisensai/fushi/update-manifest/latest-stable-fushi.json',
       );
-      expect(
-        manifestUrlsForChannel(UpdateChannel.stable),
-        const <String, String>{
-          'hajisensai/fushi':
-              'https://raw.githubusercontent.com/hajisensai/fushi/update-manifest/latest-stable-fushi.json',
-          'hajisensai/hibiki':
-              'https://raw.githubusercontent.com/hajisensai/hibiki/update-manifest/latest-stable-fushi.json',
-        },
-      );
+      expect(manifestUrlsForChannel(UpdateChannel.stable), const <
+        String,
+        String
+      >{
+        'hajisensai/fushi':
+            'https://raw.githubusercontent.com/hajisensai/fushi/update-manifest/latest-stable-fushi.json',
+        'hajisensai/hibiki':
+            'https://raw.githubusercontent.com/hajisensai/hibiki/update-manifest/latest-stable-fushi.json',
+      });
     });
   });
 
-  group('buildReleaseFromManifest (manifest to API-isomorphic release map)',
-      () {
+  group('buildReleaseFromManifest (manifest to API-isomorphic release map)', () {
     test('valid beta manifest rebuilds tag/prerelease/body/assets', () {
-      final Map<String, dynamic>? release =
-          buildReleaseFromManifest(_manifestJson());
+      final Map<String, dynamic>? release = buildReleaseFromManifest(
+        _manifestJson(),
+      );
       expect(release, isNotNull);
       expect(release!['tag_name'], 'v0.10.1-beta.162');
       expect(release['prerelease'], isTrue);
@@ -116,8 +114,9 @@ void main() {
       expect(assets.length, 2);
       final Map<String, dynamic> apk = assets
           .cast<Map<String, dynamic>>()
-          .firstWhere((Map<String, dynamic> a) =>
-              (a['name'] as String).endsWith('.apk'));
+          .firstWhere(
+            (Map<String, dynamic> a) => (a['name'] as String).endsWith('.apk'),
+          );
       // downstream UpdateAsset.fromReleaseAsset reads browser_download_url
       // (and, TODO-1205, the per-asset `version` stamp when present).
       expect(
@@ -127,8 +126,9 @@ void main() {
     });
 
     test('rebuilt release matches the beta channel', () {
-      final Map<String, dynamic> release =
-          buildReleaseFromManifest(_manifestJson())!;
+      final Map<String, dynamic> release = buildReleaseFromManifest(
+        _manifestJson(),
+      )!;
       expect(releaseMatchesUpdateChannel(release, UpdateChannel.beta), isTrue);
     });
 
@@ -152,12 +152,15 @@ void main() {
       )!;
       expect(release['releaseSequence'], 7850);
       expect(
-          releaseMatchesUpdateChannel(release, UpdateChannel.stable), isTrue);
+        releaseMatchesUpdateChannel(release, UpdateChannel.stable),
+        isTrue,
+      );
     });
 
     test('BUG-846: absent releaseSequence leaves the key unset (302 保守)', () {
-      final Map<String, dynamic> release =
-          buildReleaseFromManifest(_manifestJson())!;
+      final Map<String, dynamic> release = buildReleaseFromManifest(
+        _manifestJson(),
+      )!;
       expect(release.containsKey('releaseSequence'), isFalse);
     });
 
@@ -175,8 +178,9 @@ void main() {
     });
 
     test('Android updater picks apk by ABI from rebuilt release', () async {
-      final Map<String, dynamic> release =
-          buildReleaseFromManifest(_manifestJson())!;
+      final Map<String, dynamic> release = buildReleaseFromManifest(
+        _manifestJson(),
+      )!;
       final List<Map<String, dynamic>> assets =
           (release['assets'] as List<dynamic>).cast<Map<String, dynamic>>();
       final UpdateAsset? asset = await AndroidUpdater(
@@ -188,8 +192,7 @@ void main() {
       );
     });
 
-    test('debug manifest (prerelease true, debug tag) rebuilds and matches',
-        () {
+    test('debug manifest (prerelease true, debug tag) rebuilds and matches', () {
       final Map<String, dynamic> release = buildReleaseFromManifest(
         _manifestJson(
           tag: 'v0.10.1-debug.162+abc1234',
@@ -229,7 +232,8 @@ void main() {
     test('empty assets or no valid browser_download_url returns null', () {
       expect(
         buildReleaseFromManifest(
-            _manifestJson(assets: const <Map<String, dynamic>>[])),
+          _manifestJson(assets: const <Map<String, dynamic>>[]),
+        ),
         isNull,
       );
       final String missingUrl = jsonEncode(<String, dynamic>{
@@ -266,25 +270,35 @@ void main() {
   });
 
   group('manifest candidate fallback (direct-first + mirror prefixes)', () {
-    test('beta manifest URL candidates: direct first, then gh proxy prefixes',
-        () {
-      final List<String> urls =
-          updateCheckUrls(manifestUrlForChannel(UpdateChannel.beta)!);
-      expect(urls.first, kBetaManifestUrl, reason: 'direct raw must be first');
-      for (final String u in urls.skip(1)) {
-        expect(u.endsWith(kBetaManifestUrl), isTrue,
-            reason: 'mirror candidate must wrap the direct URL: $u');
-        expect(u, isNot(kBetaManifestUrl));
-      }
-      expect(urls.length, greaterThan(1));
-    });
-
     test(
-        'direct-first failure: concurrent race still obtains manifest body '
+      'beta manifest URL candidates: direct first, then gh proxy prefixes',
+      () {
+        final List<String> urls = updateCheckUrls(
+          manifestUrlForChannel(UpdateChannel.beta)!,
+        );
+        expect(
+          urls.first,
+          kBetaManifestUrl,
+          reason: 'direct raw must be first',
+        );
+        for (final String u in urls.skip(1)) {
+          expect(
+            u.endsWith(kBetaManifestUrl),
+            isTrue,
+            reason: 'mirror candidate must wrap the direct URL: $u',
+          );
+          expect(u, isNot(kBetaManifestUrl));
+        }
+        expect(urls.length, greaterThan(1));
+      },
+    );
+
+    test('direct-first failure: concurrent race still obtains manifest body '
         'from a mirror (TODO-821)', () async {
       final List<String> attempted = <String>[];
-      final List<String> urls =
-          updateCheckUrls(manifestUrlForChannel(UpdateChannel.beta)!);
+      final List<String> urls = updateCheckUrls(
+        manifestUrlForChannel(UpdateChannel.beta)!,
+      );
       final String json = _manifestJson();
       final String? body = await fetchFirstSuccessfulBody(
         urls,
@@ -302,15 +316,18 @@ void main() {
       expect(buildReleaseFromManifest(body!), isNotNull);
     });
 
-    test('all candidates fail returns null (upper layer falls back to API)',
-        () async {
-      final List<String> urls =
-          updateCheckUrls(manifestUrlForChannel(UpdateChannel.debug)!);
-      final String? body = await fetchFirstSuccessfulBody(
-        urls,
-        fetch: (String _) async => null,
-      );
-      expect(body, isNull);
-    });
+    test(
+      'all candidates fail returns null (upper layer falls back to API)',
+      () async {
+        final List<String> urls = updateCheckUrls(
+          manifestUrlForChannel(UpdateChannel.debug)!,
+        );
+        final String? body = await fetchFirstSuccessfulBody(
+          urls,
+          fetch: (String _) async => null,
+        );
+        expect(body, isNull);
+      },
+    );
   });
 }

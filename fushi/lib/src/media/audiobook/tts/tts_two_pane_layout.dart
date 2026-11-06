@@ -9,7 +9,9 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// 切成「侧栏 + 内容」双栏的最小宽度（MD3 window size class 的 expanded 起点，
 /// 与词典管理 / 快捷键浏览器同一断点）。

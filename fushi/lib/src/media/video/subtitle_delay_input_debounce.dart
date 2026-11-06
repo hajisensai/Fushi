@@ -24,10 +24,10 @@ class SubtitleDelayInputDebounce {
     required int Function() currentDelayMs,
     required void Function(int delayMs, {bool syncField}) commit,
     this.delay = const Duration(milliseconds: 350),
-  })  : _controller = controller,
-        _isMounted = isMounted,
-        _currentDelayMs = currentDelayMs,
-        _commit = commit;
+  }) : _controller = controller,
+       _isMounted = isMounted,
+       _currentDelayMs = currentDelayMs,
+       _commit = commit;
 
   /// 数值输入框的控制器（onSubmitted 非法输入时回退文本用）。
   final TextEditingController _controller;

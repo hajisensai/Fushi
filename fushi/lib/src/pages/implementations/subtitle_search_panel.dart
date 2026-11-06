@@ -30,7 +30,7 @@ import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_archive_label.dart';
-import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
@@ -42,7 +42,18 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
 import 'package:fushi/src/pages/implementations/subtitle_version_group_list.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 一条可下载的在线字幕候选：来源条目/发布名 + 文件名 + 回给来源 provider 的句柄。
 ///
@@ -319,8 +330,8 @@ const ValueKey<String> kSubtitleNoticeBannerKey = ValueKey<String>(
 /// 盖掉的那几条永远不会有人发现。
 ///
 /// 批量落盘路径（[runSubtitleBatch]）早就踩过同一个坑，用的是 bookUid 前缀；
-/// 这里是「同一集的多个候选」，没有 bookUid 可用，故按序号消歧。
-@visibleForTesting
+/// 这里是「同一集的多个候选」，没有 bookUid 可用，故按序号消歧。手机遥控在线
+/// 字幕（`RemoteOnlineSubtitleSearch`）落盘同样用它。
 String uniqueSubtitleDestination(String directory, String fileName) {
   final String ext = p.extension(fileName);
   final String stem = p.basenameWithoutExtension(fileName);
@@ -480,9 +491,8 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   bool get _multiSelecting => _selectedCandidates.isNotEmpty;
 
   Set<String> get _selectedIdentityKeys => <String>{
-        for (final VideoSubtitleCandidate c in _selectedCandidates)
-          c.identityKey,
-      };
+    for (final VideoSubtitleCandidate c in _selectedCandidates) c.identityKey,
+  };
 
   void _toggleCandidate(VideoSubtitleCandidate candidate) {
     setState(() {
@@ -496,6 +506,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       }
     });
   }
+
   List<JimakuCandidate> _candidates = const <JimakuCandidate>[];
 
   /// true = 平铺文件列表（旧视图）；false（默认）= 版本卡视图。候选缺 source
@@ -1623,19 +1634,21 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
             onSelectAll: () => setState(() {
               _selectedCandidates
                 ..clear()
-                ..addAll(_candidates
-                    .map((JimakuCandidate c) => c.source)
-                    .whereType<VideoSubtitleCandidate>());
+                ..addAll(
+                  _candidates
+                      .map((JimakuCandidate c) => c.source)
+                      .whereType<VideoSubtitleCandidate>(),
+                );
             }),
             onInvertSelection: () => setState(() {
               final Set<String> current = _selectedIdentityKeys;
               final List<VideoSubtitleCandidate> next =
                   <VideoSubtitleCandidate>[
-                for (final JimakuCandidate c in _candidates)
-                  if (c.source != null &&
-                      !current.contains(c.source!.identityKey))
-                    c.source!,
-              ];
+                    for (final JimakuCandidate c in _candidates)
+                      if (c.source != null &&
+                          !current.contains(c.source!.identityKey))
+                        c.source!,
+                  ];
               _selectedCandidates
                 ..clear()
                 ..addAll(next);
@@ -1772,6 +1785,5 @@ class JimakuCandidateList extends StatelessWidget {
         }),
       ),
     );
-
   }
 }

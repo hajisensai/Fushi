@@ -7,7 +7,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 漫画在线源 / 下载失败给用户看的文案一律归一，原始异常串只留给诊断。
 void main() {

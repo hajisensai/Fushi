@@ -1,0 +1,6 @@
+## BUG-3632 · waveform-probe-tail-overrun-shifts-waveform
+- **报告**：2026-10-20（用户：波形对轴弹窗截图，某句字幕区间「这一段有音频但是为啥没高度」）
+- **真实性**：✅ 真 bug。波形相对字幕线 / 播放头整体错位，有声段被画成静音。根因 `fushi/lib/src/media/video/audio_energy_probe.dart` 的 `buildFfmpegPcmEnvelopeArgs`：探测上界 `-t` 放在 `-i` 之后作**输出选项**，而滤镜链末尾为提速把音频拼回 6 s 大帧（`asetnsamples=n=rate*6`），输出端截断前 `ametadata` 已多打了一截逐帧行。实测 FX戦士くるみちゃん S01E03（本地 mkv，20 分钟上界）抽出 60600 帧 = 1212 s，前 60001 帧与正确结果逐值一致、多的是尾巴；10 s 上界的合成音频抽出 900 帧 = 18 s。`SubtitleWaveformZoomView` 把整条包络均匀铺在 `[0, windowEndMs=1200000)` 上，于是波形被压缩约 1%：截图里该句（215.68 s，延迟 -5254 ms → 210.43 s）的 cue 起点那一列画的是 212.54 s 的音频（截图逐列柱高与实测包络互相关 0.67；按时间轴应有的 210.43 s 只有 -0.12），用户圈出的平坦段是 213.8–215.8 s 的真静音（mean -59.9 dB）被画进了这句字幕里。偏差随时间线性增大，片头几乎看不出、3 分半错 2 秒、15 分钟错约 9 秒。
+- **[x] ① 已修复** — `-t` 改为输入选项（置于 `-i` 之前），解复用在上界停下，滤镜图拿不到上界之后的音频；实测同一文件 60001 帧，前 59999 帧与原逐帧值完全一致（只有截断边界残块不同），耗时反而更短（2.8 s）。自动对轴（100 ms 采样）走同一函数，也不再多抽尾巴。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/audio_energy_probe_file_channel_test.dart`「limitMs bounds the envelope to exactly the probe window」（真 ffmpeg：20 s 音频、10 s 上界，包络必须 499–501 帧；旧实现 900 帧，变异实测红）；`fushi/test/media/video/subtitle_auto_align_test.dart`「limitSeconds adds -t as an input option」（参数顺序，旧实现红）。
+- **备注**：面板仍假设「包络时长 = windowEndMs」。片长短于 20 分钟时 windowEndMs 取容器时长，音轨若比容器短 / 长零点几秒也会有同类（量级小得多）拉伸；本次未改，若再报短片错位可让面板按 `kSubtitleWaveformWindowMs × 帧序号` 定位而不是均匀铺满。

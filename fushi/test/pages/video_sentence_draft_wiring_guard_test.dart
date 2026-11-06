@@ -19,13 +19,11 @@ void main() {
   }
 
   test('mixin exposes an overridable set-context hook and forwards it', () {
-    final String src =
-        readSource('lib/src/pages/implementations/dictionary_page_mixin.dart');
-    // 默认 null = 不支持（纯查词页 / 首页词典不渲染选择器）。
-    expect(
-      src,
-      contains('get onSetSentenceContextToDraft => null;'),
+    final String src = readSource(
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
     );
+    // 默认 null = 不支持（纯查词页 / 首页词典不渲染选择器）。
+    expect(src, contains('get onSetSentenceContextToDraft => null;'));
     // buildNestedPopupLayer 把钩子透传给弹窗层；非空才渲染选择器。
     expect(src, contains('onSetSentenceContext: onSetSentenceContextToDraft'));
   });
@@ -49,8 +47,11 @@ void main() {
       final int start = src.indexOf(startSig);
       expect(start, greaterThanOrEqualTo(0), reason: 'missing $startSig');
       final int end = src.indexOf(endSig, start + startSig.length);
-      expect(end, greaterThan(start),
-          reason: 'missing $endSig after $startSig');
+      expect(
+        end,
+        greaterThan(start),
+        reason: 'missing $endSig after $startSig',
+      );
       return src.substring(start, end);
     }
 
@@ -59,14 +60,16 @@ void main() {
       expect(
         src,
         contains(
-            "import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';"),
+          "import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';",
+        ),
       );
       expect(src, contains('final MiningSentenceDraft _miningDraft ='));
       // 覆写 mixin 钩子返回非空闭包 → popup 渲染上下文选择器。
       expect(
         src,
         contains(
-            'get onSetSentenceContextToDraft => _setSentenceContextToDraft;'),
+          'get onSetSentenceContextToDraft => _setSentenceContextToDraft;',
+        ),
       );
     });
 
@@ -117,14 +120,15 @@ void main() {
     });
 
     test(
-        'a new lookup discards the previous word context (no cross-contamination)',
-        () {
-      final String lookup = region(
-        '_lastLookupSentence = sentence;',
-        'await pushNestedPopup(',
-      );
-      expect(lookup, contains('_miningDraft.clear();'));
-    });
+      'a new lookup discards the previous word context (no cross-contamination)',
+      () {
+        final String lookup = region(
+          '_lastLookupSentence = sentence;',
+          'await pushNestedPopup(',
+        );
+        expect(lookup, contains('_miningDraft.clear();'));
+      },
+    );
 
     test('closing the whole popup stack discards an un-mined draft', () {
       final String pop = region(

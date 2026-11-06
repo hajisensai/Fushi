@@ -3,8 +3,12 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/pages/implementations/game_stream_page.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart'
+    show FushiAppUiScaleNeutralizer;
+import 'package:fushi/src/platform/game_stream_companion_display_channel.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -42,12 +46,17 @@ Future<void> openGameStreamSession({
   ValueChanged<GameStreamVideoSettings>? onSettingsChanged,
   GameStreamLookupLayout lookupLayout = const GameStreamLookupLayout(),
   ValueChanged<GameStreamLookupLayout>? onLookupLayoutChanged,
+  GameStreamButtonProfile buttonProfile = const GameStreamButtonProfile(),
+  ValueChanged<GameStreamButtonProfile>? onButtonProfileChanged,
+  GameStreamSecondScreen secondScreen = GameStreamSecondScreen.auto,
+  ValueChanged<GameStreamSecondScreen>? onSecondScreenChanged,
 }) async {
   final NavigatorState navigator = Navigator.of(context);
   final String requestedClientId = clientId ?? gameStreamReceiverClientId;
   GameStreamLookupController? lookup;
   FushiGameStreamReceiver? receiver;
   GameStreamInputComposer? input;
+  GameStreamCompanionDisplay? companion;
   String? joinedClientId;
   Object? leaveError;
   try {
@@ -88,19 +97,34 @@ Future<void> openGameStreamSession({
       clientId: activeClientId,
       settings: settings,
     );
+    // One handle for the whole session: the route builder may run again.
+    final GameStreamCompanionDisplay? activeCompanion =
+        GameStreamCompanionDisplay.forCurrentPlatform();
+    companion = activeCompanion;
     await navigator.push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => GameStreamPage(
-          sessionId: session.sessionId,
-          clientId: activeClientId,
-          inputComposer: activeInput,
-          lookupController: activeLookup,
-          receiver: activeReceiver,
-          session: joined,
-          settings: settings,
-          onSettingsChanged: onSettingsChanged,
-          lookupLayout: lookupLayout,
-          onLookupLayoutChanged: onLookupLayoutChanged,
+        // The rail's dictionary is a WebView: it must render at net scale 1
+        // (DictionaryPopupWebView asserts it), so the whole page is
+        // neutralized from the route like the reader, keeping the popup and
+        // its selection rects in one coordinate space.
+        builder: (BuildContext context) => FushiAppUiScaleNeutralizer(
+          child: GameStreamPage(
+            sessionId: session.sessionId,
+            clientId: activeClientId,
+            inputComposer: activeInput,
+            lookupController: activeLookup,
+            receiver: activeReceiver,
+            session: joined,
+            settings: settings,
+            onSettingsChanged: onSettingsChanged,
+            lookupLayout: lookupLayout,
+            onLookupLayoutChanged: onLookupLayoutChanged,
+            buttonProfile: buttonProfile,
+            onButtonProfileChanged: onButtonProfileChanged,
+            companionDisplay: activeCompanion,
+            secondScreen: secondScreen,
+            onSecondScreenChanged: onSecondScreenChanged,
+          ),
         ),
       ),
     );
@@ -113,6 +137,7 @@ Future<void> openGameStreamSession({
     } catch (error) {
       leaveError = error;
     } finally {
+      companion?.dispose();
       input?.dispose();
       lookup?.dispose();
       receiver?.dispose();

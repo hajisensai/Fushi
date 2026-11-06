@@ -11,8 +11,9 @@ void main() {
 
   group('markLineMined（制卡成功回写，幂等）', () {
     test('首次标记置 mined=true 并通知一次', () {
-      final TexthookerLineEntry line =
-          TexthookerService.instance.appendLine('制卡对象')!;
+      final TexthookerLineEntry line = TexthookerService.instance.appendLine(
+        '制卡对象',
+      )!;
       expect(line.mined, isFalse, reason: '新行默认未制卡');
 
       int notifications = 0;
@@ -24,8 +25,9 @@ void main() {
     });
 
     test('重复标记幂等：返回 false 且不再通知', () {
-      final TexthookerLineEntry line =
-          TexthookerService.instance.appendLine('已制卡')!;
+      final TexthookerLineEntry line = TexthookerService.instance.appendLine(
+        '已制卡',
+      )!;
       TexthookerService.instance.markLineMined(line.id);
 
       int notifications = 0;
@@ -41,8 +43,9 @@ void main() {
 
   group('收藏（会话内存态，不落 DB）', () {
     test('setLineFavorite 设置并通知，同值不通知', () {
-      final TexthookerLineEntry line =
-          TexthookerService.instance.appendLine('收藏对象')!;
+      final TexthookerLineEntry line = TexthookerService.instance.appendLine(
+        '收藏对象',
+      )!;
       expect(line.favorited, isFalse);
 
       int notifications = 0;
@@ -54,13 +57,16 @@ void main() {
 
       // 相同值再设置：无变化不通知。
       expect(
-          TexthookerService.instance.setLineFavorite(line.id, true), isFalse);
+        TexthookerService.instance.setLineFavorite(line.id, true),
+        isFalse,
+      );
       expect(notifications, 1);
     });
 
     test('toggleLineFavorite 翻转并返回新状态', () {
-      final TexthookerLineEntry line =
-          TexthookerService.instance.appendLine('翻转对象')!;
+      final TexthookerLineEntry line = TexthookerService.instance.appendLine(
+        '翻转对象',
+      )!;
       expect(TexthookerService.instance.toggleLineFavorite(line.id), isTrue);
       expect(TexthookerService.instance.entryById(line.id)!.favorited, isTrue);
       expect(TexthookerService.instance.toggleLineFavorite(line.id), isFalse);
@@ -72,12 +78,14 @@ void main() {
     });
 
     test('制卡态与收藏态互不干扰', () {
-      final TexthookerLineEntry line =
-          TexthookerService.instance.appendLine('双态')!;
+      final TexthookerLineEntry line = TexthookerService.instance.appendLine(
+        '双态',
+      )!;
       TexthookerService.instance.markLineMined(line.id);
       TexthookerService.instance.setLineFavorite(line.id, true);
-      final TexthookerLineEntry updated =
-          TexthookerService.instance.entryById(line.id)!;
+      final TexthookerLineEntry updated = TexthookerService.instance.entryById(
+        line.id,
+      )!;
       expect(updated.mined, isTrue);
       expect(updated.favorited, isTrue);
     });
@@ -103,7 +111,9 @@ void main() {
       expect(entryWith(TexthookerLineAudioStatus.pending).hasAudio, isFalse);
       expect(entryWith(TexthookerLineAudioStatus.missing).hasAudio, isFalse);
       expect(
-          entryWith(TexthookerLineAudioStatus.unavailable).hasAudio, isFalse);
+        entryWith(TexthookerLineAudioStatus.unavailable).hasAudio,
+        isFalse,
+      );
     });
   });
 
@@ -149,7 +159,9 @@ void main() {
 
     test('withAudio 仅命中有音频行', () {
       expect(
-          lineMatchesFilter(withAudio, TexthookerLineFilter.withAudio), isTrue);
+        lineMatchesFilter(withAudio, TexthookerLineFilter.withAudio),
+        isTrue,
+      );
       expect(lineMatchesFilter(plain, TexthookerLineFilter.withAudio), isFalse);
     });
 
@@ -160,7 +172,9 @@ void main() {
 
     test('favorited 仅命中已收藏行', () {
       expect(
-          lineMatchesFilter(favorited, TexthookerLineFilter.favorited), isTrue);
+        lineMatchesFilter(favorited, TexthookerLineFilter.favorited),
+        isTrue,
+      );
       expect(lineMatchesFilter(plain, TexthookerLineFilter.favorited), isFalse);
     });
   });
@@ -180,15 +194,11 @@ void main() {
         textThreadLabel: 'KiriKiriZ',
         audioStatus: TexthookerLineAudioStatus.missing,
       );
-      s.appendLine(
-        'UI 文本',
-        textThreadKey: 'k2',
-        textThreadLabel: 'TextRender',
-      );
+      s.appendLine('UI 文本', textThreadKey: 'k2', textThreadLabel: 'TextRender');
       final Map<String, TexthookerTextThread> byKey =
           <String, TexthookerTextThread>{
-        for (final TexthookerTextThread t in s.textThreads) t.key: t,
-      };
+            for (final TexthookerTextThread t in s.textThreads) t.key: t,
+          };
       expect(byKey['k1']!.latestText, '第二句');
       expect(byKey['k1']!.audioLineCount, 1, reason: 'missing 不算有音频');
       expect(byKey['k1']!.lineCount, 2);
@@ -228,8 +238,11 @@ void main() {
     test('预览折叠空白并按字素簇截断', () {
       expect(collapseTexthookerPreview('  多行\n台词\t文本  '), '多行 台词 文本');
       final String repeated = 'あ' * 50;
-      expect(collapseTexthookerPreview(repeated), 'あ',
-          reason: '逐字重绘产生的长单字游程应先折叠');
+      expect(
+        collapseTexthookerPreview(repeated),
+        'あ',
+        reason: '逐字重绘产生的长单字游程应先折叠',
+      );
       final String long = List<String>.generate(
         50,
         (int index) => String.fromCharCode(0x4e00 + index),

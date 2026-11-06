@@ -114,8 +114,9 @@ Future<http.Response> fetchCoverImageResponse(
     url,
     abortTrigger: deadline.abortTrigger,
   );
-  final Future<http.Response> response =
-      client.send(request).then(http.Response.fromStream);
+  final Future<http.Response> response = client
+      .send(request)
+      .then(http.Response.fromStream);
   // Future.any：谁先完成谁说了算，后到的错误被静默丢弃（不会变成未处理异常）。
   // 截止分支只负责「告诉等待层超时」，abort 本身由共享 trigger 负责；两者的先后
   // 由 [CoverDownloadDeadline._expire] 固定，因此超时语义不受微任务顺序影响。

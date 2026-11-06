@@ -24,15 +24,15 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
 
   @override
   Future<OnlineMangaRefreshResult> refresh(
-          OnlineMangaLibraryEntry entry) async =>
+    OnlineMangaLibraryEntry entry,
+  ) async =>
       OnlineMangaRefreshResult(series: entry.series, chapters: entry.chapters);
 
   @override
   Future<List<OnlineMangaPageRef>> resolveChapterPages({
     required OnlineMangaLibraryEntry entry,
     required OnlineMangaChapter chapter,
-  }) async =>
-      const <OnlineMangaPageRef>[];
+  }) async => const <OnlineMangaPageRef>[];
 
   @override
   Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) async =>
@@ -40,8 +40,9 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
 
   @override
   Future<List<int>> fetchCover(
-          OnlineMangaLibraryEntry entry, String url) async =>
-      <int>[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    OnlineMangaLibraryEntry entry,
+    String url,
+  ) async => <int>[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 }
 
 const OnlineMangaChapter _chapter = OnlineMangaChapter(
@@ -52,16 +53,16 @@ const OnlineMangaChapter _chapter = OnlineMangaChapter(
 );
 
 OnlineMangaLibraryEntry _entry() => const OnlineMangaLibraryEntry(
-      runtime: OnlineMangaRuntimeKind.mihon,
-      extensionPackage: 'org.example.fixture',
-      sourceId: '1',
-      series: OnlineMangaSeries(
-        key: '/series/fixture',
-        title: 'Fixture series',
-        raw: <String, Object?>{'url': '/series/fixture'},
-      ),
-      chapters: <OnlineMangaChapter>[_chapter],
-    );
+  runtime: OnlineMangaRuntimeKind.mihon,
+  extensionPackage: 'org.example.fixture',
+  sourceId: '1',
+  series: OnlineMangaSeries(
+    key: '/series/fixture',
+    title: 'Fixture series',
+    raw: <String, Object?>{'url': '/series/fixture'},
+  ),
+  chapters: <OnlineMangaChapter>[_chapter],
+);
 
 void main() {
   late Directory root;

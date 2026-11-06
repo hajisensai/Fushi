@@ -5,7 +5,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// BUG-2510：源按语言取章时，空章节列表要说清「该源只收录 X 语言」并给出同扩展
 /// 其它语言源的出路；没有语言范围（Aidoku / 互联）时空态文案不变。

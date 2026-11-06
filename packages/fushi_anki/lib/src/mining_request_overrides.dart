@@ -192,11 +192,13 @@ class MiningRequestOverrides {
     this.omitAudio = false,
     this.audioStartDeltaMs = 0,
     this.audioEndDeltaMs = 0,
+    this.audioSource,
     this.omitImage = false,
     this.videoImageMode,
     this.coverFrameAtMs,
     this.crop,
     this.mosaic = const <MiningMosaicRegion>[],
+    this.fieldValues = const <String, String>{},
   });
 
   /// fields map 里的键名。
@@ -215,6 +217,10 @@ class MiningRequestOverrides {
 
   /// 句子音频终点偏移（毫秒，正数 = 推后）。同 [audioStartDeltaMs]。
   final int audioEndDeltaMs;
+
+  /// 视频句子音频来源：`SentenceAudioSourcePick.wireName`（current / front_center /
+  /// `track:<N>`）；null = 用设置。本包不依赖引擎，所以存 wire 字符串。
+  final String? audioSource;
 
   /// 不要卡图（封面 / 截图 / 动图 / 视频片段都不要）。
   final bool omitImage;
@@ -236,6 +242,13 @@ class MiningRequestOverrides {
   /// 失败时宁可不要卡图也不能退回原图——用户打码就是不想让那块进卡。
   final List<MiningMosaicRegion> mosaic;
 
+  /// 用户在对话框里手改的卡片字段（Anki 字段名 → 写进卡片的值，反馈 -K86qlwBg6）。
+  ///
+  /// 只含**真的改过**的字段：值非空才算改，空串 / 纯空白在编解码时一律丢弃（对话框里
+  /// 留空 = 照常按字段映射自动生成）。宿主渲染完映射后用它整段替换同名字段
+  /// （`AnkiNoteComposer.buildMinedFields`），不在映射里的字段名不会凭空多写一个字段。
+  final Map<String, String> fieldValues;
+
   bool get hasMosaic => mosaic.isNotEmpty;
 
   bool get hasAudioDelta => audioStartDeltaMs != 0 || audioEndDeltaMs != 0;
@@ -245,11 +258,13 @@ class MiningRequestOverrides {
       deckName == null &&
       !omitAudio &&
       !hasAudioDelta &&
+      audioSource == null &&
       !omitImage &&
       videoImageMode == null &&
       coverFrameAtMs == null &&
       crop == null &&
-      mosaic.isEmpty;
+      mosaic.isEmpty &&
+      fieldValues.isEmpty;
 
   MiningRequestOverrides copyWith({
     String? deckName,
@@ -257,6 +272,8 @@ class MiningRequestOverrides {
     bool? omitAudio,
     int? audioStartDeltaMs,
     int? audioEndDeltaMs,
+    String? audioSource,
+    bool clearAudioSource = false,
     bool? omitImage,
     String? videoImageMode,
     bool clearVideoImageMode = false,
@@ -265,11 +282,13 @@ class MiningRequestOverrides {
     MiningImageCrop? crop,
     bool clearCrop = false,
     List<MiningMosaicRegion>? mosaic,
+    Map<String, String>? fieldValues,
   }) => MiningRequestOverrides(
     deckName: clearDeckName ? null : (deckName ?? this.deckName),
     omitAudio: omitAudio ?? this.omitAudio,
     audioStartDeltaMs: audioStartDeltaMs ?? this.audioStartDeltaMs,
     audioEndDeltaMs: audioEndDeltaMs ?? this.audioEndDeltaMs,
+    audioSource: clearAudioSource ? null : (audioSource ?? this.audioSource),
     omitImage: omitImage ?? this.omitImage,
     videoImageMode: clearVideoImageMode
         ? null
@@ -279,6 +298,7 @@ class MiningRequestOverrides {
         : (coverFrameAtMs ?? this.coverFrameAtMs),
     crop: clearCrop ? null : (crop ?? this.crop),
     mosaic: mosaic ?? this.mosaic,
+    fieldValues: fieldValues ?? this.fieldValues,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -286,6 +306,7 @@ class MiningRequestOverrides {
     if (omitAudio) 'omitAudio': true,
     if (audioStartDeltaMs != 0) 'audioStartDeltaMs': audioStartDeltaMs,
     if (audioEndDeltaMs != 0) 'audioEndDeltaMs': audioEndDeltaMs,
+    if (audioSource != null) 'audioSource': audioSource,
     if (omitImage) 'omitImage': true,
     if (videoImageMode != null) 'videoImageMode': videoImageMode,
     if (coverFrameAtMs != null) 'coverFrameAtMs': coverFrameAtMs,
@@ -294,7 +315,24 @@ class MiningRequestOverrides {
       'mosaic': <Map<String, Object?>>[
         for (final MiningMosaicRegion region in mosaic) region.toJson(),
       ],
+    if (fieldValues.isNotEmpty) 'fields': fieldValues,
   };
+
+  /// 解析 `fields`：只留「非空字符串键 → 非空白字符串值」，坏项逐个丢弃。
+  static Map<String, String> _fieldValuesFromJson(Object? raw) {
+    if (raw is! Map) return const <String, String>{};
+    final Map<String, String> out = <String, String>{
+      for (final MapEntry<Object?, Object?> e in raw.entries)
+        if (e.key case final String name
+            when name.isNotEmpty &&
+                e.value is String &&
+                (e.value! as String).trim().isNotEmpty)
+          name: e.value! as String,
+    };
+    return out.isEmpty
+        ? const <String, String>{}
+        : Map<String, String>.unmodifiable(out);
+  }
 
   static MiningRequestOverrides fromJson(Map<Object?, Object?> json) {
     final Object? deck = json['deck'];
@@ -302,16 +340,19 @@ class MiningRequestOverrides {
     final Object? frame = json['coverFrameAtMs'];
     final Object? start = json['audioStartDeltaMs'];
     final Object? end = json['audioEndDeltaMs'];
+    final Object? source = json['audioSource'];
     return MiningRequestOverrides(
       deckName: deck is String && deck.trim().isNotEmpty ? deck : null,
       omitAudio: json['omitAudio'] == true,
       audioStartDeltaMs: start is num ? start.toInt() : 0,
       audioEndDeltaMs: end is num ? end.toInt() : 0,
+      audioSource: source is String && source.isNotEmpty ? source : null,
       omitImage: json['omitImage'] == true,
       videoImageMode: mode is String && mode.isNotEmpty ? mode : null,
       coverFrameAtMs: frame is num ? frame.toInt() : null,
       crop: MiningImageCrop.fromJson(json['crop']),
       mosaic: MiningMosaicRegion.listFromJson(json['mosaic']),
+      fieldValues: _fieldValuesFromJson(json['fields']),
     );
   }
 

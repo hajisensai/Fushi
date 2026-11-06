@@ -55,8 +55,8 @@ import 'package:image/image.dart' as img;
   final int orientation = decoder is img.JpegDecoder
       ? jpegExifOrientation(bytes)
       : decoder is img.WebPDecoder
-          ? webpExifOrientation(bytes)
-          : 1;
+      ? webpExifOrientation(bytes)
+      : 1;
   if (orientation >= 5 && orientation <= 8) {
     final int swap = width;
     width = height;
@@ -70,18 +70,23 @@ import 'package:image/image.dart' as img;
 int webpExifOrientation(Uint8List bytes) {
   // RIFF<u32 size>WEBP，其后是一串 <fourcc><u32 size><payload>（payload 补齐到偶数）。
   if (bytes.length < 12) return 1;
-  if (bytes[0] != 0x52 || bytes[1] != 0x49 || bytes[2] != 0x46 ||
+  if (bytes[0] != 0x52 ||
+      bytes[1] != 0x49 ||
+      bytes[2] != 0x46 ||
       bytes[3] != 0x46) {
     return 1; // 'RIFF'
   }
-  if (bytes[8] != 0x57 || bytes[9] != 0x45 || bytes[10] != 0x42 ||
+  if (bytes[8] != 0x57 ||
+      bytes[9] != 0x45 ||
+      bytes[10] != 0x42 ||
       bytes[11] != 0x50) {
     return 1; // 'WEBP'
   }
   final ByteData data = ByteData.sublistView(bytes);
   int at = 12;
   while (at + 8 <= bytes.length) {
-    final bool isExif = bytes[at] == 0x45 && // E
+    final bool isExif =
+        bytes[at] == 0x45 && // E
         bytes[at + 1] == 0x58 && // X
         bytes[at + 2] == 0x49 && // I
         bytes[at + 3] == 0x46; // F
@@ -91,8 +96,7 @@ int webpExifOrientation(Uint8List bytes) {
     if (isExif) {
       // 规范说这里直接是 TIFF 头，但确有编码器把 JPEG APP1 的 `Exif\0\0` 前缀也带上，
       // 两种都收。
-      final int tiff =
-          _isExifHeader(bytes, payload) ? payload + 6 : payload;
+      final int tiff = _isExifHeader(bytes, payload) ? payload + 6 : payload;
       return _orientationFromTiff(bytes, tiff, payload + size);
     }
     // chunk payload 补齐到偶数字节。
@@ -196,7 +200,8 @@ int _orientationFromTiff(Uint8List bytes, int tiff, int end) {
     if (marker == 0xDA || marker == 0xD9) return null;
     final int segmentLength = (bytes[i + 2] << 8) | bytes[i + 3];
     if (segmentLength < 2) return null;
-    final bool isFrameHeader = marker >= 0xC0 &&
+    final bool isFrameHeader =
+        marker >= 0xC0 &&
         marker <= 0xCF &&
         marker != 0xC4 &&
         marker != 0xC8 &&

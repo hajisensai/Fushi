@@ -68,8 +68,9 @@ class GamepadButtonWidget extends StatelessWidget {
     final String? assetPath = GamepadButtonAssets.assetFor(button, brand);
 
     final bool isPill = shape == GamepadPadShape.pill;
-    final ShapeBorder inkShape =
-        isPill ? const StadiumBorder() : const CircleBorder();
+    final ShapeBorder inkShape = isPill
+        ? const StadiumBorder()
+        : const CircleBorder();
 
     final Widget knob = assetPath != null
         ? _buildAssetKnob(assetPath, scheme, isPill)
@@ -80,24 +81,23 @@ class GamepadButtonWidget extends StatelessWidget {
     return Material(
       type: MaterialType.transparency,
       shape: inkShape,
-      child: InkWell(
-        onTap: onTap,
-        customBorder: inkShape,
-        child: knob,
-      ),
+      child: InkWell(onTap: onTap, customBorder: inkShape, child: knob),
     );
   }
 
   /// 贴现成素材图（TODO-942 主路径）。已绑：图标下垫 primaryContainer 高亮底 +
   /// primary 描边；未绑：透明底，只显图标。高亮底形状随 [isPill]（圆钮/胶囊）。
   Widget _buildAssetKnob(String assetPath, ColorScheme scheme, bool isPill) {
-    final BorderSide side =
-        bound ? BorderSide(color: scheme.primary, width: 1.5) : BorderSide.none;
-    final ShapeBorder shapeBorder =
-        isPill ? StadiumBorder(side: side) : CircleBorder(side: side);
+    final BorderSide side = bound
+        ? BorderSide(color: scheme.primary, width: 1.5)
+        : BorderSide.none;
+    final ShapeBorder shapeBorder = isPill
+        ? StadiumBorder(side: side)
+        : CircleBorder(side: side);
     // 已绑填 primaryContainer，未绑透明——高亮/普通两态占位一致（footprint 不跳）。
-    final Color background =
-        bound ? scheme.primaryContainer : const Color(0x00000000);
+    final Color background = bound
+        ? scheme.primaryContainer
+        : const Color(0x00000000);
     return Container(
       width: isPill ? diameter * pillWidthFactor : diameter,
       height: isPill ? diameter * pillHeightFactor : diameter,
@@ -122,11 +122,13 @@ class GamepadButtonWidget extends StatelessWidget {
     final GamepadButtonGlyph glyph = GamepadGlyphs.glyphFor(button, brand);
     final String symbol = overrideSymbol ?? glyph.symbol;
 
-    final Color faceColor =
-        bound ? scheme.primaryContainer : tokens.surfaces.card;
+    final Color faceColor = bound
+        ? scheme.primaryContainer
+        : tokens.surfaces.card;
     final Color borderColor = bound ? scheme.primary : scheme.outlineVariant;
-    final Color baseFg =
-        bound ? scheme.onPrimaryContainer : scheme.onSurfaceVariant;
+    final Color baseFg = bound
+        ? scheme.onPrimaryContainer
+        : scheme.onSurfaceVariant;
     final Color fg = glyph.accent ?? baseFg;
 
     final BorderSide side = BorderSide(
@@ -165,11 +167,7 @@ class GamepadButtonWidget extends StatelessWidget {
 /// 十字键单臂的数据（按钮身份 + 绑定态 + 点击路由），由 [GamepadDpadCluster] 渲染。
 @immutable
 class GamepadDpadArm {
-  const GamepadDpadArm({
-    required this.button,
-    required this.bound,
-    this.onTap,
-  });
+  const GamepadDpadArm({required this.button, required this.bound, this.onTap});
 
   /// 方向臂的逻辑按钮（DpadUp/Down/Left/Right，序列化恒定）。
   final GamepadButton button;
@@ -215,7 +213,9 @@ class GamepadDpadCluster extends StatelessWidget {
     final double thickness = size * armThicknessFactor;
     final double armLength = (size - thickness) / 2;
     final Color crossFill = Color.alphaBlend(
-        scheme.onSurface.withValues(alpha: 0.14), scheme.surface);
+      scheme.onSurface.withValues(alpha: 0.14),
+      scheme.surface,
+    );
     final Color crossLine = scheme.onSurface.withValues(alpha: 0.45);
 
     return SizedBox(
@@ -323,10 +323,18 @@ class _DpadCrossPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final double t = size.shortestSide * thicknessFactor;
     final Radius r = Radius.circular(t * 0.28);
-    final Rect vertical =
-        Rect.fromLTWH((size.width - t) / 2, 0, t, size.height);
-    final Rect horizontal =
-        Rect.fromLTWH(0, (size.height - t) / 2, size.width, t);
+    final Rect vertical = Rect.fromLTWH(
+      (size.width - t) / 2,
+      0,
+      t,
+      size.height,
+    );
+    final Rect horizontal = Rect.fromLTWH(
+      0,
+      (size.height - t) / 2,
+      size.width,
+      t,
+    );
     final Path cross = Path.combine(
       PathOperation.union,
       Path()..addRRect(RRect.fromRectAndRadius(vertical, r)),
@@ -335,8 +343,9 @@ class _DpadCrossPainter extends CustomPainter {
 
     canvas.drawPath(cross, Paint()..color = fill);
 
-    final double strokeWidth =
-        (size.shortestSide * 0.02).clamp(1.0, 2.0).toDouble();
+    final double strokeWidth = (size.shortestSide * 0.02)
+        .clamp(1.0, 2.0)
+        .toDouble();
     final Paint linePaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth

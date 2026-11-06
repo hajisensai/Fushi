@@ -58,11 +58,12 @@ void main() {
         source: AnkiMiningSource.book,
         bookTitleTag: 'book',
         collectionTag: 'series',
-        charPositionTag: 'chars_42',
+        charPositionText: '制卡位置：第 42 字',
         clipStartMs: 10,
         clipEndMs: 20,
         synchronizedVideo: true,
         sourceLink: link,
+        sourceUrl: 'https://example.test/page?a=1',
       );
       await store.saveMining(
         link: link,
@@ -94,12 +95,16 @@ void main() {
       expect(restored.source, context.source);
       expect(restored.bookTitleTag, context.bookTitleTag);
       expect(restored.collectionTag, context.collectionTag);
-      expect(restored.charPositionTag, context.charPositionTag);
+      expect(restored.charPositionText, context.charPositionText);
       expect(restored.clipStartMs, context.clipStartMs);
       expect(restored.clipEndMs, context.clipEndMs);
-      expect(restored.synchronizedVideo, isTrue,
-          reason: '同步视频位丢了，回看落卡会把同一 MP4 当图与声各传一份');
+      expect(
+        restored.synchronizedVideo,
+        isTrue,
+        reason: '同步视频位丢了，回看落卡会把同一 MP4 当图与声各传一份',
+      );
       expect(restored.sourceLink!.toUri(), context.sourceLink!.toUri());
+      expect(restored.sourceUrl, context.sourceUrl);
       expect(await File(restored.coverPath!).readAsBytes(), <int>[1, 2]);
       expect(await File(restored.sentenceAudioPath!).readAsBytes(), <int>[
         3,

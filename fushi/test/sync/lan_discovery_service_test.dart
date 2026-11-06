@@ -1,6 +1,11 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:bonsoir/bonsoir.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
+import 'package:fushi/src/sync/mdns_fallback.dart';
 
 /// Builds a *resolved* [BonsoirService] for the mapper tests. Uses
 /// [BonsoirService.ignoreNorms] so the supplied name/attributes are preserved
@@ -10,14 +15,13 @@ BonsoirService _resolved({
   int port = 8765,
   List<String> hostAddresses = const <String>['192.168.1.100'],
   Map<String, String> attributes = const <String, String>{'id': 'abc123'},
-}) =>
-    BonsoirService.ignoreNorms(
-      name: name,
-      type: LanDiscoveryService.serviceType,
-      port: port,
-      hostAddresses: hostAddresses,
-      attributes: attributes,
-    );
+}) => BonsoirService.ignoreNorms(
+  name: name,
+  type: LanDiscoveryService.serviceType,
+  port: port,
+  hostAddresses: hostAddresses,
+  attributes: attributes,
+);
 
 void main() {
   // BUG-1554 守卫：dispose 之后 startDiscovery 必须是 no-op。
@@ -34,10 +38,112 @@ void main() {
       await service.dispose();
       expect(service.isDisposed, isTrue);
       await service.startDiscovery();
-      expect(service.hasActiveBrowser, isFalse,
-          reason: 'dispose 之后再起 browser 就是没人停得掉的孤儿');
+      expect(
+        service.hasActiveBrowser,
+        isFalse,
+        reason: 'dispose 之后再起 browser 就是没人停得掉的孤儿',
+      );
       expect(service.currentDevices, isEmpty);
     });
+
+    // BUG-4116：bonsoir_linux 的 stop() 解引用 initialize() 建出的 Avahi browser；
+    // 没有 Avahi 守护进程（WSL / 精简安装）时 initialize 抛错，旧实现已把这台未初始化
+    // 的 discovery 挂到 _discovery 上，之后 stop / dispose 就抛空检查异常（UncaughtZone）。
+    test(
+      'initialize failure publishes nothing and stop never touches it',
+      () async {
+        final List<_FakeDiscovery> made = <_FakeDiscovery>[];
+        final LanDiscoveryService service = LanDiscoveryService(
+          deviceId: 'self',
+          discoveryFactory: (String type) {
+            final _FakeDiscovery d = _FakeDiscovery(type, failInitialize: true);
+            made.add(d);
+            return d;
+          },
+          // 构造默认 `Platform.isLinux` 才开 mDNS 兜底（BUG-4119）；这条测的是
+          // 「无兜底」分支，钉死它，免得在 Linux CI 上转去兜底、真绑 UDP 5353。
+          mdnsFallbackEnabled: false,
+        );
+        await expectLater(service.startDiscovery(), throwsA(isA<StateError>()));
+        expect(service.hasActiveBrowser, isFalse);
+        await service.stopDiscovery();
+        await service.dispose();
+        expect(made.single.stopCalls, 0, reason: '未初始化的 browser 不能 stop');
+      },
+    );
+
+    // 同一 BUG-4116 形状的 Linux 分支：initialize 失败后转去内置 mDNS 兜底，
+    // 失败的 Avahi browser 照样不能被 stop / dispose 碰到，兜底 socket 随
+    // dispose 关掉。transport 注入假的，不碰真实网络。
+    test(
+      'initialize failure with the mDNS fallback never stops the dead browser',
+      () async {
+        final List<_FakeDiscovery> made = <_FakeDiscovery>[];
+        final _InertTransport transport = _InertTransport();
+        final LanDiscoveryService service = LanDiscoveryService(
+          deviceId: 'self',
+          discoveryFactory: (String type) {
+            final _FakeDiscovery d = _FakeDiscovery(type, failInitialize: true);
+            made.add(d);
+            return d;
+          },
+          mdnsTransportFactory: () async => transport,
+          mdnsFallbackEnabled: true,
+        );
+        await service.startDiscovery(); // 兜底接管，不抛
+        expect(service.usingMdnsFallback, isTrue);
+        expect(service.hasActiveBrowser, isTrue);
+        expect(transport.queries, isNotEmpty, reason: '兜底必须真的发出查询');
+        await service.stopDiscovery();
+        expect(service.usingMdnsFallback, isFalse);
+        expect(service.hasActiveBrowser, isFalse);
+        expect(transport.closed, isTrue);
+        await service.dispose();
+        expect(made.single.stopCalls, 0, reason: '未初始化的 browser 不能 stop');
+      },
+    );
+
+    test('dispose while initialize is pending stops it once ready', () async {
+      final _FakeDiscovery fake = _FakeDiscovery('t', holdInitialize: true);
+      final LanDiscoveryService service = LanDiscoveryService(
+        deviceId: 'self',
+        discoveryFactory: (_) => fake,
+      );
+      final Future<void> starting = service.startDiscovery();
+      await _untilInitializing(fake);
+      expect(service.hasActiveBrowser, isTrue);
+      await service.dispose();
+      expect(fake.stopCalls, 0, reason: '初始化未完成时不能 stop');
+      fake.releaseInitialize();
+      await starting;
+      expect(fake.stopCalls, 1, reason: '初始化完成后由启动方自己停掉');
+      expect(fake.started, isFalse);
+      expect(service.hasActiveBrowser, isFalse);
+    });
+
+    test(
+      'restart while initialize is pending keeps only the newer browser',
+      () async {
+        final _FakeDiscovery first = _FakeDiscovery('t', holdInitialize: true);
+        final _FakeDiscovery second = _FakeDiscovery('t');
+        final List<_FakeDiscovery> queue = <_FakeDiscovery>[first, second];
+        final LanDiscoveryService service = LanDiscoveryService(
+          deviceId: 'self',
+          discoveryFactory: (_) => queue.removeAt(0),
+        );
+        final Future<void> a = service.startDiscovery();
+        await pumpEventQueue();
+        await service.startDiscovery();
+        expect(second.started, isTrue);
+        first.releaseInitialize();
+        await a;
+        expect(first.stopCalls, 1);
+        expect(first.started, isFalse);
+        expect(second.stopCalls, 0);
+        await service.dispose();
+        expect(second.stopCalls, 1);
+      },
+    );
 
     test('dispose is idempotent and never touches a closed stream', () async {
       final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
@@ -87,9 +193,7 @@ void main() {
 
     test('prefers IPv4 over IPv6 when both are present', () {
       final device = FushiDevice.fromResolvedService(
-        _resolved(
-          hostAddresses: const <String>['fe80::1', '192.168.1.42'],
-        ),
+        _resolved(hostAddresses: const <String>['fe80::1', '192.168.1.42']),
       );
       expect(device, isNotNull);
       expect(device!.host, '192.168.1.42');
@@ -105,10 +209,7 @@ void main() {
 
     test('falls back to service name as deviceId when no id attribute', () {
       final device = FushiDevice.fromResolvedService(
-        _resolved(
-          name: 'Laptop',
-          attributes: const <String, String>{},
-        ),
+        _resolved(name: 'Laptop', attributes: const <String, String>{}),
       );
       expect(device, isNotNull);
       expect(device!.deviceId, 'Laptop');
@@ -185,12 +286,14 @@ void main() {
 
     test('lost event without TXT attributes still removes the device', () {
       final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
-      service.debugHandleEvent(BonsoirDiscoveryServiceResolvedEvent(
-        service: _resolved(
-          name: 'Peer PC',
-          attributes: const <String, String>{'id': 'peer-1'},
+      service.debugHandleEvent(
+        BonsoirDiscoveryServiceResolvedEvent(
+          service: _resolved(
+            name: 'Peer PC',
+            attributes: const <String, String>{'id': 'peer-1'},
+          ),
         ),
-      ));
+      );
       expect(
         service.currentDevices.map((FushiDevice d) => d.deviceId),
         <String>['peer-1'],
@@ -199,40 +302,49 @@ void main() {
       service.debugHandleEvent(
         BonsoirDiscoveryServiceLostEvent(service: lostService()),
       );
-      expect(service.currentDevices, isEmpty,
-          reason: 'lost 不带 TXT 时必须靠 name → deviceId 辅助映射找回存储键');
+      expect(
+        service.currentDevices,
+        isEmpty,
+        reason: 'lost 不带 TXT 时必须靠 name → deviceId 辅助映射找回存储键',
+      );
     });
 
     test('lost event with TXT id attribute keeps working', () {
       final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
-      service.debugHandleEvent(BonsoirDiscoveryServiceResolvedEvent(
-        service: _resolved(
-          name: 'Peer PC',
-          attributes: const <String, String>{'id': 'peer-1'},
+      service.debugHandleEvent(
+        BonsoirDiscoveryServiceResolvedEvent(
+          service: _resolved(
+            name: 'Peer PC',
+            attributes: const <String, String>{'id': 'peer-1'},
+          ),
         ),
-      ));
+      );
       expect(service.currentDevices, hasLength(1));
 
       // 平台带上了 TXT（且 name 从未 resolve 登记过 → 走 id 回落）：同样删得掉。
-      service.debugHandleEvent(BonsoirDiscoveryServiceLostEvent(
-        service: BonsoirService.ignoreNorms(
-          name: 'Renamed Peer',
-          type: LanDiscoveryService.serviceType,
-          port: 8765,
-          attributes: const <String, String>{'id': 'peer-1'},
+      service.debugHandleEvent(
+        BonsoirDiscoveryServiceLostEvent(
+          service: BonsoirService.ignoreNorms(
+            name: 'Renamed Peer',
+            type: LanDiscoveryService.serviceType,
+            port: 8765,
+            attributes: const <String, String>{'id': 'peer-1'},
+          ),
         ),
-      ));
+      );
       expect(service.currentDevices, isEmpty);
     });
 
     test('losing an unknown service is a no-op', () {
       final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
-      service.debugHandleEvent(BonsoirDiscoveryServiceResolvedEvent(
-        service: _resolved(
-          name: 'Peer PC',
-          attributes: const <String, String>{'id': 'peer-1'},
+      service.debugHandleEvent(
+        BonsoirDiscoveryServiceResolvedEvent(
+          service: _resolved(
+            name: 'Peer PC',
+            attributes: const <String, String>{'id': 'peer-1'},
+          ),
         ),
-      ));
+      );
       service.debugHandleEvent(
         BonsoirDiscoveryServiceLostEvent(service: lostService(name: 'Other')),
       );
@@ -277,4 +389,90 @@ void main() {
       expect(service.devices.isBroadcast, isTrue);
     });
   });
+}
+
+/// startDiscovery() lists real network interfaces before it initialises, so
+/// wait for the fake to see initialize() rather than draining microtasks once.
+Future<void> _untilInitializing(_FakeDiscovery fake) async {
+  for (int i = 0; i < 400 && !fake.initializeCalled; i++) {
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+  expect(fake.initializeCalled, isTrue, reason: 'initialize() never started');
+}
+
+/// Mirrors bonsoir_linux: [stop] before a successful [initialize] is an error.
+class _FakeDiscovery implements BonsoirDiscovery {
+  _FakeDiscovery(
+    this.type, {
+    this.failInitialize = false,
+    bool holdInitialize = false,
+  }) : _hold = holdInitialize ? Completer<void>() : null;
+
+  @override
+  final String type;
+  final bool failInitialize;
+  final Completer<void>? _hold;
+  final StreamController<BonsoirDiscoveryEvent> _events =
+      StreamController<BonsoirDiscoveryEvent>.broadcast();
+  bool initializeCalled = false;
+  bool initialized = false;
+  bool started = false;
+  int stopCalls = 0;
+
+  void releaseInitialize() => _hold?.complete();
+
+  @override
+  Future<void> initialize() async {
+    initializeCalled = true;
+    await _hold?.future;
+    if (failInitialize) throw StateError('no Avahi daemon');
+    initialized = true;
+  }
+
+  @override
+  Stream<BonsoirDiscoveryEvent>? get eventStream => _events.stream;
+
+  @override
+  Future<void> start() async {
+    if (!initialized) throw StateError('start before initialize');
+    started = true;
+  }
+
+  @override
+  Future<void> stop() async {
+    if (!initialized) {
+      throw StateError('Null check operator used on a null value');
+    }
+    stopCalls++;
+    started = false;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// An mDNS socket that records outgoing queries and never receives anything.
+class _InertTransport implements MdnsTransport {
+  final List<Uint8List> queries = <Uint8List>[];
+  final StreamController<MdnsDatagram> _in =
+      StreamController<MdnsDatagram>.broadcast();
+  bool closed = false;
+
+  @override
+  Stream<MdnsDatagram> get datagrams => _in.stream;
+
+  @override
+  void sendMulticast(Uint8List data) => queries.add(data);
+
+  @override
+  void sendTo(Uint8List data, InternetAddress address, int port) {}
+
+  @override
+  Future<List<InternetAddress>> localAddresses() async => <InternetAddress>[];
+
+  @override
+  void close() {
+    closed = true;
+    unawaited(_in.close());
+  }
 }

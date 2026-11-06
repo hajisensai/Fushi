@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstring>
+#include <iterator>
 #include <map>
 #include <string>
 #include "siglus_voice_source.h"
@@ -118,6 +119,72 @@ void TestPureSource() {
   Check(result.path[518] == L'x' && result.path[519] == 0);
   fixture.memory.bytes.erase(0x4000 + 400);
   Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+}
+
+// Plain-frame Resource: offset in EBX, length only in the frame local,
+// different key-copy / path / reader displacements.
+SiglusVoiceSourceLayout PlainLayout() {
+  return {0x8000, 0x7000, 8, -0x100, -0x74, -0x110, 4, 8, 12, -0xec};
+}
+struct PlainFixture {
+  Memory memory;
+  // ESI holds the key in this generation, not the offset.
+  SiglusVoiceSourceCall call{0x3000, 0x1800, 0x2000, 123456, 0x100};
+  PlainFixture() {
+    memory.Word(0x1800, 0x8000);
+    memory.Word(0x1804, 0x1f8c);
+    memory.Word(0x1808, 0x100);
+    memory.Word(0x180c, 0x40);
+    memory.Word(0x2008, 123456);
+    memory.Word(0x1f00, 123456);
+    memory.Word(0x1ef0, 0x3000);
+    memory.Word(0x1f14, 0x40);
+    memory.Word(0x3000, 0x7000);
+    static constexpr wchar_t path[] = L"C:\\koe\\z0001.ovk";
+    constexpr uint32_t units = static_cast<uint32_t>(std::size(path) - 1);
+    const uint32_t empty[6] = {};
+    memory.Put(0x1f8c, empty, sizeof(empty));
+    memory.Word(0x1f8c, 0x4000);
+    memory.Put(0x4000, path, (units + 1) * sizeof(wchar_t));
+    memory.Word(0x1f9c, units);
+    memory.Word(0x1fa0, units);
+  }
+};
+void TestPlainFrameSource() {
+  PlainFixture fixture;
+  SiglusVoiceSourceTask result;
+  Check(CaptureSiglusVoiceSource(PlainLayout(), fixture.call, fixture.memory,
+                                 &result));
+  Check(result.key == 123456 && result.offset == 0x100 && result.length == 0x40);
+  Check(std::wcscmp(result.path, L"C:\\koe\\z0001.ovk") == 0);
+  const uint32_t changed_words[] = {0x1800, 0x1804, 0x1808, 0x180c,
+      0x2008, 0x1f00, 0x1ef0, 0x1f14, 0x3000};
+  for (auto address : changed_words) {
+    PlainFixture changed;
+    uint32_t word = 0;
+    Check(changed.memory(address, &word, 4));
+    changed.memory.Word(address, word + 1);
+    Check(!CaptureSiglusVoiceSource(PlainLayout(), changed.call, changed.memory,
+                                    &result));
+  }
+  fixture = PlainFixture(); fixture.call.original_ebx = 0x101;
+  Check(!CaptureSiglusVoiceSource(PlainLayout(), fixture.call, fixture.memory,
+                                  &result));
+  // The aligned register contract does not hold for this frame, and the plain
+  // contract does not admit the aligned frame.
+  fixture = PlainFixture();
+  auto aligned = PlainLayout();
+  aligned.length_frame_displacement = 0;
+  Check(!CaptureSiglusVoiceSource(aligned, fixture.call, fixture.memory, &result));
+  Fixture aligned_frame;
+  auto plain_on_aligned = Layout();
+  plain_on_aligned.length_frame_displacement = -0xec;
+  Check(!CaptureSiglusVoiceSource(plain_on_aligned, aligned_frame.call,
+                                  aligned_frame.memory, &result));
+  fixture = PlainFixture();
+  auto positive = PlainLayout();
+  positive.length_frame_displacement = 4;
+  Check(!CaptureSiglusVoiceSource(positive, fixture.call, fixture.memory, &result));
 }
 
 void TestStablePaths() {
@@ -545,7 +612,7 @@ void TestProductionLegacySource() {
 }  // namespace
 
 int main() {
-  TestPureSource();
+  TestPureSource(); TestPlainFrameSource();
   TestStablePaths(); TestCwdChange();
 #if defined(_M_IX86)
   TestProductionNakedSource();

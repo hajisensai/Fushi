@@ -38,8 +38,9 @@ abstract final class AudiobookStorage {
 
   /// [audioExtensions] 的去点形式（file picker 的 `allowedExtensions` 用）。
   /// 两个导入对话框原各持同一派生副本，收敛到源集合旁的单一真相。
-  static final Set<String> audioExtensionsNoDot =
-      audioExtensions.map((String ext) => ext.replaceFirst('.', '')).toSet();
+  static final Set<String> audioExtensionsNoDot = audioExtensions
+      .map((String ext) => ext.replaceFirst('.', ''))
+      .toSet();
 
   static bool isAudioFile(String path) =>
       audioExtensions.contains(p.extension(path).toLowerCase());
@@ -63,11 +64,13 @@ abstract final class AudiobookStorage {
   static Future<Directory> _documentsRoot() =>
       (documentsRootResolver ?? _unassignedDocumentsRoot)();
 
-  static Future<Directory> _unassignedDocumentsRoot() =>
-      Future<Directory>.error(StateError(
-        'AudiobookStorage.documentsRootResolver 未装配：Flutter app 调 '
-        'installAudiobookStoragePlatform() / AppModel 注入 AppPaths；服务端在 CLI 入口注入。',
-      ));
+  static Future<Directory>
+  _unassignedDocumentsRoot() => Future<Directory>.error(
+    StateError(
+      'AudiobookStorage.documentsRootResolver 未装配：Flutter app 调 '
+      'installAudiobookStoragePlatform() / AppModel 注入 AppPaths；服务端在 CLI 入口注入。',
+    ),
+  );
 
   /// 单文件音频时长探测（毫秒）装配点；探测失败返回 0。平台实现（just_audio 一次性
   /// [AudioPlayer]）由 `installAudiobookStoragePlatform()` 装入。
@@ -122,7 +125,8 @@ abstract final class AudiobookStorage {
     final Directory docs = await _documentsRoot();
     final String hash = _stableHash(bookUid);
     final Directory oldDir = Directory(
-        p.join(docs.path, 'audiobooks', bookUid.hashCode.toRadixString(16)));
+      p.join(docs.path, 'audiobooks', bookUid.hashCode.toRadixString(16)),
+    );
     final Directory dir = Directory(p.join(docs.path, 'audiobooks', hash));
     if (!dir.existsSync() && oldDir.existsSync()) {
       oldDir.renameSync(dir.path);
@@ -133,19 +137,13 @@ abstract final class AudiobookStorage {
     return dir;
   }
 
-  static Future<String> persistFileWithProgress(
-    File src,
-    Directory persistDir, {
-    void Function(int copied, int total)? onProgress,
-  }) async {
-    if (p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(src.path))) {
-      return src.path;
-    }
-    final bool transcode = flacTranscodedExtensions
-        .contains(p.extension(src.path).toLowerCase());
-    final String baseName = transcode
-        ? '${p.basenameWithoutExtension(src.path)}.flac'
-        : p.basename(src.path);
+  /// [persistDir] 里给 [baseName] 找一个不冲突的落点。
+  ///
+  /// Avoid silently overwriting a same-basename file already persisted in
+  /// this batch (e.g. disc1/01.m4a vs disc2/01.m4a from a split audiobook).
+  /// Append a counter on collision so the positional audioFileIndex maps to
+  /// distinct files instead of both entries pointing at the last writer.
+  static String _freeDestIn(Directory persistDir, String baseName) {
     if (baseName.contains('..')) {
       throw ArgumentError('Invalid filename: $baseName');
     }
@@ -153,10 +151,6 @@ abstract final class AudiobookStorage {
     if (!p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(dest))) {
       throw ArgumentError('Path traversal detected: $dest');
     }
-    // Avoid silently overwriting a same-basename file already persisted in
-    // this batch (e.g. disc1/01.m4a vs disc2/01.m4a from a split audiobook).
-    // Append a counter on collision so the positional audioFileIndex maps to
-    // distinct files instead of both entries pointing at the last writer.
     if (File(dest).existsSync()) {
       final String ext = p.extension(baseName);
       final String stem = p.basenameWithoutExtension(baseName);
@@ -166,6 +160,63 @@ abstract final class AudiobookStorage {
         counter++;
       } while (File(dest).existsSync());
     }
+    return dest;
+  }
+
+  /// 持久根下的暂存目录 `<documents>/audiobooks/.staging/`：调用方要交给
+  /// [adoptFile] 接管的临时文件（如从服务器下载的字幕）一律先落这里。
+  ///
+  /// 与各书的持久目录 `<documents>/audiobooks/<hash>/` 同在持久根下，结构上保证
+  /// 同卷，[adoptFile] 因此只需一次 rename——不会落到系统 Temp（Windows 在 C 盘，
+  /// 用户把数据根设到别的盘时就跨卷了）再靠「复制 + 删源」兜底。放在 `audiobooks/`
+  /// 里而不是 documents 根下另起一个目录：老安装的 documents 根是整个用户
+  /// `Documents`，不该往里加新顶层项；点开头的名字也不会与 [ensurePersistDir] 的
+  /// 十六进制哈希目录撞名。暂存文件只在一次导入进行中存在：接管后搬走，导入失败由
+  /// 调用方删掉，平时这里是空的。
+  static Future<Directory> stagingDir() async {
+    final Directory docs = await _documentsRoot();
+    final Directory dir = Directory(
+      p.join(docs.path, 'audiobooks', stagingDirName),
+    );
+    await dir.create(recursive: true);
+    return dir;
+  }
+
+  /// [stagingDir] 的目录名（持久根 `audiobooks/` 下）。
+  static const String stagingDirName = '.staging';
+
+  /// 把调用方放在 [stagingDir] 里的**临时文件** [src] 收进 [persistDir]（不转码），
+  /// 返回落点。
+  ///
+  /// 与 [persistFileWithProgress]（复制、源文件归调用方）不同，这里持久化步骤接管
+  /// 源文件的生命周期：同卷 rename，源文件就此不在原处，调用方不用在 finally 里
+  /// 清理，也就不会出现「清理失败盖掉已成功的导入结果」。没有跨卷「复制再删源」
+  /// 的分支：暂存目录与持久目录同在 documents 根下，rename 失败（文件被占用等）
+  /// 照常抛，由调用方的导入回滚收尾（`importStandaloneSubtitleBook` 会撤掉已落的
+  /// 正文 EPUB 与持久目录）。
+  static Future<String> adoptFile(File src, Directory persistDir) async {
+    if (p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(src.path))) {
+      return src.path;
+    }
+    final String dest = _freeDestIn(persistDir, p.basename(src.path));
+    return (await src.rename(dest)).path;
+  }
+
+  static Future<String> persistFileWithProgress(
+    File src,
+    Directory persistDir, {
+    void Function(int copied, int total)? onProgress,
+  }) async {
+    if (p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(src.path))) {
+      return src.path;
+    }
+    final bool transcode = flacTranscodedExtensions.contains(
+      p.extension(src.path).toLowerCase(),
+    );
+    final String baseName = transcode
+        ? '${p.basenameWithoutExtension(src.path)}.flac'
+        : p.basename(src.path);
+    final String dest = _freeDestIn(persistDir, baseName);
     final int totalBytes = await src.length();
     if (transcode) return _transcodeToFlac(src, dest, totalBytes, onProgress);
 
@@ -195,8 +246,10 @@ abstract final class AudiobookStorage {
       );
     }
 
-    fushiDebugPrint('[fushi-import] persisted ${src.path} → $dest '
-        '(${(totalBytes / 1024 / 1024).toStringAsFixed(1)} MB)');
+    fushiDebugPrint(
+      '[fushi-import] persisted ${src.path} → $dest '
+      '(${(totalBytes / 1024 / 1024).toStringAsFixed(1)} MB)',
+    );
     return dest;
   }
 
@@ -210,8 +263,10 @@ abstract final class AudiobookStorage {
   ) async {
     final Future<void> Function(String, String)? transcoder = flacTranscoder;
     if (transcoder == null) {
-      throw StateError('AudiobookStorage.flacTranscoder is not installed; '
-          'cannot persist ${p.basename(src.path)}');
+      throw StateError(
+        'AudiobookStorage.flacTranscoder is not installed; '
+        'cannot persist ${p.basename(src.path)}',
+      );
     }
     onProgress?.call(0, totalBytes);
     await transcoder(src.path, dest);
@@ -290,13 +345,9 @@ abstract final class AudiobookStorage {
   static bool anyReferenced({
     required List<String> paths,
     required String persistRoot,
-  }) =>
-      paths.any(
-        (String path) => isReferencedPath(
-          filePath: path,
-          persistRoot: persistRoot,
-        ),
-      );
+  }) => paths.any(
+    (String path) => isReferencedPath(filePath: path, persistRoot: persistRoot),
+  );
 
   /// TODO-935 ①A 断链检测：返回 [paths] 中在磁盘上不存在的路径子集（保持原序）。
   /// [exists] 默认查真实文件系统，测试可注入假谓词。空列表返回空列表。
@@ -313,8 +364,7 @@ abstract final class AudiobookStorage {
   static bool hasMissingPaths(
     List<String> paths, {
     bool Function(String path)? exists,
-  }) =>
-      missingPaths(paths, exists: exists).isNotEmpty;
+  }) => missingPaths(paths, exists: exists).isNotEmpty;
 
   /// 两组音频路径是否是**同一套音频**（BUG-1679 的进度作废判据）。
   /// 有序比较：顺序就是 `AudioCue.audioFileIndex` 的含义，换序即换时间轴。
@@ -366,12 +416,14 @@ abstract final class AudiobookStorage {
       final File src = File(path);
       onFile?.call(p.basename(path));
       final int base = copiedBytes;
-      persisted.add(await persistFileWithProgress(
-        src,
-        persistDir,
-        onProgress: (int copied, int total) =>
-            onProgress?.call(base + copied, totalBytes),
-      ));
+      persisted.add(
+        await persistFileWithProgress(
+          src,
+          persistDir,
+          onProgress: (int copied, int total) =>
+              onProgress?.call(base + copied, totalBytes),
+        ),
+      );
       if (!_isInside(persistDir, path)) copiedBytes += await src.length();
       onProgress?.call(copiedBytes, totalBytes);
     }
@@ -405,11 +457,13 @@ abstract final class AudiobookStorage {
       fushiDebugPrint('[fushi-import] deleted persist dir: ${dir.path}');
     }
     final Directory oldDir = Directory(
-        p.join(docs.path, 'audiobooks', bookUid.hashCode.toRadixString(16)));
+      p.join(docs.path, 'audiobooks', bookUid.hashCode.toRadixString(16)),
+    );
     if (oldDir.existsSync()) {
       await oldDir.delete(recursive: true);
       fushiDebugPrint(
-          '[fushi-import] deleted legacy persist dir: ${oldDir.path}');
+        '[fushi-import] deleted legacy persist dir: ${oldDir.path}',
+      );
     }
   }
 }

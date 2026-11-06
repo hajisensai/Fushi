@@ -53,51 +53,51 @@ class MangaOcrEngineAvailability {
 
   /// 交给 [resolveMangaOcrEngine] 的能力表。
   List<MangaOcrEngineCapability> get capabilities => <MangaOcrEngineCapability>[
-        MangaOcrEngineCapability(
-          id: MangaOcrEngineId.localOnnx,
-          supported: builtinSupported,
-          ready: builtinReady,
-          requiresNetwork: false,
-          uploadsImages: false,
-          supportsIncremental: true,
-        ),
-        // 系统 OCR 必须进能力表：`resolveMangaOcrEngine` 的 auto 回退顺序里排着
-        // 它，漏在这里 auto 就永远落不到它上——Apple 上没下本地模型时「装完即用」
-        // 的 Vision 引擎只有手动选才用得上。
-        MangaOcrEngineCapability(
-          id: MangaOcrEngineId.systemOcr,
-          supported: systemOcrOffered,
-          ready: systemOcrReady,
-          requiresNetwork: false,
-          uploadsImages: false,
-          supportsIncremental: true,
-        ),
-        MangaOcrEngineCapability(
-          id: MangaOcrEngineId.googleLens,
-          supported: lensOffered,
-          ready: lensOffered,
-          requiresNetwork: true,
-          uploadsImages: true,
-          supportsIncremental: true,
-        ),
-        MangaOcrEngineCapability(
-          id: MangaOcrEngineId.externalMokuro,
-          supported: externalOffered,
-          ready: externalReady,
-          requiresNetwork: false,
-          uploadsImages: false,
-          supportsIncremental: false,
-        ),
-        MangaOcrEngineCapability(
-          id: MangaOcrEngineId.pairedHost,
-          supported: remoteOffered,
-          // 模型没下载的 host 不算 ready，auto 解析不得落到它上面。
-          ready: remoteUsable,
-          requiresNetwork: true,
-          uploadsImages: true,
-          supportsIncremental: true,
-        ),
-      ];
+    MangaOcrEngineCapability(
+      id: MangaOcrEngineId.localOnnx,
+      supported: builtinSupported,
+      ready: builtinReady,
+      requiresNetwork: false,
+      uploadsImages: false,
+      supportsIncremental: true,
+    ),
+    // 系统 OCR 必须进能力表：`resolveMangaOcrEngine` 的 auto 回退顺序里排着
+    // 它，漏在这里 auto 就永远落不到它上——Apple 上没下本地模型时「装完即用」
+    // 的 Vision 引擎只有手动选才用得上。
+    MangaOcrEngineCapability(
+      id: MangaOcrEngineId.systemOcr,
+      supported: systemOcrOffered,
+      ready: systemOcrReady,
+      requiresNetwork: false,
+      uploadsImages: false,
+      supportsIncremental: true,
+    ),
+    MangaOcrEngineCapability(
+      id: MangaOcrEngineId.googleLens,
+      supported: lensOffered,
+      ready: lensOffered,
+      requiresNetwork: true,
+      uploadsImages: true,
+      supportsIncremental: true,
+    ),
+    MangaOcrEngineCapability(
+      id: MangaOcrEngineId.externalMokuro,
+      supported: externalOffered,
+      ready: externalReady,
+      requiresNetwork: false,
+      uploadsImages: false,
+      supportsIncremental: false,
+    ),
+    MangaOcrEngineCapability(
+      id: MangaOcrEngineId.pairedHost,
+      supported: remoteOffered,
+      // 模型没下载的 host 不算 ready，auto 解析不得落到它上面。
+      ready: remoteUsable,
+      requiresNetwork: true,
+      uploadsImages: true,
+      supportsIncremental: true,
+    ),
+  ];
 
   /// 某个引擎现在能不能真跑（向导里选项的 enabled、钩子里的最终校验共用）。
   bool isUsable(MangaOcrEngineId engine) {
@@ -150,9 +150,9 @@ Future<MangaOcrEngineAvailability> probeMangaOcrEngines(
   if (systemOcrRunner != null) {
     try {
       systemOcr = await systemOcrRunner.isAvailable().timeout(
-            kSystemOcrProbeTimeout,
-            onTimeout: () => false,
-          );
+        kSystemOcrProbeTimeout,
+        onTimeout: () => false,
+      );
     } on Object {
       systemOcr = false;
     }

@@ -5,7 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/extension_catalog_controls.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// BUG-3140：扩展页「最低下载量」一排的首档（门槛 0 = 不筛）借用了语言筛选的
@@ -22,12 +22,10 @@ void main() {
             key: const ValueKey<String>('preview'),
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: ExtensionCatalogActions(
+              child: ExtensionMinDownloadsFilter(
                 keyPrefix: 'test_extension',
                 minDownloads: 0,
                 onMinDownloadsChanged: (int _) {},
-                onBulkInstall: () {},
-                onUpdateAll: () {},
               ),
             ),
           ),

@@ -2,6 +2,7 @@
 
 package eu.kanade.tachiyomi.animesource.model
 
+import kotlinx.serialization.json.JsonObject
 import java.io.Serializable
 
 /**
@@ -9,7 +10,7 @@ import java.io.Serializable
  * `preview_url` on top of the lib-14 fields). Episode parsers in the yuzono /
  * Anikku ecosystem assign `fillermark`, which on a lib-14 host is a
  * NoSuchMethodError at the first episode list -- the "cannot open the source"
- * symptom.
+ * symptom. extensions-lib 17 adds [memo].
  */
 interface SEpisode : Serializable {
     var url: String
@@ -31,6 +32,14 @@ interface SEpisode : Serializable {
     /** @since extensions-lib 16 */
     var preview_url: String?
 
+    /**
+     * Source-private metadata (extensions-lib 17). The host does not interpret it
+     * and does not carry it across bridge calls (see [SAnime.memo]).
+     *
+     * @since extensions-lib 17
+     */
+    var memo: JsonObject
+
     fun copyFrom(other: SEpisode) {
         name = other.name
         url = other.url
@@ -40,6 +49,7 @@ interface SEpisode : Serializable {
         scanlator = other.scanlator
         summary = other.summary
         preview_url = other.preview_url
+        memo = other.memo
     }
 
     companion object {

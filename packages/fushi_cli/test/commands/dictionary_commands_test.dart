@@ -97,6 +97,62 @@ void main() {
       );
     });
 
+    test('BUG-3573：kanji-enable / kanji-disable / kanji-order 只动汉字部分', () {
+      final CtlRequestSpec on = _build('dict', 'kanji-enable', <String>[
+        '現代新国語辞典',
+      ]);
+      expect(on.method, 'PUT');
+      expect(
+        on.path,
+        '/api/admin/dictionaries/${Uri.encodeComponent('現代新国語辞典')}',
+      );
+      expect(on.body, <String, Object?>{'kanjiEnabled': true});
+      expect(
+        _build('dict', 'kanji-disable', <String>['X']).body,
+        <String, Object?>{'kanjiEnabled': false},
+      );
+      final CtlRequestSpec order = _build('dict', 'kanji-order', <String>[
+        'My',
+        'Dict',
+        '1',
+      ]);
+      expect(order.path, '/api/admin/dictionaries/My%20Dict');
+      expect(order.body, <String, Object?>{'kanjiPosition': 1});
+      expect(
+        () => _build('dict', 'kanji-order', <String>['X', '0']),
+        throwsA(isA<CtlUsageError>()),
+      );
+      expect(
+        () => _build('dict', 'kanji-enable', <String>[]),
+        throwsA(isA<CtlUsageError>()),
+      );
+      // 单本回显：混合词典带上汉字部分的开关，普通词典不多一个字。
+      final String Function(Object?) render = _spec(
+        'dict',
+        'kanji-enable',
+      ).render!;
+      expect(
+        render(<String, Object?>{
+          'displayName': 'M',
+          'enabled': false,
+          'type': 'term',
+          'order': 0,
+          'kanjiEnabled': true,
+          'kanjiOrder': 0,
+        }),
+        allOf(contains('停用'), contains('汉字部分启用')),
+      );
+      expect(
+        render(<String, Object?>{
+          'displayName': 'J',
+          'enabled': true,
+          'type': 'term',
+          'order': 0,
+        }),
+        isNot(contains('汉字部分')),
+      );
+    });
+
     test('rm 需要 --yes', () {
       expect(
         () => _build('dict', 'rm', <String>['JMdict']),
@@ -164,6 +220,13 @@ void main() {
         'limit': '3',
         'wildcards': 'true',
       });
+      // --lang：调用方查词语言随请求下发（中文会补查繁体变体）；缺省不发，按 app 当前语言。
+      final CtlRequestSpec zh = _build('dict', 'search', <String>[
+        '头发',
+        '--lang',
+        'zh-CN',
+      ]);
+      expect(zh.query, <String, String>{'term': '头发', 'language': 'zh-CN'});
       expect(
         () => _build('dict', 'search', <String>[]),
         throwsA(isA<CtlUsageError>()),
@@ -467,6 +530,10 @@ void main() {
       expect(
         _build('anki', 'mine', <String>['-w', '猫']).body,
         <String, Object?>{'word': '猫'},
+      );
+      expect(
+        _build('anki', 'mine', <String>['-w', '头发', '--lang', 'zh']).body,
+        <String, Object?>{'word': '头发', 'language': 'zh'},
       );
       expect(
         () => _build('anki', 'mine', <String>['-w', '猫', '--field', 'bad']),

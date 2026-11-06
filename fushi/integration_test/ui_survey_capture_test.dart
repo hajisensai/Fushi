@@ -31,8 +31,9 @@ import 'test_helpers.dart';
 /// 关掉启动期弹出的模态框（如联网成功时的「发现新版本」更新弹窗），避免挡住
 /// 截图。走 Navigator.pop（不点坐标）；根路由 canPop=false 时自然停。
 Future<void> _dismissTopDialogs(WidgetTester tester) async {
-  final NavigatorState nav =
-      tester.state<NavigatorState>(find.byType(Navigator).first);
+  final NavigatorState nav = tester.state<NavigatorState>(
+    find.byType(Navigator).first,
+  );
   for (int i = 0; i < 3 && nav.canPop(); i++) {
     nav.pop();
     await tester.pump(const Duration(milliseconds: 400));
@@ -41,9 +42,11 @@ Future<void> _dismissTopDialogs(WidgetTester tester) async {
 }
 
 /// 固定 pump 若干帧（不 settle），让页面异步内容尽量渲染出来。
-Future<void> _pumpFrames(WidgetTester tester,
-    {int frames = 8,
-    Duration interval = const Duration(milliseconds: 250)}) async {
+Future<void> _pumpFrames(
+  WidgetTester tester, {
+  int frames = 8,
+  Duration interval = const Duration(milliseconds: 250),
+}) async {
   for (int i = 0; i < frames; i++) {
     await tester.pump(interval);
   }
@@ -58,17 +61,21 @@ Future<bool> _captureRenderView(WidgetTester tester, String name) async {
     if (layer == null) return false;
     final ui.Image image = await layer.toImage(view.paintBounds);
     try {
-      final ByteData? rgba =
-          await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      final ByteData? rgba = await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
       final bool nonBlank =
           rgba != null && rgbaLooksNonBlank(rgba.buffer.asUint8List());
-      final ByteData? png =
-          await image.toByteData(format: ui.ImageByteFormat.png);
+      final ByteData? png = await image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
       if (png == null) return false;
       final String path = '${observeScreenshotDir().path}/$name.png';
       await File(path).writeAsBytes(png.buffer.asUint8List(), flush: true);
-      debugPrint('[survey] saved $path (${png.lengthInBytes}B, '
-          'nonBlank=$nonBlank)');
+      debugPrint(
+        '[survey] saved $path (${png.lengthInBytes}B, '
+        'nonBlank=$nonBlank)',
+      );
       return nonBlank;
     } finally {
       image.dispose();
@@ -135,8 +142,11 @@ void main() {
         if (Platform.isWindows) HomeTab.games,
         HomeTab.settings,
       ];
-      expect(HomePage.debugSelectTab, isNotNull,
-          reason: 'HomePage.debugSelectTab 测试钩子应已注册（debug build）');
+      expect(
+        HomePage.debugSelectTab,
+        isNotNull,
+        reason: 'HomePage.debugSelectTab 测试钩子应已注册（debug build）',
+      );
 
       final String originalBrightness = appModel.themeNotifier.brightnessMode;
       int nonBlankCount = 0;
@@ -162,8 +172,10 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
 
       // 至少各主题多数面非空白（takeScreenshot 路径由 driver 落盘，宿主侧校验）。
-      debugPrint('[survey] nonBlank RenderView captures: '
-          '$nonBlankCount/${tabs.length * 2}');
+      debugPrint(
+        '[survey] nonBlank RenderView captures: '
+        '$nonBlankCount/${tabs.length * 2}',
+      );
 
       assertStrictErrors(errors);
     } finally {

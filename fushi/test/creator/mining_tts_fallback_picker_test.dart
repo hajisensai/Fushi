@@ -40,6 +40,7 @@ void main() {
     );
     expect(fallback.items.map((SettingsItem i) => i.id).toList(), <String>[
       'models.tts_fallback_voice',
+      'models.tts_fallback_speed',
       'models.tts_usage',
     ]);
     expect(fallback.items.first, isA<SettingsActionItem>());

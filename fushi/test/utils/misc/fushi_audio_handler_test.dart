@@ -30,28 +30,30 @@ void main() {
       expect(item.displayDescription, '役立たない地図の所為にして今');
     });
 
-    test('restores fallback artist and clears display subtitle when disabled',
-        () {
-      final FushiAudioHandler handler = buildHandler();
+    test(
+      'restores fallback artist and clears display subtitle when disabled',
+      () {
+        final FushiAudioHandler handler = buildHandler();
 
-      handler.setMediaItemInfo(title: 'Book title', artist: 'Author');
-      handler.updateNotificationSubtitle(
-        title: 'Book title',
-        subtitle: '遠方に暮れています',
-        fallbackArtist: 'Author',
-      );
-      handler.updateNotificationSubtitle(
-        title: 'Book title',
-        subtitle: null,
-        fallbackArtist: 'Author',
-      );
+        handler.setMediaItemInfo(title: 'Book title', artist: 'Author');
+        handler.updateNotificationSubtitle(
+          title: 'Book title',
+          subtitle: '遠方に暮れています',
+          fallbackArtist: 'Author',
+        );
+        handler.updateNotificationSubtitle(
+          title: 'Book title',
+          subtitle: null,
+          fallbackArtist: 'Author',
+        );
 
-      final item = handler.mediaItem.value;
-      expect(item, isNotNull);
-      expect(item!.title, 'Book title');
-      expect(item.artist, 'Author');
-      expect(item.displaySubtitle, isNull);
-      expect(item.displayDescription, isNull);
-    });
+        final item = handler.mediaItem.value;
+        expect(item, isNotNull);
+        expect(item!.title, 'Book title');
+        expect(item.artist, 'Author');
+        expect(item.displaySubtitle, isNull);
+        expect(item.displayDescription, isNull);
+      },
+    );
   });
 }

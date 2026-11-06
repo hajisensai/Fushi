@@ -18,16 +18,30 @@ import 'package:fushi/src/reader/reader_control_layout.dart';
 @visibleForTesting
 bool? debugDesktopSystemBallPlatformOverride;
 
-/// Windows / macOS：应用外悬浮球是 runner 自绘的置顶窗口（与应用内球同时在）。
+/// Windows / macOS / Linux (X11)：应用外悬浮球是 runner 自绘的置顶窗口（与应用内球
+/// 同时在）。Linux 只在 X11 会话里有：Wayland 不让程序摆放自己的窗口。
 bool get isDesktopSystemBallPlatform =>
     debugDesktopSystemBallPlatformOverride ??
-    (Platform.isWindows || Platform.isMacOS);
+    (Platform.isWindows ||
+        Platform.isMacOS ||
+        (Platform.isLinux && linuxSessionIsX11(Platform.environment)));
+
+/// Whether GTK on Linux talks to an X server: forced with `GDK_BACKEND=x11`, or
+/// an X display without a Wayland one (a Plasma X11 session, the Steam Deck's
+/// default desktop). GTK prefers Wayland whenever `WAYLAND_DISPLAY` is set.
+bool linuxSessionIsX11(Map<String, String> environment) {
+  final String backend = environment['GDK_BACKEND'] ?? '';
+  if (backend.isNotEmpty) return backend.split(',').first.trim() == 'x11';
+  return (environment['WAYLAND_DISPLAY'] ?? '').isEmpty &&
+      (environment['DISPLAY'] ?? '').isNotEmpty;
+}
 
 /// 应用外（系统级）悬浮球此刻是否该给应用内球让位（隐藏）。两颗球同时出现在
 /// Fushi 里是重复入口（群反馈：歌词页右侧并排两颗球），所以：
 ///
-///  - 只在「应用内悬浮球」开关开着时让位（[inAppBallEnabled]）——用户关了应用内
-///    球，前台也保留应用外球，否则 Fushi 里一颗球都没有。页面临时不画球（场景
+///  - 只在「应用内悬浮球」开关开着、且当前场景还勾着按钮时让位（[inAppBallEnabled]，
+///    宿主把两者合在一起传）——用户关了应用内球、或把这一场景的按钮全取消了（应用
+///    内球因此不画，BUG-3687），前台也保留应用外球，否则 Fushi 里一颗球都没有。页面临时不画球（场景
 ///    要求隐藏、本页点了关闭、截屏中）不算关掉，照样让位：那是页面 / 用户此刻
 ///    不要球，不是要另一颗球顶上。
 ///  - 「在前台」按平台分：
@@ -77,7 +91,7 @@ enum FloatingBallScope {
   final String storageValue;
 
   /// 本平台有没有应用外悬浮球：Android（悬浮窗服务）与 Windows / macOS（原生
-  /// 置顶窗口）有；iOS 不允许应用外悬浮，Linux 没有实现。
+  /// 置顶窗口）有，Linux 只在 X11 会话里有；iOS 不允许应用外悬浮。
   static bool systemBallSupported({
     required bool isAndroid,
     bool isDesktop = false,
@@ -200,10 +214,21 @@ enum FloatingBallGlobalAction {
   /// 冲突裁决与重新登录提示都在主窗里给。
   sync('sync'),
 
+  /// 切换配置（Profile）：弹出配置列表，点一项即切过去——与查词弹窗顶栏「制卡
+  /// 目标」菜单、设置页配置选择器同一条 `ProfileViewModel.switchProfile`。应用外球
+  /// 把 Fushi 唤到前台再弹（配置在主窗的数据库里）。
+  switchProfile('switch_profile'),
+
   /// 反馈：截下当前画面后打开反馈中心（与首页顶栏的反馈按钮同一个入口
   /// `openFeedbackCenter`）。只在应用内球上：截图截的是 Fushi 自己的页面，应用外
   /// 球浮在别的程序上，截不到也没有页面可附。
-  feedback('feedback');
+  feedback('feedback'),
+
+  /// AI 助手（spec `docs/specs/2026-10-26-ai-operations-agent-design.md` §6.4）：
+  /// 应用内球在当前页上方弹 AI 浮层（手机半屏面板 / 桌面靠边侧栏），按场景带上
+  /// 当前书 / 视频 / 页面作上下文；应用外球把 Fushi 唤到前台再开浮层。AI 模块关着
+  /// 时宿主不出这颗按钮；没指派提供商时照常出，点了引导去设置、不发请求。
+  ai('ai');
 
   const FloatingBallGlobalAction(this.storageValue);
 
@@ -212,7 +237,7 @@ enum FloatingBallGlobalAction {
   /// 在 [scope] 的球上出厂勾不勾上（都能在 设置 → 悬浮球 里自己勾 / 取消）：
   ///
   /// - 同步各场景都不勾：多数人没配同步后端，出厂就塞一颗点了只会说「同步不可用」
-  ///   的按钮是噪音。
+  ///   的按钮是噪音。切换配置同理：多数人只有一份配置。
   /// - 应用外球：其余全勾——它本来就是给别的程序用的这些入口。
   /// - 阅读器 / 漫画 / 视频只勾「查词」与「反馈」：球上已有一整排本页专属按钮，
   ///   再叠上应用外查词 / 剪贴板 / 截屏识字 / 拍照这些与当前媒体无关的入口，漫画页
@@ -220,7 +245,9 @@ enum FloatingBallGlobalAction {
   /// - 其它应用内页面：除「应用外查词」外都勾——在 Fushi 里面它只是另开一个独立
   ///   查词窗，与「查词」重复。
   bool onByDefaultIn(FloatingBallScope scope) {
-    if (this == sync) return false;
+    if (this == sync || this == switchProfile) return false;
+    // AI：四个应用内场景默认放进按钮组，应用外球默认不勾（spec §6.4）。
+    if (this == ai) return scope != FloatingBallScope.system;
     if (scope == FloatingBallScope.system) return true;
     if (scope.isMediaScene) return this == lookup || this == feedback;
     return this != popupLookup;
@@ -254,12 +281,17 @@ enum FloatingBallGlobalAction {
   /// 查词页）、「应用外查词」与「截屏识字」（都用全局查词覆盖窗）都挂在这个模块
   /// 上——模块关着时查词页没有入口、全局查词也不启动，按钮点了没反应，所以干脆
   /// 不出现。剪贴板查词在覆盖窗不可用时退回主窗查词弹窗，不受影响。
+  ///
+  /// [globalLookupSupported]：这台桌面有没有全局查词覆盖窗（Linux 只在 X11 且
+  /// 带了 `fushi_lookup_card` 时有）。「应用外查词」与「截屏识字」的结果都在那张卡
+  /// 上，没有它就不出现。
   bool availableIn(
     FloatingBallScope scope, {
     required bool isAndroid,
     required bool isIOS,
     required bool isDesktop,
     required bool lookupModuleEnabled,
+    bool globalLookupSupported = true,
   }) {
     if (scope == FloatingBallScope.system &&
         this == FloatingBallGlobalAction.feedback) {
@@ -267,16 +299,55 @@ enum FloatingBallGlobalAction {
     }
     if (scope == FloatingBallScope.system && isDesktop) {
       return switch (this) {
-        FloatingBallGlobalAction.lookup ||
+        FloatingBallGlobalAction.lookup => lookupModuleEnabled,
         FloatingBallGlobalAction.popupLookup ||
-        FloatingBallGlobalAction.screenOcr => lookupModuleEnabled,
+        FloatingBallGlobalAction.screenOcr =>
+          lookupModuleEnabled && globalLookupSupported,
         FloatingBallGlobalAction.clipboard => true,
         FloatingBallGlobalAction.cameraOcr => false,
         FloatingBallGlobalAction.sync => true,
+        FloatingBallGlobalAction.switchProfile => true,
         FloatingBallGlobalAction.feedback => false,
+        FloatingBallGlobalAction.ai => true,
       };
     }
     return availableOn(isAndroid: isAndroid, isIOS: isIOS);
+  }
+}
+
+/// Android 应用外悬浮球收起态「点一下」做什么。除 [expand] 外都是一步直达的单个
+/// 功能，此时长按才展开按钮（只用某一个功能的人不必点两下，反馈 9bdhVTgq3A）。
+/// 线协议值即动作 id（原生 `FloatingBallService.TAP_ACTIONS`），[expand] 发空串。
+enum FloatingBallTapAction {
+  /// 出厂：点球展开按钮。
+  expand(''),
+
+  /// 直接查剪贴板（旧版「点球查剪贴板」开关）。
+  clipboard('clipboard'),
+
+  /// 直接截屏识字。
+  screenOcr('screen_ocr'),
+
+  /// 直接打开 AI 助手（spec §6.4）：Fushi 被拉到前台并打开 AI 浮层。
+  ai('ai');
+
+  const FloatingBallTapAction(this.storageValue);
+
+  final String storageValue;
+
+  static const FloatingBallTapAction fallback = expand;
+
+  /// 持久化值 → 档位。[legacyTapClipboard] 是旧版 bool 偏好
+  /// `floating_ball.tap_clipboard`：新键从没写过（null）时沿用它。
+  static FloatingBallTapAction fromStorage(
+    Object? raw, {
+    bool legacyTapClipboard = false,
+  }) {
+    if (raw is! String) return legacyTapClipboard ? clipboard : fallback;
+    for (final FloatingBallTapAction value in values) {
+      if (value.storageValue == raw) return value;
+    }
+    return fallback;
   }
 }
 

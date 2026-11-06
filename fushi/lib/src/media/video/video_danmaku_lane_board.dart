@@ -69,10 +69,12 @@ class VideoDanmakuLaneBoard {
     required int positionMs,
   }) {
     final int maxDurationMs = math.max(scrollDurationMs, fixedDurationMs);
-    final bool timelineJumped = !_primed ||
+    final bool timelineJumped =
+        !_primed ||
         positionMs < _lastPositionMs ||
         positionMs - _lastPositionMs > maxDurationMs;
-    final bool premiseChanged = !identical(itemsToken, _itemsToken) ||
+    final bool premiseChanged =
+        !identical(itemsToken, _itemsToken) ||
         viewportWidth != _viewportWidth ||
         maxRows != _maxRows ||
         maxActive != _maxActive ||

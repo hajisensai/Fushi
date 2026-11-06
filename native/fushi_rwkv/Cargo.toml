@@ -1,0 +1,55 @@
+[package]
+name = "fushi_rwkv"
+version = "0.1.0"
+edition = "2021"
+publish = false
+# The inference core is carried over from the RWKV fork of Anki
+# (kuma3-anki-core, AGPL-3.0-or-later; see UPSTREAM.md). This crate is kept
+# separate from native/fushi_fsrs so that the GPL-3.0-only fsrs crate stays
+# GPL-only; whatever links this one is AGPL-covered.
+license = "AGPL-3.0-or-later"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+# f16 shifts in the int8/int4 compact card/note states (upstream precision.rs).
+half = "2.7.1"
+# The upstream replay and query paths are written against rayon. Fushi caps the
+# worker count per runtime (RwkvRuntime::new(.., threads)) instead of a cargo
+# feature: one thread on e-ink / low-end phones, all cores on desktop.
+rayon = "1.12.0"
+
+[dev-dependencies]
+# Fixture parsing and the weight-file hash check in tests/.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+# The small model's release package (weights + golden test vectors, .npz) is
+# read straight from its zip in tests/small_model.rs.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[profile.release]
+# Not "z" like fushi_fsrs: this is an inference kernel (a full-collection
+# replay is millions of small matrix products). Measured 2026-10-19 on x86_64
+# Windows, single thread, 56,511 reviews / 5,000 cards (examples/bench.rs):
+#   opt-level 3: f32 replay 11.4 s, int8 replay 16.1 s, 5,000-card query 1.1-1.5 s, DLL 682,496 B
+#   opt-level z: f32 replay 17.6 s, int8 replay 30.1 s, 5,000-card query 2.0-2.3 s, DLL 590,336 B
+# i.e. "z" saves 92 KB for a 1.5-1.9x slower replay.
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "unwind"
+
+# 构建脚本 / 过程宏不 strip：rustc 的 -C strip 在 Apple 主机上调 rust-objcopy 重排 LINKEDIT，
+# 间接符号表项数为奇数时字符串表只对齐到 4；macOS 27 的 dyld 拒绝加载这种 SDK 27 链出的 dylib
+# （mis-aligned LINKEDIT string pool），过程宏载不进 rustc 就报 E0463「can't find crate」
+# （2026-10-24 实测：MACOSX_DEPLOYMENT_TARGET=13.4 时 rustversion / zerocopy-derive 中招，11.0 时碰巧偶数）。
+# 最终产物的 macOS strip 见 build_macos_dylib.sh。
+[profile.release.build-override]
+strip = false
+
+# Tests run the network on thousands of reviews; unoptimized it is ~50x slower.
+[profile.test]
+opt-level = 3

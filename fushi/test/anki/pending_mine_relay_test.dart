@@ -195,6 +195,17 @@ void main() {
     expect(assets.spaces, isEmpty, reason: '连中转目录都不建');
   });
 
+  test('onRemoteWork 只在真要碰远端时调用（同步进度据此决定是否挂「同步待发制卡」）', () async {
+    int idle = 0;
+    await phone.relay().run(assets, onRemoteWork: () => idle++);
+    expect(idle, 0, reason: '无事可做的轮次不公布阶段');
+
+    await eink.mineOffline('猫');
+    int busy = 0;
+    await eink.relay().run(assets, onRemoteWork: () => busy++);
+    expect(busy, 1);
+  });
+
   test('没有任何设备认领落地：制卡设备只看一眼，不上传', () async {
     await eink.mineOffline('猫');
     final PendingMineRelayReport r = await eink.relay().run(assets);

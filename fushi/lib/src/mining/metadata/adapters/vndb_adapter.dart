@@ -38,16 +38,17 @@ class VndbMetadataAdapter implements GalgameMetadataAdapter {
     GalgameRateLimiter? rateLimiter,
     String baseUrl = 'https://api.vndb.org/kana',
     Duration timeout = const Duration(seconds: 15),
-  })  : _client = client ?? createAppHttpIoClient(),
-        _ownsClient = client == null,
-        // VNDB 官方限流约 1 req/s、突发 200；这里取远比它保守的稳态。
-        _rateLimiter = rateLimiter ??
-            GalgameRateLimiter(
-              capacity: 2,
-              refillInterval: const Duration(milliseconds: 1100),
-            ),
-        _baseUrl = baseUrl,
-        _timeout = timeout;
+  }) : _client = client ?? createAppHttpIoClient(),
+       _ownsClient = client == null,
+       // VNDB 官方限流约 1 req/s、突发 200；这里取远比它保守的稳态。
+       _rateLimiter =
+           rateLimiter ??
+           GalgameRateLimiter(
+             capacity: 2,
+             refillInterval: const Duration(milliseconds: 1100),
+           ),
+       _baseUrl = baseUrl,
+       _timeout = timeout;
 
   final http.Client _client;
   final bool _ownsClient;
@@ -71,19 +72,13 @@ class VndbMetadataAdapter implements GalgameMetadataAdapter {
   Future<GalgameMetadataDraft?> fetchById(String id) async {
     final String trimmed = id.trim();
     if (!validateId(trimmed)) {
-      throw GalgameMetadataException(
-        'invalid VNDB id: "$id"',
-        source: source,
-      );
+      throw GalgameMetadataException('invalid VNDB id: "$id"', source: source);
     }
-    final List<Object?> results = await _queryVn(
-      <String, Object?>{
-        'filters': <Object?>['id', '=', trimmed],
-        'fields': kVndbDetailFields,
-        'results': 1,
-      },
-      what: 'fetch $trimmed',
-    );
+    final List<Object?> results = await _queryVn(<String, Object?>{
+      'filters': <Object?>['id', '=', trimmed],
+      'fields': kVndbDetailFields,
+      'results': 1,
+    }, what: 'fetch $trimmed');
     if (results.isEmpty) {
       return null; // 不存在的 ID：VNDB 回 200 + 空 results，不是异常。
     }
@@ -103,15 +98,12 @@ class VndbMetadataAdapter implements GalgameMetadataAdapter {
     if (keyword.isEmpty) {
       return const <SourceCandidate>[];
     }
-    final List<Object?> results = await _queryVn(
-      <String, Object?>{
-        'filters': <Object?>['search', '=', keyword],
-        'fields': kVndbSearchFields,
-        'sort': 'searchrank',
-        'results': limit.clamp(1, 100),
-      },
-      what: 'search "$keyword"',
-    );
+    final List<Object?> results = await _queryVn(<String, Object?>{
+      'filters': <Object?>['search', '=', keyword],
+      'fields': kVndbSearchFields,
+      'sort': 'searchrank',
+      'results': limit.clamp(1, 100),
+    }, what: 'search "$keyword"');
     return parseVndbSearchResults(results, limit: limit);
   }
 
@@ -175,13 +167,17 @@ class VndbMetadataAdapter implements GalgameMetadataAdapter {
       try {
         response = await send();
       } on TimeoutException {
-        throw GalgameMetadataException('VNDB request timed out',
-            source: source);
+        throw GalgameMetadataException(
+          'VNDB request timed out',
+          source: source,
+        );
       } on GalgameMetadataException {
         rethrow;
       } catch (e) {
-        throw GalgameMetadataException('VNDB request failed: $e',
-            source: source);
+        throw GalgameMetadataException(
+          'VNDB request failed: $e',
+          source: source,
+        );
       }
       _rateLimiter.noteResponse(response.statusCode, response.headers);
       return response;
@@ -226,15 +222,17 @@ List<SourceCandidate> parseVndbSearchResults(
       continue;
     }
     final _Titles titles = _parseTitles(vn['titles']);
-    out.add(SourceCandidate(
-      source: GalgameMetadataSource.vndb,
-      externalId: id,
-      name: titles.main,
-      nameCn: titles.chinese,
-      coverUrl: _parseImage(vn['image']),
-      releaseDate: draftDate(vn['released']),
-      summary: summaryExcerpt(vn['description']),
-    ));
+    out.add(
+      SourceCandidate(
+        source: GalgameMetadataSource.vndb,
+        externalId: id,
+        name: titles.main,
+        nameCn: titles.chinese,
+        coverUrl: _parseImage(vn['image']),
+        releaseDate: draftDate(vn['released']),
+        summary: summaryExcerpt(vn['description']),
+      ),
+    );
     if (out.length >= limit) {
       break;
     }
@@ -356,8 +354,9 @@ String? _parseDevelopers(Object? value) {
   }
   final List<String> names = <String>[];
   for (final Object? item in value) {
-    final String? name =
-        item is Map ? draftString(item['name']) : draftString(item);
+    final String? name = item is Map
+        ? draftString(item['name'])
+        : draftString(item);
     if (name != null && !names.contains(name)) {
       names.add(name);
     }

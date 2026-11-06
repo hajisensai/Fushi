@@ -74,9 +74,7 @@ class FushiP2pBindings {
       fp2p_conn_status = lib.lookupFunction<_StatusC, _StatusC>(
         'fp2p_conn_status',
       ),
-      fp2p_host_peer = lib.lookupFunction<_PortC, _PortDart>(
-        'fp2p_host_peer',
-      ),
+      fp2p_host_peer = lib.lookupFunction<_PortC, _PortDart>('fp2p_host_peer'),
       fp2p_endpoint_close = lib.lookupFunction<_CloseC, _CloseDart>(
         'fp2p_endpoint_close',
       );

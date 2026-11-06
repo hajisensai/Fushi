@@ -38,11 +38,11 @@ class SidecarResult {
 
   /// 全 null 结果（目录不存在 / 无资产 / 不可读时返回）。
   const SidecarResult.empty()
-      : posterFile = null,
-        posterIsUnmodifiedGeneratedArtifact = false,
-        nfoTitle = null,
-        nfoTmdbId = null,
-        nfoYear = null;
+    : posterFile = null,
+      posterIsUnmodifiedGeneratedArtifact = false,
+      nfoTitle = null,
+      nfoTmdbId = null,
+      nfoYear = null;
 
   /// 命中的本地海报文件（按优先序取第一个存在的），无则 null。
   final File? posterFile;
@@ -72,7 +72,7 @@ class SidecarScanner {
   static const List<String> _posterStems = <String>[
     'poster',
     'folder',
-    'cover'
+    'cover',
   ];
 
   /// 海报图扩展名（含点，按此顺序取用）＝图片扩展名基集顺序，显式去掉
@@ -80,9 +80,7 @@ class SidecarScanner {
   /// jpg / jpeg / png / webp，动图更不宜作海报；const Set 基集按书写顺序
   /// 迭代，`.jpg` 最优先维持既有行为）。
   static final List<String> _imageExts = List<String>.unmodifiable(
-    kImageExtensionsBase.where(
-      (String ext) => ext != '.gif' && ext != '.bmp',
-    ),
+    kImageExtensionsBase.where((String ext) => ext != '.gif' && ext != '.bmp'),
   );
 
   /// 扫描 [videoFilePath] 所在目录，识别海报图与 NFO 元数据。
@@ -102,8 +100,9 @@ class SidecarScanner {
       if (!await dir.exists()) {
         return const SidecarResult.empty();
       }
-      await for (final FileSystemEntity entity
-          in dir.list(followLinks: false)) {
+      await for (final FileSystemEntity entity in dir.list(
+        followLinks: false,
+      )) {
         if (entity is File) {
           filesByLowerName[p.basename(entity.path).toLowerCase()] = entity;
         }
@@ -117,10 +116,10 @@ class SidecarScanner {
     bool posterIsUnmodifiedGeneratedArtifact = false;
     if (poster != null && generatedArtifactChecker != null) {
       try {
-        posterIsUnmodifiedGeneratedArtifact =
-            await generatedArtifactChecker.isUnmodifiedGeneratedArtifact(
-          p.normalize(p.absolute(poster.path)),
-        );
+        posterIsUnmodifiedGeneratedArtifact = await generatedArtifactChecker
+            .isUnmodifiedGeneratedArtifact(
+              p.normalize(p.absolute(poster.path)),
+            );
       } on Object {
         // 归属校验失败时保守视作第三方/已修改文件，保持旧的用户 sidecar 保护。
         posterIsUnmodifiedGeneratedArtifact = false;
@@ -142,7 +141,9 @@ class SidecarScanner {
   /// 顺序：`poster` > `folder` > `cover`（各自遍历扩展名），再查
   /// Kodi 电影约定的 `<片名>-poster.<ext>`。
   static File? _findPoster(
-      Map<String, File> filesByLowerName, String baseName) {
+    Map<String, File> filesByLowerName,
+    String baseName,
+  ) {
     final List<String> candidates = <String>[];
     for (final String stem in _posterStems) {
       for (final String ext in _imageExts) {

@@ -7,6 +7,7 @@ library;
 import 'causal_context.dart';
 import 'entities.dart';
 import 'field_edit.dart';
+import 'register_kernel.dart';
 import 'review_log.dart';
 import 'ordering.dart';
 import 'valid_logs.dart';
@@ -185,8 +186,18 @@ class SrsEventStore {
     // 被同一字段键上的已有记录支配：丢掉。支配可传递（任何含 a.dot 的上下文都 ⊇ a.ctx，
     // 因为 dot 只能经「应用该记录」进入上下文），所以被丢掉的记录以后再收到也能当场判出。
     // 注意上下文是全局的：a.dot 出现在别的字段键的记录里，不代表 a 在自己的字段键上被支配。
-    if (reg.values.any((SrsFieldEdit b) => b.dominates(edit))) return false;
-    reg.removeWhere((String _, SrsFieldEdit a) => edit.dominates(a));
+    // 支配判据在原生内核里（与读路径的寄存器同一份）。
+    final List<SrsFieldEdit> existing = reg.values.toList();
+    final SrsLanding landing = srsLandEdits(
+      <SrsEditItem>[
+        for (final SrsFieldEdit e in existing) SrsEditItem.of(e, null),
+      ],
+      <SrsEditItem>[SrsEditItem.of(edit, null)],
+    );
+    if (!landing.landed.single) return false;
+    for (final int i in landing.dominated.single) {
+      reg.remove(existing[i].id);
+    }
     reg[edit.id] = edit;
     return true;
   }
@@ -229,10 +240,24 @@ class SrsEventStore {
   /// 收敛判定用的规范摘要：寄存器（live 集合与生效值）、每张卡的排程状态、身份记录。
   /// 不含本机元信息（published、收到时间等）。
   String digest() {
+    final List<MapEntry<String, Map<String, SrsFieldEdit>>> live =
+        <MapEntry<String, Map<String, SrsFieldEdit>>>[
+          for (final MapEntry<String, Map<String, SrsFieldEdit>> e
+              in _edits.entries)
+            if (e.value.isNotEmpty) e,
+        ];
+    // 全部寄存器一次 FFI 调用（每个寄存器的记录同一个字段键）。
+    final List<SrsEntityEdits> built =
+        SrsEntityEdits.buildMany(<List<SrsFieldEdit>>[
+          for (final MapEntry<String, Map<String, SrsFieldEdit>> e in live)
+            e.value.values.toList(),
+        ], serverTimeOf: serverTimeOf);
     final List<String> regs = <String>[
-      for (final MapEntry<String, Map<String, SrsFieldEdit>> e
-          in _edits.entries)
-        if (e.value.isNotEmpty) _registerDigest(e.key, e.value.values),
+      for (int i = 0; i < live.length; i++)
+        _registerDigest(
+          live[i].key,
+          built[i][live[i].value.values.first.fieldKey]!,
+        ),
     ]..sort();
     final List<String> cards = <String>[
       for (final String cardId in logs.keys)
@@ -253,12 +278,7 @@ class SrsEventStore {
     });
   }
 
-  String _registerDigest(String key, Iterable<SrsFieldEdit> edits) {
-    final SrsRegister r = srsResolveRegister(
-      key,
-      edits,
-      serverTimeOf: serverTimeOf,
-    );
+  String _registerDigest(String key, SrsRegister r) {
     return '$key:${r.live.map((SrsFieldEdit e) => e.id).join(',')}'
         '=${srsCanonicalJson(r.value)}';
   }

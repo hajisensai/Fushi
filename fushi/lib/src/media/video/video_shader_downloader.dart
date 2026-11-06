@@ -114,7 +114,8 @@ const List<Anime4kPreset> kAnime4kPresets = <Anime4kPreset>[
     shaders: <Anime4kShaderFile>[
       Anime4kShaderFile('glsl/Restore/Anime4K_Clamp_Highlights.glsl'),
       Anime4kShaderFile(
-          'glsl/Upscale+Denoise/Anime4K_Upscale_Denoise_CNN_x2_M.glsl'),
+        'glsl/Upscale+Denoise/Anime4K_Upscale_Denoise_CNN_x2_M.glsl',
+      ),
       Anime4kShaderFile('glsl/Upscale/Anime4K_AutoDownscalePre_x2.glsl'),
       Anime4kShaderFile('glsl/Upscale/Anime4K_AutoDownscalePre_x4.glsl'),
       Anime4kShaderFile('glsl/Upscale/Anime4K_Upscale_CNN_x2_S.glsl'),
@@ -157,7 +158,8 @@ const List<Anime4kPreset> kAnime4kPresets = <Anime4kPreset>[
     shaders: <Anime4kShaderFile>[
       Anime4kShaderFile('glsl/Restore/Anime4K_Clamp_Highlights.glsl'),
       Anime4kShaderFile(
-          'glsl/Upscale+Denoise/Anime4K_Upscale_Denoise_CNN_x2_VL.glsl'),
+        'glsl/Upscale+Denoise/Anime4K_Upscale_Denoise_CNN_x2_VL.glsl',
+      ),
       Anime4kShaderFile('glsl/Upscale/Anime4K_AutoDownscalePre_x2.glsl'),
       Anime4kShaderFile('glsl/Upscale/Anime4K_AutoDownscalePre_x4.glsl'),
       Anime4kShaderFile('glsl/Upscale/Anime4K_Upscale_CNN_x2_M.glsl'),
@@ -171,12 +173,14 @@ const List<Anime4kPreset> kAnime4kPresets = <Anime4kPreset>[
 
 /// 「中」档：Anime4K Mode A Fast（中低端 GPU 可跑）。直接复用 [kAnime4kPresets] 里的
 /// `mode_a_fast` 着色器链（同文件，避免重复枚举）。
-final Anime4kPreset kAnime4kFastPreset =
-    kAnime4kPresets.firstWhere((Anime4kPreset p) => p.id == 'mode_a_fast');
+final Anime4kPreset kAnime4kFastPreset = kAnime4kPresets.firstWhere(
+  (Anime4kPreset p) => p.id == 'mode_a_fast',
+);
 
 /// 「高」档：Anime4K Mode A HQ（需较强 GPU）。复用 `mode_a_hq` 链。
-final Anime4kPreset kAnime4kHqPreset =
-    kAnime4kPresets.firstWhere((Anime4kPreset p) => p.id == 'mode_a_hq');
+final Anime4kPreset kAnime4kHqPreset = kAnime4kPresets.firstWhere(
+  (Anime4kPreset p) => p.id == 'mode_a_hq',
+);
 
 /// 「极高」档：Anime4K Mode A **VL + 额外去模糊修复**（高档 VL 链之上再叠一个
 /// `Restore_CNN_Soft_VL` 去模糊/降噪 pass，对 web 压制番做双重修复）。bloc97/Anime4K，MIT。
@@ -286,12 +290,7 @@ const Anime4kPreset kAnime4kMobileRestoreMSoftPreset = Anime4kPreset(
 /// - **gh 加速代理前缀**：套在 `raw.githubusercontent.com` 直链前的反代（BUG-319 名单）。
 ///
 /// 顺序：jsDelivr 多节点（最稳、中国可达）→ 代理前缀 → raw 官方直连兜底。
-const List<String> _kJsDelivrHosts = <String>[
-  'cdn.jsdelivr.net',
-  'fastly.jsdelivr.net',
-  'gcore.jsdelivr.net',
-  'testingcf.jsdelivr.net',
-];
+const List<String> _kJsDelivrHosts = kJsDelivrHosts;
 
 /// 为仓库相对路径 [repoPath] 生成按优先级排序的下载 URL 列表（多镜像回退）。纯函数。
 ///
@@ -306,14 +305,7 @@ List<String> anime4kMirrorUrls(
   String ref = 'master',
 }) {
   // jsDelivr / 代理 / raw 都不需要对路径里的 `+`（如 Upscale+Denoise 目录）做转义。
-  final String rawUrl =
-      'https://raw.githubusercontent.com/$repo/$ref/$repoPath';
-  return <String>[
-    for (final String host in _kJsDelivrHosts)
-      'https://$host/gh/$repo@$ref/$repoPath',
-    for (final String prefix in kGitHubMirrorPrefixes) '$prefix$rawUrl',
-    rawUrl,
-  ];
+  return gitHubRepoFileUrls(repoPath, repo: repo, ref: ref);
 }
 
 /// **纯函数**：把用户粘贴的着色器链接规整成「按优先级尝试的 URL 列表」。
@@ -325,12 +317,12 @@ List<String> anime4kMirrorUrls(
 /// 让用户从 GitHub/教程里复制任意 `.glsl` 链接粘进来即可下，不必本机装 mpv。
 List<String> shaderDownloadUrlsFor(String userUrl) {
   final String url = userUrl.trim();
-  final RegExpMatch? blob =
-      RegExp(r'^https?://github\.com/([^/]+)/([^/]+)/blob/(.+)$')
-          .firstMatch(url);
-  final RegExpMatch? raw =
-      RegExp(r'^https?://raw\.githubusercontent\.com/([^/]+)/([^/]+)/(.+)$')
-          .firstMatch(url);
+  final RegExpMatch? blob = RegExp(
+    r'^https?://github\.com/([^/]+)/([^/]+)/blob/(.+)$',
+  ).firstMatch(url);
+  final RegExpMatch? raw = RegExp(
+    r'^https?://raw\.githubusercontent\.com/([^/]+)/([^/]+)/(.+)$',
+  ).firstMatch(url);
   final RegExpMatch? m = blob ?? raw;
   if (m == null) return <String>[url];
   final String owner = m.group(1)!;
@@ -380,20 +372,22 @@ Future<String?> downloadShaderFromUrl(
   // BUG-1498：原先是裸 `Dio(...)`，`findProxy` 为 null，连 HTTPS_PROXY 都不读——注释里
   // 「app 运行时下载不走本机代理，只能靠镜像兜底」说的就是这个。改经统一装配点后镜像
   // 表仍在（代理不通时照样逐镜像回退），但用户挂着的代理终于能用上了。
-  final Dio client = dio ??
+  final Dio client =
+      dio ??
       createAppDio(
-          options: BaseOptions(
-        // 连接超时调短（8s）：直链优先，直连不通时尽快回退镜像，不让用户干等。
-        connectTimeout: const Duration(seconds: 8),
-        receiveTimeout: const Duration(seconds: 60),
-        followRedirects: true,
-        maxRedirects: 10,
-        responseType: ResponseType.bytes,
-        headers: <String, String>{
-          'User-Agent': fushiUserAgent('shader-downloader'),
-          'Accept': '*/*',
-        },
-      ));
+        options: BaseOptions(
+          // 连接超时调短（8s）：直链优先，直连不通时尽快回退镜像，不让用户干等。
+          connectTimeout: const Duration(seconds: 8),
+          receiveTimeout: const Duration(seconds: 60),
+          followRedirects: true,
+          maxRedirects: 10,
+          responseType: ResponseType.bytes,
+          headers: <String, String>{
+            'User-Agent': fushiUserAgent('shader-downloader'),
+            'Accept': '*/*',
+          },
+        ),
+      );
   final String fileName = shaderFileNameFromUrl(trimmed);
   final String destPath = p.join(dir.path, fileName);
 
@@ -422,10 +416,7 @@ Future<String?> downloadShaderFromUrl(
 
 /// 下载结果：成功/失败的文件数与失败明细（供 UI 提示）。
 class Anime4kDownloadResult {
-  const Anime4kDownloadResult({
-    required this.downloaded,
-    required this.failed,
-  });
+  const Anime4kDownloadResult({required this.downloaded, required this.failed});
 
   /// 成功落盘的文件名。
   final List<String> downloaded;
@@ -567,23 +558,25 @@ Future<Anime4kDownloadResult> downloadAnime4kFiles(
   int maxRetries = 2,
   Duration retryBackoff = const Duration(seconds: 1),
   void Function(int fileIndex, int fileTotal, double? fileProgress)?
-      onFileProgress,
+  onFileProgress,
 }) async {
   final Directory dir = targetDir ?? await mpvShaderDirectory();
   // BUG-1498：同上，Anime4K 批量下载改经统一装配点。
-  final Dio client = dio ??
+  final Dio client =
+      dio ??
       createAppDio(
-          options: BaseOptions(
-        connectTimeout: const Duration(seconds: 15),
-        receiveTimeout: const Duration(minutes: 5),
-        followRedirects: true,
-        maxRedirects: 10,
-        responseType: ResponseType.bytes,
-        headers: <String, String>{
-          'User-Agent': fushiUserAgent('anime4k-downloader'),
-          'Accept': '*/*',
-        },
-      ));
+        options: BaseOptions(
+          connectTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(minutes: 5),
+          followRedirects: true,
+          maxRedirects: 10,
+          responseType: ResponseType.bytes,
+          headers: <String, String>{
+            'User-Agent': fushiUserAgent('anime4k-downloader'),
+            'Accept': '*/*',
+          },
+        ),
+      );
 
   final List<Anime4kShaderFile> files = preset.shaders;
   final List<String> done = <String>[];

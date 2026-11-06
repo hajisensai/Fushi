@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
-import 'package:fushi/utils.dart' show showAppDialog;
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// Returns whether an eligible follow-up was offered, so startup can avoid

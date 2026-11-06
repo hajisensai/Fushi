@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// G15 全目录镜像守卫：`tools/browser-extension/`（唯一真相源）与随 app 打包的
 /// `assets/browser_extension/` 必须整目录字节一致——不再是逐文件手工点名
@@ -46,20 +46,30 @@ void main() {
     final List<String> tools = collect(toolsRoot);
     final List<String> assets = collect(assetsRoot);
     expect(tools, isNotEmpty, reason: '源目录空？路径错了');
-    expect(assets, tools,
-        reason: '镜像文件集合漂移：跑 dart run tool/sync_browser_extension.dart');
+    expect(
+      assets,
+      tools,
+      reason: '镜像文件集合漂移：跑 dart run tool/sync_browser_extension.dart',
+    );
   });
 
   test('镜像中每个文件与 tools 源字节一致', () {
     for (final String rel in collect(toolsRoot)) {
       final File src = File('$toolsRoot/$rel');
       final File dst = File('$assetsRoot/$rel');
-      expect(dst.existsSync(), isTrue,
-          reason:
-              '$assetsRoot/$rel 缺失：跑 dart run tool/sync_browser_extension.dart');
-      expect(dst.readAsBytesSync(), src.readAsBytesSync(),
-          reason: '$assetsRoot/$rel 与源不一致：'
-              '跑 dart run tool/sync_browser_extension.dart');
+      expect(
+        dst.existsSync(),
+        isTrue,
+        reason:
+            '$assetsRoot/$rel 缺失：跑 dart run tool/sync_browser_extension.dart',
+      );
+      expect(
+        dst.readAsBytesSync(),
+        src.readAsBytesSync(),
+        reason:
+            '$assetsRoot/$rel 与源不一致：'
+            '跑 dart run tool/sync_browser_extension.dart',
+      );
     }
   });
 }

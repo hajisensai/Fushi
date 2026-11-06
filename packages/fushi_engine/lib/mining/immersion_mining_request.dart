@@ -11,9 +11,9 @@ import 'package:fushi_anki/fushi_anki_core.dart'
 
 /// 沉浸制卡片段音频的容器扩展名，按平台分（TODO-1217 / BUG-460）：
 /// - iOS：`m4a`——AnkiMobile 只自动下载它识别为媒体的 localhost URL，`.aac` 裸流会被当成
-///   可见文本不下载（da22cd42a）；iOS 端 ffmpeg-kit 自带 ipod muxer，能产出 `.m4a`。
-/// - 桌面 / Android：`aac`（adts）——桌面捆绑的 ffmpeg-min
-///   （`tool/ffmpeg-min/build-ffmpeg-min.sh` 的 MUXERS 白名单只有 adts，无 ipod/mp4/m4a）
+///   可见文本不下载（da22cd42a）；iOS 端 ffmpeg_kit_next_flutter 自带 ipod muxer，能产出 `.m4a`。
+/// - 桌面 / Android：`aac`（adts）——当时桌面捆绑的旧 ffmpeg-min
+///   （MUXERS 白名单只有 adts，无 ipod/mp4/m4a；统一 FFmpeg 已含，此分流作为既有契约保留）
 ///   写 `.m4a` 会自动选一个不存在的 ipod muxer → `Unable to choose output format` /
 ///   exit -22 → `extractAudioSegmentViaFfmpeg` 返 null → 音频丢（桌面网飞/YouTube/应用内
 ///   视频制卡有图无声，正是 da22cd42a 的桌面回归）；Android AnkiDroid 历来接受 `.aac`（BUG-460）。
@@ -47,8 +47,8 @@ class VideoMiningHistorySnapshot {
   }) : expression = fields['expression'] ?? '',
        reading = fields['reading'] ?? '',
        glossary = fields['glossary'] ?? '',
-       normCharOffset = cueStartMs,
-       normCharLength = cueStartMs == null || cueEndMs == null
+       positionMs = cueStartMs,
+       durationMs = cueStartMs == null || cueEndMs == null
            ? null
            : (cueEndMs - cueStartMs).clamp(0, 1 << 31).toInt();
 
@@ -59,8 +59,12 @@ class VideoMiningHistorySnapshot {
   final String documentTitle;
   final String bookKey;
   final int? sectionIndex;
-  final int? normCharOffset;
-  final int? normCharLength;
+
+  /// cue 起点毫秒（落 `mined_sentences.position_ms`）。
+  final int? positionMs;
+
+  /// cue 时长毫秒（落 `mined_sentences.duration_ms`）。
+  final int? durationMs;
   final String dateKey;
 }
 
@@ -96,12 +100,16 @@ enum VideoMiningImageMode {
   /// 偏好持久化用的稳定字符串键（勿随枚举名改动）。
   final String wireName;
 
-  /// 从偏好字符串解析；未知/null → [videoClip]（默认，见枚举文档）。
-  static VideoMiningImageMode fromWireName(String? name) {
+  /// 从偏好字符串解析；未知/null → [fallback]（默认 [videoClip]，见枚举文档；galgame 按
+  /// 来源给 [gif]，见 `PreferencesRepository.galMiningImageMode`）。
+  static VideoMiningImageMode fromWireName(
+    String? name, {
+    VideoMiningImageMode fallback = VideoMiningImageMode.videoClip,
+  }) {
     for (final VideoMiningImageMode mode in VideoMiningImageMode.values) {
       if (mode.wireName == name) return mode;
     }
-    return VideoMiningImageMode.videoClip;
+    return fallback;
   }
 
   /// 是否为静态截图模式（用户主动选静态图，非 GIF 降级）。动图与视频片段都不是。
@@ -119,7 +127,7 @@ enum VideoMiningImageMode {
 /// | 格式 | 卡片里怎么播 | 取舍 |
 /// |---|---|---|
 /// | [webmVp9]（默认） | `<video>` 内嵌，翻面自动播放、点例句重播 | Anki 桌面 Qt WebEngine / AnkiDroid WebView 都能解 |
-/// | [webmAv1] | 同上 | 体积最小（约为 VP9 的 60%），编码耗时约为 VP9 的 2 倍；移动端 ffmpeg-kit（Android / iOS）无 SVT-AV1 → 降级 VP9，仍内嵌 |
+/// | [webmAv1] | 同上 | 体积最小（约为 VP9 的 60%），编码耗时约为 VP9 的 2 倍；统一 FFmpeg 五端都带 SVT-AV1（tool/ffmpeg-unified），降级链只给用户自带的外部 ffmpeg 兜底 |
 /// | [mp4H264] | `[sound:]` 交给 Anki 原生播放器（Windows 弹独立窗口） | 兼容兜底；iOS 默认 |
 ///
 /// 为什么内嵌只能是 WebM：Anki 桌面的 Qt WebEngine 不带专利编解码器，**没有 H.264 也没有
@@ -314,23 +322,14 @@ enum MiningAnimatedFormat {
 /// [png] 走 [encodeAttempts] 的降级链：ffmpeg 缺 png 编码器时退回 [jpg] 再抽一次，
 /// 而不是让封面直接丢失。
 ///
-/// **两个平台的现状不同，别再把这条链当纯兜底**（BUG-2366，此处原先写反）：
-/// - 桌面：入库的 `ffmpeg-min` 配方 ENCODERS 含 `png`，降级链确实只是给「配方漂了 /
-///   用户自带的外部 ffmpeg」兜底。
-/// - **移动端（Android/iOS）：png 编码器根本不存在**。入库的自编 ffmpeg-kit 配方带
-///   `--disable-zlib`，而 ffmpeg 的 png 编解码器硬依赖 zlib——实测 AAR 里
-///   `libavcodec.so` 的未定义符号中一条 `deflate*`/`inflate*` 都没有。所以移动端选
-///   [png] 时，第一次尝试是**注定失败**的常态路径，降级到 [jpg] 才出卡。
-///
-/// 由此推出两条不变式，改这里前先想清楚：
-/// 1. 那次注定失败**不是错误**，不得进用户可见错误日志——收口在
+/// 统一 FFmpeg（tool/ffmpeg-unified）五端都带 zlib 与 png 编码器（BUG-2366 时移动端的
+/// ffmpeg-kit 是 `--disable-zlib`，png 第一次尝试注定失败；统一后已不再如此，由守卫
+/// `fushi/test/tools/ffmpeg_unified_mobile_guard_test.dart` 从产物字节钉住）。降级链现在只给
+/// 用户自带的外部 ffmpeg 兜底，但两条不变式照旧：
+/// 1. 非末次尝试的失败**不是错误**，不得进用户可见错误日志——收口在
 ///    `extractStillWithFallback`（`immersion_mining_engine.dart`），非末次尝试一律
 ///    `diagnosticOnly`。
 /// 2. 卡上的文件扩展名必须跟随**实际编成**的格式（见 [fileExtension]）。
-///
-/// 想让移动端真正支持 png，唯一办法是在构建机重编 ffmpeg-kit 时加 `--enable-zlib`
-/// 并重新 vendor AAR/xcframework；配方与 Dart 假设的一致性由守卫
-/// `fushi/test/tools/ffmpeg_kit_mobile_recipe_guard_test.dart` 钉住。
 enum MiningStillFormat {
   jpg('jpg', 'jpg'),
   png('png', 'png');
@@ -394,6 +393,8 @@ class ImmersionMiningRequest {
     this.documentTitle,
     this.audioStreamIndex,
     this.audioStreamCount,
+    this.audioFrontCenter = false,
+    this.audioFrontCenterNeedsProbe = false,
     // BUG-1137：不给默认值。曾默认 video，gal 场景卡忘传 source 就被静默标成
     // 视频；来源必须由每个调用点显式声明，漏传直接编译不过。
     required this.source,
@@ -451,6 +452,14 @@ class ImmersionMiningRequest {
   final String? documentTitle;
   final int? audioStreamIndex;
   final int? audioStreamCount;
+
+  /// 句子音频只取 [audioStreamIndex] 那条轨的中置声道 FC（多声道资源里的人声，反馈
+  /// pNF2ZL7Kfc；决策见 `planSentenceAudioSource`）。false = 现状。取不到时引擎回退
+  /// 整条音轨重抽，并经 `onAudioSourceFallback` 告诉调用方。
+  final bool audioFrontCenter;
+
+  /// [audioFrontCenter] 为真但调用方不知道声道布局：引擎抽取前先 ffprobe 确认有 FC。
+  final bool audioFrontCenterNeedsProbe;
   final AnkiMiningSource source;
   final String? bookTitleTag;
 
@@ -620,6 +629,10 @@ class ImmersionMiningRequest {
         mediaSource: snapshot.path,
         cueSentence: cueSentence,
         documentTitle: documentTitle,
+        // 副本里只有正在播放的那一条轨，中置模式取的正是它（调用方对「指定另一条轨」
+        // 不落副本，见 `SentenceAudioSourcePlan.differsFromPlaying`）：中置取音照旧。
+        audioFrontCenter: audioFrontCenter,
+        audioFrontCenterNeedsProbe: audioFrontCenterNeedsProbe,
         source: source,
         bookTitleTag: bookTitleTag,
         collectionTag: collectionTag,
@@ -682,6 +695,8 @@ class ImmersionMiningRequest {
     documentTitle: documentTitle,
     audioStreamIndex: audioStreamIndex,
     audioStreamCount: audioStreamCount,
+    audioFrontCenter: audioFrontCenter,
+    audioFrontCenterNeedsProbe: audioFrontCenterNeedsProbe,
     source: source,
     bookTitleTag: bookTitleTag,
     collectionTag: collectionTag,

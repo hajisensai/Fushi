@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 
 /// ffmpeg 是否在本机可用（CI 可能没有）；用于守卫真跑 ffmpeg 的集成用例。
@@ -45,10 +45,7 @@ void main() {
       expect(result.failureSummary, contains('0xC000007B'));
       expect(result.failureSummary, contains('STATUS_INVALID_IMAGE_FORMAT'));
       expect(result.failureSummary, contains(r'C:\Fushi\ffmpeg.exe'));
-      expect(
-        result.failureSummary,
-        contains(r'C:\Fushi\ffmpeg.exe -> ffmpeg'),
-      );
+      expect(result.failureSummary, contains(r'C:\Fushi\ffmpeg.exe -> ffmpeg'));
       expect(result.failureSummary, contains('The application was unable'));
     });
 
@@ -111,11 +108,13 @@ void main() {
   });
 
   group('resolveFfmpegBackend', () {
-    test('蓝光适配包装 CLI 且进程级单例（缓存同一实例）', () {
+    test('蓝光 → DVD 适配包装 CLI 且进程级单例（缓存同一实例）', () {
       final FfmpegBackend a = resolveFfmpegBackend();
       final FfmpegBackend b = resolveFfmpegBackend();
       expect(a, isA<BlurayFfmpegBackend>());
-      expect((a as BlurayFfmpegBackend).delegate, isA<CliFfmpegBackend>());
+      final FfmpegBackend dvd = (a as BlurayFfmpegBackend).delegate;
+      expect(dvd, isA<DvdFfmpegBackend>());
+      expect((dvd as DvdFfmpegBackend).delegate, isA<CliFfmpegBackend>());
       expect(identical(a, b), isTrue);
     });
   });

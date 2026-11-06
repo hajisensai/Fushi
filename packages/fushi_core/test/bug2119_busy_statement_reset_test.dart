@@ -36,54 +36,50 @@ void main() {
     }
   });
 
-  test(
-    '写语句撞 SQLITE_BUSY 之后，同连接后续事务仍能 COMMIT 并跨连接可见',
-    () async {
-      final String path = p.join(tmp.path, 'fushi.db');
-      final FushiDatabase db = FushiDatabase.atFile(path);
-      // 先真正开库（schema 建好、WAL 生效），再让外部连接抢写锁。
-      await db.setPref('bug2119.warmup', '1');
+  test('写语句撞 SQLITE_BUSY 之后，同连接后续事务仍能 COMMIT 并跨连接可见', () async {
+    final String path = p.join(tmp.path, 'fushi.db');
+    final FushiDatabase db = FushiDatabase.atFile(path);
+    // 先真正开库（schema 建好、WAL 生效），再让外部连接抢写锁。
+    await db.setPref('bug2119.warmup', '1');
 
-      final raw.Database outsider = raw.sqlite3.open(path);
-      outsider.execute('BEGIN IMMEDIATE');
-      try {
-        // busy_timeout=5000 到期后必须以 SqliteException 收场——这一步就是真机上
-        // 「另一个进程持锁」的复刻。故意选一条**之后不会再被执行**的 SQL：drift 只在
-        // 同一 SQL 再次执行时才 reset 缓存语句，真机上被毒化的续期 UPDATE 正是如此。
-        // drift 的后台 isolate 执行器把远端异常包成 DriftRemoteException
-        // （`drift/remote.dart` 是实验 API，不导入类型，按异常文本认）。
-        await expectLater(
-          db.updateVideoBookPosition('bug2119/never-again', 1, playedAt: 1),
-          throwsA(
-            isA<Exception>().having(
-              (Exception e) => e.toString(),
-              'toString',
-              contains('SqliteException'),
-            ),
+    final raw.Database outsider = raw.sqlite3.open(path);
+    outsider.execute('BEGIN IMMEDIATE');
+    try {
+      // busy_timeout=5000 到期后必须以 SqliteException 收场——这一步就是真机上
+      // 「另一个进程持锁」的复刻。故意选一条**之后不会再被执行**的 SQL：drift 只在
+      // 同一 SQL 再次执行时才 reset 缓存语句，真机上被毒化的续期 UPDATE 正是如此。
+      // drift 的后台 isolate 执行器把远端异常包成 DriftRemoteException
+      // （`drift/remote.dart` 是实验 API，不导入类型，按异常文本认）。
+      await expectLater(
+        db.updateVideoBookPosition('bug2119/never-again', 1, playedAt: 1),
+        throwsA(
+          isA<Exception>().having(
+            (Exception e) => e.toString(),
+            'toString',
+            contains('SqliteException'),
           ),
-        );
-      } finally {
-        outsider.execute('ROLLBACK');
-        outsider.close();
-      }
+        ),
+      );
+    } finally {
+      outsider.execute('ROLLBACK');
+      outsider.close();
+    }
 
-      // 3.3.3：这里抛「cannot commit transaction - SQL statements in progress」。
-      await db.setPref('bug2119.after-busy', 'committed');
+    // 3.3.3：这里抛「cannot commit transaction - SQL statements in progress」。
+    await db.setPref('bug2119.after-busy', 'committed');
 
-      // 跨连接读到 = 真的 COMMIT 进了 WAL，而不是留在本连接的隐式事务里。
-      final raw.Database verifier = raw.sqlite3.open(path);
-      try {
-        final raw.ResultSet rows = verifier.select(
-          'SELECT value FROM preferences WHERE key = ?',
-          <Object>['bug2119.after-busy'],
-        );
-        expect(rows, hasLength(1));
-        expect(rows.first['value'], 'committed');
-      } finally {
-        verifier.close();
-      }
-      await db.close();
-    },
-    timeout: const Timeout(Duration(minutes: 2)),
-  );
+    // 跨连接读到 = 真的 COMMIT 进了 WAL，而不是留在本连接的隐式事务里。
+    final raw.Database verifier = raw.sqlite3.open(path);
+    try {
+      final raw.ResultSet rows = verifier.select(
+        'SELECT value FROM preferences WHERE key = ?',
+        <Object>['bug2119.after-busy'],
+      );
+      expect(rows, hasLength(1));
+      expect(rows.first['value'], 'committed');
+    } finally {
+      verifier.close();
+    }
+    await db.close();
+  }, timeout: const Timeout(Duration(minutes: 2)));
 }

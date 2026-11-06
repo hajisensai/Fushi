@@ -52,9 +52,13 @@ void main() {
   // 函数体窗口静默配对错位——本文件的所有断言会在一个错的窗口上「全绿」。今天这份 .kt
   // 里一个单引号都没有，把这个前提钉死：将来引入字符字面量时这条先响，而不是判据变哑。
   test('被扫的 .kt 不含单引号——Dart 词法器切 Kotlin 函数体的前提', () {
-    expect(code.contains("'"), isFalse,
-        reason: 'Kotlin 字符字面量会让 methodBody 的花括号配对错位，判据将静默失效；'
-            '出现时应改用 Kotlin 词法器或换非词法锚点。');
+    expect(
+      code.contains("'"),
+      isFalse,
+      reason:
+          'Kotlin 字符字面量会让 methodBody 的花括号配对错位，判据将静默失效；'
+          '出现时应改用 Kotlin 词法器或换非词法锚点。',
+    );
   });
 
   test('result.success 只在 reply() 里出现，业务回复全部经 reply() 出口', () {

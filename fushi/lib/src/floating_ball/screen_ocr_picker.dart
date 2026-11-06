@@ -9,6 +9,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
+import 'package:fushi/src/lookup/ocr_block_sentence.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
@@ -16,7 +18,12 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 /// 一次点选的结果：哪一行、行内第几个 UTF-16 码元、被点字符的框（逻辑像素）。
@@ -211,6 +218,14 @@ class ScreenOcrPickerPage extends StatelessWidget {
                 hit.line.text,
                 hit.charIndex,
                 selectionRect: hit.charRect.shift(layout.origin),
+                // 反馈 1Mwaro8UTC：制卡例句 = 被点字在这一行里所在的那一句。
+                sentence: ocrSentenceInLine(hit.line.text, hit.charIndex),
+                // 反馈 Gz7z6Y6Mbr：识别用的这张图 + 所点文本块，制卡时裁成卡图。
+                cardImage: screenOcrCardImageForHit(
+                  bytes: imageBytes,
+                  lines: result.lines,
+                  hit: hit.line,
+                ),
               );
             },
             child: Stack(

@@ -2,18 +2,32 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/media/metadata/bangumi_api_client.dart'
-    show parseBangumiSubjectUrl;
+import 'package:fushi/src/media/metadata/book_metadata_scrape_facade.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
+import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:fushi_engine/media/metadata/image_download.dart';
 import 'package:fushi/src/media/metadata/scrape_cover_preview.dart';
 import 'package:fushi/src/media/metadata/scrape_failure_view.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
-/// 书籍 / 漫画「在线匹配封面」弹窗（统一刮削 P1b）。
+/// 书籍 / 漫画 / 有声书「在线匹配封面」弹窗（统一刮削 P1b）。
 ///
-/// 搜 Bangumi 书籍条目（[BookMetadataScraper]，`filter.type=[1]`），选中候选后下载其封面
-/// 到临时文件并经 `Navigator.pop(file)` 返回给调用方（书籍编辑对话框把它当作新的封面
+/// 两个源用分段切换（[BookScrapeSource]）：Bangumi 书籍条目（`filter.type=[1]`）与 DLsite
+/// 音声 / 漫画 / 小说作品。默认 Bangumi——DLsite 的搜索含成人向作品，不混进普通书搜索；
+/// 预填词里认得出 DLsite 编号时默认切到 DLsite 并只填编号（直取）。选中候选后下载其封面
+/// 到临时文件并经 `Navigator.pop(file)` 返回给调用方（候选解析与下载都经
+/// [BookMetadataScrapeFacade]，书架页的写回也经它）（书籍编辑对话框把它当作新的封面
 /// override，走既有 `setOverrideThumbnailFromMediaItem` 落地——不新增任何存储路径）。
 ///
 /// 返回 `null` = 用户取消 / 未选。
@@ -45,9 +59,22 @@ class BookCoverScrapeDialog extends StatefulWidget {
   State<BookCoverScrapeDialog> createState() => _BookCoverScrapeDialogState();
 }
 
+/// 纯函数：弹窗的初始源与搜索词。预填词里带 DLsite 编号 → (DLsite, 编号)；否则
+/// (Bangumi, 原词)。
+(BookScrapeSource, String) bookScrapeInitialState(String initialQuery) {
+  final DlsiteWorkId? id = DlsiteWorkId.findIn(initialQuery);
+  return id == null
+      ? (BookScrapeSource.bangumi, initialQuery)
+      : (BookScrapeSource.dlsite, id.value);
+}
+
 class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   late final TextEditingController _queryCtrl;
   late final BookMetadataScraper _scraper;
+
+  /// 候选解析与封面下载都经门面（与 `fushi_cli book` 同一个方法）。
+  late final BookMetadataScrapeFacade _facade;
+  late BookScrapeSource _source;
 
   List<BookScrapeCandidate> _results = const <BookScrapeCandidate>[];
   bool _searching = false;
@@ -63,8 +90,13 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   @override
   void initState() {
     super.initState();
-    _queryCtrl = TextEditingController(text: widget.initialQuery);
+    final (BookScrapeSource source, String query) = bookScrapeInitialState(
+      widget.initialQuery,
+    );
+    _source = source;
+    _queryCtrl = TextEditingController(text: query);
     _scraper = widget.scraperOverride ?? BookMetadataScraper();
+    _facade = BookMetadataScrapeFacade(scraper: _scraper);
     // 首帧后按预填标题自动搜一次。
     WidgetsBinding.instance.addPostFrameCallback((_) => _search());
   }
@@ -87,7 +119,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     List<BookScrapeCandidate> results = const <BookScrapeCandidate>[];
     Object? failure;
     try {
-      results = await _resolveCandidates(keyword);
+      results = await _facade.search(source: _source, query: keyword);
     } catch (e, stack) {
       // BUG-1176：失败要有出口。界面出可见失败行，原始原因落错误日志（用户可在
       // 「错误日志」页查看/上传），不静默塌缩成空列表。
@@ -114,41 +146,15 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     return status == null ? t.scrape_reason_network : t.scrape_reason_server;
   }
 
-  /// 关键词 → 候选。添加/修改 Bangumi 映射：贴条目 URL = 按 id 直取（跳过关键词
-  /// 搜索）；纯数字既可能是 id 也可能是书名（如《1984》）——搜索 + id 直取并列，
-  /// 直取命中置顶、按 subjectId 去重；其余走关键词搜索。
-  Future<List<BookScrapeCandidate>> _resolveCandidates(String keyword) async {
-    final String? mappedSubjectId = parseBangumiSubjectUrl(keyword);
-    if (mappedSubjectId != null) {
-      final BookScrapeCandidate? candidate =
-          await _scraper.fetchById(mappedSubjectId);
-      return candidate == null
-          ? const <BookScrapeCandidate>[]
-          : <BookScrapeCandidate>[candidate];
-    }
-    if (RegExp(r'^\d+$').hasMatch(keyword)) {
-      final List<BookScrapeCandidate> searched = await _scraper.search(keyword);
-      BookScrapeCandidate? direct;
-      try {
-        direct = await _scraper.fetchById(keyword);
-      } catch (e) {
-        // 界面上静默：这是尽力而为的第二路，本分支上方那次关键词搜索（未 guard）
-        // 失败才会冒泡成可见失败态，所以这里吞掉不会让任何真失败消失。仍落诊断
-        // 日志，否则「数字关键词结果时多时少」无从查起。
-        direct = null;
-        ErrorLogService.instance.logDiagnostic(
-          'BookCoverScrapeDialog.fetchById',
-          'numeric keyword direct fetch failed: $e',
-        );
-      }
-      if (direct == null) return searched;
-      final String directId = direct.subjectId;
-      return <BookScrapeCandidate>[
-        direct,
-        ...searched.where((BookScrapeCandidate c) => c.subjectId != directId),
-      ];
-    }
-    return _scraper.search(keyword);
+  void _selectSource(BookScrapeSource source) {
+    if (source == _source) return;
+    setState(() {
+      _source = source;
+      _results = const <BookScrapeCandidate>[];
+      _searched = false;
+      _searchFailure = null;
+    });
+    _search();
   }
 
   Future<void> _use(BookScrapeCandidate candidate) async {
@@ -157,7 +163,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     File? file;
     Object? failure;
     try {
-      file = await downloadImageToTempFile(candidate.coverUrl);
+      file = await _facade.downloadCover(candidate);
     } catch (e, stack) {
       // 下载失败必须可见 + 可查：toast 给「失败了 + 大概因为什么」，原始原因进日志。
       ErrorLogService.instance.log('BookCoverScrapeDialog.download', e, stack);
@@ -189,6 +195,21 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
+            adaptiveSegmentedButton<BookScrapeSource>(
+              context: context,
+              segments: <ButtonSegment<BookScrapeSource>>[
+                for (final BookScrapeSource s in BookScrapeSource.values)
+                  ButtonSegment<BookScrapeSource>(
+                    value: s,
+                    label: Text(s.label),
+                  ),
+              ],
+              selected: <BookScrapeSource>{_source},
+              onSelectionChanged: (Set<BookScrapeSource> v) {
+                if (v.isNotEmpty && !_searching) _selectSource(v.first);
+              },
+            ),
+            const SizedBox(height: 8),
             Row(
               children: <Widget>[
                 Expanded(
@@ -259,7 +280,9 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     BookScrapeCandidate candidate,
   ) {
     final List<String> metaParts = <String>[
+      if (candidate.isAdult) 'R18',
       if (candidate.year != null) '${candidate.year}',
+      if (candidate.author != null) candidate.author!,
       if (candidate.originalTitle != null) candidate.originalTitle!,
     ];
     return Padding(
@@ -274,8 +297,11 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text(candidate.title,
-                    maxLines: 2, overflow: TextOverflow.ellipsis),
+                Text(
+                  candidate.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 if (metaParts.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
@@ -291,8 +317,9 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
           ),
           const SizedBox(width: 8),
           FushiFilledButton.tonal(
-            onPressed:
-                _applyingCandidate != null ? null : () => _use(candidate),
+            onPressed: _applyingCandidate != null
+                ? null
+                : () => _use(candidate),
             child: identical(_applyingCandidate, candidate)
                 ? const SizedBox(
                     width: 16,

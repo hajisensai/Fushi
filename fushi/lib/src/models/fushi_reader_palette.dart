@@ -19,8 +19,8 @@ import 'package:fushi/src/models/theme_notifier.dart' show hctToneKeepingHue;
 /// | 页面底 [background]（VN 底板同） | neutral 98 | neutral 6 |
 /// | 正文 [text] | neutral 12 | neutral 90 |
 /// | 链接 [link] | primary 40 | primary 80 |
-/// | 查词高亮 [lookupHighlight] | primaryContainer 90 @0.75 | primaryContainer 30 @0.70 |
-/// | 当前句 [sentenceHighlight] | tertiaryContainer 90 @0.65 | tertiaryContainer 30 @0.60 |
+/// | 查词高亮 [lookupHighlight] | primaryContainer 90 @0.75 起 | primaryContainer 30 @0.70 起 |
+/// | 当前句 [sentenceHighlight] | tertiaryContainer 90 @0.65 起 | tertiaryContainer 30 @0.60 起 |
 /// | 原生选区 [nativeSelection] | primary 40 @0.25 | primary 80 @0.25 |
 /// | 注音 [rubyText] | neutralVariant 40 | neutralVariant 70 |
 /// | 浮动工具栏 / 侧板 [chromeContainer] | neutral 92 | neutral 17 |
@@ -31,7 +31,8 @@ import 'package:fushi/src/models/theme_notifier.dart' show hctToneKeepingHue;
 /// [_kNeutralChromaCap]：vibrant 的中性色彩度 ~10，整页铺满时偏色明显，书页只留
 /// 「极轻的主题色调」（默认青色 seed：亮 #F6FAFD / 暗 #0F1417；米色 seed：亮
 /// #FFF8F4 / 暗 #18120B）。对比度不变式：正文 ≥ 7:1（WCAG AAA）、注音 ≥ 4.5:1、
-/// 高亮合成到纸色上之后正文仍 ≥ 4.5:1；某个 seed 达不到就自动挪 tone / 降 α。
+/// 高亮合成到纸色上之后正文仍 ≥ 4.5:1、且与纸色 ≥ [kFushiReaderHighlightMinVisibility]
+/// （看得出来）；某个 seed 达不到就自动挪 tone / 降 α。
 @immutable
 class FushiReaderPalette {
   const FushiReaderPalette({
@@ -90,6 +91,9 @@ const double _kNeutralVariantChromaCap = 16;
 const double _kBodyContrast = 7.0;
 const double _kSecondaryContrast = 4.5;
 
+/// 查词 / 当前句高亮合成到纸色上之后与纸色的最小对比度（可见性下限）。
+const double kFushiReaderHighlightMinVisibility = 1.3;
+
 /// [scheme] 是当前生效的 app ColorScheme（系统取色 / 预设 / 自定义都行，色相与
 /// 彩度从它的角色色反推），[brightness] 决定取亮档还是暗档。纯函数，阅读器、
 /// 漫画、VN、有声书歌词、自定义主题编辑页预览共用这一份。
@@ -127,14 +131,18 @@ FushiReaderPalette _buildReaderPalette(
   final bool dark = brightness == Brightness.dark;
 
   final Hct neutralAnchor = Hct.fromInt(scheme.surfaceContainer.toARGB32());
-  final double neutralChroma =
-      math.min(neutralAnchor.chroma, _kNeutralChromaCap);
+  final double neutralChroma = math.min(
+    neutralAnchor.chroma,
+    _kNeutralChromaCap,
+  );
   Color neutral(double tone) =>
       hctToneKeepingHue(neutralAnchor.hue, neutralChroma, tone);
 
   final Hct variantAnchor = Hct.fromInt(scheme.outline.toARGB32());
-  final double variantChroma =
-      math.min(variantAnchor.chroma, _kNeutralVariantChromaCap);
+  final double variantChroma = math.min(
+    variantAnchor.chroma,
+    _kNeutralVariantChromaCap,
+  );
   Color neutralVariant(double tone) =>
       hctToneKeepingHue(variantAnchor.hue, variantChroma, tone);
 
@@ -170,15 +178,19 @@ FushiReaderPalette _buildReaderPalette(
     background: background,
     text: text,
     link: link,
-    lookupHighlight: _readableHighlight(
-      Color(primaryContainer.get(dark ? 30 : 90)),
+    lookupHighlight: _visibleHighlight(
+      primaryContainer,
+      startTone: dark ? 30 : 90,
       alpha: dark ? 0.70 : 0.75,
+      dark: dark,
       text: text,
       background: background,
     ),
-    sentenceHighlight: _readableHighlight(
-      Color(tertiaryContainer.get(dark ? 30 : 90)),
+    sentenceHighlight: _visibleHighlight(
+      tertiaryContainer,
+      startTone: dark ? 30 : 90,
       alpha: dark ? 0.60 : 0.65,
+      dark: dark,
       text: text,
       background: background,
     ),
@@ -224,6 +236,40 @@ Color _ensureContrast(
     color = at(tone);
   }
   return color;
+}
+
+/// 查词 / 当前句高亮：合成到纸色上之后与纸色的对比不够
+/// [kFushiReaderHighlightMinVisibility] 就从 [startTone] 往正文一侧挪 tone（亮色往深、
+/// 暗色往浅，最多到 tone 40 / 60），每一档都经 [_readableHighlight] 保住正文 ≥ 4.5:1。
+///
+/// 只设上限（正文可读）不设下限时，亮色 tone 90 合成到 tone 98 的纸上只剩 ~1.15:1，
+/// 粉 / 黄等浅色主题下查词选区几乎看不出来（反馈 lIWk_4rGA4）。
+Color _visibleHighlight(
+  TonalPalette palette, {
+  required double startTone,
+  required double alpha,
+  required bool dark,
+  required Color text,
+  required Color background,
+}) {
+  Color at(double tone) => _readableHighlight(
+    Color(palette.get(tone.round())),
+    alpha: alpha,
+    text: text,
+    background: background,
+  );
+  double tone = startTone;
+  Color highlight = at(tone);
+  while (fushiContrastRatio(
+            Color.alphaBlend(highlight, background),
+            background,
+          ) <
+          kFushiReaderHighlightMinVisibility &&
+      (dark ? tone < 60 : tone > 40)) {
+    tone += dark ? 2 : -2;
+    highlight = at(tone);
+  }
+  return highlight;
 }
 
 /// 半透明高亮：合成到纸色上之后正文仍须 ≥ 4.5:1，不够就逐级降 α（下限 0.2）。

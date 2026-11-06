@@ -44,8 +44,11 @@ void main() {
 
       final List<SyncChannel> channels = await enabledSyncChannelBackends(repo);
 
-      expect(channels.length, 2,
-          reason: '删除传播/比较入口只看第一条 = 互联通道整条被漏掉（BUG-1566）');
+      expect(
+        channels.length,
+        2,
+        reason: '删除传播/比较入口只看第一条 = 互联通道整条被漏掉（BUG-1566）',
+      );
       expect(channels[0].isInterconnect, isFalse);
       expect(channels[0].type, SyncBackendType.googleDrive);
       expect(channels[1].isInterconnect, isTrue);
@@ -72,14 +75,22 @@ void main() {
       final String src = _readSource('lib/src/models/app_model.dart');
       // 没有自动并集同步，远端那份就不会被拉回来；它是用户显式传上去的备份，本地删
       // 一本不该连坐删掉它。要恢复传播，得先恢复某条通道的词典自动同步。
-      expect(src, isNot(contains('_propagateDictionaryDeleteToRemote')),
-          reason: '词典已无自动同步，删除传播不得回来');
-      expect(src, isNot(contains('deleteRemoteDictionary')),
-          reason: '本地删词典不得顺手删对端 / 云端那份手动备份');
+      expect(
+        src,
+        isNot(contains('_propagateDictionaryDeleteToRemote')),
+        reason: '词典已无自动同步，删除传播不得回来',
+      );
+      expect(
+        src,
+        isNot(contains('deleteRemoteDictionary')),
+        reason: '本地删词典不得顺手删对端 / 云端那份手动备份',
+      );
     });
 
     test('showSyncCompareDialog 遍历所有启用通道取第一条已认证后端', () {
-      final String source = _readSource('lib/src/sync/sync_compare_dialog.dart');
+      final String source = _readSource(
+        'lib/src/sync/sync_compare_dialog.dart',
+      );
       // 后端解析抽成 resolveSyncCompareBackend（对话框与控制通道 `sync compare`
       // 共用），守卫跟着钉在它身上，对话框只许经它解析。
       final String resolver = _functionSource(
@@ -93,16 +104,31 @@ void main() {
         '/// 同步对比对话框：',
       );
 
-      expect(resolver, contains('enabledSyncChannelBackends'),
-          reason: '只开互联的用户必须能进比较对话框（BUG-1566 根因B）');
-      expect(resolver, isNot(contains('resolveSyncBackend')),
-          reason: '单通道解析 = 云后端没配过时恒报「请先设置同步」');
-      expect(body, contains('resolveSyncCompareBackend('),
-          reason: '对话框必须走同一个多通道解析');
-      expect(body, isNot(contains('resolveSyncBackend(')),
-          reason: '单通道解析 = 云后端没配过时恒报「请先设置同步」');
-      expect(body, contains('sync_compare_unavailable'),
-          reason: '一条通道都没认证过时仍应如实报「没配同步」，不得静默打开空对话框');
+      expect(
+        resolver,
+        contains('enabledSyncChannelBackends'),
+        reason: '只开互联的用户必须能进比较对话框（BUG-1566 根因B）',
+      );
+      expect(
+        resolver,
+        isNot(contains('resolveSyncBackend')),
+        reason: '单通道解析 = 云后端没配过时恒报「请先设置同步」',
+      );
+      expect(
+        body,
+        contains('resolveSyncCompareBackend('),
+        reason: '对话框必须走同一个多通道解析',
+      );
+      expect(
+        body,
+        isNot(contains('resolveSyncBackend(')),
+        reason: '单通道解析 = 云后端没配过时恒报「请先设置同步」',
+      );
+      expect(
+        body,
+        contains('sync_compare_unavailable'),
+        reason: '一条通道都没认证过时仍应如实报「没配同步」，不得静默打开空对话框',
+      );
     });
   });
 }

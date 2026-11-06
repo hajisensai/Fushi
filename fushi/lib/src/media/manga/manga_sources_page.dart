@@ -5,8 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'package:fushi/media.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/import/import_carrier.dart'
+    show kMangaCarrierFileExtensions;
 import 'package:fushi/src/media/import/quick_import_section.dart';
+import 'package:fushi_engine/media/manga/manga_importer.dart'
+    show kMangaImageExtensions;
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_row.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -14,7 +18,14 @@ import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 漫画库「导入」视图：本地来源的管理处。
 ///
@@ -82,7 +93,11 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
         // 对话框内含文件 / 文件夹 / OCR 向导）。
         QuickImportSection(
           heroIcon: FushiIcons.manga,
-          formats: const <String>['CBZ', 'ZIP', 'PDF', 'MOKURO', 'JPG', 'PNG'],
+          // 单卷载体（导入框文件选择器同一份）+ 页图文件夹里认的图片格式。
+          formats: importFormatLabels(<Iterable<String>>[
+            kMangaCarrierFileExtensions,
+            kMangaImageExtensions,
+          ]),
           actions: <QuickImportAction>[
             QuickImportAction(
               icon: FushiIcons.manga,

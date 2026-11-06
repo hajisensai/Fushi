@@ -710,6 +710,24 @@ abstract final class FushiIcons {
     fontFamily: kFushiSymbolsFontFamily,
   );
 
+  /// 本机 API 服务：Symbols `api`（取代 Icons.api_outlined / Icons.api）
+  static const IconData localApi = IconData(
+    0xf1b7,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 局域网访问范围：Symbols `lan`（取代 Icons.lan_outlined / Icons.lan）
+  static const IconData lan = IconData(
+    0xeb2f,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 监听端口：Symbols `settings_ethernet`（取代 Icons.settings_ethernet_outlined / Icons.settings_ethernet）
+  static const IconData networkPort = IconData(
+    0xe8be,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
   /// 局域网：Symbols `wifi`（取代 Icons.wifi / Icons.wifi）
   static const IconData wifi = IconData(
     0xe63e,
@@ -980,6 +998,18 @@ abstract final class FushiIcons {
     fontFamily: kFushiSymbolsFontFamily,
   );
 
+  /// 单曲循环：Symbols `repeat_one`（取代 Icons.repeat_one / Icons.repeat_one）
+  static const IconData repeatOne = IconData(
+    0xe041,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 随机播放：Symbols `shuffle`（取代 Icons.shuffle / Icons.shuffle）
+  static const IconData shuffle = IconData(
+    0xe043,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
   /// 音量：Symbols `volume_up`（取代 Icons.volume_up_outlined / Icons.volume_up）
   static const IconData volumeUp = IconData(
     0xe050,
@@ -1167,6 +1197,12 @@ abstract final class FushiIcons {
   /// 画质：Symbols `high_quality`（取代 Icons.high_quality_outlined / Icons.high_quality）
   static const IconData highQuality = IconData(
     0xe024,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 原画（不转码，源文件画质）：Symbols `hd`（取代 Icons.hd_outlined / Icons.hd）
+  static const IconData originalQuality = IconData(
+    0xe052,
     fontFamily: kFushiSymbolsFontFamily,
   );
 
@@ -1651,6 +1687,66 @@ abstract final class FushiIcons {
     fontFamily: kFushiSymbolsFontFamily,
   );
 
+  /// 侧边栏开关 / 侧边栏样式：Symbols `dock_to_right`
+  static const IconData sidebar = IconData(
+    0xf7e4,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 标签页 / 顶部标签栏：Symbols `tab`（取代 Icons.tab_outlined / Icons.tab）
+  static const IconData tab = IconData(
+    0xe8d8,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 页内查找：Symbols `find_in_page`（取代 Icons.find_in_page_outlined / Icons.find_in_page）
+  static const IconData findInPage = IconData(
+    0xe880,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 无痕浏览：Symbols `visibility_off`（取代 Icons.visibility_off_outlined / Icons.visibility_off）
+  static const IconData incognito = IconData(
+    0xe8f5,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 页面背景 / 壁纸：Symbols `wallpaper`（取代 Icons.wallpaper_outlined / Icons.wallpaper）
+  static const IconData pageBackdrop = IconData(
+    0xe1bc,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 浓度 / 强度：Symbols `opacity`（取代 Icons.opacity_outlined / Icons.opacity）
+  static const IconData opacity = IconData(
+    0xe91c,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 遮罩浓度（图片上的渐变压暗）：Symbols `gradient`（取代 Icons.gradient_outlined / Icons.gradient）
+  static const IconData scrim = IconData(
+    0xe3e9,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 竖屏专用图片：Symbols `stay_current_portrait`（取代 Icons.stay_current_portrait_outlined / Icons.stay_current_portrait）
+  static const IconData portraitImage = IconData(
+    0xe7ba,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 添加图片：Symbols `add_photo_alternate`（取代 Icons.add_photo_alternate_outlined / Icons.add_photo_alternate）
+  static const IconData addImage = IconData(
+    0xe43e,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 环境动效（缓慢漂移）：Symbols `motion_photos_on`（取代 Icons.motion_photos_on_outlined / Icons.motion_photos_on）
+  static const IconData ambientMotion = IconData(
+    0xe9c1,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
   /// 全部语义名 → 线框图标（测试 / 样张页遍历用）。
   static const Map<String, IconData> all = <String, IconData>{
     'home': home,
@@ -1769,6 +1865,9 @@ abstract final class FushiIcons {
     'devices': devices,
     'server': server,
     'hub': hub,
+    'localApi': localApi,
+    'lan': lan,
+    'networkPort': networkPort,
     'wifi': wifi,
     'person': person,
     'account': account,
@@ -1814,6 +1913,8 @@ abstract final class FushiIcons {
     'fastRewind': fastRewind,
     'replay': replay,
     'repeat': repeat,
+    'repeatOne': repeatOne,
+    'shuffle': shuffle,
     'volumeUp': volumeUp,
     'volumeOff': volumeOff,
     'audio': audio,
@@ -1845,6 +1946,7 @@ abstract final class FushiIcons {
     'alignLeft': alignLeft,
     'alignRight': alignRight,
     'highQuality': highQuality,
+    'originalQuality': originalQuality,
     'animation': animation,
     'myLocation': myLocation,
     'signalLow': signalLow,
@@ -1924,6 +2026,16 @@ abstract final class FushiIcons {
     'webAsset': webAsset,
     'webAssetOff': webAssetOff,
     'remoteControl': remoteControl,
+    'sidebar': sidebar,
+    'tab': tab,
+    'findInPage': findInPage,
+    'incognito': incognito,
+    'pageBackdrop': pageBackdrop,
+    'opacity': opacity,
+    'scrim': scrim,
+    'portraitImage': portraitImage,
+    'addImage': addImage,
+    'ambientMotion': ambientMotion,
   };
 
   /// [icon] 的实心（FILL=1）版本：选中态 / 激活态用。非语义图标原样返回。
@@ -1946,7 +2058,9 @@ abstract final class FushiIcons {
     0xe037: IconData(0xe037, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe03c: IconData(0xe03c, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe040: IconData(0xe040, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe041: IconData(0xe041, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe042: IconData(0xe042, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe043: IconData(0xe043, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe044: IconData(0xe044, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe045: IconData(0xe045, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe047: IconData(0xe047, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -1954,6 +2068,7 @@ abstract final class FushiIcons {
     0xe04d: IconData(0xe04d, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe04f: IconData(0xe04f, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe050: IconData(0xe050, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe052: IconData(0xe052, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe053: IconData(0xe053, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe056: IconData(0xe056, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe059: IconData(0xe059, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -1991,6 +2106,7 @@ abstract final class FushiIcons {
     0xe1a1: IconData(0xe1a1, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe1a2: IconData(0xe1a2, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe1b8: IconData(0xe1b8, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe1bc: IconData(0xe1bc, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe1bd: IconData(0xe1bd, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe1c4: IconData(0xe1c4, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe202: IconData(0xe202, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2055,6 +2171,7 @@ abstract final class FushiIcons {
     0xe3b9: IconData(0xe3b9, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe3be: IconData(0xe3be, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe3d3: IconData(0xe3d3, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe3e9: IconData(0xe3e9, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe3f4: IconData(0xe3f4, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe404: IconData(0xe404, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe405: IconData(0xe405, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2066,6 +2183,7 @@ abstract final class FushiIcons {
     0xe426: IconData(0xe426, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe429: IconData(0xe429, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe431: IconData(0xe431, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe43e: IconData(0xe43e, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe43f: IconData(0xe43f, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe518: IconData(0xe518, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe51c: IconData(0xe51c, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2163,6 +2281,7 @@ abstract final class FushiIcons {
     0xe87a: IconData(0xe87a, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe87b: IconData(0xe87b, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe87e: IconData(0xe87e, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe880: IconData(0xe880, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe888: IconData(0xe888, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe88e: IconData(0xe88e, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe898: IconData(0xe898, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2176,9 +2295,11 @@ abstract final class FushiIcons {
     0xe8b3: IconData(0xe8b3, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8b8: IconData(0xe8b8, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8ba: IconData(0xe8ba, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe8be: IconData(0xe8be, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8c7: IconData(0xe8c7, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8d4: IconData(0xe8d4, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8d5: IconData(0xe8d5, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe8d8: IconData(0xe8d8, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8de: IconData(
       0xe8de,
       fontFamily: kFushiSymbolsFilledFontFamily,
@@ -2211,6 +2332,7 @@ abstract final class FushiIcons {
     0xe90f: IconData(0xe90f, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe911: IconData(0xe911, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe913: IconData(0xe913, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe91c: IconData(0xe91c, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe91f: IconData(0xe91f, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe92e: IconData(0xe92e, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe933: IconData(0xe933, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2226,6 +2348,7 @@ abstract final class FushiIcons {
     0xe9b2: IconData(0xe9b2, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe9ba: IconData(0xe9ba, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe9bd: IconData(0xe9bd, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe9c1: IconData(0xe9c1, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe9df: IconData(0xe9df, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe9e0: IconData(0xe9e0, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe9e4: IconData(0xe9e4, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2246,6 +2369,7 @@ abstract final class FushiIcons {
     0xeadd: IconData(0xeadd, fontFamily: kFushiSymbolsFilledFontFamily),
     0xeae2: IconData(0xeae2, fontFamily: kFushiSymbolsFilledFontFamily),
     0xeae7: IconData(0xeae7, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xeb2f: IconData(0xeb2f, fontFamily: kFushiSymbolsFilledFontFamily),
     0xeb32: IconData(0xeb32, fontFamily: kFushiSymbolsFilledFontFamily),
     0xeb5a: IconData(0xeb5a, fontFamily: kFushiSymbolsFilledFontFamily),
     0xebcc: IconData(0xebcc, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2285,11 +2409,13 @@ abstract final class FushiIcons {
     0xf10d: IconData(0xf10d, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf15c: IconData(0xf15c, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf18a: IconData(0xf18a, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xf1b7: IconData(0xf1b7, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf1ca: IconData(0xf1ca, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf1dc: IconData(0xf1dc, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf20b: IconData(0xf20b, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf2ea: IconData(0xf2ea, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf539: IconData(0xf539, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xf7e4: IconData(0xf7e4, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf8b6: IconData(0xf8b6, fontFamily: kFushiSymbolsFilledFontFamily),
   };
 }
@@ -2309,7 +2435,9 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.plus_rectangle_on_rectangle,
   ),
   0xe040: (CupertinoIcons.repeat, CupertinoIcons.repeat),
+  0xe041: (CupertinoIcons.repeat_1, CupertinoIcons.repeat_1),
   0xe042: (CupertinoIcons.gobackward, CupertinoIcons.gobackward),
+  0xe043: (CupertinoIcons.shuffle, CupertinoIcons.shuffle),
   0xe044: (CupertinoIcons.forward_end, CupertinoIcons.forward_end_fill),
   0xe045: (CupertinoIcons.backward_end, CupertinoIcons.backward_end_fill),
   0xe047: (CupertinoIcons.stop_fill, CupertinoIcons.stop_fill),
@@ -2317,6 +2445,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   0xe04d: (CupertinoIcons.speaker_1_fill, CupertinoIcons.speaker_1_fill),
   0xe04f: (CupertinoIcons.speaker_slash, CupertinoIcons.speaker_slash_fill),
   0xe050: (CupertinoIcons.speaker_2, CupertinoIcons.speaker_2_fill),
+  0xe052: (CupertinoIcons.film, CupertinoIcons.film_fill),
   0xe053: (CupertinoIcons.textformat_abc, CupertinoIcons.textformat_abc),
   0xe056: (CupertinoIcons.goforward_10, CupertinoIcons.goforward_10),
   0xe059: (CupertinoIcons.gobackward_10, CupertinoIcons.gobackward_10),
@@ -2354,6 +2483,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   0xe1a1: (CupertinoIcons.archivebox, CupertinoIcons.archivebox_fill),
   0xe1a2: (CupertinoIcons.pause_circle, CupertinoIcons.pause_circle),
   0xe1b8: (CupertinoIcons.waveform, CupertinoIcons.waveform),
+  0xe1bc: (CupertinoIcons.rectangle_stack, CupertinoIcons.rectangle_stack_fill),
   0xe1bd: (CupertinoIcons.square_grid_2x2, CupertinoIcons.square_grid_2x2_fill),
   0xe1c4: (CupertinoIcons.play_circle, CupertinoIcons.play_circle_fill),
   0xe202: (CupertinoIcons.chart_bar, CupertinoIcons.chart_bar_fill),
@@ -2436,6 +2566,10 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.photo_on_rectangle,
     CupertinoIcons.photo_on_rectangle,
   ),
+  0xe3e9: (
+    CupertinoIcons.circle_lefthalf_fill,
+    CupertinoIcons.circle_lefthalf_fill,
+  ),
   0xe3f4: (CupertinoIcons.photo, CupertinoIcons.photo_fill),
   0xe404: (CupertinoIcons.film, CupertinoIcons.film_fill),
   0xe405: (CupertinoIcons.music_note, CupertinoIcons.music_note),
@@ -2453,6 +2587,10 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.slider_horizontal_3,
   ),
   0xe431: (CupertinoIcons.bookmark, CupertinoIcons.bookmark_fill),
+  0xe43e: (
+    CupertinoIcons.plus_rectangle_on_rectangle,
+    CupertinoIcons.plus_rectangle_fill_on_rectangle_fill,
+  ),
   0xe43f: (CupertinoIcons.photo, CupertinoIcons.photo_fill),
   0xe518: (CupertinoIcons.sun_max, CupertinoIcons.sun_max_fill),
   0xe51c: (CupertinoIcons.moon, CupertinoIcons.moon_fill),
@@ -2543,6 +2681,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   0xe87a: (CupertinoIcons.compass, CupertinoIcons.compass_fill),
   0xe87b: (CupertinoIcons.cube_box, CupertinoIcons.cube_box_fill),
   0xe87e: (CupertinoIcons.heart, CupertinoIcons.heart_fill),
+  0xe880: (CupertinoIcons.doc_text_search, CupertinoIcons.doc_text_search),
   0xe888: (CupertinoIcons.xmark_circle, CupertinoIcons.xmark_circle_fill),
   0xe88e: (CupertinoIcons.info_circle, CupertinoIcons.info_circle_fill),
   0xe898: (CupertinoIcons.lock_open, CupertinoIcons.lock_open_fill),
@@ -2558,6 +2697,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.arrow_counterclockwise,
     CupertinoIcons.arrow_counterclockwise,
   ),
+  0xe8be: (CupertinoIcons.number_square, CupertinoIcons.number_square_fill),
   0xe8c7: (
     CupertinoIcons.antenna_radiowaves_left_right,
     CupertinoIcons.antenna_radiowaves_left_right,
@@ -2569,6 +2709,10 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   0xe8d5: (
     CupertinoIcons.arrow_up_arrow_down,
     CupertinoIcons.arrow_up_arrow_down,
+  ),
+  0xe8d8: (
+    CupertinoIcons.square_on_square,
+    CupertinoIcons.square_fill_on_square_fill,
   ),
   0xe8de: (CupertinoIcons.list_dash, CupertinoIcons.list_dash),
   0xe8e2: (CupertinoIcons.globe, CupertinoIcons.globe),
@@ -2598,6 +2742,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.hand_point_right,
     CupertinoIcons.hand_point_right_fill,
   ),
+  0xe91c: (CupertinoIcons.drop, CupertinoIcons.drop_fill),
   0xe91f: (CupertinoIcons.waveform, CupertinoIcons.waveform),
   0xe92e: (CupertinoIcons.trash, CupertinoIcons.trash_fill),
   0xe933: (
@@ -2619,6 +2764,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.square_arrow_right,
   ),
   0xe9bd: (CupertinoIcons.sidebar_left, CupertinoIcons.sidebar_left),
+  0xe9c1: (CupertinoIcons.sparkles, CupertinoIcons.sparkles),
   0xe9df: (
     CupertinoIcons.square_on_square,
     CupertinoIcons.square_fill_on_square_fill,
@@ -2648,6 +2794,10 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   0xeadd: (CupertinoIcons.textformat_size, CupertinoIcons.textformat_size),
   0xeae2: (CupertinoIcons.textformat_size, CupertinoIcons.textformat_size),
   0xeae7: (CupertinoIcons.command, CupertinoIcons.command),
+  0xeb2f: (
+    CupertinoIcons.antenna_radiowaves_left_right,
+    CupertinoIcons.antenna_radiowaves_left_right,
+  ),
   0xeb32: (
     CupertinoIcons.line_horizontal_3_decrease_circle,
     CupertinoIcons.line_horizontal_3_decrease_circle_fill,
@@ -2723,6 +2873,10 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   0xf10d: (CupertinoIcons.pin, CupertinoIcons.pin_fill),
   0xf15c: (CupertinoIcons.cloud, CupertinoIcons.cloud_fill),
   0xf18a: (CupertinoIcons.envelope_badge, CupertinoIcons.envelope_badge_fill),
+  0xf1b7: (
+    CupertinoIcons.chevron_left_slash_chevron_right,
+    CupertinoIcons.chevron_left_slash_chevron_right,
+  ),
   0xf1ca: (CupertinoIcons.wifi_slash, CupertinoIcons.wifi_slash),
   0xf1dc: (CupertinoIcons.captions_bubble, CupertinoIcons.captions_bubble_fill),
   0xf20b: (
@@ -2731,6 +2885,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   ),
   0xf2ea: (CupertinoIcons.xmark_rectangle, CupertinoIcons.xmark_rectangle_fill),
   0xf539: (CupertinoIcons.book, CupertinoIcons.book_fill),
+  0xf7e4: (CupertinoIcons.sidebar_left, CupertinoIcons.sidebar_left),
   0xf8b6: (
     CupertinoIcons.exclamationmark_circle,
     CupertinoIcons.exclamationmark_circle_fill,

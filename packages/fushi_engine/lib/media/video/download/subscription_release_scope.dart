@@ -29,10 +29,7 @@ const String kBatchSubscriptionItemKey = 'batch';
 /// 注意它**认不出**只带 `[Fin]`、`BDRip` 这类没有区间也没有关键词的整季包——那种
 /// 形态只能靠「解析不出集号」兜住，见 [subscriptionReleaseIsBatch]。
 bool looksLikeBatchVideoRelease(String title) {
-  if (RegExp(
-    r'\b(batch|complete)\b',
-    caseSensitive: false,
-  ).hasMatch(title)) {
+  if (RegExp(r'\b(batch|complete)\b', caseSensitive: false).hasMatch(title)) {
     return true;
   }
   if (RegExp('season pack', caseSensitive: false).hasMatch(title)) return true;

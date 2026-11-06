@@ -21,8 +21,10 @@ void main() {
       // Measured on Windows 11: joining these into one argument makes Dart
       // quote it ("/select,D:\media\Show S01E01.mkv") and explorer answers by
       // opening Documents. Split, it selects the file every time.
-      expect(
-          command.arguments, <String>['/select,', r'D:\media\Show S01E01.mkv']);
+      expect(command.arguments, <String>[
+        '/select,',
+        r'D:\media\Show S01E01.mkv',
+      ]);
     });
 
     test('windows explorer exit codes carry no success signal', () {
@@ -44,26 +46,28 @@ void main() {
       );
     });
 
-    test('windows reveal succeeds although explorer.exe exits with 1',
-        () async {
-      String? executable;
-      List<String>? arguments;
-      final bool revealed = await revealInFileManagerOn(
-        r'D:\media\Show S01E01.mkv',
-        host: RevealHost.windows,
-        typeOf: (String _) async => FileSystemEntityType.file,
-        run: (String value, List<String> args) async {
-          executable = value;
-          arguments = args;
-          // explorer.exe returns 1 even when it opened and selected the file.
-          return ProcessResult(0, 1, '', '');
-        },
-      );
+    test(
+      'windows reveal succeeds although explorer.exe exits with 1',
+      () async {
+        String? executable;
+        List<String>? arguments;
+        final bool revealed = await revealInFileManagerOn(
+          r'D:\media\Show S01E01.mkv',
+          host: RevealHost.windows,
+          typeOf: (String _) async => FileSystemEntityType.file,
+          run: (String value, List<String> args) async {
+            executable = value;
+            arguments = args;
+            // explorer.exe returns 1 even when it opened and selected the file.
+            return ProcessResult(0, 1, '', '');
+          },
+        );
 
-      expect(revealed, isTrue);
-      expect(executable, 'explorer');
-      expect(arguments, <String>['/select,', r'D:\media\Show S01E01.mkv']);
-    });
+        expect(revealed, isTrue);
+        expect(executable, 'explorer');
+        expect(arguments, <String>['/select,', r'D:\media\Show S01E01.mkv']);
+      },
+    );
 
     test('a failing exit code still fails where it means something', () async {
       expect(
@@ -159,17 +163,14 @@ void main() {
 
     test('全都打不开返回 false，调用方据此提示', () async {
       expect(
-        await revealFirstOf(
-          <String>[r'D:\games\gone.exe', r'D:\gone'],
-          reveal: (String _) async => false,
-        ),
+        await revealFirstOf(<String>[
+          r'D:\games\gone.exe',
+          r'D:\gone',
+        ], reveal: (String _) async => false),
         isFalse,
       );
       expect(
-        await revealFirstOf(
-          const <String>[],
-          reveal: (String _) async => true,
-        ),
+        await revealFirstOf(const <String>[], reveal: (String _) async => true),
         isFalse,
         reason: '没有任何候选 = 定位不到，不能返回成功',
       );

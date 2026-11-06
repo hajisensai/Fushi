@@ -3,11 +3,12 @@ import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -29,11 +30,11 @@ class _TestAppModel extends AppModel {
 
   @override
   PackageInfo get packageInfo => PackageInfo(
-        appName: 'Fushi',
-        packageName: 'jp.fushi.test',
-        version: '1.0.0',
-        buildNumber: '1',
-      );
+    appName: 'Fushi',
+    packageName: 'jp.fushi.test',
+    version: '1.0.0',
+    buildNumber: '1',
+  );
 
   // prefs 未初始化的裸 AppModel：把本组件 build 路径读到的两个 pref-backed
   // getter 换成常量默认（qb 未配置 → 桌面解析成内置引擎，字段最全）。
@@ -59,9 +60,7 @@ Widget _harness({required double paneWidth}) {
   });
 
   return ProviderScope(
-    overrides: <Override>[
-      appProvider.overrideWith((Ref ref) => appModel),
-    ],
+    overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
     child: MaterialApp(
       theme: ThemeData(
         useMaterial3: true,
@@ -76,9 +75,7 @@ Widget _harness({required double paneWidth}) {
           alignment: Alignment.topLeft,
           child: SizedBox(
             width: paneWidth,
-            child: SingleChildScrollView(
-              child: const TorrentSettingsSection(),
-            ),
+            child: SingleChildScrollView(child: const TorrentSettingsSection()),
           ),
         ),
       ),
@@ -138,8 +135,11 @@ void main() {
     }
 
     final Finder fields = find.byType(TextFormField);
-    expect(fields, findsWidgets,
-        reason: 'embedded backend must render its input fields');
+    expect(
+      fields,
+      findsWidgets,
+      reason: 'embedded backend must render its input fields',
+    );
     for (final Element element in fields.evaluate()) {
       expect(
         tester.getSize(find.byWidget(element.widget)).width,
@@ -155,8 +155,9 @@ void main() {
     expect(tester.takeException(), isNull);
   }
 
-  testWidgets('wide pane: one baseline, fields fill the content area',
-      (WidgetTester tester) async {
+  testWidgets('wide pane: one baseline, fields fill the content area', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(2600, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -168,8 +169,9 @@ void main() {
     await expectSingleBaseline(tester, paneWidth: paneWidth);
   });
 
-  testWidgets('narrow pane: same rule, no extra cap kicks in',
-      (WidgetTester tester) async {
+  testWidgets('narrow pane: same rule, no extra cap kicks in', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(800, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);

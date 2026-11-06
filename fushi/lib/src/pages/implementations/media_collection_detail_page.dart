@@ -1,20 +1,30 @@
 import 'dart:async' show Completer, Timer, unawaited;
 import 'dart:io';
-import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
+import 'package:flutter/foundation.dart' show setEquals;
+import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
+import 'package:fushi/src/media/video/disc/disc_session_launcher.dart';
+import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
+import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
+import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/library_reorder.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_engine/media/collections/collection_cover.dart'
+    show collectionOwnCoverCandidates;
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/collections/collection_detail_layout.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/collections/collection_drag.dart'
     show CollectionAddOutcome, addMediaRefToCollection;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/async_file_existence_cache.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
@@ -51,6 +61,13 @@ import 'package:fushi/src/media/library_progress_reset.dart';
 import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
+import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
+    show
+        DialogActionGroup,
+        DialogDangerAction,
+        DialogListAction,
+        MediaItemDialogFrame,
+        showMediaItemActions;
 import 'package:fushi/src/pages/implementations/collection_relations_section.dart';
 import 'package:fushi/src/pages/implementations/collection_split_dialog.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -64,6 +81,8 @@ import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
+import 'package:fushi/src/pages/implementations/interconnect_download_tasks_page.dart'
+    show openInterconnectDownloadTasksPage;
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
@@ -72,9 +91,53 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
     show currentRevealHost, revealFirstOf;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/media/selection/media_selection_controller.dart';
+import 'package:fushi/src/media/selection/selection_gestures.dart';
+import 'package:fushi/src/media/video/video_watched_marks.dart';
+import 'package:fushi/src/sync/remote_video_client.dart'
+    show RemoteVideoPlayedMark;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_lock_dialog.dart';
+import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
+import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
+    show
+        AppVideoSubtitleService,
+        AppVideoSubtitleTarget,
+        AppVideoSubtitleTargetNotFound,
+        appVideoSubtitleService;
+import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart'
+    show PrefsRepoVideoSubtitleGeneratePrefs, showVideoSubtitleGenerateSheet;
+import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
+    show pushAiSettingsPage;
+import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_service.dart'
+    show
+        RemoteVideoSubtitleEpisode,
+        RemoteVideoSubtitleTarget,
+        appRemoteVideoSubtitleService;
+import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_sheet.dart'
+    show showRemoteVideoSubtitleSheet;
+import 'package:fushi/src/media/links/media_link_entries.dart'
+    show MediaLinkEntry;
+import 'package:fushi/src/media/links/media_link_inference_host.dart'
+    show mediaLinkInferCallback;
+import 'package:fushi/src/media/links/media_link_opener.dart'
+    show mediaLinkSearchAction, openMediaLinkEntry;
+import 'package:fushi/src/media/links/media_links_section.dart'
+    show MediaLinksSection;
 
 /// 统一合集 Phase 4：合集详情页（Jellyfin 式）。playlist 合集 = 有序剧集列表：点某集从
 /// 该集开始播放（带剧集面板 / 上下集 / 连播，调用方经 playlistCollectionId 打开播放器）；
@@ -87,7 +150,6 @@ class MediaCollectionDetailPage extends StatefulWidget {
     required this.collection,
     required this.loadEpisodes,
     required this.onOpenEpisode,
-    this.onOpenDiscMenu,
     this.remote,
     required this.onChanged,
     this.onDeleteMembersMedia,
@@ -98,10 +160,16 @@ class MediaCollectionDetailPage extends StatefulWidget {
     this.onPickOnlineCover,
     this.collectionAiSettings,
     this.aiClientFactory,
+    this.discMenuProbe,
     super.key,
   });
 
   final FushiDatabase database;
+
+  /// 测试注入：判定一张盘在本机能否开菜单。生产为 null，走 [probeLocalDiscMenu]
+  /// （读一次 index.bdmv）。
+  final Future<DiscMenuUnavailableReason?> Function(DiscRef disc)?
+  discMenuProbe;
 
   /// 「排序」菜单的「AI 排序」用的 AI 指派来源。null = 不显示该项（AI 模块关着，
   /// 调用方按 `isAiModuleEnabled` 求值后传）。构造注入的理由同 [videoSpecs]。
@@ -126,8 +194,6 @@ class MediaCollectionDetailPage extends StatefulWidget {
 
   /// 打开某集（调用方用 playlistCollectionId 进播放器带面板）。
   final void Function(VideoBookRow episode) onOpenEpisode;
-
-  final void Function(VideoBookRow episode)? onOpenDiscMenu;
 
   /// 远端上下文（列远端成员 / 流播 / 取封面）；null = 纯本地视图。
   final CollectionRemoteContext? remote;
@@ -178,8 +244,18 @@ class MediaCollectionDetailPage extends StatefulWidget {
 class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     with
         CollectionDetailShared<MediaCollectionDetailPage>,
+        LibraryReorderHost<MediaCollectionDetailPage>,
         TickerProviderStateMixin {
   late String _name;
+
+  /// 封面 / 海报 / 附加图缩略图的「文件在不在」异步记忆表（BUG-3756）：合集海报常落在
+  /// 网络盘（rclone / SMB 挂载）上，build 里同步 stat 一次就能冻结 UI 与同 isolate 的
+  /// 互联 host 数秒。build 只读这张表，没见过的路径后台 async 探测、落定后重建。
+  late final AsyncFileExistenceCache _coverExists = AsyncFileExistenceCache(
+    onChanged: () {
+      if (mounted) setState(() {});
+    },
+  );
 
   /// 本合集**有序**成员槽（本地行 + 只在对端的远端占位）——本页唯一的成员真相源。
   List<CollectionEpisodeSlot> _slots = const <CollectionEpisodeSlot>[];
@@ -191,6 +267,33 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     for (final CollectionEpisodeSlot slot in _slots)
       if (slot.local case final VideoBookRow row) row,
   ];
+
+  /// 原盘入口（BD/DVD 原盘交互改造第 5 项）：本合集背后的盘根（按盘号 / 目录名
+  /// 排序）。原盘入口由本页自己提供，不再靠调用方记得传回调——此前「相关作品」
+  /// 进来的那条路径就因为没传而看不到原盘按钮。
+  List<DiscRef> _discs = const <DiscRef>[];
+
+  /// 原盘成员只在对端（互联 host）上（远端原盘第二期：能流式就开菜单）。
+  bool _hasRemoteDisc = false;
+
+  /// 远端原盘探测得到的盘源（能流式开菜单时非 null）。
+  RemoteDiscMenuSource? _remoteDiscSource;
+
+  /// 这台 host 能被遥控着在它那边打开原盘菜单（「在 PC 上打开」）。
+  bool _hostCanOpenDisc = false;
+
+  /// 第一条远端原盘成员（探测 / 遥控用它的 id 指认这张盘）。
+  RemoteVideoInfo? get _firstRemoteDiscMember {
+    for (final CollectionEpisodeSlot slot in _slots) {
+      if (slot.local == null && isRemoteDiscMember(slot.remote)) {
+        return slot.remote;
+      }
+    }
+    return null;
+  }
+
+  /// 主按钮那张盘（最近看过的那张）在本机开不开得了菜单；null = 能开 / 未探测。
+  DiscMenuUnavailableReason? _discUnavailable;
 
   /// 成员里只在对端的那些（按序），供远端连播列表与起播下标换算。
   List<RemoteVideoInfo> get _remoteMembers => <RemoteVideoInfo>[
@@ -211,6 +314,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 季 tab 控制器：只在 ≥2 节时存在，节数变化（移出成员导致某季清空）时重建。
   TabController? _seasonTabs;
   int _selectedSeason = 0;
+
+  /// 集多选（批量标记已看 / 未看）。只用散格（键 = [CollectionEpisodeSlot.entryKey]），
+  /// 与库页多选同一个状态机：Shift 区间选、全选、可见性约束都现成。
+  final MediaSelectionController _selection = MediaSelectionController();
 
   /// 初始选季只做一次（落在续播那一季，见 [_rebuildSections]）。之后一律尊重
   /// 用户手选的 tab —— 重排 / 移出成员不得把他弹回别的季。
@@ -255,6 +362,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       const <String, List<VideoMetadataEpisodeRow>>{};
   String? _canonicalCoverPath;
   String? _canonicalCoverRemoteUrl;
+
+  /// 本合集的附加图组（v68 `media_images`）快照：hero 封面自有层的原盘竖版盘面图
+  /// 从这里取（[collectionOwnCoverCandidates]）。
+  List<MediaImageRow> _mediaImages = const <MediaImageRow>[];
   List<VideoMetadataTermRow> _workTerms = const <VideoMetadataTermRow>[];
   List<VideoMetadataExtraRow> _workExtras = const <VideoMetadataExtraRow>[];
 
@@ -271,8 +382,54 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 其实还在看第二集。只有「本页路由重新变成栈顶」才是真的回来了。
   bool _awaitingPlaybackReturn = false;
 
+  /// 排序模式（集卡菜单「排序」进入）：触屏按住集卡即拖，见 [LibraryReorderHost]。
+  bool _reordering = false;
+
+  void _startReorder() {
+    if (mounted) setState(() => _reordering = true);
+  }
+
+  void _endReorder() => setState(() => _reordering = false);
+
+  @override
+  VoidCallback? get libraryReorderEntry => _startReorder;
+
   /// 上一次看到的本页路由是否在栈顶（判「被盖住 → 又露出来」的边沿）。
   bool _routeWasCurrent = true;
+
+  /// 本机成员里**从配对设备下载来的副本**（同一个 id 仍在对端清单里）的
+  /// entryKey。只有它们给「删除本机副本」：删掉后合集成员行留着，这一集退回
+  /// 远端集（反馈 _sZllpFQWm / BUG-3698：iPad 上找不到删下载副本的地方）。用户
+  /// 自己导入的本机原件不在其中，不会被这条动作误删。
+  Set<String> _peerCopyKeys = const <String>{};
+
+  /// 重算 [_peerCopyKeys]。在 [_reload] 画完之后后台跑、不挡首帧：
+  /// [loadCollectionEpisodeSlots] 在全员本地时刻意不问远端清单，这里只在库页
+  /// 注入了「删除本机副本」时才问一次（共享远端库缓存，TTL 内不打网络）；拉不到
+  /// 清单就当没有副本——宁可不给入口，也不把本机原件当副本删。
+  Future<void> _refreshPeerCopyKeys(List<VideoBookRow> members) async {
+    final CollectionRemoteContext? remote = widget.remote;
+    Set<String> keys = const <String>{};
+    if (remote != null &&
+        remote.deleteLocalCopy != null &&
+        members.isNotEmpty) {
+      try {
+        final Set<String> remoteIds = <String>{
+          for (final RemoteVideoInfo info in await remote.loadRemoteVideos())
+            info.id,
+        };
+        keys = <String>{
+          for (final VideoBookRow member in members)
+            if (remoteIds.contains(member.bookUid)) member.bookUid,
+        };
+      } catch (_) {
+        keys = const <String>{};
+      }
+    }
+    if (!mounted) return;
+    if (setEquals(keys, _peerCopyKeys)) return;
+    setState(() => _peerCopyKeys = keys);
+  }
 
   @override
   FushiDatabase get detailDatabase => widget.database;
@@ -308,6 +465,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   @override
   void dispose() {
+    _coverExists.dispose();
     _backdropRotationTimer?.cancel();
     _seasonTabs?.dispose();
     super.dispose();
@@ -404,8 +562,17 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final Map<String, int> knownDurations = await loadKnownVideoDurationsMs(
       widget.database,
     );
+    final List<DiscRef> discs = collectDiscRefs(members);
+    final bool remoteDisc =
+        discs.isEmpty &&
+        slots.any(
+          (CollectionEpisodeSlot slot) =>
+              slot.local == null && isRemoteDiscMember(slot.remote),
+        );
     if (!mounted) return;
     setState(() {
+      _discs = discs;
+      _hasRemoteDisc = remoteDisc;
       _knownDurationsMs = knownDurations;
       _slots = episodeSlots;
       _groupKeyByEntry = <String, String>{
@@ -420,6 +587,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       _workTerms = workTerms;
       _workExtras = workExtras;
       _scrapeMeta = decoded;
+      _mediaImages = imageRows;
       _canonicalCoverPath = canonicalImages
           .where(
             (VideoMetadataImageRow row) =>
@@ -479,7 +647,218 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       }
       _loading = false;
     });
+    unawaited(_refreshPeerCopyKeys(members));
+    unawaited(_probeDiscMenu());
     _syncBackdropRotation();
+  }
+
+  /// 探测主按钮那张盘能不能开菜单（只读一次 index.bdmv，不启动 Java）。远端盘
+  /// （第二期）向 host 签发一次盘目录共享、读共享里的 index.bdmv：能流式就开菜单，
+  /// 不能时给出确切原因（对端版本过低 / DVD 文件夹形态 / 移动端 BD-J / 连不上）。
+  Future<void> _probeDiscMenu() async {
+    if (_hasRemoteDisc) {
+      await _probeRemoteDiscMenu();
+      return;
+    }
+    final DiscRef? disc = preferredDisc(_discs);
+    final DiscMenuUnavailableReason? reason = disc == null
+        ? null
+        : await (widget.discMenuProbe ?? probeLocalDiscMenu)(disc);
+    if (!mounted) return;
+    if (reason != _discUnavailable) setState(() => _discUnavailable = reason);
+  }
+
+  Future<void> _probeRemoteDiscMenu() async {
+    final RemoteDiscActions? actions = widget.remote?.discActions;
+    final RemoteVideoInfo? member = _firstRemoteDiscMember;
+    if (actions == null || member == null) {
+      if (!mounted) return;
+      setState(() {
+        _remoteDiscSource = null;
+        _discUnavailable = DiscMenuUnavailableReason.remote;
+      });
+      return;
+    }
+    final Future<bool> Function()? hostCheck = actions.hostCanOpenDisc;
+    if (hostCheck != null) {
+      unawaited(
+        hostCheck().then((bool can) {
+          if (mounted && can != _hostCanOpenDisc) {
+            setState(() => _hostCanOpenDisc = can);
+          }
+        }, onError: (Object _) {}),
+      );
+    }
+    final RemoteDiscProbe probe = await probeRemoteDiscMenu(
+      actions: actions,
+      videoId: member.id,
+      title: _name,
+      platform: currentDiscMenuPlatform(),
+      bdjComponentInstallable: currentBdjComponentInstallable(),
+      downloadToDevice: _downloadRemoteDiscToDevice,
+    );
+    if (!mounted) return;
+    setState(() {
+      _remoteDiscSource = probe.source;
+      _discUnavailable = probe.unavailable;
+    });
+  }
+
+  /// 流式会话缓冲提示里的「下载到本机」：与「下载远端集」同一入口（原盘成员按盘
+  /// 整体下载，见库页 `_prepareRemoteDiscDownloads`）。
+  Future<void> _downloadRemoteDiscToDevice() async {
+    final Future<void> Function(MediaCollectionRow, List<RemoteVideoInfo>)?
+    download = widget.remote?.downloadMembers;
+    if (download == null) return;
+    await download(_collectionRow ?? widget.collection, <RemoteVideoInfo>[
+      for (final RemoteVideoInfo info in _remoteMembers)
+        if (isRemoteDiscMember(info)) info,
+    ]);
+  }
+
+  void _openRemoteDisc(RemoteDiscMenuSource source) {
+    unawaited(
+      openRemoteDiscSession(
+        context: context,
+        repo: VideoBookRepository(widget.database),
+        source: source,
+        cover: _heroCover,
+      ),
+    );
+  }
+
+  /// 「在 PC 上打开」：遥控 host 在它那边进原盘会话（复用视频遥控通道）。
+  Future<void> _openRemoteDiscOnHost() async {
+    final Future<void> Function(String videoId)? open =
+        widget.remote?.discActions?.openOnHost;
+    final RemoteVideoInfo? member = _firstRemoteDiscMember;
+    if (open == null || member == null) return;
+    try {
+      await open(member.id);
+      FushiToast.show(msg: t.video_disc_open_on_host_sent);
+    } catch (error, stack) {
+      ErrorLogService.instance.log('VideoDiscMenu.openOnHost', error, stack);
+      FushiToast.show(
+        msg: t.video_disc_open_on_host_failed,
+        severity: ToastSeverity.warning,
+      );
+    }
+  }
+
+  bool get _isDiscEntry => _discs.isNotEmpty || _hasRemoteDisc;
+
+  /// 「原盘默认进入菜单」设置；没有 [ProviderScope]（部分 widget 测试）时取默认开。
+  bool get _discOpenMenuByDefault => discOpenMenuByDefaultOf(context);
+
+  DiscPrimaryKind get _discPrimaryKind => resolveDiscPrimaryKind(
+    hasDisc: _isDiscEntry,
+    openMenuByDefault: _discOpenMenuByDefault,
+    unavailable: _discUnavailable,
+  );
+
+  void _openDisc(DiscRef disc) {
+    // 播放页回来时重读进度（见 [_awaitingPlaybackReturn]）。
+    _awaitingPlaybackReturn = true;
+    unawaited(
+      openDiscSession(
+        context: context,
+        repo: VideoBookRepository(widget.database),
+        book: disc.book,
+        collectionId: widget.collection.id,
+        cover: _heroCover,
+      ),
+    );
+  }
+
+  /// 多盘：选一张再进它的菜单。所选那张开不了菜单时说明原因，不静默降级。
+  Future<void> _chooseDisc() async {
+    final DiscRef? disc = await showDiscPicker(
+      context: context,
+      discs: _discs,
+      selected: preferredDisc(_discs),
+    );
+    if (disc == null || !mounted) return;
+    final DiscMenuUnavailableReason? reason =
+        await (widget.discMenuProbe ?? probeLocalDiscMenu)(disc);
+    if (!mounted) return;
+    if (reason != null) {
+      FushiToast.show(
+        msg: discMenuUnavailableText(reason),
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    _openDisc(disc);
+  }
+
+  /// 主按钮的动作：原盘可开菜单时「播放原盘」（最近看过的那张），否则普通播放。
+  void _onPrimaryPlay(CollectionEpisodeSlot episode) {
+    final DiscRef? disc = preferredDisc(_discs);
+    if (_discPrimaryKind == DiscPrimaryKind.playDisc && disc != null) {
+      _openDisc(disc);
+      return;
+    }
+    final RemoteDiscMenuSource? remote = _remoteDiscSource;
+    if (_discPrimaryKind == DiscPrimaryKind.playDisc && remote != null) {
+      _openRemoteDisc(remote);
+      return;
+    }
+    _openSlot(episode);
+  }
+
+  /// 原盘作品 hero 的次按钮：主按钮是「播放原盘」时给「继续观看 xx:xx」/「直接播放
+  /// 正片」；多盘再给「选盘」。主按钮退回普通播放（设置关 / 开不了菜单）但菜单仍可开
+  /// 时，菜单入口留在次按钮。
+  List<Widget> _discSecondaryActions(CollectionEpisodeSlot episode) {
+    if (!_isDiscEntry) return const <Widget>[];
+    final bool discPrimary = _discPrimaryKind == DiscPrimaryKind.playDisc;
+    final DiscRef? disc = preferredDisc(_discs);
+    return <Widget>[
+      if (discPrimary)
+        _isEpisodeStarted(episode)
+            ? MediaDetailSecondaryButton(
+                buttonKey: const ValueKey<String>('collection-disc-continue'),
+                icon: FushiIcons.history,
+                label: t.video_disc_continue_at(
+                  time: formatDiscResumePosition(episode.positionMs),
+                ),
+                onPressed: () => _openSlot(episode),
+              )
+            : MediaDetailSecondaryButton(
+                buttonKey: const ValueKey<String>('collection-disc-main-title'),
+                icon: FushiIcons.playCircle,
+                label: t.video_disc_play_main_title,
+                onPressed: () => _openSlot(episode),
+              )
+      else if (_discUnavailable == null && disc != null)
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('collection-disc-open-menu'),
+          icon: FushiIcons.toc,
+          label: t.video_disc_play,
+          onPressed: () => _openDisc(disc),
+        )
+      else if (_discUnavailable == null && _remoteDiscSource != null)
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('collection-disc-open-menu'),
+          icon: FushiIcons.toc,
+          label: t.video_disc_play,
+          onPressed: () => _openRemoteDisc(_remoteDiscSource!),
+        ),
+      if (_hasRemoteDisc && _hostCanOpenDisc)
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('collection-disc-open-on-host'),
+          icon: FushiIcons.cast,
+          label: t.video_disc_open_on_host,
+          onPressed: () => unawaited(_openRemoteDiscOnHost()),
+        ),
+      if (_discs.length > 1 && _discUnavailable == null)
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('collection-disc-choose'),
+          icon: FushiIcons.swap,
+          label: t.video_disc_choose_disc,
+          onPressed: () => unawaited(_chooseDisc()),
+        ),
+    ];
   }
 
   /// 本会话里已经在详情页兜底索引过的来源 id，按数据库实例分（见
@@ -813,46 +1192,67 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   ImageProvider? get _heroCover {
     // 读 DB 快照而非进页副本：刮削刚写进去的新封面必须立刻生效（见 [_collectionRow]）。
-    final String? collectionCover =
-        (_collectionRow ?? widget.collection).coverPath;
-    if (collectionCover != null && collectionCover.isNotEmpty) {
-      return resolveMediaCoverImage(
-        kind: MediaKind.video,
-        localPath: collectionCover,
-        decodeWidth: 1600,
-      );
+    // 每一级本地路径都要文件真实存在才算数，与库页合集卡
+    // （`home_video_page.dart` 的 `_buildCollectionCover`）同一条判据：剧集目录
+    // 搬家、备份恢复带来的悬空路径必须表现得像「没设过封面」，落到刮削封面 /
+    // 成员封面，而不是返回一张必坏的 FileImage 把后面的回退全挡掉。
+    //
+    // 存在性读 [_coverExists]（零同步 IO，BUG-3756）；某一级还在探测时整条链停在
+    // [kPendingCoverImage]，不先闪成后面的回退封面。
+    // 自有层（自有封面 → 原盘竖版盘面图）的优先级只在
+    // [collectionOwnCoverCandidates] 写一次。
+    for (final String ownCoverPath in collectionOwnCoverCandidates(
+      _collectionRow ?? widget.collection,
+      _mediaImages,
+    )) {
+      switch (_coverExists.lookupOptional(ownCoverPath)) {
+        case null:
+          return kPendingCoverImage;
+        case true:
+          return resolveMediaCoverImage(
+            kind: MediaKind.video,
+            localPath: ownCoverPath,
+            decodeWidth: 1600,
+          );
+        case false:
+          break;
+      }
     }
-    if (_canonicalCoverPath case final String canonicalCover
-        when canonicalCover.isNotEmpty) {
-      return resolveMediaCoverImage(
-        kind: MediaKind.video,
-        localPath: canonicalCover,
-        decodeWidth: 1600,
-      );
+    switch (_coverExists.lookupOptional(_canonicalCoverPath)) {
+      case null:
+        return kPendingCoverImage;
+      case true:
+        return resolveMediaCoverImage(
+          kind: MediaKind.video,
+          localPath: _canonicalCoverPath,
+          decodeWidth: 1600,
+        );
+      case false:
+        break;
     }
     if (_canonicalCoverRemoteUrl case final String remoteCover
         when remoteCover.isNotEmpty) {
       return _resolveCanonicalImage(remoteCover, decodeWidth: 1600);
     }
     if (_members.isEmpty) return null;
-    final String? continueCover = _members[_continueIndex].coverPath;
-    String? fallbackCover = continueCover?.isNotEmpty == true
-        ? continueCover
-        : null;
-    if (fallbackCover == null) {
-      for (final VideoBookRow row in _members) {
-        final String? candidate = row.coverPath;
-        if (candidate != null && candidate.isNotEmpty) {
-          fallbackCover = candidate;
-          break;
-        }
+    for (final String? candidate in <String?>[
+      _members[_continueIndex].coverPath,
+      for (final VideoBookRow row in _members) row.coverPath,
+    ]) {
+      switch (_coverExists.lookupOptional(candidate)) {
+        case null:
+          return kPendingCoverImage;
+        case true:
+          return resolveMediaCoverImage(
+            kind: MediaKind.video,
+            localPath: candidate,
+            decodeWidth: 1600,
+          );
+        case false:
+          continue;
       }
     }
-    return resolveMediaCoverImage(
-      kind: MediaKind.video,
-      localPath: fallbackCover,
-      decodeWidth: 1600,
-    );
+    return null;
   }
 
   /// 把当前 [_slots] 顺序一次落盘（sortIndex 全表回写）。库页合集行与播放器
@@ -1070,6 +1470,66 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 
+  /// 「整季生成日语字幕」：取合集全部视频成员（已有 `.ja.srt` 的由管线跳过），一部
+  /// 作品一张专名表，面板里显示每集进度与跳过原因。编排在 [AppVideoSubtitleService]
+  /// （与视频页单集、桌面 CLI 同一个服务）。
+  Future<void> _generateSeasonJaSubtitles() async {
+    final AppModel appModel = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appProvider);
+    // 成员全在对端：整季交给放视频的 host 跑（逐集 videoId 任务，host 侧同一作品键
+    // 共用一张专名表）；本机有成员时在本机跑，只在对端的集列为跳过。
+    if (_members.isEmpty && _remoteMembers.isNotEmpty) {
+      await _generateRemoteSeasonJaSubtitles(appModel);
+      return;
+    }
+    final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
+    final AppVideoSubtitleTarget target;
+    try {
+      target = await service.resolveCollection(widget.collection.id);
+    } on AppVideoSubtitleTargetNotFound {
+      // 合集在这期间被删掉了（与视频页单集入口同一处理）。
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.video_subtitle_ai_no_local_episodes,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    await showVideoSubtitleGenerateSheet(
+      context: context,
+      service: service,
+      target: target,
+      prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
+      openAiSettings: pushAiSettingsPage,
+    );
+  }
+
+  Future<void> _generateRemoteSeasonJaSubtitles(AppModel appModel) async {
+    bool hasJapanese(RemoteVideoInfo m) =>
+        m.subtitleFileName?.toLowerCase().endsWith('.ja.srt') ?? false;
+    await showRemoteVideoSubtitleSheet(
+      context: context,
+      service: appRemoteVideoSubtitleService(appModel),
+      target: RemoteVideoSubtitleTarget(
+        title: _canonicalWork?.title ?? _name,
+        wholeSeason: true,
+        episodes: <RemoteVideoSubtitleEpisode>[
+          for (final RemoteVideoInfo m in _remoteMembers)
+            if (!hasJapanese(m))
+              RemoteVideoSubtitleEpisode(videoId: m.id, title: m.title),
+        ],
+        skippedExisting: <String>[
+          for (final RemoteVideoInfo m in _remoteMembers)
+            if (hasJapanese(m)) m.title,
+        ],
+      ),
+      prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
+    );
+  }
+
   // 「刮削分集资料」独立入口已删（TODO-2791）：它硬门「合集已刮削」，而合集刮削
   // 管线（VideoMetadataDatabaseStore.apply → _writeLegacyProjection）本就会把集名/
   // 集号投影进 video_scrape_meta，所以这个入口在未刮时只会弹「请先刮削合集资料」、
@@ -1191,9 +1651,20 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     List<String> paths,
     Offset globalPosition,
   ) async {
+    // 目录判定先 async 做完再交给同步的分类器（BUG-3756：拖进来的常是网络盘上的
+    // 文件，同步 stat 冷目录要数秒、冻结 UI isolate）。
+    // 各路径并发判（一次往返，不逐个串行等网络盘）。
+    final List<bool> isDirectory = await Future.wait(<Future<bool>>[
+      for (final String path in paths) FileSystemEntity.isDirectory(path),
+    ]);
+    final Set<String> directories = <String>{
+      for (int i = 0; i < paths.length; i++)
+        if (isDirectory[i]) paths[i],
+    };
+    if (!mounted) return;
     final DroppedFiles files = classifyDroppedFiles(
       paths,
-      isDirectory: (String path) => Directory(path).existsSync(),
+      isDirectory: directories.contains,
     );
     debugPrint(
       '[fushi-drop] [collection-detail] videos=${files.videos.length} '
@@ -1572,8 +2043,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final RemoteVideoInfo? remote = slot.remote;
     if (remote == null) return null;
     final String? cachedPath = remote.coverPath;
-    if (cachedPath != null && File(cachedPath).existsSync()) {
-      return FileImage(File(cachedPath));
+    switch (_coverExists.lookupOptional(cachedPath)) {
+      case null:
+        return kPendingCoverImage;
+      case true:
+        return FileImage(File(cachedPath!));
+      case false:
+        break;
     }
     final String? url = remote.coverUrl;
     final RemoteCoverFetcher? fetcher = widget.remote?.coverFetcher;
@@ -1601,6 +2077,27 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     context.openEpisode(remote, members, members.indexOf(remote));
   }
 
+  /// 这一集看过没有：有播放位置且没看完。重看到一半的已打勾集同样是「继续观看」
+  /// （BUG-3491）。
+  bool _isEpisodeStarted(CollectionEpisodeSlot episode) =>
+      episode.positionMs > 0 && !_slotProgress(episode).isFinished;
+
+  /// 右下角「继续 / 开始观看」悬浮按钮：与 hero 主按钮同一集。
+  Widget? _buildResumeFab() {
+    if (_slots.isEmpty) return null;
+    final CollectionEpisodeSlot episode = _slots[_continueIndex];
+    final bool discPrimary = _discPrimaryKind == DiscPrimaryKind.playDisc;
+    return MediaDetailResumeFab(
+      buttonKey: const ValueKey<String>('collection-resume-fab'),
+      watching: true,
+      started: _isEpisodeStarted(episode),
+      itemLabel: _episodeDisplayTitle(episode),
+      labelOverride: discPrimary ? t.video_disc_play : null,
+      icon: discPrimary ? FushiIcons.toc : null,
+      onPressed: () => _onPrimaryPlay(episode),
+    );
+  }
+
   /// 详情页 hero：数据求值留在本页（背景轮换 / 元信息 chip / 标签 / 人物 / 续播集 /
   /// 主操作），视觉交给共享的 [CollectionDetailHero]（与媒体服务器详情页同一套）。
   ///
@@ -1615,13 +2112,17 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 一份只会形成重复内容。旧 v68 资料没有规范详情宿主时才保留 hero 回退，
     // 避免老库凭空丢信息。简介只在 hero 里展示一份（可展开、可选中划词）。
     final bool useLegacyHeroDetails = _canonicalWork == null;
-    // 重看到一半的已打勾集同样是「继续观看」（BUG-3491）。
-    final bool started =
-        episode.positionMs > 0 && !_slotProgress(episode).isFinished;
+    final bool started = _isEpisodeStarted(episode);
+    final bool discPrimary = _discPrimaryKind == DiscPrimaryKind.playDisc;
+    final DiscMenuUnavailableReason? discUnavailable = _isDiscEntry
+        ? _discUnavailable
+        : null;
+    final DiscRef? disc = preferredDisc(_discs);
     return CollectionDetailHero(
       backdrop: _heroBackdrop,
       backdropIndex: _heroBackdropIndex,
       cover: _heroCover,
+      coverMaterial: ShelfCoverMaterial.glossyPoster,
       logo: _heroLogo,
       title: _canonicalWork?.title ?? _name,
       // 读屏与测试按合集名找 logo。
@@ -1647,12 +2148,21 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             ]
           : const <CollectionHeroCredit>[],
       summary: useLegacyHeroDetails ? meta?.summary : _canonicalWork?.overview,
-      continueLabel:
-          '${t.collection_continue_progress(n: _continueIndex + 1)}  ·  '
-          '${_episodeDisplayTitle(episode)}',
-      playLabel: started ? t.video_continue_watching : t.collection_play,
+      // 原盘开不了菜单时，这一行写明原因（主按钮退回普通播放）；多盘时写主按钮
+      // 开的是哪一张。
+      continueLabel: discUnavailable != null
+          ? discMenuUnavailableText(discUnavailable)
+          : discPrimary && _discs.length > 1 && disc != null
+          ? '${t.video_disc_play}  ·  ${disc.label}'
+          : '${t.collection_continue_progress(n: _continueIndex + 1)}  ·  '
+                '${_episodeDisplayTitle(episode)}',
+      // 续播行已写明是哪一集，按钮只给动作：有进度「继续观看」、没看过「开始观看」。
+      playLabel: discPrimary
+          ? t.video_disc_play
+          : MediaDetailResumeFab.labelFor(watching: true, started: started),
+      playIcon: discPrimary ? FushiIcons.toc : null,
       playButtonKey: const ValueKey<String>('collection-hero-play'),
-      onPlay: () => _openSlot(episode),
+      onPlay: () => _onPrimaryPlay(episode),
       // hero 不再挂「⋯」：它只是右上角管理菜单的子集，左右两处同样的按钮
       // （BUG-3190）。完整管理只在右上角；hero 只留主操作与两个次按钮。
       secondaryActions: _heroSecondaryActions(),
@@ -1665,6 +2175,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 数据逻辑。
   List<Widget> _heroSecondaryActions() {
     return <Widget>[
+      if (_slots.isNotEmpty) ..._discSecondaryActions(_slots[_continueIndex]),
       MediaDetailSecondaryButton(
         buttonKey: const ValueKey<String>('collection-hero-tags'),
         icon: FushiIcons.tag,
@@ -1919,7 +2430,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                           child: Stack(
                             fit: StackFit.expand,
                             children: <Widget>[
-                              if (thumb != null && File(thumb).existsSync())
+                              // 存在性读异步记忆表（BUG-3756）；还在探测时先画底色块。
+                              if (thumb != null &&
+                                  _coverExists.lookup(thumb) == null)
+                                const ColoredBox(color: Color(0x1FFFFFFF))
+                              else if (thumb != null &&
+                                  _coverExists.lookup(thumb)!)
                                 Image.file(
                                   File(thumb),
                                   fit: BoxFit.cover,
@@ -2012,36 +2528,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     }
   }
 
-  Widget _buildDiscMenuEntries(FushiDesignTokens tokens) {
-    final Map<String, VideoBookRow> discs = <String, VideoBookRow>{};
-    for (final VideoBookRow book in _members) {
-      final String? root = blurayDiscRootForPlaylistPath(book.videoPath);
-      if (root != null) discs.putIfAbsent(root, () => book);
-    }
-    if (discs.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.page,
-        vertical: tokens.spacing.rowVertical,
-      ),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 8,
-        children: <Widget>[
-          for (final MapEntry<String, VideoBookRow> disc in discs.entries)
-            FushiOutlinedButton.icon(
-              key: ValueKey<String>('bluray-menu-${disc.key}'),
-              onPressed: () => widget.onOpenDiscMenu!(disc.value),
-              icon: const FushiIcon(FushiIcons.toc),
-              label: Text(
-                '${t.video_disc_open_menu} · ${p.basename(disc.key)}',
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildEpisodeSection(FushiDesignTokens tokens) {
     return Padding(
       padding: EdgeInsets.only(
@@ -2051,7 +2537,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          if (widget.onOpenDiscMenu != null) _buildDiscMenuEntries(tokens),
           CollectionSectionTitle(
             t.video_episode_list,
             count: _visibleSlots.length,
@@ -2059,6 +2544,20 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           // 多季合集：季分段（浮动胶囊）紧贴标题行、在集列表之上——用户一进详情页
           // 就看得见分季。
           if (_hasSeasonTabs) _buildSeasonTabs(),
+          // 多选入口：选集后批量标记已看 / 未看（底栏见 [_buildSelectionBar]）。
+          Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+              child: FushiTextButton(
+                key: const ValueKey<String>('collection-select-toggle'),
+                onPressed: _toggleSelecting,
+                child: Text(
+                  _selecting ? t.dialog_cancel : t.collection_select_episodes,
+                ),
+              ),
+            ),
+          ),
           SizedBox(height: tokens.spacing.card),
           // hayase 式宽列表卡（TODO-2491 用户拍板）：每集一张横向卡（16:9 缩略图 +
           // 「N. 集名」+ 集简介 + 观看进度），**默认全量可见、不再折叠**；宽屏两列。
@@ -2100,11 +2599,24 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// 集列表（hayase 式宽卡网格）：宽度 ≥ [kCollectionEpisodeTwoColumnMinWidth] 两列，
   /// 否则一列。拖拽重排/右键/长按菜单由 [FushiReorderableGrid] 统一接管（鼠标
-  /// 按住即拖 + 右键菜单；触摸长按起拖、原地松手出菜单——BUG-778 缩放安全一族）。
+  /// 按住即拖 + 右键菜单；触摸长按与库页卡片同一时机直接出菜单，菜单「排序」进入
+  /// 排序模式后按住即拖——BUG-778 缩放安全一族）。
   /// 分季时只列本季（[_visibleMembers]），拖拽是节内重排，由 [_onReorder] 拼回
   /// 全序落盘。
   Widget _buildEpisodeGrid() {
     final List<CollectionEpisodeSlot> visible = _visibleSlots;
+    // 区间选 / 全选按可见顺序（本季）；顺序变了锚点作废，底栏计数补一帧。
+    if (_selection.setVisibleOrder(
+          loose: <String>[
+            for (final CollectionEpisodeSlot s in visible) s.entryKey,
+          ],
+          collections: const <int>[],
+        ) &&
+        _selecting) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         const double spacing = 12;
@@ -2118,17 +2630,41 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           crossAxisSpacing: spacing,
           mainAxisSpacing: spacing,
           feedbackBorderRadius: FushiBorderRadius.card,
+          reordering: _reordering,
           keyForIndex: (int i) =>
               ValueKey<String>('collection-episode-row-${visible[i].entryKey}'),
-          onReorder: _onReorder,
-          onActivateItem: (int i) => _openSlot(visible[i]),
+          // 多选态不重排（拖动只会误操作）；点击 = 勾选 / 取消勾选。
+          onReorder: _selecting ? (int from, int to) {} : _onReorder,
+          onActivateItem: (int i) {
+            if (_selecting) {
+              _tapSelect(visible[i]);
+              return;
+            }
+            // 桌面 Ctrl（macOS ⌘）/ Shift 点击直接进多选并选中该集。
+            if (selectionEntryModifierPressed(context)) {
+              setState(
+                () => _selection.enterWith(
+                  SelectionSlot.loose(visible[i].entryKey),
+                ),
+              );
+              return;
+            }
+            _openSlot(visible[i]);
+          },
           onContextMenu: (int i, Offset globalPosition) =>
               _showEpisodeMenu(visible[i], globalPosition),
           // 2026-10 动效重做：集卡首屏错峰进场（窗口在页级
           // [FushiEntranceScope]，换季时重开）。只包装卡，不改网格几何。
           itemBuilder: (BuildContext context, int i) => FushiStaggeredEntrance(
             index: i,
-            child: _buildEpisodeCard(context, visible[i], i),
+            child: _selecting
+                ? _withSelectionOverlay(
+                    _buildEpisodeCard(context, visible[i], i),
+                    selected: _selection.isSelected(
+                      SelectionSlot.loose(visible[i].entryKey),
+                    ),
+                  )
+                : _buildEpisodeCard(context, visible[i], i),
           ),
         );
       },
@@ -2226,84 +2762,207 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     }
   }
 
-  /// 集卡上下文菜单（右键 / 触摸长按原地松手）。坐标经 Overlay `globalToLocal`
-  /// 消掉 FushiAppUiScale 缩放（BUG-781 同族纪律）。管理能力从旧管理列表的行内
+  /// 集卡上下文菜单（右键 / 触摸长按）。管理能力从旧管理列表的行内
   /// 按钮收进本菜单（拖拽排序仍是直接拖卡）。
+  ///
+  /// 容器走 [showMediaItemActions]，与库页卡片同一套：右键在指针处弹右键菜单
+  /// （锚点由 [FushiReorderableGrid] 在同步派发期间经 `activeContextMenuAnchor`
+  /// 给出），触摸长按弹抽屉 / 对话框。此前一律 `showFushiMenu` 小菜单，右键与长按
+  /// 长得一样。菜单必须在第一个 await 之前弹出，才读得到锚点。
   Future<void> _showEpisodeMenu(
     CollectionEpisodeSlot episode,
     Offset globalPosition,
   ) async {
-    final RenderObject? overlay = Overlay.of(
-      context,
-    ).context.findRenderObject();
-    if (overlay is! RenderBox) return;
-    final Offset anchor = overlay.globalToLocal(globalPosition);
     // 这一集在本机已有原始文件（流媒体 / 远端行的 videoPath 是 URL，不算）：下载
     // 本集对它没有意义，换成「打开文件位置」。纯函数判据，不吃 IO。
     final VideoBookRow? local = episode.local;
     final bool hasLocalFiles = local != null && videoBookHasLocalFiles(local);
-    final _EpisodeMenuAction? action = await showFushiMenu<_EpisodeMenuAction>(
-      context: context,
-      position: RelativeRect.fromRect(
-        Rect.fromPoints(anchor, anchor),
-        Offset.zero & overlay.size,
-      ),
-      items: <PopupMenuEntry<_EpisodeMenuAction>>[
-        if (_downloadsAvailable && !hasLocalFiles)
-          PopupMenuItem<_EpisodeMenuAction>(
-            value: _EpisodeMenuAction.download,
-            child: _menuItemRow(
-              FushiIcons.download,
-              t.collection_episode_download,
-            ),
-          ),
-        // 「打开文件位置」：与视频库卡同一条动作、同一份文案；移动端没有文件管理器
-        // 契约（[currentRevealHost] 为 null），整条不出。
-        if (hasLocalFiles && currentRevealHost() != null)
-          PopupMenuItem<_EpisodeMenuAction>(
-            value: _EpisodeMenuAction.openFileLocation,
-            child: _menuItemRow(
-              FushiIcons.folderOpen,
-              t.media_file_location_open,
-            ),
-          ),
-        // v95：完整技术规格（音轨/字幕轨在集卡上放不下，只能进弹窗）。
-        // 仅本地文件有——远端占位集探不了。
-        if (episode.local != null && widget.videoSpecs != null)
-          PopupMenuItem<_EpisodeMenuAction>(
-            value: _EpisodeMenuAction.mediaInfo,
-            child: _menuItemRow(FushiIcons.info, t.video_specs_title),
-          ),
-        // 「清除观看进度」：只对本地行且确有观看痕迹的集出现（远端占位集的进度
-        // 归 host，本地没得清）。用户误点开下一集又退出后，「继续看」会被钉在那一集
-        // （BUG-1542 的最近播放锚点），这条动作让它回到上一集看完后的下一集。
-        if (episode.local case final VideoBookRow local
-            when videoBookHasWatchTrace(local))
-          PopupMenuItem<_EpisodeMenuAction>(
-            value: _EpisodeMenuAction.clearWatchProgress,
-            child: _menuItemRow(
-              FushiIcons.restart,
-              t.video_watch_progress_clear,
-            ),
-          ),
-        // 集级 UserVerified（Shoko）：把这个文件钉到规范作品的某一季某一集，之后
-        // 每次刮削都保留。只对本地文件、且合集已刮出剧集作品时出现。
-        if (episode.local != null && _canonicalWork?.mediaType == 'tv')
-          PopupMenuItem<_EpisodeMenuAction>(
-            value: _EpisodeMenuAction.pinEpisode,
-            child: _menuItemRow(
-              FushiIcons.pin,
-              t.collection_episode_link_manual,
-            ),
-          ),
-        PopupMenuItem<_EpisodeMenuAction>(
-          value: _EpisodeMenuAction.removeFromCollection,
-          child: _menuItemRow(FushiIcons.linkOff, t.collection_remove_member),
-        ),
-      ],
-    );
+    // 互联下载的管理动作（反馈 _sZllpFQWm / BUG-3698）：与发起下载的「下载远端集」
+    // 同一处、对同一集，任何平台都可达——不依赖「浏览 → 下载」，也不问商店合规门
+    // （互联下载不是受限能力）。
+    final InterconnectDownloadManager? downloads = widget.remote?.downloads;
+    final String? taskId = episode.isRemote && downloads != null
+        ? downloads.taskFor(episode.entryKey)?.id
+        : null;
+    final bool canDownloadToDevice =
+        episode.remote != null &&
+        widget.remote?.downloadMembers != null &&
+        taskId == null;
+    final bool canDeleteLocalCopy =
+        local != null &&
+        widget.remote?.deleteLocalCopy != null &&
+        _peerCopyKeys.contains(local.bookUid);
+    final _EpisodeMenuAction? action =
+        await showMediaItemActions<_EpisodeMenuAction>(
+          context: context,
+          builder: (BuildContext menuContext) {
+            void pick(_EpisodeMenuAction value) =>
+                Navigator.pop(menuContext, value);
+            return MediaItemDialogFrame(
+              title: _episodeDisplayTitle(episode),
+              showLaunchAction: false,
+              listActions: <DialogListAction>[
+                if (canDownloadToDevice)
+                  DialogListAction(
+                    label: t.remote_video_download,
+                    icon: FushiIcons.cloudDownload,
+                    group: DialogActionGroup.content,
+                    onPressed: () => pick(_EpisodeMenuAction.downloadToDevice),
+                  ),
+                if (taskId != null && downloads!.canPause(taskId))
+                  DialogListAction(
+                    label: t.download_task_pause,
+                    icon: FushiIcons.pause,
+                    group: DialogActionGroup.content,
+                    onPressed: () => pick(_EpisodeMenuAction.pauseDownload),
+                  ),
+                if (taskId != null && downloads!.canRestart(taskId))
+                  DialogListAction(
+                    label: t.download_task_resume,
+                    icon: FushiIcons.play,
+                    group: DialogActionGroup.content,
+                    onPressed: () => pick(_EpisodeMenuAction.resumeDownload),
+                  ),
+                if (taskId != null && downloads!.canCancel(taskId))
+                  DialogListAction(
+                    label: t.interconnect_download_cancel,
+                    icon: FushiIcons.close,
+                    group: DialogActionGroup.content,
+                    onPressed: () => pick(_EpisodeMenuAction.cancelDownload),
+                  ),
+                if (_downloadsAvailable && !hasLocalFiles)
+                  DialogListAction(
+                    label: t.collection_episode_download,
+                    icon: FushiIcons.download,
+                    group: DialogActionGroup.content,
+                    onPressed: () => pick(_EpisodeMenuAction.download),
+                  ),
+                // 「打开文件位置」：与视频库卡同一条动作、同一份文案；移动端没有文件管理器
+                // 契约（[currentRevealHost] 为 null），整条不出。
+                if (hasLocalFiles && currentRevealHost() != null)
+                  DialogListAction(
+                    label: t.media_file_location_open,
+                    icon: FushiIcons.folderOpen,
+                    group: DialogActionGroup.organize,
+                    onPressed: () => pick(_EpisodeMenuAction.openFileLocation),
+                  ),
+                // 标记已看 / 未看：本地集写库，媒体服务器的远端集同步到服务器；其它远端
+                // 源没有这个协议（[CollectionRemoteContext.playedMark] 为 null）就不出。
+                if (_canMarkWatched(episode)) ...<DialogListAction>[
+                  DialogListAction(
+                    label: episode.completed
+                        ? t.video_mark_unwatched
+                        : t.video_mark_watched,
+                    icon: episode.completed
+                        ? FushiIcons.visibilityOff
+                        : FushiIcons.check,
+                    group: DialogActionGroup.progress,
+                    onPressed: () => pick(
+                      episode.completed
+                          ? _EpisodeMenuAction.markUnwatched
+                          : _EpisodeMenuAction.markWatched,
+                    ),
+                  ),
+                  DialogListAction(
+                    label: t.video_mark_watched_through,
+                    icon: FushiIcons.checklist,
+                    group: DialogActionGroup.progress,
+                    onPressed: () =>
+                        pick(_EpisodeMenuAction.markWatchedThrough),
+                  ),
+                ],
+                DialogListAction(
+                  label: t.collection_select_episodes,
+                  icon: FushiIcons.selectAll,
+                  group: DialogActionGroup.organize,
+                  onPressed: () => pick(_EpisodeMenuAction.select),
+                ),
+                // v95：完整技术规格（音轨/字幕轨在集卡上放不下，只能进弹窗）。
+                // 仅本地文件有——远端占位集探不了。
+                if (episode.local != null && widget.videoSpecs != null)
+                  DialogListAction(
+                    label: t.video_specs_title,
+                    icon: FushiIcons.info,
+                    group: DialogActionGroup.content,
+                    onPressed: () => pick(_EpisodeMenuAction.mediaInfo),
+                  ),
+                // 「清除观看进度」：只对本地行且确有观看痕迹的集出现（远端占位集的进度
+                // 归 host，本地没得清）。用户误点开下一集又退出后，「继续看」会被钉在那一集
+                // （BUG-1542 的最近播放锚点），这条动作让它回到上一集看完后的下一集。
+                if (episode.local case final VideoBookRow local
+                    when videoBookHasWatchTrace(local))
+                  DialogListAction(
+                    label: t.video_watch_progress_clear,
+                    icon: FushiIcons.restart,
+                    group: DialogActionGroup.progress,
+                    onPressed: () =>
+                        pick(_EpisodeMenuAction.clearWatchProgress),
+                  ),
+                // 集级 UserVerified（Shoko）：把这个文件钉到规范作品的某一季某一集，之后
+                // 每次刮削都保留。只对本地文件、且合集已刮出剧集作品时出现。
+                if (episode.local != null && _canonicalWork?.mediaType == 'tv')
+                  DialogListAction(
+                    label: t.collection_episode_link_manual,
+                    icon: FushiIcons.pin,
+                    group: DialogActionGroup.organize,
+                    onPressed: () => pick(_EpisodeMenuAction.pinEpisode),
+                  ),
+                DialogListAction(
+                  label: t.collection_remove_member,
+                  icon: FushiIcons.linkOff,
+                  group: DialogActionGroup.organize,
+                  onPressed: () =>
+                      pick(_EpisodeMenuAction.removeFromCollection),
+                ),
+              ],
+              dangerActions: <DialogDangerAction>[
+                if (canDeleteLocalCopy)
+                  DialogDangerAction(
+                    label: t.collection_episode_local_copy_delete,
+                    icon: FushiIcons.delete,
+                    onPressed: () => pick(_EpisodeMenuAction.deleteLocalCopy),
+                  ),
+              ],
+            );
+          },
+        );
     if (!mounted) return;
     switch (action) {
+      case _EpisodeMenuAction.downloadToDevice:
+        await widget.remote?.downloadMembers?.call(
+          _collection,
+          <RemoteVideoInfo>[episode.remote!],
+        );
+        if (mounted) await _reload();
+      case _EpisodeMenuAction.pauseDownload:
+        downloads?.pause(taskId!);
+      case _EpisodeMenuAction.resumeDownload:
+        await downloads?.resume(taskId!);
+        if (mounted) await _reload();
+      case _EpisodeMenuAction.cancelDownload:
+        await downloads?.cancel(taskId!);
+      case _EpisodeMenuAction.deleteLocalCopy:
+        final bool deleted =
+            await widget.remote?.deleteLocalCopy?.call(local!) ?? false;
+        if (!deleted || !mounted) return;
+        widget.onChanged();
+        await _reload();
+      case _EpisodeMenuAction.markWatched:
+        await _markEpisodes(<CollectionEpisodeSlot>[episode], watched: true);
+      case _EpisodeMenuAction.markUnwatched:
+        await _markEpisodes(<CollectionEpisodeSlot>[episode], watched: false);
+      case _EpisodeMenuAction.markWatchedThrough:
+        await _markEpisodes(
+          itemsThrough(
+            _visibleSlots,
+            _visibleSlots.indexOf(episode),
+          ).where(_canMarkWatched).toList(),
+          watched: true,
+        );
+      case _EpisodeMenuAction.select:
+        setState(
+          () => _selection.enterWith(SelectionSlot.loose(episode.entryKey)),
+        );
       case _EpisodeMenuAction.download:
         _openDownloadDialog(episodeNumber: _episodeNumberOf(episode));
       case _EpisodeMenuAction.openFileLocation:
@@ -2319,6 +2978,170 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       case null:
         break;
     }
+  }
+
+  /// 这一集能不能手动标记：本地行总是可以；纯远端集要来源支持（媒体服务器）。
+  bool _canMarkWatched(CollectionEpisodeSlot episode) =>
+      episode.local != null || widget.remote?.playedMark != null;
+
+  /// 批量标记已看 / 未看，一次 [setVideosWatched]：本地行（含本地入库的媒体服务器
+  /// 条目，顺带回写服务器）写库并盖同步戳；纯远端集与本地集在当前来源上的镜像经
+  /// 来源的「已播放」协议标到服务器（同一条目只发一次）。之后重读本页与库页；
+  /// 服务器失败只提示条数，并如实区分「本地已更新」与「什么都没改」。
+  Future<void> _markEpisodes(
+    List<CollectionEpisodeSlot> episodes, {
+    required bool watched,
+  }) async {
+    if (episodes.isEmpty) return;
+    final RemoteVideoPlayedMark? marker = widget.remote?.playedMark;
+    final List<String> localUids = <String>[
+      for (final CollectionEpisodeSlot e in episodes)
+        if (e.local != null) e.local!.bookUid,
+    ];
+    final List<String> remoteIds = <String>[
+      for (final CollectionEpisodeSlot e in episodes)
+        if (e.local == null && e.remote != null)
+          e.remote!.id
+        else if (marker != null && e.remoteMirror != null)
+          e.remoteMirror!.id,
+    ];
+    final WatchedMarkResult result;
+    try {
+      result = await setVideosWatched(
+        db: widget.database,
+        watched: watched,
+        localUids: localUids,
+        remoteIds: remoteIds,
+        remoteMarker: marker,
+      );
+    } catch (e, stack) {
+      // 服务器失败在 setVideosWatched 内部计数；走到这里的是本地写库失败。
+      ErrorLogService.instance.log('CollectionDetail.markWatched', e, stack);
+      FushiToast.show(msg: t.video_mark_failed, severity: ToastSeverity.error);
+      return;
+    }
+    if (remoteIds.isNotEmpty || result.remoteChanged > 0) {
+      widget.remote?.onPlayedMarked?.call();
+    }
+    if (!mounted) return;
+    widget.onChanged();
+    await _reload();
+    if (!mounted) return;
+    FushiToast.show(
+      msg: watchedMarkFeedback(result, watched: watched),
+      severity: result.hasFailures
+          ? ToastSeverity.error
+          : ToastSeverity.success,
+    );
+  }
+
+  bool get _selecting => _selection.active;
+
+  void _exitSelection() => setState(_selection.exit);
+
+  void _toggleSelecting() => setState(_selection.toggleMode);
+
+  void _tapSelect(CollectionEpisodeSlot episode) => setState(
+    () => _selection.applyTap(
+      SelectionSlot.loose(episode.entryKey),
+      selectionTapKind(),
+    ),
+  );
+
+  void _selectAllInSeason() => setState(
+    () => _selection.selectAll(
+      loose: <String>[
+        for (final CollectionEpisodeSlot s in _visibleSlots) s.entryKey,
+      ],
+      collections: const <int>[],
+    ),
+  );
+
+  Future<void> _markSelected({required bool watched}) async {
+    final Set<String> keys = _selection.looseKeys;
+    final List<CollectionEpisodeSlot> targets = <CollectionEpisodeSlot>[
+      for (final CollectionEpisodeSlot s in _visibleSlots)
+        if (keys.contains(s.entryKey) && _canMarkWatched(s)) s,
+    ];
+    setState(_selection.exit);
+    await _markEpisodes(targets, watched: watched);
+  }
+
+  /// 多选态底栏：已选数 + 全选本季 + 标记已看 / 未看 + 取消。走共享底部动作条
+  /// （MD3 贴底 surfaceContainer 条 / Apple 悬浮玻璃面）；按钮放进可换行的 Wrap，
+  /// 窄屏放不下一行时折到下一行。
+  Widget? _buildSelectionBar() {
+    if (!_selecting) return null;
+    return FushiBottomActionBar(
+      message: Text(
+        t.collection_selected_count(n: _selection.length),
+        key: const ValueKey<String>('collection-selection-count'),
+      ),
+      leading: Wrap(
+        alignment: WrapAlignment.end,
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          FushiTextButton(
+            onPressed: _selectAllInSeason,
+            child: Text(t.collection_select_all_in_season),
+          ),
+          FushiTextButton(
+            key: const ValueKey<String>('collection-selection-unwatched'),
+            onPressed: _selection.isEmpty
+                ? null
+                : () => unawaited(_markSelected(watched: false)),
+            child: Text(t.video_mark_unwatched),
+          ),
+          FushiFilledButton(
+            key: const ValueKey<String>('collection-selection-watched'),
+            onPressed: _selection.isEmpty
+                ? null
+                : () => unawaited(_markSelected(watched: true)),
+            child: Text(t.video_mark_watched),
+          ),
+          FushiTextButton(
+            onPressed: _exitSelection,
+            child: Text(t.dialog_cancel),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 多选态集卡的选中描边 + 右上角勾选标。整层 IgnorePointer：手势仍归网格。
+  Widget _withSelectionOverlay(Widget card, {required bool selected}) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Stack(
+      children: <Widget>[
+        card,
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: FushiBorderRadius.card,
+                border: selected
+                    ? Border.all(color: scheme.primary, width: 2)
+                    : null,
+                color: selected ? scheme.primary.withValues(alpha: 0.08) : null,
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          top: 8,
+          right: 8,
+          child: IgnorePointer(
+            child: FushiIcon(
+              selected ? FushiIcons.check : FushiIcons.radioUnchecked,
+              size: 22,
+              color: selected ? scheme.primary : scheme.outline,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   /// 在系统文件管理器里定位并选中这一集的原始文件。候选表与视频库卡同源
@@ -2409,12 +3232,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       context: context,
       builder: (BuildContext context) => FushiAlertDialog(
         title: Text(_episodeDisplayTitle(episode)),
-        content: SingleChildScrollView(
-          child: VideoSpecsPanel(
-            service: widget.videoSpecs,
-            filePath: path,
-            showTitle: false,
-          ),
+        content: VideoSpecsPanel(
+          service: widget.videoSpecs,
+          filePath: path,
+          showTitle: false,
         ),
         actions: <Widget>[
           FushiTextButton(
@@ -2451,6 +3272,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       case _CollectionManageAction.subtitles:
         await _fetchCollectionSubtitles();
         return;
+      case _CollectionManageAction.generateJaSubtitles:
+        await _generateSeasonJaSubtitles();
+        return;
       case _CollectionManageAction.renameEpisodes:
         await _renameEpisodesFromScrape();
         return;
@@ -2458,6 +3282,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         // 批下载在 app 级管理器里跑到底；这里只等它排完，回来重载让新落地的
         // 本地行替换远端占位。
         await widget.remote?.downloadMembers?.call(_collection, _remoteMembers);
+        if (mounted) await _reload();
+        return;
+      case _CollectionManageAction.interconnectDownloadTasks:
+        await openInterconnectDownloadTasksPage(context);
         if (mounted) await _reload();
         return;
       case _CollectionManageAction.scrapeOnHost:
@@ -2500,20 +3328,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     if (!saved || !mounted) return;
     FushiToast.show(msg: t.video_work_locked_fields_saved);
     await _reload();
-  }
-
-  /// 菜单项「图标 + 文字」行。2026-10 体验优化：文字包 [Flexible] + 省略号，
-  /// 长译文（德 / 俄等）在窄菜单里不再横向溢出。
-  Widget _menuItemRow(IconData icon, String label) {
-    return Row(
-      children: <Widget>[
-        FushiIcon(icon, size: 20),
-        const SizedBox(width: 12),
-        Flexible(
-          child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-        ),
-      ],
-    );
   }
 
   PreferredSizeWidget _buildAppBar() {
@@ -2616,6 +3430,16 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         t.video_jimaku_batch_title,
         enabled: _members.isNotEmpty,
       ),
+      // 整季生成日语字幕（ASR + 可选 AI 校对）：要本机视频文件与本机 ONNX 运行时；
+      // 只在对端的集由面板列出跳过原因，不在这里藏入口。
+      // 只在对端的合集交给 host 跑（不需要本机 ASR）。
+      if (isAsrSupported || widget.remote != null)
+        action(
+          _CollectionManageAction.generateJaSubtitles,
+          FushiIcons.ai,
+          t.video_subtitle_ai_generate_season_title,
+          enabled: _members.isNotEmpty || _remoteMembers.isNotEmpty,
+        ),
       action(
         _CollectionManageAction.renameEpisodes,
         FushiIcons.edit,
@@ -2632,6 +3456,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           FushiIcons.cloudDownload,
           t.remote_collection_download_members,
           enabled: _remoteMembers.isNotEmpty,
+        ),
+      // 互联下载任务（暂停 / 继续 / 取消）：「下载远端集」发起的整批任务在这里能停
+      // （反馈 _sZllpFQWm：iOS 没有「浏览 → 下载」，此前点了就停不下来）。
+      if (widget.remote?.downloads != null)
+        action(
+          _CollectionManageAction.interconnectDownloadTasks,
+          FushiIcons.download,
+          t.interconnect_download_tasks_title,
         ),
       // 互联刮削（7a / 7b）。
       if (widget.remote?.scrapeOnHost != null)
@@ -2714,6 +3546,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               ? double.infinity
               : kMediaDetailTwoPaneMinWidth,
           bottomPadding: tokens.spacing.page,
+          fab: _buildResumeFab(),
           header: _buildHero(),
           slivers: <Widget>[
             SliverToBoxAdapter(child: _buildEpisodeSection(tokens)),
@@ -2728,6 +3561,32 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                 onDownload: _downloadsAvailable ? _downloadRelation : null,
               ),
             ),
+            // 跨模块「同一作品」（作品图谱 media_links）：原作 / 改编 / 游戏…
+            SliverToBoxAdapter(
+              child: Consumer(
+                builder: (BuildContext context, WidgetRef ref, Widget? _) {
+                  final MediaLinkEndpoint self = (
+                    kind: MediaLinkKind.videoCollection,
+                    key: collectionTagEntryKey(widget.collection.id),
+                  );
+                  return MediaLinksSection(
+                    database: widget.database,
+                    self: self,
+                    onOpen: (MediaLinkEntry e) => openMediaLinkEntry(
+                      context: context,
+                      ref: ref,
+                      entry: e,
+                    ),
+                    onInfer: mediaLinkInferCallback(ref: ref, self: self),
+                    searchActionFor: (MediaLinkKind k) => mediaLinkSearchAction(
+                      context: context,
+                      ref: ref,
+                      kind: k,
+                    ),
+                  );
+                },
+              ),
+            ),
             SliverToBoxAdapter(child: _buildWorkDetailsSection()),
           ],
         ),
@@ -2739,14 +3598,34 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       // [MediaDetailSkeleton] / SafeArea）。
       extendBodyBehindAppBar: true,
       appBar: _buildAppBar(),
+      bottomNavigationBar: _buildSelectionBar(),
       // 加载骨架 → 正文 / 空态交叉淡入（时长走动效令牌，墨水屏 / 减弱动效归零）。
-      body: AnimatedSwitcher(
-        duration: context.fushiMotion.effectsDefault.duration,
-        child: KeyedSubtree(
-          key: ValueKey<String>(
-            _loading ? 'loading' : (_slots.isEmpty ? 'empty' : 'content'),
-          ),
-          child: body,
+      body: PopScope(
+        canPop: !_reordering,
+        onPopInvokedWithResult: (bool didPop, Object? _) {
+          if (!didPop && _reordering) _endReorder();
+        },
+        child: Stack(
+          children: <Widget>[
+            Positioned.fill(
+              child: AnimatedSwitcher(
+                duration: context.fushiMotion.effectsDefault.duration,
+                child: KeyedSubtree(
+                  key: ValueKey<String>(
+                    _loading
+                        ? 'loading'
+                        : (_slots.isEmpty ? 'empty' : 'content'),
+                  ),
+                  child: body,
+                ),
+              ),
+            ),
+            LibraryReorderBar.overlay(
+              context: context,
+              visible: _reordering,
+              onDone: _endReorder,
+            ),
+          ],
         ),
       ),
     );
@@ -2763,6 +3642,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
 /// 集卡上下文菜单动作。
 enum _EpisodeMenuAction {
+  downloadToDevice,
+  pauseDownload,
+  resumeDownload,
+  cancelDownload,
+  deleteLocalCopy,
+  markWatched,
+  markUnwatched,
+  markWatchedThrough,
+  select,
   download,
   openFileLocation,
   mediaInfo,
@@ -2780,8 +3668,10 @@ enum _CollectionManageAction {
   tmdbOrderingOnHost,
   sortBySeason,
   subtitles,
+  generateJaSubtitles,
   renameEpisodes,
   downloadRemote,
+  interconnectDownloadTasks,
   scrapeOnHost,
   scrapeForHost,
   splitBySeason,

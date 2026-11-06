@@ -93,15 +93,15 @@ void main() {
     Uint8List? audioBytes,
     bool clipSucceeds = true,
     bool gifSucceeds = true,
-  }) =>
-      GalHookMiningCoordinator(
-        textService: service,
-        lineLookup: service.entryById,
-        lineValidator: (_) => true,
-        stateLoader: () => activeState,
-        lineTimestampLookup: (String lineId) =>
-            lineTimestamps?[lineId] ?? lineTimestampMs,
-        captureAudio: ({
+  }) => GalHookMiningCoordinator(
+    textService: service,
+    lineLookup: service.entryById,
+    lineValidator: (_) => true,
+    stateLoader: () => activeState,
+    lineTimestampLookup: (String lineId) =>
+        lineTimestamps?[lineId] ?? lineTimestampMs,
+    captureAudio:
+        ({
           required String lineId,
           required String sentence,
           required String outputExtension,
@@ -110,7 +110,8 @@ void main() {
           events.add('audio');
           return audioBytes ?? Uint8List.fromList(<int>[7, 8, 9]);
         },
-        exportRecording: ({
+    exportRecording:
+        ({
           required int fromTickMs,
           required int toTickMs,
           required String directory,
@@ -130,7 +131,8 @@ void main() {
             nowTickMs: 10000,
           );
         },
-        buildVideoClip: ({
+    buildVideoClip:
+        ({
           required WindowRecordingExport export,
           required int? fromTickMs,
           required int toTickMs,
@@ -143,10 +145,15 @@ void main() {
           buildCalls.add(_BuildCall(fromTickMs, toTickMs, audioBytes));
           expect(audioExtension, isNotEmpty);
           return clipSucceeds
-              ? (bytes: mp4Bytes, extension: 'mp4', hasAudio: audioBytes != null)
+              ? (
+                  bytes: mp4Bytes,
+                  extension: 'mp4',
+                  hasAudio: audioBytes != null,
+                )
               : null;
         },
-        captureGif: ({
+    captureGif:
+        ({
           required int hwnd,
           MiningAnimatedFormat format = MiningAnimatedFormat.gif,
         }) async {
@@ -155,26 +162,25 @@ void main() {
               ? (bytes: Uint8List.fromList(<int>[71, 73, 70]), format: format)
               : null;
         },
-        captureStill: (int hwnd) async {
-          events.add('still');
-          return WindowCaptureResult(
-            pngBytes: Uint8List.fromList(<int>[80, 78, 71]),
-          );
-        },
+    captureStill: (int hwnd) async {
+      events.add('still');
+      return WindowCaptureResult(
+        pngBytes: Uint8List.fromList(<int>[80, 78, 71]),
       );
+    },
+  );
 
   Future<GalHookMiningResult> mine(
     GalHookMiningCoordinator subject,
     TexthookerLineEntry entry,
     _RecordingRepo repo,
-  ) =>
-      subject.mineLine(
-        lineId: entry.id,
-        fields: const <String, String>{'expression': '台詞'},
-        compression: MiningMediaCompression.compressed,
-        repo: repo,
-        imageMode: VideoMiningImageMode.videoClip,
-      );
+  ) => subject.mineLine(
+    lineId: entry.id,
+    fields: const <String, String>{'expression': '台詞'},
+    compression: MiningMediaCompression.compressed,
+    repo: repo,
+    imageMode: VideoMiningImageMode.videoClip,
+  );
 
   test('视频片段：先等语音播完再导出录制帧，音频混流进编码器，封面落 .mp4', () async {
     final TexthookerLineEntry entry = service.appendLine('録画の台詞')!;
@@ -188,14 +194,11 @@ void main() {
     );
 
     expect(result.success, isTrue);
-    expect(
-        events,
-        <String>[
-          'audio',
-          'export',
-          'build',
-        ],
-        reason: '片段终点必须在语音播完之后，导出不能先于音频返回');
+    expect(events, <String>[
+      'audio',
+      'export',
+      'build',
+    ], reason: '片段终点必须在语音播完之后，导出不能先于音频返回');
     expect(repo.contexts.single.coverPath, endsWith('external_window.mp4'));
     expect(repo.contexts.single.sentenceAudioPath, isNotNull);
     expect(buildCalls.single.audioBytes, audio);
@@ -217,10 +220,9 @@ void main() {
     final TexthookerLineEntry first = service.appendLine('前の台詞')!;
     final TexthookerLineEntry second = service.appendLine('今の台詞')!;
     await mine(
-      coordinator(lineTimestamps: <String, int>{
-        first.id: 5000,
-        second.id: 9000,
-      }),
+      coordinator(
+        lineTimestamps: <String, int>{first.id: 5000, second.id: 9000},
+      ),
       first,
       _RecordingRepo(),
     );
@@ -229,7 +231,8 @@ void main() {
     expect(
       exportCalls.single.toTickMs,
       9000,
-      reason: '用 0（=现在）会把从那句到现在的所有后续台词画面全拼进 mp4，'
+      reason:
+          '用 0（=现在）会把从那句到现在的所有后续台词画面全拼进 mp4，'
           '用户拿到一段跑马灯而不是那句话的画面',
     );
     expect(buildCalls.single.toTickMs, 9000);
@@ -239,10 +242,9 @@ void main() {
     final TexthookerLineEntry first = service.appendLine('前の台詞')!;
     final TexthookerLineEntry latest = service.appendLine('今の台詞')!;
     await mine(
-      coordinator(lineTimestamps: <String, int>{
-        first.id: 5000,
-        latest.id: 9000,
-      }),
+      coordinator(
+        lineTimestamps: <String, int>{first.id: 5000, latest.id: 9000},
+      ),
       latest,
       _RecordingRepo(),
     );
@@ -319,23 +321,24 @@ void main() {
       lineValidator: (_) => true,
       stateLoader: () => activeState,
       lineTimestampLookup: (_) => 5000,
-      captureAudio: ({
-        required String lineId,
-        required String sentence,
-        required String outputExtension,
-      }) async =>
-          Uint8List.fromList(<int>[7]),
-      exportRecording: ({
-        required int fromTickMs,
-        required int toTickMs,
-        required String directory,
-      }) async =>
-          throw StateError('recorder unavailable'),
-      captureGif: ({
-        required int hwnd,
-        MiningAnimatedFormat format = MiningAnimatedFormat.gif,
-      }) async =>
-          (bytes: Uint8List.fromList(<int>[71, 73, 70]), format: format),
+      captureAudio:
+          ({
+            required String lineId,
+            required String sentence,
+            required String outputExtension,
+          }) async => Uint8List.fromList(<int>[7]),
+      exportRecording:
+          ({
+            required int fromTickMs,
+            required int toTickMs,
+            required String directory,
+          }) async => throw StateError('recorder unavailable'),
+      captureGif:
+          ({
+            required int hwnd,
+            MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+          }) async =>
+              (bytes: Uint8List.fromList(<int>[71, 73, 70]), format: format),
       captureStill: (int hwnd) async =>
           WindowCaptureResult(pngBytes: Uint8List.fromList(<int>[80, 78, 71])),
     );
@@ -347,14 +350,14 @@ void main() {
 
   test('非视频片段模式不碰录制导出（Never break）', () async {
     final TexthookerLineEntry entry = service.appendLine('GIF のまま')!;
-    final GalHookMiningResult result =
-        await coordinator(lineTimestampMs: 5000).mineLine(
-      lineId: entry.id,
-      fields: const <String, String>{'expression': '台詞'},
-      compression: MiningMediaCompression.compressed,
-      repo: _RecordingRepo(),
-      imageMode: VideoMiningImageMode.gif,
-    );
+    final GalHookMiningResult result = await coordinator(lineTimestampMs: 5000)
+        .mineLine(
+          lineId: entry.id,
+          fields: const <String, String>{'expression': '台詞'},
+          compression: MiningMediaCompression.compressed,
+          repo: _RecordingRepo(),
+          imageMode: VideoMiningImageMode.gif,
+        );
     expect(result.success, isTrue);
     expect(exportCalls, isEmpty);
     expect(buildCalls, isEmpty);

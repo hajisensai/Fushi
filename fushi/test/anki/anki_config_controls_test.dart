@@ -63,30 +63,30 @@ class _FakeRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      const MineOutcome.notConfigured();
+  }) async => const MineOutcome.notConfigured();
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
 }
 
 AnkiSettings _loadedSettings() => AnkiSettings(
-      availableDecks: const <AnkiDeck>[
-        AnkiDeck(id: 1, name: 'Lapis'),
-        AnkiDeck(id: 2, name: 'Mining'),
-      ],
-      availableNoteTypes: <AnkiNoteType>[
-        AnkiNoteType(id: 7, name: 'Lapis', fields: LapisNoteType.fields),
-        const AnkiNoteType(id: 8, name: 'Basic', fields: <String>['Front']),
-      ],
-      selectedDeckId: 1,
-      selectedNoteTypeId: 7,
-    );
+  availableDecks: const <AnkiDeck>[
+    AnkiDeck(id: 1, name: 'Lapis'),
+    AnkiDeck(id: 2, name: 'Mining'),
+  ],
+  availableNoteTypes: <AnkiNoteType>[
+    AnkiNoteType(id: 7, name: 'Lapis', fields: LapisNoteType.fields),
+    const AnkiNoteType(id: 8, name: 'Basic', fields: <String>['Front']),
+  ],
+  selectedDeckId: 1,
+  selectedNoteTypeId: 7,
+);
 
 Widget _host(Widget child) => TranslationProvider(
-      child: MaterialApp(
-          home: Scaffold(body: ListView(children: <Widget>[child]))),
-    );
+  child: MaterialApp(
+    home: Scaffold(body: ListView(children: <Widget>[child])),
+  ),
+);
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
@@ -95,9 +95,9 @@ void main() {
     final _FakeRepo repo = _FakeRepo();
     final AnkiViewModel vm = AnkiViewModel(repo);
 
-    await tester.pumpWidget(_host(
-      AnkiDeckPickerRow(settings: _loadedSettings(), viewModel: vm),
-    ));
+    await tester.pumpWidget(
+      _host(AnkiDeckPickerRow(settings: _loadedSettings(), viewModel: vm)),
+    );
     await tester.pumpAndSettle();
 
     // controlBelow: true 会把标题渲染两次（标签 + 控件自身），所以是 findsWidgets。
@@ -111,9 +111,9 @@ void main() {
     final _FakeRepo repo = _FakeRepo();
     final AnkiViewModel vm = AnkiViewModel(repo);
 
-    await tester.pumpWidget(_host(
-      AnkiNoteTypePickerRow(settings: _loadedSettings(), viewModel: vm),
-    ));
+    await tester.pumpWidget(
+      _host(AnkiNoteTypePickerRow(settings: _loadedSettings(), viewModel: vm)),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text(t.anki_note_type), findsWidgets);
@@ -126,13 +126,15 @@ void main() {
     final AnkiViewModel vm = AnkiViewModel(repo);
 
     final List<bool> busyLog = <bool>[];
-    await tester.pumpWidget(_host(
-      AnkiCreateLapisRow(
-        viewModel: vm,
-        isFetching: false,
-        onBusyChanged: busyLog.add,
+    await tester.pumpWidget(
+      _host(
+        AnkiCreateLapisRow(
+          viewModel: vm,
+          isFetching: false,
+          onBusyChanged: busyLog.add,
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     expect(find.text(t.anki_create_lapis), findsOneWidget);
@@ -151,9 +153,9 @@ void main() {
     final _FakeRepo repo = _FakeRepo();
     final AnkiViewModel vm = AnkiViewModel(repo);
 
-    await tester.pumpWidget(_host(
-      AnkiCreateLapisRow(viewModel: vm, isFetching: true),
-    ));
+    await tester.pumpWidget(
+      _host(AnkiCreateLapisRow(viewModel: vm, isFetching: true)),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.text(t.anki_create_lapis));
@@ -169,18 +171,25 @@ void main() {
     final String settings = File(
       'lib/src/pages/implementations/anki_settings_page.dart',
     ).readAsStringSync();
-    final String shared =
-        File('lib/src/anki/anki_config_controls.dart').readAsStringSync();
+    final String shared = File(
+      'lib/src/anki/anki_config_controls.dart',
+    ).readAsStringSync();
 
     for (final String widgetName in <String>[
       'AnkiCreateLapisRow',
       'AnkiDeckPickerRow',
       'AnkiNoteTypePickerRow',
     ]) {
-      expect(onboarding.contains(widgetName), isTrue,
-          reason: '新手引导必须提供 $widgetName —— 缺的正是这个（BUG-1902）');
-      expect(settings.contains(widgetName), isTrue,
-          reason: '制卡设置页必须复用同一份 $widgetName，而不是自己再写一份');
+      expect(
+        onboarding.contains(widgetName),
+        isTrue,
+        reason: '新手引导必须提供 $widgetName —— 缺的正是这个（BUG-1902）',
+      );
+      expect(
+        settings.contains(widgetName),
+        isTrue,
+        reason: '制卡设置页必须复用同一份 $widgetName，而不是自己再写一份',
+      );
     }
 
     // 单一实现不变量：调用 view model 的那几个动作只能出现在共享组件里。
@@ -192,10 +201,16 @@ void main() {
       'selectNoteType(',
     ]) {
       expect(shared.contains(call), isTrue, reason: '共享组件应当是 $call 的唯一 UI 调用点');
-      expect(onboarding.contains(call), isFalse,
-          reason: '引导页不得自己调 $call —— 走共享组件');
-      expect(settings.contains(call), isFalse,
-          reason: '设置页不得自己调 $call —— 走共享组件');
+      expect(
+        onboarding.contains(call),
+        isFalse,
+        reason: '引导页不得自己调 $call —— 走共享组件',
+      );
+      expect(
+        settings.contains(call),
+        isFalse,
+        reason: '设置页不得自己调 $call —— 走共享组件',
+      );
     }
   });
 }

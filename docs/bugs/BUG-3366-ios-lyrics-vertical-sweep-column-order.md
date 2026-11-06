@@ -7,3 +7,4 @@
   - iOS 模拟器 Safari 真 WebKit 探针（iOS 26.5 / FushiProbe，页面 = 本修复的生产 `LyricsModeHtml.generate`：竖排、MD3 覆盖层主题、`platform: iOS`、截图里同几句 cue，URL 参数驱动 `__lyricsSetPlaying` / `__lyricsSetCue` / `__lyricsSetProgress`）：进度 20% 只有右列上段亮、往下渐暗，左两列未读；50% 右列整列亮、左两列未读；80% 右两列亮到第二列中段、末列未读；暂停整句点亮；短句正常。修前同一状态是截图里的横带。
   - node 测试在 Mac 上跑不了（Mac 没装 node，三条 node 用例因此红），本机与 CI 有 node；已用 Mac 生成的真文档在本机 node 下跑通三条用例。
   - 未在 Fushi app 本体的 iOS 真机上复测，等用户确认。
+  - 2026-10-23 扫过整体改为合成器驱动（未读色底层 + 影子树里的当前色副本窗口，Web Animations 只动 transform），`--ly-p` / 列层渐变 / inline-block 回退与 `_lyLayoutSweepColumns` 一并移除；竖排「右列扫满再进下一列」由 `__lyricsSweepLines`（按列量、右起排序）+ 逐列 translateY 关键帧保持，测试迁到 `fushi/test/media/audiobook/lyrics_sweep_compositor_test.dart`（原 `lyrics_vertical_sweep_columns_js_test.dart` 已删）。

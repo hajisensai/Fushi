@@ -1,0 +1,11 @@
+## BUG-4208 · 勾了「允许重复」，点已制卡 ✓ 仍弹覆写 / 新增选择框
+- **报告**：2026-10-29（用户：kanjieater，GitHub issue #2633 经 fushi-bot 转为应用内反馈 E0sdqm4h-F；Android S25U，v3.0.0）
+- **真实性**：✅ 真 bug。app 内点 ✓ 的宿主编排收口 `fushi/lib/src/anki/anki_mined_card_action_sheet.dart` `runAnkiMinedCardAction`（修前 943 行起）不读 `AnkiSettings.allowDupes`，有命中就弹 `showAnkiMinedCardActionSheet`；设置说明写的是「添加卡片时跳过重复检查」，用户开了仍被拦。popup.js 里唯一读 `window.allowDupes` 的分支只在「没有桥」的退化宿主里，且 Dart 从未注入这个全局，是死判据。
+- **[x] ① 已修复** — 判据收成一处 `fushi/lib/src/anki/mined_card_tap_policy.dart` `ankiMinedTapMinesNewDirectly`（读 `AnkiSettings.allowDupes`），三条车道都用它：
+  - app 内：`runAnkiMinedCardAction` 单击且允许重复 → 直接 `mineNew()`（调用方已带 `withAllowDuplicate`），不反查、不弹框；
+  - app 外裸 WebView（剪贴板面板 / 瞬态查词窗）：`overlay_bridge_handlers.dart` `_handleFindMinedMatchesBridge` 单击且允许重复 → 回 `{mineNew: true}`，popup.js 不弹页内面板、带 `allowDuplicate` 直接再制；
+  - 浏览器扩展：`POST /api/duplicate` 多回 `allowDuplicates`（可选能力 `FushiRemoteDuplicatePolicyService`，app 的远程挖词 service 实现），bridge-shim 的 `findMinedMatches` 据此回 `{mineNew: true}`。
+  - popup.js 读从未注入的 `window.allowDupes` 的死分支删掉。
+  - **不丢功能**（PR #2980 审查）：已制卡 ✓ 加「管理」手势——右键 / 长按 / ContextMenu 键 / Shift+F10，带 `openChooser: true`，三条车道都永远弹覆写 / 新增 / 查看的选择单；✓ 的 tooltip 写明这个入口。单击行为只在允许重复开着时变。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/anki_mined_card_action_sheet_widget_test.dart`（允许重复单击直接新增 / 不允许照旧弹 / 允许重复 + openChooser 仍弹且能覆写）；`fushi/test/lookup/overlay_find_mined_matches_allow_dupes_test.dart`（真桥：单击回 mineNew、openChooser 照旧列卡）；`fushi/test/sync/remote_duplicate_allow_dupes_response_test.dart`（`/api/duplicate` 的 allowDuplicates 位）；`fushi/test/utils/misc/popup_asset_behavior_test.js`（页内车道直接新增不弹面板、右键弹面板能覆写、+ 上不拦原生菜单、app 内车道把 openChooser 交给宿主）；`tools/browser-extension/mined-card-allow-dupes.test.js`（shim）。
+- **备注**：「最新可改」✓⤺ 单击原地覆写不变（用户主动的「改上一张」）。`fushi_server` 无头服务端的挖词 service 未实现允许重复策略，扩展连它时照旧问。真机未复测。

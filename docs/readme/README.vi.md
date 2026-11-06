@@ -14,6 +14,8 @@
 
 [![Tải bản mới nhất](https://img.shields.io/badge/%E2%AC%87%20T%E1%BA%A3i%20b%E1%BA%A3n%20m%E1%BB%9Bi%20nh%E1%BA%A5t-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Tham gia Discord](https://img.shields.io/badge/Tham%20gia%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor%20on%20GitHub-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/hajisensai)
+[![Support on Ko-fi](https://img.shields.io/badge/Support%20on%20Ko-fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/hajisensai)
 
 </div>
 
@@ -136,9 +138,9 @@ Fushi lưu trữ sách, từ điển, phông chữ, dữ liệu sách nói, vide
 
 - **Đồng bộ**: Google Drive / OneDrive / Dropbox dùng đăng nhập OAuth; WebDAV / FTP / SFTP / Fushi Server dùng địa chỉ máy chủ và thông tin xác thực do bạn cung cấp. Fushi Interconnect kết nối trực tiếp các thiết bị đã ghép đôi (LAN, IPv6, mạng lớp phủ hoặc địa chỉ công khai) và chuyển sang đường hầm P2P iroh đầu cuối khi không có đường trực tiếp nào dùng được; liên kết ghép đôi luôn yêu cầu xác nhận.
 - **Anki**: việc tạo thẻ chỉ giao tiếp với AnkiDroid hoặc địa chỉ AnkiConnect do bạn cấu hình.
-- **Thống kê sử dụng**: mỗi ngày một lần, bản desktop và Android gửi tới fushi.moe một ID cài đặt ngẫu nhiên, phiên bản ứng dụng, nền tảng và kênh cập nhật để đếm người dùng hoạt động; không kèm tài khoản, thư viện hay dữ liệu đọc, và địa chỉ IP không được lưu. Tắt bằng *Chia sẻ thống kê sử dụng* trong phần cài đặt cập nhật. Bản iOS không gửi.
+- **Thống kê sử dụng**: mỗi ngày một lần, bản desktop và Android gửi tới fushi.moe một ID cài đặt được tạo từ thiết bị (không đổi khi cài lại), phiên bản ứng dụng, nền tảng và kênh cập nhật để đếm người dùng hoạt động; không kèm tài khoản, thư viện hay dữ liệu đọc, và địa chỉ IP không được lưu. Tắt bằng *Chia sẻ thống kê sử dụng* trong phần cài đặt cập nhật. Bản iOS không gửi.
 - **Chỉ khi bạn yêu cầu**: tải log lên (sau một lần hỏi đồng ý), phản hồi trong ứng dụng và bảng xếp hạng (mặc định tắt; chỉ tải tiêu đề thư viện và tiến độ của bạn sau khi bạn chủ động bật).
-- **OCR manga**: engine mặc định là Google Lens, gửi ảnh trang tới Google; hãy chuyển sang mô hình trên thiết bị hoặc OCR của hệ thống trong cài đặt để giữ ảnh ở máy.
+- **OCR manga**: engine mặc định là mô hình CTC trên thiết bị nên ảnh trang ở lại máy (tải một lần trong cài đặt); Google Lens là tùy chọn và sẽ gửi ảnh trang tới Google.
 - **Tính năng AI**: yêu cầu chỉ được gửi tới nhà cung cấp LLM mà bạn cấu hình và gán cho một tính năng; nếu chưa gán nhà cung cấp, sẽ không có gì được gửi đi.
 - **Dịch vụ bên thứ ba**: các tính năng siêu dữ liệu, phụ đề và nguồn trực tuyến chỉ liên hệ các dịch vụ được liệt kê tại [Nguồn nội dung và tích hợp](#nguồn-nội-dung-và-tích-hợp) khi bạn sử dụng chúng.
 

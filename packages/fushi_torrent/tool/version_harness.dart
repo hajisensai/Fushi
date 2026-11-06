@@ -14,8 +14,9 @@ import 'package:fushi_torrent/fushi_torrent.dart';
 
 void main(List<String> args) {
   final String? path = args.isNotEmpty ? args.first : null;
-  final EmbeddedTorrentEngine engine =
-      EmbeddedTorrentEngine.open(libraryPath: path);
+  final EmbeddedTorrentEngine engine = EmbeddedTorrentEngine.open(
+    libraryPath: path,
+  );
 
   final String version = engine.libtorrentVersion();
   stdout.writeln('libtorrent version: $version');

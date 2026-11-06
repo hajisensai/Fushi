@@ -7,6 +7,8 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:fushi/src/diagnostics/previous_exit_log.dart'
+    show activityNameFromBreadcrumbFileName;
 import 'package:fushi/src/startup/test_environment.dart';
 import 'package:fushi/src/storage/macos_data_root_access.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -170,7 +172,7 @@ class AppPaths {
   static const String documentsLayoutFlat = 'flat';
 
   /// 当前默认布局：documents 根 = `<Documents>/Fushi/data`（Fushi 专属容器；存量 nested
-/// 安装的容器名仍是 `Hibiki`，见 [documentsContainerPrefKey]）。
+  /// 安装的容器名仍是 `Hibiki`，见 [documentsContainerPrefKey]）。
   ///
   /// BUG-1188：迁移把数据归一化到默认位置时，提交阶段必须把这个锚点写成本值——否则下次
   /// 启动仍按 `flat` 把 documents 根解析回共享 `Documents`，而数据已经在 `<容器>/data` 里。
@@ -186,9 +188,9 @@ class AppPaths {
   /// `Hibiki`，由 [documentsContainerPrefKey] 锚点冻结（同 flat/nested 锚点
   /// 哲学：存量布局一经判定永不漂移，改名不搬书库——DB 里的绝对路径都指着它）。
   static List<String> get defaultDocumentsChildSegments => <String>[
-        _documentsContainerName ?? 'Fushi',
-        'data',
-      ];
+    _documentsContainerName ?? 'Fushi',
+    'data',
+  ];
 
   /// nested 容器名锚点（SharedPreferences，与布局锚点同通道）。值 `Hibiki`
   /// （存量安装）或 `Fushi`（新装/已迁移）。
@@ -241,7 +243,8 @@ class AppPaths {
         final SharedPreferences prefs = await SharedPreferences.getInstance();
         raw = prefs.getString(dataRootPrefKey);
         if (raw != null && raw.trim().isNotEmpty && Platform.isMacOS) {
-          raw = await MacOSDataRootAccess.startAccessingStoredBookmark(prefs) ??
+          raw =
+              await MacOSDataRootAccess.startAccessingStoredBookmark(prefs) ??
               raw;
         }
       } catch (_) {
@@ -264,9 +267,10 @@ class AppPaths {
   /// 都返回 false。
   static Future<bool> _probeDataRootExists(Directory dir) async {
     try {
-      return await dir
-          .exists()
-          .timeout(const Duration(seconds: 2), onTimeout: () => false);
+      return await dir.exists().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => false,
+      );
     } catch (_) {
       // 断链盘的异步 stat 也可能直接抛（而非挂起）→ 同样当作不可用。
       return false;
@@ -335,10 +339,12 @@ class AppPaths {
     if (test != null) return test;
     final Directory platformDocuments =
         await getApplicationDocumentsDirectory();
-    return Directory(p.joinAll(<String>[
-      platformDocuments.path,
-      ...defaultDocumentsChildSegments,
-    ]));
+    return Directory(
+      p.joinAll(<String>[
+        platformDocuments.path,
+        ...defaultDocumentsChildSegments,
+      ]),
+    );
   }
 
   /// 本机默认布局是否为历史扁平布局。**纯读取、绝不探测文件系统**（见 [resolve] 里对
@@ -397,8 +403,10 @@ class AppPaths {
     // 固化锚点（best-effort）。写失败只意味着下次启动再探一次，不改变本次结果——而下次
     // 探测的判据（主库文件是否存在）此时只会更成立，不会翻转成新布局。
     try {
-      await prefs?.setString(documentsLayoutPrefKey,
-          flat ? documentsLayoutFlat : documentsLayoutNested);
+      await prefs?.setString(
+        documentsLayoutPrefKey,
+        flat ? documentsLayoutFlat : documentsLayoutNested,
+      );
     } catch (e) {
       debugPrint('AppPaths: 固化 documents 布局失败（下次启动重新判定）: $e');
     }
@@ -416,7 +424,8 @@ class AppPaths {
   /// 探测失败按存量处理（保守——误锚 Fushi 会让存量书库集体消失，反向只是新装
   /// 目录名旧了点）。
   static Future<void> _ensureDocumentsContainerDecided(
-      SharedPreferences? prefs) async {
+    SharedPreferences? prefs,
+  ) async {
     if (_documentsContainerName != null) return;
     final String? stored = prefs?.getString(documentsContainerPrefKey);
     if (stored == 'Hibiki' || stored == 'Fushi') {
@@ -427,14 +436,12 @@ class AppPaths {
     try {
       final Directory platformDocuments =
           await getApplicationDocumentsDirectory();
-      final bool legacyExists =
-          await Directory(p.join(platformDocuments.path, 'Hibiki', 'data'))
-              .exists()
-              .timeout(const Duration(seconds: 2), onTimeout: () => true);
-      final bool newExists =
-          await Directory(p.join(platformDocuments.path, 'Fushi', 'data'))
-              .exists()
-              .timeout(const Duration(seconds: 2), onTimeout: () => false);
+      final bool legacyExists = await Directory(
+        p.join(platformDocuments.path, 'Hibiki', 'data'),
+      ).exists().timeout(const Duration(seconds: 2), onTimeout: () => true);
+      final bool newExists = await Directory(
+        p.join(platformDocuments.path, 'Fushi', 'data'),
+      ).exists().timeout(const Duration(seconds: 2), onTimeout: () => false);
       decided = (legacyExists && !newExists) ? 'Hibiki' : 'Fushi';
     } catch (_) {
       decided = 'Hibiki';
@@ -458,10 +465,9 @@ class AppPaths {
   static Future<bool> existingInstallHasDatabase() async {
     try {
       final Directory support = await _resolveSupportRoot();
-      Future<bool> dbExists(String fileName) =>
-          File(p.join(support.path, fileName))
-              .exists()
-              .timeout(const Duration(seconds: 2), onTimeout: () => true);
+      Future<bool> dbExists(String fileName) => File(
+        p.join(support.path, fileName),
+      ).exists().timeout(const Duration(seconds: 2), onTimeout: () => true);
       return await dbExists(fushiDatabaseFileName) ||
           await dbExists(legacyHibikiDatabaseFileName);
     } catch (_) {
@@ -492,16 +498,18 @@ class AppPaths {
   static Future<Directory> _resolveTempRoot() async =>
       fushiTestDirectory('temp') ?? await getTemporaryDirectory();
 
+  static Future<Directory> _resolveAppCacheRoot() async =>
+      fushiTestDirectory('app-cache') ?? await getApplicationCacheDirectory();
+
   /// 给迁移引擎（E1）/ 设置 UI（E2）复用的纯派生：把一个 dataRoot 绝对路径映射成它
   /// 派生的 (documentsRoot, supportRoot) 对，子目录名与 [_resolveDocumentsRoot] /
   /// [_resolveSupportRoot] 的 dataRoot 分支逐字节一致。
   static (Directory documents, Directory support) rootsForDataRoot(
     String dataRootPath,
-  ) =>
-      (
-        Directory(p.join(dataRootPath, dataRootDocumentsChild)),
-        Directory(p.join(dataRootPath, dataRootSupportChild)),
-      );
+  ) => (
+    Directory(p.join(dataRootPath, dataRootDocumentsChild)),
+    Directory(p.join(dataRootPath, dataRootSupportChild)),
+  );
 
   /// TODO-1226：documents 根顶层**属于 Fushi 的目录名全集**（数据根迁移白名单）。
   ///
@@ -537,10 +545,9 @@ class AppPaths {
   ///    `dictionaryImportWorkingDirectory` / `webArchive` ——
   ///    `AppModel` 运行时目录系列派生。
   ///
-  /// **刻意不收**：`error_log.txt` / `*_breadcrumb.txt`（`ErrorLogService` 直连
-  /// `getApplicationDocumentsDirectory()`，固定落平台 Documents、不随数据根走，搬走
-  /// 反而让服务失去续写目标）；`video_clips` 与桌面导出目录 `Hibiki`（同样直连
-  /// path_provider 的用户可见导出物，属用户文件语义）。
+  /// **刻意不收**：`video_clips` 与桌面导出目录 `Hibiki`（直连 path_provider 的用户可见
+  /// 导出物，属用户文件语义）。错误日志 / 面包屑 / 诊断日志不在 documents 下，见
+  /// [diagnosticsDirectory]（4w_veZGiQ7：它们曾直落平台 Documents 根）。
   ///
   /// 守卫测试 `test/storage/documents_whitelist_guard_test.dart` 扫描源码派生点，
   /// 新增 `<documents>/<child>` 派生而漏加这里会红。
@@ -550,6 +557,9 @@ class AppPaths {
     'hoshi_books',
     'video_covers',
     'game_covers',
+    // 音乐刮削下载的 Cover Art Archive 专辑封面（`<documents>/music_covers/<发行 MBID>.jpg`，
+    // music_albums.cover_path 指向它；数据根迁移按 DataRootMigrator._rebaseMusicAlbums 改写）。
+    'music_covers',
     'video_subtitles',
     'mpv_shaders',
     'mpv_scripts',
@@ -575,12 +585,14 @@ class AppPaths {
     // 卡片来源回看的待回写草稿（临时音频/图片/字段，`card_source_drafts/<sourceId>`），
     // 失败后可恢复提交，必须随数据根走。派生点：card_source_router.dart。
     'card_source_drafts',
+    // 删 Profile 前自动做的复习数据备份（`.fushisrs`，撤销途径，BUG-3818），必须随数据根走。
+    // 派生点：AppPaths.srsProfileBackupsDirectory（srs_profile_cleanup.dart 使用）。
+    'srs_profile_backups',
     // 音频 CD 抓轨产物（BUG-3312，`<documents>/audio_cd/<卷标> (<光盘id>)/`）。导入后的
     // 视频条目 videoPath 指向这里，必须随数据根走。派生点：audio_cd_import.dart。
     'audio_cd',
-    // 复习（Fushi SRS）自动备份（`<documents>/srs_backups/<profileUid>/*.fushisrs` + 共享媒体池
-    // `media/<sha256>`）。与 Anki 一样放在用户看得到、换设备能带走的位置，必须随数据根走；
-    // 清单里只存相对名，无需 rebase。派生点：[srsBackupsDirectory]。
+    // 旧版复习自动备份（`<documents>/srs_backups/`）。同步 v2 已取消定时备份（时间线 + 归档 + 手动
+    // 导出取代），旧文件升级后再留 30 天（srs_legacy_backup_cleanup.dart），这期间仍随数据根走。
     'srs_backups',
   };
 
@@ -607,10 +619,151 @@ class AppPaths {
     final String canonRoot = p.canonicalize(sharedDocumentsRoot);
     final String canonNew = p.canonicalize(newDataRoot);
     if (!p.isWithin(canonRoot, canonNew)) return false;
-    final String firstSegment =
-        p.split(p.relative(canonNew, from: canonRoot)).first.toLowerCase();
-    return !ownedEntries
-        .any((String owned) => owned.toLowerCase() == firstSegment);
+    final String firstSegment = p
+        .split(p.relative(canonNew, from: canonRoot))
+        .first
+        .toLowerCase();
+    return !ownedEntries.any(
+      (String owned) => owned.toLowerCase() == firstSegment,
+    );
+  }
+
+  // ---- 诊断目录（错误日志 / 崩溃面包屑 / 诊断日志） ----
+
+  /// 诊断文件（`error_log.txt`、各 `*_breadcrumb.txt`、`crash_report_state.json`、
+  /// `previous_exit_state.json`、`session_marker.json`、`activity_*`、视频 / 学习诊断
+  /// 日志）的唯一落点。
+  ///
+  /// 4w_veZGiQ7：这些文件曾由 `ErrorLogService` / `VideoDiagLog` / `StudyDiagLog` 各自直连
+  /// `getApplicationDocumentsDirectory()`。桌面上（macOS 已去沙盒、Windows、Linux）那就是
+  /// 用户自己的 `~/Documents` 根——Fushi 的内容早已收进 `<Documents>/Fushi/data`
+  /// （BUG-1115），日志却摊在用户文档根里。「不随数据根迁移」是对的（启动最早期就要写、
+  /// 数据根可能不可达），但目录选错了：
+  /// - 桌面：`<ApplicationSupport>/logs`（macOS `~/Library/Application Support/<bundle>/logs`），
+  ///   app 私有、与数据根无关、启动最早期可用；
+  /// - Android / iOS：沿用 app 沙盒内的 documents 目录（用户看不到，iOS 原生 MetricKit
+  ///   落盘 `Documents/metrickit/` 与它同目录约定，见 `AppDelegate.swift`）。
+  ///
+  /// 测试分支与旧实现同一个键（`app-documents`），测试注入不变。首次解析时把旧位置
+  /// （平台 Documents 根）残留的诊断文件搬过来（[migrateLegacyDiagnostics]），再交给
+  /// `ErrorLogService.init` 读面包屑做崩溃恢复——顺序保证上次的崩溃现场不丢。
+  static Future<Directory> diagnosticsDirectory() async {
+    final Directory? test = fushiTestDirectory('app-documents');
+    if (test != null) return test;
+    // 生产分支只解析 + 搬迁一次（多个日志服务并发 init 共用同一个 future）。
+    return _diagnosticsDirectory ??= _resolveDiagnosticsDirectory();
+  }
+
+  static Future<Directory>? _diagnosticsDirectory;
+
+  /// 启动期把旧诊断文件搬进 [diagnosticsDirectory] 时失败的条目（`文件名: 原因`）。
+  /// 搬迁跑在错误日志就绪之前，由 `ErrorLogService.init` 读出写进错误日志，不吞。
+  static List<String> get diagnosticsMigrationFailures =>
+      List<String>.unmodifiable(_diagnosticsMigrationFailures);
+  static final List<String> _diagnosticsMigrationFailures = <String>[];
+
+  @visibleForTesting
+  static void resetDiagnosticsDirectoryForTesting() {
+    _diagnosticsDirectory = null;
+    _diagnosticsMigrationFailures.clear();
+  }
+
+  static Future<Directory> _resolveDiagnosticsDirectory() async {
+    if (!isDesktopPlatform) return getApplicationDocumentsDirectory();
+    final Directory support = await getApplicationSupportDirectory();
+    final Directory dir = Directory(p.join(support.path, 'logs'));
+    await dir.create(recursive: true);
+    _diagnosticsMigrationFailures.addAll(
+      await migrateLegacyDiagnostics(
+        from: await getApplicationDocumentsDirectory(),
+        to: dir,
+      ),
+    );
+    return dir;
+  }
+
+  /// 旧位置（平台 Documents 根）上属于 Fushi 的诊断文件名。只认这些确切的名字 /
+  /// `ActivityBreadcrumb` 的完整文件名形态（`activity_<名>.breadcrumb`，判据与读取端
+  /// 共用 [activityNameFromBreadcrumbFileName]）——这是用户自己的文档目录，绝不扫别的东西。
+  static const Set<String> legacyDiagnosticFileNames = <String>{
+    'error_log.txt',
+    'import_crash_breadcrumb.txt',
+    'import_step_breadcrumb.txt',
+    'lookup_crash_breadcrumb.txt',
+    'init_step_breadcrumb.txt',
+    'crash_report_state.json',
+    'previous_exit_state.json',
+    'session_marker.json',
+    'video_diag_log.txt',
+    'video_mpv_log.txt',
+    'study_diag_log.txt',
+  };
+
+  /// 搬迁完成标记（落在 [migrateLegacyDiagnostics] 的 `to` 里）。全部条目都搬成功后写入，
+  /// 之后启动不再扫用户的 Documents 根——旧位置只可能有升级前留下的文件，扫一次就够；
+  /// 有失败条目时不写，下次启动重试。
+  static const String legacyDiagnosticsMigratedMarker =
+      '.legacy_documents_diagnostics_migrated';
+
+  /// [name] 是否是 Fushi 旧版写在 Documents 根的诊断文件。
+  @visibleForTesting
+  static bool isLegacyDiagnosticFileName(String name) =>
+      legacyDiagnosticFileNames.contains(name) ||
+      activityNameFromBreadcrumbFileName(name) != null;
+
+  /// 把 [from] 根下的 Fushi 诊断文件搬进 [to]。返回失败条目（`文件名: 原因`），成功 / 无需
+  /// 搬为空。目标已有同名文件（新位置已在用）时以新位置为准、删掉旧文件。
+  /// [to] 里已有 [legacyDiagnosticsMigratedMarker] 时直接返回，不再列 [from]。
+  @visibleForTesting
+  static Future<List<String>> migrateLegacyDiagnostics({
+    required Directory from,
+    required Directory to,
+  }) async {
+    final List<String> failures = <String>[];
+    if (p.equals(from.path, to.path)) return failures;
+    final File marker = File(p.join(to.path, legacyDiagnosticsMigratedMarker));
+    if (await marker.exists()) return failures;
+    final List<File> candidates = <File>[];
+    try {
+      if (await from.exists()) {
+        await for (final FileSystemEntity e in from.list(followLinks: false)) {
+          if (e is! File) continue;
+          if (isLegacyDiagnosticFileName(p.basename(e.path))) {
+            candidates.add(e);
+          }
+        }
+      }
+    } catch (e) {
+      failures.add('${from.path}: list failed: $e');
+      return failures;
+    }
+    for (final File legacy in candidates) {
+      final String name = p.basename(legacy.path);
+      final File target = File(p.join(to.path, name));
+      try {
+        if (await target.exists()) {
+          await legacy.delete();
+          continue;
+        }
+        try {
+          await legacy.rename(target.path);
+        } on FileSystemException {
+          // 跨卷（自定义 Documents 重定向到别的盘）rename 不成：复制后删源。
+          await legacy.copy(target.path);
+          await legacy.delete();
+        }
+      } catch (e) {
+        failures.add('$name: $e');
+      }
+    }
+    if (failures.isEmpty) {
+      try {
+        await marker.writeAsString(DateTime.now().toIso8601String());
+      } catch (e) {
+        failures.add('$legacyDiagnosticsMigratedMarker: $e');
+      }
+    }
+    return failures;
   }
 
   // ---- 静态便捷层（给无 AppModel 实例的 static 存储助手） ----
@@ -623,6 +776,13 @@ class AppPaths {
 
   /// 临时目录。等价于过去的 `getTemporaryDirectory()`。
   static Future<Directory> tempRootDirectory() => _resolveTempRoot();
+
+  /// 本 app 专属的缓存目录（`getApplicationCacheDirectory()`）。
+  ///
+  /// 与 [tempRootDirectory] 不同：未沙盒的 macOS 上临时根是全用户共享的
+  /// `~/Library/Caches`，这里是追加了 bundle id 的子目录，只属于 Fushi。
+  /// 需要「这个目录里的东西全是我们的」时（存储页统计 / 清理）用它。
+  static Future<Directory> appCacheRootDirectory() => _resolveAppCacheRoot();
 
   /// `<documents>/<child>` 的绝对路径目录（不创建）。集中派生点，保证各模块对同一
   /// 子目录名拿到逐字节一致的绝对路径。
@@ -648,6 +808,10 @@ class AppPaths {
   static Future<Directory> gameCoversDirectory() =>
       documentsSubdirectory('game_covers');
 
+  /// 音乐刮削封面目录 `<documents>/music_covers`（文件名 = 发行 MBID）。
+  static Future<Directory> musicCoversDirectory() =>
+      documentsSubdirectory('music_covers');
+
   /// 视频外挂字幕副本目录 `<documents>/video_subtitles`。
   static Future<Directory> videoSubtitlesDirectory() =>
       documentsSubdirectory('video_subtitles');
@@ -664,7 +828,12 @@ class AppPaths {
   static Future<Directory> remoteVideosDirectory() =>
       documentsSubdirectory('remote_videos');
 
-  /// 复习自动备份根 `<documents>/srs_backups`（见 docs/specs/2026-10-17-srs-auto-backup-restore.md）。
+  /// 旧版复习自动备份根 `<documents>/srs_backups`（只剩升级后 30 天的清理在用）。
   static Future<Directory> srsBackupsDirectory() =>
       documentsSubdirectory('srs_backups');
+
+  /// 删 Profile 前自动做的复习数据备份 `<documents>/srs_profile_backups`（`.fushisrs`，撤销途径；
+  /// 不进旧备份的 30 天清理，见 `srs_profile_cleanup.dart`）。
+  static Future<Directory> srsProfileBackupsDirectory() =>
+      documentsSubdirectory('srs_profile_backups');
 }

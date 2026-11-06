@@ -34,43 +34,60 @@ void main() {
     final String src = read('lib/src/media/video/video_player_controller.dart');
 
     test(
-        'VideoController 必须带 configuration 构造（裸 VideoController(player) 会吃到 auto）',
-        () {
-      // 裸构造 = 不传 configuration → media_kit 兜底 'auto' → CUDA 崩溃路径。
-      final bool hasBareController =
-          RegExp(r'VideoController\(\s*player\s*[,)]\s*\n?\s*\)')
-                  .hasMatch(src) ||
-              RegExp(r'VideoController\(player\)').hasMatch(src);
-      expect(hasBareController, isFalse,
-          reason: '不得裸构造 VideoController(player)——media_kit 会把 hwdec 兜底成 '
-              "'auto'（含 cuda/nvdec），Windows+NVIDIA 上 cuInit 空指针解引用整进程闪退");
+      'VideoController 必须带 configuration 构造（裸 VideoController(player) 会吃到 auto）',
+      () {
+        // 裸构造 = 不传 configuration → media_kit 兜底 'auto' → CUDA 崩溃路径。
+        final bool hasBareController =
+            RegExp(
+              r'VideoController\(\s*player\s*[,)]\s*\n?\s*\)',
+            ).hasMatch(src) ||
+            RegExp(r'VideoController\(player\)').hasMatch(src);
+        expect(
+          hasBareController,
+          isFalse,
+          reason:
+              '不得裸构造 VideoController(player)——media_kit 会把 hwdec 兜底成 '
+              "'auto'（含 cuda/nvdec），Windows+NVIDIA 上 cuInit 空指针解引用整进程闪退",
+        );
 
-      expect(src.contains('VideoControllerConfiguration('), isTrue,
-          reason: 'VideoController 必须显式传 VideoControllerConfiguration');
-    });
+        expect(
+          src.contains('VideoControllerConfiguration('),
+          isTrue,
+          reason: 'VideoController 必须显式传 VideoControllerConfiguration',
+        );
+      },
+    );
 
-    test('configuration 的 hwdec 必须来自 app 策略（resolvePlatformHwdec + mpvConfig）',
-        () {
-      expect(
-        // BUG-2691：Android 远端 DV P5 片源经 _mpvConfigForCurrentSource 强制软解，
-        // 包装后仍是本次 load 的 mpvConfig，两种形态都认。
-        RegExp(r'hwdec:\s*resolvePlatformHwdec\(\s*'
-                r'(?:mpvConfig|_mpvConfigForCurrentSource\(\s*mpvConfig\s*\))'
-                r'\.hwdec\s*,?\s*\)')
-            .hasMatch(src),
-        isTrue,
-        reason: 'hwdec 必须由本次 load 的 mpvConfig 经 resolvePlatformHwdec 解析，'
-            '与 buildMpvProperties 取值一致（Android 仍为 copy 变体 BUG-465 不回归；'
-            'Windows 为 D3D11 在前、CUDA 仅 copy 兜底的列表 BUG-1639/BUG-3315）',
-      );
-    });
+    test(
+      'configuration 的 hwdec 必须来自 app 策略（resolvePlatformHwdec + mpvConfig）',
+      () {
+        expect(
+          // BUG-2691：Android 远端 DV P5 片源经 _mpvConfigForCurrentSource 强制软解，
+          // 包装后仍是本次 load 的 mpvConfig，两种形态都认。
+          RegExp(
+            r'hwdec:\s*resolvePlatformHwdec\(\s*'
+            r'(?:mpvConfig|_mpvConfigForCurrentSource\(\s*mpvConfig\s*\))'
+            r'\.hwdec\s*,?\s*\)',
+          ).hasMatch(src),
+          isTrue,
+          reason:
+              'hwdec 必须由本次 load 的 mpvConfig 经 resolvePlatformHwdec 解析，'
+              '与 buildMpvProperties 取值一致（Android 仍为 copy 变体 BUG-465 不回归；'
+              'Windows 为 D3D11 在前、CUDA 仅 copy 兜底的列表 BUG-1639/BUG-3315）',
+        );
+      },
+    );
 
     test('app 侧源码不得出现字面量 hwdec: \'auto\'（非 auto-safe / auto-copy）', () {
       // 只禁裸 'auto'；'auto-safe' / 'auto-copy' 合法，故用右边界断言。
-      final bool hasBareAuto =
-          RegExp("""hwdec['"]?\\s*[:=]\\s*['"]auto['"]""").hasMatch(src);
-      expect(hasBareAuto, isFalse,
-          reason: "video_player_controller 不得把 hwdec 硬编码成 'auto'");
+      final bool hasBareAuto = RegExp(
+        """hwdec['"]?\\s*[:=]\\s*['"]auto['"]""",
+      ).hasMatch(src);
+      expect(
+        hasBareAuto,
+        isFalse,
+        reason: "video_player_controller 不得把 hwdec 硬编码成 'auto'",
+      );
     });
 
     test('vendored media_kit_video 仍把 hwdec 兜底成 auto（本守卫存在的前提）', () {
@@ -79,10 +96,12 @@ void main() {
         'native_video_controller/real.dart',
       );
       expect(
-        RegExp(r"hwdec:\s*configuration\.hwdec\s*\?\?\s*'auto'")
-            .hasMatch(vendored),
+        RegExp(
+          r"hwdec:\s*configuration\.hwdec\s*\?\?\s*'auto'",
+        ).hasMatch(vendored),
         isTrue,
-        reason: '若 vendored media_kit_video 改掉了这个兜底，请重新评估本守卫与 '
+        reason:
+            '若 vendored media_kit_video 改掉了这个兜底，请重新评估本守卫与 '
             'BUG-1545 的修复方式（前提变了，但传 configuration 仍是正确做法）',
       );
     });
@@ -91,8 +110,11 @@ void main() {
   group('VideoMpvConfig 值域不接受 auto (BUG-1545)', () {
     test("decode 把非法的 hwdec:'auto' 收敛回 auto-safe", () {
       final VideoMpvConfig cfg = VideoMpvConfig.decode('{"hwdec":"auto"}');
-      expect(cfg.hwdec, 'auto-safe',
-          reason: "'auto' 不在合法值域，必须回落默认 auto-safe，绝不能透传给 libmpv");
+      expect(
+        cfg.hwdec,
+        'auto-safe',
+        reason: "'auto' 不在合法值域，必须回落默认 auto-safe，绝不能透传给 libmpv",
+      );
     });
 
     test('默认配置就是 auto-safe，不是 auto', () {
@@ -104,10 +126,11 @@ void main() {
         for (final bool android in <bool>[true, false]) {
           for (final bool windows in <bool>[true, false]) {
             expect(
-                resolvePlatformHwdec(v, isAndroid: android, isWindows: windows),
-                isNot('auto'),
-                reason:
-                    'hwdec=$v (android=$android, windows=$windows) 解析后不得是裸 auto');
+              resolvePlatformHwdec(v, isAndroid: android, isWindows: windows),
+              isNot('auto'),
+              reason:
+                  'hwdec=$v (android=$android, windows=$windows) 解析后不得是裸 auto',
+            );
           }
         }
       }
@@ -115,11 +138,13 @@ void main() {
 
     test('Android 仍改写成 copy 变体（BUG-465 不回归）', () {
       expect(
-          resolvePlatformHwdec('auto-safe', isAndroid: true, isWindows: false),
-          'auto-copy');
+        resolvePlatformHwdec('auto-safe', isAndroid: true, isWindows: false),
+        'auto-copy',
+      );
       expect(
-          resolvePlatformHwdec('auto-safe', isAndroid: false, isWindows: false),
-          'auto-safe');
+        resolvePlatformHwdec('auto-safe', isAndroid: false, isWindows: false),
+        'auto-safe',
+      );
     });
   });
 
@@ -147,11 +172,11 @@ void main() {
           backend.startsWith('nvdec') || backend.startsWith('cuda');
 
       String windows(String hwdec, {bool? capable}) => resolvePlatformHwdec(
-            hwdec,
-            isAndroid: false,
-            isWindows: true,
-            nvdecHigh10Capable: capable,
-          );
+        hwdec,
+        isAndroid: false,
+        isWindows: true,
+        nvdecHigh10Capable: capable,
+      );
 
       test('任何合法 hwdec 在 Windows 解析后都不含零拷贝 nvdec / cuda', () {
         for (final String v in <String>['no', 'auto-safe', 'auto-copy']) {
@@ -215,11 +240,10 @@ void main() {
           reason: 'D3D11VA 没有 H.264 High 10 解码配置，不兜底就整条压到 CPU 软解',
         );
         final List<String> base = candidates(kWindowsAutoHwdec);
-        expect(
-          candidates(kWindowsAutoHwdecWithNvdec),
-          <String>[...base, 'nvdec-copy'],
-          reason: 'nvdec-copy 只是追加在不含 CUDA 的基础表之后，D3D11 顺序不变',
-        );
+        expect(candidates(kWindowsAutoHwdecWithNvdec), <String>[
+          ...base,
+          'nvdec-copy',
+        ], reason: 'nvdec-copy 只是追加在不含 CUDA 的基础表之后，D3D11 顺序不变');
       });
 
       test('显卡不支持 / 未判定 → auto-safe 不含任何 CUDA 系后端', () {
@@ -229,8 +253,11 @@ void main() {
           windows('auto-safe'),
         ]) {
           expect(resolved, kWindowsAutoHwdec);
-          expect(candidates(resolved).where(isCuda), isEmpty,
-              reason: '老 NVIDIA / 非 NVIDIA / 枚举失败时不得为 Hi10P 白走 CUDA 初始化');
+          expect(
+            candidates(resolved).where(isCuda),
+            isEmpty,
+            reason: '老 NVIDIA / 非 NVIDIA / 枚举失败时不得为 Hi10P 白走 CUDA 初始化',
+          );
         }
       });
 
@@ -263,10 +290,15 @@ void main() {
       test('非 Windows 桌面（macOS / Linux）原样透传，零行为变化', () {
         for (final String v in <String>['no', 'auto-safe', 'auto-copy']) {
           expect(
-              resolvePlatformHwdec(v,
-                  isAndroid: false, isWindows: false, nvdecHigh10Capable: true),
+            resolvePlatformHwdec(
               v,
-              reason: '非 Android / 非 Windows 平台不改写 hwdec');
+              isAndroid: false,
+              isWindows: false,
+              nvdecHigh10Capable: true,
+            ),
+            v,
+            reason: '非 Android / 非 Windows 平台不改写 hwdec',
+          );
         }
       });
 

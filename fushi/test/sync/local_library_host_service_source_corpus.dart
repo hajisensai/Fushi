@@ -18,9 +18,9 @@ const String kLocalLibraryHostPartDir =
 
 /// 主库 + 磁盘上全部 `*.part.dart`（按路径排序）。
 List<String> localLibraryHostServiceFiles() => partCorpusFiles(
-      shell: _localLibraryHostShell,
-      partDir: kLocalLibraryHostPartDir,
-    );
+  shell: _localLibraryHostShell,
+  partDir: kLocalLibraryHostPartDir,
+);
 
 /// 读「本机库 host 服务合并语料」：主库 + 全部 part 拼成单个字符串，换行统一成 '\n'。
 String readLocalLibraryHostServiceSource() =>

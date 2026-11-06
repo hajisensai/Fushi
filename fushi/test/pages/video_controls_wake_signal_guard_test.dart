@@ -54,10 +54,16 @@ void main() {
       expect(probe.playerEntered, isTrue, reason: '合成 hover 先命中播放页桩');
       await _popPlayer(tester);
 
-      expect(RendererBinding.instance.mouseTracker.mouseIsConnected, isTrue,
-          reason: '没派 remove 时合成设备永久在册');
-      expect(probe.libraryHovered, isTrue,
-          reason: '幽灵指针停在屏幕中心 → 中心那张卡被当成鼠标悬停（BUG-2453 症状）');
+      expect(
+        RendererBinding.instance.mouseTracker.mouseIsConnected,
+        isTrue,
+        reason: '没派 remove 时合成设备永久在册',
+      );
+      expect(
+        probe.libraryHovered,
+        isTrue,
+        reason: '幽灵指针停在屏幕中心 → 中心那张卡被当成鼠标悬停（BUG-2453 症状）',
+      );
     });
 
     testWidgets('不合成指针事件（修复本体）→ 退页后没有任何设备在册，中心卡不被判 hover', (
@@ -72,8 +78,9 @@ void main() {
       expect(probe.libraryEverHovered, isFalse);
 
       // 正向对照：真实鼠标移到同一位置，卡片必须照常悬停——证明探针没失灵。
-      final TestGesture mouse =
-          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      final TestGesture mouse = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
       addTearDown(() => mouse.removePointer());
       await mouse.addPointer(location: Offset.zero);
       await tester.pump();
@@ -99,15 +106,21 @@ void main() {
         '_syntheticHoverDevice',
         '0x6869626B',
       ]) {
-        expect(containsCodeLine(src, needle), isFalse,
-            reason: '页面不得再造指针事件（$needle）：那是幽灵设备的来源');
+        expect(
+          containsCodeLine(src, needle),
+          isFalse,
+          reason: '页面不得再造指针事件（$needle）：那是幽灵设备的来源',
+        );
       }
     });
 
     test('_pokeControlsVisible 的唯一出口是 _restartHideTimerSignal.poke()', () {
       final String body = methodBody(src, 'void _pokeControlsVisible()');
-      expect(containsCodeLine(body, '_restartHideTimerSignal.poke();'), isTrue,
-          reason: '两端都经信号唤起 / 续命');
+      expect(
+        containsCodeLine(body, '_restartHideTimerSignal.poke();'),
+        isTrue,
+        reason: '两端都经信号唤起 / 续命',
+      );
       // 五条门控仍在（BUG-1798 等）：门控成立时控制条本被遮住 / 压制，唤起只会打架。
       for (final String gate in <String>[
         'if (_immersiveLocked.value) return;',
@@ -121,21 +134,32 @@ void main() {
       // 合成 hover 时代顺带续命侧边锁按钮（经页面根 Listener → _handleVideoControlsHover），
       // 改信号后必须显式补上，否则键盘 seek 时锁按钮不再跟着露出。
       expect(containsCodeLine(body, '_pokeLockButton();'), isTrue);
-      expect(containsCodeLine(body, 'scheduleMicrotask('), isFalse,
-          reason: 'BUG-425 的微任务延迟随合成派发一起删除');
+      expect(
+        containsCodeLine(body, 'scheduleMicrotask('),
+        isFalse,
+        reason: 'BUG-425 的微任务延迟随合成派发一起删除',
+      );
     });
 
     test('桌面 theme 装配 wakeSignal，与移动端 restartHideTimerSignal 共用同一信号', () {
       final String desktop = methodBody(
-          src, 'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(');
-      expect(containsCodeLine(desktop, 'wakeSignal: _restartHideTimerSignal,'),
-          isTrue,
-          reason: '桌面 fork 不接信号就再也没人唤醒控制条（键盘 seek 后 2 秒消失回归）');
+        src,
+        'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(',
+      );
+      expect(
+        containsCodeLine(desktop, 'wakeSignal: _restartHideTimerSignal,'),
+        isTrue,
+        reason: '桌面 fork 不接信号就再也没人唤醒控制条（键盘 seek 后 2 秒消失回归）',
+      );
       final String mobile = methodBody(
-          src, 'MaterialVideoControlsThemeData _mobileControlsTheme(');
+        src,
+        'MaterialVideoControlsThemeData _mobileControlsTheme(',
+      );
       expect(
         containsCodeLine(
-            mobile, 'restartHideTimerSignal: _restartHideTimerSignal,'),
+          mobile,
+          'restartHideTimerSignal: _restartHideTimerSignal,',
+        ),
         isTrue,
       );
     });
@@ -156,8 +180,11 @@ void main() {
     test('theme data 暴露 wakeSignal（字段 / 构造 / copyWith）', () {
       expect(containsCodeLine(fork, 'final Listenable? wakeSignal;'), isTrue);
       expect(containsCodeLine(fork, 'this.wakeSignal,'), isTrue);
-      expect(containsCodeLine(fork, 'Listenable? wakeSignal,'), isTrue,
-          reason: 'copyWith 参数');
+      expect(
+        containsCodeLine(fork, 'Listenable? wakeSignal,'),
+        isTrue,
+        reason: 'copyWith 参数',
+      );
       expect(
         containsCodeLine(fork, 'wakeSignal: wakeSignal ?? this.wakeSignal,'),
         isTrue,
@@ -179,16 +206,24 @@ void main() {
       final String handler = methodBody(fork, 'void _onWakeSignal()');
       // 两条调用各钉一行**整行精确**：`containsCodeLine` 是子串匹配，只钉 `onHover();`
       // 会被帧末分支的 `if (mounted) onHover();` 顶替（变异实测：注掉直接调用仍绿）。
-      expect(_hasExactCodeLine(handler, 'onHover();'), isTrue,
-          reason: '非 build 阶段直接唤醒 = 与真实 hover 完全同一条路径（唤起 + 重排隐藏 Timer）');
-      expect(_hasExactCodeLine(handler, 'if (mounted) onHover();'), isTrue,
-          reason: 'build/layout 阶段发的信号延到帧末，不能丢');
+      expect(
+        _hasExactCodeLine(handler, 'onHover();'),
+        isTrue,
+        reason: '非 build 阶段直接唤醒 = 与真实 hover 完全同一条路径（唤起 + 重排隐藏 Timer）',
+      );
+      expect(
+        _hasExactCodeLine(handler, 'if (mounted) onHover();'),
+        isTrue,
+        reason: 'build/layout 阶段发的信号延到帧末，不能丢',
+      );
       expect(containsCodeLine(handler, 'addPostFrameCallback('), isTrue);
       expect(_hasExactCodeLine(handler, 'if (!mounted) return;'), isTrue);
       final String dispose = methodBody(fork, 'void dispose()');
       expect(
         containsCodeLine(
-            dispose, '_wakeSignal?.removeListener(_onWakeSignal);'),
+          dispose,
+          '_wakeSignal?.removeListener(_onWakeSignal);',
+        ),
         isTrue,
       );
     });
@@ -197,9 +232,9 @@ void main() {
 
 /// 剥注释后是否存在一行（trim 后）**恰好等于** [line] 的代码行。与 [containsCodeLine] 的
 /// 子串匹配互补：钉「某条语句独立成行存在」而不被含它的更长语句顶替。
-bool _hasExactCodeLine(String body, String line) => maskComments(body)
-    .split('\n')
-    .any((String candidate) => candidate.trim() == line);
+bool _hasExactCodeLine(String body, String line) => maskComments(
+  body,
+).split('\n').any((String candidate) => candidate.trim() == line);
 
 /// 删除前 `_VideoFushiPageState._syntheticHoverDevice` 的值（'hibk'），只用于机制复现。
 const int _kLegacySyntheticDevice = 0x6869626B;
@@ -222,17 +257,19 @@ class _HoverProbe {
 
 Future<void> _pushPlayer(WidgetTester tester, _HoverProbe probe) async {
   await tester.pumpWidget(MaterialApp(home: _LibraryStub(probe: probe)));
-  final BuildContext libraryContext =
-      tester.element(find.byKey(const ValueKey<String>('library')));
-  Navigator.of(libraryContext).push(
-    MaterialPageRoute<void>(builder: (_) => _PlayerStub(probe: probe)),
+  final BuildContext libraryContext = tester.element(
+    find.byKey(const ValueKey<String>('library')),
   );
+  Navigator.of(
+    libraryContext,
+  ).push(MaterialPageRoute<void>(builder: (_) => _PlayerStub(probe: probe)));
   await tester.pumpAndSettle();
 }
 
 Future<void> _popPlayer(WidgetTester tester) async {
-  final BuildContext playerContext =
-      tester.element(find.byKey(const ValueKey<String>('player')));
+  final BuildContext playerContext = tester.element(
+    find.byKey(const ValueKey<String>('player')),
+  );
   Navigator.of(playerContext).pop();
   for (int i = 0; i < 12; i++) {
     await tester.pump(const Duration(milliseconds: 50));
@@ -244,7 +281,7 @@ Future<void> _popPlayer(WidgetTester tester) async {
 
 class _PlayerStub extends StatelessWidget {
   const _PlayerStub({required this.probe})
-      : super(key: const ValueKey<String>('player'));
+    : super(key: const ValueKey<String>('player'));
 
   final _HoverProbe probe;
 
@@ -261,7 +298,7 @@ class _PlayerStub extends StatelessWidget {
 
 class _LibraryStub extends StatelessWidget {
   const _LibraryStub({required this.probe})
-      : super(key: const ValueKey<String>('library'));
+    : super(key: const ValueKey<String>('library'));
 
   final _HoverProbe probe;
 

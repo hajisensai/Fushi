@@ -41,49 +41,67 @@ void main() {
     });
 
     test('整份带 opf: 前缀的包文档能解析出全部章节（修复前抛 no readable chapters）', () {
-      final EpubBook book =
-          EpubParser.parseSync(_buildEpub(prefixed: true), extractDir.path);
+      final EpubBook book = EpubParser.parseSync(
+        _buildEpub(prefixed: true),
+        extractDir.path,
+      );
 
-      expect(book.chapters, hasLength(2),
-          reason: 'manifest 按 local-name 匹配后 spine 两章都应落地；'
-              '若为 0 章说明 <opf:item> 又没被匹配到');
+      expect(
+        book.chapters,
+        hasLength(2),
+        reason:
+            'manifest 按 local-name 匹配后 spine 两章都应落地；'
+            '若为 0 章说明 <opf:item> 又没被匹配到',
+      );
       expect(book.chapters[0].href, contains('chapter-1.xhtml'));
       expect(book.chapters[1].href, contains('chapter-2.xhtml'));
       expect(book.title, '白夜行');
       expect(book.author, '東野圭吾');
       expect(book.language, 'ja');
-      expect(book.coverHref, contains('cover.jpg'),
-          reason: '<opf:meta name="cover"> 同样按 qualified name 匹配不到');
+      expect(
+        book.coverHref,
+        contains('cover.jpg'),
+        reason: '<opf:meta name="cover"> 同样按 qualified name 匹配不到',
+      );
     });
 
-    test('完全不写 xmlns 的简陋 EPUB 仍能解析（向后兼容：按 local-name 匹配是纯放宽）',
-        () {
-      final EpubBook book =
-          EpubParser.parseSync(_buildBareEpub(), extractDir.path);
+    test('完全不写 xmlns 的简陋 EPUB 仍能解析（向后兼容：按 local-name 匹配是纯放宽）', () {
+      final EpubBook book = EpubParser.parseSync(
+        _buildBareEpub(),
+        extractDir.path,
+      );
 
-      expect(book.chapters, hasLength(2),
-          reason: 'OPF 元素落在**无命名空间**里，按 local-name 匹配必须照样命中。'
-              '若为 0 章说明原语被换成了「按命名空间 URI 精确匹配」——那会让这类'
-              '原本能导入的书变成 no readable chapters，是真回归');
+      expect(
+        book.chapters,
+        hasLength(2),
+        reason:
+            'OPF 元素落在**无命名空间**里，按 local-name 匹配必须照样命中。'
+            '若为 0 章说明原语被换成了「按命名空间 URI 精确匹配」——那会让这类'
+            '原本能导入的书变成 no readable chapters，是真回归',
+      );
       expect(book.title, '白夜行');
       expect(book.coverHref, contains('cover.jpg'));
-      expect(book.toc, hasLength(2),
-          reason: '无命名空间的 NCX 同样要解析出目录');
+      expect(book.toc, hasLength(2), reason: '无命名空间的 NCX 同样要解析出目录');
     });
 
     test('带前缀与不带前缀解析出完全一致的结果（前缀不改变任何语义）', () {
-      final EpubBook prefixed =
-          EpubParser.parseSync(_buildEpub(prefixed: true), extractDir.path);
+      final EpubBook prefixed = EpubParser.parseSync(
+        _buildEpub(prefixed: true),
+        extractDir.path,
+      );
 
-      final Directory plainDir =
-          Directory.systemTemp.createTempSync('epub_ns_plain_');
+      final Directory plainDir = Directory.systemTemp.createTempSync(
+        'epub_ns_plain_',
+      );
       addTearDown(() {
         if (plainDir.existsSync()) {
           plainDir.deleteSync(recursive: true);
         }
       });
-      final EpubBook plain =
-          EpubParser.parseSync(_buildEpub(prefixed: false), plainDir.path);
+      final EpubBook plain = EpubParser.parseSync(
+        _buildEpub(prefixed: false),
+        plainDir.path,
+      );
 
       expect(prefixed.chapters.length, plain.chapters.length);
       expect(prefixed.title, plain.title);
@@ -108,11 +126,16 @@ void main() {
     });
 
     test('NCX 带 ncx: 前缀时目录仍能解析', () {
-      final EpubBook book =
-          EpubParser.parseSync(_buildEpub(prefixed: true), extractDir.path);
+      final EpubBook book = EpubParser.parseSync(
+        _buildEpub(prefixed: true),
+        extractDir.path,
+      );
 
-      expect(book.toc, isNotEmpty,
-          reason: '<ncx:navMap>/<ncx:navLabel>/<ncx:text> 必须按 local-name 匹配');
+      expect(
+        book.toc,
+        isNotEmpty,
+        reason: '<ncx:navMap>/<ncx:navLabel>/<ncx:text> 必须按 local-name 匹配',
+      );
       expect(book.toc.first.label, '第一章');
       expect(book.toc.map((EpubTocItem e) => e.label), contains('第二章'));
     });
@@ -130,8 +153,11 @@ void main() {
       ]);
 
       final EpubBook book = EpubParser.parseSync(bytes, extractDir.path);
-      expect(book.chapters, hasLength(2),
-          reason: '<ocf:rootfile> 匹配不到会更早抛 no rootfile in container.xml');
+      expect(
+        book.chapters,
+        hasLength(2),
+        reason: '<ocf:rootfile> 匹配不到会更早抛 no rootfile in container.xml',
+      );
     });
 
     test('EPUB 3 nav 文档的 epub:type 属性按 local-name 读', () {
@@ -143,17 +169,22 @@ void main() {
       ]);
 
       final EpubBook book = EpubParser.parseSync(bytes, extractDir.path);
-      expect(book.toc, isNotEmpty,
-          reason: 'nav 走 <nav epub:type="toc">，属性同样带前缀；'
-              '读不到就会静默回落 NCX，这里没有 NCX 所以目录会是空');
+      expect(
+        book.toc,
+        isNotEmpty,
+        reason:
+            'nav 走 <nav epub:type="toc">，属性同样带前缀；'
+            '读不到就会静默回落 NCX，这里没有 NCX 所以目录会是空',
+      );
       expect(book.toc.first.label, '第一章');
     });
   });
 
   group('EpubParser 源码守卫：不得再出现按 qualified name 的裸查找 (BUG-2012)', () {
     test('epub_parser.dart 里所有标签查找都走 _elements/_childElement', () {
-      final String source =
-          File('../packages/fushi_engine/lib/epub/epub_parser.dart').readAsStringSync();
+      final String source = File(
+        '../packages/fushi_engine/lib/epub/epub_parser.dart',
+      ).readAsStringSync();
 
       // 剥掉注释，否则文档里解释这个坑的那几行会被判据自己命中（假红）。
       // 必须走共享原语：手写的「跳 `//` 开头整行」只管行首注释，行尾注释与
@@ -162,29 +193,45 @@ void main() {
       final String code = maskComments(source);
 
       // 裸 findAllElements('foo') —— 即不带 namespace 参数的调用。
-      final RegExp bareFindAll =
-          RegExp(r"findAllElements\(\s*'[^']*'\s*\)", multiLine: true);
-      expect(bareFindAll.allMatches(code).map((Match m) => m.group(0)).toList(),
-          isEmpty,
-          reason: 'findAllElements 不传 namespace 时按 qualified name 匹配，'
-              '带 opf:/ncx: 前缀的包文档会解析成空 → 整本书 0 章。改走 _elements()');
-
-      final RegExp bareGetElement =
-          RegExp(r"getElement\(\s*'[^']*'\s*\)", multiLine: true);
+      final RegExp bareFindAll = RegExp(
+        r"findAllElements\(\s*'[^']*'\s*\)",
+        multiLine: true,
+      );
       expect(
-          bareGetElement.allMatches(code).map((Match m) => m.group(0)).toList(),
-          isEmpty,
-          reason: 'getElement 同理，改走 _childElement()');
+        bareFindAll.allMatches(code).map((Match m) => m.group(0)).toList(),
+        isEmpty,
+        reason:
+            'findAllElements 不传 namespace 时按 qualified name 匹配，'
+            '带 opf:/ncx: 前缀的包文档会解析成空 → 整本书 0 章。改走 _elements()',
+      );
+
+      final RegExp bareGetElement = RegExp(
+        r"getElement\(\s*'[^']*'\s*\)",
+        multiLine: true,
+      );
+      expect(
+        bareGetElement.allMatches(code).map((Match m) => m.group(0)).toList(),
+        isEmpty,
+        reason: 'getElement 同理，改走 _childElement()',
+      );
 
       // 两个原语必须还在，且确实传了 namespace: '*'——否则上面两条断言会
       // 因为「一处调用都没有」而恒真空转。
       expect(
-          code.contains("findAllElements(localName, namespace: '*')"), isTrue,
-          reason: '_elements 原语被改名/删除，本组守卫已失去锚点');
-      expect(code.contains("getElement(localName, namespace: '*')"), isTrue,
-          reason: '_childElement 原语被改名/删除，本组守卫已失去锚点');
-      expect(RegExp(r'_elements\(').allMatches(code).length, greaterThan(5),
-          reason: '解析器应有多处走 _elements；数量塌到个位说明查找被改回裸调用');
+        code.contains("findAllElements(localName, namespace: '*')"),
+        isTrue,
+        reason: '_elements 原语被改名/删除，本组守卫已失去锚点',
+      );
+      expect(
+        code.contains("getElement(localName, namespace: '*')"),
+        isTrue,
+        reason: '_childElement 原语被改名/删除，本组守卫已失去锚点',
+      );
+      expect(
+        RegExp(r'_elements\(').allMatches(code).length,
+        greaterThan(5),
+        reason: '解析器应有多处走 _elements；数量塌到个位说明查找被改回裸调用',
+      );
 
       // `_attribute` 原语的守卫：属性名里不许硬编码命名空间前缀。这正是本 bug 的
       // 形态——`epub:` / `opf:` 只是**惯例**，XML 允许把同一个命名空间绑到任意前缀，
@@ -192,13 +239,19 @@ void main() {
       // 按规范就落在「无命名空间」里，裸 getAttribute 是对的，故只拦带冒号的字面量。
       final RegExp prefixedAttr = RegExp(r"getAttribute\(\s*'[^':]*:[^']*'");
       expect(
-          prefixedAttr.allMatches(code).map((Match m) => m.group(0)).toList(),
-          isEmpty,
-          reason: '硬编码 epub:/opf: 前缀只覆盖惯例写法；换个前缀绑同一个命名空间'
-              '照样取不到。改走 _attribute()');
-      expect(code.contains("getAttribute(localName, namespace: '*')"), isTrue,
-          reason: '_attribute 原语被改名/删除，上一条断言会因「一处调用都没有」'
-              '而恒真空转');
+        prefixedAttr.allMatches(code).map((Match m) => m.group(0)).toList(),
+        isEmpty,
+        reason:
+            '硬编码 epub:/opf: 前缀只覆盖惯例写法；换个前缀绑同一个命名空间'
+            '照样取不到。改走 _attribute()',
+      );
+      expect(
+        code.contains("getAttribute(localName, namespace: '*')"),
+        isTrue,
+        reason:
+            '_attribute 原语被改名/删除，上一条断言会因「一处调用都没有」'
+            '而恒真空转',
+      );
     });
   });
 }
@@ -260,14 +313,16 @@ ArchiveFile _binaryFile(String name) {
   return ArchiveFile(name, bytes.length, bytes);
 }
 
-const String _containerXmlPlain = '<?xml version="1.0" encoding="UTF-8"?>'
+const String _containerXmlPlain =
+    '<?xml version="1.0" encoding="UTF-8"?>'
     '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" '
     'version="1.0"><rootfiles>'
     '<rootfile full-path="content.opf" '
     'media-type="application/oebps-package+xml"/>'
     '</rootfiles></container>';
 
-const String _containerXmlPrefixed = '<?xml version="1.0" encoding="UTF-8"?>'
+const String _containerXmlPrefixed =
+    '<?xml version="1.0" encoding="UTF-8"?>'
     '<ocf:container '
     'xmlns:ocf="urn:oasis:names:tc:opendocument:xmlns:container" '
     'version="1.0"><ocf:rootfiles>'
@@ -280,10 +335,10 @@ String _opf({required bool prefixed}) {
   final String p = prefixed ? 'opf:' : '';
   final String ns = prefixed
       ? 'xmlns:opf="http://www.idpf.org/2007/opf" '
-          'xmlns:dc="http://purl.org/dc/elements/1.1/"'
+            'xmlns:dc="http://purl.org/dc/elements/1.1/"'
       : 'xmlns="http://www.idpf.org/2007/opf" '
-          'xmlns:dc="http://purl.org/dc/elements/1.1/" '
-          'xmlns:opf="http://www.idpf.org/2007/opf"';
+            'xmlns:dc="http://purl.org/dc/elements/1.1/" '
+            'xmlns:opf="http://www.idpf.org/2007/opf"';
   return '<?xml version="1.0" encoding="utf-8"?>'
       '<${p}package $ns unique-identifier="uuid_id" version="2.0">'
       '<${p}metadata>'
@@ -308,7 +363,8 @@ String _opf({required bool prefixed}) {
       '</${p}package>';
 }
 
-const String _opfWithNav = '<?xml version="1.0" encoding="utf-8"?>'
+const String _opfWithNav =
+    '<?xml version="1.0" encoding="utf-8"?>'
     '<package xmlns="http://www.idpf.org/2007/opf" '
     'xmlns:dc="http://purl.org/dc/elements/1.1/" '
     'unique-identifier="uuid_id" version="3.0">'
@@ -323,7 +379,8 @@ const String _opfWithNav = '<?xml version="1.0" encoding="utf-8"?>'
     '<spine><itemref idref="c1"/></spine>'
     '</package>';
 
-const String _navXhtml = '<?xml version="1.0" encoding="utf-8"?>'
+const String _navXhtml =
+    '<?xml version="1.0" encoding="utf-8"?>'
     '<html xmlns="http://www.w3.org/1999/xhtml" '
     'xmlns:epub="http://www.idpf.org/2007/ops"><head><title>目次</title></head>'
     '<body><nav epub:type="toc"><ol>'

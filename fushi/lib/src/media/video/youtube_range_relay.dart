@@ -71,8 +71,10 @@ class YoutubeRangeRelay {
 
   /// 起一个绑定 loopback 随机端口的中继（测试直接调；生产走 [instance]）。
   static Future<YoutubeRangeRelay> start() async {
-    final HttpServer server =
-        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final HttpServer server = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
     final YoutubeRangeRelay relay = YoutubeRangeRelay._(server);
     server.listen(
       (HttpRequest request) => unawaited(relay._serve(request)),
@@ -102,8 +104,9 @@ class YoutubeRangeRelay {
         return _localUri(e.key);
       }
     }
-    final String token = base64Url
-        .encode(List<int>.generate(18, (int _) => _random.nextInt(256)));
+    final String token = base64Url.encode(
+      List<int>.generate(18, (int _) => _random.nextInt(256)),
+    );
     _entries[token] = _RelayEntry(
       upstream: Uri.parse(upstreamUrl),
       headers: Map<String, String>.unmodifiable(headers),
@@ -112,11 +115,11 @@ class YoutubeRangeRelay {
   }
 
   Uri _localUri(String token) => Uri(
-        scheme: 'http',
-        host: InternetAddress.loopbackIPv4.address,
-        port: _server.port,
-        path: '/yt/$token',
-      );
+    scheme: 'http',
+    host: InternetAddress.loopbackIPv4.address,
+    port: _server.port,
+    path: '/yt/$token',
+  );
 
   Future<void> close() async {
     _closed = true;
@@ -141,8 +144,9 @@ class YoutubeRangeRelay {
         await response.close();
         return;
       }
-      final ({int start, int? end})? range =
-          parseRelayRange(request.headers.value(HttpHeaders.rangeHeader));
+      final ({int start, int? end})? range = parseRelayRange(
+        request.headers.value(HttpHeaders.rangeHeader),
+      );
       if (range == null) {
         response.statusCode = HttpStatus.requestedRangeNotSatisfiable;
         await response.close();
@@ -189,18 +193,21 @@ class YoutubeRangeRelay {
     // Future，mpv 每次 seek 关掉旧连接后，这里的循环会照样把 `bytes=X-` 的剩余整段
     // 2 MiB 一块地从 googlevideo 拉完：移动流量 + 与活流抢带宽，seek 越多僵尸越多。
     bool clientGone = false;
-    unawaited(response.done.then<void>(
-      (_) => clientGone = true,
-      onError: (Object _) => clientGone = true,
-    ));
+    unawaited(
+      response.done.then<void>(
+        (_) => clientGone = true,
+        onError: (Object _) => clientGone = true,
+      ),
+    );
     int cursor = range.start;
     int? end = range.end;
     int? total;
     bool headersSent = false;
     while (!clientGone) {
       final int chunkEnd = min(cursor + chunkBytes - 1, end ?? (1 << 62));
-      final HttpClientRequest upstreamRequest =
-          await _upstream.getUrl(entry.upstream);
+      final HttpClientRequest upstreamRequest = await _upstream.getUrl(
+        entry.upstream,
+      );
       entry.headers.forEach(upstreamRequest.headers.set);
       upstreamRequest.headers.set(
         HttpHeaders.rangeHeader,
@@ -242,19 +249,21 @@ class YoutubeRangeRelay {
       }
       final ({int start, int end, int? total})? contentRange =
           parseContentRange(
-        upstreamResponse.headers.value(HttpHeaders.contentRangeHeader),
-      );
+            upstreamResponse.headers.value(HttpHeaders.contentRangeHeader),
+          );
       if (!headersSent) {
         total = contentRange?.total;
         if (total != null) {
           end ??= total - 1;
           end = min(end, total - 1);
         }
-        response.statusCode =
-            ranged ? HttpStatus.partialContent : HttpStatus.ok;
+        response.statusCode = ranged
+            ? HttpStatus.partialContent
+            : HttpStatus.ok;
         response.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
-        final String? type =
-            upstreamResponse.headers.value(HttpHeaders.contentTypeHeader);
+        final String? type = upstreamResponse.headers.value(
+          HttpHeaders.contentTypeHeader,
+        );
         if (type != null) {
           response.headers.set(HttpHeaders.contentTypeHeader, type);
         }
@@ -322,8 +331,9 @@ class _RelayEntry {
 /// `bytes=a-b` → 闭区间；后缀区间 `bytes=-N` 与多区间不支持 → null（416）。
 ({int start, int? end})? parseRelayRange(String? header) {
   if (header == null || header.isEmpty) return (start: 0, end: null);
-  final RegExpMatch? m =
-      RegExp(r'^\s*bytes\s*=\s*(\d+)\s*-\s*(\d*)\s*$').firstMatch(header);
+  final RegExpMatch? m = RegExp(
+    r'^\s*bytes\s*=\s*(\d+)\s*-\s*(\d*)\s*$',
+  ).firstMatch(header);
   if (m == null) return null;
   final int start = int.parse(m.group(1)!);
   final String endText = m.group(2)!;
@@ -336,8 +346,9 @@ class _RelayEntry {
 /// 纯函数：解析上游 `Content-Range: bytes a-b/total`（total 可为 `*`）。
 ({int start, int end, int? total})? parseContentRange(String? header) {
   if (header == null) return null;
-  final RegExpMatch? m =
-      RegExp(r'^\s*bytes\s+(\d+)-(\d+)/(\d+|\*)\s*$').firstMatch(header);
+  final RegExpMatch? m = RegExp(
+    r'^\s*bytes\s+(\d+)-(\d+)/(\d+|\*)\s*$',
+  ).firstMatch(header);
   if (m == null) return null;
   final String totalText = m.group(3)!;
   return (
@@ -349,10 +360,8 @@ class _RelayEntry {
 
 /// 「原始流 URL + 回放 header → 交给播放内核的 URL」签名。生产 [relayYoutubeStreamUrl]，
 /// 测试注入假件。
-typedef YoutubeStreamRelay = Future<String> Function(
-  String url,
-  Map<String, String> headers,
-);
+typedef YoutubeStreamRelay =
+    Future<String> Function(String url, Map<String, String> headers);
 
 /// 把 YouTube 直链换成本地中继地址（BUG-2507）。非 googlevideo 直链原样返回。
 ///

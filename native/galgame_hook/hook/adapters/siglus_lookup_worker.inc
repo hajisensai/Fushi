@@ -196,6 +196,8 @@ void QueueSiglusLookupClickSubmit(const SiglusLookupPayload &payload) {
       &g_siglus_lookup_click_events[next % kSiglusLookupClickEventSlots];
   InterlockedExchange64(&event->seq, 0);
   event->payload = payload;
+  event->release_glyph_seq = static_cast<uint64_t>(
+      InterlockedCompareExchange64(&g_siglus_lookup_glyph_event_count, 0, 0));
   InterlockedExchange64(&event->seq, static_cast<LONG64>(next));
 }
 
@@ -550,25 +552,31 @@ enum class SiglusLookupSubmissionResult {
   kPublished,
 };
 
+// The decision needs every glyph reserved before the input it answers, not a
+// quiescent producer: engines that lay the line out every frame are never
+// quiescent, and waiting for that starved delivery for seconds. Glyphs after
+// the decision instant belong to later redraws; eligibility still requires
+// the consumed layout to be current, so a change already seen rejects.
 SiglusLookupSubmissionResult CheckSiglusLookupSubmission(
-    const SiglusLookupPayload &payload, uint64_t* awaiting_glyph_seq,
+    const SiglusLookupPayload &payload, uint64_t required_glyph_seq,
+    uint64_t* awaiting_glyph_seq,
     SiglusLookupRejectReason* rejection = nullptr) {
   *awaiting_glyph_seq = 0;
   if (!IsSiglusLookupPayloadEligible(payload, rejection))
     return SiglusLookupSubmissionResult::kRejected;
-  const uint64_t latest_glyph = static_cast<uint64_t>(
-      InterlockedCompareExchange64(&g_siglus_lookup_glyph_event_count, 0, 0));
-  if (latest_glyph != g_siglus_lookup_glyph_processed_seq) {
-    *awaiting_glyph_seq = latest_glyph;
+  if (g_siglus_lookup_glyph_processed_seq < required_glyph_seq) {
+    *awaiting_glyph_seq = required_glyph_seq;
     return SiglusLookupSubmissionResult::kAwaitingCapture;
   }
   return SiglusLookupSubmissionResult::kReady;
 }
 
 SiglusLookupSubmissionResult TryPublishSiglusLookupPayload(
-    const SiglusLookupPayload &payload, uint64_t* awaiting_glyph_seq,
+    const SiglusLookupPayload &payload, uint64_t required_glyph_seq,
+    uint64_t* awaiting_glyph_seq,
     SiglusLookupRejectReason* rejection = nullptr) {
-  const auto initial = CheckSiglusLookupSubmission(payload, awaiting_glyph_seq, rejection);
+  const auto initial = CheckSiglusLookupSubmission(
+      payload, required_glyph_seq, awaiting_glyph_seq, rejection);
   if (initial != SiglusLookupSubmissionResult::kReady)
     return initial;
   const ULONGLONG now = GetTickCount64();
@@ -591,7 +599,8 @@ SiglusLookupSubmissionResult TryPublishSiglusLookupPayload(
     if (rejection != nullptr) *rejection = SiglusLookupRejectReason::kDuplicate;
     return SiglusLookupSubmissionResult::kRejected;
   }
-  const auto confirmed = CheckSiglusLookupSubmission(payload, awaiting_glyph_seq, rejection);
+  const auto confirmed = CheckSiglusLookupSubmission(
+      payload, required_glyph_seq, awaiting_glyph_seq, rejection);
   if (confirmed != SiglusLookupSubmissionResult::kReady)
     return confirmed;
   if (!PublishSiglusLookupHit(payload)) {
@@ -604,8 +613,12 @@ SiglusLookupSubmissionResult TryPublishSiglusLookupPayload(
 }
 
 bool PublishSiglusLookupPayload(const SiglusLookupPayload &payload) {
+  // The worker decides here and now: every glyph reserved so far is required.
+  const uint64_t decision_glyph_seq = static_cast<uint64_t>(
+      InterlockedCompareExchange64(&g_siglus_lookup_glyph_event_count, 0, 0));
   uint64_t awaiting_glyph_seq = 0;
-  return TryPublishSiglusLookupPayload(payload, &awaiting_glyph_seq) ==
+  return TryPublishSiglusLookupPayload(payload, decision_glyph_seq,
+                                       &awaiting_glyph_seq) ==
       SiglusLookupSubmissionResult::kPublished;
 }
 
@@ -623,7 +636,9 @@ bool ProcessSiglusLookupClickSubmissions() {
   uint64_t awaiting_glyph_seq = 0;
   SiglusLookupRejectReason rejection = SiglusLookupRejectReason::kNone;
   const auto result =
-      TryPublishSiglusLookupPayload(click_event.payload, &awaiting_glyph_seq, &rejection);
+      TryPublishSiglusLookupPayload(click_event.payload,
+                                    click_event.release_glyph_seq,
+                                    &awaiting_glyph_seq, &rejection);
   if (result == SiglusLookupSubmissionResult::kAwaitingCapture) {
     g_siglus_lookup_waiting_click_seq = click_seq;
     g_siglus_lookup_waiting_glyph_seq = awaiting_glyph_seq;

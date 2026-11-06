@@ -54,15 +54,20 @@ void main() {
 
   // A 1200x500 block image (base64 SVG, deterministic intrinsic size) for the
   // multicol image-overflow path (BUG-679).
-  const String svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1200" '
+  const String svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="1200" '
       'height="500"><rect width="1200" height="500" fill="#888888"/></svg>';
   final String imgSrc =
       'data:image/svg+xml;base64,${base64Encode(utf8.encode(svg))}';
 
   Future<void> applyCss(
-      InAppWebViewController controller, ReaderSettings settings) async {
+    InAppWebViewController controller,
+    ReaderSettings settings,
+  ) async {
     final String css = ReaderContentStyles.css(settings: settings);
-    await controller.evaluateJavascript(source: '''
+    await controller.evaluateJavascript(
+      source:
+          '''
       (function() {
         var vars = document.getElementById('fushi-test-vars');
         if (!vars) {
@@ -83,7 +88,8 @@ void main() {
         }
         s.textContent = ${jsonEncode(css)};
       })();
-    ''');
+    ''',
+    );
   }
 
   // Column-band probe: clusters probe glyph turn-axis positions into COLUMN
@@ -213,97 +219,120 @@ void main() {
   Future<InAppWebViewController> bootWebView(WidgetTester tester) async {
     final Completer<InAppWebViewController> ready =
         Completer<InAppWebViewController>();
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: InAppWebView(
-          initialData: InAppWebViewInitialData(
-              data: '<!DOCTYPE html><html><head><meta charset="utf-8">'
-                  '</head><body></body></html>'),
-          onLoadStop: (InAppWebViewController controller, WebUri? url) async {
-            if (!ready.isCompleted) ready.complete(controller);
-          },
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: InAppWebView(
+            initialData: InAppWebViewInitialData(
+              data:
+                  '<!DOCTYPE html><html><head><meta charset="utf-8">'
+                  '</head><body></body></html>',
+            ),
+            onLoadStop: (InAppWebViewController controller, WebUri? url) async {
+              if (!ready.isCompleted) ready.complete(controller);
+            },
+          ),
         ),
       ),
-    ));
+    );
     for (int i = 0; i < 150 && !ready.isCompleted; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    expect(ready.isCompleted, isTrue,
-        reason: 'WebView did not load within 15s');
+    expect(
+      ready.isCompleted,
+      isTrue,
+      reason: 'WebView did not load within 15s',
+    );
     final InAppWebViewController controller = await ready.future;
     await tester.pump(const Duration(seconds: 1));
     return controller;
   }
 
   testWidgets(
-      'TODO-1285: pageColumns renders N distinct column bands per page in the '
-      'real WebView2 engine (horizontal + vertical), and JS pageStep matches '
-      'the true page advance', (WidgetTester tester) async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final ReaderSettings settings = ReaderSettings(db);
-    await settings.refreshFromDb();
-    final InAppWebViewController controller = await bootWebView(tester);
-    await controller.evaluateJavascript(source: buildProbeBodyJs);
+    'TODO-1285: pageColumns renders N distinct column bands per page in the '
+    'real WebView2 engine (horizontal + vertical), and JS pageStep matches '
+    'the true page advance',
+    (WidgetTester tester) async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      final InAppWebViewController controller = await bootWebView(tester);
+      await controller.evaluateJavascript(source: buildProbeBodyJs);
 
-    final List<String> modes = <String>['horizontal-tb', 'vertical-rl'];
-    final List<int> columnCounts = <int>[1, 2, 3];
-    final Map<String, Map<String, dynamic>> results =
-        <String, Map<String, dynamic>>{};
+      final List<String> modes = <String>['horizontal-tb', 'vertical-rl'];
+      final List<int> columnCounts = <int>[1, 2, 3];
+      final Map<String, Map<String, dynamic>> results =
+          <String, Map<String, dynamic>>{};
 
-    for (final String mode in modes) {
-      for (final int n in columnCounts) {
-        final Map<String, dynamic> m = await measure(
-          controller: controller,
-          settings: settings,
-          writingMode: mode,
-          pageColumns: n,
-          tester: tester,
-        );
-        results['$mode/N=$n'] = m;
-        debugPrint('[cols-dom] $mode/N=$n => ${jsonEncode(m)}');
+      for (final String mode in modes) {
+        for (final int n in columnCounts) {
+          final Map<String, dynamic> m = await measure(
+            controller: controller,
+            settings: settings,
+            writingMode: mode,
+            pageColumns: n,
+            tester: tester,
+          );
+          results['$mode/N=$n'] = m;
+          debugPrint('[cols-dom] $mode/N=$n => ${jsonEncode(m)}');
+        }
       }
-    }
 
-    for (final String mode in modes) {
-      for (final int n in columnCounts) {
-        final Map<String, dynamic> m = results['$mode/N=$n']!;
-        final int bands = (m['columnBandsFirstPage'] as num?)?.toInt() ?? -1;
-        expect(bands, n,
-            reason: '$mode: set $n cols/page -> real WebView2 must render $n '
+      for (final String mode in modes) {
+        for (final int n in columnCounts) {
+          final Map<String, dynamic> m = results['$mode/N=$n']!;
+          final int bands = (m['columnBandsFirstPage'] as num?)?.toInt() ?? -1;
+          expect(
+            bands,
+            n,
+            reason:
+                '$mode: set $n cols/page -> real WebView2 must render $n '
                 'distinct column bands on page 1, measured $bands. '
                 'computedColumnCount=${m['computedColumnCount']} '
-                'computedColumnWidth=${m['computedColumnWidth']}');
+                'computedColumnWidth=${m['computedColumnWidth']}',
+          );
 
-        final num? trueAdvance = m['truePageAdvancePx'] as num?;
-        final num? jsPageStep = m['js_pageStep'] as num?;
-        if (trueAdvance != null && jsPageStep != null && trueAdvance > 0) {
-          expect((jsPageStep - trueAdvance).abs(), lessThan(2.0),
+          final num? trueAdvance = m['truePageAdvancePx'] as num?;
+          final num? jsPageStep = m['js_pageStep'] as num?;
+          if (trueAdvance != null && jsPageStep != null && trueAdvance > 0) {
+            expect(
+              (jsPageStep - trueAdvance).abs(),
+              lessThan(2.0),
               reason:
                   '$mode/N=$n: JS pageStep=$jsPageStep must ~= true advance='
                   '$trueAdvance (<2px), else flipping leaks a neighbour page. '
-                  'js_columnsSource=${m['js_columnsSource']}');
+                  'js_columnsSource=${m['js_columnsSource']}',
+            );
+          }
         }
       }
-    }
-  });
+    },
+  );
 
   testWidgets(
-      'TODO-1285/BUG-679: a wide block image OVERFLOWS the sub-column without '
-      'the _imageMaxBox clamp and is CLAMPED with it, in the real WebView2 '
-      'engine', (WidgetTester tester) async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final ReaderSettings settings = ReaderSettings(db);
-    await settings.refreshFromDb();
-    await settings.setViewMode('paginated');
-    await settings.setWritingMode('horizontal-tb');
-    await settings.setPageColumns(2);
+    'TODO-1285/BUG-679: a wide block image OVERFLOWS the sub-column without '
+    'the _imageMaxBox clamp and is CLAMPED with it, in the real WebView2 '
+    'engine',
+    (WidgetTester tester) async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setViewMode('paginated');
+      await settings.setWritingMode('horizontal-tb');
+      await settings.setPageColumns(2);
 
-    final InAppWebViewController controller = await bootWebView(tester);
+      final InAppWebViewController controller = await bootWebView(tester);
 
-    // Build a wide block image + filler text (2-column page) via safe DOM APIs.
-    await controller.evaluateJavascript(source: '''
+      // Build a wide block image + filler text (2-column page) via safe DOM APIs.
+      await controller.evaluateJavascript(
+        source:
+            '''
       (function() {
         var body = document.body;
         body.replaceChildren();
@@ -318,11 +347,12 @@ void main() {
           body.appendChild(s);
         }
       })();
-    ''');
-    await applyCss(controller, settings);
-    await tester.pump(const Duration(milliseconds: 500));
+    ''',
+      );
+      await applyCss(controller, settings);
+      await tester.pump(const Duration(milliseconds: 500));
 
-    const String imgProbe = r'''
+      const String imgProbe = r'''
       (function() {
         var body = document.body;
         var cs = getComputedStyle(body);
@@ -333,35 +363,46 @@ void main() {
         return JSON.stringify({ subCol: subCol, imgWidth: w, imgMaxWidth: maxw });
       })();
     ''';
-    final Map<String, dynamic> noClamp =
-        parse(await controller.evaluateJavascript(source: imgProbe));
-    debugPrint('[img-dom] no-clamp => ${jsonEncode(noClamp)}');
+      final Map<String, dynamic> noClamp = parse(
+        await controller.evaluateJavascript(source: imgProbe),
+      );
+      debugPrint('[img-dom] no-clamp => ${jsonEncode(noClamp)}');
 
-    // Replicate fushiReader._imageMaxBox: set --fushi-image-max-width to the used
-    // sub-column width (getComputedStyle(body).columnWidth).
-    await controller.evaluateJavascript(source: r'''
+      // Replicate fushiReader._imageMaxBox: set --fushi-image-max-width to the used
+      // sub-column width (getComputedStyle(body).columnWidth).
+      await controller.evaluateJavascript(
+        source: r'''
       (function() {
         var used = parseFloat(getComputedStyle(document.body).columnWidth);
         document.documentElement.style.setProperty('--fushi-image-max-width', used + 'px');
       })();
-    ''');
-    await tester.pump(const Duration(milliseconds: 300));
-    final Map<String, dynamic> clamped =
-        parse(await controller.evaluateJavascript(source: imgProbe));
-    debugPrint('[img-dom] clamped => ${jsonEncode(clamped)}');
+    ''',
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      final Map<String, dynamic> clamped = parse(
+        await controller.evaluateJavascript(source: imgProbe),
+      );
+      debugPrint('[img-dom] clamped => ${jsonEncode(clamped)}');
 
-    final double subCol = (noClamp['subCol'] as num).toDouble();
-    final double imgNoClamp = (noClamp['imgWidth'] as num).toDouble();
-    final double imgClamped = (clamped['imgWidth'] as num).toDouble();
+      final double subCol = (noClamp['subCol'] as num).toDouble();
+      final double imgNoClamp = (noClamp['imgWidth'] as num).toDouble();
+      final double imgClamped = (clamped['imgWidth'] as num).toDouble();
 
-    expect(imgNoClamp, greaterThan(subCol + 2),
+      expect(
+        imgNoClamp,
+        greaterThan(subCol + 2),
         reason:
             'a 1200px image without the _imageMaxBox clamp must overflow the '
             '${subCol}px sub-column (imgWidth=$imgNoClamp) -- proves the clamp '
-            'is load-bearing');
-    expect(imgClamped, lessThanOrEqualTo(subCol + 2),
+            'is load-bearing',
+      );
+      expect(
+        imgClamped,
+        lessThanOrEqualTo(subCol + 2),
         reason:
             'with --fushi-image-max-width = used sub-column, the image must '
-            'be clamped to <= ${subCol}px (imgWidth=$imgClamped)');
-  });
+            'be clamped to <= ${subCol}px (imgWidth=$imgClamped)',
+      );
+    },
+  );
 }

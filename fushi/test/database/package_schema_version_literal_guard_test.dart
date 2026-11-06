@@ -28,20 +28,26 @@ void main() {
   final Directory packagesDir = Directory('../packages');
 
   test('packages 目录存在', () {
-    expect(packagesDir.existsSync(), isTrue,
-        reason: 'expected ${packagesDir.absolute.path}');
+    expect(
+      packagesDir.existsSync(),
+      isTrue,
+      reason: 'expected ${packagesDir.absolute.path}',
+    );
   });
 
   test('packages/*/test 下的 schemaVersion 断言必须是下界而非等值', () {
     if (!packagesDir.existsSync()) {
-      fail('../packages 不存在——静默 return 会让这条守卫整条变绿（扫不到 = 没违规），'
-          '这正是本轮要消灭的假绿形态。请在 fushi/ 包根下运行。');
+      fail(
+        '../packages 不存在——静默 return 会让这条守卫整条变绿（扫不到 = 没违规），'
+        '这正是本轮要消灭的假绿形态。请在 fushi/ 包根下运行。',
+      );
     }
 
     // 匹配 `expect(<任意>.schemaVersion, 66)` 这类第二参数是裸整数字面量的断言。
     // `greaterThanOrEqualTo(65)` / `lessThan(...)` 等 matcher 不匹配。
-    final RegExp exactEquality =
-        RegExp(r'expect\(\s*[A-Za-z0-9_.]*schemaVersion\s*,\s*[0-9]+\s*[,)]');
+    final RegExp exactEquality = RegExp(
+      r'expect\(\s*[A-Za-z0-9_.]*schemaVersion\s*,\s*[0-9]+\s*[,)]',
+    );
 
     final List<String> offenders = <String>[];
     int scannedFiles = 0;
@@ -51,8 +57,10 @@ void main() {
       final Directory testDir = Directory('${pkg.path}/test');
       if (!testDir.existsSync()) continue;
 
-      for (final FileSystemEntity entity
-          in testDir.listSync(recursive: true, followLinks: false)) {
+      for (final FileSystemEntity entity in testDir.listSync(
+        recursive: true,
+        followLinks: false,
+      )) {
         if (entity is! File || !entity.path.endsWith('.dart')) continue;
         scannedFiles++;
         final String source = entity.readAsStringSync();
@@ -67,19 +75,28 @@ void main() {
         for (int i = 0; i < maskedLines.length; i++) {
           if (exactEquality.hasMatch(maskedLines[i])) {
             offenders.add(
-                '${entity.path.replaceAll(r'\', '/')}:${i + 1}: ${rawLines[i].trim()}');
+              '${entity.path.replaceAll(r'\', '/')}:${i + 1}: ${rawLines[i].trim()}',
+            );
           }
         }
       }
     }
 
-    expectScanScale(scannedFiles,
-        what: 'packages/*/test 下的 .dart', atLeast: 50, measured: 72);
-    expect(offenders, isEmpty,
-        reason: 'package 侧测试跑在 CI 的 `Run package tests` 里，拿不到 fushi/test '
-            '那次批量替换，schema bump 必漏改。改成下界断言，例如\n'
-            '  expect(db.schemaVersion, greaterThanOrEqualTo(65),\n'
-            "      reason: 'v65 = <本用例依赖的表>');\n"
-            '违规位置：\n${offenders.join('\n')}');
+    expectScanScale(
+      scannedFiles,
+      what: 'packages/*/test 下的 .dart',
+      atLeast: 50,
+      measured: 72,
+    );
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'package 侧测试跑在 CI 的 `Run package tests` 里，拿不到 fushi/test '
+          '那次批量替换，schema bump 必漏改。改成下界断言，例如\n'
+          '  expect(db.schemaVersion, greaterThanOrEqualTo(65),\n'
+          "      reason: 'v65 = <本用例依赖的表>');\n"
+          '违规位置：\n${offenders.join('\n')}',
+    );
   });
 }

@@ -50,7 +50,7 @@ String singleVideoBookUid(String videoPath) {
 /// 回调基础设施，故采用与 EpubImporter 无回调路径一致的静默后缀 UX。
 String uniqueVideoBookUid(String base, Set<String> existingKeys) {
   if (!existingKeys.contains(base)) return base;
-  for (int i = 2;; i++) {
+  for (int i = 2; ; i++) {
     final String candidate = '$base ($i)';
     if (!existingKeys.contains(candidate)) return candidate;
   }

@@ -55,7 +55,7 @@ class BookConvertVerdict {
   const BookConvertVerdict.supported(this.sourcePath) : blocker = null;
 
   const BookConvertVerdict.blocked(BookConvertBlocker this.blocker)
-      : sourcePath = null;
+    : sourcePath = null;
 
   /// 可转化时非 null：重建所需的源文件**绝对路径**。
   final String? sourcePath;

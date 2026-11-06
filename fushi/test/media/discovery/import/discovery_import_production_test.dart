@@ -76,8 +76,8 @@ void main() {
       galgameRepo: GalgameRepository(db),
       transcribeAudiobook: (TranscribeAudiobookPlan plan) async =>
           throw const DiscoveryImportBlockedException(
-        DiscoveryImportBlocker.audiobookMissingSubtitle,
-      ),
+            DiscoveryImportBlocker.audiobookMissingSubtitle,
+          ),
     );
   });
 
@@ -90,8 +90,7 @@ void main() {
   // BUG-2775：有声书包里的 EPUB 与库中已有书同名时，自动入库不附着音频。以前
   // 返回 null 被当成「0 条新增」，任务行只剩一句 import failed；现在必须以
   // 稳定原因码报出，UI 才能告诉用户去已有书里手动导入有声书。
-  test(
-      'audiobook whose EPUB is already in the library is blocked with a '
+  test('audiobook whose EPUB is already in the library is blocked with a '
       'stable reason', () async {
     final File epub = File(p.join(tempRoot.path, '秒速5センチメートル.epub'))
       ..writeAsBytesSync(_minimalEpub('秒速5センチメートル'));
@@ -127,15 +126,19 @@ void main() {
     final File sameTitle = File(p.join(tempRoot.path, 'b', 'other-name.epub'))
       ..createSync(recursive: true)
       ..writeAsBytesSync(_minimalEpub('銀河鉄道の夜'));
-    expect(await isDuplicateDiscoveryAudiobookContent(db, sameTitle.path),
-        isTrue);
+    expect(
+      await isDuplicateDiscoveryAudiobookContent(db, sameTitle.path),
+      isTrue,
+    );
     // 交叉核对:导入器对它确实会挡下(同名书已在库)。
     await expectLater(
-      importers.importAudiobook(AlignAudiobookPlan(
-        contentPath: sameTitle.path,
-        subtitlePath: p.join(tempRoot.path, 'x.srt'),
-        audioPaths: <String>[p.join(tempRoot.path, 'x.mp3')],
-      )),
+      importers.importAudiobook(
+        AlignAudiobookPlan(
+          contentPath: sameTitle.path,
+          subtitlePath: p.join(tempRoot.path, 'x.srt'),
+          audioPaths: <String>[p.join(tempRoot.path, 'x.mp3')],
+        ),
+      ),
       throwsA(isA<DiscoveryImportBlockedException>()),
     );
 

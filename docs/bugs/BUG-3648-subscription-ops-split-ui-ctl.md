@@ -1,0 +1,10 @@
+## BUG-3648 · 视频订阅操作在订阅页与 host 各写一份、语义分叉；经 host 重新启用已完成 oneShot 撞 CHECK；CLI 没有订阅命令
+- **报告**：2026-10-20（用户：用 fushi_cli 把《凶乱令嬢ニア・リストン》改成订阅后，CLI 查不到 / 管不了订阅，要求根本性修复）
+- **真实性**：✅ 真 bug。根因是同一组订阅操作有两份实现：
+  - 订阅页把启停 / 检查 / 全部检查 / 删除 / 编辑写成 State 私有方法直接写库（`fushi/lib/src/pages/implementations/video_download_subscriptions_panel.dart` 旧 `_setEnabled` / `_checkOne` / `_checkAll` / `_delete` / `_edit`），桌面控制通道无从调「按钮背后的同一个方法」，CLI 因此整组漏接；
+  - 互联 / 无头服务端走 `packages/fushi_engine/lib/sync/subscriptions/pipeline_subscription_host.dart` 的 `setEnabled`，重新启用时**没清 `fulfilledAt`**，而表级约束 `CHECK (fulfilled_at IS NULL OR (mode = 'oneShot' AND enabled = 0))`（`packages/fushi_core/lib/src/database/tables.dart:2524`）只许停用态带完成位 → 经 `/api/subscriptions/:id/enable` 或 `fushi_server ctl subscriptions enable` 重新启用一条已完成的 oneShot 订阅直接 `SqliteException(275)`；
+  - 「全部检查」两边语义也不同：页面把所有启用的订阅置为到期，host 的 `checkNow(null)` 只叫醒一轮（只查本来就到期的）。
+  - 守卫 `ctl_cli_route_coverage_guard_test` 只比「路由 ↔ CLI」，看不到「页面动作 ↔ 路由」这一层，所以漏接没被抓到。
+- **[x] ① 已修复** — 订阅操作收成一份：`PipelineSubscriptionHost` 统一语义（启用清 `fulfilledAt` 与租约、`checkNow(null)` = 启用订阅全部到期、停用 / 未知 id 明确拒绝）并新增本机专用 `items` / `update`（窄合并 + 改来源连带改派任务 BUG-2755 与摘旧来源种子 BUG-2776）；app 侧公开 `AppSubscriptionHost`，订阅页只经它动手；桌面控制通道新增 `/api/admin/subscriptions*`（`fushi/lib/src/platform/desktop/ctl/ctl_download_subscription_routes.dart`，与服务端 admin API 同形，多出详情 / 逐集 / 编辑），CLI 新增 `fushi_cli sub ls|get|items|check|enable|disable|edit|rm`。
+- **[x] ② 已加自动化测试** — `packages/fushi_server/test/subscription_host_manage_test.dart`（重新启用清完成位、停用不动排期、全部检查只碰启用的、单条检查 404/409、编辑窄合并与摘种子、取值校验）；`fushi/test/platform/desktop/ctl/ctl_ui_action_facade_coverage_guard_test.dart`（门面每个公开方法都被路由用到、页面不得绕过门面直接写库 / 驱动服务）；`fushi/test/platform/desktop/ctl/ctl_data_routes_test.dart`、`packages/fushi_cli/test/commands/data_commands_test.dart`（路由表与 CLI 请求 / 渲染）。变异实测：去掉启用时清 `fulfilledAt` → 复现 `SqliteException(275) CHECK constraint failed`；页面改回直接调订阅服务 → 门面守卫红；路由不再调 `update` → 门面守卫红；路由改名 → CLI 覆盖守卫红。
+- **备注**：新建订阅仍走 `aidl` / 发现页（各自已有 CLI 入口），门面守卫对 `create` 显式豁免并写明理由。已配对 host 上的订阅（订阅页的「远端订阅」段）尚未接 CLI，未在本条范围内。

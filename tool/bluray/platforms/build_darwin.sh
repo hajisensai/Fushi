@@ -36,6 +36,12 @@ cp "$ROOT/third_party/media_kit_libs_windows_video/patches/mkv-laced-audio-times
 # BUG-3500: dump-cache derives the DTS of Matroska video (B-frames).
 cp "$ROOT/third_party/media_kit_libs_windows_video/patches/recorder-video-dts.patch" \
   "$WORK/checkout/patches/mpv-recorder-video-dts.patch"
+# Audio CD (tool/cdda): stream_cdda seek keeps the byte offset inside the sector.
+# Only the fork's fushi/cdda branch applies it (macOS -Dcdda=enabled); the
+# darwin-build.patch overlay predates the unified FFmpeg / DVD fork state and
+# does not, so on this 865ef149 checkout it is staged but inert.
+cp "$ROOT/third_party/media_kit_libs_windows_video/patches/cdda-seek-sector-offset.patch" \
+  "$WORK/checkout/patches/mpv-cdda-seek-sector-offset.patch"
 # Nix flakes deliberately ignore untracked files. Stage only this overlay in
 # the isolated dependency worktree, otherwise Nix cannot see the new recipes.
 git -C "$WORK/checkout" add nix/packages/mk-pkg-mpv nix/packages/mk-pkg-libbluray \
@@ -45,7 +51,7 @@ git -C "$WORK/checkout" add nix/packages/mk-pkg-mpv nix/packages/mk-pkg-libblura
   patches/mpv-audiounit-shared-session-menu.patch \
   patches/mpv-darwin-cross-sdk.patch patches/mpv-gl-dovi-p5-menu.patch \
   patches/disc-navigation-state.patch patches/mpv-mkv-laced-audio-timestamps.patch \
-  patches/mpv-recorder-video-dts.patch
+  patches/mpv-recorder-video-dts.patch patches/mpv-cdda-seek-sector-offset.patch
 if [ "$PREPARE_ONLY" = 1 ]; then
   echo "Prepared dependency checkout: $WORK/checkout"
   exit 0

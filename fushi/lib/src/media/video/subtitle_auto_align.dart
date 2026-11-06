@@ -1,6 +1,5 @@
-import 'dart:math' as math;
-
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 
 /// 字幕自动对轴（TODO-701 阶段1）的纯算法层。
 ///
@@ -9,7 +8,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 /// 范围内滑动，找让两者重叠最大的整体平移 offset。**只整体平移、不重排单条 cue、
 /// 不解帧率漂移**——这正是「手动延迟」做的事，本层只是自动算出该填多少延迟。
 ///
-/// 全部纯函数（无 IO、无平台依赖），便于单测。音频包络的真实采样由
+/// 全部纯函数（无 IO），便于单测；互相关本体在 Rust（native/fushi_compute）。音频包络的真实采样由
 /// `audio_energy_probe.dart`（经 ffmpeg 抽象）提供。
 
 /// 一次自动对轴的结果状态。
@@ -63,7 +62,8 @@ class SubtitleAutoAlignResult {
   int get hashCode => Object.hash(offsetMs, confidence, status);
 
   @override
-  String toString() => 'SubtitleAutoAlignResult(offsetMs: $offsetMs, '
+  String toString() =>
+      'SubtitleAutoAlignResult(offsetMs: $offsetMs, '
       'confidence: ${confidence.toStringAsFixed(3)}, status: $status)';
 }
 
@@ -165,9 +165,12 @@ List<double> normalizeAudioEnergyEnvelope(
 /// 约定：正 offset 表示**字幕需整体延后**（与 `delayMs` 同号同义）。实现上枚举 shift
 /// （以格为单位），把 cueActivity 整体右移 shift 格后与 audioActivity 逐格相乘求和
 /// （重叠的「都为 1」格累加）；归一化分母取两序列各自的活动格数中较小者（最大可能
-/// 重叠），得 0..1 的置信度。无重叠/空输入返回 noData。
+/// 重叠），得 0..1 的置信度。无重叠/空输入返回 noData。平手时偏向 |shift| 更小者。
 ///
 /// shift 步长 = [binMs]；搜索范围 `[-maxShiftMs, +maxShiftMs]` 换算成格数枚举。
+/// 计算在 Rust（native/fushi_compute `ffc_signal_xcorr_best_shift`，一次调用扫完全部
+/// shift；20 分钟 × ±15 s 是 12000 格 × 301 个 shift）。库不可用抛
+/// `FushiComputeUnavailableError`。
 SubtitleAutoAlignResult bestOffsetMsByCrossCorrelation(
   List<double> audioActivity,
   List<double> cueActivity, {
@@ -175,71 +178,19 @@ SubtitleAutoAlignResult bestOffsetMsByCrossCorrelation(
   int maxShiftMs = kSubtitleAutoAlignMaxShiftMs,
   double minConfidence = kSubtitleAutoAlignMinConfidence,
 }) {
-  if (binMs <= 0 ||
-      audioActivity.isEmpty ||
-      cueActivity.isEmpty ||
-      maxShiftMs < 0) {
-    return SubtitleAutoAlignResult.noData;
-  }
-  final double audioActiveCount = _activeCount(audioActivity);
-  final double cueActiveCount = _activeCount(cueActivity);
-  if (audioActiveCount <= 0 || cueActiveCount <= 0) {
-    return SubtitleAutoAlignResult.noData;
-  }
-  // 归一化分母：理论最大重叠 = 两序列活动格数中较小者。
-  final double maxOverlap = math.min(audioActiveCount, cueActiveCount);
-
-  final int maxShiftBins = maxShiftMs ~/ binMs;
-  int bestShiftBins = 0;
-  double bestOverlap = -1.0;
-  for (int shift = -maxShiftBins; shift <= maxShiftBins; shift++) {
-    final double overlap = _overlapAtShift(audioActivity, cueActivity, shift);
-    // 平手时偏向 |shift| 更小者（更接近无偏移，避免过度平移）。
-    if (overlap > bestOverlap ||
-        (overlap == bestOverlap && shift.abs() < bestShiftBins.abs())) {
-      bestOverlap = overlap;
-      bestShiftBins = shift;
-    }
-  }
-
-  final double confidence =
-      maxOverlap > 0 ? (bestOverlap / maxOverlap).clamp(0.0, 1.0) : 0.0;
-  final int offsetMs = bestShiftBins * binMs;
-  final SubtitleAutoAlignStatus status = confidence >= minConfidence
+  final ({int shiftBins, double confidence})? peak = ffcXcorrBestShift(
+    audioActivity,
+    cueActivity,
+    binMs: binMs,
+    maxShiftMs: maxShiftMs,
+  );
+  if (peak == null) return SubtitleAutoAlignResult.noData;
+  final SubtitleAutoAlignStatus status = peak.confidence >= minConfidence
       ? SubtitleAutoAlignStatus.aligned
       : SubtitleAutoAlignStatus.lowConfidence;
   return SubtitleAutoAlignResult(
-    offsetMs: offsetMs,
-    confidence: confidence,
+    offsetMs: peak.shiftBins * binMs,
+    confidence: peak.confidence,
     status: status,
   );
-}
-
-/// 序列中「活动格」（值 > 0）的总和（活动强度），用作互相关归一化基准。
-double _activeCount(List<double> activity) {
-  double sum = 0.0;
-  for (final double v in activity) {
-    if (v > 0) sum += v;
-  }
-  return sum;
-}
-
-/// 把 [cueActivity] 整体右移 [shiftBins] 格（正＝字幕延后）后与 [audioActivity]
-/// 逐格相乘求和。`audio[i]` 对应 `cue[i - shiftBins]`。
-double _overlapAtShift(
-  List<double> audioActivity,
-  List<double> cueActivity,
-  int shiftBins,
-) {
-  double overlap = 0.0;
-  final int n = audioActivity.length;
-  final int m = cueActivity.length;
-  for (int i = 0; i < n; i++) {
-    final int j = i - shiftBins;
-    if (j < 0 || j >= m) continue;
-    final double a = audioActivity[i];
-    final double c = cueActivity[j];
-    if (a > 0 && c > 0) overlap += a * c;
-  }
-  return overlap;
 }

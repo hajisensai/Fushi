@@ -67,8 +67,10 @@ Future<AudiobookPlayerController?> _waitForActiveAudiobook(
     await tester.pump(const Duration(milliseconds: 500));
     final AudiobookPlayerController? c = appModel.audiobookSession.controller;
     if (c != null && c.chapterCueCount > 0) {
-      debugPrint('[arrow-skip] audiobook active after ${i * 500}ms '
-          'cueCount=${c.chapterCueCount} idx=${c.currentCueIdx}');
+      debugPrint(
+        '[arrow-skip] audiobook active after ${i * 500}ms '
+        'cueCount=${c.chapterCueCount} idx=${c.currentCueIdx}',
+      );
       return c;
     }
   }
@@ -93,165 +95,210 @@ void _remapBareKey(
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets(
-    'TODO-992 continuous scroll: remapped Left/Right drive audiobook '
-    'prev/next sentence instead of only turning the page',
-    (WidgetTester tester) async {
-      await runFushiItest(
-        label: 'arrow-skip',
-        body: () async {
-          await launchFushiTestApp();
-          expect(await waitForHome(tester), isTrue,
-              reason: 'home (nav bar) must render');
-          await tester.pump(const Duration(seconds: 2));
+  testWidgets('TODO-992 continuous scroll: remapped Left/Right drive audiobook '
+      'prev/next sentence instead of only turning the page', (
+    WidgetTester tester,
+  ) async {
+    await runFushiItest(
+      label: 'arrow-skip',
+      body: () async {
+        await launchFushiTestApp();
+        expect(
+          await waitForHome(tester),
+          isTrue,
+          reason: 'home (nav bar) must render',
+        );
+        await tester.pump(const Duration(seconds: 2));
 
-          // 焦点驱动需要 FushiFocusRoot（默认 OFF；开关后 main.dart 重建装上壳）。
-          final AppModel appModel = await readyAppModel(tester);
-          await appModel.setExperimentalFocusNavigationEnabled(true);
-          for (int i = 0; i < 8; i++) {
-            await tester.pump(const Duration(milliseconds: 250));
-          }
+        // 焦点驱动需要 FushiFocusRoot（默认 OFF；开关后 main.dart 重建装上壳）。
+        final AppModel appModel = await readyAppModel(tester);
+        await appModel.setExperimentalFocusNavigationEnabled(true);
+        for (int i = 0; i < 8; i++) {
+          await tester.pump(const Duration(milliseconds: 250));
+        }
 
-          // 播种带 cue 的有声书并焦点驱动打开。
-          final String bookKey =
-              await seedAudiobook(tester, title: 'TODO-992 Arrow Audiobook');
-          final FocusDriver driver = FocusDriver(tester);
+        // 播种带 cue 的有声书并焦点驱动打开。
+        final String bookKey = await seedAudiobook(
+          tester,
+          title: 'TODO-992 Arrow Audiobook',
+        );
+        final FocusDriver driver = FocusDriver(tester);
 
-          // 先把焦点落到「书架」标签（与 reader_caret_test 同套路）。
-          final List<Finder> navTargets = findPrimaryNavigationTargets();
-          if (navTargets.isNotEmpty) {
-            await driver.focusWidget(navTargets.first);
-            await driver.activate();
-            await tester.pump(const Duration(seconds: 1));
-          }
-
-          final String entryKey =
-              'srt_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}';
-          final String altEntryKey =
-              'book_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}';
-          Finder bookEntry = find.byKey(ValueKey<String>(entryKey));
-          for (int i = 0; i < 40; i++) {
-            await tester.pump(const Duration(milliseconds: 500));
-            if (bookEntry.evaluate().isNotEmpty) break;
-            final Finder alt = find.byKey(ValueKey<String>(altEntryKey));
-            if (alt.evaluate().isNotEmpty) {
-              bookEntry = alt;
-              break;
-            }
-          }
-          expect(bookEntry, findsOneWidget,
-              reason: 'seeded audiobook must appear on the shelf');
-
-          final bool focusedBook = await driver.focusWidget(bookEntry);
-          expect(focusedBook, isTrue,
-              reason: 'audiobook card must be reachable by focus');
+        // 先把焦点落到「书架」标签（与 reader_caret_test 同套路）。
+        final List<Finder> navTargets = findPrimaryNavigationTargets();
+        if (navTargets.isNotEmpty) {
+          await driver.focusWidget(navTargets.first);
           await driver.activate();
-          await tester.pump(const Duration(seconds: 3));
+          await tester.pump(const Duration(seconds: 1));
+        }
 
-          for (int i = 0; i < 60; i++) {
-            await tester.pump(const Duration(milliseconds: 500));
-            if (_webViewShown()) break;
+        final String entryKey =
+            'srt_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}';
+        final String altEntryKey =
+            'book_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}';
+        Finder bookEntry = find.byKey(ValueKey<String>(entryKey));
+        for (int i = 0; i < 40; i++) {
+          await tester.pump(const Duration(milliseconds: 500));
+          if (bookEntry.evaluate().isNotEmpty) break;
+          final Finder alt = find.byKey(ValueKey<String>(altEntryKey));
+          if (alt.evaluate().isNotEmpty) {
+            bookEntry = alt;
+            break;
           }
-          expect(_webViewShown(), isTrue,
-              reason: 'reader WebView must mount after opening the book');
+        }
+        expect(
+          bookEntry,
+          findsOneWidget,
+          reason: 'seeded audiobook must appear on the shelf',
+        );
 
-          // 有声书 session 必须已 attach 且本章有 cue（_hasActiveAudiobook 真）。
-          final AudiobookPlayerController? controller =
-              await _waitForActiveAudiobook(tester, appModel);
-          expect(controller, isNotNull,
-              reason: 'audiobook session controller must attach to the reader');
-          final AudiobookPlayerController ctrl = controller!;
-          expect(ctrl.chapterCueCount, greaterThanOrEqualTo(3),
-              reason: 'fixture must seed enough cues to skip within bounds '
-                  '(got ${ctrl.chapterCueCount})');
+        final bool focusedBook = await driver.focusWidget(bookEntry);
+        expect(
+          focusedBook,
+          isTrue,
+          reason: 'audiobook card must be reachable by focus',
+        );
+        await driver.activate();
+        await tester.pump(const Duration(seconds: 3));
 
-          // 强制连续滚动模式（报告里的精确场景）。
-          await ReaderFushiSource.instance.setReaderViewMode('continuous');
-          for (int i = 0; i < 6; i++) {
-            await tester.pump(const Duration(milliseconds: 200));
-          }
-          expect(ReaderFushiSource.readerSettings?.isContinuousMode, isTrue,
-              reason: 'reader must be in continuous scroll mode for TODO-992');
+        for (int i = 0; i < 60; i++) {
+          await tester.pump(const Duration(milliseconds: 500));
+          if (_webViewShown()) break;
+        }
+        expect(
+          _webViewShown(),
+          isTrue,
+          reason: 'reader WebView must mount after opening the book',
+        );
 
-          // 建立确定性基线 cue（中段，避开首/末句边界），不经键、纯程序定位。
-          await ctrl.skipToCueIndex(2);
-          for (int i = 0; i < 4; i++) {
-            await tester.pump(const Duration(milliseconds: 200));
-          }
-          final int baseIdx = ctrl.currentCueIdx;
-          expect(baseIdx, 2,
-              reason: 'baseline cue index must be the seeded mid cue');
+        // 有声书 session 必须已 attach 且本章有 cue（_hasActiveAudiobook 真）。
+        final AudiobookPlayerController? controller =
+            await _waitForActiveAudiobook(tester, appModel);
+        expect(
+          controller,
+          isNotNull,
+          reason: 'audiobook session controller must attach to the reader',
+        );
+        final AudiobookPlayerController ctrl = controller!;
+        expect(
+          ctrl.chapterCueCount,
+          greaterThanOrEqualTo(3),
+          reason:
+              'fixture must seed enough cues to skip within bounds '
+              '(got ${ctrl.chapterCueCount})',
+        );
 
-          // 负向对照：默认绑定下按 → 是翻页，不动有声书 cue。
-          // 证明本测试能区分「翻页」与「动句子」（修复前的红行为正是这个：方向键
-          // 只翻页，cue 不动）。改绑前 cue 必须保持 baseIdx。
-          await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-          for (int i = 0; i < 6; i++) {
-            await tester.pump(const Duration(milliseconds: 150));
-          }
-          expect(ctrl.currentCueIdx, baseIdx,
-              reason:
-                  'with DEFAULT page-turn binding, ArrowRight must NOT move '
-                  'the audiobook cue (it turns the page) — this is the pre-fix '
-                  'behaviour the report complained about');
-
-          // 真实改绑：裸 → = 下一句，裸 ← = 上一句。
-          _remapBareKey(appModel, LogicalKeyboardKey.arrowRight,
-              ShortcutAction.audiobookNextSentence);
-          _remapBareKey(appModel, LogicalKeyboardKey.arrowLeft,
-              ShortcutAction.audiobookPrevSentence);
+        // 强制连续滚动模式（报告里的精确场景）。
+        await ReaderFushiSource.instance.setReaderViewMode('continuous');
+        for (int i = 0; i < 6; i++) {
           await tester.pump(const Duration(milliseconds: 200));
+        }
+        expect(
+          ReaderFushiSource.readerSettings?.isContinuousMode,
+          isTrue,
+          reason: 'reader must be in continuous scroll mode for TODO-992',
+        );
 
-          // 健全性：注册表现在把裸 →/← 解析成有声书上/下句（reader+audiobook 组）。
-          expect(
-            appModel.shortcutRegistry.resolveKeyboard(
-                  LogicalKeyboardKey.arrowRight,
-                  modifiers: const <ModifierKey>{},
-                  scope: ShortcutScope.reader,
-                ) ??
-                appModel.shortcutRegistry.resolveKeyboard(
-                  LogicalKeyboardKey.arrowRight,
-                  modifiers: const <ModifierKey>{},
-                  scope: ShortcutScope.audiobook,
-                ),
-            ShortcutAction.audiobookNextSentence,
-            reason:
-                'after remap, bare ArrowRight must resolve to next-sentence',
-          );
+        // 建立确定性基线 cue（中段，避开首/末句边界），不经键、纯程序定位。
+        await ctrl.skipToCueIndex(2);
+        for (int i = 0; i < 4; i++) {
+          await tester.pump(const Duration(milliseconds: 200));
+        }
+        final int baseIdx = ctrl.currentCueIdx;
+        expect(
+          baseIdx,
+          2,
+          reason: 'baseline cue index must be the seeded mid cue',
+        );
 
-          // 正向断言①：改绑后按 → 前进一句（TODO-992 修复点）。
-          await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-          for (int i = 0; i < 6; i++) {
-            await tester.pump(const Duration(milliseconds: 150));
-          }
-          final int afterNext = ctrl.currentCueIdx;
-          debugPrint('[arrow-skip] base=$baseIdx afterNext=$afterNext');
-          expect(afterNext, baseIdx + 1,
-              reason:
-                  'remapped ArrowRight must advance the audiobook cue by one '
-                  'sentence in continuous scroll mode (TODO-992 fix); pre-fix it '
-                  'would have only turned the page and left cue at $baseIdx');
+        // 负向对照：默认绑定下按 → 是翻页，不动有声书 cue。
+        // 证明本测试能区分「翻页」与「动句子」（修复前的红行为正是这个：方向键
+        // 只翻页，cue 不动）。改绑前 cue 必须保持 baseIdx。
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        for (int i = 0; i < 6; i++) {
+          await tester.pump(const Duration(milliseconds: 150));
+        }
+        expect(
+          ctrl.currentCueIdx,
+          baseIdx,
+          reason:
+              'with DEFAULT page-turn binding, ArrowRight must NOT move '
+              'the audiobook cue (it turns the page) — this is the pre-fix '
+              'behaviour the report complained about',
+        );
 
-          // 正向断言②：改绑后按 ← 回退一句。
-          await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
-          for (int i = 0; i < 6; i++) {
-            await tester.pump(const Duration(milliseconds: 150));
-          }
-          final int afterPrev = ctrl.currentCueIdx;
-          debugPrint('[arrow-skip] afterNext=$afterNext afterPrev=$afterPrev');
-          expect(afterPrev, afterNext - 1,
-              reason:
-                  'remapped ArrowLeft must retreat the audiobook cue by one '
-                  'sentence (back to $baseIdx)');
-          expect(afterPrev, baseIdx,
-              reason: 'next then prev returns to the baseline cue');
+        // 真实改绑：裸 → = 下一句，裸 ← = 上一句。
+        _remapBareKey(
+          appModel,
+          LogicalKeyboardKey.arrowRight,
+          ShortcutAction.audiobookNextSentence,
+        );
+        _remapBareKey(
+          appModel,
+          LogicalKeyboardKey.arrowLeft,
+          ShortcutAction.audiobookPrevSentence,
+        );
+        await tester.pump(const Duration(milliseconds: 200));
 
-          debugPrint('[arrow-skip] PASS: in continuous scroll mode, remapped '
-              'Left/Right drove audiobook prev/next sentence '
-              '(base=$baseIdx next=$afterNext prev=$afterPrev) instead of only '
-              'turning the page (TODO-992 / BUG-466).');
-        },
-      );
-    },
-  );
+        // 健全性：注册表现在把裸 →/← 解析成有声书上/下句（reader+audiobook 组）。
+        expect(
+          appModel.shortcutRegistry.resolveKeyboard(
+                LogicalKeyboardKey.arrowRight,
+                modifiers: const <ModifierKey>{},
+                scope: ShortcutScope.reader,
+              ) ??
+              appModel.shortcutRegistry.resolveKeyboard(
+                LogicalKeyboardKey.arrowRight,
+                modifiers: const <ModifierKey>{},
+                scope: ShortcutScope.audiobook,
+              ),
+          ShortcutAction.audiobookNextSentence,
+          reason: 'after remap, bare ArrowRight must resolve to next-sentence',
+        );
+
+        // 正向断言①：改绑后按 → 前进一句（TODO-992 修复点）。
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        for (int i = 0; i < 6; i++) {
+          await tester.pump(const Duration(milliseconds: 150));
+        }
+        final int afterNext = ctrl.currentCueIdx;
+        debugPrint('[arrow-skip] base=$baseIdx afterNext=$afterNext');
+        expect(
+          afterNext,
+          baseIdx + 1,
+          reason:
+              'remapped ArrowRight must advance the audiobook cue by one '
+              'sentence in continuous scroll mode (TODO-992 fix); pre-fix it '
+              'would have only turned the page and left cue at $baseIdx',
+        );
+
+        // 正向断言②：改绑后按 ← 回退一句。
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        for (int i = 0; i < 6; i++) {
+          await tester.pump(const Duration(milliseconds: 150));
+        }
+        final int afterPrev = ctrl.currentCueIdx;
+        debugPrint('[arrow-skip] afterNext=$afterNext afterPrev=$afterPrev');
+        expect(
+          afterPrev,
+          afterNext - 1,
+          reason:
+              'remapped ArrowLeft must retreat the audiobook cue by one '
+              'sentence (back to $baseIdx)',
+        );
+        expect(
+          afterPrev,
+          baseIdx,
+          reason: 'next then prev returns to the baseline cue',
+        );
+
+        debugPrint(
+          '[arrow-skip] PASS: in continuous scroll mode, remapped '
+          'Left/Right drove audiobook prev/next sentence '
+          '(base=$baseIdx next=$afterNext prev=$afterPrev) instead of only '
+          'turning the page (TODO-992 / BUG-466).',
+        );
+      },
+    );
+  });
 }

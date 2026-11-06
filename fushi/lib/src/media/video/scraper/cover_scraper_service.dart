@@ -81,10 +81,10 @@ class CoverScraperService {
     required CoverMetaStore coverMetaStore,
     SidecarGeneratedArtifactChecker? generatedSidecarArtifactChecker,
     Directory? coversDirectory,
-  })  : _repo = repository,
-        _coverMeta = coverMetaStore,
-        _generatedSidecarArtifactChecker = generatedSidecarArtifactChecker,
-        _coversDirectory = coversDirectory;
+  }) : _repo = repository,
+       _coverMeta = coverMetaStore,
+       _generatedSidecarArtifactChecker = generatedSidecarArtifactChecker,
+       _coversDirectory = coversDirectory;
 
   final VideoBookRepository _repo;
   final CoverMetaStore _coverMeta;
@@ -152,11 +152,9 @@ class CoverScraperService {
 
   /// 批量检查 sidecar。只允许覆盖自动抽帧占位封面；用户封面、历史刮削封面和
   /// 多成员合集中的子篇均保持不动。
-  Stream<BatchScrapeProgress> scrapeLibrary(
-    List<VideoBookRow> books,
-  ) async* {
-    final Map<String, int> memberCollectionIds =
-        await _repo.multiMemberCollectionIds();
+  Stream<BatchScrapeProgress> scrapeLibrary(List<VideoBookRow> books) async* {
+    final Map<String, int> memberCollectionIds = await _repo
+        .multiMemberCollectionIds();
     for (int index = 0; index < books.length; index++) {
       final VideoBookRow book = books[index];
       ScrapeOutcome outcome;
@@ -166,7 +164,8 @@ class CoverScraperService {
         } else {
           final CoverMeta? meta = await _coverMeta.get(book.bookUid);
           final CoverOrigin origin = meta?.origin ?? CoverOrigin.autoFrame;
-          final bool allowed = memberCollectionIds[book.bookUid] == null &&
+          final bool allowed =
+              memberCollectionIds[book.bookUid] == null &&
               origin == CoverOrigin.autoFrame;
           outcome = allowed
               ? await applySidecarCover(book, requireBatchEligibility: true)
@@ -188,10 +187,7 @@ class CoverScraperService {
     final Directory covers = _coversDirectory ?? await VideoStorage.coversDir();
     await covers.create(recursive: true);
     final String finalPath = p.join(covers.path, videoCoverFileName(bookUid));
-    await MediaCoverService.applyCoverFile(
-      source: poster,
-      destPath: finalPath,
-    );
+    await MediaCoverService.applyCoverFile(source: poster, destPath: finalPath);
     return finalPath;
   }
 

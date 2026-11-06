@@ -42,7 +42,8 @@ void main() {
     expect(
       file.existsSync(),
       isTrue,
-      reason: '守卫目标文件不存在：$relPath（文件被移动/改名时本守卫必须同步更新，'
+      reason:
+          '守卫目标文件不存在：$relPath（文件被移动/改名时本守卫必须同步更新，'
           '而不是被静默跳过）',
     );
     return maskComments(file.readAsStringSync());
@@ -75,7 +76,8 @@ void main() {
     expect(
       containsCodeLine(body, gate),
       isTrue,
-      reason: '浮层开着时 barrier 盖在控制条之上，唤起控制条只会在背后打架；且 '
+      reason:
+          '浮层开着时 barrier 盖在控制条之上，唤起控制条只会在背后打架；且 '
           '_handleSubtitleHover 收到字幕 hover 就调本方法，不早退会形成自激环。'
           '必须与其余四个门控同族地早退。',
     );
@@ -87,7 +89,8 @@ void main() {
     expect(
       body.indexOf(gate),
       lessThan(body.indexOf(exit)),
-      reason: '门控必须排在发信号之前——信号本身分不出「续命」和「唤起」，'
+      reason:
+          '门控必须排在发信号之前——信号本身分不出「续命」和「唤起」，'
           '排在后面等于没门',
     );
   });
@@ -102,7 +105,8 @@ void main() {
     expect(
       writes.length,
       2,
-      reason: '记账点数量变了（当前 ${writes.length} 处）。新增/删除记账点时必须同步'
+      reason:
+          '记账点数量变了（当前 ${writes.length} 处）。新增/删除记账点时必须同步'
           '本守卫——页面根 Listener 与浮层 barrier 两条 hover 路径缺一都会让 Shift 反查有盲区。',
     );
 
@@ -112,7 +116,8 @@ void main() {
     expect(
       containsIdentifier(src, '_isSyntheticControlsHover'),
       isFalse,
-      reason: '按设备号过滤 hover 的 helper 不得回来：它存在的唯一理由是页面自己在造'
+      reason:
+          '按设备号过滤 hover 的 helper 不得回来：它存在的唯一理由是页面自己在造'
           '合成指针事件，而那正是 BUG-2453 幽灵悬停的来源',
     );
     for (final Match m in writes) {
@@ -122,7 +127,8 @@ void main() {
       expect(
         before.contains('event.device'),
         isFalse,
-        reason: '偏移 ${m.start} 处的 _lastGlobalPointerPos 写入前又出现了按 event.device '
+        reason:
+            '偏移 ${m.start} 处的 _lastGlobalPointerPos 写入前又出现了按 event.device '
             '的分流：BUG-2453 起页面不合成指针事件，记账点无需也不得区分设备号。',
       );
     }
@@ -143,7 +149,8 @@ void main() {
     expect(
       body.contains('_lookupOverlayActive.value'),
       isTrue,
-      reason: '查词浮层是本页最需要光标的覆盖层（点词/点发音/拖把手/滚正文），'
+      reason:
+          '查词浮层是本页最需要光标的覆盖层（点词/点发音/拖把手/滚正文），'
           '不在 _hasVideoOverlay 里就会在控制条自动淡出时被 _setCursorHidden(true) '
           '连同弹窗一起把 OS 光标吃掉。',
     );
@@ -154,7 +161,8 @@ void main() {
         '_lookupOverlayActive.addListener(_applyControlsVisibilityFromMediaKit)',
       ),
       isTrue,
-      reason: '_applyControlsVisibilityFromMediaKit 的输入必须全部被订阅，'
+      reason:
+          '_applyControlsVisibilityFromMediaKit 的输入必须全部被订阅，'
           '否则弹窗开/关时光标策略停在上一次的结论上（改了也白改）。',
     );
     expect(
@@ -211,7 +219,8 @@ void main() {
     expect(
       layoutSrc.substring(mergeAt, mergeEnd).contains('_lookupOverlayActive'),
       isTrue,
-      reason: '_lookupOverlayActive 进了 theme 判据却没进 merge 列表 = 哑火：'
+      reason:
+          '_lookupOverlayActive 进了 theme 判据却没进 merge 列表 = 哑火：'
           '弹窗一开 theme 仍是上一轮的 true，光标照样被 fork 那层 cursor:none 吃掉。',
     );
   });

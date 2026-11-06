@@ -101,9 +101,8 @@ Color fushiStatusColor(BuildContext context, FushiStatusTone tone) {
     };
   }
   final bool dark = cs.brightness == Brightness.dark;
-  Color harmonized(int light, int darkArgb) => Color(
-    Blend.harmonize(dark ? darkArgb : light, cs.primary.toARGB32()),
-  );
+  Color harmonized(int light, int darkArgb) =>
+      Color(Blend.harmonize(dark ? darkArgb : light, cs.primary.toARGB32()));
   return switch (tone) {
     FushiStatusTone.success => harmonized(0xFF2E7D32, 0xFF81C995),
     FushiStatusTone.warning => harmonized(0xFFB26A00, 0xFFFFB95C),
@@ -214,8 +213,8 @@ class FushiStepNumberBadge extends StatelessWidget {
         border: eink && !active
             ? Border.all(color: cs.outline)
             : (!active && isGlassDesign(context)
-                ? Border.all(color: appleColorsOf(context).separator)
-                : null),
+                  ? Border.all(color: appleColorsOf(context).separator)
+                  : null),
       ),
       child: Text(
         '$number',

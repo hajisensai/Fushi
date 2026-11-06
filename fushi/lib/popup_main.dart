@@ -4,14 +4,22 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show buildFushiFallbackTheme;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/pages/implementations/popup_dictionary_loading_view.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
+    show dictionaryPopupWebViewUsesHybridComposition;
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi/src/profile/profile_view_model.dart'
+    show invalidateAnkiStateAfterPrefsChange;
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/utils/misc/popup_channel.dart';
 import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
@@ -21,6 +29,9 @@ void popupMain() {
   runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      // BUG-2790：本引擎缓存复用、关窗只 detach，查词 WebView 必须走 TLHC，见
+      // [dictionaryPopupWebViewUsesHybridComposition]。
+      dictionaryPopupWebViewUsesHybridComposition = false;
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
       final platformServices = PlatformServices.forCurrentPlatform();
@@ -39,6 +50,9 @@ void popupMain() {
 
       await FushiDicts.preloadTransforms();
       final appModel = container.read(appProvider);
+      // 弹窗进程的制卡结果 toast 同样听「制卡提示」开关（偏好在 initialise 后才有值，
+      // 闭包每次现读）。
+      FushiToast.mineNoticeFilter = appModel.mineNoticeShown;
       unawaited(appModel.initialiseForDictionaryPopup());
     },
     (exception, stack) {
@@ -103,10 +117,15 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
               // 紧随其后投递新词的 setState——否则常驻热页收不到新词、didUpdateWidget 不触发，
               // 弹窗卡在旧词甚至配合 _isClosing 残留一并关不掉。记日志后带旧偏好缓存继续。
               try {
-                await appModel.refreshPrefCacheIfChanged();
+                // 偏好真变过（主 app 改了牌组 / Anki 后端 / 切了 Profile）：再丢掉
+                // 本进程里由 Anki 设置派生的 Riverpod 状态，下一个词才用新配置
+                // （fiwDIpFep7）。
+                if (await appModel.refreshForWarmDictionaryPopup() && mounted) {
+                  invalidateAnkiStateAfterPrefsChange(ref);
+                }
               } on Object catch (e, stack) {
                 ErrorLogService.instance.log(
-                  'popupMain.refreshPrefCacheIfChanged',
+                  'popupMain.refreshForWarmDictionaryPopup',
                   e,
                   stack,
                 );
@@ -229,6 +248,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
           sourceCharIndex: _sourceCharIndex,
           sourceBlock: _sourceBlock?.text,
           sourceBlockOffset: _sourceBlock?.offset ?? -1,
+          cardImage: _sourceBlock?.cardImage,
           // TODO-872：浮动字幕条点字带屏幕锚点 → 弹窗贴被查字旁；其它入口 null → topCenter。
           // TODO-708 P1 ⑤：物理→逻辑换算含状态栏平移在此处（build，视图 metrics 稳定）完成。
           anchorRect: _toLogicalRect(_anchorPhysical),

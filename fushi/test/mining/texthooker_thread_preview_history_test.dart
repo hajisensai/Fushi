@@ -14,14 +14,13 @@ void main() {
     int id,
     String text, {
     int observedLineCount = 1,
-  }) =>
-      TexthookerThreadPreview(
-        nativeThreadId: id,
-        text: text,
-        observedLineCount: observedLineCount,
-        observedArtifactCount: 0,
-        isArtifact: false,
-      );
+  }) => TexthookerThreadPreview(
+    nativeThreadId: id,
+    text: text,
+    observedLineCount: observedLineCount,
+    observedArtifactCount: 0,
+    isArtifact: false,
+  );
 
   TexthookerService seeded() {
     final TexthookerService service = TexthookerService.test();

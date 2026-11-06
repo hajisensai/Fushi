@@ -1,0 +1,9 @@
+# Repo-wide rustfmt config for every Rust crate under native/ (rustfmt looks
+# for this file by walking up from each source file). Checked in CI by
+# .github/workflows/rust-format.yml via `bash tool/rust_format.sh check`.
+#
+# style_edition is pinned explicitly so the formatting does not silently change
+# when a crate bumps its language `edition` in Cargo.toml (rustfmt otherwise
+# derives the style from the edition). "2024" is the newest value stable
+# rustfmt accepts (1.9.0 / Rust 1.95); "2027" is still nightly-only.
+style_edition = "2024"

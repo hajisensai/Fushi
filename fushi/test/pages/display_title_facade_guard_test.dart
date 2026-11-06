@@ -77,12 +77,17 @@ void main() {
     test('「继续」书卡显示名走 override 门面（BUG-1018 A1）', () {
       expect(
         dashboard,
-        contains('ReaderFushiSource.instance.getDisplayTitleFromMediaItem(item)'),
+        contains(
+          'ReaderFushiSource.instance.getDisplayTitleFromMediaItem(item)',
+        ),
       );
     });
 
     test('「继续」游戏卡显示名用库内显示名（改名 / 刮削后首页同步）', () {
-      final String fn = methodBody(dashboard, '_ContinueEntry _gameContinueEntry(');
+      final String fn = methodBody(
+        dashboard,
+        '_ContinueEntry _gameContinueEntry(',
+      );
       expect(fn, contains('title: game.displayName'));
     });
   });

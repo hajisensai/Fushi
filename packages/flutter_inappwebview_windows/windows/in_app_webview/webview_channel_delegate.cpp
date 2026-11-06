@@ -106,7 +106,9 @@ namespace flutter_inappwebview_plugin
       result->Success(make_fl_value(webView->getUrl()));
     }
     else if (string_equals(methodName, "getTitle")) {
-      result->Success(make_fl_value(webView->getUrl()));
+      // 上游 0.6.0 这里误调了 getUrl()：Windows 上 controller.getTitle() 恒返回地址，
+      // 浏览器标签名 / 书签名全变成网址。
+      result->Success(make_fl_value(webView->getTitle()));
     }
     else if (string_equals(methodName, "loadUrl")) {
       auto urlRequest = std::make_unique<URLRequest>(get_fl_map_value<flutter::EncodableMap>(arguments, "urlRequest"));
@@ -421,6 +423,16 @@ namespace flutter_inappwebview_plugin
     channel->InvokeMethod("onConsoleMessage", std::move(arguments));
   }
 
+  void WebViewChannelDelegate::onDownloadStartRequest(std::shared_ptr<DownloadStartRequest> request) const
+  {
+    if (!channel) {
+      return;
+    }
+
+    auto arguments = std::make_unique<flutter::EncodableValue>(request->toEncodableMap());
+    channel->InvokeMethod("onDownloadStartRequest", std::move(arguments));
+  }
+
   void WebViewChannelDelegate::onDevToolsProtocolEventReceived(const std::string& eventName, const std::string& data) const
   {
     if (!channel) {
@@ -465,6 +477,23 @@ namespace flutter_inappwebview_plugin
 
     auto arguments = std::make_unique<flutter::EncodableValue>();
     channel->InvokeMethod("onCloseWindow", std::move(arguments));
+  }
+
+  // WebView2 ProcessFailed → 跨平台 onRenderProcessGone（RenderProcessGoneDetail 只认 didCrash /
+  // rendererPriorityAtExit；Windows 没有 renderer 优先级，传 null）。processFailedKind 是附加诊断
+  // 字段（"render" / "browser"），Dart 侧 fromMap 忽略未知键。
+  void WebViewChannelDelegate::onRenderProcessGone(const bool& didCrash, const std::string& processFailedKind) const
+  {
+    if (!channel) {
+      return;
+    }
+
+    auto arguments = std::make_unique<flutter::EncodableValue>(flutter::EncodableMap{
+      {"didCrash", make_fl_value(didCrash)},
+      {"rendererPriorityAtExit", make_fl_value()},
+      {"processFailedKind", make_fl_value(processFailedKind)},
+      });
+    channel->InvokeMethod("onRenderProcessGone", std::move(arguments));
   }
 
   void WebViewChannelDelegate::onPermissionRequest(const std::string& origin, const std::vector<int64_t>& resources, std::unique_ptr<PermissionRequestCallback> callback) const

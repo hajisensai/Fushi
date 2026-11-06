@@ -10,10 +10,12 @@ import 'video_fushi_page_source_corpus.dart';
 /// HomeVideoPage 页头不得重新长出这两个入口；收藏夹与统计入口都已收敛到首页
 /// dashboard，两个库页页头都不再挂。
 void main() {
-  final File videoSrc =
-      File('lib/src/pages/implementations/home_video_page.dart');
-  final File shelfSrc =
-      File('lib/src/pages/implementations/reader_fushi_history_page.dart');
+  final File videoSrc = File(
+    'lib/src/pages/implementations/home_video_page.dart',
+  );
+  final File shelfSrc = File(
+    'lib/src/pages/implementations/reader_fushi_history_page.dart',
+  );
 
   /// 截取某文件中 [_buildPageHeader] 方法体内 actions 列表字面量的源码，顺序断言只在
   /// 该区间内做，避免命中页面其它位置的同名 tooltip / 图标。
@@ -43,12 +45,19 @@ void main() {
     if (actionsIdx < 0 || (inlineIdx >= 0 && inlineIdx < actionsIdx)) {
       actionsIdx = inlineIdx;
     }
-    expect(actionsIdx, greaterThanOrEqualTo(0),
-        reason: '${file.path} 的 _buildPageHeader 应有 actions 列表字面量'
-            '（`actions: <Widget>[` 或 `List<Widget> actions = <Widget>[`）');
+    expect(
+      actionsIdx,
+      greaterThanOrEqualTo(0),
+      reason:
+          '${file.path} 的 _buildPageHeader 应有 actions 列表字面量'
+          '（`actions: <Widget>[` 或 `List<Widget> actions = <Widget>[`）',
+    );
     final int openIdx = text.indexOf('[', actionsIdx);
-    expect(openIdx, greaterThanOrEqualTo(0),
-        reason: '${file.path} 的 actions 列表应有起始方括号');
+    expect(
+      openIdx,
+      greaterThanOrEqualTo(0),
+      reason: '${file.path} 的 actions 列表应有起始方括号',
+    );
     int depth = 0;
     int closeIdx = -1;
     for (int i = openIdx; i < text.length; i++) {
@@ -63,8 +72,11 @@ void main() {
         }
       }
     }
-    expect(closeIdx, greaterThan(openIdx),
-        reason: '${file.path} 的 actions 列表应正常闭合');
+    expect(
+      closeIdx,
+      greaterThan(openIdx),
+      reason: '${file.path} 的 actions 列表应正常闭合',
+    );
     return text.substring(openIdx, closeIdx);
   }
 
@@ -78,12 +90,13 @@ void main() {
     final int statsIdx = orderOf(block, 't.reading_statistics');
     final int scrapeIdx = orderOf(block, 't.scrape_all');
     expect(importIdx, greaterThanOrEqualTo(0), reason: '书架应有导入按钮');
-    expect(collectionsIdx, -1,
-        reason: '收藏夹入口已收敛到首页 dashboard（2026-10-14），书架顶栏不再挂');
-    expect(statsIdx, -1,
-        reason: '统计入口已收敛到首页 dashboard（2026-09-01），书架顶栏不再挂');
-    expect(scrapeIdx, -1,
-        reason: '书 / 漫画不需要批量刮削（2026-10-14），全部刮削只留视频与游戏');
+    expect(
+      collectionsIdx,
+      -1,
+      reason: '收藏夹入口已收敛到首页 dashboard（2026-10-14），书架顶栏不再挂',
+    );
+    expect(statsIdx, -1, reason: '统计入口已收敛到首页 dashboard（2026-09-01），书架顶栏不再挂');
+    expect(scrapeIdx, -1, reason: '书 / 漫画不需要批量刮削（2026-10-14），全部刮削只留视频与游戏');
   });
 
   test('视频顶栏移除导入/全部刮削/统计/收藏夹', () {
@@ -94,10 +107,12 @@ void main() {
     final int statsIdx = orderOf(block, 't.video_statistics');
     expect(importIdx, -1, reason: '视频常规入库应统一从来源添加文件夹');
     expect(scrapeIdx, -1, reason: '视频全部刮削入口应位于来源页');
-    expect(collectionsIdx, -1,
-        reason: '收藏夹入口已收敛到首页 dashboard（2026-10-14），视频顶栏不再挂');
-    expect(statsIdx, -1,
-        reason: '统计入口已收敛到首页 dashboard（2026-09-01），视频顶栏不再挂');
+    expect(
+      collectionsIdx,
+      -1,
+      reason: '收藏夹入口已收敛到首页 dashboard（2026-10-14），视频顶栏不再挂',
+    );
+    expect(statsIdx, -1, reason: '统计入口已收敛到首页 dashboard（2026-09-01），视频顶栏不再挂');
   });
 
   test('视频空库只提供前往「导入」视图的 CTA，不提供单视频导入', () {
@@ -118,18 +133,21 @@ void main() {
     // TODO-590 batch11：两套 controls 主题已搬到 controls_theme.part.dart，改读合并语料
     // （+端点 `\n}`）；topRight slot 渲染的两处调用现落在 part 末段，须读主壳+全部 part。
     final String text = readVideoFushiSource();
-    final List<VideoControlItem> topRightItems =
-        VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
+    final List<VideoControlItem> topRightItems = VideoControlLayout
+        .currentChrome
+        .itemsIn(VideoControlSlot.topRight);
     final int screenshot = topRightItems.indexOf(VideoControlItem.screenshot);
     expect(screenshot, greaterThanOrEqualTo(0), reason: '顶栏应保留截图按钮');
     // 2026-10-06 遮挡最小化：片段导出默认移出播放器、常驻右上「⋯」，仍可拖回。
     expect(topRightItems.contains(VideoControlItem.clipExport), isFalse);
-    expect(VideoControlLayout.currentChrome.removedItems,
-        contains(VideoControlItem.clipExport));
     expect(
-      RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight')
-          .allMatches(text)
-          .length,
+      VideoControlLayout.currentChrome.removedItems,
+      contains(VideoControlItem.clipExport),
+    );
+    expect(
+      RegExp(
+        r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight',
+      ).allMatches(text).length,
       greaterThanOrEqualTo(2),
       reason: '桌面与移动顶栏都应渲染 topRight slot',
     );
@@ -144,17 +162,14 @@ void main() {
     // .currentChrome 的文档）：字幕轨挪到底栏右，设置从右侧栏挪到右上；右上 =
     // 音轨 / 选集 / 章节 / 截图 / 片段导出 / 设置，窄窗按优先级收进「⋮」。
     // screenshot 与 clipExport 保持相邻（受上一个守卫钉死）。
-    final List<VideoControlItem> topRight =
-        VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
-    expect(
-        topRight,
-        <VideoControlItem>[
-          VideoControlItem.episodeList,
-          VideoControlItem.chapterList,
-          VideoControlItem.screenshot,
-          VideoControlItem.settings,
-        ],
-        reason: '默认右上角只留常用入口，其余进「⋯」');
+    final List<VideoControlItem> topRight = VideoControlLayout.currentChrome
+        .itemsIn(VideoControlSlot.topRight);
+    expect(topRight, <VideoControlItem>[
+      VideoControlItem.episodeList,
+      VideoControlItem.chapterList,
+      VideoControlItem.screenshot,
+      VideoControlItem.settings,
+    ], reason: '默认右上角只留常用入口，其余进「⋯」');
 
     // 上 / 下一集、上 / 下一章、音轨、片段导出默认移出播放器（常驻右上「⋯」），
     // 可从编辑器拖回。
@@ -167,12 +182,21 @@ void main() {
       VideoControlItem.clipExport,
     ];
     for (final VideoControlItem nav in trimmedNav) {
-      expect(VideoControlLayout.currentChrome.isOnPlayer(nav), isFalse,
-          reason: '$nav 默认不应在播放器可见槽');
-      expect(VideoControlLayout.currentChrome.removedItems, contains(nav),
-          reason: '$nav 默认落 removedItems，可从编辑器面板拖回（非从模型删除）');
-      expect(nav.canMoveToSlot(VideoControlSlot.topRight), isTrue,
-          reason: '$nav 仍可被用户加回 topRight');
+      expect(
+        VideoControlLayout.currentChrome.isOnPlayer(nav),
+        isFalse,
+        reason: '$nav 默认不应在播放器可见槽',
+      );
+      expect(
+        VideoControlLayout.currentChrome.removedItems,
+        contains(nav),
+        reason: '$nav 默认落 removedItems，可从编辑器面板拖回（非从模型删除）',
+      );
+      expect(
+        nav.canMoveToSlot(VideoControlSlot.topRight),
+        isTrue,
+        reason: '$nav 仍可被用户加回 topRight',
+      );
     }
   });
 }

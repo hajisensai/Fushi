@@ -120,20 +120,19 @@ class LapisCustomBlock {
     LapisBlockAnchor? anchor,
     List<String>? fields,
     LapisVisualRule? rule,
-  }) =>
-      LapisCustomBlock(
-        id: id,
-        anchor: anchor ?? this.anchor,
-        fields: fields ?? this.fields,
-        rule: rule ?? this.rule,
-      );
+  }) => LapisCustomBlock(
+    id: id,
+    anchor: anchor ?? this.anchor,
+    fields: fields ?? this.fields,
+    rule: rule ?? this.rule,
+  );
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'id': id,
-        'anchor': anchor.wireName,
-        'fields': fields,
-        if (!rule.isDefault) 'rule': rule.toJson(),
-      };
+    'id': id,
+    'anchor': anchor.wireName,
+    'fields': fields,
+    if (!rule.isDefault) 'rule': rule.toJson(),
+  };
 
   /// 解析一个区域；id / 锚点 / 字段任一不合法就返回 null（整条丢弃，不猜）。
   static LapisCustomBlock? fromJson(Object? value) {
@@ -141,8 +140,9 @@ class LapisCustomBlock {
     final Object? rawId = value['id'];
     if (rawId is! String || !isValidLapisBlockId(rawId)) return null;
     final Object? rawAnchor = value['anchor'];
-    final LapisBlockAnchor? anchor =
-        rawAnchor is String ? LapisBlockAnchor.fromWireName(rawAnchor) : null;
+    final LapisBlockAnchor? anchor = rawAnchor is String
+        ? LapisBlockAnchor.fromWireName(rawAnchor)
+        : null;
     if (anchor == null) return null;
     final List<String> fields = (value['fields'] as List<dynamic>? ?? const [])
         .whereType<String>()
@@ -198,10 +198,14 @@ List<LapisCustomBlock> lapisBlocksFromJson(Object? value) {
 /// 可能变成真正的空元素——生成时不留缩进空白，配合 [lapisBlocksBaseCss] 的
 /// `:empty` 规则，空区域不会在卡上留一条空白带。
 String buildLapisBlockHtml(LapisCustomBlock block) {
-  final Iterable<String> parts =
-      block.fields.where(isValidLapisBlockFieldName).map((String f) => '{{#$f}}'
-          '<div class="hibiki-block-field" data-hibiki-field="$f">{{$f}}</div>'
-          '{{/$f}}');
+  final Iterable<String> parts = block.fields
+      .where(isValidLapisBlockFieldName)
+      .map(
+        (String f) =>
+            '{{#$f}}'
+            '<div class="hibiki-block-field" data-hibiki-field="$f">{{$f}}</div>'
+            '{{/$f}}',
+      );
   return '<div class="hibiki-block" data-hibiki-block="${block.id}">'
       '${parts.join()}'
       '</div>';
@@ -215,7 +219,8 @@ String buildLapisBlockHtml(LapisCustomBlock block) {
 /// 直接继承，加进来的内容会莫名其妙居中（用户反馈「对齐也有 bug 没自动居左」）。
 /// 释义块在真卡上也是居左的，跟着它走观感一致。想要别的对齐用区域自己的对齐
 /// 控件改——那条规则带 `!important`，压得过这里。
-const String lapisBlocksBaseCss = '.hibiki-block:empty {\n'
+const String lapisBlocksBaseCss =
+    '.hibiki-block:empty {\n'
     '  display: none;\n'
     '}\n'
     '.hibiki-block {\n'
@@ -237,11 +242,14 @@ List<String> buildLapisBlocksCss(List<LapisCustomBlock> blocks) {
       rules.add('$selector {\n${declarations.join('\n')}\n}');
     }
     if (block.rule.fontScalePercent != 100) {
-      final String factor =
-          (block.rule.fontScalePercent / 100).toStringAsFixed(2);
-      rules.add('$selector {\n'
-          '  font-size: calc(var(--main-def-size) * $factor) !important;\n'
-          '}');
+      final String factor = (block.rule.fontScalePercent / 100).toStringAsFixed(
+        2,
+      );
+      rules.add(
+        '$selector {\n'
+        '  font-size: calc(var(--main-def-size) * $factor) !important;\n'
+        '}',
+      );
     }
   }
   return rules;
@@ -265,12 +273,11 @@ List<String> buildLapisBlocksCss(List<LapisCustomBlock> blocks) {
 String composeLapisBackTemplate(
   List<LapisCustomBlock> blocks, {
   String? baseBack,
-}) =>
-    insertLapisBlocksIntoBackHtml(
-      stripLapisBlocksSections(baseBack ?? LapisNoteType.back),
-      blocks,
-      renderBlock: buildLapisBlockHtml,
-    );
+}) => insertLapisBlocksIntoBackHtml(
+  stripLapisBlocksSections(baseBack ?? LapisNoteType.back),
+  blocks,
+  renderBlock: buildLapisBlockHtml,
+);
 
 /// 剥掉背面模板里**全部**由 Fushi 托管的区域区段。
 ///
@@ -318,8 +325,9 @@ String insertLapisBlocksIntoBackHtml(
   if (blocks.isEmpty) return backHtml;
   String result = backHtml;
   for (final LapisBlockAnchor anchor in LapisBlockAnchor.values) {
-    final List<LapisCustomBlock> here =
-        blocks.where((LapisCustomBlock b) => b.anchor == anchor).toList();
+    final List<LapisCustomBlock> here = blocks
+        .where((LapisCustomBlock b) => b.anchor == anchor)
+        .toList();
     if (here.isEmpty) continue;
     final int index = result.indexOf(anchor.anchorText);
     if (index < 0) {
@@ -333,8 +341,9 @@ String insertLapisBlocksIntoBackHtml(
       ...here.map(renderBlock),
       lapisBlocksEndMarker,
     ].join('\n');
-    final int at =
-        anchor.insertAfter ? index + anchor.anchorText.length : index;
+    final int at = anchor.insertAfter
+        ? index + anchor.anchorText.length
+        : index;
     result = '${result.substring(0, at)}\n$section\n${result.substring(at)}';
   }
   return result;
@@ -380,31 +389,31 @@ LapisStylingDecision decideLapisTemplateAction({
 ///
 /// 只认名字，不再要求「整个卡型只有一张模板」——用户给 Lapis 加过第二张卡模板
 /// 不是我们该拦的事，我们只改自己认得的那一张，其余原样带回。
-AnkiCardTemplate? lapisCardTemplateOf(AnkiNoteTypeDefinition def) =>
-    def.templates
-        .where((AnkiCardTemplate t) => t.name == LapisNoteType.cardName)
-        .firstOrNull;
+AnkiCardTemplate? lapisCardTemplateOf(AnkiNoteTypeDefinition def) => def
+    .templates
+    .where((AnkiCardTemplate t) => t.name == LapisNoteType.cardName)
+    .firstOrNull;
 
 /// 把 [def] 的模板列表里 Lapis 那张的背面换成 [back]，**其余模板逐字节原样带回**
 /// （含它们的正面）。推送整份列表时不会顺手抹掉用户的其它卡模板。
 List<AnkiCardTemplate> lapisTemplatesWithBack(
   AnkiNoteTypeDefinition def,
   String back,
-) =>
-    def.templates
-        .map((AnkiCardTemplate t) => t.name == LapisNoteType.cardName
-            ? AnkiCardTemplate(name: t.name, front: t.front, back: back)
-            : t)
-        .toList();
+) => def.templates
+    .map(
+      (AnkiCardTemplate t) => t.name == LapisNoteType.cardName
+          ? AnkiCardTemplate(name: t.name, front: t.front, back: back)
+          : t,
+    )
+    .toList();
 
 /// 期望推送到 Anki 的完整卡模板列表（正面不变，背面按区域重算）。
 List<AnkiCardTemplate> composeLapisCardTemplates(
   List<LapisCustomBlock> blocks,
-) =>
-    <AnkiCardTemplate>[
-      AnkiCardTemplate(
-        name: LapisNoteType.cardName,
-        front: LapisNoteType.front,
-        back: composeLapisBackTemplate(blocks),
-      ),
-    ];
+) => <AnkiCardTemplate>[
+  AnkiCardTemplate(
+    name: LapisNoteType.cardName,
+    front: LapisNoteType.front,
+    back: composeLapisBackTemplate(blocks),
+  ),
+];

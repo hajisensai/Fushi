@@ -82,8 +82,9 @@ void main() {
   });
 
   test('不注入回调时栈操作不抛（纯逻辑测试不受影响）', () {
-    final DictionaryPopupController plain =
-        DictionaryPopupController(lowMemory: false);
+    final DictionaryPopupController plain = DictionaryPopupController(
+      lowMemory: false,
+    );
     expect(
       () => plain.beginTop(
         term: 't',

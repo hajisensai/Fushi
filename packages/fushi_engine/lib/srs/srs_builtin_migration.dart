@@ -1,10 +1,10 @@
 /// Lapis → Fushi 卡片 一键迁移（复用「更改笔记类型」的存储层操作）。
 ///
-/// 两种内置类型的字段键相同（Fushi 卡片 = Lapis 字段 + SentenceTranslation），所以预设映射
-/// 按**字段键**直映：Fushi 卡片的内置字段 k ← Lapis 的内置字段 k（按内置 fieldId 认，用户给
-/// Lapis 字段改过名也照样对上）。用户在 Lapis 上自己加的字段按名字（不区分大小写）找 Fushi
-/// 卡片上同名的字段，找不到就不迁（预演里能看到）。扩展字段 SentenceTranslation 在 Lapis 里
-/// 没有来源，留空。模板同理：Fushi 卡片唯一的模板 ← Lapis 的内置模板。
+/// 目标是 Fushi 卡片时字段按**语义槽**映射（[srsLapisFieldPlan]，srs_legacy_lapis_migration.dart）：
+/// Fushi 卡片的内置字段 k ← 源类型里落进槽 k 的最强字段（内置 fieldId > 归一同名 > 同义名），
+/// 用户给 Lapis 字段改过名、或自己加了「来源 / 例句翻译」一类字段都对得上；迁移后再按笔记逐条
+/// 把主映射为空、同槽其它字段有内容的补上（[SrsLegacyLapisMigrationOps.applyLapisBackfill]）。
+/// 其它目标仍按字段键直映、其余按名字。模板：Fushi 卡片唯一的模板 ← Lapis 的内置模板。
 ///
 /// 复习历史随迁：[SrsNoteTypeStoreOps.changeNoteType] 给新卡记下前身，历史 = 自己 + 前身的日志。
 library;
@@ -13,6 +13,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 
 /// 一次「换成内置类型」的预设映射（新 id → 旧 id，null = 留空）。
@@ -117,14 +118,19 @@ SrsBuiltinMigrationMaps srsBuiltinMigrationMaps(
     templateMap[to.templates.first.id] = from.templates.first.id;
   }
   return SrsBuiltinMigrationMaps(
-    fieldMap: mapItems(
-      <(String, String)>[
-        for (final SrsFieldDef f in from.fields) (f.id, f.name),
-      ],
-      <(String, String)>[for (final SrsFieldDef f in to.fields) (f.id, f.name)],
-      fromFieldKey,
-      toFieldKey,
-    ),
+    // 目标是 Fushi 卡片：按语义槽（旧实现只认同名，用户自加的「来源」等字段整列丢失）。
+    fieldMap: to.builtinKey == kSrsBuiltinFushiCardKey
+        ? srsLapisFieldPlan(profileUid, from, to).fieldMap
+        : mapItems(
+            <(String, String)>[
+              for (final SrsFieldDef f in from.fields) (f.id, f.name),
+            ],
+            <(String, String)>[
+              for (final SrsFieldDef f in to.fields) (f.id, f.name),
+            ],
+            fromFieldKey,
+            toFieldKey,
+          ),
     templateMap: templateMap,
   );
 }
@@ -158,7 +164,8 @@ extension SrsBuiltinMigrationOps on SrsDbStore {
     );
   }
 
-  /// 执行 Lapis → Fushi 卡片（复习历史经前身链接随迁）。返回迁移的笔记数。
+  /// 执行 Lapis → Fushi 卡片（复习历史经前身链接随迁），再对这些笔记补迁同语义的空字段。
+  /// 返回迁移的笔记数。
   Future<int> migrateToFushiCard(List<String> noteIds) async {
     if (noteIds.isEmpty) return 0;
     final SrsBuiltinMigrationMaps maps = await lapisToFushiCardMaps(noteIds);
@@ -168,6 +175,7 @@ extension SrsBuiltinMigrationOps on SrsDbStore {
       fieldMap: maps.fieldMap,
       templateMap: maps.templateMap,
     );
+    await applyLapisBackfill(noteIds: noteIds);
     return noteIds.length;
   }
 }

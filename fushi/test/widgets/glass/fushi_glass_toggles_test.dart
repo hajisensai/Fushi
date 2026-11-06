@@ -152,49 +152,50 @@ void main() {
       expect(find.byType(FushiAppleSlider), findsNothing);
     });
 
-    testWidgets('glass renders FushiAppleSlider and arrow keys adjust the value', (
-      WidgetTester tester,
-    ) async {
-      final FocusNode node = FocusNode();
-      addTearDown(node.dispose);
-      double value = 5;
-      final List<double> starts = <double>[];
-      final List<double> ends = <double>[];
-      await pumpHost(
-        tester,
-        (StateSetter setState) => FushiSlider(
-          value: value,
-          min: 0,
-          max: 10,
-          divisions: 10,
-          focusNode: node,
-          onChangeStart: starts.add,
-          onChangeEnd: ends.add,
-          onChanged: (double v) => setState(() => value = v),
-        ),
-        glass: true,
-      );
-      expect(find.byType(FushiAppleSlider), findsOneWidget);
-      expect(find.byType(Slider), findsNothing);
+    testWidgets(
+      'glass renders FushiAppleSlider and arrow keys adjust the value',
+      (WidgetTester tester) async {
+        final FocusNode node = FocusNode();
+        addTearDown(node.dispose);
+        double value = 5;
+        final List<double> starts = <double>[];
+        final List<double> ends = <double>[];
+        await pumpHost(
+          tester,
+          (StateSetter setState) => FushiSlider(
+            value: value,
+            min: 0,
+            max: 10,
+            divisions: 10,
+            focusNode: node,
+            onChangeStart: starts.add,
+            onChangeEnd: ends.add,
+            onChanged: (double v) => setState(() => value = v),
+          ),
+          glass: true,
+        );
+        expect(find.byType(FushiAppleSlider), findsOneWidget);
+        expect(find.byType(Slider), findsNothing);
 
-      node.requestFocus();
-      await tester.pump();
-      expect(node.hasFocus, isTrue);
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-      await tester.pump();
-      expect(value, 6);
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
-      await tester.pump();
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
-      await tester.pump();
-      expect(value, 4);
-      // 传统导航模式下 ↑/↓ 也调值（与 Material Slider 同键位）。
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-      await tester.pump();
-      expect(value, 5);
-      expect(starts, <double>[5, 6, 5, 4]);
-      expect(ends, <double>[6, 5, 4, 5]);
-    });
+        node.requestFocus();
+        await tester.pump();
+        expect(node.hasFocus, isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pump();
+        expect(value, 6);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pump();
+        expect(value, 4);
+        // 传统导航模式下 ↑/↓ 也调值（与 Material Slider 同键位）。
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pump();
+        expect(value, 5);
+        expect(starts, <double>[5, 6, 5, 4]);
+        expect(ends, <double>[6, 5, 4, 5]);
+      },
+    );
 
     testWidgets('glass slider responds to a tap on the track', (
       WidgetTester tester,
@@ -641,7 +642,10 @@ void main() {
       );
       expect(find.byType(FushiConnectedButtonGroup<String>), findsOneWidget);
       expect(find.byType(FushiAppleSegmentedControl), findsNothing);
-      expect(find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>), findsNothing);
+      expect(
+        find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
+        findsNothing,
+      );
       await tester.tap(find.text('Beta'));
       await tester.pump();
       expect(calls, <Set<String>>[
@@ -666,7 +670,10 @@ void main() {
         ),
         glass: true,
       );
-      expect(find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>), findsNothing);
+      expect(
+        find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
+        findsNothing,
+      );
       expect(find.byType(FushiAppleSegmentedControl), findsOneWidget);
 
       await tester.tap(find.text('Beta'));
@@ -697,7 +704,10 @@ void main() {
         ),
         glass: true,
       );
-      expect(find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>), findsNothing);
+      expect(
+        find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
+        findsNothing,
+      );
       expect(find.byType(FushiAppleSegmentedControl), findsNothing);
       expect(find.byType(GlassButton), findsNothing);
       // iOS 分段不画 M3 选中对勾：选中只靠滑块。

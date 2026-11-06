@@ -11,8 +11,20 @@ import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/galgame_scrape_controller.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_adapter.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
+import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -37,11 +49,8 @@ Future<bool> showGalgameScrapeDialog({
 }) async {
   final bool? applied = await showAppDialog<bool>(
     context: context,
-    builder: (BuildContext ctx) => GalgameScrapeDialog(
-      game: game,
-      repo: repo,
-      initialQuery: initialQuery,
-    ),
+    builder: (BuildContext ctx) =>
+        GalgameScrapeDialog(game: game, repo: repo, initialQuery: initialQuery),
   );
   return applied ?? false;
 }
@@ -56,13 +65,15 @@ Future<bool> showGalgameScrapeDialog({
 /// - Bangumi 条目页（`bgm.tv` / `bangumi.tv` / `chii.in` 的 `/subject/<数字>`，
 ///   允许尾随斜杠/多余路径段/query/fragment）→ 数字串裸 ID；
 /// - VNDB 条目页（`vndb.org` 的 `/v<数字>`，同样宽容尾随内容）→ `v<数字>`；
+/// - DLsite 作品页（`dlsite.com` 任意分站，路径里带 `product_id/<编号>`）→ 编号；
 /// - 其它输入（裸 ID、普通关键词、非条目 URL）**原样返回，零行为变化**。
 String normalizeGalgameScrapeQuery(String input) {
   final Uri? uri = _tryParseEntryUrl(input);
   if (uri == null) return input;
   final String rawHost = uri.host.toLowerCase();
-  final String host =
-      rawHost.startsWith('www.') ? rawHost.substring(4) : rawHost;
+  final String host = rawHost.startsWith('www.')
+      ? rawHost.substring(4)
+      : rawHost;
   final List<String> segments = <String>[
     for (final String s in uri.pathSegments)
       if (s.isNotEmpty) s,
@@ -75,11 +86,35 @@ String normalizeGalgameScrapeQuery(String input) {
     return segments[1];
   }
   if (host == 'vndb.org' && segments.isNotEmpty) {
-    final RegExpMatch? m =
-        RegExp(r'^v(\d+)$', caseSensitive: false).firstMatch(segments[0]);
+    final RegExpMatch? m = RegExp(
+      r'^v(\d+)$',
+      caseSensitive: false,
+    ).firstMatch(segments[0]);
     if (m != null) return 'v${m.group(1)!}';
   }
+  if (host == 'dlsite.com' || host.endsWith('.dlsite.com')) {
+    final DlsiteWorkId? id = DlsiteWorkId.findIn(uri.path);
+    if (id != null) return id.value;
+  }
   return input;
+}
+
+/// 纯函数：弹窗搜索框的预填词。
+///
+/// 预填词里带 DLsite 编号就只填编号——编号命中即按 ID 直取，比拿名字去搜准得多。
+///
+/// 调用方**显式给了** [initialQuery]（详情页编辑框里用户手填的名字）时，那就是
+/// 用户要搜的词：里面没编号就原样用，**不**再去 exe 路径里找编号覆盖它。只有没给
+/// 预填词（缺省 = 显示名）时，才回退到游戏 exe 路径（安装目录多以编号命名）认编号。
+String galgameScrapeInitialQuery(GalgameEntry game, String? initialQuery) {
+  final String explicit = initialQuery?.trim() ?? '';
+  if (explicit.isNotEmpty) {
+    return DlsiteWorkId.findIn(explicit)?.value ?? explicit;
+  }
+  final String query = game.displayName;
+  final DlsiteWorkId? id =
+      DlsiteWorkId.findIn(query) ?? DlsiteWorkId.findIn(game.exePath);
+  return id?.value ?? query;
 }
 
 /// 把输入解析成 http/https URL；解析不出（裸词/裸 ID/含空格）返回 null。
@@ -123,8 +158,10 @@ Future<bool> applyGalgameScrapeCandidate({
 }) async {
   final GalgameScrapeController used =
       controller ?? GalgameScrapeController.instance;
-  final GalgameMetadataDraft? draft =
-      await used.fetchById(candidate.source, candidate.externalId);
+  final GalgameMetadataDraft? draft = await used.fetchById(
+    candidate.source,
+    candidate.externalId,
+  );
   if (draft == null) return false;
   // 多个源都有快照时主显示源记 mixed（契约 §1.1）。
   final List<GalgameSourceRow> existing = await repo.sourcesOf(gameId);
@@ -136,8 +173,9 @@ Future<bool> applyGalgameScrapeCandidate({
     gameId: gameId,
     source: candidate.source,
     draft: draft,
-    primarySource:
-        sources.length > 1 ? kGalgamePrimarySourceMixed : candidate.source.key,
+    primarySource: sources.length > 1
+        ? kGalgamePrimarySourceMixed
+        : candidate.source.key,
   );
   await _downloadScrapedCover(
     repo: repo,
@@ -180,7 +218,8 @@ Future<void> _downloadScrapedCover({
   } else {
     final String? existingPath = repo.byId(gameId)?.coverPath;
     shouldDownload = shouldAutoDownloadScrapedCover(
-      hasUsableCoverFile: existingPath != null &&
+      hasUsableCoverFile:
+          existingPath != null &&
           existingPath.isNotEmpty &&
           await File(existingPath).exists(),
       coverUrl: coverUrl,
@@ -230,9 +269,7 @@ class GalgameScrapeDialog extends StatefulWidget {
 
 class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
   late final TextEditingController _queryCtrl = TextEditingController(
-    text: (widget.initialQuery?.trim().isNotEmpty ?? false)
-        ? widget.initialQuery!.trim()
-        : widget.game.displayName,
+    text: galgameScrapeInitialQuery(widget.game, widget.initialQuery),
   );
 
   GalgameScrapeController get _controller =>
@@ -479,8 +516,9 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
           ),
           const SizedBox(width: 8),
           FushiFilledButton.tonal(
-            onPressed:
-                _applyingCandidate != null ? null : () => _use(candidate),
+            onPressed: _applyingCandidate != null
+                ? null
+                : () => _use(candidate),
             child: identical(_applyingCandidate, candidate)
                 ? const SizedBox(
                     width: 16,

@@ -37,33 +37,36 @@ void main() {
     // 把这个固定偏移算进期望值，断言才精确锁定真正语义量（避让叠加 / 落回）。
     const double kBoxPadBottom = 6;
     double gapFromBottom(WidgetTester tester) {
-      final Rect overlayRect =
-          tester.getRect(find.byType(VideoSubtitleOverlay));
+      final Rect overlayRect = tester.getRect(
+        find.byType(VideoSubtitleOverlay),
+      );
       // 默认单层 Text（Niratan 软投影），取 .first 兼容有无描边。
       final Rect charRect = tester.getRect(find.text('A').first);
       return overlayRect.bottom - charRect.bottom;
     }
 
     testWidgets(
-        'no controlsVisible: subtitle sits at the user baseline (no dodge)',
-        (tester) async {
-      // 无控制条可见性（有声书 / 测试 / 无控制条场景）：字幕恒贴 bottomPadding 基线，
-      // 不叠加任何避让（与历史像素级一致）。
-      final VideoPlayerController c = _controllerWithCue('A');
-      await _pump(
-        tester,
-        VideoSubtitleOverlay(controller: c, bottomPadding: 75),
-      );
-      expect(gapFromBottom(tester), closeTo(75 + kBoxPadBottom, 0.5));
-    });
+      'no controlsVisible: subtitle sits at the user baseline (no dodge)',
+      (tester) async {
+        // 无控制条可见性（有声书 / 测试 / 无控制条场景）：字幕恒贴 bottomPadding 基线，
+        // 不叠加任何避让（与历史像素级一致）。
+        final VideoPlayerController c = _controllerWithCue('A');
+        await _pump(
+          tester,
+          VideoSubtitleOverlay(controller: c, bottomPadding: 75),
+        );
+        expect(gapFromBottom(tester), closeTo(75 + kBoxPadBottom, 0.5));
+      },
+    );
 
     // 取一个明确低于避让高的基线（与具体 reserve 数值解耦，TODO-171 把 reserve 从 98
     // 降到 56 后，默认基线 75 已高于 reserve，故验证「抬到 reserve」的几何前提必须用低
     // 于 reserve 的基线才成立）。低 1px 保证 < reserve 且与其联动。
     const double lowBaseline = kVideoControlsBottomReserve - 1;
 
-    testWidgets('controls visible -> 基线低于避让高时字幕底缘抬到避让高（骑进度条上缘）',
-        (tester) async {
+    testWidgets('controls visible -> 基线低于避让高时字幕底缘抬到避让高（骑进度条上缘）', (
+      tester,
+    ) async {
       // 控制条可见时字幕底缘 = max(bottomPadding, reserve)：基线 < 避让高，故抬到 reserve
       // 恰骑进度条上缘（避开进度条又不飞）。撤回成旧的加法（基线 + reserve，凭空多抬一个
       // 基线、把字幕顶进画面中上部 = 用户报「进度条出来把字幕往上顶太高很怪」）则 gap 远
@@ -84,13 +87,15 @@ void main() {
       expect(
         gapFromBottom(tester),
         closeTo(kVideoControlsBottomReserve + kBoxPadBottom, 0.5),
-        reason: '控制条可见时字幕底缘应骑到进度条上缘（max(基线, 避让 $kVideoControlsBottomReserve)），'
+        reason:
+            '控制条可见时字幕底缘应骑到进度条上缘（max(基线, 避让 $kVideoControlsBottomReserve)），'
             '不再凭空多抬一个基线（TODO-161/171）',
       );
     });
 
-    testWidgets('controls hide -> subtitle drops back to the user baseline',
-        (tester) async {
+    testWidgets('controls hide -> subtitle drops back to the user baseline', (
+      tester,
+    ) async {
       // 控制条隐藏（visible 翻 false）：字幕落回 bottomPadding 基线，不再被避让恒抬高
       // （这正是反转 089「恒抬升」的核心：进度条不在时不留空白）。用低于 reserve 的基线，
       // 可见时才有抬升、隐藏才有落差可断言。
@@ -108,22 +113,30 @@ void main() {
       await tester.pumpAndSettle();
       final double visibleGap = gapFromBottom(tester);
       // 可见：底缘对避让高取下限 = max(基线, reserve) = reserve（基线低于 reserve）。
-      expect(visibleGap,
-          closeTo(kVideoControlsBottomReserve + kBoxPadBottom, 0.5));
+      expect(
+        visibleGap,
+        closeTo(kVideoControlsBottomReserve + kBoxPadBottom, 0.5),
+      );
 
       visible.value = false;
       await tester.pumpAndSettle();
       final double hiddenGap = gapFromBottom(tester);
-      expect(hiddenGap, closeTo(lowBaseline + kBoxPadBottom, 0.5),
-          reason: '控制条隐藏后字幕应落回用户基线，不残留避让抬升');
+      expect(
+        hiddenGap,
+        closeTo(lowBaseline + kBoxPadBottom, 0.5),
+        reason: '控制条隐藏后字幕应落回用户基线，不残留避让抬升',
+      );
       // 核心守卫（不依赖盒内 padding）：上顶增量 = 取下限差（避让高 - 基线 = 1px），
       // 不是整段避让高 reserve——后者是旧的加法 bug（凭空多抬一个基线，TODO-161）。
-      expect(visibleGap - hiddenGap,
-          closeTo(kVideoControlsBottomReserve - lowBaseline, 0.5));
+      expect(
+        visibleGap - hiddenGap,
+        closeTo(kVideoControlsBottomReserve - lowBaseline, 0.5),
+      );
     });
 
-    testWidgets('manual low bottomPadding: 隐藏尊重低位，可见取下限躲进度条（不叠加飞走）',
-        (tester) async {
+    testWidgets('manual low bottomPadding: 隐藏尊重低位，可见取下限躲进度条（不叠加飞走）', (
+      tester,
+    ) async {
       // 用户显式低位置（20px）< 避让高（56）：隐藏时尊重 20（贴底是用户的选择），可见时
       // max(20, 56) = 56 恰躲开进度条——不是 20+56=76 的加法叠加（那会把低位用户的字幕
       // 也顶飞，TODO-161）。
@@ -145,12 +158,15 @@ void main() {
       visible.value = true;
       await tester.pumpAndSettle();
       // 控制条可见：对避让高取下限 = max(20, 56) = 56（躲进度条），非 20+56。
-      expect(gapFromBottom(tester),
-          closeTo(kVideoControlsBottomReserve + kBoxPadBottom, 0.5));
+      expect(
+        gapFromBottom(tester),
+        closeTo(kVideoControlsBottomReserve + kBoxPadBottom, 0.5),
+      );
     });
 
-    testWidgets('manual high bottomPadding stays verbatim (基线 > 避让则取基线，不被改写)',
-        (tester) async {
+    testWidgets('manual high bottomPadding stays verbatim (基线 > 避让则取基线，不被改写)', (
+      tester,
+    ) async {
       // 用户显式高位置（200px）> 避让高：取下限 max(200, 56) = 200，可见 / 隐藏都用 200
       // ——高位用户已在进度条之上，避让不该把它再往上推或往下拉，尊重原值。
       final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
@@ -206,9 +222,14 @@ void main() {
         await tester.pumpAndSettle();
         final double shown1 = dodgeGap(tester);
         expect(
-            shown1, closeTo(kVideoControlsBottomReserve + kBoxPadBottom, 0.5));
-        expect(shown1, greaterThan(hidden0),
-            reason: '显示时字幕必须上抬（gap 变大），不能反向下落');
+          shown1,
+          closeTo(kVideoControlsBottomReserve + kBoxPadBottom, 0.5),
+        );
+        expect(
+          shown1,
+          greaterThan(hidden0),
+          reason: '显示时字幕必须上抬（gap 变大），不能反向下落',
+        );
 
         // 隐藏：落回基线（< reserve）——方向「下」。
         visible.value = false;
@@ -221,8 +242,11 @@ void main() {
         visible.value = true;
         await tester.pumpAndSettle();
         final double shown3 = dodgeGap(tester);
-        expect(shown3, closeTo(shown1, 0.5),
-            reason: '同一真相源同一值必须给出同一避让位置（无相位漂移）');
+        expect(
+          shown3,
+          closeTo(shown1, 0.5),
+          reason: '同一真相源同一值必须给出同一避让位置（无相位漂移）',
+        );
       });
 
       testWidgets('动画途中翻回（并发操作）：避让目标恒等于 notifier 最终值，不残留反向', (tester) async {
@@ -250,8 +274,10 @@ void main() {
         await tester.pumpAndSettle();
         // 最终停在隐藏基线，跟随真相源最终值（不卡在上抬的反向位置）。
         expect(
-            dodgeGap(tester), closeTo(lowBaselineForDodge + kBoxPadBottom, 0.5),
-            reason: '并发翻回后避让目标必须跟随 notifier 最终值（隐藏=基线），不反相残留');
+          dodgeGap(tester),
+          closeTo(lowBaselineForDodge + kBoxPadBottom, 0.5),
+          reason: '并发翻回后避让目标必须跟随 notifier 最终值（隐藏=基线），不反相残留',
+        );
       });
     });
 
@@ -265,33 +291,40 @@ void main() {
       const double mobileReserveAt2x = 178; // 24 + (56+8+5+8)*2。
 
       testWidgets(
-          'controls visible + 真实 reserve(140) > 默认基线 75：字幕抬到 reserve（盖过进度条）',
-          (tester) async {
-        // 根因守卫：默认基线 75 + 真实移动 reserve 140 → max(75,140)=140，字幕底缘抬到
-        // 进度条上缘（盖过被抬高的移动进度条）。撤回 reserve 到旧常量 56 → max(75,56)=75
-        // < 140，字幕停在 75 被遮（「只动一点点」）→ 红。
-        final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
-        addTearDown(visible.dispose);
-        final VideoPlayerController c = _controllerWithCue('A');
-        await _pump(
-          tester,
-          VideoSubtitleOverlay(
-            controller: c,
-            bottomPadding: 75, // 默认基线。
-            controlsVisible: visible,
-            controlsBottomReserve: mobileReserveAt1x,
-          ),
-        );
-        await tester.pumpAndSettle();
-        // 字幕底缘抬到 reserve 140，严格高于默认基线 75（真正盖过进度条）。
-        expect(gapFromBottom(tester),
-            closeTo(mobileReserveAt1x + kBoxPadBottom, 0.5));
-        expect(gapFromBottom(tester), greaterThan(75 + kBoxPadBottom),
-            reason: '控制条可见时字幕底缘必须严格高于默认基线 75 才不被进度条遮（根因）');
-      });
+        'controls visible + 真实 reserve(140) > 默认基线 75：字幕抬到 reserve（盖过进度条）',
+        (tester) async {
+          // 根因守卫：默认基线 75 + 真实移动 reserve 140 → max(75,140)=140，字幕底缘抬到
+          // 进度条上缘（盖过被抬高的移动进度条）。撤回 reserve 到旧常量 56 → max(75,56)=75
+          // < 140，字幕停在 75 被遮（「只动一点点」）→ 红。
+          final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
+          addTearDown(visible.dispose);
+          final VideoPlayerController c = _controllerWithCue('A');
+          await _pump(
+            tester,
+            VideoSubtitleOverlay(
+              controller: c,
+              bottomPadding: 75, // 默认基线。
+              controlsVisible: visible,
+              controlsBottomReserve: mobileReserveAt1x,
+            ),
+          );
+          await tester.pumpAndSettle();
+          // 字幕底缘抬到 reserve 140，严格高于默认基线 75（真正盖过进度条）。
+          expect(
+            gapFromBottom(tester),
+            closeTo(mobileReserveAt1x + kBoxPadBottom, 0.5),
+          );
+          expect(
+            gapFromBottom(tester),
+            greaterThan(75 + kBoxPadBottom),
+            reason: '控制条可见时字幕底缘必须严格高于默认基线 75 才不被进度条遮（根因）',
+          );
+        },
+      );
 
-      testWidgets('controls hide + 真实 reserve(140)：字幕落回默认基线 75（不残留避让）',
-          (tester) async {
+      testWidgets('controls hide + 真实 reserve(140)：字幕落回默认基线 75（不残留避让）', (
+        tester,
+      ) async {
         final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
         addTearDown(visible.dispose);
         final VideoPlayerController c = _controllerWithCue('A');
@@ -311,8 +344,11 @@ void main() {
         visible.value = false;
         await tester.pumpAndSettle();
         // 隐藏：落回默认基线 75（= bottomPadding，无避让残留）。
-        expect(gapFromBottom(tester), closeTo(75 + kBoxPadBottom, 0.5),
-            reason: '控制条隐藏后字幕落回 bottomPadding 基线');
+        expect(
+          gapFromBottom(tester),
+          closeTo(75 + kBoxPadBottom, 0.5),
+          reason: '控制条隐藏后字幕落回 bottomPadding 基线',
+        );
       });
 
       testWidgets('reserve 随界面放大（256 > 140）：字幕抬得更高（避让随缩放）', (tester) async {
@@ -331,10 +367,15 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(gapFromBottom(tester),
-            closeTo(mobileReserveAt2x + kBoxPadBottom, 0.5));
-        expect(mobileReserveAt2x, greaterThan(mobileReserveAt1x),
-            reason: '界面放大后 reserve 必须更大（避让随缩放）');
+        expect(
+          gapFromBottom(tester),
+          closeTo(mobileReserveAt2x + kBoxPadBottom, 0.5),
+        );
+        expect(
+          mobileReserveAt2x,
+          greaterThan(mobileReserveAt1x),
+          reason: '界面放大后 reserve 必须更大（避让随缩放）',
+        );
       });
     });
   });
@@ -342,30 +383,42 @@ void main() {
   testWidgets('blur off: no ImageFiltered around subtitle', (tester) async {
     final VideoPlayerController c = _controllerWithCue('テスト');
     await _pump(
-        tester, VideoSubtitleOverlay(controller: c, blurEnabled: false));
+      tester,
+      VideoSubtitleOverlay(controller: c, blurEnabled: false),
+    );
     // 默认统一外观：每字单层 Text（Niratan 软投影）。
     expect(find.text('テ'), findsOneWidget);
     expect(find.byType(ImageFiltered), findsNothing);
   });
 
-  testWidgets('blur on + playing: ImageFiltered wraps subtitle, revealed=false',
-      (tester) async {
-    final VideoPlayerController c = _controllerWithCue('テスト');
-    c.debugSetIsPlayingForTesting(true); // 听力沉浸模糊只在播放中生效
-    await _pump(tester, VideoSubtitleOverlay(controller: c, blurEnabled: true));
-    expect(find.byType(ImageFiltered), findsOneWidget);
-  });
+  testWidgets(
+    'blur on + playing: ImageFiltered wraps subtitle, revealed=false',
+    (tester) async {
+      final VideoPlayerController c = _controllerWithCue('テスト');
+      c.debugSetIsPlayingForTesting(true); // 听力沉浸模糊只在播放中生效
+      await _pump(
+        tester,
+        VideoSubtitleOverlay(controller: c, blurEnabled: true),
+      );
+      expect(find.byType(ImageFiltered), findsOneWidget);
+    },
+  );
 
-  testWidgets('blur on + playing + tap reveal: ImageFiltered gone after reveal',
-      (tester) async {
-    final VideoPlayerController c = _controllerWithCue('テスト');
-    c.debugSetIsPlayingForTesting(true);
-    await _pump(tester, VideoSubtitleOverlay(controller: c, blurEnabled: true));
-    expect(find.byType(ImageFiltered), findsOneWidget);
-    await tester.tap(find.byKey(const Key('video-subtitle-reveal')));
-    await tester.pump();
-    expect(find.byType(ImageFiltered), findsNothing);
-  });
+  testWidgets(
+    'blur on + playing + tap reveal: ImageFiltered gone after reveal',
+    (tester) async {
+      final VideoPlayerController c = _controllerWithCue('テスト');
+      c.debugSetIsPlayingForTesting(true);
+      await _pump(
+        tester,
+        VideoSubtitleOverlay(controller: c, blurEnabled: true),
+      );
+      expect(find.byType(ImageFiltered), findsOneWidget);
+      await tester.tap(find.byKey(const Key('video-subtitle-reveal')));
+      await tester.pump();
+      expect(find.byType(ImageFiltered), findsNothing);
+    },
+  );
 
   group('TODO-301/BUG-267 favorited current cue shows a star marker', () {
     testWidgets('isCueFavorited true -> filled star icon rendered', (
@@ -374,10 +427,7 @@ void main() {
       final VideoPlayerController c = _controllerWithCue('テスト');
       await _pump(
         tester,
-        VideoSubtitleOverlay(
-          controller: c,
-          isCueFavorited: (_) => true,
-        ),
+        VideoSubtitleOverlay(controller: c, isCueFavorited: (_) => true),
       );
       // Revert the marker / pass isCueFavorited:false -> findsNothing -> red.
       expect(find.byIcon(Icons.star), findsOneWidget);
@@ -389,10 +439,7 @@ void main() {
       final VideoPlayerController c = _controllerWithCue('テスト');
       await _pump(
         tester,
-        VideoSubtitleOverlay(
-          controller: c,
-          isCueFavorited: (_) => false,
-        ),
+        VideoSubtitleOverlay(controller: c, isCueFavorited: (_) => false),
       );
       expect(find.byIcon(Icons.star), findsNothing);
     });
@@ -408,10 +455,7 @@ void main() {
 
   testWidgets('appearance: custom font size applied', (tester) async {
     final VideoPlayerController c = _controllerWithCue('A');
-    await _pump(
-      tester,
-      VideoSubtitleOverlay(controller: c, fontSize: 40),
-    );
+    await _pump(tester, VideoSubtitleOverlay(controller: c, fontSize: 40));
     // 取填充层（foreground==null）断言字号：默认单层即该层。
     final Text txt = tester
         .widgetList<Text>(find.text('A'))
@@ -425,8 +469,9 @@ void main() {
       final VideoSubtitleHitTester ht = VideoSubtitleHitTester();
       await _pump(tester, VideoSubtitleOverlay(controller: c, hitTester: ht));
 
-      final Offset center =
-          tester.getCenter(find.text('ス').first); // grapheme 1
+      final Offset center = tester.getCenter(
+        find.text('ス').first,
+      ); // grapheme 1
       final SubtitleCharHit? hit = ht.hitTest(center);
       expect(hit, isNotNull);
       expect(hit!.sentence, 'テスト');
@@ -477,10 +522,12 @@ void main() {
       await _pump(
         tester,
         VideoSubtitleOverlay(
-            controller: c, onCharTap: (_, __, ___, AudioCue cueArg) {}),
+          controller: c,
+          onCharTap: (_, __, ___, AudioCue cueArg) {},
+        ),
       );
-      final Iterable<GestureDetector> detectors =
-          tester.widgetList<GestureDetector>(find.byType(GestureDetector));
+      final Iterable<GestureDetector> detectors = tester
+          .widgetList<GestureDetector>(find.byType(GestureDetector));
       // 不允许任何 opaque GestureDetector（撤修复改回逐字符 opaque → 红）。
       for (final GestureDetector d in detectors) {
         expect(
@@ -495,8 +542,9 @@ void main() {
       final Iterable<RawGestureDetector> raws = tester
           .widgetList<RawGestureDetector>(find.byType(RawGestureDetector));
       expect(
-        raws.any((RawGestureDetector r) =>
-            r.behavior == HitTestBehavior.translucent),
+        raws.any(
+          (RawGestureDetector r) => r.behavior == HitTestBehavior.translucent,
+        ),
         isTrue,
         reason: '缺少 translucent 的字符 tap 层（hover 透传 + 竞技场门控）',
       );
@@ -538,8 +586,11 @@ void main() {
       // 暂停（查词必先暂停）→ 字幕清晰（撤 `&& isPlaying` → 仍模糊 → 红）。
       c.debugSetIsPlayingForTesting(false);
       await tester.pump();
-      expect(find.byType(ImageFiltered), findsNothing,
-          reason: '查词/暂停时字幕不该再被打码（BUG-199）');
+      expect(
+        find.byType(ImageFiltered),
+        findsNothing,
+        reason: '查词/暂停时字幕不该再被打码（BUG-199）',
+      );
     });
   });
 
@@ -549,14 +600,12 @@ void main() {
       final List<bool> events = <bool>[];
       await _pump(
         tester,
-        VideoSubtitleOverlay(
-          controller: c,
-          onHoverChanged: events.add,
-        ),
+        VideoSubtitleOverlay(controller: c, onHoverChanged: events.add),
       );
 
-      final TestGesture gesture =
-          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      final TestGesture gesture = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
       await gesture.addPointer(location: Offset.zero);
       addTearDown(gesture.removePointer);
       await tester.pump();
@@ -564,8 +613,11 @@ void main() {
       // 移到字幕字符上 → onHoverChanged(true)。
       await gesture.moveTo(tester.getCenter(find.text('A').first));
       await tester.pump();
-      expect(events, contains(true),
-          reason: '鼠标进字幕盒应回报 hover=true（页面据此唤回光标，BUG-284）');
+      expect(
+        events,
+        contains(true),
+        reason: '鼠标进字幕盒应回报 hover=true（页面据此唤回光标，BUG-284）',
+      );
 
       // 移出到角落 → onHoverChanged(false)。
       await gesture.moveTo(const Offset(2, 2));
@@ -573,8 +625,9 @@ void main() {
       expect(events.last, isFalse, reason: '鼠标出字幕盒应回报 hover=false');
     });
 
-    testWidgets('注册 onHoverChanged 才挂字幕盒 hover 追踪（非 blur 基线对照）',
-        (tester) async {
+    testWidgets('注册 onHoverChanged 才挂字幕盒 hover 追踪（非 blur 基线对照）', (
+      tester,
+    ) async {
       // 对照同一非 blur 布局：注册 onHoverChanged 比不注册多出恰一个用于追踪字幕盒
       // hover 的 MouseRegion（仅 hover 需要时才挂，否则透传 box，保外观零变化，BUG-284）。
       final VideoPlayerController c1 = _controllerWithCue('A');
@@ -588,9 +641,13 @@ void main() {
       );
       final int withHover = find.byType(MouseRegion).evaluate().length;
 
-      expect(withHover, baseline + 1,
-          reason: '注册 onHoverChanged 应恰多挂一个字幕盒 hover MouseRegion；'
-              '不注册时透传 box 不引入额外层（外观零变化）');
+      expect(
+        withHover,
+        baseline + 1,
+        reason:
+            '注册 onHoverChanged 应恰多挂一个字幕盒 hover MouseRegion；'
+            '不注册时透传 box 不引入额外层（外观零变化）',
+      );
     });
   });
 }

@@ -5,6 +5,7 @@ import 'dart:ui' show FontFeature, PathMetric;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_audio_source.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_controller.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_mosaic.dart';
@@ -13,7 +14,21 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_dropdown.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi_anki/fushi_anki_core.dart' show MiningMosaicRegion;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
@@ -33,10 +48,21 @@ String formatAdvancedMiningTime(int ms) {
 String formatAdvancedMiningDuration(int ms) =>
     '${(ms / 1000).toStringAsFixed(1)} s';
 
-/// 微调按钮文案：`−0.25s` / `+0.25s`（用真正的减号，与「−」字形对齐）。
+/// 微调按钮文案：`−0.25s` / `+0.1s`（用真正的减号，与「−」字形对齐）。
 String formatAdvancedMiningStep(int ms, {required bool forward}) {
-  final String value = (ms / 1000).toStringAsFixed(2);
-  return forward ? '+${value}s' : '−${value}s';
+  final String value = formatAdvancedMiningStepSize(ms);
+  return forward ? '+$value' : '−$value';
+}
+
+/// 步长文案：`0.05s` / `0.1s` / `0.25s` / `1s`（去掉多余的尾零）。
+String formatAdvancedMiningStepSize(int ms) {
+  String value = (ms / 1000).toStringAsFixed(2);
+  if (value.contains('.')) {
+    value = value
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+  return '${value}s';
 }
 
 /// 视频图片方式的显示名。
@@ -408,7 +434,7 @@ class AdvancedMiningSentencePanel extends StatelessWidget {
     required VoidCallback? onPressed,
   }) => FushiIconButtonControl(
     tooltip: tooltip,
-    size: FushiIconButtonSize.xs,
+    size: ButtonSizeVariant.xSmall,
     onPressed: onPressed,
     icon: FushiIcon(icon, size: 18),
   );
@@ -683,6 +709,241 @@ class _DefaultDeckToggle extends StatelessWidget {
   }
 }
 
+// ───────────────────────────── 单词音频 ─────────────────────────────
+
+/// 一条单词音频候选的显示名：「源名 · 变体」；两者都空（别的设备给的默认一条）时
+/// 显示「默认音源」。
+String advancedMiningWordAudioLabel(AdvancedMiningWordAudioChoice choice) {
+  final String name = choice.name.trim();
+  final String variant = choice.variant.trim();
+  if (name.isEmpty && variant.isEmpty) {
+    return t.popup_advanced_mining_word_audio_default_source;
+  }
+  if (name.isEmpty) return variant;
+  if (variant.isEmpty) return name;
+  return '$name · $variant';
+}
+
+/// 整列候选的显示名（与 [AdvancedMiningController.wordAudioChoices] 逐位对应）。
+/// 显示名撞车的（没起名、同 host 的两个模板源都显示成 host）补上它在音频源设置里
+/// 的序号「#n」；同一个源内仍撞车的再补出现次序，保证每行都分得出来。
+List<String> advancedMiningWordAudioLabels(
+  List<AdvancedMiningWordAudioChoice> choices,
+) {
+  List<String> labels = <String>[
+    for (final AdvancedMiningWordAudioChoice c in choices)
+      advancedMiningWordAudioLabel(c),
+  ];
+  Map<String, int> counts(List<String> xs) {
+    final Map<String, int> m = <String, int>{};
+    for (final String x in xs) {
+      m[x] = (m[x] ?? 0) + 1;
+    }
+    return m;
+  }
+
+  Map<String, int> n = counts(labels);
+  labels = <String>[
+    for (final (int i, String l) in labels.indexed)
+      (n[l] ?? 0) > 1 && choices[i].sourceIndex >= 0
+          ? '$l · #${choices[i].sourceIndex + 1}'
+          : l,
+  ];
+  n = counts(labels);
+  final Map<String, int> seen = <String, int>{};
+  return <String>[
+    for (final String l in labels)
+      if ((n[l] ?? 0) > 1) '$l (${seen[l] = (seen[l] ?? 0) + 1})' else l,
+  ];
+}
+
+/// 窄屏摘要行的值：选中的源 / 「不要」/ 「暂无」。
+String advancedMiningWordAudioSummary(AdvancedMiningController c) {
+  if (c.omitWordAudio) return t.popup_advanced_mining_audio_none;
+  if (!c.wordAudioLoaded) return '…';
+  if (c.selectedWordAudio == null) {
+    return t.popup_advanced_mining_word_audio_unavailable;
+  }
+  return advancedMiningWordAudioLabels(c.wordAudioChoices)[c.wordAudioIndex];
+}
+
+/// 单词音频分区：每个启用音频源解析出的候选一行一条（左侧试听钮、右侧选中标记），
+/// 末尾一条「不要」。点行 = 选中并试听，与查词弹窗 ♪ 的「选择音频源」菜单同一份数据。
+class AdvancedMiningWordAudioPanel extends StatelessWidget {
+  const AdvancedMiningWordAudioPanel({
+    super.key,
+    required this.controller,
+    required this.onPreview,
+    this.embedded = false,
+  });
+
+  final AdvancedMiningController controller;
+
+  /// 试听第 i 条（由对话框统一处理播放失败提示）。
+  final ValueChanged<int> onPreview;
+  final bool embedded;
+
+  @override
+  Widget build(BuildContext context) {
+    final AdvancedMiningController c = controller;
+    final List<String> labels = advancedMiningWordAudioLabels(
+      c.wordAudioChoices,
+    );
+    final Widget body;
+    if (!c.wordAudioLoaded) {
+      body = const SizedBox(
+        height: 56,
+        child: Center(child: FushiLoadingView(compact: true)),
+      );
+    } else {
+      body = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (c.wordAudioChoices.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: _caption(
+                context,
+                t.popup_advanced_mining_word_audio_unavailable,
+              ),
+            ),
+          for (final (int i, String label) in labels.indexed)
+            _WordAudioRow(
+              label: label,
+              selected: c.wordAudioIndex == i,
+              loading: c.wordAudioPreviewing == i,
+              onPreview: c.locked ? null : () => onPreview(i),
+              onSelect: c.locked ? null : () => c.selectWordAudio(i),
+            ),
+          _WordAudioRow(
+            label: t.popup_advanced_mining_audio_none,
+            selected: c.omitWordAudio,
+            onSelect: c.locked
+                ? null
+                : () => c.selectWordAudio(
+                    AdvancedMiningController.kWordAudioOmitted,
+                  ),
+          ),
+          if (c.wordAudioChoices.length > 1) ...<Widget>[
+            const SizedBox(height: 6),
+            _caption(context, t.popup_advanced_mining_word_audio_hint),
+          ],
+        ],
+      );
+    }
+    return AdvancedMiningSectionShell(
+      title: t.popup_advanced_mining_word_audio_section,
+      embedded: embedded,
+      child: FushiAnimatedSize(
+        duration: context.fushiMotion.spatialDefault.duration,
+        curve: context.fushiMotion.spatialDefault.curve,
+        alignment: Alignment.topCenter,
+        child: body,
+      ),
+    );
+  }
+}
+
+/// 单词音频的一行：试听钮（「不要」那行没有）+ 源名 + 选中勾。点行选中并试听，
+/// 点试听钮只试听（同样会选中，见 [AdvancedMiningController.previewWordAudio]）。
+class _WordAudioRow extends StatelessWidget {
+  const _WordAudioRow({
+    required this.label,
+    required this.selected,
+    required this.onSelect,
+    this.onPreview,
+    this.loading = false,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback? onSelect;
+
+  /// null = 这一行不能试听（「不要」）或已锁住。
+  final VoidCallback? onPreview;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final VoidCallback? tap = onPreview ?? onSelect;
+    return Semantics(
+      selected: selected,
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      onTap: tap,
+      child: FushiPressScale(
+        enabled: tap != null,
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            borderRadius: const BorderRadius.all(Radius.circular(14)),
+            onTap: tap,
+            child: AnimatedContainer(
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              curve: FushiMotion.standard,
+              constraints: const BoxConstraints(minHeight: 48),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: selected
+                    ? scheme.secondaryContainer
+                    : Colors.transparent,
+                borderRadius: const BorderRadius.all(Radius.circular(14)),
+              ),
+              child: Row(
+                children: <Widget>[
+                  SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: onPreview == null && !loading
+                        ? FushiIcon(
+                            FushiIcons.close,
+                            size: 18,
+                            color: scheme.onSurfaceVariant,
+                          )
+                        : loading
+                        ? const Center(child: FushiLoadingView(compact: true))
+                        : FushiIconButtonControl(
+                            tooltip: t.popup_ctx_preview_audio,
+                            padding: EdgeInsets.zero,
+                            onPressed: onPreview,
+                            icon: const FushiIcon(FushiIcons.play, size: 20),
+                          ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.fushiType.bodyMedium.copyWith(
+                        color: selected
+                            ? scheme.onSecondaryContainer
+                            : scheme.onSurface,
+                      ),
+                    ),
+                  ),
+                  AnimatedOpacity(
+                    opacity: selected ? 1 : 0,
+                    duration: fushiMotionDuration(context, FushiMotion.short),
+                    child: FushiIcon(
+                      FushiIcons.check,
+                      size: 20,
+                      color: scheme.onSecondaryContainer,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ───────────────────────────── 句子音频 ─────────────────────────────
 
 /// 句子音频分区：「跟随句子 / 不要」、区间条、起止各 ±一步、时间标签、试听。
@@ -745,6 +1006,7 @@ class AdvancedMiningAudioPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           if (embedded) ...<Widget>[choices, const SizedBox(height: 10)],
+          AdvancedMiningAudioSourceChips(controller: c),
           FushiAnimatedSize(
             duration: context.fushiMotion.spatialDefault.duration,
             curve: context.fushiMotion.spatialDefault.curve,
@@ -770,7 +1032,7 @@ class _AudioDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     final AdvancedMiningController c = controller;
     final AdvancedMiningAudioWindow w = c.audioWindow!;
-    final int step = c.audioSection!.nudgeStepMs;
+    final int step = c.audioNudgeStepMs;
     VoidCallback? nudge(bool start, bool forward) => c.locked
         ? null
         : () => c.nudgeAudioEdge(start: start, deltaMs: forward ? step : -step);
@@ -824,6 +1086,31 @@ class _AudioDetails extends StatelessWidget {
           children: <Widget>[
             edge(t.popup_advanced_mining_audio_start, start: true),
             edge(t.popup_advanced_mining_audio_end, start: false),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // 微调步长（反馈 3_VB7kAeHj）：0.05–1 s 五档，宿主记住上次选择。
+        Row(
+          children: <Widget>[
+            _caption(context, t.popup_advanced_mining_audio_step),
+            const SizedBox(width: 8),
+            Expanded(
+              child: adaptiveSegmentedButton<int>(
+                context: context,
+                segments: <ButtonSegment<int>>[
+                  for (final int ms in kAdvancedMiningAudioNudgeStepsMs)
+                    ButtonSegment<int>(
+                      value: ms,
+                      label: Text(formatAdvancedMiningStepSize(ms)),
+                    ),
+                ],
+                selected: <int>{step},
+                onSelectionChanged: (Set<int> v) {
+                  if (c.locked || v.isEmpty) return;
+                  c.setAudioNudgeStep(v.first);
+                },
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -1354,6 +1641,200 @@ class _AdvancedMiningFrameThumbState extends State<AdvancedMiningFrameThumb> {
               errorBuilder: (BuildContext _, Object _, StackTrace? _) =>
                   const SizedBox.expand(),
             ),
+    );
+  }
+}
+
+// ───────────────────────────── 卡片字段 ─────────────────────────────
+
+/// 卡片字段分区（反馈 -K86qlwBg6）：「选择字段」胶囊行挑出要在这里编辑的字段（记住
+/// 选择），每个显示中的字段一个输入框；留空 = 照字段映射自动生成，填了就只替换这张卡
+/// 的对应字段（[AdvancedMiningController.editedFieldValues]）。
+class AdvancedMiningFieldsPanel extends StatelessWidget {
+  const AdvancedMiningFieldsPanel({
+    super.key,
+    required this.controller,
+    this.embedded = false,
+  });
+
+  final AdvancedMiningController controller;
+  final bool embedded;
+
+  @override
+  Widget build(BuildContext context) {
+    final AdvancedMiningController c = controller;
+    final AdvancedMiningFieldsSection section = c.fieldsSection!;
+    final List<AdvancedMiningField> shown = c.shownFields;
+    return AdvancedMiningSectionShell(
+      title: t.popup_advanced_mining_fields_section,
+      embedded: embedded,
+      trailing: Align(
+        alignment: AlignmentDirectional.centerEnd,
+        child: FushiIconButtonControl(
+          tooltip: t.popup_advanced_mining_fields_choose,
+          size: ButtonSizeVariant.xSmall,
+          isSelected: c.choosingFields,
+          onPressed: c.busy ? null : c.toggleChoosingFields,
+          icon: const FushiIcon(FushiIcons.checklist, size: 18),
+        ),
+      ),
+      // 显示 / 隐藏字段、展开「选择字段」时整块高度跟着补间，新出现的输入框错峰进场。
+      child: FushiAnimatedSize(
+        duration: context.fushiMotion.spatialDefault.duration,
+        curve: context.fushiMotion.spatialDefault.curve,
+        alignment: Alignment.topCenter,
+        child: FushiEntranceScope(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (c.choosingFields || shown.isEmpty)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    for (final AdvancedMiningField f in section.fields)
+                      AdvancedMiningChoiceChip(
+                        key: ValueKey<String>(
+                          'advanced-mining-field-chip-${f.name}',
+                        ),
+                        label: f.name,
+                        selected: c.visibleFields.contains(f.name),
+                        onSelected: c.busy
+                            ? null
+                            : () => unawaited(c.toggleFieldVisible(f.name)),
+                      ),
+                  ],
+                ),
+              if (shown.isEmpty) ...<Widget>[
+                const SizedBox(height: 8),
+                _caption(context, t.popup_advanced_mining_fields_empty),
+              ] else ...<Widget>[
+                if (c.previewLoading) ...<Widget>[
+                  const SizedBox(height: 8),
+                  const FushiLinearProgressIndicator(),
+                  const SizedBox(height: 4),
+                  _caption(context, t.popup_advanced_mining_fields_loading),
+                ] else if (c.previewFailed) ...<Widget>[
+                  const SizedBox(height: 8),
+                  _caption(
+                    context,
+                    t.popup_advanced_mining_fields_preview_failed,
+                  ),
+                ],
+                for (final (int i, AdvancedMiningField f) in shown.indexed)
+                  FushiStaggeredEntrance(
+                    key: ValueKey<String>('advanced-mining-field-${f.name}'),
+                    index: i,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: f.generatedAtMining
+                          ? _GeneratedFieldRow(field: f)
+                          : _EditableFieldRow(controller: c, field: f),
+                    ),
+                  ),
+                const SizedBox(height: 6),
+                _caption(context, t.popup_advanced_mining_fields_hint),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 落卡时才生成的字段（媒体 / 出处 / 时间窗）：只读，写明它会在制卡时生成。
+class _GeneratedFieldRow extends StatelessWidget {
+  const _GeneratedFieldRow({required this.field});
+
+  final AdvancedMiningField field;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+    child: Row(
+      children: <Widget>[
+        Flexible(
+          child: Text(
+            field.name,
+            style: context.fushiType.bodyMediumEmphasized,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _caption(
+            context,
+            '${t.popup_advanced_mining_fields_generated} · ${field.template}',
+            align: TextAlign.end,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// 可编辑字段：**源码视图**——输入框里就是管线渲染出的原文（释义是 HTML 源码），
+/// 提交时原样发出。选源码视图而不是纯文本视图：纯文本视图要把 HTML 拆成文字再拼回
+/// 去，结构（列表 / 词典样式 / 外字图片占位）很难无损往返；源码视图没改就是逐字节
+/// 原样，改了也只动用户动过的那几个字。释义很长时点右侧按钮展开成大编辑框。
+class _EditableFieldRow extends StatelessWidget {
+  const _EditableFieldRow({required this.controller, required this.field});
+
+  final AdvancedMiningController controller;
+  final AdvancedMiningField field;
+
+  @override
+  Widget build(BuildContext context) {
+    final AdvancedMiningController c = controller;
+    final bool expanded = c.expandedFields.contains(field.name);
+    final bool markup = c.prefillOf(field.name).contains('<');
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Expanded(
+          child: FushiTextFieldControl(
+            key: ValueKey<String>('advanced-mining-field-input-${field.name}'),
+            controller: c.fieldController(field.name),
+            enabled: !c.busy,
+            minLines: expanded ? 8 : 1,
+            maxLines: expanded ? 20 : 4,
+            keyboardType: TextInputType.multiline,
+            textInputAction: TextInputAction.newline,
+            style: markup
+                ? context.fushiType.bodySmall.copyWith(
+                    fontFamily: 'monospace',
+                    fontFamilyFallback: const <String>['Consolas', 'Menlo'],
+                  )
+                : context.fushiType.bodyMedium,
+            decoration: InputDecoration(
+              border: const FushiOutlinedFieldBorder(),
+              isDense: true,
+              labelText: field.name,
+              hintText: t.popup_advanced_mining_fields_auto_hint(
+                template: field.template,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 8,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 4),
+        FushiIconButtonControl(
+          tooltip: expanded
+              ? t.popup_advanced_mining_fields_collapse
+              : t.popup_advanced_mining_fields_expand,
+          size: ButtonSizeVariant.xSmall,
+          onPressed: () => c.toggleFieldExpanded(field.name),
+          icon: FushiIcon(
+            expanded ? FushiIcons.expandLess : FushiIcons.expandMore,
+            size: 18,
+          ),
+        ),
+      ],
     );
   }
 }

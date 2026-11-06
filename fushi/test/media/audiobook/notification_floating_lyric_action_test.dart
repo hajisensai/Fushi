@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫（TODO-160子d / BUG-227 / TODO-291 阶段2）：Android 媒体播放通知栏「悬浮字幕」
 /// custom action，沿用现有 prev/next/playPause 的 StreamController 范式。TODO-291 阶段2
@@ -13,10 +13,12 @@ void main() {
   late String session;
   late String appModel;
   setUpAll(() {
-    handler =
-        File('lib/src/utils/misc/fushi_audio_handler.dart').readAsStringSync();
-    controller =
-        File('lib/src/models/audio_controller.dart').readAsStringSync();
+    handler = File(
+      'lib/src/utils/misc/fushi_audio_handler.dart',
+    ).readAsStringSync();
+    controller = File(
+      'lib/src/models/audio_controller.dart',
+    ).readAsStringSync();
     session = File(
       'lib/src/media/audiobook/audiobook_session.dart',
     ).readAsStringSync();

@@ -296,7 +296,7 @@ void main() {
   });
 
   group('runner: VoiceHookReader 回调安全发布', () {
-    test('Popup owner、try_lock、无 HWND 查询、release 不带 Left 位', () {
+    test('Popup owner、只拿映射寿命共享锁、无 HWND 查询、release 不带 Left 位', () {
       final String header = compactCode(readerHeader);
       expect(
         header.contains(
@@ -310,7 +310,18 @@ void main() {
           'uint32_t VoiceHookReader::TryPublishOverlayClickShieldTransaction(',
         ),
       );
-      expect(body.contains('std::try_to_lock'), isTrue);
+      // 反馈 -AynHxzwNe：reader 的 st.mutex 在 PCM 抓取 / 写查词帧 / PollText 期间
+      // 整段持有，try_lock 失败就 fail-open，左键偶发漏给采样型引擎。回调只拿映射
+      // 寿命的共享锁；写入方之间由共享内存 seq 上的 CAS 串行。
+      expect(
+        body.contains('MappingLifetimeShared mapping(st);'.replaceAll(' ', '')),
+        isTrue,
+      );
+      expect(
+        body.contains('st.mutex'),
+        isFalse,
+        reason: '回调发布不能再与 PCM / 查词帧争 reader 主锁',
+      );
       expect(body.contains('std::lock_guard'), isFalse);
       expect(
         body.contains('IsWindow('),
@@ -326,6 +337,25 @@ void main() {
       );
       // 常规（会重试一秒）的发布入口仍把 Popup 列在白名单里——host 侧另一条路
       // （窗口线程）若将来要用，契约是同一个。
+      final String lifetime = compactCode(readerSource);
+      expect(
+        lifetime.contains(
+          'AcquireSRWLockExclusive(&st.mapping_lifetime);UnmapViewOfFile(st.header);',
+        ),
+        isTrue,
+        reason: '解除映射必须在寿命锁的独占模式下，共享端才能安全读 header',
+      );
+      expect(
+        lifetime.contains(
+          'AcquireSRWLockExclusive(&st.mapping_lifetime);st.header=header;',
+        ),
+        isTrue,
+      );
+      expect(
+        lifetime.contains('TryAcquireSRWLockShared(lock_)'),
+        isTrue,
+        reason: 'WH_MOUSE_LL 回调绝不能阻塞等锁',
+      );
       final String regular = compactCode(
         methodBody(
           readerSource,
@@ -338,7 +368,7 @@ void main() {
       );
     });
 
-    test('孤儿判定：try_lock、gate 关或槽位易主才算孤儿、写入中不算', () {
+    test('孤儿判定：映射寿命共享锁、gate 关或槽位易主才算孤儿、写入中不算', () {
       final String header = compactCode(readerHeader);
       expect(
         header.contains(
@@ -352,10 +382,10 @@ void main() {
           'bool VoiceHookReader::OverlayClickShieldTransactionOrphaned(',
         ),
       );
-      expect(body.contains('std::try_to_lock'), isTrue);
+      expect(body.contains('st.mutex'), isFalse);
       expect(body.contains('std::lock_guard'), isFalse);
       expect(
-        body.contains('if(!lock.owns_lock())returnfalse;'),
+        body.contains('if(!mapping.owned())returnfalse;'),
         isTrue,
         reason: '拿不到锁只是忙，不能判孤儿',
       );
@@ -547,6 +577,91 @@ void main() {
         ),
       );
       expect(smash.contains('owner_kind'), isFalse);
+    });
+  });
+
+  // 反馈 -AynHxzwNe / 4c0IeCpSjb：中键 / 侧键与键盘在 LL 钩子里直接吞掉（被吞的事件
+  // 不进任何输入队列、不更新异步键态，所有采样读法同时生效），不走注入侧护盾。
+  group('runner: 中键 / 侧键改投与键盘护盾', () {
+    final String hookProc = compactCode(
+      hookSource.substring(
+        hookSource.indexOf('LRESULT CALLBACK HookProc('),
+        hookSource.indexOf('HWND KeyboardShieldCardTarget()'),
+      ),
+    );
+
+    test('覆盖窗口上的中键 / 侧键 down 在 g_target 闸门之前吞掉并改投，up 成对', () {
+      final int relayDown = hookProc.indexOf(
+        'PostRelayedButton(relay,wparam,info,true);return1;',
+      );
+      final int targetGate = hookProc.indexOf(
+        'constHWNDtarget=g_target.load(std::memory_order_acquire);',
+      );
+      expect(relayDown, greaterThanOrEqualTo(0));
+      expect(relayDown, lessThan(targetGate));
+      expect(
+        hookProc.contains(
+          'g_swallowed_buttons.fetch_or(button_bit,std::memory_order_relaxed);'
+          'g_relayed_button_window[relay_slot].store(relay,',
+        ),
+        isTrue,
+        reason: '吞掉的 down 必须记位，配对 up 才会同样被吞',
+      );
+      final int relayUp = hookProc.indexOf(
+        'PostRelayedButton(relay,wparam,info,false);',
+      );
+      expect(relayUp, greaterThanOrEqualTo(0));
+      expect(relayUp, lessThan(targetGate));
+      final String slot = compactCode(
+        methodBody(hookSource, 'int RelayedButtonSlot(uint32_t button_bit)'),
+      );
+      expect(
+        slot.contains('kSwallowedLeftButton') ||
+            slot.contains('kSwallowedRightButton'),
+        isFalse,
+        reason: '左键走 v19 护盾（要落到卡片 WebView 上），右键要给卡片原生右键菜单',
+      );
+    });
+
+    test('键盘钩子与鼠标钩子同生共死，回调放行自己的重放并探测全局热键', () {
+      final String thread = compactCode(
+        methodBody(hookSource, 'void HookThreadMain()'),
+      );
+      expect(
+        thread.contains('SyncKeyboardHook(hook!=nullptr,&keyboard_hook);'),
+        isTrue,
+      );
+      expect(
+        thread.contains('SyncKeyboardHook(false,&keyboard_hook);'),
+        isTrue,
+      );
+      final String proc = compactCode(
+        methodBody(
+          hookSource,
+          'LRESULT CALLBACK KeyboardHookProc(int code, WPARAM wparam, LPARAM lparam)',
+        ),
+      );
+      expect(
+        proc.indexOf('info->dwExtraInfo==kKeyboardShieldReplayTag'),
+        lessThan(proc.indexOf('g_keyboard_shield.OnKey(')),
+        reason: '重放的热键不能被自己再吞一次',
+      );
+      expect(
+        proc.contains('PostMessage(card,kLowLevelKeyboardCopyMessage,0,0);'),
+        isTrue,
+      );
+      expect(
+        proc.contains('IsRegisteredGlobalHotkey('),
+        isTrue,
+        reason: '吞掉的组合若是全局热键（应用外查词 / 截屏识字）必须交还',
+      );
+      expect(
+        compactCode(
+          cardSource,
+        ).contains('casefushi::kLowLevelKeyboardCopyMessage:'),
+        isTrue,
+        reason: '吞掉的 Ctrl+C 由卡片自己复制选区',
+      );
     });
   });
 }

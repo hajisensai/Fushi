@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('Windows Profile and Release bundles require the torrent runtime', () {
@@ -8,9 +8,7 @@ void main() {
 
     expect(
       source,
-      contains(
-        r'CMAKE_INSTALL_CONFIG_NAME MATCHES \"^(Profile|Release)$\"',
-      ),
+      contains(r'CMAKE_INSTALL_CONFIG_NAME MATCHES \"^(Profile|Release)$\"'),
     );
     expect(source, contains('fushi_torrent_ffi.dll'));
     expect(source, contains('torrent-rasterbar.dll'));

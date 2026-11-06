@@ -20,12 +20,11 @@ void main() {
   FushiFileDropTarget targetWith(
     FileDropCallback onDrop,
     List<Object> reported,
-  ) =>
-      FushiFileDropTarget(
-        onDrop: onDrop,
-        onDropFailure: (Object error, StackTrace _) => reported.add(error),
-        child: const SizedBox.shrink(),
-      );
+  ) => FushiFileDropTarget(
+    onDrop: onDrop,
+    onDropFailure: (Object error, StackTrace _) => reported.add(error),
+    child: const SizedBox.shrink(),
+  );
 
   test('同步处理器抛出：不外泄且被上报', () async {
     final List<Object> reported = <Object>[];
@@ -45,13 +44,13 @@ void main() {
     // 变成 `async` 之后，只包同步栈的 try/catch 接不住它抛的异常。把返回类型改回
     // `void`（或把 runDrop 里的 await 去掉）这条就红。
     final List<Object> reported = <Object>[];
-    final FushiFileDropTarget target = targetWith(
-      (List<String> paths, Offset position) async {
-        await Future<void>.delayed(Duration.zero);
-        throw StateError('boom-async');
-      },
-      reported,
-    );
+    final FushiFileDropTarget target = targetWith((
+      List<String> paths,
+      Offset position,
+    ) async {
+      await Future<void>.delayed(Duration.zero);
+      throw StateError('boom-async');
+    }, reported);
 
     await target.runDrop(<String>['/a.zip'], Offset.zero);
 
@@ -84,8 +83,10 @@ void main() {
         },
       );
 
-      expect(probed, <String>['/a.zip', '/e.ZIP'],
-          reason: '.epub / 视频 / 无扩展名都不该白开一次包');
+      expect(probed, <String>[
+        '/a.zip',
+        '/e.ZIP',
+      ], reason: '.epub / 视频 / 无扩展名都不该白开一次包');
       expect(result, <String, bool>{'/a.zip': true, '/e.ZIP': true});
     });
 
@@ -100,8 +101,10 @@ void main() {
         },
       );
 
-      expect(probed, <String>['/a.zip', '/b.epub'],
-          reason: '漫画库里图片型 EPUB 要在落点就认出来；PDF 不开包（直接归漫画）');
+      expect(probed, <String>[
+        '/a.zip',
+        '/b.epub',
+      ], reason: '漫画库里图片型 EPUB 要在落点就认出来；PDF 不开包（直接归漫画）');
     });
 
     test('同一路径重复拖入只开一次包', () async {
@@ -118,13 +121,13 @@ void main() {
     });
 
     test('开包失败只是「不是图片包」，不炸掉整次拖放', () async {
-      final Map<String, bool> result = await probeDroppedImageArchives(
-        <String>['/broken.zip'],
-        probe: (String path) async => throw const FileSystemException('nope'),
-      );
+      final Map<String, bool> result = await probeDroppedImageArchives(<String>[
+        '/broken.zip',
+      ], probe: (String path) async => throw const FileSystemException('nope'));
 
-      expect(result, <String, bool>{'/broken.zip': false},
-          reason: '损坏包应落回按扩展名的常规分类（.zip → 词典包），而不是抛出去');
+      expect(result, <String, bool>{
+        '/broken.zip': false,
+      }, reason: '损坏包应落回按扩展名的常规分类（.zip → 词典包），而不是抛出去');
     });
   });
 }

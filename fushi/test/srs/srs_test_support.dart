@@ -2,12 +2,37 @@
 //
 // 假内核与 test/srs/srs_pages_test.dart、packages/fushi_engine/test/srs/srs_db_store_test.dart
 // 同一套数值（真实数值由 packages/fushi_srs 的 FFI 测试覆盖）。
+import 'dart:io';
+
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart' show TargetPlatform;
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
+import 'package:flutter_test/flutter_test.dart' show addTearDown;
 import 'package:fushi_srs/fushi_srs.dart';
+
+import '../helpers/test_platform_services.dart';
+
+/// 页面测试用的 AppModel（偏好层没初始化）：「首次 v2 同步」视为已确认。
+///
+/// 牌组列表首帧会问一次首次同步（`ensureSrsFirstSyncConfirmed`）：偏好层没初始化时 getter 恒为 false，
+/// 有笔记就弹确认框挡住后续点按、没笔记则写偏好失败——与被测功能无关，在这里钉成已确认。
+/// 专门测这个确认框的用例自己装真偏好层。
+///
+/// 快捷键注册表装出厂默认（真 app 在 `initialise` 里装）：复习页的键盘 / 手柄按
+/// `ShortcutScope.srsReview` 解析，未装载的注册表对每个动作都是空绑定。
+class SrsTestAppModel extends AppModel {
+  SrsTestAppModel() : super(testPlatformServices()) {
+    shortcutRegistry.loadDefaults(TargetPlatform.windows);
+  }
+
+  @override
+  bool get srsSync2MergeConfirmed => true;
+}
 
 const String kSrsTestProfile = '01928c3e-0000-7000-8000-0000000000cd';
 
@@ -79,20 +104,19 @@ class SrsTestEngine implements FsrsEngine {
   @override
   List<double> computeParameters({
     required SrsAlgorithm algorithm,
-    required List<List<SrsFsrsReview>> items,
-    List<int>? cardIds,
+    required SrsFsrsTrainingSet items,
     SrsOptimizerControl? control,
   }) => defaultParams(algorithm);
   @override
   SrsEvaluation evaluateTimeSeries({
     required SrsAlgorithm algorithm,
-    required List<List<SrsFsrsReview>> items,
+    required SrsFsrsTrainingSet items,
   }) => const SrsEvaluation(logLoss: 0.3, rmseBins: 0.1);
   @override
   SrsEvaluation evaluate({
     required SrsAlgorithm algorithm,
     required List<double> params,
-    required List<List<SrsFsrsReview>> items,
+    required SrsFsrsTrainingSet items,
   }) => const SrsEvaluation(logLoss: 0.3, rmseBins: 0.1);
 }
 
@@ -107,23 +131,46 @@ class SrsTestClock {
 
   SrsTrustedClock trusted() => SrsTrustedClock(
     wallClockMs: () => nowMs,
-    monotonicMs: () => nowMs,
+    bootClockMs: () => nowMs,
     bootId: 'test-boot',
   );
 }
 
-/// 内存库上的一个 store（调用方负责关库）。
+/// 临时目录里的一份 srs.db（Rust 独占连接，Drift 执行器跑在当前 isolate）。注册
+/// [addTearDown]：关存储、删目录（Windows 句柄滞后时删除失败吞掉，临时目录留给系统清理）。
+Future<SrsStorage> openSrsTestStorage() async {
+  final Directory dir = Directory.systemTemp.createTempSync('fushi_srs_test_');
+  final SrsStorage storage = await SrsStorage.open(
+    path: SrsStorage.pathIn(dir.path),
+    inline: true,
+  );
+  addTearDown(() async {
+    await storage.close();
+    try {
+      dir.deleteSync(recursive: true);
+    } on FileSystemException {
+      // 句柄尚未释放；临时目录留给系统清理。
+    }
+  });
+  return storage;
+}
+
+/// 内存主库 + 临时 srs.db 上的一个 store（主库由调用方关；srs.db 随 [addTearDown] 关）。
+/// [storage] 给了就用它（同一份 srs.db 上开多个 profile 的 store）。
 Future<(FushiDatabase, SrsDbStore)> openSrsTestStore({
   String profileUid = kSrsTestProfile,
   String deviceId = 'dev',
   FsrsEngine? engine = const SrsTestEngine(),
   SrsTestClock? clock,
   SrsStyleStore? styles,
+  SrsStorage? storage,
 }) async {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+  final SrsStorage srs = storage ?? await openSrsTestStorage();
   final SrsDbStore store = await SrsDbStore.open(
-    db: db,
+    db: srs.db,
+    core: srs.core,
     profileUid: profileUid,
     deviceId: deviceId,
     engine: engine,

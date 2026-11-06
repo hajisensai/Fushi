@@ -48,21 +48,14 @@ void main() {
       },
     );
     final Future<String?> superseded =
-        SelectionCapture.debugRunClipboardExclusive<String>(
-      () async {
-        bodyRan = true;
-        return 'superseded';
-      },
-      stillWanted: () => wanted,
-    );
+        SelectionCapture.debugRunClipboardExclusive<String>(() async {
+          bodyRan = true;
+          return 'superseded';
+        }, stillWanted: () => wanted);
 
     expect(await first, 'first');
     expect(await superseded, isNull);
-    expect(
-      bodyRan,
-      isFalse,
-      reason: '已被取代的那次不该再去动剪贴板——结果反正会被上游丢弃',
-    );
+    expect(bodyRan, isFalse, reason: '已被取代的那次不该再去动剪贴板——结果反正会被上游丢弃');
   });
 
   test('事务体抛异常也放行后来者（一次失败不得永久堵死这条路）', () async {

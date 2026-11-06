@@ -1,16 +1,16 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
 import 'anki_media_dedup.dart';
 import 'anki_models.dart';
+import 'anki_settings_store.dart';
 import 'anki_note_type_definition.dart';
 import 'anki_synchronized_clip_template.dart';
 import 'card_source_link.dart';
 import 'lapis_note_type.dart';
 import 'anki_note_composer.dart';
 
+export 'anki_settings_store.dart';
 export 'anki_note_composer.dart'
     show
         AudioFetchOutcome,
@@ -24,18 +24,27 @@ export 'anki_note_composer.dart'
         synchronizedVideoReplayHtml;
 
 abstract class BaseAnkiRepository with AnkiNoteComposer {
-  @protected
-  static const settingsKey = 'fushi_anki_settings';
+  /// [settingsStore] 为 null 时用进程（isolate）级装配点 [defaultSettingsStore]。
+  BaseAnkiRepository({AnkiSettingsStore? settingsStore})
+    : _settingsStore = settingsStore;
 
-  /// 存量 SharedPreferences 键（W2-7 迁移输入）：[readSettingsJson] 载入期把
-  /// 值搬到 [settingsKey] 后删除旧键。旧字面量只允许活在这一处迁移代码里。
-  static const String _legacySettingsKey = 'hoshi_anki_settings';
+  /// 进程级装配点：app 在每个 entry point（主 app / `:popup` / 悬浮词典）打开
+  /// Drift 库后换成 Drift 实现；没装配（测试、没有 Drift 库的宿主）时是
+  /// SharedPreferences 实现，行为与迁移前一致。
+  static AnkiSettingsStore defaultSettingsStore =
+      const SharedPreferencesAnkiSettingsStore();
+
+  final AnkiSettingsStore? _settingsStore;
+
+  /// 本实例实际读写的设置存储（每次取值都解析，装配点后换也立即生效）。
+  @protected
+  AnkiSettingsStore get settingsStore => _settingsStore ?? defaultSettingsStore;
 
   /// 载入期一次性迁移（W2-2）：把存量用户卡模板里的音频旧别名
   /// `{sasayaki-audio}` 就地改写为 `{sentence-audio}`（两者从来渲染同一个值，
   /// 改写零语义变化），命中即回写持久层。幂等：改写后源串不再含旧 token。
   /// 旧字面量只允许活在这一处迁移代码里——渲染器/枚举/诊断均已不再受理别名。
-  /// 清理条件：无（SharedPreferences 无版本阶梯，载入期改写即是它的迁移通道）。
+  /// 清理条件：无（设置串整份存在单个键里、无版本阶梯，载入期改写即是它的迁移通道）。
   static const String _legacySentenceAudioAlias = '{sasayaki-audio}';
 
   /// 载入期一次性迁移：存量配置里 `MiscInfo` 的映射**一字不差**还是旧出厂默认
@@ -45,7 +54,7 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   /// 为什么只认「等于旧默认」：这等价于「用户从没碰过这个字段」，补齐是在替他
   /// 跟进出厂默认。凡是被改过的值——清空、换成别的占位符、或自己拼过别的
   /// 组合——一律不动，不覆盖用户意图。不会修改已经导出的旧卡。
-  /// 幂等：改写后值不再等于旧默认。清理条件：无（SharedPreferences 无版本阶梯，
+  /// 幂等：改写后值不再等于旧默认。清理条件：无（设置串无版本阶梯，
   /// 载入期改写即是它的迁移通道，与上面的别名改写同构）。
   static const String _legacyMiscInfoMapping = '{document-title}';
   static const String _miscInfoMappingWithClipTime =
@@ -55,32 +64,25 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   static const String _miscInfoMappingWithLinkedTitle =
       '{source-link} {clip-timestamp}';
 
-  /// 读原始设置 JSON 的**唯一通道**：三个载入期迁移（W2-7 键搬移 + W2-2 别名改写
-  /// + MiscInfo 补片段时间窗）都收敛在这里。子类若覆写 [loadSettings]（AnkiDroid 的
+  /// 读原始设置 JSON 的**唯一通道**：载入期迁移（W2-2 别名改写 + MiscInfo 补片段
+  /// 时间窗）都收敛在这里，改写结果经 [store] 回写——换成 Drift 存储后照样生效。
+  /// （W2-7 旧 SP 键搬移属于 SP 存储自身，见 [SharedPreferencesAnkiSettingsStore]。）子类若覆写 [loadSettings]（AnkiDroid 的
   /// legacy deck 迁移）也必须经由本方法取原始串，否则迁移被绕过。返回 null = 从未存过。
   ///
   /// 顺序有意：别名改写只把 `{sasayaki-audio}` 换成 `{sentence-audio}`，不可能凭空
   /// 造出或抹掉 `{document-title}`，故两条迁移互不干扰；但必须先改写再补 MiscInfo，
   /// 否则 `replaceAll` 会作用在已重编码的串上、把后一步的结果覆盖掉。
   @protected
-  Future<String?> readSettingsJson(SharedPreferences prefs) async {
-    String? raw = prefs.getString(settingsKey);
-    if (raw == null) {
-      final String? legacy = prefs.getString(_legacySettingsKey);
-      if (legacy != null) {
-        await prefs.setString(settingsKey, legacy);
-        await prefs.remove(_legacySettingsKey);
-        raw = legacy;
-      }
-    }
+  Future<String?> readSettingsJson(AnkiSettingsStore store) async {
+    String? raw = await store.read();
     if (raw != null && raw.contains(_legacySentenceAudioAlias)) {
       raw = raw.replaceAll(_legacySentenceAudioAlias, '{sentence-audio}');
-      await prefs.setString(settingsKey, raw);
+      await store.write(raw);
     }
     if (raw != null) {
       final String? upgraded = upgradeMiscInfoMapping(raw);
       if (upgraded != null) {
-        await prefs.setString(settingsKey, upgraded);
+        await store.write(upgraded);
         raw = upgraded;
       }
     }
@@ -120,14 +122,14 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
     if (mappings is! Map) return null;
     if (mappings['MiscInfo'] != _legacyMiscInfoMapping &&
         mappings['MiscInfo'] != _miscInfoMappingWithClipTime &&
-        mappings['MiscInfo'] != _miscInfoMappingWithSource) return null;
+        mappings['MiscInfo'] != _miscInfoMappingWithSource)
+      return null;
     mappings['MiscInfo'] = _miscInfoMappingWithLinkedTitle;
     return jsonEncode(decoded);
   }
 
   Future<AnkiSettings> loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? raw = await readSettingsJson(prefs);
+    final String? raw = await readSettingsJson(settingsStore);
     if (raw == null) return const AnkiSettings();
     try {
       return AnkiSettings.fromJson(jsonDecode(raw) as Map<String, dynamic>);
@@ -137,16 +139,8 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
     }
   }
 
-  Future<void> saveSettings(AnkiSettings settings) async {
-    final prefs = await SharedPreferences.getInstance();
-    final bool saved = await prefs.setString(
-      settingsKey,
-      jsonEncode(settings.toJson()),
-    );
-    if (!saved) {
-      throw StateError('Failed to persist Anki settings.');
-    }
-  }
+  Future<void> saveSettings(AnkiSettings settings) =>
+      settingsStore.write(jsonEncode(settings.toJson()));
 
   Future<AnkiSettings> updateSettings(
     AnkiSettings Function(AnkiSettings) transform,
@@ -177,10 +171,9 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
     required int noteId,
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      MineOutcome.failure(
-        'This Anki backend does not support overwriting a mined card.',
-      );
+  }) async => MineOutcome.failure(
+    'This Anki backend does not support overwriting a mined card.',
+  );
 
   /// TODO-614：按「与查重同一条件」反查一张可被覆写的**已存在** note id。
   ///
@@ -195,8 +188,7 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   Future<int?> findOverwriteTargetNoteId(
     String expression,
     String reading,
-  ) async =>
-      null;
+  ) async => null;
 
   /// TODO-1007/1008：按「与查重同一条件」（第一字段=expression）反查 Anki 中**所有**
   /// 已存在的同词卡，返回它们的 [MinedNoteRef]（noteId + 一行预览），**不受
@@ -212,8 +204,7 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   Future<List<MinedNoteRef>> findMatchingNotes(
     String expression,
     String reading,
-  ) async =>
-      const <MinedNoteRef>[];
+  ) async => const <MinedNoteRef>[];
 
   /// 这个后端能不能回读 Anki、核对「某张卡现在到底还在不在」。
   ///
@@ -243,6 +234,22 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   ///
   /// 返回是否真的划掉了（本来就没有记录 / 后端不需要 → `false`）。
   Future<bool> forgetMinedCard(String expression) async => false;
+
+  /// 反馈 JNyykxvuY9：这个后端能不能按 note id **删掉**一张已制卡（制卡成功提示上的
+  /// 「撤销」、已制卡 ✓ 对话框里的「从 Anki 删除这张卡」）。
+  ///
+  /// `true`：AnkiConnect（`deleteNotes`）、AnkiDroid（ContentProvider 删 note）、
+  /// Fushi 复习（Rust 核心删笔记，走同步墓碑）。`false`（默认）：AnkiMobile 只有
+  /// `anki://x-callback-url/addnote`，没有删卡入口；转发到互联主机的仓库也不删——
+  /// 界面据此不出「撤销」/「删除」按钮，而不是出一个点了只会失败的按钮。
+  bool get canDeleteMinedNotes => false;
+
+  /// 删掉 [noteId]（连同它的卡片）。返回 `true` = 删了，`false` = 后端明确回答
+  /// 这张 note 已不存在。后端不可达 / 出错照抛（调用方据此提示「删除失败」，不能把
+  /// 「问不到」当成「删掉了」）。[canDeleteMinedNotes] 为 `false` 的后端调用即抛
+  /// [UnsupportedError]。
+  Future<bool> deleteMinedNote(int noteId) async =>
+      throw UnsupportedError('$runtimeType cannot delete notes');
 
   /// TODO-1007/1008：读取一张已存在 note（[noteId]）的现有字段（字段名 → 值），供
   /// note viewer 只读展示。两后端各自覆写（AnkiConnect `notesInfo` / AnkiDroid
@@ -285,8 +292,7 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   Future<Map<String, String>> prepareSourceNoteFields({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      throw UnsupportedError('Source note editing is unavailable');
+  }) async => throw UnsupportedError('Source note editing is unavailable');
 
   /// Candidate notes whose fields contain the source ID substring (see
   /// [CardSourceLink.searchQueryForSourceId]). Must propagate backend failure
@@ -308,8 +314,7 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   Future<void> writeSourceNoteFields(
     int noteId,
     Map<String, String> fields,
-  ) async =>
-      throw UnsupportedError('Source note editing is unavailable');
+  ) async => throw UnsupportedError('Source note editing is unavailable');
 
   /// Resolve the single note carrying [sourceId] in a `fushi://source` href.
   /// A substring candidate that parses to a different (or no) source link is
@@ -317,16 +322,18 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   /// Backend failures propagate: "could not ask" is never reported as "gone".
   Future<AnkiSourceNote?> readSourceNote(String sourceId) async {
     CardSourceLink.validateSourceId(sourceId);
-    final Set<int> candidates =
-        (await findSourceNoteCandidates(sourceId)).toSet();
+    final Set<int> candidates = (await findSourceNoteCandidates(
+      sourceId,
+    )).toSet();
     final Map<int, Map<String, String>> matches = <int, Map<String, String>>{};
     for (final int noteId in candidates) {
       if (noteId <= 0) throw StateError('Invalid source note candidate');
       final Map<String, String>? fields = await sourceNoteFields(noteId);
       if (fields == null) continue;
       final bool carriesSource = fields.values.any(
-        (String field) => CardSourceLink.fromHtml(field)
-            .any((CardSourceLink link) => link.sourceId == sourceId),
+        (String field) => CardSourceLink.fromHtml(
+          field,
+        ).any((CardSourceLink link) => link.sourceId == sourceId),
       );
       if (carriesSource) matches[noteId] = fields;
     }
@@ -387,6 +394,14 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   /// **默认实现 = 优雅降级**：基类返回 `false`。
   Future<bool> openNoteInAnki(int noteId) async => false;
 
+  /// BUG-3790：已制卡片住在哪（界面据此说「Anki」还是「Fushi 复习」）。
+  MinedNoteHome get minedNoteHome => MinedNoteHome.anki;
+
+  /// [openNoteInAnki] 在本后端是否可能成功。基类默认实现恒 `false`，与之同步默认
+  /// 为 `false`；真实现了按 id 打开的后端覆写为 `true`。为 `false` 时「已存在的
+  /// 卡片」不出「打开」按钮——点下去只能弹「打不开」。
+  bool get canOpenMinedNote => false;
+
   /// BUG-2051：点 ↗「在 Anki 中打开**这个词**已有的卡」。
   ///
   /// 语义是「按词去 Anki 里看」，不是「按我们记下的某个 note id 去看」——后者要求
@@ -405,8 +420,10 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
     String reading,
   ) async {
     if (expression.isEmpty) return AnkiOpenWordOutcome.failed;
-    final List<MinedNoteRef> matches =
-        await findMatchingNotes(expression, reading);
+    final List<MinedNoteRef> matches = await findMatchingNotes(
+      expression,
+      reading,
+    );
     if (matches.isEmpty) return AnkiOpenWordOutcome.noMatch;
     final int newest = matches
         .map((MinedNoteRef m) => m.noteId)
@@ -455,8 +472,7 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   /// （调用方决定提示还是静默跳过）。**默认实现 = 优雅降级**：返回 `null`。
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
     String modelName,
-  ) async =>
-      null;
+  ) async => null;
 
   /// 本次制卡的目标笔记类型能否承载音画同步片段（判据见
   /// [noteTypeRendersSynchronizedClip]）。`null` = 无法判定（后端读不到模板、没选
@@ -469,8 +485,9 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
     final AnkiSettings settings = await loadSettings();
     final AnkiNoteType? noteType = settings.selectedNoteType;
     if (noteType == null) return null;
-    final AnkiNoteTypeDefinition? definition =
-        await readNoteTypeDefinition(noteType.name);
+    final AnkiNoteTypeDefinition? definition = await readNoteTypeDefinition(
+      noteType.name,
+    );
     // AnkiDroid 游标为空时回空模板列表：那是「没读到」，不是「模板不渲染」。
     if (definition == null || definition.templates.isEmpty) return null;
     return noteTypeRendersSynchronizedClip(
@@ -490,8 +507,7 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   Future<bool> updateNoteTypeTemplates(
     String modelName,
     List<AnkiCardTemplate> templates,
-  ) async =>
-      false;
+  ) async => false;
 
   // ── 媒体存储优化（字节级去重，见 anki_media_dedup.dart）────────────────
 
@@ -540,24 +556,59 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
     Future<void> Function(Map<String, dynamic> entry)? onJournal,
     AnkiMediaDedupOnProgress? onProgress,
     bool Function()? shouldCancel,
-  }) async =>
-      null;
+  }) async => null;
 
   // ── 卡组新卡按词频重排 ───────────────────────────────────────────────────
 
   /// 本后端能不能读某卡组的新卡并改写它们的队列位置。
   ///
   /// **后端不对称（有意）**：只有 AnkiConnect 有卡片级读写（`findCards` /
-  /// `cardsInfo` / `setSpecificValueOfCard`）。AnkiDroid ContentProvider 与
+  /// `cardsInfo` / 原生 `scheduling.repositionNewCards`）。AnkiDroid ContentProvider 与
   /// AnkiMobile 的 URL scheme 都没有改 `due` 的接口；互联「制卡到已配对设备」
   /// 也没有对应端点。这些后端默认 false，UI 据此把入口置灰并说明原因。
+  ///
+  /// 这是**静态**能力（后端类型）。后端类型支持、但连着的那一端此刻能不能真写，
+  /// 由 [probeDeckReposition] 探测。
   bool get supportsDeckReposition => false;
+
+  /// 探测重排此刻真能不能用（一次网络往返的后端会真问一次）。
+  ///
+  /// * true / false = 明确结论；
+  /// * 抛异常 = 下不了结论（后端不可达），调用方按「未知」处理，别记成不支持。
+  ///
+  /// 默认 = 静态能力 [supportsDeckReposition]。AnkiConnect 覆盖成问
+  /// `api.describe` 有没有原生 `scheduling.repositionNewCards`：新版 AnkiConnect
+  /// 不再允许直接写 `due`，没有原生接口就不能重排。
+  Future<bool> probeDeckReposition() async => supportsDeckReposition;
+
+  /// 制卡后要不要自动重排新卡（「制卡后自动按词频重排」开关与调度器只对它为 true 的后端生效）。
+  ///
+  /// 缺省 = 能重排就要：Anki 出卡只看队列位置，新卡按词频出只能事后改写位置。Fushi 复习
+  /// 覆盖成 false——它出卡时直接按卡上的词频名次排（牌组「新卡顺序」），不需要事后改写。
+  bool get supportsAutoReposition => supportsDeckReposition;
 
   /// 列出 [deckName]（含子卡组、排除筛选牌组）里的全部**新卡**。
   /// 默认实现 = 不支持，抛 [UnsupportedError]；调用前先看
   /// [supportsDeckReposition]。
   Future<List<AnkiCardInfo>> listNewCards(String deckName) async =>
       throw UnsupportedError('This Anki backend cannot list deck cards.');
+
+  /// [deckName] 里此刻全部新卡的 id（写回前重校验「还是不是新卡」用）。
+  ///
+  /// 默认取 [listNewCards] 的 id；读字段代价高的后端（Fushi 复习要物化笔记）覆盖成
+  /// 只读卡片 id 的轻查询——写回前的重校验不需要字段，不该再把整个牌组读一遍。
+  Future<Set<int>> newCardIdsIn(String deckName) async => <int>{
+    for (final AnkiCardInfo c in await listNewCards(deckName)) c.cardId,
+  };
+
+  /// 给已按目标出卡顺序排好的 [ordered] 分配新位置（与 [ordered] 同序、严格递增）。
+  ///
+  /// 默认 = 从 1 起连续编号，与 Anki 自己的「重新定位」一致（AnkiConnect 走这条）。
+  /// 后端可以覆盖成「只移动必须移动的卡」的稀疏方案（Fushi 复习：位置只是排序键、
+  /// 每改一张卡就是一条要同步的修改记录）。
+  List<int> assignNewCardPositions(List<AnkiCardInfo> ordered) => <int>[
+    for (int i = 0; i < ordered.length; i++) i + 1,
+  ];
 
   /// 批量写回新卡位置。默认实现 = 不支持。
   Future<AnkiCardDueWriteResult> setNewCardPositions(
@@ -571,10 +622,7 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   static const String bookTag = AnkiNoteComposer.bookTag;
   static const String videoTag = AnkiNoteComposer.videoTag;
   static const String gameTag = AnkiNoteComposer.gameTag;
-  static const String charPositionTagPrefix =
-      AnkiNoteComposer.charPositionTagPrefix;
-  static String? formatCharPositionTag(int? absoluteChars) =>
-      AnkiNoteComposer.formatCharPositionTag(absoluteChars);
+
   static String previewFromFieldValue(String value, {int maxLen = 60}) =>
       AnkiNoteComposer.previewFromFieldValue(value, maxLen: maxLen);
   static String? sanitizeTitleTag(String? title) =>
@@ -584,19 +632,17 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
     required AnkiMiningPayload payload,
     required String? noteTypeName,
     required Map<String, String> fieldMappings,
-  }) =>
-      AnkiNoteComposer.shouldYieldSelectionText(
-        payload: payload,
-        noteTypeName: noteTypeName,
-        fieldMappings: fieldMappings,
-      );
+  }) => AnkiNoteComposer.shouldYieldSelectionText(
+    payload: payload,
+    noteTypeName: noteTypeName,
+    fieldMappings: fieldMappings,
+  );
   @protected
   static Map<String, String> fieldsForOverwrite({
     required Iterable<String> existingFieldNames,
     required Map<String, String> rendered,
-  }) =>
-      AnkiNoteComposer.fieldsForOverwrite(
-        existingFieldNames: existingFieldNames,
-        rendered: rendered,
-      );
+  }) => AnkiNoteComposer.fieldsForOverwrite(
+    existingFieldNames: existingFieldNames,
+    rendered: rendered,
+  );
 }

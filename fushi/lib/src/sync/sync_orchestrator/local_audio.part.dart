@@ -18,10 +18,15 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
     InterconnectSyncBackend backend,
     SyncAssetDirection direction,
   ) async {
-    final List<RemoteLocalAudioInfo> remoteEntries =
-        await backend.listRemoteLocalAudio();
+    final List<RemoteLocalAudioInfo> remoteEntries = await backend
+        .listRemoteLocalAudio();
+    // 「本端有」只认库文件真在本机的条目（[localAudioEntries] 的 path 已归一到本机
+    // 落点，见 AppModel.localAudioDbsOnThisDevice）。从另一台设备导入的配置方案会
+    // 带来同名但文件不在本机的引用（BUG-3702）：把它算作「本端有」，远端那份就永远
+    // 不会被拉下来，这条源也就永远修不好。拉下来后由 onLocalAudioImported 原位改指。
     final Set<String> localNames = <String>{
-      for (final LocalAudioDbEntry d in localAudioEntries) d.displayName,
+      for (final LocalAudioDbEntry d in localAudioEntries)
+        if (File(d.path).existsSync()) d.displayName,
     };
     final Set<String> remoteNames = <String>{
       for (final RemoteLocalAudioInfo r in remoteEntries) r.displayName,
@@ -40,24 +45,30 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
 
     // ── Pull：远端独有 → 下载并注册 ────────────────────────────────────────
     for (final String name in pulls) {
-      _emit(SyncPhase.localAudio,
-          itemIndex: index, itemTotal: total, title: name);
+      _emit(
+        SyncPhase.localAudio,
+        itemIndex: index,
+        itemTotal: total,
+        title: name,
+      );
       File? tmp;
       File? stagingDb;
       try {
-        tmp = _tmpFile(_localAudioAssetSuffix);
+        tmp = resumableTmpFile('localaudio', name, _localAudioAssetSuffix);
         await backend.getRemoteLocalAudio(
           name,
           tmp,
-          onProgress: (double f, [int? b]) => _emit(SyncPhase.localAudio,
-              itemIndex: index, itemTotal: total, title: name,
-              fileFraction: f, fileBytes: b),
+          onProgress: (double f, [int? b]) => _emit(
+            SyncPhase.localAudio,
+            itemIndex: index,
+            itemTotal: total,
+            title: name,
+            fileFraction: f,
+            fileBytes: b,
+          ),
         );
-        final LocalAudioPackageContents contents =
-            await _packages.importLocalAudioPackage(
-          packageFile: tmp,
-          stagingDir: _tempDir,
-        );
+        final LocalAudioPackageContents contents = await _packages
+            .importLocalAudioPackage(packageFile: tmp, stagingDir: _tempDir);
         stagingDb = contents.dbFile;
         if (onLocalAudioImported != null) {
           await onLocalAudioImported!(contents);
@@ -74,18 +85,24 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
 
     // ── Push：本端独有 → 打包并上传 ─────────────────────────────────────────
     for (final String name in pushes) {
-      _emit(SyncPhase.localAudio,
-          itemIndex: index, itemTotal: total, title: name);
+      _emit(
+        SyncPhase.localAudio,
+        itemIndex: index,
+        itemTotal: total,
+        title: name,
+      );
       File? tmp;
       try {
-        final LocalAudioDbEntry? entry =
-            localAudioEntries.cast<LocalAudioDbEntry?>().firstWhere(
-                  (LocalAudioDbEntry? d) => d!.displayName == name,
-                  orElse: () => null,
-                );
+        final LocalAudioDbEntry? entry = localAudioEntries
+            .cast<LocalAudioDbEntry?>()
+            .firstWhere(
+              (LocalAudioDbEntry? d) => d!.displayName == name,
+              orElse: () => null,
+            );
         if (entry == null || !File(entry.path).existsSync()) {
           report.errors.add(
-              'live push local audio "$name": DB file missing or not found');
+            'live push local audio "$name": DB file missing or not found',
+          );
           index++;
           continue;
         }
@@ -100,9 +117,14 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
         await backend.putRemoteLocalAudio(
           name,
           tmp,
-          onProgress: (double f, [int? b]) => _emit(SyncPhase.localAudio,
-              itemIndex: index, itemTotal: total, title: name,
-              fileFraction: f, fileBytes: b),
+          onProgress: (double f, [int? b]) => _emit(
+            SyncPhase.localAudio,
+            itemIndex: index,
+            itemTotal: total,
+            title: name,
+            fileFraction: f,
+            fileBytes: b,
+          ),
         );
         report.localAudioExported++;
       } catch (e) {

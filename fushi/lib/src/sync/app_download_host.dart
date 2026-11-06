@@ -36,13 +36,13 @@ class AppDownloadHost implements HostDownloadHost {
     required VideoResourceRegistry? Function() resourceRegistry,
     required VideoDownloadSubscriptionService? Function() subscriptionService,
     this.discoveryImportSupported = true,
-  })  : _database = database,
-        _pipeline = pipeline,
-        _backendTarget = backendTarget,
-        _readyBackend = readyBackend,
-        _targetSourceId = targetSourceId,
-        _resourceRegistry = resourceRegistry,
-        _subscriptionService = subscriptionService;
+  }) : _database = database,
+       _pipeline = pipeline,
+       _backendTarget = backendTarget,
+       _readyBackend = readyBackend,
+       _targetSourceId = targetSourceId,
+       _resourceRegistry = resourceRegistry,
+       _subscriptionService = subscriptionService;
 
   final FushiDatabase Function() _database;
   final VideoDownloadPipelineService? Function() _pipeline;
@@ -62,20 +62,21 @@ class AppDownloadHost implements HostDownloadHost {
   /// 本机能否把非视频域下载按域入库（有发现导入执行器）。
   final bool discoveryImportSupported;
 
-  /// `/api/subscriptions` 面：与代下载共享同一组闭包，registry / service 每次现取。
-  HostSubscriptionHost get subscriptions => _AppSubscriptionHost(this);
+  /// 订阅面：互联 `/api/subscriptions`、订阅页按钮与桌面控制通道共用这一份；
+  /// 与代下载共享同一组闭包，registry / service 每次现取。
+  AppSubscriptionHost get subscriptions => AppSubscriptionHost._(this);
 
   bool get _supported => _pipeline() != null && _readyBackend() != null;
 
   @override
   Future<Map<String, Object?>> capability() async => <String, Object?>{
-        'supported': _supported,
-        'backend': _readyBackend() ?? 'none',
-        'kinds': <String>[
-          'video',
-          if (discoveryImportSupported) ...kHostDownloadDiscoveryKinds,
-        ],
-      };
+    'supported': _supported,
+    'backend': _readyBackend() ?? 'none',
+    'kinds': <String>[
+      'video',
+      if (discoveryImportSupported) ...kHostDownloadDiscoveryKinds,
+    ],
+  };
 
   @override
   Future<List<VideoDownloadJobRow>> listJobs() =>
@@ -156,30 +157,38 @@ class AppDownloadHost implements HostDownloadHost {
 /// 每次调用都按当下的 registry / service 重建一份 [PipelineSubscriptionHost]：
 /// 它自身无状态（订阅行全在 DB），而 app 的下载 runtime 会随设置变更整体重建，
 /// 缓存实例只会拿着一个已 dispose 的 service。registry 没起来时用空 registry
-/// 顶上——能力位如实报 supported=false、provider 清单为空，列表 / 启停 / 删除
-/// 只碰 DB 照常可用。
-class _AppSubscriptionHost implements HostSubscriptionHost {
-  const _AppSubscriptionHost(this._owner);
+/// 顶上——能力位如实报 supported=false、provider 清单为空，列表 / 启停 / 删除 /
+/// 编辑只碰 DB 照常可用。
+///
+/// 这是本机订阅操作的**唯一入口**：订阅页（`video_download_subscriptions_panel.dart`）
+/// 与桌面控制通道（`ctl_download_subscription_routes.dart`）都只调这里，不各自写库，
+/// 语义才不会分叉（守卫 `test/ops/ctl_ui_action_facade_coverage_guard_test.dart`）。
+class AppSubscriptionHost implements HostSubscriptionHost {
+  const AppSubscriptionHost._(this._owner);
 
   final AppDownloadHost _owner;
 
   PipelineSubscriptionHost get _delegate => PipelineSubscriptionHost(
-        db: _owner._database(),
-        registry: _owner._resourceRegistry() ??
-            VideoResourceRegistry(const <VideoResourceProvider>[]),
-        backendTarget: _owner._backendTarget,
-        targetSourceId: () async {
-          final int? id = await _owner._targetSourceId();
-          if (id == null) {
-            throw const VideoDownloadPipelineActionRequired(
-              'no managed video source on this host',
-            );
-          }
-          return id;
-        },
-        backendName: _owner._readyBackend() ?? 'none',
-        service: _owner._supported ? _owner._subscriptionService() : null,
-      );
+    db: _owner._database(),
+    registry:
+        _owner._resourceRegistry() ??
+        VideoResourceRegistry(const <VideoResourceProvider>[]),
+    backendTarget: _owner._backendTarget,
+    targetSourceId: () async {
+      final int? id = await _owner._targetSourceId();
+      if (id == null) {
+        throw const VideoDownloadPipelineActionRequired(
+          'no managed video source on this host',
+        );
+      }
+      return id;
+    },
+    backendName: _owner._readyBackend() ?? 'none',
+    service: _owner._supported ? _owner._subscriptionService() : null,
+    releaseSeedsOutsideTarget: _owner
+        ._pipeline()
+        ?.releaseSubscriptionSeedsOutsideTarget,
+  );
 
   @override
   Future<Map<String, Object?>> capability() => _delegate.capability();
@@ -193,8 +202,7 @@ class _AppSubscriptionHost implements HostSubscriptionHost {
   @override
   Future<VideoDownloadSubscriptionRow> create(
     HostSubscriptionCreateRequest request,
-  ) =>
-      _delegate.create(request);
+  ) => _delegate.create(request);
 
   @override
   Future<void> setEnabled(String subscriptionId, bool enabled) =>
@@ -207,4 +215,14 @@ class _AppSubscriptionHost implements HostSubscriptionHost {
   @override
   Future<void> delete(String subscriptionId) =>
       _delegate.delete(subscriptionId);
+
+  /// 逐集历史（本机专用，见 [PipelineSubscriptionHost.items]）。
+  Future<List<VideoDownloadSubscriptionItemRow>> items(String subscriptionId) =>
+      _delegate.items(subscriptionId);
+
+  /// 编辑订阅规则（本机专用，见 [PipelineSubscriptionHost.update]）。
+  Future<VideoDownloadSubscriptionRow> update(
+    String subscriptionId,
+    VideoDownloadSubscriptionRuleEdit edit,
+  ) => _delegate.update(subscriptionId, edit);
 }

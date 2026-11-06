@@ -5,7 +5,11 @@ import 'package:flutter/gestures.dart' show PointerHoverEvent;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:material_color_utilities/material_color_utilities.dart'
     show Hct;
 import 'package:fushi_srs/fushi_srs.dart' show srsDayToDate;

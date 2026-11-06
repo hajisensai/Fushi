@@ -90,6 +90,7 @@ Widget _app({
   ValueNotifier<VideoRemoteFavoritesScope>? scope,
   VideoRemoteLookupHighlight? lookupHighlight,
   bool pageSwipeEnabled = true,
+  VoidCallback? onCloseVideo,
 }) {
   // 收藏范围由「调用方」持有：范围回调里改它，脚手架据此滑到对应页。
   final ValueNotifier<VideoRemoteFavoritesScope> scopeState =
@@ -166,6 +167,7 @@ Widget _app({
                 onToggleFavoriteLine: (_) {},
                 onMineLine: (_) {},
                 onCustomizeControls: () {},
+                onCloseVideo: onCloseVideo,
               ),
             ),
       ),
@@ -221,6 +223,25 @@ FushiChromeReveal _revealOf(WidgetTester tester, Finder child) =>
     );
 
 void main() {
+  testWidgets('顶栏「关闭视频」只在电脑支持时出现，点它回调一次（PR #2469 移植）', (
+    WidgetTester tester,
+  ) async {
+    const Key close = ValueKey<String>('video-remote-close-video');
+    await _pumpAt(tester, const Size(1000, 1400), _app(recorder: _Recorder()));
+    expect(find.byKey(close), findsNothing);
+
+    int closed = 0;
+    await _pumpAt(
+      tester,
+      const Size(1000, 1400),
+      _app(recorder: _Recorder(), onCloseVideo: () => closed++),
+    );
+    expect(find.byKey(close), findsOneWidget);
+    await tester.tap(find.byKey(close));
+    await tester.pump();
+    expect(closed, 1);
+  });
+
   testWidgets('竖屏：浮动顶栏 + 列表 + 底部浮动控制卡', (WidgetTester tester) async {
     final _Recorder recorder = _Recorder();
     await _pumpAt(tester, const Size(390, 844), _app(recorder: recorder));

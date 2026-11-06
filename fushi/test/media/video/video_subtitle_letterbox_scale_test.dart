@@ -39,22 +39,24 @@ Future<void> _pump(
   c.debugVideoHeightOverride = videoH;
   c.setCues(<AudioCue>[_cue()]);
   c.debugUpdateCueForPosition(1);
-  await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      body: Center(
-        child: SizedBox(
-          width: 640,
-          height: 640, // 方形容器：16:9 视频 letterbox，内容高 = 640×1080/1920 = 360
-          child: VideoSubtitleOverlay(
-            controller: c,
-            fontSize: 36,
-            shadowThickness: 5,
-            respectAssStyle: true,
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: 640,
+            height: 640, // 方形容器：16:9 视频 letterbox，内容高 = 640×1080/1920 = 360
+            child: VideoSubtitleOverlay(
+              controller: c,
+              fontSize: 36,
+              shadowThickness: 5,
+              respectAssStyle: true,
+            ),
           ),
         ),
       ),
     ),
-  ));
+  );
   await tester.pump();
 }
 
@@ -67,21 +69,26 @@ Text _stroke(WidgetTester tester) => tester
 
 void main() {
   testWidgets(
-      'letterboxed container: font/outline scale by video content height, '
-      'not container height (BUG-820)', (WidgetTester tester) async {
-    await _pump(tester, videoW: 1920, videoH: 1080);
-    // 内容矩形高 = 640×(1080/1920) = 360 → 字号 65×360/1080 = 21.67，
-    // 而非容器基准的 65×640/1080 = 38.5（偏大 78%）。
-    expect(_fill(tester).style?.fontSize, closeTo(65 * 360 / 1080, 0.01));
-    // BUG-897：ASS Outline 是向外扩的半径，居中 stroke 需 ×2 才与 mpv 同可见宽。
-    expect(_stroke(tester).style?.foreground?.strokeWidth,
-        closeTo(2.5 * 360 / 1080 * 2, 0.01));
-  });
+    'letterboxed container: font/outline scale by video content height, '
+    'not container height (BUG-820)',
+    (WidgetTester tester) async {
+      await _pump(tester, videoW: 1920, videoH: 1080);
+      // 内容矩形高 = 640×(1080/1920) = 360 → 字号 65×360/1080 = 21.67，
+      // 而非容器基准的 65×640/1080 = 38.5（偏大 78%）。
+      expect(_fill(tester).style?.fontSize, closeTo(65 * 360 / 1080, 0.01));
+      // BUG-897：ASS Outline 是向外扩的半径，居中 stroke 需 ×2 才与 mpv 同可见宽。
+      expect(
+        _stroke(tester).style?.foreground?.strokeWidth,
+        closeTo(2.5 * 360 / 1080 * 2, 0.01),
+      );
+    },
+  );
 
   testWidgets(
-      'video resolution unknown: falls back to container height (historical)',
-      (WidgetTester tester) async {
-    await _pump(tester, videoW: null, videoH: null);
-    expect(_fill(tester).style?.fontSize, closeTo(65 * 640 / 1080, 0.01));
-  });
+    'video resolution unknown: falls back to container height (historical)',
+    (WidgetTester tester) async {
+      await _pump(tester, videoW: null, videoH: null);
+      expect(_fill(tester).style?.fontSize, closeTo(65 * 640 / 1080, 0.01));
+    },
+  );
 }

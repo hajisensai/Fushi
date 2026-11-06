@@ -16,8 +16,9 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 /// `physical=0 / logical=0` 的 KeyEvent（BUG-1427 已把这条平台事实钉成守卫），
 /// 于是整张快捷键表静默失效。
 ///
-/// 日语输入法「看起来正常」只是因为它常驻半角英数态、根本不吃字母；被吃掉的空格那
-/// 一个键恰好被 BUG-1239 的 native 单键转发救了回来。中文拼音没有等价的英数态
+/// 日语输入法「看起来正常」只是因为它常驻半角英数态、根本不吃字母；被吃掉的空格
+/// 当年以为被 BUG-1239 的 native 单键转发救了回来，2026-11-05 真机证实那条通道从未
+/// 生效（已删，BUG-430）。中文拼音没有等价的英数态
 /// （切英文就等于切走输入法），所以空格 + 全部字母快捷键一起废。
 ///
 /// 修法是消除这个特殊情况而不是逐键补转发：**没有文本输入焦点时解除窗口的 IME
@@ -26,8 +27,9 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 ///
 /// 只作用于 Windows。其它平台不存在这条平台缺陷，`install` 直接空转。
 abstract final class WindowsImeGuard {
-  static const MethodChannel _channel =
-      MethodChannel('app.fushi/windows_ime_guard');
+  static const MethodChannel _channel = MethodChannel(
+    'app.fushi/windows_ime_guard',
+  );
 
   static bool _installed = false;
   static bool? _lastSent;
@@ -99,5 +101,4 @@ abstract final class WindowsImeGuard {
 bool imeShouldBeEnabled({
   required bool hasEditableFocus,
   required bool focusedEditableIsReadOnly,
-}) =>
-    hasEditableFocus && !focusedEditableIsReadOnly;
+}) => hasEditableFocus && !focusedEditableIsReadOnly;

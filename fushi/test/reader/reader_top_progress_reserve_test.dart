@@ -24,7 +24,8 @@ void main() {
       expect(
         kTopProgressStripHeight,
         greaterThanOrEqualTo(minReserve),
-        reason: '顶部进度预留高必须同时覆盖文字行盒和毛玻璃 pill 的上下内边距；'
+        reason:
+            '顶部进度预留高必须同时覆盖文字行盒和毛玻璃 pill 的上下内边距；'
             '只要 pill 加了内边距而预留没跟着涨（BUG-843），此断言即失败',
       );
     });
@@ -34,7 +35,8 @@ void main() {
       expect(
         kTopProgressStripHeight,
         kTopProgressFontSize * 1.5 + 2 * kTopProgressPillVerticalPadding,
-        reason: 'kTopProgressStripHeight 必须由 kTopProgressFontSize 与 '
+        reason:
+            'kTopProgressStripHeight 必须由 kTopProgressFontSize 与 '
             'kTopProgressPillVerticalPadding 推导，杜绝两个不同源常量漂移',
       );
     });
@@ -66,7 +68,8 @@ void main() {
       expect(
         pillHeight,
         lessThanOrEqualTo(kTopProgressStripHeight),
-        reason: 'pill 实测高度（$pillHeight）不得超过顶部进度预留高'
+        reason:
+            'pill 实测高度（$pillHeight）不得超过顶部进度预留高'
             '（$kTopProgressStripHeight），否则挤压模式下会压住正文首行',
       );
     });
@@ -86,7 +89,8 @@ void main() {
       expect(
         topProgressUsesFrostedGlass(floating: false),
         isFalse,
-        reason: '挤压模式顶部进度必须是纯文字、无 BackdropFilter 模糊；'
+        reason:
+            '挤压模式顶部进度必须是纯文字、无 BackdropFilter 模糊；'
             '一旦有人把毛玻璃改回无条件绘制（BUG-887 回归），此断言即失败',
       );
     });

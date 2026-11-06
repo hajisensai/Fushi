@@ -1,0 +1,116 @@
+name: Build fushi_compute for tests / app builds
+description: >-
+  Builds native/fushi_compute (Rust compute kernel: hash / image / text) for the runner's
+  own platform and exports FUSHI_COMPUTE_LIB=<absolute path> to every later step of the job;
+  optionally also cross-builds the Android .so for the given ABIs (cargo-ndk), so that
+  fushi/android's checkFushiComputeNative passes.
+
+# Why: fushi_compute is a HARD dependency of the app, packages/fushi_engine and the headless
+# server -- there is no Dart fallback. Every job that runs `flutter test` / `dart test` over
+# code that reaches it, or that builds an APK, must have the library first. One composite
+# action so the toolchain pin and the build/verify/export steps cannot drift between the
+# ~10 jobs that need it.
+#
+# Toolchain: the same pin as fushi_p2p / fushi_fsrs, read from
+# .github/actions/native-store-names/names.sh (P2P_RUST / CARGO_NDK), so a bump there moves
+# this too. rustup ships on every GitHub-hosted runner, so no dtolnay step.
+# No Swatinem/rust-cache: these are test jobs, the crate builds cold in well under a minute,
+# and GitHub's 10 GB cache quota is this repo's bottleneck
+# (fushi/test/build/workflow_cache_quota_guard_test.dart). Release / packaging jobs build it
+# with their own cached steps instead.
+inputs:
+  host:
+    description: Build the runner-platform library and export FUSHI_COMPUTE_LIB ('true' / 'false').
+    required: false
+    default: 'true'
+  android-abis:
+    description: >-
+      Space-separated Android ABIs to cross-build into native/fushi_compute/prebuilt/android
+      (e.g. 'arm64-v8a' or 'x86_64'); empty = none. Needs $ANDROID_NDK_LATEST_HOME.
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Install pinned Rust toolchain (fushi_compute)
+      id: rust
+      shell: bash
+      env:
+        ANDROID_ABIS: ${{ inputs.android-abis }}
+      run: |
+        set -euo pipefail
+        names=.github/actions/native-store-names/names.sh
+        toolchain="$(sed -n 's/^P2P_RUST=//p' "$names")"
+        cargo_ndk="$(sed -n 's/^CARGO_NDK=//p' "$names")"
+        if [ -z "$toolchain" ] || [ -z "$cargo_ndk" ]; then
+          echo "::error title=No Rust pin::$names has no P2P_RUST= / CARGO_NDK= line"
+          exit 1
+        fi
+        rustup toolchain install "$toolchain" --profile minimal
+        targets=()
+        if [ "$RUNNER_OS" = macOS ]; then targets+=(aarch64-apple-darwin); fi
+        for abi in $ANDROID_ABIS; do
+          case "$abi" in
+            arm64-v8a) targets+=(aarch64-linux-android) ;;
+            armeabi-v7a) targets+=(armv7-linux-androideabi) ;;
+            x86_64) targets+=(x86_64-linux-android) ;;
+            *) echo "::error title=Unknown ABI::$abi"; exit 1 ;;
+          esac
+        done
+        if [ "${#targets[@]}" -gt 0 ]; then rustup target add --toolchain "$toolchain" "${targets[@]}"; fi
+        # Step outputs, not GITHUB_ENV: an exported RUSTUP_TOOLCHAIN would override other
+        # crates' rust-toolchain.toml (fushi_anki_sync) in later steps of the same job.
+        echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
+        echo "cargo_ndk=$cargo_ndk" >> "$GITHUB_OUTPUT"
+        rustup run "$toolchain" cargo --version
+    - name: Install cargo-ndk (fushi_compute Android)
+      if: inputs.android-abis != ''
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-ndk@${{ steps.rust.outputs.cargo_ndk }}
+    - name: Build fushi_compute (runner platform)
+      if: inputs.host == 'true' && runner.os != 'Windows'
+      shell: bash
+      env:
+        RUSTUP_TOOLCHAIN: ${{ steps.rust.outputs.toolchain }}
+      run: |
+        set -euo pipefail
+        case "$RUNNER_OS" in
+          Linux)
+            bash native/fushi_compute/build_linux_so.sh
+            lib="$GITHUB_WORKSPACE/native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so"
+            ;;
+          macOS)
+            bash native/fushi_compute/build_macos_dylib.sh
+            lib="$GITHUB_WORKSPACE/native/fushi_compute/prebuilt/macos/libfushi_compute.dylib"
+            ;;
+          *) echo "::error title=Unsupported runner::$RUNNER_OS"; exit 1 ;;
+        esac
+        bash native/fushi_compute/verify_abi.sh "$lib" nm
+        echo "FUSHI_COMPUTE_LIB=$lib" >> "$GITHUB_ENV"
+    - name: Build fushi_compute (Windows)
+      if: inputs.host == 'true' && runner.os == 'Windows'
+      shell: pwsh
+      env:
+        RUSTUP_TOOLCHAIN: ${{ steps.rust.outputs.toolchain }}
+      run: |
+        powershell -ExecutionPolicy Bypass -File native/fushi_compute/build_windows_dll.ps1
+        if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_compute) failed" }
+        $lib = Join-Path $env:GITHUB_WORKSPACE 'native\fushi_compute\prebuilt\windows-x64\fushi_compute.dll'
+        if (-not (Test-Path -LiteralPath $lib -PathType Leaf)) { throw "missing $lib" }
+        "FUSHI_COMPUTE_LIB=$lib" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+    - name: Build fushi_compute Android .so
+      if: inputs.android-abis != ''
+      shell: bash
+      env:
+        ANDROID_ABIS: ${{ inputs.android-abis }}
+        RUSTUP_TOOLCHAIN: ${{ steps.rust.outputs.toolchain }}
+      run: |
+        set -euo pipefail
+        # shellcheck disable=SC2086 # word-split the ABI list on purpose
+        bash native/fushi_compute/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" $ANDROID_ABIS
+        nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+        if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+        for abi in $ANDROID_ABIS; do
+          bash native/fushi_compute/verify_abi.sh "native/fushi_compute/prebuilt/android/$abi/libfushi_compute.so" "$nm_bin"
+        done

@@ -18,3 +18,5 @@
     fvp_.shutdown();
     kogado_hy_.shutdown();
     luca_.shutdown();
+    knife_.shutdown();
+    softpal_.shutdown();

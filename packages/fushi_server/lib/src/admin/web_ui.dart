@@ -63,7 +63,7 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <nav>
 <button data-s="status" class="on">状态</button><button data-s="pairing">配对</button><button data-s="libraries">库</button>
 <button data-s="upload">上传</button><button data-s="jobs">任务</button><button data-s="downloads">下载</button>
-<button data-s="subscriptions">订阅</button><button data-s="anki">Anki</button><button data-s="models">模型</button><button data-s="settings">设置</button><button data-s="logs">日志</button>
+<button data-s="subscriptions">订阅</button><button data-s="ai">AI 助手</button><button data-s="anki">Anki</button><button data-s="models">模型</button><button data-s="settings">设置</button><button data-s="logs">日志</button>
 </nav>
 <form method="post" action="/logout" style="margin:0"><button class="b sec" type="submit">退出</button></form>
 </header>
@@ -78,7 +78,8 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 
 <section id="s-pairing">
 <div class="card"><h2>配对请求</h2><div id="pairing-pending"><p class="muted">没有待处理的配对。在 Fushi 里添加互联设备并输入本机地址，PIN 会显示在这里。</p></div></div>
-<div class="card"><h2>已配对设备</h2><table><thead><tr><th>设备</th><th>peer id</th><th>最近地址</th><th>配对时间</th><th></th></tr></thead><tbody id="peers"></tbody></table></div>
+<div class="card"><h2>已配对设备</h2><table><thead><tr><th>设备</th><th>peer id</th><th>最近地址</th><th>配对时间</th><th>我的设备</th><th></th></tr></thead><tbody id="peers"></tbody></table>
+<p class="small muted"><span id="lb-link-state"></span> 标为「我的设备」的已配对设备在本机没有 Fushi 账户时，会跟随本机（当前 Profile）的排行榜账户自动登录：设备只交来它自己的公钥，由本机账户代绑；私钥 / 恢复码不外传。配对不会自动标记；只有配对时证明过设备钥匙的设备能标（旧版客户端需升级后重新配对）。仅 TLS 下可用，总开关在「设置」。</p></div>
 <div class="card"><h2>配置文件寄存</h2>
 <div class="row"><span id="prof-state" class="small"></span><span class="sp"></span><button class="b sec" id="btn-prof-toggle"></button></div>
 <p class="small muted">已配对设备在「互联 → 上传配置 / 下载配置」里把配置方案（Profile）推到本机寄存，另一台设备再拉走。本机只寄存、不应用；设备拉取时交出标「分发中」的那一份（缺省为最近收到的）。凭据已由发送端剔除。仅 TLS 下可用。</p>
@@ -90,7 +91,7 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <table><thead><tr><th>id</th><th>路径</th><th>类型</th><th>状态</th><th></th></tr></thead><tbody id="libs"></tbody></table>
 <div class="row" style="margin-top:12px">
 <input type="text" id="lib-path" placeholder="/srv/media/anime" style="flex:1">
-<select id="lib-kind"><option value="video">video</option><option value="book">book (epub)</option></select>
+<select id="lib-kind"><option value="video">video</option><option value="book">book (epub)</option><option value="manga">manga (mokuro / cbz / cbr / cb7 / zip / rar / 页图目录)</option><option value="audiobook">audiobook (音频目录，可带 epub / 字幕)</option></select>
 <input type="text" id="lib-id" placeholder="id（可空）" style="min-width:120px">
 <button class="b" id="btn-lib-add">添加</button></div>
 <p class="small muted">加完记得在「状态」页点扫描；服务端进程要能读到该目录。</p>
@@ -127,8 +128,15 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <div class="card"><h2>订阅</h2><div class="row"><button class="b sec" id="btn-sub-check-all">全部立即检查</button></div>
 <table><thead><tr><th>标题</th><th>搜索词</th><th>源</th><th>状态</th><th>集数</th><th>最近</th><th></th></tr></thead><tbody id="subs"></tbody></table></div>
 <div class="card"><h2>资源索引器</h2>
-<p class="small muted">订阅与代下载在这些源里搜资源。与 Fushi app「视频资源」设置是同一份配置；保存后对正在运行的服务立即生效（正在下载的种子不受影响）。</p>
-<div class="row" id="ri-builtin"></div>
+<p class="small muted">订阅与代下载在这些来源里搜资源。与 Fushi app 的资源来源设置是同一份配置；改动对正在运行的服务立即生效（正在下载的种子不受影响）。</p>
+<p class="small muted" id="ri-none" style="display:none">还没有 BT 来源。添加一个 BT 站地址，或接入 Torznab 索引器</p>
+<h2 style="margin-top:16px">BT 站</h2>
+<div id="ri-bt"></div>
+<div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0">
+<div class="row"><input type="text" id="bt-url" placeholder="https://example.com" style="flex:1"><input type="text" id="bt-name" placeholder="名称（可选）"></div>
+<div class="row" id="bt-domains"></div>
+<div class="row"><label><input type="checkbox" id="bt-enabled" checked> 启用</label><label><input type="checkbox" id="bt-insecure"> 允许明文 HTTP（仅受信任局域网）</label><button class="b" id="btn-bt-add">添加</button></div>
+<p class="small muted">只填地址即可，添加时会自动检测站点。</p></div>
 <h2 style="margin-top:16px">Torznab（Jackett / Prowlarr）</h2>
 <div id="ri-torznab"></div>
 <div class="row"><button class="b sec" id="btn-ri-add">添加 indexer</button><button class="b" id="btn-ri-save">保存</button><button class="b sec" id="btn-ri-reset">放弃修改</button></div>
@@ -166,6 +174,13 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 </div>
 </section>
 
+<section id="s-ai">
+<div class="card"><h2>AI 助手会话</h2>
+<p class="small muted">已配对设备经互联让本服务端跑的 AI 助手会话（保留 30 天）。这里只读；撤销与续接在发起的那台设备上做。</p>
+<table><thead><tr><th>标题</th><th>发起设备</th><th>更新</th><th>tokens</th></tr></thead><tbody id="ai-sessions"></tbody></table></div>
+<div class="card" id="ai-detail" style="display:none"><h2 id="ai-detail-title"></h2><p class="small muted" id="ai-detail-meta"></p><div id="ai-entries"></div></div>
+</section>
+
 <section id="s-logs">
 <div class="card"><h2>最近日志</h2><div class="row"><button class="b sec" id="btn-log-refresh">刷新</button><label><input type="checkbox" id="log-auto" checked> 自动刷新</label></div><pre id="logs"></pre></div>
 </section>
@@ -179,11 +194,12 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':
 const fmtBytes = (n) => { n = Number(n||0); const u=['B','KB','MB','GB','TB']; let i=0; while(n>=1024&&i<u.length-1){n/=1024;i++;} return n.toFixed(i?1:0)+' '+u[i]; };
 const fmtTime = (v) => { if(!v) return ''; const d = typeof v==='number'? new Date(v): new Date(v); return isNaN(d)? String(v): d.toLocaleString(); };
 let toastTimer; function toast(msg){ const t=$('#toast'); t.textContent=msg; t.style.display='block'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.style.display='none',2600); }
+const REASON_TEXT = {disabled:'订阅已停用，请先启用', unrecognized:'无法识别这个站点', timedOut:'站点响应超时', invalidUrl:'地址无效', insecureHttp:'这是明文 HTTP 地址：请改用 HTTPS，或勾选「允许明文 HTTP」'};
 async function api(path, opts){
   const r = await fetch('/api/admin/'+path, Object.assign({headers:{'Content-Type':'application/json'}}, opts||{}));
   if (r.status===401){ location.reload(); throw new Error('unauthorized'); }
   const j = await r.json().catch(()=>({}));
-  if (!r.ok) throw new Error(j.error || ('HTTP '+r.status));
+  if (!r.ok) throw new Error(REASON_TEXT[j.reason] || j.error || ('HTTP '+r.status));
   return j;
 }
 const post = (p,b)=>api(p,{method:'POST',body:JSON.stringify(b||{})});
@@ -231,8 +247,11 @@ async function loadPairing(){
   $('#pairing-pending').innerHTML = p.pending
     ? `<p>${esc(p.pending.deviceName||'未知设备')} <span class="muted">(${esc(p.pending.remoteAddress||'?')})</span> 请求配对，请在该设备输入：</p><div class="pin">${esc(p.pending.pin)}</div><p class="small muted">${fmtTime(p.pending.createdAt)}</p>`
     : '<p class="muted">没有待处理的配对。在 Fushi 里添加互联设备并输入本机地址，PIN 会显示在这里。</p>';
-  $('#peers').innerHTML = p.peers.map(x=>`<tr><td>${esc(x.deviceName||'—')}</td><td class="small muted">${esc(x.peerId)}</td><td>${esc(x.lastSeenIp||'')}</td><td>${fmtTime(x.pairedAtMs)}</td><td><button class="b danger" data-revoke="${esc(x.peerId)}">吊销</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">无</td></tr>';
+  $('#peers').innerHTML = p.peers.map(x=>`<tr><td>${esc(x.deviceName||'—')}</td><td class="small muted">${esc(x.peerId)}</td><td>${esc(x.lastSeenIp||'')}</td><td>${fmtTime(x.pairedAtMs)}</td><td>${x.deviceKeyVerified ? `<button class="b ${x.ownerDevice?'':'sec'}" data-owner="${esc(x.peerId)}" data-on="${x.ownerDevice?'1':'0'}">${x.ownerDevice?'是（取消）':'标为我的设备'}</button>` : '<span class="small muted">未证明设备钥匙</span>'}</td><td><button class="b danger" data-revoke="${esc(x.peerId)}">吊销</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">无</td></tr>';
+  const lb = p.leaderboardLink || {};
+  $('#lb-link-state').innerHTML = lb.enabled ? (lb.tls ? '<span class="tag ok">自动登录已开</span>' : '<span class="tag">自动登录已开，但 TLS 关着——端点在明文下拒绝访问</span>') : '<span class="tag">自动登录已关</span>';
   $('#peers').querySelectorAll('[data-revoke]').forEach(b=>b.onclick=guard(async()=>{ if(!confirm('吊销该设备？')) return; await del('pairing/peers/'+encodeURIComponent(b.dataset.revoke)); loadPairing(); }));
+  $('#peers').querySelectorAll('[data-owner]').forEach(b=>b.onclick=guard(async()=>{ const on = b.dataset.on!=='1'; if(on && !confirm('标为「我的设备」？它将能跟随本机的 Fushi 排行榜账户自动登录（代绑出去的设备钥匙在账户里是满权限）。只标你自己的设备。')) return; await put('pairing/peers/'+encodeURIComponent(b.dataset.owner)+'/owner',{owner:on}); toast(on?'已标为我的设备':'已取消'); loadPairing(); }));
   await loadProfiles();
 }
 async function loadProfiles(){
@@ -308,13 +327,14 @@ $('#btn-dl-add').onclick = guard(async()=>{ await post('downloads',{magnet:$('#d
 // ── 订阅 ──
 async function loadSubscriptions(){
   const r = await api('subscriptions');
-  $('#sub-cap').textContent = r.supported ? `后端: ${r.backend}；可用索引器: ${(r.providers||[]).join(', ')||'无'}` : '下载后端未配置，订阅不可用。';
+  const opts = r.providerOptions||[];
+  $('#sub-cap').textContent = r.supported ? `后端: ${r.backend}；可用来源: ${opts.map(o=>o.label).join(', ')||'无'}` : '下载后端未配置，订阅不可用。';
   $('#btn-sub-add').disabled = !r.supported; $('#btn-sub-check-all').disabled = !r.supported;
   const sel = $('#sub-provider'); const cur = sel.value;
-  sel.innerHTML = (r.providers||[]).map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join('');
+  sel.innerHTML = opts.map(o=>`<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
   if (cur) sel.value = cur;
   const fmtCounts = (c)=> c ? Object.entries(c).map(([k,v])=>`${k} ${v}`).join(' · ') : '';
-  $('#subs').innerHTML = (r.subscriptions||[]).map(s=>`<tr><td>${esc(s.title)}<div class="small muted">${esc(s.mediaKind)} · ${esc(s.mode)}</div></td><td class="small">${esc(s.searchQuery)}</td><td class="small">${esc(s.resourceProvider)}</td><td>${s.enabled?'<span class="tag ok">启用</span>':'<span class="tag">停用</span>'} ${s.lastError?`<div class="small" style="color:var(--err)">${esc(s.lastError)}</div>`:''}</td><td class="small">${esc(fmtCounts(s.itemCounts))}</td><td class="small">${s.lastCheckedAt?fmtTime(s.lastCheckedAt):'—'}</td><td class="row"><button class="b sec" data-sub="enable" data-id="${esc(s.subscriptionId)}" data-enabled="${s.enabled?'0':'1'}">${s.enabled?'停用':'启用'}</button><button class="b sec" data-sub="check" data-id="${esc(s.subscriptionId)}">检查</button><button class="b danger" data-sub="delete" data-id="${esc(s.subscriptionId)}">删除</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">无</td></tr>';
+  $('#subs').innerHTML = (r.subscriptions||[]).map(s=>`<tr><td>${esc(s.title)}<div class="small muted">${esc(s.mediaKind)} · ${esc(s.mode)}</div></td><td class="small">${esc(s.searchQuery)}</td><td class="small">${s.resourceProviderLabel?esc(s.resourceProviderLabel):'<span class="muted">没有可用来源</span>'}</td><td>${s.enabled?'<span class="tag ok">启用</span>':'<span class="tag">停用</span>'} ${s.lastError?`<div class="small" style="color:var(--err)">${esc(s.lastError)}</div>`:''}</td><td class="small">${esc(fmtCounts(s.itemCounts))}</td><td class="small">${s.lastCheckedAt?fmtTime(s.lastCheckedAt):'—'}</td><td class="row"><button class="b sec" data-sub="enable" data-id="${esc(s.subscriptionId)}" data-enabled="${s.enabled?'0':'1'}">${s.enabled?'停用':'启用'}</button><button class="b sec" data-sub="check" data-id="${esc(s.subscriptionId)}"${s.enabled?'':' disabled title="已停用的订阅不检查，请先启用"'}>检查</button><button class="b danger" data-sub="delete" data-id="${esc(s.subscriptionId)}">删除</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">无</td></tr>';
   $('#subs').querySelectorAll('[data-sub]').forEach(b=>b.onclick=guard(async()=>{ const id=encodeURIComponent(b.dataset.id);
     if(b.dataset.sub==='delete'){ if(!confirm('删除该订阅？（已下载的任务不受影响）')) return; await del('subscriptions/'+id); }
     else if(b.dataset.sub==='enable'){ await post('subscriptions/'+id+'/enable',{enabled:b.dataset.enabled==='1'}); }
@@ -324,8 +344,66 @@ async function loadSubscriptions(){
 $('#btn-sub-add').onclick = guard(async()=>{ const after=$('#sub-after').value.trim(); await post('subscriptions',{title:$('#sub-title').value, searchQuery:$('#sub-query').value, mediaKind:$('#sub-kind').value, resourceProvider:$('#sub-provider').value, startAfterEpisode: after?Number(after):undefined}); $('#sub-title').value=''; $('#sub-query').value=''; toast('已创建'); loadSubscriptions(); });
 $('#btn-sub-check-all').onclick = guard(async()=>{ await post('subscriptions/check'); toast('已触发检查'); loadSubscriptions(); });
 
-// ── 资源索引器（内置源启停 + Torznab；表单只在首次 / 保存 / 放弃时重画，轮询不冲掉编辑）──
+// ── 资源索引器（用户 BT 站 + Torznab；Torznab 表单只在首次 / 保存 / 放弃时重画，轮询不冲掉编辑）──
 let riLoaded=false;
+const BT_DOMAINS = [['anime','动画'],['movie','电影'],['tv','剧集'],['novel','小说'],['audiobook','有声书'],['manga','漫画'],['game','游戏']];
+const btDomainBoxes = (attr, on) => BT_DOMAINS.map(([k,l])=>`<label><input type="checkbox" ${attr}="${k}" ${on.includes(k)?'checked':''}> ${l}</label>`).join('');
+const btPicked = (root, attr) => Array.from(root.querySelectorAll(`[${attr}]`)).filter(e=>e.checked).map(e=>e.getAttribute(attr));
+$('#bt-domains').innerHTML = btDomainBoxes('data-bt-add-domain', BT_DOMAINS.map(d=>d[0]));
+function btRow(x){
+  const label = Object.fromEntries(BT_DOMAINS);
+  const eff = x.effectiveDomains||[];
+  const off = (x.domains||[]).filter(d=>!eff.includes(d));
+  const state = !x.enabled ? '<span class="tag">已停用</span>' : (x.active===true ? '<span class="tag ok">生效中</span>' : (x.active===false ? '<span class="tag warn">未参与资源搜索</span>' : ''));
+  return `<div class="bt-row" data-id="${esc(x.id)}" style="border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0">
+    <div class="row"><b>${esc(x.displayName)}</b><span class="small muted">${esc(x.host)}</span>${state}</div>
+    <div class="small muted">适用：${eff.map(d=>esc(label[d]||d)).join('、')||'无'}${off.length?`；对 ${off.map(d=>esc(label[d]||d)).join('、')} 不生效`:''}</div>
+    <div class="bt-edit" style="display:none">
+      <div class="row"><input type="text" data-k="name" placeholder="名称（可选）" value="${esc(x.name||'')}"><input type="text" data-k="url" placeholder="新地址（留空不改）" style="flex:1"></div>
+      <div class="row">${btDomainBoxes('data-bt-domain', x.domains||[])}</div>
+      <div class="row"><label><input type="checkbox" data-k="enabled" ${x.enabled?'checked':''}> 启用</label><label><input type="checkbox" data-k="allowInsecureHttp" ${x.allowInsecureHttp?'checked':''}> 允许明文 HTTP（仅受信任局域网）</label><button class="b" data-bt="save">保存</button></div>
+    </div>
+    <div class="row"><button class="b sec" data-bt="edit">编辑</button><button class="b sec" data-bt="reprobe">重新检测</button><button class="b danger" data-bt="delete">删除</button></div></div>`;
+}
+function renderRiState(r){
+  const bt = r.btSites||[]; const tz = r.torznab||[];
+  $('#ri-none').style.display = (bt.length||tz.length) ? 'none' : '';
+  const activeBt = bt.filter(x=>x.active===true).length;
+  const activeTz = (r.providers||[]).filter(p=>p.startsWith('torznab:')).length;
+  $('#ri-state').textContent = r.applied ? `当前生效：${activeBt} 个 BT 站、${activeTz} 个 Torznab 索引器` : '互联 host 未运行：保存后下次启动 serve 生效。';
+}
+function renderBtSites(r){
+  $('#ri-bt').innerHTML = (r.btSites||[]).map(btRow).join('');
+  $('#ri-bt').querySelectorAll('[data-bt]').forEach(b=>b.onclick=guard(async()=>{
+    const row = b.closest('.bt-row'); const id = encodeURIComponent(row.dataset.id); const act = b.dataset.bt;
+    if (act==='edit'){ const e=row.querySelector('.bt-edit'); e.style.display = e.style.display==='none' ? '' : 'none'; return; }
+    let res;
+    b.disabled = true;
+    try {
+      if (act==='delete'){ if(!confirm('删除这个 BT 站？（已建的订阅会改用其它来源，没有可用来源时暂停）')) return; res = await del('resource-indexers/bt-sites/'+id); toast('已删除'); }
+      else if (act==='reprobe'){ toast('正在检测站点…'); res = await post('resource-indexers/bt-sites/'+id+'/reprobe'); toast('检测完成'); }
+      else {
+        const v = (k)=>row.querySelector(`.bt-edit [data-k="${k}"]`);
+        const domains = btPicked(row, 'data-bt-domain');
+        if (!domains.length) throw new Error('至少选择一个媒体域');
+        const body = {name: v('name').value, domains, enabled: v('enabled').checked, allowInsecureHttp: v('allowInsecureHttp').checked};
+        const url = v('url').value.trim(); if (url) { body.url = url; toast('正在检测站点…'); }
+        res = await put('resource-indexers/bt-sites/'+id, body); toast('已保存');
+      }
+    } finally { b.disabled = false; }
+    renderBtSites(res); renderRiState(res); loadSubscriptions();
+  }));
+}
+$('#btn-bt-add').onclick = guard(async()=>{
+  const url = $('#bt-url').value.trim(); if (!url) throw new Error('请填写站点地址');
+  const domains = btPicked($('#bt-domains'), 'data-bt-add-domain'); if (!domains.length) throw new Error('至少选择一个媒体域');
+  $('#btn-bt-add').disabled = true; toast('正在检测站点…');
+  try {
+    const r = await post('resource-indexers/bt-sites', {url, name: $('#bt-name').value, domains, enabled: $('#bt-enabled').checked, allowInsecureHttp: $('#bt-insecure').checked});
+    $('#bt-url').value=''; $('#bt-name').value='';
+    renderBtSites(r); renderRiState(r); toast('已添加'); loadSubscriptions();
+  } finally { $('#btn-bt-add').disabled = false; }
+});
 function riRow(x){
   return `<div class="ri-row" data-id="${esc(x.id||'')}" style="border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0"><div class="grid">
     <label class="f">名称<input type="text" data-k="name" value="${esc(x.name||'')}"></label>
@@ -337,17 +415,15 @@ function riRow(x){
 }
 function bindRiRemove(){ $('#ri-torznab').querySelectorAll('[data-ri-rm]').forEach(b=>b.onclick=()=>b.closest('.ri-row').remove()); }
 function renderIndexers(r){
-  $('#ri-builtin').innerHTML = (r.builtin||[]).map(b=>`<label><input type="checkbox" data-builtin="${esc(b.id)}" ${b.enabled?'checked':''}> ${esc(b.name)}</label>`).join('');
+  renderBtSites(r);
   $('#ri-torznab').innerHTML = (r.torznab||[]).map(riRow).join('') || '<p class="muted small" id="ri-empty">还没有 Torznab indexer。</p>';
   bindRiRemove();
-  $('#ri-state').textContent = r.applied ? `当前可用：${(r.providers||[]).join(', ')||'无'}` : '互联 host 未运行：保存后下次启动 serve 生效。';
+  renderRiState(r);
 }
 async function loadIndexers(force){ if(riLoaded && !force) return; const r = await api('resource-indexers'); riLoaded=true; renderIndexers(r); }
 $('#btn-ri-add').onclick = ()=>{ const e=$('#ri-empty'); if(e) e.remove(); $('#ri-torznab').insertAdjacentHTML('beforeend', riRow({})); bindRiRemove(); };
 $('#btn-ri-reset').onclick = guard(()=>loadIndexers(true));
 $('#btn-ri-save').onclick = guard(async()=>{
-  const builtin = {};
-  document.querySelectorAll('#ri-builtin [data-builtin]').forEach(el=>{ builtin[el.dataset.builtin] = el.checked; });
   const torznab = Array.from(document.querySelectorAll('#ri-torznab .ri-row')).map((row,i)=>{
     const v = (k)=>row.querySelector(`[data-k="${k}"]`);
     const pr = v('priority').value.trim();
@@ -357,7 +433,7 @@ $('#btn-ri-save').onclick = guard(async()=>{
       priority: pr==='' ? undefined : Number(pr), categories: v('categories').value, enabled: v('enabled').checked, allowInsecureHttp: v('allowInsecureHttp').checked};
   });
   $('#btn-ri-save').disabled=true;
-  try { const r = await put('resource-indexers', {builtin, torznab}); renderIndexers(r); toast(r.applied ? '已保存并生效' : '已保存'); loadSubscriptions(); }
+  try { const r = await put('resource-indexers', {torznab}); renderIndexers(r); toast(r.applied ? '已保存并生效' : '已保存'); loadSubscriptions(); }
   finally { $('#btn-ri-save').disabled=false; }
 });
 
@@ -463,12 +539,12 @@ $('#btn-anki-retry').onclick = guard(async()=>{ const r = await post('anki/retry
 const FIELDS = [
   ['deviceName','设备名','text'],['port','互联端口','number'],['bind','绑定地址','text'],['tls','TLS','bool'],['lanRequiresPin','局域网配对必须 PIN','bool'],
   ['subtitleLanguage','字幕语言','text'],['metadataLocale','刮削资料语言（BCP-47，如 ja / zh-CN）','text'],
-  ['scanScrape','扫描后自动补刮视频资料','bool'],['tmdbApiKey','TMDB API key（服务端没有内置 key，不填则 TMDB 不可用）','secret:tmdbApiKeySet'],['scanPrune','扫描后清理文件已消失的视频条目','bool'],['profileTransfer','允许已配对设备推送 / 拉取配置文件（Profile）','bool'],['ffmpeg','ffmpeg 路径（空=PATH）','text'],['ffprobe','ffprobe 路径（空=PATH）','text'],['onnxruntimeLibrary','onnxruntime 动态库','text'],['uploadQuotaBytes','上传配额（字节）','number'],['adminPort','WebUI 端口','number'],
+  ['scanScrape','扫描后自动补刮视频资料','bool'],['tmdbApiKey','TMDB API key（服务端没有内置 key，不填则 TMDB 不可用）','secret:tmdbApiKeySet'],['scanPrune','扫描后清理文件已消失的视频条目','bool'],['profileTransfer','允许已配对设备推送 / 拉取配置文件（Profile）','bool'],['leaderboardLink','允许「我的设备」跟随本机 Fushi 排行榜账户自动登录','bool'],['ffmpeg','ffmpeg 路径（空=PATH）','text'],['ffprobe','ffprobe 路径（空=PATH）','text'],['onnxruntimeLibrary','onnxruntime 动态库','text'],['uploadQuotaBytes','上传配额（字节）','number'],['adminPort','WebUI 端口','number'],
   ['torrent.engine','torrent 引擎','select:auto,embedded,qbittorrent'],['torrent.library','内置引擎库路径（空=随包/系统）','text'],['torrent.listen','libtorrent 监听接口','text'],
   ['qbittorrent.url','qBittorrent WebUI 地址','text'],['qbittorrent.username','qBittorrent 用户名','text'],['qbittorrent.password','qBittorrent 密码','password'],
   ['ai.preset','AI 提供商（手机「AI 下视频」选本机执行时用；空 = 不用 AI、不发任何 AI 请求）','dyn:aiPresets'],['ai.apiKey','AI API key','secret:ai.apiKeySet'],
   ['ai.model','AI 模型（空 = 预设起点模型）','text'],['ai.baseUrl','AI 接口地址（空 = 预设地址）','text'],['ai.protocol','AI 协议（空 = 跟随预设）','select:,openAiCompatible,anthropicMessages,geminiGenerateContent'],
-  ['ai.reasoningEffort','AI 推理档位','select:none,low,medium,high'],['ai.allowInsecureHttp','AI 允许明文 HTTP（本地推理服务）','bool'],['ai.webKnowledge','AI 联网资料（维基辅助识别作品）','bool'],
+  ['ai.reasoningEffort','AI 推理档位','select:none,low,medium,high'],['ai.allowInsecureHttp','AI 允许明文 HTTP（本地推理服务）','bool'],['ai.webKnowledge','AI 联网资料（维基辅助识别作品）','bool'],['ai.libraryOrganize','扫描入库后自动 AI 整理库（把该在一起的归进合集，按量计费）','bool'],
 ];
 let settingsCache=null;
 async function loadSettings(){
@@ -529,12 +605,30 @@ $('#btn-rr-save').onclick = guard(async()=>{
   } finally { $('#btn-rr-save').disabled=false; }
 });
 
+// ── AI 助手会话 ──
+const AI_KIND = {user:'用户', assistant:'AI', toolCall:'操作', confirm:'确认', choice:'候选', notice:'提示'};
+const aiDevice = (s) => s.originPeerId ? (s.originDeviceName || s.originPeerId) : '本机';
+let aiOpen = null;
+async function loadAi(){
+  const r = await api('ai/sessions');
+  $('#ai-sessions').innerHTML = r.sessions.map(s=>`<tr data-ai="${esc(s.id)}" style="cursor:pointer"><td>${esc(s.title||'新对话')}</td><td>${esc(aiDevice(s))}</td><td class="small">${fmtTime(s.updatedAt)}</td><td class="small">${esc(s.tokens)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">无</td></tr>';
+  $('#ai-sessions').querySelectorAll('[data-ai]').forEach(tr=>tr.onclick=guard(async()=>{ aiOpen=tr.dataset.ai; await loadAiDetail(); }));
+  if (aiOpen) await loadAiDetail();
+}
+async function loadAiDetail(){
+  const s = await api('ai/sessions/'+encodeURIComponent(aiOpen));
+  $('#ai-detail').style.display='block';
+  $('#ai-detail-title').textContent = s.title || '新对话';
+  $('#ai-detail-meta').textContent = `${aiDevice(s)} · ${fmtTime(s.createdAt)} → ${fmtTime(s.updatedAt)} · ${s.tokens} tokens`;
+  $('#ai-entries').innerHTML = s.entries.map(e=>`<div class="row" style="align-items:flex-start"><span class="tag">${esc(AI_KIND[e.kind]||e.kind)}</span><div style="flex:1;white-space:pre-wrap">${esc(e.toolName?e.toolName+(e.text?' — '+e.text:''):(e.text||''))} ${e.status&&e.kind!=='user'&&e.kind!=='assistant'?stTag(e.status):''} ${e.errorCode?`<span class="small" style="color:var(--err)">${esc(e.errorCode)}</span>`:''}</div></div>`).join('') || '<p class="muted">无</p>';
+}
+
 // ── 日志 ──
 async function loadLogs(){ const r = await api('logs'); const pre=$('#logs'); const atBottom = pre.scrollTop+pre.clientHeight >= pre.scrollHeight-10; pre.textContent = r.lines.join('\n'); if(atBottom) pre.scrollTop=pre.scrollHeight; }
 $('#btn-log-refresh').onclick = guard(loadLogs);
 
 // ── 轮询 ──
-const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:async()=>{ await loadSubscriptions(); await loadIndexers(false); }, anki:loadAnki, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
+const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:async()=>{ await loadSubscriptions(); await loadIndexers(false); }, ai:loadAi, anki:loadAnki, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
 let busy=false;
 async function refresh(){ if(busy) return; busy=true; try{ await loaders[current](); }catch(e){ console.warn(e); } finally{ busy=false; } }
 refresh(); setInterval(refresh, 2500);

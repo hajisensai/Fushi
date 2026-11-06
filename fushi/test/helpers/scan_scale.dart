@@ -41,7 +41,8 @@ void expectScanScale(
   expect(
     scanned,
     greaterThanOrEqualTo(atLeast),
-    reason: '扫描规模哨兵：$what 只扫到 $scanned 个，下界是 $atLeast'
+    reason:
+        '扫描规模哨兵：$what 只扫到 $scanned 个，下界是 $atLeast'
         '（写下这条哨兵时实测 $measured 个）。\n'
         '这几乎一定是**守卫自己坏了**而不是代码变干净了：扫描根改名 / 路径常量写错 / '
         '过滤条件写反 / 工作目录不是 fushi/ 都长这样。\n'

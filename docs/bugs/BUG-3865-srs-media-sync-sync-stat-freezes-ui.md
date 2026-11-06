@@ -1,0 +1,6 @@
+## BUG-3865 · 复习同步「同步卡片媒体」阶段逐个同步 stat 本机文件，UI 卡死到 ANR
+- **报告**：2026-10-28（用户：手机同步时还是会卡死；「同步卡组媒体」时被系统判无响应关掉。OnePlus 15 / Android 16，装的 `3.0.1-debug.21854`，已含 BUG-3860 修复）
+- **真实性**：✅ 真 bug。真机两次 ANR（10:41:41、10:50:28，`Input dispatching timed out`）主线程栈逐帧相同；拿同一提交本地 `flutter assemble` 出带调试信息的 AOT，按指令字节窗口把手机上的返回地址映射过去再符号化：`_File._exists` ← `srsSyncMedia.syncOne`（`packages/fushi_engine/lib/srs/srs_media_sync.dart:171` `local.existsSync()`）← `srsRunPooled.worker`（`packages/fushi_engine/lib/srs/sync2/srs_location_store.dart:67`）← `_microtaskLoop`。本机和位置上都已有的媒体，`syncOne` 里没有任何真正挂起的 IO，worker 的 `await task(...)` 每次都在微任务里完成，整轮对账不回事件循环；上万个媒体逐个同步 stat（手机内存紧时伴随大量缺页，第二次 ANR 前 32 s 里 48523 次 major fault）期间 UI isolate 收不到帧和触摸。「立即同步」/ 进复习页的一轮强制全量媒体对账，所以用户主动同步必中。
+- **[x] ① 已修复**（见本分支提交）— 一轮媒体同步开头异步列一次本机媒体目录建文件名索引（`_SrsLocalMediaIndex`），`syncOne` 查索引不再逐个 `existsSync`；只差大小写命中时对那一个文件异步 `exists()` 复核（不分大小写的文件系统上与原先 stat 结果相同），下载落地后补进索引。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/srs/srs_media_sync_test.dart`「BUG-3865：媒体对账不在调用方 isolate 上逐个同步 stat 本机文件」：`IOOverrides` 把 `File` 换成记录 `existsSync` / `statSync` / `lengthSync` / `lastModifiedSync` 的代理，300 个两边都有 + 一个只在本机 + 一个只在位置上，断言零同步 stat 且上传 / 下载各 1。变异实测：换回旧实现该测试红（列出逐个 `existsSync`）。
+- **备注**：未在真机上复测修复后的包（要等 CI 出包）。同一轮里的 `srsReferencedMedia` / `srsLiveMediaReferences` 走 Rust 胖核心，不在此栈上。

@@ -1,7 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/anki_settings_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 void main() {
   setUp(() {
@@ -9,9 +10,7 @@ void main() {
   });
 
   Widget buildApp(Widget child) {
-    return TranslationProvider(
-      child: MaterialApp(home: child),
-    );
+    return TranslationProvider(child: MaterialApp(home: child));
   }
 
   testWidgets('anki handlebar picker fits a compact desktop window', (
@@ -74,7 +73,8 @@ void main() {
       expect(
         sheetSize.height,
         greaterThan(500.0),
-        reason: 'picker should use a generous slice of the 1200px-tall window, '
+        reason:
+            'picker should use a generous slice of the 1200px-tall window, '
             'not the old ~320px sliver',
       );
     },
@@ -122,10 +122,12 @@ void main() {
 
       // Friendly labels are shown, raw literals are not. 这两个都是旧别名，
       // 标签额外带「已弃用」标注（纯展示，写回的仍是字面量）。
-      final String bookCoverLabel =
-          t.handlebar_deprecated_label(label: t.handlebar_book_cover);
-      final String videoClipLabel =
-          t.handlebar_deprecated_label(label: t.handlebar_video_clip);
+      final String bookCoverLabel = t.handlebar_deprecated_label(
+        label: t.handlebar_book_cover,
+      );
+      final String videoClipLabel = t.handlebar_deprecated_label(
+        label: t.handlebar_video_clip,
+      );
       expect(find.text(bookCoverLabel), findsOneWidget);
       expect(find.text(videoClipLabel), findsOneWidget);
       expect(find.text('{book-cover}'), findsNothing);

@@ -7,8 +7,13 @@ import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
-import 'package:fushi/utils.dart';
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 
 /// TODO-607 P0-3：「诊断区 → 崩溃转储」页（Windows-only）。
 ///
@@ -64,10 +69,9 @@ class _CrashDumpPageState extends State<CrashDumpPage> {
   /// 分享单个 `.dmp`（系统分享面板）。
   Future<void> _shareDump(File dump) async {
     try {
-      await FushiShare.shareFiles(
-        <XFile>[XFile(dump.path, mimeType: 'application/octet-stream')],
-        subject: t.crash_dump_share_subject,
-      );
+      await FushiShare.shareFiles(<XFile>[
+        XFile(dump.path, mimeType: 'application/octet-stream'),
+      ], subject: t.crash_dump_share_subject);
     } catch (e) {
       debugPrint('[CrashDumpPage] share dump failed: $e');
     }

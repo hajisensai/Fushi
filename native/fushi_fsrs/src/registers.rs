@@ -1,0 +1,1553 @@
+//! 字段寄存器内核（铁律 H）：修改记录 → 多值寄存器 → 笔记 / 卡片标志 / 笔记类型 / 牌组的物化视图。
+//!
+//! 设计见 docs/specs/2026-10-23-srs-rust-core.md「第二阶段」。合并规则只在这里写一份，Dart 的
+//! `SrsEntityEdits` / `SrsRegister`（packages/fushi_srs/lib/src/field_edit.dart、entities.dart）只是
+//! 它的结果视图。一个批量入口 [materialize]，一次 FFI 调用处理一整批实体（一块缓存刷新 / 一次批量读）：
+//!
+//! - 修改记录是落库形态（canonical JSON 原文 + 服务器时刻 S(e)），解析与校验和 Dart
+//!   `SrsFieldEdit.fromJson` 逐条对齐（必填键缺失 / 类型不对、ID 与 dot 不符都判坏数据）；
+//! - 寄存器：同 ID 留最后一条 → 去掉被支配的（b 支配 a ⇔ b.ctx 含 a.dot）→ 按排序键（ordering.rs，
+//!   与卡片历史共用）从大到小；并发且值不同 = 冲突；被覆盖的候选里值不同、且不全是机器产出的进冲突记录；
+//! - 「值相同」的唯一口径 [same_value]：字段文本按「释义样式去重」的规范形比较（内联 `<style>` 与它的
+//!   共享样式引用行是同一内容），其它值按规范 JSON 比较（int 与 double 不同、-0.0 与 0.0 不同）；
+//! - 删除优先：删除寄存器里有没被支配的整数值 = 已删；与删除并发的内容修改另列出来（待裁决）；
+//! - 卡片标志沿「前身」血统继承（广度优先、前身按 UTF-16 序、最多 256 张、防环）；
+//! - 落库前的支配裁剪（[land]）与读路径同一个支配判据。
+//!
+//! 固定向量 packages/fushi_srs/test/registers/fixtures/ 由删除前的 Dart 实现生成，逐条一致。
+
+use std::borrow::Cow;
+use std::collections::HashMap;
+
+use serde::Deserialize;
+use serde_json::value::RawValue;
+use serde_json::{Map, Value, json};
+use sha1::{Digest, Sha1};
+
+use crate::history::{NONE_I64, parse_hlc};
+use crate::ordering::{SortKey, cmp_utf16};
+use crate::style_dedup::same_field_text;
+
+/// 修改记录 ID 的 UUIDv5 命名空间（Dart `srsNamespace`，冻结）。
+const SRS_NAMESPACE: &str = "6f1c8a2e-4b7d-5e3f-9a10-2d4c6e8f0b13";
+
+const KINDS: [&str; 5] = ["profile", "deck", "notetype", "note", "card"];
+
+const KEY_DELETED: &str = "deleted";
+
+/// 同步 v2 投影出的**合成**修改记录的写入者前缀（标签 OR-Set 每条笔记一行的 `sync2:tags:<笔记>`，见
+/// store/sync2/semantics.rs `tags_writer`）。合成行不是某个作者的一次写入，没有因果 dot（`s` 恒为 1、`ctx` 空）：
+/// 拿它和删除比「谁看见过谁」永远是「并发」。它与删除的并发由同步 v2 的扣住机制按底层 `#tag` 操作判定
+/// （semantics.rs `evaluate_holds`：并发就扣住删除进冲突中心，删除根本不落进投影），这里不再判它。
+pub(crate) const SYNTHETIC_WRITER_PREFIX: &str = "sync2:";
+const HISTORY_FROM: &str = "historyFrom/";
+
+// ---------------------------------------------------------------- 因果上下文
+
+/// dotted version vector（causal_context.dart）：连续前缀 vv + 额外 dot 集合 cloud。只读：这里只判
+/// 「含不含某个 dot」；本机写入者的上下文维护（合并 / 闭包）仍在 Dart 的 `SrsEditWriter`。
+#[derive(Debug, Default)]
+struct Ctx {
+    vv: HashMap<String, i64>,
+    cloud: HashMap<String, Vec<i64>>,
+}
+
+impl Ctx {
+    /// Dart `SrsCausalContext.fromJson`：不是对象当空；vv 只认整数且 > 0；cloud 只认整数列表。
+    fn parse(v: Option<&Value>) -> Ctx {
+        let mut ctx = Ctx::default();
+        let Some(Value::Object(m)) = v else {
+            return ctx;
+        };
+        if let Some(Value::Object(vv)) = m.get("vv") {
+            for (k, x) in vv {
+                if let Some(n) = x.as_i64() {
+                    if n > 0 {
+                        ctx.vv.insert(k.clone(), n);
+                    }
+                }
+            }
+        }
+        if let Some(Value::Object(cloud)) = m.get("cloud") {
+            for (k, x) in cloud {
+                if let Value::Array(xs) = x {
+                    let set: Vec<i64> = xs.iter().filter_map(Value::as_i64).collect();
+                    if !set.is_empty() {
+                        ctx.cloud.insert(k.clone(), set);
+                    }
+                }
+            }
+        }
+        ctx
+    }
+
+    fn contains(&self, writer: &str, seq: i64) -> bool {
+        if seq <= self.vv.get(writer).copied().unwrap_or(0) {
+            return true;
+        }
+        self.cloud.get(writer).is_some_and(|s| s.contains(&seq))
+    }
+}
+
+// ---------------------------------------------------------------- 修改记录
+
+// 与列重复的键（id / p / k / e / f / w / s）在 srs.db v18 的瘦存里不在 JSON 里（store/slim.rs）：都可缺，缺了从
+// [EditCols] 补；原文（不是瘦存）缺必需的键照旧报错。
+#[derive(Deserialize)]
+struct WireEdit<'a> {
+    #[serde(default, borrow)]
+    id: Option<&'a RawValue>,
+    #[serde(default, borrow, rename = "p")]
+    _p: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    k: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    e: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    f: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    w: Option<Cow<'a, str>>,
+    #[serde(default)]
+    s: Option<i64>,
+    #[serde(default)]
+    ctx: Option<Value>,
+    #[serde(default)]
+    v: Option<Value>,
+    #[serde(borrow)]
+    hlc: Cow<'a, str>,
+    #[serde(default, borrow)]
+    #[serde(rename = "ts")]
+    _ts: Option<Cow<'a, str>>,
+    #[serde(default)]
+    m: Option<Value>,
+}
+
+/// 一条解析好的修改记录。
+struct Edit<'a> {
+    id: String,
+    kind: &'static str,
+    entity: Cow<'a, str>,
+    key: Cow<'a, str>,
+    writer: Cow<'a, str>,
+    seq: i64,
+    ctx: Ctx,
+    value: Value,
+    physical: i64,
+    counter: i64,
+    hlc_writer: String,
+    server_time: Option<i64>,
+    machine: bool,
+}
+
+impl Edit<'_> {
+    fn sort_key(&self) -> SortKey<'_> {
+        SortKey::new(
+            self.physical,
+            self.counter,
+            &self.hlc_writer,
+            &self.id,
+            self.server_time,
+        )
+    }
+
+    /// b 支配 a ⇔ b 的作者修改时已经看见了 a（dot 不同且 b.ctx 含 a.dot）。
+    fn dominates(&self, other: &Edit<'_>) -> bool {
+        !(self.writer == other.writer && self.seq == other.seq)
+            && self.ctx.contains(&other.writer, other.seq)
+    }
+
+    /// 谁也没看见谁。
+    fn concurrent(&self, other: &Edit<'_>) -> bool {
+        !self.ctx.contains(&other.writer, other.seq) && !other.ctx.contains(&self.writer, self.seq)
+    }
+}
+
+fn uuid_bytes(uuid: &str) -> [u8; 16] {
+    let hex: Vec<u8> = uuid.bytes().filter(|b| *b != b'-').collect();
+    let mut out = [0u8; 16];
+    for i in 0..16 {
+        let s = std::str::from_utf8(&hex[2 * i..2 * i + 2]).expect("ascii");
+        out[i] = u8::from_str_radix(s, 16).expect("namespace is a uuid");
+    }
+    out
+}
+
+fn hex(bytes: &[u8]) -> String {
+    const H: &[u8; 16] = b"0123456789abcdef";
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push(H[(b >> 4) as usize] as char);
+        s.push(H[(b & 15) as usize] as char);
+    }
+    s
+}
+
+/// RFC 9562 UUIDv5（Dart `uuidV5`，native/fushi_compute 同一算法）。
+fn uuid_v5(namespace: &[u8; 16], name: &str) -> String {
+    let mut h = Sha1::new();
+    h.update(namespace);
+    h.update(name.as_bytes());
+    let d = h.finalize();
+    let mut b = [0u8; 16];
+    b.copy_from_slice(&d[..16]);
+    b[6] = (b[6] & 0x0f) | 0x50;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    let x = hex(&b);
+    format!(
+        "{}-{}-{}-{}-{}",
+        &x[0..8],
+        &x[8..12],
+        &x[12..16],
+        &x[16..20],
+        &x[20..32]
+    )
+}
+
+/// 修改记录 ID（Dart `SrsIds.fieldEdit`）：由 dot 决定。同步 v2 的投影行（sync2）与这里同一个函数。
+pub fn edit_id(writer: &str, seq: i64) -> String {
+    uuid_v5(&uuid_bytes(SRS_NAMESPACE), &format!("edit/{writer}/{seq}"))
+}
+
+/// Dart `SrsFieldEdit.fromJson`：kind 不认识 / 必填键缺失或类型不对 / ID 与 dot 不符 → 坏数据。
+/// 修改记录行里与 JSON 键重复的列（ID 已解码成文本）。读 `jslim` + 这些列的读者（store/slim.rs）用它代替拼回的 `json`。
+pub(crate) struct EditCols {
+    pub id: String,
+    pub k: String,
+    pub e: String,
+    pub f: String,
+    pub w: String,
+    pub s: i64,
+}
+
+fn parse_edit<'a>(
+    stored: &'a str,
+    server_time: Option<i64>,
+    cols: Option<&'a EditCols>,
+    ns: &[u8; 16],
+) -> Result<Edit<'a>, String> {
+    // 瘦存 `~<原文没有的键>{…}`：去掉的键从列补，记为原文没有的不补（与 slim::expand 拼回的原文同义）。
+    let (json, absent, cols) = match (stored.strip_prefix('~'), cols) {
+        (Some(rest), Some(c)) => {
+            let brace = rest.find('{').ok_or("bad slim field edit")?;
+            (&rest[brace..], &rest[..brace], Some(c))
+        }
+        (Some(_), None) => return Err("slim field edit read without its columns".to_owned()),
+        (None, _) => (stored, "", None),
+    };
+    let w: WireEdit<'a> = serde_json::from_str(json).map_err(|e| format!("bad field edit: {e}"))?;
+    let col = |v: Option<Cow<'a, str>>,
+               key: &str,
+               pick: fn(&'a EditCols) -> &'a str|
+     -> Option<Cow<'a, str>> {
+        v.or_else(|| {
+            cols.filter(|_| !absent.split(',').any(|a| a == key))
+                .map(|c| Cow::Borrowed(pick(c)))
+        })
+    };
+    let need = |v: Option<Cow<'a, str>>, key: &str| {
+        v.ok_or_else(|| format!("bad field edit: missing field `{key}`"))
+    };
+    // p 解出来用不到：瘦存里缺了不补，原文缺照旧报错。
+    need(col(w._p, "p", |c| &c.id), "p")?;
+    let k = col(w.k, "k", |c| &c.k);
+    let e = need(col(w.e, "e", |c| &c.e), "e")?;
+    let f = need(col(w.f, "f", |c| &c.f), "f")?;
+    let wr = need(col(w.w, "w", |c| &c.w), "w")?;
+    let seq = match w.s {
+        Some(s) => s,
+        None => cols
+            .filter(|_| !absent.split(',').any(|a| a == "s"))
+            .map(|c| c.s)
+            .ok_or("bad field edit: missing field `s`")?,
+    };
+    let given_id: Option<Cow<'a, str>> = match w.id {
+        Some(raw) if raw.get().starts_with('"') => Some(Cow::Owned(
+            serde_json::from_str(raw.get()).map_err(|e| format!("bad field edit id: {e}"))?,
+        )),
+        Some(_) => None,
+        None => col(None, "id", |c| &c.id),
+    };
+    let kind = match k.as_deref() {
+        Some(k) => KINDS
+            .iter()
+            .copied()
+            .find(|x| *x == k)
+            .ok_or_else(|| format!("unknown entity kind {k}"))?,
+        None => return Err("unknown entity kind null".to_owned()),
+    };
+    let (physical, counter, hlc_writer) = {
+        let (p, c, wr) = parse_hlc(&w.hlc)?;
+        (p, c, wr.to_owned())
+    };
+    let id = uuid_v5(ns, &format!("edit/{wr}/{seq}"));
+    if let Some(given) = given_id {
+        if given != id {
+            return Err(format!("field edit id mismatch: {given} vs {id}"));
+        }
+    }
+    Ok(Edit {
+        id,
+        kind,
+        entity: e,
+        key: f,
+        writer: wr,
+        seq,
+        ctx: Ctx::parse(w.ctx.as_ref()),
+        value: w.v.unwrap_or(Value::Null),
+        physical,
+        counter,
+        hlc_writer,
+        server_time,
+        machine: w.m == Some(Value::Bool(true)),
+    })
+}
+
+// ---------------------------------------------------------------- 「值相同」
+
+/// 规范 JSON 相等（Dart `srsCanonicalJson(a) == srsCanonicalJson(b)`）：对象键序无关；
+/// 整数与浮点不同（`1` ≠ `1.0`），浮点按位比较（`-0.0` ≠ `0.0`）。
+fn canonical_eq(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Null, Value::Null) => true,
+        (Value::Bool(x), Value::Bool(y)) => x == y,
+        (Value::String(x), Value::String(y)) => x == y,
+        (Value::Number(x), Value::Number(y)) => {
+            if x.is_f64() || y.is_f64() {
+                x.is_f64()
+                    && y.is_f64()
+                    && x.as_f64().map(f64::to_bits) == y.as_f64().map(f64::to_bits)
+            } else {
+                x == y
+            }
+        }
+        (Value::Array(x), Value::Array(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| canonical_eq(p, q))
+        }
+        (Value::Object(x), Value::Object(y)) => {
+            x.len() == y.len()
+                && x.iter()
+                    .all(|(k, v)| y.get(k).is_some_and(|w| canonical_eq(v, w)))
+        }
+        _ => false,
+    }
+}
+
+/// 「值相同」的唯一口径（冲突判定、no-op 判定都用它）。
+pub fn same_value(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::String(x), Value::String(y)) => same_field_text(x, y),
+        _ => canonical_eq(a, b),
+    }
+}
+
+// ---------------------------------------------------------------- 寄存器
+
+/// 一个字段键的合并结果。下标都指向该实体的输入切片。
+struct Register {
+    key: String,
+    /// 没被支配的记录，按排序键从大到小；第一条是当前生效值。
+    live: Vec<usize>,
+    conflicted: bool,
+    visible_losers: Vec<usize>,
+}
+
+/// 一个实体的全部寄存器（键按首次出现的顺序，与 Dart `Map` 同序）。
+struct Entity<'e, 'a> {
+    edits: &'e [Edit<'a>],
+    regs: Vec<Register>,
+}
+
+impl<'e, 'a> Entity<'e, 'a> {
+    fn build(edits: &'e [Edit<'a>]) -> Self {
+        let mut order: Vec<(&str, Vec<usize>)> = Vec::new();
+        let mut at: HashMap<&str, usize> = HashMap::new();
+        for (i, e) in edits.iter().enumerate() {
+            let k: &str = &e.key;
+            match at.get(k) {
+                Some(&p) => order[p].1.push(i),
+                None => {
+                    at.insert(k, order.len());
+                    order.push((k, vec![i]));
+                }
+            }
+        }
+        let regs = order
+            .into_iter()
+            .map(|(k, idx)| resolve(k, edits, &idx))
+            .collect();
+        Entity { edits, regs }
+    }
+
+    fn reg(&self, key: &str) -> Option<&Register> {
+        self.regs.iter().find(|r| r.key == key)
+    }
+
+    /// 生效值（没有记录 / 寄存器空 = null）。
+    fn value(&self, key: &str) -> &Value {
+        static NULL: Value = Value::Null;
+        match self.reg(key).and_then(|r| r.live.first()) {
+            Some(&i) => &self.edits[i].value,
+            None => &NULL,
+        }
+    }
+
+    /// 这个键有没有值：生效值为 null 与没有记录是同一状态（「未设」）。带子键的映射（笔记 `f/`、笔记类型
+    /// `fieldDef/` `tmplDef/` `fieldDesc/`）按它决定这一项在不在——时间线恢复把「那一刻还没有的键」写回 null
+    /// （store/sync2/timeline.rs `restored_value`），这一项就回到不存在：之后才加的模板 / 字段消失，内置笔记类型被改过的
+    /// 模板 / 字段回到跟随代码的默认值，而不是变成一份全空的定义盖住它。
+    /// 例外：卡片标志的血统继承（[cards_group]）里自己的 null 是显式值（`buried = null` = 取消埋卡），不走这里。
+    fn is_set(&self, key: &str) -> bool {
+        !self.value(key).is_null()
+    }
+
+    /// 删除优先：删除寄存器里第一条值为整数的候选的值。
+    fn deleted_at(&self) -> Option<i64> {
+        let r = self.reg(KEY_DELETED)?;
+        r.live.iter().find_map(|&i| self.edits[i].value.as_i64())
+    }
+
+    /// 与删除记录并发（谁也没看见谁）的内容修改（原 Dart `srsEditsConcurrentWithDelete`）。
+    fn concurrent_with_delete(&self) -> Vec<usize> {
+        let Some(del) = self.reg(KEY_DELETED) else {
+            return Vec::new();
+        };
+        let deletes: Vec<&Edit<'_>> = del
+            .live
+            .iter()
+            .map(|&i| &self.edits[i])
+            .filter(|e| e.value.as_i64().is_some())
+            .collect();
+        if deletes.is_empty() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        for r in &self.regs {
+            if r.key == KEY_DELETED {
+                continue;
+            }
+            for &c in &r.live {
+                // 合成行没有因果 dot，不参与（[SYNTHETIC_WRITER_PREFIX]）。
+                if self.edits[c].writer.starts_with(SYNTHETIC_WRITER_PREFIX) {
+                    continue;
+                }
+                if deletes.iter().any(|d| d.concurrent(&self.edits[c])) {
+                    out.push(c);
+                }
+            }
+        }
+        out
+    }
+
+    /// 内容类待裁决（Dart `SrsNoteView.hasPendingDecision`）。
+    fn pending_decision(&self, concurrent: &[usize]) -> bool {
+        self.regs.iter().any(|r| r.conflicted)
+            || (self.deleted_at().is_some() && !concurrent.is_empty())
+    }
+
+    fn registers_json(&self) -> Value {
+        Value::Array(
+            self.regs
+                .iter()
+                .map(|r| json!([r.key, r.live, u8::from(r.conflicted), r.visible_losers]))
+                .collect(),
+        )
+    }
+}
+
+/// 合并一个字段键上的全部记录（原 Dart `srsResolveRegister`；顺序无关、幂等）。
+fn resolve(key: &str, edits: &[Edit<'_>], idx: &[usize]) -> Register {
+    // 同 ID 留最后一条。
+    let mut all: Vec<usize> = Vec::with_capacity(idx.len());
+    for (p, &i) in idx.iter().enumerate() {
+        if !idx[p + 1..].iter().any(|&j| edits[j].id == edits[i].id) {
+            all.push(i);
+        }
+    }
+    let mut live: Vec<usize> = all
+        .iter()
+        .copied()
+        .filter(|&a| !all.iter().any(|&b| edits[b].dominates(&edits[a])))
+        .collect();
+    live.sort_by(|&a, &b| edits[b].sort_key().cmp(&edits[a].sort_key()));
+    let (conflicted, visible_losers) = match live.first() {
+        None => (false, Vec::new()),
+        Some(&w) => {
+            let winner = &edits[w];
+            let losers: Vec<usize> = live[1..]
+                .iter()
+                .copied()
+                .filter(|&i| !same_value(&edits[i].value, &winner.value))
+                .collect();
+            let conflicted = !losers.is_empty();
+            let visible = if winner.machine && losers.iter().all(|&i| edits[i].machine) {
+                Vec::new()
+            } else {
+                losers
+            };
+            (conflicted, visible)
+        }
+    };
+    Register {
+        key: key.to_owned(),
+        live,
+        conflicted,
+        visible_losers,
+    }
+}
+
+// ---------------------------------------------------------------- 物化：强转（与 Dart `as T?` 同语义）
+
+fn as_str<'v>(v: &'v Value, what: &str) -> Result<Option<&'v str>, String> {
+    match v {
+        Value::Null => Ok(None),
+        Value::String(s) => Ok(Some(s)),
+        _ => Err(format!("{what}: expected String?, got {v}")),
+    }
+}
+
+fn as_int(v: &Value, what: &str) -> Result<Option<i64>, String> {
+    match v {
+        Value::Null => Ok(None),
+        Value::Number(n) if n.is_i64() => Ok(n.as_i64()),
+        _ => Err(format!("{what}: expected int?, got {v}")),
+    }
+}
+
+fn as_num(v: &Value, what: &str) -> Result<Option<f64>, String> {
+    match v {
+        Value::Null => Ok(None),
+        Value::Number(n) => Ok(n.as_f64()),
+        _ => Err(format!("{what}: expected num?, got {v}")),
+    }
+}
+
+fn get<'v>(m: &'v Value, key: &str) -> &'v Value {
+    static NULL: Value = Value::Null;
+    match m {
+        Value::Object(o) => o.get(key).unwrap_or(&NULL),
+        _ => &NULL,
+    }
+}
+
+/// `SrsEntityRecord.createdAt`：`(payload['createdAt'] as int?) ?? 0`。
+fn created_at(payload: &Value) -> Result<i64, String> {
+    Ok(as_int(get(payload, "createdAt"), "createdAt")?.unwrap_or(0))
+}
+
+// ---------------------------------------------------------------- 物化：笔记
+
+fn note_view(ent: &Entity<'_, '_>, payload: &Value, concurrent: &[usize]) -> Result<Value, String> {
+    let mut fields: Vec<Value> = Vec::new();
+    for r in &ent.regs {
+        if !ent.is_set(&r.key) {
+            continue;
+        }
+        if let Some(id) = r.key.strip_prefix("f/") {
+            let v = match ent.value(&r.key) {
+                Value::String(s) => s.clone(),
+                _ => String::new(),
+            };
+            fields.push(json!([id, v]));
+        }
+    }
+    let tags: Vec<Value> = match ent.value("tags") {
+        Value::Array(xs) => xs.iter().filter(|x| x.is_string()).cloned().collect(),
+        _ => Vec::new(),
+    };
+    let note_type = match as_str(ent.value("noteType"), "noteType")? {
+        Some(s) => s.to_owned(),
+        None => as_str(get(payload, "noteTypeId"), "noteTypeId")?
+            .ok_or("noteTypeId missing")?
+            .to_owned(),
+    };
+    let guid = as_str(get(payload, "guid"), "guid")?
+        .ok_or("guid missing")?
+        .to_owned();
+    let created = created_at(payload)?;
+    let deck = as_str(ent.value("deck"), "deck")?.map(str::to_owned);
+    Ok(json!({
+        "nt": note_type,
+        "g": guid,
+        "ca": created,
+        "f": fields,
+        "t": tags,
+        "s": ent.value("source"),
+        "dk": deck,
+        "da": ent.deleted_at(),
+        "pd": ent.pending_decision(concurrent),
+    }))
+}
+
+// ---------------------------------------------------------------- 物化：卡片标志
+
+fn card_flags(
+    inherited: &HashMap<&str, &Value>,
+    note_deck: Option<&str>,
+    fallback: &str,
+) -> Result<Value, String> {
+    static NULL: Value = Value::Null;
+    let val = |k: &str| -> &Value { inherited.get(k).copied().unwrap_or(&NULL) };
+    let deck = match as_str(val("deck"), "deck")? {
+        Some(d) => d.to_owned(),
+        None => note_deck.unwrap_or(fallback).to_owned(),
+    };
+    let new_pos = match val("newPos") {
+        Value::Number(n) => match n.as_i64() {
+            Some(i) if n.is_i64() => Some(i),
+            // Dart `num.toInt()`：向零截断。
+            _ => n.as_f64().map(|f| f as i64),
+        },
+        _ => None,
+    };
+    Ok(json!({
+        "dk": deck,
+        "su": *val("suspended") == Value::Bool(true),
+        "bu": as_int(val("buried"), "buried")?,
+        "fl": as_int(val("flag"), "flag")?.unwrap_or(0),
+        "np": new_pos,
+    }))
+}
+
+// ---------------------------------------------------------------- 物化：笔记类型
+
+#[derive(Clone)]
+struct FieldDef {
+    id: String,
+    name: String,
+    ord: i64,
+    anki_num: Option<i64>,
+    description: String,
+    deleted: bool,
+}
+
+#[derive(Clone)]
+struct TemplateDef {
+    id: String,
+    name: String,
+    ord: i64,
+    front: String,
+    back: String,
+    anki_num: Option<i64>,
+    deleted: bool,
+}
+
+/// Dart `SrsFieldDef.fromValue`：不是对象当空对象；name / ord / ankiNum 强转。
+fn field_def(id: &str, v: &Value) -> Result<FieldDef, String> {
+    Ok(FieldDef {
+        id: id.to_owned(),
+        name: as_str(get(v, "name"), "fieldDef.name")?
+            .unwrap_or("")
+            .to_owned(),
+        ord: as_int(get(v, "ord"), "fieldDef.ord")?.unwrap_or(0),
+        anki_num: as_int(get(v, "ankiNum"), "fieldDef.ankiNum")?,
+        description: String::new(),
+        deleted: *get(v, "deleted") == Value::Bool(true),
+    })
+}
+
+fn template_def(id: &str, v: &Value) -> Result<TemplateDef, String> {
+    Ok(TemplateDef {
+        id: id.to_owned(),
+        name: as_str(get(v, "name"), "tmplDef.name")?
+            .unwrap_or("")
+            .to_owned(),
+        ord: as_int(get(v, "ord"), "tmplDef.ord")?.unwrap_or(0),
+        front: as_str(get(v, "front"), "tmplDef.front")?
+            .unwrap_or("")
+            .to_owned(),
+        back: as_str(get(v, "back"), "tmplDef.back")?
+            .unwrap_or("")
+            .to_owned(),
+        anki_num: as_int(get(v, "ankiNum"), "tmplDef.ankiNum")?,
+        deleted: *get(v, "deleted") == Value::Bool(true),
+    })
+}
+
+fn field_json(f: &FieldDef) -> Value {
+    json!({"id": f.id, "name": f.name, "ord": f.ord, "ankiNum": f.anki_num, "description": f.description, "deleted": f.deleted})
+}
+
+fn template_json(t: &TemplateDef) -> Value {
+    json!({"id": t.id, "name": t.name, "ord": t.ord, "front": t.front, "back": t.back, "ankiNum": t.anki_num, "deleted": t.deleted})
+}
+
+/// 按插入顺序的小映射（Dart `Map` 语义：覆盖保留原位置，新键追加）。
+struct Ordered<T> {
+    items: Vec<T>,
+}
+
+impl<T> Ordered<T> {
+    fn put(&mut self, id: &str, item: T, id_of: impl Fn(&T) -> &str) {
+        match self.items.iter().position(|x| id_of(x) == id) {
+            Some(p) => self.items[p] = item,
+            None => self.items.push(item),
+        }
+    }
+}
+
+fn by_ord(a_ord: i64, a_id: &str, b_ord: i64, b_id: &str) -> std::cmp::Ordering {
+    a_ord.cmp(&b_ord).then_with(|| cmp_utf16(a_id, b_id))
+}
+
+fn note_type_view(ent: &Entity<'_, '_>, payload: &Value, builtin: &Value) -> Result<Value, String> {
+    let has_builtin = !builtin.is_null();
+    let mut fields = Ordered::<FieldDef> { items: Vec::new() };
+    let mut templates = Ordered::<TemplateDef> { items: Vec::new() };
+    // 内置字段 id → (改名前的默认名, 现在的默认名)。字段定义修改记录是整份快照（调序 / 改名都写全份），
+    // 旧版本写下的快照里名字还是旧默认名——等于旧默认名就当「没改过名」，显示现在的默认名。
+    // 只在物化时认、不写任何修改记录：多设备各自升级不产生同步操作，也就不会有冲突或重复改名。
+    let mut legacy_names: Vec<(String, String, String)> = Vec::new();
+    if let Value::Array(bf) = get(builtin, "fields") {
+        for f in bf {
+            let id = as_str(get(f, "id"), "builtin field id")?.unwrap_or("");
+            if let Some(legacy) = as_str(get(f, "legacyName"), "builtin legacyName")? {
+                let current = as_str(get(f, "name"), "builtin field name")?.unwrap_or("");
+                legacy_names.push((id.to_owned(), legacy.to_owned(), current.to_owned()));
+            }
+            let mut d = field_def(id, f)?;
+            d.description = as_str(get(f, "description"), "builtin description")?
+                .unwrap_or("")
+                .to_owned();
+            fields.put(id, d, |x| &x.id);
+        }
+    }
+    if let Value::Array(bt) = get(builtin, "templates") {
+        for t in bt {
+            let id = as_str(get(t, "id"), "builtin template id")?.unwrap_or("");
+            templates.put(id, template_def(id, t)?, |x| &x.id);
+        }
+    }
+    // 每条字段 / 模板定义修改记录本身（含已删除的）：Anki 导入按它解析字段 ID（definedFields）。
+    let mut edited_fields: Vec<FieldDef> = Vec::new();
+    let mut edited_templates: Vec<TemplateDef> = Vec::new();
+    for r in &ent.regs {
+        if !ent.is_set(&r.key) {
+            continue;
+        }
+        if let Some(id) = r.key.strip_prefix("fieldDef/") {
+            let mut d = field_def(id, ent.value(&r.key))?;
+            if let Some((_, _, current)) = legacy_names
+                .iter()
+                .find(|(lid, legacy, _)| lid == id && *legacy == d.name)
+            {
+                d.name = current.clone();
+            }
+            edited_fields.push(d.clone());
+            fields.put(id, d, |x| &x.id);
+        } else if let Some(id) = r.key.strip_prefix("tmplDef/") {
+            let t = template_def(id, ent.value(&r.key))?;
+            edited_templates.push(t.clone());
+            templates.put(id, t, |x| &x.id);
+        }
+    }
+    // 字段说明是独立键，定义都物化完再并进去。生效值为 null = 未设（[Entity::is_set]）：内置字段留代码默认说明，
+    // 不被一份空说明盖住。
+    for r in &ent.regs {
+        let Some(id) = r.key.strip_prefix("fieldDesc/") else {
+            continue;
+        };
+        if !ent.is_set(&r.key) {
+            continue;
+        }
+        let desc = match ent.value(&r.key) {
+            Value::String(s) => s.clone(),
+            _ => String::new(),
+        };
+        if let Some(f) = fields.items.iter_mut().find(|f| f.id == id) {
+            f.description = desc;
+        }
+    }
+    let mut live_fields: Vec<FieldDef> = fields
+        .items
+        .iter()
+        .filter(|f| !f.deleted)
+        .cloned()
+        .collect();
+    live_fields.sort_by(|a, b| by_ord(a.ord, &a.id, b.ord, &b.id));
+    let mut live_templates: Vec<TemplateDef> = templates
+        .items
+        .iter()
+        .filter(|t| !t.deleted)
+        .cloned()
+        .collect();
+    live_templates.sort_by(|a, b| by_ord(a.ord, &a.id, b.ord, &b.id));
+
+    // Dart 旧实现 `_haveDefs`（apkg 导入）：未删除的物化结果在前，再按记录顺序用定义记录本身覆盖。
+    let mut defined_fields = Ordered::<FieldDef> {
+        items: live_fields.clone(),
+    };
+    for d in edited_fields {
+        let id = d.id.clone();
+        defined_fields.put(&id, d, |x| &x.id);
+    }
+    let mut defined_templates = Ordered::<TemplateDef> {
+        items: live_templates.clone(),
+    };
+    for t in edited_templates {
+        let id = t.id.clone();
+        defined_templates.put(&id, t, |x| &x.id);
+    }
+
+    let pick = |key: &str, fallback: &str, what: &str| -> Result<String, String> {
+        Ok(match as_str(ent.value(key), what)? {
+            Some(s) => s.to_owned(),
+            None if has_builtin => as_str(get(builtin, key), what)?
+                .unwrap_or(fallback)
+                .to_owned(),
+            None => fallback.to_owned(),
+        })
+    };
+    let name = pick("name", "", "name")?;
+    let css = pick("css", "", "css")?;
+    let term = match as_str(ent.value("termField"), "termField")? {
+        Some(s) => Some(s.to_owned()),
+        None => as_str(get(builtin, "termFieldId"), "termFieldId")?.map(str::to_owned),
+    };
+    // 词频序字段（新卡按词频出卡的排序键来源）：与词条字段同一套「修改记录优先、否则内置默认」。
+    let freq = match as_str(ent.value("freqField"), "freqField")? {
+        Some(s) => Some(s.to_owned()),
+        None => as_str(get(builtin, "freqFieldId"), "freqFieldId")?.map(str::to_owned),
+    };
+    // 实际生效的词频序字段（缓存行 `freq_rank` 的来源、编辑页「词频序字段」标签都读它，规则只在这里写一次）：
+    // 显式设的 `freq`（字段还在时），否则名为 `FreqSort` / `FrequencyRank` 的字段（去首尾空白、不分大小写——Lapis 及其衍生类型、
+    // 从 Anki 导入的同类笔记都用这个名字）；都没有 = None。
+    let freq_effective = effective_frequency_field(freq.as_deref(), &live_fields);
+    Ok(json!({
+        "ak": as_int(get(payload, "ankiNum"), "ankiNum")?.unwrap_or(0),
+        "nk": as_str(get(payload, "ntKind"), "ntKind")?.unwrap_or("standard"),
+        "nm": name,
+        "fs": live_fields.iter().map(field_json).collect::<Vec<_>>(),
+        "ts": live_templates.iter().map(template_json).collect::<Vec<_>>(),
+        "df": defined_fields.items.iter().map(field_json).collect::<Vec<_>>(),
+        "dt": defined_templates.items.iter().map(template_json).collect::<Vec<_>>(),
+        "css": css,
+        "tf": term,
+        "qf": freq,
+        "qe": freq_effective,
+        "da": ent.deleted_at(),
+        "bk": as_str(get(payload, "builtin"), "builtin")?,
+    }))
+}
+
+/// 见 [note_type_view] 里 `qe` 的说明。
+fn effective_frequency_field(explicit: Option<&str>, fields: &[FieldDef]) -> Option<String> {
+    if let Some(id) = explicit {
+        if fields.iter().any(|f| f.id == id) {
+            return Some(id.to_owned());
+        }
+    }
+    // `FrequencyRank` 是 Fushi 卡片 2026-10-29 起的字段名（旧名 `FreqSort`），回导 Fushi 导出的包时认它。
+    fields
+        .iter()
+        .find(|f| {
+            matches!(
+                f.name.trim().to_lowercase().as_str(),
+                "freqsort" | "frequencyrank"
+            )
+        })
+        .map(|f| f.id.clone())
+}
+
+// ---------------------------------------------------------------- 物化：牌组
+
+/// 牌组的标量设置。参数组 / 步长 / RWKV 排队设置是值对象，原值交给 Dart 的值对象解析
+/// （`SrsParamSet.fromValue` / `srsSanitizeSteps` / `SrsRwkvQueueSettings.fromValue`，别处也在用）；
+/// 算法缺省值（`srsDefaultAlgorithm`）同样由 Dart 填。
+fn deck_view(ent: &Entity<'_, '_>, payload: &Value) -> Result<Value, String> {
+    let limits = ent.value("limits");
+    let steps = ent.value("steps");
+    let alg = ent.value("algorithm");
+    let baseline = ent.value("optimizeBaseline");
+    let parent = as_str(ent.value("parent"), "parent")?;
+    let limit = |k: &str, d: i64| -> Result<i64, String> {
+        if limits.is_object() {
+            Ok(as_int(get(limits, k), "limits")?.unwrap_or(d))
+        } else {
+            Ok(d)
+        }
+    };
+    let (alg_wire, alg_auto) = if alg.is_object() {
+        (
+            as_str(get(alg, "alg"), "alg")?.map(str::to_owned),
+            *get(alg, "auto") != Value::Bool(false),
+        )
+    } else {
+        (None, true)
+    };
+    let (baseline_at, baseline_n) = if baseline.is_object() {
+        (
+            as_int(get(baseline, "at"), "baseline.at")?,
+            as_int(get(baseline, "n"), "baseline.n")?,
+        )
+    } else {
+        (None, None)
+    };
+    let position = match ent.value("position") {
+        Value::Number(n) => n.as_f64().filter(|f| f.is_finite()),
+        _ => None,
+    };
+    let (learn, relearn) = if steps.is_object() {
+        (get(steps, "learn").clone(), get(steps, "relearn").clone())
+    } else {
+        (Value::Null, Value::Null)
+    };
+    let builtin = as_str(get(payload, "builtin"), "builtin")?;
+    // 内置默认牌组没有「新建」那一刻（身份记录每台设备确定性生成、不写修改记录），没改过 RWKV 排队设置时
+    // 按代码里的推荐值算——与内置笔记类型「没改过就跟代码默认」同一个做法。值 = Dart
+    // `SrsRwkvQueueSettings.forNewDeck`（新建牌组写进去的那份），两边一致由 Dart 测试咬住。
+    let rwkv_queue = match ent.value("rwkvQueue") {
+        Value::Null if builtin == Some("default") => json!({ "minReviews": 40 }),
+        v => v.clone(),
+    };
+    Ok(json!({
+        "nm": as_str(ent.value("name"), "name")?.unwrap_or("Default"),
+        "pa": parent,
+        "own": parent.is_none() || *ent.value("paramsMode") == Value::String("own".to_owned()),
+        "np": limit("new", 20)?,
+        "rp": limit("review", 200)?,
+        "ls": learn,
+        "rs": relearn,
+        "ret": as_num(ent.value("retention"), "retention")?.unwrap_or(0.8),
+        "alg": alg_wire,
+        "aa": alg_auto,
+        "f6": ent.value("fsrs6Params"),
+        "f7": ent.value("fsrs7Params"),
+        "ao": *ent.value("autoOptimize") != Value::Bool(false),
+        "mi": as_int(ent.value("maxInterval"), "maxInterval")?.unwrap_or(36500),
+        "co": *ent.value("collapsed") == Value::Bool(true),
+        "po": position,
+        "ap": *ent.value("autoplay") != Value::Bool(false),
+        "no": as_str(ent.value("newOrder"), "newOrder")?,
+        "rq": *ent.value("replayQuestion") != Value::Bool(false),
+        "rw": rwkv_queue,
+        "npl": ent.value("newPlan"),
+        // 自定义学习「提升今日上限」（`{"day", "new", "review"}`；store/study.rs `today_extension`）。
+        "ext": ent.value("extendLimits"),
+        "ba": baseline_at,
+        "bn": baseline_n,
+        "da": ent.deleted_at(),
+        "bk": builtin,
+        "ca": created_at(payload)?,
+    }))
+}
+
+// ---------------------------------------------------------------- 卡片血统
+
+/// 一组卡（缓存刷新的一块：要的卡 + 预读到的全部前身）各自的寄存器、每张要的卡的血统与继承后的标志。
+fn cards_group(
+    edits: &[Edit<'_>],
+    cards: &[(String, usize)],
+    want: &[(String, Option<String>, String)],
+) -> Result<Value, String> {
+    let mut entities: Vec<Entity<'_, '_>> = Vec::with_capacity(cards.len());
+    let mut by_id: HashMap<&str, usize> = HashMap::with_capacity(cards.len());
+    let mut at = 0;
+    for (k, (id, n)) in cards.iter().enumerate() {
+        entities.push(Entity::build(&edits[at..at + n]));
+        by_id.insert(id, k);
+        at += n;
+    }
+    let mut wants = Vec::with_capacity(want.len());
+    for (card, note_deck, fallback) in want {
+        // 血统：自己在前，再按广度优先列出全部前身（防环，最多 256 张）。
+        let mut lineage: Vec<&str> = Vec::new();
+        let mut seen: Vec<&str> = vec![card];
+        let mut queue: std::collections::VecDeque<&str> =
+            std::collections::VecDeque::from([card.as_str()]);
+        while let Some(id) = queue.pop_front() {
+            if lineage.len() >= 256 {
+                break;
+            }
+            lineage.push(id);
+            let Some(&k) = by_id.get(id) else { continue };
+            let ent = &entities[k];
+            let mut preds: Vec<&str> = ent
+                .regs
+                .iter()
+                .filter_map(|r| {
+                    r.key
+                        .strip_prefix(HISTORY_FROM)
+                        .filter(|_| *ent.value(&r.key) == Value::Bool(true))
+                })
+                .collect();
+            preds.sort_by(|a, b| cmp_utf16(a, b));
+            for p in preds {
+                if !seen.contains(&p) {
+                    seen.push(p);
+                    queue.push_back(p);
+                }
+            }
+        }
+        // 标志按血统继承：自己有记录的键用自己的，没有的取最近的前身的。
+        let mut inherited: HashMap<&str, &Value> = HashMap::new();
+        for id in lineage.iter().rev() {
+            let Some(&k) = by_id.get(id) else { continue };
+            let ent = &entities[k];
+            for r in &ent.regs {
+                if r.key.starts_with(HISTORY_FROM) {
+                    continue;
+                }
+                inherited.insert(&r.key, ent.value(&r.key));
+            }
+        }
+        let flags = card_flags(&inherited, note_deck.as_deref(), fallback)?;
+        wants.push(json!({"l": lineage, "f": flags}));
+    }
+    Ok(json!({
+        "r": entities.iter().map(|e| entity_json(e, None)).collect::<Vec<_>>(),
+        "w": wants,
+    }))
+}
+
+// ---------------------------------------------------------------- 落库前的支配裁剪
+
+/// 已有的记录（前 [existing] 条）+ 依次到达的记录：每条到达的落不落库，以及它支配了哪些（已有的或
+/// 先到的）、要从库里删掉（下标指向全部项，与到达顺序对齐）。与 Dart 旧 `_storeLocalBatch` / `SrsEventStore._applyEdit` 同语义：同 ID 已在（不论哪个
+/// 字段键）或被同字段键上现存的记录支配 → 不落；落了就删掉同字段键上被它支配的。
+fn land(edits: &[Edit<'_>], existing: usize) -> Value {
+    let mut regs: HashMap<(&str, &str, &str), Vec<usize>> = HashMap::new();
+    let mut ids: HashMap<&str, ()> = HashMap::new();
+    for (i, e) in edits[..existing].iter().enumerate() {
+        regs.entry((e.kind, &e.entity, &e.key)).or_default().push(i);
+        ids.insert(&e.id, ());
+    }
+    let mut landed = Vec::with_capacity(edits.len() - existing);
+    // 每条到达的记录删掉了谁（没落库的是空列表），与到达顺序对齐。
+    let mut deleted: Vec<Vec<usize>> = Vec::with_capacity(edits.len() - existing);
+    for (i, e) in edits.iter().enumerate().skip(existing) {
+        let reg = regs.entry((e.kind, &e.entity, &e.key)).or_default();
+        let ok = !ids.contains_key(e.id.as_str()) && !reg.iter().any(|&b| edits[b].dominates(e));
+        landed.push(u8::from(ok));
+        if !ok {
+            deleted.push(Vec::new());
+            continue;
+        }
+        let dominated: Vec<usize> = reg
+            .iter()
+            .copied()
+            .filter(|&a| e.dominates(&edits[a]))
+            .collect();
+        reg.retain(|a| !dominated.contains(a));
+        for &a in &dominated {
+            ids.remove(edits[a].id.as_str());
+        }
+        deleted.push(dominated);
+        reg.push(i);
+        ids.insert(&e.id, ());
+    }
+    json!({"l": landed, "d": deleted})
+}
+
+// ---------------------------------------------------------------- 批量入口
+
+#[derive(Deserialize)]
+#[serde(tag = "t")]
+enum Group {
+    /// 只要寄存器。
+    #[serde(rename = "edits")]
+    Edits { n: usize },
+    #[serde(rename = "note")]
+    Note { n: usize, rec: Value },
+    #[serde(rename = "notetype")]
+    NoteType {
+        n: usize,
+        rec: Value,
+        #[serde(default)]
+        b: Value,
+    },
+    #[serde(rename = "deck")]
+    Deck { n: usize, rec: Value },
+    /// 落库裁剪：前 `e` 条是已有的，其余依次到达。
+    #[serde(rename = "land")]
+    Land { n: usize, e: usize },
+    /// 两个原始 JSON 值是否相同（no-op 判定）：两项不是修改记录，是值本身。
+    #[serde(rename = "same")]
+    Same,
+}
+
+/// 批量物化。`header` 是组描述的 JSON 数组；第 i 项 = `text[offs[i]..offs[i+1]]`（修改记录的落库 JSON，
+/// `same` 组是值本身），服务器时刻 `servers[i]`（[NONE_I64] = 未知）；各组按顺序依次消费项。
+///
+/// 输出是与组同序的 JSON 数组（UTF-8）。寄存器 = `[键, [生效顺序的项下标…], 冲突 0/1, [被覆盖的可见候选…]]`，
+/// 下标相对该实体自己的项。
+pub fn materialize(
+    header: &[u8],
+    text: &[u8],
+    offs: &[u32],
+    servers: &[i64],
+) -> Result<Vec<u8>, String> {
+    let n_items = servers.len();
+    if offs.len() != n_items + 1 {
+        return Err("bad register batch layout".to_owned());
+    }
+    let header =
+        std::str::from_utf8(header).map_err(|_| "register header is not UTF-8".to_owned())?;
+    let groups: Vec<Group> =
+        serde_json::from_str(header).map_err(|e| format!("bad register header: {e}"))?;
+    let text = std::str::from_utf8(text).map_err(|_| "register batch is not UTF-8".to_owned())?;
+    let item = |i: usize| -> Result<&str, String> {
+        let (a, b) = (offs[i] as usize, offs[i + 1] as usize);
+        if a > b || b > text.len() || !text.is_char_boundary(a) || !text.is_char_boundary(b) {
+            return Err("bad register batch offsets".to_owned());
+        }
+        Ok(&text[a..b])
+    };
+    let ns = uuid_bytes(SRS_NAMESPACE);
+    let at = std::cell::Cell::new(0usize);
+    let take = |n: usize| -> Result<Vec<Edit<'_>>, String> {
+        let from = at.get();
+        if from + n > n_items {
+            return Err("register batch is shorter than its header".to_owned());
+        }
+        let mut out = Vec::with_capacity(n);
+        for i in from..from + n {
+            let s = servers[i];
+            out.push(parse_edit(
+                item(i)?,
+                (s != NONE_I64).then_some(s),
+                None,
+                &ns,
+            )?);
+        }
+        at.set(from + n);
+        Ok(out)
+    };
+    let mut out: Vec<Value> = Vec::with_capacity(groups.len());
+    for g in &groups {
+        let v = match g {
+            Group::Edits { n } => {
+                let edits = take(*n)?;
+                entity_json(&Entity::build(&edits), None)
+            }
+            Group::Note { n, rec } => {
+                let edits = take(*n)?;
+                let ent = Entity::build(&edits);
+                let payload = rec;
+                let concurrent = ent.concurrent_with_delete();
+                let view = note_view(&ent, &payload, &concurrent)?;
+                entity_json(&ent, Some(view))
+            }
+            Group::NoteType { n, rec, b } => {
+                let edits = take(*n)?;
+                let ent = Entity::build(&edits);
+                let payload = rec;
+                let view = note_type_view(&ent, &payload, b)?;
+                entity_json(&ent, Some(view))
+            }
+            Group::Deck { n, rec } => {
+                let edits = take(*n)?;
+                let ent = Entity::build(&edits);
+                let payload = rec;
+                let view = deck_view(&ent, &payload)?;
+                entity_json(&ent, Some(view))
+            }
+            Group::Land { n, e } => {
+                if e > n {
+                    return Err("bad land group".to_owned());
+                }
+                let edits = take(*n)?;
+                land(&edits, *e)
+            }
+            Group::Same => {
+                // `same` 组的两项是值本身，不走修改记录解析。
+                let from = at.get();
+                if from + 2 > n_items {
+                    return Err("register batch is shorter than its header".to_owned());
+                }
+                let a: Value =
+                    serde_json::from_str(item(from)?).map_err(|e| format!("bad value: {e}"))?;
+                let b: Value =
+                    serde_json::from_str(item(from + 1)?).map_err(|e| format!("bad value: {e}"))?;
+                at.set(from + 2);
+                Value::Bool(same_value(&a, &b))
+            }
+        };
+        out.push(v);
+    }
+    if at.get() != n_items {
+        return Err("register batch is longer than its header".to_owned());
+    }
+    serde_json::to_vec(&Value::Array(out)).map_err(|e| e.to_string())
+}
+
+fn entity_json(ent: &Entity<'_, '_>, view: Option<Value>) -> Value {
+    let mut m = Map::new();
+    m.insert("r".to_owned(), ent.registers_json());
+    m.insert("d".to_owned(), json!(ent.deleted_at()));
+    m.insert("x".to_owned(), json!(ent.concurrent_with_delete()));
+    if let Some(v) = view {
+        m.insert("v".to_owned(), v);
+    }
+    Value::Object(m)
+}
+
+// ---------------------------------------------------------------- crate 内部入口（同步 v2，sync2）
+
+/// 一条落库修改记录（JSON 原文 + S(e)）。
+/// (落库 JSON 或瘦存 `jslim`, 服务器时刻, 瘦存时同一行的列)。
+pub(crate) type StoredEdit<'a> = (&'a str, Option<i64>, Option<&'a EditCols>);
+
+fn parse_stored<'a>(edits: &[StoredEdit<'a>]) -> Result<Vec<Edit<'a>>, String> {
+    let ns = uuid_bytes(SRS_NAMESPACE);
+    edits
+        .iter()
+        .map(|(j, s, c)| parse_edit(j, *s, *c, &ns))
+        .collect()
+}
+
+/// 落库裁剪（[land]，与 `materialize` 的 `land` 组同一个判据）：前 [existing] 条是已有的，其余依次到达。
+/// 返回每条到达的落不落、以及删掉了谁（下标指向全部项）。
+pub(crate) fn land_stored(
+    edits: &[StoredEdit<'_>],
+    existing: usize,
+) -> Result<(Vec<bool>, Vec<Vec<usize>>), String> {
+    let parsed = parse_stored(edits)?;
+    let v = land(&parsed, existing);
+    let landed = v["l"]
+        .as_array()
+        .map(|a| a.iter().map(|x| x.as_u64() == Some(1)).collect())
+        .unwrap_or_default();
+    let deleted = v["d"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|d| {
+                    d.as_array()
+                        .map(|x| {
+                            x.iter()
+                                .filter_map(|i| i.as_u64().map(|i| i as usize))
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok((landed, deleted))
+}
+
+/// 牌组的物化视图（与 `materialize` 的 `deck` 组同一份，键见 [deck_view]）。
+pub(crate) fn deck_view_of(payload: &Value, edits: &[StoredEdit<'_>]) -> Result<Value, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    deck_view(&ent, payload)
+}
+
+/// 笔记的物化视图（与 `materialize` 的 `note` 组同一份，键见 [note_view]）。
+pub(crate) fn note_view_of(payload: &Value, edits: &[StoredEdit<'_>]) -> Result<Value, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    let concurrent = ent.concurrent_with_delete();
+    note_view(&ent, payload, &concurrent)
+}
+
+/// 笔记类型的物化视图（与 `materialize` 的 `notetype` 组同一份，键见 [note_type_view]）；[builtin] 是内置
+/// 类型的代码默认值（不是内置类型 = null）。
+pub(crate) fn note_type_view_of(
+    payload: &Value,
+    edits: &[StoredEdit<'_>],
+    builtin: &Value,
+) -> Result<Value, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    note_type_view(&ent, payload, builtin)
+}
+
+/// 卡片 ID（Dart `SrsIds.card`）：UUIDv5(笔记 ID, `<模板 ID>/<cloze 序号>`)。笔记 ID 不是 UUID = 错误
+/// （Dart `_uuidBytes` 抛 FormatException）。
+pub(crate) fn card_id(note_id: &str, template_id: &str, cloze_ord: i64) -> Result<String, String> {
+    let hex: Vec<u8> = note_id.bytes().filter(|b| *b != b'-').collect();
+    if hex.len() != 32 || !hex.iter().all(u8::is_ascii_hexdigit) {
+        return Err(format!("not a uuid: {note_id}"));
+    }
+    Ok(uuid_v5(
+        &uuid_bytes(note_id),
+        &format!("{template_id}/{cloze_ord}"),
+    ))
+}
+
+/// 某实体某字段键的生效值（多值寄存器按读路径的规则取胜者；没有记录 = null）。
+pub(crate) fn register_value(edits: &[StoredEdit<'_>], key: &str) -> Result<Value, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    Ok(ent.value(key).clone())
+}
+
+/// 测试用：一个实体全部寄存器的裁决（按记录 ID 而不是下标）——每个键的未被支配者（排序后，首个是胜者）、是否冲突、
+/// 可见败者，以及与删除并发的内容修改。两份只差 ctx 的记录集比这个就知道支配 / 胜负有没有变。
+#[cfg(test)]
+pub(crate) fn registers_report(edits: &[StoredEdit<'_>]) -> Result<Value, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    let ids = |xs: &[usize]| -> Vec<&str> { xs.iter().map(|&i| parsed[i].id.as_str()).collect() };
+    let regs: Vec<Value> = ent
+        .regs
+        .iter()
+        .map(|r| json!([r.key, ids(&r.live), r.conflicted, ids(&r.visible_losers)]))
+        .collect();
+    Ok(json!({"regs": regs, "concurrentWithDelete": ids(&ent.concurrent_with_delete())}))
+}
+
+/// 浏览（store/browse.rs）：一条笔记各字段的生效原文（`f/<字段 id>` 键；非字符串记成空串，与 Dart 浏览按需读同值），
+/// 以及各寄存器生效记录 HLC 物理时刻的最大值（Dart `srsEditsModifiedAt` 去掉创建时刻那一项；没有记录 = None）。
+/// [edits] 只给部分字段键时，最后改动时刻只对这些键成立（调用方只在给全部记录时用它）。
+pub(crate) fn note_browse_values(
+    edits: &[StoredEdit<'_>],
+) -> Result<(Vec<(String, String)>, Option<i64>), String> {
+    note_browse_detail(edits).map(|(values, modified, _)| (values, modified))
+}
+
+/// [note_browse_values] 再加出处寄存器（`source`，`SrsSourceRef.toJson()`；没有 = null，与笔记物化 `note_view` 的
+/// `s` 同值）。[edits] 不含 `source` 键的记录时出处恒为 null。
+pub(crate) fn note_browse_detail(
+    edits: &[StoredEdit<'_>],
+) -> Result<(Vec<(String, String)>, Option<i64>, Value), String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    let source = ent.value("source").clone();
+    let mut values = Vec::new();
+    let mut modified: Option<i64> = None;
+    for r in &ent.regs {
+        let winner = r.live.first().map(|&i| &parsed[i]);
+        if let Some(e) = winner {
+            modified = Some(modified.map_or(e.physical, |m| m.max(e.physical)));
+        }
+        if let Some(id) = r
+            .key
+            .strip_prefix("f/")
+            .filter(|_| winner.is_some_and(|e| !e.value.is_null()))
+        {
+            let v = winner.and_then(|e| e.value.as_str()).unwrap_or("");
+            values.push((id.to_owned(), v.to_owned()));
+        }
+    }
+    Ok((values, modified, source))
+}
+
+/// 一组卡的血统与标志（store/caches.rs 的血统查询、缓存刷新用）：[cards] 是 (卡 ID, 它的修改记录)，
+/// [want] 是 (卡 ID, 笔记首选牌组, 默认牌组)。返回每个 want 的 (血统, 标志 JSON)。
+pub(crate) fn card_lineage_flags(
+    cards: &[(String, Vec<StoredEdit<'_>>)],
+    want: &[(String, Option<String>, String)],
+) -> Result<Vec<(Vec<String>, Value)>, String> {
+    let mut all: Vec<StoredEdit<'_>> = Vec::new();
+    let mut counts: Vec<(String, usize)> = Vec::with_capacity(cards.len());
+    for (id, es) in cards {
+        all.extend_from_slice(es);
+        counts.push((id.clone(), es.len()));
+    }
+    let parsed = parse_stored(&all)?;
+    let v = cards_group(&parsed, &counts, want)?;
+    let mut out = Vec::with_capacity(want.len());
+    for w in v["w"].as_array().cloned().unwrap_or_default() {
+        let lineage = w["l"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+        out.push((lineage, w["f"].clone()));
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 卡片血统与继承后的标志（[card_lineage_flags] / [cards_group]）：tests/fixtures/card_lineage_vectors.json 是
+    /// packages/fushi_srs/test/registers/fixtures/register_vectors.json.gz 里的 300 个 `card` 用例（由**删除前的
+    /// Dart 实现**生成：成环、缺失前身、historyFrom 值不为 true、坏类型），以前经 Dart `srsCardLineages`（`cards`
+    /// 批量组）对拍；那层 Dart 包装生产不再用、已删（L-5），这里直接测内核：血统、标志、每张输入卡的寄存器。
+    #[test]
+    fn card_lineage_vectors_match_the_old_dart_implementation() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/card_lineage_vectors.json"
+        );
+        let vectors: Vec<Value> =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(vectors.len(), 300);
+        let mut multi = 0;
+        for v in &vectors {
+            let server = v["server"].as_object().cloned().unwrap_or_default();
+            let mut texts: Vec<(String, Vec<String>)> = Vec::new();
+            for (id, items) in v["cards"].as_object().unwrap() {
+                texts.push((
+                    id.clone(),
+                    items
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|j| j.as_str().unwrap().to_owned())
+                        .collect(),
+                ));
+            }
+            let id_of = |j: &str| -> Option<String> {
+                serde_json::from_str::<Value>(j)
+                    .ok()
+                    .and_then(|x| x.get("id").and_then(Value::as_str).map(str::to_owned))
+            };
+            let cards: Vec<(String, Vec<StoredEdit<'_>>)> = texts
+                .iter()
+                .map(|(id, items)| {
+                    let edits = items
+                        .iter()
+                        .map(|j| {
+                            (
+                                j.as_str(),
+                                id_of(j)
+                                    .and_then(|e| server.get(&e))
+                                    .and_then(Value::as_i64),
+                                None,
+                            )
+                        })
+                        .collect();
+                    (id.clone(), edits)
+                })
+                .collect();
+            let want = vec![(
+                v["card"].as_str().unwrap().to_owned(),
+                v["noteDeckId"].as_str().map(str::to_owned),
+                v["fallbackDeckId"].as_str().unwrap().to_owned(),
+            )];
+            let e = &v["expect"];
+            let mut all: Vec<StoredEdit<'_>> = Vec::new();
+            let mut counts: Vec<(String, usize)> = Vec::new();
+            for (id, es) in &cards {
+                all.extend_from_slice(es);
+                counts.push((id.clone(), es.len()));
+            }
+            let got = parse_stored(&all).and_then(|parsed| cards_group(&parsed, &counts, &want));
+            if e.get("error").is_some() {
+                assert!(got.is_err(), "{v}");
+                continue;
+            }
+            let got = got.unwrap_or_else(|err| panic!("{err}: {v}"));
+            // 与旧 Dart 测试同一份序列化：标志用 Dart 字段名，寄存器里的项下标换回修改记录 id。
+            let f = &got["w"][0]["f"];
+            let flags = json!({
+                "deckId": f["dk"],
+                "suspended": f["su"] == Value::Bool(true),
+                "buriedUntilDay": f["bu"],
+                "flag": f["fl"],
+                "newPosition": f["np"],
+            });
+            assert_eq!(got["w"][0]["l"], e["lineage"], "{v}");
+            assert_eq!(flags, e["flags"], "{v}");
+            let mut regs = Map::new();
+            for (k, (id, items)) in texts.iter().enumerate() {
+                let ids: Vec<Option<String>> = items.iter().map(|j| id_of(j)).collect();
+                let by = |xs: &Value| -> Value {
+                    Value::Array(
+                        xs.as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|i| json!(ids[i.as_u64().unwrap() as usize]))
+                            .collect(),
+                    )
+                };
+                let list: Vec<Value> = got["r"][k]["r"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|r| json!([r[0], by(&r[1]), r[2] == json!(1), by(&r[3])]))
+                    .collect();
+                regs.insert(id.clone(), Value::Array(list));
+            }
+            assert_eq!(Value::Object(regs), e["regs"], "{v}");
+            if e["lineage"].as_array().unwrap().len() > 1 {
+                multi += 1;
+            }
+        }
+        assert!(multi > 60);
+    }
+
+    #[test]
+    fn uuid_v5_matches_dart_field_edit_id() {
+        // Dart: SrsIds.fieldEdit('A', 1)。
+        let ns = uuid_bytes(SRS_NAMESPACE);
+        let id = uuid_v5(&ns, "edit/A/1");
+        assert_eq!(id.len(), 36);
+        assert_eq!(&id[14..15], "5");
+    }
+
+    /// 内置字段改了默认名（Fushi 卡片 2026-10-29）：旧版本写下的字段定义快照（调序）里名字还是旧默认名时，
+    /// 物化显示新默认名、保留快照的顺序；用户真改过的名字照旧；不带 `legacyName` 的内置类型不受影响。
+    #[test]
+    fn builtin_field_snapshot_with_legacy_default_name_shows_current_name() {
+        let edit = |seq: i64, key: &str, v: Value| {
+            json!({
+                "p": "p", "k": "notetype", "e": "NT", "f": key, "w": "dev", "s": seq,
+                "v": v, "hlc": format!("{}:0:dev", 1_700_000_000_000i64 + seq),
+            })
+            .to_string()
+        };
+        let edits = [
+            // 旧版本调序：整份快照，名字是旧默认名。
+            edit(
+                1,
+                "fieldDef/a",
+                json!({"name": "Expression", "ord": 1, "ankiNum": 11}),
+            ),
+            edit(
+                2,
+                "fieldDef/b",
+                json!({"name": "Picture", "ord": 0, "ankiNum": 12}),
+            ),
+            // 用户真改过名。
+            edit(
+                3,
+                "fieldDef/c",
+                json!({"name": "我的来源", "ord": 2, "ankiNum": 13}),
+            ),
+        ];
+        let stored: Vec<StoredEdit<'_>> = edits.iter().map(|j| (j.as_str(), None, None)).collect();
+        let builtin = json!({
+            "name": "Fushi Card", "css": "",
+            "fields": [
+                {"id": "a", "name": "Term", "ord": 0, "ankiNum": 11, "legacyName": "Expression"},
+                {"id": "b", "name": "Media", "ord": 1, "ankiNum": 12, "legacyName": "Picture"},
+                {"id": "c", "name": "Source", "ord": 2, "ankiNum": 13, "legacyName": "MiscInfo"},
+            ],
+            "templates": [],
+        });
+        let payload = json!({"ankiNum": 1, "ntKind": "standard", "builtin": "fushi_card"});
+        let v = note_type_view_of(&payload, &stored, &builtin).unwrap();
+        let names = |key: &str| -> Vec<String> {
+            v[key]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|f| f["name"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        // 顺序跟快照（Media 调到最前），名字是新默认名；真改过的保留。
+        assert_eq!(names("fs"), vec!["Media", "Term", "我的来源"]);
+        assert!(names("df").contains(&"Term".to_owned()));
+        assert!(!names("df").contains(&"Expression".to_owned()));
+        // 幂等：同一份输入再物化一次结果相同（只在读时认，不产生任何修改记录）。
+        assert_eq!(note_type_view_of(&payload, &stored, &builtin).unwrap(), v);
+
+        // 内置默认值不带 legacyName（如 Lapis）：快照名字原样。
+        let lapis = json!({
+            "name": "Lapis", "css": "",
+            "fields": [{"id": "a", "name": "Expression", "ord": 0, "ankiNum": 11}],
+            "templates": [],
+        });
+        let only_a: Vec<StoredEdit<'_>> = vec![(edits[0].as_str(), None, None)];
+        let v = note_type_view_of(&payload, &only_a, &lapis).unwrap();
+        assert_eq!(v["fs"][0]["name"], "Expression");
+    }
+
+    #[test]
+    fn canonical_eq_distinguishes_int_float_and_signed_zero() {
+        let v = |s: &str| serde_json::from_str::<Value>(s).unwrap();
+        assert!(!same_value(&v("1"), &v("1.0")));
+        assert!(!same_value(&v("-0.0"), &v("0.0")));
+        assert!(same_value(&v(r#"{"a":1,"b":2}"#), &v(r#"{"b":2,"a":1}"#)));
+        assert!(same_value(&v("0.1"), &v("0.10")));
+    }
+}

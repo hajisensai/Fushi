@@ -4,9 +4,11 @@ import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart'
     show formatCueTimestamp;
 import 'package:fushi/src/reader/reader_panel_kit.dart'
-    show ReaderBadgeShape, ReaderPolarShapeBorder;
+    show ReaderBadgeShape, readerBadgeShapeBorder;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// 视频内封章节（chapter）列表面板（TODO-424）。复用 [VideoTranslucentSidePanel]
 /// 的侧栏外壳，本 widget 只负责列出 [VideoPlayerController.chapters]：每行「序号 +
@@ -170,8 +172,9 @@ class _VideoChapterPanelState extends State<VideoChapterPanel> {
               fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
             ),
           ),
-          trailing:
-              selected ? FushiIcon(Icons.play_arrow, color: selectedFg) : null,
+          trailing: selected
+              ? FushiIcon(Icons.play_arrow, color: selectedFg)
+              : null,
           onTap: () => widget.onTapChapter(chapter),
         );
       },
@@ -204,7 +207,7 @@ class _ChapterIndexBadge extends StatelessWidget {
         decoration: ShapeDecoration(
           color: selected ? cs.primary : cs.onSurface.withValues(alpha: 0.08),
           shape: selected
-              ? ReaderPolarShapeBorder.of(ReaderBadgeShape.cookie4)
+              ? readerBadgeShapeBorder(ReaderBadgeShape.cookie4)
               : const CircleBorder(),
         ),
         child: Center(

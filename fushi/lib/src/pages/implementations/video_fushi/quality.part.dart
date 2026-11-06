@@ -101,7 +101,7 @@ extension _VideoQuality on _VideoFushiPageState {
   List<RemoteVideoStreamVariant> get _streamVariants {
     final List<RemoteVideoStreamVariant> variants =
         _streamVariantsClient?.streamVariants ??
-            const <RemoteVideoStreamVariant>[];
+        const <RemoteVideoStreamVariant>[];
     return variants.length > 1 ? variants : const <RemoteVideoStreamVariant>[];
   }
 
@@ -128,10 +128,7 @@ extension _VideoQuality on _VideoFushiPageState {
   String? get _qualityCurrentLabel {
     final RemoteVideoQualityLimit? server = _mediaServerQuality;
     if (server != null) {
-      final int index = server.qualityPresetIndex;
-      return index < 0 || index >= server.qualityPresets.length
-          ? t.video_quality_auto
-          : server.qualityPresets[index].label;
+      return _mediaServerQualityLabel(server, server.qualityPresetIndex);
     }
     final List<RemoteVideoStreamVariant> variants = _streamVariants;
     if (variants.isNotEmpty) {
@@ -163,10 +160,7 @@ extension _VideoQuality on _VideoFushiPageState {
         !_youtubeVariantsLoading) {
       unawaited(_ensureYoutubeVariantsLoaded());
     }
-    _showVideoSidePanel(
-      _VideoSidePanelKind.quality,
-      sourceSlot: sourceSlot,
-    );
+    _showVideoSidePanel(_VideoSidePanelKind.quality, sourceSlot: sourceSlot);
   }
 
   /// 懒解析当前 YouTube 视频的各档 video-only 流（用户点开画质菜单时调）。填
@@ -183,8 +177,10 @@ extension _VideoQuality on _VideoFushiPageState {
     final int seq = _episodeLoadSeq;
     _rebuild(() => _youtubeVariantsLoading = true);
     try {
-      final YoutubeVariantSet set = await resolveYoutubeVideoVariants(watch,
-          playbackTargetHeight: appModel.youtubeQualityTargetHeightOrNull);
+      final YoutubeVariantSet set = await resolveYoutubeVideoVariants(
+        watch,
+        playbackTargetHeight: appModel.youtubeQualityTargetHeightOrNull,
+      );
       // 换集：丢弃迟到结果（新集已复位状态、bump seq），绝不覆盖新集画质态。
       if (!mounted || seq != _episodeLoadSeq) return;
       _rebuild(() {
@@ -207,10 +203,23 @@ extension _VideoQuality on _VideoFushiPageState {
 
   /// 切到第 [index] 档 YouTube 画质（-1=自动=解析器默认最佳）：换 video-only URL + 同
   /// audio-only 音轨重载，保持当前播放位置与现有字幕 cue。同档早退；重载后弹 OSD。
+  ///
+  /// 本集分离音轨已被拒（[SeparatedAudioLoadGuard.separatedAudioRefused]）时不再切：
+  /// 各档都要挂同一条被拒的 audio-only 流，切过去只会再无声一次、再回退一次。画质菜单
+  /// 此时已禁用这些档并说明原因，这里兜住快捷键等其它入口。
   Future<void> _switchYoutubeVariant(int index) async {
     if (index >= _youtubeVariants.length) return;
     if (index == _selectedYoutubeVariantIndex) {
       _hideVideoSidePanel();
+      return;
+    }
+    if (_separatedAudio.separatedAudioRefused) {
+      _hideVideoSidePanel();
+      _showOsd(
+        t.video_quality_separated_audio_refused,
+        icon: FushiIcons.volumeOff,
+        severity: ToastSeverity.warning,
+      );
       return;
     }
     // 自动 → 解析器默认最佳档（[_youtubeVariantsDefaultIndex]）的 URL。
@@ -219,16 +228,23 @@ extension _VideoQuality on _VideoFushiPageState {
       _hideVideoSidePanel();
       return;
     }
+    // 中继地址要 await：期间换集（集序号前进）或分离音轨被拒，这次切档作废。
+    final int seq = _episodeLoadSeq;
     // BUG-2507：googlevideo 直链只接受有界 Range，交给内核前换成本地分块中继地址
     // （与 [UrlStreamVideoClient.remoteVideoStreamUrls] 同一口径）。
     final Map<String, String> headers = _streamHttpHeaderFields;
     final String videoUrl = await relayYoutubeStreamUrl(
-        _youtubeVariants[effectiveIndex].videoUrl, headers);
+      _youtubeVariants[effectiveIndex].videoUrl,
+      headers,
+    );
     final String? audioRaw = _youtubeVariantsAudioUrl;
     final String? audioUrl = audioRaw == null
         ? null
         : await relayYoutubeStreamUrl(audioRaw, headers);
-    if (!mounted) return;
+    if (!_separatedAudio.isCurrent(seq) ||
+        _separatedAudio.separatedAudioRefused) {
+      return;
+    }
     final VideoPlayerController? controller = _controller;
     final int posMs = controller?.resumePositionMs ?? 0;
     final List<AudioCue> cues = controller != null
@@ -239,21 +255,83 @@ extension _VideoQuality on _VideoFushiPageState {
     _rebuild(() => _selectedYoutubeVariantIndex = index);
     // detectHls=false：googlevideo URL 非 m3u8，且不碰 YouTube 档列表。音轨保持同一
     // audio-only 流（切档只换画面清晰度）。字幕经现有 cue + 当前 source 保留。
-    await _applyLoad(
-      videoPath: null,
-      mediaUri: videoUrl,
-      cues: cues,
-      title: _title ?? '',
-      initialPositionMs: posMs,
-      startIntent: EpisodeStartIntent.explicitCue,
-      externalSubtitlePath: _currentSubtitleSource,
-      externalAudioTrackUrl: audioUrl,
-      detectHls: false,
+    await _separatedAudio.runLoad<void>(
+      () => _applyLoad(
+        videoPath: null,
+        mediaUri: videoUrl,
+        cues: cues,
+        title: _title ?? '',
+        initialPositionMs: posMs,
+        startIntent: EpisodeStartIntent.explicitCue,
+        externalSubtitlePath: _currentSubtitleSource,
+        externalAudioTrackUrl: audioUrl,
+        detectHls: false,
+      ),
     );
-    if (!mounted) return;
-    final String label =
-        index < 0 ? t.video_quality_auto : _youtubeVariants[index].label;
+    // 重载期间换集 / 页面销毁：新集已接管，旧档的 OSD 与收尾一律作废。
+    if (!_separatedAudio.isCurrent(seq)) return;
+    final String label = index < 0
+        ? t.video_quality_auto
+        : _youtubeVariants[index].label;
     _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
+    // 切档后分离音轨同样可能被拒（同一条 audio-only 流）：收尾处理。
+    unawaited(_recoverFromExternalAudioFailure());
+  }
+
+  /// 控制器报「本次 load 的外挂分离音轨打不开」（反馈 s3sOy3sD1J）。有载入在途时只等它
+  /// 收尾（在途的那程会在结束后调 [_recoverFromExternalAudioFailure]），否则立即处理。
+  void _handleExternalAudioTrackFailed() {
+    if (_separatedAudio.loadInFlight) return;
+    unawaited(_recoverFromExternalAudioFailure());
+  }
+
+  /// 分离音轨被拒后的处理：403 本身在 YouTube 侧、不可控，这里不重试同一条流，而是
+  ///
+  /// - 本集有自带音轨的 muxed 流（[_separatedAudioFallbackUrl]）：原位换到它重载（保持
+  ///   播放位置与字幕 cue），OSD 说明已换成低画质兼容流；
+  /// - 没有：OSD 明确告诉用户音频流打不开、当前没有声音，而不是静默放无声画面。
+  ///
+  /// 只在控制器确实记了本次 load 的音轨失败时动作，并记下本集分离音轨已被拒（画质菜单
+  /// 据此禁用分离档）；换成 muxed 后那程 load 不挂外挂音轨，失败标记随之复位，不会循环
+  /// 回退。回退重载期间换集 / 页面销毁则静默作废（[SeparatedAudioLoadGuard.recover]）。
+  Future<void> _recoverFromExternalAudioFailure() async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    await _separatedAudio.recover(
+      externalAudioFailed: () => controller.externalAudioTrackFailed,
+      fallbackUrl: _separatedAudioFallbackUrl,
+      onNoFallback: () {
+        // 画质菜单若开着，分离档随即变为禁用态。
+        _rebuild(() {});
+        _showOsd(
+          t.video_audio_track_load_failed,
+          icon: FushiIcons.volumeOff,
+          prominent: true,
+          severity: ToastSeverity.error,
+        );
+      },
+      reloadWithFallback: (String fallback) {
+        final int posMs = controller.resumePositionMs ?? 0;
+        final List<AudioCue> cues = List<AudioCue>.of(controller.cues);
+        _rebuild(() => _selectedYoutubeVariantIndex = -1);
+        return _applyLoad(
+          videoPath: null,
+          mediaUri: fallback,
+          cues: cues,
+          title: _title ?? '',
+          initialPositionMs: posMs,
+          startIntent: EpisodeStartIntent.explicitCue,
+          externalSubtitlePath: _currentSubtitleSource,
+          detectHls: false,
+        );
+      },
+      onFellBack: () => _showOsd(
+        t.video_audio_track_fallback_muxed,
+        icon: FushiIcons.volumeUp,
+        prominent: true,
+        severity: ToastSeverity.warning,
+      ),
+    );
   }
 
   /// 切到媒体服务器第 [index] 档（-1 = 自动）：偏好落库、写进 client，先关掉当前
@@ -275,7 +353,7 @@ extension _VideoQuality on _VideoFushiPageState {
     _stopAdaptiveQuality();
     final InterconnectSyncBackend? client = _adaptiveQualityClient;
     if (client == null) return;
-    if (client.qualityPresetIndex >= 0) return;
+    if (client.qualityPresetIndex != kRemoteVideoQualityAuto) return;
     // 按 host 链路重算（换 peer / 从公网回到局域网都要重新起步），不是无脑 ??=。
     client.ensureAdaptiveQualityStart();
     _adaptiveQuality.reset();
@@ -300,8 +378,8 @@ extension _VideoQuality on _VideoFushiPageState {
       _stopAdaptiveQuality();
       return;
     }
-    // 用户在播放途中显式选了档 → 自动接管结束。
-    if (client.qualityPresetIndex >= 0) {
+    // 用户在播放途中显式选了档（含「原画」）→ 自动接管结束。
+    if (client.qualityPresetIndex != kRemoteVideoQualityAuto) {
       _stopAdaptiveQuality();
       return;
     }
@@ -355,11 +433,13 @@ extension _VideoQuality on _VideoFushiPageState {
       // 正由上一行 `_loadRemoteEpisode` 内部的 /streamurl 响应重新赋值——换档期间
       // host 用户关掉「为对端转码视频」就足以让表变空。调用点是 unawaited，越界会
       // 变成未捕获的 zone error。
-      final List<MediaServerQualityPreset> presets = client.qualityPresets;
-      final String label = decision.targetIndex < 0 ||
-              decision.targetIndex >= presets.length
-          ? t.video_quality_auto
-          : presets[decision.targetIndex].label;
+      // 自适应的 -1 是「原画直传」，不是「自动」（自动是策略，这里报的是取值）。
+      final String label = _mediaServerQualityLabel(
+        client,
+        decision.targetIndex < 0
+            ? kRemoteVideoQualityOriginal
+            : decision.targetIndex,
+      );
       _showOsd(
         decision.reason == AdaptiveQualityReason.stall
             ? t.video_quality_auto_lowered(label: label)
@@ -376,19 +456,23 @@ extension _VideoQuality on _VideoFushiPageState {
   /// 互联与媒体服务器（Jellyfin/Emby）的档位阶梯**不同**（互联整体更低，它要解决的
   /// 是人在外面用手机网络），共用一个下标会让同一个数字在两边指向不同画质——用户在
   /// Emby 上选的 `2` 跑到互联上就成了另一档。
-  int _readQualityPresetIndex(Object client) => client is InterconnectSyncBackend
+  int _readQualityPresetIndex(Object client) =>
+      client is InterconnectSyncBackend
       ? appModel.prefsRepo.interconnectQualityPresetIndex
       : appModel.prefsRepo.mediaServerQualityPresetIndex;
 
   Future<void> _writeQualityPresetIndex(Object client, int index) =>
       client is InterconnectSyncBackend
-          ? appModel.prefsRepo.setInterconnectQualityPresetIndex(index)
-          : appModel.prefsRepo.setMediaServerQualityPresetIndex(index);
+      ? appModel.prefsRepo.setInterconnectQualityPresetIndex(index)
+      : appModel.prefsRepo.setMediaServerQualityPresetIndex(index);
 
   Future<void> _switchMediaServerQuality(int index) async {
     final RemoteVideoQualityLimit? server = _mediaServerQuality;
     if (server == null || index >= server.qualityPresets.length) return;
-    final int target = index < 0 ? -1 : index;
+    final int target =
+        index == kRemoteVideoQualityOriginal && server.offersOriginalQuality
+        ? kRemoteVideoQualityOriginal
+        : (index < 0 ? kRemoteVideoQualityAuto : index);
     if (target == server.qualityPresetIndex) {
       _hideVideoSidePanel();
       return;
@@ -401,7 +485,7 @@ extension _VideoQuality on _VideoFushiPageState {
     // 用户显式选档 = 自动接管结束；选回「自动」则把自适应的当前取值清掉，让它从
     // 起点判据重新开始，而不是接着上次自动降到的那一档跑。
     if (server is InterconnectSyncBackend) {
-      if (target >= 0) {
+      if (target != kRemoteVideoQualityAuto) {
         _stopAdaptiveQuality();
       } else {
         server.adaptiveQualityIndex = null;
@@ -420,11 +504,28 @@ extension _VideoQuality on _VideoFushiPageState {
       initialPositionMsOverride: posMs,
     );
     if (!mounted) return;
+    _showOsd(
+      t.video_quality_switched(label: _mediaServerQualityLabel(server, target)),
+      icon: Icons.high_quality,
+    );
+  }
+
+  /// 服务端画质档 [index] 的显示名：自动 / 原画 / 档位文案（越界按自动）。
+  String _mediaServerQualityLabel(RemoteVideoQualityLimit server, int index) {
+    if (index == kRemoteVideoQualityOriginal && server.offersOriginalQuality) {
+      return t.video_quality_original;
+    }
     final List<MediaServerQualityPreset> presets = server.qualityPresets;
-    final String label = target < 0 || target >= presets.length
+    return index < 0 || index >= presets.length
         ? t.video_quality_auto
-        : presets[target].label;
-    _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
+        : presets[index].label;
+  }
+
+  /// 「原画」行的副标题：源文件码率（知道时）。
+  String? get _originalQualitySubtitle {
+    final Object? client = _effectiveRemoteClient;
+    if (client is! InterconnectSyncBackend) return null;
+    return formatBitrate(client.sourceBitrate);
   }
 
   /// 切到视频源扩展的第 [index] 条线路：选择记进 client（钉到当前集），再按当前集
@@ -480,23 +581,32 @@ extension _VideoQuality on _VideoFushiPageState {
     _hideVideoSidePanel();
     // 乐观更新选中档（菜单高亮即时反映）。
     _rebuild(() => _selectedHlsVariantIndex = index);
+    final int seq = _episodeLoadSeq;
     // explicitCue：不做近尾重置，精确 seek 回当前位置。detectHls=false：不拿
     // variant（media playlist）URL 重探测把档位列表清空。字幕经现有 cue + 当前 source
     // 保留（externalSubtitlePath 非空即让 controller 跳过内嵌自动抽取，避免重复）。
-    await _applyLoad(
-      videoPath: null,
-      mediaUri: target,
-      cues: cues,
-      title: _title ?? '',
-      initialPositionMs: posMs,
-      startIntent: EpisodeStartIntent.explicitCue,
-      externalSubtitlePath: _currentSubtitleSource,
-      detectHls: false,
+    // 同一条流的外挂音轨（DASH 风格分离音频 / 替代配音）原样带上：控制器每次 load
+    // 都清空上一片的外挂轨，不带就是切档后无声 / 配音从音轨菜单消失。
+    await _separatedAudio.runLoad<void>(
+      () => _applyLoad(
+        videoPath: null,
+        mediaUri: target,
+        cues: cues,
+        title: _title ?? '',
+        initialPositionMs: posMs,
+        startIntent: EpisodeStartIntent.explicitCue,
+        externalSubtitlePath: _currentSubtitleSource,
+        externalAudioTracks: _streamExternalAudioTracks,
+        detectHls: false,
+      ),
     );
-    if (!mounted) return;
-    final String label =
-        index < 0 ? t.video_quality_auto : _hlsVariants[index].qualityLabel;
+    if (!mounted || !_separatedAudio.isCurrent(seq)) return;
+    final String label = index < 0
+        ? t.video_quality_auto
+        : _hlsVariants[index].qualityLabel;
     _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
+    // 外挂音轨在切档那程里一条都没挂上（且流无自带音轨）：载入在途时只记了账，收尾处理。
+    unawaited(_recoverFromExternalAudioFailure());
   }
 
   /// 多条可播候选（扩展线路 / 媒体服务器版本）各一行，正在播的打勾；点了按
@@ -515,8 +625,9 @@ extension _VideoQuality on _VideoFushiPageState {
           title: Text(variants[i].label),
           selected: current == i,
           selectedColor: selectedFg,
-          trailing:
-              current == i ? FushiIcon(Icons.check, color: selectedFg) : null,
+          trailing: current == i
+              ? FushiIcon(Icons.check, color: selectedFg)
+              : null,
           onTap: () => unawaited(_switchStreamVariant(i)),
         ),
     ];
@@ -557,10 +668,9 @@ extension _VideoQuality on _VideoFushiPageState {
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
               child: Text(
                 t.media_server_versions,
-                style: Theme.of(panelContext)
-                    .textTheme
-                    .labelMedium
-                    ?.copyWith(color: cs.onSurfaceVariant),
+                style: Theme.of(
+                  panelContext,
+                ).textTheme.labelMedium?.copyWith(color: cs.onSurfaceVariant),
               ),
             ),
             ..._buildStreamVariantTiles(selectedFg, versions),
@@ -571,8 +681,18 @@ extension _VideoQuality on _VideoFushiPageState {
             icon: Icons.auto_awesome,
             label: t.video_quality_auto,
             index: -1,
-            selected: server.qualityPresetIndex < 0,
+            selected: server.qualityPresetIndex == kRemoteVideoQualityAuto,
           ),
+          if (server.offersOriginalQuality)
+            _buildMediaServerQualityTile(
+              selectedFg,
+              icon: FushiIcons.originalQuality,
+              label: t.video_quality_original,
+              subtitle: _originalQualitySubtitle,
+              index: kRemoteVideoQualityOriginal,
+              selected:
+                  server.qualityPresetIndex == kRemoteVideoQualityOriginal,
+            ),
           for (int i = 0; i < presets.length; i++)
             _buildMediaServerQualityTile(
               selectedFg,
@@ -634,14 +754,29 @@ extension _VideoQuality on _VideoFushiPageState {
         );
       }
       if (_youtubeVariants.isNotEmpty) {
+        // 本集分离音轨已被拒：各档都得挂同一条被拒的音频流，禁用并说明（而不是让用户
+        // 点了再无声一次、再回退一次）。
+        final bool separatedRefused = _separatedAudio.separatedAudioRefused;
         return ListView(
           padding: listPadding,
           children: <Widget>[
+            if (separatedRefused)
+              Padding(
+                key: const ValueKey<String>(
+                  'video-quality-youtube-separated-audio-refused',
+                ),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Text(
+                  t.video_quality_separated_audio_refused,
+                  style: TextStyle(color: cs.onSurfaceVariant),
+                ),
+              ),
             _buildYoutubeQualityTile(
               selectedFg,
               icon: Icons.auto_awesome,
               label: t.video_quality_auto,
               index: -1,
+              enabled: !separatedRefused,
             ),
             for (int i = 0; i < _youtubeVariants.length; i++)
               _buildYoutubeQualityTile(
@@ -649,6 +784,7 @@ extension _VideoQuality on _VideoFushiPageState {
                 icon: Icons.high_quality,
                 label: _youtubeVariants[i].label,
                 index: i,
+                enabled: !separatedRefused,
               ),
           ],
         );
@@ -723,12 +859,14 @@ extension _VideoQuality on _VideoFushiPageState {
     required String label,
     required int index,
     required bool selected,
+    String? subtitle,
   }) {
     return FushiListTileControl(
       key: ValueKey<String>('video-quality-media-server-$index'),
       dense: true,
       leading: FushiIcon(icon),
       title: Text(label),
+      subtitle: subtitle == null ? null : Text(subtitle),
       selected: selected,
       selectedColor: selectedFg,
       trailing: selected ? FushiIcon(Icons.check, color: selectedFg) : null,
@@ -741,16 +879,19 @@ extension _VideoQuality on _VideoFushiPageState {
     required IconData icon,
     required String label,
     required int index,
+    required bool enabled,
   }) {
     final bool selected = _selectedYoutubeVariantIndex == index;
     return FushiListTileControl(
+      key: ValueKey<String>('video-quality-youtube-$index'),
       dense: true,
+      enabled: enabled,
       leading: FushiIcon(icon),
       title: Text(label),
       selected: selected,
       selectedColor: selectedFg,
       trailing: selected ? FushiIcon(Icons.check, color: selectedFg) : null,
-      onTap: () => unawaited(_switchYoutubeVariant(index)),
+      onTap: enabled ? () => unawaited(_switchYoutubeVariant(index)) : null,
     );
   }
 }

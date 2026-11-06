@@ -2,8 +2,9 @@ import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -29,7 +30,8 @@ void main() {
         .expand((SettingsSection s) => s.items)
         .whereType<SettingsStepperItem>()
         .firstWhere(
-            (SettingsStepperItem i) => i.id == 'reading_display.font_size');
+          (SettingsStepperItem i) => i.id == 'reading_display.font_size',
+        );
   }
 
   group('reader font size cap (schema)', () {
@@ -63,8 +65,9 @@ void main() {
                   readerSource: ReaderFushiSource.instance,
                   refresh: () {},
                 );
-                final SettingsStepperItem item =
-                    readerFontSizeItem(settingsContext);
+                final SettingsStepperItem item = readerFontSizeItem(
+                  settingsContext,
+                );
                 expect(item.min, 8, reason: '下限不变');
                 expect(
                   item.max,
@@ -83,8 +86,9 @@ void main() {
 
   group('reader font size cap (behavior)', () {
     test('a font size above 64 persists and reaches the body CSS', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -103,8 +107,11 @@ void main() {
       // 生成的正文 CSS 用的就是这个字号（DB 双精度往返渲染成 `96.0px`），
       // 不是被夹回 64 的值。
       final String css = ReaderContentStyles.css(settings: restored);
-      expect(css, contains('font-size: 96.0px'),
-          reason: '正文 CSS 必须用 96px（>64 字号能真生效渲染）');
+      expect(
+        css,
+        contains('font-size: 96.0px'),
+        reason: '正文 CSS 必须用 96px（>64 字号能真生效渲染）',
+      );
       expect(css, isNot(contains('font-size: 64')));
     });
   });

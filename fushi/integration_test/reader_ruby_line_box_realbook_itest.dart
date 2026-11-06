@@ -70,12 +70,15 @@ Future<void> _waitFor(
     await tester.pump(step);
     if (ready()) {
       debugPrint(
-          '[ruby-realbook] $label ready after ${i * step.inMilliseconds}ms');
+        '[ruby-realbook] $label ready after ${i * step.inMilliseconds}ms',
+      );
       return;
     }
   }
-  fail('$label did not become ready within '
-      '${maxPolls * step.inMilliseconds}ms');
+  fail(
+    '$label did not become ready within '
+    '${maxPolls * step.inMilliseconds}ms',
+  );
 }
 
 Future<void> _pumpForPref(WidgetTester tester) async {
@@ -88,14 +91,19 @@ Future<void> _openBook(WidgetTester tester, String bookKey) async {
   await openBookViaProductionPath(tester, bookKey);
   await _waitFor(tester, _webViewShown, 'reader WebView');
   await _waitFor(tester, _contentReady, 'reader content', maxPolls: 240);
-  await _waitFor(tester, readerWebViewReady, 'reader debug hooks',
-      maxPolls: 20);
+  await _waitFor(
+    tester,
+    readerWebViewReady,
+    'reader debug hooks',
+    maxPolls: 20,
+  );
 }
 
 Future<void> _closeReader(WidgetTester tester) async {
   if (_readerPageGone()) return;
-  final NavigatorState nav =
-      Navigator.of(tester.element(find.byType(ReaderFushiPage)));
+  final NavigatorState nav = Navigator.of(
+    tester.element(find.byType(ReaderFushiPage)),
+  );
   nav.pop();
   await _waitFor(tester, _readerPageGone, 'reader closed', maxPolls: 40);
   await tester.pump(const Duration(seconds: 1));
@@ -255,8 +263,11 @@ void main() {
     'user\'s EPUB across writing modes and font sizes (engine-tagged)',
     timeout: const Timeout(Duration(minutes: 25)),
     (WidgetTester tester) async {
-      expect(_epubPath, isNotEmpty,
-          reason: 'pass --dart-define=FUSHI_PROBE_EPUB=<path to epub>');
+      expect(
+        _epubPath,
+        isNotEmpty,
+        reason: 'pass --dart-define=FUSHI_PROBE_EPUB=<path to epub>',
+      );
       final File epub = File(_epubPath);
       expect(epub.existsSync(), isTrue, reason: 'epub not found: $_epubPath');
 
@@ -264,8 +275,11 @@ void main() {
         label: 'ruby-realbook',
         body: () async {
           await launchFushiTestApp();
-          expect(await waitForHome(tester), isTrue,
-              reason: 'home (nav bar) must render');
+          expect(
+            await waitForHome(tester),
+            isTrue,
+            reason: 'home (nav bar) must render',
+          );
           await tester.pump(const Duration(seconds: 2));
           final AppModel appModel = await readyAppModel(tester);
 
@@ -275,10 +289,12 @@ void main() {
           final String originalViewMode = source.readerViewMode;
           final double originalLineHeight = source.readerLineHeight;
           final double originalFontSize = source.readerFontSize;
-          debugPrint('[ruby-realbook] original prefs: furigana_mode='
-              '$originalMode writing_mode=$originalWritingMode '
-              'view_mode=$originalViewMode line_height=$originalLineHeight '
-              'font_size=$originalFontSize');
+          debugPrint(
+            '[ruby-realbook] original prefs: furigana_mode='
+            '$originalMode writing_mode=$originalWritingMode '
+            'view_mode=$originalViewMode line_height=$originalLineHeight '
+            'font_size=$originalFontSize',
+          );
 
           try {
             await source.setReaderViewMode('paginated');
@@ -293,8 +309,9 @@ void main() {
               fileName: epub.uri.pathSegments.last,
             );
             debugPrint('[ruby-realbook] imported key=$bookKey');
-            final EpubBookRow? row =
-                await appModel.database.getEpubBook(bookKey);
+            final EpubBookRow? row = await appModel.database.getEpubBook(
+              bookKey,
+            );
             expect(row, isNotNull);
             final int section = await _sectionWithMostRuby(row!);
             await appModel.database.upsertReaderPosition(
@@ -325,7 +342,8 @@ void main() {
                 final Map<String, dynamic> r =
                     jsonDecode((await runJs!(_measureJs)) as String)
                         as Map<String, dynamic>;
-                final String line = '[ruby-realbook] engine=${r['engine']} '
+                final String line =
+                    '[ruby-realbook] engine=${r['engine']} '
                     'pass=$pass plain=${r['plain']} (n=${r['plainN']}, '
                     'max=${r['plainMax']}) ruby=${r['ruby']} (n=${r['rubyN']}, '
                     'max=${r['rubyMax']}) delta=${r['delta']} '
@@ -336,20 +354,27 @@ void main() {
                     '(n=${r['firstRubyExtraN']})';
                 debugPrint(line);
                 summary.add(line);
-                debugPrint('[ruby-realbook]   body font=${r['bodyFontSize']} '
-                    'lineHeight=${r['bodyLineHeight']} '
-                    'writingMode=${r['bodyWritingMode']} rt=${r['rtCss']} '
-                    'ruby=${r['rubyCss']}');
+                debugPrint(
+                  '[ruby-realbook]   body font=${r['bodyFontSize']} '
+                  'lineHeight=${r['bodyLineHeight']} '
+                  'writingMode=${r['bodyWritingMode']} rt=${r['rtCss']} '
+                  'ruby=${r['rubyCss']}',
+                );
                 for (final dynamic d in r['lines'] as List<dynamic>) {
                   debugPrint('[ruby-realbook]   $d');
                 }
-                final ObserveShot web =
-                    await captureReaderWebView('observe-rb-$pass-webview');
-                debugPrint('[ruby-realbook]   webview $pass saved=${web.saved} '
-                    'nonBlank=${web.nonBlank} path=${web.path}');
+                final ObserveShot web = await captureReaderWebView(
+                  'observe-rb-$pass-webview',
+                );
+                debugPrint(
+                  '[ruby-realbook]   webview $pass saved=${web.saved} '
+                  'nonBlank=${web.nonBlank} path=${web.path}',
+                );
                 expect(
-                    (r['plainN'] as num) + (r['rubyN'] as num), greaterThan(0),
-                    reason: 'pass $pass must measure some line pitches');
+                  (r['plainN'] as num) + (r['rubyN'] as num),
+                  greaterThan(0),
+                  reason: 'pass $pass must measure some line pitches',
+                );
                 await _closeReader(tester);
               }
             }

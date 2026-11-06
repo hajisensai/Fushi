@@ -28,17 +28,16 @@ class _StubRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      const MineOutcome.success(noteId: 1);
+  }) async => const MineOutcome.success(noteId: 1);
 
   @override
   Future<AnkiSettings> loadSettings() async => const AnkiSettings(
-        fieldMappings: <String, String>{
-          'Sentence': '{sentence}',
-          'Image': '{card-image}',
-          'SentenceAudio': '{sentence-audio}',
-        },
-      );
+    fieldMappings: <String, String>{
+      'Sentence': '{sentence}',
+      'Image': '{card-image}',
+      'SentenceAudio': '{sentence-audio}',
+    },
+  );
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -85,25 +84,30 @@ void main() {
       lineValidator: (_) => true,
       stateLoader: () => activeState,
       createTempDirectory: () async => testRoot,
-      captureGif: ({
-        required int hwnd,
-        MiningAnimatedFormat format = MiningAnimatedFormat.gif,
-      }) async {
-        if (!gifStarted.isCompleted) gifStarted.complete();
-        await gifRelease.future;
-        return (bytes: Uint8List.fromList(<int>[71, 73, 70]), format: format);
-      },
+      captureGif:
+          ({
+            required int hwnd,
+            MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+          }) async {
+            if (!gifStarted.isCompleted) gifStarted.complete();
+            await gifRelease.future;
+            return (
+              bytes: Uint8List.fromList(<int>[71, 73, 70]),
+              format: format,
+            );
+          },
       captureStill: (int hwnd) async =>
           WindowCaptureResult(pngBytes: Uint8List.fromList(<int>[80, 78, 71])),
-      captureAudio: ({
-        required String lineId,
-        required String sentence,
-        required String outputExtension,
-      }) async {
-        if (!audioStarted.isCompleted) audioStarted.complete();
-        await audioRelease.future;
-        return Uint8List.fromList(<int>[1, 2, 3]);
-      },
+      captureAudio:
+          ({
+            required String lineId,
+            required String sentence,
+            required String outputExtension,
+          }) async {
+            if (!audioStarted.isCompleted) audioStarted.complete();
+            await audioRelease.future;
+            return Uint8List.fromList(<int>[1, 2, 3]);
+          },
     );
 
     final Future<GalHookMiningResult> mining = subject.mineLine(

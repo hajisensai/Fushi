@@ -26,7 +26,7 @@ ModuleVisibility _visibility({
   if (games) ModuleId.games,
   if (downloads) ModuleId.browse,
   if (lookup) ModuleId.lookup,
-  if (browserExtension) ModuleId.browserExtension,
+  if (browserExtension) ModuleId.web,
 });
 
 /// 锁定首页顶层 tab 顺序与「实验视频」开关的条件插入（用户需求：视频 tab 放在
@@ -96,10 +96,7 @@ void main() {
         _visibility(video: true, games: true),
       );
       // 去掉视频后两者应完全一致（视频是仅有的差异；下载恒在）。
-      expect(
-        on.where((HomeTab t) => t != HomeTab.video).toList(),
-        equals(off),
-      );
+      expect(on.where((HomeTab t) => t != HomeTab.video).toList(), equals(off));
     });
   });
 }

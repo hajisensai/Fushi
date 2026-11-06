@@ -88,18 +88,23 @@ Future<DiscoveredPairingProbeOutcome> probeDiscoveredPairingEndpointDetailed({
   required int port,
   required bool tlsAdvertised,
   Future<FushiTofuOutcome> Function(String host, int port)? captureFingerprint,
-  Future<FushiPingOutcome> Function(String baseUrl,
-          {String? pinnedFingerprint})?
-      ping,
+  Future<FushiPingOutcome> Function(
+    String baseUrl, {
+    String? pinnedFingerprint,
+  })?
+  ping,
 }) async {
   final Future<FushiTofuOutcome> Function(String host, int port) capture =
       captureFingerprint ??
-          (String h, int p) => FushiTofuProbe.probeFingerprint(h, p);
-  final Future<FushiPingOutcome> Function(String baseUrl,
-          {String? pinnedFingerprint}) doPing =
+      (String h, int p) => FushiTofuProbe.probeFingerprint(h, p);
+  final Future<FushiPingOutcome> Function(
+    String baseUrl, {
+    String? pinnedFingerprint,
+  })
+  doPing =
       ping ??
-          (String baseUrl, {String? pinnedFingerprint}) =>
-              probeFushiPing(baseUrl, pinnedFingerprint: pinnedFingerprint);
+      (String baseUrl, {String? pinnedFingerprint}) =>
+          probeFushiPing(baseUrl, pinnedFingerprint: pinnedFingerprint);
 
   FushiPingFailure? worst;
   bool peerSpeaksTls = false;
@@ -118,8 +123,10 @@ Future<DiscoveredPairingProbeOutcome> probeDiscoveredPairingEndpointDetailed({
         if (mapped != null) worst = _worst(worst, mapped);
         continue;
       }
-      final FushiPingOutcome outcome =
-          await doPing(baseUrl, pinnedFingerprint: captured);
+      final FushiPingOutcome outcome = await doPing(
+        baseUrl,
+        pinnedFingerprint: captured,
+      );
       final FushiPingResult? result = outcome.result;
       if (result == null) {
         worst = _worst(worst, outcome.failure ?? FushiPingFailure.unreachable);

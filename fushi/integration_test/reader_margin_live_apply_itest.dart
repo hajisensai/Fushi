@@ -93,8 +93,11 @@ void main() {
         label: 'margin',
         body: () async {
           await launchFushiTestApp();
-          expect(await waitForHome(tester), isTrue,
-              reason: 'home (nav bar) must render');
+          expect(
+            await waitForHome(tester),
+            isTrue,
+            reason: 'home (nav bar) must render',
+          );
           await tester.pump(const Duration(seconds: 2));
 
           final AppModel appModel = await readyAppModel(tester);
@@ -124,10 +127,16 @@ void main() {
             await tester.pump(const Duration(milliseconds: 500));
             if (bookEntries.evaluate().isNotEmpty) break;
           }
-          expect(bookEntries, findsWidgets,
-              reason: 'seeded book must appear on the shelf');
-          expect(await driver.focusWidget(bookEntries.first), isTrue,
-              reason: 'book card must be reachable by focus');
+          expect(
+            bookEntries,
+            findsWidgets,
+            reason: 'seeded book must appear on the shelf',
+          );
+          expect(
+            await driver.focusWidget(bookEntries.first),
+            isTrue,
+            reason: 'book card must be reachable by focus',
+          );
           await driver.activate();
           await tester.pump(const Duration(seconds: 3));
 
@@ -136,8 +145,11 @@ void main() {
 
           final Future<dynamic> Function(String source)? runJs =
               ReaderFushiPage.debugEvaluateJavascript;
-          expect(runJs, isNotNull,
-              reason: 'reader must expose debugEvaluateJavascript hook');
+          expect(
+            runJs,
+            isNotNull,
+            reason: 'reader must expose debugEvaluateJavascript hook',
+          );
 
           // Distinctive target values so we can detect the exact string in CSS
           // and unambiguous px deltas in computed padding.
@@ -148,8 +160,10 @@ void main() {
           Future<Map<String, dynamic>> measure(String label) async {
             await runJs!('void document.body.offsetHeight;');
             await tester.pump(const Duration(milliseconds: 300));
-            final String js =
-                _measureJs.replaceAll('\${TOKEN}', '${targetMt}vh');
+            final String js = _measureJs.replaceAll(
+              '\${TOKEN}',
+              '${targetMt}vh',
+            );
             final Object? raw = await runJs(js);
             final Map<String, dynamic> m =
                 jsonDecode(raw.toString()) as Map<String, dynamic>;
@@ -158,8 +172,9 @@ void main() {
             return m;
           }
 
-          final Map<String, dynamic> before =
-              await measure('BEFORE margin change');
+          final Map<String, dynamic> before = await measure(
+            'BEFORE margin change',
+          );
           final double innerH = _px(before['innerHeight']);
           final double beforePadTop = _px(before['paddingTop']);
           final double beforePadBottom = _px(before['paddingBottom']);
@@ -175,8 +190,9 @@ void main() {
             await tester.pump(const Duration(milliseconds: 250));
           }
 
-          final Map<String, dynamic> afterMargin =
-              await measure('AFTER margin change (no reopen)');
+          final Map<String, dynamic> afterMargin = await measure(
+            'AFTER margin change (no reopen)',
+          );
           final double afterPadTop = _px(afterMargin['paddingTop']);
           final double afterPadBottom = _px(afterMargin['paddingBottom']);
           final double afterColW = _px(afterMargin['columnWidth']);
@@ -189,8 +205,9 @@ void main() {
           for (int i = 0; i < 12; i++) {
             await tester.pump(const Duration(milliseconds: 250));
           }
-          final Map<String, dynamic> afterFont =
-              await measure('AFTER font change (no reopen)');
+          final Map<String, dynamic> afterFont = await measure(
+            'AFTER font change (no reopen)',
+          );
           final double afterFontPx = _px(afterFont['fontSize']);
 
           // Restore global prefs so we don't pollute the user's real settings.
@@ -213,17 +230,22 @@ void main() {
           final double actualDeltaBottom = afterPadBottom - beforePadBottom;
 
           debugPrint('[margin] innerH=$innerH');
-          debugPrint('[margin] padTop  before=$beforePadTop after=$afterPadTop '
-              'Δ=$actualDeltaTop expectedΔ≈$expectedDeltaTop');
           debugPrint(
-              '[margin] padBot  before=$beforePadBottom after=$afterPadBottom '
-              'Δ=$actualDeltaBottom expectedΔ≈$expectedDeltaBottom');
+            '[margin] padTop  before=$beforePadTop after=$afterPadTop '
+            'Δ=$actualDeltaTop expectedΔ≈$expectedDeltaTop',
+          );
+          debugPrint(
+            '[margin] padBot  before=$beforePadBottom after=$afterPadBottom '
+            'Δ=$actualDeltaBottom expectedΔ≈$expectedDeltaBottom',
+          );
           debugPrint('[margin] colW    before=$beforeColW after=$afterColW');
           debugPrint(
-              '[margin] styleTextContent carries ${targetMt}vh: $styleHasMt');
+            '[margin] styleTextContent carries ${targetMt}vh: $styleHasMt',
+          );
           debugPrint(
-              '[margin] fontSize before=$beforeFontPx after=$afterFontPx '
-              'target=$targetFont');
+            '[margin] fontSize before=$beforeFontPx after=$afterFontPx '
+            'target=$targetFont',
+          );
 
           // ── Assertions ──────────────────────────────────────────────────
           // 1) The injected <style> must literally carry the new margin value
@@ -231,27 +253,40 @@ void main() {
           //    paginated shell's beginStyleReanchor swapped the CSS). If false →
           //    CSS was never swapped = the reported "must reopen" bug (BUG-849:
           //    paginated shell lacked beginStyleReanchor entirely).
-          expect(styleHasMt, isTrue,
-              reason: 'live CSS swap missing: #fushi-reader-style textContent '
-                  'does not carry ${targetMt}vh after setReaderMarginTop');
+          expect(
+            styleHasMt,
+            isTrue,
+            reason:
+                'live CSS swap missing: #fushi-reader-style textContent '
+                'does not carry ${targetMt}vh after setReaderMarginTop',
+          );
 
           // 2) Computed body padding-top/bottom must grow by the new margins
           //    WITHOUT reopening the book (delta isolates the margin term).
-          expect((actualDeltaTop - expectedDeltaTop).abs(),
-              lessThan(innerH * 0.03),
-              reason:
-                  'top margin did NOT apply live: Δpadding-top=$actualDeltaTop '
-                  '(expected ≈$expectedDeltaTop). This is the reported '
-                  '"must reopen the book" bug.');
-          expect((actualDeltaBottom - expectedDeltaBottom).abs(),
-              lessThan(innerH * 0.03),
-              reason: 'bottom margin did NOT apply live: '
-                  'Δpadding-bottom=$actualDeltaBottom (expected ≈$expectedDeltaBottom).');
+          expect(
+            (actualDeltaTop - expectedDeltaTop).abs(),
+            lessThan(innerH * 0.03),
+            reason:
+                'top margin did NOT apply live: Δpadding-top=$actualDeltaTop '
+                '(expected ≈$expectedDeltaTop). This is the reported '
+                '"must reopen the book" bug.',
+          );
+          expect(
+            (actualDeltaBottom - expectedDeltaBottom).abs(),
+            lessThan(innerH * 0.03),
+            reason:
+                'bottom margin did NOT apply live: '
+                'Δpadding-bottom=$actualDeltaBottom (expected ≈$expectedDeltaBottom).',
+          );
 
           // 3) Control: font size must apply live on the same path.
-          expect((afterFontPx - targetFont).abs(), lessThan(2.0),
-              reason: 'font size did NOT apply live either → shared live-CSS '
-                  'channel is broken, not a margin-specific bug.');
+          expect(
+            (afterFontPx - targetFont).abs(),
+            lessThan(2.0),
+            reason:
+                'font size did NOT apply live either → shared live-CSS '
+                'channel is broken, not a margin-specific bug.',
+          );
         },
       );
     },

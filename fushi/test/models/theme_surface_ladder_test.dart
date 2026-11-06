@@ -27,13 +27,13 @@ void main() {
 
   /// 由低层级到高层级（M3 语义：越"高"离内容越近）。
   List<Color> ladder(ColorScheme s) => <Color>[
-        s.surfaceContainerLowest,
-        s.surface,
-        s.surfaceContainerLow,
-        s.surfaceContainer,
-        s.surfaceContainerHigh,
-        s.surfaceContainerHighest,
-      ];
+    s.surfaceContainerLowest,
+    s.surface,
+    s.surfaceContainerLow,
+    s.surfaceContainer,
+    s.surfaceContainerHigh,
+    s.surfaceContainerHighest,
+  ];
 
   const List<String> ladderNames = <String>[
     'surfaceContainerLowest',
@@ -87,7 +87,8 @@ void main() {
         expect(
           light ? cur < prev : cur > prev,
           isTrue,
-          reason: '$name: ${ladderNames[i]} 没有比 ${ladderNames[i - 1]} 更'
+          reason:
+              '$name: ${ladderNames[i]} 没有比 ${ladderNames[i - 1]} 更'
               '${light ? '深' : '亮'}（$prev → $cur）',
         );
       }
@@ -103,7 +104,8 @@ void main() {
         expect(
           contrast(l[i], l[i - 1]),
           greaterThanOrEqualTo(1.07),
-          reason: '$name: ${ladderNames[i]} 对 ${ladderNames[i - 1]} 只有 '
+          reason:
+              '$name: ${ladderNames[i]} 对 ${ladderNames[i - 1]} 只有 '
               '${contrast(l[i], l[i - 1]).toStringAsFixed(3)}',
         );
       }
@@ -115,7 +117,8 @@ void main() {
       expect(
         contrast(s.surface, s.surfaceContainer),
         greaterThanOrEqualTo(1.14),
-        reason: '$name: page↔card 只有 '
+        reason:
+            '$name: page↔card 只有 '
             '${contrast(s.surface, s.surfaceContainer).toStringAsFixed(3)}',
       );
     });
@@ -128,14 +131,16 @@ void main() {
       expect(
         contrast(s.secondaryContainer, s.surfaceContainer),
         greaterThanOrEqualTo(1.085),
-        reason: '$name: 选中态对卡片只有 '
+        reason:
+            '$name: 选中态对卡片只有 '
             '${contrast(s.secondaryContainer, s.surfaceContainer).toStringAsFixed(3)}',
       );
       // 扁平 + 描边的语言里，卡片边界靠 outlineVariant 承担。
       expect(
         contrast(s.outlineVariant, s.surfaceContainer),
         greaterThanOrEqualTo(1.35),
-        reason: '$name: 卡片描边对卡片只有 '
+        reason:
+            '$name: 卡片描边对卡片只有 '
             '${contrast(s.outlineVariant, s.surfaceContainer).toStringAsFixed(3)}',
       );
     });
@@ -275,8 +280,10 @@ void main() {
     );
     expect(dark.surface, const Color(0xFF000000));
     expect(dark.surfaceDim, const Color(0xFF000000));
-    final ColorScheme lightBase =
-        ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.light);
+    final ColorScheme lightBase = ColorScheme.fromSeed(
+      seedColor: seed,
+      brightness: Brightness.light,
+    );
     expect(
       applyFushiPureBlackSurfaceLadder(lightBase).surface,
       applyFushiSurfaceLadder(lightBase).surface,

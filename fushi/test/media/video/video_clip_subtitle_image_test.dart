@@ -21,7 +21,10 @@ void main() {
       expect(l.scale, 1.5);
       expect(l.fontSize, 36 * 1.5);
       expect(l.bottomPadding, 75 * 1.5);
-      expect(l.shadowThickness, VideoSubtitleStyle.defaultShadowThickness * 1.5);
+      expect(
+        l.shadowThickness,
+        VideoSubtitleStyle.defaultShadowThickness * 1.5,
+      );
       expect(l.maxWidth, 1920 * kClipSubtitleMaxWidthFraction);
     });
 
@@ -68,8 +71,10 @@ void main() {
     test('honours a user-tuned font size and position', () {
       final ClipSubtitleLayout l = computeClipSubtitleLayout(
         frame: const ClipFrameSize(1920, 1080),
-        style: VideoSubtitleStyle.defaults
-            .copyWith(fontSize: 48, bottomPadding: 120),
+        style: VideoSubtitleStyle.defaults.copyWith(
+          fontSize: 48,
+          bottomPadding: 120,
+        ),
         viewportHeight: 1080,
       );
 
@@ -92,8 +97,9 @@ void main() {
   });
 
   group('renderClipSubtitlePng', () {
-    testWidgets('renders a full-frame PNG at the video resolution',
-        (WidgetTester tester) async {
+    testWidgets('renders a full-frame PNG at the video resolution', (
+      WidgetTester tester,
+    ) async {
       Uint8List? png;
       await tester.runAsync(() async {
         png = await renderClipSubtitlePng(
@@ -107,8 +113,16 @@ void main() {
       expect(png, isNotNull);
       expect(png!.length, greaterThan(0));
       // PNG 魔数，确认真是 PNG 而不是别的字节。
-      expect(png!.sublist(0, 8),
-          <int>[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+      expect(png!.sublist(0, 8), <int>[
+        0x89,
+        0x50,
+        0x4E,
+        0x47,
+        0x0D,
+        0x0A,
+        0x1A,
+        0x0A,
+      ]);
       // IHDR 的宽高（大端 32 位，偏移 16/20）必须**等于视频分辨率**——overlay 到
       // 0:0 全靠这一点，尺寸不符会让字幕被拉伸或裁掉。
       final ByteData bd = ByteData.sublistView(png!);
@@ -116,8 +130,9 @@ void main() {
       expect(bd.getUint32(20), 360);
     });
 
-    testWidgets('blank text yields null instead of a fully transparent frame',
-        (WidgetTester tester) async {
+    testWidgets('blank text yields null instead of a fully transparent frame', (
+      WidgetTester tester,
+    ) async {
       // 全透明的图只会白白多占一个 overlay 节点（还挤占命令行长度预算）。
       await tester.runAsync(() async {
         expect(
@@ -141,8 +156,9 @@ void main() {
       });
     });
 
-    testWidgets('a long line wraps instead of running off the frame',
-        (WidgetTester tester) async {
+    testWidgets('a long line wraps instead of running off the frame', (
+      WidgetTester tester,
+    ) async {
       // 换行走 TextPainter 的 maxWidth（画面宽的 90%）。测试字体是 Ahem，每个字符
       // 宽度恰好等于字号，所以「一定会超宽」的输入是可构造的：这里断言的是渲染不
       // 抛、且仍产出整帧图（换行后文本更高，底部锚定要能容纳）。

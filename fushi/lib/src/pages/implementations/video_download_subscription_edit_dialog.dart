@@ -6,7 +6,12 @@ import 'package:fushi_engine/media/video/download/video_download_pipeline_servic
     show VideoDownloadSubtitlePolicy;
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart'
     show kVideoSubscriptionTitleExcludeKey, kVideoSubscriptionTitleIncludeKey;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_core/fushi_core.dart'
     show MediaSourceRow, VideoDownloadSubscriptionRow;
 
@@ -66,9 +71,9 @@ List<String> videoSubscriptionFilterValues(String rawJson, String key) {
 
 /// **纯函数**：把输入框里「逗号 / 顿号分隔」的多个值拆成去重列表。
 List<String> splitVideoSubscriptionList(String text) => <String>{
-      for (final String part in text.split(RegExp(r'[,，、]')))
-        if (part.trim().isNotEmpty) part.trim(),
-    }.toList(growable: false);
+  for (final String part in text.split(RegExp(r'[,，、]')))
+    if (part.trim().isNotEmpty) part.trim(),
+}.toList(growable: false);
 
 /// **纯函数**：只改版本规则里「编辑订阅」管得着的四项（字幕组 / 分辨率 / 标题包含 /
 /// 标题排除），其余规则（strict、trusted、编码、语言、分类 …）原样保留。空列表 =
@@ -109,14 +114,11 @@ Future<VideoDownloadSubscriptionEdit?> showVideoDownloadSubscriptionEditDialog({
   required BuildContext context,
   required VideoDownloadSubscriptionRow subscription,
   required List<MediaSourceRow> sources,
-}) =>
-    showAppDialog<VideoDownloadSubscriptionEdit>(
-      context: context,
-      builder: (BuildContext _) => _SubscriptionEditDialog(
-        subscription: subscription,
-        sources: sources,
-      ),
-    );
+}) => showAppDialog<VideoDownloadSubscriptionEdit>(
+  context: context,
+  builder: (BuildContext _) =>
+      _SubscriptionEditDialog(subscription: subscription, sources: sources),
+);
 
 class _SubscriptionEditDialog extends StatefulWidget {
   const _SubscriptionEditDialog({
@@ -133,14 +135,15 @@ class _SubscriptionEditDialog extends StatefulWidget {
 }
 
 class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
-  late final TextEditingController _queryController =
-      TextEditingController(text: widget.subscription.searchQuery);
+  late final TextEditingController _queryController = TextEditingController(
+    text: widget.subscription.searchQuery,
+  );
   late final TextEditingController _startAfterController =
       TextEditingController(
-    text: widget.subscription.startAfterEpisode?.toString() ?? '',
-  );
-  late VideoDownloadSubtitlePolicy _subtitlePolicy = VideoDownloadSubtitlePolicy
-          .values
+        text: widget.subscription.startAfterEpisode?.toString() ?? '',
+      );
+  late VideoDownloadSubtitlePolicy _subtitlePolicy =
+      VideoDownloadSubtitlePolicy.values
           .asNameMap()[widget.subscription.subtitlePolicy] ??
       VideoDownloadSubtitlePolicy.bestEffort;
 
@@ -156,11 +159,11 @@ class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
   );
   late final TextEditingController _resolutionController =
       TextEditingController(
-    text: videoSubscriptionFilterValues(
-      widget.subscription.filterJson,
-      'resolution',
-    ).join(', '),
-  );
+        text: videoSubscriptionFilterValues(
+          widget.subscription.filterJson,
+          'resolution',
+        ).join(', '),
+      );
   late final TextEditingController _includeController = TextEditingController(
     text: videoSubscriptionFilterValues(
       widget.subscription.filterJson,
@@ -269,8 +272,9 @@ class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
         startAfterEpisode: _parsedStartAfter.$2,
         subtitlePolicy: _subtitlePolicy,
         // 没动过就传 null（宿主据此不写这一列）。
-        targetSourceId:
-            _sourceId == widget.subscription.targetSourceId ? null : _sourceId,
+        targetSourceId: _sourceId == widget.subscription.targetSourceId
+            ? null
+            : _sourceId,
         filterJson: _editedFilterJson,
       ),
     );
@@ -284,165 +288,161 @@ class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
       title: Text(t.subscription_edit_title),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Text(
-                widget.subscription.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleSmall,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              widget.subscription.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleSmall,
+            ),
+            SizedBox(height: tokens.spacing.gap / 2),
+            Text(
+              t.subscription_edit_filter_hint,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
-              SizedBox(height: tokens.spacing.gap / 2),
-              Text(
-                t.subscription_edit_filter_hint,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              SizedBox(height: tokens.spacing.card),
+            ),
+            SizedBox(height: tokens.spacing.card),
+            FushiTextFieldControl(
+              key: const ValueKey<String>('subscription-edit-query'),
+              controller: _queryController,
+              decoration: InputDecoration(labelText: t.video_jimaku_query),
+              maxLines: 1,
+              onChanged: (_) => setState(() {}),
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            for (final (Key, TextEditingController, String, String?) field
+                in <(Key, TextEditingController, String, String?)>[
+                  (
+                    const ValueKey<String>('subscription-edit-release-group'),
+                    _groupController,
+                    t.subscription_edit_release_group,
+                    _groupError,
+                  ),
+                  (
+                    const ValueKey<String>('subscription-edit-resolution'),
+                    _resolutionController,
+                    t.subscription_edit_resolution,
+                    _resolutionError,
+                  ),
+                  (
+                    const ValueKey<String>('subscription-edit-title-include'),
+                    _includeController,
+                    t.subscription_edit_title_include,
+                    null,
+                  ),
+                  (
+                    const ValueKey<String>('subscription-edit-title-exclude'),
+                    _excludeController,
+                    t.subscription_edit_title_exclude,
+                    null,
+                  ),
+                ]) ...<Widget>[
               FushiTextFieldControl(
-                key: const ValueKey<String>('subscription-edit-query'),
-                controller: _queryController,
+                key: field.$1,
+                controller: field.$2,
                 decoration: InputDecoration(
-                  labelText: t.video_jimaku_query,
+                  labelText: field.$3,
+                  helperText: t.subscription_edit_list_helper,
+                  errorText: field.$4,
                 ),
                 maxLines: 1,
                 onChanged: (_) => setState(() {}),
               ),
               SizedBox(height: tokens.spacing.gap),
-              for (final (Key, TextEditingController, String, String?) field
-                  in <(Key, TextEditingController, String, String?)>[
-                (
-                  const ValueKey<String>('subscription-edit-release-group'),
-                  _groupController,
-                  t.subscription_edit_release_group,
-                  _groupError,
+            ],
+            FushiTextFieldControl(
+              key: const ValueKey<String>('subscription-edit-start-after'),
+              controller: _startAfterController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: t.video_jimaku_episode,
+                helperText: t.download_subscription_start_episode(
+                  episode: _startAfterController.text.trim().isEmpty
+                      ? '1'
+                      : _startAfterController.text.trim(),
                 ),
-                (
-                  const ValueKey<String>('subscription-edit-resolution'),
-                  _resolutionController,
-                  t.subscription_edit_resolution,
-                  _resolutionError,
-                ),
-                (
-                  const ValueKey<String>('subscription-edit-title-include'),
-                  _includeController,
-                  t.subscription_edit_title_include,
-                  null,
-                ),
-                (
-                  const ValueKey<String>('subscription-edit-title-exclude'),
-                  _excludeController,
-                  t.subscription_edit_title_exclude,
-                  null,
-                ),
-              ]) ...<Widget>[
-                FushiTextFieldControl(
-                  key: field.$1,
-                  controller: field.$2,
-                  decoration: InputDecoration(
-                    labelText: field.$3,
-                    helperText: t.subscription_edit_list_helper,
-                    errorText: field.$4,
-                  ),
-                  maxLines: 1,
-                  onChanged: (_) => setState(() {}),
-                ),
-                SizedBox(height: tokens.spacing.gap),
-              ],
-              FushiTextFieldControl(
-                key: const ValueKey<String>('subscription-edit-start-after'),
-                controller: _startAfterController,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: t.video_jimaku_episode,
-                  helperText: t.download_subscription_start_episode(
-                    episode: _startAfterController.text.trim().isEmpty
-                        ? '1'
-                        : _startAfterController.text.trim(),
-                  ),
-                  // 非法输入直接标错并禁掉保存，而不是静默清空 / 静默写库失败。
-                  errorText: _parsedStartAfter.$1
-                      ? null
-                      : t.download_subscription_start_episode_invalid,
-                ),
-                onChanged: (_) => setState(() {}),
+                // 非法输入直接标错并禁掉保存，而不是静默清空 / 静默写库失败。
+                errorText: _parsedStartAfter.$1
+                    ? null
+                    : t.download_subscription_start_episode_invalid,
               ),
-              SizedBox(height: tokens.spacing.gap),
-              FushiDropdownButtonFormField<VideoDownloadSubtitlePolicy>(
-                key: const ValueKey<String>('subscription-edit-subtitle'),
-                initialValue: _subtitlePolicy,
-                // 与来源下拉同样必须 isExpanded：不给的话 DropdownButton 按**最宽那条
-                // 选项**定宽，「包含字幕 · 拒绝」这条在英文下约 1000px，直接把 452 宽的
-                // 对话框撑出 RenderFlex 溢出（widget 测试里是硬失败）。
-                isExpanded: true,
-                decoration: InputDecoration(
-                  labelText: t.anime_download_include_subs,
+              onChanged: (_) => setState(() {}),
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            FushiDropdownButtonFormField<VideoDownloadSubtitlePolicy>(
+              key: const ValueKey<String>('subscription-edit-subtitle'),
+              initialValue: _subtitlePolicy,
+              // 与来源下拉同样必须 isExpanded：不给的话 DropdownButton 按**最宽那条
+              // 选项**定宽，「包含字幕 · 拒绝」这条在英文下约 1000px，直接把 452 宽的
+              // 对话框撑出 RenderFlex 溢出（widget 测试里是硬失败）。
+              isExpanded: true,
+              decoration: InputDecoration(
+                labelText: t.anime_download_include_subs,
+              ),
+              items: <DropdownMenuItem<VideoDownloadSubtitlePolicy>>[
+                DropdownMenuItem<VideoDownloadSubtitlePolicy>(
+                  value: VideoDownloadSubtitlePolicy.none,
+                  child: Text(t.anime_download_no_subs),
                 ),
-                items: <DropdownMenuItem<VideoDownloadSubtitlePolicy>>[
-                  DropdownMenuItem<VideoDownloadSubtitlePolicy>(
-                    value: VideoDownloadSubtitlePolicy.none,
-                    child: Text(t.anime_download_no_subs),
+                DropdownMenuItem<VideoDownloadSubtitlePolicy>(
+                  value: VideoDownloadSubtitlePolicy.bestEffort,
+                  child: Text(t.anime_download_include_subs),
+                ),
+                DropdownMenuItem<VideoDownloadSubtitlePolicy>(
+                  value: VideoDownloadSubtitlePolicy.required,
+                  child: Text(
+                    '${t.anime_download_include_subs} · '
+                    '${t.video_control_reject_required}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  DropdownMenuItem<VideoDownloadSubtitlePolicy>(
-                    value: VideoDownloadSubtitlePolicy.bestEffort,
-                    child: Text(t.anime_download_include_subs),
-                  ),
-                  DropdownMenuItem<VideoDownloadSubtitlePolicy>(
-                    value: VideoDownloadSubtitlePolicy.required,
+                ),
+              ],
+              onChanged: (VideoDownloadSubtitlePolicy? value) {
+                if (value != null) setState(() => _subtitlePolicy = value);
+              },
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            FushiDropdownButtonFormField<int>(
+              key: const ValueKey<String>('subscription-edit-source'),
+              initialValue: _sourceId,
+              isExpanded: true,
+              decoration: InputDecoration(
+                labelText: t.video_download_target_source_title,
+              ),
+              items: <DropdownMenuItem<int>>[
+                // 原绑定不在可用列表里时（典型：目标库在外置盘，盘拔了就被
+                // existsSync 过滤掉）补一条占位项。少了它，DropdownButtonFormField
+                // 的 initialValue 无对应 item 会抛，于是旧代码退而把选中值改写成
+                // 「列表第一个」——那正是静默改写目标库的来源。留着它，用户既看得见
+                // 当前绑在哪，也可以主动改；不动就不写这一列。
+                if (!_boundSourceAvailable &&
+                    widget.subscription.targetSourceId != null)
+                  DropdownMenuItem<int>(
+                    value: widget.subscription.targetSourceId,
                     child: Text(
-                      '${t.anime_download_include_subs} · '
-                      '${t.video_control_reject_required}',
+                      t.download_subscription_source_unavailable,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                ],
-                onChanged: (VideoDownloadSubtitlePolicy? value) {
-                  if (value != null) setState(() => _subtitlePolicy = value);
-                },
-              ),
-              SizedBox(height: tokens.spacing.gap),
-              FushiDropdownButtonFormField<int>(
-                key: const ValueKey<String>('subscription-edit-source'),
-                initialValue: _sourceId,
-                isExpanded: true,
-                decoration: InputDecoration(
-                  labelText: t.video_download_target_source_title,
-                ),
-                items: <DropdownMenuItem<int>>[
-                  // 原绑定不在可用列表里时（典型：目标库在外置盘，盘拔了就被
-                  // existsSync 过滤掉）补一条占位项。少了它，DropdownButtonFormField
-                  // 的 initialValue 无对应 item 会抛，于是旧代码退而把选中值改写成
-                  // 「列表第一个」——那正是静默改写目标库的来源。留着它，用户既看得见
-                  // 当前绑在哪，也可以主动改；不动就不写这一列。
-                  if (!_boundSourceAvailable &&
-                      widget.subscription.targetSourceId != null)
-                    DropdownMenuItem<int>(
-                      value: widget.subscription.targetSourceId,
-                      child: Text(
-                        t.download_subscription_source_unavailable,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                for (final MediaSourceRow source in widget.sources)
+                  DropdownMenuItem<int>(
+                    value: source.id,
+                    child: Text(
+                      source.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  for (final MediaSourceRow source in widget.sources)
-                    DropdownMenuItem<int>(
-                      value: source.id,
-                      child: Text(
-                        source.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                ],
-                onChanged: (int? value) => setState(() => _sourceId = value),
-              ),
-            ],
-          ),
+                  ),
+              ],
+              onChanged: (int? value) => setState(() => _sourceId = value),
+            ),
+          ],
         ),
       ),
       actions: <Widget>[

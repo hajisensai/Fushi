@@ -14,6 +14,8 @@
 
 [![Download Latest](https://img.shields.io/badge/%E2%AC%87%20Download%20Latest-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Join our Discord](https://img.shields.io/badge/Join%20our%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor%20on%20GitHub-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/hajisensai)
+[![Support on Ko-fi](https://img.shields.io/badge/Support%20on%20Ko-fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/hajisensai)
 
 </div>
 
@@ -136,9 +138,9 @@ Fushi stores imported books, dictionaries, fonts, audiobook data, videos, readin
 
 - **Sync** — Google Drive / OneDrive / Dropbox use OAuth sign-in; WebDAV / FTP / SFTP / Fushi Server use the server address and credentials you provide. Fushi Interconnect connects paired devices directly (LAN, IPv6, overlay networks, or public addresses), falling back to an end-to-end iroh P2P tunnel when no direct route works; pairing links always ask for confirmation.
 - **Anki** — card creation talks to AnkiDroid or the AnkiConnect address you configure.
-- **Usage statistics** — once a day, desktop and Android builds send a random install ID, the app version, platform, and update channel to fushi.moe to count active users; no account, library, or reading data is included and IP addresses are not stored. Turn it off with *Share usage statistics* in the update settings. iOS builds do not send it.
+- **Usage statistics** — once a day, desktop and Android builds send an install ID (a one-way hash of the system machine ID, unchanged after reinstalling; the machine ID itself is never sent), the app version, platform, and update channel to fushi.moe to count active users; no account, library, or reading data is included and IP addresses are not stored. Turn it off with *Share usage statistics* in the update settings. iOS builds do not send it.
 - **Only when you ask** — log upload (after a one-time consent prompt), in-app feedback, and the leaderboard (off by default; uploads your library titles and progress only after you opt in).
-- **Manga OCR** — the default engine is Google Lens, which sends the page image to Google; switch to the on-device model or system OCR in settings to keep images local.
+- **Manga OCR** — the default engine is the on-device CTC model, so page images stay local (download it once in settings); Google Lens is opt-in and sends the page image to Google.
 - **AI features** — requests go only to the LLM provider you configure and assign to a feature; with no provider assigned, nothing is sent.
 - **Third-party services** — metadata, subtitle, and online-source features contact the services listed under [Content sources and integrations](#content-sources-and-integrations) only when you use them.
 
@@ -247,7 +249,7 @@ Distributed under the GNU General Public License v3.0. See [LICENSE](LICENSE) fo
 
 ## Maintainer
 
-Fushi is maintained by [hajisensai](https://github.com/hajisensai). Website: [fushi.moe](https://fushi.moe). Contact: [contact@fushi.moe](mailto:contact@fushi.moe).
+Fushi is maintained by [hajisensai](https://github.com/hajisensai). Website: [fushi.moe](https://fushi.moe). Contact: [contact@fushi.moe](mailto:contact@fushi.moe). If Fushi helps you, you can support development, distribution and maintenance through [GitHub Sponsors](https://github.com/sponsors/hajisensai) or [Ko-fi](https://ko-fi.com/hajisensai).
 
 <div align="center">
 

@@ -62,10 +62,7 @@ class PopupDictionaryLoadingView extends StatelessWidget {
         if (anchor == null)
           Align(
             alignment: Alignment.topCenter,
-            child: Padding(
-              padding: const EdgeInsets.all(_gap),
-              child: pill,
-            ),
+            child: Padding(padding: const EdgeInsets.all(_gap), child: pill),
           )
         else
           // Positioned 必须是 Stack 的直接子节点：LayoutBuilder 铺满量出屏幕尺寸后，
@@ -114,11 +111,7 @@ class PopupDictionaryLoadingPill extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            FushiIcon(
-              FushiIcons.lookup,
-              size: 18,
-              color: colorScheme.primary,
-            ),
+            FushiIcon(FushiIcons.lookup, size: 18, color: colorScheme.primary),
             const SizedBox(width: 10),
             SizedBox(
               width: 80,

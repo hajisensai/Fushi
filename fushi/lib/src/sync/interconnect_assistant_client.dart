@@ -6,6 +6,14 @@ import 'dart:convert';
 
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
+import 'package:fushi_core/fushi_core.dart' show AiAgentSessionSummary;
+import 'package:fushi_engine/ai/agent/agent_session_archive.dart'
+    show kAiAgentRemoteScene;
+import 'package:fushi_engine/sync/assistant/agent_assistant_host.dart'
+    show
+        kHostAssistantAgentHistoryKey,
+        kHostAssistantAgentHistoryVersion,
+        kHostAssistantReasonsKey;
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:http/http.dart' as http;
@@ -17,7 +25,10 @@ class HostAssistantTarget {
     required this.deviceName,
     required this.features,
     this.reason,
+    this.reasons = const <String, String>{},
     this.fingerprintSha256,
+    this.agentHistoryVersion = 0,
+    this.pairedToken = false,
   });
 
   final String baseUrl;
@@ -29,11 +40,32 @@ class HostAssistantTarget {
   /// 开不了时 host 给的短码（`no_provider` / `not_ready` / `disabled`）；老 host 根本
   /// 没有 `assistant` 能力位时是 [kHostAssistantReasonUnsupported]。
   final String? reason;
+
+  /// 按 feature 的不可用短码（host 宣告多种会话时：AI 下视频能开、AI 助手没指派
+  /// 提供商…）。老 host 没有这个字段。
+  final Map<String, String> reasons;
   final String? fingerprintSha256;
+
+  /// host 宣告的远端会话历史协议版本（能力位 `agentHistory`，BUG-4067）；0 = 老 host /
+  /// 没有存档，不发 `history` 路由、不发 `resume`。
+  final int agentHistoryVersion;
+
+  /// 这台设备用的是 host 派给它的 per-peer 口令（不是老版本的共享口令）。host 按
+  /// 口令认设备、按设备列会话历史；共享口令认不出是谁，历史路由一律 403。
+  final bool pairedToken;
+
+  /// 这台 host 能列 / 续接 / 改名 / 删除这台设备发起的 AI 助手会话。
+  bool get supportsAgentHistory =>
+      pairedToken && agentHistoryVersion >= kHostAssistantAgentHistoryVersion;
 
   String get label => deviceName ?? baseUrl;
 
   bool supports(String feature) => features.contains(feature);
+
+  /// [feature] 开不了的原因：先看按 feature 的短码，再退回顶层 [reason]；都没有
+  /// （老 host 只宣告了别的 feature）按 [kHostAssistantReasonUnsupported]。
+  String reasonFor(String feature) =>
+      reasons[feature] ?? reason ?? kHostAssistantReasonUnsupported;
 }
 
 /// 老 host（没有 `assistant` 能力位）的本地短码。
@@ -86,11 +118,11 @@ class InterconnectAssistantClient {
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
     Duration probeTimeout = const Duration(seconds: 4),
     Duration requestTimeout = const Duration(seconds: 30),
-  })  : _repo = repo,
-        _httpClient = httpClient ?? http.Client(),
-        _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
-        _probeTimeout = probeTimeout,
-        _requestTimeout = requestTimeout;
+  }) : _repo = repo,
+       _httpClient = httpClient ?? http.Client(),
+       _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
+       _probeTimeout = probeTimeout,
+       _requestTimeout = requestTimeout;
 
   final SyncRepository _repo;
   final http.Client _httpClient;
@@ -135,6 +167,7 @@ class InterconnectAssistantClient {
           );
         }
         final Object? features = assistant['features'];
+        final Object? reasons = assistant[kHostAssistantReasonsKey];
         return HostAssistantTarget(
           baseUrl: candidate.url,
           deviceName: candidate.deviceName,
@@ -142,7 +175,16 @@ class InterconnectAssistantClient {
               ? features.map((Object? f) => '$f').toList(growable: false)
               : const <String>[],
           reason: assistant['reason']?.toString(),
+          reasons: reasons is Map
+              ? <String, String>{
+                  for (final MapEntry<Object?, Object?> e in reasons.entries)
+                    '${e.key}': '${e.value}',
+                }
+              : const <String, String>{},
           fingerprintSha256: candidate.fingerprintSha256,
+          agentHistoryVersion:
+              (assistant[kHostAssistantAgentHistoryKey] as num?)?.toInt() ?? 0,
+          pairedToken: (candidate.token ?? '').isNotEmpty,
         );
       } catch (_) {
         return null;
@@ -153,19 +195,96 @@ class InterconnectAssistantClient {
     return null;
   }
 
+  /// 开会话；[resume] 非空 = 续接 host 上这场存档会话（只在
+  /// [HostAssistantTarget.supportsAgentHistory] 时发：老 host 不认这个字段，会静默
+  /// 开一场新的）。
   Future<HostAssistantEnvelope> open(
     HostAssistantTarget target, {
     required String feature,
     required String locale,
-  }) async =>
-      HostAssistantEnvelope.fromJson(
-        await _call(
-          target,
-          'POST',
-          '/api/assistant/sessions',
-          jsonBody: <String, Object?>{'feature': feature, 'locale': locale},
-        ),
-      );
+    String? resume,
+  }) async {
+    if (resume != null && !target.supportsAgentHistory) {
+      throw const HostAssistantException('history_unsupported');
+    }
+    return HostAssistantEnvelope.fromJson(
+      await _call(
+        target,
+        'POST',
+        '/api/assistant/sessions',
+        jsonBody: <String, Object?>{
+          'feature': feature,
+          'locale': locale,
+          'resume': ?resume,
+        },
+      ),
+    );
+  }
+
+  /// 这台设备在 [target] 上发起的 [feature] 会话（最近更新的在前）。
+  Future<List<AiAgentSessionSummary>> listHistory(
+    HostAssistantTarget target, {
+    required String feature,
+  }) async {
+    _requireHistory(target);
+    final Map<String, dynamic> body = await _call(
+      target,
+      'GET',
+      '/api/assistant/history',
+      query: <String, String>{'feature': feature},
+    );
+    final Object? sessions = body['sessions'];
+    int intOf(Object? v) => (v as num?)?.toInt() ?? 0;
+    return <AiAgentSessionSummary>[
+      if (sessions is List)
+        for (final Object? s in sessions)
+          if (s is Map && s['id'] is String)
+            AiAgentSessionSummary(
+              id: s['id'] as String,
+              title: '${s['title'] ?? ''}',
+              scene: kAiAgentRemoteScene,
+              profileUid: '',
+              totalTokens: intOf(s['tokens']),
+              createdAt: intOf(s['createdAt']),
+              updatedAt: intOf(s['updatedAt']),
+            ),
+    ];
+  }
+
+  Future<void> renameHistory(
+    HostAssistantTarget target,
+    String id, {
+    required String feature,
+    required String title,
+  }) async {
+    _requireHistory(target);
+    await _call(
+      target,
+      'PATCH',
+      '/api/assistant/history/${Uri.encodeComponent(id)}',
+      jsonBody: <String, Object?>{'feature': feature, 'title': title},
+    );
+  }
+
+  Future<void> deleteHistory(
+    HostAssistantTarget target,
+    String id, {
+    required String feature,
+  }) async {
+    _requireHistory(target);
+    await _call(
+      target,
+      'DELETE',
+      '/api/assistant/history/${Uri.encodeComponent(id)}',
+      query: <String, String>{'feature': feature},
+    );
+  }
+
+  static void _requireHistory(HostAssistantTarget target) {
+    if (!target.supportsAgentHistory) {
+      throw const HostAssistantException('history_unsupported');
+    }
+  }
 
   /// 长轮询：快照越过 [after] 或等满 [wait] 就返回。
   Future<HostAssistantEnvelope> read(
@@ -173,33 +292,31 @@ class InterconnectAssistantClient {
     String id, {
     int? after,
     Duration wait = Duration.zero,
-  }) async =>
-      HostAssistantEnvelope.fromJson(
-        await _call(
-          target,
-          'GET',
-          '/api/assistant/sessions/${Uri.encodeComponent(id)}',
-          query: <String, String>{
-            if (after != null) 'after': '$after',
-            if (wait > Duration.zero) 'wait': '${wait.inSeconds}',
-          },
-          timeout: _requestTimeout + wait,
-        ),
-      );
+  }) async => HostAssistantEnvelope.fromJson(
+    await _call(
+      target,
+      'GET',
+      '/api/assistant/sessions/${Uri.encodeComponent(id)}',
+      query: <String, String>{
+        if (after != null) 'after': '$after',
+        if (wait > Duration.zero) 'wait': '${wait.inSeconds}',
+      },
+      timeout: _requestTimeout + wait,
+    ),
+  );
 
   Future<HostAssistantEnvelope> act(
     HostAssistantTarget target,
     String id,
     Map<String, Object?> action,
-  ) async =>
-      HostAssistantEnvelope.fromJson(
-        await _call(
-          target,
-          'POST',
-          '/api/assistant/sessions/${Uri.encodeComponent(id)}/actions',
-          jsonBody: action,
-        ),
-      );
+  ) async => HostAssistantEnvelope.fromJson(
+    await _call(
+      target,
+      'POST',
+      '/api/assistant/sessions/${Uri.encodeComponent(id)}/actions',
+      jsonBody: action,
+    ),
+  );
 
   /// 关 host 上的会话。
   ///
@@ -255,8 +372,9 @@ class InterconnectAssistantClient {
         }
         throw HostAssistantException('http_${response.statusCode}', detail);
       }
-      final dynamic decoded =
-          text.isEmpty ? <String, dynamic>{} : jsonDecode(text);
+      final dynamic decoded = text.isEmpty
+          ? <String, dynamic>{}
+          : jsonDecode(text);
       if (decoded is! Map) return <String, dynamic>{};
       return Map<String, dynamic>.from(decoded);
     } finally {
@@ -275,12 +393,13 @@ class InterconnectAssistantClient {
   }
 
   Map<String, String> _headers(String token) => <String, String>{
-        'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
-      };
+    'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+  };
 
   (http.Client, bool) _clientFor(String baseUrl, {String? fingerprint}) {
     final Uri? base = _parse(baseUrl);
-    final bool usePinned = base != null &&
+    final bool usePinned =
+        base != null &&
         base.isScheme('https') &&
         fingerprint != null &&
         fingerprint.isNotEmpty;

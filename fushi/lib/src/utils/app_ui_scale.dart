@@ -122,12 +122,23 @@ class FushiAppUiScale extends StatelessWidget {
         // FittedBox 把 canvas 子树「装进」自身：box 尺寸恒为 view，子树缩放后恰好填满、
         // 绝不溢出，整个可见区都可命中。canvas = view/s 各轴等比，BoxFit.fill 算出的
         // 变换就是均匀 scale = s，与原 Transform 数值等价（WebView 坐标一致性不变）。
-        return FittedBox(
-          fit: BoxFit.fill,
-          alignment: Alignment.topLeft,
-          child: SizedBox.fromSize(
-            size: canvas,
-            child: MediaQuery(data: _scaleMediaQuery(mq, 1 / s), child: scoped),
+        //
+        // 外层 SizedBox 把本层钉成 view：宽松约束（Stack 非定位子 / Align 下）时
+        // RenderFittedBox 会把自己缩成子树尺寸 canvas，变换比例退化成 1——画布按 1/s
+        // 反算了、却没放大回去，整层既不缩放又被撑成 canvas 大小（BUG-3773：浮条调轴
+        // 拖出一整块空白大板）。紧约束调用点（侧栏 / 主导航）本就是 view，不受影响。
+        return SizedBox.fromSize(
+          size: view,
+          child: FittedBox(
+            fit: BoxFit.fill,
+            alignment: Alignment.topLeft,
+            child: SizedBox.fromSize(
+              size: canvas,
+              child: MediaQuery(
+                data: _scaleMediaQuery(mq, 1 / s),
+                child: scoped,
+              ),
+            ),
           ),
         );
       },
@@ -167,18 +178,26 @@ class FushiAppUiScaleNeutralizer extends StatelessWidget {
         final Size canvas = constraints.biggest; // 祖先给的缩放画布 (view/s)
         final Size view = canvas * s; // 还原真实视口
         final MediaQueryData mq = MediaQuery.of(context);
-        return FittedBox(
-          fit: BoxFit.fill,
-          alignment: Alignment.topLeft,
-          child: SizedBox.fromSize(
-            size: view,
-            child: MediaQuery(
-              data: _scaleMediaQuery(mq, s), // ×s 还原真实 size/inset
-              child: _AppUiScaleScope(
-                scale: FushiAppUiScale.defaultScale, // 子树视角:净缩放=1
-                // 本层把 MediaQuery 几何 ×s 还原，窗口量 = 本层量 ÷ s × 祖先系数。
-                mediaQueryToWindow: parentToWindow / s,
-                child: child,
+        // 外层 SizedBox 把本层钉成画布（与 [FushiAppUiScale] 同理，BUG-3773）：页面
+        // 路由经 FushiPageBackdrop → LibraryShapeBackdrop（不带 fit 的 Stack）拿到的
+        // 是宽松约束，RenderFittedBox 会缩成子树尺寸 view、变换比例退化成 1——界面
+        // 缩放 < 1 时整页按 s 倍缩在左上角，外圈露出下层路由（阅读器 / 歌词模式
+        // 「不能全屏」）。
+        return SizedBox.fromSize(
+          size: canvas,
+          child: FittedBox(
+            fit: BoxFit.fill,
+            alignment: Alignment.topLeft,
+            child: SizedBox.fromSize(
+              size: view,
+              child: MediaQuery(
+                data: _scaleMediaQuery(mq, s), // ×s 还原真实 size/inset
+                child: _AppUiScaleScope(
+                  scale: FushiAppUiScale.defaultScale, // 子树视角:净缩放=1
+                  // 本层把 MediaQuery 几何 ×s 还原，窗口量 = 本层量 ÷ s × 祖先系数。
+                  mediaQueryToWindow: parentToWindow / s,
+                  child: child,
+                ),
               ),
             ),
           ),

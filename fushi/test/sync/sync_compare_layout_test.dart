@@ -45,8 +45,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('段头 pinned 且带计数：冲突 2 / 全部书籍 2 / 词典 1',
-      (WidgetTester tester) async {
+  testWidgets('段头 pinned 且带计数：冲突 2 / 全部书籍 2 / 词典 1', (
+    WidgetTester tester,
+  ) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
     await pump(tester, db, await seedCompareScenario(db));
@@ -59,7 +60,8 @@ void main() {
     expect(find.byType(SliverPersistentHeader), findsNWidgets(3));
     for (final SliverPersistentHeader h
         in tester.widgetList<SliverPersistentHeader>(
-            find.byType(SliverPersistentHeader))) {
+          find.byType(SliverPersistentHeader),
+        )) {
       expect(h.pinned, isTrue, reason: '段头必须钉在滚动容器顶上');
     }
     expect(find.text(t.sync_compare_conflicts), findsOneWidget);
@@ -95,11 +97,17 @@ void main() {
     // 初始：冲突 2（默认远端更新→用远端）+ 本地更新 + 远端更新 = 4 项可应用。
     expect(find.text(t.sync_compare_apply(count: 4)), findsOneWidget);
     // M3E 双栏对比卡（2c0e01a）更高，「其它书」段落在懒列表首屏之外：先滚到。
-    await tester.scrollUntilVisible(find.text('Local newer'), 300,
-        scrollable: find.byType(Scrollable).first);
+    await tester.scrollUntilVisible(
+      find.text('Local newer'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Local newer'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('JMdict'), 300,
-        scrollable: find.byType(Scrollable).first);
+    await tester.scrollUntilVisible(
+      find.text('JMdict'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('JMdict'), findsOneWidget);
 
     final Finder chip = find.byType(FilterChip);
@@ -117,19 +125,24 @@ void main() {
     expect(find.text(t.sync_compare_all_books), findsNothing);
     expect(find.text(t.sync_compare_dictionaries), findsNothing);
     expect(find.text('Conflict A'), findsOneWidget);
-    expect(find.text(t.sync_compare_apply(count: 2)), findsOneWidget,
-        reason: '渲染集 = 应用集：只看冲突时只应用冲突');
+    expect(
+      find.text(t.sync_compare_apply(count: 2)),
+      findsOneWidget,
+      reason: '渲染集 = 应用集：只看冲突时只应用冲突',
+    );
 
     await tester.tap(chip);
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Local newer'), 300,
-        scrollable: find.byType(Scrollable).first);
+    await tester.scrollUntilVisible(
+      find.text('Local newer'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Local newer'), findsOneWidget);
     expect(find.text(t.sync_compare_apply(count: 4)), findsOneWidget);
   });
 
-  testWidgets('筛选开着时冲突归零：chip 必须留下，否则再也退不出「只看冲突」',
-      (WidgetTester tester) async {
+  testWidgets('筛选开着时冲突归零：chip 必须留下，否则再也退不出「只看冲突」', (WidgetTester tester) async {
     // 一个开关不能在自己是 ON 的时候把自己的 OFF 入口删掉。
     // 这条路径全程走的是既有 UI：冲突行本身带删除菜单（真冲突两边都有远端副本，
     // remoteFolderId 必非空），把最后一条冲突的远端删掉后 _conflictCount 归零。
@@ -160,14 +173,16 @@ void main() {
     expect(find.text('Conflict B'), findsNothing);
 
     final Finder chip = find.byType(FilterChip);
-    expect(chip, findsOneWidget,
-        reason: '筛选仍开着，chip 就必须留下——它是唯一的关闭入口');
+    expect(chip, findsOneWidget, reason: '筛选仍开着，chip 就必须留下——它是唯一的关闭入口');
     expect(find.text('${t.sync_compare_only_conflicts} · 0'), findsOneWidget);
 
     await tester.tap(chip);
     await tester.pumpAndSettle();
-    expect(find.text('Local newer'), findsOneWidget,
-        reason: '关掉筛选后非冲突条目必须重新可见可应用');
+    expect(
+      find.text('Local newer'),
+      findsOneWidget,
+      reason: '关掉筛选后非冲突条目必须重新可见可应用',
+    );
   });
 
   testWidgets('冲突解决弹窗（conflictsOnly）没有筛选 chip', (WidgetTester tester) async {
@@ -180,8 +195,7 @@ void main() {
     expect(find.text(t.sync_compare_apply(count: 2)), findsOneWidget);
   });
 
-  testWidgets('长书名换行展示：同系列的两条冲突不能只剩同一个前缀',
-      (WidgetTester tester) async {
+  testWidgets('长书名换行展示：同系列的两条冲突不能只剩同一个前缀', (WidgetTester tester) async {
     // 书名是冲突行唯一的身份（`_choices` 也按 title 索引）。它曾经写死
     // maxLines: 1，同一系列的两卷被省略号截在分岐点之前，两行渲染完全一样，
     // 用户无法分辨自己在给哪一本选「本地 / 跳过 / 远端」。
@@ -196,22 +210,33 @@ void main() {
       final EpubBookRow b = await seedCompareBook(db, titles[i]);
       await seedComparePosition(db, b.uid, updatedAt: 120, fraction: 0.6);
       await db.setSyncBaseline(sanitizeTtuFilename(titles[i]), 'progress', 50);
-      remote[titles[i]] =
-          RemoteBookFixture(folderId: 'f$i', timestampMs: 130, fraction: 0.7);
+      remote[titles[i]] = RemoteBookFixture(
+        folderId: 'f$i',
+        timestampMs: 130,
+        fraction: 0.7,
+      );
     }
     await pump(tester, db, FakeCompareBackend(remote), conflictsOnly: true);
 
     for (final String title in titles) {
       final Finder text = find.text(title);
       expect(text, findsOneWidget, reason: '完整书名必须在树里');
-      final RenderParagraph paragraph =
-          tester.renderObject<RenderParagraph>(text);
-      expect(paragraph.didExceedMaxLines, isFalse,
-          reason: '书名不得被省略号截掉——截掉的恰好是区分两条冲突的那段');
+      final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+        text,
+      );
+      expect(
+        paragraph.didExceedMaxLines,
+        isFalse,
+        reason: '书名不得被省略号截掉——截掉的恰好是区分两条冲突的那段',
+      );
       final List<TextBox> lines = paragraph.getBoxesForSelection(
-          TextSelection(baseOffset: 0, extentOffset: title.length));
-      expect(lines.length, greaterThan(1),
-          reason: '这么长的标题在对话框宽度下必然要换行；不换行就说明又被限成了单行');
+        TextSelection(baseOffset: 0, extentOffset: title.length),
+      );
+      expect(
+        lines.length,
+        greaterThan(1),
+        reason: '这么长的标题在对话框宽度下必然要换行；不换行就说明又被限成了单行',
+      );
     }
   });
 }

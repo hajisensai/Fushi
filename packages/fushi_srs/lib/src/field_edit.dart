@@ -1,18 +1,20 @@
-/// 可编辑字段的修改记录与合并（铁律 H）。
+/// 可编辑字段的修改记录与合并结果（铁律 H）。
 ///
 /// 每次修改一个字段键产生一条不可变记录：dot = (writerId, seq)，ctx = 修改时本机已应用的因果上下文
 /// （含闭包，见 causal_context.dart）。记录 b 支配 a ⇔ b.ctx 含 a.dot。每个字段键保留没被支配的记录
 /// （多值寄存器）：只剩一条或值都相同 = 无冲突；多条且值不同 = 并发冲突，当前生效值取 sortKey 较大者，
 /// 候选全部留在集合里，按字段类别决定要不要用户处理。
+///
+/// 合并规则（支配、排序键与钳位、「值相同」、删除优先、冲突候选）只在 Rust 里写一份
+/// （native/fushi_fsrs/src/registers.rs，见 register_kernel.dart）；这里的 [SrsRegister] 只是结果视图。
 library;
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'causal_context.dart';
 import 'hlc.dart';
 import 'ids.dart';
-import 'ordering.dart';
-import 'style_dedup.dart';
 
 /// 被修改的实体种类。持久化名冻结。
 enum SrsEntityKind {
@@ -70,15 +72,30 @@ abstract final class SrsFieldKeys {
   // notetype
   static const String name = 'name';
   static String fieldDef(String fieldId) => 'fieldDef/$fieldId';
+
+  /// 字段说明（字符串；空串 = 清空）。与 [fieldDef] 分开：改名 / 调序与改说明互不冲突，
+  /// 不认识它的旧版本只是不显示，不会在改名时把它抹掉。
+  static String fieldDescription(String fieldId) =>
+      '$fieldDescriptionPrefix$fieldId';
+  static const String fieldDescriptionPrefix = 'fieldDesc/';
   static String templateDef(String templateId) => 'tmplDef/$templateId';
   static const String css = 'css';
   static const String termField = 'termField';
+
+  /// 词频序字段（fieldId；null = 按字段名 `FreqSort` 认）：制卡占位符 `{frequency-harmonic-rank}`
+  /// 写进的那个字段。牌组「新卡顺序 = 按词频」时，新卡按这个字段里的名次出卡。
+  static const String freqField = 'freqField';
 
   // card
   static const String suspended = 'suspended';
   static const String buriedUntilDay = 'buried';
   static const String flag = 'flag';
   static const String cardDeck = 'deck';
+
+  /// 新卡在出卡队列里的位置（int；null / 没有记录 = 没排过，按笔记创建时刻出卡）。
+  /// 「按词频重排新卡」写它，对应 Anki 新卡的 `due`（队列位置）。只影响新卡的出卡
+  /// 顺序：学过的卡排程只来自日志，这个值留着也不起作用。
+  static const String cardNewPosition = 'newPos';
 
   /// 卡片的「前身」：更改笔记类型时新卡继承旧卡的复习历史与标志（值恒为 true）。
   /// 每个前身一个键（集合语义）：两台设备各自加同一个前身是同值，不冲突。
@@ -104,6 +121,10 @@ abstract final class SrsFieldKeys {
   /// 牌组列表里是否收起子牌组（对应 Anki deck 的 `collapsed` / Deck.Common.study_collapsed）。
   static const String deckCollapsed = 'collapsed';
 
+  /// 牌组在同级里的手动排序位（num，小的在前；缺省 = 排在有位置的之后、按名字排）。
+  /// Anki 没有这一项（它只按名字排），导出时不带。
+  static const String deckPosition = 'position';
+
   /// 复习时自动播放卡面音频（bool，缺省 = true；对应 Anki 预设的 autoplay /
   /// disable_autoplay）。随参数继承走 own 祖先。
   static const String deckAutoplay = 'autoplay';
@@ -112,6 +133,23 @@ abstract final class SrsFieldKeys {
   /// skip_question_when_replaying_answer 取反）。随参数继承走 own 祖先。
   static const String deckReplayQuestion = 'replayQuestion';
 
+  /// RWKV-Instant 排队设置（Map，三项一起写、一起合并，见 [SrsRwkvQueueSettings]）：
+  /// `minReviews` 每天最少复习数、`repeatReviews` / `repeatSeconds` 同日重复的间隔守卫。
+  /// 对应上游 kuma3 的 RWKV 牌组选项；缺省 = 上游默认。随参数继承走 own 祖先。
+  static const String deckRwkvQueue = 'rwkvQueue';
+
+  /// 新卡出卡顺序（[SrsNewCardOrder.wire]；缺省 = 按词频）。随参数继承走 own 祖先。
+  static const String deckNewOrder = 'newOrder';
+
+  /// 新卡计划（Map，见 [SrsNewCardPlan]）：`auto` 按复习量自动调整、
+  /// `budget` 复习预算百分比、`boost` 复习少时多出新卡的百分比。一起写、一起合并；
+  /// 与 [deckLimits] 一样是牌组自己的值，不随参数继承。
+  static const String deckNewPlan = 'newPlan';
+
+  /// 自定义学习「提升今日上限」（Map，见 [SrsDeckLimitExtension]）：`day` 写入日序、`new` / `review` 追加张数，
+  /// 只对那一天生效。牌组自己的值，不随参数继承；并发写不进冲突记录（[SrsFieldClass.viewState]）。
+  static const String deckExtendLimits = 'extendLimits';
+
   // profile
   static const String dayRolloverHour = 'dayRolloverHour';
   static const String utcOffsetMin = 'utcOffsetMin';
@@ -119,28 +157,100 @@ abstract final class SrsFieldKeys {
 
 /// 字段类别表（只在这里写一次）。
 SrsFieldClass srsFieldClassOf(SrsEntityKind kind, String fieldKey) {
-  switch (kind) {
-    case SrsEntityKind.note:
-      if (fieldKey == SrsFieldKeys.noteDeck) return SrsFieldClass.setting;
-      // 换类型：最后修改生效，被覆盖的进同步冲突记录、可一键改回（字段值另按内容类处理）。
-      if (fieldKey == SrsFieldKeys.noteType) return SrsFieldClass.setting;
-      if (fieldKey == SrsFieldKeys.deleted) return SrsFieldClass.content;
-      return SrsFieldClass.content;
-    case SrsEntityKind.noteType:
-      if (fieldKey == SrsFieldKeys.name || fieldKey == SrsFieldKeys.termField) {
-        return SrsFieldClass.setting;
+  final _SrsFieldClassRule rule = _kSrsFieldClassRules[kind]!;
+  return rule.exceptions[fieldKey] ?? rule.fallback;
+}
+
+/// 一种实体的字段类别：没列出的键都是 [fallback]，[exceptions] 里的键按各自的类别。
+typedef _SrsFieldClassRule = ({
+  SrsFieldClass fallback,
+  Map<String, SrsFieldClass> exceptions,
+});
+
+/// 字段类别的唯一真相：[srsFieldClassOf]（Dart 侧逐条判）与 [srsFieldClassSqlFilter]（让 SQLite 在读回之前
+/// 就筛掉不需要的类别）都只读这张表。
+const Map<SrsEntityKind, _SrsFieldClassRule> _kSrsFieldClassRules =
+    <SrsEntityKind, _SrsFieldClassRule>{
+      // 笔记：字段值、标签、来源、删除都是内容。首选牌组是设置；换类型也是设置：最后修改生效，被覆盖的进同步
+      // 冲突记录、可一键改回（字段值另按内容类处理）。
+      SrsEntityKind.note: (
+        fallback: SrsFieldClass.content,
+        exceptions: <String, SrsFieldClass>{
+          SrsFieldKeys.noteDeck: SrsFieldClass.setting,
+          SrsFieldKeys.noteType: SrsFieldClass.setting,
+        },
+      ),
+      // 笔记类型：字段 / 模板定义与 CSS 是内容。名字、词条字段、词频序字段都是「指向哪个字段」的设置：最后修改
+      // 生效，不按内容冲突处理。
+      SrsEntityKind.noteType: (
+        fallback: SrsFieldClass.content,
+        exceptions: <String, SrsFieldClass>{
+          SrsFieldKeys.name: SrsFieldClass.setting,
+          SrsFieldKeys.termField: SrsFieldClass.setting,
+          SrsFieldKeys.freqField: SrsFieldClass.setting,
+        },
+      ),
+      // 卡片：新卡位置是一整批机械重排的产物，两台设备各自重排同一牌组是常态，每张卡都进「同步冲突记录」只会
+      // 刷屏，所以同折叠状态一样按界面状态处理（最后修改生效）。
+      SrsEntityKind.card: (
+        fallback: SrsFieldClass.flag,
+        exceptions: <String, SrsFieldClass>{
+          SrsFieldKeys.cardNewPosition: SrsFieldClass.viewState,
+        },
+      ),
+      SrsEntityKind.deck: (
+        fallback: SrsFieldClass.setting,
+        exceptions: <String, SrsFieldClass>{
+          SrsFieldKeys.deckCollapsed: SrsFieldClass.viewState,
+          SrsFieldKeys.deckPosition: SrsFieldClass.viewState,
+          SrsFieldKeys.deckExtendLimits: SrsFieldClass.viewState,
+        },
+      ),
+      SrsEntityKind.profile: (
+        fallback: SrsFieldClass.setting,
+        exceptions: <String, SrsFieldClass>{},
+      ),
+    };
+
+/// SQL 布尔表达式：[kindColumn]（实体种类 wire 值）/ [keyColumn]（字段键）这一行的类别（[srsFieldClassOf]）属于
+/// [classes]。与 [srsFieldClassOf] 读同一张表，二者恒等（回归：fushi_engine
+/// `test/srs/srs_field_class_sql_test.dart`）。
+///
+/// 用途：只要某几类修改记录时让 SQLite 先筛，别把笔记字段正文（内容类，大库上全部加起来是 GB 级）读回来再丢。
+String srsFieldClassSqlFilter(
+  Set<SrsFieldClass> classes, {
+  required String kindColumn,
+  required String keyColumn,
+}) {
+  String quote(String s) => "'${s.replaceAll("'", "''")}'";
+  String inList(Iterable<String> keys) => keys.map(quote).join(', ');
+  final List<String> terms = <String>[];
+  for (final SrsEntityKind kind in SrsEntityKind.values) {
+    final _SrsFieldClassRule rule = _kSrsFieldClassRules[kind]!;
+    final String isKind = '$kindColumn = ${quote(kind.wire)}';
+    if (classes.contains(rule.fallback)) {
+      // 缺省类别要：这种实体除了「类别不要的例外键」以外都要。
+      final List<String> drop = <String>[
+        for (final MapEntry<String, SrsFieldClass> e in rule.exceptions.entries)
+          if (!classes.contains(e.value)) e.key,
+      ];
+      terms.add(
+        drop.isEmpty
+            ? '($isKind)'
+            : '($isKind AND $keyColumn NOT IN (${inList(drop)}))',
+      );
+    } else {
+      // 缺省类别不要：只要类别在 [classes] 里的例外键。
+      final List<String> keep = <String>[
+        for (final MapEntry<String, SrsFieldClass> e in rule.exceptions.entries)
+          if (classes.contains(e.value)) e.key,
+      ];
+      if (keep.isNotEmpty) {
+        terms.add('($isKind AND $keyColumn IN (${inList(keep)}))');
       }
-      return SrsFieldClass.content;
-    case SrsEntityKind.card:
-      return SrsFieldClass.flag;
-    case SrsEntityKind.deck:
-      if (fieldKey == SrsFieldKeys.deckCollapsed) {
-        return SrsFieldClass.viewState;
-      }
-      return SrsFieldClass.setting;
-    case SrsEntityKind.profile:
-      return SrsFieldClass.setting;
+    }
   }
+  return terms.isEmpty ? '(0)' : '(${terms.join(' OR ')})';
 }
 
 /// 一条修改记录。创建即不可变；ID 由 dot 决定。
@@ -176,10 +286,6 @@ class SrsFieldEdit {
   final bool machine;
 
   String get registerKey => '${entityKind.wire}/$entityId/$fieldKey';
-
-  /// b 支配 a ⇔ b 的作者修改时已经看见了 a。
-  bool dominates(SrsFieldEdit other) =>
-      other.dot != dot && ctx.contains(other.dot);
 
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
@@ -220,6 +326,41 @@ class SrsFieldEdit {
     return edit;
   }
 
+  SrsFieldEdit._verified({
+    required this.id,
+    required this.profileUid,
+    required this.entityKind,
+    required this.entityId,
+    required this.fieldKey,
+    required this.dot,
+    required this.ctx,
+    required this.value,
+    required this.hlc,
+    required this.timeSource,
+    required this.machine,
+  });
+
+  /// 原生内核已校验过的落库原文（kind 认识、必填键齐全、ID 与 dot 相符）：ID 直接取原文里的，
+  /// 不再逐条派生（派生要一次 FFI）。
+  static SrsFieldEdit _fromVerifiedJson(Map<String, Object?> json) {
+    final String writer = json['w']! as String;
+    final int seq = json['s']! as int;
+    final Object? id = json['id'];
+    return SrsFieldEdit._verified(
+      id: id is String ? id : SrsIds.fieldEdit(writer, seq),
+      profileUid: json['p']! as String,
+      entityKind: SrsEntityKind.tryParse(json['k'] as String?)!,
+      entityId: json['e']! as String,
+      fieldKey: json['f']! as String,
+      dot: SrsDot(writer, seq),
+      ctx: SrsCausalContext.fromJson(json['ctx']),
+      value: json['v'],
+      hlc: Hlc.decode(json['hlc']! as String),
+      timeSource: SrsTimeSource.parse(json['ts'] as String?),
+      machine: json['m'] == true,
+    );
+  }
+
   /// 规范编码（内容哈希 / 逐字节比较用）。
   String canonical() => srsCanonicalJson(toJson());
 
@@ -242,102 +383,64 @@ Object? _canonicalize(Object? value) {
   return value;
 }
 
-/// 「值相同」的唯一口径（冲突判定、no-op 判定都用它）。字段文本按去重规范形比较：
-/// 内联 `<style>` 与它的共享样式引用行是同一内容（见 style_dedup.dart），所以同一份内容
-/// 无论哪台设备、去没去重写下，都不会被判成并发冲突。
-bool _sameValue(Object? a, Object? b) {
-  if (a is String && b is String) return srsSameFieldText(a, b);
-  return srsCanonicalJson(a) == srsCanonicalJson(b);
+/// 一条修改记录在原生内核批次里的形态：落库原文（canonical JSON 的 UTF-8）与 S(e)。
+/// 内存里已有对象的（[SrsFieldEdit] 直接构造 / 刚解析的）带着对象；落库原文按需才在 Dart 侧解析
+/// （缓存刷新只用物化视图，不解析修改记录）。
+final class SrsEditItem {
+  /// 落库原文。
+  SrsEditItem.stored(this.json, this.serverTime) : _edit = null;
+
+  /// 内存里的记录（规范编码后交给内核）。
+  SrsEditItem.of(SrsFieldEdit edit, this.serverTime)
+    : json = utf8.encode(edit.canonical()),
+      _edit = edit;
+
+  final Uint8List json;
+  final int? serverTime;
+  SrsFieldEdit? _edit;
+
+  /// 解析好的记录。只对内核已校验过的批次调用（见 register_kernel.dart）。
+  SrsFieldEdit get edit => _edit ??= SrsFieldEdit._fromVerifiedJson(
+    (jsonDecode(utf8.decode(json)) as Map).cast<String, Object?>(),
+  );
 }
 
-/// 一个字段键的合并结果。
+/// 一个字段键的合并结果（原生内核算好的视图）。
 class SrsRegister {
-  SrsRegister._(this.key, this.live);
+  /// 由内核结果构造：[liveIndices] 是没被支配的记录（按 sortKey 从大到小）在 [items] 里的下标，
+  /// [loserIndices] 是要进「同步冲突记录」/「待裁决」的被覆盖候选。
+  SrsRegister.fromKernel(
+    this.key,
+    List<SrsEditItem> items,
+    List<int> liveIndices, {
+    required this.conflicted,
+    required List<int> loserIndices,
+  }) : _items = items,
+       _live = liveIndices,
+       _losers = loserIndices;
 
   final String key;
+  final List<SrsEditItem> _items;
+  final List<int> _live;
+  final List<int> _losers;
 
   /// 没被支配的记录，按 sortKey 从大到小。第一条是当前生效值。
-  final List<SrsFieldEdit> live;
+  late final List<SrsFieldEdit> live = List<SrsFieldEdit>.unmodifiable(
+    <SrsFieldEdit>[for (final int i in _live) _items[i].edit],
+  );
 
-  bool get isEmpty => live.isEmpty;
+  bool get isEmpty => _live.isEmpty;
 
-  SrsFieldEdit? get winner => live.isEmpty ? null : live.first;
+  SrsFieldEdit? get winner => _live.isEmpty ? null : _items[_live.first].edit;
 
   Object? get value => winner?.value;
 
-  /// 并发且值不同。
-  bool get conflicted {
-    for (int i = 1; i < live.length; i++) {
-      if (!_sameValue(live[i].value, live.first.value)) return true;
-    }
-    return false;
-  }
+  /// 并发且值不同（「值相同」的口径见 registers.rs `same_value`：字段文本按释义样式去重的规范形比较）。
+  final bool conflicted;
 
   /// 要进「同步冲突记录」/「待裁决」的被覆盖候选：值与生效值不同、且不全是机器产出。
-  List<SrsFieldEdit> get visibleLosers {
-    final SrsFieldEdit? w = winner;
-    if (w == null) return const <SrsFieldEdit>[];
-    final List<SrsFieldEdit> losers = <SrsFieldEdit>[
-      for (int i = 1; i < live.length; i++)
-        if (!_sameValue(live[i].value, w.value)) live[i],
-    ];
-    if (losers.isEmpty) return losers;
-    if (w.machine && losers.every((SrsFieldEdit e) => e.machine)) {
-      return const <SrsFieldEdit>[];
-    }
-    return losers;
-  }
-}
-
-/// 合并一个字段键上的全部记录（顺序无关、幂等）。
-///
-/// [serverTimeOf] 返回事件的 S(e)（未知 = null），只影响生效值的选取，不影响支配关系。
-SrsRegister srsResolveRegister(
-  String key,
-  Iterable<SrsFieldEdit> edits, {
-  int? Function(String eventId)? serverTimeOf,
-}) {
-  final Map<String, SrsFieldEdit> byId = <String, SrsFieldEdit>{
-    for (final SrsFieldEdit e in edits) e.id: e,
-  };
-  final List<SrsFieldEdit> all = byId.values.toList();
-  final List<SrsFieldEdit> live = <SrsFieldEdit>[
-    for (final SrsFieldEdit a in all)
-      if (!all.any((SrsFieldEdit b) => b.dominates(a))) a,
-  ];
-  SrsSortKey keyOf(SrsFieldEdit e) =>
-      srsSortKey(e.hlc, e.id, serverTimeOf?.call(e.id));
-  live.sort((SrsFieldEdit a, SrsFieldEdit b) => keyOf(b).compareTo(keyOf(a)));
-  return SrsRegister._(key, List<SrsFieldEdit>.unmodifiable(live));
-}
-
-/// 「删除优先」：删除寄存器里只要有一条没被支配的记录值非空，行就是已删。
-/// 返回生效的删除时刻（非空候选里 sortKey 最大的那条的值），未删返回 null。
-int? srsEffectiveDeletedAt(SrsRegister deleted) {
-  for (final SrsFieldEdit e in deleted.live) {
-    final Object? v = e.value;
-    if (v is int) return v;
-  }
-  return null;
-}
-
-/// 与删除记录并发（谁也没看见谁）的内容修改：删除优先，但这些修改留在行里，
-/// 作为一条内容类待裁决项「另一台设备删除了这条笔记，这里有未同步的修改：恢复 / 确认删除」。
-List<SrsFieldEdit> srsEditsConcurrentWithDelete(
-  SrsRegister deleted,
-  Iterable<SrsFieldEdit> contentLive,
-) {
-  final List<SrsFieldEdit> deletes = <SrsFieldEdit>[
-    for (final SrsFieldEdit e in deleted.live)
-      if (e.value is int) e,
-  ];
-  if (deletes.isEmpty) return const <SrsFieldEdit>[];
-  return <SrsFieldEdit>[
-    for (final SrsFieldEdit c in contentLive)
-      if (deletes.any(
-        (SrsFieldEdit d) => !d.ctx.contains(c.dot) && !c.ctx.contains(d.dot),
-      ))
-        c,
+  List<SrsFieldEdit> get visibleLosers => <SrsFieldEdit>[
+    for (final int i in _losers) _items[i].edit,
   ];
 }
 
@@ -398,9 +501,3 @@ class SrsEditWriter {
     return edit;
   }
 }
-
-/// 值没变且没有冲突的编辑不产生记录（no-op 不递增 seq，避免云盘文件被无意义刷新）。
-bool srsEditIsNoop(SrsRegister current, Object? newValue) =>
-    !current.isEmpty &&
-    !current.conflicted &&
-    _sameValue(current.value, newValue);

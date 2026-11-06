@@ -120,8 +120,10 @@ void main() {
     final Object? moves = await controller!.evaluateJavascript(
       source: 'window.__moves',
     );
-    debugPrint('[wheel-units] dpr=$dpr notch=$notch fifth=$fifth '
-        'flutterSignals=$flutterSignals domMoves=$moves');
+    debugPrint(
+      '[wheel-units] dpr=$dpr notch=$notch fifth=$fifth '
+      'flutterSignals=$flutterSignals domMoves=$moves',
+    );
     expect(notch, hasLength(1), reason: '一档应恰好派发一个 wheel 事件');
     expect(fifth, hasLength(1));
     final double notchDy = (notch.single['dy'] as num).toDouble();

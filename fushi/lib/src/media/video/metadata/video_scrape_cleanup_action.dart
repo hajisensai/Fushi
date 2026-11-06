@@ -1,7 +1,11 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_service.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 bool _videoScrapeCleanupRunning = false;
@@ -105,5 +109,7 @@ Future<bool> showClearAllVideoScrapeRecordsAction({
 
 void _showVideoScrapeCleanupSnackBar(BuildContext context, String message) {
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(FushiSnackBar(content: Text(message)));
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(FushiSnackBar(content: Text(message)));
 }

@@ -2,6 +2,7 @@
 
 #include "attached_glyph_transaction_latch.h"
 #include "attached_popup_rearm_policy.h"
+#include "lookup_keyboard_shield.h"
 #include "voice_hook_reader.h"
 
 #include "../../../native/galgame_hook/include/voice_hook_ipc.h"
@@ -166,6 +167,12 @@ constexpr uint32_t kSwallowedX2Button = 1u << 4;
 // 所以这份事务状态不能随 g_target 立即清空；回调必须先收掉配对 up，再看
 // target 是否还在。只有宽限期后真正卸钩才清理残留位。
 std::atomic<uint32_t> g_swallowed_buttons{0};
+// 反馈 -AynHxzwNe — 中键 / 侧键落在游戏之上的我方窗口（查词卡、台词浮窗、穿透
+// 工具条）时被吞掉、改投给命中的窗口。按键位记下改投目标，配对 up 投给同一个窗口。
+// 下标：0 = 中键，1 = X1，2 = X2。
+std::atomic<HWND> g_relayed_button_window[3] = {};
+// 反馈 4c0IeCpSjb — 游戏内查词卡在屏时的键盘护盾状态（只在钩子线程的回调里改）。
+fushi::lookup_keyboard_shield::KeyboardShieldLatch g_keyboard_shield;
 
 struct AttachedGlyphHitSnapshot {
   HWND surface = nullptr;
@@ -427,6 +434,55 @@ HWND OverlayClickShieldGameAt(POINT pt) {
     if (entry.overlay == hit || entry.overlay == root) return entry.game;
   }
   return nullptr;
+}
+
+// 反馈 -AynHxzwNe — 中键 / X1 / X2 的护盾。
+//
+// 采样型引擎（HUNEX 的 GetAsyncKeyState、SGRE 的 DirectInput、RawInput 引擎）不看消息、
+// 读物理键态：点在查词卡 / 台词浮窗上的中键虽然消息投给了我方窗口，游戏照样读到
+// 「中键按下」——魔法使之夜 Steam 版的中键是快进。注入侧的 v19 护盾只覆盖左键（左键
+// 必须照常投给 WebView 选词，只能对游戏隐藏采样）；中键 / 侧键在我方窗口上不需要
+// 进入系统输入流：在这里吞掉（回调返回非 0 = 不进任何输入队列、不更新异步键态，对所有
+// 采样读法同时生效），再把同一条按键消息投给命中的窗口，台词浮窗的「中键 / 侧键
+// 查词」照常工作。只在登记了游戏的覆盖窗口上生效（无 galgame 会话时解析器给 nullptr，
+// 桌面查词零变化）。
+int RelayedButtonSlot(uint32_t button_bit) {
+  switch (button_bit) {
+    case kSwallowedMiddleButton:
+      return 0;
+    case kSwallowedX1Button:
+      return 1;
+    case kSwallowedX2Button:
+      return 2;
+    default:
+      return -1;
+  }
+}
+
+// 光标下的窗口若属于一个登记了游戏的覆盖窗口，返回该命中窗口（消息投给它）。
+HWND OverlayButtonRelayWindowAt(POINT pt) {
+  if (OverlayClickShieldGameAt(pt) == nullptr) return nullptr;
+  return WindowFromPoint(pt);
+}
+
+void PostRelayedButton(HWND window, WPARAM message, const MSLLHOOKSTRUCT* info,
+                       bool down) {
+  POINT client = info->pt;
+  if (!ScreenToClient(window, &client)) return;
+  WPARAM keys = 0;
+  if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0) keys |= MK_CONTROL;
+  if ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0) keys |= MK_SHIFT;
+  WPARAM wparam = keys;
+  if (message == WM_MBUTTONDOWN || message == WM_MBUTTONUP) {
+    if (down) wparam |= MK_MBUTTON;
+  } else {
+    const WORD xbutton = HIWORD(info->mouseData);
+    if (down) wparam |= xbutton == XBUTTON1 ? MK_XBUTTON1 : MK_XBUTTON2;
+    wparam = MAKEWPARAM(LOWORD(wparam), xbutton);
+  }
+  PostMessage(window, static_cast<UINT>(message), wparam,
+              MAKELPARAM(static_cast<short>(client.x),
+                         static_cast<short>(client.y)));
 }
 
 uint64_t NextOverlayTransactionId() {
@@ -1559,6 +1615,12 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
   // 点击给那些在 button-up 推进的游戏。
   if (is_button_up) {
     const uint32_t bit = button_bit;
+    const int relay_slot = RelayedButtonSlot(bit);
+    if (relay_slot >= 0) {
+      const HWND relay = g_relayed_button_window[relay_slot].exchange(
+          nullptr, std::memory_order_relaxed);
+      if (relay != nullptr) PostRelayedButton(relay, wparam, info, false);
+    }
     if (wparam == WM_LBUTTONUP) {
       EndAttachedGlyphTransaction(info->pt);
       // BUG-2613 — 覆盖窗口事务的配对 up：也在 g_target 闸门之前，台词浮窗上的
@@ -1621,6 +1683,24 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
       // down reached the foreground app (a stuck button).
       g_attached_rearm_suppressed_buttons.fetch_and(~bit,
                                                     std::memory_order_relaxed);
+    }
+  }
+  // 反馈 -AynHxzwNe — 中键 / 侧键落在登记的覆盖窗口上：吞掉并改投（见
+  // OverlayButtonRelayWindowAt）。放在 g_target 闸门之前，理由同下面的左键护盾。
+  if (is_button_down) {
+    const int relay_slot = RelayedButtonSlot(button_bit);
+    if (relay_slot >= 0) {
+      const HWND relay = OverlayButtonRelayWindowAt(info->pt);
+      if (relay != nullptr) {
+        g_swallowed_buttons.fetch_or(button_bit, std::memory_order_relaxed);
+        g_relayed_button_window[relay_slot].store(relay,
+                                                  std::memory_order_relaxed);
+        PostRelayedButton(relay, wparam, info, true);
+        return 1;
+      }
+      // 新的、不落在覆盖窗口上的 down 证明上一次改投已结束（up 丢了）。
+      g_relayed_button_window[relay_slot].store(nullptr,
+                                                std::memory_order_relaxed);
     }
   }
   // BUG-2613 — 落在登记的覆盖窗口上的左键 down：向注入侧发布 Popup 护盾请求，
@@ -1750,7 +1830,10 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
   // 这里取到的是**唯一可信的修饰键真值**：过了 PostMessage 那道边界就再也拿不回来
   // （Chromium 读 GetKeyState，而合成消息不更新键状态表）。ctrl/alt 因此单独成字段
   // 随载荷带走，供窗口线程分流；MK_* 位只是给裸滚轮那条原生快路捎带的。
-  const bool ctrl_down = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+  // 反馈 4c0IeCpSjb：查词卡在屏时 Ctrl 被键盘护盾吞掉、系统键态里看不到，Ctrl+滚轮
+  // 缩放要并上护盾里「被吞住的 Ctrl」。
+  const bool ctrl_down = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 ||
+                         g_keyboard_shield.ControlSwallowed();
   const bool shift_down = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
   const bool alt_down = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
   if (ctrl_down) wheel.keys |= MK_CONTROL;
@@ -1764,6 +1847,144 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
   // 返回非 0 = 事件到此为止：不进入任何线程的输入队列，前台的 galgame 也就收不到
   // WM_MOUSEWHEEL。这是整个修复的落点，改成 CallNextHookEx 就等于没修。
   return 1;
+}
+
+// 反馈 4c0IeCpSjb — 游戏内查词卡在屏时，键盘不进游戏（判据见 lookup_keyboard_shield.h）。
+//
+// 「游戏内查词卡」= 当前单例目标带着 consume-outside 游戏 owner（direct galCard 与
+// attached 表面打开的桌面 route 卡片），且不是 attached 校准字形表面本身（那是常驻的
+// 点击穿透层，绝不能吞键盘）。游戏还必须是前台：键盘只会投给前台，前台换走时卡片
+// 本就会随前台钩子关掉，这里不替别的程序吞键。
+HWND KeyboardShieldCardTarget() {
+  const HWND target = g_target.load(std::memory_order_acquire);
+  if (target == nullptr || AttachedGlyphSnapshotForTarget(target) != nullptr) {
+    return nullptr;
+  }
+  const HWND game = reinterpret_cast<HWND>(
+      GetPropW(target, kConsumeOutsideOwnerProperty));
+  if (game == nullptr) return nullptr;
+  const HWND foreground = GetForegroundWindow();
+  if (foreground == nullptr || foreground != GetAncestor(game, GA_ROOT)) {
+    return nullptr;
+  }
+  return target;
+}
+
+// 本钩子重新注入的按键带这个标记：钩子见到它直接放行，不把自己交还的热键再吞一次。
+constexpr ULONG_PTR kKeyboardShieldReplayTag = 0x46534B52;  // 'FSKR'
+// 热键探测用的线程热键 id（应用可用区间 0x0000-0xBFFF 的顶端，不与插件自增 id 撞）。
+constexpr int kKeyboardShieldHotkeyProbeId = 0xBFF0;
+
+UINT CurrentHotkeyModifiers(bool ctrl) {
+  UINT mods = ctrl ? MOD_CONTROL : 0u;
+  if ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0) mods |= MOD_SHIFT;
+  if ((GetAsyncKeyState(VK_MENU) & 0x8000) != 0) mods |= MOD_ALT;
+  if ((GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 ||
+      (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0) {
+    mods |= MOD_WIN;
+  }
+  return mods;
+}
+
+// (|mods|, |vk|) 是否已被任何程序（含 Fushi 自己经 hotkey_manager 注册的应用外查词 /
+// 截屏识字热键）注册为全局热键。Windows 没有查询接口，只能试注册：撞上已注册的组合
+// 会以 ERROR_HOTKEY_ALREADY_REGISTERED 失败；试成功立刻注销（钩子线程有消息队列，
+// 线程热键在返回前就撤掉，不会抢到这次按键）。
+bool IsRegisteredGlobalHotkey(UINT mods, uint32_t vk) {
+  if (RegisterHotKey(nullptr, kKeyboardShieldHotkeyProbeId, mods,
+                     static_cast<UINT>(vk))) {
+    UnregisterHotKey(nullptr, kKeyboardShieldHotkeyProbeId);
+    return false;
+  }
+  return GetLastError() == ERROR_HOTKEY_ALREADY_REGISTERED;
+}
+
+// 把交还的热键按「原顺序」重新注入：先补此前吞掉的 Ctrl down，再补这个键的 down。
+// 在 LL 回调里 SendInput 的事件排在当前事件之后，所以当前事件必须吞掉、整组重放，
+// 否则键会先于 Ctrl 到达。之后真实的 up / 自动重复由系统按普通键配对。
+void ReplayHotkeyDown(const uint32_t* controls, int control_count, uint32_t vk,
+                      DWORD flags) {
+  INPUT inputs[4] = {};
+  int count = 0;
+  for (int i = 0; i < control_count && count < 3; ++i) {
+    INPUT& input = inputs[count++];
+    input.type = INPUT_KEYBOARD;
+    input.ki.wVk = static_cast<WORD>(controls[i]);
+    input.ki.dwFlags =
+        controls[i] == VK_RCONTROL ? KEYEVENTF_EXTENDEDKEY : 0u;
+    input.ki.dwExtraInfo = kKeyboardShieldReplayTag;
+  }
+  INPUT& key = inputs[count++];
+  key.type = INPUT_KEYBOARD;
+  key.ki.wVk = static_cast<WORD>(vk);
+  key.ki.dwFlags = (flags & LLKHF_EXTENDED) != 0 ? KEYEVENTF_EXTENDEDKEY : 0u;
+  key.ki.dwExtraInfo = kKeyboardShieldReplayTag;
+  SendInput(static_cast<UINT>(count), inputs, sizeof(INPUT));
+}
+
+LRESULT CALLBACK KeyboardHookProc(int code, WPARAM wparam, LPARAM lparam) {
+  if (code != HC_ACTION) return CallNextHookEx(nullptr, code, wparam, lparam);
+  const auto* info = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lparam);
+  if (info->dwExtraInfo == kKeyboardShieldReplayTag) {
+    return CallNextHookEx(nullptr, code, wparam, lparam);
+  }
+  const uint32_t vk = static_cast<uint32_t>(info->vkCode);
+  const bool up = (info->flags & LLKHF_UP) != 0;
+  // up 只关心「它的 down 是不是被吞了」：没吞就是纯放行，不碰任何窗口状态。
+  if (up && !g_keyboard_shield.IsSwallowed(vk)) {
+    return CallNextHookEx(nullptr, code, wparam, lparam);
+  }
+  const HWND card = up ? nullptr : KeyboardShieldCardTarget();
+  // LowLevelKeyboardProc 在系统更新异步键态**之前**被调用：此刻读到「已按下」只可能是
+  // 自动重复或卡片出现前就按住的键——它们的 down 游戏已经见过，必须放行配对。
+  const bool down_in_system =
+      !up && (GetAsyncKeyState(static_cast<int>(vk)) & 0x8000) != 0;
+  const bool ctrl_in_system = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+  // Alt / Win 按住时的新按下属于系统（Alt+F4 / Alt+Tab / Win+D …）：Alt 从本事件的
+  // LLKHF_ALTDOWN 读，Win 从键态读（两者永远放行，系统键态与真实一致）。
+  const bool system_combo =
+      !up && ((info->flags & LLKHF_ALTDOWN) != 0 ||
+              (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 ||
+              (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0);
+  const bool was_swallowed = g_keyboard_shield.IsSwallowed(vk);
+  const auto action =
+      g_keyboard_shield.OnKey(vk, up, card != nullptr, down_in_system,
+                              ctrl_in_system, system_combo);
+  if (action == fushi::lookup_keyboard_shield::Action::kPass) {
+    return CallNextHookEx(nullptr, code, wparam, lparam);
+  }
+  if (action == fushi::lookup_keyboard_shield::Action::kSwallowAndCopy &&
+      card != nullptr) {
+    PostMessage(card, kLowLevelKeyboardCopyMessage, 0, 0);
+    return 1;
+  }
+  // 新吞下的非 Ctrl 键：若（修饰键 + 键）是某个全局热键，交还并整组重放，让热键照常
+  // 触发（游戏在这种情况下看到的与没有护盾时一致）。自动重复 / up 不探测。
+  if (!up && !was_swallowed &&
+      !fushi::lookup_keyboard_shield::KeyboardShieldLatch::IsControlKey(vk)) {
+    const bool ctrl = ctrl_in_system || g_keyboard_shield.ControlSwallowed();
+    if (IsRegisteredGlobalHotkey(CurrentHotkeyModifiers(ctrl), vk)) {
+      uint32_t controls[3] = {};
+      const int control_count = g_keyboard_shield.ReleaseForHotkey(vk, controls);
+      ReplayHotkeyDown(controls, control_count, vk, info->flags);
+    }
+  }
+  return 1;
+}
+
+// 键盘钩子与鼠标钩子同生共死（同一条 TIME_CRITICAL 钩子线程、同一套宽限期卸载）：
+// 不另起一套装卸时机，就不会出现「鼠标护盾在、键盘护盾不在」的半态。回调在没有
+// 游戏内查词卡时纯放行。卸载时清空状态：之后的 up 不再经过这里，游戏看到一个没有
+// down 的 up 是无害的。
+void SyncKeyboardHook(bool wanted, HHOOK* keyboard_hook) {
+  if (wanted && *keyboard_hook == nullptr) {
+    *keyboard_hook = SetWindowsHookEx(WH_KEYBOARD_LL, &KeyboardHookProc,
+                                      GetModuleHandle(nullptr), 0);
+  } else if (!wanted && *keyboard_hook != nullptr) {
+    UnhookWindowsHookEx(*keyboard_hook);
+    *keyboard_hook = nullptr;
+    g_keyboard_shield.Reset();
+  }
 }
 
 void HookThreadMain() {
@@ -1781,6 +2002,7 @@ void HookThreadMain() {
   SetEvent(g_thread_ready);
 
   HHOOK hook = nullptr;
+  HHOOK keyboard_hook = nullptr;
   // 宽限期卸载定时器（线程定时器，WM_TIMER 走本线程消息队列）。0 = 未挂起。
   UINT_PTR disarm_timer = 0;
   // BUG-1286 — 存活性核对定时器：常驻，不随 Arm/Disarm 起停。armed 状态的真值是
@@ -1948,10 +2170,12 @@ void HookThreadMain() {
                                                   std::memory_order_relaxed);
       }
     }
+    SyncKeyboardHook(hook != nullptr, &keyboard_hook);
   }
   if (liveness_timer != 0) {
     KillTimer(nullptr, liveness_timer);
   }
+  SyncKeyboardHook(false, &keyboard_hook);
   if (hook != nullptr) {
     UnhookWindowsHookEx(hook);
   }

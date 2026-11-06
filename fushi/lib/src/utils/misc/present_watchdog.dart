@@ -171,15 +171,15 @@ class PresentStallLog {
 
   /// 生产用 marker 文件（Windows），非 Windows / 无 LOCALAPPDATA 返回 null。
   static File? resolveMarkerFile() => resolveFile(
-        markerRelative,
-        isWindows: Platform.isWindows,
-        localAppData: Platform.environment['LOCALAPPDATA'],
-      );
+    markerRelative,
+    isWindows: Platform.isWindows,
+    localAppData: Platform.environment['LOCALAPPDATA'],
+  );
 
   /// 生产用取证日志文件（Windows），非 Windows / 无 LOCALAPPDATA 返回 null。
   static File? resolveStallLogFile() => resolveFile(
-        logRelative,
-        isWindows: Platform.isWindows,
-        localAppData: Platform.environment['LOCALAPPDATA'],
-      );
+    logRelative,
+    isWindows: Platform.isWindows,
+    localAppData: Platform.environment['LOCALAPPDATA'],
+  );
 }

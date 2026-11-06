@@ -20,7 +20,14 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 站点在界面上的名字：内置站按 id 取 i18n（语种用母语写，不随界面语言变），
 /// 自定义站用用户填的名称。
@@ -109,9 +116,7 @@ List<Widget> buildAiWebKnowledgeCustomSiteRows(
               ),
             ),
             FushiIconButtonControl(
-              key: ValueKey<String>(
-                'ai-web-knowledge-site-${site.id}-remove',
-              ),
+              key: ValueKey<String>('ai-web-knowledge-site-${site.id}-remove'),
               tooltip: t.ai_web_knowledge_custom_remove,
               icon: const FushiIcon(FushiIcons.delete),
               onPressed: () => unawaited(
@@ -238,9 +243,8 @@ SettingsCliList buildWebKnowledgeCustomCliList() {
         required: false,
       ),
     ],
-    list: (SettingsContext c) async => webKnowledgeCustomSiteRecords(
-      c.appModel.prefsRepo,
-    ),
+    list: (SettingsContext c) async =>
+        webKnowledgeCustomSiteRecords(c.appModel.prefsRepo),
     add: (SettingsContext c, Map<String, String> fields) async {
       final String endpoint = (fields['endpoint'] ?? '').trim();
       if (endpoint.isEmpty) throw ArgumentError('add 需要 endpoint');

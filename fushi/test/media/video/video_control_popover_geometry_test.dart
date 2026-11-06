@@ -14,11 +14,11 @@ void main() {
     test('bottom-left volume stays inside the player', () {
       final VideoControlPopoverPlacement placement =
           resolveVideoControlPopoverPlacement(
-        playerBounds: player,
-        targetRect: const Rect.fromLTWH(8, 140, 36, 36),
-        preferredWidth: 220,
-        sourceSlot: VideoControlSlot.bottomLeft,
-      );
+            playerBounds: player,
+            targetRect: const Rect.fromLTWH(8, 140, 36, 36),
+            preferredWidth: 220,
+            sourceSlot: VideoControlSlot.bottomLeft,
+          );
 
       expect(placement.left, greaterThanOrEqualTo(player.left));
       expect(placement.right, lessThanOrEqualTo(player.right));
@@ -28,11 +28,11 @@ void main() {
     test('bottom-right volume stays inside the player', () {
       final VideoControlPopoverPlacement placement =
           resolveVideoControlPopoverPlacement(
-        playerBounds: player,
-        targetRect: const Rect.fromLTWH(276, 140, 36, 36),
-        preferredWidth: 220,
-        sourceSlot: VideoControlSlot.bottomRight,
-      );
+            playerBounds: player,
+            targetRect: const Rect.fromLTWH(276, 140, 36, 36),
+            preferredWidth: 220,
+            sourceSlot: VideoControlSlot.bottomRight,
+          );
 
       expect(placement.left, greaterThanOrEqualTo(player.left));
       expect(placement.right, lessThanOrEqualTo(player.right));
@@ -42,11 +42,11 @@ void main() {
     test('bottom-right volume can be an inner button and still clamp', () {
       final VideoControlPopoverPlacement placement =
           resolveVideoControlPopoverPlacement(
-        playerBounds: player,
-        targetRect: const Rect.fromLTWH(100, 140, 36, 36),
-        preferredWidth: 220,
-        sourceSlot: VideoControlSlot.bottomRight,
-      );
+            playerBounds: player,
+            targetRect: const Rect.fromLTWH(100, 140, 36, 36),
+            preferredWidth: 220,
+            sourceSlot: VideoControlSlot.bottomRight,
+          );
 
       expect(placement.left, player.left);
       expect(placement.right, 220);
@@ -56,11 +56,11 @@ void main() {
     test('oversized scaled volume popover shrinks to player width', () {
       final VideoControlPopoverPlacement placement =
           resolveVideoControlPopoverPlacement(
-        playerBounds: player,
-        targetRect: const Rect.fromLTWH(276, 140, 36, 36),
-        preferredWidth: 520,
-        sourceSlot: VideoControlSlot.bottomRight,
-      );
+            playerBounds: player,
+            targetRect: const Rect.fromLTWH(276, 140, 36, 36),
+            preferredWidth: 520,
+            sourceSlot: VideoControlSlot.bottomRight,
+          );
 
       expect(placement.left, player.left);
       expect(placement.right, player.right);
@@ -78,41 +78,43 @@ void main() {
   });
 
   group('slot-adaptive popover direction (TODO-560)', () {
-    test('bottom slots pop up, top slots pop down, side rails pop sideways',
-        () {
-      expect(
-        videoControlPopoverDirectionForSlot(VideoControlSlot.bottomLeft),
-        VideoControlPopoverDirection.up,
-      );
-      expect(
-        videoControlPopoverDirectionForSlot(VideoControlSlot.bottomCenter),
-        VideoControlPopoverDirection.up,
-      );
-      expect(
-        videoControlPopoverDirectionForSlot(VideoControlSlot.bottomRight),
-        VideoControlPopoverDirection.up,
-      );
-      expect(
-        videoControlPopoverDirectionForSlot(VideoControlSlot.topLeft),
-        VideoControlPopoverDirection.down,
-      );
-      expect(
-        videoControlPopoverDirectionForSlot(VideoControlSlot.topCenter),
-        VideoControlPopoverDirection.down,
-      );
-      expect(
-        videoControlPopoverDirectionForSlot(VideoControlSlot.topRight),
-        VideoControlPopoverDirection.down,
-      );
-      expect(
-        videoControlPopoverDirectionForSlot(VideoControlSlot.screenLeft),
-        VideoControlPopoverDirection.right,
-      );
-      expect(
-        videoControlPopoverDirectionForSlot(VideoControlSlot.screenRight),
-        VideoControlPopoverDirection.left,
-      );
-    });
+    test(
+      'bottom slots pop up, top slots pop down, side rails pop sideways',
+      () {
+        expect(
+          videoControlPopoverDirectionForSlot(VideoControlSlot.bottomLeft),
+          VideoControlPopoverDirection.up,
+        );
+        expect(
+          videoControlPopoverDirectionForSlot(VideoControlSlot.bottomCenter),
+          VideoControlPopoverDirection.up,
+        );
+        expect(
+          videoControlPopoverDirectionForSlot(VideoControlSlot.bottomRight),
+          VideoControlPopoverDirection.up,
+        );
+        expect(
+          videoControlPopoverDirectionForSlot(VideoControlSlot.topLeft),
+          VideoControlPopoverDirection.down,
+        );
+        expect(
+          videoControlPopoverDirectionForSlot(VideoControlSlot.topCenter),
+          VideoControlPopoverDirection.down,
+        );
+        expect(
+          videoControlPopoverDirectionForSlot(VideoControlSlot.topRight),
+          VideoControlPopoverDirection.down,
+        );
+        expect(
+          videoControlPopoverDirectionForSlot(VideoControlSlot.screenLeft),
+          VideoControlPopoverDirection.right,
+        );
+        expect(
+          videoControlPopoverDirectionForSlot(VideoControlSlot.screenRight),
+          VideoControlPopoverDirection.left,
+        );
+      },
+    );
 
     test('null / hidden slot falls back to popping up (no regression)', () {
       expect(
@@ -131,12 +133,12 @@ void main() {
     test('bottom button: popover top sits ABOVE the button', () {
       final VideoControlPopoverPlacement placement =
           resolveVideoControlPopoverPlacement(
-        playerBounds: player,
-        targetRect: const Rect.fromLTWH(276, 140, 36, 36),
-        preferredWidth: 220,
-        sourceSlot: VideoControlSlot.bottomRight,
-        height: height,
-      );
+            playerBounds: player,
+            targetRect: const Rect.fromLTWH(276, 140, 36, 36),
+            preferredWidth: 220,
+            sourceSlot: VideoControlSlot.bottomRight,
+            height: height,
+          );
       // Popover bottom edge (top + height) must clear the button top (140).
       expect(placement.top + height, lessThanOrEqualTo(140 + 0.001));
     });
@@ -145,12 +147,12 @@ void main() {
       const Rect target = Rect.fromLTWH(8, 4, 36, 36);
       final VideoControlPopoverPlacement placement =
           resolveVideoControlPopoverPlacement(
-        playerBounds: player,
-        targetRect: target,
-        preferredWidth: 220,
-        sourceSlot: VideoControlSlot.topLeft,
-        height: height,
-      );
+            playerBounds: player,
+            targetRect: target,
+            preferredWidth: 220,
+            sourceSlot: VideoControlSlot.topLeft,
+            height: height,
+          );
       // The whole point of TODO-560: a top-bar button must NOT pop above.
       expect(placement.top, greaterThanOrEqualTo(target.bottom));
       expect(placement.left, greaterThanOrEqualTo(player.left));
@@ -161,12 +163,12 @@ void main() {
       const Rect target = Rect.fromLTWH(4, 70, 36, 36);
       final VideoControlPopoverPlacement placement =
           resolveVideoControlPopoverPlacement(
-        playerBounds: player,
-        targetRect: target,
-        preferredWidth: 160,
-        sourceSlot: VideoControlSlot.screenLeft,
-        height: height,
-      );
+            playerBounds: player,
+            targetRect: target,
+            preferredWidth: 160,
+            sourceSlot: VideoControlSlot.screenLeft,
+            height: height,
+          );
       expect(placement.left, greaterThanOrEqualTo(target.right));
       expect(placement.right, lessThanOrEqualTo(player.right));
     });
@@ -175,12 +177,12 @@ void main() {
       const Rect target = Rect.fromLTWH(280, 70, 36, 36);
       final VideoControlPopoverPlacement placement =
           resolveVideoControlPopoverPlacement(
-        playerBounds: player,
-        targetRect: target,
-        preferredWidth: 160,
-        sourceSlot: VideoControlSlot.screenRight,
-        height: height,
-      );
+            playerBounds: player,
+            targetRect: target,
+            preferredWidth: 160,
+            sourceSlot: VideoControlSlot.screenRight,
+            height: height,
+          );
       expect(placement.right, lessThanOrEqualTo(target.left));
       expect(placement.left, greaterThanOrEqualTo(player.left));
     });
@@ -188,18 +190,17 @@ void main() {
     test('top button popover stays inside the player vertically', () {
       final VideoControlPopoverPlacement placement =
           resolveVideoControlPopoverPlacement(
-        playerBounds: player,
-        targetRect: const Rect.fromLTWH(8, 4, 36, 36),
-        preferredWidth: 220,
-        sourceSlot: VideoControlSlot.topLeft,
-        height: height,
-      );
+            playerBounds: player,
+            targetRect: const Rect.fromLTWH(8, 4, 36, 36),
+            preferredWidth: 220,
+            sourceSlot: VideoControlSlot.topLeft,
+            height: height,
+          );
       expect(placement.top, greaterThanOrEqualTo(player.top));
       expect(placement.top + height, lessThanOrEqualTo(player.bottom + 0.001));
     });
 
-    test(
-        'speed popover render path is slot-adaptive: threads sourceSlot and '
+    test('speed popover render path is slot-adaptive: threads sourceSlot and '
         'uses gapDirection', () {
       final String page = readVideoFushiSource();
 
@@ -221,8 +222,10 @@ void main() {
       );
       expect(
         page,
-        contains('_showSpeedMenu(popoverLink: popoverLink, '
-            'sourceSlot: sourceSlot)'),
+        contains(
+          '_showSpeedMenu(popoverLink: popoverLink, '
+          'sourceSlot: sourceSlot)',
+        ),
       );
       // Horizontal clamp now also runs for the speed popover, not volume-only:
       // the resolve gate keys off sourceSlot/targetRect, not the popover kind.
@@ -231,10 +234,7 @@ void main() {
   });
 
   group('visible volume overlays render compactly', () {
-    const List<Size> viewports = <Size>[
-      Size(360, 640),
-      Size(1000, 700),
-    ];
+    const List<Size> viewports = <Size>[Size(360, 640), Size(1000, 700)];
     const List<double> uiScales = <double>[1, 2];
 
     Future<void> setViewport(WidgetTester tester, Size viewport) async {
@@ -288,15 +288,19 @@ void main() {
             final Size barrierSize = tester.getSize(find.byKey(barrierKey));
             expect(barrierSize.height, viewport.height);
 
-            final Size frameSize =
-                tester.getSize(find.byKey(videoVolumePopoverFrameKey));
-            final Size sliderSize =
-                tester.getSize(find.byKey(videoVolumePopoverSliderKey));
+            final Size frameSize = tester.getSize(
+              find.byKey(videoVolumePopoverFrameKey),
+            );
+            final Size sliderSize = tester.getSize(
+              find.byKey(videoVolumePopoverSliderKey),
+            );
             expect(frameSize.width, closeTo(popoverWidth, 0.1));
             expect(frameSize.height, closeTo(56 * uiScale, 0.1));
-            expect(frameSize.height, lessThan(viewport.height * 0.25),
-                reason:
-                    'measure the visible popover frame, not the full barrier');
+            expect(
+              frameSize.height,
+              lessThan(viewport.height * 0.25),
+              reason: 'measure the visible popover frame, not the full barrier',
+            );
             expect(sliderSize.height, lessThanOrEqualTo(40 * uiScale + 0.1));
             expect(sliderSize.height, lessThan(frameSize.height));
           },
@@ -331,8 +335,9 @@ void main() {
                               right: 76 * uiScale,
                               bottom: 16,
                             ),
-                            surfaceColor:
-                                cs.inverseSurface.withValues(alpha: 0.82),
+                            surfaceColor: cs.inverseSurface.withValues(
+                              alpha: 0.82,
+                            ),
                             textColor: cs.onInverseSurface,
                             shadowColor: cs.shadow,
                             frameKey: videoVolumeHudFrameKey,
@@ -349,14 +354,19 @@ void main() {
             final Size barrierSize = tester.getSize(find.byKey(barrierKey));
             expect(barrierSize.height, viewport.height);
 
-            final Size frameSize =
-                tester.getSize(find.byKey(videoVolumeHudFrameKey));
-            final Size progressSize =
-                tester.getSize(find.byKey(videoVolumeHudProgressKey));
+            final Size frameSize = tester.getSize(
+              find.byKey(videoVolumeHudFrameKey),
+            );
+            final Size progressSize = tester.getSize(
+              find.byKey(videoVolumeHudProgressKey),
+            );
             expect(frameSize.height, greaterThan(40 * uiScale));
             expect(frameSize.height, lessThanOrEqualTo(72 * uiScale));
-            expect(frameSize.height, lessThan(viewport.height * 0.25),
-                reason: 'measure the visible HUD card, not the full barrier');
+            expect(
+              frameSize.height,
+              lessThan(viewport.height * 0.25),
+              reason: 'measure the visible HUD card, not the full barrier',
+            );
             expect(progressSize.height, closeTo(4 * uiScale, 0.1));
           },
         );

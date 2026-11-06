@@ -14,9 +14,10 @@ class _FakeRepo implements BaseAnkiRepository {
   AnkiMiningContext? minedContext;
 
   @override
-  Future<MineOutcome> mineEntry(
-      {required String rawPayloadJson,
-      required AnkiMiningContext context}) async {
+  Future<MineOutcome> mineEntry({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async {
     minedContext = context;
     return const MineOutcome.success(noteId: 1);
   }
@@ -25,36 +26,37 @@ class _FakeRepo implements BaseAnkiRepository {
   dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
 }
 
-Future<String?> _okFrame(
-        {required String inputPath,
-        required String outputPath,
-        double atSeconds = 10.0,
-        FfmpegFailureReporter? onFailure,
-        String? tlsPinSha256,
-        Map<String, String> httpHeaders = const {},
-        bool diagnosticOnly = false}) async =>
-    outputPath;
-Future<String?> _okGif(
-        {required String inputPath,
-        required int startMs,
-        required int endMs,
-        required String outputPath,
-        int fps = 8,
-        int width = 320,
-        MiningAnimatedFormat format = MiningAnimatedFormat.gif,
-        bool diagnosticOnly = false,
-        FfmpegFailureReporter? onFailure,
-        String? tlsPinSha256,
-        Map<String, String> httpHeaders = const {}}) async =>
-    outputPath;
+Future<String?> _okFrame({
+  required String inputPath,
+  required String outputPath,
+  double atSeconds = 10.0,
+  FfmpegFailureReporter? onFailure,
+  String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
+  bool diagnosticOnly = false,
+}) async => outputPath;
+Future<String?> _okGif({
+  required String inputPath,
+  required int startMs,
+  required int endMs,
+  required String outputPath,
+  int fps = 8,
+  int width = 320,
+  MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+  bool diagnosticOnly = false,
+  FfmpegFailureReporter? onFailure,
+  String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
+}) async => outputPath;
 
 void main() {
   group('buildGoogleVideoRangeUrl', () {
     test('appends range query param preserving existing params', () {
       final String url = buildGoogleVideoRangeUrl(
-          'https://r1.googlevideo.com/videoplayback?itag=251&expire=999',
-          0,
-          4194303);
+        'https://r1.googlevideo.com/videoplayback?itag=251&expire=999',
+        0,
+        4194303,
+      );
       final Uri u = Uri.parse(url);
       expect(u.queryParameters['itag'], '251');
       expect(u.queryParameters['expire'], '999');
@@ -62,8 +64,11 @@ void main() {
     });
 
     test('overwrites an existing range param (idempotent per chunk)', () {
-      final String url =
-          buildGoogleVideoRangeUrl('https://g/v?range=0-10&x=1', 20, 39);
+      final String url = buildGoogleVideoRangeUrl(
+        'https://g/v?range=0-10&x=1',
+        20,
+        39,
+      );
       final Uri u = Uri.parse(url);
       expect(u.queryParameters['range'], '20-39');
       expect(u.queryParameters['x'], '1');
@@ -101,8 +106,9 @@ void main() {
     });
 
     test('first chunk non-2xx -> null and no partial file', () async {
-      final MockClient client =
-          MockClient((http.Request req) async => http.Response('no', 403));
+      final MockClient client = MockClient(
+        (http.Request req) async => http.Response('no', 403),
+      );
       final String out = '${tmp.path}/audio.dat';
       final String? result = await materializeRemoteAudioViaRangeDownload(
         audioUrl: 'https://g/v?itag=251',
@@ -134,8 +140,9 @@ void main() {
       int calls = 0;
       final MockClient client = MockClient((http.Request req) async {
         calls++;
-        final int start =
-            int.parse(req.url.queryParameters['range']!.split('-')[0]);
+        final int start = int.parse(
+          req.url.queryParameters['range']!.split('-')[0],
+        );
         if (start >= whole.length) return http.Response.bytes(<int>[], 416);
         return http.Response.bytes(whole, 200);
       });
@@ -164,18 +171,19 @@ void main() {
     test('muxed source (audioSource null) does NOT materialize', () async {
       bool materialized = false;
       String? audioInput;
-      Future<String?> capAudio(
-          {required String inputPath,
-          required int startMs,
-          required int endMs,
-          required String outputPath,
-          int? audioStreamIndex,
-          int? audioStreamCount,
-          FfmpegFailureReporter? onFailure,
-          int audioChannels = 1,
-          String audioBitrate = '64k',
-          String? tlsPinSha256,
-          Map<String, String> httpHeaders = const {}}) async {
+      Future<String?> capAudio({
+        required String inputPath,
+        required int startMs,
+        required int endMs,
+        required String outputPath,
+        int? audioStreamIndex,
+        int? audioStreamCount,
+        FfmpegFailureReporter? onFailure,
+        int audioChannels = 1,
+        String audioBitrate = '64k',
+        String? tlsPinSha256,
+        Map<String, String> httpHeaders = const {},
+      }) async {
         audioInput = inputPath;
         return outputPath;
       }
@@ -184,34 +192,39 @@ void main() {
         gifExtractor: _okGif,
         audioExtractor: capAudio,
         frameExtractor: _okFrame,
-        audioMaterializer: (
-            {required String audioUrl,
-            required String outputPath,
-            FfmpegFailureReporter? onFailure}) async {
-          materialized = true;
-          return '${tmp.path}/should_not_be_used';
-        },
+        audioMaterializer:
+            ({
+              required String audioUrl,
+              required String outputPath,
+              FfmpegFailureReporter? onFailure,
+            }) async {
+              materialized = true;
+              return '${tmp.path}/should_not_be_used';
+            },
       );
       await engine.mine(
-          const ImmersionMiningRequest(
-              source: AnkiMiningSource.video,
-              fields: {'expression': 'x'},
-              mediaSource: 'https://muxed.example/v',
-              clipStartMs: 0,
-              clipEndMs: 2000,
-              sentence: 's'),
-          compression: MiningMediaCompression.compressed,
-          tempDir: tmp.path,
-          repo: _FakeRepo());
+        const ImmersionMiningRequest(
+          source: AnkiMiningSource.video,
+          fields: {'expression': 'x'},
+          mediaSource: 'https://muxed.example/v',
+          clipStartMs: 0,
+          clipEndMs: 2000,
+          sentence: 's',
+        ),
+        compression: MiningMediaCompression.compressed,
+        tempDir: tmp.path,
+        repo: _FakeRepo(),
+      );
       expect(materialized, isFalse);
       expect(audioInput, 'https://muxed.example/v');
     });
 
-    test('materialize failure falls back to cutting the URL directly',
-        () async {
-      String? audioInput;
-      Future<String?> capAudio(
-          {required String inputPath,
+    test(
+      'materialize failure falls back to cutting the URL directly',
+      () async {
+        String? audioInput;
+        Future<String?> capAudio({
+          required String inputPath,
           required int startMs,
           required int endMs,
           required String outputPath,
@@ -221,34 +234,39 @@ void main() {
           int audioChannels = 1,
           String audioBitrate = '64k',
           String? tlsPinSha256,
-          Map<String, String> httpHeaders = const {}}) async {
-        audioInput = inputPath;
-        return outputPath;
-      }
+          Map<String, String> httpHeaders = const {},
+        }) async {
+          audioInput = inputPath;
+          return outputPath;
+        }
 
-      final engine = ImmersionMiningEngine(
-        gifExtractor: _okGif,
-        audioExtractor: capAudio,
-        frameExtractor: _okFrame,
-        audioMaterializer: (
-                {required String audioUrl,
+        final engine = ImmersionMiningEngine(
+          gifExtractor: _okGif,
+          audioExtractor: capAudio,
+          frameExtractor: _okFrame,
+          audioMaterializer:
+              ({
+                required String audioUrl,
                 required String outputPath,
-                FfmpegFailureReporter? onFailure}) async =>
-            null,
-      );
-      await engine.mine(
+                FfmpegFailureReporter? onFailure,
+              }) async => null,
+        );
+        await engine.mine(
           const ImmersionMiningRequest(
-              source: AnkiMiningSource.video,
-              fields: {'expression': 'x'},
-              mediaSource: 'https://video-only.example/v',
-              audioSource: 'https://audio-only.example/a',
-              clipStartMs: 0,
-              clipEndMs: 2000,
-              sentence: 's'),
+            source: AnkiMiningSource.video,
+            fields: {'expression': 'x'},
+            mediaSource: 'https://video-only.example/v',
+            audioSource: 'https://audio-only.example/a',
+            clipStartMs: 0,
+            clipEndMs: 2000,
+            sentence: 's',
+          ),
           compression: MiningMediaCompression.compressed,
           tempDir: tmp.path,
-          repo: _FakeRepo());
-      expect(audioInput, 'https://audio-only.example/a');
-    });
+          repo: _FakeRepo(),
+        );
+        expect(audioInput, 'https://audio-only.example/a');
+      },
+    );
   });
 }

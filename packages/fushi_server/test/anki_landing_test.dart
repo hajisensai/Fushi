@@ -207,25 +207,35 @@ void main() {
     expect(session.state.unsynced, 0);
   });
 
-  // 登录、刷新后牌组 / 笔记类型都有了，唯独字段映射空：卡渲染不出任何字段。
-  // 这必须是「等配置」而不是「失败」——失败的卡要人工重试，等配置的卡配好就自动落。
-  test('已登录但字段映射空：卡留着等，不标失败', () async {
+  // 登录、刷新后牌组 / 笔记类型都有了，用户从没配过字段映射。cd732f10c7 起
+  // `AnkiSettings.fromJson` 对「一个字段都没映射到所选笔记类型」的设置按字段名套默认
+  // 映射（首字段必为 `{expression}`，见 note_type_default_mappings.dart；反馈
+  // AGLC0BuaKB：空映射让每张卡都是空卡被拒收）。所以这里不再「等配置」，卡直接按默认
+  // 映射落进 Anki；「等配置」只剩笔记类型还不知道（没登录 / 没刷新）这一种，见上一条。
+  test('已登录但从没配过字段映射：按字段名套默认映射，卡直接落进 Anki', () async {
     await anki.setLandingEnabled(true);
     await session.signIn(endpoint: 'http://nas/', username: 'u', password: 'p');
     await anki.refreshMeta();
     expect(anki.settings.selectedNoteTypeName, 'Vocab');
-    expect(anki.settings.fieldMappings, isEmpty);
+    expect(anki.settings.fieldMappings, const <String, String>{
+      'Word': '{expression}',
+      'Meaning': '{glossary}',
+    });
 
     phoneUploads('a1', '猫');
     final r = await anki.runNow();
-    expect(r!.waiting, 1);
+    expect(r!.delivered, 1);
+    expect(r.waiting, 0);
     expect(r.failed, 0);
-    expect(helper.local, isEmpty);
+    expect(helper.local.single.first, '猫');
+    expect(helper.local.single.last, contains('meaning of 猫'));
+    expect(files(), contains('a1.landed.json'));
   });
 
   // 审查第 9 项：映射里只有旧笔记类型的字段名（换了笔记类型没清）——「映射全空」
-  // 判断会被旧键骗过，卡被标成失败要手动重试。按所选笔记类型的字段判断。
-  test('映射只有别的笔记类型的字段：同样按没配置处理，不标失败', () async {
+  // 判断会被旧键骗过。按所选笔记类型的字段判断：一个都没覆盖到 = 没配过，同样套
+  // 默认映射落卡，不会渲染出空卡被标失败。
+  test('映射只有别的笔记类型的字段：按所选笔记类型套默认映射，照常落卡', () async {
     await anki.setLandingEnabled(true);
     await session.signIn(endpoint: 'http://nas/', username: 'u', password: 'p');
     await anki.refreshMeta();
@@ -234,10 +244,36 @@ void main() {
         fieldMappings: const <String, String>{'Front': '{expression}'},
       ),
     );
+    expect(anki.settings.fieldMappings, const <String, String>{
+      'Word': '{expression}',
+      'Meaning': '{glossary}',
+    });
     phoneUploads('a1', '猫');
     final r = await anki.runNow();
-    expect(r!.waiting, 1);
+    expect(r!.delivered, 1);
     expect(r.failed, 0);
+    expect(helper.local.single.first, '猫');
+    expect(helper.local.single.last, contains('meaning of 猫'));
+  });
+
+  // 用户自己配过（覆盖到所选笔记类型的字段）就原样尊重，不被默认映射盖掉。
+  test('自己配过的映射不被默认映射覆盖', () async {
+    await anki.setLandingEnabled(true);
+    await session.signIn(endpoint: 'http://nas/', username: 'u', password: 'p');
+    await anki.refreshMeta();
+    await anki.saveSettings(
+      anki.settings.copyWith(
+        fieldMappings: const <String, String>{'Word': '{expression}'},
+      ),
+    );
+    expect(anki.settings.fieldMappings, const <String, String>{
+      'Word': '{expression}',
+    });
+    phoneUploads('a1', '猫');
+    final r = await anki.runNow();
+    expect(r!.delivered, 1);
+    expect(helper.local.single.first, '猫');
+    expect(helper.local.single.last, isEmpty, reason: '没映射的字段保持空');
   });
 
   test('关落地：立刻撤认领', () async {

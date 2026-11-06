@@ -114,7 +114,11 @@ void main() {
       );
       expect(
         timeToX(
-            timeMs: 10000, windowStartMs: 0, windowEndMs: 10000, width: 200),
+          timeMs: 10000,
+          windowStartMs: 0,
+          windowEndMs: 10000,
+          width: 200,
+        ),
         closeTo(200, 0.001),
       );
     });
@@ -122,26 +126,42 @@ void main() {
     test('non-zero window start offsets correctly', () {
       expect(
         timeToX(
-            timeMs: 3000, windowStartMs: 2000, windowEndMs: 4000, width: 100),
+          timeMs: 3000,
+          windowStartMs: 2000,
+          windowEndMs: 4000,
+          width: 100,
+        ),
         closeTo(50, 0.001),
       );
     });
 
     test('out-of-window time returns out-of-window x (no clamp)', () {
       final double x = timeToX(
-          timeMs: -1000, windowStartMs: 0, windowEndMs: 10000, width: 200);
+        timeMs: -1000,
+        windowStartMs: 0,
+        windowEndMs: 10000,
+        width: 200,
+      );
       expect(x, lessThan(0));
     });
 
     test('degenerate window / non-positive width returns NaN', () {
       expect(
-        timeToX(timeMs: 100, windowStartMs: 500, windowEndMs: 500, width: 200)
-            .isNaN,
+        timeToX(
+          timeMs: 100,
+          windowStartMs: 500,
+          windowEndMs: 500,
+          width: 200,
+        ).isNaN,
         isTrue,
       );
       expect(
-        timeToX(timeMs: 100, windowStartMs: 0, windowEndMs: 1000, width: 0)
-            .isNaN,
+        timeToX(
+          timeMs: 100,
+          windowStartMs: 0,
+          windowEndMs: 1000,
+          width: 0,
+        ).isNaN,
         isTrue,
       );
     });
@@ -149,16 +169,7 @@ void main() {
 
   group('downsample -> painter contract', () {
     test('downsample output in 0..1, bucketRect never exceeds box', () {
-      final List<double> raw = <double>[
-        -60,
-        -20,
-        -40,
-        -10,
-        -80,
-        -15,
-        -30,
-        -5,
-      ];
+      final List<double> raw = <double>[-60, -20, -40, -10, -80, -15, -30, -5];
       final List<double> buckets = downsampleEnergyEnvelope(raw, 4);
       expect(buckets.length, 4);
       for (final double v in buckets) {
@@ -203,12 +214,16 @@ void main() {
 
     test('preview delay change => repaint', () {
       expect(
-          mk(previewDelayMs: 0).shouldRepaint(mk(previewDelayMs: 500)), isTrue);
+        mk(previewDelayMs: 0).shouldRepaint(mk(previewDelayMs: 500)),
+        isTrue,
+      );
     });
 
     test('position change => repaint', () {
-      expect(mk(currentPositionMs: 0).shouldRepaint(mk(currentPositionMs: 100)),
-          isTrue);
+      expect(
+        mk(currentPositionMs: 0).shouldRepaint(mk(currentPositionMs: 100)),
+        isTrue,
+      );
     });
 
     test('identical => no repaint', () {
@@ -217,8 +232,9 @@ void main() {
   });
 
   group('SubtitleWaveformPainter renders (widget)', () {
-    testWidgets('with buckets => CustomPaint renders (no throw)',
-        (WidgetTester tester) async {
+    testWidgets('with buckets => CustomPaint renders (no throw)', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -246,34 +262,36 @@ void main() {
       expect(find.byType(CustomPaint), findsWidgets);
     });
 
-    testWidgets('empty buckets (degraded) => still renders center/cue/playhead',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: SizedBox(
-              width: 300,
-              height: 100,
-              child: CustomPaint(
-                painter: SubtitleWaveformPainter(
-                  buckets: const <double>[],
-                  windowStartMs: 0,
-                  windowEndMs: 10000,
-                  cueBoundariesMs: <int>[1000],
-                  previewDelayMs: 0,
-                  currentPositionMs: 500,
-                  waveColor: const Color(0xFF2196F3),
-                  cueLineColor: const Color(0xFFFF9800),
-                  playheadColor: const Color(0xFFF44336),
-                  centerLineColor: const Color(0xFF9E9E9E),
+    testWidgets(
+      'empty buckets (degraded) => still renders center/cue/playhead',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 300,
+                height: 100,
+                child: CustomPaint(
+                  painter: SubtitleWaveformPainter(
+                    buckets: const <double>[],
+                    windowStartMs: 0,
+                    windowEndMs: 10000,
+                    cueBoundariesMs: <int>[1000],
+                    previewDelayMs: 0,
+                    currentPositionMs: 500,
+                    waveColor: const Color(0xFF2196F3),
+                    cueLineColor: const Color(0xFFFF9800),
+                    playheadColor: const Color(0xFFF44336),
+                    centerLineColor: const Color(0xFF9E9E9E),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      );
-      expect(find.byType(CustomPaint), findsWidgets);
-    });
+        );
+        expect(find.byType(CustomPaint), findsWidgets);
+      },
+    );
   });
 
   group('waveformFollowOffset (BUG-1486)', () {

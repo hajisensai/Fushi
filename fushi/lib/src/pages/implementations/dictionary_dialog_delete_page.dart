@@ -1,17 +1,16 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_progress_dialog_content.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// The content of the dialog used for showing dictionary import progress when
 /// deleting a dictionary from the dictionary menu. See the
 /// [DictionaryDialogPage].
 class DictionaryDialogDeletePage extends BasePage {
   /// Create an instance of this page.
-  const DictionaryDialogDeletePage({
-    this.name,
-    super.key,
-  });
+  const DictionaryDialogDeletePage({this.name, super.key});
 
   /// Name of current dictionary being deleted.
   final String? name;

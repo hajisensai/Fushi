@@ -26,14 +26,14 @@ void main() {
     docsDir = await Directory.systemTemp.createTemp('fushi_launcher_heal_');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (MethodCall call) async {
-        if (call.method == 'getApplicationDocumentsDirectory') {
-          return docsDir.path;
-        }
-        return null;
-      },
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (MethodCall call) async {
+            if (call.method == 'getApplicationDocumentsDirectory') {
+              return docsDir.path;
+            }
+            return null;
+          },
+        );
     // 平台兜底（getApplicationDocumentsDirectory → 上面的 mock）现在由重文件装配。
     installAudiobookStoragePlatform();
     db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -44,16 +44,14 @@ void main() {
     AudiobookStorage.documentsRootResolver = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      null,
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          null,
+        );
     if (docsDir.existsSync()) docsDir.deleteSync(recursive: true);
   });
 
-  test(
-      'after replaceAudio heals the dirty Audiobook row, resolve(bookKey) '
-      'returns the SrtBook freshly imported audio (not the stale row)',
-      () async {
+  test('after replaceAudio heals the dirty Audiobook row, resolve(bookKey) '
+      'returns the SrtBook freshly imported audio (not the stale row)', () async {
     const String bookKey = 'A';
     final SrtBookRepository srtRepo = SrtBookRepository(db);
 
@@ -77,16 +75,22 @@ void main() {
     // （alignment 两列留空串），再单独写音频——想给它加上对齐都得多调一个方法。
     final AudiobookRepository dirtyRepo = AudiobookRepository(db);
     await dirtyRepo.ensureAudiobook(bookKey);
-    await dirtyRepo
-        .replaceAudio(bookKey: bookKey, audioPaths: <String>[staleAudio.path]);
+    await dirtyRepo.replaceAudio(
+      bookKey: bookKey,
+      audioPaths: <String>[staleAudio.path],
+    );
 
     // Pre-condition: resolve returns the stale Audiobook audio.
     final AudiobookSessionLauncher launcher = AudiobookSessionLauncher(db);
-    final AudiobookSessionStartRequest? before =
-        await launcher.resolve(bookKey);
+    final AudiobookSessionStartRequest? before = await launcher.resolve(
+      bookKey,
+    );
     expect(before, isNotNull);
-    expect(before!.audioFiles.single.path, staleAudio.path,
-        reason: 'before heal, resolve returns the dirty Audiobook audio');
+    expect(
+      before!.audioFiles.single.path,
+      staleAudio.path,
+      reason: 'before heal, resolve returns the dirty Audiobook audio',
+    );
 
     // User re-imports the correct audio onto the SrtBook (the only write path).
     final Directory srcDir = Directory(p.join(docsDir.path, 'src'))
@@ -104,14 +108,17 @@ void main() {
     final AudiobookSessionStartRequest? after = await launcher.resolve(bookKey);
     expect(after, isNotNull);
     expect(after!.audioFiles, hasLength(1));
-    expect(p.basename(after.audioFiles.single.path), 'correct.mp3',
-        reason: 'after heal, resolve returns the SrtBook freshly imported '
-            'audio, not the stale Audiobook audio');
+    expect(
+      p.basename(after.audioFiles.single.path),
+      'correct.mp3',
+      reason:
+          'after heal, resolve returns the SrtBook freshly imported '
+          'audio, not the stale Audiobook audio',
+    );
     expect(after.audioFiles.single.path, isNot(staleAudio.path));
   });
 
-  test(
-      'resolve marks an EPUB Audiobook row as audiobook source even when '
+  test('resolve marks an EPUB Audiobook row as audiobook source even when '
       'its alignment format is srt', () async {
     const String bookKey = 'epub-audio';
     final Directory srcDir = Directory(p.join(docsDir.path, 'epub_audio'))
@@ -123,18 +130,28 @@ void main() {
 
     final AudiobookRepository realRepo = AudiobookRepository(db);
     await realRepo.replaceAlignment(
-        bookKey: bookKey, format: 'srt', path: alignment.path);
-    await realRepo
-        .replaceAudio(bookKey: bookKey, audioPaths: <String>[audio.path]);
+      bookKey: bookKey,
+      format: 'srt',
+      path: alignment.path,
+    );
+    await realRepo.replaceAudio(
+      bookKey: bookKey,
+      audioPaths: <String>[audio.path],
+    );
 
     final AudiobookSessionLauncher launcher = AudiobookSessionLauncher(db);
-    final AudiobookSessionStartRequest? request =
-        await launcher.resolve(bookKey);
+    final AudiobookSessionStartRequest? request = await launcher.resolve(
+      bookKey,
+    );
 
     expect(request, isNotNull);
-    expect(request!.isSrtBookSource, isFalse,
-        reason: 'SRT is an alignment format here; the row still came from '
-            'Audiobooks and reader cue loading must use AudiobookRepository.');
+    expect(
+      request!.isSrtBookSource,
+      isFalse,
+      reason:
+          'SRT is an alignment format here; the row still came from '
+          'Audiobooks and reader cue loading must use AudiobookRepository.',
+    );
   });
 
   test('resolve marks SrtBook fallback as srt book source', () async {
@@ -157,8 +174,9 @@ void main() {
     await SrtBookRepository(db).save(book);
 
     final AudiobookSessionLauncher launcher = AudiobookSessionLauncher(db);
-    final AudiobookSessionStartRequest? request =
-        await launcher.resolve(bookKey);
+    final AudiobookSessionStartRequest? request = await launcher.resolve(
+      bookKey,
+    );
 
     expect(request, isNotNull);
     expect(request!.isSrtBookSource, isTrue);

@@ -20,18 +20,19 @@ void main() {
     // 每条都是 injector 真实会打印的中文诊断（对应 classify 里的中文分支）。
     const Map<String, GalHookInjectorFailure> cases =
         <String, GalHookInjectorFailure>{
-      '位数不匹配：目标是 64 位进程，请改用对应 arch 的注入器\n':
-          GalHookInjectorFailure.bitnessMismatch,
-      '目标 exe 不存在\n': GalHookInjectorFailure.gameExeMissing,
-      '已存在但不可复用的 hook 会话\n': GalHookInjectorFailure.staleSession,
-      '未收到就绪信号\n': GalHookInjectorFailure.readyTimeout,
-      'Steam 已接受启动请求，但目标进程未出现\n': GalHookInjectorFailure.steamTimeout,
-    };
+          '位数不匹配：目标是 64 位进程，请改用对应 arch 的注入器\n':
+              GalHookInjectorFailure.bitnessMismatch,
+          '目标 exe 不存在\n': GalHookInjectorFailure.gameExeMissing,
+          '已存在但不可复用的 hook 会话\n': GalHookInjectorFailure.staleSession,
+          '未收到就绪信号\n': GalHookInjectorFailure.readyTimeout,
+          'Steam 已接受启动请求，但目标进程未出现\n': GalHookInjectorFailure.steamTimeout,
+        };
 
     test('按 UTF-8 解码后中文诊断能正确归类', () {
       cases.forEach((String diagnostics, GalHookInjectorFailure expected) {
-        final String decoded = const Utf8Decoder(allowMalformed: true)
-            .convert(_nativeStderrBytes(diagnostics));
+        final String decoded = const Utf8Decoder(
+          allowMalformed: true,
+        ).convert(_nativeStderrBytes(diagnostics));
         expect(
           classifyGalHookInjectorFailure(decoded),
           expected,
@@ -61,14 +62,16 @@ void main() {
       const String ascii = 'ERR reason=elevationRequired\n';
       expect(
         classifyGalHookInjectorFailure(
-          const Utf8Decoder(allowMalformed: true)
-              .convert(_nativeStderrBytes(ascii)),
+          const Utf8Decoder(
+            allowMalformed: true,
+          ).convert(_nativeStderrBytes(ascii)),
         ),
         GalHookInjectorFailure.elevationRequired,
       );
       expect(
         classifyGalHookInjectorFailure(
-            latin1.decode(_nativeStderrBytes(ascii))),
+          latin1.decode(_nativeStderrBytes(ascii)),
+        ),
         GalHookInjectorFailure.elevationRequired,
       );
     });
@@ -82,8 +85,9 @@ void main() {
         0xFE,
         ...utf8.encode('：目标是 64 位进程'),
       ];
-      final String decoded =
-          const Utf8Decoder(allowMalformed: true).convert(bytes);
+      final String decoded = const Utf8Decoder(
+        allowMalformed: true,
+      ).convert(bytes);
       expect(decoded, contains('位数不匹配'));
       expect(
         classifyGalHookInjectorFailure(decoded),
@@ -100,7 +104,8 @@ void main() {
       expect(
         RegExp(r'SystemEncoding\s*\(').hasMatch(code),
         isFalse,
-        reason: 'injector 用 /utf-8 编译，输出恒为 UTF-8；'
+        reason:
+            'injector 用 /utf-8 编译，输出恒为 UTF-8；'
             '用 SystemEncoding() 解码会在中文 Windows 上重现 BUG-1091',
       );
       expect(code, contains('Utf8Decoder(allowMalformed: true)'));
@@ -218,14 +223,11 @@ void main() {
       expect(
         names,
         isNot(contains('none')),
-        reason: '哨兵一旦回到值域，failed(none) 又能被构造，'
+        reason:
+            '哨兵一旦回到值域，failed(none) 又能被构造，'
             '而 release 里没有 assert 兜底 —— 失败会被读成成功',
       );
-      expect(
-        names,
-        isNot(contains('success')),
-        reason: '换个名字的哨兵是同一个洞',
-      );
+      expect(names, isNot(contains('success')), reason: '换个名字的哨兵是同一个洞');
     });
 
     test('每个可构造的失败原因都不能被判成启动成功（assert 剥离后仍成立）', () {
@@ -255,8 +257,9 @@ void main() {
     });
 
     test('源码守卫：失败构造器不得靠 assert 拦非法原因', () {
-      final File source =
-          File('lib/src/mining/gal_hook_session_controller.dart');
+      final File source = File(
+        'lib/src/mining/gal_hook_session_controller.dart',
+      );
       expect(source.existsSync(), isTrue, reason: '测试须在 fushi/ 下运行才能读到源码');
       final String code = source.readAsStringSync();
       final int start = code.indexOf('const GalHookLaunchResult.failed(');
@@ -266,7 +269,8 @@ void main() {
       expect(
         code.substring(start, end).contains('assert('),
         isFalse,
-        reason: 'assert 在 release 被剥离，非法状态必须由类型系统挡掉而不是运行期断言'
+        reason:
+            'assert 在 release 被剥离，非法状态必须由类型系统挡掉而不是运行期断言'
             '（BUG-1169）',
       );
       expect(
@@ -323,7 +327,8 @@ void main() {
         diagnostics: GalHookInjectorDiagnostics(
           failure: GalHookInjectorFailure.unknown,
           exitCode: 3,
-          stderrTail: '[luna] LunaHook32.dll 已注入 pid=1234，等待连接...\n'
+          stderrTail:
+              '[luna] LunaHook32.dll 已注入 pid=1234，等待连接...\n'
               'engine bootstrap aborted: unexpected module layout',
         ),
       );
@@ -362,8 +367,9 @@ void main() {
     });
 
     test('源码守卫：launchGame 不得退回 bool 返回值', () {
-      final File source =
-          File('lib/src/mining/gal_hook_session_controller.dart');
+      final File source = File(
+        'lib/src/mining/gal_hook_session_controller.dart',
+      );
       expect(source.existsSync(), isTrue, reason: '测试须在 fushi/ 下运行才能读到源码');
       final String code = source.readAsStringSync();
       expect(
@@ -385,10 +391,12 @@ void main() {
     // 「请重启一次游戏」。对前者是谎报要动手，对后者又和「等一下」混成一句，用户
     // 只能瞎试。分流判据必须与 galHookFailureIsRetryable 同源。
     test('可重试与必须重启游戏的两条不得共用同一句文案', () {
-      final String? transient =
-          galHookFailureLabel(GalHookInjectorFailure.staleSession);
-      final String? fatal =
-          galHookFailureLabel(GalHookInjectorFailure.residentHookMismatch);
+      final String? transient = galHookFailureLabel(
+        GalHookInjectorFailure.staleSession,
+      );
+      final String? fatal = galHookFailureLabel(
+        GalHookInjectorFailure.residentHookMismatch,
+      );
       expect(transient, isNotNull);
       expect(fatal, isNotNull);
       expect(

@@ -1,12 +1,14 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
+
+import '../helpers/source_guard.dart';
 
 String _read(List<String> candidates, String name) {
-  final File? file = candidates.map(File.new).cast<File?>().firstWhere(
-        (File? f) => f != null && f.existsSync(),
-        orElse: () => null,
-      );
+  final File? file = candidates
+      .map(File.new)
+      .cast<File?>()
+      .firstWhere((File? f) => f != null && f.existsSync(), orElse: () => null);
   expect(file, isNotNull, reason: '$name not found');
   return file!.readAsStringSync();
 }
@@ -15,14 +17,16 @@ String _body(String src, String signature, String nextMarker) {
   final int start = src.indexOf(signature);
   expect(start, greaterThanOrEqualTo(0), reason: '$signature not found');
   final int end = src.indexOf(nextMarker, start + signature.length);
-  expect(end, greaterThan(start),
-      reason: '$signature must be bounded by $nextMarker');
+  expect(
+    end,
+    greaterThan(start),
+    reason: '$signature must be bounded by $nextMarker',
+  );
   return src.substring(start, end);
 }
 
 void main() {
-  test('TODO-508: WGC default path uses removable timer pump, not FrameArrived',
-      () {
+  test('BUG-4114: WGC pulls frames on a joined worker, not FrameArrived', () {
     final String src = _read(<String>[
       'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
       '../packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
@@ -40,149 +44,278 @@ void main() {
       '../packages/flutter_inappwebview_windows/windows/custom_platform_view/custom_platform_view.h',
     ], 'custom_platform_view.h');
 
-    expect(src.contains('add_FrameArrived'), isFalse,
-        reason:
-            'default WGC path must not subscribe to FrameArrived; dump crashes before our handler body');
-    expect(src.contains('remove_FrameArrived'), isFalse,
-        reason:
-            'FrameArrived is not registered, so teardown must not rely on event revoke');
-    expect(src.contains('OnFrameArrived'), isFalse,
-        reason: 'old event-driven pump must not remain in default code');
-    expect(src.contains('FrameArrivedCallbackState'), isFalse,
-        reason: 'old event callback state must not remain in default code');
-    expect(src.contains('frame_arrived_handler'), isFalse,
-        reason: 'old FrameArrived delegate lifetime must not remain');
-
-    expect(header.contains('DispatcherQueueTimer'), isTrue);
-    expect(src.contains('CreateTimer'), isTrue);
-    expect(src.contains('add_Tick'), isTrue);
-    expect(src.contains('remove_Tick'), isTrue);
-    expect(src.contains('StartPumpLocked'), isTrue);
-    expect(src.contains('StopPumpLocked'), isTrue);
-    expect(src.contains('PumpFrameLocked'), isTrue);
-    expect(src.contains('Microsoft::WRL::ComPtr<WgcPumpTickHandler>'), isTrue,
-        reason: 'timer tick delegate must be retained by the pool lifetime');
-    expect(src.contains('EventRegistrationToken on_tick_token'), isTrue,
-        reason:
-            'timer tick token must be saved so StopPumpLocked can remove it');
-    expect(header.contains('capture_item_closed_handler_'), isTrue,
-        reason: 'capture_item Closed callback must be member-retained');
     expect(
-        src.contains('capture_item_->remove_Closed(on_closed_token_)'), isTrue,
-        reason: 'capture_item Closed callback must be removed in destructor');
+      src.contains('add_FrameArrived'),
+      isFalse,
+      reason:
+          'default WGC path must not subscribe to FrameArrived; dump crashes before our handler body',
+    );
+    expect(
+      src.contains('remove_FrameArrived'),
+      isFalse,
+      reason:
+          'FrameArrived is not registered, so teardown must not rely on event revoke',
+    );
+    expect(
+      src.contains('OnFrameArrived'),
+      isFalse,
+      reason: 'old event-driven pump must not remain in default code',
+    );
+    expect(
+      src.contains('FrameArrivedCallbackState'),
+      isFalse,
+      reason: 'old event callback state must not remain in default code',
+    );
+    expect(
+      src.contains('frame_arrived_handler'),
+      isFalse,
+      reason: 'old FrameArrived delegate lifetime must not remain',
+    );
 
-    expect(src.contains('CreateFreeThreadedCaptureFramePool'), isFalse,
-        reason: 'free-threaded capture previously blanked WebView rendering');
-    expect(src.contains('graphics_context_->CreateCaptureFramePool('), isTrue,
-        reason: 'capture remains on the UI DispatcherQueue frame pool');
-    expect(src.contains('frame_pool_->Recreate('), isFalse,
-        reason:
-            'resize must retire the old pool and create a fresh pool, not mutate the old one');
+    // BUG-4114：旧的 UI 线程 DispatcherQueueTimer 泵（BUG-3352 64 Hz 取整、Dart 一忙
+    // 就晚）整体移除；取帧在每个帧池自己的线程上按合成器时钟拉。
+    for (final String banned in <String>[
+      'DispatcherQueueTimer',
+      'CreateTimer',
+      'add_Tick',
+      'StartPumpLocked',
+      'StopPumpLocked',
+      'PumpFrameLocked',
+      'kPumpInterval100ns',
+      'last_frame_content_size_',
+      'winrt::com_ptr<ID3D11Texture2D> last_frame_',
+    ]) {
+      expect(
+        src.contains(banned) || header.contains(banned),
+        isFalse,
+        reason: '$banned belongs to the removed UI-thread timer pump',
+      );
+    }
+    expect(src.contains('StartFrameWorkerLocked'), isTrue);
+    expect(src.contains('StopFrameWorkerLocked'), isTrue);
+    expect(src.contains('DeliverFrameLocked'), isTrue);
+    expect(src.contains('void RunFrameWorker('), isTrue);
+    expect(
+      src.contains('std::thread worker;'),
+      isTrue,
+      reason:
+          'the worker thread is owned by the pool lifetime so retire can join it',
+    );
+    expect(
+      src.contains('DCompositionWaitForCompositorClock'),
+      isTrue,
+      reason: 'the worker is paced by the compositor clock',
+    );
+    expect(
+      src.contains('Microsoft::WRL::ComPtr<WgcDeliverHandler> deliver_handler'),
+      isTrue,
+      reason:
+          'the platform-thread delivery delegate is retained by worker state',
+    );
+    expect(
+      header.contains('capture_item_closed_handler_'),
+      isTrue,
+      reason: 'capture_item Closed callback must be member-retained',
+    );
+    expect(
+      src.contains('capture_item_->remove_Closed(on_closed_token_)'),
+      isTrue,
+      reason: 'capture_item Closed callback must be removed in destructor',
+    );
+
+    // BUG-163 第四修的 free-threaded 帧池 + FrameArrived 曾让 Release 下 WebView 不出字。
+    // BUG-4114 的 free-threaded 帧池不订阅任何事件：帧在取帧线程拷进私有纹理、上报
+    // 回平台线程，Release 整包实测出字（见 BUG-4114 记录）。
+    expect(
+      src.contains('graphics_context_->CreateFreeThreadedCaptureFramePool('),
+      isTrue,
+      reason: 'frames are pulled off the UI thread from a free-threaded pool',
+    );
+    expect(
+      src.contains('graphics_context_->CreateCaptureFramePool('),
+      isFalse,
+      reason:
+          'the UI-DispatcherQueue frame pool tied capture pacing to Dart-thread load',
+    );
+    expect(
+      src.contains('frame_pool_->Recreate('),
+      isFalse,
+      reason:
+          'resize must retire the old pool and create a fresh pool, not mutate the old one',
+    );
 
     final String startBody = _body(
       src,
       'bool TextureBridge::Start()',
       'bool TextureBridge::CreateAndStartFramePoolLocked()',
     );
-    expect(startBody.contains('RetireFramePoolLocked("start")'), isTrue,
-        reason:
-            'Start reentry must retire any partially-created old pool before replacement');
+    expect(
+      startBody.contains('RetireFramePoolLocked("start")'),
+      isTrue,
+      reason:
+          'Start reentry must retire any partially-created old pool before replacement',
+    );
 
     final String createBody = _body(
       src,
       'bool TextureBridge::CreateAndStartFramePoolLocked()',
-      'void TextureBridge::RecreateFramePoolLocked()',
+      'bool TextureBridge::RecreateFramePoolLocked()',
     );
-    final int createPool =
-        createBody.indexOf('graphics_context_->CreateCaptureFramePool(');
+    final int createPool = createBody.indexOf(
+      'graphics_context_->CreateFreeThreadedCaptureFramePool(',
+    );
     final int activeRetain = createBody.indexOf(
-        'FramePoolLifetimeRegistry::Instance().Retain(lifetime)', createPool);
-    final int startCapture =
-        createBody.indexOf('lifetime->capture_session->StartCapture()');
-    final int startPump =
-        createBody.indexOf('StartPumpLocked(lifetime)', startCapture);
+      'FramePoolLifetimeRegistry::Instance().Retain(lifetime)',
+      createPool,
+    );
+    final int startCapture = createBody.indexOf(
+      'lifetime->capture_session->StartCapture()',
+    );
+    final int startPump = createBody.indexOf(
+      'StartFrameWorkerLocked(lifetime)',
+      startCapture,
+    );
     expect(createPool, greaterThanOrEqualTo(0));
-    expect(activeRetain, greaterThan(createPool),
-        reason: 'active pool must be retained immediately after creation');
-    expect(startPump, greaterThan(startCapture),
-        reason: 'timer pump starts only after StartCapture succeeds');
+    expect(
+      activeRetain,
+      greaterThan(createPool),
+      reason: 'active pool must be retained immediately after creation',
+    );
+    expect(
+      startPump,
+      greaterThan(startCapture),
+      reason: 'the frame worker starts only after StartCapture succeeds',
+    );
     expect(createBody.contains('add_FrameArrived'), isFalse);
 
-    final String stopPumpBody = _body(
+    final String stopWorkerBody = _body(
       src,
-      'void TextureBridge::StopPumpLocked(',
-      'void TextureBridge::Stop()',
+      'void TextureBridge::StopFrameWorkerLocked(',
+      'void TextureBridge::PostDeliveryLocked(',
     );
-    final int invalidate = stopPumpBody.indexOf('InvalidatePumpCallback');
-    final int stopTimer = stopPumpBody.indexOf('pump_timer->Stop()');
-    final int removeTick = stopPumpBody.indexOf('remove_Tick');
-    final int releaseHandler =
-        stopPumpBody.indexOf('pump_tick_handler = nullptr');
-    final int clearState = stopPumpBody.indexOf('pump_state = nullptr');
-    final int clearTimer = stopPumpBody.indexOf('pump_timer = nullptr');
+    final int invalidate = stopWorkerBody.indexOf('InvalidatePumpCallback');
+    final int signalStop = stopWorkerBody.indexOf('SetEvent(');
+    final int join = stopWorkerBody.indexOf('worker.join()');
+    final int clearShared = stopWorkerBody.indexOf('worker_shared = nullptr');
+    final int clearState = stopWorkerBody.indexOf('pump_state = nullptr');
     expect(invalidate, greaterThanOrEqualTo(0));
-    expect(stopTimer, greaterThan(invalidate),
-        reason: 'StopPumpLocked must invalidate callback state before Stop');
-    expect(removeTick, greaterThan(stopTimer),
-        reason:
-            'timer Tick must be removed after Stop and before releasing it');
-    expect(releaseHandler, greaterThan(removeTick));
-    expect(clearState, greaterThan(releaseHandler));
-    expect(clearTimer, greaterThan(clearState));
+    expect(
+      signalStop,
+      greaterThan(invalidate),
+      reason: 'delivery must be invalidated before the worker is told to stop',
+    );
+    expect(
+      join,
+      greaterThan(signalStop),
+      reason: 'the worker thread must be joined, not detached',
+    );
+    expect(clearShared, greaterThan(join));
+    expect(clearState, greaterThan(clearShared));
+    expect(
+      src.contains('.detach()'),
+      isFalse,
+      reason: 'a detached worker could outlive the frame pool it polls',
+    );
 
     final String retireBody = _body(
       src,
       'void TextureBridge::RetireFramePoolLocked(',
       'namespace',
     );
-    final int retireStopPump = retireBody.indexOf('StopPumpLocked');
-    final int clearCurrent =
-        retireBody.indexOf('frame_pool_lifetime_ = nullptr');
-    final int finalize =
-        retireBody.indexOf('FinalizeFramePoolLifetime(lifetime)');
-    expect(retireStopPump, greaterThanOrEqualTo(0),
-        reason: 'retire must stop/remove the pump before closing resources');
+    final int retireStopPump = retireBody.indexOf('StopFrameWorkerLocked');
+    final int clearCurrent = retireBody.indexOf(
+      'frame_pool_lifetime_ = nullptr',
+    );
+    final int finalize = retireBody.indexOf(
+      'FinalizeFramePoolLifetime(lifetime)',
+    );
+    expect(
+      retireStopPump,
+      greaterThanOrEqualTo(0),
+      reason: 'retire must join the frame worker before closing resources',
+    );
     expect(clearCurrent, greaterThan(retireStopPump));
-    expect(finalize, greaterThan(clearCurrent),
-        reason: 'session/pool close happens after current lifetime is cleared');
-    expect(retireBody.contains('TryEnqueue'), isFalse,
-        reason: 'no handler-stack defer is needed when FrameArrived is gone');
+    expect(
+      finalize,
+      greaterThan(clearCurrent),
+      reason: 'session/pool close happens after current lifetime is cleared',
+    );
+    expect(
+      retireBody.contains('TryEnqueue'),
+      isFalse,
+      reason: 'no handler-stack defer is needed when FrameArrived is gone',
+    );
 
     final String finalizeBody = _body(
       src,
       'void FinalizeFramePoolLifetime(',
-      'void TextureBridge::PumpFrameLocked(',
+      'void TextureBridge::DeliverFrameLocked(',
     );
-    final int sessionClose =
-        finalizeBody.indexOf('WgcLog::Write("session-close-start"');
-    final int poolClose =
-        finalizeBody.indexOf('WgcLog::Write("pool-close-start"');
-    final int markRetired = finalizeBody
-        .indexOf('FramePoolLifetimeRegistry::Instance().MarkRetired(lifetime)');
+    final int sessionClose = finalizeBody.indexOf(
+      'WgcLog::Write("session-close-start"',
+    );
+    final int poolClose = finalizeBody.indexOf(
+      'WgcLog::Write("pool-close-start"',
+    );
+    final int markRetired = finalizeBody.indexOf(
+      'FramePoolLifetimeRegistry::Instance().MarkRetired(lifetime)',
+    );
     expect(finalizeBody.contains('remove_FrameArrived'), isFalse);
     expect(finalizeBody.contains('handler-release'), isFalse);
     expect(sessionClose, greaterThanOrEqualTo(0));
     expect(poolClose, greaterThan(sessionClose));
     expect(markRetired, greaterThan(poolClose));
 
-    final String pumpBody = _body(
+    final String deliverBody = _body(
       src,
-      'void TextureBridge::PumpFrameLocked(',
+      'void TextureBridge::DeliverFrameLocked(',
       'bool TextureBridge::ShouldDropFrame()',
     );
-    final int needsUpdate = pumpBody.indexOf('if (needs_update_)');
-    final int recreate =
-        pumpBody.indexOf('RecreateFramePoolLocked()', needsUpdate);
-    final int tryGet = pumpBody.indexOf('TryGetNextFrame');
-    expect(needsUpdate, greaterThanOrEqualTo(0),
-        reason: 'resize must be processed on every tick');
+    final int needsUpdate = deliverBody.indexOf('if (needs_update_)');
+    final int recreate = deliverBody.indexOf(
+      'RecreateFramePoolLocked()',
+      needsUpdate,
+    );
+    final int seqCheck = deliverBody.indexOf('seq == delivered_seq_');
+    expect(
+      needsUpdate,
+      greaterThanOrEqualTo(0),
+      reason: 'resize must be processed on every delivery',
+    );
     expect(recreate, greaterThan(needsUpdate));
-    expect(tryGet, greaterThan(recreate),
-        reason:
-            'resize handling must not depend on successfully taking a frame');
-    expect(pumpBody.contains('i < kMaxFramesPerPump'), isTrue,
-        reason: 'each tick drains a bounded number of queued frames');
-    expect(pumpBody.contains('frame_available_()'), isTrue);
+    expect(
+      seqCheck,
+      greaterThan(recreate),
+      reason: 'resize handling must not depend on a new frame having arrived',
+    );
+    expect(deliverBody.contains('frame_available_()'), isTrue);
+    expect(
+      deliverBody.contains('TryGetNextFrame'),
+      isFalse,
+      reason: 'the platform thread never touches WGC frames',
+    );
+
+    final String workerBody = _body(
+      src,
+      'void RunFrameWorker(',
+      '}  // namespace',
+    );
+    expect(
+      workerBody.contains('i < kMaxFramesPerDrain'),
+      isTrue,
+      reason: 'each wake drains a bounded number of queued frames',
+    );
+    expect(
+      workerBody.contains('frame_available_'),
+      isFalse,
+      reason:
+          'the worker never calls into Flutter; delivery hops to the platform thread',
+    );
+    expect(
+      workerBody.contains('TryEnqueue'),
+      isTrue,
+      reason: 'the worker posts delivery to the platform DispatcherQueue',
+    );
 
     for (final String banned in <String>[
       'TryEnqueueWithPriority',
@@ -193,45 +326,143 @@ void main() {
       'std::remove_if',
       'kRetiredGenerationGap',
     ]) {
-      expect(src.contains(banned), isFalse,
-          reason: '$banned is an old timing-based teardown strategy');
+      expect(
+        src.contains(banned),
+        isFalse,
+        reason: '$banned is an old timing-based teardown strategy',
+      );
     }
     expect(src.contains('FramePoolLifetimeRegistry'), isTrue);
-    expect(src.contains('push_back'), isTrue,
-        reason: 'registry keeps lifetimes alive for crash forensics');
+    expect(
+      src.contains('push_back'),
+      isTrue,
+      reason: 'registry keeps lifetimes alive for crash forensics',
+    );
     expect(src.contains('MarkRetired('), isTrue);
 
-    final int destructorStart =
-        platformViewSrc.indexOf('CustomPlatformView::~CustomPlatformView()');
-    final int nextMethodStart = platformViewSrc
-        .indexOf('void CustomPlatformView::RegisterEventHandlers()');
+    final int destructorStart = platformViewSrc.indexOf(
+      'CustomPlatformView::~CustomPlatformView()',
+    );
+    final int nextMethodStart = platformViewSrc.indexOf(
+      'void CustomPlatformView::RegisterEventHandlers()',
+    );
     expect(destructorStart, greaterThanOrEqualTo(0));
     expect(nextMethodStart, greaterThan(destructorStart));
-    final String destructorBody =
-        platformViewSrc.substring(destructorStart, nextMethodStart);
-    final int severIndex =
-        destructorBody.indexOf('SetOnFrameAvailable(nullptr)');
+    final String destructorBody = platformViewSrc.substring(
+      destructorStart,
+      nextMethodStart,
+    );
+    final int severIndex = destructorBody.indexOf(
+      'SetOnFrameAvailable(nullptr)',
+    );
     final int stopIndex = destructorBody.indexOf('texture_bridge_->Stop()');
-    final int unregisterIndex =
-        destructorBody.indexOf('texture_registrar_->UnregisterTexture');
-    expect(severIndex, greaterThanOrEqualTo(0),
-        reason: 'consumer callback must be severed before WGC Stop');
+    final int unregisterIndex = destructorBody.indexOf(
+      'texture_registrar_->UnregisterTexture',
+    );
+    expect(
+      severIndex,
+      greaterThanOrEqualTo(0),
+      reason: 'consumer callback must be severed before WGC Stop',
+    );
     expect(stopIndex, greaterThan(severIndex));
-    expect(unregisterIndex, greaterThan(stopIndex),
-        reason: 'WGC Stop must happen before unregistering Flutter texture');
+    expect(
+      unregisterIndex,
+      greaterThan(stopIndex),
+      reason: 'WGC Stop must happen before unregistering Flutter texture',
+    );
     expect(destructorBody.contains('WgcLog::Write("stop-start"'), isTrue);
     expect(destructorBody.contains('WgcLog::Write("stop-done"'), isTrue);
     expect(destructorBody.contains('WgcLog::Write("unregister-start"'), isTrue);
     expect(destructorBody.contains('WgcLog::Write("unregister-done"'), isTrue);
 
-    final int textureBridgeMemberIndex =
-        platformViewHeader.indexOf('texture_bridge_');
-    final int flutterTextureMemberIndex =
-        platformViewHeader.indexOf('flutter_texture_');
+    final int textureBridgeMemberIndex = platformViewHeader.indexOf(
+      'texture_bridge_',
+    );
+    final int flutterTextureMemberIndex = platformViewHeader.indexOf(
+      'flutter_texture_',
+    );
     expect(textureBridgeMemberIndex, greaterThanOrEqualTo(0));
     expect(flutterTextureMemberIndex, greaterThanOrEqualTo(0));
-    expect(textureBridgeMemberIndex, lessThan(flutterTextureMemberIndex),
-        reason:
-            'member destruction order should destroy flutter_texture_ before texture_bridge_');
+    expect(
+      textureBridgeMemberIndex,
+      lessThan(flutterTextureMemberIndex),
+      reason:
+          'member destruction order should destroy flutter_texture_ before texture_bridge_',
+    );
+  });
+
+  test('BUG-4114: delivery coalescing flag is per generation, worker exits '
+      'loudly and drops COM refs before CoUninitialize', () {
+    final String src = maskComments(
+      _read(<String>[
+        'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
+        '../packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
+      ], 'texture_bridge.cc'),
+    );
+    final String header = maskComments(
+      _read(<String>[
+        'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.h',
+        '../packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.h',
+      ], 'texture_bridge.h'),
+    );
+
+    // 1) 投递合并标记与 deliver_handler 一一对应（按代），不挂在桥共用的
+    //    mailbox 上：否则旧一代排队中的 handler 会吞掉新一代首帧的投递。
+    expect(
+      header.contains('post_pending'),
+      isFalse,
+      reason:
+          'the bridge-wide mailbox must not own the delivery-coalescing flag',
+    );
+    expect(src.contains('mailbox_->post_pending'), isFalse);
+    expect(src.contains('mailbox.post_pending'), isFalse);
+    final String sharedBody = _body(
+      src,
+      'struct WgcFrameWorkerShared {',
+      'struct WgcFramePoolLifetime {',
+    );
+    expect(
+      sharedBody.contains('std::shared_ptr<std::atomic<bool>> post_pending'),
+      isTrue,
+      reason: 'each generation owns its own coalescing flag',
+    );
+    expect(
+      src.contains('[pump_state, post_pending]()'),
+      isTrue,
+      reason:
+          'the handler clears the flag of its own generation, captured by '
+          'shared pointer so a queued handler outliving the worker is safe',
+    );
+    final String postBody = _body(
+      src,
+      'void TextureBridge::PostDeliveryLocked(',
+      'TextureBridge::StagedFrame TextureBridge::AcquireStagedFrame()',
+    );
+    expect(postBody.contains('lifetime->worker_shared->post_pending'), isTrue);
+    final String workerBody = _body(
+      src,
+      'void RunFrameWorker(',
+      'CoUninitialize();',
+    );
+    expect(workerBody.contains('shared->post_pending->exchange('), isTrue);
+
+    // 2) 取帧线程的 COM 引用在 CoUninitialize 之前放掉。
+    expect(
+      workerBody.contains('shared.reset();'),
+      isTrue,
+      reason:
+          'the worker must release its COM refs (frame pool, dispatcher '
+          'queue, handler, D3D device) while its apartment is still valid',
+    );
+
+    // 3) 退回定时器的等待失败不能静默退出取帧线程（WebView 冻结且日志无迹）。
+    final String clockBody = _body(
+      src,
+      'class FrameClock {',
+      'void RunFrameWorker(',
+    );
+    expect(clockBody.contains('LogWaitFailed("timer_wait_failed"'), isTrue);
+    expect(clockBody.contains('LogWaitFailed("sleep_wait_failed"'), isTrue);
+    expect(clockBody.contains('"worker-clock-exit"'), isTrue);
   });
 }

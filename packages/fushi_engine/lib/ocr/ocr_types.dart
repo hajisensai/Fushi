@@ -59,25 +59,25 @@ class OcrRect {
       math.min(right, other.right) > math.max(left, other.left);
 
   OcrRect clamp(double maxWidth, double maxHeight) => OcrRect(
-        left: left.clamp(0, maxWidth),
-        top: top.clamp(0, maxHeight),
-        right: right.clamp(0, maxWidth),
-        bottom: bottom.clamp(0, maxHeight),
-      );
+    left: left.clamp(0, maxWidth),
+    top: top.clamp(0, maxHeight),
+    right: right.clamp(0, maxWidth),
+    bottom: bottom.clamp(0, maxHeight),
+  );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'left': left,
-        'top': top,
-        'right': right,
-        'bottom': bottom,
-      };
+    'left': left,
+    'top': top,
+    'right': right,
+    'bottom': bottom,
+  };
 
   static OcrRect fromJson(Map<String, dynamic> json) => OcrRect(
-        left: (json['left'] as num).toDouble(),
-        top: (json['top'] as num).toDouble(),
-        right: (json['right'] as num).toDouble(),
-        bottom: (json['bottom'] as num).toDouble(),
-      );
+    left: (json['left'] as num).toDouble(),
+    top: (json['top'] as num).toDouble(),
+    right: (json['right'] as num).toDouble(),
+    bottom: (json['bottom'] as num).toDouble(),
+  );
 
   @override
   String toString() =>
@@ -178,16 +178,16 @@ class OcrGlyphBox {
   final OcrRect rect;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'start': start,
-        'end': end,
-        'rect': rect.toJson(),
-      };
+    'start': start,
+    'end': end,
+    'rect': rect.toJson(),
+  };
 
   static OcrGlyphBox fromJson(Map<String, dynamic> json) => OcrGlyphBox(
-        start: (json['start'] as num).toInt(),
-        end: (json['end'] as num).toInt(),
-        rect: OcrRect.fromJson(json['rect'] as Map<String, dynamic>),
-      );
+    start: (json['start'] as num).toInt(),
+    end: (json['end'] as num).toInt(),
+    rect: OcrRect.fromJson(json['rect'] as Map<String, dynamic>),
+  );
 }
 
 /// [boxes] 能否逐字代表 [text]：每格是 [text] 内非空的 UTF-16 区间、按序不重叠。
@@ -251,22 +251,22 @@ class OcrBlock {
   String get text => lines.join();
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'box': box.toJson(),
-        'vertical': vertical,
-        'lines': lines,
-        if (lineBoxes != null)
-          'lineBoxes': <Map<String, dynamic>>[
-            for (final OcrRect rect in lineBoxes!) rect.toJson(),
-          ],
-        if (lineTilt != 0) 'lineTilt': lineTilt,
-        'score': score,
-        'insideBubble': insideBubble,
-        if (confidence != null) 'confidence': confidence,
-        if (glyphBoxes != null)
-          'glyphBoxes': <Map<String, dynamic>>[
-            for (final OcrGlyphBox glyph in glyphBoxes!) glyph.toJson(),
-          ],
-      };
+    'box': box.toJson(),
+    'vertical': vertical,
+    'lines': lines,
+    if (lineBoxes != null)
+      'lineBoxes': <Map<String, dynamic>>[
+        for (final OcrRect rect in lineBoxes!) rect.toJson(),
+      ],
+    if (lineTilt != 0) 'lineTilt': lineTilt,
+    'score': score,
+    'insideBubble': insideBubble,
+    if (confidence != null) 'confidence': confidence,
+    if (glyphBoxes != null)
+      'glyphBoxes': <Map<String, dynamic>>[
+        for (final OcrGlyphBox glyph in glyphBoxes!) glyph.toJson(),
+      ],
+  };
 
   static OcrBlock fromJson(Map<String, dynamic> json) {
     final List<String> lines = (json['lines'] as List<dynamic>).cast<String>();
@@ -274,11 +274,11 @@ class OcrBlock {
     // 行框必须与行一一对应；对不上（手改 / 截断的缓存）就当没有行几何。
     final List<OcrRect>? lineBoxes =
         rawBoxes != null && rawBoxes.length == lines.length
-            ? <OcrRect>[
-                for (final dynamic raw in rawBoxes)
-                  OcrRect.fromJson(raw as Map<String, dynamic>),
-              ]
-            : null;
+        ? <OcrRect>[
+            for (final dynamic raw in rawBoxes)
+              OcrRect.fromJson(raw as Map<String, dynamic>),
+          ]
+        : null;
     final List<dynamic>? rawGlyphs = json['glyphBoxes'] as List<dynamic>?;
     final List<OcrGlyphBox>? glyphs = rawGlyphs == null
         ? null
@@ -320,20 +320,20 @@ class OcrPageResult {
   final List<OcrBlock> blocks;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'pageIndex': pageIndex,
-        'imageWidth': imageWidth,
-        'imageHeight': imageHeight,
-        'blocks': blocks.map((OcrBlock b) => b.toJson()).toList(),
-      };
+    'pageIndex': pageIndex,
+    'imageWidth': imageWidth,
+    'imageHeight': imageHeight,
+    'blocks': blocks.map((OcrBlock b) => b.toJson()).toList(),
+  };
 
   static OcrPageResult fromJson(Map<String, dynamic> json) => OcrPageResult(
-        pageIndex: json['pageIndex'] as int,
-        imageWidth: json['imageWidth'] as int,
-        imageHeight: json['imageHeight'] as int,
-        blocks: (json['blocks'] as List<dynamic>)
-            .map((dynamic b) => OcrBlock.fromJson(b as Map<String, dynamic>))
-            .toList(),
-      );
+    pageIndex: json['pageIndex'] as int,
+    imageWidth: json['imageWidth'] as int,
+    imageHeight: json['imageHeight'] as int,
+    blocks: (json['blocks'] as List<dynamic>)
+        .map((dynamic b) => OcrBlock.fromJson(b as Map<String, dynamic>))
+        .toList(),
+  );
 }
 
 /// 检测器窄接口（pipeline 依赖它而非具体实现，测试可 fake）。
@@ -397,19 +397,19 @@ class OcrRecognition {
 
   /// 换掉置信度的副本（路由层把子识别器的分数挂回排版结果）。
   OcrRecognition withConfidence(double? value) => OcrRecognition(
-        text: text,
-        vertical: vertical,
-        lines: lines,
-        lineBoxes: lineBoxes,
-        lineTilt: lineTilt,
-        confidence: value,
-        glyphBoxes: glyphBoxes,
-      );
+    text: text,
+    vertical: vertical,
+    lines: lines,
+    lineBoxes: lineBoxes,
+    lineTilt: lineTilt,
+    confidence: value,
+    glyphBoxes: glyphBoxes,
+  );
 
   /// 换掉行倾角的副本（路由层把块级倾角挂回子识别器的排版结果）。没有行几何时
   /// 倾角无处可用、或倾角没变，原样返回。
-  OcrRecognition withLineTilt(double value) => lineBoxes == null ||
-          value == lineTilt
+  OcrRecognition withLineTilt(double value) =>
+      lineBoxes == null || value == lineTilt
       ? this
       : OcrRecognition(
           text: text,

@@ -2,7 +2,7 @@
 // 逐部提交（单部失败不拖垮其余）。
 import 'dart:async';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
@@ -160,11 +160,10 @@ void main() {
       ],
     );
     // 只有剧集拉详情（定下载还是订阅），电影不拉。
-    expect(
-      calls.where((String c) => c.startsWith('details:')),
-      <String>['details:tv', 'details:tv'],
-      reason: '锚点在选定作品时拉一次、清单里再拉一次；电影一次都不拉',
-    );
+    expect(calls.where((String c) => c.startsWith('details:')), <String>[
+      'details:tv',
+      'details:tv',
+    ], reason: '锚点在选定作品时拉一次、清单里再拉一次；电影一次都不拉');
 
     await service.choose(
       VideoAcquisitionSlot.franchise,

@@ -1,7 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 
 /// Jimaku API key 输入框——三个 Jimaku 界面（视频字幕对话框 / 番剧下载对话框 /
 /// 合集批量对话框）共用的**唯一实现**。
@@ -37,11 +38,14 @@ class JimakuApiKeyField extends StatelessWidget {
       obscureText: true,
       decoration: InputDecoration(
         labelText: t.video_jimaku_api_key,
-        helperText: '${t.video_jimaku_api_key_hint}\n'
+        helperText:
+            '${t.video_jimaku_api_key_hint}\n'
             '${t.video_jimaku_api_key_settings_hint}',
         helperMaxLines: 3,
         isDense: dense,
-        prefixIcon: showKeyIcon ? const FushiIcon(Icons.vpn_key, size: 18) : null,
+        prefixIcon: showKeyIcon
+            ? const FushiIcon(Icons.vpn_key, size: 18)
+            : null,
       ),
     );
   }

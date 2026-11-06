@@ -2,7 +2,7 @@
 /// `docs/specs/2026-09-28-floating-ball.md`）。
 ///
 /// Android：原生系统悬浮球服务 + MediaProjection 截屏 OCR；iOS：截自己的窗口 +
-/// App Intent 查词入口；Windows / macOS：原生置顶窗口画的应用外悬浮球（只画与报
+/// App Intent 查词入口；Windows / macOS / Linux（X11）：原生置顶窗口画的应用外悬浮球（只画与报
 /// 事件，动作由 Dart 执行，契约见 `docs/specs/2026-09-30-desktop-system-floating-ball.md`）。
 /// 其它平台原生侧没有实现，这里一律按「没有」处理，不抛错。
 library;
@@ -68,6 +68,8 @@ class FloatingBallChannel {
     required String ocrLanguage,
     bool animate = true,
     bool showLabels = true,
+    bool showOpenApp = true,
+    String tapAction = '',
     Map<String, Uint8List>? iconImages,
     Uint8List? ballImage,
     String? dock,
@@ -81,6 +83,10 @@ class FloatingBallChannel {
         'ocrLanguage': ocrLanguage,
         'animate': animate,
         'showLabels': showLabels,
+        // 菜单里有没有「打开 Fushi」：Android / Windows / macOS 原生球都认。
+        'showOpenApp': showOpenApp,
+        // 只有 Android 原生球消费（点球直接执行该动作、长按展开）；桌面端忽略。
+        'tapAction': tapAction,
         if (iconImages != null) 'iconImages': iconImages,
         if (ballImage != null) 'ballImage': ballImage,
         if (dock != null) 'dock': dock,
@@ -115,6 +121,17 @@ class FloatingBallChannel {
       }) ??
       false;
 
+  /// Android：截屏识字的两个用户选项（原生 `ScreenOcrOptions`）。[keepSession] =
+  /// 保持截屏会话（之后不再弹系统确认框），[cardImage] = 制卡带图（把定格帧写进缓存
+  /// 给查词窗裁卡图）。
+  static Future<void> setScreenOcrOptions({
+    required bool keepSession,
+    required bool cardImage,
+  }) => _invoke<void>('setScreenOcrOptions', <String, Object?>{
+    'keepSession': keepSession,
+    'cardImage': cardImage,
+  });
+
   /// 「应用外查词」：弹出独立查词窗（与系统「处理文本」、截屏识字同一个
   /// `PopupDictFlutterActivity`），只有搜索栏。
   static Future<void> openPopupLookup() => _invoke<void>('openPopupLookup');
@@ -133,6 +150,16 @@ class FloatingBallChannel {
   /// [takePendingOpenLookupPage]：主引擎不在时原生先把 Fushi 拉起来再排队）。
   static Future<bool> takePendingSync() async =>
       await _invoke<bool>('takePendingSync') ?? false;
+
+  /// 同 [takePendingSync]，排的是 Android 系统球「AI」（Fushi 已被拉到前台，
+  /// app 就绪后打开 AI 浮层）。
+  static Future<bool> takePendingOpenAi() async =>
+      await _invoke<bool>('takePendingOpenAi') ?? false;
+
+  /// 取走（并清掉）原生系统球「切换配置」排队的请求（同
+  /// [takePendingOpenLookupPage]：主引擎不在时原生先把 Fushi 拉起来再排队）。
+  static Future<bool> takePendingProfileSwitch() async =>
+      await _invoke<bool>('takePendingProfileSwitch') ?? false;
 
   /// 取走（并清掉）截屏 OCR 报「模型未就绪」后排队的「打开系统 OCR 配置」请求
   /// （同 [takePendingOpenLookupPage]，BUG-2906）。
@@ -168,6 +195,19 @@ class FloatingBallChannel {
     );
     return DesktopScreenOcrCapture.fromWire(raw);
   }
+
+  /// 桌面应用外球「切换配置」：在球旁弹原生配置菜单（不唤起主窗）。[items] 每项
+  /// `{id, label, checked}`；[anchor] 同 `systemBallAction` 报来的球矩形（屏幕物理
+  /// 像素、左上原点），原样回传。返回选中的配置 id；关掉菜单 / 原生没有该方法 → null。
+  static Future<int?> showProfileMenu({
+    required List<Map<String, Object?>> items,
+    required Rect? anchor,
+  }) => _invoke<int>('showProfileMenu', <String, Object?>{
+    'items': items,
+    'anchor': anchor == null
+        ? null
+        : <double>[anchor.left, anchor.top, anchor.right, anchor.bottom],
+  });
 
   /// 在冻结层上画识别出的行框（截图像素坐标）；[message] 非空时替换顶部提示
   /// （失败 / 没识别到字），null 时显示「点文字查词」。
@@ -223,6 +263,13 @@ class FloatingBallChannel {
   ///  - `openLookupPage`（Android 系统球「查词」，Fushi 已被拉到前台）→ [onOpenLookupPage]；
   ///  - `openCameraOcr`（Android 系统球「拍照查词」，Fushi 已被拉到前台）→ [onOpenCameraOcr]；
   ///  - `openSync`（Android 系统球「立即同步」，Fushi 已被拉到前台）→ [onOpenSync]；
+  ///  - `openAi`（Android 系统球「AI」，Fushi 已被拉到前台）→ [onOpenAi]；
+  ///  - `openProfileSwitch`（Android 系统球「切换配置」，Fushi 已被拉到前台）→
+  ///    [onOpenProfileSwitch]；
+  ///  - `getProfileMenu`（Android 系统球「切换配置」要在球旁弹配置菜单）→
+  ///    [onProfileMenu]，回 `[{id, label, checked}]`；
+  ///  - `switchProfileTo {id}`（在那个菜单里选了一项）→ [onSwitchProfileTo]，回给
+  ///    原生 Toast 的一句话（成功 / 失败）；
   ///  - `openSystemOcrSetup`（Android 截屏 OCR 报模型未就绪，Fushi 已被拉到前台）→
   ///    [onOpenSystemOcrSetup]；
   ///  - `systemBallClosedByUser`（系统球 / 常驻通知上点了关闭）→
@@ -248,6 +295,10 @@ class FloatingBallChannel {
     void Function()? onOpenLookupPage,
     void Function()? onOpenCameraOcr,
     void Function()? onOpenSync,
+    void Function()? onOpenAi,
+    void Function()? onOpenProfileSwitch,
+    Future<List<Map<String, Object?>>?> Function()? onProfileMenu,
+    Future<String> Function(int id)? onSwitchProfileTo,
     void Function()? onOpenSystemOcrSetup,
     void Function()? onSystemBallClosedByUser,
     void Function(String id, Rect? anchor)? onSystemBallAction,
@@ -272,6 +323,16 @@ class FloatingBallChannel {
           onOpenCameraOcr?.call();
         case 'openSync':
           onOpenSync?.call();
+        case 'openAi':
+          onOpenAi?.call();
+        case 'openProfileSwitch':
+          onOpenProfileSwitch?.call();
+        case 'getProfileMenu':
+          return await onProfileMenu?.call();
+        case 'switchProfileTo':
+          final Object? args = call.arguments;
+          final Object? id = args is Map ? args['id'] : null;
+          if (id is int) return await onSwitchProfileTo?.call(id);
         case 'openSystemOcrSetup':
           onOpenSystemOcrSetup?.call();
         case 'systemBallClosedByUser':
@@ -310,6 +371,8 @@ class FloatingBallChannel {
       if (await takePendingOpenLookupPage()) onOpenLookupPage?.call();
       if (await takePendingCameraOcr()) onOpenCameraOcr?.call();
       if (await takePendingSync()) onOpenSync?.call();
+      if (await takePendingOpenAi()) onOpenAi?.call();
+      if (await takePendingProfileSwitch()) onOpenProfileSwitch?.call();
       if (await takePendingSystemOcrSetup()) onOpenSystemOcrSetup?.call();
       return;
     }
@@ -384,6 +447,10 @@ class DesktopScreenOcrCapture {
   static const String permissionDenied = 'permission_denied';
 
   static const String captureFailed = 'capture_failed';
+
+  /// 截图途中被作废（Linux 的 portal 截图是异步的：期间又点了一次、关了冻结层或
+  /// 关了球）。不是失败，宿主静默收场。
+  static const String cancelled = 'cancelled';
 
   final Uint8List? png;
   final Rect? screen;

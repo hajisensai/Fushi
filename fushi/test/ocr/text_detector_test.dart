@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/ocr/text_detector.dart';
@@ -115,8 +115,8 @@ void main() {
     final LetterboxTransform transform = computeLetterbox(1280, 1280);
 
     Float32List logitsFor(List<List<double>> perQuery) => Float32List.fromList(
-          <double>[for (final List<double> q in perQuery) ...q],
-        );
+      <double>[for (final List<double> q in perQuery) ...q],
+    );
 
     test('sigmoid + 阈值 + cxcywh 反变换回原图', () {
       final Float32List logits = logitsFor(<List<double>>[

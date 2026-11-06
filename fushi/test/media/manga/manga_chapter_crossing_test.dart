@@ -148,7 +148,13 @@ void main() {
         isNot(contains('_jumpToPage(')),
         reason: '「先按第 0 页装好再跳末页」就是那一下闪回',
       );
-      expect(switchBody, contains('landOnLastPage: landOnLastPage,'));
+      // 书签跳章（PR #2485）加了显式起始页：点名了页码时以它为准，没点名时
+      // 「往回翻落末页」照旧原样传下去。
+      expect(
+        switchBody,
+        contains('landOnLastPage: initialPage == null && landOnLastPage,'),
+      );
+      expect(switchBody, contains('explicitInitialPage: initialPage,'));
 
       final String open = body(
         'Future<void> _openShelfChapter({',

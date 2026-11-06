@@ -43,11 +43,14 @@ class _TorrentUploadConsentDialogState
     final QbConnectionConfig c = widget.initialConfig;
     _uploadEnabled = c.uploadEnabled;
     _uploadLimitCtrl = TextEditingController(
-        text: c.uploadLimitKbps == 0 ? '' : '${c.uploadLimitKbps}');
+      text: c.uploadLimitKbps == 0 ? '' : '${c.uploadLimitKbps}',
+    );
     _seedTimeCtrl = TextEditingController(
-        text: c.seedTimeLimitMinutes == 0 ? '' : '${c.seedTimeLimitMinutes}');
+      text: c.seedTimeLimitMinutes == 0 ? '' : '${c.seedTimeLimitMinutes}',
+    );
     _seedRatioCtrl = TextEditingController(
-        text: c.seedRatioLimit == 0 ? '' : '${c.seedRatioLimit}');
+      text: c.seedRatioLimit == 0 ? '' : '${c.seedRatioLimit}',
+    );
   }
 
   @override
@@ -86,60 +89,61 @@ class _TorrentUploadConsentDialogState
     return FushiAlertDialog(
       icon: const FushiIcon(FushiIcons.upload),
       title: Text(t.torrent_upload_intro_title),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Text(t.torrent_upload_intro_body),
-            const SizedBox(height: 12),
-            Row(
-              children: <Widget>[
-                Expanded(child: Text(t.torrent_upload_intro_enable)),
-                adaptiveSwitch(
-                  context: context,
-                  value: _uploadEnabled,
-                  onChanged: _applying
-                      ? null
-                      : (bool v) => setState(() => _uploadEnabled = v),
-                ),
-              ],
-            ),
-            if (_uploadEnabled) ...<Widget>[
-              const SizedBox(height: 4),
-              FushiTextFieldControl(
-                controller: _uploadLimitCtrl,
-                enabled: !_applying,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: t.video_setting_torrent_upload_limit,
-                  hintText: t.video_setting_torrent_limit_hint,
-                ),
-              ),
-              const SizedBox(height: 8),
-              FushiTextFieldControl(
-                controller: _seedTimeCtrl,
-                enabled: !_applying,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: t.video_setting_torrent_seed_time_limit,
-                  hintText: t.video_setting_torrent_seed_time_hint,
-                ),
-              ),
-              const SizedBox(height: 8),
-              FushiTextFieldControl(
-                controller: _seedRatioCtrl,
-                enabled: !_applying,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(
-                  labelText: t.video_setting_torrent_seed_ratio_limit,
-                  hintText: t.video_setting_torrent_seed_ratio_hint,
-                ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Text(t.torrent_upload_intro_body),
+          const SizedBox(height: 12),
+          Row(
+            children: <Widget>[
+              Expanded(child: Text(t.torrent_upload_intro_enable)),
+              adaptiveSwitch(
+                context: context,
+                value: _uploadEnabled,
+                onChanged: _applying
+                    ? null
+                    : (bool v) => setState(() => _uploadEnabled = v),
               ),
             ],
+          ),
+          if (_uploadEnabled) ...<Widget>[
+            const SizedBox(height: 4),
+            FushiTextFieldControl(
+              controller: _uploadLimitCtrl,
+              enabled: !_applying,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: t.video_setting_torrent_upload_limit,
+                hintText: t.video_setting_torrent_limit_hint,
+              ),
+            ),
+            const SizedBox(height: 8),
+            FushiTextFieldControl(
+              controller: _seedTimeCtrl,
+              enabled: !_applying,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: t.video_setting_torrent_seed_time_limit,
+                hintText: t.video_setting_torrent_seed_time_hint,
+              ),
+            ),
+            const SizedBox(height: 8),
+            FushiTextFieldControl(
+              controller: _seedRatioCtrl,
+              enabled: !_applying,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: InputDecoration(
+                labelText: t.video_setting_torrent_seed_ratio_limit,
+                // 文案较长（写明含下载过程中的上传），放 helper 允许换行。
+                helperText: t.video_setting_torrent_seed_ratio_lifetime_hint,
+                helperMaxLines: 4,
+              ),
+            ),
           ],
-        ),
+        ],
       ),
       actions: <Widget>[
         FushiTextButton(

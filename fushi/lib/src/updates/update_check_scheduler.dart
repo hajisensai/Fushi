@@ -25,6 +25,20 @@ typedef UpdateProbe = Future<void> Function();
 String updateLastCheckPrefKey(UpdateFeedKind kind) =>
     'updates_last_check_${kind.dbValue}';
 
+/// 调度器的域开关（[UpdateCheckScheduler.isKindEnabled] 的生产接线）。
+///
+/// 番剧新集域在调度器里只跑「媒体库在线作品补新集」：跑不跑看它自己的开关
+/// [videoLibraryAutoUpdate]（`video_library_auto_update`），**不看**「番剧新集提醒」
+/// ——提醒开关只决定补上的集进不进更新中心（publishBatch 按域开关丢弃），用户
+/// 2026-10-23 拍板拆开。其余域看各自的提醒开关 [notifyEnabled]。
+bool Function(UpdateFeedKind) updateCheckKindGate({
+  required bool Function() videoLibraryAutoUpdate,
+  required bool Function(UpdateFeedKind) notifyEnabled,
+}) =>
+    (UpdateFeedKind kind) => kind == UpdateFeedKind.videoEpisode
+    ? videoLibraryAutoUpdate()
+    : notifyEnabled(kind);
+
 class UpdateCheckScheduler {
   UpdateCheckScheduler({
     required PreferencesRepository prefs,
@@ -34,11 +48,11 @@ class UpdateCheckScheduler {
     this.tick = const Duration(minutes: 30),
     Set<UpdateFeedKind> dueOnStart = const <UpdateFeedKind>{},
     DateTime Function() now = DateTime.now,
-  })  : _prefs = prefs,
-        _dueOnStart = <UpdateFeedKind>{...dueOnStart},
-        _probes = probes,
-        _isKindEnabled = isKindEnabled,
-        _now = now;
+  }) : _prefs = prefs,
+       _dueOnStart = <UpdateFeedKind>{...dueOnStart},
+       _probes = probes,
+       _isKindEnabled = isKindEnabled,
+       _now = now;
 
   /// 各域的最小检查间隔。
   ///
@@ -46,11 +60,13 @@ class UpdateCheckScheduler {
   /// 扩展与 app 24 小时：版本发布是周级事件，一天一次已经足够快。
   static const Map<UpdateFeedKind, Duration> kDefaultUpdateCheckIntervals =
       <UpdateFeedKind, Duration>{
-    UpdateFeedKind.mangaChapter: Duration(hours: 6),
-    UpdateFeedKind.mangaExtension: Duration(hours: 24),
-    UpdateFeedKind.animeExtension: Duration(hours: 24),
-    UpdateFeedKind.appRelease: Duration(hours: 24),
-  };
+        // 番剧域在这里只有「媒体库在线作品补新集」（订阅仍走自己的相位节奏，见库注释）。
+        UpdateFeedKind.videoEpisode: Duration(hours: 6),
+        UpdateFeedKind.mangaChapter: Duration(hours: 6),
+        UpdateFeedKind.mangaExtension: Duration(hours: 24),
+        UpdateFeedKind.animeExtension: Duration(hours: 24),
+        UpdateFeedKind.appRelease: Duration(hours: 24),
+      };
 
   final PreferencesRepository _prefs;
   final Map<UpdateFeedKind, UpdateProbe> _probes;
@@ -110,7 +126,9 @@ class UpdateCheckScheduler {
       try {
         await entry.value();
       } on Object catch (error) {
-        debugPrint('UpdateCheckScheduler: ${kind.dbValue} probe failed. $error');
+        debugPrint(
+          'UpdateCheckScheduler: ${kind.dbValue} probe failed. $error',
+        );
       }
       // 成败都记：失败也算「这一轮问过了」，否则断网时每个 tick 都重试。
       await _prefs.setPref(
@@ -124,8 +142,10 @@ class UpdateCheckScheduler {
   bool isDue(UpdateFeedKind kind) {
     final Duration? interval = intervals[kind];
     if (interval == null) return false;
-    final Object? raw =
-        _prefs.getPref(updateLastCheckPrefKey(kind), defaultValue: 0);
+    final Object? raw = _prefs.getPref(
+      updateLastCheckPrefKey(kind),
+      defaultValue: 0,
+    );
     final int last = raw is int ? raw : 0;
     if (last <= 0) return true;
     return _now().millisecondsSinceEpoch - last >= interval.inMilliseconds;

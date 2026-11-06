@@ -28,13 +28,13 @@ const PcmFormat _pcm16Mono = PcmFormat(
 );
 
 GalAudioTrack _track(int sourcePtr) => GalAudioTrack(
-      sourcePtr: sourcePtr,
-      format: _pcm16Mono,
-      avgBytes: 4096,
-      avgEnergy: 120.5,
-      orderIndex: 0,
-      clipCount: 3,
-    );
+  sourcePtr: sourcePtr,
+  format: _pcm16Mono,
+  avgBytes: 4096,
+  avgEnergy: 120.5,
+  orderIndex: 0,
+  clipCount: 3,
+);
 
 class _TrackFakeEngine extends EngineHookGalAudioSource {
   _TrackFakeEngine({
@@ -99,8 +99,7 @@ class _TrackFakeEngine extends EngineHookGalAudioSource {
     int tolMs = 8000,
     int? sourcePtr,
     List<int>? exclude,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<GalTextPoll?> pollText(int fromSeq) async =>
@@ -118,11 +117,11 @@ class _TrackFakeEngine extends EngineHookGalAudioSource {
 class _SilentLoopback extends LoopbackGalAudioSource {
   @override
   Future<PcmFormat?> start() async => const PcmFormat(
-        sampleRate: 44100,
-        channels: 2,
-        bitsPerSample: 16,
-        isFloat: false,
-      );
+    sampleRate: 44100,
+    channels: 2,
+    bitsPerSample: 16,
+    isFloat: false,
+  );
 
   @override
   Future<void> stop() async {}
@@ -143,18 +142,19 @@ GalHookSessionController _controller({
     isWindows: true,
     targetWow64Probe: (_) async => false,
     injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
-    engineSourceFactory: ({
-      required int targetPid,
-      required String? launchExe,
-      required String injectorPath,
-      required bool lunaPcHooks,
-      int? lunaCodepage,
-      List<String> launchArguments = const <String>[],
-      String launchWorkdir = '',
-      GalJapaneseLocaleMode japaneseLocaleMode = kGalDefaultJapaneseLocaleMode,
-      String? contentLanguage,
-    }) =>
-        engine,
+    engineSourceFactory:
+        ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
+        }) => engine,
     loopbackSourceFactory: _SilentLoopback.new,
     textPollInterval: textPollInterval,
     trackRefreshInterval: trackRefreshInterval,
@@ -196,8 +196,11 @@ void main() {
     // 低频定时器（20ms）持续刷新。
     final int before = engine.listCalls;
     await Future<void>.delayed(const Duration(milliseconds: 120));
-    expect(engine.listCalls, greaterThan(before),
-        reason: '引擎 PCM 后端应有会话级低频自动刷新');
+    expect(
+      engine.listCalls,
+      greaterThan(before),
+      reason: '引擎 PCM 后端应有会话级低频自动刷新',
+    );
 
     await controller.stopCapture();
     expect(controller.state.audioTracks, isEmpty);
@@ -230,8 +233,9 @@ void main() {
     await controller.refreshAudioTracks();
     expect(engine.listCalls, greaterThan(2));
     expect(
-      controller.events
-          .where((GalHookEvent e) => e.code == 'audio.tracks_refreshed'),
+      controller.events.where(
+        (GalHookEvent e) => e.code == 'audio.tracks_refreshed',
+      ),
       hasLength(1),
       reason: '只有轨成员变化才记事件，低频刷新不得把事件日志刷成噪音',
     );

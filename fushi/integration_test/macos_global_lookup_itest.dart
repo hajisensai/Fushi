@@ -138,9 +138,10 @@ void main() {
         '${text.length > 400 ? text.substring(0, 400) : text}',
       );
       final String frames =
-          await channel.invokeMethod<String>('debugEvaluateJs', <String, Object?>{
-            'script': describeFrames,
-          }) ??
+          await channel.invokeMethod<String>(
+            'debugEvaluateJs',
+            <String, Object?>{'script': describeFrames},
+          ) ??
           '';
       debugPrint('[mac-glookup] frames:\n$frames');
 
@@ -200,9 +201,10 @@ void main() {
   return out.join('\\n');
 })()''';
       final String vis =
-          await channel.invokeMethod<String>('debugEvaluateJs', <String, Object?>{
-            'script': armRafProbe,
-          }) ??
+          await channel.invokeMethod<String>(
+            'debugEvaluateJs',
+            <String, Object?>{'script': armRafProbe},
+          ) ??
           '';
       debugPrint('[mac-glookup] visibility before settle: $vis');
       debugPrint(
@@ -214,9 +216,10 @@ void main() {
       // geometry path ran or only the READY-SAFETY legacy reveal).
       await tester.pump(const Duration(seconds: 3));
       final String probe =
-          await channel.invokeMethod<String>('debugEvaluateJs', <String, Object?>{
-            'script': readProbe,
-          }) ??
+          await channel.invokeMethod<String>(
+            'debugEvaluateJs',
+            <String, Object?>{'script': readProbe},
+          ) ??
           '';
       debugPrint('[mac-glookup] probe after settle:\n$probe');
       final String snapshot2 =
@@ -226,7 +229,9 @@ void main() {
             'path': snapshot2,
           }) ??
           false;
-      debugPrint('[mac-glookup] settled snapshot saved=$saved2 path=$snapshot2');
+      debugPrint(
+        '[mac-glookup] settled snapshot saved=$saved2 path=$snapshot2',
+      );
 
       // 4) dismissal takes the panel down.
       await GlobalLookupChannel.hide();

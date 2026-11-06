@@ -63,8 +63,9 @@ String uniqueVideoScreenshotPath(
 
 String _safeScreenshotSourceStem(String? sourcePathOrTitle) {
   final String raw = (sourcePathOrTitle ?? '').trim();
-  final String leaf =
-      raw.isEmpty ? '' : p.posix.basename(raw.replaceAll(r'\', '/'));
+  final String leaf = raw.isEmpty
+      ? ''
+      : p.posix.basename(raw.replaceAll(r'\', '/'));
   final String stem = p.posix.basenameWithoutExtension(leaf);
   // G1 收敛：黑名单替换走共享 helper（逐字符 → `_`），紧随的 `_+` 折叠使输出与
   // 旧手写 `[...]+ → _`（整段 → 单个 `_`）对全部输入逐字节一致。
@@ -116,7 +117,8 @@ String _playbackTimeToken(int positionMs) {
   final int hours = safeMs ~/ Duration.millisecondsPerHour;
   final int minutes =
       (safeMs % Duration.millisecondsPerHour) ~/ Duration.millisecondsPerMinute;
-  final int seconds = (safeMs % Duration.millisecondsPerMinute) ~/
+  final int seconds =
+      (safeMs % Duration.millisecondsPerMinute) ~/
       Duration.millisecondsPerSecond;
   return '${_two(hours)}-${_two(minutes)}-${_two(seconds)}';
 }

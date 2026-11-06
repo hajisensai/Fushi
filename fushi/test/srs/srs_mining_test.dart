@@ -7,8 +7,11 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/anki/anki_deck_reposition.dart';
+import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
@@ -18,6 +21,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_new_card_positions.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -94,6 +98,19 @@ class _FakeAnki extends BaseAnkiRepository {
 
   @override
   Future<bool> createDeck(String name) async => false;
+}
+
+/// 数 [listNewCards] 调用次数的透传装饰器（验证 apply 不再整组重读字段）。
+class _CountingRepo extends DelegatingAnkiRepository {
+  _CountingRepo(BaseAnkiRepository inner) : super(inner: inner);
+
+  int listCalls = 0;
+
+  @override
+  Future<List<AnkiCardInfo>> listNewCards(String deckName) {
+    listCalls++;
+    return super.listNewCards(deckName);
+  }
 }
 
 String _payload(
@@ -351,6 +368,41 @@ void main() {
     expect(note.noteTypeId, store.fushiCardNoteTypeId);
   });
 
+  test('落地（反馈 0h0e_6fqhY）：高级制卡选的牌组按全名覆写本次落地，不改偏好；名字对不上回落偏好牌组', () async {
+    final String preferred = await store.createDeck('Mining');
+    final String parent = await store.createDeck('Books');
+    final String child = await store.createDeck('Novel', parentId: parent);
+    String withDeck(String expression, String deckName) {
+      final Map<String, String> fields = MiningRequestOverrides.attach(
+        Map<String, String>.from(
+          (jsonDecode(_payload(expression, 'よみ')) as Map<String, dynamic>)
+              .cast<String, String>(),
+        ),
+        MiningRequestOverrides(deckName: deckName),
+      );
+      return jsonEncode(fields);
+    }
+
+    final SrsMiningAnkiRepository repo = repoWith(
+      SrsMiningDestination(deckId: preferred),
+    );
+    final MineOutcome out = await repo.mineEntry(
+      rawPayloadJson: withDeck('雪', 'Books::Novel'),
+      context: bookContext(),
+    );
+    expect(out.result, MineResult.success);
+    expect(out.deckName, 'Books::Novel');
+    expect((await noteOf('雪', 'よみ')).deckId, child);
+
+    final MineOutcome missing = await repo.mineEntry(
+      rawPayloadJson: withDeck('雨', 'Nope'),
+      context: bookContext(),
+    );
+    expect(missing.result, MineResult.success);
+    expect(missing.deckName, 'Mining');
+    expect((await noteOf('雨', 'よみ')).deckId, preferred);
+  });
+
   test('落地：明确选了 Lapis 的仍落 Lapis（只改「没选过」的默认）', () async {
     final MineOutcome out = await repoWith(
       SrsMiningDestination(noteTypeId: store.lapisNoteTypeId),
@@ -444,6 +496,134 @@ void main() {
     expect(resolved.deckId, store.defaultDeckId);
   });
 
+  // 反馈 MhQHXQI-sB 审查：制卡位置写进 MiscInfo 等价字段。SRS 的映射键是 fieldId，
+  // 共享渲染按字段名判落点，必须由 SrsMiner 把 fieldId 换回名字——否则位置被静默丢掉。
+  group('制卡位置（charPositionText）落 SRS 的 MiscInfo 等价字段', () {
+    const String position = '制卡位置：第 48210 字';
+
+    AnkiMiningContext withPosition() => const AnkiMiningContext(
+      sentence: '雪が降る。',
+      documentTitle: 'Snow Country',
+      source: AnkiMiningSource.book,
+      charPositionText: position,
+    );
+
+    test('Fushi 卡片（默认）：写进 Source 字段', () async {
+      final MineOutcome out = await repoWith(
+        const SrsMiningDestination(),
+      ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: withPosition());
+      expect(out.result, MineResult.success);
+      final SrsNoteView note = await noteOf('雪', 'ゆき');
+      expect(note.noteTypeId, store.fushiCardNoteTypeId);
+      expect(note.field(fid('Source')), endsWith(position));
+      expect(note.field(fid('Sentence')), isNot(contains(position)));
+      expect(note.tags.where((String t) => t.startsWith('chars_')), isEmpty);
+    });
+
+    test('Lapis：写进 MiscInfo 字段', () async {
+      final MineOutcome out = await repoWith(
+        SrsMiningDestination(noteTypeId: store.lapisNoteTypeId),
+      ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: withPosition());
+      expect(out.result, MineResult.success);
+      final SrsNoteView note = await noteOf('雪', 'ゆき');
+      expect(note.noteTypeId, store.lapisNoteTypeId);
+      expect(note.field(lapisFid('MiscInfo')), endsWith(position));
+    });
+
+    test('自建类型：写进名为 Source 的字段；没有等价字段就不写', () async {
+      final String type = await createVocabType();
+      final MineOutcome plain = await repoWith(
+        SrsMiningDestination(noteTypeId: type),
+      ).mineEntry(rawPayloadJson: _payload('雨', 'あめ'), context: withPosition());
+      expect(plain.result, MineResult.success);
+      final SrsNoteView rain = await noteOf('雨', 'あめ');
+      for (final String id in <String>['fw', 'fm', 'fs']) {
+        expect(rain.field(id), isNot(contains(position)));
+      }
+
+      await store.editFields(SrsEntityKind.noteType, type, <String, Object?>{
+        SrsFieldKeys.fieldDef('fsrc'): const SrsFieldDef(
+          id: 'fsrc',
+          name: 'Source',
+          ord: 3,
+        ).toValue(),
+      });
+      final MineOutcome out = await repoWith(
+        SrsMiningDestination(
+          noteTypeId: type,
+          fieldMappingsByType: <String, Map<String, String>>{
+            type: <String, String>{'fsrc': '{document-title}'},
+          },
+        ),
+      ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: withPosition());
+      expect(out.result, MineResult.success);
+      final SrsNoteView note = await noteOf('雪', 'ゆき');
+      expect(note.field('fsrc'), 'Snow Country<br>$position');
+    });
+
+    test('覆写与「回到出处改卡」预填同样带上位置（Lapis + Fushi 卡片）', () async {
+      final SrsMiner lapisMiner = SrsMiner(
+        store: store,
+        media: media,
+        destination: SrsMiningDestination(noteTypeId: store.lapisNoteTypeId),
+      );
+      final SrsMiner cardMiner = SrsMiner(store: store, media: media);
+      const AnkiSettings settings = AnkiSettings();
+      await repoWith(
+        SrsMiningDestination(noteTypeId: store.lapisNoteTypeId),
+      ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: bookContext());
+      await repoWith(
+        const SrsMiningDestination(),
+      ).mineEntry(rawPayloadJson: _payload('雨', 'あめ'), context: bookContext());
+      final SrsNoteView lapisNote = await noteOf('雪', 'ゆき');
+      final SrsNoteView cardNote = await noteOf('雨', 'あめ');
+      expect(lapisNote.field(lapisFid('MiscInfo')), isNot(contains(position)));
+      expect(cardNote.field(fid('Source')), isNot(contains(position)));
+
+      final Map<String, String> lapisPrep = await lapisMiner.prepareFieldsFor(
+        noteId: lapisNote.id,
+        settings: settings,
+        rawPayloadJson: _payload('雪', 'ゆき'),
+        context: withPosition(),
+      );
+      expect(lapisPrep['MiscInfo'], endsWith(position));
+      final Map<String, String> cardPrep = await cardMiner.prepareFieldsFor(
+        noteId: cardNote.id,
+        settings: settings,
+        rawPayloadJson: _payload('雨', 'あめ'),
+        context: withPosition(),
+      );
+      expect(cardPrep['Source'], endsWith(position));
+
+      expect(
+        (await lapisMiner.overwrite(
+          noteId: lapisNote.id,
+          settings: settings,
+          rawPayloadJson: _payload('雪', 'ゆき'),
+          context: withPosition(),
+        )).result,
+        MineResult.success,
+      );
+      expect(
+        (await cardMiner.overwrite(
+          noteId: cardNote.id,
+          settings: settings,
+          rawPayloadJson: _payload('雨', 'あめ'),
+          context: withPosition(),
+        )).result,
+        MineResult.success,
+      );
+      expect(
+        (await noteOf('雪', 'ゆき')).field(lapisFid('MiscInfo')),
+        endsWith(position),
+      );
+      expect(
+        (await noteOf('雨', 'あめ')).field(fid('Source')),
+        endsWith(position),
+      );
+    });
+  });
+
   group('复习模式下的其余制卡操作走 SRS（不碰 Anki）', () {
     late _FakeAnki inner;
     late List<String> opened;
@@ -471,6 +651,24 @@ void main() {
       expect(out.noteId, isNotNull, reason: '有整数句柄才能进「可覆写」态');
       return out.noteId!;
     }
+
+    test('撤回制卡（反馈 JNyykxvuY9）：按句柄删复习笔记（软删墓碑），判重随之变回否；再删报已不在', () async {
+      expect(repo.canDeleteMinedNotes, isTrue);
+      final int handle = await mine('霧', 'きり');
+      final SrsNoteView note = await noteOf('霧', 'きり');
+      expect(await repo.isDuplicate('霧', 'きり'), isTrue);
+
+      expect(await repo.deleteMinedNote(handle), isTrue);
+      expect(
+        (await store.note(note.id))?.deletedAt,
+        isNotNull,
+        reason: '走 SrsDbStore.deleteNote：记删除时刻（同步墓碑），不是物理删行',
+      );
+      expect(await repo.isDuplicate('霧', 'きり'), isFalse);
+      expect(await repo.findMatchingNotes('霧', 'きり'), isEmpty);
+      expect(await repo.deleteMinedNote(handle), isFalse);
+      expect(inner.ankiCalls, 0);
+    });
 
     test('覆写：按句柄改同一条复习笔记的字段，标签只增不减，不新建', () async {
       final int handle = await mine('雪', 'ゆき');
@@ -530,7 +728,7 @@ void main() {
       final List<MinedNoteRef> refs = await repo.findMatchingNotes('雪', 'ゆき');
       expect(refs.map((MinedNoteRef r) => r.noteId), <int>[newer, older]);
       expect(refs.first.preview, '雪');
-      expect((await repo.noteFields(newer))!['Expression'], '雪');
+      expect((await repo.noteFields(newer))!['Term'], '雪');
       expect(await repo.noteFields(12345), isNull);
 
       final String olderId = (await store.noteIdForAnkiNumericId(older))!;
@@ -573,15 +771,305 @@ void main() {
       expect(inner.sourceLookups, 1, reason: '复习里没有 → 交给 Anki（切换前的卡）');
     });
 
-    test('Anki 专属能力在复习模式下关闭', () async {
+    test('Anki 专属能力在复习模式下关闭（新卡重排除外：走复习）', () async {
       expect(repo.supportsNoteTypeEditing, isFalse);
       expect(repo.supportsMediaMaintenance, isFalse);
       expect(await repo.probeMediaMaintenance(), isFalse);
-      expect(repo.supportsDeckReposition, isFalse);
+      expect(repo.supportsDeckReposition, isTrue);
+      // BUG-4122：探测必须跟静态位一起答「复习能重排」，不能委派给 inner（Anki 默认 false）。
+      expect(await repo.probeDeckReposition(), isTrue);
       expect(await repo.rendersSynchronizedClip(), isNull);
       expect(repo.canVerifyExistingCards, isTrue);
       expect(() => repo.createDeck('X'), throwsUnsupportedError);
-      expect(() => repo.listNewCards('X'), throwsUnsupportedError);
+      expect(await repo.listNewCards('不存在的牌组'), isEmpty);
+    });
+
+    group('新卡按词频重排', () {
+      late Directory snapshots;
+      setUp(() {
+        snapshots = Directory('${tmp.path}/reposition')..createSync();
+      });
+
+      Future<String> deckName() async =>
+          (await store.deckTree()).fullName(store.defaultDeckId);
+
+      /// 制一张卡并把它的 FreqSort 字段设成 [rank]；返回 SRS 笔记 id。
+      Future<String> mineRanked(
+        BaseAnkiRepository via,
+        String expression,
+        String reading,
+        int rank,
+      ) async {
+        final MineOutcome out = await via.mineEntry(
+          rawPayloadJson: _payload(expression, reading, allowDuplicate: true),
+          context: bookContext(),
+        );
+        expect(out.result, MineResult.success);
+        final String noteId = (await store.noteIdForAnkiNumericId(
+          out.noteId!,
+        ))!;
+        await store.updateNote(
+          noteId,
+          fieldsById: <String, String>{fid('FreqSort'): '$rank'},
+        );
+        return noteId;
+      }
+
+      Future<List<String>> expressionsInOrder() async => <String>[
+        for (final AnkiCardInfo c in await repo.listNewCards(await deckName()))
+          c.fields['Expression']!,
+      ];
+
+      Future<String> nextExpression() async {
+        final String cardId = (await store.nextCard(store.defaultDeckId))!;
+        final SrsCardCacheRow row = (await store.cardRow(cardId))!;
+        return (await store.note(row.noteId))!.field(fid('Expression'));
+      }
+
+      AnkiDeckRepositionRunner runner() => AnkiDeckRepositionRunner(
+        repo,
+        snapshotDirectory: () async => snapshots,
+      );
+
+      test('Fushi 卡片的词形 / 读音 / 词频序字段能被角色解析认出', () async {
+        await mineRanked(repo, '雪', 'ゆき', 300);
+        final AnkiCardInfo card = (await repo.listNewCards(
+          await deckName(),
+        )).single;
+        expect(card.isNew, isTrue);
+        expect(card.fields['Expression'], '雪');
+        expect(card.fields['ExpressionReading'], 'ゆき');
+        expect(card.fields['FreqSort'], '300');
+        final AnkiNoteFieldRoles roles = resolveNoteFieldRoles(
+          modelName: card.modelName,
+          fieldNames: card.fields.keys,
+          settings: const AnkiSettings(),
+        );
+        expect(roles.expression, 'Expression');
+        expect(roles.reading, 'ExpressionReading');
+        expect(roles.rank, 'FreqSort');
+      });
+
+      test('内层是缺原生重排接口的 AnkiConnect：复习照常能重排，直连 Anki 才被挡（BUG-4122）', () async {
+        final _NoNativeRepositionAnki anki = _NoNativeRepositionAnki();
+        final SrsMiningAnkiRepository srs = repoFor(anki);
+        await mineRanked(srs, '雪', 'ゆき', 300);
+        await mineRanked(srs, '犬', 'いぬ', 200);
+
+        // 复习目标：重排写本机复习库，与内层 Anki 此刻的能力无关。
+        expect(await srs.probeDeckReposition(), isTrue);
+        final AnkiRepositionPlan? plan =
+            await AnkiDeckRepositionRunner(
+              srs,
+              snapshotDirectory: () async => snapshots,
+            ).plan(
+              deckName: await deckName(),
+              settings: const AnkiSettings(),
+              options: const AnkiRepositionRankOptions(
+                source: AnkiRepositionSource.field,
+              ),
+            );
+        expect(plan, isNotNull);
+        expect(plan!.total, 2);
+        expect(
+          plan.ordered.map((AnkiRepositionCard c) => c.expression),
+          <String>['犬', '雪'],
+        );
+        expect(anki.probes, 0, reason: '复习目标不该去问 Anki 后端的重排能力');
+
+        // 对照：同一个 Anki 后端直连 runner，探测为 false → 读卡前就抛。
+        await expectLater(
+          AnkiDeckRepositionRunner(
+            anki,
+            snapshotDirectory: () async => snapshots,
+          ).plan(
+            deckName: await deckName(),
+            settings: const AnkiSettings(),
+            options: const AnkiRepositionRankOptions(
+              source: AnkiRepositionSource.field,
+            ),
+          ),
+          throwsA(isA<AnkiRepositionUnsupportedException>()),
+        );
+        expect(anki.probes, 1);
+        expect(anki.listed, 0, reason: '探测不到就不该读卡');
+      });
+
+      test('手动重排往返：计划 → 写回 → 出卡顺序按词频 → 撤销回到原顺序', () async {
+        await mineRanked(repo, '雪', 'ゆき', 300);
+        await mineRanked(repo, '上手', 'じょうず', 100);
+        await mineRanked(repo, '犬', 'いぬ', 200);
+        final List<String> before = await expressionsInOrder();
+
+        final AnkiRepositionPlan plan = (await runner().plan(
+          deckName: await deckName(),
+          settings: const AnkiSettings(),
+          options: const AnkiRepositionRankOptions(
+            source: AnkiRepositionSource.field,
+          ),
+        ))!;
+        expect(plan.total, 3);
+        expect(plan.ranked, 3);
+        expect(
+          plan.ordered.map((AnkiRepositionCard c) => c.expression),
+          <String>['上手', '犬', '雪'],
+        );
+
+        final AnkiRepositionOutcome outcome = await runner().apply(plan);
+        expect(outcome.failures, isEmpty);
+        expect(outcome.written, 3);
+        expect(await expressionsInOrder(), <String>['上手', '犬', '雪']);
+        // 复习的位置是带间隙的排序键（从没排过的卡按间隙追加），不是 Anki 的 1..N。
+        expect(
+          (await repo.listNewCards(
+            await deckName(),
+          )).map((AnkiCardInfo c) => c.due),
+          <int>[
+            kSrsNewPositionGap,
+            2 * kSrsNewPositionGap,
+            3 * kSrsNewPositionGap,
+          ],
+        );
+        expect(await nextExpression(), '上手');
+
+        final AnkiRepositionSnapshot snapshot = (await runner().latestSnapshot(
+          await deckName(),
+        ))!;
+        final AnkiRepositionUndoOutcome undo = await runner().undo(snapshot);
+        expect(undo.restored, 3);
+        expect(undo.failures, isEmpty);
+        expect(await expressionsInOrder(), before);
+      });
+
+      test('大牌组（2000 张新卡）里再挖 1 张：自动重排只写这 1 张、写回前不再整组读字段', () async {
+        // 根因回归（用户 2026-10-27「一自动重排就卡住、白屏、同步也卡」）：旧实现每次把整个
+        // 牌组连续重编 1..N，插到词频中间的一张新卡让它后面每张卡 +1——挖一个词 = O(N) 条
+        // `newPos` 修改记录进发件箱（2000 张实测 998 条）；写回前还把整组连字段再读一遍。
+        const int n = 2000;
+        for (int i = 0; i < n; i++) {
+          await store.createNote(
+            noteTypeId: store.fushiCardNoteTypeId,
+            fieldsById: <String, String>{
+              fid('Expression'): 'w$i',
+              fid('FreqSort'): '${2 * i + 2}',
+            },
+          );
+        }
+        final _CountingRepo counting = _CountingRepo(repo);
+        final AnkiDeckRepositionRunner r = AnkiDeckRepositionRunner(
+          counting,
+          snapshotDirectory: () async => snapshots,
+        );
+        Future<AnkiRepositionOutcome> reposition() async {
+          final AnkiRepositionPlan plan = (await r.plan(
+            deckName: await deckName(),
+            settings: const AnkiSettings(),
+            options: const AnkiRepositionRankOptions(
+              source: AnkiRepositionSource.field,
+            ),
+          ))!;
+          return r.apply(plan, auto: true);
+        }
+
+        // 首次重排：从没排过的卡全部要落位（一次性）。
+        expect((await reposition()).written, n);
+
+        // 再挖一张，词频落在正中间。
+        await store.createNote(
+          noteTypeId: store.fushiCardNoteTypeId,
+          fieldsById: <String, String>{
+            fid('Expression'): 'mid',
+            fid('FreqSort'): '${n + 1}',
+          },
+        );
+        counting.listCalls = 0;
+        final AnkiRepositionOutcome outcome = await reposition();
+        expect(outcome.failures, isEmpty);
+        expect(outcome.written, 1, reason: '只写新挖的那张，不重编它后面的 1000 张');
+        expect(counting.listCalls, 1, reason: '整组带字段只在 plan 读一次，apply 只取 id');
+
+        final List<AnkiCardInfo> after = await repo.listNewCards(
+          await deckName(),
+        );
+        expect(after, hasLength(n + 1));
+        expect(after[n ~/ 2].fields['Expression'], 'mid');
+        for (int i = 1; i < after.length; i++) {
+          expect(after[i].due, greaterThan(after[i - 1].due));
+        }
+
+        // 顺序没变再跑一次：一张都不写。
+        final AnkiRepositionPlan again = (await r.plan(
+          deckName: await deckName(),
+          settings: const AnkiSettings(),
+          options: const AnkiRepositionRankOptions(
+            source: AnkiRepositionSource.field,
+          ),
+        ))!;
+        expect(again.changed, 0);
+      }, timeout: const Timeout(Duration(minutes: 5)));
+
+      test('写回时已不是新卡 / 找不到的进 failures、不写', () async {
+        await mineRanked(repo, '雪', 'ゆき', 300);
+        final AnkiCardInfo card = (await repo.listNewCards(
+          await deckName(),
+        )).single;
+        final String cardId = (await store.cardIdForAnkiNumericId(
+          card.cardId,
+        ))!;
+        await store.setDueDay(cardId, 100);
+        final AnkiCardDueWriteResult result = await repo
+            .setNewCardPositions(<AnkiCardDueUpdate>[
+              AnkiCardDueUpdate(cardId: card.cardId, due: 5),
+              const AnkiCardDueUpdate(cardId: 1, due: 6),
+            ]);
+        expect(result.written, 0);
+        expect(result.failures.keys.toSet(), <int>{card.cardId, 1});
+        expect((await store.cardRow(cardId))!.newPosition, isNull);
+      });
+
+      test('出卡直接按卡上的词频：刚挖的卡不用重排就按名次出，不写新卡位置', () async {
+        final String snow = await mineRanked(repo, '雪', 'ゆき', 300);
+        final String good = await mineRanked(repo, '上手', 'じょうず', 100);
+        await mineRanked(repo, '犬', 'いぬ', 200);
+        expect(await nextExpression(), '上手');
+        for (final String id in <String>[snow, good]) {
+          expect((await store.cardsOfNote(id)).single.newPosition, isNull);
+        }
+
+        // 位置（手动重排 / Anki 导入写的）不压过名次：按词频的牌组只在没有名次时看位置。
+        await store.setNewCardPositions(<String, int>{
+          (await store.cardsOfNote(snow)).single.id: 1,
+          (await store.cardsOfNote(good)).single.id: 2,
+        });
+        expect(await nextExpression(), '上手');
+
+        // 「新卡顺序 = 按位置」：回到位置序（排过的在前）。
+        await store.editFields(
+          SrsEntityKind.deck,
+          store.defaultDeckId,
+          <String, Object?>{
+            SrsFieldKeys.deckNewOrder: SrsNewCardOrder.position.wire,
+          },
+        );
+        expect(await nextExpression(), '雪');
+      });
+
+      test('名次随笔记字段刷新：改 FreqSort / 清空后重新落位，没有名次的排在有名次的后面', () async {
+        final String snow = await mineRanked(repo, '雪', 'ゆき', 300);
+        await mineRanked(repo, '上手', 'じょうず', 100);
+        expect(await nextExpression(), '上手');
+        await store.updateNote(
+          snow,
+          fieldsById: <String, String>{fid('FreqSort'): '<b>12</b>'},
+        );
+        expect(await nextExpression(), '雪');
+        await store.updateNote(
+          snow,
+          fieldsById: <String, String>{fid('FreqSort'): ''},
+        );
+        expect((await store.cardsOfNote(snow)).single.freqRank, isNull);
+        expect(await nextExpression(), '上手');
+      });
     });
   });
 
@@ -696,12 +1184,29 @@ void main() {
       expect(repo, isNot(isA<SrsMiningAnkiRepository>()));
     });
 
-    test('模块开着、目标是 Fushi 复习：最外层是 SRS 层', () {
+    test('模块开着、目标是 Fushi 复习：SRS 层在最外、不套自动重排，快照目录与 Anki 分开', () {
       final BaseAnkiRepository repo = container(
         srsEnabled: true,
         target: SrsMiningTarget.srs,
       ).read(ankiRepositoryProvider);
+      // 复习出卡直接按词频名次排，不需要制卡后改写新卡位置：SRS 层外面不再有自动重排。
       expect(repo, isA<SrsMiningAnkiRepository>());
+      expect(repo.supportsDeckReposition, isTrue);
+      expect(
+        repositionSnapshotFolderFor(repo),
+        AnkiDeckRepositionRunner.kSrsSnapshotFolder,
+      );
+    });
+
+    test('目标是 Anki：重排快照仍落在 Anki 的目录', () {
+      final BaseAnkiRepository repo = container(
+        srsEnabled: true,
+        target: SrsMiningTarget.anki,
+      ).read(ankiRepositoryProvider);
+      expect(
+        repositionSnapshotFolderFor(repo),
+        AnkiDeckRepositionRunner.kAnkiSnapshotFolder,
+      );
     });
   });
 
@@ -729,4 +1234,26 @@ class _TargetAppModel extends AppModel {
 
   @override
   SrsMiningTarget get srsMiningTarget => _target;
+}
+
+/// 后端类型支持重排、但连着的那一端缺原生接口（新版 AnkiConnect 无
+/// `scheduling.repositionNewCards`）：探测恒 false。
+class _NoNativeRepositionAnki extends _FakeAnki {
+  int probes = 0;
+  int listed = 0;
+
+  @override
+  bool get supportsDeckReposition => true;
+
+  @override
+  Future<bool> probeDeckReposition() async {
+    probes++;
+    return false;
+  }
+
+  @override
+  Future<List<AnkiCardInfo>> listNewCards(String deckName) async {
+    listed++;
+    return const <AnkiCardInfo>[];
+  }
 }

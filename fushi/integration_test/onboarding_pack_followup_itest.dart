@@ -16,7 +16,7 @@ import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_prompt.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
-import 'package:fushi/utils.dart' show t;
+import 'package:fushi/i18n/strings.g.dart';
 
 import 'helpers/focus_driver.dart';
 import 'helpers/observe_capture.dart';

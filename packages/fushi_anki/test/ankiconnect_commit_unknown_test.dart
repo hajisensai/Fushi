@@ -82,10 +82,8 @@ class _DuplicateService extends AnkiConnectService {
 }
 
 class _ConfiguredRepo extends AnkiConnectRepository {
-  _ConfiguredRepo({
-    required AnkiConnectService service,
-    required this.settings,
-  }) : super(service: service);
+  _ConfiguredRepo({required AnkiConnectService service, required this.settings})
+    : super(service: service);
 
   final AnkiSettings settings;
 
@@ -94,49 +92,60 @@ class _ConfiguredRepo extends AnkiConnectRepository {
 }
 
 AnkiSettings _settings({bool allowDupes = false}) => AnkiSettings(
-      selectedDeckId: 1,
-      selectedNoteTypeId: 2,
-      availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
-      availableNoteTypes: const <AnkiNoteType>[
-        AnkiNoteType(
-          id: 2,
-          name: 'Fushi',
-          fields: <String>['Expression', 'Reading'],
-        ),
-      ],
-      fieldMappings: const <String, String>{
-        'Expression': '{expression}',
-        'Reading': '{reading}',
-      },
-      allowDupes: allowDupes,
-    );
+  selectedDeckId: 1,
+  selectedNoteTypeId: 2,
+  availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
+  availableNoteTypes: const <AnkiNoteType>[
+    AnkiNoteType(
+      id: 2,
+      name: 'Fushi',
+      fields: <String>['Expression', 'Reading'],
+    ),
+  ],
+  fieldMappings: const <String, String>{
+    'Expression': '{expression}',
+    'Reading': '{reading}',
+  },
+  allowDupes: allowDupes,
+);
 
 const String _payload = '{"expression":"勉強","reading":"べんきょう"}';
 const AnkiMiningContext _context = AnkiMiningContext(sentence: '');
 
 void main() {
   group('AnkiConnect atomic addNote duplicate handling', () {
-    test('normal mining does not preflight or reconcile with findNotes',
-        () async {
-      final service = _CommitUnknownService();
-      final repo = _ConfiguredRepo(service: service, settings: _settings());
+    test(
+      'normal mining does not preflight or reconcile with findNotes',
+      () async {
+        final service = _CommitUnknownService();
+        final repo = _ConfiguredRepo(service: service, settings: _settings());
 
-      final MineOutcome outcome = await repo.mineEntry(
-        rawPayloadJson: _payload,
-        context: _context,
-      );
+        final MineOutcome outcome = await repo.mineEntry(
+          rawPayloadJson: _payload,
+          context: _context,
+        );
 
-      expect(outcome.result, MineResult.error);
-      expect(outcome.noteId, isNull);
-      expect(outcome.errorDetail, contains('may have created'));
-      expect(service.addAttempts, 1,
-          reason: 'response-phase addNote reset must not be blindly retried');
-      expect(service.duplicateChecks, 0,
-          reason: 'mining must not run a GUI-thread findNotes preflight');
-      expect(service.findCalls, 0,
-          reason: 'a lost addNote response cannot be reconciled safely');
-      expect(service.receivedScope, AnkiDuplicateScope.deck);
-    });
+        expect(outcome.result, MineResult.error);
+        expect(outcome.noteId, isNull);
+        expect(outcome.errorDetail, contains('may have created'));
+        expect(
+          service.addAttempts,
+          1,
+          reason: 'response-phase addNote reset must not be blindly retried',
+        );
+        expect(
+          service.duplicateChecks,
+          0,
+          reason: 'mining must not run a GUI-thread findNotes preflight',
+        );
+        expect(
+          service.findCalls,
+          0,
+          reason: 'a lost addNote response cannot be reconciled safely',
+        );
+        expect(service.receivedScope, AnkiDuplicateScope.deck);
+      },
+    );
 
     test('native duplicate response becomes MineOutcome.duplicate', () async {
       final service = _DuplicateService();
@@ -152,23 +161,25 @@ void main() {
       expect(service.duplicateChecks, 0);
     });
 
-    test('allowDupes=true also never runs a separate duplicate query',
-        () async {
-      final service = _CommitUnknownService();
-      final repo = _ConfiguredRepo(
-        service: service,
-        settings: _settings(allowDupes: true),
-      );
+    test(
+      'allowDupes=true also never runs a separate duplicate query',
+      () async {
+        final service = _CommitUnknownService();
+        final repo = _ConfiguredRepo(
+          service: service,
+          settings: _settings(allowDupes: true),
+        );
 
-      final MineOutcome outcome = await repo.mineEntry(
-        rawPayloadJson: _payload,
-        context: _context,
-      );
+        final MineOutcome outcome = await repo.mineEntry(
+          rawPayloadJson: _payload,
+          context: _context,
+        );
 
-      expect(outcome.result, MineResult.error);
-      expect(outcome.noteId, isNull);
-      expect(service.duplicateChecks, 0);
-      expect(service.findCalls, 0);
-    });
+        expect(outcome.result, MineResult.error);
+        expect(outcome.noteId, isNull);
+        expect(service.duplicateChecks, 0);
+        expect(service.findCalls, 0);
+      },
+    );
   });
 }

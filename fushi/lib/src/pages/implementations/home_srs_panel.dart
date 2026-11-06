@@ -2,7 +2,8 @@
 ///
 /// 一行高：前导图标 + 「复习」+ 今日新卡 / 学习中 / 到期三色计数 + 「开始复习」主按钮；
 /// 点条目本身进牌组列表（复习 tab）。今天没有待复习的卡时计数与按钮换成一句
-/// 「今日已完成」。计数直接读牌组列表同一个 provider（[srsDeckListProvider]）的顶层
+/// 「今日已完成」。下面一行是今天已做的复习（张数 · 用时 · 正确率，[srsTodayReviewSummaryProvider]，
+/// 与复习统计页「今天」同口径；4mY-bG0T96）。计数直接读牌组列表同一个 provider（[srsDeckListProvider]）的顶层
 /// 行之和，口径与牌组列表逐字相同，不另算一套；写操作 / 制卡 / 同步都经
 /// [srsRevisionProvider] 让它重读。
 ///
@@ -16,6 +17,8 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
+import 'package:fushi/src/pages/implementations/stat_shared.dart'
+    show formatStatTime;
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart'
@@ -23,7 +26,58 @@ import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart'
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+
+/// 首页此刻是否真被看着（首页 dashboard 按 TickerMode 写入：所在 tab 隐藏、或被别的页面盖住时为 false）。
+final StateProvider<bool> homeSrsLiveProvider = StateProvider<bool>(
+  (Ref ref) => true,
+);
+
+/// 首页用的牌组列表：首页看得见时订阅 [srsDeckListProvider]（写操作 / 制卡 / 同步后重读）；看不见时只取当前
+/// 已有的值、不订阅——没人订阅时 [srsDeckListProvider] 不重算，用户在阅读器里制卡、后台同步收数据都不会让
+/// 看不见的首页在 UI isolate 上重扫一遍全部卡片。回到首页重新订阅，脏了就重算一次。
+final Provider<AsyncValue<SrsDeckListData?>> homeSrsDeckListProvider =
+    Provider<AsyncValue<SrsDeckListData?>>(
+      (Ref ref) => ref.watch(homeSrsLiveProvider)
+          ? ref.watch(srsDeckListProvider)
+          : ref.read(srsDeckListProvider),
+    );
+
+/// 今天已做的复习（[SrsDbStore.todayReviewSummary]，与复习统计页「今天」同口径）；写操作 / 作答 / 同步
+/// 都经 [srsRevisionProvider] 让它重读。没有复习库时为 null。
+final FutureProvider<SrsTodayReviewSummary?> srsTodayReviewSummaryProvider =
+    FutureProvider<SrsTodayReviewSummary?>((Ref ref) async {
+      ref.watch(srsRevisionProvider);
+      final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+      return store?.todayReviewSummary();
+    });
+
+/// 首页用的「今日」复习汇总：与 [homeSrsDeckListProvider] 同一条订阅规则（首页看不见时不订阅、不重算）。
+final Provider<AsyncValue<SrsTodayReviewSummary?>> homeSrsTodayReviewsProvider =
+    Provider<AsyncValue<SrsTodayReviewSummary?>>(
+      (Ref ref) => ref.watch(homeSrsLiveProvider)
+          ? ref.watch(srsTodayReviewSummaryProvider)
+          : ref.read(srsTodayReviewSummaryProvider),
+    );
+
+/// 首页复习条「今日」一行的文字：已复习张数 · 用时，有复习时再加正确率（与统计页今天一节同口径）。
+String homeSrsTodayLine(SrsTodayReviewSummary s) {
+  final String time = s.durationMs < 60000
+      ? t.srs_stats_seconds(n: (s.durationMs / 1000).round())
+      : formatStatTime(s.durationMs);
+  final double? rate = s.correctRate;
+  return <String>[
+    t.home_srs_panel_today(count: s.count, time: time),
+    if (rate != null) '${t.srs_stats_today_correct} ${(rate * 100).round()}%',
+  ].join(' · ');
+}
 
 /// 复习条该不该出现在首页（纯函数，判据的唯一实现）。
 ///
@@ -62,7 +116,7 @@ final Provider<bool> homeSrsPanelVisibleProvider = Provider<bool>((Ref ref) {
       mode == HomeDashboardPanelMode.auto && !miningToReview;
   final int? totalCards = needsCount
       ? ref.watch(
-          srsDeckListProvider.select(
+          homeSrsDeckListProvider.select(
             (AsyncValue<SrsDeckListData?> d) => d.valueOrNull?.totalCards,
           ),
         )
@@ -96,7 +150,9 @@ class HomeSrsPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final SrsDeckListData? data = ref.watch(srsDeckListProvider).valueOrNull;
+    final SrsDeckListData? data = ref
+        .watch(homeSrsDeckListProvider)
+        .valueOrNull;
     final bool apple = isGlassDesign(context);
     final bool eink = isEinkTheme(context);
     final BorderRadius radius = apple
@@ -106,11 +162,14 @@ class HomeSrsPanel extends ConsumerWidget {
         ? appleColorsOf(context).secondaryGroupedBackground
         : tokens.surfaces.group;
     final SrsDeckSummary? target = data?.firstRootWithWork;
+    final SrsTodayReviewSummary? today = ref
+        .watch(homeSrsTodayReviewsProvider)
+        .valueOrNull;
 
     final Widget status;
     if (data == null) {
       status = const _HomeSrsCountsSkeleton(key: ValueKey<String>('loading'));
-    } else if (!data.hasWorkToday) {
+    } else if (!data.hasWorkToday && !data.rwkvPending) {
       status = Row(
         key: const ValueKey<String>('done'),
         mainAxisSize: MainAxisSize.min,
@@ -143,6 +202,7 @@ class HomeSrsPanel extends ConsumerWidget {
             newCount: data.todayNew,
             learnCount: data.todayLearn,
             reviewCount: data.todayReview,
+            reviewPending: data.rwkvPending,
             dense: true,
           ),
           if (target != null)
@@ -184,49 +244,101 @@ class HomeSrsPanel extends ConsumerWidget {
                 tokens.spacing.gap / 2 + 4,
                 tokens.spacing.gap / 2,
               ),
-              child: SizedBox(
-                height: rowHeight,
-                child: Row(
-                  children: <Widget>[
-                    FushiIcon(
-                      FushiIcons.repeat,
-                      size: 18,
-                      color: tokens.type.sectionLabel.color,
-                    ),
-                    SizedBox(width: tokens.spacing.gap / 2),
-                    Text(
-                      t.nav_srs,
-                      maxLines: 1,
-                      style: tokens.type.sectionLabel,
-                    ),
-                    SizedBox(width: tokens.spacing.gap),
-                    Expanded(
-                      child: Align(
-                        alignment: AlignmentDirectional.centerEnd,
-                        child: AnimatedSwitcher(
-                          duration: fushiMotionDuration(
-                            context,
-                            FushiMotion.short,
-                          ),
-                          switchInCurve: FushiMotion.enter,
-                          switchOutCurve: FushiMotion.exit,
-                          layoutBuilder:
-                              (Widget? current, List<Widget> previous) => Stack(
-                                alignment: AlignmentDirectional.centerEnd,
-                                children: <Widget>[
-                                  ...previous,
-                                  if (current != null) current,
-                                ],
-                              ),
-                          child: status,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  SizedBox(
+                    height: rowHeight,
+                    child: Row(
+                      children: <Widget>[
+                        FushiIcon(
+                          FushiIcons.repeat,
+                          size: 18,
+                          color: tokens.type.sectionLabel.color,
                         ),
-                      ),
+                        SizedBox(width: tokens.spacing.gap / 2),
+                        Text(
+                          t.nav_srs,
+                          maxLines: 1,
+                          style: tokens.type.sectionLabel,
+                        ),
+                        SizedBox(width: tokens.spacing.gap),
+                        Expanded(
+                          child: Align(
+                            alignment: AlignmentDirectional.centerEnd,
+                            child: AnimatedSwitcher(
+                              duration: fushiMotionDuration(
+                                context,
+                                FushiMotion.short,
+                              ),
+                              switchInCurve: FushiMotion.enter,
+                              switchOutCurve: FushiMotion.exit,
+                              layoutBuilder:
+                                  (Widget? current, List<Widget> previous) =>
+                                      Stack(
+                                        alignment:
+                                            AlignmentDirectional.centerEnd,
+                                        children: <Widget>[
+                                          ...previous,
+                                          if (current != null) current,
+                                        ],
+                                      ),
+                              child: status,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  _HomeSrsTodayLine(today: today),
+                ],
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 「今日」一行（今天已复习张数 · 用时 · 正确率）：固定行高，数据回来前挂同高骨架，不跳布局。
+class _HomeSrsTodayLine extends StatelessWidget {
+  const _HomeSrsTodayLine({required this.today});
+
+  final SrsTodayReviewSummary? today;
+
+  /// 行高：骨架 / 文字两态同高。
+  static const double height = 20;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final SrsTodayReviewSummary? s = today;
+    return SizedBox(
+      height: height,
+      child: Padding(
+        padding: EdgeInsetsDirectional.only(start: 18 + tokens.spacing.gap / 2),
+        child: AnimatedSwitcher(
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          switchInCurve: FushiMotion.enter,
+          switchOutCurve: FushiMotion.exit,
+          layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+            alignment: AlignmentDirectional.centerStart,
+            children: <Widget>[...previous, ?current],
+          ),
+          child: s == null
+              ? const FushiSkeletonShimmer(
+                  key: ValueKey<String>('home-srs-today-skeleton'),
+                  child: FushiSkeleton(width: 140, height: 12),
+                )
+              : Text(
+                  homeSrsTodayLine(s),
+                  key: const ValueKey<String>('home-srs-panel-today'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.metadata,
+                ),
         ),
       ),
     );

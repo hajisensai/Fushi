@@ -40,7 +40,7 @@ if [[ -n "$app_executable" ]]; then
         ;;
     esac
     if [[ ! -x "$want_java" ]]; then
-      echo "Mihon runtime 缺 $want 的 JVM 镜像（缺 $want_java）。该架构的 Mac 上 sidecar 起不来，漫画 Mihon 源整条链全部失效。" >&2
+      echo "Mihon runtime 缺 $want 的 JVM 镜像（缺 ${want_java}）。该架构的 Mac 上 sidecar 起不来，漫画 Mihon 源整条链全部失效。" >&2
       exit 1
     fi
     want_java_archs="$(lipo -archs "$want_java")"
@@ -48,7 +48,7 @@ if [[ -n "$app_executable" ]]; then
     case " $want_java_archs " in
       *" $want "*) ;;
       *)
-        echo "Mihon 的 $want JVM 镜像实际是 $want_java_archs（交叉 jlink 出错）。该架构的 Mac 上会被内核以 EBADARCH 拒掉。" >&2
+        echo "Mihon 的 $want JVM 镜像实际是 ${want_java_archs}（交叉 jlink 出错）。该架构的 Mac 上会被内核以 EBADARCH 拒掉。" >&2
         exit 1
         ;;
     esac

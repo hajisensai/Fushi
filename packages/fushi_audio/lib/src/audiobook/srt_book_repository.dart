@@ -10,6 +10,7 @@ import 'audiobook_repository.dart';
 import 'audiobook_local_files.dart';
 import 'srt_book_model.dart';
 import 'audiobook_storage.dart';
+import 'remote_audio_binding.dart';
 import '../parsers/srt_parser.dart';
 
 /// [SrtBookRepository.delete] 的结果：删掉几行 + 用户原件的逐条删除结果。
@@ -59,18 +60,33 @@ class SrtBookRepository {
   /// 要为「重新定位」按钮对同一批路径跑 `AudiobookStorage.hasMissingPaths`）。
   /// 判据与保守策略见 [AudiobookPathRelocator]。
   ///
+  /// **两张表一起修**（反馈 XDtB1kYT0C）：EPUB 有声书的音频路径同时落在
+  /// `audiobooks` 行与它配对的 `srtbook_epub_<bookKey>` 行里（同一批文件）。以前
+  /// 只修后者，于是 Windows 备份合并到 Android、两行都指着带 `\` 的坏路径时，
+  /// 配对 srt 行被这里修好、`audiobooks` 行仍坏——会话启动器
+  /// （`AudiobookSessionLauncher._pickSource`）看 `audiobooks` 行解析不到音频，
+  /// 退到配对 srt 行按 uid 身份起播：能出声，但 cue / 进度都挂在 bookKey 上，
+  /// 于是字幕不跟、进度归零。同一份路径必须同一处、同一个 relocator 一起修，
+  /// 两行才不会分叉。
+  ///
   /// [audiobooksRoot] 默认惰性取 [AudiobookStorage.audiobooksRootDir]（只在真有
   /// 断链行时才解析）；解析失败（纯 Dart 单测、无 path_provider）降级为不修，
-  /// **绝不让列书本身失败**。返回真改写了的行数。
+  /// **绝不让列书本身失败**。返回真改写了的行数（两表合计）。
   Future<int> repairMovedPaths({
     String? audiobooksRoot,
     bool Function(String path)? exists,
     List<String> Function(String root)? listEntries,
   }) async {
     final List<SrtBookRow> rows = await _db.getAllSrtBooks();
+    final List<AudiobookRow> audiobookRows = await _db.getAllAudiobooks();
     final bool Function(String) probe =
         exists ?? AudiobookPathRelocator.defaultExists;
-    if (!rows.any((SrtBookRow r) => _hasMissingPath(r, probe))) return 0;
+    if (!rows.any((SrtBookRow r) => _hasMissingPath(r, probe)) &&
+        !audiobookRows.any(
+          (AudiobookRow r) => _audiobookHasMissingPath(r, probe),
+        )) {
+      return 0;
+    }
 
     String? root = audiobooksRoot;
     if (root == null) {
@@ -78,7 +94,8 @@ class SrtBookRepository {
         root = await AudiobookStorage.audiobooksRootDir();
       } catch (e) {
         fushiDebugPrint(
-            '[fushi-audio] srt path repair skipped (no documents root): $e');
+          '[fushi-audio] srt path repair skipped (no documents root): $e',
+        );
         return 0;
       }
     }
@@ -90,13 +107,18 @@ class SrtBookRepository {
     );
     int rowsChanged = 0;
     for (final SrtBookRow row in rows) {
-      final String? newAudioRoot =
-          row.audioRoot == null ? null : relocator.relocate(row.audioRoot!);
+      final String? newAudioRoot = row.audioRoot == null
+          ? null
+          : relocator.relocate(row.audioRoot!);
       final String? newSrtPath = relocator.relocate(row.srtPath);
-      final String? newCover =
-          row.coverPath == null ? null : relocator.relocate(row.coverPath!);
-      final String? newPathsJson =
-          _relocateAudioPathsJson(row.audioPathsJson, relocator, row.uid);
+      final String? newCover = row.coverPath == null
+          ? null
+          : relocator.relocate(row.coverPath!);
+      final String? newPathsJson = _relocateAudioPathsJson(
+        row.audioPathsJson,
+        relocator,
+        row.uid,
+      );
       if (newAudioRoot == null &&
           newSrtPath == null &&
           newCover == null &&
@@ -112,9 +134,34 @@ class SrtBookRepository {
       );
       rowsChanged++;
     }
+    for (final AudiobookRow row in audiobookRows) {
+      final String? newAudioRoot = row.audioRoot == null
+          ? null
+          : relocator.relocate(row.audioRoot!);
+      final String? newAlignment = relocator.relocate(row.alignmentPath);
+      final String? newPathsJson = _relocateAudioPathsJson(
+        row.audioPathsJson,
+        relocator,
+        row.bookKey,
+      );
+      if (newAudioRoot == null &&
+          newAlignment == null &&
+          newPathsJson == null) {
+        continue;
+      }
+      await _db.updateAudiobookPaths(
+        row.bookKey,
+        audioRoot: newAudioRoot,
+        audioPathsJson: newPathsJson,
+        alignmentPath: newAlignment,
+      );
+      rowsChanged++;
+    }
     if (!relocator.stats.isEmpty) {
-      fushiDebugPrint('[fushi-audio] srt path repair: rows=$rowsChanged '
-          '${relocator.stats} root=$root');
+      fushiDebugPrint(
+        '[fushi-audio] srt path repair: rows=$rowsChanged '
+        '${relocator.stats} root=$root',
+      );
     }
     return rowsChanged;
   }
@@ -133,8 +180,10 @@ class SrtBookRepository {
       if (decoded is! List) return null;
       paths = decoded.whereType<String>().toList();
     } catch (e) {
-      fushiDebugPrint('[fushi-audio] srt path repair: bad audioPathsJson for '
-          '$uid: $e');
+      fushiDebugPrint(
+        '[fushi-audio] srt path repair: bad audioPathsJson for '
+        '$uid: $e',
+      );
       return null;
     }
     bool changed = false;
@@ -147,16 +196,33 @@ class SrtBookRepository {
     return changed ? jsonEncode(out) : null;
   }
 
-  static bool _hasMissingPath(SrtBookRow row, bool Function(String) probe) {
+  static bool _hasMissingPath(SrtBookRow row, bool Function(String) probe) =>
+      _anyMissing(
+        <String?>[row.audioRoot, row.srtPath, row.coverPath],
+        row.audioPathsJson,
+        probe,
+      );
+
+  static bool _audiobookHasMissingPath(
+    AudiobookRow row,
+    bool Function(String) probe,
+  ) => _anyMissing(
+    <String?>[row.audioRoot, row.alignmentPath],
+    row.audioPathsJson,
+    probe,
+  );
+
+  static bool _anyMissing(
+    List<String?> paths,
+    String? audioPathsJson,
+    bool Function(String) probe,
+  ) {
     bool broken(String? path) =>
         path != null && path.isNotEmpty && !probe(path);
-    if (broken(row.audioRoot) || broken(row.srtPath) || broken(row.coverPath)) {
-      return true;
-    }
-    final String? json = row.audioPathsJson;
-    if (json == null) return false;
+    if (paths.any(broken)) return true;
+    if (audioPathsJson == null) return false;
     try {
-      final dynamic decoded = jsonDecode(json);
+      final dynamic decoded = jsonDecode(audioPathsJson);
       if (decoded is! List) return false;
       return decoded.whereType<String>().any(broken);
     } catch (_) {
@@ -204,8 +270,9 @@ class SrtBookRepository {
     }
 
     final Directory persistDir = await AudiobookStorage.ensurePersistDir(uid);
-    final List<String> previousAudio =
-        List<String>.from(book.audioPaths ?? const <String>[]);
+    final List<String> previousAudio = List<String>.from(
+      book.audioPaths ?? const <String>[],
+    );
     final String? previousRoot = book.audioRoot;
     // 持久目录音频的唯一写入原语（同步成恰好这一组，幂等、不会先删掉自己的源）。
     final List<String> persisted = await AudiobookStorage.syncAudioFiles(
@@ -222,11 +289,13 @@ class SrtBookRepository {
     // `audiobook_pos_<uid>`（与 AudiobookSessionLauncher._readPrefs 的 SRT 分支
     // 同源）。不归零则恢复 seek 落在新音频的随机处甚至 EOF——「音频不响」/
     // 「乱跳页」。音频集合没变（重复导入同一组）时不动进度。
-    final bool audioChanged = previousRoot != null ||
+    final bool audioChanged =
+        previousRoot != null ||
         !AudiobookStorage.sameAudioPathList(previousAudio, persisted);
     if (audioChanged) {
-      await AudiobookRepository(_db)
-          .updatePositionMs(bookKey: uid, positionMs: 0);
+      await AudiobookRepository(
+        _db,
+      ).updatePositionMs(bookKey: uid, positionMs: 0);
     }
 
     // TODO-1032 PR2：愈合旧数据。PR1 把 SRT 书音频归一到 SrtBooks.audioPaths，但
@@ -284,27 +353,32 @@ class SrtBookRepository {
   }
 
   Future<void> save(SrtBook book) async {
-    await _db.upsertSrtBook(SrtBooksCompanion(
-      // Carry the primary key when known so insertOnConflictUpdate (which
-      // resolves on the `id` PK, not the `uid` unique index) performs a real
-      // in-place update instead of hitting the UNIQUE(uid) constraint. Callers
-      // that don't load `id` (fresh inserts) leave it absent — unchanged.
-      id: book.id != null ? Value(book.id!) : const Value.absent(),
-      uid: Value(book.uid),
-      title: Value(book.title),
-      author: Value(book.author),
-      audioRoot: Value(book.audioRoot),
-      audioPathsJson:
-          Value(book.audioPaths != null ? jsonEncode(book.audioPaths) : null),
-      srtPath: Value(book.srtPath),
-      coverPath: Value(book.coverPath),
-      importedAt: Value(book.importedAt),
-      bookKey: Value(book.bookKey),
-    ));
+    await _db.upsertSrtBook(
+      SrtBooksCompanion(
+        // Carry the primary key when known so insertOnConflictUpdate (which
+        // resolves on the `id` PK, not the `uid` unique index) performs a real
+        // in-place update instead of hitting the UNIQUE(uid) constraint. Callers
+        // that don't load `id` (fresh inserts) leave it absent — unchanged.
+        id: book.id != null ? Value(book.id!) : const Value.absent(),
+        uid: Value(book.uid),
+        title: Value(book.title),
+        author: Value(book.author),
+        audioRoot: Value(book.audioRoot),
+        audioPathsJson: Value(
+          book.audioPaths != null ? jsonEncode(book.audioPaths) : null,
+        ),
+        srtPath: Value(book.srtPath),
+        coverPath: Value(book.coverPath),
+        importedAt: Value(book.importedAt),
+        bookKey: Value(book.bookKey),
+      ),
+    );
     // 删除传播：重新导入同 uid 的纯字幕书 → 清其 sync 删除墓碑，防「删了又加、墓碑
     // 还在」误判（范式仿 [AudiobookRepository.saveAudiobook] / 书 / 视频的插入清墓碑）。
     await _db.clearSyncDeletionTombstone(
-        SyncTombstoneKind.srtbook.dbValue, book.uid);
+      SyncTombstoneKind.srtbook.dbValue,
+      book.uid,
+    );
   }
 
   /// 局部更新一条 SRT 书：**只写显式传入的字段**，其余列原样不动，行不存在时
@@ -334,8 +408,9 @@ class SrtBookRepository {
         title: title == null ? const Value.absent() : Value(title),
         srtPath: srtPath == null ? const Value.absent() : Value(srtPath),
         bookKey: bookKey == null ? const Value.absent() : Value(bookKey),
-        importedAt:
-            importedAt == null ? const Value.absent() : Value(importedAt),
+        importedAt: importedAt == null
+            ? const Value.absent()
+            : Value(importedAt),
         author: author == null ? const Value.absent() : Value(author),
         coverPath: coverPath == null ? const Value.absent() : Value(coverPath),
         audioPathsJson: audioPaths == null
@@ -346,14 +421,29 @@ class SrtBookRepository {
         audioRoot: audioPaths != null
             ? const Value<String?>(null)
             : (audioRoot == null
-                ? const Value.absent()
-                : Value<String?>(audioRoot)),
+                  ? const Value.absent()
+                  : Value<String?>(audioRoot)),
       ),
     );
     if (affected == 0) return false;
     await _db.clearSyncDeletionTombstone(
-        SyncTombstoneKind.srtbook.dbValue, uid);
+      SyncTombstoneKind.srtbook.dbValue,
+      uid,
+    );
     return true;
+  }
+
+  /// 把一条字幕书的文件列表模式音频清空（`audio_paths_json` 置 NULL），其余列不动。
+  ///
+  /// 这是 [patchByUid] 文档里说的「真要把某列清空」的专门入口：音频断链的书转成纯
+  /// 字幕书（反馈 IHgBrvHizT）。目录模式的 `audio_root` 不在这里碰——断链判定只看
+  /// 文件列表。行不存在返回 false。
+  Future<bool> clearAudioPaths(String uid) async {
+    final int affected = await _db.patchSrtBook(
+      uid,
+      const SrtBooksCompanion(audioPathsJson: Value<String?>(null)),
+    );
+    return affected > 0;
   }
 
   /// Deletes the SRT book + its on-disk persist dir. [SrtBookDeleteResult
@@ -390,8 +480,11 @@ class SrtBookRepository {
     // （同 TODO-1359 那类「尾活失败翻转结果」的坑）。
     if (deleted > 0 && standalone) {
       try {
-        await _db.writeSyncDeletionTombstone(SyncTombstoneKind.srtbook.dbValue,
-            uid, DateTime.now().millisecondsSinceEpoch);
+        await _db.writeSyncDeletionTombstone(
+          SyncTombstoneKind.srtbook.dbValue,
+          uid,
+          DateTime.now().millisecondsSinceEpoch,
+        );
       } catch (_) {
         // best-effort：记账失败不影响字幕书已删。
       }
@@ -402,8 +495,9 @@ class SrtBookRepository {
     }
     return SrtBookDeleteResult(
       deleted: deleted,
-      localFiles:
-          await deleteAudiobookLocalFiles(_decodeAudioPaths(before.audioPathsJson)),
+      localFiles: await deleteAudiobookLocalFiles(
+        _decodeAudioPaths(before.audioPathsJson),
+      ),
     );
   }
 
@@ -422,29 +516,47 @@ class SrtBookRepository {
   }
 
   Future<List<AudioCue>> cuesFor(String uid) async {
-    final rows = await ((_db.select(_db.audioCues))
-          ..where((t) =>
-              t.bookKey.equals(uid) &
-              t.chapterHref.equals(SrtParser.defaultChapter))
-          ..orderBy([(t) => OrderingTerm.asc(t.sentenceIndex)]))
-        .get();
+    final rows =
+        await ((_db.select(_db.audioCues))
+              ..where(
+                (t) =>
+                    t.bookKey.equals(uid) &
+                    t.chapterHref.equals(SrtParser.defaultChapter),
+              )
+              ..orderBy([(t) => OrderingTerm.asc(t.sentenceIndex)]))
+            .get();
     return rows.map(AudioCue.fromRow).toList();
   }
 
   /// 整组替换字幕书 [uid] 的 cue；进度键 `audiobook_pos_<uid>` 按真实时间位置
   /// 换编码（BUG-3197，同 [AudiobookRepository.saveCues]；同一事务，BUG-3251）。
-  Future<void> saveCues({
-    required String uid,
-    required List<AudioCue> cues,
-  }) =>
+  Future<void> saveCues({required String uid, required List<AudioCue> cues}) =>
       _db.transaction(() async {
         final List<AudioCue> before = await cuesFor(uid);
         await _db.replaceCuesForBook(
-            uid, cues.map(AudioCue.toCompanion).toList());
+          uid,
+          cues.map(AudioCue.toCompanion).toList(),
+        );
+        // 流式书没挂字幕时，控制器按服务器音轨时长编码进度（同一条规则
+        // [audiobookPositionDurationsMs]）；这里不按同一条换算，补字幕那一下就挪位。
+        final RemoteAudioBinding? binding = await RemoteAudioBindingRepository(
+          _db,
+        ).get(uid);
+        final List<int> remoteDurations = <int>[
+          for (final RemoteAudioTrack t
+              in binding?.tracks ?? const <RemoteAudioTrack>[])
+            t.durationMs,
+        ];
         await AudiobookRepository(_db).rebaseStoredPositionForCueChange(
           positionKey: uid,
-          oldDurationsMs: audiobookFileDurationsFromCues(before),
-          newDurationsMs: audiobookFileDurationsFromCues(cues),
+          oldDurationsMs: audiobookPositionDurationsMs(
+            before,
+            remoteTrackDurationsMs: remoteDurations,
+          ),
+          newDurationsMs: audiobookPositionDurationsMs(
+            cues,
+            remoteTrackDurationsMs: remoteDurations,
+          ),
         );
       });
 

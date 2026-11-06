@@ -10,7 +10,9 @@ void main() {
 
   Widget buildApp(Widget child) {
     return TranslationProvider(
-      child: MaterialApp(home: Scaffold(body: Center(child: child))),
+      child: MaterialApp(
+        home: Scaffold(body: Center(child: child)),
+      ),
     );
   }
 
@@ -53,9 +55,7 @@ void main() {
     tester.view.physicalSize = const Size(320, 240);
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(
-      buildApp(OpenStashClearDialog(onConfirm: () {})),
-    );
+    await tester.pumpWidget(buildApp(OpenStashClearDialog(onConfirm: () {})));
 
     expect(tester.takeException(), isNull);
     expect(find.text(t.stash_clear_title), findsOneWidget);

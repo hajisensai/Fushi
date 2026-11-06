@@ -40,18 +40,22 @@ void main() {
   final Directory workflowsDir = Directory('../.github/workflows');
 
   test('workflows 目录存在', () {
-    expect(workflowsDir.existsSync(), isTrue,
-        reason: 'expected ${workflowsDir.absolute.path}');
+    expect(
+      workflowsDir.existsSync(),
+      isTrue,
+      reason: 'expected ${workflowsDir.absolute.path}',
+    );
   });
 
   final List<File> workflows = workflowsDir.existsSync()
       ? (workflowsDir
-          .listSync()
-          .whereType<File>()
-          .where(
-              (File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml'))
-          .toList()
-        ..sort((File a, File b) => a.path.compareTo(b.path)))
+            .listSync()
+            .whereType<File>()
+            .where(
+              (File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml'),
+            )
+            .toList()
+          ..sort((File a, File b) => a.path.compareTo(b.path)))
       : <File>[];
 
   /// 一个 workflow 步骤块：`- name:` / `- uses:` 起头，延伸到下一个同缩进
@@ -101,8 +105,9 @@ void main() {
       }
       final List<String> block = masked.sublist(i, end);
       // `actions/cache/restore@` 也算：它读同一份配额里的条目，只是不写。
-      final bool restoreOnly =
-          block.any((String l) => l.contains('uses: actions/cache/restore@'));
+      final bool restoreOnly = block.any(
+        (String l) => l.contains('uses: actions/cache/restore@'),
+      );
       if (!restoreOnly &&
           !block.any((String l) => l.contains('uses: actions/cache@'))) {
         continue;
@@ -150,22 +155,28 @@ void main() {
         break;
       }
 
-      allCacheSteps.add(_CacheStep(
-        workflow: name,
-        line: i + 1,
-        header: raw[i].trim(),
-        paths: paths,
-        key: keyText,
-        restoreKeys: restoreKeys,
-        restoreOnly: restoreOnly,
-      ));
+      allCacheSteps.add(
+        _CacheStep(
+          workflow: name,
+          line: i + 1,
+          header: raw[i].trim(),
+          paths: paths,
+          key: keyText,
+          restoreKeys: restoreKeys,
+          restoreOnly: restoreOnly,
+        ),
+      );
     }
   }
 
   test('扫描到了 actions/cache 步骤（守卫没跑空）', () {
-    expect(allCacheSteps, isNotEmpty,
-        reason: '一个 actions/cache 步骤都没扫到，说明块切分坏了或 workflow 改版了；'
-            '本守卫的其余断言此时全部无意义。');
+    expect(
+      allCacheSteps,
+      isNotEmpty,
+      reason:
+          '一个 actions/cache 步骤都没扫到，说明块切分坏了或 workflow 改版了；'
+          '本守卫的其余断言此时全部无意义。',
+    );
   });
 
   test('没有 workflow 再为 pub cache 目录挂第二个 actions/cache', () {
@@ -179,15 +190,22 @@ void main() {
 
     final List<String> offenders = allCacheSteps
         .where((_CacheStep s) => s.paths.any(isPubCachePath))
-        .map((_CacheStep s) => '${s.workflow}:${s.line} ${s.header} '
-            '(path: ${s.paths.join(", ")})')
+        .map(
+          (_CacheStep s) =>
+              '${s.workflow}:${s.line} ${s.header} '
+              '(path: ${s.paths.join(", ")})',
+        )
         .toList();
 
-    expect(offenders, isEmpty,
-        reason: 'subosito/flutter-action@v2 的 `cache: true` 已经把 pub cache 存成 '
-            '`flutter-pub-<os>-...-<pubspec.lock hash>` 了；再挂一个 actions/cache 只是'
-            '把同一批字节换个 key 名存第二遍，白占 GitHub 那 10 GB 配额（三平台 447 MB）'
-            '并让每个作业多解压一次。删掉这些步骤：\n${offenders.join("\n")}');
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'subosito/flutter-action@v2 的 `cache: true` 已经把 pub cache 存成 '
+          '`flutter-pub-<os>-...-<pubspec.lock hash>` 了；再挂一个 actions/cache 只是'
+          '把同一批字节换个 key 名存第二遍，白占 GitHub 那 10 GB 配额（三平台 447 MB）'
+          '并让每个作业多解压一次。删掉这些步骤：\n${offenders.join("\n")}',
+    );
   });
 
   group('Gradle 缓存', () {
@@ -199,28 +217,33 @@ void main() {
       final List<String> owners =
           gradleSteps.map((_CacheStep s) => s.workflow).toList()..sort();
       expect(
-          owners,
-          equals(<String>[
-            'build-multiplatform.yml',
-            'main.yml',
-            'release.yml',
-          ]),
-          reason: 'Gradle 缓存步骤的归属变了。多一个 workflow 存 Gradle 缓存就多一条 '
-              '2.7 GB 级记录，改动前先算配额；少一个则说明本守卫已失去锚点。'
-              '实际扫到：$owners');
+        owners,
+        equals(<String>['build-multiplatform.yml', 'main.yml', 'release.yml']),
+        reason:
+            'Gradle 缓存步骤的归属变了。多一个 workflow 存 Gradle 缓存就多一条 '
+            '2.7 GB 级记录，改动前先算配额；少一个则说明本守卫已失去锚点。'
+            '实际扫到：$owners',
+      );
     });
 
     test('三处的 path + key + restore-keys 逐字相同', () {
       final Set<String> shapes = gradleSteps
-          .map((_CacheStep s) => 'path=${s.paths.join("|")} key=${s.key} '
-              'restore=${s.restoreKeys.join("|")}')
+          .map(
+            (_CacheStep s) =>
+                'path=${s.paths.join("|")} key=${s.key} '
+                'restore=${s.restoreKeys.join("|")}',
+          )
           .toSet();
-      expect(shapes.length, 1,
-          reason: 'Gradle 缓存 key 只要有一处不同，同一份 2.7 GB 内容就会被存成两条。'
-              'develop 上真发生过：`Linux-gradle-6facc6ed…` 与 '
-              '`Linux-gradle-5709404c…` 只差 89,953 B。当前形状：\n'
-              '${gradleSteps.map((_CacheStep s) => "${s.workflow}:${s.line} "
-                  "path=${s.paths} key=${s.key}").join("\n")}');
+      expect(
+        shapes.length,
+        1,
+        reason:
+            'Gradle 缓存 key 只要有一处不同，同一份 2.7 GB 内容就会被存成两条。'
+            'develop 上真发生过：`Linux-gradle-6facc6ed…` 与 '
+            '`Linux-gradle-5709404c…` 只差 89,953 B。当前形状：\n'
+            '${gradleSteps.map((_CacheStep s) => "${s.workflow}:${s.line} "
+                "path=${s.paths} key=${s.key}").join("\n")}',
+      );
     });
 
     // 2026-09-30 实测：缓存 10.8 GB > 10 GB 配额、约一小时整体轮换一遍，最大的搅动是
@@ -233,9 +256,13 @@ void main() {
           .where((_CacheStep s) => !s.restoreOnly)
           .map((_CacheStep s) => s.workflow)
           .toList();
-      expect(writers, equals(<String>['release.yml']),
-          reason: '每个 PR ref 各存一份 1.7 GB Gradle 缓存会把整个配额冲掉；'
-              'PR 侧请用 actions/cache/restore@。实际写入方：$writers');
+      expect(
+        writers,
+        equals(<String>['release.yml']),
+        reason:
+            '每个 PR ref 各存一份 1.7 GB Gradle 缓存会把整个配额冲掉；'
+            'PR 侧请用 actions/cache/restore@。实际写入方：$writers',
+      );
     });
 
     test('只缓存下载物，不缓存 transforms 之类的派生产物', () {
@@ -252,37 +279,52 @@ void main() {
           }
         }
       }
-      expect(offenders, isEmpty,
-          reason: '`~/.gradle/caches` 全量里 `<ver>/transforms` 是可从 modules-2 '
-              '重算的构建产物（本机实测 5,073.7 MB vs modules-2 的 1,937.2 MB）。'
-              '缓存它是拿配额换 CPU，而配额才是本仓的瓶颈。只列 '
-              '`~/.gradle/caches/modules-2` / `~/.gradle/caches/journal-1` / '
-              '`~/.gradle/wrapper/dists`：\n${offenders.join("\n")}');
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            '`~/.gradle/caches` 全量里 `<ver>/transforms` 是可从 modules-2 '
+            '重算的构建产物（本机实测 5,073.7 MB vs modules-2 的 1,937.2 MB）。'
+            '缓存它是拿配额换 CPU，而配额才是本仓的瓶颈。只列 '
+            '`~/.gradle/caches/modules-2` / `~/.gradle/caches/journal-1` / '
+            '`~/.gradle/wrapper/dists`：\n${offenders.join("\n")}',
+      );
     });
 
     test('Gradle 缓存步骤必须排在改写 build.gradle/settings.gradle 的 sed 前面', () {
       // 反向锚：那些 sed 还在，才说明这条排序断言仍有对象可查。
       expect(
-          earliestGradleSed.keys.toSet(),
-          containsAll(
-              <String>['build-multiplatform.yml', 'main.yml', 'release.yml']),
-          reason: '三个 workflow 里删 aliyun 镜像的 sed 消失了？若注入方式改版请同步'
-              '更新本守卫，别让它空转。实际：${earliestGradleSed.keys.toList()..sort()}');
+        earliestGradleSed.keys.toSet(),
+        containsAll(<String>[
+          'build-multiplatform.yml',
+          'main.yml',
+          'release.yml',
+        ]),
+        reason:
+            '三个 workflow 里删 aliyun 镜像的 sed 消失了？若注入方式改版请同步'
+            '更新本守卫，别让它空转。实际：${earliestGradleSed.keys.toList()..sort()}',
+      );
 
       final List<String> offenders = <String>[];
       for (final _CacheStep step in gradleSteps) {
         final int? sedLine = earliestGradleSed[step.workflow];
         if (sedLine == null) continue;
         if (sedLine + 1 < step.line) {
-          offenders.add('${step.workflow}: sed 在第 ${sedLine + 1} 行，'
-              'Gradle 缓存步骤在第 ${step.line} 行');
+          offenders.add(
+            '${step.workflow}: sed 在第 ${sedLine + 1} 行，'
+            'Gradle 缓存步骤在第 ${step.line} 行',
+          );
         }
       }
-      expect(offenders, isEmpty,
-          reason: 'hashFiles() 算的是**当时磁盘上**的内容。sed 改过 build.gradle / '
-              'settings.gradle 之后再算 key，得到的哈希与「没改过」的 workflow 不同，'
-              '同一份 Gradle 缓存就被存成两条 2.7 GB 记录。把 sed 步骤挪到缓存步骤'
-              '之后（gradle 真正跑起来之前即可）：\n${offenders.join("\n")}');
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            'hashFiles() 算的是**当时磁盘上**的内容。sed 改过 build.gradle / '
+            'settings.gradle 之后再算 key，得到的哈希与「没改过」的 workflow 不同，'
+            '同一份 Gradle 缓存就被存成两条 2.7 GB 记录。把 sed 步骤挪到缓存步骤'
+            '之后（gradle 真正跑起来之前即可）：\n${offenders.join("\n")}',
+      );
     });
   });
 
@@ -294,8 +336,11 @@ void main() {
     final File script = File('../tool/cleanup_pr_ci.sh');
     expect(script.existsSync(), isTrue);
     final String sh = script.readAsStringSync();
-    expect(sh, contains(r'gh api -X DELETE "repos/$REPO/actions/caches/$id"'),
-        reason: '清理必须真的调 DELETE /actions/caches');
+    expect(
+      sh,
+      contains(r'gh api -X DELETE "repos/$REPO/actions/caches/$id"'),
+      reason: '清理必须真的调 DELETE /actions/caches',
+    );
     final List<String> texts = <String>[sh];
     for (final String name in <String>[
       'cache-cleanup.yml',
@@ -304,8 +349,11 @@ void main() {
       final File wf = File('../.github/workflows/$name');
       expect(wf.existsSync(), isTrue, reason: '$name 不见了');
       final String masked = maskHashComments(wf.readAsStringSync());
-      expect(masked, contains('bash tool/cleanup_pr_ci.sh'),
-          reason: '$name 必须真的跑清理脚本');
+      expect(
+        masked,
+        contains('bash tool/cleanup_pr_ci.sh'),
+        reason: '$name 必须真的跑清理脚本',
+      );
       texts.add(masked);
     }
     // 回收链路绝不能长出发布动作（CLAUDE.md 发布通道硬规则）。
@@ -315,8 +363,11 @@ void main() {
         'gh release create',
         'make_latest',
       ]) {
-        expect(text.contains(forbidden), isFalse,
-            reason: 'PR 缓存回收链路不得触碰发布链路，发现：$forbidden');
+        expect(
+          text.contains(forbidden),
+          isFalse,
+          reason: 'PR 缓存回收链路不得触碰发布链路，发现：$forbidden',
+        );
       }
     }
   });

@@ -216,9 +216,17 @@ void main() {
     final String source = File(
       'lib/src/pages/implementations/texthooker_page.dart',
     ).readAsStringSync();
+    // 判据收在 `_hookCapture`（GamesModuleForm.supportsHookCapture，只有 Windows 的
+    // localLibrary 形态为真），非 Windows 桌面的外部 texthooker 台词页不建工作台。
     expect(
       RegExp(
-        r'if\s*\(Platform\.isWindows\)\s*GalAttachedLookupWorkbench\(',
+        r'if\s*\(_hookCapture\)\s*GalAttachedLookupWorkbench\(',
+      ).hasMatch(source),
+      isTrue,
+    );
+    expect(
+      RegExp(
+        r'bool get _hookCapture => GamesModuleForm\.on\(\s*isWindows:',
       ).hasMatch(source),
       isTrue,
     );
@@ -318,9 +326,13 @@ void main() {
       );
       expect(
         tester
-            .widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(
-                const ValueKey<String>('game-attached-calibration-commit'),
-              )),)
+            .widget<FilledButton>(
+              glassUnwrap<FilledButton>(
+                find.byKey(
+                  const ValueKey<String>('game-attached-calibration-commit'),
+                ),
+              ),
+            )
             .onPressed,
         isNull,
       );
@@ -359,9 +371,13 @@ void main() {
       );
       expect(
         tester
-            .widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(
-                const ValueKey<String>('game-attached-calibration-commit'),
-              )),)
+            .widget<FilledButton>(
+              glassUnwrap<FilledButton>(
+                find.byKey(
+                  const ValueKey<String>('game-attached-calibration-commit'),
+                ),
+              ),
+            )
             .onPressed,
         isNull,
       );
@@ -380,9 +396,13 @@ void main() {
       emit('targetBackground');
       await tester.pump();
       tester
-          .widget<TextButton>(glassUnwrap<TextButton>(find.byKey(
-              const ValueKey<String>('game-attached-calibration-cancel'),
-            )),)
+          .widget<TextButton>(
+            glassUnwrap<TextButton>(
+              find.byKey(
+                const ValueKey<String>('game-attached-calibration-cancel'),
+              ),
+            ),
+          )
           .onPressed!();
       await tester.pumpAndSettle();
       expect(port.cancelCalls, 1);

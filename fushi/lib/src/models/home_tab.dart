@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 /// 顶层 tab 的逻辑身份（取代写死的整数索引 0/1/2）。条件 tab（video/browse 常驻、
 /// games 仅 Windows）用枚举身份而非位置来切换/路由——插入条件 tab 不会再打乱「设置/词典」
 /// 的索引（消除 `==2` / `case 1/2` / `%3` 这类特殊情况）。底栏/侧栏只在渲染层把身份映射
@@ -12,6 +14,9 @@ enum HomeTab {
   manga,
   video,
 
+  /// 音乐库（`ModuleId.music`）。
+  music,
+
   /// 浏览（Mihon 的 Browse：来源 / 扩展 / 发现 / 下载），2026-09-27 由「下载」改名。
   browse,
   dictionaries,
@@ -19,6 +24,18 @@ enum HomeTab {
   /// 复习（Fushi 内置 SRS）。模块默认关闭，见 `ModuleId.srs`。
   srs,
   games,
-  browserExtension,
+  web,
   settings,
 }
+
+/// 顶层 home-shell 选中 tab 的共享真值（[HomeTab] 身份，不用整数位置——插入 video /
+/// games 条件 tab 不再打乱索引）。macOS 根 [MacosWindow] 的原生侧栏在 main.dart
+/// 的 builder 里（Approach B，让 MacosWindow 包住整个 navigator，pushed 路由也拿到
+/// MacosWindowScope）构建，与 HomePage 自绘的 rail / 底栏驱动**同一个**选中身份。
+///
+/// 放在本文件（而不是 `home_page.dart`）是为了让路由层页面背景
+/// （`fushi_page_backdrop.dart`，按模块取背景，反馈 DYI1IOZxSM）读它时不反向 import
+/// 整个首页实现。
+final ValueNotifier<HomeTab> homeShellTabNotifier = ValueNotifier<HomeTab>(
+  HomeTab.home,
+);

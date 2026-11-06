@@ -6,7 +6,8 @@ import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_waveform_select.dart';
 import 'package:fushi/src/mining/galgame_waveform_select_dialog.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// galgame 波形选区对话框 MD3 收口的 widget 行为守卫：
 /// 走共享对话框骨架（FushiDialogFrame + FushiModalSheetFrame）、肯定动作
@@ -35,26 +36,31 @@ void main() {
 
   Future<void> openDialog(WidgetTester tester) async {
     dialogResult = null;
-    await tester.pumpWidget(MaterialApp(
-      theme: ThemeData(useMaterial3: true),
-      home: Scaffold(
-        body: Builder(
-          builder: (BuildContext context) => TextButton(
-            onPressed: () {
-              dialogResult =
-                  showGalWaveformSelectDialog(context, slice: buildSlice());
-            },
-            child: const Text('open'),
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) => TextButton(
+              onPressed: () {
+                dialogResult = showGalWaveformSelectDialog(
+                  context,
+                  slice: buildSlice(),
+                );
+              },
+              child: const Text('open'),
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
   }
 
-  testWidgets('走共享 MD3 骨架：frame + i18n 标题 + FilledButton 肯定动作',
-      (WidgetTester tester) async {
+  testWidgets('走共享 MD3 骨架：frame + i18n 标题 + FilledButton 肯定动作', (
+    WidgetTester tester,
+  ) async {
     await openDialog(tester);
     expect(find.byType(FushiDialogFrame), findsOneWidget);
     expect(find.byType(FushiModalSheetFrame), findsOneWidget);

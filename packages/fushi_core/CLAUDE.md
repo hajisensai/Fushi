@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-共享核心模块：定义 Drift SQLite 数据库 schema（当前 schemaVersion=118；以 `database.dart` 的 `schemaVersion` getter 与 `@DriftDatabase(tables: [...])` 注册清单为准，本文数字仅作快照。v82：ReaderPositions/Bookmarks/BookCustomCss/RevealedImages 书键从 bookKey 切稳定 uid；v90：网页播放器自动制卡队列 `web_mine_queue`；v114：收藏词上下文；v115：排行榜 isbn / completedAt；v116：设备端待发制卡队列 `pending_mine_queue`；v117：Fushi SRS——`profiles.uid` 全局身份 + 八张 `srs_*` 表；v118：`epub_books` / `srt_books` / `video_books` 加 `localAddedAt`——本机开始拥有的时刻，与原始入库时刻 `importedAt` 拆开，删除墓碑仲裁与首页「最近添加」读它，设备本地不进 wire）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
+共享核心模块：定义 Drift SQLite 数据库 schema（当前 schemaVersion=136；以 `database.dart` 的 `schemaVersion` getter 与 `@DriftDatabase(tables: [...])` 注册清单为准，本文数字仅作快照。v82：ReaderPositions/Bookmarks/BookCustomCss/RevealedImages 书键从 bookKey 切稳定 uid；v90：网页播放器自动制卡队列 `web_mine_queue`；v114：收藏词上下文；v115：排行榜 isbn / completedAt；v116：设备端待发制卡队列 `pending_mine_queue`；v117：Fushi SRS——`profiles.uid` 全局身份 + 八张 `srs_*` 表；v118：`epub_books` / `srt_books` / `video_books` 加 `localAddedAt`——本机开始拥有的时刻，与原始入库时刻 `importedAt` 拆开，删除墓碑仲裁与首页「最近添加」读它，设备本地不进 wire；v119：`video_metadata_characters.originalName`（角色日文原名）+ 视频字幕 AI 校对作品级专名表 `video_subtitle_glossaries`；v120：`srs_field_edits` 加卡片前身链接的部分覆盖索引 `idx_srs_field_edits_history_from`——缓存刷新找后继卡不再全表扫描修改记录表，BUG-3543；v121：`srs_sent_batches`——SRS 多目录同步的本机已冻结批次留存（设备本地，不进备份、恢复后清空）；v122：作品级「私密」标记表 `media_privacy_flags`——不上传排行榜、不推 Bangumi，键与 `tag_assignments` 同一套 `(mediaKind, entryKey)`，两只 LWW 时钟搭互联标签清单的 `privacy` 字段跨端同步；v123：`srs_cards_cache.new_position`——新卡出卡位置（卡片修改记录 `newPos` 的生效值，「按词频重排新卡」写它；NULL = 没排过，按笔记创建时刻出卡）；v124：AI 整理库——`media_collections.origin` / `organize_key` / `organize_aliases`（合集由谁建归谁管 + 跨端分组身份）、`collection_member_tombstones.organize_key` / `organize_merged`（删除哨兵上的分组键与「被并掉 vs 用户删」）、设备本地整理记录 `library_organize_runs` / `library_organize_changes`，设计见 `docs/specs/2026-10-20-ai-library-organize-design.md`；v125：SRS 写入路径读放大的三条索引——`idx_srs_field_edits_profile_register`（同步冲突角标按 profile 分组只扫索引）、`idx_srs_notes_cache_type`（笔记类型成员查找）、`idx_srs_notes_cache_pending`（待裁决笔记部分索引）；v126：`collection_member_tombstones.published_at`——墓碑知识进入本库的时刻，本机作互联 host 时作合集清单的 publishedAt / deletedPublishedAt 输出，NULL = 本机用户亲手移出或存量行）；v127：`bookmarks.char_offset`（书签页首字符章内精确偏移，存量 -1）+ `bookmarks.chapter_key`（在线漫画书签所在章的稳定键，存量 NULL）；v128：内置浏览器五张新表 `web_browser_history` / `web_browser_bookmarks`（含文件夹）/ 标签页会话 / 最近关闭 / 下载记录——历史与书签随备份、经聚合快照跨端同步，其余设备本地；v129：跨模块作品图谱 `media_links`（手动连接 + 推断建议 + 否决墓碑，随互联同步与备份走，设计见 `docs/specs/2026-10-24-cross-media-links.md`）；v130：音乐模块 P0 十张 `music_*` 表（曲目 / 专辑 / 艺人 / 署名 / 歌词缓存 / MV 绑定 / 光盘来源 / 歌单 / 歌单条目 / 播放流，定义在 `music_tables.dart`，P0 整组设备本地），设计见 `docs/specs/2026-10-23-music-module-design.md` §10；v131：OP / ED 声纹比对按集缓存 `video_theme_song_spans`（`theme_song_span_tables.dart`，设备本地纯缓存）；v132：`mined_sentences` 加显式定位列 `position_ms` / `duration_ms` / `page_index`，视频来源旧值从 `norm_char_offset` / `norm_char_length` 搬入新列并清空旧列；v133：音乐 P4 刮削三表 `music_scrape_meta` / `music_metadata_raw_snapshots` / `music_locked_fields`（`music_scrape_tables.dart`，设备本地；识别身份经 `writeMusicScanBatch` 同一事务重放到曲库目录，显示列仍以文件标签为准）；v134：游戏台词 `galgame_text_lines`（`galgame_text_line_tables.dart`，文本钩子台词唯一的持久副本，「我库里的例句」的游戏来源；`(game_id, text)` 唯一、外键 cascade；随备份 games 类别走，合并按游戏身份重映射去重，不进互联同步）；v135：作品图谱 L5 三表 `game_voice_casts` / `person_identity_bridges` / `adaptation_progress_anchors`（`people_tables.dart`）；v136：AI 助手设备本地两表 `ai_agent_sessions`（对话存档，本机保留 30 天）/ `ai_agent_actions`（操作记录与撤销载荷，`session_id` 不挂外键），不同步、不进备份、不分 Profile，设计见 `docs/specs/2026-10-26-ai-operations-agent-design.md` §5.3；v140：`ai_agent_sessions.profile_uid`——AI 助手多会话按 Profile 归属（存量存档按迁移时的激活 Profile 回填，空串 = 归属不明、对所有 Profile 可见），见同一设计稿 §12.5。v129–v135 在音乐 / 作品图谱分支上原用 v125–v131，合入时整体后移；两条阶梯争用的 user_version 125–131 一律按 `from < 132` 补跑两侧全部幂等产物（develop 的 v125–v128 与分支的 media_links / 音乐表 / 主题曲区间））、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
 
 ## 入口与启动
 
@@ -20,13 +20,13 @@
 
 ## 关键依赖与配置
 
-- `drift: ">=2.33.0 <2.34.0"` + `sqlite3` -- ORM 与 SQLite 绑定。**本包零 Flutter**（pubspec 不声明 `sdk: flutter`，包测试用 `package:test`）；SQLite 原生库由消费方装配：app 在 `fushi/pubspec.yaml` 声明 `sqlite3_flutter_libs`，服务端走 `sqlite3` 的 native asset（`dart build cli`）。
+- `drift: ">=2.33.0 <2.34.0"` + `sqlite3` -- ORM 与 SQLite 绑定。**本包零 Flutter**（pubspec 不声明 `sdk: flutter`，包测试用 `package:test`）；SQLite 原生库由 `sqlite3` 3.x 的 build hook 作为 native asset 提供：app 随 `flutter build` 打包，服务端走 `dart build cli`；不要加 `sqlite3_flutter_libs`（只配 2.x，会多塞一份 SQLite）。
 - `path: ^1.8.2` -- 路径处理。
 - 代码生成：`drift_dev: ^2.23.0` + `build_runner`，生成 `database.g.dart`。
 
 ## 数据模型
 
-98 张 Drift 表（按功能分组，以 `database.dart` 的 `@DriftDatabase(tables: [...])` 注册清单为准）：
+100 张 Drift 表（按功能分组，以 `database.dart` 的 `@DriftDatabase(tables: [...])` 注册清单为准）：
 
 | 分组 | 表名 |
 |------|------|
@@ -42,16 +42,16 @@
 | 剪贴板/活动 | `ClipboardHistory`, `ActivityEvents` |
 | 词典 | `DictionaryMetadata`, `DictionaryHistory` |
 | EPUB | `EpubBooks` |
-| 标签 | `BookTags`, `TagAssignments`（v77 五张映射表合一，宿主逻辑外键） |
+| 标签 | `BookTags`, `TagAssignments`（v77 五张映射表合一，宿主逻辑外键）, `MediaPrivacyFlags`（v122 作品私密标记，同一套宿主键） |
 | Profile | `Profiles`, `ProfileSettings`, `MediaTypeProfiles`, `BookProfiles` |
 | 同步基线 | `SyncBaselines` |
-| 视频 | `VideoBooks`, `VideoWatchStatistics`, `VideoHourlyLogs` |
+| 视频 | `VideoBooks`, `VideoWatchStatistics`, `VideoHourlyLogs`, `VideoSubtitleGlossaries`（v119 字幕 AI 校对专名表，随备份「视频」类别，不进合并导入） |
 | 收藏/制卡 | `FavoriteWords`, `MiningStatistics`, `MinedSentences`, `LookupMiningCounters`, `WebMineQueue`, `PendingMineQueue`（后两张设备本地） |
 | 合集/系列 | `MediaCollections`, `MediaCollectionItems`, `CollectionBookAliases`, `Series`, `ShelfEntries` |
 | 互联 | `FushiPairedPeers` |
 | 游戏库 | `Galgames`, `GalgameSources`, `GalgameSessions` |
 | 删除墓碑 | `BookTombstones`, `StatisticsTombstones`, `CollectionMemberTombstones`, `BookTagMembershipTombstones`, `SyncDeletionTombstones` |
-| SRS（v117） | 同步事件本体 `SrsEntities`, `SrsFieldEdits`, `SrsReviewLogs`, `SrsUnknownEvents`（随备份走，合并导入走 SRS 专用步骤）；本机状态 / 可重建缓存 `SrsEventLocal`, `SrsLocalState`, `SrsNotesCache`, `SrsCardsCache`（设备本地，不进备份、恢复后清空）。身份是 `profiles.uid` |
+| SRS（v117） | 同步事件本体 `SrsEntities`, `SrsFieldEdits`, `SrsReviewLogs`, `SrsUnknownEvents`（随备份走，合并导入走 SRS 专用步骤）；本机状态 / 可重建缓存 `SrsEventLocal`, `SrsLocalState`, `SrsNotesCache`, `SrsCardsCache`, `SrsSentBatches`（v121，设备本地，不进备份、恢复后清空）。身份是 `profiles.uid` |
 
 新增表（相对旧文档的 28 张补齐的 18 张）用途：
 

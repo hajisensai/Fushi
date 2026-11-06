@@ -5,7 +5,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
 import 'package:fushi/src/utils/misc/segmented_downloader.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 推荐包（9.5 GB 的词典 + 发音库整包）下载任务所处的阶段。
 ///
@@ -378,6 +380,7 @@ class RecommendedPackDownloadController {
         RecommendedPackDownloader(
           packDir: packDir,
           url: kRecommendedPackGoogleDriveDirectUrl,
+          sha256Hex: kRecommendedPackWholeFileSha256,
         );
     return downloader.download(
       progress: progress,

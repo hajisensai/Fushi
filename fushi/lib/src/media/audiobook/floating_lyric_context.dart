@@ -23,8 +23,11 @@ class FloatingLyricBlock {
   });
 
   /// 空块常量：无当前行（index<0 或空列表），退化为「无行标记」payload。
-  static const FloatingLyricBlock empty =
-      FloatingLyricBlock(text: '', start: -1, length: 0);
+  static const FloatingLyricBlock empty = FloatingLyricBlock(
+    text: '',
+    start: -1,
+    length: 0,
+  );
 
   final String text;
   final int start;

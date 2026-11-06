@@ -198,7 +198,15 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text(t.feedback_reply_notice(n: 2)), findsOneWidget);
     expect(find.text(t.feedback_reply_notice_open), findsOneWidget);
-    ScaffoldMessenger.of(ctx).clearSnackBars();
+    // 反馈 eiFcN3DZQ3：被动提醒不能常驻挡住底部按钮——到时自己收起，也不补常驻
+    // 提示条才有的关闭按钮。
+    expect(
+      find.byKey(const ValueKey<String>('fushi-snackbar-close')),
+      findsNothing,
+    );
+    await tester.pump(kFeedbackReplyNoticeDuration);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text(t.feedback_reply_notice(n: 2)), findsNothing);
   });
 
   Future<void> waitForRequests(int n) async {
@@ -228,11 +236,7 @@ void main() {
       ),
     );
     await Future<void>.delayed(const Duration(milliseconds: 50));
-    expect(
-      secondSettled,
-      isFalse,
-      reason: '已有刷新在进行时不能立刻返回（调用方会当成功处理）',
-    );
+    expect(secondSettled, isFalse, reason: '已有刷新在进行时不能立刻返回（调用方会当成功处理）');
 
     failing = true;
     final Future<void> firstFails = expectLater(first, throwsA(anything));
@@ -288,10 +292,6 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 100));
     held.complete();
     await center;
-    expect(
-      await checked,
-      1,
-      reason: '修复前 check() 在结果落下前就读 tickets，新回复漏提示',
-    );
+    expect(await checked, 1, reason: '修复前 check() 在结果落下前就读 tickets，新回复漏提示');
   });
 }

@@ -18,15 +18,12 @@ import 'package:fushi/src/focus/fushi_focus_target.dart';
 //   整理 organize : x∈[600,640]  y=[60,100]（标签栏，最右）
 //   书 A          : x∈[40,180]   y=[130,330]（网格第一本）
 Widget _target(String id, Rect r) => Positioned(
-      left: r.left,
-      top: r.top,
-      width: r.width,
-      height: r.height,
-      child: FushiFocusTarget(
-        id: FushiFocusId(id),
-        child: const SizedBox.expand(),
-      ),
-    );
+  left: r.left,
+  top: r.top,
+  width: r.width,
+  height: r.height,
+  child: FushiFocusTarget(id: FushiFocusId(id), child: const SizedBox.expand()),
+);
 
 Widget _shelf({required GlobalKey rootKey}) {
   return MaterialApp(
@@ -39,17 +36,27 @@ Widget _shelf({required GlobalKey rootKey}) {
             children: <Widget>[
               // Header icon row (right-aligned): import then manage-source.
               _target(
-                  'reader-shelf-import', const Rect.fromLTWH(560, 10, 40, 40)),
+                'reader-shelf-import',
+                const Rect.fromLTWH(560, 10, 40, 40),
+              ),
               _target(
-                  'reader-shelf-manage', const Rect.fromLTWH(660, 10, 40, 40)),
+                'reader-shelf-manage',
+                const Rect.fromLTWH(660, 10, 40, 40),
+              ),
               // Tag bar: organize (swap_vert) at the far right.
-              _target('reader-shelf-tagbar-organize',
-                  const Rect.fromLTWH(600, 60, 40, 40)),
+              _target(
+                'reader-shelf-tagbar-organize',
+                const Rect.fromLTWH(600, 60, 40, 40),
+              ),
               // Grid first cards.
-              _target('reader-shelf-book-A',
-                  const Rect.fromLTWH(40, 130, 140, 200)),
-              _target('reader-shelf-book-B',
-                  const Rect.fromLTWH(200, 130, 140, 200)),
+              _target(
+                'reader-shelf-book-A',
+                const Rect.fromLTWH(40, 130, 140, 200),
+              ),
+              _target(
+                'reader-shelf-book-B',
+                const Rect.fromLTWH(200, 130, 140, 200),
+              ),
             ],
           ),
         ),
@@ -60,7 +67,9 @@ Widget _shelf({required GlobalKey rootKey}) {
 
 void main() {
   Future<FushiFocusController> pump(
-      WidgetTester tester, GlobalKey rootKey) async {
+    WidgetTester tester,
+    GlobalKey rootKey,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1000, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(_shelf(rootKey: rootKey));
@@ -69,26 +78,33 @@ void main() {
   }
 
   testWidgets(
-      'baseline: Right from organize overshoots past import to manage-source',
-      (WidgetTester tester) async {
-    final GlobalKey rootKey = GlobalKey();
-    final FushiFocusController controller = await pump(tester, rootKey);
+    'baseline: Right from organize overshoots past import to manage-source',
+    (WidgetTester tester) async {
+      final GlobalKey rootKey = GlobalKey();
+      final FushiFocusController controller = await pump(tester, rootKey);
 
-    expect(
-      controller
-          .requestById(const FushiFocusId('reader-shelf-tagbar-organize')),
-      isTrue,
-    );
-    await tester.pump();
-    controller.move(FushiFocusDirection.right);
-    await tester.pump();
-    expect(controller.activeId, const FushiFocusId('reader-shelf-manage'),
-        reason: 'pure geometry picks the cleanly-clearing manage-source, '
-            'overshooting import (the reported bug B)');
-  });
+      expect(
+        controller.requestById(
+          const FushiFocusId('reader-shelf-tagbar-organize'),
+        ),
+        isTrue,
+      );
+      await tester.pump();
+      controller.move(FushiFocusDirection.right);
+      await tester.pump();
+      expect(
+        controller.activeId,
+        const FushiFocusId('reader-shelf-manage'),
+        reason:
+            'pure geometry picks the cleanly-clearing manage-source, '
+            'overshooting import (the reported bug B)',
+      );
+    },
+  );
 
-  testWidgets('Right anchor lands on import, never manage-source (B fix)',
-      (WidgetTester tester) async {
+  testWidgets('Right anchor lands on import, never manage-source (B fix)', (
+    WidgetTester tester,
+  ) async {
     final GlobalKey rootKey = GlobalKey();
     final FushiFocusController controller = await pump(tester, rootKey);
 
@@ -98,8 +114,9 @@ void main() {
       const FushiFocusId('reader-shelf-import'),
     );
     expect(
-      controller
-          .requestById(const FushiFocusId('reader-shelf-tagbar-organize')),
+      controller.requestById(
+        const FushiFocusId('reader-shelf-tagbar-organize'),
+      ),
       isTrue,
     );
     await tester.pump();
@@ -107,11 +124,14 @@ void main() {
     await tester.pump();
     expect(controller.activeId, const FushiFocusId('reader-shelf-import'));
     expect(
-        controller.activeId, isNot(const FushiFocusId('reader-shelf-manage')));
+      controller.activeId,
+      isNot(const FushiFocusId('reader-shelf-manage')),
+    );
   });
 
-  testWidgets('Down anchor from organize enters the grid first card (A2 fix)',
-      (WidgetTester tester) async {
+  testWidgets('Down anchor from organize enters the grid first card (A2 fix)', (
+    WidgetTester tester,
+  ) async {
     final GlobalKey rootKey = GlobalKey();
     final FushiFocusController controller = await pump(tester, rootKey);
 
@@ -121,19 +141,24 @@ void main() {
       const FushiFocusId('reader-shelf-book-A'),
     );
     expect(
-      controller
-          .requestById(const FushiFocusId('reader-shelf-tagbar-organize')),
+      controller.requestById(
+        const FushiFocusId('reader-shelf-tagbar-organize'),
+      ),
       isTrue,
     );
     await tester.pump();
     controller.move(FushiFocusDirection.down);
     await tester.pump();
-    expect(controller.activeId, const FushiFocusId('reader-shelf-book-A'),
-        reason: 'Down from the tag bar must enter the grid first card');
+    expect(
+      controller.activeId,
+      const FushiFocusId('reader-shelf-book-A'),
+      reason: 'Down from the tag bar must enter the grid first card',
+    );
   });
 
-  testWidgets('anchor with a non-focusable target falls through to geometry',
-      (WidgetTester tester) async {
+  testWidgets('anchor with a non-focusable target falls through to geometry', (
+    WidgetTester tester,
+  ) async {
     final GlobalKey rootKey = GlobalKey();
     final FushiFocusController controller = await pump(tester, rootKey);
 
@@ -143,8 +168,9 @@ void main() {
       const FushiFocusId('does-not-exist'),
     );
     expect(
-      controller
-          .requestById(const FushiFocusId('reader-shelf-tagbar-organize')),
+      controller.requestById(
+        const FushiFocusId('reader-shelf-tagbar-organize'),
+      ),
       isTrue,
     );
     await tester.pump();
@@ -154,8 +180,9 @@ void main() {
     expect(controller.activeId, const FushiFocusId('reader-shelf-manage'));
   });
 
-  testWidgets('unregisterDirectionalAnchor restores pure geometry',
-      (WidgetTester tester) async {
+  testWidgets('unregisterDirectionalAnchor restores pure geometry', (
+    WidgetTester tester,
+  ) async {
     final GlobalKey rootKey = GlobalKey();
     final FushiFocusController controller = await pump(tester, rootKey);
 
@@ -170,8 +197,9 @@ void main() {
       const FushiFocusId('reader-shelf-import'),
     );
     expect(
-      controller
-          .requestById(const FushiFocusId('reader-shelf-tagbar-organize')),
+      controller.requestById(
+        const FushiFocusId('reader-shelf-tagbar-organize'),
+      ),
       isTrue,
     );
     await tester.pump();

@@ -3,14 +3,23 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart';
 import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
 import 'package:fushi/src/utils/settled_theme.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/library_section_tab.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
 /// 2026-10-09 用户「按钮的悬停 / 按下反馈与可点范围要和可见形状完全一致，全 app
 /// 统一，可以选满」：反馈页刷新键、词典管理返回键悬停只亮中间一枚更小的圆 /
@@ -21,21 +30,47 @@ Widget _host(Widget child) => MaterialApp(
   home: Scaffold(body: Center(child: child)),
 );
 
-/// [root] 子树里唯一一个 InkWell 的 RenderBox 尺寸。
-Size _inkSize(WidgetTester tester, Finder root) {
+/// Material 下浮动胶囊整体按 [kFushiFloatingCapsuleScale] 缩：56 的圆 / 胶囊在
+/// 屏幕上是这个尺寸。
+const double _kScaledExtent =
+    kFushiFloatingToolbarCompactExtent * kFushiFloatingCapsuleScale;
+
+/// [root] 子树里唯一一个 InkWell 在屏幕上的矩形（走 localToGlobal，含胶囊缩放
+/// 变换；`getSize` 只给缩放前的局部尺寸，跨缩放边界比较会失真）。
+Rect _inkRect(WidgetTester tester, Finder root) {
   final Finder ink = find.descendant(
     of: root,
     matching: find.byWidgetPredicate((Widget w) => w is InkWell),
   );
   expect(ink, findsOneWidget);
-  return tester.getSize(ink);
+  return tester.getRect(ink);
 }
+
+/// [actual] 与 [expected] 在浮点误差内相等（缩放变换后的坐标有 1e-14 级尾差）。
+void _expectRect(Rect actual, Rect expected) {
+  expect(actual.left, moreOrLessEquals(expected.left));
+  expect(actual.top, moreOrLessEquals(expected.top));
+  expect(actual.right, moreOrLessEquals(expected.right));
+  expect(actual.bottom, moreOrLessEquals(expected.bottom));
+}
+
+void _expectSquare(Size actual, double side) {
+  expect(actual.width, moreOrLessEquals(side));
+  expect(actual.height, moreOrLessEquals(side));
+}
+
+/// ink 区与 [root] 在屏幕上重合（撑满整枚圆 / 整颗胶囊）。
+void _expectInkFills(WidgetTester tester, Finder root) =>
+    _expectRect(_inkRect(tester, root), tester.getRect(root));
 
 /// 在 [root] 中心偏 [offset] 处点一下。
 Future<void> _tapAt(WidgetTester tester, Finder root, Offset offset) async {
   await tester.tapAt(tester.getCenter(root) + offset);
   await tester.pump(const Duration(milliseconds: 400));
 }
+
+/// 圆边缘内侧的点：原 56 圆里距圆心 25（半径 28 内侧），随胶囊一起缩。
+const double _kEdgeInset = 25 * kFushiFloatingCapsuleScale;
 
 void main() {
   setUp(() => LocaleSettings.setLocaleRaw('zh-CN'));
@@ -56,15 +91,18 @@ void main() {
         ),
       );
       final Finder circle = find.byType(FushiPageChromeCircle);
-      expect(tester.getSize(circle), const Size.square(kFushiPageChromeExtent));
-      expect(_inkSize(tester, circle), tester.getSize(circle));
+      _expectSquare(
+        tester.getRect(circle).size,
+        kFushiPageChromeExtent * kFushiFloatingCapsuleScale,
+      );
+      _expectInkFills(tester, circle);
       final InkWell ink = tester.widget<InkWell>(
         find.descendant(of: circle, matching: find.byType(InkWell)),
       );
       expect(ink.customBorder, isA<CircleBorder>());
-      // 圆的边缘内侧（旧实现 40 的按钮外、56 的圆内）也能点中。
-      await _tapAt(tester, circle, const Offset(0, 25));
-      await _tapAt(tester, circle, const Offset(-25, 0));
+      // 圆的边缘内侧（旧实现 40 的按钮外、56 的圆内；均按胶囊比例缩）也能点中。
+      await _tapAt(tester, circle, const Offset(0, _kEdgeInset));
+      await _tapAt(tester, circle, const Offset(-_kEdgeInset, 0));
       expect(taps, 2);
     });
 
@@ -82,12 +120,12 @@ void main() {
         ),
       );
       final Finder circle = find.byType(FushiPageChromeCircle);
-      expect(_inkSize(tester, circle), tester.getSize(circle));
+      _expectInkFills(tester, circle);
       final InkWell ink = tester.widget<InkWell>(
         find.descendant(of: circle, matching: find.byType(InkWell)),
       );
       expect(ink.customBorder, isA<CircleBorder>());
-      await _tapAt(tester, circle, const Offset(25, 0));
+      await _tapAt(tester, circle, const Offset(_kEdgeInset, 0));
       expect(taps, 1);
     });
 
@@ -102,7 +140,7 @@ void main() {
         ),
       );
       final Finder circle = find.byType(FushiPageChromeCircle);
-      expect(_inkSize(tester, circle), tester.getSize(circle));
+      _expectInkFills(tester, circle);
     });
   });
 
@@ -120,7 +158,7 @@ void main() {
     );
     final Finder circle = find.byType(FushiPageChromeCircle);
     expect(circle, findsOneWidget);
-    expect(_inkSize(tester, circle), tester.getSize(circle));
+    _expectInkFills(tester, circle);
   });
 
   testWidgets('FushiFloatingTopBar 返回键：ink = 圆胶囊', (WidgetTester tester) async {
@@ -143,8 +181,8 @@ void main() {
     );
     final Finder slot = find.byType(FushiFillSlot);
     expect(slot, findsOneWidget);
-    expect(tester.getSize(slot), const Size.square(56));
-    expect(_inkSize(tester, slot), const Size.square(56));
+    _expectSquare(tester.getRect(slot).size, _kScaledExtent);
+    _expectInkFills(tester, slot);
   });
 
   testWidgets('单按钮悬浮工具栏塌成一枚圆，按钮撑满', (WidgetTester tester) async {
@@ -168,9 +206,9 @@ void main() {
     final Finder bar = find.byKey(
       const ValueKey<String>('fushi_floating_toolbar'),
     );
-    expect(tester.getSize(bar), const Size.square(56));
-    expect(_inkSize(tester, bar), const Size.square(56));
-    await _tapAt(tester, bar, const Offset(0, -25));
+    _expectSquare(tester.getRect(bar).size, _kScaledExtent);
+    _expectInkFills(tester, bar);
+    await _tapAt(tester, bar, const Offset(0, -_kEdgeInset));
     expect(taps, 1);
   });
 
@@ -224,6 +262,38 @@ void main() {
           reason: '$id 用了 red：换主题时只有它还是红的',
         );
       }
+    });
+
+    testWidgets('M3E 分类图标统一 primary 实色（不按色调用发虚的 tertiary / secondary）', (
+      WidgetTester tester,
+    ) async {
+      final ColorScheme scheme = ColorScheme.fromSeed(
+        seedColor: const Color(0xFF7E57C2),
+      );
+      late BuildContext captured;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(colorScheme: scheme),
+          home: Builder(
+            builder: (BuildContext context) {
+              captured = context;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      for (final SettingsDestinationId id in SettingsDestinationId.values) {
+        expect(
+          settingsToneGlyphColor(captured, settingsIconToneFor(id)),
+          scheme.primary,
+          reason: '$id 的字形色与宽屏导航行（primary）不一致',
+        );
+      }
+      expect(
+        settingsToneGlyphColor(captured, SettingsIconTone.red),
+        scheme.error,
+        reason: '破坏性行保留 error',
+      );
     });
   });
 
@@ -375,8 +445,8 @@ void main() {
     expect(slots, findsNWidgets(2), reason: '返回键与单个动作都是撑满的圆胶囊');
     final Rect back = tester.getRect(slots.first);
     final Rect more = tester.getRect(slots.last);
-    expect(back.size, const Size.square(kFushiFloatingToolbarCompactExtent));
-    expect(more.size, const Size.square(kFushiFloatingToolbarCompactExtent));
+    _expectSquare(back.size, _kScaledExtent);
+    _expectSquare(more.size, _kScaledExtent);
     final Rect title = tester.getRect(
       find
           .ancestor(
@@ -389,10 +459,10 @@ void main() {
           )
           .first,
     );
-    expect(title.height, kFushiFloatingToolbarCompactExtent);
+    expect(title.height, moreOrLessEquals(_kScaledExtent));
     expect(
       more.left - title.right,
-      greaterThanOrEqualTo(4),
+      greaterThanOrEqualTo(4 * kFushiFloatingCapsuleScale),
       reason: '标题胶囊与动作胶囊不能贴在一起',
     );
   });
@@ -438,7 +508,7 @@ void main() {
 
   test('设置详情 / 窄屏设置页：页头背后的遮罩实色盖满让位高度', () {
     final String kit = File(
-      'lib/src/settings/settings_kit.dart',
+      'lib/src/settings/settings_kit_core.dart',
     ).readAsStringSync();
     expect(kit, contains('solidHeight: inset(),'));
     final String home = File(

@@ -38,22 +38,21 @@ void main() {
     int height = 2160,
     String transfer = 'smpte2084',
     List<AudioTrackFacts> audio = const <AudioTrackFacts>[],
-  }) =>
-      VideoProbeFacts(
-        durationMs: 90 * 60 * 1000,
-        containerBitrate: 15000000,
-        video: VideoStreamFacts(
-          codec: 'hevc',
-          width: width,
-          height: height,
-          pixelFormat: 'yuv420p10le',
-          bitDepth: 10,
-          frameRateMilli: 23976,
-          colorPrimaries: 'bt2020',
-          colorTransfer: transfer,
-        ),
-        audioTracks: audio,
-      );
+  }) => VideoProbeFacts(
+    durationMs: 90 * 60 * 1000,
+    containerBitrate: 15000000,
+    video: VideoStreamFacts(
+      codec: 'hevc',
+      width: width,
+      height: height,
+      pixelFormat: 'yuv420p10le',
+      bitDepth: 10,
+      frameRateMilli: 23976,
+      colorPrimaries: 'bt2020',
+      colorTransfer: transfer,
+    ),
+    audioTracks: audio,
+  );
 
   test('探一次后可同步读到，且落库', () async {
     final String path = writeFile('a.mkv');
@@ -89,8 +88,10 @@ void main() {
 
   test('第二个服务实例从 DB 命中，不再探', () async {
     final String path = writeFile('b.mkv');
-    final VideoSpecsService first =
-        VideoSpecsService(db, probe: (String p) async => facts());
+    final VideoSpecsService first = VideoSpecsService(
+      db,
+      probe: (String p) async => facts(),
+    );
     await first.resolve(path);
     first.dispose();
 
@@ -112,8 +113,10 @@ void main() {
   group('失效判据', () {
     test('文件大小变了 → 重探', () async {
       final String path = writeFile('c.mkv', size: 100);
-      final VideoSpecsService first =
-          VideoSpecsService(db, probe: (String p) async => facts());
+      final VideoSpecsService first = VideoSpecsService(
+        db,
+        probe: (String p) async => facts(),
+      );
       await first.resolve(path);
       first.dispose();
 
@@ -140,12 +143,14 @@ void main() {
       final String path = writeFile('d.mkv');
       final FileStat stat = File(path).statSync();
       // 直接塞一条「上个版本探的」缓存行。
-      await db.upsertVideoFileSpec(videoFileSpecCompanion(
-        filePath: path,
-        facts: facts(),
-        fileSizeBytes: stat.size,
-        fileModifiedAt: stat.modified.millisecondsSinceEpoch,
-      ).copyWith(probeVersion: const Value<int>(0)));
+      await db.upsertVideoFileSpec(
+        videoFileSpecCompanion(
+          filePath: path,
+          facts: facts(),
+          fileSizeBytes: stat.size,
+          fileModifiedAt: stat.modified.millisecondsSinceEpoch,
+        ).copyWith(probeVersion: const Value<int>(0)),
+      );
 
       int probeCalls = 0;
       final VideoSpecsService service = VideoSpecsService(
@@ -163,8 +168,7 @@ void main() {
     });
 
     test('文件不存在 → 不探，记为无结论', () async {
-      final String missing =
-          '${tempDir.path}${Platform.pathSeparator}nope.mkv';
+      final String missing = '${tempDir.path}${Platform.pathSeparator}nope.mkv';
       int probeCalls = 0;
       final VideoSpecsService service = VideoSpecsService(
         db,
@@ -190,8 +194,7 @@ void main() {
     addTearDown(service.dispose);
 
     expect(await service.resolve(path), isNull);
-    expect(await db.videoFileSpec(path), isNull,
-        reason: '空结果不该在库里留一行');
+    expect(await db.videoFileSpec(path), isNull, reason: '空结果不该在库里留一行');
     expect(service.isResolved(path), isTrue, reason: '本次会话内不重试');
   });
 
@@ -199,8 +202,10 @@ void main() {
     final String known = writeFile('f1.mkv');
     final String unknown = writeFile('f2.mkv');
 
-    final VideoSpecsService seeder =
-        VideoSpecsService(db, probe: (String p) async => facts());
+    final VideoSpecsService seeder = VideoSpecsService(
+      db,
+      probe: (String p) async => facts(),
+    );
     await seeder.resolve(known);
     seeder.dispose();
 
@@ -245,8 +250,11 @@ void main() {
     await service.prime(paths);
     await service.drain();
 
-    expect(peak, lessThanOrEqualTo(kVideoSpecsProbeConcurrency),
-        reason: '并发上限被突破会跟正在播放的视频抢磁盘');
+    expect(
+      peak,
+      lessThanOrEqualTo(kVideoSpecsProbeConcurrency),
+      reason: '并发上限被突破会跟正在播放的视频抢磁盘',
+    );
     expect(peak, greaterThan(1), reason: '也不能退化成串行');
     for (final String path in paths) {
       expect(service.specsFor(path), isNotNull, reason: '$path 应已探完');
@@ -257,34 +265,38 @@ void main() {
     final String path = writeFile('h.mkv');
     final VideoSpecsService service = VideoSpecsService(
       db,
-      probe: (String p) async => facts(audio: const <AudioTrackFacts>[
-        AudioTrackFacts(
-          index: 1,
-          codec: 'flac',
-          channels: 6,
-          channelLayout: '5.1',
-          sampleRate: 48000,
-          language: 'jpn',
-          title: '日本語 5.1',
-          isDefault: true,
-        ),
-        AudioTrackFacts(
-          index: 2,
-          codec: 'aac',
-          channels: 2,
-          channelLayout: 'stereo',
-          language: 'eng',
-          isCommentary: true,
-        ),
-      ]),
+      probe: (String p) async => facts(
+        audio: const <AudioTrackFacts>[
+          AudioTrackFacts(
+            index: 1,
+            codec: 'flac',
+            channels: 6,
+            channelLayout: '5.1',
+            sampleRate: 48000,
+            language: 'jpn',
+            title: '日本語 5.1',
+            isDefault: true,
+          ),
+          AudioTrackFacts(
+            index: 2,
+            codec: 'aac',
+            channels: 2,
+            channelLayout: 'stereo',
+            language: 'eng',
+            isCommentary: true,
+          ),
+        ],
+      ),
     );
     addTearDown(service.dispose);
 
     await service.resolve(path);
 
     // 换一个实例，强制走「从 DB 解码」这条路。
-    final VideoSpecsService reader =
-        VideoSpecsService(db, probe: (String p) async => VideoProbeFacts.empty);
+    final VideoSpecsService reader = VideoSpecsService(
+      db,
+      probe: (String p) async => VideoProbeFacts.empty,
+    );
     addTearDown(reader.dispose);
     await reader.prime(<String>[path]);
 
@@ -306,15 +318,21 @@ void main() {
     // 真的会抛（no such table）。
     await db.customStatement('DROP TABLE video_file_specs');
 
-    final VideoSpecsService service =
-        VideoSpecsService(db, probe: (String p) async => facts());
+    final VideoSpecsService service = VideoSpecsService(
+      db,
+      probe: (String p) async => facts(),
+    );
     addTearDown(service.dispose);
 
     final VideoProbeFacts? resolved = await service.resolve(path);
     expect(resolved, isNotNull, reason: 'ffprobe 明明成功了');
-    expect(service.specsFor(path), isNotNull,
-        reason: '写库失败只是丢了跨启动缓存，本次会话的事实照样有效——'
-            '一起判死会让角标在探测成功时消失，且 isResolved 已 true 不再重试');
+    expect(
+      service.specsFor(path),
+      isNotNull,
+      reason:
+          '写库失败只是丢了跨启动缓存，本次会话的事实照样有效——'
+          '一起判死会让角标在探测成功时消失，且 isResolved 已 true 不再重试',
+    );
     expect(service.specsFor(path)!.video!.resolutionLabel, '4K');
   });
 
@@ -340,16 +358,17 @@ void main() {
     final VideoProbeFacts? facts0 = await resolved;
     await service.drain();
 
-    expect(probeCalls, 1,
-        reason: '起第二个 ffprobe 正好废掉并发上限想守的东西（别跟播放中的视频抢 IO）');
+    expect(probeCalls, 1, reason: '起第二个 ffprobe 正好废掉并发上限想守的东西（别跟播放中的视频抢 IO）');
     expect(facts0, isNotNull);
     expect(service.specsFor(path), isNotNull);
   });
 
   test('invalidate 清掉内存与库两处', () async {
     final String path = writeFile('i.mkv');
-    final VideoSpecsService service =
-        VideoSpecsService(db, probe: (String p) async => facts());
+    final VideoSpecsService service = VideoSpecsService(
+      db,
+      probe: (String p) async => facts(),
+    );
     addTearDown(service.dispose);
 
     await service.resolve(path);
@@ -361,20 +380,21 @@ void main() {
     expect(await db.videoFileSpec(path), isNull);
   });
 
-  group('删书时回收规格缓存（表以文件路径为键、与 book 无 FK，没人清就只增不减）',
-      () {
+  group('删书时回收规格缓存（表以文件路径为键、与 book 无 FK，没人清就只增不减）', () {
     test('单视频：删书清掉它的规格行', () async {
       const String main = r'D:\media\solo.mkv';
       await db.customStatement(
         'INSERT INTO video_books (book_uid, title, video_path, imported_at) '
         "VALUES ('solo', '单片', '$main', 1700000000)",
       );
-      await db.upsertVideoFileSpec(videoFileSpecCompanion(
-        filePath: main,
-        facts: facts(),
-        fileSizeBytes: 1,
-        fileModifiedAt: 1,
-      ));
+      await db.upsertVideoFileSpec(
+        videoFileSpecCompanion(
+          filePath: main,
+          facts: facts(),
+          fileSizeBytes: 1,
+          fileModifiedAt: 1,
+        ),
+      );
       expect(await db.videoFileSpec(main), isNotNull);
 
       await db.deleteVideoBook('solo');
@@ -395,12 +415,14 @@ void main() {
         <Object?>['series', '连续剧', main, playlist, 1700000000],
       );
       for (final String path in <String>[main, ep2, ep3]) {
-        await db.upsertVideoFileSpec(videoFileSpecCompanion(
-          filePath: path,
-          facts: facts(),
-          fileSizeBytes: 1,
-          fileModifiedAt: 1,
-        ));
+        await db.upsertVideoFileSpec(
+          videoFileSpecCompanion(
+            filePath: path,
+            facts: facts(),
+            fileSizeBytes: 1,
+            fileModifiedAt: 1,
+          ),
+        );
       }
 
       await db.deleteVideoBook('series');
@@ -418,19 +440,20 @@ void main() {
         "VALUES ('mine', 'A', '$mine', 1700000000)",
       );
       for (final String path in <String>[mine, other]) {
-        await db.upsertVideoFileSpec(videoFileSpecCompanion(
-          filePath: path,
-          facts: facts(),
-          fileSizeBytes: 1,
-          fileModifiedAt: 1,
-        ));
+        await db.upsertVideoFileSpec(
+          videoFileSpecCompanion(
+            filePath: path,
+            facts: facts(),
+            fileSizeBytes: 1,
+            fileModifiedAt: 1,
+          ),
+        );
       }
 
       await db.deleteVideoBook('mine');
 
       expect(await db.videoFileSpec(mine), isNull);
-      expect(await db.videoFileSpec(other), isNotNull,
-          reason: '只清这本书涉及的文件');
+      expect(await db.videoFileSpec(other), isNotNull, reason: '只清这本书涉及的文件');
     });
 
     test('坏 playlist_json 不让删除事务回滚（只清主视频）', () async {
@@ -440,20 +463,22 @@ void main() {
         'imported_at) VALUES (?, ?, ?, ?, ?)',
         <Object?>['broken', 'B', main, '{not json at all', 1700000000],
       );
-      await db.upsertVideoFileSpec(videoFileSpecCompanion(
-        filePath: main,
-        facts: facts(),
-        fileSizeBytes: 1,
-        fileModifiedAt: 1,
-      ));
+      await db.upsertVideoFileSpec(
+        videoFileSpecCompanion(
+          filePath: main,
+          facts: facts(),
+          fileSizeBytes: 1,
+          fileModifiedAt: 1,
+        ),
+      );
 
       await db.deleteVideoBook('broken');
 
       expect(await db.videoFileSpec(main), isNull);
       expect(
-        await (db.select(db.videoBooks)
-              ..where((t) => t.bookUid.equals('broken')))
-            .getSingleOrNull(),
+        await (db.select(
+          db.videoBooks,
+        )..where((t) => t.bookUid.equals('broken'))).getSingleOrNull(),
         isNull,
         reason: '书本身必须删掉——不能因为一条脏缓存键让整个事务回滚',
       );
@@ -461,8 +486,7 @@ void main() {
   });
 
   group('BUG-2571 「这次没探成」不是「这文件没规格」', () {
-    test('探测不可用不写负缓存：isResolved 保持 false，显式 resolve 会重探到结果',
-        () async {
+    test('探测不可用不写负缓存：isResolved 保持 false，显式 resolve 会重探到结果', () async {
       final String path = writeFile('unavail.mkv');
       int probeCalls = 0;
       final VideoSpecsService service = VideoSpecsService(
@@ -482,7 +506,8 @@ void main() {
       expect(
         service.isResolved(path),
         isFalse,
-        reason: '没得出结论就不是结论——修复前这里会被记成 null 并永久 true，'
+        reason:
+            '没得出结论就不是结论——修复前这里会被记成 null 并永久 true，'
             '本次会话再也不重探，角标永远空着',
       );
       expect(service.specsFor(path), isNull);
@@ -512,11 +537,7 @@ void main() {
         await service.drain();
       }
 
-      expect(
-        probeCalls,
-        1,
-        reason: '滚动反复 prime 同一屏时，不能每次都再烧一次必然失败的探测',
-      );
+      expect(probeCalls, 1, reason: '滚动反复 prime 同一屏时，不能每次都再烧一次必然失败的探测');
     });
 
     test('对照组：探完了确实没东西（empty）仍是终局结论，不再重探', () async {

@@ -5,7 +5,9 @@ void main() {
   group('clampSeekTargetMs (±10s transport)', () {
     test('forward within bounds', () {
       expect(
-          VideoPlayerController.clampSeekTargetMs(5000, 10000, 60000), 15000);
+        VideoPlayerController.clampSeekTargetMs(5000, 10000, 60000),
+        15000,
+      );
     });
 
     test('backward clamps to 0', () {
@@ -14,12 +16,16 @@ void main() {
 
     test('forward clamps to duration', () {
       expect(
-          VideoPlayerController.clampSeekTargetMs(58000, 10000, 60000), 60000);
+        VideoPlayerController.clampSeekTargetMs(58000, 10000, 60000),
+        60000,
+      );
     });
 
     test('unknown duration only guards lower bound', () {
       expect(
-          VideoPlayerController.clampSeekTargetMs(58000, 10000, null), 68000);
+        VideoPlayerController.clampSeekTargetMs(58000, 10000, null),
+        68000,
+      );
       expect(VideoPlayerController.clampSeekTargetMs(1000, -10000, null), 0);
     });
 

@@ -100,6 +100,27 @@ class SrsStyleStore {
     return d.html;
   }
 
+  /// [expand] 的成批版本（与输入同序）：先收齐全部值引用的样式文件名、每个文件只读一次，再逐值同步展开——
+  /// 不按字段各等一次读盘（notesInfo 一次几百条笔记 × 每条十几个字段）。
+  Future<List<String>> expandAll(
+    List<String> htmls, {
+    bool dropMissing = false,
+  }) async {
+    final Set<String> names = <String>{
+      for (final String h in htmls) ...srsStyleRefsIn(h),
+    };
+    if (names.isEmpty) return htmls;
+    final Map<String, String> found = <String, String>{};
+    for (final String n in names) {
+      final String? css = await load(n);
+      if (css != null) found[n] = css;
+    }
+    return <String>[
+      for (final String h in htmls)
+        srsExpandStyles(h, (String n) => found[n], dropMissing: dropMissing),
+    ];
+  }
+
   /// 展开引用（见 [srsExpandStyles]；[dropMissing] 的取舍在那里说明）。
   Future<String> expand(String html, {bool dropMissing = false}) async {
     final Set<String> names = srsStyleRefsIn(html);

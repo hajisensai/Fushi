@@ -1,0 +1,69 @@
+[package]
+name = "fushi_web_core"
+version = "0.2.0"
+edition = "2021"
+publish = false
+# 本 crate 自身代码以 MPL-2.0 发布，与上游 adblock-rust（Brave，MPL-2.0）一致；见 README「许可」。
+license = "MPL-2.0"
+
+[lib]
+# rlib：给 native/fushi_ios_umbrella（iOS 伞形 staticlib，与 fushi_p2p / fushi_fsrs 共用一份 Rust std）当依赖用。
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+# 钉死精确版本：adblock-rust 的序列化格式「不保证跨 minor 兼容」，升级时引擎缓存键
+# （fwc_version）随本 crate 版本一起变，旧缓存自动作废重编。
+# 关掉默认的 single-thread：引擎改用 Mutex 正则缓存，成为 Send + Sync（Dart isolate 可能换 OS 线程调用）。
+# content-blocking：导出 Apple WKContentRuleList JSON，给不能逐请求拦截的 WKWebView 用。
+adblock = { version = "=0.13.3", default-features = false, features = [
+    "embedded-domain-resolver",
+    "full-regex-handling",
+    "content-blocking",
+] }
+# `$redirect` 替身资源是 data:...;base64 URL；与 adblock 自己用的同一个大版本，不多带一份。
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 漫画章末广告页识别的图像解码。MIT OR Apache-2.0；只开网页漫画会遇到的格式
+# （解码器 png / zune-jpeg / image-webp / gif / bmp 同为 MIT/Apache 系）。
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
+# 网页小说正文提取（article）：HTML5 解析 + CSS 选择器（dom_query，MIT）与 readability.js 的
+# Rust 移植（dom_smoothie，MIT；只做通用兜底，站点规则命中时不经过它）。两者同一作者、同一 DOM，
+# 版本必须对齐（dom_smoothie 0.18 依赖 dom_query 0.28）。
+dom_query = { version = "0.28", default-features = false }
+dom_smoothie = "0.18.2"
+# 整页原始字节的字符集解码（GB18030 / Shift_JIS / EUC-*；MIT OR Apache-2.0，WHATWG Encoding Standard）。
+encoding_rs = "0.8"
+# 相对链接解析（MIT OR Apache-2.0；adblock 已经依赖同一份，不多带）。
+url = "2"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "unwind"
+
+# 构建脚本 / 过程宏不 strip：rustc 的 -C strip 在 Apple 主机上调 rust-objcopy 重排 LINKEDIT，
+# 间接符号表项数为奇数时字符串表只对齐到 4；macOS 27 的 dyld 拒绝加载这种 SDK 27 链出的 dylib
+# （mis-aligned LINKEDIT string pool），过程宏载不进 rustc 就报 E0463「can't find crate」
+# （2026-10-24 实测：MACOSX_DEPLOYMENT_TARGET=13.4 时 rustversion / zerocopy-derive 中招，11.0 时碰巧偶数）。
+# 最终产物的 macOS strip 见 build_macos_dylib.sh。
+[profile.release.build-override]
+strip = false
+
+# 图像解码与定位图形扫描是逐像素热循环；"s" 会把它们拖慢一倍以上，单独给 O3。
+[profile.release.package.image]
+opt-level = 3
+[profile.release.package.zune-jpeg]
+opt-level = 3
+[profile.release.package.png]
+opt-level = 3
+[profile.release.package.image-webp]
+opt-level = 3
+[profile.release.package.fdeflate]
+opt-level = 3
+[profile.release.package.miniz_oxide]
+opt-level = 3
+[profile.release.package.fushi_web_core]
+opt-level = 3

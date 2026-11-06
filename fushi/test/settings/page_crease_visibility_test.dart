@@ -4,8 +4,9 @@ import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -15,7 +16,8 @@ import 'package:fushi_core/fushi_core.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 「中缝折痕」(`reading_display.page_crease`) 只在开关真能生效时露出：翻页模式且本次
-/// 排版实际恰好两栏（每页列数 = 2，或「自动」在折叠屏书本姿态 + 横排下被解析成两栏）。
+/// 排版实际是一屏两页（每页列数 = 2，或「自动」在折叠屏书本姿态下被解析成横排两栏 /
+/// 竖排对开）。
 /// 列数 ≠ 2 时 CSS 根本不发折痕（`ReaderContentStyles.pageCreaseApplies`），此前该项
 /// 照样显示，用户打开了看不到任何变化。判据与 CSS 生成同源，这里咬住 schema 显隐。
 void main() {
@@ -119,7 +121,14 @@ void main() {
     expect(item.isVisible(book), isTrue, reason: '自动列数在书本姿态 + 横排被解析成两栏，折痕生效');
 
     await readerSettings.setWritingMode('vertical-rl');
-    expect(item.isVisible(book), isFalse, reason: '竖排不做折叠自动两栏');
+    expect(item.isVisible(flat), isFalse, reason: '竖排自动列数在普通屏是单条');
+    expect(
+      item.isVisible(book),
+      isTrue,
+      reason: '竖排自动列数在书本姿态下排成对开（右页 + 左页），两页之间有折痕',
+    );
+    await readerSettings.setPageColumns(1);
+    expect(item.isVisible(book), isFalse, reason: '竖排用户显式列数优先于折叠姿态');
 
     await readerSettings.setPageColumns(2);
     for (final String mode in <String>['continuous', 'vn']) {

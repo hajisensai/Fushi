@@ -2,9 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
-import 'package:fushi/src/platform/desktop/ctl/ctl_settings_body_items.dart';
+import 'package:fushi/src/ops/ctl_settings_body_items.dart';
 import 'package:fushi/src/settings/settings_cli_values.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -111,7 +111,9 @@ void main() {
       'video.player.mpv_raw',
       'video.player.danmaku_block_rules',
       'video.player.controls_editor',
+      'video.player.immersive_controls_editor',
       'reading_controls.controls_editor',
+      'manga.controls_editor',
       'game.gal_hook_text_color',
       'listening.floating_lyric_color_text',
     ];

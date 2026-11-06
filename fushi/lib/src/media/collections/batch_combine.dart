@@ -52,8 +52,9 @@ MergeTargetChoice chooseMergeTarget(
 ) {
   assert(collections.isNotEmpty, 'chooseMergeTarget requires ≥1 collection');
   ({int id, String name, int memberCount}) best = collections.first;
-  for (final ({int id, String name, int memberCount}) c
-      in collections.skip(1)) {
+  for (final ({int id, String name, int memberCount}) c in collections.skip(
+    1,
+  )) {
     if (c.memberCount > best.memberCount) best = c;
   }
   return MergeTargetChoice(targetId: best.id, defaultName: best.name);

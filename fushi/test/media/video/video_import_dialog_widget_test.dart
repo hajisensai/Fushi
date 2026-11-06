@@ -18,10 +18,10 @@ void main() {
     );
   }
 
-  testWidgets('renders with import disabled until a video is picked',
-      (WidgetTester tester) async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+  testWidgets('renders with import disabled until a video is picked', (
+    WidgetTester tester,
+  ) async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final VideoBookRepository repo = VideoBookRepository(db);
 
@@ -32,7 +32,11 @@ void main() {
     expect(find.text(t.video_import_subtitle_optional), findsOneWidget);
 
     // 初始（未选视频）导入按钮禁用。
-    final FilledButton importButton = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.widgetWithText(FilledButton, t.video_import_confirm)),);
+    final FilledButton importButton = tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.widgetWithText(FilledButton, t.video_import_confirm),
+      ),
+    );
     expect(importButton.onPressed, isNull);
   });
 }

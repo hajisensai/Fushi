@@ -11,8 +11,7 @@ void main() {
   setUp(() => db = FushiDatabase.forTesting(NativeDatabase.memory()));
   tearDown(() => db.close());
 
-  test('mergeTagInto 把源标签的书 / 字幕书 / 视频 / 游戏 / 合集映射搬到目标并删除源',
-      () async {
+  test('mergeTagInto 把源标签的书 / 字幕书 / 视频 / 游戏 / 合集映射搬到目标并删除源', () async {
     final int source = await db.createTag('源', 0xFFEF5350);
     final int target = await db.createTag('目标', 0xFF42A5F5);
     final int cid = await db.createMediaCollection('合集');

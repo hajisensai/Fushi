@@ -1,6 +1,8 @@
 // 复习卡面查词：原生区按字取词 → 查词弹窗（与阅读器同一套弹窗引擎）；弹窗里继续嵌套查；
-// 卡面原有点击（点例句显示注音）不被取词吃掉；卡面链接只放行 Fushi 来源跳转。
+// 卡面原有点击（点例句显示注音）不被取词吃掉，取词 / 显示注音用掉的点按也不报卡面手势；卡面链接只放行 Fushi 来源跳转。
 // 复习页整页（按键不评分、Esc 关弹窗回焦点）见 srs_pages_test.dart 的「卡面查词」组。
+import 'dart:ui' show BoxHeightStyle;
+
 import 'package:flutter/rendering.dart' show RenderParagraph, TextBox;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart'
@@ -8,8 +10,10 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart'
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
@@ -18,12 +22,14 @@ import 'package:fushi/src/srs/srs_card_sample.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../helpers/fake_anki_repository.dart';
 import '../helpers/fake_inappwebview_platform.dart';
 import '../helpers/popup_mining_target_overrides.dart';
 import '../helpers/test_platform_services.dart';
@@ -64,6 +70,8 @@ class _LookupApp extends AppModel {
 Future<DictionarySearchResult> _fakeSearch(String term, int max) async =>
     DictionarySearchResult(
       searchTerm: term,
+      // 引擎按最长匹配回报命中长度：假词典整串命中（卡面高亮据此标出整个查询串）。
+      bestLength: term.length,
       entries: <DictionaryEntry>[
         DictionaryEntry(word: term, reading: 'よみ', meaning: 'm'),
       ],
@@ -72,6 +80,8 @@ Future<DictionarySearchResult> _fakeSearch(String term, int max) async =>
 Map<String, String> _fields() => <String, String>{
   for (final String f in FushiCardNoteType.fields) f: '',
   ...srsSampleCardFields(),
+  // 例句字段自带 Anki 方括号注音（导入的笔记常见）：例句注音的点按显示走这一份。
+  'Sentence': '毎日[まいにち]のように 図書館[としょかん]に<b>通[かよ]って</b>いる。',
 };
 
 void main() {
@@ -82,6 +92,8 @@ void main() {
     WidgetTester tester, {
     required bool answer,
     bool apple = false,
+    SrsCardLookupCardSource? Function()? cardSource,
+    void Function(SrsCardGestureEvent)? onCardGesture,
   }) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
@@ -123,6 +135,7 @@ void main() {
               body: SizedBox.expand(
                 child: SrsCardLookupHost(
                   controller: lookup,
+                  cardSource: cardSource,
                   child: SrsFushiCardView(
                     face: SrsCardFace(
                       cardId: 'c1',
@@ -131,6 +144,7 @@ void main() {
                       css: FushiCardNoteType.template.css,
                       languageCode: 'ja',
                       onBridgeKey: (_) {},
+                      onCardGesture: onCardGesture,
                     ),
                     fields: _fields(),
                     definitionsHtml: '<div class="fc-defs-only">defs</div>',
@@ -208,6 +222,142 @@ void main() {
     });
   }
 
+  // 反馈 hbre3AQKXS：原生卡面查词后卡面上没有被查词的高亮（WebView 卡面有）。
+  testWidgets('原生区：查到结果后卡面高亮被查词（注音段 + 普通字），关弹窗后清掉', (
+    WidgetTester tester,
+  ) async {
+    final SrsCardLookupController lookup = await pumpCard(tester, answer: true);
+    final Finder term = find.byKey(const ValueKey<String>('srs-fushi-term'));
+    final Finder regionFinder = find
+        .ancestor(of: term, matching: find.byType(SrsNativeLookupRegion))
+        .first;
+    final SrsNativeLookupRegionState region = tester
+        .state<SrsNativeLookupRegionState>(regionFinder);
+    expect(region.debugHighlightRects, isEmpty);
+
+    final Offset tsu = rubyBaseCenter(tester, term, '通');
+    final Offset u = rubyBaseCenter(tester, term, 'う');
+    await tester.tapAt(tsu);
+    await settlePopup(tester);
+    expect(lookup.isOpen, isTrue);
+    expect(lookup.debugQueries, <String>['通う']);
+
+    final RenderBox regionBox = tester.renderObject<RenderBox>(regionFinder);
+    bool covered(Offset global) {
+      final Offset local = regionBox.globalToLocal(global);
+      return region.debugHighlightRects.any((Rect r) => r.contains(local));
+    }
+
+    expect(region.debugHighlightRects, isNotEmpty);
+    expect(covered(tsu), isTrue, reason: '注音段「通」整段高亮');
+    expect(covered(u), isTrue, reason: '命中 2 字：普通段「う」也高亮');
+
+    lookup.closeAll();
+    await tester.pump();
+    expect(lookup.isOpen, isFalse);
+    expect(region.debugHighlightRects, isEmpty);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  test('SrsLookupTextData.outerRangesFor：普通段按偏移平移，注音段整段占位符', () {
+    const SrsLookupTextData data = SrsLookupTextData(
+      '毎日のように通う',
+      segments: <SrsLookupTextSegment>[
+        SrsLookupTextSegment(
+          outerStart: 0,
+          outerLength: 1,
+          fullStart: 0,
+          placeholder: true,
+        ),
+        SrsLookupTextSegment(
+          outerStart: 1,
+          outerLength: 4,
+          fullStart: 2,
+          placeholder: false,
+        ),
+        SrsLookupTextSegment(
+          outerStart: 5,
+          outerLength: 1,
+          fullStart: 6,
+          placeholder: true,
+        ),
+        SrsLookupTextSegment(
+          outerStart: 6,
+          outerLength: 1,
+          fullStart: 7,
+          placeholder: false,
+        ),
+      ],
+    );
+    expect(data.outerRangesFor(1, 3), const <TextRange>[
+      TextRange(start: 0, end: 1),
+      TextRange(start: 1, end: 2),
+    ]);
+    expect(data.outerRangesFor(6, 8), const <TextRange>[
+      TextRange(start: 5, end: 6),
+      TextRange(start: 6, end: 7),
+    ]);
+    expect(data.outerRangesFor(3, 3), isEmpty);
+    expect(
+      const SrsLookupTextData('abc').outerRangesFor(1, 3),
+      const <TextRange>[TextRange(start: 1, end: 3)],
+    );
+  });
+
+  group('制卡来源（cardSource）', () {
+    Future<List<AnkiMiningContext>> mineBoth(WidgetTester tester) async {
+      final Finder host = find.byType(SrsCardLookupHost);
+      final DictionaryPageMixin page =
+          tester.state(host) as DictionaryPageMixin;
+      final FakeAnkiRepository repo =
+          ProviderScope.containerOf(
+                tester.element(host),
+              ).read(ankiRepositoryProvider)
+              as FakeAnkiRepository;
+      // 假仓库的 mineEntry 记下上下文后抛 UnimplementedError（不落卡）。
+      await expectLater(
+        page.onMineEntry(<String, String>{'sentence': 's'}),
+        throwsUnimplementedError,
+      );
+      await page.onUpdateEntry(7, <String, String>{'sentence': 's'});
+      await tester.pump(const Duration(seconds: 5));
+      expect(repo.minedContexts, hasLength(2));
+      return repo.minedContexts;
+    }
+
+    testWidgets('不传：标题 / 网址都不带（复习卡面行为不变）', (WidgetTester tester) async {
+      await pumpCard(tester, answer: true);
+      for (final AnkiMiningContext c in await mineBoth(tester)) {
+        expect(c.documentTitle, isNull);
+        expect(c.sourceUrl, isNull);
+        expect(c.sourceLink, isNull);
+      }
+    });
+
+    testWidgets('传：制卡与覆写都带当前网页标题与网址；返回 null 时不带', (WidgetTester tester) async {
+      SrsCardLookupCardSource? current = (
+        title: '  ニュース  ',
+        url: Uri.parse('https://example.jp/a?b=1'),
+      );
+      await pumpCard(tester, answer: true, cardSource: () => current);
+      for (final AnkiMiningContext c in await mineBoth(tester)) {
+        expect(c.documentTitle, 'ニュース');
+        expect(c.sourceUrl, 'https://example.jp/a?b=1');
+      }
+      current = null; // 例如切到无痕标签页
+      final Finder host = find.byType(SrsCardLookupHost);
+      final FakeAnkiRepository repo =
+          ProviderScope.containerOf(
+                tester.element(host),
+              ).read(ankiRepositoryProvider)
+              as FakeAnkiRepository;
+      repo.minedContexts.clear();
+      final AnkiMiningContext c = (await mineBoth(tester)).last;
+      expect(c.documentTitle, isNull);
+      expect(c.sourceUrl, isNull);
+    });
+  });
+
   testWidgets('原生区：例句注音收起时第一下点按只显示注音（原有操作），之后点字才查词', (
     WidgetTester tester,
   ) async {
@@ -241,6 +391,45 @@ void main() {
     );
     lookup.closeAll();
     await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('原生区卡面手势：取词 / 显示注音用掉的点按不报单击，空白处照报', (WidgetTester tester) async {
+    final List<SrsCardGestureEvent> events = <SrsCardGestureEvent>[];
+    final SrsCardLookupController lookup = await pumpCard(
+      tester,
+      answer: true,
+      onCardGesture: events.add,
+    );
+    final Finder term = find.byKey(const ValueKey<String>('srs-fushi-term'));
+    final Finder sentence = find.byKey(
+      const ValueKey<String>('srs-fushi-sentence'),
+    );
+
+    // 点例句（注音收起）：显示注音，不是单击空白。
+    await tester.tapAt(tester.getTopLeft(sentence) + const Offset(6, 12));
+    await tester.pump();
+    expect(
+      find.descendant(of: sentence, matching: find.text('まいにち')),
+      findsOneWidget,
+    );
+    expect(events, isEmpty, reason: '显示注音用掉了这一下');
+
+    // 点词条的字：查词，不是单击空白。
+    await tester.tapAt(rubyBaseCenter(tester, term, '通'));
+    await settlePopup(tester);
+    expect(lookup.isOpen, isTrue);
+    expect(events, isEmpty, reason: '取词用掉了这一下');
+    lookup.closeAll();
+    await tester.pump(const Duration(seconds: 2));
+
+    // 卡面底部右下角的页边空白：报单击（带落点）。
+    const Offset blank = Offset(386, 836);
+    await tester.tapAt(blank);
+    await tester.pump();
+    expect(events, <SrsCardGestureEvent>[
+      const SrsCardGestureEvent(SrsCardGestureKind.tap, position: blank),
+    ]);
+    expect(lookup.isOpen, isFalse);
   });
 
   testWidgets('原生区：正面预热的释义区不登记为取词表面（只有原生词条可查）', (WidgetTester tester) async {
@@ -291,6 +480,64 @@ void main() {
     expect(termAt('よ'), 'ように通う');
     expect(termAt('通'), '通う');
     expect(termAt('か'), '通う', reason: '点注音按该段起点取词');
+  });
+
+  // 用户 2026-10-21「弹窗位置不对，高了一点」：复习页不在界面缩放中和层之下（实测用户
+  // 界面缩放 1.4），取词锚点只平移原点时高宽 / 位置留在 1/缩放，弹窗按偏高的下沿摆、
+  // 盖住被查的那一行。锚点必须是字形盒经完整变换后的全局矩形。
+  testWidgets('原生区取词锚点随界面缩放：盒子含点按位置、高度 = 字形高 × 缩放', (
+    WidgetTester tester,
+  ) async {
+    const double scale = 1.4;
+    final GlobalKey root = GlobalKey();
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 30, top: 40),
+            child: Transform.scale(
+              scale: scale,
+              alignment: Alignment.topLeft,
+              child: RepaintBoundary(
+                key: root,
+                child: const SrsRubyText(
+                  segments: <SrsInline>[SrsInline('手足を動かして水中を進む')],
+                  style: TextStyle(fontSize: 20),
+                  rubyStyle: TextStyle(fontSize: 10),
+                  lookup: true,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final RenderBox box = root.currentContext!.findRenderObject()! as RenderBox;
+    final Offset tap = rubyBaseCenter(tester, find.byKey(root), '水');
+    final SrsNativeLookupHit hit = srsNativeLookupHitAt(box, tap)!;
+    expect(hit.term, '水中を進む');
+    final RenderParagraph paragraph = hit.paragraph;
+    final String text = paragraph.text.toPlainText(
+      includeSemanticsLabels: false,
+    );
+    final int i = text.indexOf('水');
+    final Rect glyph = paragraph
+        .getBoxesForSelection(
+          TextSelection(baseOffset: i, extentOffset: i + 1),
+          boxHeightStyle: BoxHeightStyle.max,
+        )
+        .first
+        .toRect();
+    expect(hit.anchor.contains(tap), isTrue, reason: '${hit.anchor} vs $tap');
+    expect(hit.anchor.height, moreOrLessEquals(glyph.height * scale));
+    expect(hit.anchor.width, moreOrLessEquals(glyph.width * scale));
+    // 下沿 = 字形真实下沿（弹窗贴着它往下摆，不能压进这一行）。
+    expect(
+      hit.anchor.bottom,
+      moreOrLessEquals(paragraph.localToGlobal(glyph.bottomLeft).dy),
+    );
   });
 
   group('卡面链接', () {

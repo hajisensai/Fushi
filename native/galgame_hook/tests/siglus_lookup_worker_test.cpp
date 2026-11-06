@@ -212,10 +212,11 @@ SiglusLookupPayload Press(uint32_t character = 0) {
 void TestUnreadCompleteRedrawDoesNotAcknowledgeClick() {
   Fixture fixture;
   Begin();
-  QueueSiglusLookupClickSubmit(Press());
+  const auto payload = Press();
   // Exact production interleaving: tick consumes a complete layout, then the
-  // renderer publishes another unchanged batch before queued up is checked.
+  // renderer publishes another unchanged batch before the up is queued.
   FullRedraw();
+  QueueSiglusLookupClickSubmit(payload);
   assert(!ProcessSiglusLookupClickSubmissions());
   assert(g_header->lookup_hit_count == 0);
   assert(g_siglus_lookup_click_processed_seq == 0);
@@ -247,8 +248,9 @@ SiglusLookupPayload BeginSingleGlyph() {
 void TestZeroPrefixReservedGapPreservesOnlyPendingRelease() {
   Fixture fixture;
   const auto payload = BeginSingleGlyph();
-  QueueSiglusLookupClickSubmit(payload);
+  // The reservation precedes the release: the decision must wait for it.
   const auto reserved = ReserveGlyph();
+  QueueSiglusLookupClickSubmit(payload);
   const auto before_invalidations = invalidated_targets;
   Consume();
   if (!g_siglus_lookup_layout.current_valid) {
@@ -274,17 +276,20 @@ void TestZeroPrefixReservedGapPreservesOnlyPendingRelease() {
 void TestReservedGapKnownPrefixNeverRevivesOldGeometry() {
   for (int kind = 0; kind < 3; ++kind) {
     Fixture fixture; Begin();
-    const auto payload = Press(); QueueSiglusLookupClickSubmit(payload);
+    const auto payload = Press();
     if (kind == 0) {
       // Complete displaced B, then gap, then original A: generation alone is
       // insufficient because the worker has observed an intervening prefix.
+      // All of it precedes the release.
       Glyph(u'A', 300); Glyph(u'B', 340); Glyph(u'C', 380);
-      const auto reserved = ReserveGlyph(); Consume();
+      const auto reserved = ReserveGlyph();
+      QueueSiglusLookupClickSubmit(payload); Consume();
       assert(!g_siglus_lookup_layout.current_valid);
       assert(!ProcessSiglusLookupClickSubmissions());
       PublishReservedGlyph(reserved); Glyph(u'B', 140); Glyph(u'C', 180);
     } else {
-      const auto first = ReserveGlyph(); Consume();
+      const auto first = ReserveGlyph();  // Reserved before the release.
+      QueueSiglusLookupClickSubmit(payload); Consume();
       assert(!ProcessSiglusLookupClickSubmissions());
       PublishReservedGlyph(first);
       if (kind == 1) {
@@ -294,10 +299,14 @@ void TestReservedGapKnownPrefixNeverRevivesOldGeometry() {
         assert(!ProcessSiglusLookupClickSubmissions());
         PublishReservedGlyph(second, u'B', 140); Glyph(u'C', 180);
       } else {
-        // Transport is fully consumed, but its semantic tail is partial.
-        Consume(); assert(!g_siglus_lookup_layout.current_valid);
-        assert(!ProcessSiglusLookupClickSubmissions());
-        Glyph(u'B', 140); Glyph(u'C', 180);
+        // Transport is fully consumed and its tail repeats the committed pass
+        // glyph for glyph: an identical redraw in progress (engines that lay
+        // the line out every frame) keeps the press current and submits.
+        Consume(); assert(g_siglus_lookup_layout.current_valid);
+        assert(g_siglus_lookup_layout.snapshot_epoch == payload.snapshot_epoch);
+        assert(ProcessSiglusLookupClickSubmissions());
+        assert(g_header->lookup_hit_count == 1);
+        continue;
       }
     }
     Consume();
@@ -311,8 +320,8 @@ void TestReservedGapKnownPrefixNeverRevivesOldGeometry() {
 void TestReservedGapHardFailuresRemainTerminal() {
   for (int kind = 0; kind < 7; ++kind) {
     Fixture fixture; const auto payload = BeginSingleGlyph();
-    QueueSiglusLookupClickSubmit(payload);
-    const auto reserved = ReserveGlyph(); Consume();
+    const auto reserved = ReserveGlyph();  // Reserved before the release.
+    QueueSiglusLookupClickSubmit(payload); Consume();
     assert(!ProcessSiglusLookupClickSubmissions());
     switch (kind) {
       case 0: PublishSiglusLookupTextSnapshot(L"A", 1, {43, 7}); break;
@@ -335,8 +344,8 @@ void TestReservedGapHardFailuresRemainTerminal() {
 void TestReservedGapLossAndChangedGeometryReject() {
   for (int kind = 0; kind < 3; ++kind) {
     Fixture fixture; const auto payload = BeginSingleGlyph();
-    QueueSiglusLookupClickSubmit(payload);
-    const auto reserved = ReserveGlyph(); Consume();
+    const auto reserved = ReserveGlyph();  // Reserved before the release.
+    QueueSiglusLookupClickSubmit(payload); Consume();
     assert(!ProcessSiglusLookupClickSubmissions());
     if (kind == 0) {
       // Even zero actual appends after a lost ring prefix must not preserve A.
@@ -353,8 +362,8 @@ void TestReservedGapLossAndChangedGeometryReject() {
 }
 void TestReservedGapClickOverflowDoesNotReviveLostPrefix() {
   Fixture fixture; const auto payload = BeginSingleGlyph();
-  QueueSiglusLookupClickSubmit(payload);
-  const auto reserved = ReserveGlyph(); Consume();
+  const auto reserved = ReserveGlyph();  // Reserved before the release.
+  QueueSiglusLookupClickSubmit(payload); Consume();
   assert(!ProcessSiglusLookupClickSubmissions());
   for (int i = 0; i < 5; ++i) QueueSiglusLookupClickSubmit(payload);
   assert(!ProcessSiglusLookupClickSubmissions());
@@ -368,54 +377,73 @@ void TestRedrawBetweenBothPublicationChecks() {
   Fixture fixture;
   Begin();
   QueueSiglusLookupClickSubmit(Press());
+  // A redraw landing between the two checks comes after the release: it
+  // neither holds nor revokes the decision.
   before_second_validation = FullRedraw;
-  assert(!ProcessSiglusLookupClickSubmissions());
-  assert(g_siglus_lookup_click_processed_seq == 0);
-  assert(g_siglus_lookup_waiting_glyph_seq == 6);
-  Consume();
   assert(ProcessSiglusLookupClickSubmissions());
+  assert(g_siglus_lookup_click_processed_seq == 1);
   assert(g_header->lookup_hit_count == 1);
 }
 
 void TestNoProgressAndContinuingCompleteRedraws() {
+  {
+    // Everything reserved before the release is consumed: a producer that
+    // keeps redrawing afterwards (every-frame layout) cannot hold delivery.
+    Fixture fixture;
+    Begin();
+    QueueSiglusLookupClickSubmit(Press());
+    FullRedraw();
+    assert(ProcessSiglusLookupClickSubmissions());
+    assert(!ProcessSiglusLookupClickSubmissions());
+    assert(g_header->lookup_hit_count == 1);
+  }
   Fixture fixture;
   Begin();
-  QueueSiglusLookupClickSubmit(Press());
+  // Glyphs reserved before the release must be consumed first.
   FullRedraw();
-  assert(!ProcessSiglusLookupClickSubmissions());
+  QueueSiglusLookupClickSubmit(Press());
   for (int same_frontier = 0; same_frontier < 20; ++same_frontier) {
     assert(!ProcessSiglusLookupClickSubmissions());
     assert(g_siglus_lookup_waiting_glyph_seq == 6);
     assert(g_siglus_lookup_click_processed_seq == 0);
   }
-  // No retry-count expiration. Every deferral depends on an actual new batch;
-  // preserving the pending-glyph safety gate cannot promise delivery while
-  // the producer is perpetually ahead at every validation instant.
-  for (int frame = 0; frame < 100; ++frame) {
-    Consume();
-    FullRedraw();
-    assert(!ProcessSiglusLookupClickSubmissions());
-    assert(g_siglus_lookup_click_processed_seq == 0);
-    assert(g_header->lookup_hit_count == 0);
-  }
+  // Only those: the redraw that keeps arriving after the release does not.
   Consume();
+  FullRedraw();
   assert(ProcessSiglusLookupClickSubmissions());
   assert(!ProcessSiglusLookupClickSubmissions());
   assert(g_header->lookup_hit_count == 1);
 }
 
 void TestPartialRedrawPermanentlyRejectsOldRelease() {
+  {
+    // An identical redraw sliced mid-pass is the same line being drawn again
+    // (every-frame layout engines): the release stays eligible.
+    Fixture fixture;
+    Begin();
+    const auto payload = Press();
+    Glyph(u'A', 100);
+    QueueSiglusLookupClickSubmit(payload);
+    Consume();
+    assert(g_siglus_lookup_layout.current_valid);
+    assert(g_siglus_lookup_layout.snapshot_epoch == payload.snapshot_epoch);
+    assert(ProcessSiglusLookupClickSubmissions());
+    assert(g_header->lookup_hit_count == 1);
+  }
+  // A divergent partial (other anchor) between press and release permanently
+  // rejects the release, even when the next complete pass restores the same
+  // geometry.
   Fixture fixture;
   Begin();
   const auto payload = Press();
+  Glyph(u'A', 104);
   QueueSiglusLookupClickSubmit(payload);
-  Glyph(u'A', 100);
   assert(!ProcessSiglusLookupClickSubmissions());
   Consume();
   assert(g_siglus_lookup_layout.snapshot_epoch != payload.snapshot_epoch);
   assert(!ProcessSiglusLookupClickSubmissions());
   assert(g_siglus_lookup_click_processed_seq == 1);
-  Glyph(u'B', 140); Glyph(u'C', 180);
+  Glyph(u'A', 100); Glyph(u'B', 140); Glyph(u'C', 180);
   Consume();
   assert(g_siglus_lookup_layout.generation == payload.geometry_generation);
   assert(!ProcessSiglusLookupClickSubmissions());
@@ -438,8 +466,8 @@ void TestFirstPartialHasNoEligibleRelease() {
 void TestNewOccurrenceEvenWithIdenticalTextRejects() {
   Fixture fixture;
   Begin();
-  QueueSiglusLookupClickSubmit(Press());
   FullRedraw();
+  QueueSiglusLookupClickSubmit(Press());  // Release after the redraw above.
   assert(!ProcessSiglusLookupClickSubmissions());
   PublishSiglusLookupTextSnapshot(L"ABC", 3, {43, 7});
   Consume();
@@ -451,8 +479,8 @@ void TestNewOccurrenceEvenWithIdenticalTextRejects() {
 void TestUnreadTextRejectsWithoutWaitingForGlyphs() {
   Fixture fixture;
   Begin();
-  QueueSiglusLookupClickSubmit(Press());
   FullRedraw();
+  QueueSiglusLookupClickSubmit(Press());  // Release after the redraw above.
   assert(!ProcessSiglusLookupClickSubmissions());
   PublishSiglusLookupTextSnapshot(L"XYZ", 3, {43, 7});
   assert(!ProcessSiglusLookupClickSubmissions());
@@ -462,8 +490,8 @@ void TestUnreadTextRejectsWithoutWaitingForGlyphs() {
 void TestCoordinateChangeRejects() {
   Fixture fixture;
   Begin();
-  QueueSiglusLookupClickSubmit(Press());
   Glyph(u'A', 300); Glyph(u'B', 340); Glyph(u'C', 380);
+  QueueSiglusLookupClickSubmit(Press());  // Release after the redraw above.
   assert(!ProcessSiglusLookupClickSubmissions());
   Consume();
   assert(!ProcessSiglusLookupClickSubmissions());
@@ -474,8 +502,8 @@ void TestCoordinateChangeRejects() {
 void TestForegroundLossDuringWaitIsTerminal() {
   Fixture fixture;
   Begin();
-  QueueSiglusLookupClickSubmit(Press());
   FullRedraw();
+  QueueSiglusLookupClickSubmit(Press());  // Release after the redraw above.
   assert(!ProcessSiglusLookupClickSubmissions());
   foreground = nullptr;
   assert(!ProcessSiglusLookupClickSubmissions());
@@ -489,8 +517,8 @@ void TestForegroundLossDuringWaitIsTerminal() {
 void TestSessionLossCancelsPendingQueue() {
   Fixture fixture;
   Begin();
-  QueueSiglusLookupClickSubmit(Press());
   FullRedraw();
+  QueueSiglusLookupClickSubmit(Press());  // Release after the redraw above.
   assert(!ProcessSiglusLookupClickSubmissions());
   ResetSiglusLookupRuntimeLayout();
   assert(g_siglus_lookup_click_processed_seq == 1);
@@ -504,9 +532,9 @@ void TestSessionLossCancelsPendingQueue() {
 void TestGlyphRingLossInvalidatesPendingEpoch() {
   Fixture fixture;
   Begin();
-  QueueSiglusLookupClickSubmit(Press());
   for (size_t i = 0; i < kSiglusLookupGlyphEventSlots + 1; ++i) Glyph(u'X', 300);
   FullRedraw();
+  QueueSiglusLookupClickSubmit(Press());  // Release after the redraw above.
   assert(!ProcessSiglusLookupClickSubmissions());
   Consume();
   assert(g_siglus_lookup_layout.current_valid);
@@ -518,8 +546,8 @@ void TestGlyphRingLossInvalidatesPendingEpoch() {
 void TestClicksStayInOrderAcrossWaitingAndOverflow() {
   Fixture fixture;
   Begin();
-  QueueSiglusLookupClickSubmit(Press(0));
   FullRedraw();
+  QueueSiglusLookupClickSubmit(Press(0));  // Release after the redraw above.
   assert(!ProcessSiglusLookupClickSubmissions());
   for (uint32_t index = 1; index <= 5; ++index)
     QueueSiglusLookupClickSubmit(Press(index % 3));
@@ -568,8 +596,8 @@ void TestRegistryRejectionIsTerminal() {
 void TestWindowInvalidationIsTerminal() {
   Fixture fixture;
   Begin();
-  QueueSiglusLookupClickSubmit(Press());
   FullRedraw();
+  QueueSiglusLookupClickSubmit(Press());  // Release after the redraw above.
   assert(!ProcessSiglusLookupClickSubmissions());
   window_valid = false;
   assert(!ProcessSiglusLookupClickSubmissions());
@@ -671,8 +699,8 @@ void TestWorkerRejectionReasonMetadata() {
 void TestOnlyTerminalOutcomesPublishDiagnostic() {
   Fixture fixture;
   Begin();
-  QueueSiglusLookupClickSubmit(Press());
   FullRedraw();
+  QueueSiglusLookupClickSubmit(Press());  // Release after the redraw above.
   for (int i = 0; i < 20; ++i) {
     assert(!ProcessSiglusLookupClickSubmissions());
     assert(g_siglus_lookup_worker_diagnostic_count == 0);

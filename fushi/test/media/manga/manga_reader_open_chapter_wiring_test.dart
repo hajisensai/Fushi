@@ -5,8 +5,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/manga_fushi_source.dart';
+import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 
 MangaFushiPage _readerOf(Object page) =>
@@ -44,11 +45,13 @@ void main() {
     final String src = File(
       'lib/src/media/manga/library/manga_series_page.dart',
     ).readAsStringSync();
-    expect(src, contains('await _openReader(bookKey, chapterIndex: index);'));
+    // 去空白再比：dart format 的折行（参数是否逐行、尾逗号）不该让接线守卫变红。
+    final String flat = src.replaceAll(RegExp(r'\s+'), '');
+    expect(flat, contains('await_openReader(bookKey,chapterIndex:index);'));
     expect(
-      src,
+      flat,
       contains(
-        '.buildChapterLaunchPage(item: launchItem, chapterIndex: chapterIndex)',
+        '.buildChapterLaunchPage(item:launchItem,chapterIndex:chapterIndex',
       ),
     );
   });

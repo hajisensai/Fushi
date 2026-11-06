@@ -324,20 +324,33 @@ void main() {
         ),
       );
       final ShapeDecoration fd = flower.decoration as ShapeDecoration;
-      expect(fd.shape, isA<FushiCookieBorder>());
+      expect(
+        fd.shape,
+        isA<MaterialShapeBorder>().having(
+          (MaterialShapeBorder b) => b.shape,
+          'shape',
+          same(MaterialShapes.cookie9Sided),
+        ),
+      );
       expect(fd.color, _scheme.tertiaryContainer);
     });
 
-    test('cookie 外形落在外接正方形内且有凹凸', () {
-      const FushiCookieBorder border = FushiCookieBorder(lobes: 4);
+    test('cookie 取官方 M3E 形状并落在外接正方形内', () {
+      final ShapeBorder border = fushiLeadingShapeBorder(
+        FushiLeadingShape.cookie,
+      );
+      expect(
+        border,
+        isA<MaterialShapeBorder>().having(
+          (MaterialShapeBorder b) => b.shape,
+          'shape',
+          same(MaterialShapes.cookie4Sided),
+        ),
+      );
       final Rect rect = Rect.fromLTWH(0, 0, 40, 40);
-      final Path path = border.getOuterPath(rect);
-      final Rect bounds = path.getBounds();
+      final Rect bounds = border.getOuterPath(rect).getBounds();
       expect(rect.inflate(0.01).contains(bounds.topLeft), isTrue);
       expect(rect.inflate(0.01).contains(bounds.bottomRight), isTrue);
-      // 瓣尖在轴上（顶点）触到外接框，对角方向凹进去。
-      expect(path.contains(const Offset(20, 0.5)), isTrue);
-      expect(path.contains(const Offset(6.5, 6.5)), isFalse);
     });
 
     testWidgets('Apple：强调色圆角方块', (WidgetTester tester) async {

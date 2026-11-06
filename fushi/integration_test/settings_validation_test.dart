@@ -28,8 +28,9 @@ void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('M2: All settings toggles are operable and persist',
-      (WidgetTester tester) async {
+  testWidgets('M2: All settings toggles are operable and persist', (
+    WidgetTester tester,
+  ) async {
     final List<FlutterErrorDetails> errors = [];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
     FlutterError.onError = (FlutterErrorDetails details) {
@@ -75,8 +76,10 @@ void main() {
         totalFailed += result.failed;
 
         final segments = await _countSegmentedButtons(tester);
-        debugPrint('[M2] $page: ${result.toggled} switches OK, '
-            '${result.failed} failed, $segments segmented buttons present');
+        debugPrint(
+          '[M2] $page: ${result.toggled} switches OK, '
+          '${result.failed} failed, $segments segmented buttons present',
+        );
 
         // Persistence: prove a setting actually writes through (not just an
         // in-widget setState) by flipping it, leaving the page, returning, and
@@ -95,22 +98,38 @@ void main() {
 
       debugPrint('[M2] === Summary ===');
       debugPrint(
-          '[M2] Switches toggled OK: $totalToggled, failed: $totalFailed');
-      debugPrint('[M2] Persistence verified on $totalPersistChecked pages, '
-          'failed: $totalPersistFailed');
+        '[M2] Switches toggled OK: $totalToggled, failed: $totalFailed',
+      );
+      debugPrint(
+        '[M2] Persistence verified on $totalPersistChecked pages, '
+        'failed: $totalPersistFailed',
+      );
 
       await takeScreenshot(binding, 'm2_final_state');
       assertStrictErrors(errors);
 
-      expect(totalToggled, greaterThan(0),
-          reason: 'Expected to exercise at least one switch across settings');
-      expect(totalFailed, 0,
-          reason: '$totalFailed switches did not toggle/restore correctly');
-      expect(totalPersistChecked, greaterThan(0),
-          reason: 'Expected to verify persistence on at least one page');
-      expect(totalPersistFailed, 0,
-          reason: '$totalPersistFailed pages had a setting that did not '
-              'persist across page re-entry');
+      expect(
+        totalToggled,
+        greaterThan(0),
+        reason: 'Expected to exercise at least one switch across settings',
+      );
+      expect(
+        totalFailed,
+        0,
+        reason: '$totalFailed switches did not toggle/restore correctly',
+      );
+      expect(
+        totalPersistChecked,
+        greaterThan(0),
+        reason: 'Expected to verify persistence on at least one page',
+      );
+      expect(
+        totalPersistFailed,
+        0,
+        reason:
+            '$totalPersistFailed pages had a setting that did not '
+            'persist across page re-entry',
+      );
       debugPrint('[M2] === ALL SETTINGS TESTS PASSED ===');
     } finally {
       FlutterError.onError = oldHandler;
@@ -121,7 +140,9 @@ void main() {
 /// Toggle every enabled Switch on the current page, verifying each changes
 /// value and can be restored. Returns counts.
 Future<({int toggled, int failed})> _exerciseAllSwitches(
-    WidgetTester tester, String page) async {
+  WidgetTester tester,
+  String page,
+) async {
   await _scrollToTop(tester);
 
   final FocusDriver driver = FocusDriver(tester);
@@ -155,7 +176,9 @@ Future<({int toggled, int failed})> _exerciseAllSwitches(
       continue;
     }
 
-    final bool v1 = tester.widget<Switch>(glassUnwrap<Switch>(find.byType(Switch).at(i))).value;
+    final bool v1 = tester
+        .widget<Switch>(glassUnwrap<Switch>(find.byType(Switch).at(i)))
+        .value;
     if (v1 == v0) {
       debugPrint('[M2] ✗ switch[$i] value did not change (stayed $v0)');
       failed++;
@@ -168,7 +191,9 @@ Future<({int toggled, int failed})> _exerciseAllSwitches(
       failed++;
       continue;
     }
-    final bool v2 = tester.widget<Switch>(glassUnwrap<Switch>(find.byType(Switch).at(i))).value;
+    final bool v2 = tester
+        .widget<Switch>(glassUnwrap<Switch>(find.byType(Switch).at(i)))
+        .value;
     if (v2 != v0) {
       debugPrint('[M2] ✗ switch[$i] did not restore (want $v0, got $v2)');
       failed++;
@@ -202,7 +227,10 @@ Future<_Persist> _verifyPersistence(WidgetTester tester, String page) async {
   final int count = find.byType(Switch).evaluate().length;
   int idx = -1;
   for (int i = 0; i < count; i++) {
-    if (tester.widget<Switch>(glassUnwrap<Switch>(find.byType(Switch).at(i))).onChanged != null) {
+    if (tester
+            .widget<Switch>(glassUnwrap<Switch>(find.byType(Switch).at(i)))
+            .onChanged !=
+        null) {
       idx = i;
       break;
     }
@@ -249,11 +277,7 @@ bool _mapsEqual(Map<String, String> a, Map<String, String> b) {
 }
 
 Future<int> _countSegmentedButtons(WidgetTester tester) async {
-  return find
-      .byWidgetPredicate(
-          (w) => w is SegmentedButton)
-      .evaluate()
-      .length;
+  return find.byWidgetPredicate((w) => w is SegmentedButton).evaluate().length;
 }
 
 /// Navigate to the Settings tab and open the named sub-page.
@@ -263,8 +287,11 @@ Future<bool> _openSettingsPage(WidgetTester tester, String text) async {
   final navTargets = findPrimaryNavigationTargets();
   if (navTargets.isEmpty) return false;
   final bool focusedSettings = await driver.focusWidget(navTargets.last);
-  expect(focusedSettings, isTrue,
-      reason: 'Settings tab must be reachable by focus');
+  expect(
+    focusedSettings,
+    isTrue,
+    reason: 'Settings tab must be reachable by focus',
+  );
   await driver.activate();
   await tester.pump(const Duration(milliseconds: 500));
 
@@ -272,8 +299,11 @@ Future<bool> _openSettingsPage(WidgetTester tester, String text) async {
   final Finder entry = find.text(text).first;
   if (entry.evaluate().isEmpty) return false;
   final bool focusedEntry = await driver.focusWidget(entry);
-  expect(focusedEntry, isTrue,
-      reason: 'Settings sub-page entry "$text" must be reachable by focus');
+  expect(
+    focusedEntry,
+    isTrue,
+    reason: 'Settings sub-page entry "$text" must be reachable by focus',
+  );
   await driver.activate();
   await tester.pump(const Duration(milliseconds: 500));
   return true;

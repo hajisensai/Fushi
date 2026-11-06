@@ -108,8 +108,8 @@ class LookupImeChannel {
   /// 这两种失败的修法完全不同。没有原生实现时返回 null。
   static Future<Map<String, Object?>?> probe() async {
     try {
-      final Map<Object?, Object?>? raw =
-          await _channel.invokeMethod<Map<Object?, Object?>>('probe');
+      final Map<Object?, Object?>? raw = await _channel
+          .invokeMethod<Map<Object?, Object?>>('probe');
       if (raw == null) return null;
       return raw.map(
         (Object? key, Object? value) =>

@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/startup/observe_blank_detector.dart';
 
 Uint8List _solid(int w, int h, int r, int g, int b) {

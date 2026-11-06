@@ -8,7 +8,9 @@
 /// 与那两个编辑器唯一的结构差别在预览：它们用 WebView 渲染样式，这里渲染的是
 /// [GalTextProcessPipeline.run] 的**逐步留痕**——每一步吃进什么、吐出什么、有没有把整行
 /// 清空，是用户判断「这条规则该不该留」的唯一依据。预览与 hook 热路径共用同一份
-/// [applyGalTextProcessStep]，预览结果与真实入库文本不可能分叉。
+/// [applyGalTextProcessStep]；样例行由调用方给出产出当前字幕的那份原文（见
+/// `texthooker_page.dart` 的 `_selectedThreadSample`），同一输入过同一管线，预览结果与
+/// 真实入库文本不会分叉（BUG-4029）。
 library;
 
 import 'dart:async';
@@ -17,13 +19,30 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/ai/ai_saved_prompt_picker.dart';
+import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/ai/ai_text_process_assistant.dart';
 import 'package:fushi/src/mining/galgame_text_process.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 取「当前所选线程最近抓到的一行」。返回空串 = 拿不到（未选线程 / 该线程还没出过文本），
 /// 页面据此把「使用最近抓到的一行」按钮置灰。
@@ -164,8 +183,42 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
     final String id = _draftPipeline.nextIdFor(kind);
     _replaceSteps(<GalTextProcessStep>[
       ..._steps,
-      GalTextProcessStep(id: id, kind: kind),
+      defaultGalTextProcessStep(id, kind),
     ]);
+  }
+
+  /// 草稿换回 [kGalDefaultTextProcessPipeline]。存过管线的游戏不会自动拿到新的默认
+  /// 步骤表，这是它们回到默认的唯一入口；同样只改草稿，保存才生效。
+  void _resetToDefaults() => _replaceSteps(
+    List<GalTextProcessStep>.of(kGalDefaultTextProcessPipeline.steps),
+  );
+
+  /// 把 AI 建议并进草稿：不允许重复的种类若草稿里已有一步（默认步骤表里通常都有，
+  /// 只是关着），**就地**换成建议的参数并打开，而不是在末尾再挂一张同名卡——那样
+  /// 用户会看到两张「花括号注音转振假名」，一开一关，顺序还跟默认表对不上。
+  List<GalTextProcessStep> _mergeAiSteps(List<GalTextProcessStep> suggested) {
+    final List<GalTextProcessStep> next = List<GalTextProcessStep>.of(_steps);
+    for (final GalTextProcessStep step in suggested) {
+      final int existing = step.kind.allowsDuplicates
+          ? -1
+          : next.indexWhere((GalTextProcessStep s) => s.kind == step.kind);
+      if (existing < 0) {
+        next.add(step);
+        continue;
+      }
+      next[existing] = GalTextProcessStep(
+        id: next[existing].id,
+        kind: step.kind,
+        enabled: step.enabled,
+        repeatCount: step.repeatCount,
+        lineCount: step.lineCount,
+        fromEnd: step.fromEnd,
+        pattern: step.pattern,
+        replacement: step.replacement,
+        isRegex: step.isRegex,
+      );
+    }
+    return next;
   }
 
   /// 「item[from] 移到最终下标 to」——[FushiReorderableColumn] 的契约。
@@ -254,7 +307,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
       }
       // 追加进**草稿**，不落盘：AI 给的规则和手写的一样，要先看预览再决定保不保存。
       setState(() {
-        _steps = <GalTextProcessStep>[..._steps, ...suggestion.steps];
+        _steps = _mergeAiSteps(suggestion.steps);
         _aiMessage = t.game_text_process_ai_added(
           count: suggestion.steps.length,
         );
@@ -595,14 +648,25 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
                   _buildStepCard(tokens, _steps[index], index, _steps.length),
             ),
           SizedBox(height: tokens.spacing.gap),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: FushiFilledButton.tonalIcon(
-              key: const ValueKey<String>('gtp-add-step'),
-              onPressed: _promptAddStep,
-              icon: const FushiIcon(Icons.add),
-              label: Text(t.game_text_process_add_step),
-            ),
+          Wrap(
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            children: <Widget>[
+              FushiFilledButton.tonalIcon(
+                key: const ValueKey<String>('gtp-add-step'),
+                onPressed: _promptAddStep,
+                icon: const FushiIcon(Icons.add),
+                label: Text(t.game_text_process_add_step),
+              ),
+              FushiTextButton.icon(
+                key: const ValueKey<String>('gtp-reset-defaults'),
+                onPressed: _draftPipeline == kGalDefaultTextProcessPipeline
+                    ? null
+                    : _resetToDefaults,
+                icon: const FushiIcon(FushiIcons.restart),
+                label: Text(t.game_text_process_reset_defaults),
+              ),
+            ],
           ),
           if (_hasAutoDedupe) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
@@ -865,24 +929,22 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
         title: Text(t.game_text_process_add_step),
         content: SizedBox(
           width: 420,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                // 已在管线里且不允许重复的种类整条隐藏（只有「替换」允许多条）：
-                // 列出来再置灰只会让 17 行的列表更难扫。
-                for (final GalTextProcessKind kind in GalTextProcessKind.values)
-                  if (kind.allowsDuplicates || !used.contains(kind))
-                    FushiListItem(
-                      key: ValueKey<String>('gtp-add-${kind.storageKey}'),
-                      title: Text(_kindLabel(kind)),
-                      subtitle: Text(_kindDescription(kind)),
-                      titleMaxLines: 2,
-                      subtitleMaxLines: 3,
-                      onTap: () => Navigator.of(dialogContext).pop(kind),
-                    ),
-              ],
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              // 已在管线里且不允许重复的种类整条隐藏（只有「替换」允许多条）：
+              // 列出来再置灰只会让 17 行的列表更难扫。
+              for (final GalTextProcessKind kind in GalTextProcessKind.values)
+                if (kind.allowsDuplicates || !used.contains(kind))
+                  FushiListItem(
+                    key: ValueKey<String>('gtp-add-${kind.storageKey}'),
+                    title: Text(_kindLabel(kind)),
+                    subtitle: Text(_kindDescription(kind)),
+                    titleMaxLines: 2,
+                    subtitleMaxLines: 3,
+                    onTap: () => Navigator.of(dialogContext).pop(kind),
+                  ),
+            ],
           ),
         ),
         actions: <Widget>[
@@ -917,20 +979,30 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
             maxLines: 3,
           ),
           SizedBox(height: tokens.spacing.gap),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: FushiFilledButton.icon(
-              key: const ValueKey<String>('gtp-ai-generate'),
-              onPressed: _aiBusy ? null : () => unawaited(_runAi()),
-              icon: _aiBusy
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: FushiCircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const FushiIcon(Icons.auto_awesome_outlined),
-              label: Text(t.game_text_process_ai_generate),
-            ),
+          Wrap(
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap / 2,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              FushiFilledButton.icon(
+                key: const ValueKey<String>('gtp-ai-generate'),
+                onPressed: _aiBusy ? null : () => unawaited(_runAi()),
+                icon: _aiBusy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const FushiIcon(Icons.auto_awesome_outlined),
+                label: Text(t.game_text_process_ai_generate),
+              ),
+              AiSavedPromptButton(
+                scene: AiPromptScene.galTextProcess,
+                controller: _aiRequestController,
+                enabled: !_aiBusy,
+                showLabel: true,
+              ),
+            ],
           ),
           if (_aiMessage != null) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
@@ -961,7 +1033,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
     GalTextProcessKind.filterAsciiPunctuation =>
       t.game_text_process_kind_filter_ascii_punctuation,
     GalTextProcessKind.keepJapaneseQuotes =>
-      t.game_text_process_kind_keep_japanese_quotes,
+      t.game_text_process_kind_strip_outside_quotes,
     GalTextProcessKind.stripCurlyBraces =>
       t.game_text_process_kind_strip_curly_braces,
     GalTextProcessKind.normalizeWidth =>
@@ -994,9 +1066,9 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
     GalTextProcessKind.filterAsciiPunctuation =>
       t.game_text_process_kind_filter_ascii_punctuation_desc,
     GalTextProcessKind.keepJapaneseQuotes =>
-      t.game_text_process_kind_keep_japanese_quotes_desc,
+      t.game_text_process_kind_strip_outside_quotes_desc,
     GalTextProcessKind.stripCurlyBraces =>
-      t.game_text_process_kind_strip_curly_braces_desc,
+      t.game_text_process_kind_strip_curly_braces_detail,
     GalTextProcessKind.normalizeWidth =>
       t.game_text_process_kind_normalize_width_desc,
     GalTextProcessKind.takeLines => t.game_text_process_kind_take_lines_desc,

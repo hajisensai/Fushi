@@ -6,6 +6,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
+import 'package:fushi/src/utils/adaptive/nav_shape.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -249,7 +250,7 @@ void main() {
     });
   });
 
-  group('导航药丸', () {
+  group('导航选中多边形', () {
     const List<AdaptiveNavItem> items = <AdaptiveNavItem>[
       AdaptiveNavItem(
         icon: Icons.home_outlined,
@@ -275,51 +276,41 @@ void main() {
       reduceMotion: reduceMotion,
     );
 
-    double pillWidth(WidgetTester tester, IconData icon) {
-      return tester
-          .getSize(
-            find
-                .ancestor(
-                  of: find.byIcon(icon),
-                  matching: find.byWidgetPredicate(
-                    (Widget w) =>
-                        w is Container && w.decoration is BoxDecoration,
-                  ),
-                )
-                .first,
-          )
-          .width;
+    /// 正在画（visible）的选中多边形所在的那一项图标是否在它中心。
+    bool shapeBehind(WidgetTester tester, IconData icon) {
+      final Iterable<Element> shapes = find
+          .byType(NavMorphShape)
+          .evaluate()
+          .where((Element e) => (e.widget as NavMorphShape).visible);
+      if (shapes.length != 1) return false;
+      final Rect rect = tester.getRect(find.byWidget(shapes.single.widget));
+      return rect.contains(tester.getCenter(find.byIcon(icon).hitTestable()));
     }
 
-    // MD3 Expressive 刷新：完整药丸宽 = AdaptiveNavTileMetrics.fullPillWidth（56）。
-    testWidgets('选中时从 32 横向展开到 56', (WidgetTester tester) async {
+    // 2026-10-24 起底栏选中高亮是专属多边形：墨滴在两项间滑（途中两格都不画
+    // 自己的多边形），落定后新项的多边形由圆弹簧变形出来。
+    testWidgets('切换时墨滴滑过去，落定后多边形出现在新项', (WidgetTester tester) async {
       await tester.pumpWidget(bar(0));
       await tester.pumpAndSettle();
-      expect(
-        pillWidth(tester, Icons.home),
-        AdaptiveNavTileMetrics.fullPillWidth,
-      );
-      expect(pillWidth(tester, Icons.book_outlined), 32);
+      expect(shapeBehind(tester, Icons.home), isTrue);
       await tester.pumpWidget(bar(1));
       await tester.pump(const Duration(milliseconds: 40));
-      final double mid = pillWidth(tester, Icons.book);
-      expect(mid, greaterThan(32));
-      expect(mid, lessThan(AdaptiveNavTileMetrics.fullPillWidth));
-      await tester.pumpAndSettle();
       expect(
-        pillWidth(tester, Icons.book),
-        AdaptiveNavTileMetrics.fullPillWidth,
+        find
+            .byType(NavMorphShape)
+            .evaluate()
+            .where((Element e) => (e.widget as NavMorphShape).visible),
+        isEmpty,
       );
+      await tester.pumpAndSettle();
+      expect(shapeBehind(tester, Icons.book), isTrue);
     });
 
     testWidgets('减弱动态效果下同帧到位', (WidgetTester tester) async {
       await tester.pumpWidget(bar(0, reduceMotion: true));
       await tester.pumpWidget(bar(1, reduceMotion: true));
       await tester.pump();
-      expect(
-        pillWidth(tester, Icons.book),
-        AdaptiveNavTileMetrics.fullPillWidth,
-      );
+      expect(shapeBehind(tester, Icons.book), isTrue);
     });
   });
 

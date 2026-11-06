@@ -37,8 +37,8 @@ class DesktopOAuthLaunch {
     required this.finished,
     required Future<bool> Function() reopenBrowser,
     required void Function() cancel,
-  })  : _reopenBrowser = reopenBrowser,
-        _cancel = cancel;
+  }) : _reopenBrowser = reopenBrowser,
+       _cancel = cancel;
 
   /// 交给浏览器的那条授权 URL，与 [runDesktopOAuthLoopback] 实际拉起的逐字节相同。
   final Uri authUrl;
@@ -163,8 +163,10 @@ Future<DesktopOAuthResult> runDesktopOAuthLoopback({
   try {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
   } on SocketException catch (e) {
-    throw SyncAuthError('Failed to start local OAuth listener on port '
-        '${port == 0 ? 'auto' : port}: ${e.message}');
+    throw SyncAuthError(
+      'Failed to start local OAuth listener on port '
+      '${port == 0 ? 'auto' : port}: ${e.message}',
+    );
   }
 
   try {
@@ -184,8 +186,11 @@ Future<DesktopOAuthResult> runDesktopOAuthLoopback({
         // `browserOpened` 以错误完成，而等待对话框是 `browserOpened.then((opened) {...})`
         // 不带 onError 的——那就是一条无人接管的异步错误。「浏览器没打开」必须是一个
         // 可展示的状态，不是异常。
-        ErrorLogService.instance
-            .log('runDesktopOAuthLoopback.openBrowser', e, st);
+        ErrorLogService.instance.log(
+          'runDesktopOAuthLoopback.openBrowser',
+          e,
+          st,
+        );
         return false;
       }
     }
@@ -205,8 +210,9 @@ Future<DesktopOAuthResult> runDesktopOAuthLoopback({
 
       if (completer.isCompleted) return;
       if (code != null) {
-        completer
-            .complete(DesktopOAuthResult(code: code, redirectUri: redirectUri));
+        completer.complete(
+          DesktopOAuthResult(code: code, redirectUri: redirectUri),
+        );
       } else if (error != null) {
         completer.completeError(SyncAuthError('Authorization denied: $error'));
       }
@@ -214,15 +220,17 @@ Future<DesktopOAuthResult> runDesktopOAuthLoopback({
     });
     final Timer timer = Timer(timeout, () {
       if (completer.isCompleted) return;
-      completer.completeError(SyncAuthError(
-        'Timed out waiting for authorization',
-        // Typed, not guessed: the message contains "authorization", which the
-        // error-message mapper's `contains('auth')` branch used to swallow as
-        // "sign-in expired" — telling the user to re-authenticate when the
-        // real problem is that the browser callback never reached us
-        // (BUG-1348).
-        kind: SyncAuthFailureKind.browserTimeout,
-      ));
+      completer.completeError(
+        SyncAuthError(
+          'Timed out waiting for authorization',
+          // Typed, not guessed: the message contains "authorization", which the
+          // error-message mapper's `contains('auth')` branch used to swallow as
+          // "sign-in expired" — telling the user to re-authenticate when the
+          // real problem is that the browser callback never reached us
+          // (BUG-1348).
+          kind: SyncAuthFailureKind.browserTimeout,
+        ),
+      );
     });
 
     try {
@@ -230,21 +238,26 @@ Future<DesktopOAuthResult> runDesktopOAuthLoopback({
           onLaunched ?? DesktopOAuthLaunchObserver._current;
       final Future<bool> opened = openBrowser();
       _notifyLaunchListener(
-          listener,
-          DesktopOAuthLaunch(
-            authUrl: authUrl,
-            browserOpened: opened,
-            finished: completer.future
-                .then<void>((_) {}, onError: (Object _, StackTrace __) {}),
-            reopenBrowser: openBrowser,
-            cancel: () {
-              if (completer.isCompleted) return;
-              completer.completeError(SyncAuthError(
+        listener,
+        DesktopOAuthLaunch(
+          authUrl: authUrl,
+          browserOpened: opened,
+          finished: completer.future.then<void>(
+            (_) {},
+            onError: (Object _, StackTrace __) {},
+          ),
+          reopenBrowser: openBrowser,
+          cancel: () {
+            if (completer.isCompleted) return;
+            completer.completeError(
+              SyncAuthError(
                 'Sign-in cancelled by user',
                 kind: SyncAuthFailureKind.cancelled,
-              ));
-            },
-          ));
+              ),
+            );
+          },
+        ),
+      );
       if (!await opened && listener == null) {
         throw SyncAuthError('Failed to launch browser for authentication');
       }
@@ -263,7 +276,7 @@ String _resultPage({required bool success, String? error}) {
   final body = success
       ? 'You can close this tab and return to Fushi.'
       : 'Authorization failed${error != null ? ': $error' : ''}. '
-          'You can close this tab and try again in Fushi.';
+            'You can close this tab and try again in Fushi.';
   return '<!DOCTYPE html><html><head><meta charset="utf-8">'
       '<title>$title</title></head>'
       '<body style="font-family:sans-serif;text-align:center;padding:48px">'

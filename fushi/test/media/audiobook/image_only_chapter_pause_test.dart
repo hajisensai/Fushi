@@ -165,16 +165,21 @@ void main() {
       expect(src.contains('_pauseThroughImageOnlyChapters('), isTrue);
       // 必须在最终 _navigateToChapter(newSection) 之前停留，否则图片章被跳过。
       final int pauseIdx = src.indexOf('await _pauseThroughImageOnlyChapters(');
-      final int navIdx =
-          src.indexOf('await _navigateToChapter(newSection', pauseIdx);
+      final int navIdx = src.indexOf(
+        'await _navigateToChapter(newSection',
+        pauseIdx,
+      );
       expect(pauseIdx >= 0, isTrue);
       expect(navIdx > pauseIdx, isTrue, reason: '停留必须发生在跨章落定到目标章之前');
     });
 
     test('停留序列经纯决策 imageOnlyChaptersToPauseBetween 枚举中间图片章', () {
       expect(src.contains('imageOnlyChaptersToPauseBetween('), isTrue);
-      expect(src.contains('isImageOnly: _book!.isImageOnlyChapter'), isTrue,
-          reason: '复用既有 isImageOnlyChapter 能力判定纯图片章');
+      expect(
+        src.contains('isImageOnly: _book!.isImageOnlyChapter'),
+        isTrue,
+        reason: '复用既有 isImageOnlyChapter 能力判定纯图片章',
+      );
     });
 
     test('每个图片章导航后复用控制器 await-based 停留（不新造定时器）', () {
@@ -195,31 +200,57 @@ void main() {
     });
 
     test('awaitImageChapterPause 受 imagePauseSec>0 门控，复用 _imagePauseTimer', () {
-      final String body =
-          methodBody(src, 'Future<void> awaitImageChapterPause()');
-      expect(containsCodeLine(body, 'if (sec <= 0) return'), isTrue,
-          reason: 'imagePauseSec=0 时不停留');
-      expect(containsCodeLine(body, '_imagePauseTimer'), isTrue,
-          reason: '复用 triggerImagePause 同一 Timer 字段，不新造定时器语义');
-      expect(containsCodeLine(body, '_player.pause()'), isTrue,
-          reason: '主动暂停：复用与 triggerImagePause 同一暂停原语');
+      final String body = methodBody(
+        src,
+        'Future<void> awaitImageChapterPause()',
+      );
+      expect(
+        containsCodeLine(body, 'if (sec <= 0) return'),
+        isTrue,
+        reason: 'imagePauseSec=0 时不停留',
+      );
+      expect(
+        containsCodeLine(body, '_imagePauseTimer'),
+        isTrue,
+        reason: '复用 triggerImagePause 同一 Timer 字段，不新造定时器语义',
+      );
+      expect(
+        containsCodeLine(body, '_player.pause()'),
+        isTrue,
+        reason: '主动暂停：复用与 triggerImagePause 同一暂停原语',
+      );
       // 恢复播放必须经 _activateMainPlayer 这条**唯一激活通道**（内部串行
       // _playActivationTail + 检查 _stopRequested），不得裸调 _player.play()——
       // 裸调会绕过停止 fence，在停留窗口内被 stopPlayback 撞上就「停了又响」。
-      expect(containsCodeLine(body, '_activateMainPlayer()'), isTrue,
-          reason: '停留结束的恢复播放必须走 _activateMainPlayer 激活通道');
-      expect(containsCodeLine(body, '_player.play()'), isFalse,
-          reason: '不得绕过激活通道裸调 _player.play()（会丢 _stopRequested 门与串行化）');
+      expect(
+        containsCodeLine(body, '_activateMainPlayer()'),
+        isTrue,
+        reason: '停留结束的恢复播放必须走 _activateMainPlayer 激活通道',
+      );
+      expect(
+        containsCodeLine(body, '_player.play()'),
+        isFalse,
+        reason: '不得绕过激活通道裸调 _player.play()（会丢 _stopRequested 门与串行化）',
+      );
     });
 
     test('_activateMainPlayer 是唯一激活通道：串行化 + _stopRequested 门 + 真正 play', () {
       final String body = methodBody(src, 'Future<void> _activateMainPlayer()');
-      expect(containsCodeLine(body, '_stopRequested'), isTrue,
-          reason: '激活前必须检查停止 fence，stopPlayback 后不得再起播');
-      expect(containsCodeLine(body, '_playActivationTail'), isTrue,
-          reason: '激活必须串到同一条 tail 上，避免并发 play 交叠');
-      expect(containsCodeLine(body, '_player.play()'), isTrue,
-          reason: '激活通道末端必须真正调用底层 play 原语');
+      expect(
+        containsCodeLine(body, '_stopRequested'),
+        isTrue,
+        reason: '激活前必须检查停止 fence，stopPlayback 后不得再起播',
+      );
+      expect(
+        containsCodeLine(body, '_playActivationTail'),
+        isTrue,
+        reason: '激活必须串到同一条 tail 上，避免并发 play 交叠',
+      );
+      expect(
+        containsCodeLine(body, '_player.play()'),
+        isTrue,
+        reason: '激活通道末端必须真正调用底层 play 原语',
+      );
     });
 
     test('holdChapterTransition 竖起 _chapterTransition 守卫', () {

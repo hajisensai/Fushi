@@ -18,7 +18,6 @@ window.__fushiCssHighlightsSupported = false;
 // 设计，注入宿主页后宿主页自身 hover/click 会误触 selectText→clearSelection，拆掉刚画的划词高亮；
 // popup.js 读此 flag 后只处理落在 #entries-container 内的事件（content.js 与 popup.js 同隔离世界共享 window）。
 window.__fushiExtension = true;
-const FUSHI_MOD = 'shiftKey';
 const FUSHI_MAX_LEN = 12;
 let fushiContainer = null;
 // BUG-688：弹窗渲染进 Shadow DOM，宿主网页 CSS 无法穿透 shadow 边界（ruby/行距/定位等
@@ -52,11 +51,14 @@ try {
 let fushiCssLink = null;
 // BUG-530 性能：划词监听器原来对每次 mousemove 都发查词请求 → 一直按 Shift 移动会把服务器
 // 刷爆、UI 卡顿。用「位移阈值 + 同词去重 + 在途请求闸」三重节流：只在移到**不同词**上才查。
-let fushiLastTerm = '';
+//
+// 「同词」= 同一个查词身份 [fushiLookupKey]（词 + 原文振假名）：同样写作「忙しい」，一处
+// ruby 标「せわ」、一处没有 / 标别的读音，引擎排出的候选顺序不同，必须当作两次不同的查词。
+let fushiLastLookupKey = '';
 let fushiLastAutoLookupKey = '';
-// 当前在场弹窗渲染的是哪个词（fushiRender 成功后置、关窗清空）。与 fushiLastTerm 分开：
-// 后者在**发起**时就写、失败也不回退，拿它判「已经显示着」会把上一次失败的词当成在场。
-let fushiShownTerm = '';
+// 当前在场弹窗渲染的是哪个查词身份（fushiRender 成功后置、关窗清空）。与 fushiLastLookupKey
+// 分开：后者在**发起**时就写、失败也不回退，拿它判「已经显示着」会把上一次失败的词当成在场。
+let fushiShownLookupKey = '';
 let fushiLastX = -1;
 let fushiLastY = -1;
 let fushiPending = false;
@@ -167,6 +169,60 @@ function fushiArmPlayDismiss(v) {
 // 据此复位扫词去重键——否则鼠标停在同一个字上就永远重查不了。定向：页面自身 Shift 查词关窗
 // 不发这条，侧栏自己那份面板内弹窗不受影响。
 let fushiLookupFromSidePanel = false;
+
+// 宿主适配口（Fushi app 内浏览器）。扩展本身没有这个绑定：内容脚本跑在隔离世界，
+// `__fushiHostAdapter` 解析到隔离世界的全局 → undefined，下面恒返回 null，扩展行为逐字不变。
+// app 内浏览器把整栈拼进一个闭包注入网页，闭包里声明了同名局部变量（宿主运行时
+// fushi/assets/web_browser/extension_host_runtime.js），于是这里拿到它：查词不发 runtime 消息、
+// 不画页内 popup.js 弹窗，词交给 app 自己的查词弹窗；暂停 / 续播 / 高亮时序仍由本文件管。
+// 适配器形状：lookup(req, onMatched)、dismiss()；关窗由宿主调本文件登记的 onClosed。
+function fushiHostAdapter() {
+  try {
+    // eslint-disable-next-line no-undef
+    return (typeof __fushiHostAdapter === 'object' && __fushiHostAdapter) ? __fushiHostAdapter : null;
+  } catch (_) {
+    return null;
+  }
+}
+// 宿主弹窗在场的镜像（扩展里的 fushiHost 在宿主模式下恒为 null：弹窗不在这个页面里）。
+let fushiHostLookupOpen = false;
+let fushiHostLookupSeq = 0;
+// 宿主关窗是不是由我们自己发起（手动播放 / 新查词顶掉）：此时不必再回头叫宿主关。
+let fushiHostClosing = false;
+// 例句兜底：查词来自字幕时用那一句，否则按 fushiMineContext 的同一套优先级取（当前字幕行 / 页面所在句）。
+function fushiHostLookupSentence(cueWindow) {
+  if (cueWindow && typeof cueWindow.text === 'string' && cueWindow.text) return cueWindow.text;
+  try {
+    const ctx = typeof window.fushiMineContext === 'function' ? window.fushiMineContext() : null;
+    if (ctx) return (ctx.window && ctx.window.text) || ctx.pageSentence || '';
+  } catch (_) { /* 取不到例句：宿主照常查词 */ }
+  return '';
+}
+// 宿主回报命中字数：只高亮真正匹配的词（与 fushiRender 同一套覆盖层高亮）。
+function fushiHostHighlight(matched) {
+  const n = Number(matched);
+  if (!(n > 0)) return;
+  try {
+    const hl = fushiSelectionRects(n);
+    if (hl.rects.length) {
+      fushiDrawHighlightOverlay(hl.rects);
+      fushiHighlightTermLen = n;
+    }
+  } catch (_) { /* 选区已失效：不高亮 */ }
+}
+// 宿主弹窗关掉了（点外面、Esc、关闭按钮）：走与页面弹窗同一个关窗汇聚点——续播、撤高亮、清选区。
+function fushiHostLookupClosed() {
+  if (!fushiHostLookupOpen) return false;
+  fushiHostLookupOpen = false;
+  fushiHostClosing = true;
+  try { fushiRemoveContainer(); } finally { fushiHostClosing = false; }
+  return true;
+}
+(function fushiBindHostAdapter() {
+  const adapter = fushiHostAdapter();
+  if (adapter) adapter.onClosed = fushiHostLookupClosed;
+})();
+
 function fushiNotifySidePanelLookupGone() {
   if (!fushiLookupFromSidePanel) return;
   fushiLookupFromSidePanel = false;
@@ -188,7 +244,7 @@ function fushiNotifySidePanelLookupGone() {
 // 「bool 镜像只有成功路径复位」是本仓反复出现的形状；收成一个原语而不是在四个失败
 // 出口各抄两行，以后再加出口也只有这一个地方要记。
 function fushiAbandonLookupWithoutPopup() {
-  if (fushiHost) return;
+  if (fushiHost || fushiHostLookupOpen) return;
   fushiResumePausedForLookup();
   fushiNotifySidePanelLookupGone();
 }
@@ -257,6 +313,42 @@ function fushiNodeWithin(container, target) {
   if (!container || !target) return false;
   if (container === target) return true;
   try { return typeof container.contains === 'function' && container.contains(target); } catch (_) { return false; }
+}
+// 查词会话的「顶层在页宿主」归属判据（fWIaHFV1qD）。查词会话由多个挂在 documentElement /
+// fullscreenElement 下的兄弟宿主组成：弹窗本体 fushiHost、缩放把手、「调整上下文」模态、
+// popup.js 的音频源菜单宿主（#fushi-audio-menu-host，为逃出弹窗宿主的 backdrop-filter 包含块
+// 而另建）……以后还可能更多。旧实现在外部点击判据里逐个点名豁免，菜单宿主挪出 fushiHost 时
+// 漏改，右键音频菜单一点就被当成外部点击关窗、点击还被吞掉。现在归属只认一个属性：凡属于
+// 查词会话的顶层宿主，创建时打 data-fushi-session-host；外部点击 / 悬停离开等判据只问
+// 「事件路径上有没有带这个属性的节点」。路径取 composedPath()（穿透 open/closed shadow 的
+// retarget），没有时沿 parentNode / shadow host 上溯。
+const FUSHI_SESSION_HOST_ATTR = 'data-fushi-session-host';
+function fushiMarkSessionHost(el) {
+  try { if (el && typeof el.setAttribute === 'function') el.setAttribute(FUSHI_SESSION_HOST_ATTR, ''); } catch (_) {}
+  return el;
+}
+function fushiIsSessionHostNode(node) {
+  try {
+    return !!(node && typeof node.hasAttribute === 'function' && node.hasAttribute(FUSHI_SESSION_HOST_ATTR));
+  } catch (_) {
+    return false;
+  }
+}
+// e：DOM 事件（优先用 composedPath）；也接受裸节点（沿父链 / shadow host 上溯）。
+function fushiIsLookupSessionTarget(e) {
+  if (!e) return false;
+  let path = null;
+  try { path = typeof e.composedPath === 'function' ? e.composedPath() : null; } catch (_) { path = null; }
+  if (path && path.length) {
+    for (const node of path) if (fushiIsSessionHostNode(node)) return true;
+    return false;
+  }
+  let node = (e && typeof e === 'object' && 'target' in e) ? e.target : e;
+  for (let guard = 0; node && guard < 512; guard++) {
+    if (fushiIsSessionHostNode(node)) return true;
+    node = node.parentNode || node.host || null;
+  }
+  return false;
 }
 // 「查词区」= 命中字符所在的字幕容器（扩展覆盖层 / 站点字幕容器），都不是就退回命中字符的
 // 父元素——普通网页正文里 Shift 悬停时那就是所在段落，指针在段落里挪动不算离开。
@@ -435,22 +527,60 @@ try {
 // 另有用途（选区扩展、站点快捷键），用户可以关掉这条入口，只留点击 / 悬浮字幕自动查词等
 // 其余入口。只认显式 false；storage.onChanged 实时生效。
 let fushiShiftHoverLookup = true;
+// 悬停查词的触发键（反馈 ulS75hVkAK，对齐 Yomitan 的 scan modifier）：storage.scanModifier，
+// shift（默认，旧行为）/ ctrl / alt / meta（⌘ / Win）/ none（不按键，指针停在字上即查）；未知值回落 shift。
+// 变量 / 函数名里的 "Shift" 是历史名，语义已是「悬停查词触发键」。side-panel.js 的字幕行
+// 悬停用同名函数的副本（扩展页不装 content.js），scan-modifier.test.js 逐例交叉比对两份。
+let fushiScanModifier = 'shift';
+const FUSHI_SCAN_MODIFIER_KEYS = Object.freeze({ shift: 'Shift', ctrl: 'Control', alt: 'Alt', meta: 'Meta' });
+function fushiNormalizeScanModifier(value) {
+  return value === 'none' || Object.prototype.hasOwnProperty.call(FUSHI_SCAN_MODIFIER_KEYS, value) ? value : 'shift';
+}
+// 事件发生时触发键是否按着（mousemove / pointermove / mousedown 都带这四个布尔位）。
+function fushiScanModifierHeld(event, modifier) {
+  if (!event) return false;
+  const mod = fushiNormalizeScanModifier(modifier);
+  if (mod === 'none') return true;
+  return event[mod + 'Key'] === true;
+}
+// 「指针静止时按下触发键立即查」：只认触发键本身首次按下，且没同按别的修饰键（Ctrl+Shift 之类
+// 是快捷键组合，不是查词）。none 无键可按，恒 false。
+function fushiScanModifierKeydown(event, modifier) {
+  if (!event || event.repeat) return false;
+  const mod = fushiNormalizeScanModifier(modifier);
+  if (mod === 'none' || event.key !== FUSHI_SCAN_MODIFIER_KEYS[mod]) return false;
+  for (const other of Object.keys(FUSHI_SCAN_MODIFIER_KEYS)) {
+    if (other !== mod && event[other + 'Key'] === true) return false;
+  }
+  return true;
+}
+// 松开触发键：复位同词去重与待补查。
+function fushiScanModifierKeyup(event, modifier) {
+  const mod = fushiNormalizeScanModifier(modifier);
+  return !!(event && mod !== 'none' && event.key === FUSHI_SCAN_MODIFIER_KEYS[mod]);
+}
 function fushiApplyShiftHoverLookupPref(saved) {
   if (saved && typeof saved.shiftHoverLookup === 'boolean') {
     fushiShiftHoverLookup = saved.shiftHoverLookup;
   }
+  if (saved && typeof saved.scanModifier === 'string') {
+    fushiScanModifier = fushiNormalizeScanModifier(saved.scanModifier);
+  }
 }
+// 弹窗内嵌套查词（vendor/popup.js，与 app 共用）经这个钩子认同一个触发键；app 内无此钩子时它退回 Shift。
+window.__fushiScanModifierHeld = (e) => fushiScanModifierHeld(e, fushiScanModifier);
 try {
   const fushiShiftPrefPromise = chrome.storage.local.get(
-    ['shiftHoverLookup'],
+    ['shiftHoverLookup', 'scanModifier'],
     fushiApplyShiftHoverLookupPref,
   );
   if (fushiShiftPrefPromise && typeof fushiShiftPrefPromise.then === 'function') {
     fushiShiftPrefPromise.then(fushiApplyShiftHoverLookupPref, () => {});
   }
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || !changes || !changes.shiftHoverLookup) return;
-    fushiShiftHoverLookup = changes.shiftHoverLookup.newValue !== false;
+    if (area !== 'local' || !changes) return;
+    if (changes.shiftHoverLookup) fushiShiftHoverLookup = changes.shiftHoverLookup.newValue !== false;
+    if (changes.scanModifier) fushiScanModifier = fushiNormalizeScanModifier(changes.scanModifier.newValue);
   });
 } catch (_) {}
 
@@ -639,14 +769,24 @@ async function fushiRemoveQueued(okIds) {
     await chrome.storage.local.set({ fushiQueue: remaining });
   } catch (_) {}
 }
+// 把一次失败记到队列项上（判据 mine-outcome.js fushiQueueAfterMineFailure，与 background 的
+// YouTube 批量同一份）：永久失败 / 反复失败的项进失败分组，不再参与下次生成（EMI05fe8RJ）。
+async function fushiRecordQueuedFailure(id, outcome) {
+  try {
+    const got = await chrome.storage.local.get(['fushiQueue']);
+    const r = window.fushiQueueAfterMineFailure(got.fushiQueue, id, outcome);
+    fushiQueue = r.queue;
+    await chrome.storage.local.set({ fushiQueue: r.queue });
+  } catch (_) {}
+}
 // 制卡结果分类：判据住在 mine-outcome.js（与 background 的 YouTube 批量制卡共用同一份），
-// 这里只负责把 notice 弹成页面 toast（Netflix 回放录制在本页里跑）。
+// 这里只负责把 notice 弹成页面 toast（Netflix 回放录制在本页里跑），返回完整分类结果。
 function fushiClassifyMineResp(resp) {
   const o = window.fushiMineOutcome(resp, fushiTr);
   if (o.notice && typeof window.fushiToast === 'function') {
     try { window.fushiToast(o.notice, false, o.settingsFixable); } catch (_) {}
   }
-  return o.cls;
+  return o;
 }
 function fushiQueueLoad() {
   try {
@@ -844,6 +984,7 @@ window.fushiOpenSentenceContextModal = function (args) {
   const dark = fushiResolveTheme() === 'dark';
   const host = document.createElement('div');
   host.id = 'fushi-ctx-modal-host';
+  fushiMarkSessionHost(host);
   host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;';
   // 明暗跟扩展主题；--fushi-* token 由 content.css 重根到本宿主（theme.js IN_PAGE_HOSTS 同一份
   // 清单，预设 / 自定义调色板也落到这里），shadow 内经继承读到；缺席时用下面的同色系兜底。
@@ -1190,7 +1331,7 @@ async function fushiRunNetflixBatch(introGate) {
   // TODO-1217：按视频时间升序，逐句 seek 单调前进（乱序会往回跳，放大抖动）。filter 已产生新数组，
   // sort 不影响作为跨标签真相源的 fushiQueue。
   const items = fushiQueue
-    .filter((q) => q.site === 'netflix' && q.netflixId === nfId)
+    .filter((q) => q.site === 'netflix' && q.netflixId === nfId && window.fushiQueueItemPending(q))
     .sort((a, b) => (a.startV || 0) - (b.startV || 0));
   if (!items.length) return;
   // BUG-2170：片头分级提示窗内的句直接放弃（理由见 fushiSplitNetflixIntroOverlayItems）。
@@ -1261,6 +1402,7 @@ async function fushiRunNetflixBatch(introGate) {
     for (const q of recordable) {
       let began = false; // beginClip 是否成功（决定 finally 是否需要收口 recorder）
       let cls = 'retry';
+      let outcome = null; // 服务端答复后的完整分类（录制环节失败时为 null，不计入该项）
       try {
         const targetSec = Math.max(0, q.startV / 1000);
         await seekTo(targetSec);
@@ -1335,7 +1477,7 @@ async function fushiRunNetflixBatch(introGate) {
         const clip = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'endClip' });
         began = false; // 已正常收口，finally 不再重复 endClip
         if (clip && clip.ok && clip.clipBase64) {
-          cls = await new Promise((resolve) => {
+          outcome = await new Promise((resolve) => {
             chrome.runtime.sendMessage(
               // BUG-676（TODO-1361 ③）：带上入队时抓的剧名；旧队列项无则录制时现抓（此刻正在目标集页）。
               { type: 'mineClip', fields: q.fields, sentence: q.sentence, clipBase64: clip.clipBase64, clipDurationMs: clip.clipDurationMs,
@@ -1351,10 +1493,11 @@ async function fushiRunNetflixBatch(introGate) {
                 mineAtMs: (typeof q.mineAtV === 'number' ? q.mineAtV : null),
                 documentTitle: q.documentTitle || (typeof netflixDocumentTitle === 'function' ? netflixDocumentTitle() : '') },
               (resp) => {
-                try { if (chrome.runtime.lastError) return resolve('retry'); } catch (_) { return resolve('retry'); }
+                try { if (chrome.runtime.lastError) return resolve(null); } catch (_) { return resolve(null); }
                 resolve(fushiClassifyMineResp(resp));
               });
           });
+          if (outcome) cls = outcome.cls;
         }
       } catch (_) {
         // 录制期异常：不吞进「下一句」，交给 finally 收口 recorder，本句按失败计（下方 else fail++）。
@@ -1367,7 +1510,11 @@ async function fushiRunNetflixBatch(introGate) {
         }
       }
       if (cls === 'done') { done++; okIds.push(q.id); }
-      else { fail++; if (cls === 'unconfigured') unconfigured++; }
+      else {
+        fail++;
+        if (cls === 'unconfigured') unconfigured++;
+        else if (outcome) await fushiRecordQueuedFailure(q.id, outcome);
+      }
       window.fushiToast(fushiTr('gen_progress', { done: done + fail, total: items.length }), true);
     }
   } finally {
@@ -1618,7 +1765,8 @@ async function fushiMaybeResumeNetflixBatch(fromLoad) {
         const fushiGot = await chrome.storage.local.get(['fushiQueue']);
         const fushiQ = Array.isArray(fushiGot.fushiQueue) ? fushiGot.fushiQueue : [];
         fushiRemainingNf = fushiQ.filter(
-            (it) => it && it.site === 'netflix' && st.episodes.indexOf(it.netflixId) >= 0).length;
+            (it) => it && it.site === 'netflix' && st.episodes.indexOf(it.netflixId) >= 0 &&
+              window.fushiQueueItemPending(it)).length;
       } catch (_) {}
       if (fushiRemainingNf > 0) {
         window.fushiToast('✓ ' + fushiTr('gen_nf_done_with_failures', { n: fushiRemainingNf }));
@@ -1811,6 +1959,12 @@ window.fushiToggleSubtitleHiding = function () {
   return true;
 };
 
+// 只读查询：用户此刻是否主动隐藏了字幕（'manual' 原因）。video-shortcuts.js 据此把「隐藏」
+// 当作「字幕已关」，←/→ 放回站点（BUG-4053）。状态仍只由本模块持有，调用方不另读 storage。
+window.fushiSubtitleManuallyHidden = function () {
+  return fushiSubtitleHidden === true;
+};
+
 function fushiReadSubtitleHidden() {
   try {
     chrome.storage.local.get(['subtitleHidden'], (r) => {
@@ -1899,6 +2053,7 @@ function fushiEnsureContainer() {
     // 宿主页 CSS 无法穿透 → 与 in-app 弹窗渲染一致（不再被宿主站点 line-height/ruby 等污染）。
     fushiHost = document.createElement('div');
     fushiHost.id = 'fushi-popup-host';
+    fushiMarkSessionHost(fushiHost);
     // BUG-688：尺寸盒 + zoom 落在 host（视口坐标系，确定宽度），弹窗内容尺寸不再受
     // 「CSS zoom × 100vw × shadow shrink-to-fit」相互作用干扰。host 宽/高/zoom 由 fushiRender
     // 按查词响应下发的 --fushi-popup-* 设置；#entries-container 在 shadow 内中和为 width:100%。
@@ -2057,10 +2212,33 @@ function fushiClearNativeSelection() {
   } catch (_) { /* 某些跨域/detached 上下文 getSelection 可能抛：静默 */ }
 }
 
+// canvas 抓图取词这一窗的字框（视口坐标，从被查的字起逐字）；null = 本次查词来自 DOM 文本。
+// 每次查词由 fushiSendLookup 刷新，绝不让上一个 OCR 词的框跟到下一个 DOM 词上。
+let fushiOcrHighlightRects = null;
+function fushiOcrRectsOf(all, charCount) {
+  const rects = all.slice(0, Math.max(0, charCount)).filter((r) => r && r.width > 0 && r.height > 0);
+  let bx = null;
+  for (const r of rects) {
+    if (!bx) bx = { left: r.left, top: r.top, right: r.left + r.width, bottom: r.top + r.height };
+    else {
+      bx.left = Math.min(bx.left, r.left);
+      bx.top = Math.min(bx.top, r.top);
+      bx.right = Math.max(bx.right, r.left + r.width);
+      bx.bottom = Math.max(bx.bottom, r.top + r.height);
+    }
+  }
+  return {
+    rects,
+    bounds: bx ? { x: bx.left, y: bx.top, width: bx.right - bx.left, height: bx.bottom - bx.top } : null,
+  };
+}
+
 // 从 fushiSelection.selection.ranges 取前 charCount 个「码点」的视口系 client rects（只读
 // Range.getClientRects，**不改宿主页 DOM**），并算出整体 bbox 作弹窗锚点。返回 {rects, bounds}。
 // 与 selection.js highlightSelection 的裁词逻辑同构，但不做 DOM 包裹。
 function fushiSelectionRects(charCount) {
+  // canvas 抓图取词：词不在 DOM 里，高亮框是 OCR 交回的字框（fushiCanvasOcrScanAt 存下）。
+  if (fushiOcrHighlightRects) return fushiOcrRectsOf(fushiOcrHighlightRects, charCount);
   const rects = [];
   let bx = null;
   const sel = window.fushiSelection && window.fushiSelection.selection;
@@ -2154,6 +2332,13 @@ function fushiOnPageScroll() {
 
 function fushiFollowLookupAnchor() {
   if (!fushiHost || !fushiPlaceAnchor || !(fushiHighlightTermLen > 0)) return;
+  // OCR 字框是识别那一刻的视口坐标，滚动后无从重量（画面里的字已经挪了）：同「量不到 rects」，
+  // 撤掉会错位的高亮，弹窗留在原处。
+  if (fushiOcrHighlightRects) {
+    fushiHighlightTermLen = 0;
+    fushiClearHighlightOverlay();
+    return;
+  }
   const hl = fushiSelectionRects(fushiHighlightTermLen);
   const b = hl.bounds;
   if (!b) {
@@ -2209,11 +2394,11 @@ function fushiRemoveContainer() {
   fushiCancelPendingReveal();
   fushiHost = null;
   fushiContainer = null;
-  fushiShownTerm = '';
+  fushiShownLookupKey = '';
   // Shift 悬停的同词去重只在「那个词的弹窗还开着」时成立。关窗后按住 Shift 回到同一个词必须能
   // 再查（再暂停）——否则悬停离开续播之后，指针回到刚才那个词上毫无反应，只能松开 Shift 重按。
   // 在途期间被吞的那次取词也随关窗作废：关窗是用户的意图，别再补查弹出来。
-  fushiLastTerm = '';
+  fushiLastLookupKey = '';
   fushiDeferredScan = null;
   // 在途 link 门控随窗作废：waiters 里的 reveal 绑的是被销毁的容器，留引用只会在
   // settle 时对孤儿节点写 visibility（无害但无意义）；置 null 让新弹窗登记新门。
@@ -2264,6 +2449,15 @@ function fushiRemoveContainer() {
   fushiPlacedSide = null;
   fushiUserResizedPopup = false;
   fushiHighlightTermLen = 0;
+  // 宿主模式：关窗由这边发起（手动播放、跟随滚出视口）时，把宿主那份弹窗一并关掉；
+  // 由宿主回调进来的关窗（fushiHostLookupClosed）不再回头叫。
+  if (fushiHostLookupOpen) {
+    fushiHostLookupOpen = false;
+    if (!fushiHostClosing) {
+      const adapter = fushiHostAdapter();
+      try { if (adapter && typeof adapter.dismiss === 'function') adapter.dismiss(); } catch (_) {}
+    }
+  }
   fushiNotifySidePanelLookupGone();
 }
 
@@ -2319,28 +2513,67 @@ function fushiSubtitleCaretAtPoint(x, y) {
 document.addEventListener('mousemove', (e) => {
   if (fushiNfBatchRunning) return; // 批量回放录制中：不查词、不自动暂停，免误触把当前句录制截断
   // 松开 Shift 复位，下次可重查同词；在途期间被吞的那次取词也随之作废（用户已不在扫词）。
-  if (!e[FUSHI_MOD]) { fushiLastTerm = ''; fushiDeferShiftScan(null); return; }
+  if (!fushiScanModifierHeld(e, fushiScanModifier)) { fushiLastLookupKey = ''; fushiDeferShiftScan(null); return; }
+  fushiShiftHoverAt(e.clientX, e.clientY, e.target, e.buttons === 0, false);
+});
+// Shift 悬停的共同入口：mousemove（指针在动）与 keydown（指针静止时按下 Shift）都走这里。
+// keydown 入口没有新的指针位移，bypassMoveThreshold=true 跳过 4px 位移阈值——否则鼠标停在词上
+// 按 Shift 永远被「几乎没动」挡掉（反馈 pBDjgW3T4v，对齐 Yomitan / Hachidori）。
+function fushiShiftHoverAt(x, y, target, clearNativeSelection, bypassMoveThreshold) {
+  // 宿主模式：网页正文的 Shift 悬停由宿主自己的取词脚本负责（两边都扫会弹两次），这里只管
+  // 扩展自绘的字幕覆盖层。
+  // canvas 阅读器例外：宿主的取词脚本只认文本节点，canvas 上的字只有这里的抓图取词能查。
+  if (fushiHostAdapter() && !fushiOwnPageUiTarget(target) &&
+      !(typeof fushiCanvasOcrTargetAt === 'function' && fushiCanvasOcrTargetAt(document, x, y))) return;
   // 用户关掉了 Shift 悬停查词：整条入口不动，连原生选区清理也不做（Shift+拖选照常是浏览器的）。
-  if (!fushiShiftHoverLookup) { fushiLastTerm = ''; fushiDeferShiftScan(null); return; }
+  if (!fushiShiftHoverLookup) { fushiLastLookupKey = ''; fushiDeferShiftScan(null); return; }
   // TODO-1279：Shift 悬停取词是「纯悬停扫描」——浏览器会在 Shift 按住+指针移动时把原生文本选区从
   // 既有 caret 扩到指针，与我们自绘的覆盖层高亮叠出一条多余的蓝色原生选区（用户报「一个我们的选区、
   // 一个浏览器自带的蓝色选区」）。纯悬停（无鼠标键按下，e.buttons===0）时清掉原生选区，只留覆盖层
   // 高亮；用户手动按住键拖拽划选复制（e.buttons!==0）不清，保住其复制能力。
-  if (e.buttons === 0) fushiClearNativeSelection();
+  if (clearNativeSelection) fushiClearNativeSelection();
   // 位移阈值：几乎没动就跳过（同一像素反复 mousemove 不重复取词）。
-  if (Math.abs(e.clientX - fushiLastX) < 4 && Math.abs(e.clientY - fushiLastY) < 4) return;
-  fushiLastX = e.clientX;
-  fushiLastY = e.clientY;
+  if (!bypassMoveThreshold && Math.abs(x - fushiLastX) < 4 && Math.abs(y - fushiLastY) < 4) return;
+  fushiLastX = x;
+  fushiLastY = y;
   // 在途闸：上一次查词还没回来就不发新请求（防洪）。BUG-1024：带截止时间——超时视为
   // 上一次已废弃（回调被杀死的 worker 吞掉），放行本次，避免永久卡死。被吞的这一次记下来，
   // 在途结果回来后补查（fushiReplayDeferredScan）——闸只防洪，不能丢掉指针最终停下的词。
   if (fushiLookupInFlight()) {
-    fushiDeferShiftScan({ auto: false, x: e.clientX, y: e.clientY });
+    fushiDeferShiftScan({ auto: false, x, y });
     return;
   }
   fushiDeferShiftScan(null);
-  fushiShiftScanAt(e.clientX, e.clientY);
-});
+  fushiShiftScanAt(x, y);
+}
+// 鼠标静止时按下 Shift：用最后已知的指针位置（window 捕获阶段 mousemove 记下的
+// fushiHoverPointerX/Y）立即扫一次。边界：
+// - 只认首次按下（e.repeat 的自动连发不重复扫）；组合键里的 Shift（Ctrl/Alt/Meta 同按）不算查词；
+// - 焦点在输入框 / contenteditable 里：Shift 是在打大写或扩选，不查词；
+// - 还没见过指针、或指针已移出文档：没有可信坐标，不扫；
+// - 不清原生选区：单按 Shift 不会扩选（那要指针移动），清了反而毁掉用户正要 Shift+点击 / Shift+方向键扩的选区；
+// - 其余门控（批量录制、宿主模式、总开关、在途闸、同词去重）与 mousemove 入口完全相同。
+document.addEventListener('keydown', (e) => {
+  // 触发键本身首次按下、且没有同按别的修饰键（scan.js fushiScanModifierKeydown）；none 模式无键可按。
+  if (!fushiScanModifierKeydown(e, fushiScanModifier)) return;
+  if (fushiNfBatchRunning) return;
+  if (fushiHoverPointerX < 0 || fushiHoverPointerY < 0 || fushiPointerOutsideDocument) return;
+  if (fushiNodeInEditable(e.target) || fushiNodeInEditable(document.activeElement)) return;
+  let target = null;
+  try {
+    target = typeof document.elementFromPoint === 'function'
+      ? document.elementFromPoint(fushiHoverPointerX, fushiHoverPointerY)
+      : null;
+  } catch (_) { target = null; }
+  fushiShiftHoverAt(fushiHoverPointerX, fushiHoverPointerY, target, false, true);
+}, true);
+// 松开 Shift：与「不按 Shift 的 mousemove」同样复位同词去重与待补查——否则鼠标不动、松开再按
+// Shift 查同一个词会被去重吞掉。
+document.addEventListener('keyup', (e) => {
+  if (!fushiScanModifierKeyup(e, fushiScanModifier)) return;
+  fushiLastLookupKey = '';
+  fushiDeferShiftScan(null);
+}, true);
 // Shift 悬停只改写「Shift 那一路」的待补查；悬浮字幕自动查词那一路由覆盖层自己的进出管。
 function fushiDeferShiftScan(scan) {
   if (scan || (fushiDeferredScan && !fushiDeferredScan.auto)) fushiDeferredScan = scan;
@@ -2365,11 +2598,13 @@ function fushiShiftScanAt(x, y) {
       ? String(hit.node.textContent || '').slice(hit.offset, hit.offset + 12)
       : 'null';
   } catch (_) {}
-  if (!hit) return;
+  // 取不到文本节点：指针下若是 canvas 渲染的阅读器正文（BookWalker 等），走抓图取词。
+  if (!hit) { fushiCanvasOcrScanAt(x, y, true); return; }
   // selectFromPosition 向左扩到词首、向右扫最多 MAX_LEN 字（跨节点收 ranges）并存进 fushiSelection.selection，
   // 供随后 highlightSelection 高亮 + 取 bbox；内部 fire 的 textSelected 经 bridge-shim 进 __fushiOnLinkClick，
   // 那里按选区不在弹窗 ShadowRoot 内丢弃（页面选词不是递归查词）。
   const term = window.fushiSelection.selectFromPosition(hit.node, hit.offset, FUSHI_MAX_LEN, x, y);
+  const termRuby = fushiSelectionRuby(term);
   // TODO-1218②：立刻快照被查词的锚点几何（selection.js getSelectionRect）。不能等响应回来才量——
   // 那时并发的 selectText 可能已清掉 fushiSelection.selection → highlightSelection 返回 null → 锚点
   // 退回鼠标坐标（弹窗比词底高半行）。随响应传给 fushiRender 作回退锚点。
@@ -2381,10 +2616,111 @@ function fushiShiftScanAt(x, y) {
   } catch (_) { fushiAnchorRect = null; }
   try { document.documentElement.dataset.fushiTerm = term || ''; } catch (_) {}
   if (!term || !term.trim()) return;
-  if (term === fushiLastTerm) return; // 同词去重：还在同一个词上就不重复查/重渲染
-  fushiLastTerm = term;
-  fushiSendLookup(term, fushiAnchorRect, null, false, hit, true);
+  // 同词去重：还在同一个词（连同原文振假名）上就不重复查/重渲染。
+  const lookupKey = fushiLookupKey(term, termRuby);
+  if (lookupKey === fushiLastLookupKey) return;
+  fushiLastLookupKey = lookupKey;
+  fushiSendLookup(term, fushiAnchorRect, null, false, hit, true, termRuby);
 }
+// ── canvas 阅读器抓图取词（canvas-ocr.js）────────────────────────────────────────────
+let fushiCanvasOcr = null;
+let fushiLastCanvasOcrHintAt = 0;
+function fushiCanvasOcrSession() {
+  if (fushiCanvasOcr || typeof fushiCreateCanvasOcrSession !== 'function') return fushiCanvasOcr;
+  fushiCanvasOcr = fushiCreateCanvasOcrSession({
+    doc: document,
+    win: window,
+    sendMessage: (msg) => new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage(msg, (resp) => {
+          try { if (chrome.runtime.lastError) { resolve(null); return; } } catch (_) { resolve(null); return; }
+          resolve(resp || null);
+        });
+      } catch (_) { resolve(null); }
+    }),
+    loadImage: (url) => new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('screenshot decode failed'));
+      img.src = url;
+    }),
+    // 截屏路截的是屏幕像素：先收起扩展自己的弹窗与高亮，等浏览器把撤掉后的画面合成出来
+    // （两帧：第一帧提交样式，第二帧上屏）再截，免得把上一页的词条识别成正文。
+    beforeScreenshot: () => {
+      if (fushiHost) fushiRemoveContainer();
+      fushiClearHighlightOverlay();
+      return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    },
+  });
+  // 翻页类输入：canvas 上的画面可能已经换了，缓存的识别结果作废，下一次悬停重新识别。
+  // 只按住扫词修饰键（Shift 等）不算翻页；落在扩展自己界面（查词弹窗 / 字幕覆盖层等，
+  // 弹窗 ShadowRoot 里的事件在这里已被重定向到宿主元素）上的滚动 / 点按也不算——那是在看词条，
+  // 页面没翻；否则下一次悬停走截屏路时会先把正在看的弹窗收起来。
+  const invalidate = (e) => {
+    if (fushiCanvasOcrOwnUiEvent(e)) return;
+    if (fushiCanvasOcr) fushiCanvasOcr.invalidate();
+  };
+  document.addEventListener('pointerdown', invalidate, true);
+  window.addEventListener('wheel', invalidate, { capture: true, passive: true });
+  window.addEventListener('resize', invalidate, { passive: true });
+  document.addEventListener('scroll', invalidate, { capture: true, passive: true });
+  document.addEventListener('keydown', (e) => {
+    const k = e && e.key;
+    if (k === 'Shift' || k === 'Control' || k === 'Alt' || k === 'Meta') return;
+    invalidate(e);
+  }, true);
+  // 失败结果会留在缓存里（同一画面不反复请求）：用户切去 app 装好引擎 / 开好 API、或切回这个
+  // 标签页时作废，回来后的第一次悬停重新识别。
+  window.addEventListener('focus', invalidate);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') invalidate(null);
+  });
+  return fushiCanvasOcr;
+}
+// 事件是否落在扩展自己的页内界面上：id 以 fushi- 开头的（查词弹窗宿主、字幕覆盖层、播放器菜单……）
+// 与递归查词子层（data-fushi-session-host）。
+function fushiCanvasOcrOwnUiEvent(e) {
+  const t = e && e.target;
+  try {
+    return !!(t && typeof t.closest === 'function' && t.closest('[id^="fushi-"], [data-fushi-session-host]'));
+  } catch (_) {
+    return false;
+  }
+}
+function fushiReportCanvasOcrError(r) {
+  if (r.repeat) return; // 同一次失败（缓存结果）已经提示过
+  if (r.error === 'request') { fushiShowConnectionFailure(r.resp); return; }
+  const now = Date.now();
+  if (now - fushiLastCanvasOcrHintAt < 8000) return; // 悬停连发时只提醒一次
+  fushiLastCanvasOcrHintAt = now;
+  const noEngine = r.error === 'noEngine' || r.error === 'lensDeclined' || r.error === 'unsupported';
+  try { window.fushiToast('⚠ ' + fushiTr(noEngine ? 'canvas_ocr_no_engine' : 'canvas_ocr_failed')); } catch (_) {}
+}
+// 指针 (x, y) 下的 canvas 阅读器正文：识别（一页一次）→ 命中字 → 既有查词弹窗。
+// openedByHover：Shift 悬停 = true（同词去重、悬停会话），点按 = false（同词且弹窗在场 = 停在这儿看）。
+function fushiCanvasOcrScanAt(x, y, openedByHover) {
+  const session = fushiCanvasOcrSession();
+  if (!session) return;
+  session.lookupAt(x, y, FUSHI_MAX_LEN).then((r) => {
+    if (!r) return;
+    if (r.status === 'error') { fushiReportCanvasOcrError(r); return; }
+    if (r.status !== 'hit') return;
+    const lookup = r.lookup;
+    if (!lookup.term || !lookup.term.trim()) return;
+    const lookupKey = fushiLookupKey(lookup.term, null);
+    if (openedByHover) {
+      if (lookupKey === fushiLastLookupKey) return;
+    } else if ((fushiHost || fushiHostLookupOpen) && lookupKey === fushiShownLookupKey) {
+      fushiHoldLookupSession();
+      return;
+    }
+    fushiLastLookupKey = lookupKey;
+    // 页面锚点取 canvas 本身：悬停会话的「查词区」就是整块 canvas，指针在页面上挪动不算离开。
+    fushiSendLookup(lookup.term, lookup.anchorRect, null, false, { node: r.canvas, offset: 0 },
+      openedByHover, null, lookup.sentence, lookup.rects);
+  }, () => { /* lookupAt 内部已把异常收成 error 结果 */ });
+}
+
 // 在途结果回来后补查被在途闸吞掉的最后一次悬停取词。补查照走各自入口的全部门控（Shift 总开关、
 // 同词去重、悬浮字幕的 cue 去重），指针停在已显示的那个词上时就是 no-op。
 function fushiReplayDeferredScan() {
@@ -2412,9 +2748,8 @@ window.addEventListener('mousemove', (e) => {
       Math.abs(e.clientY - fushiHoverLeaveCheckedY) < FUSHI_HOVER_LEAVE_THRESHOLD_PX) return;
   fushiHoverLeaveCheckedX = e.clientX;
   fushiHoverLeaveCheckedY = e.clientY;
-  // 弹窗本体，以及「调整上下文」对话框 / 缩放把手（host 之外的兄弟节点）：指针在它们上面同样算在弹窗上。
-  if (fushiNodeWithin(fushiHost, e.target) || fushiNodeWithin(fushiCtxModalHost, e.target) ||
-      fushiNodeWithin(fushiResizeGrip, e.target)) {
+  // 查词会话的任一顶层宿主（弹窗本体、「调整上下文」对话框、缩放把手、音频源菜单……）：指针在它们上面同样算在弹窗上。
+  if (fushiIsLookupSessionTarget(e)) {
     fushiCancelHoverLeave();
     return;
   }
@@ -2446,6 +2781,8 @@ function fushiShowConnectionFailure(resp) {
     message = fushiTr('conn_yomitan_conflict', { port: c.port || 19633 });
   } else if (c && c.state === 'unauthorized') {
     message = fushiTr('conn_unauthorized');
+  } else if (c && c.state === 'forbidden') {
+    message = fushiTr('conn_forbidden');
   } else if (c && c.state === 'wrong-service') {
     message = fushiTr('conn_wrong_service');
   } else if (c && c.state === 'no-response') {
@@ -2463,7 +2800,53 @@ function fushiShowConnectionFailure(resp) {
 // 用户开启「查词时暂停」后，仅在确实发起了非空查词请求时暂停正在播放的视频，并记下
 // fushiPausedForLookup；关闭查词弹窗时自动恢复（fushiRemoveContainer）。关闭该设置时
 // 任何站点都不因查词被暂停。
-function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAnchor, openedByHover) {
+// 原文自带振假名随查词带给 app（app 让引擎把读音吻合的同长度候选排前面；只用来源自带的
+// 读音，绝不推断读音）。selection.js 在 selectFromPosition 之后把 `[{s,e,r}]` 放进
+// fushiSelection.selection.rubyReadings，坐标是选出的原文 selection.text 的 UTF-16 偏移。
+// 真正发出去的 term 若被裁过句首空白 / 截短，这里按同样的偏移平移，越界 / 被截断的段丢弃；
+// term 根本不是 raw 去句首空白后的前缀（调用方改写过词）就整份不用——宁缺不错配。
+function fushiAlignLookupRuby(raw, term, ruby) {
+  if (!Array.isArray(ruby) || !ruby.length) return null;
+  const source = String(raw == null ? '' : raw);
+  const value = String(term == null ? '' : term);
+  if (!value) return null;
+  const lead = source.length - source.replace(/^\s+/, '').length;
+  if (source.substr(lead, value.length) !== value) return null;
+  const out = [];
+  for (const span of ruby) {
+    if (!span || typeof span.r !== 'string' || !span.r.trim()) continue;
+    const s = Number(span.s);
+    const e = Number(span.e);
+    if (!Number.isInteger(s) || !Number.isInteger(e) || e <= s) continue;
+    if (s < lead || e > lead + value.length) continue;
+    out.push({ s: s - lead, e: e - lead, r: span.r.trim() });
+  }
+  return out.length ? out : null;
+}
+window.fushiAlignLookupRuby = fushiAlignLookupRuby;
+// 查词身份：词 + 已对齐到它的原文振假名。只用来源自带的 ruby 做区分，不推断读音。
+function fushiLookupKey(term, ruby) {
+  const base = String(term || '');
+  if (!Array.isArray(ruby) || !ruby.length) return base;
+  return base + '\u0000' + ruby.map(function (span) {
+    return String(span.s) + ',' + String(span.e) + ',' + String(span.r);
+  }).join(';');
+}
+window.fushiLookupKey = fushiLookupKey;
+// 刚由 selectFromPosition 选出的词的原文振假名（对齐到 [term]）；没有 / 结构异常 → null。
+// 必须紧跟 selectFromPosition 同步读：之后并发的 selectText / clearSelection 会换掉 selection。
+function fushiSelectionRuby(term) {
+  try {
+    const sel = window.fushiSelection && window.fushiSelection.selection;
+    if (!sel || !Array.isArray(sel.rubyReadings)) return null;
+    return fushiAlignLookupRuby(typeof sel.text === 'string' ? sel.text : term, term, sel.rubyReadings);
+  } catch (_) {
+    return null;
+  }
+}
+// pageSentence / ocrRects：canvas 抓图取词专用——词不在 DOM 里，例句是 OCR 识别出的整块文字，
+// 高亮框是 OCR 字框。其余入口不传（例句照旧惰性从页面锚点算，高亮照旧量 DOM 选区）。
+function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAnchor, openedByHover, ruby, pageSentence, ocrRects) {
   if (window.fushiNestedPopups) window.fushiNestedPopups.clear();
   // TODO-1219 P3：每次查词刷新精确窗——面板行查词传 cueWindow（该行精确 [startMs,endMs]），
   // mousemove 划词不传则清空，使后续制卡回落 DOM 采样窗（live 视频 hover 取当前句）。
@@ -2472,7 +2855,8 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAncho
   // 页面命中点），绝不让上一次查词的句子跟到下一个词的卡上。
   fushiPendingLookupAnchor =
       lookupAnchor && lookupAnchor.node ? lookupAnchor : null;
-  fushiPendingPageSentence = null;
+  fushiPendingPageSentence = typeof pageSentence === 'string' ? pageSentence : null;
+  fushiOcrHighlightRects = Array.isArray(ocrRects) && ocrRects.length ? ocrRects : null;
   fushiLookupFromSidePanel = fromSidePanel === true; // 关窗回执只发给真正的侧栏路径
   if (!term || !term.trim()) return;
   if (!fushiExtAlive()) return; // 扩展已重载/失效：静默停手（重载页面恢复）
@@ -2486,6 +2870,43 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAncho
   // 用户按下播放就是「继续看片」，查词浮层不该留着挡画面。
   if (fushiPauseOnLookup) {
     try { fushiArmPlayDismiss(fushiPausedForLookup || document.querySelector('video')); } catch (_) {}
+  }
+  // 宿主模式：词交给 app 的查词弹窗。悬停离开自动续播依赖页内弹窗几何（指针在不在弹窗上），
+  // 宿主弹窗不在这个页面里量不到，所以宿主模式下一律按点击会话处理——关窗才续播。
+  const hostAdapter = fushiHostAdapter();
+  if (hostAdapter) {
+    fushiPending = false;
+    fushiLookupOpenedByHover = false;
+    fushiHostLookupOpen = true;
+    fushiShownLookupKey = fushiLookupKey(term, ruby);
+    fushiHighlightTermLen = 0;
+    fushiClearHighlightOverlay(); // 换词：上一个词的高亮等新词命中再画
+    const seq = ++fushiHostLookupSeq;
+    const rect = anchorRect ? {
+      x: Number(anchorRect.x !== undefined ? anchorRect.x : anchorRect.left) || 0,
+      y: Number(anchorRect.y !== undefined ? anchorRect.y : anchorRect.top) || 0,
+      width: Number(anchorRect.width) || 0,
+      height: Number(anchorRect.height) || 0,
+    } : null;
+    try {
+      hostAdapter.lookup({
+        term: term,
+        sentence: fushiHostLookupSentence(cueWindow),
+        rect: rect,
+        fromHover: openedByHover === true,
+        fromSidePanel: fromSidePanel === true,
+        // 原文振假名（已按 term 对齐）：宿主 app 的引擎据此让读音吻合的候选排前。
+        ruby: Array.isArray(ruby) && ruby.length ? ruby : null,
+      }, function (matched) {
+        if (seq !== fushiHostLookupSeq || !fushiHostLookupOpen) return;
+        fushiHostHighlight(matched);
+      });
+    } catch (_) {
+      fushiHostLookupOpen = false;
+      fushiShownLookupKey = '';
+      fushiAbandonLookupWithoutPopup();
+    }
+    return;
   }
   fushiPending = true;
   fushiPendingSince = Date.now(); // BUG-1024：记发起时刻，供在途闸超时兜底
@@ -2502,7 +2923,9 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAncho
   const clientStartedAt = performance.now();
   const clientSentEpochMs = performance.timeOrigin + clientStartedAt;
   try {
-    chrome.runtime.sendMessage({ type: 'lookup', term, clientSentEpochMs }, (resp) => {
+    // 原文振假名只在非空时带（空 / 无 = 旧消息形态逐字不变）。
+    const hasRuby = Array.isArray(ruby) && ruby.length > 0;
+    chrome.runtime.sendMessage({ type: 'lookup', term, clientSentEpochMs, ...(hasRuby ? { ruby } : {}) }, (resp) => {
       fushiPending = false;
       const responseAt = performance.now();
       const responseEpochMs = performance.timeOrigin + responseAt;
@@ -2583,7 +3006,7 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAncho
       // popup.js 读取的全局上——不落这一步 mdx 词典的自带样式在扩展里全失效。
       applyFushiPopupCss(resp.data);
       fushiRender(resp.data.popupJson, termLen, resp.data.theme, anchorRect);
-      fushiShownTerm = term;
+      fushiShownLookupKey = fushiLookupKey(term, ruby);
       fushiArmHoverLeaveAfterRender();
       // 查词后自动朗读：开关是 app 的全局偏好（随响应下发），解析与播放都走点 ♪ 的同一条
       // 路径。扩展曾是唯一没接这条线的表面（app 内弹窗 / app 外浮窗 / 剪贴板面板都有）。
@@ -2624,8 +3047,13 @@ window.fushiLookupAtPoint = function (clientX, clientY, cueWindow, options) {
       hit = { node: subRange.startContainer, offset: subRange.startOffset };
     }
   }
-  if (!hit) return;
+  if (!hit) {
+    // 点按 / 长按落在 canvas 阅读器正文上：抓图取词（悬浮字幕自动查词不会落在 canvas 上，不走）。
+    if (!autoLookup) fushiCanvasOcrScanAt(clientX, clientY, false);
+    return;
+  }
   const term = window.fushiSelection.selectFromPosition(hit.node, hit.offset, FUSHI_MAX_LEN, clientX, clientY);
+  const termRuby = fushiSelectionRuby(term);
   fushiClearNativeSelection(); // TODO-1279：显式点击查词同样清掉浏览器原生蓝色选区，只留覆盖层高亮
   let anchorRect = null;
   try {
@@ -2637,23 +3065,24 @@ window.fushiLookupAtPoint = function (clientX, clientY, cueWindow, options) {
   // 悬浮字幕自动查词后点、面板行连点）不该重发请求重渲染：弹窗闪一下、「查词时暂停」再
   // 走一轮、词典服务白跑一趟。同词且弹窗在场 = no-op；同词还在途也不再发第二笔。弹窗关了
   // 或换了词照常查。
-  if (term && fushiHost && term === fushiShownTerm) {
+  const lookupKey = fushiLookupKey(term, termRuby);
+  if (term && (fushiHost || fushiHostLookupOpen) && lookupKey === fushiShownLookupKey) {
     // 悬停会话里显式点了同一个词 = 「停在这儿看」：降级成点击会话，之后不再自动关窗续播。
     if (!autoLookup) fushiHoldLookupSession();
     return;
   }
-  if (term && fushiPending && term === fushiLastTerm &&
+  if (term && fushiPending && lookupKey === fushiLastLookupKey &&
       Date.now() - fushiPendingSince < FUSHI_PENDING_TIMEOUT_MS) return;
   if (autoLookup) {
     const cueKey = cueWindow
       ? String(cueWindow.startMs) + ':' + String(cueWindow.endMs) + ':' + String(cueWindow.text || '')
       : '';
-    const lookupKey = String(term || '') + '\0' + cueKey;
-    if (lookupKey === fushiLastAutoLookupKey) return;
-    fushiLastAutoLookupKey = lookupKey;
+    const autoKey = lookupKey + '\0' + cueKey;
+    if (autoKey === fushiLastAutoLookupKey) return;
+    fushiLastAutoLookupKey = autoKey;
   }
-  fushiLastTerm = term || ''; // 与 mousemove 去重状态对齐，避免点后立刻 hover 同词重查
-  fushiSendLookup(term, anchorRect, cueWindow, false, hit, autoLookup); // TODO-1219 P3：面板行传入精确窗；auto=悬浮字幕自动查词=悬停会话
+  fushiLastLookupKey = term ? lookupKey : ''; // 与 mousemove 去重状态对齐，避免点后立刻 hover 同词重查
+  fushiSendLookup(term, anchorRect, cueWindow, false, hit, autoLookup, termRuby); // TODO-1219 P3：面板行传入精确窗；auto=悬浮字幕自动查词=悬停会话
 };
 // 原生 Side Panel 自己请求并渲染词典，视频页只保留精确 cue 窗（制卡媒体）以及可选的
 // “查词时暂停”。这里不创建弹窗、不读/写宿主 Selection，也不修改任何宿主文本节点。
@@ -2674,9 +3103,11 @@ window.fushiPrepareLookupFromSidePanel = function (cueWindow) {
 // 取词发生在侧栏，宿主页这边并没有对应选区：先清掉上一轮的选区与高亮覆盖层，否则 fushiRender
 // 会拿上一个词的 rects 当锚点、并把那处词重新点亮。锚点给视口右上角的零宽矩形，经落点夹取后
 // 弹窗贴右缘展开——紧邻侧栏、也不压住底部字幕。
-window.fushiShowLookupFromSidePanel = function (term, cueWindow, anchorRatio) {
+window.fushiShowLookupFromSidePanel = function (term, cueWindow, anchorRatio, ruby) {
   const value = String(term || '').trim();
   if (!value) return false;
+  // 侧栏取词时的原文振假名以侧栏发来的 term 为坐标系，裁掉首尾空白后照样平移。
+  const valueRuby = fushiAlignLookupRuby(term, value, ruby);
   try {
     if (window.fushiSelection && typeof window.fushiSelection.clearSelection === 'function') {
       window.fushiSelection.clearSelection();
@@ -2697,7 +3128,7 @@ window.fushiShowLookupFromSidePanel = function (term, cueWindow, anchorRatio) {
     left: edge, top: y, right: edge, bottom: y,
     authoritative: true, // 宿主页上没有对应选区，锚点以这份为准（见 fushiRender）
   };
-  fushiSendLookup(value, anchorRect, cueWindow, true);
+  fushiSendLookup(value, anchorRect, cueWindow, true, undefined, undefined, valueRuby);
   return true;
 };
 // 侧栏按 Esc 时关掉页面上的这份弹窗（面板内那份由侧栏自己关）。fushiRemoveContainer 幂等，
@@ -2745,9 +3176,9 @@ function fushiSelectionInsidePopup() {
 // 选区落在弹窗 ShadowRoot 里才是「弹窗内选词 → 递归查词」；页面上的选词若也照开子层，根弹窗
 // 在场时按住 Shift 在同一个词上挪几像素就会叠出一层同词子层（每次还白发一笔查词请求），
 // 而子层在场会让悬停离开判定永远否决——视频一直停着（用户报「移出去还是暂停」）。
-window.__fushiOnLinkClick = function (query, anchor, highlight) {
+window.__fushiOnLinkClick = function (query, anchor, highlight, ruby) {
   if (highlight === true && !fushiSelectionInsidePopup()) return;
-  if (window.fushiNestedPopups) window.fushiNestedPopups.open(query, anchor, highlight);
+  if (window.fushiNestedPopups) window.fushiNestedPopups.open(query, anchor, highlight, ruby);
 };
 
 // BUG-767：计算查词弹窗落点，保证**永不覆盖被查词**。纯函数（不碰 DOM），便于单测。
@@ -2966,6 +3397,7 @@ function fushiEnsureResizeGrip() {
   if (!fushiResizeGrip) {
     const g = document.createElement('div');
     g.id = 'fushi-popup-resize-grip';
+    fushiMarkSessionHost(g);
     // 顶层 fixed；z-index 与 host 齐平（同值时 DOM 靠后者胜出 → 把手可点）；斜纹视觉暗示可拖。
     g.style.cssText =
       'position:fixed;left:0;top:0;width:' + FUSHI_RESIZE_GRIP_SIZE + 'px;height:' +
@@ -3444,26 +3876,19 @@ function fushiSwallowClosingClick() {
 }
 
 document.addEventListener('mousedown', (e) => {
-  // 独立 ShadowRoot 的上下文弹层也是查词会话的一部分。capture 阶段必须先认领，
-  // 否则按钮尚未收到点击，底层已被当作外部点击关闭并恢复视频、吞掉随后的 click。
-  if (fushiCtxModalHost && fushiCtxModalHost.contains(e.target)) return;
-  // BUG-688：shadow 内点击 e.target 被 retarget 成 fushiHost，故 contains 判定天然把
-  // 「点弹窗内部」算作命中（不关窗）；只有点 host 之外才关。
-  // Phase D：拖拽把手是 host 之外的顶层兄弟节点（避开 host 的 zoom 包含块），点它属正常操作
-  // （开始拖拽调尺寸），不能触发关窗——否则一按把手弹窗就没了。故命中把手也算「点在弹窗上」。
-  if (fushiResizeGrip &&
-      (e.target === fushiResizeGrip || fushiResizeGrip.contains(e.target))) {
-    return;
-  }
-  if (fushiHost && !fushiHost.contains(e.target)) {
-    fushiRemoveContainer();
-    // 「关窗」和「吞击」在这里必须分开取值：点扩展自绘的在页 UI（字幕覆盖层）是
-    // 「用扩展做下一件事」——旧弹窗该让位，但那一击必须送达我们自己的监听，否则
-    // 「看一句字幕连着查两三个词」每个词都要点两次（覆盖层的 click 走
-    // subtitle-panel.js 的 fushiLookupAtPoint）。只有站点自己的元素才需要挡，
-    // 那才是 BUG-1940 要防的（Netflix 点画面 = 播放/暂停）。
-    if (!fushiOwnPageUiTarget(e.target)) fushiSwallowClosingClick();
-  }
+  // 外部点击 = 事件路径上没有任何查词会话宿主（fushiIsLookupSessionTarget）。弹窗本体、缩放把手
+  // （避开 host 的 zoom 包含块的顶层兄弟）、「调整上下文」模态、音频源菜单宿主都是会话的一部分：
+  // capture 阶段必须先认领，否则按钮 / 菜单项尚未收到点击，底层已被当作外部点击关闭并恢复视频、
+  // 吞掉随后的 click（fWIaHFV1qD：右键音频菜单选项一点就关窗、不播放）。
+  if (!fushiHost) return;
+  if (fushiIsLookupSessionTarget(e)) return;
+  fushiRemoveContainer();
+  // 「关窗」和「吞击」在这里必须分开取值：点扩展自绘的在页 UI（字幕覆盖层）是
+  // 「用扩展做下一件事」——旧弹窗该让位，但那一击必须送达我们自己的监听，否则
+  // 「看一句字幕连着查两三个词」每个词都要点两次（覆盖层的 click 走
+  // subtitle-panel.js 的 fushiLookupAtPoint）。只有站点自己的元素才需要挡，
+  // 那才是 BUG-1940 要防的（Netflix 点画面 = 播放/暂停）。
+  if (!fushiOwnPageUiTarget(e.target)) fushiSwallowClosingClick();
 }, true);
 
 // Esc 关弹窗（此前页面弹窗根本不认 Esc：全屏看片时按 Esc 只会退出全屏，弹窗还留在那）。

@@ -14,6 +14,23 @@ describe('注册（邮箱验证码）', () => {
     return { status: r.status, code: lastCode(env, email) };
   }
 
+  it('邮件正文吞掉换行后验证码也不和后面的数字粘连（通知栏 / 列表摘要）', async () => {
+    const env = makeEnv();
+    for (const [i, lang] of ['zh', 'en', 'ja'].entries()) {
+      const email = `digits${i}@example.com`;
+      const r = await call(env, 'POST', '/v1/email/code', {
+        body: { email, purpose: 'register', lang },
+        headers: { 'CF-Connecting-IP': nextIp() },
+        now: NOW,
+      });
+      expect(r.status).toBe(202);
+      const code = lastCode(env, email);
+      const flat = env.sent.at(-1).text.replace(/\s+/g, '');
+      expect(flat).toContain(code);
+      expect(flat).not.toMatch(new RegExp(`${code}\\d`));
+    }
+  });
+
   it('验证码注册 201；同一把钥匙重复注册返回同一账户 200（不再要验证码）', async () => {
     const env = makeEnv();
     const key = await newKey();
@@ -144,13 +161,73 @@ describe('注册（邮箱验证码）', () => {
       headers: { 'CF-Connecting-IP': nextIp() },
     });
     let code = null;
-    for (let round = 0; round < 3; round++) {
+    for (let round = 0; round < 2; round++) {
+      // 每轮把当前码的 5 次机会用光（码作废），下一轮重发才是新码。
       code = (await codeFor(env, 'cap@example.com')).code;
       const wrong = code === '111111' ? '222222' : '111111';
-      for (let i = 0; i < 4; i++) await reg(wrong);
+      for (let i = 0; i < 5; i++) expect((await reg(wrong)).data.error).toBe('bad_code');
     }
-    // 已猜错 12 次 > 10：拿着最新的正确码也被拒。
+    code = (await codeFor(env, 'cap@example.com')).code;
+    // 已猜错 10 次：拿着最新的正确码也被拒。
     expect((await reg(code)).data.error).toBe('too_many_attempts');
+  });
+
+  it('有效期内重发是同一个码：迟到的第一封仍可用，重发也不刷新猜码次数', async () => {
+    const env = makeEnv();
+    const key = await newKey();
+    const send = (now) => call(env, 'POST', '/v1/email/code', {
+      body: { email: 'slow@example.com', purpose: 'register' }, headers: { 'CF-Connecting-IP': nextIp() }, now,
+    });
+    const reg = (c, now) => call(env, 'POST', '/v1/register', {
+      key, body: { pubkey: key.pubkey, nickname: 'slow', email: 'slow@example.com', code: c }, now, time: now,
+      headers: { 'CF-Connecting-IP': nextIp() },
+    });
+    await send(NOW);
+    const first = lastCode(env, 'slow@example.com');
+    const wrong = first === '111111' ? '222222' : '111111';
+    for (let i = 0; i < 4; i++) expect((await reg(wrong, NOW + 1000)).data.error).toBe('bad_code');
+    await send(NOW + 2 * 60 * 1000); // 等不到信，2 分钟后重发
+    expect(env.sent).toHaveLength(2);
+    expect(lastCode(env, 'slow@example.com')).toBe(first);
+    // 重发没把次数清零：第 5 次猜错后码作废。
+    expect((await reg(wrong, NOW + 3 * 60 * 1000)).data.error).toBe('bad_code');
+    expect((await reg(first, NOW + 3 * 60 * 1000)).data.error).toBe('too_many_attempts');
+  });
+
+  it('迟到的第一封邮件里的码在重发之后仍能注册成功', async () => {
+    const env = makeEnv();
+    const key = await newKey();
+    const send = (now) => call(env, 'POST', '/v1/email/code', {
+      body: { email: 'late@example.com', purpose: 'register' }, headers: { 'CF-Connecting-IP': nextIp() }, now,
+    });
+    await send(NOW);
+    const first = lastCode(env, 'late@example.com');
+    await send(NOW + 60 * 1000);
+    await send(NOW + 2 * 60 * 1000);
+    const r = await call(env, 'POST', '/v1/register', {
+      key, body: { pubkey: key.pubkey, nickname: 'late', email: 'late@example.com', code: first },
+      now: NOW + 4 * 60 * 1000, time: NOW + 4 * 60 * 1000,
+    });
+    expect(r.status).toBe(201);
+  });
+
+  it('现有码剩余有效期不足一半时重发换新码（旧码作废），新码有完整 10 分钟', async () => {
+    const env = makeEnv();
+    const key = await newKey();
+    const send = (now) => call(env, 'POST', '/v1/email/code', {
+      body: { email: 'old@example.com', purpose: 'register' }, headers: { 'CF-Connecting-IP': nextIp() }, now,
+    });
+    await send(NOW);
+    const first = lastCode(env, 'old@example.com');
+    const t = NOW + 6 * 60 * 1000;
+    await send(t);
+    const second = lastCode(env, 'old@example.com');
+    const reg = (c, now) => call(env, 'POST', '/v1/register', {
+      key, body: { pubkey: key.pubkey, nickname: 'old', email: 'old@example.com', code: c }, now, time: now,
+      headers: { 'CF-Connecting-IP': nextIp() },
+    });
+    if (second !== first) expect((await reg(first, t + 1000)).data.error).toBe('bad_code');
+    expect((await reg(second, t + 9 * 60 * 1000)).status).toBe(201);
   });
 
   it('Cloudflare Email Service 绑定优先于 Resend：有 EMAIL 绑定就用它发，发件人取 EMAIL_FROM', async () => {

@@ -195,7 +195,8 @@ extension _VideoAdvancedMining on _VideoFushiPageState {
         source != null &&
             !networkSource &&
             p.isAbsolute(source) &&
-            File(source).existsSync()
+            // async：本地视频可能在网络盘上，同步 stat 会冻结 UI isolate（BUG-3756）。
+            await File(source).exists()
         ? source
         : null;
     // 在线流：缩略图没法对远端逐帧开流，趁这句还在播放器缓冲里落一份本地副本（与制卡
@@ -275,12 +276,15 @@ extension _VideoAdvancedMining on _VideoFushiPageState {
                 startDeltaMs: startDeltaMs,
                 endDeltaMs: endDeltaMs,
               )
-            : Future<bool>.value(false),
+            : Future<RangePlayback?>.value(),
         stopPreview: () async {
           if (identical(_controller, controller)) {
             await controller.stopPlayRange();
           }
         },
+        nudgeStepMs: appModel.advancedMiningAudioNudgeStepMs,
+        onNudgeStepChanged: appModel.setAdvancedMiningAudioNudgeStepMs,
+        sources: _advancedMiningAudioSources(controller),
       ),
       videoImage: AdvancedMiningVideoImageSection(
         modes: modes,

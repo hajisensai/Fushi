@@ -168,7 +168,7 @@ function revealedKeys(calls) {
 /// body > [img#cover.block-img.blurred, h1 > img#gaiji.gaiji, p#s1, img#mid.blurred, p#s2]
 function chapterWithCover() {
   const cover = new FakeElement('img', {
-    id: 'cover', classes: ['block-img', 'blurred'], attrs: { loading: 'lazy' },
+    id: 'cover', classes: ['block-img', 'blurred'],
   });
   const gaiji = new FakeElement('img', { id: 'gaiji', classes: ['gaiji'] });
   const h1 = new FakeElement('h1').append(gaiji);
@@ -192,7 +192,6 @@ function chapterWithCover() {
   assert.ok(!d.cover.classList.contains('blurred'), '章首图的 blurred 遮罩须去掉');
   assert.deepStrictEqual(revealedKeys(env.calls), ['cover'], '须回传 onImageRevealed 持久化');
   assert.deepStrictEqual(env.calls.marked, ['cover'], '须登记进已揭活集');
-  assert.strictEqual(d.cover.getAttribute('loading'), 'eager', '懒图须强制 eager 才看得见');
   assert.ok(d.mid.classList.contains('blurred'), '第一句之后的图不能被提前揭开');
   assert.strictEqual(env.sandbox.__fushiPrevHighlight, d.s1, '锚点须推进到第一句');
 }

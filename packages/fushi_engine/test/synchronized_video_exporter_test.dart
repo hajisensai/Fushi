@@ -212,7 +212,7 @@ void main() {
   });
 
   group('#1951 export must actually carry both streams', () {
-    // ffmpeg-kit 6.0 (Android) prints the stats line without a prefix and in kB.
+    // The old ffmpeg-kit 6.0 (Android) prints the stats line without a prefix and in kB.
     const String ffmpeg6Stats =
         'frame=   76 fps=0.0 q=0.0 Lsize=      86kB time=00:00:03.16\n'
         'video:84kB audio:0kB subtitle:0kB other streams:0kB '

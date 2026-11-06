@@ -3,16 +3,18 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
+import 'package:fushi_engine/media/media_pref_keys.dart'
+    show dbSourcePrefKey, kReaderSourcePersistedKey;
 import 'package:fushi/src/pages/implementations/font_preview/font_file_metadata.dart'
     show FontFaceWeight, readFontFaceWeightSync;
+import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
+import 'package:fushi/src/reader/reader_tap_zones.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
-import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_engine/epub/reader_resource_host.dart' as engine_host;
 
 /// The independent font targets a user can configure (TODO-049 / TODO-864):
@@ -50,10 +52,11 @@ enum FontTarget {
   /// **不是**用户列表里的第二条。语义与 [appUi] 的整链回退不同。
   gameLookup,
 
-  /// Windows 有声书**悬浮字幕**（native 分层窗 `FloatingLyricWindow`，与
-  /// [gameLookup] 同一个原生窗类，DirectWrite 自绘）的字体。
+  /// 有声书**悬浮字幕** / 音乐桌面歌词的字体：Windows native 分层窗
+  /// `FloatingLyricWindow`（与 [gameLookup] 同一个原生窗类，DirectWrite 自绘）与
+  /// macOS `FushiFloatingLyric.swift`（NSPanel + TextKit，CTFontManager 读字体文件）。
   ///
-  /// 语义、平台可用性（只 Windows）与导入格式限制都与 [gameLookup] 相同：
+  /// 语义与导入格式限制都与 [gameLookup] 相同（平台多一个 macOS）：
   /// native 只吃**第一条可用**的 family/file，且只认 `.ttf/.otf/.ttc`；
   /// 缺字回退靠 native 追加的系统字体集。
   floatingLyric,
@@ -61,24 +64,24 @@ enum FontTarget {
   /// 复习（SRS）「Fushi 卡片」卡面的字体：卡面是 WebView 渲染，整条字体链按
   /// 字形回落，语义与 [body]（阅读器正文）相同——不是 native 单字体表面。
   /// 五平台通用。
-  srsCard
+  srsCard,
 }
 
 /// 这个用途在当前平台**是否真有消费端**。
 ///
-/// [FontTarget.gameLookup] / [FontTarget.floatingLyric] 只有 Windows 有 native
-/// 消费端（分层窗 DirectWrite），
+/// [FontTarget.gameLookup] 只有 Windows 有 native 消费端（分层窗 DirectWrite），
+/// [FontTarget.floatingLyric] 是 Windows + macOS（悬浮字幕原生窗），
 /// 其余平台勾上等于写一个永远没人读的偏好键——UI 必须据此隐藏，否则用户会以为
 /// 自己已经设好了。其余用途五平台通用。
 bool isFontTargetAvailableOnPlatform(FontTarget target) => switch (target) {
-      FontTarget.gameLookup || FontTarget.floatingLyric => Platform.isWindows,
-      FontTarget.appUi ||
-      FontTarget.body ||
-      FontTarget.dictionary ||
-      FontTarget.videoSubtitle ||
-      FontTarget.srsCard =>
-        true,
-    };
+  FontTarget.gameLookup => Platform.isWindows,
+  FontTarget.floatingLyric => Platform.isWindows || Platform.isMacOS,
+  FontTarget.appUi ||
+  FontTarget.body ||
+  FontTarget.dictionary ||
+  FontTarget.videoSubtitle ||
+  FontTarget.srsCard => true,
+};
 
 /// All reader display/behavior settings, decoupled from the media source.
 ///
@@ -117,7 +120,7 @@ class ReaderSettings {
   /// 上下文里用。存在的理由是 [ReaderSettings] 的读取器全是同步 getter，但构造
   /// 出来的实例缓存是**空的**——没有这一步，`ReaderSettings(db).dictionaryFonts`
   /// 恒为空列表，和「用户什么都没配」不可区分（见
-  /// [ReaderFushiSource.resolveEffectiveReaderSettings] 的说明）。
+  /// `ReaderFushiSource.resolveEffectiveReaderSettings` 的说明）。
   ///
   /// 迁移（边距/字体目录）由主进程的初始化路径负责且幂等，旁路只读消费方不需要、
   /// 也不应该在只读路径上写盘。
@@ -139,7 +142,10 @@ class ReaderSettings {
   /// Reload all settings from the database, e.g. after a profile switch.
   Future<void> refreshFromDb() async {
     _cache.clear();
-    final Map<String, String> all = await _db.getAllPrefs();
+    // 反馈 kEFPY4cuKZ：打开的作品带着作品级配置时，阅读样式键取会话覆盖层。
+    final Map<String, String> all = WorkProfileScope.instance.effectivePrefs(
+      await _db.getAllPrefs(),
+    );
     await loadFromPrefsSnapshot(all);
   }
 
@@ -158,9 +164,9 @@ class ReaderSettings {
     _cache.remove('first_dimension_margin');
     _cache.remove('second_dimension_margin');
     _cache.remove('second_dimension_max');
-    await _db.deletePref('${_prefix}first_dimension_margin');
-    await _db.deletePref('${_prefix}second_dimension_margin');
-    await _db.deletePref('${_prefix}second_dimension_max');
+    await _delete('first_dimension_margin');
+    await _delete('second_dimension_margin');
+    await _delete('second_dimension_max');
   }
 
   Future<void> _ensureResponsiveMarginDefaults() async {
@@ -186,12 +192,39 @@ class ReaderSettings {
 
   Future<void> _set<T>(String key, T value) async {
     _cache[key] = value;
+    final String dbKey = '$_prefix$key';
+    if (WorkProfileScope.instance.overrides(dbKey)) {
+      await WorkProfileScope.instance.write(dbKey, value.toString());
+      return;
+    }
     try {
-      await _db.setPref('$_prefix$key', value.toString());
+      await _db.setPref(dbKey, value.toString());
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderSettings.write', e, stack);
       debugPrint('[ReaderSettings] write error: $e');
     }
+  }
+
+  /// 写一个本源键的原始串（字体目录 / 字体表这类已编码的 JSON）：作品级配置会话期间写进
+  /// 会话覆盖层（绑定配置的快照），否则写全局偏好。与 [_set] 同一判据，只是不再 toString。
+  Future<void> _writeRaw(String key, String raw) async {
+    final String dbKey = '$_prefix$key';
+    if (WorkProfileScope.instance.overrides(dbKey)) {
+      await WorkProfileScope.instance.write(dbKey, raw);
+      return;
+    }
+    await _db.setPref(dbKey, raw);
+  }
+
+  /// 删掉一个本源键：作品级配置会话期间作品级键删在会话覆盖层（绑定配置的快照），
+  /// 否则删全局偏好。
+  Future<void> _delete(String key) async {
+    final String dbKey = '$_prefix$key';
+    if (WorkProfileScope.instance.overrides(dbKey)) {
+      await WorkProfileScope.instance.write(dbKey, null);
+      return;
+    }
+    await _db.deletePref(dbKey);
   }
 
   /// BUG-1116：读侧统一走 [PrefCodec.decodeUntyped]，兼容两种历史写入格式：
@@ -286,6 +319,36 @@ class ReaderSettings {
   Future<void> setLyricsPanelMirrored(bool v) =>
       _set<bool>('lyrics_panel_mirrored', v);
 
+  /// 歌词模式播放控件布局（`LyricsControlsStyle.wire`，MD3 / Apple 都读）：`modern` = 新版
+  /// （默认，2026-10-31 用户拍板）/ `classic` = 经典布局。
+  String get lyricsControlsStyle =>
+      _get<String>('lyrics_controls_style', 'modern');
+  Future<void> setLyricsControlsStyle(String v) =>
+      _set<String>('lyrics_controls_style', v);
+
+  /// 新版窄屏播放卡展开 / 收起（默认 `false` = 收起成迷你条，之后记住上次状态）。
+  bool get lyricsControlsExpanded =>
+      _get<bool>('lyrics_controls_expanded', false);
+  Future<void> setLyricsControlsExpanded(bool v) =>
+      _set<bool>('lyrics_controls_expanded', v);
+
+  /// 歌词模式播放走过插图时的提示方式：`popup` = 弹出插图卡并按「图片暂停」秒数
+  /// 停留（默认）/ `dot` = 只把封面位换成缩略图 + 红点，不弹、不停。
+  String get lyricsIllustrationCue =>
+      _get<String>('lyrics_illustration_cue', 'popup');
+  Future<void> setLyricsIllustrationCue(String v) =>
+      _set<String>('lyrics_illustration_cue', v);
+
+  /// 歌词模式次要按钮布局 JSON（`LyricsControlLayout`）：宽屏 / 窄屏各一份，
+  /// 空串 = 出厂布局。
+  String get lyricsControlLayout => _get<String>('lyrics_control_layout', '');
+  Future<void> setLyricsControlLayout(String v) =>
+      _set<String>('lyrics_control_layout', v);
+  String get lyricsCompactControlLayout =>
+      _get<String>('lyrics_control_layout_compact', '');
+  Future<void> setLyricsCompactControlLayout(String v) =>
+      _set<String>('lyrics_control_layout_compact', v);
+
   /// 有声书正文当前句是否铺底色。默认 `true` = 历史行为；关掉后只靠
   /// [audioHighlightTextColor]（未设时用高亮色本身）给字上色、不加底色。
   bool get audioHighlightBackground =>
@@ -299,7 +362,8 @@ class ReaderSettings {
       _set<int>('audio_highlight_text_color', v);
 
   /// 一类高亮的笔触配置：`<前缀>_style` / `_thickness` / `_opacity` / `_cover_ruby` /
-  /// `_roughness` / `_animate` 六个键，前缀见 [HighlightKind.prefPrefix]（收藏
+  /// `_roughness` / `_animate` / `_underline_form` / `_underline_offset` 八个键，前缀见
+  /// [HighlightKind.prefPrefix]（收藏
   /// `favorite_highlight`、查词 `lookup_highlight`、有声书 `audio_highlight`、搜索
   /// `search_highlight`）。没写过的键取 [HighlightKind.defaults]。
   HighlightStrokeConfig highlightStrokeConfig(HighlightKind kind) {
@@ -314,6 +378,10 @@ class ReaderSettings {
       coverRuby: _get<bool>('${p}_cover_ruby', d.coverRuby),
       roughness: _get<double>('${p}_roughness', d.roughness),
       animate: _get<bool>('${p}_animate', d.animate),
+      underlineForm: HighlightUnderlineForm.fromWire(
+        _get<String>('${p}_underline_form', d.underlineForm.wireName),
+      ),
+      underlineOffset: _get<double>('${p}_underline_offset', d.underlineOffset),
     );
   }
 
@@ -341,6 +409,12 @@ class ReaderSettings {
     }
     if (next.animate != prev.animate) {
       await _set<bool>('${p}_animate', next.animate);
+    }
+    if (next.underlineForm != prev.underlineForm) {
+      await _set<String>('${p}_underline_form', next.underlineForm.wireName);
+    }
+    if (next.underlineOffset != prev.underlineOffset) {
+      await _set<double>('${p}_underline_offset', next.underlineOffset);
     }
   }
 
@@ -435,8 +509,10 @@ class ReaderSettings {
     final dynamic raw = _cache['hide_furigana'];
     final bool? legacy = raw is bool ? raw : null;
     if (legacy != null) {
-      final String oldStyle =
-          _get<String>('furigana_style', 'partial').toLowerCase();
+      final String oldStyle = _get<String>(
+        'furigana_style',
+        'partial',
+      ).toLowerCase();
       final String mode = legacy ? 'hidden' : 'off';
       final String merged = normalizeFuriganaMode(
         (legacy && (oldStyle == 'partial' || oldStyle == 'toggle'))
@@ -445,13 +521,11 @@ class ReaderSettings {
       );
       _set<String>('furigana_mode', merged);
       _cache.remove('hide_furigana');
-      _db.deletePref('${_prefix}hide_furigana');
-      _db.deletePref('${_prefix}furigana_style');
+      _delete('hide_furigana');
+      _delete('furigana_style');
       return merged;
     }
-    return normalizeFuriganaMode(
-      _get<String>('furigana_mode', 'off'),
-    );
+    return normalizeFuriganaMode(_get<String>('furigana_mode', 'off'));
   }
 
   Future<void> setFuriganaMode(String v) =>
@@ -562,30 +636,22 @@ class ReaderSettings {
 
   int get lookupAudioVolume =>
       _get<int>('lookup_audio_volume', 100).clamp(0, 100).toInt();
-  Future<void> setLookupAudioVolume(num value) => _set<int>(
-        'lookup_audio_volume',
-        normalizeLookupAudioVolume(value),
-      );
+  Future<void> setLookupAudioVolume(num value) =>
+      _set<int>('lookup_audio_volume', normalizeLookupAudioVolume(value));
 
   double get dismissSwipeSensitivity =>
       _get<double>('dismiss_swipe_sensitivity', 0.6);
   Future<void> setDismissSwipeSensitivity(double v) =>
       _set<double>('dismiss_swipe_sensitivity', v);
 
-  /// 滑动关闭查词弹窗时，松手后是否播放「补间滑出屏外 / 弹回原位」动画。默认 true
-  /// （保持既有手感）；关掉则松手当帧就关，与墨水屏模式下的行为一致。
-  bool get popupDismissAnimation => _get<bool>('popup_dismiss_animation', true);
-  Future<void> setPopupDismissAnimation(bool v) =>
-      _set<bool>('popup_dismiss_animation', v);
-
   /// TODO-407②：查词弹窗是否允许"水平滑动关闭"（[SwipeDismissWrapper]）。桌面端
   /// （Windows/Linux）鼠标左键框选正文与滑动手势的位移序列同形，默认关闭滑动关闭、
   /// 用顶栏 X 兜底；触摸为主的平台（macOS/iOS/Android）默认开启。未持久化覆盖时
   /// 回退到 [defaultSwipeToClose]，让"换平台即取该平台默认"成立。
   bool get enableSwipeToClose => _get<bool>(
-        'enable_swipe_to_close',
-        defaultSwipeToClose(defaultTargetPlatform),
-      );
+    'enable_swipe_to_close',
+    defaultSwipeToClose(defaultTargetPlatform),
+  );
   Future<void> setEnableSwipeToClose(bool v) =>
       _set<bool>('enable_swipe_to_close', v);
 
@@ -641,10 +707,8 @@ class ReaderSettings {
     return defaultSwipePageTurnSensitivity;
   }
 
-  Future<void> setSwipePageTurnSensitivity(double v) => _set<double>(
-        swipeSensitivityKey,
-        normalizeSwipePageTurnSensitivity(v),
-      );
+  Future<void> setSwipePageTurnSensitivity(double v) =>
+      _set<double>(swipeSensitivityKey, normalizeSwipePageTurnSensitivity(v));
 
   /// 基础滑动翻页阈值：纯距离触发 [baseSwipeDistPx]，配合速度的快速短滑触发
   /// [baseSwipeFastDistPx] + [baseSwipeFastVelocityPxPerSec]。灵敏度 1.0 = 24 / 12 / 300。
@@ -687,7 +751,7 @@ class ReaderSettings {
   /// 半径、swipe 判的是**净位移**，而轨迹半径恒 ≥ 净位移，所以只要 `dist > tapSlopPx`
   /// 两者就不可能同时命中。
   static ({int dist, int fastDist, int fastVelocity})
-      swipePageTurnDistThresholds(double sensitivity) {
+  swipePageTurnDistThresholds(double sensitivity) {
     final double s = normalizeSwipePageTurnSensitivity(sensitivity);
     return (
       dist: (baseSwipeDistPx / s).round().clamp(tapSlopPx + 1, 600),
@@ -703,15 +767,15 @@ class ReaderSettings {
       _set<int>('wheel_page_turn_interval', v);
 
   // ── 翻页动画（只在翻页 / paginated 模式生效）────────────────────────
-  // 值域与降级规则唯一出处 page_turn_animation.dart（与漫画阅读器共用）；小说默认淡入淡出。
+  // 值域与降级规则唯一出处 page_turn_animation.dart（与漫画阅读器共用）；小说默认卷页。
 
   static const String pageTurnAnimationKey = 'page_turn_animation';
   static const String pageTurnAnimationSpeedKey = 'page_turn_animation_speed';
   static const String pageTurnFollowDragKey = 'page_turn_follow_drag';
 
-  /// 小说阅读器翻页效果的出厂默认（用户拍板：淡入淡出）。
+  /// 小说阅读器翻页效果的出厂默认（用户 2026-11-06 拍板：卷页，原为淡入淡出）。
   static const PageTurnAnimation defaultPageTurnAnimation =
-      PageTurnAnimation.fade;
+      PageTurnAnimation.curl;
   static const PageTurnAnimationSpeed defaultPageTurnAnimationSpeed =
       PageTurnAnimationSpeed.normal;
   static const bool defaultPageTurnFollowDrag = true;
@@ -740,6 +804,18 @@ class ReaderSettings {
       _get<bool>(pageTurnFollowDragKey, defaultPageTurnFollowDrag);
   Future<void> setPageTurnFollowDrag(bool v) =>
       _set<bool>(pageTurnFollowDragKey, v);
+
+  // ── 点击翻页区域（indZkg2A0I）：三种 view mode 共用，语义见 reader_tap_zones.dart。
+  static const String tapZoneLayoutKey = 'tap_zone_layout';
+
+  /// 出厂默认关闭：保持「点空白只管工具栏」的旧行为。
+  static const ReaderTapZoneLayout defaultTapZoneLayout =
+      ReaderTapZoneLayout.disabled;
+
+  ReaderTapZoneLayout get tapZoneLayout =>
+      ReaderTapZoneLayout.fromKey(_cache[tapZoneLayoutKey]?.toString());
+  Future<void> setTapZoneLayout(ReaderTapZoneLayout v) =>
+      _set<String>(tapZoneLayoutKey, v.key);
 
   bool get highlightOnTap => _get<bool>('highlight_on_tap', true);
   Future<void> toggleHighlightOnTap() =>
@@ -773,12 +849,13 @@ class ReaderSettings {
   // (centered between left/right 96px insets). Normalized on read so an
   // unexpected stored value degrades to 'center'.
   static String normalizeTopProgressPosition(String value) => switch (value) {
-        'left' || 'center' || 'right' => value,
-        _ => 'center',
-      };
+    'left' || 'center' || 'right' => value,
+    _ => 'center',
+  };
 
   String get topProgressPosition => normalizeTopProgressPosition(
-      _get<String>('top_progress_position', 'center'));
+    _get<String>('top_progress_position', 'center'),
+  );
   Future<void> setTopProgressPosition(String v) =>
       _set<String>('top_progress_position', normalizeTopProgressPosition(v));
 
@@ -800,8 +877,8 @@ class ReaderSettings {
   /// 顶部与底栏共用同一个值。默认 [kDefaultAutoHideChromeMillis]（3000ms），可调滑块
   /// 1000–10000，越界值经 [normalizeAutoHideChromeMillis] 归一。
   int get autoHideChromeMillis => normalizeAutoHideChromeMillis(
-        _get<int>('auto_hide_chrome_millis', kDefaultAutoHideChromeMillis),
-      );
+    _get<int>('auto_hide_chrome_millis', kDefaultAutoHideChromeMillis),
+  );
   Future<void> setAutoHideChromeMillis(int v) =>
       _set<int>('auto_hide_chrome_millis', normalizeAutoHideChromeMillis(v));
 
@@ -827,7 +904,9 @@ class ReaderSettings {
   bool get invertAudiobookSkipDirection =>
       _get<bool>('invert_audiobook_skip_direction', false);
   Future<void> toggleInvertAudiobookSkipDirection() => _set<bool>(
-      'invert_audiobook_skip_direction', !invertAudiobookSkipDirection);
+    'invert_audiobook_skip_direction',
+    !invertAudiobookSkipDirection,
+  );
 
   // ── Custom fonts (catalog + per-target refs) ─────────────────────
   //
@@ -873,7 +952,7 @@ class ReaderSettings {
     fontKeyVideoSubtitle,
     fontKeyGameLookup,
     fontKeyFloatingLyric,
-    fontKeySrsCard
+    fontKeySrsCard,
   ];
 
   bool get _hasAnyFontPrefs =>
@@ -912,7 +991,7 @@ class ReaderSettings {
       if (_cache.containsKey(fontKeyFloatingLyric))
         fontKeyFloatingLyric: _legacyFontListForKey(fontKeyFloatingLyric),
       if (_cache.containsKey(fontKeySrsCard))
-        fontKeySrsCard: _legacyFontListForKey(fontKeySrsCard)
+        fontKeySrsCard: _legacyFontListForKey(fontKeySrsCard),
     };
   }
 
@@ -958,22 +1037,20 @@ class ReaderSettings {
   }) async {
     _cacheFontCatalogState(state, syncLegacyKeys: syncLegacyKeys);
     try {
-      await _db.setPref(
-        '$_prefix$fontCatalogKey',
-        _cache[fontCatalogKey] as String,
-      );
-      await _db.setPref(
-        '$_prefix$fontTargetsKey',
-        _cache[fontTargetsKey] as String,
-      );
+      // 反馈 kEFPY4cuKZ：字体随作品级配置走，会话期间改字体写进作品配置的快照。
+      await _writeRaw(fontCatalogKey, _cache[fontCatalogKey] as String);
+      await _writeRaw(fontTargetsKey, _cache[fontTargetsKey] as String);
       if (!syncLegacyKeys) return;
       for (final String key in _fontTargetKeys) {
         if (!state.hasTarget(key)) continue;
-        await _db.setPref('$_prefix$key', _cache[key] as String);
+        await _writeRaw(key, _cache[key] as String);
       }
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('ReaderSettings.fontCatalog.write', e, stack);
+      ErrorLogService.instance.log(
+        'ReaderSettings.fontCatalog.write',
+        e,
+        stack,
+      );
       debugPrint('[ReaderSettings] write error: $e');
     }
   }
@@ -1014,11 +1091,14 @@ class ReaderSettings {
 
     final dynamic catalog = _cache[fontCatalogKey];
     if (catalog is String) {
-      final ({String json, int relocated}) r =
-          relocateMissingFontCatalogPaths(catalog, currentFontsDir, exists);
+      final ({String json, int relocated}) r = relocateMissingFontCatalogPaths(
+        catalog,
+        currentFontsDir,
+        exists,
+      );
       if (r.relocated > 0) {
         _cache[fontCatalogKey] = r.json;
-        await _db.setPref('$_prefix$fontCatalogKey', r.json);
+        await _writeRaw(fontCatalogKey, r.json);
         healed += r.relocated;
       }
     }
@@ -1026,11 +1106,14 @@ class ReaderSettings {
     for (final String key in _fontTargetKeys) {
       final dynamic raw = _cache[key];
       if (raw is! String) continue;
-      final ({String json, int relocated}) r =
-          relocateMissingFontListPaths(raw, currentFontsDir, exists);
+      final ({String json, int relocated}) r = relocateMissingFontListPaths(
+        raw,
+        currentFontsDir,
+        exists,
+      );
       if (r.relocated > 0) {
         _cache[key] = r.json;
-        await _db.setPref('$_prefix$key', r.json);
+        await _writeRaw(key, r.json);
         healed += r.relocated;
       }
     }
@@ -1098,7 +1181,7 @@ class ReaderSettings {
         FontTarget.videoSubtitle => videoSubtitleFonts,
         FontTarget.gameLookup => gameLookupFonts,
         FontTarget.floatingLyric => floatingLyricFonts,
-        FontTarget.srsCard => srsCardFonts
+        FontTarget.srsCard => srsCardFonts,
       };
 
   /// CSS font-family string and @font-face declarations for the BODY fonts.
@@ -1139,14 +1222,14 @@ class ReaderSettings {
 
   /// Resolves the persistence key backing a [FontTarget].
   static String fontKeyForTarget(FontTarget target) => switch (target) {
-        FontTarget.body => fontKeyBody,
-        FontTarget.appUi => fontKeyAppUi,
-        FontTarget.dictionary => fontKeyDictionary,
-        FontTarget.videoSubtitle => fontKeyVideoSubtitle,
-        FontTarget.gameLookup => fontKeyGameLookup,
-        FontTarget.floatingLyric => fontKeyFloatingLyric,
-        FontTarget.srsCard => fontKeySrsCard
-      };
+    FontTarget.body => fontKeyBody,
+    FontTarget.appUi => fontKeyAppUi,
+    FontTarget.dictionary => fontKeyDictionary,
+    FontTarget.videoSubtitle => fontKeyVideoSubtitle,
+    FontTarget.gameLookup => fontKeyGameLookup,
+    FontTarget.floatingLyric => fontKeyFloatingLyric,
+    FontTarget.srsCard => fontKeySrsCard,
+  };
 
   /// Persists the whole list for [target]. The body convenience overload
   /// [setCustomFonts] preserves the pre-split call sites unchanged.
@@ -1170,23 +1253,26 @@ class ReaderSettings {
     required String name,
     String? path,
   }) async {
-    final List<Map<String, dynamic>> list =
-        List<Map<String, dynamic>>.from(fontsForTarget(target));
+    final List<Map<String, dynamic>> list = List<Map<String, dynamic>>.from(
+      fontsForTarget(target),
+    );
     list.add(<String, dynamic>{'name': name, 'path': path, 'enabled': true});
     await setFontsForTarget(target, list);
   }
 
   Future<void> removeFontForTarget(FontTarget target, int index) async {
-    final List<Map<String, dynamic>> list =
-        List<Map<String, dynamic>>.from(fontsForTarget(target));
+    final List<Map<String, dynamic>> list = List<Map<String, dynamic>>.from(
+      fontsForTarget(target),
+    );
     if (index < 0 || index >= list.length) return;
     list.removeAt(index);
     await setFontsForTarget(target, list);
   }
 
   Future<void> toggleFontForTarget(FontTarget target, int index) async {
-    final List<Map<String, dynamic>> list =
-        List<Map<String, dynamic>>.from(fontsForTarget(target));
+    final List<Map<String, dynamic>> list = List<Map<String, dynamic>>.from(
+      fontsForTarget(target),
+    );
     if (index < 0 || index >= list.length) return;
     list[index]['enabled'] = !(list[index]['enabled'] as bool? ?? true);
     await setFontsForTarget(target, list);
@@ -1197,8 +1283,9 @@ class ReaderSettings {
     int oldIndex,
     int newIndex,
   ) async {
-    final List<Map<String, dynamic>> list =
-        List<Map<String, dynamic>>.from(fontsForTarget(target));
+    final List<Map<String, dynamic>> list = List<Map<String, dynamic>>.from(
+      fontsForTarget(target),
+    );
     if (newIndex > oldIndex) newIndex--;
     if (oldIndex < 0 ||
         oldIndex >= list.length ||
@@ -1239,8 +1326,9 @@ class ReaderCustomFontCss {
         .where((String path) => path.isNotEmpty)
         .map(p.canonicalize)
         .toSet();
-    final Iterable<Map<String, dynamic>> enabled =
-        fonts.where((e) => e['enabled'] as bool? ?? true);
+    final Iterable<Map<String, dynamic>> enabled = fonts.where(
+      (e) => e['enabled'] as bool? ?? true,
+    );
     final List<String> families = <String>[];
     final List<String> faces = <String>[];
     for (final Map<String, dynamic> e in enabled) {
@@ -1252,8 +1340,10 @@ class ReaderCustomFontCss {
         families.add(cssFontFamilyName(normalizedName));
         continue;
       }
-      final String? safePath =
-          safeFontPath(fontPath, allowedRoots: allowedRoots);
+      final String? safePath = safeFontPath(
+        fontPath,
+        allowedRoots: allowedRoots,
+      );
       if (safePath == null) {
         continue;
       }
@@ -1268,10 +1358,7 @@ class ReaderCustomFontCss {
         'font-display: swap; }',
       );
     }
-    return (
-      fontFamily: families.join(', '),
-      fontFaces: faces.join('\n'),
-    );
+    return (fontFamily: families.join(', '), fontFaces: faces.join('\n'));
   }
 
   /// 关闭字重合成的声明：**只**给查词弹窗用（它的粗体是纯装饰性的词头 / 标签强调，
@@ -1311,7 +1398,7 @@ class ReaderCustomFontCss {
   /// (mtime, size) 内容键的进程内缓存：阅读器每次重建样式都会走 [build]，
   /// 同一文件只读一次表头。文件原地覆盖时 mtime/size 变，自动失效。
   static final Map<String, ({int mtimeUs, int size, FontFaceWeight? weight})>
-      _faceWeightCache =
+  _faceWeightCache =
       <String, ({int mtimeUs, int size, FontFaceWeight? weight})>{};
 
   static FontFaceWeight? _cachedFaceWeight(String path) {
@@ -1331,7 +1418,11 @@ class ReaderCustomFontCss {
       return cached.weight;
     }
     final FontFaceWeight? weight = readFontFaceWeightSync(path);
-    _faceWeightCache[path] = (mtimeUs: mtimeUs, size: stat.size, weight: weight);
+    _faceWeightCache[path] = (
+      mtimeUs: mtimeUs,
+      size: stat.size,
+      weight: weight,
+    );
     return weight;
   }
 
@@ -1341,8 +1432,9 @@ class ReaderCustomFontCss {
 
   static String cssFontFamilyName(String name) {
     final String normalized = normalizedFontFamilyName(name);
-    final String escaped =
-        normalized.replaceAll('\\', r'\\').replaceAll('"', r'\"');
+    final String escaped = normalized
+        .replaceAll('\\', r'\\')
+        .replaceAll('"', r'\"');
     return '"$escaped"';
   }
 
@@ -1356,8 +1448,10 @@ class ReaderCustomFontCss {
         .map(p.canonicalize)
         .toList();
     if (roots.isNotEmpty &&
-        !roots.any((String root) =>
-            canonicalPath == root || p.isWithin(root, canonicalPath))) {
+        !roots.any(
+          (String root) =>
+              canonicalPath == root || p.isWithin(root, canonicalPath),
+        )) {
       return null;
     }
     return canonicalPath;
@@ -1366,12 +1460,15 @@ class ReaderCustomFontCss {
   // WKWebView 与 Linux 的 WPE WebKit 只能注册自定义 scheme、拦不到 https，
   // 与 `webViewUsesCustomSchemeTransport` 同一判据（这里用 defaultTargetPlatform
   // 以便测试覆写平台）。
-  static String fontUrl(String path) => '${switch (defaultTargetPlatform) {
-        TargetPlatform.macOS ||
-        TargetPlatform.iOS ||
-        TargetPlatform.linux =>
-          kReaderResourceScheme,
+  static String fontUrl(String path) =>
+      resourceUrl('/fonts/${Uri.encodeComponent(path)}');
+
+  /// 阅读器资源 URL：[urlPath] 以 `/` 开头，走与 [fontUrl] 相同的 scheme / host，
+  /// 由阅读器的请求拦截器下发。
+  static String resourceUrl(String urlPath) =>
+      '${switch (defaultTargetPlatform) {
+        TargetPlatform.macOS || TargetPlatform.iOS || TargetPlatform.linux => kReaderResourceScheme,
         _ => 'https',
       }}'
-      '://$kReaderResourceHost/fonts/${Uri.encodeComponent(path)}';
+      '://$kReaderResourceHost$urlPath';
 }

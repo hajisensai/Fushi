@@ -253,11 +253,14 @@ Future<ResolvedGameCover?> autoResolveGameCover({
   String? workdir,
   Directory? coverDirectory,
 }) async {
-  final String directory =
-      (workdir != null && workdir.isNotEmpty) ? workdir : p.dirname(exePath);
+  final String directory = (workdir != null && workdir.isNotEmpty)
+      ? workdir
+      : p.dirname(exePath);
   final List<String> files = await listCoverCandidateFiles(directory);
-  final List<GameCoverCandidate> ranked =
-      rankGameCoverCandidates(filePaths: files, gameName: gameName);
+  final List<GameCoverCandidate> ranked = rankGameCoverCandidates(
+    filePaths: files,
+    gameName: gameName,
+  );
   for (final GameCoverCandidate candidate in ranked) {
     final (int, int)? size = await probeImageSize(candidate.path);
     if (size == null) continue;

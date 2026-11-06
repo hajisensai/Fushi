@@ -127,9 +127,7 @@ void main() {
   });
 
   group('FushiPressScale / FushiHoverLift', () {
-    testWidgets('Apple：按压照常缩放（所有者拍板保留按压缩放）', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('Apple：按压照常缩放（所有者拍板保留按压缩放）', (WidgetTester tester) async {
       const Key box = Key('box');
       await tester.pumpWidget(
         _app(
@@ -169,16 +167,16 @@ void main() {
       );
     });
 
-    testWidgets('切换设计系统不重建子 State（不按设计系统增删包装层）', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('切换设计系统不重建子 State（不按设计系统增删包装层）', (WidgetTester tester) async {
       final List<String> inits = <String>[];
       Widget tree({required bool glass}) => _app(
         Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              FushiPressScale(child: _InitProbe(tag: 'press', log: inits)),
+              FushiPressScale(
+                child: _InitProbe(tag: 'press', log: inits),
+              ),
               FushiHoverLift(
                 builder: (BuildContext context, bool hovering) =>
                     _InitProbe(tag: 'hover', log: inits),
@@ -194,11 +192,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.pumpWidget(tree(glass: false));
       await tester.pumpAndSettle();
-      expect(
-        inits,
-        <String>['press', 'hover'],
-        reason: 'MD3 与 Apple 来回切换，子 State 一次都不重建',
-      );
+      expect(inits, <String>[
+        'press',
+        'hover',
+      ], reason: 'MD3 与 Apple 来回切换，子 State 一次都不重建');
     });
 
     testWidgets('MD3：按压仍缩放', (WidgetTester tester) async {
@@ -219,9 +216,7 @@ void main() {
       );
     });
 
-    testWidgets('Apple：悬停轻微放大，悬停态照常交给 builder', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('Apple：悬停轻微放大，悬停态照常交给 builder', (WidgetTester tester) async {
       bool hovering = false;
       const Key card = Key('card');
       await tester.pumpWidget(

@@ -128,6 +128,7 @@ const Map<String, String> kCustomFileTypeAllowlist = <String, String>{
   'lib/src/sync/sync_settings_schema/backup.part.dart': 'saveFile：导出备份 zip',
   'lib/src/utils/misc/log_exporter.dart': 'saveFile：导出日志',
   'lib/src/media/audiobook/asr_transcribe_sheet.dart': 'saveFile：导出转录字幕 srt',
+  'lib/src/utils/misc/image_file_saver.dart': 'saveFile：桌面另存图片',
   // Windows 专属入口：桌面原生对话框按扩展名过滤可靠。
   'lib/src/mining/galgame_add_flow.dart':
       'galgame exe：Windows 专属（见 galgame SOP），安卓无此入口',
@@ -198,8 +199,9 @@ void main() {
   test('目录选择器：除统一入口与登记豁免外，不得裸调 getDirectoryPath', () {
     final Set<String> callers = _filesCalling('getDirectoryPath')
       ..removeAll(kPickerImplementationLayer);
-    final Set<String> unexpected =
-        callers.difference(kDirectoryPickerAllowlist.keys.toSet());
+    final Set<String> unexpected = callers.difference(
+      kDirectoryPickerAllowlist.keys.toSet(),
+    );
     expect(
       unexpected,
       isEmpty,
@@ -227,8 +229,9 @@ void main() {
   test('文件选择器：裸调 pickFiles 的文件必须已登记在案', () {
     final Set<String> callers = _filesCalling('pickFiles')
       ..removeAll(kPickerImplementationLayer);
-    final Set<String> unexpected =
-        callers.difference(kFilePickerAllowlist.keys.toSet());
+    final Set<String> unexpected = callers.difference(
+      kFilePickerAllowlist.keys.toSet(),
+    );
     expect(
       unexpected,
       isEmpty,
@@ -276,7 +279,8 @@ void main() {
       expect(
         anyCalls,
         innerCalls,
-        reason: '$kPickerPlatformDecorator 出现了 inner 之外的 $member 调用——'
+        reason:
+            '$kPickerPlatformDecorator 出现了 inner 之外的 $member 调用——'
             '装饰层不得自己发起选择；要新增调用点请走 $kPickerImpl。',
       );
     }
@@ -293,11 +297,10 @@ void main() {
     );
     // 唯一改写的参数是 lockParentWindow：其余参数名与被转发值同名（原样透传）。
     final RegExp namedArg = RegExp(r'(\w+)\s*:\s*([\w.()]+)\s*,');
-    final Iterable<RegExpMatch> forwarded = RegExp(
-      r'\binner\s*\.\s*\w+\s*\(([^;]*?)\)\s*;',
-    ).allMatches(code).expand(
-      (RegExpMatch call) => namedArg.allMatches(call.group(1)!),
-    );
+    final Iterable<RegExpMatch> forwarded =
+        RegExp(r'\binner\s*\.\s*\w+\s*\(([^;]*?)\)\s*;')
+            .allMatches(code)
+            .expand((RegExpMatch call) => namedArg.allMatches(call.group(1)!));
     expect(forwarded, isNotEmpty);
     for (final RegExpMatch arg in forwarded) {
       final String name = arg.group(1)!;
@@ -305,7 +308,8 @@ void main() {
       expect(
         arg.group(2),
         name,
-        reason: '$kPickerPlatformDecorator 改写了参数 $name——装饰层只许决定 '
+        reason:
+            '$kPickerPlatformDecorator 改写了参数 $name——装饰层只许决定 '
             'lockParentWindow，其余必须原样透传',
       );
     }

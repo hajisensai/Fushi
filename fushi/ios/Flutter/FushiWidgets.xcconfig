@@ -1,0 +1,15 @@
+// FushiWidgets（主屏小组件 / Live Activity / 控制中心控件）扩展的 base configuration。
+// Debug / Release / Profile 共用这一份；CI 签 TestFlight 时只往这里追加扩展自己的手动签名
+// （.github/workflows/release-desktop.yml「Install provisioning profile and signing xcconfig」）。
+//
+// 版本号必须与主 app 完全一致（App Store 校验 CFBundleVersion / ShortVersionString），
+// 所以同样从 flutter 生成的 Generated.xcconfig 取。
+#include "Generated.xcconfig"
+
+MARKETING_VERSION = $(FLUTTER_BUILD_NAME)
+CURRENT_PROJECT_VERSION = $(FLUTTER_BUILD_NUMBER)
+FUSHI_APP_GROUP = group.app.fushi.reader
+
+// 模拟器不按描述文件核对 entitlements，可以无条件带 App Group；真机只由 CI 在描述文件
+// 确实带了 App Group 时接入（见 Runner.entitlements 的说明与 feedback_push_wiring_guard_test）。
+CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*] = FushiWidgets/FushiWidgets.entitlements

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
+import 'package:fushi_engine/anki_sync/fushi_anki_sync_client.dart'
+    show FushiAnkiSyncException;
 
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/sync_client/anki_sync_client_actions.dart';
@@ -10,7 +12,40 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+
+/// 本节启用开关的设置搜索落点 id（与 settings_schema_card_creation.dart 的
+/// `SettingsBodySearchEntry` 同一个）。
+const String kAnkiSyncClientSearchTargetId = 'card_creation.anki.sync_client';
+
+/// 把 helper 的报错（rslib 错误的 Debug 原文）翻成用户能照着改的一句；认不出的
+/// 原样给出（去掉异常类名前缀）。
+///
+/// `missing original size`：服务器回了 200 却没带 `anki-original-size` 头——回话的
+/// 不是 Anki 同步服务（地址指到了网页 / 反代的别的站点 / 反代剥了这个头 / 不支持
+/// 当前协议的旧第三方服务器）。原文照样附在后面，排查时用得上。
+///
+/// [ankiWeb] 为 true（同步对象是 AnkiWeb，地址不是用户填的）时同一个错误要换一种
+/// 说法：AnkiWeb 本身一定说同步协议，回来的却不是——是本机与 AnkiWeb 之间有东西
+/// 改写了响应（杀毒软件的 HTTPS 扫描 / 代理 / 加速器 / DNS 过滤 / 公司或学校网络把
+/// AnkiWeb 分片地址 `syncN.ankiweb.net` 换成了网页）。叫用户「检查服务器地址」是
+/// 误导（反馈 xpAtBYv9-k：用户登录 AnkiWeb 成功、同步却报这句）。
+@visibleForTesting
+String describeAnkiSyncError(Object error, {bool ankiWeb = false}) {
+  final String raw = error is FushiAnkiSyncException
+      ? error.message
+      : '$error'.replaceFirst('FushiAnkiSyncException: ', '');
+  if (raw.contains('missing original size')) {
+    return ankiWeb
+        ? t.anki_sync_client_error_ankiweb_intercepted(detail: raw)
+        : t.anki_sync_client_error_not_sync_server(detail: raw);
+  }
+  return raw;
+}
 
 /// 「Anki 同步（无需安装 Anki）」设置节：选后端、登录同步服务器、看同步状态。
 ///
@@ -33,6 +68,33 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
   AnkiSyncAccount? _account;
   bool _switching = false;
 
+  /// 用户亲手展开 / 折叠过的结果；null = 还没动过，跟随 [_defaultExpanded]。
+  bool? _userExpanded;
+
+  /// 已消费的设置搜索跳转代号（[SettingsSearchReveal.generation]）。
+  int _searchGeneration = -1;
+
+  /// 默认展开态只对**未启用**的用户折叠：这是高风险的实验功能（同步到 AnkiWeb
+  /// 可能被拒绝或动账号），不该让不了解的用户一眼点到；但已启用的用户必须一眼
+  /// 看到同步状态与「还有 N 张卡没同步」——折起来等于把告警藏掉。跟随 [enabled]
+  /// 实时求值（而不是 initState 抄一次）：页面开着时经 CLI / 档案切换启用，
+  /// 这里同样立刻展开。
+  static bool _defaultExpanded({required bool enabled}) => enabled;
+
+  /// 搜索跳到本节的开关（`card_creation.anki.sync_client`）时，落点
+  /// [SettingsSearchTarget] 只在展开时才构建；折叠着就没人消费挂点，跳转落空且
+  /// [SettingsSearchReveal.pendingItemId] 一直悬挂。所以在构建子树**之前**先认领
+  /// 这次跳转并展开（同 SettingsSectionContainer 的搜索展开），同一帧里落点随即
+  /// 构建、消费挂点、滚动高亮。
+  void _expandForPendingSearchReveal() {
+    if (_searchGeneration == SettingsSearchReveal.generation) return;
+    if (SettingsSearchReveal.pendingItemId != kAnkiSyncClientSearchTargetId) {
+      return;
+    }
+    _searchGeneration = SettingsSearchReveal.generation;
+    _userExpanded = true;
+  }
+
   /// 已登录时点了「重新登录」（凭据过期 / 改了密码）：显示预填好的登录表单。
   bool _relogin = false;
 
@@ -45,6 +107,7 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     if (session == null) return;
     _sub = session.states.listen((AnkiSyncState s) {
       if (mounted) setState(() => _state = s);
+      _armRateLimitExpiry(s.rateLimitedUntil);
       unawaited(_loadAccount());
     });
     unawaited(session.refresh());
@@ -63,8 +126,25 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     });
   }
 
+  /// 状态行里的限流说明按「截止时刻 vs 现在」二选一（[_rateLimitLine]）。会话在冷却
+  /// 到期那一刻不发新状态，所以页面开着跨过截止时刻时要自己在那一刻重建一次，否则
+  /// 「将在 xx 之后自动重试」会一直挂着一个已经过去的时刻。
+  Timer? _rateLimitExpiry;
+
+  void _armRateLimitExpiry(int? until) {
+    _rateLimitExpiry?.cancel();
+    _rateLimitExpiry = null;
+    if (until == null) return;
+    final int remaining = until - DateTime.now().millisecondsSinceEpoch;
+    if (remaining <= 0) return;
+    _rateLimitExpiry = Timer(Duration(milliseconds: remaining), () {
+      if (mounted) setState(() {});
+    });
+  }
+
   @override
   void dispose() {
+    _rateLimitExpiry?.cancel();
     unawaited(_sub?.cancel());
     _server.dispose();
     _username.dispose();
@@ -81,19 +161,30 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     );
     final AnkiSyncState? state = _state;
     final bool busy = state?.phase == AnkiSyncPhase.busy;
+    _expandForPendingSearchReveal();
+    final bool expanded = _userExpanded ?? _defaultExpanded(enabled: enabled);
     return AdaptiveSettingsSection(
       title: t.anki_sync_client_section_title,
       children: <Widget>[
-        SettingsSearchTarget(
-          id: 'card_creation.anki.sync_client',
-          child: AdaptiveSettingsSwitchRow(
-            title: t.anki_sync_client_use_title,
-            subtitle: t.anki_sync_client_use_hint,
-            value: enabled,
-            onChanged: _switching ? null : _setEnabled,
-          ),
+        AdaptiveSettingsRow(
+          key: const ValueKey<String>('anki-sync-client-expander'),
+          title: t.anki_sync_client_advanced_title,
+          subtitle: t.anki_sync_client_advanced_hint,
+          icon: expanded ? FushiIcons.expandLess : FushiIcons.expandMore,
+          showIcon: true,
+          onTap: () => setState(() => _userExpanded = !expanded),
         ),
-        if (enabled) ...<Widget>[
+        if (expanded)
+          SettingsSearchTarget(
+            id: kAnkiSyncClientSearchTargetId,
+            child: AdaptiveSettingsSwitchRow(
+              title: t.anki_sync_client_use_title,
+              subtitle: t.anki_sync_client_use_hint,
+              value: enabled,
+              onChanged: _switching ? null : _setEnabled,
+            ),
+          ),
+        if (expanded && enabled) ...<Widget>[
           AdaptiveSettingsRow(
             // 状态行首图标按阶段换语义：同步中 / 受阻 / 失败 / 已同步 / 未登录。
             icon: _statusIcon(state),
@@ -183,9 +274,10 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
       AnkiSyncPhase.busy => FushiIcons.cloudSync,
       AnkiSyncPhase.blocked => FushiIcons.warning,
       AnkiSyncPhase.failed => FushiIcons.error,
-      _ => (state?.unsynced ?? 0) == 0
-          ? FushiIcons.success
-          : FushiIcons.cloudUpload,
+      _ =>
+        (state?.unsynced ?? 0) == 0
+            ? FushiIcons.success
+            : FushiIcons.cloudUpload,
     };
   }
 
@@ -200,18 +292,29 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
 
   String? _statusDetail(AnkiSyncState? state) {
     if (state == null || _account == null) return null;
+    final String? rateLimit = _rateLimitLine(
+      state.rateLimitedUntil,
+      DateTime.now().millisecondsSinceEpoch,
+    );
     final List<String> lines = <String>[
       switch (state.phase) {
         AnkiSyncPhase.busy => t.anki_sync_client_status_busy,
         AnkiSyncPhase.blocked => t.anki_sync_client_status_blocked,
+        // 限流（HTTP 429）给人话与自动重试时刻，不给 helper 的 Rust 原文。
+        AnkiSyncPhase.failed when rateLimit != null => rateLimit,
         AnkiSyncPhase.failed => t.anki_sync_client_status_failed(
-          error: state.message ?? '',
+          error: describeAnkiSyncError(
+            state.message ?? '',
+            ankiWeb: _account!.isAnkiWeb,
+          ),
         ),
         _ =>
           state.unsynced == 0
               ? t.anki_sync_client_status_all_synced
               : t.anki_sync_client_status_unsynced(count: state.unsynced),
       },
+      // 重启后会话从盘上读回冷却，阶段是 idle：限流说明另起一行。
+      if (state.phase == AnkiSyncPhase.idle && rateLimit != null) rateLimit,
       if (state.phase != AnkiSyncPhase.idle && state.unsynced > 0)
         t.anki_sync_client_status_unsynced(count: state.unsynced),
       if (state.failing > 0)
@@ -227,6 +330,17 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     return lines.join('\n');
   }
 
+  /// 限流说明：冷却还没到期 → 「限流，将在 [until] 之后自动重试」；已经到期（页面
+  /// 开着跨过了截止时刻，或重启后读回的是过期冷却）→ 「上次被限流，冷却已于 [until]
+  /// 结束」——不能再说「将在某个已经过去的时刻之后重试」。
+  static String? _rateLimitLine(int? until, int now) {
+    if (until == null) return null;
+    final String time = _formatTime(until);
+    return until > now
+        ? t.anki_sync_client_status_rate_limited(time: time)
+        : t.anki_sync_client_status_rate_limit_expired(time: time);
+  }
+
   static String _formatTime(int ms) {
     final DateTime d = DateTime.fromMillisecondsSinceEpoch(ms);
     String two(int v) => v.toString().padLeft(2, '0');
@@ -236,6 +350,9 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
   /// 切后端的唯一落地路径：持久化 → 运行时选择 → 重建仓库 provider（与移动端
   /// 「改用 AnkiConnect」同一顺序，三步缺一步就是存储与运行时不一致）。
   Future<void> _setEnabled(bool value) async {
+    if (value && !await _confirmEnable()) return;
+    // 确认框期间页面可能已被关掉。
+    if (!mounted) return;
     setState(() => _switching = true);
     try {
       await setAnkiSyncClientEnabled(ref, value);
@@ -264,7 +381,11 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     } on AnkiSyncHasUnsyncedNotes catch (e) {
       _toast(t.anki_sync_client_has_unsynced(count: e.count));
     } catch (e) {
-      _toast(t.anki_sync_client_sign_in_failed(error: '$e'));
+      _toast(
+        t.anki_sync_client_sign_in_failed(
+          error: describeAnkiSyncError(e, ankiWeb: endpoint == null),
+        ),
+      );
     }
   }
 
@@ -291,26 +412,38 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
 
   /// 破坏性确认：M3E 对话框 + errorContainer 图标徽标 + error 色确认键。
   Future<bool> _confirmDiscard(int count) => showFushiConfirmDialog(
-        context: context,
-        title: t.anki_sync_client_sign_out,
-        message: t.anki_sync_client_discard_confirm(count: count),
-        cancelLabel: t.cancel,
-        confirmLabel: t.anki_sync_client_discard_action,
-        icon: FushiIcons.logout,
-        destructive: true,
-      );
+    context: context,
+    title: t.anki_sync_client_sign_out,
+    message: t.anki_sync_client_discard_confirm(count: count),
+    cancelLabel: t.cancel,
+    confirmLabel: t.anki_sync_client_discard_action,
+    icon: FushiIcons.logout,
+    destructive: true,
+  );
+
+  Future<bool> _confirmEnable() => showFushiConfirmDialog(
+    context: context,
+    title: t.anki_sync_client_enable_warn_title,
+    message: t.anki_sync_client_enable_warn_body,
+    cancelLabel: t.cancel,
+    confirmLabel: t.anki_sync_client_enable_warn_confirm,
+    icon: FushiIcons.warning,
+    destructive: true,
+  );
 
   Future<bool> _confirmAnkiWeb() => showFushiConfirmDialog(
-        context: context,
-        title: t.anki_sync_client_ankiweb_title,
-        message: t.anki_sync_client_ankiweb_body,
-        cancelLabel: t.cancel,
-        confirmLabel: t.anki_sync_client_ankiweb_confirm,
-        icon: FushiIcons.cloud,
-      );
+    context: context,
+    title: t.anki_sync_client_ankiweb_title,
+    message: t.anki_sync_client_ankiweb_body,
+    cancelLabel: t.cancel,
+    confirmLabel: t.anki_sync_client_ankiweb_confirm,
+    icon: FushiIcons.cloud,
+  );
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(FushiSnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(msg)));
   }
 }

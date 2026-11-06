@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：发布序号必须走 `tool/release_sequence.sh`，且地板高过所有历史发布序号。
 ///
@@ -31,17 +31,19 @@ void main() {
 
   /// 历史上真实出现过的最大序号。
   ///
-  /// 10405 = 已发布到 `fushi-debug-rolling` 并装到用户机器上的最大值；
-  /// 10546 = 重写前 develop 曾推上去（并跑过发布 workflow）的最大计数。
-  /// 取两者较大者当下限：地板必须让**任何分支**的新序号都越过它，否则老装机
-  /// 永远收不到更新。再次重写历史后要重新核这个数（见 docs/agent/build.md）。
-  const int historicalMaxSequence = 10546;
+  /// 第一次重写（2026-08-12）时是 10546；第二次重写（2026-11-01）前最后一次
+  /// 发布的序号是 22671（develop 4b14ceff00：计数 20671 + 旧地板 2000，GitHub
+  /// Release 资产名里的最大 `-debug.<seq>`），重写剪掉 54 个空提交后计数倒退。
+  /// 地板必须让**任何分支**的新序号都越过它，否则老装机永远收不到更新。
+  /// 再次重写历史后要重新核这个数（见 docs/agent/build.md）。
+  const int historicalMaxSequence = 22671;
 
   test('前置：序号脚本与 workflows 目录都在', () {
     expect(
       seqScript.existsSync(),
       isTrue,
-      reason: '缺 ${seqScript.absolute.path}——序号算式的单一真相源没了，'
+      reason:
+          '缺 ${seqScript.absolute.path}——序号算式的单一真相源没了，'
           '本守卫的全部断言失去对象。',
     );
     expect(
@@ -51,14 +53,16 @@ void main() {
     );
   });
 
-  final String scriptText =
-      seqScript.existsSync() ? seqScript.readAsStringSync() : '';
+  final String scriptText = seqScript.existsSync()
+      ? seqScript.readAsStringSync()
+      : '';
 
   test('脚本里能解析出 RELEASE_SEQUENCE_FLOOR', () {
     expect(
       _parseFloor(scriptText),
       isNotNull,
-      reason: '在 tool/release_sequence.sh 里找不到形如 '
+      reason:
+          '在 tool/release_sequence.sh 里找不到形如 '
           'RELEASE_SEQUENCE_FLOOR=<数字> 的赋值。改了变量名就同步改这条守卫，'
           '否则下面「序号越过历史最大值」的断言会静默跑空。',
     );
@@ -68,14 +72,11 @@ void main() {
     final int? floor = _parseFloor(scriptText);
     if (floor == null) return; // 上一条已经红了，这里不重复报。
 
-    final ProcessResult count = Process.runSync(
-        'git',
-        <String>[
-          'rev-list',
-          '--count',
-          'HEAD',
-        ],
-        workingDirectory: repoRoot.path);
+    final ProcessResult count = Process.runSync('git', <String>[
+      'rev-list',
+      '--count',
+      'HEAD',
+    ], workingDirectory: repoRoot.path);
     // 拿不到 git（沙箱里跑测试）时不制造假红。
     if (count.exitCode != 0) return;
     final int? commits = int.tryParse((count.stdout as String).trim());
@@ -94,7 +95,8 @@ void main() {
     expect(
       commits + floor,
       greaterThan(historicalMaxSequence),
-      reason: '当前分支序号 = 提交计数 $commits + 地板 $floor = '
+      reason:
+          '当前分支序号 = 提交计数 $commits + 地板 $floor = '
           '${commits + floor}，没有越过历史最大已发布序号 '
           '$historicalMaxSequence。从这个分支出的包：Android 装不上'
           '（versionCode 更小）、app 内更新器判「不比本机新」、清单守卫拒收。'
@@ -120,19 +122,19 @@ void main() {
         });
         _git(repo, <String>['init', '--initial-branch=main']);
         void commit(String message) => _git(repo, <String>[
-              '-c',
-              'user.name=Release floor test',
-              '-c',
-              'user.email=release-floor@example.invalid',
-              '-c',
-              'commit.gpgsign=false',
-              '-c',
-              'core.hooksPath=${repo.path}/no-hooks',
-              'commit',
-              '--allow-empty',
-              '-m',
-              message,
-            ]);
+          '-c',
+          'user.name=Release floor test',
+          '-c',
+          'user.email=release-floor@example.invalid',
+          '-c',
+          'commit.gpgsign=false',
+          '-c',
+          'core.hooksPath=${repo.path}/no-hooks',
+          'commit',
+          '--allow-empty',
+          '-m',
+          message,
+        ]);
         commit('root');
         final String root = _git(repo, <String>['rev-parse', 'HEAD']);
         commit('main tip');
@@ -165,13 +167,13 @@ void main() {
 
   final List<File> workflows = workflowsDir.existsSync()
       ? (workflowsDir
-          .listSync()
-          .whereType<File>()
-          .where(
-            (File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml'),
-          )
-          .toList()
-        ..sort((File a, File b) => a.path.compareTo(b.path)))
+            .listSync()
+            .whereType<File>()
+            .where(
+              (File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml'),
+            )
+            .toList()
+          ..sort((File a, File b) => a.path.compareTo(b.path)))
       : <File>[];
 
   /// 走共享脚本的赋值点。
@@ -180,9 +182,11 @@ void main() {
   /// 绕过地板的裸赋值点。
   final List<String> bareAssignments = <String>[];
 
-  const String scriptCall = 'RELEASE_SEQUENCE='
+  const String scriptCall =
+      'RELEASE_SEQUENCE='
       r'$(bash tool/release_sequence.sh)';
-  const String bareCall = 'RELEASE_SEQUENCE='
+  const String bareCall =
+      'RELEASE_SEQUENCE='
       r'$(git rev-list';
 
   for (final File workflow in workflows) {
@@ -199,7 +203,8 @@ void main() {
     expect(
       viaScript,
       isNotEmpty,
-      reason: '一处 `$scriptCall` 都没扫到。要么 workflow 改了写法，要么本守卫'
+      reason:
+          '一处 `$scriptCall` 都没扫到。要么 workflow 改了写法，要么本守卫'
           '的匹配串过期了——无论哪种，下面那条「无裸赋值」的断言此刻都是空转，'
           '先修守卫再谈绿。',
     );
@@ -209,7 +214,8 @@ void main() {
     expect(
       bareAssignments,
       isEmpty,
-      reason: '这些地方直接用 `git rev-list --count HEAD` 当序号，绕过了 '
+      reason:
+          '这些地方直接用 `git rev-list --count HEAD` 当序号，绕过了 '
           'tool/release_sequence.sh 的一次性地板。历史一旦被重写，这些点算出的'
           '序号会倒退到已发布序号之下，用户侧表现为「永远收不到更新 / 装不上包」，'
           '而 CI 全绿：\n'
@@ -249,7 +255,8 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: '这些 step 给根相对的 `bash tool/release_sequence.sh` 设了 '
+      reason:
+          '这些 step 给根相对的 `bash tool/release_sequence.sh` 设了 '
           'working-directory，脚本会解析到不存在的子目录路径，step 直接 '
           'exit 127（BUG-1596）。要么去掉 working-directory 并把 step 里其余'
           '相对路径改成根相对（对齐 release-desktop.yml 的同名 step），要么'

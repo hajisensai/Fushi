@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-944：快捷键设置列表里「未映射」（当前无任何按键绑定）的行也必须能点击
 /// 进入分配流程。历史上 [_ActionTile] 只在 trailing 挂了一个小小的编辑图标按钮，
@@ -30,8 +30,10 @@ void main() {
     expect(start, isNonNegative, reason: '应能定位到 _ActionTile 类');
     // 2026-10 重设计后 _ActionTile 是 StatefulWidget：行体在 _ActionTileState
     // 里，截到鼠标 chip 类之前（widget + state 两个类）。
-    final int next =
-        source.indexOf('\nclass _MouseChip', start + marker.length);
+    final int next = source.indexOf(
+      '\nclass _MouseChip',
+      start + marker.length,
+    );
     return next < 0 ? source.substring(start) : source.substring(start, next);
   }
 
@@ -45,8 +47,9 @@ void main() {
     );
     // FushiListItem 必须收到 onTap（不是只有 trailing 图标按钮可点）。
     expect(
-      RegExp(r'child: FushiListItem\(\s*\n\s*onTap: w\.readOnly \? null : w\.onEdit')
-          .hasMatch(body),
+      RegExp(
+        r'child: FushiListItem\(\s*\n\s*onTap: w\.readOnly \? null : w\.onEdit',
+      ).hasMatch(body),
       isTrue,
       reason: 'FushiListItem 必须在构造时传入 onTap: onEdit',
     );

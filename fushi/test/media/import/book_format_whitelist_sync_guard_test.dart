@@ -37,7 +37,8 @@ void main() {
         expect(
           kDragBookExtensions,
           contains(ext),
-          reason: '拖放白名单漏了 .$ext：按钮能导、拖进去却说「本页面不支持」，'
+          reason:
+              '拖放白名单漏了 .$ext：按钮能导、拖进去却说「本页面不支持」，'
               '同一件东西两个入口两种答案（BUG-1789 的原始症状之一）。',
         );
       }
@@ -48,7 +49,8 @@ void main() {
         expect(
           kScanBookExtensions,
           contains(ext),
-          reason: '扫描白名单漏了 .$ext：「导入文件夹」会把目录里每一份 .$ext '
+          reason:
+              '扫描白名单漏了 .$ext：「导入文件夹」会把目录里每一份 .$ext '
               '静默跳过——不报错、不计数，看起来像扫描漏了文件（BUG-1789）。',
         );
       }
@@ -56,8 +58,9 @@ void main() {
 
     test('书籍导入框的选择器白名单认全部单文件书格式', () {
       // private static，只能扫源码。路径变了这条会先红在 existsSync 上。
-      final File dialog =
-          File('lib/src/media/audiobook/book_import_dialog.dart');
+      final File dialog = File(
+        'lib/src/media/audiobook/book_import_dialog.dart',
+      );
       expect(
         dialog.existsSync(),
         isTrue,
@@ -68,7 +71,8 @@ void main() {
       expect(
         start,
         isNonNegative,
-        reason: '_bookExtensions 改名了；它是书籍框选择器的白名单，'
+        reason:
+            '_bookExtensions 改名了；它是书籍框选择器的白名单，'
             '改名后必须同步更新这条守卫，否则守卫会变成一条永远不看的死断言。',
       );
       final int end = source.indexOf('];', start);
@@ -78,7 +82,8 @@ void main() {
         expect(
           block,
           contains("'$ext'"),
-          reason: '书籍框选择器白名单漏了 .$ext：用户在书架点「导入书籍」'
+          reason:
+              '书籍框选择器白名单漏了 .$ext：用户在书架点「导入书籍」'
               '根本选不中这个文件。',
         );
       }
@@ -108,7 +113,8 @@ void main() {
         expect(
           carrier.isMangaCapable,
           isTrue,
-          reason: '$ext 在漫画选择器白名单里，但它的载体 $carrier '
+          reason:
+              '$ext 在漫画选择器白名单里，但它的载体 $carrier '
               'isMangaCapable 为 false——用户选得中、导不进。',
         );
       }
@@ -118,7 +124,8 @@ void main() {
       expect(
         ImportCarrier.pdf.isManga,
         isFalse,
-        reason: 'pdf 并进 isManga 会让「从书架选一份 PDF」被误判成漫画并转走，'
+        reason:
+            'pdf 并进 isManga 会让「从书架选一份 PDF」被误判成漫画并转走，'
             '那是把一个本来正确的行为改坏。',
       );
       expect(ImportCarrier.pdf.isMangaCapable, isTrue);

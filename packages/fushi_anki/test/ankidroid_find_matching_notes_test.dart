@@ -21,21 +21,21 @@ class _ConfiguredAnkiRepository extends AnkiRepository {
 }
 
 AnkiSettings _settings() => AnkiSettings(
-      selectedDeckId: 1,
-      selectedNoteTypeId: 2,
-      availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
-      availableNoteTypes: const <AnkiNoteType>[
-        AnkiNoteType(
-          id: 2,
-          name: 'Fushi',
-          fields: <String>['Expression', 'Reading'],
-        ),
-      ],
-      fieldMappings: const <String, String>{
-        'Expression': '{expression}',
-        'Reading': '{reading}',
-      },
-    );
+  selectedDeckId: 1,
+  selectedNoteTypeId: 2,
+  availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
+  availableNoteTypes: const <AnkiNoteType>[
+    AnkiNoteType(
+      id: 2,
+      name: 'Fushi',
+      fields: <String>['Expression', 'Reading'],
+    ),
+  ],
+  fieldMappings: const <String, String>{
+    'Expression': '{expression}',
+    'Reading': '{reading}',
+  },
+);
 
 void _mockChannel(
   List<MethodCall> calls,
@@ -43,15 +43,15 @@ void _mockChannel(
 ) {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(_channel, (MethodCall call) async {
-    // BUG-2098 把「先申请权限、等用户答复」变成每个碰 provider 的入口的**前置条件**，
-    // 于是每次业务调用前都多一次 requestAnkidroidPermissions。本文件的用例断言的是业务
-    // 调用本身（`calls.single` 等），权限只是前置：这里统一答「已授权」且**不记账**，
-    // 让既有断言继续描述它们真正关心的那次调用。测权限被拒的用例在
-    // ankidroid_permission_denied_test.dart。
-    if (call.method == 'requestAnkidroidPermissions') return true;
-    calls.add(call);
-    return responder(call);
-  });
+        // BUG-2098 把「先申请权限、等用户答复」变成每个碰 provider 的入口的**前置条件**，
+        // 于是每次业务调用前都多一次 requestAnkidroidPermissions。本文件的用例断言的是业务
+        // 调用本身（`calls.single` 等），权限只是前置：这里统一答「已授权」且**不记账**，
+        // 让既有断言继续描述它们真正关心的那次调用。测权限被拒的用例在
+        // ankidroid_permission_denied_test.dart。
+        if (call.method == 'requestAnkidroidPermissions') return true;
+        calls.add(call);
+        return responder(call);
+      });
   addTearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_channel, null);
@@ -77,8 +77,10 @@ void main() {
       final repo = _ConfiguredAnkiRepository(_settings());
       final matches = await repo.findMatchingNotes('勉強', 'べんきょう');
 
-      expect(matches.map((m) => m.noteId).toList(),
-          [1654000000999, 1654000000123]);
+      expect(matches.map((m) => m.noteId).toList(), [
+        1654000000999,
+        1654000000123,
+      ]);
       // 预览去 HTML / trim。
       expect(matches.first.preview, '勉強');
       expect(matches.last.preview, '勉強');
@@ -101,13 +103,15 @@ void main() {
       expect(matches, isEmpty);
     });
 
-    test('returns empty list when native gives a non-list (no throw)',
-        () async {
-      _mockChannel(<MethodCall>[], (call) async => null);
-      final repo = _ConfiguredAnkiRepository(_settings());
-      final matches = await repo.findMatchingNotes('勉強', '');
-      expect(matches, isEmpty);
-    });
+    test(
+      'returns empty list when native gives a non-list (no throw)',
+      () async {
+        _mockChannel(<MethodCall>[], (call) async => null);
+        final repo = _ConfiguredAnkiRepository(_settings());
+        final matches = await repo.findMatchingNotes('勉強', '');
+        expect(matches, isEmpty);
+      },
+    );
   });
 
   group('openNoteInAnki', () {

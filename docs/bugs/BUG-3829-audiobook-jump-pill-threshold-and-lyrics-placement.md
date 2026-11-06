@@ -1,0 +1,13 @@
+## BUG-3829 · 有声书返回原位置胶囊阈值过小且歌词模式压住歌词
+- **报告**：2026-10-27（用户：应用内反馈 0AwuVqrNFn，Android 3.0.1-debug，有声书「返回原位置」胶囊；设计项，所有者 2026-10-27 批准按分诊推荐实施）
+- **真实性**：✅ 真问题（沿代码路径确认，非设备复现）。
+  - 阈值写死：`fushi/lib/src/media/audiobook/audiobook_controller.dart:399`（修前）`static const int audioJumpThresholdMs = 15000`，`_reportAudioJump`（`:405`）凡挪动 ≥15 秒就把出发点压进跳转回退历史。没听清往回拖 1 分钟、在歌词里回点前几句都会弹胶囊——与反馈「跳了 1 分钟也提示」一致。没有任何设置入口。
+  - 歌词模式位置：`fushi/lib/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart:271-277`（修前）浮动件 `Positioned(top: rect.top + 8, …)` 直接盖在歌词矩形顶部，歌词 WebView 仍占满整个矩形 → 胶囊压住顶部歌词行，与用户边距设置无关（默认边距下同样压）。
+- **[x] ① 已修复** —
+  - 新增 `fushi/lib/src/media/audiobook/audiobook_jump_threshold.dart`：默认 120 秒，档位 15 秒 / 30 秒 / 1 / 2 / 5 / 10 / 15 / 30 分钟，任意存值归最近档位。
+  - 偏好 `audiobook_jump_threshold_sec`（`PreferencesRepository.audiobookJumpThresholdSec`，普通偏好：随 Profile 快照与备份走），设置「阅读 › 有声书 › 返回原位置的跳转距离」（`listening.audiobook_jump_threshold`，下拉单选）。
+  - 控制器阈值改为注入闭包 `AudiobookPlayerController.audioJumpThresholdSec`（未注入取默认），`AppModel → AudiobookSession(audioJumpThresholdSec:) → 控制器` 每次跳转读实时值，改设置对正在播的书立即生效。
+  - 歌词覆盖层：有浮动件时歌词 WebView 矩形从底边让出 `kLyricsNavigationAccessoryBand`（56dp），胶囊坐在这条带子里、紧贴底栏 / 控件面板上方，从下往上滑入；不与任何歌词行重叠，WebView 只换矩形不重建。
+  - 视频跳转阈值（`kVideoJumpThresholdMs`）不在本反馈范围，仍为 15 秒，注释里不再声称与有声书同口径。
+- **[x] ② 已加自动化测试** — `fushi/test/media/audiobook/audiobook_jump_threshold_test.dart`（默认值 / 档位归一 / 偏好往返 / 真实 `seekGlobalMs` 漏斗按阈值报出发点 / 设置实时生效 / 接线守卫）。歌词模式压字那一半 **2026-11-02 起被顶栏设计取代**：浮动胶囊整体移除，↶ / ↷ 进歌词覆盖层顶栏动作区，歌词矩形不再让带子、也不再被占用；原测试 `fushi/test/media/audiobook/lyrics_player_jump_pill_placement_test.dart` 随组件删除，现由 `fushi/test/media/audiobook/lyrics_player_jump_actions_test.dart` 覆盖（各歌词外观 × 窄屏 / 宽屏：图标出现前后歌词矩形完全不变、不重建歌词 WebView、↶ 在动作区最前）。共用的假音频后端抽到 `fushi/test/helpers/fake_just_audio.dart`。
+- **备注**：未在真机上复测。Apple 设计系统的歌词矩形走同一外壳（让位逻辑在 `ReaderLyricsPlayerOverlay`，与外观无关），但 widget 测试只跑了 MD3 两种布局。

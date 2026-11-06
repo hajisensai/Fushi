@@ -29,6 +29,35 @@ async function fushiSrsTermStatus(arg) {
     return null;
   }
 }
+// 批量版（popup.js 一轮可见批次一次）：转发到 /api/srs/term-status-batch，回
+// {statuses:[...]}。退避期（复习模块关）回等长全 null——不是「不支持」，popup.js 不必
+// 退回逐条；老 app 没有批量端点（非 200 且非 404）或其它失败 → 回 null，popup.js 本批
+// 退回逐条 srsTermStatus（老端点照旧可用）。
+async function fushiSrsTermStatusBatch(arg) {
+  var terms = arg && Array.isArray(arg.terms) ? arg.terms : null;
+  if (!terms) return null;
+  var empty = terms.map(function () { return null; });
+  if (Date.now() < fushiSrsDisabledUntil) return { statuses: empty };
+  try {
+    var resp = await chrome.runtime.sendMessage({
+      type: 'srsTermStatusBatch',
+      terms: terms.map(function (t) {
+        return { expression: (t && t.expression) || '', reading: (t && t.reading) || '' };
+      }),
+    });
+    if (resp && resp.status === 404) {
+      // 老 app 也会对未知路径回 404：交给逐条端点判断（真关着时它同样 404 并退避）。
+      return null;
+    }
+    var statuses = resp && resp.ok && resp.data ? resp.data.statuses : null;
+    if (!Array.isArray(statuses) || statuses.length !== terms.length) return null;
+    return {
+      statuses: statuses.map(function (s) { return s && typeof s === 'object' ? s : null; }),
+    };
+  } catch (_) {
+    return null;
+  }
+}
 window.flutter_inappwebview = {
   callHandler: function (name, ...args) {
     switch (name) {
@@ -153,8 +182,31 @@ window.flutter_inappwebview = {
             return false;
           }
         })();
+      case 'findMinedMatches':
+        // 扩展列不出命中卡（服务端没有反查笔记的端点）→ 回 null，popup.js 用 duplicateCheck
+        // 再核、照旧问「新增为重复卡 / 取消」（反馈 _3tWQR6J2G）。唯一例外（反馈 E0sdqm4h-F）：
+        // 单击 ✓（没带 openChooser）且 app 开着「允许重复」（/api/duplicate 的
+        // allowDuplicates 位）→ 回 {mineNew:true}，与 app 内同一判据：直接再制一张，不弹框。
+        // 右键 / 长按 ✓（openChooser:true）永远照旧问。任何失败都回 null（照旧问，不误制）。
+        return (async function () {
+          var q = args[0] || {};
+          if (q.openChooser === true) return null;
+          try {
+            var resp = await chrome.runtime.sendMessage({
+              type: 'duplicate',
+              expression: q.expression || '',
+              reading: q.reading || '',
+            });
+            if (resp && resp.ok && resp.data && resp.data.allowDuplicates === true) {
+              return { mineNew: true };
+            }
+          } catch (_) { /* 照旧问 */ }
+          return null;
+        })();
       case 'srsTermStatus':
         return fushiSrsTermStatus(args[0]);
+      case 'srsTermStatusBatch':
+        return fushiSrsTermStatusBatch(args[0]);
       case 'srsOpenCard':
         // 点复习标记：让 app 打开那张卡（POST /api/srs/open）。失败只回 false，不打扰查词。
         return (async function () {
@@ -252,7 +304,11 @@ window.flutter_inappwebview = {
         return Promise.resolve(null);
       case 'textSelected':
       case 'onLinkClick':
-        if (window.__fushiOnLinkClick) window.__fushiOnLinkClick(args[0], args[1], name === 'textSelected');
+        // textSelected 的第三个参数是 selection.js 选出的原文振假名 `[{s,e,r}]`（可缺）。
+        if (window.__fushiOnLinkClick) {
+          window.__fushiOnLinkClick(args[0], args[1], name === 'textSelected',
+            name === 'textSelected' && Array.isArray(args[2]) ? args[2] : null);
+        }
         return Promise.resolve(null);
       case 'tapOutside':
         if (window.__fushiOnTapOutside) window.__fushiOnTapOutside();
@@ -293,6 +349,27 @@ window.flutter_inappwebview = {
             return (resp && resp.ok && Array.isArray(resp.audioSources)) ? resp.audioSources : [];
           } catch (_) {
             return [];
+          }
+        })();
+      case 'getDictAsset':
+        // 带脚本词条的外链 <script src>：popup.js 的 __dictSandboxInlineScripts 经这里取源码、
+        // 内联进扩展沙箱文档（沙箱里 connect-src 'none'，取不了）。与图片同一条词典媒体端点；
+        // token 只在 fetch 参数里。配置未就绪 / 取不到 → null，与 app 内缺文件时一致（跳过该脚本）。
+        return (async function () {
+          try {
+            var a = args[0] || {};
+            var media = window.__fushiDictMedia;
+            if (!media || !media.base || !media.token || !a.path) return null;
+            var url = media.base + '/api/media/dictionary'
+              + '?dictionary=' + encodeURIComponent(a.dictionary || '')
+              + '&path=' + encodeURIComponent(a.path)
+              + '&token=' + encodeURIComponent(media.token);
+            var r = await fetch(url);
+            if (!r.ok) return null;
+            var text = await r.text();
+            return text.length ? text : null;
+          } catch (_) {
+            return null;
           }
         })();
       // 单词音频播放已统一到 popup.js 自身（playWordAudio 直接 new Audio(url).play()），

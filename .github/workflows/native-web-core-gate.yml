@@ -1,0 +1,110 @@
+# 网页内容核心原生库（native/fushi_web_core，Rust：adblock-rust 广告拦截 + 漫画章末广告页识别）的
+# **PR 阶段门**。
+#
+# ── 补的是哪个缺口（与 native-p2p-gate.yml 同一形态）──────────────────────────────
+#   build_windows_dll.ps1 / build_macos_dylib.sh / iOS 伞形库
+#       -> build-multiplatform.yml 的 windows / macos / ios job（路径门把
+#          `native/fushi_web_core/**` 与 `packages/fushi_web_core/**` 路由给 app_common），
+#          Windows 还跑 packages/fushi_web_core 的真 FFI 测试。linux-server 是无头服务端，不带广告拦截。
+#   build_android_so.sh
+#       -> 没有任何 `pull_request` 触发的 workflow 编它。本 workflow 的 android job 补这一条：
+#          cargo-ndk 三个 ABI + ELF 架构 + fwc_* 符号核对。
+#   crate 自己的单元测试（订阅 / 缓存 / 过期状态机、规则匹配、序列化往返、漫画广告页回归向量……）
+#       -> 本 workflow 的 rust-tests job（ubuntu 上 `cargo test --release`）。
+#
+# ── 它**不**负责什么 ──────────────────────────────────────────────────────────────
+#   * 不重复跑上面四端；不碰发布路径（全程只读，不上传产物、不建 tag）。
+#
+# ── 退出码纪律 ────────────────────────────────────────────────────────────────────
+# `shell: bash` + `set -euo pipefail`，无 `continue-on-error`；缓存未命中只会变慢。
+name: native-web-core-gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['main', 'develop']
+    paths:
+      - 'native/fushi_web_core/**'
+      - 'packages/fushi_web_core/lib/src/ffi/**'
+      - 'native/fushi_ios_umbrella/**'
+      - '.github/workflows/native-web-core-gate.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      # 工具链钉法与 native-p2p-gate.yml 一致（Rust 1.95.0、cargo-ndk 4.1.2）。
+      - name: Set up Rust (fushi_web_core, Android targets)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - name: Cache Rust build (fushi_web_core)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_web_core -> target
+          key: fushi-web-core-android
+      - name: Install cargo-ndk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk@4.1.2
+      - name: Build fushi_web_core Android .so (arm64-v8a, armeabi-v7a, x86_64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_web_core/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a armeabi-v7a x86_64
+      - name: Verify .so architecture and exported C ABI surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+          for pair in arm64-v8a:AArch64 armeabi-v7a:ARM x86_64:X86-64; do
+            abi="${pair%%:*}"; want="${pair#*:}"
+            so="native/fushi_web_core/prebuilt/android/$abi/libfushi_web_core.so"
+            machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+            echo "$abi: ELF machine = $machine"
+            case "$machine" in
+              *"$want"*) : ;;
+              *) echo "::error title=wrong target arch::$abi 期望 $want，实际 $machine"; exit 1 ;;
+            esac
+            bash native/fushi_web_core/verify_abi.sh "$so" "$nm_bin"
+          done
+
+  rust-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Rust (fushi_web_core)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+      - name: Cache Rust build (fushi_web_core tests)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_web_core -> target
+          key: fushi-web-core-tests
+      - name: cargo test --release (fushi_web_core, incl. comic ad-page regression vectors)
+        shell: bash
+        working-directory: native/fushi_web_core
+        run: |
+          set -euo pipefail
+          cargo test --release --locked
+      # iOS 伞形库把本 crate 作为 rlib 依赖编进一个 staticlib：改了本 crate 的公开项 / 依赖，
+      # 伞形库在宿主上 cargo check 一遍（真正的 iOS 链接与 fwc_* 符号核对在出 iOS 包的 job 里）。
+      - name: cargo check (iOS umbrella, host)
+        shell: bash
+        working-directory: native/fushi_ios_umbrella
+        run: |
+          set -euo pipefail
+          cargo check --locked

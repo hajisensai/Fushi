@@ -3,38 +3,60 @@
 /// 不会再各自漂移（BUG-2612：单文件作品页此前只画文字 Chip，结构上没有照片）。
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/async_file_existence_cache.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
+import 'package:fushi/src/media/people/person_detail_page.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/media/people/person_identity.dart';
 
 /// 一条人物关系在卡片上该显示的图：先人物照（本地落地 > 远端 URL），声优没有
 /// 人物照时退到角色图——AniDB / MAL 对角色图的覆盖率远高于声优照，卡片上本来
 /// 就同时印着声优名与角色名，退到角色图不会认错人。Shoko 的 Role 模型也是
 /// 角色图与人物图并列两张，只是这里卡位只够一张。
+///
+/// [fileExists] 回答本地落地文件在不在：true / false = 已知；null = 还在异步探测，
+/// 此时返回 [kPendingCoverImage]（不先跳到远端 URL / 角色图）。不在这里同步 stat：
+/// 刮削把人物照作为 sidecar 写在视频旁边，常在网络盘上（BUG-3756）。
 VideoCreditCardImage? videoCreditCardImage(
-  VideoMetadataCreditSummary credit,
-) {
+  VideoMetadataCreditSummary credit, {
+  required bool? Function(String path) fileExists,
+}) {
   final VideoCreditCardImage? person = _imageFor(
     credit.person.profilePath,
     credit.person.profileUrl,
+    fileExists,
   );
   if (person != null || credit.creditKind != 'voice_actor') return person;
   final VideoMetadataCharacterSummary? character = credit.character;
   return character == null
       ? null
-      : _imageFor(character.imagePath, character.imageUrl);
+      : _imageFor(character.imagePath, character.imageUrl, fileExists);
 }
 
 /// 卡片图与它的来源（本地路径或 URL，只用于诊断日志）。
 typedef VideoCreditCardImage = ({ImageProvider image, String source});
 
-VideoCreditCardImage? _imageFor(String? path, String? url) {
-  if (path != null && File(path).existsSync()) {
-    return (image: FileImage(File(path)), source: path);
+VideoCreditCardImage? _imageFor(
+  String? path,
+  String? url,
+  bool? Function(String path) fileExists,
+) {
+  if (path != null && path.isNotEmpty) {
+    switch (fileExists(path)) {
+      case null:
+        return (image: kPendingCoverImage, source: path);
+      case true:
+        return (image: FileImage(File(path)), source: path);
+      case false:
+        break;
+    }
   }
   return url == null ? null : (image: AppCachedHttpImage(url), source: url);
 }
@@ -43,7 +65,10 @@ VideoCreditCardImage? _imageFor(String? path, String? url) {
 /// 角色或职位），错峰进场。视觉是作品详情共享骨架的 [MediaDetailCastStrip]；这里
 /// 只负责把规范人物行换成纯值——照片来源与回退规则（[videoCreditCardImage]）、
 /// 坏图诊断日志（BUG-2496）与测试 key 前缀都留在本文件。
-class VideoCreditRail extends StatelessWidget {
+///
+/// 点头像进人物聚合页（作品图谱 L5，[PersonDetailPage]）：同一位声优在其它动画、
+/// 游戏、音乐里的出场都汇在那一页。
+class VideoCreditRail extends StatefulWidget {
   const VideoCreditRail({
     required this.title,
     required this.credits,
@@ -58,32 +83,74 @@ class VideoCreditRail extends StatelessWidget {
   final String keyPrefix;
 
   @override
+  State<VideoCreditRail> createState() => _VideoCreditRailState();
+}
+
+class _VideoCreditRailState extends State<VideoCreditRail> {
+  /// 人物照 / 角色图本地文件的存在性：build 只读这张表，后台 async 探测落定后重建
+  /// （BUG-3756）。
+  late final AsyncFileExistenceCache _fileExists = AsyncFileExistenceCache(
+    onChanged: () {
+      if (mounted) setState(() {});
+    },
+  );
+
+  @override
+  void dispose() {
+    _fileExists.dispose();
+    super.dispose();
+  }
+
+  String get title => widget.title;
+  List<VideoMetadataCreditSummary> get credits => widget.credits;
+  FushiDesignTokens get tokens => widget.tokens;
+  String get keyPrefix => widget.keyPrefix;
+
+  @override
   Widget build(BuildContext context) {
     return MediaDetailCastStrip(
       title: title,
       padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
       people: <MediaDetailPerson>[
         for (int index = 0; index < credits.length; index++)
-          _personOf(credits[index], index),
+          _personOf(context, credits[index], index),
       ],
     );
   }
 
-  MediaDetailPerson _personOf(VideoMetadataCreditSummary credit, int index) {
-    final VideoCreditCardImage? image = videoCreditCardImage(credit);
+  MediaDetailPerson _personOf(
+    BuildContext context,
+    VideoMetadataCreditSummary credit,
+    int index,
+  ) {
+    final VideoCreditCardImage? image = videoCreditCardImage(
+      credit,
+      fileExists: _fileExists.lookup,
+    );
     return MediaDetailPerson(
+      onTap: () => unawaited(
+        openPersonPage(
+          context,
+          seedNode: personRefNode(
+            PersonRefDomain.video,
+            credit.person.personKey,
+          ),
+          initialName: credit.person.name,
+        ),
+      ),
       key: ValueKey<String>('$keyPrefix-${credit.person.personKey}-$index'),
       name: credit.person.name,
-      role: credit.character?.name ??
+      role:
+          credit.character?.name ??
           (credit.roleName.isEmpty ? credit.creditKind : credit.roleName),
       image: image?.image,
       // BUG-2496：坏头像文件解码失败退回占位（骨架里画），不当致命错误。
       onImageError: image == null
           ? null
           : (Object error) => ErrorLogService.instance.logDiagnostic(
-                'VideoCreditRail.coverDecode',
-                '${image.source}: $error',
-              ),
+              'VideoCreditRail.coverDecode',
+              '${image.source}: $error',
+            ),
     );
   }
 }

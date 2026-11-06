@@ -22,6 +22,7 @@ export 'package:fushi_engine/ocr/ocr_inference.dart'
         kOcrLogName,
         resolveOcrSessionInputs;
 import 'package:fushi/src/onnx/onnx_inference_ort.dart';
+
 // 本地推理可不可用的那道闸门随共享 ONNX 抽象一起搬进了 fushi_asr_core；本层保留同名
 // getter 转发，OCR 调用方与测试零改动。
 
@@ -42,11 +43,11 @@ Map<String, OcrTensor> _resolveOcrInputs(
 
 class OrtOcrSessionFactory extends OrtOnnxSessionFactory {
   OrtOcrSessionFactory({OnnxRuntime? runtime})
-      : super(
-          runtime: runtime,
-          resolveInputs: _resolveOcrInputs,
-          logName: kOcrLogName,
-        );
+    : super(
+        runtime: runtime,
+        resolveInputs: _resolveOcrInputs,
+        logName: kOcrLogName,
+      );
 }
 
 /// 顶层函数：在后台 isolate 里构造插件后端的 OCR 会话工厂

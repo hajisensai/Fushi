@@ -22,20 +22,21 @@ void main() {
     // the only refresh entry point, so its label must not name a single
     // platform's app (which made AnkiConnect users miss it).
     for (final AppLocale locale in AppLocale.values) {
-      test(
-          '${locale.languageTag}: fetch + not-configured copy is not '
+      test('${locale.languageTag}: fetch + not-configured copy is not '
           'AnkiDroid-only', () {
         final t = locale.translations;
         expect(
           t.anki_fetch.toLowerCase().contains('ankidroid'),
           isFalse,
-          reason: '${locale.languageTag} anki_fetch still names AnkiDroid: '
+          reason:
+              '${locale.languageTag} anki_fetch still names AnkiDroid: '
               '"${t.anki_fetch}"',
         );
         expect(
           t.anki_not_configured.toLowerCase().contains('ankidroid'),
           isFalse,
-          reason: '${locale.languageTag} anki_not_configured still names '
+          reason:
+              '${locale.languageTag} anki_not_configured still names '
               'AnkiDroid: "${t.anki_not_configured}"',
         );
         // The refresh hint that tells users to tap after creating/renaming in
@@ -47,10 +48,7 @@ void main() {
     test('English copy reads as a generic refresh action', () {
       final t = AppLocale.en.translations;
       expect(t.anki_fetch, 'Refresh decks & note types');
-      expect(
-        t.anki_not_configured.toLowerCase().contains('refresh'),
-        isTrue,
-      );
+      expect(t.anki_not_configured.toLowerCase().contains('refresh'), isTrue);
     });
 
     test('Chinese copy reads as a generic refresh action', () {
@@ -72,8 +70,11 @@ void main() {
         'lib/src/anki/anki_config_controls.dart',
       ).readAsStringSync();
       final int start = source.indexOf('class AnkiDeckPickerRow');
-      expect(start, greaterThanOrEqualTo(0),
-          reason: 'AnkiDeckPickerRow not found');
+      expect(
+        start,
+        greaterThanOrEqualTo(0),
+        reason: 'AnkiDeckPickerRow not found',
+      );
       final int end = source.indexOf('class AnkiNoteTypePickerRow', start);
       expect(end, greaterThan(start));
       deckDropdownBlock = source.substring(start, end);
@@ -81,16 +82,22 @@ void main() {
       final String page = File(
         'lib/src/pages/implementations/anki_settings_page.dart',
       ).readAsStringSync();
-      expect(page.contains('AnkiDeckPickerRow('), isTrue,
-          reason: '制卡设置页必须挂载共享的牌组选择行');
+      expect(
+        page.contains('AnkiDeckPickerRow('),
+        isTrue,
+        reason: '制卡设置页必须挂载共享的牌组选择行',
+      );
     });
 
     test('options come straight from settings.availableDecks', () {
       // The picker options must be built by mapping availableDecks directly —
       // the deck list the fetch wrote — so any deck Anki returned (including
       // ひびき) is selectable.
-      expect(deckDropdownBlock.contains('settings.availableDecks'), isTrue,
-          reason: 'deck dropdown must read from settings.availableDecks');
+      expect(
+        deckDropdownBlock.contains('settings.availableDecks'),
+        isTrue,
+        reason: 'deck dropdown must read from settings.availableDecks',
+      );
       expect(
         RegExp(r'decks\s*\.\s*map\s*\(').hasMatch(deckDropdownBlock),
         isTrue,

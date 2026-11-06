@@ -28,7 +28,8 @@ void main() {
   });
 
   test('skips disabled and web fonts, then returns a safe OpenType file', () {
-    final File raw = File(p.join(root.path, 'lookup.ttf'))..writeAsBytesSync(<int>[0]);
+    final File raw = File(p.join(root.path, 'lookup.ttf'))
+      ..writeAsBytesSync(<int>[0]);
     File(p.join(root.path, 'web.woff2')).writeAsBytesSync(<int>[0]);
 
     final result = AppFontLoader.resolveForNativeOverlay(
@@ -57,7 +58,9 @@ void main() {
   });
 
   test('rejects imported files outside the managed font directory', () {
-    final Directory outside = Directory.systemTemp.createTempSync('fushi-font-outside-');
+    final Directory outside = Directory.systemTemp.createTempSync(
+      'fushi-font-outside-',
+    );
     addTearDown(() {
       if (outside.existsSync()) outside.deleteSync(recursive: true);
     });
@@ -66,11 +69,7 @@ void main() {
 
     final result = AppFontLoader.resolveForNativeOverlay(
       <Map<String, dynamic>>[
-        <String, dynamic>{
-          'name': 'Outside',
-          'path': raw.path,
-          'enabled': true,
-        },
+        <String, dynamic>{'name': 'Outside', 'path': raw.path, 'enabled': true},
       ],
       allowedDirectories: <String>[root.path],
     );

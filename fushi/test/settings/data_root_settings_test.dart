@@ -204,7 +204,8 @@ void main() {
       expect(src.contains('Process.start('), isTrue);
       expect(src.contains('Platform.resolvedExecutable'), isTrue);
       expect(src.contains('ProcessStartMode.detached'), isTrue);
-      expect(src.contains('exit(0)'), isTrue);
+      // 退出经唯一出口（退出协调器标 clean 后 exit），不再裸 exit(0)。
+      expect(src.contains("coordinator.terminate('restart')"), isTrue);
       // Guard against regressing to the empty stub.
       expect(src.contains('Future<void> restartApp() async {}'), isFalse);
     });

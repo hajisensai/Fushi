@@ -1,0 +1,12 @@
+diff --git a/buildscripts/bundle_unified.sh b/buildscripts/bundle_unified.sh
+--- a/buildscripts/bundle_unified.sh
++++ b/buildscripts/bundle_unified.sh
+@@ -62,6 +62,8 @@
+ # Fushi DVD menus: dvd:// stream + disc-navigation-state v2 (dvd-state).
+ grep -Fq -- '-Ddvdnav=enabled' "$out/$abi.strings.txt"
+ grep -Fxq 'dvd-state' "$out/$abi.strings.txt"
++# Fushi remote discs: bluray-device / dvd-device accept a disc share URL.
++grep -Fxq 'disc-remote-access' "$out/$abi.strings.txt"
+ if grep -Eq ' T dvdnav_open(@|$)' "$out/$abi.symbols.txt"; then
+     echo "libmpv.so defines libdvdnav itself: a private DVD copy was linked in" >&2
+     exit 3

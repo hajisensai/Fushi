@@ -69,7 +69,8 @@ VideoResourceTitleIdentity parseVideoResourceIdentity(String raw) {
     titles: titles,
     // 优先级：位置化解析 → 全串季号记号 → 并列标题一致的裸数字。后两者都只在
     // **唯一**时才敢认，避免 "S1+S2 合集" 这种被随便挑一个。
-    season: parsed.season ??
+    season:
+        parsed.season ??
         (markedSeasons.length == 1 ? markedSeasons.single : null) ??
         (trailingSeasons.length == 1 ? trailingSeasons.single : null),
   );
@@ -109,8 +110,9 @@ List<VideoResourceCandidate> rankVideoResourcesByRelevance(
   required String query,
   int? season,
 }) {
-  final VideoResourceTitleIdentity queryIdentity =
-      parseVideoResourceIdentity(query);
+  final VideoResourceTitleIdentity queryIdentity = parseVideoResourceIdentity(
+    query,
+  );
   final int? querySeason = season ?? queryIdentity.season;
   if (candidates.length < 2) {
     return List<VideoResourceCandidate>.unmodifiable(candidates);
@@ -119,8 +121,9 @@ List<VideoResourceCandidate> rankVideoResourcesByRelevance(
       <(VideoResourceCandidate, int, double, int)>[];
   for (int index = 0; index < candidates.length; index++) {
     final VideoResourceCandidate candidate = candidates[index];
-    final VideoResourceTitleIdentity identity =
-        parseVideoResourceIdentity(candidate.title);
+    final VideoResourceTitleIdentity identity = parseVideoResourceIdentity(
+      candidate.title,
+    );
     scored.add((
       candidate,
       _seasonRank(querySeason, identity.season),

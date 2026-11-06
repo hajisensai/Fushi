@@ -123,7 +123,9 @@ class FavoriteBatchMiningRunner {
       }
       return plan;
     }
+    // 网页视频（KGC1ifR1a3）：媒体在浏览器里，App 拿不到可截的文件 → 纯文字卡。
     if (item.source == kFavoriteSentenceSourceGame ||
+        item.source == kFavoriteSentenceSourceWeb ||
         bookKey == null ||
         bookKey.isEmpty) {
       return const FavoriteTextOnlyPlan(FavoriteTextOnlyReason.noMediaSource);
@@ -298,7 +300,10 @@ class FavoriteBatchMiningRunner {
         tagTitle: appModel.autoAddBookNameToTags,
       );
     }
-    if (!item.isVideo && bookKey != null && bookKey.isNotEmpty) {
+    if (!item.isVideo &&
+        item.source != kFavoriteSentenceSourceWeb &&
+        bookKey != null &&
+        bookKey.isNotEmpty) {
       final EpubBookRow? book = await _epubRow(bookKey);
       if (book != null) {
         if (rawTitle.isEmpty) rawTitle = book.title;
@@ -394,6 +399,9 @@ class FavoriteBatchMiningRunner {
             status: FavoriteBatchItemStatus.failed,
             message: described.message,
           ),
+          // 字段映射整体为空 / 首字段为空是配置问题，后面每一条都会同样失败：
+          // 与 notConfigured 同待遇整批中止，只报一次（反馈 AGLC0BuaKB）。
+          abortBatch: isFieldMappingConfigError(outcome.errorCode),
         );
     }
   }
@@ -421,9 +429,15 @@ class FavoriteBatchMiningRunner {
     } catch (e, stack) {
       ErrorLogService.instance.log('FavoriteBatchMining.stats', e, stack);
     }
+    // 收藏的锚点沿用收藏句 wire 口径（视频 = cue 起点 / 时长毫秒复用在
+    // normCharOffset / normCharLength），制卡历史 v132 起各占一列：边界上拆开。
+    final bool timeAxis =
+        item.isVideo ||
+        item.sourceKind == SentenceSourceKind.music ||
+        item.sourceKind == SentenceSourceKind.web;
     try {
       await _db.addMinedSentence(
-        source: source,
+        source: minedSentenceSourceOf(item),
         dateKey: statTodayKey(),
         expression: fields['expression'] ?? item.expression,
         reading: fields['reading'] ?? item.reading,
@@ -432,8 +446,10 @@ class FavoriteBatchMiningRunner {
         documentTitle: documentTitle.isEmpty ? null : documentTitle,
         bookKey: bookKey,
         sectionIndex: item.sectionIndex,
-        normCharOffset: item.normCharOffset,
-        normCharLength: item.normCharLength,
+        normCharOffset: timeAxis ? null : item.normCharOffset,
+        normCharLength: timeAxis ? null : item.normCharLength,
+        positionMs: timeAxis ? item.normCharOffset : null,
+        durationMs: timeAxis ? item.normCharLength : null,
         noteId: noteId,
       );
     } catch (e, stack) {

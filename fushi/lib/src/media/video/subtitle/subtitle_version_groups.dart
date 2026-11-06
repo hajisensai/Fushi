@@ -13,8 +13,9 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 /// 文件名开头的发布组标签（`[SubsPlease] xxx` → `SubsPlease`）。
 /// 8 位 hex（CRC）、分辨率、纯语言 token 不算组名；认不出返回 null。
 String? subtitleReleaseGroupTag(String fileName) {
-  final RegExpMatch? match =
-      RegExp(r'^\s*[\[【]([^\]】]{2,30})[\]】]').firstMatch(fileName);
+  final RegExpMatch? match = RegExp(
+    r'^\s*[\[【]([^\]】]{2,30})[\]】]',
+  ).firstMatch(fileName);
   if (match == null) return null;
   final String tag = match.group(1)!.trim();
   if (tag.isEmpty) return null;
@@ -26,6 +27,46 @@ String? subtitleReleaseGroupTag(String fileName) {
   };
   if (languageTokens.contains(tag.toLowerCase())) return null;
   return tag;
+}
+
+/// 文件名里的发行平台 token（scene 命名惯例：`.Netflix.` / `.NF.` / `.AMZN.` …）
+/// → 规范平台名。只认被分隔符（`.` / 空格 / 括号 / `_` / `-`）包住的整词。
+const Map<String, String> _kPlatformTokens = <String, String>{
+  'netflix': 'Netflix',
+  'nf': 'Netflix',
+  'amazon': 'Amazon',
+  'amzn': 'Amazon',
+  'crunchyroll': 'Crunchyroll',
+  'cr': 'Crunchyroll',
+  'disney+': 'Disney+',
+  'dsnp': 'Disney+',
+  'hulu': 'Hulu',
+  'hidive': 'HIDIVE',
+  'abema': 'ABEMA',
+  'u-next': 'U-NEXT',
+  'bilibili': 'Bilibili',
+  'b-global': 'Bilibili',
+  'iqiyi': 'iQIYI',
+  'baha': 'Baha',
+  'youtube': 'YouTube',
+};
+
+/// 版本的「名字」：文件名开头的发布组标签（[subtitleReleaseGroupTag]），没有时
+/// 退到发行平台 token（`….WEBRip.Netflix.ja[cc].srt` → `Netflix`）。
+///
+/// 没有组名的官方抽轨字幕（Netflix / Amazon CC）过去全落进同一个「无组名」版本，
+/// 两家的时间轴、断句完全不同却被当成一套；用户在版本列表里也只能看到一张没名字
+/// 的卡。认不出返回 null。
+String? subtitleVersionTag(String fileName) {
+  final String? group = subtitleReleaseGroupTag(fileName);
+  if (group != null) return group;
+  for (final String token in fileName.toLowerCase().split(
+    RegExp(r'[.\s\[\]\(\)_]+'),
+  )) {
+    final String? platform = _kPlatformTokens[token];
+    if (platform != null) return platform;
+  }
+  return null;
 }
 
 /// 小写扩展名（不含点）；认不出为空串。
@@ -60,25 +101,23 @@ class SubtitleVersionGroup {
   /// `.format`」。两个毫不相干的概念共用一个词，只会让那条守卫在这里误报、又诱使
   /// 后来人去削弱它。
   String get container => subtitleFormatOf(members.first.fileName);
-  String? get releaseGroupTag =>
-      subtitleReleaseGroupTag(members.first.fileName);
+  String? get releaseGroupTag => subtitleVersionTag(members.first.fileName);
   bool get hearingImpaired => members.first.hearingImpaired;
   bool get aiTranslated => members.first.aiTranslated;
-  bool get fromTrusted => members.any(
-        (VideoSubtitleCandidate candidate) => candidate.fromTrusted,
-      );
+  bool get fromTrusted =>
+      members.any((VideoSubtitleCandidate candidate) => candidate.fromTrusted);
 
   /// 第二级标签的组成部分（UI 逐段拼、缺段跳过）：容器名大写、语言母语名、组名。
   List<String> get variantParts => <String>[
-        if (container.isNotEmpty) container.toUpperCase(),
-        if (language.isNotEmpty) jimakuLanguageLabel(language),
-        if (releaseGroupTag != null) releaseGroupTag!,
-      ];
+    if (container.isNotEmpty) container.toUpperCase(),
+    if (language.isNotEmpty) jimakuLanguageLabel(language),
+    if (releaseGroupTag != null) releaseGroupTag!,
+  ];
 
   Set<int> get episodes => <int>{
-        for (final VideoSubtitleCandidate candidate in members)
-          if (candidate.episode != null) candidate.episode!,
-      };
+    for (final VideoSubtitleCandidate candidate in members)
+      if (candidate.episode != null) candidate.episode!,
+  };
 
   int get unnumberedCount => members
       .where((VideoSubtitleCandidate candidate) => candidate.episode == null)
@@ -113,18 +152,32 @@ class SubtitleVersionGroup {
   }
 
   int get totalDownloadCount => members.fold(
-        0,
-        (int sum, VideoSubtitleCandidate candidate) =>
-            sum + candidate.downloadCount,
-      );
+    0,
+    (int sum, VideoSubtitleCandidate candidate) =>
+        sum + candidate.downloadCount,
+  );
 }
 
-String _groupKeyOf(VideoSubtitleCandidate candidate) => <String>[
+/// 候选所属「版本」的键（同来源合集 + 同容器 + 同语言 + 同发布组 + CC/机翻标记）。
+/// 版本卡聚类与合集批量下载的整批版本一致性（`preferConsistentVersion`）共用。
+String subtitleVersionKeyOf(VideoSubtitleCandidate candidate) =>
+    _versionKeyOf(candidate, subtitleVersionTag(candidate.fileName));
+
+/// BUG-3998 之前的版本键：名字段只认发布组标签（[subtitleReleaseGroupTag]），
+/// 没有组名的平台抽轨（Netflix / Amazon）末段是空串。
+///
+/// 这个键曾原样写进 `MediaCollections.subtitleReleaseGroup`（合集点名的版本）。
+/// **只用于把旧列值一次性改写成 [subtitleVersionKeyOf]**，不得用于新的聚类或比较。
+String legacySubtitleVersionKeyOf(VideoSubtitleCandidate candidate) =>
+    _versionKeyOf(candidate, subtitleReleaseGroupTag(candidate.fileName));
+
+String _versionKeyOf(VideoSubtitleCandidate candidate, String? nameTag) =>
+    <String>[
       candidate.providerId,
       candidate.collectionId ?? '',
       subtitleFormatOf(candidate.fileName),
       candidate.language,
-      subtitleReleaseGroupTag(candidate.fileName) ?? '',
+      nameTag ?? '',
       candidate.hearingImpaired ? 'hi' : '',
       candidate.aiTranslated ? 'ai' : '',
     ].join('\u001f');
@@ -144,7 +197,10 @@ List<SubtitleVersionGroup> buildSubtitleVersionGroups(
       <String, List<VideoSubtitleCandidate>>{};
   for (final VideoSubtitleCandidate candidate in candidates) {
     byKey
-        .putIfAbsent(_groupKeyOf(candidate), () => <VideoSubtitleCandidate>[])
+        .putIfAbsent(
+          subtitleVersionKeyOf(candidate),
+          () => <VideoSubtitleCandidate>[],
+        )
         .add(candidate);
   }
   final List<SubtitleVersionGroup> groups = <SubtitleVersionGroup>[
@@ -160,20 +216,24 @@ List<SubtitleVersionGroup> buildSubtitleVersionGroups(
       ),
   ];
   groups.sort((SubtitleVersionGroup a, SubtitleVersionGroup b) {
-    final int byLanguage = jimakuLanguageRank(
-      a.language.isEmpty ? null : a.language,
-      preferred: preferredLanguage,
-    ).compareTo(jimakuLanguageRank(
-      b.language.isEmpty ? null : b.language,
-      preferred: preferredLanguage,
-    ));
+    final int byLanguage =
+        jimakuLanguageRank(
+          a.language.isEmpty ? null : a.language,
+          preferred: preferredLanguage,
+        ).compareTo(
+          jimakuLanguageRank(
+            b.language.isEmpty ? null : b.language,
+            preferred: preferredLanguage,
+          ),
+        );
     if (byLanguage != 0) return byLanguage;
     if (a.aiTranslated != b.aiTranslated) return a.aiTranslated ? 1 : -1;
     final int aAt = a.latestUploadedAtMs ?? -1;
     final int bAt = b.latestUploadedAtMs ?? -1;
     if (aAt != bAt) return bAt.compareTo(aAt);
-    final int byDownloads =
-        b.totalDownloadCount.compareTo(a.totalDownloadCount);
+    final int byDownloads = b.totalDownloadCount.compareTo(
+      a.totalDownloadCount,
+    );
     return byDownloads != 0 ? byDownloads : a.key.compareTo(b.key);
   });
   return List<SubtitleVersionGroup>.unmodifiable(groups);

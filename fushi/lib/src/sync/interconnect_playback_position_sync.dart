@@ -5,6 +5,13 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 /// 一条播放位置：毫秒位置 + 最后更新时刻（epoch 毫秒，0 = 无记录 / 旧数据）。
 typedef PlaybackPosition = ({int positionMs, int updatedAtMs});
 
+/// 一轮 sweep 开头一次读齐的位置基线（assetKey → 位置毫秒）与「待确认」推送基线
+/// （见 [InterconnectPlaybackPositionSync.loadBaselineSnapshot]）。
+typedef PlaybackBaselineSnapshot = ({
+  Map<String, int> baselines,
+  Map<String, int> pending,
+});
+
 /// 互联播放位置的两类条目（BUG-3367）。
 enum PlaybackPositionKind { video, audiobook }
 
@@ -84,18 +91,111 @@ class InterconnectPlaybackPositionSync {
     }
   }
 
+  /// 从整表偏好快照读本端位置（与 [localPosition] 同口径，零 SQL）。
+  ///
+  /// [prefs] 是 sweep 开头一次读齐的 `preferences`（[FushiDatabase.getAllPrefs]）；
+  /// [rowPositionMs] 是视频的 `VideoBooks.lastPositionMs`（无行 = null，有声书忽略）。
+  /// 只用于 sweep 的「已收敛则跳过」判定；需要落地时一律回到 [localPosition] 重读。
+  PlaybackPosition localPositionFromPrefs(
+    String key, {
+    required Map<String, String> prefs,
+    int? rowPositionMs,
+  }) {
+    int readInt(String prefKey) {
+      final String? raw = prefs[prefKey];
+      return raw == null ? 0 : PrefCodec.decode<int>(raw, 0);
+    }
+
+    switch (kind) {
+      case PlaybackPositionKind.video:
+        return (
+          positionMs: rowPositionMs ?? readInt(videoRemotePositionPrefKey(key)),
+          updatedAtMs: readInt(videoRemotePositionAtPrefKey(key)),
+        );
+      case PlaybackPositionKind.audiobook:
+        return (
+          positionMs: readInt(audiobookPositionPrefKey(key)),
+          updatedAtMs: readInt(audiobookPositionAtPrefKey(key)),
+        );
+    }
+  }
+
+  /// 一次读齐本种类全部条目的基线与「待确认」基线（两条查询），供 sweep 在内存里
+  /// 判定 [isSettled]，免逐条 `getSyncBaseline`。
+  Future<PlaybackBaselineSnapshot> loadBaselineSnapshot() async => (
+    baselines: await _db.getSyncBaselinesForDimension(dimension),
+    pending: await _db.getSyncBaselinesForDimension(pendingDimension),
+  );
+
+  /// 两端已完全收敛、这一轮无事可做：位置与时间戳都相同、基线已等于该位置、
+  /// 没有「待确认」推送。
+  ///
+  /// 此时原路径是 [decide] → synced → [alignSynced]：不 PUT（时间戳相等）、不落
+  /// 本端（时间戳相等）、只把同一个值重写一遍基线并删一条不存在的待确认行——
+  /// 净效果为零，却是每条目每轮固定的读写。条件里任何一项不成立都
+  /// 不算收敛，调用方回到原路径逐条重读、判定、落地，语义不变。
+  static bool isSettled({
+    required PlaybackPosition local,
+    required PlaybackPosition remote,
+    required PlaybackBaselineSnapshot snapshot,
+    required String key,
+  }) {
+    if (snapshot.pending.containsKey(key)) return false;
+    if (local.positionMs != remote.positionMs ||
+        local.updatedAtMs != remote.updatedAtMs) {
+      return false;
+    }
+    final int recorded = local.positionMs < 0 ? 0 : local.positionMs;
+    return snapshot.baselines[key] == recorded;
+  }
+
   /// host 端位置（host 无记录 → 0@0）。
   Future<PlaybackPosition> remotePosition(String key) => switch (kind) {
     PlaybackPositionKind.video => _backend.remoteVideoPosition(key),
     PlaybackPositionKind.audiobook => _backend.remoteAudiobookPosition(key),
   };
 
+  /// 「已发出、尚未确认」推送位置的 dimension（BUG-3528）。
+  String get pendingDimension => '${dimension}_pending';
+
   /// 上次两端达成一致的位置（毫秒）；没有基线返回 null。
   Future<int?> baseline(String key) => _db.getSyncBaseline(key, dimension);
 
-  /// 记下两端此刻达成一致的位置。
-  Future<void> recordBaseline(String key, int positionMs) =>
-      _db.setSyncBaseline(key, dimension, positionMs < 0 ? 0 : positionMs);
+  /// 三方判定的唯一入口：sweep 与冲突弹窗都走这里，不各自读基线。
+  ///
+  /// 与书籍版 `InterconnectBookProgressSync.decide` 同理（BUG-3528）：PUT 在 host
+  /// 端已提交、客户端却超时时基线没推进，下一轮会把 host 上本机自己的写入误判成
+  /// 对端改动。推送前记下的「待确认」位置若正是 host 当前位置，先提升为基线。
+  Future<BookProgressSyncAction> decide(
+    String key, {
+    required PlaybackPosition local,
+    required PlaybackPosition remote,
+  }) async {
+    int? base = await baseline(key);
+    final int? pending = await _db.getSyncBaseline(key, pendingDimension);
+    if (pending != null &&
+        remote.updatedAtMs > 0 &&
+        pending == remote.positionMs &&
+        base != remote.positionMs) {
+      await recordBaseline(key, pending);
+      base = pending;
+    }
+    return resolvePlaybackPositionThreeWay(
+      local: local,
+      remote: remote,
+      basePositionMs: base,
+    );
+  }
+
+  /// 记下两端此刻达成一致的位置；同时作废「待确认」推送。
+  Future<void> recordBaseline(String key, int positionMs) async {
+    await _db.setSyncBaseline(key, dimension, positionMs < 0 ? 0 : positionMs);
+    await _db.deleteSyncBaseline(key, pendingDimension);
+  }
+
+  /// 推送前记下「待确认」位置（见 [decide]）。
+  Future<void> _recordPending(String key, int positionMs) => _db
+      .setSyncBaseline(key, pendingDimension, positionMs < 0 ? 0 : positionMs);
 
   /// 本端胜出：推给 host（时间戳不新于 host 时抬到 host + 1，见类头），本端只对齐
   /// 时间戳 pref，记基线。返回两端对齐后的位置。
@@ -123,9 +223,16 @@ class InterconnectPlaybackPositionSync {
       positionMs: local.positionMs,
       updatedAtMs: ts,
     );
+    await _recordPending(key, agreed.positionMs);
     await _putRemote(key, agreed);
     if (ts != local.updatedAtMs) {
-      await _db.setPrefTyped<int>(_localAtPrefKey(key), ts);
+      // 比较后写入（BUG-3537）：PUT 期间本端断点若已被改写，抬戳作废，本端留着
+      // 更新的那份，下一轮照常再推；host 此刻停在 [agreed]，基线照记。
+      await _db.runIfIntPrefUnchanged(
+        stampKey: _localAtPrefKey(key),
+        expectedStamp: local.updatedAtMs,
+        write: () => _db.setPrefTyped<int>(_localAtPrefKey(key), ts),
+      );
     }
     await recordBaseline(key, agreed.positionMs);
     return agreed;
@@ -142,14 +249,29 @@ class InterconnectPlaybackPositionSync {
   /// host 端 PUT 仍是 LWW：若 host 已存更新的戳而拒收，基线停在本端位置，下一轮
   /// sweep 判「只 host 动了」→ [applyRemote]，与 host 的 LWW 结论一致。
   Future<void> reportLive(String key, PlaybackPosition live) async {
+    await _recordPending(key, live.positionMs);
     await _putRemote(key, live);
     await recordBaseline(key, live.positionMs);
   }
 
-  /// host 胜出：落回本端，记基线。
-  Future<void> applyRemote(String key, PlaybackPosition remote) async {
-    await _writeLocal(key, remote);
-    await recordBaseline(key, remote.positionMs);
+  /// host 胜出：落回本端，记基线。返回是否真的落地。
+  ///
+  /// [local] 是判定时读到的本端断点。落地是「比较后写入」（BUG-3537，与书籍版
+  /// `InterconnectBookProgressSync.applyRemote` 同纪律）：判定前刚走过一次网络读
+  /// host，这期间本机播放器或本机作为互联 host 收到的对端 PUT 可能已写进更新的
+  /// 断点；本端时间戳一变就不落地、不记基线，交给下一轮重新判定。
+  Future<bool> applyRemote(
+    String key,
+    PlaybackPosition remote, {
+    required PlaybackPosition local,
+  }) async {
+    final bool landed = await _writeLocalIfUnchanged(
+      key,
+      remote,
+      expected: local,
+    );
+    if (landed) await recordBaseline(key, remote.positionMs);
+    return landed;
   }
 
   /// 两端位置一致、只是时间戳不同：把较新的时间戳对齐到另一端（沿用此前 LWW 路径
@@ -163,8 +285,8 @@ class InterconnectPlaybackPositionSync {
     if (local.updatedAtMs > remote.updatedAtMs) {
       await _putRemote(key, local);
     } else if (remote.updatedAtMs > local.updatedAtMs) {
-      await _writeLocal(key, remote);
-      localChanged = true;
+      // 比较后写入（BUG-3537）：判定后本端被改写就不对齐。
+      localChanged = await _writeLocalIfUnchanged(key, remote, expected: local);
     }
     await recordBaseline(key, local.positionMs);
     return localChanged;
@@ -187,6 +309,18 @@ class InterconnectPlaybackPositionSync {
     PlaybackPositionKind.video => videoRemotePositionAtPrefKey(key),
     PlaybackPositionKind.audiobook => audiobookPositionAtPrefKey(key),
   };
+
+  /// 本端落地的唯一写口：仅当本端时间戳 pref 仍是判定时读到的 [expected] 才写
+  /// （[FushiDatabase.runIfIntPrefUnchanged]，重读与写入同一事务，BUG-3537）。
+  Future<bool> _writeLocalIfUnchanged(
+    String key,
+    PlaybackPosition p, {
+    required PlaybackPosition expected,
+  }) => _db.runIfIntPrefUnchanged(
+    stampKey: _localAtPrefKey(key),
+    expectedStamp: expected.updatedAtMs,
+    write: () => _writeLocal(key, p),
+  );
 
   /// 把对端位置落到本端。视频写回 pref 键对，并**仅当本地有 VideoBooks 行时**
   /// 写穿 `lastPositionMs`（流式视频不强建行污染书架）；`playedAt` 用**对端的**

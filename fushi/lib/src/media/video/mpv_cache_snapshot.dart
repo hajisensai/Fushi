@@ -113,3 +113,48 @@ List<String> mpvDumpCacheCommand(MpvCacheDumpPlan plan, String outputPath) =>
       plan.dumpEnd.toStringAsFixed(6),
       outputPath,
     ];
+
+/// HLS 往缓冲外 seek 时给 libmpv 的 `hr-seek-demuxer-offset`（秒），见
+/// [hrSeekDemuxerOffsetForSeek]。
+///
+/// 量级取「一个 GOP 的上界」：x264 默认 `keyint=250`，23.976 fps 下关键帧间隔
+/// ≈10.4 s，番剧压制普遍不超过它；再留一点余量取 12 s。代价只落在缓冲外的 seek 上
+/// （本来就要重新拉分片），多拉一两个分片、多解十来秒的帧（硬解远快于实时）。
+const double kHlsOutOfCacheSeekDemuxerOffsetSeconds = 12;
+
+/// 判「目标在缓冲里」时离缓冲段起点留的余量（秒）：缓冲快照是周期采样的（≤1 s
+/// 旧），后向缓冲的起点会随裁剪往后挪；贴着起点的目标按「不在缓冲里」处理更稳。
+const double kSeekableRangeStartMarginSeconds = 2;
+
+/// 一次 seek 应当下发的 `hr-seek-demuxer-offset`（秒，BUG-3618）。
+///
+/// 在线源的 HLS 分片常常**不是从关键帧切开**的（分片 4～6 s、GOP 10 s 上下）。往
+/// 缓冲外 seek 时，ffmpeg 的 hls demuxer 只能按播放列表时长找到「包含目标的那一片」
+/// 从片头读起；片头不是关键帧，解码要等到片内 / 下一片的第一个关键帧，而它可能在
+/// 目标**之后**——libmpv 的 hr-seek 只会往后丢帧、不会往回找，于是落点比目标晚最多
+/// 一个 GOP。往回跳几秒（上一句 / 固定秒数后退）时这个晚落点常常就在原位置附近，
+/// 表现为「往回跳不动」；从前面播过来的段已在 demuxer 缓冲里（缓冲内 seek 按真实
+/// 关键帧定位，精确），所以「多往前跳一点播过来就好了」「从头看很少遇到」。
+///
+/// mpv 为「demuxer 做不到精确 seek」提供的就是 `hr-seek-demuxer-offset`：demuxer
+/// 从目标前这么多秒读起，目标之前必有关键帧，hr-seek 再精确解到目标。它对缓冲内的
+/// seek 同样生效（会白解一段帧、拖慢句子跳转），所以只在**目标不在缓冲里**时给：
+///  - [hlsStream] 为 false（本地文件 / 有索引的 mp4、mkv 直链，demuxer 自己能按索引
+///    找到目标前的关键帧）→ 0；
+///  - 目标落在某段 [ranges]（`demuxer-cache-state.seekable-ranges`）里、且离段起点
+///    不少于 [kSeekableRangeStartMarginSeconds] → 0；
+///  - 其余 → [kHlsOutOfCacheSeekDemuxerOffsetSeconds]。
+double hrSeekDemuxerOffsetForSeek({
+  required bool hlsStream,
+  required List<MpvSeekableRange> ranges,
+  required double targetSeconds,
+}) {
+  if (!hlsStream) return 0;
+  for (final MpvSeekableRange range in ranges) {
+    if (targetSeconds >= range.start + kSeekableRangeStartMarginSeconds &&
+        targetSeconds <= range.end) {
+      return 0;
+    }
+  }
+  return kHlsOutOfCacheSeekDemuxerOffsetSeconds;
+}

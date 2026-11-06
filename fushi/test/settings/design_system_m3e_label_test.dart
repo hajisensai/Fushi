@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 用户 2026-10-05 先把外观页设计系统选项改名「M3E」，2026-10-17 再拍板
 /// 「M3E 改名 Material」：选项与 tooltip 都显示「Material」，用户可见文案里

@@ -4,7 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/reader/manga_chapter_drawer.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 反馈 zRXJNN2Zp-：漫画目录是逆序、太长难翻。阅读器章节抽屉要能切正 / 逆序（记住
@@ -94,9 +94,7 @@ void main() {
     expect(visible(tester, row(200)), isFalse);
   });
 
-  testWidgets('排序初值来自偏好：旧→新时第 1 话在最前，仍定位到当前章', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('排序初值来自偏好：旧→新时第 1 话在最前，仍定位到当前章', (WidgetTester tester) async {
     await pumpDrawer(tester, newestFirst: false);
     expect(visible(tester, row(20)), isTrue);
     expect(
@@ -118,13 +116,14 @@ void main() {
     );
     await settle(tester);
     expect(changes, <bool>[false]);
-    expect(tester.getRect(row(20)).top, greaterThan(tester.getRect(row(19)).top));
+    expect(
+      tester.getRect(row(20)).top,
+      greaterThan(tester.getRect(row(19)).top),
+    );
     expect(visible(tester, row(20)), isTrue);
   });
 
-  testWidgets('窄抽屉：排序与跳到当前平铺，顶部 / 底部收进「⋯」并可用', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('窄抽屉：排序与跳到当前平铺，顶部 / 底部收进「⋯」并可用', (WidgetTester tester) async {
     await pumpDrawer(tester);
     expect(
       find.byKey(const ValueKey<String>('manga_chapter_drawer_sort')),
@@ -154,10 +153,7 @@ void main() {
     await settle(tester);
     await tester.tap(find.text(t.manga_chapter_list_jump_bottom));
     await settle(tester);
-    expect(
-      drawerScroll(tester).pixels,
-      drawerScroll(tester).maxScrollExtent,
-    );
+    expect(drawerScroll(tester).pixels, drawerScroll(tester).maxScrollExtent);
     expect(visible(tester, row(1)), isTrue);
 
     await tester.tap(

@@ -49,14 +49,14 @@ class YoutubeStreamCacheEntry {
   bool isExpiredAt(DateTime now) => expiresAtMs <= now.millisecondsSinceEpoch;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'streamUrl': streamUrl,
-        if (audioStreamUrl != null) 'audioStreamUrl': audioStreamUrl,
-        if (miningVideoUrl != null) 'miningVideoUrl': miningVideoUrl,
-        'miningVideoHasAudio': miningVideoHasAudio,
-        'httpHeaders': httpHeaders,
-        'expiresAtMs': expiresAtMs,
-        if (targetHeight != null) 'targetHeight': targetHeight,
-      };
+    'streamUrl': streamUrl,
+    if (audioStreamUrl != null) 'audioStreamUrl': audioStreamUrl,
+    if (miningVideoUrl != null) 'miningVideoUrl': miningVideoUrl,
+    'miningVideoHasAudio': miningVideoHasAudio,
+    'httpHeaders': httpHeaders,
+    'expiresAtMs': expiresAtMs,
+    if (targetHeight != null) 'targetHeight': targetHeight,
+  };
 
   /// 缺 streamUrl / expiresAtMs 抛（调用方按条目跳过脏数据）。
   factory YoutubeStreamCacheEntry.fromJson(Map<String, dynamic> json) {
@@ -79,8 +79,9 @@ class YoutubeStreamCacheEntry {
       miningVideoHasAudio: json['miningVideoHasAudio'] == true,
       httpHeaders: httpHeaders,
       expiresAtMs: expiresAtMs,
-      targetHeight:
-          json['targetHeight'] is int ? json['targetHeight'] as int : null,
+      targetHeight: json['targetHeight'] is int
+          ? json['targetHeight'] as int
+          : null,
     );
   }
 }
@@ -126,8 +127,8 @@ int? computeStreamCacheExpiryMs(
 /// [now] 可注入便于测过期。加载惰性、顺带 prune 已过期条目；put 时也 prune。
 class YoutubeStreamCache {
   YoutubeStreamCache({required File file, DateTime Function()? now})
-      : _file = file,
-        _now = now ?? DateTime.now;
+    : _file = file,
+      _now = now ?? DateTime.now;
 
   final File _file;
   final DateTime Function() _now;
@@ -171,7 +172,8 @@ class YoutubeStreamCache {
         if (key is! String || value is! Map) return;
         try {
           _entries[key] = YoutubeStreamCacheEntry.fromJson(
-              Map<String, dynamic>.from(value));
+            Map<String, dynamic>.from(value),
+          );
         } catch (_) {
           // 单条脏数据跳过，不阻断整份缓存加载。
         }
@@ -211,7 +213,8 @@ class YoutubeStreamCache {
   void _pruneExpired() {
     final DateTime now = _now();
     _entries.removeWhere(
-        (String _, YoutubeStreamCacheEntry e) => e.isExpiredAt(now));
+      (String _, YoutubeStreamCacheEntry e) => e.isExpiredAt(now),
+    );
   }
 
   Future<void> _save() async {
@@ -239,7 +242,8 @@ class YoutubeStreamCache {
     if (existing != null) return existing;
     final Directory dir = await AppPaths.supportRootDirectory();
     final YoutubeStreamCache cache = YoutubeStreamCache(
-        file: File(p.join(dir.path, 'youtube_stream_cache.json')));
+      file: File(p.join(dir.path, 'youtube_stream_cache.json')),
+    );
     _instance = cache;
     return cache;
   }

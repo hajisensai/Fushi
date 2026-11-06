@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 
 /// TODO-1314（C7）：多分辨率缩略图候选回退的守卫。
@@ -49,25 +49,29 @@ void main() {
       expect(best, youtubeThumbnailUrl('v'));
     });
 
-    test('all probes false -> still returns hqdefault (never no-cover)',
-        () async {
-      final String best = await resolveBestThumbnailUrl(
-        'v',
-        probe: (String u) async => false,
-      );
-      expect(best, youtubeThumbnailUrl('v'));
-    });
+    test(
+      'all probes false -> still returns hqdefault (never no-cover)',
+      () async {
+        final String best = await resolveBestThumbnailUrl(
+          'v',
+          probe: (String u) async => false,
+        );
+        expect(best, youtubeThumbnailUrl('v'));
+      },
+    );
 
-    test('probe throwing is treated as missing, continues to next candidate',
-        () async {
-      final String best = await resolveBestThumbnailUrl(
-        'v',
-        probe: (String u) async {
-          if (u.contains('maxresdefault')) throw Exception('network');
-          return u.contains('sddefault');
-        },
-      );
-      expect(best, 'https://i.ytimg.com/vi/v/sddefault.jpg');
-    });
+    test(
+      'probe throwing is treated as missing, continues to next candidate',
+      () async {
+        final String best = await resolveBestThumbnailUrl(
+          'v',
+          probe: (String u) async {
+            if (u.contains('maxresdefault')) throw Exception('network');
+            return u.contains('sddefault');
+          },
+        );
+        expect(best, 'https://i.ytimg.com/vi/v/sddefault.jpg');
+      },
+    );
   });
 }

@@ -53,8 +53,9 @@ Future<List<String>> collectionOwnedImagePaths(
   int collectionId,
 ) async {
   return <String>[
-    for (final MediaImageRow row
-        in await db.getMediaImagesForCollection(collectionId))
+    for (final MediaImageRow row in await db.getMediaImagesForCollection(
+      collectionId,
+    ))
       row.path,
   ];
 }
@@ -70,13 +71,24 @@ Future<int> deleteMediaCollectionWithAssets(
   FushiDatabase db,
   int collectionId, {
   Directory? collectionCoversDirectory,
+  int? deletedAt,
+  bool organizeMerged = false,
+  bool userIntent = true,
 }) async {
   // 快照必须在删行**之前**取：行一删，coverPath / 附加图行就再也推导不出来。
-  final MediaCollectionRow? snapshot =
-      await db.getMediaCollectionById(collectionId);
-  final List<String> imagePaths =
-      await collectionOwnedImagePaths(db, collectionId);
-  final int removed = await db.deleteMediaCollection(collectionId);
+  final MediaCollectionRow? snapshot = await db.getMediaCollectionById(
+    collectionId,
+  );
+  final List<String> imagePaths = await collectionOwnedImagePaths(
+    db,
+    collectionId,
+  );
+  final int removed = await db.deleteMediaCollection(
+    collectionId,
+    deletedAt: deletedAt,
+    organizeMerged: organizeMerged,
+    userIntent: userIntent,
+  );
   await reclaimDeletedCollectionAssets(
     db,
     <MediaCollectionRow>[if (snapshot != null) snapshot],
@@ -86,7 +98,9 @@ Future<int> deleteMediaCollectionWithAssets(
   return removed;
 }
 
-/// 清掉合集**自有**封面，回到自动推导（成员借用链 / canonical 海报）。
+/// 清掉合集**自有**封面，回到自动推导（原盘竖版盘面图 → canonical 海报 → 成员
+/// 借用链，见 `collection_cover.dart`）。盘面图另存在附加图组、不在 `coverPath`，
+/// 所以清完重扫不会把它写回自有层。
 ///
 /// 与 [deleteMediaCollectionWithAssets] 的关系：那条是「合集没了，顺手回收它的
 /// 图」，这条是「合集还在，只是不要这张图了」。两者共用**同一套误删护栏**——先把
@@ -109,16 +123,15 @@ Future<void> clearCollectionOwnCover(
   int collectionId, {
   Directory? collectionCoversDirectory,
 }) async {
-  final MediaCollectionRow? snapshot =
-      await db.getMediaCollectionById(collectionId);
+  final MediaCollectionRow? snapshot = await db.getMediaCollectionById(
+    collectionId,
+  );
   final String? coverPath = snapshot?.coverPath;
   if (snapshot == null || coverPath == null || coverPath.isEmpty) return;
   await db.updateMediaCollectionCoverPath(collectionId, null);
-  await reclaimDeletedCollectionAssets(
-    db,
-    <MediaCollectionRow>[snapshot],
-    collectionCoversDirectory: collectionCoversDirectory,
-  );
+  await reclaimDeletedCollectionAssets(db, <MediaCollectionRow>[
+    snapshot,
+  ], collectionCoversDirectory: collectionCoversDirectory);
   await evictImageCacheForFile(File(coverPath));
 }
 
@@ -148,8 +161,8 @@ Future<int> reclaimDeletedCollectionAssets(
   if (candidates.isEmpty) return 0;
   int reclaimed = 0;
   try {
-    final List<MediaCollectionRow> survivors =
-        await db.getAllMediaCollections();
+    final List<MediaCollectionRow> survivors = await db
+        .getAllMediaCollections();
     final List<String> stillReferenced = <String>[
       for (final MediaCollectionRow collection in survivors)
         for (final String? path in collectionOwnedAssetPaths(collection))

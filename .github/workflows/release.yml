@@ -25,13 +25,19 @@ on:
       - 'fushi/**'
       - 'packages/**'
       # Android 构建真正用到的原生源码：fushidicts 走 build.gradle 的 CMake，
-      # torrent / p2p / fsrs 在本 workflow 里编成 .so 进 jniLibs。
+      # torrent / p2p / fsrs / compute / web_core / rwkv 在本 workflow 里编成 .so 进 jniLibs。
       - 'native/fushidicts/**'
       - 'native/fushi_torrent/**'
       - 'native/fushi_p2p/**'
       - 'native/fushi_fsrs/**'
+      - 'native/fushi_compute/**'
+      - 'native/fushi_rwkv/**'
+      - 'native/fushi_web_core/**'
       - 'ci/**'
       - 'third_party/**'
+      - 'tool/vendored_binaries.json'
+      - 'tool/vendored_binaries.py'
+      - '.github/actions/fetch-vendored-binaries/**'
       - 'tool/check_release_policy.ps1'
       - 'tool/release_sequence.sh'
       - 'tool/publish_update_manifest.sh'
@@ -40,9 +46,18 @@ on:
       - '.github/workflows/release.yml'
       - '.github/workflows/release-desktop.yml'
       - '.github/actions/provide-baked-secrets/**'
+      # strings.g.dart 不入库：编 app 前由它生成（生成器 fushi/tool/gen_i18n.dart 在 fushi/** 里）。
+      - '.github/actions/gen-i18n/**'
       - '.github/actions/native-artifact-store/**'
       - '.github/actions/native-store-names/**'
       - '.github/actions/pdfium-hook-cache/**'
+      - '.github/actions/setup-fushi-compute/**'
+      - '.github/actions/setup-fushi-rwkv/**'
+      - '.github/actions/setup-fushi-music/**'
+      - '.github/actions/setup-fushi-corpus/**'
+      - '.github/actions/fushi-web-core-linux/**'
+      - '.github/actions/test-native-linux/**'
+      - '.github/actions/fushidicts-linux/**'
       - '.github/scripts/verify_torrent_abi.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'
@@ -111,7 +126,9 @@ jobs:
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
     if: ${{ (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # 120：split-per-abi 逐 ABI 串行后要编三遍 kernel + AOT（ubuntu-26.04 上单 ABI
+    # kernel ~170 s、AOT ~285 s），formal 在构建前的原生步骤已占 ~30 min，90 不够余量。
+    timeout-minutes: 120
     permissions:
       contents: write
       # publish_update_manifest.sh 推完正式版清单要 `gh workflow run` 唤醒 R2 镜像；
@@ -135,6 +152,11 @@ jobs:
     - uses: actions/checkout@v6
       with:
         fetch-depth: 0
+    # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
+    - name: Fetch vendored binaries
+      uses: ./.github/actions/fetch-vendored-binaries
+      with:
+        groups: android
 
     - name: Validate unified release policy
       shell: pwsh
@@ -446,6 +468,7 @@ jobs:
         dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
         tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
         opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
+        acoustid-api-key: ${{ secrets.ACOUSTID_API_KEY }}
     # TODO-2721: 只缓存 Gradle 的下载物（modules-2 / wrapper dists），不缓存
     # <ver>/transforms 这类可从 modules-2 重算的派生产物。三个 workflow
     # （main / release / build-multiplatform）的 path + key 必须逐字相同，且此步
@@ -477,6 +500,9 @@ jobs:
       run: |
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
+    # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+    - name: Generate i18n
+      uses: ./.github/actions/gen-i18n
 
     # 内置 libtorrent 引擎的 Android .so：vcpkg 交叉编 libtorrent + bridge，产物落
     # native/fushi_torrent/prebuilt/android/arm64-v8a/，由 fushi/android/app/
@@ -718,6 +744,191 @@ jobs:
           esac
           bash native/fushi_fsrs/verify_abi.sh "$so" "$nm_bin"
         done
+    # 网页内容核心（fushi_web_core，硬依赖）的 Android .so：cargo-ndk 交叉编，产物落
+    # native/fushi_web_core/prebuilt/android/<abi>/，由 build.gradle 的 jniLibs 随包（release 构建缺库即失败）
+    # 随包。失败口径同 fushi_p2p：**构建失败即 job 失败**，不降级出一个悄悄少了网页广告拦截原生
+    # 库的包；出包后下面还会逐 ABI 核对 APK 里确有 libfushi_web_core.so。
+    # 工具链钉法与 fushi_p2p 同源（Rust / cargo-ndk 版本都从 native_store 读，与
+    # native-web-core-gate.yml 的 1.95.0 / 4.1.2 一致）；ABI 同样三个。fushi_web_core 不进原生产物
+    # 持久库（与 build-multiplatform.yml 各端的 fushi_web_core 步骤同一口径：冷编便宜），只靠
+    # rust-cache。fushi_p2p 持久库命中时它那组 Rust / cargo-ndk 安装步骤被跳过，所以这里
+    # 无条件再装一次（同版本，幂等）。
+    - name: Set up Rust (fushi_web_core, Android targets)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ steps.native_store.outputs.p2p_rust }}
+        targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+    - name: Cache Rust build (fushi_web_core)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: native/fushi_web_core -> target
+        key: fushi-web-core-android
+    - name: Install cargo-ndk (fushi_web_core)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-ndk@${{ steps.native_store.outputs.cargo_ndk }}
+    - name: Build fushi_web_core Android .so (cargo-ndk)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      timeout-minutes: 45
+      shell: bash
+      run: |
+        set -euo pipefail
+        bash native/fushi_web_core/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a armeabi-v7a x86_64
+    # 每个 ABI 的 .so：ELF 架构对得上，且导出 Dart 绑定 lookup 的全部 fwc_* 符号。
+    - name: Verify fushi_web_core Android .so
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+        if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+        for pair in arm64-v8a:AArch64 armeabi-v7a:ARM x86_64:X86-64; do
+          abi="${pair%%:*}"; want="${pair#*:}"
+          so="native/fushi_web_core/prebuilt/android/$abi/libfushi_web_core.so"
+          test -f "$so" || { echo "::error::missing artifact $so"; exit 1; }
+          machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+          echo "$abi: ELF machine = $machine"
+          case "$machine" in
+            *"$want"*) : ;;
+            *) echo "::error title=wrong target arch::$abi 期望 $want，实际 $machine"; exit 1 ;;
+          esac
+          bash native/fushi_web_core/verify_abi.sh "$so" "$nm_bin"
+        done
+
+    # 计算内核（哈希 / 图像 / 文本，native/fushi_compute）的 Android .so：与上面 fushi_fsrs
+    # 同一口径——cargo-ndk 三个 ABI 交叉编，产物落 native/fushi_compute/prebuilt/android/<abi>/，
+    # 由 build.gradle 的 jniLibs copy-if-present 随包；**构建失败即 job 失败**，出包后逐 ABI
+    # 核对 APK 里确有 libfushi_compute.so。不进原生产物持久库，只靠 rust-cache。Rust /
+    # cargo-ndk 已由 fushi_fsrs 那组无条件装好，这里不再重复安装。
+    - name: Cache Rust build (fushi_compute)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: native/fushi_compute -> target
+        key: fushi-compute-android
+    - name: Build fushi_compute Android .so (cargo-ndk)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      timeout-minutes: 45
+      shell: bash
+      run: |
+        set -euo pipefail
+        bash native/fushi_compute/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a armeabi-v7a x86_64
+    # 每个 ABI 的 .so：ELF 架构对得上，且导出 Dart 绑定 lookup 的全部 ffc_* 符号。
+    - name: Verify fushi_compute Android .so
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+        if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+        for pair in arm64-v8a:AArch64 armeabi-v7a:ARM x86_64:X86-64; do
+          abi="${pair%%:*}"; want="${pair#*:}"
+          so="native/fushi_compute/prebuilt/android/$abi/libfushi_compute.so"
+          test -f "$so" || { echo "::error::missing artifact $so"; exit 1; }
+          machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+          echo "$abi: ELF machine = $machine"
+          case "$machine" in
+            *"$want"*) : ;;
+            *) echo "::error title=wrong target arch::$abi 期望 $want，实际 $machine"; exit 1 ;;
+          esac
+          bash native/fushi_compute/verify_abi.sh "$so" "$nm_bin"
+        done
+
+    # RWKV-Instant 排程推理（native/fushi_rwkv，硬依赖，AGPL-3.0-or-later）的 Android .so：与上面
+    # fushi_compute 同一口径——cargo-ndk 三个 ABI，产物落 native/fushi_rwkv/prebuilt/android/<abi>/，
+    # build.gradle 的 checkFushiRwkvNative 缺 ABI 即失败；出包后逐 ABI 核对 APK 里确有 libfushi_rwkv.so。
+    - name: Cache Rust build (fushi_rwkv)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: native/fushi_rwkv -> target
+        key: fushi-rwkv-android
+    - name: Build fushi_rwkv Android .so (cargo-ndk)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      timeout-minutes: 45
+      shell: bash
+      run: |
+        set -euo pipefail
+        bash native/fushi_rwkv/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a armeabi-v7a x86_64
+    # 音乐胖核心 fushi_music（曲库扫描 / 标签 / CUE）同为 app 硬依赖：与上一步 fushi_rwkv 同一口径。
+    - name: Build fushi_music Android .so (cargo-ndk)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      timeout-minutes: 45
+      shell: bash
+      run: |
+        set -euo pipefail
+        bash native/fushi_music/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a armeabi-v7a x86_64
+    # 语料胖核心 fushi_corpus（「我库里的例句」倒排索引）同为 app 硬依赖：与上一步 fushi_corpus 同一口径。
+    - name: Build fushi_corpus Android .so (cargo-ndk)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      timeout-minutes: 45
+      shell: bash
+      run: |
+        set -euo pipefail
+        bash native/fushi_corpus/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a armeabi-v7a x86_64
+    # 每个 ABI 的 .so：ELF 架构对得上，且导出全部 frwkv_* 符号（src/ 声明 ∪ Dart 绑定 lookup）。
+    - name: Verify fushi_rwkv Android .so
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+        if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+        for pair in arm64-v8a:AArch64 armeabi-v7a:ARM x86_64:X86-64; do
+          abi="${pair%%:*}"; want="${pair#*:}"
+          so="native/fushi_rwkv/prebuilt/android/$abi/libfushi_rwkv.so"
+          test -f "$so" || { echo "::error::missing artifact $so"; exit 1; }
+          machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+          echo "$abi: ELF machine = $machine"
+          case "$machine" in
+            *"$want"*) : ;;
+            *) echo "::error title=wrong target arch::$abi 期望 $want，实际 $machine"; exit 1 ;;
+          esac
+          bash native/fushi_rwkv/verify_abi.sh "$so" "$nm_bin"
+        done
+    # 音乐胖核心 fushi_music（曲库扫描 / 标签 / CUE）同为 app 硬依赖：与上一步 fushi_rwkv 同一口径。
+    - name: Verify fushi_music Android .so
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+        if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+        for pair in arm64-v8a:AArch64 armeabi-v7a:ARM x86_64:X86-64; do
+          abi="${pair%%:*}"; want="${pair#*:}"
+          so="native/fushi_music/prebuilt/android/$abi/libfushi_music.so"
+          test -f "$so" || { echo "::error::missing artifact $so"; exit 1; }
+          machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+          echo "$abi: ELF machine = $machine"
+          case "$machine" in
+            *"$want"*) : ;;
+            *) echo "::error title=wrong target arch::$abi 期望 $want，实际 $machine"; exit 1 ;;
+          esac
+          bash native/fushi_music/verify_abi.sh "$so" "$nm_bin"
+        done
+    # 语料胖核心 fushi_corpus（「我库里的例句」倒排索引）同为 app 硬依赖：与上一步 fushi_corpus 同一口径。
+    - name: Verify fushi_corpus Android .so
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+        if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+        for pair in arm64-v8a:AArch64 armeabi-v7a:ARM x86_64:X86-64; do
+          abi="${pair%%:*}"; want="${pair#*:}"
+          so="native/fushi_corpus/prebuilt/android/$abi/libfushi_corpus.so"
+          test -f "$so" || { echo "::error::missing artifact $so"; exit 1; }
+          machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+          echo "$abi: ELF machine = $machine"
+          case "$machine" in
+            *"$want"*) : ;;
+            *) echo "::error title=wrong target arch::$abi 期望 $want，实际 $machine"; exit 1 ;;
+          esac
+          bash native/fushi_corpus/verify_abi.sh "$so" "$nm_bin"
+        done
 
     # TODO-fast-release: analyze/unit/package tests no longer gate this build job.
     # They ran here as sequential steps BEFORE `flutter build apk`, so a slow or
@@ -750,6 +961,14 @@ jobs:
         ls -la build/app/outputs || true
         ls -la build/app/outputs/flutter-apk || true
         find build/app/outputs/flutter-apk -maxdepth 1 -type f -name '*.apk' -print -exec ls -lh {} \; || true
+        echo "::endgroup::"
+        # 构建步骤被 runner 掐死时（"The runner has received a shutdown signal"）不会留下
+        # 任何诊断；资源基线必须在这里先打出来，事后才能分清内存还是磁盘。
+        echo "::group::Runner resources"
+        nproc || true
+        free -m || true
+        swapon --show || true
+        df -h / "$GITHUB_WORKSPACE" /mnt 2>/dev/null || df -h || true
         echo "::endgroup::"
 
     - name: Build debug APK
@@ -814,17 +1033,67 @@ jobs:
         rm -f "$OUT_DIR"/fushi-*.apk
         cp "$DEBUG_CHANNEL_APK" "$OUT_DIR/fushi-${BUILD_VERSION_NAME}-${SHORT_SHA}-debug.apk"
 
-    - name: Build release APK (split per ABI)
-      if: steps.channel.outputs.build_split_release_apk == 'true'
+    # BUG-3874：--target-platform 只管 libflutter/libapp，插件与本仓 jniLibs 不随之过滤，
+    # 调试包曾带着 armeabi-v7a / x86_64 两套起不来的原生库（459 MB，近一半死重）。过滤由
+    # build.gradle 的 ndk.abiFilters 按 target-platform 收；这里在出包后钉死结果。
+    - name: Verify debug-channel APK is arm64-only
+      if: steps.channel.outputs.build_debug_channel_apk == 'true'
       working-directory: fushi
-      timeout-minutes: 60
       shell: bash
       run: |
         set -euo pipefail
-        flutter --verbose build apk --split-per-abi --release \
-          --build-name "${{ steps.channel.outputs.build_version_name }}" \
-          --build-number "${{ steps.channel.outputs.android_build_number }}" \
-          --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+        apk=$(find build/release-artifacts -maxdepth 1 -type f -name 'fushi-*-debug.apk' | head -n 1)
+        abis="$(unzip -Z1 "$apk" | sed -n 's#^lib/\([^/]*\)/.*#\1#p' | sort -u)"
+        echo "lib ABIs in $apk: $(echo $abis)"
+        if [ "$abis" != "arm64-v8a" ]; then
+          echo "::error title=Debug APK carries extra ABIs::$apk lib/ has: $(echo $abis) (expected arm64-v8a only)"
+          exit 1
+        fi
+
+    # 逐 ABI 串行出包（2026-11-05，3.3.0 正式版预构建 run 41955804997 连挂两次）：
+    # 一次 `--split-per-abi` 不带 target-platform 时，flutter assemble 把 arm / arm64 / x64
+    # 三个 gen_snapshot **同时**拉起（日志里三条 android_aot_release_* 同一毫秒 Starting），
+    # 叠在 Gradle daemon（-Xmx4608m）+ Kotlin daemon 上。ubuntu-latest 换成 ubuntu-26.04
+    # 镜像后（v3.0.0 那次还是 24.04），三份 AOT 并发约 70 s 后 runner 收到 shutdown signal，
+    # 整个 job 被平台回收；同一天同一代码只编单 ABI arm64 的 debug 通道是绿的。
+    # 每次只带一个 target-platform，峰值退回到单个 gen_snapshot（= debug 通道已验证的量级）；
+    # 产物与一次出三份完全相同：splits.abi 只 include 本次的 ABI，versionCode 偏移按输出
+    # ABI 算（build.gradle），flutter-apk/ 里三份 APK 依次累积。
+    # 后台每 15 s 打一行内存 / 磁盘采样进本步日志：runner 被掐时 post 步骤不会跑，
+    # 只有实时打进本步的行能留下来。
+    - name: Build release APK (split per ABI)
+      if: steps.channel.outputs.build_split_release_apk == 'true'
+      working-directory: fushi
+      timeout-minutes: 80
+      shell: bash
+      run: |
+        set -euo pipefail
+        (
+          # 采样只是诊断：ps|head 的 SIGPIPE 之类不许在 pipefail 下把采样器自己弄死。
+          set +e +o pipefail
+          while sleep 15; do
+            echo "[res] $(awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree):/{printf "%s%dMiB ", $1, $2/1024}' /proc/meminfo)disk=$(df -h --output=avail "$GITHUB_WORKSPACE" | tail -n 1 | tr -d ' ')"
+            ps -eo rss=,comm= --sort=-rss | head -n 4 | awk '{printf "[res]   %6d MiB %s\n", $1/1024, $2}'
+          done
+        ) &
+        sampler=$!
+        trap 'kill "$sampler" 2>/dev/null || true' EXIT
+        for platform in android-arm android-arm64 android-x64; do
+          echo "::group::split-per-abi release build: $platform"
+          flutter --verbose build apk --split-per-abi --release --target-platform "$platform" \
+            --build-name "${{ steps.channel.outputs.build_version_name }}" \
+            --build-number "${{ steps.channel.outputs.android_build_number }}" \
+            --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+          echo "::endgroup::"
+        done
+        missing=0
+        for abi in armeabi-v7a arm64-v8a x86_64; do
+          if [ ! -f "build/app/outputs/flutter-apk/app-${abi}-release.apk" ]; then
+            echo "::error title=Split APK missing::build/app/outputs/flutter-apk/app-${abi}-release.apk was not produced"
+            missing=1
+          fi
+        done
+        exit "$missing"
 
     - name: Collect Android post-build diagnostics
       if: ${{ always() && (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') }}
@@ -852,6 +1121,50 @@ jobs:
           ABI=$(basename "$f" | sed 's/^app-//;s/-release\.apk$//')
           cp "$f" "$OUT_DIR/fushi-${BUILD_VERSION_NAME}-${ABI}.apk"
         done
+
+    # build.gradle 的 release signingConfig 显式开了 v1 + v2 + v3，并在 packageRelease 后用 apksigner
+    # 强制补 v1（minSdk 24 时 AGP 无视 enableV1Signing，只签 v2/v3）。HarmonyOS 4.x 安装器会因没有 JAR（v1）签名报「无证书」拒装（反馈 j3ChbSpKgJ）。
+    # 这三个开关被删 / 被 AGP 升级改了默认都不会让构建失败，这里对每个 release 签名的 APK
+    # （release-signed 调试通道包与 split release 包；Gradle 出的 `*-release.apk`，debug 签名
+    # 的 `*-debug.apk` 不在其列）跑 apksigner，三种方案缺一个就挡在发布前。
+    - name: Verify release APK signing schemes (v1 + v2 + v3)
+      if: ${{ steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      working-directory: fushi
+      shell: bash
+      run: |
+        set -euo pipefail
+        APKSIGNER=$(ls -1 "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+        if [ -z "$APKSIGNER" ]; then
+          echo "::error title=apksigner missing::No apksigner under $ANDROID_HOME/build-tools"
+          exit 1
+        fi
+        echo "Using $APKSIGNER"
+        shopt -s nullglob
+        apks=(build/app/outputs/flutter-apk/*-release.apk)
+        if [ "${#apks[@]}" -eq 0 ]; then
+          echo "::error title=Release APK missing::No *-release.apk in build/app/outputs/flutter-apk"
+          exit 1
+        fi
+        failed=0
+        for apk in "${apks[@]}"; do
+          # apksigner verify 按 APK 自己的 minSdk（24）判：那个口径下 v2 已足够，它**根本不看** v1，
+          # 恒报 v1=false。v1 要按「API 23 及以下 / 只认 JAR 签名的安装器」口径单独验。
+          out="$("$APKSIGNER" verify --verbose "$apk")"
+          out_v1="$("$APKSIGNER" verify --verbose --min-sdk-version 23 "$apk")"
+          echo "::group::apksigner verify $apk"
+          echo "$out"
+          echo "--- --min-sdk-version 23 (JAR / v1) ---"
+          echo "$out_v1"
+          echo "::endgroup::"
+          for scheme in v1 v2 v3; do
+            if [ "$scheme" = v1 ]; then subject="$out_v1"; else subject="$out"; fi
+            if ! grep -Eq "^Verified using ${scheme} scheme \(.*\): true$" <<<"$subject"; then
+              echo "::error title=APK not signed with ${scheme}::$apk is not verified with the ${scheme} signature scheme"
+              failed=1
+            fi
+          done
+        done
+        exit "$failed"
 
     # jniLibs 是 copy-if-present：.so 没落到 prebuilt/ 时 Gradle 静默跳过，APK 照出、
     # P2P 能力在用户那里整块消失。这里按「APK 里 app 能跑的每个 ABI（有 libflutter.so
@@ -918,6 +1231,150 @@ jobs:
               exit 1
             fi
             echo "ok: $apk lib/$abi/libfushi_fsrs.so"
+          done
+        done
+    # 同上，fushi_web_core（网页内容核心）也走 jniLibs：逐包、逐 ABI 核对
+    # APK 里确有 libfushi_web_core.so，把「编了但没进包」挡在发布前。判据与 here-string
+    # 理由（BUG-2804）同上一步。
+    - name: Verify fushi_web_core is packaged in every APK ABI
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      working-directory: fushi
+      shell: bash
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        apks=(build/release-artifacts/fushi-*.apk)
+        if [ "${#apks[@]}" -eq 0 ]; then
+          echo "::error title=No APK to verify::build/release-artifacts has no fushi-*.apk"
+          exit 1
+        fi
+        for apk in "${apks[@]}"; do
+          listing="$(unzip -Z1 "$apk")"
+          abis="$(printf '%s\n' "$listing" | sed -n 's#^lib/\([^/]*\)/libflutter\.so$#\1#p' | sort -u)"
+          if [ -z "$abis" ]; then
+            echo "::error title=APK has no Flutter engine::$apk has no lib/<abi>/libflutter.so"
+            exit 1
+          fi
+          for abi in $abis; do
+            if ! grep -qx "lib/$abi/libfushi_web_core.so" <<< "$listing"; then
+              echo "::error title=fushi_web_core missing from APK::$apk lib/$abi/ has no libfushi_web_core.so"
+              exit 1
+            fi
+            echo "ok: $apk lib/$abi/libfushi_web_core.so"
+          done
+        done
+
+    # 同上，fushi_compute（计算内核）也是 jniLibs copy-if-present：逐包、逐 ABI 核对。
+    - name: Verify fushi_compute is packaged in every APK ABI
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      working-directory: fushi
+      shell: bash
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        apks=(build/release-artifacts/fushi-*.apk)
+        if [ "${#apks[@]}" -eq 0 ]; then
+          echo "::error title=No APK to verify::build/release-artifacts has no fushi-*.apk"
+          exit 1
+        fi
+        for apk in "${apks[@]}"; do
+          listing="$(unzip -Z1 "$apk")"
+          abis="$(printf '%s\n' "$listing" | sed -n 's#^lib/\([^/]*\)/libflutter\.so$#\1#p' | sort -u)"
+          if [ -z "$abis" ]; then
+            echo "::error title=APK has no Flutter engine::$apk has no lib/<abi>/libflutter.so"
+            exit 1
+          fi
+          for abi in $abis; do
+            if ! grep -qx "lib/$abi/libfushi_compute.so" <<< "$listing"; then
+              echo "::error title=fushi_compute missing from APK::$apk lib/$abi/ has no libfushi_compute.so"
+              exit 1
+            fi
+            echo "ok: $apk lib/$abi/libfushi_compute.so"
+          done
+        done
+
+    # 同上，fushi_rwkv（RWKV 排程推理，硬依赖）：逐包、逐 ABI 核对。
+    - name: Verify fushi_rwkv is packaged in every APK ABI
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      working-directory: fushi
+      shell: bash
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        apks=(build/release-artifacts/fushi-*.apk)
+        if [ "${#apks[@]}" -eq 0 ]; then
+          echo "::error title=No APK to verify::build/release-artifacts has no fushi-*.apk"
+          exit 1
+        fi
+        for apk in "${apks[@]}"; do
+          listing="$(unzip -Z1 "$apk")"
+          abis="$(printf '%s\n' "$listing" | sed -n 's#^lib/\([^/]*\)/libflutter\.so$#\1#p' | sort -u)"
+          if [ -z "$abis" ]; then
+            echo "::error title=APK has no Flutter engine::$apk has no lib/<abi>/libflutter.so"
+            exit 1
+          fi
+          for abi in $abis; do
+            if ! grep -qx "lib/$abi/libfushi_rwkv.so" <<< "$listing"; then
+              echo "::error title=fushi_rwkv missing from APK::$apk lib/$abi/ has no libfushi_rwkv.so"
+              exit 1
+            fi
+            echo "ok: $apk lib/$abi/libfushi_rwkv.so"
+          done
+        done
+    # 音乐胖核心 fushi_music（曲库扫描 / 标签 / CUE）同为 app 硬依赖：与上一步 fushi_rwkv 同一口径。
+    - name: Verify fushi_music is packaged in every APK ABI
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      working-directory: fushi
+      shell: bash
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        apks=(build/release-artifacts/fushi-*.apk)
+        if [ "${#apks[@]}" -eq 0 ]; then
+          echo "::error title=No APK to verify::build/release-artifacts has no fushi-*.apk"
+          exit 1
+        fi
+        for apk in "${apks[@]}"; do
+          listing="$(unzip -Z1 "$apk")"
+          abis="$(printf '%s\n' "$listing" | sed -n 's#^lib/\([^/]*\)/libflutter\.so$#\1#p' | sort -u)"
+          if [ -z "$abis" ]; then
+            echo "::error title=APK has no Flutter engine::$apk has no lib/<abi>/libflutter.so"
+            exit 1
+          fi
+          for abi in $abis; do
+            if ! grep -qx "lib/$abi/libfushi_music.so" <<< "$listing"; then
+              echo "::error title=fushi_music missing from APK::$apk lib/$abi/ has no libfushi_music.so"
+              exit 1
+            fi
+            echo "ok: $apk lib/$abi/libfushi_music.so"
+          done
+        done
+    # 语料胖核心 fushi_corpus（「我库里的例句」倒排索引）同为 app 硬依赖：与上一步 fushi_corpus 同一口径。
+    - name: Verify fushi_corpus is packaged in every APK ABI
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      working-directory: fushi
+      shell: bash
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        apks=(build/release-artifacts/fushi-*.apk)
+        if [ "${#apks[@]}" -eq 0 ]; then
+          echo "::error title=No APK to verify::build/release-artifacts has no fushi-*.apk"
+          exit 1
+        fi
+        for apk in "${apks[@]}"; do
+          listing="$(unzip -Z1 "$apk")"
+          abis="$(printf '%s\n' "$listing" | sed -n 's#^lib/\([^/]*\)/libflutter\.so$#\1#p' | sort -u)"
+          if [ -z "$abis" ]; then
+            echo "::error title=APK has no Flutter engine::$apk has no lib/<abi>/libflutter.so"
+            exit 1
+          fi
+          for abi in $abis; do
+            if ! grep -qx "lib/$abi/libfushi_corpus.so" <<< "$listing"; then
+              echo "::error title=fushi_corpus missing from APK::$apk lib/$abi/ has no libfushi_corpus.so"
+              exit 1
+            fi
+            echo "ok: $apk lib/$abi/libfushi_corpus.so"
           done
         done
 
@@ -1384,6 +1841,61 @@ jobs:
         echo "::error title=main sync failed::推 main 三次都被拒（有人同时在推 main）。请人工把 develop 合进 main。"
         exit 1
 
+  # 网页内容核心（native/fushi_web_core）Linux .so：packages/fushi_web_core 把原生库当硬依赖
+  # （没有「缺库判不可用」的分支，测试找不到库就失败、不 skip），所以 fushi/ 与 packages/ 的
+  # 单测 job 都要它。只编一次、以 workflow artifact 交给下游（artifact 不占 Actions 缓存配额）。
+  web-core-linux:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_tests == 'true') && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v6
+    - uses: ./.github/actions/fushi-web-core-linux
+    - uses: actions/upload-artifact@v7
+      with:
+        name: fushi-web-core-linux-x64
+        path: native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
+        if-no-files-found: error
+        retention-days: 3
+
+  # 测试矩阵的另几个 Rust 硬依赖（fushi_fsrs / fushi_compute / fushi_rwkv）同理只编一次、与
+  # web-core-linux 并行，以 artifact 交给五份矩阵（原来每份各编一遍，约 2 分钟压在每份的关键路径上）。
+  test-native-linux:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_tests == 'true') && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v6
+    - uses: ./.github/actions/test-native-linux
+    - uses: actions/upload-artifact@v7
+      with:
+        name: fushi-test-native-linux-x64
+        path: |
+          native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
+          native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
+          native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so
+          native/fushi_music/prebuilt/linux-x64/libfushi_music.so
+          native/fushi_corpus/prebuilt/linux-x64/libfushi_corpus.so
+        if-no-files-found: error
+        retention-days: 3
+
+  # 词典引擎（native/fushidicts）Linux .so：packages/fushi_dictionary 的真原生库测试
+  # （background_tokenize_native_test.dart 的后台查词 / redirect 标记迁移两组）缺库直接失败、
+  # 不 skip，所以 tests (checks) 的包测试要它。与 web-core-linux 并行编一次、以 artifact 下发。
+  fushidicts-linux:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_tests == 'true') && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v6
+    - uses: ./.github/actions/fushidicts-linux
+    - uses: actions/upload-artifact@v7
+      with:
+        name: fushidicts-linux-x64
+        path: native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so
+        if-no-files-found: error
+        retention-days: 3
+
   # TODO-fast-release: the analyze/unit/package suites that used to run as
   # sequential steps at the top of the `build` job (gating `flutter build apk`)
   # now live here as an INDEPENDENT job. It shares the same trigger as `build`
@@ -1413,14 +1925,29 @@ jobs:
     # 2026-09-30：已按文件分片（--file-shard，原理见 main.yml 的 unit-tests 注释）。
     # 矩阵 5 份：4 片主应用单测 + checks（analyze + 包测试），各自独立 runner 并行；
     # 分片数改 matrix 和 --file-shard 分母两处。
+    # 2026-10-21：--experimental-faster-testing 试过又撤回（随机 SIGSEGV，见 main.yml 的
+    # unit-tests 注释）；分片仍按实测 suite 耗时均衡，Rust 测试库由 test-native-linux 只编一次。
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         part: ['0', '1', '2', '3', checks]
     name: tests (${{ matrix.part }})
+    needs: [web-core-linux, test-native-linux, fushidicts-linux]
+    env:
+      FUSHI_WEB_CORE_LIB: ${{ github.workspace }}/native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
+      FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
+      FUSHI_COMPUTE_LIB: ${{ github.workspace }}/native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
+      FUSHI_RWKV_LIB: ${{ github.workspace }}/native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so
+      FUSHI_MUSIC_LIB: ${{ github.workspace }}/native/fushi_music/prebuilt/linux-x64/libfushi_music.so
+      FUSHI_CORPUS_LIB: ${{ github.workspace }}/native/fushi_corpus/prebuilt/linux-x64/libfushi_corpus.so
     steps:
     - uses: actions/checkout@v6
+    # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
+    - name: Fetch vendored binaries
+      uses: ./.github/actions/fetch-vendored-binaries
+      with:
+        groups: all
 
     - uses: subosito/flutter-action@v2
       with:
@@ -1445,6 +1972,7 @@ jobs:
         dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
         tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
         opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
+        acoustid-api-key: ${{ secrets.ACOUSTID_API_KEY }}
     - name: Flutter pub get
       working-directory: fushi
       run: flutter pub get
@@ -1453,19 +1981,71 @@ jobs:
       run: |
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
+    # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+    - name: Generate i18n
+      uses: ./.github/actions/gen-i18n
+
+    - name: Fetch fushi_web_core linux-x64 library (hard dependency of the unit tests)
+      uses: actions/download-artifact@v7
+      with:
+        name: fushi-web-core-linux-x64
+        path: native/fushi_web_core/prebuilt/linux-x64
+    - name: Fetch fushidicts linux-x64 library (hard dependency of the package tests)
+      if: matrix.part == 'checks'
+      uses: actions/download-artifact@v7
+      with:
+        name: fushidicts-linux-x64
+        path: native/fushidicts/prebuilt/linux-x64
 
     - name: Run dart analyze
       if: matrix.part == 'checks'
       working-directory: fushi
       run: flutter analyze
 
+    # Anki 搜索的逐卡求值与 AnkiConnect 查重规范形只有 Rust 实现（native/fushi_fsrs/src/search.rs），
+    # 计算内核 fushi_compute 与 RWKV-Instant 排程推理 fushi_rwkv 是硬依赖：单测（flutter_tester）与
+    # 包测试（fushi_srs / fushi_compute / fushi_engine）都要真实 .so，库缺失时直接判红（不 skip）。
+    # 由 test-native-linux 编好，五份矩阵只下载（路径与 job 级 FUSHI_FSRS_LIB / FUSHI_COMPUTE_LIB /
+    # FUSHI_RWKV_LIB 对应）。
+    - name: Fetch fushi_fsrs + fushi_compute + fushi_rwkv linux-x64 libraries (hard dependencies of the tests)
+      uses: actions/download-artifact@v7
+      with:
+        name: fushi-test-native-linux-x64
+        path: native
+
     - name: Run unit tests (main app, file shard ${{ matrix.part }}/4)
       if: matrix.part != 'checks'
       working-directory: fushi
-      run: dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.part }}/4 --exclude-tags golden
+      # faster-testing 的三个参数与原因见 main.yml 同名步骤。
+      run: dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.part }}/4 --exclude-tags golden --experimental-faster-testing --concurrency=1 --max-suites-per-run=400
+
+    # 逐 suite 耗时（tool/update_suite_timings.dart 的输入），见 main.yml 同名步骤。
+    - name: Upload test event log
+      if: always() && matrix.part != 'checks'
+      uses: actions/upload-artifact@v7
+      with:
+        name: unit-test-events-${{ matrix.part }}
+        path: .codex-test/flutter-test/flutter_test.jsonl
+        if-no-files-found: warn
+        retention-days: 14
+
+    # packages/fushi_rwkv 的端到端测试要真权重（缺了判红、不 skip），与 main.yml 同名两步一致：
+    # 只读 native-rwkv-gate 写的同一个缓存条目（key 是两个钉死的 SHA-256，与 fetch_model.sh
+    # 一致），未命中时 fetch_model.sh 按钉死 URL 下载并校验（~16 MB）。
+    - name: Restore RWKV weights cache
+      if: matrix.part == 'checks'
+      uses: actions/cache/restore@v4
+      with:
+        path: native/fushi_rwkv/model
+        key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-7b1790f49fdabf1279510247cc9bc3bf3ac461b67cf0135ab8e51589b5efe71a
+    - name: Fetch RWKV weights (pinned URL, SHA-256 checked)
+      if: matrix.part == 'checks'
+      run: bash native/fushi_rwkv/fetch_model.sh
 
     - name: Run package tests
       if: matrix.part == 'checks'
+      env:
+        FUSHI_DICTS_LIB: ${{ github.workspace }}/native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so
       run: |
         # 扫描面按磁盘枚举，不写死包清单：这里是 packages/*/test 的**唯一** runner，
         # 上一版把五个包名写成字面量，于是任何新加的自有包连同它的测试在 CI 里

@@ -6,9 +6,9 @@
 //     Taking one is atomic, and a process that dies releases it -- no polling
 //     race (the old gate let every waiter start at once) and no stale holder
 //     (a dead run used to keep the gate shut for hours).
-//   * A free slot is taken right away: there is no memory admission (removed
-//     2026-10-03, see heavy_budget.dart). The slot count alone bounds the
-//     machine's concurrency.
+//   * A free slot is taken when the run's memory ceiling fits the budget next
+//     to the ceilings the holders booked (2026-10-19, see heavy_budget.dart);
+//     the live free memory is never consulted (removed 2026-10-03).
 //   * Writers of one checkout's build/ (native assets, sqlite3.dll, result
 //     files) additionally hold <repo>/.codex-test/heavy/worktree.lock.
 //   * On Windows the holder joins a Job Object: below-normal priority (the
@@ -65,6 +65,15 @@ int heavySlotCount(MemorySnapshot? memory, [Map<String, String>? environment]) {
   return memory == null ? 2 : defaultHeavySlots(memory.totalPhysMb);
 }
 
+/// The ceilings budget: `FUSHI_HEAVY_BUDGET_MB`, else [defaultHeavyBudgetMb]
+/// of the RAM; null (slots alone pace the runs) where the RAM is unknown.
+int? heavyBudgetMb(MemorySnapshot? memory, [Map<String, String>? environment]) {
+  final Map<String, String> env = environment ?? Platform.environment;
+  final int? forced = int.tryParse(env['FUSHI_HEAVY_BUDGET_MB'] ?? '');
+  if (forced != null && forced > 0) return forced;
+  return memory == null ? null : defaultHeavyBudgetMb(memory.totalPhysMb);
+}
+
 /// This machine's memory, or null where it cannot be read (macOS: slots
 /// alone then pace the runs).
 MemorySnapshot? readMemorySnapshot() {
@@ -102,9 +111,9 @@ class HeavyLease {
     RandomAccessFile? slotLock,
     _WorktreeLock? worktreeLock,
     File? slotInfo,
-  })  : _slotLock = slotLock,
-        _worktreeLock = worktreeLock,
-        _slotInfo = slotInfo;
+  }) : _slotLock = slotLock,
+       _worktreeLock = worktreeLock,
+       _slotInfo = slotInfo;
 
   /// The slot held, or null when no lease was needed ([skipReason]).
   final int? slot;
@@ -182,6 +191,25 @@ Future<HeavyLease> acquireHeavyLease({
     worktree = await _waitWorktreeLock(worktreeRoot, label, sw, waitMax, say);
   }
   try {
+    // A light run neither queues nor waits behind this process's other lanes:
+    // the chain is held for a lane's whole wait, so pre_push_check --parallel
+    // would park its analyze behind a test lane waiting for a slot. Each
+    // admission attempt is one synchronous block under the gate, so skipping
+    // the chain cannot interleave two attempts.
+    if (need.light) {
+      return await _waitSlot(
+        dir,
+        need,
+        label,
+        sw,
+        waitMax,
+        say,
+        worktree,
+        env: env,
+        readMemory: readMemory,
+        poll: poll,
+      );
+    }
     final Completer<void> mine = Completer<void>();
     final Future<void> before = _admissionChain;
     _admissionChain = mine.future;
@@ -189,6 +217,7 @@ Future<HeavyLease> acquireHeavyLease({
     try {
       return await _waitSlot(
         dir,
+        need,
         label,
         sw,
         waitMax,
@@ -237,8 +266,9 @@ Future<_WorktreeLock> _waitWorktreeLock(
   while (true) {
     // Held by this very process (another lane): do not even open the file --
     // POSIX would grant the lock again, and closing the probe would drop it.
-    final RandomAccessFile? f =
-        _heldWorktrees.contains(key) ? null : _tryLock(lockFile);
+    final RandomAccessFile? f = _heldWorktrees.contains(key)
+        ? null
+        : _tryLock(lockFile);
     if (f != null) {
       _heldWorktrees.add(key);
       info.writeAsStringSync(
@@ -275,11 +305,33 @@ String _readText(File f) {
   }
 }
 
-/// The holders of the slots other processes hold right now (a free slot's
-/// stale info file is ignored: the lock, not the file, is the truth).
+/// The slot indexes to probe: this process's own `0..slots-1` plus every
+/// `slot-<n>.lock` already in [dir]. A session started with a larger
+/// `FUSHI_HEAVY_SLOTS` holds slots past this process's count; they are not
+/// ours to take, but their runs count against the memory budget all the same.
+List<int> _slotIndexes(Directory dir, int slots) {
+  final Set<int> out = <int>{for (int i = 0; i < slots; i++) i};
+  final RegExp name = RegExp(r'^slot-(\d+)\.lock$');
+  try {
+    for (final FileSystemEntity e in dir.listSync(followLinks: false)) {
+      final RegExpMatch? m = name.firstMatch(
+        e.path.replaceAll(r'\', '/').split('/').last,
+      );
+      if (m != null) out.add(int.parse(m.group(1)!));
+    }
+  } on FileSystemException {
+    // No directory yet: nobody holds anything past our own range.
+  }
+  return out.toList()..sort();
+}
+
+/// The holders of the slots other processes (or other lanes of this one)
+/// hold right now, including slots past [slots] that a session with a
+/// larger slot count took (a free slot's stale info file is ignored: the
+/// lock, not the file, is the truth).
 List<HeavyHolder> readHeavyHolders(Directory dir, int slots) {
   final List<HeavyHolder> out = <HeavyHolder>[];
-  for (int i = 0; i < slots; i++) {
+  for (final int i in _slotIndexes(dir, slots)) {
     if (_heldInProcess.contains(i)) {
       final HeavyHolder? h = _holderInfo(dir, i);
       if (h != null) out.add(h);
@@ -292,14 +344,7 @@ List<HeavyHolder> readHeavyHolders(Directory dir, int slots) {
     }
     final HeavyHolder? h = _holderInfo(dir, i);
     out.add(
-      h ??
-          HeavyHolder(
-            slot: i,
-            pid: 0,
-            startedAtMs: 0,
-            label: '?',
-            cwd: '',
-          ),
+      h ?? HeavyHolder(slot: i, pid: 0, startedAtMs: 0, label: '?', cwd: ''),
     );
   }
   return out;
@@ -329,6 +374,7 @@ RandomAccessFile? _tryLock(File f) {
 
 Future<HeavyLease> _waitSlot(
   Directory dir,
+  HeavyNeed need,
   String label,
   Stopwatch sw,
   Duration? waitMax,
@@ -351,9 +397,12 @@ Future<HeavyLease> _waitSlot(
       String reason;
       try {
         gate.lockSync(FileLock.blockingExclusive);
-        ticket ??= _Ticket.take(dir, label);
+        // A light run (analyze) does not queue: it never takes a regular
+        // slot, so a slot waiter at the head has nothing to wait on it for.
+        if (!need.light) ticket ??= _Ticket.take(dir, label);
         final (HeavyLease? lease, String blocker) = _admitHead(
           dir,
+          need,
           ticket,
           label,
           sw,
@@ -385,10 +434,12 @@ Future<HeavyLease> _waitSlot(
 }
 
 /// Under the admission gate: the slot lease for [ticket] if it heads the
-/// queue and a slot is free, else null and why not.
+/// queue, a slot is free and [need]'s booking fits the budget, else null and
+/// why not. A light [need] has no ticket and picks among the light slots.
 (HeavyLease?, String) _admitHead(
   Directory dir,
-  _Ticket ticket,
+  HeavyNeed need,
+  _Ticket? ticket,
   String label,
   Stopwatch sw,
   void Function(String) say,
@@ -396,27 +447,54 @@ Future<HeavyLease> _waitSlot(
   required Map<String, String> env,
   required MemorySnapshot? Function() readMemory,
 }) {
-  final List<HeavyQueued> queue = readHeavyQueue(dir);
-  final int ahead = queue.indexWhere((HeavyQueued q) => q.name == ticket.name);
-  if (ahead > 0) {
-    return (
-      null,
-      'queued behind $ahead earlier run(s): '
-          '${queue.take(ahead).map((HeavyQueued q) => q.label).join(', ')}',
+  if (ticket != null) {
+    final List<HeavyQueued> queue = readHeavyQueue(dir);
+    final int ahead = queue.indexWhere(
+      (HeavyQueued q) => q.name == ticket.name,
     );
+    if (ahead > 0) {
+      return (
+        null,
+        'queued behind $ahead earlier run(s): '
+            '${queue.take(ahead).map((HeavyQueued q) => q.label).join(', ')}',
+      );
+    }
   }
   final MemorySnapshot? memory = readMemory();
   final int slots = heavySlotCount(memory, env);
   final List<HeavyHolder> holders = readHeavyHolders(dir, slots);
   final Set<int> busy = holders.map((HeavyHolder h) => h.slot).toSet();
-  if (busy.length >= slots) {
+  final List<int> candidates = need.light
+      ? <int>[for (int i = 0; i < kLightSlotCount; i++) kLightSlotBase + i]
+      : <int>[for (int i = 0; i < slots; i++) i];
+  // Holders past our own range book memory below but are no slot of ours:
+  // "full" means every candidate is taken.
+  if (!candidates.any((int i) => !busy.contains(i))) {
+    final Iterable<HeavyHolder> rivals = holders.where(
+      (HeavyHolder h) => candidates.contains(h.slot),
+    );
     return (
       null,
-      'all $slots slots busy: '
-          '${holders.map((HeavyHolder h) => '${h.label} (pid ${h.pid})').join(', ')}',
+      'all ${candidates.length} ${need.light ? 'light ' : ''}slots busy: '
+          '${rivals.map((HeavyHolder h) => '${h.label} (pid ${h.pid})').join(', ')}',
     );
   }
-  for (int i = 0; i < slots; i++) {
+  final int? budget = heavyBudgetMb(memory, env);
+  final String? overBudget = budget == null
+      ? null
+      : heavyBudgetBlocker(
+          needMb: need.bookedMb,
+          heldCapsMb: <int>[for (final HeavyHolder h in holders) h.bookedMb],
+          budgetMb: budget,
+        );
+  if (overBudget != null) {
+    return (
+      null,
+      '$overBudget: '
+          '${holders.map((HeavyHolder h) => '${h.label} (pid ${h.pid}, ${h.bookedMb} MB)').join(', ')}',
+    );
+  }
+  for (final int i in candidates) {
     if (busy.contains(i) || _heldInProcess.contains(i)) continue;
     final RandomAccessFile? lock = _tryLock(File('${dir.path}/slot-$i.lock'));
     if (lock == null) continue;
@@ -431,6 +509,7 @@ Future<HeavyLease> _waitSlot(
             startedAtMs: DateTime.now().millisecondsSinceEpoch,
             label: label,
             cwd: Directory.current.path,
+            capMb: need.bookedMb,
           ).toJson(),
         ),
       );
@@ -593,9 +672,11 @@ DynamicLibrary get _kernel32 =>
     _kernel32Lib ??= DynamicLibrary.open('kernel32.dll');
 
 MemorySnapshot? _windowsMemory() {
-  final int Function(Pointer<_MemoryStatusEx>) globalMemoryStatusEx =
-      _kernel32.lookupFunction<Int32 Function(Pointer<_MemoryStatusEx>),
-          int Function(Pointer<_MemoryStatusEx>)>('GlobalMemoryStatusEx');
+  final int Function(Pointer<_MemoryStatusEx>) globalMemoryStatusEx = _kernel32
+      .lookupFunction<
+        Int32 Function(Pointer<_MemoryStatusEx>),
+        int Function(Pointer<_MemoryStatusEx>)
+      >('GlobalMemoryStatusEx');
   final Pointer<_MemoryStatusEx> p = calloc<_MemoryStatusEx>();
   try {
     p.ref.dwLength = sizeOf<_MemoryStatusEx>();
@@ -660,22 +741,25 @@ class HeavyJob {
   }
 }
 
-final int Function(Pointer<Void>, Pointer<Utf16>) _createJob =
-    _kernel32.lookupFunction<IntPtr Function(Pointer<Void>, Pointer<Utf16>),
-        int Function(Pointer<Void>, Pointer<Utf16>)>('CreateJobObjectW');
-final int Function(int, int, Pointer<Void>, int) _setJob =
-    _kernel32.lookupFunction<
-        Int32 Function(IntPtr, Int32, Pointer<Void>, Uint32),
-        int Function(int, int, Pointer<Void>, int)>('SetInformationJobObject');
+final int Function(Pointer<Void>, Pointer<Utf16>) _createJob = _kernel32
+    .lookupFunction<
+      IntPtr Function(Pointer<Void>, Pointer<Utf16>),
+      int Function(Pointer<Void>, Pointer<Utf16>)
+    >('CreateJobObjectW');
+final int Function(int, int, Pointer<Void>, int) _setJob = _kernel32
+    .lookupFunction<
+      Int32 Function(IntPtr, Int32, Pointer<Void>, Uint32),
+      int Function(int, int, Pointer<Void>, int)
+    >('SetInformationJobObject');
 final int Function(int, int, Pointer<Void>, int, Pointer<Uint32>) _queryJob =
     _kernel32.lookupFunction<
-        Int32 Function(IntPtr, Int32, Pointer<Void>, Uint32, Pointer<Uint32>),
-        int Function(int, int, Pointer<Void>, int,
-            Pointer<Uint32>)>('QueryInformationJobObject');
+      Int32 Function(IntPtr, Int32, Pointer<Void>, Uint32, Pointer<Uint32>),
+      int Function(int, int, Pointer<Void>, int, Pointer<Uint32>)
+    >('QueryInformationJobObject');
 final int Function(int, int) _assignJob = _kernel32
     .lookupFunction<Int32 Function(IntPtr, IntPtr), int Function(int, int)>(
-  'AssignProcessToJobObject',
-);
+      'AssignProcessToJobObject',
+    );
 final int Function() _currentProcess = _kernel32
     .lookupFunction<IntPtr Function(), int Function()>('GetCurrentProcess');
 

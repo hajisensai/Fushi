@@ -30,10 +30,12 @@ Offset clampFloatingWindowOrigin({
 }) {
   // Keep minVisible sane: a window narrower/shorter than the requested margin
   // can at most show its whole extent, so cap the per-axis margin.
-  final double marginX =
-      minVisible < windowSize.width ? minVisible : windowSize.width;
-  final double marginY =
-      minVisible < windowSize.height ? minVisible : windowSize.height;
+  final double marginX = minVisible < windowSize.width
+      ? minVisible
+      : windowSize.width;
+  final double marginY = minVisible < windowSize.height
+      ? minVisible
+      : windowSize.height;
 
   final double minX = bounds.left - (windowSize.width - marginX);
   final double maxX = bounds.right - marginX;

@@ -40,12 +40,18 @@ void main() {
   test('定时器回调静止超时重跑光标策略（空闲重隐光标，沉浸态缺失路径根修）', () {
     final String body = pokeBody();
     // 定时器仍先清自动淡出可见性。
-    expect(body.contains('_lockButtonVisible.value = false'), isTrue,
-        reason: '定时器到点仍应清 _lockButtonVisible（自然淡出）');
+    expect(
+      body.contains('_lockButtonVisible.value = false'),
+      isTrue,
+      reason: '定时器到点仍应清 _lockButtonVisible（自然淡出）',
+    );
     // 关键：回调内重跑光标隐藏唯一权威 → 沉浸态静止 2s 重隐光标。
-    expect(body.contains('_applyControlsVisibilityFromMediaKit()'), isTrue,
-        reason:
-            'BUG-923：定时器回调必须重跑 _applyControlsVisibilityFromMediaKit，补上沉浸态静止后的光标重隐路径');
+    expect(
+      body.contains('_applyControlsVisibilityFromMediaKit()'),
+      isTrue,
+      reason:
+          'BUG-923：定时器回调必须重跑 _applyControlsVisibilityFromMediaKit，补上沉浸态静止后的光标重隐路径',
+    );
   });
 
   test('光标真隐藏时释放锁按钮 hover 保活（按钮随光标同步淡出），且整块桌面门控', () {
@@ -53,14 +59,18 @@ void main() {
     // 光标真被隐藏时才释放 hover 保活 → 按钮随光标同步淡出（消除 keep-alive 顶死）。
     expect(
       body.contains(
-          'if (_cursorHidden.value) _lockButtonHovered.value = false'),
+        'if (_cursorHidden.value) _lockButtonHovered.value = false',
+      ),
       isTrue,
       reason:
           'BUG-923：光标真被隐藏时应释放 _lockButtonHovered，让沉浸退出按钮随光标一起淡出（keep-alive 前提消失）',
     );
     // 空闲重隐整块桌面门控（移动端无 OS 光标语义，行为不变）。
-    expect(body.contains('if (_isDesktopVideoControls) {'), isTrue,
-        reason: '空闲重隐光标 / 释放 hover 属桌面 OS 光标语义，必须桌面门控');
+    expect(
+      body.contains('if (_isDesktopVideoControls) {'),
+      isTrue,
+      reason: '空闲重隐光标 / 释放 hover 属桌面 OS 光标语义，必须桌面门控',
+    );
   });
 
   test('保 BUG-294：定时器内每次释放 _lockButtonHovered 都受 _cursorHidden 门控（不无条件清）', () {
@@ -68,16 +78,22 @@ void main() {
     // 反向钉死：不得无条件清 hover（那会在 overlay 打开、光标仍可见时把按钮从光标正下方
     // 凭空收走，回归 BUG-294）。定时器回调里对 _lockButtonHovered 的**每一次**清零都必须
     // 挂在 `if (_cursorHidden.value)` 门控之后。
-    final int total =
-        '_lockButtonHovered.value = false'.allMatches(body).length;
+    final int total = '_lockButtonHovered.value = false'
+        .allMatches(body)
+        .length;
     final int guarded =
         'if (_cursorHidden.value) _lockButtonHovered.value = false'
             .allMatches(body)
             .length;
-    expect(guarded, greaterThan(0),
-        reason: '应有受 _cursorHidden 门控的 _lockButtonHovered 释放');
-    expect(total, guarded,
-        reason:
-            'BUG-294：定时器内不得存在未受 _cursorHidden 门控的无条件 _lockButtonHovered 清零');
+    expect(
+      guarded,
+      greaterThan(0),
+      reason: '应有受 _cursorHidden 门控的 _lockButtonHovered 释放',
+    );
+    expect(
+      total,
+      guarded,
+      reason: 'BUG-294：定时器内不得存在未受 _cursorHidden 门控的无条件 _lockButtonHovered 清零',
+    );
   });
 }

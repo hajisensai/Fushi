@@ -44,12 +44,17 @@ List<int> _varint(int value) {
 }
 
 /// 变长字段（wire type 0）。
-List<int> _pbVarintField(int field, int value) =>
-    <int>[..._tag(field, 0), ..._varint(value)];
+List<int> _pbVarintField(int field, int value) => <int>[
+  ..._tag(field, 0),
+  ..._varint(value),
+];
 
 /// 长度前缀字段（wire type 2）：嵌套 message / string / bytes 共用。
-List<int> _pbLenField(int field, List<int> payload) =>
-    <int>[..._tag(field, 2), ..._varint(payload.length), ...payload];
+List<int> _pbLenField(int field, List<int> payload) => <int>[
+  ..._tag(field, 2),
+  ..._varint(payload.length),
+  ...payload,
+];
 
 List<int> _tag(int field, int wireType) => _varint((field << 3) | wireType);
 
@@ -77,9 +82,9 @@ List<int> _floatTensorTypePayload(int dim) {
 
 /// `ValueInfoProto { name = 1, type = 2 }`。
 List<int> _valueInfo(String name, int dim) => <int>[
-      ..._pbLenField(1, _utf8(name)),
-      ..._pbLenField(2, _floatTensorTypePayload(dim)),
-    ];
+  ..._pbLenField(1, _utf8(name)),
+  ..._pbLenField(2, _floatTensorTypePayload(dim)),
+];
 
 /// 拼一个只含 `Add` 的合法 ONNX ModelProto。
 Uint8List _buildAddModel({int dim = 2}) {
@@ -134,35 +139,48 @@ void main() {
 
   group('ORT native 在本平台真实可用', () {
     test('闸门开着（isLocalOnnxRuntimeAvailable）', () {
-      expect(isLocalOnnxRuntimeAvailable, isTrue,
-          reason: '${Platform.operatingSystem} 上本地 OCR 闸门应为真');
+      expect(
+        isLocalOnnxRuntimeAvailable,
+        isTrue,
+        reason: '${Platform.operatingSystem} 上本地 OCR 闸门应为真',
+      );
     });
 
-    test('MethodChannel 有 native 实现（getPlatformVersion 不抛 MissingPlugin）',
-        () async {
-      // 这一条就是旧回归的直接探针：fork gate 掉 Apple 时，这里抛
-      // MissingPluginException。
-      final String? version = await OnnxRuntime().getPlatformVersion();
-      expect(version, isNotNull);
-      expect(version, isNotEmpty);
-      if (Platform.isIOS) {
-        expect(version, startsWith('iOS'));
-      } else if (Platform.isMacOS) {
-        expect(version, startsWith('macOS'));
-      }
-    });
+    test(
+      'MethodChannel 有 native 实现（getPlatformVersion 不抛 MissingPlugin）',
+      () async {
+        // 这一条就是旧回归的直接探针：fork gate 掉 Apple 时，这里抛
+        // MissingPluginException。
+        final String? version = await OnnxRuntime().getPlatformVersion();
+        expect(version, isNotNull);
+        expect(version, isNotEmpty);
+        if (Platform.isIOS) {
+          expect(version, startsWith('iOS'));
+        } else if (Platform.isMacOS) {
+          expect(version, startsWith('macOS'));
+        }
+      },
+    );
 
     test('EP 枚举可用，且 Apple 上报告 CoreML', () async {
-      final List<OrtProvider> providers =
-          await OnnxRuntime().getAvailableProviders();
-      expect(providers, contains(OrtProvider.CPU),
-          reason: 'CPU EP 在任何平台都必须在场——**生产的检测与识别都走它**'
-              '（Apple 分支的 CoreML 已按 BUG-1613 撤掉）');
+      final List<OrtProvider> providers = await OnnxRuntime()
+          .getAvailableProviders();
+      expect(
+        providers,
+        contains(OrtProvider.CPU),
+        reason:
+            'CPU EP 在任何平台都必须在场——**生产的检测与识别都走它**'
+            '（Apple 分支的 CoreML 已按 BUG-1613 撤掉）',
+      );
       if (Platform.isIOS || Platform.isMacOS) {
-        expect(providers, contains(OrtProvider.CORE_ML),
-            reason: 'Apple 构建里 CoreML EP 应当被编进 ORT。它当前**不参与生产'
-                '选路**（BUG-1613：iOS 上对 int8 检测模型静默返回空结果），但仍是'
-                '重新评估时的入口——枚举里消失说明 ORT 构建变了，值得知道');
+        expect(
+          providers,
+          contains(OrtProvider.CORE_ML),
+          reason:
+              'Apple 构建里 CoreML EP 应当被编进 ORT。它当前**不参与生产'
+              '选路**（BUG-1613：iOS 上对 int8 检测模型静默返回空结果），但仍是'
+              '重新评估时的入口——枚举里消失说明 ORT 构建变了，值得知道',
+        );
       }
     });
 
@@ -179,9 +197,13 @@ void main() {
       final Map<String, OcrTensor> outputs = await session.run(
         <String, OcrTensor>{
           'a': OcrTensor.float32(
-              Float32List.fromList(<double>[1.5, 2.5]), <int>[2]),
+            Float32List.fromList(<double>[1.5, 2.5]),
+            <int>[2],
+          ),
           'b': OcrTensor.float32(
-              Float32List.fromList(<double>[10.0, 20.0]), <int>[2]),
+            Float32List.fromList(<double>[10.0, 20.0]),
+            <int>[2],
+          ),
         },
       );
 
@@ -218,9 +240,13 @@ void main() {
       final Map<String, OcrTensor> outputs = await session.run(
         <String, OcrTensor>{
           'a': OcrTensor.float32(
-              Float32List.fromList(<double>[3.0, 4.0]), <int>[2]),
+            Float32List.fromList(<double>[3.0, 4.0]),
+            <int>[2],
+          ),
           'b': OcrTensor.float32(
-              Float32List.fromList(<double>[0.5, 0.25]), <int>[2]),
+            Float32List.fromList(<double>[0.5, 0.25]),
+            <int>[2],
+          ),
         },
       );
       final OcrTensor out = outputs.values.single;

@@ -8,6 +8,7 @@
 #include "../types/channel_delegate.h"
 #include "../types/create_window_action.h"
 #include "../types/custom_scheme_response.h"
+#include "../types/download_start_request.h"
 #include "../types/navigation_action.h"
 #include "../types/permission_response.h"
 #include "../types/web_resource_error.h"
@@ -79,9 +80,11 @@ namespace flutter_inappwebview_plugin
     void onUpdateVisitedHistory(const std::optional<std::string>& url, const std::optional<bool>& isReload) const;
     void onCallJsHandler(const std::string& handlerName, const std::string& args, std::unique_ptr<CallJsHandlerCallback> callback) const;
     void onConsoleMessage(const std::string& message, const int64_t& messageLevel) const;
+    void onDownloadStartRequest(std::shared_ptr<DownloadStartRequest> request) const;
     void onDevToolsProtocolEventReceived(const std::string& eventName, const std::string& data) const;
     void onCreateWindow(std::shared_ptr<CreateWindowAction> createWindowAction, std::unique_ptr<CreateWindowCallback> callback) const;
     void onCloseWindow() const;
+    void onRenderProcessGone(const bool& didCrash, const std::string& processFailedKind) const;
     void onPermissionRequest(const std::string& origin, const std::vector<int64_t>& resources, std::unique_ptr<PermissionRequestCallback> callback) const;
     void shouldInterceptRequest(std::shared_ptr<WebResourceRequest> request, std::unique_ptr<ShouldInterceptRequestCallback> callback) const;
     void onLoadResourceWithCustomScheme(std::shared_ptr<WebResourceRequest> request, std::unique_ptr<LoadResourceWithCustomSchemeCallback> callback) const;

@@ -8,6 +8,9 @@
 # 提交计数只在「历史只增不减」的前提下单调。重写历史会让它**倒退**：
 # 2026-08-12 develop 被强推成重写后的历史，计数从 10546 掉到 9466，而当时
 # 已发布、已装到用户机器上的最大序号是 10405（fushi-debug-rolling）。
+# 2026-11-01 又一次重写（filter-repo 清 strings.g.dart / vendored 二进制，
+# 只含这些路径的 54 个提交变空被剪掉）：develop 计数 20671 → 20619，而已发布
+# 最大序号是 22671（重写前 4b14ceff00 那次，= 20671 + 旧地板 2000）。
 #
 # 序号同时喂三处单调比较，倒退会把它们一起锁死：
 #   1. Android versionCode = versionCodeBase + 100 * seq + abiOffset
@@ -30,10 +33,12 @@
 # 守卫：fushi/test/build/release_sequence_floor_guard_test.dart
 set -euo pipefail
 
-# 10546 = 重写前 develop 曾推上去的最大计数（已发布最大 10405）。加余量取
-# 2000：重写后 develop 9473 + 2000 = 11473 > 10546；桥包分支 9114 + 2000
-# = 11114 同样越过，跨分支发布不会再撞回旧序号。
-RELEASE_SEQUENCE_FLOOR=2000
+# 第一次（2026-08-12）：10546 = 重写前 develop 曾推上去的最大计数（已发布
+# 最大 10405），取 2000：重写后 develop 9473 + 2000 = 11473 > 10546。
+# 第二次（2026-11-01）：已发布最大 22671 = 旧计数 20671 + 2000；新历史少了
+# 54 个提交，抬到 2200：重写后 develop 20619 + 2200 = 22819 > 22671，留 148
+# 余量（重写后保留的旧分支计数都不超过 develop）。
+RELEASE_SEQUENCE_FLOOR=2200
 
 count=$(git rev-list --count HEAD)
 if ! [[ "$count" =~ ^[0-9]+$ ]] || [ "$count" -le 0 ]; then

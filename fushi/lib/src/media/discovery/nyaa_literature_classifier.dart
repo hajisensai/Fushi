@@ -61,12 +61,11 @@ DiscoveryContentHint classifyNyaaLiterature({
   required String title,
   int? sizeBytes,
   String? categoryId,
-}) =>
-    scoreNyaaLiterature(
-      title: title,
-      sizeBytes: sizeBytes,
-      categoryId: categoryId,
-    ).hint;
+}) => scoreNyaaLiterature(
+  title: title,
+  sizeBytes: sizeBytes,
+  categoryId: categoryId,
+).hint;
 
 /// [classifyNyaaLiterature] 的打分版本，测试/调试看明细用。
 NyaaLiteratureScore scoreNyaaLiterature({
@@ -113,11 +112,15 @@ final RegExp _audiobook = _ci(r'\b(Audiobook|MP3|M4B|FLAC|M4A)\b');
 /// 强漫画 +3（每条判据独立计分）。
 final List<RegExp> _strongManga = <RegExp>[
   // 括号源标签：(Digital) / (Digital-Compilation) / (c2c) / (Scan) / (Colored)。
-  _ci(r'\((Digital(?:-[\w ]+)?|c2c|Scans?(?:ned)?|Colou?red(?: Manga| Comics)?)\)'),
+  _ci(
+    r'\((Digital(?:-[\w ]+)?|c2c|Scans?(?:ned)?|Colou?red(?: Manga| Comics)?)\)',
+  ),
   // 漫画容器名。
   _ci(r'\b(cbz|cbr|cb7|cbt)\b'),
   // 类型词（英文）。
-  _ci(r'\b(Manga|Manhwa|Manhua|Webtoon|Doujinshi?|Scanlations?|Tankobon|Omake|One-?shot)\b'),
+  _ci(
+    r'\b(Manga|Manhwa|Manhua|Webtoon|Doujinshi?|Scanlations?|Tankobon|Omake|One-?shot)\b',
+  ),
   // 类型词（日文：`\b` 对 CJK 无效，直接子串）。
   _ci('一般コミック|コミック|漫画|週刊|月刊|雑誌|ジャンプ|マガジン|サンデー'),
   // 章节编号：c12 / ch.12 / Chapter 12 / c12.5。
@@ -151,7 +154,9 @@ final List<RegExp> _mediumManga = <RegExp>[
   // 图片格式。
   _ci(r'\b(JXL|JPEG-?XL|WebP)\b'),
   // 漫画专属发布组（`PapriKa+` 末尾是 `+`，`\b` 接不上，用显式非字词环视）。
-  _ci(r'(?<!\w)(1r0n|\w+-Empire|\w+-DCP|Shizu|Kaos|Rillant|Trite|0v3r|Colored Council|PapriKa\+|Chromatique|aKraa|Kileko)(?!\w)'),
+  _ci(
+    r'(?<!\w)(1r0n|\w+-Empire|\w+-DCP|Shizu|Kaos|Rillant|Trite|0v3r|Colored Council|PapriKa\+|Chromatique|aKraa|Kileko)(?!\w)',
+  ),
   // 版本词。
   _ci(r'\b(Omnibus|Deluxe Edition|Perfect Edition|Master Edition|2-in-1)\b'),
 ];
@@ -166,9 +171,13 @@ final List<RegExp> _strongNovel = <RegExp>[
   // 电子书格式。
   _ci(r'\b(EPUB|AZW3?|MOBI)\b'),
   // LN 专属出版社（方括号可有可无）。
-  _ci(r'(?<!\w)(Yen Press|Yen On|J-?Novel Club|Cross Infinite World|Tentai Books|Hanashi Media|One Peace Books|Sol Press|Airship)(?!\w)'),
+  _ci(
+    r'(?<!\w)(Yen Press|Yen On|J-?Novel Club|Cross Infinite World|Tentai Books|Hanashi Media|One Peace Books|Sol Press|Airship)(?!\w)',
+  ),
   // LN 专属发布者。
-  _ci(r'\b(CleanBookGuy|faratnis|Antithetical|Zaphkiel|vgperson|Skeweds|Mochiguma|SpicyEPUBs|Baka-Tsuki|LNWNCentral)\b'),
+  _ci(
+    r'\b(CleanBookGuy|faratnis|Antithetical|Zaphkiel|vgperson|Skeweds|Mochiguma|SpicyEPUBs|Baka-Tsuki|LNWNCentral)\b',
+  ),
 ];
 
 /// 中小说 +2。
@@ -176,7 +185,9 @@ final List<RegExp> _mediumNovel = <RegExp>[
   // 尾部连续 ≥2 个不含数字的方括号：`[Yen Press] [Stick]`（`[ABCD1234]` 不算）。
   _ci(r'(\[[^\]\d]{2,}\]\s*){2,}$'),
   // 双栖出版社只在方括号里才算小说信号（括号形状即类型）。
-  _ci(r'\[(Seven Seas(?: Siren)?|Vertical|Kodansha|Viz|Square Enix|Dark Horse)\]'),
+  _ci(
+    r'\[(Seven Seas(?: Siren)?|Vertical|Kodansha|Viz|Square Enix|Dark Horse)\]',
+  ),
   // J-Novel Club 分级。
   _ci(r'\b(Premium|Prepub)\b'),
   // 阅读平台。
@@ -193,12 +204,14 @@ const int _mib = 1024 * 1024;
 const int _gib = 1024 * _mib;
 
 /// 合集/图包：体积与卷数无关，跳过体积规则。
-final RegExp _sizeSkip =
-    _ci(r'\b(Collection|Pack|Dump|Anthology|Bundle|SiteRip)\b');
+final RegExp _sizeSkip = _ci(
+  r'\b(Collection|Pack|Dump|Anthology|Bundle|SiteRip)\b',
+);
 
 /// 单文件形态：标题以文件扩展名结尾。
-final RegExp _singleFile =
-    _ci(r'\.(cbz|cbr|cb7|cbt|epub|pdf|azw3?|mobi|zip|rar|7z)$');
+final RegExp _singleFile = _ci(
+  r'\.(cbz|cbr|cb7|cbt|epub|pdf|azw3?|mobi|zip|rar|7z)$',
+);
 
 final RegExp _volumeRange = _ci(r'\bv(\d{1,3})\s*[-–~]\s*v?(\d{1,3})\b');
 final RegExp _jpVolumeRange = RegExp(r'第(\d{1,3})\s*[-–~]\s*(\d{1,3})巻');

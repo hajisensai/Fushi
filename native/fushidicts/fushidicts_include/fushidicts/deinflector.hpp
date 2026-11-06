@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -25,6 +26,10 @@ class Deinflector {
   void load_transforms_json(const std::string& json);
   std::vector<DeinflectionResult> deinflect(const std::string& text) const;
   uint64_t pos_to_conditions(const std::vector<std::string>& part_of_speech) const;
+  // 与 pos_to_conditions(把 [rules] 按空白切开) 逐位相同：空白取 C locale 的
+  // isspace 六个字符（istringstream >> 的切分口径），"*" 仍是通配。原地扫描、不建
+  // 中间 vector / stringstream——Lookup::filter_by_pos 对每个候选命中都调一次。
+  uint64_t rules_to_conditions(std::string_view rules) const;
 
  private:
   struct SuffixRule {

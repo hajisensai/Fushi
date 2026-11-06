@@ -58,137 +58,164 @@ const int _kResumedAdvanceMs = 200;
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets(
-    'playback pauses on entering background and resumes on returning',
-    (WidgetTester tester) async {
-      final List<String> caught = <String>[];
-      final FlutterExceptionHandler? oldHandler = FlutterError.onError;
-      FlutterError.onError = (FlutterErrorDetails details) {
-        caught.add(details.exceptionAsString());
-      };
-      try {
-        app.main(const <String>[]);
-        expect(await waitForHome(tester), isTrue);
-        await tester.pump(const Duration(seconds: 2));
+  testWidgets('playback pauses on entering background and resumes on returning', (
+    WidgetTester tester,
+  ) async {
+    final List<String> caught = <String>[];
+    final FlutterExceptionHandler? oldHandler = FlutterError.onError;
+    FlutterError.onError = (FlutterErrorDetails details) {
+      caught.add(details.exceptionAsString());
+    };
+    try {
+      app.main(const <String>[]);
+      expect(await waitForHome(tester), isTrue);
+      await tester.pump(const Duration(seconds: 2));
 
-        final ProviderContainer container = ProviderScope.containerOf(
-          tester.element(find.byType(MaterialApp).first),
+      final ProviderContainer container = ProviderScope.containerOf(
+        tester.element(find.byType(MaterialApp).first),
+      );
+      final AppModel appModel = container.read(appProvider);
+      final VideoBookRepository repo = VideoBookRepository(appModel.database);
+
+      // 60s 测试视频：足够长，暂停/恢复窗口都落在片中，不会撞到片尾自然停止。
+      //
+      // Android 模拟器（x86_64）没有 FFmpegKit native 库，[generateTestVideo] 必失败，
+      // 故那边只认预置素材（见文件头的 adb 命令）；桌面自给自足。
+      const String prepushed =
+          '/sdcard/Android/data/app.fushi.reader/files/'
+          'background_resume_probe.mp4';
+      final File videoFile;
+      if (Platform.isAndroid) {
+        expect(
+          File(prepushed).existsSync(),
+          isTrue,
+          reason:
+              '缺测试素材 $prepushed。先 adb install 再 adb push（重装会清空该'
+              '目录）；素材 = 60s testsrc mp4，见本文件头部注释。',
         );
-        final AppModel appModel = container.read(appProvider);
-        final VideoBookRepository repo = VideoBookRepository(appModel.database);
-
-        // 60s 测试视频：足够长，暂停/恢复窗口都落在片中，不会撞到片尾自然停止。
-        //
-        // Android 模拟器（x86_64）没有 FFmpegKit native 库，[generateTestVideo] 必失败，
-        // 故那边只认预置素材（见文件头的 adb 命令）；桌面自给自足。
-        const String prepushed = '/sdcard/Android/data/app.fushi.reader/files/'
-            'background_resume_probe.mp4';
-        final File videoFile;
-        if (Platform.isAndroid) {
-          expect(File(prepushed).existsSync(), isTrue,
-              reason: '缺测试素材 $prepushed。先 adb install 再 adb push（重装会清空该'
-                  '目录）；素材 = 60s testsrc mp4，见本文件头部注释。');
-          videoFile = File(prepushed);
-        } else {
-          final Directory dir =
-              await Directory.systemTemp.createTemp('fushi_bg_resume_');
-          videoFile = await generateTestVideo(
-            outPath:
-                '${dir.path}${Platform.pathSeparator}background_resume_probe.mp4',
-            duration: const Duration(seconds: 60),
-          );
-        }
-        const String bookUid = 'video/itest-background-resume';
-        await repo.saveVideoBook(VideoBooksCompanion(
+        videoFile = File(prepushed);
+      } else {
+        final Directory dir = await Directory.systemTemp.createTemp(
+          'fushi_bg_resume_',
+        );
+        videoFile = await generateTestVideo(
+          outPath:
+              '${dir.path}${Platform.pathSeparator}background_resume_probe.mp4',
+          duration: const Duration(seconds: 60),
+        );
+      }
+      const String bookUid = 'video/itest-background-resume';
+      await repo.saveVideoBook(
+        VideoBooksCompanion(
           bookUid: const Value(bookUid),
           title: const Value('background resume probe'),
           videoPath: Value(videoFile.absolute.path),
-        ));
+        ),
+      );
 
-        final NavigatorState navigator =
-            tester.state<NavigatorState>(find.byType(Navigator).first);
-        unawaited(navigator.push<void>(MaterialPageRoute<void>(
-          builder: (_) => VideoFushiPage(bookUid: bookUid, repo: repo),
-        )));
+      final NavigatorState navigator = tester.state<NavigatorState>(
+        find.byType(Navigator).first,
+      );
+      unawaited(
+        navigator.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => VideoFushiPage(bookUid: bookUid, repo: repo),
+          ),
+        ),
+      );
 
-        VideoFushiTestHooks? readHooks() {
-          if (find.byType(VideoFushiPage).evaluate().isEmpty) return null;
-          return tester.state<State<VideoFushiPage>>(
-              find.byType(VideoFushiPage)) as VideoFushiTestHooks;
-        }
-
-        /// 真实时间等待（不驱动帧）：paused 期间帧调度被关掉，pump 会等不到 vsync。
-        Future<void> waitReal(int ms) => tester
-            .runAsync(() => Future<void>.delayed(Duration(milliseconds: ms)));
-
-        /// 按真机序列投递生命周期状态（与 embedder 发的是同一条通道消息）。
-        Future<void> sendLifecycle(List<String> states) async {
-          for (final String state in states) {
-            tester.binding.channelBuffers.push(
-              'flutter/lifecycle',
-              const StringCodec().encodeMessage('AppLifecycleState.$state'),
-              (ByteData? _) {},
-            );
-          }
-          await waitReal(400);
-        }
-
-        // 页面 _applyLoad 传 autoPlay:true，等它真的播起来（位置在推进）。
-        bool playing = false;
-        for (int i = 0; i < 100; i++) {
-          await tester.pump(const Duration(milliseconds: 200));
-          final VideoFushiTestHooks? hooks = readHooks();
-          if (hooks != null &&
-              hooks.debugIsPlaying &&
-              (hooks.debugPositionMs ?? 0) > 0) {
-            playing = true;
-            break;
-          }
-        }
-        expect(playing, isTrue, reason: '视频应在打开后自动起播（本测试的前提，不是被测行为）');
-        final int beforeBackgroundMs = readHooks()!.debugPositionMs!;
-
-        // ── 切到后台 ─────────────────────────────────────────────────
-        await sendLifecycle(<String>['inactive', 'hidden', 'paused']);
-        await waitReal(400);
-        final bool pausedState = readHooks()!.debugIsPlaying;
-        final int pausedAtMs = readHooks()!.debugPositionMs!;
-        await waitReal(1200);
-        final int stillPausedAtMs = readHooks()!.debugPositionMs!;
-        debugPrint('[bg-resume] before=$beforeBackgroundMs '
-            'paused(playing=$pausedState)=$pausedAtMs → $stillPausedAtMs');
-
-        expect(pausedState, isFalse, reason: '进真后台（paused）应暂停播放');
-        expect(stillPausedAtMs - pausedAtMs, lessThan(_kPausedDriftToleranceMs),
-            reason: '后台期间位置不该继续前进（暂停没落地）：'
-                '$pausedAtMs → $stillPausedAtMs');
-
-        // ── 切回前台 ─────────────────────────────────────────────────
-        await sendLifecycle(<String>['hidden', 'inactive', 'resumed']);
-        await waitReal(800);
-        await tester.pump(const Duration(milliseconds: 200));
-        final bool resumedState = readHooks()!.debugIsPlaying;
-        final int resumedAtMs = readHooks()!.debugPositionMs!;
-        await waitReal(1200);
-        await tester.pump(const Duration(milliseconds: 200));
-        final int advancedToMs = readHooks()!.debugPositionMs!;
-        debugPrint('[bg-resume] resumed(playing=$resumedState)=$resumedAtMs '
-            '→ $advancedToMs');
-
-        expect(resumedState, isTrue,
-            reason: '回前台应自动续播（BUG-2544：修复前停在暂停，这里为 false）');
-        expect(advancedToMs - resumedAtMs, greaterThan(_kResumedAdvanceMs),
-            reason: '回前台后位置应继续前进：$resumedAtMs → $advancedToMs');
-
-        await navigator.maybePop();
-        for (int i = 0; i < 20; i++) {
-          await tester.pump(const Duration(milliseconds: 100));
-          if (find.byType(VideoFushiPage).evaluate().isEmpty) break;
-        }
-        debugPrint('[bg-resume] non-fatal framework errors=${caught.length}');
-      } finally {
-        FlutterError.onError = oldHandler;
+      VideoFushiTestHooks? readHooks() {
+        if (find.byType(VideoFushiPage).evaluate().isEmpty) return null;
+        return tester.state<State<VideoFushiPage>>(find.byType(VideoFushiPage))
+            as VideoFushiTestHooks;
       }
-    },
-  );
+
+      /// 真实时间等待（不驱动帧）：paused 期间帧调度被关掉，pump 会等不到 vsync。
+      Future<void> waitReal(int ms) => tester.runAsync(
+        () => Future<void>.delayed(Duration(milliseconds: ms)),
+      );
+
+      /// 按真机序列投递生命周期状态（与 embedder 发的是同一条通道消息）。
+      Future<void> sendLifecycle(List<String> states) async {
+        for (final String state in states) {
+          tester.binding.channelBuffers.push(
+            'flutter/lifecycle',
+            const StringCodec().encodeMessage('AppLifecycleState.$state'),
+            (ByteData? _) {},
+          );
+        }
+        await waitReal(400);
+      }
+
+      // 页面 _applyLoad 传 autoPlay:true，等它真的播起来（位置在推进）。
+      bool playing = false;
+      for (int i = 0; i < 100; i++) {
+        await tester.pump(const Duration(milliseconds: 200));
+        final VideoFushiTestHooks? hooks = readHooks();
+        if (hooks != null &&
+            hooks.debugIsPlaying &&
+            (hooks.debugPositionMs ?? 0) > 0) {
+          playing = true;
+          break;
+        }
+      }
+      expect(playing, isTrue, reason: '视频应在打开后自动起播（本测试的前提，不是被测行为）');
+      final int beforeBackgroundMs = readHooks()!.debugPositionMs!;
+
+      // ── 切到后台 ─────────────────────────────────────────────────
+      await sendLifecycle(<String>['inactive', 'hidden', 'paused']);
+      await waitReal(400);
+      final bool pausedState = readHooks()!.debugIsPlaying;
+      final int pausedAtMs = readHooks()!.debugPositionMs!;
+      await waitReal(1200);
+      final int stillPausedAtMs = readHooks()!.debugPositionMs!;
+      debugPrint(
+        '[bg-resume] before=$beforeBackgroundMs '
+        'paused(playing=$pausedState)=$pausedAtMs → $stillPausedAtMs',
+      );
+
+      expect(pausedState, isFalse, reason: '进真后台（paused）应暂停播放');
+      expect(
+        stillPausedAtMs - pausedAtMs,
+        lessThan(_kPausedDriftToleranceMs),
+        reason:
+            '后台期间位置不该继续前进（暂停没落地）：'
+            '$pausedAtMs → $stillPausedAtMs',
+      );
+
+      // ── 切回前台 ─────────────────────────────────────────────────
+      await sendLifecycle(<String>['hidden', 'inactive', 'resumed']);
+      await waitReal(800);
+      await tester.pump(const Duration(milliseconds: 200));
+      final bool resumedState = readHooks()!.debugIsPlaying;
+      final int resumedAtMs = readHooks()!.debugPositionMs!;
+      await waitReal(1200);
+      await tester.pump(const Duration(milliseconds: 200));
+      final int advancedToMs = readHooks()!.debugPositionMs!;
+      debugPrint(
+        '[bg-resume] resumed(playing=$resumedState)=$resumedAtMs '
+        '→ $advancedToMs',
+      );
+
+      expect(
+        resumedState,
+        isTrue,
+        reason: '回前台应自动续播（BUG-2544：修复前停在暂停，这里为 false）',
+      );
+      expect(
+        advancedToMs - resumedAtMs,
+        greaterThan(_kResumedAdvanceMs),
+        reason: '回前台后位置应继续前进：$resumedAtMs → $advancedToMs',
+      );
+
+      await navigator.maybePop();
+      for (int i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+        if (find.byType(VideoFushiPage).evaluate().isEmpty) break;
+      }
+      debugPrint('[bg-resume] non-fatal framework errors=${caught.length}');
+    } finally {
+      FlutterError.onError = oldHandler;
+    }
+  });
 }

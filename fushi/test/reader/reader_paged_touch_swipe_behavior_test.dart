@@ -30,56 +30,61 @@ import 'package:fushi/src/reader/reader_settings.dart';
 /// 当本机/CI 没有 node 时自动 skip（Node 守卫不强制进无 node 环境），但本地
 /// 与装有 node 的环境都会真跑，提供静态守卫缺失的行为级覆盖。
 void main() {
-  test('reader touch handler distinguishes swipe, pan, and lookup tap via node',
-      () async {
-    final String? nodeExe = _resolveNode();
-    if (nodeExe == null) {
-      markTestSkipped('node not found on PATH; skipping JS behavior execution');
-      return;
-    }
+  test(
+    'reader touch handler distinguishes swipe, pan, and lookup tap via node',
+    () async {
+      final String? nodeExe = _resolveNode();
+      if (nodeExe == null) {
+        markTestSkipped(
+          'node not found on PATH; skipping JS behavior execution',
+        );
+        return;
+      }
 
-    final File jsTest = File(
-      'test/reader/reader_paged_touch_swipe_behavior_test.js',
-    );
-    expect(jsTest.existsSync(), isTrue,
-        reason: 'behavior harness ${jsTest.path} must exist');
+      final File jsTest = File(
+        'test/reader/reader_paged_touch_swipe_behavior_test.js',
+      );
+      expect(
+        jsTest.existsSync(),
+        isTrue,
+        reason: 'behavior harness ${jsTest.path} must exist',
+      );
 
-    // 阈值从生产的单一真值取，作为 argv 交给 harness——harness 里**不再**有第二份
-    // 硬编码副本。以前它自带 44/22 且没有速度门，于是生产阈值一改，它既不会转红、
-    // 也不再验真正的判据（`velocity >= undefined` 恒 false）。
-    final ({int dist, int fastDist, int fastVelocity}) thresholds =
-        ReaderSettings.swipePageTurnDistThresholds(
-      ReaderSettings.defaultSwipePageTurnSensitivity,
-    );
-    final ProcessResult result = await Process.run(
-      nodeExe,
-      <String>[
+      // 阈值从生产的单一真值取，作为 argv 交给 harness——harness 里**不再**有第二份
+      // 硬编码副本。以前它自带 44/22 且没有速度门，于是生产阈值一改，它既不会转红、
+      // 也不再验真正的判据（`velocity >= undefined` 恒 false）。
+      final ({int dist, int fastDist, int fastVelocity}) thresholds =
+          ReaderSettings.swipePageTurnDistThresholds(
+            ReaderSettings.defaultSwipePageTurnSensitivity,
+          );
+      final ProcessResult result = await Process.run(nodeExe, <String>[
         jsTest.path,
         '${thresholds.dist}',
         '${thresholds.fastDist}',
         '${thresholds.fastVelocity}',
-      ],
-      workingDirectory: Directory.current.path,
-    );
+      ], workingDirectory: Directory.current.path);
 
-    expect(
-      result.exitCode,
-      0,
-      reason: 'reader handler JS behavior test failed.\n'
-          'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
-    );
-    expect(
-      result.stdout.toString(),
-      contains('all assertions passed'),
-      reason: 'behavior harness must reach its success marker',
-    );
-  });
+      expect(
+        result.exitCode,
+        0,
+        reason:
+            'reader handler JS behavior test failed.\n'
+            'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+      );
+      expect(
+        result.stdout.toString(),
+        contains('all assertions passed'),
+        reason: 'behavior harness must reach its success marker',
+      );
+    },
+  );
 }
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

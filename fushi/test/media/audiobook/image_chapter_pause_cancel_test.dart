@@ -64,8 +64,11 @@ void main() {
       await Future<void>.delayed(settleAfterCancel);
 
       expect(done, isTrue, reason: 'pause() 必须成对完成 Completer，await 不得挂起');
-      expect(h.platform.playCalls, 0,
-          reason: '失效续体绝不能把用户刚暂停的播放又恢复回去（先递增 epoch 再 complete）');
+      expect(
+        h.platform.playCalls,
+        0,
+        reason: '失效续体绝不能把用户刚暂停的播放又恢复回去（先递增 epoch 再 complete）',
+      );
       h.controller.dispose();
     });
 
@@ -130,8 +133,11 @@ void main() {
       await Future<void>.delayed(settleAfterCancel);
 
       expect(done, isTrue, reason: 'dispose() 必须成对完成 Completer');
-      expect(h.platform.playCalls, 0,
-          reason: '销毁后续体不得恢复播放，也不得对已 dispose 的 notifier notify');
+      expect(
+        h.platform.playCalls,
+        0,
+        reason: '销毁后续体不得恢复播放，也不得对已 dispose 的 notifier notify',
+      );
     });
 
     test('取消点 awaitImageChapterPause 自身重入：上一轮停留必须被放行', () async {
@@ -168,17 +174,25 @@ void main() {
 
       bool done = false;
       final Stopwatch sw = Stopwatch()..start();
-      unawaited(h.controller.awaitImageChapterPause().then((_) {
-        done = true;
-        sw.stop();
-      }));
+      unawaited(
+        h.controller.awaitImageChapterPause().then((_) {
+          done = true;
+          sw.stop();
+        }),
+      );
       await Future<void>.delayed(pauseWindow + settleAfterCancel);
 
       expect(done, isTrue, reason: '停留结束的契约是「这张插图看完了」，不能押在播放激活上');
-      expect(sw.elapsed, lessThan(pauseWindow + settleAfterCancel),
-          reason: '必须在停留窗口结束后立刻返回');
-      expect(h.platform.playCalls, greaterThan(0),
-          reason: '仍必须真的发起恢复播放（只是不 await）');
+      expect(
+        sw.elapsed,
+        lessThan(pauseWindow + settleAfterCancel),
+        reason: '必须在停留窗口结束后立刻返回',
+      );
+      expect(
+        h.platform.playCalls,
+        greaterThan(0),
+        reason: '仍必须真的发起恢复播放（只是不 await）',
+      );
       h.controller.dispose();
     });
 
@@ -189,9 +203,12 @@ void main() {
       await h.controller.play();
       await Future<void>.delayed(settleAfterCancel);
 
-      expect(h.platform.playCalls, 0,
-          reason:
-              '_stopRequested 门只存在于 _activateMainPlayer，退回裸 _player.play() 会倒退掉它');
+      expect(
+        h.platform.playCalls,
+        0,
+        reason:
+            '_stopRequested 门只存在于 _activateMainPlayer，退回裸 _player.play() 会倒退掉它',
+      );
       h.controller.dispose();
     });
   });
@@ -207,8 +224,9 @@ void main() {
     );
 
     test('全文只允许 _invalidateImageChapterPause 里那一处 cancel', () {
-      final int helperIdx =
-          src.indexOf('void _invalidateImageChapterPause() {');
+      final int helperIdx = src.indexOf(
+        'void _invalidateImageChapterPause() {',
+      );
       expect(helperIdx, isNonNegative, reason: '成对作废的唯一入口必须存在');
       final int helperEnd = src.indexOf('\n  }', helperIdx);
       expect(helperEnd, greaterThan(helperIdx));
@@ -223,7 +241,8 @@ void main() {
         expect(
           offset > helperIdx && offset < helperEnd,
           isTrue,
-          reason: '裸 cancel（不 complete Completer）会让 awaitImageChapterPause '
+          reason:
+              '裸 cancel（不 complete Completer）会让 awaitImageChapterPause '
               '永久挂起；所有取消点必须走 _invalidateImageChapterPause / '
               '_invalidateReaderTransition。越界位置 offset=$offset',
         );
@@ -231,8 +250,9 @@ void main() {
     });
 
     test('作废顺序必须是「先递增 epoch，再 complete」', () {
-      final int helperIdx =
-          src.indexOf('void _invalidateImageChapterPause() {');
+      final int helperIdx = src.indexOf(
+        'void _invalidateImageChapterPause() {',
+      );
       final int helperEnd = src.indexOf('\n  }', helperIdx);
       final String body = src.substring(helperIdx, helperEnd);
       final int epochBump = body.indexOf('_imageChapterPauseEpoch++;');
@@ -242,25 +262,38 @@ void main() {
       // 本同步块之后才跑，所以今天两种顺序行为相同。锁住它是为了防未来把
       // Completer 换成 `Completer.sync()` / 在两句之间插入 await——那时顺序立刻
       // 变成 load-bearing：旧续体会通过 epoch 校验并把用户刚暂停的播放恢复回去。
-      expect(complete, greaterThan(epochBump),
-          reason: '作废必须先递增 epoch 再 complete，否则同步唤醒的旧续体会通过 epoch 校验');
+      expect(
+        complete,
+        greaterThan(epochBump),
+        reason: '作废必须先递增 epoch 再 complete，否则同步唤醒的旧续体会通过 epoch 校验',
+      );
     });
 
     test('awaitImageChapterPause 的恢复播放必须 unawaited 且走 _activateMainPlayer', () {
-      final int start =
-          src.indexOf('Future<void> awaitImageChapterPause() async {');
+      final int start = src.indexOf(
+        'Future<void> awaitImageChapterPause() async {',
+      );
       expect(start, isNonNegative);
       final int end = src.indexOf('\n  void holdChapterTransition()', start);
       expect(end, greaterThan(start));
       final String body = src.substring(start, end);
 
-      expect(body.contains('unawaited(_activateMainPlayer());'), isTrue,
-          reason: 'await 会把 reader 跨章 finally 押在播放激活上（TODO-2369）');
-      expect(body.contains('await _activateMainPlayer()'), isFalse,
-          reason: '不得再出现阻塞形态');
-      expect(body.contains('_player.play('), isFalse,
-          reason:
-              '退回裸 _player.play() 会倒退掉 _stopRequested 门与 _playActivationTail 串行化');
+      expect(
+        body.contains('unawaited(_activateMainPlayer());'),
+        isTrue,
+        reason: 'await 会把 reader 跨章 finally 押在播放激活上（TODO-2369）',
+      );
+      expect(
+        body.contains('await _activateMainPlayer()'),
+        isFalse,
+        reason: '不得再出现阻塞形态',
+      );
+      expect(
+        body.contains('_player.play('),
+        isFalse,
+        reason:
+            '退回裸 _player.play() 会倒退掉 _stopRequested 门与 _playActivationTail 串行化',
+      );
     });
   });
 }
@@ -336,8 +369,9 @@ Audiobook _audiobook() {
 }
 
 _FakeJustAudioPlatform _installFakeAudioPlatform() {
-  const MethodChannel audioSessionChannel =
-      MethodChannel('com.ryanheise.audio_session');
+  const MethodChannel audioSessionChannel = MethodChannel(
+    'com.ryanheise.audio_session',
+  );
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(audioSessionChannel, (_) async => null);
   addTearDown(() {
@@ -399,16 +433,18 @@ class _FakeAudioPlayerPlatform extends AudioPlayerPlatform {
   @override
   Future<LoadResponse> load(LoadRequest request) async {
     if (!_events.isClosed) {
-      _events.add(PlaybackEventMessage(
-        processingState: ProcessingStateMessage.ready,
-        updateTime: DateTime.now(),
-        updatePosition: Duration.zero,
-        bufferedPosition: Duration.zero,
-        duration: const Duration(seconds: 30),
-        icyMetadata: null,
-        currentIndex: 0,
-        androidAudioSessionId: null,
-      ));
+      _events.add(
+        PlaybackEventMessage(
+          processingState: ProcessingStateMessage.ready,
+          updateTime: DateTime.now(),
+          updatePosition: Duration.zero,
+          bufferedPosition: Duration.zero,
+          duration: const Duration(seconds: 30),
+          icyMetadata: null,
+          currentIndex: 0,
+          androidAudioSessionId: null,
+        ),
+      );
     }
     return LoadResponse(duration: const Duration(seconds: 30));
   }
@@ -432,22 +468,19 @@ class _FakeAudioPlayerPlatform extends AudioPlayerPlatform {
   @override
   Future<SetAndroidAudioAttributesResponse> setAndroidAudioAttributes(
     SetAndroidAudioAttributesRequest request,
-  ) async =>
-      SetAndroidAudioAttributesResponse();
+  ) async => SetAndroidAudioAttributesResponse();
 
   @override
   Future<SetAutomaticallyWaitsToMinimizeStallingResponse>
-      setAutomaticallyWaitsToMinimizeStalling(
+  setAutomaticallyWaitsToMinimizeStalling(
     SetAutomaticallyWaitsToMinimizeStallingRequest request,
-  ) async =>
-          SetAutomaticallyWaitsToMinimizeStallingResponse();
+  ) async => SetAutomaticallyWaitsToMinimizeStallingResponse();
 
   @override
   Future<SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse>
-      setCanUseNetworkResourcesForLiveStreamingWhilePaused(
+  setCanUseNetworkResourcesForLiveStreamingWhilePaused(
     SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest request,
-  ) async =>
-          SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
+  ) async => SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
 
   @override
   Future<SetLoopModeResponse> setLoopMode(SetLoopModeRequest request) async =>
@@ -460,26 +493,22 @@ class _FakeAudioPlayerPlatform extends AudioPlayerPlatform {
   @override
   Future<SetPreferredPeakBitRateResponse> setPreferredPeakBitRate(
     SetPreferredPeakBitRateRequest request,
-  ) async =>
-      SetPreferredPeakBitRateResponse();
+  ) async => SetPreferredPeakBitRateResponse();
 
   @override
   Future<SetShuffleModeResponse> setShuffleMode(
     SetShuffleModeRequest request,
-  ) async =>
-      SetShuffleModeResponse();
+  ) async => SetShuffleModeResponse();
 
   @override
   Future<SetShuffleOrderResponse> setShuffleOrder(
     SetShuffleOrderRequest request,
-  ) async =>
-      SetShuffleOrderResponse();
+  ) async => SetShuffleOrderResponse();
 
   @override
   Future<SetSkipSilenceResponse> setSkipSilence(
     SetSkipSilenceRequest request,
-  ) async =>
-      SetSkipSilenceResponse();
+  ) async => SetSkipSilenceResponse();
 
   @override
   Future<SetSpeedResponse> setSpeed(SetSpeedRequest request) async =>
@@ -492,8 +521,7 @@ class _FakeAudioPlayerPlatform extends AudioPlayerPlatform {
   @override
   Future<SetWebCrossOriginResponse> setWebCrossOrigin(
     SetWebCrossOriginRequest request,
-  ) async =>
-      SetWebCrossOriginResponse();
+  ) async => SetWebCrossOriginResponse();
 
   @override
   Future<DisposeResponse> dispose(DisposeRequest request) async {

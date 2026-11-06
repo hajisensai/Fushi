@@ -79,33 +79,44 @@ void main() {
     );
   });
 
-  test('anime lib gate accepts 14 to 16 and refuses 17', () async {
-    runtime.inspection = _inspection(MihonMediaKind.anime, libVersion: '17');
-    await expectLater(
-      () => install(anime, 'lib17.apk'),
-      throwsA(
-        isA<MihonRuntimeException>().having(
-          (MihonRuntimeException e) => e.code,
-          'code',
-          'UNSUPPORTED_LIB',
+  test(
+    'anime lib gate accepts 14 to 17 and refuses other generations',
+    () async {
+      // gRSPNbJjqT：lib 17（Aniyomi extensions-lib v17，2026-09）曾在这里被拒，
+      // 用户看到「Unsupported extension-lib version」。宿主 ABI 已并入 lib 17。
+      runtime.inspection = _inspection(MihonMediaKind.anime, libVersion: '13');
+      await expectLater(
+        () => install(anime, 'lib13.apk'),
+        throwsA(
+          isA<MihonRuntimeException>().having(
+            (MihonRuntimeException e) => e.code,
+            'code',
+            'UNSUPPORTED_LIB',
+          ),
         ),
-      ),
-    );
-    runtime.inspection = _inspection(MihonMediaKind.anime, libVersion: '14');
-    await install(anime, 'lib14.apk');
-    expect(anime.installed.single.libVersion, '14');
-    // 宿主 ABI 是 lib 14 + lib 16 并集（Hoster API、data class Video）：两代都装。
-    runtime.inspection = _inspection(
-      MihonMediaKind.anime,
-      libVersion: '16',
-      packageName: 'eu.kanade.tachiyomi.animeextension.all.fixture16',
-    );
-    await install(anime, 'lib16.apk');
-    expect(
-      anime.installed.map((MangaExtensionRow e) => e.libVersion).toSet(),
-      <String>{'14', '16'},
-    );
-  });
+      );
+      runtime.inspection = _inspection(MihonMediaKind.anime, libVersion: '14');
+      await install(anime, 'lib14.apk');
+      expect(anime.installed.single.libVersion, '14');
+      // 宿主 ABI 是 lib 14 + lib 16 并集（Hoster API、data class Video）：两代都装。
+      runtime.inspection = _inspection(
+        MihonMediaKind.anime,
+        libVersion: '16',
+        packageName: 'eu.kanade.tachiyomi.animeextension.all.fixture16',
+      );
+      await install(anime, 'lib16.apk');
+      runtime.inspection = _inspection(
+        MihonMediaKind.anime,
+        libVersion: '17',
+        packageName: 'eu.kanade.tachiyomi.animeextension.all.fixture17',
+      );
+      await install(anime, 'lib17.apk');
+      expect(
+        anime.installed.map((MangaExtensionRow e) => e.libVersion).toSet(),
+        <String>{'14', '16', '17'},
+      );
+    },
+  );
 
   test(
     'installs land in the shared tables tagged by kind and each manager only sees its own',

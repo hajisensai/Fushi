@@ -55,6 +55,18 @@ extension _VideoAudioTrack on _VideoFushiPageState {
     final int generation = _episodeLoadSeq;
     await controller.selectAudioTrack(track);
     if (!mounted || generation != _episodeLoadSeq) return;
+    // 网页档：音轨 id 是站点的（每部作品各自一套），不落库 / 不进互联；站点自己会把选择带到下一
+    // 集。用户亲手选过之后不再按语言偏好替他改（P1-5）。
+    if (_webMode) {
+      _webAudioUserChosen = true;
+      _rebuild(() => _currentAudioTrackId = track.id);
+      _showOsd(
+        t.video_audio_track_switched(
+          label: _trackLabel(track.title, track.language, track.id),
+        ),
+      );
+      return;
+    }
     // 同系列音轨记忆（schema v52）：合集内选音轨写系列级，全系列共享（换集/从书架
     // 重进任一集都读到）；单文件视频（无合集）仍走 per-book，行为与旧版一致。
     //

@@ -22,6 +22,22 @@ void fushiSelectionHaptic(BuildContext context) {
   }
 }
 
+/// 遥控按键的短促触感：手机字幕遥控器上按下即在另一台设备生效的按钮（播放 /
+/// 上下句 / 选集…），以及「电脑已执行」的确认（字幕应用、视频关闭）。手机当
+/// 实体遥控器用时眼睛多半在电脑屏幕上，靠这一下确认按到了。平台门同上。
+void fushiRemoteActionHaptic(BuildContext context) {
+  switch (Theme.of(context).platform) {
+    case TargetPlatform.android:
+    case TargetPlatform.iOS:
+      HapticFeedback.lightImpact();
+    case TargetPlatform.fuchsia:
+    case TargetPlatform.linux:
+    case TargetPlatform.macOS:
+    case TargetPlatform.windows:
+      break;
+  }
+}
+
 /// 「拎起」一类的轻触感：长按底栏把选中指示器拎起来拖动时发一次。与
 /// [fushiSelectionHaptic] 同一个平台门（只在手机上发）。
 void fushiLiftHaptic(BuildContext context) {

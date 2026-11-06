@@ -28,7 +28,33 @@ bool videoM3ePanelNeutral(BuildContext context) =>
 /// （2026-10-14 用户：播放器设置「很多地方都是灰色、没有着色」，要像阅读器设置
 /// 那样）。日间模式下是浅色面板、深色模式下是深色面板（同日跟进：面板要吃 app
 /// 的日间 / 深色模式）。播放器顶 / 底栏胶囊仍是中性表面，只有面板换成着色方案。
-ColorScheme videoM3ePanelScheme(ColorScheme cs) => videoM3eChromeScheme(cs);
+///
+/// **表面族取 app 方案本身**（反馈 DGApb0CQgE）：只有强调色（primary / secondary /
+/// tertiary 及其容器）用 seed 方案，surface / surfaceContainer* / onSurface* /
+/// outline* / inverse* 全部照抄 [cs]。app 方案的表面阶梯已经过主题工厂处理——自定义
+/// 主题钉了底色时由 `deriveSurfaceRolesFrom` 从它推出同族阶梯，纯黑模式走纯黑阶梯；
+/// 此前整份方案只拿 `cs.primary` 重新 `fromSeed`，字幕轨抽屉等面板于是是 seed 的
+/// tone 95 / 90（如 #FFF0F1 / #FFD9DF），与用户钉的页面底色不同族。
+ColorScheme videoM3ePanelScheme(ColorScheme cs) =>
+    videoM3eChromeScheme(cs).copyWith(
+      surface: cs.surface,
+      surfaceDim: cs.surfaceDim,
+      surfaceBright: cs.surfaceBright,
+      surfaceContainerLowest: cs.surfaceContainerLowest,
+      surfaceContainerLow: cs.surfaceContainerLow,
+      surfaceContainer: cs.surfaceContainer,
+      surfaceContainerHigh: cs.surfaceContainerHigh,
+      surfaceContainerHighest: cs.surfaceContainerHighest,
+      onSurface: cs.onSurface,
+      onSurfaceVariant: cs.onSurfaceVariant,
+      outline: cs.outline,
+      outlineVariant: cs.outlineVariant,
+      inverseSurface: cs.inverseSurface,
+      onInverseSurface: cs.onInverseSurface,
+      surfaceTint: cs.surfaceTint,
+      shadow: cs.shadow,
+      scrim: cs.scrim,
+    );
 
 /// 面板表面色：着色方案的 surfaceContainerLow（[opaque] 时不透明，否则与播放器
 /// 浮层同一不透明度——[videoM3eSurfaceAlpha]，画面隐约透出）。

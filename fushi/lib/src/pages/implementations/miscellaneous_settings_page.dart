@@ -7,6 +7,7 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/src/pages/implementations/crop_image_dialog_page.dart';
@@ -15,7 +16,16 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/app_icon_apply.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 应用图标（app icon）设置子页。薄壳：把 [MiscellaneousSettingsBody] 投影进与
 /// 统一设置详情面板完全一致的页壳（见 [buildSettingsDetailShell]），不再使用自带
@@ -90,13 +100,12 @@ class _MiscellaneousSettingsBodyState
     if (Platform.isAndroid) {
       final results = await Future.wait([
         FushiChannels.iconSwitch.invokeMethod<String>('getCurrentIcon'),
-        FushiChannels.iconSwitch
-            .invokeMethod<bool>('isCustomShortcutSupported'),
+        FushiChannels.iconSwitch.invokeMethod<bool>(
+          'isCustomShortcutSupported',
+        ),
       ]);
       await publishAppIconSelection(
-        AppIconSelection(
-          presetKey: (results[0] as String?) ?? 'default',
-        ),
+        AppIconSelection(presetKey: (results[0] as String?) ?? 'default'),
       );
       if (!mounted) return;
       setState(() {
@@ -122,9 +131,9 @@ class _MiscellaneousSettingsBodyState
         if (!mounted) return;
         // 选中态由 _currentIcon getter 从已发布的真值读；这里只需触发重建。
         setState(() {});
-        ScaffoldMessenger.of(context).showSnackBar(
-          FushiSnackBar(content: Text(t.icon_switch_success)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(FushiSnackBar(content: Text(t.icon_switch_success)));
       }
     } finally {
       if (mounted) setState(() => _switching = false);
@@ -186,6 +195,12 @@ class _MiscellaneousSettingsBodyState
     // 依赖且在 Android/Windows 均有实现，覆盖两个平台。
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.image,
+      // BUG-3601 复查（WkL9BvD7Z9）：file_picker 8.x 安卓对 image/* 默认在**裸线程**
+      // 里做 JPEG 重压缩（FileUtils.compressImage）——往公共 Pictures 目录建临时
+      // 文件，Android 9/10 未授予运行时 WRITE_EXTERNAL_STORAGE 时抛 IOException 被包成
+      // RuntimeException、decodeStream 返回 null 时 NPE，都直接杀进程且 Dart 零日志。
+      // 我们自己的裁剪链路已按 appIconSourceMaxPixels 封顶，不需要它压缩。
+      allowCompression: false,
     );
     if (result == null) return;
     final String? pickedPath = result.files.first.path;
@@ -199,6 +214,7 @@ class _MiscellaneousSettingsBodyState
       context,
       File(pickedPath),
       aspectRatio: 1,
+      maxDimension: appIconSourceMaxPixels,
     );
     if (cropped == null) return;
     final String iconPath = cropped.path;
@@ -210,9 +226,11 @@ class _MiscellaneousSettingsBodyState
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       FushiSnackBar(
-        content: Text(Platform.isAndroid
-            ? (ok ? t.icon_shortcut_created : t.icon_shortcut_unsupported)
-            : (ok ? t.icon_switch_success : t.icon_shortcut_unsupported)),
+        content: Text(
+          Platform.isAndroid
+              ? (ok ? t.icon_shortcut_created : t.icon_shortcut_unsupported)
+              : (ok ? t.icon_switch_success : t.icon_shortcut_unsupported),
+        ),
       ),
     );
   }
@@ -337,8 +355,8 @@ class _AppIconTile extends StatelessWidget {
               borderColor: selected
                   ? theme.colorScheme.primary
                   : (isGlassDesign(context)
-                      ? null
-                      : theme.colorScheme.outlineVariant),
+                        ? null
+                        : theme.colorScheme.outlineVariant),
               onTap: enabled ? onTap : null,
               child: Stack(
                 fit: StackFit.expand,

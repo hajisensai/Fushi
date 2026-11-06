@@ -124,12 +124,16 @@ class PdfImporter {
           title: storedTitle,
           mediaKey: bookKey,
           dateKey: FushiTimeFormat.dayKey(
-              DateTime.fromMillisecondsSinceEpoch(importedAtMs)),
+            DateTime.fromMillisecondsSinceEpoch(importedAtMs),
+          ),
           timestampMs: importedAtMs,
         );
       } catch (e) {
-        ErrorLogService.instance
-            .log('PdfImporter.addActivityEvent', e, StackTrace.current);
+        ErrorLogService.instance.log(
+          'PdfImporter.addActivityEvent',
+          e,
+          StackTrace.current,
+        );
       }
 
       return insertedKey;
@@ -139,16 +143,22 @@ class PdfImporter {
         try {
           await db.deleteEpubBook(insertedKey);
         } catch (rollbackError, stack) {
-          ErrorLogService.instance
-              .log('PdfImporter.rollbackDelete', rollbackError, stack);
+          ErrorLogService.instance.log(
+            'PdfImporter.rollbackDelete',
+            rollbackError,
+            stack,
+          );
         }
       }
       try {
         final Directory dir = Directory(bookDir);
         if (dir.existsSync()) dir.deleteSync(recursive: true);
       } catch (cleanupError, stack) {
-        ErrorLogService.instance
-            .log('PdfImporter.rollbackDir', cleanupError, stack);
+        ErrorLogService.instance.log(
+          'PdfImporter.rollbackDir',
+          cleanupError,
+          stack,
+        );
       }
       rethrow;
     }

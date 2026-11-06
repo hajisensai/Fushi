@@ -51,7 +51,9 @@ class ServerLockHolder {
       return ServerLockHolder(
         pid: decoded['pid'] is int ? decoded['pid']! as int : null,
         mode: decoded['mode'] is String ? decoded['mode']! as String : null,
-        command: decoded['command'] is String ? decoded['command']! as String : null,
+        command: decoded['command'] is String
+            ? decoded['command']! as String
+            : null,
         admin: decoded['admin'] is String ? decoded['admin']! as String : null,
       );
     } on FormatException {
@@ -62,7 +64,11 @@ class ServerLockHolder {
 
 /// 数据目录被别的进程占着。
 class ServerDataLockedException implements Exception {
-  const ServerDataLockedException({required this.dataDir, required this.lockPath, this.holder});
+  const ServerDataLockedException({
+    required this.dataDir,
+    required this.lockPath,
+    this.holder,
+  });
 
   final String dataDir;
   final String lockPath;
@@ -81,7 +87,10 @@ class ServerDataLockedException implements Exception {
           '请改用 `fushi_server ctl …` 或先停止 serve';
     }
     if (h != null && h.mode == 'offline') {
-      final String detail = <String>[pid, ?h.command].where((String s) => s.isNotEmpty).join('：');
+      final String detail = <String>[
+        pid,
+        ?h.command,
+      ].where((String s) => s.isNotEmpty).join('：');
       return '另一条 fushi_server 离线命令正在使用数据目录 $dataDir'
           '${detail.isEmpty ? '' : '（$detail）'}，等它结束后再试';
     }
@@ -106,16 +115,28 @@ class ServerDataLock {
   /// 非阻塞拿 `<dataDir>/fushi_server.lock` 的排他锁；被占时抛 [ServerDataLockedException]。
   ///
   /// [mode] 是 `serve` 或 `offline`；[command] 写进锁文件给被拒的一方看。
-  static Future<ServerDataLock> acquire(String dataDir, {required String mode, String? command}) async {
+  static Future<ServerDataLock> acquire(
+    String dataDir, {
+    required String mode,
+    String? command,
+  }) async {
     final File file = File(p.join(dataDir, kServerLockFileName));
     await file.parent.create(recursive: true);
     // append：打开不截断——别人持有时不能把他写的持有者信息清掉。
     final RandomAccessFile raf = await file.open(mode: FileMode.append);
     try {
-      await raf.lock(FileLock.exclusive, _kLockRegionStart, _kLockRegionStart + 1);
+      await raf.lock(
+        FileLock.exclusive,
+        _kLockRegionStart,
+        _kLockRegionStart + 1,
+      );
     } on FileSystemException {
       await raf.close();
-      throw ServerDataLockedException(dataDir: dataDir, lockPath: file.path, holder: await readHolder(file));
+      throw ServerDataLockedException(
+        dataDir: dataDir,
+        lockPath: file.path,
+        holder: await readHolder(file),
+      );
     }
     final ServerDataLock lock = ServerDataLock._(file, raf, mode, command);
     await lock.update();

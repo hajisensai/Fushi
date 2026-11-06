@@ -247,6 +247,11 @@ final class DirectAnkiProvider implements AnkiProvider {
     }
 
     @Override
+    public boolean deleteNote(long noteId) {
+        return resolver.delete(note(noteId), null, null) > 0;
+    }
+
+    @Override
     public boolean updateNoteTags(long noteId, Set<String> tags) {
         final ContentValues values = new ContentValues();
         values.put(FlashCardsContract.Note.TAGS,

@@ -26,19 +26,23 @@ FushiDatabase _memDb() {
 }
 
 void main() {
-  final SyncChannelScope drive =
-      SyncChannelScope.forBackendType(SyncBackendType.googleDrive);
-  final SyncChannelScope inter =
-      SyncChannelScope.forBackendType(SyncBackendType.fushiServer);
-  final SyncChannelScope dav =
-      SyncChannelScope.forBackendType(SyncBackendType.webDav);
+  final SyncChannelScope drive = SyncChannelScope.forBackendType(
+    SyncBackendType.googleDrive,
+  );
+  final SyncChannelScope inter = SyncChannelScope.forBackendType(
+    SyncBackendType.fushiServer,
+  );
+  final SyncChannelScope dav = SyncChannelScope.forBackendType(
+    SyncBackendType.webDav,
+  );
   group('syncChannelScopeOf 是 resolveSyncBackend 的逆', () {
     test('每个 SyncBackendType 解析出的后端都能反查回自己（新增后端漏改在此当场红）', () {
       for (final SyncBackendType type in SyncBackendType.values) {
         expect(
           syncChannelScopeOf(resolveSyncBackend(type)).id,
           SyncChannelScope.forBackendType(type).id,
-          reason: '$type 的后端反查不回自己的槽位：它会和别的通道共用一格持久化键，'
+          reason:
+              '$type 的后端反查不回自己的槽位：它会和别的通道共用一格持久化键，'
               '互联/WebDAV 的绝对 URL folderId 就此串到另一条通道的请求上',
         );
       }
@@ -54,8 +58,9 @@ void main() {
     });
 
     test('槽位 id 两两不同（撞 id = 两条通道共用一把锁）', () {
-      final List<String> ids =
-          SyncChannelScope.all.map((SyncChannelScope s) => s.id).toList();
+      final List<String> ids = SyncChannelScope.all
+          .map((SyncChannelScope s) => s.id)
+          .toList();
       expect(ids.toSet(), hasLength(ids.length));
     });
   });
@@ -74,14 +79,17 @@ void main() {
       // 互联通道的 folderId 是**绝对 URL**：这正是串槽后会被云后端当 fileId、
       // 被 WebDAV 当自己的路径直接请求（并附上自己的 Basic 凭据）的那个值。
       await repo.setRootFolderId(inter, 'https://peer.lan:8443/hibiki-data/');
-      await repo.setFolderCache(
-          inter, <String, String>{'書': 'https://peer.lan:8443/hibiki-data/書/'});
+      await repo.setFolderCache(inter, <String, String>{
+        '書': 'https://peer.lan:8443/hibiki-data/書/',
+      });
 
       expect(await repo.getRootFolderId(drive), isNull);
       expect(await repo.getFolderCache(drive), isEmpty);
       expect(await repo.getRootFolderId(dav), isNull);
-      expect(await repo.getRootFolderId(inter),
-          'https://peer.lan:8443/hibiki-data/');
+      expect(
+        await repo.getRootFolderId(inter),
+        'https://peer.lan:8443/hibiki-data/',
+      );
     });
 
     test('清一条通道的缓存不动其它通道', () async {
@@ -92,7 +100,9 @@ void main() {
 
       expect(await repo.getRootFolderId(drive), isNull);
       expect(
-          await repo.getRootFolderId(inter), 'https://peer.lan/hibiki-data/');
+        await repo.getRootFolderId(inter),
+        'https://peer.lan/hibiki-data/',
+      );
     });
 
     test('clearAllFolderCaches 清掉全部槽位 + 解耦前的旧全局键（备份导入用）', () async {
@@ -122,8 +132,10 @@ void main() {
       expect(await db.getPref('sync_folder_cache'), isNull);
       // 搬运才是错的：那个值可能是任一条通道写的，塞进哪一格都等于固化污染。
       for (final SyncChannelScope s in SyncChannelScope.all) {
-        expect(await repo.getRootFolderId(s),
-            isNot('https://peer.lan/hibiki-data/'));
+        expect(
+          await repo.getRootFolderId(s),
+          isNot('https://peer.lan/hibiki-data/'),
+        );
       }
       // 已有的分槽值不受影响（迁移只删旧全局键）。
       expect(await repo.getRootFolderId(drive), 'drive-root');
@@ -138,14 +150,17 @@ void main() {
       expect(
         await repo.hasStoredBackendConfig(SyncBackendType.googleDrive),
         isFalse,
-        reason: '判成「云已配置」会让删除确认框放行「从所有设备删除」，'
+        reason:
+            '判成「云已配置」会让删除确认框放行「从所有设备删除」，'
             '而根本没有云通道去发布墓碑——用户以为删干净了，实际只删了本机',
       );
 
       // Drive 自己那格有值才算配置过。
       await repo.setRootFolderId(drive, 'drive-root');
-      expect(await repo.hasStoredBackendConfig(SyncBackendType.googleDrive),
-          isTrue);
+      expect(
+        await repo.hasStoredBackendConfig(SyncBackendType.googleDrive),
+        isTrue,
+      );
     });
   });
 
@@ -169,22 +184,33 @@ void main() {
       expect(await repo.getCollectionsSyncBaselineMs(drive), 5000);
       expect(await repo.getCollectionsSyncBaselineMs(inter), 7000);
       expect(
-          await repo.getCollectionsSyncBaselineMs(SyncChannelScope.host), 9000);
+        await repo.getCollectionsSyncBaselineMs(SyncChannelScope.host),
+        9000,
+      );
     });
 
     test('合集基线迁移：旧全局键作各槽位初值，写侧只写本槽位', () async {
       await db.setPref('sync_collections_baseline_ms', '4242');
 
-      expect(await repo.getCollectionsSyncBaselineMs(drive), 4242,
-          reason: '升级后第一轮若从 0 起，所有历史墓碑会被当成新闻重裁一遍');
+      expect(
+        await repo.getCollectionsSyncBaselineMs(drive),
+        4242,
+        reason: '升级后第一轮若从 0 起，所有历史墓碑会被当成新闻重裁一遍',
+      );
       expect(await repo.getCollectionsSyncBaselineMs(inter), 4242);
 
       await repo.setCollectionsSyncBaselineMs(drive, 9000);
       expect(await repo.getCollectionsSyncBaselineMs(drive), 9000);
-      expect(await repo.getCollectionsSyncBaselineMs(inter), 4242,
-          reason: '一条通道推进基线不得连带压住另一条通道还没见过的墓碑');
-      expect(await db.getPref('sync_collections_baseline_ms'), '4242',
-          reason: '旧全局键只读不写（它是所有槽位的共同初值）');
+      expect(
+        await repo.getCollectionsSyncBaselineMs(inter),
+        4242,
+        reason: '一条通道推进基线不得连带压住另一条通道还没见过的墓碑',
+      );
+      expect(
+        await db.getPref('sync_collections_baseline_ms'),
+        '4242',
+        reason: '旧全局键只读不写（它是所有槽位的共同初值）',
+      );
     });
 
     test('删除墓碑消费基线：分槽 + 旧全局键作初值', () async {
@@ -193,9 +219,13 @@ void main() {
 
       await repo.setDeletionTombstonesBaselineMs(drive, 8000);
       expect(await repo.getDeletionTombstonesBaselineMs(drive), 8000);
-      expect(await repo.getDeletionTombstonesBaselineMs(inter), 1000,
-          reason: '云通道确认框推进的基线压住互联对端的老墓碑 = 那些条目永远不再弹，'
-              '用户却以为「所有设备都删了」');
+      expect(
+        await repo.getDeletionTombstonesBaselineMs(inter),
+        1000,
+        reason:
+            '云通道确认框推进的基线压住互联对端的老墓碑 = 那些条目永远不再弹，'
+            '用户却以为「所有设备都删了」',
+      );
     });
 
     test('冷却戳：分槽 + 旧全局键作初值', () async {
@@ -205,8 +235,11 @@ void main() {
 
       await repo.setLastSyncMs(drive, 222);
       expect(await repo.getLastSyncMs(drive), 222);
-      expect(await repo.getLastSyncMs(inter), 111,
-          reason: '一条通道跑完不得把另一条通道一起压进 5 分钟冷却窗');
+      expect(
+        await repo.getLastSyncMs(inter),
+        111,
+        reason: '一条通道跑完不得把另一条通道一起压进 5 分钟冷却窗',
+      );
     });
 
     test('聚合快照哈希按通道分槽（云通道推完不得让互联通道跳过 PUT）', () async {
@@ -217,10 +250,14 @@ void main() {
 
     test('设备本地键目录展开到每个槽位（漏展开 = 基线随备份跨设备泄漏）', () {
       for (final SyncChannelScope s in SyncChannelScope.all) {
-        expect(SyncRepository.deviceLocalPrefKeys,
-            contains(s.key('sync_collections_baseline_ms')));
-        expect(SyncRepository.deviceLocalPrefKeys,
-            contains(s.key('sync_deletion_tombstones_baseline_ms')));
+        expect(
+          SyncRepository.deviceLocalPrefKeys,
+          contains(s.key('sync_collections_baseline_ms')),
+        );
+        expect(
+          SyncRepository.deviceLocalPrefKeys,
+          contains(s.key('sync_deletion_tombstones_baseline_ms')),
+        );
       }
     });
   });
@@ -264,34 +301,46 @@ void main() {
     test('互联通道的凭据类失败**不**触发登出（signOut 会清空整份配对配置）', () {
       expect(
         shouldSignOutChannelOnAuthError(
-            err(lanChannel, SyncAuthFailureKind.credentials)),
+          err(lanChannel, SyncAuthFailureKind.credentials),
+        ),
         isFalse,
-        reason: 'InterconnectSyncBackend.signOut 会抹掉全部对端地址/指纹/per-peer '
+        reason:
+            'InterconnectSyncBackend.signOut 会抹掉全部对端地址/指纹/per-peer '
             'token；一台对端的 401 株连其余对端正是 BUG-1550 要消灭的行为',
       );
     });
 
     test('云通道保持原判据：credentials 登出、forbidden / browserTimeout 不登出', () {
       expect(
-          shouldSignOutChannelOnAuthError(
-              err(cloudChannel, SyncAuthFailureKind.credentials)),
-          isTrue);
+        shouldSignOutChannelOnAuthError(
+          err(cloudChannel, SyncAuthFailureKind.credentials),
+        ),
+        isTrue,
+      );
       expect(
-          shouldSignOutChannelOnAuthError(
-              err(cloudChannel, SyncAuthFailureKind.forbidden)),
-          isFalse);
+        shouldSignOutChannelOnAuthError(
+          err(cloudChannel, SyncAuthFailureKind.forbidden),
+        ),
+        isFalse,
+      );
       expect(
-          shouldSignOutChannelOnAuthError(
-              err(cloudChannel, SyncAuthFailureKind.browserTimeout)),
-          isFalse);
+        shouldSignOutChannelOnAuthError(
+          err(cloudChannel, SyncAuthFailureKind.browserTimeout),
+        ),
+        isFalse,
+      );
     });
 
     test('通道身份随异常一起流出：登出的对象由它决定，不再靠 backendType 猜', () {
-      final SyncChannelAuthError e =
-          err(lanChannel, SyncAuthFailureKind.credentials);
+      final SyncChannelAuthError e = err(
+        lanChannel,
+        SyncAuthFailureKind.credentials,
+      );
       expect(e.channel.type, SyncBackendType.fushiServer);
-      expect(e.channel.scope.id,
-          SyncChannelScope.forBackendType(SyncBackendType.fushiServer).id);
+      expect(
+        e.channel.scope.id,
+        SyncChannelScope.forBackendType(SyncBackendType.fushiServer).id,
+      );
       expect(e.error.kind, SyncAuthFailureKind.credentials);
       // 原始错误信息一字不丢（UI 仍拿它给用户看）。
       expect(e.error.message, 'rejected');
@@ -299,7 +348,9 @@ void main() {
 
     test('通道槽位与 orchestrator/manager 的推导同源', () {
       expect(
-          cloudChannel.scope.id, syncChannelScopeOf(cloudChannel.backend).id);
+        cloudChannel.scope.id,
+        syncChannelScopeOf(cloudChannel.backend).id,
+      );
       expect(lanChannel.scope.id, syncChannelScopeOf(lanChannel.backend).id);
     });
   });

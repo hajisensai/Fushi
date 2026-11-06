@@ -21,7 +21,7 @@ import 'package:fushi/src/leaderboard/leaderboard_store.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_detail_page.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_dev_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
@@ -192,7 +192,7 @@ void main() {
     supportRoot: () async => root,
     client: b.feedbackClient,
     meta: () async => <String, Object?>{'platform': 'test'},
-    logText: () => 'log',
+    logText: ({required bool includeDebugLog}) => 'log',
     logEncoder: (String s) =>
         Uint8List.fromList(<int>[0x1f, 0x8b, ...utf8.encode(s)]),
     // 测试宿主没有 ffmpeg：假转码 = 原样复制进工作目录。

@@ -4,25 +4,28 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 const double kScrapeCoverPreviewWidth = 80;
 const double kScrapeCoverPreviewHeight = 112;
 
 /// 书籍、漫画、视频、游戏刮削候选共用的可辨识封面预览。
 class ScrapeCoverPreview extends StatelessWidget {
-  const ScrapeCoverPreview({
-    super.key,
-    required this.url,
-  });
+  const ScrapeCoverPreview({super.key, required this.url});
 
   final String? url;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final String? normalized =
-        url?.trim().isEmpty == false ? url!.trim() : null;
+    final String? normalized = url?.trim().isEmpty == false
+        ? url!.trim()
+        : null;
     final Widget preview = SizedBox(
       width: kScrapeCoverPreviewWidth,
       height: kScrapeCoverPreviewHeight,
@@ -54,10 +57,7 @@ class ScrapeCoverPreview extends StatelessWidget {
   }
 }
 
-Widget _buildPlaceholder(
-  FushiDesignTokens tokens, {
-  double iconSize = 28,
-}) {
+Widget _buildPlaceholder(FushiDesignTokens tokens, {double iconSize = 28}) {
   return ColoredBox(
     color: tokens.surfaces.overlay,
     child: Center(

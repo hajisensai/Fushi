@@ -7,17 +7,22 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/torrent/anime_download_matching.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi/src/media/video/jimaku_matching.dart'
+    show jimakuVersionKeyOf;
+import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart'
+    show coarseVersionLanguages, probeUnlabeledVersionLanguages;
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_timing_check.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
+import 'package:fushi_engine/media/video/video_filename_parser.dart';
 
 /// 延迟字幕解析的结果：配好的字幕 + 失败原因（二选一有值）。
 class ResolvedPlanSubtitles {
   const ResolvedPlanSubtitles.ok(this.subtitles) : failureReason = null;
 
   const ResolvedPlanSubtitles.failed(this.failureReason)
-      : subtitles = const <PlanSubtitle>[];
+    : subtitles = const <PlanSubtitle>[];
 
   /// 已下载落地的字幕（顺序 = 反查结果顺序）。
   final List<PlanSubtitle> subtitles;
@@ -41,10 +46,10 @@ class JimakuPlanSubtitleResolver {
     required Future<http.Client> Function() httpClientFactory,
     required Directory Function(String planId) stagingDirFor,
     String Function()? defaultContentLanguageProvider,
-  })  : _apiKeyProvider = apiKeyProvider,
-        _httpClientFactory = httpClientFactory,
-        _stagingDirFor = stagingDirFor,
-        _defaultContentLanguage = defaultContentLanguageProvider ?? (() => '');
+  }) : _apiKeyProvider = apiKeyProvider,
+       _httpClientFactory = httpClientFactory,
+       _stagingDirFor = stagingDirFor,
+       _defaultContentLanguage = defaultContentLanguageProvider ?? (() => '');
 
   final String Function() _apiKeyProvider;
   final Future<http.Client> Function() _httpClientFactory;
@@ -73,10 +78,7 @@ class JimakuPlanSubtitleResolver {
 
     JimakuClient? jimaku;
     try {
-      jimaku = JimakuClient(
-        apiKey: apiKey,
-        client: await _httpClientFactory(),
-      );
+      jimaku = JimakuClient(apiKey: apiKey, client: await _httpClientFactory());
       // 列全部文件（不带 episode query）：反查要拿字幕侧完整集号集合，
       // 服务端按文件名 best-effort 过滤反而会遮住「一条都对不上」这个事实。
       final List<JimakuFile> files = await jimaku.listFiles(entryId);
@@ -88,24 +90,54 @@ class JimakuPlanSubtitleResolver {
       // 权重——Jimaku 是日语字幕站，那条默认在这里是合理的领域知识，不是全局假设。
       final String? preferredLanguage = resolveSubtitleDownloadLanguage(
         explicitSubtitlePreference: plan.jimakuLanguage,
-        contentMetadataLanguage:
-            (await probeVideoFacts(videoAbsolutePaths.first))
-                .primaryAudioLanguage,
+        contentMetadataLanguage: (await probeVideoFacts(
+          videoAbsolutePaths.first,
+        )).primaryAudioLanguage,
         globalDefaultContentLanguage: _defaultContentLanguage(),
       );
+      // 文件名没写语言的版本按正文判语言（BUG-3998）；下过的字节留给落盘复用。
+      final Map<String, Future<Uint8List?>> fetched =
+          <String, Future<Uint8List?>>{};
+      final JimakuClient client = jimaku;
+      Future<Uint8List?> fetch(JimakuFile file) =>
+          fetched[file.url] ??= client.downloadFile(file.url);
+      final Map<String, String> contentLanguageByVersion =
+          coarseVersionLanguages(
+            await probeUnlabeledVersionLanguages<JimakuFile>(
+              files: files.where((JimakuFile file) => file.isTextSubtitle),
+              targetEpisodes: <int>[
+                for (final String path in videoAbsolutePaths)
+                  ?parseVideoFilename(p.basename(path)).episode,
+              ],
+              versionOf: jimakuVersionKeyOf,
+              declaredLanguageOf: (JimakuFile file) =>
+                  detectSubtitleLanguage(file.name),
+              episodeOf: (JimakuFile file) => file.episode,
+              sizeOf: (JimakuFile file) => file.size,
+              fetch: fetch,
+            ),
+          );
       final List<ResolvedSubtitleMatch> matches = matchJimakuFilesToVideoNames(
         videoAbsolutePaths,
         files,
         preferredLanguage: preferredLanguage,
+        contentLanguageByVersion: contentLanguageByVersion,
       );
       if (matches.isEmpty) {
         // 反查一条都对不上——绝大多数是条目选错季或用了绝对集号编号。
         // 明说，而不是悄悄不放字幕。
         return const ResolvedPlanSubtitles.failed(
-            'no jimaku file matches the pack episodes');
+          'no jimaku file matches the pack episodes',
+        );
       }
       return ResolvedPlanSubtitles.ok(
-        await _download(plan, matches, jimaku, videoAbsolutePaths),
+        await _download(
+          plan,
+          matches,
+          fetch,
+          videoAbsolutePaths,
+          contentLanguageByVersion,
+        ),
       );
     } catch (e) {
       return ResolvedPlanSubtitles.failed('jimaku fetch failed: $e');
@@ -124,8 +156,9 @@ class JimakuPlanSubtitleResolver {
   Future<List<PlanSubtitle>> _download(
     AnimeDownloadPlan plan,
     List<ResolvedSubtitleMatch> matches,
-    JimakuClient jimaku,
+    Future<Uint8List?> Function(JimakuFile file) fetch,
     List<String> videoAbsolutePaths,
+    Map<String, String> contentLanguageByVersion,
   ) async {
     final Directory subsDir = _stagingDirFor(plan.id);
     final Map<String, String> stagedByUrl = <String, String>{};
@@ -137,14 +170,15 @@ class JimakuPlanSubtitleResolver {
     for (final ResolvedSubtitleMatch match in matches) {
       String? staged = stagedByUrl[match.file.url];
       if (staged == null) {
-        final Uint8List? bytes = await jimaku.downloadFile(match.file.url);
+        final Uint8List? bytes = await fetch(match.file);
         if (bytes == null) continue;
         final String? videoPath = _videoPathFor(match, videoAbsolutePaths);
         if (videoPath != null) {
           final int? durationMs = durationByVideo.containsKey(videoPath)
               ? durationByVideo[videoPath]
-              : (durationByVideo[videoPath] =
-                  await probeVideoDurationMs(videoPath));
+              : (durationByVideo[videoPath] = await probeVideoDurationMs(
+                  videoPath,
+                ));
           final SubtitleTimingCheck check = checkSubtitleTiming(
             summarizeSubtitleTiming(await decodeTextBytes(bytes)),
             video: durationMs == null
@@ -156,9 +190,9 @@ class JimakuPlanSubtitleResolver {
           if (check.contradictsVideo) continue;
         }
         try {
-          final File dest =
-              File(p.join(subsDir.path, p.basename(match.file.name)))
-                ..createSync(recursive: true);
+          final File dest = File(
+            p.join(subsDir.path, p.basename(match.file.name)),
+          )..createSync(recursive: true);
           await dest.writeAsBytes(bytes);
           staged = dest.path;
           stagedByUrl[match.file.url] = staged;
@@ -166,12 +200,16 @@ class JimakuPlanSubtitleResolver {
           continue; // 单条落盘失败跳过。
         }
       }
-      out.add(PlanSubtitle(
-        episode: match.episode,
-        fileName: match.file.name,
-        stagedPath: staged,
-        language: detectSubtitleLanguage(match.file.name),
-      ));
+      out.add(
+        PlanSubtitle(
+          episode: match.episode,
+          fileName: match.file.name,
+          stagedPath: staged,
+          language:
+              detectSubtitleLanguage(match.file.name) ??
+              contentLanguageByVersion[jimakuVersionKeyOf(match.file)],
+        ),
+      );
     }
     return out;
   }

@@ -46,39 +46,43 @@ void main() {
       expect(d, t0.add(const Duration(seconds: 8)));
     });
 
-    test('deadline exactly equal to now is treated as expired (not in future)',
-        () {
-      final DateTime d = contentReadyTimeoutDeadline(
-        now: t0,
-        existingDeadline: t0,
-      );
-      expect(d, t0.add(const Duration(seconds: 8)));
-    });
-
-    test('future existing deadline is PRESERVED (jitter does not extend it)',
-        () {
-      // 第一次武装记下 t0+8s。
-      final DateTime firstDeadline = contentReadyTimeoutDeadline(
-        now: t0,
-        existingDeadline: null,
-      );
-      expect(firstDeadline, t0.add(const Duration(seconds: 8)));
-
-      // 关键回归：手柄抖动在 8s 内反复重武装——每次都必须返回同一个 firstDeadline，
-      // 绝不外推。撤掉 wall-clock 修复（回到「每次重起 8s」）则下面任一断言转红。
-      for (final int dtMs in <int>[10, 100, 1000, 3000, 5000, 7990]) {
-        final DateTime later = t0.add(Duration(milliseconds: dtMs));
+    test(
+      'deadline exactly equal to now is treated as expired (not in future)',
+      () {
         final DateTime d = contentReadyTimeoutDeadline(
-          now: later,
-          existingDeadline: firstDeadline,
+          now: t0,
+          existingDeadline: t0,
         );
-        expect(
-          d,
-          firstDeadline,
-          reason: '抖动 +${dtMs}ms 时 deadline 被外推 = 无限 loading 回归',
+        expect(d, t0.add(const Duration(seconds: 8)));
+      },
+    );
+
+    test(
+      'future existing deadline is PRESERVED (jitter does not extend it)',
+      () {
+        // 第一次武装记下 t0+8s。
+        final DateTime firstDeadline = contentReadyTimeoutDeadline(
+          now: t0,
+          existingDeadline: null,
         );
-      }
-    });
+        expect(firstDeadline, t0.add(const Duration(seconds: 8)));
+
+        // 关键回归：手柄抖动在 8s 内反复重武装——每次都必须返回同一个 firstDeadline，
+        // 绝不外推。撤掉 wall-clock 修复（回到「每次重起 8s」）则下面任一断言转红。
+        for (final int dtMs in <int>[10, 100, 1000, 3000, 5000, 7990]) {
+          final DateTime later = t0.add(Duration(milliseconds: dtMs));
+          final DateTime d = contentReadyTimeoutDeadline(
+            now: later,
+            existingDeadline: firstDeadline,
+          );
+          expect(
+            d,
+            firstDeadline,
+            reason: '抖动 +${dtMs}ms 时 deadline 被外推 = 无限 loading 回归',
+          );
+        }
+      },
+    );
 
     test('once original deadline passes, the next arm opens a new window', () {
       // 第一次武装记下 t0+8s（值见上一个用例，这里只关心「越过后重开新窗口」）。
@@ -111,62 +115,90 @@ void main() {
       return readerSrc.substring(start, end > start ? end : readerSrc.length);
     }
 
-    test('didChangeMetrics no longer calls _syncPageSize via raw postFrame',
-        () {
-      final String body = didChangeMetricsBody();
-      // 旧的未去抖直连写法（postFrame 内直接 _syncPageSize）不得复活。
-      expect(
-        body.contains('addPostFrameCallback'),
-        isFalse,
-        reason: 'didChangeMetrics 不得再用 postFrame 直连 _syncPageSize（未去抖）',
-      );
-    });
+    test(
+      'didChangeMetrics no longer calls _syncPageSize via raw postFrame',
+      () {
+        final String body = didChangeMetricsBody();
+        // 旧的未去抖直连写法（postFrame 内直接 _syncPageSize）不得复活。
+        expect(
+          body.contains('addPostFrameCallback'),
+          isFalse,
+          reason: 'didChangeMetrics 不得再用 postFrame 直连 _syncPageSize（未去抖）',
+        );
+      },
+    );
 
-    test('didChangeMetrics routes through the shared ~50ms resize debounce',
-        () {
-      final String body = didChangeMetricsBody();
-      expect(body.contains('_resizeRepaginateDebounce'), isTrue,
-          reason: 'didChangeMetrics 必须经 _resizeRepaginateDebounce 去抖');
-      expect(body.contains('milliseconds: 50'), isTrue,
-          reason: '去抖窗口必须是 ~50ms（对齐 _onReaderConstraintsChanged）');
-    });
+    test(
+      'didChangeMetrics routes through the shared ~50ms resize debounce',
+      () {
+        final String body = didChangeMetricsBody();
+        expect(
+          body.contains('_resizeRepaginateDebounce'),
+          isTrue,
+          reason: 'didChangeMetrics 必须经 _resizeRepaginateDebounce 去抖',
+        );
+        expect(
+          body.contains('milliseconds: 50'),
+          isTrue,
+          reason: '去抖窗口必须是 ~50ms（对齐 _onReaderConstraintsChanged）',
+        );
+      },
+    );
 
     test('_startContentReadyTimeout uses wall-clock absolute deadline', () {
       final int start = navSrc.indexOf('void _startContentReadyTimeout()');
       expect(start, isNonNegative, reason: '找不到 _startContentReadyTimeout');
       final int end = navSrc.indexOf('void _clearContentReadyTimeout()');
-      expect(end, greaterThan(start),
-          reason: '找不到 _clearContentReadyTimeout（清 deadline 的配套 helper）');
+      expect(
+        end,
+        greaterThan(start),
+        reason: '找不到 _clearContentReadyTimeout（清 deadline 的配套 helper）',
+      );
       final String body = navSrc.substring(start, end);
-      expect(body.contains('contentReadyTimeoutDeadline'), isTrue,
-          reason: '兜底超时必须用纯函数 contentReadyTimeoutDeadline 算绝对 deadline');
-      expect(body.contains('_contentReadyDeadline'), isTrue,
-          reason: '必须维护 _contentReadyDeadline 绝对截止时刻字段');
+      expect(
+        body.contains('contentReadyTimeoutDeadline'),
+        isTrue,
+        reason: '兜底超时必须用纯函数 contentReadyTimeoutDeadline 算绝对 deadline',
+      );
+      expect(
+        body.contains('_contentReadyDeadline'),
+        isTrue,
+        reason: '必须维护 _contentReadyDeadline 绝对截止时刻字段',
+      );
       // 旧的「每次固定起 8s 相对 timer」写法不得复活。
-      expect(body.contains('Timer(const Duration(seconds: 8)'), isFalse,
-          reason: '不得再用固定 8s 相对 timer（抖动会反复推迟兜底 = 无限 loading）');
+      expect(
+        body.contains('Timer(const Duration(seconds: 8)'),
+        isFalse,
+        reason: '不得再用固定 8s 相对 timer（抖动会反复推迟兜底 = 无限 loading）',
+      );
     });
 
-    test('MainActivity re-applies focus-highlight suppression on resume/config',
-        () {
-      // 症状1 加固：disableSystemFocusHighlight 不再只挂 onCreate。
-      expect(
-        mainActivitySrc.contains('onConfigurationChanged'),
-        isTrue,
-        reason: 'MainActivity 必须 override onConfigurationChanged 重应用焦点框抑制',
-      );
-      final int resumeStart =
-          mainActivitySrc.indexOf('protected void onResume()');
-      expect(resumeStart, isNonNegative, reason: '找不到 onResume');
-      final int resumeEnd =
-          mainActivitySrc.indexOf('private void resumePendingInstall');
-      final String resumeBody = mainActivitySrc.substring(resumeStart,
-          resumeEnd > resumeStart ? resumeEnd : mainActivitySrc.length);
-      expect(
-        resumeBody.contains('disableSystemFocusHighlight()'),
-        isTrue,
-        reason: 'onResume 必须重应用 disableSystemFocusHighlight()',
-      );
-    });
+    test(
+      'MainActivity re-applies focus-highlight suppression on resume/config',
+      () {
+        // 症状1 加固：disableSystemFocusHighlight 不再只挂 onCreate。
+        expect(
+          mainActivitySrc.contains('onConfigurationChanged'),
+          isTrue,
+          reason: 'MainActivity 必须 override onConfigurationChanged 重应用焦点框抑制',
+        );
+        final int resumeStart = mainActivitySrc.indexOf(
+          'protected void onResume()',
+        );
+        expect(resumeStart, isNonNegative, reason: '找不到 onResume');
+        final int resumeEnd = mainActivitySrc.indexOf(
+          'private void resumePendingInstall',
+        );
+        final String resumeBody = mainActivitySrc.substring(
+          resumeStart,
+          resumeEnd > resumeStart ? resumeEnd : mainActivitySrc.length,
+        );
+        expect(
+          resumeBody.contains('disableSystemFocusHighlight()'),
+          isTrue,
+          reason: 'onResume 必须重应用 disableSystemFocusHighlight()',
+        );
+      },
+    );
   });
 }

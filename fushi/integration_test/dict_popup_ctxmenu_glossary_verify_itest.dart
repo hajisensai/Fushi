@@ -81,10 +81,14 @@ void main() {
         final bool dictOk = await seedDictionary(tester);
         expect(dictOk, isTrue, reason: 'test dictionary must seed');
 
-        await appModel.database
-            .setPref('src:reader_fushi:view_mode', 'pagination');
-        await appModel.database
-            .setPref('src:reader_fushi:writing_mode', 'horizontal-tb');
+        await appModel.database.setPref(
+          'src:reader_fushi:view_mode',
+          'pagination',
+        );
+        await appModel.database.setPref(
+          'src:reader_fushi:writing_mode',
+          'horizontal-tb',
+        );
         await ReaderFushiSource.readerSettings?.refreshFromDb();
 
         final String bookKey = await EpubImporter.import(
@@ -105,21 +109,31 @@ void main() {
           canEdit: true,
         );
 
-        final NavigatorState navigator =
-            tester.state<NavigatorState>(find.byType(Navigator).first);
-        unawaited(navigator.push<void>(MaterialPageRoute<void>(
-          builder: (_) => source.buildLaunchPage(item: item),
-        )));
+        final NavigatorState navigator = tester.state<NavigatorState>(
+          find.byType(Navigator).first,
+        );
+        unawaited(
+          navigator.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => source.buildLaunchPage(item: item),
+            ),
+          ),
+        );
         await tester.pump(const Duration(seconds: 3));
 
         const Key webViewKey = ValueKey<String>('fushi_webview');
-        for (int i = 0;
-            i < 80 && find.byKey(webViewKey).evaluate().isEmpty;
-            i++) {
+        for (
+          int i = 0;
+          i < 80 && find.byKey(webViewKey).evaluate().isEmpty;
+          i++
+        ) {
           await tester.pump(const Duration(milliseconds: 500));
         }
-        expect(find.byKey(webViewKey), findsOneWidget,
-            reason: 'reader WebView must mount');
+        expect(
+          find.byKey(webViewKey),
+          findsOneWidget,
+          reason: 'reader WebView must mount',
+        );
 
         const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
         bool contentReady = false;
@@ -142,8 +156,11 @@ void main() {
         final Map<String, dynamic> pt =
             jsonDecode(rawPt as String) as Map<String, dynamic>;
         debugPrint('[verify][1018/1022] word point: $pt');
-        expect(pt['ok'], isTrue,
-            reason: 'must find a visible lookup glyph: ${pt['error']}');
+        expect(
+          pt['ok'],
+          isTrue,
+          reason: 'must find a visible lookup glyph: ${pt['error']}',
+        );
         final double x1 = (pt['x'] as num).toDouble();
         final double y1 = (pt['y'] as num).toDouble();
 
@@ -155,14 +172,20 @@ void main() {
         for (int i = 0; i < 60 && !dictShown(); i++) {
           await tester.pump(const Duration(milliseconds: 200));
         }
-        expect(dictShown(), isTrue,
-            reason: 'tap on glyph must open a lookup popup WebView');
+        expect(
+          dictShown(),
+          isTrue,
+          reason: 'tap on glyph must open a lookup popup WebView',
+        );
 
         // 弹窗 WebView 的 evaluateJavascript 钩子（顶层可见弹窗）。
         final Future<dynamic> Function(String source)? runInPopup =
             ReaderFushiPage.debugEvaluateTopPopup;
-        expect(runInPopup, isNotNull,
-            reason: 'top-popup JS hook must be wired once a popup is up');
+        expect(
+          runInPopup,
+          isNotNull,
+          reason: 'top-popup JS hook must be wired once a popup is up',
+        );
 
         // 等弹窗文档就绪。
         bool popupReady = false;
@@ -178,81 +201,139 @@ void main() {
             }
           }
         }
-        expect(popupReady, isTrue,
-            reason: 'popup WebView document must become ready');
+        expect(
+          popupReady,
+          isTrue,
+          reason: 'popup WebView document must become ready',
+        );
 
         // ── TODO-1022 探针：注入 gloss-sc span/div + image-link 反向对照 ──
-        final dynamic rawGloss =
-            await runInPopup!(_glossaryNeutralizeProbeJs());
+        final dynamic rawGloss = await runInPopup!(
+          _glossaryNeutralizeProbeJs(),
+        );
         final Map<String, dynamic> gloss =
             jsonDecode(rawGloss as String) as Map<String, dynamic>;
         debugPrint('[verify][1022] glossary neutralize probe: $gloss');
-        expect(gloss['ok'], isTrue,
-            reason: 'glossary probe must run: ${gloss['error']}');
+        expect(
+          gloss['ok'],
+          isTrue,
+          reason: 'glossary probe must run: ${gloss['error']}',
+        );
 
-        expect(gloss['spanFloat'], 'none',
-            reason: 'TODO-1022: dict float on rendered gloss-sc-span must be '
-                'filtered at the source, got ${gloss['spanFloat']}');
-        expect(gloss['spanPosition'], 'static',
-            reason: 'TODO-1022: dict position:absolute on rendered '
-                'gloss-sc-span must be filtered, got ${gloss['spanPosition']}');
-        expect(gloss['divFloat'], 'none',
-            reason: 'TODO-1022: dict float on rendered gloss-sc-div must be '
-                'filtered at the source, got ${gloss['divFloat']}');
-        expect(gloss['divPosition'], 'static',
-            reason: 'TODO-1022: dict position:fixed on rendered gloss-sc-div '
-                'must be filtered, got ${gloss['divPosition']}');
+        expect(
+          gloss['spanFloat'],
+          'none',
+          reason:
+              'TODO-1022: dict float on rendered gloss-sc-span must be '
+              'filtered at the source, got ${gloss['spanFloat']}',
+        );
+        expect(
+          gloss['spanPosition'],
+          'static',
+          reason:
+              'TODO-1022: dict position:absolute on rendered '
+              'gloss-sc-span must be filtered, got ${gloss['spanPosition']}',
+        );
+        expect(
+          gloss['divFloat'],
+          'none',
+          reason:
+              'TODO-1022: dict float on rendered gloss-sc-div must be '
+              'filtered at the source, got ${gloss['divFloat']}',
+        );
+        expect(
+          gloss['divPosition'],
+          'static',
+          reason:
+              'TODO-1022: dict position:fixed on rendered gloss-sc-div '
+              'must be filtered, got ${gloss['divPosition']}',
+        );
 
         // BUG-520 分行不变量：渲染出的 div 保持 block，两个 div 垂直堆叠。
-        expect(gloss['divDisplay'], 'block',
-            reason: 'BUG-520: rendered gloss-sc-div must keep UA block display '
-                '(line breaks), got ${gloss['divDisplay']}');
-        expect(gloss['divsStackVertically'], isTrue,
-            reason: 'BUG-520: two rendered dict divs must stack vertically '
-                '(line breaks), rects ${gloss['div1Rect']} / '
-                '${gloss['div2Rect']}');
+        expect(
+          gloss['divDisplay'],
+          'block',
+          reason:
+              'BUG-520: rendered gloss-sc-div must keep UA block display '
+              '(line breaks), got ${gloss['divDisplay']}',
+        );
+        expect(
+          gloss['divsStackVertically'],
+          isTrue,
+          reason:
+              'BUG-520: two rendered dict divs must stack vertically '
+              '(line breaks), rects ${gloss['div1Rect']} / '
+              '${gloss['div2Rect']}',
+        );
 
         // position:relative（行内微调）保留。
-        expect(gloss['relPosition'], 'relative',
-            reason: 'source filter must keep position:relative glyph nudges, '
-                'got ${gloss['relPosition']}');
+        expect(
+          gloss['relPosition'],
+          'relative',
+          reason:
+              'source filter must keep position:relative glyph nudges, '
+              'got ${gloss['relPosition']}',
+        );
 
         // 反向对照：裸 gloss-sc-div（不经渲染管线、直接带 inline float）float 原样
         // 保留 —— 证明一刀切 CSS 已删，中和只发生在 popup.js 源头（BUG-520 守卫）。
-        expect(gloss['bareDivFloat'], isNot('none'),
-            reason: 'BUG-520: no blanket CSS may neutralize a bare '
-                'gloss-sc-div; filtering happens only in the JS renderer, got '
-                '${gloss['bareDivFloat']}');
+        expect(
+          gloss['bareDivFloat'],
+          isNot('none'),
+          reason:
+              'BUG-520: no blanket CSS may neutralize a bare '
+              'gloss-sc-div; filtering happens only in the JS renderer, got '
+              '${gloss['bareDivFloat']}',
+        );
 
         // 图片链接布局零回归：popup.css 仍给 .gloss-image-link position:relative。
-        expect(gloss['imageLinkPosition'], 'relative',
-            reason: 'TODO-859/350: .gloss-image-link must keep '
-                'position:relative from popup.css, got '
-                '${gloss['imageLinkPosition']}');
+        expect(
+          gloss['imageLinkPosition'],
+          'relative',
+          reason:
+              'TODO-859/350: .gloss-image-link must keep '
+              'position:relative from popup.css, got '
+              '${gloss['imageLinkPosition']}',
+        );
 
         // ── TODO-1018 探针：弹窗 WebView 可派发 contextmenu，JS 层不吞它 ──
         final dynamic rawCtx = await runInPopup(_contextMenuProbeJs());
         final Map<String, dynamic> ctx =
             jsonDecode(rawCtx as String) as Map<String, dynamic>;
         debugPrint('[verify][1018] popup contextmenu probe: $ctx');
-        expect(ctx['ok'], isTrue,
-            reason: 'popup contextmenu probe must run: ${ctx['error']}');
-        expect(ctx['dispatched'], isTrue,
-            reason: 'contextmenu event must dispatch on live popup document');
-        expect(ctx['defaultPreventedByJs'], isFalse,
-            reason: 'popup JS must NOT preventDefault contextmenu (native '
-                'disableContextMenu is the sole suppressor per TODO-1018)');
-        expect(dictShown(), isTrue,
-            reason: 'popup WebView must survive contextmenu dispatch');
+        expect(
+          ctx['ok'],
+          isTrue,
+          reason: 'popup contextmenu probe must run: ${ctx['error']}',
+        );
+        expect(
+          ctx['dispatched'],
+          isTrue,
+          reason: 'contextmenu event must dispatch on live popup document',
+        );
+        expect(
+          ctx['defaultPreventedByJs'],
+          isFalse,
+          reason:
+              'popup JS must NOT preventDefault contextmenu (native '
+              'disableContextMenu is the sole suppressor per TODO-1018)',
+        );
+        expect(
+          dictShown(),
+          isTrue,
+          reason: 'popup WebView must survive contextmenu dispatch',
+        );
 
         await takeScreenshot(binding, 'dict_popup_ctxmenu_glossary_verified');
         assertStrictErrors(errors);
 
         navigator.pop();
         await tester.pump(const Duration(seconds: 2));
-        for (int i = 0;
-            i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
-            i++) {
+        for (
+          int i = 0;
+          i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
+          i++
+        ) {
           await tester.pump(const Duration(milliseconds: 250));
         }
       } finally {
@@ -296,7 +377,8 @@ String _wordPointJs() => r'''
 ''';
 
 /// 派发一次真实单击，让阅读器 onTap 的 callHandler('onTap', x, y, false) 触发。
-String _dispatchClickJs(double x, double y) => '''
+String _dispatchClickJs(double x, double y) =>
+    '''
 (function() {
   var px = $x, py = $y;
   var target = document.elementFromPoint(px, py) || document.body;

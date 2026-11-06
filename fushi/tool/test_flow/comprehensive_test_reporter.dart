@@ -3,12 +3,7 @@ import 'dart:io';
 
 import 'comprehensive_test_matrix.dart';
 
-enum ScenarioStatus {
-  pending,
-  blocked,
-  passed,
-  failed,
-}
+enum ScenarioStatus { pending, blocked, passed, failed }
 
 class ScenarioReport {
   const ScenarioReport({
@@ -36,17 +31,17 @@ class ScenarioReport {
   final int? durationMs;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'platform': platform.name,
-        'scenario': scenario.name,
-        'status': status.name,
-        'commands': commands,
-        'assertions': assertions,
-        'evidence': evidence,
-        'blockedReason': blockedReason,
-        'failureReason': failureReason,
-        'exitCode': exitCode,
-        'durationMs': durationMs,
-      };
+    'platform': platform.name,
+    'scenario': scenario.name,
+    'status': status.name,
+    'commands': commands,
+    'assertions': assertions,
+    'evidence': evidence,
+    'blockedReason': blockedReason,
+    'failureReason': failureReason,
+    'exitCode': exitCode,
+    'durationMs': durationMs,
+  };
 }
 
 class ComprehensiveReport {
@@ -65,9 +60,8 @@ class ComprehensiveReport {
       });
 
   Map<String, Object> toJson() => <String, Object>{
-        'entries':
-            entries.map((ScenarioReport entry) => entry.toJson()).toList(),
-      };
+    'entries': entries.map((ScenarioReport entry) => entry.toJson()).toList(),
+  };
 }
 
 ComprehensiveReport buildDryRunReport({
@@ -82,16 +76,19 @@ ComprehensiveReport buildDryRunReport({
     final bool hostMissing = !plan.supportsHost(hostPlatform);
     for (final TestScenario scenario in plan.scenarios) {
       if (!selectedScenarios.contains(scenario.id)) continue;
-      entries.add(ScenarioReport(
-        platform: plan.platform,
-        scenario: scenario.id,
-        status: hostMissing ? ScenarioStatus.blocked : ScenarioStatus.pending,
-        commands: scenario.commands,
-        assertions: scenario.assertions,
-        evidence: scenario.evidence,
-        blockedReason:
-            hostMissing ? plan.blockedReasonForHost(hostPlatform) : '',
-      ));
+      entries.add(
+        ScenarioReport(
+          platform: plan.platform,
+          scenario: scenario.id,
+          status: hostMissing ? ScenarioStatus.blocked : ScenarioStatus.pending,
+          commands: scenario.commands,
+          assertions: scenario.assertions,
+          evidence: scenario.evidence,
+          blockedReason: hostMissing
+              ? plan.blockedReasonForHost(hostPlatform)
+              : '',
+        ),
+      );
     }
   }
   return ComprehensiveReport(entries: entries);
@@ -102,23 +99,21 @@ void writeComprehensiveReport(ComprehensiveReport report, String outputDir) {
   if (!dir.existsSync()) {
     dir.createSync(recursive: true);
   }
-  File('${dir.path}/report.json').writeAsStringSync(
-    jsonEncode(report.toJson()),
-    flush: true,
-  );
-  File('${dir.path}/report.md').writeAsStringSync(
-    _renderMarkdown(report),
-    flush: true,
-  );
+  File(
+    '${dir.path}/report.json',
+  ).writeAsStringSync(jsonEncode(report.toJson()), flush: true);
+  File(
+    '${dir.path}/report.md',
+  ).writeAsStringSync(_renderMarkdown(report), flush: true);
 }
 
 String renderComprehensiveFailureSummary(ComprehensiveReport report) {
-  final Iterable<ScenarioReport> failures = report.entries.where(
-    (ScenarioReport entry) {
-      return entry.status == ScenarioStatus.failed ||
-          entry.status == ScenarioStatus.blocked;
-    },
-  );
+  final Iterable<ScenarioReport> failures = report.entries.where((
+    ScenarioReport entry,
+  ) {
+    return entry.status == ScenarioStatus.failed ||
+        entry.status == ScenarioStatus.blocked;
+  });
   if (failures.isEmpty) return '';
 
   final StringBuffer buffer = StringBuffer();

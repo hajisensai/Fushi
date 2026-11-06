@@ -8,10 +8,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_ignored_works.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -42,9 +43,12 @@ class _IdleRunner implements VideoSourceScrapeRunner {
     VideoSourceScrapeBatchContext? batchContext,
     List<VideoSourceScrapeWork>? plannedWorks,
     String runScope = 'source',
-  }) async =>
-      SourceScrapeReport(sourceIds: <int>[source.id]);
+  }) async => SourceScrapeReport(sourceIds: <int>[source.id]);
 }
+
+/// 这些用例的视频路径都是虚构的（`D:/A/...`）：存在性判据一律当「在」，
+/// BUG-4055 的「文件都不在就不进清单」在 video_library_scrape_sweep_test.dart 里测。
+Future<bool> _allMembersPresent(String _) async => true;
 
 void main() {
   final TestWidgetsFlutterBinding binding =
@@ -52,8 +56,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_pending_scrape_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_pending_scrape_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -83,8 +88,9 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    final Directory storeDir =
-        Directory.systemTemp.createTempSync('fushi_pending_scrape_store');
+    final Directory storeDir = Directory.systemTemp.createTempSync(
+      'fushi_pending_scrape_store',
+    );
     platformServices = testPlatformServices();
     ankiRepository = FakeAnkiRepository();
     controller = VideoSourceScrapeTaskController(_IdleRunner());
@@ -99,21 +105,23 @@ void main() {
   });
 
   Future<int> addSource() => db.insertMediaSource(
-        MediaSourcesCompanion.insert(
-          label: 'A',
-          mediaKind: 'video',
-          rootPath: 'D:/A',
-          createdAt: 1,
-        ),
-      );
+    MediaSourcesCompanion.insert(
+      label: 'A',
+      mediaKind: 'video',
+      rootPath: 'D:/A',
+      createdAt: 1,
+    ),
+  );
 
   Future<void> addVideo(String uid, String path, int sourceId, String title) =>
-      db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value<String>(uid),
-        title: Value<String>(title),
-        videoPath: Value<String>(path),
-        sourceId: Value<int?>(sourceId),
-      ));
+      db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value<String>(uid),
+          title: Value<String>(title),
+          videoPath: Value<String>(path),
+          sourceId: Value<int?>(sourceId),
+        ),
+      );
 
   /// 真链路的端口：planner → 待确认判据 → 清单。`isEnabled: false` 让它只回传
   /// 清单、不真发批次（本用例断的是提醒，不是刮削本身）。
@@ -122,9 +130,11 @@ void main() {
     Future<List<VideoPendingScrapeWork>> Function() refresh,
     List<int> callCount,
     List<int> refreshCount,
-  }) makePort() {
+  })
+  makePort() {
     final VideoLibraryScrapeSweep sweep = VideoLibraryScrapeSweep(
       database: db,
+      memberExists: _allMembersPresent,
       controller: controller,
       isEnabled: () => false,
     );
@@ -144,30 +154,33 @@ void main() {
     );
   }
 
-  Widget buildApp(Future<List<VideoPendingScrapeWork>> Function()? load,
-          {VoidCallback? onOpenScrapeTasks,
-          Future<List<VideoPendingScrapeWork>> Function()? refresh}) =>
-      ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: HomeVideoPage(
-                repo: VideoBookRepository(db),
-                section: VideoLibrarySection.allVideos,
-                loadPendingScrapeWorks: load,
-                refreshPendingScrapeWorks: refresh,
-                onOpenScrapeTasks: onOpenScrapeTasks,
-                scrapeTaskController: controller,
-              ),
-            ),
+  Widget buildApp(
+    Future<List<VideoPendingScrapeWork>> Function()? load, {
+    VoidCallback? onOpenScrapeTasks,
+    Future<List<VideoPendingScrapeWork>> Function()? refresh,
+    Listenable? pendingScrapeChangedSignal,
+  }) => ProviderScope(
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: HomeVideoPage(
+            repo: VideoBookRepository(db),
+            section: VideoLibrarySection.allVideos,
+            loadPendingScrapeWorks: load,
+            refreshPendingScrapeWorks: refresh,
+            pendingScrapeChangedSignal: pendingScrapeChangedSignal,
+            onOpenScrapeTasks: onOpenScrapeTasks,
+            scrapeTaskController: controller,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   testWidgets('有作品没确认身份时，视频页顶部常驻提醒条并可点进确认队列', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);
@@ -176,14 +189,17 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final int sourceId = await addSource();
-    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-        'Unscraped Movie');
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      'Unscraped Movie',
+    );
 
     int opened = 0;
-    await tester.pumpWidget(buildApp(
-      makePort().load,
-      onOpenScrapeTasks: () => opened++,
-    ));
+    await tester.pumpWidget(
+      buildApp(makePort().load, onOpenScrapeTasks: () => opened++),
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -210,8 +226,14 @@ void main() {
 
     final int sourceId = await addSource();
     await addVideo(
-        'movie-a', 'D:/A/Scraped Movie (2020).mkv', sourceId, 'Scraped Movie');
-    final int workId = await db.into(db.videoMetadataWorks).insert(
+      'movie-a',
+      'D:/A/Scraped Movie (2020).mkv',
+      sourceId,
+      'Scraped Movie',
+    );
+    final int workId = await db
+        .into(db.videoMetadataWorks)
+        .insert(
           VideoMetadataWorksCompanion.insert(
             bookUid: const Value<String?>('movie-a'),
             mediaType: 'movie',
@@ -219,7 +241,9 @@ void main() {
             updatedAt: 1,
           ),
         );
-    await db.into(db.videoMetadataProviderIdentities).insert(
+    await db
+        .into(db.videoMetadataProviderIdentities)
+        .insert(
           VideoMetadataProviderIdentitiesCompanion.insert(
             identityKey: 'work:$workId:anidb',
             workId: Value<int?>(workId),
@@ -245,8 +269,12 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final int sourceId = await addSource();
-    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-        'Unscraped Movie');
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      'Unscraped Movie',
+    );
 
     await tester.pumpWidget(buildApp(null));
     await tester.pumpAndSettle();
@@ -273,8 +301,12 @@ void main() {
 
     // 内置下载管线 import 落库走的就是这条 videoBooks uid 流：用户停在视频页
     // 不动，提醒也必须自己冒出来。
-    await addVideo('movie-a', 'D:/A/Fresh Download (2023).mkv', sourceId,
-        'Fresh Download');
+    await addVideo(
+      'movie-a',
+      'D:/A/Fresh Download (2023).mkv',
+      sourceId,
+      'Fresh Download',
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -284,22 +316,26 @@ void main() {
     );
   });
 
-  testWidgets('刮削结果落库只重算提醒条计数，不发起补刮（BUG-3072）',
-      (WidgetTester tester) async {
+  testWidgets('刮削结果落库只重算提醒条计数，不发起补刮（BUG-3072）', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final int sourceId = await addSource();
-    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-        'Unscraped Movie');
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      'Unscraped Movie',
+    );
     final ({
       Future<List<VideoPendingScrapeWork>> Function() load,
       Future<List<VideoPendingScrapeWork>> Function() refresh,
       List<int> callCount,
       List<int> refreshCount,
-    }) port = makePort();
+    })
+    port = makePort();
     await tester.pumpWidget(buildApp(port.load, refresh: port.refresh));
     await tester.pumpAndSettle();
     expect(port.callCount[0], 1, reason: '进页面那一次是补刮请求');
@@ -309,7 +345,9 @@ void main() {
     );
 
     // 刮削把身份写进库（补刮批次自己的写入走的是同一条展示层变更流）。
-    final int workId = await db.into(db.videoMetadataWorks).insert(
+    final int workId = await db
+        .into(db.videoMetadataWorks)
+        .insert(
           VideoMetadataWorksCompanion.insert(
             bookUid: const Value<String?>('movie-a'),
             mediaType: 'movie',
@@ -317,7 +355,9 @@ void main() {
             updatedAt: 1,
           ),
         );
-    await db.into(db.videoMetadataProviderIdentities).insert(
+    await db
+        .into(db.videoMetadataProviderIdentities)
+        .insert(
           VideoMetadataProviderIdentitiesCompanion.insert(
             identityKey: 'work:$workId:anidb',
             workId: Value<int?>(workId),
@@ -329,31 +369,48 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
 
-    expect(port.refreshCount[0], greaterThanOrEqualTo(1),
-        reason: '结果落库后提醒条的数字要跟着掉下去');
+    expect(
+      port.refreshCount[0],
+      greaterThanOrEqualTo(1),
+      reason: '结果落库后提醒条的数字要跟着掉下去',
+    );
     expect(
       find.text(t.video_library_scrape_pending_banner(count: 1)),
       findsNothing,
     );
-    expect(port.callCount[0], 1,
-        reason: '结果写入不是补刮请求：否则补刮批次的写入会启动下一轮，'
-            '资料源连不上时同一作品被每分钟重刮十几次');
+    expect(
+      port.callCount[0],
+      1,
+      reason:
+          '结果写入不是补刮请求：否则补刮批次的写入会启动下一轮，'
+          '资料源连不上时同一作品被每分钟重刮十几次',
+    );
   });
 
-  testWidgets('计数重算在飞时又来一次：完成后补跑一次，不被在飞闸门吞掉（BUG-3085）',
-      (WidgetTester tester) async {
+  testWidgets('计数重算在飞时又来一次：完成后补跑一次，不被在飞闸门吞掉（BUG-3085）', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final int sourceId = await addSource();
-    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-        'Unscraped Movie');
-    await addVideo('movie-b', 'D:/A/Another Movie (2021).mkv', sourceId,
-        'Another Movie');
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      'Unscraped Movie',
+    );
+    await addVideo(
+      'movie-b',
+      'D:/A/Another Movie (2021).mkv',
+      sourceId,
+      'Another Movie',
+    );
     final VideoLibraryScrapeSweep sweep = VideoLibraryScrapeSweep(
       database: db,
+      memberExists: _allMembersPresent,
       controller: controller,
       isEnabled: () => false,
     );
@@ -363,14 +420,16 @@ void main() {
     // 第一次重算先读到当时的状态，再卡住：模拟「在飞期间库又变了」。
     Future<List<VideoPendingScrapeWork>> refresh() async {
       refreshes++;
-      final List<VideoPendingScrapeWork> pending =
-          await sweep.refreshPendingAfterScrapeResults();
+      final List<VideoPendingScrapeWork> pending = await sweep
+          .refreshPendingAfterScrapeResults();
       if (refreshes == 1) await firstRefreshGate.future;
       return pending;
     }
 
     Future<void> seedIdentity(String bookUid) async {
-      final int workId = await db.into(db.videoMetadataWorks).insert(
+      final int workId = await db
+          .into(db.videoMetadataWorks)
+          .insert(
             VideoMetadataWorksCompanion.insert(
               bookUid: Value<String?>(bookUid),
               mediaType: 'movie',
@@ -378,7 +437,9 @@ void main() {
               updatedAt: 1,
             ),
           );
-      await db.into(db.videoMetadataProviderIdentities).insert(
+      await db
+          .into(db.videoMetadataProviderIdentities)
+          .insert(
             VideoMetadataProviderIdentitiesCompanion.insert(
               identityKey: 'work:$workId:anidb',
               workId: Value<int?>(workId),
@@ -389,8 +450,9 @@ void main() {
           );
     }
 
-    await tester
-        .pumpWidget(buildApp(sweep.sweepAndListPending, refresh: refresh));
+    await tester.pumpWidget(
+      buildApp(sweep.sweepAndListPending, refresh: refresh),
+    );
     await tester.pumpAndSettle();
     expect(
       find.text(t.video_library_scrape_pending_banner(count: 2)),
@@ -419,6 +481,144 @@ void main() {
     expect(
       find.text(t.video_library_scrape_pending_banner(count: 2)),
       findsNothing,
+    );
+  });
+
+  // 反馈 Fbchzxuq6f：提醒条以前没有关闭按钮，特典这类本来就认不出的作品让它永远
+  // 钉在库页顶上。「×」= 知道了：收起到出现新的待确认作品为止（本次会话）。
+  testWidgets('提醒条可收起；冒出新的待确认作品时重新亮出', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final int sourceId = await addSource();
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      'Unscraped Movie',
+    );
+    final ValueNotifier<int> changed = ValueNotifier<int>(0);
+    addTearDown(changed.dispose);
+    final ({
+      Future<List<VideoPendingScrapeWork>> Function() load,
+      Future<List<VideoPendingScrapeWork>> Function() refresh,
+      List<int> callCount,
+      List<int> refreshCount,
+    })
+    port = makePort();
+    await tester.pumpWidget(
+      buildApp(
+        port.load,
+        refresh: port.refresh,
+        pendingScrapeChangedSignal: changed,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.video_library_scrape_pending_banner(count: 1)),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('video-library-scrape-pending-banner-dismiss'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.video_library_scrape_pending_banner(count: 1)),
+      findsNothing,
+      reason: '提醒条必须能关掉',
+    );
+
+    // 同一批作品重算不能把它又顶出来。
+    changed.value++;
+    await tester.pumpAndSettle();
+    expect(port.refreshCount[0], greaterThan(0), reason: '确实重算过');
+    expect(
+      find.byKey(const ValueKey<String>('video-library-scrape-pending-banner')),
+      findsNothing,
+    );
+
+    await addVideo(
+      'movie-b',
+      'D:/A/Fresh Download (2023).mkv',
+      sourceId,
+      'Fresh Download',
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.video_library_scrape_pending_banner(count: 2)),
+      findsOneWidget,
+      reason: '新作品入库仍要提醒：收起的只是用户已经看过的那一批',
+    );
+  });
+
+  testWidgets('在待确认队列里忽略作品后，提醒条当场按剩余作品重算', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final int sourceId = await addSource();
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      'Unscraped Movie',
+    );
+    await addVideo(
+      'movie-b',
+      'D:/A/Bonus Feature (2019).mkv',
+      sourceId,
+      'Bonus Feature',
+    );
+    final ValueNotifier<int> changed = ValueNotifier<int>(0);
+    addTearDown(changed.dispose);
+    final ({
+      Future<List<VideoPendingScrapeWork>> Function() load,
+      Future<List<VideoPendingScrapeWork>> Function() refresh,
+      List<int> callCount,
+      List<int> refreshCount,
+    })
+    port = makePort();
+    await tester.pumpWidget(
+      buildApp(
+        port.load,
+        refresh: port.refresh,
+        pendingScrapeChangedSignal: changed,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.video_library_scrape_pending_banner(count: 2)),
+      findsOneWidget,
+    );
+
+    await setVideoScrapeWorksIgnored(db, <String>[
+      'book:movie-b',
+    ], ignored: true);
+    changed.value++;
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(t.video_library_scrape_pending_banner(count: 1)),
+      findsOneWidget,
+      reason: '被忽略的作品不再计入提醒条',
+    );
+    expect(port.callCount[0], 1, reason: '忽略只重算计数，不发起补刮');
+
+    await setVideoScrapeWorksIgnored(db, <String>[
+      'book:movie-a',
+    ], ignored: true);
+    changed.value++;
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('video-library-scrape-pending-banner')),
+      findsNothing,
+      reason: '全部忽略后提醒条消失',
     );
   });
 }

@@ -8,8 +8,9 @@ import 'package:fushi/src/sync/webdav_ops.dart';
 /// while preserving an explicit `https://` for pinned TLS hosts.
 String normalizeFushiInterconnectManualUrl(String rawUrl) {
   final String trimmed = rawUrl.trim();
-  final RegExpMatch? explicitScheme =
-      RegExp(r'^([A-Za-z][A-Za-z0-9+.-]*):\/\/').firstMatch(trimmed);
+  final RegExpMatch? explicitScheme = RegExp(
+    r'^([A-Za-z][A-Za-z0-9+.-]*):\/\/',
+  ).firstMatch(trimmed);
   final String withScheme;
   if (explicitScheme == null) {
     withScheme = 'http://$trimmed';

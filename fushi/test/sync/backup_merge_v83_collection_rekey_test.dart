@@ -30,19 +30,20 @@ void main() {
   int bookCounter = 0;
 
   EpubBooksCompanion book(String key, String uid) => EpubBooksCompanion.insert(
-        bookKey: key,
-        uid: Value(uid),
-        title: key,
-        epubPath: '/fake/$key.epub',
-        extractDir: '/fake/$key-${bookCounter++}',
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: 1000,
-      );
+    bookKey: key,
+    uid: Value(uid),
+    title: key,
+    epubPath: '/fake/$key.epub',
+    extractDir: '/fake/$key-${bookCounter++}',
+    chapterCount: 1,
+    chaptersJson: '[]',
+    importedAt: 1000,
+  );
 
   /// 在磁盘目录建 src 库（ATTACH 需要真文件），种子回调后关闭，返回 db 路径。
   Future<String> buildSrcDb(
-      Future<void> Function(FushiDatabase src) seed) async {
+    Future<void> Function(FushiDatabase src) seed,
+  ) async {
     final Directory srcDir = await Directory.systemTemp.createTemp('ck_src_');
     addTearDown(() => cleanupTempDir(srcDir));
     final FushiDatabase src = FushiDatabase(srcDir.path);
@@ -59,9 +60,14 @@ void main() {
   }
 
   Future<Set<String>> memberKeysOf(
-      FushiDatabase db, String name, String type) async {
-    final MediaCollectionRow? row =
-        await db.getMediaCollectionByNaturalKey(name, type);
+    FushiDatabase db,
+    String name,
+    String type,
+  ) async {
+    final MediaCollectionRow? row = await db.getMediaCollectionByNaturalKey(
+      name,
+      type,
+    );
     if (row == null) return const <String>{};
     return (await db.getCollectionItems(row.id))
         .map((MediaCollectionItemRow m) => '${m.mediaType}|${m.entryKey}')
@@ -72,8 +78,10 @@ void main() {
     final String srcDbPath = await buildSrcDb((FushiDatabase src) async {
       await src.insertEpubBook(book('shared', 'src-uid-shared'));
       await src.insertEpubBook(book('src-only', 'src-only-uid'));
-      final int cid =
-          await src.createMediaCollection('集甲', collectionType: 'collection');
+      final int cid = await src.createMediaCollection(
+        '集甲',
+        collectionType: 'collection',
+      );
       // src 本地书 uid 行 + 同书透传 bookKey 行（脏数据/未收敛窗口）——换键后
       // 收敛为同一目标键，INSERT OR IGNORE 去重。
       await src.addToCollection(cid, MediaKind.epub, 'src-uid-shared');
@@ -91,8 +99,9 @@ void main() {
       await src.updateMediaCollectionCover(cid, 'epub|src-uid-shared');
     });
 
-    final FushiDatabase target =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase target = FushiDatabase.forTesting(
+      NativeDatabase.memory(),
+    );
     addTearDown(target.close);
     await target.insertEpubBook(book('shared', 'tgt-uid-shared'));
     // 'src-only' 在本机被用户删过：书墓碑挡住 _insertMissingEpubBooks 复活，
@@ -101,39 +110,47 @@ void main() {
 
     await attachAndMerge(target, srcDbPath);
 
-    expect(
-      await memberKeysOf(target, '集甲', 'collection'),
-      <String>{
-        'epub|tgt-uid-shared', // src uid → src bookKey → 本库 uid（双行收敛为一）
-        'epub|src-only', // 本库无书 → 回落 src bookKey
-        'epub|wire-ghost', // src 无书行 → 照抄（透传）
-        'video|v1', // 非 epub 域照抄
-      },
-      reason: '三级回落换键 + INSERT OR IGNORE 同键去重',
-    );
+    expect(await memberKeysOf(target, '集甲', 'collection'), <String>{
+      'epub|tgt-uid-shared', // src uid → src bookKey → 本库 uid（双行收敛为一）
+      'epub|src-only', // 本库无书 → 回落 src bookKey
+      'epub|wire-ghost', // src 无书行 → 照抄（透传）
+      'video|v1', // 非 epub 域照抄
+    }, reason: '三级回落换键 + INSERT OR IGNORE 同键去重');
     // 雷区总闸：src 本机局域 uid 绝不落进目标库。
-    final MediaCollectionRow row =
-        (await target.getMediaCollectionByNaturalKey('集甲', 'collection'))!;
-    for (final MediaCollectionItemRow m
-        in await target.getCollectionItems(row.id)) {
-      expect(m.entryKey, isNot(anyOf('src-uid-shared', 'src-only-uid')),
-          reason: 'src uid 直搬 = 永久孤儿（换键断掉的第一症状）');
+    final MediaCollectionRow row = (await target.getMediaCollectionByNaturalKey(
+      '集甲',
+      'collection',
+    ))!;
+    for (final MediaCollectionItemRow m in await target.getCollectionItems(
+      row.id,
+    )) {
+      expect(
+        m.entryKey,
+        isNot(anyOf('src-uid-shared', 'src-only-uid')),
+        reason: 'src uid 直搬 = 永久孤儿（换键断掉的第一症状）',
+      );
     }
-    expect(row.coverSource, 'epub|tgt-uid-shared',
-        reason: 'cover_source 的 epub 借用键与成员行同律换键（漏了封面断链）');
+    expect(
+      row.coverSource,
+      'epub|tgt-uid-shared',
+      reason: 'cover_source 的 epub 借用键与成员行同律换键（漏了封面断链）',
+    );
   });
 
   test('墓碑 bookKey 域匹配防复活：src uid 成员先归一 bookKey 再比本地墓碑', () async {
     final String srcDbPath = await buildSrcDb((FushiDatabase src) async {
       await src.insertEpubBook(book('shared', 'src-uid-2'));
-      final int cid =
-          await src.createMediaCollection('集乙', collectionType: 'collection');
+      final int cid = await src.createMediaCollection(
+        '集乙',
+        collectionType: 'collection',
+      );
       await src.addToCollection(cid, MediaKind.epub, 'src-uid-2');
       await src.addToCollection(cid, MediaKind.video, 'v9');
     });
 
-    final FushiDatabase target =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase target = FushiDatabase.forTesting(
+      NativeDatabase.memory(),
+    );
     addTearDown(target.close);
     await target.insertEpubBook(book('shared', 'tgt-uid-2'));
     // 本地墓碑（用户在本设备移出过这本书）——冻结在 bookKey 域。
@@ -150,7 +167,8 @@ void main() {
     expect(
       await memberKeysOf(target, '集乙', 'collection'),
       <String>{'video|v9'},
-      reason: 'src 的 uid 成员归一到 bookKey 域后命中本地墓碑 → 跳过不复活；'
+      reason:
+          'src 的 uid 成员归一到 bookKey 域后命中本地墓碑 → 跳过不复活；'
           '未被墓碑点名的 video 成员正常并入',
     );
   });

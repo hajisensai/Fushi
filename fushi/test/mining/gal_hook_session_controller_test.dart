@@ -580,7 +580,8 @@ void main() {
       );
 
       expect(bytes, isNull);
-      expect(service.entries.single.audioBackend, 'game_resource');
+      // 没配上原件就没有 game_resource 来源：backend 只在真拿到资源时才写。
+      expect(service.entries.single.audioBackend, isNull);
       expect(
         service.entries.single.fallbackReason,
         'paired_voice_not_found_fallback_disabled',
@@ -1432,7 +1433,11 @@ void main() {
         (await first.launchGame(r'D:nemoi\SiglusEngine.exe')).launched,
         isTrue,
       );
-      expect(first.textProcessPipeline.steps, isEmpty, reason: '默认是空管线');
+      expect(
+        first.textProcessPipeline,
+        kGalDefaultTextProcessPipeline,
+        reason: '没存过管线的游戏用默认管线',
+      );
       await first.setTextProcessPipeline(pipeline);
       expect(
         store[r'd:nemoi\siglusengine.exe']?.textProcess.steps,
@@ -1459,7 +1464,7 @@ void main() {
 
       // 换游戏不得继承上一个游戏的管线（`_beginActivitySession` 复位记忆会话）。
       expect((await second.launchGame(r'D:\other\Game.exe')).launched, isTrue);
-      expect(second.textProcessPipeline.steps, isEmpty);
+      expect(second.textProcessPipeline, kGalDefaultTextProcessPipeline);
 
       await second.close();
       endpoints.dispose();
@@ -1774,8 +1779,11 @@ void main() {
       );
       expect(
         loopback.grabRecentCalls,
-        1,
-        reason: 'mining must reuse the line cache instead of recording later',
+        2,
+        reason:
+            'the line is still current (no next line yet), so mining closes '
+            'its window at "now" once (BUG-3575); a line already superseded '
+            'is never re-recorded (gal_audio_degrade_track_test)',
       );
       expect(
         engine.utteranceTimestamps,
@@ -2125,9 +2133,14 @@ void main() {
         sentence: entry.text,
         outputExtension: 'aac',
       );
-      expect(engine.utteranceTimestamps, <int>[
-        654321,
-      ], reason: 'mining reuses the exact cached utterance for this line');
+      expect(
+        engine.utteranceTimestamps,
+        <int>[654321, 654321],
+        reason:
+            'mining does one closing grab for this exact line timestamp '
+            '(BUG-3575: tail that arrived after settle stopped); it never '
+            'grabs any other line',
+      );
 
       await controller.close();
       endpoints.dispose();
@@ -2893,6 +2906,7 @@ void main() {
   _playTrackerAttachWiring();
   _playTrackerWiringGuard();
   _bug950Guard();
+  _gameExitWatchTests();
 }
 
 /// P4 B1：游玩时长账本接线（`GalgamePlayTracker` → `galgame_sessions` +
@@ -2946,6 +2960,9 @@ void _playTrackerLaunchWiring() {
       windowPollAttempts: 1,
       endpointListenable: endpoints,
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      // 游戏进程存活只有会话的退出监视一路（计时器不判活）：与计时器同一个假 probe。
+      gameProcessProbe: probe,
+      gameExitPollInterval: const Duration(milliseconds: 1),
       playTrackerFactory:
           ({
             required String gameId,
@@ -3125,6 +3142,80 @@ void _playTrackerLaunchWiring() {
     harness.endpoints.dispose();
   });
 
+  test('BUG-3616：串流远端在场时游戏留在主机后台也计时，结算落 galgame_sessions', () async {
+    final FushiDatabase db = await openDbWithGame();
+    final harness = buildHarness(db);
+    // 串流默认只把输入投递到游戏窗口，主机前台是别的进程（不在游戏目录下）。
+    harness.probe.foregroundPid = 9999;
+
+    expect(
+      (await harness.controller.launchGame(
+        gameExe,
+        gameId: 'galgame-row-42',
+        gameTitle: '统一后的显示名',
+      )).launched,
+      isTrue,
+    );
+    final GalgamePlayTracker tracker = harness.controller.playTracker!;
+    for (int i = 0; i < 10; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(
+      tracker.machine?.activeSeconds ?? 0,
+      0,
+      reason: '无远端在场时主机后台不计时（既有前台语义不变）',
+    );
+
+    // 接收端连上：串流宿主转告在场，计时器按前台同等计时。
+    harness.controller.setRemotePlayPresence(true);
+    expect(tracker.remotePresent, isTrue);
+    await accrueUntil(tracker, kMinSessionSeconds);
+
+    // 断开：不再计时。
+    harness.controller.setRemotePlayPresence(false);
+    expect(tracker.remotePresent, isFalse);
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    final int frozen = tracker.machine!.activeSeconds;
+    for (int i = 0; i < 10; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(tracker.machine!.activeSeconds, frozen);
+
+    await harness.controller.close();
+    final List<GalgameSessionRow> sessions = await db.getGalgameSessions(
+      'galgame-row-42',
+    );
+    expect(sessions, hasLength(1));
+    expect(
+      sessions.single.durationSeconds,
+      greaterThanOrEqualTo(kMinSessionSeconds),
+    );
+    harness.endpoints.dispose();
+  });
+
+  test('BUG-3616：在场标记先于计时器设置时，新启动的计时器起步即带上', () async {
+    final FushiDatabase db = await openDbWithGame();
+    final harness = buildHarness(db);
+    harness.probe.foregroundPid = 9999;
+
+    harness.controller.setRemotePlayPresence(true);
+    expect(
+      (await harness.controller.launchGame(
+        gameExe,
+        gameId: 'galgame-row-42',
+        gameTitle: '统一后的显示名',
+      )).launched,
+      isTrue,
+    );
+    final GalgamePlayTracker tracker = harness.controller.playTracker!;
+    expect(tracker.remotePresent, isTrue);
+    expect(tracker.machine?.remotePresent, isTrue);
+    await accrueUntil(tracker, 1);
+
+    await harness.controller.close();
+    harness.endpoints.dispose();
+  });
+
   test('P4 B1：裸 exe 启动（无 galgames.id）不建计时器', () async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
@@ -3280,6 +3371,9 @@ void _playTrackerAttachWiring() {
       windowPollAttempts: 1,
       endpointListenable: endpoints,
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      // 游戏进程存活只有会话的退出监视一路（计时器不判活）：与计时器同一个假 probe。
+      gameProcessProbe: probe,
+      gameExitPollInterval: const Duration(milliseconds: 1),
       playTrackerFactory:
           ({
             required String gameId,
@@ -4808,4 +4902,225 @@ class _GatedLoopbackSource extends _FakeLoopbackSource {
     await allowStop.future;
     await super.stop();
   }
+}
+
+/// BUG-4002 用的假进程表：`alive` 里的 PID 活着，`processes` 是全量枚举结果。
+class _FakeGameProcessProbe implements GalgameProcessProbe {
+  final Set<int> alive = <int>{};
+  final List<GalgameProcessInfo> processes = <GalgameProcessInfo>[];
+
+  @override
+  bool isProcessAlive(int pid) => alive.contains(pid);
+
+  @override
+  List<GalgameProcessInfo> listProcesses() => processes;
+
+  @override
+  String? processImagePath(int pid) => null;
+
+  @override
+  int? foregroundProcessId() => null;
+
+  @override
+  String? canonicalize(String path) => null;
+}
+
+/// BUG-4002：游戏进程退出后捕获会话自动结束（附着与启动两条路径都要）。
+void _gameExitWatchTests() {
+  GalHookSessionController buildController({
+    required _FakeGameProcessProbe probe,
+    required ChangeNotifier endpoints,
+    String? imagePath,
+    List<int>? engineTargetPids,
+  }) {
+    return GalHookSessionController(
+      textService: TexthookerService.test(),
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      targetImagePathProbe: (_) => imagePath,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory:
+          ({
+            required int targetPid,
+            required String? launchExe,
+            required String injectorPath,
+            required bool lunaPcHooks,
+            int? lunaCodepage,
+            List<String> launchArguments = const <String>[],
+            String launchWorkdir = '',
+            GalJapaneseLocaleMode japaneseLocaleMode =
+                kGalDefaultJapaneseLocaleMode,
+            String? contentLanguage,
+          }) {
+            engineTargetPids?.add(targetPid);
+            return _FakeEngineSource(
+              pairedBytes: Uint8List(0),
+              audioFormat: null,
+              textReady: true,
+            );
+          },
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      gameProcessProbe: probe,
+      gameExitPollInterval: const Duration(milliseconds: 5),
+      gameExitConfirmSamples: 2,
+    );
+  }
+
+  Future<void> pumpUntil(bool Function() done) async {
+    for (int i = 0; i < 200 && !done(); i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+  }
+
+  Iterable<String> codes(GalHookSessionController controller) =>
+      controller.events.map((GalHookEvent event) => event.code);
+
+  test('BUG-4002：附着的游戏关掉后会话回到 idle 并通知回首页', () async {
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeGameProcessProbe probe = _FakeGameProcessProbe()
+      ..alive.add(2468);
+    final GalHookSessionController controller = buildController(
+      probe: probe,
+      endpoints: endpoints,
+    );
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 1, pid: 2468, title: 'Game'),
+    );
+    expect(controller.state.isActive, isTrue);
+    // 先让监视至少见它活一次，再关游戏。
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    expect(controller.state.isActive, isTrue);
+
+    probe.alive.remove(2468);
+    await pumpUntil(() => controller.gameExitedCount.value > 0);
+
+    expect(controller.state.phase, GalHookSessionPhase.idle);
+    expect(controller.state.boundWindow, isNull);
+    expect(controller.state.gamePid, isNull);
+    expect(controller.gameExitedCount.value, 1);
+    expect(codes(controller), contains('session.game_exited'));
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('BUG-4002：启动的游戏关掉后会话同样结束', () async {
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeGameProcessProbe probe = _FakeGameProcessProbe()
+      ..alive.add(4242);
+    final GalHookSessionController controller = buildController(
+      probe: probe,
+      endpoints: endpoints,
+    );
+    expect(
+      (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
+      isTrue,
+    );
+    expect(controller.state.isActive, isTrue);
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    probe.alive.remove(4242);
+    await pumpUntil(() => controller.gameExitedCount.value > 0);
+
+    expect(controller.state.phase, GalHookSessionPhase.idle);
+    expect(codes(controller), contains('session.game_exited'));
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('BUG-4002：从没判活成功（进程打不开）时不擅自结束会话', () async {
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeGameProcessProbe probe = _FakeGameProcessProbe();
+    final GalHookSessionController controller = buildController(
+      probe: probe,
+      endpoints: endpoints,
+    );
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 1, pid: 2468, title: 'Game'),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+
+    expect(controller.state.isActive, isTrue);
+    expect(controller.gameExitedCount.value, 0);
+    expect(codes(controller), isNot(contains('session.game_exited')));
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('BUG-4002：游戏目录下有接手进程（自重启）时整条会话跟到新进程', () async {
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeGameProcessProbe probe = _FakeGameProcessProbe()
+      ..alive.add(2468);
+    final List<int> engineTargetPids = <int>[];
+    final GalHookSessionController controller = buildController(
+      probe: probe,
+      endpoints: endpoints,
+      imagePath: r'D:\Games\Title\Game.exe',
+      engineTargetPids: engineTargetPids,
+    );
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 1, pid: 2468, title: 'Game'),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    probe
+      ..alive.remove(2468)
+      ..alive.add(3001)
+      ..processes.add(
+        const GalgameProcessInfo(
+          pid: 3001,
+          imagePath: r'D:\Games\Title\Game.exe',
+        ),
+      );
+    await pumpUntil(
+      () => codes(controller).contains('session.game_process_handoff'),
+    );
+    expect(codes(controller), contains('session.game_process_handoff'));
+    // 不是只换监视器盯的 PID：hook 重新注入接手进程，会话的 gamePid 跟过去，
+    // 指着死进程的窗口绑定被清掉（交给窗口监视按新 PID 重绑）。
+    await pumpUntil(() => engineTargetPids.length >= 2);
+    expect(engineTargetPids, <int>[2468, 3001]);
+    expect(controller.state.gamePid, 3001);
+    expect(controller.state.boundWindow, isNull);
+    expect(controller.state.isActive, isTrue);
+    expect(controller.gameExitedCount.value, 0);
+
+    // 接手的进程也退出，才算游戏真的关了。
+    probe.alive.remove(3001);
+    await pumpUntil(() => controller.gameExitedCount.value > 0);
+    expect(controller.state.phase, GalHookSessionPhase.idle);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('BUG-4002：手动停止后旧监视不再动作', () async {
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeGameProcessProbe probe = _FakeGameProcessProbe()
+      ..alive.add(2468);
+    final GalHookSessionController controller = buildController(
+      probe: probe,
+      endpoints: endpoints,
+    );
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 1, pid: 2468, title: 'Game'),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    await controller.stopCapture();
+
+    probe.alive.remove(2468);
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    expect(controller.gameExitedCount.value, 0, reason: '手动停止不送回首页');
+    expect(codes(controller), isNot(contains('session.game_exited')));
+
+    await controller.close();
+    endpoints.dispose();
+  });
 }

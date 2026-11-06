@@ -42,25 +42,28 @@ void main() {
 
     add('mimetype', 'application/epub+zip');
     add(
-        'META-INF/container.xml',
-        '<?xml version="1.0"?><container version="1.0"><rootfiles>'
-            '<rootfile full-path="OEBPS/content.opf" '
-            'media-type="application/oebps-package+xml"/>'
-            '</rootfiles></container>');
+      'META-INF/container.xml',
+      '<?xml version="1.0"?><container version="1.0"><rootfiles>'
+          '<rootfile full-path="OEBPS/content.opf" '
+          'media-type="application/oebps-package+xml"/>'
+          '</rootfiles></container>',
+    );
     add(
-        'OEBPS/content.opf',
-        '<?xml version="1.0"?>'
-            '<package xmlns="http://www.idpf.org/2007/opf" version="3.0">'
-            '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
-            '<dc:title>Case Book</dc:title></metadata>'
-            '<manifest><item id="c" href="chapter.xhtml" '
-            'media-type="application/xhtml+xml"/></manifest>'
-            '<spine><itemref idref="c"/></spine></package>');
+      'OEBPS/content.opf',
+      '<?xml version="1.0"?>'
+          '<package xmlns="http://www.idpf.org/2007/opf" version="3.0">'
+          '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+          '<dc:title>Case Book</dc:title></metadata>'
+          '<manifest><item id="c" href="chapter.xhtml" '
+          'media-type="application/xhtml+xml"/></manifest>'
+          '<spine><itemref idref="c"/></spine></package>',
+    );
     add(
-        'OEBPS/chapter.xhtml',
-        '<?xml version="1.0"?>'
-            '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>C</title>'
-            '</head><body><p>Body.</p></body></html>');
+      'OEBPS/chapter.xhtml',
+      '<?xml version="1.0"?>'
+          '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>C</title>'
+          '</head><body><p>Body.</p></body></html>',
+    );
 
     return Uint8List.fromList(ZipEncoder().encode(archive)!);
   }
@@ -76,75 +79,91 @@ void main() {
     return extractDir;
   }
 
-  test('extraction preserves upper-case META-INF on disk (not lower-cased)',
-      () {
+  test('extraction preserves upper-case META-INF on disk (not lower-cased)', () {
     final Directory extractDir = extractRealEpub();
 
     // The spec-correct upper-case directory + file must exist VERBATIM, so the
     // case-sensitive peer can find it after a repackage round-trip.
     expect(Directory(p.join(extractDir.path, 'META-INF')).existsSync(), isTrue);
     expect(
-        File(p.join(extractDir.path, 'META-INF', 'container.xml')).existsSync(),
-        isTrue);
+      File(p.join(extractDir.path, 'META-INF', 'container.xml')).existsSync(),
+      isTrue,
+    );
 
     // And the lower-cased form (the old regression) must NOT be what landed on
     // disk. On a case-insensitive FS (Windows/macOS default) both lookups hit
     // the same inode, so we assert on the real directory listing instead.
-    final List<String> names = Directory(extractDir.path)
-        .listSync()
-        .map((FileSystemEntity e) => p.basename(e.path))
-        .toList();
-    expect(names, contains('META-INF'),
-        reason: 'on-disk directory name must keep the original archive case');
+    final List<String> names = Directory(
+      extractDir.path,
+    ).listSync().map((FileSystemEntity e) => p.basename(e.path)).toList();
+    expect(
+      names,
+      contains('META-INF'),
+      reason: 'on-disk directory name must keep the original archive case',
+    );
     expect(names, isNot(contains('meta-inf')));
   });
 
-  test('repackaged archive entry stays upper-case META-INF/container.xml',
-      () async {
-    final Directory extractDir = extractRealEpub();
-    final String out = '${tmp.path}/book.epub';
+  test(
+    'repackaged archive entry stays upper-case META-INF/container.xml',
+    () async {
+      final Directory extractDir = extractRealEpub();
+      final String out = '${tmp.path}/book.epub';
 
-    final bool built = await repackageExtractedEpub(extractDir.path, out);
-    expect(built, isTrue);
+      final bool built = await repackageExtractedEpub(extractDir.path, out);
+      expect(built, isTrue);
 
-    final Archive archive =
-        ZipDecoder().decodeBytes(File(out).readAsBytesSync());
-    final Set<String> names = archive.files
-        .where((ArchiveFile f) => f.isFile)
-        .map((ArchiveFile f) => f.name)
-        .toSet();
+      final Archive archive = ZipDecoder().decodeBytes(
+        File(out).readAsBytesSync(),
+      );
+      final Set<String> names = archive.files
+          .where((ArchiveFile f) => f.isFile)
+          .map((ArchiveFile f) => f.name)
+          .toSet();
 
-    // EPUB structure at the archive ROOT with the canonical upper-case path.
-    expect(names, contains('mimetype'));
-    expect(names, contains('META-INF/container.xml'),
-        reason: 'repackaged zip entry must keep upper-case META-INF so a '
-            'case-sensitive peer can extract and parse it');
-    expect(names, isNot(contains('meta-inf/container.xml')));
-    expect(names, contains('OEBPS/content.opf'));
-    expect(names.any((String n) => n.startsWith('extracted/')), isFalse,
-        reason: 'entries must not be wrapped in the extract-dir name');
-  });
+      // EPUB structure at the archive ROOT with the canonical upper-case path.
+      expect(names, contains('mimetype'));
+      expect(
+        names,
+        contains('META-INF/container.xml'),
+        reason:
+            'repackaged zip entry must keep upper-case META-INF so a '
+            'case-sensitive peer can extract and parse it',
+      );
+      expect(names, isNot(contains('meta-inf/container.xml')));
+      expect(names, contains('OEBPS/content.opf'));
+      expect(
+        names.any((String n) => n.startsWith('extracted/')),
+        isFalse,
+        reason: 'entries must not be wrapped in the extract-dir name',
+      );
+    },
+  );
 
   test(
-      'parseFromExtracted finds container.xml under a case-sensitive simulation',
-      () {
-    final Directory extractDir = extractRealEpub();
+    'parseFromExtracted finds container.xml under a case-sensitive simulation',
+    () {
+      final Directory extractDir = extractRealEpub();
 
-    // Simulate a case-sensitive peer: the lower-cased form does NOT exist there.
-    // After the fix the on-disk path is upper-case, so the exact lookup the
-    // peer performs (File(.../META-INF/container.xml)) succeeds. parse must not
-    // throw the regression FormatException.
-    expect(
-      () => EpubParser.parseFromExtracted(extractDir.path),
-      returnsNormally,
-    );
-  });
+      // Simulate a case-sensitive peer: the lower-cased form does NOT exist there.
+      // After the fix the on-disk path is upper-case, so the exact lookup the
+      // peer performs (File(.../META-INF/container.xml)) succeeds. parse must not
+      // throw the regression FormatException.
+      expect(
+        () => EpubParser.parseFromExtracted(extractDir.path),
+        returnsNormally,
+      );
+    },
+  );
 
   test('no-ops (false) when the extract dir is empty or missing', () async {
     expect(await repackageExtractedEpub('', '${tmp.path}/x.epub'), isFalse);
     expect(
-        await repackageExtractedEpub(
-            '${tmp.path}/does_not_exist', '${tmp.path}/y.epub'),
-        isFalse);
+      await repackageExtractedEpub(
+        '${tmp.path}/does_not_exist',
+        '${tmp.path}/y.epub',
+      ),
+      isFalse,
+    );
   });
 }

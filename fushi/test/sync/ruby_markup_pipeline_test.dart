@@ -55,8 +55,9 @@ void main() {
 
     test('前后空白被 trim 后注音区间跟着平移', () {
       final TexthookerService service = TexthookerService.test();
-      final TexthookerLineEntry? entry =
-          service.appendLine('   <rふる>震</r>わせる   ');
+      final TexthookerLineEntry? entry = service.appendLine(
+        '   <rふる>震</r>わせる   ',
+      );
       expect(entry!.text, '震わせる');
       expectAlignedSpan(entry.text, entry.rubySpans, 0, base: '震', ruby: 'ふる');
     });
@@ -100,12 +101,8 @@ void main() {
     });
 
     test('青空文庫式长文也认（深链 / 悬浮字幕会喂到任意文本）', () {
-      DesktopLookupService.instance
-          .triggerLookup('その優等生《ゆうとうせい》はご機嫌ななめ。');
-      expect(
-        DesktopLookupService.instance.pendingText,
-        'その優等生はご機嫌ななめ。',
-      );
+      DesktopLookupService.instance.triggerLookup('その優等生《ゆうとうせい》はご機嫌ななめ。');
+      expect(DesktopLookupService.instance.pendingText, 'その優等生はご機嫌ななめ。');
     });
   });
 }

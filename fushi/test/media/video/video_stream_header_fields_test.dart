@@ -3,10 +3,15 @@ import 'package:fushi/src/media/video/video_mpv_config.dart';
 
 void main() {
   group('buildHttpHeaderFieldsProperty (TODO-850 stage1)', () {
-    test('empty headers -> empty props (no-op, local/plain stream unaffected)',
-        () {
-      expect(buildHttpHeaderFieldsProperty(const <String, String>{}), isEmpty);
-    });
+    test(
+      'empty headers -> empty props (no-op, local/plain stream unaffected)',
+      () {
+        expect(
+          buildHttpHeaderFieldsProperty(const <String, String>{}),
+          isEmpty,
+        );
+      },
+    );
 
     test('single header -> "Key: Value"', () {
       final Map<String, String> p = buildHttpHeaderFieldsProperty(
@@ -31,7 +36,8 @@ void main() {
     test('a comma inside a value stays inside that value (BUG-2617)', () {
       // 在线视频源扩展给的 UA 几乎人手一个 `(KHTML, like Gecko)`：裸逗号连接会把它
       // 拆成半条 UA + 一条没有冒号的垃圾项，防盗链 CDN 直接拒 → 点开必转圈到超时。
-      const String ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+      const String ua =
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
           'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
       final Map<String, String> p = buildHttpHeaderFieldsProperty(
         <String, String>{'User-Agent': ua, 'Referer': 'https://a.test/'},
@@ -59,8 +65,11 @@ void main() {
       // 所以只转义逗号、其它字符一律不动。
       expect(encodeMpvListItem('X-A: a,b'), 'X-A: a\\,b');
       expect(encodeMpvListItem('X-A: a\\b'), 'X-A: a\\b');
-      expect(encodeMpvListItem('X-Note: 日本語'), 'X-Note: 日本語',
-          reason: '非 ASCII 不需要任何编码：mpv 按字节流原样保留');
+      expect(
+        encodeMpvListItem('X-Note: 日本語'),
+        'X-Note: 日本語',
+        reason: '非 ASCII 不需要任何编码：mpv 按字节流原样保留',
+      );
       expect(encodeMpvListItem('X-A: plain'), 'X-A: plain');
     });
 
@@ -75,14 +84,19 @@ void main() {
       expect(p['http-header-fields'], 'Referer: r');
     });
 
-    test('clear property resets http-header-fields to empty (episode switch)',
-        () {
-      // 换集复用同一 Player：上一站的 Referer 若不清会带到下一站的 hoster。
-      expect(kClearHttpHeaderFieldsProperty, <String, String>{
-        'http-header-fields': '',
-      });
-      expect(buildHttpHeaderFieldsProperty(const <String, String>{}), isEmpty,
-          reason: '空 header 本身不产生属性，清空要走专门的 clear 路径');
-    });
+    test(
+      'clear property resets http-header-fields to empty (episode switch)',
+      () {
+        // 换集复用同一 Player：上一站的 Referer 若不清会带到下一站的 hoster。
+        expect(kClearHttpHeaderFieldsProperty, <String, String>{
+          'http-header-fields': '',
+        });
+        expect(
+          buildHttpHeaderFieldsProperty(const <String, String>{}),
+          isEmpty,
+          reason: '空 header 本身不产生属性，清空要走专门的 clear 路径',
+        );
+      },
+    );
   });
 }

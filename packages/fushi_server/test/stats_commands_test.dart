@@ -129,14 +129,23 @@ void main() {
   });
 
   Future<int> stats(List<String> args, {File? config}) {
-    final StatsModule module = StatsModule(out: out, err: err, clock: () => _now);
+    final StatsModule module = StatsModule(
+      out: out,
+      err: err,
+      clock: () => _now,
+    );
     final ArgParser parser = ArgParser();
     module.register(parser);
     final ArgResults results = parser.parse(<String>['stats', ...args]);
-    return module.run('stats', results.command!, CliContext(configFile: config ?? configFile, verbose: false));
+    return module.run(
+      'stats',
+      results.command!,
+      CliContext(configFile: config ?? configFile, verbose: false),
+    );
   }
 
-  Map<String, Object?> json() => jsonDecode(out.toString()) as Map<String, Object?>;
+  Map<String, Object?> json() =>
+      jsonDecode(out.toString()) as Map<String, Object?>;
 
   test('默认 7d：今日 + 3 天前入窗，20 天前与写零段不入', () async {
     expect(await stats(<String>['show', '--json']), 0, reason: err.toString());
@@ -145,29 +154,60 @@ void main() {
     expect(r['from'], '2026-09-28');
     expect(r['to'], '2026-10-04');
     expect(r['kind'], 'all');
-    expect(r['totals'], <String, Object?>{'ms': 60 * 60000, 'chars': 1900, 'pages': 0, 'activeDays': 2, 'sessions': 3});
+    expect(r['totals'], <String, Object?>{
+      'ms': 60 * 60000,
+      'chars': 1900,
+      'pages': 0,
+      'activeDays': 2,
+      'sessions': 3,
+    });
     expect(r['byKind'], <String, Object?>{
       'book': <String, Object?>{'ms': 40 * 60000, 'chars': 1600, 'pages': 0},
       'video': <String, Object?>{'ms': 20 * 60000, 'chars': 300, 'pages': 0},
     });
-    expect((r['byDay']! as List<Object?>).map((Object? d) => (d! as Map<String, Object?>)['date']), <String>[
-      '2026-10-01',
-      '2026-10-04',
-    ]);
+    expect(
+      (r['byDay']! as List<Object?>).map(
+        (Object? d) => (d! as Map<String, Object?>)['date'],
+      ),
+      <String>['2026-10-01', '2026-10-04'],
+    );
     final List<Object?> media = r['media']! as List<Object?>;
     expect((media.first! as Map<String, Object?>)['key'], 'book-1');
     expect((media.first! as Map<String, Object?>)['chars'], 1600);
-    expect(media.map((Object? m) => (m! as Map<String, Object?>)['key']), isNot(contains('book-zero')));
+    expect(
+      media.map((Object? m) => (m! as Map<String, Object?>)['key']),
+      isNot(contains('book-zero')),
+    );
     final List<Object?> sessions = r['sessions']! as List<Object?>;
     expect(sessions, hasLength(3));
     expect(
       (sessions.first! as Map<String, Object?>).keys,
-      containsAll(<String>['kind', 'key', 'title', 'startAt', 'endAt', 'ms', 'chars', 'pages']),
+      containsAll(<String>[
+        'kind',
+        'key',
+        'title',
+        'startAt',
+        'endAt',
+        'ms',
+        'chars',
+        'pages',
+      ]),
     );
   });
 
   test('--window 30d --kind read：只算书域，含 20 天前的漫画页数', () async {
-    expect(await stats(<String>['show', '--window', '30d', '--kind', 'read', '--json']), 0, reason: err.toString());
+    expect(
+      await stats(<String>[
+        'show',
+        '--window',
+        '30d',
+        '--kind',
+        'read',
+        '--json',
+      ]),
+      0,
+      reason: err.toString(),
+    );
     final Map<String, Object?> r = json();
     expect(r['kind'], 'read');
     expect(r['from'], '2026-09-05');
@@ -177,7 +217,11 @@ void main() {
   });
 
   test('--window today --kind watch', () async {
-    expect(await stats(<String>['show', '-w', 'today', '-k', 'watch', '--json']), 0, reason: err.toString());
+    expect(
+      await stats(<String>['show', '-w', 'today', '-k', 'watch', '--json']),
+      0,
+      reason: err.toString(),
+    );
     expect(json()['totals'], containsPair('ms', 20 * 60000));
   });
 
@@ -187,7 +231,11 @@ void main() {
     final FushiDatabase db = FushiDatabase(paths.support.path);
     await db.setPref(kStatDayResetHourPrefKey, PrefCodec.encode(16));
     await db.close();
-    expect(await stats(<String>['show', '-w', 'today', '--json']), 0, reason: err.toString());
+    expect(
+      await stats(<String>['show', '-w', 'today', '--json']),
+      0,
+      reason: err.toString(),
+    );
     final Map<String, Object?> r = json();
     expect(r['dayResetHour'], 16);
     expect(r['to'], '2026-10-03');
@@ -210,6 +258,11 @@ void main() {
   });
 
   test('缺配置 = 66', () async {
-    expect(await stats(<String>['show'], config: File(p.join(tmp.path, 'missing.yaml'))), 66);
+    expect(
+      await stats(<String>[
+        'show',
+      ], config: File(p.join(tmp.path, 'missing.yaml'))),
+      66,
+    );
   });
 }

@@ -15,19 +15,19 @@ class TorrentAddCoordinator {
   }) {
     return switch (payload) {
       TorrentMagnetPayload magnet => backend.addTorrent(
-          magnet.magnetUri,
-          category: category,
-          savePath: savePath,
-          sequential: sequential,
-          firstLastPiecePrio: firstLastPiecePrio,
-        ),
+        magnet.magnetUri,
+        category: category,
+        savePath: savePath,
+        sequential: sequential,
+        firstLastPiecePrio: firstLastPiecePrio,
+      ),
       TorrentMetainfoPayload metainfo => _addMetainfo(
-          metainfo,
-          category: category,
-          savePath: savePath,
-          sequential: sequential,
-          firstLastPiecePrio: firstLastPiecePrio,
-        ),
+        metainfo,
+        category: category,
+        savePath: savePath,
+        sequential: sequential,
+        firstLastPiecePrio: firstLastPiecePrio,
+      ),
     };
   }
 

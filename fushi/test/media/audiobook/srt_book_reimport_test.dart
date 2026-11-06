@@ -32,18 +32,19 @@ void main() {
     // 真实重建要跑 isolate 解压 + path_provider 临时目录，单测跑不动；这里只记录
     // 「有没有被调用、拿到的是不是新 cue」，判据本身照常由生产代码决定。
     rebuildCalls = <({String bookKey, List<String> cueTexts})>[];
-    debugBodyRebuilder = ({
-      required FushiDatabase db,
-      required EpubBookRow row,
-      required SrtBook book,
-      required List<AudioCue> cues,
-    }) async {
-      rebuildCalls.add((
-        bookKey: row.bookKey,
-        cueTexts: cues.map((AudioCue c) => c.text).toList(),
-      ));
-      return true;
-    };
+    debugBodyRebuilder =
+        ({
+          required FushiDatabase db,
+          required EpubBookRow row,
+          required SrtBook book,
+          required List<AudioCue> cues,
+        }) async {
+          rebuildCalls.add((
+            bookKey: row.bookKey,
+            cueTexts: cues.map((AudioCue c) => c.text).toList(),
+          ));
+          return true;
+        };
   });
 
   tearDown(() async {
@@ -56,7 +57,9 @@ void main() {
   });
 
   File writeSubtitle(
-      String name, List<(String start, String end, String text)> lines) {
+    String name,
+    List<(String start, String end, String text)> lines,
+  ) {
     final StringBuffer buf = StringBuffer();
     for (int i = 0; i < lines.length; i++) {
       final (String start, String end, String text) = lines[i];
@@ -93,6 +96,106 @@ void main() {
     return (await repo.findByUid(uid))!;
   }
 
+  Future<void> bindToServer(String uid) =>
+      RemoteAudioBindingRepository(db).save(
+        RemoteAudioBinding(
+          srtBookUid: uid,
+          provider: RemoteAudioBinding.providerAudiobookshelf,
+          serverConfigId: 'srv',
+          itemId: 'item_1',
+          tracks: const <RemoteAudioTrack>[
+            RemoteAudioTrack(ino: '1', startOffsetMs: 0, durationMs: 2000),
+            RemoteAudioTrack(ino: '2', startOffsetMs: 2000, durationMs: 8000),
+          ],
+          createdAt: 1,
+          updatedAt: 1,
+        ),
+      );
+
+  test('绑在服务器上、本机没有音频（流式播放）：整本时间轴按音轨切开', () async {
+    final File oldSrt = writeSubtitle('old.srt', <(String, String, String)>[
+      ('00:00:01,000', '00:00:01,500', '旧句'),
+    ]);
+    await seedBook(uid: 'srtbook_s', bookKey: '', srtPath: oldSrt.path);
+    await bindToServer('srtbook_s');
+    final File newSrt = writeSubtitle('new.srt', <(String, String, String)>[
+      ('00:00:03,000', '00:00:04,000', '第二轨里的句子'),
+    ]);
+
+    await reimportSrtBook(
+      db: db,
+      repo: repo,
+      uid: 'srtbook_s',
+      subtitlePath: newSrt.path,
+    );
+
+    final AudioCue cue = (await repo.cuesFor('srtbook_s')).single;
+    expect(cue.audioFileIndex, 1);
+    expect(cue.startMs, 1000);
+    expect(cue.endMs, 2000);
+  });
+
+  test('绑定上的字幕来源：本机文件记 local，取自服务器的记 server:<ino>', () async {
+    final File oldSrt = writeSubtitle('old.srt', <(String, String, String)>[
+      ('00:00:01,000', '00:00:01,500', '旧句'),
+    ]);
+    await seedBook(uid: 'srtbook_o', bookKey: '', srtPath: oldSrt.path);
+    await bindToServer('srtbook_o');
+    Future<String> origin() async => (await RemoteAudioBindingRepository(
+      db,
+    ).get('srtbook_o'))!.subtitleOrigin;
+
+    await reimportSrtBook(
+      db: db,
+      repo: repo,
+      uid: 'srtbook_o',
+      subtitlePath: writeSubtitle('server.srt', <(String, String, String)>[
+        ('00:00:03,000', '00:00:04,000', '服务器上的字幕'),
+      ]).path,
+      subtitleOrigin: RemoteAudioBinding.subtitleOriginServer('42'),
+    );
+    expect(await origin(), 'server:42');
+
+    await reimportSrtBook(
+      db: db,
+      repo: repo,
+      uid: 'srtbook_o',
+      subtitlePath: writeSubtitle('local.srt', <(String, String, String)>[
+        ('00:00:03,000', '00:00:04,000', '本机的字幕'),
+      ]).path,
+    );
+    expect(await origin(), RemoteAudioBinding.subtitleOriginLocal);
+  });
+
+  test('有绑定但本机有音频（播放走本机文件）：cue 原样，不按服务器音轨切', () async {
+    final File oldSrt = writeSubtitle('old.srt', <(String, String, String)>[
+      ('00:00:01,000', '00:00:01,500', '旧句'),
+    ]);
+    final File audio = writeAudio('local.mp3');
+    await seedBook(
+      uid: 'srtbook_l',
+      bookKey: '',
+      srtPath: oldSrt.path,
+      audioPaths: <String>[audio.path],
+    );
+    await bindToServer('srtbook_l');
+    final File newSrt = writeSubtitle('new.srt', <(String, String, String)>[
+      ('00:00:03,000', '00:00:04,000', '本机音频里的句子'),
+    ]);
+
+    await reimportSrtBook(
+      db: db,
+      repo: repo,
+      uid: 'srtbook_l',
+      subtitlePath: newSrt.path,
+    );
+
+    final AudioCue cue = (await repo.cuesFor('srtbook_l')).single;
+    expect(cue.audioFileIndex, 0);
+    expect(cue.startMs, 3000);
+    expect(cue.endMs, 4000);
+  });
+
   test('换字幕：cue 整组换掉且 srtPath 指向持久目录里的新文件', () async {
     final File oldSrt = writeSubtitle('old.srt', <(String, String, String)>[
       ('00:00:01,000', '00:00:02,000', '旧句一'),
@@ -101,7 +204,10 @@ void main() {
     await repo.saveCues(
       uid: 'srtbook_1',
       cues: await SrtParser.parse(
-          srtFile: oldSrt, bookKey: 'srtbook_1', audioFileIndex: 0),
+        srtFile: oldSrt,
+        bookKey: 'srtbook_1',
+        audioFileIndex: 0,
+      ),
     );
 
     final File newSrt = writeSubtitle('new.srt', <(String, String, String)>[
@@ -128,8 +234,11 @@ void main() {
     final SrtBook? saved = await repo.findByUid('srtbook_1');
     expect(saved, isNotNull);
     expect(p.basename(saved!.srtPath), 'new.srt');
-    expect(File(saved.srtPath).existsSync(), isTrue,
-        reason: '新字幕必须被复制进持久目录，而不是只记下用户的原始路径');
+    expect(
+      File(saved.srtPath).existsSync(),
+      isTrue,
+      reason: '新字幕必须被复制进持久目录，而不是只记下用户的原始路径',
+    );
     expect(
       p.isWithin(p.canonicalize(docsRoot.path), p.canonicalize(saved.srtPath)),
       isTrue,
@@ -144,7 +253,10 @@ void main() {
     await repo.saveCues(
       uid: 'srtbook_2',
       cues: await SrtParser.parse(
-          srtFile: oldSrt, bookKey: 'srtbook_2', audioFileIndex: 0),
+        srtFile: oldSrt,
+        bookKey: 'srtbook_2',
+        audioFileIndex: 0,
+      ),
     );
 
     final File junk = File(p.join(workDir.path, 'junk.srt'))
@@ -152,7 +264,11 @@ void main() {
 
     await expectLater(
       reimportSrtBook(
-          db: db, repo: repo, uid: 'srtbook_2', subtitlePath: junk.path),
+        db: db,
+        repo: repo,
+        uid: 'srtbook_2',
+        subtitlePath: junk.path,
+      ),
       throwsA(isA<SrtBookReimportEmptyCuesException>()),
     );
 
@@ -164,27 +280,29 @@ void main() {
   test('EPUB 有声书的配对行换字幕：绝不重建正文（不碰 epub_books 章节列）', () async {
     const String bookKey = 'user-epub-book';
     const String chaptersJson = '[{"id":"c1","href":"c1.xhtml"}]';
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: bookKey,
-      title: 'User EPUB',
-      epubPath: 'user.epub',
-      extractDir: p.join(workDir.path, 'extract'),
-      chapterCount: 1,
-      chaptersJson: chaptersJson,
-      importedAt: 1,
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: 'User EPUB',
+        epubPath: 'user.epub',
+        extractDir: p.join(workDir.path, 'extract'),
+        chapterCount: 1,
+        chaptersJson: chaptersJson,
+        importedAt: 1,
+      ),
+    );
 
-    final File oldSrt =
-        writeSubtitle('paired-old.srt', <(String, String, String)>[
-      ('00:00:01,000', '00:00:02,000', '旧句一'),
-    ]);
+    final File oldSrt = writeSubtitle(
+      'paired-old.srt',
+      <(String, String, String)>[('00:00:01,000', '00:00:02,000', '旧句一')],
+    );
     final String uid = epubBackedSrtBookUid(bookKey);
     await seedBook(uid: uid, bookKey: bookKey, srtPath: oldSrt.path);
 
-    final File newSrt =
-        writeSubtitle('paired-new.srt', <(String, String, String)>[
-      ('00:00:03,000', '00:00:04,000', '新句一'),
-    ]);
+    final File newSrt = writeSubtitle(
+      'paired-new.srt',
+      <(String, String, String)>[('00:00:03,000', '00:00:04,000', '新句一')],
+    );
 
     final SrtBookReimportOutcome outcome = await reimportSrtBook(
       db: db,
@@ -194,8 +312,11 @@ void main() {
     );
 
     expect(outcome.subtitleReplaced, isTrue);
-    expect(outcome.bodyRebuilt, isFalse,
-        reason: '配对行的正文是用户自己的 EPUB，用 cue 重生成会直接毁书');
+    expect(
+      outcome.bodyRebuilt,
+      isFalse,
+      reason: '配对行的正文是用户自己的 EPUB，用 cue 重生成会直接毁书',
+    );
     expect(rebuildCalls, isEmpty, reason: '不是「重建失败」而是**根本不该走到重建**');
 
     final EpubBookRow? row = await db.getEpubBook(bookKey);
@@ -206,15 +327,17 @@ void main() {
 
   test('普通字幕书换字幕：正文必须跟着用新 cue 重建', () async {
     const String bookKey = 'generated-body-book';
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: bookKey,
-      title: 'Generated',
-      epubPath: 'generated.epub',
-      extractDir: p.join(workDir.path, 'gen-extract'),
-      chapterCount: 1,
-      chaptersJson: '[]',
-      importedAt: 1,
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: 'Generated',
+        epubPath: 'generated.epub',
+        extractDir: p.join(workDir.path, 'gen-extract'),
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: 1,
+      ),
+    );
 
     final File oldSrt = writeSubtitle('gen-old.srt', <(String, String, String)>[
       ('00:00:01,000', '00:00:02,000', '旧句一'),
@@ -284,8 +407,11 @@ void main() {
     ]);
     await seedBook(uid: 'srtbook_4', bookKey: '', srtPath: srt.path);
 
-    final SrtBookReimportOutcome outcome =
-        await reimportSrtBook(db: db, repo: repo, uid: 'srtbook_4');
+    final SrtBookReimportOutcome outcome = await reimportSrtBook(
+      db: db,
+      repo: repo,
+      uid: 'srtbook_4',
+    );
 
     expect(outcome.audioReplaced, isFalse);
     expect(outcome.subtitleReplaced, isFalse);

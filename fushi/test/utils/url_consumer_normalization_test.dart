@@ -17,25 +17,37 @@ void main() {
   group('Jellyfin 服务器地址（JellyfinApi.normalizeServerUrl）', () {
     test('全角与半角归一到同一个地址', () {
       const String expected = 'http://192.168.1.10:8096';
-      expect(JellyfinApi.normalizeServerUrl('http://192.168.1.10:8096'),
-          expected);
-      expect(JellyfinApi.normalizeServerUrl('http：//192.168.1.10:8096'),
-          expected);
-      expect(JellyfinApi.normalizeServerUrl('http://192。168。1。10:8096'),
-          expected);
+      expect(
+        JellyfinApi.normalizeServerUrl('http://192.168.1.10:8096'),
+        expected,
+      );
+      expect(
+        JellyfinApi.normalizeServerUrl('http：//192.168.1.10:8096'),
+        expected,
+      );
+      expect(
+        JellyfinApi.normalizeServerUrl('http://192。168。1。10:8096'),
+        expected,
+      );
     });
 
     test('裸主机补 http scheme 的老行为不变', () {
-      expect(JellyfinApi.normalizeServerUrl('192.168.1.10:8096'),
-          'http://192.168.1.10:8096');
+      expect(
+        JellyfinApi.normalizeServerUrl('192.168.1.10:8096'),
+        'http://192.168.1.10:8096',
+      );
       // 全角裸主机同样要能补上
-      expect(JellyfinApi.normalizeServerUrl('192。168。1。10:8096'),
-          'http://192.168.1.10:8096');
+      expect(
+        JellyfinApi.normalizeServerUrl('192。168。1。10:8096'),
+        'http://192.168.1.10:8096',
+      );
     });
 
     test('去尾斜杠的老行为不变', () {
-      expect(JellyfinApi.normalizeServerUrl('http://host:8096///'),
-          'http://host:8096');
+      expect(
+        JellyfinApi.normalizeServerUrl('http://host:8096///'),
+        'http://host:8096',
+      );
     });
   });
 
@@ -64,8 +76,10 @@ void main() {
     test('全角与半角归一到同一结果', () {
       expect(normalizeUserProxyHostPort('127.0.0.1:7890'), '127.0.0.1:7890');
       expect(normalizeUserProxyHostPort('127。0。0。1:7890'), '127.0.0.1:7890');
-      expect(normalizeUserProxyHostPort('http：//127.0.0.1:7890'),
-          '127.0.0.1:7890');
+      expect(
+        normalizeUserProxyHostPort('http：//127.0.0.1:7890'),
+        '127.0.0.1:7890',
+      );
     });
 
     test('带路径仍然被拒——归一化不该放宽既有校验', () {
@@ -94,17 +108,20 @@ void main() {
     test('全角地址模板不再被误判为非法', () {
       expect(
         AudioSourcesDialog.isValidRemoteUrl(
-            'https://audio.example.org/?term={term}'),
+          'https://audio.example.org/?term={term}',
+        ),
         isTrue,
       );
       expect(
         AudioSourcesDialog.isValidRemoteUrl(
-            'https：//audio.example.org/?term={term}'),
+          'https：//audio.example.org/?term={term}',
+        ),
         isTrue,
       );
       expect(
         AudioSourcesDialog.isValidRemoteUrl(
-            'https://audio。example。org/?term={term}'),
+          'https://audio。example。org/?term={term}',
+        ),
         isTrue,
       );
     });

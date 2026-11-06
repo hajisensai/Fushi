@@ -23,8 +23,10 @@ import 'package:integration_test/integration_test.dart';
 /// 对 fftools `setjmp`/`longjmp` 退出路径的处理问题），在那里跑只会超时。真机直接：
 ///   flutter drive --driver=test_driver/integration_test.dart
 ///     --target=integration_test/subtitle_waveform_ffmpeg_kit_itest.dart -d <device>
-const int _seconds =
-    int.fromEnvironment('WAVEFORM_ITEST_SECONDS', defaultValue: 360);
+const int _seconds = int.fromEnvironment(
+  'WAVEFORM_ITEST_SECONDS',
+  defaultValue: 360,
+);
 const bool _legacy = bool.fromEnvironment('WAVEFORM_ITEST_LEGACY');
 
 Uint8List _alternatingWav({required int seconds}) {
@@ -53,8 +55,9 @@ Uint8List _alternatingWav({required int seconds}) {
   // 奇数秒响（440Hz 半幅正弦）、偶数秒静音。
   for (int i = 0; i < total; i++) {
     final bool loud = (i ~/ rate).isOdd;
-    final int v =
-        loud ? (math.sin(2 * math.pi * 440 * i / rate) * 16383).round() : 0;
+    final int v = loud
+        ? (math.sin(2 * math.pi * 440 * i / rate) * 16383).round()
+        : 0;
     b.setInt16(44 + i * 2, v, Endian.little);
   }
   return b.buffer.asUint8List();
@@ -63,14 +66,16 @@ Uint8List _alternatingWav({required int seconds}) {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('ffmpeg-kit: waveform RMS arrives via the file channel',
-      (WidgetTester tester) async {
+  testWidgets('ffmpeg-kit: waveform RMS arrives via the file channel', (
+    WidgetTester tester,
+  ) async {
     if (!Platform.isAndroid && !Platform.isIOS) return;
     const int expectedFrames = _seconds * 1000 ~/ kSubtitleWaveformWindowMs;
 
     await tester.runAsync(() async {
-      final Directory dir =
-          Directory.systemTemp.createTempSync("waveform a b,c;[x]'q 字");
+      final Directory dir = Directory.systemTemp.createTempSync(
+        "waveform a b,c;[x]'q 字",
+      );
       try {
         final File wav = File('${dir.path}/in.wav')
           ..writeAsBytesSync(_alternatingWav(seconds: _seconds));
@@ -85,13 +90,19 @@ void main() {
             limitSeconds: _seconds,
           );
           final int af = args.indexOf('-af');
-          args[af + 1] = args[af + 1]
-              .substring(0, args[af + 1].lastIndexOf(',asetnsamples='));
-          final FfmpegRunResult legacy = await resolveFfmpegBackend()
-              .run(args, const Duration(minutes: 5));
-          debugPrint('[waveform-itest] legacy expected=$expectedFrames '
-              'got=${parseAudioRmsEnvelopeFromFfmpegLog(legacy.output).length} '
-              'rc=${legacy.returnCode} ${watch.elapsedMilliseconds}ms');
+          args[af + 1] = args[af + 1].substring(
+            0,
+            args[af + 1].lastIndexOf(',asetnsamples='),
+          );
+          final FfmpegRunResult legacy = await resolveFfmpegBackend().run(
+            args,
+            const Duration(minutes: 5),
+          );
+          debugPrint(
+            '[waveform-itest] legacy expected=$expectedFrames '
+            'got=${parseAudioRmsEnvelopeFromFfmpegLog(legacy.output).length} '
+            'rc=${legacy.returnCode} ${watch.elapsedMilliseconds}ms',
+          );
           return;
         }
 
@@ -99,11 +110,15 @@ void main() {
           videoPath: wav.path,
           windowMs: kSubtitleWaveformWindowMs,
         );
-        debugPrint('[waveform-itest] file expected=$expectedFrames '
-            'got=${env.length} ${watch.elapsedMilliseconds}ms');
+        debugPrint(
+          '[waveform-itest] file expected=$expectedFrames '
+          'got=${env.length} ${watch.elapsedMilliseconds}ms',
+        );
 
-        expect(env.length,
-            inInclusiveRange(expectedFrames - 10, expectedFrames + 1));
+        expect(
+          env.length,
+          inInclusiveRange(expectedFrames - 10, expectedFrames + 1),
+        );
         // 第 0 秒静音、第 1 秒响：各取该秒中段 30 帧的峰值。
         final double quiet = env.sublist(10, 40).reduce(math.max);
         final double loud = env.sublist(60, 90).reduce(math.max);

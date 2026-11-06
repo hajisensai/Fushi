@@ -19,13 +19,18 @@ void main() {
 
   /// 读某合集（自然键）当前成员的 entryKey 列表；合集不存在返回 null。
   Future<List<String>?> membersOf(
-      FushiDatabase db, String name, String type) async {
-    final MediaCollectionRow? row =
-        await db.getMediaCollectionByNaturalKey(name, type);
+    FushiDatabase db,
+    String name,
+    String type,
+  ) async {
+    final MediaCollectionRow? row = await db.getMediaCollectionByNaturalKey(
+      name,
+      type,
+    );
     if (row == null) return null;
-    return (await db.getCollectionItems(row.id))
-        .map((MediaCollectionItemRow m) => m.entryKey)
-        .toList();
+    return (await db.getCollectionItems(
+      row.id,
+    )).map((MediaCollectionItemRow m) => m.entryKey).toList();
   }
 
   test('合并尊重成员移出墓碑 + 合集删除墓碑，同时正常合入新合集/新成员', () async {
@@ -64,8 +69,11 @@ void main() {
     final Directory zipDir = await tempDir('mg_tomb_zip_');
     addTearDown(() => cleanupTempDir(zipDir));
     final String zip = p.join(zipDir.path, 'b.zip');
-    await BackupService(db: src, dbDirectory: srcDir.path, appVersion: '2.0.0')
-        .createBackup(zip);
+    await BackupService(
+      db: src,
+      dbDirectory: srcDir.path,
+      appVersion: '2.0.0',
+    ).createBackup(zip);
     await src.close();
 
     // ── 合并导入 ──────────────────────────────────────────────────────────────
@@ -79,18 +87,27 @@ void main() {
     addTearDown(after.close);
 
     // Keep：b 被成员墓碑挡下不复活；a 保留；c（无墓碑）正常合入。
-    final List<String>? keepMembers =
-        await membersOf(after, 'Keep', 'collection');
+    final List<String>? keepMembers = await membersOf(
+      after,
+      'Keep',
+      'collection',
+    );
     expect(keepMembers, isNotNull);
-    expect(keepMembers!.toSet(), <String>{'a', 'c'},
-        reason: '已移出成员 b 不复活；未标记的新成员 c 正常合入');
+    expect(keepMembers!.toSet(), <String>{
+      'a',
+      'c',
+    }, reason: '已移出成员 b 不复活；未标记的新成员 c 正常合入');
 
     // Gone：合集级删除墓碑挡下整个合集（不复活合集，也不合入其成员）。
-    expect(await membersOf(after, 'Gone', 'collection'), isNull,
-        reason: '已删合集被删除墓碑挡下，不复活');
+    expect(
+      await membersOf(after, 'Gone', 'collection'),
+      isNull,
+      reason: '已删合集被删除墓碑挡下，不复活',
+    );
 
     // New：无墓碑，照常合入（回归既有并集语义）。
-    expect(await membersOf(after, 'New', 'collection'), <String>['n'],
-        reason: '全新合集正常合入');
+    expect(await membersOf(after, 'New', 'collection'), <String>[
+      'n',
+    ], reason: '全新合集正常合入');
   });
 }

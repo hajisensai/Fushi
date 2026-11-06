@@ -26,9 +26,9 @@ void main() {
 
     test('标记等于当前版本 = 探过，跳过', () {
       expect(
-        dict(metadata: <String, String>{
-          kDictTypeProbeKey: kDictTypeProbeVersion,
-        }).isTypeProbed,
+        dict(
+          metadata: <String, String>{kDictTypeProbeKey: kDictTypeProbeVersion},
+        ).isTypeProbed,
         isTrue,
       );
     });
@@ -44,8 +44,9 @@ void main() {
 
     test('标记是垃圾值 = 要重探（不把无法解释的值当成已探过）', () {
       expect(
-        dict(metadata: <String, String>{kDictTypeProbeKey: 'true'})
-            .isTypeProbed,
+        dict(
+          metadata: <String, String>{kDictTypeProbeKey: 'true'},
+        ).isTypeProbed,
         isFalse,
       );
     });
@@ -53,27 +54,33 @@ void main() {
     test('「探过」与「有 kanji 内容」是两件事，不能互相反推', () {
       // 这正是旧实现的二义：hasKanji 缺席既可能是没探过，也可能是探过但这本没有
       // kanji 记录。两个键各管各的。
-      final Dictionary probedNoKanji = dict(metadata: <String, String>{
-        kDictTypeProbeKey: kDictTypeProbeVersion,
-      });
+      final Dictionary probedNoKanji = dict(
+        metadata: <String, String>{kDictTypeProbeKey: kDictTypeProbeVersion},
+      );
       expect(probedNoKanji.isTypeProbed, isTrue);
       expect(probedNoKanji.metadata['hasKanji'], isNull);
 
-      final Dictionary unprobedWithKanji =
-          dict(metadata: <String, String>{'hasKanji': 'true'});
+      final Dictionary unprobedWithKanji = dict(
+        metadata: <String, String>{'hasKanji': 'true'},
+      );
       expect(unprobedWithKanji.isTypeProbed, isFalse);
     });
   });
 
   group('metadata 往返', () {
     test('标记随 toJson/fromJson 存活（存量词典重启后不会退回未探状态）', () {
-      final Dictionary original = dict(metadata: <String, String>{
-        kDictTypeProbeKey: kDictTypeProbeVersion,
-        'hasKanji': 'true',
-      });
+      final Dictionary original = dict(
+        metadata: <String, String>{
+          kDictTypeProbeKey: kDictTypeProbeVersion,
+          'hasKanji': 'true',
+        },
+      );
       final Dictionary restored = Dictionary.fromJson(original.toJson());
-      expect(restored.isTypeProbed, isTrue,
-          reason: '标记丢了就等于每次重启都重扫一遍，这条修复也就没了');
+      expect(
+        restored.isTypeProbed,
+        isTrue,
+        reason: '标记丢了就等于每次重启都重扫一遍，这条修复也就没了',
+      );
       expect(restored.metadata['hasKanji'], equals('true'));
     });
   });

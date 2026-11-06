@@ -1,9 +1,7 @@
 /// Application identity only; this never supplies the user's AniDB login.
 class AniDbAppClientIdentity {
   const AniDbAppClientIdentity({required this.name, required this.version});
-  const AniDbAppClientIdentity.unregistered()
-      : name = '',
-        version = null;
+  const AniDbAppClientIdentity.unregistered() : name = '', version = null;
 
   final String name;
   final int? version;
@@ -31,8 +29,10 @@ const Set<String> kReservedShokoAniDbClientNames = <String>{
 /// **只是 UDP 登记**：AniDB 的 HTTP API 客户端是另一条登记，`fushiplayer` 从没
 /// 登记过 HTTP，拿它请求 httpapi 恒回 `<error code="302">client version missing
 /// or invalid</error>`（BUG-2623）。HTTP 身份见 [kBundledAniDbHttpClient]。
-const AniDbAppClientIdentity kBundledAniDbClient =
-    AniDbAppClientIdentity(name: 'fushiplayer', version: 1);
+const AniDbAppClientIdentity kBundledAniDbClient = AniDbAppClientIdentity(
+  name: 'fushiplayer',
+  version: 1,
+);
 
 /// 随包的 AniDB **HTTP API** 客户端身份：尚未登记，所以不存在（BUG-2623）。
 ///
@@ -60,11 +60,9 @@ AniDbAppClientIdentity resolveAniDbAppClient({
   required String customName,
   required int? customVersion,
   AniDbAppClientIdentity bundled = kBundledAniDbClient,
-}) =>
-    customName.trim().isEmpty
-        ? bundled
-        : AniDbAppClientIdentity(
-            name: customName.trim(), version: customVersion);
+}) => customName.trim().isEmpty
+    ? bundled
+    : AniDbAppClientIdentity(name: customName.trim(), version: customVersion);
 
 /// [resolveAniDbAppClient] 的两协议版本：自定义客户端整对替换两条身份，留空时
 /// UDP 取 [bundledUdp]、HTTP 取 [bundledHttp]——绝不把 UDP 登记拿去冒充 HTTP。
@@ -73,14 +71,15 @@ AniDbAppClients resolveAniDbAppClients({
   required int? customVersion,
   AniDbAppClientIdentity bundledUdp = kBundledAniDbClient,
   AniDbAppClientIdentity bundledHttp = kBundledAniDbHttpClient,
-}) =>
-    AniDbAppClients(
-      udp: resolveAniDbAppClient(
-          customName: customName,
-          customVersion: customVersion,
-          bundled: bundledUdp),
-      http: resolveAniDbAppClient(
-          customName: customName,
-          customVersion: customVersion,
-          bundled: bundledHttp),
-    );
+}) => AniDbAppClients(
+  udp: resolveAniDbAppClient(
+    customName: customName,
+    customVersion: customVersion,
+    bundled: bundledUdp,
+  ),
+  http: resolveAniDbAppClient(
+    customName: customName,
+    customVersion: customVersion,
+    bundled: bundledHttp,
+  ),
+);

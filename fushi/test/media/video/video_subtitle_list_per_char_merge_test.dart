@@ -19,8 +19,11 @@ import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 AudioCue _cue(String raw, {required int startMs, required int endMs}) {
-  final SubtitleMarkup m =
-      parseSubtitleMarkup(raw, playResX: 1280, playResY: 720);
+  final SubtitleMarkup m = parseSubtitleMarkup(
+    raw,
+    playResX: 1280,
+    playResY: 720,
+  );
   return AudioCue()
     ..bookKey = 'b'
     ..chapterHref = 'c'
@@ -35,8 +38,12 @@ AudioCue _cue(String raw, {required int startMs, required int endMs}) {
 
 /// 片源形态的一整行逐字事件：y 恒 672、x 从 [x0] 递增 30、逐字入场与退场各晚 40ms。
 /// [startMs] / [endMs] 是**首字**的起止；第 i 个字为 `startMs + i*40` / `endMs + i*40`。
-List<AudioCue> _line(List<String> chars,
-    {required int x0, required int startMs, required int endMs}) {
+List<AudioCue> _line(
+  List<String> chars, {
+  required int x0,
+  required int startMs,
+  required int endMs,
+}) {
   return <AudioCue>[
     for (int i = 0; i < chars.length; i++)
       _cue(
@@ -111,10 +118,18 @@ void main() {
       // 后面整首歌链式吞并成一条 101 字乱码。交集口径下第 3 句首字要和第 2 句**首字**
       // 的窗口（末端 201180）比，201350 > 201180 → 断组。
       final List<AudioCue> cues = <AudioCue>[
-        ..._line(<String>['一', '雫', '頬', 'を', '濡', 'ら', 'し', 'て'],
-            x0: 521, startMs: 197470, endMs: 201180),
-        ..._line(<String>['切', 'な', 'く', '雨', 'が', '降', 'る'],
-            x0: 535, startMs: 201350, endMs: 204480),
+        ..._line(
+          <String>['一', '雫', '頬', 'を', '濡', 'ら', 'し', 'て'],
+          x0: 521,
+          startMs: 197470,
+          endMs: 201180,
+        ),
+        ..._line(
+          <String>['切', 'な', 'く', '雨', 'が', '降', 'る'],
+          x0: 535,
+          startMs: 201350,
+          endMs: 204480,
+        ),
       ];
       final r = mergePerCharacterCueGroups(cues);
       expect(r.byRep.length, 2, reason: '两句，不是一坨');
@@ -183,10 +198,17 @@ void main() {
     });
 
     test('不同 ASS Layer 不合并（多层特效各按自己的层）', () {
-      final SubtitleMarkup m0 = parseSubtitleMarkup(r'{\pos(500,672)}影',
-          playResX: 1280, playResY: 720);
-      final SubtitleMarkup m1 = parseSubtitleMarkup(r'{\pos(530,672)}字',
-          playResX: 1280, playResY: 720, layer: 3);
+      final SubtitleMarkup m0 = parseSubtitleMarkup(
+        r'{\pos(500,672)}影',
+        playResX: 1280,
+        playResY: 720,
+      );
+      final SubtitleMarkup m1 = parseSubtitleMarkup(
+        r'{\pos(530,672)}字',
+        playResX: 1280,
+        playResY: 720,
+        layer: 3,
+      );
       final List<AudioCue> cues = <AudioCue>[
         AudioCue()
           ..bookKey = 'b'
@@ -247,17 +269,20 @@ void main() {
   });
 
   group('源码守卫', () {
-    final String src =
-        File('lib/src/media/video/video_subtitle_jump_panel.dart')
-            .readAsStringSync();
+    final String src = File(
+      'lib/src/media/video/video_subtitle_jump_panel.dart',
+    ).readAsStringSync();
 
     test('列表取行 cue 必须走 _rowCue 单一入口', () {
       // 割裂风险：任何一处漏改都会变成「列表显示整句、制卡/收藏只拿到一个字」。
       expect(src, contains('AudioCue _rowCue('));
       // 行渲染 / 行高测量 / 计数 / 筛选全部经此入口取 cue。下界 6：制卡多选删除后
       // 「已选档筛选」「选中计数」两个调用点随之消失（原为 8）。
-      expect('_rowCue(cues'.allMatches(src).length, greaterThanOrEqualTo(6),
-          reason: '漏改任何一处就会出现「列表整句、制卡单字」的割裂');
+      expect(
+        '_rowCue(cues'.allMatches(src).length,
+        greaterThanOrEqualTo(6),
+        reason: '漏改任何一处就会出现「列表整句、制卡单字」的割裂',
+      );
     });
 
     test('合并结果的缓存与 dedup 表同生命周期（换轨不得残留上一份字幕）', () {

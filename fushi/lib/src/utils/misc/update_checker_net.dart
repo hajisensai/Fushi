@@ -562,8 +562,10 @@ Future<List<Map<String, dynamic>>> fetchAllGitHubReleases({
 }
 
 /// 解析 GitHub `releases` 列表 API 响应体（[fetchAllGitHubReleases] 的纯解析核心，
-/// 抽出便于单测）：期望顶层是 release 对象数组，逐元素保留 `Map`、过滤 `draft==true`
-/// 的草稿；顶层非数组（如错误对象 `{"message":...}`）返回空列表。**不吞 JSON 语法
+/// 抽出便于单测）：期望顶层是 release 对象数组，逐元素保留 `Map`，只留
+/// [isAppVersionRelease]（与检查更新同一判据：tag 是版本号、非草稿）——同仓库里只挂资产的
+/// `vendored-binaries` / `flutter-engine-*` / 模型等 release 不是 app 版本，不进更新日志；
+/// 顶层非数组（如错误对象 `{"message":...}`）返回空列表。**不吞 JSON 语法
 /// 错误**——`jsonDecode` 抛出交由调用方的 try 收敛为空列表并记日志。
 @visibleForTesting
 List<Map<String, dynamic>> parseGitHubReleasesResponse(String body) {
@@ -571,6 +573,6 @@ List<Map<String, dynamic>> parseGitHubReleasesResponse(String body) {
   if (decoded is! List) return const <Map<String, dynamic>>[];
   return decoded
       .whereType<Map<String, dynamic>>()
-      .where((Map<String, dynamic> release) => release['draft'] != true)
+      .where(isAppVersionRelease)
       .toList(growable: false);
 }

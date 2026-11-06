@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2884：换章时 WebView 一直挂在树上（onWebViewCreated 不会再来），
 /// 只有 [_presentPayload] 能把新章正文装进去；它漏掉重装，屏上就停在旧章文档，

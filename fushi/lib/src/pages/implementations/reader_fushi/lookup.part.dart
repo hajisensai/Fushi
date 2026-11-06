@@ -61,13 +61,14 @@ extension _ReaderLookup on _ReaderFushiPageState {
     try {
       controller
           .evaluateJavascript(
-        source: 'window.__fushiTapGate = '
-            '{ chrome: $_tapGateChrome, lookup: $lookup, maxLen: 400 };',
-      )
+            source:
+                'window.__fushiTapGate = '
+                '{ chrome: $_tapGateChrome, lookup: $lookup, maxLen: 400 };',
+          )
           .catchError((Object e, StackTrace s) {
-        ErrorLogService.instance.log('ReaderFushi.syncTapGate', e, s);
-        return null;
-      });
+            ErrorLogService.instance.log('ReaderFushi.syncTapGate', e, s);
+            return null;
+          });
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderFushi.syncTapGate', e, stack);
     }
@@ -76,7 +77,32 @@ extension _ReaderLookup on _ReaderFushiPageState {
   void _clearLookupState() {
     if (_pausedForLookup) {
       _pausedForLookup = false;
-      _audiobookController?.play();
+      final AudiobookPlayerController? ctrl = _audiobookController;
+      if (ctrl != null) {
+        // 恢复是异步的（激活链 + 等播放器真正起播）：在途期间仍算查词「按住」，
+        // 否则歌词覆盖层会在「已不按住、还没在播」的间隙里把它当成用户暂停、复位
+        // 底栏并重排（awLXfD49Ep）。播放器真的起播、或这次激活不会起播（被拒 /
+        // 已请求停止）时撤掉——不能等 `play()` 的 Future：原生后端上它挂到下一次
+        // 暂停才完成，会把恢复后的整段播放都记成「按住」（见 lookupResumeHoldReleased）。
+        _lookupResumeInFlight = true;
+        final Future<void> resume = ctrl.play();
+        unawaited(
+          resume.catchError((Object e, StackTrace stack) {
+            ErrorLogService.instance.log('ReaderFushi.lookupResume', e, stack);
+          }),
+        );
+        unawaited(
+          lookupResumeHoldReleased(
+            playback: ctrl,
+            isPlaying: () => ctrl.isPlaying,
+            resume: resume,
+          ).then((_) {
+            if (!mounted || !_lookupResumeInFlight) return;
+            // 覆盖层读 playbackHeldForLookup：撤掉按住要重建，不靠控制器之后碰巧 notify。
+            _rebuild(() => _lookupResumeInFlight = false);
+          }),
+        );
+      }
     }
     // BUG-1344：DOM/CSS 选区由整栈关闭的异步收尾显式 await；不能在这里
     // fire-and-forget 后马上 reclaim 焦点，否则 macOS WKWebView 会把失焦灰选区绘在
@@ -191,9 +217,9 @@ extension _ReaderLookup on _ReaderFushiPageState {
     // 时退回选中的词，杜绝收藏读点（chrome.part.dart）误报「未选择句子」。
     final String sentenceText =
         ReaderSelectionScripts.resolveCurrentSentenceText(
-      data.sentence,
-      data.text,
-    );
+          data.sentence,
+          data.text,
+        );
     appModel.currentMediaSource?.setCurrentSentence(
       selection: FushiTextSelection(text: sentenceText),
     );
@@ -210,12 +236,21 @@ extension _ReaderLookup on _ReaderFushiPageState {
         // try —— 半销毁 WebView 上它抛 MissingPluginException，此前 eval 在 try 之外
         // 会让整个歌词查词分支（含 _runLookupAndHighlight）被打断、弹窗不显示。纳入后
         // 失败则 _lookupCue 退回 currentCue fallback，查词照常继续。
-        final Object? ctxRaw = await _lyricsController?.evaluateJavascript(
-          source: 'JSON.stringify(window.__lyricsCueContext || null)',
-        );
-        if (ctxRaw is String && ctxRaw != 'null') {
-          final Map<String, dynamic> ctx =
-              jsonDecode(ctxRaw) as Map<String, dynamic>;
+        // 查词卡顿：歌词文档选词时已把 `__lyricsCueContext` 同步放进 payload
+        // （fireTextSelected），直接用它，省掉查词前对歌词 WebView 的一次 eval 来回。
+        // payload 不带这个键（正文文档 / 旧 payload）才回去读一次，行为与旧实现一致。
+        final Map<String, dynamic>? ctx;
+        if (data.carriesLyricsCueContext) {
+          ctx = data.lyricsCueContext;
+        } else {
+          final Object? ctxRaw = await _lyricsController?.evaluateJavascript(
+            source: 'JSON.stringify(window.__lyricsCueContext || null)',
+          );
+          ctx = ctxRaw is String && ctxRaw != 'null'
+              ? jsonDecode(ctxRaw) as Map<String, dynamic>
+              : null;
+        }
+        if (ctx != null) {
           final String? fragId = ctx['textFragmentId'] as String?;
           final int? cueIdx = (ctx['cueIndex'] as num?)?.toInt();
           if (fragId != null && fragId.isNotEmpty) {
@@ -258,6 +293,7 @@ extension _ReaderLookup on _ReaderFushiPageState {
         data.text,
         selectionRect,
         origin: _lookupOriginOf(data),
+        rubySpans: data.rubySpans,
       );
       _checkFavoriteStatus();
       return;
@@ -288,6 +324,7 @@ extension _ReaderLookup on _ReaderFushiPageState {
       data.text,
       selectionRect,
       origin: _lookupOriginOf(data),
+      rubySpans: data.rubySpans,
     );
     _cacheMatchableSelection(data);
     if (data.normalizedOffset != null && data.normalizedLength != null) {
@@ -322,7 +359,8 @@ extension _ReaderLookup on _ReaderFushiPageState {
       }
       return;
     }
-    final sentenceRange = _cachedSentenceRange ??
+    final sentenceRange =
+        _cachedSentenceRange ??
         (_cachedSelectionRange != null
             ? (
                 offset: _cachedSelectionRange!.offset,
@@ -332,11 +370,11 @@ extension _ReaderLookup on _ReaderFushiPageState {
     // BUG-494：拿匹配条目的精确 id（未收藏 → null），供 toggle 用 removeById 精确删单条。
     final String? matchedId =
         await FavoriteSentenceRepository(appModel.database).matchedFavoriteId(
-      text: sentence,
-      bookKey: widget.bookKey,
-      sectionIndex: _favoriteSectionIndex,
-      normCharOffset: sentenceRange?.offset,
-    );
+          text: sentence,
+          bookKey: widget.bookKey,
+          sectionIndex: _favoriteSectionIndex,
+          normCharOffset: sentenceRange?.offset,
+        );
     final bool favorited = matchedId != null;
     if (mounted && favorited != _currentSentenceIsFavorited) {
       _rebuild(() => _currentSentenceIsFavorited = favorited);
@@ -349,10 +387,10 @@ extension _ReaderLookup on _ReaderFushiPageState {
   /// 落到左栏封面上。RenderBox 不可用时原样返回（退化为旧行为，不崩）。
   Rect _surfaceRectToPage(Rect local) {
     if (!_lyricsMode) return local;
-    final RenderObject? web =
-        _lyricsWebViewKey.currentContext?.findRenderObject();
-    final RenderObject? stack =
-        _pageStackKey.currentContext?.findRenderObject();
+    final RenderObject? web = _lyricsWebViewKey.currentContext
+        ?.findRenderObject();
+    final RenderObject? stack = _pageStackKey.currentContext
+        ?.findRenderObject();
     if (web is! RenderBox ||
         stack is! RenderBox ||
         !web.attached ||
@@ -360,8 +398,7 @@ extension _ReaderLookup on _ReaderFushiPageState {
         !web.hasSize) {
       return local;
     }
-    final Offset origin =
-        stack.globalToLocal(web.localToGlobal(Offset.zero));
+    final Offset origin = stack.globalToLocal(web.localToGlobal(Offset.zero));
     return local.shift(origin);
   }
 }

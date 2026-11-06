@@ -487,70 +487,62 @@ void main() {
       },
     );
 
-    test(
-      'launch starts the game, waits for its window and streams',
-      () async {
-        final List<String> launched = <String>[];
-        final GalgameEntry entry = game('a');
-        final FushiGameStreamLibraryHost library = host(
-          games: <GalgameEntry>[entry],
-          launch: (GalgameEntry g) async {
-            launched.add(g.id);
-            // The Hook session binds the window a little later.
-            scheduleMicrotask(() {
-              hook.value = GalHookSessionState(
-                phase: GalHookSessionPhase.running,
-                launchExe: g.exePath,
-                boundWindow: const ExternalWindowInfo(hwnd: 42, title: 'A'),
-              );
-            });
-          },
-        );
-        service.library = library;
-        // Seed the launch record the HTTP route would create.
-        final Completer<void> done = Completer<void>();
-        unawaited(
-          library
-              .launch(
-                launchId: 'L1',
-                gameId: 'a',
-                settings: const GameStreamVideoSettings(),
-              )
-              .whenComplete(done.complete),
-        );
-        await done.future;
-        expect(launched, <String>['a']);
-        expect(service.session?.windowId, 'hwnd:42');
-        expect(service.session?.gameId, 'a');
-      },
-      skip: !Platform.isWindows ? 'Remote launch is Windows-only' : false,
-    );
+    test('launch starts the game, waits for its window and streams', () async {
+      final List<String> launched = <String>[];
+      final GalgameEntry entry = game('a');
+      final FushiGameStreamLibraryHost library = host(
+        games: <GalgameEntry>[entry],
+        launch: (GalgameEntry g) async {
+          launched.add(g.id);
+          // The Hook session binds the window a little later.
+          scheduleMicrotask(() {
+            hook.value = GalHookSessionState(
+              phase: GalHookSessionPhase.running,
+              launchExe: g.exePath,
+              boundWindow: const ExternalWindowInfo(hwnd: 42, title: 'A'),
+            );
+          });
+        },
+      );
+      service.library = library;
+      // Seed the launch record the HTTP route would create.
+      final Completer<void> done = Completer<void>();
+      unawaited(
+        library
+            .launch(
+              launchId: 'L1',
+              gameId: 'a',
+              settings: const GameStreamVideoSettings(),
+            )
+            .whenComplete(done.complete),
+      );
+      await done.future;
+      expect(launched, <String>['a']);
+      expect(service.session?.windowId, 'hwnd:42');
+      expect(service.session?.gameId, 'a');
+    }, skip: !Platform.isWindows ? 'Remote launch is Windows-only' : false);
 
-    test(
-      'a window that never appears fails with window_missing',
-      () async {
-        final FushiGameStreamLibraryHost library = host(
-          games: <GalgameEntry>[game('a')],
-          launch: (GalgameEntry g) async {},
-          windowTimeout: const Duration(milliseconds: 50),
-        );
-        await expectLater(
-          library.launch(
-            launchId: 'L1',
-            gameId: 'a',
-            settings: const GameStreamVideoSettings(),
+    test('a window that never appears fails with window_missing', () async {
+      final FushiGameStreamLibraryHost library = host(
+        games: <GalgameEntry>[game('a')],
+        launch: (GalgameEntry g) async {},
+        windowTimeout: const Duration(milliseconds: 50),
+      );
+      await expectLater(
+        library.launch(
+          launchId: 'L1',
+          gameId: 'a',
+          settings: const GameStreamVideoSettings(),
+        ),
+        throwsA(
+          isA<GameStreamLaunchRejected>().having(
+            (GameStreamLaunchRejected e) => e.code,
+            'code',
+            GameStreamLaunchFailure.windowMissing,
           ),
-          throwsA(
-            isA<GameStreamLaunchRejected>().having(
-              (GameStreamLaunchRejected e) => e.code,
-              'code',
-              GameStreamLaunchFailure.windowMissing,
-            ),
-          ),
-        );
-      },
-      skip: !Platform.isWindows ? 'Remote launch is Windows-only' : false,
-    );
+        ),
+      );
+    }, skip: !Platform.isWindows ? 'Remote launch is Windows-only' : false);
 
     test(
       'a local session on another game is busy, never torn down remotely',

@@ -196,11 +196,13 @@ abstract final class AnkiConnectInstaller {
     if (archive.files.isEmpty) {
       throw const FormatException('AnkiWeb 返回的插件包是空的');
     }
-    final bool hasManifest =
-        archive.files.any((ArchiveFile file) => file.name == 'manifest.json');
+    final bool hasManifest = archive.files.any(
+      (ArchiveFile file) => file.name == 'manifest.json',
+    );
     if (!hasManifest) {
-      final Uint8List encoded =
-          Uint8List.fromList(utf8.encode(jsonEncode(manifest)));
+      final Uint8List encoded = Uint8List.fromList(
+        utf8.encode(jsonEncode(manifest)),
+      );
       archive.addFile(ArchiveFile('manifest.json', encoded.length, encoded));
     }
     final List<int>? encoded = ZipEncoder().encode(archive);
@@ -410,8 +412,9 @@ class _RealAnkiConnectInstallerHost implements AnkiConnectInstallerHost {
 
   @override
   Future<String> writeTempAddon(String fileName, Uint8List bytes) async {
-    final Directory dir =
-        await Directory.systemTemp.createTemp('fushi_ankiaddon_');
+    final Directory dir = await Directory.systemTemp.createTemp(
+      'fushi_ankiaddon_',
+    );
     final File file = File('${dir.path}${Platform.pathSeparator}$fileName');
     await file.writeAsBytes(bytes, flush: true);
     return file.path;

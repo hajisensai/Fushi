@@ -1,13 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   String readRepositoryWorkflow(String relativePath) {
     final File file = File('../.github/workflows/$relativePath');
-    expect(file.existsSync(), isTrue,
-        reason: 'expected workflow at ${file.absolute.path}');
+    expect(
+      file.existsSync(),
+      isTrue,
+      reason: 'expected workflow at ${file.absolute.path}',
+    );
     return file.readAsStringSync();
   }
 
@@ -29,15 +32,21 @@ void main() {
 
   String readAndroidBuildGradle() {
     final File file = File('android/app/build.gradle');
-    expect(file.existsSync(), isTrue,
-        reason: 'expected build.gradle at ${file.absolute.path}');
+    expect(
+      file.existsSync(),
+      isTrue,
+      reason: 'expected build.gradle at ${file.absolute.path}',
+    );
     return file.readAsStringSync();
   }
 
   String readRepositoryTool(String relativePath) {
     final File file = File('../tool/$relativePath');
-    expect(file.existsSync(), isTrue,
-        reason: 'expected tool at ${file.absolute.path}');
+    expect(
+      file.existsSync(),
+      isTrue,
+      reason: 'expected tool at ${file.absolute.path}',
+    );
     return file.readAsStringSync();
   }
 
@@ -63,17 +72,19 @@ void main() {
     return workflow.substring(start, next == -1 ? workflow.length : next);
   }
 
-  void expectWorkflowOrder(
-    String workflow,
-    String before,
-    String after,
-  ) {
+  void expectWorkflowOrder(String workflow, String before, String after) {
     final int beforeIndex = workflow.indexOf(before);
     final int afterIndex = workflow.indexOf(after);
-    expect(beforeIndex, isNonNegative,
-        reason: 'missing workflow marker: $before');
-    expect(afterIndex, isNonNegative,
-        reason: 'missing workflow marker: $after');
+    expect(
+      beforeIndex,
+      isNonNegative,
+      reason: 'missing workflow marker: $before',
+    );
+    expect(
+      afterIndex,
+      isNonNegative,
+      reason: 'missing workflow marker: $after',
+    );
     expect(beforeIndex, lessThan(afterIndex));
   }
 
@@ -102,13 +113,19 @@ void main() {
       expect(step, contains('timeout-minutes:'));
       expect(step, contains('flutter --verbose build apk'));
       expect(
-          step,
-          contains('--build-name '
-              '"\${{ steps.channel.outputs.build_version_name }}"'));
+        step,
+        contains(
+          '--build-name '
+          '"\${{ steps.channel.outputs.build_version_name }}"',
+        ),
+      );
       expect(
-          step,
-          contains('--build-number '
-              '"\${{ steps.channel.outputs.android_build_number }}"'));
+        step,
+        contains(
+          '--build-number '
+          '"\${{ steps.channel.outputs.android_build_number }}"',
+        ),
+      );
     }
 
     expect(debugChannelBuild, contains('--release'));
@@ -117,10 +134,79 @@ void main() {
 
     // TODO-841: push/debug 通道只打 arm64-only 瘦身（debug 包太大，正常人只用
     // arm64）；beta/formal 的 split-per-abi 必须保留全 ABI（资产名依赖全 ABI）。
-    expect(debugChannelBuild, contains('--target-platform android-arm64'),
-        reason: 'TODO-841: push/debug 通道只打 arm64-only 瘦身');
-    expect(splitReleaseBuild, isNot(contains('--target-platform')),
-        reason: 'beta/formal 必须保留全 ABI，不得限制到单一 ABI');
+    expect(
+      debugChannelBuild,
+      contains('--target-platform android-arm64'),
+      reason: 'TODO-841: push/debug 通道只打 arm64-only 瘦身',
+    );
+    // 2026-11-05（run 41955804997）：一次不带 target-platform 的 split-per-abi 会让三个
+    // gen_snapshot 同时跑，ubuntu-26.04 托管 runner 上被平台掐死。改成逐 ABI 串行，
+    // 但三个 ABI 一个都不能少，且每次只带一个 target-platform（不许退回并发的单次调用）。
+    expect(
+      splitReleaseBuild,
+      contains('for platform in android-arm android-arm64 android-x64; do'),
+      reason: 'beta/formal 必须保留全 ABI：arm / arm64 / x64 三个都要出包',
+    );
+    expect(
+      splitReleaseBuild,
+      contains(
+        'flutter --verbose build apk --split-per-abi --release '
+        r'--target-platform "$platform"',
+      ),
+      reason: '逐 ABI 串行：一次只编一个 gen_snapshot，避免三份 AOT 并发耗尽 runner',
+    );
+    expect(
+      'flutter --verbose build apk'.allMatches(splitReleaseBuild).length,
+      1,
+      reason: '只允许循环里那一条构建命令，不许再并存一次三 ABI 并发的调用',
+    );
+    for (final String abi in <String>['armeabi-v7a', 'arm64-v8a', 'x86_64']) {
+      expect(splitReleaseBuild, contains(abi), reason: '出包后必须核对 $abi 的 APK 在');
+    }
+    expect(
+      splitReleaseBuild,
+      contains('/proc/meminfo'),
+      reason: 'runner 被掐时 post 步骤不跑，内存采样必须实时打进本步日志',
+    );
+    expect(preBuildDiagnostics, contains('free -m'));
+    expect(preBuildDiagnostics, contains('df -h'));
+
+    // BUG-3874：--target-platform 只过滤 libflutter/libapp，Flutter 插件不分包时又把
+    // abiFilters 固定写回三个 ABI，调试包 459 MB 里 ~228 MB 是起不来的 v7a/x86_64。
+    // 关掉 Flutter 那份、build.gradle 按 target-platform 收，出包后 CI 钉死只有 arm64。
+    final String gradle = readAndroidBuildGradle();
+    expect(
+      gradle,
+      contains('abiFilters.addAll(targetPlatform.split'),
+      reason: 'BUG-3874：不分包时必须按 target-platform 收 ndk.abiFilters',
+    );
+    expect(
+      gradle,
+      contains("findProperty('split-per-abi')"),
+      reason:
+          'BUG-3874：--split-per-abi 时不得再设 abiFilters（AGP 不许与 splits.abi 并存）',
+    );
+    final String gradleProperties = File(
+      'android/gradle.properties',
+    ).readAsStringSync();
+    expect(
+      gradleProperties,
+      contains('disable-abi-filtering=true'),
+      reason: 'BUG-3874：不关掉 Flutter 插件那份，它会把 abiFilters 覆盖回三个 ABI',
+    );
+    final String debugAbiGate = workflowStep(
+      workflow,
+      'Verify debug-channel APK is arm64-only',
+    );
+    expect(
+      debugAbiGate,
+      contains("if: steps.channel.outputs.build_debug_channel_apk == 'true'"),
+    );
+    expect(debugAbiGate, contains('"\$abis" != "arm64-v8a"'));
+    expect(
+      workflow.indexOf('Prepare release-signed debug-channel APK asset'),
+      lessThan(workflow.indexOf('Verify debug-channel APK is arm64-only')),
+    );
 
     expect(preBuildDiagnostics, contains('flutter --version'));
     expect(preBuildDiagnostics, contains('dart --version'));
@@ -137,9 +223,13 @@ void main() {
 
     expect(postBuildDiagnostics, contains(r'if: ${{ always() &&'));
     expect(
-        postBuildDiagnostics, contains('find build/app/outputs/flutter-apk'));
+      postBuildDiagnostics,
+      contains('find build/app/outputs/flutter-apk'),
+    );
     expect(
-        postBuildDiagnostics, contains('find build/app/outputs -maxdepth 5'));
+      postBuildDiagnostics,
+      contains('find build/app/outputs -maxdepth 5'),
+    );
     expect(
       workflow.indexOf('Build release APK (split per ABI)'),
       lessThan(workflow.indexOf('Collect Android post-build diagnostics')),
@@ -159,8 +249,10 @@ void main() {
     );
 
     expect(removeAliyunMirrors, contains('working-directory: fushi/android'));
-    expect(removeAliyunMirrors,
-        contains('sed -i "/maven.*aliyun/d" build.gradle'));
+    expect(
+      removeAliyunMirrors,
+      contains('sed -i "/maven.*aliyun/d" build.gradle'),
+    );
     expect(
       removeAliyunMirrors,
       contains('sed -i "/maven.*aliyun/d" settings.gradle'),
@@ -178,38 +270,49 @@ void main() {
     );
   });
 
-  test('build-multiplatform Android emulator gets KVM access before appSmoke',
-      () {
-    final String workflow = readBuildMultiplatformWorkflow();
-    final String androidJob = workflowJob(workflow, 'android');
-    // Anchor on the whole line: matching the bare prefix would still succeed
-    // against a renamed step such as `Enable KVM group permissions (disabled)`.
-    final int kvmStart =
-        androidJob.indexOf('- name: Enable KVM group permissions\n');
-    expect(kvmStart, isNonNegative,
-        reason: 'android job must grant the runner user access to /dev/kvm; '
-            'without it the emulator silently falls back to -accel off (TCG)');
-    final int emulatorStart = androidJob
-        .indexOf('- name: Run Android comprehensive automation contract\n');
-    expect(emulatorStart, greaterThan(kvmStart),
-        reason: 'the udev rule must be applied before the emulator starts');
-    final String enableKvm = androidJob.substring(kvmStart, emulatorStart);
+  test(
+    'build-multiplatform Android emulator gets KVM access before appSmoke',
+    () {
+      final String workflow = readBuildMultiplatformWorkflow();
+      final String androidJob = workflowJob(workflow, 'android');
+      // Anchor on the whole line: matching the bare prefix would still succeed
+      // against a renamed step such as `Enable KVM group permissions (disabled)`.
+      final int kvmStart = androidJob.indexOf(
+        '- name: Enable KVM group permissions\n',
+      );
+      expect(
+        kvmStart,
+        isNonNegative,
+        reason:
+            'android job must grant the runner user access to /dev/kvm; '
+            'without it the emulator silently falls back to -accel off (TCG)',
+      );
+      final int emulatorStart = androidJob.indexOf(
+        '- name: Run Android comprehensive automation contract\n',
+      );
+      expect(
+        emulatorStart,
+        greaterThan(kvmStart),
+        reason: 'the udev rule must be applied before the emulator starts',
+      );
+      final String enableKvm = androidJob.substring(kvmStart, emulatorStart);
 
-    // Pin the rule itself, not just the step name: on the hosted runner
-    // /dev/kvm exists but the `runner` user is not in the `kvm` group, so the
-    // emulator probe fails and the AVD boots under software TCG (measured:
-    // boot 316s..704s against a 600s timeout, in-app frames 90s..214s).
-    // Dropping any of these lines silently restores that starvation.
-    expect(enableKvm, contains('/etc/udev/rules.d/99-kvm4all.rules'));
-    expect(enableKvm, contains('KERNEL=="kvm"'));
-    expect(enableKvm, contains('GROUP="kvm"'));
-    // 0666 is load-bearing: with 0660 the runner user would additionally have
-    // to join the kvm group, and a mid-job `usermod -aG` does not take effect
-    // for the already-running shell, so the emulator would still see EACCES.
-    expect(enableKvm, contains('MODE="0666"'));
-    expect(enableKvm, contains('sudo udevadm control --reload-rules'));
-    expect(enableKvm, contains('sudo udevadm trigger --name-match=kvm'));
-  });
+      // Pin the rule itself, not just the step name: on the hosted runner
+      // /dev/kvm exists but the `runner` user is not in the `kvm` group, so the
+      // emulator probe fails and the AVD boots under software TCG (measured:
+      // boot 316s..704s against a 600s timeout, in-app frames 90s..214s).
+      // Dropping any of these lines silently restores that starvation.
+      expect(enableKvm, contains('/etc/udev/rules.d/99-kvm4all.rules'));
+      expect(enableKvm, contains('KERNEL=="kvm"'));
+      expect(enableKvm, contains('GROUP="kvm"'));
+      // 0666 is load-bearing: with 0660 the runner user would additionally have
+      // to join the kvm group, and a mid-job `usermod -aG` does not take effect
+      // for the already-running shell, so the emulator would still see EACCES.
+      expect(enableKvm, contains('MODE="0666"'));
+      expect(enableKvm, contains('sudo udevadm control --reload-rules'));
+      expect(enableKvm, contains('sudo udevadm trigger --name-match=kvm'));
+    },
+  );
 
   // BUG-2088：正式版/测试版的更新公告必须真的喂进 `body`（= manifest 的 `notes`，
   // 应用内更新弹窗渲染的就是它）。此前 `BODY` 只有一行模板，实测 v2.1.1 的
@@ -220,8 +323,10 @@ void main() {
   // channel step（windows/macos/ios/publish），少接一个就是那个平台的用户看占位符，
   // 而整文件 contains 只要有一个接了就绿。
   test('BUG-2088：每个 channel step 都把真实公告喂进 body', () {
-    const String notesRead = r'if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi';
-    const String notesFileDef = r'NOTES_FILE="docs/release-notes/${VERSION}.md"';
+    const String notesRead =
+        r'if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi';
+    const String notesFileDef =
+        r'NOTES_FILE="docs/release-notes/${VERSION}.md"';
     const String releaseBodyFirst = r'BODY="${RELEASE_BODY:-}"';
 
     for (final MapEntry<String, int> e in <String, int>{
@@ -232,31 +337,46 @@ void main() {
       final String w = readRepositoryWorkflow(e.key);
       final int steps = e.value;
       // 每个 step 各定义一次 NOTES_FILE。
-      expect(RegExp(RegExp.escape(notesFileDef)).allMatches(w).length, steps,
-          reason: '${e.key}: NOTES_FILE 定义数应等于 channel step 数（$steps）');
+      expect(
+        RegExp(RegExp.escape(notesFileDef)).allMatches(w).length,
+        steps,
+        reason: '${e.key}: NOTES_FILE 定义数应等于 channel step 数（$steps）',
+      );
       // 每个 step 里 formal + beta 两档各读一次 = 2 * steps。
-      expect(RegExp(RegExp.escape(notesRead)).allMatches(w).length, steps * 2,
-          reason: '${e.key}: formal/beta 两档都必须读公告文件');
+      expect(
+        RegExp(RegExp.escape(notesRead)).allMatches(w).length,
+        steps * 2,
+        reason: '${e.key}: formal/beta 两档都必须读公告文件',
+      );
       // release 事件分支：先取作者写的 Release 正文。
-      expect(RegExp(RegExp.escape(releaseBodyFirst)).allMatches(w).length, steps,
-          reason: '${e.key}: 手动发 Release 时必须优先用作者正文');
+      expect(
+        RegExp(RegExp.escape(releaseBodyFirst)).allMatches(w).length,
+        steps,
+        reason: '${e.key}: 手动发 Release 时必须优先用作者正文',
+      );
       // env 里必须真把 release body 传进来，否则上一条取到的恒是空。
       expect(
-          RegExp(RegExp.escape(r'RELEASE_BODY: ${{ github.event.release.body }}'))
-              .allMatches(w)
-              .length,
-          steps,
-          reason: '${e.key}: RELEASE_BODY 没接进 env，作者正文取不到');
+        RegExp(
+          RegExp.escape(r'RELEASE_BODY: ${{ github.event.release.body }}'),
+        ).allMatches(w).length,
+        steps,
+        reason: '${e.key}: RELEASE_BODY 没接进 env，作者正文取不到',
+      );
     }
 
     // debug 通道**有意不取**公告：滚动开发构建挂完整 changelog 会误导。
     // 反向断言——debug 那两行模板后面不许紧跟读公告。
     final String rel = readReleaseWorkflow();
-    final int debugAt = rel.indexOf('Manual release-signed debug-channel build from');
+    final int debugAt = rel.indexOf(
+      'Manual release-signed debug-channel build from',
+    );
     expect(debugAt, greaterThan(-1), reason: 'debug 模板行不见了，判据锚点失效');
     final String afterDebug = rel.substring(debugAt, debugAt + 400);
-    expect(afterDebug.contains(notesRead), isFalse,
-        reason: 'debug 通道不应挂正式版 changelog');
+    expect(
+      afterDebug.contains(notesRead),
+      isFalse,
+      reason: 'debug 通道不应挂正式版 changelog',
+    );
   });
 
   // BUG-2104：`BUILD_DEBUG_APK` 的初值是 true，每条终端通道分支都必须**显式**设它。
@@ -270,16 +390,21 @@ void main() {
     final String workflow = readReleaseWorkflow();
     final List<String> lines = const LineSplitter().convert(workflow);
 
-    final int caseAt =
-        lines.indexWhere((String l) => l.contains(r'case "$EVENT" in'));
+    final int caseAt = lines.indexWhere(
+      (String l) => l.contains(r'case "$EVENT" in'),
+    );
     expect(caseAt, greaterThan(-1), reason: '找不到通道 case 块，判据锚点已失效');
     // 外层 case 的 `esac` 必须**按缩进**配对：`workflow_dispatch)` 里还有一个嵌套
     // `case "$CHANNEL" in`，取「第一个 esac」会命中内层那个，把 release) 排除在
     // 窗口之外（第一版就是这么错的，报「release) 不见了」）。
-    final String caseIndent =
-        lines[caseAt].substring(0, lines[caseAt].indexOf('case'));
+    final String caseIndent = lines[caseAt].substring(
+      0,
+      lines[caseAt].indexOf('case'),
+    );
     final int esacAt = lines.indexWhere(
-        (String l) => l == '${caseIndent}esac', caseAt + 1);
+      (String l) => l == '${caseIndent}esac',
+      caseAt + 1,
+    );
     expect(esacAt, greaterThan(caseAt), reason: '外层通道 case 块没有收口');
 
     // 终端分支 = 真正决定一个通道的那些 `<label>)`；嵌套的 workflow_dispatch 只是
@@ -292,10 +417,12 @@ void main() {
       'release)',
     ];
     for (final String label in terminal) {
-      final int at = lines.indexWhere(
-          (String l) => l.trim() == label, caseAt);
-      expect(at, allOf(greaterThan(caseAt), lessThan(esacAt)),
-          reason: '通道分支 $label 不见了，判据已失效');
+      final int at = lines.indexWhere((String l) => l.trim() == label, caseAt);
+      expect(
+        at,
+        allOf(greaterThan(caseAt), lessThan(esacAt)),
+        reason: '通道分支 $label 不见了，判据已失效',
+      );
       // 分支体到下一个同缩进 `;;` 为止。
       final String pad = lines[at].substring(0, lines[at].indexOf(label));
       // 同理，`;;` 也要按缩进配对——内层分支的 `;;` 缩进更深，裸 trim 比较会把
@@ -309,11 +436,18 @@ void main() {
       }
       final String body = lines.sublist(at, end).join('\n');
       // 自校验：切出来的分支体不是空壳（否则下面的断言在空串上恒假、报错也是错的）。
-      expect(body.length, greaterThan(label.length + 10),
-          reason: '$label 的分支体窗口异常小（at=$at end=$end），判据已失效');
-      expect(body, contains('BUILD_DEBUG_APK='),
-          reason: '$label 没有显式设 BUILD_DEBUG_APK —— 会继承初值 true，'
-              '正式版资产表里会多出一个 debug APK（BUG-2104）');
+      expect(
+        body.length,
+        greaterThan(label.length + 10),
+        reason: '$label 的分支体窗口异常小（at=$at end=$end），判据已失效',
+      );
+      expect(
+        body,
+        contains('BUILD_DEBUG_APK='),
+        reason:
+            '$label 没有显式设 BUILD_DEBUG_APK —— 会继承初值 true，'
+            '正式版资产表里会多出一个 debug APK（BUG-2104）',
+      );
     }
   });
 
@@ -347,14 +481,24 @@ void main() {
     final String prBlock = lines.sublist(prAt, prEnd).join('|');
     // 自校验：切出来的确实是 pull_request 段（段里必须有 branches:），否则下面的断言
     // 会在一个错窗口上恒真/恒假地「通过」。
-    expect(prBlock, contains('branches:'),
-        reason: 'pull_request 段切歪了（prAt=$prAt prEnd=$prEnd），判据已失效');
-    expect(prBlock, contains("branches: ['main', 'develop']"),
-        reason: 'the multiplatform compile gate must run on routine '
-            'main/develop PRs, not only ad-hoc ci/** branches');
+    expect(
+      prBlock,
+      contains('branches:'),
+      reason: 'pull_request 段切歪了（prAt=$prAt prEnd=$prEnd），判据已失效',
+    );
+    expect(
+      prBlock,
+      contains("branches: ['main', 'develop']"),
+      reason:
+          'the multiplatform compile gate must run on routine '
+          'main/develop PRs, not only ad-hoc ci/** branches',
+    );
     expect(workflow, isNot(contains("branches: ['ci/**']")));
-    expect(workflow, isNot(contains('if: false')),
-        reason: 'iOS/macOS compile jobs must not be left disabled');
+    expect(
+      workflow,
+      isNot(contains('if: false')),
+      reason: 'iOS/macOS compile jobs must not be left disabled',
+    );
     expect(macosJob, contains('flutter build macos --debug'));
     expect(iosJob, contains('flutter build ios --debug --no-codesign'));
   });
@@ -397,16 +541,20 @@ void main() {
     expect(macosJob, contains('Sign and notarize macOS dmg'));
     expect(publishJob, contains('fushi-*-macos-arm64.dmg'));
     expect(
-        publishJob,
-        contains('ASSET_GLOB: fushi-*-macos-arm64.zip '
-            'fushi-*-macos-arm64.dmg fushi-*-ios.ipa'),
-        reason: '官网 macOS 默认下载 dmg，它必须随 Apple 清单发布。');
+      publishJob,
+      contains(
+        'ASSET_GLOB: fushi-*-macos-arm64.zip '
+        'fushi-*-macos-arm64.dmg fushi-*-ios.ipa',
+      ),
+      reason: '官网 macOS 默认下载 dmg，它必须随 Apple 清单发布。',
+    );
     expect(
-        publishJob, contains('Publish mirror update manifest (Apple assets)'));
+      publishJob,
+      contains('Publish mirror update manifest (Apple assets)'),
+    );
   });
 
-  test(
-      'TODO-414: Android versionCode is the monotonic git-rev-count + base, '
+  test('TODO-414: Android versionCode is the monotonic git-rev-count + base, '
       'never the overflowing *1000000 formula', () {
     final String releaseWorkflow = readReleaseWorkflow();
     final String mainWorkflow = readBuildAndroidWorkflow();
@@ -415,48 +563,78 @@ void main() {
     // The *1000000 build number produced versionCode ~6.6e9 (int32 overflow /
     // over Android's 2.1e9 ceiling), so beta/release Android packages could not
     // be built. The Android build number must be the bare release sequence.
-    expect(releaseWorkflow, isNot(contains('* 1000000')),
-        reason: 'the *1000000 build number overflows int32 / Android 2.1e9 '
-            'versionCode ceiling (TODO-414)');
+    expect(
+      releaseWorkflow,
+      isNot(contains('* 1000000')),
+      reason:
+          'the *1000000 build number overflows int32 / Android 2.1e9 '
+          'versionCode ceiling (TODO-414)',
+    );
     expect(releaseWorkflow, isNot(contains('PUBSPEC_BUILD * 1000000')));
-    expect(releaseWorkflow, contains(r'ANDROID_BUILD_NUMBER=$RELEASE_SEQUENCE'),
-        reason: 'Android build number must be the bare monotonic commit count; '
-            'the versionCode base is applied in build.gradle');
+    expect(
+      releaseWorkflow,
+      contains(r'ANDROID_BUILD_NUMBER=$RELEASE_SEQUENCE'),
+      reason:
+          'Android build number must be the bare monotonic commit count; '
+          'the versionCode base is applied in build.gradle',
+    );
 
     // main.yml validation builds must use the same monotonic sequence (full
     // history + --build-number) so debug/release versionCode matches release.yml.
-    expect(mainWorkflow, contains('fetch-depth: 0'),
-        reason: 'shallow checkout would truncate git rev-list --count HEAD');
-    expect(mainWorkflow,
-        contains(r'RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)'));
     expect(
-        r'--build-number "$RELEASE_SEQUENCE"'.allMatches(mainWorkflow).length,
-        greaterThanOrEqualTo(2),
-        reason: 'debug + release validation builds must carry the shared '
-            'build number so their versionCode matches release.yml');
+      mainWorkflow,
+      contains('fetch-depth: 0'),
+      reason: 'shallow checkout would truncate git rev-list --count HEAD',
+    );
+    expect(
+      mainWorkflow,
+      contains(r'RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)'),
+    );
+    expect(
+      r'--build-number "$RELEASE_SEQUENCE"'.allMatches(mainWorkflow).length,
+      greaterThanOrEqualTo(2),
+      reason:
+          'debug + release validation builds must carry the shared '
+          'build number so their versionCode matches release.yml',
+    );
 
     // TODO-921: main.yml push CI 不再编译/上传冗余的 debug APK artifact
     // （push 通道只跑 analyze/test + release-build-validation；debug 包没人装、
     // 白占 CI 构建时间）。锁住这次删除：main.yml 不得再出现 debug APK 构建。
-    expect(mainWorkflow, isNot(contains('flutter build apk --debug')),
-        reason: 'TODO-921: push CI 已删除冗余 debug APK 构建，只保留 '
-            'release-signed 校验构建（释放 CI 资源）');
+    expect(
+      mainWorkflow,
+      isNot(contains('flutter build apk --debug')),
+      reason:
+          'TODO-921: push CI 已删除冗余 debug APK 构建，只保留 '
+          'release-signed 校验构建（释放 CI 资源）',
+    );
 
     // build.gradle owns the one-time migration floor + ceiling assertion.
-    expect(buildGradle, contains('def versionCodeBase = 1000000000'),
-        reason: 'one-time versionCode floor above every shipped versionCode');
-    expect(buildGradle, contains('def maxVersionCode = 2100000000'),
-        reason: 'ceiling guard must match Android 2.1e9 limit');
-    expect(buildGradle, contains('output.versionCodeOverride = computed'),
-        reason: 'versionCode must be the bounds-checked computed value');
-    expect('throw new GradleException'.allMatches(buildGradle).length,
-        greaterThanOrEqualTo(3),
-        reason: 'fat + split versionCode ceiling assertions must both throw '
-            '(plus the pre-existing keystore guards)');
+    expect(
+      buildGradle,
+      contains('def versionCodeBase = 1000000000'),
+      reason: 'one-time versionCode floor above every shipped versionCode',
+    );
+    expect(
+      buildGradle,
+      contains('def maxVersionCode = 2100000000'),
+      reason: 'ceiling guard must match Android 2.1e9 limit',
+    );
+    expect(
+      buildGradle,
+      contains('output.versionCodeOverride = computed'),
+      reason: 'versionCode must be the bounds-checked computed value',
+    );
+    expect(
+      'throw new GradleException'.allMatches(buildGradle).length,
+      greaterThanOrEqualTo(3),
+      reason:
+          'fat + split versionCode ceiling assertions must both throw '
+          '(plus the pre-existing keystore guards)',
+    );
   });
 
-  test(
-      'TODO-923: beta/formal manual release channels must not build/attach the '
+  test('TODO-923: beta/formal manual release channels must not build/attach the '
       'unsigned debug APK', () {
     final String workflow = readReleaseWorkflow();
 
@@ -465,8 +643,11 @@ void main() {
     String dispatchCaseBody(String name) {
       final String marker = '              $name)\n';
       final int start = workflow.indexOf(marker);
-      expect(start, isNonNegative,
-          reason: 'missing workflow_dispatch case arm: $name)');
+      expect(
+        start,
+        isNonNegative,
+        reason: 'missing workflow_dispatch case arm: $name)',
+      );
       final int end = workflow.indexOf('\n                ;;', start);
       expect(end, isNonNegative, reason: 'unterminated case arm: $name)');
       return workflow.substring(start, end);
@@ -481,12 +662,20 @@ void main() {
     // ~314MB debug APK gets matched by the fushi-*.apk FILES glob and uploaded
     // (formal even as Latest). push) and debug) already set it false; beta) and
     // formal) must too.
-    expect(betaCase, contains('BUILD_DEBUG_APK=false'),
-        reason: 'TODO-923: beta manual release must not build the unsigned '
-            'debug APK (it would be attached to the beta release)');
-    expect(formalCase, contains('BUILD_DEBUG_APK=false'),
-        reason: 'TODO-923: formal release must not build the unsigned debug '
-            'APK (it would be attached to the Latest release)');
+    expect(
+      betaCase,
+      contains('BUILD_DEBUG_APK=false'),
+      reason:
+          'TODO-923: beta manual release must not build the unsigned '
+          'debug APK (it would be attached to the beta release)',
+    );
+    expect(
+      formalCase,
+      contains('BUILD_DEBUG_APK=false'),
+      reason:
+          'TODO-923: formal release must not build the unsigned debug '
+          'APK (it would be attached to the Latest release)',
+    );
   });
 
   test('Windows desktop release smokes bundled ffmpeg in final bundle', () {
@@ -514,35 +703,20 @@ void main() {
           '(BUG-1420: it was never built nor bundled, and both of its consumers '
           'degrade silently when it is absent)',
     );
+    // Unified FFmpeg: the shipped binary is a full build, so the capability
+    // floor and the behavioural smoke run on it directly.
     expect(
       smoke,
-      contains('tool/ffmpeg-min/smoke-test.sh'),
+      contains('tool/ffmpeg-unified/verify_ffmpeg_capabilities.py'),
+      reason:
+          'the bundle smoke must check the capability floor the player '
+          'and card mining share (tool/ffmpeg-unified/capabilities.json)',
+    );
+    expect(
+      smoke,
+      contains('tool/ffmpeg-unified/smoke-test.sh'),
       reason:
           'the final bundle smoke must exercise subtitle, GIF, frame, cover, and sentence audio commands',
-    );
-    expect(
-      smoke,
-      contains(r'$env:FIXTURE_FFMPEG'),
-      reason:
-          'representative MP4/MKV fixtures must be generated by a full ffmpeg, not the minimal runtime binary',
-    );
-    expect(
-      smoke,
-      contains('choco install ffmpeg'),
-      reason:
-          'GitHub runners that lack full ffmpeg still need a fixture generator, but it must not be bundled',
-    );
-    expect(
-      smoke,
-      isNot(contains(r'FIXTURE_FFMPEG="$FFMPEG_MIN"')),
-      reason:
-          'the minimal bundled ffmpeg must not need MP4/MKV muxers or video/subtitle encoders just to generate smoke fixtures',
-    );
-    expect(
-      smoke,
-      isNot(contains('SELF_CONTAINED_FIXTURES=1')),
-      reason:
-          'release smoke should use a full fixture generator instead of expanding the minimal ffmpeg allowlist',
     );
     expect(
       smoke,
@@ -550,9 +724,19 @@ void main() {
       reason:
           'PowerShell must execute the copied Windows binary outside MSYS2 before installer compilation',
     );
+    expect(
+      smoke,
+      contains(r'throw "Bundled ffmpeg failed -version'),
+      reason:
+          'the bundled ffmpeg -version gate must remain a hard failure; '
+          'it verifies the exact binary we ship',
+    );
+    // TODO-652: the chocolatey fixture ffmpeg (and its 504 flakes) existed only
+    // because the minimal build could not author fixtures; it must not return.
+    expect(smoke, isNot(contains('choco install ffmpeg')));
     expectWorkflowOrder(
       workflow,
-      'Install vendored ffmpeg-min runtime into Windows bundle',
+      'Build Windows release',
       'Smoke test bundled ffmpeg in Windows bundle',
     );
     expectWorkflowOrder(
@@ -563,74 +747,22 @@ void main() {
   });
 
   test(
-      'TODO-652: Windows ffmpeg smoke tolerates external chocolatey flake '
-      'without failing the desktop release', () {
-    final String workflow = readReleaseDesktopWorkflow();
-    final String smoke = workflowStep(
-      workflow,
-      'Smoke test bundled ffmpeg in Windows bundle',
-    );
+    'unified ffmpeg smoke authors its own fixtures with the shipped binary',
+    () {
+      final String smoke = readRepositoryTool('ffmpeg-unified/smoke-test.sh');
 
-    // The bundled binary -version check stays a hard gate (it is the shipped
-    // deliverable, no external dependency): it must still throw on failure.
-    expect(
-      smoke,
-      contains(r'throw "Bundled ffmpeg failed -version'),
-      reason: 'the bundled ffmpeg -version gate must remain a hard failure; '
-          'it verifies the exact binary we ship',
-    );
-
-    // The fixture ffmpeg is only a reference generator fetched from chocolatey,
-    // whose source intermittently returns 504. Its acquisition must be retried
-    // and, on persistent failure, skipped with a loud warning - never throw and
-    // fail the whole Desktop release (TODO-652, mirrors TODO-624 precedent).
-    expect(
-      smoke,
-      contains(r'for ($attempt = 1; $attempt -le 3; $attempt++)'),
-      reason: 'choco install ffmpeg must be retried to absorb transient 504s',
-    );
-    expect(
-      smoke,
-      isNot(contains(r'Get-Command ffmpeg -ErrorAction Stop')),
-      reason:
-          'fixture ffmpeg lookup must not hard-throw when chocolatey flakes; '
-          'that regressed the whole Desktop workflow on runs +130/+132',
-    );
-    expect(
-      smoke,
-      contains('::warning title=Fixture ffmpeg unavailable'),
-      reason: 'a persistent fixture-ffmpeg outage must surface a visible '
-          'warning, not a silent pass',
-    );
-    expect(
-      smoke,
-      contains('exit 0'),
-      reason: 'when only the reference fixture is unavailable the step skips '
-          'the comparison smoke and exits 0 instead of failing the release',
-    );
-  });
-
-  test('ffmpeg smoke fixture generation does not require the minimal binary',
-      () {
-    final String smoke = readRepositoryTool('ffmpeg-min/smoke-test.sh');
-
-    expect(
-      smoke,
-      contains(r'FIXTURE_FFMPEG="${FIXTURE_FFMPEG:-ffmpeg}"'),
-      reason:
-          'fixture generation should default to a full host ffmpeg while FFMPEG_MIN exercises runtime extraction paths',
-    );
-    expect(
-      smoke,
-      isNot(contains('SELF_CONTAINED_FIXTURES')),
-      reason:
-          'do not add a path that asks the minimal runtime ffmpeg to author representative MP4/MKV fixtures',
-    );
-    expect(
-      smoke,
-      isNot(contains('-c:v mpeg4')),
-      reason:
-          'mpeg4 fixture authoring would pressure the minimal build to ship input-generation-only encoders/muxers',
-    );
-  });
+      expect(
+        smoke,
+        contains(r'FIXTURE_FFMPEG="${FIXTURE_FFMPEG:-$FFMPEG_MIN}"'),
+        reason:
+            'the unified FFmpeg is a full build: fixtures default to the '
+            'binary under test, no external reference ffmpeg is required',
+      );
+      expect(
+        smoke,
+        isNot(contains('-c:v mpeg4')),
+        reason: 'fixtures stay on the codecs the app actually emits',
+      );
+    },
+  );
 }

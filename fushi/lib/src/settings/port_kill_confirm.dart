@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/sync/port_process_terminator.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 「一键结束占用端口的进程」杀前决策结果。
 enum PortKillDecisionKind {
@@ -80,14 +82,14 @@ Future<PortKillDecision> decidePortKill(
 
   final FushiDestructiveConfirmResult? confirmed =
       await showAppDialog<FushiDestructiveConfirmResult>(
-    context: context,
-    builder: (_) => FushiDestructiveConfirmDialog(
-      title: t.yomitan_port_kill_confirm_title(port: port),
-      message: message.toString(),
-      confirmLabel: t.yomitan_port_kill_confirm,
-      leadingIcon: Icons.stop_circle_outlined,
-    ),
-  );
+        context: context,
+        builder: (_) => FushiDestructiveConfirmDialog(
+          title: t.yomitan_port_kill_confirm_title(port: port),
+          message: message.toString(),
+          confirmLabel: t.yomitan_port_kill_confirm,
+          leadingIcon: Icons.stop_circle_outlined,
+        ),
+      );
   if (confirmed == null) {
     return const PortKillDecision(PortKillDecisionKind.cancelled);
   }

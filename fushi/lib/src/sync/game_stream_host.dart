@@ -525,6 +525,11 @@ class FushiGameStreamHost extends ChangeNotifier {
 
   bool get started => _started;
   bool get starting => _starting;
+
+  /// Whether a receiver is connected right now (peer connection `connected`).
+  /// Listeners are notified on every change, including drops, so the host
+  /// controller can tell the play timer the player is present remotely.
+  bool get connected => _connected;
   String? get error => _error;
   GameStreamSession? get session => service.session;
 
@@ -744,10 +749,15 @@ class FushiGameStreamHost extends ChangeNotifier {
       };
       connection.onConnectionState = (RTCPeerConnectionState state) {
         if (generation != _generation || current.state.isTerminal) return;
+        final bool wasConnected = _connected;
         _connected =
             state == RTCPeerConnectionState.RTCPeerConnectionStateConnected;
         if (!_connected) {
           _ladder.observe(at: _elapsed(), availableKbps: null);
+          // A dropped receiver (iPad backgrounded, Wi-Fi lost) must reach
+          // listeners: the play timer counts streamed time only while one
+          // is connected (BUG-3616).
+          if (wasConnected) notifyListeners();
         }
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           service.markConnected(sessionId: current.sessionId);

@@ -9,32 +9,45 @@ void main() {
       expect(browserKindFromDefaultBrowserId('ChromeHTML'), BrowserKind.chrome);
       expect(browserKindFromDefaultBrowserId('MSEdgeHTM'), BrowserKind.edge);
       expect(browserKindFromDefaultBrowserId('BraveHTML'), BrowserKind.brave);
-      expect(browserKindFromDefaultBrowserId('VivaldiHTM.ABC123'),
-          BrowserKind.vivaldi);
+      expect(
+        browserKindFromDefaultBrowserId('VivaldiHTM.ABC123'),
+        BrowserKind.vivaldi,
+      );
       expect(browserKindFromDefaultBrowserId('OperaStable'), BrowserKind.opera);
     });
 
     test('macOS bundle id / Linux desktop file', () {
-      expect(browserKindFromDefaultBrowserId('com.google.chrome'),
-          BrowserKind.chrome);
-      expect(browserKindFromDefaultBrowserId('com.microsoft.edgemac'),
-          BrowserKind.edge);
-      expect(browserKindFromDefaultBrowserId('brave-browser.desktop\n'),
-          BrowserKind.brave);
-      expect(browserKindFromDefaultBrowserId('google-chrome.desktop'),
-          BrowserKind.chrome);
+      expect(
+        browserKindFromDefaultBrowserId('com.google.chrome'),
+        BrowserKind.chrome,
+      );
+      expect(
+        browserKindFromDefaultBrowserId('com.microsoft.edgemac'),
+        BrowserKind.edge,
+      );
+      expect(
+        browserKindFromDefaultBrowserId('brave-browser.desktop\n'),
+        BrowserKind.brave,
+      );
+      expect(
+        browserKindFromDefaultBrowserId('google-chrome.desktop'),
+        BrowserKind.chrome,
+      );
     });
 
     test('unsupported browsers map to null', () {
-      expect(browserKindFromDefaultBrowserId('FirefoxURL-308046B0AF4A39CB'),
-          isNull);
+      expect(
+        browserKindFromDefaultBrowserId('FirefoxURL-308046B0AF4A39CB'),
+        isNull,
+      );
       expect(browserKindFromDefaultBrowserId('com.apple.safari'), isNull);
       expect(browserKindFromDefaultBrowserId(''), isNull);
     });
   });
 
   test('parseWindowsUserChoiceProgId reads the ProgId value', () {
-    const String out = '\r\n'
+    const String out =
+        '\r\n'
         r'HKEY_CURRENT_USER\Software\Microsoft\Windows\Shell\Associations'
         r'\UrlAssociations\https\UserChoice'
         '\r\n    ProgId    REG_SZ    MSEdgeHTM\r\n\r\n';
@@ -43,11 +56,14 @@ void main() {
   });
 
   test('parseWindowsRegDefaultValue ignores the localized value name', () {
-    const String out = '\r\n    (默认)    REG_SZ    '
+    const String out =
+        '\r\n    (默认)    REG_SZ    '
         r'C:\Program Files\Google\Chrome\Application\chrome.exe'
         '\r\n';
-    expect(parseWindowsRegDefaultValue(out),
-        r'C:\Program Files\Google\Chrome\Application\chrome.exe');
+    expect(
+      parseWindowsRegDefaultValue(out),
+      r'C:\Program Files\Google\Chrome\Application\chrome.exe',
+    );
   });
 
   test('parseMacLaunchServicesHandler picks the https handler', () {
@@ -75,13 +91,19 @@ void main() {
       <String>['open', '-a', 'Microsoft Edge', 'edge://extensions'],
     );
     expect(
-      browserLaunchCommand(BrowserKind.chrome, 'chrome://extensions',
-          os: 'linux'),
+      browserLaunchCommand(
+        BrowserKind.chrome,
+        'chrome://extensions',
+        os: 'linux',
+      ),
       <String>['google-chrome', 'chrome://extensions'],
     );
     expect(
-      browserLaunchCommand(BrowserKind.chrome, 'chrome://extensions',
-          os: 'windows'),
+      browserLaunchCommand(
+        BrowserKind.chrome,
+        'chrome://extensions',
+        os: 'windows',
+      ),
       isNull,
     );
   });

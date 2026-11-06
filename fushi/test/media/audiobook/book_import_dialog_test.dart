@@ -12,7 +12,9 @@ import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 
 void main() {
   Widget buildApp(Widget child) {
-    return MaterialApp(home: Scaffold(body: Center(child: child)));
+    return MaterialApp(
+      home: Scaffold(body: Center(child: child)),
+    );
   }
 
   testWidgets('book import dialog frame fits compact form content', (
@@ -52,8 +54,10 @@ void main() {
   test(
     'windows audio file filter includes an all files option',
     () {
-      final String filter =
-          FilePickerWindows().fileTypeToFileFilter(FileType.audio, null);
+      final String filter = FilePickerWindows().fileTypeToFileFilter(
+        FileType.audio,
+        null,
+      );
 
       expect(
         filter,
@@ -72,46 +76,65 @@ void main() {
   // bookKey-less SrtBook shell row is still saved (orphan card that can't open
   // + later fakes a successful delete). Source guard: the EPUB import catch must
   // rethrow so the top-level handler reports the failure.
-  test('subtitle-book bad-EPUB import rethrows instead of saving a shell row',
-      () {
-    // 字幕书导入的实现已抽到引擎（发现页自动入库与对话框共用一份）：对话框
-    // 必须委托给它，守卫随实现一起看引擎那份。
-    final String dialog =
-        File('lib/src/media/audiobook/book_import_dialog.dart')
-            .readAsStringSync();
-    final int dialogStart = dialog.indexOf('Future<void> _importSubtitleBook(');
-    expect(dialogStart, isNonNegative,
-        reason: '_importSubtitleBook must exist in book_import_dialog.dart');
-    expect(
-      dialog.substring(dialogStart),
-      contains('importStandaloneSubtitleBook('),
-      reason: 'the dialog must delegate to the shared engine primitive, '
-          'not grow a second copy that the guard below does not see',
-    );
+  test(
+    'subtitle-book bad-EPUB import rethrows instead of saving a shell row',
+    () {
+      // 字幕书导入的实现已抽到引擎（发现页自动入库与对话框共用一份）：对话框
+      // 必须委托给它，守卫随实现一起看引擎那份。
+      final String dialog = File(
+        'lib/src/media/audiobook/book_import_dialog.dart',
+      ).readAsStringSync();
+      final int dialogStart = dialog.indexOf(
+        'Future<void> _importSubtitleBook(',
+      );
+      expect(
+        dialogStart,
+        isNonNegative,
+        reason: '_importSubtitleBook must exist in book_import_dialog.dart',
+      );
+      expect(
+        dialog.substring(dialogStart),
+        contains('importStandaloneSubtitleBook('),
+        reason:
+            'the dialog must delegate to the shared engine primitive, '
+            'not grow a second copy that the guard below does not see',
+      );
 
-    final String source = File(
-      '../packages/fushi_engine/lib/media/audiobook/'
-      'standalone_subtitle_book.dart',
-    ).readAsStringSync();
+      final String source = File(
+        '../packages/fushi_engine/lib/media/audiobook/'
+        'standalone_subtitle_book.dart',
+      ).readAsStringSync();
 
-    final int start =
-        source.indexOf('Future<SrtBook> importStandaloneSubtitleBook(');
-    expect(start, isNonNegative,
-        reason: 'importStandaloneSubtitleBook must exist in the engine');
-    // Inspect only the EPUB import try/catch region.
-    final int regionEnd = source.indexOf('report(0.7', start);
-    expect(regionEnd, greaterThan(start));
-    final String region = source.substring(start, regionEnd);
+      final int start = source.indexOf(
+        'Future<SrtBook> importStandaloneSubtitleBook(',
+      );
+      expect(
+        start,
+        isNonNegative,
+        reason: 'importStandaloneSubtitleBook must exist in the engine',
+      );
+      // Inspect only the EPUB import try/catch region.
+      final int regionEnd = source.indexOf('report(0.7', start);
+      expect(regionEnd, greaterThan(start));
+      final String region = source.substring(start, regionEnd);
 
-    // The catch that logs the EPUB import failure must rethrow.
-    final int logIdx =
-        region.indexOf("engineLog.log('importStandaloneSubtitleBook.epubImport'");
-    expect(logIdx, isNonNegative,
-        reason: 'the bad-EPUB catch must still log for diagnostics');
-    final String afterLog = region.substring(logIdx);
-    expect(afterLog, contains('rethrow;'),
+      // The catch that logs the EPUB import failure must rethrow.
+      final int logIdx = region.indexOf(
+        "engineLog.log('importStandaloneSubtitleBook.epubImport'",
+      );
+      expect(
+        logIdx,
+        isNonNegative,
+        reason: 'the bad-EPUB catch must still log for diagnostics',
+      );
+      final String afterLog = region.substring(logIdx);
+      expect(
+        afterLog,
+        contains('rethrow;'),
         reason:
             'a bad EPUB must abort the import (rethrow), not fall through to '
-            'save an orphan SrtBook shell row with an empty bookKey (BUG-439).');
-  });
+            'save an orphan SrtBook shell row with an empty bookKey (BUG-439).',
+      );
+    },
+  );
 }

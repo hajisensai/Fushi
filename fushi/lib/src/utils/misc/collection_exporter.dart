@@ -24,12 +24,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 /// - 分组键统一用 [ExportSentence.bookTitle]（恒非空），不用可空的 bookKey。
 
 /// 导出格式。
-enum ExportFormat {
-  markdown,
-  txt,
-  csv,
-  json,
-}
+enum ExportFormat { markdown, txt, csv, json }
 
 /// 导出用的轻量收藏句载体（与 `FavoriteSentence` 解耦，纯数据，便于单测）。
 class ExportSentence {
@@ -161,7 +156,8 @@ String _formatDateTime(DateTime dt) => FushiTimeFormat.dateHourMinute(dt);
 
 /// CSV（RFC4180）字段转义：含逗号/引号/换行的字段加双引号包裹并把内部 `"` 翻倍。
 String _csvEscape(String field) {
-  final bool needsQuote = field.contains(',') ||
+  final bool needsQuote =
+      field.contains(',') ||
       field.contains('"') ||
       field.contains('\n') ||
       field.contains('\r');
@@ -206,8 +202,9 @@ String buildSentenceExport(
 }
 
 String _buildSentenceMarkdown(List<ExportSentence> sentences) {
-  final Map<String, List<ExportSentence>> grouped =
-      _groupSentencesByBook(sentences);
+  final Map<String, List<ExportSentence>> grouped = _groupSentencesByBook(
+    sentences,
+  );
   final StringBuffer buf = StringBuffer();
   buf.writeln('# ${t.collection_export_sentences_title}');
   buf.writeln();
@@ -249,18 +246,26 @@ String _buildSentenceCsv(
 }) {
   final StringBuffer buf = StringBuffer();
   if (csvBom) buf.write(_utf8Bom);
-  buf.write(<String>['text', 'bookTitle', 'chapter', 'source', 'createdAt']
-      .map(_csvEscape)
-      .join(','));
+  buf.write(
+    <String>[
+      'text',
+      'bookTitle',
+      'chapter',
+      'source',
+      'createdAt',
+    ].map(_csvEscape).join(','),
+  );
   buf.write(_csvNewline);
   for (final ExportSentence s in sentences) {
-    buf.write(<String>[
-      s.text,
-      s.bookTitle,
-      s.chapterLabel ?? '',
-      s.source ?? '',
-      s.createdAt.toIso8601String(),
-    ].map(_csvEscape).join(','));
+    buf.write(
+      <String>[
+        s.text,
+        s.bookTitle,
+        s.chapterLabel ?? '',
+        s.source ?? '',
+        s.createdAt.toIso8601String(),
+      ].map(_csvEscape).join(','),
+    );
     buf.write(_csvNewline);
   }
   return buf.toString();
@@ -268,13 +273,15 @@ String _buildSentenceCsv(
 
 String _buildSentenceJson(List<ExportSentence> sentences) {
   final List<Map<String, dynamic>> list = sentences
-      .map((ExportSentence s) => <String, dynamic>{
-            'text': s.text,
-            'bookTitle': s.bookTitle,
-            if (s.chapterLabel != null) 'chapterLabel': s.chapterLabel,
-            if (s.source != null) 'source': s.source,
-            'createdAt': s.createdAt.toIso8601String(),
-          })
+      .map(
+        (ExportSentence s) => <String, dynamic>{
+          'text': s.text,
+          'bookTitle': s.bookTitle,
+          if (s.chapterLabel != null) 'chapterLabel': s.chapterLabel,
+          if (s.source != null) 'source': s.source,
+          'createdAt': s.createdAt.toIso8601String(),
+        },
+      )
       .toList();
   return const JsonEncoder.withIndent('  ').convert(list);
 }
@@ -335,8 +342,9 @@ String _buildWordMarkdown(List<ExportWord> words) {
 String _buildWordTxt(List<ExportWord> words) {
   final StringBuffer buf = StringBuffer();
   for (final ExportWord w in words) {
-    final String head =
-        w.reading.isEmpty ? w.expression : '${w.expression}（${w.reading}）';
+    final String head = w.reading.isEmpty
+        ? w.expression
+        : '${w.expression}（${w.reading}）';
     if (w.glossary.isEmpty) {
       buf.writeln(head);
     } else {
@@ -349,18 +357,26 @@ String _buildWordTxt(List<ExportWord> words) {
 String _buildWordCsv(List<ExportWord> words, {required bool csvBom}) {
   final StringBuffer buf = StringBuffer();
   if (csvBom) buf.write(_utf8Bom);
-  buf.write(<String>['expression', 'reading', 'glossary', 'source', 'createdAt']
-      .map(_csvEscape)
-      .join(','));
+  buf.write(
+    <String>[
+      'expression',
+      'reading',
+      'glossary',
+      'source',
+      'createdAt',
+    ].map(_csvEscape).join(','),
+  );
   buf.write(_csvNewline);
   for (final ExportWord w in words) {
-    buf.write(<String>[
-      w.expression,
-      w.reading,
-      w.glossary,
-      w.sourceType,
-      w.createdAt.toIso8601String(),
-    ].map(_csvEscape).join(','));
+    buf.write(
+      <String>[
+        w.expression,
+        w.reading,
+        w.glossary,
+        w.sourceType,
+        w.createdAt.toIso8601String(),
+      ].map(_csvEscape).join(','),
+    );
     buf.write(_csvNewline);
   }
   return buf.toString();
@@ -368,13 +384,15 @@ String _buildWordCsv(List<ExportWord> words, {required bool csvBom}) {
 
 String _buildWordJson(List<ExportWord> words) {
   final List<Map<String, dynamic>> list = words
-      .map((ExportWord w) => <String, dynamic>{
-            'expression': w.expression,
-            'reading': w.reading,
-            'glossary': w.glossary,
-            'sourceType': w.sourceType,
-            'createdAt': w.createdAt.toIso8601String(),
-          })
+      .map(
+        (ExportWord w) => <String, dynamic>{
+          'expression': w.expression,
+          'reading': w.reading,
+          'glossary': w.glossary,
+          'sourceType': w.sourceType,
+          'createdAt': w.createdAt.toIso8601String(),
+        },
+      )
       .toList();
   return const JsonEncoder.withIndent('  ').convert(list);
 }
@@ -416,8 +434,9 @@ String buildMinedExport(
 }
 
 String _buildMinedMarkdown(List<ExportMinedSentence> items) {
-  final Map<String, List<ExportMinedSentence>> grouped =
-      _groupMinedByBook(items);
+  final Map<String, List<ExportMinedSentence>> grouped = _groupMinedByBook(
+    items,
+  );
   final StringBuffer buf = StringBuffer();
   buf.writeln('# ${t.collection_export_mined_title}');
   buf.writeln();
@@ -455,8 +474,9 @@ String _buildMinedTxt(List<ExportMinedSentence> items) {
   final StringBuffer buf = StringBuffer();
   for (final ExportMinedSentence m in items) {
     if (m.sentence.isNotEmpty) buf.writeln(m.sentence);
-    final String head =
-        m.reading.isEmpty ? m.expression : '${m.expression}（${m.reading}）';
+    final String head = m.reading.isEmpty
+        ? m.expression
+        : '${m.expression}（${m.reading}）';
     if (m.glossary.isEmpty) {
       buf.writeln(head);
     } else {
@@ -469,24 +489,28 @@ String _buildMinedTxt(List<ExportMinedSentence> items) {
 String _buildMinedCsv(List<ExportMinedSentence> items, {required bool csvBom}) {
   final StringBuffer buf = StringBuffer();
   if (csvBom) buf.write(_utf8Bom);
-  buf.write(<String>[
-    'sentence',
-    'expression',
-    'reading',
-    'glossary',
-    'source',
-    'createdAt',
-  ].map(_csvEscape).join(','));
+  buf.write(
+    <String>[
+      'sentence',
+      'expression',
+      'reading',
+      'glossary',
+      'source',
+      'createdAt',
+    ].map(_csvEscape).join(','),
+  );
   buf.write(_csvNewline);
   for (final ExportMinedSentence m in items) {
-    buf.write(<String>[
-      m.sentence,
-      m.expression,
-      m.reading,
-      m.glossary,
-      m.source ?? '',
-      m.createdAt.toIso8601String(),
-    ].map(_csvEscape).join(','));
+    buf.write(
+      <String>[
+        m.sentence,
+        m.expression,
+        m.reading,
+        m.glossary,
+        m.source ?? '',
+        m.createdAt.toIso8601String(),
+      ].map(_csvEscape).join(','),
+    );
     buf.write(_csvNewline);
   }
   return buf.toString();
@@ -494,15 +518,17 @@ String _buildMinedCsv(List<ExportMinedSentence> items, {required bool csvBom}) {
 
 String _buildMinedJson(List<ExportMinedSentence> items) {
   final List<Map<String, dynamic>> list = items
-      .map((ExportMinedSentence m) => <String, dynamic>{
-            'sentence': m.sentence,
-            'expression': m.expression,
-            'reading': m.reading,
-            'glossary': m.glossary,
-            'bookTitle': m.bookTitle,
-            if (m.source != null) 'source': m.source,
-            'createdAt': m.createdAt.toIso8601String(),
-          })
+      .map(
+        (ExportMinedSentence m) => <String, dynamic>{
+          'sentence': m.sentence,
+          'expression': m.expression,
+          'reading': m.reading,
+          'glossary': m.glossary,
+          'bookTitle': m.bookTitle,
+          if (m.source != null) 'source': m.source,
+          'createdAt': m.createdAt.toIso8601String(),
+        },
+      )
       .toList();
   return const JsonEncoder.withIndent('  ').convert(list);
 }
@@ -610,21 +636,25 @@ List<ExportMinedSentenceGroup> dedupeMinedBySentence(
     if (m.createdAt.isAfter(acc.createdAt)) acc.createdAt = m.createdAt;
     final String wordKey = '${m.expression} ${m.reading} ${m.glossary}';
     if (acc.seenWords.add(wordKey)) {
-      acc.words.add(ExportMinedWord(
-        expression: m.expression,
-        reading: m.reading,
-        glossary: m.glossary,
-      ));
+      acc.words.add(
+        ExportMinedWord(
+          expression: m.expression,
+          reading: m.reading,
+          glossary: m.glossary,
+        ),
+      );
     }
   }
   return groups.values
-      .map((_MinedGroupAccumulator a) => ExportMinedSentenceGroup(
-            sentence: a.sentence,
-            words: a.words,
-            bookTitle: a.bookTitle,
-            createdAt: a.createdAt,
-            source: a.source,
-          ))
+      .map(
+        (_MinedGroupAccumulator a) => ExportMinedSentenceGroup(
+          sentence: a.sentence,
+          words: a.words,
+          bookTitle: a.bookTitle,
+          createdAt: a.createdAt,
+          source: a.source,
+        ),
+      )
       .toList();
 }
 
@@ -714,8 +744,9 @@ String _buildMinedGroupedMarkdown(List<ExportMinedSentenceGroup> groups) {
         final String head = w.reading.isEmpty
             ? '**${w.expression}**'
             : '**${w.expression}**（${w.reading}）';
-        final String gloss =
-            w.glossary.isEmpty ? '' : ' · ${w.glossary.replaceAll('\n', ' ')}';
+        final String gloss = w.glossary.isEmpty
+            ? ''
+            : ' · ${w.glossary.replaceAll('\n', ' ')}';
         buf.writeln('> - $head$gloss');
       }
       buf.writeln('>');
@@ -731,8 +762,9 @@ String _buildMinedGroupedTxt(List<ExportMinedSentenceGroup> groups) {
   for (final ExportMinedSentenceGroup g in groups) {
     if (g.sentence.isNotEmpty) buf.writeln(g.sentence);
     for (final ExportMinedWord w in g.words) {
-      final String head =
-          w.reading.isEmpty ? w.expression : '${w.expression}（${w.reading}）';
+      final String head = w.reading.isEmpty
+          ? w.expression
+          : '${w.expression}（${w.reading}）';
       if (w.glossary.isEmpty) {
         buf.writeln('\t$head');
       } else {
@@ -749,25 +781,29 @@ String _buildMinedGroupedCsv(
 }) {
   final StringBuffer buf = StringBuffer();
   if (csvBom) buf.write(_utf8Bom);
-  buf.write(<String>[
-    'sentence',
-    'expression',
-    'reading',
-    'glossary',
-    'source',
-    'createdAt',
-  ].map(_csvEscape).join(','));
+  buf.write(
+    <String>[
+      'sentence',
+      'expression',
+      'reading',
+      'glossary',
+      'source',
+      'createdAt',
+    ].map(_csvEscape).join(','),
+  );
   buf.write(_csvNewline);
   for (final ExportMinedSentenceGroup g in groups) {
     for (final ExportMinedWord w in g.words) {
-      buf.write(<String>[
-        g.sentence,
-        w.expression,
-        w.reading,
-        w.glossary,
-        g.source ?? '',
-        g.createdAt.toIso8601String(),
-      ].map(_csvEscape).join(','));
+      buf.write(
+        <String>[
+          g.sentence,
+          w.expression,
+          w.reading,
+          w.glossary,
+          g.source ?? '',
+          g.createdAt.toIso8601String(),
+        ].map(_csvEscape).join(','),
+      );
       buf.write(_csvNewline);
     }
   }
@@ -776,35 +812,40 @@ String _buildMinedGroupedCsv(
 
 List<Map<String, dynamic>> _minedGroupsToJsonList(
   List<ExportMinedSentenceGroup> groups,
-) =>
-    groups
-        .map((ExportMinedSentenceGroup g) => <String, dynamic>{
-              'sentence': g.sentence,
-              'words': g.words
-                  .map((ExportMinedWord w) => <String, dynamic>{
-                        'expression': w.expression,
-                        'reading': w.reading,
-                        'glossary': w.glossary,
-                      })
-                  .toList(),
-              'bookTitle': g.bookTitle,
-              if (g.source != null) 'source': g.source,
-              'createdAt': g.createdAt.toIso8601String(),
-            })
-        .toList();
+) => groups
+    .map(
+      (ExportMinedSentenceGroup g) => <String, dynamic>{
+        'sentence': g.sentence,
+        'words': g.words
+            .map(
+              (ExportMinedWord w) => <String, dynamic>{
+                'expression': w.expression,
+                'reading': w.reading,
+                'glossary': w.glossary,
+              },
+            )
+            .toList(),
+        'bookTitle': g.bookTitle,
+        if (g.source != null) 'source': g.source,
+        'createdAt': g.createdAt.toIso8601String(),
+      },
+    )
+    .toList();
 
 String _buildMinedGroupedJson(List<ExportMinedSentenceGroup> groups) =>
     const JsonEncoder.withIndent('  ').convert(_minedGroupsToJsonList(groups));
 
 List<Map<String, dynamic>> _sentencesToJsonList(List<ExportSentence> rows) =>
     rows
-        .map((ExportSentence s) => <String, dynamic>{
-              'text': s.text,
-              'bookTitle': s.bookTitle,
-              if (s.chapterLabel != null) 'chapterLabel': s.chapterLabel,
-              if (s.source != null) 'source': s.source,
-              'createdAt': s.createdAt.toIso8601String(),
-            })
+        .map(
+          (ExportSentence s) => <String, dynamic>{
+            'text': s.text,
+            'bookTitle': s.bookTitle,
+            if (s.chapterLabel != null) 'chapterLabel': s.chapterLabel,
+            if (s.source != null) 'source': s.source,
+            'createdAt': s.createdAt.toIso8601String(),
+          },
+        )
         .toList();
 
 /// 「全部」导出：制卡句段 + 收藏句段，按格式各自渲染后拼接（两段**分开**，段间不互消）。
@@ -851,46 +892,52 @@ String buildCombinedExport({
     case ExportFormat.csv:
       final StringBuffer buf = StringBuffer();
       if (csvBom) buf.write(_utf8Bom);
-      buf.write(<String>[
-        'kind',
-        'sentence',
-        'expression',
-        'reading',
-        'glossary',
-        'bookTitle',
-        'chapter',
-        'source',
-        'createdAt',
-      ].map(_csvEscape).join(','));
+      buf.write(
+        <String>[
+          'kind',
+          'sentence',
+          'expression',
+          'reading',
+          'glossary',
+          'bookTitle',
+          'chapter',
+          'source',
+          'createdAt',
+        ].map(_csvEscape).join(','),
+      );
       buf.write(_csvNewline);
       for (final ExportMinedSentenceGroup g in mined) {
         for (final ExportMinedWord w in g.words) {
-          buf.write(<String>[
-            'mined',
-            g.sentence,
-            w.expression,
-            w.reading,
-            w.glossary,
-            g.bookTitle,
-            '',
-            g.source ?? '',
-            g.createdAt.toIso8601String(),
-          ].map(_csvEscape).join(','));
+          buf.write(
+            <String>[
+              'mined',
+              g.sentence,
+              w.expression,
+              w.reading,
+              w.glossary,
+              g.bookTitle,
+              '',
+              g.source ?? '',
+              g.createdAt.toIso8601String(),
+            ].map(_csvEscape).join(','),
+          );
           buf.write(_csvNewline);
         }
       }
       for (final ExportSentence s in favorites) {
-        buf.write(<String>[
-          'favorite',
-          s.text,
-          '',
-          '',
-          '',
-          s.bookTitle,
-          s.chapterLabel ?? '',
-          s.source ?? '',
-          s.createdAt.toIso8601String(),
-        ].map(_csvEscape).join(','));
+        buf.write(
+          <String>[
+            'favorite',
+            s.text,
+            '',
+            '',
+            '',
+            s.bookTitle,
+            s.chapterLabel ?? '',
+            s.source ?? '',
+            s.createdAt.toIso8601String(),
+          ].map(_csvEscape).join(','),
+        );
         buf.write(_csvNewline);
       }
       return buf.toString();
@@ -914,8 +961,9 @@ Future<void> saveOrShareExport({
 }) async {
   void notify(String message) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(FushiSnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   Directory? exportDirectory;
@@ -939,10 +987,9 @@ Future<void> saveOrShareExport({
         notify(t.collection_export_saved);
       }
     } else {
-      await FushiShare.shareFiles(
-        <XFile>[XFile(tmpPath, mimeType: mimeType)],
-        subject: subject,
-      );
+      await FushiShare.shareFiles(<XFile>[
+        XFile(tmpPath, mimeType: mimeType),
+      ], subject: subject);
     }
   } catch (e, s) {
     // fail-open：保留 notify 提示用户导出失败；补 ErrorLogService.log 便于线上诊断。

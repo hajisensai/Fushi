@@ -16,6 +16,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import '../../../packages/fushi_engine/test/srs/apkg/apkg_test_support.dart';
@@ -122,10 +123,12 @@ void main() {
       store: store,
       media: media,
       file: file,
-      // 默认（= Anki）不含预设与排程；这里要看被截步长，打开牌组预设。
+      // 默认（= Anki）不含预设与排程；这里要看被截步长，打开牌组预设。开着「使用 RWKV」时非 RWKV 预设的步长
+      // 不带过来（也就无从截），所以关掉。
       options: const SrsAnkiImportOptions(
         withScheduling: true,
         withDeckConfigs: true,
+        useRwkv: false,
       ),
       onProgress: progress.add,
       zstdDecompress: (Uint8List b) => null,
@@ -157,6 +160,11 @@ void main() {
         t.srs_import_report_steps_removed(preset: 'JP preset', removed: '1d'),
       ),
     );
+    // 关着 RWKV、预设没有 FSRS 参数：落到 FSRS-7 默认参数，报告里写明。
+    expect(
+      lines,
+      contains(t.srs_import_report_default_fsrs(preset: 'JP preset')),
+    );
 
     // 再导一次（默认不更新已有笔记）：没有新增。
     final SrsImportReport again = await runSrsAnkiImport(
@@ -167,6 +175,105 @@ void main() {
     );
     expect(again.notesAdded, 0);
     expect(again.notesSkipped, 1);
+  });
+
+  test('删掉笔记类型后重导：笔记类型恢复、笔记计恢复且看得见，报告写出恢复的笔记类型', () async {
+    final File file = File('${tmp.path}/deck.apkg')..writeAsBytesSync(_apkg());
+    await runSrsAnkiImport(
+      store: store,
+      media: media,
+      file: file,
+      zstdDecompress: (Uint8List b) => null,
+    );
+    final String ntId = SrsIds.noteType(kSrsTestProfile, _kBasic);
+    await store.deleteNoteType(ntId);
+    expect(await store.listNotes(), isEmpty);
+
+    final SrsImportReport report = await runSrsAnkiImport(
+      store: store,
+      media: media,
+      file: file,
+      zstdDecompress: (Uint8List b) => null,
+    );
+    expect(report.notesAdded, 0);
+    expect(report.notesRestored, 1);
+    expect(report.noteTypesRestored, <String>['Basic']);
+    expect(<String>[
+      for (final SrsNoteTypeView v in await store.noteTypes()) v.id,
+    ], contains(ntId));
+    expect(await store.listNotes(), hasLength(1));
+    expect(
+      srsImportReportLines(report),
+      containsAll(<String>[
+        t.srs_import_report_restored(n: 1),
+        t.srs_import_report_notetypes_restored(name: 'Basic'),
+      ]),
+    );
+  });
+
+  test('冲突笔记按原因与笔记类型分行，写明类型名（BUG-3890）', () {
+    SrsImportNoteIssue issue(String guid, String nt, String reason) =>
+        SrsImportNoteIssue(guid: guid, noteType: nt, reason: reason);
+    final SrsImportReport report = SrsImportReport()
+      ..conflictNotes.addAll(<SrsImportNoteIssue>[
+        issue('a', 'Kiku', SrsImportIssueReason.noteTypeChanged),
+        issue('b', 'Kiku', SrsImportIssueReason.noteTypeChanged),
+        issue('c', 'Cloze', SrsImportIssueReason.noteTypeKindMismatch),
+        issue('d', '42', SrsImportIssueReason.missingNoteType),
+      ]);
+    final List<String> lines = srsImportReportLines(report);
+    expect(
+      lines,
+      containsAll(<String>[
+        t.srs_import_report_conflicts_type_changed(n: 2, name: 'Kiku'),
+        t.srs_import_report_conflicts_kind_mismatch(n: 1, name: 'Cloze'),
+        t.srs_import_report_conflicts_missing_type(n: 1),
+      ]),
+    );
+    expect(lines.where((String l) => l.contains('Kiku')), hasLength(1));
+  });
+
+  test('带 FSRS 参数导入：报告写明已改用 RWKV；「继续用 FSRS」只切回仍自己管参数的 RWKV 牌组', () async {
+    final String imported = await store.createDeck('Imported');
+    final String child = await store.createDeck('Child', parentId: imported);
+    final String changed = await store.createDeck('User changed');
+    await store.editFields(SrsEntityKind.deck, imported, <String, Object?>{
+      SrsFieldKeys.deckAlgorithm: <String, Object?>{
+        'alg': SrsAlgorithm.rwkv.wire,
+        'auto': true,
+      },
+    });
+    await store.editFields(SrsEntityKind.deck, child, <String, Object?>{
+      SrsFieldKeys.deckParamsMode: 'inherit',
+    });
+    // 导入后用户自己在牌组设置里换成了 FSRS-7：不动。
+    await store.editFields(SrsEntityKind.deck, changed, <String, Object?>{
+      SrsFieldKeys.deckAlgorithm: <String, Object?>{
+        'alg': SrsAlgorithm.fsrs7.wire,
+        'auto': false,
+      },
+    });
+    final SrsImportReport report = SrsImportReport()
+      ..fsrsPresets['JP preset'] = SrsAlgorithm.fsrs6
+      ..fsrsDecks.addAll(<String, SrsAlgorithm>{
+        imported: SrsAlgorithm.fsrs6,
+        child: SrsAlgorithm.fsrs6,
+        changed: SrsAlgorithm.fsrs6,
+        'gone': SrsAlgorithm.fsrs6,
+      });
+    expect(
+      srsImportReportLines(report),
+      contains(t.srs_import_report_fsrs(preset: 'JP preset', alg: 'FSRS-6')),
+    );
+
+    expect(await srsKeepImportedDecksOnFsrs(store, report.fsrsDecks), 1);
+    final SrsDeckTree tree = await store.deckTree();
+    expect(tree[imported]!.localAlgorithm, SrsAlgorithm.fsrs6);
+    expect(tree[imported]!.algorithmAuto, isFalse);
+    expect(tree.paramsOwner(child).localAlgorithm, SrsAlgorithm.fsrs6);
+    expect(tree[changed]!.localAlgorithm, SrsAlgorithm.fsrs7);
+    // 再点一次什么也不改。
+    expect(await srsKeepImportedDecksOnFsrs(store, report.fsrsDecks), 0);
   });
 
   test('坏包：抛 SrsImportException（入口据此报失败而不是吞掉）', () async {
@@ -199,17 +306,17 @@ void main() {
     final SrsAnkiExport export = await buildSrsAnkiExport(
       store: store,
       media: media,
+      file: File('${tmp.path}/out.apkg'),
     );
     expect(export.usesFsrs7, isTrue);
-    expect(export.bytes, isNotEmpty);
+    expect(export.file.lengthSync(), greaterThan(0));
 
     final (FushiDatabase db2, SrsDbStore other) = await openSrsTestStore(
       profileUid: '01928c3e-0000-7000-8000-0000000000ee',
       deviceId: 'other',
     );
     addTearDown(db2.close);
-    final File file = File('${tmp.path}/out.apkg')
-      ..writeAsBytesSync(export.bytes);
+    final File file = export.file;
     final SrsImportReport back = await runSrsAnkiImport(
       store: other,
       media: SrsMediaStore(Directory('${tmp.path}/media2')),
@@ -249,8 +356,8 @@ void main() {
             reading: const Value<String>('あめ'),
             source: 'video',
             bookKey: const Value<String?>('video/ep1'),
-            normCharOffset: const Value<int?>(5000),
-            normCharLength: const Value<int?>(1500),
+            positionMs: const Value<int?>(5000),
+            durationMs: const Value<int?>(1500),
             dateKey: '2026-09-02',
             createdAt: t0 + 1000,
           ),

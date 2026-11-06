@@ -8,25 +8,27 @@ import 'reader_fushi_page_source_corpus.dart';
 void main() {
   String read(String path) => File(path).readAsStringSync();
 
-  test('reader JavaScript routes image context menu and long press to Dart',
-      () {
-    final String source = readReaderPageSource();
-    final String js = _functionSource(
-      source,
-      'function _fushiBlockImageUrl(target)',
-      'window.fushiProgressDetails',
-    );
+  test(
+    'reader JavaScript routes image context menu and long press to Dart',
+    () {
+      final String source = readReaderPageSource();
+      final String js = _functionSource(
+        source,
+        'function _fushiBlockImageUrl(target)',
+        'window.fushiProgressDetails',
+      );
 
-    expect(js, contains("document.addEventListener('contextmenu'"));
-    expect(js, contains("'onImageContextMenu'"));
-    expect(js, contains('e.preventDefault()'));
-    expect(js, contains("document.addEventListener('touchstart'"));
-    expect(js, contains('setTimeout'));
-    expect(js, contains("callHandler('onImageLongPress'"));
-    expect(js, contains('clearImageLongPressTimer'));
-    expect(js, contains('imageLongPressConsumed'));
-    expect(js, contains('_fushiBlockImageUrl(e.target'));
-  });
+      expect(js, contains("document.addEventListener('contextmenu'"));
+      expect(js, contains("'onImageContextMenu'"));
+      expect(js, contains('e.preventDefault()'));
+      expect(js, contains("document.addEventListener('touchstart'"));
+      expect(js, contains('setTimeout'));
+      expect(js, contains("callHandler('onImageLongPress'"));
+      expect(js, contains('clearImageLongPressTimer'));
+      expect(js, contains('imageLongPressConsumed'));
+      expect(js, contains('_fushiBlockImageUrl(e.target'));
+    },
+  );
 
   test('reader resolves fushi.local image URLs to files before actions', () {
     final String source = readReaderPageSource();
@@ -52,23 +54,47 @@ void main() {
     expect(viewer, contains('_readerImageFileForUrl(imgUrl)'));
   });
 
-  test('reader exposes desktop copy and mobile share image handlers', () {
+  test('reader exposes desktop copy and mobile image action handlers', () {
     final String source = readReaderPageSource();
 
     expect(source, contains("handlerName: 'onImageContextMenu'"));
     expect(source, contains("handlerName: 'onImageLongPress'"));
     expect(source, contains('Future<void> _showReaderImageContextMenu('));
-    expect(source, contains('Future<void> _shareReaderImage(String imgUrl)'));
+    expect(
+      source,
+      contains('Future<void> _showReaderImageActions(String imgUrl)'),
+    );
     expect(source, contains('Future<void> _copyReaderImageToClipboard('));
+    // 长按图片：全局图片动作面板（保存 / 分享），阅读器只解析文件再委派。
+    expect(
+      source,
+      contains('await _showReaderImageActions(args[0] as String);'),
+    );
+    expect(
+      source,
+      contains('await showImageActionsSheet(context, file: file);'),
+    );
+    expect(source, contains('onSave: () => _saveReaderImage(imgUrl),'));
+    final String sheet = read('lib/src/reader/image_actions_sheet.dart');
+    expect(
+      sheet,
+      contains('ImageAction.save => saveImageFileWithFeedback(file)'),
+    );
+    expect(sheet, contains('ImageAction.share => shareImageFile(file)'));
+    expect(
+      sheet,
+      contains('ImageAction.copy => copyImageFileToClipboard(file)'),
+    );
     // BUG-2589：动作本体抽到 illustration_zoom_viewer.dart，与书架端插图册共用；
     // 阅读器只解析文件再委派，不得再长出第二份 channel 调用。
-    expect(source, contains('await shareImageFile(file);'));
     expect(source, contains('await copyImageFileToClipboard(file);'));
     expect(source, isNot(contains('FushiChannels.clipboardImage')));
     final String shared = read('lib/src/reader/illustration_zoom_viewer.dart');
     expect(shared, contains('Future<void> shareImageFile(File file)'));
     expect(
-        shared, contains('Future<void> copyImageFileToClipboard(File file)'));
+      shared,
+      contains('Future<void> copyImageFileToClipboard(File file)'),
+    );
     expect(shared, contains('FushiShare.shareFiles'));
     expect(shared, contains('XFile(file.path'));
     expect(shared, contains('FushiChannels.clipboardImage'));
@@ -90,8 +116,11 @@ void main() {
     // 菜单上 → 视觉尺寸 scale²（实测 scale=2 时 chrome 文字 40px、菜单 80px）。
     // 现在菜单尺寸一律写常量，"随界面大小缩放"由它所在的画布负责。
     // 真行为断言见 test/pages/context_menu_ui_scale_guard_test.dart。
-    expect(source, isNot(contains('double get _readerImageMenuScale')),
-        reason: '双重缩放根源的 getter 必须保持删除状态');
+    expect(
+      source,
+      isNot(contains('double get _readerImageMenuScale')),
+      reason: '双重缩放根源的 getter 必须保持删除状态',
+    );
 
     // 菜单本体在共享模块（BUG-2589）；阅读器方法只剩 Windows 门 + 委派。
     final String delegate = _functionSource(
@@ -143,30 +172,34 @@ void main() {
     expect(menu, isNot(contains('webViewOffset *')));
   });
 
-  test('expanded reader image viewer exposes Windows right-click copy menu',
-      () {
-    final String source = readReaderPageSource();
-    final String viewer = _functionSource(
-      source,
-      'Future<void> _openImageViewer(String imgUrl',
-      'void _toggleChrome(',
-    );
+  test(
+    'expanded reader image viewer exposes Windows right-click copy menu',
+    () {
+      final String source = readReaderPageSource();
+      final String viewer = _functionSource(
+        source,
+        'Future<void> _openImageViewer(String imgUrl',
+        'void _toggleChrome(',
+      );
 
-    expect(viewer, contains('_readerImageFileForUrl(imgUrl)'));
-    expect(viewer, contains('ContextMenuTrigger('));
-    expect(viewer, contains('isWindowsPlatform'));
-    expect(viewer, contains('(Offset position) => unawaited('));
-    expect(viewer, contains('_showReaderImageContextMenuAtGlobalPosition'));
-    // BUG-2589：缩放查看本体（scrim 路由 + InteractiveViewer）只有共享的一份，
-    // 阅读器正文 / 插图册 / 书架端插图册三处都走它。
-    expect(viewer, contains('illustrationZoomRoute('));
-    expect(viewer, contains('IllustrationZoomViewer('));
-    expect(viewer, isNot(contains('InteractiveViewer(')));
-    final String shared = read('lib/src/reader/illustration_zoom_viewer.dart');
-    expect(shared, contains('class IllustrationZoomViewer'));
-    expect(shared, contains('InteractiveViewer('));
-    expect(shared, contains('barrierDismissible: true'));
-  });
+      expect(viewer, contains('_readerImageFileForUrl(imgUrl)'));
+      expect(viewer, contains('ContextMenuTrigger('));
+      expect(viewer, contains('isWindowsPlatform'));
+      expect(viewer, contains('(Offset position) => unawaited('));
+      expect(viewer, contains('_showReaderImageContextMenuAtGlobalPosition'));
+      // BUG-2589：缩放查看本体（scrim 路由 + InteractiveViewer）只有共享的一份，
+      // 阅读器正文 / 插图册 / 书架端插图册三处都走它。
+      expect(viewer, contains('illustrationZoomRoute('));
+      expect(viewer, contains('IllustrationZoomViewer('));
+      expect(viewer, isNot(contains('InteractiveViewer(')));
+      final String shared = read(
+        'lib/src/reader/illustration_zoom_viewer.dart',
+      );
+      expect(shared, contains('class IllustrationZoomViewer'));
+      expect(shared, contains('InteractiveViewer('));
+      expect(shared, contains('barrierDismissible: true'));
+    },
+  );
 
   test('Windows runner registers a native image clipboard channel', () {
     final String constants = read('lib/src/utils/misc/channel_constants.dart');
@@ -174,7 +207,15 @@ void main() {
     final String runner = read('windows/runner/flutter_window.cpp');
 
     expect(constants, contains('clipboardImage'));
-    expect(constants, contains("MethodChannel('\$_prefix/clipboard_image')"));
+    // 折叠空白后匹配：`dart format` 会把长构造调用拆行并补尾逗号，守卫钉语义不钉排版。
+    expect(
+      RegExp(
+        r"clipboardImage=MethodChannel\('\$_prefix/clipboard_image',?\)",
+      ).hasMatch(compactCode(constants)),
+      isTrue,
+      reason:
+          r"clipboardImage must be MethodChannel('$_prefix/clipboard_image')",
+    );
     expect(header, contains('clipboard_image_channel_'));
     expect(runner, contains('"app.fushi.reader/clipboard_image"'));
     expect(runner, contains('copyImageFile'));

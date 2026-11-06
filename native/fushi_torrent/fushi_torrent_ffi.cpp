@@ -947,6 +947,23 @@ HT_EXPORT int ht_pause_torrent(void* session, const char* info_hash,
   }
 }
 
+HT_EXPORT int ht_set_torrent_upload_blocked(void* session,
+                                            const char* info_hash,
+                                            int blocked) {
+  if (session == nullptr || info_hash == nullptr || info_hash[0] == '\0') {
+    return 0;
+  }
+  try {
+    lt::torrent_handle h = find_torrent(as_session(session), info_hash);
+    if (!h.is_valid()) return 0;
+    // 0 / -1 在 libtorrent 里都是「不限」，1 B/s 是可表达的最低上传限速。
+    h.set_upload_limit(blocked != 0 ? 1 : -1);
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
 HT_EXPORT char* ht_add_magnet(void* session, const char* magnet_uri,
                               const char* save_path, int sequential) {
   if (session == nullptr) return json_error("session is null");

@@ -26,7 +26,7 @@ Future<VideoProbeFacts> probeBlurayPlaylistFacts(String playlistPath) async {
   final File file = File(playlistPath);
   final Uint8List bytes;
   try {
-    if (!file.existsSync()) return VideoProbeFacts.unavailable;
+    if (!await file.exists()) return VideoProbeFacts.unavailable;
     bytes = await file.readAsBytes();
   } on FileSystemException {
     return VideoProbeFacts.unavailable;

@@ -6,12 +6,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/audio_energy_probe.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 
+import '../../helpers/unified_ffmpeg.dart';
+
 /// 字幕波形对轴全平台化：逐帧 RMS 走 `ametadata` 的 `file=` 文件通道，不再依赖 ffmpeg
 /// 日志回传。移动端 ffmpeg-kit 的 `getOutput` 要把逐帧日志跨平台通道异步搬回来，拿到的
 /// 输出不全或为空——波形对轴因此只在桌面可用。这里钉三件事：
 /// 1. 转义函数经 ffmpeg 两层 `av_get_token` 解析后原样还原任意路径；
 /// 2. 后端**不回任何日志**（ffmpeg-kit 的失败形态）时包络照样从文件拿到；
-/// 3. 真 ffmpeg（随包 ffmpeg-min / FUSHI_FFMPEG / PATH）在含逗号、分号、方括号、单引号、
+/// 3. 真 ffmpeg（随包统一 FFmpeg / FUSHI_FFMPEG / PATH）在含逗号、分号、方括号、单引号、
 ///    空格、中文的临时目录下真能把逐帧行写进文件（无 ffmpeg 时跳过）。
 
 /// 复刻 libavutil `av_get_token` 的反转义语义（不带终止符集，整串一个 token）：
@@ -90,8 +92,9 @@ Uint8List _wav(List<(double, double)> segments) {
   for (final (double seconds, double amp) in segments) {
     final int n = (seconds * rate).round();
     for (int i = 0; i < n; i++) {
-      samples
-          .add((math.sin(2 * math.pi * 440 * i / rate) * amp * 32767).round());
+      samples.add(
+        (math.sin(2 * math.pi * 440 * i / rate) * amp * 32767).round(),
+      );
     }
   }
   final ByteData b = ByteData(44 + samples.length * 2);
@@ -120,22 +123,8 @@ Uint8List _wav(List<(double, double)> segments) {
   return b.buffer.asUint8List();
 }
 
-/// 找一个真 ffmpeg：FUSHI_FFMPEG > 仓库随包 ffmpeg-min（Windows / macOS）> PATH。
-String? _realFfmpeg() {
-  final String? override = Platform.environment['FUSHI_FFMPEG'];
-  if (override != null && override.isNotEmpty) return override;
-  final String? bundled = Platform.isWindows
-      ? '../third_party/ffmpeg-min/windows/ffmpeg.exe'
-      : (Platform.isMacOS ? '../third_party/ffmpeg-min/macos/ffmpeg' : null);
-  if (bundled != null && File(bundled).existsSync()) {
-    return File(bundled).absolute.path;
-  }
-  try {
-    final ProcessResult r = Process.runSync('ffmpeg', <String>['-version']);
-    if (r.exitCode == 0) return 'ffmpeg';
-  } catch (_) {}
-  return null;
-}
+/// 找一个真 ffmpeg：FUSHI_FFMPEG > 随包统一 FFmpeg（Windows / macOS）> PATH。
+String? _realFfmpeg() => resolveUnifiedFfmpegForTests()?.ffmpeg;
 
 /// 按固定可执行文件跑的桌面 CLI 后端（不走进程级单例解析，免得依赖测试进程旁有无捆绑）。
 class _FixedCliBackend implements FfmpegBackend {
@@ -193,8 +182,9 @@ void main() {
 
   group('buildFfmpegPcmEnvelopeArgs metadataFilePath', () {
     test('appends escaped file= to ametadata only when a path is given', () {
-      final List<String> without =
-          buildFfmpegPcmEnvelopeArgs(inputPath: '/tmp/v.mkv');
+      final List<String> without = buildFfmpegPcmEnvelopeArgs(
+        inputPath: '/tmp/v.mkv',
+      );
       expect(_metadataFileArg(without), isNull);
 
       final List<String> withFile = buildFfmpegPcmEnvelopeArgs(
@@ -204,14 +194,18 @@ void main() {
       final String graph = withFile[withFile.indexOf('-af') + 1];
       expect(
         graph,
-        startsWith('aresample=8000,asetnsamples=n=800:p=0,'
-            'astats=metadata=1:reset=1:'
-            'measure_perchannel=none:measure_overall=RMS_level,'
-            'ametadata=print:key=lavfi.astats.Overall.RMS_level:file='),
+        startsWith(
+          'aresample=8000,asetnsamples=n=800:p=0,'
+          'astats=metadata=1:reset=1:'
+          'measure_perchannel=none:measure_overall=RMS_level,'
+          'ametadata=print:key=lavfi.astats.Overall.RMS_level:file=',
+        ),
       );
       expect(graph, endsWith(',asetnsamples=n=48000:p=0'));
-      expect(_decodeFilterOptionValue(_metadataFileArg(withFile)!),
-          "/tmp/a b,c/rms'.txt");
+      expect(
+        _decodeFilterOptionValue(_metadataFileArg(withFile)!),
+        "/tmp/a b,c/rms'.txt",
+      );
     });
   });
 
@@ -222,43 +216,48 @@ void main() {
       if (tmp.existsSync()) tmp.deleteSync(recursive: true);
     });
 
-    test('reads per-frame RMS from file when the backend returns no logs',
-        () async {
-      final File input = File('${tmp.path}/v.mkv')..writeAsBytesSync(<int>[0]);
-      final _FileOnlyBackend backend = _FileOnlyBackend(
-        'frame:0    pts:0       pts_time:0\n'
-        'lavfi.astats.Overall.RMS_level=-30.5\n'
-        'frame:1    pts:160     pts_time:0.02\n'
-        'lavfi.astats.Overall.RMS_level=-inf\n'
-        'frame:2    pts:320     pts_time:0.04\n'
-        'lavfi.astats.Overall.RMS_level=-12.25\n',
-      );
-      setFfmpegBackendForTesting(backend);
+    test(
+      'reads per-frame RMS from file when the backend returns no logs',
+      () async {
+        final File input = File('${tmp.path}/v.mkv')
+          ..writeAsBytesSync(<int>[0]);
+        final _FileOnlyBackend backend = _FileOnlyBackend(
+          'frame:0    pts:0       pts_time:0\n'
+          'lavfi.astats.Overall.RMS_level=-30.5\n'
+          'frame:1    pts:160     pts_time:0.02\n'
+          'lavfi.astats.Overall.RMS_level=-inf\n'
+          'frame:2    pts:320     pts_time:0.04\n'
+          'lavfi.astats.Overall.RMS_level=-12.25\n',
+        );
+        setFfmpegBackendForTesting(backend);
 
-      final List<double> env = await extractAudioEnergyEnvelope(
-        videoPath: input.path,
-        windowMs: kSubtitleWaveformWindowMs,
-      );
+        final List<double> env = await extractAudioEnergyEnvelope(
+          videoPath: input.path,
+          windowMs: kSubtitleWaveformWindowMs,
+        );
 
-      expect(env, <double>[-30.5, -120.0, -12.25]);
-      // 临时文件读完即删，不在缓存目录留垃圾。
-      expect(backend.decodedPath, isNotNull);
-      expect(File(backend.decodedPath!).existsSync(), isFalse);
-      expect(File(backend.decodedPath!).parent.existsSync(), isFalse);
-    });
+        expect(env, <double>[-30.5, -120.0, -12.25]);
+        // 临时文件读完即删，不在缓存目录留垃圾。
+        expect(backend.decodedPath, isNotNull);
+        expect(File(backend.decodedPath!).existsSync(), isFalse);
+        expect(File(backend.decodedPath!).parent.existsSync(), isFalse);
+      },
+    );
   });
 
   group('extractAudioEnergyEnvelope real ffmpeg', () {
     final String? ffmpeg = _realFfmpeg();
 
     test('writes per-frame RMS to a file under a hostile path', () async {
-      final Directory tmp =
-          Directory.systemTemp.createTempSync("energy a b,c;[x]'q 字");
+      final Directory tmp = Directory.systemTemp.createTempSync(
+        "energy a b,c;[x]'q 字",
+      );
       try {
         // 1s 静音 + 1s 响 + 1s 静音：20ms 窗口 → ~150 帧，中段明显更响。
         final File wav = File('${tmp.path}${Platform.pathSeparator}in.wav')
           ..writeAsBytesSync(
-              _wav(<(double, double)>[(1.0, 0.0), (1.0, 0.5), (1.0, 0.0)]));
+            _wav(<(double, double)>[(1.0, 0.0), (1.0, 0.5), (1.0, 0.0)]),
+          );
         final _FixedCliBackend backend = _FixedCliBackend(ffmpeg!);
         setFfmpegBackendForTesting(backend);
 
@@ -267,14 +266,44 @@ void main() {
           windowMs: kSubtitleWaveformWindowMs,
         );
 
-        expect(env.length, inInclusiveRange(140, 160),
-            reason: backend.lastOutput);
+        expect(
+          env.length,
+          inInclusiveRange(140, 160),
+          reason: backend.lastOutput,
+        );
         // 数据确实来自文件通道：stderr 里没有逐帧行。
         expect(parseAudioRmsEnvelopeFromFfmpegLog(backend.lastOutput), isEmpty);
         final double loud = env.sublist(60, 90).reduce(math.max);
         final double quiet = env.sublist(5, 40).reduce(math.max);
         expect(loud, greaterThan(-20.0));
         expect(quiet, lessThan(-60.0));
+      } finally {
+        tmp.deleteSync(recursive: true);
+      }
+    }, skip: ffmpeg == null ? 'no ffmpeg available' : false);
+
+    // 波形面板把整条包络均匀铺在 [0, limitMs) 上：包络必须恰好覆盖上界。`-t` 作输出
+    // 选项时被末尾 6s 大帧 asetnsamples 拖过上界（实测 10s 上界抽出 900 帧 = 18s，
+    // 20 分钟上界抽出 1212s），整条波形被压缩、与字幕线 / 播放头错开。
+    test('limitMs bounds the envelope to exactly the probe window', () async {
+      final Directory tmp = Directory.systemTemp.createTempSync('energy_limit');
+      try {
+        final File wav = File('${tmp.path}${Platform.pathSeparator}in.wav')
+          ..writeAsBytesSync(_wav(<(double, double)>[(20.0, 0.5)]));
+        final _FixedCliBackend backend = _FixedCliBackend(ffmpeg!);
+        setFfmpegBackendForTesting(backend);
+
+        final List<double> env = await extractAudioEnergyEnvelope(
+          videoPath: wav.path,
+          windowMs: kSubtitleWaveformWindowMs,
+          limitMs: 10000,
+        );
+
+        expect(
+          env.length,
+          inInclusiveRange(499, 501),
+          reason: backend.lastOutput,
+        );
       } finally {
         tmp.deleteSync(recursive: true);
       }

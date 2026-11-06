@@ -1,21 +1,22 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/quick_action.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
 
 /// An enhancement used as a shortcut for adding text items to the Stash.
 class AddToStashAction extends QuickAction {
   /// Initialise this enhancement with the hardset parameters.
   AddToStashAction()
-      : super(
-          uniqueKey: key,
-          label: 'Add To Stash',
-          description:
-              'Quickly save the headword of a dictionary entry to the Stash.',
-          icon: Icons.bookmark_add_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Add To Stash',
+        description:
+            'Quickly save the headword of a dictionary entry to the Stash.',
+        icon: Icons.bookmark_add_outlined,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].

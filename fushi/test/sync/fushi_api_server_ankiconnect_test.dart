@@ -4,11 +4,14 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
+import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import '../srs/srs_test_support.dart' show openSrsTestStorage;
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 
 class _NoLookup implements FushiRemoteLookupService {
@@ -62,8 +65,10 @@ void main() {
 
   setUp(() async {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
+    final SrsStorage srs = await openSrsTestStorage();
     final SrsDbStore store = await SrsDbStore.open(
-      db: db,
+      db: srs.db,
+      core: srs.core,
       profileUid: '01928c3e-0000-7000-8000-0000000000ff',
       deviceId: 'dev',
     );
@@ -85,8 +90,9 @@ void main() {
       server = FushiApiServer(
         port: 0,
         lookupService: _NoLookup(),
-        tokenizer: (String t) => <String>[t],
-        readingResolver: (String w) => '',
+        tokenizer: (List<String> ts) async => <List<TokenizedSegment>>[
+          for (final String t in ts) <TokenizedSegment>[(text: t, reading: '')],
+        ],
         apiKey: apiKey,
         ankiConnectEndpoint: ac,
       );

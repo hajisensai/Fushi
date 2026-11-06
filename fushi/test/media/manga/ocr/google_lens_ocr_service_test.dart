@@ -42,25 +42,33 @@ void main() {
     if (root.existsSync()) root.deleteSync(recursive: true);
   });
 
-  test('serial page OCR writes engine metadata and character regions',
-      () async {
-    final _FakeTransport transport = _FakeTransport(makeGoogleLensFixture());
-    final GoogleLensMangaOcrService service =
-        GoogleLensMangaOcrService(transport: transport);
-    final List<MangaOcrVolumeEvent> events = await service
-        .ocrFolder(imageDirPath: root.path, onlyMissing: false, language: 'ja')
-        .toList();
+  test(
+    'serial page OCR writes engine metadata and character regions',
+    () async {
+      final _FakeTransport transport = _FakeTransport(makeGoogleLensFixture());
+      final GoogleLensMangaOcrService service = GoogleLensMangaOcrService(
+        transport: transport,
+      );
+      final List<MangaOcrVolumeEvent> events = await service
+          .ocrFolder(
+            imageDirPath: root.path,
+            onlyMissing: false,
+            language: 'ja',
+          )
+          .toList();
 
-    expect(transport.requests, 2);
-    expect(events.last.finished, isTrue);
-    final MokuroPayload payload =
-        parseMangaJson(File(events.last.mangaJsonPath!).readAsStringSync());
-    expect(payload.ocr?.engine, 'google_lens');
-    expect(payload.ocr?.engineSignature, googleLensEngineSignature('ja'));
-    expect(payload.images, hasLength(2));
-    expect(payload.images.first.blocks.single.lines.single, '日本');
-    expect(payload.images.first.blocks.single.regions, hasLength(2));
-  });
+      expect(transport.requests, 2);
+      expect(events.last.finished, isTrue);
+      final MokuroPayload payload = parseMangaJson(
+        File(events.last.mangaJsonPath!).readAsStringSync(),
+      );
+      expect(payload.ocr?.engine, 'google_lens');
+      expect(payload.ocr?.engineSignature, googleLensEngineSignature('ja'));
+      expect(payload.images, hasLength(2));
+      expect(payload.images.first.blocks.single.lines.single, '日本');
+      expect(payload.images.first.blocks.single.regions, hasLength(2));
+    },
+  );
 
   test('page cache resumes without another network request', () async {
     final _FakeTransport first = _FakeTransport(makeGoogleLensFixture());
@@ -76,41 +84,108 @@ void main() {
     expect(second.requests, 0);
   });
 
-  test('legacy cache is unflipped and restored in visual reading order',
-      () async {
+  test(
+    'legacy cache is unflipped and restored in visual reading order',
+    () async {
+      final List<MangaOcrPageFile> pages = enumerateMangaPages(root);
+      final Directory directory = Directory(
+        p.join(
+          root.path,
+          kMangaOcrOutDirName,
+          kMangaOcrPagesCacheDirName,
+          googleLensEngineSignature('ja'),
+        ),
+      );
+      final GoogleLensPageCache writer = GoogleLensPageCache(directory);
+      await writer.write(
+        0,
+        pages[0],
+        MokuroImage(
+          url: pages[0].relativeUrl,
+          size: const MokuroSize(101, 200),
+          blocks: const <MokuroBlock>[
+            MokuroBlock(
+              rectangle: MokuroRect.fromLTWH(10, 20, 60, 80),
+              isVertical: false,
+              fontSize: 10,
+              zIndex: 0,
+              lines: <String>['下上'],
+              regions: <MangaOcrTextRegion>[
+                MangaOcrTextRegion(
+                  rectangle: MokuroRect.fromLTWH(10, 20, 10, 10),
+                  utf16Start: 0,
+                  utf16End: 1,
+                ),
+                MangaOcrTextRegion(
+                  rectangle: MokuroRect.fromLTWH(10, 80, 10, 10),
+                  utf16Start: 1,
+                  utf16End: 2,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      final File cacheFile = File(p.join(directory.path, '000000.json'));
+      final Map<String, dynamic> legacy =
+          jsonDecode(await cacheFile.readAsString()) as Map<String, dynamic>;
+      legacy.remove('geometry_version');
+      await cacheFile.writeAsString(jsonEncode(legacy), flush: true);
+
+      final MokuroImage restored = (await GoogleLensPageCache(
+        directory,
+      ).read(0, pages[0]))!;
+      expect(restored.blocks.single.lines.single, '上下');
+      expect(restored.blocks.single.rectangle.top, 100);
+      expect(
+        restored.blocks.single.regions!.first.rectangle.top,
+        lessThan(restored.blocks.single.regions!.last.rectangle.top),
+      );
+    },
+  );
+
+  // BUG-4179（反馈 vXYKPudf7U）：旧缓存按区域重拼句子时，区域不覆盖的词间空格不能丢，
+  // 换行处的拉丁文词界也要补回（旧缓存行与行直接相接：`SOLONG`）。
+  test('legacy English cache keeps word spaces when regrouped', () async {
     final List<MangaOcrPageFile> pages = enumerateMangaPages(root);
-    final Directory directory = Directory(p.join(
-      root.path,
-      kMangaOcrOutDirName,
-      kMangaOcrPagesCacheDirName,
-      googleLensEngineSignature('ja'),
-    ));
-    final GoogleLensPageCache writer = GoogleLensPageCache(directory);
-    await writer.write(
+    final Directory directory = Directory(
+      p.join(
+        root.path,
+        kMangaOcrOutDirName,
+        kMangaOcrPagesCacheDirName,
+        googleLensEngineSignature('en'),
+      ),
+    );
+    const String original = 'BEEN SOLONG';
+    // 旧缓存的 Y 是翻转的：第一行存在下方（top 80），第二行存在上方（top 20）。
+    final List<MangaOcrTextRegion> regions = <MangaOcrTextRegion>[
+      for (int i = 0; i < original.length; i++)
+        if (original[i] != ' ')
+          MangaOcrTextRegion(
+            rectangle: MokuroRect.fromLTWH(
+              10.0 + (i < 7 ? i : i - 7) * 10,
+              i < 7 ? 80 : 20,
+              10,
+              10,
+            ),
+            utf16Start: i,
+            utf16End: i + 1,
+          ),
+    ];
+    await GoogleLensPageCache(directory).write(
       0,
       pages[0],
       MokuroImage(
         url: pages[0].relativeUrl,
         size: const MokuroSize(101, 200),
-        blocks: const <MokuroBlock>[
+        blocks: <MokuroBlock>[
           MokuroBlock(
-            rectangle: MokuroRect.fromLTWH(10, 20, 60, 80),
+            rectangle: const MokuroRect.fromLTWH(10, 20, 80, 80),
             isVertical: false,
             fontSize: 10,
             zIndex: 0,
-            lines: <String>['下上'],
-            regions: <MangaOcrTextRegion>[
-              MangaOcrTextRegion(
-                rectangle: MokuroRect.fromLTWH(10, 20, 10, 10),
-                utf16Start: 0,
-                utf16End: 1,
-              ),
-              MangaOcrTextRegion(
-                rectangle: MokuroRect.fromLTWH(10, 80, 10, 10),
-                utf16Start: 1,
-                utf16End: 2,
-              ),
-            ],
+            lines: const <String>[original],
+            regions: regions,
           ),
         ],
       ),
@@ -121,20 +196,24 @@ void main() {
     legacy.remove('geometry_version');
     await cacheFile.writeAsString(jsonEncode(legacy), flush: true);
 
-    final MokuroImage restored =
-        (await GoogleLensPageCache(directory).read(0, pages[0]))!;
-    expect(restored.blocks.single.lines.single, '上下');
-    expect(restored.blocks.single.rectangle.top, 100);
+    final MokuroBlock restored = (await GoogleLensPageCache(
+      directory,
+    ).read(0, pages[0]))!.blocks.single;
+    final String sentence = restored.lines.single;
+    expect(sentence, 'BEEN SO LONG');
     expect(
-      restored.blocks.single.regions!.first.rectangle.top,
-      lessThan(restored.blocks.single.regions!.last.rectangle.top),
+      <String>[
+        for (final MangaOcrTextRegion r in restored.regions!)
+          sentence.substring(r.utf16Start, r.utf16End),
+      ].join(),
+      'BEENSOLONG',
     );
   });
 
   test('source change invalidates only that Lens page', () async {
     await GoogleLensMangaOcrService(
-      transport: _FakeTransport(makeGoogleLensFixture()),
-    )
+          transport: _FakeTransport(makeGoogleLensFixture()),
+        )
         .ocrFolder(imageDirPath: root.path, onlyMissing: false, language: 'ja')
         .drain<void>();
     await Future<void>.delayed(const Duration(milliseconds: 2));
@@ -164,64 +243,74 @@ void main() {
         )
         .toList();
     progress.addAll(
-      events.where((MangaOcrVolumeEvent e) => !e.finished).map(
-            (MangaOcrVolumeEvent e) => e.pagesDone,
-          ),
+      events
+          .where((MangaOcrVolumeEvent e) => !e.finished)
+          .map((MangaOcrVolumeEvent e) => e.pagesDone),
     );
     expect(progress, <int>[1, 2]);
   });
 
-  test('per-language cache dirs are independent and clearCache removes all',
-      () async {
-    final _FakeTransport ja = _FakeTransport(makeGoogleLensFixture());
-    final GoogleLensMangaOcrService service =
-        GoogleLensMangaOcrService(transport: ja);
-    await service
-        .ocrFolder(imageDirPath: root.path, onlyMissing: false, language: 'ja')
-        .drain<void>();
-    expect(ja.requests, 2);
+  test(
+    'per-language cache dirs are independent and clearCache removes all',
+    () async {
+      final _FakeTransport ja = _FakeTransport(makeGoogleLensFixture());
+      final GoogleLensMangaOcrService service = GoogleLensMangaOcrService(
+        transport: ja,
+      );
+      await service
+          .ocrFolder(
+            imageDirPath: root.path,
+            onlyMissing: false,
+            language: 'ja',
+          )
+          .drain<void>();
+      expect(ja.requests, 2);
 
-    // Same volume in another language must not reuse the ja page cache.
-    final _FakeTransport en = _FakeTransport(makeGoogleLensFixture());
-    final List<MangaOcrVolumeEvent> events =
-        await GoogleLensMangaOcrService(transport: en)
-            .ocrFolder(
-              imageDirPath: root.path,
-              onlyMissing: false,
-              language: 'en',
-            )
-            .toList();
-    expect(en.requests, 2);
-    final MokuroPayload payload =
-        parseMangaJson(File(events.last.mangaJsonPath!).readAsStringSync());
-    expect(payload.ocr?.engineSignature, googleLensEngineSignature('en'));
+      // Same volume in another language must not reuse the ja page cache.
+      final _FakeTransport en = _FakeTransport(makeGoogleLensFixture());
+      final List<MangaOcrVolumeEvent> events =
+          await GoogleLensMangaOcrService(transport: en)
+              .ocrFolder(
+                imageDirPath: root.path,
+                onlyMissing: false,
+                language: 'en',
+              )
+              .toList();
+      expect(en.requests, 2);
+      final MokuroPayload payload = parseMangaJson(
+        File(events.last.mangaJsonPath!).readAsStringSync(),
+      );
+      expect(payload.ocr?.engineSignature, googleLensEngineSignature('en'));
 
-    final Directory cacheRoot = Directory(p.join(
-      root.path,
-      kMangaOcrOutDirName,
-      kMangaOcrPagesCacheDirName,
-    ));
-    expect(
-      Directory(p.join(cacheRoot.path, googleLensEngineSignature('ja')))
-          .existsSync(),
-      isTrue,
-    );
-    expect(
-      Directory(p.join(cacheRoot.path, googleLensEngineSignature('en')))
-          .existsSync(),
-      isTrue,
-    );
+      final Directory cacheRoot = Directory(
+        p.join(root.path, kMangaOcrOutDirName, kMangaOcrPagesCacheDirName),
+      );
+      expect(
+        Directory(
+          p.join(cacheRoot.path, googleLensEngineSignature('ja')),
+        ).existsSync(),
+        isTrue,
+      );
+      expect(
+        Directory(
+          p.join(cacheRoot.path, googleLensEngineSignature('en')),
+        ).existsSync(),
+        isTrue,
+      );
 
-    await service.clearCache(root.path);
-    expect(
-      Directory(p.join(cacheRoot.path, googleLensEngineSignature('ja')))
-          .existsSync(),
-      isFalse,
-    );
-    expect(
-      Directory(p.join(cacheRoot.path, googleLensEngineSignature('en')))
-          .existsSync(),
-      isFalse,
-    );
-  });
+      await service.clearCache(root.path);
+      expect(
+        Directory(
+          p.join(cacheRoot.path, googleLensEngineSignature('ja')),
+        ).existsSync(),
+        isFalse,
+      );
+      expect(
+        Directory(
+          p.join(cacheRoot.path, googleLensEngineSignature('en')),
+        ).existsSync(),
+        isFalse,
+      );
+    },
+  );
 }

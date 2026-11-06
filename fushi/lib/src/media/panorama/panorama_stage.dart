@@ -1,0 +1,744 @@
+/// 媒体库全景的渲染舞台：每帧一次 `ffc_pano_frame`（布局 / 轨道 / 投影 / 远近样式全在
+/// Rust，封面是真正的 3D 平面），Flutter 只按返回的批次 `drawVertices`（每图集页一批三角网格）
+/// 并用片段着色器画背景。
+///
+/// 两种模式：
+/// - [FfcPanoMode.interactive]（全屏页）：开场是俯视的封面星系；拖拽转视角，双指 / 滚轮 /
+///   +- 拉近时星系连续收拢成球幕、直到站在球心，拉远再散回星系（滚轮 / 键盘是平滑的无极
+///   缩放，镜头逐帧追目标距离；捏合跟手）；[PanoramaStageController] 一键切换星系 / 球幕；
+///   点封面 → 转向并飞到眼前 → 书翻开 → 进阅读器，返回或 Esc 取消后镜头回到选中前的位置；
+///   方向键 / Enter 同样可操作。
+/// - [FfcPanoMode.cinematic]（分享用）：16 秒开场动画，最后锁定 [PanoramaStage.cinematicTarget]。
+///
+/// 动效开关：墨水屏 / 系统「减弱动态效果」下不跑 Ticker（只在输入时重算一帧），点封面直接打开。
+///
+/// 空闲停帧：可操作模式下 Rust 每帧报告场景是否仍在变化（`FfcPanoFrame.moving`：惯性、
+/// 环境动效、锁定）。静止且没有翻书 / 打开在进行时停掉 Ticker，首页闲置不再每帧出图；
+/// 输入、选中、回到可操作时再起。
+library;
+
+import 'dart:async';
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:flutter/gestures.dart'
+    show PointerScrollEvent, PointerSignalEvent;
+import 'package:flutter/scheduler.dart' show Ticker;
+import 'package:flutter/services.dart'
+    show KeyDownEvent, KeyRepeatEvent, LogicalKeyboardKey;
+import 'package:fushi_compute/fushi_compute.dart';
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
+import 'package:material_ui/material_ui.dart';
+
+import 'package:fushi/src/media/panorama/panorama_atlas.dart';
+import 'package:fushi/src/media/panorama/panorama_book_flip.dart';
+import 'package:fushi/src/media/panorama/panorama_library.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+
+/// 分享动画里封面停稳（交给翻书）的时刻，与 pano.rs `T_HANDOFF` 一致。
+const double kPanoramaHandoffSeconds = 13.5;
+
+/// 分享动画总长（秒）。
+const double kPanoramaCinematicSeconds = 16;
+
+/// 翻书时长：交接后到进阅读器，合起来正好 16 秒。
+const Duration kPanoramaFlipDuration = Duration(milliseconds: 2500);
+
+/// 飞到眼前的封面高度占视口比例（与 pano.rs `TARGET_SCREEN_HEIGHT` 一致，高清图按它预渲染）。
+const double kPanoramaTargetScreenHeight = 0.62;
+
+/// 已建好的全景资源（数据 + 图集），首页面板与全屏页共用一份。
+class PanoramaAssets {
+  PanoramaAssets({
+    required this.library,
+    required this.atlas,
+    this.db,
+    this.bookFont,
+  });
+
+  final PanoramaLibrary library;
+  final PanoramaAtlas atlas;
+
+  /// 翻开后正文页的字体（小说正文字体那一套）；null = 系统默认。
+  final PanoramaFontSet? bookFont;
+
+  /// 取翻开正文用；null（测试）时翻开后显示书名。
+  final FushiDatabase? db;
+
+  /// 分享动画默认锁定的作品，见 [panoramaDefaultTarget]。
+  int get defaultTarget => panoramaDefaultTarget(library);
+
+  void dispose() => atlas.dispose();
+}
+
+/// 分享动画默认锁定的作品：最近在读的书 → 任意书 → 最近打开的作品；空库为 -1。
+int panoramaDefaultTarget(PanoramaLibrary library) {
+  final List<PanoramaWork> works = library.works;
+  int best = -1;
+  for (int i = 0; i < works.length; i++) {
+    if (!works[i].isBook) continue;
+    if (best < 0 || works[i].lastOpenedAt > works[best].lastOpenedAt) {
+      best = i;
+    }
+  }
+  if (best >= 0) return best;
+  for (int i = 0; i < works.length; i++) {
+    if (best < 0 || works[i].lastOpenedAt > works[best].lastOpenedAt) {
+      best = i;
+    }
+  }
+  return best;
+}
+
+/// 舞台外的控件（顶栏「切换阶段」钮）读当前阶段、发切换命令。
+class PanoramaStageController extends ChangeNotifier {
+  bool _sphere = false;
+  void Function(bool sphere)? _setStage;
+
+  /// 当前是球幕（镜头已收拢到球心一侧）；false = 星系。
+  bool get sphere => _sphere;
+
+  /// 切到另一阶段（星系 ↔ 球幕），平滑过渡；舞台未挂载时什么也不做。
+  void toggleStage() => _setStage?.call(!_sphere);
+
+  void _report(bool sphere) {
+    if (sphere == _sphere) return;
+    _sphere = sphere;
+    notifyListeners();
+  }
+}
+
+class PanoramaStage extends StatefulWidget {
+  const PanoramaStage({
+    super.key,
+    required this.assets,
+    required this.onOpen,
+    this.mode = FfcPanoMode.interactive,
+    this.cinematicTarget = -1,
+    this.onCinematicDone,
+    this.controller,
+    this.idleDrift = 0,
+    this.autofocus = false,
+  });
+
+  final PanoramaAssets assets;
+
+  /// 打开作品（书 → 阅读器；其他域各自的打开路径）。返回后舞台回到可操作状态，
+  /// 镜头回到选中前的位置。
+  final Future<void> Function(PanoramaWork work) onOpen;
+  final FfcPanoMode mode;
+  final int cinematicTarget;
+
+  /// 分享动画结束（已打开作品或无可锁定作品）。
+  final VoidCallback? onCinematicDone;
+
+  /// 外部切换阶段 / 读当前阶段（可操作模式）。
+  final PanoramaStageController? controller;
+
+  /// 空闲时环境动效保留的最低走速（0..1）：0 = 空闲收敛到停（停帧省电）；全屏页给正值，
+  /// 公转的封面与环绕的词一直慢慢转，不会定住。
+  final double idleDrift;
+
+  /// 打开即取键盘焦点（全屏页：方向键 / +- / Enter / Esc 直接可用）。
+  final bool autofocus;
+
+  @override
+  State<PanoramaStage> createState() => _PanoramaStageState();
+}
+
+class _PanoramaStageState extends State<PanoramaStage>
+    with SingleTickerProviderStateMixin {
+  static Future<ui.FragmentProgram>? _program;
+
+  late final FfcPanorama _pano;
+  late final Ticker _ticker;
+  final _FrameNotifier _frames = _FrameNotifier();
+  ui.FragmentShader? _shader;
+  Size _size = Size.zero;
+  Duration _last = Duration.zero;
+  double _t = 0;
+
+  /// Ticker 每次（重新）启动时 [_t] 的起点：空闲停帧后再起，舞台时钟（锁定的 t0、背景
+  /// 着色器时间）接着走，不因 Ticker 的 elapsed 归零而倒退。
+  double _tBase = 0;
+  bool _motion = true;
+  double _lastScale = 1;
+
+  /// 锁定中的作品与它的高清带框封面 / 正文片段。
+  int _target = -1;
+  ui.Image? _hiRes;
+  Future<String?>? _excerpt;
+  bool _flipping = false;
+  Rect? _handoffRect;
+  bool _opening = false;
+  bool _cinematicEnded = false;
+
+  /// 已备好高清封面 / 正文的作品下标（-1 = 还没备）。
+  int _preparedFor = -1;
+
+  /// 「切换阶段」进行中的目标（true = 球幕）：过渡途中不按半程回报，免得按钮来回跳；
+  /// 到位或被手动缩放接管后清掉。
+  bool? _stageGoal;
+
+  @override
+  void initState() {
+    super.initState();
+    _pano = FfcPanorama.create(widget.assets.atlas.scene);
+    _ticker = createTicker(_onTick);
+    _program ??= ui.FragmentProgram.fromAsset('shaders/panorama_backdrop.frag');
+    _program!.then(
+      (ui.FragmentProgram p) {
+        if (!mounted) return;
+        _shader = p.fragmentShader();
+        _frames.ping();
+      },
+      onError: (Object e, StackTrace s) {
+        ErrorLogService.instance.log('PanoramaStage.shader', e, s);
+      },
+    );
+    _enterMode();
+    _pano.input(FfcPanoInput.idleDrift, widget.idleDrift.clamp(0, 1));
+    widget.controller?._setStage = _setStage;
+  }
+
+  @override
+  void didUpdateWidget(PanoramaStage old) {
+    super.didUpdateWidget(old);
+    if (old.controller != widget.controller) {
+      if (old.controller?._setStage == _setStage) {
+        old.controller!._setStage = null;
+      }
+      widget.controller?._setStage = _setStage;
+    }
+    if (old.idleDrift != widget.idleDrift) {
+      _pano.input(FfcPanoInput.idleDrift, widget.idleDrift.clamp(0, 1));
+      _wake();
+    }
+  }
+
+  void _enterMode() {
+    _pano.setMode(widget.mode, target: widget.cinematicTarget);
+    _t = 0;
+    _last = Duration.zero;
+    _target = widget.mode == FfcPanoMode.cinematic
+        ? widget.cinematicTarget
+        : -1;
+    // 高清封面按视口高度出图：等第一帧拿到尺寸再备（见 [_compute]）。
+    _preparedFor = -1;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _motion = fushiMotionEnabled(context);
+    if (_motion) {
+      _wake();
+    } else {
+      if (_ticker.isActive) _ticker.stop();
+      // 不跑动画：交互模式停在球幕静帧（分享动画由入口直接跳过，不会走到这里）。
+      _t = 0;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _renderOnce());
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.controller?._setStage == _setStage) {
+      widget.controller!._setStage = null;
+    }
+    _ticker.dispose();
+    _pano.dispose();
+    _shader?.dispose();
+    _hiRes?.dispose();
+    _frames.dispose();
+    super.dispose();
+  }
+
+  void _onTick(Duration elapsed) {
+    final double dt = (elapsed - _last).inMicroseconds / 1e6;
+    _last = elapsed;
+    _t = _tBase + elapsed.inMicroseconds / 1e6;
+    _compute(dt);
+  }
+
+  /// 场景有变化可能（输入、选中、回到可操作）时重启帧循环；已在跑或不放动效时什么也不做。
+  void _wake() {
+    if (!_motion || _ticker.isActive) return;
+    _tBase = _t;
+    _last = Duration.zero;
+    _ticker.start();
+  }
+
+  void _renderOnce() {
+    if (!mounted) return;
+    _compute(0);
+  }
+
+  void _compute(double dt) {
+    if (_size.isEmpty) return;
+    if (_target >= 0 && _preparedFor != _target) _prepareTarget(_target);
+    final FfcPanoFrame f = _pano.frame(
+      t: _t,
+      dt: dt,
+      width: _size.width,
+      height: _size.height,
+    );
+    _frames.update(f, _size);
+    _reportStage(f.info[FfcPanoInfo.morph]);
+    // 空闲停帧：Rust 报告场景已静止（惯性、环境动效收敛到零，没有锁定），且这边也没有
+    // 翻书 / 打开在进行——再出帧画面不变，停掉 Ticker，等输入经 [_wake] 再起。
+    if (_ticker.isActive &&
+        !f.moving &&
+        _target < 0 &&
+        !_flipping &&
+        !_opening) {
+      _ticker.stop();
+    }
+    // 分享动画没有可锁定的作品（-1）：放满 16 秒后自行收尾。
+    if (widget.mode == FfcPanoMode.cinematic &&
+        _target < 0 &&
+        !_cinematicEnded &&
+        _t >= kPanoramaCinematicSeconds) {
+      _cinematicEnded = true;
+      widget.onCinematicDone?.call();
+    }
+    if (_target >= 0 && f.handoff && !_flipping && !_opening) {
+      _handoff(f);
+    }
+  }
+
+  void _reportStage(double morph) {
+    final PanoramaStageController? c = widget.controller;
+    if (c == null || widget.mode != FfcPanoMode.interactive) return;
+    final bool? goal = _stageGoal;
+    if (goal == null) {
+      c._report(morph >= 0.5);
+    } else if (goal ? morph >= 1 : morph <= 0) {
+      _stageGoal = null;
+      c._report(goal);
+    }
+  }
+
+  /// 切换阶段：镜头平滑推到球心（球幕）或退回俯视远景（星系）；不放动效时一步到位。
+  void _setStage(bool sphere) {
+    if (widget.mode != FfcPanoMode.interactive || _target >= 0) return;
+    _input(FfcPanoInput.stage, sphere ? 1 : 0);
+    _stageGoal = sphere;
+    widget.controller?._report(sphere);
+  }
+
+  /// 锁定开始时就备好高清封面与正文，交接那一帧已就绪。
+  void _prepareTarget(int index) {
+    _preparedFor = index;
+    final PanoramaWork work = widget.assets.library.works[index];
+    final double aspect = widget.assets.atlas.aspects[index];
+    final double h = math.max(1, _size.height) * kPanoramaTargetScreenHeight;
+    final double dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 2;
+    unawaited(
+      renderPanoramaHiResCover(
+        work,
+        cover: Size(h * aspect, h),
+        hue: widget.assets.atlas.hues[index],
+        pixelRatio: dpr,
+      ).then((ui.Image img) {
+        if (!mounted || _target != index) {
+          img.dispose();
+          return;
+        }
+        _hiRes?.dispose();
+        _hiRes = img;
+        _frames.hiRes = img;
+      }),
+    );
+    final FushiDatabase? db = widget.assets.db;
+    // 解析失败（解压目录被删 / 读盘出错）时记日志并回落到书名；不能把出错的 future
+    // 留给翻书层——那边只 then，错误会变成未处理的异步异常。
+    _excerpt = work.isBook && db != null
+        ? loadPanoramaBookExcerpt(db: db, work: work).catchError((
+            Object e,
+            StackTrace s,
+          ) {
+            ErrorLogService.instance.log('PanoramaStage.excerpt', e, s);
+            return null;
+          })
+        : null;
+  }
+
+  void _handoff(FfcPanoFrame f) {
+    final PanoramaWork work = widget.assets.library.works[_target];
+    final Float32List i = f.info;
+    final Rect rect = Rect.fromLTWH(
+      i[FfcPanoInfo.targetRect],
+      i[FfcPanoInfo.targetRect + 1],
+      i[FfcPanoInfo.targetRect + 2],
+      i[FfcPanoInfo.targetRect + 3],
+    );
+    if (work.isBook && _motion) {
+      setState(() {
+        _flipping = true;
+        _handoffRect = rect;
+      });
+      _frames.hideTarget = true;
+    } else {
+      unawaited(_open(work));
+    }
+  }
+
+  Future<void> _open(PanoramaWork work) async {
+    if (_opening) return;
+    _opening = true;
+    try {
+      await widget.onOpen(work);
+    } catch (e, s) {
+      ErrorLogService.instance.log('PanoramaStage.open', e, s);
+    } finally {
+      _opening = false;
+    }
+    if (!mounted) return;
+    if (widget.mode == FfcPanoMode.cinematic) {
+      widget.onCinematicDone?.call();
+    }
+    _resetToInteractive();
+  }
+
+  void _resetToInteractive() {
+    setState(() {
+      _flipping = false;
+      _handoffRect = null;
+    });
+    _target = -1;
+    _preparedFor = -1;
+    // setMode 会把镜头目标收到当前位置，进行中的阶段切换到不了终点；交还给按实际 morph 回报。
+    _stageGoal = null;
+    _frames
+      ..hideTarget = false
+      ..hiRes = null;
+    _hiRes?.dispose();
+    _hiRes = null;
+    _excerpt = null;
+    _pano.setMode(FfcPanoMode.interactive);
+    _renderOnce();
+    _wake();
+  }
+
+  void _select(int index) {
+    if (index < 0 || _target >= 0 || widget.mode != FfcPanoMode.interactive) {
+      return;
+    }
+    final PanoramaWork work = widget.assets.library.works[index];
+    // 锁定期间 Rust 不推进镜头，进行中的阶段切换不会到位；改按实际 morph 回报。
+    _stageGoal = null;
+    if (!_motion) {
+      unawaited(_open(work));
+      return;
+    }
+    _target = index;
+    _prepareTarget(index);
+    _pano.select(index, _t);
+    _wake();
+  }
+
+  void _input(FfcPanoInput kind, double a, [double b = 0]) {
+    if (_target >= 0) return;
+    if (kind == FfcPanoInput.zoom || kind == FfcPanoInput.stage) {
+      // 手动缩放接管正在进行的阶段切换；不放动效时没有逐帧逼近，缩放 / 切换一步到位。
+      if (kind == FfcPanoInput.zoom) _stageGoal = null;
+      if (!_motion) b = 1;
+    }
+    _pano.input(kind, a, b);
+    if (_motion) {
+      _wake();
+    } else {
+      _renderOnce();
+    }
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    const double step = 60;
+    final LogicalKeyboardKey k = event.logicalKey;
+    if (k == LogicalKeyboardKey.escape) {
+      // 飞入 / 翻书途中 Esc：取消锁定，镜头回到选中前的位置。没有锁定（或作品已经在
+      // 打开）时不接，交给路由返回。
+      if (_target < 0 ||
+          _opening ||
+          widget.mode != FfcPanoMode.interactive ||
+          event is! KeyDownEvent) {
+        return KeyEventResult.ignored;
+      }
+      _resetToInteractive();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.arrowLeft) {
+      _input(FfcPanoInput.drag, step, 0);
+    } else if (k == LogicalKeyboardKey.arrowRight) {
+      _input(FfcPanoInput.drag, -step, 0);
+    } else if (k == LogicalKeyboardKey.arrowUp) {
+      _input(FfcPanoInput.drag, 0, step);
+    } else if (k == LogicalKeyboardKey.arrowDown) {
+      _input(FfcPanoInput.drag, 0, -step);
+    } else if (k == LogicalKeyboardKey.equal ||
+        k == LogicalKeyboardKey.numpadAdd) {
+      _input(FfcPanoInput.zoom, 1.25);
+    } else if (k == LogicalKeyboardKey.minus ||
+        k == LogicalKeyboardKey.numpadSubtract) {
+      _input(FfcPanoInput.zoom, 0.8);
+    } else if (k == LogicalKeyboardKey.enter ||
+        k == LogicalKeyboardKey.numpadEnter) {
+      _select(_pano.pick(_size.width / 2, _size.height / 2));
+    } else {
+      return KeyEventResult.ignored;
+    }
+    _input(FfcPanoInput.release, 0, 0);
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool interactive = widget.mode == FfcPanoMode.interactive;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        final Size size = c.biggest;
+        if (size != _size) {
+          _size = size;
+          WidgetsBinding.instance.addPostFrameCallback((_) => _renderOnce());
+        }
+        Widget canvas = CustomPaint(
+          size: size,
+          painter: _PanoramaPainter(
+            frames: _frames,
+            pages: widget.assets.atlas.pages,
+            atlasRects: widget.assets.atlas.scene.cellRects,
+            atlasCellOfWork: widget.assets.atlas.scene.workCells,
+            atlasPages: widget.assets.atlas.scene.cellPages,
+            target: () => _target,
+            shader: () => _shader,
+            time: () => _t,
+          ),
+        );
+        if (interactive) {
+          canvas = Listener(
+            onPointerSignal: (PointerSignalEvent e) {
+              if (e is PointerScrollEvent) {
+                _input(
+                  FfcPanoInput.zoom,
+                  math.pow(1.0015, -e.scrollDelta.dy).toDouble(),
+                );
+              }
+            },
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onScaleStart: (ScaleStartDetails d) {
+                _lastScale = 1;
+                _input(FfcPanoInput.hold, 0);
+              },
+              onScaleUpdate: (ScaleUpdateDetails d) {
+                if (d.pointerCount >= 2 && d.scale != _lastScale) {
+                  // 捏合跟手：立即生效，不走平滑。
+                  _input(FfcPanoInput.zoom, d.scale / _lastScale, 1);
+                  _lastScale = d.scale;
+                }
+                _input(
+                  FfcPanoInput.drag,
+                  d.focalPointDelta.dx,
+                  d.focalPointDelta.dy,
+                );
+              },
+              onScaleEnd: (ScaleEndDetails d) => _input(
+                FfcPanoInput.release,
+                d.velocity.pixelsPerSecond.dx,
+                d.velocity.pixelsPerSecond.dy,
+              ),
+              onTapUp: (TapUpDetails d) =>
+                  _select(_pano.pick(d.localPosition.dx, d.localPosition.dy)),
+              child: canvas,
+            ),
+          );
+          canvas = Focus(
+            autofocus: widget.autofocus,
+            onKeyEvent: _onKey,
+            child: canvas,
+          );
+        }
+        return Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            canvas,
+            if (_flipping && _handoffRect != null && _target >= 0)
+              PanoramaBookFlip(
+                key: ValueKey<int>(_target),
+                coverRect: _handoffRect!,
+                framedCover: _hiRes,
+                fallbackTitle: widget.assets.library.works[_target].title,
+                accent: panoramaAccent(widget.assets.atlas.hues[_target]),
+                font: widget.assets.bookFont,
+                excerpt: _excerpt,
+                duration: kPanoramaFlipDuration,
+                onOpened: () => _open(widget.assets.library.works[_target]),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// 每帧数据的通知器（Ticker → 重绘，不走 setState）。
+class _FrameNotifier extends ChangeNotifier {
+  FfcPanoFrame? frame;
+  Size size = Size.zero;
+  ui.Image? hiRes;
+  bool hideTarget = false;
+
+  void update(FfcPanoFrame f, Size s) {
+    frame = f;
+    size = s;
+    notifyListeners();
+  }
+
+  void ping() => notifyListeners();
+}
+
+class _PanoramaPainter extends CustomPainter {
+  _PanoramaPainter({
+    required this.frames,
+    required this.pages,
+    required this.atlasRects,
+    required this.atlasCellOfWork,
+    required this.atlasPages,
+    required this.target,
+    required this.shader,
+    required this.time,
+  }) : super(repaint: frames);
+
+  final _FrameNotifier frames;
+  final List<ui.Image> pages;
+  final Float32List atlasRects;
+  final Int32List atlasCellOfWork;
+  final Int32List atlasPages;
+  final int Function() target;
+  final ui.FragmentShader? Function() shader;
+  final double Function() time;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final FfcPanoFrame? f = frames.frame;
+    final Rect bounds = Offset.zero & size;
+    canvas.clipRect(bounds);
+    final ui.FragmentShader? sh = shader();
+    if (sh != null && f != null) {
+      final Float32List i = f.info;
+      int k = 0;
+      void put(double v) => sh.setFloat(k++, v);
+      put(size.width);
+      put(size.height);
+      put(i[FfcPanoInfo.haloX]);
+      put(i[FfcPanoInfo.haloY]);
+      put(i[FfcPanoInfo.haloR]);
+      put(i[FfcPanoInfo.haloAlpha]);
+      for (int a = 0; a < 3; a++) {
+        put(i[FfcPanoInfo.forward + a]);
+      }
+      for (int a = 0; a < 3; a++) {
+        put(i[FfcPanoInfo.right + a]);
+      }
+      for (int a = 0; a < 3; a++) {
+        put(i[FfcPanoInfo.up + a]);
+      }
+      put(i[FfcPanoInfo.focal]);
+      put(time());
+      canvas.drawRect(bounds, Paint()..shader = sh);
+    } else {
+      canvas.drawRect(bounds, Paint()..color = const Color(0xFF05070F));
+    }
+    if (f == null) return;
+    for (int b = 0; b < f.batches; b++) {
+      final int page = f.batchPage(b);
+      final Paint paint;
+      if (page == FfcPanorama.targetPage) {
+        if (frames.hideTarget) continue;
+        paint = _targetPaint(target());
+      } else {
+        paint = _pagePaint(page);
+      }
+      final int v0 = f.batchVertexStart(b);
+      final int vn = f.batchVertexCount(b);
+      final int i0 = f.batchIndexStart(b);
+      final int iN = f.batchIndexCount(b);
+      if (iN == 0) continue;
+      final ui.Vertices v = ui.Vertices.raw(
+        VertexMode.triangles,
+        Float32List.sublistView(f.positions, v0 * 2, (v0 + vn) * 2),
+        textureCoordinates: Float32List.sublistView(
+          f.texCoords,
+          v0 * 2,
+          (v0 + vn) * 2,
+        ),
+        colors: Int32List.sublistView(f.colors, v0, v0 + vn),
+        indices: Uint16List.sublistView(f.indices, i0, i0 + iN),
+      );
+      canvas.drawVertices(v, BlendMode.modulate, paint);
+      v.dispose();
+    }
+  }
+
+  final Map<int, Paint> _pagePaints = <int, Paint>{};
+  ui.Image? _targetImage;
+  int _targetWork = -1;
+  Paint? _targetPaintCache;
+
+  /// 图集页的纹理画笔（纹理坐标就是图集像素）。
+  Paint _pagePaint(int page) => _pagePaints[page] ??= Paint()
+    ..filterQuality = FilterQuality.medium
+    ..isAntiAlias = true
+    ..shader = ImageShader(
+      pages[page],
+      TileMode.clamp,
+      TileMode.clamp,
+      Matrix4.identity().storage,
+    );
+
+  /// 锁定目标批（纹理坐标 0..1）：高清带框封面；高清图还没出来时用图集里那一格（同一套边框
+  /// 比例），把 0..1 映射到格子矩形。
+  Paint _targetPaint(int work) {
+    final ui.Image? hi = frames.hiRes;
+    final ui.Image src;
+    final Matrix4 m;
+    if (hi != null) {
+      src = hi;
+      m = Matrix4.diagonal3Values(1 / hi.width, 1 / hi.height, 1);
+    } else {
+      final int cell = atlasCellOfWork[work];
+      src = pages[atlasPages[cell]];
+      final double cw = atlasRects[cell * 4 + 2];
+      final double ch = atlasRects[cell * 4 + 3];
+      m = Matrix4.diagonal3Values(1 / cw, 1 / ch, 1)
+        ..translateByDouble(
+          -atlasRects[cell * 4],
+          -atlasRects[cell * 4 + 1],
+          0,
+          1,
+        );
+    }
+    // 缓存键要带作品：没有高清图时不同作品可能落在同一图集页（src 相同、格子矩阵不同）。
+    if (_targetPaintCache != null &&
+        identical(_targetImage, src) &&
+        _targetWork == work) {
+      return _targetPaintCache!;
+    }
+    _targetImage = src;
+    _targetWork = work;
+    return _targetPaintCache = Paint()
+      ..filterQuality = FilterQuality.medium
+      ..isAntiAlias = true
+      ..shader = ImageShader(src, TileMode.clamp, TileMode.clamp, m.storage);
+  }
+
+  @override
+  bool shouldRepaint(_PanoramaPainter old) =>
+      old.pages != pages || old.frames != frames;
+}

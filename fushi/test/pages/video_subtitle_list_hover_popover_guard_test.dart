@@ -32,51 +32,72 @@ void main() {
     return src.substring(start, end);
   }
 
-  test('BUG-792：_showControlPopover 不得关闭 push-aside 字幕列表（hover 触发的轻浮层与字幕列表共存）',
-      () {
-    final String body = showControlPopoverBody();
-    expect(
-      body.contains('_subtitleListVisible.value = false'),
-      isFalse,
-      reason: 'hover 触发的音量/倍速轻浮层几何上不遮挡右侧字幕栏，'
-          '不得把 push-aside 字幕列表弄没（BUG-792）',
-    );
-  });
+  test(
+    'BUG-792：_showControlPopover 不得关闭 push-aside 字幕列表（hover 触发的轻浮层与字幕列表共存）',
+    () {
+      final String body = showControlPopoverBody();
+      expect(
+        body.contains('_subtitleListVisible.value = false'),
+        isFalse,
+        reason:
+            'hover 触发的音量/倍速轻浮层几何上不遮挡右侧字幕栏，'
+            '不得把 push-aside 字幕列表弄没（BUG-792）',
+      );
+    },
+  );
 
   test('对照锚定：点击触发的 overlay 面板 _showVideoSidePanel 仍互斥关闭字幕列表（遮挡右栏合理）', () {
     final int showStart = src.indexOf('void _showVideoSidePanel(');
     expect(showStart, greaterThan(-1), reason: '应有 _showVideoSidePanel 方法');
-    final int showEnd =
-        src.indexOf('\n  void _hideVideoSidePanel()', showStart);
+    final int showEnd = src.indexOf(
+      '\n  void _hideVideoSidePanel()',
+      showStart,
+    );
     expect(showEnd, greaterThan(showStart));
     final String showBody = src.substring(showStart, showEnd);
     expect(
       showBody.contains('_subtitleListVisible.value = false'),
       isTrue,
-      reason: 'overlay 面板 centerRight 遮挡右栏，开它时关字幕列表合理——'
+      reason:
+          'overlay 面板 centerRight 遮挡右栏，开它时关字幕列表合理——'
           '此对照确保 BUG-792 的修复只针对轻浮层、未误删 overlay 面板的互斥',
     );
   });
 
   test(
-      '回归锚定：轻浮层由 _controlPopoverAnchor 的 MouseRegion.onEnter（hover）触发 _showControlPopover',
-      () {
-    final int anchorStart = src.indexOf('Widget _controlPopoverAnchor({');
-    expect(anchorStart, greaterThan(-1),
-        reason: '应有 _controlPopoverAnchor helper');
-    final int anchorEnd =
-        src.indexOf('\n  ', src.indexOf('child: anchored,', anchorStart));
-    final String anchorBody = src.substring(anchorStart, anchorEnd);
-    expect(anchorBody.contains('MouseRegion('), isTrue,
-        reason: '桌面 hover 由 MouseRegion 打开轻浮层');
-    expect(anchorBody.contains('onEnter:'), isTrue,
-        reason: 'onEnter（hover 进入）即触发——这正是 BUG-792 的意外行为来源');
-    expect(
-      RegExp(r'onEnter:.*?_showControlPopover\(', dotAll: true)
-          .hasMatch(anchorBody),
-      isTrue,
-      reason: 'onEnter 调 _showControlPopover：证明轻浮层是 hover 触发，'
-          '故 _showControlPopover 不得含关字幕列表的副作用',
-    );
-  });
+    '回归锚定：轻浮层由 _controlPopoverAnchor 的 MouseRegion.onEnter（hover）触发 _showControlPopover',
+    () {
+      final int anchorStart = src.indexOf('Widget _controlPopoverAnchor({');
+      expect(
+        anchorStart,
+        greaterThan(-1),
+        reason: '应有 _controlPopoverAnchor helper',
+      );
+      final int anchorEnd = src.indexOf(
+        '\n  ',
+        src.indexOf('child: anchored,', anchorStart),
+      );
+      final String anchorBody = src.substring(anchorStart, anchorEnd);
+      expect(
+        anchorBody.contains('MouseRegion('),
+        isTrue,
+        reason: '桌面 hover 由 MouseRegion 打开轻浮层',
+      );
+      expect(
+        anchorBody.contains('onEnter:'),
+        isTrue,
+        reason: 'onEnter（hover 进入）即触发——这正是 BUG-792 的意外行为来源',
+      );
+      expect(
+        RegExp(
+          r'onEnter:.*?_showControlPopover\(',
+          dotAll: true,
+        ).hasMatch(anchorBody),
+        isTrue,
+        reason:
+            'onEnter 调 _showControlPopover：证明轻浮层是 hover 触发，'
+            '故 _showControlPopover 不得含关字幕列表的副作用',
+      );
+    },
+  );
 }

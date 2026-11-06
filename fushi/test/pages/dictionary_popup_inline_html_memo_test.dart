@@ -22,12 +22,20 @@ void main() {
   test('same (themeAttr, bgHex) returns the identical cached instance', () {
     seedAssets();
     final String first = DictionaryPopupWebViewState.debugBuildInlinePopupHtml(
-        themeAttr: 'dark', bgHex: '#112233');
+      themeAttr: 'dark',
+      bgHex: '#112233',
+    );
     final String second = DictionaryPopupWebViewState.debugBuildInlinePopupHtml(
-        themeAttr: 'dark', bgHex: '#112233');
-    expect(identical(first, second), isTrue,
-        reason: '同主题/底色必须命中 memo 返回同一实例——'
-            '拖拽调整弹窗大小的每个指针事件都会走到这里');
+      themeAttr: 'dark',
+      bgHex: '#112233',
+    );
+    expect(
+      identical(first, second),
+      isTrue,
+      reason:
+          '同主题/底色必须命中 memo 返回同一实例——'
+          '拖拽调整弹窗大小的每个指针事件都会走到这里',
+    );
     expect(first, contains('data-theme="dark"'));
     expect(first, contains('--background-color:#112233'));
   });
@@ -35,40 +43,61 @@ void main() {
   test('theme or background change rebuilds with the new values', () {
     seedAssets();
     final String dark = DictionaryPopupWebViewState.debugBuildInlinePopupHtml(
-        themeAttr: 'dark', bgHex: '#112233');
+      themeAttr: 'dark',
+      bgHex: '#112233',
+    );
     final String light = DictionaryPopupWebViewState.debugBuildInlinePopupHtml(
-        themeAttr: 'light', bgHex: '#ffffff');
+      themeAttr: 'light',
+      bgHex: '#ffffff',
+    );
     expect(identical(dark, light), isFalse);
     expect(light, contains('data-theme="light"'));
     expect(light, contains('--background-color:#ffffff'));
     // 单槽 memo：换回旧键重建（允许），内容必须与最初一致（不串味）。
     final String darkAgain =
         DictionaryPopupWebViewState.debugBuildInlinePopupHtml(
-            themeAttr: 'dark', bgHex: '#112233');
+          themeAttr: 'dark',
+          bgHex: '#112233',
+        );
     expect(darkAgain, dark);
   });
 
   test('</style in css is escaped (load-time escape keeps byte parity)', () {
     seedAssets(css: 'a{}</style><b>break-out</b>');
     final String html = DictionaryPopupWebViewState.debugBuildInlinePopupHtml(
-        themeAttr: 'dark', bgHex: '#000000');
-    expect(html, contains(r'a{}<\/style><b>break-out</b>'),
-        reason: 'css 里的 </style 必须在装载时转义，产物与旧的每次转义逐字节一致');
-    expect(html, isNot(contains('a{}</style>')),
-        reason: '未转义的 </style 会提前终结 <style> 块（注入面）');
+      themeAttr: 'dark',
+      bgHex: '#000000',
+    );
+    expect(
+      html,
+      contains(r'a{}<\/style><b>break-out</b>'),
+      reason: 'css 里的 </style 必须在装载时转义，产物与旧的每次转义逐字节一致',
+    );
+    expect(
+      html,
+      isNot(contains('a{}</style>')),
+      reason: '未转义的 </style 会提前终结 <style> 块（注入面）',
+    );
   });
 
   test('asset (re)load invalidates the html memo', () {
     seedAssets(css: 'body{color:red}');
     final String before = DictionaryPopupWebViewState.debugBuildInlinePopupHtml(
-        themeAttr: 'dark', bgHex: '#112233');
+      themeAttr: 'dark',
+      bgHex: '#112233',
+    );
     expect(before, contains('body{color:red}'));
 
     seedAssets(css: 'body{color:blue}');
     final String after = DictionaryPopupWebViewState.debugBuildInlinePopupHtml(
-        themeAttr: 'dark', bgHex: '#112233');
-    expect(after, contains('body{color:blue}'),
-        reason: '资产重装载必须清空 HTML memo，不得回吐旧 css 的产物');
+      themeAttr: 'dark',
+      bgHex: '#112233',
+    );
+    expect(
+      after,
+      contains('body{color:blue}'),
+      reason: '资产重装载必须清空 HTML memo，不得回吐旧 css 的产物',
+    );
   });
 
   test('popup input bridge carries the host spec and stays idempotent', () {
@@ -93,21 +122,36 @@ void main() {
       hostOwnsPointer: false,
     );
 
-    expect(bound, contains("'Escape', 'Ctrl+KeyD'"),
-        reason: '宿主声明的键（含组合键）必须原样进表');
-    expect(bound,
-        contains("window['__fushiKeyBridgeButtons_hostInputToken'] = [3]"),
-        reason: '鼠标绑定必须进表——弹窗表面此前完全没有非左键通道');
     expect(
-        empty, contains("window['__fushiKeyBridgeKeys_hostInputToken'] = []"),
-        reason: '空表也要下发，用于清掉热槽 WebView 上残留的旧表');
+      bound,
+      contains("'Escape', 'Ctrl+KeyD'"),
+      reason: '宿主声明的键（含组合键）必须原样进表',
+    );
     expect(
-        bound, contains("window['__fushiKeyBridgeInstalled_hostInputToken']"),
-        reason: '幂等安装守卫：热槽反复注入不得叠加 listener');
-    expect(bound, contains('if (e.repeat) return;'),
-        reason: '按住关词典键不该逐层关掉整条弹窗栈');
-    expect(bound, contains('stopImmediatePropagation()'),
-        reason: '交给宿主的输入不能再被 popup.js 自己的监听二次响应');
+      bound,
+      contains("window['__fushiKeyBridgeButtons_hostInputToken'] = [3]"),
+      reason: '鼠标绑定必须进表——弹窗表面此前完全没有非左键通道',
+    );
+    expect(
+      empty,
+      contains("window['__fushiKeyBridgeKeys_hostInputToken'] = []"),
+      reason: '空表也要下发，用于清掉热槽 WebView 上残留的旧表',
+    );
+    expect(
+      bound,
+      contains("window['__fushiKeyBridgeInstalled_hostInputToken']"),
+      reason: '幂等安装守卫：热槽反复注入不得叠加 listener',
+    );
+    expect(
+      bound,
+      contains('if (e.repeat) return;'),
+      reason: '按住关词典键不该逐层关掉整条弹窗栈',
+    );
+    expect(
+      bound,
+      contains('stopImmediatePropagation()'),
+      reason: '交给宿主的输入不能再被 popup.js 自己的监听二次响应',
+    );
     expect(bound, contains("callHandler('hostInputToken', _hit)"));
     expect(bound, contains("addEventListener('keydown'"));
     expect(bound, contains("addEventListener('mousedown'"));

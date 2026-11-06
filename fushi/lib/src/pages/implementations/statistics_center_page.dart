@@ -2,8 +2,13 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/pages/implementations/home_video_page.dart';
+import 'package:fushi/src/pages/implementations/reading_statistics_page.dart';
+import 'package:fushi/src/pages/implementations/video_statistics_page.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -17,6 +22,7 @@ import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart'
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
 import 'package:fushi/src/pages/implementations/srs_statistics_page.dart';
@@ -25,7 +31,15 @@ import 'package:fushi/src/stats/stat_range.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/library_section_tab.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -242,10 +256,15 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     try {
       final AppModel appModel = ref.read(appProvider);
       final FushiDatabase db = appModel.database;
+      // 复习（SRS）时长读时并进总览（BUG-3771），复习模块关着时不出现。
+      final SrsStorage? srs = ref.read(srsModuleEnabledProvider)
+          ? await ref.read(srsStorageProvider.future)
+          : null;
       final StatFacts facts = await loadStatFacts(
         db,
         activityLimit: 0,
         includeCounters: true,
+        reviewsFrom: srs?.db,
       );
       _daily = facts.daily;
       _byDay = sumStatDaysByKey(_daily);
@@ -551,6 +570,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
 
   /// 事实行 → 展示标题（合集名走 sheet 组头；与首页 dashboard 同判据）。
   String _entryTitle(StatFact f) {
+    if (f.isReview) return t.nav_srs;
     if (f.isGame) {
       final GalgameEntry? entry = findGalgameForActivity(
         _games,
@@ -573,6 +593,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
 
   /// 事实行 → 所属合集名（v83 键契约：epub 经 bookKey→uid 换算）。
   String? _entryCollection(StatFact f) {
+    if (f.isReview) return null;
     if (f.isBook) {
       final String? bookKey = f.mediaKey.isNotEmpty
           ? f.mediaKey

@@ -230,7 +230,11 @@ void main() {
       reason: '收起的是低优先级动作，剩下的按钮命中区不缩水',
     );
     // 「⋯」紧贴在关闭键左边、不压它。
-    expect(tester.takeException(), isNull, reason: '280 宽两行页头都不得右溢（含「全部 / 收藏」分段）');
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: '280 宽两行页头都不得右溢（含「全部 / 收藏」分段）',
+    );
     final Rect more = tester.getRect(find.byKey(moreKey));
     final Rect close = tester.getRect(find.byIcon(FushiIcons.close));
     expect(more.right, lessThanOrEqualTo(close.left));

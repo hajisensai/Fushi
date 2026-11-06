@@ -57,13 +57,16 @@ Future<DictDirDeleteOutcome> deleteDictionaryDirectory(
   required FutureOr<void> Function() reloadEngine,
 }) async {
   if (!directory.existsSync()) return DictDirDeleteOutcome.absent;
-  releaseDictionaryMappings();
-  return deleteDictionaryDirectoryCore(
-    delete: () => directory.delete(recursive: true),
-    quarantine: () => _quarantineDictionaryDirectory(directory),
-    sleep: (int ms) => Future<void>.delayed(Duration(milliseconds: ms)),
-    isWindows: Platform.isWindows,
-    reloadEngine: reloadEngine,
+  // 删除（含占用重试与隔离）整段在映射释放的作用域里：中途排下的引擎装载推迟到
+  // 作用域结束，不会把正在删的目录又映射回来。
+  return withDictionaryMappingsReleased(
+    () => deleteDictionaryDirectoryCore(
+      delete: () => directory.delete(recursive: true),
+      quarantine: () => _quarantineDictionaryDirectory(directory),
+      sleep: (int ms) => Future<void>.delayed(Duration(milliseconds: ms)),
+      isWindows: Platform.isWindows,
+      reloadEngine: reloadEngine,
+    ),
   );
 }
 
@@ -135,7 +138,8 @@ Future<DictDirDeleteOutcome> _deleteDictionaryDirectoryAttempts({
 /// 把删不掉的 [directory] 改名挪进资源根下的隔离区，空出词典名。
 Future<void> _quarantineDictionaryDirectory(Directory directory) async {
   final Directory pending = Directory(
-      path.join(directory.parent.path, kDictionaryPendingDeleteDirName));
+    path.join(directory.parent.path, kDictionaryPendingDeleteDirName),
+  );
   await pending.create(recursive: true);
   final String base = path.basename(directory.path);
   for (int n = 0; n < 1000; n++) {
@@ -150,8 +154,9 @@ Future<void> _quarantineDictionaryDirectory(Directory directory) async {
 /// 清理上一次运行留下的隔离区（进程重启后映射早已随进程消失，此时必能删掉）。
 /// 尽力而为：删不掉就留到下次启动，绝不阻断初始化。
 Future<void> purgePendingDictionaryDeletes(Directory resourceRoot) async {
-  final Directory pending =
-      Directory(path.join(resourceRoot.path, kDictionaryPendingDeleteDirName));
+  final Directory pending = Directory(
+    path.join(resourceRoot.path, kDictionaryPendingDeleteDirName),
+  );
   if (!pending.existsSync()) return;
   try {
     await pending.delete(recursive: true);

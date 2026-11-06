@@ -64,8 +64,9 @@ class WindowCaptionChannel {
   /// 系统窗口材质（Windows 11 Mica / macOS NSVisualEffectView vibrancy）是否
   /// 已在窗口上生效。只有它为 true 时，首页外壳才把 scaffold 底色调成半透明让
   /// 系统材质透出来；Win10 / 旧 runner / 其它平台恒 false，外壳保持实心。
-  static final ValueNotifier<bool> systemBackdropActive =
-      ValueNotifier<bool>(false);
+  static final ValueNotifier<bool> systemBackdropActive = ValueNotifier<bool>(
+    false,
+  );
 
   static bool? _lastMica;
   static bool? _lastDark;
@@ -96,10 +97,11 @@ class WindowCaptionChannel {
     }
     bool active = false;
     try {
-      active = await _channel.invokeMethod<bool>(
-            'setSystemBackdrop',
-            <String, bool>{'mica': mica, 'dark': dark},
-          ) ??
+      active =
+          await _channel.invokeMethod<bool>('setSystemBackdrop', <String, bool>{
+            'mica': mica,
+            'dark': dark,
+          }) ??
           false;
     } on PlatformException {
       active = false;
@@ -177,6 +179,27 @@ class WindowCaptionChannel {
       // 旧 runner 不实现该方法时静默忽略（调用方各有回退语义）。
     } on MissingPluginException {
       // 通道未注册（widget 测试 / 非 window runner 宿主）时静默忽略。
+    }
+  }
+
+  /// macOS 应用自有的无边框全屏（原盘会话）：窗口去掉标题栏与边框、铺满当前屏幕、
+  /// 菜单栏与 Dock 自动隐藏，退出时还原进入前的 styleMask / frame / 层级。不走
+  /// AppKit 的 `toggleFullScreen`——那会进独立 Space、Esc 归系统，原盘会话的 Esc
+  /// （呼出控制栏 / 退出原盘）到不了 Flutter。实现见
+  /// `macos/Runner/MainFlutterWindow.swift` 的 `setBorderlessFullscreen`。
+  ///
+  /// 返回 runner 是否照做（已处在系统原生全屏、或没有屏幕可铺时为 false）。非 macOS
+  /// 恒 false；通道未注册（widget 测试）同样 false。平台侧的真实错误照常抛出。
+  static Future<bool> setBorderlessFullscreen(bool fullscreen) async {
+    if (!Platform.isMacOS) return false;
+    try {
+      return await _channel.invokeMethod<bool>(
+            'setBorderlessFullscreen',
+            <String, bool>{'fullscreen': fullscreen},
+          ) ??
+          false;
+    } on MissingPluginException {
+      return false;
     }
   }
 
@@ -307,15 +330,13 @@ class WindowCaptionChannel {
     }
     _ensureNativeHandler();
     try {
-      await _channel.invokeMethod<void>(
-        'setCaptionMaxButtonRect',
-        <String, int>{
-          'left': rounded?.left.toInt() ?? 0,
-          'top': rounded?.top.toInt() ?? 0,
-          'right': rounded?.right.toInt() ?? 0,
-          'bottom': rounded?.bottom.toInt() ?? 0,
-        },
-      );
+      await _channel
+          .invokeMethod<void>('setCaptionMaxButtonRect', <String, int>{
+            'left': rounded?.left.toInt() ?? 0,
+            'top': rounded?.top.toInt() ?? 0,
+            'right': rounded?.right.toInt() ?? 0,
+            'bottom': rounded?.bottom.toInt() ?? 0,
+          });
     } on PlatformException {
       // 旧 runner 没有这条方法：没有贴靠布局，按钮照常由 Flutter 处理。
     } on MissingPluginException {

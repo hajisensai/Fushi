@@ -27,75 +27,77 @@ Future<FushiDatabase> _freshDb(String prefix) async {
 /// `Book A` / `w1` / 收藏句立墓碑，`Book B` 保持存活作对照（证明裁剪是逐条的，
 /// 不是把整份快照一刀切扔掉）。
 AggregateSnapshot _peerSnapshot(FavoriteSentence sentence) => AggregateSnapshot(
-      readingStats: const <ReadingStatRecord>[
-        ReadingStatRecord(
-          title: 'Book A',
-          dateKey: '2026-06-01',
-          charactersRead: 120,
-          readingTimeMs: 60000,
-          lastStatisticModified: 10,
-        ),
-        ReadingStatRecord(
-          title: 'Book B',
-          dateKey: '2026-06-01',
-          charactersRead: 300,
-          readingTimeMs: 90000,
-          lastStatisticModified: 11,
-        ),
-      ],
-      videoStats: const <VideoStatRecord>[
-        VideoStatRecord(
-          title: 'Video A',
-          dateKey: '2026-06-01',
-          subtitleChars: 50,
-          watchTimeMs: 30000,
-          lastModified: 12,
-        ),
-      ],
-      lookupMiningCounters: const <LookupMiningRecord>[
-        LookupMiningRecord(
-          bookKey: 'bk-a',
-          title: 'Book A',
-          sourceType: 'book',
-          dateKey: '2026-06-01',
-          lookupCount: 7,
-          mineCount: 3,
-        ),
-      ],
-      favoriteWords: const <FavoriteWordRecord>[
-        FavoriteWordRecord(
-          expression: 'w1',
-          reading: 'r1',
-          glossary: 'g1',
-          sourceType: 'book',
-          dateKey: '2026-06-01',
-          createdAt: 100,
-        ),
-        FavoriteWordRecord(
-          expression: 'w2',
-          reading: 'r2',
-          glossary: 'g2',
-          sourceType: 'book',
-          dateKey: '2026-06-01',
-          createdAt: 101,
-        ),
-      ],
-      favoriteSentences: <FavoriteSentence>[sentence],
-    );
+  readingStats: const <ReadingStatRecord>[
+    ReadingStatRecord(
+      title: 'Book A',
+      dateKey: '2026-06-01',
+      charactersRead: 120,
+      readingTimeMs: 60000,
+      lastStatisticModified: 10,
+    ),
+    ReadingStatRecord(
+      title: 'Book B',
+      dateKey: '2026-06-01',
+      charactersRead: 300,
+      readingTimeMs: 90000,
+      lastStatisticModified: 11,
+    ),
+  ],
+  videoStats: const <VideoStatRecord>[
+    VideoStatRecord(
+      title: 'Video A',
+      dateKey: '2026-06-01',
+      subtitleChars: 50,
+      watchTimeMs: 30000,
+      lastModified: 12,
+    ),
+  ],
+  lookupMiningCounters: const <LookupMiningRecord>[
+    LookupMiningRecord(
+      bookKey: 'bk-a',
+      title: 'Book A',
+      sourceType: 'book',
+      dateKey: '2026-06-01',
+      lookupCount: 7,
+      mineCount: 3,
+    ),
+  ],
+  favoriteWords: const <FavoriteWordRecord>[
+    FavoriteWordRecord(
+      expression: 'w1',
+      reading: 'r1',
+      glossary: 'g1',
+      sourceType: 'book',
+      dateKey: '2026-06-01',
+      createdAt: 100,
+    ),
+    FavoriteWordRecord(
+      expression: 'w2',
+      reading: 'r2',
+      glossary: 'g2',
+      sourceType: 'book',
+      dateKey: '2026-06-01',
+      createdAt: 101,
+    ),
+  ],
+  favoriteSentences: <FavoriteSentence>[sentence],
+);
 
 FavoriteSentence _sentence() => FavoriteSentence(
-      id: 'fav-1',
-      text: '削除された文',
-      bookTitle: 'Book A',
-      bookKey: 'bk-a',
-      sectionIndex: 0,
-      normCharOffset: 10,
-      createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
-    );
+  id: 'fav-1',
+  text: '削除された文',
+  bookTitle: 'Book A',
+  bookKey: 'bk-a',
+  sectionIndex: 0,
+  normCharOffset: 10,
+  createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
+);
 
 /// 在本机立下「这些条目我已经删了」的三类墓碑。
 Future<void> _tombstoneEverything(
-    FushiDatabase db, FavoriteSentence sentence) async {
+  FushiDatabase db,
+  FavoriteSentence sentence,
+) async {
   await db.insertStatisticsTombstone('Book A', FushiDatabase.statSourceBook);
   await db.insertStatisticsTombstone('Video A', FushiDatabase.statSourceVideo);
   await db.writeSyncDeletionTombstone(
@@ -117,15 +119,20 @@ void main() {
     final FavoriteSentence sentence = _sentence();
     await _tombstoneEverything(db, sentence);
 
-    final AggregateSnapshot filtered = await AggregateSyncService(db)
-        .filterTombstoned(_peerSnapshot(sentence));
+    final AggregateSnapshot filtered = await AggregateSyncService(
+      db,
+    ).filterTombstoned(_peerSnapshot(sentence));
 
-    expect(filtered.readingStats.map((ReadingStatRecord r) => r.title),
-        <String>['Book B']);
+    expect(
+      filtered.readingStats.map((ReadingStatRecord r) => r.title),
+      <String>['Book B'],
+    );
     expect(filtered.videoStats, isEmpty);
     expect(filtered.lookupMiningCounters, isEmpty);
-    expect(filtered.favoriteWords.map((FavoriteWordRecord r) => r.expression),
-        <String>['w2']);
+    expect(
+      filtered.favoriteWords.map((FavoriteWordRecord r) => r.expression),
+      <String>['w2'],
+    );
     expect(filtered.favoriteSentences, isEmpty);
   });
 
@@ -148,25 +155,36 @@ void main() {
     final FakeAssetStore store = FakeAssetStore();
     final String ns = await store.ensureNamespace(kSyncAggregateNamespace);
     await store.putJsonAsset(
-        ns, 'dev-B.fushiaggregate', _peerSnapshot(sentence).toJson());
+      ns,
+      'dev-B.fushiaggregate',
+      _peerSnapshot(sentence).toJson(),
+    );
 
-    final bool pushed =
-        await AggregateSyncService(db).sync(store: store, deviceId: 'dev-A');
+    final bool pushed = await AggregateSyncService(
+      db,
+    ).sync(store: store, deviceId: 'dev-A');
     expect(pushed, isTrue, reason: 'Book B 仍需发布，裁剪不是整份跳过');
 
     final AssetEntry? own = await store.findAsset(ns, 'dev-A.fushiaggregate');
     expect(own, isNotNull);
-    final AggregateSnapshot outgoing =
-        AggregateSnapshot.fromJson(await store.getJsonAsset(own!.id));
+    final AggregateSnapshot outgoing = AggregateSnapshot.fromJson(
+      await store.getJsonAsset(own!.id),
+    );
 
-    expect(outgoing.readingStats.map((ReadingStatRecord r) => r.title),
-        isNot(contains('Book A')));
-    expect(outgoing.readingStats.map((ReadingStatRecord r) => r.title),
-        contains('Book B'));
+    expect(
+      outgoing.readingStats.map((ReadingStatRecord r) => r.title),
+      isNot(contains('Book A')),
+    );
+    expect(
+      outgoing.readingStats.map((ReadingStatRecord r) => r.title),
+      contains('Book B'),
+    );
     expect(outgoing.videoStats, isEmpty);
     expect(outgoing.lookupMiningCounters, isEmpty);
-    expect(outgoing.favoriteWords.map((FavoriteWordRecord r) => r.expression),
-        <String>['w2']);
+    expect(
+      outgoing.favoriteWords.map((FavoriteWordRecord r) => r.expression),
+      <String>['w2'],
+    );
     expect(outgoing.favoriteSentences, isEmpty);
   });
 
@@ -184,12 +202,16 @@ void main() {
 
     expect(pushedJson, isNotNull);
     final AggregateSnapshot outgoing = AggregateSnapshot.fromJson(pushedJson);
-    expect(outgoing.readingStats.map((ReadingStatRecord r) => r.title),
-        <String>['Book B']);
+    expect(
+      outgoing.readingStats.map((ReadingStatRecord r) => r.title),
+      <String>['Book B'],
+    );
     expect(outgoing.videoStats, isEmpty);
     expect(outgoing.lookupMiningCounters, isEmpty);
-    expect(outgoing.favoriteWords.map((FavoriteWordRecord r) => r.expression),
-        <String>['w2']);
+    expect(
+      outgoing.favoriteWords.map((FavoriteWordRecord r) => r.expression),
+      <String>['w2'],
+    );
     expect(outgoing.favoriteSentences, isEmpty);
     // wire 形状没变（仍是可解回的 JSON map）。
     expect(jsonEncode(pushedJson), contains('Book B'));
@@ -211,9 +233,9 @@ void main() {
 
     Object? pushedJson;
     await AggregateSyncService(db).syncOverClient(
-      fetchRemote: () async =>
-          AggregateSnapshot(favoriteSentences: <FavoriteSentence>[sentence])
-              .toJson(),
+      fetchRemote: () async => AggregateSnapshot(
+        favoriteSentences: <FavoriteSentence>[sentence],
+      ).toJson(),
       pushMerged: (Object json) async {
         pushedJson = json;
       },
@@ -221,7 +243,10 @@ void main() {
     expect(pushedJson, isNotNull, reason: '纯删除也必须上行');
     final AggregateSnapshot outgoing = AggregateSnapshot.fromJson(pushedJson);
     expect(outgoing.favoriteSentences, isEmpty, reason: '被墓碑压制的句不得复活上行');
-    expect(outgoing.favoriteSentenceTombstones, hasLength(1),
-        reason: '墓碑随快照传播，对端据此移除同键收藏句');
+    expect(
+      outgoing.favoriteSentenceTombstones,
+      hasLength(1),
+      reason: '墓碑随快照传播，对端据此移除同键收藏句',
+    );
   });
 }

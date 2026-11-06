@@ -74,8 +74,9 @@ class VideoNfoReader {
     final VideoMetadataMediaKind kind = rootName == 'movie'
         ? VideoMetadataMediaKind.movie
         : VideoMetadataMediaKind.tv;
-    final List<VideoMetadataId> ids =
-        doc == null ? const <VideoMetadataId>[] : _ids(doc);
+    final List<VideoMetadataId> ids = doc == null
+        ? const <VideoMetadataId>[]
+        : _ids(doc);
     final VideoMetadataProviderKind provider = _provider(ids);
     final Map<int, List<VideoMetadataEpisode>> bySeason =
         <int, List<VideoMetadataEpisode>>{};
@@ -87,13 +88,15 @@ class VideoNfoReader {
     return VideoMetadataWork(
       provider: provider,
       kind: kind,
-      title:
-          doc == null ? fallbackTitle : (_text(doc, 'title') ?? fallbackTitle),
+      title: doc == null
+          ? fallbackTitle
+          : (_text(doc, 'title') ?? fallbackTitle),
       originalTitle: doc == null ? null : _text(doc, 'originaltitle'),
       tagline: doc == null ? null : _text(doc, 'tagline'),
       year: doc == null ? null : _int(doc, 'year'),
-      premiered:
-          doc == null ? null : (_text(doc, 'premiered') ?? _text(doc, 'aired')),
+      premiered: doc == null
+          ? null
+          : (_text(doc, 'premiered') ?? _text(doc, 'aired')),
       plot: doc == null ? null : (_text(doc, 'plot') ?? _text(doc, 'outline')),
       rating: doc == null ? null : _double(doc, 'rating'),
       ratingVotes: doc == null ? null : _int(doc, 'votes'),
@@ -106,23 +109,24 @@ class VideoNfoReader {
       keywords: doc == null ? const <String>[] : _texts(doc, 'tag'),
       ids: ids,
       credits: doc == null ? const <VideoMetadataCredit>[] : _credits(doc),
-      seasons: <VideoMetadataSeason>[
-        for (final MapEntry<int, List<VideoMetadataEpisode>> entry
-            in bySeason.entries)
-          VideoMetadataSeason(
-            seasonNumber: entry.key,
-            title: 'Season ${entry.key}',
-            episodeCount: entry.value.length,
-            episodes: entry.value
-              ..sort(
-                (VideoMetadataEpisode a, VideoMetadataEpisode b) =>
-                    a.episodeNumber.compareTo(b.episodeNumber),
+      seasons:
+          <VideoMetadataSeason>[
+            for (final MapEntry<int, List<VideoMetadataEpisode>> entry
+                in bySeason.entries)
+              VideoMetadataSeason(
+                seasonNumber: entry.key,
+                title: 'Season ${entry.key}',
+                episodeCount: entry.value.length,
+                episodes: entry.value
+                  ..sort(
+                    (VideoMetadataEpisode a, VideoMetadataEpisode b) =>
+                        a.episodeNumber.compareTo(b.episodeNumber),
+                  ),
               ),
+          ]..sort(
+            (VideoMetadataSeason a, VideoMetadataSeason b) =>
+                a.seasonNumber.compareTo(b.seasonNumber),
           ),
-      ]..sort(
-          (VideoMetadataSeason a, VideoMetadataSeason b) =>
-              a.seasonNumber.compareTo(b.seasonNumber),
-        ),
       rawPayload: <String, Object?>{
         'source': 'nfo',
         if (workPath != null) 'path': workPath,
@@ -198,9 +202,9 @@ class VideoNfoReader {
   }
 
   static List<String> _texts(XmlDocument doc, String name) => <String>{
-        for (final XmlElement element in doc.findAllElements(name))
-          if (element.innerText.trim().isNotEmpty) element.innerText.trim(),
-      }.toList(growable: false);
+    for (final XmlElement element in doc.findAllElements(name))
+      if (element.innerText.trim().isNotEmpty) element.innerText.trim(),
+  }.toList(growable: false);
 
   static int? _int(XmlDocument doc, String name) =>
       int.tryParse(_text(doc, name) ?? '');
@@ -297,8 +301,8 @@ class VideoNfoReader {
           kind: type.contains('voice')
               ? VideoMetadataCreditKind.voiceActor
               : type.contains('guest')
-                  ? VideoMetadataCreditKind.guest
-                  : VideoMetadataCreditKind.actor,
+              ? VideoMetadataCreditKind.guest
+              : VideoMetadataCreditKind.actor,
           person: VideoMetadataPerson(
             name: name,
             profileUrl: child('thumb'),
@@ -322,32 +326,30 @@ class VideoNfoReader {
 VideoMetadataWork mergeNfoAuthority(
   VideoMetadataWork nfo,
   VideoMetadataWork online,
-) =>
-    online.copyWith(
-      title: nfo.title,
-      originalTitle: nfo.originalTitle ?? online.originalTitle,
-      tagline: nfo.tagline ?? online.tagline,
-      year: nfo.year ?? online.year,
-      premiered: nfo.premiered ?? online.premiered,
-      plot: nfo.plot ?? online.plot,
-      rating: nfo.rating ?? online.rating,
-      ratingVotes: nfo.ratingVotes ?? online.ratingVotes,
-      runtimeMinutes: nfo.runtimeMinutes ?? online.runtimeMinutes,
-      contentRating: nfo.contentRating ?? online.contentRating,
-      status: nfo.status ?? online.status,
-      genres: nfo.genres.isEmpty ? online.genres : nfo.genres,
-      studios: nfo.studios.isEmpty ? online.studios : nfo.studios,
-      countries: nfo.countries.isEmpty ? online.countries : nfo.countries,
-      keywords: nfo.keywords.isEmpty ? online.keywords : nfo.keywords,
-      ids: <VideoMetadataId>{
-        for (final VideoMetadataId id in nfo.ids)
-          if (id.type.trim().toLowerCase() != 'tmdb' || nfo.kind == online.kind)
-            id,
-        ...online.ids,
-      }.toList(),
-      credits: nfo.credits.isEmpty ? online.credits : nfo.credits,
-      seasons: _mergeNfoSeasons(nfo.seasons, online.seasons),
-    );
+) => online.copyWith(
+  title: nfo.title,
+  originalTitle: nfo.originalTitle ?? online.originalTitle,
+  tagline: nfo.tagline ?? online.tagline,
+  year: nfo.year ?? online.year,
+  premiered: nfo.premiered ?? online.premiered,
+  plot: nfo.plot ?? online.plot,
+  rating: nfo.rating ?? online.rating,
+  ratingVotes: nfo.ratingVotes ?? online.ratingVotes,
+  runtimeMinutes: nfo.runtimeMinutes ?? online.runtimeMinutes,
+  contentRating: nfo.contentRating ?? online.contentRating,
+  status: nfo.status ?? online.status,
+  genres: nfo.genres.isEmpty ? online.genres : nfo.genres,
+  studios: nfo.studios.isEmpty ? online.studios : nfo.studios,
+  countries: nfo.countries.isEmpty ? online.countries : nfo.countries,
+  keywords: nfo.keywords.isEmpty ? online.keywords : nfo.keywords,
+  ids: <VideoMetadataId>{
+    for (final VideoMetadataId id in nfo.ids)
+      if (id.type.trim().toLowerCase() != 'tmdb' || nfo.kind == online.kind) id,
+    ...online.ids,
+  }.toList(),
+  credits: nfo.credits.isEmpty ? online.credits : nfo.credits,
+  seasons: _mergeNfoSeasons(nfo.seasons, online.seasons),
+);
 
 List<VideoMetadataSeason> _mergeNfoSeasons(
   List<VideoMetadataSeason> nfoSeasons,
@@ -387,9 +389,9 @@ List<VideoMetadataEpisode> _mergeNfoEpisodes(
 
   final Map<int, VideoMetadataEpisode> nfoByNumber =
       <int, VideoMetadataEpisode>{
-    for (final VideoMetadataEpisode episode in nfoEpisodes)
-      episode.episodeNumber: episode,
-  };
+        for (final VideoMetadataEpisode episode in nfoEpisodes)
+          episode.episodeNumber: episode,
+      };
   final List<VideoMetadataEpisode> merged = <VideoMetadataEpisode>[
     for (final VideoMetadataEpisode online in onlineEpisodes)
       if (nfoByNumber.remove(online.episodeNumber)

@@ -12,7 +12,8 @@ void main() {
     test('Windows drive-letter path → file (BUG-046 regression guard)', () {
       expect(
         TtsChannel.classifyAudioRef(
-            r'C:\Users\wrds\AppData\Local\Temp\local_audio.mp3'),
+          r'C:\Users\wrds\AppData\Local\Temp\local_audio.mp3',
+        ),
         ResolvedAudioPlayback.file,
       );
       // forward-slash separators (how extractBlob builds the path) too.
@@ -43,7 +44,8 @@ void main() {
       );
       expect(
         TtsChannel.classifyAudioRef(
-            'https://fushi-reader.example.workers.dev/?term=%E6%97%A5'),
+          'https://fushi-reader.example.workers.dev/?term=%E6%97%A5',
+        ),
         ResolvedAudioPlayback.url,
       );
     });

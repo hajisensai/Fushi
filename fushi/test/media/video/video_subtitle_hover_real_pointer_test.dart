@@ -9,8 +9,11 @@ import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 AudioCue _cue(String raw) {
-  final SubtitleMarkup m =
-      parseSubtitleMarkup(raw, playResX: 1280, playResY: 720);
+  final SubtitleMarkup m = parseSubtitleMarkup(
+    raw,
+    playResX: 1280,
+    playResY: 720,
+  );
   return AudioCue()
     ..bookKey = 'b'
     ..chapterHref = 'c'
@@ -24,8 +27,9 @@ AudioCue _cue(String raw) {
 }
 
 void main() {
-  testWidgets('招牌落到静止指针下不回报 hover；指针真动了才回报，移出回报 false',
-      (WidgetTester tester) async {
+  testWidgets('招牌落到静止指针下不回报 hover；指针真动了才回报，移出回报 false', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1280, 720);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -37,19 +41,21 @@ void main() {
     final AudioCue sign = _cue(r'{\an7\pos(300,300)}Hoh');
 
     Future<void> pumpOverlay() async {
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: SizedBox(
-            width: 1280,
-            height: 720,
-            child: VideoSubtitleOverlay(
-              controller: c,
-              respectAssStyle: true,
-              onHoverChanged: events.add,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 1280,
+              height: 720,
+              child: VideoSubtitleOverlay(
+                controller: c,
+                respectAssStyle: true,
+                onHoverChanged: events.add,
+              ),
             ),
           ),
         ),
-      ));
+      );
       await tester.pump();
     }
 
@@ -63,8 +69,9 @@ void main() {
     expect(find.text('H'), findsNothing);
 
     // 指针静止停在落点；招牌再次出现（MouseTracker 会对新挂的 MouseRegion 派 onEnter）。
-    final TestGesture gesture =
-        await tester.createGesture(kind: PointerDeviceKind.mouse);
+    final TestGesture gesture = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
     await gesture.addPointer(location: spot);
     addTearDown(gesture.removePointer);
     await tester.pump();
@@ -73,8 +80,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.text('H'), findsWidgets);
-    expect(events, isEmpty,
-        reason: '鼠标没动，招牌自己出现在指针下不得算作用户 hover（BUG-2537）');
+    expect(events, isEmpty, reason: '鼠标没动，招牌自己出现在指针下不得算作用户 hover（BUG-2537）');
 
     // 指针真的动了 1px → 回报 true（且只回报一次）。
     await gesture.moveTo(spot + const Offset(1, 0));

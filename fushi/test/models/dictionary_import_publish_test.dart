@@ -9,10 +9,10 @@ import 'package:fushi/src/models/dictionary_import_manager.dart';
 /// 用尽后回退「复制+删源」，且只在 Windows 触发、只对瞬时码触发。
 void main() {
   FileSystemException winError(int code) => FileSystemException(
-        'Rename failed',
-        r'C:\Users\wrds\Documents\dictionaryResources\import_temp\辞典',
-        OSError('拒绝访问。', code),
-      );
+    'Rename failed',
+    r'C:\Users\wrds\Documents\dictionaryResources\import_temp\辞典',
+    OSError('拒绝访问。', code),
+  );
 
   group('DictionaryImportManager.publishImportedDir', () {
     test('happy path: rename 一次成功，不重试不复制', () async {

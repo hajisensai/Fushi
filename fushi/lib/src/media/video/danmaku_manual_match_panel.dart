@@ -4,7 +4,11 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 
 /// 手动搜索 / 选集匹配面板（TODO-1376）。
 ///
@@ -29,7 +33,7 @@ class DanmakuManualMatchPanel extends StatefulWidget {
 
   /// 用户选定某集 → 绑定弹幕（页面注入：拉评论 + 持久化 episodeId + 关面板）。
   final Future<void> Function(DandanplaySearchEpisode episode)
-      onEpisodeSelected;
+  onEpisodeSelected;
 
   /// 视频页 chrome 配色（侧栏统一色）；为空时回退主题配色。
   final ColorScheme? colorScheme;
@@ -40,8 +44,9 @@ class DanmakuManualMatchPanel extends StatefulWidget {
 }
 
 class _DanmakuManualMatchPanelState extends State<DanmakuManualMatchPanel> {
-  late final TextEditingController _controller =
-      TextEditingController(text: widget.initialKeyword);
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialKeyword,
+  );
   final FocusNode _fieldFocus = FocusNode();
   bool _searching = false;
   bool _binding = false;
@@ -148,15 +153,15 @@ class _DanmakuManualMatchPanelState extends State<DanmakuManualMatchPanel> {
   }
 
   Widget _hint(ColorScheme cs, String message) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            message,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: cs.onSurfaceVariant),
-          ),
-        ),
-      );
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: TextStyle(color: cs.onSurfaceVariant),
+      ),
+    ),
+  );
 
   Widget _buildAnime(ColorScheme cs, DandanplaySearchAnime anime) {
     final String subtitle = anime.typeDescription ?? '';

@@ -6,6 +6,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/pages/implementations/popup_body_static_layer.dart';
 import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 
 /// Shared empty result used to mount the popup WebView during the search phase
@@ -61,11 +62,19 @@ class DictionaryPopupHistoryPage {
     required this.result,
     required this.allLoaded,
     required this.scrollTop,
+    this.rubySpans = const <FushiRubySpan>[],
+    this.contextSentence = '',
   });
 
   final String searchTerm;
   final DictionarySearchResult? result;
   final bool allLoaded;
+
+  /// 该页 [searchTerm] 上来源自带的振假名（见 [DictionaryPopupEntry.rubySpans]）。
+  final List<FushiRubySpan> rubySpans;
+
+  /// 该页 [searchTerm] 出自的那一句（见 [DictionaryPopupEntry.contextSentence]）。
+  final String contextSentence;
 
   /// 离开该页时弹窗内容的 `scrollTop`（CSS px，WebView 局部）；回来时恢复。
   final double scrollTop;
@@ -81,12 +90,29 @@ class DictionaryPopupEntry {
     this.visible = true,
     this.isWarmSlot = false,
     this.allLoaded = false,
+    this.rubySpans = const <FushiRubySpan>[],
+    this.contextSentence = '',
     GlobalKey<DictionaryPopupWebViewState>? webViewKey,
   }) : webViewKey = webViewKey ?? GlobalKey<DictionaryPopupWebViewState>();
 
   String searchTerm;
   Rect selectionRect;
   DictionarySearchResult? result;
+
+  /// [searchTerm] 上来源自带的振假名（以 [searchTerm] 为坐标系），即本层首查时交给
+  /// 引擎、让读音吻合的候选排前的那组区间。「加载更多」是**同一个查询**扩大上限重查，
+  /// 必须带着同一组 ruby，否则续查结果按纯频率重排、整份替换掉首查的读音排序
+  /// （PR #2671 审查）。与 [searchTerm] 同生同灭：换词（热槽复用 / 原地跳转 / 后退
+  /// 前进 / 热槽复位）时一并替换。
+  List<FushiRubySpan> rubySpans;
+
+  /// [searchTerm] 出自的那一句：点释义正文里的词发起本层查词时，selection.js 在被点处
+  /// 取出的整句（`textSelected` 第 4 参，反馈 TnKWBi4C-9）。没有书 / 视频「当前句」的
+  /// 宿主（查词页 / 独立查词窗）制卡时拿它补 `{sentence}`——与 Yomitan 在弹窗释义里
+  /// 扫词同口径。与 [rubySpans] 同生同灭：只属于「这个词出自那一句」，换词（热槽复用 /
+  /// 原地跳转 / 后退前进 / 热槽复位）时一并替换；原地跳到的词（词头 / 链接 / 汉字）不
+  /// 出自任何句子，为空。
+  String contextSentence;
 
   /// 该层是否被绘制/可交互。常驻热槽在两次查词之间 `visible=false` 隐身，
   /// 但 WebView 仍挂载预热；一次查词把它翻为可见。
@@ -109,6 +135,15 @@ class DictionaryPopupEntry {
   /// 都重新判定，不跨查词沿用。
   Duration? searchPlaceholderShownFor;
 
+  /// 本层的入场淡入是否已走完、满不透明地画在屏上（隐藏即复位 false）。由
+  /// `parkedPopupLayer` 的 `onEntranceSettled` 回报、宿主写入。
+  ///
+  /// 只有满足它的层才进更下层的 `occluders`（`PopupOccluderClip` 把下层被盖住的部分
+  /// 整块裁掉）。反馈 iZupbhhdNV：曾按 [visible] 判，上层一翻可见、下层同一帧就被挖洞，
+  /// 而上层此时正从透明度 0 淡入——那 200ms 里洞口什么都不挡，视频画面直接透出来
+  /// （「视频查词框内出现播放画面，很短的一下，次级查词才有」）。
+  bool entranceSettled = false;
+
   /// 该层是否正在（增量/分页）搜索中。
   bool isSearching = false;
 
@@ -116,17 +151,27 @@ class DictionaryPopupEntry {
   /// [popupLookupPending]）。宿主若还有额外的屏外停靠门（对话框期间），实际注入值由
   /// `parkedPopupLayer` 的最终可见性再收紧一次，派生函数仍是同一个。
   bool get lookupPending => popupLookupPending(
-        layerVisible: visible,
-        isSearching: isSearching,
-        result: result,
-      );
+    layerVisible: visible,
+    isSearching: isSearching,
+    result: result,
+  );
 
   /// 是否已无更多结果可加载（分页到底）。
   bool allLoaded;
 
   /// BUG-1651：本层按 DOM 内容测量得到的外壳总高度（Flutter 逻辑像素）。null 表示
   /// 尚未测量，先按用户最大高度布局；每次新顶层查词重置，增量结果则在当前高度上伸缩。
+  ///
+  /// 宿主改它一律走 [DictionaryPopupController.setAutoFitHeight]：那里 notify，
+  /// 监听 controller 的那一层就地重建，不再整页 setState（每次渲染信号两次）。
   double? autoFitHeight;
+
+  /// 本层「查词会话」代次。热槽复用 / 关栈复位 / 原地跳转换页都**不换 entry 身份**，
+  /// 只靠 `entries.contains(entry)` 判不出「这条 entry 已经换成别的词了」——远程查词
+  /// 真异步时，慢回来的旧词结果会灌进新词那一层。发起异步查询前记下它，结果回来用
+  /// [DictionaryPopupController.isCurrentLookup] 核对。只由 controller 递增。
+  int get lookupGeneration => _lookupGeneration;
+  int _lookupGeneration = 0;
 
   /// 查询已结束、且没有任何可渲染结果（无词条也无汉字卡）。与
   /// `DictionaryPopupLayer` 画「未找到」的判据同口径：搜索期占位单例不算空。
@@ -187,7 +232,15 @@ class DictionaryPopupController extends ChangeNotifier {
   DictionaryPopupController({
     required this.lowMemory,
     this.onLookupStackDepthChanged,
-  }) {
+    PopupBodyStaticLayerGate? bodyStaticLayer,
+  }) : bodyStaticLayer =
+           bodyStaticLayer ??
+           PopupBodyStaticLayerGate(
+             setter: platformWebViewStaticLayerSetter(),
+           ) {
+    // 正文静态层的唯一收口：所有栈 / 可见性 / 搜索占位变化都经 notifyListeners，
+    // 这里统一折成「弹窗是否在屏上」交给闸门（去重在闸门里）。
+    addListener(_syncBodyStaticLayer);
     // 手柄重设计 P2：每个弹窗栈 controller 把自己登记为 dictionaryPopup scope 手柄
     // 动作的执行体（GamepadService 在页面 Actions 未消费后按可见性取用）。7 个宿主
     // （书内/漫画/视频/首页词典/独立查词/歌词浮窗/texthooker）由此免逐个接线。
@@ -207,6 +260,15 @@ class DictionaryPopupController extends ChangeNotifier {
   }
 
   late final DictionaryPopupGamepadHooks _gamepadHooks;
+
+  /// 查词弹窗打开期间给宿主正文 WebView 开静态硬件层（Android Hybrid Composition；
+  /// 其它平台 no-op）。宿主设 [PopupBodyStaticLayerGate.resolveBody]，正文 WebView
+  /// 新建 / 重建时调 [PopupBodyStaticLayerGate.bodyChanged]；开 / 关由本 controller 驱动。
+  final PopupBodyStaticLayerGate bodyStaticLayer;
+
+  /// 弹窗（可见层或搜索期占位）是否在屏上——开关动画期间正文同样静止被覆盖。
+  void _syncBodyStaticLayer() =>
+      bodyStaticLayer.popupOpenChanged(hasVisiblePopup || isSearchingUi);
 
   /// 栈顶**可见**层的 WebView 状态（热槽隐身层不算）；无可见层或 WebView 未挂载
   /// 返回 null（钩子就地变 no-op，不抛）。
@@ -275,15 +337,19 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 冷的。现在被裁掉的嵌套层把 WebView 键停到这里，宿主继续在屏外挂着它，下一条嵌套
   /// 层直接接管。上限 1：绝大多数嵌套只有两层，多停一个 realm 就多一份 WebView 进程
   /// 内存；更深层次仍冷建。低内存模式不停驻（与热槽同一策略）。
-  static const int kMaxParkedRealms = 1;
+  ///
+  /// P2-G（2026-10-20）：上限 1 → 2。上限 1 时第三层起每次都冷建（约 300KB 内联
+  /// HTML/CSS/JS 解析 + 等 onLoadStop + 全量静态段），而「词条里点词再点词」三层
+  /// 是常见操作。多停一个 realm 换掉这次冷建；低内存模式仍一个都不停（见 [_retireEntries]）。
+  static const int kMaxParkedRealms = 2;
 
   final List<GlobalKey<DictionaryPopupWebViewState>> _parkedRealms =
       <GlobalKey<DictionaryPopupWebViewState>>[];
 
   late final List<GlobalKey<DictionaryPopupWebViewState>> _parkedRealmsView =
       UnmodifiableListView<GlobalKey<DictionaryPopupWebViewState>>(
-    _parkedRealms,
-  );
+        _parkedRealms,
+      );
 
   /// 停驻中的嵌套 realm 键（最近用过的在末尾）。宿主必须把每一把键渲染成一层屏外
   /// 隐藏弹窗（[parkedRealmPopupLayer]），否则键背后的 WebView element 会被销毁，
@@ -337,6 +403,15 @@ class DictionaryPopupController extends ChangeNotifier {
   bool get hasVisiblePopup =>
       _entries.any((DictionaryPopupEntry e) => e.visible);
 
+  /// BUG-3652 续：[entry] 这一层此刻是否仍在屏上——仍在栈里（没被关 / 清栈）且未
+  /// 停驻（常驻热槽在两次查词之间 `visible=false` 隐身）。读的是模型而不是已建好的
+  /// widget 树：用户刚关掉弹窗、重建帧还没跑时，制卡回包看到的也是「已不在」。
+  ///
+  /// 对话框期间宿主把弹窗挪到屏外（`_popupHidingDialogDepth`）**不算**不在：那是同一
+  /// 次查词，对话框一关它就回来，失败原因仍该由它就地说。
+  bool isEntryOnScreen(DictionaryPopupEntry entry) =>
+      entry.visible && _entries.contains(entry);
+
   /// 最顶层**可见**条目的下标，无可见层返回 -1（常驻隐藏热槽不算）。
   int get lastVisibleIndex {
     for (int i = _entries.length - 1; i >= 0; i--) {
@@ -383,8 +458,8 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 派生值已落 false，可占位卡要到这次重建才撤。
   Duration? _searchPlaceholderElapsedFor(DictionaryPopupEntry e) =>
       identical(_searchTarget, e) && _pendingRectRaw != null
-          ? _searchUiClock.elapsed
-          : null;
+      ? _searchUiClock.elapsed
+      : null;
 
   /// [beginSearchUi] 起表：占位卡（及其入场淡入）从那一刻开始画。
   final Stopwatch _searchUiClock = Stopwatch();
@@ -421,13 +496,15 @@ class DictionaryPopupController extends ChangeNotifier {
       );
       return;
     }
-    _entries.add(DictionaryPopupEntry(
-      searchTerm: '',
-      selectionRect: Rect.zero,
-      result: seedResult ?? kPopupSearchingPlaceholderResult,
-      visible: false,
-      isWarmSlot: true,
-    ));
+    _entries.add(
+      DictionaryPopupEntry(
+        searchTerm: '',
+        selectionRect: Rect.zero,
+        result: seedResult ?? kPopupSearchingPlaceholderResult,
+        visible: false,
+        isWarmSlot: true,
+      ),
+    );
     notifyListeners();
     _notifyLookupStackDepth();
   }
@@ -435,6 +512,8 @@ class DictionaryPopupController extends ChangeNotifier {
   void _restoreWarmSeed(DictionaryPopupEntry e) {
     e
       ..searchTerm = ''
+      ..rubySpans = const <FushiRubySpan>[]
+      ..contextSentence = ''
       ..selectionRect = Rect.zero
       ..result = kPopupSearchingPlaceholderResult
       ..visible = false
@@ -442,7 +521,31 @@ class DictionaryPopupController extends ChangeNotifier {
       ..isSearching = false
       ..allLoaded = false;
     e.autoFitHeight = null;
+    _bumpLookupGeneration(e);
     _clearHistory(e);
+  }
+
+  /// [e] 换成一个新的查词会话：代次 +1，在途的旧查询回来后 [isCurrentLookup] 落 false。
+  void _bumpLookupGeneration(DictionaryPopupEntry e) {
+    e._lookupGeneration++;
+  }
+
+  /// [e] 仍在栈内、且仍是发起查询时（代次 [generation]）的那一次查词会话。
+  ///
+  /// 异步查词结果回填前必须过这道门：热槽复用时新旧查词是**同一个** entry，只核
+  /// `entries.contains` 会让慢回来的旧结果覆盖新词。
+  bool isCurrentLookup(DictionaryPopupEntry e, int generation) =>
+      e._lookupGeneration == generation && _entries.contains(e);
+
+  /// 写入 [e] 按内容测得的外壳高度并通知监听者（P1-D）。与旧值相差不足 1 逻辑像素、
+  /// 或 [e] 已不在栈内时 no-op——不白白重建。返回是否真的改了。
+  bool setAutoFitHeight(DictionaryPopupEntry e, double height) {
+    if (!_entries.contains(e)) return false;
+    final double? current = e.autoFitHeight;
+    if (current != null && (current - height).abs() < 1) return false;
+    e.autoFitHeight = height;
+    notifyListeners();
+    return true;
   }
 
   /// 清掉 [e] 的原地跳转历史与待恢复滚动位。所有「本层换成一个新查词会话」的路径
@@ -463,6 +566,8 @@ class DictionaryPopupController extends ChangeNotifier {
     required bool replaceStack,
     required bool visible,
     DictionarySearchResult? initialResult,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    String contextSentence = '',
   }) {
     onLookupStarted?.call();
     final bool warmHit =
@@ -488,6 +593,8 @@ class DictionaryPopupController extends ChangeNotifier {
       _cancelRevealTimer(_entries.first);
       e = _entries.first
         ..searchTerm = term
+        ..rubySpans = rubySpans
+        ..contextSentence = contextSentence
         ..selectionRect = rect
         ..result = initialResult
         ..allLoaded = false
@@ -495,6 +602,7 @@ class DictionaryPopupController extends ChangeNotifier {
         ..isSearching = true
         ..revealOnRender = false
         ..visible = visible;
+      _bumpLookupGeneration(e);
       _clearHistory(e);
     } else {
       if (replaceStack) {
@@ -507,6 +615,8 @@ class DictionaryPopupController extends ChangeNotifier {
         selectionRect: rect,
         result: initialResult,
         visible: visible,
+        rubySpans: rubySpans,
+        contextSentence: contextSentence,
         webViewKey: _takeRealmKey(),
       )..isSearching = true;
       _entries.add(e);
@@ -530,6 +640,8 @@ class DictionaryPopupController extends ChangeNotifier {
     required Rect rect,
     required int parentIndex,
     required bool visible,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    String contextSentence = '',
   }) {
     onLookupStarted?.call();
     truncateTo(parentIndex + 1);
@@ -537,6 +649,8 @@ class DictionaryPopupController extends ChangeNotifier {
       searchTerm: term,
       selectionRect: rect,
       visible: visible,
+      rubySpans: rubySpans,
+      contextSentence: contextSentence,
       webViewKey: _takeRealmKey(),
     )..isSearching = true;
     _entries.add(e);
@@ -609,12 +723,16 @@ class DictionaryPopupController extends ChangeNotifier {
   // ── 原地跳转历史（Hoshi Reader iOS 的 backStack/forwardStack）────────────
 
   DictionaryPopupHistoryPage _snapshot(
-      DictionaryPopupEntry e, double scrollTop) {
+    DictionaryPopupEntry e,
+    double scrollTop,
+  ) {
     return DictionaryPopupHistoryPage(
       searchTerm: e.searchTerm,
       result: e.result,
       allLoaded: e.allLoaded,
       scrollTop: scrollTop,
+      rubySpans: e.rubySpans,
+      contextSentence: e.contextSentence,
     );
   }
 
@@ -625,10 +743,14 @@ class DictionaryPopupController extends ChangeNotifier {
   }) {
     e
       ..searchTerm = page.searchTerm
+      ..rubySpans = page.rubySpans
+      ..contextSentence = page.contextSentence
       ..result = page.result
       ..allLoaded = page.allLoaded
       ..isSearching = false
       ..restoreScrollTop = restoreScrollTop;
+    // 换页 = 换查词会话：本层在途的 load-more 等旧词查询回来后一律作废。
+    _bumpLookupGeneration(e);
     // 弹窗不动：selectionRect / autoFitHeight 都保留。高度由新内容的
     // onContentMetrics 再伸缩，先重置会让外壳先跳到最大高再收回来。
   }
@@ -645,6 +767,7 @@ class DictionaryPopupController extends ChangeNotifier {
     required DictionarySearchResult result,
     required bool allLoaded,
     required double scrollTop,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) {
     if (!_entries.contains(e)) return false;
     onLookupStarted?.call();
@@ -657,6 +780,7 @@ class DictionaryPopupController extends ChangeNotifier {
         result: result,
         allLoaded: allLoaded,
         scrollTop: 0,
+        rubySpans: rubySpans,
       ),
       restoreScrollTop: null,
     );
@@ -666,14 +790,21 @@ class DictionaryPopupController extends ChangeNotifier {
   }
 
   /// 后退一页；[scrollTop] 是当前页离开时的滚动位（进前进栈，再前进时恢复）。
-  bool goBack(DictionaryPopupEntry e, {required double scrollTop}) =>
-      _navigate(e,
-          from: e._backHistory, to: e._forwardHistory, scrollTop: scrollTop);
+  bool goBack(DictionaryPopupEntry e, {required double scrollTop}) => _navigate(
+    e,
+    from: e._backHistory,
+    to: e._forwardHistory,
+    scrollTop: scrollTop,
+  );
 
   /// 前进一页；[scrollTop] 同 [goBack]。
   bool goForward(DictionaryPopupEntry e, {required double scrollTop}) =>
-      _navigate(e,
-          from: e._forwardHistory, to: e._backHistory, scrollTop: scrollTop);
+      _navigate(
+        e,
+        from: e._forwardHistory,
+        to: e._backHistory,
+        scrollTop: scrollTop,
+      );
 
   bool _navigate(
     DictionaryPopupEntry e, {
@@ -717,7 +848,10 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 零跳变。
   void reanchorEntry(DictionaryPopupEntry e, Rect rect) {
     if (!_entries.contains(e)) return;
-    if (!e.visible && e.isWarmSlot) return;
+    // 隐身且**没被任何查词认领**的热槽才不动：P1-C 起热槽命中也先挂起
+    // （[markPendingReveal]，`revealOnRender=true`）等首条渲染信号再翻可见，这段
+    // 窗口里高亮 eval 回来的重锚必须落地，翻可见时才一次到位。
+    if (!e.visible && e.isWarmSlot && !e.revealOnRender) return;
     if (e.selectionRect == rect) return;
     e.selectionRect = rect;
     notifyListeners();
@@ -828,6 +962,8 @@ class DictionaryPopupController extends ChangeNotifier {
   @override
   void dispose() {
     DictionaryPopupGamepadRegistry.pop(_gamepadHooks);
+    removeListener(_syncBodyStaticLayer);
+    bodyStaticLayer.dispose();
     // 防泄漏：销毁时取消所有挂起的兜底 Timer。
     for (final Timer t in _revealFailsafeTimers.values) {
       t.cancel();

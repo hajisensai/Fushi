@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_detail_view.dart';
@@ -6,7 +7,10 @@ import 'package:fushi/src/pages/implementations/media_server/media_server_grid_v
 import 'package:fushi/src/pages/implementations/media_server/media_server_home_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/cover_badge.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 
 import 'fake_media_server_browser.dart';
 
@@ -31,9 +35,14 @@ void main() {
     browser = FakeMediaServerBrowser();
   });
 
-  Widget harness() {
+  Widget harness({bool apple = false}) {
     return TranslationProvider(
       child: MaterialApp(
+        theme: ThemeData(
+          extensions: <ThemeExtension<dynamic>>[
+            FushiGlassTheme(FushiGlassMaterial.off, glassDesign: apple),
+          ],
+        ),
         home: Scaffold(
           body: MediaServerHomeView(
             session: MediaServerSession(
@@ -120,8 +129,15 @@ void main() {
       ),
       findsNWidgets(3),
     );
-    // 剧卡未看角标。
-    expect(find.text('3'), findsOneWidget);
+    // 剧卡未看集数在封面下副行（不再是封面角标）。
+    expect(
+      find.text(
+        '${t.video_filter_watch_status_unwatched} '
+        '${t.video_playlist_episodes(count: 3)}',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byType(CoverBadge), findsNothing);
   });
 
   testWidgets('库是按物理文件夹组织的：首页行显示最新作品海报，不显示文件夹卡', (WidgetTester tester) async {
@@ -173,7 +189,18 @@ void main() {
       find.descendant(of: row, matching: find.text('重生计划')),
       findsOneWidget,
     );
-    expect(find.descendant(of: row, matching: find.text('17')), findsOneWidget);
+    // 未看集数不再是封面角标，进封面下的副行（2026-10-25 材质定版）。
+    expect(
+      find.descendant(
+        of: row,
+        matching: find.text(t.media_server_item_unplayed_episodes(n: 17)),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: row, matching: find.byType(CoverBadge)),
+      findsNothing,
+    );
     expect(find.text('完结动漫'), findsNothing, reason: '不再列库内物理文件夹');
     expect(find.text('新番完结'), findsNothing);
   });
@@ -324,4 +351,105 @@ void main() {
     expect(played, hasLength(1), reason: '海报墙里的电影先进详情，不直接播');
     expect(find.byType(MediaServerDetailView), findsOneWidget);
   });
+
+  testWidgets('a-XEzglLaq：继续观看卡点按续播，长按 / 右键出菜单「继续播放 / 打开详情」', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final List<MediaServerPlayRequest> played = <MediaServerPlayRequest>[];
+    browser.libraries.add(shows);
+    browser.resume.addAll(
+      fakeEpisodes(seriesId: 's1', seasonId: 'sea1', seasonNumber: 1, count: 2),
+    );
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: MediaServerHomeView(
+              session: MediaServerSession(
+                browser: browser,
+                play: (BuildContext _, MediaServerPlayRequest request) =>
+                    played.add(request),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final Finder card = find.byKey(
+      ValueKey<String>('${browser.serverId}-home-continue-card-sea1-ep2'),
+    );
+    final Finder resumeItem = find.byKey(
+      const ValueKey<String>('media-server-continue-menu-resume'),
+    );
+    final Finder detailsItem = find.byKey(
+      const ValueKey<String>('media-server-continue-menu-details'),
+    );
+
+    // 长按：只出菜单，不播、不跳。
+    await tester.longPress(card);
+    await tester.pumpAndSettle();
+    expect(played, isEmpty);
+    expect(find.byType(MediaServerDetailView), findsNothing);
+    expect(find.text(t.media_server_continue_menu_resume), findsOneWidget);
+    expect(find.text(t.media_server_continue_menu_details), findsOneWidget);
+
+    // 「继续播放」= 点按同义：从这一集续播，同伴是这一行。
+    await tester.tap(resumeItem);
+    await tester.pumpAndSettle();
+    expect(played, hasLength(1));
+    expect(played.single.info.id, 'sea1-ep2');
+    expect(resumeItem, findsNothing, reason: '选完菜单收起');
+
+    // 右键同一菜单；「打开详情」进所属剧的详情（选中这一集的季），不播。
+    await tester.tap(card, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(detailsItem);
+    await tester.pumpAndSettle();
+    expect(played, hasLength(1), reason: '打开详情不播');
+    final MediaServerDetailView detail = tester.widget<MediaServerDetailView>(
+      find.byType(MediaServerDetailView),
+    );
+    expect(detail.item.id, 's1');
+    expect(detail.item.type, MediaServerItemType.series);
+    expect(detail.initialSeasonId, 'sea1');
+  });
+
+  for (final bool apple in <bool>[false, true]) {
+    final String design = apple ? 'Apple' : 'MD3';
+    testWidgets('BUG-3993（$design）：独立路由（不在库页外壳里）时页头让开状态栏，正文在页头下方', (
+      WidgetTester tester,
+    ) async {
+      const double statusBar = 47;
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.padding = const FakeViewPadding(top: statusBar);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPadding);
+      browser.libraries.add(movies);
+
+      await tester.pumpWidget(harness(apple: apple));
+      await tester.pumpAndSettle();
+
+      // 两条分支真的走到了各自的设计系统，避免 apple 变体悄悄退回 MD3 分支。
+      expect(
+        isGlassDesign(tester.element(find.byType(MediaServerHomeView))),
+        apple,
+      );
+      final Rect search = tester.getRect(
+        find.byKey(const ValueKey<String>('media-server-home-search')),
+      );
+      expect(search.top, greaterThanOrEqualTo(statusBar));
+      // 正文让位跟着页头实测高度走：「媒体库」标题不被页头盖住。
+      final Rect libraries = tester.getRect(
+        find.text(t.media_server_libraries_title),
+      );
+      expect(libraries.top, greaterThanOrEqualTo(search.bottom));
+    });
+  }
 }

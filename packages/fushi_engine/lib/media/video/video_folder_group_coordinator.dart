@@ -26,8 +26,8 @@ class VideoFolderGroupCoordinator {
   const VideoFolderGroupCoordinator({
     required FushiDatabase database,
     required VideoBookRepository repository,
-  })  : _database = database,
-        _repository = repository;
+  }) : _database = database,
+       _repository = repository;
 
   final FushiDatabase _database;
   final VideoBookRepository _repository;
@@ -41,24 +41,32 @@ class VideoFolderGroupCoordinator {
   /// - 多集优先复用成员重叠或同作品的 playlist 合集；
   /// - 重扫只补成员并按全集自然顺序整理，不移除本轮未发现的旧成员；
   /// - [sourceId] 非空时，只把尚无来源的复用视频归到当前来源。
+  /// - [restoreDissolvedGroups] 为 true 时不再尊重「用户解散过」的墓碑（BUG-1739
+  ///   那道门），按规则把散开的成员重新归组；新建合集经 `createMediaCollection`
+  ///   清掉同名墓碑、成员经 `addToCollection` 清成员墓碑。只给用户显式的「恢复
+  ///   自动分组」用（BUG-3654），普通重扫一律 false。
   Future<VideoFolderGroupSummary> groupPaths({
     required List<String> videoPaths,
     List<String> createdVideoPaths = const <String>[],
     int? sourceId,
     String groupingMode = 'series',
     String? sourceRoot,
+    bool restoreDissolvedGroups = false,
   }) async {
     final Map<String, String> uniquePaths = <String, String>{};
     for (final String path in videoPaths) {
       uniquePaths.putIfAbsent(normalizeVideoPath(path), () => path);
     }
     final List<String> paths = uniquePaths.values.toList()
-      ..sort((String a, String b) =>
-          normalizeVideoPath(a).compareTo(normalizeVideoPath(b)));
+      ..sort(
+        (String a, String b) =>
+            normalizeVideoPath(a).compareTo(normalizeVideoPath(b)),
+      );
     if (paths.isEmpty) return _emptySummary;
 
-    final Set<String> createdPathKeys =
-        createdVideoPaths.map(normalizeVideoPath).toSet();
+    final Set<String> createdPathKeys = createdVideoPaths
+        .map(normalizeVideoPath)
+        .toSet();
     List<VideoBookRow> books = await _repository.listAll();
     Map<String, VideoBookRow> booksByPath = <String, VideoBookRow>{
       for (final VideoBookRow row in books)
@@ -95,8 +103,8 @@ class VideoFolderGroupCoordinator {
       for (final VideoBookRow row in books) row.bookUid: row,
     };
 
-    final List<MediaCollectionRow> collections =
-        await _database.getAllMediaCollections();
+    final List<MediaCollectionRow> collections = await _database
+        .getAllMediaCollections();
     final Map<int, List<MediaCollectionItemRow>> itemsByCollection =
         <int, List<MediaCollectionItemRow>>{};
     for (final MediaCollectionItemRow item
@@ -136,6 +144,7 @@ class VideoFolderGroupCoordinator {
       collections: collections,
       createdCollectionIds: createdCollectionIds,
       updatedCollectionIds: updatedCollectionIds,
+      restoreDissolvedGroups: restoreDissolvedGroups,
     );
     if (groupingMode == 'folder') {
       final String root = sourceRoot!;
@@ -150,6 +159,7 @@ class VideoFolderGroupCoordinator {
         collections: collections,
         createdCollectionIds: createdCollectionIds,
         updatedCollectionIds: updatedCollectionIds,
+        restoreDissolvedGroups: restoreDissolvedGroups,
       );
       return (
         createdVideoUids: List<String>.unmodifiable(createdVideoUids),
@@ -180,8 +190,9 @@ class VideoFolderGroupCoordinator {
       if (groupRows.isEmpty) continue;
 
       final String seriesKey = _seriesKey(group.series);
-      final Set<String> groupUids =
-          groupRows.map((VideoBookRow row) => row.bookUid).toSet();
+      final Set<String> groupUids = groupRows
+          .map((VideoBookRow row) => row.bookUid)
+          .toSet();
       final List<_CollectionCandidate> candidates = <_CollectionCandidate>[];
       for (final MediaCollectionRow collection in collections) {
         if (collection.collectionType != 'playlist') continue;
@@ -203,31 +214,32 @@ class VideoFolderGroupCoordinator {
           }
         }
         final bool exactName = _seriesKey(collection.name) == seriesKey;
-        final bool eligible = overlap > 0 ||
+        final bool eligible =
+            overlap > 0 ||
             sameSeriesMembers > 0 ||
             (exactName && (group.isPlaylist || sourceId != null));
         if (eligible) {
-          candidates.add(_CollectionCandidate(
-            collection: collection,
-            overlap: overlap,
-            sameSourceSeriesMembers: sameSourceSeriesMembers,
-            sameSeriesMembers: sameSeriesMembers,
-            exactName: exactName,
-          ));
+          candidates.add(
+            _CollectionCandidate(
+              collection: collection,
+              overlap: overlap,
+              sameSourceSeriesMembers: sameSourceSeriesMembers,
+              sameSeriesMembers: sameSeriesMembers,
+              exactName: exactName,
+            ),
+          );
         }
       }
       candidates.sort(_compareCandidates);
 
-      MediaCollectionRow? collection =
-          candidates.isEmpty ? null : candidates.first.collection;
+      MediaCollectionRow? collection = candidates.isEmpty
+          ? null
+          : candidates.first.collection;
       if (collection == null && !group.isPlaylist) continue;
       bool createdCollection = false;
       if (collection == null) {
-        final MediaCollectionRow? natural =
-            await _database.getMediaCollectionByNaturalKey(
-          group.series,
-          'playlist',
-        );
+        final MediaCollectionRow? natural = await _database
+            .getMediaCollectionByNaturalKey(group.series, 'playlist');
         if (natural != null) {
           collection = natural;
         } else {
@@ -235,15 +247,22 @@ class VideoFolderGroupCoordinator {
           // 「删除合集（保留条目）」会在成员文件仍在来源目录时被下一次扫描按
           // 自然键原样重建（createMediaCollection 还会清墓碑），删除永远不生效。
           // 成员视频本身照常入库/保留，只是不再被自动归组。
-          if (await _database.hasCollectionDeletionTombstone(
-            group.series,
-            'playlist',
-          )) {
+          if (!restoreDissolvedGroups &&
+              await _database.hasCollectionDeletionTombstone(
+                group.series,
+                'playlist',
+              )) {
             continue;
           }
           final int id = await _database.createMediaCollection(
             group.series,
             collectionType: 'playlist',
+            // v124（AI 整理库 spec §6）：规则建的合集归整理器管。
+            origin: CollectionOrigin.rule,
+            organizeKey: titleOrganizeKey(
+              CollectionShelfDomain.video.name,
+              group.series,
+            ),
           );
           collection = (await _database.getMediaCollectionById(id))!;
           createdCollection = true;
@@ -260,8 +279,10 @@ class VideoFolderGroupCoordinator {
       List<MediaCollectionItemRow> current =
           itemsByCollection[collection.id] ?? <MediaCollectionItemRow>[];
       final Set<String> currentVideoUids = current
-          .where((MediaCollectionItemRow item) =>
-              item.mediaType == MediaKind.video.dbValue)
+          .where(
+            (MediaCollectionItemRow item) =>
+                item.mediaType == MediaKind.video.dbValue,
+          )
           .map((MediaCollectionItemRow item) => item.entryKey)
           .toSet();
       for (final VideoBookRow row in groupRows) {
@@ -270,6 +291,7 @@ class VideoFolderGroupCoordinator {
             collection.id,
             MediaKind.video,
             row.bookUid,
+            userIntent: false,
           );
           changed = true;
         }
@@ -277,17 +299,17 @@ class VideoFolderGroupCoordinator {
 
       current = await _database.getCollectionItems(collection.id);
       final List<MediaCollectionItemRow> currentVideos = current
-          .where((MediaCollectionItemRow item) =>
-              item.mediaType == MediaKind.video.dbValue)
+          .where(
+            (MediaCollectionItemRow item) =>
+                item.mediaType == MediaKind.video.dbValue,
+          )
           .toList();
       final List<MediaCollectionItemRow> orderedVideos =
-          List<MediaCollectionItemRow>.of(currentVideos)
-            ..sort((MediaCollectionItemRow a, MediaCollectionItemRow b) =>
-                _compareVideoMembers(a, b, booksByUid));
-      final bool orderChanged = !_sameMemberOrder(
-        currentVideos,
-        orderedVideos,
-      );
+          List<MediaCollectionItemRow>.of(currentVideos)..sort(
+            (MediaCollectionItemRow a, MediaCollectionItemRow b) =>
+                _compareVideoMembers(a, b, booksByUid),
+          );
+      final bool orderChanged = !_sameMemberOrder(currentVideos, orderedVideos);
       if (orderChanged) {
         await _database.reorderCollectionItemsAutomatically(
           collection.id,
@@ -298,8 +320,9 @@ class VideoFolderGroupCoordinator {
         );
         changed = true;
       }
-      itemsByCollection[collection.id] =
-          await _database.getCollectionItems(collection.id);
+      itemsByCollection[collection.id] = await _database.getCollectionItems(
+        collection.id,
+      );
       if (!createdCollection && changed) {
         updatedCollectionIds.add(collection.id);
       }
@@ -322,11 +345,13 @@ class VideoFolderGroupCoordinator {
     required ({
       Map<String, List<VideoBookRow>> members,
       Map<String, String> displayPaths,
-    }) folders,
+    })
+    folders,
     required String Function(String displayPath) nameOf,
     required List<MediaCollectionRow> collections,
     required List<int> createdCollectionIds,
     required List<int> updatedCollectionIds,
+    required bool restoreDissolvedGroups,
   }) async {
     for (final MapEntry<String, List<VideoBookRow>> entry
         in folders.members.entries) {
@@ -354,16 +379,16 @@ class VideoFolderGroupCoordinator {
                 '$baseName (${p.posix.basename(p.posix.dirname(displayPath))}${suffix == 1 ? '' : ' $suffix'})';
             suffix++;
           }
-          if (await _database.hasCollectionDeletionTombstone(
-            name,
-            'collection',
-          )) {
+          if (!restoreDissolvedGroups &&
+              await _database.hasCollectionDeletionTombstone(
+                name,
+                'collection',
+              )) {
             return;
           }
-          final Set<String> removed = await _removedFolderMembers(
-            name,
-            'collection',
-          );
+          final Set<String> removed = restoreDissolvedGroups
+              ? const <String>{}
+              : await _removedFolderMembers(name, 'collection');
           if (entry.value.every(
             (VideoBookRow row) => removed.contains(row.bookUid),
           )) {
@@ -372,11 +397,12 @@ class VideoFolderGroupCoordinator {
           final int id = await _database.createMediaCollection(
             name,
             collectionType: 'collection',
+            // v124：目录合集——整理器只把它当并入目标，不合并、不移出成员。
+            origin: CollectionOrigin.folder,
           );
           await (_database.update(
             _database.mediaCollections,
-          )..where((tbl) => tbl.id.equals(id)))
-              .write(
+          )..where((tbl) => tbl.id.equals(id))).write(
             MediaCollectionsCompanion(
               sourceFolderPath: Value<String?>(entry.key),
             ),
@@ -395,10 +421,15 @@ class VideoFolderGroupCoordinator {
                 .map((MediaCollectionItemRow item) => item.entryKey)
                 .toSet();
         bool changed = false;
-        final Set<String> removedMembers = await _removedFolderMembers(
-          collection.name,
-          collection.collectionType,
-        );
+        // 恢复自动分组新建的目录合集与上面建前检查同一口径越过成员墓碑：只在建前
+        // 越过、这里仍按墓碑跳过，会建出缺集甚至空的合集（BUG-3654）。已存在的
+        // 合集不是被解散的，用户从里面移出的集照旧尊重。
+        final Set<String> removedMembers = created && restoreDissolvedGroups
+            ? const <String>{}
+            : await _removedFolderMembers(
+                collection.name,
+                collection.collectionType,
+              );
         entry.value.sort(
           (VideoBookRow a, VideoBookRow b) =>
               a.videoPath.compareTo(b.videoPath),
@@ -410,6 +441,7 @@ class VideoFolderGroupCoordinator {
             collection.id,
             MediaKind.video,
             row.bookUid,
+            userIntent: false,
           );
           changed = true;
         }
@@ -419,11 +451,12 @@ class VideoFolderGroupCoordinator {
   }
 
   Future<Set<String>> _removedFolderMembers(String name, String type) async =>
-      (await (_database.select(_database.collectionMemberTombstones)
-                ..where((tbl) =>
+      (await (_database.select(_database.collectionMemberTombstones)..where(
+                (tbl) =>
                     tbl.collectionName.equals(name) &
                     tbl.collectionType.equals(type) &
-                    tbl.mediaType.equals(MediaKind.video.dbValue)))
+                    tbl.mediaType.equals(MediaKind.video.dbValue),
+              ))
               .get())
           .map((CollectionMemberTombstoneRow row) => row.entryKey)
           .toSet();
@@ -483,8 +516,9 @@ int _compareVideoMembers(
   if (result != 0) return result;
   result = aRow.title.toLowerCase().compareTo(bRow.title.toLowerCase());
   if (result != 0) return result;
-  result = normalizeVideoPath(aRow.videoPath)
-      .compareTo(normalizeVideoPath(bRow.videoPath));
+  result = normalizeVideoPath(
+    aRow.videoPath,
+  ).compareTo(normalizeVideoPath(bRow.videoPath));
   if (result != 0) return result;
   return a.entryKey.compareTo(b.entryKey);
 }
@@ -510,7 +544,7 @@ String _seriesKey(String value) => value.trim().toLowerCase();
 /// 把 [paths] 按 [keyOf] 分桶到已入库行（未入库的路径跳过）；[displayOf] 给出
 /// 每个目录键第一次出现时的展示路径（`/` 分隔、保留大小写）。
 ({Map<String, List<VideoBookRow>> members, Map<String, String> displayPaths})
-    _bucketByFolder(
+_bucketByFolder(
   List<String> paths,
   Map<String, VideoBookRow> booksByPath, {
   required String Function(String path) keyOf,
@@ -576,8 +610,8 @@ bool _isWindowsSourcePath(String path) =>
 
 String _videoSourceFolderDisplayPath(String videoPath, String sourceRoot) {
   final p.Context context = p.Context(
-      style:
-          _isWindowsSourcePath(sourceRoot) ? p.Style.windows : p.Style.posix);
+    style: _isWindowsSourcePath(sourceRoot) ? p.Style.windows : p.Style.posix,
+  );
   final String root = context.normalize(sourceRoot);
   final String path = context.normalize(videoPath);
   final String relative = context.relative(path, from: root);
@@ -588,6 +622,8 @@ String _videoSourceFolderDisplayPath(String videoPath, String sourceRoot) {
     throw ArgumentError.value(videoPath, 'videoPath', 'Outside source root');
   }
   final List<String> parts = context.split(relative);
-  return (parts.length > 1 ? context.join(root, parts.first) : root)
-      .replaceAll('\\', '/');
+  return (parts.length > 1 ? context.join(root, parts.first) : root).replaceAll(
+    '\\',
+    '/',
+  );
 }

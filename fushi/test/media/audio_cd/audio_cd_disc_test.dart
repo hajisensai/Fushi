@@ -1,9 +1,9 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audio_cd/audio_cd_import.dart'
+    show isAudioCdNeighbourMedia;
 import 'package:fushi_engine/media/audio_cd/audio_cd_disc.dart';
-import 'package:fushi_engine/media/media_extensions.dart';
-import 'package:path/path.dart' as p;
 
 /// 按 `CDROM_TOC` 布局拼一份 TOC。[entries] 末项应是 lead-out（0xAA）。
 Uint8List _toc(List<({int number, int control, int lba})> entries) {
@@ -93,9 +93,8 @@ void main() {
   });
 
   group('audioCdLayoutOf', () {
-    // 与生产（audioCdLayoutOfDirectory）同一判据：视频库收的扩展名，含 .aiff / .aif。
-    bool media(String name) =>
-        kVideoLibraryMediaExtensions.contains(p.extension(name).toLowerCase());
+    // 与生产（audioCdLayoutOfDirectory）同一判据：视频或纯音频，含 .aiff / .aif。
+    bool media(String name) => isAudioCdNeighbourMedia(name);
 
     test('Windows: only .cda shortcuts', () {
       expect(

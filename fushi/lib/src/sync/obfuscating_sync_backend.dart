@@ -17,8 +17,8 @@ import 'package:fushi_engine/sync/ttu_models.dart';
 /// （对比 / 增量 / 冲突 / 删除全靠文件名）零影响。
 ///
 /// 混淆插入点（只有这 5 个数据入口，其余方法纯委托）：
-/// - [uploadContentFile] / [putAsset]：上传前把本地文件流式混淆到临时文件再传。
-/// - [downloadContentFile] / [getAsset]：inner 先落临时，再流式反混淆到目标。
+/// - [uploadContentFile] / [putAsset]：上传前把本地文件混淆到临时文件再传（Rust 整段读写）。
+/// - [downloadContentFile] / [getAsset]：inner 先落临时，再还原到目标（Rust 整段读写）。
 /// - [ensureBookFolder] 的 coverData：整块混淆（封面是小数据）。
 ///
 /// A2（JSON 正文混淆）是 follow-up：本装饰器不碰 [updateProgressFile] /
@@ -38,31 +38,22 @@ class ObfuscatingSyncBackend extends SyncBackend
 
   // ── 混淆临时文件辅助 ──────────────────────────────────────────────
 
-  /// 把 [source] 文件经 [SyncObfuscator.obfuscateStream] 写到一个临时文件，
-  /// 返回该临时文件；调用方用完须删。流式，不把大文件读进内存。
+  /// 把 [source] 文件经 [SyncObfuscator.obfuscateFile] 混淆到一个临时文件，返回该临时
+  /// 文件；调用方用完须删。整段在 Rust 里流式读写，不把大文件读进内存。
   Future<File> _obfuscateToTemp(File source) async {
     final tmp = await _createTempFile('obf_up_');
-    final sink = tmp.openWrite();
-    try {
-      await sink.addStream(SyncObfuscator.obfuscateStream(source.openRead()));
-    } finally {
-      await sink.close();
-    }
+    await SyncObfuscator.obfuscateFile(source, tmp);
     return tmp;
   }
 
-  /// 把 [obfuscated] 文件经 [SyncObfuscator.deobfuscateStream] 还原到 [destination]
-  /// （混读：无魔数的旧明文原样透传）。流式，不把大文件读进内存。
+  /// 把 [obfuscated] 文件经 [SyncObfuscator.deobfuscateFile] 还原到 [destination]
+  /// （混读：无魔数的旧明文原样复制）。整段在 Rust 里流式读写。
   Future<void> _deobfuscateToDestination(
-      File obfuscated, File destination) async {
+    File obfuscated,
+    File destination,
+  ) async {
     await destination.parent.create(recursive: true);
-    final sink = destination.openWrite();
-    try {
-      await sink
-          .addStream(SyncObfuscator.deobfuscateStream(obfuscated.openRead()));
-    } finally {
-      await sink.close();
-    }
+    await SyncObfuscator.deobfuscateFile(obfuscated, destination);
   }
 
   Future<File> _createTempFile(String prefix) async {
@@ -116,15 +107,15 @@ class ObfuscatingSyncBackend extends SyncBackend
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) =>
-      _inner.ensureBookFolder(
-        bookTitle: bookTitle,
-        rootFolderId: rootFolderId,
-        // 封面是小数据，整块混淆。null 原样透传。混淆包在惰性回调「里面」，
-        // 所以内层后端缓存命中不调用回调时，既不读磁盘也不做混淆（TODO-2657）。
-        readCoverData:
-            readCoverData == null ? null : _obfuscateCover(readCoverData),
-      );
+  }) => _inner.ensureBookFolder(
+    bookTitle: bookTitle,
+    rootFolderId: rootFolderId,
+    // 封面是小数据，整块混淆。null 原样透传。混淆包在惰性回调「里面」，
+    // 所以内层后端缓存命中不调用回调时，既不读磁盘也不做混淆（TODO-2657）。
+    readCoverData: readCoverData == null
+        ? null
+        : _obfuscateCover(readCoverData),
+  );
 
   /// 把惰性封面来源 [inner] 包一层混淆，保持惰性（只在被调用时才读+混淆）。
   static SyncCoverDataProvider _obfuscateCover(SyncCoverDataProvider inner) =>
@@ -167,9 +158,11 @@ class ObfuscatingSyncBackend extends SyncBackend
     required String folderId,
     required String? fileId,
     required TtuProgress progress,
-  }) =>
-      _inner.updateProgressFile(
-          folderId: folderId, fileId: fileId, progress: progress);
+  }) => _inner.updateProgressFile(
+    folderId: folderId,
+    fileId: fileId,
+    progress: progress,
+  );
 
   @override
   Future<void> updateStatsFile({
@@ -184,9 +177,11 @@ class ObfuscatingSyncBackend extends SyncBackend
     required String folderId,
     required String? fileId,
     required TtuAudioBook audioBook,
-  }) =>
-      _inner.updateAudioBookFile(
-          folderId: folderId, fileId: fileId, audioBook: audioBook);
+  }) => _inner.updateAudioBookFile(
+    folderId: folderId,
+    fileId: fileId,
+    audioBook: audioBook,
+  );
 
   // ── Content file sync（混淆插入点） ───────────────────────────────
 
@@ -242,9 +237,10 @@ class ObfuscatingSyncBackend extends SyncBackend
   void restoreCache({
     String? rootFolderId,
     Map<String, String>? titleToFolderId,
-  }) =>
-      _inner.restoreCache(
-          rootFolderId: rootFolderId, titleToFolderId: titleToFolderId);
+  }) => _inner.restoreCache(
+    rootFolderId: rootFolderId,
+    titleToFolderId: titleToFolderId,
+  );
 
   @override
   String? get cachedRootFolderId => _inner.cachedRootFolderId;

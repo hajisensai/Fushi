@@ -109,9 +109,7 @@ void main() {
   final int padMs = int.tryParse(_param('ASR_ALIGN_PAD_MS')) ?? 500;
   final bool cpuOnly = _param('ASR_ALIGN_ONLY') == 'cpu';
 
-  testWidgets('CTC 强制对齐：正文文本 → 逐字起止帧 → cue 边界', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('CTC 强制对齐：正文文本 → 逐字起止帧 → cue 边界', (WidgetTester tester) async {
     expect(seed, isNotEmpty, reason: '需要 ASR_MODEL_SEED');
     for (final String f in <String>[audio, epubPath, srtPath]) {
       expect(File(f).existsSync(), isTrue, reason: '文件不存在：$f');
@@ -120,8 +118,9 @@ void main() {
       Directory(seed),
       kAsrOmnilingualPack,
     );
-    final AsrEncoderVariant variant =
-        cpuOnly ? AsrEncoderVariant.int8 : AsrEncoderVariant.fp32;
+    final AsrEncoderVariant variant = cpuOnly
+        ? AsrEncoderVariant.int8
+        : AsrEncoderVariant.fp32;
     expect(store.isReady(variant), isTrue, reason: '模型不全：$seed');
 
     // 1. EPUB → 章节（带 ruby 读音轨）。
@@ -131,18 +130,17 @@ void main() {
     final Directory work = await Directory.systemTemp.createTemp('asr_align_');
     AsrEngineSessions? sessions;
     try {
-      final EpubBook book =
-          EpubParser.parseSyncFromPath(epubPath, extract.path);
+      final EpubBook book = EpubParser.parseSyncFromPath(
+        epubPath,
+        extract.path,
+      );
       final List<EpubSection> sections = epubSectionsFromBook(book);
 
       // 2. cue：解析 → sidecar → 匹配 + 回填 → 句界重切 → 换正文。
       List<AudioCue> cues = (await SrtParser.parse(
         srtFile: File(srtPath),
         bookKey: 'align',
-      ))
-          .where((AudioCue c) => c.startMs < limitMs)
-          .take(maxCues)
-          .toList();
+      )).where((AudioCue c) => c.startMs < limitMs).take(maxCues).toList();
       final File sidecar = File(
         srtPath.replaceAll(RegExp(r'\.srt$'), '.tokens.jsonl'),
       );
@@ -187,8 +185,9 @@ void main() {
 
       // 3. 整段 PCM 进内存（20 分钟 ≈ 77 MB float32）。
       final Stopwatch pcmClock = Stopwatch()..start();
-      final List<AsrPcmChunk> chunks =
-          await FfmpegAsrPcmSource().decode(audio, chunkSeconds: 600).toList();
+      final List<AsrPcmChunk> chunks = await FfmpegAsrPcmSource()
+          .decode(audio, chunkSeconds: 600)
+          .toList();
       final int totalSamples = chunks.fold<int>(
         0,
         (int a, AsrPcmChunk c) => a + c.samples.length,
@@ -274,11 +273,12 @@ void main() {
           // 长度凑到整 2 s（减少动态会话的形状种类），Omnilingual 上限 40 s。
           final int len = s1 - s0;
           final int padded = math.min(
-              40 * kAsrSampleRate,
-              (len + 2 * kAsrSampleRate - 1) ~/
-                  (2 * kAsrSampleRate) *
-                  2 *
-                  kAsrSampleRate);
+            40 * kAsrSampleRate,
+            (len + 2 * kAsrSampleRate - 1) ~/
+                (2 * kAsrSampleRate) *
+                2 *
+                kAsrSampleRate,
+          );
           if (enc.isEmpty || len <= 0 || len > 40 * kAsrSampleRate) {
             skipped++;
           } else {
@@ -287,11 +287,16 @@ void main() {
             final Stopwatch one = Stopwatch()..start();
             final AsrCtcLogits lg = await decoder.runLogits(slice);
             runMs += one.elapsedMilliseconds;
-            final int realFrames =
-                math.min(lg.frames, (len / lg.frameSamples).ceil());
+            final int realFrames = math.min(
+              lg.frames,
+              (len / lg.frameSamples).ceil(),
+            );
             final AsrCtcAlignment? a = ctcForcedAlign(
-              logits:
-                  Float32List.sublistView(lg.logits, 0, realFrames * lg.vocab),
+              logits: Float32List.sublistView(
+                lg.logits,
+                0,
+                realFrames * lg.vocab,
+              ),
               frames: realFrames,
               vocab: lg.vocab,
               targets: enc.ids,

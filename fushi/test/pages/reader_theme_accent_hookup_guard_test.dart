@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 自定义主题「未接入颜色」补齐的源码守卫（2026-09 审计）：
 /// - 词典弹窗配色不再拿阅读器纸色当 seed 重造 ColorScheme（那样弹窗里的按钮 /
@@ -26,16 +26,22 @@ void main() {
   test('词典弹窗：配色即 app ColorScheme，不 fromSeed(纸色)、不叠纸色梯度', () {
     // 决策住在纯函数 resolveDictionaryPopupTheme 里（BUG-2434 从
     // chrome.part.dart 抽出），断言面因此在 dictionary_popup_theme.dart。
-    expect(popupTheme.contains('ColorScheme.fromSeed('), isFalse,
-        reason: '纸色重造 ColorScheme 会让按钮/高亮/描边与用户主题色脱钩');
+    expect(
+      popupTheme.contains('ColorScheme.fromSeed('),
+      isFalse,
+      reason: '纸色重造 ColorScheme 会让按钮/高亮/描边与用户主题色脱钩',
+    );
     expect(
       RegExp(r'buildColorScheme\(brightness\)').hasMatch(popupTheme),
       isTrue,
       reason: 'app 真实 ColorScheme 必须是基底',
     );
     // 用户 10-09：以外部查词模块为准——书内弹窗不再用纸色覆盖中性梯度。
-    expect(popupTheme.contains('deriveSurfaceRolesFrom('), isFalse,
-        reason: '纸色覆盖会让书内弹窗与外部查词模块配色分叉');
+    expect(
+      popupTheme.contains('deriveSurfaceRolesFrom('),
+      isFalse,
+      reason: '纸色覆盖会让书内弹窗与外部查词模块配色分叉',
+    );
   });
 
   test('词典弹窗：chrome.part 仍然只是把当前取值喂给那个纯函数', () {
@@ -47,8 +53,11 @@ void main() {
       start,
       chrome.indexOf('\n  }\n', start),
     );
-    expect(body.contains('resolveDictionaryPopupTheme('), isTrue,
-        reason: '决策必须仍然经由纯函数，否则上一条守卫就看不见它了');
+    expect(
+      body.contains('resolveDictionaryPopupTheme('),
+      isTrue,
+      reason: '决策必须仍然经由纯函数，否则上一条守卫就看不见它了',
+    );
     expect(body.contains('ColorScheme.fromSeed('), isFalse);
   });
 
@@ -99,9 +108,13 @@ void main() {
     // Apple 歌词页恒深色档：弹窗经 lyricsMode 走同一配方。
     expect(body.contains('lyricsMode: _lyricsMode,'), isTrue);
     // 进入歌词模式当场重算（app 已是深色时宿主主题不变、不会发通知）。
+    // 判据是「同一段同步代码里、任何 await 之前」：中间允许正文 WebView 换了
+    // 一个的通知（[notifyPopupBodyWebViewChanged]，查词弹窗静态层闸门要求它紧跟
+    // _lyricsMode 翻转，见 popup_body_static_layer_wiring_guard_test.dart）。
     expect(
       RegExp(
-        r'_rebuild\(\(\) => _lyricsMode = true\);\s*(//[^\n]*\n\s*)*'
+        r'_rebuild\(\(\) => _lyricsMode = true\);\s*'
+        r'(notifyPopupBodyWebViewChanged\(\);\s*)?(//[^\n]*\n\s*)*'
         r'_syncDictionaryTheme\(\);',
       ).hasMatch(lyrics),
       isTrue,
@@ -109,7 +122,8 @@ void main() {
     // 退出歌词模式当场恢复阅读器原覆盖值。
     expect(
       RegExp(
-        r'_rebuild\(\(\) => _lyricsMode = false\);\s*(//[^\n]*\n\s*)*'
+        r'_rebuild\(\(\) => _lyricsMode = false\);\s*'
+        r'(notifyPopupBodyWebViewChanged\(\);\s*)?(//[^\n]*\n\s*)*'
         r'_syncDictionaryTheme\(\);',
       ).hasMatch(lyrics),
       isTrue,

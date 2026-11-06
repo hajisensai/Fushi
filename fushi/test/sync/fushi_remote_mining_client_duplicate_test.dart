@@ -13,15 +13,14 @@ import 'package:http/testing.dart';
 /// 把主机的 401 一起吞掉，于是「token 被拒、根本没查成」被冒充成「查过了、不重复」。
 /// 用户看到 ➕ 会以为这张卡没做过。本组用真实 HTTP 状态码驱动，锁死三态映射。
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 Future<SyncRepository> _repo(FushiDatabase db) async {
   final SyncRepository repo = SyncRepository(db);
-  await repo.setFushiClientUrls(
-      const <FushiClientUrl>[FushiClientUrl(url: 'http://host:8765')]);
+  await repo.setFushiClientUrls(const <FushiClientUrl>[
+    FushiClientUrl(url: 'http://host:8765'),
+  ]);
   await repo.setFushiClientToken('tok');
   return repo;
 }
@@ -60,8 +59,10 @@ void main() {
     final FushiDatabase db = _testDb();
     addTearDown(db.close);
     expect(
-      await _check(db,
-          (http.Request _) => _json(<String, dynamic>{'duplicate': true}, 200)),
+      await _check(
+        db,
+        (http.Request _) => _json(<String, dynamic>{'duplicate': true}, 200),
+      ),
       RemoteDuplicateCheck.duplicate,
     );
   });
@@ -71,9 +72,9 @@ void main() {
     addTearDown(db.close);
     expect(
       await _check(
-          db,
-          (http.Request _) =>
-              _json(<String, dynamic>{'duplicate': false}, 200)),
+        db,
+        (http.Request _) => _json(<String, dynamic>{'duplicate': false}, 200),
+      ),
       RemoteDuplicateCheck.notDuplicate,
     );
   });
@@ -93,7 +94,8 @@ void main() {
     final FushiRemoteMiningClient client = FushiRemoteMiningClient(
       repo: await _repo(db),
       httpClient: MockClient(
-          (http.Request _) async => throw http.ClientException('boom')),
+        (http.Request _) async => throw http.ClientException('boom'),
+      ),
     );
     expect(
       await client.isDuplicate(expression: '猫', reading: 'ねこ'),
@@ -107,7 +109,8 @@ void main() {
     final FushiRemoteMiningClient client = FushiRemoteMiningClient(
       repo: SyncRepository(db),
       httpClient: MockClient(
-          (http.Request _) async => throw StateError('must not be called')),
+        (http.Request _) async => throw StateError('must not be called'),
+      ),
     );
     expect(
       await client.isDuplicate(expression: '猫', reading: 'ねこ'),

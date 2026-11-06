@@ -63,12 +63,7 @@ void main() {
 
     test('parses map result from platform bridge', () {
       final rect = ReaderSelectionScripts.highlightRectFromResult(
-        <String, Object?>{
-          'x': 1,
-          'y': 2.5,
-          'width': 3,
-          'height': 4.5,
-        },
+        <String, Object?>{'x': 1, 'y': 2.5, 'width': 3, 'height': 4.5},
       );
 
       expect(rect?.left, 1);
@@ -82,7 +77,9 @@ void main() {
       expect(ReaderSelectionScripts.highlightRectFromResult('null'), isNull);
       expect(ReaderSelectionScripts.highlightRectFromResult(''), isNull);
       expect(
-          ReaderSelectionScripts.highlightRectFromResult('  null  '), isNull);
+        ReaderSelectionScripts.highlightRectFromResult('  null  '),
+        isNull,
+      );
       expect(
         ReaderSelectionScripts.highlightRectFromResult(
           '{"x":10,"y":20,"width":0,"height":40}',
@@ -185,15 +182,15 @@ void main() {
       expect(js, contains('getNormalizedOffset:'));
     });
 
-    test(
-        'selectText delegates to selectFromPosition (shared core for the '
+    test('selectText delegates to selectFromPosition (shared core for the '
         'coordinate and caret paths)', () {
       expect(
-          js, contains('return this.selectFromPosition(hit.node, hit.offset'));
+        js,
+        contains('return this.selectFromPosition(hit.node, hit.offset'),
+      );
     });
 
-    test(
-        'selectFromPosition fires the onTextSelected handler (caret lookup '
+    test('selectFromPosition fires the onTextSelected handler (caret lookup '
         'reuses the same dictionary pipeline)', () {
       // Single onTextSelected emitter lives in selectFromPosition.
       final int emitters = "callHandler('onTextSelected'".allMatches(js).length;
@@ -210,7 +207,7 @@ void main() {
     });
 
     test('calls Flutter InAppWebView handler for empty tap', () {
-      expect(js, contains("callHandler('onTapEmpty'"));
+      expect(js, matches(RegExp(r"callHandler\(\s*'onTapEmpty'")));
     });
 
     // TODO-851：selectText 签名带第 4 参 fromHover。
@@ -223,12 +220,15 @@ void main() {
     // 不能 fire onTapEmpty（否则反复 toggle 操作栏导致闪烁）；真点击仍 fire。
     test('onTapEmpty only fires on the non-hover (tap) path', () {
       // 全脚本仅一处 onTapEmpty 调用（selectText 空白分支）。
-      final int emitters = "callHandler('onTapEmpty'".allMatches(js).length;
+      final int emitters = RegExp(
+        r"callHandler\(\s*'onTapEmpty'",
+      ).allMatches(js).length;
       expect(emitters, 1);
       // 该调用紧跟在 `if (!fromHover) {` 守卫之后。
       final RegExp guard = RegExp(
         r'if\s*\(\s*!fromHover\s*\)\s*\{\s*'
-        r"window\.flutter_inappwebview\.callHandler\('onTapEmpty'\);",
+        // 允许带实参（点击坐标 + 视口尺寸，供点击翻页区域分发）。
+        r"window\.flutter_inappwebview\.callHandler\(\s*'onTapEmpty'[^;]*\);",
       );
       expect(
         guard.hasMatch(js),
@@ -319,10 +319,7 @@ void main() {
 
     test('empty sentence falls back to the selected word', () {
       // 旧逻辑直接写 data.sentence（空）→ 收藏读点读到空串误报；新契约退回词。
-      expect(
-        ReaderSelectionScripts.resolveCurrentSentenceText('', '言葉'),
-        '言葉',
-      );
+      expect(ReaderSelectionScripts.resolveCurrentSentenceText('', '言葉'), '言葉');
     });
 
     test('whitespace-only sentence is NOT treated as empty (kept as-is)', () {
@@ -334,14 +331,13 @@ void main() {
       );
     });
 
-    test('both empty yields empty (word also empty — only when no selection)',
-        () {
-      // data.text 由调用方守卫保证非空，此处仅证 helper 本身不凭空造串。
-      expect(
-        ReaderSelectionScripts.resolveCurrentSentenceText('', ''),
-        '',
-      );
-    });
+    test(
+      'both empty yields empty (word also empty — only when no selection)',
+      () {
+        // data.text 由调用方守卫保证非空，此处仅证 helper 本身不凭空造串。
+        expect(ReaderSelectionScripts.resolveCurrentSentenceText('', ''), '');
+      },
+    );
   });
 
   // TODO-1104：拖选跨句制卡——source() 里必须存在「起点句首 → 终点句尾」端点合并逻辑，
@@ -350,20 +346,34 @@ void main() {
   group('ReaderSelectionScripts drag-selection sentence span (TODO-1104)', () {
     test('source() exposes the endpoint-merge helpers and wiring', () {
       final String src = ReaderSelectionScripts.source();
-      expect(src, contains('spanSentenceRange: function'),
-          reason: 'drag span must merge start/end sentence contexts');
-      expect(src, contains('textBetween: function'),
-          reason: 'merged card text is assembled across the dragged span');
+      expect(
+        src,
+        contains('spanSentenceRange: function'),
+        reason: 'drag span must merge start/end sentence contexts',
+      );
+      expect(
+        src,
+        contains('textBetween: function'),
+        reason: 'merged card text is assembled across the dragged span',
+      );
       // Native drag path computes an END-sentence context and merges it.
-      expect(src, contains('this.getSentenceContext(endNode, endOffset)'),
-          reason:
-              'the drag path must resolve the END sentence, not only start');
+      expect(
+        src,
+        contains('this.getSentenceContext(endNode, endOffset)'),
+        reason: 'the drag path must resolve the END sentence, not only start',
+      );
       // Never-break: the merge is gated on start!=end so tap single-point stays
       // byte-identical, and a reversed/cross-block span conservatively falls back.
-      expect(src, contains('var isDrag ='),
-          reason: 'collapsed (tap) selections must skip the widen path');
-      expect(src, contains('if (endSEnd < startSStart) return startOnly;'),
-          reason: 'reversed/discontiguous cross-block spans must fall back');
+      expect(
+        src,
+        contains('var isDrag ='),
+        reason: 'collapsed (tap) selections must skip the widen path',
+      );
+      expect(
+        src,
+        contains('if (endSEnd < startSStart) return startOnly;'),
+        reason: 'reversed/discontiguous cross-block spans must fall back',
+      );
     });
   });
 }

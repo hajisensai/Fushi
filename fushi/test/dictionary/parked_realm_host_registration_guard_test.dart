@@ -24,8 +24,11 @@ void main() {
   late List<({String path, String code})> hosts;
 
   setUpAll(() {
-    expect(libRoot.existsSync(), isTrue,
-        reason: 'flutter test 的 cwd 应是 fushi 包根');
+    expect(
+      libRoot.existsSync(),
+      isTrue,
+      reason: 'flutter test 的 cwd 应是 fushi 包根',
+    );
     hosts = <({String path, String code})>[];
     for (final FileSystemEntity e in libRoot.listSync(recursive: true)) {
       if (e is! File || !e.path.endsWith('.dart')) continue;
@@ -50,7 +53,8 @@ void main() {
     expect(
       missing,
       isEmpty,
-      reason: '这些宿主建了弹窗控制器却从不渲染 parkedRealms：'
+      reason:
+          '这些宿主建了弹窗控制器却从不渲染 parkedRealms：'
           '${missing.join(", ")}。'
           '控制器照常停驻离栈层的 WebView 键，宿主不挂在屏外 = 键背后的 element '
           '当帧销毁，下次嵌套查词静默退回冷建。',
@@ -62,8 +66,11 @@ void main() {
     // video_fushi_page / web_video_fushi_page / floating_lyric_lookup_host /
     // popup_dictionary_page。数字只是下界哨兵——新增宿主会让它往上走，
     // 往下掉一定是枚举器或判据坏了，不是「宿主变少了」。
-    expect(hosts.length, greaterThanOrEqualTo(7),
-        reason: '只扫到 ${hosts.length} 个宿主：枚举根或判据漂了');
+    expect(
+      hosts.length,
+      greaterThanOrEqualTo(7),
+      reason: '只扫到 ${hosts.length} 个宿主：枚举根或判据漂了',
+    );
   });
 
   test('循环体只许有一份：parkedRealmPopupLayer 单数形只在它自己的文件里被引用', () {
@@ -82,7 +89,10 @@ void main() {
       final String stripped = code.replaceAll('parkedRealmPopupLayers(', '');
       if (stripped.contains('parkedRealmPopupLayer(')) offenders.add(path);
     }
-    expect(offenders, isEmpty,
-        reason: '这些文件绕过共享原语直接铺单层：${offenders.join(", ")}');
+    expect(
+      offenders,
+      isEmpty,
+      reason: '这些文件绕过共享原语直接铺单层：${offenders.join(", ")}',
+    );
   });
 }

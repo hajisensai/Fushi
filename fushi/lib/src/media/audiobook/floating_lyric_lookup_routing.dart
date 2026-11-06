@@ -6,7 +6,7 @@
 // 的 reader_fushi/lyrics.part.dart 与 app 级 AppModel 默认 handler）共用本适配
 // 器，分词共用同一把 [floatingLyricSearchTerm]，消除两处分词漂移。
 //
-// 平台边界：Android 的悬浮歌词 native overlay 自带 PopupDictActivity，点词根本
+// 平台边界：Android 的悬浮歌词 native overlay 点词直接拉起 PopupDictFlutterActivity，点词根本
 // 不回 Dart、不经过这里；[GlobalLookupController.isSupported]（Windows-only）为
 // false 或控制器未 start 时本路由返回 false，由调用方回落各自原路由——点词永不
 // 静默丢失。

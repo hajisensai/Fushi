@@ -23,12 +23,17 @@ void main() {
         'Failed to obtain access credentials. Error: invalid_client '
         'Unauthorized Status code:401';
 
-    test('invalid_client (the exact 401 users saw) → "client invalid" message',
-        () {
-      final SyncAuthError error = SyncAuthError(invalidClientMsg);
-      expect(friendlySyncError(error), equals(t.sync_err_invalid_client));
-      expect(friendlySyncErrorDetail(error), equals(t.sync_err_invalid_client));
-    });
+    test(
+      'invalid_client (the exact 401 users saw) → "client invalid" message',
+      () {
+        final SyncAuthError error = SyncAuthError(invalidClientMsg);
+        expect(friendlySyncError(error), equals(t.sync_err_invalid_client));
+        expect(
+          friendlySyncErrorDetail(error),
+          equals(t.sync_err_invalid_client),
+        );
+      },
+    );
 
     test('invalid_client is NOT mislabeled as "sign-in expired"', () {
       final SyncAuthError error = SyncAuthError(invalidClientMsg);
@@ -36,28 +41,36 @@ void main() {
     });
 
     test('a genuine expired/401 token → "sign-in expired" message', () {
-      final SyncAuthError error =
-          SyncAuthError('Invalid Credentials (401 Unauthorized)');
+      final SyncAuthError error = SyncAuthError(
+        'Invalid Credentials (401 Unauthorized)',
+      );
       // This message contains "Credentials" + "401" but NOT invalid_client, so
       // it must map to the expired-auth clause, not the invalid_client one.
       expect(friendlySyncError(error), equals(t.sync_err_auth_expired));
       expect(
-          friendlySyncError(error), isNot(equals(t.sync_err_invalid_client)));
+        friendlySyncError(error),
+        isNot(equals(t.sync_err_invalid_client)),
+      );
     });
 
     test('placeholder fail-fast marker → "not configured" message', () {
       final SyncAuthError error = SyncAuthError(
-          'sync_credentials_not_configured: this build has no Google desktop '
-          'OAuth client secret (placeholder shipped)');
+        'sync_credentials_not_configured: this build has no Google desktop '
+        'OAuth client secret (placeholder shipped)',
+      );
       expect(friendlySyncError(error), equals(t.sync_err_not_configured));
       expect(friendlySyncError(error), isNot(equals(t.sync_err_auth_expired)));
     });
 
-    test('a bare invalid_grant (refresh token revoked) → "sign-in expired"',
-        () {
-      final SyncAuthError error = SyncAuthError('invalid_grant: Token expired');
-      expect(friendlySyncError(error), equals(t.sync_err_auth_expired));
-    });
+    test(
+      'a bare invalid_grant (refresh token revoked) → "sign-in expired"',
+      () {
+        final SyncAuthError error = SyncAuthError(
+          'invalid_grant: Token expired',
+        );
+        expect(friendlySyncError(error), equals(t.sync_err_auth_expired));
+      },
+    );
 
     // Removing the bare `credentials` substring from the not-configured gate
     // must NOT regress the existing backend config errors. "... credentials not
@@ -73,9 +86,13 @@ void main() {
         final SyncAuthError error = SyncAuthError(raw);
         expect(friendlySyncError(error), equals(t.sync_error(message: raw)));
         expect(
-            friendlySyncError(error), isNot(equals(t.sync_err_auth_expired)));
+          friendlySyncError(error),
+          isNot(equals(t.sync_err_auth_expired)),
+        );
         expect(
-            friendlySyncError(error), isNot(equals(t.sync_err_invalid_client)));
+          friendlySyncError(error),
+          isNot(equals(t.sync_err_invalid_client)),
+        );
       });
     }
   });
@@ -98,27 +115,29 @@ void main() {
       expect(friendlySyncErrorDetail(error), equals(t.sync_err_scope_upgrade));
     });
 
-    test(
-        'insufficient_scope is NOT mislabeled as "sign-in expired" '
+    test('insufficient_scope is NOT mislabeled as "sign-in expired" '
         '(B2 ordering)', () {
       // A verbatim 403 www-authenticate string carrying BOTH insufficient_scope
       // AND unauthorized: the scope branch must win because it is checked first.
       final SyncAuthError error = SyncAuthError(
-          'Access was denied (www-authenticate header was: Bearer '
-          'error="insufficient_scope") 403 unauthorized');
+        'Access was denied (www-authenticate header was: Bearer '
+        'error="insufficient_scope") 403 unauthorized',
+      );
       expect(friendlySyncError(error), equals(t.sync_err_scope_upgrade));
       expect(friendlySyncError(error), isNot(equals(t.sync_err_auth_expired)));
     });
 
     test('a 403 insufficient permission (alt wording) → scope-upgrade', () {
-      final SyncBackendError error =
-          SyncBackendError('403 insufficient permissions for this request');
+      final SyncBackendError error = SyncBackendError(
+        '403 insufficient permissions for this request',
+      );
       expect(friendlySyncError(error), equals(t.sync_err_scope_upgrade));
     });
 
     test('a plain 401 expired token is still "sign-in expired", not scope', () {
-      final SyncAuthError error =
-          SyncAuthError('Invalid Credentials (401 Unauthorized)');
+      final SyncAuthError error = SyncAuthError(
+        'Invalid Credentials (401 Unauthorized)',
+      );
       expect(friendlySyncError(error), equals(t.sync_err_auth_expired));
       expect(friendlySyncError(error), isNot(equals(t.sync_err_scope_upgrade)));
     });
@@ -130,7 +149,8 @@ void main() {
     test('403 DetailedApiRequestError with insufficient_scope → true', () {
       expect(
         googleDriveErrorIsInsufficientScope(
-            drive.DetailedApiRequestError(403, 'insufficient_scope')),
+          drive.DetailedApiRequestError(403, 'insufficient_scope'),
+        ),
         isTrue,
       );
     });
@@ -138,7 +158,8 @@ void main() {
     test('403 with insufficientPermissions wording → true', () {
       expect(
         googleDriveErrorIsInsufficientScope(
-            drive.DetailedApiRequestError(403, 'insufficientPermissions')),
+          drive.DetailedApiRequestError(403, 'insufficientPermissions'),
+        ),
         isTrue,
       );
     });
@@ -146,7 +167,8 @@ void main() {
     test('a 401 is NOT insufficient_scope', () {
       expect(
         googleDriveErrorIsInsufficientScope(
-            drive.DetailedApiRequestError(401, 'insufficient_scope')),
+          drive.DetailedApiRequestError(401, 'insufficient_scope'),
+        ),
         isFalse,
       );
     });
@@ -154,29 +176,38 @@ void main() {
     test('a 403 WITHOUT insufficient_scope (e.g. rate limit) → false', () {
       expect(
         googleDriveErrorIsInsufficientScope(
-            drive.DetailedApiRequestError(403, 'Rate limit exceeded')),
+          drive.DetailedApiRequestError(403, 'Rate limit exceeded'),
+        ),
         isFalse,
       );
     });
 
     test('AccessDeniedException carrying insufficient_scope → true', () {
       expect(
-        googleDriveErrorIsInsufficientScope(auth.AccessDeniedException(
+        googleDriveErrorIsInsufficientScope(
+          auth.AccessDeniedException(
             'Access was denied (www-authenticate header was: Bearer '
-            'error="insufficient_scope").')),
+            'error="insufficient_scope").',
+          ),
+        ),
         isTrue,
       );
     });
 
-    test('AccessDeniedException WITHOUT insufficient_scope (plain 401) → false',
-        () {
-      expect(
-        googleDriveErrorIsInsufficientScope(auth.AccessDeniedException(
-            'Access was denied (www-authenticate header was: Bearer '
-            'error="invalid_token").')),
-        isFalse,
-      );
-    });
+    test(
+      'AccessDeniedException WITHOUT insufficient_scope (plain 401) → false',
+      () {
+        expect(
+          googleDriveErrorIsInsufficientScope(
+            auth.AccessDeniedException(
+              'Access was denied (www-authenticate header was: Bearer '
+              'error="invalid_token").',
+            ),
+          ),
+          isFalse,
+        );
+      },
+    );
   });
 
   group('BUG-1693 互联对端不可达的错误分型', () {
@@ -184,15 +215,21 @@ void main() {
       final SyncPeerUnreachableError error = SyncPeerUnreachableError();
       expect(friendlySyncError(error), equals(t.sync_err_peer_unreachable));
       expect(
-          friendlySyncErrorDetail(error), equals(t.sync_err_peer_unreachable));
+        friendlySyncErrorDetail(error),
+        equals(t.sync_err_peer_unreachable),
+      );
       // 修复前的症状：任何分支都命不中 → 英文原文直接上屏。
-      expect(friendlySyncError(error),
-          isNot(contains('No reachable Fushi server address')));
+      expect(
+        friendlySyncError(error),
+        isNot(contains('No reachable Fushi server address')),
+      );
     });
 
     test('也不是「网络错误」——对端没开 Fushi 不等于本机网络坏了', () {
-      expect(friendlySyncError(SyncPeerUnreachableError()),
-          isNot(equals(t.sync_err_network)));
+      expect(
+        friendlySyncError(SyncPeerUnreachableError()),
+        isNot(equals(t.sync_err_network)),
+      );
     });
 
     test('裸 SyncBackendError 的兜底行为不变（原文可见，不吞信息）', () {

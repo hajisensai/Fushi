@@ -9,7 +9,7 @@
 // overlay_bridge_handlers）都是「制卡前先落缓存」，远程入口必须同一步骤。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('远程 mineEntry / mineImmersion 制卡前先落词典媒体缓存（BUG-2190）', () {
@@ -19,8 +19,9 @@ void main() {
     final String body = src.substring(cls);
 
     final int mineEntry = body.indexOf('Future<RemoteMineResult> mineEntry({');
-    final int mineImmersion =
-        body.indexOf('Future<RemoteMineResult> mineImmersion(');
+    final int mineImmersion = body.indexOf(
+      'Future<RemoteMineResult> mineImmersion(',
+    );
     expect(mineEntry, greaterThan(0));
     expect(mineImmersion, greaterThan(0));
 
@@ -31,17 +32,36 @@ void main() {
 
     final String entryBody = methodBody(mineEntry);
     final String immersionBody = methodBody(mineImmersion);
-    expect(entryBody,
-        contains("writeDictionaryMediaCache(fields['dictionaryMedia']"),
-        reason: 'mineEntry 制卡前必须把 fields.dictionaryMedia 落进 Anki 媒体缓存');
-    expect(immersionBody,
-        contains("writeDictionaryMediaCache(payload.fields['dictionaryMedia']"),
-        reason: 'mineImmersion 三条沉浸分支最终都走 repo 渲染，同样要先落缓存');
-    // 落缓存必须在 repo 创建/制卡之前（顺序守卫：缓存在前，repo 才读得到）。
-    expect(entryBody.indexOf('writeDictionaryMediaCache'),
-        lessThan(entryBody.indexOf('createAnkiRepository()')));
-    expect(immersionBody.indexOf('writeDictionaryMediaCache'),
-        lessThan(immersionBody.indexOf('createAnkiRepository()')));
+    expect(
+      entryBody,
+      contains("writeDictionaryMediaCache(fields['dictionaryMedia']"),
+      reason: 'mineEntry 制卡前必须把 fields.dictionaryMedia 落进 Anki 媒体缓存',
+    );
+    expect(
+      immersionBody,
+      contains("writeDictionaryMediaCache(payload.fields['dictionaryMedia']"),
+      reason: 'mineImmersion 三条沉浸分支最终都走 repo 渲染，同样要先落缓存',
+    );
+    // 落缓存必须在拿 repo / 制卡之前（顺序守卫：缓存在前，repo 才读得到）。
+    // #2477 起远程制卡改走 `_appModel.hostMiningAnkiRepository`（遵守本机挖词目标），
+    // 不再直接 `createAnkiRepository()`；锚点随之换，并先断言锚点存在，免得 -1
+    // 让顺序比较失去意义。
+    // 反馈 biLEesNqWb：再改走 `_miningRepository`——无配置视图时就是
+    // hostMiningAnkiRepository，扩展所选配置时按视图的 Anki 设置建。
+    expect(
+      RegExp(
+        r'BaseAnkiRepository get _miningRepository \{[^}]*'
+        r'_appModel\.hostMiningAnkiRepository',
+      ).hasMatch(body),
+      isTrue,
+      reason: '无配置视图时制卡仓库仍须是 hostMiningAnkiRepository',
+    );
+    const String repoAnchor = '_miningRepository';
+    for (final String methodBody in <String>[entryBody, immersionBody]) {
+      final int repoAt = methodBody.indexOf(repoAnchor);
+      expect(repoAt, greaterThan(0), reason: '制卡仓库应经 $repoAnchor 取得');
+      expect(methodBody.indexOf('writeDictionaryMediaCache'), lessThan(repoAt));
+    }
   });
 
   test('扩展 content.js 渲染弹窗前置 window.embedMedia = true（三镜像）', () {
@@ -55,9 +75,13 @@ void main() {
       final int renderPopup = src.indexOf('window.renderPopup()', render);
       expect(renderPopup, greaterThan(render));
       final String between = src.substring(render, renderPopup);
-      expect(between, contains('window.embedMedia = true;'),
-          reason: '$path 必须在 renderPopup 之前把 embedMedia 设真，'
-              '否则 popup.js 把外字导出成 alt 文本（BUG-2190）');
+      expect(
+        between,
+        contains('window.embedMedia = true;'),
+        reason:
+            '$path 必须在 renderPopup 之前把 embedMedia 设真，'
+            '否则 popup.js 把外字导出成 alt 文本（BUG-2190）',
+      );
     }
   });
 }

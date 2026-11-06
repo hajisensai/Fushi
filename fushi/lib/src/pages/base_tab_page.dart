@@ -1,16 +1,18 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/pages.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/media_type.dart';
+import 'package:fushi/src/pages/base_module_tab_page.dart';
+import 'package:fushi/src/pages/implementations/media_source_picker_dialog_page.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// A template for a single media type's tab body content in the main menu.
 ///
 /// [BaseModuleTabPage] 的 MediaSource 特化子类：在共通 tab 生命周期之上
 /// 绑定 [MediaType]（tabRefreshNotifier 刷新信号 + [MediaSource] 代理渲染）。
 abstract class BaseTabPage extends BaseModuleTabPage {
-  const BaseTabPage({
-    super.key,
-  });
+  const BaseTabPage({super.key});
 
   @override
   BaseTabPageState<BaseTabPage> createState();
@@ -71,18 +73,15 @@ abstract class BaseTabPageState<T extends BaseTabPage>
       onTap: () async {
         await showAppDialog(
           context: context,
-          builder: (context) => MediaSourcePickerDialogPage(
-            mediaType: mediaType,
-          ),
+          builder: (context) =>
+              MediaSourcePickerDialogPage(mediaType: mediaType),
         );
         mediaType.refreshTab();
       },
     );
   }
 
-  Widget buildBackButton({
-    required VoidCallback onTap,
-  }) {
+  Widget buildBackButton({required VoidCallback onTap}) {
     return FushiIconButton(
       size: textTheme.titleLarge?.fontSize,
       tooltip: t.back,

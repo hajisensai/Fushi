@@ -1,0 +1,91 @@
+[
+ {
+  "workno": "RJ01014447",
+  "work_name": "【耳かき・吐息】ねこぐらし。異世界転生篇〜古田土(こだと)なお〜【CV:佐倉綾音】",
+  "work_name_kana": "ネコグラシイセカイテンセイヘンコダトナオ",
+  "maker_name": "CANDY VOICE",
+  "work_type": "SOU",
+  "work_type_string": "音声・ASMR",
+  "regist_date": "2023-01-16 00:00:00",
+  "age_category": 1,
+  "age_category_string": "general",
+  "genres": [
+   {
+    "name": "ASMR",
+    "id": 497,
+    "search_val": "497",
+    "name_base": "ASMR"
+   },
+   {
+    "name": "治愈",
+    "id": 56,
+    "search_val": "056",
+    "name_base": "癒し"
+   },
+   {
+    "name": "双声道立体声/人头麦",
+    "id": 496,
+    "search_val": "496",
+    "name_base": "バイノーラル/ダミヘ"
+   },
+   {
+    "name": "萌",
+    "id": 51,
+    "search_val": "051",
+    "name_base": "萌え"
+   },
+   {
+    "name": "人外娘/魔物娘",
+    "id": 317,
+    "search_val": "317",
+    "name_base": "人外娘/モンスター娘"
+   },
+   {
+    "name": "掏耳",
+    "id": 442,
+    "search_val": "442",
+    "name_base": "耳かき"
+   },
+   {
+    "name": "低语",
+    "id": 503,
+    "search_val": "503",
+    "name_base": "ささやき"
+   }
+  ],
+  "creaters": {
+   "scenario_by": [
+    {
+     "id": "39835",
+     "name": "柳出國男",
+     "classification": "scenario_by",
+     "sub_classification": null
+    }
+   ],
+   "illust_by": [
+    {
+     "id": "37616",
+     "name": "ぶーた",
+     "classification": "illust_by",
+     "sub_classification": null
+    }
+   ],
+   "voice_by": [
+    {
+     "id": "14807",
+     "name": "佐倉綾音",
+     "classification": "voice_by",
+     "sub_classification": null
+    }
+   ]
+  },
+  "intro_s": "「ねこぐらし。異世界転生篇」第一弾は、古田土(こだと)なお(CV.佐倉綾音)!!実力派の音響効果スタッフによる極上の耳かきやマッサージなど心地良いASMR音声を中心に、ストーリー性も融合された新たな音声作品となります。【ストーリー】猫娘らがそれぞれ現世へと異世界転生し、そこでの人間関係を癒すことで、おもてなしの力が試される。今までとは異なる関係性の中、果たして猫娘たちはどうなるのか…?!",
+  "title_name": "ねこぐらし。シーズン5　異世界転生篇",
+  "series_name": "ねこぐらし。シーズン5　異世界転生篇",
+  "image_main": {
+   "url": "//img.dlsite.jp/modpub/images2/work/doujin/RJ01015000/RJ01014447_img_main.jpg",
+   "file_name": "RJ01014447_img_main.jpg"
+  },
+  "site_id": "home"
+ }
+]

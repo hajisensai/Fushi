@@ -105,31 +105,37 @@ void main() {
   }
 
   testWidgets(
-      'gamepad face buttons render with Xbox Kenney icons (A/B/X/Y) by default',
-      (WidgetTester tester) async {
-    final FushiShortcutRegistry registry = buildRegistry();
-    await pumpGamepadView(tester, registry, ShortcutScope.reader);
+    'gamepad face buttons render with Xbox Kenney icons (A/B/X/Y) by default',
+    (WidgetTester tester) async {
+      final FushiShortcutRegistry registry = buildRegistry();
+      await pumpGamepadView(tester, registry, ShortcutScope.reader);
 
-    // The gamepad figure renders one keyed knob per known button.
-    expect(find.byKey(const Key('gamepad_btn_A')), findsOneWidget);
-    expect(find.byKey(const Key('gamepad_btn_B')), findsOneWidget);
-    final GamepadButtonWidget aWidget = tester.widget<GamepadButtonWidget>(
-      find.byKey(const Key('gamepad_btn_A')),
+      // The gamepad figure renders one keyed knob per known button.
+      expect(find.byKey(const Key('gamepad_btn_A')), findsOneWidget);
+      expect(find.byKey(const Key('gamepad_btn_B')), findsOneWidget);
+      final GamepadButtonWidget aWidget = tester.widget<GamepadButtonWidget>(
+        find.byKey(const Key('gamepad_btn_A')),
+      );
+      expect(aWidget.brand, GamepadBrand.xbox);
+      // TODO-942: face buttons now show the Xbox coloured-ABXY Kenney icons, not
+      // hand-drawn text glyphs.
+      expectButtonAsset(tester, 'A', GamepadButton.a, GamepadBrand.xbox);
+      expectButtonAsset(tester, 'B', GamepadButton.b, GamepadBrand.xbox);
+      expectButtonAsset(tester, 'X', GamepadButton.x, GamepadBrand.xbox);
+      expectButtonAsset(tester, 'Y', GamepadButton.y, GamepadBrand.xbox);
+    },
+  );
+
+  testWidgets('PlayStation brand renders ✕○□△ Kenney face-button icons', (
+    WidgetTester tester,
+  ) async {
+    final FushiShortcutRegistry registry = buildRegistry();
+    await pumpGamepadView(
+      tester,
+      registry,
+      ShortcutScope.reader,
+      brand: GamepadBrand.playstation,
     );
-    expect(aWidget.brand, GamepadBrand.xbox);
-    // TODO-942: face buttons now show the Xbox coloured-ABXY Kenney icons, not
-    // hand-drawn text glyphs.
-    expectButtonAsset(tester, 'A', GamepadButton.a, GamepadBrand.xbox);
-    expectButtonAsset(tester, 'B', GamepadButton.b, GamepadBrand.xbox);
-    expectButtonAsset(tester, 'X', GamepadButton.x, GamepadBrand.xbox);
-    expectButtonAsset(tester, 'Y', GamepadButton.y, GamepadBrand.xbox);
-  });
-
-  testWidgets('PlayStation brand renders ✕○□△ Kenney face-button icons',
-      (WidgetTester tester) async {
-    final FushiShortcutRegistry registry = buildRegistry();
-    await pumpGamepadView(tester, registry, ShortcutScope.reader,
-        brand: GamepadBrand.playstation);
 
     // A -> ✕ (cross), B -> ○ (circle): the PlayStation coloured Kenney icons.
     expectButtonAsset(tester, 'A', GamepadButton.a, GamepadBrand.playstation);
@@ -139,37 +145,64 @@ void main() {
   });
 
   testWidgets(
-      'Nintendo Switch brand icons keep ABXY physical swap (.a -> B icon, '
-      '.b -> A icon)', (WidgetTester tester) async {
-    final FushiShortcutRegistry registry = buildRegistry();
-    await pumpGamepadView(tester, registry, ShortcutScope.reader,
-        brand: GamepadBrand.nintendoSwitch);
+    'Nintendo Switch brand icons keep ABXY physical swap (.a -> B icon, '
+    '.b -> A icon)',
+    (WidgetTester tester) async {
+      final FushiShortcutRegistry registry = buildRegistry();
+      await pumpGamepadView(
+        tester,
+        registry,
+        ShortcutScope.reader,
+        brand: GamepadBrand.nintendoSwitch,
+      );
 
-    // The Kenney Switch icons keep the physical A/B, X/Y position swap that the
-    // glyph layer established: logical .a shows the physical 'B' icon, etc.
-    expectButtonAsset(
-        tester, 'A', GamepadButton.a, GamepadBrand.nintendoSwitch);
-    expectButtonAsset(
-        tester, 'B', GamepadButton.b, GamepadBrand.nintendoSwitch);
-    expectButtonAsset(
-        tester, 'X', GamepadButton.x, GamepadBrand.nintendoSwitch);
-    expectButtonAsset(
-        tester, 'Y', GamepadButton.y, GamepadBrand.nintendoSwitch);
-    // Pin the swap explicitly at the asset level.
-    expect(
-      GamepadButtonAssets.assetFor(
-          GamepadButton.a, GamepadBrand.nintendoSwitch),
-      endsWith('switch_button_b.png'),
-    );
-    expect(
-      GamepadButtonAssets.assetFor(
-          GamepadButton.b, GamepadBrand.nintendoSwitch),
-      endsWith('switch_button_a.png'),
-    );
-  });
+      // The Kenney Switch icons keep the physical A/B, X/Y position swap that the
+      // glyph layer established: logical .a shows the physical 'B' icon, etc.
+      expectButtonAsset(
+        tester,
+        'A',
+        GamepadButton.a,
+        GamepadBrand.nintendoSwitch,
+      );
+      expectButtonAsset(
+        tester,
+        'B',
+        GamepadButton.b,
+        GamepadBrand.nintendoSwitch,
+      );
+      expectButtonAsset(
+        tester,
+        'X',
+        GamepadButton.x,
+        GamepadBrand.nintendoSwitch,
+      );
+      expectButtonAsset(
+        tester,
+        'Y',
+        GamepadButton.y,
+        GamepadBrand.nintendoSwitch,
+      );
+      // Pin the swap explicitly at the asset level.
+      expect(
+        GamepadButtonAssets.assetFor(
+          GamepadButton.a,
+          GamepadBrand.nintendoSwitch,
+        ),
+        endsWith('switch_button_b.png'),
+      );
+      expect(
+        GamepadButtonAssets.assetFor(
+          GamepadButton.b,
+          GamepadBrand.nintendoSwitch,
+        ),
+        endsWith('switch_button_a.png'),
+      );
+    },
+  );
 
-  testWidgets('a bound gamepad button is tappable and routes onGamepadTap',
-      (WidgetTester tester) async {
+  testWidgets('a bound gamepad button is tappable and routes onGamepadTap', (
+    WidgetTester tester,
+  ) async {
     final FushiShortcutRegistry registry = buildRegistry();
     // Seed a gamepad binding so its knob is bound + tappable.
     registry.updateBinding(
@@ -193,8 +226,9 @@ void main() {
     expect(tappedButton, GamepadButton.a);
   });
 
-  testWidgets('an unbound gamepad button routes onEmptyGamepadTap',
-      (WidgetTester tester) async {
+  testWidgets('an unbound gamepad button routes onEmptyGamepadTap', (
+    WidgetTester tester,
+  ) async {
     final FushiShortcutRegistry registry = buildRegistry();
     GamepadButton? emptyTapped;
     await pumpGamepadView(
@@ -210,28 +244,28 @@ void main() {
   });
 
   testWidgets(
-      'TODO-1060②: tapping an UNBOUND keycap fires onEmptyKeyTap (un-deferred)',
-      (WidgetTester tester) async {
-    final FushiShortcutRegistry registry = buildRegistry();
-    LogicalKeyboardKey? tappedEmpty;
-    await pumpKeyboardView(
-      tester,
-      registry,
-      ShortcutScope.reader,
-      onEmptyKeyTap: (LogicalKeyboardKey k) => tappedEmpty = k,
-    );
+    'TODO-1060②: tapping an UNBOUND keycap fires onEmptyKeyTap (un-deferred)',
+    (WidgetTester tester) async {
+      final FushiShortcutRegistry registry = buildRegistry();
+      LogicalKeyboardKey? tappedEmpty;
+      await pumpKeyboardView(
+        tester,
+        registry,
+        ShortcutScope.reader,
+        onEmptyKeyTap: (LogicalKeyboardKey k) => tappedEmpty = k,
+      );
 
-    // F9 has no reader default -> it is the empty/unbound slot. It must now be
-    // tappable and route the key-first empty handler (previously a no-op).
-    await tester.tap(
-      find.byKey(Key('keycap_${LogicalKeyboardKey.f9.keyId}')),
-    );
-    await tester.pumpAndSettle();
-    expect(tappedEmpty, LogicalKeyboardKey.f9);
-  });
+      // F9 has no reader default -> it is the empty/unbound slot. It must now be
+      // tappable and route the key-first empty handler (previously a no-op).
+      await tester.tap(
+        find.byKey(Key('keycap_${LogicalKeyboardKey.f9.keyId}')),
+      );
+      await tester.pumpAndSettle();
+      expect(tappedEmpty, LogicalKeyboardKey.f9);
+    },
+  );
 
-  testWidgets(
-      'empty keycap stays non-tappable when no onEmptyKeyTap is provided '
+  testWidgets('empty keycap stays non-tappable when no onEmptyKeyTap is provided '
       '(back-compat)', (WidgetTester tester) async {
     final FushiShortcutRegistry registry = buildRegistry();
     // No onEmptyKeyTap passed -> unbound keys must have no InkWell (old default).

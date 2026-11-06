@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/tags/tag_drop.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/misc/toast_severity.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 拖标签落库失败不再静默的守卫。
@@ -70,8 +70,11 @@ void main() {
 
     expect(outcome, TagAddOutcome.failed);
     expect(told, hasLength(1));
-    expect(told.single.$2, ToastSeverity.error,
-        reason: '落库失败必须是 error 语义，不能与「已存在」的 warning 混同');
+    expect(
+      told.single.$2,
+      ToastSeverity.error,
+      reason: '落库失败必须是 error 语义，不能与「已存在」的 warning 混同',
+    );
   });
 
   group('reorderTagsSafely', () {

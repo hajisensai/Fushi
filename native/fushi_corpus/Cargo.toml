@@ -1,0 +1,24 @@
+[package]
+name = "fushi_corpus"
+version = "0.1.0"
+edition = "2021"
+publish = false
+# 依赖一律选可链进 GPL-3.0 app 本体的许可（MIT / Apache-2.0 / BSD）；当前只用 std。
+license = "GPL-3.0-only"
+
+[lib]
+# rlib：给 native/fushi_ios_umbrella（iOS 伞形 staticlib，共用一份 Rust std）当依赖用。
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "unwind"
+
+# 构建脚本 / 过程宏不 strip（与 fushi_compute 同理：hajisensai/Fushi#2329）。
+[profile.release.build-override]
+strip = false

@@ -75,8 +75,8 @@ class BackupImportOverlayView extends StatelessWidget {
     final IconData statusIcon = inProgress
         ? FushiIcons.restoreBackup
         : failed
-            ? FushiIcons.error
-            : FushiIcons.success;
+        ? FushiIcons.error
+        : FushiIcons.success;
     // M3E：状态图标是形状库饼干底的 hero（进行中 primary、失败 errorContainer、
     // 完成 tertiary 色块）；Apple 下 hero 退化成单色字形，完成态用系统绿。
     final FushiHeroTone heroTone = failed
@@ -84,22 +84,22 @@ class BackupImportOverlayView extends StatelessWidget {
         : (inProgress ? FushiHeroTone.primary : FushiHeroTone.tertiary);
     final Color? appleStatusColor = isGlassDesign(context)
         ? (failed
-            ? cs.error
-            : (!inProgress ? appleColorsOf(context).success : cs.primary))
+              ? cs.error
+              : (!inProgress ? appleColorsOf(context).success : cs.primary))
         : null;
     final FushiTypography type = context.fushiType;
     // 主行文案：validating=「正在读取备份…」；running=「正在导入备份」；done/failed=结果文案。
     final String title = validating
         ? t.backup_import_validating_title
         : running
-            ? t.backup_import_overlay_title
-            : (message ?? t.backup_import_success);
+        ? t.backup_import_overlay_title
+        : (message ?? t.backup_import_success);
     // 副行文案（仅进行中）：validating=校验提示；running=「请勿关闭」警示。
     final String? subtitle = validating
         ? t.backup_import_validating_hint
         : running
-            ? t.backup_import_overlay_warning
-            : null;
+        ? t.backup_import_overlay_warning
+        : null;
     int slot = 0;
     Widget stagger(Widget child) =>
         FushiStaggeredEntrance(index: slot++, child: child);
@@ -127,8 +127,9 @@ class BackupImportOverlayView extends StatelessWidget {
                   stagger(
                     Text(
                       title,
-                      style: type.headlineSmallEmphasized
-                          .copyWith(color: cs.onSurface),
+                      style: type.headlineSmallEmphasized.copyWith(
+                        color: cs.onSurface,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -137,8 +138,9 @@ class BackupImportOverlayView extends StatelessWidget {
                     stagger(
                       Text(
                         subtitle,
-                        style: type.bodyMedium
-                            .copyWith(color: cs.onSurfaceVariant),
+                        style: type.bodyMedium.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -156,12 +158,9 @@ class BackupImportOverlayView extends StatelessWidget {
                             )
                           : ValueListenableBuilder<double>(
                               valueListenable: progress!,
-                              builder: (
-                                BuildContext context,
-                                double value,
-                                _,
-                              ) =>
-                                  _ImportProgress(value: value),
+                              builder:
+                                  (BuildContext context, double value, _) =>
+                                      _ImportProgress(value: value),
                             ),
                     ),
                   // validating：进度条下给「取消」出口（中断读取/预览回设置页）。
@@ -213,8 +212,9 @@ class _ImportProgress extends StatelessWidget {
         if (determinate) ...<Widget>[
           Text(
             '${(value.clamp(0.0, 1.0) * 100).round()}%',
-            style: context.fushiType.displaySmallEmphasized.tabular
-                .copyWith(color: cs.primary),
+            style: context.fushiType.displaySmallEmphasized.tabular.copyWith(
+              color: cs.primary,
+            ),
           ),
           const SizedBox(height: 12),
         ],

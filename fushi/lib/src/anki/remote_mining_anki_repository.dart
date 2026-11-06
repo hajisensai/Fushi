@@ -37,13 +37,13 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     DictMediaByteLoader? dictMediaLoader,
     LocalFileByteLoader? fileByteLoader,
     RemoteMiningAuthReporter? onAuthRejected,
-  })  : _local = local,
-        _client = client,
-        _payloadBuilder = ForwardedMinePayloadBuilder(
-          dictMediaLoader: dictMediaLoader,
-          fileByteLoader: fileByteLoader,
-        ),
-        _onAuthRejected = onAuthRejected;
+  }) : _local = local,
+       _client = client,
+       _payloadBuilder = ForwardedMinePayloadBuilder(
+         dictMediaLoader: dictMediaLoader,
+         fileByteLoader: fileByteLoader,
+       ),
+       _onAuthRejected = onAuthRejected;
 
   /// 主机拒绝互联 token 时给用户看的话。制卡失败与查重失败共用同一句，
   /// 因为它们是同一个 token 被同一台主机拒绝。
@@ -104,8 +104,10 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   /// 一张重复卡；若反过来谎报 true，用户只会以为卡已做好并就此走开。
   @override
   Future<bool> isDuplicate(String expression, String reading) async {
-    final RemoteDuplicateCheck check =
-        await _client.isDuplicate(expression: expression, reading: reading);
+    final RemoteDuplicateCheck check = await _client.isDuplicate(
+      expression: expression,
+      reading: reading,
+    );
     if (check == RemoteDuplicateCheck.authRejected) {
       _reportAuthRejectedOnce();
       return false;
@@ -143,10 +145,24 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     if (result == MineResult.notConfigured.name) {
       return const MineOutcome.notConfigured();
     }
+    // 反馈 E52FUMdbR6：请求送到了主机，是主机那边的 Anki 没制成卡。主机回的文案
+    // （如「连不上 AnkiConnect」）原样当失败原因会被读成本机的问题——用户开着
+    // 「制卡到已配对设备」、本机却是 AnkiMobile，根本看不出卡发去了电脑。分类成
+    // [AnkiErrorCode.pairedDeviceMineFailed]，主 app 把原因包进「服务端上的 Anki
+    // 制卡失败：…」；主机侧分类码进诊断日志。
+    final String reason =
+        message ??
+        detail ??
+        'The Fushi Interconnect server failed to create the card.';
+    final String? hostCode = json['errorCode'] as String?;
     return MineOutcome.failure(
-      message ??
-          detail ??
-          'The Fushi Interconnect server failed to create the card.',
+      reason,
+      errorCode: AnkiErrorCode.pairedDeviceMineFailed,
+      error: StateError(
+        'Fushi Interconnect server could not create the card'
+        '${hostCode == null ? '' : ' ($hostCode)'}: '
+        '${detail ?? reason}',
+      ),
     );
   }
 
@@ -203,31 +219,28 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     String sourceId,
     String peerUrl, {
     required String pairingIdentity,
-  }) =>
-      _sourceClient.bindSourcePeer(
-        sourceId,
-        peerUrl,
-        pairingIdentity: pairingIdentity,
-      );
+  }) => _sourceClient.bindSourcePeer(
+    sourceId,
+    peerUrl,
+    pairingIdentity: pairingIdentity,
+  );
 
   @override
   Future<Map<String, String>> prepareSourceNoteFields({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      _sourceClient.prepareForwardedSourceNote(
-        await _payloadBuilder.build(
-          rawPayloadJson: rawPayloadJson,
-          context: context,
-        ),
-      );
+  }) async => _sourceClient.prepareForwardedSourceNote(
+    await _payloadBuilder.build(
+      rawPayloadJson: rawPayloadJson,
+      context: context,
+    ),
+  );
 
   @override
   Future<void> patchSourceNote({
     required AnkiSourceNote original,
     required Map<String, String> fields,
-  }) =>
-      _sourceClient.patchSourceNote(original: original, fields: fields);
+  }) => _sourceClient.patchSourceNote(original: original, fields: fields);
 
   // ---- 配置类：委派本地仓库，保持设置页可配置本地 Anki ----
 
@@ -276,8 +289,9 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
 
   @override
   Future<bool> updateNoteTypeTemplates(
-          String modelName, List<AnkiCardTemplate> templates) =>
-      _client.updateNoteTypeTemplates(modelName, templates);
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) => _client.updateNoteTypeTemplates(modelName, templates);
 
   // ── 媒体存储优化：作用于**主机端** collection.media ────────────────────
   //

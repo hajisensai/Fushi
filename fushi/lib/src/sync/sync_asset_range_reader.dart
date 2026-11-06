@@ -176,7 +176,7 @@ class DeobfuscatingAssetRangeReader implements SyncAssetRangeReader {
 /// [ttl] 或上游拒绝（[invalidate]）就现取。并发请求共用同一次在途获取。
 class PresignedLinkCache {
   PresignedLinkCache({required this.ttl, DateTime Function()? clock})
-      : _clock = clock ?? DateTime.now;
+    : _clock = clock ?? DateTime.now;
 
   /// 本地视为有效的时长；取得比服务端真实有效期短，留出一次长 `Range` 读的余量。
   final Duration ttl;
@@ -236,7 +236,7 @@ Future<SyncAssetRange> openPresignedAssetRange({
   required int start,
   int? end,
 }) async {
-  for (int attempt = 0;; attempt++) {
+  for (int attempt = 0; ; attempt++) {
     final Uri url = await cache.link(assetId, fetchLink);
     final http.Request request = http.Request('GET', url)
       ..headers['Range'] = 'bytes=$start-${end ?? ''}';
@@ -293,8 +293,9 @@ SyncAssetRange _rangeFromResponse(
 }) {
   final String? type = response.headers['content-type'];
   if (response.statusCode == 206) {
-    final ({int start, int end, int? total})? range =
-        parseContentRange(response.headers['content-range']);
+    final ({int start, int end, int? total})? range = parseContentRange(
+      response.headers['content-range'],
+    );
     if (range == null) {
       // 206 却给不出可解析的 Content-Range：不知道这段字节落在文件哪儿。不能落进下面
       // 的 200 分支——那里把 Content-Length（只是这一段的长度）当总长、再按 [start]

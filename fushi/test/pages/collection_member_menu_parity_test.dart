@@ -28,16 +28,18 @@ void main() {
     }
     // 长按→共享菜单是手动序拖排网格的行为（默认卷号序下长按是多选）。
     await db.setPref(
-        collectionDetailSortPrefKey(cid), kCollectionDetailManualSortValue);
+      collectionDetailSortPrefKey(cid),
+      kCollectionDetailManualSortValue,
+    );
     return (db: db, col: (await db.getMediaCollectionById(cid))!);
   }
 
-  Widget? cardBuilder(String mediaType, String entryKey,
-          {VoidCallback? onRemoveFromCollection}) =>
-      Container(
-        key: ValueKey<String>('member-$entryKey'),
-        color: Colors.blue,
-      );
+  Widget? cardBuilder(
+    String mediaType,
+    String entryKey, {
+    VoidCallback? onRemoveFromCollection,
+  }) =>
+      Container(key: ValueKey<String>('member-$entryKey'), color: Colors.blue);
 
   testWidgets('注入共享菜单后，长按 / 右键成员走调用方菜单，不再弹精简菜单', (WidgetTester tester) async {
     // M3E 详情页（8853cd4fc75）顶部是 hero + 工具行，默认 800x600 视口里成员
@@ -49,37 +51,44 @@ void main() {
     final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
     final List<String> menus = <String>[];
     VoidCallback? remove;
-    await tester.pumpWidget(TranslationProvider(
-      child: MaterialApp(
-        home: MediaCollectionGridDetailPage(
-          database: s.db,
-          collection: s.col,
-          memberCardBuilder: cardBuilder,
-          onOpenMember: (_, __) {},
-          onChanged: () {},
-          onShowMemberMenu: (
-            String mediaType,
-            String entryKey, {
-            required VoidCallback onRemoveFromCollection,
-          }) async {
-            menus.add('$mediaType|$entryKey');
-            remove = onRemoveFromCollection;
-          },
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: MediaCollectionGridDetailPage(
+            database: s.db,
+            collection: s.col,
+            memberCardBuilder: cardBuilder,
+            onOpenMember: (_, __) {},
+            onChanged: () {},
+            onShowMemberMenu:
+                (
+                  String mediaType,
+                  String entryKey, {
+                  required VoidCallback onRemoveFromCollection,
+                }) async {
+                  menus.add('$mediaType|$entryKey');
+                  remove = onRemoveFromCollection;
+                },
+          ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     // 触摸长按原地松手。
-    final Offset center =
-        tester.getCenter(find.byKey(const ValueKey<String>('member-k2')));
+    final Offset center = tester.getCenter(
+      find.byKey(const ValueKey<String>('member-k2')),
+    );
     final TestGesture press = await tester.startGesture(center);
     await tester.pump(const Duration(milliseconds: 600));
     await press.up();
     await tester.pumpAndSettle();
     expect(menus, <String>['epub|k2'], reason: '长按必须交给共享菜单');
-    expect(find.text(t.collection_open), findsNothing,
-        reason: '不得再弹详情页自绘的「打开 / 移出」精简菜单');
+    expect(
+      find.text(t.collection_open),
+      findsNothing,
+      reason: '不得再弹详情页自绘的「打开 / 移出」精简菜单',
+    );
 
     // 桌面右键同一入口。
     final TestGesture right = await tester.startGesture(
@@ -94,10 +103,13 @@ void main() {
     // 共享菜单里的「移出合集」仍是详情页的真实移出流程。
     remove!();
     await tester.pumpAndSettle();
-    final List<MediaCollectionItemRow> after =
-        await s.db.getCollectionItems(s.col.id);
-    expect(after.map((MediaCollectionItemRow r) => r.entryKey),
-        <String>['k1', 'k2']);
+    final List<MediaCollectionItemRow> after = await s.db.getCollectionItems(
+      s.col.id,
+    );
+    expect(after.map((MediaCollectionItemRow r) => r.entryKey), <String>[
+      'k1',
+      'k2',
+    ]);
   });
 
   group('书架：合集内外同一个卡片菜单（源码守卫）', () {
@@ -110,7 +122,9 @@ void main() {
 
     test('合集详情页注入共享成员菜单', () {
       expect(
-          main.contains('onShowMemberMenu: _showCollectionMemberMenu'), isTrue);
+        main.contains('onShowMemberMenu: _showCollectionMemberMenu'),
+        isTrue,
+      );
     });
 
     test('成员菜单分派到与书架卡相同的菜单函数', () {
@@ -136,8 +150,10 @@ void main() {
     });
 
     test('卡片菜单含「标签」项（合集内也能选标签）', () {
-      final String actions =
-          methodBody(main, 'List<DialogAction> _epubExtraActions(');
+      final String actions = methodBody(
+        main,
+        'List<DialogAction> _epubExtraActions(',
+      );
       expect(actions.contains('label: t.tag_label'), isTrue);
     });
   });

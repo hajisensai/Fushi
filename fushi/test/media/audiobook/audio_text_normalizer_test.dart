@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 void main() {
@@ -48,10 +48,7 @@ void main() {
     });
 
     test('mixed content keeps only whitelisted chars', () {
-      expect(
-        AudioTextNormalizer.normalize('第1話「開始」'),
-        '第1話開始',
-      );
+      expect(AudioTextNormalizer.normalize('第1話「開始」'), '第1話開始');
     });
 
     test('converts halfwidth katakana to hiragana', () {
@@ -95,10 +92,7 @@ void main() {
     });
 
     test('mixed katakana/hiragana normalizes to hiragana', () {
-      expect(
-        AudioTextNormalizer.normalize('カタかな'),
-        'かたかな',
-      );
+      expect(AudioTextNormalizer.normalize('カタかな'), 'かたかな');
     });
 
     test('chōon mark ー preserved (no hiragana equivalent)', () {

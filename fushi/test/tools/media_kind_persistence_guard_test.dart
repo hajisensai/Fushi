@@ -82,8 +82,9 @@ const List<String> _libRoots = <String>[
 /// 手写复合键字面量：以**字面种类串紧跟 `|`** 开头的字符串。
 /// DB 行值拼出来的 `'${row.mediaType}|${row.entryKey}'` 不以字面种类开头，
 /// 不会误伤（那正是「原样透传未知种类」该走的形态）。
-final RegExp _handwrittenCompositeKey =
-    RegExp(r'''['"](epub|srt|video|game)\|''');
+final RegExp _handwrittenCompositeKey = RegExp(
+  r'''['"](epub|srt|video|game)\|''',
+);
 
 /// `MediaKind.<member>.name`（直接对枚举成员取 `.name`）。
 final RegExp _enumMemberDotName = RegExp(r'\bMediaKind\.[a-zA-Z_]\w*\.name\b');
@@ -107,7 +108,7 @@ const String kFrozenMigrationLiteralMarker = 'frozen-migration-literal';
 const Map<String, String> kFrozenMigrationLiteralFiles = <String, String>{
   'packages/fushi_core/lib/src/database/database.dart':
       'Drift MigrationStrategy.onUpgrade 的版本阶梯：每步读/写的都是「升到那一版'
-          '那一刻磁盘上真实存在」的串，必须逐字节钉死历史值，不能跟着枚举串漂。',
+      '那一刻磁盘上真实存在」的串，必须逐字节钉死历史值，不能跟着枚举串漂。',
 };
 
 /// 全仓生效的冻结豁免**总条数**（v83 那条 UPDATE 里的 SET 侧 + WHERE 侧共 2 处）。
@@ -133,8 +134,9 @@ final RegExp _migrationStepGate = RegExp(r'\bfrom\s*<\s*\d+');
 
 /// `onUpgrade` 之外的迁移回调。从违规行往上找阶梯步时先撞见它，说明这行压根
 /// 不在升级阶梯里（`onCreate` 建的是当前版本的库，没有「历史串」一说）。
-final RegExp _nonUpgradeSection =
-    RegExp(r'\b(onCreate|onCreateAll|beforeOpen|onDowngrade)\s*:');
+final RegExp _nonUpgradeSection = RegExp(
+  r'\b(onCreate|onCreateAll|beforeOpen|onDowngrade)\s*:',
+);
 
 /// 一次扫描的结果：未登记的违规 + 已登记且四把锁全过的豁免。
 class CompositeKeyScan {
@@ -354,8 +356,10 @@ void main() {
     final List<String> violations = <String>[];
     final List<String> exemptions = <String>[];
     for (final File f in _dartFiles(root)) {
-      final CompositeKeyScan scan =
-          scanCompositeKeyLiterals(_relative(root, f), f.readAsStringSync());
+      final CompositeKeyScan scan = scanCompositeKeyLiterals(
+        _relative(root, f),
+        f.readAsStringSync(),
+      );
       violations.addAll(scan.violations);
       exemptions.addAll(scan.exemptions);
     }
@@ -363,8 +367,12 @@ void main() {
   }
 
   test('扫描规模哨兵：6 个生产 lib 根确实都被枚举到了', () {
-    expectScanScale(_dartFiles(root).length,
-        what: '6 个生产 lib 根下的 .dart（已排除生成物）', atLeast: 1220, measured: 1528);
+    expectScanScale(
+      _dartFiles(root).length,
+      what: '6 个生产 lib 根下的 .dart（已排除生成物）',
+      atLeast: 1220,
+      measured: 1528,
+    );
   });
 
   test('lib/ 不得手写 <kind>|... 复合键字面量（只走 MediaKind.compositeKey）', () {
@@ -372,7 +380,8 @@ void main() {
     expect(
       violations,
       isEmpty,
-      reason: '复合键必须由 MediaKind.compositeKey(entryKey) 派生。手写字面量会在'
+      reason:
+          '复合键必须由 MediaKind.compositeKey(entryKey) 派生。手写字面量会在'
           '有人改动 dbValue 时静默漂开（折叠归属 map 全 miss，合集卡退化成散卡'
           '且无任何报错）。\n'
           '唯一例外是 Drift onUpgrade 的版本阶梯（那里必须钉死历史串），走 '
@@ -386,7 +395,8 @@ void main() {
     expect(
       exemptions.length,
       kFrozenMigrationLiteralCount,
-      reason: '冻结迁移字面量的条数变了。多出来的必须逐条确认「它真的是在改写老库里'
+      reason:
+          '冻结迁移字面量的条数变了。多出来的必须逐条确认「它真的是在改写老库里'
           '已存在的数据形态」，确认后把 kFrozenMigrationLiteralCount 改成新值；'
           '少了说明那处迁移被删/改写，把常量减回去。当前实际：\n'
           '${exemptions.join('\n')}',
@@ -398,16 +408,22 @@ void main() {
     for (final File f in _dartFiles(root)) {
       final String rel = _relative(root, f);
       if (!kFrozenMigrationLiteralFiles.containsKey(rel)) continue;
-      byFile[rel] =
-          scanCompositeKeyLiterals(rel, f.readAsStringSync()).exemptions.length;
+      byFile[rel] = scanCompositeKeyLiterals(
+        rel,
+        f.readAsStringSync(),
+      ).exemptions.length;
     }
     for (final String path in kFrozenMigrationLiteralFiles.keys) {
-      expect(File('${root.path}/$path').existsSync(), isTrue,
-          reason: '$path 不存在（登记表里的路径拼错了或文件已挪走）');
+      expect(
+        File('${root.path}/$path').existsSync(),
+        isTrue,
+        reason: '$path 不存在（登记表里的路径拼错了或文件已挪走）',
+      );
       expect(
         byFile[path] ?? 0,
         greaterThan(0),
-        reason: '$path 已经没有任何生效的冻结豁免了，请把它从 '
+        reason:
+            '$path 已经没有任何生效的冻结豁免了，请把它从 '
             'kFrozenMigrationLiteralFiles 删掉——清单只减不增，虚挂条目会让下一个'
             '人以为这里还有豁免在用。',
       );
@@ -436,9 +452,11 @@ void main() {
     test('普通注释（无标记词）不能当豁免用', () {
       final CompositeKeyScan scan = scanCompositeKeyLiterals(
         _kRegisteredPath,
-        _migrationCorpus(comment: const <String>[
-          '          // 这里必须钉死历史串，别改成 dbValue，理由见 BUG-1489 正文。',
-        ]),
+        _migrationCorpus(
+          comment: const <String>[
+            '          // 这里必须钉死历史串，别改成 dbValue，理由见 BUG-1489 正文。',
+          ],
+        ),
       );
       expect(scan.violations, hasLength(2));
     });
@@ -472,10 +490,14 @@ void main() {
 // frozen-migration-literal：理由写得再长也没用，这里不是迁移体，只是普通运行时代码。
 final String key = 'video|' + bookUid;
 ''';
-      expect(scanCompositeKeyLiterals(_kRuntimePath, corpus).violations,
-          hasLength(1));
-      expect(scanCompositeKeyLiterals(_kRegisteredPath, corpus).violations,
-          hasLength(1));
+      expect(
+        scanCompositeKeyLiterals(_kRuntimePath, corpus).violations,
+        hasLength(1),
+      );
+      expect(
+        scanCompositeKeyLiterals(_kRegisteredPath, corpus).violations,
+        hasLength(1),
+      );
     });
 
     test('标记与语句之间隔了代码行 ⇒ 不算登记（不能文件头写一次全文件豁免）', () {
@@ -508,7 +530,9 @@ final String key = 'video|' + bookUid;
 final String key = '${row.mediaType}|${row.entryKey}';
 ''';
       expect(
-          scanCompositeKeyLiterals(_kRuntimePath, corpus).violations, isEmpty);
+        scanCompositeKeyLiterals(_kRuntimePath, corpus).violations,
+        isEmpty,
+      );
     });
   });
 
@@ -541,7 +565,8 @@ final String key = '${row.mediaType}|${row.entryKey}';
     expect(
       violations,
       isEmpty,
-      reason: 'MediaKind 的持久化串只有 dbValue 一个真相源。`.name` 跟着 Dart '
+      reason:
+          'MediaKind 的持久化串只有 dbValue 一个真相源。`.name` 跟着 Dart '
           '标识符走——重命名枚举成员就换了落库值域，旧数据全部失配。'
           '违规：\n${violations.join('\n')}',
     );

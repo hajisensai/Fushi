@@ -15,9 +15,21 @@ import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'package:fushi/src/media/online/online_source_browse_page.dart';
 import 'package:fushi/src/media/video/online/anime_source_detail_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 浏览页要浏览的那「一个源」从哪来。
 ///
@@ -105,6 +117,12 @@ class _MihonCatalog extends OnlineSourceCatalog<MihonCatalogueEntry> {
   String get title => switch (target) {
     MihonInstalledTarget(:final MangaOnlineSourceRow row) => row.name,
     MihonPreviewTarget(:final MihonSource source) => source.name,
+  };
+
+  /// 源站地址：取自浏览目标本身，[prepare] 失败（拿不到上下文）时也有。
+  String get _baseUrl => switch (target) {
+    MihonInstalledTarget(:final MangaOnlineSourceRow row) => row.baseUrl,
+    MihonPreviewTarget(:final MihonSource source) => source.baseUrl,
   };
 
   @override
@@ -230,6 +248,14 @@ class _MihonCatalog extends OnlineSourceCatalog<MihonCatalogueEntry> {
   @override
   String titleOf(MihonCatalogueEntry item) => item.title;
 
+  /// 漫画源 = 光面书皮（与漫画书架同材质）；Aniyomi 视频源 = 光面海报（与视频库
+  /// 同材质）。
+  @override
+  ShelfCoverMaterial get coverMaterial => switch (manager.kind) {
+    MihonMediaKind.manga => ShelfCoverMaterial.glossyBook,
+    MihonMediaKind.anime => ShelfCoverMaterial.glossyPoster,
+  };
+
   @override
   Widget buildCover(BuildContext context, MihonCatalogueEntry item) =>
       MihonSourceImage(
@@ -272,10 +298,28 @@ class _MihonCatalog extends OnlineSourceCatalog<MihonCatalogueEntry> {
     BuildContext context, {
     required Object? error,
     required Future<void> Function() onVerified,
-  }) => MihonCloudflareAction(
-    runtime: manager.runtime,
-    error: error,
-    onVerified: onVerified,
+  }) => Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    // 只放真要显示的按钮：零尺寸子项照样占 spacing，会把登录按钮挤偏。
+    children: <Widget>[
+      if (MihonCloudflareAction.shows(runtime: manager.runtime, error: error))
+        MihonCloudflareAction(
+          runtime: manager.runtime,
+          error: error,
+          onVerified: onVerified,
+        ),
+      // 真出错了才给登录（本页 verifyOnEmpty 为 false，空结果不走这里）；漫画与
+      // 视频源共用这一页。
+      if (error != null &&
+          mihonLoginTarget(runtime: manager.runtime, baseUrl: _baseUrl) != null)
+        MihonLoginAction(
+          runtime: manager.runtime,
+          sourceName: title,
+          baseUrl: _baseUrl,
+          onLoggedIn: onVerified,
+        ),
+    ],
   );
 }
 

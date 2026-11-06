@@ -23,8 +23,9 @@ import 'package:fushi_core/fushi_core.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const MethodChannel channel =
-      MethodChannel('io.material.plugins/dynamic_color');
+  const MethodChannel channel = MethodChannel(
+    'io.material.plugins/dynamic_color',
+  );
 
   TextTheme textThemeBuilder() => const TextTheme();
 
@@ -42,9 +43,9 @@ void main() {
     accentArgb = 0xFF112233;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
-      if (call.method == 'getAccentColor') return accentArgb;
-      return null;
-    });
+          if (call.method == 'getAccentColor') return accentArgb;
+          return null;
+        });
   });
 
   tearDown(() async {
@@ -72,11 +73,7 @@ void main() {
     await notifier.refreshSystemPalette();
     await notifier.refreshSystemPalette();
 
-    expect(
-      notifications,
-      1,
-      reason: '系统色没变却广播 = 每次拉到前台就把整棵树重建一遍',
-    );
+    expect(notifications, 1, reason: '系统色没变却广播 = 每次拉到前台就把整棵树重建一遍');
   });
 
   test('强调色真的变了 → 照常广播', () async {

@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'reader_history_source_corpus.dart';
 
 /// 守卫（TODO-160子d / BUG-227 / TODO-291 阶段2）：书架长按 EPUB 书籍菜单的 extraActions
@@ -38,11 +38,13 @@ void main() {
     );
   });
 
-  test('入口门控 Android/Windows（与 isSupported 一致，不删现有入口）', () {
+  test('入口门控与 isSupported 同源（不删现有入口）', () {
     expect(
-      src.contains('Platform.isAndroid || Platform.isWindows'),
+      src.contains('FloatingLyricChannel.supported &&'),
       isTrue,
-      reason: '悬浮字幕仅 Android/Windows 支持。',
+      reason:
+          '悬浮字幕入口只认 FloatingLyricChannel.supported（Android / Windows / '
+          'macOS），不各自写 Platform 判据。',
     );
   });
 
@@ -65,7 +67,8 @@ void main() {
       expect(
         actions,
         contains('t.tag_label'),
-        reason: '统一三库页卡菜单：书卡与视频/游戏卡对称含「标签」项'
+        reason:
+            '统一三库页卡菜单：书卡与视频/游戏卡对称含「标签」项'
             '（用户 2026-07-28 拍板推翻 TODO-455）。',
       );
       expect(actions, contains('Icons.sell_outlined'));
@@ -116,7 +119,7 @@ void main() {
     );
     expect(
       srtActions,
-      contains('Platform.isAndroid || Platform.isWindows'),
+      contains('FloatingLyricChannel.supported &&'),
       reason: 'SRT 卡悬浮字幕入口平台门控与 EPUB 侧一致。',
     );
   });
@@ -151,7 +154,8 @@ void main() {
     expect(
       addToCollectionBody,
       contains('resolveEpubBookUid(bookKey) ?? bookKey'),
-      reason: 'v83：单卡加入合集必须把 bookKey 换算成成员表键域的 uid'
+      reason:
+          'v83：单卡加入合集必须把 bookKey 换算成成员表键域的 uid'
           '（换算不上沿用 bookKey，与批量档兜底口径一致）。',
     );
     expect(
@@ -246,7 +250,8 @@ void main() {
     expect(
       srtCover,
       contains('resolveOverrideThumbnailFile'),
-      reason: 'SRT 卡封面必须优先读编辑信息弹窗写入的 override thumbnail（TODO-1191），'
+      reason:
+          'SRT 卡封面必须优先读编辑信息弹窗写入的 override thumbnail（TODO-1191），'
           '且必须走迁移感知入口（BUG-1317）。',
     );
     // 仍保留 book.coverPath 回退，向后兼容历史外层「选择封面图片」写入的封面。
@@ -261,20 +266,23 @@ void main() {
     final String srtDialog = _sectionSource(
       src,
       // 复查F3 起签名带 onRemoveFromCollection 注入参，锚点用前缀。
-      'Future<void> _showSrtBookDialog(SrtBook book,',
+      'Future<void> _showSrtBookDialog(',
       '  bool _srtBookHasMissingAudio(',
     );
     // BUG-2969：EPUB / 漫画 / PDF 书卡的长按对话框抽成 _showEpubItemMenu（书架卡与
     // 合集详情成员卡同一入口），书卡的 onLongPress 只转发到它。
     final String epubCard = _sectionSource(
       src,
-      'Widget _buildEpubBookCard(MediaItem item,',
+      'Widget _buildEpubBookCard(',
       '      child: buildMediaItemContent(item),',
     );
     expect(
       epubCard,
-      contains('onLongPress: () =>\n'
-          '          _showEpubItemMenu(item, removeFromCollection: removeFromCollection),'),
+      matches(
+        RegExp(
+          r'onLongPress: \(\) =>\s*_showEpubItemMenu\(item, removeFromCollection: removeFromCollection\),',
+        ),
+      ),
     );
     final String epubDialog = _sectionSource(
       src,
@@ -293,7 +301,10 @@ String _sectionSource(String source, String startToken, String endToken) {
   final int start = source.indexOf(startToken);
   final int end = source.indexOf(endToken, start + startToken.length);
   expect(start, isNonNegative, reason: 'Missing source marker: $startToken');
-  expect(end, greaterThan(start),
-      reason: 'Missing end marker after $startToken: $endToken');
+  expect(
+    end,
+    greaterThan(start),
+    reason: 'Missing end marker after $startToken: $endToken',
+  );
   return source.substring(start, end);
 }

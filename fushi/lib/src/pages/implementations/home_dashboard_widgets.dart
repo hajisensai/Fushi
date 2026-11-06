@@ -11,14 +11,23 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 /// 首载骨架块：中性底色圆角块（MD3 surfaceContainer 档 / Apple tertiaryFill /
 /// 墨水屏描边），尺寸即最终内容的大致轮廓，数据到达时整块换成真实内容——
@@ -127,10 +136,15 @@ class HomeEmptyState extends StatelessWidget {
     required this.icon,
     required this.message,
     this.actions = const <Widget>[],
+    this.stateKey = 'home-empty-state',
   });
 
   final IconData icon;
   final String message;
+
+  /// 外层 Padding 的 key（测试定位用）。同一屏有两处说明块（「继续」空态 +
+  /// 新手引导卡）时各用各的，避免按 key 查找命中两个。
+  final String stateKey;
 
   /// 说明下方的引导按钮（新用户空库：去书架 / 去媒体库）；空 = 只有说明。
   final List<Widget> actions;
@@ -171,7 +185,7 @@ class HomeEmptyState extends StatelessWidget {
       ],
     );
     return Padding(
-      key: const ValueKey<String>('home-empty-state'),
+      key: ValueKey<String>(stateKey),
       padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
       child: actions.isEmpty
           ? row
@@ -198,6 +212,14 @@ class HomeEmptyState extends StatelessWidget {
   }
 }
 
+/// 首页「新手引导」卡是否出现：没点过「不再显示」，且（新手引导没走完，或
+/// 本地库还是空的）。[libraryEmpty] 只在首载结束后才有意义，调用方自己把关。
+bool homeOnboardingCardVisible({
+  required bool dismissed,
+  required bool onboardingFinished,
+  required bool libraryEmpty,
+}) => !dismissed && (!onboardingFinished || libraryEmpty);
+
 /// 每日目标环：今日学习字数 / 目标的环形进度（MD3 Expressive 波浪环 / Apple
 /// 原生环，分派在 [FushiCircularProgressIndicator] 里）。未设目标时环里放一面
 /// 旗子，表示「这里可以设一个」。
@@ -205,11 +227,7 @@ class HomeEmptyState extends StatelessWidget {
 /// 进度变化（首载 / 写库后重载 / 改目标）走一段 M3E 弹簧补间从旧值长到新值，
 /// 墨水屏与「减弱动态效果」下 [fushiMotionDuration] 归零即瞬间到位。
 class HomeGoalRing extends StatelessWidget {
-  const HomeGoalRing({
-    super.key,
-    required this.fraction,
-    this.size = 56,
-  });
+  const HomeGoalRing({super.key, required this.fraction, this.size = 56});
 
   /// 0..1；null = 未设目标。
   final double? fraction;
@@ -243,29 +261,29 @@ class HomeGoalRing extends StatelessWidget {
       curve: FushiMotion.enter,
       builder: (BuildContext context, double value, Widget? _) =>
           SizedBox.square(
-        dimension: size,
-        child: Stack(
-          alignment: Alignment.center,
-          children: <Widget>[
-            SizedBox.square(
-              dimension: size,
-              child: FushiCircularProgressIndicator(
-                value: value,
-                strokeWidth: 5,
-                color: accent,
-                backgroundColor: fushiNeutralBlockColor(context),
-              ),
+            dimension: size,
+            child: Stack(
+              alignment: Alignment.center,
+              children: <Widget>[
+                SizedBox.square(
+                  dimension: size,
+                  child: FushiCircularProgressIndicator(
+                    value: value,
+                    strokeWidth: 5,
+                    color: accent,
+                    backgroundColor: fushiNeutralBlockColor(context),
+                  ),
+                ),
+                Text(
+                  '${(value * 100).round()}%',
+                  style: context.fushiType.labelSmall.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: tokens.surfaces.onSurface,
+                  ),
+                ),
+              ],
             ),
-            Text(
-              '${(value * 100).round()}%',
-              style: context.fushiType.labelSmall.copyWith(
-                fontWeight: FontWeight.w600,
-                color: tokens.surfaces.onSurface,
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
     );
   }
 }
@@ -349,9 +367,9 @@ class HomeStudyHeader extends StatelessWidget {
               softWrap: false,
               style: (theme.textTheme.titleMedium ?? tokens.type.listTitle)
                   .copyWith(
-                color: tokens.surfaces.onSurface,
-                fontWeight: FontWeight.w600,
-              ),
+                    color: tokens.surfaces.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
             ),
           ),
         ],
@@ -409,469 +427,366 @@ class HomeStudyHeader extends StatelessWidget {
   }
 }
 
-/// 封面卡下方标题块的文字样式（[HomeContinueCoverCard.showTitle]）。
-TextStyle homeCoverTitleStyle(BuildContext context) {
-  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-  return tokens.type.metadata.copyWith(
-    color: tokens.surfaces.onSurface,
-    fontWeight: FontWeight.w500,
-  );
-}
+/// 「继续」竖封面的比例（宽 / 高）：游戏是卡盒材质的 1:1.6
+/// （[kShelfGameCaseAspectRatio]，与游戏库同形），书 / 视频海报 2:3。
+double homeContinuePortraitAspect(ShelfCoverMaterial? material) =>
+    material == ShelfCoverMaterial.gameCase ? kShelfGameCaseAspectRatio : 2 / 3;
 
-/// 封面与下方标题之间的间距。
-const double kHomeCoverTitleGap = 6;
-
-/// 「继续」横卡的封面宽高比：完整显示每集截图 / 横版画面。
-const double kHomeLandscapeCoverAspect = 16 / 9;
-
-/// 「继续」封面朝向判据（用户 2026-10-14「卡片比例跟着实际用到的图走」）：图片
-/// 真实宽高比 > 1 是横图，其余（含正方形、尺寸未知）按竖卡。
-bool homeCoverIsLandscape(double? aspect) => aspect != null && aspect > 1;
-
-/// 「继续」卡封面槽尺寸：竖卡 2:3（宽 = [portraitWidth]）；横卡与竖卡**同高**
-///（用户 2026-10-14「应该同高」：一排封面顶边、底边都齐），宽按 16:9 推出。
-Size homeContinueCoverSize({
-  required double portraitWidth,
-  required bool landscape,
-}) {
-  final double height = portraitWidth * 3 / 2;
-  if (!landscape) return Size(portraitWidth, height);
-  return Size(height * kHomeLandscapeCoverAspect, height);
-}
-
-/// 按封面图**真实宽高比**决定「继续」卡横竖（[homeCoverIsLandscape]）。
+/// 首页面板自适应分列（用户 2026-10-31「有空地的时候可以自适应一下这些面板」；
+/// 2026-11-01「宽屏下首页有点空，最好就是自适应」）：
 ///
-/// 与卡内封面渲染共用同一个 [image]（同一 ImageStream，零额外解码）；[image] 为
-/// null、首帧解码前或解码失败时按竖卡，解码出横图后重建为横卡（尺寸变化由卡片
-/// 自己的 [FushiMotion] 尺寸过渡接住，不硬跳）。
-class HomeCoverOrientationProbe extends StatelessWidget {
-  const HomeCoverOrientationProbe({
+/// - 列数上限 = 按 [minColumnWidth] 放得下几列，且不超过面板数与 [maxColumns]
+///   （[columnsFor]）。
+/// - 按真实高度排：在 2..上限 列里逐个试，每种列数下先量出各面板高度，按「最高的
+///   先放进当前最矮的列」分配，选列底参差（空白）占比最小的那种。一个很长的面板
+///   （最近添加）独占一列、几条矮面板（复习 / AI 助手）叠在另一列，不再出现某列
+///   只有一条矮面板、下面一大片空。
+/// - 列内保持面板原顺序；含第一个面板（今日）的列排在最前。
+class HomePanelFlow extends MultiChildRenderObjectWidget {
+  const HomePanelFlow({
     super.key,
-    required this.image,
-    required this.builder,
+    required super.children,
+    required this.gap,
+    this.minColumnWidth = 320,
+    this.maxColumns = 3,
   });
 
-  /// 封面源；null = 没有可用封面（恒竖卡）。
-  final ImageProvider? image;
-  final Widget Function(BuildContext context, bool landscape) builder;
+  final double gap;
+  final double minColumnWidth;
+  final int maxColumns;
+
+  /// 逐列数试排的次数（测试用：判据与面板高度都没变的 relayout 不该再试排）。
+  @visibleForTesting
+  static int debugColumnChoices = 0;
+
+  /// 宽 [width] 下 [count] 个面板最多分几列（纯函数，测试与版面共用）。
+  static int columnsFor({
+    required double width,
+    required int count,
+    required double gap,
+    double minColumnWidth = 320,
+    int maxColumns = 3,
+  }) {
+    if (count <= 1) return 1;
+    final int fit = ((width + gap) / (minColumnWidth + gap)).floor();
+    return fit.clamp(1, math.min(count, maxColumns));
+  }
+
+  /// 按高度给 [heights] 分 [columns] 列：最高的先放进当前最矮的列；返回每列的
+  /// 面板序号（列内按原顺序）与各列总高（含 [gap]）。纯函数，测试可直接验。
+  static ({List<List<int>> columns, List<double> heights}) balance(
+    List<double> heights,
+    int columns,
+    double gap,
+  ) {
+    final List<List<int>> cols = <List<int>>[
+      for (int c = 0; c < columns; c++) <int>[],
+    ];
+    final List<double> totals = List<double>.filled(columns, 0);
+    final List<int> order = List<int>.generate(heights.length, (int i) => i)
+      ..sort((int a, int b) {
+        final int byHeight = heights[b].compareTo(heights[a]);
+        return byHeight != 0 ? byHeight : a.compareTo(b);
+      });
+    for (final int i in order) {
+      int shortest = 0;
+      for (int c = 1; c < columns; c++) {
+        if (totals[c] < totals[shortest]) shortest = c;
+      }
+      totals[shortest] += (cols[shortest].isEmpty ? 0 : gap) + heights[i];
+      cols[shortest].add(i);
+    }
+    for (final List<int> col in cols) {
+      col.sort();
+    }
+    // 含第一个面板的列排最前，其余按各自首个面板的顺序。
+    final List<int> colOrder = List<int>.generate(columns, (int c) => c)
+      ..removeWhere((int c) => cols[c].isEmpty)
+      ..sort((int a, int b) => cols[a].first.compareTo(cols[b].first));
+    return (
+      columns: <List<int>>[for (final int c in colOrder) cols[c]],
+      heights: <double>[for (final int c in colOrder) totals[c]],
+    );
+  }
 
   @override
-  Widget build(BuildContext context) {
-    final ImageProvider? provider = image;
-    if (provider == null) return builder(context, false);
-    return _HomeCoverAspectProbe(image: provider, builder: builder);
+  RenderObject createRenderObject(BuildContext context) => _RenderPanelFlow(
+    gap: gap,
+    minColumnWidth: minColumnWidth,
+    maxColumns: maxColumns,
+  );
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderPanelFlow renderObject) {
+    renderObject
+      ..gap = gap
+      ..minColumnWidth = minColumnWidth
+      ..maxColumns = maxColumns;
   }
 }
 
-class _HomeCoverAspectProbe extends StatefulWidget {
-  const _HomeCoverAspectProbe({required this.image, required this.builder});
+class _PanelFlowParentData extends ContainerBoxParentData<RenderBox> {}
 
-  final ImageProvider image;
-  final Widget Function(BuildContext context, bool landscape) builder;
+class _RenderPanelFlow extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _PanelFlowParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _PanelFlowParentData> {
+  _RenderPanelFlow({
+    required double gap,
+    required double minColumnWidth,
+    required int maxColumns,
+  }) : _gap = gap,
+       _minColumnWidth = minColumnWidth,
+       _maxColumns = maxColumns;
+
+  double _gap;
+  set gap(double v) {
+    if (v == _gap) return;
+    _gap = v;
+    markNeedsLayout();
+  }
+
+  double _minColumnWidth;
+  set minColumnWidth(double v) {
+    if (v == _minColumnWidth) return;
+    _minColumnWidth = v;
+    markNeedsLayout();
+  }
+
+  int _maxColumns;
+  set maxColumns(int v) {
+    if (v == _maxColumns) return;
+    _maxColumns = v;
+    markNeedsLayout();
+  }
 
   @override
-  State<_HomeCoverAspectProbe> createState() => _HomeCoverAspectProbeState();
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _PanelFlowParentData) {
+      child.parentData = _PanelFlowParentData();
+    }
+  }
+
+  List<RenderBox> get _kids {
+    final List<RenderBox> out = <RenderBox>[];
+    RenderBox? child = firstChild;
+    while (child != null) {
+      out.add(child);
+      child = childAfter(child);
+    }
+    return out;
+  }
+
+  double _columnWidth(double width, int columns) =>
+      (width - _gap * (columns - 1)) / columns;
+
+  /// 上次选列的判据（宽、面板数、gap / 最小列宽 / 最大列数）与选出的列数、
+  /// 当时各面板在该列宽下的高度。判据与高度都没变时直接按缓存列数排一遍，不再
+  /// 逐个列数试排——面板内部 relayout（数据到达、文字变化）尺寸没变就只排一次。
+  Object? _choiceKey;
+  int _chosenColumns = 1;
+  List<double> _chosenHeights = const <double>[];
+
+  /// 按列宽真排一遍量高度（面板里有 LayoutBuilder，不支持 dry layout）。
+  List<double> _measure(List<RenderBox> kids, double colWidth) {
+    final BoxConstraints c = BoxConstraints.tightFor(width: colWidth);
+    return <double>[
+      for (final RenderBox k in kids)
+        (k..layout(c, parentUsesSize: true)).size.height,
+    ];
+  }
+
+  static bool _sameHeights(List<double> a, List<double> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if ((a[i] - b[i]).abs() > 0.5) return false;
+    }
+    return true;
+  }
+
+  /// 在 2..[maxCols] 列里逐个试排，选列底空白占比最小的；返回列数与该列宽下
+  /// 各面板高度（子节点最后一次 layout 就停在选中的列宽上）。
+  ({int columns, List<double> heights}) _chooseColumns(
+    List<RenderBox> kids,
+    double width,
+    int maxCols,
+  ) {
+    HomePanelFlow.debugColumnChoices++;
+    int best = 1;
+    double bestWaste = double.infinity;
+    List<double>? bestHeights;
+    int? lastMeasured;
+    // 单列恒为零空白，不参与比较；放得下两列以上时才挑。
+    for (int cols = maxCols; cols >= 2; cols--) {
+      final List<double> heights = _measure(kids, _columnWidth(width, cols));
+      lastMeasured = cols;
+      final ({List<List<int>> columns, List<double> heights}) plan =
+          HomePanelFlow.balance(heights, cols, _gap);
+      final double tallest = plan.heights.fold<double>(0, math.max);
+      if (tallest <= 0) continue;
+      final double filled = plan.heights.fold<double>(
+        0,
+        (double a, double h) => a + h,
+      );
+      final double waste = 1 - filled / (tallest * cols);
+      // 空白差不多时偏向更多列（更矮）。
+      if (waste < bestWaste - 0.05) {
+        best = cols;
+        bestWaste = waste;
+        bestHeights = heights;
+      }
+    }
+    if (best != lastMeasured || bestHeights == null) {
+      bestHeights = _measure(kids, _columnWidth(width, best));
+    }
+    return (columns: best, heights: bestHeights);
+  }
+
+  @override
+  void performLayout() {
+    final List<RenderBox> kids = _kids;
+    final double width = constraints.maxWidth;
+    if (kids.isEmpty) {
+      size = constraints.constrain(Size(width, 0));
+      return;
+    }
+    final int maxCols = HomePanelFlow.columnsFor(
+      width: width,
+      count: kids.length,
+      gap: _gap,
+      minColumnWidth: _minColumnWidth,
+      maxColumns: _maxColumns,
+    );
+    final Object key = (width, kids.length, _gap, _minColumnWidth, maxCols);
+    int columns;
+    List<double> heights;
+    if (maxCols <= 1) {
+      columns = 1;
+      heights = _measure(kids, width);
+    } else if (key == _choiceKey) {
+      // 判据没变：按缓存列数排一遍；高度也没变就沿用，变了才重新试排。
+      columns = _chosenColumns;
+      heights = _measure(kids, _columnWidth(width, columns));
+      if (!_sameHeights(heights, _chosenHeights)) {
+        (columns: columns, heights: heights) = _chooseColumns(
+          kids,
+          width,
+          maxCols,
+        );
+      }
+    } else {
+      (columns: columns, heights: heights) = _chooseColumns(
+        kids,
+        width,
+        maxCols,
+      );
+    }
+    _choiceKey = key;
+    _chosenColumns = columns;
+    _chosenHeights = heights;
+
+    final double colWidth = _columnWidth(width, columns);
+    final ({List<List<int>> columns, List<double> heights}) plan =
+        HomePanelFlow.balance(heights, columns, _gap);
+    double height = 0;
+    for (int c = 0; c < plan.columns.length; c++) {
+      double y = 0;
+      for (final int i in plan.columns[c]) {
+        final _PanelFlowParentData pd =
+            kids[i].parentData! as _PanelFlowParentData;
+        pd.offset = Offset(c * (colWidth + _gap), y);
+        y += heights[i] + _gap;
+      }
+      height = math.max(height, y - _gap);
+    }
+    size = constraints.constrain(Size(width, height));
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
 }
 
-class _HomeCoverAspectProbeState extends State<_HomeCoverAspectProbe>
-    with CoverAspectProbe<_HomeCoverAspectProbe> {
-  @override
-  ImageProvider probedImageOf(_HomeCoverAspectProbe widget) => widget.image;
-
-  /// 只回答横竖，一个像素都不画：不需要主色底采样。
-  @override
-  bool needsBackdropSeed(double aspect) => false;
-
-  @override
-  Widget build(BuildContext context) => widget.builder(
-    context,
-    !coverFailed && homeCoverIsLandscape(coverAspect),
-  );
-}
-
-/// 封面卡下方标题块的固定高度：恰好两行（按当前字号与缩放实测，不估算），一排
-/// 卡的封面因此恒在同一高度、横滑行可以定高。
-double homeCoverTitleBlockHeight(BuildContext context) {
-  final TextPainter painter = TextPainter(
-    text: TextSpan(text: 'あ\nあ', style: homeCoverTitleStyle(context)),
-    textDirection: TextDirection.ltr,
-    textScaler: MediaQuery.textScalerOf(context),
-    maxLines: 2,
-  )..layout();
-  final double height = painter.height;
-  painter.dispose();
-  return kHomeCoverTitleGap + height;
-}
-
-/// 「继续」封面卡：封面底部贴进度条，右上角挂一枚进度角标（书 = 「42%」、视频 =
-/// 「第 3 集」或看到的时间点）。[showTitle] 时封面下方再挂两行标题（2026-10-10
-/// 用户：「首页每一项都要有标题」）；不挂时标题只进读屏标签与桌面悬停提示。封面
-/// 缺失时由调用方在 [cover] 里画「图标 + 标题」兜底。悬停抬升 + 按压回弹，焦点
-/// 停靠点就是卡本身。
-class HomeContinueCoverCard extends StatelessWidget {
-  const HomeContinueCoverCard({
+/// 「今日」面板宽屏时的近 7 天柱条（2026-10-31 方案 A 补齐「今日」）：每天一根，
+/// 高度按 7 天里的最大值归一，今天用强调色、其余用浅一档；悬停提示是当天字数。
+/// 全为 0 时柱条贴底一线（不画空白）。
+class HomeWeekBars extends StatelessWidget {
+  const HomeWeekBars({
     super.key,
-    required this.cover,
-    required this.width,
-    required this.height,
-    required this.title,
-    required this.onTap,
-    this.progress,
-    this.badgeLabel,
-    this.badgeIcon,
-    this.showTitle = false,
+    required this.values,
+    required this.labels,
+    required this.semanticLabel,
+    this.height = 44,
   });
 
-  final Widget cover;
-  final double width;
+  /// 升序 7 天的数值（最后一个是今天）。
+  final List<int> values;
 
-  /// 封面高度（不含 [showTitle] 的标题块）。
+  /// 与 [values] 对齐的悬停提示文案。
+  final List<String> labels;
+  final String semanticLabel;
   final double height;
-
-  /// 封面下方挂两行标题（块高见 [homeCoverTitleBlockHeight]）。
-  final bool showTitle;
-
-  /// 条目显示名：读屏标签 + 悬停提示；[showTitle] 时也画在封面下方。
-  final String title;
-  final VoidCallback onTap;
-
-  /// 0..1；null = 不画进度条。
-  final double? progress;
-
-  /// 右上角进度角标文案；null 且 [badgeIcon] 也为 null = 不画角标。
-  final String? badgeLabel;
-  final IconData? badgeIcon;
-
-  @override
-  Widget build(BuildContext context) {
-    final String? label = badgeLabel;
-    final IconData? icon = badgeIcon;
-    final double? value = progress;
-    return FushiHoverLift(
-      builder: (BuildContext context, bool _) => FushiPressScale(
-        // 读屏：整卡一个按钮节点（标题 + 进度角标），点按动作直接挂在节点上
-        //（子树里的 InkWell 被 excludeSemantics 收掉）。
-        child: Semantics(
-          container: true,
-          button: true,
-          label: label == null ? title : '$title · $label',
-          onTap: onTap,
-          excludeSemantics: true,
-          child: _withTitle(
-            context,
-            FushiTooltip(
-              message: title,
-              excludeFromSemantics: true,
-              // 横竖切换（封面解码出真实宽高比后）走尺寸过渡，不硬跳。
-              child: AnimatedContainer(
-                duration: fushiMotionDuration(context, FushiMotion.medium),
-                curve: FushiMotion.standard,
-                width: width,
-                height: height,
-                child: ClipRRect(
-                  borderRadius: FushiBorderRadius.card,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: <Widget>[
-                      cover,
-                      if (value != null)
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child:
-                              CoverProgressStrip(value: value.clamp(0.0, 1.0)),
-                        ),
-                      // 角标恒完整显示：窄卡放不下时整枚等比缩小，不被卡边裁掉。
-                      if (label != null || icon != null)
-                        PositionedDirectional(
-                          key: const ValueKey<String>('home-cover-badge'),
-                          top: 6,
-                          end: 6,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(maxWidth: width - 12),
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: AlignmentDirectional.topEnd,
-                              child: CoverBadge(icon: icon, label: label),
-                            ),
-                          ),
-                        ),
-                      Positioned.fill(
-                        child: Material(
-                          type: MaterialType.transparency,
-                          child: InkWell(onTap: onTap),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// [showTitle] 时在封面下方挂定高两行标题块；否则原样返回封面。
-  Widget _withTitle(BuildContext context, Widget coverBox) {
-    if (!showTitle) return coverBox;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        coverBox,
-        // 标题也是点按面（封面上的 InkWell 只盖封面）。
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: AnimatedContainer(
-            key: const ValueKey<String>('home-cover-title'),
-            duration: fushiMotionDuration(context, FushiMotion.medium),
-            curve: FushiMotion.standard,
-            width: width,
-            height: homeCoverTitleBlockHeight(context),
-            child: Padding(
-              padding: const EdgeInsets.only(top: kHomeCoverTitleGap),
-              child: Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: homeCoverTitleStyle(context),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// 「继续」主角卡（2026-10-10 加回）：最近一条在读 / 在看 / 在玩的条目放大成整卡——
-/// 竖版封面在左，右侧依次是相对时间、标题、副标题、M3E 波浪进度条
-/// （[FushiLinearProgressIndicator] 在 MD3 下即 [FushiWavyLinearProgress]，Apple /
-/// 墨水屏各走原生细条）与「继续阅读 / 继续观看」主按钮。
-///
-/// 封面高度由调用方按布局给（竖屏小、横屏 / 宽屏大），卡内再按可用宽度夹一次：
-/// 封面宽不超过卡宽的 36%，极窄屏（320）上信息列仍放得下按钮。
-///
-/// 交互：整卡可点（鼠标 / 触屏）且带悬停抬升 + 按压回弹；**键盘焦点只落在主
-/// 按钮上**（卡本身 `canRequestFocus: false`），同一动作不占两个 Tab 停靠点。
-class HomeContinueHero extends StatelessWidget {
-  const HomeContinueHero({
-    super.key,
-    required this.cover,
-    required this.coverHeight,
-    required this.title,
-    required this.actionLabel,
-    required this.actionIcon,
-    required this.onOpen,
-    this.eyebrow,
-    this.subtitle,
-    this.progress,
-    this.progressLabel,
-    this.landscapeCover = false,
-  });
-
-  /// 封面本体（调用方按槽向渲染好的 PortraitCoverImage / 占位）。
-  final Widget cover;
-
-  /// 竖卡封面期望高度（2:3）；卡宽不够时等比缩小。
-  final double coverHeight;
-
-  /// 封面是横图（每集截图 / 横版画面）：封面槽改成 16:9、宽为竖槽的
-  /// 同高、16:9（不超过卡宽一半），完整显示截图。
-  final bool landscapeCover;
-
-  /// 标题上方的小字（最近一次的相对时间）；null = 不画。
-  final String? eyebrow;
-  final String title;
-  final String? subtitle;
-
-  /// 0..1；null = 无可展示进度（单视频无总时长、游戏）不画进度条。
-  final double? progress;
-
-  /// 进度条右侧的进度文案（「42%」「第 3 集」「12:34」）；null = 不画。
-  final String? progressLabel;
-  final String actionLabel;
-  final IconData actionIcon;
-  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool apple = isGlassDesign(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
-    final BorderRadius radius = fushiCardBorderRadius(context);
-    final Color fill = apple
-        ? appleColorsOf(context).tertiaryFill
-        : Color.alphaBlend(
-            tokens.surfaces.primaryContainer.withValues(alpha: 0.38),
-            tokens.surfaces.card,
-          );
-    return FushiHoverLift(
-      scale: 1.015,
-      builder: (BuildContext context, bool _) => FushiPressScale(
-        child: Material(
-          key: const ValueKey<String>('home-continue-hero'),
-          color: eink ? Colors.transparent : fill,
-          shape: RoundedRectangleBorder(
-            borderRadius: radius,
-            side: eink
-                ? BorderSide(color: tokens.surfaces.outline)
-                : BorderSide.none,
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            canRequestFocus: false,
-            onTap: onOpen,
-            child: Padding(
-              padding: EdgeInsets.all(tokens.spacing.card),
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints c) {
-                  final double portraitWidth = math.min(
-                    coverHeight * 2 / 3,
-                    c.maxWidth * 0.36,
-                  );
-                  Size slot = homeContinueCoverSize(
-                    portraitWidth: portraitWidth,
-                    landscape: landscapeCover,
-                  );
-                  if (slot.width > c.maxWidth * 0.5) {
-                    final double w = c.maxWidth * 0.5;
-                    slot = Size(w, w * slot.height / slot.width);
-                  }
-                  return Row(
-                    children: <Widget>[
-                      ClipRRect(
-                        borderRadius: FushiBorderRadius.card,
-                        child: AnimatedContainer(
-                          key: const ValueKey<String>('home-continue-hero-cover'),
-                          duration: fushiMotionDuration(
-                            context,
-                            FushiMotion.medium,
-                          ),
-                          curve: FushiMotion.standard,
-                          width: slot.width,
-                          height: slot.height,
-                          child: cover,
-                        ),
-                      ),
-                      SizedBox(width: tokens.spacing.card + 4),
-                      // 宽屏信息列封顶 480：进度条与标题不被拉成一整条长线。
-                      Expanded(
-                        child: Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 480),
-                            child: _info(context, tokens),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _info(BuildContext context, FushiDesignTokens tokens) {
-    final ThemeData theme = Theme.of(context);
-    final TextStyle titleStyle =
-        (theme.textTheme.titleLarge ?? tokens.type.listTitle).copyWith(
-      fontWeight: FontWeight.w600,
-      color: tokens.surfaces.onSurface,
-    );
-    final double? value = progress;
-    final String? label = progressLabel;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        if (eyebrow case final String text) ...<Widget>[
-          Text(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: tokens.type.metadata.copyWith(
-              color: tokens.surfaces.primary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          SizedBox(height: tokens.spacing.gap / 2),
-        ],
-        Text(
-          title,
-          key: const ValueKey<String>('home-continue-hero-title'),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: titleStyle,
-        ),
-        if (subtitle case final String sub) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap / 2),
-          Text(
-            sub,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: tokens.type.metadata,
-          ),
-        ],
-        if (value != null || label != null) ...<Widget>[
-          SizedBox(height: tokens.spacing.card),
-          Row(
-            children: <Widget>[
-              if (value != null)
-                Expanded(
-                  // 进度从 0 弹簧长到当前值（M3E 进场；墨水屏 / 减弱动态效果下
-                  // 时长归零即瞬间到位）。
+    final bool apple = isGlassDesign(context) && !eink;
+    final Color today = eink
+        ? cs.onSurface
+        : (apple ? appleColorsOf(context).accent : cs.primary);
+    final Color past = eink
+        ? cs.outline
+        : (apple
+              ? appleColorsOf(context).accent.withValues(alpha: 0.4)
+              : cs.primaryContainer);
+    final int peak = values.fold<int>(0, math.max);
+    return Semantics(
+      container: true,
+      label: semanticLabel,
+      excludeSemantics: true,
+      child: SizedBox(
+        key: const ValueKey<String>('home-week-bars'),
+        height: height,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: <Widget>[
+            for (int i = 0; i < values.length; i++) ...<Widget>[
+              if (i > 0) SizedBox(width: tokens.spacing.gap / 2),
+              Expanded(
+                child: FushiTooltip(
+                  message: labels[i],
+                  excludeFromSemantics: true,
                   child: TweenAnimationBuilder<double>(
-                    tween: Tween<double>(begin: 0, end: value.clamp(0.0, 1.0)),
-                    duration: fushiMotionDuration(context, FushiMotion.long),
-                    curve: FushiMotion.enter,
-                    builder: (BuildContext context, double v, Widget? _) =>
-                        FushiLinearProgressIndicator(
-                      key:
-                          const ValueKey<String>('home-continue-hero-progress'),
-                      value: v,
-                      minHeight: 6,
-                      color: tokens.surfaces.primary,
+                    // begin: 0：首次出现也从底长起（只给 end 时首帧直接画终值）。
+                    tween: Tween<double>(
+                      begin: 0,
+                      end: peak == 0 ? 0 : values[i] / peak,
                     ),
-                  ),
-                )
-              else
-                const Spacer(),
-              if (label != null) ...<Widget>[
-                SizedBox(width: tokens.spacing.gap),
-                Text(
-                  label,
-                  maxLines: 1,
-                  style: tokens.type.metadata.copyWith(
-                    color: tokens.surfaces.onSurface,
-                    fontWeight: FontWeight.w600,
+                    duration: fushiMotionDuration(context, FushiMotion.medium),
+                    curve: FushiMotion.standard,
+                    builder: (BuildContext _, double f, Widget? __) =>
+                        Container(
+                          height: math.max(3, height * f),
+                          decoration: BoxDecoration(
+                            color: i == values.length - 1 ? today : past,
+                            borderRadius: const BorderRadius.all(
+                              Radius.circular(4),
+                            ),
+                          ),
+                        ),
                   ),
                 ),
-              ],
+              ),
             ],
-          ),
-        ],
-        SizedBox(height: tokens.spacing.card),
-        // 极窄屏信息列放不下整颗按钮时等比缩小，不溢出、不截字。
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: AlignmentDirectional.centerStart,
-          child: FushiFilledButton.icon(
-            key: const ValueKey<String>('home-continue-hero-action'),
-            onPressed: onOpen,
-            icon: FushiIcon(actionIcon),
-            label: Text(actionLabel),
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -886,6 +801,7 @@ class HomeRecentTile extends StatelessWidget {
     required this.subtitle,
     required this.onTap,
     this.coverHeight = 60,
+    this.material,
   });
 
   final Widget cover;
@@ -893,6 +809,22 @@ class HomeRecentTile extends StatelessWidget {
   final String subtitle;
   final VoidCallback onTap;
   final double coverHeight;
+
+  /// 小缩略图的条目材质（按条目种类给，走简化档 [ShelfCoverDensity.compact]）；
+  /// null = 不套材质。
+  final ShelfCoverMaterial? material;
+
+  /// 列表行缩略图：材质简化档（圆角 / 内描边 / 轻光泽，没有投影与扫光）。
+  Widget _thumb() {
+    final Widget frame = ShelfCoverFrame(
+      density: ShelfCoverDensity.compact,
+      child: cover,
+    );
+    final ShelfCoverMaterial? m = material;
+    return m == null
+        ? frame
+        : ShelfCoverMaterialScope(material: m, child: frame);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -911,13 +843,10 @@ class HomeRecentTile extends StatelessWidget {
             padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
             child: Row(
               children: <Widget>[
-                ClipRRect(
-                  borderRadius: FushiBorderRadius.card,
-                  child: SizedBox(
-                    width: coverHeight * 2 / 3,
-                    height: coverHeight,
-                    child: cover,
-                  ),
+                SizedBox(
+                  width: coverHeight * homeContinuePortraitAspect(material),
+                  height: coverHeight,
+                  child: _thumb(),
                 ),
                 SizedBox(width: tokens.spacing.card),
                 Expanded(

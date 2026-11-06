@@ -68,6 +68,10 @@ void main() {
       // ShortcutAction.globalToggleFullscreen from the registry inside
       // wrapWithGlobalNavigation and flips WindowManager.setFullScreen on desktop.
       'lib/src/shortcuts/global_navigation.dart',
+      // 焦点导航（反馈 bjPjRHsaUy）：dpadUp/Down/Left/Right → TraversalDirection
+      // 的唯一映射（focusNavigationDirectionOf），键盘 wrapper 与 GamepadService
+      // 共用它派发移焦；focusActivate 的执行体在上面两个文件里。
+      'lib/src/shortcuts/focus_navigation_shortcuts.dart',
       // 查词弹窗「上/下一个词条」（popupNextEntry / popupPrevEntry）的执行体：弹窗
       // 内容是 WebView，滚轮事件先到 popup.js，故这里把注册表里的滚轮绑定序列化成
       // window.__fushiEntryWheelBindings 注入过去，popup.js 命中即调
@@ -83,7 +87,16 @@ void main() {
       // FushiHeaderSearchKeys 读注册表里本动作的绑定、命中即展开页头搜索栏。
       // 它挂在首页键事件节点之下、先于 home 页的 _executeShortcutAction，库页
       // 之外 home 解析到它时返回 ignored 冒泡——与 globalExternalLookup 同类。
-      'lib/src/utils/components/fushi_header_search.dart',
+      'lib/src/pages/shared/fushi_header_search_keys.dart',
+      // app 内浏览器（webBrowser scope）：页面键事件节点
+      // `resolveKeyboard(event, scope: ShortcutScope.webBrowser)` 后按动作派发
+      // （新建 / 关闭标签页、地址栏、页内查找、缩放…），未命中再兜底 universal。
+      'lib/src/pages/implementations/fushi_web_browser_page.dart',
+      // 音乐（ShortcutScope.music）的执行体：曲库页 / 歌词页 → dispatchMusicShortcut。
+      'lib/src/pages/implementations/music/music_shortcuts.dart',
+      // SRS 复习页（ShortcutScope.srsReview）的执行体：_onKey / 卡面键盘桥 /
+      // _handleGamepadButton → _executeShortcut。
+      'lib/src/pages/implementations/srs/srs_review_page.dart',
     ];
 
     final StringBuffer corpus = StringBuffer();

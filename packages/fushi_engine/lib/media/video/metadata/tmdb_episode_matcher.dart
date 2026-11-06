@@ -16,6 +16,8 @@
 /// 界面，宁可留空交人工确认。
 library;
 
+import 'dart:typed_data';
+
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 
@@ -66,12 +68,11 @@ Map<int, TmdbEpisodeMatch> matchEpisodesToTmdb(
   Iterable<VideoMetadataEpisode> tmdbEpisodes, {
   Map<(int, int), List<String>> candidateAliases =
       const <(int, int), List<String>>{},
-}) =>
-    _matchAgainstPool(
-      sources,
-      _pool(tmdbEpisodes, candidateAliases, specials: false),
-      specials: false,
-    );
+}) => _matchAgainstPool(
+  sources,
+  _pool(tmdbEpisodes, candidateAliases, specials: false),
+  specials: false,
+);
 
 /// 特典版：AniDB `S` 型集只在 TMDB 第 0 季池里找（Shoko `GetEpisodeList`：
 /// `IsSpecialEpisode ? tmdbSpecialEpisodes : tmdbNormalEpisodes`），评分链到
@@ -85,51 +86,80 @@ Map<int, TmdbEpisodeMatch> matchSpecialsToTmdb(
   Iterable<VideoMetadataEpisode> tmdbEpisodes, {
   Map<(int, int), List<String>> candidateAliases =
       const <(int, int), List<String>>{},
-}) =>
-    _matchAgainstPool(
-      sources,
-      _pool(tmdbEpisodes, candidateAliases, specials: true),
-      specials: true,
-    );
+}) => _matchAgainstPool(
+  sources,
+  _pool(tmdbEpisodes, candidateAliases, specials: true),
+  specials: true,
+);
 
 List<_Candidate> _pool(
   Iterable<VideoMetadataEpisode> tmdbEpisodes,
   Map<(int, int), List<String>> candidateAliases, {
   required bool specials,
-}) =>
-    <_Candidate>[
-      for (final VideoMetadataEpisode episode in tmdbEpisodes)
-        if ((episode.seasonNumber == 0) == specials)
-          _Candidate(
-            episode,
-            candidateAliases[(episode.seasonNumber, episode.episodeNumber)] ??
-                const <String>[],
-          ),
-    ]..sort((_Candidate a, _Candidate b) {
-        final int season =
-            a.episode.seasonNumber.compareTo(b.episode.seasonNumber);
-        return season != 0
-            ? season
-            : a.episode.episodeNumber.compareTo(b.episode.episodeNumber);
-      });
+}) {
+  final List<VideoMetadataEpisode> episodes = <VideoMetadataEpisode>[
+    for (final VideoMetadataEpisode episode in tmdbEpisodes)
+      if ((episode.seasonNumber == 0) == specials) episode,
+  ];
+  final List<List<String>> titles = <List<String>>[
+    for (final VideoMetadataEpisode episode in episodes)
+      <String>[
+        episode.title,
+        ...?candidateAliases[(episode.seasonNumber, episode.episodeNumber)],
+      ],
+  ];
+  // 整池标题一次 FFI 归一化。
+  final List<String> normalized = TitleNormalizer.normalizeAll(<String>[
+    for (final List<String> list in titles) ...list,
+  ]);
+  int cursor = 0;
+  return <_Candidate>[
+    for (int i = 0; i < episodes.length; i++)
+      _Candidate(
+        episodes[i],
+        <String>{
+          for (int k = 0; k < titles[i].length; k++)
+            if (normalized[cursor++] case final String n when n.isNotEmpty) n,
+        }.toList(growable: false),
+      ),
+  ]..sort((_Candidate a, _Candidate b) {
+    final int season = a.episode.seasonNumber.compareTo(b.episode.seasonNumber);
+    return season != 0
+        ? season
+        : a.episode.episodeNumber.compareTo(b.episode.episodeNumber);
+  });
+}
 
 Map<int, TmdbEpisodeMatch> _matchAgainstPool(
   List<TmdbEpisodeMatchSource> sources,
   List<_Candidate> pool, {
   required bool specials,
 }) {
+  final List<String> sourceNormalized = TitleNormalizer.normalizeAll(<String>[
+    for (final TmdbEpisodeMatchSource source in sources) ...source.titles,
+  ]);
+  int cursor = 0;
   final List<_Source> ordered = <_Source>[
-    for (final TmdbEpisodeMatchSource source in sources) _Source(source),
+    for (final TmdbEpisodeMatchSource source in sources)
+      _Source(source, <String>[
+        for (int k = 0; k < source.titles.length; k++)
+          if (sourceNormalized[cursor++] case final String n
+              when n.isNotEmpty && !_isGenericTitle(n))
+            n,
+      ]),
   ]..sort((_Source a, _Source b) => a.source.number.compareTo(b.source.number));
+  // 全部（来源标题 × 候选标题）的相似度一次 FFI 算完；相似度是纯函数，查表与
+  // 原来逐对现算逐位一致，四轮匹配不再重复打分。
+  final _SimilarityTable similarities = _SimilarityTable(ordered, pool);
   final Map<int, _Link> links = <int, _Link>{};
   final Set<_Candidate> used = <_Candidate>{};
 
   bool accepts(int pass, TmdbEpisodeMatchRating rating) => switch (pass) {
-        1 => rating == TmdbEpisodeMatchRating.dateAndTitle,
-        2 => rating.index <= TmdbEpisodeMatchRating.title.index,
-        3 => rating.index <= TmdbEpisodeMatchRating.dateKinda.index,
-        _ => rating != TmdbEpisodeMatchRating.none,
-      };
+    1 => rating == TmdbEpisodeMatchRating.dateAndTitle,
+    2 => rating.index <= TmdbEpisodeMatchRating.title.index,
+    3 => rating.index <= TmdbEpisodeMatchRating.dateKinda.index,
+    _ => rating != TmdbEpisodeMatchRating.none,
+  };
 
   for (int pass = 1; pass <= 4; pass++) {
     final Set<int> lockedSeasons = <int>{
@@ -150,6 +180,7 @@ Map<int, TmdbEpisodeMatch> _matchAgainstPool(
       final _Link? link = _bestMatch(
         source,
         candidates,
+        similarities,
         anchor: _anchor(source, ordered, links),
         allowNearestAirDate: !specials,
         allowFirstAvailable: !specials && lockedSeasons.isNotEmpty,
@@ -170,31 +201,56 @@ Map<int, TmdbEpisodeMatch> _matchAgainstPool(
 }
 
 class _Candidate {
-  _Candidate(this.episode, List<String> aliases)
-      : normalizedTitles = <String>{
-          for (final String title in <String>[episode.title, ...aliases])
-            if (TitleNormalizer.normalize(title) case final String normalized
-                when normalized.isNotEmpty)
-              normalized,
-        }.toList(growable: false),
-        airDate = _parseDate(episode.airDate);
+  _Candidate(this.episode, this.normalizedTitles)
+    : airDate = _parseDate(episode.airDate);
   final VideoMetadataEpisode episode;
   final List<String> normalizedTitles;
   final DateTime? airDate;
 }
 
 class _Source {
-  _Source(this.source)
-      : normalizedTitles = <String>[
-          for (final String title in source.titles)
-            if (TitleNormalizer.normalize(title) case final String normalized
-                when normalized.isNotEmpty && !_isGenericTitle(normalized))
-              normalized,
-        ],
-        airDate = _parseDate(source.airDate);
+  _Source(this.source, this.normalizedTitles)
+    : airDate = _parseDate(source.airDate);
   final TmdbEpisodeMatchSource source;
   final List<String> normalizedTitles;
   final DateTime? airDate;
+}
+
+/// 去重后的来源标题 × 候选标题相似度矩阵。
+class _SimilarityTable {
+  factory _SimilarityTable(List<_Source> sources, List<_Candidate> pool) {
+    final Map<String, int> rows = <String, int>{};
+    final Map<String, int> columns = <String, int>{};
+    for (final _Source source in sources) {
+      for (final String title in source.normalizedTitles) {
+        rows.putIfAbsent(title, () => rows.length);
+      }
+    }
+    for (final _Candidate candidate in pool) {
+      for (final String title in candidate.normalizedTitles) {
+        columns.putIfAbsent(title, () => columns.length);
+      }
+    }
+    return _SimilarityTable._(
+      rows,
+      columns,
+      TitleNormalizer.similarityNormalizedMatrix(
+        rows.keys.toList(growable: false),
+        columns.keys.toList(growable: false),
+      ),
+    );
+  }
+
+  _SimilarityTable._(this._rows, this._columns, this._values);
+
+  final Map<String, int> _rows;
+  final Map<String, int> _columns;
+  final Float64List _values;
+
+  /// `TitleNormalizer.similarityNormalized(sourceTitle, candidateTitle)`。
+  double of(String sourceTitle, String candidateTitle) =>
+      _values[_rows[sourceTitle]! * _columns.length +
+          _columns[candidateTitle]!];
 }
 
 class _Link {
@@ -230,8 +286,9 @@ _Anchor _anchor(_Source source, List<_Source> ordered, Map<int, _Link> links) {
       after = link;
     }
   }
-  final int? afterOrder =
-      before == null ? null : _order(before.candidate.episode);
+  final int? afterOrder = before == null
+      ? null
+      : _order(before.candidate.episode);
   if (before == null) {
     return _Anchor(after?.candidate.episode.seasonNumber, afterOrder);
   }
@@ -262,27 +319,30 @@ int _order(VideoMetadataEpisode e) => e.seasonNumber * 100000 + e.episodeNumber;
 /// Shoko `TryFindAnidbAndTmdbMatch` + `SelectBestEpisodeMatch`。
 _Link? _bestMatch(
   _Source source,
-  List<_Candidate> candidates, {
+  List<_Candidate> candidates,
+  _SimilarityTable similarities, {
   required _Anchor anchor,
   required bool allowNearestAirDate,
   required bool allowFirstAvailable,
 }) {
   final int? anchorSeason = anchor.season;
   // 播出日 ±2 天内的候选，按日差、季、集排序（Shoko `CalculateAirDateProbability`）。
-  final List<(_Candidate, int)> dated = <(_Candidate, int)>[
-    for (final _Candidate candidate in candidates)
-      if (_dayDiff(source.airDate, candidate.airDate) case final int diff
-          when diff <= 2)
-        (candidate, diff),
-  ]..sort(((_Candidate, int) a, (_Candidate, int) b) {
-      final int diff = a.$2.compareTo(b.$2);
-      if (diff != 0) return diff;
-      final int season =
-          a.$1.episode.seasonNumber.compareTo(b.$1.episode.seasonNumber);
-      return season != 0
-          ? season
-          : a.$1.episode.episodeNumber.compareTo(b.$1.episode.episodeNumber);
-    });
+  final List<(_Candidate, int)> dated =
+      <(_Candidate, int)>[
+        for (final _Candidate candidate in candidates)
+          if (_dayDiff(source.airDate, candidate.airDate) case final int diff
+              when diff <= 2)
+            (candidate, diff),
+      ]..sort(((_Candidate, int) a, (_Candidate, int) b) {
+        final int diff = a.$2.compareTo(b.$2);
+        if (diff != 0) return diff;
+        final int season = a.$1.episode.seasonNumber.compareTo(
+          b.$1.episode.seasonNumber,
+        );
+        return season != 0
+            ? season
+            : a.$1.episode.episodeNumber.compareTo(b.$1.episode.episodeNumber);
+      });
   final Set<_Candidate> datedSet = <_Candidate>{
     for (final (_Candidate candidate, _) in dated) candidate,
   };
@@ -308,7 +368,7 @@ _Link? _bestMatch(
           }
           continue;
         }
-        final double similarity = TitleNormalizer.similarityNormalized(st, ct);
+        final double similarity = similarities.of(st, ct);
         if (similarity >= 0.8 && lengthDifference < 6) {
           final double score =
               similarity + (datedSet.contains(candidate) ? 1 : 0);

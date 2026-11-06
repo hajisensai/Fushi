@@ -1,17 +1,16 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/field.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 
 class CueSentenceField extends Field {
   CueSentenceField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Cue Sentence',
-          description:
-              'Full subtitle cue text without punctuation segmentation.',
-          icon: Icons.subtitles_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Cue Sentence',
+        description: 'Full subtitle cue text without punctuation segmentation.',
+        icon: Icons.subtitles_outlined,
+      );
 
   static CueSentenceField get instance => _instance;
 

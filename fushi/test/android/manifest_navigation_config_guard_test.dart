@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-438 / TODO-889 source-scan guard: every Flutter-host Activity in the
 /// Android manifest must list `navigation` in `android:configChanges`.
@@ -23,17 +23,25 @@ void main() {
   final File manifestFile = File('android/app/src/main/AndroidManifest.xml');
 
   test('every <activity> android:configChanges includes navigation', () {
-    expect(manifestFile.existsSync(), isTrue,
-        reason: 'BUG-438/TODO-889 fix lives in this manifest');
+    expect(
+      manifestFile.existsSync(),
+      isTrue,
+      reason: 'BUG-438/TODO-889 fix lives in this manifest',
+    );
     final String manifest = manifestFile.readAsStringSync();
 
     final RegExp configChangesAttr = RegExp(r'android:configChanges="([^"]*)"');
-    final Iterable<RegExpMatch> matches =
-        configChangesAttr.allMatches(manifest);
+    final Iterable<RegExpMatch> matches = configChangesAttr.allMatches(
+      manifest,
+    );
 
-    expect(matches, isNotEmpty,
-        reason: 'manifest must declare configChanges on its Flutter-host '
-            'activities');
+    expect(
+      matches,
+      isNotEmpty,
+      reason:
+          'manifest must declare configChanges on its Flutter-host '
+          'activities',
+    );
 
     for (final RegExpMatch m in matches) {
       final String value = m.group(1)!;
@@ -41,7 +49,8 @@ void main() {
       expect(
         flags.contains('navigation'),
         isTrue,
-        reason: 'BUG-438/TODO-889: configChanges "$value" is missing '
+        reason:
+            'BUG-438/TODO-889: configChanges "$value" is missing '
             '"navigation"; a gamepad (navigation input) plug/unplug would '
             'recreate this Activity instead of firing onConfigurationChanged, '
             're-exposing the system focus frame and a load spinner',

@@ -40,10 +40,7 @@ void main() {
         textScaleFactor: 1,
       );
       final double long = estimateSegmentedStripWidth(
-        segmentLabels: const <String?>[
-          'Material Design 3',
-          'iOS (Cupertino)',
-        ],
+        segmentLabels: const <String?>['Material Design 3', 'iOS (Cupertino)'],
         fontSize: 14,
         textScaleFactor: 1,
       );

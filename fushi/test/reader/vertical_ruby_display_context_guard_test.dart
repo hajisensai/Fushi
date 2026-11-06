@@ -41,7 +41,8 @@ Future<String> _readerCss({
   await settings.setViewMode(viewMode);
   await settings.setFuriganaMode(furiganaMode);
   return _collapseWs(
-      _stripCssComments(ReaderContentStyles.css(settings: settings)));
+    _stripCssComments(ReaderContentStyles.css(settings: settings)),
+  );
 }
 
 void main() {
@@ -56,21 +57,33 @@ void main() {
     test('ruby 容器与 rp 在所有布局都强制 display(!important)', () async {
       for (final ({String wm, String vm}) c in layouts) {
         final String css = await _readerCss(
-            writingMode: c.wm, viewMode: c.vm, furiganaMode: 'off');
+          writingMode: c.wm,
+          viewMode: c.vm,
+          furiganaMode: 'off',
+        );
         expect(
-            css.contains(
-                'ruby { display: ruby !important; ruby-position: over !important; }'),
-            isTrue,
-            reason: '${c.wm}/${c.vm}: 必须强制 ruby{display:ruby!important}，否则书本 '
-                '`ruby{display:inline-block}` 会破坏 ruby 上下文 → 竖排振假名塌进基字列');
-        expect(css.contains('ruby rp { display: none !important; }'), isTrue,
-            reason:
-                '${c.wm}/${c.vm}: 必须强制 ruby rp{display:none!important}(后代选择器，'
-                '覆盖 rtc/rb 嵌套里的 rp)，防书本让 rp 括注显示');
-        expect(css.contains('ruby rb { display: inline !important; }'), isTrue,
-            reason:
-                '${c.wm}/${c.vm}: 必须强制 ruby rb{display:inline!important}——Blink 无 '
-                'rb 支持，书本 rb{display:block/inline-block} 会改变基字几何');
+          css.contains(
+            'ruby { display: ruby !important; ruby-position: over !important; }',
+          ),
+          isTrue,
+          reason:
+              '${c.wm}/${c.vm}: 必须强制 ruby{display:ruby!important}，否则书本 '
+              '`ruby{display:inline-block}` 会破坏 ruby 上下文 → 竖排振假名塌进基字列',
+        );
+        expect(
+          css.contains('ruby rp { display: none !important; }'),
+          isTrue,
+          reason:
+              '${c.wm}/${c.vm}: 必须强制 ruby rp{display:none!important}(后代选择器，'
+              '覆盖 rtc/rb 嵌套里的 rp)，防书本让 rp 括注显示',
+        );
+        expect(
+          css.contains('ruby rb { display: inline !important; }'),
+          isTrue,
+          reason:
+              '${c.wm}/${c.vm}: 必须强制 ruby rb{display:inline!important}——Blink 无 '
+              'rb 支持，书本 rb{display:block/inline-block} 会改变基字几何',
+        );
       }
     });
 
@@ -81,13 +94,23 @@ void main() {
       // center=基字列)错位到振假名列。over 横排=基字上方、竖排=基字右侧，两写向都对。
       for (final ({String wm, String vm}) c in layouts) {
         final String css = await _readerCss(
-            writingMode: c.wm, viewMode: c.vm, furiganaMode: 'off');
-        expect(css.contains('ruby-position: over !important'), isTrue,
-            reason: '${c.wm}/${c.vm}: 必须强制 ruby-position:over!important，否则书本 '
-                '`ruby{ruby-position:under}` 竖排把振假名翻到基字左侧 + 高亮带错位');
+          writingMode: c.wm,
+          viewMode: c.vm,
+          furiganaMode: 'off',
+        );
+        expect(
+          css.contains('ruby-position: over !important'),
+          isTrue,
+          reason:
+              '${c.wm}/${c.vm}: 必须强制 ruby-position:over!important，否则书本 '
+              '`ruby{ruby-position:under}` 竖排把振假名翻到基字左侧 + 高亮带错位',
+        );
         // over 必须直接挂在 ruby 容器规则上(与 display:ruby 同一块)，不得写成 under。
-        expect(css.contains('ruby-position: under'), isFalse,
-            reason: '${c.wm}/${c.vm}: 阅读器不得发出 ruby-position:under(会把振假名翻错侧)');
+        expect(
+          css.contains('ruby-position: under'),
+          isFalse,
+          reason: '${c.wm}/${c.vm}: 阅读器不得发出 ruby-position:under(会把振假名翻错侧)',
+        );
       }
     });
 
@@ -126,21 +149,31 @@ void main() {
       );
     });
 
-    test('振假名显示态(off/toggle/dimmed) rt 强制 display:ruby-text(!important)',
-        () async {
-      for (final String fm in <String>['off', 'toggle', 'dimmed']) {
-        final String css = await _readerCss(
+    test(
+      '振假名显示态(off/toggle/dimmed) rt 强制 display:ruby-text(!important)',
+      () async {
+        for (final String fm in <String>['off', 'toggle', 'dimmed']) {
+          final String css = await _readerCss(
             writingMode: 'vertical-rl',
             viewMode: 'continuous',
-            furiganaMode: fm);
-        expect(css.contains('display: ruby-text !important'), isTrue,
-            reason: 'furigana=$fm: 显示态 rt 必须强制 display:ruby-text!important，'
-                '否则书本 `rt{display:inline-block}` 把 <rt> 挤出注音盒 → 竖排错位');
-        // 显示态不得把 rt 藏掉(display:none 只属于 hide 模式)。
-        expect(css.contains('rt { display: none !important; }'), isFalse,
-            reason: 'furigana=$fm: 显示态不应发出 rt{display:none}(那是 hide 模式)');
-      }
-    });
+            furiganaMode: fm,
+          );
+          expect(
+            css.contains('display: ruby-text !important'),
+            isTrue,
+            reason:
+                'furigana=$fm: 显示态 rt 必须强制 display:ruby-text!important，'
+                '否则书本 `rt{display:inline-block}` 把 <rt> 挤出注音盒 → 竖排错位',
+          );
+          // 显示态不得把 rt 藏掉(display:none 只属于 hide 模式)。
+          expect(
+            css.contains('rt { display: none !important; }'),
+            isFalse,
+            reason: 'furigana=$fm: 显示态不应发出 rt{display:none}(那是 hide 模式)',
+          );
+        }
+      },
+    );
 
     test('振假名显示态接管 <rtc>(Blink 无 rtc 支持) — rtc=注音级、rtc>rt=内联', () async {
       // TODO-1308 复诉：真机(WebView2)量测证实 CSS.supports('display','ruby-base'|
@@ -150,42 +183,62 @@ void main() {
       // 单一注音级(display:ruby-text)、其 rt 子元素归位 inline(在注音里当普通文本跑)。
       for (final String fm in <String>['off', 'toggle', 'dimmed']) {
         final String css = await _readerCss(
-            writingMode: 'vertical-rl',
-            viewMode: 'continuous',
-            furiganaMode: fm);
+          writingMode: 'vertical-rl',
+          viewMode: 'continuous',
+          furiganaMode: fm,
+        );
         expect(
-            css.contains(
-                'rtc { display: ruby-text !important; font-size: 0.45em; }'),
-            isTrue,
-            reason: 'furigana=$fm: 显示态必须把 rtc 映射为单一注音级(ruby-text)');
+          css.contains(
+            'rtc { display: ruby-text !important; font-size: 0.45em; }',
+          ),
+          isTrue,
+          reason: 'furigana=$fm: 显示态必须把 rtc 映射为单一注音级(ruby-text)',
+        );
         expect(
-            css.contains(
-                'rtc > rt { display: inline !important; font-size: 1em; }'),
-            isTrue,
-            reason: 'furigana=$fm: rtc 里的 rt 必须归位 inline，否则被裸 rt 规则包成'
-                '匿名 ruby 内联进基字列(TODO-1308 复诉截图)');
+          css.contains(
+            'rtc > rt { display: inline !important; font-size: 1em; }',
+          ),
+          isTrue,
+          reason:
+              'furigana=$fm: rtc 里的 rt 必须归位 inline，否则被裸 rt 规则包成'
+              '匿名 ruby 内联进基字列(TODO-1308 复诉截图)',
+        );
       }
     });
 
     test('振假名 hidden 模式 rt 仍是 display:none(强制显示不得覆盖隐藏)', () async {
       final String css = await _readerCss(
-          writingMode: 'vertical-rl',
-          viewMode: 'continuous',
-          furiganaMode: 'hidden');
-      expect(css.contains('rt, rtc { display: none !important; }'), isTrue,
-          reason: 'hide 模式必须保留 rt,rtc{display:none!important}(振假名与 rtc 注音容器'
-              '一起隐藏，防空 rtc 注音盒继续占注音道)');
-      expect(css.contains('display: ruby-text !important'), isFalse,
-          reason: 'hide 模式不得强制 rt/rtc display:ruby-text，否则会把隐藏的振假名显示出来');
-      expect(css.contains('rtc > rt { display: inline !important'), isFalse,
-          reason: 'hide 模式不得发出 rtc>rt{display:inline!important}——它比裸 rt 选择器'
-              '更特异，会压过 rt{display:none} 把 rtc 里的振假名显示出来');
+        writingMode: 'vertical-rl',
+        viewMode: 'continuous',
+        furiganaMode: 'hidden',
+      );
+      expect(
+        css.contains('rt, rtc { display: none !important; }'),
+        isTrue,
+        reason:
+            'hide 模式必须保留 rt,rtc{display:none!important}(振假名与 rtc 注音容器'
+            '一起隐藏，防空 rtc 注音盒继续占注音道)',
+      );
+      expect(
+        css.contains('display: ruby-text !important'),
+        isFalse,
+        reason: 'hide 模式不得强制 rt/rtc display:ruby-text，否则会把隐藏的振假名显示出来',
+      );
+      expect(
+        css.contains('rtc > rt { display: inline !important'),
+        isFalse,
+        reason:
+            'hide 模式不得发出 rtc>rt{display:inline!important}——它比裸 rt 选择器'
+            '更特异，会压过 rt{display:none} 把 rtc 里的振假名显示出来',
+      );
       // ruby 容器仍强制(与振假名显隐无关)。
       expect(
-          css.contains(
-              'ruby { display: ruby !important; ruby-position: over !important; }'),
-          isTrue,
-          reason: 'ruby 容器强制与 furigana 显隐正交，hide 模式也应保留');
+        css.contains(
+          'ruby { display: ruby !important; ruby-position: over !important; }',
+        ),
+        isTrue,
+        reason: 'ruby 容器强制与 furigana 显隐正交，hide 模式也应保留',
+      );
     });
   });
 }

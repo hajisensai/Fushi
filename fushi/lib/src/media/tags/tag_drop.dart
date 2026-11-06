@@ -9,7 +9,8 @@ library;
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:fushi_core/fushi_core.dart';
 
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// [addTagToTarget] 的结果：三种结局各自对应一条不同的用户可见提示。
 enum TagAddOutcome {
@@ -51,7 +52,8 @@ Future<TagAddOutcome> addTagToTarget({
   required String alreadyTaggedMessage,
   TagAddNotifier? notify,
 }) async {
-  final TagAddNotifier tell = notify ??
+  final TagAddNotifier tell =
+      notify ??
       (String message, ToastSeverity severity) =>
           FushiToast.show(msg: message, severity: severity);
   try {
@@ -84,11 +86,10 @@ Future<bool> reorderTagsSafely({
   } catch (error, stackTrace) {
     debugPrint('reorderTagsSafely failed: $error\n$stackTrace');
     (notify ??
-        (String message, ToastSeverity severity) =>
-            FushiToast.show(msg: message, severity: severity))(
-      t.tag_reorder_failed,
-      ToastSeverity.error,
-    );
+        (String message, ToastSeverity severity) => FushiToast.show(
+          msg: message,
+          severity: severity,
+        ))(t.tag_reorder_failed, ToastSeverity.error);
     return false;
   }
 }

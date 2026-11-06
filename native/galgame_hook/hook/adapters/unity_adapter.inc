@@ -103,6 +103,9 @@ fushi_voice_hook::UnityTextMeshReassembler<501>
     g_unity_text_mesh_reassembler;
 // 旧 KEMCO 式逐字形 TextMesh 约定的行为判据（见 unity_text_profile.h）。读写都在 g_cs 内。
 fushi_voice_hook::UnityLegacyGlyphBatchDetector g_unity_glyph_batch_detector;
+// Unity 文本 setter 被脚本反复赋同一个值（常见是每帧）：组件文字没变就不是新的一行。
+// 判据与时间窗见 immediate_text_repeat_filter.h（按线程、全文相等、1 s 内）。读写都在 g_cs 内。
+fushi_voice_hook::ImmediateTextRepeatFilter g_unity_line_repeats;
 alignas(8) volatile uint64_t g_unity_preview_generation = 0;
 
 int InvokeUnityInt(const void* method, void* instance) {
@@ -178,9 +181,17 @@ void WriteUnityTextEvent(uint64_t thread_id, void* text_component,
   write.hook_name = hook_name;
   write.hook_code = hook_code;
   if (g_cs_ready) EnterCriticalSection(&g_cs);
-  fushi_voice_hook::WriteTextLaneEvent(
-      g_header, fushi_voice_hook::kNativeThreadPreviewStart,
-      fushi_voice_hook::kTextLaneCount, write);
+  // 反馈 bfaVEbHL_s（Unity UI.Text，同一句每秒进道好几次 → 文本道洪泛、每行一次
+  // loopback 抓取，Fushi 冻住到关游戏）：setter 重赋同值不进文本道。预览槽照常刷新。
+  const bool unchanged_reassignment =
+      event_kind == fushi_voice_hook::kTextEventLine &&
+      g_unity_line_repeats.IsRepeat(thread_id, clean, length,
+                                    GetTickCount64());
+  if (!unchanged_reassignment) {
+    fushi_voice_hook::WriteTextLaneEvent(
+        g_header, fushi_voice_hook::kNativeThreadPreviewStart,
+        fushi_voice_hook::kTextLaneCount, write);
+  }
   if (g_cs_ready) LeaveCriticalSection(&g_cs);
 }
 

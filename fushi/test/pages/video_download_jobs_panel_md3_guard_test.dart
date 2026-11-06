@@ -15,8 +15,11 @@ void main() {
     final File f = File(
       'lib/src/pages/implementations/video_download_jobs_panel.dart',
     );
-    expect(f.existsSync(), isTrue,
-        reason: '找不到 video_download_jobs_panel.dart（路径变了要同步本守卫）');
+    expect(
+      f.existsSync(),
+      isTrue,
+      reason: '找不到 video_download_jobs_panel.dart（路径变了要同步本守卫）',
+    );
     final String code = maskCommentsAndScriptLines(f.readAsStringSync());
 
     // 裸构造带不带泛型都算（`PopupMenuButton(` / `PopupMenuButton<int>(`）；
@@ -24,10 +27,14 @@ void main() {
     expect(
       RegExp(r'PopupMenuButton(<[^>]*>)?\s*\(').hasMatch(code),
       isFalse,
-      reason: '裸 PopupMenuButton 菜单没走 MD3 设计令牌（BUG-1766），'
+      reason:
+          '裸 PopupMenuButton 菜单没走 MD3 设计令牌（BUG-1766），'
           '用共享原语 FushiOverflowMenu。',
     );
-    expect(code, contains('FushiOverflowMenu<'),
-        reason: '优先级/排序菜单应经共享 MD3 菜单原语渲染。');
+    expect(
+      code,
+      contains('FushiOverflowMenu<'),
+      reason: '优先级/排序菜单应经共享 MD3 菜单原语渲染。',
+    );
   });
 }

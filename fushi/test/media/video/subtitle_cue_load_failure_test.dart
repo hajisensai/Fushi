@@ -96,8 +96,9 @@ void main() {
     late String src;
 
     setUpAll(() {
-      src = File('lib/src/pages/implementations/video_fushi/subtitle.part.dart')
-          .readAsStringSync();
+      src = File(
+        'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+      ).readAsStringSync();
     });
 
     test('存在按失败原因分流文案的映射函数', () {
@@ -138,7 +139,8 @@ void main() {
 
 /// 最小 ASS 夹具（与 text_file_io_encoding_test 同构，故意各自持有一份，
 /// 避免跨测试文件的隐式耦合）。
-const String _minimalAss = '[Script Info]\r\n'
+const String _minimalAss =
+    '[Script Info]\r\n'
     'ScriptType: v4.00+\r\n'
     '\r\n'
     '[Events]\r\n'

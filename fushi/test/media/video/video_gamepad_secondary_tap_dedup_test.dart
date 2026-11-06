@@ -10,9 +10,7 @@ void main() {
       );
       expect(
         VideoGamepadSecondaryTapDeduper.settleDelay,
-        lessThanOrEqualTo(
-          VideoGamepadSecondaryTapDeduper.coincidenceWindow,
-        ),
+        lessThanOrEqualTo(VideoGamepadSecondaryTapDeduper.coincidenceWindow),
       );
     });
 
@@ -32,9 +30,7 @@ void main() {
             ..recordGamepadPress(const Duration(milliseconds: 1000));
 
       expect(
-        deduper.shouldSuppressSecondaryTap(
-          const Duration(milliseconds: 1060),
-        ),
+        deduper.shouldSuppressSecondaryTap(const Duration(milliseconds: 1060)),
         isTrue,
       );
     });
@@ -45,9 +41,7 @@ void main() {
             ..recordGamepadPress(const Duration(milliseconds: 1060));
 
       expect(
-        deduper.shouldSuppressSecondaryTap(
-          const Duration(milliseconds: 1000),
-        ),
+        deduper.shouldSuppressSecondaryTap(const Duration(milliseconds: 1000)),
         isTrue,
       );
     });
@@ -58,9 +52,7 @@ void main() {
             ..recordGamepadPress(const Duration(milliseconds: 1000));
 
       expect(
-        deduper.shouldSuppressSecondaryTap(
-          const Duration(milliseconds: 1201),
-        ),
+        deduper.shouldSuppressSecondaryTap(const Duration(milliseconds: 1201)),
         isFalse,
       );
     });
@@ -71,9 +63,7 @@ void main() {
             ..recordGamepadPress(const Duration(milliseconds: 1000));
 
       expect(
-        deduper.shouldSuppressSecondaryTap(
-          const Duration(milliseconds: 1120),
-        ),
+        deduper.shouldSuppressSecondaryTap(const Duration(milliseconds: 1120)),
         isTrue,
       );
     });

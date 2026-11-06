@@ -367,14 +367,15 @@ void main() {
           OnnxExecutionProvider.directml,
         },
       );
-      final AsrEngineSessions onGpu = await AsrEngineLoader(
-        factory: gpu,
-        platform: AsrPlatform.windows,
-      ).load(
-        store: store,
-        variant: AsrEncoderVariant.fp32,
-        preference: AsrAccelerationPreference.auto,
-      );
+      final AsrEngineSessions onGpu =
+          await AsrEngineLoader(
+            factory: gpu,
+            platform: AsrPlatform.windows,
+          ).load(
+            store: store,
+            variant: AsrEncoderVariant.fp32,
+            preference: AsrAccelerationPreference.auto,
+          );
       expect(onGpu.staticEncoders, isNotNull);
       // 显存预算查不到（fake runtime）→ 默认桶表；装载时只预热最小桶（P0-2），
       // 大桶留给真出现长段时按需建。

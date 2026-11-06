@@ -31,8 +31,7 @@ void main() {
     if (root.existsSync()) await cleanupTempDir(root);
   });
 
-  test('onProgress 闭包持有不可发送对象时，导出照样成功（isolate 闭包不得捕获它）',
-      () async {
+  test('onProgress 闭包持有不可发送对象时，导出照样成功（isolate 闭包不得捕获它）', () async {
     final String dbDir = p.join(root.path, 'db');
     final String booksRoot = p.join(root.path, 'fushi_books');
     Directory(dbDir).createSync(recursive: true);
@@ -70,8 +69,11 @@ void main() {
     await db.close();
 
     expect(meta.appVersion, '1.0.0');
-    expect(File(zipPath).existsSync(), isTrue,
-        reason: '导出必须真的产出 zip，而不是 spawn 阶段就抛');
+    expect(
+      File(zipPath).existsSync(),
+      isTrue,
+      reason: '导出必须真的产出 zip，而不是 spawn 阶段就抛',
+    );
 
     final InputFileStream input = InputFileStream(zipPath);
     final Archive archive = ZipDecoder().decodeBuffer(input);

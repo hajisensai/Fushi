@@ -87,9 +87,11 @@ void main() {
 
     test('纯 ASCII UTF-8 不误判（无 0x00 字节）', () {
       expect(
-          detectBomlessUtf16(
-              utf8.encode('1\n00:00:01,000 --> 00:00:02,000\nhi\n')),
-          isNull);
+        detectBomlessUtf16(
+          utf8.encode('1\n00:00:01,000 --> 00:00:02,000\nhi\n'),
+        ),
+        isNull,
+      );
     });
 
     test('奇数长度不可能是完整 UTF-16 流', () {
@@ -113,9 +115,12 @@ void main() {
     });
 
     test('UTF-8 有 BOM：解出内容且 BOM 被剥掉', () {
-      final Uint8List bytes = Uint8List.fromList(
-        <int>[0xEF, 0xBB, 0xBF, ...utf8.encode(_minimalAss)],
-      );
+      final Uint8List bytes = Uint8List.fromList(<int>[
+        0xEF,
+        0xBB,
+        0xBF,
+        ...utf8.encode(_minimalAss),
+      ]);
       final String? text = decodeUnicodeText(bytes);
       expect(text, _minimalAss);
       expect(text!.startsWith(kBomChar), isFalse);
@@ -163,7 +168,8 @@ void main() {
       const String withEmoji = 'Dialogue text 𩸽 🍣 end';
       expect(
         decodeUnicodeText(
-            _encodeUtf16(withEmoji, littleEndian: true, withBom: true)),
+          _encodeUtf16(withEmoji, littleEndian: true, withBom: true),
+        ),
         withEmoji,
       );
       expect(
@@ -174,8 +180,14 @@ void main() {
 
     test('非 Unicode 家族（Shift-JIS 字节）返回 null，交给上层字符集检测', () {
       // 「日本語」的 CP932 编码：日 93 FA / 本 96 7B / 語 8C EA。
-      final Uint8List sjis =
-          Uint8List.fromList(<int>[0x93, 0xFA, 0x96, 0x7B, 0x8C, 0xEA]);
+      final Uint8List sjis = Uint8List.fromList(<int>[
+        0x93,
+        0xFA,
+        0x96,
+        0x7B,
+        0x8C,
+        0xEA,
+      ]);
       expect(decodeUnicodeText(sjis), isNull);
     });
   });
@@ -206,8 +218,12 @@ void main() {
     test('UTF-8 有 BOM', () async {
       expect(
         await readBytes(
-          Uint8List.fromList(
-              <int>[0xEF, 0xBB, 0xBF, ...utf8.encode(_minimalAss)]),
+          Uint8List.fromList(<int>[
+            0xEF,
+            0xBB,
+            0xBF,
+            ...utf8.encode(_minimalAss),
+          ]),
           'b.ass',
         ),
         _minimalAss,
@@ -257,8 +273,11 @@ void main() {
         0x0A,
       ]);
       final String text = await readBytes(sjis, 'g.ass');
-      expect(text.startsWith('Dialogue: '), isTrue,
-          reason: 'ASCII 部分必须完好，不能整体失败');
+      expect(
+        text.startsWith('Dialogue: '),
+        isTrue,
+        reason: 'ASCII 部分必须完好，不能整体失败',
+      );
       expect(text.contains('\u{FFFD}'), isTrue, reason: '无法解码的字节替换为 U+FFFD');
     });
 
@@ -310,15 +329,18 @@ void main() {
     test('UTF-8 + BOM 的 JSON 对齐文件可解析（jsonDecode 不吃 BOM）', () async {
       // 记事本 / PowerShell 5.1 写出的「UTF-8」就带 BOM。上游不剥 BOM 时
       // `jsonDecode` 直接抛 FormatException，且 JsonAlignmentParser 不 catch。
-      const String json = '{"cues":[{"chapter":"c","i":0,"selector":"s",'
+      const String json =
+          '{"cues":[{"chapter":"c","i":0,"selector":"s",'
           '"start":10,"end":20,"file":0,"text":"あ"}]}';
       final File f = File('${dir.path}${Platform.pathSeparator}align.json');
       await f.writeAsBytes(
         Uint8List.fromList(<int>[0xEF, 0xBB, 0xBF, ...utf8.encode(json)]),
         flush: true,
       );
-      final List<AudioCue> cues =
-          await JsonAlignmentParser.parse(jsonFile: f, bookKey: 'bug1490');
+      final List<AudioCue> cues = await JsonAlignmentParser.parse(
+        jsonFile: f,
+        bookKey: 'bug1490',
+      );
       expect(cues.length, 1);
       expect(cues[0].text, 'あ');
     });
@@ -327,7 +349,8 @@ void main() {
 
 /// 最小 ASS 夹具：保留 `[Script Info]` / `[Events]` / `Format:` 三个结构要素
 /// 和两条 Dialogue，足以走通 [AssParser] 的列定位逻辑。**不入库用户的 52KB 原件**。
-const String _minimalAss = '[Script Info]\r\n'
+const String _minimalAss =
+    '[Script Info]\r\n'
     'ScriptType: v4.00+\r\n'
     '\r\n'
     '[Events]\r\n'

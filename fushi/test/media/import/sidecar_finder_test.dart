@@ -22,6 +22,55 @@ void main() {
       expect(r.subtitle, 'book.srt');
     });
 
+    test('带学习语言标记的同名字幕也命中；别的语言的不挂', () {
+      expect(
+        selectSidecarNames(
+          mainFileName: 'book.epub',
+          siblingNames: <String>['book.en.srt', 'book.ja.srt'],
+        ).subtitle,
+        'book.ja.srt',
+      );
+      expect(
+        selectSidecarNames(
+          mainFileName: 'book.epub',
+          siblingNames: <String>['book.jpn.vtt'],
+        ).subtitle,
+        'book.jpn.vtt',
+      );
+      expect(
+        selectSidecarNames(
+          mainFileName: 'book.epub',
+          siblingNames: <String>['book.en.srt', 'other.srt'],
+        ).subtitle,
+        isNull,
+      );
+    });
+
+    test('视频走完全同名规则：不认语言标记，带点主文件名也只认整名', () {
+      ({String? subtitle, List<String> audio}) video(
+        String main,
+        List<String> siblings,
+      ) => selectSidecarNames(
+        mainFileName: main,
+        siblingNames: siblings,
+        wantAudio: false,
+        subtitleExts: const <String>{'srt', 'vtt', 'ass', 'ssa'},
+        subtitleRule: SidecarSubtitleRule.exactName,
+      );
+      // 有声书规则会把 `Movie.Eng` 拆成「movie + eng」，与 `Movie.srt` 主干不唯一而
+      // 放弃；视频只认完全同名的 `Movie.Eng.srt`。
+      expect(
+        video('Movie.Eng.mkv', <String>['Movie.Eng.srt', 'Movie.srt']).subtitle,
+        'Movie.Eng.srt',
+      );
+      expect(video('movie.mkv', <String>['movie.ja.srt']).subtitle, isNull);
+      expect(video('movie.mkv', <String>['movie.en.srt']).subtitle, isNull);
+      expect(
+        video('movie.mkv', <String>['movie.ass', 'movie.srt']).subtitle,
+        'movie.srt',
+      );
+    });
+
     test('无 srt 时退到 vtt', () {
       final r = selectSidecarNames(
         mainFileName: 'book.epub',
@@ -41,8 +90,12 @@ void main() {
         ],
       );
       // 自然排序：01 < 2 < 3 < 10（数字段按值比较，非字典序）
-      expect(r.audio,
-          <String>['book 01.mp3', 'book 2.mp3', 'book 3.mp3', 'book 10.mp3']);
+      expect(r.audio, <String>[
+        'book 01.mp3',
+        'book 2.mp3',
+        'book 3.mp3',
+        'book 10.mp3',
+      ]);
     });
 
     test('完全同名单段音频命中', () {
@@ -189,8 +242,9 @@ void main() {
     });
 
     test('目录不存在返回空且不抛', () async {
-      final SidecarMatch m =
-          await findSidecars(p.join(tmp.path, 'nope', 'book.epub'));
+      final SidecarMatch m = await findSidecars(
+        p.join(tmp.path, 'nope', 'book.epub'),
+      );
       expect(m.isEmpty, isTrue);
     });
 

@@ -33,38 +33,45 @@ void main() {
   });
 
   group('buildStreamVideoLaunch (direct stream, no network)', () {
-    test('direct stream: client carries url + spec headers + subtitle',
-        () async {
-      const StreamVideoSpec spec = StreamVideoSpec(
-        subtitleUrl: 'https://cdn.example.com/s.srt',
-        subtitleFileName: 's.srt',
-        referer: 'https://example.com/',
-        userAgent: 'FushiAgent/1.0',
-      );
-      final launch = await buildStreamVideoLaunch(_row(
-        videoPath: 'https://cdn.example.com/live.m3u8',
-        streamSpecJson: spec.toStorageJson(),
-      ));
-      expect(launch.client.streamUrl, 'https://cdn.example.com/live.m3u8');
-      expect(launch.client.subtitleUrl, 'https://cdn.example.com/s.srt');
-      expect(launch.client.subtitleFileName, 's.srt');
-      expect(launch.client.httpHeaderFields, <String, String>{
-        'Referer': 'https://example.com/',
-        'User-Agent': 'FushiAgent/1.0',
-      });
-      expect(launch.info.id, 'video/stream/abc');
-      launch.client.close();
-    });
+    test(
+      'direct stream: client carries url + spec headers + subtitle',
+      () async {
+        const StreamVideoSpec spec = StreamVideoSpec(
+          subtitleUrl: 'https://cdn.example.com/s.srt',
+          subtitleFileName: 's.srt',
+          referer: 'https://example.com/',
+          userAgent: 'FushiAgent/1.0',
+        );
+        final launch = await buildStreamVideoLaunch(
+          _row(
+            videoPath: 'https://cdn.example.com/live.m3u8',
+            streamSpecJson: spec.toStorageJson(),
+          ),
+        );
+        expect(launch.client.streamUrl, 'https://cdn.example.com/live.m3u8');
+        expect(launch.client.subtitleUrl, 'https://cdn.example.com/s.srt');
+        expect(launch.client.subtitleFileName, 's.srt');
+        expect(launch.client.httpHeaderFields, <String, String>{
+          'Referer': 'https://example.com/',
+          'User-Agent': 'FushiAgent/1.0',
+        });
+        expect(launch.info.id, 'video/stream/abc');
+        launch.client.close();
+      },
+    );
 
-    test('direct stream with null spec: bare url, no headers/subtitle',
-        () async {
-      final launch = await buildStreamVideoLaunch(
-          _row(videoPath: 'https://cdn.example.com/live.m3u8'));
-      expect(launch.client.streamUrl, 'https://cdn.example.com/live.m3u8');
-      expect(launch.client.subtitleUrl, isNull);
-      expect(launch.client.httpHeaderFields, isEmpty);
-      launch.client.close();
-    });
+    test(
+      'direct stream with null spec: bare url, no headers/subtitle',
+      () async {
+        final launch = await buildStreamVideoLaunch(
+          _row(videoPath: 'https://cdn.example.com/live.m3u8'),
+        );
+        expect(launch.client.streamUrl, 'https://cdn.example.com/live.m3u8');
+        expect(launch.client.subtitleUrl, isNull);
+        expect(launch.client.httpHeaderFields, isEmpty);
+        launch.client.close();
+      },
+    );
 
     // 来源库 WebDAV 视频：打开时按 sourceId 现解析的认证头与 spec 防盗链头合并
     // 进同一个 map（同时用于视频流与字幕下载），认证头不落行级 spec（凭据红线）。
@@ -105,112 +112,122 @@ void main() {
     final int futureExpire = now.millisecondsSinceEpoch ~/ 1000 + 36000;
 
     YoutubeResolvedSource fakeResolved(String tag) => YoutubeResolvedSource(
-          streamUrl: 'https://g/v?itag=137&expire=$futureExpire&t=$tag',
-          audioStreamUrl: 'https://g/a?itag=251&expire=$futureExpire',
-          miningVideoUrl: 'https://g/m?itag=18&expire=$futureExpire',
-          miningVideoHasAudio: true,
-          title: '',
-          httpHeaders: const <String, String>{'User-Agent': 'Mozilla/5.0'},
-          cues: const <AudioCue>[],
-        );
+      streamUrl: 'https://g/v?itag=137&expire=$futureExpire&t=$tag',
+      audioStreamUrl: 'https://g/a?itag=251&expire=$futureExpire',
+      miningVideoUrl: 'https://g/m?itag=18&expire=$futureExpire',
+      miningVideoHasAudio: true,
+      title: '',
+      httpHeaders: const <String, String>{'User-Agent': 'Mozilla/5.0'},
+      cues: const <AudioCue>[],
+    );
 
     VideoBookRow ytRow() => VideoBookRow(
-          bookUid: 'video/stream/yt:dQw4w9WgXcQ',
-          title: 'yt',
-          videoPath: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-          lastPositionMs: 0,
-          currentEpisode: 0,
-          delayMs: 0,
-          streamSpecJson: null,
+      bookUid: 'video/stream/yt:dQw4w9WgXcQ',
+      title: 'yt',
+      videoPath: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      lastPositionMs: 0,
+      currentEpisode: 0,
+      delayMs: 0,
+      streamSpecJson: null,
+    );
+
+    test(
+      'cache miss resolves once and stores; second open is a cache hit',
+      () async {
+        int resolveCalls = 0;
+        final YoutubeStreamCache cache = YoutubeStreamCache(
+          file: File('${tmp.path}/c.json'),
+          now: () => now,
         );
+        final launch1 = await buildStreamVideoLaunch(
+          ytRow(),
+          streamCache: cache,
+          youtubeResolver: (String url) async {
+            resolveCalls++;
+            return fakeResolved('r$resolveCalls');
+          },
+          livenessCheck: (String u, Map<String, String> h) async => true,
+          now: () => now,
+        );
+        expect(resolveCalls, 1);
+        expect(launch1.client.streamUrl, contains('t=r1'));
+        launch1.client.close();
 
-    test('cache miss resolves once and stores; second open is a cache hit',
-        () async {
-      int resolveCalls = 0;
-      final YoutubeStreamCache cache =
-          YoutubeStreamCache(file: File('${tmp.path}/c.json'), now: () => now);
-      final launch1 = await buildStreamVideoLaunch(
-        ytRow(),
-        streamCache: cache,
-        youtubeResolver: (String url) async {
-          resolveCalls++;
-          return fakeResolved('r$resolveCalls');
-        },
-        livenessCheck: (String u, Map<String, String> h) async => true,
-        now: () => now,
-      );
-      expect(resolveCalls, 1);
-      expect(launch1.client.streamUrl, contains('t=r1'));
-      launch1.client.close();
+        // 第二次开书：命中缓存、liveness 存活 → 不再 resolve，复用缓存 URL。
+        final launch2 = await buildStreamVideoLaunch(
+          ytRow(),
+          streamCache: cache,
+          youtubeResolver: (String url) async {
+            resolveCalls++;
+            return fakeResolved('r$resolveCalls');
+          },
+          livenessCheck: (String u, Map<String, String> h) async => true,
+          now: () => now,
+        );
+        expect(resolveCalls, 1); // 未再解析
+        expect(launch2.client.streamUrl, contains('t=r1')); // 仍是缓存的那条
+        launch2.client.close();
+      },
+    );
 
-      // 第二次开书：命中缓存、liveness 存活 → 不再 resolve，复用缓存 URL。
-      final launch2 = await buildStreamVideoLaunch(
-        ytRow(),
-        streamCache: cache,
-        youtubeResolver: (String url) async {
-          resolveCalls++;
-          return fakeResolved('r$resolveCalls');
-        },
-        livenessCheck: (String u, Map<String, String> h) async => true,
-        now: () => now,
-      );
-      expect(resolveCalls, 1); // 未再解析
-      expect(launch2.client.streamUrl, contains('t=r1')); // 仍是缓存的那条
-      launch2.client.close();
-    });
+    test(
+      'cache hit but liveness dead -> invalidate + re-resolve fresh',
+      () async {
+        int resolveCalls = 0;
+        final YoutubeStreamCache cache = YoutubeStreamCache(
+          file: File('${tmp.path}/c.json'),
+          now: () => now,
+        );
+        // 先种一条缓存。
+        await buildStreamVideoLaunch(
+          ytRow(),
+          streamCache: cache,
+          youtubeResolver: (String url) async {
+            resolveCalls++;
+            return fakeResolved('r$resolveCalls');
+          },
+          livenessCheck: (String u, Map<String, String> h) async => true,
+          now: () => now,
+        );
+        expect(resolveCalls, 1);
 
-    test('cache hit but liveness dead -> invalidate + re-resolve fresh',
-        () async {
-      int resolveCalls = 0;
-      final YoutubeStreamCache cache =
-          YoutubeStreamCache(file: File('${tmp.path}/c.json'), now: () => now);
-      // 先种一条缓存。
-      await buildStreamVideoLaunch(
-        ytRow(),
-        streamCache: cache,
-        youtubeResolver: (String url) async {
-          resolveCalls++;
-          return fakeResolved('r$resolveCalls');
-        },
-        livenessCheck: (String u, Map<String, String> h) async => true,
-        now: () => now,
-      );
-      expect(resolveCalls, 1);
+        // 再开：命中缓存但 liveness 判失效 → invalidate + 重解析拿新 URL。
+        final launch = await buildStreamVideoLaunch(
+          ytRow(),
+          streamCache: cache,
+          youtubeResolver: (String url) async {
+            resolveCalls++;
+            return fakeResolved('r$resolveCalls');
+          },
+          livenessCheck: (String u, Map<String, String> h) async => false,
+          now: () => now,
+        );
+        expect(resolveCalls, 2); // 失效触发重解析
+        expect(launch.client.streamUrl, contains('t=r2')); // 新 URL
+        launch.client.close();
 
-      // 再开：命中缓存但 liveness 判失效 → invalidate + 重解析拿新 URL。
-      final launch = await buildStreamVideoLaunch(
-        ytRow(),
-        streamCache: cache,
-        youtubeResolver: (String url) async {
-          resolveCalls++;
-          return fakeResolved('r$resolveCalls');
-        },
-        livenessCheck: (String u, Map<String, String> h) async => false,
-        now: () => now,
-      );
-      expect(resolveCalls, 2); // 失效触发重解析
-      expect(launch.client.streamUrl, contains('t=r2')); // 新 URL
-      launch.client.close();
-
-      // 失效后缓存被新结果覆盖（再开且 liveness 存活 → 不再解析）。
-      final launch2 = await buildStreamVideoLaunch(
-        ytRow(),
-        streamCache: cache,
-        youtubeResolver: (String url) async {
-          resolveCalls++;
-          return fakeResolved('r$resolveCalls');
-        },
-        livenessCheck: (String u, Map<String, String> h) async => true,
-        now: () => now,
-      );
-      expect(resolveCalls, 2);
-      launch2.client.close();
-    });
+        // 失效后缓存被新结果覆盖（再开且 liveness 存活 → 不再解析）。
+        final launch2 = await buildStreamVideoLaunch(
+          ytRow(),
+          streamCache: cache,
+          youtubeResolver: (String url) async {
+            resolveCalls++;
+            return fakeResolved('r$resolveCalls');
+          },
+          livenessCheck: (String u, Map<String, String> h) async => true,
+          now: () => now,
+        );
+        expect(resolveCalls, 2);
+        launch2.client.close();
+      },
+    );
 
     test('画质目标变更 -> 旧缓存视为 miss 重解析；同目标再开命中', () async {
       int resolveCalls = 0;
-      final YoutubeStreamCache cache =
-          YoutubeStreamCache(file: File('${tmp.path}/c.json'), now: () => now);
+      final YoutubeStreamCache cache = YoutubeStreamCache(
+        file: File('${tmp.path}/c.json'),
+        now: () => now,
+      );
       Future<void> open(int? targetHeight) async {
         final launch = await buildStreamVideoLaunch(
           ytRow(),
@@ -242,17 +259,19 @@ void main() {
 
     test('no parseable expire -> not cached (each open re-resolves)', () async {
       int resolveCalls = 0;
-      final YoutubeStreamCache cache =
-          YoutubeStreamCache(file: File('${tmp.path}/c.json'), now: () => now);
+      final YoutubeStreamCache cache = YoutubeStreamCache(
+        file: File('${tmp.path}/c.json'),
+        now: () => now,
+      );
       YoutubeResolvedSource noExpire(String tag) => YoutubeResolvedSource(
-            streamUrl: 'https://g/v?itag=137&t=$tag',
-            audioStreamUrl: null,
-            miningVideoUrl: null,
-            miningVideoHasAudio: true,
-            title: '',
-            httpHeaders: const <String, String>{},
-            cues: const <AudioCue>[],
-          );
+        streamUrl: 'https://g/v?itag=137&t=$tag',
+        audioStreamUrl: null,
+        miningVideoUrl: null,
+        miningVideoHasAudio: true,
+        title: '',
+        httpHeaders: const <String, String>{},
+        cues: const <AudioCue>[],
+      );
       for (int i = 0; i < 2; i++) {
         final launch = await buildStreamVideoLaunch(
           ytRow(),

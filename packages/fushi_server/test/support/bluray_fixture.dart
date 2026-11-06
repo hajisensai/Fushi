@@ -1,7 +1,8 @@
 // 字节级合成 MPLS / CLPI，给蓝光解析器的测试当输入。
 //
 // 原样复制自 `fushi/test/media/video/bluray_fixture.dart`（服务端测试 import 不到
-// app 的 test 目录）；改字节布局时两份一起改。
+// app 的 test 目录）；与 `packages/fushi_engine/test/media/video/bluray/
+// bluray_fixture.dart` 共三份，改字节布局时三份一起改。
 //
 // 手工拼字节而不是塞一份真盘文件进仓：MPLS 里没有任何可公开分发的样本，而且合成的
 // 好处是每个字段都能单独拨动——「IN 不从零起跳」「多角度」「章节落在第二段上」这些
@@ -40,15 +41,21 @@ class FixtureStream {
   }) : language = null,
        kind = 0;
 
-  const FixtureStream.audio({required this.codingType, required this.language, this.pid = 0x1100})
-    : videoFormat = 0,
-      frameRate = 0,
-      kind = 1;
+  const FixtureStream.audio({
+    required this.codingType,
+    required this.language,
+    this.pid = 0x1100,
+  }) : videoFormat = 0,
+       frameRate = 0,
+       kind = 1;
 
-  const FixtureStream.subtitle({required this.codingType, required this.language, this.pid = 0x1200})
-    : videoFormat = 0,
-      frameRate = 0,
-      kind = 2;
+  const FixtureStream.subtitle({
+    required this.codingType,
+    required this.language,
+    this.pid = 0x1200,
+  }) : videoFormat = 0,
+       frameRate = 0,
+       kind = 2;
 
   final int kind; // 0=video 1=audio 2=pg/textst
   final int codingType;
@@ -60,7 +67,11 @@ class FixtureStream {
 
 /// 一个章节标记。
 class FixtureMark {
-  const FixtureMark({required this.playItemIndex, required this.timestampTicks, this.markType = 0x01});
+  const FixtureMark({
+    required this.playItemIndex,
+    required this.timestampTicks,
+    this.markType = 0x01,
+  });
 
   final int playItemIndex;
   final int timestampTicks;
@@ -105,7 +116,10 @@ Uint8List buildMplsFixture({
   return out.toBytes();
 }
 
-Uint8List _buildPlayListBlock(List<FixturePlayItem> playItems, List<FixtureStream> streams) {
+Uint8List _buildPlayListBlock(
+  List<FixturePlayItem> playItems,
+  List<FixtureStream> streams,
+) {
   final BytesBuilder body = BytesBuilder();
   body.add(_u16(0)); // reserved
   body.add(_u16(playItems.length));
@@ -146,9 +160,15 @@ Uint8List _buildPlayItem(FixturePlayItem item, List<FixtureStream> streams) {
 }
 
 Uint8List _buildStnTable(List<FixtureStream> streams) {
-  final List<FixtureStream> video = streams.where((FixtureStream s) => s.kind == 0).toList();
-  final List<FixtureStream> audio = streams.where((FixtureStream s) => s.kind == 1).toList();
-  final List<FixtureStream> subtitle = streams.where((FixtureStream s) => s.kind == 2).toList();
+  final List<FixtureStream> video = streams
+      .where((FixtureStream s) => s.kind == 0)
+      .toList();
+  final List<FixtureStream> audio = streams
+      .where((FixtureStream s) => s.kind == 1)
+      .toList();
+  final List<FixtureStream> subtitle = streams
+      .where((FixtureStream s) => s.kind == 2)
+      .toList();
 
   final BytesBuilder body = BytesBuilder();
   body.add(_u16(0)); // reserved
@@ -160,7 +180,11 @@ Uint8List _buildStnTable(List<FixtureStream> streams) {
   body.addByte(0); // secondary video
   body.addByte(0); // PiP PG
   body.add(Uint8List(5)); // reserved
-  for (final FixtureStream stream in <FixtureStream>[...video, ...audio, ...subtitle]) {
+  for (final FixtureStream stream in <FixtureStream>[
+    ...video,
+    ...audio,
+    ...subtitle,
+  ]) {
     body.add(_buildStreamEntry(stream));
     body.add(_buildStreamAttributes(stream));
   }

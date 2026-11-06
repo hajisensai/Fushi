@@ -45,9 +45,8 @@ class VideoDownloadSubtitleLanguageQuery {
 /// 返回该作品的显式字幕语言码（`ja` / `zh` / …）；null = 不表态，走全局链。
 ///
 /// 异常由管线吞掉（记日志、按 null 处理）：解析器出错不能让字幕阶段炸。
-typedef VideoDownloadSubtitleLanguageResolver = FutureOr<String?> Function(
-  VideoDownloadSubtitleLanguageQuery query,
-);
+typedef VideoDownloadSubtitleLanguageResolver =
+    FutureOr<String?> Function(VideoDownloadSubtitleLanguageQuery query);
 
 /// 下载导入时落库的合集名。legacy 策略与无年份时是裸标题，否则 `Title (2026)`。
 ///
@@ -57,8 +56,7 @@ String videoDownloadCollectionName({
   required String title,
   int? year,
   bool legacy = false,
-}) =>
-    legacy || year == null ? title : '$title ($year)';
+}) => legacy || year == null ? title : '$title ($year)';
 
 /// 每系列字幕语言记忆的键：合集名小写 trim（与字幕工作台的 `seriesKey` 同构）。
 String videoDownloadSeriesKey({required String title, int? year}) =>

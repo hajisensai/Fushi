@@ -30,8 +30,9 @@ VideoPlayerController _controllerWithCue() {
 
 /// 找到字幕盒那层 [DecoratedBox]（圆角 6 的 [BoxDecoration]），返回其解析后的底色。
 Color? _subtitleBoxColor(WidgetTester tester) {
-  final Iterable<DecoratedBox> boxes =
-      tester.widgetList<DecoratedBox>(find.byType(DecoratedBox));
+  final Iterable<DecoratedBox> boxes = tester.widgetList<DecoratedBox>(
+    find.byType(DecoratedBox),
+  );
   for (final DecoratedBox b in boxes) {
     final Decoration d = b.decoration;
     if (d is BoxDecoration &&
@@ -71,29 +72,38 @@ Future<void> _pumpLight(
 void main() {
   group('TODO-1059 子1：字幕背景默认固定半透明黑，不跟随浅色主题 surface（方案A）', () {
     testWidgets(
-        'backgroundColor==null + opacity>0 + 浅色主题：底色=固定黑×opacity（不是 surface）',
-        (tester) async {
-      const double opacity = 0.5;
-      final VideoPlayerController c = _controllerWithCue();
-      addTearDown(c.dispose);
-      await _pumpLight(tester, c, opacity: opacity);
+      'backgroundColor==null + opacity>0 + 浅色主题：底色=固定黑×opacity（不是 surface）',
+      (tester) async {
+        const double opacity = 0.5;
+        final VideoPlayerController c = _controllerWithCue();
+        addTearDown(c.dispose);
+        await _pumpLight(tester, c, opacity: opacity);
 
-      final Color? boxColor = _subtitleBoxColor(tester);
-      expect(boxColor, isNotNull, reason: '未找到字幕盒 DecoratedBox');
+        final Color? boxColor = _subtitleBoxColor(tester);
+        expect(boxColor, isNotNull, reason: '未找到字幕盒 DecoratedBox');
 
-      final Color expected =
-          kDefaultSubtitleBackgroundColor.withValues(alpha: opacity);
-      expect(boxColor, expected,
-          reason: '字幕盒默认底色必须是固定 [kDefaultSubtitleBackgroundColor]×opacity，'
-              '不是浅色主题的 surface（方案A 根因）');
+        final Color expected = kDefaultSubtitleBackgroundColor.withValues(
+          alpha: opacity,
+        );
+        expect(
+          boxColor,
+          expected,
+          reason:
+              '字幕盒默认底色必须是固定 [kDefaultSubtitleBackgroundColor]×opacity，'
+              '不是浅色主题的 surface（方案A 根因）',
+        );
 
-      // 明确排除「跟随浅色 surface」的回归：浅色 surface 近白，其 alpha=opacity 的结果
-      // 明显比固定黑亮得多。
-      final Color surfaceFallback =
-          const ColorScheme.light().surface.withValues(alpha: opacity);
-      expect(boxColor, isNot(surfaceFallback),
-          reason: '字幕盒底色不得再跟随浅色主题 surface（泛白根因）');
-    });
+        // 明确排除「跟随浅色 surface」的回归：浅色 surface 近白，其 alpha=opacity 的结果
+        // 明显比固定黑亮得多。
+        final Color surfaceFallback = const ColorScheme.light().surface
+            .withValues(alpha: opacity);
+        expect(
+          boxColor,
+          isNot(surfaceFallback),
+          reason: '字幕盒底色不得再跟随浅色主题 surface（泛白根因）',
+        );
+      },
+    );
 
     testWidgets('用户显式选过背景色（非 null）仍逐字尊重，不被默认黑覆盖', (tester) async {
       const double opacity = 0.6;
@@ -103,8 +113,11 @@ void main() {
       await _pumpLight(tester, c, backgroundColor: userColor, opacity: opacity);
 
       final Color? boxColor = _subtitleBoxColor(tester);
-      expect(boxColor, userColor.withValues(alpha: opacity),
-          reason: '显式设过的背景色必须逐字尊重（Never break userspace）');
+      expect(
+        boxColor,
+        userColor.withValues(alpha: opacity),
+        reason: '显式设过的背景色必须逐字尊重（Never break userspace）',
+      );
     });
 
     testWidgets('opacity==0：完全透明（无背景），与颜色默认无关', (tester) async {

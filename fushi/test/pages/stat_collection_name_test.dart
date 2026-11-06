@@ -39,11 +39,9 @@ void main() {
 
     test('归属到已被删除的合集（名字缺失）→ null 不崩', () {
       expect(
-        statCollectionName(
-          'epub|dangling',
-          <String, int>{'epub|dangling': 99},
-          namesById,
-        ),
+        statCollectionName('epub|dangling', <String, int>{
+          'epub|dangling': 99,
+        }, namesById),
         isNull,
       );
     });
@@ -62,21 +60,17 @@ void main() {
   // 纯函数层：resolveEntryDisplayTitle 供「标题=合集名、副标题=条目名」两行场景，
   // collectionQualifiedTitle 供活动时间轴等单行「合集名 - 名字」场景。
   group('resolveEntryDisplayTitle', () {
-    final Map<String, int> primaryByEntry = <String, int>{
-      'video|uid-x': 2,
-    };
-    final Map<int, String> namesById = <int, String>{
-      2: '进击的巨人 第一季',
-    };
+    final Map<String, int> primaryByEntry = <String, int>{'video|uid-x': 2};
+    final Map<int, String> namesById = <int, String>{2: '进击的巨人 第一季'};
 
     test('命中合集返回 (合集名, 原名)', () {
       final ({String? collectionName, String title}) r =
           resolveEntryDisplayTitle(
-        entryKey: 'video|uid-x',
-        rawTitle: 'S01E01',
-        primaryByEntry: primaryByEntry,
-        collectionNamesById: namesById,
-      );
+            entryKey: 'video|uid-x',
+            rawTitle: 'S01E01',
+            primaryByEntry: primaryByEntry,
+            collectionNamesById: namesById,
+          );
       expect(r.collectionName, '进击的巨人 第一季');
       expect(r.title, 'S01E01');
     });
@@ -84,11 +78,11 @@ void main() {
     test('未命中返回 (null, 原名)', () {
       final ({String? collectionName, String title}) r =
           resolveEntryDisplayTitle(
-        entryKey: 'video|orphan',
-        rawTitle: 'S01E01',
-        primaryByEntry: primaryByEntry,
-        collectionNamesById: namesById,
-      );
+            entryKey: 'video|orphan',
+            rawTitle: 'S01E01',
+            primaryByEntry: primaryByEntry,
+            collectionNamesById: namesById,
+          );
       expect(r.collectionName, isNull);
       expect(r.title, 'S01E01');
     });

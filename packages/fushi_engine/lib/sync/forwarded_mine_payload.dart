@@ -29,9 +29,10 @@ class ForwardedMinePayload {
     this.sentenceOffset,
     this.source,
     this.sourceLink,
+    this.sourceUrl,
     this.bookTitleTag,
     this.collectionTag,
-    this.charPositionTag,
+    this.charPositionText,
     this.clipStartMs,
     this.clipEndMs,
     this.coverBytes,
@@ -54,13 +55,21 @@ class ForwardedMinePayload {
   /// `AnkiMiningSource.name`（`'book'` / `'video'` / `'game'`）；null = 不追加分类标签。
   final String? source;
   final CardSourceLink? sourceLink;
+
+  /// `AnkiMiningContext.sourceUrl`：外部网页来源（app 内浏览器制卡）。可空 = 非网页
+  /// 来源，或对端是尚未带这个键的旧版本——`{source-link}` 退回纯标题，卡照建。
+  final String? sourceUrl;
   final String? bookTitleTag;
   final String? collectionTag;
 
-  /// `AnkiMiningContext.charPositionTag`：制卡所在字符数标签（`chars_12345`）。可空 =
-  /// 非小说来源、开关关闭、锚点取不到，或对端是尚未带这个键的旧版本——服务端解析成
-  /// null，`buildNoteTags` 不追加，卡照建。
-  final String? charPositionTag;
+  /// `AnkiMiningContext.charPositionText`：发送端按其界面语言格式化好的制卡位置文本，
+  /// 服务端写进 MiscInfo（等价）字段。可空 = 非小说来源、开关关闭、锚点取不到，或对端是
+  /// 尚未带这个键的旧版本——服务端解析成 null，不写，卡照建。
+  ///
+  /// wire 键是新的 `charPositionText`，不复用旧 `charPositionTag`：旧版接收端会把
+  /// `charPositionTag` 的值当标签打，送一句带空格的位置文本过去会变成垃圾标签。旧版发送端
+  /// 的 `charPositionTag`（`chars_12345` 标签字面量）不再读：位置不进标签了。
+  final String? charPositionText;
 
   /// `AnkiMiningContext.clipStartMs|clipEndMs`：本卡截取的媒体片段起止（毫秒偏移），
   /// 服务端渲染 `{clip-timestamp}` 用。可空 = 无时间轴来源（书 / galgame），或对端是
@@ -83,33 +92,34 @@ class ForwardedMinePayload {
   final List<ForwardedDictMedia> dictionaryMedia;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'rawPayloadJson': rawPayloadJson,
-        'sentence': sentence,
-        if (cueSentence != null) 'cueSentence': cueSentence,
-        if (documentTitle != null) 'documentTitle': documentTitle,
-        if (sentenceOffset != null) 'sentenceOffset': sentenceOffset,
-        if (source != null) 'source': source,
-        if (sourceLink != null) 'sourceLink': sourceLink!.toUri().toString(),
-        if (bookTitleTag != null) 'bookTitleTag': bookTitleTag,
-        if (collectionTag != null) 'collectionTag': collectionTag,
-        if (charPositionTag != null) 'charPositionTag': charPositionTag,
-        if (clipStartMs != null) 'clipStartMs': clipStartMs,
-        if (clipEndMs != null) 'clipEndMs': clipEndMs,
-        if (coverBytes != null) 'coverBase64': base64Encode(coverBytes!),
-        if (coverExt != null) 'coverExt': coverExt,
-        if (synchronizedVideo) 'synchronizedVideo': true,
-        if (sentenceAudioBytes != null && !synchronizedVideo)
-          'sentenceAudioBase64': base64Encode(sentenceAudioBytes!),
-        if (sentenceAudioExt != null && !synchronizedVideo)
-          'sentenceAudioExt': sentenceAudioExt,
-        if (wordAudioBytes != null)
-          'wordAudioBase64': base64Encode(wordAudioBytes!),
-        if (wordAudioExt != null) 'wordAudioExt': wordAudioExt,
-        if (dictionaryMedia.isNotEmpty)
-          'dictionaryMedia': dictionaryMedia
-              .map((ForwardedDictMedia m) => m.toJson())
-              .toList(),
-      };
+    'rawPayloadJson': rawPayloadJson,
+    'sentence': sentence,
+    if (cueSentence != null) 'cueSentence': cueSentence,
+    if (documentTitle != null) 'documentTitle': documentTitle,
+    if (sentenceOffset != null) 'sentenceOffset': sentenceOffset,
+    if (source != null) 'source': source,
+    if (sourceLink != null) 'sourceLink': sourceLink!.toUri().toString(),
+    if (sourceUrl != null) 'sourceUrl': sourceUrl,
+    if (bookTitleTag != null) 'bookTitleTag': bookTitleTag,
+    if (collectionTag != null) 'collectionTag': collectionTag,
+    if (charPositionText != null) 'charPositionText': charPositionText,
+    if (clipStartMs != null) 'clipStartMs': clipStartMs,
+    if (clipEndMs != null) 'clipEndMs': clipEndMs,
+    if (coverBytes != null) 'coverBase64': base64Encode(coverBytes!),
+    if (coverExt != null) 'coverExt': coverExt,
+    if (synchronizedVideo) 'synchronizedVideo': true,
+    if (sentenceAudioBytes != null && !synchronizedVideo)
+      'sentenceAudioBase64': base64Encode(sentenceAudioBytes!),
+    if (sentenceAudioExt != null && !synchronizedVideo)
+      'sentenceAudioExt': sentenceAudioExt,
+    if (wordAudioBytes != null)
+      'wordAudioBase64': base64Encode(wordAudioBytes!),
+    if (wordAudioExt != null) 'wordAudioExt': wordAudioExt,
+    if (dictionaryMedia.isNotEmpty)
+      'dictionaryMedia': dictionaryMedia
+          .map((ForwardedDictMedia m) => m.toJson())
+          .toList(),
+  };
 
   /// `fields` 缺失/非法（[rawPayloadJson] 不是字符串）→ 抛 [FormatException]（真正的坏请求，
   /// 由调用方转 400）。媒体字节 base64 坏了只当该媒体缺失（降级），不抛。
@@ -121,11 +131,13 @@ class ForwardedMinePayload {
     final Object? dmRaw = json['dictionaryMedia'];
     final List<ForwardedDictMedia> media = dmRaw is List
         ? dmRaw
-            .whereType<Map>()
-            .map((Map e) =>
-                ForwardedDictMedia.fromJson(Map<String, dynamic>.from(e)))
-            .where((ForwardedDictMedia m) => m.bytes != null)
-            .toList(growable: false)
+              .whereType<Map>()
+              .map(
+                (Map e) =>
+                    ForwardedDictMedia.fromJson(Map<String, dynamic>.from(e)),
+              )
+              .where((ForwardedDictMedia m) => m.bytes != null)
+              .toList(growable: false)
         : const <ForwardedDictMedia>[];
     return ForwardedMinePayload(
       rawPayloadJson: raw,
@@ -137,9 +149,10 @@ class ForwardedMinePayload {
       sourceLink: json['sourceLink'] == null
           ? null
           : CardSourceLink.parse(json['sourceLink'] as String),
+      sourceUrl: json['sourceUrl'] as String?,
       bookTitleTag: json['bookTitleTag'] as String?,
       collectionTag: json['collectionTag'] as String?,
-      charPositionTag: json['charPositionTag'] as String?,
+      charPositionText: json['charPositionText'] as String?,
       clipStartMs: (json['clipStartMs'] as num?)?.toInt(),
       clipEndMs: (json['clipEndMs'] as num?)?.toInt(),
       coverBytes: tryDecodeBase64(json['coverBase64']),
@@ -167,8 +180,9 @@ class ForwardedMinePayload {
   /// 或过长串影响服务端临时文件命名。
   static String? sanitizeExt(Object? value) {
     if (value is! String) return null;
-    final String cleaned =
-        value.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toLowerCase();
+    final String cleaned = value
+        .replaceAll(RegExp(r'[^A-Za-z0-9]'), '')
+        .toLowerCase();
     if (cleaned.isEmpty) return null;
     return cleaned.length > 8 ? cleaned.substring(0, 8) : cleaned;
   }
@@ -189,10 +203,10 @@ class ForwardedDictMedia {
   final Uint8List? bytes;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        if (dictionary.isNotEmpty) 'dictionary': dictionary,
-        'path': path,
-        if (bytes != null) 'base64': base64Encode(bytes!),
-      };
+    if (dictionary.isNotEmpty) 'dictionary': dictionary,
+    'path': path,
+    if (bytes != null) 'base64': base64Encode(bytes!),
+  };
 
   static ForwardedDictMedia fromJson(Map<String, dynamic> json) =>
       ForwardedDictMedia(

@@ -1,0 +1,8 @@
+# Rust 构建树与脚本产物 —— 不入库。
+target/
+prebuilt/
+*.log
+# 权重由 fetch_model.sh / fetch_model.ps1 下载（~11 MB，不入库）。
+model/
+# 黄金值生成器的上游源码检出（见 tools/oracle/Cargo.toml），不入库。
+tools/oracle/upstream/

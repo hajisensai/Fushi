@@ -20,16 +20,22 @@ void main() {
       final String? nodeExe = _resolveNode();
       if (nodeExe == null) {
         markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
+          'node not found on PATH; skipping JS behavior execution',
+        );
         return;
       }
-      final File jsTest =
-          File('test/lookup/reader_cue_gap_word_scan_bug3453_test.js');
-      expect(jsTest.existsSync(), isTrue,
-          reason: 'behavior harness ${jsTest.path} must exist');
+      final File jsTest = File(
+        'test/lookup/reader_cue_gap_word_scan_bug3453_test.js',
+      );
+      expect(
+        jsTest.existsSync(),
+        isTrue,
+        reason: 'behavior harness ${jsTest.path} must exist',
+      );
 
-      final Directory tmp =
-          Directory.systemTemp.createTempSync('fushi_bug3452_');
+      final Directory tmp = Directory.systemTemp.createTempSync(
+        'fushi_bug3452_',
+      );
       final File readerJs = File('${tmp.path}/reader_selection.js');
       readerJs.writeAsStringSync(ReaderSelectionScripts.source());
       try {
@@ -44,11 +50,15 @@ void main() {
         expect(
           result.exitCode,
           0,
-          reason: 'BUG-3453 behavior test failed.\n'
+          reason:
+              'BUG-3453 behavior test failed.\n'
               'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
         );
-        expect(result.stdout.toString(), contains('all assertions passed'),
-            reason: 'behavior harness must reach its success marker');
+        expect(
+          result.stdout.toString(),
+          contains('all assertions passed'),
+          reason: 'behavior harness must reach its success marker',
+        );
       } finally {
         tmp.deleteSync(recursive: true);
       }
@@ -58,8 +68,9 @@ void main() {
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

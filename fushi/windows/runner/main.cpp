@@ -2,8 +2,13 @@
 #include <flutter/flutter_view_controller.h>
 #include <shellapi.h>
 #include <windows.h>
+#include <audiopolicy.h>
+#include <mmdeviceapi.h>
+#include <wrl/client.h>
 
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "crash_dump.h"
 #include "external_video_handoff.h"
@@ -46,6 +51,37 @@ std::wstring FirstFileArgFromCommandLine() {
 // 见到它说明本次启动是「旧进程刚迁完数据、主动拉起的新进程」，而非用户二次点击图标。
 constexpr wchar_t kRestartMarkerArg[] = L"--fushi-restarted";
 
+// 等旧实例释放单实例互斥量的上界（数据迁移重启 / 首实例正在退出 / 窗口尚未出现三处
+// 共用）。下限由 Dart 侧退出看门狗推出：main.dart 的 `_exitWatchdogTimeout` = 退出链
+// 各串行步骤超时之和 + 余量（当前约 14.1s），退出中的旧进程最长活这么久；本上界必须
+// 再留出进程拆除的余量，否则退出链拖满时这里先超时，把文件转交给一个马上就没的进程。
+// 守卫 test/platform/exit_watchdog_runner_wait_guard_test.dart 把两者钉在一起。
+constexpr DWORD kPreviousInstanceWaitMs = 20000;
+
+// BUG-4028：安装器替换安装目录期间持有的「请勿启动」门（fushi.iss 的
+// FushiInstallGateMutexName，PrepareToInstall 清场之前建、ssPostInstall 放开）。名字两侧
+// 必须逐字一致，守卫 test/build/windows_installer_launch_gate_guard_test.dart 钉住。
+constexpr wchar_t kInstallInProgressMutex[] = L"FushiInstallInProgressMutex";
+
+// 安装器此刻是否正在替换安装目录。
+//
+// 应用内更新的现场（反馈 umcyzpaebn）：旧实例退出、安装器清场之后，一个由 shell 拉起的
+// 新 fushi.exe 把插件 DLL 映射进来，复制阶段 DeleteFile code 5 → 整包回滚 → 半更新态。
+// 本进程映像（fushi.exe）与静态链接的插件 DLL 在 wWinMain 之前就已映射，只能**立即退出**
+// 让锁随进程消失（安装器的 DeleteFile 自带重试）；等待门放开则会一直占着这些文件，
+// 正好把安装卡死。安装成功后 [Run] / launcher 会把新版拉起来，这次启动不会白丢。
+//
+// 门由安装器建：提权安装时那是管理员令牌建的对象，普通权限 OpenMutexW 会得到
+// ERROR_ACCESS_DENIED——拒绝访问同样说明它存在。
+bool InstallInProgress() {
+  HANDLE gate = ::OpenMutexW(SYNCHRONIZE, FALSE, kInstallInProgressMutex);
+  if (gate != nullptr) {
+    ::CloseHandle(gate);
+    return true;
+  }
+  return ::GetLastError() == ERROR_ACCESS_DENIED;
+}
+
 // 本进程 argv 是否带 [kRestartMarkerArg]（自动重启拉起的新进程）。
 bool HasRestartMarker() {
   int argc = 0;
@@ -78,6 +114,57 @@ bool HasRestartMarker() {
 bool IsTestRunnerMode() {
   return ::GetEnvironmentVariableW(L"FUSHI_TEST_HIDDEN", nullptr, 0) > 0;
 }
+
+// 集成测试 runner 下把本进程的默认音频会话静音：itest 素材是 ffmpeg 生成的
+// 440/880 Hz 正弦波（视频轨、查词发音），真 libmpv / just_audio_media_kit 播出来
+// 就是持续的「嘟嘟」声。静音在 WASAPI 会话层做，一处覆盖本进程所有播放器，且
+// mpv 的 volume / mute 属性、时间轴推进都不受影响（测音量 duck 的用例照样成立）。
+// 只作用于本进程（GUID_NULL + 非跨进程会话）：WebView2 在 msedgewebview2 子进程里
+// 出声，不在此列。对枚举时已激活的每个输出设备都静音；测试中途插拔出的新设备不覆盖。
+class TestRunnerAudioMute {
+ public:
+  TestRunnerAudioMute() {
+    Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator;
+    if (FAILED(::CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr,
+                                  CLSCTX_ALL, IID_PPV_ARGS(&enumerator)))) {
+      return;
+    }
+    Microsoft::WRL::ComPtr<IMMDeviceCollection> devices;
+    if (FAILED(enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE,
+                                              &devices))) {
+      return;
+    }
+    UINT count = 0;
+    devices->GetCount(&count);
+    for (UINT i = 0; i < count; ++i) {
+      Microsoft::WRL::ComPtr<IMMDevice> device;
+      Microsoft::WRL::ComPtr<IAudioSessionManager> manager;
+      Microsoft::WRL::ComPtr<ISimpleAudioVolume> volume;
+      if (FAILED(devices->Item(i, &device)) ||
+          FAILED(device->Activate(__uuidof(IAudioSessionManager), CLSCTX_ALL,
+                                  nullptr, &manager)) ||
+          FAILED(manager->GetSimpleAudioVolume(nullptr, FALSE, &volume)) ||
+          FAILED(volume->SetMute(TRUE, nullptr))) {
+        continue;
+      }
+      muted_.push_back(std::move(volume));
+    }
+  }
+
+  // 退出时解除静音：Windows 会按 exe 记住应用音量，不还原的话同一份构建产物
+  // 之后手动 `flutter run` 也会是哑的。
+  ~TestRunnerAudioMute() {
+    for (const Microsoft::WRL::ComPtr<ISimpleAudioVolume> &volume : muted_) {
+      volume->SetMute(FALSE, nullptr);
+    }
+  }
+
+  TestRunnerAudioMute(const TestRunnerAudioMute &) = delete;
+  TestRunnerAudioMute &operator=(const TestRunnerAudioMute &) = delete;
+
+ private:
+  std::vector<Microsoft::WRL::ComPtr<ISimpleAudioVolume>> muted_;
+};
 
 // 开发期与已安装的 Fushi 并存（`flutter run` 热重载时用户还开着自己的 Fushi 在看书）。
 // 只在 debug 构建、且显式设了 FUSHI_DEV_SIDE_BY_SIDE 时生效，release 包恒为 false。
@@ -183,6 +270,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // 注释：否则撞用户实例的互斥量会在引擎初始化前退出，itest 无法 attach。
   const bool dev_side_by_side = IsDevSideBySideMode();
   const bool test_runner = IsTestRunnerMode() || dev_side_by_side;
+  // BUG-4028：安装器正在替换安装目录 → 立即退出，不碰单实例互斥量、不建引擎。
+  if (!test_runner && InstallInProgress()) {
+    ::OutputDebugStringW(L"Fushi: installer is replacing the app; exiting.\n");
+    return EXIT_SUCCESS;
+  }
   ::fushi::SingleInstanceMutex single_instance_mutex(
       L"FushiSingleInstanceMutex", !test_runner);
   if (!test_runner && !single_instance_mutex.valid()) {
@@ -198,13 +290,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // AppPaths.resolve() 即读到新 data_root。等待加 10s 上界，旧进程异常不退时退回二次
   // 启动语义（前置旧窗口 + 退出），不永久卡死。普通用户二次点击图标无此标志，行为不变。
   if (another_instance && HasRestartMarker()) {
-    if (single_instance_mutex.Wait(10000)) {
+    if (single_instance_mutex.Wait(kPreviousInstanceWaitMs)) {
       another_instance = false;  // 已接管单实例所有权：按首实例正常启动。
     }
   }
   // 首实例可能正在**退出**：main.dart 的退出链第一步就 windowManager.hide()，此后
-  // 进程最长还要活约 6s（退出总预算看门狗）才真正消失，而互斥量在整个过程里一直被
-  // 它持有、隐藏窗口也照样被 FindWindowW 找得到。此时走下面那条「转交 + 前置 + 退出」
+  // 进程最长还要活到退出看门狗到点（见 kPreviousInstanceWaitMs）才真正消失，
+  // 而互斥量在整个过程里一直被它持有、隐藏窗口也照样被 FindWindowW 找得到。此时走下面那条「转交 + 前置 + 退出」
   // 是两头落空：文件转交给一个马上就没的进程 = 路径整个丢掉；前置一个看不见的窗口
   // = 用户双击视频「点了没反应」（TODO-904 修过的正是这个形态）。
   //
@@ -216,16 +308,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     const HWND exiting = ::FindWindowW(nullptr, L"Fushi");
     if (exiting != nullptr && !::IsWindowVisible(exiting)) {
       // 窗口存在但不可见 ⇔ 正在退出：等它释放所有权即可按首实例启动。
-      if (single_instance_mutex.Wait(10000)) {
+      if (single_instance_mutex.Wait(kPreviousInstanceWaitMs)) {
         another_instance = false;
       }
     } else if (exiting == nullptr) {
       // 窗口还没出现，两种可能分不开：①首实例正在启动（它这辈子都不会释放互斥量，
-      // 裸 Wait(10000) 必然跑满 10 秒——资源管理器多选两个视频「用 Fushi 打开」就是
-      // 这个形状，第二个进程白卡十秒才转交）；②上一个进程已经走干净、只剩别人手里
+      // 裸 Wait(kPreviousInstanceWaitMs) 必然跑满上界——资源管理器多选两个视频「用 Fushi
+      // 打开」就是这个形状，第二个进程白卡满上界才转交）；②上一个进程已经走干净、只剩别人手里
       // 一个未关句柄。分片等待并每片探一次窗口：情况②在第一片就拿到所有权；情况①
       // 一见到窗口就立刻回落到转交；真正卡死不退的旧进程仍等满上界。
-      for (int waited = 0; waited < 10000; waited += 100) {
+      for (DWORD waited = 0; waited < kPreviousInstanceWaitMs; waited += 100) {
         if (single_instance_mutex.Wait(100)) {
           another_instance = false;
           break;
@@ -258,6 +350,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     return EXIT_SUCCESS;
   }
 
+  // BUG-4028：上面「首实例正在退出 → 等它放开互斥量」最长等 kPreviousInstanceWaitMs，
+  // 应用内更新时等到的正是为安装让路而退出的旧实例——等完安装器多半已经开工。拿到
+  // 单实例所有权后、建引擎之前再看一次门。
+  if (!test_runner && InstallInProgress()) {
+    ::OutputDebugStringW(L"Fushi: installer is replacing the app; exiting.\n");
+    return EXIT_SUCCESS;
+  }
+
   // BUG-1483：必须在 Flutter engine（进而 WebView2 环境）创建之前决定用户数据
   // 目录，见函数注释。
   EnsureWritableWebView2UserDataFolder();
@@ -277,12 +377,19 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
+  // 只有 itest runner 才静音；生命周期包住整个消息循环，在 CoUninitialize 之前析构。
+  std::unique_ptr<TestRunnerAudioMute> test_audio_mute;
+  if (IsTestRunnerMode() && !dev_side_by_side) {
+    test_audio_mute = std::make_unique<TestRunnerAudioMute>();
+  }
+
   flutter::DartProject project(L"data");
-  // Flutter 3.47 起 Windows 默认 Impeller；合成器内 HDR 的引擎补丁
-  // （ci/patches/flutter-engine/<版本>/）只实现了 Skia 路径，Impeller 下
-  // FlutterDesktopViewSetHdrOutput 恒返回 false、HDR 视频静默退回宿主窗。
-  // 3.44 及以前 Windows 默认就是 Skia，这里保持同一渲染器。
-  project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);
+  // 全线 Impeller，不留 Skia 回退（docs/specs/2026-10-23-music-module-design.md
+  // D13）。显式钉住而不是依赖引擎默认：环境变量 FLUTTER_ENGINE_SWITCHES 的
+  // --enable-impeller=false 在默认档下仍会生效。合成器内 HDR 在 Impeller 下由
+  // ci/patches/flutter-engine/<版本>/engine-impeller-hdr.patch 接上；没有它的
+  // 引擎产物会让 HDR 视频静默退回 SDR（守卫 compositor_hdr_engine_guard_test）。
+  project.set_impeller_switch(flutter::ImpellerSwitch::Enabled);
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
@@ -312,6 +419,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
 
   ::fushi::StopHangWatchdog();
+  test_audio_mute.reset();
   ::CoUninitialize();
   return EXIT_SUCCESS;
 }

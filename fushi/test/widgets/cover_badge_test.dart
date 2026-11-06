@@ -24,31 +24,33 @@ Color _badgeColor(WidgetTester tester) {
 
 void main() {
   testWidgets('渲染图标 + 可选文字', (WidgetTester tester) async {
-    await tester.pumpWidget(_app(
-      eink: false,
-      child: const CoverBadge(icon: Icons.subtitles_outlined, label: '12'),
-    ));
+    await tester.pumpWidget(
+      _app(
+        eink: false,
+        child: const CoverBadge(icon: Icons.subtitles_outlined, label: '12'),
+      ),
+    );
     expect(find.byIcon(Icons.subtitles_outlined), findsOneWidget);
     expect(find.text('12'), findsOneWidget);
   });
 
-  testWidgets('MD3：inverseSurface@0.85 半透明角标（2026-10-04 角标统一）',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(_app(
-      eink: false,
-      child: const CoverBadge(icon: Icons.cloud_outlined),
-    ));
+  testWidgets('MD3：inverseSurface@0.85 半透明角标（2026-10-04 角标统一）', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(eink: false, child: const CoverBadge(icon: Icons.cloud_outlined)),
+    );
     final Color color = _badgeColor(tester);
-    final ColorScheme cs =
-        Theme.of(tester.element(find.byType(CoverBadge))).colorScheme;
+    final ColorScheme cs = Theme.of(
+      tester.element(find.byType(CoverBadge)),
+    ).colorScheme;
     expect(color, cs.inverseSurface.withValues(alpha: 0.85));
   });
 
   testWidgets('eink：纯黑实底（半透明黑在墨水屏合成抖动灰）', (WidgetTester tester) async {
-    await tester.pumpWidget(_app(
-      eink: true,
-      child: const CoverBadge(icon: Icons.cloud_outlined),
-    ));
+    await tester.pumpWidget(
+      _app(eink: true, child: const CoverBadge(icon: Icons.cloud_outlined)),
+    );
     expect(_badgeColor(tester), Colors.black);
   });
 }

@@ -14,6 +14,7 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/ai/web_search.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
@@ -45,6 +46,9 @@ class _Settings implements AiSettingsSource {
 
   @override
   List<WebKnowledgeSite> get aiWebKnowledgeSites => const <WebKnowledgeSite>[];
+
+  @override
+  WebSearchConfig? get aiWebSearch => null;
 }
 
 /// 视频合集详情页「排序」菜单的「AI 排序」：AI 模块关（调用方传 null）不出现；
@@ -113,6 +117,8 @@ void main() {
       home: MediaCollectionDetailPage(
         database: db,
         collection: MediaCollectionRow(
+          origin: 'user',
+          organizeAliases: '',
           id: collectionId,
           name: 'Show',
           collectionType: 'playlist',

@@ -5,6 +5,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
+import 'package:fushi/src/media/manga/cookie/browser_login_import.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
@@ -18,6 +19,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_toolbar.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 该源能不能在 app 里登录，以及登录页要打开哪个地址；不能则返回 null。
 ///
@@ -134,6 +136,8 @@ class MihonWebLoginPage extends StatefulWidget {
     this.environmentFactory,
     this.openExternal,
     this.cookieWriter,
+    this.userAgent,
+    this.browserImportAvailable = true,
     super.key,
   });
 
@@ -143,7 +147,20 @@ class MihonWebLoginPage extends StatefulWidget {
   final Uri baseUrl;
 
   /// 宿主的 cookie jar；null = 运行时直接读浏览器那份，不导出。
-  final MihonCookieJar? jar;
+  ///
+  /// 漫画 / 视频源（桌面 sidecar）是 [MihonCookieJar]；小说源是 LNReader 自己的
+  /// jar（出站桥直接读，见 `lnreader_web_login.dart`）。
+  final MangaCookieJar? jar;
+
+  /// 登录页 WebView 的 UA；null = 平台默认。
+  ///
+  /// 小说源的请求由宿主桥按固定 UA 发出，站点把会话（以及顺手解掉的
+  /// `cf_clearance`）绑在 UA 上时，登录页必须用同一个 UA，导出的会话桥才用得上。
+  final String? userAgent;
+
+  /// 是否给「从浏览器导入」（仅在 [jar] 非空时有意义）。Fushi 浏览器扩展只在桌面，
+  /// 移动端持有 jar 的调用方（小说源）按 `browserExtensionSupportedOn` 传 false。
+  final bool browserImportAvailable;
 
   /// 测试注入：默认读绑定环境的 [CookieManager]。
   final Future<List<Cookie>> Function(WebUri url)? cookieReader;
@@ -189,10 +206,13 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
   bool _canGoForward = false;
   String _currentUrl = '';
 
-  /// 「从浏览器导入」的登记；null = 没开始。收到过的条数用来决定「完成」怎么收尾。
-  BrowserCookieImportRequestHandle? _import;
-  StreamSubscription<BrowserCookieDelivery>? _importSubscription;
-  int _importedCount = 0;
+  /// 「从浏览器导入」（与 app 内浏览器、视频站点同一份 [BrowserLoginImport]：一次即
+  /// 结束、等待时有可取消的状态条）。导入过的条数决定「完成」怎么收尾。
+  BrowserLoginImport? _import;
+
+  int get _importedCount => _import?.phase == BrowserLoginImportPhase.imported
+      ? _import!.importedCount
+      : 0;
 
   @override
   void initState() {
@@ -204,49 +224,35 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
 
   @override
   void dispose() {
-    unawaited(_importSubscription?.cancel());
-    _import?.end();
+    _import?.dispose();
     super.dispose();
   }
 
-  /// 登记导入并把源站交给系统浏览器；扩展送来的每一批都直接写 jar。
-  Future<void> _beginBrowserImport(MihonCookieJar jar) async {
-    if (_import != null) return;
-    final BrowserCookieImportRequestHandle handle =
-        BrowserCookieImportGate.begin(widget.baseUrl.host);
-    _import = handle;
-    _importSubscription = handle.deliveries.listen(
-      (BrowserCookieDelivery delivery) =>
-          unawaited(_applyDelivery(jar, delivery)),
-    );
-    setState(() {});
-    try {
-      await (widget.openExternal ?? _launchExternal)(widget.baseUrl);
-    } on Object {
-      // 打不开浏览器不撤登记：用户可以自己把站点打开，扩展照样会送。
-    }
+  /// 登记导入并把源站交给系统浏览器；扩展送来的第一批本站 cookie 写 jar 并回灌
+  /// WebView 后登记结束。
+  Future<void> _beginBrowserImport(MangaCookieJar jar) async {
+    final BrowserLoginImport import = _import ??= BrowserLoginImport(
+      write: (List<BrowserSiteCookie> cookies) => _applyCookies(jar, cookies),
+      openExternal: widget.openExternal,
+    )..addListener(_onImportChanged);
+    await import.begin(widget.baseUrl, open: widget.baseUrl);
   }
 
-  static Future<void> _launchExternal(Uri url) async {
-    await launchUrl(url, mode: LaunchMode.externalApplication);
+  void _onImportChanged() {
+    if (mounted) setState(() {});
   }
 
-  Future<void> _applyDelivery(
-    MihonCookieJar jar,
-    BrowserCookieDelivery delivery,
+  /// [cookies] 已按本站过滤（[BrowserLoginImport]）。
+  Future<int> _applyCookies(
+    MangaCookieJar jar,
+    List<BrowserSiteCookie> cookies,
   ) async {
-    final List<BrowserSiteCookie> cookies = browserSiteCookiesForSite(
-      delivery.cookies,
-      widget.baseUrl.host,
-    );
-    if (cookies.isEmpty) return;
     await jar.replaceForSite(
       widget.baseUrl.host,
       browserCookiesForSite(cookies, widget.baseUrl.host),
     );
-    if (!mounted) return;
-    setState(() => _importedCount = cookies.length);
-    await _backfillWebView(cookies);
+    if (mounted) await _backfillWebView(cookies);
+    return cookies.length;
   }
 
   /// 把这批 cookie 写进本页 WebView 的环境并刷新当前页（见类文档）。
@@ -345,7 +351,7 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
   }
 
   /// 把浏览器里的整站 cookie 导出到 jar；返回导出条数。
-  Future<int> _export(MihonCookieJar jar) async {
+  Future<int> _export(MangaCookieJar jar) async {
     final String host = widget.baseUrl.host;
     final Map<String, MangaCookie> deduped = <String, MangaCookie>{};
     for (final Uri origin in _visited) {
@@ -409,7 +415,7 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
 
   Future<void> _finish() async {
     if (_saving) return;
-    final MihonCookieJar? jar = widget.jar;
+    final MangaCookieJar? jar = widget.jar;
     if (jar == null) {
       // 浏览器持有 cookie 的运行时：没有东西要导出，关页即生效。
       if (ModalRoute.of(context)?.isCurrent ?? false) {
@@ -491,7 +497,8 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
                 style: theme.textTheme.bodyMedium,
               ),
             ),
-            if (widget.jar != null) _buildBrowserImportRow(context),
+            if (widget.jar != null && widget.browserImportAvailable)
+              _buildBrowserImportRow(context),
             _buildNavigationBar(context),
             Expanded(child: _buildWebView(context)),
           ],
@@ -501,45 +508,61 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
   }
 
   String _hintText() {
-    if (_import == null) return t.mihon_source_login_hint;
     if (_importedCount > 0) {
       return t.mihon_source_login_import_received(count: _importedCount);
     }
-    return t.mihon_source_login_import_hint;
+    if (_import?.waiting ?? false) return t.mihon_source_login_import_hint;
+    return t.mihon_source_login_hint;
   }
 
-  /// 「从浏览器导入」：开始后按钮变成状态文字，不能重复登记。
+  /// 「从浏览器导入」：等待期间按钮禁用（不重复登记），下方是可取消的等待状态条；
+  /// 导入完 / 取消后可以再点一次。
   Widget _buildBrowserImportRow(BuildContext context) {
-    final MihonCookieJar jar = widget.jar!;
+    final MangaCookieJar jar = widget.jar!;
     final ThemeData theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-      child: Row(
-        children: <Widget>[
-          FushiOutlinedButton.icon(
-            key: const ValueKey<String>('mihon_login_import_browser'),
-            onPressed: _import == null
-                ? () => unawaited(_beginBrowserImport(jar))
-                : null,
-            icon: const FushiIcon(FushiIcons.browserExtension),
-            label: Text(t.mihon_source_login_import_browser),
-          ),
-          if (_import != null) ...<Widget>[
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                _importedCount > 0
-                    ? t.mihon_source_login_import_received(
-                        count: _importedCount,
-                      )
-                    : t.mihon_source_login_import_none,
-                key: const ValueKey<String>('mihon_login_import_status'),
-                style: theme.textTheme.bodySmall,
-              ),
-            ),
-          ],
-        ],
+    final BrowserLoginImport? import = _import;
+    final bool waiting = import?.waiting ?? false;
+    final String? status = switch (import?.phase) {
+      BrowserLoginImportPhase.imported => t.mihon_source_login_import_received(
+        count: _importedCount,
       ),
+      BrowserLoginImportPhase.failed => t.login_import_write_failed,
+      _ => null,
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+          child: Row(
+            children: <Widget>[
+              FushiOutlinedButton.icon(
+                key: const ValueKey<String>('mihon_login_import_browser'),
+                onPressed: waiting
+                    ? null
+                    : () => unawaited(_beginBrowserImport(jar)),
+                icon: const FushiIcon(FushiIcons.browserExtension),
+                label: Text(t.mihon_source_login_import_browser),
+              ),
+              if (status != null) ...<Widget>[
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    status,
+                    key: const ValueKey<String>('mihon_login_import_status'),
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (import != null)
+          BrowserLoginImportStatusBar(
+            import: import,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+          ),
+      ],
     );
   }
 
@@ -552,32 +575,35 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
       padding: const EdgeInsets.fromLTRB(4, 0, 16, 4),
       child: Row(
         children: <Widget>[
-          FushiToolbar(dense: true, children: <Widget>[
-            FushiIconButtonControl(
-              key: const ValueKey<String>('mihon_login_back'),
-              tooltip: t.back,
-              onPressed: controller != null && _canGoBack
-                  ? () => unawaited(controller.goBack())
-                  : null,
-              icon: const FushiIcon(FushiIcons.back),
-            ),
-            FushiIconButtonControl(
-              key: const ValueKey<String>('mihon_login_forward'),
-              tooltip: t.mihon_source_login_forward,
-              onPressed: controller != null && _canGoForward
-                  ? () => unawaited(controller.goForward())
-                  : null,
-              icon: const FushiIcon(FushiIcons.forward),
-            ),
-            FushiIconButtonControl(
-              key: const ValueKey<String>('mihon_login_reload'),
-              tooltip: t.refresh,
-              onPressed: controller != null
-                  ? () => unawaited(controller.reload())
-                  : null,
-              icon: const FushiIcon(FushiIcons.refresh),
-            ),
-          ]),
+          FushiToolbar(
+            dense: true,
+            children: <Widget>[
+              FushiIconButtonControl(
+                key: const ValueKey<String>('mihon_login_back'),
+                tooltip: t.back,
+                onPressed: controller != null && _canGoBack
+                    ? () => unawaited(controller.goBack())
+                    : null,
+                icon: const FushiIcon(FushiIcons.back),
+              ),
+              FushiIconButtonControl(
+                key: const ValueKey<String>('mihon_login_forward'),
+                tooltip: t.mihon_source_login_forward,
+                onPressed: controller != null && _canGoForward
+                    ? () => unawaited(controller.goForward())
+                    : null,
+                icon: const FushiIcon(FushiIcons.forward),
+              ),
+              FushiIconButtonControl(
+                key: const ValueKey<String>('mihon_login_reload'),
+                tooltip: t.refresh,
+                onPressed: controller != null
+                    ? () => unawaited(controller.reload())
+                    : null,
+                icon: const FushiIcon(FushiIcons.refresh),
+              ),
+            ],
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -611,6 +637,7 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
         initialSettings: InAppWebViewSettings(
           javaScriptEnabled: true,
           sharedCookiesEnabled: true,
+          userAgent: widget.userAgent ?? '',
         ),
         onWebViewCreated: (InAppWebViewController controller) {
           if (mounted) setState(() => _controller = controller);
@@ -632,6 +659,51 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
                   ),
                 ),
       ),
+    );
+  }
+}
+
+/// 加载失败时给的「登录」按钮（视频 / 漫画源的作品页、浏览页错误区）。
+///
+/// 源站要登录才给内容时，扩展报的错五花八门（401、空列表、站点自己的提示页），
+/// 判不出「是不是因为没登录」，所以不猜：只要该源能在 app 里登录（[mihonLoginTarget]）
+/// 就在错误旁边给入口，不能则不占位。登录成功后提示并调 [onLoggedIn]（页面重新加载）。
+class MihonLoginAction extends StatelessWidget {
+  const MihonLoginAction({
+    required this.runtime,
+    required this.sourceName,
+    required this.baseUrl,
+    required this.onLoggedIn,
+    super.key,
+  });
+
+  final Object? runtime;
+  final String sourceName;
+  final String baseUrl;
+  final Future<void> Function() onLoggedIn;
+
+  Future<void> _login(BuildContext context) async {
+    final bool saved = await openMihonWebLogin(
+      context,
+      runtime: runtime,
+      sourceName: sourceName,
+      baseUrl: baseUrl,
+    );
+    if (!saved) return;
+    FushiToast.show(msg: t.mihon_source_login_saved);
+    await onLoggedIn();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (mihonLoginTarget(runtime: runtime, baseUrl: baseUrl) == null) {
+      return const SizedBox.shrink();
+    }
+    return FushiFilledButton.tonalIcon(
+      key: const ValueKey<String>('mihon_source_login_action'),
+      onPressed: () => unawaited(_login(context)),
+      icon: const FushiIcon(FushiIcons.login),
+      label: Text(t.mihon_source_login),
     );
   }
 }

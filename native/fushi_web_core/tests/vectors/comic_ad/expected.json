@@ -1,0 +1,707 @@
+{
+  "source": "fushi/lib/src/media/manga/web/web_comic_ad_filter.dart (Dart, package:image 4.3.0)",
+  "generatedBy": "tools/gen_inputs.py (inputs, PIL 12.2 + qrcode) and tools/record_dart_outputs.dart (outputs, run from fushi/tool/ against the Dart implementation before it was deleted)",
+  "rules": {
+    "tailWindow": 10,
+    "protectedLeadingPages": 3,
+    "colorfulThreshold": 0.12
+  },
+  "colorfulTolerance": 0.01,
+  "cases": [
+    {
+      "file": "py_color_page_800x1200.jpg",
+      "bytes": 62405,
+      "dartIsAd": false,
+      "dartColorful": 0.1725,
+      "expectedIsAd": false,
+      "expectedColorful": 0.1725
+    },
+    {
+      "file": "py_color_page_800x1200.webp",
+      "bytes": 22728,
+      "dartIsAd": false,
+      "dartColorful": 0.20081666666666667,
+      "expectedIsAd": false,
+      "expectedColorful": 0.20081666666666667
+    },
+    {
+      "file": "py_color_poster_noqr_600x900.png",
+      "bytes": 3602,
+      "dartIsAd": false,
+      "dartColorful": 1.0,
+      "expectedIsAd": false,
+      "expectedColorful": 1.0
+    },
+    {
+      "file": "py_color_qr_2000x1400.jpg",
+      "bytes": 116203,
+      "dartIsAd": true,
+      "dartColorful": 0.8738412698412699,
+      "expectedIsAd": true,
+      "expectedColorful": 0.8738412698412699
+    },
+    {
+      "file": "py_color_qr_2400x3400.jpg",
+      "bytes": 207028,
+      "dartIsAd": true,
+      "dartColorful": 0.8809748427672957,
+      "expectedIsAd": true,
+      "expectedColorful": 0.8809748427672957
+    },
+    {
+      "file": "py_color_qr_320x480.bmp",
+      "bytes": 460854,
+      "dartIsAd": true,
+      "dartColorful": 0.8865625,
+      "expectedIsAd": true,
+      "expectedColorful": 0.8865625
+    },
+    {
+      "file": "py_color_qr_600x900.gif",
+      "bytes": 48499,
+      "dartIsAd": true,
+      "dartColorful": 0.9011833333333333,
+      "expectedIsAd": true,
+      "expectedColorful": 0.9011833333333333
+    },
+    {
+      "file": "py_color_qr_600x900.jpg",
+      "bytes": 35091,
+      "dartIsAd": true,
+      "dartColorful": 0.9011666666666667,
+      "expectedIsAd": true,
+      "expectedColorful": 0.9011666666666667
+    },
+    {
+      "file": "py_color_qr_600x900.webp",
+      "bytes": 6708,
+      "dartIsAd": true,
+      "dartColorful": 0.9011833333333333,
+      "expectedIsAd": true,
+      "expectedColorful": 0.9011833333333333
+    },
+    {
+      "file": "py_color_qr_600x900_lossless.webp",
+      "bytes": 986,
+      "dartIsAd": true,
+      "dartColorful": 0.9011833333333333,
+      "expectedIsAd": true,
+      "expectedColorful": 0.9011833333333333
+    },
+    {
+      "file": "py_color_qr_600x900_palette.png",
+      "bytes": 6669,
+      "dartIsAd": true,
+      "dartColorful": 0.9011833333333333,
+      "expectedIsAd": true,
+      "expectedColorful": 0.9011833333333333
+    },
+    {
+      "file": "py_color_qr_600x900_rgba.png",
+      "bytes": 4975,
+      "dartIsAd": true,
+      "dartColorful": 0.9011833333333333,
+      "expectedIsAd": true,
+      "expectedColorful": 0.9011833333333333
+    },
+    {
+      "file": "py_color_qr_tiny_modules_1800x2600.jpg",
+      "bytes": 174022,
+      "dartIsAd": false,
+      "dartColorful": 0.9976923076923077,
+      "expectedIsAd": false,
+      "expectedColorful": 0.9976923076923077
+    },
+    {
+      "file": "py_color_realqr_750x1100.jpg",
+      "bytes": 40291,
+      "dartIsAd": true,
+      "dartColorful": 0.8697560975609756,
+      "expectedIsAd": true,
+      "expectedColorful": 0.8697560975609756
+    },
+    {
+      "file": "py_color_realqr_750x1100.png",
+      "bytes": 6089,
+      "dartIsAd": true,
+      "dartColorful": 0.8697560975609756,
+      "expectedIsAd": true,
+      "expectedColorful": 0.8697560975609756
+    },
+    {
+      "file": "py_color_two_finders_600x900.jpg",
+      "bytes": 43354,
+      "dartIsAd": false,
+      "dartColorful": 0.9010333333333334,
+      "expectedIsAd": false,
+      "expectedColorful": 0.9010333333333334
+    },
+    {
+      "file": "py_color_two_finders_600x900.png",
+      "bytes": 4220,
+      "dartIsAd": false,
+      "dartColorful": 0.9011833333333333,
+      "expectedIsAd": false,
+      "expectedColorful": 0.9011833333333333
+    },
+    {
+      "file": "py_empty.bin",
+      "bytes": 0,
+      "dartIsAd": false,
+      "dartColorful": null,
+      "expectedIsAd": false,
+      "expectedColorful": null
+    },
+    {
+      "file": "py_gray_l_qr_600x900.jpg",
+      "bytes": 107908,
+      "dartIsAd": false,
+      "dartColorful": 0.0,
+      "expectedIsAd": false,
+      "expectedColorful": 0.0
+    },
+    {
+      "file": "py_gray_l_qr_600x900.png",
+      "bytes": 10014,
+      "dartIsAd": true,
+      "dartColorful": 0.9308166666666666,
+      "expectedIsAd": false,
+      "expectedColorful": 0.0,
+      "note": "Dart bug, fixed in Rust: package:image 4.3.0 decodes an 8-bit grayscale PNG as a 1-channel image whose Pixel.g / Pixel.b read 0, so every bright gray pixel passed the colour gate (colourful fraction ~0.9 for a black-and-white page) and a gray manga page carrying a QR code was dropped as an ad. Gray stays gray in Rust (r = g = b = luma)."
+    },
+    {
+      "file": "py_gray_l_qr_600x900.webp",
+      "bytes": 32928,
+      "dartIsAd": false,
+      "dartColorful": 0.0,
+      "expectedIsAd": false,
+      "expectedColorful": 0.0
+    },
+    {
+      "file": "py_gray_la_qr_600x900.png",
+      "bytes": 11680,
+      "dartIsAd": false,
+      "dartColorful": 0.0,
+      "expectedIsAd": false,
+      "expectedColorful": 0.0
+    },
+    {
+      "file": "py_gray_rgb_qr_600x900.jpg",
+      "bytes": 111198,
+      "dartIsAd": false,
+      "dartColorful": 0.0,
+      "expectedIsAd": false,
+      "expectedColorful": 0.0
+    },
+    {
+      "file": "py_manga_page_800x1200.jpg",
+      "bytes": 147429,
+      "dartIsAd": false,
+      "dartColorful": 0.0,
+      "expectedIsAd": false,
+      "expectedColorful": 0.0
+    },
+    {
+      "file": "py_manga_page_800x1200.png",
+      "bytes": 10255,
+      "dartIsAd": false,
+      "dartColorful": 0.9692,
+      "expectedIsAd": false,
+      "expectedColorful": 0.0,
+      "note": "Dart bug, fixed in Rust: package:image 4.3.0 decodes an 8-bit grayscale PNG as a 1-channel image whose Pixel.g / Pixel.b read 0, so every bright gray pixel passed the colour gate (colourful fraction ~0.9 for a black-and-white page) and a gray manga page carrying a QR code was dropped as an ad. Gray stays gray in Rust (r = g = b = luma)."
+    },
+    {
+      "file": "py_manga_page_rgb_1100x1600.webp",
+      "bytes": 76200,
+      "dartIsAd": false,
+      "dartColorful": 0.0,
+      "expectedIsAd": false,
+      "expectedColorful": 0.0
+    },
+    {
+      "file": "py_min_32x32.png",
+      "bytes": 133,
+      "dartIsAd": false,
+      "dartColorful": 1.0,
+      "expectedIsAd": false,
+      "expectedColorful": 1.0
+    },
+    {
+      "file": "py_not_an_image.bin",
+      "bytes": 44,
+      "dartIsAd": false,
+      "dartColorful": null,
+      "expectedIsAd": false,
+      "expectedColorful": null
+    },
+    {
+      "file": "py_too_small_31x40.png",
+      "bytes": 133,
+      "dartIsAd": false,
+      "dartColorful": null,
+      "expectedIsAd": false,
+      "expectedColorful": null
+    },
+    {
+      "file": "py_truncated_color_qr.jpg",
+      "bytes": 11697,
+      "dartIsAd": false,
+      "dartColorful": null,
+      "expectedIsAd": false,
+      "expectedColorful": null
+    },
+    {
+      "file": "t_garbage_3bytes.bin",
+      "bytes": 3,
+      "dartIsAd": false,
+      "dartColorful": null,
+      "expectedIsAd": false,
+      "expectedColorful": null
+    },
+    {
+      "file": "t_graypage_qr_600x900.png",
+      "bytes": 5221,
+      "dartIsAd": false,
+      "dartColorful": 0.0,
+      "expectedIsAd": false,
+      "expectedColorful": 0.0
+    },
+    {
+      "file": "t_poster_noqr_600x900.png",
+      "bytes": 3593,
+      "dartIsAd": false,
+      "dartColorful": 1.0,
+      "expectedIsAd": false,
+      "expectedColorful": 1.0
+    },
+    {
+      "file": "t_poster_qr_1400x2000.png",
+      "bytes": 14245,
+      "dartIsAd": true,
+      "dartColorful": 0.8984126984126984,
+      "expectedIsAd": true,
+      "expectedColorful": 0.8984126984126984
+    },
+    {
+      "file": "t_poster_qr_600x900.png",
+      "bytes": 4238,
+      "dartIsAd": true,
+      "dartColorful": 0.9011833333333333,
+      "expectedIsAd": true,
+      "expectedColorful": 0.9011833333333333
+    },
+    {
+      "file": "t_poster_two_finders_600x900.png",
+      "bytes": 4205,
+      "dartIsAd": false,
+      "dartColorful": 0.9011833333333333,
+      "expectedIsAd": false,
+      "expectedColorful": 0.9011833333333333
+    }
+  ],
+  "candidates": {
+    "0": [],
+    "1": [],
+    "2": [],
+    "3": [],
+    "4": [
+      3
+    ],
+    "5": [
+      3,
+      4
+    ],
+    "6": [
+      3,
+      4,
+      5
+    ],
+    "7": [
+      3,
+      4,
+      5,
+      6
+    ],
+    "8": [
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "9": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "10": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "11": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "12": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "13": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "14": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+    ],
+    "15": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14
+    ],
+    "16": [
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "17": [
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16
+    ],
+    "18": [
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17
+    ],
+    "19": [
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18
+    ],
+    "20": [
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19
+    ],
+    "21": [
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+    ],
+    "22": [
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21
+    ],
+    "23": [
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22
+    ],
+    "24": [
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23
+    ],
+    "25": [
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24
+    ],
+    "26": [
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25
+    ],
+    "27": [
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26
+    ],
+    "28": [
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27
+    ],
+    "29": [
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28
+    ],
+    "30": [
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29
+    ],
+    "31": [
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30
+    ],
+    "32": [
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31
+    ],
+    "33": [
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32
+    ],
+    "34": [
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33
+    ],
+    "35": [
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34
+    ],
+    "36": [
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35
+    ],
+    "37": [
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36
+    ],
+    "38": [
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37
+    ],
+    "39": [
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38
+    ],
+    "40": [
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39
+    ]
+  }
+}

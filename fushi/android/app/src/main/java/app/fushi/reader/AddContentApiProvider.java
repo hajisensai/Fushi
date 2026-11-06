@@ -1,7 +1,10 @@
 package app.fushi.reader;
 
+import android.content.ContentResolver;
 import android.content.Context;
+import android.net.Uri;
 
+import com.ichi2.anki.FlashCardsContract;
 import com.ichi2.anki.api.AddContentApi;
 import com.ichi2.anki.api.NoteInfo;
 
@@ -22,9 +25,11 @@ import java.util.Set;
 final class AddContentApiProvider implements AnkiProvider {
 
     private final AddContentApi api;
+    private final ContentResolver resolver;
 
     AddContentApiProvider(Context context) {
         this.api = new AddContentApi(context);
+        this.resolver = context.getContentResolver();
     }
 
     private static AnkiNote wrap(NoteInfo note) {
@@ -76,6 +81,18 @@ final class AddContentApiProvider implements AnkiProvider {
     @Override
     public boolean updateNoteFields(long noteId, String[] fields) {
         return api.updateNoteFields(noteId, fields);
+    }
+
+    /**
+     * 上游 AAR 的 {@code AddContentApi} 没有删笔记的方法，只能直接对同一个 authority
+     * （AAR 编译进去的 {@code FlashCardsContract.Note.CONTENT_URI}）发 delete——仍是
+     * 一次直白的 ContentProvider 调用，不加任何逻辑。
+     */
+    @Override
+    public boolean deleteNote(long noteId) {
+        final Uri uri = Uri.withAppendedPath(
+            FlashCardsContract.Note.CONTENT_URI, Long.toString(noteId));
+        return resolver.delete(uri, null, null) > 0;
     }
 
     @Override

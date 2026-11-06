@@ -29,9 +29,9 @@ class VideoMetadataAssetDownloader {
     this.baseBackoff = const Duration(milliseconds: 500),
     this.maxRetryDelay = const Duration(seconds: 30),
     Future<void> Function(Duration)? sleep,
-  })  : _client = client ?? createAppHttpIoClient(),
-        _ownsClient = client == null,
-        _sleep = sleep ?? Future<void>.delayed;
+  }) : _client = client ?? createAppHttpIoClient(),
+       _ownsClient = client == null,
+       _sleep = sleep ?? Future<void>.delayed;
 
   final http.Client _client;
   final bool _ownsClient;
@@ -50,7 +50,8 @@ class VideoMetadataAssetDownloader {
         final bool retryable =
             response.statusCode == 429 || response.statusCode >= 500;
         if (retryable && attempt < maxAttempts) {
-          final Duration requestedDelay = parseRetryAfter(
+          final Duration requestedDelay =
+              parseRetryAfter(
                 response.headers['retry-after'],
                 now: DateTime.now(),
               ) ??
@@ -101,15 +102,19 @@ class VideoMetadataAssetDownloader {
             (statusCode != null && statusCode != 429 && statusCode < 500)) {
           rethrow;
         }
-        await _sleep(baseBackoff * attempt > maxRetryDelay
-            ? maxRetryDelay
-            : baseBackoff * attempt);
+        await _sleep(
+          baseBackoff * attempt > maxRetryDelay
+              ? maxRetryDelay
+              : baseBackoff * attempt,
+        );
       } on Object catch (error) {
         lastError = error;
         if (attempt >= maxAttempts) rethrow;
-        await _sleep(baseBackoff * attempt > maxRetryDelay
-            ? maxRetryDelay
-            : baseBackoff * attempt);
+        await _sleep(
+          baseBackoff * attempt > maxRetryDelay
+              ? maxRetryDelay
+              : baseBackoff * attempt,
+        );
       }
     }
     if (lastError case final Exception exception) throw exception;

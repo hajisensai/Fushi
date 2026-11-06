@@ -165,6 +165,9 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("devices", "devices", "devices_outlined", "devices", "设备 / 互联"),
     ("server", "dns", "dns_outlined", "dns", "服务器"),
     ("hub", "hub", "hub_outlined", "hub", "互联中枢"),
+    ("localApi", "api", "api_outlined", "api", "本机 API 服务"),
+    ("lan", "lan", "lan_outlined", "lan", "局域网访问范围"),
+    ("networkPort", "settings_ethernet", "settings_ethernet_outlined", "settings_ethernet", "监听端口"),
     ("wifi", "wifi", "wifi", "wifi", "局域网"),
     ("person", "person", "person_outline", "person", "个人 / 档案"),
     ("account", "account_circle", "account_circle_outlined", "account_circle", "账号"),
@@ -211,6 +214,8 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("fastRewind", "fast_rewind", "fast_rewind_outlined", "fast_rewind", "快退"),
     ("replay", "replay", "replay", "replay", "重播"),
     ("repeat", "repeat", "repeat", "repeat", "循环"),
+    ("repeatOne", "repeat_one", "repeat_one", "repeat_one", "单曲循环"),
+    ("shuffle", "shuffle", "shuffle", "shuffle", "随机播放"),
     ("volumeUp", "volume_up", "volume_up_outlined", "volume_up", "音量"),
     ("volumeOff", "volume_off", "volume_off_outlined", "volume_off", "静音"),
     ("audio", "graphic_eq", "graphic_eq", "graphic_eq", "音频 / 波形"),
@@ -242,6 +247,7 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("alignLeft", "align_horizontal_left", "align_horizontal_left", "align_horizontal_left", "向前对齐"),
     ("alignRight", "align_horizontal_right", "align_horizontal_right", "align_horizontal_right", "向后对齐"),
     ("highQuality", "high_quality", "high_quality_outlined", "high_quality", "画质"),
+    ("originalQuality", "hd", "hd_outlined", "hd", "原画（不转码，源文件画质）"),
     ("animation", "animation", "animation_outlined", "animation", "动画 / 插帧"),
     ("myLocation", "my_location", "my_location", "my_location", "定位到当前"),
     ("signalLow", "signal_cellular_alt_1_bar", "signal_cellular_alt_1_bar", "signal_cellular_alt_1_bar", "强度：低（一格）"),
@@ -323,12 +329,34 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("webAsset", "web_asset", "web_asset_outlined", "web_asset", "窗口 / 页面元素"),
     ("webAssetOff", "web_asset_off", "web_asset_off_outlined", "web_asset_off", "隐藏页面元素"),
     ("remoteControl", "settings_remote", None, None, "遥控器（手机遥控电脑播放）"),
+    # ── 应用内浏览器 ─────────────────────────────────────────────────
+    ("sidebar", "dock_to_right", None, None, "侧边栏开关 / 侧边栏样式"),
+    ("tab", "tab", "tab_outlined", "tab", "标签页 / 顶部标签栏"),
+    ("findInPage", "find_in_page", "find_in_page_outlined", "find_in_page", "页内查找"),
+    # Material Symbols 没有 incognito 字形（上游码位表至 master 都没有），无痕沿用
+    # visibility_off；单独给语义名，换字形时只改这一行。
+    ("incognito", "visibility_off", "visibility_off_outlined", "visibility_off", "无痕浏览"),
+    # ── 外观 › 页面背景（2026-10-31，PR #2660）──────────────────────────
+    ("pageBackdrop", "wallpaper", "wallpaper_outlined", "wallpaper", "页面背景 / 壁纸"),
+    ("opacity", "opacity", "opacity_outlined", "opacity", "浓度 / 强度"),
+    ("scrim", "gradient", "gradient_outlined", "gradient", "遮罩浓度（图片上的渐变压暗）"),
+    ("portraitImage", "stay_current_portrait", "stay_current_portrait_outlined", "stay_current_portrait", "竖屏专用图片"),
+    ("addImage", "add_photo_alternate", "add_photo_alternate_outlined", "add_photo_alternate", "添加图片"),
+    ("ambientMotion", "motion_photos_on", "motion_photos_on_outlined", "motion_photos_on", "环境动效（缓慢漂移）"),
 ]
 
 # 旧 Material 图标在 Apple 映射表里没有、或映射不合适时，直接指定 CupertinoIcons 名
 # （线框, 实心）。
 APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
+    "pageBackdrop": ("rectangle_stack", "rectangle_stack_fill"),
+    "opacity": ("drop", "drop_fill"),
+    "scrim": ("circle_lefthalf_fill", "circle_lefthalf_fill"),
+    "portraitImage": ("device_phone_portrait", "device_phone_portrait"),
+    "addImage": ("plus_rectangle_on_rectangle", "plus_rectangle_fill_on_rectangle_fill"),
+    "ambientMotion": ("sparkles", "sparkles"),
     "settingsGear": ("gear", "gear_solid"),
+    "repeatOne": ("repeat_1", "repeat_1"),
+    "shuffle": ("shuffle", "shuffle"),
     "dictionary": ("book", "book_fill"),
     "manga": ("photo_on_rectangle", "photo_fill_on_rectangle_fill"),
     "menu": ("line_horizontal_3", "line_horizontal_3"),
@@ -347,6 +375,9 @@ APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
     "sdStorage": ("tray_full", "tray_full_fill"),
     "tracking": ("rectangle_stack", "rectangle_stack_fill"),
     "fingerprint": ("lock_shield", "lock_shield_fill"),
+    "localApi": ("chevron_left_slash_chevron_right", "chevron_left_slash_chevron_right"),
+    "lan": ("antenna_radiowaves_left_right", "antenna_radiowaves_left_right"),
+    "networkPort": ("number_square", "number_square_fill"),
     "slowMotion": ("tortoise", "tortoise_fill"),
     "replay5": ("gobackward", "gobackward"),
     "compare": ("square_split_2x1", "square_split_2x1_fill"),
@@ -359,6 +390,7 @@ APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
     "captionsOff": ("captions_bubble", "captions_bubble_fill"),
     "moreTime": ("goforward_plus", "goforward_plus"),
     "highQuality": ("tv", "tv_fill"),
+    "originalQuality": ("film", "film_fill"),
     "animation": ("wand_stars", "wand_stars"),
     "signalLow": ("chart_bar", "chart_bar_fill"),
     "signalMedium": ("chart_bar", "chart_bar_fill"),
@@ -392,6 +424,9 @@ APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
     "danmaku": ("chat_bubble_text", "chat_bubble_text_fill"),
     "danmakuOff": ("chat_bubble", "chat_bubble_fill"),
     "remoteControl": ("antenna_radiowaves_left_right", "antenna_radiowaves_left_right"),
+    "sidebar": ("sidebar_left", "sidebar_left"),
+    "tab": ("square_on_square", "square_fill_on_square_fill"),
+    "findInPage": ("doc_text_search", "doc_text_search"),
 }
 
 

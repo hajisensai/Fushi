@@ -37,8 +37,7 @@ class _FakeAudioLookupService implements FushiRemoteLookupService {
     required String term,
     required bool wildcards,
     required int maximumTerms,
-  }) async =>
-      null;
+  }) async => null;
 }
 
 void main() {
@@ -72,14 +71,16 @@ void main() {
   /// 经查词端点取一个签名好的 file URL（带新鲜 token）。
   Future<String> resolveFileUrl() async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.postUrl(Uri.parse('$base/api/lookup/audio'));
+    final HttpClientRequest req = await c.postUrl(
+      Uri.parse('$base/api/lookup/audio'),
+    );
     req.headers.set('authorization', authHeader());
     req.headers.contentType = ContentType.json;
-    req.add(utf8.encode(jsonEncode(<String, String>{
-      'expression': '猫',
-      'reading': 'ねこ',
-    })));
+    req.add(
+      utf8.encode(
+        jsonEncode(<String, String>{'expression': '猫', 'reading': 'ねこ'}),
+      ),
+    );
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 200);
     final Map<String, dynamic> json =
@@ -87,8 +88,11 @@ void main() {
             as Map<String, dynamic>;
     c.close();
     final String? url = json['url'] as String?;
-    expect(url, isNotNull,
-        reason: 'audio lookup must return a signed file URL');
+    expect(
+      url,
+      isNotNull,
+      reason: 'audio lookup must return a signed file URL',
+    );
     return url!;
   }
 
@@ -102,32 +106,43 @@ void main() {
     return code;
   }
 
-  test('accessing an audio file refreshes its token TTL (no mid-use expiry)',
-      () async {
-    // t=0: mint a token-signed file URL.
-    final String url = await resolveFileUrl();
+  test(
+    'accessing an audio file refreshes its token TTL (no mid-use expiry)',
+    () async {
+      // t=0: mint a token-signed file URL.
+      final String url = await resolveFileUrl();
 
-    // t=+4min (within the 5-min window): access it → 200 AND refreshes the TTL.
-    clock = clock.add(const Duration(minutes: 4));
-    expect(await getFile(url), 200,
-        reason: 'a 4-minute-old token is still inside the 5-minute window');
+      // t=+4min (within the 5-min window): access it → 200 AND refreshes the TTL.
+      clock = clock.add(const Duration(minutes: 4));
+      expect(
+        await getFile(url),
+        200,
+        reason: 'a 4-minute-old token is still inside the 5-minute window',
+      );
 
-    // t=+8min total (8 > 5 since mint, but only 4 since the refreshing hit):
-    // the refresh must keep it alive.
-    clock = clock.add(const Duration(minutes: 4));
-    expect(await getFile(url), 200,
+      // t=+8min total (8 > 5 since mint, but only 4 since the refreshing hit):
+      // the refresh must keep it alive.
+      clock = clock.add(const Duration(minutes: 4));
+      expect(
+        await getFile(url),
+        200,
         reason:
             'the previous hit refreshed the token TTL, so 8 minutes after MINT '
-            '(but 4 minutes after the last access) it must NOT have expired');
-  });
+            '(but 4 minutes after the last access) it must NOT have expired',
+      );
+    },
+  );
 
   test('an unaccessed audio token still expires after 5 minutes', () async {
     // Without any intervening access, the original 5-min prune still applies —
     // the refresh is a hit-driven extension, not an immortality grant.
     final String url = await resolveFileUrl();
     clock = clock.add(const Duration(minutes: 6));
-    expect(await getFile(url), 404,
-        reason:
-            'an audio token never accessed within 5 minutes must still be pruned');
+    expect(
+      await getFile(url),
+      404,
+      reason:
+          'an audio token never accessed within 5 minutes must still be pruned',
+    );
   });
 }

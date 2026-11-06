@@ -125,8 +125,10 @@ void main() {
   });
 
   test('「过去一周」火苗档位：0 / 1–2 / 3–5 / 6–7 天', () {
-    expect(<int>[for (int d = 0; d <= 7; d++) statWeekFlameTier(d)],
-        <int>[0, 1, 1, 2, 2, 2, 3, 3]);
+    expect(
+      <int>[for (int d = 0; d <= 7; d++) statWeekFlameTier(d)],
+      <int>[0, 1, 1, 2, 2, 2, 3, 3],
+    );
     expect(statWeekFlameSize(3), greaterThan(statWeekFlameSize(2)));
     expect(statWeekFlameSize(2), greaterThan(statWeekFlameSize(1)));
   });
@@ -135,25 +137,23 @@ void main() {
     final StatWindow w = StatWindow(DateTime(2026, 10, 7, 12));
     final List<String> week = w.lastDayKeys(7);
     Map<String, StatDayData> byDay(int activeDays) => <String, StatDayData>{
-          for (int i = 0; i < activeDays; i++)
-            week[6 - i]: StatDayData(dateKey: week[6 - i])..ms = 600000,
-        };
+      for (int i = 0; i < activeDays; i++)
+        week[6 - i]: StatDayData(dateKey: week[6 - i])..ms = 600000,
+    };
 
     Widget section(int activeDays, ValueChanged<String> onDay) => Builder(
-          builder: (BuildContext context) => SingleChildScrollView(
-            child: buildStatRangeCalendarSection(
-              context,
-              byDay: byDay(activeDays),
-              now: w.now,
-              weekKeys: week,
-              onDaySelected: onDay,
-            ),
-          ),
-        );
+      builder: (BuildContext context) => SingleChildScrollView(
+        child: buildStatRangeCalendarSection(
+          context,
+          byDay: byDay(activeDays),
+          now: w.now,
+          weekKeys: week,
+          onDaySelected: onDay,
+        ),
+      ),
+    );
 
-    testWidgets('火苗行在日历之上；7 个日格；档位随天数变；点日格回调那一天', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('火苗行在日历之上；7 个日格；档位随天数变；点日格回调那一天', (WidgetTester tester) async {
       final List<String> picked = <String>[];
       for (final (int days, int tier) in <(int, int)>[
         (0, 0),
@@ -177,12 +177,16 @@ void main() {
       }
       expect(
         tester
-            .getTopLeft(find.textContaining(t.stat_week_past, findRichText: true))
+            .getTopLeft(
+              find.textContaining(t.stat_week_past, findRichText: true),
+            )
             .dy,
         lessThan(tester.getTopLeft(find.byType(StatContributionHeatmap)).dy),
         reason: '过去一周在上、日历在下',
       );
-      await tester.tap(find.byKey(ValueKey<String>('stat-week-day-${week[2]}')));
+      await tester.tap(
+        find.byKey(ValueKey<String>('stat-week-day-${week[2]}')),
+      );
       await tester.pumpAndSettle();
       expect(picked, <String>[week[2]]);
     });
@@ -190,18 +194,23 @@ void main() {
     testWidgets('手机宽 / 桌面宽、两套设计系统都不溢出', (WidgetTester tester) async {
       for (final bool apple in <bool>[false, true]) {
         for (final Size size in const <Size>[Size(360, 900), Size(1600, 900)]) {
-          await _pump(tester, section(5, (_) {}),
-              size: size, theme: _theme(apple: apple));
-          expect(tester.takeException(), isNull,
-              reason: 'apple=$apple ${size.width}');
+          await _pump(
+            tester,
+            section(5, (_) {}),
+            size: size,
+            theme: _theme(apple: apple),
+          );
+          expect(
+            tester.takeException(),
+            isNull,
+            reason: 'apple=$apple ${size.width}',
+          );
         }
       }
     });
   });
 
-  testWidgets('时间窗口分段控件：切粒度回调新模式；翻到过去给「回到当前」入口', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('时间窗口分段控件：切粒度回调新模式；翻到过去给「回到当前」入口', (WidgetTester tester) async {
     StatRangeSelection? last;
     StatRange range = StatRange.resolve(
       const StatRangeSelection(),
@@ -224,8 +233,9 @@ void main() {
         ),
       ),
     );
-    final Finder back =
-        find.byKey(const ValueKey<String>('stat-range-back-to-current'));
+    final Finder back = find.byKey(
+      const ValueKey<String>('stat-range-back-to-current'),
+    );
     expect(
       find.byKey(const ValueKey<String>('stat-range-modes')),
       findsOneWidget,

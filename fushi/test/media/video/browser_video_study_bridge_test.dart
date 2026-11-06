@@ -24,16 +24,34 @@ BrowserVideoSample _sample({
   bool playing = true,
   double speed = 1.0,
   bool ended = false,
-}) =>
-    BrowserVideoSample(
-      mediaKey: mediaKey,
-      title: title,
-      positionMs: positionMs,
-      durationMs: durationMs,
-      playing: playing,
-      speed: speed,
-      ended: ended,
-    );
+  BrowserVideoCue? cue,
+}) => BrowserVideoSample(
+  mediaKey: mediaKey,
+  title: title,
+  positionMs: positionMs,
+  durationMs: durationMs,
+  playing: playing,
+  speed: speed,
+  ended: ended,
+  cue: cue,
+);
+
+int _totalChars(List<StudySegmentRow> rows, String key) => rows
+    .where((StudySegmentRow r) => r.mediaKey == key)
+    .fold<int>(0, (int a, StudySegmentRow r) => a + r.chars);
+
+/// 一条 0–10s 每 2s 一句的整集轨：页面在 [posMs] 这一刻出的那一句。
+BrowserVideoCue? _cueAt(int posMs) {
+  const List<String> lines = <String>['こんにちは', '元気ですか', 'ありがとう'];
+  final int i = posMs ~/ 2000;
+  if (i >= lines.length) return null;
+  return BrowserVideoCue(
+    index: i,
+    startMs: i * 2000,
+    endMs: i * 2000 + 2000,
+    text: lines[i],
+  );
+}
 
 Future<List<StudySegmentRow>> _segments(FushiDatabase db) async =>
     (await db.select(db.studySegments).get())
@@ -86,11 +104,13 @@ class _Rig {
   }) {
     for (int i = 1; i <= seconds; i++) {
       _fakeNow = _fakeNow.add(const Duration(seconds: 1));
-      bridge.onSample(_sample(
-        mediaKey: mediaKey,
-        title: title,
-        positionMs: fromMs + i * 1000,
-      ));
+      bridge.onSample(
+        _sample(
+          mediaKey: mediaKey,
+          title: title,
+          positionMs: fromMs + i * 1000,
+        ),
+      );
     }
   }
 }
@@ -99,17 +119,18 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('BrowserVideoSample.tryParse 契约', () {
-    final BrowserVideoSample? ok =
-        BrowserVideoSample.tryParse(<String, dynamic>{
-      'mediaKind': 'video',
-      'mediaKey': 'web:x',
-      'title': 'T',
-      'positionMs': 1000,
-      'durationMs': 5000.0, // JSON 里带 .0 的整数值也认
-      'playing': true,
-      'speed': 2,
-      'ended': true,
-    });
+    final BrowserVideoSample? ok = BrowserVideoSample.tryParse(
+      <String, dynamic>{
+        'mediaKind': 'video',
+        'mediaKey': 'web:x',
+        'title': 'T',
+        'positionMs': 1000,
+        'durationMs': 5000.0, // JSON 里带 .0 的整数值也认
+        'playing': true,
+        'speed': 2,
+        'ended': true,
+      },
+    );
     expect(ok, isNotNull);
     expect(ok!.durationMs, 5000);
     expect(ok.speed, 2.0);
@@ -152,19 +173,23 @@ void main() {
     final List<StudySegmentRow> rows = await _segments(rig.db);
     expect(rows, isNotEmpty);
     expect(
-        rows.every((StudySegmentRow r) => r.mediaKey == 'web:yt-abc'), isTrue);
+      rows.every((StudySegmentRow r) => r.mediaKey == 'web:yt-abc'),
+      isTrue,
+    );
     expect(rows.first.title, 'Video A');
     expect(_totalMs(rows, 'web:yt-abc'), 5000);
     // 覆盖并集已按视频身份持久化。
-    expect(await rig.db.getPref(videoWatchCoveragePrefKey('web:yt-abc')),
-        isNotNull);
+    expect(
+      await rig.db.getPref(videoWatchCoveragePrefKey('web:yt-abc')),
+      isNotNull,
+    );
   });
 
-  test('RemoteVideoPlaybackSource 播放中按经过墙钟 × 倍速外推位置、暂停不外推、封顶片长',
-      () {
+  test('RemoteVideoPlaybackSource 播放中按经过墙钟 × 倍速外推位置、暂停不外推、封顶片长', () {
     _fakeNow = DateTime(2026, 1, 1, 12);
-    final RemoteVideoPlaybackSource source =
-        RemoteVideoPlaybackSource(now: () => _fakeNow);
+    final RemoteVideoPlaybackSource source = RemoteVideoPlaybackSource(
+      now: () => _fakeNow,
+    );
     source.apply(_sample(positionMs: 1000, speed: 2.0, durationMs: 2500));
     _fakeNow = _fakeNow.add(const Duration(milliseconds: 700));
     expect(source.positionMs, 2400, reason: '1000 + 700 × 2.0');
@@ -256,6 +281,70 @@ void main() {
     expect(rig.bridge.debugActiveMediaKey, isNull);
     await rig.bridge.stopAll();
     expect(_totalMs(await _segments(rig.db), 'web:yt-abc'), 3000);
+  });
+
+  // 反馈 jk4rTLHPZ_：内置浏览器里看 YouTube，Fushi 在出字幕、时长照计，chars 恒 0——
+  // 样本契约里没有当前句，播放源的 cue 恒空。
+  test('样本带当前句：字幕字数按停留门计进同一段，与视频页同口径', () async {
+    final _Rig rig = _Rig.create();
+    await rig.open(_sample(positionMs: 0, cue: _cueAt(0)));
+    for (int i = 1; i <= 6; i++) {
+      _fakeNow = _fakeNow.add(const Duration(seconds: 1));
+      rig.bridge.onSample(_sample(positionMs: i * 1000, cue: _cueAt(i * 1000)));
+    }
+    await rig.bridge.stopAll();
+    final List<StudySegmentRow> rows = await _segments(rig.db);
+    expect(_totalMs(rows, 'web:yt-abc'), 6000);
+    // 三句各播满 2s：5 + 5 + 5 字。
+    expect(_totalChars(rows, 'web:yt-abc'), 15);
+  });
+
+  test('拖进度条掠过的句不计字；没有当前句的样本不计字', () async {
+    final _Rig rig = _Rig.create();
+    await rig.open(_sample(positionMs: 0));
+    rig.play(fromMs: 0, seconds: 3);
+    // 拖到第二句中间又立刻拖走：墙钟没走，停留量为 0。
+    rig.bridge.onSample(_sample(positionMs: 2500, cue: _cueAt(2500)));
+    rig.bridge.onSample(_sample(positionMs: 9000));
+    await rig.bridge.stopAll();
+    expect(_totalChars(await _segments(rig.db), 'web:yt-abc'), 0);
+  });
+
+  test('BrowserVideoSample.tryParse：cue 契约', () {
+    Map<String, dynamic> body(Object? cue) => <String, dynamic>{
+      'mediaKind': 'video',
+      'mediaKey': 'web:yt-x',
+      'positionMs': 1200,
+      'playing': true,
+      'cue': cue,
+    };
+    final BrowserVideoSample? ok = BrowserVideoSample.tryParse(
+      body(<String, dynamic>{
+        'index': 3,
+        'startMs': 1000,
+        'endMs': 2500.0,
+        'text': 'こんにちは',
+      }),
+    );
+    expect(ok?.cue?.index, 3);
+    expect(ok?.cue?.endMs, 2500);
+    expect(ok?.cue?.toAudioCue().text, 'こんにちは');
+    expect(BrowserVideoSample.tryParse(body(null))?.cue, isNull);
+    // 坏 cue：整条丢弃（与其它字段同一契约）。
+    for (final Object bad in <Object>[
+      'x',
+      <String, dynamic>{'index': 0, 'startMs': 10, 'endMs': 5, 'text': 'a'},
+      <String, dynamic>{'index': -1, 'startMs': 0, 'endMs': 5, 'text': 'a'},
+      <String, dynamic>{'index': 0, 'startMs': 0, 'endMs': 5},
+      <String, dynamic>{
+        'index': 0,
+        'startMs': 0,
+        'endMs': 5,
+        'text': 'あ' * (BrowserVideoCue.maxTextLength + 1),
+      },
+    ]) {
+      expect(BrowserVideoSample.tryParse(body(bad)), isNull, reason: '$bad');
+    }
   });
 
   test('没开过的 ended 不建段', () async {

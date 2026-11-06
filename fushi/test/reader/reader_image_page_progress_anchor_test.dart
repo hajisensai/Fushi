@@ -105,28 +105,41 @@ void main() {
       // 定长窗口在方法体变长时会把被守的那一行挤出去（本例：_refreshProgress 补了
       // evaluateJavascript 的 try/catch 后 1200 字符不够用），红的是守卫自己塌了、
       // 不是行为退化。
-      final String body =
-          methodBody(src, 'Future<void> _refreshProgress() async {');
+      final String body = methodBody(
+        src,
+        'Future<void> _refreshProgress() async {',
+      );
       expect(
         body.contains('_applyImagePageProgressFallback();'),
         isTrue,
-        reason: 'snapshot==null（图片/封面页）分支必须调图片页进度兜底，'
+        reason:
+            'snapshot==null（图片/封面页）分支必须调图片页进度兜底，'
             '否则顶部百分比沿用上一章旧值（TODO-796 Bug1 回归）',
       );
     });
 
     test('_applyImagePageProgressFallback 经 isImageOnlyChapter 门控 + 纯函数锚点', () {
       // 同上：定长 900 字符窗口换成花括号配对，与方法体长度无关。
-      final String body =
-          methodBody(src, 'void _applyImagePageProgressFallback() {');
+      final String body = methodBody(
+        src,
+        'void _applyImagePageProgressFallback() {',
+      );
       // 只对真正的纯图片页兜底，普通章节走正常快照路径不受影响。
-      expect(body.contains('isImageOnlyChapter(_currentChapter)'), isTrue,
-          reason: '必须经 isImageOnlyChapter 门控，避免误伤普通无快照瞬态');
-      expect(body.contains('imagePageProgressAnchor('), isTrue,
-          reason: '落点必须走纯函数 imagePageProgressAnchor');
+      expect(
+        body.contains('isImageOnlyChapter(_currentChapter)'),
+        isTrue,
+        reason: '必须经 isImageOnlyChapter 门控，避免误伤普通无快照瞬态',
+      );
+      expect(
+        body.contains('imagePageProgressAnchor('),
+        isTrue,
+        reason: '落点必须走纯函数 imagePageProgressAnchor',
+      );
       // 只动进度 UI 字段，不碰 DB 落库 / session 累计。
       expect(
-          body.contains('_progressCurrentChars = anchor.currentChars'), isTrue);
+        body.contains('_progressCurrentChars = anchor.currentChars'),
+        isTrue,
+      );
       expect(body.contains('_progressTotalChars = anchor.totalChars'), isTrue);
     });
   });

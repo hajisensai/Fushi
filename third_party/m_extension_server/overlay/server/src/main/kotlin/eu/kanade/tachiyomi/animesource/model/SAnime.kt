@@ -2,6 +2,7 @@
 
 package eu.kanade.tachiyomi.animesource.model
 
+import kotlinx.serialization.json.JsonObject
 import java.io.Serializable
 
 /**
@@ -9,6 +10,7 @@ import java.io.Serializable
  * `fetch_type`, `season_number` on top of the lib-14 fields). Extensions built
  * against the yuzono / Anikku lib assign these from their parsers, so a host that
  * lacks the accessors fails with NoSuchMethodError on the first details parse.
+ * extensions-lib 17 adds [memo].
  */
 interface SAnime : Serializable {
     var url: String
@@ -37,6 +39,16 @@ interface SAnime : Serializable {
 
     /** @since extensions-lib 16 */
     var season_number: Double
+
+    /**
+     * Source-private metadata (extensions-lib 17). The host does not interpret it.
+     * It survives within one bridge call (details -> episodes inside one
+     * `getAnimeEpisodeUpdate`), but is **not** carried across bridge calls: the
+     * host's anime wire format has no slot for it.
+     *
+     * @since extensions-lib 17
+     */
+    var memo: JsonObject
 
     var initialized: Boolean
 
@@ -75,6 +87,8 @@ interface SAnime : Serializable {
 
         season_number = other.season_number
 
+        memo = other.memo
+
         if (!initialized) {
             initialized = other.initialized
         }
@@ -88,6 +102,9 @@ interface SAnime : Serializable {
         const val PUBLISHING_FINISHED = 4
         const val CANCELLED = 5
         const val ON_HIATUS = 6
+
+        /** @since extensions-lib 17 */
+        const val UPCOMING = 7
 
         fun create(): SAnime = SAnimeImpl()
     }

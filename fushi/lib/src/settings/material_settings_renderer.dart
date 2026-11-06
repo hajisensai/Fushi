@@ -1,11 +1,14 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/settings/settings_search_sheet.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_navigation_groups.dart';
@@ -132,9 +135,10 @@ class MaterialSettingsRenderer implements SettingsRenderer {
           for (final (int index, SettingsNavigationGroup group)
               in groupSettingsDestinations(destinations).indexed)
             FushiStaggeredEntrance(
-              key: ValueKey<(String, SettingsNavigationGroupId)>(
-                ('entrance', group.id),
-              ),
+              key: ValueKey<(String, SettingsNavigationGroupId)>((
+                'entrance',
+                group.id,
+              )),
               index: index,
               child: AdaptiveSettingsSection(
                 key: ValueKey<SettingsNavigationGroupId>(group.id),
@@ -144,8 +148,8 @@ class MaterialSettingsRenderer implements SettingsRenderer {
                       in group.destinations)
                     FushiListItem(
                       key: ValueKey<SettingsDestinationId>(destination.id),
-                      // M3E：分类图标坐在按分组着色的形状色块里（饱和
-                      // container 分区），首页一眼能分出「内容 / 学习 / 连接」。
+                      // 分类图标不垫色块，字形按分组强调色着色，首页一眼
+                      // 能分出「内容 / 学习 / 连接」。
                       leading: SettingsShapeIcon(
                         icon: destination.icon,
                         tone: settingsIconToneFor(destination.id),
@@ -233,19 +237,20 @@ class MaterialSettingsRenderer implements SettingsRenderer {
                 ),
                 child: destination.body!(settingsContext),
               ),
-            ) : _detailBody(
-            settingsContext: settingsContext,
-            destination: destination,
-            scrollController: controller,
-            sectionSpy: spy,
-            inlineHeader: false,
-            shrinkWrap: false,
-            insetHorizontally: true,
-            // 叠放页头的让位不在这里读：读在这一层，让位逐帧变化（跳转条出现、
-            // 页头收展的尺寸动画）就会把整页设置行逐帧重建。交给滚动视图那一个
-            // 叶子按 MediaQuery.paddingOf 精确依赖去读（_ShellInsetScrollView）。
-            consumeShellInset: true,
-          ),
+            )
+          : _detailBody(
+              settingsContext: settingsContext,
+              destination: destination,
+              scrollController: controller,
+              sectionSpy: spy,
+              inlineHeader: false,
+              shrinkWrap: false,
+              insetHorizontally: true,
+              // 叠放页头的让位不在这里读：读在这一层，让位逐帧变化（跳转条出现、
+              // 页头收展的尺寸动画）就会把整页设置行逐帧重建。交给滚动视图那一个
+              // 叶子按 MediaQuery.paddingOf 精确依赖去读（_ShellInsetScrollView）。
+              consumeShellInset: true,
+            ),
     );
   }
 
@@ -570,6 +575,10 @@ class Md3SettingsNavList extends StatelessWidget {
   }
 }
 
+/// 导航行行首图标槽的边长（与原色块图标同宽，标题左缘不随改版漂移）。是组件
+/// 几何而非间距，故不走 `tokens.spacing`。
+const double _kSettingsNavIconSlot = 32;
+
 /// MD3 导航抽屉式分类行：24 单色图标 + 标题（labelLarge，最多两行），行高至少 48；选中
 /// = secondaryContainer 全圆角胶囊、图标与文字 onSecondaryContainer；悬停 /
 /// 焦点 / 按下是 InkWell 状态层。墨水屏下选中填充塌缩成背景色，补 2px 实描边
@@ -640,13 +649,20 @@ class _Md3SettingsNavRowState extends State<Md3SettingsNavRow> {
               ),
               child: Row(
                 children: <Widget>[
-                  // M3E「当前项」形状对比：图标坐在分组着色的方圆角色块里，
-                  // 选中时弹簧变形成 primary 实底圆（SettingsShapeIcon）。
-                  SettingsShapeIcon(
-                    icon: widget.icon,
-                    tone: widget.tone,
-                    selected: selected,
-                    size: 32,
+                  // 二级导航图标不垫色块，裸字形直接着主题色（用户 2026-10-26）；
+                  // 选中行已有 secondaryContainer 胶囊作当前项信号，字形跟随
+                  // 胶囊上的前景色。
+                  SizedBox.square(
+                    dimension: _kSettingsNavIconSlot,
+                    child: Center(
+                      child: FushiIcon(
+                        widget.icon,
+                        size: 24,
+                        color: selected
+                            ? scheme.onSecondaryContainer
+                            : scheme.primary,
+                      ),
+                    ),
                   ),
                   SizedBox(width: tokens.spacing.gap + 4),
                   Expanded(
@@ -660,8 +676,9 @@ class _Md3SettingsNavRowState extends State<Md3SettingsNavRow> {
                         color: selected
                             ? scheme.onSecondaryContainer
                             : scheme.onSurface,
-                        fontWeight:
-                            selected ? FontWeight.w700 : FontWeight.w500,
+                        fontWeight: selected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
                       ),
                     ),
                   ),

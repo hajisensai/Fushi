@@ -34,9 +34,12 @@ void main() {
   test('工作线程与平台线程分发器的源文件在，且进了 CMake', () {
     expect(File('$vendored/windows/src/async_dispatch.h').existsSync(), isTrue);
     expect(
-        File('$vendored/windows/src/async_dispatch.cc').existsSync(), isTrue);
-    final String cmake =
-        File('$vendored/windows/CMakeLists.txt').readAsStringSync();
+      File('$vendored/windows/src/async_dispatch.cc').existsSync(),
+      isTrue,
+    );
+    final String cmake = File(
+      '$vendored/windows/CMakeLists.txt',
+    ).readAsStringSync();
     expect(
       cmake,
       contains('src/async_dispatch.cc'),
@@ -46,8 +49,9 @@ void main() {
 
   test('三个重活都经 queueFor 下放工作线程，回复经 dispatcher 回平台线程', () {
     final String src = maskComments(
-      File('$vendored/windows/flutter_onnxruntime_plugin.cpp')
-          .readAsStringSync(),
+      File(
+        '$vendored/windows/flutter_onnxruntime_plugin.cpp',
+      ).readAsStringSync(),
     );
     for (final String handler in <String>[
       'HandleRunInference',
@@ -61,7 +65,8 @@ void main() {
       expect(
         body,
         contains('queueFor('),
-        reason: '$handler 又回到平台线程同步执行：UI 会被推理卡住、GPU/CPU 会话'
+        reason:
+            '$handler 又回到平台线程同步执行：UI 会被推理卡住、GPU/CPU 会话'
             '无法重叠，且没有别的测试会红',
       );
       expect(
@@ -79,16 +84,20 @@ void main() {
     // 丢掉它同样是静默回退：所有 CPU 会话又挤回一条 FIFO，两个贪心 Loop 图会话
     // 只能串行，ASR 搜索并行度归一，结果照旧正确、没有别的测试会红。
     final String src = maskComments(
-      File('$vendored/windows/flutter_onnxruntime_plugin.cpp')
-          .readAsStringSync(),
+      File(
+        '$vendored/windows/flutter_onnxruntime_plugin.cpp',
+      ).readAsStringSync(),
     );
     expect(
       src,
       contains(
-          'std::map<std::string, std::unique_ptr<WorkQueue>> cpuSessionQueues_'),
+        'std::map<std::string, std::unique_ptr<WorkQueue>> cpuSessionQueues_',
+      ),
     );
     expect(
-        src, contains('queueFor(bool is_gpu, const std::string &session_id)'));
+      src,
+      contains('queueFor(bool is_gpu, const std::string &session_id)'),
+    );
     for (final String handler in <String>[
       'HandleRunInference',
       'HandleCloseSession',
@@ -103,8 +112,9 @@ void main() {
         reason: '$handler 必须按会话取队列，否则 CPU 会话又全挤在 cpuQueue_ 上串行',
       );
     }
-    final int closeAt =
-        src.indexOf('void FlutterOnnxruntimePlugin::HandleCloseSession(');
+    final int closeAt = src.indexOf(
+      'void FlutterOnnxruntimePlugin::HandleCloseSession(',
+    );
     final String closeBody = src.substring(closeAt);
     expect(
       closeBody,
@@ -141,8 +151,9 @@ void main() {
       reason: 'runInference 必须只在查表时持锁，拿到 shared_ptr 后放锁再 Run',
     );
     // 锁的作用域必须在 Run 之前结束：lock_guard 所在的块要在 Run 之前闭合。
-    final int lockAt =
-        beforeRun.indexOf('std::lock_guard<std::mutex> lock(mutex_);');
+    final int lockAt = beforeRun.indexOf(
+      'std::lock_guard<std::mutex> lock(mutex_);',
+    );
     expect(lockAt, greaterThan(0));
     expect(
       beforeRun.substring(lockAt),
@@ -178,7 +189,8 @@ void main() {
       expect(
         at,
         lessThan(threadAt),
-        reason: '`$member` 必须声明在 thread_ **之前**：构造函数一初始化 thread_ '
+        reason:
+            '`$member` 必须声明在 thread_ **之前**：构造函数一初始化 thread_ '
             '线程就跑起来了，它会立刻用到这个成员',
       );
     }

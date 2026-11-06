@@ -45,8 +45,11 @@ void main() {
         }
       }
     }
-    expect(parenClose, greaterThanOrEqualTo(0),
-        reason: '$signatureNeedle 参数列表括号未闭合');
+    expect(
+      parenClose,
+      greaterThanOrEqualTo(0),
+      reason: '$signatureNeedle 参数列表括号未闭合',
+    );
     // 2) 方法体起始花括号 = 参数列表右括号之后第一个 '{'（越过 async / async* 等修饰词）。
     final int braceStart = source.indexOf('{', parenClose);
     expect(braceStart, greaterThanOrEqualTo(0));
@@ -78,12 +81,21 @@ void main() {
         isTrue,
         reason: '$signature 缺再入守卫：应在进入时 `if ($flag) return;`。',
       );
-      expect(body.contains('$flag = true'), isTrue,
-          reason: '$signature 应置位 $flag = true。');
-      expect(body.contains('$flag = false'), isTrue,
-          reason: '$signature 应在 finally 复位 $flag = false。');
-      expect(body.contains('finally'), isTrue,
-          reason: '$signature 守卫复位必须在 finally，避免异常/提前 return 卡死。');
+      expect(
+        body.contains('$flag = true'),
+        isTrue,
+        reason: '$signature 应置位 $flag = true。',
+      );
+      expect(
+        body.contains('$flag = false'),
+        isTrue,
+        reason: '$signature 应在 finally 复位 $flag = false。',
+      );
+      expect(
+        body.contains('finally'),
+        isTrue,
+        reason: '$signature 守卫复位必须在 finally，避免异常/提前 return 卡死。',
+      );
     }
 
     test('games_library_page._launchGame 有 _launching 守卫', () {

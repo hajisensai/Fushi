@@ -1,17 +1,20 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/media_type.dart';
+import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 
 /// A template for a single media type's history body content in the main menu
 /// given a selected media source.
 abstract class BaseHistoryPage extends BasePage {
   /// Create an instance of this tab page.
-  const BaseHistoryPage({
-    super.key,
-  });
+  const BaseHistoryPage({super.key});
 
   @override
   BaseHistoryPageState<BaseHistoryPage> createState();
@@ -58,7 +61,7 @@ abstract class BaseHistoryPageState<T extends BaseHistoryPage>
   /// and long pressing.
   Widget buildMediaItem(MediaItem item) {
     Future<void> onLongPress() async {
-      await showAppDialog(
+      await showMediaItemActions(
         context: context,
         builder: (context) => MediaItemDialogPage(
           item: item,

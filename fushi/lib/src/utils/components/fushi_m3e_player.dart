@@ -1,11 +1,16 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart' show ValueListenable, immutable;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isGlassDesign;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart'
+    show FushiJumpProgressMarks;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -51,13 +56,73 @@ const Duration _kMeshPeriod = Duration(seconds: 48);
 /// mesh 重画间隔（≈30fps）。
 const int _kMeshFrameMicros = 33000;
 
-/// 所有 mesh 实例共用的相位时钟（页面与标题栏里的两份背景同相位）。
-final Stopwatch _meshClock = Stopwatch()..start();
+/// 本帧的 vsync 时刻（微秒）。同一帧里所有回调读到同一个值：页面与桌面标题栏
+/// 里的两份 mesh 背景按它取相位，同一帧必然同相位，接缝处连续。
+int _frameClockMicros() =>
+    SchedulerBinding.instance.currentSystemFrameTimeStamp.inMicroseconds;
+
+/// 按最小间隔要帧的驱动：等到 [interval] 的下一个档位（按本帧 vsync 时刻
+/// [_frameClockMicros] 对齐，多个实例落在同一帧）才 `scheduleFrameCallback`
+/// 要一帧，帧回调里跑 [onFrame] 再排下一次。
+///
+/// 为什么不用 [Ticker]：Ticker 只要在跑，每个 vsync 都要一帧；而
+/// `RendererBinding.drawFrame` 即使没有脏节点也照样 `compositeFrame` 把整棵层树
+/// 送去栅格化——120Hz 屏上就是每秒 120 次整屏重画（mesh 的整屏径向渐变、封面
+/// 投影、平台视图合成），回调里自己按 33ms 跳过更新也省不掉这些帧。这里改成真正
+/// 只在需要时要帧。后台 / 熄屏时引擎不出帧，帧回调不来，链条自然停住，恢复出帧
+/// 后接着跑，不会在后台空转定时器。
+class _ThrottledFrameDriver {
+  _ThrottledFrameDriver({required this.interval, required this.onFrame});
+
+  final Duration interval;
+  final void Function(int frameMicros) onFrame;
+
+  Timer? _timer;
+  int? _callbackId;
+  bool _active = false;
+
+  bool get isActive => _active;
+
+  void start() {
+    if (_active) return;
+    _active = true;
+    _requestFrame();
+  }
+
+  void stop() {
+    _active = false;
+    _timer?.cancel();
+    _timer = null;
+    final int? id = _callbackId;
+    if (id != null) {
+      SchedulerBinding.instance.cancelFrameCallbackWithId(id);
+      _callbackId = null;
+    }
+  }
+
+  void _requestFrame() {
+    _callbackId = SchedulerBinding.instance.scheduleFrameCallback(_handleFrame);
+  }
+
+  void _handleFrame(Duration _) {
+    _callbackId = null;
+    if (!_active) return;
+    final int now = _frameClockMicros();
+    onFrame(now);
+    if (!_active) return;
+    final int step = interval.inMicroseconds;
+    final int wait = step - now % step;
+    _timer = Timer(Duration(microseconds: wait), () {
+      _timer = null;
+      if (_active) _requestFrame();
+    });
+  }
+}
 
 /// 底板圆角：MD3 extra-large（28，与底部弹层同档）。
 const double _kPlateRadius = FushiRadii.sheetValue;
 
-/// 底板矩形解析：[page] 是去掉 bleedTop 的页面尺寸，[padding] 是系统安全区。
+/// 底板矩形解析：[page] 是页面尺寸，[padding] 是系统安全区。
 /// 返回 null = 不画底板。
 typedef FushiMeshPlateResolver = Rect? Function(Size page, EdgeInsets padding);
 
@@ -67,13 +132,10 @@ typedef FushiMeshPlateResolver = Rect? Function(Size page, EdgeInsets padding);
 class FushiMeshBackdrop extends StatefulWidget {
   const FushiMeshBackdrop({
     super.key,
-    this.bleedTop = 0,
     this.plateRect,
     this.animate = true,
+    this.colorTransition = false,
   });
-
-  /// 画布顶上延伸到标题栏底下的高度（歌词模式桌面标题栏里画同一张背景）。
-  final double bleedTop;
 
   /// 底板矩形（页面坐标）；null / 返回 null = 不画。
   final FushiMeshPlateResolver? plateRect;
@@ -82,16 +144,29 @@ class FushiMeshBackdrop extends StatefulWidget {
   /// 不为背景流动白花 GPU。
   final bool animate;
 
+  /// true = 配色变化（封面取色到达、换书换章取色变了、主题 / 深浅色切换）时用
+  /// [FushiMotion.medium] 做一次交叉过渡，过渡完就停、不再出帧；减弱动态效果时
+  /// 直接切换。false（默认）= 配色变了下一帧直接换（原行为）。歌词模式用
+  /// `animate: false` + 这个：静态网格渐变，只在颜色变化时动一下。
+  final bool colorTransition;
+
   @override
   State<FushiMeshBackdrop> createState() => _FushiMeshBackdropState();
 }
 
-class _FushiMeshBackdropState extends State<FushiMeshBackdrop>
-    with SingleTickerProviderStateMixin {
-  late final Ticker _ticker = createTicker(_onTick);
+class _FushiMeshBackdropState extends State<FushiMeshBackdrop> {
+  /// 按 33ms 档位要帧（不用 Ticker：Ticker 一开就逐 vsync 出整帧，见
+  /// [_ThrottledFrameDriver]）。
+  late final _ThrottledFrameDriver _driver = _ThrottledFrameDriver(
+    interval: const Duration(microseconds: _kMeshFrameMicros),
+    onFrame: _onFrame,
+  );
 
   /// 流动相位（0–1，一周 [_kMeshPeriod]）。只驱动画家重绘，不重建。
   final ValueNotifier<double> _phase = ValueNotifier<double>(0);
+
+  /// 低分辨率渐变图缓存（见 [_MeshImageCache]）。
+  final _MeshImageCache _cache = _MeshImageCache();
   int _lastFrame = -1;
 
   @override
@@ -107,21 +182,24 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop>
   }
 
   void _syncTicker() {
-    final bool motion = widget.animate && fushiExpressiveMotionEnabled(context);
-    if (motion && !_ticker.isActive) {
+    // TickerMode 照旧生效（被别的路由盖住时停）：driver 不是 Ticker，要自己读。
+    final bool motion =
+        widget.animate &&
+        fushiExpressiveMotionEnabled(context) &&
+        TickerMode.valuesOf(context).enabled;
+    if (motion && !_driver.isActive) {
       _lastFrame = -1;
-      _ticker.start();
-    } else if (!motion && _ticker.isActive) {
-      _ticker.stop();
+      _driver.start();
+    } else if (!motion && _driver.isActive) {
+      _driver.stop();
       _phase.value = 0;
     }
   }
 
-  void _onTick(Duration _) {
-    // 漂移极慢，30fps 足够顺；整屏渐变每帧重画是白花 GPU。相位取全局共享时钟
-    // 并量化到 33ms 一档（不取本 ticker 的 elapsed）：桌面标题栏里画的是同一张
-    // 背景的另一个实例（bleedTop），两个实例同一帧必须是同一相位，接缝处才连续。
-    final int frame = _meshClock.elapsedMicroseconds ~/ _kMeshFrameMicros;
+  void _onFrame(int frameMicros) {
+    // 漂移极慢，30fps 足够顺；整屏渐变每帧重画是白花 GPU。相位取本帧 vsync 时刻
+    // 并量化到 33ms 一档。
+    final int frame = frameMicros ~/ _kMeshFrameMicros;
     if (frame == _lastFrame) return;
     _lastFrame = frame;
     _phase.value =
@@ -130,8 +208,9 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop>
 
   @override
   void dispose() {
-    _ticker.dispose();
+    _driver.stop();
     _phase.dispose();
+    _cache.dispose();
     super.dispose();
   }
 
@@ -141,35 +220,60 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop>
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final EdgeInsets padding = MediaQuery.paddingOf(context);
     final bool dark = cs.brightness == Brightness.dark;
+    // 缓存小图的分辨率（图像素 / 逻辑像素）。静止时只画一次，按物理像素全分辨率
+    // 画：低分辨率图拉伸到整屏，8-bit 量化的渐变经双线性插值会露出菱形网格，
+    // 静止不动时网格钉在屏幕上（BUG-3933）。流动时网格随相位漂移看不出，仍按
+    // [_kMeshAnimatedTexelPx] 个**物理**像素一个纹素降采样省 GPU。
+    final double devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final double rasterScale = _driver.isActive
+        ? devicePixelRatio / _kMeshAnimatedTexelPx
+        : devicePixelRatio;
     return RepaintBoundary(
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final Size size = constraints.biggest;
-          // 底板按页面尺寸（画布去掉顶上延伸的一截）算，再整体下移回画布坐标。
-          final double bleed = widget.bleedTop;
-          final Size page = Size(size.width, math.max(0, size.height - bleed));
-          final Rect? plate = widget.plateRect
-              ?.call(page, padding)
-              ?.translate(0, bleed);
-          return CustomPaint(
+          final Rect? plate = widget.plateRect?.call(size, padding);
+          // 四团都取主色同色相（primary / secondary 两族）：tertiary 是 MD3
+          // 色相旋转 60° 的那一族，封面取色后常落到与主色不搭的色相（粉主色
+          // 配黄 tertiary），流到画面一侧就成了「左红右黄」的两截色。
+          final _MeshColors target = _MeshColors(
+            base: cs.surface,
+            blobs: <Color>[
+              cs.primaryContainer.withValues(alpha: dark ? 0.85 : 0.9),
+              Color.lerp(
+                cs.primaryContainer,
+                cs.secondaryContainer,
+                0.5,
+              )!.withValues(alpha: dark ? 0.75 : 0.8),
+              cs.secondaryContainer.withValues(alpha: dark ? 0.7 : 0.75),
+              cs.primary.withValues(alpha: dark ? 0.22 : 0.16),
+            ],
+            // 底板：surfaceContainerLow 档（令牌 group）半透明，透出流动
+            // 背景又压住对比度。
+            plate: tokens.surfaces.group.withValues(alpha: dark ? 0.5 : 0.55),
+          );
+          Widget paint(_MeshColors colors) => CustomPaint(
             size: size,
             isComplex: true,
             painter: _MeshPainter(
               phase: _phase,
-              base: cs.surface,
-              blobs: <Color>[
-                cs.primaryContainer.withValues(alpha: dark ? 0.85 : 0.9),
-                cs.tertiaryContainer.withValues(alpha: dark ? 0.75 : 0.8),
-                cs.secondaryContainer.withValues(alpha: dark ? 0.7 : 0.75),
-                cs.primary.withValues(alpha: dark ? 0.22 : 0.16),
-              ],
+              cache: _cache,
+              rasterScale: rasterScale,
+              base: colors.base,
+              blobs: colors.blobs,
               plate: plate,
-              // 底板：surfaceContainerLow 档（令牌 group）半透明，透出流动
-              // 背景又压住对比度。
-              plateColor: tokens.surfaces.group.withValues(
-                alpha: dark ? 0.5 : 0.55,
-              ),
+              plateColor: colors.plate,
             ),
+          );
+          if (!widget.colorTransition) return paint(target);
+          // 几何（相位）不变、只换颜色：逐色线性插值与两张渐变交叉淡化等价，
+          // 且只在过渡期间出帧（TweenAnimationBuilder 到终点即停 Ticker）。
+          return TweenAnimationBuilder<_MeshColors>(
+            tween: _MeshColorsTween(end: target),
+            duration: fushiMotionDuration(context, FushiMotion.medium),
+            curve: FushiMotion.standard,
+            builder: (BuildContext context, _MeshColors colors, _) =>
+                paint(colors),
           );
         },
       ),
@@ -177,9 +281,54 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop>
   }
 }
 
+/// 网格背景的一套配色（底色 + 四团 + 底板）。
+@immutable
+class _MeshColors {
+  const _MeshColors({
+    required this.base,
+    required this.blobs,
+    required this.plate,
+  });
+
+  final Color base;
+  final List<Color> blobs;
+  final Color plate;
+
+  static _MeshColors lerp(_MeshColors a, _MeshColors b, double t) {
+    if (a.blobs.length != b.blobs.length) return t < 0.5 ? a : b;
+    return _MeshColors(
+      base: Color.lerp(a.base, b.base, t)!,
+      blobs: <Color>[
+        for (int i = 0; i < a.blobs.length; i++)
+          Color.lerp(a.blobs[i], b.blobs[i], t)!,
+      ],
+      plate: Color.lerp(a.plate, b.plate, t)!,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _MeshColors &&
+      other.base == base &&
+      other.plate == plate &&
+      _MeshPainter._sameColors(other.blobs, blobs);
+
+  @override
+  int get hashCode => Object.hash(base, plate, Object.hashAll(blobs));
+}
+
+class _MeshColorsTween extends Tween<_MeshColors> {
+  _MeshColorsTween({super.end});
+
+  @override
+  _MeshColors lerp(double t) => _MeshColors.lerp(begin ?? end!, end!, t);
+}
+
 class _MeshPainter extends CustomPainter {
   _MeshPainter({
     required this.phase,
+    required this.cache,
+    required this.rasterScale,
     required this.base,
     required this.blobs,
     required this.plate,
@@ -187,6 +336,10 @@ class _MeshPainter extends CustomPainter {
   }) : super(repaint: phase);
 
   final ValueListenable<double> phase;
+  final _MeshImageCache cache;
+
+  /// 缓存图分辨率：图像素 / 逻辑像素（见 [_MeshImageCache.resolve]）。
+  final double rasterScale;
   final Color base;
   final List<Color> blobs;
   final Rect? plate;
@@ -210,8 +363,45 @@ class _MeshPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final Rect bounds = Offset.zero & size;
+    // 整屏四团径向渐变按 [rasterScale] 画成一张图缓存起来，这里只贴图
+    // （Impeller 没有栅格缓存：直接整屏画渐变的话，页面上任何一处每帧变化——
+    // 歌词逐帧擦色、进度条——都会让四个整屏 shader 跟着重新栅格化，宽屏高刷下
+    // 就是音乐歌词页的卡顿）。
+    final ui.Image? image = cache.resolve(
+      size,
+      phase.value,
+      rasterScale,
+      (Canvas c, Size s) => _paintMesh(c, s, phase.value, base, blobs),
+    );
+    if (image == null) {
+      _paintMesh(canvas, size, phase.value, base, blobs);
+    } else {
+      canvas.drawImageRect(
+        image,
+        Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+        bounds,
+        Paint()..filterQuality = FilterQuality.medium,
+      );
+    }
+    final Rect? plate = this.plate;
+    if (plate != null && plate.width > 1 && plate.height > 1) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(plate, const Radius.circular(_kPlateRadius)),
+        Paint()..color = plateColor,
+      );
+    }
+  }
+
+  static void _paintMesh(
+    Canvas canvas,
+    Size size,
+    double phase,
+    Color base,
+    List<Color> blobs,
+  ) {
+    final Rect bounds = Offset.zero & size;
     canvas.drawRect(bounds, Paint()..color = base);
-    final double t = phase.value * 2 * math.pi;
+    final double t = phase * 2 * math.pi;
     final double diag = math.sqrt(
       size.width * size.width + size.height * size.height,
     );
@@ -240,22 +430,19 @@ class _MeshPainter extends CustomPainter {
           ).createShader(circle),
       );
     }
-    final Rect? plate = this.plate;
-    if (plate != null && plate.width > 1 && plate.height > 1) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(plate, const Radius.circular(_kPlateRadius)),
-        Paint()..color = plateColor,
-      );
-    }
   }
 
   @override
-  bool shouldRepaint(covariant _MeshPainter old) =>
-      old.phase != phase ||
-      old.base != base ||
-      old.plate != plate ||
-      old.plateColor != plateColor ||
-      !_sameColors(old.blobs, blobs);
+  bool shouldRepaint(covariant _MeshPainter old) {
+    // 配色变了小图要重画（相位变化由 [_MeshImageCache] 自己按相位值判断）。
+    final bool colors = old.base != base || !_sameColors(old.blobs, blobs);
+    if (colors) cache.invalidate();
+    return colors ||
+        old.phase != phase ||
+        old.rasterScale != rasterScale ||
+        old.plate != plate ||
+        old.plateColor != plateColor;
+  }
 
   static bool _sameColors(List<Color> a, List<Color> b) {
     if (a.length != b.length) return false;
@@ -278,15 +465,19 @@ const Duration _kStaticWavePoll = Duration(milliseconds: 250);
 /// 未播段是平直轨道 + 尾端停止点，中间一根竖条 thumb（拖动时变粗变高），拖动时
 /// thumb 上方冒时长气泡，松手才 [onSeek]。下方左右两端是已播 / -剩余。
 ///
-/// 播放中用 Ticker 每帧读 [FushiPlaybackClock.position]，只重建这一小块；暂停时
-/// 降到每 400ms 轮询一次（还要跟上外部跳转）。←/→ 键前后跳 5 秒。
+/// 播放中波浪按 ≈30fps 流动（[_ThrottledFrameDriver]，不是逐 vsync 的 Ticker：
+/// 波浪 2.4 秒才流过一个 40px 波长，每帧只挪零点几像素，逐 vsync 重画看不出差别，
+/// 却让整屏每秒多合成几十到上百帧），顺带读 [FushiPlaybackClock.position]；振幅
+/// 弹簧 / 拖动这些短暂过渡期才用 vsync Ticker。重画只落在自带的 RepaintBoundary
+/// 里，不连带外层卡片、封面投影一起重录。暂停时降到每 400ms 轮询一次（还要跟上
+/// 外部跳转）。←/→ 键前后跳 5 秒。
 ///
 /// [onSeek] 为 null 时只显示进度（不可拖、不可聚焦）。[animateWave] = false 时
-/// 波形静止（不逐帧流动，振幅照样随播放态弹簧收放），位置每 250ms 轮询一次——
+/// 波形静止（不流动，振幅照样随播放态弹簧收放），位置每 250ms 轮询一次——
 /// 常亮的遥控页不为一条进度条逐帧重建。
 ///
 /// 给了 [clockListenable]（位置变化的推送源）时，位置改由它的通知驱动，**不再起任何
-/// 轮询定时器**；Ticker 只负责波浪流动 / 振幅弹簧 / 拖动这些纯动画。
+/// 轮询定时器**；帧驱动只负责波浪流动 / 振幅弹簧 / 拖动这些纯动画。
 class FushiWavySeekBar extends StatefulWidget {
   const FushiWavySeekBar({
     super.key,
@@ -299,6 +490,7 @@ class FushiWavySeekBar extends StatefulWidget {
     this.showTimes = true,
     this.debugLabel = 'fushi-wavy-seek',
     this.clockListenable,
+    this.jumpMarks,
   });
 
   final FushiPlaybackClock clock;
@@ -317,13 +509,31 @@ class FushiWavySeekBar extends StatefulWidget {
   /// [clock] 位置 / 时长变化时通知；null = 没有推送源，按上面的节奏轮询 [clock]。
   final Listenable? clockListenable;
 
+  /// 跳转记录的落点刻度（[FushiJumpProgressMarks]，与视频进度条同款：返回点
+  /// tertiary、前进点 secondary），比例按时间轴给（0 = 起点，不含 RTL 翻转，
+  /// 这里自己翻）。画在轨道可用区间（两端各缩半个线宽，与 thumb 同一换算）上，
+  /// 只看不点。null / 两边都空 = 不画。
+  final ({List<double> back, List<double> forward})? jumpMarks;
+
   @override
   State<FushiWavySeekBar> createState() => _FushiWavySeekBarState();
 }
 
+/// [FushiWavySeekBar] 一段按下 / 拖动的发起方。
+enum _SeekGesture { tap, drag }
+
 class _FushiWavySeekBarState extends State<FushiWavySeekBar>
     with TickerProviderStateMixin {
+  /// 只在过渡期（振幅弹簧 / 拖动 / thumb 弹簧）跑的逐 vsync 驱动。
   late final Ticker _ticker = createTicker(_onTick);
+
+  /// 稳态波浪流动（≈30fps）。
+  late final _ThrottledFrameDriver _flow = _ThrottledFrameDriver(
+    interval: const Duration(microseconds: _kMeshFrameMicros),
+    onFrame: _advance,
+  );
+
+  bool _tickerModeEnabled = true;
   late final FushiSpring _amp = FushiSpring(
     vsync: this,
     spring: fushiExpressiveDefaultSpatial,
@@ -331,6 +541,7 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
   late final FushiSpring _drag = FushiSpring(vsync: this);
   late final FocusNode _focusNode = FocusNode(debugLabel: widget.debugLabel);
   Timer? _idlePoll;
+  Duration? _idlePollInterval;
 
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
@@ -338,6 +549,12 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
 
   /// 拖动中的比例（null = 没在拖）。
   double? _dragFraction;
+
+  /// 当前这段按下 / 拖动是哪个识别器开的。点按与横向拖动在同一竞技场里竞争，输掉的一方
+  /// 会收到自己的 cancel：只许收尾自己开的那段，不能把赢家的状态一起清掉
+  /// （#358s4Ae_fn：按住超过 kPressTimeout 时 onTapDown 先触发，随后横向拖动被拒、
+  /// onHorizontalDragCancel 把点按的状态清空，松手的 onTapUp 就没东西可提交）。
+  _SeekGesture? _dragOwner;
 
   /// 刚松手 / 按键跳转的目标：播放器回报位置追上来之前先显示它，免得 thumb
   /// 弹回旧位置再跳过去。
@@ -364,6 +581,7 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _tickerModeEnabled = TickerMode.valuesOf(context).enabled;
     _syncMotion(animate: false);
   }
 
@@ -388,33 +606,47 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
   void _syncMotion({required bool animate}) {
     final bool wave = widget.isPlaying && _motion;
     _amp.animateTo(wave ? 1 : 0, animate: animate && _motion);
-    if (!widget.animateWave) {
-      // 静态波形：位置走定时轮询；Ticker 只在振幅弹簧 / 拖动期间跑。
-      _restartIdlePoll(_kStaticWavePoll);
-      if (_amp.animation.isAnimating && !_ticker.isActive) _ticker.start();
+    if (_amp.animation.isAnimating && !_ticker.isActive) _ticker.start();
+    _syncSteady();
+  }
+
+  /// 过渡期（振幅 / thumb 弹簧在动、正在拖）需要逐 vsync 重建。
+  bool get _transient =>
+      _amp.animation.isAnimating ||
+      _drag.animation.isAnimating ||
+      _dragFraction != null;
+
+  /// 过渡期之外的刷新：播放中波浪流动走 ≈30fps 驱动（顺带读位置）；否则位置按
+  /// 轮询 / 推送源刷新。过渡期 Ticker 在跑时两者都停。
+  void _syncSteady() {
+    if (_ticker.isActive) {
+      _flow.stop();
+      _stopIdlePoll();
       return;
     }
-    if (widget.isPlaying || _amp.value > 0.001) {
-      _idlePoll?.cancel();
-      _idlePoll = null;
-      if (!_ticker.isActive) _ticker.start();
-    } else {
-      _startIdlePoll();
+    final bool flowing =
+        widget.animateWave && widget.isPlaying && _motion && _tickerModeEnabled;
+    if (flowing) {
+      _stopIdlePoll();
+      _flow.start();
+      return;
     }
+    _flow.stop();
+    _startIdlePoll(
+      widget.animateWave ? const Duration(milliseconds: 400) : _kStaticWavePoll,
+    );
   }
 
-  void _startIdlePoll() {
-    if (widget.clockListenable != null) return; // 有推送源：位置不靠轮询。
-    _idlePoll ??= Timer.periodic(const Duration(milliseconds: 400), (_) {
-      if (!mounted) return;
-      if (_readClock()) setState(() {});
-    });
-  }
-
-  void _restartIdlePoll(Duration interval) {
+  void _stopIdlePoll() {
     _idlePoll?.cancel();
     _idlePoll = null;
+  }
+
+  void _startIdlePoll(Duration interval) {
     if (widget.clockListenable != null) return; // 有推送源：位置不靠轮询。
+    if (_idlePoll != null && _idlePollInterval == interval) return;
+    _idlePoll?.cancel();
+    _idlePollInterval = interval;
     _idlePoll = Timer.periodic(interval, (_) {
       if (!mounted) return;
       if (_readClock()) setState(() {});
@@ -438,29 +670,31 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
     return changed;
   }
 
-  void _onTick(Duration elapsed) {
-    if (!widget.animateWave) {
-      _readClock();
-      setState(() {});
-      if (!_amp.animation.isAnimating && _dragFraction == null) {
-        _ticker.stop();
-      }
-      return;
+  void _onTick(Duration _) {
+    _advance(_frameClockMicros());
+    if (!_transient) {
+      _ticker.stop();
+      _syncSteady();
     }
-    // 一个波长约 2.4 秒流过（慢而可感）。
-    _phase = elapsed.inMicroseconds / 1e6 * (2 * math.pi / 2.4);
+  }
+
+  /// 推进一帧：波浪相位 + 读位置 + 重建这一小块。相位取本帧 vsync 时刻，跨
+  /// Ticker / 稳态驱动切换连续，不随重启归零。
+  void _advance(int frameMicros) {
+    if (!mounted) return;
+    if (widget.animateWave) {
+      // 一个波长约 2.4 秒流过（慢而可感）。
+      _phase = frameMicros / 1e6 * (2 * math.pi / 2.4);
+    }
     _readClock();
     setState(() {});
-    if (!widget.isPlaying && _amp.value <= 0.001 && _dragFraction == null) {
-      _ticker.stop();
-      _startIdlePoll();
-    }
   }
 
   @override
   void dispose() {
     widget.clockListenable?.removeListener(_onClockChanged);
     _ticker.dispose();
+    _flow.stop();
     _idlePoll?.cancel();
     _amp.dispose();
     _drag.dispose();
@@ -483,29 +717,32 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
     return _pendingSeek ?? _position;
   }
 
+  /// 点 / 拖的横坐标 → 比例。与画法（thumb / 已播填充）同一换算：轨道可用区间
+  /// 两端各缩半个线宽，点在画出来的 thumb / 刻度上就落在它代表的那一处。
   double _fractionAt(double dx, double width) {
     if (width <= 0) return 0;
     final bool rtl = Directionality.of(context) == TextDirection.rtl;
-    final double f = (dx / width).clamp(0.0, 1.0);
+    final double half = widget.strokeWidth / 2;
+    final double usable = width - widget.strokeWidth;
+    final double f = usable <= 0
+        ? (dx / width).clamp(0.0, 1.0)
+        : ((dx - half) / usable).clamp(0.0, 1.0);
     return rtl ? 1 - f : f;
   }
 
-  void _beginDrag(double fraction) {
+  void _beginDrag(double fraction, _SeekGesture owner) {
     if (_duration <= Duration.zero) return;
+    _dragOwner = owner;
     setState(() => _dragFraction = fraction);
     _drag.animateTo(1, animate: _motion);
-    if (!_ticker.isActive) {
-      if (widget.animateWave) {
-        _idlePoll?.cancel();
-        _idlePoll = null;
-      }
-      _ticker.start();
-    }
+    if (!_ticker.isActive) _ticker.start();
+    _syncSteady();
   }
 
-  void _endDrag({required bool commit}) {
+  void _endDrag(_SeekGesture owner, {required bool commit}) {
     final double? fraction = _dragFraction;
-    if (fraction == null) return;
+    if (fraction == null || _dragOwner != owner) return;
+    _dragOwner = null;
     _drag.animateTo(0, animate: _motion);
     setState(() {
       _dragFraction = null;
@@ -548,6 +785,34 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
     return KeyEventResult.ignored;
   }
 
+  /// 轨道上叠跳转落点刻度（[FushiWavySeekBar.jumpMarks]）。刻度比线高一截、
+  /// 竖直居中于命中带，不超出命中带。
+  Widget _withJumpMarks(Widget paint, double usable, double inset, bool rtl) {
+    final ({List<double> back, List<double> forward})? marks = widget.jumpMarks;
+    if (marks == null || (marks.back.isEmpty && marks.forward.isEmpty)) {
+      return paint;
+    }
+    List<double> place(List<double> fractions) =>
+        rtl ? <double>[for (final double f in fractions) 1 - f] : fractions;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        paint,
+        Positioned(
+          left: inset,
+          width: usable,
+          top: 0,
+          height: widget.barHeight,
+          child: FushiJumpProgressMarks(
+            back: place(marks.back),
+            forward: place(marks.forward),
+            tickHeight: math.min(widget.barHeight, widget.strokeWidth + 9),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -572,44 +837,56 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
             ? width - half - usable * fraction
             : half + usable * fraction;
         final double drag = _drag.value.clamp(0.0, 1.2);
-        final Widget paint = CustomPaint(
-          size: Size(width, widget.barHeight),
-          painter: _SeekPainter(
-            fraction: fraction,
-            phase: _phase,
-            amplitude: 4 * _amp.value.clamp(0.0, 1.2),
-            strokeWidth: widget.strokeWidth,
-            activeColor: cs.primary,
-            trackColor: cs.secondaryContainer,
-            thumbWidth: 4 + 2 * drag,
-            thumbHeight: widget.barHeight * (0.6 + 0.25 * drag),
-            focused: _focused,
-            rtl: rtl,
+        // 波浪逐帧重画只落在这一层，不连带时间文字 / 外层卡片重录。
+        final Widget paint = RepaintBoundary(
+          child: CustomPaint(
+            size: Size(width, widget.barHeight),
+            painter: _SeekPainter(
+              fraction: fraction,
+              phase: _phase,
+              amplitude: 4 * _amp.value.clamp(0.0, 1.2),
+              strokeWidth: widget.strokeWidth,
+              activeColor: cs.primary,
+              trackColor: cs.secondaryContainer,
+              thumbWidth: 4 + 2 * drag,
+              thumbHeight: widget.barHeight * (0.6 + 0.25 * drag),
+              focused: _focused,
+              rtl: rtl,
+            ),
           ),
         );
-        if (!seekable) return paint;
+        final Widget track = _withJumpMarks(paint, usable, half, rtl);
+        if (!seekable) return track;
         return Stack(
           clipBehavior: Clip.none,
           children: <Widget>[
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTapDown: (TapDownDetails d) =>
-                  _beginDrag(_fractionAt(d.localPosition.dx, width)),
-              onTapUp: (_) => _endDrag(commit: true),
-              onTapCancel: () => _endDrag(commit: false),
-              onHorizontalDragStart: (DragStartDetails d) =>
-                  _beginDrag(_fractionAt(d.localPosition.dx, width)),
+              onTapDown: (TapDownDetails d) => _beginDrag(
+                _fractionAt(d.localPosition.dx, width),
+                _SeekGesture.tap,
+              ),
+              onTapUp: (_) => _endDrag(_SeekGesture.tap, commit: true),
+              onTapCancel: () => _endDrag(_SeekGesture.tap, commit: false),
+              onHorizontalDragStart: (DragStartDetails d) => _beginDrag(
+                _fractionAt(d.localPosition.dx, width),
+                _SeekGesture.drag,
+              ),
               onHorizontalDragUpdate: (DragUpdateDetails d) {
-                if (_dragFraction == null) return;
+                if (_dragFraction == null || _dragOwner != _SeekGesture.drag) {
+                  return;
+                }
                 setState(
                   () => _dragFraction = _fractionAt(d.localPosition.dx, width),
                 );
               },
-              onHorizontalDragEnd: (_) => _endDrag(commit: true),
-              onHorizontalDragCancel: () => _endDrag(commit: false),
+              onHorizontalDragEnd: (_) =>
+                  _endDrag(_SeekGesture.drag, commit: true),
+              onHorizontalDragCancel: () =>
+                  _endDrag(_SeekGesture.drag, commit: false),
               child: MouseRegion(
                 cursor: SystemMouseCursors.click,
-                child: paint,
+                child: track,
               ),
             ),
             // 拖动时的时长气泡（M3 slider value indicator：inverseSurface 胶囊）。
@@ -672,18 +949,22 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
           ),
       ],
     );
-    return Semantics(
-      slider: seekable,
-      value: formatFushiPlaybackTime(shown),
-      child: seekable
-          ? Focus(
-              focusNode: _focusNode,
-              onKeyEvent: _onKey,
-              onFocusChange: (bool focused) =>
-                  setState(() => _focused = focused),
-              child: column,
-            )
-          : column,
+    // 自带重绘边界：时间文字每秒一变也只重录这一小块，不连带外层播放卡
+    // （投影 / 封面）一起重画。
+    return RepaintBoundary(
+      child: Semantics(
+        slider: seekable,
+        value: formatFushiPlaybackTime(shown),
+        child: seekable
+            ? Focus(
+                focusNode: _focusNode,
+                onKeyEvent: _onKey,
+                onFocusChange: (bool focused) =>
+                    setState(() => _focused = focused),
+                child: column,
+              )
+            : column,
+      ),
     );
   }
 }
@@ -838,8 +1119,8 @@ class FushiTransportGroup extends StatelessWidget {
   final VoidCallback onPrevious;
   final VoidCallback onNext;
   final double playSize;
-  final FushiIconButtonSize sideSize;
-  final FushiIconButtonWidth sideWidth;
+  final ButtonSizeVariant sideSize;
+  final IconButtonWidthVariant sideWidth;
 
   /// 后退 / 前进若干秒（负数后退）。null = 不显示 ±10 秒键。
   final ValueChanged<int>? onSeekRelative;
@@ -902,16 +1183,41 @@ Widget fushiRelativeSeekButton(
           ? '${keyPrefix}_seek_back_button'
           : '${keyPrefix}_seek_forward_button',
     ),
-    size: FushiIconButtonSize.s,
+    size: ButtonSizeVariant.small,
     tooltip: back ? '-10s' : '+10s',
     onPressed: () => seekBy(seconds),
     icon: FushiIcon(back ? FushiIcons.replay10 : FushiIcons.forward10),
   );
 }
 
-/// 大号 Expressive 播放键：播放中是圆、暂停时是圆角方（圆角 = 边长 30%），两态
-/// 之间按 default spatial 弹簧形变；按下整体缩 6%（fast spatial）。图标交叉缩放 +
-/// 轻旋转切换。外形是显式 shape，所以 FushiFilledButton 自己的按压变形让位。
+// ---------------------------------------------------------------------------
+// 主播放键外形（MD3 唯一定义）
+// ---------------------------------------------------------------------------
+
+/// MD3 主播放 / 暂停键的 M3 Expressive 多边形：12 瓣「饼干」。视频、有声书、
+/// 音乐等所有主播放键都从这里取，不各写一份（守卫
+/// `test/utils/components/fushi_play_button_shape_test.dart`）。Apple（glass）
+/// 设计系统不用它。
+RoundedPolygon get fushiPlayButtonPolygon => MaterialShapes.cookie12Sided;
+
+/// [fushiPlayButtonPolygon] 的 [OutlinedBorder]（可带描边，墨水屏用）。
+OutlinedBorder fushiPlayButtonBorder({BorderSide side = BorderSide.none}) =>
+    MaterialShapeBorder(shape: fushiPlayButtonPolygon, side: side);
+
+/// 播放态相对暂停态的外形旋转量（圈）：12 瓣对称，转半瓣（1/24 圈）——形状即
+/// 状态又不乱晃。由各播放键的状态弹簧（[FushiSpring]）驱动，减弱动态效果 / 墨水
+/// 屏时弹簧直接跳到终值，不出动画。字形反向转回，始终正立。
+const double kFushiPlayButtonPlayingTurns = 1 / 24;
+
+/// 播放态进度 [t]（0 = 暂停、1 = 播放）对应的外形旋转角（弧度）。
+double fushiPlayButtonRotation(double t) =>
+    t * kFushiPlayButtonPlayingTurns * 2 * math.pi;
+
+/// 大号 Expressive 播放键。MD3：[fushiPlayButtonPolygon] 12 瓣饼干实色主色填充，
+/// 播放态按 default spatial 弹簧转半瓣（[fushiPlayButtonRotation]）。Apple：播放
+/// 中是圆、暂停时是圆角方（圆角 = 边长 30%），两态之间弹簧形变。按下整体缩 6%
+/// （fast spatial）。图标交叉缩放 + 轻旋转切换。外形是显式 shape，所以
+/// FushiFilledButton 自己的按压变形让位。
 class FushiExpressivePlayButton extends StatefulWidget {
   const FushiExpressivePlayButton({
     super.key,
@@ -966,6 +1272,7 @@ class _FushiExpressivePlayButtonState extends State<FushiExpressivePlayButton>
     final ColorScheme cs = Theme.of(context).colorScheme;
     final double size = widget.size;
     final bool motion = fushiExpressiveMotionEnabled(context);
+    final bool glass = isGlassDesign(context);
     final Widget icon = AnimatedSwitcher(
       duration: Duration(milliseconds: motion ? 220 : 0),
       switchInCurve: FushiSpringCurve.spatialFast,
@@ -996,35 +1303,97 @@ class _FushiExpressivePlayButtonState extends State<FushiExpressivePlayButton>
           ]),
           builder: (BuildContext context, Widget? child) {
             final double pill = _shape.value;
+            final double angle = glass ? 0 : fushiPlayButtonRotation(pill);
+            final Widget button = FushiFilledButton(
+              onPressed: widget.onPressed,
+              style: ButtonStyle(
+                fixedSize: WidgetStatePropertyAll<Size>(Size.square(size)),
+                minimumSize: WidgetStatePropertyAll<Size>(Size.square(size)),
+                padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+                  EdgeInsets.zero,
+                ),
+                backgroundColor: WidgetStatePropertyAll<Color>(cs.primary),
+                foregroundColor: WidgetStatePropertyAll<Color>(cs.onPrimary),
+                elevation: const WidgetStatePropertyAll<double>(0),
+                animationDuration: Duration.zero,
+                shape: WidgetStatePropertyAll<OutlinedBorder>(
+                  glass
+                      ? FushiMorphBorder(
+                          radius: size * 0.3,
+                          startPill: pill,
+                          endPill: pill,
+                        )
+                      : fushiPlayButtonBorder(),
+                ),
+              ),
+              // 外形随播放态转半瓣，字形反向转回保持正立。旋转层恒在树里
+              // （角度 0 也包），播放态切换不重挂按钮、不丢焦点 / 水波纹。
+              child: Transform.rotate(angle: -angle, child: child),
+            );
             return Transform.scale(
               scale: 1 - 0.06 * _press.value,
-              child: FushiFilledButton(
-                onPressed: widget.onPressed,
-                style: ButtonStyle(
-                  fixedSize: WidgetStatePropertyAll<Size>(Size.square(size)),
-                  minimumSize: WidgetStatePropertyAll<Size>(Size.square(size)),
-                  padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
-                    EdgeInsets.zero,
-                  ),
-                  backgroundColor: WidgetStatePropertyAll<Color>(cs.primary),
-                  foregroundColor: WidgetStatePropertyAll<Color>(cs.onPrimary),
-                  elevation: const WidgetStatePropertyAll<double>(0),
-                  animationDuration: Duration.zero,
-                  shape: WidgetStatePropertyAll<OutlinedBorder>(
-                    FushiMorphBorder(
-                      radius: size * 0.3,
-                      startPill: pill,
-                      endPill: pill,
-                    ),
-                  ),
-                ),
-                child: child!,
-              ),
+              child: Transform.rotate(angle: angle, child: button),
             );
           },
           child: icon,
         ),
       ),
     );
+  }
+}
+
+/// mesh 背景流动时缓存图一个纹素覆盖的**物理**像素边长。按物理像素算：按逻辑
+/// 像素算的话 DPR 3 的手机上一个纹素会被拉成 24×24 物理像素（BUG-3933）。
+const double _kMeshAnimatedTexelPx = 8;
+
+/// 测试钩子：[FushiMeshBackdrop] 每重画一次缓存图就回调一次（参数是本次产出的图，
+/// 归背景 State 所有，测试只读不释放）。
+@visibleForTesting
+ValueChanged<ui.Image>? debugOnFushiMeshImageRendered;
+
+/// [FushiMeshBackdrop] 的渐变图缓存：同一尺寸、同一相位、同一分辨率只画一次。
+class _MeshImageCache {
+  ui.Image? _image;
+  Size? _size;
+  double? _phase;
+  double? _rasterScale;
+
+  void invalidate() {
+    _phase = null;
+  }
+
+  ui.Image? resolve(
+    Size size,
+    double phase,
+    double rasterScale,
+    void Function(Canvas canvas, Size size) paint,
+  ) {
+    if (size.isEmpty || !size.isFinite || rasterScale <= 0) return null;
+    if (_image != null &&
+        _size == size &&
+        _phase == phase &&
+        _rasterScale == rasterScale) {
+      return _image;
+    }
+    final int w = math.max(1, (size.width * rasterScale).ceil());
+    final int h = math.max(1, (size.height * rasterScale).ceil());
+    final ui.PictureRecorder recorder = ui.PictureRecorder();
+    final Canvas c = Canvas(recorder);
+    paint(c, Size(w.toDouble(), h.toDouble()));
+    final ui.Picture picture = recorder.endRecording();
+    final ui.Image image = picture.toImageSync(w, h);
+    picture.dispose();
+    _image?.dispose();
+    _image = image;
+    _size = size;
+    _phase = phase;
+    _rasterScale = rasterScale;
+    debugOnFushiMeshImageRendered?.call(image);
+    return image;
+  }
+
+  void dispose() {
+    _image?.dispose();
+    _image = null;
   }
 }

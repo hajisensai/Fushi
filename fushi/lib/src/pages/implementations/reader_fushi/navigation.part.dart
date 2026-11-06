@@ -223,6 +223,11 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       // 所以能显示）。在这里（与立即收藏相同的稳定状态）再应用一次即可对齐。
       // 重复应用是幂等的：__fushiApplyHighlights 会先清空再重建 range map。
       _applyChapterHighlights();
+      // BUG-4103：带句子区间的跳转（卡片来源回跳 / 收藏页 / 制卡历史）给落点句画
+      // 「你跳到了这里」标记。与收藏高亮同处、同时机：每次本章恢复落定（首开、换样式
+      // 重分页、宽变重导）都重画，DOM 重建不会把标记丢掉；离开该章即作废（见
+      // [_beginNavigation]）。
+      _applyJumpTargetMark();
       // TODO-724：跳章 / 位置恢复完成后重置有声书图片暂停的 cue 推进锚点
       // (__fushiPrevHighlight)。否则恢复到章节中段后，首次 cue 推进时 prev 仍指向很早
       // 的元素，__fushiImageBetween 会跨越中间所有插图、误把视口 reveal 到一张远处的图
@@ -482,6 +487,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     if (chapter != _currentChapter) {
       _chapterAdvanceDirection = chapter > _currentChapter ? 1 : -1;
     }
+    // BUG-4103：落点标记只属于跳转目标那一章；导航去别的章就作废（同章重恢复保留）。
+    if (_jumpTargetSpan?.chapter != chapter) _jumpTargetSpan = null;
     _currentChapter = chapter;
     _initialProgress = progress;
     _initialCharOffset = charOffset;
@@ -561,7 +568,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   /// TODO-1128：把一个导航目标章号解析成真正拥有虚拟页的章号。开启「图片合并」
   /// (`mergeImagePages`) 后，被吸收进后续文本章的单图片章（[EpubSpreadMap.isAbsorbedImageChapter]）
   /// 没有自己的页——它的 `<img>` 直接内联注入到宿主文本章正文顶部（见
-  /// `webview.part.dart _injectMergedChapterImages`）。若裸导航直接落到被吸收章，会
+  /// `webview.part.dart _mergedChapterImagesHtml`）。若裸导航直接落到被吸收章，会
   /// 加载它自己的独立单图页（第 1 份）+ 宿主正文顶部又注入同图（第 2 份）=**图片重复**。
   /// 本 helper 把这类目标重定向到其宿主文本章（该章虚拟页拥有那张内联图）；其余章号原样
   /// 返回（幂等——宿主本身绝不会被吸收）。spread map 未就绪或合并关闭时 no-op。
@@ -573,7 +580,15 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     return map.entryAt(virtual).chapterIndex;
   }
 
-  Future<void> _navigateToChapter(
+  /// 返回值：这次请求**是否真的开始了导航**（走到了 [_beginNavigation]）。
+  ///
+  /// `false` = 被拒（页面已卸载 / 书或 WebView 未就绪 / 章号越界 / 被动导航的目标
+  /// 解析后落在目录页）：既没有 `_beginNavigation`，也就没有 restore 回执
+  /// （[_onRestoreComplete]）、没有中止收尾（[_failNavigation]）、连 content-ready
+  /// 兜底计时都没有武装。持有有声书跨章守卫的调用方（[_handleCueCrossChapter]）
+  /// 必须据此自己释放守卫——否则守卫等的那条回执永远不会来（BUG-3798）。
+  /// `true` 之后的结局（回执 / 中止）由导航自身负责通知控制器。
+  Future<bool> _navigateToChapter(
     int index, {
     double progress = 0.0,
     int? charOffset,
@@ -585,10 +600,10 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         _book == null ||
         index < 0 ||
         index >= _book!.chapters.length) {
-      return;
+      return false;
     }
     if (_controller == null) {
-      return;
+      return false;
     }
     // TODO-1128：目标是被吸收的单图片章时，重定向到其宿主文本章的章首——被吸收图片只在
     // 宿主正文顶部内联注入那一份，绝不再加载独立单图页（消除重复）。charOffset 归零锚
@@ -604,7 +619,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // 否则跨章会把用户甩到目录。manual=true 是用户显式跳章（TOC 点击 / 翻章
     // 按钮），保留其自由不拦。被动命中 nav 页直接保位（不加载、不归零）。
     if (!manual && _book!.isChapterNav(index)) {
-      return;
+      return false;
     }
 
     if (manual) {
@@ -633,6 +648,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       debugPrint('[ReaderFushi] _navigateToChapter loadUrl failed: $e');
       _failNavigation();
     }
+    return true;
   }
 
   Future<bool> _navigateToChapterAndWait(
@@ -657,7 +673,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // 把收藏句的精确字符锚烘进同一条原子恢复链（_beginNavigation → shell
     // restoreToCharOffset），与冷启动 charAnchor 跳转（BUG-459）同构；[charOffsetEnd]
     // 句尾锚透传做整句对齐（BUG-461）。分数与字符锚二选一：charOffset 非空时优先。
-    await _navigateToChapter(
+    final bool started = await _navigateToChapter(
       index,
       progress: progress,
       charOffset: charOffset,
@@ -665,6 +681,9 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       manual: manual,
       preciseLocateJs: preciseLocateJs,
     );
+    // 被拒的导航没有自己的 restore completer：不能去等**上一次**导航残留的那个
+    // （它可能仍在飞，等到的是别人的结局）。
+    if (!started) return false;
     final bool success =
         await _restoreCompleter?.future.timeout(
           const Duration(seconds: 10),
@@ -726,7 +745,11 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       // HBK-AUDIT-038: a same-document anchor (e.g. href="#note1") resolves to
       // the current chapter's path plus a fragment. Jump in place instead of
       // reloading the whole chapter (avoids a visible flash + lost scroll).
-      await _jumpToChapterAnchor(link.chapterIndex, link.fragment);
+      await _jumpToChapterAnchor(
+        link.chapterIndex,
+        link.fragment,
+        source: JumpSource.link,
+      );
       return;
     }
     // HBK-AUDIT-038: route genuine external schemes (http/https/mailto/tel on a
@@ -744,9 +767,16 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   /// 常见，这类目录项的 spine 章号**全都一样**，此前锚被丢在
   /// [flattenTtuTocEntries] 之外，于是同一章下的每一条目录项都只跳到章首——
   /// 用户看到的「章节跳转不准」。
-  Future<void> _jumpToChapterAnchor(int index, String? fragment) async {
+  ///
+  /// [source]：「跳转记录」面板里这次跳转的来源（目录 / 内链 / 书签……）。
+  Future<void> _jumpToChapterAnchor(
+    int index,
+    String? fragment, {
+    required JumpSource source,
+  }) async {
+    await _recordTextJumpDeparture(source: source);
     if (_lyricsMode) {
-      await _jumpToChapterInLyricsMode(index);
+      await _jumpToChapterInLyricsMode(index, source: source);
       return;
     }
     if (fragment == null) {
@@ -769,16 +799,66 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   ///
   /// 该章没有任何 cue（纯文字章 / 对齐没覆盖到）→ 歌词里根本不存在这一章，
   /// 唯一能到达它的地方是正文：退出歌词模式后按普通跳章落到该章。
-  Future<void> _jumpToChapterInLyricsMode(int index) async {
+  Future<void> _jumpToChapterInLyricsMode(
+    int index, {
+    required JumpSource source,
+  }) async {
     final AudiobookPlayerController? ctrl = _audiobookController;
     final AudioCue? first = _firstCueOfSection(index);
     if (ctrl != null && first != null) {
-      await ctrl.skipToCue(first);
+      await ctrl.skipToCue(first, jumpSource: source);
       return;
     }
     await _toggleLyricsMode();
     if (!mounted || _lyricsMode) return;
     await _navigateToChapter(index, manual: true);
+  }
+
+  /// 歌词模式的「进度跳转」（按字数 / 百分比，导航面板同一段 UI）。歌词文档是全书
+  /// cue 的连续列表，没有正文视口可滚——与 [_jumpToChapterInLyricsMode] 同一语义：
+  /// 把音频定位到目标字数所在的那句（[_audioCueNearCharOffset]；对齐家族没有章内
+  /// 字符区间时退到该章首句），跳转记录由音频侧经 `jumpSource` 记。该章一句 cue
+  /// 都没有 → 歌词里不存在这一处，退出歌词模式后按正文字数跳转。
+  Future<void> _jumpToGlobalCharOffsetInLyricsMode(
+    int globalOffset, {
+    required JumpSource source,
+  }) async {
+    final ChapterProgressTarget target = resolveChapterProgressForGlobalOffset(
+      _chapterCumulativeChars,
+      _chapterCharCounts,
+      globalOffset,
+    );
+    final int chapterLen =
+        target.chapter >= 0 && target.chapter < _chapterCharCounts.length
+        ? _chapterCharCounts[target.chapter]
+        : 0;
+    final int inChapter = (target.progress * chapterLen).round();
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    final AudioCue? cue =
+        _audioCueNearCharOffset(target.chapter, inChapter) ??
+        _firstCueOfSection(target.chapter);
+    if (ctrl != null && cue != null) {
+      await ctrl.skipToCue(cue, jumpSource: source);
+      return;
+    }
+    await _toggleLyricsMode();
+    if (!mounted || _lyricsMode) return;
+    await _jumpToGlobalCharOffset(globalOffset, source: source);
+  }
+
+  /// 章 [section] 里离章内**学习单位**偏移 [studyOffset]（阅读进度字数口径）最近的
+  /// 句子 cue。cue 片段是音频 matchable 坐标，逐句经 [_studyRangeForAudioFragment]
+  /// 换成学习区间再比（单点在 [audioCueNearStudyOffset]）。只认带章内字符区间的
+  /// `fushi-cue://` 家族（[SubtitleRematchCodec]），其余家族返回 null。
+  AudioCue? _audioCueNearCharOffset(int section, int studyOffset) {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl == null) return null;
+    return audioCueNearStudyOffset(
+      ctrl.sentenceAudioCuesForSection(section),
+      section: section,
+      studyOffset: studyOffset,
+      studyRangeOf: _studyRangeForAudioFragment,
+    );
   }
 
   /// 某章在全书 cue 里的首句；该章没有 cue → null。三种 cue 家族各走各的精确
@@ -1017,6 +1097,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         '${webViewKeyBridgeScript(handlerName: 'onSpreadKey', keys: spreadKeyBridgeTokens(appModel.shortcutRegistry))}\n${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}';
 
     final String html = buildSpreadPageHtml(
+      // 调用方 [_navigateToSpread] 已在 [_beginNavigation] 里递增代际。
+      navigationGeneration: _navigateGeneration,
       leftUrl: leftUrl,
       rightUrl: rightUrl,
       swipeDistThreshold: swipeThresholds.dist,
@@ -1568,6 +1650,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         // 同/跨 section 的保留/失效决策交回 repo.save。
         charOffset: saveArgs.charOffset,
       );
+      // Kavita 绑定书：位置落库后转发给进度同步（防抖上报；非绑定书为 null）。
+      _kavitaSync?.onPositionSaved(section);
     } catch (e, stack) {
       // fail-open：本次位置未落盘（后续 debounce/flush 会重试），补日志便于诊断。
       ErrorLogService.instance.log('ReaderFushi._persistPosition', e, stack);
@@ -1748,8 +1832,16 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         (progress * _chapterCharCounts[_currentChapter]).round();
   }
 
-  Future<void> _jumpToGlobalCharOffset(int globalOffset) async {
+  Future<void> _jumpToGlobalCharOffset(
+    int globalOffset, {
+    JumpSource source = JumpSource.positionJump,
+  }) async {
     if (_chapterCumulativeChars.isEmpty || _controller == null) return;
+    if (_lyricsMode) {
+      await _jumpToGlobalCharOffsetInLyricsMode(globalOffset, source: source);
+      return;
+    }
+    await _recordTextJumpDeparture(source: source);
 
     // 进度条拖动是跳转不是阅读：不播种（旧标量水位要在此播种）。跨章走
     // [_beginNavigation] 的 `leave()`；同章 `restoreProgress` 不经导航，得在这里自己
@@ -1840,7 +1932,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       studyClockMayRun(
         manualPause: _studyClockManualPause,
         lifecycleStopped: _studyClockLifecycleStopped,
-        modalDepth: _studyClockModalDepth,
+        modalDepth: _studyClockModalDepth + (_studyCoverWatch.covered ? 1 : 0),
         audiobookPlaying: _audiobookController?.isPlaying ?? false,
       );
 

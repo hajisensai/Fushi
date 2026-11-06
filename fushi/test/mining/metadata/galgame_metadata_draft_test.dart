@@ -1,7 +1,7 @@
 /// [GalgameMetadataDraft] / [SourceCandidate] 的容错解析测试：脏 JSON 一律降级，不崩。
 library;
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 
@@ -203,7 +203,9 @@ void main() {
     test('合法键解析，大小写与空白容错', () {
       expect(GalgameMetadataSource.fromKey('bgm'), GalgameMetadataSource.bgm);
       expect(
-          GalgameMetadataSource.fromKey(' VNDB '), GalgameMetadataSource.vndb);
+        GalgameMetadataSource.fromKey(' VNDB '),
+        GalgameMetadataSource.vndb,
+      );
     });
 
     test('未知 / 空 / 非字符串 → null', () {

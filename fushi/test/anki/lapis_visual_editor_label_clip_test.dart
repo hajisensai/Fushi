@@ -8,20 +8,22 @@
 // 这类几何断言不能只 `findsOneWidget`——被裁的标签照样 find 得到。
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 import 'lapis_style_editor_harness.dart';
 
 /// [inner] 顶部越过它**最近的裁剪祖先**上边界的高度；>0 = 被裁掉这么多。
 double _topOverflowIntoClip(WidgetTester tester, Finder inner) {
-  final Finder clip =
-      find.ancestor(of: inner, matching: find.byType(ClipRect)).first;
+  final Finder clip = find
+      .ancestor(of: inner, matching: find.byType(ClipRect))
+      .first;
   return tester.getRect(clip).top - tester.getRect(inner).top;
 }
 
 void main() {
-  testWidgets('布局折叠区第一个下拉框的标签完整可见，没被展开动画的 ClipRect 裁掉',
-      (WidgetTester tester) async {
+  testWidgets('布局折叠区第一个下拉框的标签完整可见，没被展开动画的 ClipRect 裁掉', (
+    WidgetTester tester,
+  ) async {
     useWideWindow(tester);
     await pumpEditor(tester, initialCustomCss: '');
 

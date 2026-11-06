@@ -15,8 +15,9 @@ class VideoLocalExtraMatch {
 VideoLocalExtraMatch? classifyLocalVideoExtra(String path) {
   final List<String> segments = p
       .split(p.normalize(path))
-      .map((String value) =>
-          value.toLowerCase().replaceAll(RegExp(r'[_-]+'), ' '))
+      .map(
+        (String value) => value.toLowerCase().replaceAll(RegExp(r'[_-]+'), ' '),
+      )
       .toList(growable: false);
   final String stem = p.basenameWithoutExtension(path).toLowerCase();
   VideoMetadataExtraKind? kind;
@@ -26,8 +27,7 @@ VideoLocalExtraMatch? classifyLocalVideoExtra(String path) {
       'featurettes' || 'featurette' => VideoMetadataExtraKind.featurette,
       'behind the scenes' => VideoMetadataExtraKind.behindTheScenes,
       'deleted scenes' ||
-      'deleted scene' =>
-        VideoMetadataExtraKind.deletedScene,
+      'deleted scene' => VideoMetadataExtraKind.deletedScene,
       'interviews' || 'interview' => VideoMetadataExtraKind.interview,
       'shorts' || 'short' => VideoMetadataExtraKind.short,
       'scenes' || 'scene' => VideoMetadataExtraKind.scene,
@@ -37,8 +37,7 @@ VideoLocalExtraMatch? classifyLocalVideoExtra(String path) {
       'pv' ||
       'pvs' ||
       'ncop&nced' ||
-      'ncop nced' =>
-        VideoMetadataExtraKind.clip,
+      'ncop nced' => VideoMetadataExtraKind.clip,
       '迷你动画' || '迷你動畫' => VideoMetadataExtraKind.short,
       '特典' || '特典映像' || '映像特典' => VideoMetadataExtraKind.extra,
       _ => kind,

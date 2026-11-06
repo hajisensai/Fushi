@@ -15,26 +15,34 @@ import 'package:fushi_torrent/fushi_torrent.dart';
 Future<void> main(List<String> args) async {
   if (args.length < 3) {
     stderr.writeln(
-        'usage: dart run tool/download_harness.dart <dll> <magnet> <saveDir>');
+      'usage: dart run tool/download_harness.dart <dll> <magnet> <saveDir>',
+    );
     exit(2);
   }
   final String libPath = args[0];
   final String magnet = args[1];
   final Directory saveDir = Directory(args[2])..createSync(recursive: true);
 
-  final EmbeddedTorrentEngine engine =
-      EmbeddedTorrentEngine.open(libraryPath: libPath);
+  final EmbeddedTorrentEngine engine = EmbeddedTorrentEngine.open(
+    libraryPath: libPath,
+  );
   stdout.writeln('libtorrent ${engine.libtorrentVersion()}');
 
-  final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(engine,
-      listenInterfaces: '0.0.0.0:6881', enableDht: true);
+  final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(
+    engine,
+    listenInterfaces: '0.0.0.0:6881',
+    enableDht: true,
+  );
   if (session == null) {
     stderr.writeln('FAIL: cannot create session');
     exit(1);
   }
 
-  final FtAddResult added =
-      session.addMagnet(magnet, savePath: saveDir.path, sequential: true);
+  final FtAddResult added = session.addMagnet(
+    magnet,
+    savePath: saveDir.path,
+    sequential: true,
+  );
   if (!added.ok || added.id == null) {
     stderr.writeln('FAIL: addMagnet: ${added.error}');
     session.close();
@@ -56,18 +64,22 @@ Future<void> main(List<String> args) async {
     }
     if (!flppApplied && t.hasMetadata) {
       flppApplied = session.applyFirstLastPriority(id) == 1;
-      stdout.writeln('metadata ready: ${t.name}; first/last piece '
-          'priority ${flppApplied ? 'applied' : 'FAILED'}');
+      stdout.writeln(
+        'metadata ready: ${t.name}; first/last piece '
+        'priority ${flppApplied ? 'applied' : 'FAILED'}',
+      );
       final List<FtFileEntry>? files = session.torrentFiles(id);
       for (final FtFileEntry f in files ?? const <FtFileEntry>[]) {
         stdout.writeln('  [${f.index}] ${f.path} (${f.size} bytes)');
       }
     }
     final String pct = (t.progress * 100).toStringAsFixed(1);
-    stdout.writeln('[${t.state}] $pct%  '
-        'down ${(t.downRate / 1024).toStringAsFixed(0)} KiB/s  '
-        'up ${(t.upRate / 1024).toStringAsFixed(0)} KiB/s  '
-        'peers ${t.numPeers}  left ${t.left}');
+    stdout.writeln(
+      '[${t.state}] $pct%  '
+      'down ${(t.downRate / 1024).toStringAsFixed(0)} KiB/s  '
+      'up ${(t.upRate / 1024).toStringAsFixed(0)} KiB/s  '
+      'peers ${t.numPeers}  left ${t.left}',
+    );
     if (t.isFinished && t.progress >= 1.0) {
       stdout.writeln('PASS: download complete → ${t.contentPath}');
       break;

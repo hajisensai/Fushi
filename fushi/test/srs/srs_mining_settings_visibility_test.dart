@@ -1,10 +1,16 @@
 // 制卡设置：挖词目标 = Fushi 复习时，只作用于 Anki 发送链路的项（AnkiConnect、Anki
-// 牌组 / 笔记类型、Lapis、批量制卡、跨设备中转、查重范围、重排……）不显示也搜不到，
+// 牌组 / 笔记类型、Lapis、批量制卡、跨设备中转、查重范围……）不显示也搜不到，
 // 换成 Fushi 复习的牌组 / 笔记类型；目标切回 Anki 时一切照旧。切换即时生效。
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/anki/anki_view_model.dart'
+    show pendingMineCountProvider;
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/platform/platform_providers.dart'
+    show platformServicesProvider;
+import 'package:fushi/src/pages/implementations/anki_settings_page.dart'
+    show AnkiSectionRow;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -39,12 +45,11 @@ const List<String> _ankiOnlyEntries = <String>[
   'card_creation.anki.fetch',
   'card_creation.anki.create_lapis',
   'card_creation.anki.batch_mining',
+  'card_creation.anki.queue_undelivered_mines',
   'card_creation.anki.pending_mine_landing',
   'card_creation.anki.pending_mines',
   'card_creation.anki.deck',
   'card_creation.anki.note_type',
-  'card_creation.anki.reposition',
-  'card_creation.anki.reposition_auto',
   'card_creation.anki.duplicate_scope',
   'card_creation.anki.backup_import',
 ];
@@ -63,6 +68,7 @@ const List<String> _ankiUnconditional = <String>[
   'card_creation.anki.fetch',
   'card_creation.anki.create_lapis',
   'card_creation.anki.batch_mining',
+  'card_creation.anki.queue_undelivered_mines',
   'card_creation.anki.pending_mine_landing',
   'card_creation.anki.pending_mines',
 ];
@@ -78,6 +84,8 @@ const List<String> _sharedEntries = <String>[
 const List<String> _srsEntries = <String>[
   'card_creation.srs.deck',
   'card_creation.srs.note_type',
+  // 反馈 Rl00Di264R：复习目标的「后台制卡」。
+  'card_creation.srs.background_mining',
 ];
 
 void main() {
@@ -156,9 +164,13 @@ void main() {
       'card_creation.anki.allow_duplicates',
       'card_creation.anki.compact_glossaries',
       'card_creation.anki.overwrite_scope',
+      // 新卡按词频重排：复习层自己读写新卡位置，挪进「Fushi 复习」分组。
+      'card_creation.anki.reposition',
     ]) {
       expect(entry(id).isVisible(ctx), isTrue, reason: id);
     }
+    // 复习没有「制卡后自动重排」：出卡直接按卡上的词频名次排（牌组「新卡顺序」）。
+    expect(entry('card_creation.anki.reposition_auto').isVisible(ctx), isFalse);
     expect(navVisible(ctx, 'card_creation.media.open'), isTrue);
 
     // 切回 Anki：恢复。
@@ -203,4 +215,50 @@ void main() {
       expect(entry(id).isVisible(ctx), isFalse, reason: id);
     }
   });
+
+  // #ZWr6B6u_RM：空的「待发卡片」行不能以零尺寸行混进分段分组当组尾——入不入列由
+  // 分组按张数决定。
+  for (final int pending in <int>[0, 3]) {
+    testWidgets('待发卡片行只在会用到 / 有卡时入列（pending=$pending）', (
+      WidgetTester tester,
+    ) async {
+      final _TargetAppModel app = _TargetAppModel();
+      late SettingsContext ctx;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            appProvider.overrideWith((Ref ref) => app),
+            platformServicesProvider.overrideWithValue(testPlatformServices()),
+            pendingMineCountProvider.overrideWith(
+              (Ref ref) => Stream<int>.value(pending),
+            ),
+          ],
+          child: Consumer(
+            builder: (BuildContext context, WidgetRef ref, Widget? _) {
+              ref.watch(pendingMineCountProvider);
+              ctx = SettingsContext(
+                context: context,
+                appModel: app,
+                ref: ref,
+                readerSource: ReaderFushiSource.instance,
+                refresh: () {},
+              );
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+      final List<AnkiSectionRow> rows = ankiDeliveryRowsFor(ctx);
+      // 默认批量制卡与「连不上时暂存」都关着：只有队列里真有卡才露出。
+      expect(rows.contains(AnkiSectionRow.pendingMines), pending > 0);
+      expect(
+        rows.last,
+        pending > 0
+            ? AnkiSectionRow.pendingMines
+            : AnkiSectionRow.pendingLanding,
+        reason: '分组末行必须是真画出来的那一行',
+      );
+    });
+  }
 }

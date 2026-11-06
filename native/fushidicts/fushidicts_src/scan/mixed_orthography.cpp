@@ -15,6 +15,9 @@ bool is_kanji(char32_t c) {
          (c >= 0x2F800 && c <= 0x2FA1F) || c == 0x3005 || c == 0x3006 || c == 0x30F6;
 }
 
+
+}  // namespace
+
 bool is_kana(char32_t c) {
   if (is_kanji(c)) return false;
   return (c >= 0x3041 && c <= 0x3096) || (c >= 0x309D && c <= 0x309F) || (c >= 0x30A1 && c <= 0x30FA) ||
@@ -26,6 +29,8 @@ char32_t fold_kana(char32_t c) {
   if (c == 0x30FD || c == 0x30FE) return c - 0x60;  // ヽ ヾ → ゝ ゞ
   return c;
 }
+
+namespace {
 
 std::u32string to_u32(const std::string& s) {
   std::u32string out;

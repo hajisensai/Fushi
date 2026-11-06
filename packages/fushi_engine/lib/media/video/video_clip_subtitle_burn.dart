@@ -7,8 +7,8 @@
 /// 主场景里是纯负资产：既让文件播不了，播得了也看不见字。
 ///
 /// 为什么走 `overlay` 而不是 libass 的 `subtitles` filter：
-/// - `overlay` 是 ffmpeg **内建** filter，五个平台一个新原生依赖都不加，`ffmpeg-min`
-///   的构建脚本只需在 `FILTERS` 白名单里多一个词；libass 要拖进 libass + freetype +
+/// - `overlay` 是 ffmpeg **内建** filter，五个平台一个新原生依赖都不加（旧 `ffmpeg-min`
+///   的构建脚本当时只需在 `FILTERS` 白名单里多一个词；统一 FFmpeg 全组件构建已自带）；libass 要拖进 libass + freetype +
 ///   fribidi + fontconfig 四个库，而 macOS 那边（BUG-1443 起不能用 brew 的动态库）
 ///   得把整条依赖链从源码静态编一遍。
 /// - 布局全在 Dart 侧算完（[ClipBurnCue.pngPath] 是一张与视频**同分辨率**的全画幅
@@ -34,15 +34,13 @@ import 'package:meta/meta.dart';
 /// 为什么是回调而不是让导出层直接调渲染函数：导出层只懂 ffmpeg，**画成什么样是页面
 /// 层的事**——只有页面知道用户的字幕外观设置和屏幕上视频区有多高（决定字号换算）。
 /// 导出层负责探出画面尺寸并把它喂回来，两边各管各的。
-typedef ClipSubtitleFrameRenderer = Future<Uint8List?> Function(
-  ClipSubtitleCue cue,
-  ClipFrameSize frame,
-);
+typedef ClipSubtitleFrameRenderer =
+    Future<Uint8List?> Function(ClipSubtitleCue cue, ClipFrameSize frame);
 
-/// 烧录需要、且 `ffmpeg-min` 的 `FILTERS` 白名单里必须有的 filter。
+/// 烧录需要、且本机 ffmpeg 必须编入的 filter（统一 FFmpeg 已具备；用户自带的外部
+/// ffmpeg 仍需探测，见 [parseFfmpegFilterNames]）。
 ///
-/// 只有 `overlay` 是新增的；rgba→yuva420p 的转换由 ffmpeg 自动插入的 `scale`
-/// 承担，而 `scale` 早就在白名单里（见 `tool/ffmpeg-min/build-ffmpeg-min.sh`）。
+/// 只有 `overlay` 是必需的；rgba→yuva420p 的转换由 ffmpeg 自动插入的 `scale` 承担。
 const Set<String> kClipBurnRequiredFilters = <String>{'overlay'};
 
 /// 一次导出最多烧多少条字幕。
@@ -94,13 +92,13 @@ class ClipBurnCue {
 
 /// 纯函数：解析 `ffmpeg -filters` 的输出，拿到本机 ffmpeg 真正编进去了哪些 filter。
 ///
-/// 为什么必须解析而不是假设：随包的 `ffmpeg-min` 是 `--disable-everything` + 显式
-/// 白名单构建的（当前只有 28 个 filter），而用户也可能用 `FUSHI_FFMPEG` 指到自己的
-/// 完整版 ffmpeg。烧录能力只能探，不能猜。
+/// 为什么必须解析而不是假设：旧随包的 `ffmpeg-min` 是 `--disable-everything` + 显式
+/// 白名单构建的（当时只有 28 个 filter），统一 FFmpeg 已是全组件构建；但用户也可能用
+/// `FUSHI_FFMPEG` 指到自己的 ffmpeg，Linux 则用系统 ffmpeg。烧录能力只能探，不能猜。
 ///
 /// 两种真实输出的列宽**不一样**，解析器必须都吃：
 /// ```
-///  T.. ametadata         A->A       (null)      ← ffmpeg-min（n7.1.x），3 位 flag
+///  T.. ametadata         A->A       (null)      ← 旧 ffmpeg-min（n7.1.x），3 位 flag
 ///  TS overlay           VV->V      Overlay ...  ← 新版完整构建，2 位 flag
 /// ```
 /// 判据取「有 `->` 的行」而不是列位置：表头的 `T.. = Timeline support`、
@@ -115,8 +113,9 @@ Set<String> parseFfmpegFilterNames(String filtersLog) {
 }
 
 /// `<flags> <name> <in>-><out> <描述>`；flags 位数不固定，只要求不含空格。
-final RegExp _kFilterLine =
-    RegExp(r'^\s*[A-Z.]{1,4}\s+([A-Za-z0-9_]+)\s+[AVN|]+->[AVN|]+');
+final RegExp _kFilterLine = RegExp(
+  r'^\s*[A-Z.]{1,4}\s+([A-Za-z0-9_]+)\s+[AVN|]+->[AVN|]+',
+);
 
 /// 本机 ffmpeg 能不能烧字幕。
 ///
@@ -170,7 +169,9 @@ ClipFrameSize? parseClipFrameSize(String ffmpegLog) {
 
 /// `, 1920x1080 ` / `, 1920x1080[SAR...` / 行尾。前置的 `, ` 与词边界一起，
 /// 避免把 `DAR 16:9` 或时长里的数字凑成尺寸。
-final RegExp _kFrameSize = RegExp(r'(?:^|,)\s*(\d{2,5})x(\d{2,5})(?=[\s,\[]|$)');
+final RegExp _kFrameSize = RegExp(
+  r'(?:^|,)\s*(\d{2,5})x(\d{2,5})(?=[\s,\[]|$)',
+);
 
 /// 纯函数：拼字幕 PNG 的输入段（`-i c0.png -i c1.png …`）。
 ///
@@ -207,8 +208,9 @@ String buildClipBurnFilterGraph(List<ClipBurnCue> cues) {
   for (int i = 0; i < cues.length; i++) {
     final ClipBurnCue cue = cues[i];
     final String inLabel = i == 0 ? '[0:v]' : '[vb${i - 1}]';
-    final String outLabel =
-        i == cues.length - 1 ? kClipBurnOutputLabel : '[vb$i]';
+    final String outLabel = i == cues.length - 1
+        ? kClipBurnOutputLabel
+        : '[vb$i]';
     if (i > 0) sb.write(';');
     sb
       ..write(inLabel)

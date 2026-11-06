@@ -6,7 +6,15 @@ import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/epub/book_css_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 class BookCssEditorPage extends ConsumerStatefulWidget {
   const BookCssEditorPage({super.key, required this.extractDir});
@@ -95,8 +103,9 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
     for (int i = 0; i < snapshots.length; i++) {
       final String content = snapshots[i].content;
       _diskContent[i] = content;
-      final TextEditingController controller =
-          TextEditingController(text: content);
+      final TextEditingController controller = TextEditingController(
+        text: content,
+      );
       controller.addListener(_onTextChanged);
       _textControllers[i] = controller;
     }
@@ -193,9 +202,9 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
     // _guardUnsaved, so the page may already be popped/disposed. Guard the
     // snackbar like _doResetCurrent/_doResetAll (HBK-AUDIT-108).
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        FushiSnackBar(content: Text(t.book_css_editor_saved)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(FushiSnackBar(content: Text(t.book_css_editor_saved)));
     }
   }
 
@@ -273,7 +282,7 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
     // 重置前捕获「有自定义（.original 存在）」的条目，逐条记重置墓碑（跨端传播重置）。
     final List<CssFileEntry> customized = <CssFileEntry>[
       for (final CssFileEntry e in _entries)
-        if (e.hasOriginal) e
+        if (e.hasOriginal) e,
     ];
     _repo.resetAll();
     for (final CssFileEntry e in customized) {
@@ -451,10 +460,7 @@ class BookCssConfirmationDialog<T> extends StatelessWidget {
           tokens.spacing.card,
           tokens.spacing.card,
         ),
-        body: Text(
-          message,
-          style: tokens.type.listSubtitle,
-        ),
+        body: Text(message, style: tokens.type.listSubtitle),
         footer: Wrap(
           alignment: WrapAlignment.end,
           spacing: tokens.spacing.gap,

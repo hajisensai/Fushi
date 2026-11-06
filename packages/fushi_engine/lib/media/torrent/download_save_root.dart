@@ -21,8 +21,9 @@ String sourceIncomingCategoryPath(String sourceRoot, String category) =>
 
 /// [path] 是否位于来源 [sourceRoot] 的下载暂存目录内（含目录本身）。
 bool isSourceIncomingPath(String sourceRoot, String path) {
-  final String incoming =
-      p.normalize(p.join(sourceRoot, kSourceIncomingDirName));
+  final String incoming = p.normalize(
+    p.join(sourceRoot, kSourceIncomingDirName),
+  );
   final String normalized = p.normalize(path);
   return p.equals(incoming, normalized) || p.isWithin(incoming, normalized);
 }
@@ -82,7 +83,9 @@ class TorrentSaveRoots {
       if (uniqueLegacy.length >= kMaxSaveRootHistory) break;
     }
     return TorrentSaveRoots._(
-        normalizedActive, List<String>.unmodifiable(uniqueLegacy));
+      normalizedActive,
+      List<String>.unmodifiable(uniqueLegacy),
+    );
   }
 
   const TorrentSaveRoots._(this.active, this.legacy);
@@ -119,10 +122,8 @@ class TorrentSaveRoots {
   }
 
   /// 换活动根：旧的活动根自动降级成历史根（永不丢），新根等于旧根时是空操作。
-  TorrentSaveRoots withActive(String newActive) => TorrentSaveRoots(
-        active: newActive,
-        legacy: <String>[active, ...legacy],
-      );
+  TorrentSaveRoots withActive(String newActive) =>
+      TorrentSaveRoots(active: newActive, legacy: <String>[active, ...legacy]);
 
   @override
   bool operator ==(Object other) {

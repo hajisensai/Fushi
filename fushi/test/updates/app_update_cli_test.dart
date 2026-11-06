@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/settings/settings_cli_tasks.dart';
 import 'package:fushi/src/updates/app_update_cli.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../helpers/test_platform_services.dart';

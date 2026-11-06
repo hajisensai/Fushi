@@ -14,15 +14,19 @@ void main() {
 
   int dbSeq = 0;
 
-  String makeDb(Uint8List bytes,
-      {String file = 'nhk_001.mp3', String source = 'NHK'}) {
+  String makeDb(
+    Uint8List bytes, {
+    String file = 'nhk_001.mp3',
+    String source = 'NHK',
+  }) {
     final String p = '${tmp.path}/local_audio_${dbSeq++}.sqlite';
     final File f = File(p);
     if (f.existsSync()) f.deleteSync();
     final Database db = sqlite3.open(p);
     db.execute('CREATE TABLE android(file TEXT, source TEXT, data BLOB)');
-    final PreparedStatement stmt =
-        db.prepare('INSERT INTO android(file, source, data) VALUES(?, ?, ?)');
+    final PreparedStatement stmt = db.prepare(
+      'INSERT INTO android(file, source, data) VALUES(?, ?, ?)',
+    );
     stmt.execute(<Object?>[file, source, bytes]);
     stmt.dispose();
     db.dispose();
@@ -74,10 +78,16 @@ void main() {
       cacheDir: cacheDir,
     );
     // Without the existing-file fast path this would return null (DB missing).
-    expect(second, first,
-        reason: 'existing cache file must be returned without the DB');
-    expect(out.statSync().modified, firstModified,
-        reason: 'the file must not be rewritten on the second call');
+    expect(
+      second,
+      first,
+      reason: 'existing cache file must be returned without the DB',
+    );
+    expect(
+      out.statSync().modified,
+      firstModified,
+      reason: 'the file must not be rewritten on the second call',
+    );
   });
 
   test('different (file,source) yields a different cache file', () {

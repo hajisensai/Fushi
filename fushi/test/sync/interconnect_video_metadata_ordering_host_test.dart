@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.dart';
@@ -49,6 +49,8 @@ class _OrderingRunner
     required String workTitle,
     String? workStableKey,
     required String query,
+    VideoMetadataProviderKind? provider,
+    VideoMetadataMediaKind? mediaKind,
   }) async => const <VideoSourceScrapeConfirmationCandidate>[];
 
   @override
@@ -311,7 +313,10 @@ void main() {
 
     final ({int status, Object? json}) unknown =
         await post('/api/library/metadata/episode-group', {
-          'key': VideoMetadataWorkKey.collection(name: 'Nope', collectionType: 'playlist').toJson(),
+          'key': VideoMetadataWorkKey.collection(
+            name: 'Nope',
+            collectionType: 'playlist',
+          ).toJson(),
           'groupId': 'x',
         });
     expect(unknown.status, 409);

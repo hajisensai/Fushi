@@ -120,8 +120,8 @@ function fushiResolvePopupBox(theme, viewport, opts) {
   var t = theme && typeof theme === 'object' ? theme : {};
   var margin = opts && isFinite(opts.margin) ? opts.margin : 16;
 
-  var width = fushiParsePx(t['--fushi-popup-max-width'], 400);
-  var maxHeight = fushiParsePx(t['--fushi-popup-max-height'], 360);
+  var width = fushiParsePx(t['--fushi-popup-max-width'], 480);
+  var maxHeight = fushiParsePx(t['--fushi-popup-max-height'], 480);
   var zoom = parseFloat(t['--fushi-popup-zoom']) || 1;
   if (!(zoom > 0)) zoom = 1;
   // 扩展字号覆盖：opts.fontSizePx 显式给出（测试 / 调用方）优先，否则用当前生效覆盖。

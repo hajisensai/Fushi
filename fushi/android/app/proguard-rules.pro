@@ -98,7 +98,8 @@
 # R8 rename them makes every build-session / build-tensor / throw path fail at runtime.
 # This is release-only and invisible in debug (minifyEnabled is false there) -- the same
 # shape as the Mihon kotlin.Lazy breakage.
-# Verified against onnxruntime-android 1.23.0: the AAR ships classes.jar ONLY, with no
+# Verified against onnxruntime-android 1.23.0 and 1.28.0 (same 12 descriptors): the AAR
+# ships classes.jar ONLY, with no
 # consumer proguard.txt, so nothing keeps these unless we do. Descriptors hardcoded in
 # the .so: MapInfo NodeInfo OnnxMap OnnxModelMetadata OnnxSequence OnnxSparseTensor
 # OnnxTensor OnnxValue OrtException SequenceInfo TensorInfo ValueInfo.

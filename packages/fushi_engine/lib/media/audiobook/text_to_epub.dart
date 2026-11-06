@@ -155,16 +155,19 @@ class TextToEpub {
 
   static String _extractBody(String html) {
     // Try to extract <body> content
-    final bodyMatch =
-        RegExp(r'<body[^>]*>([\s\S]*?)</body>', caseSensitive: false)
-            .firstMatch(html);
+    final bodyMatch = RegExp(
+      r'<body[^>]*>([\s\S]*?)</body>',
+      caseSensitive: false,
+    ).firstMatch(html);
     if (bodyMatch != null) return bodyMatch.group(1)!.trim();
     // If no body tags, use as-is but strip doctype/html/head
     return html
         .replaceAll(RegExp('<!DOCTYPE[^>]*>', caseSensitive: false), '')
         .replaceAll(RegExp('</?html[^>]*>', caseSensitive: false), '')
         .replaceAll(
-            RegExp(r'<head[^>]*>[\s\S]*?</head>', caseSensitive: false), '')
+          RegExp(r'<head[^>]*>[\s\S]*?</head>', caseSensitive: false),
+          '',
+        )
         .trim();
   }
 

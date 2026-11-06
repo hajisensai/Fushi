@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 Widget _host(Widget child, {bool reduceMotion = false}) => MaterialApp(
   home: MediaQuery(
@@ -260,4 +261,69 @@ void main() {
     // 全部按钮并成一组：组间不插竖分隔线。
     expect(call, contains('for (final List<FushiToolbarItem> g in dock) ...g'));
   });
+
+  // 反馈 5JA3m7P9BP：三种按钮形态都把图标显式染色，显式色盖掉 IconButton /
+  // InkWell 的禁用前景，禁用按钮（onPressed == null）看起来和可用的一样。
+  for (final bool showLabels in <bool>[false, true]) {
+    testWidgets(
+      'disabled toolbar item dims its icon (showLabels=$showLabels)',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(
+          _host(
+            FushiFloatingToolbar(
+              showLabels: showLabels,
+              groups: <List<FushiToolbarItem>>[
+                <FushiToolbarItem>[
+                  FushiToolbarItem(
+                    icon: Icons.list,
+                    label: 'Enabled',
+                    onPressed: () {},
+                  ),
+                  const FushiToolbarItem(
+                    icon: Icons.checklist,
+                    label: 'Disabled',
+                    onPressed: null,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+        Color iconColor(IconData icon) => tester
+            .widget<FushiIcon>(
+              find.byWidgetPredicate(
+                (Widget w) => w is FushiIcon && w.icon == icon,
+              ),
+            )
+            .color!;
+        final Color enabled = iconColor(Icons.list);
+        final Color disabled = iconColor(Icons.checklist);
+        expect(
+          disabled.a,
+          closeTo(enabled.a * kFushiToolbarDisabledForegroundOpacity, 0.01),
+        );
+        expect(disabled.withValues(alpha: 1), enabled.withValues(alpha: 1));
+      },
+    );
+  }
+
+  test(
+    'fushiToolbarItemForeground: selected + disabled dims the selected fg',
+    () {
+      const Color fg = Color(0xFF112233);
+      const Color sel = Color(0xFF445566);
+      final Color c = fushiToolbarItemForeground(
+        const FushiToolbarItem(
+          icon: Icons.tune,
+          label: 'x',
+          onPressed: null,
+          selected: true,
+        ),
+        foreground: fg,
+        selectedForeground: sel,
+      );
+      expect(c.a, closeTo(kFushiToolbarDisabledForegroundOpacity, 0.01));
+      expect(c.withValues(alpha: 1), sel);
+    },
+  );
 }

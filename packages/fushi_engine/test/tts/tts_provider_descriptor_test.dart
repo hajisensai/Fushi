@@ -26,10 +26,19 @@ void main() {
     const GptSovitsTtsDescriptor sovits = GptSovitsTtsDescriptor();
 
     test('GPT-SoVITS: missing ref audio reported, defaults fill the rest', () {
-      expect(sovits.validate(_preset(sovits.id)), <String>['ref_audio_path', 'prompt_text']);
+      expect(sovits.validate(_preset(sovits.id)), <String>[
+        'ref_audio_path',
+        'prompt_text',
+      ]);
       expect(
         sovits.validate(
-          _preset(sovits.id, params: <String, String>{'ref_audio_path': '/r', 'prompt_text': 'p'}),
+          _preset(
+            sovits.id,
+            params: <String, String>{
+              'ref_audio_path': '/r',
+              'prompt_text': 'p',
+            },
+          ),
         ),
         isEmpty,
       );
@@ -59,7 +68,11 @@ void main() {
           sovits.validate(
             _preset(
               sovits.id,
-              params: <String, String>{'endpoint': bad, 'ref_audio_path': '/r', 'prompt_text': 'p'},
+              params: <String, String>{
+                'endpoint': bad,
+                'ref_audio_path': '/r',
+                'prompt_text': 'p',
+              },
             ),
           ),
           <String>['endpoint'],
@@ -82,10 +95,9 @@ void main() {
     });
 
     test('Azure / Google need api key; Edge needs nothing', () {
-      expect(
-        const AzureTtsDescriptor().validate(_preset('azure')),
-        <String>['api_key'],
-      );
+      expect(const AzureTtsDescriptor().validate(_preset('azure')), <String>[
+        'api_key',
+      ]);
       expect(
         const AzureTtsDescriptor().validate(
           _preset('azure', secrets: <String, String>{'api_key': 'k'}),
@@ -125,41 +137,46 @@ void main() {
       expect(id.values, isNot(contains('secret')));
     });
 
-    test('changing endpoint / key keeps cache key; voice or revision changes it', () {
-      const GptSovitsTtsDescriptor d = GptSovitsTtsDescriptor();
-      String key(TtsVoicePreset p) =>
-          TtsAudioCache.keyFor(d.audioIdentity(p), 'text');
-      final String base = key(
-        _preset(d.id, params: <String, String>{'ref_audio_path': '/a.wav'}),
-      );
-      expect(
-        key(
-          _preset(
-            d.id,
-            params: <String, String>{
-              'ref_audio_path': '/a.wav',
-              'endpoint': 'http://other:1',
-            },
-            secrets: <String, String>{'api_key': 'x'},
+    test(
+      'changing endpoint / key keeps cache key; voice or revision changes it',
+      () {
+        const GptSovitsTtsDescriptor d = GptSovitsTtsDescriptor();
+        String key(TtsVoicePreset p) =>
+            TtsAudioCache.keyFor(d.audioIdentity(p), 'text');
+        final String base = key(
+          _preset(d.id, params: <String, String>{'ref_audio_path': '/a.wav'}),
+        );
+        expect(
+          key(
+            _preset(
+              d.id,
+              params: <String, String>{
+                'ref_audio_path': '/a.wav',
+                'endpoint': 'http://other:1',
+              },
+              secrets: <String, String>{'api_key': 'x'},
+            ),
           ),
-        ),
-        base,
-      );
-      expect(
-        key(_preset(d.id, params: <String, String>{'ref_audio_path': '/b.wav'})),
-        isNot(base),
-      );
-      expect(
-        key(
-          _preset(
-            d.id,
-            params: <String, String>{'ref_audio_path': '/a.wav'},
-            revision: 1,
+          base,
+        );
+        expect(
+          key(
+            _preset(d.id, params: <String, String>{'ref_audio_path': '/b.wav'}),
           ),
-        ),
-        isNot(base),
-      );
-    });
+          isNot(base),
+        );
+        expect(
+          key(
+            _preset(
+              d.id,
+              params: <String, String>{'ref_audio_path': '/a.wav'},
+              revision: 1,
+            ),
+          ),
+          isNot(base),
+        );
+      },
+    );
 
     test('Azure excludes region / api_key, includes voice', () {
       const AzureTtsDescriptor d = AzureTtsDescriptor();

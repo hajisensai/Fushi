@@ -12,8 +12,7 @@ import 'package:fushi/src/sync/google_drive_auth.dart';
 /// to the friendly "not configured in this build" message.
 void main() {
   group('GoogleDriveAuth placeholder fail-fast (TODO-045)', () {
-    test(
-        'isDesktopSecretConfigured rejects the placeholder but accepts a real '
+    test('isDesktopSecretConfigured rejects the placeholder but accepts a real '
         'secret', () {
       // Environment-independent contract: feed the predicate the exact
       // placeholder string and a representative real GOCSPX- secret directly,
@@ -41,8 +40,7 @@ void main() {
       );
     });
 
-    test(
-        'authenticate() throws the not-configured marker on a placeholder build '
+    test('authenticate() throws the not-configured marker on a placeholder build '
         'instead of opening the browser', () async {
       // This end-to-end path can only be exercised on a build that actually
       // ships the placeholder (CI / a clone that never filled the secret); on a
@@ -69,23 +67,33 @@ void main() {
   });
 
   group('source guard: fail-fast precedes the browser loopback', () {
-    test(
-        'authenticate() checks desktopCredentialsConfigured before '
+    test('authenticate() checks desktopCredentialsConfigured before '
         'runDesktopOAuthLoopback', () {
       final File src = File('lib/src/sync/google_drive_auth.dart');
-      expect(src.existsSync(), isTrue,
-          reason: 'run from the fushi/ package root');
+      expect(
+        src.existsSync(),
+        isTrue,
+        reason: 'run from the fushi/ package root',
+      );
       final String body = src.readAsStringSync();
 
       final int guardIdx = body.indexOf('!desktopCredentialsConfigured');
       final int loopbackIdx = body.indexOf('runDesktopOAuthLoopback');
-      expect(guardIdx, greaterThanOrEqualTo(0),
-          reason: 'the placeholder fail-fast guard was removed; the browser '
-              'flow would run before invalid_client 401 (TODO-045)');
+      expect(
+        guardIdx,
+        greaterThanOrEqualTo(0),
+        reason:
+            'the placeholder fail-fast guard was removed; the browser '
+            'flow would run before invalid_client 401 (TODO-045)',
+      );
       expect(loopbackIdx, greaterThanOrEqualTo(0));
-      expect(guardIdx, lessThan(loopbackIdx),
-          reason: 'the credentials check must run BEFORE the browser loopback '
-              'so we never open a browser on a misconfigured build');
+      expect(
+        guardIdx,
+        lessThan(loopbackIdx),
+        reason:
+            'the credentials check must run BEFORE the browser loopback '
+            'so we never open a browser on a misconfigured build',
+      );
     });
   });
 }

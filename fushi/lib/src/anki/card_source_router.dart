@@ -3,7 +3,8 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/media.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
@@ -12,6 +13,7 @@ import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/source_review_session.dart';
 import 'package:fushi/src/anki/source_review_draft_store.dart';
 import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
+import 'package:fushi/src/mining/mined_origin_navigation.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -24,7 +26,11 @@ import 'package:fushi/src/pages/implementations/collections_page.dart'
     show buildCollectionReaderMediaItem;
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -55,7 +61,9 @@ RemoteVideoInfo? findRemoteVideoForCardSource(
 ) {
   if (link.kind != CardSourceKind.video) return null;
   for (final RemoteVideoInfo video in videos) {
-    if (video.id == link.uid) return video;
+    // host 列出但没有字节可给的条目（网络流书 / `.strm`，BUG-3875）跳过：点过去
+    // 只会撞 `/streamurl` 404，按「没有来源」提示才是真话。
+    if (video.id == link.uid && video.peerPlayable) return video;
   }
   return null;
 }
@@ -104,6 +112,28 @@ Future<void> _openCardSource({
   final AppModel app = ref.read(appProvider);
   final NavigatorState? navigator = app.navigatorKey.currentState;
   if (navigator == null || app.isMigrationReadonly) return;
+  // 游戏 / 音乐出处没有「回看并改原卡」的审阅形态（游戏台词不在可重放的正文里，
+  // 音乐只是一段原曲）：直接落到出处本身，不建 [SourceReviewSession]。
+  switch (link.kind) {
+    case CardSourceKind.game:
+      await openGameOrigin(
+        navigator: navigator,
+        db: app.database,
+        gameId: link.uid,
+      );
+      return;
+    case CardSourceKind.music:
+      await playMusicOriginClip(
+        app: app,
+        trackUid: link.uid,
+        positionMs: link.startMs ?? 0,
+      );
+      return;
+    case CardSourceKind.book:
+    case CardSourceKind.manga:
+    case CardSourceKind.video:
+      break;
+  }
   final EpubBookRow? book = link.kind == CardSourceKind.video
       ? null
       : await resolveCardSourceBook(app.database, link);

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart';
+import 'package:fushi/src/media/playback_route_marks.dart';
 
 import '../../helpers/source_guard.dart';
 
@@ -121,6 +122,56 @@ void main() {
     }
   });
 
+  // BUG-4084 追加（用户 2026-11-05）：有声书播放页（歌词模式覆盖层）也是「播放页」，
+  // 盖住浏览器时浏览页要让网页停下；退回正文阅读（覆盖层撤掉）就不算了。
+  testWidgets('歌词模式覆盖层挂着时把所在路由登记成播放页，撤掉即撤登记', (WidgetTester tester) async {
+    final ValueNotifier<bool> lyricsMode = ValueNotifier<bool>(true);
+    addTearDown(lyricsMode.dispose);
+    late BuildContext pageContext;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) {
+            pageContext = context;
+            return Scaffold(
+              body: ValueListenableBuilder<bool>(
+                valueListenable: lyricsMode,
+                builder: (BuildContext context, bool on, Widget? _) => on
+                    ? ReaderLyricsPlayerOverlay(
+                        lyricsView: const SizedBox.expand(),
+                        data: LyricsPlayerData(
+                          title: '無職転生',
+                          cover: null,
+                          isPlaying: false,
+                          speed: 1,
+                          lyricsMasked: false,
+                          clock: _FakeClock(),
+                          controlsStyle: LyricsControlsStyle.classic,
+                        ),
+                        callbacks: callbacks(),
+                        onHtmlThemeChanged: (_) {},
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    final Route<dynamic> route = ModalRoute.of(pageContext)!;
+    expect(playbackRouteMarks.isPlayback(route), isTrue);
+
+    lyricsMode.value = false;
+    await tester.pump();
+    expect(
+      playbackRouteMarks.isPlayback(route),
+      isFalse,
+      reason: '退回正文阅读：阅读器页不再算播放页',
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
   for (final String design in <String>['md3']) {
     testWidgets('$design：宽窄切换不重建歌词 WebView，矩形随布局变化', (
       WidgetTester tester,
@@ -140,6 +191,9 @@ void main() {
               speed: 1,
               lyricsMasked: false,
               clock: clock,
+              // 这几条钉的是经典布局（左栏封面 + 右栏歌词 + 左右互换）；新版布局见
+              // lyrics_modern_layout_test.dart。
+              controlsStyle: LyricsControlsStyle.classic,
             ),
             callbacks: callbacks(),
             onHtmlThemeChanged: (LyricsHtmlTheme t) => reported = t,
@@ -195,6 +249,9 @@ void main() {
             speed: 1,
             lyricsMasked: false,
             clock: clock,
+            // 这几条钉的是经典布局（左栏封面 + 右栏歌词 + 左右互换）；新版布局见
+            // lyrics_modern_layout_test.dart。
+            controlsStyle: LyricsControlsStyle.classic,
             sidesMirrored: mirrored,
           ),
           callbacks: LyricsPlayerCallbacks(
@@ -267,6 +324,9 @@ void main() {
             speed: 1,
             lyricsMasked: false,
             clock: clock,
+            // 这几条钉的是经典布局（左栏封面 + 右栏歌词 + 左右互换）；新版布局见
+            // lyrics_modern_layout_test.dart。
+            controlsStyle: LyricsControlsStyle.classic,
             sidesMirrored: mirrored,
           ),
           callbacks: callbacks(),
@@ -311,7 +371,6 @@ void main() {
       alignStart: true,
       contextBlurPx: 0,
       rowRadius: 16,
-      hoverFill: Color(0x14FFFFFF),
     );
     final ({Map<String, String> vars, List<String> bodyClasses}) v =
         LyricsModeHtml.themeVars(theme);

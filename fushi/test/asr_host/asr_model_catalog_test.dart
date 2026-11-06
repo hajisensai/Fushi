@@ -16,8 +16,9 @@ import 'package:fushi/src/asr_host/asr_model_catalog.dart';
 void main() {
   group('buildAsrModelRegistry', () {
     test('空目录：每种内置语言的默认包与内置表逐字相同', () {
-      final AsrModelRegistry registry =
-          buildAsrModelRegistry(AsrModelCatalog.empty);
+      final AsrModelRegistry registry = buildAsrModelRegistry(
+        AsrModelCatalog.empty,
+      );
       final AsrModelRegistry builtin = AsrModelRegistry.builtin();
       for (final AsrLanguage language in AsrLanguage.values) {
         expect(
@@ -55,11 +56,12 @@ void main() {
       );
     });
 
-    test('选中 Kitsune：置顶的窄包保留 NeMo mel 前端与许可（否则按波形 CTC 装载必失败）',
-        () {
+    test('选中 Kitsune：置顶的窄包保留 NeMo mel 前端与许可（否则按波形 CTC 装载必失败）', () {
       final AsrModelRegistry registry = buildAsrModelRegistry(
-        AsrModelCatalog.empty
-            .withChoice(AsrLanguage.japanese, kAsrKitsunePack.id),
+        AsrModelCatalog.empty.withChoice(
+          AsrLanguage.japanese,
+          kAsrKitsunePack.id,
+        ),
       );
       // 选择默认记在有声书上（老键），窄包只在那种素材上参选。
       final AsrModelPack? chosen = registry.packForLanguage(
@@ -97,8 +99,10 @@ void main() {
     });
 
     test('给日语选 Omnilingual：只有日语变，英语等其余语言不受影响', () {
-      final AsrModelCatalog catalog = AsrModelCatalog.empty
-          .withChoice(AsrLanguage.japanese, kAsrOmnilingualPack.id);
+      final AsrModelCatalog catalog = AsrModelCatalog.empty.withChoice(
+        AsrLanguage.japanese,
+        kAsrOmnilingualPack.id,
+      );
       final AsrModelRegistry registry = buildAsrModelRegistry(catalog);
 
       // 老键（语言标签）只管有声书：按 cleanSpeech 查。
@@ -132,9 +136,9 @@ void main() {
           .withChoice(AsrLanguage.japanese, kAsrOmnilingualPack.id)
           .withChoice(AsrLanguage.japanese, null);
       expect(
-        buildAsrModelRegistry(catalog)
-            .packForLanguage(AsrLanguage.japanese)
-            ?.id,
+        buildAsrModelRegistry(
+          catalog,
+        ).packForLanguage(AsrLanguage.japanese)?.id,
         kAsrJapanesePack.id,
       );
     });
@@ -148,8 +152,10 @@ void main() {
         reason: '接入一个包不该悄悄顶掉默认模型',
       );
 
-      final AsrModelCatalog chosen =
-          added.withChoice(AsrLanguage.japanese, mine.id);
+      final AsrModelCatalog chosen = added.withChoice(
+        AsrLanguage.japanese,
+        mine.id,
+      );
       expect(
         buildAsrModelRegistry(chosen)
             .packForLanguage(
@@ -162,13 +168,17 @@ void main() {
     });
 
     test('自带包与内置同 id：就地覆盖内容，不改谁是默认', () {
-      final AsrModelPack shadow =
-          _fakePack(kAsrJapanesePack.id, AsrLanguage.japanese, name: '我的日语');
+      final AsrModelPack shadow = _fakePack(
+        kAsrJapanesePack.id,
+        AsrLanguage.japanese,
+        name: '我的日语',
+      );
       final AsrModelRegistry registry = buildAsrModelRegistry(
         AsrModelCatalog.empty.withCustomPack(shadow),
       );
-      final AsrModelPack? resolved =
-          registry.packForLanguage(AsrLanguage.japanese);
+      final AsrModelPack? resolved = registry.packForLanguage(
+        AsrLanguage.japanese,
+      );
       expect(resolved?.id, kAsrJapanesePack.id);
       expect(resolved?.displayName, '我的日语');
       // 同 id 不能变成两个包（磁盘目录同名，设置页会画出两行同名模型）。
@@ -186,9 +196,9 @@ void main() {
           .withoutCustomPack(mine.id);
       expect(catalog.choices, isEmpty);
       expect(
-        buildAsrModelRegistry(catalog)
-            .packForLanguage(AsrLanguage.japanese)
-            ?.id,
+        buildAsrModelRegistry(
+          catalog,
+        ).packForLanguage(AsrLanguage.japanese)?.id,
         kAsrJapanesePack.id,
       );
     });
@@ -199,9 +209,9 @@ void main() {
           .withCustomPack(enOnly)
           .withChoice(AsrLanguage.japanese, enOnly.id);
       expect(
-        buildAsrModelRegistry(catalog)
-            .packForLanguage(AsrLanguage.japanese)
-            ?.id,
+        buildAsrModelRegistry(
+          catalog,
+        ).packForLanguage(AsrLanguage.japanese)?.id,
         kAsrJapanesePack.id,
       );
     });
@@ -209,10 +219,13 @@ void main() {
 
   group('asrModelChoicesFor', () {
     test('日语能选内置包与 Omnilingual，第一项是当前生效的那个', () {
-      final AsrModelRegistry registry =
-          buildAsrModelRegistry(AsrModelCatalog.empty);
-      final List<AsrModelPack> choices =
-          asrModelChoicesFor(AsrLanguage.japanese, registry);
+      final AsrModelRegistry registry = buildAsrModelRegistry(
+        AsrModelCatalog.empty,
+      );
+      final List<AsrModelPack> choices = asrModelChoicesFor(
+        AsrLanguage.japanese,
+        registry,
+      );
       expect(choices.first.id, kAsrJapanesePack.id);
       expect(
         choices.map((AsrModelPack p) => p.id),
@@ -222,11 +235,15 @@ void main() {
 
     test('选中后第一项就是选中的那个，且不出现重复 id', () {
       final AsrModelRegistry registry = buildAsrModelRegistry(
-        AsrModelCatalog.empty
-            .withChoice(AsrLanguage.japanese, kAsrOmnilingualPack.id),
+        AsrModelCatalog.empty.withChoice(
+          AsrLanguage.japanese,
+          kAsrOmnilingualPack.id,
+        ),
       );
-      final List<AsrModelPack> choices =
-          asrModelChoicesFor(AsrLanguage.japanese, registry);
+      final List<AsrModelPack> choices = asrModelChoicesFor(
+        AsrLanguage.japanese,
+        registry,
+      );
       expect(choices.first.id, kAsrOmnilingualPack.id);
       expect(
         choices.map((AsrModelPack p) => p.id).toSet(),
@@ -250,7 +267,9 @@ void main() {
         kAsrJapanesePack.id,
         profile: AsrAudioProfile.mixedAudio,
       );
-      expect(catalog.choices, <String, String>{'ja@mixedAudio': 'reazonspeech-k2-v2'});
+      expect(catalog.choices, <String, String>{
+        'ja@mixedAudio': 'reazonspeech-k2-v2',
+      });
       expect(
         catalog
             .withChoice(
@@ -264,8 +283,9 @@ void main() {
     });
 
     test('没做过选择：视频默认 Parakeet，有声书默认 ReazonSpeech', () {
-      final AsrModelRegistry registry =
-          buildAsrModelRegistry(AsrModelCatalog.empty);
+      final AsrModelRegistry registry = buildAsrModelRegistry(
+        AsrModelCatalog.empty,
+      );
       expect(
         registry
             .packForLanguage(
@@ -294,16 +314,20 @@ void main() {
         kAsrParakeetJapanesePack.id,
       );
       expect(
-        asrModelChoicesFor(AsrLanguage.japanese, registry)
-            .map((AsrModelPack p) => p.id),
+        asrModelChoicesFor(
+          AsrLanguage.japanese,
+          registry,
+        ).map((AsrModelPack p) => p.id),
         isNot(contains(kAsrParakeetJapanesePack.id)),
       );
     });
 
     test('老用户在有声书里选过 ReazonSpeech（老键 ja）不会把视频钉死在它上面', () {
       final AsrModelRegistry registry = buildAsrModelRegistry(
-        AsrModelCatalog.empty
-            .withChoice(AsrLanguage.japanese, kAsrJapanesePack.id),
+        AsrModelCatalog.empty.withChoice(
+          AsrLanguage.japanese,
+          kAsrJapanesePack.id,
+        ),
       );
       expect(
         registry
@@ -348,8 +372,10 @@ void main() {
 
     test('把只服务视频的包选给有声书：这条选择被忽略，回落默认', () {
       final AsrModelRegistry registry = buildAsrModelRegistry(
-        AsrModelCatalog.empty
-            .withChoice(AsrLanguage.japanese, kAsrParakeetJapanesePack.id),
+        AsrModelCatalog.empty.withChoice(
+          AsrLanguage.japanese,
+          kAsrParakeetJapanesePack.id,
+        ),
       );
       expect(
         registry
@@ -382,14 +408,8 @@ void main() {
 
   group('asrModelFitFor', () {
     test('内置 transducer 包全是轻量档', () {
-      expect(
-        asrModelFitFor(kAsrJapanesePack, mobile: true),
-        AsrModelFit.light,
-      );
-      expect(
-        asrModelFitFor(kAsrEnglishPack, mobile: false),
-        AsrModelFit.light,
-      );
+      expect(asrModelFitFor(kAsrJapanesePack, mobile: true), AsrModelFit.light);
+      expect(asrModelFitFor(kAsrEnglishPack, mobile: false), AsrModelFit.light);
     });
 
     test('Omnilingual 1B：桌面是「大模型」，手机上要明说很慢', () {
@@ -408,8 +428,9 @@ void main() {
     test('一语言一包是专用；Omnilingual 与基础清单里的它都是通用', () {
       expect(asrModelScopeFor(kAsrJapanesePack), AsrModelScope.dedicated);
       expect(asrModelScopeFor(kAsrOmnilingualPack), AsrModelScope.multilingual);
-      final AsrModelPack widened = fushiAsrBasePacks()
-          .firstWhere((AsrModelPack p) => p.id == kAsrOmnilingualPack.id);
+      final AsrModelPack widened = fushiAsrBasePacks().firstWhere(
+        (AsrModelPack p) => p.id == kAsrOmnilingualPack.id,
+      );
       expect(asrModelScopeFor(widened), AsrModelScope.multilingual);
     });
 
@@ -454,14 +475,15 @@ void main() {
       if (dir.existsSync()) await dir.delete(recursive: true);
     });
 
-    void write(String name) => File('${dir.path}${Platform.pathSeparator}$name')
-        .writeAsBytesSync(<int>[1, 2, 3]);
+    void write(String name) => File(
+      '${dir.path}${Platform.pathSeparator}$name',
+    ).writeAsBytesSync(<int>[1, 2, 3]);
 
     AsrLocalModelScan scan() => scanLocalAsrModelDirectory(
-          dir: dir,
-          displayName: '我的模型',
-          languages: <AsrLanguage>[AsrLanguage.japanese],
-        );
+      dir: dir,
+      displayName: '我的模型',
+      languages: <AsrLanguage>[AsrLanguage.japanese],
+    );
 
     test('transducer 三件套：认出来，两个变体角色都齐', () {
       write('tokens.txt');
@@ -495,13 +517,15 @@ void main() {
     test('单个 CTC 模型：按 ctc 认，blank 记号照传', () {
       write('tokens.txt');
       write('model.onnx');
-      final AsrModelPack pack = (scanLocalAsrModelDirectory(
-        dir: dir,
-        displayName: 'ctc',
-        languages: <AsrLanguage>[AsrLanguage.japanese],
-        blankToken: '<s>',
-      ) as AsrLocalModelFound)
-          .pack;
+      final AsrModelPack pack =
+          (scanLocalAsrModelDirectory(
+                    dir: dir,
+                    displayName: 'ctc',
+                    languages: <AsrLanguage>[AsrLanguage.japanese],
+                    blankToken: '<s>',
+                  )
+                  as AsrLocalModelFound)
+              .pack;
       expect(pack.architecture, AsrModelArchitecture.ctc);
       expect(pack.blankToken, '<s>');
     });
@@ -510,10 +534,7 @@ void main() {
       write('tokens.txt');
       write('model.onnx');
       final AsrModelPack pack = (scan() as AsrLocalModelFound).pack;
-      expect(
-        pack.fileForRole(AsrModelRole.vad).fileName,
-        kAsrVadFile.fileName,
-      );
+      expect(pack.fileForRole(AsrModelRole.vad).fileName, kAsrVadFile.fileName);
     });
 
     test('目录里有 silero_vad 时用它，且不会被当成 CTC 模型', () {
@@ -566,8 +587,10 @@ void main() {
 
     test('bootstrap 现读目录文件装表（没有 token 也照装）', () {
       final File file = catalogFile(
-        AsrModelCatalog.empty
-            .withChoice(AsrLanguage.japanese, kAsrOmnilingualPack.id),
+        AsrModelCatalog.empty.withChoice(
+          AsrLanguage.japanese,
+          kAsrOmnilingualPack.id,
+        ),
       );
       asrModelRegistry = AsrModelRegistry.builtin();
 
@@ -600,8 +623,10 @@ void main() {
       // 用户在弹层里换了模型 → 先落盘。backend 的 bootstrapArg 是同一个路径，
       // 下一次起 isolate 读到的就是新的。
       catalogFile(
-        AsrModelCatalog.empty
-            .withChoice(AsrLanguage.japanese, kAsrOmnilingualPack.id),
+        AsrModelCatalog.empty.withChoice(
+          AsrLanguage.japanese,
+          kAsrOmnilingualPack.id,
+        ),
       );
       fushiAsrIsolateBootstrap(<Object?>[null, file.path]);
       expect(
@@ -626,9 +651,10 @@ void main() {
       fushiAsrIsolateBootstrap(<Object?>[null]);
       expect(asrModelPackFor(AsrLanguage.japanese).id, kAsrJapanesePack.id);
 
-      fushiAsrIsolateBootstrap(
-        <Object?>[null, '${dir.path}${Platform.pathSeparator}nope.json'],
-      );
+      fushiAsrIsolateBootstrap(<Object?>[
+        null,
+        '${dir.path}${Platform.pathSeparator}nope.json',
+      ]);
       expect(asrModelPackFor(AsrLanguage.japanese).id, kAsrJapanesePack.id);
     });
   });
@@ -643,8 +669,9 @@ void main() {
         'decoder-epoch-99-avg-1.onnx',
         'joiner-epoch-99-avg-1.onnx',
       ]) {
-        File('${dir.path}${Platform.pathSeparator}$name')
-            .writeAsBytesSync(<int>[1, 2, 3]);
+        File(
+          '${dir.path}${Platform.pathSeparator}$name',
+        ).writeAsBytesSync(<int>[1, 2, 3]);
       }
     });
     tearDown(() async {
@@ -653,23 +680,27 @@ void main() {
     });
 
     test('sourceUrl 是 file: 的包解析出用户那个文件夹；内置包不是', () {
-      final AsrModelPack local = (scanLocalAsrModelDirectory(
-        dir: dir,
-        displayName: '我的模型',
-        languages: <AsrLanguage>[AsrLanguage.japanese],
-      ) as AsrLocalModelFound)
-          .pack;
+      final AsrModelPack local =
+          (scanLocalAsrModelDirectory(
+                    dir: dir,
+                    displayName: '我的模型',
+                    languages: <AsrLanguage>[AsrLanguage.japanese],
+                  )
+                  as AsrLocalModelFound)
+              .pack;
       expect(localAsrModelDirectory(local)?.path, dir.path);
       expect(localAsrModelDirectory(kAsrJapanesePack), isNull);
     });
 
     test('装配出的 store 指向用户文件夹，模型文件当场就位', () async {
-      final AsrModelPack local = (scanLocalAsrModelDirectory(
-        dir: dir,
-        displayName: '我的模型',
-        languages: <AsrLanguage>[AsrLanguage.japanese],
-      ) as AsrLocalModelFound)
-          .pack;
+      final AsrModelPack local =
+          (scanLocalAsrModelDirectory(
+                    dir: dir,
+                    displayName: '我的模型',
+                    languages: <AsrLanguage>[AsrLanguage.japanese],
+                  )
+                  as AsrLocalModelFound)
+              .pack;
       final AsrModelCatalog catalog = AsrModelCatalog.empty
           .withCustomPack(local)
           .withChoice(AsrLanguage.japanese, local.id);
@@ -705,16 +736,15 @@ void main() {
     });
 
     test('vad 不在文件夹里时补的是内置直链，不是 file: URL', () {
-      final AsrModelPack local = (scanLocalAsrModelDirectory(
-        dir: dir,
-        displayName: '我的模型',
-        languages: <AsrLanguage>[AsrLanguage.japanese],
-      ) as AsrLocalModelFound)
-          .pack;
-      expect(
-        local.fileForRole(AsrModelRole.vad).url,
-        startsWith('https://'),
-      );
+      final AsrModelPack local =
+          (scanLocalAsrModelDirectory(
+                    dir: dir,
+                    displayName: '我的模型',
+                    languages: <AsrLanguage>[AsrLanguage.japanese],
+                  )
+                  as AsrLocalModelFound)
+              .pack;
+      expect(local.fileForRole(AsrModelRole.vad).url, startsWith('https://'));
     });
   });
 
@@ -724,8 +754,9 @@ void main() {
       final AsrModelPack second = _fakeLocalPack('custom-model', '/tmp/b');
       final ({AsrModelCatalog catalog, AsrModelPack pack}) added1 =
           AsrModelCatalog.empty.withLocalPack(first);
-      final ({AsrModelCatalog catalog, AsrModelPack pack}) added2 =
-          added1.catalog.withLocalPack(second);
+      final ({AsrModelCatalog catalog, AsrModelPack pack}) added2 = added1
+          .catalog
+          .withLocalPack(second);
 
       expect(added1.pack.id, 'custom-model');
       expect(added2.pack.id, 'custom-model-2');
@@ -750,88 +781,87 @@ void main() {
 
 /// 一个 sourceUrl 指向本地目录的假包（只用来验 id 去重规则）。
 AsrModelPack _fakeLocalPack(String id, String dirPath) => AsrModelPack(
-      languages: const <AsrLanguage>[AsrLanguage.japanese],
-      id: id,
-      displayName: id,
-      sourceUrl: Uri.file(dirPath).toString(),
-      files: const <AsrModelFile>[
-        AsrModelFile(
-          fileName: 'model.onnx',
-          url: 'file:///tmp/model.onnx',
-          expectedBytes: 10,
-          role: AsrModelRole.ctcModelFp32,
-        ),
-        AsrModelFile(
-          fileName: 'model.onnx',
-          url: 'file:///tmp/model.onnx',
-          expectedBytes: 10,
-          role: AsrModelRole.ctcModelInt8,
-        ),
-        AsrModelFile(
-          fileName: 'tokens.txt',
-          url: 'file:///tmp/tokens.txt',
-          expectedBytes: 10,
-          role: AsrModelRole.tokens,
-        ),
-        kAsrVadFile,
-      ],
-      architecture: AsrModelArchitecture.ctc,
-      blankToken: '<blk>',
-    );
+  languages: const <AsrLanguage>[AsrLanguage.japanese],
+  id: id,
+  displayName: id,
+  sourceUrl: Uri.file(dirPath).toString(),
+  files: const <AsrModelFile>[
+    AsrModelFile(
+      fileName: 'model.onnx',
+      url: 'file:///tmp/model.onnx',
+      expectedBytes: 10,
+      role: AsrModelRole.ctcModelFp32,
+    ),
+    AsrModelFile(
+      fileName: 'model.onnx',
+      url: 'file:///tmp/model.onnx',
+      expectedBytes: 10,
+      role: AsrModelRole.ctcModelInt8,
+    ),
+    AsrModelFile(
+      fileName: 'tokens.txt',
+      url: 'file:///tmp/tokens.txt',
+      expectedBytes: 10,
+      role: AsrModelRole.tokens,
+    ),
+    kAsrVadFile,
+  ],
+  architecture: AsrModelArchitecture.ctc,
+  blankToken: '<blk>',
+);
 
 AsrModelPack _fakePack(
   String id,
   AsrLanguage language, {
   String name = '自带模型',
-}) =>
-    AsrModelPack(
-      languages: <AsrLanguage>[language],
-      id: id,
-      displayName: name,
-      sourceUrl: 'file:///tmp/$id',
-      files: const <AsrModelFile>[
-        AsrModelFile(
-          fileName: 'encoder.onnx',
-          url: 'file:///tmp/encoder.onnx',
-          expectedBytes: 10,
-          role: AsrModelRole.encoderFp32,
-        ),
-        AsrModelFile(
-          fileName: 'encoder.onnx',
-          url: 'file:///tmp/encoder.onnx',
-          expectedBytes: 10,
-          role: AsrModelRole.encoderInt8,
-        ),
-        AsrModelFile(
-          fileName: 'decoder.onnx',
-          url: 'file:///tmp/decoder.onnx',
-          expectedBytes: 10,
-          role: AsrModelRole.decoderFp32,
-        ),
-        AsrModelFile(
-          fileName: 'decoder.onnx',
-          url: 'file:///tmp/decoder.onnx',
-          expectedBytes: 10,
-          role: AsrModelRole.decoderInt8,
-        ),
-        AsrModelFile(
-          fileName: 'joiner.onnx',
-          url: 'file:///tmp/joiner.onnx',
-          expectedBytes: 10,
-          role: AsrModelRole.joinerFp32,
-        ),
-        AsrModelFile(
-          fileName: 'joiner.onnx',
-          url: 'file:///tmp/joiner.onnx',
-          expectedBytes: 10,
-          role: AsrModelRole.joinerInt8,
-        ),
-        AsrModelFile(
-          fileName: 'tokens.txt',
-          url: 'file:///tmp/tokens.txt',
-          expectedBytes: 10,
-          role: AsrModelRole.tokens,
-        ),
-        kAsrVadFile,
-      ],
-    );
+}) => AsrModelPack(
+  languages: <AsrLanguage>[language],
+  id: id,
+  displayName: name,
+  sourceUrl: 'file:///tmp/$id',
+  files: const <AsrModelFile>[
+    AsrModelFile(
+      fileName: 'encoder.onnx',
+      url: 'file:///tmp/encoder.onnx',
+      expectedBytes: 10,
+      role: AsrModelRole.encoderFp32,
+    ),
+    AsrModelFile(
+      fileName: 'encoder.onnx',
+      url: 'file:///tmp/encoder.onnx',
+      expectedBytes: 10,
+      role: AsrModelRole.encoderInt8,
+    ),
+    AsrModelFile(
+      fileName: 'decoder.onnx',
+      url: 'file:///tmp/decoder.onnx',
+      expectedBytes: 10,
+      role: AsrModelRole.decoderFp32,
+    ),
+    AsrModelFile(
+      fileName: 'decoder.onnx',
+      url: 'file:///tmp/decoder.onnx',
+      expectedBytes: 10,
+      role: AsrModelRole.decoderInt8,
+    ),
+    AsrModelFile(
+      fileName: 'joiner.onnx',
+      url: 'file:///tmp/joiner.onnx',
+      expectedBytes: 10,
+      role: AsrModelRole.joinerFp32,
+    ),
+    AsrModelFile(
+      fileName: 'joiner.onnx',
+      url: 'file:///tmp/joiner.onnx',
+      expectedBytes: 10,
+      role: AsrModelRole.joinerInt8,
+    ),
+    AsrModelFile(
+      fileName: 'tokens.txt',
+      url: 'file:///tmp/tokens.txt',
+      expectedBytes: 10,
+      role: AsrModelRole.tokens,
+    ),
+    kAsrVadFile,
+  ],
+);

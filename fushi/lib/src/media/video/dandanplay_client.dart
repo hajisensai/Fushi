@@ -1,19 +1,25 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/dandanplay_secret.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_danmaku_source.dart';
+import 'package:fushi_engine/media/video/dandanplay_file_key.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
-const int kDandanplayHashPrefixBytes = 16 * 1024 * 1024;
+// 指纹（文件名 + 前 16 MiB md5 + 字节数）在引擎层算：互联 host 要用同一份算法替
+// 远端流播的 client 出指纹（BUG-3614）。保持旧导入点可用。
+export 'package:fushi_engine/media/video/dandanplay_file_key.dart'
+    show
+        DandanplayFileKey,
+        dandanplayFileHash,
+        dandanplayFileKeyOf,
+        kDandanplayHashPrefixBytes;
 
 /// Dandanplay 弹幕来源配置（全局偏好）：自建/镜像服务器地址 + 可选 API 凭据。
 ///
@@ -83,9 +89,10 @@ class DandanplayConfig {
     }
     // 只取 scheme+host(+port)，丢掉用户可能误填的尾部 path/query（请求自带 /api/v2/...）。
     return Uri(
-        scheme: parsed.scheme,
-        host: parsed.host,
-        port: parsed.hasPort ? parsed.port : null);
+      scheme: parsed.scheme,
+      host: parsed.host,
+      port: parsed.hasPort ? parsed.port : null,
+    );
   }
 
   /// 是否启用 API v2 签名（[effectiveAppId] 与 [effectiveAppSecret] 同时非空）。
@@ -113,10 +120,10 @@ class DandanplayConfig {
   }
 
   static String encode(DandanplayConfig config) => jsonEncode(<String, dynamic>{
-        'baseUrl': config.baseUrl,
-        'appId': config.appId,
-        'appSecret': config.appSecret,
-      });
+    'baseUrl': config.baseUrl,
+    'appId': config.appId,
+    'appSecret': config.appSecret,
+  });
 
   static DandanplayConfig decode(String? json) {
     if (json == null || json.isEmpty) return defaults;
@@ -173,8 +180,9 @@ class DandanplayMatch {
       episodeId: id.toInt(),
       animeTitle: json['animeTitle']?.toString(),
       episodeTitle: json['episodeTitle']?.toString(),
-      shiftSeconds:
-          json['shift'] is num ? (json['shift'] as num).toDouble() : 0,
+      shiftSeconds: json['shift'] is num
+          ? (json['shift'] as num).toDouble()
+          : 0,
     );
   }
 }
@@ -262,12 +270,12 @@ class DandanplayClient {
     DandanplayConfig? config,
     Duration timeout = const Duration(seconds: 8),
     Duration commentTimeout = const Duration(seconds: 30),
-  })  : _client = httpClient ?? createAppHttpIoClient(),
-        _config = config ?? DandanplayConfig.current,
-        _baseUri =
-            baseUri ?? (config ?? DandanplayConfig.current).resolvedBaseUri,
-        _timeout = timeout,
-        _commentTimeout = commentTimeout;
+  }) : _client = httpClient ?? createAppHttpIoClient(),
+       _config = config ?? DandanplayConfig.current,
+       _baseUri =
+           baseUri ?? (config ?? DandanplayConfig.current).resolvedBaseUri,
+       _timeout = timeout,
+       _commentTimeout = commentTimeout;
 
   final http.Client _client;
   final DandanplayConfig _config;
@@ -289,13 +297,25 @@ class DandanplayClient {
 
   Future<DandanplayFetchResult> fetchBestDanmakuForFile(File file) async {
     try {
-      final DandanplayFetchResult matched = await matchFile(file);
+      return await fetchBestDanmakuForKey(await dandanplayFileKeyOf(file));
+    } catch (e) {
+      return DandanplayFetchResult(status: _statusForError(e), error: e);
+    }
+  }
+
+  /// 按已算好的指纹匹配并拉弹幕（远端流播：指纹由持有文件的 host 算，BUG-3614）。
+  Future<DandanplayFetchResult> fetchBestDanmakuForKey(
+    DandanplayFileKey key,
+  ) async {
+    try {
+      final DandanplayFetchResult matched = await matchKey(key);
       if (matched.status != DandanplayFetchStatus.hit ||
           matched.match == null) {
         return matched;
       }
-      final DandanplayFetchResult comments =
-          await fetchCommentsForMatch(matched.match!);
+      final DandanplayFetchResult comments = await fetchCommentsForMatch(
+        matched.match!,
+      );
       // 拉弹幕失败时如实上抛失败状态（此前被吞成「命中且 0 条」，见 BUG-1057）；
       // 匹配信息仍保留，供 UI 展示已匹配到哪一集。
       return DandanplayFetchResult(
@@ -310,13 +330,16 @@ class DandanplayClient {
     }
   }
 
-  Future<DandanplayFetchResult> matchFile(File file) async {
+  Future<DandanplayFetchResult> matchFile(File file) async =>
+      matchKey(await dandanplayFileKeyOf(file));
+
+  Future<DandanplayFetchResult> matchKey(DandanplayFileKey key) async {
     const String path = '/api/v2/match';
     final Uri uri = _baseUri.replace(path: path);
     final Map<String, dynamic> body = <String, dynamic>{
-      'fileName': p.basenameWithoutExtension(file.path),
-      'fileHash': await dandanplayFileHash(file),
-      'fileSize': file.lengthSync(),
+      'fileName': key.fileName,
+      'fileHash': key.fileHash,
+      'fileSize': key.fileSize,
       'matchMode': 'hashAndFileName',
     };
     final http.Response response = await _client
@@ -382,9 +405,7 @@ class DandanplayClient {
     final String path = '/api/v2/comment/${match.episodeId}';
     final Uri uri = _baseUri.replace(
       path: path,
-      queryParameters: const <String, String>{
-        'withRelated': 'true',
-      },
+      queryParameters: const <String, String>{'withRelated': 'true'},
     );
     try {
       final http.Response response = await _client
@@ -397,8 +418,12 @@ class DandanplayClient {
           error: response.statusCode,
         );
       }
-      final dynamic decoded = jsonDecode(response.body);
-      if (decoded is! Map || decoded['comments'] is! List) {
+      // 语法错误抛 FormatException、数值非有限抛 UnsupportedError，都落到下面的 catch。
+      final List<VideoDanmakuItem>? items = dandanplayDanmakuFromResponseBody(
+        response.body,
+        shiftSeconds: match.shiftSeconds,
+      );
+      if (items == null) {
         return DandanplayFetchResult(
           status: DandanplayFetchStatus.serverError,
           match: match,
@@ -406,10 +431,7 @@ class DandanplayClient {
       }
       return DandanplayFetchResult(
         status: DandanplayFetchStatus.hit,
-        items: dandanplayCommentsToDanmaku(
-          decoded['comments'] as List<dynamic>,
-          shiftMs: (match.shiftSeconds * 1000).round(),
-        ),
+        items: items,
         match: match,
       );
     } catch (e) {
@@ -427,7 +449,8 @@ class DandanplayClient {
     final String trimmed = keyword.trim();
     if (trimmed.isEmpty) {
       return const DandanplaySearchResult(
-          status: DandanplayFetchStatus.noMatch);
+        status: DandanplayFetchStatus.noMatch,
+      );
     }
     const String path = '/api/v2/search/episodes';
     final Uri uri = _baseUri.replace(
@@ -435,8 +458,9 @@ class DandanplayClient {
       queryParameters: <String, String>{'anime': trimmed},
     );
     try {
-      final http.Response response =
-          await _client.get(uri, headers: _headersFor(path)).timeout(_timeout);
+      final http.Response response = await _client
+          .get(uri, headers: _headersFor(path))
+          .timeout(_timeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return DandanplaySearchResult(
           status: DandanplayFetchStatus.serverError,
@@ -455,8 +479,9 @@ class DandanplayClient {
           error: decoded['errorMessage'],
         );
       }
-      final List<DandanplaySearchAnime> animes =
-          _animesFromJson(decoded['animes']);
+      final List<DandanplaySearchAnime> animes = _animesFromJson(
+        decoded['animes'],
+      );
       if (animes.isEmpty) {
         return const DandanplaySearchResult(
           status: DandanplayFetchStatus.noMatch,
@@ -476,19 +501,13 @@ class DandanplayClient {
 /// （用户侧可重试），其余（JSON 畸形等）算 `serverError`。三处调用点共用同一判据，
 /// 消除此前每处各写四个 `on ... catch` 的重复分支。
 DandanplayFetchStatus _statusForError(Object error) {
-  final bool network = error is IOException || // Socket/Handshake/Http 等
+  final bool network =
+      error is IOException || // Socket/Handshake/Http 等
       error is http.ClientException ||
       error is TimeoutException;
   return network
       ? DandanplayFetchStatus.networkError
       : DandanplayFetchStatus.serverError;
-}
-
-Future<String> dandanplayFileHash(File file) async {
-  final int length = file.lengthSync();
-  final int end = math.min(length, kDandanplayHashPrefixBytes);
-  final Digest digest = await md5.bind(file.openRead(0, end)).first;
-  return digest.toString();
 }
 
 List<DandanplayMatch> _matchesFromJson(Object? raw) {
@@ -507,12 +526,14 @@ List<DandanplaySearchAnime> _animesFromJson(Object? raw) {
     if (anime is! Map) continue;
     final Object? id = anime['animeId'];
     if (id is! num) continue;
-    out.add(DandanplaySearchAnime(
-      animeId: id.toInt(),
-      animeTitle: anime['animeTitle']?.toString() ?? '',
-      typeDescription: anime['typeDescription']?.toString(),
-      episodes: _searchEpisodesFromJson(anime['episodes']),
-    ));
+    out.add(
+      DandanplaySearchAnime(
+        animeId: id.toInt(),
+        animeTitle: anime['animeTitle']?.toString() ?? '',
+        typeDescription: anime['typeDescription']?.toString(),
+        episodes: _searchEpisodesFromJson(anime['episodes']),
+      ),
+    );
   }
   return out;
 }

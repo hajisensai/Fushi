@@ -17,8 +17,8 @@ import 'package:fushi/src/sync/backup_service.dart';
 /// the bounded, backing-off cleanup the app itself uses, instead of failing on
 /// a transient handle release. A genuine non-transient failure still surfaces.
 Future<void> cleanupTempDir(Directory dir) => deleteDirectoryWithRetry(
-      exists: dir.exists,
-      delete: () => dir.delete(recursive: true),
-      sleep: (int ms) => Future<void>.delayed(Duration(milliseconds: ms)),
-      isWindows: Platform.isWindows,
-    );
+  exists: dir.exists,
+  delete: () => dir.delete(recursive: true),
+  sleep: (int ms) => Future<void>.delayed(Duration(milliseconds: ms)),
+  isWindows: Platform.isWindows,
+);

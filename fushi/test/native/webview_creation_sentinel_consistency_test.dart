@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-904 跨文件字面量一致守卫：WebView2 实例创建失败的 sentinel。
 ///
@@ -30,20 +30,29 @@ void main() {
   }
 
   test('reader 与 fork 的 WebView 创建失败 sentinel 字面量必须一致', () {
-    final String readerSrc =
-        read('lib/src/pages/implementations/reader_fushi_page.dart');
+    final String readerSrc = read(
+      'lib/src/pages/implementations/reader_fushi_page.dart',
+    );
     final String forkSrc = read(
       '../packages/flutter_inappwebview_windows/lib/src/in_app_webview/in_app_webview.dart',
     );
 
-    final String readerSentinel =
-        extractConstString(readerSrc, 'kReaderWebViewCreationFailedSentinel');
-    final String forkSentinel =
-        extractConstString(forkSrc, 'kInAppWebViewCreationFailedSentinel');
+    final String readerSentinel = extractConstString(
+      readerSrc,
+      'kReaderWebViewCreationFailedSentinel',
+    );
+    final String forkSentinel = extractConstString(
+      forkSrc,
+      'kInAppWebViewCreationFailedSentinel',
+    );
 
     expect(readerSentinel, isNotEmpty);
-    expect(readerSentinel, equals(forkSentinel),
-        reason: 'reader 与 fork 的 WebView 创建失败 sentinel 必须逐字相等，'
-            '否则 reader 的可见恢复分支永远匹配不上');
+    expect(
+      readerSentinel,
+      equals(forkSentinel),
+      reason:
+          'reader 与 fork 的 WebView 创建失败 sentinel 必须逐字相等，'
+          '否则 reader 的可见恢复分支永远匹配不上',
+    );
   });
 }

@@ -52,22 +52,31 @@ void main() {
       WidgetTester tester,
     ) async {
       double value = 1.0;
-      await tester
-          .pumpWidget(buildRow(initial: 1.0, onValue: (v) => value = v));
+      await tester.pumpWidget(
+        buildRow(initial: 1.0, onValue: (v) => value = v),
+      );
       await tester.pump();
 
-      final Slider slider = tester.widget<Slider>(glassUnwrap<Slider>(find.byType(Slider)));
+      final Slider slider = tester.widget<Slider>(
+        glassUnwrap<Slider>(find.byType(Slider)),
+      );
       expect(slider.max, AudiobookVolumeRow.maxVolume);
-      expect(slider.divisions, AudiobookVolumeRow.sliderDivisions,
-          reason: '0–2.0 共 200 档 = 1% 一档（旧 20 档 = 10% 太粗）');
+      expect(
+        slider.divisions,
+        AudiobookVolumeRow.sliderDivisions,
+        reason: '0–2.0 共 200 档 = 1% 一档（旧 20 档 = 10% 太粗）',
+      );
 
       // 行为证明：真实拖动后的值仍落在 1% 网格上（snap 由 SDK divisions 实现）。
       await tester.drag(find.byType(Slider), const Offset(37, 0));
       await tester.pump();
       expect(value, isNot(1.0), reason: '拖动确实改了音量');
       final double percent = value * 100;
-      expect(percent, closeTo(percent.roundToDouble(), 1e-6),
-          reason: '拖动结果必须吸附在整数百分比（1% 档位）上');
+      expect(
+        percent,
+        closeTo(percent.roundToDouble(), 1e-6),
+        reason: '拖动结果必须吸附在整数百分比（1% 档位）上',
+      );
     });
 
     testWidgets('arrow keys nudge by 5% per press and stay clamped', (
@@ -105,8 +114,9 @@ void main() {
       WidgetTester tester,
     ) async {
       double value = 1.0;
-      await tester
-          .pumpWidget(buildRow(initial: 1.0, onValue: (v) => value = v));
+      await tester.pumpWidget(
+        buildRow(initial: 1.0, onValue: (v) => value = v),
+      );
       await tester.pump();
 
       final FushiFocusController controller = FushiFocusRoot.controllerOf(
@@ -138,8 +148,9 @@ void main() {
       WidgetTester tester,
     ) async {
       double value = 1.98;
-      await tester
-          .pumpWidget(buildRow(initial: 1.98, onValue: (v) => value = v));
+      await tester.pumpWidget(
+        buildRow(initial: 1.98, onValue: (v) => value = v),
+      );
       await tester.pump();
 
       final FushiFocusController controller = FushiFocusRoot.controllerOf(
@@ -159,22 +170,32 @@ void main() {
 
   group('sheet wiring source guard', () {
     test('volume section routes through AudiobookVolumeRow into setVolume', () {
-      final String source =
-          File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-              .readAsStringSync();
+      final String source = File(
+        'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+      ).readAsStringSync();
       final int start = source.indexOf(
-          'Widget _buildVolumeSection(AudiobookPlayerController ctrl)');
+        'Widget _buildVolumeSection(AudiobookPlayerController ctrl)',
+      );
       final int end = source.indexOf('Widget _buildSpeedSection(', start);
       expect(start, isNonNegative);
       expect(end, greaterThan(start));
       final String section = source.substring(start, end);
 
-      expect(section, contains('AudiobookVolumeRow('),
-          reason: 'sheet 的音量行必须走共享的细粒度音量 widget');
-      expect(section, contains('ctrl.setVolume(v)'),
-          reason: '回调必须写穿控制器（setVolume → onVolumePersist 持久化）');
-      expect(section, isNot(contains('divisions: 20')),
-          reason: '旧的 10% 粗粒度档位不得回潮');
+      expect(
+        section,
+        contains('AudiobookVolumeRow('),
+        reason: 'sheet 的音量行必须走共享的细粒度音量 widget',
+      );
+      expect(
+        section,
+        contains('ctrl.setVolume(v)'),
+        reason: '回调必须写穿控制器（setVolume → onVolumePersist 持久化）',
+      );
+      expect(
+        section,
+        isNot(contains('divisions: 20')),
+        reason: '旧的 10% 粗粒度档位不得回潮',
+      );
     });
   });
 }

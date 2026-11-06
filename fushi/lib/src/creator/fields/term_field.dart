@@ -1,18 +1,18 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/field.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 
 /// Returns the word or phrase particular to a selected headword.
 class TermField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   TermField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Term',
-          description: 'Dictionary headword or phrase.',
-          icon: Icons.speaker_notes_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Term',
+        description: 'Dictionary headword or phrase.',
+        icon: Icons.speaker_notes_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static TermField get instance => _instance;

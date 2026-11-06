@@ -16,12 +16,11 @@ StatRange _resolve(
   String? anchor,
   String today = '2026-09-28',
   String? earliest = '2025-03-10',
-}) =>
-    StatRange.resolve(
-      StatRangeSelection(mode: mode, anchorKey: anchor),
-      todayKey: today,
-      earliestKey: earliest,
-    );
+}) => StatRange.resolve(
+  StatRangeSelection(mode: mode, anchorKey: anchor),
+  todayKey: today,
+  earliestKey: earliest,
+);
 
 void main() {
   group('StatRange.resolve', () {
@@ -189,12 +188,12 @@ void main() {
       anchorKey: '2026-05-12',
     );
     Future<void> pump() => tester.pumpWidget(
-          TranslationProvider(
-            child: MaterialApp(
-              home: Scaffold(
-                body: StatefulBuilder(
-                  builder: (BuildContext context, StateSetter setState) =>
-                      StatRangeBar(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (BuildContext context, StateSetter setState) =>
+                  StatRangeBar(
                     range: StatRange.resolve(
                       selection,
                       todayKey: '2026-09-28',
@@ -203,11 +202,11 @@ void main() {
                     onChanged: (StatRangeSelection s) =>
                         setState(() => selection = s),
                   ),
-                ),
-              ),
             ),
           ),
-        );
+        ),
+      ),
+    );
     await pump();
     expect(find.text('2026-05'), findsOneWidget);
 
@@ -236,28 +235,34 @@ void main() {
   test('statRangeCurrentLabel：只在非当前段出现、文案跟粒度', () {
     LocaleSettings.setLocale(AppLocale.en);
     StatRange r(StatRangeMode mode, [String? anchor]) => StatRange.resolve(
-          StatRangeSelection(mode: mode, anchorKey: anchor),
-          todayKey: '2026-09-28',
-          earliestKey: '2025-03-10',
-        );
+      StatRangeSelection(mode: mode, anchorKey: anchor),
+      todayKey: '2026-09-28',
+      earliestKey: '2025-03-10',
+    );
     expect(statRangeCurrentLabel(r(StatRangeMode.day)), isNull);
-    expect(statRangeCurrentLabel(r(StatRangeMode.day, '2026-09-27')),
-        t.stat_today);
+    expect(
+      statRangeCurrentLabel(r(StatRangeMode.day, '2026-09-27')),
+      t.stat_today,
+    );
     expect(statRangeCurrentLabel(r(StatRangeMode.week)), isNull);
-    expect(statRangeCurrentLabel(r(StatRangeMode.week, '2026-09-20')),
-        t.stat_this_week);
+    expect(
+      statRangeCurrentLabel(r(StatRangeMode.week, '2026-09-20')),
+      t.stat_this_week,
+    );
     expect(statRangeCurrentLabel(r(StatRangeMode.month)), isNull);
-    expect(statRangeCurrentLabel(r(StatRangeMode.month, '2026-08-31')),
-        t.stat_this_month);
+    expect(
+      statRangeCurrentLabel(r(StatRangeMode.month, '2026-08-31')),
+      t.stat_this_month,
+    );
     expect(statRangeCurrentLabel(r(StatRangeMode.year)), isNull);
-    expect(statRangeCurrentLabel(r(StatRangeMode.year, '2025-12-31')),
-        t.stat_this_year);
+    expect(
+      statRangeCurrentLabel(r(StatRangeMode.year, '2025-12-31')),
+      t.stat_this_year,
+    );
     expect(statRangeCurrentLabel(r(StatRangeMode.all)), isNull);
   });
 
-  testWidgets('范围条：翻到过去的一天给出「今日」入口，点了回到今日（粒度不变）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('范围条：翻到过去的一天给出「今日」入口，点了回到今日（粒度不变）', (WidgetTester tester) async {
     LocaleSettings.setLocale(AppLocale.en);
     StatRangeSelection selection = const StatRangeSelection(
       mode: StatRangeMode.day,
@@ -270,21 +275,22 @@ void main() {
             body: StatefulBuilder(
               builder: (BuildContext context, StateSetter setState) =>
                   StatRangeBar(
-                range: StatRange.resolve(
-                  selection,
-                  todayKey: '2026-09-28',
-                  earliestKey: '2025-03-10',
-                ),
-                onChanged: (StatRangeSelection s) =>
-                    setState(() => selection = s),
-              ),
+                    range: StatRange.resolve(
+                      selection,
+                      todayKey: '2026-09-28',
+                      earliestKey: '2025-03-10',
+                    ),
+                    onChanged: (StatRangeSelection s) =>
+                        setState(() => selection = s),
+                  ),
             ),
           ),
         ),
       ),
     );
-    final Finder back =
-        find.byKey(const ValueKey<String>('stat-range-back-to-current'));
+    final Finder back = find.byKey(
+      const ValueKey<String>('stat-range-back-to-current'),
+    );
     expect(back, findsOneWidget);
     expect(find.text(t.stat_today), findsOneWidget);
     expect(find.text(t.stat_this_month), findsNothing, reason: '日粒度不再写「本月」');
@@ -320,16 +326,16 @@ void main() {
   // 纯键算术断言与源码守卫，保证任何宿主时区都能拦住同类回归。
   group('BUG-2777 DST 切换周翻段 / 日数', () {
     StatRange week(String anchor) => StatRange.resolve(
-          StatRangeSelection(mode: StatRangeMode.week, anchorKey: anchor),
-          todayKey: '2026-12-31',
-          earliestKey: '2020-01-01',
-        );
+      StatRangeSelection(mode: StatRangeMode.week, anchorKey: anchor),
+      todayKey: '2026-12-31',
+      earliestKey: '2020-01-01',
+    );
 
     StatRange resolveSel(StatRangeSelection sel) => StatRange.resolve(
-          sel,
-          todayKey: '2026-12-31',
-          earliestKey: '2020-01-01',
-        );
+      sel,
+      todayKey: '2026-12-31',
+      earliestKey: '2020-01-01',
+    );
 
     test('秋季回拨周（EU 10-25 / US 11-01）「下一段」进到下一周', () {
       final StatRange eu = week('2026-10-21');

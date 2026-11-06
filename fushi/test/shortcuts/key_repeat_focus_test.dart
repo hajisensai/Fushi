@@ -15,16 +15,15 @@ void main() {
     Axis axis = Axis.vertical,
   }) async {
     late FushiFocusController controller;
-    final FocusNode sink =
-        FocusNode(debugLabel: 'page-sink', skipTraversal: true);
+    final FocusNode sink = FocusNode(
+      debugLabel: 'page-sink',
+      skipTraversal: true,
+    );
     addTearDown(sink.dispose);
 
     final List<Widget> targets = <Widget>[
       for (final FushiFocusId id in ids)
-        FushiFocusTarget(
-          id: id,
-          child: const SizedBox(width: 120, height: 40),
-        ),
+        FushiFocusTarget(id: id, child: const SizedBox(width: 120, height: 40)),
     ];
 
     await tester.pumpWidget(
@@ -45,8 +44,9 @@ void main() {
                       if (event is! KeyDownEvent) {
                         return KeyEventResult.ignored;
                       }
-                      final TraversalDirection? dir =
-                          arrowTraversalDirection(event.logicalKey);
+                      final TraversalDirection? dir = arrowTraversalDirection(
+                        event.logicalKey,
+                      );
                       if (dir != null && focusedEditableText() == null) {
                         gamepadMoveFocusInDirection(context, dir);
                         return KeyEventResult.handled;
@@ -76,35 +76,37 @@ void main() {
   const FushiFocusId d = FushiFocusId('d');
 
   testWidgets(
-      'held arrow keeps moving focus: KeyDown plus each KeyRepeat steps',
-      (WidgetTester tester) async {
-    final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    final FushiFocusController controller = await pumpManagedColumn(
-      tester,
-      navKey,
-      ids: <FushiFocusId>[a, b, c, d],
-    );
-    controller.requestById(a);
-    await tester.pump();
-    expect(controller.activeId, a);
+    'held arrow keeps moving focus: KeyDown plus each KeyRepeat steps',
+    (WidgetTester tester) async {
+      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+      final FushiFocusController controller = await pumpManagedColumn(
+        tester,
+        navKey,
+        ids: <FushiFocusId>[a, b, c, d],
+      );
+      controller.requestById(a);
+      await tester.pump();
+      expect(controller.activeId, a);
 
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pump();
-    expect(controller.activeId, b, reason: 'press edge moves one step');
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(controller.activeId, b, reason: 'press edge moves one step');
 
-    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pump();
-    expect(controller.activeId, c, reason: 'first repeat continues moving');
+      await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(controller.activeId, c, reason: 'first repeat continues moving');
 
-    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pump();
-    expect(controller.activeId, d, reason: 'second repeat continues moving');
+      await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(controller.activeId, d, reason: 'second repeat continues moving');
 
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
-  });
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
+    },
+  );
 
-  testWidgets('held arrow stops at the edge, identical to a single press',
-      (WidgetTester tester) async {
+  testWidgets('held arrow stops at the edge, identical to a single press', (
+    WidgetTester tester,
+  ) async {
     // Continuous movement must not run away or wrap past the last control: once
     // focus reaches the edge a further repeat is a no-op, exactly as a discrete
     // press at the edge already is (FushiFocusController geometry clamps; the
@@ -120,8 +122,11 @@ void main() {
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
-    expect(controller.activeId, b,
-        reason: 'press edge reaches the last target');
+    expect(
+      controller.activeId,
+      b,
+      reason: 'press edge reaches the last target',
+    );
 
     // Repeats at the edge keep focus on the last target (no wrap, no run-away).
     await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowDown);
@@ -135,8 +140,9 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
   });
 
-  testWidgets('a held NON-arrow key does not move focus on repeat',
-      (WidgetTester tester) async {
+  testWidgets('a held NON-arrow key does not move focus on repeat', (
+    WidgetTester tester,
+  ) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
     final FushiFocusController controller = await pumpManagedColumn(
       tester,
@@ -152,14 +158,18 @@ void main() {
     await tester.pump();
     await tester.sendKeyRepeatEvent(LogicalKeyboardKey.keyJ);
     await tester.pump();
-    expect(controller.activeId, a,
-        reason: 'only arrow repeats move focus; other keys are untouched');
+    expect(
+      controller.activeId,
+      a,
+      reason: 'only arrow repeats move focus; other keys are untouched',
+    );
 
     await tester.sendKeyUpEvent(LogicalKeyboardKey.keyJ);
   });
 
-  testWidgets('releasing the arrow (KeyUp) does not move focus',
-      (WidgetTester tester) async {
+  testWidgets('releasing the arrow (KeyUp) does not move focus', (
+    WidgetTester tester,
+  ) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
     final FushiFocusController controller = await pumpManagedColumn(
       tester,
@@ -180,23 +190,30 @@ void main() {
 
   group('arrowFocusMoveDirection (shared rule)', () {
     KeyEvent down(LogicalKeyboardKey k) => KeyDownEvent(
-        physicalKey: PhysicalKeyboardKey.arrowDown,
-        logicalKey: k,
-        timeStamp: Duration.zero);
+      physicalKey: PhysicalKeyboardKey.arrowDown,
+      logicalKey: k,
+      timeStamp: Duration.zero,
+    );
     KeyEvent repeat(LogicalKeyboardKey k) => KeyRepeatEvent(
-        physicalKey: PhysicalKeyboardKey.arrowDown,
-        logicalKey: k,
-        timeStamp: Duration.zero);
+      physicalKey: PhysicalKeyboardKey.arrowDown,
+      logicalKey: k,
+      timeStamp: Duration.zero,
+    );
     KeyEvent up(LogicalKeyboardKey k) => KeyUpEvent(
-        physicalKey: PhysicalKeyboardKey.arrowDown,
-        logicalKey: k,
-        timeStamp: Duration.zero);
+      physicalKey: PhysicalKeyboardKey.arrowDown,
+      logicalKey: k,
+      timeStamp: Duration.zero,
+    );
 
     test('KeyDown plus KeyRepeat on an arrow both yield a direction', () {
-      expect(arrowFocusMoveDirection(down(LogicalKeyboardKey.arrowDown)),
-          TraversalDirection.down);
-      expect(arrowFocusMoveDirection(repeat(LogicalKeyboardKey.arrowUp)),
-          TraversalDirection.up);
+      expect(
+        arrowFocusMoveDirection(down(LogicalKeyboardKey.arrowDown)),
+        TraversalDirection.down,
+      );
+      expect(
+        arrowFocusMoveDirection(repeat(LogicalKeyboardKey.arrowUp)),
+        TraversalDirection.up,
+      );
     });
 
     test('KeyUp never yields a direction (release does not move)', () {

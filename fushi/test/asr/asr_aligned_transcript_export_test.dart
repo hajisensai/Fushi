@@ -156,11 +156,11 @@ void main() {
         srtPath: srt,
         audioPaths: <String>[p.join(tmp.path, 'a.m4b')],
         desktop: true,
-        saveFilePicker: ({
-          required String fileName,
-          required String? initialDirectory,
-        }) async =>
-            target,
+        saveFilePicker:
+            ({
+              required String fileName,
+              required String? initialDirectory,
+            }) async => target,
       );
       expect(ok, isTrue);
       expect(File(target).readAsStringSync(), contains('夢見る時がある。'));
@@ -174,11 +174,11 @@ void main() {
         srtPath: srt,
         audioPaths: const <String>[],
         desktop: true,
-        saveFilePicker: ({
-          required String fileName,
-          required String? initialDirectory,
-        }) async =>
-            target,
+        saveFilePicker:
+            ({
+              required String fileName,
+              required String? initialDirectory,
+            }) async => target,
       );
       expect(File(target).readAsStringSync(), File(srt).readAsStringSync());
     });

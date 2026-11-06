@@ -25,8 +25,11 @@ import '../helpers/source_guard.dart';
 void main() {
   test('lib/ 下只有 fushi_share.dart 能直接调 share_plus 的分享 API', () {
     final Directory libDir = Directory('lib');
-    expect(libDir.existsSync(), isTrue,
-        reason: '必须在 fushi/ 下运行（cwd=${Directory.current.path}）');
+    expect(
+      libDir.existsSync(),
+      isTrue,
+      reason: '必须在 fushi/ 下运行（cwd=${Directory.current.path}）',
+    );
 
     const String entryPointPath = 'lib/src/utils/misc/fushi_share.dart';
     final RegExp forbidden = RegExp(r'\b(Share\.share|SharePlus)');
@@ -57,24 +60,33 @@ void main() {
 
     // 扫描本身失效（cwd 不是 fushi/ / listSync 拿不到东西 / 过滤写反）必须红，
     // 不能静默退化成「零违规」的摆设。
-    expectScanScale(scanned,
-        what: 'lib/ 下除分享入口外的 .dart', atLeast: 960, measured: 1201);
+    expectScanScale(
+      scanned,
+      what: 'lib/ 下除分享入口外的 .dart',
+      atLeast: 960,
+      measured: 1201,
+    );
 
     expect(
       offenders,
       isEmpty,
-      reason: '这些地方绕过了 FushiShare，iOS/iPad 上会因缺 sharePositionOrigin '
+      reason:
+          '这些地方绕过了 FushiShare，iOS/iPad 上会因缺 sharePositionOrigin '
           '抛 PlatformException：\n${offenders.join('\n')}',
     );
   });
 
   test('FushiShare 自身确实携带 sharePositionOrigin（守卫的另一半）', () {
-    final String source =
-        File('lib/src/utils/misc/fushi_share.dart').readAsStringSync();
-    final Iterable<RegExpMatch> passes =
-        RegExp(r'sharePositionOrigin:\s*_sharePositionOrigin\(\)')
-            .allMatches(source);
-    expect(passes.length, greaterThanOrEqualTo(2),
-        reason: '文件分享与文本分享两条路径都必须传锚点');
+    final String source = File(
+      'lib/src/utils/misc/fushi_share.dart',
+    ).readAsStringSync();
+    final Iterable<RegExpMatch> passes = RegExp(
+      r'sharePositionOrigin:\s*_sharePositionOrigin\(\)',
+    ).allMatches(source);
+    expect(
+      passes.length,
+      greaterThanOrEqualTo(2),
+      reason: '文件分享与文本分享两条路径都必须传锚点',
+    );
   });
 }

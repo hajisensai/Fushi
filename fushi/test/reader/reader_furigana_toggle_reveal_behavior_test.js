@@ -80,6 +80,9 @@ function makeHarness(sc) {
     selectText + ',\n' +
     '  selection: null,\n' +
     '  getCharacterAtPoint: function() { calls.getCharacterAtPoint++; return { node: {}, offset: 0 }; },\n' +
+    // selectText 用 selectionStartFor 归一同词判据（BUG-3978）；本 harness 只测揭示分流，
+    // 起点归一由 ruby_tail_tap_selection_test 在真 DOM 上覆盖，这里取恒等。
+    '  selectionStartFor: function(node, offset) { return { node: node, offset: offset }; },\n' +
     '  clearSelection: function() { calls.clearSelection++; },\n' +
     '  selectFromPosition: function() { calls.selectFromPosition++; return "looked-up"; }\n' +
     '}; return o; })()';

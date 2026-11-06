@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// TODO-904 / BUG-437 源码守卫：Windows runner 真单实例。
 ///
 /// 根因放大器：原 `main.cpp` 只 `CreateMutexW(...)` 不查 `ERROR_ALREADY_EXISTS` =
@@ -24,16 +26,21 @@ void main() {
 
     // 必须是真正的运行期检查（GetLastError），而非仅注释提到。
     expect(
-        read('windows/runner/single_instance_mutex.h')
-            .contains('GetLastError() == ERROR_ALREADY_EXISTS'),
-        isTrue,
-        reason: '必须检测 GetLastError()==ERROR_ALREADY_EXISTS（真单实例守卫）');
+      read(
+        'windows/runner/single_instance_mutex.h',
+      ).contains('GetLastError() == ERROR_ALREADY_EXISTS'),
+      isTrue,
+      reason: '必须检测 GetLastError()==ERROR_ALREADY_EXISTS（真单实例守卫）',
+    );
     // TODO-935：数据迁移自动重启会以 detached 模式拉起带 --fushi-restarted 标志的新
     // 进程，但旧进程此刻仍持单实例互斥量。带该标志命中已有实例时必须**等待**旧进程
     // 释放互斥量后按首实例启动（否则重启落空、新 data_root 从不重读）；普通二次启动
     // 无此标志，维持「前置旧窗口 + 退出」。守卫这条豁免在位，防止有人把它改回无条件早退。
-    expect(src.contains('HasRestartMarker()'), isTrue,
-        reason: 'TODO-935：带重启标志命中已有实例须等待互斥量释放再作首实例，不能误退');
+    expect(
+      src.contains('HasRestartMarker()'),
+      isTrue,
+      reason: 'TODO-935：带重启标志命中已有实例须等待互斥量释放再作首实例，不能误退',
+    );
     // 命中已有实例（且非重启豁免）时退出本进程。
     //
     // **按结构锚，不用字符窗口**：这条断言原本是「FindWindowW 之后 1400 字符内必须
@@ -56,10 +63,16 @@ void main() {
     }
     expect(depth, 0, reason: '早退分支花括号不配对');
     final String body = src.substring(open, close + 1);
-    expect(body.contains('::FindWindowW(nullptr, L"Fushi")'), isTrue,
-        reason: '二次实例分支必须前置首实例窗口');
-    expect(body.contains('return EXIT_SUCCESS;'), isTrue,
-        reason: '命中已有实例必须退出本进程，不再创建第二个共享 userDataFolder 的实例');
+    expect(
+      body.contains('::FindWindowW(nullptr, L"Fushi")'),
+      isTrue,
+      reason: '二次实例分支必须前置首实例窗口',
+    );
+    expect(
+      body.contains('return EXIT_SUCCESS;'),
+      isTrue,
+      reason: '命中已有实例必须退出本进程，不再创建第二个共享 userDataFolder 的实例',
+    );
   });
 
   // TODO-904 P0 回归守卫：单实例守卫退出前，必须把「用 Fushi 打开视频」的文件
@@ -69,68 +82,107 @@ void main() {
     final String src = read('windows/runner/main.cpp');
 
     // 退出第二实例前必须解析 argv 文件参数并经 SendExternalVideoPath 转交。
-    expect(src.contains('FirstFileArgFromCommandLine()'), isTrue,
-        reason: '第二实例必须从 argv 解出视频文件参数');
-    expect(src.contains('::fushi::SendExternalVideoPath('), isTrue,
-        reason: '第二实例退出前必须经 WM_COPYDATA 把视频路径转交首实例（不能丢路径）');
+    expect(
+      src.contains('FirstFileArgFromCommandLine()'),
+      isTrue,
+      reason: '第二实例必须从 argv 解出视频文件参数',
+    );
+    expect(
+      src.contains('::fushi::SendExternalVideoPath('),
+      isTrue,
+      reason: '第二实例退出前必须经 WM_COPYDATA 把视频路径转交首实例（不能丢路径）',
+    );
 
     // 转交必须发生在 ERROR_ALREADY_EXISTS 早退分支内（退出之前）。
     final int idx = src.indexOf('if (another_instance)');
     final int exitIdx = src.indexOf('return EXIT_SUCCESS;', idx >= 0 ? idx : 0);
     final int handoffIdx = src.indexOf('::fushi::SendExternalVideoPath(');
-    expect(idx >= 0 && handoffIdx > idx && handoffIdx < exitIdx, isTrue,
-        reason: '路径转交必须在单实例早退分支内、return 之前发生');
+    expect(
+      idx >= 0 && handoffIdx > idx && handoffIdx < exitIdx,
+      isTrue,
+      reason: '路径转交必须在单实例早退分支内、return 之前发生',
+    );
 
     // 只在有文件参数时发送：纯第二次启动（无文件参数）维持「只前置 + 退出」。
-    expect(src.contains('if (!file_arg.empty())'), isTrue,
-        reason: '无文件参数时不应发送 WM_COPYDATA（只前置 + 退出）');
+    expect(
+      src.contains('if (!file_arg.empty())'),
+      isTrue,
+      reason: '无文件参数时不应发送 WM_COPYDATA（只前置 + 退出）',
+    );
   });
 
   test('runner 发送/接收 WM_COPYDATA 路径转交链路在位', () {
     final String handoff = read('windows/runner/external_video_handoff.cpp');
     // 发送端：用 WM_COPYDATA 携带 magic dwData，避免与系统拖放等其它 WM_COPYDATA 混淆。
-    expect(handoff.contains('WM_COPYDATA'), isTrue,
-        reason: '转交必须走 WM_COPYDATA');
-    expect(handoff.contains('kExternalVideoCopyDataMagic'), isTrue,
-        reason: 'dwData 必须带 magic 区分本协议消息');
+    expect(
+      handoff.contains('WM_COPYDATA'),
+      isTrue,
+      reason: '转交必须走 WM_COPYDATA',
+    );
+    expect(
+      handoff.contains('kExternalVideoCopyDataMagic'),
+      isTrue,
+      reason: 'dwData 必须带 magic 区分本协议消息',
+    );
 
     // 接收端：窗口过程必须处理 WM_COPYDATA → 经 channel 推给 Dart。
     final String fw = read('windows/runner/flutter_window.cpp');
-    expect(fw.contains('case WM_COPYDATA:'), isTrue,
-        reason: 'MessageHandler 必须处理 WM_COPYDATA');
-    expect(fw.contains('::fushi::DecodeExternalVideoPath('), isTrue,
-        reason: '必须用 DecodeExternalVideoPath 解出路径（magic 不匹配则忽略）');
     expect(
-        fw.contains('app.fushi/external_video') &&
-            fw.contains('openExternalVideo'),
-        isTrue,
-        reason: '收到路径必须经 app.fushi/external_video channel 推给 Dart');
+      fw.contains('case WM_COPYDATA:'),
+      isTrue,
+      reason: 'MessageHandler 必须处理 WM_COPYDATA',
+    );
+    expect(
+      fw.contains('::fushi::DecodeExternalVideoPath('),
+      isTrue,
+      reason: '必须用 DecodeExternalVideoPath 解出路径（magic 不匹配则忽略）',
+    );
+    expect(
+      fw.contains('app.fushi/external_video') &&
+          fw.contains('openExternalVideo'),
+      isTrue,
+      reason: '收到路径必须经 app.fushi/external_video channel 推给 Dart',
+    );
 
     // Dart 端：复用现有 _openExternalVideo 打开链路，不另造第二套。
-    final String main = read('lib/main.dart');
-    expect(main.contains("MethodChannel('app.fushi/external_video')"), isTrue,
-        reason: 'Dart 必须注册 app.fushi/external_video channel');
+    // 折叠空白、掩掉注释后匹配：main.dart 走 `dart format`，构造参数可能被拆行并带
+    // 尾逗号（`MethodChannel('app.fushi/external_video',)`），守卫只钉通道名。
+    final String main = compactCode(read('lib/main.dart'));
     expect(
-        main.contains('_handleExternalVideoChannel') &&
-            main.contains('_openExternalVideo('),
-        isTrue,
-        reason: '收到转交路径必须复用现有 _openExternalVideo 打开链路');
+      main.contains("MethodChannel('app.fushi/external_video'"),
+      isTrue,
+      reason: 'Dart 必须注册 app.fushi/external_video channel',
+    );
+    expect(
+      main.contains('setMethodCallHandler(_handleExternalVideoChannel)') &&
+          main.contains('_openExternalVideo('),
+      isTrue,
+      reason: '收到转交路径必须复用现有 _openExternalVideo 打开链路',
+    );
   });
 
   test('开发并存开关只在 debug 构建生效，且换掉主窗标题', () {
     final String src = read('windows/runner/main.cpp');
     final int start = src.indexOf('bool IsDevSideBySideMode()');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: '热重载与已安装 Fushi 并存要靠 IsDevSideBySideMode');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: '热重载与已安装 Fushi 并存要靠 IsDevSideBySideMode',
+    );
     final String body = src.substring(start, src.indexOf('\n}\n', start));
     // release 包必须恒为 false：否则任何人设个环境变量就能绕过真单实例守卫，
     // 两个 release 实例共享 WebView2 userDataFolder（BUG-437）。
-    expect(body.contains('#ifdef NDEBUG') && body.contains('return false;'),
-        isTrue,
-        reason: 'FUSHI_DEV_SIDE_BY_SIDE 只能在 debug 构建生效');
+    expect(
+      body.contains('#ifdef NDEBUG') && body.contains('return false;'),
+      isTrue,
+      reason: 'FUSHI_DEV_SIDE_BY_SIDE 只能在 debug 构建生效',
+    );
     expect(body.contains('FUSHI_DEV_SIDE_BY_SIDE'), isTrue);
     // 已安装实例的二次启动按标题 "Fushi" 转交文件，开发实例不能抢走。
-    expect(src.contains('dev_side_by_side ? L"Fushi Dev" : L"Fushi"'), isTrue,
-        reason: '并存模式下主窗标题须与正式实例不同');
+    expect(
+      src.contains('dev_side_by_side ? L"Fushi Dev" : L"Fushi"'),
+      isTrue,
+      reason: '并存模式下主窗标题须与正式实例不同',
+    );
   });
 }

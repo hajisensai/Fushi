@@ -24,18 +24,16 @@ Future<void> _sendBackGesture(
 ]) async {
   await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
     SystemChannels.backGesture.name,
-    const StandardMethodCodec().encodeMethodCall(
-      MethodCall(method, arguments),
-    ),
+    const StandardMethodCodec().encodeMethodCall(MethodCall(method, arguments)),
     (ByteData? _) {},
   );
 }
 
 Map<String, Object?> _gestureEvent(double progress) => <String, Object?>{
-      'touchOffset': <Object?>[10.0, 100.0],
-      'progress': progress,
-      'swipeEdge': 0,
-    };
+  'touchOffset': <Object?>[10.0, 100.0],
+  'progress': progress,
+  'swipeEdge': 0,
+};
 
 /// 首页：恒挂 `PopScope(canPop:false)`，与设置 tab 的返回拦截同构（BUG-236）。
 class _HomeShell extends StatelessWidget {
@@ -55,9 +53,8 @@ class _HomeShell extends StatelessWidget {
           child: ElevatedButton(
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
-                builder: (BuildContext _) => const Scaffold(
-                  body: Center(child: Text('subpage')),
-                ),
+                builder: (BuildContext _) =>
+                    const Scaffold(body: Center(child: Text('subpage'))),
               ),
             ),
             child: const Text('open'),
@@ -73,10 +70,7 @@ NavigatorState _navigator(WidgetTester tester) =>
 
 /// 首页的按钮此刻是否真的可点（失配时整层被 IgnorePointer，点了没有任何反应）。
 Future<bool> _homeButtonStillWorks(WidgetTester tester) async {
-  await tester.tap(
-    find.text('open', skipOffstage: false),
-    warnIfMissed: false,
-  );
+  await tester.tap(find.text('open', skipOffstage: false), warnIfMissed: false);
   await tester.pumpAndSettle();
   final bool opened = find.text('subpage').evaluate().isNotEmpty;
   if (opened) {
@@ -139,8 +133,9 @@ void main() {
     resetPlatform();
   });
 
-  testWidgets('平台重发起始事件（start→start→commit）不再让手势计数卡死',
-      (WidgetTester tester) async {
+  testWidgets('平台重发起始事件（start→start→commit）不再让手势计数卡死', (
+    WidgetTester tester,
+  ) async {
     await pumpHomeAndOpenSubpage(tester);
 
     await _sendBackGesture(tester, 'startBackGesture', _gestureEvent(0.0));
@@ -177,8 +172,9 @@ void main() {
     resetPlatform();
   });
 
-  testWidgets('commit 之后重发 cancel 被丢弃，不会把手势计数减成负数',
-      (WidgetTester tester) async {
+  testWidgets('commit 之后重发 cancel 被丢弃，不会把手势计数减成负数', (
+    WidgetTester tester,
+  ) async {
     await pumpHomeAndOpenSubpage(tester);
 
     await _sendBackGesture(tester, 'startBackGesture', _gestureEvent(0.0));
@@ -208,8 +204,9 @@ void main() {
     resetPlatform();
   });
 
-  testWidgets('栈底 + PopScope(canPop:false)：侧滑不接管，仍走拦截回调',
-      (WidgetTester tester) async {
+  testWidgets('栈底 + PopScope(canPop:false)：侧滑不接管，仍走拦截回调', (
+    WidgetTester tester,
+  ) async {
     // 首页的返回语义（消费系统返回、切回来源 tab）必须原样保留：本 detector 在
     // popGestureEnabled 为假时不接管，事件回落到框架的普通 pop 路径。
     useAndroid();

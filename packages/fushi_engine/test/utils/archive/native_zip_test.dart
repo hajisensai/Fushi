@@ -181,6 +181,55 @@ void main() {
     },
   );
 
+  test(
+    'addFileStored：STORE 条目头 CRC 与 archive getCrc32 一致，跨多个读块，旧读端校验 CRC 解开、流式读回逐字一致',
+    () {
+      // 9 MiB 伪随机 + 末尾一个不满块：覆盖 _fileCrc32 的多块链式与尾块。
+      final Uint8List big = payload(
+        9 * 1024 * 1024 + 12345,
+        randomBytes: 9 * 1024 * 1024,
+      );
+      final File bigFile = File(p.join(tmp.path, 'track.m4b'))
+        ..writeAsBytesSync(big);
+      final File emptyFile = File(p.join(tmp.path, 'empty.srt'))
+        ..writeAsBytesSync(const <int>[]);
+      final Uint8List small = payload(100);
+      final File smallFile = File(p.join(tmp.path, 'a.srt'))
+        ..writeAsBytesSync(small);
+
+      final String zipPath = p.join(tmp.path, 'store.zip');
+      final ZipFileEncoder encoder = ZipFileEncoder()..create(zipPath);
+      addFileStored(encoder, bigFile, 'res/track.m4b');
+      addFileStored(encoder, emptyFile, 'res/empty.srt');
+      addFileStored(encoder, smallFile, 'res/a.srt');
+      encoder.closeSync();
+
+      final List<int> zipBytes = File(zipPath).readAsBytesSync();
+      final Archive headers = ZipDecoder().decodeBytes(zipBytes);
+      for (final (String name, Uint8List bytes) in <(String, Uint8List)>[
+        ('res/track.m4b', big),
+        ('res/empty.srt', Uint8List(0)),
+        ('res/a.srt', small),
+      ]) {
+        expect(methodOf(zipBytes, name), ArchiveFile.STORE, reason: name);
+        // 对拍第三方 archive 的纯 Dart CRC（不是自己写的算法，直接当真值）。
+        expect(entryNamed(headers, name).crc32, getCrc32(bytes), reason: name);
+      }
+
+      // 旧读端：archive 带 CRC 校验解开。
+      final Archive verified = decodeVerified(zipPath);
+      expect(entryNamed(verified, 'res/track.m4b').content, big);
+      expect(entryNamed(verified, 'res/a.srt').content, small);
+
+      // 现有恢复路径（同步包导入 / 备份恢复都走 writeZipEntryStreaming 流式拷贝）。
+      final String outDir = p.join(tmp.path, 'out');
+      extractZipFileToDirectory(zipPath, outDir);
+      expect(File(p.join(outDir, 'res', 'track.m4b')).readAsBytesSync(), big);
+      expect(File(p.join(outDir, 'res', 'empty.srt')).lengthSync(), 0);
+      expect(File(p.join(outDir, 'res', 'a.srt')).readAsBytesSync(), small);
+    },
+  );
+
   test('nativeDeflatedArchiveFile 交给 ZipEncoder 原样透传，CRC 正确', () {
     final List<int> json = utf8.encode(
       jsonEncode(<String, Object?>{

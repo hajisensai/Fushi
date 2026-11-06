@@ -20,8 +20,9 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
 
 void main() {
   group('DataRootMigrationView (TODO-959 机制A：搬移中遮罩)', () {
-    testWidgets('渲染「请勿关闭」文案 + 不确定进度条；背景非纯黑（无 splash 时回退 surface）',
-        (WidgetTester tester) async {
+    testWidgets('渲染「请勿关闭」文案 + 不确定进度条；背景非纯黑（无 splash 时回退 surface）', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         TranslationProvider(
           child: MaterialApp(
@@ -40,10 +41,10 @@ void main() {
       expect(find.text(t.data_storage_migrate_overlay_title), findsOneWidget);
       expect(find.text(t.data_storage_migrate_overlay_warning), findsOneWidget);
       // 有进度条。progress=null → 不确定进度（value 为 null）。
-      final FushiLinearProgressIndicator bar =
-          tester.widget<FushiLinearProgressIndicator>(
-        find.byType(FushiLinearProgressIndicator),
-      );
+      final FushiLinearProgressIndicator bar = tester
+          .widget<FushiLinearProgressIndicator>(
+            find.byType(FushiLinearProgressIndicator),
+          );
       expect(bar.value, isNull);
 
       // 背景非 null 且非纯黑（修复的核心：消除「真黑底」）。
@@ -70,10 +71,10 @@ void main() {
       );
       await tester.pump();
 
-      final FushiLinearProgressIndicator bar =
-          tester.widget<FushiLinearProgressIndicator>(
-        find.byType(FushiLinearProgressIndicator),
-      );
+      final FushiLinearProgressIndicator bar = tester
+          .widget<FushiLinearProgressIndicator>(
+            find.byType(FushiLinearProgressIndicator),
+          );
       expect(bar.value, closeTo(0.3, 1e-9));
 
       // 给定的 splash 背景被尊重（非回退）。
@@ -81,8 +82,9 @@ void main() {
       expect(scaffold.backgroundColor, equals(const Color(0xFF223344)));
     });
 
-    testWidgets('TODO-1182 失败态：显示标题 + 原因 + 建议 + 重启按钮，点按触发 onRestart',
-        (WidgetTester tester) async {
+    testWidgets('TODO-1182 失败态：显示标题 + 原因 + 建议 + 重启按钮，点按触发 onRestart', (
+      WidgetTester tester,
+    ) async {
       int restarts = 0;
       await tester.pumpWidget(
         TranslationProvider(
@@ -104,7 +106,9 @@ void main() {
       expect(find.text(t.data_storage_migrate_failed_title), findsOneWidget);
       expect(find.text('boom: 有文件被占用'), findsOneWidget);
       expect(
-          find.text(t.data_storage_migrate_failed_suggestions), findsOneWidget);
+        find.text(t.data_storage_migrate_failed_suggestions),
+        findsOneWidget,
+      );
       // 失败态不显示进度条。
       expect(find.byType(FushiLinearProgressIndicator), findsNothing);
 
@@ -129,14 +133,21 @@ void main() {
       // build 内的分支顺序，所以从 build 起点往后找。
       final int buildIdx = src.indexOf('Widget build(BuildContext context)');
       expect(buildIdx, greaterThan(0), reason: 'main.dart 必须有根 widget 的 build');
-      final int migrateIdx =
-          src.indexOf('appModel.dataRootMigrationActive', buildIdx);
-      final int loadingIdx =
-          src.indexOf('if (!appModel.isInitialised)', buildIdx);
+      final int migrateIdx = src.indexOf(
+        'appModel.dataRootMigrationActive',
+        buildIdx,
+      );
+      final int loadingIdx = src.indexOf(
+        'if (!appModel.isInitialised)',
+        buildIdx,
+      );
       expect(migrateIdx, greaterThan(0), reason: '根 widget 必须有迁移遮罩分支');
       expect(loadingIdx, greaterThan(0));
-      expect(migrateIdx, lessThan(loadingIdx),
-          reason: '迁移遮罩必须在裸 loading 分支之前命中，否则迁移期回退近黑屏');
+      expect(
+        migrateIdx,
+        lessThan(loadingIdx),
+        reason: '迁移遮罩必须在裸 loading 分支之前命中，否则迁移期回退近黑屏',
+      );
       // 迁移分支渲染独立遮罩视图。
       expect(src.contains('DataRootMigrationView('), isTrue);
     });
@@ -157,7 +168,10 @@ void main() {
       final String src = readSource('lib/main.dart').readAsStringSync();
       final int at = src.indexOf('Future<void> _revealStartupWindow()');
       expect(at, greaterThan(-1), reason: '必须有唯一显窗点 _revealStartupWindow');
-      final int end = src.indexOf('Future<void> _revealStartupWindowFallback', at);
+      final int end = src.indexOf(
+        'Future<void> _revealStartupWindowFallback',
+        at,
+      );
       expect(end, greaterThan(at));
       final String body = src.substring(at, end);
       expect(body.contains('windowManager.show()'), isTrue);
@@ -165,38 +179,44 @@ void main() {
     });
 
     test('desktop_lifecycle_service：重启给新进程带上前台标志', () {
-      final String src =
-          readSource('lib/src/platform/desktop/desktop_lifecycle_service.dart')
-              .readAsStringSync();
+      final String src = readSource(
+        'lib/src/platform/desktop/desktop_lifecycle_service.dart',
+      ).readAsStringSync();
       expect(src.contains('restartMarkerArg'), isTrue);
       // 标志被实际加进 Process.start 的 args。
       expect(src.contains('restartMarkerArg,'), isTrue);
     });
 
     test('data_root.part：先 begin 遮罩再 migrate，并线程 onProgress', () {
-      final String src =
-          readSource('lib/src/sync/sync_settings_schema/data_root.part.dart')
-              .readAsStringSync();
+      final String src = readSource(
+        'lib/src/sync/sync_settings_schema/data_root.part.dart',
+      ).readAsStringSync();
       final int beginIdx = src.indexOf('beginDataRootMigration()');
       final int migrateIdx = src.indexOf('DataRootMigrator().migrate(');
       expect(beginIdx, greaterThan(0), reason: '必须先把遮罩顶上来（顺序铁律：遮罩→关库→搬文件）');
       expect(migrateIdx, greaterThan(0));
-      expect(beginIdx, lessThan(migrateIdx),
-          reason: 'beginDataRootMigration 必须在 migrate 之前调用');
+      expect(
+        beginIdx,
+        lessThan(migrateIdx),
+        reason: 'beginDataRootMigration 必须在 migrate 之前调用',
+      );
       // onProgress 回灌进度到遮罩。
       expect(src.contains('updateDataRootMigrationProgress('), isTrue);
       expect(src.contains('onProgress:'), isTrue);
     });
 
     test('data_root.part：迁移失败同步写错误日志再重启', () {
-      final String src =
-          readSource('lib/src/sync/sync_settings_schema/data_root.part.dart')
-              .readAsStringSync();
+      final String src = readSource(
+        'lib/src/sync/sync_settings_schema/data_root.part.dart',
+      ).readAsStringSync();
       final int logIdx = src.indexOf("logFatal('DataRootMigration.migrate'");
       final int recoverIdx = src.indexOf('_recoverAfterFailedMigration(');
       expect(logIdx, greaterThan(0), reason: '迁移失败必须同步落错误日志');
-      expect(recoverIdx, greaterThan(logIdx),
-          reason: '错误日志必须在自动重启前落盘，否则失败原因会消失');
+      expect(
+        recoverIdx,
+        greaterThan(logIdx),
+        reason: '错误日志必须在自动重启前落盘，否则失败原因会消失',
+      );
     });
   });
 }

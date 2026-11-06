@@ -20,8 +20,8 @@ void main() {
 
   List<String> stringsOf(Object? value) =>
       (value as List<Object?>? ?? const <Object?>[]).whereType<String>().toList(
-            growable: false,
-          );
+        growable: false,
+      );
 
   bool isJapanese(String tag) => tag == 'ja' || tag.startsWith('ja-');
 
@@ -55,7 +55,8 @@ void main() {
     expect(
       stringsOf(switched!['currentLanguages']).any(isJapanese),
       isTrue,
-      reason: '设了日语，但当前输入源没变——切换没真正落地'
+      reason:
+          '设了日语，但当前输入源没变——切换没真正落地'
           '（沙盒下 TISSelectInputSource 有「图标变了实际没切」的已知问题）',
     );
     expect(switched['active'], isTrue);

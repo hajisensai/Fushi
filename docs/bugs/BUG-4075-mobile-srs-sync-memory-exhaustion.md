@@ -1,0 +1,66 @@
+## BUG-4075 · iOS / Android 互联 SRS 同步中内存耗尽（SIGABRT / Scudo OOM / Dart Out of Memory）
+- **报告**：2026-11-04，来自崩溃报告的整批分诊，共 4 份：
+  - Android `7oF6GvM4Ii`：Xiaomi，3.3.0-debug.23213，Scudo OOM 中止，pss 约 3.3 GB，同步阶段停在 `stage=downloading`。
+  - iOS `n1i0ET11Ea`、`vll_gRx-_8`、`_QErzK4JT5`：iPhone18,3，iOS 27.2，3.3.0-debug.23213，累计约 12 次 SIGABRT。
+  - 最新出现版本是 23213。
+- **真实性**：⚠️ 内存耗尽确实发生，**根因没有定位到**。
+  - 已有证据：
+    1. **发生在 BUG-4001 / BUG-3993 修复之后。** 这两个修复首个进入的构建是 23152，而这批报告来自 23213，说明它们不是同一个已修的问题。
+    2. **iOS 崩溃位置。** 中止帧在 `Runner+31961832`，偏移落在静态链接的 Rust 库段内，与 `fushi_fsrs` 一致。CI 没有保留 dSYM，所以无法符号化。
+    3. **崩溃前的日志尾。** 面包屑依次是 `start:heads`、`start:identity`、media 阶段、downloading 阶段，rss 在 1.0–1.4 GB 之间。
+    4. **Dart 侧也耗尽了内存。** 拼接 collections-live-sync 响应体时，`StringBuffer.toString` 报出 Dart `Out of Memory`（`fushi/lib/src/sync/interconnect_sync_backend.dart:294-304` `_readBodyBounded`）。此外 rwkvReplay 报出 `SrsCoreException out of memory`。
+    5. **大量 retire 报错。** 多份日志都有 `profile X is no longer the active SRS profile`，来自 `fushi/lib/src/srs/srs_profile_stores.dart:124-144` 的 `_handOver` 退役旧 store。
+  - 待证伪的假设（**推测，未验证**）：
+    - (a) `native/fushi_fsrs/src/store/mod.rs:281` 给每个连接设 64 MB page cache 加 256 MB mmap。读池大小为核数的一半并有上下限（`read_pool.rs`），连接数乘上去会把移动端地址空间和 RSS 推高。
+    - (b) 档案切换时，被退役的 store 在进行中的同步结束前仍持有原生 core，新旧两份 core 同时驻留。
+    - (c) `_readBodyBounded` 的上限按字节算，但先拼 String，大响应会在 Dart 堆上占约两倍内存。
+- **[x] ① 已修复（Android 前台匀速涨到 Scudo OOM 这一族）**——根因与修法见文末「根因（2026-11-06）」。iOS 早期报告是否同源未验证。原先的证据清单：
+  - ① CI 归档 iOS dSYM，使 `Runner+偏移` 可以符号化；
+  - ② 在同步各阶段的面包屑里记录原生 core 实例数和连接数；
+  - ③ 用大库（与用户量级相当的卡片数）在移动端模拟器上跑一次完整互联同步，并记录 RSS 曲线。
+- **[x] ② 已加自动化测试**：`native/fushi_rwkv/tests/journal.rs` `a_huge_append_batch_never_holds_more_than_the_journal_cap`（一次 append 超过撤销日志容量的整批，途中峰值不超过上限 + 一行；变异实测：改回整批跑完才修剪，峰值 63 MB > 32 MB 红）；`packages/fushi_engine/test/srs/srs_rwkv_service_test.dart`「退回重放的行多于撤销日志种子：前面整块 replay、只把末尾几条 append」。
+- **备注**：
+  - `n1i0ET11Ea` 日志里另外发现的 IPv6 回拼 bug 已经单独由 BUG-4070 修复。那个 bug 会让每轮同步失败，但不是内存耗尽的原因。
+  - **2026-11-05 续报**（同一台 iPhone18,3 / iOS 27.2）：`n5OctGeoZv`、`203OplWhew`、`HGELrYwLzJ`、`-gRMoCHExn`、`qST-r751jz`，3.3.0-debug.23469 / 23480。签名同族：JavaScriptCore EXC_BREAKPOINT（`JavaScriptCore ← WebCore ← WebKit+15172248` 于 libdispatch 队列，即 WebKit 内容拦截规则编译）、`Runner+32094696` abort、liblangid / libswiftCore abort，Dart `Out of Memory` 于 `SrsCore._utf8 ← SrsCore.sync2`（media 阶段）与 `PlatformViewsService.initUiKitView` 编码创建参数；崩溃前面包屑 `srs_sync stage=downloading/uploading`、`srs_v1_migrate`，rss 0.7–2.0 GB（maxRss 2.17 GB）。**两个构建都早于 BUG-4013 修复**（PR #2834 合并点序号 23591），不能用来判 4013 是否覆盖本 bug，结论不变：等 ≥23591 的 iOS 报告。
+  - 证据缺口 ① 由 BUG-4102 补上：CI 按序号存 iOS dSYM（未签名 / TestFlight 各一份），崩溃摘要带镜像 UUID、崩溃线程 32 帧，调用树超限时不再整棵丢。
+  - **与 BUG-4013 的关系**（同日、同机型 iPhone18,3 的 iOS 同步闪退，4013 定位为进程虚拟地址空间耗尽，PR #2834）：
+    - 4013 的修复**可能覆盖**本 bug 的 iOS 三份报告：rss 只有 1.0–1.4 GB 却在 Rust 与 Dart 堆各处分配失败，符合「地址空间满、物理内存未满」的特征；4013 去掉了重载期词典映射翻倍、media.bin 映射、逐 WebView 编译拦截规则，并开扩展虚拟地址空间 entitlement。本 bug 的报告里没有 VM 摘要，无法直接对照，需含 4013 修复的构建上再收 iOS 崩溃报告确认。
+    - 4013 **不覆盖**：Android `7oF6GvM4Ii`（Scudo OOM，pss 约 3.3 GB，64 位进程，是物理内存耗尽）；假设 (a) 在 64 位上不变（4013 只给 32 位进程的次要连接关 mmap）；假设 (b)、(c) 未触及。本 bug 保持未修复，根因定位所需证据不变。
+  - **2026-11-05 续报（Android，含 4013 修复之后）**：`Eg5thU2wox`，与 `7oF6GvM4Ii` 同一台 Xiaomi 23116PN5BC / Android 16，**3.3.0-debug.23853**（晚于 23591）。两次 Scudo / `mprotect ... Out of memory` SIGABRT（09:58、10:02，各在启动后约 4 分钟、前台），第二次 pss 1.9 GB / rss 2.0 GB，`memoryPressure=2x`。
+    - 同一份日志里的历史段把这台机的进程内存曲线串起来了：23213 `stage=downloading` rss 1.1–1.4 GB → pss 3.3 GB；23261 `stage=start:plan heads=2` rss 3.45 GB（maxRss 3.6 GB），同轮 Dart 侧报 `SrsCoreException(-1): out of memory`（`SrsCore.sync2` ← `_coreSync2`，`srs_db_store.dart:5325`），即 Rust sync2 自己分配失败。
+    - **23853 这两次崩溃没有 `srs_sync` / `srs_v1_migrate` 活动面包屑**，且 09:51 上一轮互联同步已因 `No reachable Fushi server address` 在 `srsDirectoryKeyOf` 前失败——崩溃当时 SRS 同步大概率没在跑。错误日志在这两个进程里没有任何记录（只有 popup WebView 的 `ResizeObserver` 噪声），内存涨到 1.9 GB 的来源**无证据**，不能直接归给 SRS 同步。
+    - 推论：本 bug 在 Android 上不是 4013 覆盖的地址空间问题，且「只在同步中爆」的前提被这份报告削弱。证据缺口新增 ④：非活动期间也要有内存采样面包屑（周期 rss + 原生 core / 连接数 / WebView 数），否则此类前台 OOM 永远只剩 pss 一个数。
+  - **证据缺口 ② / ④ 补上（取证，不是修复）**：会话标记滚动保留最近 6 次内存采样（每 30 s 一次 + 系统内存压力时一次，`fushi/lib/src/diagnostics/previous_exit_log.dart` `PreviousExitLog.startMemorySampling`），下次启动的 `Process.previousExitUnclean` 带 `memory=[HH:mm:ss rss=… max=… srs=开/存活 sess=… rd=… sqlite=当前/高水位MB; …]`。SRS 读数来自新导出 `ffsrs_store_diag_counts`（`native/fushi_fsrs/src/store/ffi.rs`）：句柄表里打开的库、还没释放的 `SrsCore`（存活 > 打开 = 退役的库还驻留，对应假设 (b)）、只读会话、只读连接池连接总数（假设 (a)）、内置 SQLite 堆用量与高水位。WebView 个数没有现成登记点，未纳入。下一份 ≥ 本 PR 构建的同机报告据此判 (a)/(b) 是否成立。
+  - **2026-11-05 用户另交 issue**（同机，6 份 tombstone）：崩溃线程有 DartWorker、`1.raster`（Adreno Vulkan 驱动 calloc）、主线程（pthread shadow stack mprotect），都是内存见底时的受害者，不指向元凶；线程数稳定 94–95。新线索：同 profile 手机 App Data 15.6 GB（曾 26 GB），桌面 srs.db 2.68 GB，分项未知。为此加了启动后 20 s 的存储分项诊断（`fushi/lib/src/diagnostics/storage_footprint_log.dart`，`Storage.footprint`：App 数据根前两层 ≥50 MB 的目录与 ≥100 MB 的大文件），内存采样另带线程数与打开着的 srs.db / -wal 字节。issue 建议的「回退 Skia」违反 Impeller 硬规则、「分配失败不 abort」App 层做不到，均不采纳。
+  - **2026-11-05 第一份带内存采样的报告**：`2sNhUbaEBO`（同一台 Xiaomi 23116PN5BC，3.3.0-debug.23862）。13:01:31 启动、全程前台，13:04:57 Scudo `internal map failure (Out of memory)` SIGABRT。用户补充：当时**停在 SRS 页面不动**。采样：
+    - rss 1164 → 1491 → 1802 → 2255 → 2848 → 3036 MB（每 30 s，约 10 MB/s 线性涨）；
+    - SRS 原生计数全程不变：`srs=1/1 sess=0 rd=3 sqlite=2/221MB db=2597MB wal=0MB`；
+    - 13:01:51 那轮互联同步在 `srsDirectoryKeyOf` 就因 `No reachable Fushi server address` 失败，之后没有 `srs_sync` 面包屑。
+    - 结论：假设 (b)（退役的库还驻留）**不成立**（只有 1 份 core）；假设 (a) 的「连接页缓存」部分**不成立**（SQLite 堆 2 MB、连接数不变）；同步没在跑。**但 `sqlite=` 只量 SQLite 页缓存**：连接开了 256 MB mmap，经 mmap 读的页不进页缓存，所以这个读数证明不了库在这 3 分钟里没被大块地读——涨的是谁仍无证据。
+  - **证据缺口 ⑤ 补上（取证，不是修复）**：内存采样再加三样，下一份同机报告直接点名涨的是谁、谁在跑：
+    - `anon= file= shm=`（`/proc/self/status` 的 RssAnon / RssFile / RssShmem，`processRssBreakdownProbe`）：file 涨 = srs.db 等文件映射页；
+    - `malloc=`（bionic `mallinfo().uordblks`，`fushi/lib/src/diagnostics/native_heap_probe.dart`）：anon 涨而 malloc 不涨 = Dart 堆 / 图形映射，malloc 跟着涨 = Rust / SQLite / C++；
+    - `srsops=[…] marks=[…] busy=[…]`（`packages/fushi_engine/lib/srs/srs_op_ledger.dart` `SrsOpLedger`）：每个采样窗口里 SRS 内核命令（`core:<op>`，含 RWKV 回放 / 日志尾）、srs.db 上每条 Drift 语句（`sql:<动词> <表>`，查询道与写那一路都记，带行数与读回字节）、`dart:load_stats` 整库统计装载的次数 / 用时 / 字节，正在跑超过 2 s 的操作，修订号按来源分开的跳数（`rev:local` 本机写入 / `rev:pulled` 同步拉入），以及牌组列表 / 首页统计 / 冲突角标 provider 的重建次数。单次超过 3 s 或读回超过 32 MB 的操作另记诊断日志 `SrsOpLedger.heavy`。
+  - **2026-11-05 第一份带 malloc 分项 + SRS 账本的报告**：`7ED7Jiky72`（同机 Xiaomi 23116PN5BC，3.3.0-debug.23868，即 #2916 合并点 `758bd5a`，账本已在包里）。15:06:07 启动、全程前台（`lastLifecycle=resumed`），15:11:02 Scudo `internal map failure (Out of memory)` SIGABRT（崩溃线程 AudioThread，受害者）。采样每 30 s：
+    - malloc 955 → 1263 → 1535 → 1914 → 2399 → 2902 MB（约 10 MB/s 线性涨），anon 1169 → 2904 MB 同步涨，file 577 → 308 MB（内存压力下被回收）；
+    - SRS 原生计数全程不变 `srs=1/1 sess=0 rd=3 sqlite=2/221MB`；**6 个窗口都没有 `srsops=` / `marks=` / `busy=` 段**——`takeSummary()` 只在窗口为空时返回 null，即这 3 分钟里没有任何 SRS 内核命令、srs.db 语句、整库统计装载，也没有修订号 / 牌组列表 / 首页统计 provider 重建；
+    - 15:06:27 那轮互联同步照旧在 `resolveReachableFushiCandidate` 失败，之后无 `srs_sync` 面包屑。
+  - **同日用户反馈 `6Eu_JmRboy`**（同机 23868）：「关闭 srs 模块后，在小说统计页面又崩溃了」。日志里另有 23862 的 pid 30757（13:51–14:58）：`srs=0/0` 全程（SRS 内核根本没开），maxRss 仍到 1725 MB、`memoryPressure=2x`。
+  - **结论更新**：涨的是 **native malloc（anon 跟 malloc 同步，file 不涨）**，且**与 SRS 无关**——账本证明 SRS 在涨的窗口里零活动，关掉 SRS 模块照样涨照样崩。「SRS 页面不动」与「小说统计页不动」两个现场的共同点是**停在某个页面不操作、内存仍以约 10 MB/s 匀速上涨**，形态像「每帧泄漏」（120 Hz 下约 80 KB/帧）而不是某次大查询。早先 issue 里 6 份 tombstone 有一份死在 `1.raster` 的 Adreno Vulkan 驱动 `calloc`，与「渲染路径持续分配」一致，但**仍是推测**：Impeller Vulkan 后端 / 驱动、持续动画的 widget（加载指示器、图表、错峰入场）、或 Dart 侧 FFI 的 native 分配（sqlite3 native asset 堆、词典库等不在 `sqlite=` 读数里）都没排除。
+  - 本 bug 标题里的「SRS 同步」已被证据否定（只剩 iOS 早期报告与 23261 那次 `SrsCore.sync2` OOM 发生在同步中，后者也可能是同一泄漏把内存吃满后 sync2 恰好是分配失败的那一个）。证据缺口 ⑥：采样里没有**当前路由**与**窗口内帧数**，无法确认「停在页面不动时是否仍在持续出帧」以及停在哪一页；下一步应补这两项，或在同机型上停在统计中心 / SRS 页用 `dumpsys meminfo` + `adb shell am dumpheap -n` 抓 native heap 分配栈。
+  - **证据缺口 ⑥ 补上（取证，不是修复）**：内存采样再加 `frames=N page=[A>B]`（`fushi/lib/src/diagnostics/ui_activity_probe.dart` `UiActivityProbe`）。`frames` = 上次采样以来跑过的帧数（持久帧回调计数），停着不动仍有几千帧 = 有东西在逐帧重绘；`page` = 元素树里类型名以 `Page` 结尾、且不在 `TickerMode(enabled: false)` 子树里的 widget（被盖住的路由、没显示的 tab 都排除），即用户此刻看得见的页面。下一份同机报告据此判「每帧泄漏」成立与否、落在哪一页。
+  - **2026-11-05 第一份带帧数 / 页面的报告**：`hcIrkemA-E`（同机，3.3.0-debug.23876）。17:51:39 启动、前台，17:53:17 原生崩溃。采样：
+    - 17:52:09 `page=[SettingsDetailPage]` frames=1566，malloc 565 MB，SRS 启动重活（`core:rwkv_replay` 4.2 s、`core:study` 1.1 s）；
+    - 17:52:39 `page=[HomePage>SrsDeckListPage]` frames=3393，malloc 1436 MB，**这次 SRS 同步真在跑**（`core:media_hash` 2× 14.2 s、`media_scan`、`ingest_commit` 等 +18 种，`rev:pulled+1`），busy `sql:SELECT srs_field_edits 7.4s`；
+    - 17:53:09 同页 frames=3542，malloc **3017 MB（30 s +1.58 GB）**，窗口里只有一条 `sql:SELECT srs_field_edits` 8.3 s / 20.6 MB / 44285 行；`sqlite=2/131MB`。
+    - 判读：① 停在牌组列表时**持续约 118 fps 出帧**（30 s 3400–3500 帧），某个东西在逐帧跑；牌组行的 `_SrsDeckProgress` 是 `TweenAnimationBuilder` 跑完即停，不是它。② 这次 malloc 增速与 SRS 同步 / `srs_field_edits` 全表读重叠，但 `7ED7Jiky72` 里 SRS 零活动也照涨，SRS 只是可能的加速项、不是必要条件。③ 帧数与 malloc 增量不成比例（30 s +871 MB 与 +1581 MB 帧数几乎相同），「纯每帧泄漏」也没坐实。
+  - **证据缺口 ⑦ 补上（取证，不是修复）**：采样再加 `tick=[A×3 B]`——同一趟走树里数各 widget 持有的**活跃且未静音的 ticker**（经 `SingleTickerProviderStateMixin` / `TickerProviderStateMixin` 的 `debugFillProperties` 取到 ticker 对象判 `isActive`）。下一份报告直接点名是谁在逐帧跑；frames 高而 tick 空 = 出帧不是 ticker 驱动（动图、视频纹理、平台视图、手动 scheduleFrame）。
+  - **2026-11-05 `RZdXf9eW67`（同机，23878，首份带 `tick=`）**：停在 `HomePage>SrsDeckListPage`，6 个窗口每 30 s 2916–3606 帧（满 120 fps），**`tick=` 全程为空**；首个窗口有一轮 SRS 同步，之后 SRS 零活动、无 provider 重建（`marks` 空），malloc 383 → 732 → 1043 → 1530 → 2180 → 2620 MB 后 SIGABRT。同机另一进程停在 `HomeDashboardPage`（SRS 关）帧数 0–196、malloc 稳在约 110 MB。本地用 `srs_pages_test` 的装配单独挂 `SrsDeckListPage`（MD3 / Apple、411×914 与 1100×900），静止后 `hasScheduledFrame=false`——页面自身没有重绘循环，满帧出帧不是 ticker 驱动。
+  - **证据缺口 ⑧ 补上（取证，不是修复）**：采样再加 `build=N who=[函数@文件:行×k; …]`——套住 `BuildOwner.onBuildScheduled`，数窗口里「因重建而要帧」的次数，并按 200 ms 节流抓调用栈记第一个应用栈帧。frames ≫ build = 出帧来自纹理 / 平台视图 / 纯重绘；who 直接点名逐帧 setState 的调用点。
+  - **证据缺口 ⑨ 补上（取证）**：`req= fcb= fvis= layers=`——要帧归因与 layer 普查（`fushi/lib/src/diagnostics/fushi_binding.dart` + `ui_activity_probe.dart`）。`#VJLEBHP4lz` 点名逐帧要帧的是后台任务按钮上的不定态进度环（`_RepeatingTicker.syncTicker`），但 Windows 离屏同款进度环 60 s 只涨 6 MB（`integration_test/progress_ring_native_leak_probe_itest.dart`），渲染不漏。
+  - **2026-11-06 排除渲染**：`fyqsAwZOjU`（23891）用户关掉系统动画，30 s 只 24 帧，malloc 仍 38 → 1627 MB；同日另一进程停在阅读器（每 30 s 1–400 帧）照样 553 → 3098 MB；那轮同步一开头就 `No reachable Fushi server address`，没进媒体阶段。所有漏的进程开头都有一次 RWKV 准备（`core:rwkv_replay` + `rwkv_log_tail`），没开 SRS 的进程 malloc 稳在约 108 MB。桌面跑 3 万卡 / 37.6 万条的 RWKV 全量回放只 +100 MB（`native/fushi_rwkv/examples/bench.rs`），全量回放本身不漏。
+  - **证据缺口 ⑩ 补上（取证）**：RWKV worker 每条命令记进 SRS 账本（`rwkv:<命令>`），阶段切换记 `marks=rwkv:<阶段>`；另加原生内存归因（各线程 CPU、匿名映射分组、malloc 越档 smaps dump，`fushi/lib/src/diagnostics/native_attribution_probe.dart`）。
+- **根因（2026-11-06，`42RdstXPpT`，23892）**：`marks=rwkv:preparing+1 rwkv:ready+1`（从快照恢复、就绪）之后 **`busy=[rwkv:append 21s → 51s → 81s → 111s → 141s]`**——一次 RWKV append 跑了两分多钟没结束，同期 malloc 487 → 894 → 1421 → 2142 → 2635 MB 后 Scudo OOM。
+  - `native/fushi_rwkv/src/lib.rs` `RwkvRuntime::append`：每追加一行记一条撤销记录（小模型每行约 55 KB），**整批跑完才按 `JOURNAL_MAX_BYTES`（32 MB）修剪**。一批几万行时撤销日志在途中涨到 GB 级。
+  - 一批会有几万行的来源：`packages/fushi_engine/lib/srs/srs_rwkv_service.dart` `_rebase`（退回重放）把分歧时刻之后的**全部**行一次交给 `append`。同步拉回另一台设备的评分插在已回放的历史中间时，分歧时刻可能很早，之后的整段历史都走逐行带撤销的 append（手机上逐行顺序算、几分钟）。进程在快照存下来之前就 OOM，下次启动从同一个旧快照恢复、同样的退回重放再来一遍，于是每次打开 SRS 都崩。
+  - 修复：① 原生 `append` 每追加一行就修剪（`trim_journal`），撤销日志任何时刻不超过上限加一行；② `_rebase` 与全量重建同一种拆法（`_replayRows`）：前面的整块 `replay`（原生成批并行、不记撤销），只把最后 `journalSeed`（500）条 `append`。

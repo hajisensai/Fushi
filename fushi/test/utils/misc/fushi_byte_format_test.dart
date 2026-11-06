@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 
 void main() {
@@ -21,10 +21,7 @@ void main() {
     });
 
     test('GB 封顶不再升档', () {
-      expect(
-        FushiByteFormat.bytes(2048 * 1024 * 1024 * 1024),
-        '2048.0 GB',
-      );
+      expect(FushiByteFormat.bytes(2048 * 1024 * 1024 * 1024), '2048.0 GB');
     });
 
     test('负值保留符号并正常换档', () {

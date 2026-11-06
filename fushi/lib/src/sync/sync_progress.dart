@@ -13,6 +13,11 @@ library;
 /// label; keeping it an enum (not a pre-localized string) keeps i18n in the
 /// widget layer and makes the orchestrator testable.
 enum SyncPhase {
+  /// 解析同步根 + 一次列举远端清单（`snapshotListing`）+ 清理根下残留。每轮最先走网络的
+  /// 一步，库大时可达数十秒；没有这个阶段名时进度行停在「正在准备同步」，与「等锁 /
+  /// 鉴权」同形，用户看不出同步在干活。
+  remoteListing,
+
   /// Downloading + importing books that exist remotely but not locally.
   books,
 
@@ -34,6 +39,31 @@ enum SyncPhase {
 
   /// Font files + font settings in the `__fonts__` namespace.
   fonts,
+
+  // ── 收尾阶段（DRXb43v3fA / y3tzvcnrPU）─────────────────────────────────
+  // 有声书 / 视频之后这几步都走网络、在 Drive 上合计可达十几秒。它们没有阶段名时
+  // 进度行停在上一阶段最后一本书上，用户看到的就是「最后一本卡死」。不拆条目：
+  // 只发 itemTotal 0 的阶段 tick（不确定进度条）。
+
+  /// Cross-device aggregate: statistics, favorites, web history.
+  statistics,
+
+  /// Collections plus what hangs off them (tags, media links, scraped metadata).
+  collections,
+
+  /// 可移植偏好设置（「同步设置」，反馈 AWp-0BtDDv）。
+  settings,
+
+  /// Deletion-propagation tombstones.
+  deletions,
+
+  /// Pending card-mining relay (`__pending_mines__`).
+  pendingMines,
+
+  /// 通道编排跑完之后的后置步骤（复习同步、刷新库页）。它们不发阶段 tick，没有
+  /// 这一档时进度行会一直挂着编排的最后一个阶段名（用户看到的是「同步待发制卡」
+  /// 长时间不动，以为每轮都在传卡）。
+  finishing,
 }
 
 /// One progress tick within a sync phase.

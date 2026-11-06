@@ -14,6 +14,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fushi_asr_core/asr_core.dart';
+
 void main(List<String> args) {
   final Map<String, String> opts = _parseArgs(args);
   final String inPath = _require(opts, 'in');

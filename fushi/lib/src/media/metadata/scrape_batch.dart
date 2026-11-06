@@ -1,13 +1,13 @@
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
-enum ScrapeBatchItemResult {
-  applied,
-  needsReview,
-  skipped,
-  failed,
-}
+enum ScrapeBatchItemResult { applied, needsReview, skipped, failed }
 
 class ScrapeBatchSummary {
   const ScrapeBatchSummary({
@@ -47,12 +47,10 @@ class ScrapeBatchProgress {
   final ScrapeBatchSummary summary;
 }
 
-typedef ScrapeBatchProgressCallback = void Function(
-  ScrapeBatchProgress progress,
-);
-typedef ScrapeBatchRunner = Future<ScrapeBatchSummary> Function(
-  ScrapeBatchProgressCallback onProgress,
-);
+typedef ScrapeBatchProgressCallback =
+    void Function(ScrapeBatchProgress progress);
+typedef ScrapeBatchRunner =
+    Future<ScrapeBatchSummary> Function(ScrapeBatchProgressCallback onProgress);
 
 Future<ScrapeBatchSummary?> showScrapeBatchDialog({
   required BuildContext context,
@@ -137,33 +135,33 @@ class _ScrapeBatchDialogState extends State<ScrapeBatchDialog> {
                 ),
               )
             : _running
-                ? Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      FushiLinearProgressIndicator(value: value),
-                      const SizedBox(height: 12),
-                      Text(
-                        t.scrape_all_running(
-                          current: progress?.current ?? 0,
-                          total: widget.itemCount,
-                        ),
-                      ),
-                      if (progress != null) ...<Widget>[
-                        const SizedBox(height: 6),
-                        Text(
-                          t.scrape_all_item(title: progress.title),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ],
-                  )
-                : Text(
-                    widget.itemCount == 0
-                        ? t.scrape_all_empty
-                        : t.scrape_all_confirm(n: widget.itemCount),
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  FushiLinearProgressIndicator(value: value),
+                  const SizedBox(height: 12),
+                  Text(
+                    t.scrape_all_running(
+                      current: progress?.current ?? 0,
+                      total: widget.itemCount,
+                    ),
                   ),
+                  if (progress != null) ...<Widget>[
+                    const SizedBox(height: 6),
+                    Text(
+                      t.scrape_all_item(title: progress.title),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              )
+            : Text(
+                widget.itemCount == 0
+                    ? t.scrape_all_empty
+                    : t.scrape_all_confirm(n: widget.itemCount),
+              ),
       ),
       actions: <Widget>[
         // 出口在**任何阶段**都在场。原先 `PopScope(canPop: !_running)` 与按钮的
@@ -181,10 +179,7 @@ class _ScrapeBatchDialogState extends State<ScrapeBatchDialog> {
           ),
         ),
         if (!_running && summary == null && widget.itemCount > 0)
-          FushiFilledButton(
-            onPressed: _start,
-            child: Text(t.scrape_all_start),
-          ),
+          FushiFilledButton(onPressed: _start, child: Text(t.scrape_all_start)),
       ],
     );
   }

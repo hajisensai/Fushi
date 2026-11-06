@@ -53,14 +53,10 @@ import 'package:flutter/foundation.dart';
 @immutable
 class SelectionSlot {
   /// 散卡：书架是 `mediaIdentifier` / `srt_` 前缀键，视频库是 `bookUid`。
-  const SelectionSlot.loose(String key)
-      : looseKey = key,
-        collectionId = null;
+  const SelectionSlot.loose(String key) : looseKey = key, collectionId = null;
 
   /// 整合集：`MediaCollections.id`。
-  const SelectionSlot.collection(int id)
-      : collectionId = id,
-        looseKey = null;
+  const SelectionSlot.collection(int id) : collectionId = id, looseKey = null;
 
   final String? looseKey;
   final int? collectionId;
@@ -134,20 +130,18 @@ class MediaSelectionController {
   bool get active => _active;
 
   /// 已选散卡键（只读视图，**只含当前可见的**——见库文档「可见性约束」）。
-  Set<String> get looseKeys => _looseKeysView ??= UnmodifiableSetView<String>(
-        <String>{
-          for (final String key in _looseKeys)
-            if (_visibleLooseSet.contains(key)) key,
-        },
-      );
+  Set<String> get looseKeys =>
+      _looseKeysView ??= UnmodifiableSetView<String>(<String>{
+        for (final String key in _looseKeys)
+          if (_visibleLooseSet.contains(key)) key,
+      });
 
   /// 已选合集 id（只读视图，**只含当前可见的**）。
-  Set<int> get collectionIds => _collectionIdsView ??= UnmodifiableSetView<int>(
-        <int>{
-          for (final int id in _collectionIds)
-            if (_visibleCollectionSet.contains(id)) id,
-        },
-      );
+  Set<int> get collectionIds =>
+      _collectionIdsView ??= UnmodifiableSetView<int>(<int>{
+        for (final int id in _collectionIds)
+          if (_visibleCollectionSet.contains(id)) id,
+      });
 
   /// 内部选中集（含当前不可见的）。仅供测试比对派生视图是否陈旧。
   @visibleForTesting
@@ -198,9 +192,9 @@ class MediaSelectionController {
 
   bool isSelected(SelectionSlot slot) => slot.isCollection
       ? _collectionIds.contains(slot.collectionId) &&
-          _visibleCollectionSet.contains(slot.collectionId)
+            _visibleCollectionSet.contains(slot.collectionId)
       : _looseKeys.contains(slot.looseKey) &&
-          _visibleLooseSet.contains(slot.looseKey);
+            _visibleLooseSet.contains(slot.looseKey);
 
   /// 当前可见的散卡键（[setVisibleOrder] 最近一次登记的那份）。
   ///
@@ -351,8 +345,9 @@ class MediaSelectionController {
     final Set<String> looseCandidates = loose.toSet();
     final Set<int> collectionCandidates = collections.toSet();
     final Set<String> invertedLoose = looseCandidates.difference(_looseKeys);
-    final Set<int> invertedCollections =
-        collectionCandidates.difference(_collectionIds);
+    final Set<int> invertedCollections = collectionCandidates.difference(
+      _collectionIds,
+    );
     _looseKeys
       ..removeAll(looseCandidates)
       ..addAll(invertedLoose);

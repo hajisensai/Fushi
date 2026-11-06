@@ -1,18 +1,18 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/field.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 
 /// Highlighted text in a sentence.
 class ClozeInsideField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   ClozeInsideField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Cloze Inside',
-          description: 'Highlighted text in a sentence.',
-          icon: Icons.dehaze_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Cloze Inside',
+        description: 'Highlighted text in a sentence.',
+        icon: Icons.dehaze_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static ClozeInsideField get instance => _instance;

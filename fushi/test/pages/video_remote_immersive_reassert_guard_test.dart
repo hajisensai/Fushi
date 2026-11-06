@@ -20,20 +20,34 @@ void main() {
   test('_applyLoad 成功 setState 后重申 _applyVideoImmersiveMode', () {
     // 锚 _applyLoad 成功路径的 setState 块到方法尾部一带，断言其中重申沉浸模式。
     final int setStateIdx = src.indexOf('_failed = false;');
-    expect(setStateIdx, greaterThanOrEqualTo(0),
-        reason: '需有 _applyLoad 成功路径的 _failed = false');
+    expect(
+      setStateIdx,
+      greaterThanOrEqualTo(0),
+      reason: '需有 _applyLoad 成功路径的 _failed = false',
+    );
     final int refocusIdx = src.indexOf(
-        '_focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady)',
-        setStateIdx);
+      '_focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady)',
+      setStateIdx,
+    );
     expect(refocusIdx, greaterThan(setStateIdx), reason: '需有就绪后的焦点回收锚点');
     // 重申沉浸模式应紧随就绪 setState / refocus 之后、在窗口纵横比同步之前。
-    final int immersiveIdx =
-        src.indexOf('unawaited(_applyVideoImmersiveMode());', refocusIdx);
-    expect(immersiveIdx, greaterThan(refocusIdx),
-        reason: 'BUG-370：视频就绪后必须重申 _applyVideoImmersiveMode（远端 inset 归位）');
-    final int aspectLockIdx =
-        src.indexOf('_syncWindowAspectRatioLock();', refocusIdx);
-    expect(aspectLockIdx, greaterThan(immersiveIdx),
-        reason: '重申沉浸模式应在就绪后、窗口纵横比同步前');
+    final int immersiveIdx = src.indexOf(
+      'unawaited(_applyVideoImmersiveMode());',
+      refocusIdx,
+    );
+    expect(
+      immersiveIdx,
+      greaterThan(refocusIdx),
+      reason: 'BUG-370：视频就绪后必须重申 _applyVideoImmersiveMode（远端 inset 归位）',
+    );
+    final int aspectLockIdx = src.indexOf(
+      '_syncWindowAspectRatioLock();',
+      refocusIdx,
+    );
+    expect(
+      aspectLockIdx,
+      greaterThan(immersiveIdx),
+      reason: '重申沉浸模式应在就绪后、窗口纵横比同步前',
+    );
   });
 }

@@ -44,10 +44,10 @@ void main() {
 
   const String knownWord = 'テスト語';
 
-  testWidgets(
-      'popup cursor: caret + selection injected into the popup; '
-      'lookup opens it while the reader cursor is active',
-      (WidgetTester tester) async {
+  testWidgets('popup cursor: caret + selection injected into the popup; '
+      'lookup opens it while the reader cursor is active', (
+    WidgetTester tester,
+  ) async {
     final List<FlutterErrorDetails> errors = [];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
     FlutterError.onError = (FlutterErrorDetails details) {
@@ -76,14 +76,21 @@ void main() {
 
       // ── Ensure a term dictionary with our known word exists ──────────
       var probe = await appModel.searchDictionary(
-          searchTerm: knownWord, searchWithWildcards: false);
+        searchTerm: knownWord,
+        searchWithWildcards: false,
+      );
       if (probe.entries.isEmpty) {
         await _importTestDictionary(tester, appModel);
         probe = await appModel.searchDictionary(
-            searchTerm: knownWord, searchWithWildcards: false);
+          searchTerm: knownWord,
+          searchWithWildcards: false,
+        );
       }
-      expect(probe.entries, isNotEmpty,
-          reason: 'the generated dictionary must resolve "$knownWord"');
+      expect(
+        probe.entries,
+        isNotEmpty,
+        reason: 'the generated dictionary must resolve "$knownWord"',
+      );
 
       // ── Open a book ──────────────────────────────────────────────────
       // Always import a FRESH EPUB (no audiobook) and open that exact book, so
@@ -94,8 +101,11 @@ void main() {
       final navTargets = findPrimaryNavigationTargets();
       if (navTargets.isNotEmpty) {
         final bool focusedTab = await driver.focusWidget(navTargets.first);
-        expect(focusedTab, isTrue,
-            reason: 'Books tab must be reachable by focus');
+        expect(
+          focusedTab,
+          isTrue,
+          reason: 'Books tab must be reachable by focus',
+        );
         await driver.activate();
         await tester.pumpAndSettle();
       }
@@ -105,11 +115,17 @@ void main() {
       for (int i = 0; i < 40 && seededEntry.evaluate().isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 500));
       }
-      expect(seededEntry, findsOneWidget,
-          reason: 'freshly seeded paginated book must appear on the shelf');
+      expect(
+        seededEntry,
+        findsOneWidget,
+        reason: 'freshly seeded paginated book must appear on the shelf',
+      );
       final bool focusedBook = await driver.focusWidget(seededEntry);
-      expect(focusedBook, isTrue,
-          reason: 'Book card must be reachable by focus');
+      expect(
+        focusedBook,
+        isTrue,
+        reason: 'Book card must be reachable by focus',
+      );
       await driver.activate();
       await tester.pump(const Duration(seconds: 3));
 
@@ -170,16 +186,22 @@ void main() {
         caretType = (await eval2('typeof window.fushiCaret')).toString();
         if (caretType == 'object') break;
       }
-      expect(popupShown, isTrue,
-          reason: 'a popup WebView opens for the lookup');
+      expect(
+        popupShown,
+        isTrue,
+        reason: 'a popup WebView opens for the lookup',
+      );
       final popupEval = ReaderFushiPage.debugEvaluateTopPopup!;
 
       // ── The SAME caret + selection are injected into the popup ───────
       // These read-only checks verify the new integration points: the reader
       // injects window.fushiCaret on the popup's load, and selection.js exposes
       // the refactored selectFromPosition the caret lookup reuses.
-      expect(caretType, 'object',
-          reason: 'the char caret module is injected into the popup WebView');
+      expect(
+        caretType,
+        'object',
+        reason: 'the char caret module is injected into the popup WebView',
+      );
 
       Future<String> typeOf(String expr) async =>
           (await popupEval('typeof ($expr)')).toString();
@@ -188,9 +210,12 @@ void main() {
       expect(await typeOf('window.fushiCaret.move'), 'function');
       expect(await typeOf('window.fushiCaret.lookup'), 'function');
       expect(
-          await typeOf('window.fushiSelection.selectFromPosition'), 'function',
-          reason: 'popup selection.js exposes selectFromPosition (caret lookup '
-              'reuses it)');
+        await typeOf('window.fushiSelection.selectFromPosition'),
+        'function',
+        reason:
+            'popup selection.js exposes selectFromPosition (caret lookup '
+            'reuses it)',
+      );
 
       await takeScreenshot(binding, 'popup_caret_injected');
 
@@ -206,8 +231,9 @@ void main() {
       // machine (CaretSurface) is pure Dart and is also covered by code review;
       // the caret's DOM behaviour is proven on a real WebView by
       // reader_caret_test.dart.
-      final String renderType =
-          (await popupEval('typeof window.renderPopup')).toString();
+      final String renderType = (await popupEval(
+        'typeof window.renderPopup',
+      )).toString();
       if (renderType == 'function') {
         bool transferred = false;
         for (int i = 0; i < 60; i++) {
@@ -217,17 +243,23 @@ void main() {
             break;
           }
         }
-        final String d = 'surface=${surface()} '
+        final String d =
+            'surface=${surface()} '
             "gc=${await popupEval("document.querySelectorAll('.glossary-content').length")} "
             'active=${await popupEval('!!(window.fushiCaret&&window.fushiCaret.isActive())')}';
-        expect(transferred, isTrue,
-            reason: 'cursor must auto-transfer onto the rendered popup [$d]');
         expect(
-            (await popupEval(
-                    '!!(window.fushiCaret&&window.fushiCaret.isActive())')) ==
-                true,
-            isTrue,
-            reason: 'popup cursor active after transfer [$d]');
+          transferred,
+          isTrue,
+          reason: 'cursor must auto-transfer onto the rendered popup [$d]',
+        );
+        expect(
+          (await popupEval(
+                '!!(window.fushiCaret&&window.fushiCaret.isActive())',
+              )) ==
+              true,
+          isTrue,
+          reason: 'popup cursor active after transfer [$d]',
+        );
         // The popup cursor now navigates the whole popup (no scopeSelector), so
         // a gamepad can reach interactive controls and every kanji, not just the
         // definition body.
@@ -261,8 +293,9 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump(const Duration(milliseconds: 400));
 
-      final NavigatorState nav =
-          Navigator.of(tester.element(find.byType(Scaffold).first));
+      final NavigatorState nav = Navigator.of(
+        tester.element(find.byType(Scaffold).first),
+      );
       nav.pop();
       await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
@@ -278,7 +311,9 @@ void main() {
 /// Builds a minimal Yomitan term dictionary (one known word) in memory, writes
 /// it to the app cache dir, and imports it — no host files or adb push needed.
 Future<void> _importTestDictionary(
-    WidgetTester tester, AppModel appModel) async {
+  WidgetTester tester,
+  AppModel appModel,
+) async {
   final Map<String, dynamic> index = <String, dynamic>{
     'title': 'FushiCaretTestDict',
     'format': 3,
@@ -294,7 +329,7 @@ Future<void> _importTestDictionary(
       0,
       <String>['テスト用の語釈。'],
       0,
-      ''
+      '',
     ],
     <dynamic>[
       '言葉',
@@ -304,7 +339,7 @@ Future<void> _importTestDictionary(
       0,
       <String>['言語。ことば。'],
       1,
-      ''
+      '',
     ],
   ];
 

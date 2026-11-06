@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// TODO-902 守卫：书架愤怒回归——用户「我之前好好的书怎么变成 epub书库 和
 /// 字幕有声书 分组了，改回去」。`f709b288e` 把书架按类型拆成「字幕有声书 /
@@ -31,8 +31,11 @@ void main() {
     const String end = 'Widget buildPlaceholder(';
     final int startIdx = source.indexOf(start);
     final int endIdx = source.indexOf(end);
-    expect(startIdx, greaterThanOrEqualTo(0),
-        reason: '_buildBodyWithSrtBooks 应存在');
+    expect(
+      startIdx,
+      greaterThanOrEqualTo(0),
+      reason: '_buildBodyWithSrtBooks 应存在',
+    );
     expect(endIdx, greaterThan(startIdx), reason: 'buildPlaceholder 应在其后');
     return source.substring(startIdx, endIdx);
   }

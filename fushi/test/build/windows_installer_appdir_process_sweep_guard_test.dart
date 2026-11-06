@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1459 回归守卫：Windows 安装器必须在文件复制前清扫安装目录下的残留进程。
 ///

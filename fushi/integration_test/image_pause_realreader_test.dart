@@ -32,129 +32,166 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-      'BUG-007 e2e: real paginated reader reveals image on cross, text on resume',
-      (WidgetTester tester) async {
-    await launchFushiTestApp();
-    expect(await waitForHome(tester), isTrue, reason: 'Home must render');
-    await tester.pump(const Duration(seconds: 2));
+    'BUG-007 e2e: real paginated reader reveals image on cross, text on resume',
+    (WidgetTester tester) async {
+      await launchFushiTestApp();
+      expect(await waitForHome(tester), isTrue, reason: 'Home must render');
+      await tester.pump(const Duration(seconds: 2));
 
-    // BUG-1106：Tab 遍历前必须先开实验焦点导航开关——关闭（默认）时裸 Tab 被全局
-    // 中和成 DoNothingIntent，而集成测试跑在全新隔离根上、偏好恒为默认值。
-    await enableFocusNavigation(tester);
-    final FocusDriver driver = FocusDriver(tester);
+      // BUG-1106：Tab 遍历前必须先开实验焦点导航开关——关闭（默认）时裸 Tab 被全局
+      // 中和成 DoNothingIntent，而集成测试跑在全新隔离根上、偏好恒为默认值。
+      await enableFocusNavigation(tester);
+      final FocusDriver driver = FocusDriver(tester);
 
-    // ── 打开（必要时自种）测试书 ──────────────────────────────────────────
-    final List<Finder> nav = findPrimaryNavigationTargets();
-    if (nav.isNotEmpty) {
-      final bool focusedTab = await driver.focusWidget(nav.first);
-      expect(focusedTab, isTrue,
-          reason: 'Books tab must be reachable by focus');
-      await driver.activate();
-      await tester.pumpAndSettle();
-    }
-    Finder entries = findBookEntries();
-    for (int i = 0; i < 20 && entries.evaluate().isEmpty; i++) {
-      await tester.pump(const Duration(milliseconds: 500));
-      entries = findBookEntries();
-    }
-    if (entries.evaluate().isEmpty) {
-      await seedReaderBook(tester);
+      // ── 打开（必要时自种）测试书 ──────────────────────────────────────────
+      final List<Finder> nav = findPrimaryNavigationTargets();
       if (nav.isNotEmpty) {
         final bool focusedTab = await driver.focusWidget(nav.first);
-        expect(focusedTab, isTrue,
-            reason: 'Books tab must be reachable by focus');
+        expect(
+          focusedTab,
+          isTrue,
+          reason: 'Books tab must be reachable by focus',
+        );
         await driver.activate();
         await tester.pumpAndSettle();
       }
-      entries = findBookEntries();
+      Finder entries = findBookEntries();
       for (int i = 0; i < 20 && entries.evaluate().isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 500));
         entries = findBookEntries();
       }
-    }
-    expect(entries.evaluate(), isNotEmpty, reason: 'need a book on the shelf');
-
-    final bool focusedBook = await driver.focusWidget(entries.first);
-    expect(focusedBook, isTrue, reason: 'Book card must be reachable by focus');
-    await driver.activate();
-    await tester.pump(const Duration(seconds: 3));
-
-    const Key webViewKey = ValueKey<String>('fushi_webview');
-    for (int i = 0; i < 60 && find.byKey(webViewKey).evaluate().isEmpty; i++) {
-      await tester.pump(const Duration(milliseconds: 500));
-    }
-    expect(find.byKey(webViewKey), findsOneWidget, reason: 'WebView present');
-
-    const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
-    bool ready = false;
-    for (int i = 0; i < 120; i++) {
-      await tester.pump(const Duration(milliseconds: 500));
-      if (find.byKey(contentReadyKey).evaluate().isNotEmpty) {
-        ready = true;
-        break;
+      if (entries.evaluate().isEmpty) {
+        await seedReaderBook(tester);
+        if (nav.isNotEmpty) {
+          final bool focusedTab = await driver.focusWidget(nav.first);
+          expect(
+            focusedTab,
+            isTrue,
+            reason: 'Books tab must be reachable by focus',
+          );
+          await driver.activate();
+          await tester.pumpAndSettle();
+        }
+        entries = findBookEntries();
+        for (int i = 0; i < 20 && entries.evaluate().isEmpty; i++) {
+          await tester.pump(const Duration(milliseconds: 500));
+          entries = findBookEntries();
+        }
       }
-    }
-    expect(ready, isTrue, reason: 'reader content ready');
-    await tester.pump(const Duration(seconds: 4));
+      expect(
+        entries.evaluate(),
+        isNotEmpty,
+        reason: 'need a book on the shelf',
+      );
 
-    final Future<dynamic> Function(String)? runJs =
-        ReaderFushiPage.debugEvaluateJavascript;
-    final Future<void> Function()? injectBridge =
-        ReaderFushiPage.debugInjectAudiobookBridge;
-    expect(runJs, isNotNull, reason: 'debug JS hook set (debug build)');
-    expect(injectBridge, isNotNull, reason: 'bridge inject hook set');
+      final bool focusedBook = await driver.focusWidget(entries.first);
+      expect(
+        focusedBook,
+        isTrue,
+        reason: 'Book card must be reachable by focus',
+      );
+      await driver.activate();
+      await tester.pump(const Duration(seconds: 3));
 
-    // ── 注入真实 bridge + 整页大图(插在 m101 前) + 分页 harness ───────────
-    await injectBridge!();
-    await tester.pump(const Duration(milliseconds: 300));
-    await runJs!(paginationHarnessJs);
-    final dynamic setup = await runJs(_insertImageJs);
-    debugPrint('[IMGPAUSE-E2E] setup=$setup');
-    final Map<String, dynamic> setupMap =
-        jsonDecode(setup as String) as Map<String, dynamic>;
-    expect(setupMap['hasPic'], isTrue, reason: 'full-page image injected');
-    expect(setupMap['hasHighlight'], isTrue,
-        reason: 'real __fushiHighlight injected by bridge');
+      const Key webViewKey = ValueKey<String>('fushi_webview');
+      for (
+        int i = 0;
+        i < 60 && find.byKey(webViewKey).evaluate().isEmpty;
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+      expect(find.byKey(webViewKey), findsOneWidget, reason: 'WebView present');
 
-    // ── 模拟 cue 推进：先 reveal 图片前一句 m100，再推进到图片后一句 m101 ──
-    await runJs("window.__fushiHighlight('#m100', true);");
-    await tester.pump(const Duration(milliseconds: 600));
-    final double m100Frac = await _frac(runJs, 'm100');
-    final String alignAfterM100 = await _align(runJs);
-    debugPrint(
-        '[IMGPAUSE-E2E] after m100: m100Frac=$m100Frac align=$alignAfterM100');
+      const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
+      bool ready = false;
+      for (int i = 0; i < 120; i++) {
+        await tester.pump(const Duration(milliseconds: 500));
+        if (find.byKey(contentReadyKey).evaluate().isNotEmpty) {
+          ready = true;
+          break;
+        }
+      }
+      expect(ready, isTrue, reason: 'reader content ready');
+      await tester.pump(const Duration(seconds: 4));
 
-    // 推进到 m101 —— 中间隔着整页插图 → 应 reveal 到插图(暂停时看得到图)。
-    await runJs("window.__fushiHighlight('#m101', true);");
-    await tester.pump(const Duration(milliseconds: 600));
-    final double picFrac = await _frac(runJs, 'rrPic');
-    final double m101FracAtCross = await _frac(runJs, 'm101');
-    final String alignAtCross = await _align(runJs);
-    debugPrint('[IMGPAUSE-E2E] at cross: picFrac=$picFrac '
-        'm101Frac=$m101FracAtCross align=$alignAtCross');
+      final Future<dynamic> Function(String)? runJs =
+          ReaderFushiPage.debugEvaluateJavascript;
+      final Future<void> Function()? injectBridge =
+          ReaderFushiPage.debugInjectAudiobookBridge;
+      expect(runJs, isNotNull, reason: 'debug JS hook set (debug build)');
+      expect(injectBridge, isNotNull, reason: 'bridge inject hook set');
 
-    // ── 模拟恢复：重新 reveal 当前 cue m101（插图后正文）应显示出来 ─────────
-    await runJs("window.__fushiHighlight('#m101', true);");
-    await tester.pump(const Duration(milliseconds: 600));
-    final double m101FracAfterResume = await _frac(runJs, 'm101');
-    final double picFracAfterResume = await _frac(runJs, 'rrPic');
-    final String alignAfterResume = await _align(runJs);
-    debugPrint('[IMGPAUSE-E2E] after resume: m101Frac=$m101FracAfterResume '
-        'picFrac=$picFracAfterResume align=$alignAfterResume');
+      // ── 注入真实 bridge + 整页大图(插在 m101 前) + 分页 harness ───────────
+      await injectBridge!();
+      await tester.pump(const Duration(milliseconds: 300));
+      await runJs!(paginationHarnessJs);
+      final dynamic setup = await runJs(_insertImageJs);
+      debugPrint('[IMGPAUSE-E2E] setup=$setup');
+      final Map<String, dynamic> setupMap =
+          jsonDecode(setup as String) as Map<String, dynamic>;
+      expect(setupMap['hasPic'], isTrue, reason: 'full-page image injected');
+      expect(
+        setupMap['hasHighlight'],
+        isTrue,
+        reason: 'real __fushiHighlight injected by bridge',
+      );
 
-    // ── 断言 ────────────────────────────────────────────────────────────
-    debugPrint('[IMGPAUSE-E2E] ===== VERDICT =====');
-    // gap2：跨过插图时插图成为可见页（暂停时看得到图）。
-    expect(picFrac, greaterThanOrEqualTo(0.5),
-        reason: '真实分页下 cue 跨过整页插图时，视口须滚到插图（暂停时图片可见），'
-            '实测 picFrac=$picFrac');
-    // 恢复：重新 reveal 当前 cue，插图后正文显示。
-    expect(m101FracAfterResume, greaterThanOrEqualTo(0.5),
-        reason: '恢复后重新 reveal 当前 cue（插图后那句 m101）须显示出来，'
-            '实测 m101Frac=$m101FracAfterResume');
-    debugPrint('[IMGPAUSE-E2E] gap2 image-visible-on-cross=$picFrac '
-        'resume-text-visible=$m101FracAfterResume — PASS');
-  });
+      // ── 模拟 cue 推进：先 reveal 图片前一句 m100，再推进到图片后一句 m101 ──
+      await runJs("window.__fushiHighlight('#m100', true);");
+      await tester.pump(const Duration(milliseconds: 600));
+      final double m100Frac = await _frac(runJs, 'm100');
+      final String alignAfterM100 = await _align(runJs);
+      debugPrint(
+        '[IMGPAUSE-E2E] after m100: m100Frac=$m100Frac align=$alignAfterM100',
+      );
+
+      // 推进到 m101 —— 中间隔着整页插图 → 应 reveal 到插图(暂停时看得到图)。
+      await runJs("window.__fushiHighlight('#m101', true);");
+      await tester.pump(const Duration(milliseconds: 600));
+      final double picFrac = await _frac(runJs, 'rrPic');
+      final double m101FracAtCross = await _frac(runJs, 'm101');
+      final String alignAtCross = await _align(runJs);
+      debugPrint(
+        '[IMGPAUSE-E2E] at cross: picFrac=$picFrac '
+        'm101Frac=$m101FracAtCross align=$alignAtCross',
+      );
+
+      // ── 模拟恢复：重新 reveal 当前 cue m101（插图后正文）应显示出来 ─────────
+      await runJs("window.__fushiHighlight('#m101', true);");
+      await tester.pump(const Duration(milliseconds: 600));
+      final double m101FracAfterResume = await _frac(runJs, 'm101');
+      final double picFracAfterResume = await _frac(runJs, 'rrPic');
+      final String alignAfterResume = await _align(runJs);
+      debugPrint(
+        '[IMGPAUSE-E2E] after resume: m101Frac=$m101FracAfterResume '
+        'picFrac=$picFracAfterResume align=$alignAfterResume',
+      );
+
+      // ── 断言 ────────────────────────────────────────────────────────────
+      debugPrint('[IMGPAUSE-E2E] ===== VERDICT =====');
+      // gap2：跨过插图时插图成为可见页（暂停时看得到图）。
+      expect(
+        picFrac,
+        greaterThanOrEqualTo(0.5),
+        reason:
+            '真实分页下 cue 跨过整页插图时，视口须滚到插图（暂停时图片可见），'
+            '实测 picFrac=$picFrac',
+      );
+      // 恢复：重新 reveal 当前 cue，插图后正文显示。
+      expect(
+        m101FracAfterResume,
+        greaterThanOrEqualTo(0.5),
+        reason:
+            '恢复后重新 reveal 当前 cue（插图后那句 m101）须显示出来，'
+            '实测 m101Frac=$m101FracAfterResume',
+      );
+      debugPrint(
+        '[IMGPAUSE-E2E] gap2 image-visible-on-cross=$picFrac '
+        'resume-text-visible=$m101FracAfterResume — PASS',
+      );
+    },
+  );
 }
 
 // 整页大图(id=rrPic)插在 #m101 之前；data-URI 避开资源拦截。
@@ -202,7 +239,8 @@ Future<double> _frac(Future<dynamic> Function(String) runJs, String id) async {
   return (m['frac'] as num?)?.toDouble() ?? 0;
 }
 
-String _fracJs(String id) => '''
+String _fracJs(String id) =>
+    '''
 (function(){
   var el = document.getElementById('$id');
   if (!el) return JSON.stringify({frac: 0});
@@ -224,8 +262,9 @@ String _fracJs(String id) => '''
 // scroll 相对 columnPitch 的对齐（信息性）。
 Future<String> _align(Future<dynamic> Function(String) runJs) async {
   try {
-    final dynamic raw =
-        await runJs('window.fushiTestHarness.getPaginationState();');
+    final dynamic raw = await runJs(
+      'window.fushiTestHarness.getPaginationState();',
+    );
     final Map<String, dynamic> s =
         jsonDecode(raw as String) as Map<String, dynamic>;
     final int scroll = (s['scroll'] as num?)?.toInt() ?? 0;

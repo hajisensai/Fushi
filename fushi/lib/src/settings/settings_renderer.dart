@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 
 abstract class SettingsRenderer {
   Widget buildHomePage({

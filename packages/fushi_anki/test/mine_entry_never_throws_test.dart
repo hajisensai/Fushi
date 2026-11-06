@@ -42,9 +42,9 @@ void main() {
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(ankiChannel, (MethodCall call) async {
-      if (call.method == 'requestAnkidroidPermissions') return true;
-      return null;
-    });
+          if (call.method == 'requestAnkidroidPermissions') return true;
+          return null;
+        });
   });
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -55,34 +55,38 @@ void main() {
   const String payload = '{"expression":"勉強","reading":"べんきょう"}';
 
   group('mineEntry honors its MineOutcome contract (never throws)', () {
-    test('AnkiConnectRepository maps an unhandled inner error to error',
-        () async {
-      final AnkiConnectRepository repo = _ThrowingLoadConnectRepo();
+    test(
+      'AnkiConnectRepository maps an unhandled inner error to error',
+      () async {
+        final AnkiConnectRepository repo = _ThrowingLoadConnectRepo();
 
-      final MineOutcome outcome = await repo.mineEntry(
-        rawPayloadJson: payload,
-        context: context,
-      );
+        final MineOutcome outcome = await repo.mineEntry(
+          rawPayloadJson: payload,
+          context: context,
+        );
 
-      expect(outcome.result, MineResult.error);
-    });
+        expect(outcome.result, MineResult.error);
+      },
+    );
 
-    test('AnkiConnectRepository carries the real cause back to the caller',
-        () async {
-      final AnkiConnectRepository repo = _ThrowingLoadConnectRepo();
+    test(
+      'AnkiConnectRepository carries the real cause back to the caller',
+      () async {
+        final AnkiConnectRepository repo = _ThrowingLoadConnectRepo();
 
-      final MineOutcome outcome = await repo.mineEntry(
-        rawPayloadJson: payload,
-        context: context,
-      );
+        final MineOutcome outcome = await repo.mineEntry(
+          rawPayloadJson: payload,
+          context: context,
+        );
 
-      // Concise reason for the toast.
-      expect(outcome.errorDetail, isNotNull);
-      expect(outcome.errorDetail, isNotEmpty);
-      // Full diagnostics for the error log.
-      expect(outcome.error, isA<StateError>());
-      expect(outcome.stackTrace, isNotNull);
-    });
+        // Concise reason for the toast.
+        expect(outcome.errorDetail, isNotNull);
+        expect(outcome.errorDetail, isNotEmpty);
+        // Full diagnostics for the error log.
+        expect(outcome.error, isA<StateError>());
+        expect(outcome.stackTrace, isNotNull);
+      },
+    );
 
     test('AnkiConnectRepository.mineEntry future does not reject', () {
       final AnkiConnectRepository repo = _ThrowingLoadConnectRepo();
@@ -95,32 +99,36 @@ void main() {
       );
     });
 
-    test('AnkiRepository (AnkiDroid) maps an unhandled inner error to error',
-        () async {
-      final AnkiRepository repo = _ThrowingLoadDroidRepo();
+    test(
+      'AnkiRepository (AnkiDroid) maps an unhandled inner error to error',
+      () async {
+        final AnkiRepository repo = _ThrowingLoadDroidRepo();
 
-      final MineOutcome outcome = await repo.mineEntry(
-        rawPayloadJson: payload,
-        context: context,
-      );
+        final MineOutcome outcome = await repo.mineEntry(
+          rawPayloadJson: payload,
+          context: context,
+        );
 
-      expect(outcome.result, MineResult.error);
-    });
+        expect(outcome.result, MineResult.error);
+      },
+    );
 
-    test('AnkiRepository (AnkiDroid) carries the real cause back to the caller',
-        () async {
-      final AnkiRepository repo = _ThrowingLoadDroidRepo();
+    test(
+      'AnkiRepository (AnkiDroid) carries the real cause back to the caller',
+      () async {
+        final AnkiRepository repo = _ThrowingLoadDroidRepo();
 
-      final MineOutcome outcome = await repo.mineEntry(
-        rawPayloadJson: payload,
-        context: context,
-      );
+        final MineOutcome outcome = await repo.mineEntry(
+          rawPayloadJson: payload,
+          context: context,
+        );
 
-      expect(outcome.errorDetail, isNotNull);
-      expect(outcome.errorDetail, isNotEmpty);
-      expect(outcome.error, isA<StateError>());
-      expect(outcome.stackTrace, isNotNull);
-    });
+        expect(outcome.errorDetail, isNotNull);
+        expect(outcome.errorDetail, isNotEmpty);
+        expect(outcome.error, isA<StateError>());
+        expect(outcome.stackTrace, isNotNull);
+      },
+    );
 
     test('AnkiRepository.mineEntry future does not reject', () {
       final AnkiRepository repo = _ThrowingLoadDroidRepo();
@@ -140,7 +148,9 @@ void main() {
       expect(const MineOutcome.success().errorDetail, isNull);
       expect(const MineOutcome.duplicate().result, MineResult.duplicate);
       expect(
-          const MineOutcome.notConfigured().result, MineResult.notConfigured);
+        const MineOutcome.notConfigured().result,
+        MineResult.notConfigured,
+      );
       expect(const MineOutcome.notConfigured().error, isNull);
     });
 

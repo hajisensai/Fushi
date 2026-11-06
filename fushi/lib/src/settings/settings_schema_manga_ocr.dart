@@ -11,9 +11,10 @@ import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_page_reset.dart'
     show settingsSectionModifiedSummary;
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 「漫画 OCR」设置组（隶属**漫画**设置分类，入口始终可见）。
 ///
@@ -55,6 +56,8 @@ SettingsDestination buildOcrSettingsPage(SettingsDestinationId owner) {
       enginePreferenceSetter: c.appModel.setMangaOcrEnginePreference,
       parallelTasksGetter: () => c.appModel.mangaOcrParallelTasks,
       parallelTasksSetter: c.appModel.setMangaOcrParallelTasks,
+      ignoreFuriganaGetter: () => c.appModel.mangaOcrIgnoreFurigana,
+      ignoreFuriganaSetter: c.appModel.setMangaOcrIgnoreFurigana,
       localModelGetter: () => c.appModel.mangaOcrLocalModel,
       localModelSetter: c.appModel.setMangaOcrLocalModel,
       lensLanguageGetter: () => c.appModel.mangaOcrLensLanguage,

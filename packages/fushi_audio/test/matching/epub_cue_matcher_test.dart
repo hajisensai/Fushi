@@ -20,8 +20,8 @@ AudioCue _cue(int idx, String text) {
 }
 
 List<AudioCue> _cues(List<String> texts) => <AudioCue>[
-      for (int i = 0; i < texts.length; i++) _cue(i, texts[i]),
-    ];
+  for (int i = 0; i < texts.length; i++) _cue(i, texts[i]),
+];
 
 EpubSection _section(int i, String text) =>
     EpubSection(index: i, href: 'ch$i.xhtml', text: text);
@@ -137,8 +137,11 @@ void _expectFillOnlyAdds(
         break;
       }
     }
-    expect(norm.start(o), greaterThanOrEqualTo(prevEnd),
-        reason: 'cue $i 软锚点向前出界');
+    expect(
+      norm.start(o),
+      greaterThanOrEqualTo(prevEnd),
+      reason: 'cue $i 软锚点向前出界',
+    );
     expect(norm.end(o), lessThanOrEqualTo(nextStart), reason: 'cue $i 软锚点向后出界');
   }
   // 命中数与逐条结果一致。
@@ -152,26 +155,26 @@ void _expectFillOnlyAdds(
 /// [count] 条正文里绝对没有的 cue（片假名重复，bigram 与正文零重叠、精确
 /// indexOf 必败），每条 ≥ 6 字以便第一遍的恢复扫描也会拿它去试。
 List<String> _garbageCues(int count) => <String>[
-      for (int i = 0; i < count; i++) 'ヴェ' * (3 + i % 3),
-    ];
+  for (int i = 0; i < count; i++) 'ヴェ' * (3 + i % 3),
+];
 
 /// 两条唯一的长句锚点中间夹 [fillerSentences] 句埋草正文。
 List<EpubSection> _bookWithHugeGap(int fillerSentences) => <EpubSection>[
-      _section(0, '俺は三十四歳、住所不定無職。人生を後悔している真っ最中だ。'),
-      _section(1, 'この文章は埋め草である。' * fillerSentences),
-      _section(2, '最後の文章で終わるのだった。それから何も起きなかった。'),
-    ];
+  _section(0, '俺は三十四歳、住所不定無職。人生を後悔している真っ最中だ。'),
+  _section(1, 'この文章は埋め草である。' * fillerSentences),
+  _section(2, '最後の文章で終わるのだった。それから何も起きなかった。'),
+];
 
 /// 前锚点 + [garbage] 条正文里没有的 cue + 后锚点。垃圾 cue ≥ 20 条才会触发
 /// 第一遍的恢复扫描（[EpubSrtMatcher.defaultMaxConsecutiveMisses]）让后锚点
 /// 命中——否则后锚点在 200 字窗口里根本看不见。
 List<AudioCue> _cuesWithGarbage(int garbage) => _cues(<String>[
-      '俺は三十四歳住所不定無職',
-      '人生を後悔している真っ最中だ',
-      ..._garbageCues(garbage),
-      '最後の文章で終わるのだった',
-      'それから何も起きなかった',
-    ]);
+  '俺は三十四歳住所不定無職',
+  '人生を後悔している真っ最中だ',
+  ..._garbageCues(garbage),
+  '最後の文章で終わるのだった',
+  'それから何も起きなかった',
+]);
 
 void main() {
   group('EpubCueMatcher 对 EpubSrtMatcher：回填只增不改', () {
@@ -213,8 +216,11 @@ void main() {
       expect(first.matchedCues, _exactCueTexts.length);
       _expectFillOnlyAdds(_book, cues, first, filled);
       for (int i = 0; i < cues.length; i++) {
-        expect(_sameMatch(filled.matches[i], first.matches[i]), isTrue,
-            reason: 'cue $i "${texts[i]}"');
+        expect(
+          _sameMatch(filled.matches[i], first.matches[i]),
+          isTrue,
+          reason: 'cue $i "${texts[i]}"',
+        );
       }
       expect(filled.matchedCues, first.matchedCues);
       expect(filled.gapFill!.runs, 1);
@@ -258,8 +264,11 @@ void main() {
         cues: _cuesWithGarbage(30),
       );
       expect(first.matches[1].score, 1.0);
-      expect(first.matches[cues.length - 2].score, 1.0,
-          reason: '后锚点应由恢复扫描精确命中');
+      expect(
+        first.matches[cues.length - 2].score,
+        1.0,
+        reason: '后锚点应由恢复扫描精确命中',
+      );
       final Stopwatch sw = Stopwatch()..start();
       final MatchResult filled = EpubCueMatcher.match(
         sections: book,
@@ -269,8 +278,11 @@ void main() {
       expect(sw.elapsedMilliseconds, lessThan(2000));
       _expectFillOnlyAdds(book, cues, first, filled);
       for (int i = 0; i < cues.length; i++) {
-        expect(_sameMatch(filled.matches[i], first.matches[i]), isTrue,
-            reason: 'cue $i');
+        expect(
+          _sameMatch(filled.matches[i], first.matches[i]),
+          isTrue,
+          reason: 'cue $i',
+        );
       }
       final GapFillStats stats = filled.gapFill!;
       expect(stats.runs, 1);
@@ -338,10 +350,15 @@ void main() {
       );
       expect(iso.matches.length, sync.matches.length);
       for (int i = 0; i < sync.matches.length; i++) {
-        expect(_sameMatch(iso.matches[i], sync.matches[i]), isTrue,
-            reason: 'cue $i');
         expect(
-            iso.matches[i].cueSentenceIndex, sync.matches[i].cueSentenceIndex);
+          _sameMatch(iso.matches[i], sync.matches[i]),
+          isTrue,
+          reason: 'cue $i',
+        );
+        expect(
+          iso.matches[i].cueSentenceIndex,
+          sync.matches[i].cueSentenceIndex,
+        );
       }
       expect(iso.matchedCues, sync.matchedCues);
       expect(iso.gapFill, isNotNull, reason: 'isolate 里也做了回填');
@@ -369,8 +386,11 @@ void main() {
       final MatchResult best = iso.bestResult!;
       expect(best.gapFill, isNotNull);
       for (int i = 0; i < cues.length; i++) {
-        expect(_sameMatch(best.matches[i], sync.matches[i]), isTrue,
-            reason: 'cue $i');
+        expect(
+          _sameMatch(best.matches[i], sync.matches[i]),
+          isTrue,
+          reason: 'cue $i',
+        );
       }
       expect(best.matchedCues, sync.matchedCues);
       expect(best.matchedCues, greaterThan(syncProbe.bestResult!.matchedCues));

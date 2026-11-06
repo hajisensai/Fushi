@@ -52,7 +52,7 @@ const List<int> _pngSignature = <int>[
   0x0D,
   0x0A,
   0x1A,
-  0x0A
+  0x0A,
 ];
 
 /// 解析 [exeBytes] 里所有 `RT_ICON` 资源；非 PE / 无资源段 / 结构损坏返回空列表。

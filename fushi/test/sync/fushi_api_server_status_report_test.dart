@@ -11,6 +11,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
+import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
 class _FakeLookup implements FushiRemoteLookupService {
   @override
@@ -18,19 +19,20 @@ class _FakeLookup implements FushiRemoteLookupService {
     required String term,
     required bool wildcards,
     required int maximumTerms,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<RemoteAudioLookup?> lookupAudio({
     required String expression,
     required String reading,
-  }) async =>
-      null;
+  }) async => null;
 }
 
-List<String> _noopTokenize(String text) => <String>[text];
-String _noopReading(String word) => '';
+Future<List<List<TokenizedSegment>>> _noopTokenize(List<String> texts) async =>
+    <List<TokenizedSegment>>[
+      for (final String text in texts)
+        <TokenizedSegment>[(text: text, reading: '')],
+    ];
 
 Future<HttpClientResponse> _postRaw(
   int port,
@@ -40,8 +42,9 @@ Future<HttpClientResponse> _postRaw(
 }) async {
   // 不在这里 close client（响应尚未被调用方读取）；测试进程退出即回收。
   final HttpClient c = HttpClient();
-  final HttpClientRequest req =
-      await c.postUrl(Uri.parse('http://127.0.0.1:$port$path'));
+  final HttpClientRequest req = await c.postUrl(
+    Uri.parse('http://127.0.0.1:$port$path'),
+  );
   req.headers.contentType = ContentType.json;
   if (auth != null) req.headers.set('authorization', auth);
   req.write(rawBody);
@@ -66,7 +69,6 @@ void main() {
         port: 0, // ephemeral
         lookupService: _FakeLookup(),
         tokenizer: _noopTokenize,
-        readingResolver: _noopReading,
         extensionBuildProvider: () => 'ffff0000ffff0000',
         onExtensionSeen: () => seenCount++,
         onExtensionReport: (String build, String? version) =>
@@ -82,8 +84,10 @@ void main() {
       final HttpClientResponse resp = await _postRaw(
         server.port,
         '/api/extension/status',
-        jsonEncode(
-            <String, dynamic>{'build': 'abcd1234abcd1234', 'version': '0.3.0'}),
+        jsonEncode(<String, dynamic>{
+          'build': 'abcd1234abcd1234',
+          'version': '0.3.0',
+        }),
       );
       expect(resp.statusCode, 200);
       final Map<String, dynamic> j = await _json(resp);
@@ -102,31 +106,38 @@ void main() {
         port: 0,
         lookupService: _FakeLookup(),
         tokenizer: _noopTokenize,
-        readingResolver: _noopReading,
         appLocaleProvider: () => 'zh-CN',
       );
       await server.start();
       final Map<String, dynamic> j = await _json(
-          await _postRaw(server.port, '/api/extension/status', '{}'));
+        await _postRaw(server.port, '/api/extension/status', '{}'),
+      );
       expect(j['locale'], 'zh-CN');
 
       // setUp 起的默认 server 没注入 → 字段省略。
       await server.stop();
       await startServer();
       final Map<String, dynamic> j2 = await _json(
-          await _postRaw(server.port, '/api/extension/status', '{}'));
+        await _postRaw(server.port, '/api/extension/status', '{}'),
+      );
       expect(j2.containsKey('locale'), isFalse);
     });
 
     test('只报 build 不报 version → version 为 null', () async {
-      await _postRaw(server.port, '/api/extension/status',
-          jsonEncode(<String, dynamic>{'build': 'abcd1234abcd1234'}));
+      await _postRaw(
+        server.port,
+        '/api/extension/status',
+        jsonEncode(<String, dynamic>{'build': 'abcd1234abcd1234'}),
+      );
       expect(reports, <(String, String?)>[('abcd1234abcd1234', null)]);
     });
 
     test('旧扩展 \'{}\' body → 不回调、响应与现状一致（向后兼容）', () async {
-      final HttpClientResponse resp =
-          await _postRaw(server.port, '/api/extension/status', '{}');
+      final HttpClientResponse resp = await _postRaw(
+        server.port,
+        '/api/extension/status',
+        '{}',
+      );
       expect(resp.statusCode, 200);
       final Map<String, dynamic> j = await _json(resp);
       expect(j['app'], 'fushi');
@@ -137,22 +148,33 @@ void main() {
 
     test('空 body / 非法 JSON / build 类型错 → 容错不回调不报错', () async {
       expect(
-          (await _postRaw(server.port, '/api/extension/status', '')).statusCode,
-          200);
+        (await _postRaw(server.port, '/api/extension/status', '')).statusCode,
+        200,
+      );
       expect(
-          (await _postRaw(server.port, '/api/extension/status', 'not json'))
-              .statusCode,
-          200);
+        (await _postRaw(
+          server.port,
+          '/api/extension/status',
+          'not json',
+        )).statusCode,
+        200,
+      );
       expect(
-          (await _postRaw(server.port, '/api/extension/status',
-                  jsonEncode(<String, dynamic>{'build': 42})))
-              .statusCode,
-          200);
+        (await _postRaw(
+          server.port,
+          '/api/extension/status',
+          jsonEncode(<String, dynamic>{'build': 42}),
+        )).statusCode,
+        200,
+      );
       expect(
-          (await _postRaw(server.port, '/api/extension/status',
-                  jsonEncode(<String, dynamic>{'build': ''})))
-              .statusCode,
-          200);
+        (await _postRaw(
+          server.port,
+          '/api/extension/status',
+          jsonEncode(<String, dynamic>{'build': ''}),
+        )).statusCode,
+        200,
+      );
       expect(reports, isEmpty);
     });
 
@@ -162,13 +184,13 @@ void main() {
         port: 0,
         lookupService: _FakeLookup(),
         tokenizer: _noopTokenize,
-        readingResolver: _noopReading,
       );
       await server.start();
       final HttpClientResponse resp = await _postRaw(
-          server.port,
-          '/api/extension/status',
-          jsonEncode(<String, dynamic>{'build': 'abcd1234abcd1234'}));
+        server.port,
+        '/api/extension/status',
+        jsonEncode(<String, dynamic>{'build': 'abcd1234abcd1234'}),
+      );
       expect(resp.statusCode, 200);
       expect((await _json(resp))['app'], 'fushi');
     });

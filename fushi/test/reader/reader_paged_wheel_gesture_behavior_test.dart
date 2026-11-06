@@ -88,71 +88,80 @@ void main() {
   // 换章加载（_paginationInFlight）覆盖惯性流的开头几百毫秒：首个 tick 落不了地。
   // 旧实现无条件写 _lastTickAt，token 被这个翻不动的 tick 吃掉 ⇒ 加载落定后的所有
   // 后续 tick 都在闸门早退 ⇒ 用户这一次滑动**完全没有反馈**。
-  test('burst that opens during chapter loading still turns exactly one page',
-      () {
-    final ReaderWheelGestureGate gate = ReaderWheelGestureGate();
-    final int pageTurns = _burstPageTurns(
-      gate: gate,
-      totalMs: 1500,
-      tickIntervalMs: 60,
-      // 前 300ms 换章加载在飞，之后落定。
-      paginationInFlight: (int elapsedMs) => elapsedMs <= 300,
-    );
-    expect(pageTurns, isNonZero,
-        reason: '换章加载期消费掉的 token 会吞掉整段惯性 → 用户零反馈（BUG-1380 根因）');
-    expect(pageTurns, 1, reason: '恢复后只放行一页，不得因补翻而连翻');
-  });
-
-  test('a whole burst swallowed by an in-flight navigation leaves no token',
-      () {
-    final ReaderWheelGestureGate gate = ReaderWheelGestureGate();
-    // 整段惯性都撞在换章加载里：一次翻页都不产生。
-    expect(
-      _burstPageTurns(
+  test(
+    'burst that opens during chapter loading still turns exactly one page',
+    () {
+      final ReaderWheelGestureGate gate = ReaderWheelGestureGate();
+      final int pageTurns = _burstPageTurns(
         gate: gate,
-        totalMs: 600,
+        totalMs: 1500,
         tickIntervalMs: 60,
-        paginationInFlight: (_) => true,
-      ),
-      0,
-    );
-    // 闸门必须仍是「未认领」状态——紧接着（远小于 settleInterval）到来的第一个可
-    // 落地 tick 就该翻页，而不是等一个完整静默窗。
-    expect(
-      gate.shouldStartNewGesture(
-        now: DateTime(2026, 8, 2).add(const Duration(milliseconds: 660)),
-        settleInterval: _kSettle,
-        canTurnPage: true,
-      ),
-      isTrue,
-    );
-  });
+        // 前 300ms 换章加载在飞，之后落定。
+        paginationInFlight: (int elapsedMs) => elapsedMs <= 300,
+      );
+      expect(
+        pageTurns,
+        isNonZero,
+        reason: '换章加载期消费掉的 token 会吞掉整段惯性 → 用户零反馈（BUG-1380 根因）',
+      );
+      expect(pageTurns, 1, reason: '恢复后只放行一页，不得因补翻而连翻');
+    },
+  );
 
-  test('ticks inside an already-claimed gesture keep sliding the trailing edge',
-      () {
-    final ReaderWheelGestureGate gate = ReaderWheelGestureGate();
-    final DateTime start = DateTime(2026, 8, 2);
-    // 认领手势。
-    expect(
-      gate.shouldStartNewGesture(
-        now: start,
-        settleInterval: _kSettle,
-        canTurnPage: true,
-      ),
-      isTrue,
-    );
-    // 手势内的 tick 即使 canTurnPage=false（换章加载在飞）也必须续 trailing edge，
-    // 否则同一段惯性会在加载落定后再翻一页（BUG-1342 的原始症状）。
-    for (int elapsed = 300; elapsed <= 1200; elapsed += 300) {
+  test(
+    'a whole burst swallowed by an in-flight navigation leaves no token',
+    () {
+      final ReaderWheelGestureGate gate = ReaderWheelGestureGate();
+      // 整段惯性都撞在换章加载里：一次翻页都不产生。
+      expect(
+        _burstPageTurns(
+          gate: gate,
+          totalMs: 600,
+          tickIntervalMs: 60,
+          paginationInFlight: (_) => true,
+        ),
+        0,
+      );
+      // 闸门必须仍是「未认领」状态——紧接着（远小于 settleInterval）到来的第一个可
+      // 落地 tick 就该翻页，而不是等一个完整静默窗。
       expect(
         gate.shouldStartNewGesture(
-          now: start.add(Duration(milliseconds: elapsed)),
+          now: DateTime(2026, 8, 2).add(const Duration(milliseconds: 660)),
           settleInterval: _kSettle,
-          canTurnPage: false,
+          canTurnPage: true,
         ),
-        isFalse,
-        reason: '$elapsed ms 处仍属同一手势',
+        isTrue,
       );
-    }
-  });
+    },
+  );
+
+  test(
+    'ticks inside an already-claimed gesture keep sliding the trailing edge',
+    () {
+      final ReaderWheelGestureGate gate = ReaderWheelGestureGate();
+      final DateTime start = DateTime(2026, 8, 2);
+      // 认领手势。
+      expect(
+        gate.shouldStartNewGesture(
+          now: start,
+          settleInterval: _kSettle,
+          canTurnPage: true,
+        ),
+        isTrue,
+      );
+      // 手势内的 tick 即使 canTurnPage=false（换章加载在飞）也必须续 trailing edge，
+      // 否则同一段惯性会在加载落定后再翻一页（BUG-1342 的原始症状）。
+      for (int elapsed = 300; elapsed <= 1200; elapsed += 300) {
+        expect(
+          gate.shouldStartNewGesture(
+            now: start.add(Duration(milliseconds: elapsed)),
+            settleInterval: _kSettle,
+            canTurnPage: false,
+          ),
+          isFalse,
+          reason: '$elapsed ms 处仍属同一手势',
+        );
+      }
+    },
+  );
 }

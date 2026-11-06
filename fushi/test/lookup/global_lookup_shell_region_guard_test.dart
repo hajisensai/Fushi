@@ -616,12 +616,16 @@ void main() {
       contains('var GAL_CAPTURE_READY_RAF_FALLBACK_MS = 120;'),
       reason: '永久停在屏外的 WebView2 可能暴露 rAF 但永不调度回调',
     );
+    // 回退定时器到点必须走 postIfCurrent（route / epoch / token 三重校验）：直接传
+    // postIfCurrent，或包一层闭包（先记 releasedBy 等诊断）再转调都算。
     expect(
-      arm,
-      contains(
-        'fallbackTimer = setTimerSafe(\n'
-        '        postIfCurrent, GAL_CAPTURE_READY_RAF_FALLBACK_MS);',
-      ),
+      RegExp(
+        r'fallbackTimer = setTimerSafe\(\s*'
+        r'(?:postIfCurrent|function \(\) \{[^}]*\bpostIfCurrent\(\);\s*\})'
+        r',\s*GAL_CAPTURE_READY_RAF_FALLBACK_MS\);',
+      ).hasMatch(arm),
+      isTrue,
+      reason: '屏外 rAF 永不回调时，回退定时器必须经 postIfCurrent 投递 captureReady',
     );
     expect(arm, contains('routeKey(activeRoute) === key'));
     expect(arm, contains('epoch === committedGeometryEpoch'));

@@ -4,9 +4,12 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/audio_enhancement.dart';
+import 'package:fushi/src/creator/audio_export_field.dart';
+import 'package:fushi/src/creator/enhancement.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
@@ -14,12 +17,12 @@ import 'package:fushi_audio/fushi_audio.dart';
 class PickAudioEnhancement extends AudioEnhancement {
   /// Initialise this enhancement with the hardset parameters.
   PickAudioEnhancement({required super.field})
-      : super(
-          uniqueKey: key,
-          label: 'Pick Audio',
-          description: 'Pick an audio file to use with an external picker.',
-          icon: Icons.upload_file_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Pick Audio',
+        description: 'Pick an audio file to use with an external picker.',
+        icon: Icons.upload_file_outlined,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].

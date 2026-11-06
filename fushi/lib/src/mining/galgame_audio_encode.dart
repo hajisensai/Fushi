@@ -56,7 +56,11 @@ int pcmDurationMs(int pcmByteLength, int byteRate) {
 /// 收敛后 `start>=end`（区间空/倒置/越界）时返回空 [Uint8List]（调用方据此提示「未选到音频」，
 /// 不塞空段假装成功）。返回的是**拷贝**（不与入参共享底层 buffer）。
 Uint8List slicePcmByMs(
-    Uint8List pcm, PcmFormat format, int startMs, int endMs) {
+  Uint8List pcm,
+  PcmFormat format,
+  int startMs,
+  int endMs,
+) {
   final int blockAlign = format.blockAlign;
   final int byteRate = format.byteRate;
   if (pcm.isEmpty || blockAlign <= 0 || byteRate <= 0) {
@@ -194,11 +198,10 @@ Uint8List concatAudioStreams(List<Uint8List> streams) {
 /// 文件。旧实现每层只挑一个，卡里就只剩其中一个人的声音。
 ///
 /// 合成方式是**按顺序接续播放**，不是叠加混音。这不是偷懒：
-///  - 入库的 `third_party/ffmpeg-min` 是白名单裁剪版，滤镜只留了
-///    `aresample/astats/...`（见 `tool/ffmpeg-min/build-ffmpeg-min.sh` 的 `FILTERS`），
-///    **没有 `amix`/`adelay`/`volume`**；要混音就得改配方、重编三平台二进制并重新
-///    vendor，而 `ffmpeg_min_vendored_recipe_guard_test.dart` 会在二进制换上来之前一直
-///    红。为一个能用接续解决的需求换掉整条工具链不划算。
+///  - 旧的 `third_party/ffmpeg-min` 是白名单裁剪版，滤镜只留了
+///    `aresample/astats/...`，**没有 `amix`/`adelay`/`volume`**，当时要混音就得改配方、
+///    重编三平台二进制并重新 vendor。统一 FFmpeg（`tool/ffmpeg-unified/`）为全组件构建，
+///    这条限制已不成立；接续播放的合成方式作为既有行为保留。
 ///  - 对制卡本身，两个人的台词分开听比叠在一起更能听清——这正是用户要的。
 ///
 /// [resourcePaths] 首元素是主语音（配对层已排好序，见 [pickPairedGameResources]）。
@@ -268,29 +271,27 @@ Future<Uint8List?> transcodeVoiceResourceToMiningAudio({
   if (!File(resourcePath).existsSync()) {
     return null;
   }
-  final Directory dir =
-      Directory('$tempDir/gal_voice_${resourcePath.hashCode}');
+  final Directory dir = Directory(
+    '$tempDir/gal_voice_${resourcePath.hashCode}',
+  );
   await dir.create(recursive: true);
   try {
     final String outPath = '${dir.path}/voice.$outputExtension';
-    final FfmpegRunResult result = await resolveFfmpegBackend().run(
-      <String>[
-        '-y',
-        '-i',
-        resourcePath,
-        '-vn',
-        '-ac',
-        '$audioChannels',
-        '-ar',
-        '44100',
-        '-c:a',
-        'aac',
-        '-b:a',
-        audioBitrate,
-        outPath,
-      ],
-      const Duration(seconds: 30),
-    );
+    final FfmpegRunResult result = await resolveFfmpegBackend().run(<String>[
+      '-y',
+      '-i',
+      resourcePath,
+      '-vn',
+      '-ac',
+      '$audioChannels',
+      '-ar',
+      '44100',
+      '-c:a',
+      'aac',
+      '-b:a',
+      audioBitrate,
+      outPath,
+    ], const Duration(seconds: 30));
     final File out = File(outPath);
     if (result.returnCode == 0 && out.existsSync() && out.lengthSync() > 0) {
       return await out.readAsBytes();

@@ -15,13 +15,24 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
         showReaderSideSheet;
 import 'package:fushi/src/reader/reader_panel_kit.dart'
     show ReaderPanelTab, ReaderPanelTabs;
-import 'package:fushi/src/settings/settings_kit.dart' show SettingsModifiedRow;
+import 'package:fushi/src/settings/settings_kit_core.dart'
+    show SettingsModifiedRow;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show FushiFloatingPill, fushiFloatingPillDecoration;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 enum MangaReaderPreferenceKind { choice, toggle, integer }
 
@@ -171,6 +182,30 @@ List<MangaReaderPreferenceDescriptor> mangaReaderPreferenceDescriptors(
     kind: MangaReaderPreferenceKind.toggle,
     title: t.manga_reader_crop_borders,
   ),
+  // 放大态三项（反馈 EjyFnomM6w）：拖过边缘翻页、缩小下限、快速缩回手势与目标。
+  MangaReaderPreferenceDescriptor(
+    key: 'zoomedEdgeTurn',
+    kind: MangaReaderPreferenceKind.toggle,
+    title: t.manga_reader_zoomed_edge_turn,
+  ),
+  MangaReaderPreferenceDescriptor(
+    key: 'zoomOutLimit',
+    kind: MangaReaderPreferenceKind.choice,
+    title: t.manga_reader_zoom_out_limit,
+    choices: const <String>['free', 'fit_height'],
+  ),
+  MangaReaderPreferenceDescriptor(
+    key: 'quickZoomGesture',
+    kind: MangaReaderPreferenceKind.choice,
+    title: t.manga_reader_quick_zoom_gesture,
+    choices: const <String>['off', 'double_tap', 'two_finger_tap'],
+  ),
+  MangaReaderPreferenceDescriptor(
+    key: 'quickZoomTarget',
+    kind: MangaReaderPreferenceKind.choice,
+    title: t.manga_reader_quick_zoom_target,
+    choices: const <String>['fit_height', 'fit_width'],
+  ),
   MangaReaderPreferenceDescriptor(
     key: 'splitWidePages',
     kind: MangaReaderPreferenceKind.toggle,
@@ -305,12 +340,6 @@ List<MangaReaderPreferenceDescriptor> mangaReaderPreferenceDescriptors(
       '#000000',
     ],
   ),
-  MangaReaderPreferenceDescriptor(
-    key: 'saveDirectory',
-    kind: MangaReaderPreferenceKind.choice,
-    title: t.manga_reader_save_directory,
-    choices: const <String>['flat', 'book', 'chapter'],
-  ),
 ];
 
 /// 漫画阅读设置面板：宽窗贴右侧（章节目录占左侧，不提供左右换边），窄窗
@@ -328,6 +357,7 @@ Future<void> showMangaReaderSettingsSheet({
   Set<String> supportedDeviceKeys = const <String>{},
   MangaPageTurnSettings? pageTurn,
   Future<void> Function(MangaPageTurnSettings value)? onPageTurnChanged,
+  VoidCallback? onEditToolbarLayout,
 }) async => showReaderSideSheet<void>(
   context: context,
   side: ReaderSideSheetSide.right,
@@ -341,6 +371,7 @@ Future<void> showMangaReaderSettingsSheet({
     supportedDeviceKeys: supportedDeviceKeys,
     pageTurn: pageTurn,
     onPageTurnChanged: onPageTurnChanged,
+    onEditToolbarLayout: onEditToolbarLayout,
   ),
 );
 
@@ -358,6 +389,7 @@ class MangaReaderSettingsSheet extends StatefulWidget {
     this.ocrSettings,
     this.pageTurn,
     this.onPageTurnChanged,
+    this.onEditToolbarLayout,
   });
   final MangaReaderPreferences globalDefaults;
   final Map<String, Object?> overrides;
@@ -373,6 +405,10 @@ class MangaReaderSettingsSheet extends StatefulWidget {
 
   /// 翻页动画三项的写入（全局偏好）；null = 只读。
   final Future<void> Function(MangaPageTurnSettings value)? onPageTurnChanged;
+
+  /// 「工具栏布局」入口（打开按钮布局编辑器）；null = 不显示。工具栏布局是全局
+  /// 偏好（不分作品），不受下方作用域切换影响。
+  final VoidCallback? onEditToolbarLayout;
   @override
   State<MangaReaderSettingsSheet> createState() =>
       _MangaReaderSettingsSheetState();
@@ -594,6 +630,17 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       'smart' => t.manga_scale_smart,
       _ => t.manga_scale_fit_screen,
     },
+    'zoomOutLimit' =>
+      value == 'fit_height'
+          ? t.manga_scale_fit_height
+          : t.manga_reader_zoom_out_limit_free,
+    'quickZoomGesture' => switch (value) {
+      'double_tap' => t.manga_reader_quick_zoom_gesture_double_tap,
+      'two_finger_tap' => t.manga_reader_quick_zoom_gesture_two_finger_tap,
+      _ => t.manga_reader_quick_zoom_gesture_off,
+    },
+    'quickZoomTarget' =>
+      value == 'fit_width' ? t.manga_scale_fit_width : t.manga_scale_fit_height,
     'tapZones' => switch (value) {
       'edge' => t.manga_reader_tap_edge,
       'disabled' => t.manga_reader_tap_disabled,
@@ -601,11 +648,6 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       'right_left' => t.manga_reader_tap_right_left,
       'kindle' => t.manga_reader_tap_kindle,
       _ => t.manga_reader_tap_default,
-    },
-    'saveDirectory' => switch (value) {
-      'flat' => t.manga_reader_save_flat,
-      'book' => t.manga_reader_save_book,
-      _ => t.manga_reader_save_chapter,
     },
     _ => '$value',
   };
@@ -634,6 +676,10 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     'autoScrollSpeed' => FushiIcons.speed,
     'animateDoubleTap' => FushiIcons.touch,
     'disableZoomOut' => FushiIcons.zoomOut,
+    'zoomedEdgeTurn' => FushiIcons.swap,
+    'zoomOutLimit' => FushiIcons.zoomOut,
+    'quickZoomGesture' => FushiIcons.touch,
+    'quickZoomTarget' => FushiIcons.zoomOut,
     'invertHorizontal' => FushiIcons.swap,
     'invertVertical' => FushiIcons.swap,
     'invertBoth' => FushiIcons.swap,
@@ -651,7 +697,6 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     'readerHideThreshold' => FushiIcons.visibilityOff,
     'showReadingMode' => FushiIcons.info,
     'showTapZonesOverlay' => FushiIcons.touch,
-    'saveDirectory' => FushiIcons.folder,
     'invertColors' => FushiIcons.darkMode,
     'grayscale' => FushiIcons.filter,
     'brightness' => FushiIcons.lightMode,
@@ -892,7 +937,6 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       'readerHideThreshold',
       'showReadingMode',
       'showTapZonesOverlay',
-      'saveDirectory',
     }.contains(key)) {
       return 1;
     }
@@ -907,7 +951,13 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     0 => <(String Function(), List<String>)>[
       (
         () => t.manga_reader_group_layout,
-        <String>['direction', 'scaleType', 'tapZones', 'longStripSidePadding'],
+        <String>[
+          'direction',
+          'scaleType',
+          'tapZones',
+          'showPageGaps',
+          'longStripSidePadding',
+        ],
       ),
       (
         () => t.manga_reader_group_wide_pages,
@@ -915,18 +965,17 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       ),
       (
         () => t.manga_reader_group_long_strip,
-        <String>[
-          'showPageGaps',
-          'webtoonDoubleTapZoom',
-          'autoScroll',
-          'autoScrollSpeed',
-        ],
+        <String>['webtoonDoubleTapZoom', 'autoScroll', 'autoScrollSpeed'],
       ),
       (
         () => t.manga_reader_group_controls,
         <String>[
           'animateDoubleTap',
           'disableZoomOut',
+          'zoomedEdgeTurn',
+          'zoomOutLimit',
+          'quickZoomGesture',
+          'quickZoomTarget',
           'invertHorizontal',
           'invertVertical',
           'invertBoth',
@@ -957,7 +1006,6 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
         () => t.manga_reader_group_hints,
         <String>['showReadingMode', 'showTapZonesOverlay'],
       ),
-      (() => t.manga_reader_group_other, <String>['saveDirectory']),
     ],
     2 => <(String Function(), List<String>)>[
       (() => t.manga_reader_group_color, <String>['invertColors', 'grayscale']),
@@ -978,6 +1026,15 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     ],
   };
 
+  /// 只对某种阅读模式生效的项，在别的模式下不出现——关着还留着会让人以为它有用。
+  /// 页间距：长条漫由「条漫 / 带间距长条漫」两个模式本身决定（BUG-3749），
+  /// 开关只剩纵向分页的翻页空隙在用。
+  bool _appliesToCurrentMode(String key) => switch (key) {
+    'showPageGaps' =>
+      _value('mode') == MangaReadingMode.pagedVertical.storageKey,
+    _ => true,
+  };
+
   List<Widget> _tabBlocks(
     int tab,
     Map<String, MangaReaderPreferenceDescriptor> byKey,
@@ -996,13 +1053,26 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       if (tab == 0 && byKey['mode'] != null) _modeBlock(byKey['mode']!),
       if (tab == 0 && _pageTurn != null) _pageTurnGroup(_pageTurn!),
       if (tab == 2) _filterPreview(),
+      if (tab == 1 && widget.onEditToolbarLayout != null)
+        MangaPanelGroup(
+          title: t.manga_reader_control_layout,
+          children: <Widget>[
+            AdaptiveSettingsNavigationRow(
+              key: const ValueKey<String>('manga_reader_toolbar_layout'),
+              title: t.manga_reader_control_layout,
+              icon: FushiIcons.dashboardCustomize,
+              showIcon: true,
+              onTap: widget.onEditToolbarLayout!,
+            ),
+          ],
+        ),
       for (final (String Function(), List<String>) g in groups)
         MangaPanelGroup(
           title: g.$1(),
           children: <Widget>[
             for (final String key in g.$2)
               if (byKey[key] case final MangaReaderPreferenceDescriptor d)
-                _row(d),
+                if (_appliesToCurrentMode(key)) _row(d),
           ],
         ),
       if (orphans.isNotEmpty)
@@ -1057,6 +1127,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
                   PageTurnAnimation.slide => t.page_turn_animation_slide,
                   PageTurnAnimation.cover => t.page_turn_animation_cover,
                   PageTurnAnimation.fade => t.page_turn_animation_fade,
+                  PageTurnAnimation.curl => t.page_turn_animation_curl,
                 },
                 key: ValueKey<String>('manga_page_turn_animation_${a.key}'),
               ),
@@ -1094,19 +1165,19 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
                       unawaited(_setPageTurn(value.copyWith(speed: sp)))
                 : null,
           ),
-        if (value.animation.isDirectional)
-          AdaptiveSettingsSwitchRow(
-            key: const ValueKey<String>('manga_page_turn_follow_drag'),
-            title: t.page_turn_follow_drag,
-            subtitle: t.page_turn_follow_drag_description,
-            icon: FushiIcons.touch,
-            showIcon: true,
-            value: value.followDrag,
-            onChanged: editable
-                ? (bool v) =>
-                      unawaited(_setPageTurn(value.copyWith(followDrag: v)))
-                : null,
-          ),
+        // 跟手与翻页效果无关（BUG-3624）：任何效果下都能开关。
+        AdaptiveSettingsSwitchRow(
+          key: const ValueKey<String>('manga_page_turn_follow_drag'),
+          title: t.page_turn_follow_drag,
+          subtitle: t.page_turn_follow_drag_description,
+          icon: FushiIcons.touch,
+          showIcon: true,
+          value: value.followDrag,
+          onChanged: editable
+              ? (bool v) =>
+                    unawaited(_setPageTurn(value.copyWith(followDrag: v)))
+              : null,
+        ),
       ],
     );
   }

@@ -6,7 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
-import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/settings/settings_schema_fields.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_section_container.dart';
@@ -454,6 +454,7 @@ class SettingsSchemaItem extends StatefulWidget
       initialValue: text.value(settingsContext),
       obscureText: text.secret,
       revealToggle: text.secret,
+      copyable: text.copyable,
       keyboardType:
           text.keyboardType ??
           (text.secret ? TextInputType.visiblePassword : TextInputType.text),

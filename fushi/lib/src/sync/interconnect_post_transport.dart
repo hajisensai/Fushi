@@ -132,8 +132,8 @@ class InterconnectPostTransport {
             (onlyHost != null
                 ? candidate.hostId != onlyHost
                 : (candidate.url != onlyCandidate.url ||
-                    candidate.fingerprintSha256 !=
-                        onlyCandidate.fingerprintSha256)) ||
+                      candidate.fingerprintSha256 !=
+                          onlyCandidate.fingerprintSha256)) ||
             interconnectTokenFor(candidate, fallbackToken) !=
                 onlyCandidate.token,
       );

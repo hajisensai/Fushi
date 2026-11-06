@@ -63,8 +63,10 @@ extension _VideoControlsPopover on _VideoFushiPageState {
     required bool desktop,
     required VideoControlSlot slot,
   }) {
-    final LayerLink popoverLink =
-        _controlPopoverLinkFor(slot, VideoControlItem.volume);
+    final LayerLink popoverLink = _controlPopoverLinkFor(
+      slot,
+      VideoControlItem.volume,
+    );
     final Widget volumeButton = ValueListenableBuilder<double>(
       valueListenable: _volumeDisplay,
       builder: (BuildContext context, double value, Widget? child) {
@@ -149,13 +151,13 @@ extension _VideoControlsPopover on _VideoFushiPageState {
         // 浮层底边贴按钮顶边；横向取按钮同侧（左/右/中）对齐。
         final (Alignment target, Alignment follower) = switch (sourceSlot) {
           VideoControlSlot.bottomLeft => (
-              Alignment.topLeft,
-              Alignment.bottomLeft,
-            ),
+            Alignment.topLeft,
+            Alignment.bottomLeft,
+          ),
           VideoControlSlot.bottomRight => (
-              Alignment.topRight,
-              Alignment.bottomRight,
-            ),
+            Alignment.topRight,
+            Alignment.bottomRight,
+          ),
           _ => (Alignment.topCenter, Alignment.bottomCenter),
         };
         return _VideoControlPopoverPlacement(
@@ -166,14 +168,11 @@ extension _VideoControlsPopover on _VideoFushiPageState {
       case VideoControlPopoverDirection.down:
         // 浮层顶边贴按钮底边；横向取按钮同侧对齐。
         final (Alignment target, Alignment follower) = switch (sourceSlot) {
-          VideoControlSlot.topLeft => (
-              Alignment.bottomLeft,
-              Alignment.topLeft,
-            ),
+          VideoControlSlot.topLeft => (Alignment.bottomLeft, Alignment.topLeft),
           VideoControlSlot.topRight => (
-              Alignment.bottomRight,
-              Alignment.topRight,
-            ),
+            Alignment.bottomRight,
+            Alignment.topRight,
+          ),
           _ => (Alignment.bottomCenter, Alignment.topCenter),
         };
         return _VideoControlPopoverPlacement(
@@ -281,8 +280,10 @@ extension _VideoControlsPopover on _VideoFushiPageState {
     if (!mounted) return;
     _controlPopoverHideTimer?.cancel();
     _activeControlPopoverLink = popoverLink;
-    _activeControlPopoverPlacement =
-        _controlPopoverPlacementFor(kind, sourceSlot);
+    _activeControlPopoverPlacement = _controlPopoverPlacementFor(
+      kind,
+      sourceSlot,
+    );
     _activeControlPopoverSourceSlot = sourceSlot;
     _activeControlPopoverSourceItem = sourceItem;
     if (_videoControlPopover.value != kind) {
@@ -365,10 +366,10 @@ extension _VideoControlsPopover on _VideoFushiPageState {
             builder: (BuildContext context, BoxConstraints constraints) {
               final _VideoControlPopoverPlacement placement =
                   _activeControlPopoverPlacement ??
-                      _controlPopoverPlacementFor(kind, null);
+                  _controlPopoverPlacementFor(kind, null);
               final double gap =
                   _VideoFushiPageState._videoControlPopoverGapBase *
-                      _videoUiScale;
+                  _videoUiScale;
               final Rect? targetRect = _activeControlPopoverTargetRect(context);
               final VideoControlSlot? sourceSlot =
                   _activeControlPopoverSourceSlot;
@@ -376,34 +377,32 @@ extension _VideoControlsPopover on _VideoFushiPageState {
               // resolve，放进顶/侧栏后既不换方向也不修横向。
               final VideoControlPopoverPlacement? resolved =
                   sourceSlot != null && targetRect != null
-                      ? resolveVideoControlPopoverPlacement(
-                          playerBounds: Offset.zero &
-                              Size(
-                                constraints.maxWidth,
-                                constraints.maxHeight,
-                              ),
-                          targetRect: targetRect,
-                          preferredWidth:
-                              _controlPopoverPreferredWidthFor(kind),
-                          sourceSlot: sourceSlot,
-                          gap: gap,
-                          minWidth: 160 * _videoUiScale,
-                        )
-                      : null;
-              final double width = resolved?.width ??
+                  ? resolveVideoControlPopoverPlacement(
+                      playerBounds:
+                          Offset.zero &
+                          Size(constraints.maxWidth, constraints.maxHeight),
+                      targetRect: targetRect,
+                      preferredWidth: _controlPopoverPreferredWidthFor(kind),
+                      sourceSlot: sourceSlot,
+                      gap: gap,
+                      minWidth: 160 * _videoUiScale,
+                    )
+                  : null;
+              final double width =
+                  resolved?.width ??
                   _controlPopoverWidthFor(kind, constraints.maxWidth);
               // 仅竖向弹（顶/底栏）需要横向修正把宽浮层拉回画面内；侧栏弹时横向由
               // gapDirection 的 gap 提供，不叠加 dx（否则与 gap 双重位移）。
               final bool verticalPopover = placement.gapDirection.dx == 0;
               final double dx =
                   !verticalPopover || resolved == null || targetRect == null
-                      ? 0
-                      : resolved.left -
-                          _controlPopoverAnchoredLeft(
-                            targetRect: targetRect,
-                            width: width,
-                            placement: placement,
-                          );
+                  ? 0
+                  : resolved.left -
+                        _controlPopoverAnchoredLeft(
+                          targetRect: targetRect,
+                          width: width,
+                          placement: placement,
+                        );
               return Stack(
                 children: <Widget>[
                   Positioned.fill(
@@ -451,70 +450,32 @@ extension _VideoControlsPopover on _VideoFushiPageState {
     }
   }
 
-  Widget _buildControlPopoverFrame({
-    required double width,
-    required Widget child,
-  }) {
-    final ColorScheme cs = _videoPopoverColorScheme(context);
-    final bool neutral = _m3eChrome && !isEinkTheme(context);
-    final Widget frame = Material(
-      color: Colors.transparent,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          // 浮层 alpha 两档制的实底档（UI 巡检 PR-4）。
-          // M3E：与悬浮胶囊同一无色相中性表面（[videoM3eFloatingColor]）。
-          color: neutral
-              ? videoM3eFloatingColor(Theme.of(context).colorScheme)
-              : cs.surfaceContainerHighest
-                  .withValues(alpha: kVideoOverlaySolidAlpha),
-          borderRadius: FushiBorderRadius.menu,
-          border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.7)),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: cs.shadow.withValues(alpha: 0.28),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints.tightFor(width: width),
-          child: Padding(
-            padding: EdgeInsets.all(10 * _videoUiScale),
-            child: child,
-          ),
-        ),
-      ),
-    );
-    if (!neutral) return frame;
-    // M3E：浮层内的文字按钮 / 滑条读无色相中性方案（白字，强调色仍是主题 primary）。
-    return Theme(
-      data: Theme.of(context).copyWith(colorScheme: cs),
-      child: frame,
-    );
-  }
+  /// 浮层的 M3E 中性底色：按**页面**主题（不是浮层内换过的中性方案）取，与悬浮
+  /// 胶囊同一种（[videoM3eFloatingColor]）；Apple / 墨水屏不用。
+  Color? get _videoPopoverM3eSurface => _m3eChrome && !isEinkTheme(context)
+      ? videoM3eFloatingColor(Theme.of(context).colorScheme)
+      : null;
 
+  // 浮层内容的主题（Apple 恒深色档 / M3E 中性方案 / 墨水屏实底）由
+  // [VideoControlPopoverFrame] 统一提供，这里不再按设计系统各包一层 Theme。
   Widget _buildVolumePopover({required double width}) {
     return ValueListenableBuilder<double>(
       valueListenable: _volumeDisplay,
       builder: (BuildContext context, double value, Widget? child) {
-        final double clamped = value.clamp(0.0, 100.0).toDouble();
+        final double max = _maxVideoVolume;
+        final double clamped = value.clamp(0.0, max).toDouble();
         final ColorScheme cs = _videoPopoverColorScheme(context);
-        final Widget card = VideoVolumePopoverCard(
+        return VideoVolumePopoverCard(
           width: width,
           value: clamped,
+          maximum: max,
           uiScale: _videoUiScale,
           colorScheme: cs,
+          m3eSurfaceColor: _videoPopoverM3eSurface,
           icon: _volumeIconFor(clamped),
           tooltip: t.shortcut_action_video_toggle_mute,
           onToggleMute: () => unawaited(_toggleMute()),
           onChanged: _setVolumeFromSlider,
-        );
-        if (_appleChrome || isEinkTheme(context)) return card;
-        // M3E：浮层内的滑条读无色相中性方案（与悬浮胶囊同一表面）。
-        return Theme(
-          data: Theme.of(context).copyWith(colorScheme: cs),
-          child: card,
         );
       },
     );
@@ -534,48 +495,20 @@ extension _VideoControlsPopover on _VideoFushiPageState {
   }
 
   Widget _buildSpeedPopover({required double width}) {
-    final ColorScheme cs = _videoPopoverColorScheme(context);
     final List<double> speedPresets = _speedMenuPresets();
-    final double sliderValue = _playbackSpeed.clamp(0.5, 2.0).toDouble();
-    return _buildControlPopoverFrame(
+    return VideoSpeedPopoverCard(
       width: width,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              FushiIcon(Icons.speed, color: cs.primary, size: 20 * _videoUiScale),
-              SizedBox(width: 8 * _videoUiScale),
-              Expanded(
-                child: Text(
-                  '${_playbackSpeed.toStringAsFixed(1)}x',
-                  style: TextStyle(
-                    color: cs.onSurface,
-                    fontSize: 14 * _videoUiScale,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              FushiTextButton(
-                onPressed: () => unawaited(_setSpeed(1.0)),
-                child: const Text('1.0x'),
-              ),
-            ],
-          ),
-          FushiSlider(
-            value: sliderValue,
-            min: 0.5,
-            max: 2.0,
-            divisions: speedPresets.length > 1 ? speedPresets.length - 1 : null,
-            label: '${_playbackSpeed.toStringAsFixed(1)}x',
-            onChanged: (double value) {
-              final double next = _nearestSpeedPreset(value, speedPresets);
-              unawaited(_setSpeed(next));
-            },
-          ),
-        ],
-      ),
+      speed: _playbackSpeed,
+      uiScale: _videoUiScale,
+      colorScheme: _videoPopoverColorScheme(context),
+      m3eSurfaceColor: _videoPopoverM3eSurface,
+      icon: Icons.speed,
+      divisions: speedPresets.length > 1 ? speedPresets.length - 1 : null,
+      onReset: () => unawaited(_setSpeed(1.0)),
+      onChanged: (double value) {
+        final double next = _nearestSpeedPreset(value, speedPresets);
+        unawaited(_setSpeed(next));
+      },
     );
   }
 }

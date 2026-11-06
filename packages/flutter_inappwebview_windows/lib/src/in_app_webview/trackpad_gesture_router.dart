@@ -1,6 +1,10 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
+import 'package:flutter/gestures.dart'
+    show kMaxFlingVelocity, kMinFlingVelocity;
+import 'package:flutter/widgets.dart' show ClampingScrollSimulation;
+
 /// 触控板两指手势（Flutter 的 PointerPanZoom 序列）转给 WebView2 的方式。
 enum TrackpadGestureKind { scroll, pinch }
 
@@ -97,3 +101,44 @@ class TrackpadGestureRouter {
 }
 
 enum _TrackpadGesturePhase { undecided, scroll, pinch }
+
+/// 触控板两指滚动松手后的惯性（反馈 2026-10-19：笔记本触控板在查词弹窗里滚动
+/// 「卡卡的」，浏览器扩展里的同一份弹窗就不卡）。
+///
+/// Windows 引擎的 DirectManipulation 在惯性阶段（`during_inertia_`）**不再发**
+/// PointerPanZoomUpdate，Flutter 自家 Scrollable 靠 PanZoomEnd 的速度自己起
+/// ballistic；WebView 的 Listener 此前只转发手指实际走过的平移，一松手就急停。
+/// Chromium 在浏览器里会把系统惯性继续作为精确滚轮发给页面，所以同一份 popup.js
+/// 在扩展里是顺的。这里按 Flutter 在 Windows 上的默认滚动物理
+/// （[ClampingScrollSimulation]）续上惯性，增量照旧走滚轮通道交给页面。
+class TrackpadFling {
+  TrackpadFling._(Offset velocity)
+    : _x = ClampingScrollSimulation(position: 0, velocity: velocity.dx),
+      _y = ClampingScrollSimulation(position: 0, velocity: velocity.dy);
+
+  /// [velocity] 低于 [kMinFlingVelocity] 视为「停下来再抬手」，不起惯性（返回
+  /// null）；高于 [kMaxFlingVelocity] 截断，与 Flutter 拖拽手势同口径。
+  static TrackpadFling? fromVelocity(Offset velocity) {
+    final double speed = velocity.distance;
+    if (!speed.isFinite || speed < kMinFlingVelocity) return null;
+    if (speed > kMaxFlingVelocity) {
+      velocity = velocity * (kMaxFlingVelocity / speed);
+    }
+    return TrackpadFling._(velocity);
+  }
+
+  final ClampingScrollSimulation _x;
+  final ClampingScrollSimulation _y;
+  Offset _emitted = Offset.zero;
+
+  /// 惯性开始后 [elapsed] 时刻应补发的平移增量（与 PanZoomUpdate.panDelta 同号
+  /// 同单位）；惯性已结束返回 null。
+  Offset? step(Duration elapsed) {
+    final double t = elapsed.inMicroseconds / Duration.microsecondsPerSecond;
+    if (_x.isDone(t) && _y.isDone(t)) return null;
+    final Offset position = Offset(_x.x(t), _y.x(t));
+    final Offset delta = position - _emitted;
+    _emitted = position;
+    return delta;
+  }
+}

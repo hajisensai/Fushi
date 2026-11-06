@@ -10,18 +10,20 @@ import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
+import 'support/srs_sync2_peers.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-000000000001';
 const String kProfile2 = '01928c3e-0000-7000-8000-000000000002';
 
 void main() {
   int t = DateTime.utc(2026, 10, 14, 12).millisecondsSinceEpoch;
-  late MemoryDir dir;
+  late SrsMemoryLocationStore dir;
 
   Future<SrsDbStore> device(String id, {String profile = kProfile}) =>
       openTestStore(profileUid: profile, deviceId: id, now: () => t);
@@ -29,7 +31,7 @@ void main() {
   Future<void> syncAll(List<SrsDbStore> stores) async {
     for (int round = 0; round < 3; round++) {
       for (final SrsDbStore s in stores) {
-        await SrsSyncEngine(directory: dir, replica: s).syncOnce();
+        await srsSyncOnce(s, dir);
       }
     }
   }
@@ -44,11 +46,11 @@ void main() {
 
   setUp(() {
     t = DateTime.utc(2026, 10, 14, 12).millisecondsSinceEpoch;
-    dir = MemoryDir(() => t);
+    dir = SrsMemoryLocationStore();
   });
 
   group('笔记类型管理', () {
-    test('新建基础类型 → 加笔记生成卡；加模板为已有笔记生成卡；删模板隐藏卡；对端一致', () async {
+    test('新建基础类型 → 加笔记生成卡；加模板为已有笔记生成卡；删模板删掉那张卡的缓存行；对端一致', () async {
       final SrsDbStore a = await device('a');
       final SrsDbStore b = await device('b');
       final String nt = await a.createStockNoteType(
@@ -95,7 +97,11 @@ void main() {
 
       expect(await a.visibleCardsOfTemplate(tpl2), 1);
       await a.deleteTemplate(nt, tpl2);
-      expect((await a.cardRow(reversed.id))!.hidden, isTrue);
+      expect(
+        await a.cardRow(reversed.id),
+        isNull,
+        reason: '删模板：卡不再生成，删缓存行；增量与重建同一张表',
+      );
       v = await type(a, nt);
       expect(v.templates, hasLength(1));
       await expectLater(
@@ -104,7 +110,7 @@ void main() {
         reason: '最后一个模板不能删',
       );
       await syncAll(<SrsDbStore>[a, b]);
-      expect((await b.cardRow(reversed.id))!.hidden, isTrue);
+      expect(await b.cardRow(reversed.id), isNull);
     });
 
     test('字段：加 / 改名（模板不动）/ 调序 / 删（模板引用一起去掉）；内置 Lapis 的保护', () async {
@@ -157,6 +163,157 @@ void main() {
         lapis2.edits.keys.where((String k) => k.startsWith('fieldDef/')),
         <String>[SrsFieldKeys.fieldDef(mine)],
       );
+    });
+
+    test('删字段带模板改写（prepareTemplate）：成功时改写与删除同一次落库；删不掉时模板与字段都不变', () async {
+      final SrsDbStore a = await device('a');
+      final String nt = await a.createStockNoteType(
+        SrsStockNoteType.basic,
+        '问答',
+      );
+      SrsNoteTypeView v = await type(a, nt);
+      final String front = v.fields[0].id;
+      final String back = v.fields[1].id;
+      final String tplId = v.templates.single.id;
+      Set<String> liveEditIds(SrsNoteTypeView x) => <String>{
+        for (final String k in x.edits.keys)
+          for (final SrsFieldEdit e in x.edits[k]!.live) e.id,
+      };
+      int calls = 0;
+      SrsTemplateDef rewrite(SrsNoteTypeView type, SrsTemplateDef tpl) {
+        calls++;
+        return tpl.copyWith(
+          front: '<!--rewritten-->${tpl.front}',
+          back: '<!--rewritten-->${tpl.back}',
+        );
+      }
+
+      // 成功：改写结果再剥掉被删字段的引用，一起落库。
+      final Set<String> editsBefore = liveEditIds(v);
+      await a.deleteField(nt, back, prepareTemplate: rewrite);
+      v = await type(a, nt);
+      expect(calls, 1);
+      expect(v.fieldById(back), isNull);
+      expect(v.templates.single.front, startsWith('<!--rewritten-->'));
+      expect(v.templates.single.back, startsWith('<!--rewritten-->'));
+      expect(v.templates.single.back, isNot(contains(back)));
+      expect(
+        liveEditIds(v).difference(editsBefore).length,
+        2,
+        reason: '字段删除标记 + 模板定义，同一批写入',
+      );
+
+      // 失败：只剩一个字段 → 抛错，改写从没被调用，模板与字段都原样。
+      final SrsTemplateDef tplBefore = v.templates.single;
+      final Set<String> editsBeforeFail = liveEditIds(v);
+      await expectLater(
+        a.deleteField(nt, front, prepareTemplate: rewrite),
+        throwsStateError,
+      );
+      v = await type(a, nt);
+      expect(calls, 1, reason: '校验先于改写');
+      expect(v.fieldById(front), isNotNull);
+      expect(v.templates.single.id, tplId);
+      expect(v.templates.single.front, tplBefore.front);
+      expect(v.templates.single.back, tplBefore.back);
+      expect(liveEditIds(v), editsBeforeFail, reason: '一条记录都不写');
+
+      // 内置字段同理。
+      final SrsNoteTypeView lapis = await type(a, a.lapisNoteTypeId);
+      final List<SrsTemplateDef> lapisTpls = lapis.templates;
+      await expectLater(
+        a.deleteField(
+          lapis.id,
+          srsLapisFieldId(kProfile, 'Sentence'),
+          prepareTemplate: rewrite,
+        ),
+        throwsStateError,
+      );
+      final SrsNoteTypeView lapisAfter = await type(a, lapis.id);
+      expect(
+        lapisAfter.templates.map((SrsTemplateDef x) => x.front),
+        lapisTpls.map((SrsTemplateDef x) => x.front),
+      );
+      expect(calls, 1);
+    });
+
+    test('字段说明：独立键，一台改说明一台改名不冲突；克隆带上；说明没变不写记录；导出 .apkg 带上', () async {
+      final SrsDbStore a = await device('a');
+      final SrsDbStore b = await device('b');
+      final String nt = await a.createStockNoteType(
+        SrsStockNoteType.basic,
+        '问答',
+      );
+      final SrsNoteTypeView v0 = await type(a, nt);
+      final String front = v0.fields[0].id;
+      final String back = v0.fields[1].id;
+      await a.setFieldDescription(nt, back, '  中文释义  ');
+      expect((await type(a, nt)).fieldById(back)!.description, '中文释义');
+      final String key = SrsFieldKeys.fieldDescription(back);
+      expect(
+        ((await type(a, nt)).edits.value(SrsFieldKeys.fieldDef(back))! as Map)
+            .containsKey('description'),
+        isFalse,
+        reason: '说明不写进字段定义',
+      );
+      final String before = (await type(
+        a,
+        nt,
+      )).edits[key]!.live.map((SrsFieldEdit e) => e.id).join();
+      await a.setFieldDescription(nt, back, '中文释义');
+      expect(
+        (await type(
+          a,
+          nt,
+        )).edits[key]!.live.map((SrsFieldEdit e) => e.id).join(),
+        before,
+        reason: '没变不写',
+      );
+      await syncAll(<SrsDbStore>[a, b]);
+      // 离线并发：a 改说明、b 改名 → 合并后两样都在，没有待裁决的冲突。
+      await a.setFieldDescription(nt, back, '中文释义（新）');
+      await b.renameField(nt, back, 'Meaning');
+      await syncAll(<SrsDbStore>[a, b]);
+      for (final SrsDbStore s in <SrsDbStore>[a, b]) {
+        final SrsNoteTypeView v = await type(s, nt);
+        expect(v.fieldById(back)!.name, 'Meaning');
+        expect(v.fieldById(back)!.description, '中文释义（新）');
+        expect(v.edits.conflicted, isEmpty);
+      }
+
+      final String clone = await a.cloneNoteType(nt, '问答 副本');
+      expect(
+        (await type(a, clone)).fields
+            .firstWhere((SrsFieldDef f) => f.name == 'Meaning')
+            .description,
+        '中文释义（新）',
+      );
+
+      await a.createNote(
+        noteTypeId: nt,
+        fieldsById: <String, String>{front: 'Q', back: 'A'},
+      );
+      final SrsAnkiPackage p = SrsAnkiPackage.open(
+        await exportAnkiPackage(store: a),
+        zstd: (Uint8List b) => null,
+      );
+      final SrsAnkiCollection col = await SrsAnkiCollection.open(
+        p.collectionBytes,
+      );
+      try {
+        final SrsAnkiNoteType exported = col.noteTypes.values.firstWhere(
+          (SrsAnkiNoteType x) => x.name == '问答',
+        );
+        expect(
+          exported.fields
+              .firstWhere((SrsAnkiField f) => f.name == 'Meaning')
+              .description,
+          '中文释义（新）',
+          reason: '导出时写进 Anki 的字段说明，再读回来一致',
+        );
+      } finally {
+        await col.close();
+      }
     });
 
     test('两台设备离线各加一个字段，合并后两个都在（按项合并，铁律 D）', () async {
@@ -213,7 +370,7 @@ void main() {
   });
 
   group('更改笔记类型', () {
-    test('字段按映射搬值、新卡继承复习历史与标志、没映射的旧卡隐藏；同步后对端一致', () async {
+    test('字段按映射搬值、新卡继承复习历史与标志、没映射的旧卡不再生成；同步后对端一致', () async {
       final SrsDbStore a = await device('a');
       final SrsDbStore b = await device('b');
       final String from = await a.createStockNoteType(
@@ -270,8 +427,12 @@ void main() {
         expect(n.noteTypeId, to);
         expect(n.field(vt.fields[0].id), 'cat');
         expect(n.field(vt.fields[1].id), '猫');
-        expect((await s.cardRow(card1))!.hidden, isTrue);
-        expect((await s.cardRow(card2))!.hidden, isTrue);
+        expect(
+          await s.cardRow(card1),
+          isNull,
+          reason: '前身卡不再生成，删缓存行；增量与重建同一张表',
+        );
+        expect(await s.cardRow(card2), isNull);
         final SrsCardCacheRow c = (await s.cardRow(newCard))!;
         expect(c.hidden, isFalse);
         expect(c.lastLogId, l2.id, reason: '排程状态 = 继承历史里最后一条有效日志');

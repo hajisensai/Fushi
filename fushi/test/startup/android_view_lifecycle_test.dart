@@ -113,40 +113,37 @@ void main() {
     },
   );
 
-  test(
-    'BUG-2280 退后台 flush 失败不得变成 unhandled async error',
-    () async {
-      // 唯一调用点是 `unawaited(_androidViewLifecycle.handleState(state))`
-      // （fushi/lib/src/main.dart 的 didChangeAppLifecycleState），没有人 catch
-      // 这个 future。所以 _drain 一旦 completeError，丢一次 flush 窗口就会升级成
-      // 崩溃——而本层的既定语义恰恰相反：ExitFlushRegistry._runGuarded 已经把每个
-      // 回调的异常兜住并 debugPrint，「退出清理失败不该阻止退出」。
-      //
-      // 为什么是源码守卫而不是行为测试：ExitFlushRegistry 的构造函数是私有的
-      // （`ExitFlushRegistry._()`），测试注不进一个「flushAll 会抛」的实现；而真实
-      // 的 flushAll 逐回调 _runGuarded，拿会抛的回调去驱动只会得到恒绿的空壳断言。
-      final String source = File(
-        'lib/src/startup/android_view_lifecycle.dart',
-      ).readAsStringSync();
-      final int drain = source.indexOf('Future<void> _drain(');
-      expect(drain, greaterThanOrEqualTo(0), reason: '_drain 改名了，守卫要跟着改');
-      final String body = source.substring(drain);
+  test('BUG-2280 退后台 flush 失败不得变成 unhandled async error', () async {
+    // 唯一调用点是 `unawaited(_androidViewLifecycle.handleState(state))`
+    // （fushi/lib/src/main.dart 的 didChangeAppLifecycleState），没有人 catch
+    // 这个 future。所以 _drain 一旦 completeError，丢一次 flush 窗口就会升级成
+    // 崩溃——而本层的既定语义恰恰相反：ExitFlushRegistry._runGuarded 已经把每个
+    // 回调的异常兜住并 debugPrint，「退出清理失败不该阻止退出」。
+    //
+    // 为什么是源码守卫而不是行为测试：ExitFlushRegistry 的构造函数是私有的
+    // （`ExitFlushRegistry._()`），测试注不进一个「flushAll 会抛」的实现；而真实
+    // 的 flushAll 逐回调 _runGuarded，拿会抛的回调去驱动只会得到恒绿的空壳断言。
+    final String source = File(
+      'lib/src/startup/android_view_lifecycle.dart',
+    ).readAsStringSync();
+    final int drain = source.indexOf('Future<void> _drain(');
+    expect(drain, greaterThanOrEqualTo(0), reason: '_drain 改名了，守卫要跟着改');
+    final String body = source.substring(drain);
 
-      expect(
-        body,
-        isNot(contains('completeError')),
-        reason: '退后台 flush 是 best-effort：调用方 unawaited，以错误完成 = 崩溃',
-      );
-      // complete() 必须在 finally 里——放在 try 尾部时，抛异常的那一路会让 future
-      // 永远不完成，下一次 _flush() 拿到的 pending 也就永远 await 不回来。
-      final int fin = body.indexOf('} finally {');
-      expect(fin, greaterThanOrEqualTo(0), reason: '_drain 必须有 finally 收口');
-      final int done = body.indexOf('completion.complete()');
-      expect(
-        done,
-        greaterThan(fin),
-        reason: 'completion.complete() 必须在 finally 里，失败路径也要让 future 完成',
-      );
-    },
-  );
+    expect(
+      body,
+      isNot(contains('completeError')),
+      reason: '退后台 flush 是 best-effort：调用方 unawaited，以错误完成 = 崩溃',
+    );
+    // complete() 必须在 finally 里——放在 try 尾部时，抛异常的那一路会让 future
+    // 永远不完成，下一次 _flush() 拿到的 pending 也就永远 await 不回来。
+    final int fin = body.indexOf('} finally {');
+    expect(fin, greaterThanOrEqualTo(0), reason: '_drain 必须有 finally 收口');
+    final int done = body.indexOf('completion.complete()');
+    expect(
+      done,
+      greaterThan(fin),
+      reason: 'completion.complete() 必须在 finally 里，失败路径也要让 future 完成',
+    );
+  });
 }

@@ -6,7 +6,7 @@ import '../ctl_commands.dart';
 ///
 /// - `task`：设置类后台任务（更新下载 / 安装、Plex 账号授权、Hoshi 备份导入…）的
 ///   查询、等待与取消；app 侧路由见
-///   `fushi/lib/src/platform/desktop/ctl/ctl_settings_task_routes.dart`。
+///   `fushi/lib/src/ops/ctl_settings_task_routes.dart`。
 /// - `update`：应用自更新三步（检查 / 后台下载 / 确认安装），与设置页「立即检查
 ///   更新」→「发现新版本」对话框同一条链路（`fushi/lib/src/updates/app_update_cli.dart`）。
 const List<CtlCommandGroup> settingsTaskCommandGroups = <CtlCommandGroup>[

@@ -22,10 +22,12 @@ import 'reader_fushi_page_source_corpus.dart';
 void main() {
   final String readerSrc = readReaderPageSource();
 
-  final int prepStart = readerSrc
-      .indexOf('Future<String?> _prepareSentenceAudioCuesJson() async {');
-  final int injectStart =
-      readerSrc.indexOf('Future<void> _injectAudiobookBridge() async {');
+  final int prepStart = readerSrc.indexOf(
+    'Future<String?> _prepareSentenceAudioCuesJson() async {',
+  );
+  final int injectStart = readerSrc.indexOf(
+    'Future<void> _injectAudiobookBridge() async {',
+  );
 
   test('方法边界可定位（防守卫因重命名失效）', () {
     expect(prepStart, greaterThanOrEqualTo(0));
@@ -40,7 +42,8 @@ void main() {
     expect(
       prepBody.contains('applySentenceAudioCues SKIPPED (early return)'),
       isFalse,
-      reason: '旧代码 _srtBookUid!=null 即 return null（SKIPPED early return），'
+      reason:
+          '旧代码 _srtBookUid!=null 即 return null（SKIPPED early return），'
           'SRT-rematch 书永不建 range；修复后两源统一走 buildSentenceAudioPayload',
     );
   });
@@ -49,26 +52,36 @@ void main() {
     expect(
       prepBody.contains('_loadHighlightCues('),
       isTrue,
-      reason: 'SRT 与 Audiobook 两源必须先经统一加载，再走同一 sentenceAudioHighlight 判据，'
+      reason:
+          'SRT 与 Audiobook 两源必须先经统一加载，再走同一 sentenceAudioHighlight 判据，'
           '不得在 _prepareSentenceAudioCuesJson 里按 _srtBookUid 分叉早退',
     );
   });
 
   test(
-      '_prepareSentenceAudioCuesJson 仍复用 buildSentenceAudioPayload（BUG-300 契约不回退）',
-      () {
-    expect(prepBody.contains('AudiobookBridge.buildSentenceAudioPayload('),
-        isTrue);
-  });
+    '_prepareSentenceAudioCuesJson 仍复用 buildSentenceAudioPayload（BUG-300 契约不回退）',
+    () {
+      expect(
+        prepBody.contains('AudiobookBridge.buildSentenceAudioPayload('),
+        isTrue,
+      );
+    },
+  );
 
   test('_loadHighlightCues 同时覆盖 SRT 与 Audiobook 两个 cue 源', () {
     final int loadStart = readerSrc.indexOf('_loadHighlightCues() async {');
     expect(loadStart, greaterThanOrEqualTo(0), reason: '统一 cue 加载器必须存在');
     final String loadBody = readerSrc.substring(loadStart, loadStart + 600);
-    expect(loadBody.contains('SrtBookRepository'), isTrue,
-        reason: 'SRT 书 cue 源');
-    expect(loadBody.contains('AudiobookRepository'), isTrue,
-        reason: '普通有声书 cue 源');
+    expect(
+      loadBody.contains('SrtBookRepository'),
+      isTrue,
+      reason: 'SRT 书 cue 源',
+    );
+    expect(
+      loadBody.contains('AudiobookRepository'),
+      isTrue,
+      reason: '普通有声书 cue 源',
+    );
   });
 
   group('BUG-395 判据：sentenceAudioHighlight 编码的 cue（无论书源）都产出非空 payload', () {
@@ -78,25 +91,31 @@ void main() {
           ..chapterHref = ''
           ..sentenceIndex = 0
           ..textFragmentId = SubtitleRematchCodec.encodeHit(
-              sectionIndex: section, normCharStart: ns, normCharEnd: ne)
+            sectionIndex: section,
+            normCharStart: ns,
+            normCharEnd: ne,
+          )
           ..text = text
           ..startMs = 0
           ..endMs = 0
           ..audioFileIndex = 0;
 
     test(
-        'SRT 书被匹配进真 EPUB 后的 sentenceAudioHighlight cue → buildSentenceAudioPayload 非空（应建 range）',
-        () {
-      // 这正是用户日志里的 cue：sasayaki://s=26&ns=84&ne=111。
-      final payload = AudiobookBridge.buildSentenceAudioPayload(
-        <AudioCue>[sentenceAudioCue(26, 84, 111, 'これは推理小説です')],
-        26,
-      );
-      expect(payload, isNotEmpty,
+      'SRT 书被匹配进真 EPUB 后的 sentenceAudioHighlight cue → buildSentenceAudioPayload 非空（应建 range）',
+      () {
+        // 这正是用户日志里的 cue：sasayaki://s=26&ns=84&ne=111。
+        final payload = AudiobookBridge.buildSentenceAudioPayload(<AudioCue>[
+          sentenceAudioCue(26, 84, 111, 'これは推理小説です'),
+        ], 26);
+        expect(
+          payload,
+          isNotEmpty,
           reason:
-              'cue 是 sentenceAudioHighlight 编码就该建 range —— 与书源（SRT/Audiobook）无关');
-      expect(payload.single['text'], 'これは推理小説です');
-    });
+              'cue 是 sentenceAudioHighlight 编码就该建 range —— 与书源（SRT/Audiobook）无关',
+        );
+        expect(payload.single['text'], 'これは推理小説です');
+      },
+    );
 
     test('纯 [data-cue-id] 字幕 cue → 空 payload（保留早退，真 SRT 字幕书零回归）', () {
       final AudioCue dataCueId = AudioCue()
@@ -109,8 +128,9 @@ void main() {
         ..endMs = 0
         ..audioFileIndex = 0;
       expect(
-          AudiobookBridge.buildSentenceAudioPayload(<AudioCue>[dataCueId], 0),
-          isEmpty);
+        AudiobookBridge.buildSentenceAudioPayload(<AudioCue>[dataCueId], 0),
+        isEmpty,
+      );
     });
   });
 }

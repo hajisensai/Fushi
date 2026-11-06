@@ -9,14 +9,16 @@ import 'video_fushi_page_source_corpus.dart';
 
 void main() {
   final String src = readVideoFushiSource();
-  final String shortcuts =
-      File('lib/src/media/video/video_player_shortcuts.dart')
-          .readAsStringSync();
+  final String shortcuts = File(
+    'lib/src/media/video/video_player_shortcuts.dart',
+  ).readAsStringSync();
 
   test('字幕列表走 push-aside（把画面挤左），不再 overlay 浮层遮挡也不回旧阻塞弹窗（TODO-314）', () {
     final int toggleIdx = src.indexOf('void _toggleSubtitleJumpList()');
-    final int nextHandlerIdx =
-        src.indexOf('void _handleSubtitleJumpTap', toggleIdx);
+    final int nextHandlerIdx = src.indexOf(
+      'void _handleSubtitleJumpTap',
+      toggleIdx,
+    );
     final String toggleBody = src.substring(toggleIdx, nextHandlerIdx);
 
     // push-aside 由 _subtitleListVisible / _videoWithSubtitlePanel 承载（Row 真挤窄画面）。
@@ -26,9 +28,9 @@ void main() {
     // 不再经 overlay side-panel 系统开字幕列表（那会浮在画面上遮挡，TODO-314 根因）。
     expect(toggleBody, contains('_subtitleListVisible.value'));
     expect(
-        toggleBody,
-        isNot(
-            contains('_showVideoSidePanel(_VideoSidePanelKind.subtitleList)')));
+      toggleBody,
+      isNot(contains('_showVideoSidePanel(_VideoSidePanelKind.subtitleList)')),
+    );
     expect(toggleBody, isNot(contains('showModalBottomSheet')));
   });
 
@@ -58,9 +60,9 @@ void main() {
     expect(
       ShortcutDefaults.forPlatform(
         TargetPlatform.windows,
-      )[ShortcutAction.videoToggleSubtitleList]!
-          .keyboardBindings
-          .contains(const InputBinding(key: LogicalKeyboardKey.keyL)),
+      )[ShortcutAction.videoToggleSubtitleList]!.keyboardBindings.contains(
+        const InputBinding(key: LogicalKeyboardKey.keyL),
+      ),
       isTrue,
       reason: '裸 L 键未绑定到 videoToggleSubtitleList 默认键',
     );
@@ -72,8 +74,11 @@ void main() {
       reason: 'videoToggleSubtitleList action 未接到 toggleSubtitleList 回调',
     );
     final int actionIdx = src.indexOf('toggleSubtitleList:');
-    expect(actionIdx, greaterThanOrEqualTo(0),
-        reason: 'page 缺 toggleSubtitleList action');
+    expect(
+      actionIdx,
+      greaterThanOrEqualTo(0),
+      reason: 'page 缺 toggleSubtitleList action',
+    );
     final int nextActionIdx = src.indexOf('toggleImmersiveLock:', actionIdx);
     expect(nextActionIdx, greaterThan(actionIdx));
     final String callback = src.substring(actionIdx, nextActionIdx);
@@ -92,8 +97,11 @@ void main() {
     // VideoPlayerController 的动作，加载态下键盘 / 手柄要能绕开表单独调到它）。
     final int escIdx = src.indexOf('void _handleVideoEscapeAction() {');
     expect(escIdx, greaterThanOrEqualTo(0), reason: '缺 escape 执行体');
-    expect(src.contains('escape: _handleVideoEscapeAction,'), isTrue,
-        reason: 'globalBack 的执行体必须仍接在 VideoPlayerShortcutActions.escape 上');
+    expect(
+      src.contains('escape: _handleVideoEscapeAction,'),
+      isTrue,
+      reason: 'globalBack 的执行体必须仍接在 VideoPlayerShortcutActions.escape 上',
+    );
     final int dismissIdx = src.indexOf('_dismissTopForegroundLayer()', escIdx);
     final int exitIdx = src.indexOf('_handleBackOrExit()', escIdx);
     expect(dismissIdx, greaterThanOrEqualTo(0), reason: 'Esc 未先逐级关前台层');
@@ -103,11 +111,17 @@ void main() {
     expect(tableIdx, greaterThanOrEqualTo(0), reason: '缺共用层级表');
     // 层级表读的是两条独立可见性：push-aside 字幕列表 与 side panel。
     final int listGate = src.indexOf(
-        'subtitleListVisible: _subtitleListVisible.value', tableIdx);
-    final int panelGate =
-        src.indexOf('sidePanelOpen: _videoSidePanel.value != null', tableIdx);
-    final int listCloseIdx =
-        src.indexOf('_toggleSubtitleJumpList();', tableIdx);
+      'subtitleListVisible: _subtitleListVisible.value',
+      tableIdx,
+    );
+    final int panelGate = src.indexOf(
+      'sidePanelOpen: _videoSidePanel.value != null',
+      tableIdx,
+    );
+    final int listCloseIdx = src.indexOf(
+      '_toggleSubtitleJumpList();',
+      tableIdx,
+    );
     final int closeIdx = src.indexOf('_hideVideoSidePanel();', tableIdx);
     expect(listGate, greaterThanOrEqualTo(0), reason: '层级表未读 push-aside 字幕列表');
     expect(panelGate, greaterThan(listGate), reason: '字幕列表比侧栏更前台，读取顺序应保持一致');
@@ -116,9 +130,9 @@ void main() {
   });
 
   test('一体式字幕侧栏只剩「全部 / 收藏」两档，无制卡勾选框', () {
-    final String panel =
-        File('lib/src/media/video/video_subtitle_jump_panel.dart')
-            .readAsStringSync();
+    final String panel = File(
+      'lib/src/media/video/video_subtitle_jump_panel.dart',
+    ).readAsStringSync();
     expect(panel, contains('VideoSubtitleListFilter.all'));
     expect(panel, contains('VideoSubtitleListFilter.favorites'));
     // 「选入制卡」勾选框连同「已选」档整条删除：行左侧不再有勾选框列。

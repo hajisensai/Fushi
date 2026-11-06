@@ -27,11 +27,26 @@ void main() {
   Stream<List<int>> bytes(String s) => Stream<List<int>>.value(utf8.encode(s));
 
   test('路径穿越被拒', () {
-    expect(() => UploadStore.resolveTarget(lib, '../x.mkv'), throwsA(isA<UploadRejected>()));
-    expect(() => UploadStore.resolveTarget(lib, 'a/../../x.mkv'), throwsA(isA<UploadRejected>()));
-    expect(() => UploadStore.resolveTarget(lib, '/abs.mkv'), throwsA(isA<UploadRejected>()));
-    expect(() => UploadStore.resolveTarget(lib, ''), throwsA(isA<UploadRejected>()));
-    expect(UploadStore.resolveTarget(lib, 'Season1/ep01.mkv'), p.normalize(p.join(lib.path, 'Season1', 'ep01.mkv')));
+    expect(
+      () => UploadStore.resolveTarget(lib, '../x.mkv'),
+      throwsA(isA<UploadRejected>()),
+    );
+    expect(
+      () => UploadStore.resolveTarget(lib, 'a/../../x.mkv'),
+      throwsA(isA<UploadRejected>()),
+    );
+    expect(
+      () => UploadStore.resolveTarget(lib, '/abs.mkv'),
+      throwsA(isA<UploadRejected>()),
+    );
+    expect(
+      () => UploadStore.resolveTarget(lib, ''),
+      throwsA(isA<UploadRejected>()),
+    );
+    expect(
+      UploadStore.resolveTarget(lib, 'Season1/ep01.mkv'),
+      p.normalize(p.join(lib.path, 'Season1', 'ep01.mkv')),
+    );
   });
 
   test('无 Content-Length 的分块上传照样受配额约束（不得绕过）', () async {
@@ -57,8 +72,7 @@ void main() {
     );
     final File part = File('$target.part');
     final int onDisk = await part.exists() ? await part.length() : 0;
-    expect(onDisk, lessThanOrEqualTo(1000),
-        reason: '被拒的上传不得把 .part 留在超额状态');
+    expect(onDisk, lessThanOrEqualTo(1000), reason: '被拒的上传不得把 .part 留在超额状态');
   });
 
   test('声明长度撒谎时，按真实写入字节数拦下', () async {
@@ -111,21 +125,60 @@ void main() {
 
   test('偏移不匹配 409（客户端先 GET received 再续传）', () async {
     final String target = UploadStore.resolveTarget(lib, 'c.txt');
-    await store.putChunk(target: target, body: bytes('abc'), rangeStart: 0, total: 6, declaredLength: 3);
+    await store.putChunk(
+      target: target,
+      body: bytes('abc'),
+      rangeStart: 0,
+      total: 6,
+      declaredLength: 3,
+    );
     expect(
-      () => store.putChunk(target: target, body: bytes('xyz'), rangeStart: 1, total: 6, declaredLength: 3),
-      throwsA(isA<UploadRejected>().having((UploadRejected e) => e.status, 'status', 409)),
+      () => store.putChunk(
+        target: target,
+        body: bytes('xyz'),
+        rangeStart: 1,
+        total: 6,
+        declaredLength: 3,
+      ),
+      throwsA(
+        isA<UploadRejected>().having(
+          (UploadRejected e) => e.status,
+          'status',
+          409,
+        ),
+      ),
     );
   });
 
   test('超配额 413，账本跨实例持久', () async {
     final String target = UploadStore.resolveTarget(lib, 'big.bin');
     expect(
-      () => store.putChunk(target: target, body: bytes('x'), rangeStart: 0, total: 5000, declaredLength: 5000),
-      throwsA(isA<UploadRejected>().having((UploadRejected e) => e.status, 'status', 413)),
+      () => store.putChunk(
+        target: target,
+        body: bytes('x'),
+        rangeStart: 0,
+        total: 5000,
+        declaredLength: 5000,
+      ),
+      throwsA(
+        isA<UploadRejected>().having(
+          (UploadRejected e) => e.status,
+          'status',
+          413,
+        ),
+      ),
     );
-    await store.putChunk(target: target, body: bytes('12345'), rangeStart: 0, total: 5, declaredLength: 5);
-    final UploadStore again = UploadStore(ledgerFile: store.ledgerFile, quotaBytes: 1000);
+    await store.putChunk(
+      target: target,
+      body: bytes('12345'),
+      rangeStart: 0,
+      total: 5,
+      declaredLength: 5,
+    );
+    final UploadStore again = UploadStore(
+      ledgerFile: store.ledgerFile,
+      quotaBytes: 1000,
+    );
     expect(await again.used(), 5);
   });
 

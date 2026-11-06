@@ -131,6 +131,23 @@ int main() {
              text_ts - fushi_voice_hook::kUtteranceBackMs, "all inside window");
   }
 
+  // ⑦ 前向窗口：没有下一句时取上限（旧值 6000 把长句截在 6 秒，用户报「长句语音被截、
+  //    短句完整」）；有下一句收到下一句；下一句不晚于本句为 0。
+  {
+    using fushi_voice_hook::UtteranceForwardMs;
+    const int64_t ts = 5000000;
+    ExpectEq(UtteranceForwardMs(ts, 0), fushi_voice_hook::kUtteranceMaxForwardMs,
+             "forward without next line");
+    Expect(fushi_voice_hook::kUtteranceMaxForwardMs >= 20000,
+           "forward cap covers long lines", fushi_voice_hook::kUtteranceMaxForwardMs,
+           20000);
+    ExpectEq(UtteranceForwardMs(ts, ts + 9500), 9500, "forward bounded by next line");
+    ExpectEq(UtteranceForwardMs(ts, ts + 90000),
+             fushi_voice_hook::kUtteranceMaxForwardMs, "forward capped");
+    ExpectEq(UtteranceForwardMs(ts, ts), 0, "next line not later");
+    ExpectEq(UtteranceForwardMs(ts, ts - 5), 0, "next line earlier");
+  }
+
   if (g_failures != 0) {
     printf("utterance_window_test: %d failure(s)\n", g_failures);
     return 1;

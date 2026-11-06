@@ -1,8 +1,8 @@
 /// 「导入 Anki 包」的选项对话框（对齐 Anki 23.10+ 导入页）。
 ///
 /// - 顶部：标题「导入选项」+ 文件名，右上「?」逐项说明；
-/// - 两个开关：导入所有学习进度信息（with_scheduling）/ 导入所有牌组预设配置
-///   （with_deck_configs）；
+/// - 三个开关：导入所有学习进度信息（with_scheduling）/ 导入所有牌组预设配置
+///   （with_deck_configs）/ 导入 FSRS 参数与期望保留率（Fushi 自加，默认开）；
 /// - 可折叠分组「更新」：合并笔记模板（开关）、更新笔记 / 更新笔记模板（较新时 /
 ///   始终 / 从不），每项右侧「恢复默认」，值等于默认时不可点。
 ///
@@ -21,7 +21,14 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 偏好键：上次导入 Anki 包时的选项（String，[SrsAnkiImportOptions.toJson] 的 JSON）。
 ///
@@ -154,36 +161,39 @@ class _SrsImportOptionsDialogState extends State<SrsImportOptionsDialog> {
         title: Text(t.srs_import_options_title),
         content: SizedBox(
           width: SrsImportOptionsDialog.contentWidth,
-          child: SingleChildScrollView(
-            child: Column(
-              key: const ValueKey<String>('srs-import-options-help'),
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                item(
-                  t.srs_import_with_scheduling,
-                  t.srs_import_with_scheduling_help,
+          child: Column(
+            key: const ValueKey<String>('srs-import-options-help'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              item(
+                t.srs_import_with_scheduling,
+                t.srs_import_with_scheduling_help,
+              ),
+              item(
+                t.srs_import_with_deck_configs,
+                t.srs_import_with_deck_configs_help,
+              ),
+              item(t.srs_import_use_rwkv, t.srs_import_use_rwkv_help),
+              item(
+                t.srs_import_with_fsrs_params,
+                t.srs_import_with_fsrs_params_help,
+              ),
+              item(
+                t.srs_import_merge_notetypes,
+                t.srs_import_merge_notetypes_help,
+              ),
+              item(t.srs_import_update_notes, t.srs_import_update_notes_help),
+              item(
+                t.srs_import_update_notetypes,
+                t.srs_import_update_notetypes_help,
+              ),
+              if (widget.wholeCollection)
+                Text(
+                  t.srs_import_colpkg_note,
+                  style: theme.textTheme.bodyMedium,
                 ),
-                item(
-                  t.srs_import_with_deck_configs,
-                  t.srs_import_with_deck_configs_help,
-                ),
-                item(
-                  t.srs_import_merge_notetypes,
-                  t.srs_import_merge_notetypes_help,
-                ),
-                item(t.srs_import_update_notes, t.srs_import_update_notes_help),
-                item(
-                  t.srs_import_update_notetypes,
-                  t.srs_import_update_notetypes_help,
-                ),
-                if (widget.wholeCollection)
-                  Text(
-                    t.srs_import_colpkg_note,
-                    style: theme.textTheme.bodyMedium,
-                  ),
-              ],
-            ),
+            ],
           ),
         ),
         actions: <Widget>[
@@ -232,6 +242,18 @@ class _SrsImportOptionsDialogState extends State<SrsImportOptionsDialog> {
               title: t.srs_import_with_deck_configs,
               value: o.withDeckConfigs,
               onChanged: (bool v) => _set(o.copyWith(withDeckConfigs: v)),
+            ),
+            AdaptiveSettingsSwitchRow(
+              key: const ValueKey<String>('srs-import-with-fsrs-params'),
+              title: t.srs_import_with_fsrs_params,
+              value: o.withFsrsParams,
+              onChanged: (bool v) => _set(o.copyWith(withFsrsParams: v)),
+            ),
+            AdaptiveSettingsSwitchRow(
+              key: const ValueKey<String>('srs-import-use-rwkv'),
+              title: t.srs_import_use_rwkv,
+              value: o.useRwkv,
+              onChanged: (bool v) => _set(o.copyWith(useRwkv: v)),
             ),
           ],
         ),
@@ -330,45 +352,39 @@ class _SrsImportOptionsDialogState extends State<SrsImportOptionsDialog> {
                 screen.width - insetX * 2 - 48,
               )
             : SrsImportOptionsDialog.contentWidth,
-        child: SingleChildScrollView(
-          child: FushiEntranceScope(
-            child: twoColumn
-                // 手机横屏（又宽又矮）：基础开关与「更新」两组并排，不必在 ~250 高的
-                // 正文里上下滚。
-                ? Row(
-                    key: const ValueKey<String>('srs-import-options'),
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    spacing: tokens.spacing.gap * 2,
-                    children: <Widget>[
-                      Expanded(
-                        child: Column(
-                          key: const ValueKey<String>(
-                            'srs-import-options-basic',
-                          ),
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          mainAxisSize: MainAxisSize.min,
-                          children: basic,
-                        ),
+        child: FushiEntranceScope(
+          child: twoColumn
+              // 手机横屏（又宽又矮）：基础开关与「更新」两组并排，不必在 ~250 高的
+              // 正文里上下滚。
+              ? Row(
+                  key: const ValueKey<String>('srs-import-options'),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  spacing: tokens.spacing.gap * 2,
+                  children: <Widget>[
+                    Expanded(
+                      child: Column(
+                        key: const ValueKey<String>('srs-import-options-basic'),
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisSize: MainAxisSize.min,
+                        children: basic,
                       ),
-                      Expanded(
-                        key: const ValueKey<String>(
-                          'srs-import-options-updates',
-                        ),
-                        child: updates,
-                      ),
-                    ],
-                  )
-                : Column(
-                    key: const ValueKey<String>('srs-import-options'),
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      ...basic,
-                      SizedBox(height: tokens.spacing.gap),
-                      updates,
-                    ],
-                  ),
-          ),
+                    ),
+                    Expanded(
+                      key: const ValueKey<String>('srs-import-options-updates'),
+                      child: updates,
+                    ),
+                  ],
+                )
+              : Column(
+                  key: const ValueKey<String>('srs-import-options'),
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    ...basic,
+                    SizedBox(height: tokens.spacing.gap),
+                    updates,
+                  ],
+                ),
         ),
       ),
       actions: <Widget>[

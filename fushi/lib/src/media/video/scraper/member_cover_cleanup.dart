@@ -63,7 +63,8 @@ class MemberCoverCleanup {
   final bool promoteToCollection;
 
   @override
-  String toString() => 'MemberCoverCleanup($bookUid → collection $collectionId,'
+  String toString() =>
+      'MemberCoverCleanup($bookUid → collection $collectionId,'
       ' promote=$promoteToCollection)';
 }
 
@@ -106,12 +107,14 @@ List<MemberCoverCleanup> planMemberCoverCleanup({
     if (!p.equals(p.dirname(normalized), coversDir)) continue;
 
     final int collectionId = multiMemberCollectionIdByVideoUid[uid]!;
-    plan.add(MemberCoverCleanup(
-      bookUid: uid,
-      collectionId: collectionId,
-      coverPath: normalized,
-      promoteToCollection: promoted.add(collectionId),
-    ));
+    plan.add(
+      MemberCoverCleanup(
+        bookUid: uid,
+        collectionId: collectionId,
+        coverPath: normalized,
+        promoteToCollection: promoted.add(collectionId),
+      ),
+    );
   }
   return plan;
 }
@@ -157,15 +160,15 @@ Future<int> _runMemberCoverCleanupUnlocked({
   Directory? coversDirectory,
   Directory? collectionCoversDirectory,
 }) async {
-  final Map<String, int> memberCollectionIds =
-      await repo.multiMemberCollectionIds();
+  final Map<String, int> memberCollectionIds = await repo
+      .multiMemberCollectionIds();
   if (memberCollectionIds.isEmpty) return 0;
 
   final Directory covers = coversDirectory ?? await VideoStorage.coversDir();
   final CoverMetaStore coverMeta = coverMetaStore ?? CoverMetaStore(covers);
   final List<VideoBookRow> books = await repo.listAll();
-  final List<MediaCollectionRow> collections =
-      await repo.getAllMediaCollections();
+  final List<MediaCollectionRow> collections = await repo
+      .getAllMediaCollections();
 
   final List<MemberCoverCleanup> plan = planMemberCoverCleanup(
     multiMemberCollectionIdByVideoUid: memberCollectionIds,

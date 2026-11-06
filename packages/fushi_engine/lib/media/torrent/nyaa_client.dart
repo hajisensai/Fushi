@@ -45,7 +45,7 @@ enum NyaaFeedErrorCode {
 
 class NyaaFeedFormatException extends FormatException {
   NyaaFeedFormatException(this.code, String detail)
-      : super('Nyaa RSS ${code.name}: $detail');
+    : super('Nyaa RSS ${code.name}: $detail');
 
   final NyaaFeedErrorCode code;
 }
@@ -229,7 +229,8 @@ DateTime? parseNyaaPubDate(String raw) {
   final String? zone = m.group(7);
   if (zone != null && RegExp(r'^[+-]\d{4}$').hasMatch(zone)) {
     final int sign = zone.startsWith('-') ? -1 : 1;
-    offsetMinutes = sign *
+    offsetMinutes =
+        sign *
         (int.parse(zone.substring(1, 3)) * 60 + int.parse(zone.substring(3)));
   }
   // 其它字母时区（GMT/UT 等）按 0 偏移处理；nyaa 实际恒发 `-0000`。
@@ -525,7 +526,10 @@ const int kNyaaMaxBrowsePages = 100;
 /// 同一 host 两次请求的最小间隔（对齐 Jackett/Prowlarr 的 nyaasi 定义）。
 const Duration kNyaaMinRequestInterval = Duration(seconds: 2);
 
-/// Nyaa（nyaa.si）搜索客户端。无需鉴权。
+/// Nyaa 式站点（HTML 搜索页 + `table.torrent-list`）的搜索客户端。无需鉴权。
+///
+/// **不内置任何站点地址**：[baseUrl] 由调用方给（用户在设置里添加的 BT 站，见
+/// `bt_site_config.dart`）。
 ///
 /// 端点：HTML 搜索页
 /// `GET {base}/?q=<query>&c=<category>&f=<filter>&s=<sort>&o=<order>[&p=<page>]`。
@@ -539,11 +543,13 @@ const Duration kNyaaMinRequestInterval = Duration(seconds: 2);
 /// 打同一站点 host 的请求按 [minRequestInterval] 节流（跨实例共用节奏，实例内串行）。
 class NyaaClient {
   NyaaClient({
-    this.baseUrl = 'https://nyaa.si',
+    required this.baseUrl,
     http.Client? client,
     this.requestTimeout = kDownloadDiscoveryTimeout,
     this.minRequestInterval = kNyaaMinRequestInterval,
-  }) : _client = client ?? createAppHttpIoClient();
+    Duration Function()? monotonicNow,
+  }) : _client = client ?? createAppHttpIoClient(),
+       _monotonicNow = monotonicNow ?? _processMonotonicNow;
 
   final String baseUrl;
   final http.Client _client;
@@ -551,14 +557,28 @@ class NyaaClient {
   /// 同 host 两次请求**开始**之间的最小间隔；测试可注入 [Duration.zero]。
   final Duration minRequestInterval;
 
-  /// 各站点 host 最近一次请求的开始时刻。多个实例（发现源 / 视频资源 provider /
-  /// 订阅轮询）打同一站点时共用节奏，这才是「同 host」而不只是「同实例」。
+  /// 各站点 host 最近一次请求的放行时刻（单调时钟读数）：调用进入时先同步记下
+  /// 预约的那一格，醒来后若实际放行更晚再改记成实际时刻（见 [_waitForRequestSlot]）。多个实例
+  /// （发现源 / 视频资源 provider / 订阅轮询）打同一站点时共用节奏，这才是
+  /// 「同 host」而不只是「同实例」。
   ///
   /// 只存时刻、不存 Future：完成态 Future 记住创建时的 zone，测试在 setUp 里建
   /// client、在 fake-async 测试体里 await 时，`then` 回调会被派到拿不到 pump 的
   /// zone 里，整条搜索无声挂死（pumpAndSettle 超时、请求根本没发出）。
-  static final Map<String, DateTime> _lastRequestStartByHost =
-      <String, DateTime>{};
+  static final Map<String, Duration> _lastRequestStartByHost =
+      <String, Duration>{};
+
+  /// 进程级单调时钟。节流间隔不能用墙钟 `DateTime.now()` 量：系统校时把墙钟
+  /// 往回拨时，「距上次多久」会算成负数，下一次请求要睡掉回拨的整段时长。
+  static final Stopwatch _processMonotonicClock = Stopwatch()..start();
+
+  static Duration _processMonotonicNow() => _processMonotonicClock.elapsed;
+
+  /// 读单调时钟。默认是进程级 [Stopwatch]；测试注入 fake-async 的
+  /// `elapsed`，让节流完全由虚拟时间驱动、不受调度负载影响。注入的时间基与
+  /// 默认时钟不同，所以注入方必须用独占的 [baseUrl] host，别和其它 client 共用
+  /// [_lastRequestStartByHost] 的同一格。
+  final Duration Function() _monotonicNow;
 
   /// 本实例排队的尾巴；null = 没人在排。惰性创建，理由同上。
   Future<void>? _requestQueueTail;
@@ -573,24 +593,39 @@ class NyaaClient {
   Future<void> _waitForRequestSlot(Future<void>? previous) async {
     if (previous != null) await previous;
     final String host = Uri.parse(baseUrl).host;
-    // **先占坑、再等**，而不是「读 last → 睡 → 写 last」。后者中间隔着一个 await：
-    // 发现源 / 资源 provider / 订阅轮询各自 new 的 client 并发打同一站点时，会同时
-    // 读到同一个 last、同时睡到同一时刻、然后一起发请求 —— 契约说的「同 host 至少
-    // 间隔 minRequestInterval」退化成「一阵爆发再等一轮」。
+    // **进入时先同步占坑、再睡**，不能「读 last → 睡 → 写 last」：后者中间隔着
+    // 一个 await，发现源 / 资源 provider / 订阅轮询各自 new 的 client 并发打同一
+    // 站点时，会同时读到同一个 last、同时睡到同一时刻、然后一起发请求 —— 契约说的
+    // 「同 host 至少间隔 minRequestInterval」退化成「一阵爆发再等一轮」。这里的读改写
+    // 在同一个同步段里完成（Dart 单线程，无 await 即不可被打断），所以下一个并发调用
+    // （无论哪个实例）看到的已经是这一格预约，自己再顺延一格。
     //
-    // 这里的读改写全在同一个同步段里完成（Dart 单线程，无 await 即不可被打断），
-    // 所以第二个并发调用看到的 last 已经是第一个占掉的那一格，自己顺延一格。
+    // 醒来后再把这一格改记成**实际放行**时刻：定时器在负载下晚醒（计划 +120ms、
+    // 实际 +300ms 才醒）时，后面的调用要从实际放行时刻起算，否则会拿计划时刻算出
+    // 「早就过了」而贴着这一次一起打出去。只往后改、不往回改：期间别的调用可能已经
+    // 在后面占了更晚的一格，那一格不能被覆盖掉。（同实例的调用经 [_requestQueueTail]
+    // 串行，下一个总在这里改记之后才占坑；别的实例已经按预约排好的定时器则挪不动，
+    // 晚醒的余量只能由它们醒来时各自的改记吸收。）
+    //
+    // 只睡一次、醒来不再按时钟复查：时钟（真实单调时钟）和定时器（当前 zone 的
+    // `Future.delayed`）不是同一个时间源。widget 测试的 fake-async 里定时器走虚拟
+    // 时间、单调时钟走真实时间，「睡醒再查」会一直查出「还差一点」再睡，请求被
+    // 无限推迟（resource_search_page_scroll_test 实测因此变红）。
+    //
     // 存的仍然只是时刻、不是 Future —— 静态存完成态 Future 正是上面注释里那个
     // 跨 zone 挂死的坑，别为了排队把它请回来。
-    final DateTime now = DateTime.now();
-    final DateTime? last = _lastRequestStartByHost[host];
-    final DateTime start =
-        (last == null || now.difference(last) >= minRequestInterval)
-            ? now
-            : last.add(minRequestInterval);
-    _lastRequestStartByHost[host] = start;
-    final Duration wait = start.difference(now);
-    if (wait > Duration.zero) await Future<void>.delayed(wait);
+    final Duration now = _monotonicNow();
+    final Duration? last = _lastRequestStartByHost[host];
+    final Duration reserved = (last == null || now - last >= minRequestInterval)
+        ? now
+        : last + minRequestInterval;
+    _lastRequestStartByHost[host] = reserved;
+    final Duration wait = reserved - now;
+    if (wait <= Duration.zero) return;
+    await Future<void>.delayed(wait);
+    final Duration released = _monotonicNow();
+    final Duration latest = _lastRequestStartByHost[host] ?? released;
+    if (released > latest) _lastRequestStartByHost[host] = released;
   }
 
   /// 单次请求的整体超时上限。默认取发现链路的唯一真相源
@@ -630,8 +665,9 @@ class NyaaClient {
     NyaaSortOrder order = NyaaSortOrder.desc,
   }) async {
     if (page <= 0) throw ArgumentError.value(page, 'page');
-    final int maxPages =
-        query.trim().isEmpty ? kNyaaMaxBrowsePages : kNyaaMaxSearchPages;
+    final int maxPages = query.trim().isEmpty
+        ? kNyaaMaxBrowsePages
+        : kNyaaMaxSearchPages;
     if (page > maxPages) return const <NyaaTorrent>[];
     final Uri uri = Uri.parse(baseUrl).replace(
       path: '/',
@@ -644,11 +680,45 @@ class NyaaClient {
         if (page > 1) 'p': page.toString(),
       },
     );
+    final String? body = await _fetchSearchPage(uri, pastEndIsEmpty: page > 1);
+    if (body == null) return const <NyaaTorrent>[];
+    return _parseNyaaHtmlSearch(body, uri);
+  }
+
+  /// 探测这个地址是不是 Nyaa 式站点（添加 BT 站时的自动识别，见
+  /// `bt_site_probe.dart`）：用 [query] 搜一次全站（`c=0_0`），页面必须是能解析
+  /// 的搜索结果页（有结果表，或「No results found」）；顺带从页面的分类下拉
+  /// （`<select name="c">`）读出该站可用的分类。不是搜索页一律抛，与 [search]
+  /// 同一套错误契约。
+  Future<NyaaSiteProbe> probeSite(String query) async {
+    final Uri uri = Uri.parse(baseUrl).replace(
+      path: '/',
+      queryParameters: <String, String>{'q': query, 'c': '0_0', 'f': '0'},
+    );
+    final String body = (await _fetchSearchPage(uri, pastEndIsEmpty: false))!;
+    final List<NyaaTorrent> torrents = _parseNyaaHtmlSearch(body, uri);
+    final List<NyaaCategoryOption> categories = parseNyaaCategoryOptions(body);
+    // 0 条结果时页面上只剩一个「No results found」标题——任何网站都可能有这
+    // 句话，单凭它不足以认定是 Nyaa 式站点；还得有它的分类下拉。
+    if (torrents.isEmpty && categories.isEmpty) {
+      throw NyaaFeedFormatException(
+        NyaaFeedErrorCode.missingStructure,
+        'search page has neither results nor a category selector',
+      );
+    }
+    return NyaaSiteProbe(resultCount: torrents.length, categories: categories);
+  }
+
+  /// 取一页搜索 HTML。[pastEndIsEmpty] 时 404 视作「翻过末页」返回 null。
+  Future<String?> _fetchSearchPage(
+    Uri uri, {
+    required bool pastEndIsEmpty,
+  }) async {
     await _reserveRequestSlot();
     final http.Response res = await _client.get(uri).timeout(requestTimeout);
-    if (page > 1 && res.statusCode == 404) {
+    if (pastEndIsEmpty && res.statusCode == 404) {
       // Nyaa returns 404 when a valid HTML search asks past its final page.
-      return const <NyaaTorrent>[];
+      return null;
     }
     if (res.statusCode != 200) {
       throw http.ClientException('HTTP ${res.statusCode}', uri);
@@ -684,17 +754,96 @@ class NyaaClient {
         'response body was empty',
       );
     }
-    return _parseNyaaHtmlSearch(body, uri);
+    return body;
   }
 
   void close() => _client.close();
 }
 
+/// [NyaaClient.probeSite] 的结果。
+class NyaaSiteProbe {
+  const NyaaSiteProbe({required this.resultCount, required this.categories});
+
+  /// 测试关键词搜到的条数（0 也算识别成功——页面结构对就行）。
+  final int resultCount;
+
+  /// 站点分类下拉里的全部选项（含「All categories」`0_0`）。
+  final List<NyaaCategoryOption> categories;
+}
+
+/// Nyaa 式站点分类下拉的一个选项。
+class NyaaCategoryOption {
+  const NyaaCategoryOption({required this.value, required this.label});
+
+  /// 分类号，形如 `1_0`（大类）/ `1_2`（子类）。
+  final String value;
+
+  /// 完整分类名，子类带父类前缀：`Anime`、`Software - Games`、`Art - Games`。
+  final String label;
+
+  /// 大类（`X_0`）。
+  bool get isTopLevel => value.endsWith('_0');
+
+  @override
+  bool operator ==(Object other) =>
+      other is NyaaCategoryOption &&
+      other.value == value &&
+      other.label == label;
+
+  @override
+  int get hashCode => Object.hash(value, label);
+
+  @override
+  String toString() => 'NyaaCategoryOption($value, $label)';
+}
+
+/// 从 Nyaa 式搜索页 HTML 里解析分类下拉（`<select name="c">`）。
+///
+/// 子类选项的**文本**只有缩进后的短名（`- Games`），完整名在 `title` 属性里
+/// （`Software - Games`）；没有 `title` 时按分类号找父类拼出完整名。`0_0`
+/// （All categories）与形状不对的值丢弃。页面没有下拉 → 空表。
+List<NyaaCategoryOption> parseNyaaCategoryOptions(String html) {
+  final html_dom.Document document = html_parser.parse(html);
+  final html_dom.Element? select = document.querySelector('select[name="c"]');
+  if (select == null) return const <NyaaCategoryOption>[];
+  final RegExp valueShape = RegExp(r'^\d+_\d+$');
+  final Map<String, String> topLevelLabels = <String, String>{};
+  final List<NyaaCategoryOption> options = <NyaaCategoryOption>[];
+  for (final html_dom.Element option in select.querySelectorAll('option')) {
+    final String value = (option.attributes['value'] ?? '').trim();
+    if (!valueShape.hasMatch(value) || value == '0_0') continue;
+    final String text = _collapseSpaces(option.text);
+    final String title = _collapseSpaces(option.attributes['title'] ?? '');
+    final bool topLevel = value.endsWith('_0');
+    String label;
+    if (topLevel) {
+      label = title.isNotEmpty ? title : text;
+      topLevelLabels[value.split('_').first] = label;
+    } else {
+      final String parent = topLevelLabels[value.split('_').first] ?? '';
+      final String shortName = text.replaceFirst(RegExp(r'^-\s*'), '');
+      label = title.contains(' - ')
+          ? title
+          : parent.isNotEmpty && shortName.isNotEmpty
+          ? '$parent - $shortName'
+          : (title.isNotEmpty ? title : shortName);
+    }
+    if (label.isEmpty) continue;
+    options.add(NyaaCategoryOption(value: value, label: label));
+  }
+  return List<NyaaCategoryOption>.unmodifiable(options);
+}
+
+String _collapseSpaces(String value) =>
+    value.trim().replaceAll(RegExp(r'\s+'), ' ');
+
 List<NyaaTorrent> _parseNyaaHtmlSearch(String body, Uri requestUri) {
   final html_dom.Document document = html_parser.parse(body);
   final html_dom.Element? table = document.querySelector('table.torrent-list');
   if (table == null) {
-    final bool noResults = document.querySelectorAll('h3').any(
+    final bool noResults = document
+        .querySelectorAll('h3')
+        .any(
           (html_dom.Element heading) =>
               heading.text.trim().toLowerCase() == 'no results found',
         );
@@ -706,8 +855,9 @@ List<NyaaTorrent> _parseNyaaHtmlSearch(String body, Uri requestUri) {
   }
 
   final List<NyaaTorrent> torrents = <NyaaTorrent>[];
-  final List<html_dom.Element> rows =
-      table.querySelectorAll('tbody tr').toList(growable: false);
+  final List<html_dom.Element> rows = table
+      .querySelectorAll('tbody tr')
+      .toList(growable: false);
   NyaaFeedFormatException? firstRowError;
   int skipped = 0;
   for (final html_dom.Element row in rows) {
@@ -752,15 +902,12 @@ NyaaTorrent _parseNyaaHtmlRow(html_dom.Element row, Uri requestUri) {
   final html_dom.Element? detailLink = cells[1]
       .querySelectorAll('a[href]')
       .cast<html_dom.Element?>()
-      .firstWhere(
-    (html_dom.Element? link) {
-      final Uri? href = Uri.tryParse(link?.attributes['href'] ?? '');
-      return href != null &&
-          href.path.startsWith('/view/') &&
-          href.fragment.isEmpty;
-    },
-    orElse: () => null,
-  );
+      .firstWhere((html_dom.Element? link) {
+        final Uri? href = Uri.tryParse(link?.attributes['href'] ?? '');
+        return href != null &&
+            href.path.startsWith('/view/') &&
+            href.fragment.isEmpty;
+      }, orElse: () => null);
   final html_dom.Element? magnetLink = cells[2]
       .querySelectorAll('a[href]')
       .cast<html_dom.Element?>()
@@ -775,8 +922,8 @@ NyaaTorrent _parseNyaaHtmlRow(html_dom.Element row, Uri requestUri) {
   final String? exactTopic = Uri.tryParse(magnet)?.queryParameters['xt'];
   final String infoHash =
       exactTopic?.toLowerCase().startsWith('urn:btih:') == true
-          ? exactTopic!.substring('urn:btih:'.length).toLowerCase()
-          : '';
+      ? exactTopic!.substring('urn:btih:'.length).toLowerCase()
+      : '';
   if (title.isEmpty ||
       detailLink == null ||
       !RegExp(r'^[0-9a-f]{40}$').hasMatch(infoHash)) {
@@ -796,15 +943,17 @@ NyaaTorrent _parseNyaaHtmlRow(html_dom.Element row, Uri requestUri) {
   }
   String categoryId = '';
   for (final html_dom.Element link in cells[0].querySelectorAll('a[href]')) {
-    final String? candidate =
-        Uri.tryParse(link.attributes['href'] ?? '')?.queryParameters['c'];
+    final String? candidate = Uri.tryParse(
+      link.attributes['href'] ?? '',
+    )?.queryParameters['c'];
     if (candidate?.isNotEmpty == true) {
       categoryId = candidate!;
       break;
     }
   }
-  final int? timestampSeconds =
-      int.tryParse(cells[4].attributes['data-timestamp'] ?? '');
+  final int? timestampSeconds = int.tryParse(
+    cells[4].attributes['data-timestamp'] ?? '',
+  );
   return NyaaTorrent(
     title: title,
     torrentUrl: torrentUrl,

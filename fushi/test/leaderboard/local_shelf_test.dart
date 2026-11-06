@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/leaderboard/local_shelf.dart';
@@ -941,6 +941,320 @@ void main() {
 
       expect(m['game:g3']!.upload.finished, isFalse);
       expect(m['game:g5']!.upload.ms, 60000);
+    });
+  });
+
+  group('私密作品', () {
+    test('书：标私密后不进 entries 但字数仍进 daily；取消后回来', () async {
+      await book('Secret', completedAt: DateTime(2026, 9, 3, 12));
+      await segment('book', 'Secret', date: '2026-09-01', chars: 100, ms: 60);
+
+      LocalShelf shelf = await buildLocalShelf(db, profileId: profile);
+      expect(byKey(shelf).keys, <String>['book:Secret']);
+
+      await db.setMediaPrivate(TagHostKind.epub, 'Secret', true);
+      shelf = await buildLocalShelf(db, profileId: profile);
+      expect(shelf.entries, isEmpty);
+      expect(
+        shelf.daily.map((DailyCharsUpload d) => '${d.date}=${d.chars}'),
+        <String>['2026-09-01=100'],
+      );
+
+      await db.setMediaPrivate(TagHostKind.epub, 'Secret', false);
+      shelf = await buildLocalShelf(db, profileId: profile);
+      expect(byKey(shelf).keys, <String>['book:Secret']);
+    });
+
+    test('书：属于私密合集的成员被跳过', () async {
+      await book('InPrivateColl', completedAt: DateTime(2026, 9, 3, 12));
+      await book('Open', completedAt: DateTime(2026, 9, 3, 12));
+      final int c = await db
+          .into(db.mediaCollections)
+          .insert(MediaCollectionsCompanion.insert(name: '秘', createdAt: 0));
+      await db
+          .into(db.mediaCollectionItems)
+          .insert(
+            MediaCollectionItemsCompanion.insert(
+              collectionId: c,
+              mediaType: MediaKind.epub.dbValue,
+              entryKey: 'InPrivateColl',
+            ),
+          );
+      await db.setMediaPrivate(
+        TagHostKind.collection,
+        collectionTagEntryKey(c),
+        true,
+      );
+      final LocalShelf shelf = await buildLocalShelf(db, profileId: profile);
+      expect(byKey(shelf).keys, <String>['book:Open']);
+    });
+
+    test('书：私密合集成员按真实路径的 uid 键入合集（v83）同样被跳过', () async {
+      await book('UidMember', completedAt: DateTime(2026, 9, 3, 12));
+      await book('Open', completedAt: DateTime(2026, 9, 3, 12));
+      final String uid = (await db.getEpubBook('UidMember'))!.uid;
+      expect(uid, isNot('UidMember'), reason: 'insertEpubBook 应自动生成 uid');
+      final int c = await db.createMediaCollection('秘');
+      // 生产路径（书架「加入合集」/ 批量组合）落的是 uid，不是 bookKey。
+      await db.addToCollection(c, MediaKind.epub, uid);
+      await db.setMediaPrivate(
+        TagHostKind.collection,
+        collectionTagEntryKey(c),
+        true,
+      );
+      final LocalShelf shelf = await buildLocalShelf(db, profileId: profile);
+      expect(byKey(shelf).keys, <String>['book:Open']);
+    });
+
+    test('视频单位：合集内任一成员私密 → 整个单位跳过', () async {
+      await video('e1', completedAt: DateTime(2026, 8, 1, 12));
+      await video('e2', completedAt: DateTime(2026, 8, 5, 12));
+      final int c = await db
+          .into(db.mediaCollections)
+          .insert(MediaCollectionsCompanion.insert(name: '剧', createdAt: 0));
+      for (final String uid in <String>['e1', 'e2']) {
+        await db
+            .into(db.mediaCollectionItems)
+            .insert(
+              MediaCollectionItemsCompanion.insert(
+                collectionId: c,
+                mediaType: 'video',
+                entryKey: uid,
+              ),
+            );
+      }
+      final int w = await db
+          .into(db.videoMetadataWorks)
+          .insert(
+            VideoMetadataWorksCompanion.insert(
+              collectionId: Value<int?>(c),
+              mediaType: 'tv',
+              title: 'Show',
+              updatedAt: 0,
+            ),
+          );
+      await db
+          .into(db.videoMetadataProviderIdentities)
+          .insert(
+            VideoMetadataProviderIdentitiesCompanion.insert(
+              identityKey: 'work:$w:anidb',
+              workId: Value<int?>(w),
+              provider: 'anidb',
+              externalId: '1',
+              updatedAt: 0,
+            ),
+          );
+      await segment('video', 'e1', date: '2026-08-01', chars: 30, ms: 1000);
+
+      expect(
+        byKey(await buildLocalShelf(db, profileId: profile)).keys,
+        <String>['video:c$c'],
+      );
+
+      await db.setMediaPrivate(TagHostKind.video, 'e2', true);
+      final LocalShelf shelf = await buildLocalShelf(db, profileId: profile);
+      expect(shelf.entries, isEmpty);
+      expect(
+        shelf.daily.map((DailyCharsUpload d) => '${d.date}=${d.chars}'),
+        <String>['2026-08-01=30'],
+      );
+    });
+
+    test('游戏：标私密后跳过', () async {
+      await db
+          .into(db.galgames)
+          .insert(
+            GalgamesCompanion.insert(
+              id: 'gp',
+              name: 'exe_gp',
+              exePath: 'C:/g/gp.exe',
+              workdir: 'C:/g',
+              addedAt: 0,
+              playStatus: const Value<int>(2),
+            ),
+          );
+      await db
+          .into(db.galgameSources)
+          .insert(
+            GalgameSourcesCompanion.insert(
+              gameId: 'gp',
+              source: 'bgm',
+              externalId: const Value<String?>('5'),
+              dataJson: jsonEncode(<String, Object?>{'name': 'G'}),
+              fetchedAt: 0,
+            ),
+          );
+      expect(
+        byKey(await buildLocalShelf(db, profileId: profile)).keys,
+        <String>['game:gp'],
+      );
+      await db.setMediaPrivate(TagHostKind.game, 'gp', true);
+      expect((await buildLocalShelf(db, profileId: profile)).entries, isEmpty);
+
+      // 游戏也能进合集：本身取消私密、但在私密合集里 → 仍跳过。
+      await db.setMediaPrivate(TagHostKind.game, 'gp', false);
+      final int c = await db.createMediaCollection('秘游');
+      await db.addToCollection(c, MediaKind.game, 'gp');
+      expect(
+        byKey(await buildLocalShelf(db, profileId: profile)).keys,
+        <String>['game:gp'],
+      );
+      await db.setMediaPrivate(
+        TagHostKind.collection,
+        collectionTagEntryKey(c),
+        true,
+      );
+      expect((await buildLocalShelf(db, profileId: profile)).entries, isEmpty);
+    });
+  });
+
+  // 反馈 kEAgATi1LF：来源库（扫描根）的隐私开关（v140 media_sources.is_private）。
+  // 书架条目是排行榜公开书架 / 主页 / 封面投票的唯一来源，这里逐种类钉死排除。
+  group('隐私来源（v140）', () {
+    Future<int> source(String kind, {bool isPrivate = false}) => db
+        .into(db.mediaSources)
+        .insert(
+          MediaSourcesCompanion.insert(
+            label: 'src-$kind-$isPrivate',
+            mediaKind: kind,
+            rootPath: '/root/$kind/$isPrivate',
+            createdAt: 0,
+            isPrivate: Value<bool>(isPrivate),
+          ),
+        );
+
+    Future<void> bookFrom(String key, int sourceId) async =>
+        (db.update(db.epubBooks)..where((t) => t.bookKey.equals(key))).write(
+          EpubBooksCompanion(sourceId: Value<int?>(sourceId)),
+        );
+
+    Future<void> videoFrom(String uid, int sourceId) async =>
+        (db.update(db.videoBooks)..where((t) => t.bookUid.equals(uid))).write(
+          VideoBooksCompanion(sourceId: Value<int?>(sourceId)),
+        );
+
+    test('书：隐私来源里的书不进 entries，字数仍进 daily；别的来源照常', () async {
+      final int secret = await source('book', isPrivate: true);
+      final int open = await source('book');
+      await book('Nsfw', completedAt: DateTime(2026, 9, 3, 12));
+      await book('Open', completedAt: DateTime(2026, 9, 3, 12));
+      await book('Loose', completedAt: DateTime(2026, 9, 3, 12));
+      await bookFrom('Nsfw', secret);
+      await bookFrom('Open', open);
+      await segment('book', 'Nsfw', date: '2026-09-01', chars: 100, ms: 60);
+
+      final LocalShelf shelf = await buildLocalShelf(db, profileId: profile);
+      expect(byKey(shelf).keys, <String>['book:Loose', 'book:Open']);
+      expect(
+        shelf.daily.map((DailyCharsUpload d) => '${d.date}=${d.chars}'),
+        <String>['2026-09-01=100'],
+        reason: '每日总字数不带作品身份，隐私来源照常计入',
+      );
+    });
+
+    test('漫画：manga 来源打开隐私后漫画行被跳过，关掉后回来', () async {
+      final int src = await source('manga');
+      await book('Vol1', format: 'manga', completedAt: DateTime(2026, 9, 3));
+      await bookFrom('Vol1', src);
+      expect(
+        byKey(await buildLocalShelf(db, profileId: profile)).keys,
+        <String>['book:Vol1'],
+      );
+
+      await db.updateMediaSourcePrivate(src, true);
+      expect((await buildLocalShelf(db, profileId: profile)).entries, isEmpty);
+
+      await db.updateMediaSourcePrivate(src, false);
+      expect(
+        byKey(await buildLocalShelf(db, profileId: profile)).keys,
+        <String>['book:Vol1'],
+      );
+    });
+
+    test('视频：刮削过的电影在隐私来源里被跳过；作品单元任一文件在隐私来源 → 整个单元跳过', () async {
+      final int secret = await source('video', isPrivate: true);
+      await video('m1', completedAt: DateTime(2026, 8, 1, 12));
+      await scrapedMovie('m1');
+      await video('m2', completedAt: DateTime(2026, 8, 1, 12));
+      await scrapedMovie('m2');
+      expect(
+        byKey(await buildLocalShelf(db, profileId: profile)).keys,
+        hasLength(2),
+      );
+
+      await videoFrom('m1', secret);
+      final LocalShelf shelf = await buildLocalShelf(db, profileId: profile);
+      expect(shelf.entries, hasLength(1));
+      expect(shelf.entries.single.upload.title, 'T m2');
+
+      // 剧集单元：两集合成一个作品，其中一集来自隐私来源。
+      await video('e1', completedAt: DateTime(2026, 8, 1, 12));
+      await video('e2', completedAt: DateTime(2026, 8, 5, 12));
+      final int c = await db.createMediaCollection('剧');
+      await db.addToCollection(c, MediaKind.video, 'e1');
+      await db.addToCollection(c, MediaKind.video, 'e2');
+      final int w = await db
+          .into(db.videoMetadataWorks)
+          .insert(
+            VideoMetadataWorksCompanion.insert(
+              collectionId: Value<int?>(c),
+              mediaType: 'tv',
+              title: 'Show',
+              updatedAt: 0,
+            ),
+          );
+      await db
+          .into(db.videoMetadataProviderIdentities)
+          .insert(
+            VideoMetadataProviderIdentitiesCompanion.insert(
+              identityKey: 'work:$w:anidb',
+              workId: Value<int?>(w),
+              provider: 'anidb',
+              externalId: 'show',
+              updatedAt: 0,
+            ),
+          );
+      expect(
+        byKey(await buildLocalShelf(db, profileId: profile)).keys,
+        contains('video:c$c'),
+      );
+      await videoFrom('e2', secret);
+      expect(
+        byKey(await buildLocalShelf(db, profileId: profile)).keys,
+        isNot(contains('video:c$c')),
+      );
+    });
+
+    test('移除隐私来源：条目保留且逐一补上作品级私密标记，不会因此变回公开', () async {
+      // 内存库默认不开外键；打开它才走真实的 source_id → NULL（onDelete: setNull）。
+      await db.customStatement('PRAGMA foreign_keys = ON');
+      final int secret = await source('book', isPrivate: true);
+      await book('Nsfw', completedAt: DateTime(2026, 9, 3, 12));
+      await bookFrom('Nsfw', secret);
+      final int vsrc = await source('video', isPrivate: true);
+      await video('m1', completedAt: DateTime(2026, 8, 1, 12));
+      await scrapedMovie('m1');
+      await videoFrom('m1', vsrc);
+      expect((await buildLocalShelf(db, profileId: profile)).entries, isEmpty);
+
+      await db.deleteMediaSource(secret);
+      await db.deleteMediaSource(vsrc);
+      expect((await db.getEpubBook('Nsfw'))!.sourceId, isNull);
+      expect(await db.isMediaPrivate(TagHostKind.epub, 'Nsfw'), isTrue);
+      expect(await db.isMediaPrivate(TagHostKind.video, 'm1'), isTrue);
+      expect((await buildLocalShelf(db, profileId: profile)).entries, isEmpty);
+    });
+
+    test('移除普通来源不改条目的私密状态', () async {
+      final int open = await source('book');
+      await book('Open', completedAt: DateTime(2026, 9, 3, 12));
+      await bookFrom('Open', open);
+      await db.deleteMediaSource(open);
+      expect(await db.isMediaPrivate(TagHostKind.epub, 'Open'), isFalse);
+      expect(
+        byKey(await buildLocalShelf(db, profileId: profile)).keys,
+        <String>['book:Open'],
+      );
     });
   });
 

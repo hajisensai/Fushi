@@ -40,6 +40,8 @@ String backupCategoryLabel(BackupCategory category) {
       return t.backup_category_profiles;
     case BackupCategory.srs:
       return t.backup_category_srs;
+    case BackupCategory.music:
+      return t.backup_category_music;
   }
 }
 
@@ -71,6 +73,8 @@ String backupCategoryDescription(BackupCategory category) {
       return t.backup_category_profiles_desc;
     case BackupCategory.srs:
       return t.backup_category_srs_desc;
+    case BackupCategory.music:
+      return t.backup_category_music_desc;
   }
 }
 
@@ -102,6 +106,8 @@ IconData backupCategoryIcon(BackupCategory category) {
       return FushiIcons.profiles;
     case BackupCategory.srs:
       return FushiIcons.repeat;
+    case BackupCategory.music:
+      return FushiIcons.music;
   }
 }
 
@@ -126,6 +132,8 @@ const Set<BackupCategory> importSelectableCategories = <BackupCategory>{
   // 它依赖配置档案的 uid——没同时导入设置与配置档案时走 SRS 专用合并，见
   // [BackupRestoreService.restoreBackup]。
   BackupCategory.srs,
+  // 音乐：歌单 / 歌词 / MV 绑定 / 播放流；备份里有音乐数据时才出开关。
+  BackupCategory.music,
 };
 
 /// 导出分类勾选框里要不要列出 [category]。复习（SRS）是默认关闭的模块：本机没有
@@ -134,7 +142,11 @@ const Set<BackupCategory> importSelectableCategories = <BackupCategory>{
 bool backupCategoryShownInExport(
   BackupCategory category,
   BackupContentSummary summary,
-) => category != BackupCategory.srs || summary.has(BackupCategory.srs);
+) => switch (category) {
+  // 复习 / 音乐都是新模块：本机没有对应数据时整行不出现。
+  BackupCategory.srs || BackupCategory.music => summary.has(category),
+  _ => true,
+};
 
 /// Merge uses the same full selectable set as overwrite now.
 const Set<BackupCategory> importMergeSelectableCategories =
@@ -150,7 +162,7 @@ const Set<BackupCategory> importMergeSelectableCategories =
 /// `supportsRestart==true`）。消除了旧实现在本文件里 ad-hoc `Process.start(resolvedExecutable)`
 /// 的劣质重复（缺前台标志、macOS 会崩）。
 /// **兜底 never-break**：`restartApp` 起新进程失败或平台不支持时，退回旧的纯退出分支（移动端
-/// [FlutterExitApp.exitApp]、桌面端 `exit(0)`），至少让用户手动重开，绝不制造「老进程没了、新
+/// `lifecycle.exitApp()`，经退出协调器标 clean），至少让用户手动重开，绝不制造「老进程没了、新
 /// 进程也没起来」的假崩溃。抽成顶层函数供 `main.dart` 注入为 `onRestart`。
 Future<void> backupImportRestart(AppModel appModel) async {
   final PlatformLifecycleService lifecycle =
@@ -165,11 +177,9 @@ Future<void> backupImportRestart(AppModel appModel) async {
       debugPrint('Backup import: restartApp failed, fall back to exit: $e');
     }
   }
-  if (Platform.isAndroid || Platform.isIOS) {
-    FlutterExitApp.exitApp();
-  } else {
-    exit(0);
-  }
+  // 纯退出兜底也走生命周期服务的 exitApp：经退出协调器标 clean（过去这里裸 exit，
+  // 下次启动被误报成闪退）。
+  await lifecycle.exitApp();
 }
 
 class _BackupExportWidget extends StatefulWidget {
@@ -215,6 +225,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       // crossed over and the fonts silently never apply.
       fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
       // Game covers travel with the `games` category (rows + cover files).
+      srsStorage: appModel.srsStorageForBackup,
       gameCoversRootDirectory: p.join(
         appModel.appDirectory.path,
         'game_covers',
@@ -308,65 +319,65 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                     // sub-option of its category instead of a duplicate top row.
                     for (final BackupCategory c in BackupCategory.values)
                       if (backupCategoryShownInExport(c, summary)) ...<Widget>[
-                      FushiStaggeredEntrance(
-                        index: c.index,
-                        child: AdaptiveSettingsSwitchRow(
-                          title: backupCategoryLabel(c),
-                          subtitle: summary.counts.containsKey(c)
-                              ? '${backupCategoryDescription(c)} '
-                                    '(${summary.countFor(c)})'
-                              : backupCategoryDescription(c),
-                          icon: backupCategoryIcon(c),
-                          showIcon: true,
-                          value: selected.contains(c),
-                          onChanged: (bool v) => setLocal(() {
-                            if (v) {
-                              selected.add(c);
-                            } else {
-                              selected.remove(c);
-                            }
-                          }),
+                        FushiStaggeredEntrance(
+                          index: c.index,
+                          child: AdaptiveSettingsSwitchRow(
+                            title: backupCategoryLabel(c),
+                            subtitle: summary.counts.containsKey(c)
+                                ? '${backupCategoryDescription(c)} '
+                                      '(${summary.countFor(c)})'
+                                : backupCategoryDescription(c),
+                            icon: backupCategoryIcon(c),
+                            showIcon: true,
+                            value: selected.contains(c),
+                            onChanged: (bool v) => setLocal(() {
+                              if (v) {
+                                selected.add(c);
+                              } else {
+                                selected.remove(c);
+                              }
+                            }),
+                          ),
                         ),
-                      ),
-                      // Per-book selection row (TODO-1195 part A): only meaningful
-                      // when the Books category itself is packed.
-                      if (c == BackupCategory.books &&
-                          selected.contains(BackupCategory.books))
-                        AdaptiveSettingsRow(
-                          title: t.backup_export_choose_books,
-                          subtitle: chosenBooks == null
-                              ? t.backup_export_books_all
-                              : t.backup_export_books_selected(
-                                  count: chosenBooks!.length.toString(),
-                                ),
-                          trailing: const FushiIcon(FushiIcons.chevronRight),
-                          onTap: () async {
-                            final Set<String>? picked = await _pickBooks(
-                              chosenBooks,
-                            );
-                            setLocal(() => chosenBooks = picked);
-                          },
-                        ),
-                      // Per-video selection row (books analogue): only meaningful
-                      // when the Videos category itself is packed.
-                      if (c == BackupCategory.videos &&
-                          selected.contains(BackupCategory.videos))
-                        AdaptiveSettingsRow(
-                          title: t.backup_export_choose_videos,
-                          subtitle: chosenVideos == null
-                              ? t.backup_export_videos_all
-                              : t.backup_export_videos_selected(
-                                  count: chosenVideos!.length.toString(),
-                                ),
-                          trailing: const FushiIcon(FushiIcons.chevronRight),
-                          onTap: () async {
-                            final Set<String>? picked = await _pickVideos(
-                              chosenVideos,
-                            );
-                            setLocal(() => chosenVideos = picked);
-                          },
-                        ),
-                    ],
+                        // Per-book selection row (TODO-1195 part A): only meaningful
+                        // when the Books category itself is packed.
+                        if (c == BackupCategory.books &&
+                            selected.contains(BackupCategory.books))
+                          AdaptiveSettingsRow(
+                            title: t.backup_export_choose_books,
+                            subtitle: chosenBooks == null
+                                ? t.backup_export_books_all
+                                : t.backup_export_books_selected(
+                                    count: chosenBooks!.length.toString(),
+                                  ),
+                            trailing: const FushiIcon(FushiIcons.chevronRight),
+                            onTap: () async {
+                              final Set<String>? picked = await _pickBooks(
+                                chosenBooks,
+                              );
+                              setLocal(() => chosenBooks = picked);
+                            },
+                          ),
+                        // Per-video selection row (books analogue): only meaningful
+                        // when the Videos category itself is packed.
+                        if (c == BackupCategory.videos &&
+                            selected.contains(BackupCategory.videos))
+                          AdaptiveSettingsRow(
+                            title: t.backup_export_choose_videos,
+                            subtitle: chosenVideos == null
+                                ? t.backup_export_videos_all
+                                : t.backup_export_videos_selected(
+                                    count: chosenVideos!.length.toString(),
+                                  ),
+                            trailing: const FushiIcon(FushiIcons.chevronRight),
+                            onTap: () async {
+                              final Set<String>? picked = await _pickVideos(
+                                chosenVideos,
+                              );
+                              setLocal(() => chosenVideos = picked);
+                            },
+                          ),
+                      ],
                   ],
                 ),
               ),
@@ -1161,6 +1172,10 @@ Future<void> runBackupImportFlowForFile({
     // 「请勿关闭」遮罩、没有进度条，直到进程重启。await endOfFrame 等这帧真正把遮罩画出来
     // 再继续（复用 validating→app 切换 [_rootContextAfterOverlay] 已依赖的同一原语）。
     await WidgetsBinding.instance.endOfFrame;
+    // 「合并导入时包含设置」（AWp-0BtDDv）要在关库之前读。
+    final bool mergeSettings =
+        choice.mode == BackupImportMode.merge &&
+        await SyncRepository(appModel.database).isBackupMergeSettingsEnabled();
     await appModel.closeDatabase();
     if (choice.mode == BackupImportMode.merge) {
       // TODO-888 merge: keep this device's library + settings, only ADD what
@@ -1180,6 +1195,7 @@ Future<void> runBackupImportFlowForFile({
         gameCoversRootDirectory: gameCoversRoot,
         // TODO-1183: 后台解压 isolate 经 SendPort 回报字节 → 确定进度条。
         onProgress: appModel.reportBackupImportProgress,
+        mergePortableSettings: mergeSettings,
       );
     } else {
       await BackupRestoreService.restoreBackup(

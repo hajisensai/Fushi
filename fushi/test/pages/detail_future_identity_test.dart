@@ -42,137 +42,128 @@ void main() {
     db = FushiDatabase.forTesting(
       NativeDatabase.memory().interceptWith(counter),
     );
-    collectionId =
-        await db.createMediaCollection('作品', collectionType: 'playlist');
+    collectionId = await db.createMediaCollection(
+      '作品',
+      collectionType: 'playlist',
+    );
   });
 
   tearDown(() => db.close());
 
-  testWidgets(
-    '作品资料页：祖先重建后子页 State 原地复用，不退回加载态',
-    (WidgetTester tester) async {
-      final _RebuildHarness harness = _RebuildHarness(
-        builder: (BuildContext context) => VideoWorkDetailPage(
+  testWidgets('作品资料页：祖先重建后子页 State 原地复用，不退回加载态', (WidgetTester tester) async {
+    final _RebuildHarness harness = _RebuildHarness(
+      builder: (BuildContext context) => VideoWorkDetailPage(
+        database: db,
+        repository: VideoBookRepository(db),
+        workRef: VideoWorkRef.collection(collectionId),
+        onChanged: () {},
+      ),
+    );
+    await tester.pumpWidget(
+      TranslationProvider(child: MaterialApp(home: harness)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MediaCollectionDetailPage), findsOneWidget);
+    final State<StatefulWidget> before = tester.state(
+      find.byType(MediaCollectionDetailPage),
+    );
+    final int selectsBefore = counter.selects;
+
+    // 模拟「主题通知 → 全树重建」：widget 换新实例，位置与类型不变。
+    _RebuildHarness.of(tester).rebuild();
+    // 只 pump 一帧、不 settle：闪就发生在这一帧里，settle 会把它重新加载完、
+    // 把证据抹掉。
+    await tester.pump();
+
+    expect(
+      find.byType(MediaCollectionDetailPage),
+      findsOneWidget,
+      reason: '退回 waiting 会让整个子页从树上消失 = 用户看到的那一下闪',
+    );
+    expect(
+      identical(tester.state(find.byType(MediaCollectionDetailPage)), before),
+      isTrue,
+      reason: 'State 被换掉 = _loading 复位 + 剧集列表重查一遍',
+    );
+    expect(counter.selects, selectsBefore, reason: '纯重建不该产生任何新查询');
+  });
+
+  testWidgets('相关作品区：祖先重建后不重查库', (WidgetTester tester) async {
+    await db.replaceCollectionRelations(
+      collectionId,
+      <CollectionRelationsCompanion>[
+        CollectionRelationsCompanion.insert(
+          collectionId: collectionId,
+          relationType: 'sequel',
+          sortIndex: const Value<int>(0),
+          targetCollectionId: const Value<int?>(null),
+          source: 'bangumi',
+          subjectId: '200',
+          title: '某作品 第二季',
+        ),
+      ],
+    );
+
+    final _RebuildHarness harness = _RebuildHarness(
+      builder: (BuildContext context) => SingleChildScrollView(
+        child: CollectionRelationsSection(
           database: db,
-          repository: VideoBookRepository(db),
-          workRef: VideoWorkRef.collection(collectionId),
-          onChanged: () {},
+          collectionId: collectionId,
+          onOpenCollection: (int _) {},
+          onDownload: (CollectionRelationRow _) {},
         ),
-      );
-      await tester.pumpWidget(
-        TranslationProvider(child: MaterialApp(home: harness)),
-      );
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(home: Scaffold(body: harness)),
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.byType(MediaCollectionDetailPage), findsOneWidget);
-      final State<StatefulWidget> before =
-          tester.state(find.byType(MediaCollectionDetailPage));
-      final int selectsBefore = counter.selects;
+    expect(find.text('某作品 第二季'), findsOneWidget);
+    final int selectsBefore = counter.selects;
 
-      // 模拟「主题通知 → 全树重建」：widget 换新实例，位置与类型不变。
-      _RebuildHarness.of(tester).rebuild();
-      // 只 pump 一帧、不 settle：闪就发生在这一帧里，settle 会把它重新加载完、
-      // 把证据抹掉。
-      await tester.pump();
+    _RebuildHarness.of(tester).rebuild();
+    await tester.pump();
 
-      expect(
-        find.byType(MediaCollectionDetailPage),
-        findsOneWidget,
-        reason: '退回 waiting 会让整个子页从树上消失 = 用户看到的那一下闪',
-      );
-      expect(
-        identical(tester.state(find.byType(MediaCollectionDetailPage)), before),
-        isTrue,
-        reason: 'State 被换掉 = _loading 复位 + 剧集列表重查一遍',
-      );
-      expect(
-        counter.selects,
-        selectsBefore,
-        reason: '纯重建不该产生任何新查询',
-      );
-    },
-  );
+    expect(
+      counter.selects,
+      selectsBefore,
+      reason: 'future 写在 build 里 = 每次重建都对 collection_relations 重查一遍',
+    );
+    // 数据仍在（drift 的 inState 保留 data，本区本来就不闪）。
+    expect(find.text('某作品 第二季'), findsOneWidget);
+  });
 
-  testWidgets(
-    '相关作品区：祖先重建后不重查库',
-    (WidgetTester tester) async {
-      await db.replaceCollectionRelations(
-        collectionId,
-        <CollectionRelationsCompanion>[
-          CollectionRelationsCompanion.insert(
-            collectionId: collectionId,
-            relationType: 'sequel',
-            sortIndex: const Value<int>(0),
-            targetCollectionId: const Value<int?>(null),
-            source: 'bangumi',
-            subjectId: '200',
-            title: '某作品 第二季',
-          ),
-        ],
-      );
+  testWidgets('标签 chip 行：祖先重建后不重查库', (WidgetTester tester) async {
+    final MediaCollectionRow collection = (await db.getMediaCollectionById(
+      collectionId,
+    ))!;
 
-      final _RebuildHarness harness = _RebuildHarness(
-        builder: (BuildContext context) => SingleChildScrollView(
-          child: CollectionRelationsSection(
-            database: db,
-            collectionId: collectionId,
-            onOpenCollection: (int _) {},
-            onDownload: (CollectionRelationRow _) {},
-          ),
-        ),
-      );
-      await tester.pumpWidget(
-        TranslationProvider(
-          child: MaterialApp(home: Scaffold(body: harness)),
-        ),
-      );
-      await tester.pumpAndSettle();
+    final _RebuildHarness harness = _RebuildHarness(
+      builder: (BuildContext context) =>
+          _TagChipsHost(db: db, collection: collection),
+    );
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(home: Scaffold(body: harness)),
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.text('某作品 第二季'), findsOneWidget);
-      final int selectsBefore = counter.selects;
+    final int selectsBefore = counter.selects;
 
-      _RebuildHarness.of(tester).rebuild();
-      await tester.pump();
+    _RebuildHarness.of(tester).rebuild();
+    await tester.pump();
 
-      expect(
-        counter.selects,
-        selectsBefore,
-        reason: 'future 写在 build 里 = 每次重建都对 collection_relations 重查一遍',
-      );
-      // 数据仍在（drift 的 inState 保留 data，本区本来就不闪）。
-      expect(find.text('某作品 第二季'), findsOneWidget);
-    },
-  );
-
-  testWidgets(
-    '标签 chip 行：祖先重建后不重查库',
-    (WidgetTester tester) async {
-      final MediaCollectionRow collection =
-          (await db.getMediaCollectionById(collectionId))!;
-
-      final _RebuildHarness harness = _RebuildHarness(
-        builder: (BuildContext context) =>
-            _TagChipsHost(db: db, collection: collection),
-      );
-      await tester.pumpWidget(
-        TranslationProvider(
-          child: MaterialApp(home: Scaffold(body: harness)),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      final int selectsBefore = counter.selects;
-
-      _RebuildHarness.of(tester).rebuild();
-      await tester.pump();
-
-      expect(
-        counter.selects,
-        selectsBefore,
-        reason: 'future 写在 build 里 = 每次重建都把本合集标签重查一遍',
-      );
-    },
-  );
+    expect(
+      counter.selects,
+      selectsBefore,
+      reason: 'future 写在 build 里 = 每次重建都把本合集标签重查一遍',
+    );
+  });
 }
 
 /// 数 `runSelect`，用来钉「纯重建不产生查询」。

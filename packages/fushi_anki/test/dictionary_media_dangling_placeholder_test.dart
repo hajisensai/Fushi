@@ -77,4 +77,25 @@ void main() {
     const String html = '<div class="yomitan-glossary">定义</div>';
     expect(degrade(html), html);
   });
+
+  test('没有占位符 filename 的媒体不进映射（空键会把媒体名插进每个字符之间）', () async {
+    final _Composer composer = _Composer();
+    final Map<String, String> tags = await composer.tags(<DictionaryMedia>[
+      const DictionaryMedia(dictionary: 'd', path: 'img/a.png', filename: ''),
+      const DictionaryMedia(
+        dictionary: 'd',
+        path: 'gaiji/b.svg',
+        filename: 'fushi_dict_1.svg',
+      ),
+    ]);
+    expect(tags, <String, String>{'fushi_dict_1.svg': 'stored_gaiji/b.svg'});
+  });
+}
+
+class _Composer with AnkiNoteComposer {
+  Future<Map<String, String>> tags(List<DictionaryMedia> media) =>
+      buildDictionaryMediaTags(
+        media,
+        (DictionaryMedia m) async => 'stored_${m.path}',
+      );
 }

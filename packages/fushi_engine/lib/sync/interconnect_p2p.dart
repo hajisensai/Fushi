@@ -264,8 +264,9 @@ String? interconnectP2pPublishableUrl(
   required String? relayUrl,
   required List<String> directAddrs,
 }) {
-  final List<String> dialable =
-      directAddrs.where(isInterconnectP2pDialableAddr).toList(growable: false);
+  final List<String> dialable = directAddrs
+      .where(isInterconnectP2pDialableAddr)
+      .toList(growable: false);
   final bool hasRelay = relayUrl != null && relayUrl.isNotEmpty;
   if (!hasRelay && dialable.isEmpty) return null;
   return interconnectP2pUrl(

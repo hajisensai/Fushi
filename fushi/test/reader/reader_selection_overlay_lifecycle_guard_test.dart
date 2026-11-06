@@ -36,8 +36,14 @@ void main() {
       methodBody(chrome, 'Future<void> _handleSelectionMenu('),
     );
     expect(body, contains('ModalRoute.of(context)'));
-    expect(body, contains('_sideSheetOpen || _appearanceSheetOpen ||'));
-    expect(body, contains('_studyClockModalDepth > 0'));
+    // 四个拒绝条件是同一个 if 的析取（格式化可能把它折成多行，钉去空白后的整条件）。
+    expect(
+      compactCode(body),
+      contains(
+        'if(_sideSheetOpen||_appearanceSheetOpen||_studyClockModalDepth>0||'
+        '(owner!=null&&!owner.isCurrent)){',
+      ),
+    );
     final int guard = body.indexOf('!owner.isCurrent');
     final int insert = body.indexOf('overlay.insert(entry)');
     expect(guard, lessThan(insert));
@@ -197,7 +203,9 @@ void main() {
       greaterThanOrEqualTo(0),
       reason: 'onSelectionMenu payload 必须带出两球各自的盒',
     );
-    final int dev = scripts.indexOf('payload.handlesRect = this.selectionHandlesRect();');
+    final int dev = scripts.indexOf(
+      'payload.handlesRect = this.selectionHandlesRect();',
+    );
     expect(dev, greaterThanOrEqualTo(0));
     expect(
       scripts.indexOf('handlesBoxes', dev),

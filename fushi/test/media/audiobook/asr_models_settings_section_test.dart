@@ -4,9 +4,12 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_asr_core/asr_core.dart';
+import 'package:fushi/src/asr_host/shared_model_downloads.dart'
+    show SharedModelDownloads;
 import 'package:fushi/src/asr_host/asr_model_downloads.dart';
 import 'package:fushi/src/media/audiobook/asr_models_settings_section.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:path/path.dart' as p;
 
 /// 假服务：每种语言的就绪状态可编程；模型目录落在临时目录里，`deleteAll` 走真
@@ -148,6 +151,7 @@ void main() {
       openPackStore: openPackStore,
       serviceForProfile: service.forProfile,
       gpuRuntimeToDownload: () async => null,
+      shared: SharedModelDownloads(),
     ),
   );
 

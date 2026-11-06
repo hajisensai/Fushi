@@ -3,10 +3,8 @@ import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
 
-JimakuCandidate _cand(String fileName) => JimakuCandidate(
-      entryName: 'Series',
-      name: fileName,
-    );
+JimakuCandidate _cand(String fileName) =>
+    JimakuCandidate(entryName: 'Series', name: fileName);
 
 void main() {
   // G6：jimaku 关键词筛选并入库页同一归一化口径（filterByMediaSearch），
@@ -18,8 +16,11 @@ void main() {
 
   test('case-insensitive substring match', () {
     final List<String> names = <String>['a.WEBRip.srt', 'b.BD.ass', 'c.srt'];
-    final List<String> out =
-        filterByMediaSearch(names, 'webrip', (String s) => <String>[s]);
+    final List<String> out = filterByMediaSearch(
+      names,
+      'webrip',
+      (String s) => <String>[s],
+    );
     expect(out, <String>['a.WEBRip.srt']);
   });
 
@@ -49,16 +50,22 @@ void main() {
     });
 
     test('选 ja 只留 ja 候选', () {
-      final List<JimakuCandidate> out =
-          filterCandidatesByLanguage(candidates, 'ja');
-      expect(out.map((JimakuCandidate c) => c.name),
-          <String>['ep01.ja.srt', 'ep02.ja.ass']);
+      final List<JimakuCandidate> out = filterCandidatesByLanguage(
+        candidates,
+        'ja',
+      );
+      expect(out.map((JimakuCandidate c) => c.name), <String>[
+        'ep01.ja.srt',
+        'ep02.ja.ass',
+      ]);
     });
 
     test('选具体语言会过滤掉认不出语言的候选；但「全部」仍能看到', () {
       // 选 zh：只剩 zh。认不出语言的 ep03.srt 被排除。
-      final List<JimakuCandidate> zh =
-          filterCandidatesByLanguage(candidates, 'zh');
+      final List<JimakuCandidate> zh = filterCandidatesByLanguage(
+        candidates,
+        'zh',
+      );
       expect(zh.map((JimakuCandidate c) => c.name), <String>['ep01.zh.srt']);
       // 但「全部」永远列出全部，认不出语言的候选绝不彻底消失（保底）。
       expect(filterCandidatesByLanguage(candidates, null), hasLength(4));
@@ -93,15 +100,21 @@ void main() {
     });
 
     test('选 ass 只留 ass 候选（含大写扩展名）', () {
-      final List<JimakuCandidate> out =
-          filterCandidatesByFormat(candidates, 'ass');
-      expect(out.map((JimakuCandidate c) => c.name),
-          <String>['ep01.ja.ass', 'ep02.zh.ASS']);
+      final List<JimakuCandidate> out = filterCandidatesByFormat(
+        candidates,
+        'ass',
+      );
+      expect(out.map((JimakuCandidate c) => c.name), <String>[
+        'ep01.ja.ass',
+        'ep02.zh.ASS',
+      ]);
     });
 
     test('选 srt 不会漏进 ass', () {
-      final List<JimakuCandidate> out =
-          filterCandidatesByFormat(candidates, 'srt');
+      final List<JimakuCandidate> out = filterCandidatesByFormat(
+        candidates,
+        'srt',
+      );
       expect(out.map((JimakuCandidate c) => c.name), <String>['ep01.ja.srt']);
     });
 
@@ -120,8 +133,9 @@ void main() {
 
     test('只有一种类型时 availableFormats 仍返回它（由 UI 决定不渲染单选项筛选区）', () {
       expect(
-          availableFormats(<JimakuCandidate>[_cand('a.srt'), _cand('b.srt')]),
-          <String>['srt']);
+        availableFormats(<JimakuCandidate>[_cand('a.srt'), _cand('b.srt')]),
+        <String>['srt'],
+      );
     });
 
     test('语言 + 类型两层筛选可叠加，且顺序无关', () {
@@ -133,52 +147,51 @@ void main() {
         filterCandidatesByFormat(candidates, 'ass'),
         'ja',
       );
-      expect(langThenFormat.map((JimakuCandidate c) => c.name),
-          <String>['ep01.ja.ass']);
-      expect(formatThenLang.map((JimakuCandidate c) => c.name),
-          langThenFormat.map((JimakuCandidate c) => c.name));
+      expect(langThenFormat.map((JimakuCandidate c) => c.name), <String>[
+        'ep01.ja.ass',
+      ]);
+      expect(
+        formatThenLang.map((JimakuCandidate c) => c.name),
+        langThenFormat.map((JimakuCandidate c) => c.name),
+      );
     });
   });
 
   group('sortJimakuCandidates（消除集数乱序）', () {
     test('同语言按集号升序，认不出集号排末尾', () {
-      final List<JimakuCandidate> sorted =
-          sortJimakuCandidates(<JimakuCandidate>[
-        _cand('Show - 12.ja.srt'),
-        _cand('Show extras.ja.srt'), // 无集号
-        _cand('Show - 02.ja.srt'),
-        _cand('Show - 09.ja.srt'),
-      ]);
-      expect(
-        sorted.map((JimakuCandidate c) => c.name),
-        <String>[
-          'Show - 02.ja.srt',
-          'Show - 09.ja.srt',
-          'Show - 12.ja.srt',
-          'Show extras.ja.srt',
+      final List<JimakuCandidate> sorted = sortJimakuCandidates(
+        <JimakuCandidate>[
+          _cand('Show - 12.ja.srt'),
+          _cand('Show extras.ja.srt'), // 无集号
+          _cand('Show - 02.ja.srt'),
+          _cand('Show - 09.ja.srt'),
         ],
       );
+      expect(sorted.map((JimakuCandidate c) => c.name), <String>[
+        'Show - 02.ja.srt',
+        'Show - 09.ja.srt',
+        'Show - 12.ja.srt',
+        'Show extras.ja.srt',
+      ]);
     });
 
     test('语言权重优先：ja→zh→en→ko，同集号也按语言分组', () {
       final List<JimakuCandidate> sorted =
           sortJimakuCandidates(<JimakuCandidate>[
-        _cand('Show - 01.en.srt'),
-        _cand('Show - 01.zh.srt'),
-        _cand('Show - 01.ja.srt'),
+            _cand('Show - 01.en.srt'),
+            _cand('Show - 01.zh.srt'),
+            _cand('Show - 01.ja.srt'),
+          ]);
+      expect(sorted.map((JimakuCandidate c) => c.language), <String>[
+        'ja',
+        'zh',
+        'en',
       ]);
-      expect(
-        sorted.map((JimakuCandidate c) => c.language),
-        <String>['ja', 'zh', 'en'],
-      );
     });
 
     test('preferred 语言置顶（用户按系列记忆的语言）', () {
       final List<JimakuCandidate> sorted = sortJimakuCandidates(
-        <JimakuCandidate>[
-          _cand('Show - 01.ja.srt'),
-          _cand('Show - 01.zh.srt'),
-        ],
+        <JimakuCandidate>[_cand('Show - 01.ja.srt'), _cand('Show - 01.zh.srt')],
         preferredLanguage: 'zh',
       );
       expect(sorted.first.language, 'zh');
@@ -189,8 +202,10 @@ void main() {
       expect(jimakuLanguageRank('zh'), lessThan(jimakuLanguageRank('en')));
       expect(jimakuLanguageRank('en'), lessThan(jimakuLanguageRank('ko')));
       expect(jimakuLanguageRank(null), greaterThan(jimakuLanguageRank('ko')));
-      expect(jimakuLanguageRank('en', preferred: 'en'),
-          lessThan(jimakuLanguageRank('ja')));
+      expect(
+        jimakuLanguageRank('en', preferred: 'en'),
+        lessThan(jimakuLanguageRank('ja')),
+      );
     });
   });
 }

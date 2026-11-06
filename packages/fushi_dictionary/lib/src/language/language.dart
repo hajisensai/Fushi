@@ -11,12 +11,22 @@ import '../models/dictionary_entry.dart';
 import '../models/dictionary_search_result.dart';
 import 'transform_description_i18n.dart';
 
+/// BCP-47 标签是否为中文（`zh` / `zh-Hans` / `zh_CN` / `zh-Hant-TW` / `yue`…）。
+/// 查词按中文处理（简体 → 繁體回落）的唯一判据；null/空串/无法识别一律 false，
+/// 宁可不回落也不去动日语等其它语言的查询。
+bool isChineseLanguageTag(String? tag) {
+  final String lower = (tag ?? '').trim().toLowerCase();
+  if (lower.isEmpty) return false;
+  final String primary = lower.split(RegExp('[-_]')).first;
+  return primary == 'zh' || primary == 'yue' || primary == 'cmn';
+}
+
 /// 弹窗上的一枚词形变化标签：变形名（`-て`）+ 该变形的语法说明。
 typedef DeinflectionTag = ({String name, String description});
 
 /// 词形变化链 → 弹窗标签序列。**这是全 app 唯一一处生成变形标签的地方**，
-/// 三条弹窗路径（[buildPopupJsonFromLookup] / `buildLookupEntriesJson` /
-/// 原生弹窗）和 C++ 的 `build_popup_json` 都必须走这套语义，不允许各自再拼。
+/// 两条弹窗路径（[buildPopupJsonFromLookup] / `buildLookupEntriesJson`）和 C++ 的
+/// `build_popup_json` 都必须走这套语义，不允许各自再拼。
 ///
 /// `trace` 是唯一真相：引擎每剥掉一层变形就往里压一个 [FushiTransformGroup]，
 /// 带着变形名和 `assets/transforms/<lang>.json` 里的语法说明。压栈顺序是**剥离
@@ -98,10 +108,18 @@ List<DeinflectionTag> deinflectionTagsFromExtra(Map<String, dynamic> extra) {
   );
 }
 
-String buildLookupEntryExtra(FushiLookupResult r, FushiGlossaryEntry g) {
-  return jsonEncode({
-    'definitionTags': g.definitionTags,
-    'termTags': g.termTags,
+String buildLookupEntryExtra(FushiLookupResult r, FushiGlossaryEntry g) =>
+    _lookupEntryExtraWithTail(g, _lookupEntryExtraTail(r));
+
+/// [buildLookupEntryExtra] 里与 glossary 无关、整个词头共用的后半段（从 `matched`
+/// 到结尾，不含开头的 `{`）。
+///
+/// 一个词头常带十几条 glossary（多本词典的释义），而 frequencies / pitches /
+/// deinflectionTrace 只属于词头：以前每条 glossary 都把这三样重新 jsonEncode 一遍。
+/// 现在每个词头编码一次、逐条拼接。输出逐字节不变：`jsonEncode(Map)` 按插入顺序、
+/// 以 `,` 无空白分隔输出，`definitionTags` / `termTags` 两个键原本就排在最前。
+String _lookupEntryExtraTail(FushiLookupResult r) {
+  final String full = jsonEncode({
     'matched': r.matched,
     'deinflected': r.deinflected,
     // 变形链带着语法说明一起随 entry 走。走 extra 的两条弹窗路径（原生弹窗、
@@ -135,7 +153,12 @@ String buildLookupEntryExtra(FushiLookupResult r, FushiGlossaryEntry g) {
         )
         .toList(),
   });
+  return full.substring(1);
 }
+
+String _lookupEntryExtraWithTail(FushiGlossaryEntry g, String tail) =>
+    '{"definitionTags":${jsonEncode(g.definitionTags)},'
+    '"termTags":${jsonEncode(g.termTags)},$tail';
 
 DictionarySearchResult buildResultFromLookup({
   required String searchTerm,
@@ -190,6 +213,7 @@ DictionarySearchResult buildResultFromLookup({
       headword,
       () => headwords.length,
     );
+    final String extraTail = _lookupEntryExtraTail(r);
     for (final g in glossaries) {
       collected.add((
         entry: DictionaryEntry(
@@ -197,7 +221,7 @@ DictionarySearchResult buildResultFromLookup({
           word: r.term.expression,
           reading: reading,
           meaning: g.glossary,
-          extra: buildLookupEntryExtra(r, g),
+          extra: _lookupEntryExtraWithTail(g, extraTail),
         ),
         headword: headwordIndex,
       ));

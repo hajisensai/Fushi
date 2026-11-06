@@ -255,6 +255,11 @@ void main() {
       '  Future<void> _openGallery() async {',
       '  Future<void> _transcribeFromAudiobookPanel() async {',
       '  void _showLyricsModeHintIfNeeded() {',
+      // 歌词页面板：页面弹、压着期间停表（2026-10-25 用户：歌词模式计时要与阅读器
+      // 一致）。倍速面板此前由按钮自己 push，页面看不见，一直不停表。
+      '  Future<void> _showLyricsTypographyPanel(LyricsMenuAnchor anchor) async {',
+      '  Future<void> _showLyricsSpeedPanel(',
+      '  Future<void> _showLyricsControlLayoutEditor() async {',
     ];
     for (final String entry in entries) {
       test('入口经 _withStudyClockPaused：${entry.trim()}', () {
@@ -268,6 +273,38 @@ void main() {
         );
       });
     }
+
+    test('任何路由盖住阅读器都停表（悬浮球 / 通知 / 快捷键推上来的、以后新加的入口）', () {
+      // BUG-3994：判据是根导航观察器 studyCoverTracker——阅读器路由之上压着任何未豁免
+      // 的模态路由（整页 / 对话框 / 侧板 / 菜单）即停表，新入口不必各自接线。旧实现
+      // 只认 PageRoute（RouteAware），对话框 / 侧板从页面外弹上来就照计。
+      final String main = maskComments(
+        File('lib/main.dart').readAsStringSync().replaceAll('\r\n', '\n'),
+      );
+      final String observers = _functionSource(
+        main,
+        'navigatorObservers: <NavigatorObserver>[',
+        '],',
+      );
+      expect(observers, contains('studyCoverTracker'));
+      expect(corpus, isNot(contains('RouteAware')));
+      expect(
+        corpus,
+        contains('_studyCoverWatch.attach(ModalRoute.of(context))'),
+      );
+      expect(corpus, contains('_studyCoverWatch.dispose()'));
+      final String mayRun = _functionSource(
+        corpus,
+        '  bool get _studyClockMayRun =>',
+        ';\n',
+      );
+      expect(
+        compactCode(mayRun),
+        contains(
+          'modalDepth:_studyClockModalDepth+(_studyCoverWatch.covered?1:0)',
+        ),
+      );
+    });
 
     test('书内统计侧栏（_openReadingStatistics）有意不停表——侧栏不遮正文', () {
       // 2026-09-13 chrome 重做：统计从 640px 居中对话框改成右侧侧栏，正文照常可读，
@@ -312,6 +349,24 @@ void main() {
       expect(
         panel.substring(panel.indexOf('finally')),
         contains('_syncPanelClockHold(null)'),
+      );
+      // 侧板路由本身也是盖住阅读器的模态路由：切到统计页时必须豁免，否则统一判据
+      // 照样把表停住（BUG-3994）。豁免随路由构造带上（开关在事件里切），推路由当帧
+      // 生效，不在 build 里补登记。
+      final String compactPanel = compactCode(panel);
+      expect(
+        compactPanel,
+        contains('ValueNotifier<bool>(kind==_kReaderPanelStatistics,)'),
+      );
+      expect(
+        compactPanel,
+        contains(
+          'statisticsShown.value=notifier.value==_kReaderPanelStatistics;',
+        ),
+      );
+      expect(
+        compactPanel,
+        contains('studyClockTransparentWhen:statisticsShown,'),
       );
       expect(body, isNot(contains('_withStudyClockPaused(')));
     });

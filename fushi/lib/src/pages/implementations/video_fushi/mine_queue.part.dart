@@ -19,6 +19,12 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
   /// 重读本视频的待制卡数（待写入 + 写入失败）。best-effort：未初始化的最小宿主
   /// （smoke / widget 测试没有 AppModel）直接当 0。
   Future<void> _refreshStagedMineCount() async {
+    // 网页档的待制卡是 web_mine_queue（等内置档重放），不是看完再制卡的暂存。
+    if (_webMode) {
+      final int pending = await _webMineQueue.pendingCount(_activeBookUid);
+      if (mounted) _stagedMineCount.value = pending;
+      return;
+    }
     try {
       final VideoMineQueue queue = await _videoMineQueue();
       final int count =
@@ -125,6 +131,8 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
       _backgroundMineJobs,
     );
     if (_stagedMineCount.value == 0 && inFlight.isEmpty) return;
+    // 网页档的角标数是重放队列（留给内置档），退页不提交任何东西。
+    if (_webMode) return;
     final String bookUid = _activeBookUid;
     final BaseAnkiRepository repo;
     try {
@@ -147,6 +155,46 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
   /// 点开列表。两者都没有时零尺寸。只有角标本身吃点击（外层 [Align] 不命中空白处），
   /// 且不抢键盘焦点——播放页的快捷键焦点归属不因它变化。窗口与全屏共用（监听 notifier，
   /// 与 OSD 同源）。
+  /// 「循环当前句」常驻标记（Ix4j5SKUth）：右上角、与制卡队列角标同一锚点，角标在时
+  /// 让到它下面一格。点它关闭循环。
+  Widget _buildLoopCueBadgeOverlay(VideoPlayerController controller) {
+    return Positioned.fill(
+      child: SafeArea(
+        child: AnimatedBuilder(
+          animation: Listenable.merge(<Listenable>[
+            controller.loopCurrentCueListenable,
+            _minesInFlight,
+            _stagedMineCount,
+          ]),
+          builder: (BuildContext context, _) {
+            final bool mineBadgeShown =
+                _minesInFlight.value > 0 || _stagedMineCount.value > 0;
+            final ColorScheme cs = _videoChromeColorScheme(context);
+            return Align(
+              alignment: Alignment.topRight,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  right: 16,
+                  top:
+                      _videoButtonBarHeight +
+                      (mineBadgeShown ? 48 : 8) * _videoUiScale,
+                ),
+                child: VideoLoopCueBadge(
+                  active: controller.loopCurrentCue,
+                  label: t.video_loop_cue_badge_label,
+                  tooltip: t.video_loop_cue_badge_tooltip,
+                  onTap: () => controller.setLoopCurrentCue(false),
+                  surfaceColor: _osdSurfaceColor(cs),
+                  textColor: _osdTextColor(cs),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   Widget _buildMineQueueBadgeOverlay() {
     return Positioned.fill(
       child: SafeArea(
@@ -179,7 +227,12 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
                     customBorder: const StadiumBorder(),
                     canRequestFocus: false,
                     onTap: staged > 0
-                        ? () => unawaited(_openVideoMineQueue())
+                        ? () => unawaited(
+                            // 网页档：切到可捕获的内置档逐句重放落卡。
+                            _webMode
+                                ? _runWebMineQueue()
+                                : _openVideoMineQueue(),
+                          )
                         : null,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(

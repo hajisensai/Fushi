@@ -52,8 +52,9 @@ void main() {
   setUp(() async {
     // 素材用仓库自带的真 ttf：必须是浏览器**真能解析**的字体，否则
     // document.fonts.check 即便 CORS 通过也会是 false，测不出所以然。
-    final ByteData bytes =
-        await rootBundle.load('assets/fonts/MaterialSymbolsRounded.ttf');
+    final ByteData bytes = await rootBundle.load(
+      'assets/fonts/MaterialSymbolsRounded.ttf',
+    );
     fontDir = await Directory.systemTemp.createTemp('fushi_font_url_itest');
     // 用 p.join 而不是手拼 '/'：systemTemp 在 Windows 给的是反斜杠路径，手拼会造出
     // 混合分隔符（`...\temp\xxx/ItestFont.ttf`），而白名单两侧都按 p.canonicalize
@@ -72,7 +73,7 @@ void main() {
   /// origin），页面里声明一个引用 [kDictionaryFontUrlPrefix] 的 @font-face，
   /// 然后真去 load 它。返回 `document.fonts.check` 的结果。
   Future<({String probe, List<String> intercepted, bool served})>
-      loadFontThroughInterceptor(
+  loadFontThroughInterceptor(
     WidgetTester tester, {
     required bool sendCorsHeader,
   }) async {
@@ -87,7 +88,8 @@ void main() {
         home: Scaffold(
           body: InAppWebView(
             initialData: InAppWebViewInitialData(
-              data: '<!DOCTYPE html><html><head><meta charset="utf-8">'
+              data:
+                  '<!DOCTYPE html><html><head><meta charset="utf-8">'
                   '<style>'
                   '@font-face { font-family: "ItestFont"; '
                   'src: url("$fontUrl") format("truetype"); }'
@@ -103,12 +105,12 @@ void main() {
               intercepted.add(request.url.toString());
               final WebResourceResponse? real =
                   await dictionaryFontWebResourceResponse(
-                request.url,
-                allowedRoots: <String>[fontDir.path],
-                // 白名单必须与拦截器内部同一套归一化（p.canonicalize），
-                // 否则分隔符/大小写差异会让合法字体被自己的白名单挡下。
-                whitelistedPaths: <String>{p.canonicalize(fontFile.path)},
-              );
+                    request.url,
+                    allowedRoots: <String>[fontDir.path],
+                    // 白名单必须与拦截器内部同一套归一化（p.canonicalize），
+                    // 否则分隔符/大小写差异会让合法字体被自己的白名单挡下。
+                    whitelistedPaths: <String>{p.canonicalize(fontFile.path)},
+                  );
               if (real == null) return null;
               served = real.statusCode == 200;
               if (sendCorsHeader) return real;
@@ -141,7 +143,8 @@ void main() {
     // 「失败」全是假的——探针压根没取到值，与 CORS / 拦截器无关。
     // 所以改成两步：先把结果写进 window.__fushiFontProbe，再轮询读那个同步值。
     await controller.evaluateJavascript(
-      source: '''
+      source:
+          '''
         window.__fushiFontProbe = 'pending';
         (async () => {
           var out = [];
@@ -181,11 +184,7 @@ void main() {
       if (probe != 'pending' && probe.isNotEmpty) break;
     }
 
-    return (
-      probe: probe,
-      intercepted: intercepted,
-      served: served,
-    );
+    return (probe: probe, intercepted: intercepted, served: served);
   }
 
   testWidgets(
@@ -196,12 +195,15 @@ void main() {
       // ignore: avoid_print
       print('[BUG-1868][cors] probe=${r.probe}');
       // ignore: avoid_print
-      print('[BUG-1868][cors] served=${r.served} '
-          'intercepted=${r.intercepted}');
+      print(
+        '[BUG-1868][cors] served=${r.served} '
+        'intercepted=${r.intercepted}',
+      );
       expect(
         r.probe,
         contains('check:true'),
-        reason: '字体没能经 https://fushi.local/dictfonts/ 加载。这条路一旦不通，'
+        reason:
+            '字体没能经 https://fushi.local/dictfonts/ 加载。这条路一旦不通，'
             '用户的词典字体会静默失效——比原来的慢更糟，不得合入。'
             '探针：${r.probe}；拦截到的请求：${r.intercepted}',
       );
@@ -218,7 +220,8 @@ void main() {
       expect(
         r.probe,
         isNot(contains('check:true')),
-        reason: '没有 Access-Control-Allow-Origin 也能加载，说明这个环境根本没在'
+        reason:
+            '没有 Access-Control-Allow-Origin 也能加载，说明这个环境根本没在'
             '检查 CORS——那么正向用例的绿就不能证明生产环境也会通过，本测试失去意义。'
             '探针：${r.probe}',
       );

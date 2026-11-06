@@ -185,181 +185,174 @@ void main() {
 
   const String realPageSeed = String.fromEnvironment('OCR_REAL_PAGE_DIR');
   if (realPageSeed.isNotEmpty) {
-    test(
-      'selected local model full-page private fixture smoke',
-      () async {
-        const String seed = String.fromEnvironment('OCR_MODEL_SEED');
-        final MangaOcrLocalModel selected = MangaOcrLocalModel.fromKey(
-          const String.fromEnvironment(
-            'OCR_LOCAL_MODEL',
-            defaultValue: 'manga_ctc',
-          ),
+    test('selected local model full-page private fixture smoke', () async {
+      const String seed = String.fromEnvironment('OCR_MODEL_SEED');
+      final MangaOcrLocalModel selected = MangaOcrLocalModel.fromKey(
+        const String.fromEnvironment(
+          'OCR_LOCAL_MODEL',
+          defaultValue: 'manga_ctc',
+        ),
+      );
+      const bool preparedSeed = bool.fromEnvironment(
+        'OCR_USE_PREPARED_MODEL_SEED',
+      );
+      const String reportPath = String.fromEnvironment('OCR_REAL_PAGE_REPORT');
+      final Map<String, dynamic> fixture =
+          jsonDecode(
+                File(
+                  p.join(realPageSeed, 'expectations.json'),
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      final List<dynamic> expectedPages = fixture['pages'] as List<dynamic>;
+      expect(expectedPages, isNotEmpty);
+      final Directory realPages = Directory(p.join(workDir.path, 'real-pages'))
+        ..createSync();
+      final Directory models = Directory(
+        preparedSeed ? seed : p.join(workDir.path, 'real-models'),
+      )..createSync();
+      for (final MangaOcrModelFile model in selected.manifest) {
+        final File source = File(p.join(seed, model.fileName));
+        expect(
+          source.existsSync(),
+          isTrue,
+          reason: 'Missing seeded ${model.fileName}',
         );
-        const bool preparedSeed = bool.fromEnvironment(
-          'OCR_USE_PREPARED_MODEL_SEED',
+        if (!preparedSeed) {
+          source.copySync(p.join(models.path, model.fileName));
+        }
+      }
+      for (final dynamic raw in expectedPages) {
+        final Map<String, dynamic> expected = raw as Map<String, dynamic>;
+        final String name = expected['file'] as String;
+        // Fixtures are flat files. Do not let a manifest escape either directory.
+        expect(p.basename(name), name);
+        final File source = File(p.join(realPageSeed, name));
+        expect(
+          source.existsSync(),
+          isTrue,
+          reason: 'Missing private page $name',
         );
-        const String reportPath = String.fromEnvironment(
-          'OCR_REAL_PAGE_REPORT',
+        source.copySync(p.join(realPages.path, name));
+      }
+      final MangaOcrServiceImpl service = MangaOcrServiceImpl(
+        localModel: selected,
+        modelsDirProvider: () async => models,
+      );
+      expect((await service.modelStatus()).allReady, isTrue);
+      final Stopwatch timer = Stopwatch()..start();
+      final List<Map<String, Object?>> progress = <Map<String, Object?>>[];
+      MangaOcrVolumeEvent? finished;
+      await for (final MangaOcrVolumeEvent event in service.ocrFolder(
+        imageDirPath: realPages.path,
+        volumeTitle: 'private full-page native smoke',
+      )) {
+        progress.add(<String, Object?>{
+          'done': event.pagesDone,
+          'total': event.pagesTotal,
+          'elapsed_ms': timer.elapsedMilliseconds,
+          'acceleration': event.acceleration?.toString(),
+        });
+        if (event.finished) finished = event;
+      }
+      timer.stop();
+      expect(finished, isNotNull);
+      expect(finished!.pagesTotal, expectedPages.length);
+      final File result = File(finished.mangaJsonPath!);
+      expect(result.existsSync(), isTrue);
+      final Map<String, dynamic> payload =
+          jsonDecode(result.readAsStringSync()) as Map<String, dynamic>;
+      final List<dynamic> actualPages = payload['pages'] as List<dynamic>;
+      // Preserve the complete evidence before content assertions, including failures.
+      final Map<String, Object?> report = <String, Object?>{
+        'model': selected.key,
+        'platform': Platform.operatingSystem,
+        'total_ms': timer.elapsedMilliseconds,
+        'timing_note':
+            'diagnostic only; other builds/tests may share the device',
+        'progress': progress,
+        'payload': payload,
+      };
+      if (reportPath.isNotEmpty) {
+        final File reportFile = File(reportPath);
+        reportFile.parent.createSync(recursive: true);
+        reportFile.writeAsStringSync(
+          const JsonEncoder.withIndent('  ').convert(report),
         );
-        final Map<String, dynamic> fixture =
-            jsonDecode(
-                  File(
-                    p.join(realPageSeed, 'expectations.json'),
-                  ).readAsStringSync(),
-                )
-                as Map<String, dynamic>;
-        final List<dynamic> expectedPages = fixture['pages'] as List<dynamic>;
-        expect(expectedPages, isNotEmpty);
-        final Directory realPages = Directory(
-          p.join(workDir.path, 'real-pages'),
-        )..createSync();
-        final Directory models = Directory(
-          preparedSeed ? seed : p.join(workDir.path, 'real-models'),
-        )..createSync();
-        for (final MangaOcrModelFile model in selected.manifest) {
-          final File source = File(p.join(seed, model.fileName));
-          expect(
-            source.existsSync(),
-            isTrue,
-            reason: 'Missing seeded ${model.fileName}',
-          );
-          if (!preparedSeed) {
-            source.copySync(p.join(models.path, model.fileName));
-          }
-        }
-        for (final dynamic raw in expectedPages) {
-          final Map<String, dynamic> expected = raw as Map<String, dynamic>;
-          final String name = expected['file'] as String;
-          // Fixtures are flat files. Do not let a manifest escape either directory.
-          expect(p.basename(name), name);
-          final File source = File(p.join(realPageSeed, name));
-          expect(
-            source.existsSync(),
-            isTrue,
-            reason: 'Missing private page $name',
-          );
-          source.copySync(p.join(realPages.path, name));
-        }
-        final MangaOcrServiceImpl service = MangaOcrServiceImpl(
-          localModel: selected,
-          modelsDirProvider: () async => models,
-        );
-        expect((await service.modelStatus()).allReady, isTrue);
-        final Stopwatch timer = Stopwatch()..start();
-        final List<Map<String, Object?>> progress = <Map<String, Object?>>[];
-        MangaOcrVolumeEvent? finished;
-        await for (final MangaOcrVolumeEvent event in service.ocrFolder(
-          imageDirPath: realPages.path,
-          volumeTitle: 'private full-page native smoke',
-        )) {
-          progress.add(<String, Object?>{
-            'done': event.pagesDone,
-            'total': event.pagesTotal,
-            'elapsed_ms': timer.elapsedMilliseconds,
-            'acceleration': event.acceleration?.toString(),
-          });
-          if (event.finished) finished = event;
-        }
-        timer.stop();
-        expect(finished, isNotNull);
-        expect(finished!.pagesTotal, expectedPages.length);
-        final File result = File(finished.mangaJsonPath!);
-        expect(result.existsSync(), isTrue);
-        final Map<String, dynamic> payload =
-            jsonDecode(result.readAsStringSync()) as Map<String, dynamic>;
-        final List<dynamic> actualPages = payload['pages'] as List<dynamic>;
-        // Preserve the complete evidence before content assertions, including failures.
-        final Map<String, Object?> report = <String, Object?>{
-          'model': selected.key,
-          'platform': Platform.operatingSystem,
-          'total_ms': timer.elapsedMilliseconds,
-          'timing_note':
-              'diagnostic only; other builds/tests may share the device',
-          'progress': progress,
-          'payload': payload,
-        };
-        if (reportPath.isNotEmpty) {
-          final File reportFile = File(reportPath);
-          reportFile.parent.createSync(recursive: true);
-          reportFile.writeAsStringSync(
-            const JsonEncoder.withIndent('  ').convert(report),
-          );
-        }
-        expect(actualPages, hasLength(expectedPages.length));
-        for (final dynamic raw in expectedPages) {
-          final Map<String, dynamic> expected = raw as Map<String, dynamic>;
-          final String name = expected['file'] as String;
-          final Map<String, dynamic> page = actualPages
-              .cast<Map<String, dynamic>>()
-              .singleWhere(
-                (Map<String, dynamic> candidate) => candidate['url'] == name,
-              );
-          final List<Map<String, dynamic>> blocks =
-              (page['blocks'] as List<dynamic>).cast<Map<String, dynamic>>();
-          final List<String> text = <String>[
-            for (final Map<String, dynamic> block in blocks)
-              (block['lines'] as List<dynamic>).cast<String>().join(),
-          ];
-          // ignore: avoid_print
-          print(
-            '[ocr-page] ${jsonEncode(<String, Object?>{'file': name, 'width': page['width'], 'height': page['height'], 'blocks': blocks})}',
-          );
-          expect(
-            blocks.length,
-            greaterThanOrEqualTo(expected['min_blocks'] as int),
-          );
-          final int vertical = blocks
-              .where((Map<String, dynamic> block) => block['vertical'] == true)
-              .length;
-          expect(
-            vertical,
-            greaterThanOrEqualTo(expected['min_vertical'] as int? ?? 0),
-          );
-          expect(
-            blocks.length - vertical,
-            greaterThanOrEqualTo(expected['min_horizontal'] as int? ?? 0),
-          );
-          final String allText = text
-              .join()
-              .replaceAll(RegExp(r'\s'), '')
-              .toLowerCase();
-          for (final String required
-              in (expected['required_text'] as List<dynamic>? ?? <dynamic>[])
-                  .cast<String>()) {
-            expect(
-              allText,
-              contains(required.replaceAll(RegExp(r'\s'), '').toLowerCase()),
-              reason: '$name missing required content: $required',
+      }
+      expect(actualPages, hasLength(expectedPages.length));
+      for (final dynamic raw in expectedPages) {
+        final Map<String, dynamic> expected = raw as Map<String, dynamic>;
+        final String name = expected['file'] as String;
+        final Map<String, dynamic> page = actualPages
+            .cast<Map<String, dynamic>>()
+            .singleWhere(
+              (Map<String, dynamic> candidate) => candidate['url'] == name,
             );
-          }
-          for (final String truth
-              in (expected['printed_blocks'] as List<dynamic>? ?? <dynamic>[])
-                  .cast<String>()) {
-            final double best = text.fold<double>(0, (
-              double score,
-              String actual,
-            ) {
-              final double overlap = _charOverlap(
-                _stripNoise(truth),
-                _stripNoise(actual),
-              );
-              return overlap > score ? overlap : score;
-            });
-            expect(
-              best,
-              greaterThanOrEqualTo(0.9),
-              reason:
-                  '$name printed block missing or severely changed: $truth; actual=$text',
-            );
-          }
-        }
+        final List<Map<String, dynamic>> blocks =
+            (page['blocks'] as List<dynamic>).cast<Map<String, dynamic>>();
+        final List<String> text = <String>[
+          for (final Map<String, dynamic> block in blocks)
+            (block['lines'] as List<dynamic>).cast<String>().join(),
+        ];
         // ignore: avoid_print
         print(
-          '[ocr-page-summary] ${jsonEncode(<String, Object?>{'pages': actualPages.length, 'total_ms': timer.elapsedMilliseconds, 'report': reportPath})}',
+          '[ocr-page] ${jsonEncode(<String, Object?>{'file': name, 'width': page['width'], 'height': page['height'], 'blocks': blocks})}',
         );
-      },
-      timeout: const Timeout(Duration(minutes: 15)),
-    );
+        expect(
+          blocks.length,
+          greaterThanOrEqualTo(expected['min_blocks'] as int),
+        );
+        final int vertical = blocks
+            .where((Map<String, dynamic> block) => block['vertical'] == true)
+            .length;
+        expect(
+          vertical,
+          greaterThanOrEqualTo(expected['min_vertical'] as int? ?? 0),
+        );
+        expect(
+          blocks.length - vertical,
+          greaterThanOrEqualTo(expected['min_horizontal'] as int? ?? 0),
+        );
+        final String allText = text
+            .join()
+            .replaceAll(RegExp(r'\s'), '')
+            .toLowerCase();
+        for (final String required
+            in (expected['required_text'] as List<dynamic>? ?? <dynamic>[])
+                .cast<String>()) {
+          expect(
+            allText,
+            contains(required.replaceAll(RegExp(r'\s'), '').toLowerCase()),
+            reason: '$name missing required content: $required',
+          );
+        }
+        for (final String truth
+            in (expected['printed_blocks'] as List<dynamic>? ?? <dynamic>[])
+                .cast<String>()) {
+          final double best = text.fold<double>(0, (
+            double score,
+            String actual,
+          ) {
+            final double overlap = _charOverlap(
+              _stripNoise(truth),
+              _stripNoise(actual),
+            );
+            return overlap > score ? overlap : score;
+          });
+          expect(
+            best,
+            greaterThanOrEqualTo(0.9),
+            reason:
+                '$name printed block missing or severely changed: $truth; actual=$text',
+          );
+        }
+      }
+      // ignore: avoid_print
+      print(
+        '[ocr-page-summary] ${jsonEncode(<String, Object?>{'pages': actualPages.length, 'total_ms': timer.elapsedMilliseconds, 'report': reportPath})}',
+      );
+    }, timeout: const Timeout(Duration(minutes: 15)));
   }
 
   test('整卷本地 OCR 端到端：真模型认出页面上的四句日文', () async {

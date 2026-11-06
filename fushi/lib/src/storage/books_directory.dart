@@ -24,11 +24,13 @@ void migrateLegacyBooksDirectoryAt(
   String documentsRootPath, {
   void Function(Object error, StackTrace stack)? onMigrationError,
 }) {
-  final Directory target =
-      Directory(p.join(documentsRootPath, kBooksDirectoryName));
+  final Directory target = Directory(
+    p.join(documentsRootPath, kBooksDirectoryName),
+  );
   if (target.existsSync()) return;
-  final Directory legacy =
-      Directory(p.join(documentsRootPath, kLegacyBooksDirectoryName));
+  final Directory legacy = Directory(
+    p.join(documentsRootPath, kLegacyBooksDirectoryName),
+  );
   if (!legacy.existsSync()) return;
   try {
     legacy.renameSync(target.path);

@@ -36,10 +36,14 @@ void main() {
         ),
         const FushiClientUrl(url: 'http://192.168.1.20:8384'),
       ]);
-      expect(await repo.getFushiClientFingerprint('https://192.168.1.10:8384'),
-          'aa:bb:cc');
-      expect(await repo.getFushiClientFingerprint('http://192.168.1.20:8384'),
-          isNull);
+      expect(
+        await repo.getFushiClientFingerprint('https://192.168.1.10:8384'),
+        'aa:bb:cc',
+      );
+      expect(
+        await repo.getFushiClientFingerprint('http://192.168.1.20:8384'),
+        isNull,
+      );
       expect(await repo.getFushiClientFingerprint('http://nope:1'), isNull);
     });
 
@@ -55,24 +59,32 @@ void main() {
       ]);
 
       expect(
-          await repo.clearFushiClientFingerprint('https://192.168.1.10:8384'),
-          isTrue);
+        await repo.clearFushiClientFingerprint('https://192.168.1.10:8384'),
+        isTrue,
+      );
       final FushiClientUrl row = (await repo.getFushiClientUrls()).single;
       expect(row.fingerprintSha256, isNull, reason: '指纹必须真的清掉，否则重新信任无从谈起');
       expect(row.enabled, isFalse);
       expect(row.deviceName, '书房台式机');
-      expect(row.token, 'peer-token',
-          reason: '同一台 host 换 IP 时那份 per-peer 凭据仍有效');
+      expect(
+        row.token,
+        'peer-token',
+        reason: '同一台 host 换 IP 时那份 per-peer 凭据仍有效',
+      );
     });
 
     test('没有指纹可清时返回 false（幂等，不白写盘）', () async {
       await repo.setFushiClientUrls(<FushiClientUrl>[
         const FushiClientUrl(url: 'http://192.168.1.10:8384'),
       ]);
-      expect(await repo.clearFushiClientFingerprint('http://192.168.1.10:8384'),
-          isFalse);
       expect(
-          await repo.clearFushiClientFingerprint('http://absent:1'), isFalse);
+        await repo.clearFushiClientFingerprint('http://192.168.1.10:8384'),
+        isFalse,
+      );
+      expect(
+        await repo.clearFushiClientFingerprint('http://absent:1'),
+        isFalse,
+      );
     });
 
     test('清掉后可重新 TOFU 记录一张新证书（不再撞 MITM 守卫）', () async {
@@ -84,47 +96,71 @@ void main() {
       ]);
       // 不清指纹直接写新指纹 → 必须被 MITM 守卫挡下（这条不变量不许动）。
       await expectLater(
-        repo.addFushiClientUrl('https://192.168.1.10:8384',
-            fingerprint: 'dd:ee:ff'),
+        repo.addFushiClientUrl(
+          'https://192.168.1.10:8384',
+          fingerprint: 'dd:ee:ff',
+        ),
         throwsA(isA<FushiFingerprintMismatchException>()),
       );
       await repo.clearFushiClientFingerprint('https://192.168.1.10:8384');
-      await repo.addFushiClientUrl('https://192.168.1.10:8384',
-          fingerprint: 'dd:ee:ff');
-      expect((await repo.getFushiClientUrls()).single.fingerprintSha256,
-          'dd:ee:ff');
+      await repo.addFushiClientUrl(
+        'https://192.168.1.10:8384',
+        fingerprint: 'dd:ee:ff',
+      );
+      expect(
+        (await repo.getFushiClientUrls()).single.fingerprintSha256,
+        'dd:ee:ff',
+      );
     });
   });
 
   group('isSameInterconnectEndpoint：编辑地址后该不该留指纹', () {
     test('同端点（补斜杠 / 改大小写 / 显式默认端口）→ 保留', () {
       expect(
-          isSameInterconnectEndpoint(
-              'http://192.168.1.10:8384', 'http://192.168.1.10:8384/'),
-          isTrue);
+        isSameInterconnectEndpoint(
+          'http://192.168.1.10:8384',
+          'http://192.168.1.10:8384/',
+        ),
+        isTrue,
+      );
       expect(
-          isSameInterconnectEndpoint(
-              'https://Host.local:8384', 'https://host.local:8384'),
-          isTrue);
+        isSameInterconnectEndpoint(
+          'https://Host.local:8384',
+          'https://host.local:8384',
+        ),
+        isTrue,
+      );
       expect(
-          isSameInterconnectEndpoint(
-              'https://host.local', 'https://host.local:443'),
-          isTrue);
+        isSameInterconnectEndpoint(
+          'https://host.local',
+          'https://host.local:443',
+        ),
+        isTrue,
+      );
     });
 
     test('换 host / 换端口 / 换 scheme → 不是同端点（必须清指纹）', () {
       expect(
-          isSameInterconnectEndpoint(
-              'http://192.168.1.10:8384', 'http://192.168.1.11:8384'),
-          isFalse);
+        isSameInterconnectEndpoint(
+          'http://192.168.1.10:8384',
+          'http://192.168.1.11:8384',
+        ),
+        isFalse,
+      );
       expect(
-          isSameInterconnectEndpoint(
-              'http://192.168.1.10:8384', 'http://192.168.1.10:9000'),
-          isFalse);
+        isSameInterconnectEndpoint(
+          'http://192.168.1.10:8384',
+          'http://192.168.1.10:9000',
+        ),
+        isFalse,
+      );
       expect(
-          isSameInterconnectEndpoint(
-              'https://192.168.1.10:8384', 'http://192.168.1.10:8384'),
-          isFalse);
+        isSameInterconnectEndpoint(
+          'https://192.168.1.10:8384',
+          'http://192.168.1.10:8384',
+        ),
+        isFalse,
+      );
     });
   });
 
@@ -148,40 +184,60 @@ void main() {
       final int gate = flow.indexOf('_ensurePinnedFingerprintTrusted(');
       final int identity = flow.indexOf('_confirmPairIdentity(');
       final int handshake = flow.indexOf('FushiPairV2Client(');
-      expect(gate, greaterThanOrEqualTo(0),
-          reason: 'BUG-1557：配对编排缺少「握手前先比已存指纹」的闸——'
-              '指纹不符要到 _onPairSuccess 才发现，那时设备名/deviceId 早送出去了');
+      expect(
+        gate,
+        greaterThanOrEqualTo(0),
+        reason:
+            'BUG-1557：配对编排缺少「握手前先比已存指纹」的闸——'
+            '指纹不符要到 _onPairSuccess 才发现，那时设备名/deviceId 早送出去了',
+      );
       expect(identity, greaterThan(gate), reason: '已存指纹比对必须排在第一重确认之前');
       expect(handshake, greaterThan(gate), reason: '已存指纹比对必须排在 pair/v2 握手之前');
     });
 
     test('不符时中止并给出「清除已存指纹重新信任」的出口', () {
       final String source = maskComments(readSyncSettingsSchemaSource());
-      final int start =
-          source.indexOf('  Future<bool> _ensurePinnedFingerprintTrusted(');
+      final int start = source.indexOf(
+        '  Future<bool> _ensurePinnedFingerprintTrusted(',
+      );
       expect(start, greaterThanOrEqualTo(0));
-      final int end =
-          source.indexOf('Future<bool> _confirmFingerprintRetrust(', start);
+      final int end = source.indexOf(
+        'Future<bool> _confirmFingerprintRetrust(',
+        start,
+      );
       expect(end, greaterThan(start));
       final String gate = source.substring(start, end);
-      expect(gate.contains('fingerprintEquals('), isTrue,
-          reason: '比对必须复用钉扎层的归一化，别再手写第二份');
-      expect(gate.contains('t.sync_pair_fingerprint_changed'), isTrue,
-          reason: '中止时要说清是证书变了，而不是笼统的「配对失败」');
-      expect(gate.contains('clearFushiClientFingerprint('), isTrue,
-          reason: 'BUG-1557：没有清除入口，host 真换了证书时那条地址永远修不好');
+      expect(
+        gate.contains('fingerprintEquals('),
+        isTrue,
+        reason: '比对必须复用钉扎层的归一化，别再手写第二份',
+      );
+      expect(
+        gate.contains('t.sync_pair_fingerprint_changed'),
+        isTrue,
+        reason: '中止时要说清是证书变了，而不是笼统的「配对失败」',
+      );
+      expect(
+        gate.contains('clearFushiClientFingerprint('),
+        isTrue,
+        reason: 'BUG-1557：没有清除入口，host 真换了证书时那条地址永远修不好',
+      );
     });
 
     test('编辑地址换端点时清掉该行指纹', () {
       final String source = maskComments(readSyncSettingsSchemaSource());
-      final int start =
-          source.indexOf('  Future<void> _addOrEditUrl({int? index}) async {');
+      final int start = source.indexOf(
+        '  Future<void> _addOrEditUrl({int? index}) async {',
+      );
       expect(start, greaterThanOrEqualTo(0), reason: '_addOrEditUrl 丢失');
       final int end = source.indexOf('Future<void> _attemptManualPair(', start);
       expect(end, greaterThan(start));
       final String edit = source.substring(start, end);
-      expect(edit.contains('isSameInterconnectEndpoint('), isTrue,
-          reason: 'BUG-1557：编辑保存无条件 copyWith 会把旧指纹钉到新机器上，那条地址就此死掉');
+      expect(
+        edit.contains('isSameInterconnectEndpoint('),
+        isTrue,
+        reason: 'BUG-1557：编辑保存无条件 copyWith 会把旧指纹钉到新机器上，那条地址就此死掉',
+      );
     });
   });
 }

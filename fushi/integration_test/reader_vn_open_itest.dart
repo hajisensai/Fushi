@@ -16,6 +16,7 @@ import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show ReaderFushiPage;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 
@@ -197,10 +198,11 @@ Future<void> _openReadingSettingsPage(WidgetTester tester) async {
               readerSource: ReaderFushiSource.instance,
               refresh: () {},
             );
-            final SettingsDestination reading =
-                buildSettingsSchema(sctx).firstWhere(
-              (SettingsDestination d) => d.id == SettingsDestinationId.reading,
-            );
+            final SettingsDestination reading = buildSettingsSchema(sctx)
+                .firstWhere(
+                  (SettingsDestination d) =>
+                      d.id == SettingsDestinationId.reading,
+                );
             return SettingsDetailPage(destination: reading);
           },
         ),
@@ -388,8 +390,9 @@ void main() {
               '[vn-open] E view_mode=paginated visible VN labels=$shownPaged/5',
             );
             if (shownPaged != 0) {
-              failures
-                  .add('E: VN settings still shown while view_mode=paginated');
+              failures.add(
+                'E: VN settings still shown while view_mode=paginated',
+              );
             }
             await _closeSettingsPage(tester);
 

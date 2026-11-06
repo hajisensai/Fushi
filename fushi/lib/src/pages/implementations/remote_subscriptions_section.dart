@@ -11,7 +11,13 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart'
+    show isVideoSubscriptionBtSiteMissingError;
 
 class RemoteSubscriptionsSection extends ConsumerStatefulWidget {
   const RemoteSubscriptionsSection({super.key});
@@ -44,10 +50,8 @@ class _RemoteSubscriptionsSectionState
 
   Future<void> _probe() async {
     final AppModel appModel = ref.read(appProvider);
-    final InterconnectSubscriptionClient client =
-        _client ??= InterconnectSubscriptionClient(
-      repo: SyncRepository(appModel.database),
-    );
+    final InterconnectSubscriptionClient client = _client ??=
+        InterconnectSubscriptionClient(repo: SyncRepository(appModel.database));
     final List<HostSubscriptionTarget> targets = await client.probeAll();
     if (!mounted) return;
     setState(() => _targets = targets);
@@ -87,7 +91,13 @@ class _RemoteSubscriptionsSectionState
     } on HostSubscriptionException catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        FushiSnackBar(content: Text(error.detail ?? error.code)),
+        FushiSnackBar(
+          content: Text(
+            error.reason == 'disabled'
+                ? t.download_subscription_disabled_enable_first
+                : error.detail ?? error.code,
+          ),
+        ),
       );
     } finally {
       if (mounted) setState(() => _busy.remove(sub.subscriptionId));
@@ -164,7 +174,12 @@ class _RemoteSubscriptionsSectionState
                     sub.resourceProvider,
                     sub.mode,
                     if (counts.isNotEmpty) counts,
-                    if (sub.lastError != null) sub.lastError!,
+                    // 对端因没有 BT 站暂停：显示本地化提示而不是引擎标记。不给
+                    // 跳设置入口——要加站点的是那台 host，不是本机。
+                    if (isVideoSubscriptionBtSiteMissingError(sub.lastError))
+                      t.bt_site_missing_status
+                    else if (sub.lastError != null)
+                      sub.lastError!,
                   ].join(' · '),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -179,44 +194,48 @@ class _RemoteSubscriptionsSectionState
           ),
           FushiIconButtonControl(
             key: ValueKey<String>(
-                'remote-subscription-check-${sub.subscriptionId}'),
+              'remote-subscription-check-${sub.subscriptionId}',
+            ),
             tooltip: t.download_subscription_check_all,
-            onPressed: busy
+            // host 拒绝检查已停用的订阅（409 disabled），与本地卡片一致：停用时不给入口。
+            onPressed: busy || !sub.enabled
                 ? null
                 : () => _action(
-                      target,
-                      sub,
-                      (InterconnectSubscriptionClient c) =>
-                          c.checkNow(target, sub.subscriptionId),
-                    ),
+                    target,
+                    sub,
+                    (InterconnectSubscriptionClient c) =>
+                        c.checkNow(target, sub.subscriptionId),
+                  ),
             icon: const FushiIcon(Icons.refresh, size: 18),
           ),
           FushiIconButtonControl(
             key: ValueKey<String>(
-                'remote-subscription-delete-${sub.subscriptionId}'),
+              'remote-subscription-delete-${sub.subscriptionId}',
+            ),
             tooltip: t.download_subscription_delete,
             onPressed: busy
                 ? null
                 : () => _action(
-                      target,
-                      sub,
-                      (InterconnectSubscriptionClient c) =>
-                          c.delete(target, sub.subscriptionId),
-                    ),
+                    target,
+                    sub,
+                    (InterconnectSubscriptionClient c) =>
+                        c.delete(target, sub.subscriptionId),
+                  ),
             icon: const FushiIcon(Icons.delete_outline, size: 18),
           ),
           FushiSwitch.adaptive(
             key: ValueKey<String>(
-                'remote-subscription-toggle-${sub.subscriptionId}'),
+              'remote-subscription-toggle-${sub.subscriptionId}',
+            ),
             value: sub.enabled,
             onChanged: busy
                 ? null
                 : (bool value) => _action(
-                      target,
-                      sub,
-                      (InterconnectSubscriptionClient c) =>
-                          c.setEnabled(target, sub.subscriptionId, value),
-                    ),
+                    target,
+                    sub,
+                    (InterconnectSubscriptionClient c) =>
+                        c.setEnabled(target, sub.subscriptionId, value),
+                  ),
           ),
         ],
       ),

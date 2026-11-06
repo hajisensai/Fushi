@@ -1,13 +1,12 @@
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-1165：getOrCreateTagByName 是跨设备按名重建标签映射的核心原语。
 /// 契约：命中同名返回既有 id（幂等，不建重复行）；未命中新建并返回 id。
 void main() {
   Future<FushiDatabase> openDb() async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     return db;
   }
@@ -66,8 +65,9 @@ void main() {
       final int a = await db.getOrCreateTagByName('A');
       final int b = await db.getOrCreateTagByName('B');
       expect(a, isNot(b));
-      final Set<String> names =
-          (await db.getAllTags()).map((BookTagRow t) => t.name).toSet();
+      final Set<String> names = (await db.getAllTags())
+          .map((BookTagRow t) => t.name)
+          .toSet();
       expect(names, <String>{'A', 'B'});
     });
   });

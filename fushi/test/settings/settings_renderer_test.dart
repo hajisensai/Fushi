@@ -7,7 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -17,10 +17,15 @@ import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_home_page.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -417,15 +422,18 @@ void main() {
     expect(find.byIcon(Icons.tune_outlined), findsNothing);
     expect(find.byIcon(Icons.settings_suggest_outlined), findsOneWidget);
     expect(find.byIcon(Icons.toggle_on_outlined), findsNothing);
+    // BUG-4205：Cupertino 设计系统但 Apple 设计不生效时，分段不再是原生
+    // CupertinoSlidingSegmentedControl（等宽、不走 fushiSegmentWidths，最长段先
+    // 被截断），而是胶囊分段（SegmentedButton 子类）。
     expect(
       find.byWidgetPredicate(
         (Widget widget) => widget is CupertinoSlidingSegmentedControl,
       ),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       find.byWidgetPredicate((Widget widget) => widget is SegmentedButton),
-      findsNothing,
+      findsOneWidget,
     );
     expect(find.byType(CupertinoSlider), findsOneWidget);
     expect(find.text('Stepper'), findsOneWidget);
@@ -804,7 +812,7 @@ void main() {
     },
   );
 
-  testWidgets('lookup settings can edit the Yomitan API key', (
+  testWidgets('local services settings can edit the Fushi API key', (
     WidgetTester tester,
   ) async {
     final FushiDatabase db = _testDb();
@@ -820,14 +828,14 @@ void main() {
         database: db,
         appModel: appModel,
         builder: (SettingsContext settingsContext) {
-          final SettingsDestination lookup =
+          final SettingsDestination localServices =
               buildSettingsSchema(settingsContext).firstWhere(
                 (SettingsDestination destination) =>
-                    destination.id == SettingsDestinationId.lookup,
+                    destination.id == SettingsDestinationId.localServices,
               );
           return MaterialSettingsRenderer().buildDetailPage(
             settingsContext: settingsContext,
-            destination: lookup,
+            destination: localServices,
           );
         },
       ),
@@ -894,8 +902,12 @@ void main() {
     // 行内带实时百分比读数（与有声书音量行同款）；row.title 保持裸标题作身份。
     // MD3 重设计后读数常驻在滑条右侧读数槽，不再拼进标题。
     expect(find.text(t.lookup_audio_volume), findsOneWidget);
-    expect(find.text('100%'), findsOneWidget);
     expect(sliderFinder(), findsOneWidget);
+    // 读数限定在音量行内：同页的「查词弹窗缩放」滑条默认读数也是 100%。
+    expect(
+      find.descendant(of: sliderFinder(), matching: find.text('100%')),
+      findsOneWidget,
+    );
     AdaptiveSettingsSliderRow row = tester.widget<AdaptiveSettingsSliderRow>(
       sliderFinder(),
     );

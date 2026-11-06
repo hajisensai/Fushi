@@ -49,14 +49,16 @@ void main() {
         config: const VideoSourceScrapeGlobalConfig(),
       ),
     );
-    sourceId = await db.insertMediaSource(MediaSourcesCompanion(
-      label: const Value('fushi_server downloads'),
-      mediaKind: const Value('video'),
-      transport: const Value('local'),
-      rootPath: Value(Directory.systemTemp.path),
-      recursive: const Value(true),
-      createdAt: Value(DateTime.now().millisecondsSinceEpoch),
-    ));
+    sourceId = await db.insertMediaSource(
+      MediaSourcesCompanion(
+        label: const Value('fushi_server downloads'),
+        mediaKind: const Value('video'),
+        transport: const Value('local'),
+        rootPath: Value(Directory.systemTemp.path),
+        recursive: const Value(true),
+        createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
     // 画质 / 字幕语言已有默认：对话不再追问，一句话直接走到「就这个？」。
     prefs = _MemoryPrefs(<String, Object?>{
       kAiVideoDownloadQualityPref: '1080p',
@@ -70,60 +72,80 @@ void main() {
     await db.close();
   });
 
-  ServerConfig config(ServerAiConfig? aiConfig) =>
-      ServerConfig.defaults(dataDir: Directory.systemTemp.path).copyWith(ai: aiConfig);
+  ServerConfig config(ServerAiConfig? aiConfig) => ServerConfig.defaults(
+    dataDir: Directory.systemTemp.path,
+  ).copyWith(ai: aiConfig);
 
   ServerAiConfig fakeAi({String? apiKey = 'sk-test'}) => ServerAiConfig(
-        preset: 'custom',
-        baseUrl: ai.baseUrl,
-        model: 'fake-model',
-        apiKey: apiKey,
-        webKnowledge: false,
-      );
+    preset: 'custom',
+    baseUrl: ai.baseUrl,
+    model: 'fake-model',
+    apiKey: apiKey,
+    webKnowledge: false,
+  );
 
-  VideoAcquisitionAssistantHost host(ServerConfig Function() cfg, {List<String>? discoveryLocales}) =>
-      createServerAssistantHostWith(
-        config: cfg,
-        prefs: prefs,
-        db: db,
-        downloads: _FakeDownloads(pipeline, registry, db, sourceId),
-        discovery: (String locale) {
-          discoveryLocales?.add(locale);
-          return (
-            search: (VideoDiscoveryRequest request) async =>
-                ProviderBatchResult<VideoDiscoveryPage>.success(<VideoDiscoveryPage>[
-                  VideoDiscoveryPage(items: <VideoDiscoveryItem>[_finishedShow()], page: 1, hasMore: false),
-                ]),
-            service: null,
-            release: () {},
-          );
-        },
+  VideoAcquisitionAssistantHost host(
+    ServerConfig Function() cfg, {
+    List<String>? discoveryLocales,
+  }) => createServerAssistantHostWith(
+    config: cfg,
+    prefs: prefs,
+    db: db,
+    downloads: _FakeDownloads(pipeline, registry, db, sourceId),
+    discovery: (String locale) {
+      discoveryLocales?.add(locale);
+      return (
+        search: (VideoDiscoveryRequest request) async =>
+            ProviderBatchResult<VideoDiscoveryPage>.success(
+              <VideoDiscoveryPage>[
+                VideoDiscoveryPage(
+                  items: <VideoDiscoveryItem>[_finishedShow()],
+                  page: 1,
+                  hasMore: false,
+                ),
+              ],
+            ),
+        service: null,
+        release: () {},
       );
+    },
+  );
 
   test('没配 ai 段 / 只配了一半 → no_provider，开会话被拒，AI 端点零请求', () async {
-    for (final ServerAiConfig? aiConfig in <ServerAiConfig?>[null, fakeAi(apiKey: null)]) {
-      final VideoAcquisitionAssistantHost provider = host(() => config(aiConfig));
+    for (final ServerAiConfig? aiConfig in <ServerAiConfig?>[
+      null,
+      fakeAi(apiKey: null),
+    ]) {
+      final VideoAcquisitionAssistantHost provider = host(
+        () => config(aiConfig),
+      );
       final Map<String, Object?> cap = await provider.capability();
       expect(cap['supported'], isFalse, reason: '$aiConfig');
       expect(cap['reason'], kHostAssistantReasonNoProvider);
       expect(cap['features'], isEmpty);
       await expectLater(
         provider.open(kHostAssistantFeatureVideoAcquire, locale: 'zh-CN'),
-        throwsA(isA<HostAssistantUnavailable>()
-            .having((HostAssistantUnavailable e) => e.reason, 'reason', kHostAssistantReasonNoProvider)),
+        throwsA(
+          isA<HostAssistantUnavailable>().having(
+            (HostAssistantUnavailable e) => e.reason,
+            'reason',
+            kHostAssistantReasonNoProvider,
+          ),
+        ),
       );
     }
     expect(ai.requests, isEmpty, reason: '所有者规则：未指派提供商不发任何 AI 请求');
   });
 
   test('下载管线没起来 → not_ready（AI 配好了也不开会话）', () async {
-    final VideoAcquisitionAssistantHost provider = createServerAssistantHostWith(
-      config: () => config(fakeAi()),
-      prefs: prefs,
-      db: db,
-      downloads: _FakeDownloads(null, null, db, null),
-      discovery: (_) => throw StateError('must not open discovery'),
-    );
+    final VideoAcquisitionAssistantHost provider =
+        createServerAssistantHostWith(
+          config: () => config(fakeAi()),
+          prefs: prefs,
+          db: db,
+          downloads: _FakeDownloads(null, null, db, null),
+          discovery: (_) => throw StateError('must not open discovery'),
+        );
     final Map<String, Object?> cap = await provider.capability();
     expect(cap['reason'], kHostAssistantReasonNotReady);
     expect(ai.requests, isEmpty);
@@ -139,34 +161,60 @@ void main() {
     expect(cap['supported'], isTrue);
     expect(cap['features'], <String>[kHostAssistantFeatureVideoAcquire]);
 
-    final Map<String, Object?> opened = await sessions.open(kHostAssistantFeatureVideoAcquire, locale: 'ja-JP');
+    final Map<String, Object?> opened = await sessions.open(
+      kHostAssistantFeatureVideoAcquire,
+      locale: 'ja-JP',
+    );
     final String id = opened['id']! as String;
     expect(discoveryLocales, <String>['ja-JP'], reason: '发现 / AI 提示词按手机的语言');
 
     await sessions.act(id, <String, Object?>{'type': 'text', 'text': '下 Show'});
-    final Map<String, Object?> asked = await _viewWhere(sessions, id, (Map<String, Object?> v) => v['stage'] == 'awaitingResourceConfirm');
+    final Map<String, Object?> asked = await _viewWhere(
+      sessions,
+      id,
+      (Map<String, Object?> v) => v['stage'] == 'awaitingResourceConfirm',
+    );
     expect(ai.requests, hasLength(1), reason: '一句话交给的是服务端配置的 AI');
     expect(ai.requests.single, contains('下 Show'));
     expect(ai.authorizations.single, 'Bearer sk-test');
     expect((asked['question']! as Map<String, Object?>)['slot'], 'resource');
 
     await sessions.act(id, <String, Object?>{'type': 'confirm'});
-    await _viewWhere(sessions, id, (Map<String, Object?> v) => v['stage'] == 'done');
-    final List<VideoDownloadJobRow> jobs = await db.select(db.videoDownloadJobs).get();
+    await _viewWhere(
+      sessions,
+      id,
+      (Map<String, Object?> v) => v['stage'] == 'done',
+    );
+    final List<VideoDownloadJobRow> jobs = await db
+        .select(db.videoDownloadJobs)
+        .get();
     expect(jobs, hasLength(3), reason: '三集都入了服务端的管线');
-    expect(jobs.map((VideoDownloadJobRow j) => j.targetSourceId).toSet(), <int>{sourceId});
-    expect(jobs.map((VideoDownloadJobRow j) => j.title).toSet(), <String>{'Show'});
-    expect(prefs.values[kServerSeriesSubtitleLanguagesPref], contains('ja'), reason: '每系列字幕语言记忆写进服务端偏好');
+    expect(jobs.map((VideoDownloadJobRow j) => j.targetSourceId).toSet(), <int>{
+      sourceId,
+    });
+    expect(jobs.map((VideoDownloadJobRow j) => j.title).toSet(), <String>{
+      'Show',
+    });
+    expect(
+      prefs.values[kServerSeriesSubtitleLanguagesPref],
+      contains('ja'),
+      reason: '每系列字幕语言记忆写进服务端偏好',
+    );
   });
 
   test('ai 段 yaml 往返：API key 写回配置文件、admin 形状不回显', () {
-    final ServerConfig original = config(const ServerAiConfig(
-      preset: 'openai',
-      model: 'gpt-x',
-      apiKey: 'sk-secret',
-      webKnowledge: false,
-    ));
-    final ServerConfig parsed = ServerConfig.parse(original.toYaml(), configDir: Directory.systemTemp.path);
+    final ServerConfig original = config(
+      const ServerAiConfig(
+        preset: 'openai',
+        model: 'gpt-x',
+        apiKey: 'sk-secret',
+        webKnowledge: false,
+      ),
+    );
+    final ServerConfig parsed = ServerConfig.parse(
+      original.toYaml(),
+      configDir: Directory.systemTemp.path,
+    );
     final ServerAiConfig back = parsed.ai!;
     expect(back.preset, 'openai');
     expect(back.model, 'gpt-x');
@@ -178,7 +226,11 @@ void main() {
     final String admin = jsonEncode(back.toAdminJson());
     expect(admin, isNot(contains('sk-secret')));
     expect(back.toAdminJson()['apiKeySet'], isTrue);
-    expect(ServerConfig.parse('port: 1\n', configDir: '.').ai, isNull, reason: '没有 ai 段 = 未配置');
+    expect(
+      ServerConfig.parse('port: 1\n', configDir: '.').ai,
+      isNull,
+      reason: '没有 ai 段 = 未配置',
+    );
   });
 }
 
@@ -193,7 +245,11 @@ Future<Map<String, Object?>> _viewWhere(
     final Map<String, Object?> view = envelope['view']! as Map<String, Object?>;
     if (test(view)) return view;
     if (DateTime.now().isAfter(deadline)) fail('view never matched: $view');
-    await sessions.read(id, after: envelope['revision']! as int, wait: const Duration(seconds: 1));
+    await sessions.read(
+      id,
+      after: envelope['revision']! as int,
+      wait: const Duration(seconds: 1),
+    );
   }
 }
 
@@ -208,7 +264,9 @@ class _FakeAiEndpoint {
   String get baseUrl => 'http://127.0.0.1:${_server.port}/v1';
 
   static Future<_FakeAiEndpoint> start() async {
-    final _FakeAiEndpoint endpoint = _FakeAiEndpoint._(await HttpServer.bind(InternetAddress.loopbackIPv4, 0));
+    final _FakeAiEndpoint endpoint = _FakeAiEndpoint._(
+      await HttpServer.bind(InternetAddress.loopbackIPv4, 0),
+    );
     endpoint._server.listen(endpoint._handle);
     return endpoint;
   }
@@ -219,13 +277,18 @@ class _FakeAiEndpoint {
     const String intent = '{"intent": "provide", "workQueries": ["Show"]}';
     request.response
       ..headers.contentType = ContentType.json
-      ..write(jsonEncode(<String, Object?>{
-        'choices': <Object?>[
-          <String, Object?>{
-            'message': <String, Object?>{'role': 'assistant', 'content': intent},
-          },
-        ],
-      }));
+      ..write(
+        jsonEncode(<String, Object?>{
+          'choices': <Object?>[
+            <String, Object?>{
+              'message': <String, Object?>{
+                'role': 'assistant',
+                'content': intent,
+              },
+            },
+          ],
+        }),
+      );
     await request.response.close();
   }
 
@@ -243,12 +306,18 @@ class _FakeDownloads implements ServerAssistantDownloads {
   final int? _sourceId;
 
   @override
-  Future<MediaSourceRow?> downloadSource() async => _sourceId == null ? null : _db.getMediaSourceById(_sourceId);
+  Future<MediaSourceRow?> downloadSource() async =>
+      _sourceId == null ? null : _db.getMediaSourceById(_sourceId);
 
   @override
-  VideoDownloadBackendTarget backendTarget() => const VideoDownloadBackendTarget(
+  VideoDownloadBackendTarget backendTarget() =>
+      const VideoDownloadBackendTarget(
         category: 'fushi',
-        identity: VideoDownloadBackendIdentity(kind: 'embedded', profileId: 'test', fingerprint: 'fp-test'),
+        identity: VideoDownloadBackendIdentity(
+          kind: 'embedded',
+          profileId: 'test',
+          fingerprint: 'fp-test',
+        ),
       );
 
   @override
@@ -261,7 +330,8 @@ class _MemoryPrefs implements PrefStore {
   final Map<String, Object?> values;
 
   @override
-  dynamic getPref(String key, {dynamic defaultValue}) => values[key] ?? defaultValue;
+  dynamic getPref(String key, {dynamic defaultValue}) =>
+      values[key] ?? defaultValue;
 
   @override
   Future<void> setPref(String key, dynamic value) async => values[key] = value;
@@ -273,12 +343,17 @@ class _FakeResources implements VideoResourceProvider {
   @override
   int get priority => 100;
   @override
-  Set<VideoDiscoveryCategory> get categories => VideoDiscoveryCategory.values.toSet();
+  Set<VideoDiscoveryCategory> get categories =>
+      VideoDiscoveryCategory.values.toSet();
   @override
-  Future<ProviderBatchResult<VideoResourceCandidate>> search(VideoResourceSearchRequest request) async =>
-      ProviderBatchResult<VideoResourceCandidate>.success(<VideoResourceCandidate>[_Candidate(1), _Candidate(2), _Candidate(3)]);
+  Future<ProviderBatchResult<VideoResourceCandidate>> search(
+    VideoResourceSearchRequest request,
+  ) async => ProviderBatchResult<VideoResourceCandidate>.success(
+    <VideoResourceCandidate>[_Candidate(1), _Candidate(2), _Candidate(3)],
+  );
   @override
-  Future<TorrentAddPayload> resolve(VideoResourceCandidate candidate) => throw UnimplementedError();
+  Future<TorrentAddPayload> resolve(VideoResourceCandidate candidate) =>
+      throw UnimplementedError();
   @override
   void close() {}
 }
@@ -289,7 +364,9 @@ VideoDiscoveryItem _finishedShow() {
     kind: VideoMetadataMediaKind.tv,
     title: 'Show',
     status: 'Finished Airing',
-    ids: const <VideoMetadataId>[VideoMetadataId(type: 'mal', value: '1', isDefault: true)],
+    ids: const <VideoMetadataId>[
+      VideoMetadataId(type: 'mal', value: '1', isDefault: true),
+    ],
   );
   return VideoDiscoveryItem(
     reference: VideoMediaReference(
@@ -306,17 +383,17 @@ VideoDiscoveryItem _finishedShow() {
 
 class _Candidate extends VideoResourceCandidate {
   _Candidate(int episode)
-      : super(
-          providerId: 'nyaa',
-          providerInstanceId: 'nyaa',
-          remoteId: 'r$episode',
-          title: '[Group] Show - ${episode.toString().padLeft(2, '0')} (1080p)',
-          providerPriority: 100,
-          releaseGroup: 'Group',
-          resolution: '1080p',
-          trusted: true,
-          seeders: 10,
-          infoHash: '${'a' * 39}$episode',
-          magnetUri: 'magnet:?xt=urn:btih:${'a' * 39}$episode',
-        );
+    : super(
+        providerId: 'nyaa',
+        providerInstanceId: 'nyaa',
+        remoteId: 'r$episode',
+        title: '[Group] Show - ${episode.toString().padLeft(2, '0')} (1080p)',
+        providerPriority: 100,
+        releaseGroup: 'Group',
+        resolution: '1080p',
+        trusted: true,
+        seeders: 10,
+        infoHash: '${'a' * 39}$episode',
+        magnetUri: 'magnet:?xt=urn:btih:${'a' * 39}$episode',
+      );
 }

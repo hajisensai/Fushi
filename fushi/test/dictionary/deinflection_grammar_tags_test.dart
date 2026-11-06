@@ -19,20 +19,20 @@ import '../helpers/source_guard.dart';
 /// 这组测试锁住修好之后的语义，外加一条源码守卫防止那四份拷贝重新长回来。
 void main() {
   FushiTermResult term() => FushiTermResult(
-        expression: '当たる',
-        reading: 'あたる',
-        rules: '',
-        glossaries: [
-          FushiGlossaryEntry(
-            dictName: 'JMdict',
-            glossary: jsonEncode(['to hit']),
-            definitionTags: '',
-            termTags: '',
-          ),
-        ],
-        frequencies: [],
-        pitches: [],
-      );
+    expression: '当たる',
+    reading: 'あたる',
+    rules: '',
+    glossaries: [
+      FushiGlossaryEntry(
+        dictName: 'JMdict',
+        glossary: jsonEncode(['to hit']),
+        definitionTags: '',
+        termTags: '',
+      ),
+    ],
+    frequencies: [],
+    pitches: [],
+  );
 
   // 引擎压栈顺序 = 剥离顺序：`当たっていた` 先剥最外层的 -た，再剥 -いる，
   // 最后剥 -て。所以 trace 是 [-た, -いる, -て]。
@@ -46,14 +46,13 @@ void main() {
     required String matched,
     required String deinflected,
     List<FushiTransformGroup> trace = const [],
-  }) =>
-      FushiLookupResult(
-        matched: matched,
-        deinflected: deinflected,
-        trace: trace,
-        preprocessorSteps: 0,
-        term: term(),
-      );
+  }) => FushiLookupResult(
+    matched: matched,
+    deinflected: deinflected,
+    trace: trace,
+    preprocessorSteps: 0,
+    term: term(),
+  );
 
   group('buildDeinflectionTags', () {
     test('trace 反转成接续顺序，语法说明逐条带上', () {
@@ -130,11 +129,7 @@ void main() {
       // 走 extra 的两条路径（原生弹窗、buildLookupEntriesJson）此前只能看到
       // matched/deinflected，语法说明就是断在这里的。
       final String extra = buildLookupEntryExtra(
-        lookup(
-          matched: '当たっていた',
-          deinflected: '当たる',
-          trace: ateiruTrace,
-        ),
+        lookup(matched: '当たっていた', deinflected: '当たる', trace: ateiruTrace),
         term().glossaries.single,
       );
 
@@ -157,9 +152,10 @@ void main() {
 
     test('老 extra 且 matched == deinflected → 空', () {
       expect(
-        deinflectionTagsFromExtra(
-          <String, dynamic>{'matched': '当たる', 'deinflected': '当たる'},
-        ),
+        deinflectionTagsFromExtra(<String, dynamic>{
+          'matched': '当たる',
+          'deinflected': '当たる',
+        }),
         isEmpty,
       );
     });
@@ -167,17 +163,21 @@ void main() {
 
   group('两条弹窗路径都送出真实变形链', () {
     test('buildPopupJsonFromLookup（主路径）', () {
-      final List decoded = jsonDecode(buildPopupJsonFromLookup(
-        results: [
-          lookup(
-            matched: '当たっていた',
-            deinflected: '当たる',
-            trace: ateiruTrace,
-          )
-        ],
-        maximumTerms: 100,
-        hiddenDictionaries: const <String>{},
-      )) as List;
+      final List decoded =
+          jsonDecode(
+                buildPopupJsonFromLookup(
+                  results: [
+                    lookup(
+                      matched: '当たっていた',
+                      deinflected: '当たる',
+                      trace: ateiruTrace,
+                    ),
+                  ],
+                  maximumTerms: 100,
+                  hiddenDictionaries: const <String>{},
+                ),
+              )
+              as List;
 
       expect((decoded.single as Map<String, dynamic>)['deinflectionTrace'], [
         {'name': '-て', 'description': 'て-form.'},
@@ -188,28 +188,30 @@ void main() {
 
     test('buildLookupEntriesJson（extra 路径）与主路径逐字段一致', () {
       final List<FushiLookupResult> results = [
-        lookup(
-          matched: '当たっていた',
-          deinflected: '当たる',
-          trace: ateiruTrace,
-        )
+        lookup(matched: '当たっていた', deinflected: '当たる', trace: ateiruTrace),
       ];
 
-      final List viaLookup = jsonDecode(buildPopupJsonFromLookup(
-        results: results,
-        maximumTerms: 100,
-        hiddenDictionaries: const <String>{},
-      )) as List;
+      final List viaLookup =
+          jsonDecode(
+                buildPopupJsonFromLookup(
+                  results: results,
+                  maximumTerms: 100,
+                  hiddenDictionaries: const <String>{},
+                ),
+              )
+              as List;
 
-      final List viaExtra = jsonDecode(
-        DictionaryPopupWebViewState.buildLookupEntriesJson(
-          buildResultFromLookup(
-            searchTerm: '当たっていた',
-            results: results,
-            maximumTerms: 100,
-          ),
-        ),
-      ) as List;
+      final List viaExtra =
+          jsonDecode(
+                DictionaryPopupWebViewState.buildLookupEntriesJson(
+                  buildResultFromLookup(
+                    searchTerm: '当たっていた',
+                    results: results,
+                    maximumTerms: 100,
+                  ),
+                ),
+              )
+              as List;
 
       expect(
         (viaExtra.single as Map<String, dynamic>)['deinflectionTrace'],
@@ -229,18 +231,33 @@ void main() {
       // 断言字面量（守卫变异测试用，勿删）：空格 + U+2192 + 空格
       const String needle = ' → ';
 
-      final String languagePath = p.join(root, 'packages', 'fushi_dictionary',
-          'lib', 'src', 'language', 'language.dart');
+      final String languagePath = p.join(
+        root,
+        'packages',
+        'fushi_dictionary',
+        'lib',
+        'src',
+        'language',
+        'language.dart',
+      );
       final String languageSrc = maskCommentsAndScriptLines(
         File(languagePath).readAsStringSync(),
       );
 
-      final String? body =
-          topLevelFunctionBody(languageSrc, 'buildDeinflectionTags');
-      expect(body, isNotNull,
-          reason: 'buildDeinflectionTags 必须是 language.dart 的顶层函数');
-      expect(body!.contains(needle), isTrue,
-          reason: '回落分支必须留在 buildDeinflectionTags 内（不能删）');
+      final String? body = topLevelFunctionBody(
+        languageSrc,
+        'buildDeinflectionTags',
+      );
+      expect(
+        body,
+        isNotNull,
+        reason: 'buildDeinflectionTags 必须是 language.dart 的顶层函数',
+      );
+      expect(
+        body!.contains(needle),
+        isTrue,
+        reason: '回落分支必须留在 buildDeinflectionTags 内（不能删）',
+      );
 
       // 整个 language.dart 里该字面量只此一处。
       expect(
@@ -251,17 +268,36 @@ void main() {
 
       // 三个消费点一处都不许拼。
       final List<String> consumers = [
-        p.join(root, 'fushi', 'lib', 'src', 'pages', 'implementations',
-            'dictionary_popup_webview.dart'),
-        p.join(root, 'fushi', 'lib', 'src', 'pages', 'implementations',
-            'dictionary_popup_native.dart'),
+        p.join(
+          root,
+          'fushi',
+          'lib',
+          'src',
+          'pages',
+          'implementations',
+          'dictionary_popup_webview.dart',
+        ),
+        p.join(
+          root,
+          'fushi',
+          'lib',
+          'src',
+          'pages',
+          'implementations',
+          'dictionary_popup_native.dart',
+        ),
       ];
       for (final String path in consumers) {
-        final String src =
-            maskCommentsAndScriptLines(File(path).readAsStringSync());
-        expect(src.contains(needle), isFalse,
-            reason: '${p.basename(path)} 必须走 buildDeinflectionTags，'
-                '不能自己拼变形标签（自己拼出来的 description 恒为空串）');
+        final String src = maskCommentsAndScriptLines(
+          File(path).readAsStringSync(),
+        );
+        expect(
+          src.contains(needle),
+          isFalse,
+          reason:
+              '${p.basename(path)} 必须走 buildDeinflectionTags，'
+              '不能自己拼变形标签（自己拼出来的 description 恒为空串）',
+        );
       }
     });
 
@@ -270,19 +306,26 @@ void main() {
       const String arrow = r'\xe2\x86\x92';
 
       final String path = p.join(
-          root, 'native', 'fushidicts', 'fushidicts_src', 'popup_json.cpp');
+        root,
+        'native',
+        'fushidicts',
+        'fushidicts_src',
+        'popup_json.cpp',
+      );
       final String src = File(path).readAsStringSync();
 
       expect(
         arrow.allMatches(src).length,
         1,
-        reason: 'popup_json.cpp 里「→」只允许出现在 write_deinflection_tags 的'
+        reason:
+            'popup_json.cpp 里「→」只允许出现在 write_deinflection_tags 的'
             '回落分支——多一处就说明有人又在别处现编变形标签了',
       );
       expect(
         src.contains('write_deinflection_tags(os, gd.matched, gd.deinflected'),
         isTrue,
-        reason: 'deinflectionTrace 必须由 write_deinflection_tags 写出，'
+        reason:
+            'deinflectionTrace 必须由 write_deinflection_tags 写出，'
             '它才是与 Dart 侧 buildDeinflectionTags 对齐的那一份',
       );
       expect(
@@ -297,8 +340,9 @@ void main() {
 
 String _repoRoot() {
   Directory dir = Directory.current;
-  while (!File(p.join(dir.path, 'native', 'fushidicts', 'CMakeLists.txt'))
-      .existsSync()) {
+  while (!File(
+    p.join(dir.path, 'native', 'fushidicts', 'CMakeLists.txt'),
+  ).existsSync()) {
     final Directory parent = dir.parent;
     if (parent.path == dir.path) {
       fail('could not locate repo root from ${Directory.current.path}');

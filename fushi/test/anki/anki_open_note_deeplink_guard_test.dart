@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-896 守卫：AnkiDroid「在 Anki 中打开这张卡片」必须走 Card Browser 深链，
 /// 不能再用永远无 activity 处理的 note ContentProvider URI 的 ACTION_VIEW。
@@ -35,16 +35,49 @@ void main() {
       expect(
         openNote.contains('Note.CONTENT_URI'),
         isFalse,
-        reason: 'the note content URI has no activity to VIEW it — '
+        reason:
+            'the note content URI has no activity to VIEW it — '
             'resolveActivity would always return null',
       );
     });
 
-    test('still guards with resolveActivity so old AnkiDroid degrades to false',
-        () {
-      expect(openNote.contains('resolveActivity'), isTrue);
-      expect(openNote.contains('return false'), isTrue);
-      expect(openNote.contains('startActivity'), isTrue);
+    // 反馈 6lORfLyhXd（10b62bf1e2）改了降级判据：`resolveActivity` 只是受包可见性
+    // 与 OEM 解析策略过滤的预测，错报 null 时连试都不试就报「无法打开」；真正的
+    // 「没有 activity 处理」信号是 startActivity 抛出的 ActivityNotFoundException。
+    // 旧 AnkiDroid（没有深链别名）仍降级为 false——由 catch 分支负责。
+    test('trusts startActivity and degrades to false on '
+        'ActivityNotFoundException (old AnkiDroid)', () {
+      expect(
+        openNote.contains('resolveActivity'),
+        isFalse,
+        reason:
+            'resolveActivity is a prediction that may wrongly be null; '
+            'it must not short-circuit the launch',
+      );
+      final tryAt = openNote.indexOf('try {');
+      final startAt = openNote.indexOf('startActivity(');
+      final catchAt = openNote.indexOf('catch (ActivityNotFoundException');
+      expect(tryAt, greaterThanOrEqualTo(0));
+      expect(
+        startAt,
+        greaterThan(tryAt),
+        reason: 'startActivity must run inside the try block',
+      );
+      expect(
+        catchAt,
+        greaterThan(startAt),
+        reason: 'ActivityNotFoundException is the degrade signal',
+      );
+      expect(
+        openNote.indexOf('return false', catchAt),
+        greaterThan(catchAt),
+        reason: 'old AnkiDroid without the deep link alias must return false',
+      );
+    });
+
+    test('pins the intent to the AnkiDroid package we mine into', () {
+      expect(openNote.contains('AnkiDroidTarget.resolve'), isTrue);
+      expect(openNote.contains('setPackage('), isTrue);
     });
   });
 }

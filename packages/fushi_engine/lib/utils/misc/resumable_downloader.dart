@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:fushi_engine/sync/repr_digest.dart';
 import 'package:meta/meta.dart';
 
-typedef ResumableDownloadOpen = Future<ResumableDownloadResponse> Function(
-  Uri uri,
-  Map<String, String> headers,
-);
+typedef ResumableDownloadOpen =
+    Future<ResumableDownloadResponse> Function(
+      Uri uri,
+      Map<String, String> headers,
+    );
 
 typedef ResumableDownloadProgress = void Function(int received, int? total);
 
@@ -120,6 +122,7 @@ class ResumableDownloader {
     this.onMeta,
     this.bodyTimeout,
     this.firstByteTimeout,
+    this.verifyResponseIntegrity = false,
   });
 
   final String url;
@@ -145,6 +148,19 @@ class ResumableDownloader {
   final Duration? bodyTimeout;
   final Duration? firstByteTimeout;
 
+  /// 按**响应自己的声明**做整体校验（Sn4fYseBt4，互联包下载用）：
+  ///
+  /// - 体积：拼完的 `.part` 必须等于 `Content-Range` 总长 / `Content-Length`（206 时
+  ///   加上续传起点）。**短了**说明流在中途被干净地关掉了——保留 `.part`、抛
+  ///   [HttpException]，下次从这里续上；**长了**说明字节不属于这份表示——删 `.part`
+  ///   抛 [ResumableDownloadIntegrityException]。
+  /// - 摘要：响应带 `Repr-Digest: sha-256=…`（整份表示的摘要，200 / 206 都带）时，
+  ///   拼完后对整份 `.part` 算 SHA-256 比对；不符删 `.part` 抛完整性异常。
+  ///
+  /// 默认关：第三方服务端（OPDS / 网盘 / 模型仓库）的长度声明不一定可靠
+  /// （BUG-2649 一类），只给自家 host 打开。
+  final bool verifyResponseIntegrity;
+
   Future<File> download() async {
     final int resumeOffset = await _currentPartLength();
     return _run(resumeOffset: resumeOffset, restarted: false);
@@ -162,8 +178,10 @@ class ResumableDownloader {
     return length;
   }
 
-  Future<File> _run(
-      {required int resumeOffset, required bool restarted}) async {
+  Future<File> _run({
+    required int resumeOffset,
+    required bool restarted,
+  }) async {
     final Uri uri = Uri.parse(url);
     final bool requestedRange = resumeOffset > 0;
     final Map<String, String> headers = <String, String>{};
@@ -194,8 +212,9 @@ class ResumableDownloader {
     }
 
     if (requestedRange && response.statusCode == HttpStatus.partialContent) {
-      final int? start =
-          _contentRangeStart(response.header(HttpHeaders.contentRangeHeader));
+      final int? start = _contentRangeStart(
+        response.header(HttpHeaders.contentRangeHeader),
+      );
       if (start != resumeOffset) {
         await response.stream.drain<void>();
         await _deleteFile(partFile);
@@ -215,13 +234,15 @@ class ResumableDownloader {
     }
 
     final int? total = _responseTotalSize(response, writeOffset);
-    onMeta?.call(ResumableDownloadMetaInfo(
-      etag: response.header(HttpHeaders.etagHeader),
-      lastModified: response.header(HttpHeaders.lastModifiedHeader),
-      totalBytes: expectedSize ?? total ?? sizeHint,
-      resumeOutcome: outcome,
-      writeOffset: writeOffset,
-    ));
+    onMeta?.call(
+      ResumableDownloadMetaInfo(
+        etag: response.header(HttpHeaders.etagHeader),
+        lastModified: response.header(HttpHeaders.lastModifiedHeader),
+        totalBytes: expectedSize ?? total ?? sizeHint,
+        resumeOutcome: outcome,
+        writeOffset: writeOffset,
+      ),
+    );
 
     final int? knownTotal = expectedSize ?? total ?? sizeHint;
     await _streamToPart(
@@ -231,6 +252,12 @@ class ResumableDownloader {
     );
 
     await _validateOrThrow();
+    if (verifyResponseIntegrity) {
+      await _verifyAgainstResponse(
+        declaredTotal: total,
+        reprDigest: parseReprDigestSha256(response.header(kReprDigestHeader)),
+      );
+    }
     return _promote();
   }
 
@@ -313,6 +340,44 @@ class ResumableDownloader {
     }
   }
 
+  Future<void> _verifyAgainstResponse({
+    required int? declaredTotal,
+    required List<int>? reprDigest,
+  }) async {
+    final int length = await partFile.length();
+    if (declaredTotal != null && length < declaredTotal) {
+      // 前缀仍然有效（同一验证器下的字节），留着给下次续传。
+      throw HttpException(
+        'download truncated: got $length of $declaredTotal bytes',
+        uri: Uri.tryParse(url),
+      );
+    }
+    if (declaredTotal != null && length > declaredTotal) {
+      await _deleteFile(partFile);
+      throw ResumableDownloadIntegrityException(
+        'size mismatch: got $length want $declaredTotal',
+      );
+    }
+    if (reprDigest != null) {
+      final List<int> actual =
+          (await sha256.bind(partFile.openRead()).first).bytes;
+      if (!_bytesEqual(actual, reprDigest)) {
+        await _deleteFile(partFile);
+        throw ResumableDownloadIntegrityException(
+          'repr-digest mismatch for ${destination.path}',
+        );
+      }
+    }
+  }
+
+  static bool _bytesEqual(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
   Future<File> _promote() async {
     await destination.parent.create(recursive: true);
     if (await destination.exists()) await _deleteFile(destination);
@@ -328,8 +393,9 @@ class ResumableDownloader {
     ResumableDownloadResponse response,
     int writeOffset,
   ) {
-    final int? contentRangeTotal =
-        _contentRangeTotal(response.header(HttpHeaders.contentRangeHeader));
+    final int? contentRangeTotal = _contentRangeTotal(
+      response.header(HttpHeaders.contentRangeHeader),
+    );
     if (contentRangeTotal != null) return contentRangeTotal;
     final String? lengthText = response.header(HttpHeaders.contentLengthHeader);
     final int? contentLength = _parsePositiveInt(lengthText);

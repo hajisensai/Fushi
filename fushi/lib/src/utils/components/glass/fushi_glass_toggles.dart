@@ -9,6 +9,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_segment_widths.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
@@ -3822,23 +3823,11 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
   @override
   Widget build(BuildContext context) {
     if (!isGlassDesign(context)) {
-      // MD3 = M3 Expressive 连接式按钮组；墨水屏保留 Material 原件（主题里
-      // 那套反色填充是为墨水屏选中段可辨认专门调过的，见 theme_notifier）。
-      if (!isEinkTheme(context)) {
-        return FushiConnectedButtonGroup<T>(
-          segments: widget.segments,
-          selected: widget.selected,
-          onSelectionChanged: widget.onSelectionChanged,
-          multiSelectionEnabled: widget.multiSelectionEnabled,
-          emptySelectionAllowed: widget.emptySelectionAllowed,
-          expandedInsets: widget.expandedInsets,
-          style: widget.style,
-          showSelectedIcon: widget.showSelectedIcon,
-          selectedIcon: widget.selectedIcon,
-          direction: widget.direction,
-        );
-      }
-      return SegmentedButton<T>(
+      // MD3 与墨水屏都是 M3 Expressive 连接式按钮组：段宽走共用的
+      // [fushiSegmentWidths]（BUG-4205：墨水屏以前退回原生 SegmentedButton，
+      // 各段等宽、放不下整体缩窄，最长段先被截断）。主题 segmentedButtonTheme
+      // 里为墨水屏调的反色填充由连接式组照用，段边界由组补 outline 描边。
+      return FushiConnectedButtonGroup<T>(
         segments: widget.segments,
         selected: widget.selected,
         onSelectionChanged: widget.onSelectionChanged,
@@ -3907,6 +3896,7 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
           label: text,
           tooltip: s.tooltip,
           enabled: s.enabled,
+          contentWidth: w,
         ),
       );
     }
@@ -3956,21 +3946,40 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
   /// 退回形态（多选 / 允许空选 / 竖排 / 富文本段）：与主形态同一套液态玻璃
   /// 语言——无色透明玻璃胶囊轨，选中段是更亮的透明 pill + label 字（降低透明度
   /// 下轨道 systemFill、选中段实色高一阶底）。
+  ///
+  /// 横排段宽走 [FushiSegmentRow]（[fushiSegmentWidths]，与主形态同一套退让：
+  /// 等宽 → 按内容分宽 → 收内边距 → 只压最宽段），不再 `Expanded` 等分或按
+  /// 自然宽溢出（BUG-4205）。
   Widget _buildButtonRow(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool expanded = widget.expandedInsets != null;
+    final bool horizontal = widget.direction == Axis.horizontal;
     final List<Widget> children = <Widget>[
       for (final ButtonSegment<T> s in widget.segments)
-        _segmentButton(context, s),
+        _segmentButton(
+          context,
+          s,
+          padding: horizontal ? _rowMinPadding : _rowPadding,
+        ),
     ];
-    Widget row = Flex(
-      direction: widget.direction,
-      mainAxisSize: expanded ? MainAxisSize.max : MainAxisSize.min,
-      spacing: 2,
-      children: expanded
-          ? <Widget>[for (final Widget c in children) Expanded(child: c)]
-          : children,
-    );
+    Widget row = horizontal
+        ? FushiSegmentRow(
+            extras: List<double>.filled(
+              children.length,
+              2 * (_rowPadding - _rowMinPadding),
+            ),
+            gap: 2,
+            fill: expanded,
+            children: children,
+          )
+        : Flex(
+            direction: widget.direction,
+            mainAxisSize: expanded ? MainAxisSize.max : MainAxisSize.min,
+            spacing: 2,
+            children: expanded
+                ? <Widget>[for (final Widget c in children) Expanded(child: c)]
+                : children,
+          );
     final double trackRadius = widget.direction == Axis.horizontal ? 999 : 12;
     row = Padding(padding: const EdgeInsets.all(3), child: row);
     row = glassMaterialOf(context) == FushiGlassMaterial.off
@@ -3986,7 +3995,15 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
     return row;
   }
 
-  Widget _segmentButton(BuildContext context, ButtonSegment<T> s) {
+  /// 退回形态段的首选 / 最小左右内边距（放不下时先收到最小，见 [_buildButtonRow]）。
+  static const double _rowPadding = 12;
+  static const double _rowMinPadding = 6;
+
+  Widget _segmentButton(
+    BuildContext context,
+    ButtonSegment<T> s, {
+    required double padding,
+  }) {
     final ThemeData theme = Theme.of(context);
     final FushiAppleColors apple = appleColorsOf(context);
     final bool selected = widget.selected.contains(s.value);
@@ -4008,7 +4025,7 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: EdgeInsets.symmetric(horizontal: padding),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
@@ -4043,12 +4060,17 @@ class FushiAppleSegmentData {
     this.icon,
     this.tooltip,
     this.enabled = true,
+    this.contentWidth,
   });
 
   final String? label;
   final Widget? icon;
   final String? tooltip;
   final bool enabled;
+
+  /// 这段内容（文字 / 图标）的自然宽。全部段都给出时按 [fushiSegmentWidths]
+  /// 分宽（放不下时按内容分、不等比截断最长段）；有任一段缺省则各段等分。
+  final double? contentWidth;
 }
 
 /// Apple 设计系统的等宽分段控件（iOS / macOS 26 `UISegmentedControl` 形态）：
@@ -4109,6 +4131,32 @@ class _FushiAppleSegmentedControlState
 
   bool get _enabled => widget.onSelected != null;
 
+  /// 段内文字两侧的固定内边距（[_buildCell]）与首选额外留白：自然段宽 =
+  /// 内容 + 2×[_cellPadding] + [_cellExtra]，与 [FushiSegmentedButton] 的
+  /// 「内容 + 28」估宽一致。
+  static const double _cellPadding = 6;
+  static const double _cellExtra = 16;
+
+  /// 逻辑顺序的段宽（总和 = [inner]）。所有段都给了 contentWidth 时按
+  /// [fushiSegmentWidths] 分配（撑满），否则等分（旧行为）。
+  List<double> _segmentWidths(double inner) {
+    final List<FushiAppleSegmentData> segments = widget.segments;
+    final int count = segments.length;
+    if (count == 0) return const <double>[];
+    if (segments.any((FushiAppleSegmentData s) => s.contentWidth == null)) {
+      return List<double>.filled(count, inner / count);
+    }
+    return fushiSegmentWidths(
+      content: <double>[
+        for (final FushiAppleSegmentData s in segments)
+          s.contentWidth! + _cellPadding * 2,
+      ],
+      extra: List<double>.filled(count, _cellExtra),
+      available: inner,
+      fill: true,
+    );
+  }
+
   void _select(int index) {
     if (!_enabled || index < 0 || index >= widget.segments.length) return;
     if (!widget.segments[index].enabled) return;
@@ -4159,52 +4207,105 @@ class _FushiAppleSegmentedControlState
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final double width = constraints.maxWidth;
-          final double segmentWidth = math.max(
-            0,
-            (width - _inset * 2) / math.max(1, count),
-          );
+          final double inner = math.max(0, width - _inset * 2);
+          // 视觉顺序（RTL 已镜像）的段宽与左缘（相对轨道内沿）。
+          final List<double> logicalWidths = _segmentWidths(inner);
+          final List<double> visualWidths = rtl
+              ? logicalWidths.reversed.toList()
+              : logicalWidths;
+          final List<double> visualLefts = <double>[];
+          double cursor = 0;
+          for (final double w in visualWidths) {
+            visualLefts.add(cursor);
+            cursor += w;
+          }
           final double thumbHeight = math.max(0, widget.height - _inset * 2);
           final double radius = thumbHeight / 2;
           // 逻辑段号 ↔ 视觉位置（RTL 镜像）。
           int visualOf(int index) => rtl ? count - 1 - index : index;
+          int visualAt(double x) {
+            final double local = x - _inset;
+            for (int v = 0; v < count; v++) {
+              if (local < visualLefts[v] + visualWidths[v]) return v;
+            }
+            return math.max(0, count - 1);
+          }
+
           int logicalIndexAt(double x) {
-            final int visual = segmentWidth <= 0
-                ? 0
-                : ((x - _inset) / segmentWidth).floor().clamp(0, count - 1);
+            final int visual = visualAt(x);
             return rtl ? count - 1 - visual : visual;
           }
 
           final int selected = widget.selectedIndex;
+          final int selectedVisual = count == 0
+              ? 0
+              : visualOf(selected.clamp(0, count - 1));
+          // 拖动中滑块取它中心所在段的宽（段宽不等时跟手换宽）。
+          final double thumbWidth = count == 0
+              ? 0
+              : (_dragCenter != null
+                    ? visualWidths[visualAt(_dragCenter!)]
+                    : visualWidths[selectedVisual]);
           final double thumbLeft = _dragCenter != null
-              ? (_dragCenter! - segmentWidth / 2).clamp(
+              ? (_dragCenter! - thumbWidth / 2).clamp(
                   _inset,
-                  math.max(_inset, width - _inset - segmentWidth),
+                  math.max(_inset, width - _inset - thumbWidth),
                 )
-              : _inset + segmentWidth * visualOf(selected.clamp(0, count - 1));
-          return GestureDetector(
+              : _inset + (count == 0 ? 0 : visualLefts[selectedVisual]);
+          // 滑块横拖与外层横向滚动区抢同一个横拖手势（BUG-3631）：控件比所在
+          // 横向滚动视口还宽时（窄屏 iPhone 上的长英文分段条），只有从选中滑块
+          // 上起手的横拖才拖滑块（iOS UISegmentedControl 同语义），其余横拖
+          // 让给外层滚动——否则内层识别器先过 slop 必胜，整条分段条滚不动，
+          // 视口外的段被裁掉、点不到。控件能整条放进视口（或不在横向滚动区）
+          // 时行为不变：在控件任意位置横拖都拖滑块。
+          final ScrollableState? hostScrollable = Scrollable.maybeOf(
+            context,
+            axis: Axis.horizontal,
+          );
+          bool allowsThumbDragFrom(Offset local) {
+            if (!_segmentedControlOverflowsHorizontalScrollable(
+              hostScrollable,
+              controlWidth: width,
+            )) {
+              return true;
+            }
+            if (selected < 0 || selected >= count) return false;
+            final double left = _inset + visualLefts[visualOf(selected)];
+            return local.dx >= left &&
+                local.dx <= left + visualWidths[visualOf(selected)];
+          }
+
+          return RawGestureDetector(
             behavior: HitTestBehavior.opaque,
-            dragStartBehavior: DragStartBehavior.down,
-            onHorizontalDragStart: _enabled
-                ? (DragStartDetails d) =>
-                      setState(() => _dragCenter = d.localPosition.dx)
-                : null,
-            onHorizontalDragUpdate: _enabled
-                ? (DragUpdateDetails d) =>
-                      setState(() => _dragCenter = d.localPosition.dx)
-                : null,
-            onHorizontalDragEnd: _enabled
-                ? (DragEndDetails _) {
-                    final double? center = _dragCenter;
-                    setState(() {
-                      _dragCenter = null;
-                      _pressedIndex = null;
-                    });
-                    if (center != null) _select(logicalIndexAt(center));
-                  }
-                : null,
-            onHorizontalDragCancel: _enabled
-                ? () => setState(() => _dragCenter = null)
-                : null,
+            gestures: <Type, GestureRecognizerFactory>{
+              if (_enabled)
+                _SegmentThumbDragRecognizer:
+                    GestureRecognizerFactoryWithHandlers<
+                      _SegmentThumbDragRecognizer
+                    >(() => _SegmentThumbDragRecognizer(debugOwner: this), (
+                      _SegmentThumbDragRecognizer r,
+                    ) {
+                      r.allowStartAt = allowsThumbDragFrom;
+                      r.dragStartBehavior = DragStartBehavior.down;
+                      r.onStart = (DragStartDetails d) {
+                        setState(() => _dragCenter = d.localPosition.dx);
+                      };
+                      r.onUpdate = (DragUpdateDetails d) {
+                        setState(() => _dragCenter = d.localPosition.dx);
+                      };
+                      r.onEnd = (DragEndDetails _) {
+                        final double? center = _dragCenter;
+                        setState(() {
+                          _dragCenter = null;
+                          _pressedIndex = null;
+                        });
+                        if (center != null) _select(logicalIndexAt(center));
+                      };
+                      r.onCancel = () {
+                        setState(() => _dragCenter = null);
+                      };
+                    }),
+            },
             child: Stack(
               clipBehavior: Clip.none,
               children: <Widget>[
@@ -4218,7 +4319,7 @@ class _FushiAppleSegmentedControlState
                     curve: const Cubic(0.3, 1.18, 0.55, 1),
                     left: thumbLeft,
                     top: _inset,
-                    width: segmentWidth,
+                    width: thumbWidth,
                     height: thumbHeight,
                     child: IgnorePointer(
                       child: DecoratedBox(
@@ -4239,7 +4340,8 @@ class _FushiAppleSegmentedControlState
                     textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
                     children: <Widget>[
                       for (int i = 0; i < count; i++)
-                        Expanded(
+                        SizedBox(
+                          width: logicalWidths[i],
                           child: _buildCell(
                             context,
                             i,
@@ -4278,7 +4380,7 @@ class _FushiAppleSegmentedControlState
           : einkSafeDuration(context, const Duration(milliseconds: 160)),
       opacity: !data.enabled ? 0.38 : (pressed ? 0.5 : 1),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6),
+        padding: const EdgeInsets.symmetric(horizontal: _cellPadding),
         child: Center(child: _segmentContent(data, style)),
       ),
     );
@@ -4332,6 +4434,42 @@ class _FushiAppleSegmentedControlState
       cell = FushiTooltip(message: data.tooltip, child: cell);
     }
     return cell;
+  }
+}
+
+/// 宽 [controlWidth] 的分段控件是否放不进它最近的横向滚动视口 [scrollable]
+/// （`Scrollable.maybeOf(context, axis: Axis.horizontal)`，BUG-3631）。
+///
+/// 不在横向滚动区里、或滚动视口尺寸还没定时返回 false（按「放得下」处理，
+/// 不改变既有手势分工）。放得下的横向宿主（例如 PageView 的一页）同样返回
+/// false：那里滑块横拖照旧。
+bool _segmentedControlOverflowsHorizontalScrollable(
+  ScrollableState? scrollable, {
+  required double controlWidth,
+}) {
+  if (scrollable == null || !scrollable.mounted) return false;
+  final ScrollPosition position = scrollable.position;
+  if (!position.hasViewportDimension) return false;
+  return controlWidth > position.viewportDimension + 0.5;
+}
+
+/// [FushiAppleSegmentedControl] 的滑块横拖识别器：按下点不满足 [allowStartAt]
+/// 时不参与手势竞技，横拖交给外层滚动区（见 BUG-3631）。
+class _SegmentThumbDragRecognizer extends HorizontalDragGestureRecognizer {
+  _SegmentThumbDragRecognizer({super.debugOwner});
+
+  /// 按下点（控件局部坐标）是否允许起滑块横拖；null = 一律允许。
+  bool Function(Offset localPosition)? allowStartAt;
+
+  @override
+  bool isPointerAllowed(PointerEvent event) {
+    final bool Function(Offset)? allow = allowStartAt;
+    if (event is PointerDownEvent &&
+        allow != null &&
+        !allow(event.localPosition)) {
+      return false;
+    }
+    return super.isPointerAllowed(event);
   }
 }
 

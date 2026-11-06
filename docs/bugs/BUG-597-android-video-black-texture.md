@@ -53,3 +53,8 @@
 **范围选择：全 Android 关（而非按机型/GPU denylist 定向关）。** 理由：最简、覆盖最广（含 RMX3085/Mali-G76 类）、完全可逆（开关一拨即回 Impeller），不引入 GPU 探测的过度工程与漏网机型风险；Skia 成熟稳定，作 Android 默认是纠正正确性 bug 的务实做法。
 
 **验证：** `dart format` + `flutter test`（render_backend_service_test / impeller_default_guard_test / video_diag_logging_guard_test 全绿）+ `flutter analyze` 净 + Android `compileDebugJavaWithJavac` 编译通过。真机层面：装新包后，未动过开关的 Android 用户下次启动即 `--enable-impeller=false`（走 Skia），视频应直接出画。若某机型仍黑（`activeRenderBackend=skia` 且黑）＝更深根因（media_kit SurfaceProducer native 纹理路径 / 驱动），转独立施工。
+
+
+## 2026-10-24 后续
+
+所有设备拍板全线 Impeller、不保留 Skia 回退：`RenderBackendService` / 播放器「切 Skia 并重启」行 / MainActivity shell arg 与 `render` channel 全部删除，旧持久化（`hibiki_render` 的 `impellerDisabled`）在启动时清掉。Mali-G76/Android 11 机型若仍出现 Impeller 下外部纹理黑屏，需按根因（media_kit SurfaceProducer 纹理路径）另立 bug 修，不能再回退 Skia。

@@ -110,6 +110,20 @@ void main() {
       expect(installPowValid(id, '', bits: 10), isFalse);
     });
 
+    test('nonce 与改 Rust 之前的纯 Dart 求解逐值一致（冻结向量）', () {
+      // 2026-10-18 用删除前的 Dart 实现（逐个 nonce sha256 + 前导零判定）求出。
+      const List<(String, int, String)> vectors = <(String, int, String)>[
+        ('test-install', 18, '97403'),
+        ('test-install', 8, '148'),
+        ('abcdef0123456789abcdef0123456789', 18, '615991'),
+        ('abcdef0123456789abcdef0123456789', 8, '439'),
+      ];
+      for (final (String id, int bits, String nonce) in vectors) {
+        expect(solveInstallPow(id, bits: bits), nonce, reason: '$id/$bits');
+        expect(installPowValid(id, nonce, bits: bits), isTrue);
+      }
+    });
+
     test('后台 isolate 版本与同步版本结果一致', () async {
       const String id = '0f8fad5b-d9cb-469f-a165-70867728950e';
       expect(

@@ -6,9 +6,7 @@ import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
 
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 Future<void> _settle() =>
@@ -66,8 +64,9 @@ void main() {
       await _settle();
       repo.addMediaItem(_item(title: 'v2'));
       await _settle();
-      final items =
-          repo.mediaItems.where((m) => m.mediaIdentifier == 'id-1').toList();
+      final items = repo.mediaItems
+          .where((m) => m.mediaIdentifier == 'id-1')
+          .toList();
       expect(items.length, 1);
       expect(items.first.title, 'v2');
     });
@@ -113,14 +112,8 @@ void main() {
       repo.addMediaItem(_item(mediaIdentifier: 'a'));
       repo.addMediaItem(_item(mediaIdentifier: 'b'));
       repo.removeFromReadingList('a');
-      expect(
-        repo.mediaItems.any((m) => m.mediaIdentifier == 'a'),
-        false,
-      );
-      expect(
-        repo.mediaItems.any((m) => m.mediaIdentifier == 'b'),
-        true,
-      );
+      expect(repo.mediaItems.any((m) => m.mediaIdentifier == 'a'), false);
+      expect(repo.mediaItems.any((m) => m.mediaIdentifier == 'b'), true);
     });
 
     test('deleteMediaItemById removes by uniqueKey (v80：无自增 id)', () async {
@@ -140,28 +133,24 @@ void main() {
 
   group('media item queries', () {
     test('getMediaTypeHistory filters by mediaTypeIdentifier', () {
-      repo.addMediaItem(_item(
-        mediaIdentifier: 'a',
-        mediaTypeIdentifier: 'reader',
-      ));
-      repo.addMediaItem(_item(
-        mediaIdentifier: 'b',
-        mediaTypeIdentifier: 'player',
-      ));
+      repo.addMediaItem(
+        _item(mediaIdentifier: 'a', mediaTypeIdentifier: 'reader'),
+      );
+      repo.addMediaItem(
+        _item(mediaIdentifier: 'b', mediaTypeIdentifier: 'player'),
+      );
       final readers = repo.getMediaTypeHistory(mediaTypeKey: 'reader');
       expect(readers.length, 1);
       expect(readers.first.mediaIdentifier, 'a');
     });
 
     test('getMediaSourceHistory filters by mediaSourceIdentifier', () {
-      repo.addMediaItem(_item(
-        mediaIdentifier: 'a',
-        mediaSourceIdentifier: 'hoshi',
-      ));
-      repo.addMediaItem(_item(
-        mediaIdentifier: 'b',
-        mediaSourceIdentifier: 'local',
-      ));
+      repo.addMediaItem(
+        _item(mediaIdentifier: 'a', mediaSourceIdentifier: 'hoshi'),
+      );
+      repo.addMediaItem(
+        _item(mediaIdentifier: 'b', mediaSourceIdentifier: 'local'),
+      );
       final hoshi = repo.getMediaSourceHistory(mediaSourceKey: 'hoshi');
       expect(hoshi.length, 1);
       expect(hoshi.first.mediaIdentifier, 'a');
@@ -220,10 +209,7 @@ void main() {
       repo.addToSearchHistory(historyKey: 'dict', searchTerm: '猫');
       repo.addToSearchHistory(historyKey: 'dict', searchTerm: '犬');
       await _settle();
-      await repo.removeFromSearchHistory(
-        historyKey: 'dict',
-        searchTerm: '猫',
-      );
+      await repo.removeFromSearchHistory(historyKey: 'dict', searchTerm: '猫');
       expect(repo.getSearchHistory(historyKey: 'dict'), ['犬']);
     });
 

@@ -10,8 +10,20 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingToolbarSurface;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/cover_badge.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 作品详情页的**共享布局**（2026-10 M3E 重做）：hero（fanart / 封面模糊 + 色晕
 /// scrim 大背景、2:3 封面卡、Display 级标题 / logo、原名、元信息 chip 行、主操作
@@ -50,9 +62,8 @@ ImageProvider? collectionHeroBackdropImage({
 }) => backdrop ?? cover;
 
 /// 与 [collectionHeroBackdropImage] 配套的模糊强度。
-double collectionHeroBackdropBlur({ImageProvider? backdrop}) => backdrop != null
-    ? kCollectionHeroBackdropBlur
-    : kCollectionHeroCoverBlur;
+double collectionHeroBackdropBlur({ImageProvider? backdrop}) =>
+    backdrop != null ? kCollectionHeroBackdropBlur : kCollectionHeroCoverBlur;
 
 /// hero 上的数字 / 标签胶囊描边（发现页详情仍在用的白字胶囊）：Apple 的 hero
 /// 元信息是无描边的半透明胶囊（描边是 MD3 outlined chip 的语言），玻璃下去掉描边。
@@ -80,6 +91,7 @@ class CollectionDetailHero extends StatelessWidget {
     this.backdrop,
     this.backdropIndex = 0,
     this.cover,
+    this.coverMaterial,
     this.logo,
     this.semanticsName,
     this.originalTitle,
@@ -109,6 +121,9 @@ class CollectionDetailHero extends StatelessWidget {
 
   /// 2:3 海报（封面卡；没有 [backdrop] 时也拿它模糊垫底）。
   final ImageProvider? cover;
+
+  /// 封面卡的条目材质（与库页一致，视频调用方传光面海报）；null = 不套材质。
+  final ShelfCoverMaterial? coverMaterial;
 
   /// 标题 logo：有则替代文字大标题（Jellyfin `.detailLogo` 同款），解码失败回落文字。
   final ImageProvider? logo;
@@ -189,7 +204,7 @@ class CollectionDetailHero extends StatelessWidget {
             page,
             tokens.spacing.section,
           ),
-          child: wide ? _buildWide(context) : _buildNarrow(context),
+          child: wide ? _buildWide(context) : _buildCompact(context),
         );
         return SizedBox(
           key: const ValueKey<String>('video-work-hero-card'),
@@ -198,7 +213,7 @@ class CollectionDetailHero extends StatelessWidget {
               ? content
               : Stack(
                   children: <Widget>[
-                    Positioned.fill(child: _buildBackdrop()),
+                    Positioned.fill(child: _buildBackdrop(artBand: !wide)),
                     content,
                   ],
                 ),
@@ -208,7 +223,8 @@ class CollectionDetailHero extends StatelessWidget {
   }
 
   /// 大背景：fanart 轻模糊 / 封面重模糊垫底（key 区分两条路，测试据此断言）。
-  Widget _buildBackdrop() {
+  /// [artBand]：窄式居中 hero 才传 true（见 [MediaDetailBackdrop.artBand]）。
+  Widget _buildBackdrop({required bool artBand}) {
     final ImageProvider? backdrop = this.backdrop;
     if (backdrop != null) {
       return KeyedSubtree(
@@ -217,6 +233,7 @@ class CollectionDetailHero extends StatelessWidget {
           image: backdrop,
           imageKey: backdropIndex,
           blurSigma: kCollectionHeroBackdropBlur,
+          artBand: artBand,
         ),
       );
     }
@@ -231,20 +248,28 @@ class CollectionDetailHero extends StatelessWidget {
     );
   }
 
-  /// 2:3 封面卡（无封面 → null，不占位）。
-  Widget? _buildCoverCard(double width) {
+  /// 2:3 封面内容（不含外框；无封面 → null，不占位）。
+  Widget? _buildCoverContent() {
     final ImageProvider? cover = this.cover;
     if (cover == null) return null;
+    return SizedBox.expand(
+      key: const ValueKey<String>('collection-hero-poster'),
+      child: PortraitCoverImage(
+        image: cover,
+        errorBuilder: (BuildContext _) =>
+            const MediaDetailCoverPlaceholder(icon: FushiIcons.video),
+      ),
+    );
+  }
+
+  /// 2:3 封面卡（无封面 → null，不占位）。
+  Widget? _buildCoverCard(double width) {
+    final Widget? content = _buildCoverContent();
+    if (content == null) return null;
     return MediaDetailCoverFrame(
       width: width,
-      child: SizedBox.expand(
-        key: const ValueKey<String>('collection-hero-poster'),
-        child: PortraitCoverImage(
-          image: cover,
-          errorBuilder: (BuildContext _) =>
-              const MediaDetailCoverPlaceholder(icon: FushiIcons.video),
-        ),
-      ),
+      material: coverMaterial,
+      child: content,
     );
   }
 
@@ -263,39 +288,154 @@ class CollectionDetailHero extends StatelessWidget {
         FushiStaggeredEntrance(index: 0, child: cover),
         const SizedBox(width: 32),
         Expanded(
-          child: Align(alignment: AlignmentDirectional.bottomStart, child: info),
+          child: Align(
+            alignment: AlignmentDirectional.bottomStart,
+            child: info,
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildNarrow(BuildContext context) {
-    final Widget? cover = _buildCoverCard(168);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+  /// 窄屏单列 / 两栏左栏：与 [MediaDetailHero] 同一套紧凑排法
+  /// （[MediaDetailCompactHero]）——小封面旁放日期 / 标题 / chip，续播行与按钮组
+  /// 占满整宽，简介（折叠）/ 标签 / 人物 / 页脚垫在下面。
+  Widget _buildCompact(BuildContext context) {
+    final bool sidePane = MediaDetailLayout.isSidePane(context);
+    final String? summary = this.summary?.trim();
+    final String? continueLabel = this.continueLabel;
+    final List<Widget> footerParts = <Widget>[
+      if (summary != null && summary.isNotEmpty)
+        MediaDetailSynopsis(
+          key: const ValueKey<String>('collection-hero-summary'),
+          text: summary,
+          selectable: selectableSummary,
+        ),
+      if (tagNames.isNotEmpty) _buildTagRow(singleLine: !sidePane),
+      if (credits.isNotEmpty) CollectionHeroCreditChips(credits: credits),
+      ?footer,
+    ];
+    return MediaDetailCompactHero(
+      cover: _buildCoverContent(),
+      coverMaterial: coverMaterial,
+      heading: _buildHeading(
+        context,
+        centered: false,
+        wide: false,
+        titleStyle: MediaDetailCompactHero.titleStyleOf(context),
+        includeTags: false,
+        chipGap: 10,
+      ),
+      actions: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (continueLabel != null) ...<Widget>[
+            _buildContinueRow(context, continueLabel),
+            const SizedBox(height: 10),
+          ],
+          _buildActionBar(alignment: null),
+        ],
+      ),
+      footer: footerParts.isEmpty
+          ? null
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                for (int i = 0; i < footerParts.length; i++) ...<Widget>[
+                  if (i > 0) const SizedBox(height: 10),
+                  footerParts[i],
+                ],
+              ],
+            ),
+    );
+  }
+
+  /// 题材标签行：窄屏一行横滑（不让一长串标签把正文挤出首屏），其余换行。
+  Widget _buildTagRow({required bool singleLine, WrapAlignment? alignment}) {
+    final List<MediaDetailChip> chips = <MediaDetailChip>[
+      for (final String name in tagNames)
+        MediaDetailChip(name, tone: MediaDetailChipTone.secondary),
+    ];
+    if (!singleLine) {
+      return MediaDetailChipRow(
+        alignment: alignment ?? WrapAlignment.start,
+        chips: chips,
+      );
+    }
+    return HorizontalDragScrollable(
+      child: SingleChildScrollView(
+        key: const ValueKey<String>('collection-hero-tags'),
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: <Widget>[
+            for (int i = 0; i < chips.length; i++) ...<Widget>[
+              if (i > 0) const SizedBox(width: 6),
+              MediaDetailChipView(chip: chips[i]),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 续播行（`继续看 第 3 集  ·  集名`）。
+  Widget _buildContinueRow(BuildContext context, String label) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        if (cover != null) ...<Widget>[
-          Center(child: FushiStaggeredEntrance(index: 0, child: cover)),
-          const SizedBox(height: 20),
-        ],
-        _buildInfo(context, centered: true, wide: false),
+        FushiIcon(FushiIcons.history, size: 18, color: cs.primary),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.fushiType.labelLargeEmphasized.copyWith(
+              color: cs.onSurface,
+            ),
+          ),
+        ),
       ],
     );
   }
 
-  /// hero 文字区：日期 / logo 或标题 / 原名 / chip 行 / 标签 / 人物 / 续播 / 按钮组 /
-  /// 简介 / 页脚。缺的逐项跳过（不占位、不显示「未知」）。
-  Widget _buildInfo(
+  /// 主按钮 + 次按钮 + 「⋯」。[alignment] null = 跟随所在 hero（紧凑 hero 下主按钮
+  /// 占满剩余宽度）。
+  Widget _buildActionBar({required WrapAlignment? alignment}) {
+    return MediaDetailActionBar(
+      alignment: alignment,
+      primary: MediaDetailPrimaryButton(
+        icon: playIcon ?? FushiIcons.play,
+        label: playLabel ?? t.collection_play,
+        onPressed: onPlay,
+        buttonKey: playButtonKey,
+      ),
+      secondary: <Widget>[?secondaryAction, ...secondaryActions],
+      more: moreItems.isEmpty
+          ? null
+          : MediaDetailMoreButton(
+              key: const ValueKey<String>('collection-hero-more'),
+              items: moreItems,
+            ),
+    );
+  }
+
+  /// 日期 / logo 或标题 / 原名 / chip 行（[includeTags] 时连同标签行与人物）。
+  Widget _buildHeading(
     BuildContext context, {
     required bool centered,
     required bool wide,
+    required TextStyle titleStyle,
+    bool includeTags = true,
+    double chipGap = 14,
   }) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final FushiTypography type = context.fushiType;
     final String? airDate = this.airDate?.trim();
     final String? originalTitle = this.originalTitle?.trim();
-    final String? summary = this.summary?.trim();
     final ImageProvider? logo = this.logo;
     final TextAlign align = centered ? TextAlign.center : TextAlign.start;
     final CrossAxisAlignment cross = centered
@@ -304,12 +444,99 @@ class CollectionDetailHero extends StatelessWidget {
     final WrapAlignment wrap = centered
         ? WrapAlignment.center
         : WrapAlignment.start;
-    final Widget titleText = _buildTitleText(context, align: align, wide: wide);
+    final Widget titleText = _buildTitleText(
+      context,
+      align: align,
+      style: titleStyle,
+    );
     final List<MediaDetailChip> chips =
         this.chips ??
         <MediaDetailChip>[
           for (final String part in badgeParts) MediaDetailChip(part),
         ];
+    return Column(
+      crossAxisAlignment: cross,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        // 放送日期行（hayase 式：小字压在大标题上方）。
+        if (airDate != null && airDate.isNotEmpty) ...<Widget>[
+          Text(
+            airDate,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: align,
+            style: type.labelLargeEmphasized.tabular.copyWith(
+              color: cs.primary,
+            ),
+          ),
+          const SizedBox(height: 6),
+        ],
+        // v68：有标题 logo 时替代纯文字大标题。Semantics 保留名字——logo 是
+        // 图，读屏与测试都还能按名字找到它；logo 解码失败回落文字标题。
+        if (logo != null)
+          Semantics(
+            label: semanticsName ?? title,
+            image: true,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: wide ? 120 : 72,
+                maxWidth: 460,
+              ),
+              child: Image(
+                key: const ValueKey<String>('collection-hero-logo'),
+                image: logo,
+                fit: BoxFit.contain,
+                alignment: centered
+                    ? Alignment.bottomCenter
+                    : AlignmentDirectional.bottomStart,
+                errorBuilder: (_, _, _) => titleText,
+              ),
+            ),
+          )
+        else
+          titleText,
+        // 原名与标题相同就不重复占一行。
+        if (originalTitle != null &&
+            originalTitle.isNotEmpty &&
+            originalTitle != title) ...<Widget>[
+          const SizedBox(height: 6),
+          Text(
+            originalTitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: align,
+            style: type.titleMedium.copyWith(color: cs.onSurfaceVariant),
+          ),
+        ],
+        if (chips.isNotEmpty) ...<Widget>[
+          SizedBox(height: chipGap),
+          MediaDetailChipRow(chips: chips, alignment: wrap),
+        ],
+        if (includeTags && tagNames.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 8),
+          _buildTagRow(singleLine: false, alignment: wrap),
+        ],
+        if (includeTags && credits.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 8),
+          CollectionHeroCreditChips(credits: credits),
+        ],
+      ],
+    );
+  }
+
+  /// hero 文字区（宽式）：标题区 / 续播 / 按钮组 / 简介 / 页脚。缺的逐项跳过
+  /// （不占位、不显示「未知」）。
+  Widget _buildInfo(
+    BuildContext context, {
+    required bool centered,
+    required bool wide,
+  }) {
+    final FushiTypography type = context.fushiType;
+    final String? summary = this.summary?.trim();
+    final TextAlign align = centered ? TextAlign.center : TextAlign.start;
+    final CrossAxisAlignment cross = centered
+        ? CrossAxisAlignment.center
+        : CrossAxisAlignment.start;
     final String? continueLabel = this.continueLabel;
     return Column(
       crossAxisAlignment: cross,
@@ -317,125 +544,27 @@ class CollectionDetailHero extends StatelessWidget {
       children: <Widget>[
         FushiStaggeredEntrance(
           index: 1,
-          child: Column(
-            crossAxisAlignment: cross,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              // 放送日期行（hayase 式：小字压在大标题上方）。
-              if (airDate != null && airDate.isNotEmpty) ...<Widget>[
-                Text(
-                  airDate,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: align,
-                  style: type.labelLargeEmphasized.tabular.copyWith(
-                    color: cs.primary,
-                  ),
-                ),
-                const SizedBox(height: 6),
-              ],
-              // v68：有标题 logo 时替代纯文字大标题。Semantics 保留名字——logo 是
-              // 图，读屏与测试都还能按名字找到它；logo 解码失败回落文字标题。
-              if (logo != null)
-                Semantics(
-                  label: semanticsName ?? title,
-                  image: true,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxHeight: wide ? 120 : 88,
-                      maxWidth: 460,
-                    ),
-                    child: Image(
-                      key: const ValueKey<String>('collection-hero-logo'),
-                      image: logo,
-                      fit: BoxFit.contain,
-                      alignment: centered
-                          ? Alignment.bottomCenter
-                          : AlignmentDirectional.bottomStart,
-                      errorBuilder: (_, _, _) => titleText,
-                    ),
-                  ),
-                )
-              else
-                titleText,
-              // 原名与标题相同就不重复占一行。
-              if (originalTitle != null &&
-                  originalTitle.isNotEmpty &&
-                  originalTitle != title) ...<Widget>[
-                const SizedBox(height: 6),
-                Text(
-                  originalTitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: align,
-                  style: type.titleMedium.copyWith(color: cs.onSurfaceVariant),
-                ),
-              ],
-              if (chips.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 14),
-                MediaDetailChipRow(chips: chips, alignment: wrap),
-              ],
-              if (tagNames.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 8),
-                MediaDetailChipRow(
-                  alignment: wrap,
-                  chips: <MediaDetailChip>[
-                    for (final String name in tagNames)
-                      MediaDetailChip(
-                        name,
-                        tone: MediaDetailChipTone.secondary,
-                      ),
-                  ],
-                ),
-              ],
-              if (credits.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 8),
-                CollectionHeroCreditChips(credits: credits),
-              ],
-            ],
+          child: _buildHeading(
+            context,
+            centered: centered,
+            wide: wide,
+            titleStyle: wide
+                ? type.displaySmallEmphasized
+                : type.headlineMediumEmphasized,
           ),
         ),
         if (continueLabel != null) ...<Widget>[
           const SizedBox(height: 16),
           FushiStaggeredEntrance(
             index: 2,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                FushiIcon(FushiIcons.history, size: 18, color: cs.primary),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    continueLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: type.labelLargeEmphasized.copyWith(
-                      color: cs.onSurface,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            child: _buildContinueRow(context, continueLabel),
           ),
         ],
         const SizedBox(height: 16),
         FushiStaggeredEntrance(
           index: 2,
-          child: MediaDetailActionBar(
-            alignment: wrap,
-            primary: MediaDetailPrimaryButton(
-              icon: playIcon ?? FushiIcons.play,
-              label: playLabel ?? t.collection_play,
-              onPressed: onPlay,
-              buttonKey: playButtonKey,
-            ),
-            secondary: <Widget>[?secondaryAction, ...secondaryActions],
-            more: moreItems.isEmpty
-                ? null
-                : MediaDetailMoreButton(
-                    key: const ValueKey<String>('collection-hero-more'),
-                    items: moreItems,
-                  ),
+          child: _buildActionBar(
+            alignment: centered ? WrapAlignment.center : WrapAlignment.start,
           ),
         ),
         if ((summary != null && summary.isNotEmpty) || footer != null)
@@ -465,24 +594,21 @@ class CollectionDetailHero extends StatelessWidget {
     );
   }
 
-  /// hero 纯文字大标题（无 logo 的常态路径 / logo 解码失败回落共用）：宽屏
-  /// Display、窄屏 Headline（Emphasized）。
+  /// hero 纯文字大标题（无 logo 的常态路径 / logo 解码失败回落共用）。
   Widget _buildTitleText(
     BuildContext context, {
     required TextAlign align,
-    required bool wide,
+    required TextStyle style,
   }) {
-    final FushiTypography type = context.fushiType;
     return Text(
       title,
       maxLines: 3,
       overflow: TextOverflow.ellipsis,
       textAlign: align,
-      style: (wide ? type.displaySmallEmphasized : type.headlineMediumEmphasized)
-          .copyWith(
-            color: Theme.of(context).colorScheme.onSurface,
-            height: 1.1,
-          ),
+      style: style.copyWith(
+        color: Theme.of(context).colorScheme.onSurface,
+        height: 1.1,
+      ),
     );
   }
 }
@@ -652,7 +778,10 @@ class CollectionWorkDetailsSection extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(t.video_work_details, style: type.titleMediumEmphasized),
+                    Text(
+                      t.video_work_details,
+                      style: type.titleMediumEmphasized,
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       pending,
@@ -727,7 +856,12 @@ class CollectionWorkDetailsSection extends StatelessWidget {
 /// 「选集」一类区块标题：M3E 区块标题（titleLarge Emphasized + 计数胶囊 + 行尾
 /// 动作），只带页边距、上下间距由调用方决定。
 class CollectionSectionTitle extends StatelessWidget {
-  const CollectionSectionTitle(this.text, {this.count, this.trailing, super.key});
+  const CollectionSectionTitle(
+    this.text, {
+    this.count,
+    this.trailing,
+    super.key,
+  });
 
   final String text;
   final int? count;
@@ -883,10 +1017,7 @@ class _EpisodeCardBottomLayout extends MultiChildLayoutDelegate {
   void performLayout(Size size) {
     double statusHeight = 0;
     if (hasChild(status)) {
-      final Size s = layoutChild(
-        status,
-        BoxConstraints(maxWidth: size.width),
-      );
+      final Size s = layoutChild(status, BoxConstraints(maxWidth: size.width));
       statusHeight = s.height;
       positionChild(status, Offset(0, math.max(0, size.height - s.height)));
     }
@@ -926,6 +1057,8 @@ int collectionEpisodeColumns(double maxWidth) =>
     maxWidth >= kCollectionEpisodeTwoColumnMinWidth ? 2 : 1;
 
 /// 集卡缩略图：有图走 [PortraitCoverImage] 横槽（解码失败退占位），无图占位。
+/// 外框是 16:9 的光面海报材质（与视频库同一套，2026-10-26 用户拍板「海报材质
+/// 横版」），材质按实际尺寸画。
 Widget collectionEpisodeThumb(
   BuildContext context,
   ImageProvider? image, {
@@ -933,22 +1066,22 @@ Widget collectionEpisodeThumb(
   double h = kCollectionEpisodeThumbHeight,
 }) {
   final ColorScheme cs = Theme.of(context).colorScheme;
-  if (image != null) {
-    return ClipRRect(
-      borderRadius: FushiBorderRadius.card,
-      child: SizedBox(
-        width: w,
-        height: h,
-        child: PortraitCoverImage(
+  final Widget content = image == null
+      ? collectionEpisodeThumbPlaceholder(w, h, cs)
+      : PortraitCoverImage(
           image: image,
           landscapeSlot: true,
           errorBuilder: (BuildContext _) =>
               collectionEpisodeThumbPlaceholder(w, h, cs),
-        ),
-      ),
-    );
-  }
-  return collectionEpisodeThumbPlaceholder(w, h, cs);
+        );
+  return SizedBox(
+    width: w,
+    height: h,
+    child: ShelfCoverMaterialScope(
+      material: ShelfCoverMaterial.glossyPoster,
+      child: ShelfCoverFrame(child: content),
+    ),
+  );
 }
 
 Widget collectionEpisodeThumbPlaceholder(double w, double h, ColorScheme cs) =>
@@ -981,9 +1114,7 @@ class CollectionEpisodeNumberPill extends StatelessWidget {
     final bool eink = isEinkTheme(context);
     final Color fill = current
         ? cs.primary
-        : (apple
-              ? cs.surface.withValues(alpha: 0.86)
-              : cs.secondaryContainer);
+        : (apple ? cs.surface.withValues(alpha: 0.86) : cs.secondaryContainer);
     final Color fg = current
         ? cs.onPrimary
         : (apple ? cs.onSurface : cs.onSecondaryContainer);

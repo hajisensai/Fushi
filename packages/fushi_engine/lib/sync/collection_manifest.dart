@@ -44,10 +44,10 @@ class CollectionManifest implements CanonicalJsonManifest {
 
   /// 复制一份并盖上新的 [lastWrittenAt]（写盘前用当前发布时刻盖戳；内容不变）。
   CollectionManifest withLastWrittenAt(int ms) => CollectionManifest(
-        version: version,
-        lastWrittenAt: ms,
-        collections: collections,
-      );
+    version: version,
+    lastWrittenAt: ms,
+    collections: collections,
+  );
 
   /// 解码。[json] 是 `jsonDecode` 的产物（Map）。结构非法抛 [FormatException]
   /// （编排器捕获后计入 report.errors，不让一份坏清单毁掉整轮同步）。严格门
@@ -55,17 +55,24 @@ class CollectionManifest implements CanonicalJsonManifest {
   factory CollectionManifest.fromJson(Object? json) {
     const String label = 'collection manifest';
     final Map<String, dynamic> map = requireManifestObject(json, label);
-    final int version = requireManifestVersion(map,
-        currentVersion: currentVersion, label: label);
-    final List<Object?> rawCollections =
-        requireManifestList(map, 'collections', label);
+    final int version = requireManifestVersion(
+      map,
+      currentVersion: currentVersion,
+      label: label,
+    );
+    final List<Object?> rawCollections = requireManifestList(
+      map,
+      'collections',
+      label,
+    );
     // lastWrittenAt 是 additive 文件级字段（finding 1）：旧清单缺它 / 非法 / 负值一律
     // 解码为 0（恒陈旧），绝不因缺字段拒绝解析——向后兼容读老写新。
     final Object? lastWrittenAt = map['lastWrittenAt'];
     return CollectionManifest(
       version: version,
-      lastWrittenAt:
-          (lastWrittenAt is int && lastWrittenAt >= 0) ? lastWrittenAt : 0,
+      lastWrittenAt: (lastWrittenAt is int && lastWrittenAt >= 0)
+          ? lastWrittenAt
+          : 0,
       collections: <CollectionManifestEntry>[
         for (final Object? c in rawCollections)
           CollectionManifestEntry.fromJson(c),
@@ -89,14 +96,15 @@ class CollectionManifest implements CanonicalJsonManifest {
   Map<String, dynamic> contentJson() {
     // 跳过非法自然键条目（空 name / 空 collectionType）：绝不把本地脏行原样发布
     // 毒害对端（对端 fromJson 对空自然键抛 FormatException，拖垮整份清单解析）。
-    final List<CollectionManifestEntry> sorted = <CollectionManifestEntry>[
-      for (final CollectionManifestEntry c in collections)
-        if (c.name.isNotEmpty && c.collectionType.isNotEmpty) c,
-    ]..sort((CollectionManifestEntry a, CollectionManifestEntry b) {
-        final int byName = a.name.compareTo(b.name);
-        if (byName != 0) return byName;
-        return a.collectionType.compareTo(b.collectionType);
-      });
+    final List<CollectionManifestEntry> sorted =
+        <CollectionManifestEntry>[
+          for (final CollectionManifestEntry c in collections)
+            if (c.name.isNotEmpty && c.collectionType.isNotEmpty) c,
+        ]..sort((CollectionManifestEntry a, CollectionManifestEntry b) {
+          final int byName = a.name.compareTo(b.name);
+          if (byName != 0) return byName;
+          return a.collectionType.compareTo(b.collectionType);
+        });
     return <String, dynamic>{
       'version': version,
       'collections': <Map<String, dynamic>>[
@@ -125,6 +133,10 @@ class CollectionManifestEntry {
     this.memberTombstones = const <CollectionMemberTombstone>[],
     this.tagNames = const <String>[],
     this.episodeOrdered = false,
+    this.origin,
+    this.organizeKey,
+    this.organizeAliases = const <String>[],
+    this.organizeMerged = false,
   });
 
   /// 自然键：合集名（跨端身份，同 backup 合并的 (name, collection_type) 对齐）。
@@ -160,6 +172,22 @@ class CollectionManifestEntry {
   /// 「平手取远端」——远端序只是另一端的下载到达顺序。只要有一端知道就随清单
   /// 传播（合并 / 折叠取或），没有下载任务的设备也据此收敛到同一顺序。
   final bool episodeOrdered;
+
+  /// 合集来源 wire 值（`CollectionOrigin.dbValue`，schema v124 AI 整理库 spec §5.4）；
+  /// null = 这份清单没说（旧对端 / 旧文件）。合并按秩取大，缺省是**未知**而不是
+  /// 「用户」：所有份清单都没说时才当用户的（`CollectionOrigin.parse(null)`）。
+  final String? origin;
+
+  /// 整理分组键（spec §6）。活合集上是它的身份；死条目上是被删合集的键（拒绝 /
+  /// 合并去向，见 `getRejectedOrganizeKeys`）。null = 未知（同 [origin]，不是清空）。
+  final String? organizeKey;
+
+  /// 吸收过的其它分组键（spec §8.3），只增不删，合并取并集。
+  final List<String> organizeAliases;
+
+  /// 死条目：这次删除是整理器把它并进了别的合集（不是用户删的）。两端说法不一时
+  /// 以「用户删的」为准（取与）。活条目恒 false。
+  final bool organizeMerged;
 
   factory CollectionManifestEntry.fromJson(Object? json) {
     if (json is! Map<String, dynamic>) {
@@ -210,33 +238,48 @@ class CollectionManifestEntry {
           : const <String>[],
       // additive 字段：旧清单缺它即 false。
       episodeOrdered: json['episodeOrdered'] == true,
+      // v124 additive 字段（AI 整理库）：缺 / 非法一律 null / 空——未知而非清空。
+      origin: _nonEmptyString(json['origin']),
+      organizeKey: _nonEmptyString(json['organizeKey']),
+      organizeAliases: json['organizeAliases'] is List
+          ? <String>[
+              for (final Object? a in (json['organizeAliases'] as List))
+                if (a is String && a.isNotEmpty) a,
+            ]
+          : const <String>[],
+      organizeMerged: json['organizeMerged'] == true,
     );
   }
+
+  static String? _nonEmptyString(Object? raw) =>
+      raw is String && raw.isNotEmpty ? raw : null;
 
   Map<String, dynamic> toJson() {
     // 跳过非法条目（空 mediaType / 空 entryKey）：本地脏行绝不原样发布毒害对端
     // （对端 fromJson 会对空键抛 FormatException，一条坏成员会拖垮整份清单解析）。
     final List<CollectionManifestMember> sortedMembers =
         <CollectionManifestMember>[
-      for (final CollectionManifestMember m in members)
-        if (m.mediaType.isNotEmpty && m.entryKey.isNotEmpty) m,
-    ]..sort((CollectionManifestMember a, CollectionManifestMember b) {
-            final int byIndex = a.sortIndex.compareTo(b.sortIndex);
-            if (byIndex != 0) return byIndex;
-            final int byType = a.mediaType.compareTo(b.mediaType);
-            if (byType != 0) return byType;
-            return a.entryKey.compareTo(b.entryKey);
-          });
+          for (final CollectionManifestMember m in members)
+            if (m.mediaType.isNotEmpty && m.entryKey.isNotEmpty) m,
+        ]..sort((CollectionManifestMember a, CollectionManifestMember b) {
+          final int byIndex = a.sortIndex.compareTo(b.sortIndex);
+          if (byIndex != 0) return byIndex;
+          final int byType = a.mediaType.compareTo(b.mediaType);
+          if (byType != 0) return byType;
+          return a.entryKey.compareTo(b.entryKey);
+        });
     final List<CollectionMemberTombstone> sortedTombstones =
         <CollectionMemberTombstone>[
-      for (final CollectionMemberTombstone t in memberTombstones)
-        if (t.mediaType.isNotEmpty && t.entryKey.isNotEmpty && t.removedAt >= 0)
-          t,
-    ]..sort((CollectionMemberTombstone a, CollectionMemberTombstone b) {
-            final int byType = a.mediaType.compareTo(b.mediaType);
-            if (byType != 0) return byType;
-            return a.entryKey.compareTo(b.entryKey);
-          });
+          for (final CollectionMemberTombstone t in memberTombstones)
+            if (t.mediaType.isNotEmpty &&
+                t.entryKey.isNotEmpty &&
+                t.removedAt >= 0)
+              t,
+        ]..sort((CollectionMemberTombstone a, CollectionMemberTombstone b) {
+          final int byType = a.mediaType.compareTo(b.mediaType);
+          if (byType != 0) return byType;
+          return a.entryKey.compareTo(b.entryKey);
+        });
     // 标签确定性排序副本（过滤空串）：内容相等 ⇒ 字节相等，供 canonicalJson 幂等。
     final List<String> sortedTags = <String>[
       for (final String tn in tagNames)
@@ -258,6 +301,15 @@ class CollectionManifestEntry {
       if (sortedTags.isNotEmpty) 'tagNames': sortedTags,
       // 同上：false 时不写 key，非下载合集的 JSON 与加特性前逐字节相同。
       if (episodeOrdered) 'episodeOrdered': true,
+      // v124：同上，缺省不写 key。别名去重排序，内容相等 ⇒ 字节相等。
+      if (origin != null) 'origin': origin,
+      if (organizeKey != null) 'organizeKey': organizeKey,
+      if (organizeAliases.isNotEmpty)
+        'organizeAliases': (<String>{
+          for (final String a in organizeAliases)
+            if (a.isNotEmpty) a,
+        }.toList()..sort()),
+      if (organizeMerged) 'organizeMerged': true,
     };
   }
 }
@@ -312,10 +364,10 @@ class CollectionManifestMember {
   }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'mediaType': mediaType,
-        'entryKey': entryKey,
-        'sortIndex': sortIndex,
-      };
+    'mediaType': mediaType,
+    'entryKey': entryKey,
+    'sortIndex': sortIndex,
+  };
 }
 
 /// 清单里的一条成员移出墓碑。
@@ -371,9 +423,9 @@ class CollectionMemberTombstone {
   }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'mediaType': mediaType,
-        'entryKey': entryKey,
-        'removedAt': removedAt,
-        if (publishedAt != null) 'publishedAt': publishedAt,
-      };
+    'mediaType': mediaType,
+    'entryKey': entryKey,
+    'removedAt': removedAt,
+    if (publishedAt != null) 'publishedAt': publishedAt,
+  };
 }

@@ -36,7 +36,9 @@ class CacheImageProvider extends ImageProvider<CacheImageProvider> {
 
   @override
   ImageStreamCompleter loadImage(
-      CacheImageProvider key, ImageDecoderCallback decode) {
+    CacheImageProvider key,
+    ImageDecoderCallback decode,
+  ) {
     return MultiFrameImageStreamCompleter(
       codec: _loadAsync(decode),
       scale: 1,
@@ -55,8 +57,9 @@ class CacheImageProvider extends ImageProvider<CacheImageProvider> {
       throw StateError('$tag is empty and cannot be loaded as an image.');
     }
 
-    final ui.ImmutableBuffer buffer =
-        await ui.ImmutableBuffer.fromUint8List(bytes);
+    final ui.ImmutableBuffer buffer = await ui.ImmutableBuffer.fromUint8List(
+      bytes,
+    );
     return decode(buffer);
   }
 

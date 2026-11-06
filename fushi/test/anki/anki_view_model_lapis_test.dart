@@ -59,7 +59,9 @@ class _FakeRepo extends BaseAnkiRepository {
         ? const [AnkiDeck(id: 1, name: '日语')]
         : const [AnkiDeck(id: 1, name: 'Lapis')];
     final noteTypes = lapisInvisibleAfterCreate
-        ? const [AnkiNoteType(id: 7, name: '基础', fields: ['正面', '背面'])]
+        ? const [
+            AnkiNoteType(id: 7, name: '基础', fields: ['正面', '背面']),
+          ]
         : [AnkiNoteType(id: 7, name: 'Lapis', fields: LapisNoteType.fields)];
     _settings = _settings.copyWith(
       availableDecks: decks,
@@ -72,8 +74,7 @@ class _FakeRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      MineOutcome.failure('test stub');
+  }) async => MineOutcome.failure('test stub');
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
@@ -82,24 +83,26 @@ class _FakeRepo extends BaseAnkiRepository {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('createLapisSetup creates, fetches, selects Lapis + applies preset',
-      () async {
-    final repo = _FakeRepo();
-    final vm = AnkiViewModel(repo);
-    await Future<void>.delayed(Duration.zero); // 让构造里的 _loadSettings 完成
+  test(
+    'createLapisSetup creates, fetches, selects Lapis + applies preset',
+    () async {
+      final repo = _FakeRepo();
+      final vm = AnkiViewModel(repo);
+      await Future<void>.delayed(Duration.zero); // 让构造里的 _loadSettings 完成
 
-    final result = await vm.createLapisSetup();
+      final result = await vm.createLapisSetup();
 
-    expect(result.outcome, LapisSetupOutcome.created);
-    expect(repo.createNoteTypeCalls, 1);
-    expect(repo.createDeckCalls, 1);
-    final s = vm.state.settings;
-    expect(s.selectedNoteTypeName, 'Lapis');
-    expect(s.selectedDeckName, 'Lapis');
-    expect(s.fieldMappings['Expression'], '{expression}');
-    expect(s.fieldMappings['Picture'], '{card-image}');
-    expect(vm.state.isFetching, isFalse);
-  });
+      expect(result.outcome, LapisSetupOutcome.created);
+      expect(repo.createNoteTypeCalls, 1);
+      expect(repo.createDeckCalls, 1);
+      final s = vm.state.settings;
+      expect(s.selectedNoteTypeName, 'Lapis');
+      expect(s.selectedDeckName, 'Lapis');
+      expect(s.fieldMappings['Expression'], '{expression}');
+      expect(s.fieldMappings['Picture'], '{card-image}');
+      expect(vm.state.isFetching, isFalse);
+    },
+  );
 
   test('createLapisSetup reports alreadyExisted when model present', () async {
     final repo = _FakeRepo()
@@ -128,8 +131,10 @@ void main() {
   // 坏了，也不知道下一步该干什么。
   test('createLapisSetup 的超时不再把 TimeoutException 原文丢给用户', () async {
     final repo = _FakeRepo(
-      throwOnCreateNoteType:
-          TimeoutException('Future not completed', const Duration(seconds: 10)),
+      throwOnCreateNoteType: TimeoutException(
+        'Future not completed',
+        const Duration(seconds: 10),
+      ),
     );
     final vm = AnkiViewModel(repo);
     await Future<void>.delayed(Duration.zero);

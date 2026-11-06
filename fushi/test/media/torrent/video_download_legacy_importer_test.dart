@@ -31,9 +31,7 @@ void main() {
     return file;
   }
 
-  Future<File> writeSubscription(
-    AnimeDownloadSubscription subscription,
-  ) async {
+  Future<File> writeSubscription(AnimeDownloadSubscription subscription) async {
     final Directory directory = Directory(p.join(root.path, 'subscriptions'));
     await directory.create(recursive: true);
     final File file = File(p.join(directory.path, '${subscription.id}.json'));
@@ -48,26 +46,25 @@ void main() {
     String contentKind = AnimeDownloadPlan.kindVideo,
     int? collectionId,
     List<PlanSubtitle> subtitles = const <PlanSubtitle>[],
-  }) =>
-      AnimeDownloadPlan(
-        id: '0123456789abcdef0123456789abcdef01234567',
-        createdAtMs: 1234,
-        anilistId: 42,
-        seriesTitle: 'Example Show',
-        coverUrl: 'https://example.test/cover.jpg',
-        torrentTitle: '[Group] Example Show - 02 [1080p]',
-        magnet: 'magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567',
-        qbCategory: 'hibiki',
-        subtitles: subtitles,
-        status: status,
-        contentKind: contentKind,
-        collectionId: collectionId,
-        jimakuEntryId: 77,
-        jimakuEntryName: 'Example Show',
-        subtitleStatus: subtitles.isEmpty
-            ? AnimeDownloadPlan.subtitleNone
-            : AnimeDownloadPlan.subtitleResolved,
-      );
+  }) => AnimeDownloadPlan(
+    id: '0123456789abcdef0123456789abcdef01234567',
+    createdAtMs: 1234,
+    anilistId: 42,
+    seriesTitle: 'Example Show',
+    coverUrl: 'https://example.test/cover.jpg',
+    torrentTitle: '[Group] Example Show - 02 [1080p]',
+    magnet: 'magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567',
+    qbCategory: 'hibiki',
+    subtitles: subtitles,
+    status: status,
+    contentKind: contentKind,
+    collectionId: collectionId,
+    jimakuEntryId: 77,
+    jimakuEntryName: 'Example Show',
+    subtitleStatus: subtitles.isEmpty
+        ? AnimeDownloadPlan.subtitleNone
+        : AnimeDownloadPlan.subtitleResolved,
+  );
 
   LegacyTorrentBinding matchingBinding(AnimeDownloadPlan value) =>
       LegacyTorrentBinding(
@@ -112,12 +109,14 @@ void main() {
       expect(report.quarantinedFiles, isEmpty);
       expect(source.existsSync(), isFalse);
       expect(
-        File(p.join(
-          root.path,
-          'legacy_import_archive',
-          'plans',
-          p.basename(source.path),
-        )).existsSync(),
+        File(
+          p.join(
+            root.path,
+            'legacy_import_archive',
+            'plans',
+            p.basename(source.path),
+          ),
+        ).existsSync(),
         isTrue,
       );
       expect(subtitleFile.readAsStringSync(), 'subtitle bytes');
@@ -152,10 +151,11 @@ void main() {
       await writePlan(legacy);
       final LegacyVideoDownloadImportReport report =
           await VideoDownloadLegacyImporter(
-        database: database,
-        baseDirectory: root,
-        torrentMatcher: (LegacyTorrentProbe _) async => matchingBinding(legacy),
-      ).importAll();
+            database: database,
+            baseDirectory: root,
+            torrentMatcher: (LegacyTorrentProbe _) async =>
+                matchingBinding(legacy),
+          ).importAll();
 
       expect(report.importedPlans, 1);
       final VideoDownloadJobRow job =
@@ -164,8 +164,10 @@ void main() {
       expect(job.mediaKind, kinds.$2);
       expect(job.discoveryCategory, isAuto ? 'anime' : null);
       expect(job.resourceProvider, isAuto ? 'nyaa' : 'legacy');
-      expect(job.organizationPolicy,
-          isAuto ? 'legacy' : 'discovery-${kinds.$2}');
+      expect(
+        job.organizationPolicy,
+        isAuto ? 'legacy' : 'discovery-${kinds.$2}',
+      );
       expect(job.subtitlePolicy, 'none');
       expect(job.jobId, 'legacy-plan:${legacy.id}');
       expect(job.torrentHash, legacy.id);
@@ -177,35 +179,37 @@ void main() {
     });
   }
 
-  test('requires hash, title, and category before binding a legacy backend',
-      () async {
-    final AnimeDownloadPlan legacy = plan();
-    await writePlan(legacy);
-    final VideoDownloadLegacyImporter importer = VideoDownloadLegacyImporter(
-      database: database,
-      baseDirectory: root,
-      torrentMatcher: (LegacyTorrentProbe _) async => LegacyTorrentBinding(
-        torrentHash: legacy.id,
-        title: '${legacy.torrentTitle} mismatch',
-        category: legacy.qbCategory,
-        backendKind: 'qbittorrent',
-        fingerprint: 'qb:must-not-bind',
-      ),
-    );
+  test(
+    'requires hash, title, and category before binding a legacy backend',
+    () async {
+      final AnimeDownloadPlan legacy = plan();
+      await writePlan(legacy);
+      final VideoDownloadLegacyImporter importer = VideoDownloadLegacyImporter(
+        database: database,
+        baseDirectory: root,
+        torrentMatcher: (LegacyTorrentProbe _) async => LegacyTorrentBinding(
+          torrentHash: legacy.id,
+          title: '${legacy.torrentTitle} mismatch',
+          category: legacy.qbCategory,
+          backendKind: 'qbittorrent',
+          fingerprint: 'qb:must-not-bind',
+        ),
+      );
 
-    final LegacyVideoDownloadImportReport report = await importer.importAll();
-    final VideoDownloadJobRow job =
-        (await database.getVideoDownloadJobs()).single;
+      final LegacyVideoDownloadImportReport report = await importer.importAll();
+      final VideoDownloadJobRow job =
+          (await database.getVideoDownloadJobs()).single;
 
-    expect(job.lifecycle, VideoDownloadJobLifecycle.needsAttention);
-    expect(job.backendKind, 'legacy');
-    expect(job.fingerprint, startsWith('legacy-unbound:'));
-    expect(job.lastError, contains('hash, title, and category'));
-    expect(
-      report.issues.map((LegacyImportIssue issue) => issue.kind),
-      contains(LegacyImportIssueKind.backendUnconfirmed),
-    );
-  });
+      expect(job.lifecycle, VideoDownloadJobLifecycle.needsAttention);
+      expect(job.backendKind, 'legacy');
+      expect(job.fingerprint, startsWith('legacy-unbound:'));
+      expect(job.lastError, contains('hash, title, and category'));
+      expect(
+        report.issues.map((LegacyImportIssue issue) => issue.kind),
+        contains(LegacyImportIssueKind.backendUnconfirmed),
+      );
+    },
+  );
 
   test('missing legacy collection is nulled and made actionable', () async {
     final AnimeDownloadPlan legacy = plan(collectionId: 999);
@@ -229,110 +233,123 @@ void main() {
     );
   });
 
-  test('replaying a committed file is idempotent and only finishes archive',
-      () async {
-    final AnimeDownloadPlan legacy = plan();
-    final File original = await writePlan(legacy);
-    final VideoDownloadLegacyImporter importer = VideoDownloadLegacyImporter(
-      database: database,
-      baseDirectory: root,
-      torrentMatcher: (LegacyTorrentProbe _) async => matchingBinding(legacy),
-    );
-    await importer.importAll();
+  test(
+    'replaying a committed file is idempotent and only finishes archive',
+    () async {
+      final AnimeDownloadPlan legacy = plan();
+      final File original = await writePlan(legacy);
+      final VideoDownloadLegacyImporter importer = VideoDownloadLegacyImporter(
+        database: database,
+        baseDirectory: root,
+        torrentMatcher: (LegacyTorrentProbe _) async => matchingBinding(legacy),
+      );
+      await importer.importAll();
 
-    final File archived = File(p.join(
-      root.path,
-      'legacy_import_archive',
-      'plans',
-      p.basename(original.path),
-    ));
-    await Directory(p.dirname(original.path)).create(recursive: true);
-    await original.writeAsBytes(await archived.readAsBytes());
+      final File archived = File(
+        p.join(
+          root.path,
+          'legacy_import_archive',
+          'plans',
+          p.basename(original.path),
+        ),
+      );
+      await Directory(p.dirname(original.path)).create(recursive: true);
+      await original.writeAsBytes(await archived.readAsBytes());
 
-    final LegacyVideoDownloadImportReport second = await importer.importAll();
+      final LegacyVideoDownloadImportReport second = await importer.importAll();
 
-    expect(second.importedPlans, 0);
-    expect(second.alreadyImportedFiles, 1);
-    expect(await database.getVideoDownloadJobs(), hasLength(1));
-    expect(original.existsSync(), isFalse);
-  });
+      expect(second.importedPlans, 0);
+      expect(second.alreadyImportedFiles, 1);
+      expect(await database.getVideoDownloadJobs(), hasLength(1));
+      expect(original.existsSync(), isFalse);
+    },
+  );
 
-  test('imports processed episodes and quarantines corrupt neighbours',
-      () async {
-    final AnimeDownloadSubscription subscription = AnimeDownloadSubscription(
-      id: 'legacy-subscription-id',
-      createdAtMs: 2000,
-      anilistId: 84,
-      seriesTitle: 'Subscribed Show',
-      nyaaQuery: 'Subscribed Show',
-      category: '1_2',
-      trustedOnly: true,
-      releaseGroup: 'Group',
-      resolution: '1080p',
-      jimakuEntryId: 99,
-      jimakuEntryName: 'Subscribed Show',
-      jimakuLanguage: 'ja',
-      startAfterEpisode: 1,
-      processedEpisodes: const <int>{2, 4},
-      lastCheckedAtMs: 2100,
-      lastMatchedAtMs: 2200,
-    );
-    await writeSubscription(subscription);
-    final Directory subscriptionDirectory =
-        Directory(p.join(root.path, 'subscriptions'));
-    final File corrupt = File(p.join(subscriptionDirectory.path, 'bad.json'));
-    await corrupt.writeAsString('{not-json');
-    final VideoDownloadLegacyImporter importer = VideoDownloadLegacyImporter(
-      database: database,
-      baseDirectory: root,
-      subscriptionBackendResolver: (AnimeDownloadSubscription _) async =>
-          const LegacySubscriptionBackendBinding(
-        backendKind: 'embedded',
-        fingerprint: 'embedded:install-id',
-        category: 'hibiki',
-      ),
-      now: () => DateTime.fromMillisecondsSinceEpoch(3000),
-    );
+  test(
+    'imports processed episodes and quarantines corrupt neighbours',
+    () async {
+      final AnimeDownloadSubscription subscription = AnimeDownloadSubscription(
+        id: 'legacy-subscription-id',
+        createdAtMs: 2000,
+        anilistId: 84,
+        seriesTitle: 'Subscribed Show',
+        nyaaQuery: 'Subscribed Show',
+        category: '1_2',
+        trustedOnly: true,
+        releaseGroup: 'Group',
+        resolution: '1080p',
+        jimakuEntryId: 99,
+        jimakuEntryName: 'Subscribed Show',
+        jimakuLanguage: 'ja',
+        startAfterEpisode: 1,
+        processedEpisodes: const <int>{2, 4},
+        lastCheckedAtMs: 2100,
+        lastMatchedAtMs: 2200,
+      );
+      await writeSubscription(subscription);
+      final Directory subscriptionDirectory = Directory(
+        p.join(root.path, 'subscriptions'),
+      );
+      final File corrupt = File(p.join(subscriptionDirectory.path, 'bad.json'));
+      await corrupt.writeAsString('{not-json');
+      final VideoDownloadLegacyImporter importer = VideoDownloadLegacyImporter(
+        database: database,
+        baseDirectory: root,
+        subscriptionBackendResolver: (AnimeDownloadSubscription _) async =>
+            const LegacySubscriptionBackendBinding(
+              backendKind: 'embedded',
+              fingerprint: 'embedded:install-id',
+              category: 'hibiki',
+            ),
+        now: () => DateTime.fromMillisecondsSinceEpoch(3000),
+      );
 
-    final LegacyVideoDownloadImportReport report = await importer.importAll();
+      final LegacyVideoDownloadImportReport report = await importer.importAll();
 
-    expect(report.importedSubscriptions, 1);
-    expect(report.importedSubscriptionItems, 2);
-    expect(report.quarantinedFiles, <String>['bad.json']);
-    expect(
-      File(p.join(
-        root.path,
-        'legacy_import_quarantine',
-        'subscriptions',
-        'bad.json',
-      )).existsSync(),
-      isTrue,
-    );
-    final VideoDownloadSubscriptionRow row =
-        (await database.getVideoDownloadSubscriptions()).single;
-    expect(row.enabled, isTrue);
-    expect(row.organizationPolicy, 'legacy');
-    expect(row.subtitlePolicy, 'required');
-    expect(row.nextCheckAt, 3000);
-    final Map<String, dynamic> filters =
-        jsonDecode(row.filterJson) as Map<String, dynamic>;
-    expect(filters['strict'], isTrue);
-    expect(filters['releaseGroup'], 'Group');
-    expect(filters['resolution'], '1080p');
-    expect(filters['trustedOnly'], isTrue);
+      expect(report.importedSubscriptions, 1);
+      expect(report.importedSubscriptionItems, 2);
+      expect(report.quarantinedFiles, <String>['bad.json']);
+      expect(
+        File(
+          p.join(
+            root.path,
+            'legacy_import_quarantine',
+            'subscriptions',
+            'bad.json',
+          ),
+        ).existsSync(),
+        isTrue,
+      );
+      final VideoDownloadSubscriptionRow row =
+          (await database.getVideoDownloadSubscriptions()).single;
+      expect(row.enabled, isTrue);
+      expect(row.organizationPolicy, 'legacy');
+      expect(row.subtitlePolicy, 'required');
+      expect(row.nextCheckAt, 3000);
+      final Map<String, dynamic> filters =
+          jsonDecode(row.filterJson) as Map<String, dynamic>;
+      expect(filters['strict'], isTrue);
+      expect(filters['releaseGroup'], 'Group');
+      expect(filters['resolution'], '1080p');
+      expect(filters['trustedOnly'], isTrue);
 
-    final List<VideoDownloadSubscriptionItemRow> items =
-        await database.getVideoDownloadSubscriptionItems(row.subscriptionId);
-    expect(
+      final List<VideoDownloadSubscriptionItemRow> items = await database
+          .getVideoDownloadSubscriptionItems(row.subscriptionId);
+      expect(
         items.map(
-            (VideoDownloadSubscriptionItemRow item) => item.logicalItemKey),
-        <String>['S01E02', 'S01E04']);
-    expect(
-      items.every((VideoDownloadSubscriptionItemRow item) =>
-          item.status == VideoDownloadSubscriptionItemStatus.processed),
-      isTrue,
-    );
-  });
+          (VideoDownloadSubscriptionItemRow item) => item.logicalItemKey,
+        ),
+        <String>['S01E02', 'S01E04'],
+      );
+      expect(
+        items.every(
+          (VideoDownloadSubscriptionItemRow item) =>
+              item.status == VideoDownloadSubscriptionItemStatus.processed,
+        ),
+        isTrue,
+      );
+    },
+  );
 
   test('keeps an unbound legacy subscription visible but disabled', () async {
     final AnimeDownloadSubscription subscription = AnimeDownloadSubscription(
@@ -349,9 +366,9 @@ void main() {
 
     final LegacyVideoDownloadImportReport report =
         await VideoDownloadLegacyImporter(
-      database: database,
-      baseDirectory: root,
-    ).importAll();
+          database: database,
+          baseDirectory: root,
+        ).importAll();
     final VideoDownloadSubscriptionRow row =
         (await database.getVideoDownloadSubscriptions()).single;
 

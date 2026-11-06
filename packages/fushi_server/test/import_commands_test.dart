@@ -36,7 +36,11 @@ void main() {
       final String epub = p.join(h.tmp.path, 'in', 'a.epub');
       writeTestEpub(epub, '吾輩は猫である');
 
-      expect(await h.run(module, <String>['import', 'epub', epub, '--json']), 0, reason: '${h.err}');
+      expect(
+        await h.run(module, <String>['import', 'epub', epub, '--json']),
+        0,
+        reason: '${h.err}',
+      );
       final Map<String, Object?> json = h.json();
       expect(json['imported'], 1);
       expect(json['skipped'], 0);
@@ -60,7 +64,10 @@ void main() {
       final String epub = p.join(h.tmp.path, 'a.epub');
       writeTestEpub(epub, 'Same');
       expect(await h.run(module, <String>['import', 'epub', epub]), 0);
-      expect(await h.run(module, <String>['import', 'epub', epub, '--json']), 0);
+      expect(
+        await h.run(module, <String>['import', 'epub', epub, '--json']),
+        0,
+      );
       expect(h.json()['skipped'], 1);
       expect(h.json()['imported'], 0);
       expect(await books(), hasLength(1));
@@ -72,7 +79,10 @@ void main() {
       writeTestEpub(p.join(dir, 'sub', 'b.epub'), 'B');
       expect(await h.run(module, <String>['import', 'epub', dir, '--json']), 0);
       expect(h.json()['imported'], 2);
-      expect((await books()).map((EpubBookRow b) => b.title).toSet(), <String>{'A', 'B'});
+      expect((await books()).map((EpubBookRow b) => b.title).toSet(), <String>{
+        'A',
+        'B',
+      });
     });
 
     test('坏 EPUB 记 failed、退出码 1，不影响同批其它书', () async {
@@ -80,7 +90,10 @@ void main() {
       final String bad = p.join(h.tmp.path, 'bad.epub');
       writeTestEpub(good, 'Good');
       File(bad).writeAsStringSync('not a zip');
-      expect(await h.run(module, <String>['import', 'epub', bad, good, '--json']), 1);
+      expect(
+        await h.run(module, <String>['import', 'epub', bad, good, '--json']),
+        1,
+      );
       expect(h.json()['imported'], 1);
       expect(h.json()['failed'], 1);
       expect((await books()).single.title, 'Good');
@@ -89,24 +102,46 @@ void main() {
     test('找不到输入 → 66，什么都不导', () async {
       final String good = p.join(h.tmp.path, 'good.epub');
       writeTestEpub(good, 'Good');
-      expect(await h.run(module, <String>['import', 'epub', good, p.join(h.tmp.path, 'nope.epub')]), 66);
+      expect(
+        await h.run(module, <String>[
+          'import',
+          'epub',
+          good,
+          p.join(h.tmp.path, 'nope.epub'),
+        ]),
+        66,
+      );
       expect(h.err.toString(), contains('nope.epub'));
-      expect(Directory(h.dataDir).existsSync(), isFalse, reason: '输入校验在打开数据目录之前');
+      expect(
+        Directory(h.dataDir).existsSync(),
+        isFalse,
+        reason: '输入校验在打开数据目录之前',
+      );
     });
 
     test('用法错误 → 64：缺子命令 / 缺路径 / 不是 .epub', () async {
       expect(await h.run(module, <String>['import']), 64);
       expect(await h.run(module, <String>['import', 'epub']), 64);
-      final File txt = File(p.join(h.tmp.path, 'a.txt'))..writeAsStringSync('x');
+      final File txt = File(p.join(h.tmp.path, 'a.txt'))
+        ..writeAsStringSync('x');
       expect(await h.run(module, <String>['import', 'epub', txt.path]), 64);
     });
 
     test('缺配置文件 → 66', () async {
-      final CommandHarness bare = await CommandHarness.create(withConfig: false);
+      final CommandHarness bare = await CommandHarness.create(
+        withConfig: false,
+      );
       try {
         final String epub = p.join(bare.tmp.path, 'a.epub');
         writeTestEpub(epub, 'A');
-        expect(await bare.run(ImportCommands(io: bare.io), <String>['import', 'epub', epub]), 66);
+        expect(
+          await bare.run(ImportCommands(io: bare.io), <String>[
+            'import',
+            'epub',
+            epub,
+          ]),
+          66,
+        );
       } finally {
         await bare.dispose();
       }
@@ -115,9 +150,17 @@ void main() {
 
   group('import text', () {
     test('--title 生效，入库为 EPUB', () async {
-      final File txt = File(p.join(h.tmp.path, 'novel.txt'))..writeAsStringSync('第一章\n本文。\n');
+      final File txt = File(p.join(h.tmp.path, 'novel.txt'))
+        ..writeAsStringSync('第一章\n本文。\n');
       expect(
-        await h.run(module, <String>['import', 'text', txt.path, '--title', '自定义书名', '--json']),
+        await h.run(module, <String>[
+          'import',
+          'text',
+          txt.path,
+          '--title',
+          '自定义书名',
+          '--json',
+        ]),
         0,
         reason: '${h.err}',
       );
@@ -129,8 +172,19 @@ void main() {
     test('缺省标题取文件名；--title 配多个输入 → 64；不支持的扩展名 → 64', () async {
       final File a = File(p.join(h.tmp.path, 'a.md'))..writeAsStringSync('# A');
       final File b = File(p.join(h.tmp.path, 'b.md'))..writeAsStringSync('# B');
-      expect(await h.run(module, <String>['import', 'text', a.path, b.path, '--title', 'x']), 64);
-      final File bin = File(p.join(h.tmp.path, 'x.bin'))..writeAsBytesSync(<int>[0]);
+      expect(
+        await h.run(module, <String>[
+          'import',
+          'text',
+          a.path,
+          b.path,
+          '--title',
+          'x',
+        ]),
+        64,
+      );
+      final File bin = File(p.join(h.tmp.path, 'x.bin'))
+        ..writeAsBytesSync(<int>[0]);
       expect(await h.run(module, <String>['import', 'text', bin.path]), 64);
       expect(await h.run(module, <String>['import', 'text', a.path]), 0);
       expect((await books()).single.title, 'a');
@@ -141,7 +195,16 @@ void main() {
     test('mokuro 卷目录 → 一行漫画', () async {
       final String vol = p.join(h.tmp.path, 'manga', 'Vol1');
       writeTestMokuro(vol, 'Vol1');
-      expect(await h.run(module, <String>['import', 'manga', p.dirname(vol), '--json']), 0, reason: '${h.err}');
+      expect(
+        await h.run(module, <String>[
+          'import',
+          'manga',
+          p.dirname(vol),
+          '--json',
+        ]),
+        0,
+        reason: '${h.err}',
+      );
       expect(h.json()['imported'], 1);
       final EpubBookRow row = (await books()).single;
       expect(row.format, BookFormat.manga.dbValue);
@@ -151,13 +214,26 @@ void main() {
     test('单个 .mokuro 文件 + --title', () async {
       final String vol = p.join(h.tmp.path, 'Vol2');
       writeTestMokuro(vol, 'Vol2');
-      expect(await h.run(module, <String>['import', 'manga', p.join(vol, 'Vol2.mokuro'), '--title', '第二卷']), 0);
+      expect(
+        await h.run(module, <String>[
+          'import',
+          'manga',
+          p.join(vol, 'Vol2.mokuro'),
+          '--title',
+          '第二卷',
+        ]),
+        0,
+      );
       expect((await books()).single.title, '第二卷');
     });
 
     test('不是漫画卷的文件记 failed → 1', () async {
-      final File txt = File(p.join(h.tmp.path, 'a.txt'))..writeAsStringSync('x');
-      expect(await h.run(module, <String>['import', 'manga', txt.path, '--json']), 1);
+      final File txt = File(p.join(h.tmp.path, 'a.txt'))
+        ..writeAsStringSync('x');
+      expect(
+        await h.run(module, <String>['import', 'manga', txt.path, '--json']),
+        1,
+      );
       expect(h.json()['failed'], 1);
     });
   });
@@ -168,42 +244,77 @@ void main() {
       writeTestEpub(epub, 'Auto Book');
       final String vol = p.join(h.tmp.path, 'm', 'AutoVol');
       writeTestMokuro(vol, 'AutoVol');
-      expect(await h.run(module, <String>['import', 'auto', epub, vol, '--json']), 0, reason: '${h.err}');
+      expect(
+        await h.run(module, <String>['import', 'auto', epub, vol, '--json']),
+        0,
+        reason: '${h.err}',
+      );
       final List<Object?> items = h.json()['items']! as List<Object?>;
       expect(
-        <Object?>[for (final Object? i in items) (i! as Map<Object?, Object?>)['domain']],
+        <Object?>[
+          for (final Object? i in items)
+            (i! as Map<Object?, Object?>)['domain'],
+        ],
         <Object?>['book', 'manga'],
       );
       final Map<String, String> formats = <String, String>{
         for (final EpubBookRow b in await books()) b.title: b.format,
       };
-      expect(formats, <String, String>{'Auto Book': 'epub', 'AutoVol': 'manga'});
+      expect(formats, <String, String>{
+        'Auto Book': 'epub',
+        'AutoVol': 'manga',
+      });
     });
 
     test('认不出的文件记 failed（unknown）', () async {
-      final File f = File(p.join(h.tmp.path, 'x.bin'))..writeAsBytesSync(<int>[0]);
-      expect(await h.run(module, <String>['import', 'auto', f.path, '--json']), 1);
-      final Map<Object?, Object?> item = (h.json()['items']! as List<Object?>).single! as Map<Object?, Object?>;
+      final File f = File(p.join(h.tmp.path, 'x.bin'))
+        ..writeAsBytesSync(<int>[0]);
+      expect(
+        await h.run(module, <String>['import', 'auto', f.path, '--json']),
+        1,
+      );
+      final Map<Object?, Object?> item =
+          (h.json()['items']! as List<Object?>).single!
+              as Map<Object?, Object?>;
       expect(item['domain'], 'unknown');
       expect(item['error'], contains('.bin'));
     });
 
     test('PDF 在服务端如实挡下（unsupportedOnThisHost），不假装导入', () async {
-      final File pdf = File(p.join(h.tmp.path, 'a.pdf'))..writeAsStringSync('%PDF-1.4');
-      expect(await h.run(module, <String>['import', 'auto', pdf.path, '--json']), 1);
-      final Map<Object?, Object?> item = (h.json()['items']! as List<Object?>).single! as Map<Object?, Object?>;
+      final File pdf = File(p.join(h.tmp.path, 'a.pdf'))
+        ..writeAsStringSync('%PDF-1.4');
+      expect(
+        await h.run(module, <String>['import', 'auto', pdf.path, '--json']),
+        1,
+      );
+      final Map<Object?, Object?> item =
+          (h.json()['items']! as List<Object?>).single!
+              as Map<Object?, Object?>;
       expect(item['error'], startsWith('unsupportedOnThisHost'));
     });
   });
 
   group('routeAutoImport', () {
     test('单文件按扩展名', () {
-      File touch(String name) => File(p.join(h.tmp.path, name))..writeAsStringSync('x');
+      File touch(String name) =>
+          File(p.join(h.tmp.path, name))..writeAsStringSync('x');
       expect(routeAutoImport(touch('a.txt').path).kind, AutoImportKind.novel);
-      expect(routeAutoImport(touch('a.cbz').path).kind, AutoImportKind.mangaArchive);
-      expect(routeAutoImport(touch('v.mokuro').path).kind, AutoImportKind.mangaLocal);
-      expect(routeAutoImport(touch('a.mp3').path).kind, AutoImportKind.audiobook);
-      expect(routeAutoImport(touch('a.xyz').path).kind, AutoImportKind.unsupported);
+      expect(
+        routeAutoImport(touch('a.cbz').path).kind,
+        AutoImportKind.mangaArchive,
+      );
+      expect(
+        routeAutoImport(touch('v.mokuro').path).kind,
+        AutoImportKind.mangaLocal,
+      );
+      expect(
+        routeAutoImport(touch('a.mp3').path).kind,
+        AutoImportKind.audiobook,
+      );
+      expect(
+        routeAutoImport(touch('a.xyz').path).kind,
+        AutoImportKind.unsupported,
+      );
       final String epub = p.join(h.tmp.path, 'b.epub');
       writeTestEpub(epub, 'B');
       expect(routeAutoImport(epub).kind, AutoImportKind.novel);
@@ -211,7 +322,8 @@ void main() {
 
     test('目录按内容：音频 → 有声书；mokuro → 漫画；EPUB + 封面图 → 书；纯页图 → 漫画', () {
       Directory dir(String name, Map<String, List<int>> files) {
-        final Directory d = Directory(p.join(h.tmp.path, name))..createSync(recursive: true);
+        final Directory d = Directory(p.join(h.tmp.path, name))
+          ..createSync(recursive: true);
         files.forEach((String rel, List<int> bytes) {
           File(p.join(d.path, rel))
             ..parent.createSync(recursive: true)
@@ -250,12 +362,18 @@ void main() {
         ).kind,
         AutoImportKind.mangaLocal,
       );
-      expect(routeAutoImport(dir('empty', <String, List<int>>{}).path).kind, AutoImportKind.unsupported);
+      expect(
+        routeAutoImport(dir('empty', <String, List<int>>{}).path).kind,
+        AutoImportKind.unsupported,
+      );
     });
   });
 
   test('books backfill-isbn --json', () async {
-    expect(await h.run(module, <String>['books', 'backfill-isbn', '--json']), 0);
+    expect(
+      await h.run(module, <String>['books', 'backfill-isbn', '--json']),
+      0,
+    );
     expect(h.json(), <String, Object?>{'written': 0});
     expect(await h.run(module, <String>['books']), 64);
   });

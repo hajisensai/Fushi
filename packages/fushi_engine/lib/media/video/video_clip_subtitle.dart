@@ -46,8 +46,10 @@ String? buildClipSrtContent({
     final ClipSubtitleCue cue = picked[i];
     buffer
       ..writeln(i + 1)
-      ..writeln('${formatSrtTimestamp(cue.startMs)} --> '
-          '${formatSrtTimestamp(cue.endMs)}')
+      ..writeln(
+        '${formatSrtTimestamp(cue.startMs)} --> '
+        '${formatSrtTimestamp(cue.endMs)}',
+      )
       ..writeln(cue.text)
       ..writeln();
   }
@@ -102,7 +104,8 @@ class ClipSubtitleCue {
       Object.hash(startMs, endMs, text, isSecondary, identityHashCode(markup));
 
   @override
-  String toString() => 'ClipSubtitleCue($startMs..$endMs, "$text"'
+  String toString() =>
+      'ClipSubtitleCue($startMs..$endMs, "$text"'
       '${isSecondary ? ', secondary' : ''})';
 }
 
@@ -141,13 +144,15 @@ List<ClipSubtitleCue> buildClipSubtitleCues({
     if (outEnd <= outStart) outEnd = (outStart + 1).clamp(0, durationMs);
     if (outEnd <= outStart) continue;
 
-    out.add(ClipSubtitleCue(
-      startMs: outStart,
-      endMs: outEnd,
-      text: text,
-      isSecondary: isSecondary,
-      markup: cue.markup,
-    ));
+    out.add(
+      ClipSubtitleCue(
+        startMs: outStart,
+        endMs: outEnd,
+        text: text,
+        isSecondary: isSecondary,
+        markup: cue.markup,
+      ),
+    );
   }
   return List<ClipSubtitleCue>.unmodifiable(out);
 }

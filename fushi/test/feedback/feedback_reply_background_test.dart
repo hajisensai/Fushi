@@ -648,7 +648,7 @@ void main() {
         supportRoot: () async => root,
         client: () => client(Uri.parse('https://rank.example')),
         meta: () async => <String, Object?>{},
-        logText: () => '',
+        logText: ({required bool includeDebugLog}) => '',
         logEncoder: (String s) => Uint8List.fromList(utf8.encode(s)),
       );
       await pumpHost(tester, f);

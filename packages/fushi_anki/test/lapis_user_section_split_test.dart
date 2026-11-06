@@ -31,8 +31,11 @@ void main() {
         expect(css, isEmpty);
         continue;
       }
-      expect(seen.containsKey(css), isFalse,
-          reason: '$percent% 与 ${seen[css]}% 产出了同一份缩放块');
+      expect(
+        seen.containsKey(css),
+        isFalse,
+        reason: '$percent% 与 ${seen[css]}% 产出了同一份缩放块',
+      );
       seen[css] = percent;
     }
   });
@@ -46,8 +49,9 @@ void main() {
       splitLapisUserSectionBody(buildLapisFontScaleCss(125)).customCss,
       isEmpty,
     );
-    final LapisUserSectionSplit onlyCustom =
-        splitLapisUserSectionBody('.a { color: red; }');
+    final LapisUserSectionSplit onlyCustom = splitLapisUserSectionBody(
+      '.a { color: red; }',
+    );
     expect(onlyCustom.fontScalePercent, 100);
     expect(onlyCustom.customCss, '.a { color: red; }');
     expect(splitLapisUserSectionBody('').fontScalePercent, 100);
@@ -83,10 +87,13 @@ void main() {
   });
 
   test('恢复之后再调字号：旧缩放块不会残留下来盖住新的（本条就是原 bug）', () {
-    final String backupCss =
-        composeLapisCss(fontScalePercent: 125, customCss: '.mine { }');
-    final LapisUserSectionSplit split =
-        splitLapisUserSectionBody(extractLapisUserSectionBody(backupCss)!);
+    final String backupCss = composeLapisCss(
+      fontScalePercent: 125,
+      customCss: '.mine { }',
+    );
+    final LapisUserSectionSplit split = splitLapisUserSectionBody(
+      extractLapisUserSectionBody(backupCss)!,
+    );
 
     final String afterUserPicks150 = composeLapisCss(
       fontScalePercent: 150,

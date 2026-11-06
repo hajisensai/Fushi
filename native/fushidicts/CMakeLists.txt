@@ -82,12 +82,16 @@ add_library(fushidicts STATIC
     fushidicts_src/stardict/stardict_reader.cpp
     fushidicts_src/text_processor/text_processor.cpp
     fushidicts_src/text_processor/kanji_standardization_data.cpp
+    fushidicts_src/text_processor/opencc_st_data.cpp
     fushidicts_src/scan/word_scan.cpp
     fushidicts_src/scan/mixed_orthography.cpp
+    fushidicts_src/scan/ruby_reading.cpp
     fushidicts_src/deinflector.cpp
     fushidicts_src/query.cpp
     fushidicts_src/lookup.cpp
     fushidicts_src/popup_json.cpp
+    fushidicts_src/tokenize.cpp
+    fushidicts_src/util/redirect_glossary.cpp
 )
 
 target_compile_features(fushidicts PUBLIC
@@ -177,26 +181,6 @@ if(WIN32)
   set_target_properties(fushidicts_ffi PROPERTIES
       PREFIX ""
       OUTPUT_NAME "fushidicts_ffi"
-  )
-endif()
-
-# JNI bridge for Android Kotlin popup (only built on Android)
-if(ANDROID)
-  add_library(fushidicts_jni SHARED
-      fushidicts_jni.cpp
-  )
-
-  target_compile_features(fushidicts_jni PRIVATE
-      cxx_std_23
-  )
-
-  target_include_directories(fushidicts_jni PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR}/fushidicts_include
-  )
-
-  target_link_libraries(fushidicts_jni PRIVATE
-      fushidicts
-      log
   )
 endif()
 

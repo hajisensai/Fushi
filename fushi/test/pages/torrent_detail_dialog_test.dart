@@ -20,42 +20,39 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 const String _hash = 'aa11bb22cc33dd44ee55ff66aa77bb88cc99dd00';
 
 AnimeDownloadPlan _plan() => const AnimeDownloadPlan(
-      id: _hash,
-      createdAtMs: 0,
-      seriesTitle: 'Series X',
-      torrentTitle: '[Sub] Series X - 01',
-      magnet: 'magnet:?xt=urn:btih:$_hash',
-      qbCategory: 'hibiki-anime',
-    );
+  id: _hash,
+  createdAtMs: 0,
+  seriesTitle: 'Series X',
+  torrentTitle: '[Sub] Series X - 01',
+  magnet: 'magnet:?xt=urn:btih:$_hash',
+  qbCategory: 'hibiki-anime',
+);
 
 TorrentSnapshot _snapshot() => const TorrentSnapshot(
-      hash: _hash,
-      name: 'Series X',
-      progress: 0.5,
-      state: 'downloading',
-      savePath: '/dl',
-      contentPath: '/dl/x',
-      amountLeft: 1024,
-      downRateBps: 2048,
-      upRateBps: 512,
-      downloadedBytes: 4096,
-      uploadedBytes: 1024,
-      numPeers: 3,
-      numSeeds: 2,
-      numLeechs: 1,
-      swarmSeeds: 30,
-      swarmLeechs: 12,
-      numConnections: 5,
-      activeDurationSeconds: 90,
-      seedingDurationSeconds: 0,
-    );
+  hash: _hash,
+  name: 'Series X',
+  progress: 0.5,
+  state: 'downloading',
+  savePath: '/dl',
+  contentPath: '/dl/x',
+  amountLeft: 1024,
+  downRateBps: 2048,
+  upRateBps: 512,
+  downloadedBytes: 4096,
+  uploadedBytes: 1024,
+  numPeers: 3,
+  numSeeds: 2,
+  numLeechs: 1,
+  swarmSeeds: 30,
+  swarmLeechs: 12,
+  numConnections: 5,
+  activeDurationSeconds: 90,
+  seedingDurationSeconds: 0,
+);
 
 /// 只有基础能力的假后端（非 TorrentDetailBackend）。
 class _BaseFakeBackend implements TorrentBackend {
-  _BaseFakeBackend({
-    this.failListTorrents = false,
-    this.failListFiles = false,
-  });
+  _BaseFakeBackend({this.failListTorrents = false, this.failListFiles = false});
 
   /// 模拟「后端持续报错」（qb 掉线 / 内置引擎 session 已死）。
   final bool failListTorrents;
@@ -74,8 +71,7 @@ class _BaseFakeBackend implements TorrentBackend {
     String? savePath,
     bool sequential = false,
     bool firstLastPiecePrio = false,
-  }) async =>
-      false;
+  }) async => false;
 
   @override
   Future<List<TorrentSnapshot>> listTorrents({String? category}) async {
@@ -96,15 +92,13 @@ class _BaseFakeBackend implements TorrentBackend {
     String torrentId,
     int fileIndex,
     String newPath,
-  ) async =>
-      const TorrentStorageResult.failure('unsupported');
+  ) async => const TorrentStorageResult.failure('unsupported');
 
   @override
   Future<TorrentStorageResult> moveStorage(
     String torrentId,
     String newSavePath,
-  ) async =>
-      const TorrentStorageResult.failure('unsupported');
+  ) async => const TorrentStorageResult.failure('unsupported');
 
   @override
   void close() {}
@@ -281,7 +275,8 @@ Future<void> _pumpPersistedFallback(
               progress: 1,
               state: 'completed',
               savePath: r'D:\downloads',
-              contentPath: r'D:\downloads\a-very-long-library-folder\season-03\'
+              contentPath:
+                  r'D:\downloads\a-very-long-library-folder\season-03\'
                   r'a-very-long-release-name-that-must-wrap-inside-the-dialog.mkv',
               amountLeft: 0,
               totalSizeBytes: 4096,
@@ -304,15 +299,14 @@ Future<void> _pumpPersistedFallback(
 }
 
 void main() {
-  testWidgets('后端在线但任务已不存在时明确说明节点无法恢复', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('后端在线但任务已不存在时明确说明节点无法恢复', (WidgetTester tester) async {
     await _pumpPersistedFallback(
       tester,
       liveDataAbsence: VideoDownloadLiveDataAbsence.missingFromBackend,
     );
-    final Finder missingNote =
-        find.textContaining('this torrent is no longer present');
+    final Finder missingNote = find.textContaining(
+      'this torrent is no longer present',
+    );
     await _scrollUntilFound(tester, missingNote);
     expect(missingNote, findsOneWidget);
     await _switchTab(tester, 'Peers');
@@ -336,15 +330,14 @@ void main() {
   // BUG：排队等槽位的任务原来被报成「该 torrent 已不在引擎中」。用户报障原话
   // 「明明只是因为其他东西在下载」。这条钉住：排队态必须说排队，且**绝不**
   // 出现丢失文案——两条一起断言，只断言前者的话把两句都显示出来也会绿。
-  testWidgets('还没交给下载器（排队等槽位）时说排队，不谎报 torrent 丢失', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('还没交给下载器（排队等槽位）时说排队，不谎报 torrent 丢失', (WidgetTester tester) async {
     await _pumpPersistedFallback(
       tester,
       liveDataAbsence: VideoDownloadLiveDataAbsence.notHandedOff,
     );
-    final Finder queuedNote =
-        find.textContaining('waiting for other downloads to free a slot');
+    final Finder queuedNote = find.textContaining(
+      'waiting for other downloads to free a slot',
+    );
     await _scrollUntilFound(tester, queuedNote);
     expect(queuedNote, findsOneWidget);
     expect(
@@ -355,15 +348,14 @@ void main() {
     await _dismiss(tester);
   });
 
-  testWidgets('原后端离线时仍展示持久化总览和文件', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('原后端离线时仍展示持久化总览和文件', (WidgetTester tester) async {
     await _pumpPersistedFallback(tester);
     expect(tester.takeException(), isNull);
     expect(find.text('Persisted Series'), findsOneWidget);
     expect(find.textContaining('100.0%'), findsOneWidget);
-    final Finder offlineNote =
-        find.textContaining('The original download backend is offline');
+    final Finder offlineNote = find.textContaining(
+      'The original download backend is offline',
+    );
     await _scrollUntilFound(tester, offlineNote);
     expect(offlineNote, findsOneWidget);
     await _switchTab(tester, 'Files');
@@ -420,9 +412,7 @@ void main() {
     await _dismiss(tester);
   });
 
-  testWidgets('节点刷新未结束时切到Tracker会独立请求并立即渲染', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('节点刷新未结束时切到Tracker会独立请求并立即渲染', (WidgetTester tester) async {
     final Completer<void> peerGate = Completer<void>();
     final _DetailFakeBackend backend = _DetailFakeBackend(
       peerGate: peerGate.future,
@@ -445,9 +435,7 @@ void main() {
     await _dismiss(tester);
   });
 
-  testWidgets('Tracker请求返回null会结束加载并显示失败态', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('Tracker请求返回null会结束加载并显示失败态', (WidgetTester tester) async {
     final _DetailFakeBackend backend = _DetailFakeBackend(
       trackerUnavailable: true,
     );
@@ -461,18 +449,14 @@ void main() {
     await _dismiss(tester);
   });
 
-  testWidgets('总览：快照请求持续抛异常时显示失败态而不是永久转圈', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('总览：快照请求持续抛异常时显示失败态而不是永久转圈', (WidgetTester tester) async {
     await _pump(tester, _BaseFakeBackend(failListTorrents: true));
     expect(find.text('Something went wrong while loading'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     await _dismiss(tester);
   });
 
-  testWidgets('文件：listFiles 抛异常时显示失败态而不是永久转圈', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('文件：listFiles 抛异常时显示失败态而不是永久转圈', (WidgetTester tester) async {
     await _pump(tester, _BaseFakeBackend(failListFiles: true));
     await _switchTab(tester, 'Files');
     expect(find.text('Something went wrong while loading'), findsOneWidget);
@@ -490,9 +474,7 @@ void main() {
     await _dismiss(tester);
   });
 
-  testWidgets('轮询里偶发一次失败不会把已渲染的Tracker列表闪成失败态', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('轮询里偶发一次失败不会把已渲染的Tracker列表闪成失败态', (WidgetTester tester) async {
     final _DetailFakeBackend backend = _DetailFakeBackend(
       trackerUnavailableAfterFirst: true,
     );
@@ -508,9 +490,7 @@ void main() {
     await _dismiss(tester);
   });
 
-  testWidgets('在途请求返回时用户已切走：不给不可见的tab补跑', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('在途请求返回时用户已切走：不给不可见的tab补跑', (WidgetTester tester) async {
     final Completer<void> trackerGate = Completer<void>();
     final _DetailFakeBackend backend = _DetailFakeBackend(
       trackerGate: trackerGate.future,
@@ -529,9 +509,7 @@ void main() {
     await _dismiss(tester);
   });
 
-  testWidgets('详情后端：改文件优先级真调 setFilePriority', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('详情后端：改文件优先级真调 setFilePriority', (WidgetTester tester) async {
     final _DetailFakeBackend backend = _DetailFakeBackend();
     await _pump(tester, backend);
     await tester.tap(find.text('Files'));

@@ -246,8 +246,10 @@ class _FushiFocusRingState extends State<FushiFocusRing>
     if (!mounted) return null;
     final FocusNode? primary = _fm.primaryFocus;
     if (primary == null) return null;
-    final FushiFocusController? controller =
-        FushiFocusRoot.maybeControllerOf(context, listen: false);
+    final FushiFocusController? controller = FushiFocusRoot.maybeControllerOf(
+      context,
+      listen: false,
+    );
     return controller?.geometryContextFor(primary) ?? primary.context;
   }
 
@@ -457,8 +459,9 @@ _FocusTargetShape? _shapeOfRenderObject(RenderObject node) {
     }
     if (decoration is BoxDecoration) {
       if (decoration.shape == BoxShape.circle) return const _CircleShape();
-      final BorderRadius? radius =
-          decoration.borderRadius?.resolve(TextDirection.ltr);
+      final BorderRadius? radius = decoration.borderRadius?.resolve(
+        TextDirection.ltr,
+      );
       return radius == null ? null : _RadiiShape(radius);
     }
   }

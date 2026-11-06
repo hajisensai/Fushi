@@ -51,118 +51,137 @@ const int _kRewoundMs = 5000;
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets(
-    'resume seek lands and is not rewound to the start',
-    (WidgetTester tester) async {
-      final List<String> caught = <String>[];
-      final FlutterExceptionHandler? oldHandler = FlutterError.onError;
-      FlutterError.onError = (FlutterErrorDetails details) {
-        caught.add(details.exceptionAsString());
-      };
-      try {
-        app.main(const <String>[]);
-        expect(await waitForHome(tester), isTrue);
-        await tester.pump(const Duration(seconds: 2));
+  testWidgets('resume seek lands and is not rewound to the start', (
+    WidgetTester tester,
+  ) async {
+    final List<String> caught = <String>[];
+    final FlutterExceptionHandler? oldHandler = FlutterError.onError;
+    FlutterError.onError = (FlutterErrorDetails details) {
+      caught.add(details.exceptionAsString());
+    };
+    try {
+      app.main(const <String>[]);
+      expect(await waitForHome(tester), isTrue);
+      await tester.pump(const Duration(seconds: 2));
 
-        final ProviderContainer container = ProviderScope.containerOf(
-          tester.element(find.byType(MaterialApp).first),
-        );
-        final AppModel appModel = container.read(appProvider);
-        final VideoBookRepository repo = VideoBookRepository(appModel.database);
+      final ProviderContainer container = ProviderScope.containerOf(
+        tester.element(find.byType(MaterialApp).first),
+      );
+      final AppModel appModel = container.read(appProvider);
+      final VideoBookRepository repo = VideoBookRepository(appModel.database);
 
-        // 90s 测试视频：断点 45s 处在片中，seek 目标明确。
+      // 90s 测试视频：断点 45s 处在片中，seek 目标明确。
+      //
+      // Android 模拟器（x86_64）没有 FFmpegKit native 库，[generateTestVideo] 必失败，
+      // 故优先用外部预置素材（`adb push` 到 app 外部文件目录，无需存储权限即可读）：
+      //   adb push resume_probe.mp4 \
+      //     /sdcard/Android/data/app.fushi.reader/files/resume_probe.mp4
+      // 桌面/有 ffmpeg 的环境仍走 [generateTestVideo] 自给自足。
+      const String prepushed =
+          '/sdcard/Android/data/app.fushi.reader/files/resume_probe.mp4';
+      final File videoFile;
+      if (Platform.isAndroid) {
+        // Android 上**只**认预置素材：FFmpegKit 在模拟器必失败，落回
+        // [generateTestVideo] 只会抛出与本 bug 无关的异常，把「素材没准备好」
+        // 伪装成「修复失效」。缺素材时明确 fail 并给出准备命令，不误导判绿。
         //
-        // Android 模拟器（x86_64）没有 FFmpegKit native 库，[generateTestVideo] 必失败，
-        // 故优先用外部预置素材（`adb push` 到 app 外部文件目录，无需存储权限即可读）：
-        //   adb push resume_probe.mp4 \
-        //     /sdcard/Android/data/app.fushi.reader/files/resume_probe.mp4
-        // 桌面/有 ffmpeg 的环境仍走 [generateTestVideo] 自给自足。
-        const String prepushed =
-            '/sdcard/Android/data/app.fushi.reader/files/resume_probe.mp4';
-        final File videoFile;
-        if (Platform.isAndroid) {
-          // Android 上**只**认预置素材：FFmpegKit 在模拟器必失败，落回
-          // [generateTestVideo] 只会抛出与本 bug 无关的异常，把「素材没准备好」
-          // 伪装成「修复失效」。缺素材时明确 fail 并给出准备命令，不误导判绿。
-          //
-          // 注意 `flutter test -d` 在 APK 变更时会卸载重装，app 外部文件目录随之
-          // 清空 —— 素材必须在**安装之后**推：
-          //   adb install -r -t build/app/outputs/flutter-apk/app-debug.apk
-          //   adb push resume_probe.mp4 $prepushed
-          expect(File(prepushed).existsSync(), isTrue,
-              reason: '缺测试素材 $prepushed。先 adb install 再 adb push（重装会清空该目录）；'
-                  '素材 = 90s testsrc mp4，见本文件头部注释。');
-          videoFile = File(prepushed);
-        } else {
-          final Directory dir =
-              await Directory.systemTemp.createTemp('fushi_resume_seek_');
-          videoFile = await generateTestVideo(
-            outPath: '${dir.path}${Platform.pathSeparator}resume_probe.mp4',
-            duration: const Duration(seconds: 90),
-          );
-        }
-        const String bookUid = 'video/itest-resume-seek-lands';
-        await repo.saveVideoBook(VideoBooksCompanion(
+        // 注意 `flutter test -d` 在 APK 变更时会卸载重装，app 外部文件目录随之
+        // 清空 —— 素材必须在**安装之后**推：
+        //   adb install -r -t build/app/outputs/flutter-apk/app-debug.apk
+        //   adb push resume_probe.mp4 $prepushed
+        expect(
+          File(prepushed).existsSync(),
+          isTrue,
+          reason:
+              '缺测试素材 $prepushed。先 adb install 再 adb push（重装会清空该目录）；'
+              '素材 = 90s testsrc mp4，见本文件头部注释。',
+        );
+        videoFile = File(prepushed);
+      } else {
+        final Directory dir = await Directory.systemTemp.createTemp(
+          'fushi_resume_seek_',
+        );
+        videoFile = await generateTestVideo(
+          outPath: '${dir.path}${Platform.pathSeparator}resume_probe.mp4',
+          duration: const Duration(seconds: 90),
+        );
+      }
+      const String bookUid = 'video/itest-resume-seek-lands';
+      await repo.saveVideoBook(
+        VideoBooksCompanion(
           bookUid: const Value(bookUid),
           title: const Value('resume seek probe'),
           videoPath: Value(videoFile.absolute.path),
           lastPositionMs: const Value(_kResumeMs),
-        ));
+        ),
+      );
 
-        final NavigatorState navigator =
-            tester.state<NavigatorState>(find.byType(Navigator).first);
-        unawaited(navigator.push<void>(MaterialPageRoute<void>(
-          builder: (_) => VideoFushiPage(bookUid: bookUid, repo: repo),
-        )));
+      final NavigatorState navigator = tester.state<NavigatorState>(
+        find.byType(Navigator).first,
+      );
+      unawaited(
+        navigator.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => VideoFushiPage(bookUid: bookUid, repo: repo),
+          ),
+        ),
+      );
 
-        VideoFushiTestHooks? readHooks() {
-          if (find.byType(VideoFushiPage).evaluate().isEmpty) return null;
-          return tester.state<State<VideoFushiPage>>(
-              find.byType(VideoFushiPage)) as VideoFushiTestHooks;
-        }
-
-        bool ready = false;
-        for (int i = 0; i < 80; i++) {
-          await tester.pump(const Duration(milliseconds: 250));
-          if (readHooks()?.debugPositionMs != null) {
-            ready = true;
-            break;
-          }
-        }
-        expect(ready, isTrue, reason: '控制器应在 load 后就绪');
-
-        // 密集采样 8s（覆盖 _waitUntilSeekable 5s 上限 + seek 落地 + 起播）。
-        // 页面 _applyLoad 传 autoPlay:true，无需手动 play。
-        final List<int> samples = <int>[];
-        for (int i = 0; i < 64; i++) {
-          await tester.pump(const Duration(milliseconds: 125));
-          final int? pos = readHooks()?.debugPositionMs;
-          if (pos != null) samples.add(pos);
-        }
-        debugPrint('[resume-seek] duration=${readHooks()?.debugDurationMs} '
-            'samples=$samples');
-
-        final int landedAt = samples.indexWhere((int p) => p >= _kLandedMs);
-        expect(landedAt, greaterThanOrEqualTo(0),
-            reason: '恢复 seek 从未落地（位置从未到达 ${_kLandedMs}ms）。samples=$samples');
-
-        final List<int> afterLanding = samples.sublist(landedAt);
-        final int rewoundAt =
-            afterLanding.indexWhere((int p) => p < _kRewoundMs);
-        expect(rewoundAt, -1,
-            reason: 'seek 落地后位置被踢回开头（第 $rewoundAt 个采样 = '
-                '${rewoundAt >= 0 ? afterLanding[rewoundAt] : -1}ms）。'
-                'samples=$samples');
-
-        await navigator.maybePop();
-        for (int i = 0; i < 20; i++) {
-          await tester.pump(const Duration(milliseconds: 100));
-          if (find.byType(VideoFushiPage).evaluate().isEmpty) break;
-        }
-        debugPrint('[resume-seek] non-fatal framework errors=${caught.length}');
-      } finally {
-        FlutterError.onError = oldHandler;
+      VideoFushiTestHooks? readHooks() {
+        if (find.byType(VideoFushiPage).evaluate().isEmpty) return null;
+        return tester.state<State<VideoFushiPage>>(find.byType(VideoFushiPage))
+            as VideoFushiTestHooks;
       }
-    },
-  );
+
+      bool ready = false;
+      for (int i = 0; i < 80; i++) {
+        await tester.pump(const Duration(milliseconds: 250));
+        if (readHooks()?.debugPositionMs != null) {
+          ready = true;
+          break;
+        }
+      }
+      expect(ready, isTrue, reason: '控制器应在 load 后就绪');
+
+      // 密集采样 8s（覆盖 _waitUntilSeekable 5s 上限 + seek 落地 + 起播）。
+      // 页面 _applyLoad 传 autoPlay:true，无需手动 play。
+      final List<int> samples = <int>[];
+      for (int i = 0; i < 64; i++) {
+        await tester.pump(const Duration(milliseconds: 125));
+        final int? pos = readHooks()?.debugPositionMs;
+        if (pos != null) samples.add(pos);
+      }
+      debugPrint(
+        '[resume-seek] duration=${readHooks()?.debugDurationMs} '
+        'samples=$samples',
+      );
+
+      final int landedAt = samples.indexWhere((int p) => p >= _kLandedMs);
+      expect(
+        landedAt,
+        greaterThanOrEqualTo(0),
+        reason: '恢复 seek 从未落地（位置从未到达 ${_kLandedMs}ms）。samples=$samples',
+      );
+
+      final List<int> afterLanding = samples.sublist(landedAt);
+      final int rewoundAt = afterLanding.indexWhere((int p) => p < _kRewoundMs);
+      expect(
+        rewoundAt,
+        -1,
+        reason:
+            'seek 落地后位置被踢回开头（第 $rewoundAt 个采样 = '
+            '${rewoundAt >= 0 ? afterLanding[rewoundAt] : -1}ms）。'
+            'samples=$samples',
+      );
+
+      await navigator.maybePop();
+      for (int i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+        if (find.byType(VideoFushiPage).evaluate().isEmpty) break;
+      }
+      debugPrint('[resume-seek] non-fatal framework errors=${caught.length}');
+    } finally {
+      FlutterError.onError = oldHandler;
+    }
+  });
 }

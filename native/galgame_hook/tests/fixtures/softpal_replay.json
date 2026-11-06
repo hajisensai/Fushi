@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "engine_id": "softpal",
+  "status": "implemented_unverified",
+  "config": {
+    "selected_thread": "softpal:2a",
+    "pair_tolerance_ms": 500,
+    "resource_late_wait_ms": 500
+  },
+  "events": [
+    {
+      "kind": "text",
+      "id": "synthetic-luna-generic-line",
+      "timestamp_ms": 900,
+      "thread": "hook:2a",
+      "text": "synthetic generic hook text"
+    },
+    {
+      "kind": "text",
+      "id": "synthetic-voiced-page",
+      "timestamp_ms": 1000,
+      "thread": "softpal:2a",
+      "text": "synthetic voiced page"
+    },
+    {
+      "kind": "resource_audio",
+      "id": "synthetic-voice-pac-entry",
+      "timestamp_ms": 1004,
+      "available_at_ms": 1040,
+      "format": "ogg",
+      "channels": 1
+    },
+    {
+      "kind": "loopback",
+      "id": "synthetic-loopback",
+      "timestamp_ms": 1030,
+      "format": "s16le",
+      "sample_rate_hz": 48000,
+      "channels": 2
+    },
+    {
+      "kind": "text",
+      "id": "synthetic-voiced-page-republished",
+      "timestamp_ms": 1300,
+      "thread": "softpal:2a",
+      "text": "synthetic voiced page"
+    },
+    {
+      "kind": "text",
+      "id": "synthetic-narration-page",
+      "timestamp_ms": 4000,
+      "thread": "softpal:2a",
+      "text": "synthetic narration page"
+    },
+    {
+      "kind": "session_end",
+      "id": "synthetic-session-end",
+      "timestamp_ms": 6000
+    }
+  ],
+  "expected": {
+    "cards": [
+      {
+        "text_id": "synthetic-voiced-page",
+        "audio_backend": "resource_audio",
+        "audio_id": "synthetic-voice-pac-entry"
+      },
+      {
+        "text_id": "synthetic-narration-page",
+        "audio_backend": null,
+        "audio_id": null
+      }
+    ],
+    "duplicate_text_events": 1,
+    "thread_filtered_events": 1,
+    "session_clean": true
+  }
+}

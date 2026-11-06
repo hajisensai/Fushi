@@ -16,8 +16,11 @@ FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 /// downloadable `.epub` content asset; when false it is an orphan that holds
 /// only sync metadata (BUG-049 phantom).
 class _OrphanFakeBackend implements SyncBackend {
-  _OrphanFakeBackend({required this.hasEpub});
+  _OrphanFakeBackend({required this.hasEpub, this.contentName = 'book.epub'});
   final bool hasEpub;
+
+  /// 内容资产名（[hasEpub] 为 true 时列出）：`.epub` 或漫画包 `.manga.zip`。
+  final String contentName;
   static const String _folderId = 'folder1';
 
   @override
@@ -25,8 +28,10 @@ class _OrphanFakeBackend implements SyncBackend {
   @override
   String? get cachedRootFolderId => null;
   @override
-  void restoreCache(
-      {String? rootFolderId, Map<String, String>? titleToFolderId}) {}
+  void restoreCache({
+    String? rootFolderId,
+    Map<String, String>? titleToFolderId,
+  }) {}
   @override
   Future<List<SyncFileRef>> listBooks(String rootFolderId) async =>
       <SyncFileRef>[SyncFileRef(id: _folderId, name: 'GhostBook')];
@@ -42,7 +47,7 @@ class _OrphanFakeBackend implements SyncBackend {
   @override
   Future<List<AssetEntry>> listChildren(String id) async {
     if (id == _folderId && hasEpub) {
-      return const <AssetEntry>[AssetEntry(id: 'epub1', name: 'book.epub')];
+      return <AssetEntry>[AssetEntry(id: 'epub1', name: contentName)];
     }
     // Orphan: only metadata-ish children, no downloadable book.
     return const <AssetEntry>[AssetEntry(id: 'prog1', name: 'progress_x.json')];
@@ -71,13 +76,18 @@ class _OrphanFakeBackend implements SyncBackend {
   @override
   Future<AssetEntry?> findAsset(String namespaceId, String name) async => null;
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
-  Future<void> getAsset(String assetId, File destination,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
   Future<Object?> getJsonAsset(String assetId) async =>
       throw UnimplementedError();
@@ -92,8 +102,7 @@ class _OrphanFakeBackend implements SyncBackend {
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<TtuProgress> getProgressFile(String fileId) async =>
       throw UnimplementedError();
@@ -108,86 +117,112 @@ class _OrphanFakeBackend implements SyncBackend {
     required String folderId,
     required String? fileId,
     required TtuProgress progress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> updateStatsFile({
     required String folderId,
     required String? fileId,
     required List<TtuStatistics> stats,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> updateAudioBookFile({
     required String folderId,
     required String? fileId,
     required TtuAudioBook audioBook,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> uploadContentFile({
     required String folderId,
     required String fileName,
     required File file,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<SyncFileRef?> findContentFile(
-          String folderId, String fileName) async =>
-      throw UnimplementedError();
+    String folderId,
+    String fileName,
+  ) async => throw UnimplementedError();
   @override
   void clearCache() {}
 }
 
 void main() {
-  test('metadata-only remote folder is kept but not downloadable (BUG-049)',
-      () async {
-    final FushiDatabase db = _memDb();
-    addTearDown(db.close);
+  test(
+    'metadata-only remote folder is kept but not downloadable (BUG-049)',
+    () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
 
-    final List<SyncCompareEntry> orphan = await fetchCompareDataForTest(
-      db,
-      _OrphanFakeBackend(hasEpub: false),
-    );
-    final ghost = orphan
-        .firstWhere((SyncCompareEntry e) => e.title.contains('GhostBook'));
-    // Kept (so it can be deleted via the row menu) but never offered as a
-    // download that importRemoteBookFolder could never satisfy.
-    expect(ghost.remoteFolderId, isNotNull);
-    expect(ghost.remoteHasContent, isFalse);
-    expect(ghost.isDownloadableRemoteOnly, isFalse);
+      final List<SyncCompareEntry> orphan = await fetchCompareDataForTest(
+        db,
+        _OrphanFakeBackend(hasEpub: false),
+      );
+      final ghost = orphan.firstWhere(
+        (SyncCompareEntry e) => e.title.contains('GhostBook'),
+      );
+      // Kept (so it can be deleted via the row menu) but never offered as a
+      // download that importRemoteBookFolder could never satisfy.
+      expect(ghost.remoteFolderId, isNotNull);
+      expect(ghost.remoteHasContent, isFalse);
+      expect(ghost.isDownloadableRemoteOnly, isFalse);
 
-    final List<SyncCompareEntry> real = await fetchCompareDataForTest(
-      db,
-      _OrphanFakeBackend(hasEpub: true),
-    );
-    final book =
-        real.firstWhere((SyncCompareEntry e) => e.title.contains('GhostBook'));
-    // A remote folder WITH an .epub is still a real downloadable book.
-    expect(book.remoteHasContent, isTrue);
-    expect(book.isDownloadableRemoteOnly, isTrue);
-  });
+      final List<SyncCompareEntry> real = await fetchCompareDataForTest(
+        db,
+        _OrphanFakeBackend(hasEpub: true),
+      );
+      final book = real.firstWhere(
+        (SyncCompareEntry e) => e.title.contains('GhostBook'),
+      );
+      // A remote folder WITH an .epub is still a real downloadable book.
+      expect(book.remoteHasContent, isTrue);
+      expect(book.isDownloadableRemoteOnly, isTrue);
+    },
+  );
 
-  test('source guard: _copyWithoutAudio preserves remoteHasContent (BUG-049)',
-      () {
-    // _copyWithoutAudio rebuilds the entry after a remote-audiobook delete;
-    // dropping remoteHasContent would reset it to the default `true` and
-    // re-expose the phantom download on a content-less orphan.
-    final src =
-        File('lib/src/sync/sync_compare_dialog.dart').readAsStringSync();
-    final int start = src.indexOf('_copyWithoutAudio(SyncCompareEntry e)');
-    expect(start, greaterThanOrEqualTo(0));
-    final int end = src.indexOf(');', start);
-    final String body = src.substring(start, end);
-    expect(body.contains('remoteHasContent: e.remoteHasContent'), isTrue,
-        reason: 'rebuilt entry must keep remoteHasContent (BUG-049)');
-  });
+  test(
+    'a remote folder holding only a `.manga.zip` manga package is downloadable',
+    () async {
+      // 所有者 2026-10-21：漫画包改传 `<title>.manga.zip`；对比弹窗不认的话，新版上传
+      // 的漫画会被当成只剩元数据的孤儿（不给下载入口）。
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      final List<SyncCompareEntry> entries = await fetchCompareDataForTest(
+        db,
+        _OrphanFakeBackend(hasEpub: true, contentName: 'GhostBook.manga.zip'),
+      );
+      final SyncCompareEntry manga = entries.firstWhere(
+        (SyncCompareEntry e) => e.title.contains('GhostBook'),
+      );
+      expect(manga.remoteHasContent, isTrue);
+      expect(manga.isDownloadableRemoteOnly, isTrue);
+    },
+  );
+
+  test(
+    'source guard: _copyWithoutAudio preserves remoteHasContent (BUG-049)',
+    () {
+      // _copyWithoutAudio rebuilds the entry after a remote-audiobook delete;
+      // dropping remoteHasContent would reset it to the default `true` and
+      // re-expose the phantom download on a content-less orphan.
+      final src = File(
+        'lib/src/sync/sync_compare_dialog.dart',
+      ).readAsStringSync();
+      final int start = src.indexOf('_copyWithoutAudio(SyncCompareEntry e)');
+      expect(start, greaterThanOrEqualTo(0));
+      final int end = src.indexOf(');', start);
+      final String body = src.substring(start, end);
+      expect(
+        body.contains('remoteHasContent: e.remoteHasContent'),
+        isTrue,
+        reason: 'rebuilt entry must keep remoteHasContent (BUG-049)',
+      );
+    },
+  );
 }

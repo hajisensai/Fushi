@@ -80,9 +80,9 @@ mixin PkceOAuthBackendMixin on SyncBackend {
   /// `Authorization: Bearer` + JSON 内容类型，普通 API 调用的默认头。
   @protected
   Map<String, String> get bearerJsonHeaders => <String, String>{
-        'Authorization': 'Bearer $accessToken',
-        'Content-Type': 'application/json',
-      };
+    'Authorization': 'Bearer $accessToken',
+    'Content-Type': 'application/json',
+  };
 
   // ── 授权流 ──────────────────────────────────────────────────────────
 

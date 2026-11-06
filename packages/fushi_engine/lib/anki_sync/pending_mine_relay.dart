@@ -97,7 +97,13 @@ class PendingMineRelay {
 
   String get _myClaim => '$_claimPrefix$_deviceId.json';
 
-  Future<PendingMineRelayReport> run(SyncAssetStore assets) async {
+  /// [onRemoteWork] 在本轮确定要碰远端、发出第一个请求之前调用一次；无事可做的
+  /// 轮次不调用。同步编排据此只在真有中转时才公布「同步待发制卡」阶段——否则从没
+  /// 用过待发制卡的设备每轮同步也挂着这个阶段名。
+  Future<PendingMineRelayReport> run(
+    SyncAssetStore assets, {
+    void Function()? onRemoteWork,
+  }) async {
     final List<PendingMineRow> rows = await _store.rows();
     // 没开落地、也没有要中转的卡：不碰远端。旧开关关掉后遗留的认领，在本机下一次
     // 有卡要中转、或重新打开开关时顺带处理。
@@ -105,6 +111,7 @@ class PendingMineRelay {
       return const PendingMineRelayReport();
     }
 
+    onRemoteWork?.call();
     final String ns = await assets.ensureNamespace(namespace);
     final Map<String, AssetEntry> entries = <String, AssetEntry>{
       for (final AssetEntry e in await assets.listChildren(ns))

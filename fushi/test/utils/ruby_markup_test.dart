@@ -15,8 +15,11 @@ void expectSpan(
   required String base,
   required String ruby,
 }) {
-  expect(parsed.spans.length, greaterThan(index),
-      reason: '缺少第 $index 段注音：${parsed.spans}');
+  expect(
+    parsed.spans.length,
+    greaterThan(index),
+    reason: '缺少第 $index 段注音：${parsed.spans}',
+  );
   final RubySpan span = parsed.spans[index];
   expect(span.ruby, ruby);
   expect(
@@ -49,8 +52,10 @@ void main() {
       const String raw = '今もピリピリと空気を<rふる>震</r>わせている。';
       final RubyMarkupText parsed = parseRubyMarkup(raw);
       expect(parsed.text, '今もピリピリと空気を震わせている。');
-      expect(parsed.spans.single,
-          const RubySpan(start: 10, length: 1, ruby: 'ふる'));
+      expect(
+        parsed.spans.single,
+        const RubySpan(start: 10, length: 1, ruby: 'ふる'),
+      );
       expectSpan(parsed, 0, base: '震', ruby: 'ふる');
     });
 
@@ -77,15 +82,17 @@ void main() {
 
   group('HTML <ruby>', () {
     test('单段 rt', () {
-      final RubyMarkupText parsed =
-          parseRubyMarkup('空気を<ruby>震<rt>ふる</rt></ruby>わせる');
+      final RubyMarkupText parsed = parseRubyMarkup(
+        '空気を<ruby>震<rt>ふる</rt></ruby>わせる',
+      );
       expect(parsed.text, '空気を震わせる');
       expectSpan(parsed, 0, base: '震', ruby: 'ふる');
     });
 
     test('mono-ruby 拆成逐字两段', () {
-      final RubyMarkupText parsed =
-          parseRubyMarkup('<ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby>');
+      final RubyMarkupText parsed = parseRubyMarkup(
+        '<ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby>',
+      );
       expect(parsed.text, '漢字');
       expect(parsed.spans.length, 2);
       expectSpan(parsed, 0, base: '漢', ruby: 'かん');
@@ -101,8 +108,9 @@ void main() {
     });
 
     test('非假名注音也抬到上方（<ruby> 结构无歧义）', () {
-      final RubyMarkupText parsed =
-          parseRubyMarkup('<ruby>東京<rt>Tokyo</rt></ruby>');
+      final RubyMarkupText parsed = parseRubyMarkup(
+        '<ruby>東京<rt>Tokyo</rt></ruby>',
+      );
       expect(parsed.text, '東京');
       expectSpan(parsed, 0, base: '東京', ruby: 'Tokyo');
     });
@@ -219,8 +227,9 @@ void main() {
     });
 
     test('区间按 UTF-16 下标排列且互不重叠', () {
-      final RubyMarkupText parsed =
-          parseRubyMarkup('<rあ>亜</r><rい>以</r><rう>宇</r>');
+      final RubyMarkupText parsed = parseRubyMarkup(
+        '<rあ>亜</r><rい>以</r><rう>宇</r>',
+      );
       expect(parsed.text, '亜以宇');
       int previousEnd = 0;
       for (final RubySpan span in parsed.spans) {
@@ -234,8 +243,9 @@ void main() {
 
   group('rebase：文本被继续加工时的偏移守恒', () {
     test('trim 后区间整体平移', () {
-      final RubyMarkupText parsed =
-          parseRubyMarkup('  <rふる>震</r>わせる  ').trimmed();
+      final RubyMarkupText parsed = parseRubyMarkup(
+        '  <rふる>震</r>わせる  ',
+      ).trimmed();
       expect(parsed.text, '震わせる');
       expectSpan(parsed, 0, base: '震', ruby: 'ふる');
     });
@@ -269,8 +279,9 @@ void main() {
     });
 
     test('有注音时按 start/length/ruby 三字段编码', () {
-      final List<Map<String, Object?>>? encoded =
-          parseRubyMarkup('<rふる>震</r>').toChannelSpans();
+      final List<Map<String, Object?>>? encoded = parseRubyMarkup(
+        '<rふる>震</r>',
+      ).toChannelSpans();
       expect(encoded, isNotNull);
       expect(encoded!.single, <String, Object?>{
         'start': 0,

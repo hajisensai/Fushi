@@ -24,8 +24,9 @@ String _read(List<String> candidates, String name) {
 void main() {
   group('ErrorLogService diagnostic tier (behavior)', () {
     setUp(() async {
-      final Directory tmp =
-          await Directory.systemTemp.createTemp('errlog_diag_test');
+      final Directory tmp = await Directory.systemTemp.createTemp(
+        'errlog_diag_test',
+      );
       await ErrorLogService.instance.init(directoryOverride: tmp);
       await ErrorLogService.instance.clear();
     });
@@ -36,7 +37,9 @@ void main() {
 
       svc.logDiagnostic('WGC.captureLog', 'lifecycle forensic evt=create-pool');
       svc.logDiagnostic(
-          'UpdateChecker.httpGet', 'connect timed out ghfast.top');
+        'UpdateChecker.httpGet',
+        'connect timed out ghfast.top',
+      );
 
       expect(svc.entries, isEmpty, reason: '诊断/取证不该出现在用户可见错误列表');
       expect(svc.diagnosticEntries.length, 2);
@@ -55,10 +58,15 @@ void main() {
     test('getFullLog 仍带上诊断段（供复制/分享/上传）', () {
       final ErrorLogService svc = ErrorLogService.instance;
       svc.logDiagnostic(
-          'WGC.captureLog', 'BUG-209 lifecycle: evt=create-bridge');
+        'WGC.captureLog',
+        'BUG-209 lifecycle: evt=create-bridge',
+      );
       final String full = svc.getFullLog();
-      expect(full, contains('WGC.captureLog'),
-          reason: 'BUG-209 取证必须仍能随日志上传，不做删除式绕过');
+      expect(
+        full,
+        contains('WGC.captureLog'),
+        reason: 'BUG-209 取证必须仍能随日志上传，不做删除式绕过',
+      );
       expect(full, contains('evt=create-bridge'));
     });
 
@@ -79,11 +87,15 @@ void main() {
         'fushi/lib/src/utils/misc/wgc_capture_log.dart',
       ], 'wgc_capture_log.dart');
       expect(
-          RegExp(r"logDiagnostic\(\s*'WGC\.captureLog'").hasMatch(src), isTrue,
-          reason: 'WGC 取证必须走 logDiagnostic（诊断段），不刷进用户可见报错日志');
+        RegExp(r"logDiagnostic\(\s*'WGC\.captureLog'").hasMatch(src),
+        isTrue,
+        reason: 'WGC 取证必须走 logDiagnostic（诊断段），不刷进用户可见报错日志',
+      );
       expect(
-          RegExp(r"instance\.log\(\s*'WGC\.captureLog'").hasMatch(src), isFalse,
-          reason: 'WGC 取证不得再走 log()（会计入用户可见错误）');
+        RegExp(r"instance\.log\(\s*'WGC\.captureLog'").hasMatch(src),
+        isFalse,
+        reason: 'WGC 取证不得再走 log()（会计入用户可见错误）',
+      );
     });
 
     test('UpdateChecker 预期网络失败三分支走 logDiagnostic', () {
@@ -99,22 +111,27 @@ void main() {
         'UpdateChecker.download',
       ]) {
         expect(
-          collapsed
-              .contains("logDiagnostic( '$label', t.update_network_failure"),
+          collapsed.contains(
+            "logDiagnostic( '$label', t.update_network_failure",
+          ),
           isTrue,
           reason: '$label 的预期网络失败分支必须走 logDiagnostic',
         );
         // 预期分支不得再用 log(...) 记 update_network_failure（那会进用户报错日志）。
         expect(
-          collapsed
-              .contains("instance.log( '$label', t.update_network_failure"),
+          collapsed.contains(
+            "instance.log( '$label', t.update_network_failure",
+          ),
           isFalse,
           reason: '$label 的预期网络失败不得再走 log()（噪声回归）',
         );
       }
       // never-break：真解析/逻辑错误（else 分支）仍走 log() 记进报错日志。
-      expect(src.contains('ErrorLogService.instance.log('), isTrue,
-          reason: '真错误分支仍须保留 log()（never break：真错误仍进报错日志）');
+      expect(
+        src.contains('ErrorLogService.instance.log('),
+        isTrue,
+        reason: '真错误分支仍须保留 log()（never break：真错误仍进报错日志）',
+      );
     });
   });
 }

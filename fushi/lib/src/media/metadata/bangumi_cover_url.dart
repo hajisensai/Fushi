@@ -42,9 +42,7 @@ String? bangumiOriginalImageUrl(Object? value) {
     return trimmed;
   }
 
-  final RegExp derivativePath = RegExp(
-    r'^/(?:r/[^/]+/)?pic/cover/[lcmsg]/',
-  );
+  final RegExp derivativePath = RegExp(r'^/(?:r/[^/]+/)?pic/cover/[lcmsg]/');
   if (!derivativePath.hasMatch(uri.path)) return trimmed;
 
   final String originalPath = uri.path.replaceFirst(

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
 
 /// BUG-1708 第二面：app 为更新主动退出后，它拉起的 ffmpeg 还活着并锁住
@@ -20,10 +20,13 @@ void main() {
     /// 一个会一直跑下去的子进程，模拟正在转码的 ffmpeg。
     Future<Process> startLongRunning() {
       if (Platform.isWindows) {
-        return registry.start(
-          'cmd.exe',
-          <String>['/c', 'ping', '-n', '600', '127.0.0.1'],
-        );
+        return registry.start('cmd.exe', <String>[
+          '/c',
+          'ping',
+          '-n',
+          '600',
+          '127.0.0.1',
+        ]);
       }
       return registry.start('sleep', <String>['600']);
     }

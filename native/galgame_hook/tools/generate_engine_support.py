@@ -55,6 +55,7 @@ LOOKUP_ACCEPTANCE_ENGINE_IDS = {
     "fvp",
     "kogado_hy",
     "luca",
+    "softpal",
 }
 LOOKUP_PROVIDERS = {
     "runtime_layout",
@@ -151,6 +152,10 @@ LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS = {
         "kLookupGeometryProviderEngineExactLayout",
         "kLookupGeometryProviderIdLuca",
     ): ("luca", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdSoftpal",
+    ): ("softpal", "engine_exact_layout"),
 }
 SIGNATURE_FIELDS = (
     "executable_names",

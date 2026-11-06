@@ -2,6 +2,8 @@
 
 package eu.kanade.tachiyomi.animesource.model
 
+import kotlinx.serialization.json.JsonObject
+
 class SAnimeImpl : SAnime {
     override lateinit var url: String
 
@@ -26,6 +28,17 @@ class SAnimeImpl : SAnime {
     override var fetch_type: FetchType = FetchType.Episodes
 
     override var season_number: Double = -1.0
+
+    // `JsonObject` is not java.io.Serializable; keep the Serializable contract of
+    // [SAnime] by not serialising the field (an absent value reads back as empty).
+    @Transient
+    private var memoValue: JsonObject? = null
+
+    override var memo: JsonObject
+        get() = memoValue ?: Video.EMPTY_MEMO
+        set(value) {
+            memoValue = value
+        }
 
     override var initialized: Boolean = false
 }

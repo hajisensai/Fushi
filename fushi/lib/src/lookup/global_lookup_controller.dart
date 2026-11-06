@@ -17,25 +17,33 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
+import 'package:fushi/src/anki/mine_failure_notice.dart';
 import 'package:fushi/src/lookup/overlay_auto_read.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/lookup/gal_lookup_latency_trace.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_layout.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/global_lookup_render.dart';
 import 'package:fushi/src/lookup/global_lookup_stack.dart';
+import 'package:fushi/src/lookup/linux_lookup_card.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/pages/implementations/popup_settings_injection.dart'
+    show
+        PopupSettingsOptions,
+        PopupStaticSettingsJs,
+        buildPopupStaticSettingsJs;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/reader/popup_swipe_close_script.dart'
     show popupSideSwipeDismissAllowed, popupTopPullDismissAllowed;
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart'
+import 'package:fushi/src/utils/misc/swipe_dismiss_threshold.dart'
     show swipeDismissThreshold;
 import 'package:fushi/src/shortcuts/global_external_lookup_route.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
@@ -96,10 +104,16 @@ class GlobalLookupController {
   static bool? platformOverride;
 
   /// Windows: runner GlobalLookupWindow (WebView2). macOS: Runner
-  /// GlobalLookupOverlay.swift (NSPanel + WKWebView) on the SAME channel
-  /// contract. Linux has no native overlay yet.
+  /// GlobalLookupOverlay.swift (NSPanel + WKWebView). Linux (X11 only): the
+  /// `fushi_lookup_card` helper (GTK + WebKitGTK), which the runner forwards
+  /// the channel to. All three speak the SAME channel contract.
   static bool get isSupported =>
-      platformOverride ?? (Platform.isWindows || Platform.isMacOS);
+      platformOverride ??
+      (Platform.isWindows || Platform.isMacOS || linuxLookupCardAvailableHere);
+
+  /// 覆盖窗能不能从截图 / 录屏里排除自己（「防截屏」开关）：Windows display
+  /// affinity、macOS sharingType 有，X11 没有这种能力。
+  static bool get canBlockCapture => isSupported && !Platform.isLinux;
 
   /// 覆盖窗此刻能否接查词（平台支持且 [start] 已跑）。悬浮字幕点词以此决定走
   /// 覆盖窗还是退回主窗 tab，请求不丢。
@@ -141,6 +155,13 @@ class GlobalLookupController {
   // (the 872 prerequisite) so a future mining-preserving switch can hook it. Not
   // fired for the between-lookups reset (that hide passes notify=false).
   void Function()? onHidden;
+  // 与 [onHidden] 同一时机（desktop 路由被用户真正关掉），但可挂多个、互不顶替：
+  // [onHidden] 是单槽，视频页会接管再归还；常驻订阅方（音乐桌面歌词查词暂停）走这里。
+  final List<VoidCallback> _hiddenListeners = <VoidCallback>[];
+  void addHiddenListener(VoidCallback listener) =>
+      _hiddenListeners.add(listener);
+  void removeHiddenListener(VoidCallback listener) =>
+      _hiddenListeners.remove(listener);
   void Function(GlobalLookupRoute route)? onRoutedHidden;
   // KiriKiri 游戏内查词 — 卡片「内容已渲染、尺寸已定」的**唯一可靠**信号。
   //
@@ -178,6 +199,14 @@ class GlobalLookupController {
   // a whole-WebView recovery via `staticSettingsRequired`.
   final PopupStaticRevisionCache _hostStaticRevisions =
       PopupStaticRevisionCache();
+  // 大结果词条的取回投递（in-app P1-B 的应用外版本）。**每个物理宿主一份**（键与
+  // [_hostStaticRevisions] 同一口径）：令牌进程内唯一，字节按本宿主仍在栈里的帧保留，
+  // 取回失败也只让本宿主退回字面量。
+  final Map<String, GlobalLookupEntriesStore> _entriesStores =
+      <String, GlobalLookupEntriesStore>{};
+
+  GlobalLookupEntriesStore _entriesStoreFor(String hostKey) =>
+      _entriesStores[hostKey] ??= GlobalLookupEntriesStore(hostKey: hostKey);
   int _desktopLookupEpoch = 0;
   // Last physical size pushed to the overlay; used to converge the page's
   // resize -> re-measure loop (see _onJsMessage 'overlaySize'). Reset per
@@ -438,6 +467,74 @@ class GlobalLookupController {
     }
   }
 
+  /// 游戏内嵌查词冷启动预热：在游戏查词会话开门时，用一个**专属**的 galCard 路由
+  /// 把静态段送进卡片宿主页。
+  ///
+  /// 卡片窗按需懒建，过去第一次点词要现场建 WebView2、再随渲染负载灌进几十 MB
+  /// 静态段（自定义字体是内联的 `data:` URL），实测首查 1.6–1.8 s。这里提前做掉：
+  /// 第一个 galCard 调用顺带建窗，宿主 `prewarmStatic` 把静态段装进备用 realm，首查
+  /// 的根卡直接接管它。
+  ///
+  /// [route] 必须是调用方新铸的、比之后任何查词都旧的 galCard 路由，且此刻卡片不可见
+  /// ——原生侧换路由上下文会清掉上一张卡的直绘状态。
+  ///
+  /// 平台调用完成后才记账（与 [_renderStack] 同一纪律）。唯一漏网的情形是窗口还没
+  /// 导航完时首查紧跟着到达：原生只缓存最后一条脚本，预热脚本被顶掉；那时宿主会按
+  /// 既有的 `staticSettingsRequired` 恢复路径要回静态段，只多一次往返。
+  Future<void> prewarmGalCardStatic(GlobalLookupRoute route) async {
+    if (route.source != 'galCard') return;
+    await _prewarmHostStatic(route);
+  }
+
+  /// 桌面查词窗的同一种预热：台词文本浮窗一显示就调用，浮窗里第一次点词不必再
+  /// 现场灌静态段。查词窗正显示着时不做（换路由上下文会打断在场的卡片）；宿主
+  /// 已装过同一版静态段时直接跳过，所以反复调用只是一次比对。
+  ///
+  /// 查词在途时也不做（PR #2763 审查）：桌面查词在 `hide(notify:false)` 与重新显示之间
+  /// `isShowing` 为 false，这时铸一个更新的 desktop 路由，原生 SetRouteContext 就会把
+  /// 在途查词的 showAt / render / revealStack 当成旧 epoch 丢掉——与游戏内
+  /// `_prewarmCardIfIdle` 查 `_activeRoute / _pendingLookup / _draining` 同一纪律。
+  /// 判断放在 `isShowing` 的 await **之后**、铸路由之前：await 期间开始的查词也拦得住。
+  Future<void> prewarmDesktopStatic() async {
+    if (!isSupported || !_started) return;
+    if (await GlobalLookupChannel.isShowing()) return;
+    if (desktopLookupInFlight) return;
+    await _prewarmHostStatic(
+      GlobalLookupRoute.desktop(lookupEpoch: ++_desktopLookupEpoch),
+    );
+  }
+
+  Future<void> _prewarmHostStatic(GlobalLookupRoute route) async {
+    final BuildContext? ctx = _appModel?.navigatorKey.currentContext;
+    final AppModel? model = _appModel;
+    if (!isSupported || ctx == null || model == null) return;
+    final PopupStaticSettingsJs settings = buildPopupStaticSettingsJs(
+      appModel: model,
+      theme: Theme.of(ctx),
+      options: const PopupSettingsOptions(globalLookup: true),
+    );
+    final String hostKey = route.target.isEmpty ? 'desktop' : route.target;
+    if (_hostStaticRevisions.snapshotFor(hostKey).contains(settings.revision)) {
+      return;
+    }
+    try {
+      await GlobalLookupChannel.runWithRoute(
+        route,
+        () => GlobalLookupChannel.render(buildPrewarmStaticScript(settings)),
+      );
+    } catch (e) {
+      glog('${route.source} prewarm FAILED (non-fatal): $e');
+      return;
+    }
+    // 路由失效时 channel 静默丢弃调用，await 照样正常返回：再确认一次才记账。
+    if (!GlobalLookupChannel.isRouteValid(route)) return;
+    _hostStaticRevisions.commit(hostKey, <int>{settings.revision});
+    glog(
+      '${route.source} prewarm sent rev=${settings.revision} '
+      'static=${((settings.head.length + settings.tail.length) / 1024).toStringAsFixed(0)}K',
+    );
+  }
+
   /// globalExternal scope 每个动作的**执行体登记处**——这个 scope 的动作不经
   /// resolveKeyboard / 页面派发，全部由本控制器读绑定注册进 OS 级 hotkey_manager，
   /// 于是「谁执行」在别处无处可查，只能在这里登记。
@@ -452,7 +549,29 @@ class GlobalLookupController {
             triggerSelectionLookup(source: 'hotkey'),
         // 相反的取舍：不取任何文本，把主窗唤到前台并落在查词页上。
         ShortcutAction.globalExternalOpenLookupPage: openLookupPageInMainWindow,
+        // 截屏识字：执行体在悬浮球宿主（与桌面应用外球的同名按钮共用）。
+        ShortcutAction.globalExternalScreenOcr: triggerScreenOcr,
       };
+
+  /// 桌面截屏识字的执行体，由常驻的 `AppFloatingBallHost` 装上 / 卸下（截屏、冻结
+  /// 层、点字查词的整套状态都在那边，与应用外悬浮球的「截屏识字」按钮同一条路径）。
+  /// 本控制器只负责把 [ShortcutAction.globalExternalScreenOcr] 的 OS 热键接过去。
+  Future<void> Function()? screenOcrHandler;
+
+  /// [ShortcutAction.globalExternalScreenOcr] 的执行体。宿主还没挂上（不该发生：
+  /// 它挂在 app 根上）时记一条错误日志而不是静默吞键。
+  Future<void> triggerScreenOcr() async {
+    final Future<void> Function()? handler = screenOcrHandler;
+    if (handler == null) {
+      ErrorLogService.instance.log(
+        'GlobalLookupController.screenOcr',
+        StateError('screen OCR hotkey pressed but no host is mounted'),
+        StackTrace.current,
+      );
+      return;
+    }
+    await handler();
+  }
 
   /// TODO-1066 — (un)registers the OS-level hotkeys from the current
   /// [_osHotKeyActions] bindings in the registry. Unregisters everything
@@ -656,7 +775,7 @@ class GlobalLookupController {
   /// TODO-1066 — maps a registry keyboard [binding] to a hotkey_manager [HotKey].
   /// hotkey_manager keys off the USB-HID [PhysicalKeyboardKey]; the registry
   /// stores a logical key + [ModifierKey] set. [InputBinding.physicalKey] reuses
-  /// the same logical→physical table the IME fallback uses (US-QWERTY). Returns
+  /// the same logical→physical table normalizeCapturedKey indexes (US-QWERTY). Returns
   /// null when the logical key has no physical mapping (e.g. game* / numpad keys
   /// that are not valid global hotkeys anyway).
   HotKey? _hotKeyFromBinding(InputBinding binding) {
@@ -750,6 +869,10 @@ class GlobalLookupController {
   Future<void> _onHotKeyRouted(GlobalLookupRoute route, String source) async {
     _activateRoute(route);
     glog('hotkey: FIRED (source=$source)');
+    // 只有查词窗真正显示出来，这条路由才继续活着（之后由关窗 [_onOverlayHidden] 作废）；
+    // 任何中止（空选区 / 无辅助功能权限 / showAt 被拒 / 异常）都要在 finally 里结束它的
+    // 生命周期，否则 [desktopLookupInFlight] 永远为真、台词浮窗预热被静默跳过。
+    bool shown = false;
     try {
       // Re-press ALWAYS does a fresh lookup of the current selection (no
       // toggle): the user selects a new word and presses the hotkey expecting
@@ -814,7 +937,7 @@ class GlobalLookupController {
         return;
       }
       // 整句只进制卡 `{sentence}` 兜底（sentenceContext），卡上不显示。
-      await _lookupExternal(
+      shown = await _lookupExternal(
         text,
         sentence: sentence,
         physicalPlacement: null,
@@ -823,6 +946,8 @@ class GlobalLookupController {
       );
     } catch (e, st) {
       glog('hotkey: EXCEPTION $e\n$st');
+    } finally {
+      if (!shown) _endAbortedRoute(route);
     }
   }
 
@@ -1010,6 +1135,7 @@ class GlobalLookupController {
     bool autoRead = true,
     OverlayMiningHandler? miningHandler,
     int? consumeOutsideClicksOwnerHwnd,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     final GlobalLookupRoute inherited = GlobalLookupChannel.currentRoute;
     final GlobalLookupRoute route = inherited.source == 'galCard'
@@ -1025,6 +1151,7 @@ class GlobalLookupController {
         autoRead: autoRead,
         miningHandler: miningHandler,
         consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
+        rubySpans: rubySpans,
       ),
     );
   }
@@ -1037,6 +1164,7 @@ class GlobalLookupController {
     required bool autoRead,
     required OverlayMiningHandler? miningHandler,
     int? consumeOutsideClicksOwnerHwnd,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     final String term = text.trim();
     if (!isSupported || !_started || _appModel == null || term.isEmpty) {
@@ -1044,7 +1172,22 @@ class GlobalLookupController {
     }
     if (physicalPlacement != null && !physicalPlacement.isValid) return false;
     _activateRoute(GlobalLookupChannel.currentRoute);
+    if (GlobalLookupChannel.currentRoute.source == 'desktop') {
+      GalLookupLatencyTrace.beginDesktop();
+    }
     glog('lookupText: "$term"');
+    // [rubySpans] 以 [text] 为坐标系：跟着 trim 掉的句首空白平移到 [term]。
+    final List<FushiRubySpan> termRubySpans = shiftRubySpans(
+      rubySpans,
+      leadingStrip: text.length - text.trimLeft().length,
+      length: term.length,
+    );
+    // 词典搜索跑在常驻后台 isolate 上，与下面两次 hide 往返互不依赖：先发起，让它和
+    // 覆盖窗复位重叠，而不是等复位完才开始搜。hide 的次数与顺序不变。
+    final Future<DictionarySearchResult> search = _startSearch(
+      term,
+      termRubySpans,
+    );
     // TODO-1268 / BUG — mirror _onHotKey's TODO-1079(D) preamble on the
     // programmatic (desktop floating-lyric tap) path: AWAIT a leading
     // hide(notify:false) so the overlay collapses to a confirmed-hidden state
@@ -1057,17 +1200,50 @@ class GlobalLookupController {
     // emitted overlaySize — the card revealed blank via the READY-SAFETY
     // fallback ("点击悬浮字幕文字没有出现查词窗口"). notify:false so this
     // between-lookups reset is not seen as a user dismissal (TODO-1233).
-    await GlobalLookupChannel.hide(notify: false);
-    if (!_isCurrentRoute) return false;
-    return _lookupExternal(
-      term,
-      sentence: sentence,
-      anchorScreenRect: anchorScreenRect,
-      physicalPlacement: physicalPlacement,
-      autoRead: autoRead,
-      miningHandler: miningHandler,
-      consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
-    );
+    final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
+    bool shown = false;
+    try {
+      await GlobalLookupChannel.hide(notify: false);
+      if (!_isCurrentRoute) return false;
+      shown = await _lookupExternal(
+        term,
+        sentence: sentence,
+        anchorScreenRect: anchorScreenRect,
+        physicalPlacement: physicalPlacement,
+        autoRead: autoRead,
+        miningHandler: miningHandler,
+        consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
+        rubySpans: termRubySpans,
+        pendingSearch: search,
+      );
+      return shown;
+    } finally {
+      if (!shown) _endAbortedRoute(route);
+    }
+  }
+
+  /// 发起一次词典搜索并立即返回 Future。错误照常在 `await` 处抛出（由
+  /// [_lookupExternal] 的 try/catch 收口）；调用方中途因 route 作废提前返回、不再
+  /// await 时，`ignore` 保证它不会变成未处理的异步错误。
+  Future<DictionarySearchResult> _startSearch(
+    String text,
+    List<FushiRubySpan> rubySpans,
+  ) {
+    final Future<DictionarySearchResult> search = _appModel!
+        .searchDictionaryWithRuby(searchTerm: text, rubySpans: rubySpans);
+    search.ignore();
+    return search;
+  }
+
+  /// 查词耗时打点：只记在**同一路由来源**的在途记录上（游戏卡片与桌面窗各记各的，
+  /// 一方的回调不会误打到另一方的记录里）。
+  void _traceLookup(GalLookupLatencyStage stage, {String? detail}) {
+    final GalLookupLatencyTrace? trace = GalLookupLatencyTrace.active;
+    if (trace == null ||
+        trace.source != GlobalLookupChannel.currentRoute.source) {
+      return;
+    }
+    GalLookupLatencyTrace.mark(stage, detail: detail);
   }
 
   void _activateRoute(GlobalLookupRoute route) {
@@ -1081,10 +1257,36 @@ class GlobalLookupController {
     _activeRoute = route;
   }
 
+  /// 桌面查词在半路中止（空选区 / 无权限 / showAt 被拒 / 异常）时结束它的路由：窗没显示，
+  /// 不会有 [_onOverlayHidden] 来作废它。只动仍是当前路由的 desktop 路由——已被新查词
+  /// 取代的不用管（[_activateRoute] 已作废），游戏卡片路由归 galCard 控制器管理。
+  void _endAbortedRoute(GlobalLookupRoute route) {
+    if (route.source != 'desktop' || _activeRoute != route) return;
+    GlobalLookupChannel.invalidateRoute(route);
+    _activeRoute = null;
+  }
+
+  /// 桌面查词窗上是否有一次查词在途或在场：当前路由是 desktop 且仍有效（真正关窗
+  /// [_onOverlayHidden]、下一次查词与查词中止 [_endAbortedRoute] 都会作废它）。查词入口在
+  /// 第一个 await 之前就 [_activateRoute]，所以「刚发起、还在 hide→show 之间」也算。
+  @visibleForTesting
+  bool get desktopLookupInFlight {
+    final GlobalLookupRoute? active = _activeRoute;
+    return active != null &&
+        active.source == 'desktop' &&
+        GlobalLookupChannel.isRouteValid(active);
+  }
+
   bool get _isCurrentRoute {
     final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
     return route == _activeRoute && GlobalLookupChannel.isRouteValid(route);
   }
+
+  /// BUG-3652 续：制卡回包时「发起它的那张卡还在不在」——[origin] 是派发时捕获的
+  /// 查词 route；真正关窗（[_onOverlayHidden]）与下一次查词（[_activateRoute]）都会
+  /// 作废它，所以「仍是当前 route 且有效」就是这张卡还在屏上。
+  MineOriginOnScreen _mineOriginProbe(GlobalLookupRoute origin) =>
+      () => origin == _activeRoute && GlobalLookupChannel.isRouteValid(origin);
 
   void _notifyRevealed(
     int width,
@@ -1128,12 +1330,19 @@ class GlobalLookupController {
     required bool autoRead,
     OverlayMiningHandler? miningHandler,
     int? consumeOutsideClicksOwnerHwnd,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    Future<DictionarySearchResult>? pendingSearch,
   }) async {
     final AppModel? model = _appModel;
     if (model == null) {
       glog('lookup: appModel null — abort');
       return false;
     }
+    // 与 hide 往返重叠的搜索（见 [_lookupTextRouted]）；热键入口在这里发起。
+    // 原文自带振假名（texthooker 行的 ruby 等）随查词带进引擎；查询串是 [text] 原样，
+    // AppModel 清洗查询串时会把区间对齐（alignRubySpansToSearchTerm）。
+    final Future<DictionarySearchResult> search =
+        pendingSearch ?? _startSearch(text, rubySpans);
     try {
       // TODO-1079 (D) — reset native + Dart reveal state from zero every
       // lookup. The native visible_/revealed_ and this controller's
@@ -1147,6 +1356,7 @@ class GlobalLookupController {
       // not look like a user dismissal.
       await GlobalLookupChannel.hide(notify: false);
       if (!_isCurrentRoute) return false;
+      _traceLookup(GalLookupLatencyStage.hide);
       // attached 表面打开的弹窗：hide 刚把 native 的 consume owner 清空，这里在
       // showAt/reveal 之前重新记下游戏 HWND，reveal/revealStack 才会走同步吞点击
       // Arm。普通桌面查词（null）不发这条 channel——非 Windows 也走本控制器。
@@ -1164,12 +1374,15 @@ class GlobalLookupController {
       // is host-global and is intentionally NOT reset here.
       _resetGeometryHandshakeForLookup();
 
-      final DictionarySearchResult result = await model.searchDictionary(
-        searchTerm: text,
-        searchWithWildcards: false,
-      );
+      final DictionarySearchResult result = await search;
       if (!_isCurrentRoute) return false;
       glog('lookup: searched "$text" -> entries=${result.entries.length}');
+      _traceLookup(
+        GalLookupLatencyStage.search,
+        detail:
+            'entries=${result.entries.length} '
+            'json=${((result.popupJson?.length ?? 0) / 1024).toStringAsFixed(0)}K',
+      );
       // New card: forget the previous size + reveal state so the overlay
       // re-measures and reveals from scratch.
       _revealed = false;
@@ -1309,6 +1522,7 @@ class GlobalLookupController {
         'monitorDpr=${shown.monitorDpr})',
       );
       if (!_isCurrentRoute) return false;
+      _traceLookup(GalLookupLatencyStage.show);
       if (!shown.ok) {
         glog('lookup: showAt rejected the current route');
         await GlobalLookupChannel.hide(notify: false);
@@ -1373,6 +1587,7 @@ class GlobalLookupController {
       _originFloorTop = floor.top;
       await _renderStack(beginRoute: route);
       if (!_isCurrentRoute) return false;
+      _traceLookup(GalLookupLatencyStage.renderSent);
       glog(
         'lookup: showAt(atCursor)=${shown.ok} off-screen w0=$w0 h0=$h0 '
         'workCss=${_screenWorkW}x$_screenWorkH rendered',
@@ -1466,6 +1681,11 @@ class GlobalLookupController {
         } else {
           unawaited(GlobalLookupChannel.reveal(width: width, height: height));
           _notifyRevealed(width, height);
+          // 兜底显示的是**还没渲染好**的窗口：记成单独的结局，别混进正常耗时。
+          if (GalLookupLatencyTrace.active?.source == 'desktop') {
+            _traceLookup(GalLookupLatencyStage.presented);
+            GalLookupLatencyTrace.finish('ready-safety');
+          }
         }
         return;
       }
@@ -1507,6 +1727,12 @@ class GlobalLookupController {
   /// URL (see global_lookup_window.cpp MediaContentTypeHeader); this side only
   /// supplies the bytes.
   Future<Uint8List> _resolveMedia(String url) async {
+    // 大结果词条的取回（同一条拦截通道，见 [GlobalLookupEntriesStore]）。地址里带宿主键，
+    // 只有登记它的那个宿主的 store 认得。
+    for (final GlobalLookupEntriesStore store in _entriesStores.values) {
+      final Uint8List? entries = store.bytesFor(url);
+      if (entries != null) return entries;
+    }
     try {
       final GlobalLookupMediaRequest? request = resolveGlobalLookupMedia(url);
       if (request == null) {
@@ -1591,6 +1817,11 @@ class GlobalLookupController {
       onRoutedHidden?.call(route);
       if (route.source == 'desktop') {
         onHidden?.call();
+        for (final VoidCallback listener in List<VoidCallback>.of(
+          _hiddenListeners,
+        )) {
+          listener();
+        }
       }
     } finally {
       // A genuine dismissal ends this immutable lookup. Retiring it here makes
@@ -1669,6 +1900,24 @@ class GlobalLookupController {
         handler != 'duplicateCheck') {
       glog('js: handler=$handler args=${message['args']}');
     }
+    if (handler == 'popupEntriesFetchFailed') {
+      // 与 in-app 同一回退：**这个**应用外宿主取不回词条（拦截没接住 / 跨源被拒），
+      // 此后它一律字面量投递，并按当前栈重渲——等着取回的卡片仍被显示门挡着。另一个
+      // 宿主不受影响（各自一份 store）。
+      final GlobalLookupRoute failedRoute = GlobalLookupChannel.currentRoute;
+      final GlobalLookupEntriesStore failedStore = _entriesStoreFor(
+        failedRoute.target.isEmpty ? 'desktop' : failedRoute.target,
+      );
+      if (!failedStore.fetchUnavailable) {
+        failedStore.fetchUnavailable = true;
+        ErrorLogService.instance.log(
+          'global_lookup.entries_fetch',
+          'fetch failed, falling back to inline entries: ${message['args']}',
+        );
+      }
+      unawaited(_renderStack());
+      return;
+    }
     if (handler == 'staticSettingsRequired') {
       final ({int? revision, int? hostGeometryEpoch}) req =
           parseStaticSettingsRequired(message);
@@ -1720,6 +1969,12 @@ class GlobalLookupController {
           _galCaptureReadySafety?.cancel();
           _galCaptureReadySafety = null;
           _pendingGalCapture = null;
+          _traceLookup(
+            GalLookupLatencyStage.captureReady,
+            detail: galLookupCaptureReadyPerfDetail(
+              args is List && args.length > 3 ? args[3] : null,
+            ),
+          );
           _notifyRevealed(
             pending.width,
             pending.height,
@@ -1873,6 +2128,9 @@ class GlobalLookupController {
       // sentence）。与句子横幅同一 `_currentSentence`（嵌套子查词无句 → ''）。
       sentenceContext: _currentSentence,
       miningHandler: _currentMiningHandler,
+      // BUG-3652 续：本消息在发起它的查词 route 的 zone 里派发；回包时这张卡还在屏上
+      // ⇔ 那条 route 仍是当前 route 且未作废（关窗、换词都会作废它）。
+      isOriginOnScreen: _mineOriginProbe(GlobalLookupChannel.currentRoute),
     )) {
       return;
     }
@@ -1896,6 +2154,10 @@ class GlobalLookupController {
             // D2 union bounding box (window-local CSS px) -> place + size window.
             final Map<Object?, Object?> box = second.cast<Object?, Object?>();
             final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
+            _traceLookup(
+              GalLookupLatencyStage.measured,
+              detail: galLookupHostPerfDetail(box['perf']),
+            );
             final int? reportedEpoch = parseGlobalLookupGeometryEpoch(
               box['geometryEpoch'],
             );
@@ -2417,6 +2679,7 @@ class GlobalLookupController {
     final double screenH = pickScreenDim(_screenWorkH, _layoutBoundsH, cardH);
     final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
     final String hostKey = route.target.isEmpty ? 'desktop' : route.target;
+    final GlobalLookupEntriesStore entriesStore = _entriesStoreFor(hostKey);
     final StackRenderScript stackRender = buildStackRenderScript(
       context: ctx,
       appModel: model,
@@ -2445,6 +2708,12 @@ class GlobalLookupController {
       clampRootShellToWorkArea: route.source != 'galCard',
       staticRevisions: _hostStaticRevisions,
       hostKey: hostKey,
+      entriesStore: entriesStore,
+    );
+    entriesStore.retain(
+      payloads.map(
+        (GlobalLookupFramePayload p) => entriesStore.tokenFor(p.result),
+      ),
     );
     // Cold-create and process-recovery paths cache exactly one complete script
     // until NavigationCompleted.  Keep beginLookup + renderStack indivisible so
@@ -2453,6 +2722,11 @@ class GlobalLookupController {
     final String script = beginRoute == null
         ? stackRender.script
         : '${buildBeginLookupScript(kGlobalLookupRootFrameId, source: beginRoute.source, routeEpoch: beginRoute.routeEpoch, lookupEpoch: beginRoute.lookupEpoch)}${stackRender.script}';
+    if (beginRoute != null) {
+      GalLookupLatencyTrace.note(
+        'script=${(script.length / 1024).toStringAsFixed(0)}K',
+      );
+    }
     await GlobalLookupChannel.render(script);
     // Commit only after the platform call accepted the complete script. A
     // thrown/invalidated send must leave the revision unknown so the next render
@@ -2558,18 +2832,29 @@ class GlobalLookupController {
         'ratchet=(${ratcheted.left},${ratcheted.top}) '
         '-> dx=$dx dy=$dy w=$w h=$h root=$rootHeight epoch=$geometryEpoch',
       );
-      unawaited(
-        GlobalLookupChannel.revealStack(
-          dx: dx,
-          dy: dy,
-          width: w,
-          height: h,
-          geometryEpoch: geometryEpoch,
-          left: ratcheted.left,
-          top: ratcheted.top,
-          rootHeight: rootHeight,
-        ),
+      final Future<void> revealed = GlobalLookupChannel.revealStack(
+        dx: dx,
+        dy: dy,
+        width: w,
+        height: h,
+        geometryEpoch: geometryEpoch,
+        left: ratcheted.left,
+        top: ratcheted.top,
+        rootHeight: rootHeight,
       );
+      if (GlobalLookupChannel.currentRoute.source == 'desktop') {
+        // 桌面窗在这一步才真正显示：耗时记录到此收尾（游戏卡片在投帧后收尾）。
+        unawaited(
+          revealed.then((_) {
+            _traceLookup(GalLookupLatencyStage.presented);
+            if (GalLookupLatencyTrace.active?.source == 'desktop') {
+              GalLookupLatencyTrace.finish('ok');
+            }
+          }),
+        );
+      } else {
+        unawaited(revealed);
+      }
       _notifyAfterResizeReady(
         w,
         h,

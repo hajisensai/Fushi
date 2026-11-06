@@ -62,10 +62,7 @@ Widget positionRemoteDownloadBadge(
 /// 的这个角标是失败态唯一恒定的出口：重进页面照样看得到，tooltip 给出真实错误文本，
 /// 再点一次下载即可重试（重试会把上一轮的失败态顶掉）。
 class RemoteDownloadFailedBadge extends StatelessWidget {
-  const RemoteDownloadFailedBadge({
-    required this.tooltip,
-    super.key,
-  });
+  const RemoteDownloadFailedBadge({required this.tooltip, super.key});
 
   final String tooltip;
 
@@ -84,8 +81,9 @@ class RemoteDownloadFailedBadge extends StatelessWidget {
           shape: BoxShape.circle,
           // eink：errorContainer == 页面底色，圆盘压在封面上没有边；图标本身
           // 已表达「失败」，描边只为把角标体画出来。
-          border:
-              isEinkTheme(context) ? Border.all(color: colors.outline) : null,
+          border: isEinkTheme(context)
+              ? Border.all(color: colors.outline)
+              : null,
         ),
         alignment: Alignment.center,
         child: FushiIcon(

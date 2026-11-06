@@ -1,20 +1,28 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_mine_notice_card.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/misc/notice_dwell.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 
 export 'package:fluttertoast/fluttertoast.dart' show Toast, ToastGravity;
 // 语义与调色板住在 toast_severity.dart（视频页 OSD 也用，见该文件头注释），
 // 这里再导出一次，让既有 `import fushi_toast.dart` 的调用点无需改 import。
 export 'package:fushi/src/utils/misc/toast_severity.dart';
+export 'package:fushi/src/utils/misc/notice_dwell.dart';
+export 'package:fushi/src/utils/components/fushi_mine_notice_card.dart'
+    show MineNoticeAction, kMineNoticeActionVisibleFor;
 
 /// Global navigator key used by the toast overlay.
 /// Must be assigned to the MaterialApp's navigatorKey.
@@ -27,9 +35,25 @@ abstract final class FushiToast {
   static set navigatorKey(GlobalKey<NavigatorState> key) =>
       _toastNavigatorKey = key;
 
+  /// 制卡结果通知的用户开关（[mineToastShown] 的接线点）。各 entry point 在拿到
+  /// `AppModel` 后装上读偏好的闭包（`AppModel.mineNoticeShown`）；没装时一律弹
+  /// （存量行为）。闭包每次现读偏好，设置页改完立即生效。
+  ///
+  /// 真值住在 [MineNotices.filter]——toast 之外还有弹窗就地提示与视频 OSD 两个出口，
+  /// 三处问同一个裁决点；这里只是转发，保留 entry point 的既有接线写法。
+  static bool Function(MineToastStatus status) get mineNoticeFilter =>
+      MineNotices.filter;
+
+  static set mineNoticeFilter(bool Function(MineToastStatus status) filter) =>
+      MineNotices.filter = filter;
+
   /// [severity] 决定前置图标与图标的语义色（见 [ToastSeverity]）；底色恒为主题的
   /// 浮条色，不再整块铺饱和色。显式传 [backgroundColor] / [textColor] 仍然优先
   /// ——少数调用点（如 tag chip 透传自身颜色）不是语义着色。
+  ///
+  /// **制卡结果（成功 / 重复 / 制卡中 / 待发 / 失败）不许走这里**，一律
+  /// [showMine]——这里不过「制卡提示」开关（守卫
+  /// `test/anki/mine_notice_single_exit_guard_test.dart`）。
   static void show({
     required String msg,
     Toast toastLength = Toast.LENGTH_SHORT,
@@ -40,7 +64,11 @@ abstract final class FushiToast {
   }) {
     final ({Color background, Color foreground, IconData icon})? palette =
         toastSeverityPalette(severity);
-    final int durationMs = toastLength == Toast.LENGTH_LONG ? 3500 : 2000;
+    final int durationMs =
+        (toastLength == Toast.LENGTH_LONG
+                ? FushiNoticeDwell.long
+                : FushiNoticeDwell.short)
+            .inMilliseconds;
     final OverlayState? overlay = _toastNavigatorKey?.currentState?.overlay;
     if (overlay == null) {
       // 原生 toast 只做无 overlay 时的兜底：它不跟主题、画不了图标，只能用固定
@@ -77,10 +105,27 @@ abstract final class FushiToast {
   /// pending 信息）。有 navigator overlay（主 app，桌面与移动）时走自绘 overlay
   /// （会顶替上一条，让 pending → 结果自然过渡）；无 overlay 的独立弹窗 Activity
   /// 降级为原生着色 toast（无图标但仍着色，绝不静默）。
-  static void showMine({required String msg, required MineToastStatus status}) {
+  ///
+  /// 先过 [mineNoticeFilter]：用户在「制卡提示」里关掉的那类结果直接不弹。所有制卡
+  /// 结果 toast 都从这里出，所以开关只需在这一处生效。
+  ///
+  /// [action]（反馈 JNyykxvuY9：成功提示上的「撤销」）只在自绘 overlay 上画：卡片
+  /// 停留 [kMineNoticeActionVisibleFor]、可点，点下立即收起再执行。无 overlay 的
+  /// 降级原生 toast 点不了，按钮不出——调用方据此不能把动作当成必达。
+  static void showMine({
+    required String msg,
+    required MineToastStatus status,
+    MineNoticeAction? action,
+  }) {
+    if (!mineNoticeFilter(status)) return;
     final overlay = _toastNavigatorKey?.currentState?.overlay;
     if (overlay != null) {
-      _showMineOverlay(overlay: overlay, msg: msg, status: status);
+      _showMineOverlay(
+        overlay: overlay,
+        msg: msg,
+        status: status,
+        action: action,
+      );
       return;
     }
     // pending 是过渡态（只有能被结果 toast 顶替时才有意义）。无 overlay 的降级路径
@@ -94,21 +139,98 @@ abstract final class FushiToast {
     );
   }
 
+  /// 登记一块「制卡结果改到角落」的区域：登记期间（最后登记的那块生效）制卡
+  /// 结果卡改成小号（[FushiMineNoticeCard.compact]），贴在 [region] 的底部起始角
+  /// 内侧，而不是屏幕底部正中的大卡。给正文铺满全屏的页面用（歌词模式）——
+  /// 底部正中的大卡正好压在正文上。
+  ///
+  /// [region] 返回全局坐标矩形；返回 null（页面还没布局 / 已不可见）时退回默认
+  /// 位置与尺寸。返回的句柄在页面销毁时 [FushiToastCornerAnchor.release]。
+  static FushiToastCornerAnchor anchorMineToCorner(ValueGetter<Rect?> region) {
+    final FushiToastCornerAnchor anchor = FushiToastCornerAnchor._(region);
+    _cornerAnchors.add(anchor);
+    return anchor;
+  }
+
+  static final List<FushiToastCornerAnchor> _cornerAnchors =
+      <FushiToastCornerAnchor>[];
+
+  /// 此刻生效的角落区域（全局坐标）：最后登记的那块；没有登记、页面被盖住 /
+  /// 还没布局（region 返回 null）或矩形为空时为 null。
+  ///
+  /// 每次 [_FushiToastView] 重建都重新解析一次，并且「小卡还是大卡」与「贴角还是
+  /// 默认位置」只取这一次的结果——不能只换位置不换尺寸，也不能贴到已经看不见
+  /// 的区域角上（显示期间退出歌词模式时，下一次重建就整张退回默认大卡）。
+  static Rect? _activeCornerRect() {
+    if (_cornerAnchors.isEmpty) return null;
+    final Rect? rect = _cornerAnchors.last._region();
+    if (rect == null || rect.isEmpty) return null;
+    return rect;
+  }
+
+  /// 锚点集合变了（页面销毁撤销登记）：让正在显示的 toast 下一帧按新的锚点重新
+  /// 解析尺寸与位置，而不是停在已经消失的区域角上。撤销通常发生在页面 dispose
+  /// （树卸载阶段，此时不能 setState），所以挪到帧后再标脏。
+  static void _onCornerAnchorsChanged() {
+    final OverlayEntry? entry = _currentEntry;
+    if (entry == null) return;
+    SchedulerBinding.instance.addPostFrameCallback((Duration _) {
+      if (_currentEntry == entry && entry.mounted) entry.markNeedsBuild();
+    });
+    SchedulerBinding.instance.ensureVisualUpdate();
+  }
+
   static void _showMineOverlay({
     required OverlayState overlay,
     required String msg,
     required MineToastStatus status,
+    MineNoticeAction? action,
   }) {
-    // pending 停留更久（等制卡结果覆盖它），结果 toast 用短时长。
+    // pending 停留更久（等制卡结果覆盖它），结果 toast 用短时长；带动作按钮的
+    // 停得更久，留出去点的时间（角落小卡同样适用）。
+    final int durationMs = action != null
+        ? kMineNoticeActionVisibleFor.inMilliseconds
+        : status == MineToastStatus.pending
+        ? FushiNoticeDwell.minePending.inMilliseconds
+        : FushiNoticeDwell.mineResult.inMilliseconds;
+    final MineNoticeAction? tapAction = action == null
+        ? null
+        : MineNoticeAction(
+            label: action.label,
+            onPressed: () {
+              dismissCurrent();
+              action.onPressed();
+            },
+          );
+    // 制卡结果用 M3E tonal 结果卡（与视频页制卡 OSD 同一长相），进退场仍走
+    // _FushiToastView 的同一套。小卡 / 大卡由视图每次重建时与位置一起决定。
     _insertToastEntry(
       overlay: overlay,
-      durationMs: status == MineToastStatus.pending ? 4000 : 2400,
+      durationMs: durationMs,
       builder: (BuildContext context) => _FushiToastView(
         msg: msg,
         icon: mineToastPalette(status).icon,
         severity: mineToastSeverity(status),
+        interactive: tapAction != null,
+        cornerRegion: _activeCornerRect,
+        bodyBuilder: (bool compact) => FushiMineNoticeCard(
+          status: status,
+          message: msg,
+          visibleFor: Duration(milliseconds: durationMs),
+          action: tapAction,
+          compact: compact,
+          maxWidth: compact ? 300 : 440,
+        ),
       ),
     );
+  }
+
+  /// 立即收起当前 toast（不播退场）：点了卡片上的动作按钮之后。
+  static void dismissCurrent() {
+    _dismissTimer?.cancel();
+    _dismissTimer = null;
+    _currentEntry?.remove();
+    _currentEntry = null;
   }
 
   static void _insertToastEntry({
@@ -151,6 +273,20 @@ abstract final class FushiToast {
   static Timer? _dismissTimer;
 }
 
+/// [FushiToast.anchorMineToCorner] 的登记句柄。
+final class FushiToastCornerAnchor {
+  FushiToastCornerAnchor._(this._region);
+
+  final ValueGetter<Rect?> _region;
+
+  /// 撤销登记（可重复调用）。正在显示的 toast 随后按剩下的锚点重新定尺寸与位置。
+  void release() {
+    if (FushiToast._cornerAnchors.remove(this)) {
+      FushiToast._onCornerAnchorsChanged();
+    }
+  }
+}
+
 /// overlay 条目与条目里 [_FushiToastView] 之间的退场握手：视图挂载后把自己的
 /// 退场动画登记进来，到时由计时器调用。
 class _FushiToastHandle {
@@ -183,7 +319,8 @@ double _toastBottomOffset(BuildContext context) {
 
 /// MD3 下语义图标的颜色。浮条是 inverseSurface（与页面明暗相反），所以语义色
 /// 按浮条自身明暗取 MD3 基线色阶：深底取 tone 80、浅底取 tone 40，保证图标在
-/// 浮条上对比达标；info 用 inversePrimary（MD3 在 inverse 表面上的强调色槽位）。
+/// 浮条上对比达标；info 取与浮条明暗相反的那档主色（inverse 浮条上就是
+/// inversePrimary；视频 OSD 这类非反色浮条上取 primary）。
 /// 墨水屏一律前景色——灰阶下颜色塌掉，靠图标形状区分。
 Color? _md3SeverityColor(
   BuildContext context,
@@ -198,7 +335,11 @@ Color? _md3SeverityColor(
     case ToastSeverity.neutral:
       return null;
     case ToastSeverity.info:
-      return Theme.of(context).colorScheme.inversePrimary;
+      final ColorScheme cs = Theme.of(context).colorScheme;
+      final bool darkScheme = cs.brightness == Brightness.dark;
+      // 深底要浅色主色（tone 80）、浅底要深色主色（tone 40）：深色方案的 primary
+      // 是 tone 80，浅色方案的 inversePrimary 是 tone 80。
+      return darkSurface == darkScheme ? cs.primary : cs.inversePrimary;
     case ToastSeverity.success:
       return darkSurface ? const Color(0xFF7DDC8C) : const Color(0xFF1E6B30);
     case ToastSeverity.warning:
@@ -245,6 +386,10 @@ const Curve _kToastSpatialCurve = Cubic(0.42, 1.67, 0.21, 0.90);
 ///   单色 SF 图标，与 Apple 版 SnackBar 同一视觉。
 ///
 /// 位置恒为底部居中（全部调用点都是 BOTTOM），淡入 + 轻微上浮。
+/// 角落定位的 overlay 本地几何：起始边距（LTR 为 left、RTL 为 right）、底边距、
+/// 可用宽度。
+typedef _CornerGeometry = ({double start, double bottom, double width});
+
 class _FushiToastView extends StatefulWidget {
   const _FushiToastView({
     required this.msg,
@@ -252,7 +397,24 @@ class _FushiToastView extends StatefulWidget {
     required this.severity,
     this.backgroundColor,
     this.textColor,
+    this.bodyBuilder,
+    this.interactive = false,
+    this.cornerRegion,
   });
+
+  /// 非空时代替默认浮条（制卡结果卡）；进退场不变。参数 `compact`：这次重建贴角
+  /// （true，画小卡）还是默认位置（false，画大卡），与定位取同一次区域解析。
+  final Widget Function(bool compact)? bodyBuilder;
+
+  /// 卡片上有可点的按钮（「撤销」）时为 true：不再整体忽略指针。只有卡片本身
+  /// 接收指针（外层 Positioned 只有卡片那么高），不挡下面页面的点击。默认位置与
+  /// 角落位置同一口径。
+  final bool interactive;
+
+  /// 每次重建解析一次：非空且能换算到 overlay 坐标时，贴在这块区域（全局坐标）的
+  /// 底部起始角内侧并画小卡，否则默认位置画大卡（见
+  /// [FushiToast.anchorMineToCorner]）。
+  final ValueGetter<Rect?>? cornerRegion;
 
   final String msg;
   final IconData? icon;
@@ -326,27 +488,73 @@ class _FushiToastViewState extends State<_FushiToastView>
 
   @override
   Widget build(BuildContext context) {
-    final Widget body = isGlassDesign(context)
+    // 区域只解析一次，尺寸（小卡 / 大卡）与位置（贴角 / 默认）都取这次的结果。
+    final _CornerGeometry? corner = _cornerGeometry(context);
+    final Widget Function(bool compact)? bodyBuilder = widget.bodyBuilder;
+    final Widget body = bodyBuilder != null
+        ? bodyBuilder(corner != null)
+        : isGlassDesign(context)
         ? _buildApple(context)
         : _buildMaterial(context);
+    final Widget animated = FadeTransition(
+      opacity: _opacity,
+      child: SlideTransition(
+        position: _slide,
+        child: ScaleTransition(
+          scale: _scale,
+          child: Material(type: MaterialType.transparency, child: body),
+        ),
+      ),
+    );
+    if (corner != null) {
+      final bool rtl = Directionality.of(context) == TextDirection.rtl;
+      return Positioned(
+        left: rtl ? null : corner.start,
+        right: rtl ? corner.start : null,
+        bottom: corner.bottom,
+        width: corner.width,
+        child: IgnorePointer(
+          ignoring: !widget.interactive,
+          child: Align(
+            alignment: AlignmentDirectional.bottomStart,
+            child: animated,
+          ),
+        ),
+      );
+    }
     return Positioned(
       bottom: _toastBottomOffset(context),
       left: 16,
       right: 16,
       child: IgnorePointer(
-        child: Center(
-          child: FadeTransition(
-            opacity: _opacity,
-            child: SlideTransition(
-              position: _slide,
-              child: ScaleTransition(
-                scale: _scale,
-                child: Material(type: MaterialType.transparency, child: body),
-              ),
-            ),
-          ),
-        ),
+        ignoring: !widget.interactive,
+        child: Center(child: animated),
       ),
+    );
+  }
+
+  /// 角落几何：把全局坐标的区域换到 overlay 本地坐标，贴底部起始角（LTR 左下、
+  /// RTL 右下）内缩 12。没有区域、区域为空或 overlay 还没布局时返回 null——此时
+  /// 调用方整张卡走默认位置与默认大卡。
+  ///
+  /// 指针口径与默认位置一致（[_FushiToastView.interactive]）：带「撤销」时卡片
+  /// 可点；[Align] 本身不命中空白处，区域里卡片以外的地方照样点穿到下面的歌词。
+  _CornerGeometry? _cornerGeometry(BuildContext context) {
+    final Rect? global = widget.cornerRegion?.call();
+    if (global == null || global.isEmpty) return null;
+    final RenderObject? overlayBox = Overlay.maybeOf(
+      context,
+    )?.context.findRenderObject();
+    if (overlayBox is! RenderBox || !overlayBox.hasSize) return null;
+    final Offset topLeft = overlayBox.globalToLocal(global.topLeft);
+    final Rect local = topLeft & global.size;
+    final Size size = overlayBox.size;
+    const double inset = 12;
+    final bool rtl = Directionality.of(context) == TextDirection.rtl;
+    return (
+      start: rtl ? size.width - local.right + inset : local.left + inset,
+      bottom: size.height - local.bottom + inset,
+      width: math.max(0, local.width - 2 * inset),
     );
   }
 
@@ -378,77 +586,12 @@ class _FushiToastViewState extends State<_FushiToastView>
 
   Widget _buildMaterial(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool eink = isEinkTheme(context);
-    final Color surface = widget.backgroundColor ?? cs.inverseSurface;
-    final Color foreground = widget.textColor ?? cs.onInverseSurface;
-    final Color? semantic = _md3SeverityColor(
-      context,
-      widget.severity,
-      surface,
-      foreground,
-    );
-    final IconData? icon = widget.icon;
-    // M3E：反色全胶囊（单行 48 高时圆角 24 = 半高），语义图标落在同色 20% 的圆形
-    // 色块里（图标本身仍是语义色）；多行退成 24 圆角块。
-    final Widget content = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        if (icon != null) ...<Widget>[
-          Container(
-            width: 32,
-            height: 32,
-            alignment: Alignment.center,
-            decoration: ShapeDecoration(
-              shape: const CircleBorder(),
-              color: eink
-                  ? Colors.transparent
-                  : (semantic ?? foreground).withValues(alpha: 0.2),
-            ),
-            child: FushiIcon(icon, color: semantic ?? foreground, size: 20),
-          ),
-          const SizedBox(width: 12),
-        ],
-        Flexible(
-          child: Text(
-            widget.msg,
-            textAlign: icon == null ? TextAlign.center : TextAlign.start,
-            style: tokens.type.controlLabel.copyWith(color: foreground),
-          ),
-        ),
-      ],
-    );
-    return Container(
-      constraints: const BoxConstraints(minHeight: 48, maxWidth: 440),
-      padding: EdgeInsetsDirectional.only(
-        start: icon != null ? 8 : 24,
-        end: 24,
-        top: 8,
-        bottom: 8,
-      ),
-      decoration: BoxDecoration(
-        color: surface,
-        borderRadius: const BorderRadius.all(_kMd3ToastCorner),
-        // 墨水屏不画阴影（灰阶抖动成脏边），改一圈前景色细边界定浮条。
-        border: eink ? Border.all(color: foreground) : null,
-        boxShadow: eink
-            ? null
-            : <BoxShadow>[
-                // M3 elevation level 3。
-                BoxShadow(
-                  color: cs.shadow.withValues(alpha: 0.18),
-                  blurRadius: 8,
-                  spreadRadius: 3,
-                  offset: const Offset(0, 4),
-                ),
-                BoxShadow(
-                  color: cs.shadow.withValues(alpha: 0.24),
-                  blurRadius: 3,
-                  offset: const Offset(0, 1),
-                ),
-              ],
-      ),
-      child: content,
+    return FushiToastCapsule(
+      message: widget.msg,
+      icon: widget.icon,
+      severity: widget.severity,
+      surfaceColor: widget.backgroundColor ?? cs.inverseSurface,
+      foregroundColor: widget.textColor ?? cs.onInverseSurface,
     );
   }
 
@@ -507,6 +650,134 @@ class _FushiToastViewState extends State<_FushiToastView>
               )
             : ColoredBox(color: fill, child: content),
       ),
+    );
+  }
+}
+
+/// M3E 通知胶囊的本体（无定位、无进退场），全应用短时通知同一副长相：
+/// 底部 [FushiToast] 与视频页左上角 OSD 共用（视频页传播放器浮层的表面色）。
+///
+/// 全胶囊（单行 48 高时圆角 24 = 半高），多行退成 24 圆角块；语义图标落在同色
+/// 20% 的圆形色块里（图标本身是语义色，见 [ToastSeverity]），不整块铺饱和色；
+/// elevation 3 档阴影，墨水屏改一圈前景色细边。[progress] 非空时在文字下方画
+/// 一条细进度条（视频页下载 / 加载进度 OSD）。
+class FushiToastCapsule extends StatelessWidget {
+  const FushiToastCapsule({
+    super.key,
+    required this.message,
+    required this.surfaceColor,
+    required this.foregroundColor,
+    this.icon,
+    this.severity = ToastSeverity.neutral,
+    this.progress,
+    this.maxWidth = 440,
+  });
+
+  final String message;
+  final Color surfaceColor;
+  final Color foregroundColor;
+  final IconData? icon;
+  final ToastSeverity severity;
+
+  /// 0..1；null 不画进度条。
+  final double? progress;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool eink = isEinkTheme(context);
+    final Color foreground = foregroundColor;
+    final Color? semantic = _md3SeverityColor(
+      context,
+      severity,
+      surfaceColor,
+      foreground,
+    );
+    final IconData? icon = this.icon;
+    final double? progress = this.progress;
+    final Widget label = Text(
+      message,
+      textAlign: icon == null && progress == null
+          ? TextAlign.center
+          : TextAlign.start,
+      style: tokens.type.controlLabel.copyWith(color: foreground),
+    );
+    final Widget content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (icon != null) ...<Widget>[
+          Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: ShapeDecoration(
+              shape: const CircleBorder(),
+              color: eink
+                  ? Colors.transparent
+                  : (semantic ?? foreground).withValues(alpha: 0.2),
+            ),
+            child: FushiIcon(icon, color: semantic ?? foreground, size: 20),
+          ),
+          const SizedBox(width: 12),
+        ],
+        Flexible(
+          child: progress == null
+              ? label
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    label,
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      width: 112,
+                      child: FushiLinearProgressIndicator(
+                        value: progress,
+                        minHeight: 4,
+                        backgroundColor: foreground.withValues(alpha: 0.25),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          semantic ?? foreground,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      ],
+    );
+    return Container(
+      constraints: BoxConstraints(minHeight: 48, maxWidth: maxWidth),
+      padding: EdgeInsetsDirectional.only(
+        start: icon != null ? 8 : 24,
+        end: 24,
+        top: 8,
+        bottom: 8,
+      ),
+      decoration: BoxDecoration(
+        color: surfaceColor,
+        borderRadius: const BorderRadius.all(_kMd3ToastCorner),
+        // 墨水屏不画阴影（灰阶抖动成脏边），改一圈前景色细边界定浮条。
+        border: eink ? Border.all(color: foreground) : null,
+        boxShadow: eink
+            ? null
+            : <BoxShadow>[
+                // M3 elevation level 3。
+                BoxShadow(
+                  color: cs.shadow.withValues(alpha: 0.18),
+                  blurRadius: 8,
+                  spreadRadius: 3,
+                  offset: const Offset(0, 4),
+                ),
+                BoxShadow(
+                  color: cs.shadow.withValues(alpha: 0.24),
+                  blurRadius: 3,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+      ),
+      child: content,
     );
   }
 }

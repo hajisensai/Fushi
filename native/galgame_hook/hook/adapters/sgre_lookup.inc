@@ -157,6 +157,12 @@ uint32_t g_sgre_last_text_units = 0;
 // Text-lane seq of the last published exact line (duplicates keep it).
 uint64_t g_sgre_last_text_seq = 0;
 wchar_t g_sgre_last_text[kSgreLookupMaxTextUnits] = {};
+// Scenario-page identity for the exact lane (BUG-4206). Guarded by g_text_cs:
+// the draw callback observes pages, the HookWorker binds voice resources.
+fushi_voice_hook::SgreScenarioPageTracker g_sgre_scenario_pages;
+static_assert(kSgreLookupMaxTextUnits <=
+                  fushi_voice_hook::kSgrePageMaxTextUnits,
+              "page tracker must hold a whole exact line");
 volatile LONG g_sgre_lookup_structure_state = 0;
 volatile LONG g_sgre_direct_input_structure_state = 0;
 volatile LONG g_sgre_lookup_structure_attempts = 0;
@@ -1411,7 +1417,34 @@ void ResetSgreExactTextDedup() {
   g_sgre_last_text_units = 0;
   g_sgre_last_text_seq = 0;
   memset(g_sgre_last_text, 0, sizeof(g_sgre_last_text));
+  g_sgre_scenario_pages.EndPage();
   LeaveCriticalSection(&g_text_cs);
+}
+
+// Records which scenario page this frame belongs to and returns the tick its
+// first glyph appeared (the line's text timestamp, BUG-4206).
+uint64_t ObserveSgreScenarioPage(const SgreLookupCapture& snapshot) {
+  if (!g_text_cs_ready || snapshot.text_units == 0) return 0;
+  EnterCriticalSection(&g_text_cs);
+  const fushi_voice_hook::SgreScenarioPage page =
+      g_sgre_scenario_pages.Observe(snapshot.text, snapshot.text_units,
+                                    GetTickCount64());
+  LeaveCriticalSection(&g_text_cs);
+  return page.first_glyph_tick;
+}
+
+// Snapshot of the scenario pages for voice binding on the HookWorker.
+// Returns false when the exact lane never observed a page this session.
+bool SnapshotSgreScenarioPages(
+    fushi_voice_hook::SgreScenarioPage* pages, size_t capacity,
+    size_t* count) {
+  *count = 0;
+  if (!g_text_cs_ready) return false;
+  EnterCriticalSection(&g_text_cs);
+  const bool observed = g_sgre_scenario_pages.observed_any_page();
+  *count = g_sgre_scenario_pages.Snapshot(pages, capacity);
+  LeaveCriticalSection(&g_text_cs);
+  return observed;
 }
 
 // Publishes the exact line to the text lane (deduplicated against the last
@@ -1419,7 +1452,8 @@ void ResetSgreExactTextDedup() {
 // the fresh seq on a new line, the retained seq on a redraw of the same
 // text, 0 when nothing was published.
 uint64_t PublishSgreExactText(const SgreLookupCapture& snapshot,
-                              void* text_surface) {
+                              void* text_surface,
+                              uint64_t first_glyph_tick) {
   if (!g_capture_enabled || g_header == nullptr || g_text_base == nullptr ||
       !g_text_cs_ready || snapshot.text_units == 0 ||
       snapshot.text_units > kSgreLookupMaxTextUnits) {
@@ -1453,6 +1487,10 @@ uint64_t PublishSgreExactText(const SgreLookupCapture& snapshot,
     write.byte_len = static_cast<uint32_t>(bytes);
     write.hook_name = kSgreTextHookName;
     write.hook_code = kSgreTextHookCode;
+    // The line appeared when its first glyph did; that is also when its voice
+    // starts. Publishing the reveal-complete tick put the text seconds after
+    // the voice on a slow typewriter (BUG-4206).
+    write.timestamp_ms = first_glyph_tick;
     const uint64_t published = fushi_voice_hook::WriteTextLaneEvent(
         g_header, fushi_voice_hook::kNativeThreadPreviewStart,
         fushi_voice_hook::kTextLaneCount, write);
@@ -1460,6 +1498,12 @@ uint64_t PublishSgreExactText(const SgreLookupCapture& snapshot,
       memcpy(g_sgre_last_text, snapshot.text, bytes);
       g_sgre_last_text_units = snapshot.text_units;
       g_sgre_last_text_seq = published;
+      // Only a fresh publication owns the page. A new page that repeats the
+      // previous line is deduplicated and stays unpublished, so a voice
+      // started on it is never named after the earlier line's seq. The
+      // publication tick bounds which voices the page may own: one that
+      // starts after the line was fully revealed belongs to a later page.
+      g_sgre_scenario_pages.MarkPublished(published, GetTickCount64());
     }
   }
   const uint64_t text_seq = g_sgre_last_text_seq;
@@ -1487,13 +1531,18 @@ void CaptureSgreLookupDrawState(void* text_surface) {
   const SgreLookupCaptureResult capture_result =
       CopySgreLookupDrawState(text_surface, &snapshot);
   if (capture_result == SgreLookupCaptureResult::kOk) {
+    // Every typing frame is observed so the page start (first glyph) is known
+    // when the line is finally published.
+    const uint64_t first_glyph_tick =
+        text_requested ? ObserveSgreScenarioPage(snapshot) : 0;
     // A typing prefix stays lookup-able (its glyphs are on screen) but is not
     // a line: it gets no text-lane seq, so a hit on it fails closed on mining
     // instead of mining a half sentence.
     if (text_requested && fushi_voice_hook::IsSgreScenarioLineFullyRevealed(
                               snapshot.glyph_count,
                               snapshot.layout_glyph_count)) {
-      snapshot.text_seq = PublishSgreExactText(snapshot, text_surface);
+      snapshot.text_seq =
+          PublishSgreExactText(snapshot, text_surface, first_glyph_tick);
     }
     if (!lookup_requested) return;
     snapshot.valid = 1;
@@ -2201,7 +2250,8 @@ bool PublishSgreLookupClickPayload(const SgreLookupClickPayload& payload) {
 struct SgreHoverHighlightScope {
   bool keep = false;
   ~SgreHoverHighlightScope() {
-    if (!keep) ClearLookupHoverHighlight();
+    if (!keep) ClearLookupHoverHighlight(
+        fushi_voice_hook::kLookupGeometryProviderIdSgre);
   }
 };
 
@@ -2449,7 +2499,9 @@ void ProcessSgreLookupTick() {
       term_rect.height = bottom - term_rect.y;
     }
     if (have_rect) {
-      RequestLookupHoverHighlight(client_origin.x + term_rect.x,
+      RequestLookupHoverHighlight(
+          fushi_voice_hook::kLookupGeometryProviderIdSgre,
+          client_origin.x + term_rect.x,
                                   client_origin.y + term_rect.y,
                                   term_rect.width, term_rect.height);
       hover_highlight.keep = true;
@@ -2460,7 +2512,9 @@ void ProcessSgreLookupTick() {
   // translucent highlight window while no card is up. hit_rect is in client
   // px; the highlight window lives in screen space.
   if (glyph_index >= 0 && game_point && !popup_visible) {
-    RequestLookupHoverHighlight(client_origin.x + hit_rect.x,
+    RequestLookupHoverHighlight(
+        fushi_voice_hook::kLookupGeometryProviderIdSgre,
+        client_origin.x + hit_rect.x,
                                 client_origin.y + hit_rect.y, hit_rect.width,
                                 hit_rect.height);
     hover_highlight.keep = true;

@@ -54,16 +54,18 @@ void main() {
   tearDown(() async => server.close(force: true));
 
   Future<InterconnectSyncBackend> buildBackend() async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+    final FushiDatabase db = FushiDatabase.forTesting(
+      DatabaseConnection(NativeDatabase.memory()),
+    );
     addTearDown(() async => db.close());
     final SyncRepository repo = SyncRepository(db);
     await repo.setFushiClientUrls(<FushiClientUrl>[
       FushiClientUrl(url: base, enabled: true),
     ]);
     await repo.setFushiClientToken(token);
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String u, String t) async => true);
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+      (String u, String t) async => true,
+    );
     await backend.restoreAuth(repo);
     await backend.authenticate(repo: repo);
     return backend;
@@ -74,18 +76,19 @@ void main() {
 
     final Map<String, Future<List<Object?>> Function()> oldDomains =
         <String, Future<List<Object?>> Function()>{
-      '/api/library/dictionaries': backend.listRemoteDictionaries,
-      '/api/library/books': backend.listRemoteBooks,
-      '/api/library/localaudio': backend.listRemoteLocalAudio,
-      '/api/library/audiobooks': backend.listRemoteAudiobooks,
-    };
+          '/api/library/dictionaries': backend.listRemoteDictionaries,
+          '/api/library/books': backend.listRemoteBooks,
+          '/api/library/localaudio': backend.listRemoteLocalAudio,
+          '/api/library/audiobooks': backend.listRemoteAudiobooks,
+        };
 
     for (final MapEntry<String, Future<List<Object?>> Function()> e
         in oldDomains.entries) {
       await expectLater(
         e.value(),
         throwsA(isA<SyncBackendError>()),
-        reason: '${e.key} 是最老的端点：404 意味着 host 把库服务关了，'
+        reason:
+            '${e.key} 是最老的端点：404 意味着 host 把库服务关了，'
             '必须作为可见错误抛出，不能降级成空表',
       );
       expect(hitPaths, contains(e.key), reason: '必须真的打过 ${e.key}，不能没发请求就抛');

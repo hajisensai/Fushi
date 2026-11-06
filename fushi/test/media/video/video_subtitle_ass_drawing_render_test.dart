@@ -26,11 +26,13 @@ Dialogue: 0,0:00:01.00,0:00:04.00,Sign,,0,0,0,,{\an7\pos(100,50)\1c&HFFFFFF&\p1}
 Dialogue: 1,0:00:01.00,0:00:04.00,Default,,0,0,0,,That is why.
 ''';
 
-List<AudioCue> _cues() => AssParser.parseString(
-    content: _kHead, bookKey: 'b', includeDrawings: true);
+List<AudioCue> _cues() =>
+    AssParser.parseString(content: _kHead, bookKey: 'b', includeDrawings: true);
 
-Future<VideoPlayerController> _pump(WidgetTester tester,
-    {required bool respect}) async {
+Future<VideoPlayerController> _pump(
+  WidgetTester tester, {
+  required bool respect,
+}) async {
   tester.view.physicalSize = const Size(1280, 720);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
@@ -41,21 +43,24 @@ Future<VideoPlayerController> _pump(WidgetTester tester,
   c.setCues(_cues());
   c.debugSetPositionForTesting(2000);
   c.debugUpdateCueForPosition(2000);
-  await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      body: SizedBox(
-        width: 1280,
-        height: 720,
-        child: VideoSubtitleOverlay(controller: c, respectAssStyle: respect),
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: 1280,
+          height: 720,
+          child: VideoSubtitleOverlay(controller: c, respectAssStyle: respect),
+        ),
       ),
     ),
-  ));
+  );
   await tester.pump();
   return c;
 }
 
 Finder _painterFinder() => find.byWidgetPredicate(
-    (Widget w) => w is CustomPaint && w.painter is AssDrawingPainter);
+  (Widget w) => w is CustomPaint && w.painter is AssDrawingPainter,
+);
 
 void main() {
   test('controller：绘图事件分流到渲染专用流，对白流零污染', () {
@@ -73,8 +78,9 @@ void main() {
     expect(c.activeDrawingCues, isEmpty);
   });
 
-  testWidgets('respect ON：白填充绘图按包围盒落在 \\an7\\pos(100,50)，盒 200×100',
-      (WidgetTester tester) async {
+  testWidgets('respect ON：白填充绘图按包围盒落在 \\an7\\pos(100,50)，盒 200×100', (
+    WidgetTester tester,
+  ) async {
     await _pump(tester, respect: true);
     expect(_painterFinder(), findsOneWidget);
     final Rect r = tester.getRect(_painterFinder());
@@ -101,6 +107,103 @@ void main() {
     await _pump(tester, respect: false);
     expect(_painterFinder(), findsNothing);
     expect(find.text('T'), findsWidgets);
+  });
+
+  // 反馈 ZjYzWc8Wfz（BanG Dream S2E08 To-Do 招牌白底错位成白条）：字幕组遮罩是
+  // `\an7\pos(0,0)` + 画面绝对坐标。参考坐标取自 libass（ffmpeg `subtitles` 滤镜对同一
+  // 脚本渲染后量白色像素外接框，PlayRes 1920×1080）：
+  //   {\an7\pos(0,0)}   m 500 300 l 700 300 700 500 500 500  → (500,300)–(700,500)
+  //   {\an5\pos(960,700)} m 100 100 l 300 100 300 300 100 300 → (960,700)–(1160,900)
+  //   {\an9\pos(1500,600)} m -50 -80 l 150 -80 150 120 -50 120 → (1250,520)–(1450,720)
+  // 即「盒尺寸 = 包围盒，绘图点相对盒左上角按原坐标落笔」，不减包围盒最小角。
+  group('绘图落点与 libass 一致（不减包围盒最小角）', () {
+    Future<Rect> paintedRect(WidgetTester tester, String event) async {
+      final String script =
+          '''
+[Script Info]
+PlayResX: 1920
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Sign,Arial,70,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,2,0,0,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:01.00,0:00:04.00,Sign,,0,0,0,,$event
+''';
+      tester.view.physicalSize = const Size(1920, 1080);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final VideoPlayerController c = VideoPlayerController()
+        ..debugVideoWidthOverride = 1920
+        ..debugVideoHeightOverride = 1080;
+      addTearDown(c.dispose);
+      c.setCues(
+        AssParser.parseString(
+          content: script,
+          bookKey: 'b',
+          includeDrawings: true,
+        ),
+      );
+      c.debugSetPositionForTesting(2000);
+      c.debugUpdateCueForPosition(2000);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 1920,
+              height: 1080,
+              child: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final Finder painter = _painterFinder();
+      expect(painter, findsOneWidget);
+      final Rect box = tester.getRect(painter);
+      final AssDrawingPainter p =
+          tester.widget<CustomPaint>(painter).painter! as AssDrawingPainter;
+      return p.buildPath().getBounds().shift(box.topLeft);
+    }
+
+    void expectRect(Rect actual, Rect expected) {
+      expect(actual.left, closeTo(expected.left, 0.5), reason: '$actual');
+      expect(actual.top, closeTo(expected.top, 0.5), reason: '$actual');
+      expect(actual.right, closeTo(expected.right, 0.5), reason: '$actual');
+      expect(actual.bottom, closeTo(expected.bottom, 0.5), reason: '$actual');
+    }
+
+    testWidgets(r'\an7\pos(0,0) 绝对坐标遮罩落在原坐标', (WidgetTester tester) async {
+      expectRect(
+        await paintedRect(
+          tester,
+          r'{\an7\pos(0,0)\p1\c&HFFFFFF&}m 500 300 l 700 300 700 500 500 500',
+        ),
+        const Rect.fromLTRB(500, 300, 700, 500),
+      );
+    });
+
+    testWidgets(r'\an5 居中：盒按包围盒尺寸居中，点按原坐标落笔', (WidgetTester tester) async {
+      expectRect(
+        await paintedRect(
+          tester,
+          r'{\an5\pos(960,700)\p1\c&HFFFFFF&}m 100 100 l 300 100 300 300 100 300',
+        ),
+        const Rect.fromLTRB(960, 700, 1160, 900),
+      );
+    });
+
+    testWidgets(r'\an9 + 负坐标', (WidgetTester tester) async {
+      expectRect(
+        await paintedRect(
+          tester,
+          r'{\an9\pos(1500,600)\p1\c&HFFFFFF&}m -50 -80 l 150 -80 150 120 -50 120',
+        ),
+        const Rect.fromLTRB(1250, 520, 1450, 720),
+      );
+    });
   });
 
   test('AssDrawingPainter：每个 m 起一个闭合子路径，非零环绕', () {

@@ -123,13 +123,13 @@ enum BanReason {
 /// 判定结果。[banned]=false 时其余字段忽略。
 class BanVerdict {
   const BanVerdict.allow()
-      : banned = false,
-        reason = null,
-        cidr = null,
-        banDurationMs = null;
+    : banned = false,
+      reason = null,
+      cidr = null,
+      banDurationMs = null;
 
   const BanVerdict.ban(this.reason, {this.cidr, this.banDurationMs})
-      : banned = true;
+    : banned = true;
 
   final bool banned;
   final BanReason? reason;
@@ -300,8 +300,9 @@ String cidrOf(String ip, {int ipv4Prefix = 24, int ipv6Prefix = 60}) {
   final List<int>? bytes = _tryParseIpBytes(ip);
   if (ip.contains(':')) {
     if (bytes == null || bytes.length != 16) return ip;
-    final int prefix =
-        ipv6Prefix < 0 ? 0 : (ipv6Prefix > 128 ? 128 : ipv6Prefix);
+    final int prefix = ipv6Prefix < 0
+        ? 0
+        : (ipv6Prefix > 128 ? 128 : ipv6Prefix);
     _maskBytes(bytes, prefix);
     final StringBuffer buffer = StringBuffer();
     for (int i = 0; i < 8; i++) {
@@ -427,8 +428,9 @@ class AntiLeechEngine {
   /// 登记/续期一个封段：banTimeMs>0 时到期时刻 = nowMs+banTimeMs（可被
   /// [pruneExpired] 解封），否则永久。
   void _registerBan(String cidr, int nowMs) {
-    _bannedCidrs[cidr] =
-        config.banTimeMs > 0 ? nowMs + config.banTimeMs : _permanentBan;
+    _bannedCidrs[cidr] = config.banTimeMs > 0
+        ? nowMs + config.banTimeMs
+        : _permanentBan;
   }
 
   /// 单 peer 判定（规则顺序见类 doc）。
@@ -456,7 +458,8 @@ class AntiLeechEngine {
     // 我们数据的 peer 不因身份自动封（PCB 内原豁免位置不动）。
     // 命中时显式携带单 IP CIDR（BUG-1275）：身份证据只指向该 peer 自身，
     // 不升级 /24（/60）整段连坐——CGNAT 下一个段后面是成百上千真实用户。
-    final bool fedUsEnough = config.ignoreByDownloadedBytes > 0 &&
+    final bool fedUsEnough =
+        config.ignoreByDownloadedBytes > 0 &&
         peer.totalDownload >= config.ignoreByDownloadedBytes;
     if (ctx.isSeeding && !fedUsEnough) {
       for (final String prefix in config.peerIdBlacklistPrefixes) {
@@ -490,8 +493,9 @@ class AntiLeechEngine {
     // ③ MultiDialingBlocker（多拨/PCDN）：同段同种子 IP 数超容忍值封段。
     final String segment = _segmentOf(peer.ip);
     final Set<String> segmentIps = _torrentSegmentIps.putIfAbsent(
-        '${ctx.infoHash}@$segment', () => <String>{})
-      ..add(peer.ip);
+      '${ctx.infoHash}@$segment',
+      () => <String>{},
+    )..add(peer.ip);
     if (segmentIps.length > config.multiDialTolerance) {
       return BanVerdict.ban(BanReason.multiDialing, cidr: segment);
     }
@@ -504,8 +508,10 @@ class AntiLeechEngine {
   BanVerdict _evaluatePcb(PeerSnapshot peer, TorrentContext ctx, int nowMs) {
     final int firstSeen = _firstSeenMs.putIfAbsent(peer.ip, () => nowMs);
     // 峰值抗断连：断连重连后 totalUpload 归零，按历史峰值判。
-    final int computedUploaded =
-        math.max(peer.totalUpload, _peakUpload[peer.ip] ?? 0);
+    final int computedUploaded = math.max(
+      peer.totalUpload,
+      _peakUpload[peer.ip] ?? 0,
+    );
     _peakUpload[peer.ip] = computedUploaded;
 
     // 宽限窗口：只更新状态不判定，避 bitfield 未就绪误封。
@@ -540,8 +546,10 @@ class AntiLeechEngine {
 
     // differenceTest：我喂给你的量对应的进度，比你自报的高出一大截 =
     // 你谎报低进度骗我持续上传。
-    final double computedProgress =
-        math.min(1.0, computedUploaded / ctx.totalSize);
+    final double computedProgress = math.min(
+      1.0,
+      computedUploaded / ctx.totalSize,
+    );
     if (computedProgress - peer.reportedProgress >
         config.maxProgressDifference) {
       return const BanVerdict.ban(BanReason.progressCheat);
@@ -571,7 +579,8 @@ class AntiLeechEngine {
         prevProgress != null) {
       final int deltaUpload = computedUploaded - prevUpload;
       final double deltaProgress = peer.reportedProgress - prevProgress;
-      final double allowed = ctx.totalSize *
+      final double allowed =
+          ctx.totalSize *
           math.max(deltaProgress, 0.0) *
           config.relativeAntiErrorRatio;
       if (deltaUpload >= config.relativeStartBytes && deltaUpload > allowed) {
@@ -589,10 +598,10 @@ class AntiLeechEngine {
 
   /// 按配置前缀算 IP 所属段。
   String _segmentOf(String ip) => cidrOf(
-        ip,
-        ipv4Prefix: config.ipv4PrefixLength,
-        ipv6Prefix: config.ipv6PrefixLength,
-      );
+    ip,
+    ipv4Prefix: config.ipv4PrefixLength,
+    ipv6Prefix: config.ipv6PrefixLength,
+  );
 
   /// 单 IP CIDR（IPv4 `/32`、IPv6 `/128`）：身份类 ban 专用，不连坐邻居
   /// （BUG-1275）。

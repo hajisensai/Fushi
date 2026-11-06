@@ -175,17 +175,24 @@ void main() {
       // 通道必须挂在两模式共享的 setup 脚本里（_buildReaderSetupScript），且对 window
       // 与 document 都监听（覆盖连续模式 window 滚动 + 分页模式 body 内部滚动）。
       // TODO-718：第二参传 isUserDriven（最近真实用户输入驱动），故匹配前缀不含闭括号。
-      expect(containsCodeLine(src, "callHandler('onReaderScroll'"), isTrue,
-          reason: 'scroll reporter 必须经 callHandler 把进度回传 Dart');
+      expect(
+        containsCodeLine(src, "callHandler('onReaderScroll'"),
+        isTrue,
+        reason: 'scroll reporter 必须经 callHandler 把进度回传 Dart',
+      );
       expect(
         containsCodeLine(
-            src, "window.addEventListener('scroll', _onReaderScrollEvent"),
+          src,
+          "window.addEventListener('scroll', _onReaderScrollEvent",
+        ),
         isTrue,
         reason: '必须监听 window scroll（连续模式 window 原生滚动）',
       );
       expect(
         containsCodeLine(
-            src, "document.addEventListener('scroll', _onReaderScrollEvent"),
+          src,
+          "document.addEventListener('scroll', _onReaderScrollEvent",
+        ),
         isTrue,
         reason: '必须监听 document scroll capture（分页模式 body 内部滚动）',
       );
@@ -197,71 +204,120 @@ void main() {
       // 边实时跟随。锁住「rAF 在飞时不再排新 rAF」这个节流不变量——若回退成纯尾沿
       // 去抖（每次都 clearTimeout 推后定时器、滑动期间不回传），下面的断言会转红。
       final String handler = methodBody(
-          engineJs, 'function _onReaderScrollEvent()',
-          lexicon: SourceLexicon.js);
-      expect(containsCodeLine(handler, 'if (!_progressScrollRaf) {'), isTrue,
-          reason: 'rAF 节流：在飞期不再排新 rAF，滑动中按帧回传（不是纯尾沿去抖）');
-      expect(containsCodeLine(handler, '_reportReaderScroll();'), isTrue,
-          reason: 'rAF 回调里必须直接回传，让进度边滑边更新');
-      // 尾沿补一发：滑停后短延时再回传一次最终位置（rAF 节流不保证捕捉到静止帧）。
-      expect(containsCodeLine(handler, '_progressScrollTimer'), isTrue,
-          reason: '尾沿补发必须有 timer 变量');
-      expect(containsCodeLine(handler, '}, 120);'), isTrue,
-          reason: '尾沿补发延时（120ms）回传最终静止位置');
-      expect(containsCodeLine(handler, 'clearTimeout(_progressScrollTimer)'),
-          isTrue,
-          reason: '新滚动须重置尾沿补发 timer');
-      // 防回归：滑动期间不得只靠尾沿（旧 bug 是 rAF 内再套 setTimeout 200ms 纯去抖）。
-      expect(containsCodeLine(handler, '}, 200);'), isFalse,
-          reason: 'BUG-380：不得回退成「rAF 内套 200ms 纯尾沿去抖」(滑动中不回传)');
+        engineJs,
+        'function _onReaderScrollEvent()',
+        lexicon: SourceLexicon.js,
+      );
       expect(
-          containsCodeLine(src, 'r._reanchorPending === true) return'), isTrue,
-          reason: '程序化重锚期（_reanchorPending）必须跳过回传，避免恢复/重排瞬态误触发');
+        containsCodeLine(handler, 'if (!_progressScrollRaf) {'),
+        isTrue,
+        reason: 'rAF 节流：在飞期不再排新 rAF，滑动中按帧回传（不是纯尾沿去抖）',
+      );
+      expect(
+        containsCodeLine(handler, '_reportReaderScroll();'),
+        isTrue,
+        reason: 'rAF 回调里必须直接回传，让进度边滑边更新',
+      );
+      // 尾沿补一发：滑停后短延时再回传一次最终位置（rAF 节流不保证捕捉到静止帧）。
+      expect(
+        containsCodeLine(handler, '_progressScrollTimer'),
+        isTrue,
+        reason: '尾沿补发必须有 timer 变量',
+      );
+      expect(
+        containsCodeLine(handler, '}, 120);'),
+        isTrue,
+        reason: '尾沿补发延时（120ms）回传最终静止位置',
+      );
+      expect(
+        containsCodeLine(handler, 'clearTimeout(_progressScrollTimer)'),
+        isTrue,
+        reason: '新滚动须重置尾沿补发 timer',
+      );
+      // 防回归：滑动期间不得只靠尾沿（旧 bug 是 rAF 内再套 setTimeout 200ms 纯去抖）。
+      expect(
+        containsCodeLine(handler, '}, 200);'),
+        isFalse,
+        reason: 'BUG-380：不得回退成「rAF 内套 200ms 纯尾沿去抖」(滑动中不回传)',
+      );
+      expect(
+        containsCodeLine(src, 'r._reanchorPending === true) return'),
+        isTrue,
+        reason: '程序化重锚期（_reanchorPending）必须跳过回传，避免恢复/重排瞬态误触发',
+      );
     });
 
     test('Dart 注册 onReaderScroll handler 并走纯函数门控后 coalesce 刷新', () {
-      expect(containsCodeLine(src, "handlerName: 'onReaderScroll'"), isTrue,
-          reason: '必须注册 onReaderScroll JS handler');
+      expect(
+        containsCodeLine(src, "handlerName: 'onReaderScroll'"),
+        isTrue,
+        reason: '必须注册 onReaderScroll JS handler',
+      );
       // TODO-718：callback 现按 isUserDriven 传 _handleReaderScroll(bool)，签名加参。
       expect(containsCodeLine(src, '_handleReaderScroll('), isTrue);
       final String body = methodBody(src, 'void _handleReaderScroll()');
       expect(
-          containsCodeLine(body, 'readerScrollProgressRefreshAllowed('), isTrue,
-          reason: '门控必须走纯函数 readerScrollProgressRefreshAllowed');
+        containsCodeLine(body, 'readerScrollProgressRefreshAllowed('),
+        isTrue,
+        reason: '门控必须走纯函数 readerScrollProgressRefreshAllowed',
+      );
       // BUG-380：门控通过后走 coalesce 守卫（高频滚动不堆积 evaluateJavascript），
       // 而不是裸调 _refreshProgress()。
-      expect(containsCodeLine(body, '_refreshProgressFromScroll();'), isTrue,
-          reason: '滚动路径门控通过后必须走 _refreshProgressFromScroll coalesce 守卫');
+      expect(
+        containsCodeLine(body, '_refreshProgressFromScroll();'),
+        isTrue,
+        reason: '滚动路径门控通过后必须走 _refreshProgressFromScroll coalesce 守卫',
+      );
     });
 
     test('BUG-380/卡死：_refreshProgressFromScroll 是 coalesce 守卫 + 50ms 节流', () {
       final String body = methodBody(src, 'void _refreshProgressFromScroll()');
       // 在飞时再来的滚动只置 pending，不并发跑第二次 evaluateJavascript。
-      expect(containsCodeLine(body, 'if (_scrollProgressInFlight) {'), isTrue,
-          reason: '在飞期必须只置 pending，避免 fushiProgressDetails 调用堆积');
+      expect(
+        containsCodeLine(body, 'if (_scrollProgressInFlight) {'),
+        isTrue,
+        reason: '在飞期必须只置 pending，避免 fushiProgressDetails 调用堆积',
+      );
       expect(containsCodeLine(body, '_scrollProgressPending = true;'), isTrue);
       // 飞完后若有 pending 补跑一次，保证最终静止位置一定被刷到。
-      expect(containsCodeLine(body, 'whenComplete('), isTrue,
-          reason: '必须在刷新完成后清在飞标记并按 pending 补跑（coalesce）');
-      expect(containsCodeLine(body, '_refreshProgress()'), isTrue,
-          reason: 'coalesce 守卫最终仍调既有 _refreshProgress 重算进度');
+      expect(
+        containsCodeLine(body, 'whenComplete('),
+        isTrue,
+        reason: '必须在刷新完成后清在飞标记并按 pending 补跑（coalesce）',
+      );
+      expect(
+        containsCodeLine(body, '_refreshProgress()'),
+        isTrue,
+        reason: 'coalesce 守卫最终仍调既有 _refreshProgress 重算进度',
+      );
       // 卡死修复：时间节流（对齐 hoshi 安卓 CONTINUOUS_PROGRESS_THROTTLE_MS=50ms）。原本只有
       // coalesce、一完成就背靠背补跑 calculateProgress 全文重算 → 鼠标拖动/连续滚动把 WebView
       // JS 线程占满卡死。节流后滑动中最多每 50ms 一次 + 尾沿补发最终位置。
-      expect(containsCodeLine(body, 'throttleMs'), isTrue,
-          reason: '滚动进度重算必须时间节流，否则背靠背全文重算 → JS 卡死（对齐 hoshi 安卓 50ms）');
-      expect(containsCodeLine(body, '_scrollProgressThrottleTimer'), isTrue,
-          reason: '节流尾沿 timer 必须存在（保证停止后最终位置被刷到）');
+      expect(
+        containsCodeLine(body, 'throttleMs'),
+        isTrue,
+        reason: '滚动进度重算必须时间节流，否则背靠背全文重算 → JS 卡死（对齐 hoshi 安卓 50ms）',
+      );
+      expect(
+        containsCodeLine(body, '_scrollProgressThrottleTimer'),
+        isTrue,
+        reason: '节流尾沿 timer 必须存在（保证停止后最终位置被刷到）',
+      );
     });
 
     test('刷新进度必须走 stableProgressInvocation，避免恢复/重锚瞬态 0 落库', () {
-      final String body =
-          methodBody(src, 'Future<void> _refreshProgress() async');
+      final String body = methodBody(
+        src,
+        'Future<void> _refreshProgress() async',
+      );
       expect(
         containsCodeLine(
-            body, 'ReaderPaginationScripts.stableProgressInvocation()'),
+          body,
+          'ReaderPaginationScripts.stableProgressInvocation()',
+        ),
         isTrue,
-        reason: '恢复完成和滚动回传复用 _refreshProgress；这里必须走 stable '
+        reason:
+            '恢复完成和滚动回传复用 _refreshProgress；这里必须走 stable '
             'gate，_reanchorPending 时返回 null，不能直接读瞬态 progress=0',
       );
       expect(

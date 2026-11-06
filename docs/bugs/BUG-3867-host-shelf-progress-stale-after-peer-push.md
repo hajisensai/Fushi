@@ -1,0 +1,6 @@
+## BUG-3867 · host-shelf-progress-stale-after-peer-push
+- **报告**：2026-10-28（用户：「我手机进度是2%。为什么电脑上的没刷新，明明手机同步了」——电脑书架「继续阅读」卡显示 安達としまむら3「已读 17%」）
+- **真实性**：✅ 真 bug。查用户电脑的实库（只读打开 `fushi.db`）：该书 `reader_positions` = section 12 / charOffset 1215，`updatedAt` 2026-10-28 20:46，按章节字数折算 **1.84%**——手机（配对设备 CPH2747）推来的进度**已经落库**，是书架显示停在旧值。根因：电脑是互联 host，对端进度经 `packages/fushi_engine/lib/sync/local_library_host_service/books.part.dart:422` `putBookProgress` 直接写 `reader_positions`；书架页 `fushi/lib/src/pages/implementations/reader_fushi_history_page.dart` 只在 `tabRefreshNotifier`（本机发起的同步收尾 `refreshAfterSyncRun`）时失效 `fushiBooksProvider` / `bookLastReadAtProvider`，对端 PUT 不经那里，于是书列表缓存一直是旧进度。首页 dashboard 早已订阅 `readerPositions` 表信号（`watchDashboardDataChanges`），书架漏了。
+- **[x] ① 已修复** — `FushiDatabase.watchReaderPositionsChanged()`（`packages/fushi_core/lib/src/database/database_library.part.dart`）；书架页订阅它，400 ms 防抖后失效两个缓存 provider；书架不在前或有书开着时只记一笔（`shouldReloadShelfProgressNow`），切回书架 tab 再重算——阅读器翻页写位置不会让藏在后面的书架反复重算，关书由 `onSourceExit` 自行失效。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/fushi_library_host_service_book_progress_test.dart`「对端 PUT 落库 → watchReaderPositionsChanged 发信号」；`fushi/test/pages/shelf_progress_reload_test.dart`（何时立刻重算 / 推迟）。
+- **备注**：未在真机复测（真机验证按规则取消）。

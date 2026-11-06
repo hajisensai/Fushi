@@ -223,36 +223,37 @@ void main() {
       await changed;
     });
 
-    test('sidecar ledger cleanup batches beyond SQLite variable limits', () async {
-      final Set<int> artifactIds = <int>{};
-      await db.transaction(() async {
-        for (int index = 0; index < 1005; index++) {
-          artifactIds.add(
-            await db.upsertVideoSidecarArtifact(
-              VideoSidecarArtifactsCompanion.insert(
-                artifactKind: 'nfo',
-                path: 'D:/Videos/batched-$index.nfo',
-                sha256: 'hash-$index',
-                generatorVersion: '1',
-                writePolicy: 'missingOnly',
-                createdAt: 1,
-                updatedAt: 1,
+    test(
+      'sidecar ledger cleanup batches beyond SQLite variable limits',
+      () async {
+        final Set<int> artifactIds = <int>{};
+        await db.transaction(() async {
+          for (int index = 0; index < 1005; index++) {
+            artifactIds.add(
+              await db.upsertVideoSidecarArtifact(
+                VideoSidecarArtifactsCompanion.insert(
+                  artifactKind: 'nfo',
+                  path: 'D:/Videos/batched-$index.nfo',
+                  sha256: 'hash-$index',
+                  generatorVersion: '1',
+                  writePolicy: 'missingOnly',
+                  createdAt: 1,
+                  updatedAt: 1,
+                ),
               ),
-            ),
-          );
-        }
-      });
+            );
+          }
+        });
 
-      await db.clearAllVideoScrapeRecords(
-        preserveAllSidecarArtifacts: true,
-      );
-      expect(await db.getVideoSidecarArtifacts(), hasLength(1005));
+        await db.clearAllVideoScrapeRecords(preserveAllSidecarArtifacts: true);
+        expect(await db.getVideoSidecarArtifacts(), hasLength(1005));
 
-      await db.clearAllVideoScrapeRecords(
-        clearSidecarArtifactIds: artifactIds,
-      );
-      expect(await db.getVideoSidecarArtifacts(), isEmpty);
-    });
+        await db.clearAllVideoScrapeRecords(
+          clearSidecarArtifactIds: artifactIds,
+        );
+        expect(await db.getVideoSidecarArtifacts(), isEmpty);
+      },
+    );
 
     test('clearAllVideoScrapeRecords clears every scrape projection but keeps '
         'library structure, settings, and unselected covers', () async {
@@ -360,15 +361,13 @@ void main() {
         ],
       );
       await db.replaceMediaImagesForBook('clear-cover', <MediaImagesCompanion>[
-          MediaImagesCompanion.insert(
-            bookUid: const Value<String?>('clear-cover'),
-            kind: MediaImageKind.logo.dbValue,
-            path: r'D:\generated\logo.png',
-            sourceUrl: const Value<String?>(
-              'https://images.example/logo.png',
-            ),
-          ),
-        ]);
+        MediaImagesCompanion.insert(
+          bookUid: const Value<String?>('clear-cover'),
+          kind: MediaImageKind.logo.dbValue,
+          path: r'D:\generated\logo.png',
+          sourceUrl: const Value<String?>('https://images.example/logo.png'),
+        ),
+      ]);
       await db.replaceMediaImagesForCollection(
         keepCoverCollection,
         <MediaImagesCompanion>[
@@ -580,16 +579,16 @@ void main() {
             },
           );
         }
-        final List<CollectionRelationRow> retainedRelations =
-            await db.getCollectionRelations(clearCoverCollection);
+        final List<CollectionRelationRow> retainedRelations = await db
+            .getCollectionRelations(clearCoverCollection);
         expect(retainedRelations, hasLength(1));
         expect(retainedRelations.single.source, 'local');
         expect(
           retainedRelations.single.targetCollectionId,
           keepCoverCollection,
         );
-        final List<MediaImageRow> retainedImages =
-            await db.getMediaImagesForCollection(keepCoverCollection);
+        final List<MediaImageRow> retainedImages = await db
+            .getMediaImagesForCollection(keepCoverCollection);
         expect(retainedImages, hasLength(1));
         expect(retainedImages.single.path, r'D:\manual\backdrop.jpg');
         expect(retainedImages.single.sourceUrl, isNull);

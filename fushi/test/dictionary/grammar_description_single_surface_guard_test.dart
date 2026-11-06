@@ -95,13 +95,13 @@ void main() {
       });
     }
 
-    // 弹窗 HTML 除了三份 popup.html，还有两份**内联拼装**的副本（桌面 about:blank
-    // 与 Android 弹窗 Activity）。BUG-2041 删 `.overlay` 时漏了这两份：那个「×」
+    // 弹窗 HTML 除了三份 popup.html，还有一份**内联拼装**的副本（桌面 about:blank；
+    // Android 原生弹窗 Activity 那份已随该 Activity 删除）。BUG-2041 删 `.overlay` 时漏了
+    // 内联副本：那个「×」
     // 成了弹窗底部的一行裸文字，一点就 `ReferenceError: closeOverlay is not defined`
     // （用户本机错误日志 2026-10-13）。
     const List<String> inlineHtmlSources = <String>[
       'lib/src/pages/implementations/dictionary_popup_webview.dart',
-      'android/app/src/main/java/app/fushi/reader/PopupDictActivity.kt',
     ];
     for (final String path in inlineHtmlSources) {
       test('[$path] 内联弹窗 HTML 没有旧 .overlay 节点', () {

@@ -20,7 +20,9 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'package:xml/xml.dart';
+import 'package:fushi_compute/fushi_compute.dart'
+    show FfcXmlElement, FfcXmlParseError, parseAniDbAnimeXml;
+import 'package:xml/xml.dart' show XmlParserException, XmlTagException;
 
 /// AniDB 明确下发的封禁（HTTP 200 + `<error>banned</error>`）。
 ///
@@ -46,6 +48,7 @@ class AniDbVideoMetadataProvider
     String clientName = '',
     int? clientVersion,
     this.language = kFallbackVideoMetadataLocale,
+    this.followOriginalLanguage = false,
     http.Client? client,
     VideoMetadataHttpClient? transport,
     AniDbTitleCatalog? titleCatalog,
@@ -56,32 +59,30 @@ class AniDbVideoMetadataProvider
     Duration apiRequestInterval = const Duration(seconds: 3),
     bool? shareRequestGate,
     AniDbXmlCacheDirectory? xmlCacheDirectory,
-  })  : assert(client == null || transport == null),
-        _xmlCacheDirectory = xmlCacheDirectory,
-        _clientName = clientName.trim().toLowerCase(),
-        _clientVersion = clientVersion,
-        // AniDB forbids rapid retries. Every real retry must re-enter this
-        // provider's 2s+ queue instead of happening inside the transport.
-        _transport = transport ??
-            VideoMetadataHttpClient(client: client, maxAttempts: 1),
-        _ownsTransport = transport == null,
-        _titleCatalog = titleCatalog ?? _sharedTitleCatalog,
-        _now = now ?? DateTime.now,
-        _sleep = sleep ?? Future<void>.delayed,
-        _requestGate = (shareRequestGate ??
-                (client == null &&
-                    transport == null &&
-                    titleCatalog == null &&
-                    now == null &&
-                    sleep == null))
-            ? _sharedRequestGates.putIfAbsent(
-                apiUrl,
-                _AniDbRequestGate.new,
-              )
-            : _AniDbRequestGate(),
-        apiRequestInterval = apiRequestInterval < _minimumRequestInterval
-            ? _minimumRequestInterval
-            : apiRequestInterval;
+  }) : assert(client == null || transport == null),
+       _xmlCacheDirectory = xmlCacheDirectory,
+       _clientName = clientName.trim().toLowerCase(),
+       _clientVersion = clientVersion,
+       // AniDB forbids rapid retries. Every real retry must re-enter this
+       // provider's 2s+ queue instead of happening inside the transport.
+       _transport =
+           transport ?? VideoMetadataHttpClient(client: client, maxAttempts: 1),
+       _ownsTransport = transport == null,
+       _titleCatalog = titleCatalog ?? _sharedTitleCatalog,
+       _now = now ?? DateTime.now,
+       _sleep = sleep ?? Future<void>.delayed,
+       _requestGate =
+           (shareRequestGate ??
+               (client == null &&
+                   transport == null &&
+                   titleCatalog == null &&
+                   now == null &&
+                   sleep == null))
+           ? _sharedRequestGates.putIfAbsent(apiUrl, _AniDbRequestGate.new)
+           : _AniDbRequestGate(),
+       apiRequestInterval = apiRequestInterval < _minimumRequestInterval
+           ? _minimumRequestInterval
+           : apiRequestInterval;
 
   static const int _maxAnimeXmlLength = 24 * 1024 * 1024;
   static const Duration _minimumRequestInterval = Duration(seconds: 2);
@@ -105,6 +106,11 @@ class AniDbVideoMetadataProvider
   final String apiUrl;
   final String imageBaseUrl;
   final String language;
+
+  /// true = 标题按作品原语言选（资料语言留空，BUG-4056）。原语言见
+  /// [_workOriginalLanguageOf]——与产出的 [VideoMetadataWork.originalLanguage]
+  /// 同一个值，协调器的合并 / 选图语言序靠它和 TMDB 请求端对齐。
+  final bool followOriginalLanguage;
   final AniDbProviderNow _now;
   final AniDbProviderSleep _sleep;
   final _AniDbRequestGate _requestGate;
@@ -127,8 +133,10 @@ class AniDbVideoMetadataProvider
   /// 且没被 AniDB 明确拒绝过）。不看封禁——封禁是另一种「暂时不可用」。
   bool get _hasHttpClientIdentity =>
       !_closed &&
-      AniDbAppClientIdentity(name: _clientName, version: _clientVersion)
-          .isUsable &&
+      AniDbAppClientIdentity(
+        name: _clientName,
+        version: _clientVersion,
+      ).isUsable &&
       httpIdentityRejection == null;
 
   String get _httpIdentityKey => '$_clientName/${_clientVersion ?? ''}';
@@ -190,9 +198,7 @@ class AniDbVideoMetadataProvider
       // 不是「没搜到」：折成网络异常，resolver 才会记 providerUnavailable 并
       // 继续问链上的 TMDB 兜底，而不是整批作品 failed（AniDB 成默认主源后这条
       // 是升级即触发的退化）。
-      throw VideoMetadataNetworkException(
-        'AniDB 标题目录不可用：${error.message}',
-      );
+      throw VideoMetadataNetworkException('AniDB 标题目录不可用：${error.message}');
     }
     return <VideoMetadataWork>[
       for (final AniDbTitleSearchResult match in matches)
@@ -288,7 +294,8 @@ class AniDbVideoMetadataProvider
       );
     }
     return List<VideoMetadataEpisode>.unmodifiable(
-        seasonNumber == 0 ? anime.specials : anime.episodes);
+      seasonNumber == 0 ? anime.specials : anime.episodes,
+    );
   }
 
   Future<_AniDbAnime?> _anime(int animeId) async {
@@ -325,9 +332,11 @@ class AniDbVideoMetadataProvider
       try {
         final bool fresh =
             _now().difference((await cacheFile.stat()).modified) <
-                _animeCacheTtl;
-        final _AniDbAnime? parsed =
-            _parseAnime(animeId, await cacheFile.readAsString());
+            _animeCacheTtl;
+        final _AniDbAnime? parsed = _parseAnime(
+          animeId,
+          await cacheFile.readAsString(),
+        );
         if (parsed != null && (fresh || !isHttpApiAvailable)) return parsed;
         stale = parsed;
       } on Object {
@@ -425,8 +434,9 @@ class AniDbVideoMetadataProvider
     }
     final _AniDbAnime? anime = await _anime(animeId);
     if (anime == null) return const <int, List<String>>{};
-    final List<VideoMetadataEpisode> episodes =
-        seasonNumber == 0 ? anime.specials : anime.episodes;
+    final List<VideoMetadataEpisode> episodes = seasonNumber == 0
+        ? anime.specials
+        : anime.episodes;
     return <int, List<String>>{
       for (final VideoMetadataEpisode episode in episodes)
         if (_episodeIdOf(episode) case final int eid)
@@ -526,25 +536,16 @@ class AniDbVideoMetadataProvider
         'AniDB anime response is too large',
       );
     }
-    if (RegExp(
-      r'<!\s*(?:DOCTYPE|ENTITY)\b',
-      caseSensitive: false,
-    ).hasMatch(xml)) {
-      throw const VideoMetadataNetworkException(
-        'AniDB anime response contains a forbidden declaration',
-      );
-    }
-
-    final XmlDocument document;
+    // DOCTYPE / ENTITY 预检与 DOM 解析都在 Rust 计算内核里（parseAniDbAnimeXml，
+    // native/fushi_compute/src/parse/anidb/dom.rs），语义照原来的
+    // `<!\s*(?:DOCTYPE|ENTITY)\b` 预检 + `XmlDocument.parse`。
+    final FfcXmlElement root;
     try {
-      document = XmlDocument.parse(xml);
-    } on XmlParserException catch (error) {
-      throw VideoMetadataNetworkException(
-        'AniDB anime response contains invalid XML: $error',
-      );
+      root = parseAniDbAnimeXml(xml);
+    } on FfcXmlParseError catch (error) {
+      throw _xmlFailure(error, xml);
     }
-    final XmlElement root = document.rootElement;
-    if (root.name.local == 'error') {
+    if (root.localName == 'error') {
       final String message = root.innerText.trim();
       final String normalized = message.toLowerCase();
       if (normalized.contains('not found')) return null;
@@ -575,7 +576,7 @@ class AniDbVideoMetadataProvider
             : 'AniDB anime request failed: $message',
       );
     }
-    if (root.name.local != 'anime') {
+    if (root.localName != 'anime') {
       throw const VideoMetadataNetworkException(
         'AniDB anime response has an unexpected root element',
       );
@@ -612,22 +613,24 @@ class AniDbVideoMetadataProvider
     );
     // Shoko `CrossRef_AniDB_MAL`：AniDB 自己登记的 MAL 条目（resources type 2）。
     final List<int> malIds = <int>[
-      for (final XmlElement resource
+      for (final FfcXmlElement resource
           in root.getElement('resources')?.findElements('resource') ??
-              const <XmlElement>[])
+              const <FfcXmlElement>[])
         if ((resource.getAttribute('type') ?? '').trim() == '2')
-          for (final XmlElement entity
-              in resource.findElements('externalentity'))
-            for (final XmlElement identifier
-                in entity.findElements('identifier'))
+          for (final FfcXmlElement entity in resource.findElements(
+            'externalentity',
+          ))
+            for (final FfcXmlElement identifier in entity.findElements(
+              'identifier',
+            ))
               if (int.tryParse(identifier.innerText.trim()) case final int id
                   when id > 0)
                 id,
     ];
     final List<int> prequelIds = <int>[
-      for (final XmlElement related
+      for (final FfcXmlElement related
           in root.getElement('relatedanime')?.findElements('anime') ??
-              const <XmlElement>[])
+              const <FfcXmlElement>[])
         if ((related.getAttribute('type') ?? '').trim().toLowerCase() ==
             'prequel')
           if (int.tryParse((related.getAttribute('id') ?? '').trim())
@@ -642,13 +645,14 @@ class AniDbVideoMetadataProvider
       ..._parseCharacterCredits(root.getElement('characters')),
     ];
     final List<String> tags = <String>[
-      for (final XmlElement tag
+      for (final FfcXmlElement tag
           in root.getElement('tags')?.findElements('tag') ??
-              const <XmlElement>[])
+              const <FfcXmlElement>[])
         if (_text(tag.getElement('name')) case final String name) name,
     ];
-    final String restricted =
-        (root.getAttribute('restricted') ?? '').trim().toLowerCase();
+    final String restricted = (root.getAttribute('restricted') ?? '')
+        .trim()
+        .toLowerCase();
     return _AniDbAnime(
       animeId: animeId,
       animeType: type.trim(),
@@ -713,10 +717,13 @@ class AniDbVideoMetadataProvider
       ratingVotes: anime.ratingVotes,
       runtimeMinutes:
           kind == VideoMetadataMediaKind.movie && anime.episodes.isNotEmpty
-              ? anime.episodes.first.runtimeMinutes
-              : null,
+          ? anime.episodes.first.runtimeMinutes
+          : null,
       contentRating: anime.restricted ? 'R18+' : null,
-      originalLanguage: 'ja',
+      // 与 [_selectTitles] 选标题同一个值（主标题 xml:lang 推出）：协调器
+      // `_localeOf` 先取它当合并 / 选图语言，写死 'ja' 会让 x-zht / x-kot 作品
+      // 的图被日语序重排，而 TMDB 请求端按 original_language=zh / ko 取回。
+      originalLanguage: _workOriginalLanguageOf(titles),
       homepage: anime.homepage ?? 'https://anidb.net/anime/${anime.animeId}',
       seasonCount: kind == VideoMetadataMediaKind.tv ? 1 : null,
       episodeCount: kind == VideoMetadataMediaKind.tv
@@ -780,14 +787,14 @@ class AniDbVideoMetadataProvider
 
   /// AniDB `S` 型特典 → 第 0 季（TMDB 的 Specials 同一位置）。
   VideoMetadataSeason _mapSpecials(_AniDbAnime anime) => VideoMetadataSeason(
-        seasonNumber: 0,
-        title: 'Specials',
-        episodeCount: anime.specials.length,
-        ids: <VideoMetadataId>[
-          VideoMetadataId(type: 'anidb', value: '${anime.animeId}'),
-        ],
-        episodes: anime.specials,
-      );
+    seasonNumber: 0,
+    title: 'Specials',
+    episodeCount: anime.specials.length,
+    ids: <VideoMetadataId>[
+      VideoMetadataId(type: 'anidb', value: '${anime.animeId}'),
+    ],
+    episodes: anime.specials,
+  );
 
   VideoMetadataWork _catalogWork(
     AniDbTitleRecord record,
@@ -821,22 +828,23 @@ class AniDbVideoMetadataProvider
   }
 
   List<AniDbTitle> _parseTitles(
-    XmlElement? parent, {
+    FfcXmlElement? parent, {
     bool allowMissingType = false,
   }) =>
       <AniDbTitle>[
-        for (final XmlElement element
-            in parent?.findElements('title') ?? const <XmlElement>[])
-          if (_text(element) case final String value)
-            AniDbTitle(
-              value: value,
-              type: (element.getAttribute('type') ??
-                      (allowMissingType ? 'none' : ''))
-                  .trim()
-                  .toLowerCase(),
-              language: _xmlLanguage(element),
-            ),
-      ]
+            for (final FfcXmlElement element
+                in parent?.findElements('title') ?? const <FfcXmlElement>[])
+              if (_text(element) case final String value)
+                AniDbTitle(
+                  value: value,
+                  type:
+                      (element.getAttribute('type') ??
+                              (allowMissingType ? 'none' : ''))
+                          .trim()
+                          .toLowerCase(),
+                  language: _xmlLanguage(element),
+                ),
+          ]
           .where(
             (AniDbTitle title) =>
                 title.type.isNotEmpty && title.language.isNotEmpty,
@@ -848,7 +856,7 @@ class AniDbVideoMetadataProvider
   /// 片尾 / 预告 / 恶搞 / 其它）两边都不取——Shoko 也只把 Episode + Special
   /// 拿去和 TMDB 对。
   List<VideoMetadataEpisode> _parseEpisodes(
-    XmlElement? parent, {
+    FfcXmlElement? parent, {
     bool specials = false,
     Map<int, List<AniDbTitle>>? episodeTitles,
   }) {
@@ -856,8 +864,8 @@ class AniDbVideoMetadataProvider
         <int, VideoMetadataEpisode>{};
     final RegExp shape = specials ? RegExp(r'^S(\d+)$') : RegExp(r'^(\d+)$');
     final int seasonNumber = specials ? 0 : 1;
-    for (final XmlElement element
-        in parent?.findElements('episode') ?? const <XmlElement>[]) {
+    for (final FfcXmlElement element
+        in parent?.findElements('episode') ?? const <FfcXmlElement>[]) {
       final String epno = (_text(element.getElement('epno')) ?? '').trim();
       final RegExpMatch? numberMatch = shape.firstMatch(epno);
       if (numberMatch == null) continue;
@@ -875,10 +883,7 @@ class AniDbVideoMetadataProvider
       // compatibility fallback for cached/test fixtures.
       final List<AniDbTitle> titles = directTitles.isNotEmpty
           ? directTitles
-          : _parseTitles(
-              element.getElement('titles'),
-              allowMissingType: true,
-            );
+          : _parseTitles(element.getElement('titles'), allowMissingType: true);
       final AniDbTitleRecord record = AniDbTitleRecord(
         animeId: episodeId ?? episodeNumber,
         titles: titles.isEmpty
@@ -892,7 +897,7 @@ class AniDbVideoMetadataProvider
             : titles,
       );
       final String? airDate = _date(_text(element.getElement('airdate')));
-      final XmlElement? ratingElement = element.getElement('rating');
+      final FfcXmlElement? ratingElement = element.getElement('rating');
       if (episodeId != null && episodeTitles != null) {
         episodeTitles.putIfAbsent(episodeId, () => titles);
       }
@@ -928,16 +933,16 @@ class AniDbVideoMetadataProvider
     return result;
   }
 
-  List<_AniDbCreator> _parseCreators(XmlElement? parent) => <_AniDbCreator>[
-        for (final XmlElement element
-            in parent?.findElements('name') ?? const <XmlElement>[])
-          if (_text(element) case final String name)
-            _AniDbCreator(
-              id: int.tryParse(element.getAttribute('id') ?? ''),
-              name: name,
-              type: (element.getAttribute('type') ?? '').trim(),
-            ),
-      ];
+  List<_AniDbCreator> _parseCreators(FfcXmlElement? parent) => <_AniDbCreator>[
+    for (final FfcXmlElement element
+        in parent?.findElements('name') ?? const <FfcXmlElement>[])
+      if (_text(element) case final String name)
+        _AniDbCreator(
+          id: int.tryParse(element.getAttribute('id') ?? ''),
+          name: name,
+          type: (element.getAttribute('type') ?? '').trim(),
+        ),
+  ];
 
   List<VideoMetadataCredit> _mapStaffCredits(List<_AniDbCreator> creators) {
     final List<VideoMetadataCredit> credits = <VideoMetadataCredit>[];
@@ -963,10 +968,10 @@ class AniDbVideoMetadataProvider
     return credits;
   }
 
-  List<VideoMetadataCredit> _parseCharacterCredits(XmlElement? parent) {
+  List<VideoMetadataCredit> _parseCharacterCredits(FfcXmlElement? parent) {
     final List<VideoMetadataCredit> credits = <VideoMetadataCredit>[];
-    for (final XmlElement element
-        in parent?.findElements('character') ?? const <XmlElement>[]) {
+    for (final FfcXmlElement element
+        in parent?.findElements('character') ?? const <FfcXmlElement>[]) {
       final String? characterName = _text(element.getElement('name'));
       if (characterName == null) continue;
       final int? characterId = int.tryParse(element.getAttribute('id') ?? '');
@@ -980,7 +985,7 @@ class AniDbVideoMetadataProvider
             VideoMetadataId(type: 'anidb', value: '$characterId'),
         ],
       );
-      for (final XmlElement seiyuu in element.findElements('seiyuu')) {
+      for (final FfcXmlElement seiyuu in element.findElements('seiyuu')) {
         final String? personName = _text(seiyuu);
         if (personName == null) continue;
         final int? personId = int.tryParse(seiyuu.getAttribute('id') ?? '');
@@ -1007,13 +1012,13 @@ class AniDbVideoMetadataProvider
     return credits;
   }
 
-  _AniDbRating _parseRating(XmlElement? parent) {
+  _AniDbRating _parseRating(FfcXmlElement? parent) {
     for (final String name in const <String>[
       'permanent',
       'temporary',
       'review',
     ]) {
-      final XmlElement? element = parent?.getElement(name);
+      final FfcXmlElement? element = parent?.getElement(name);
       final double? value = _positiveDouble(_text(element));
       if (element != null && value != null) {
         return _AniDbRating(
@@ -1047,7 +1052,9 @@ class AniDbVideoMetadataProvider
   }
 
   _SelectedTitles _selectTitles(AniDbTitleRecord record) {
-    final List<String> preferredLanguages = _preferredLanguages(language);
+    final List<String> preferredLanguages = _preferredLanguages(
+      followOriginalLanguage ? _workOriginalLanguageOf(record) : language,
+    );
     AniDbTitle? selected;
     for (final String preferred in preferredLanguages) {
       selected ??= _findTitle(record.titles, preferred, 'main');
@@ -1062,11 +1069,13 @@ class AniDbVideoMetadataProvider
       throw StateError('AniDB title record contains no usable titles');
     }
     final String title = selected.value;
-    final AniDbTitle? japanese = _findTitle(record.titles, 'ja', 'main') ??
+    final AniDbTitle? japanese =
+        _findTitle(record.titles, 'ja', 'main') ??
         _findTitle(record.titles, 'ja', 'official') ??
         _findTitle(record.titles, 'ja', null);
-    final String? originalTitle =
-        japanese == null || japanese.value == title ? null : japanese.value;
+    final String? originalTitle = japanese == null || japanese.value == title
+        ? null
+        : japanese.value;
     return _SelectedTitles(
       title: title,
       originalTitle: originalTitle,
@@ -1075,13 +1084,15 @@ class AniDbVideoMetadataProvider
           if (value.value != title) value.value,
       ]),
       // x-jat main 就是 AniDB 的罗马音主标题；en 取 official，没有再退任意 en。
-      romajiTitle: (_findTitle(record.titles, 'x-jat', 'main') ??
-              _findTitle(record.titles, 'x-jat', 'official') ??
-              _findTitle(record.titles, 'x-jat', null))
-          ?.value,
-      englishTitle: (_findTitle(record.titles, 'en', 'official') ??
-              _findTitle(record.titles, 'en', null))
-          ?.value,
+      romajiTitle:
+          (_findTitle(record.titles, 'x-jat', 'main') ??
+                  _findTitle(record.titles, 'x-jat', 'official') ??
+                  _findTitle(record.titles, 'x-jat', null))
+              ?.value,
+      englishTitle:
+          (_findTitle(record.titles, 'en', 'official') ??
+                  _findTitle(record.titles, 'en', null))
+              ?.value,
     );
   }
 
@@ -1100,6 +1111,28 @@ class AniDbVideoMetadataProvider
     }
     return null;
   }
+
+  /// AniDB 没有「原语言」字段；`type="main"` 主标题的 `xml:lang` 就是原语言的
+  /// 罗马字转写（`x-jat` = 日语、`x-zht` = 汉语、`x-kot` = 韩语、`x-tht` = 泰语），
+  /// 其它主标题语言（欧美作品常见 `en`）就是原语言本身。没有主标题 → null。
+  static String? _originalLanguageOf(AniDbTitleRecord record) {
+    final String? main = record.mainTitle?.language.trim().toLowerCase();
+    if (main == null || main.isEmpty) return null;
+    return switch (main) {
+      'x-jat' => 'ja',
+      'x-zht' => 'zh',
+      'x-kot' => 'ko',
+      'x-tht' => 'th',
+      final String other when other.startsWith('x-') => null,
+      final String other => other,
+    };
+  }
+
+  /// 作品级原语言：[_originalLanguageOf] 推得出就用它，推不出（无主标题 / 未知
+  /// `x-*` 转写）落回 'ja'——AniDB 只收动画，绝大多数是日本动画。选标题与产出的
+  /// [VideoMetadataWork.originalLanguage] 都取这一个值。
+  static String _workOriginalLanguageOf(AniDbTitleRecord record) =>
+      _originalLanguageOf(record) ?? 'ja';
 
   List<String> _preferredLanguages(String locale) {
     final String normalized = locale.trim().replaceAll('_', '-').toLowerCase();
@@ -1238,18 +1271,60 @@ class _AniDbRequestGate {
   }
 }
 
-String? _text(XmlElement? element) {
+/// 原生解析失败 → 与原 `XmlDocument.parse` 路径同类的异常：解析失败包成
+/// [VideoMetadataNetworkException]（文案里带 `XmlParserException` 的 toString，
+/// 行列号由 package:xml 按码元位置算）；闭合标签类错误照旧以 [XmlTagException]
+/// 原样抛出（原实现只接 `XmlParserException`，标签错误从这里漏出去）。
+Exception _xmlFailure(FfcXmlParseError error, String xml) {
+  switch (error.kind) {
+    case FfcXmlParseError.forbiddenDeclaration:
+      return const VideoMetadataNetworkException(
+        'AniDB anime response contains a forbidden declaration',
+      );
+    case FfcXmlParseError.mismatchClosingTag:
+      return XmlTagException.mismatchClosingTag(
+        error.expectedName,
+        error.actualName,
+        buffer: xml,
+        position: error.position,
+      );
+    case FfcXmlParseError.unexpectedClosingTag:
+      return XmlTagException.unexpectedClosingTag(
+        error.actualName,
+        buffer: xml,
+        position: error.position,
+      );
+    case FfcXmlParseError.missingClosingTag:
+      return XmlTagException.missingClosingTag(
+        error.expectedName,
+        buffer: xml,
+        position: error.position,
+      );
+    default:
+      final XmlParserException parser = XmlParserException(
+        error.message,
+        buffer: xml,
+        position: error.position,
+      );
+      return VideoMetadataNetworkException(
+        'AniDB anime response contains invalid XML: $parser',
+      );
+  }
+}
+
+String? _text(FfcXmlElement? element) {
   final String value = element?.innerText.trim() ?? '';
   return value.isEmpty ? null : value;
 }
 
-String _xmlLanguage(XmlElement element) => (element.getAttribute('xml:lang') ??
-        element.getAttribute(
-          'lang',
-          namespace: 'http://www.w3.org/XML/1998/namespace',
-        ) ??
-        '')
-    .trim();
+String _xmlLanguage(FfcXmlElement element) =>
+    (element.getAttribute('xml:lang') ??
+            element.getAttributeNs(
+              'lang',
+              'http://www.w3.org/XML/1998/namespace',
+            ) ??
+            '')
+        .trim();
 
 String? _date(String? value) {
   final String text = value?.trim() ?? '';

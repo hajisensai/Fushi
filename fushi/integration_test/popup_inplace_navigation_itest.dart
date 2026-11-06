@@ -35,39 +35,55 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
 
     final AppModel appModel = await readyAppModel(tester);
-    expect(await _seedLinkDictionary(tester, appModel), isTrue,
-        reason: '本用例需要一本「足」的释义里带 ?query=揚げ足 链接的真词典');
+    expect(
+      await _seedLinkDictionary(tester, appModel),
+      isTrue,
+      reason: '本用例需要一本「足」的释义里带 ?query=揚げ足 链接的真词典',
+    );
 
     expect(HomePage.debugSelectTab, isNotNull);
     HomePage.debugSelectTab!(HomeTab.dictionaries);
     await tester.pump(const Duration(seconds: 2));
 
-    final HomeDictionarySearchDebug page = tester
-        .state(find.byType(HomeDictionaryPage)) as HomeDictionarySearchDebug;
+    final HomeDictionarySearchDebug page =
+        tester.state(find.byType(HomeDictionaryPage))
+            as HomeDictionarySearchDebug;
 
     // ① 开「足」的弹窗（真 WebView），等链接渲染出来。
     final int matches = await page.debugOpenPopup('足');
     expect(matches, greaterThan(0));
-    expect(await _waitForExpression(tester, page, '足'), isTrue,
-        reason: '弹窗必须渲染出「足」的词头');
+    expect(
+      await _waitForExpression(tester, page, '足'),
+      isTrue,
+      reason: '弹窗必须渲染出「足」的词头',
+    );
     final Object? webViewBefore = page.debugTopPopupWebViewState;
     expect(webViewBefore, isNotNull);
     final int links = await _evalInt(
-        page, "document.querySelectorAll('a.gloss-sc-a').length");
+      page,
+      "document.querySelectorAll('a.gloss-sc-a').length",
+    );
     expect(links, greaterThan(0), reason: '释义里必须渲染出交叉引用链接');
     expect(
-        find.byKey(const ValueKey<String>('popup_history_back')), findsNothing,
-        reason: '还没跳过：顶栏不画 ← →');
+      find.byKey(const ValueKey<String>('popup_history_back')),
+      findsNothing,
+      reason: '还没跳过：顶栏不画 ← →',
+    );
 
     // 把弹窗滚到 300px（释义故意造得很长，滚得动）。
-    final int scrollable = await _evalInt(page,
-        '(document.scrollingElement.scrollHeight - document.scrollingElement.clientHeight)');
+    final int scrollable = await _evalInt(
+      page,
+      '(document.scrollingElement.scrollHeight - document.scrollingElement.clientHeight)',
+    );
     expect(scrollable, greaterThan(300), reason: '内容必须比视口高 300px 以上');
     await page.debugEvaluateTopPopup(
-        'document.scrollingElement.scrollTop = 300; true');
+      'document.scrollingElement.scrollTop = 300; true',
+    );
     await tester.pump(const Duration(milliseconds: 300));
-    final int scrollBefore =
-        await _evalInt(page, 'document.scrollingElement.scrollTop');
+    final int scrollBefore = await _evalInt(
+      page,
+      'document.scrollingElement.scrollTop',
+    );
     debugPrint('[inplace-probe] scrollTop before link click = $scrollBefore');
     expect(scrollBefore, greaterThanOrEqualTo(290));
     ObserveShot shot = await captureFlutterFrame(tester, '01-root-popup');
@@ -75,23 +91,37 @@ void main() {
 
     // ② DOM 点链接：真实 popup.js onclick → onLinkClick 桥 → 原地跳转。
     await page.debugEvaluateTopPopup(
-        "document.querySelector('a.gloss-sc-a').click(); true");
-    expect(await _waitForExpression(tester, page, '揚げ足'), isTrue,
-        reason: '同一弹窗必须换成「揚げ足」');
+      "document.querySelector('a.gloss-sc-a').click(); true",
+    );
+    expect(
+      await _waitForExpression(tester, page, '揚げ足'),
+      isTrue,
+      reason: '同一弹窗必须换成「揚げ足」',
+    );
     expect(page.debugPopupStackShape.depth, 1, reason: '原地跳转不叠子层，栈深仍是 1');
-    expect(identical(page.debugTopPopupWebViewState, webViewBefore), isTrue,
-        reason: '还是同一个 WebView（不是新建一层）');
-    final Finder backFinder =
-        find.byKey(const ValueKey<String>('popup_history_back'));
-    final Finder forwardFinder =
-        find.byKey(const ValueKey<String>('popup_history_forward'));
+    expect(
+      identical(page.debugTopPopupWebViewState, webViewBefore),
+      isTrue,
+      reason: '还是同一个 WebView（不是新建一层）',
+    );
+    final Finder backFinder = find.byKey(
+      const ValueKey<String>('popup_history_back'),
+    );
+    final Finder forwardFinder = find.byKey(
+      const ValueKey<String>('popup_history_forward'),
+    );
     expect(backFinder, findsOneWidget, reason: '跳过之后顶栏出现 ←');
     expect(forwardFinder, findsOneWidget);
     expect(tester.widget<FushiIconButton>(backFinder).enabled, isTrue);
-    expect(tester.widget<FushiIconButton>(forwardFinder).enabled, isFalse,
-        reason: '没有前进页：→ 置灰');
-    final int scrollAfterNav =
-        await _evalInt(page, 'document.scrollingElement.scrollTop');
+    expect(
+      tester.widget<FushiIconButton>(forwardFinder).enabled,
+      isFalse,
+      reason: '没有前进页：→ 置灰',
+    );
+    final int scrollAfterNav = await _evalInt(
+      page,
+      'document.scrollingElement.scrollTop',
+    );
     debugPrint('[inplace-probe] scrollTop on 揚げ足 = $scrollAfterNav');
     expect(scrollAfterNav, 0, reason: '新词从顶部开始');
     shot = await captureFlutterFrame(tester, '02-after-link-navigate');
@@ -100,8 +130,11 @@ void main() {
     // ③ ←：回到「足」，滚动位恢复到 300，→ 变可用。焦点驱动纪律禁坐标点击，这里
     // 直接驱动按钮对外的生产回调（onTap 就是 ← 唯一出口）。
     await tester.widget<FushiIconButton>(backFinder).onTap!();
-    expect(await _waitForExpression(tester, page, '足'), isTrue,
-        reason: '← 必须回到「足」');
+    expect(
+      await _waitForExpression(tester, page, '足'),
+      isTrue,
+      reason: '← 必须回到「足」',
+    );
     expect(page.debugPopupStackShape.depth, 1);
     int restored = -1;
     for (int i = 0; i < 40; i++) {
@@ -110,12 +143,21 @@ void main() {
       if (restored >= 290) break;
     }
     debugPrint('[inplace-probe] scrollTop after back = $restored');
-    expect(restored, greaterThanOrEqualTo(290),
-        reason: '回到历史页必须恢复离开时的滚动位（≈300）');
-    expect(tester.widget<FushiIconButton>(backFinder).enabled, isFalse,
-        reason: '回到栈底：← 置灰');
-    expect(tester.widget<FushiIconButton>(forwardFinder).enabled, isTrue,
-        reason: '有前进页：→ 可用');
+    expect(
+      restored,
+      greaterThanOrEqualTo(290),
+      reason: '回到历史页必须恢复离开时的滚动位（≈300）',
+    );
+    expect(
+      tester.widget<FushiIconButton>(backFinder).enabled,
+      isFalse,
+      reason: '回到栈底：← 置灰',
+    );
+    expect(
+      tester.widget<FushiIconButton>(forwardFinder).enabled,
+      isTrue,
+      reason: '有前进页：→ 可用',
+    );
     shot = await captureFlutterFrame(tester, '03-after-back');
     expect(shot.saved, isTrue);
 
@@ -141,7 +183,8 @@ Future<bool> _waitForExpression(
   for (int i = 0; i < 80; i++) {
     await tester.pump(const Duration(milliseconds: 250));
     final dynamic raw = await page.debugEvaluateTopPopup(
-        "(document.querySelector('.entry .expression') || {}).textContent || ''");
+      "(document.querySelector('.entry .expression') || {}).textContent || ''",
+    );
     if (raw is String && raw.trim() == expression) return true;
   }
   return false;
@@ -156,10 +199,7 @@ Future<int> _evalInt(HomeDictionarySearchDebug page, String source) async {
 
 /// 造一本只为本用例服务的 yomitan 词典：「足」的释义先铺 60 行占位（让弹窗滚得动），
 /// 末尾一条结构化内容带 `?query=揚げ足` 链接；「揚げ足」是跳转目标。
-Future<bool> _seedLinkDictionary(
-  WidgetTester tester,
-  AppModel appModel,
-) async {
+Future<bool> _seedLinkDictionary(WidgetTester tester, AppModel appModel) async {
   final Directory cacheDir = await getTemporaryDirectory();
   final File dictFile = File('${cacheDir.path}/inplace_nav_dict.zip');
   final Map<String, dynamic> index = <String, dynamic>{
@@ -207,9 +247,11 @@ Future<bool> _seedLinkDictionary(
     progress.dispose();
   }
   await tester.pump(const Duration(seconds: 1));
-  final bool installed = ok ||
-      appModel.dictionaries
-          .any((Dictionary d) => d.name == 'FushiInplaceNavProbeDict');
+  final bool installed =
+      ok ||
+      appModel.dictionaries.any(
+        (Dictionary d) => d.name == 'FushiInplaceNavProbeDict',
+      );
   debugPrint('[inplace-probe] dictionary seed success=$installed');
   return installed;
 }

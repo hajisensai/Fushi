@@ -186,11 +186,19 @@ class AnimeSourceLibrary {
 
   /// 加入媒体库：每集一行在线行，归进作品合集。已在库的集跳过（刷新后只补新集，
   /// 不动已看 / 已下载的行）。返回新加的集数。
-  Future<int> addToLibrary(AnimeSourceVideoClient client) async {
+  Future<int> addToLibrary(AnimeSourceVideoClient client) async =>
+      (await addMissing(client)).length;
+
+  /// [addToLibrary] 的本体：返回这次新加的集（后台库更新探针据此投递新集提醒，
+  /// 见 `video_library_update_probe.dart`）。
+  Future<List<RemoteVideoInfo>> addMissing(
+    AnimeSourceVideoClient client,
+  ) async {
     final RemoteCollectionAdoptionService adoption =
         RemoteCollectionAdoptionService(database);
     final List<RemoteVideoInfo> infos = client.remoteVideos;
     final List<String> added = <String>[];
+    final List<RemoteVideoInfo> addedInfos = <RemoteVideoInfo>[];
     for (int index = 0; index < infos.length; index++) {
       final RemoteVideoInfo info = infos[index];
       final MihonEpisode episode = client.episodes[index];
@@ -211,6 +219,7 @@ class AnimeSourceLibrary {
           ),
         );
         added.add(info.id);
+        addedInfos.add(info);
       }
       // 已在库的集也重新收养一次：合集被用户删掉后重新加入能回到合集里。
       await adoption.adoptVideo(info);
@@ -222,7 +231,7 @@ class AnimeSourceLibrary {
       );
       await _applyCovers(client, added);
     }
-    return added.length;
+    return addedInfos;
   }
 
   /// 移出媒体库：删掉本作品的**在线行**。已下载到本机的集是普通本地视频，

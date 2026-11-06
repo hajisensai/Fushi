@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// [mergeCollectionOrder] 纯规则测试（BUG-1194 根因修复的地基）。
@@ -12,12 +12,11 @@ CollectionMemberKey _k(String mediaType, String entryKey) =>
 List<CollectionMemberKey> _merge(
   List<CollectionMemberKey> all,
   List<CollectionMemberKey> subset,
-) =>
-    mergeCollectionOrder<CollectionMemberKey>(
-      all: all,
-      subset: subset,
-      keyOf: (CollectionMemberKey k) => k,
-    );
+) => mergeCollectionOrder<CollectionMemberKey>(
+  all: all,
+  subset: subset,
+  keyOf: (CollectionMemberKey k) => k,
+);
 
 void main() {
   test('未点名的成员留在原槽位，点名的按 subset 顺序依次填入', () {
@@ -136,8 +135,10 @@ void main() {
       _k('game', 'g1'),
     ];
     expect(
-      _merge(
-          all, <CollectionMemberKey>[_k('video|a', 'b'), _k('video', 'a|b')]),
+      _merge(all, <CollectionMemberKey>[
+        _k('video|a', 'b'),
+        _k('video', 'a|b'),
+      ]),
       <CollectionMemberKey>[
         _k('video|a', 'b'),
         _k('video', 'a|b'),

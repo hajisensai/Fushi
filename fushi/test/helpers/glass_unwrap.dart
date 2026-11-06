@@ -13,7 +13,7 @@ Finder glassUnwrap<T extends Widget>(Finder finder) =>
 
 /// [glassUnwrap] 的多结果版（供 `tester.widgetList<T>`）。
 Finder glassUnwrapAll<T extends Widget>(Finder finder) => find.descendant(
-      of: finder,
-      matching: find.byWidgetPredicate((Widget w) => w is T),
-      matchRoot: true,
-    );
+  of: finder,
+  matching: find.byWidgetPredicate((Widget w) => w is T),
+  matchRoot: true,
+);

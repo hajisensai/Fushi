@@ -30,61 +30,87 @@ void main() {
 
     test('HTML 缓存是有界 LRU（LinkedHashMap + 容量上限）', () {
       expect(
-          containsCodeLine(
-              src, 'LinkedHashMap<String, Uint8List> _sanitizedHtmlCache'),
-          isTrue,
-          reason: '跨章 HTML 缓存必须用 LinkedHashMap 维护 LRU 顺序');
-      expect(containsCodeLine(src, 'static const int _kChapterHtmlCacheLimit'),
-          isTrue,
-          reason: '缓存必须有界，防无限增长');
+        containsCodeLine(
+          src,
+          'LinkedHashMap<String, Uint8List> _sanitizedHtmlCache',
+        ),
+        isTrue,
+        reason: '跨章 HTML 缓存必须用 LinkedHashMap 维护 LRU 顺序',
+      );
+      expect(
+        containsCodeLine(src, 'static const int _kChapterHtmlCacheLimit'),
+        isTrue,
+        reason: '缓存必须有界，防无限增长',
+      );
     });
 
     test('HTML 资源分支经缓存提供，而非每次原地重建', () {
       final String payloadBody = methodBody(
-          src, 'Future<_ReaderResourceResponse> _readerResourcePayload(');
-      expect(containsCodeLine(payloadBody, '_chapterHtmlBytes(filePath, data)'),
-          isTrue,
-          reason: 'HTML 分支必须走 _chapterHtmlBytes（命中缓存/失效重建），'
-              '不能在资源分支里内联 sanitize+inject');
+        src,
+        'Future<_ReaderResourceResponse> _readerResourcePayload(',
+      );
+      expect(
+        containsCodeLine(payloadBody, '_chapterHtmlBytes(filePath, data)'),
+        isTrue,
+        reason:
+            'HTML 分支必须走 _chapterHtmlBytes（命中缓存/失效重建），'
+            '不能在资源分支里内联 sanitize+inject',
+      );
 
-      final String interceptBody =
-          methodBody(src, 'Future<WebResourceResponse?> _interceptRequest(');
-      expect(containsCodeLine(interceptBody, '_readerResourcePayload(url)'),
-          isTrue,
-          reason: '_interceptRequest 必须复用共享资源分支，避免 https/custom-scheme '
-              '两套路径绕过 HTML 缓存');
+      final String interceptBody = methodBody(
+        src,
+        'Future<WebResourceResponse?> _interceptRequest(',
+      );
+      expect(
+        containsCodeLine(interceptBody, '_readerResourcePayload(url)'),
+        isTrue,
+        reason:
+            '_interceptRequest 必须复用共享资源分支，避免 https/custom-scheme '
+            '两套路径绕过 HTML 缓存',
+      );
     });
 
     test('_chapterHtmlBytes 命中即把条目顶到 MRU', () {
       final String body = methodBody(src, 'Uint8List _chapterHtmlBytes(');
-      expect(containsCodeLine(body, '_sanitizedHtmlCache.remove(filePath)'),
-          isTrue);
-      expect(containsCodeLine(body, '_sanitizedHtmlCache[filePath] = cached'),
-          isTrue,
-          reason: '命中时移除再插入 = 顶到最近使用');
+      expect(
+        containsCodeLine(body, '_sanitizedHtmlCache.remove(filePath)'),
+        isTrue,
+      );
+      expect(
+        containsCodeLine(body, '_sanitizedHtmlCache[filePath] = cached'),
+        isTrue,
+        reason: '命中时移除再插入 = 顶到最近使用',
+      );
     });
 
     test('_putChapterHtml 超限淘汰最旧条目', () {
       final String body = methodBody(src, 'void _putChapterHtml(');
       expect(containsCodeLine(body, '_kChapterHtmlCacheLimit'), isTrue);
       expect(
-          containsCodeLine(body,
-              '_sanitizedHtmlCache.remove(_sanitizedHtmlCache.keys.first)'),
-          isTrue,
-          reason: '超限时淘汰 keys.first（最旧/最久未用）');
+        containsCodeLine(
+          body,
+          '_sanitizedHtmlCache.remove(_sanitizedHtmlCache.keys.first)',
+        ),
+        isTrue,
+        reason: '超限时淘汰 keys.first（最旧/最久未用）',
+      );
       // 旧写法拿 `_buildSanitizedChapterHtmlBytes` 当右边界，顺带证明了它存在。
       // 换成花括号配对后不再需要它定边界，存在性单独锁住。
       expect(
-          containsCodeLine(src, 'Uint8List _buildSanitizedChapterHtmlBytes('),
-          isTrue,
-          reason: 'sanitize+inject 构建入口必须还在');
+        containsCodeLine(src, 'Uint8List _buildSanitizedChapterHtmlBytes('),
+        isTrue,
+        reason: 'sanitize+inject 构建入口必须还在',
+      );
     });
 
     test('样式失效必须清空 HTML 缓存（styleTag 烘进缓存条目）', () {
       final String body = methodBody(src, 'void _invalidateStyleCache()');
       expect(containsCodeLine(body, '_cachedStyleTag = null'), isTrue);
-      expect(containsCodeLine(body, '_sanitizedHtmlCache.clear()'), isTrue,
-          reason: '改字号/字体/主题后，缓存里旧 styleTag 的 HTML 必须丢弃');
+      expect(
+        containsCodeLine(body, '_sanitizedHtmlCache.clear()'),
+        isTrue,
+        reason: '改字号/字体/主题后，缓存里旧 styleTag 的 HTML 必须丢弃',
+      );
     });
 
     test('翻章后预取下一章并去重在途读取', () {
@@ -92,38 +118,56 @@ void main() {
       // 预取必须挂在章节加载完成之后。旧写法把窗口切到**语料尾部**（因为
       // _onChapterLoadComplete 恰好是 webview part 最后一个方法），一旦后面再加方法，
       // 窗口就把新方法体也算进来。
-      final String loadBody =
-          methodBody(src, 'Future<void> _onChapterLoadComplete(');
+      final String loadBody = methodBody(
+        src,
+        'Future<void> _onChapterLoadComplete(',
+      );
       expect(
-          containsCodeLine(
-              loadBody, '_prefetchAdjacentChapter(chapterSnapshot + 1)'),
-          isTrue,
-          reason: '加载完一章后预取下一章（前进翻章方向）');
+        containsCodeLine(
+          loadBody,
+          '_prefetchAdjacentChapter(chapterSnapshot + 1)',
+        ),
+        isTrue,
+        reason: '加载完一章后预取下一章（前进翻章方向）',
+      );
 
       final String prefBody = methodBody(src, 'void _prefetchAdjacentChapter(');
-      expect(containsCodeLine(prefBody, '_prefetchingHtmlPath'), isTrue,
-          reason: '在途预取要去重，避免与落地导航重复读盘');
       expect(
-          containsCodeLine(
-              prefBody, '_sanitizedHtmlCache.containsKey(filePath)'),
-          isTrue,
-          reason: '已缓存就跳过预取');
+        containsCodeLine(prefBody, '_prefetchingHtmlPath'),
+        isTrue,
+        reason: '在途预取要去重，避免与落地导航重复读盘',
+      );
+      expect(
+        containsCodeLine(prefBody, '_sanitizedHtmlCache.containsKey(filePath)'),
+        isTrue,
+        reason: '已缓存就跳过预取',
+      );
       // 渐进重建 phase2：旧断言钉的 scheduleMicrotask 恰是问题本身——microtask
       // 在当前任务展开后立刻同步执行，读盘+净化全落在同一帧内（假「后台」）。
       // 现钉事件队列任务 + 异步 IO + style epoch 过期丢弃三件套。
-      expect(containsCodeLine(prefBody, 'scheduleMicrotask'), isFalse,
-          reason: 'microtask 同帧同步执行会阻塞 UI，预取必须走事件队列任务');
+      expect(
+        containsCodeLine(prefBody, 'scheduleMicrotask'),
+        isFalse,
+        reason: 'microtask 同帧同步执行会阻塞 UI，预取必须走事件队列任务',
+      );
       // tall style 下 `unawaited(` 与 `Future<void>(()` 分两行，钉去空白后的文本。
       expect(
-          prefBody.replaceAll(RegExp(r'\s+'), ''),
-          contains('unawaited(Future<void>(()'),
-          reason: '预取走事件队列任务（当前帧先收尾）+ 异步读盘');
-      expect(containsCodeLine(prefBody, 'await file.readAsBytes()'), isTrue,
-          reason: 'IO 必须异步，让出主 isolate');
-      expect(containsCodeLine(prefBody, '_styleEpoch != styleEpochAtStart'),
-          isTrue,
-          reason: '真异步后必须按 style epoch 丢弃跨样式失效的过期结果'
-              '（styleTag 烤进缓存条目，旧代际入缓存=脏样式）');
+        prefBody.replaceAll(RegExp(r'\s+'), ''),
+        contains('unawaited(Future<void>(()'),
+        reason: '预取走事件队列任务（当前帧先收尾）+ 异步读盘',
+      );
+      expect(
+        containsCodeLine(prefBody, 'await file.readAsBytes()'),
+        isTrue,
+        reason: 'IO 必须异步，让出主 isolate',
+      );
+      expect(
+        containsCodeLine(prefBody, '_styleEpoch != styleEpochAtStart'),
+        isTrue,
+        reason:
+            '真异步后必须按 style epoch 丢弃跨样式失效的过期结果'
+            '（styleTag 烤进缓存条目，旧代际入缓存=脏样式）',
+      );
     });
   });
 

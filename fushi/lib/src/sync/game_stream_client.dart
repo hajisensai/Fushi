@@ -12,6 +12,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_library.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:http/http.dart' as http;
+import 'package:fushi/src/sync/game_stream_virtual_button.dart';
 
 export 'package:fushi_engine/sync/game_stream/game_stream_library.dart'
     show
@@ -208,14 +209,12 @@ class FushiGameStreamClient {
     required String clientId,
     int after = -1,
   }) async {
-    final GameStreamPostResult result = await _post(
-      '/api/game-stream/signal',
-      <String, dynamic>{
-        'sessionId': sessionId,
-        'clientId': effectiveClientId(clientId),
-        'after': after,
-      },
-    );
+    final GameStreamPostResult result =
+        await _post('/api/game-stream/signal', <String, dynamic>{
+          'sessionId': sessionId,
+          'clientId': effectiveClientId(clientId),
+          'after': after,
+        });
     final Object? signals = result.json?['signals'];
     if (signals is! List) return const <GameStreamSignal>[];
     return <GameStreamSignal>[
@@ -455,6 +454,8 @@ class InterconnectGameStreamDictionaryLookup
       term: term,
       wildcards: wildcards,
       maximumTerms: maximumTerms,
+      // 不带 `language`：被查的台词来自 host 上运行的游戏，查词语言归 host（串流会话
+      // 启动时按该游戏条目登记）。接收端本机的查词语言与这次查词无关。
     );
     final Map<String, String>? hostStyles = _lookup.hostDictionaryStyles;
     if (hostStyles != null) {
@@ -491,32 +492,6 @@ class GameStreamPointerMapper {
   }
 }
 
-enum GameStreamVirtualButton {
-  up,
-  down,
-  left,
-  right,
-  confirm,
-  cancel,
-  menu,
-  shoulderLeft,
-  shoulderRight,
-}
-
-extension GameStreamVirtualButtonWire on GameStreamVirtualButton {
-  String get wireName => switch (this) {
-    GameStreamVirtualButton.up => 'dpad_up',
-    GameStreamVirtualButton.down => 'dpad_down',
-    GameStreamVirtualButton.left => 'dpad_left',
-    GameStreamVirtualButton.right => 'dpad_right',
-    GameStreamVirtualButton.confirm => 'confirm',
-    GameStreamVirtualButton.cancel => 'cancel',
-    GameStreamVirtualButton.menu => 'menu',
-    GameStreamVirtualButton.shoulderLeft => 'shoulder_left',
-    GameStreamVirtualButton.shoulderRight => 'shoulder_right',
-  };
-}
-
 typedef GameStreamInputSender =
     Future<GameStreamInputAck?> Function(GameStreamInputEvent event);
 
@@ -540,6 +515,14 @@ class GameStreamInputComposer extends ChangeNotifier {
   String? _lastRejectionReason;
   bool _disposed = false;
 
+  Offset? _lastPointerPosition;
+
+  /// Where the last pointer or wheel event put the host's cursor
+  /// (normalized); null before any. Every path that moves the host cursor
+  /// (touch, trackpad, desktop mouse, controller mouse actions) goes through
+  /// [pointer] / [wheel], so this is the one record of where it is.
+  Offset? get lastPointerPosition => _lastPointerPosition;
+
   int get nextSequence => _nextSequence;
   int get lastAcceptedSequence => _lastAcceptedSequence;
   int get lastRejectedSequence => _lastRejectedSequence;
@@ -553,11 +536,12 @@ class GameStreamInputComposer extends ChangeNotifier {
     required Offset normalized,
     String button = 'left',
   }) {
+    final Offset at = _recordPointer(normalized);
     return _send(
       kind: GameStreamInputKind.pointer,
       action: action,
-      x: normalized.dx.clamp(0.0, 1.0),
-      y: normalized.dy.clamp(0.0, 1.0),
+      x: at.dx,
+      y: at.dy,
       button: button == 'left' ? null : button,
     );
   }
@@ -569,15 +553,21 @@ class GameStreamInputComposer extends ChangeNotifier {
     double? dx,
     double? dy,
   }) {
+    final Offset at = _recordPointer(normalized);
     return _send(
       kind: GameStreamInputKind.pointer,
       action: GameStreamInputAction.wheel,
-      x: normalized.dx.clamp(0.0, 1.0),
-      y: normalized.dy.clamp(0.0, 1.0),
+      x: at.dx,
+      y: at.dy,
       dx: dx,
       dy: dy,
     );
   }
+
+  Offset _recordPointer(Offset normalized) => _lastPointerPosition = Offset(
+    normalized.dx.clamp(0.0, 1.0),
+    normalized.dy.clamp(0.0, 1.0),
+  );
 
   Future<GameStreamInputAck?> gamepad({
     required GameStreamVirtualButton button,

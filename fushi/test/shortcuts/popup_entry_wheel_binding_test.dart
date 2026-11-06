@@ -42,10 +42,16 @@ void main() {
         const WheelBinding(WheelDirection.up),
       );
       expect(
-        const WheelBinding(WheelDirection.up,
-            modifiers: <ModifierKey>{ModifierKey.alt}),
-        isNot(const WheelBinding(WheelDirection.down,
-            modifiers: <ModifierKey>{ModifierKey.alt})),
+        const WheelBinding(
+          WheelDirection.up,
+          modifiers: <ModifierKey>{ModifierKey.alt},
+        ),
+        isNot(
+          const WheelBinding(
+            WheelDirection.down,
+            modifiers: <ModifierKey>{ModifierKey.alt},
+          ),
+        ),
       );
     });
 
@@ -62,8 +68,10 @@ void main() {
           InputBinding(key: LogicalKeyboardKey.keyA),
         ],
         wheelBindings: <WheelBinding>[
-          WheelBinding(WheelDirection.down,
-              modifiers: <ModifierKey>{ModifierKey.alt}),
+          WheelBinding(
+            WheelDirection.down,
+            modifiers: <ModifierKey>{ModifierKey.alt},
+          ),
         ],
       );
       final ShortcutBindingSet round = ShortcutBindingSet.fromJson(
@@ -83,10 +91,12 @@ void main() {
       );
       expect(set.wheelBindings, isEmpty);
       expect(
-          set.keyboardBindings.single,
-          const InputBinding(
-              key: LogicalKeyboardKey.keyW,
-              modifiers: <ModifierKey>{ModifierKey.ctrl}));
+        set.keyboardBindings.single,
+        const InputBinding(
+          key: LogicalKeyboardKey.keyW,
+          modifiers: <ModifierKey>{ModifierKey.ctrl},
+        ),
+      );
       expect(set.gamepadBindings.single, const GamepadBinding(GamepadButton.b));
       expect(set.mouseBindings.single, const MouseBinding(1));
     });
@@ -104,15 +114,19 @@ void main() {
         expect(
           defaults[ShortcutAction.popupNextEntry]!.wheelBindings,
           const <WheelBinding>[
-            WheelBinding(WheelDirection.down,
-                modifiers: <ModifierKey>{ModifierKey.alt}),
+            WheelBinding(
+              WheelDirection.down,
+              modifiers: <ModifierKey>{ModifierKey.alt},
+            ),
           ],
         );
         expect(
           defaults[ShortcutAction.popupPrevEntry]!.wheelBindings,
           const <WheelBinding>[
-            WheelBinding(WheelDirection.up,
-                modifiers: <ModifierKey>{ModifierKey.alt}),
+            WheelBinding(
+              WheelDirection.up,
+              modifiers: <ModifierKey>{ModifierKey.alt},
+            ),
           ],
         );
       });
@@ -128,28 +142,32 @@ void main() {
     });
 
     test('dictionaryPopup 是独立 co-active 组，开滚轮 + 键盘 + 手柄三个通道', () {
-      expect(ShortcutScope.dictionaryPopup.coactiveScopes,
-          <ShortcutScope>[ShortcutScope.dictionaryPopup]);
+      expect(ShortcutScope.dictionaryPopup.coactiveScopes, <ShortcutScope>[
+        ShortcutScope.dictionaryPopup,
+      ]);
       // 契约变更史：最早只开滚轮（唯一动作是词条导航）；加入 popupMineEntry 后键盘
       // 通道有了真实消费者（popup_settings_injection 注入 popup.js + 视频页 Dart 侧
       // 派发）；手柄重设计 P2 再开手柄——GamepadService 的弹窗兜底按
       // `resolveGamepad(scope: dictionaryPopup)` 解析，经 DictionaryPopupGamepadRegistry
       // 的钩子调进弹窗 JS。鼠标仍无解析入口，**不得**放开成四通道。
+      expect(ShortcutScope.dictionaryPopup.channels, <ShortcutChannel>{
+        ShortcutChannel.wheel,
+        ShortcutChannel.keyboard,
+        ShortcutChannel.gamepad,
+      });
       expect(
         ShortcutScope.dictionaryPopup.channels,
-        <ShortcutChannel>{
-          ShortcutChannel.wheel,
-          ShortcutChannel.keyboard,
-          ShortcutChannel.gamepad,
-        },
+        isNot(contains(ShortcutChannel.mouse)),
       );
-      expect(ShortcutScope.dictionaryPopup.channels,
-          isNot(contains(ShortcutChannel.mouse)));
       // 其它 scope 保持键盘/手柄/鼠标三通道（不因新通道枚举而改变既有行为）。
-      expect(ShortcutScope.reader.channels.contains(ShortcutChannel.keyboard),
-          isTrue);
-      expect(ShortcutScope.reader.channels.contains(ShortcutChannel.wheel),
-          isFalse);
+      expect(
+        ShortcutScope.reader.channels.contains(ShortcutChannel.keyboard),
+        isTrue,
+      );
+      expect(
+        ShortcutScope.reader.channels.contains(ShortcutChannel.wheel),
+        isFalse,
+      );
     });
   });
 
@@ -162,22 +180,30 @@ void main() {
         modifiers: <ModifierKey>{ModifierKey.alt},
       );
       expect(
-        registry.hasWheelConflict(ShortcutScope.dictionaryPopup, altDown,
-            exclude: ShortcutAction.popupPrevEntry),
+        registry.hasWheelConflict(
+          ShortcutScope.dictionaryPopup,
+          altDown,
+          exclude: ShortcutAction.popupPrevEntry,
+        ),
         ShortcutAction.popupNextEntry,
       );
       // 排除自己时不算冲突（编辑自己的绑定不该报冲突）。
       expect(
-        registry.hasWheelConflict(ShortcutScope.dictionaryPopup, altDown,
-            exclude: ShortcutAction.popupNextEntry),
+        registry.hasWheelConflict(
+          ShortcutScope.dictionaryPopup,
+          altDown,
+          exclude: ShortcutAction.popupNextEntry,
+        ),
         isNull,
       );
       // 未被占用的组合无冲突。
       expect(
         registry.hasWheelConflict(
           ShortcutScope.dictionaryPopup,
-          const WheelBinding(WheelDirection.down,
-              modifiers: <ModifierKey>{ModifierKey.shift}),
+          const WheelBinding(
+            WheelDirection.down,
+            modifiers: <ModifierKey>{ModifierKey.shift},
+          ),
           exclude: null,
         ),
         isNull,
@@ -218,9 +244,11 @@ void main() {
     test('popupEntryWheelBindingsJson 输出 popup.js 能直接比对的形状', () {
       final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadDefaults(TargetPlatform.windows);
-      final Map<String, dynamic> decoded = jsonDecode(
-              popupEntryWheelBindingsJson(registry, TargetPlatform.windows))
-          as Map<String, dynamic>;
+      final Map<String, dynamic> decoded =
+          jsonDecode(
+                popupEntryWheelBindingsJson(registry, TargetPlatform.windows),
+              )
+              as Map<String, dynamic>;
       expect(decoded['next'], <Map<String, Object>>[
         <String, Object>{
           'dir': 'down',
@@ -239,10 +267,14 @@ void main() {
       final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadDefaults(TargetPlatform.windows)
         ..updateBinding(
-            ShortcutAction.popupNextEntry, const ShortcutBindingSet());
-      final Map<String, dynamic> decoded = jsonDecode(
-              popupEntryWheelBindingsJson(registry, TargetPlatform.windows))
-          as Map<String, dynamic>;
+          ShortcutAction.popupNextEntry,
+          const ShortcutBindingSet(),
+        );
+      final Map<String, dynamic> decoded =
+          jsonDecode(
+                popupEntryWheelBindingsJson(registry, TargetPlatform.windows),
+              )
+              as Map<String, dynamic>;
       expect(decoded['next'], isEmpty);
       expect(decoded['prev'], isNotEmpty);
     });
@@ -251,10 +283,14 @@ void main() {
       // 弹窗进程（Android :popup）的精简初始化早于 loadShortcutRegistry；此时每个
       // action 都读到空绑定，与「用户清空」在数据上同形。若直接下发空表，popup.js
       // 会认为用户关掉了这个功能 → Alt+滚轮在独立弹窗窗口里静默失效。
-      final Map<String, dynamic> decoded = jsonDecode(
-              popupEntryWheelBindingsJson(
-                  FushiShortcutRegistry(), TargetPlatform.windows))
-          as Map<String, dynamic>;
+      final Map<String, dynamic> decoded =
+          jsonDecode(
+                popupEntryWheelBindingsJson(
+                  FushiShortcutRegistry(),
+                  TargetPlatform.windows,
+                ),
+              )
+              as Map<String, dynamic>;
       expect(decoded['next'], isNotEmpty);
       expect(decoded['prev'], isNotEmpty);
       expect(FushiShortcutRegistry().isLoaded, isFalse);
@@ -266,25 +302,32 @@ void main() {
     });
 
     test('弹窗进程的初始化会加载用户的快捷键绑定（否则改键在该进程不生效）', () {
-      final String appModel =
-          File('lib/src/models/app_model.dart').readAsStringSync();
+      final String appModel = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
       final int popupInit = appModel.indexOf('initialiseForDictionaryPopup');
       expect(popupInit, greaterThan(0));
       final String popupInitBody = appModel.substring(
         popupInit,
         appModel.indexOf('Future<void> refreshPrefCache()', popupInit),
       );
-      expect(popupInitBody.contains('loadShortcutRegistry'), isTrue,
-          reason: '弹窗进程没加载快捷键快照：注入给 popup.js 的只会是默认绑定');
+      expect(
+        popupInitBody.contains('loadShortcutRegistry'),
+        isTrue,
+        reason: '弹窗进程没加载快捷键快照：注入给 popup.js 的只会是默认绑定',
+      );
     });
 
     test('Dart 注入的全局名与 popup.js 读取的全局名一致，且三镜像都带这段', () {
       const String globalName = '__fushiEntryWheelBindings';
-      final String injection =
-          File('lib/src/pages/implementations/popup_settings_injection.dart')
-              .readAsStringSync();
-      expect(injection.contains('window.$globalName ='), isTrue,
-          reason: '注入端改名了：popup.js 会读到 undefined 并退回默认绑定，用户改键静默失效');
+      final String injection = File(
+        'lib/src/pages/implementations/popup_settings_injection.dart',
+      ).readAsStringSync();
+      expect(
+        injection.contains('window.$globalName ='),
+        isTrue,
+        reason: '注入端改名了：popup.js 会读到 undefined 并退回默认绑定，用户改键静默失效',
+      );
 
       for (final String path in const <String>[
         'assets/popup/popup.js',
@@ -292,23 +335,37 @@ void main() {
         '../tools/browser-extension/vendor/popup.js',
       ]) {
         final String js = File(path).readAsStringSync();
-        expect(js.contains('window.$globalName'), isTrue,
-            reason: '$path 没读注入的绑定');
-        expect(js.contains('popupEntryWheelAction'), isTrue,
-            reason: '$path 缺少滚轮 → 词条导航的判定函数');
         expect(
-            js.contains('fushiFocusDictionaryEntryMove(entryAction)'), isTrue,
-            reason: '$path 没把命中的滚轮接到词条焦点移动上');
+          js.contains('window.$globalName'),
+          isTrue,
+          reason: '$path 没读注入的绑定',
+        );
+        expect(
+          js.contains('popupEntryWheelAction'),
+          isTrue,
+          reason: '$path 缺少滚轮 → 词条导航的判定函数',
+        );
+        expect(
+          js.contains('fushiFocusDictionaryEntryMove(entryAction)'),
+          isTrue,
+          reason: '$path 没把命中的滚轮接到词条焦点移动上',
+        );
         // 未注入时（浏览器扩展）必须有 Alt+滚轮默认，否则扩展里这功能是死的。
-        expect(js.contains('FUSHI_ENTRY_WHEEL_DEFAULT_BINDINGS'), isTrue,
-            reason: '$path 丢了未注入时的默认绑定');
+        expect(
+          js.contains('FUSHI_ENTRY_WHEEL_DEFAULT_BINDINGS'),
+          isTrue,
+          reason: '$path 丢了未注入时的默认绑定',
+        );
       }
     });
 
     test('裸滚轮永远不劫持（popup.js 无修饰键时早退）', () {
       final String js = File('assets/popup/popup.js').readAsStringSync();
-      expect(js.contains('if (pressed.length === 0) return null;'), isTrue,
-          reason: '裸滚轮必须留给内容滚动，否则弹窗滚不动了');
+      expect(
+        js.contains('if (pressed.length === 0) return null;'),
+        isTrue,
+        reason: '裸滚轮必须留给内容滚动，否则弹窗滚不动了',
+      );
     });
   });
 }

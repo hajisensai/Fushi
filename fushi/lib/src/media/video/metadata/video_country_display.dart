@@ -20,8 +20,9 @@ List<String> formatVideoCountriesForDisplay(Iterable<String> countries) {
           when value.isNotEmpty && seen.add(value))
         value,
   ];
-  final bool hasFullName =
-      unique.any((String value) => !_isoAlpha2.hasMatch(value));
+  final bool hasFullName = unique.any(
+    (String value) => !_isoAlpha2.hasMatch(value),
+  );
   if (!hasFullName) return unique;
   return <String>[
     for (final String value in unique)

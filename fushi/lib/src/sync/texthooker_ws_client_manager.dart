@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/io.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
@@ -16,6 +17,16 @@ class TexthookerWsClientManager extends ChangeNotifier {
 
   TexthookerWsClient? _client;
 
+  /// 连出去用的 WS 工厂；生产固定是 [IOWebSocketChannel.connect]。widget 测试里拨
+  /// 「接收文本」开关时要换成不联网的替身：flutter_test 的假 HttpClient 让 dart:io 的
+  /// WebSocket 握手在 `detachSocket()` 上留下一个没人接的失败 Future，测试结束后冒出
+  /// 未捕获的 `UnsupportedError: Mocked response`，[TexthookerWsClient] 的 catch 拦不到。
+  @visibleForTesting
+  WsChannelFactory channelFactory = _connectIo;
+
+  static WebSocketChannel _connectIo(String url) =>
+      IOWebSocketChannel.connect(Uri.parse(url));
+
   bool get isRunning => _client?.isRunning ?? false;
   List<TexthookerEndpointStatus> get endpointStatuses =>
       _client?.endpointStatuses ?? const <TexthookerEndpointStatus>[];
@@ -25,8 +36,7 @@ class TexthookerWsClientManager extends ChangeNotifier {
     final TexthookerWsClient client = TexthookerWsClient(
       urls: urls,
       service: TexthookerService.instance,
-      channelFactory: (String url) =>
-          IOWebSocketChannel.connect(Uri.parse(url)),
+      channelFactory: channelFactory,
     );
     client.start();
     client.addListener(notifyListeners);

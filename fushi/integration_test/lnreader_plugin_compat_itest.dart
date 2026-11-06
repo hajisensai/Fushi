@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_source_browse_page.dart';

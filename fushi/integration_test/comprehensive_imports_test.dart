@@ -20,8 +20,9 @@ void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('comprehensive import flow seeds dictionary font and book',
-      (WidgetTester tester) async {
+  testWidgets('comprehensive import flow seeds dictionary font and book', (
+    WidgetTester tester,
+  ) async {
     final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
     FlutterError.onError = (FlutterErrorDetails details) {
@@ -51,13 +52,14 @@ void main() {
         tester.element(find.byType(MaterialApp).first),
       );
       final AppModel appModel = container.read(appProvider);
-      originalCustomFonts = ReaderFushiSource.instance.customFonts
-          .where((Map<String, dynamic> font) {
+      originalCustomFonts = ReaderFushiSource.instance.customFonts.where((
+        Map<String, dynamic> font,
+      ) {
         return font['name'] != 'Comprehensive Test Font';
       }).toList();
-      final Directory fontDir =
-          Directory('${appModel.appDirectory.path}/custom_fonts')
-            ..createSync(recursive: true);
+      final Directory fontDir = Directory(
+        '${appModel.appDirectory.path}/custom_fonts',
+      )..createSync(recursive: true);
       final File fontFile = File('${fontDir.path}/comprehensive-test-font.ttf');
       await fontFile.writeAsBytes(await _loadSystemFontBytes(), flush: true);
 
@@ -68,17 +70,22 @@ void main() {
           'enabled': true,
         },
       ]);
-      final ({String fontFamily, String fontFaces}) css =
-          ReaderFushiSource.instance.buildCustomFontCss();
+      final ({String fontFamily, String fontFaces}) css = ReaderFushiSource
+          .instance
+          .buildCustomFontCss();
       expect(css.fontFamily, contains('Comprehensive Test Font'));
       expect(css.fontFaces, contains('@font-face'));
 
       final List<Finder> navTargets = findPrimaryNavigationTargets();
       expect(navTargets.length, greaterThanOrEqualTo(2));
-      final bool focusedDict =
-          await driver.focusWidget(findNavTargetForTab(HomeTab.dictionaries));
-      expect(focusedDict, isTrue,
-          reason: 'Dictionary tab must be reachable by focus');
+      final bool focusedDict = await driver.focusWidget(
+        findNavTargetForTab(HomeTab.dictionaries),
+      );
+      expect(
+        focusedDict,
+        isTrue,
+        reason: 'Dictionary tab must be reachable by focus',
+      );
       await driver.activate();
       await tester.pump(const Duration(seconds: 2));
       await tester.enterText(findSearchField(), 'testword');

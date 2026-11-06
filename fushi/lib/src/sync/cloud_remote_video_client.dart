@@ -34,8 +34,8 @@ class CloudRemoteVideoClient implements RemoteVideoSource {
     required this.backendType,
     SyncAssetRangeReader? rangeReader,
     Future<CloudVideoStreamRelay> Function()? relay,
-  })  : _rangeReader = rangeReader ?? plainAssetRangeReaderOf(backend),
-        _relay = relay ?? CloudVideoStreamRelay.instance;
+  }) : _rangeReader = rangeReader ?? plainAssetRangeReaderOf(backend),
+       _relay = relay ?? CloudVideoStreamRelay.instance;
 
   /// 远端资产存取层；务必是 `resolveSyncBackend` 的产物（带解混淆装饰层）。
   final SyncAssetStore backend;
@@ -71,8 +71,10 @@ class CloudRemoteVideoClient implements RemoteVideoSource {
   /// 库页消费的是 [listRemoteVideos] 的 [RemoteVideoInfo] 视图。
   Future<List<RemoteVideoManifestEntry>> listRemoteVideoManifest() async {
     final String ns = await backend.ensureNamespace(kSyncVideosNamespace);
-    final AssetEntry? asset =
-        await backend.findAsset(ns, kSyncVideosManifestName);
+    final AssetEntry? asset = await backend.findAsset(
+      ns,
+      kSyncVideosManifestName,
+    );
     if (asset == null) return const <RemoteVideoManifestEntry>[];
     final Object? json = await backend.getJsonAsset(asset.id);
     if (json == null) return const <RemoteVideoManifestEntry>[];
@@ -120,8 +122,7 @@ class CloudRemoteVideoClient implements RemoteVideoSource {
     void Function(double progress)? onProgress,
     void Function(int received, int? total)? onBytes,
     Future<void>? cancelSignal,
-  }) =>
-      getRemoteVideo(id, dest, onProgress: onProgress);
+  }) => getRemoteVideo(id, dest, onProgress: onProgress);
 
   /// 把 [uid] 对应的视频文件资产下载到 [destination]。清单里无此 uid，或清单记录的
   /// 视频资产在命名空间下已不存在 → 抛 [SyncBackendError]（调用方提示下载失败）。
@@ -165,8 +166,11 @@ class CloudRemoteVideoClient implements RemoteVideoSource {
     if (asset == null) {
       throw SyncBackendError('remote video asset missing: $assetName');
     }
-    await backend.getAsset(asset.id, destination,
-        onProgress: syncTransferFractionOnly(onProgress));
+    await backend.getAsset(
+      asset.id,
+      destination,
+      onProgress: syncTransferFractionOnly(onProgress),
+    );
   }
 }
 
@@ -205,14 +209,13 @@ class CloudStreamVideoClient extends RemoteVideoClient {
     void Function(double progress)? onProgress,
     void Function(int received, int? total)? onBytes,
     Future<void>? cancelSignal,
-  }) =>
-      _cloud.downloadRemoteVideo(
-        id,
-        dest,
-        onProgress: onProgress,
-        onBytes: onBytes,
-        cancelSignal: cancelSignal,
-      );
+  }) => _cloud.downloadRemoteVideo(
+    id,
+    dest,
+    onProgress: onProgress,
+    onBytes: onBytes,
+    cancelSignal: cancelSignal,
+  );
 
   /// 云视频都是单集条目，[episodeIndex] 不参与寻址。
   @override
@@ -252,15 +255,20 @@ class CloudStreamVideoClient extends RemoteVideoClient {
     final AssetEntry? cached = _videoAssets[uid];
     if (cached != null) return cached;
     final RemoteVideoManifestEntry entry = await _cloud._requireEntry(uid);
-    final String ns =
-        await _cloud.backend.ensureNamespace(kSyncVideosNamespace);
-    final AssetEntry? asset =
-        await _cloud.backend.findAsset(ns, entry.videoAsset);
+    final String ns = await _cloud.backend.ensureNamespace(
+      kSyncVideosNamespace,
+    );
+    final AssetEntry? asset = await _cloud.backend.findAsset(
+      ns,
+      entry.videoAsset,
+    );
     if (asset == null) {
       throw SyncBackendError('remote video asset missing: ${entry.videoAsset}');
     }
-    final AssetEntry resolved =
-        AssetEntry(id: asset.id, name: entry.videoAsset);
+    final AssetEntry resolved = AssetEntry(
+      id: asset.id,
+      name: entry.videoAsset,
+    );
     _videoAssets[uid] = resolved;
     return resolved;
   }
@@ -283,8 +291,7 @@ class CloudStreamVideoClient extends RemoteVideoClient {
   Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   /// 云盘没有服务端断点可上报；本机 prefs 已由播放页写好。
   @override

@@ -20,13 +20,16 @@ struct SiglusVoiceTask {
   uint64_t tick_ms = 0, offset = 0, text_event_id = 0, archive_revision = 0;
   uint32_t voice_key = UINT32_MAX, source_length = 0;
   bool proved_source = false, exported = false;
+  uint64_t following_lane_id = 0, following_baseline_seq = 0;
+  uint64_t following_text_event_id = 0;
   wchar_t path[520] = {};
 };
 fushi_voice_hook::SharedHeader header{};
 auto* g_header = &header;
 constexpr uint32_t kDiagSiglusVoiceDumped = 0x80000000u;
-bool message_installed = true, source_installed = true;
+bool message_installed = true, source_installed = true, message_voice_owned = true;
 bool IsSiglusMessageTextInstalled() { return message_installed; }
+bool IsSiglusMessageVoiceOwned() { return message_installed && message_voice_owned; }
 bool IsSiglusMessageVoiceMappingProved() {
   return message_installed && source_installed;
 }
@@ -136,7 +139,7 @@ void Reset() {
   header.reserved_luna = header.hook_diagnostics = 0;
   output_attempts = 0;
   output_fault = OutputFault::kNone;
-  message_installed = source_installed = true;
+  message_installed = source_installed = message_voice_owned = true;
 }
 bool Captured() {
   return (header.reserved_luna & kDiagSiglusVoiceDumped) != 0 ||
@@ -227,6 +230,45 @@ void TestOutputFailure(const std::wstring& source, const std::wstring& root) {
   }
 }
 
+// A text-only lane (the nine-argument wrapper carries no script voice key)
+// keeps the time-paired OVK capture; a voice-owning lane without a proved
+// mapping still drops every unproved archive read.
+void TestSilentMessageLane(const std::wstring& source, const std::wstring& root) {
+  for (const bool owned : {true, false}) {
+    Reset();
+    message_voice_owned = owned;
+    source_installed = false;
+    SiglusVoiceTask task;
+    task.tick_ms = 4321; task.offset = 20;
+    wcsncpy_s(task.path, source.c_str(), _TRUNCATE);
+    ProcessSiglusVoiceTask(&task);
+    const std::wstring path = root + L"\\fushi_gal_voice\\4321_z0101.ovk_125.ogg";
+    if (owned) {
+      assert(!task.exported && !Captured() && output_attempts == 0);
+      continue;
+    }
+    assert(task.exported && Captured() && output_attempts == 1);
+    CheckAndRemoveOutput(path);
+    // An unmatched offset is still not a member and never exports.
+    SiglusVoiceTask stray = task;
+    stray.exported = false; ++stray.offset;
+    ProcessSiglusVoiceTask(&stray);
+    assert(!stray.exported && output_attempts == 1);
+    // The line the silent lane committed after the read names the resource;
+    // the marker is a filename identity only and changes no admission rule.
+    SiglusVoiceTask followed = task;
+    followed.exported = false; followed.following_text_event_id = 15;
+    ProcessSiglusVoiceTask(&followed);
+    assert(followed.exported && output_attempts == 2);
+    CheckAndRemoveOutput(
+        root + L"\\fushi_gal_voice\\4321_fushi_textseq15_z0101.ovk_125.ogg");
+    SiglusVoiceTask stray_followed = followed;
+    stray_followed.exported = false; ++stray_followed.offset;
+    ProcessSiglusVoiceTask(&stray_followed);
+    assert(!stray_followed.exported && output_attempts == 2);
+  }
+}
+
 void TestSourceFailureAndDigest(const std::wstring& source) {
   Reset();
   QueueProvedSiglusVoiceResource(10100125, source.c_str(), 20,
@@ -295,6 +337,7 @@ int main() {
   WriteSource(source);
   TestRejectionAndArrival(source, root);
   TestOutputFailure(source, root);
+  TestSilentMessageLane(source, root);
   TestSourceFailureAndDigest(source);
   ShutdownSiglusMessageVoice();
   assert(DeleteFileW(source.c_str()));

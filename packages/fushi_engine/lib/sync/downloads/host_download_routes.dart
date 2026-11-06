@@ -23,10 +23,10 @@ import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:shelf/shelf.dart' as shelf;
 
 shelf.Response _json(Object body, {int status = 200}) => shelf.Response(
-      status,
-      body: jsonEncode(body),
-      headers: const <String, String>{'Content-Type': 'application/json'},
-    );
+  status,
+  body: jsonEncode(body),
+  headers: const <String, String>{'Content-Type': 'application/json'},
+);
 
 Future<shelf.Response> handleHostDownloadRequest(
   HostDownloadHost host,
@@ -53,8 +53,9 @@ Future<shelf.Response> handleHostDownloadRequest(
         if (decoded is! Map) {
           return shelf.Response(400, body: 'JSON object body required');
         }
-        final String jobId =
-            await host.add(HostDownloadAddRequest.fromJson(decoded));
+        final String jobId = await host.add(
+          HostDownloadAddRequest.fromJson(decoded),
+        );
         return _json(<String, Object?>{'jobId': jobId});
       }
       return shelf.Response(405);
@@ -63,27 +64,25 @@ Future<shelf.Response> handleHostDownloadRequest(
     if (id.contains('..') || id.contains('/')) return shelf.Response(400);
     if (seg.length == 1) {
       if (method != 'DELETE') return shelf.Response(405);
-      final String? rawDeleteFiles =
-          request.url.queryParameters['deleteFiles'];
+      final String? rawDeleteFiles = request.url.queryParameters['deleteFiles'];
       final bool? deleteFiles = switch (rawDeleteFiles) {
         null => null,
         'true' || '1' => true,
         'false' || '0' => false,
-        _ => throw const FormatException(
-            'deleteFiles must be true or false',
-          ),
+        _ => throw const FormatException('deleteFiles must be true or false'),
       };
       await host.deleteJob(id, deleteFiles: deleteFiles);
       return _json(const <String, Object?>{'ok': true});
     }
     if (seg.length == 2 && seg[1] == 'subtitles') {
       if (method != 'GET') return shelf.Response(405);
-      final List<VideoDownloadJobSubtitleRow>? rows =
-          await host.listJobSubtitles(id);
+      final List<VideoDownloadJobSubtitleRow>? rows = await host
+          .listJobSubtitles(id);
       if (rows == null) return shelf.Response.notFound('Unknown job');
       return _json(<String, Object?>{
-        'subtitles':
-            rows.map(videoDownloadJobSubtitleToWire).toList(growable: false),
+        'subtitles': rows
+            .map(videoDownloadJobSubtitleToWire)
+            .toList(growable: false),
       });
     }
     if (method != 'POST') return shelf.Response(405);
@@ -97,7 +96,10 @@ Future<shelf.Response> handleHostDownloadRequest(
     }
     return shelf.Response.notFound('Unknown downloads route');
   } on VideoDownloadPipelineActionRequired catch (e) {
-    return _json(<String, Object?>{'reason': 'action_required', 'message': '$e'}, status: 409);
+    return _json(<String, Object?>{
+      'reason': 'action_required',
+      'message': '$e',
+    }, status: 409);
   } on ArgumentError catch (e) {
     return shelf.Response(400, body: '${e.message}');
   } on FormatException catch (e) {

@@ -74,8 +74,9 @@ class BookExitSyncScope {
       await all.timeout(timeout);
     } on TimeoutException {
       debugPrint(
-          '[Fushi] book-exit sync drain timed out after ${timeout.inSeconds}s; '
-          'exiting anyway (remote transfer may be partial)');
+        '[Fushi] book-exit sync drain timed out after ${timeout.inSeconds}s; '
+        'exiting anyway (remote transfer may be partial)',
+      );
     }
   }
 

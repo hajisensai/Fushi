@@ -36,16 +36,13 @@ List<BookTagRow> _tags() => <BookTagRow>[
     ),
 ];
 
-String _code(String path) => maskCommentsAndStrings(
-  File(path).readAsStringSync(),
-);
+String _code(String path) =>
+    maskCommentsAndStrings(File(path).readAsStringSync());
 
 void main() {
   setUpAll(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
-  testWidgets('标签段不再画「管理标签」大 chip，工具行齿轮仍是唯一入口', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('标签段不再画「管理标签」大 chip，工具行齿轮仍是唯一入口', (WidgetTester tester) async {
     await tester.pumpWidget(
       _host(
         FushiTagFilterBar(
@@ -156,7 +153,8 @@ void main() {
     final String row = page.substring(start);
     expect(row.contains('ShelfReadStatus.finished'), isTrue);
     expect(row.contains('scheme.tertiary'), isTrue);
-    expect(row.contains('year2023: apple ? null : true'), isTrue);
+    // 平直形态：M3E 进度组件关掉波浪（2026-10-28 由 year2023 改为 wavy 开关）。
+    expect(row.contains('wavy: false'), isTrue);
   });
 
   test('歌词模式（有声阅读界面）窄屏有左上角返回键，退出走 onClose', () {

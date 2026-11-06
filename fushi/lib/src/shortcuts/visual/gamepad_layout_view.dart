@@ -188,7 +188,7 @@ class GamepadLayoutView extends StatelessWidget {
 
   /// 点击一个**已绑**手柄按钮（回传该按钮上的 action 列表）。
   final void Function(GamepadButton button, List<ShortcutAction> boundActions)?
-      onGamepadTap;
+  onGamepadTap;
 
   /// 点击一个**未绑**手柄按钮（key-first：回传裸按钮，由上层选 action 后分配）。
   final void Function(GamepadButton button)? onEmptyGamepadTap;
@@ -213,8 +213,10 @@ class GamepadLayoutView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ReverseBindingIndex index =
-        ReverseBindingIndex.fromRegistry(registry, scope);
+    final ReverseBindingIndex index = ReverseBindingIndex.fromRegistry(
+      registry,
+      scope,
+    );
     final List<GamepadPadSpec> specs = buildGamepadFigure(gamepadBrand);
 
     return LayoutBuilder(
@@ -257,10 +259,12 @@ class GamepadLayoutView extends StatelessWidget {
         specs.firstWhere((GamepadPadSpec s) => s.button == button);
 
     // 十字键四臂拆出来合成一个整体十字簇；其余按钮按真实位钉在机身上。
-    final List<GamepadPadSpec> plainSpecs =
-        specs.where((GamepadPadSpec s) => !s.button.isDpad).toList();
-    final List<GamepadPadSpec> dpadSpecs =
-        specs.where((GamepadPadSpec s) => s.button.isDpad).toList();
+    final List<GamepadPadSpec> plainSpecs = specs
+        .where((GamepadPadSpec s) => !s.button.isDpad)
+        .toList();
+    final List<GamepadPadSpec> dpadSpecs = specs
+        .where((GamepadPadSpec s) => s.button.isDpad)
+        .toList();
     Offset clusterCenter = Offset.zero;
     for (final GamepadPadSpec s in dpadSpecs) {
       clusterCenter += toPx(s.center);
@@ -271,17 +275,22 @@ class GamepadLayoutView extends StatelessWidget {
     // 结构安装位：摇杆凹窝、面键盘面、十字键圆盘——按钮坐在真实的「安装位」上，
     // 而不是漂在空机身上（键位映射屏的通用画法）。
     final double stickWellRadius = baseDiameter * 1.3 * 0.5 * 1.28;
-    final Offset faceCenter = (toPx(specOf(GamepadButton.y).center) +
+    final Offset faceCenter =
+        (toPx(specOf(GamepadButton.y).center) +
             toPx(specOf(GamepadButton.a).center)) /
         2;
     final double faceRadius =
         (toPx(specOf(GamepadButton.a).center) - faceCenter).distance +
-            baseDiameter * 0.62;
+        baseDiameter * 0.62;
     final List<_ChassisMount> mounts = <_ChassisMount>[
       _ChassisMount(
-          toPx(specOf(GamepadButton.thumbLeft).center), stickWellRadius),
+        toPx(specOf(GamepadButton.thumbLeft).center),
+        stickWellRadius,
+      ),
       _ChassisMount(
-          toPx(specOf(GamepadButton.thumbRight).center), stickWellRadius),
+        toPx(specOf(GamepadButton.thumbRight).center),
+        stickWellRadius,
+      ),
       _ChassisMount(faceCenter, faceRadius),
       _ChassisMount(clusterCenter, clusterSize * 0.58),
     ];
@@ -291,12 +300,18 @@ class GamepadLayoutView extends StatelessWidget {
     // outlineVariant 专为低对比分隔线设计，米色(ecru)主题下二者都会让整只手柄
     // 融进背景（TODO-942 用户截图的「看不到手柄本体」根因），故弃用。
     final Color shellTop = Color.alphaBlend(
-        scheme.onSurface.withValues(alpha: 0.05), scheme.surface);
+      scheme.onSurface.withValues(alpha: 0.05),
+      scheme.surface,
+    );
     final Color shellBottom = Color.alphaBlend(
-        scheme.onSurface.withValues(alpha: 0.12), scheme.surface);
+      scheme.onSurface.withValues(alpha: 0.12),
+      scheme.surface,
+    );
     final Color shellLine = scheme.onSurface.withValues(alpha: 0.65);
     final Color mountFill = Color.alphaBlend(
-        scheme.onSurface.withValues(alpha: 0.09), scheme.surface);
+      scheme.onSurface.withValues(alpha: 0.09),
+      scheme.surface,
+    );
     final Color mountLine = scheme.onSurface.withValues(alpha: 0.30);
 
     return SizedBox(
@@ -450,15 +465,27 @@ class _GamepadChassisPainter extends CustomPainter {
   static const Offset _apexTop = Offset(0.50, 0.135);
   static const List<_ChassisCubic> _rightHalf = <_ChassisCubic>[
     _ChassisCubic(
-        Offset(0.60, 0.085), Offset(0.68, 0.08), Offset(0.755, 0.095)),
+      Offset(0.60, 0.085),
+      Offset(0.68, 0.08),
+      Offset(0.755, 0.095),
+    ),
     _ChassisCubic(
-        Offset(0.85, 0.115), Offset(0.915, 0.17), Offset(0.935, 0.30)),
+      Offset(0.85, 0.115),
+      Offset(0.915, 0.17),
+      Offset(0.935, 0.30),
+    ),
     _ChassisCubic(Offset(0.958, 0.48), Offset(0.95, 0.70), Offset(0.90, 0.85)),
     _ChassisCubic(
-        Offset(0.878, 0.94), Offset(0.828, 0.975), Offset(0.755, 0.955)),
+      Offset(0.878, 0.94),
+      Offset(0.828, 0.975),
+      Offset(0.755, 0.955),
+    ),
     _ChassisCubic(Offset(0.70, 0.935), Offset(0.645, 0.87), Offset(0.60, 0.80)),
     _ChassisCubic(
-        Offset(0.565, 0.765), Offset(0.535, 0.75), Offset(0.50, 0.745)),
+      Offset(0.565, 0.765),
+      Offset(0.535, 0.75),
+      Offset(0.50, 0.745),
+    ),
   ];
 
   static Offset _mirror(Offset o) => Offset(1.0 - o.dx, o.dy);
@@ -524,8 +551,9 @@ class _GamepadChassisPainter extends CustomPainter {
     canvas.drawPath(path, bodyPaint);
 
     // 描边：随图缩放的高对比细边，勾出手柄外形（任何主题下可见）。
-    final double stroke =
-        (size.shortestSide * 0.008).clamp(1.2, 3.0).toDouble();
+    final double stroke = (size.shortestSide * 0.008)
+        .clamp(1.2, 3.0)
+        .toDouble();
     final Paint outlinePaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke

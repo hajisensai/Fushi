@@ -35,11 +35,7 @@ bool fushiNativePopupMaterialAvailable({
   required ThemeData theme,
   required bool highContrast,
 }) {
-  final TargetPlatform platform = theme.platform;
-  if (platform != TargetPlatform.iOS && platform != TargetPlatform.macOS) {
-    return false;
-  }
-  if (!debugNativeMaterialHostSupported()) return false;
+  if (!fushiNativePopupBackdropHostAvailable(theme)) return false;
   if (theme.extension<FushiEinkTheme>()?.einkMode ?? false) return false;
   if (highContrast) return false;
   final FushiGlassTheme? glass = theme.extension<FushiGlassTheme>();
@@ -47,6 +43,35 @@ bool fushiNativePopupMaterialAvailable({
     return glass!.material != FushiGlassMaterial.off;
   }
   return !SystemTransparency.reduceTransparency.value;
+}
+
+/// 查词浮层的背衬能否做成**原生平台视图**（[FushiNativeMaterialBackdrop]）：主题
+/// 平台是 iOS / macOS，且宿主进程真能挂原生视图（[debugNativeMaterialHostSupported]）。
+///
+/// 与「能不能真模糊」（[fushiNativePopupMaterialAvailable]）分开：透明度不被允许时
+/// 面板改画实底，但这块实底在这两端也必须是原生视图（[FushiNativeMaterialBackdrop]
+/// 的 `solidColor`），不能由 Flutter 画（反馈 hQpYQyWJNQ；iOS 26.5 模拟器上用最小
+/// 复现实测）。
+///
+/// iOS 合成规则（Flutter 3.47.6 engine）：查词 WebView 被 [FushiPopupSurface] 的圆角
+/// `Clip.antiAlias`（以及描边内缩的 `ClipRRect`）裁剪，平台视图带上非矩形裁剪
+/// mutator（kClipRRect），`FlutterPlatformViewsController.mm` 的
+/// `HasNonRectClipForUnderlayCutout` 为真。于是**紧跟在这个 WebView 之后**绘制的那段
+/// Flutter 内容：overlay 层被 `ApplyNonRectClipToOverlayCanvas` 裁成 WebView 的圆角
+/// 形状；`view_slicer.cc` 的 `preserve_underlay` 分支又不在底层画布上挖掉它，这段内容
+/// 在形状外的部分只画进**所有平台视图之下**的底层画布，被阅读器 WKWebView 整块盖住。
+/// 判据是「前一个平台视图带非矩形裁剪」，不是「与哪个视图相不相交」（`SliceViews`
+/// 会拿每段内容和它之前的所有平台视图求交）。
+///
+/// 所以嵌套层在父层 WebView 之后、自己的原生背衬之前**不许画任何 Flutter 内容**：
+/// 原生背衬没有非矩形裁剪，排在它之后的本层内容（外侧投影、描边、顶栏）照常合成。
+/// `_ApplePopupGlassBackdrop._buildNativeMaterial` 因此把原生背衬排在 Stack 第一个。
+bool fushiNativePopupBackdropHostAvailable(ThemeData theme) {
+  final TargetPlatform platform = theme.platform;
+  if (platform != TargetPlatform.iOS && platform != TargetPlatform.macOS) {
+    return false;
+  }
+  return debugNativeMaterialHostSupported();
 }
 
 /// [fushiNativePopupMaterialAvailable] 的 BuildContext 版。
@@ -70,6 +95,9 @@ bool fushiNativePopupMaterialAvailableOf(BuildContext context) {
 ///
 /// [tint] 是叠在材质上的低 alpha 色层（MD3 用主色淡染的面板色；Apple 不传 =
 /// 纯系统材质）。参数变化时整视图重建（key 随参数变），平台视图本身很轻。
+///
+/// [solidColor] 非 null 时不挂系统材质，原生侧只画一块同圆角的实色面板（透明度不被
+/// 允许时的实底，见 [fushiNativePopupBackdropHostAvailable] 为何必须是原生视图）。
 class FushiNativeMaterialBackdrop extends StatelessWidget {
   const FushiNativeMaterialBackdrop({
     required this.dark,
@@ -77,11 +105,15 @@ class FushiNativeMaterialBackdrop extends StatelessWidget {
     super.key,
     this.tint,
     this.continuousCorners = false,
+    this.solidColor,
   });
 
   final bool dark;
   final double borderRadius;
   final Color? tint;
+
+  /// 实色面板（不透明）；null = 系统材质。
+  final Color? solidColor;
 
   /// Apple 设计系统用连续曲率圆角（superellipse），MD3 用普通圆弧。
   final bool continuousCorners;
@@ -91,6 +123,7 @@ class FushiNativeMaterialBackdrop extends StatelessWidget {
     'cornerRadius': borderRadius,
     'continuousCorners': continuousCorners,
     if (tint != null) 'tint': tint!.toARGB32(),
+    if (solidColor != null) 'solid': solidColor!.toARGB32(),
   };
 
   @override
@@ -98,7 +131,7 @@ class FushiNativeMaterialBackdrop extends StatelessWidget {
     final Map<String, Object?> params = _params;
     final Key viewKey = ValueKey<String>(
       'native-material:$dark:$borderRadius:$continuousCorners:'
-      '${tint?.toARGB32()}',
+      '${tint?.toARGB32()}:${solidColor?.toARGB32()}',
     );
     final Widget view = Theme.of(context).platform == TargetPlatform.macOS
         ? AppKitView(

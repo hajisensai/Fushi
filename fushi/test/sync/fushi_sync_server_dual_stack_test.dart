@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
@@ -148,14 +148,10 @@ Future<void> main() async {
       expect((await pairV2('127.0.0.1', tls: true))['pinRequired'], isFalse);
     });
 
-    test(
-      'TLS host 双栈：v6 回环可达且判 LAN',
-      () async {
-        await start(tls: true);
-        expect((await pairV2('[::1]', tls: true))['pinRequired'], isFalse);
-      },
-      skip: hasIPv6Loopback ? false : '本机没有 IPv6 回环（::1 不可绑定）',
-    );
+    test('TLS host 双栈：v6 回环可达且判 LAN', () async {
+      await start(tls: true);
+      expect((await pairV2('[::1]', tls: true))['pinRequired'], isFalse);
+    }, skip: hasIPv6Loopback ? false : '本机没有 IPv6 回环（::1 不可绑定）');
 
     test('审批里的来源地址是还原后的 v4，而不是 ::ffff: 写法', () async {
       await start(tls: true);

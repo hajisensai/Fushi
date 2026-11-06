@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -11,7 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
@@ -20,6 +21,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/async_file_existence_cache.dart'
+    show PendingCoverImage;
 import 'package:fushi/src/media/tags/tag_chips.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
@@ -30,10 +33,14 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show videoRemotePositionAtPrefKey;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
+import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
+    show MediaItemDialogFrame;
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show ShelfCoverPlaceholder;
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -66,6 +73,8 @@ class _CoverSearchScrapeRunner extends _IdleScrapeRunner
     required String workTitle,
     String? workStableKey,
     required String query,
+    VideoMetadataProviderKind? provider,
+    VideoMetadataMediaKind? mediaKind,
   }) async {
     queries.add(query);
     return const <VideoSourceScrapeConfirmationCandidate>[];
@@ -104,10 +113,12 @@ class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
   Future<List<VideoBookRow>> deleteVideoBooks(
     Iterable<String> bookUids, {
     DeleteScope scope = DeleteScope.keepLocalOnly,
+    bool removeFromCollections = true,
   }) async {
     final List<VideoBookRow> deleted = await super.deleteVideoBooks(
       bookUids,
       scope: scope,
+      removeFromCollections: removeFromCollections,
     );
     deleteCalls += deleted.length;
     if (deleteCalls >= pauseAfterDeleteCount && !deletesCommitted.isCompleted) {
@@ -233,7 +244,11 @@ void main() {
   }
 
   Directory writeEmbeddedSubtitleCache(File video) {
-    final Directory dir = embeddedSubtitleCacheDir(video.path);
+    // 同步拿 stat 走纯函数那一半：widget 测试的 fake-async 里不能 await 真 IO。
+    final Directory dir = embeddedSubtitleCacheDirForStat(
+      video.path,
+      video.statSync(),
+    );
     dir.createSync(recursive: true);
     File(
       p.join(dir.path, 'sub_0.srt'),
@@ -327,6 +342,7 @@ void main() {
     bool captureToasts = false,
     VideoBookRepository? repo,
     VideoSourceScrapeTaskController? scrapeTaskController,
+    VideoLibrarySection section = VideoLibrarySection.allVideos,
   }) => ProviderScope(
     overrides: <Override>[
       platformServicesProvider.overrideWithValue(platformServices),
@@ -347,7 +363,7 @@ void main() {
         home: Scaffold(
           body: HomeVideoPage(
             repo: repo ?? VideoBookRepository(db),
-            section: VideoLibrarySection.allVideos,
+            section: section,
             scrapeTaskController: scrapeTaskController,
           ),
         ),
@@ -378,19 +394,19 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('视频卡渲染所挂的共享标签 chip', (WidgetTester tester) async {
+  testWidgets('视频卡副行渲染所挂的共享标签（色点 + tooltip）', (WidgetTester tester) async {
     await seedTaggedVideo();
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
     expect(find.text('My Episode'), findsOneWidget);
     // 标签来自共享 BookTags 池，经 video_book_tag_mappings 映射。
-    // 卡片与顶部筛选条现都用同款共享 FushiTagChip，故按卡片范围定位避免与
-    // 筛选条里的同名标签冲突。
+    // 2026-10-25 库页材质定版：封面上不再压标签 chip，标签收成封面下副行尾部
+    // 的色点，全名在 tooltip 里；按卡片范围定位避免与筛选条里的同名标签冲突。
     expect(
       find.descendant(
         of: videoCard('video/1'),
-        matching: find.widgetWithText(FushiTagChip, 'Anime'),
+        matching: find.byTooltip('Anime'),
       ),
       findsOneWidget,
     );
@@ -401,6 +417,152 @@ void main() {
     await tester.longPress(card);
     await tester.pumpAndSettle();
   }
+
+  // 反馈 Lf32nO2gRK（BUG 见 docs/bugs）：首页「最近添加」卡画的是刮削作品海报 +
+  // 作品名，长按 / 右键菜单头部却只认视频自身 coverPath（为空 → 胶片占位）和原始
+  // 文件名。菜单头部必须与打开它的那张卡同一图源、同一标题。
+  testWidgets('最近添加卡的菜单头部用卡上同一张刮削海报与作品名', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const String uid = 'video/dora';
+    const String rawTitle = '[Fabre-RAW] Doraemon Movie 25 (2004) [1080p]';
+    const String workTitle = '映画ドラえもん のび太のワンニャン時空伝';
+    const String posterUrl = 'https://image.example/dora-poster.jpg';
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>(uid),
+        title: const Value<String>(rawTitle),
+        videoPath: const Value<String>('/abs/dora.mkv'),
+        importedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+    final int workId = await db.upsertVideoMetadataWork(
+      VideoMetadataWorksCompanion.insert(
+        mediaType: 'movie',
+        title: workTitle,
+        bookUid: const Value<String?>(uid),
+        updatedAt: 1,
+      ),
+    );
+    await db.replaceVideoMetadataImages(
+      workId: workId,
+      images: <VideoMetadataImagesCompanion>[
+        VideoMetadataImagesCompanion.insert(
+          provider: 'tmdb',
+          kind: 'poster',
+          remoteUrl: posterUrl,
+          updatedAt: 1,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(buildApp(section: VideoLibrarySection.home));
+    await tester.pumpAndSettle();
+
+    final Finder card = find.byKey(
+      const ValueKey<String>('home_video_recent_$uid'),
+    );
+    expect(card, findsOneWidget);
+    expect(
+      find.descendant(of: card, matching: find.text(workTitle)),
+      findsOneWidget,
+      reason: '前提：卡片本身画的是刮削作品名',
+    );
+
+    await openCardMenu(tester, card);
+
+    final Finder menu = find.byType(MediaItemDialogFrame);
+    expect(menu, findsOneWidget);
+    final MediaItemDialogFrame frame = tester.widget<MediaItemDialogFrame>(
+      menu,
+    );
+    expect(frame.title, workTitle, reason: '菜单标题与卡片同为刮削作品名，不是原始文件名');
+
+    String? urlOf(ImageProvider<Object>? provider) {
+      ImageProvider<Object>? base = provider;
+      while (base is ResizeImage) {
+        base = base.imageProvider;
+      }
+      return base is CachedNetworkImageProvider ? base.url : null;
+    }
+
+    expect(urlOf(frame.coverBackdrop), posterUrl, reason: '菜单垫底图与卡片同源（刮削海报）');
+    final Iterable<Image> headerImages = tester.widgetList<Image>(
+      find.descendant(of: menu, matching: find.byType(Image)),
+    );
+    expect(
+      headerImages.where((Image i) => urlOf(i.image) == posterUrl),
+      isNotEmpty,
+      reason: '菜单头部封面必须画卡片上那张刮削海报',
+    );
+    expect(
+      find.descendant(of: menu, matching: find.byType(ShelfCoverPlaceholder)),
+      findsNothing,
+      reason: '有刮削海报时菜单头部不能退回胶片占位图标',
+    );
+    // 远程封面的磁盘缓存管理器排了 10 秒清理定时器；走完它，免得测试结束时还挂着。
+    await tester.pump(const Duration(seconds: 11));
+  });
+
+  // PR #2984 审查：菜单头部的图源若在打开那一刻定死，封面还在异步探测（BUG-3756，
+  // 网络盘冷目录可达数秒）时拿到的是永不出帧的 kPendingCoverImage；菜单是独立路由，
+  // page 的重建到不了它，头部就永远只剩空衬底。探测落定后菜单必须自己重取图源。
+  testWidgets('封面探测未落定时打开菜单，落定后菜单头部跟着换（不停在加载态）', (WidgetTester tester) async {
+    // 不存在的路径：落定 = 「没有封面」→ 胶片占位。不真读图片文件，免得测试收尾
+    // 时还挂着文件句柄。
+    final String missingCover = p.join(externalVideoDir.path, 'no-cover.jpg');
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/1'),
+        title: const Value<String>('My Episode'),
+        videoPath: const Value<String>('/abs/ep1.mp4'),
+        coverPath: Value<String>(missingCover),
+      ),
+    );
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await openCardMenu(tester, videoCard('video/1'));
+    final Finder menu = find.byType(MediaItemDialogFrame);
+    expect(menu, findsOneWidget);
+    expect(
+      tester.widget<MediaItemDialogFrame>(menu).coverBackdrop,
+      isA<PendingCoverImage>(),
+      reason: '前提：fakeAsync 下 File.exists 未回话，打开菜单时封面仍在探测',
+    );
+    expect(
+      find.descendant(of: menu, matching: find.byType(ShelfCoverPlaceholder)),
+      findsNothing,
+      reason: '前提：探测中头部画的是加载态，不是占位',
+    );
+
+    // 让真实 IO 回话（File.exists 的续体排在 fakeAsync 里，runAsync 后 pump 才跑）。
+    for (
+      int i = 0;
+      i < 200 &&
+          tester.widget<MediaItemDialogFrame>(menu).coverBackdrop
+              is PendingCoverImage;
+      i++
+    ) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump();
+    }
+
+    expect(
+      tester.widget<MediaItemDialogFrame>(menu).coverBackdrop,
+      isNull,
+      reason: '探测落定（文件不在）后菜单垫底图必须重取为「没有封面」',
+    );
+    expect(
+      find.descendant(of: menu, matching: find.byType(ShelfCoverPlaceholder)),
+      findsOneWidget,
+      reason: '探测落定后菜单头部换成胶片占位，不能永远停在空白加载态',
+    );
+  });
 
   testWidgets('触屏未进选择态长按视频卡弹管理菜单，不进入多选', (WidgetTester tester) async {
     await seedTaggedVideo();
@@ -457,8 +619,10 @@ void main() {
     await tester.tap(videoCard('video/1'), buttons: kSecondaryButton);
     await tester.pumpAndSettle();
 
-    // 右键与长按同链路（都走 _showVideoMenu）：应弹出同一封面背景动作面板。
-    expect(find.byType(FushiDialogFrame), findsOneWidget);
+    // 右键与长按同链路（都走 _showVideoMenu）、同一份动作。2026-10-25 起鼠标右键
+    // 在指针处弹右键菜单（设计稿 E），不再是居中对话框。
+    expect(find.byType(MediaItemDialogFrame), findsOneWidget);
+    expect(find.byType(FushiDialogFrame), findsNothing);
     expect(find.text(t.tag_label), findsOneWidget);
     expect(find.text(t.video_rename), findsOneWidget);
     expect(find.text(t.srt_import_pick_cover), findsOneWidget);
@@ -845,7 +1009,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey<String>('home_video_video/1')),
-        matching: find.widgetWithText(FushiTagChip, 'Anime'),
+        matching: find.byTooltip('Anime'),
       ),
       findsOneWidget,
     );

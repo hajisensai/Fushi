@@ -48,8 +48,9 @@ void main() {
       //   会被误判成违规。
       // 掩码不改行数，两个列表下标一一对应，`i + 1` 仍是原文真实行号；报错文案要
       // 给人看的是**原文**行（掩码行里注释段已成空白）。
-      final List<String> lines =
-          maskCommentsAndScriptLines(content).split('\n');
+      final List<String> lines = maskCommentsAndScriptLines(
+        content,
+      ).split('\n');
       final List<String> rawLines = content.split('\n');
       for (int i = 0; i < lines.length; i++) {
         if (constructorCall.hasMatch(lines[i])) {
@@ -58,13 +59,18 @@ void main() {
       }
     }
 
-    expectScanScale(scanned,
-        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+    expectScanScale(
+      scanned,
+      what: 'lib/ 下的 .dart',
+      atLeast: 750,
+      measured: 939,
+    );
 
     expect(
       offenders,
       isEmpty,
-      reason: 'SDK 重排组件的 Overlay 拖拽代理不认祖先 Transform.scale，'
+      reason:
+          'SDK 重排组件的 Overlay 拖拽代理不认祖先 Transform.scale，'
           '「界面大小」非 100% 时拖拽浮层漂移（BUG-778）。'
           '改用 FushiReorderableColumn / FushiReorderableGrid'
           '（浮层渲染在列表自身 Stack、指针经 globalToLocal 消掉祖先缩放）：\n'
@@ -74,8 +80,9 @@ void main() {
 
   test('自实现重排件仍在（消缩放的替代实现不得被误删）', () {
     expect(
-      File('lib/src/utils/components/fushi_reorderable_column.dart')
-          .existsSync(),
+      File(
+        'lib/src/utils/components/fushi_reorderable_column.dart',
+      ).existsSync(),
       isTrue,
     );
     expect(

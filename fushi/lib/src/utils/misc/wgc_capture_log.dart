@@ -28,10 +28,7 @@ class WgcCaptureLog {
 
   /// 解析日志文件（仅 Windows）。环境变量 `LOCALAPPDATA` 缺失或非 Windows 返回 null。
   @visibleForTesting
-  static File? resolveLogFile({
-    bool isWindows = false,
-    String? localAppData,
-  }) {
+  static File? resolveLogFile({bool isWindows = false, String? localAppData}) {
     if (!isWindows) return null;
     final String? base = localAppData;
     if (base == null || base.isEmpty) return null;

@@ -206,6 +206,14 @@ const String kGalOverlongSliceSuspectReason = 'slice_overlong_suspect';
 /// 说成没配音，资源模式的**真漏抓**也会被这句话盖过去。
 const String kGalCleanSourceSuppressedReason = 'clean_source_suppressed';
 
+/// 资源模式下这句越过了配对容差仍没有原件落盘（BUG-4206 审查）。
+///
+/// 只说「没找到这句的游戏资源」，**不是**「这句没配音」：资源通道活着时多半就是
+/// 旁白无配音，但也可能是漏抓 / 引擎绑定没命中，没有 [kGalLineNoVoiceReason] 那种
+/// PCM 静默证据。UI 因此给中性的「无原件」标并在悬停里说清两种可能，不给红色
+/// 「未匹配」——资源模式下每句无配音旁白都会走到这里，无配音是常态不是故障。
+const String kGalResourceNotPairedReason = 'game_resource_not_paired';
+
 /// 实时台词列表的筛选维度。单一枚举驱动 [lineMatchesFilter] 一个 predicate，
 /// 消除「有音频 / 已制卡 / 已收藏」各写一条 if 分支的特殊情况。与线程下拉筛选正交：
 /// 先按线程取行，再按本枚举过滤。
@@ -214,12 +222,11 @@ enum TexthookerLineFilter { all, withAudio, mined, favorited }
 /// 引擎适配器自产的**精确文本线程**：hook code 以 `ENGINE:` 为前缀，与 Luna 启发式
 /// hook 的 `HQFN-24@...` 一类码区分。
 ///
-/// **目前只有 SGRE 一家**用这个前缀（`ENGINE:SGRE:wind3d11`，见
-/// `native/galgame_hook/hook/adapters/sgre_lookup.inc` 的 `kSgreTextHookCode`）。
-/// Siglus 的 TextRender 发的是 `EXBWX0@%llX:SiglusEngine.exe`、Unity 发的是
-/// `UnityEngine.TextMesh.set_text(glyphs)`，两者都**不**带该前缀，因此不走这条
-/// 自动选中路径——别把它们写成同样受益，那会让人以为覆盖面比实际大。
-/// native 侧命名契约见各 adapter 的 `k*TextHookCode`。
+/// 带这个前缀的是各引擎适配器在已证明边界上产出的线程（SGRE / BGI / Artemis /
+/// YU-RIS / FVP / Luca / Malie / Siglus 原生消息 `ENGINE:SIGLUS:message` 等，
+/// native 侧命名契约见各 adapter 的 hook code 常量）。Siglus 的 TextRender
+/// （`EXBWX0@%llX:SiglusEngine.exe`）与 Unity（`UnityEngine.TextMesh.set_text(glyphs)`）
+/// **不**带该前缀、不走自动选中——别把它们写成同样受益。
 bool isEngineExactTextThread(TexthookerTextThread thread) =>
     (thread.hookCode ?? '').startsWith('ENGINE:');
 
@@ -235,6 +242,7 @@ class TexthookerTextThread {
     required this.lineCount,
     required this.latestAt,
     this.hookCode,
+    this.hookCodeLaneUnique = false,
     this.nativeThreadId,
     this.latestText,
     this.audioLineCount = 0,
@@ -261,6 +269,7 @@ class TexthookerTextThread {
     key: key,
     label: label ?? this.label,
     hookCode: hookCode,
+    hookCodeLaneUnique: hookCodeLaneUnique,
     nativeThreadId: nativeThreadId,
     lineCount: lineCount,
     latestAt: latestAt,
@@ -276,6 +285,13 @@ class TexthookerTextThread {
   final String key;
   final String label;
   final String? hookCode;
+
+  /// native 声明 [hookCode] 只对应这一条 lane（`kTextEventFlagLaneUniqueHookCode`，
+  /// 见 [GalHookedLine.hookCodeIsLaneUnique]）。只有它为 true 时，跨会话记忆才能
+  /// 只凭 hook code 认回线程、不做行长消歧；`ENGINE:` 前缀本身**不**代表唯一——
+  /// FVP / Luca / BGI / YU-RIS / Kogado Hy 都是一个 hook code 下多条 lane（正文 +
+  /// 名字牌）。
+  final bool hookCodeLaneUnique;
   final int? nativeThreadId;
 
   /// 已**发布**到文本环的行数（即当前生效线程的行）。v12 起未被选中的线程恒为 0，
@@ -436,6 +452,15 @@ class TexthookerLineEntry {
     TexthookerLineAudioStatus.unavailable => false,
   };
 
+  /// 这行的音频是否是**已配上的**游戏资源原件（BUG-4206）：backend 是
+  /// game_resource 且状态是已配对 / 已编码。只看 backend 会把还在等资源、或没配上
+  /// 的行当成有原件（折叠进来的旧事件也可能留着 backend 字样）。UI 的资源弹窗与
+  /// 操作目录的「来自游戏资源直提」描述共用这一个判据。
+  bool get hasResourceAudio =>
+      audioBackend == 'game_resource' &&
+      (audioStatus == TexthookerLineAudioStatus.matched ||
+          audioStatus == TexthookerLineAudioStatus.encoded);
+
   TexthookerLineEntry copyWith({
     String? text,
     List<RubySpan>? rubySpans,
@@ -532,6 +557,15 @@ class TexthookerService extends ChangeNotifier {
   /// 注销的生命周期和 observer 顺序问题。
   List<String> get lastFoldedLineIds =>
       List<String>.unmodifiable(_lastFoldedLineIds);
+
+  /// 上一次 [appendLine] 返回行的**文本出处**：null = 文本就是本次入参；否则是被折叠
+  /// 回吞、文本更长而胜出的那条旧行的 id（合并结果显示的是它的文本，不是本次入参）。
+  ///
+  /// galgame 会话据此记住「当前这条字幕到底是哪一份 hook 原文经管线得来的」——规则
+  /// 过滤页的预览样本必须是这一份，否则预览看的是一份输入、字幕吃的是另一份（BUG-4029）。
+  /// 与 [lastFoldedLineIds] 同生命周期：调用方在 [appendLine] 返回后立刻读走。
+  String? get lastAppendTextDonorId => _lastAppendTextDonorId;
+  String? _lastAppendTextDonorId;
   final List<String> _lastFoldedLineIds = <String>[];
   final Map<String, TexthookerTextThread> _discoveredTextThreads =
       <String, TexthookerTextThread>{};
@@ -576,6 +610,7 @@ class TexthookerService extends ChangeNotifier {
         key: key,
         label: entry.textThreadLabel ?? previous?.label ?? key,
         hookCode: entry.textHookCode ?? previous?.hookCode,
+        hookCodeLaneUnique: previous?.hookCodeLaneUnique ?? false,
         nativeThreadId: entry.nativeTextThreadId ?? previous?.nativeThreadId,
         lineCount: (previous?.lineCount ?? 0) + 1,
         latestAt: entry.receivedAt,
@@ -754,6 +789,7 @@ class TexthookerService extends ChangeNotifier {
     required String key,
     required String label,
     String? hookCode,
+    bool hookCodeLaneUnique = false,
     int? nativeThreadId,
     DateTime? discoveredAt,
   }) {
@@ -768,6 +804,8 @@ class TexthookerService extends ChangeNotifier {
           ? previous?.label ?? normalizedKey
           : label.trim(),
       hookCode: hookCode ?? previous?.hookCode,
+      hookCodeLaneUnique:
+          hookCodeLaneUnique || (previous?.hookCodeLaneUnique ?? false),
       nativeThreadId: nativeThreadId ?? previous?.nativeThreadId,
       lineCount: 0,
       latestAt: previous != null && previous.latestAt.isAfter(observedAt)
@@ -790,13 +828,21 @@ class TexthookerService extends ChangeNotifier {
   /// 重放，某些自定义 hook 也可能已经不在新的 helper 预览快照里；此时正文行本身就是
   /// 唯一仍可靠的线程目录证据。正文仍由控制器的选中线程过滤器决定是否发布，这里只
   /// 补目录和观测计数，不能把未选中的文本塞进 [_entries]。
+  ///
+  /// [notify] = false 供批量观测用：引擎一次轮询能带回几百条**所有线程**的行
+  /// （v13 每线程一道，64 道 × 8 槽），逐行通知会让每个监听者（工作台、浮窗、控制器
+  /// 转发）每行都同步跑一遍——Unity 这类每帧重写 set_text 的游戏会因此把 UI isolate
+  /// 压满、整个 Fushi 点不动（反馈 bfaVEbHL_s）。批量调用方在整批结束后调一次
+  /// [notifyTextThreadsObserved]。
   void observeTextThreadLine({
     required String key,
     required String label,
     required String text,
     String? hookCode,
+    bool hookCodeLaneUnique = false,
     int? nativeThreadId,
     DateTime? observedAt,
+    bool notify = true,
   }) {
     final String normalizedKey = key.trim();
     final String normalizedText = text.trim();
@@ -810,6 +856,8 @@ class TexthookerService extends ChangeNotifier {
           ? previous?.label ?? normalizedKey
           : label.trim(),
       hookCode: hookCode ?? previous?.hookCode,
+      hookCodeLaneUnique:
+          hookCodeLaneUnique || (previous?.hookCodeLaneUnique ?? false),
       nativeThreadId: nativeThreadId ?? previous?.nativeThreadId,
       lineCount: previous?.lineCount ?? 0,
       latestAt: now,
@@ -821,8 +869,11 @@ class TexthookerService extends ChangeNotifier {
       previewIsArtifact: false,
       recentPreviewTexts: previous?.recentPreviewTexts ?? const <String>[],
     );
-    notifyListeners();
+    if (notify) notifyListeners();
   }
+
+  /// 一批 `observeTextThreadLine(notify: false)` 结束后的单次通知。
+  void notifyTextThreadsObserved() => notifyListeners();
 
   /// [threadKey] 为 null 时返回所有行；否则只返回指定 Hook 线程的文本。
   List<TexthookerLineEntry> entriesForTextThread(String? threadKey) {
@@ -880,6 +931,7 @@ class TexthookerService extends ChangeNotifier {
     final String trimmed = parsed.text;
     if (trimmed.isEmpty) return null;
     _lastFoldedLineIds.clear();
+    _lastAppendTextDonorId = null;
 
     // 同一句被引擎分多次吐出来时，把 buffer 尾巴上属于这一句的几条**一次性回吞**成
     // 一条，而不是追加新行。用户报的 Zato 序列是三拍：
@@ -938,6 +990,7 @@ class TexthookerService extends ChangeNotifier {
             normalizeForFold(mergedText).length) {
           mergedText = tail.text;
           mergedSpans = tail.rubySpans;
+          _lastAppendTextDonorId = tail.id;
         }
         absorbed.add(_entries.removeAt(tailIndex));
       }

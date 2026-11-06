@@ -81,13 +81,14 @@ void main() {
                 onPressed: () async {
                   final ShortcutBindingEditResult? result =
                       await showAppDialog<ShortcutBindingEditResult>(
-                    context: context,
-                    builder: (BuildContext ctx) => ShortcutBindingEditDialog(
-                      action: action,
-                      registry: registry,
-                      initial: initial,
-                    ),
-                  );
+                        context: context,
+                        builder: (BuildContext ctx) =>
+                            ShortcutBindingEditDialog(
+                              action: action,
+                              registry: registry,
+                              initial: initial,
+                            ),
+                      );
                   if (result == null) return;
                   registry.updateBindingWithReassignments(
                     action,
@@ -132,34 +133,38 @@ void main() {
   // audiobookSeekToClickedSentence 默认占着中键(1)，中键会走冲突改绑流程而非直接
   // 落 chip。
   testWidgets(
-      'desktop: capturing the right button records a MouseBinding(2) chip',
-      (WidgetTester tester) async {
+    'desktop: capturing the right button records a MouseBinding(2) chip',
+    (WidgetTester tester) async {
+      usePlatform(TargetPlatform.windows);
+      final FushiShortcutRegistry registry = buildRegistry(
+        TargetPlatform.windows,
+      );
+      await pumpDialog(
+        tester,
+        registry,
+        action: ShortcutAction.readerDismissDict,
+      );
+
+      await tester.tap(find.byKey(const Key('shortcut_add_mouse')));
+      await tester.pumpAndSettle();
+      expect(find.text(t.shortcut_press_mouse_button), findsOneWidget);
+
+      await pressMouseButton(tester, kSecondaryMouseButton);
+
+      expect(find.text(t.shortcut_mouse_right), findsOneWidget);
+      expect(find.text(t.shortcut_press_mouse_button), findsNothing);
+
+      resetPlatform();
+    },
+  );
+
+  testWidgets('desktop: the primary (left) button is not bindable', (
+    WidgetTester tester,
+  ) async {
     usePlatform(TargetPlatform.windows);
-    final FushiShortcutRegistry registry =
-        buildRegistry(TargetPlatform.windows);
-    await pumpDialog(
-      tester,
-      registry,
-      action: ShortcutAction.readerDismissDict,
+    final FushiShortcutRegistry registry = buildRegistry(
+      TargetPlatform.windows,
     );
-
-    await tester.tap(find.byKey(const Key('shortcut_add_mouse')));
-    await tester.pumpAndSettle();
-    expect(find.text(t.shortcut_press_mouse_button), findsOneWidget);
-
-    await pressMouseButton(tester, kSecondaryMouseButton);
-
-    expect(find.text(t.shortcut_mouse_right), findsOneWidget);
-    expect(find.text(t.shortcut_press_mouse_button), findsNothing);
-
-    resetPlatform();
-  });
-
-  testWidgets('desktop: the primary (left) button is not bindable',
-      (WidgetTester tester) async {
-    usePlatform(TargetPlatform.windows);
-    final FushiShortcutRegistry registry =
-        buildRegistry(TargetPlatform.windows);
     await pumpDialog(
       tester,
       registry,
@@ -177,31 +182,34 @@ void main() {
     resetPlatform();
   });
 
-  testWidgets('desktop: captured mouse binding is written through the registry',
-      (WidgetTester tester) async {
-    usePlatform(TargetPlatform.windows);
-    final FushiShortcutRegistry registry =
-        buildRegistry(TargetPlatform.windows);
-    await pumpDialogHost(
-      tester,
-      registry,
-      action: ShortcutAction.readerDismissDict,
-    );
+  testWidgets(
+    'desktop: captured mouse binding is written through the registry',
+    (WidgetTester tester) async {
+      usePlatform(TargetPlatform.windows);
+      final FushiShortcutRegistry registry = buildRegistry(
+        TargetPlatform.windows,
+      );
+      await pumpDialogHost(
+        tester,
+        registry,
+        action: ShortcutAction.readerDismissDict,
+      );
 
-    await tester.tap(find.byKey(const Key('shortcut_add_mouse')));
-    await tester.pumpAndSettle();
-    await pressMouseButton(tester, kBackMouseButton); // DOM button 3 = back
+      await tester.tap(find.byKey(const Key('shortcut_add_mouse')));
+      await tester.pumpAndSettle();
+      await pressMouseButton(tester, kBackMouseButton); // DOM button 3 = back
 
-    await tester.tap(find.text('OK').last);
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('OK').last);
+      await tester.pumpAndSettle();
 
-    expect(
-      registry.bindingsFor(ShortcutAction.readerDismissDict).mouseBindings,
-      contains(const MouseBinding(3)),
-    );
+      expect(
+        registry.bindingsFor(ShortcutAction.readerDismissDict).mouseBindings,
+        contains(const MouseBinding(3)),
+      );
 
-    resetPlatform();
-  });
+      resetPlatform();
+    },
+  );
 
   // 通道没开的 scope 上，历史快照里的鼠标绑定**不隐身、仍可删**（Never break
   // userspace）：捕获入口不出现，但老用户当年配下的绑定仍要能看见并删掉——否则那条
@@ -215,11 +223,13 @@ void main() {
   // `gamepad` scope（dpad 四向）是目前唯一**按构造**开不了鼠标的那个：它的唯一消费者
   // 是 `GamepadService._dispatchButton` 按 `GamepadButton` 解析，键盘/鼠标绑定在那里
   // 没有也不可能有读取方（见 ShortcutScope.channels 的 gamepad case）。
-  testWidgets('desktop: 通道未开的 scope 仍显示并可删除历史鼠标绑定（但没有捕获入口）',
-      (WidgetTester tester) async {
+  testWidgets('desktop: 通道未开的 scope 仍显示并可删除历史鼠标绑定（但没有捕获入口）', (
+    WidgetTester tester,
+  ) async {
     usePlatform(TargetPlatform.windows);
-    final FushiShortcutRegistry registry =
-        buildRegistry(TargetPlatform.windows);
+    final FushiShortcutRegistry registry = buildRegistry(
+      TargetPlatform.windows,
+    );
     // 前提自检：取样的 scope 必须真的没开 mouse，否则本用例测的是另一件事（假绿）。
     expect(
       ShortcutAction.dpadUp.scope.channels,
@@ -242,34 +252,35 @@ void main() {
     await tester.tap(find.text('OK').last);
     await tester.pumpAndSettle();
 
-    expect(
-      registry.bindingsFor(ShortcutAction.dpadUp).mouseBindings,
-      isEmpty,
-    );
+    expect(registry.bindingsFor(ShortcutAction.dpadUp).mouseBindings, isEmpty);
 
     resetPlatform();
   });
 
   testWidgets(
-      'mobile: no mouse capture entry and inherited bindings still render',
-      (WidgetTester tester) async {
-    usePlatform(TargetPlatform.android);
-    final FushiShortcutRegistry registry =
-        buildRegistry(TargetPlatform.android);
-    await pumpDialog(
-      tester,
-      registry,
-      action: ShortcutAction.audiobookSeekToClickedSentence,
-      initial: const ShortcutBindingSet(
-        mouseBindings: <MouseBinding>[MouseBinding(1)],
-      ),
-    );
+    'mobile: no mouse capture entry and inherited bindings still render',
+    (WidgetTester tester) async {
+      usePlatform(TargetPlatform.android);
+      final FushiShortcutRegistry registry = buildRegistry(
+        TargetPlatform.android,
+      );
+      await pumpDialog(
+        tester,
+        registry,
+        action: ShortcutAction.audiobookSeekToClickedSentence,
+        initial: const ShortcutBindingSet(
+          mouseBindings: <MouseBinding>[MouseBinding(1)],
+        ),
+      );
 
-    expect(find.text(t.shortcut_mouse_middle), findsOneWidget);
-    expect(find.byKey(const Key('shortcut_add_mouse')), findsNothing);
-    expect(
-        find.byKey(const Key('shortcut_mouse_capture_region')), findsNothing);
+      expect(find.text(t.shortcut_mouse_middle), findsOneWidget);
+      expect(find.byKey(const Key('shortcut_add_mouse')), findsNothing);
+      expect(
+        find.byKey(const Key('shortcut_mouse_capture_region')),
+        findsNothing,
+      );
 
-    resetPlatform();
-  });
+      resetPlatform();
+    },
+  );
 }

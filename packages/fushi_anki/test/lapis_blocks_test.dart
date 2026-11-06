@@ -29,8 +29,9 @@ void main() {
     expect(LapisNoteType.back, isNot(contains('=== Details ===')));
     // BUG-2488: removing the Details text must also remove its line break.
     expect(
-      RegExp(r'<div class="misc-info">\s*\{\{MiscInfo\}\}')
-          .hasMatch(LapisNoteType.back),
+      RegExp(
+        r'<div class="misc-info">\s*\{\{MiscInfo\}\}',
+      ).hasMatch(LapisNoteType.back),
       isTrue,
     );
     expect(
@@ -44,7 +45,8 @@ void main() {
         expect(
           anchor.anchorText.allMatches(LapisNoteType.back).length,
           1,
-          reason: '${anchor.wireName} 的锚串 "${anchor.anchorText}" 在背面模板里'
+          reason:
+              '${anchor.wireName} 的锚串 "${anchor.anchorText}" 在背面模板里'
               '不是恰好一处——插入点会跑偏或整个区域被丢掉',
         );
       }
@@ -69,8 +71,9 @@ void main() {
         isNot(contains('sentence-alt')),
       );
       expect(
-        '<div class="sentence-alt" data-x>'
-            .contains(LapisBlockAnchor.aboveSentence.anchorText),
+        '<div class="sentence-alt" data-x>'.contains(
+          LapisBlockAnchor.aboveSentence.anchorText,
+        ),
         isFalse,
       );
     });
@@ -134,11 +137,13 @@ void main() {
     });
 
     test('字段用条件块包裹，空字段不会在卡上留空块', () {
-      final String html = buildLapisBlockHtml(const LapisCustomBlock(
-        id: 'b1',
-        anchor: LapisBlockAnchor.bottom,
-        fields: <String>['Frequency', 'MiscInfo'],
-      ));
+      final String html = buildLapisBlockHtml(
+        const LapisCustomBlock(
+          id: 'b1',
+          anchor: LapisBlockAnchor.bottom,
+          fields: <String>['Frequency', 'MiscInfo'],
+        ),
+      );
       expect(html, contains('{{#Frequency}}'));
       expect(html, contains('{{Frequency}}'));
       expect(html, contains('{{/Frequency}}'));
@@ -156,11 +161,13 @@ void main() {
       expect(isValidLapisBlockId('b12'), isTrue);
       expect(isValidLapisBlockId('b1"]'), isFalse);
 
-      final String html = buildLapisBlockHtml(const LapisCustomBlock(
-        id: 'b1',
-        anchor: LapisBlockAnchor.bottom,
-        fields: <String>['Frequency', 'evil}}<script>'],
-      ));
+      final String html = buildLapisBlockHtml(
+        const LapisCustomBlock(
+          id: 'b1',
+          anchor: LapisBlockAnchor.bottom,
+          fields: <String>['Frequency', 'evil}}<script>'],
+        ),
+      );
       expect(html, contains('{{#Frequency}}'));
       expect(html, isNot(contains('script')));
 
@@ -186,7 +193,8 @@ void main() {
 
   group('以用户自己的 Lapis 为基线', () {
     /// 一份「不是 Fushi 内置那版」的用户模板：换了字体、结构也不同。
-    const String userBack = '<div id="lapis" lang="ja">\n'
+    const String userBack =
+        '<div id="lapis" lang="ja">\n'
         '    <main>\n'
         '        <div class="def-header">用户自己的头部</div>\n'
         '        <div class="sentence">用户自己的例句块</div>\n'
@@ -237,16 +245,13 @@ void main() {
     });
 
     test('区域插进用户自己的模板，不换成 vendored 那份', () {
-      final String back = composeLapisBackTemplate(
-        const <LapisCustomBlock>[
-          LapisCustomBlock(
-            id: 'b1',
-            anchor: LapisBlockAnchor.bottom,
-            fields: <String>['MiscInfo'],
-          ),
-        ],
-        baseBack: userBack,
-      );
+      final String back = composeLapisBackTemplate(const <LapisCustomBlock>[
+        LapisCustomBlock(
+          id: 'b1',
+          anchor: LapisBlockAnchor.bottom,
+          fields: <String>['MiscInfo'],
+        ),
+      ], baseBack: userBack);
       expect(back, contains('用户自己的释义框'));
       expect(back, contains('data-hibiki-block="b1"'));
       // 病根守卫：用户的模板不得被 Fushi 内置副本顶掉。
@@ -273,7 +278,8 @@ void main() {
     });
 
     test('CSS 侧同样叠加：用户的字体不被顶掉', () {
-      const String userCss = ':root { --font-serif: "我的字体"; }\n'
+      const String userCss =
+          ':root { --font-serif: "我的字体"; }\n'
           '.card { color: #abcdef; }';
       final String composed = composeLapisCssOnBase(
         baseCss: userCss,
@@ -315,11 +321,7 @@ void main() {
             front: '用户自己的正面',
             back: '旧背面',
           ),
-          AnkiCardTemplate(
-            name: 'Card 2',
-            front: '第二张正面',
-            back: '第二张背面',
-          ),
+          AnkiCardTemplate(name: 'Card 2', front: '第二张正面', back: '第二张背面'),
         ],
       );
       final List<AnkiCardTemplate> out = lapisTemplatesWithBack(def, '新背面');
@@ -372,8 +374,9 @@ void main() {
           fields: <String>['MiscInfo'],
         ),
       ];
-      final List<LapisCustomBlock> round =
-          lapisBlocksFromJson(lapisBlocksToJson(blocks));
+      final List<LapisCustomBlock> round = lapisBlocksFromJson(
+        lapisBlocksToJson(blocks),
+      );
       expect(round.length, 2);
       expect(round[0].anchor, LapisBlockAnchor.top);
       expect(round[0].rule.bold, isTrue);
@@ -420,8 +423,9 @@ void main() {
 
       // 老装置升级上来（JSON 里没有这两个键）：区域为空、指纹为 null，
       // 行为与从没用过这个功能完全一致。
-      final AnkiSettings legacy =
-          AnkiSettings.fromJson(<String, dynamic>{'tags': 'a'});
+      final AnkiSettings legacy = AnkiSettings.fromJson(<String, dynamic>{
+        'tags': 'a',
+      });
       expect(legacy.lapisCustomBlocks, isEmpty);
       expect(legacy.lapisAppliedTemplateSha, isNull);
     });
@@ -453,8 +457,9 @@ void main() {
           paddingPx: 8,
         ),
       );
-      final String css =
-          buildLapisBlocksCss(<LapisCustomBlock>[block]).join('\n');
+      final String css = buildLapisBlocksCss(<LapisCustomBlock>[
+        block,
+      ]).join('\n');
       expect(css, contains(lapisBlockSelector('b1')));
       for (final String declaration in lapisVisualDeclarations(block.rule)) {
         expect(css, contains(declaration.trim()));

@@ -81,6 +81,60 @@ bool localServiceEndpointIsManaged(String endpoint, int port) {
   return host == 'localhost' || host == '::1' || host.startsWith('127.');
 }
 
+/// 一次安装的在途登记（三家本机引擎的安装器共用）。
+///
+/// - [tryBegin] 是**同步**占位：安装器在第一个 `await` 之前就拿到它，两次并发的
+///   「安装」不会都穿过忙碌判断（步骤状态要等到预检 await 之后才置忙）。
+/// - [idle] 在安装函数真正返回（下载 client、解压子进程、文件句柄都已收尾）后完成，
+///   「删除」等它再动目录——只发取消信号就删，会和还在写盘的安装抢文件。
+class LocalInstallRun {
+  Completer<void>? _done;
+
+  /// 有安装在跑（含置忙之前的预检阶段）。
+  bool get active => _done != null;
+
+  /// 占位；已有在途安装返回 false（调用方直接放弃这次安装）。
+  bool tryBegin() {
+    if (_done != null) return false;
+    _done = Completer<void>();
+    return true;
+  }
+
+  /// 安装函数返回时调（放在 `finally` 里）。
+  void end() {
+    final Completer<void>? done = _done;
+    _done = null;
+    done?.complete();
+  }
+
+  /// 当前安装结束（没有在途安装时立即完成）。
+  Future<void> get idle => _done?.future ?? Future<void>.value();
+}
+
+/// 删除 app 托管的引擎安装目录失败（文件被占用 / 没权限）。带上路径与系统原因，
+/// 由页面提示用户；安装记录保留，用户关掉占用程序后可以再点「删除」。
+class LocalInstallRemoveException implements Exception {
+  const LocalInstallRemoveException(this.path, this.cause);
+
+  final String path;
+  final FileSystemException cause;
+
+  @override
+  String toString() =>
+      'LocalInstallRemoveException($path: ${cause.message}'
+      '${cause.osError == null ? '' : ' ${cause.osError}'})';
+}
+
+/// 删整个专属安装目录；失败抛 [LocalInstallRemoveException]（不吞）。
+Future<void> deleteLocalInstallDir(String dir) async {
+  final Directory directory = Directory(dir);
+  try {
+    if (await directory.exists()) await directory.delete(recursive: true);
+  } on FileSystemException catch (e) {
+    throw LocalInstallRemoveException(dir, e);
+  }
+}
+
 /// 合成 / 列声音前先跑 [ensure]（把本机托管的服务拉起来并等就绪），再交给
 /// [inner]。拉不起来不在这里报：照常发请求，连不上就是「无法连接语音服务」。
 class AutoStartTtsProvider extends TtsProvider {

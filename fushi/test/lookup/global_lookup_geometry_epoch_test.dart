@@ -96,10 +96,14 @@ void main() {
         '_resetGeometryHandshakeForLookup();',
         lookupStart,
       );
+      // 搜索在进入本方法前（或本方法开头）就已发起，与 hide 往返重叠；这里钉的是
+      // **等待它结果的那个让出点**——旧握手必须在那之前清掉。
       final int search = source.indexOf(
-        'await model.searchDictionary(',
+        RegExp(r'await\s+search\s*;'),
         lookupStart,
       );
+      expect(lookupStart, isNonNegative);
+      expect(search, greaterThan(lookupStart));
       expect(reset, greaterThan(lookupStart));
       expect(
         reset,

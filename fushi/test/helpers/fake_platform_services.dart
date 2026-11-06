@@ -99,11 +99,16 @@ PlatformServices fakePlatformServices({
   FakeDeviceInfoService? deviceInfo,
   BaseAnkiRepository Function()? createAnkiRepository,
   BaseAnkiRepository Function()? createMobileAnkiConnectRepository,
+  // 需要感知注入的设置存储（按配置视图建仓库）的测试用这个；与
+  // [createAnkiRepository] 二选一。
+  AnkiRepositoryFactory? ankiRepositoryFactory,
   bool isMobile = false,
   bool? isWindows,
   bool? isDesktop,
   bool? isIOS,
   bool? isAndroid,
+  // 假服务不碰平台通道：默认没有系统媒体会话（不起 audio_service）。
+  bool hasSystemMediaSession = false,
 }) {
   return PlatformServices(
     directory: directory ?? FakeDirectoryService(),
@@ -111,12 +116,20 @@ PlatformServices fakePlatformServices({
     clipboard: clipboard ?? FakeClipboardService(),
     permission: permission ?? FakePermissionService(),
     deviceInfo: deviceInfo ?? FakeDeviceInfoService(),
-    createAnkiRepository: createAnkiRepository ?? AnkiConnectRepository.new,
-    createMobileAnkiConnectRepository: createMobileAnkiConnectRepository,
+    createAnkiRepository:
+        ankiRepositoryFactory ??
+        (createAnkiRepository == null
+            ? AnkiConnectRepository.new
+            : ({AnkiSettingsStore? settingsStore}) => createAnkiRepository()),
+    createMobileAnkiConnectRepository: createMobileAnkiConnectRepository == null
+        ? null
+        : ({AnkiSettingsStore? settingsStore}) =>
+              createMobileAnkiConnectRepository(),
     isMobile: isMobile,
     isWindows: isWindows,
     isDesktop: isDesktop,
     isIOS: isIOS,
     isAndroid: isAndroid,
+    hasSystemMediaSession: hasSystemMediaSession,
   );
 }

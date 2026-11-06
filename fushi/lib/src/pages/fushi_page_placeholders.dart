@@ -1,6 +1,9 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 
 /// 页面级「加载中 / 出错」占位的统一构建 mixin（审计 §1-K「页面骨架两套」）。
 ///
@@ -45,11 +48,7 @@ mixin FushiPagePlaceholders<T extends StatefulWidget> on State<T> {
   /// 主文案是通用错误提示（i18n），原始异常串降级为折叠 detail（此前直接
   /// `'$error'` 上屏，用户看到的是 SqliteException(...) 原文）；调用方传了
   /// [refresh] 就渲染重试按钮（此前该参数被静默丢弃，页面没有任何恢复入口）。
-  Widget buildError({
-    Object? error,
-    StackTrace? stack,
-    Function()? refresh,
-  }) {
+  Widget buildError({Object? error, StackTrace? stack, Function()? refresh}) {
     return Center(
       child: FushiPlaceholderMessage(
         icon: Icons.error_outline,

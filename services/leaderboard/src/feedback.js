@@ -16,6 +16,7 @@
 //   GET  /v1/feedback/mine?cursor&limit       [签名] 本账户提交过的反馈（跨设备看自己的工单），摘要 + 游标分页
 //   GET  /v1/feedback/:id                     [凭据] 详情 + 时间线
 //   POST /v1/feedback/:id/messages            [凭据] {body} 追加说明
+//   DELETE /v1/feedback/:id/messages/:mid     [凭据] 反馈人删除自己的一条追加说明（开发者已在其后回复则 409）
 //   GET  /v1/feedback/:id/attachments/:slot   [凭据] 本人取回自己的截图（s0..s2；日志 / 视频不回传）
 //   POST /v1/feedback/:id/close               [凭据] 反馈人标记完成：open / in_progress → closed
 //   [凭据] = X-Fushi-Ticket（本条回执），或提交时所用账户的签名（feedbackForReporter）；二者择一，
@@ -103,6 +104,8 @@ export const FEEDBACK_LIMITS = {
   attachmentRetentionMs: 90 * 24 * HOUR,
   /** 单条反馈追加说明的累计上限（防止一张回执被拿来无限灌消息）。 */
   messagesPerFeedbackTotal: 100,
+  /** 反馈人删除自己追加说明的次数上限（单条反馈每小时）。 */
+  messageDeletesPerFeedbackHour: 20,
   /** 反馈人取回自己截图的次数上限（单条反馈每小时；详情页每次最多 3 张）。 */
   reporterDownloadsPerFeedbackHour: 60,
   /** 反馈人「标记完成」的次数上限（单条反馈每小时；正常只会点一次）。 */
@@ -381,7 +384,7 @@ export async function reporterView(env, row) {
 
 export async function devView(env, row) {
   const reporter = row.account_id
-    ? await env.DB.prepare('SELECT id, nickname, discriminator FROM accounts WHERE id = ?1').bind(row.account_id).first()
+    ? await env.DB.prepare('SELECT id, nickname, discriminator, role FROM accounts WHERE id = ?1').bind(row.account_id).first()
     : null;
   let meta = {};
   try {
@@ -403,7 +406,9 @@ export async function devView(env, row) {
     contact: row.contact,
     meta,
     origin,
-    reporter: reporter ? { id: reporter.id, nickname: reporter.nickname, discriminator: reporter.discriminator } : null,
+    reporter: reporter
+      ? { id: reporter.id, nickname: reporter.nickname, discriminator: reporter.discriminator, isDev: reporter.role === 'dev' }
+      : null,
     attachments: publicAttachments(row),
     messages: await timeline(env, row.id),
     install: await installTrail(env, row.install_id, row.id, row.install_verified === 1),
@@ -801,6 +806,31 @@ export async function addReporterMessage(env, row, body, now) {
   ]);
 }
 
+/**
+ * DELETE /v1/feedback/:id/messages/:mid：反馈人（或代提交的机器人）收回自己追加错的一条说明。
+ * 只能删 author = 'user' 且有正文的消息；开发者已在其后回复则 409（不让反馈人改历史）。
+ * 带 status 的那条顺带把结案拉回了 open，属于状态事件：只清空 body，保留事件。
+ * 不回退 message_count，防止删了再发绕过累计上限。
+ */
+export async function deleteReporterMessage(env, row, mid, now) {
+  await hit(env, `feedback:msgdel:${row.id}`, HOUR, FEEDBACK_LIMITS.messageDeletesPerFeedbackHour, now);
+  const msg = await env.DB.prepare(
+    'SELECT id, author, body, status FROM feedback_messages WHERE id = ?1 AND feedback_id = ?2',
+  ).bind(mid, row.id).first();
+  if (!msg || msg.author !== 'user' || !msg.body) throw new HttpError(404, 'not_found');
+  const later = await env.DB.prepare(
+    "SELECT 1 FROM feedback_messages WHERE feedback_id = ?1 AND author = 'dev' AND id > ?2 LIMIT 1",
+  ).bind(row.id, mid).first();
+  if (later) throw new HttpError(409, 'dev_replied');
+  await spend(env, 'write_rows', 2, now);
+  if (msg.status == null) {
+    await env.DB.prepare('DELETE FROM feedback_messages WHERE id = ?1 AND feedback_id = ?2').bind(mid, row.id).run();
+  } else {
+    await env.DB.prepare("UPDATE feedback_messages SET body = '' WHERE id = ?1 AND feedback_id = ?2").bind(mid, row.id).run();
+  }
+  await env.DB.prepare('UPDATE feedback SET updated_at = ?2 WHERE id = ?1').bind(row.id, now).run();
+}
+
 /** 反馈人能自己标记完成的状态（开发者已给出结论的不再让反馈人改）。 */
 export const REPORTER_CLOSABLE = ['open', 'in_progress'];
 
@@ -834,6 +864,30 @@ function searchTerm(q) {
 }
 
 /**
+ * 开发者回复 / 改状态的写库语句，每条带自己的参数。devUpdate 与 scripts/feedback.mjs reply 执行同一份 SQL。
+ * @param {{id: string, devId: string, reply: string, timelineStatus: string | null, status: string | null, now: number}} p
+ *   reply 可为空串（只改状态）；timelineStatus = 时间线里记的新状态（没改状态为 null）；status = 改后的状态，
+ *   null = 不改状态（UPDATE 不写 status 列，不会撤回并发的改状态）。
+ * @returns {Array<[string, Array<string | number | null>]>}
+ */
+export function devReplyStatements({ id, devId, reply, timelineStatus, status, now }) {
+  return [
+    [`INSERT INTO feedback_messages (feedback_id, author, account_id, body, status, created_at)
+      VALUES (?1, 'dev', ?2, ?3, ?4, ?5)`, [id, devId, reply, timelineStatus, now]],
+    // status === null：只回复、不改状态。UPDATE 不碰 status 列——把早先读到的状态原样写回
+    // 会在「读」与「写」之间别人结案时把它静默撤回（CLI 回复与处理台纯回复都踩过）。
+    status === null
+      ? ['UPDATE feedback SET dev_reply_at = ?2, updated_at = ?2 WHERE id = ?1', [id, now]]
+      : ['UPDATE feedback SET status = ?2, dev_reply_at = ?3, updated_at = ?3 WHERE id = ?1', [id, status, now]],
+  ];
+}
+
+/** 开发者回复正文的唯一清洗口径（接口与 CLI 共用）：剥伪装字符、限长；空白 → ''。 */
+export function cleanDevReply(value) {
+  return cleanText(value, FEEDBACK_LIMITS.replyMax, 'reply');
+}
+
+/**
  * 开发者处理：改状态和 / 或回复（两者至少一个）。写库之后在后台（[ctx].waitUntil）给反馈人的
  * iOS 设备发 APNs 推送（通用文案，不带正文），结案的顺带清掉推送令牌——见 feedback_push.js。
  * App 处理台（routeFeedback）与网页处理台（devconsole.js）都走这里，推送不会漏掉任一路径。
@@ -842,17 +896,13 @@ export async function devUpdate(env, dev, row, body, now, ctx = null) {
   const status = body && body.status !== undefined && body.status !== null && body.status !== ''
     ? body.status : null;
   if (status !== null && !STATUSES.includes(status)) throw new HttpError(400, 'bad_status');
-  const reply = cleanText(body && body.reply, FEEDBACK_LIMITS.replyMax, 'reply');
+  const reply = cleanDevReply(body && body.reply);
   const changed = status !== null && status !== row.status;
   if (!changed && !reply) throw new HttpError(400, 'nothing_to_update');
-  await env.DB.batch([
-    env.DB.prepare(
-      `INSERT INTO feedback_messages (feedback_id, author, account_id, body, status, created_at)
-       VALUES (?1, 'dev', ?2, ?3, ?4, ?5)`,
-    ).bind(row.id, dev.id, reply, changed ? status : null, now),
-    env.DB.prepare('UPDATE feedback SET status = ?2, dev_reply_at = ?3, updated_at = ?3 WHERE id = ?1')
-      .bind(row.id, changed ? status : row.status, now),
-  ]);
+  const statements = devReplyStatements({
+    id: row.id, devId: dev.id, reply, timelineStatus: changed ? status : null, status: changed ? status : null, now,
+  });
+  await env.DB.batch(statements.map(([sql, args]) => env.DB.prepare(sql).bind(...args)));
   const after = changed ? status : row.status;
   await background(ctx, notifyFeedbackUpdate(env, row.id, {
     kind: reply ? 'reply' : 'status',
@@ -887,6 +937,20 @@ export async function devSaveNotes(env, row, body, now) {
     return text ? [text, now] : [null, null];
   });
   await env.DB.prepare(`UPDATE feedback SET ${sets.join(', ')} WHERE id = ?1`).bind(row.id, ...args).run();
+}
+
+/**
+ * 本页反馈人里的开发者账户 id → {id, nickname}。开发者自己提的反馈在处理台要醒目标出（内部人员自测 /
+ * 拍板意见，和外部用户报告分开看）。按本页出现的 account_id 走主键查，不扫 accounts 全表。
+ * @param {Array<string | null>} accountIds
+ * @returns {Promise<Map<string, {id: string, nickname: string}>>}
+ */
+async function devAccounts(env, accountIds) {
+  const ids = [...new Set(accountIds.filter((x) => x !== null))];
+  if (ids.length === 0) return new Map();
+  const marks = ids.map((_, i) => `?${i + 1}`).join(', ');
+  const rows = await env.DB.prepare(`SELECT id, nickname, role FROM accounts WHERE id IN (${marks})`).bind(...ids).all();
+  return new Map(rows.results.filter((a) => a.role === 'dev').map((a) => [a.id, { id: a.id, nickname: a.nickname }]));
 }
 
 /**
@@ -927,9 +991,12 @@ export async function devList(env, { status, cursor, limit, q }) {
   const rows = await env.DB.prepare(sql)
     .bind(first, after ? after.at : null, after ? after.id : null, n + 1,
       term ? term.exact : null, term ? term.like : null).all();
-  const list = rows.results.slice(0, n).map((r) => ({
+  const pageRows = rows.results.slice(0, n);
+  const devs = await devAccounts(env, pageRows.map((r) => r.account_id));
+  const list = pageRows.map((r) => ({
     ...devSummary(r),
     hasAccount: r.account_id !== null,
+    devReporter: devs.get(r.account_id) ?? null,
     attachments: parseAttachments(r).length,
     aiSummary: r.ai_summary ?? null,
     hasDevNote: Boolean(r.has_dev_note),
@@ -1253,6 +1320,7 @@ const RE = {
   one: new RegExp(`^/v1/feedback/${ID}$`),
   attach: new RegExp(`^/v1/feedback/${ID}/attachments/([a-z0-9]{1,4})$`),
   messages: new RegExp(`^/v1/feedback/${ID}/messages$`),
+  message: new RegExp(`^/v1/feedback/${ID}/messages/([1-9][0-9]{0,15})$`),
   push: new RegExp(`^/v1/feedback/${ID}/push$`),
   close: new RegExp(`^/v1/feedback/${ID}/close$`),
   devList: /^\/v1\/dev\/feedback$/,
@@ -1349,6 +1417,12 @@ export async function routeFeedback(request, env, url, now, io) {
     const row = await feedbackForReporter(request, env, m[1], io, bytes, { mutating: true });
     await addReporterMessage(env, row, io.parse(bytes), now);
     return json(await reporterView(env, await feedbackById(env, row.id)), 201, noStore);
+  }
+  if (method === 'DELETE' && (m = RE.message.exec(path))) {
+    const bytes = await io.readBody(4 * 1024);
+    const row = await feedbackForReporter(request, env, m[1], io, bytes, { mutating: true });
+    await deleteReporterMessage(env, row, Number(m[2]), now);
+    return json(await reporterView(env, await feedbackById(env, row.id)), 200, noStore);
   }
 
   if ((method === 'PUT' || method === 'DELETE') && (m = RE.push.exec(path))) {

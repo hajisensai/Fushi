@@ -21,8 +21,7 @@ String sanitizeTtuFilename(String title) {
   result = result.replaceAll('*', '~ttu-star~');
   result = result.replaceAllMapped(
     RegExp(r'[/?\<>\\:|%"]'),
-    (match) => match[0]!
-        .codeUnits
+    (match) => match[0]!.codeUnits
         .map((c) => '%${c.toRadixString(16).toUpperCase().padLeft(2, '0')}')
         .join(),
   );
@@ -77,8 +76,9 @@ String audioBookFileName(int timestampMs, double positionSec) =>
 /// shape. Used to detect and sweep that residue — callers MUST additionally
 /// require the entry to be a non-folder direct child of the root (a book's own
 /// folder may be named anything, so name alone is not enough).
-final RegExp _ttuPerBookFilePattern =
-    RegExp(r'(?:progress|statistics|audioBook|cover)_1_6[._]');
+final RegExp _ttuPerBookFilePattern = RegExp(
+  r'(?:progress|statistics|audioBook|cover)_1_6[._]',
+);
 
 bool isTtuPerBookFileName(String fileName) =>
     _ttuPerBookFilePattern.hasMatch(fileName);
@@ -108,19 +108,24 @@ String statisticsFileName(List<TtuStatistics> stats) {
     if (stat.readingTimeSec > 0) validDays++;
   }
 
-  final double avgTime =
-      validDays > 0 ? (readingTime / validDays).ceilToDouble() : 0;
-  final double avgWeightedTime =
-      charactersRead > 0 ? (weightedSum / charactersRead).ceilToDouble() : 0;
-  final double avgChars =
-      validDays > 0 ? (charactersRead / validDays).ceilToDouble() : 0;
-  final double avgWeightedChars =
-      readingTime > 0 ? (weightedSum / readingTime).ceilToDouble() : 0;
+  final double avgTime = validDays > 0
+      ? (readingTime / validDays).ceilToDouble()
+      : 0;
+  final double avgWeightedTime = charactersRead > 0
+      ? (weightedSum / charactersRead).ceilToDouble()
+      : 0;
+  final double avgChars = validDays > 0
+      ? (charactersRead / validDays).ceilToDouble()
+      : 0;
+  final double avgWeightedChars = readingTime > 0
+      ? (weightedSum / readingTime).ceilToDouble()
+      : 0;
   final double lastSpeed = readingTime > 0
       ? (3600.0 * charactersRead / readingTime).ceilToDouble()
       : 0;
-  final double avgSpeed =
-      avgTime > 0 ? (3600 * avgChars / avgTime).ceilToDouble() : 0;
+  final double avgSpeed = avgTime > 0
+      ? (3600 * avgChars / avgTime).ceilToDouble()
+      : 0;
   final double avgWeightedSpeed = avgWeightedTime > 0
       ? (3600 * avgWeightedChars / avgWeightedTime).ceilToDouble()
       : 0;

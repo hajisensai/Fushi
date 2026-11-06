@@ -3,7 +3,14 @@ import 'package:flutter/services.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 书籍、游戏等交互式元数据刮削的统一失败态展示件。
 ///
@@ -100,9 +107,11 @@ class _ScrapeFailureViewState extends State<ScrapeFailureView> {
                 _detailShown ? FushiIcons.expandLess : FushiIcons.expandMore,
                 size: 18,
               ),
-              label: Text(_detailShown
-                  ? t.scrape_failure_detail_hide
-                  : t.scrape_failure_detail_show),
+              label: Text(
+                _detailShown
+                    ? t.scrape_failure_detail_hide
+                    : t.scrape_failure_detail_show,
+              ),
               onPressed: () => setState(() => _detailShown = !_detailShown),
             ),
           ],

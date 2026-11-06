@@ -1,5 +1,6 @@
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart'
     show CollectionMemberVisibility;
+import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart'
     show
@@ -11,6 +12,8 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
+import 'package:fushi/src/sync/remote_video_client.dart'
+    show RemoteVideoPlayedMark;
 import 'package:fushi_core/fushi_core.dart'
     show MediaCollectionItemRow, MediaCollectionRow, MediaKind, VideoBookRow;
 
@@ -27,12 +30,13 @@ import 'package:fushi_core/fushi_core.dart'
 /// 能力边界与库页一致：远端槽只支持**流播 / 下载**，不参与任何写本地库的管理动作
 /// （改集名、批量字幕、补缺集、删除本体）——那些动作的调用方取 [local] 子集。
 class CollectionEpisodeSlot {
-  const CollectionEpisodeSlot.local(VideoBookRow this.local,
-      {this.remoteMirror})
-      : remote = null;
+  const CollectionEpisodeSlot.local(
+    VideoBookRow this.local, {
+    this.remoteMirror,
+  }) : remote = null;
   const CollectionEpisodeSlot.remote(RemoteVideoInfo this.remote)
-      : local = null,
-        remoteMirror = null;
+    : local = null,
+      remoteMirror = null;
 
   /// 本机视频行；null = 该集只在对端。
   final VideoBookRow? local;
@@ -60,9 +64,10 @@ class CollectionEpisodeSlot {
 
   String get title => local?.title ?? remote!.title;
 
-  /// 集号 / 分季解析的输入：本地用真实文件路径，远端只有 host 给的标题
-  /// （host 端标题默认就是文件名，解析不出时各调用方自有回落）。
-  String get filename => local?.videoPath ?? remote!.title;
+  /// 集号 / 分季解析的输入：本地用真实文件路径；远端用 host 下发的文件名
+  /// （[RemoteVideoInfo.parseName]：host 刮削后标题已是分集名，按标题解析季号会
+  /// 让几十集排成一列，BUG-3613；旧 host / 媒体服务器回落标题）。
+  String get filename => local?.videoPath ?? remote!.parseName;
 
   int get positionMs => local?.lastPositionMs ?? remote!.positionMs;
 
@@ -98,8 +103,8 @@ Future<List<CollectionEpisodeSlot>> loadCollectionEpisodeSlots({
   required int collectionId,
   Future<List<RemoteVideoInfo>> Function()? loadRemoteVideos,
 }) async {
-  final List<MediaCollectionItemRow> items =
-      await repository.getCollectionItems(collectionId);
+  final List<MediaCollectionItemRow> items = await repository
+      .getCollectionItems(collectionId);
   final List<String> videoKeys = <String>[
     for (final MediaCollectionItemRow item in items)
       if (item.mediaType == MediaKind.video.dbValue) item.entryKey,
@@ -109,8 +114,9 @@ Future<List<CollectionEpisodeSlot>> loadCollectionEpisodeSlots({
     final VideoBookRow? row = await repository.getByBookUid(key);
     if (row != null) localByUid[key] = row;
   }
-  final bool anyMissing =
-      videoKeys.any((String key) => !localByUid.containsKey(key));
+  final bool anyMissing = videoKeys.any(
+    (String key) => !localByUid.containsKey(key),
+  );
   Map<String, RemoteVideoInfo> remoteById = const <String, RemoteVideoInfo>{};
   // 全员本地时一次远端清单都不问：详情页是高频入口，没有缺口就没有理由付网络/缓存
   // 代价（有缓存也仍是一次 provider 往返）。
@@ -143,17 +149,16 @@ Future<List<CollectionEpisodeSlot>> loadCollectionEpisodeSlots({
   );
   final Map<String, RemoteVideoInfo> mirrorByLocalUid =
       <String, RemoteVideoInfo>{
-    for (final MapEntry<String, String> pair in localUidByRemoteId.entries)
-      pair.value: remoteById[pair.key]!,
-  };
+        for (final MapEntry<String, String> pair in localUidByRemoteId.entries)
+          pair.value: remoteById[pair.key]!,
+      };
   final List<CollectionEpisodeSlot> slots = <CollectionEpisodeSlot>[];
   for (final String key in videoKeys) {
     final VideoBookRow? local = localByUid[key];
     if (local != null) {
-      slots.add(CollectionEpisodeSlot.local(
-        local,
-        remoteMirror: mirrorByLocalUid[key],
-      ));
+      slots.add(
+        CollectionEpisodeSlot.local(local, remoteMirror: mirrorByLocalUid[key]),
+      );
       continue;
     }
     // 已并进本地同集的远端成员不再单独占槽。
@@ -198,10 +203,10 @@ typedef CollectionEpisodeIdentity = ({int season, int episode});
 /// 共用同一判据，两处的集数口径因此一致。
 ///
 /// 身份 = (季号, 集号)：本地从真实文件路径整批解析（与集卡序号同一个
-/// [parsedEpisodeNumbersOf]，季号走 [parseVideoPath] 的父目录回落），远端从标题
-/// 解析（媒体服务器标题是 `剧名 S01E02 集名`，互联 host 默认是文件名）。远端
-/// 标题不是路径，故走 [parseVideoFilename]——`Fate/Zero` 这种带斜杠的剧名不能被
-/// 当成目录切开。
+/// [parsedEpisodeNumbersOf]，季号走 [parseVideoPath] 的父目录回落），远端从
+/// [RemoteVideoInfo.parseName] 解析（互联 host 下发的文件名；媒体服务器 / 旧 host
+/// 回落标题，媒体服务器标题是 `剧名 S01E02 集名`）。它不是路径，故走
+/// [parseVideoFilename]——`Fate/Zero` 这种带斜杠的剧名不能被当成目录切开。
 ///
 /// 只配**两边各自唯一**的身份：同一身份在本地或远端出现多次（多版本、解析撞号）
 /// 时宁可不并，也不把两集错并成一集；解析不出集号的（PV / 特典 / 电影）一律不并。
@@ -223,20 +228,24 @@ Map<String, String> pairRemoteEpisodesWithLocal({
       episode: episode,
     );
     // 撞号 → 记 null（该身份作废），不按先来后到挑一个。
-    localByIdentity[identity] =
-        localByIdentity.containsKey(identity) ? null : local[i].bookUid;
+    localByIdentity[identity] = localByIdentity.containsKey(identity)
+        ? null
+        : local[i].bookUid;
   }
   if (localByIdentity.isEmpty) return const <String, String>{};
   final Map<CollectionEpisodeIdentity, String?> remoteByIdentity =
       <CollectionEpisodeIdentity, String?>{};
   for (final RemoteVideoInfo info in remote) {
-    final VideoNameInfo parsed = parseVideoFilename(info.title);
+    final VideoNameInfo parsed = parseVideoFilename(info.parseName);
     final int? episode = parsed.episode;
     if (episode == null) continue;
-    final CollectionEpisodeIdentity identity =
-        (season: parsed.season ?? 1, episode: episode);
-    remoteByIdentity[identity] =
-        remoteByIdentity.containsKey(identity) ? null : info.id;
+    final CollectionEpisodeIdentity identity = (
+      season: parsed.season ?? 1,
+      episode: episode,
+    );
+    remoteByIdentity[identity] = remoteByIdentity.containsKey(identity)
+        ? null
+        : info.id;
   }
   final Map<String, String> pairs = <String, String>{};
   remoteByIdentity.forEach((CollectionEpisodeIdentity identity, String? id) {
@@ -300,7 +309,19 @@ class CollectionRemoteContext {
     this.scrapeForHost,
     this.chooseTmdbOrderingOnHost,
     this.downloads,
+    this.deleteLocalCopy,
+    this.discActions,
+    this.playedMark,
+    this.onPlayedMarked,
   });
+
+  /// 当前远端来源的「已播放」协议（媒体服务器 Jellyfin / Emby）。null = 该来源
+  /// 不支持（互联 / 云盘的看完状态归对端），详情页不给纯远端集出标记菜单项。
+  /// 落地统一走 `setVideosWatched`（本地行 + 服务器回写同一入口）。
+  final RemoteVideoPlayedMark? playedMark;
+
+  /// 远端集被标记后通知调用方（作废该来源的清单缓存，之后重读拿到新的已播放）。
+  final void Function()? onPlayedMarked;
 
   /// 拉对端视频清单（调用方走共享的 [RemoteLibraryCache]，TTL 内不打网络）。
   final Future<List<RemoteVideoInfo>> Function() loadRemoteVideos;
@@ -311,7 +332,8 @@ class CollectionRemoteContext {
     RemoteVideoInfo episode,
     List<RemoteVideoInfo> members,
     int index,
-  ) openEpisode;
+  )
+  openEpisode;
 
   /// 远端封面取数器（钉扎 HTTP 客户端）；null = 远端集只画占位图标。
   final RemoteCoverFetcher? coverFetcher;
@@ -322,7 +344,8 @@ class CollectionRemoteContext {
   final Future<void> Function(
     MediaCollectionRow collection,
     List<RemoteVideoInfo> members,
-  )? downloadMembers;
+  )?
+  downloadMembers;
 
   /// 7a：让 host 用户选定的身份在 host 上重刮本合集（候选搜索也打到 host）。
   /// null = 对端不支持远程刮削。
@@ -334,11 +357,20 @@ class CollectionRemoteContext {
   /// TMDB 备选排序（Shoko `PreferredAlternateOrderingID`）在 host 上选定并重刮。
   /// null = 对端不是互联 host。
   final Future<void> Function(MediaCollectionRow collection)?
-      chooseTmdbOrderingOnHost;
+  chooseTmdbOrderingOnHost;
 
   /// app 级互联下载管理器：详情页据它给**每一集**画下载进度 / 失败角标（任务键
   /// = 远端集 id = [CollectionEpisodeSlot.entryKey]，与库页远端占位卡同一张表）。
   /// 详情页是普通 StatefulWidget、既有测试不挂 `ProviderScope`，所以由库页注入
   /// 而不是页内取 provider；null = 集卡不画下载态（与注入前逐像素相同）。
   final InterconnectDownloadManager? downloads;
+
+  /// 删掉一集**从配对设备下载到本机的副本**（本机行 + 下载下来的文件），合集成员
+  /// 行保留，这一集退回远端集。自带确认框，返回是否真的删了。详情页只对 id 仍在
+  /// 对端清单里的本机成员给这条动作（见详情页 `_peerCopyKeys`）。null = 不提供。
+  final Future<bool> Function(VideoBookRow row)? deleteLocalCopy;
+
+  /// 远端原盘（第二期）：流式原盘菜单、在 host 上打开。null = 这个远端来源给不出
+  /// 原盘（云盘 / 媒体服务器），详情页按「远端资源」说明原因。
+  final RemoteDiscActions? discActions;
 }

@@ -10,7 +10,11 @@ import 'dart:io';
 import 'package:fushi_engine/foundation/engine_log.dart';
 
 class ServerLog implements EngineLogSink {
-  ServerLog({required this.file, this.maxBytes = 8 * 1024 * 1024, this.verbose = false});
+  ServerLog({
+    required this.file,
+    this.maxBytes = 8 * 1024 * 1024,
+    this.verbose = false,
+  });
 
   final File file;
   final int maxBytes;
@@ -74,7 +78,8 @@ class ServerLog implements EngineLogSink {
   }
 
   @override
-  void logDiagnostic(String source, Object info) => _emit('diag', '$source: $info');
+  void logDiagnostic(String source, Object info) =>
+      _emit('diag', '$source: $info');
 
   @override
   void logFatal(String source, Object error, [StackTrace? stack]) {

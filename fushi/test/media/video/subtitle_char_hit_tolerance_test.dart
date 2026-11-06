@@ -7,10 +7,10 @@ void main() {
   // TODO-916 症状④-B：字幕字符命中容差（纯函数 resolveSubtitleCharHit）。
   // 一排 10px 宽的字符，字符间有 4px 间隙（Wrap gap / 描边外缘）。
   List<Rect> row() => <Rect>[
-        const Rect.fromLTWH(0, 0, 10, 20), // 0: x[0,10]
-        const Rect.fromLTWH(14, 0, 10, 20), // 1: x[14,24]
-        const Rect.fromLTWH(28, 0, 10, 20), // 2: x[28,38]
-      ];
+    const Rect.fromLTWH(0, 0, 10, 20), // 0: x[0,10]
+    const Rect.fromLTWH(14, 0, 10, 20), // 1: x[14,24]
+    const Rect.fromLTWH(28, 0, 10, 20), // 2: x[28,38]
+  ];
 
   test('精确命中：点落在字符矩形内返回该字符', () {
     expect(resolveSubtitleCharHit(row(), const Offset(5, 10)), 0);
@@ -89,16 +89,22 @@ void main() {
 
     test('exactOnly：字缝/描边 halo 一律 miss（点空白 → dismiss，不误判切词）', () {
       // 字缝 x=12（宽容差下会兜底命中相邻字符）：exactOnly 下必须 -1 → barrier 走 dismiss。
-      expect(resolveSubtitleCharHit(row(), const Offset(12, 10)), anyOf(0, 1),
-          reason: '对照：默认宽容差字缝会兜底命中');
+      expect(
+        resolveSubtitleCharHit(row(), const Offset(12, 10)),
+        anyOf(0, 1),
+        reason: '对照：默认宽容差字缝会兜底命中',
+      );
       expect(
         resolveSubtitleCharHit(row(), const Offset(12, 10), exactOnly: true),
         -1,
         reason: 'exactOnly：字缝空白不命中，barrier 应 dismiss 而非切词重查',
       );
       // 字符 0 上缘外 3px（默认垂直容差内会命中）：exactOnly 下 miss。
-      expect(resolveSubtitleCharHit(row(), const Offset(5, -3)), 0,
-          reason: '对照：默认容差描边外缘会兜底命中');
+      expect(
+        resolveSubtitleCharHit(row(), const Offset(5, -3)),
+        0,
+        reason: '对照：默认容差描边外缘会兜底命中',
+      );
       expect(
         resolveSubtitleCharHit(row(), const Offset(5, -3), exactOnly: true),
         -1,
@@ -110,8 +116,11 @@ void main() {
       // 36px 字幕单字，右缘外 12px（x=48）在默认水平半字宽兜底内会命中（用户误以为点的是
       // 空白，却被吃成命中→切词重查死循环）。exactOnly 下 miss → barrier dismiss+续播。
       final List<Rect> wide = <Rect>[const Rect.fromLTWH(0, 0, 36, 40)];
-      expect(resolveSubtitleCharHit(wide, const Offset(48, 20)), 0,
-          reason: '对照：默认宽容差右缘 12px halo 会误命中');
+      expect(
+        resolveSubtitleCharHit(wide, const Offset(48, 20)),
+        0,
+        reason: '对照：默认宽容差右缘 12px halo 会误命中',
+      );
       expect(
         resolveSubtitleCharHit(wide, const Offset(48, 20), exactOnly: true),
         -1,

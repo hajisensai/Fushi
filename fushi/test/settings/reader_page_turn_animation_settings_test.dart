@@ -2,9 +2,11 @@ import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/utils.dart' show FushiMotion, t;
+import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show readerChapterFadeInEnabled;
 import 'package:fushi/src/reader/page_turn_animation.dart';
@@ -14,6 +16,8 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show SettingsChoiceMenuRow;
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -37,8 +41,8 @@ void main() {
   });
 
   group('偏好', () {
-    test('默认：淡入淡出 / 正常 / 跟手开', () {
-      expect(readerSettings.pageTurnAnimation, PageTurnAnimation.fade);
+    test('默认：卷页 / 正常 / 跟手开', () {
+      expect(readerSettings.pageTurnAnimation, PageTurnAnimation.curl);
       expect(
         readerSettings.pageTurnAnimationSpeed,
         PageTurnAnimationSpeed.normal,
@@ -46,7 +50,7 @@ void main() {
       expect(readerSettings.pageTurnFollowDrag, isTrue);
       expect(
         ReaderFushiSource.instance.pageTurnAnimation,
-        PageTurnAnimation.fade,
+        PageTurnAnimation.curl,
       );
     });
 
@@ -62,10 +66,10 @@ void main() {
       expect(restored.pageTurnAnimationSpeed, PageTurnAnimationSpeed.slow);
       expect(restored.pageTurnFollowDrag, isFalse);
 
-      await db.setPref('src:reader_fushi:page_turn_animation', 'curl');
+      await db.setPref('src:reader_fushi:page_turn_animation', 'flip');
       await db.setPref('src:reader_fushi:page_turn_animation_speed', 'warp');
       await restored.refreshFromDb();
-      expect(restored.pageTurnAnimation, PageTurnAnimation.fade);
+      expect(restored.pageTurnAnimation, PageTurnAnimation.curl);
       expect(restored.pageTurnAnimationSpeed, PageTurnAnimationSpeed.normal);
     });
 
@@ -203,7 +207,9 @@ void main() {
     });
   });
 
-  testWidgets('设置项：存在于翻页与手势分组末尾，非翻页模式置灰并说明', (WidgetTester tester) async {
+  testWidgets('设置项：存在于翻页与手势分组（点击翻页区域之前），非翻页模式置灰并说明', (
+    WidgetTester tester,
+  ) async {
     late SettingsContext settingsContext;
     late List<SettingsItem> items;
     await tester.pumpWidget(
@@ -234,18 +240,22 @@ void main() {
     );
 
     final List<String> ids = items.map((SettingsItem i) => i.id).toList();
-    expect(ids.sublist(ids.length - 3), <String>[
+    // 翻页动画三项连排；其后是点击翻页区域（indZkg2A0I，三种模式都生效，不置灰）。
+    final int first = ids.indexOf('reading_controls.page_turn_animation');
+    expect(first, greaterThanOrEqualTo(0));
+    expect(ids.sublist(first), <String>[
       'reading_controls.page_turn_animation',
       'reading_controls.page_turn_animation_speed',
       'reading_controls.page_turn_follow_drag',
+      'reading_controls.tap_zone_layout',
     ]);
     final SettingsSegmentedItem<Object> effect =
-        items[ids.length - 3] as SettingsSegmentedItem<Object>;
+        items[first] as SettingsSegmentedItem<Object>;
     final SettingsSegmentedItem<Object> speed =
-        items[ids.length - 2] as SettingsSegmentedItem<Object>;
-    final SettingsSwitchItem follow = items.last as SettingsSwitchItem;
+        items[first + 1] as SettingsSegmentedItem<Object>;
+    final SettingsSwitchItem follow = items[first + 2] as SettingsSwitchItem;
     expect(effect.options.map((o) => o.value), PageTurnAnimation.values);
-    expect(effect.defaultValue, PageTurnAnimation.fade);
+    expect(effect.defaultValue, PageTurnAnimation.curl);
     expect(speed.defaultValue, PageTurnAnimationSpeed.normal);
     expect(follow.defaultValue, isTrue);
 
@@ -253,7 +263,10 @@ void main() {
     expect(effect.isEnabled(settingsContext), isTrue);
     expect(speed.isEnabled(settingsContext), isTrue);
     expect(effect.resolveSubtitle(settingsContext), isNull);
-    // 默认淡入淡出：跟手对无位移的效果没有意义 → 置灰。
+    // 默认卷页：有方向、可跟手 → 开关可用。
+    expect(follow.isEnabled(settingsContext), isTrue);
+    // 淡入淡出：跟手对无位移的效果没有意义 → 置灰。
+    await readerSettings.setPageTurnAnimation(PageTurnAnimation.fade);
     expect(follow.isEnabled(settingsContext), isFalse);
     await readerSettings.setPageTurnAnimation(PageTurnAnimation.slide);
     expect(follow.isEnabled(settingsContext), isTrue);
@@ -302,18 +315,13 @@ void main() {
     await tester.pump();
     final Switch toggle = tester.widget<Switch>(find.byType(Switch).first);
     expect(toggle.onChanged, isNull);
-    // 渲染器以 `SettingsSegmentedItem<Object>` 派发，分段条的类型参数是 Object。
-    final Finder strips = find.byWidgetPredicate(
-      (Widget w) => w is SegmentedButton,
+    // 五个效果（含卷页）超过分段条上限，MD3 下渲染成单选菜单行：整行置灰、
+    // 点不开菜单。
+    final SettingsChoiceMenuRow menu = tester.widget<SettingsChoiceMenuRow>(
+      find.byType(SettingsChoiceMenuRow),
     );
-    expect(strips, findsWidgets);
-    final SegmentedButton<Object> strip = tester
-        .widget<SegmentedButton<Object>>(strips.first);
-    expect(strip.segments, hasLength(PageTurnAnimation.values.length));
-    expect(
-      strip.segments.every((ButtonSegment<Object> s) => !s.enabled),
-      isTrue,
-    );
+    expect(menu.labels, hasLength(PageTurnAnimation.values.length));
+    expect(menu.enabled, isFalse);
     expect(find.text(t.page_turn_animation_paginated_only), findsWidgets);
   });
 }

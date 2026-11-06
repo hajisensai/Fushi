@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1741 收尾（PR#912 审查）：`sync_pair_not_fushi` 的后半句是一句**承诺**
 /// （"The address was saved." / 「已保存该地址」），只有手动输入 IP 那条路径成立
@@ -12,9 +12,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// 这条测试钉的是**两个 key 的文案差异本身**：一旦有人把「已保存该地址」补回
 /// discovered 那条，或把它从手动那条删掉，分流就失去意义。
 void main() {
-  Map<String, dynamic> load(String file) => (jsonDecode(
-        File('lib/i18n/$file').readAsStringSync(),
-      ) as Map<String, dynamic>);
+  Map<String, dynamic> load(String file) =>
+      (jsonDecode(File('lib/i18n/$file').readAsStringSync())
+          as Map<String, dynamic>);
 
   test('手动路径文案保留「已保存该地址」承诺', () {
     final Map<String, dynamic> en = load('strings.i18n.json');

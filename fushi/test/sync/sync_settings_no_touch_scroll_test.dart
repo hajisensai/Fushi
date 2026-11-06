@@ -6,7 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -35,8 +35,9 @@ FushiDatabase _testDb() =>
 
 Future<double> _settledOffset(
   WidgetTester tester,
-  FocusHighlightStrategy strategy,
-) async {
+  FocusHighlightStrategy strategy, {
+  int gamepadDownPresses = 0,
+}) async {
   FocusManager.instance.highlightStrategy = strategy;
 
   final FushiDatabase db = _testDb();
@@ -71,46 +72,60 @@ Future<double> _settledOffset(
   final ScrollController controller = ScrollController();
   addTearDown(controller.dispose);
 
-  await tester.pumpWidget(ProviderScope(
-    overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
-    child: MaterialApp(
-      theme: ThemeData(
-        useMaterial3: true,
-        platform: TargetPlatform.android,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
-        extensions: <ThemeExtension<dynamic>>[
-          FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-        ],
-      ),
-      home: Scaffold(
-        body: FushiFocusRoot(
-          child: SizedBox(
-            height: 500,
-            child: Consumer(
-              builder: (BuildContext context, WidgetRef ref, _) {
-                final SettingsContext sc = SettingsContext(
-                  context: context,
-                  appModel: ref.read(appProvider),
-                  ref: ref,
-                  readerSource: ReaderFushiSource.instance,
-                  refresh: () {},
-                );
-                return const MaterialSettingsRenderer().buildDetailContent(
-                  settingsContext: sc,
-                  destination: buildSyncBackupDestination(),
-                  scrollController: controller,
-                );
-              },
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
+      child: MaterialApp(
+        theme: ThemeData(
+          useMaterial3: true,
+          platform: TargetPlatform.android,
+          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
+          extensions: <ThemeExtension<dynamic>>[
+            FushiDesignSystemTheme(themeNotifier.designSystemTheme),
+          ],
+        ),
+        home: Scaffold(
+          body: FushiFocusRoot(
+            child: SizedBox(
+              height: 500,
+              child: Consumer(
+                builder: (BuildContext context, WidgetRef ref, _) {
+                  final SettingsContext sc = SettingsContext(
+                    context: context,
+                    appModel: ref.read(appProvider),
+                    ref: ref,
+                    readerSource: ReaderFushiSource.instance,
+                    refresh: () {},
+                  );
+                  return const MaterialSettingsRenderer().buildDetailContent(
+                    settingsContext: sc,
+                    destination: buildSyncBackupDestination(),
+                    scrollController: controller,
+                  );
+                },
+              ),
             ),
           ),
         ),
       ),
     ),
-  ));
+  );
 
   await tester.pumpAndSettle();
   // Content must genuinely exceed the viewport, else "no scroll" is vacuous.
   expect(controller.position.maxScrollExtent, greaterThan(0));
+  if (gamepadDownPresses > 0) {
+    // 手柄 / 方向键的显式导航（FushiFocusController.move，与 D-pad 同一入口）
+    // 把焦点一路往下推到视口之外，传统高亮模式下 viewport 必须跟随。
+    final FushiFocusController focus = FushiFocusRoot.controllerOf(
+      tester.element(find.byType(Consumer).first),
+    );
+    for (int i = 0; i < gamepadDownPresses; i++) {
+      focus.move(FushiFocusDirection.down);
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+  }
   return controller.offset;
 }
 
@@ -138,22 +153,33 @@ void main() {
     FocusManager.instance.highlightStrategy = FocusHighlightStrategy.automatic;
   });
 
-  testWidgets('sync/backup page does not self-scroll on open in touch mode',
-      (WidgetTester tester) async {
-    final double offset =
-        await _settledOffset(tester, FocusHighlightStrategy.alwaysTouch);
+  testWidgets('sync/backup page does not self-scroll on open in touch mode', (
+    WidgetTester tester,
+  ) async {
+    final double offset = await _settledOffset(
+      tester,
+      FocusHighlightStrategy.alwaysTouch,
+    );
     expect(
       offset,
       0,
-      reason: 'touch mode has no focus cursor; the async backend reflow must '
+      reason:
+          'touch mode has no focus cursor; the async backend reflow must '
           'not yank the viewport down',
     );
   });
 
-  testWidgets('keyboard/gamepad mode still reveals the focus cursor',
-      (WidgetTester tester) async {
-    final double offset =
-        await _settledOffset(tester, FocusHighlightStrategy.alwaysTraditional);
+  testWidgets('keyboard/gamepad mode still reveals the focus cursor', (
+    WidgetTester tester,
+  ) async {
+    // 页面顶部是常驻的「启用云备份」开关，开页时焦点就停在它上面、本来就在屏内，
+    // 开页本身不再需要滚动；所以这里用手柄方向导航把焦点往下推出视口，验证
+    // 传统高亮模式仍会把焦点光标滚进视口。
+    final double offset = await _settledOffset(
+      tester,
+      FocusHighlightStrategy.alwaysTraditional,
+      gamepadDownPresses: 20,
+    );
     expect(
       offset,
       greaterThan(0),

@@ -1,8 +1,9 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/privacy/media_privacy.dart';
 
 void main() {
   late FushiDatabase db;
@@ -26,8 +27,8 @@ void main() {
       ),
     );
 
-    List<MediaTrackingUnlinkedItem> unlinked =
-        await repository.listUnlinkedHistory();
+    List<MediaTrackingUnlinkedItem> unlinked = await repository
+        .listUnlinkedHistory();
     expect(unlinked, hasLength(1));
     expect(unlinked.single.mediaKey, 'old-video');
     expect(unlinked.single.lastActivityAt, 5000);
@@ -55,16 +56,18 @@ void main() {
   /// 漫画当时只是**侥幸**没踩到：自动映射把它判成 volume 模式绕开了 chapter 分支，
   /// 手动把映射改成 chapter 模式一样会中招。所以两种格式都要挡。
   Future<void> seedBook(String key, BookFormat format) async {
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: key,
-      title: key,
-      epubPath: 'x',
-      extractDir: 'd',
-      chapterCount: 300,
-      chaptersJson: '[]',
-      importedAt: 0,
-      format: Value(format.dbValue),
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: key,
+        title: key,
+        epubPath: 'x',
+        extractDir: 'd',
+        chapterCount: 300,
+        chaptersJson: '[]',
+        importedAt: 0,
+        format: Value(format.dbValue),
+      ),
+    );
   }
 
   for (final BookFormat format in <BookFormat>[
@@ -77,9 +80,13 @@ void main() {
         bookKey: 'b-${format.dbValue}',
         fallbackProgress: 137, // 当前第 137 页
       );
-      expect(progress, isNull,
-          reason: '按页翻的书没有章，必须返回 null 让上层整条不发，'
-              '而不是把 137 页当成 137 章报出去');
+      expect(
+        progress,
+        isNull,
+        reason:
+            '按页翻的书没有章，必须返回 null 让上层整条不发，'
+            '而不是把 137 页当成 137 章报出去',
+      );
     });
   }
 
@@ -113,12 +120,13 @@ void main() {
         progressMode: TrackingProgressMode.chapter,
         progressOffset: 0,
       );
-      final List<PersistedBookTrackingProgress> got =
-          await repository.loadPersistedBookTrackingProgress(afterMs: 0);
+      final List<PersistedBookTrackingProgress> got = await repository
+          .loadPersistedBookTrackingProgress(afterMs: 0);
       expect(
         got.where((PersistedBookTrackingProgress e) => e.mediaKey == key),
         isEmpty,
-        reason: '按页翻的书没有章：整条不产出，'
+        reason:
+            '按页翻的书没有章：整条不产出，'
             '否则第 137 页会被当成「已读 137 章」提交到用户的 Bangumi 记录',
       );
     });
@@ -146,10 +154,11 @@ void main() {
       progressOffset: 1,
     );
 
-    List<PersistedBookTrackingProgress> got =
-        await repository.loadPersistedBookTrackingProgress(afterMs: 0);
-    PersistedBookTrackingProgress progress =
-        got.singleWhere((PersistedBookTrackingProgress e) => e.mediaKey == key);
+    List<PersistedBookTrackingProgress> got = await repository
+        .loadPersistedBookTrackingProgress(afterMs: 0);
+    PersistedBookTrackingProgress progress = got.singleWhere(
+      (PersistedBookTrackingProgress e) => e.mediaKey == key,
+    );
     expect(progress.localProgress, -1);
     expect(progress.completed, isFalse);
 
@@ -158,8 +167,9 @@ void main() {
       DateTime.fromMillisecondsSinceEpoch(6000),
     );
     got = await repository.loadPersistedBookTrackingProgress(afterMs: 0);
-    progress =
-        got.singleWhere((PersistedBookTrackingProgress e) => e.mediaKey == key);
+    progress = got.singleWhere(
+      (PersistedBookTrackingProgress e) => e.mediaKey == key,
+    );
     expect(progress.localProgress, 0);
     expect(progress.completed, isTrue);
   });
@@ -184,11 +194,12 @@ void main() {
       progressMode: TrackingProgressMode.chapter,
       progressOffset: 0,
     );
-    final List<PersistedBookTrackingProgress> got =
-        await repository.loadPersistedBookTrackingProgress(afterMs: 0);
+    final List<PersistedBookTrackingProgress> got = await repository
+        .loadPersistedBookTrackingProgress(afterMs: 0);
     expect(
-        got.where((PersistedBookTrackingProgress e) => e.mediaKey == 'p-epub'),
-        isNotEmpty);
+      got.where((PersistedBookTrackingProgress e) => e.mediaKey == 'p-epub'),
+      isNotEmpty,
+    );
   });
 
   test('epub 仍照常产出章进度（止血没有误伤文字书）', () async {
@@ -270,34 +281,36 @@ void main() {
     expect(row.kind, 'manga');
   });
 
-  test('automatic mapping never overwrites an existing manual choice',
-      () async {
-    await repository.saveMapping(
-      mediaType: TrackingMediaType.book,
-      mediaKey: 'manual-book',
-      mediaTitle: 'Manual',
-      kind: TrackingKind.novel,
-      subjectId: 10,
-      subjectName: 'Chosen manually',
-      progressMode: TrackingProgressMode.chapter,
-      progressOffset: 0,
-    );
+  test(
+    'automatic mapping never overwrites an existing manual choice',
+    () async {
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'manual-book',
+        mediaTitle: 'Manual',
+        kind: TrackingKind.novel,
+        subjectId: 10,
+        subjectName: 'Chosen manually',
+        progressMode: TrackingProgressMode.chapter,
+        progressOffset: 0,
+      );
 
-    final MediaTrackingMappingRow row = await repository.saveMappingIfAbsent(
-      mediaType: TrackingMediaType.book,
-      mediaKey: 'manual-book',
-      mediaTitle: 'Automatic',
-      kind: TrackingKind.manga,
-      subjectId: 99,
-      subjectName: 'Guessed automatically',
-      progressMode: TrackingProgressMode.volume,
-      progressOffset: 3,
-    );
+      final MediaTrackingMappingRow row = await repository.saveMappingIfAbsent(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'manual-book',
+        mediaTitle: 'Automatic',
+        kind: TrackingKind.manga,
+        subjectId: 99,
+        subjectName: 'Guessed automatically',
+        progressMode: TrackingProgressMode.volume,
+        progressOffset: 3,
+      );
 
-    expect(row.subjectId, 10);
-    expect(row.subjectName, 'Chosen manually');
-    expect(row.progressMode, TrackingProgressMode.chapter.value);
-  });
+      expect(row.subjectId, 10);
+      expect(row.subjectName, 'Chosen manually');
+      expect(row.progressMode, TrackingProgressMode.chapter.value);
+    },
+  );
 
   test('outbox merges with max progress and completed OR', () async {
     await repository.saveMapping(
@@ -330,37 +343,121 @@ void main() {
     expect(await repository.pendingCount(), 1);
   });
 
-  test('successful delete is optimistic and does not remove a newer event',
-      () async {
-    await repository.saveMapping(
+  test(
+    'successful delete is optimistic and does not remove a newer event',
+    () async {
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'book',
+        mediaTitle: 'Book',
+        kind: TrackingKind.novel,
+        subjectId: 10,
+        subjectName: 'Remote',
+        progressMode: TrackingProgressMode.chapter,
+        progressOffset: 0,
+      );
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'book',
+        localProgress: 2,
+        completed: false,
+      );
+      final MediaTrackingOutboxRow stale =
+          (await repository.dueUpdates()).single.outbox;
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'book',
+        localProgress: 3,
+        completed: false,
+      );
+
+      await repository.markSucceeded(stale);
+
+      expect(await repository.pendingCount(), 1);
+      expect((await repository.dueUpdates()).single.outbox.progress, 3);
+    },
+  );
+
+  group('私密作品', () {
+    Future<void> mapBook(String key) => repository.saveMapping(
       mediaType: TrackingMediaType.book,
-      mediaKey: 'book',
-      mediaTitle: 'Book',
+      mediaKey: key,
+      mediaTitle: key,
       kind: TrackingKind.novel,
       subjectId: 10,
       subjectName: 'Remote',
       progressMode: TrackingProgressMode.chapter,
       progressOffset: 0,
     );
-    await repository.enqueueProgress(
-      mediaType: TrackingMediaType.book,
-      mediaKey: 'book',
-      localProgress: 2,
-      completed: false,
-    );
-    final MediaTrackingOutboxRow stale =
-        (await repository.dueUpdates()).single.outbox;
-    await repository.enqueueProgress(
-      mediaType: TrackingMediaType.book,
-      mediaKey: 'book',
-      localProgress: 3,
-      completed: false,
-    );
 
-    await repository.markSucceeded(stale);
+    test('有映射但书是私密的：enqueueProgress 返回 false，outbox 保持为空', () async {
+      await seedBook('secret', BookFormat.epub);
+      await mapBook('secret');
+      await db.setMediaPrivate(TagHostKind.epub, 'secret', true);
 
-    expect(await repository.pendingCount(), 1);
-    expect((await repository.dueUpdates()).single.outbox.progress, 3);
+      final bool queued = await repository.enqueueProgress(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'secret',
+        localProgress: 3,
+        completed: false,
+      );
+
+      expect(queued, isFalse);
+      expect(await repository.pendingCount(), 0);
+      expect(await repository.dueUpdates(), isEmpty);
+    });
+
+    test('公开时入队、之后标私密：dueUpdates 不返回且删掉 outbox 行', () async {
+      await seedBook('later', BookFormat.epub);
+      await mapBook('later');
+      expect(
+        await repository.enqueueProgress(
+          mediaType: TrackingMediaType.book,
+          mediaKey: 'later',
+          localProgress: 3,
+          completed: false,
+        ),
+        isTrue,
+      );
+      expect(await repository.pendingCount(), 1);
+
+      await db.setMediaPrivate(TagHostKind.epub, 'later', true);
+
+      expect(await repository.dueUpdates(), isEmpty);
+      expect(await repository.pendingCount(), 0);
+    });
+
+    test('isTrackedMediaPrivate：私密合集里的视频 / 含私密成员的合集级追踪键', () async {
+      final int privateColl = await db.createMediaCollection('秘');
+      await db.addToCollection(privateColl, MediaKind.video, 'inPrivate');
+      await db.setMediaPrivate(
+        TagHostKind.collection,
+        collectionTagEntryKey(privateColl),
+        true,
+      );
+      final int memberColl = await db.createMediaCollection('混');
+      await db.addToCollection(memberColl, MediaKind.video, 'secretEp');
+      await db.addToCollection(memberColl, MediaKind.video, 'openEp');
+      await db.setMediaPrivate(TagHostKind.video, 'secretEp', true);
+      final int openColl = await db.createMediaCollection('公开');
+      await db.addToCollection(openColl, MediaKind.video, 'plain');
+
+      final MediaPrivacySnapshot snapshot = await repository.loadPrivacy();
+      bool check(TrackingMediaType t, String key) =>
+          isTrackedMediaPrivate(snapshot, t.value, key);
+
+      expect(check(TrackingMediaType.video, 'inPrivate'), isTrue);
+      expect(check(TrackingMediaType.video, 'secretEp'), isTrue);
+      expect(check(TrackingMediaType.video, 'openEp'), isFalse);
+      expect(check(TrackingMediaType.videoCollection, '$privateColl'), isTrue);
+      expect(
+        check(TrackingMediaType.videoCollection, '$memberColl'),
+        isTrue,
+        reason: '合集里任一集私密，合集级追踪键也私密',
+      );
+      expect(check(TrackingMediaType.videoCollection, '$openColl'), isFalse);
+      expect(check(TrackingMediaType.video, 'plain'), isFalse);
+    });
   });
 
   group('游戏收藏状态', () {
@@ -369,43 +466,41 @@ void main() {
       required String name,
       int playStatus = 0,
       int addedAt = 1000,
-    }) =>
-        db.upsertGalgame(
-          GalgamesCompanion.insert(
-            id: id,
-            name: name,
-            exePath: 'C:\\games\\$id.exe',
-            workdir: 'C:\\games',
-            addedAt: addedAt,
-            playStatus: Value<int>(playStatus),
-          ),
-        );
+    }) => db.upsertGalgame(
+      GalgamesCompanion.insert(
+        id: id,
+        name: name,
+        exePath: 'C:\\games\\$id.exe',
+        workdir: 'C:\\games',
+        addedAt: addedAt,
+        playStatus: Value<int>(playStatus),
+      ),
+    );
 
     Future<void> insertSource(
       String gameId, {
       required String source,
       required String? externalId,
-    }) =>
-        db.upsertGalgameSource(
-          GalgameSourcesCompanion.insert(
-            gameId: gameId,
-            source: source,
-            externalId: Value<String?>(externalId),
-            dataJson: '{}',
-            fetchedAt: 1000,
-          ),
-        );
+    }) => db.upsertGalgameSource(
+      GalgameSourcesCompanion.insert(
+        gameId: gameId,
+        source: source,
+        externalId: Value<String?>(externalId),
+        dataJson: '{}',
+        fetchedAt: 1000,
+      ),
+    );
 
     Future<int> gameMappingId(String gameId) => repository.saveMapping(
-          mediaType: TrackingMediaType.game,
-          mediaKey: gameId,
-          mediaTitle: 'Game',
-          kind: TrackingKind.game,
-          subjectId: 77,
-          subjectName: 'Remote game',
-          progressMode: TrackingProgressMode.status,
-          progressOffset: 0,
-        );
+      mediaType: TrackingMediaType.game,
+      mediaKey: gameId,
+      mediaTitle: 'Game',
+      kind: TrackingKind.game,
+      subjectId: 77,
+      subjectName: 'Remote game',
+      progressMode: TrackingProgressMode.status,
+      progressOffset: 0,
+    );
 
     test('状态回退不被单调合并吃掉（弃坑 → 在玩）', () async {
       await gameMappingId('g1');
@@ -485,12 +580,14 @@ void main() {
       await insertGame('g1', name: 'Sakura');
       await insertSource('g1', source: 'vndb', externalId: 'v12345');
 
-      expect((await repository.loadAutoGameSource('g1'))?.bangumiSubjectId,
-          isNull);
+      expect(
+        (await repository.loadAutoGameSource('g1'))?.bangumiSubjectId,
+        isNull,
+      );
 
       await insertSource('g1', source: 'bgm', externalId: '4242');
-      final AutoGameTrackingSource? source =
-          await repository.loadAutoGameSource('g1');
+      final AutoGameTrackingSource? source = await repository
+          .loadAutoGameSource('g1');
       expect(source?.name, 'Sakura');
       expect(source?.bangumiSubjectId, 4242);
     });
@@ -500,8 +597,8 @@ void main() {
       await insertGame('g1', name: 'Playing', playStatus: 3);
       await insertSource('g1', source: 'bgm', externalId: '4242');
 
-      final List<PersistedGameTrackingStatus> statuses =
-          await repository.loadPersistedGameTrackingStatus(afterMs: 0);
+      final List<PersistedGameTrackingStatus> statuses = await repository
+          .loadPersistedGameTrackingStatus(afterMs: 0);
 
       expect(statuses.map((s) => s.gameId), <String>['g1']);
       expect(statuses.single.status, 3);

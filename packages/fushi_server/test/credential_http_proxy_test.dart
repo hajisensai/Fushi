@@ -13,7 +13,8 @@ class _EnvProxy extends HttpOverrides {
   final String directive;
 
   @override
-  String findProxyFromEnvironment(Uri url, Map<String, String>? environment) => directive;
+  String findProxyFromEnvironment(Uri url, Map<String, String>? environment) =>
+      directive;
 }
 
 /// 带凭据的 CLI 客户端（ctl 的 admin_token、sync 的 host token）不得把请求交给环境代理：
@@ -29,7 +30,9 @@ void main() {
     targetAuth = <String?>[];
     proxy = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     proxy.listen((HttpRequest r) async {
-      proxySaw.add('${r.method} ${r.uri} auth=${r.headers.value(HttpHeaders.authorizationHeader)}');
+      proxySaw.add(
+        '${r.method} ${r.uri} auth=${r.headers.value(HttpHeaders.authorizationHeader)}',
+      );
       r.response.statusCode = HttpStatus.badGateway;
       await r.response.close();
     });
@@ -51,9 +54,14 @@ void main() {
 
   test('ctl：admin API 在回环上，设了环境代理也直连，token 不进代理', () async {
     await HttpOverrides.runWithHttpOverrides(() async {
-      final AdminClient client = AdminClient(baseUri: Uri.parse('http://127.0.0.1:${target.port}'), token: 'secret');
+      final AdminClient client = AdminClient(
+        baseUri: Uri.parse('http://127.0.0.1:${target.port}'),
+        token: 'secret',
+      );
       try {
-        expect(await client.get('/api/admin/status'), <String, Object?>{'ok': true});
+        expect(await client.get('/api/admin/status'), <String, Object?>{
+          'ok': true,
+        });
       } finally {
         client.close();
       }
@@ -80,12 +88,27 @@ void main() {
 
   test('策略：回环 / 明文恒直连，https 远端跟随环境代理（CONNECT 隧道读不到凭据）', () {
     HttpOverrides.runWithHttpOverrides(() {
-      expect(credentialProxyFor(Uri.parse('http://nas.lan:38780/api/admin/status')), 'DIRECT');
-      expect(credentialProxyFor(Uri.parse('http://192.168.1.5:38780/')), 'DIRECT');
-      expect(credentialProxyFor(Uri.parse('https://localhost:38780/')), 'DIRECT');
-      expect(credentialProxyFor(Uri.parse('https://127.0.0.1:38780/')), 'DIRECT');
+      expect(
+        credentialProxyFor(Uri.parse('http://nas.lan:38780/api/admin/status')),
+        'DIRECT',
+      );
+      expect(
+        credentialProxyFor(Uri.parse('http://192.168.1.5:38780/')),
+        'DIRECT',
+      );
+      expect(
+        credentialProxyFor(Uri.parse('https://localhost:38780/')),
+        'DIRECT',
+      );
+      expect(
+        credentialProxyFor(Uri.parse('https://127.0.0.1:38780/')),
+        'DIRECT',
+      );
       expect(credentialProxyFor(Uri.parse('https://[::1]:38780/')), 'DIRECT');
-      expect(credentialProxyFor(Uri.parse('https://nas.example.com:38780/')), 'PROXY 127.0.0.1:9');
+      expect(
+        credentialProxyFor(Uri.parse('https://nas.example.com:38780/')),
+        'PROXY 127.0.0.1:9',
+      );
     }, _EnvProxy('PROXY 127.0.0.1:9'));
   });
 }

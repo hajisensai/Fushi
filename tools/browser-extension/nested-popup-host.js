@@ -305,7 +305,7 @@
         RESIZE_MS + 'ms cubic-bezier(0.2, 0, 0, 1)';
     }
   }
-  function open(query, anchor, parent, highlight) {
+  function open(query, anchor, parent, highlight, ruby) {
     const term = typeof query === 'string' ? query.trim() : '';
     if (!term || !fushiHost || (parent && !layers.includes(parent))) return;
     dismissAfter(parent);
@@ -313,7 +313,13 @@
     const request = ++sequence;
     requests.set(parent, request);
     const cue = parent ? parent.cue : fushiPendingCueWindow;
-    chrome.runtime.sendMessage({ type: 'lookup', term }, function (response) {
+    // 子框原文振假名（只有 textSelected 带）：按 trim 掉的句首空白对齐到 term
+    // （content.js 的 fushiAlignLookupRuby；子框传来的是不可信结构，对齐时逐项校验）。
+    const termRuby = Array.isArray(ruby) && typeof window.fushiAlignLookupRuby === 'function'
+      ? window.fushiAlignLookupRuby(query, term, ruby) : null;
+    const lookupMessage = { type: 'lookup', term };
+    if (termRuby) lookupMessage.ruby = termRuby;
+    chrome.runtime.sendMessage(lookupMessage, function (response) {
       if (requests.get(parent) !== request || fushiHost !== owner || (parent && !layers.includes(parent))) return;
       if (chrome.runtime.lastError || !response || !response.ok || !response.data || typeof response.data.popupJson !== 'string') {
         fushiShowConnectionFailure(response);
@@ -337,6 +343,8 @@
       // 同级挂在 body（全屏时 fullscreenElement）下，不嵌进第一层，祖先链上没有 Backdrop Root。
       const box = document.createElement('div');
       box.className = 'fushi-nested-layer';
+      // 递归查词子层也是查词会话的顶层宿主：content.js 的外部点击判据只认这个属性（fWIaHFV1qD）。
+      if (typeof box.setAttribute === 'function') box.setAttribute('data-fushi-session-host', '');
       const glass = fushiNestedGlass(response.data.theme) && fushiNestedBackdropUsable();
       box.style.cssText = 'position:fixed;z-index:2147483647;visibility:hidden;overflow:hidden;' +
         fushiNestedLayerSkin(response.data.theme) +
@@ -365,9 +373,9 @@
       updateParents();
     });
   }
-  const allowed = new Set(['mineEntry', 'duplicateCheck', 'resolveWordAudio', 'listWordAudioSources', 'openLink', 'openInAnki',
+  const allowed = new Set(['mineEntry', 'duplicateCheck', 'findMinedMatches', 'resolveWordAudio', 'listWordAudioSources', 'openLink', 'openInAnki',
     'favoriteEntry', 'favoriteCheck', 'setSentenceContext', 'clearSentenceDraft', 'sentenceContextPreview',
-    'srsTermStatus', 'srsOpenCard']);
+    'srsTermStatus', 'srsTermStatusBatch', 'srsOpenCard']);
   function receive(layer, message) {
     if (!layers.includes(layer) || !message || message.__fushiPopupFrame !== true) return;
     if (message.type === 'close') {
@@ -379,7 +387,10 @@
     if (message.type !== 'call') return;
     const args = Array.isArray(message.args) ? message.args : [];
     let result = null;
-    if (message.name === 'onLinkClick' || message.name === 'textSelected') open(args[0], args[1], layer, message.name === 'textSelected');
+    if (message.name === 'onLinkClick' || message.name === 'textSelected') {
+      open(args[0], args[1], layer, message.name === 'textSelected',
+        message.name === 'textSelected' && Array.isArray(args[2]) ? args[2] : null);
+    }
     else if (message.name === 'tapOutside') dismissAfter(layer);
     else if (message.name === 'popupRendered') {
       // args[3]：nested-popup.js 附上的「尾批仍在途」（popup.js _renderInProgress）。
@@ -433,7 +444,7 @@
     send(layer, { type: 'hasChild', value: layers.indexOf(layer) < layers.length - 1 });
   });
   window.fushiNestedPopups = {
-    open: (query, anchor, highlight) => open(query, anchor, null, highlight),
+    open: (query, anchor, highlight, ruby) => open(query, anchor, null, highlight, ruby),
     dismissChildren: () => dismissAfter(null),
     clear: () => { requests.clear(); dismissAfter(null); },
     // 有子层在场：子层是独立 iframe，指针进去后顶层文档收不到事件，content.js 的悬停离开判定据此不关栈。

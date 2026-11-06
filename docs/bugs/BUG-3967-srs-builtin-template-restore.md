@@ -1,0 +1,6 @@
+## BUG-3967 · srs-builtin-template-restore
+- **报告**：2026-11-02（用户：反馈 rSc_MnZkAs，Discord 转交）
+- **真实性**：✅ 真缺口（功能缺失，非渲染回归）。原生卡面判据要求内置 Fushi 卡片的正面 / 背面 / CSS 与代码定义逐字一致（`packages/fushi_engine/lib/srs/srs_fushi_card_native_media.dart:129`），回滚笔记带回旧模板后 `renderCard` 不给 `fushiCardDefinitions`（`packages/fushi_engine/lib/srs/srs_db_store.dart` renderCard），复习卡退回整面 WebView；外观页算出了 `_sampleNative`（`fushi/lib/src/pages/implementations/srs/srs_card_appearance_page.dart:197`）却只拿来切预览、不告诉用户，笔记类型 / 模板编辑页也没有恢复内置模板的入口。
+- **[x] ① 已修复** — 新增引擎命令 `restoreBuiltinTemplates` / `undoBuiltinTemplateRestore` / `builtinTemplatesModified`（`packages/fushi_engine/lib/srs/srs_builtin_template_restore.dart`，经 `writeEdits` 写修改记录，随同步、可撤销）；笔记类型编辑页、模板编辑页（工具栏）、外观页（「原生卡面已停用」提示 + 按钮）共用 `fushi/lib/src/pages/implementations/srs/srs_builtin_template_restore_action.dart`（确认 → 恢复 → 带撤销的提示条）。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/srs/srs_builtin_template_restore_test.dart`（改模板后 fushiCardDefinitions 为 null → 恢复后回来、CSS 逐字相等 → 撤销后回到改过的值；用户另加的模板不动；非内置类型拒绝）；`fushi/test/srs/srs_builtin_restore_and_load_error_test.dart`（外观页提示与恢复、编辑页入口，MD3 + Apple）。
+- **备注**：判据本身不改（逐字一致是有意的）。用户若改过内置字段的**名字**，恢复模板后名字形式仍与内置不一致，原生卡面仍停用——此时外观页只显示提示、不显示恢复按钮（恢复按钮按 fieldId 形式判断是否偏离）。

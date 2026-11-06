@@ -21,7 +21,17 @@ import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_common.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 拼图最多几张封面（3×3）。
 const int kLeaderboardShareMaxCovers = 9;
@@ -224,20 +234,17 @@ class LeaderboardShareCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(
-            switch (data.window) {
-              LeaderboardWindow.week => t.leaderboard_share_card_week(
-                date: data.periodLabel,
-              ),
-              LeaderboardWindow.month => t.leaderboard_share_card_month(
-                month: data.periodLabel,
-              ),
-              LeaderboardWindow.all => t.leaderboard_share_card_all(
-                date: data.periodLabel,
-              ),
-            },
-            style: text.labelLarge?.copyWith(color: foreground),
-          ),
+          Text(switch (data.window) {
+            LeaderboardWindow.week => t.leaderboard_share_card_week(
+              date: data.periodLabel,
+            ),
+            LeaderboardWindow.month => t.leaderboard_share_card_month(
+              month: data.periodLabel,
+            ),
+            LeaderboardWindow.all => t.leaderboard_share_card_all(
+              date: data.periodLabel,
+            ),
+          }, style: text.labelLarge?.copyWith(color: foreground)),
           const SizedBox(height: 4),
           Text(
             switch (data.window) {
@@ -277,16 +284,12 @@ class LeaderboardShareCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   data.accountTag,
-                  style: text.titleSmall?.copyWith(
-                    color: foreground,
-                  ),
+                  style: text.titleSmall?.copyWith(color: foreground),
                 ),
               ),
               Text(
                 'Fushi',
-                style: text.labelMedium?.copyWith(
-                  color: foreground,
-                ),
+                style: text.labelMedium?.copyWith(color: foreground),
               ),
             ],
           ),

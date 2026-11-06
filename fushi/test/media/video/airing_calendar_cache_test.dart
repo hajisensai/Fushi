@@ -1,7 +1,7 @@
 // TODO-2487 放送日历：缓存签名/编解码纯函数 + 进程内缓存命中口径。缓存身份 =
 // 周窗口 + 过滤集（绑定合集/订阅的 id 升序），任一变化即未命中；TTL 判定的
 // now 由调用方注入，测试不依赖真实时钟。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 import 'package:fushi/src/media/video/airing_calendar_cache.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
@@ -10,12 +10,11 @@ AiringScheduleCache _cache({
   int fetchedAtMs = 1000,
   String signature = 'sig',
   List<AniListAiringEpisode> episodes = const <AniListAiringEpisode>[],
-}) =>
-    AiringScheduleCache(
-      fetchedAtMs: fetchedAtMs,
-      signature: signature,
-      episodes: episodes,
-    );
+}) => AiringScheduleCache(
+  fetchedAtMs: fetchedAtMs,
+  signature: signature,
+  episodes: episodes,
+);
 
 void main() {
   setUp(AiringMemoryCache.reset);
@@ -72,9 +71,13 @@ void main() {
       expect(episode.media.displayTitle, 'Frieren');
       expect(episode.media.native, '葬送のフリーレン');
       expect(episode.media.coverUrl, 'https://x/c.png');
-      expect(episode.media.format, 'TV',
-          reason: 'format 参与 movie/tv 归类（日历条目直达发现详情页），'
-              '缓存丢字段会让剧场版被当成剧集');
+      expect(
+        episode.media.format,
+        'TV',
+        reason:
+            'format 参与 movie/tv 归类（日历条目直达发现详情页），'
+            '缓存丢字段会让剧场版被当成剧集',
+      );
     });
 
     test('misses on mismatched signature', () {
@@ -101,10 +104,7 @@ void main() {
     });
 
     test('rejects malformed payloads without throwing', () {
-      expect(
-        decodeAiringScheduleCache('', signature: 'sig', nowMs: 0),
-        isNull,
-      );
+      expect(decodeAiringScheduleCache('', signature: 'sig', nowMs: 0), isNull);
       expect(
         decodeAiringScheduleCache('not json', signature: 'sig', nowMs: 0),
         isNull,

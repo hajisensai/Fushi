@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2447：macOS 上在查词弹窗里展开/折叠词典分组之后，宿主页面的快捷键整条失效。
 ///
@@ -30,29 +30,36 @@ void main() {
       final String? nodeExe = _resolveNode();
       if (nodeExe == null) {
         markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
+          'node not found on PATH; skipping JS behavior execution',
+        );
         return;
       }
 
-      final File jsTest =
-          File('test/dictionary/popup_summary_mouse_focus_test.js');
-      expect(jsTest.existsSync(), isTrue,
-          reason: 'behavior harness ${jsTest.path} must exist');
-
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path],
-        workingDirectory: Directory.current.path,
+      final File jsTest = File(
+        'test/dictionary/popup_summary_mouse_focus_test.js',
       );
+      expect(
+        jsTest.existsSync(),
+        isTrue,
+        reason: 'behavior harness ${jsTest.path} must exist',
+      );
+
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
 
       expect(
         result.exitCode,
         0,
-        reason: 'popup <summary> mouse-focus behavior test failed.\n'
+        reason:
+            'popup <summary> mouse-focus behavior test failed.\n'
             'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
-      expect(result.stdout.toString(), contains('all assertions passed'),
-          reason: 'behavior harness must reach its success marker');
+      expect(
+        result.stdout.toString(),
+        contains('all assertions passed'),
+        reason: 'behavior harness must reach its success marker',
+      );
     },
   );
 }

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫（2026-09-30）：build-multiplatform.yml 的 PR 路径门。
 ///
@@ -183,7 +183,21 @@ void main() {
       // SRS 排程内核（fsrs-rs）：三个 app 随包 + 服务端随包；verify_abi.sh 读 Dart 绑定。
       'native/fushi_fsrs/src/lib.rs': all,
       'packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart': all,
-      // iOS 伞形静态库（fushi_p2p + fushi_fsrs 合一）只有 iOS job 编。
+      // 网页广告拦截内核（adblock-rust）：只随三个 app，无头服务端不带；verify_abi.sh 读 Dart 绑定。
+      'native/fushi_web_core/src/lib.rs': apps,
+      'packages/fushi_web_core/lib/src/ffi/fushi_web_core_bindings.dart': apps,
+      // 计算内核（硬依赖）：同 fushi_fsrs，三个 app 随包 + 服务端随包；verify_abi.sh 递归读
+      // packages/fushi_compute/lib 下各域的 Dart 绑定。
+      'native/fushi_compute/src/lib.rs': all,
+      'native/fushi_compute/build_linux_so.sh': all,
+      'packages/fushi_compute/lib/src/fushi_compute_library.dart': all,
+      'packages/fushi_compute/lib/src/hash/ffc_hash.dart': all,
+      // RWKV-Instant 排程推理（硬依赖，AGPL）：同 fushi_compute，三个 app 随包 + 服务端随包；
+      // verify_abi.sh 递归读 packages/fushi_rwkv/lib 下的 Dart 绑定。
+      'native/fushi_rwkv/src/lib.rs': all,
+      'native/fushi_rwkv/build_linux_so.sh': all,
+      'packages/fushi_rwkv/lib/src/fushi_rwkv_library.dart': all,
+      // iOS 伞形静态库（fushi_p2p + fushi_fsrs + fushi_compute + fushi_web_core + fushi_rwkv 合一）只有 iOS job 编。
       'native/fushi_ios_umbrella/src/lib.rs': <String>{'ios'},
       // fushidicts 编进三个 app，也随无头服务端包（linux-server 编 .so + 冒烟）。
       'native/fushidicts/src/fushidicts.cpp': all,
@@ -218,9 +232,8 @@ void main() {
       },
       'third_party/media_kit_libs_windows_video/windows/CMakeLists.txt':
           <String>{'windows'},
-      'third_party/ffmpeg_kit_flutter/ios/ffmpeg_kit_flutter.podspec': <String>{
-        'ios',
-      },
+      'third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter.podspec':
+          <String>{'ios'},
       'third_party/media_kit_video/pubspec.yaml': apps,
       'third_party/media_kit_video/lib/media_kit_video.dart': <String>{},
       'third_party/media_kit_libs_android_video/android/build.gradle':
@@ -248,7 +261,17 @@ void main() {
       '.github/actions/native-store-names/names.sh': all,
       '.github/actions/native-artifact-store/action.yml': all,
       '.github/actions/provide-baked-secrets/action.yml': apps,
+      '.github/actions/setup-fushi-compute/action.yml': apps,
+      '.github/actions/setup-fushi-rwkv/action.yml': apps,
       '.github/scripts/verify_torrent_abi.sh': <String>{'macos', 'server'},
+      // strings.g.dart 不入库：三个 app job 编译前跑 gen-i18n action → fushi/tool/gen_i18n.dart，
+      // 改生成器 / action 要在三个平台上真跑一次（Windows runner 的 bash / dart 路径不同）。
+      // linux-server 不编 app（fushi_server 闭包不依赖 package:fushi），不跑生成。
+      '.github/actions/gen-i18n/action.yml': apps,
+      'fushi/tool/gen_i18n.dart': apps,
+      // i18n json / slang 配置只改 Dart 生成物，同「只改 Dart」：main.yml 的 analyze + 全量测试兜底。
+      'fushi/lib/i18n/en.i18n.json': <String>{},
+      'fushi/slang.yaml': <String>{},
     };
     final List<String> wrong = <String>[
       for (final MapEntry<String, Set<String>> c in cases.entries)

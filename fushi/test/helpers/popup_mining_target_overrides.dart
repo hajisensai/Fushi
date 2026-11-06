@@ -1,10 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
-import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
-import 'package:fushi_core/fushi_core.dart' show ProfileRow;
 
 import 'fake_anki_repository.dart';
+import 'inert_profile_repository.dart';
 
 /// 查词浮层宿主测试的制卡目标依赖：空 Anki 设置 + 只有一份默认配置。
 ///
@@ -19,48 +18,15 @@ import 'fake_anki_repository.dart';
 /// 这里在仓库这一层换成惰性假货，切断那两条依赖：按钮照常挂载，不发任何 I/O。
 /// 断言制卡目标菜单本身行为的用例用
 /// `test/pages/dictionary_popup_mining_target_test.dart` 的完整接线，不用这份。
-List<Override> popupMiningTargetTestOverrides() => <Override>[
-  ankiRepositoryProvider.overrideWith((Ref ref) => FakeAnkiRepository()),
+///
+/// [anki] 为 false：调用方自己覆盖了 [ankiRepositoryProvider]（断言制卡行为用的假仓库），
+/// 这里只补配置仓库，不重复覆盖。
+List<Override> popupMiningTargetTestOverrides({bool anki = true}) => <Override>[
+  if (anki)
+    ankiRepositoryProvider.overrideWith((Ref ref) => FakeAnkiRepository()),
   profileRepositoryProvider.overrideWith((Ref ref) {
     // 与生产同形：配置仓库跟着 Anki 仓库重建。
     ref.watch(ankiRepositoryProvider);
-    return _InertProfileRepository();
+    return InertProfileRepository();
   }),
 ];
-
-class _InertProfileRepository implements ProfileRepository {
-  static const int _defaultProfileId = 1;
-
-  @override
-  Future<void> ensureDefaultProfile() async {}
-
-  @override
-  Future<List<ProfileRow>> getAllProfiles() async => const <ProfileRow>[
-    ProfileRow(
-      id: _defaultProfileId,
-      name: 'Default',
-      createdAt: 0,
-      updatedAt: 0,
-    ),
-  ];
-
-  @override
-  Future<int> getActiveProfileId() async => _defaultProfileId;
-
-  @override
-  Future<Map<String, int>> getAllMediaTypeBindings() async =>
-      const <String, int>{};
-
-  @override
-  Future<Map<String, int>> getAllLanguageBindings() async =>
-      const <String, int>{};
-
-  @override
-  Stream<void> watchProfilesChanged() => const Stream<void>.empty();
-
-  @override
-  Future<void> snapshotCurrentSettings(int profileId) async {}
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}

@@ -37,12 +37,18 @@ void main() {
       'lib/src/pages/implementations/home_video_page.dart',
     ).readAsStringSync();
     // 旧写法 t.remote_video_list_failed(error: state.errorMessage ?? '') 必须消失。
-    expect(src.contains('remote_video_list_failed(error:'), isFalse,
-        reason: '失败 toast 不得再向 remote_video_list_failed 传 error 参数');
+    expect(
+      src.contains('remote_video_list_failed(error:'),
+      isFalse,
+      reason: '失败 toast 不得再向 remote_video_list_failed 传 error 参数',
+    );
     // 用户可见 toast 走无参 getter。
     expect(src.contains('Text(t.remote_video_list_failed)'), isTrue);
     // 承载原始异常的死字段随异常泄漏一并删除。
-    expect(src.contains('errorMessage'), isFalse,
-        reason: '_RemoteVideoState.errorMessage 死字段应删除');
+    expect(
+      src.contains('errorMessage'),
+      isFalse,
+      reason: '_RemoteVideoState.errorMessage 死字段应删除',
+    );
   });
 }

@@ -56,8 +56,9 @@ void main() {
 
     test('单例包装器只是「读 activityGameKey + 委托纯判据」的一行', () {
       // 行为由纯判据钉死；这里钉住「包装器没有第二份判据」这一结构事实。
-      final String src =
-          File('lib/src/lookup/overlay_stat_source.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/lookup/overlay_stat_source.dart',
+      ).readAsStringSync();
       expect(
         src,
         contains('statSourceTypeForGameKey('),
@@ -75,21 +76,24 @@ void main() {
       );
     });
 
-    test('已知限制：SentenceSourceKind 还没有 game，宽松解析回退 book', () {
-      // 加枚举值会让 collections_page 的四处穷尽 switch 编译不过（图标 / 标签 /
-      // 跳转模块都要补 game 分支）。在补齐之前，游戏来源的制卡句在收藏夹里按书
-      // 展示——那些行本来就无定位锚点、不可跳转，行为无退化。统计分桶**不**经这
-      // 个枚举（走 StatSourceKind + 字符串比较），故三域之和的恒等式不受影响。
-      expect(SentenceSourceKind.tryParse(kFavoriteSentenceSourceGame), isNull);
+    test('SentenceSourceKind 认得 game（v128 起收藏夹按游戏展示 / 跳转）', () {
+      // L3「回到出处」补齐了 collections_page 的穷尽 switch（图标 / 标签 / 跳转
+      // 模块）后，游戏来源的制卡句不再宽松回退成书。统计分桶**不**经这个枚举
+      // （走 StatSourceKind + 字符串比较），三域之和的恒等式不受影响。
+      expect(
+        SentenceSourceKind.tryParse(kFavoriteSentenceSourceGame),
+        SentenceSourceKind.game,
+      );
       expect(
         sentenceSourceKindOf(kFavoriteSentenceSourceGame),
-        SentenceSourceKind.book,
+        SentenceSourceKind.game,
       );
     });
 
     test('会话控制器暴露了只读 activityGameKey（判据的唯一输入）', () {
-      final String src = File('lib/src/mining/gal_hook_session_controller.dart')
-          .readAsStringSync();
+      final String src = File(
+        'lib/src/mining/gal_hook_session_controller.dart',
+      ).readAsStringSync();
       expect(src, contains('String? get activityGameKey => _activityGameKey;'));
     });
   });
@@ -103,13 +107,13 @@ void main() {
     });
 
     Future<bool> check() => overlayToggleOrCheckFavoriteWord(
-          db: db,
-          toggle: false,
-          expression: 'あ',
-          reading: 'あ',
-          addSourceType: kStatSourceBook,
-          dateKey: today,
-        );
+      db: db,
+      toggle: false,
+      expression: 'あ',
+      reading: 'あ',
+      addSourceType: kStatSourceBook,
+      dateKey: today,
+    );
 
     Future<bool> toggle(String addSourceType) =>
         overlayToggleOrCheckFavoriteWord(
@@ -152,8 +156,11 @@ void main() {
       }
       expect(await db.getAllFavoriteWords(), hasLength(2));
       expect(await toggle(kStatSourceGame), isFalse);
-      expect(await db.getAllFavoriteWords(), isEmpty,
-          reason: '只删当前源会剩一行孤儿：★ 灭了，收藏夹里还在，统计还计着');
+      expect(
+        await db.getAllFavoriteWords(),
+        isEmpty,
+        reason: '只删当前源会剩一行孤儿：★ 灭了，收藏夹里还在，统计还计着',
+      );
       expect(await check(), isFalse);
     });
 

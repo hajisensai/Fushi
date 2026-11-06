@@ -1,0 +1,297 @@
+{
+ "created": "2026-10-24T09:37:33.339Z",
+ "count": 1,
+ "offset": 0,
+ "recordings": [
+  {
+   "id": "79a8b80c-018d-4004-b3ff-cc10d21a3ddd",
+   "score": 100,
+   "artist-credit-id": "dc83ce30-3d6d-3a7c-bf95-910d28e325d5",
+   "title": "Lemon",
+   "length": 255826,
+   "video": null,
+   "artist-credit": [
+    {
+     "name": "米津玄師",
+     "artist": {
+      "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046",
+      "name": "米津玄師",
+      "sort-name": "Yonezu, Kenshi",
+      "aliases": [
+       {
+        "sort-name": "よねづけんし",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "米津玄師",
+        "locale": "ja",
+        "type": "Artist name",
+        "primary": true,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "켄시 요네즈",
+        "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+        "name": "켄시 요네즈",
+        "locale": null,
+        "type": "Search hint",
+        "primary": null,
+        "begin-date": null,
+        "end-date": null
+       },
+       {
+        "sort-name": "Yonezu, Kenshi",
+        "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+        "name": "Kenshi Yonezu",
+        "locale": "en",
+        "type": "Artist name",
+        "primary": true,
+        "begin-date": null,
+        "end-date": null
+       }
+      ]
+     }
+    }
+   ],
+   "first-release-date": "2018-03-14",
+   "releases": [
+    {
+     "id": "df0ebd2a-e7c5-4899-bdd0-c3a7ac437ec0",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "dc83ce30-3d6d-3a7c-bf95-910d28e325d5",
+     "count": 1,
+     "title": "STRAY SHEEP",
+     "status": "Official",
+     "disambiguation": "Apple Digital Master",
+     "artist-credit": [
+      {
+       "name": "米津玄師",
+       "artist": {
+        "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046",
+        "name": "米津玄師",
+        "sort-name": "Yonezu, Kenshi"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "7bf1777c-48b4-491d-aaea-1405c8dd8845",
+      "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "STRAY SHEEP",
+      "primary-type": "Album"
+     },
+     "date": "2020-08-05",
+     "country": "XW",
+     "release-events": [
+      {
+       "date": "2020-08-05",
+       "area": {
+        "id": "525d4e18-3d00-31b9-a58b-a146a916de8f",
+        "name": "[Worldwide]",
+        "sort-name": "[Worldwide]",
+        "iso-3166-1-codes": [
+         "XW"
+        ]
+       }
+      }
+     ],
+     "track-count": 15,
+     "media": [
+      {
+       "id": "71fd002c-0c30-4129-9c2b-dd0be72a775a",
+       "position": 1,
+       "format": "Digital Media",
+       "track": [
+        {
+         "id": "2216d912-4aca-4730-bdb0-83a19a5701a5",
+         "number": "8",
+         "title": "Lemon",
+         "length": 255826
+        }
+       ],
+       "track-count": 15,
+       "track-offset": 7
+      }
+     ]
+    },
+    {
+     "id": "2681f9df-e2b9-43c3-9337-be35d7f3791d",
+     "status-id": "41121bb9-3413-3818-8a9a-9742318349aa",
+     "artist-credit-id": "02f8af7b-f18b-3c4d-9876-b1ac3b11eef3",
+     "count": 1,
+     "title": "Lemon",
+     "status": "Pseudo-Release",
+     "disambiguation": "English Translation",
+     "artist-credit": [
+      {
+       "name": "Kenshi Yonezu",
+       "artist": {
+        "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046",
+        "name": "米津玄師",
+        "sort-name": "Yonezu, Kenshi"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "6821e0d9-cdf8-4430-a556-9e999708d6cd",
+      "type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+      "primary-type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+      "title": "Lemon",
+      "primary-type": "Single"
+     },
+     "date": "2018-03-14",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2018-03-14",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 3,
+     "media": [
+      {
+       "id": "328f080c-5be3-4414-a8e6-d2f414c7f5db",
+       "position": 1,
+       "format": "CD",
+       "track": [
+        {
+         "id": "13e75e8f-62af-4c76-911e-8a61a95bcfce",
+         "number": "1",
+         "title": "Lemon",
+         "length": 256106
+        }
+       ],
+       "track-count": 3,
+       "track-offset": 0
+      }
+     ]
+    },
+    {
+     "id": "29df2f4d-7081-4474-b078-a83b46ccd354",
+     "artist-credit-id": "dc83ce30-3d6d-3a7c-bf95-910d28e325d5",
+     "count": 1,
+     "title": "Lemon",
+     "disambiguation": "レモン盤",
+     "artist-credit": [
+      {
+       "name": "米津玄師",
+       "artist": {
+        "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046",
+        "name": "米津玄師",
+        "sort-name": "Yonezu, Kenshi"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "6821e0d9-cdf8-4430-a556-9e999708d6cd",
+      "type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+      "primary-type-id": "d6038452-8ee0-3f68-affc-2de9a1ede0b9",
+      "title": "Lemon",
+      "primary-type": "Single"
+     },
+     "date": "2018-03-14",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2018-03-14",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 3,
+     "media": [
+      {
+       "id": "61c89251-61c0-35f3-8126-edd552a20e68",
+       "position": 1,
+       "format": "CD",
+       "track": [
+        {
+         "id": "c8170c20-963e-470f-b92f-816025598846",
+         "number": "1",
+         "title": "Lemon",
+         "length": 256106
+        }
+       ],
+       "track-count": 3,
+       "track-offset": 0
+      }
+     ]
+    },
+    {
+     "id": "47b913af-471a-4c7a-8c06-4eb0a2fc9c2e",
+     "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+     "artist-credit-id": "dc83ce30-3d6d-3a7c-bf95-910d28e325d5",
+     "count": 1,
+     "title": "STRAY SHEEP",
+     "status": "Official",
+     "disambiguation": "おまもり盤",
+     "artist-credit": [
+      {
+       "name": "米津玄師",
+       "artist": {
+        "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046",
+        "name": "米津玄師",
+        "sort-name": "Yonezu, Kenshi"
+       }
+      }
+     ],
+     "release-group": {
+      "id": "7bf1777c-48b4-491d-aaea-1405c8dd8845",
+      "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+      "title": "STRAY SHEEP",
+      "primary-type": "Album"
+     },
+     "date": "2020-08-05",
+     "country": "JP",
+     "release-events": [
+      {
+       "date": "2020-08-05",
+       "area": {
+        "id": "2db42837-c832-3c27-b4a3-08198f75693c",
+        "name": "Japan",
+        "sort-name": "Japan",
+        "iso-3166-1-codes": [
+         "JP"
+        ]
+       }
+      }
+     ],
+     "track-count": 15,
+     "media": [
+      {
+       "id": "ed2727a6-ca70-34c7-89cb-28d5aa0a8124",
+       "position": 1,
+       "format": "CD",
+       "track": [
+        {
+         "id": "1f325270-512b-4761-8b1d-0c4ae868c0a0",
+         "number": "8",
+         "title": "Lemon",
+         "length": 255826
+        }
+       ],
+       "track-count": 15,
+       "track-offset": 7
+      }
+     ]
+    }
+   ],
+   "isrcs": [
+    "JPU901800227"
+   ]
+  }
+ ]
+}

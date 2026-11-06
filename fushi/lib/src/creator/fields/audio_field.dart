@@ -1,19 +1,20 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/creator.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/creator/fields/base_audio_field.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// Returns audio information from context.
 class AudioField extends BaseAudioField {
   /// Initialise this field with the predetermined and hardset values.
   AudioField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Term Audio',
-          description: 'Audio pertaining to the term. Text field can be used'
-              ' to enter search terms for audio sources.',
-          icon: Icons.audiotrack_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Term Audio',
+        description:
+            'Audio pertaining to the term. Text field can be used'
+            ' to enter search terms for audio sources.',
+        icon: Icons.audiotrack_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static AudioField get instance => _instance;

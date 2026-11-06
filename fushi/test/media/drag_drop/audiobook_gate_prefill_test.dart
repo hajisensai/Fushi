@@ -21,15 +21,18 @@ void main() {
 
   Widget buildApp(Widget child) {
     return TranslationProvider(
-      child: MaterialApp(home: Scaffold(body: Center(child: child))),
+      child: MaterialApp(
+        home: Scaffold(body: Center(child: child)),
+      ),
     );
   }
 
   testWidgets(
     'prefill forces the import form even when the book already has audio',
     (WidgetTester tester) async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final AudiobookRepository repo = AudiobookRepository(db);
 
@@ -37,11 +40,14 @@ void main() {
       // 无需真实文件，闸门判定只看记录字段。
       const String bookKey = 'gate-prefill-book';
       await repo.replaceAlignment(
-          bookKey: bookKey,
-          format: 'srt',
-          path: '/persisted/$bookKey/align.srt');
+        bookKey: bookKey,
+        format: 'srt',
+        path: '/persisted/$bookKey/align.srt',
+      );
       await repo.replaceAudio(
-          bookKey: bookKey, audioPaths: <String>['/persisted/$bookKey/a.mp3']);
+        bookKey: bookKey,
+        audioPaths: <String>['/persisted/$bookKey/a.mp3'],
+      );
 
       // 自检：确实是已有完整有声书（否则测试不锁闸门，等同没断言）。
       final Audiobook? loaded = await repo.findByBookKey(bookKey);

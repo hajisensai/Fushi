@@ -3,6 +3,10 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
+import 'package:fushi_engine/media/manga/manga_archive_importer.dart'
+    show kMangaArchiveFileExtensions;
+import 'package:fushi_engine/media/manga/mokuro_legacy_html.dart'
+    show isLegacyMokuroHtmlVolume;
 
 /// 一个待导入路径的**载体身份**：它到底是哪种东西，因而该交给哪个 importer。
 ///
@@ -25,8 +29,9 @@ enum ImportCarrier {
   /// 不是错误情况，缺的是枚举成员，不是一个更好的错误提示。
   mangaBatchFolder,
 
-  /// mokuro v0.2+ 的 `.mokuro` OCR 结果文件（+ 同级图片）。
-  /// 走 `MangaModule.importMokuro`。
+  /// mokuro v0.2+ 的 `.mokuro` OCR 结果文件（+ 同级图片），或 mokuro 0.1 旧版产物
+  /// 的 `<卷名>.html`（同级 `<卷名>/` 页图 + `_ocr/<卷名>/` 逐页结果）。
+  /// 走 `MangaModule.importMokuro`（导入器按扩展名分派两种 manifest）。
   ///
   /// 也可能是一个**目录**：直接子层恰好一个 `.mokuro`（BUG-2785）。消费方须经
   /// `MangaModule.directorySingleMokuroPath` 换成那个文件再导入。
@@ -81,14 +86,12 @@ enum ImportCarrier {
 /// `.pdf` 在列是因为一卷扫描版漫画常常就是一份 PDF：逐页栅格化即页图。它的载体
 /// 身份仍是 [ImportCarrier.pdf]（书籍框据此走 `PdfImporter`），漫画侧的「能不能
 /// 变成漫画」由 [ImportCarrier.isMangaCapable] 单独回答，两边不打架。
+///
+/// 压缩包那一段取自引擎 [kMangaArchiveFileExtensions]（导入器真能吃的格式），与
+/// 无头服务端库扫描同源；这里只在它之上加 `.mokuro` 与 `.pdf`（PDF 栅格化在 app 侧）。
 const Set<String> kMangaCarrierFileExtensions = <String>{
   '.mokuro',
-  '.cbz',
-  '.cbr',
-  '.rar',
-  '.cb7',
-  '.zip',
-  '.epub',
+  ...kMangaArchiveFileExtensions,
   '.pdf',
 };
 
@@ -106,7 +109,12 @@ const Set<String> kMangaCarrierFileExtensions = <String>{
 ///   同源（`enumerateMangaPages`），否则会出现「判定说是页图目录、导入却扫不到页」。
 /// - [directoryCarrierFileCount]：目录**直接子层**里有几个 [kMangaCarrierFileExtensions]
 ///   文件。只看扩展名（便宜），真定性推迟到逐卷导入时——那时反正要开包。
-/// - [directoryMokuroFileCount]：目录**直接子层**里有几个 `.mokuro`。
+/// - [directoryMokuroFileCount]：目录**直接子层**里有几个 mokuro manifest（`.mokuro`
+///   与旧版 `<卷名>.html`）。
+/// - [isLegacyMokuroHtml]：`.html` 文件是不是 mokuro 0.1 旧版产物（同级有 `<卷名>/`
+///   与 `_ocr/<卷名>/`）。只在扩展名是 `.html` 时才被调用；缺省走真实文件系统
+///   （两次 stat），测试可注入。不认它，旧版产物会落进下面的文本分支被转成一本
+///   全是 HTML 标签的 EPUB。
 ImportCarrier classifyImportCarrier(
   String path, {
   required bool Function(String path) isDirectory,
@@ -114,6 +122,7 @@ ImportCarrier classifyImportCarrier(
   required bool Function(String path) directoryHasPageImages,
   required int Function(String path) directoryCarrierFileCount,
   required int Function(String path) directoryMokuroFileCount,
+  bool Function(String path) isLegacyMokuroHtml = isLegacyMokuroHtmlVolume,
 }) {
   if (isDirectory(path)) {
     // `.mokuro` 先于页图（BUG-2785）：mokuro 的标准产物就是「`卷.mokuro` + 同名页图
@@ -142,6 +151,9 @@ ImportCarrier classifyImportCarrier(
 
   // .mokuro 同理：它的 JSON 内容会被文本分支当纯文本吞掉。
   if (ext == '.mokuro') return ImportCarrier.mangaMokuro;
+  if (ext == '.html' && isLegacyMokuroHtml(path)) {
+    return ImportCarrier.mangaMokuro;
+  }
 
   if (<String>{'.cbz', '.cbr', '.rar', '.cb7'}.contains(ext)) {
     return ImportCarrier.mangaArchive;
@@ -156,6 +168,17 @@ ImportCarrier classifyImportCarrier(
   }
   return ImportCarrier.epub;
 }
+
+/// 被判成漫画的 [path]（载体 [carrier]），用户能不能坚持按书籍导入。
+///
+/// 漫画判据是启发式的（图片型 EPUB 也可能是插图版小说、绘本、图文书），判错时
+/// 书籍框必须给用户一条「仍按书籍导入」的出口，而不是只剩取消 / 转漫画。但出口
+/// 只开给**书籍管线真吃得下**的载体：图片型 `.epub` 本身就是合法 EPUB，
+/// `EpubImporter` 照常导入；`.cbz` / `.zip` / `.mokuro` / 页图目录在书籍侧没有任何
+/// importer，给了出口也只会换来一次导入失败。
+bool canImportMangaCarrierAsBook(String path, ImportCarrier carrier) =>
+    carrier == ImportCarrier.mangaArchive &&
+    p.extension(path).toLowerCase() == '.epub';
 
 /// 需要真读包才能定性的容器扩展名（带点，小写）。
 const Set<String> _ambiguousArchiveExtensions = <String>{'.zip', '.epub'};

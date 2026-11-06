@@ -14,6 +14,8 @@
 
 [![Unduh versi terbaru](https://img.shields.io/badge/%E2%AC%87%20Unduh%20versi%20terbaru-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Gabung Discord](https://img.shields.io/badge/Gabung%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor%20on%20GitHub-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/hajisensai)
+[![Support on Ko-fi](https://img.shields.io/badge/Support%20on%20Ko-fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/hajisensai)
 
 </div>
 
@@ -136,9 +138,9 @@ Fushi menyimpan buku, kamus, font, data buku audio, video, progres baca, sorotan
 
 - **Sinkronisasi** — Google Drive / OneDrive / Dropbox memakai login OAuth; WebDAV / FTP / SFTP / Fushi Server memakai alamat server dan kredensial yang Anda berikan. Fushi Interconnect menghubungkan perangkat yang dipasangkan secara langsung (LAN, IPv6, jaringan overlay, atau alamat publik), dan beralih ke terowongan P2P iroh end-to-end bila tidak ada rute langsung yang berfungsi; tautan pemasangan selalu meminta konfirmasi.
 - **Anki** — pembuatan kartu berkomunikasi dengan AnkiDroid atau alamat AnkiConnect yang Anda konfigurasi.
-- **Statistik penggunaan** — sekali sehari, build desktop dan Android mengirim ID instalasi acak, versi aplikasi, platform, dan kanal pembaruan ke fushi.moe untuk menghitung pengguna aktif; tidak ada data akun, pustaka, atau bacaan yang disertakan dan alamat IP tidak disimpan. Matikan lewat *Bagikan statistik penggunaan* di pengaturan pembaruan. Build iOS tidak mengirimnya.
+- **Statistik penggunaan** — sekali sehari, build desktop dan Android mengirim ID instalasi yang diturunkan dari perangkat (tetap sama setelah instal ulang), versi aplikasi, platform, dan kanal pembaruan ke fushi.moe untuk menghitung pengguna aktif; tidak ada data akun, pustaka, atau bacaan yang disertakan dan alamat IP tidak disimpan. Matikan lewat *Bagikan statistik penggunaan* di pengaturan pembaruan. Build iOS tidak mengirimnya.
 - **Hanya saat Anda memintanya** — unggah log (setelah satu kali permintaan persetujuan), umpan balik dalam aplikasi, dan papan peringkat (nonaktif secara default; mengunggah judul pustaka dan progres Anda hanya setelah Anda ikut serta).
-- **OCR manga** — mesin default adalah Google Lens, yang mengirim gambar halaman ke Google; beralihlah ke model di perangkat atau OCR sistem di pengaturan agar gambar tetap lokal.
+- **OCR manga** — mesin default adalah model CTC di perangkat, sehingga gambar halaman tetap lokal (unduh sekali di pengaturan); Google Lens bersifat opsional dan mengirim gambar halaman ke Google.
 - **Fitur AI** — permintaan hanya dikirim ke penyedia LLM yang Anda konfigurasi dan tetapkan ke suatu fitur; tanpa penyedia yang ditetapkan, tidak ada yang dikirim.
 - **Layanan pihak ketiga** — fitur metadata, subtitle, dan sumber daring menghubungi layanan yang tercantum di [Sumber konten dan integrasi](#sumber-konten-dan-integrasi) hanya saat Anda menggunakannya.
 

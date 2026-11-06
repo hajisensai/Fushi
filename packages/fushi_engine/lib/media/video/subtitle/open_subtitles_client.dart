@@ -27,9 +27,9 @@ const int kMaximumSubtitleDownloadBytes = 64 * 1024 * 1024;
 /// 客户端擅自丢弃。
 const Map<String, List<String>> kOpenSubtitlesLanguageExpansions =
     <String, List<String>>{
-  'zh': <String>['zh-cn', 'zh-tw'],
-  'pt': <String>['pt-br', 'pt-pt'],
-};
+      'zh': <String>['zh-cn', 'zh-tw'],
+      'pt': <String>['pt-br', 'pt-pt'],
+    };
 
 /// 把语言偏好归一成 OpenSubtitles 能接受的值域。纯函数，便于单测。
 ///
@@ -62,8 +62,8 @@ class OpenSubtitlesConfig {
     this.enabled = true,
     this.priority = 200,
     this.allowInsecureHttp = false,
-  })  : userAgent = _resolveUserAgent(userAgent),
-        baseUrl = baseUrl ?? Uri.parse('https://api.opensubtitles.com/api/v1') {
+  }) : userAgent = _resolveUserAgent(userAgent),
+       baseUrl = baseUrl ?? Uri.parse('https://api.opensubtitles.com/api/v1') {
     if (this.baseUrl.host.isEmpty ||
         this.baseUrl.hasQuery ||
         this.baseUrl.userInfo.isNotEmpty ||
@@ -132,7 +132,8 @@ class OpenSubtitlesConfig {
     if (apiKey.trim().isNotEmpty) return apiKey.trim();
     // The bundled credential belongs to OpenSubtitles, not arbitrary mirrors
     // or user-supplied servers. Custom endpoints need their own explicit key.
-    final bool officialApi = baseUrl.scheme == 'https' &&
+    final bool officialApi =
+        baseUrl.scheme == 'https' &&
         baseUrl.host == 'api.opensubtitles.com' &&
         baseUrl.port == 443 &&
         baseUrl.path.replaceFirst(RegExp(r'/$'), '') == '/api/v1';
@@ -212,25 +213,28 @@ class OpenSubtitlesSearchRecord {
 /// `feature_details` → 作品身份。剧集类（`Episode` / `Tvshow`）取**父级**（剧本身）
 /// 的标题与 id：目标作品是整部剧，单集 id 与它无从比较。纯函数。
 SubtitleWorkClaim? parseOpenSubtitlesFeatureWork(
-    Map<Object?, Object?> feature) {
+  Map<Object?, Object?> feature,
+) {
   if (feature.isEmpty) return null;
   final String type = (_string(feature['feature_type']) ?? '').toLowerCase();
   final bool series = type == 'episode' || type == 'tvshow';
   final VideoMetadataMediaKind? kind = type == 'movie'
       ? VideoMetadataMediaKind.movie
       : series
-          ? VideoMetadataMediaKind.tv
-          : null;
+      ? VideoMetadataMediaKind.tv
+      : null;
   int? positive(Object? raw) {
     final int? value = _int(raw);
     return value == null || value <= 0 ? null : value;
   }
 
-  final int? imdb =
-      positive(series ? feature['parent_imdb_id'] : feature['imdb_id']);
+  final int? imdb = positive(
+    series ? feature['parent_imdb_id'] : feature['imdb_id'],
+  );
   return SubtitleWorkClaim(
-    titles: <String?>[_string(feature[series ? 'parent_title' : 'title'])]
-        .nonNulls,
+    titles: <String?>[
+      _string(feature[series ? 'parent_title' : 'title']),
+    ].nonNulls,
     year: positive(feature['year']),
     kind: kind,
     tmdbId: positive(series ? feature['parent_tmdb_id'] : feature['tmdb_id']),
@@ -276,9 +280,9 @@ List<OpenSubtitlesSearchRecord> parseOpenSubtitlesSearchResponse(String body) {
           hearingImpaired: attributes['hearing_impaired'] == true,
           fps: _double(attributes['fps']),
           uploadedAtMs: attributes['upload_date'] is String
-              ? DateTime.tryParse(attributes['upload_date']! as String)
-                  ?.toUtc()
-                  .millisecondsSinceEpoch
+              ? DateTime.tryParse(
+                  attributes['upload_date']! as String,
+                )?.toUtc().millisecondsSinceEpoch
               : null,
           aiTranslated: attributes['ai_translated'] == true,
           fromTrusted: attributes['from_trusted'] == true,
@@ -296,8 +300,8 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
     http.Client? client,
     this.requestTimeout = const Duration(seconds: 20),
     bool closesClient = true,
-  })  : _client = client ?? createAppHttpIoClient(),
-        _closesClient = client == null || closesClient;
+  }) : _client = client ?? createAppHttpIoClient(),
+       _closesClient = client == null || closesClient;
 
   final OpenSubtitlesConfig config;
   final http.Client _client;
@@ -396,8 +400,9 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
       }
       if (config.hasLoginCredentials && _token == null) await login();
       for (final Map<String, String> query in queries) {
-        final List<OpenSubtitlesSearchRecord> records =
-            await _requestSearch(query);
+        final List<OpenSubtitlesSearchRecord> records = await _requestSearch(
+          query,
+        );
         if (records.isEmpty) continue;
         return ProviderBatchResult<VideoSubtitleCandidate>.success(
           records.map(
@@ -421,7 +426,6 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
   }
 
   @override
-
   /// OpenSubtitles 的 `/download` 就是计配额的那一步（响应带 `remaining`），
   /// 绝不为一个展示标签消耗用户的每日额度。
   @override
@@ -449,8 +453,9 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
     }
     try {
       if (config.hasLoginCredentials && _token == null) await login();
-      http.Response response =
-          await _requestDownloadLink(candidate.record.fileId);
+      http.Response response = await _requestDownloadLink(
+        candidate.record.fileId,
+      );
       if (response.statusCode == 401 && config.hasLoginCredentials) {
         _token = null;
         await login();
@@ -471,8 +476,9 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
           message: 'provider returned an invalid temporary download link',
         );
       }
-      final Uint8List subtitleBytes =
-          await _downloadTemporaryFile(temporaryLink);
+      final Uint8List subtitleBytes = await _downloadTemporaryFile(
+        temporaryLink,
+      );
       final String fileName =
           _string(decoded['file_name']) ?? candidate.record.fileName;
       return VideoSubtitleDownload(
@@ -507,8 +513,9 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
       final http.Request request = http.Request('GET', current)
         ..followRedirects = false
         ..maxRedirects = 0;
-      final http.StreamedResponse response =
-          await _client.send(request).timeout(requestTimeout);
+      final http.StreamedResponse response = await _client
+          .send(request)
+          .timeout(requestTimeout);
       if (_isRedirectStatus(response.statusCode)) {
         final String? rawLocation = response.headers['location'];
         await _cancelStream(response.stream);
@@ -551,16 +558,12 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
           message: 'subtitle download exceeded the size limit',
         );
       }
-      return _readLimitedSubtitleBody(
-        response.stream.timeout(requestTimeout),
-      );
+      return _readLimitedSubtitleBody(response.stream.timeout(requestTimeout));
     }
     throw StateError('unreachable OpenSubtitles redirect loop');
   }
 
-  Future<Uint8List> _readLimitedSubtitleBody(
-    Stream<List<int>> stream,
-  ) async {
+  Future<Uint8List> _readLimitedSubtitleBody(Stream<List<int>> stream) async {
     final BytesBuilder body = BytesBuilder(copy: false);
     int length = 0;
     await for (final List<int> chunk in stream) {
@@ -599,9 +602,7 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
   ) async {
     http.Response response = await _client
         .get(
-          _apiUri(config.baseUrl, 'subtitles').replace(
-            queryParameters: query,
-          ),
+          _apiUri(config.baseUrl, 'subtitles').replace(queryParameters: query),
           headers: _headers(),
         )
         .timeout(requestTimeout);
@@ -610,9 +611,10 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
       await login();
       response = await _client
           .get(
-            _apiUri(config.baseUrl, 'subtitles').replace(
-              queryParameters: query,
-            ),
+            _apiUri(
+              config.baseUrl,
+              'subtitles',
+            ).replace(queryParameters: query),
             headers: _headers(),
           )
           .timeout(requestTimeout);
@@ -624,9 +626,7 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
     return parseOpenSubtitlesSearchResponse(utf8.decode(response.bodyBytes));
   }
 
-  List<Map<String, String>> _searchQueries(
-    VideoSubtitleSearchRequest request,
-  ) {
+  List<Map<String, String>> _searchQueries(VideoSubtitleSearchRequest request) {
     final VideoMediaReference? media = request.media;
     final LocalVideoFingerprint? fingerprint = request.fingerprint;
     final String? imdb = media?.imdbId?.replaceFirst(
@@ -634,8 +634,9 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
       '',
     );
     // 归一后再发：Fushi 内部是大类码，OpenSubtitles 要 BCP-47（BUG-1846）。
-    final List<String> languages =
-        normalizeOpenSubtitlesLanguages(request.languages);
+    final List<String> languages = normalizeOpenSubtitlesLanguages(
+      request.languages,
+    );
     final Map<String, String> common = <String, String>{
       'page': '${request.page}',
       if (languages.isNotEmpty) 'languages': languages.join(','),
@@ -693,15 +694,14 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
   Map<String, String> _headers({
     bool includeAuthorization = true,
     bool jsonBody = false,
-  }) =>
-      <String, String>{
-        'Api-Key': config.effectiveApiKey,
-        'User-Agent': config.userAgent,
-        'Accept': 'application/json',
-        if (jsonBody) 'Content-Type': 'application/json',
-        if (includeAuthorization && _token != null)
-          'Authorization': 'Bearer $_token',
-      };
+  }) => <String, String>{
+    'Api-Key': config.effectiveApiKey,
+    'User-Agent': config.userAgent,
+    'Accept': 'application/json',
+    if (jsonBody) 'Content-Type': 'application/json',
+    if (includeAuthorization && _token != null)
+      'Authorization': 'Bearer $_token',
+  };
 
   void _requireSuccess(String operation, http.Response response) {
     if (response.statusCode >= 200 && response.statusCode < 300) return;
@@ -759,23 +759,23 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
 
 class _OpenSubtitlesCandidate extends VideoSubtitleCandidate {
   _OpenSubtitlesCandidate(this.record, int providerPriority)
-      : super(
-          providerId: 'opensubtitles',
-          remoteId: '${record.fileId}',
-          fileName: record.fileName,
-          language: record.language,
-          providerPriority: providerPriority,
-          releaseName: record.releaseName,
-          season: record.season,
-          episode: record.episode,
-          downloadCount: record.downloadCount,
-          hearingImpaired: record.hearingImpaired,
-          work: record.work,
-          fps: record.fps,
-          uploadedAtMs: record.uploadedAtMs,
-          aiTranslated: record.aiTranslated,
-          fromTrusted: record.fromTrusted,
-        );
+    : super(
+        providerId: 'opensubtitles',
+        remoteId: '${record.fileId}',
+        fileName: record.fileName,
+        language: record.language,
+        providerPriority: providerPriority,
+        releaseName: record.releaseName,
+        season: record.season,
+        episode: record.episode,
+        downloadCount: record.downloadCount,
+        hearingImpaired: record.hearingImpaired,
+        work: record.work,
+        fps: record.fps,
+        uploadedAtMs: record.uploadedAtMs,
+        aiTranslated: record.aiTranslated,
+        fromTrusted: record.fromTrusted,
+      );
 
   final OpenSubtitlesSearchRecord record;
 }
@@ -792,8 +792,8 @@ String? _string(Object? value) => value is String ? value : null;
 int? _int(Object? value) => value is int
     ? value
     : value is num
-        ? value.toInt()
-        : int.tryParse(value?.toString() ?? '');
+    ? value.toInt()
+    : int.tryParse(value?.toString() ?? '');
 
 double? _double(Object? value) =>
     value is num ? value.toDouble() : double.tryParse(value?.toString() ?? '');

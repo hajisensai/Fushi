@@ -106,8 +106,9 @@ void main() {
 
     await manager.commitInstall(proposal, trustSigner: true);
 
-    final MangaExtensionRow? row =
-        await database.getMangaExtension('org.example.fixture');
+    final MangaExtensionRow? row = await database.getMangaExtension(
+      'org.example.fixture',
+    );
     expect(row, isNotNull);
     expect(row!.versionCode, 1);
     expect(await database.getMangaOnlineSources(), hasLength(1));
@@ -199,20 +200,16 @@ void main() {
 }
 
 File _previewMarker(Directory root) => File(
-      '${root.path}${Platform.pathSeparator}tmp'
-      '${Platform.pathSeparator}preview-pending',
-    );
+  '${root.path}${Platform.pathSeparator}tmp'
+  '${Platform.pathSeparator}preview-pending',
+);
 
 Future<List<FileSystemEntity>> _stagedApks(Directory root) async {
-  final Directory tmp = Directory(
-    '${root.path}${Platform.pathSeparator}tmp',
-  );
+  final Directory tmp = Directory('${root.path}${Platform.pathSeparator}tmp');
   if (!await tmp.exists()) return const <FileSystemEntity>[];
   return tmp
       .list()
-      .where(
-        (FileSystemEntity entity) => entity.path.endsWith('.apk.part'),
-      )
+      .where((FileSystemEntity entity) => entity.path.endsWith('.apk.part'))
       .toList();
 }
 

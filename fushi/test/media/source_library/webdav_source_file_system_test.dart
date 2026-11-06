@@ -29,10 +29,14 @@ class _FakeWebDavServer {
   static const String subEpBody = 'PK-season1-ep1-epub-bytes';
   static const String srtBody = '1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n';
 
-  static Future<_FakeWebDavServer> start() async {
-    final HttpServer srv =
-        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final String origin = 'http://127.0.0.1:${srv.port}';
+  static Future<_FakeWebDavServer> start({bool ipv6 = false}) async {
+    final HttpServer srv = await HttpServer.bind(
+      ipv6 ? InternetAddress.loopbackIPv6 : InternetAddress.loopbackIPv4,
+      0,
+    );
+    final String origin = ipv6
+        ? 'http://[::1]:${srv.port}'
+        : 'http://127.0.0.1:${srv.port}';
     final _FakeWebDavServer fake = _FakeWebDavServer(srv, origin);
     fake._listen();
     return fake;
@@ -58,8 +62,10 @@ class _FakeWebDavServer {
 
   void _respondXml(HttpRequest req, String xml) {
     req.response.statusCode = 207;
-    req.response.headers
-        .set(HttpHeaders.contentTypeHeader, 'application/xml; charset=utf-8');
+    req.response.headers.set(
+      HttpHeaders.contentTypeHeader,
+      'application/xml; charset=utf-8',
+    );
     req.response.write(xml);
     req.response.close();
   }
@@ -67,22 +73,24 @@ class _FakeWebDavServer {
   void _handlePropfind(HttpRequest req, String path) {
     if (path == '/dav/books' || path == '/dav/books/') {
       _respondXml(
-          req,
-          _multistatus(<_DavRes>[
-            const _DavRes('/dav/books/', 'books', true),
-            const _DavRes('/dav/books/novel.epub', 'novel.epub', false),
-            const _DavRes('/dav/books/novel.srt', 'novel.srt', false),
-            const _DavRes('/dav/books/season1/', 'season1', true),
-          ]));
+        req,
+        _multistatus(<_DavRes>[
+          const _DavRes('/dav/books/', 'books', true),
+          const _DavRes('/dav/books/novel.epub', 'novel.epub', false),
+          const _DavRes('/dav/books/novel.srt', 'novel.srt', false),
+          const _DavRes('/dav/books/season1/', 'season1', true),
+        ]),
+      );
       return;
     }
     if (path == '/dav/books/season1' || path == '/dav/books/season1/') {
       _respondXml(
-          req,
-          _multistatus(<_DavRes>[
-            const _DavRes('/dav/books/season1/', 'season1', true),
-            const _DavRes('/dav/books/season1/ep1.epub', 'ep1.epub', false),
-          ]));
+        req,
+        _multistatus(<_DavRes>[
+          const _DavRes('/dav/books/season1/', 'season1', true),
+          const _DavRes('/dav/books/season1/ep1.epub', 'ep1.epub', false),
+        ]),
+      );
       return;
     }
     req.response.statusCode = HttpStatus.notFound;
@@ -103,8 +111,10 @@ class _FakeWebDavServer {
     }
     final List<int> bytes = utf8.encode(body);
     req.response.statusCode = HttpStatus.ok;
-    req.response.headers
-        .set(HttpHeaders.contentLengthHeader, '${bytes.length}');
+    req.response.headers.set(
+      HttpHeaders.contentLengthHeader,
+      '${bytes.length}',
+    );
     req.response.add(bytes);
     req.response.close();
   }
@@ -118,9 +128,11 @@ class _FakeWebDavServer {
         ..write('<d:response>')
         ..write('<d:href>${r.href}</d:href>')
         ..write('<d:propstat><d:prop>')
-        ..write(r.isCollection
-            ? '<d:resourcetype><d:collection/></d:resourcetype>'
-            : '<d:resourcetype/>')
+        ..write(
+          r.isCollection
+              ? '<d:resourcetype><d:collection/></d:resourcetype>'
+              : '<d:resourcetype/>',
+        )
         ..write('<d:displayname>${r.displayName}</d:displayname>')
         ..write('</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat>')
         ..write('</d:response>');
@@ -145,13 +157,15 @@ void main() {
   setUp(() async {
     fakeServer = await _FakeWebDavServer.start();
     rootUrl = '${fakeServer.origin}/dav/books';
-    fs = NetworkSourceFileSystem(NetworkSourceConfig(
-      transport: 'webdav',
-      host: '127.0.0.1',
-      port: fakeServer.server.port,
-      username: 'reader',
-      password: 'pw',
-    ));
+    fs = NetworkSourceFileSystem(
+      NetworkSourceConfig(
+        transport: 'webdav',
+        host: '127.0.0.1',
+        port: fakeServer.server.port,
+        username: 'reader',
+        password: 'pw',
+      ),
+    );
   });
 
   tearDown(() async {
@@ -165,18 +179,27 @@ void main() {
   });
 
   test('listFiles(recursive) 深度遍历只回文件，path 为完整 href URL，跳过集合自身', () async {
-    final List<SourceFileEntry> entries =
-        await fs.listFiles(rootUrl, recursive: true);
+    final List<SourceFileEntry> entries = await fs.listFiles(
+      rootUrl,
+      recursive: true,
+    );
     final Map<String, SourceFileEntry> byName = <String, SourceFileEntry>{
       for (final SourceFileEntry e in entries) e.name: e,
     };
-    expect(
-        byName.keys.toSet(), <String>{'novel.epub', 'novel.srt', 'ep1.epub'});
+    expect(byName.keys.toSet(), <String>{
+      'novel.epub',
+      'novel.srt',
+      'ep1.epub',
+    });
     expect(entries.every((SourceFileEntry e) => !e.isDirectory), isTrue);
-    expect(byName['novel.epub']!.path,
-        '${fakeServer.origin}/dav/books/novel.epub');
-    expect(byName['ep1.epub']!.path,
-        '${fakeServer.origin}/dav/books/season1/ep1.epub');
+    expect(
+      byName['novel.epub']!.path,
+      '${fakeServer.origin}/dav/books/novel.epub',
+    );
+    expect(
+      byName['ep1.epub']!.path,
+      '${fakeServer.origin}/dav/books/season1/ep1.epub',
+    );
   });
 
   test('listFiles(非递归) 列直接子项：文件 + 子目录，集合自身不出现', () async {
@@ -191,8 +214,9 @@ void main() {
   });
 
   test('copyToLocal 用 GET 下载远端文件到本地临时盘，字节一致', () async {
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('todo1274_webdav_dl_');
+    final Directory tmp = Directory.systemTemp.createTempSync(
+      'todo1274_webdav_dl_',
+    );
     addTearDown(() {
       try {
         tmp.deleteSync(recursive: true);
@@ -205,8 +229,9 @@ void main() {
   });
 
   test('readText 用 GET 读回 UTF-8 文本（字幕）', () async {
-    final String text =
-        await fs.readText('${fakeServer.origin}/dav/books/novel.srt');
+    final String text = await fs.readText(
+      '${fakeServer.origin}/dav/books/novel.srt',
+    );
     expect(text, _FakeWebDavServer.srtBody);
     expect(text, contains('こんにちは'));
   });
@@ -215,12 +240,51 @@ void main() {
     await fs.listFiles(rootUrl);
     expect(fakeServer.authHeaders, isNotEmpty);
     expect(
-      fakeServer.authHeaders
-          .every((String? h) => h != null && h.startsWith('Basic ')),
+      fakeServer.authHeaders.every(
+        (String? h) => h != null && h.startsWith('Basic '),
+      ),
       isTrue,
       reason: 'WebDAV 请求必须带注入凭据的 Basic 认证头',
     );
     final String expected = 'Basic ${base64Encode(utf8.encode('reader:pw'))}';
     expect(fakeServer.authHeaders.first, expected);
+  });
+
+  // 崩溃分诊 n1i0ET11Ea：IPv6 地址的 WebDAV 端点。旧实现用 `Uri.host`（无方括号）
+  // 手拼 baseUrl 与 PROPFIND 相对 href 的绝对 URL，得到 `http://::1:<port>/…`，
+  // 下一次 Uri.parse 抛 `FormatException: Invalid port`，递归列目录第一层就失败。
+  test('IPv6 端点：递归列目录与下载都用带方括号的 URL', () async {
+    final _FakeWebDavServer v6 = await _FakeWebDavServer.start(ipv6: true);
+    final NetworkSourceFileSystem v6fs = NetworkSourceFileSystem(
+      NetworkSourceConfig(
+        transport: 'webdav',
+        host: '::1',
+        port: v6.server.port,
+        username: 'reader',
+        password: 'pw',
+      ),
+    );
+    addTearDown(() async {
+      await v6fs.close();
+      await v6.stop();
+    });
+
+    final List<SourceFileEntry> entries = await v6fs.listFiles(
+      '${v6.origin}/dav/books',
+      recursive: true,
+    );
+    final Map<String, SourceFileEntry> byName = <String, SourceFileEntry>{
+      for (final SourceFileEntry e in entries) e.name: e,
+    };
+    expect(byName.keys.toSet(), <String>{
+      'novel.epub',
+      'novel.srt',
+      'ep1.epub',
+    });
+    expect(byName['ep1.epub']!.path, '${v6.origin}/dav/books/season1/ep1.epub');
+    expect(
+      await v6fs.readText(byName['novel.srt']!.path),
+      _FakeWebDavServer.srtBody,
+    );
   });
 }

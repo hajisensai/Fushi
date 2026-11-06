@@ -7,16 +7,14 @@ import 'package:fushi/src/focus/fushi_focus_target.dart';
 // 「设计系统」段控上，按 Down 应去同面板下方的「主题」；但左侧导航面板（另一个
 // Scrollable）的「阅读」在纵向上更近，旧评分会误选它。修复后方向焦点优先留在
 // 当前项所在的同一 Scrollable 面板内。
-Widget _twoPane({
-  required GlobalKey rootKey,
-}) {
+Widget _twoPane({required GlobalKey rootKey}) {
   // 左面板（导航 ListView）：nav0 / nav-阅读 / nav2，各高 56。
   // 右面板（详情 ListView）：seg（高 56）/ 非聚焦留白（高 80）/ theme（高 56）。
   // 两面板顶端对齐：seg 中心≈28，theme 中心≈164；nav-阅读 中心≈84（比 theme 更近）。
   Widget target(String id, double height, double width) => FushiFocusTarget(
-        id: FushiFocusId(id),
-        child: SizedBox(height: height, width: width),
-      );
+    id: FushiFocusId(id),
+    child: SizedBox(height: height, width: width),
+  );
   return MaterialApp(
     theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
     home: Scaffold(
@@ -56,37 +54,43 @@ Widget _twoPane({
 
 void main() {
   testWidgets(
-      'Down from a detail-pane control stays in the same Scrollable pane '
-      '(does not jump to the closer cross-pane nav item)', (tester) async {
+    'Down from a detail-pane control stays in the same Scrollable pane '
+    '(does not jump to the closer cross-pane nav item)',
+    (tester) async {
+      final GlobalKey rootKey = GlobalKey();
+      await tester.pumpWidget(_twoPane(rootKey: rootKey));
+      await tester.pump();
+
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
+        rootKey.currentContext!,
+      );
+
+      expect(controller.requestById(const FushiFocusId('detail-seg')), isTrue);
+      await tester.pump();
+
+      expect(controller.move(FushiFocusDirection.down), isTrue);
+      await tester.pump();
+
+      expect(
+        controller.activeId,
+        const FushiFocusId('detail-theme'),
+        reason:
+            'Down must prefer the same-pane control below, not the closer '
+            'cross-pane nav item',
+      );
+    },
+  );
+
+  testWidgets('Right from the nav pane still crosses into the detail pane', (
+    tester,
+  ) async {
     final GlobalKey rootKey = GlobalKey();
     await tester.pumpWidget(_twoPane(rootKey: rootKey));
     await tester.pump();
 
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(rootKey.currentContext!);
-
-    expect(controller.requestById(const FushiFocusId('detail-seg')), isTrue);
-    await tester.pump();
-
-    expect(controller.move(FushiFocusDirection.down), isTrue);
-    await tester.pump();
-
-    expect(
-      controller.activeId,
-      const FushiFocusId('detail-theme'),
-      reason: 'Down must prefer the same-pane control below, not the closer '
-          'cross-pane nav item',
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
+      rootKey.currentContext!,
     );
-  });
-
-  testWidgets('Right from the nav pane still crosses into the detail pane',
-      (tester) async {
-    final GlobalKey rootKey = GlobalKey();
-    await tester.pumpWidget(_twoPane(rootKey: rootKey));
-    await tester.pump();
-
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(rootKey.currentContext!);
 
     expect(controller.requestById(const FushiFocusId('nav-0')), isTrue);
     await tester.pump();

@@ -50,19 +50,23 @@ void main() {
     await writeFile(p.join(srcAudio, 'u1', 'cover.jpg'), 'COVER');
 
     final FushiDatabase srcDb = FushiDatabase(srcDbDir);
-    await srcDb.upsertSrtBook(SrtBooksCompanion.insert(
-      uid: 'srtbook_1',
-      title: 'Audio Book',
-      audioRoot: Value(p.join(srcAudio, 'u1')),
-      audioPathsJson: Value(audioPathsJsonOverride ??
-          jsonEncode(<String>[
-            p.join(srcAudio, 'u1', '01.mp3'),
-            p.join(srcAudio, 'u1', '02.mp3'),
-          ])),
-      srtPath: p.join(srcAudio, 'u1', 'sub.srt'),
-      coverPath: Value(p.join(srcAudio, 'u1', 'cover.jpg')),
-      importedAt: 0,
-    ));
+    await srcDb.upsertSrtBook(
+      SrtBooksCompanion.insert(
+        uid: 'srtbook_1',
+        title: 'Audio Book',
+        audioRoot: Value(p.join(srcAudio, 'u1')),
+        audioPathsJson: Value(
+          audioPathsJsonOverride ??
+              jsonEncode(<String>[
+                p.join(srcAudio, 'u1', '01.mp3'),
+                p.join(srcAudio, 'u1', '02.mp3'),
+              ]),
+        ),
+        srtPath: p.join(srcAudio, 'u1', 'sub.srt'),
+        coverPath: Value(p.join(srcAudio, 'u1', 'cover.jpg')),
+        importedAt: 0,
+      ),
+    );
     final String zipPath = p.join(src.path, 'backup.zip');
     final BackupMeta meta = await BackupService(
       db: srcDb,
@@ -76,45 +80,46 @@ void main() {
     return zipPath;
   }
 
-  test('merge import rebases all four srt_books path columns onto this device',
-      () async {
-    final String srcAudio = p.join(src.path, 'audiobooks');
-    final String zipPath = await buildSourceBackup(srcAudio: srcAudio);
+  test(
+    'merge import rebases all four srt_books path columns onto this device',
+    () async {
+      final String srcAudio = p.join(src.path, 'audiobooks');
+      final String zipPath = await buildSourceBackup(srcAudio: srcAudio);
 
-    final String dstDbDir = p.join(dst.path, 'db');
-    final String dstBooks = p.join(dst.path, 'fushi_books');
-    final String dstAudio = p.join(dst.path, 'audiobooks');
-    Directory(dstDbDir).createSync(recursive: true);
+      final String dstDbDir = p.join(dst.path, 'db');
+      final String dstBooks = p.join(dst.path, 'fushi_books');
+      final String dstAudio = p.join(dst.path, 'audiobooks');
+      Directory(dstDbDir).createSync(recursive: true);
 
-    await BackupRestoreService.mergeRestoreBackup(
-      dbDirectory: dstDbDir,
-      zipPath: zipPath,
-      booksRootDirectory: dstBooks,
-      audiobooksRootDirectory: dstAudio,
-    );
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: dstDbDir,
+        zipPath: zipPath,
+        booksRootDirectory: dstBooks,
+        audiobooksRootDirectory: dstAudio,
+      );
 
-    final FushiDatabase dstDb = FushiDatabase(dstDbDir);
-    try {
-      final SrtBookRow? row = await dstDb.getSrtBookByUid('srtbook_1');
-      expect(row, isNotNull);
-      expect(row!.audioRoot, p.join(dstAudio, 'u1'));
-      expect(row.srtPath, p.join(dstAudio, 'u1', 'sub.srt'));
-      expect(row.coverPath, p.join(dstAudio, 'u1', 'cover.jpg'));
-      expect(
-        jsonDecode(row.audioPathsJson!),
-        <String>[
+      final FushiDatabase dstDb = FushiDatabase(dstDbDir);
+      try {
+        final SrtBookRow? row = await dstDb.getSrtBookByUid('srtbook_1');
+        expect(row, isNotNull);
+        expect(row!.audioRoot, p.join(dstAudio, 'u1'));
+        expect(row.srtPath, p.join(dstAudio, 'u1', 'sub.srt'));
+        expect(row.coverPath, p.join(dstAudio, 'u1', 'cover.jpg'));
+        expect(jsonDecode(row.audioPathsJson!), <String>[
           p.join(dstAudio, 'u1', '01.mp3'),
           p.join(dstAudio, 'u1', '02.mp3'),
-        ],
-      );
-      // 文件也真的落在新根下：rebase 后的路径必须解析得开，否则书架照样断链。
-      expect(File(row.srtPath).existsSync(), isTrue);
-      expect(File(jsonDecode(row.audioPathsJson!)[0] as String).existsSync(),
-          isTrue);
-    } finally {
-      await dstDb.close();
-    }
-  });
+        ]);
+        // 文件也真的落在新根下：rebase 后的路径必须解析得开，否则书架照样断链。
+        expect(File(row.srtPath).existsSync(), isTrue);
+        expect(
+          File(jsonDecode(row.audioPathsJson!)[0] as String).existsSync(),
+          isTrue,
+        );
+      } finally {
+        await dstDb.close();
+      }
+    },
+  );
 
   test('overwrite restore rebases srt_books too', () async {
     final String srcAudio = p.join(src.path, 'audiobooks');
@@ -146,8 +151,7 @@ void main() {
     }
   });
 
-  test(
-      'malformed audio_paths_json is kept verbatim and does not abort the '
+  test('malformed audio_paths_json is kept verbatim and does not abort the '
       'import (the other three columns still rebase)', () async {
     final String srcAudio = p.join(src.path, 'audiobooks');
     final String zipPath = await buildSourceBackup(

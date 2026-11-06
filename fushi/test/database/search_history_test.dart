@@ -1,5 +1,5 @@
-﻿import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:drift/native.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 Future<FushiDatabase> _openDb() async {
@@ -23,8 +23,9 @@ void main() {
     await db.upsertSearchHistoryItem(
       _historyItem('dictionary_media_type', '猫'),
     );
-    final firstRow =
-        (await db.getSearchHistory('dictionary_media_type')).single;
+    final firstRow = (await db.getSearchHistory(
+      'dictionary_media_type',
+    )).single;
 
     await db.upsertSearchHistoryItem(
       _historyItem('dictionary_media_type', '猫'),

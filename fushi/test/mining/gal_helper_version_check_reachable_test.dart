@@ -31,11 +31,7 @@ void main() {
     for (final String path in entryPoints) {
       test('$path 不拿 injector 存在性当前置门', () {
         final File file = File(path);
-        expect(
-          file.existsSync(),
-          isTrue,
-          reason: '启动入口文件不在了？守卫失去锚点，先修路径再谈断言',
-        );
+        expect(file.existsSync(), isTrue, reason: '启动入口文件不在了？守卫失去锚点，先修路径再谈断言');
         final String src = file.readAsStringSync();
 
         // 前提：这个入口确实还在调 ensureInjector。否则下面的「没有短路」会因为
@@ -51,7 +47,8 @@ void main() {
         expect(
           containsCodeLine(src, 'defaultInjectorResolver'),
           isFalse,
-          reason: '$path 又用 defaultInjectorResolver 当前置门：'
+          reason:
+              '$path 又用 defaultInjectorResolver 当前置门：'
               '文件在但版本旧时会跳过换入，正是 BUG-1448 的原始形态',
         );
       });

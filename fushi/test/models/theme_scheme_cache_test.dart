@@ -17,9 +17,13 @@ void main() {
         seedColor: const Color(0xFF1F4959),
         brightness: Brightness.light,
       );
-      expect(identical(a, b), isTrue,
-          reason: '纯函数 memo：同参必须命中缓存，否则主题选择器每次 rebuild '
-              '重跑全部 HCT 色调板生成');
+      expect(
+        identical(a, b),
+        isTrue,
+        reason:
+            '纯函数 memo：同参必须命中缓存，否则主题选择器每次 rebuild '
+            '重跑全部 HCT 色调板生成',
+      );
     });
 
     test('明暗 / 种子 / 角色覆写不同 → 各自独立结果', () {

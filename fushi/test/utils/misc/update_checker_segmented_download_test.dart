@@ -122,7 +122,9 @@ void main() {
       // concat 正确 = 整文件按字节序还原
       expect(await file.readAsBytes(), payload);
       expect(
-          file.path, UpdateDownloadPaths.forAsset(updatesDir, asset).file.path);
+        file.path,
+        UpdateDownloadPaths.forAsset(updatesDir, asset).file.path,
+      );
     });
 
     test('并发各段写独立 partFile.<i>，全成后 concat，临时分段文件清理', () async {
@@ -140,8 +142,10 @@ void main() {
       );
       expect(await file.readAsBytes(), payload);
       // staging 根下不应残留 .part.<i> 分段文件
-      final UpdateDownloadPaths paths =
-          UpdateDownloadPaths.forAsset(updatesDir, asset);
+      final UpdateDownloadPaths paths = UpdateDownloadPaths.forAsset(
+        updatesDir,
+        asset,
+      );
       if (paths.stagingRoot.existsSync()) {
         final List<String> leftover = paths.stagingRoot
             .listSync(recursive: true)
@@ -177,8 +181,11 @@ void main() {
       expect(progressValues.last, closeTo(1.0, 1e-9));
       // 单调不减
       for (int i = 1; i < progressValues.length; i++) {
-        expect(progressValues[i], greaterThanOrEqualTo(progressValues[i - 1]),
-            reason: '进度不应回退');
+        expect(
+          progressValues[i],
+          greaterThanOrEqualTo(progressValues[i - 1]),
+          reason: '进度不应回退',
+        );
       }
       // 最终 diagnostics 的 receivedBytes 应等于整文件大小（Σ各段）
       expect(diagnostics.last.receivedBytes, payload.length);
@@ -231,8 +238,9 @@ void main() {
           final String? range = headers[HttpHeaders.rangeHeader];
           // 分段阶段：探针成功（让它判定可分段），但某个非首段一律抛错。
           if (segmentedMode && range != null && range.startsWith('bytes=')) {
-            final int start =
-                int.parse(RegExp(r'bytes=(\d+)-').firstMatch(range)!.group(1)!);
+            final int start = int.parse(
+              RegExp(r'bytes=(\d+)-').firstMatch(range)!.group(1)!,
+            );
             if (start > 0) {
               throw const SocketException('segment connection reset');
             }
@@ -270,8 +278,9 @@ void main() {
         openUrl: (Uri _, Map<String, String> headers) async {
           final String? range = headers[HttpHeaders.rangeHeader];
           if (range != null && range.startsWith('bytes=')) {
-            final int start =
-                int.parse(RegExp(r'bytes=(\d+)-').firstMatch(range)!.group(1)!);
+            final int start = int.parse(
+              RegExp(r'bytes=(\d+)-').firstMatch(range)!.group(1)!,
+            );
             if (start == 0 && !probeServed) {
               probeServed = true;
               // 探针段返回 etag "v1"
@@ -322,13 +331,16 @@ void main() {
             final String? range = headers[HttpHeaders.rangeHeader];
             // 每段都少返 1 字节 → concat 后总长 < 期望 size
             if (range != null && range.startsWith('bytes=')) {
-              final UpdateDownloadResponse full =
-                  _rangeResponse(payload, range);
+              final UpdateDownloadResponse full = _rangeResponse(
+                payload,
+                range,
+              );
               return UpdateDownloadResponse(
                 statusCode: full.statusCode,
                 headers: full.headers,
-                stream: full.stream.map((List<int> b) =>
-                    b.isEmpty ? b : b.sublist(0, b.length - 1)),
+                stream: full.stream.map(
+                  (List<int> b) => b.isEmpty ? b : b.sublist(0, b.length - 1),
+                ),
               );
             }
             return _rangeResponse(payload, range);
@@ -338,8 +350,10 @@ void main() {
       );
 
       // 最终包不应存在（半成品绝不 promote）
-      final UpdateDownloadPaths paths =
-          UpdateDownloadPaths.forAsset(updatesDir, asset);
+      final UpdateDownloadPaths paths = UpdateDownloadPaths.forAsset(
+        updatesDir,
+        asset,
+      );
       expect(paths.file.existsSync(), isFalse);
     });
 
@@ -384,64 +398,74 @@ void main() {
       }
     });
 
-    test('某段先吐部分字节再抛 SocketException 重试成功：onProgress 全程 ≤1.0 单调非减、末值==1.0',
-        () async {
-      // 直击 TODO-596 加减不对称：首次 attempt 已加 delta，回退却减 segWritten(=0)，
-      // 删段后重下整段又加一遍 → 重复计 → receivedTotal/total >1.0(135%) + 回跳闪烁。
-      final List<int> payload = _largePayload();
-      final UpdateAsset asset = _asset(payload);
-      final List<double> progressValues = <double>[];
-      // 每个非探针请求按 (起点) 计数，让「第二段第一次」中途抛错、第二次成功。
-      final Map<int, int> attemptByStart = <int, int>{};
-      var probeServed = false;
+    test(
+      '某段先吐部分字节再抛 SocketException 重试成功：onProgress 全程 ≤1.0 单调非减、末值==1.0',
+      () async {
+        // 直击 TODO-596 加减不对称：首次 attempt 已加 delta，回退却减 segWritten(=0)，
+        // 删段后重下整段又加一遍 → 重复计 → receivedTotal/total >1.0(135%) + 回跳闪烁。
+        final List<int> payload = _largePayload();
+        final UpdateAsset asset = _asset(payload);
+        final List<double> progressValues = <double>[];
+        // 每个非探针请求按 (起点) 计数，让「第二段第一次」中途抛错、第二次成功。
+        final Map<int, int> attemptByStart = <int, int>{};
+        var probeServed = false;
 
-      final File file = await downloadUpdateAsset(
-        asset: asset,
-        version: '1.2.0',
-        updatesDir: updatesDir,
-        candidateUrls: <String>[asset.url],
-        connectionCount: 4,
-        minSegmentBytes: _minSeg,
-        onProgress: progressValues.add,
-        openUrl: (Uri _, Map<String, String> headers) async {
-          final String? range = headers[HttpHeaders.rangeHeader];
-          if (range == null || !range.startsWith('bytes=')) {
+        final File file = await downloadUpdateAsset(
+          asset: asset,
+          version: '1.2.0',
+          updatesDir: updatesDir,
+          candidateUrls: <String>[asset.url],
+          connectionCount: 4,
+          minSegmentBytes: _minSeg,
+          onProgress: progressValues.add,
+          openUrl: (Uri _, Map<String, String> headers) async {
+            final String? range = headers[HttpHeaders.rangeHeader];
+            if (range == null || !range.startsWith('bytes=')) {
+              return _rangeResponse(payload, range);
+            }
+            final RegExpMatch m = RegExp(
+              r'bytes=(\d+)-(\d*)',
+            ).firstMatch(range)!;
+            final int start = int.parse(m.group(1)!);
+            // 第一个 bytes=0- 是探针（drain 丢弃），放行真实 206。
+            if (start == 0 && !probeServed) {
+              probeServed = true;
+              return _rangeResponse(payload, range);
+            }
+            final int attempt = (attemptByStart[start] ?? 0) + 1;
+            attemptByStart[start] = attempt;
+            // 选一个非首段：首次 attempt 先吐若干字节，再抛 SocketException。
+            if (start > 0 && attempt == 1) {
+              return _failMidStreamResponse(payload, start, m.group(2)!);
+            }
+            // 其它（含重试的第二次）正常完整返回该段。
             return _rangeResponse(payload, range);
-          }
-          final RegExpMatch m = RegExp(r'bytes=(\d+)-(\d*)').firstMatch(range)!;
-          final int start = int.parse(m.group(1)!);
-          // 第一个 bytes=0- 是探针（drain 丢弃），放行真实 206。
-          if (start == 0 && !probeServed) {
-            probeServed = true;
-            return _rangeResponse(payload, range);
-          }
-          final int attempt = (attemptByStart[start] ?? 0) + 1;
-          attemptByStart[start] = attempt;
-          // 选一个非首段：首次 attempt 先吐若干字节，再抛 SocketException。
-          if (start > 0 && attempt == 1) {
-            return _failMidStreamResponse(payload, start, m.group(2)!);
-          }
-          // 其它（含重试的第二次）正常完整返回该段。
-          return _rangeResponse(payload, range);
-        },
-      );
+          },
+        );
 
-      expect(await file.readAsBytes(), payload, reason: '重试后仍还原整文件');
-      expect(progressValues, isNotEmpty);
-      // 核心断言 1：全程绝不 >1.0（直击 135% 溢出）。
-      for (final double p in progressValues) {
-        expect(p, lessThanOrEqualTo(1.0 + 1e-9),
-            reason: '进度永不超过 100%（TODO-628 溢出 135%）');
-        expect(p, greaterThanOrEqualTo(0.0));
-      }
-      // 核心断言 2：单调非减（直击重试回退导致的向下跳变闪烁）。
-      for (int i = 1; i < progressValues.length; i++) {
-        expect(progressValues[i], greaterThanOrEqualTo(progressValues[i - 1]),
-            reason: 'TODO-650：进度不应回跳（闪烁）');
-      }
-      // 核心断言 3：末值收尾到 1.0。
-      expect(progressValues.last, closeTo(1.0, 1e-9));
-    });
+        expect(await file.readAsBytes(), payload, reason: '重试后仍还原整文件');
+        expect(progressValues, isNotEmpty);
+        // 核心断言 1：全程绝不 >1.0（直击 135% 溢出）。
+        for (final double p in progressValues) {
+          expect(
+            p,
+            lessThanOrEqualTo(1.0 + 1e-9),
+            reason: '进度永不超过 100%（TODO-628 溢出 135%）',
+          );
+          expect(p, greaterThanOrEqualTo(0.0));
+        }
+        // 核心断言 2：单调非减（直击重试回退导致的向下跳变闪烁）。
+        for (int i = 1; i < progressValues.length; i++) {
+          expect(
+            progressValues[i],
+            greaterThanOrEqualTo(progressValues[i - 1]),
+            reason: 'TODO-650：进度不应回跳（闪烁）',
+          );
+        }
+        // 核心断言 3：末值收尾到 1.0。
+        expect(progressValues.last, closeTo(1.0, 1e-9));
+      },
+    );
 
     test('多段各重试一次：receivedTotal/total 永不 >1.0（直击 135%）', () async {
       final List<int> payload = _largePayload();
@@ -496,12 +520,12 @@ void main() {
 const int _minSeg = 2;
 
 UpdateAsset _asset(List<int> payload) => UpdateAsset(
-      name: 'hibiki-1.2.0-windows-setup.exe',
-      url:
-          'https://github.com/hajisensai/hibiki/releases/download/v1.2.0/hibiki-1.2.0-windows-setup.exe',
-      sizeBytes: payload.length,
-      sha256Digest: _sha256Hex(payload),
-    );
+  name: 'hibiki-1.2.0-windows-setup.exe',
+  url:
+      'https://github.com/hajisensai/hibiki/releases/download/v1.2.0/hibiki-1.2.0-windows-setup.exe',
+  sizeBytes: payload.length,
+  sha256Digest: _sha256Hex(payload),
+);
 
 // 32 字节 payload，配合 _minSeg=2 可切成 4+ 段。
 List<int> _largePayload() =>
@@ -526,8 +550,9 @@ UpdateDownloadResponse _rangeResponse(
   }
   final RegExpMatch m = RegExp(r'bytes=(\d+)-(\d*)').firstMatch(range)!;
   final int start = int.parse(m.group(1)!);
-  final int end =
-      m.group(2)!.isEmpty ? payload.length - 1 : int.parse(m.group(2)!);
+  final int end = m.group(2)!.isEmpty
+      ? payload.length - 1
+      : int.parse(m.group(2)!);
   final List<int> slice = payload.sublist(start, end + 1);
   return UpdateDownloadResponse(
     statusCode: HttpStatus.partialContent,

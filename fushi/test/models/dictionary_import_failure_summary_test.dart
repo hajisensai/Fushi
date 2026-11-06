@@ -106,9 +106,9 @@ void main() {
     test('多条失败的全文诊断逐条保留，不互相覆盖', () {
       final String details =
           DictionaryImportManager.formatFailureDetails(<DictionaryTaskFailure>[
-        _downloadTimeout('A', 'https://huggingface.co/a.zip'),
-        _importFailure('B', StateError('bad zip')),
-      ]);
+            _downloadTimeout('A', 'https://huggingface.co/a.zip'),
+            _importFailure('B', StateError('bad zip')),
+          ]);
       expect(details, contains('https://huggingface.co/a.zip'));
       expect(details, contains('bad zip'));
     });

@@ -6,7 +6,10 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/mining/adts_duration.dart';
+import 'package:fushi/src/mining/gal_game_exit_watch.dart';
+import 'package:fushi/src/mining/galgame_process_group.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_char_count.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
@@ -15,8 +18,10 @@ import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
 import 'package:fushi/src/mining/galgame_hook_runtime_stage.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/galgame_line_voice_window.dart';
 import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
+import 'package:fushi/src/mining/knife_text_websocket.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 import 'package:fushi/src/mining/galgame_system_ui_filter.dart';
 import 'package:fushi/src/mining/galgame_text_process.dart';
@@ -175,7 +180,7 @@ class GalCaptureMemory {
     this.textThreadFingerprint,
     this.textThreadTypicalLength,
     this.audioFallbackPolicy = GalAudioFallbackPolicy.full,
-    this.textProcess = const GalTextProcessPipeline(),
+    this.textProcess = kGalDefaultTextProcessPipeline,
   });
 
   factory GalCaptureMemory.fromJson(Map<Object?, Object?> json) {
@@ -192,7 +197,11 @@ class GalCaptureMemory {
       audioFallbackPolicy: GalAudioFallbackPolicy.fromStorageKey(
         json['audioFallback'] as String?,
       ),
-      textProcess: GalTextProcessPipeline.fromJson(json['textProcess']),
+      // 没有这一项（从没改过管线）或脏值 → 默认管线；显式存的 `[]`（用户把步骤删光）
+      // 原样读成空管线，两者必须分得开。
+      textProcess: json['textProcess'] is List
+          ? GalTextProcessPipeline.fromJson(json['textProcess'])
+          : kGalDefaultTextProcessPipeline,
     );
   }
 
@@ -217,9 +226,10 @@ class GalCaptureMemory {
 
   /// 用户为这个游戏编排的文本处理管线（逐字重绘去重 / 注音花括号 / 正则替换等）。
   ///
-  /// 判空用 [GalTextProcessPipeline.steps] 而不是 [GalTextProcessPipeline.isEmpty]：
-  /// 后者只回答「有没有生效步骤」，把整条链**临时全禁用**的用户仍然有东西要记——
-  /// 按 isEmpty 记就等于「全部禁用一次 = 规则被磁盘悄悄删光」。
+  /// 从没改过的游戏是 [kGalDefaultTextProcessPipeline]，只有与它**值不等**时才落盘。
+  /// 判据刻意不用 [GalTextProcessPipeline.isEmpty]：后者只回答「有没有生效步骤」，
+  /// 把整条链**临时全禁用**或删光的用户仍然有东西要记——按 isEmpty 记就等于「全部
+  /// 禁用一次 = 下次启动又被默认管线顶回来」。
   final GalTextProcessPipeline textProcess;
 
   bool get isEmpty =>
@@ -227,7 +237,7 @@ class GalCaptureMemory {
       voiceTrackFingerprint == null &&
       textThreadFingerprint == null &&
       audioFallbackPolicy == GalAudioFallbackPolicy.full &&
-      textProcess.steps.isEmpty;
+      textProcess == kGalDefaultTextProcessPipeline;
 
   GalCaptureMemory copyWith({
     List<String>? excludedTrackFingerprints,
@@ -262,7 +272,8 @@ class GalCaptureMemory {
       'textThreadLen': textThreadTypicalLength,
     if (audioFallbackPolicy != GalAudioFallbackPolicy.full)
       'audioFallback': audioFallbackPolicy.storageKey,
-    if (textProcess.steps.isNotEmpty) 'textProcess': textProcess.toJson(),
+    if (textProcess != kGalDefaultTextProcessPipeline)
+      'textProcess': textProcess.toJson(),
   };
 }
 
@@ -283,6 +294,30 @@ typedef GalCaptureMemorySave =
 /// [GalHookSessionController.setLineVoiceTrack]。
 bool galTrackSelectionAffectsCapture(GalHookAudioBackend backend) =>
     backend == GalHookAudioBackend.enginePcm;
+
+/// 「本句音轨」对话框该展示什么（BUG-4206 审查，纯函数可单测）。
+///
+/// - [resourceAudio]：这行真配上了游戏资源原件（[TexthookerLineEntry.hasResourceAudio]），
+///   展示原件并给试听；
+/// - [resourceUnpaired]：会话在资源模式，这行却还没有原件（匹配中 / 无原件 / 其它
+///   来源）。资源模式下 PCM 轨与这句无关（[GalTrackEmptyHint.resourceMode]），列出来
+///   只会被读成「音频没抓到」；用户选了 PCM 轨还会把这行算成用户裁决、撤出待匹配
+///   集合，之后资源晚落盘也不再升格。所以只说明资源模式与这句的当前状态，不给播放键
+///   也不列轨；
+/// - [pcmTracks]：引擎 PCM 等其它后端，列会话音轨供逐句改选（BUG-1102）。
+enum GalLineTrackView { resourceAudio, resourceUnpaired, pcmTracks }
+
+/// 按这行的音频与会话音频后端决定「本句音轨」对话框的形态。
+GalLineTrackView galLineTrackViewFor(
+  TexthookerLineEntry line,
+  GalHookAudioBackend backend,
+) {
+  if (line.hasResourceAudio) return GalLineTrackView.resourceAudio;
+  if (backend == GalHookAudioBackend.gameResource) {
+    return GalLineTrackView.resourceUnpaired;
+  }
+  return GalLineTrackView.pcmTracks;
+}
 
 /// 按音频后端返回音轨空态解释分支。
 GalTrackEmptyHint galTrackEmptyHintFor(GalHookAudioBackend backend) =>
@@ -479,6 +514,9 @@ class GalHookSessionState {
     this.japaneseLocaleApplied = false,
     this.japaneseLocaleVerdict,
     this.japaneseLocaleSkipReason,
+    this.knifeTextServiceIniPath,
+    this.knifeTextServiceIniWritten = false,
+    this.knifeTextServiceIniWriteFailed = false,
   });
 
   final GalHookSessionPhase phase;
@@ -533,6 +571,18 @@ class GalHookSessionState {
   /// 状态卡按它说话。转了、或不是 `auto`，为 null；生命周期与 [japaneseLocaleVerdict] 相同。
   final GalJapaneseLocaleSkipReason? japaneseLocaleSkipReason;
 
+  /// knife（《月姬 -A piece of blue glass moon-》Switch 引擎的 Rust 重写版）的台词只经它
+  /// 自带的 WebSocket 文本服务出来，而该服务默认关闭、只在游戏启动时读开关。附着到一个
+  /// 没开服务的 knife 时，这里是需要打开开关的 knife.ini；UI 据此提示并提供一键写入。
+  /// launch 路径自己带参数开服务，恒为 null。见 knife_text_websocket.dart。
+  final String? knifeTextServiceIniPath;
+
+  /// 本局已经替用户把开关写进 [knifeTextServiceIniPath]（重启游戏后生效）。
+  final bool knifeTextServiceIniWritten;
+
+  /// 本局写 [knifeTextServiceIniPath] 失败过（UI 改为提示手动添加那一行）。
+  final bool knifeTextServiceIniWriteFailed;
+
   bool get isActive =>
       phase != GalHookSessionPhase.idle && phase != GalHookSessionPhase.error;
   bool get hasText => textSignalReceived;
@@ -571,6 +621,10 @@ class GalHookSessionState {
     GalJapaneseLocaleVerdict? japaneseLocaleVerdict,
     GalJapaneseLocaleSkipReason? japaneseLocaleSkipReason,
     bool clearJapaneseLocaleVerdict = false,
+    String? knifeTextServiceIniPath,
+    bool clearKnifeTextServiceIniPath = false,
+    bool? knifeTextServiceIniWritten,
+    bool? knifeTextServiceIniWriteFailed,
   }) {
     return GalHookSessionState(
       phase: phase ?? this.phase,
@@ -623,6 +677,16 @@ class GalHookSessionState {
           : clearJapaneseLocaleVerdict || japaneseLocaleVerdict != null
           ? japaneseLocaleSkipReason
           : japaneseLocaleSkipReason ?? this.japaneseLocaleSkipReason,
+      knifeTextServiceIniPath: clearKnifeTextServiceIniPath
+          ? null
+          : knifeTextServiceIniPath ?? this.knifeTextServiceIniPath,
+      knifeTextServiceIniWritten: clearKnifeTextServiceIniPath
+          ? false
+          : knifeTextServiceIniWritten ?? this.knifeTextServiceIniWritten,
+      knifeTextServiceIniWriteFailed: clearKnifeTextServiceIniPath
+          ? false
+          : knifeTextServiceIniWriteFailed ??
+                this.knifeTextServiceIniWriteFailed,
     );
   }
 }
@@ -680,8 +744,9 @@ typedef GalWindowListLoader = Future<List<ExternalWindowInfo>> Function();
 /// （[GalgameHookRuntimeStage]，BUG-1708），这一步是文件复制。
 typedef GalInjectorResolver = Future<String?> Function({required bool is32Bit});
 
-/// 制卡等待「这句语音收口」的耐心上限（BUG-2127）：与引擎 PCM 的收敛上限
-/// `utteranceSettleMax`（6s）对齐；loopback 冻结窗口剩余超过它就不等、按旧路径提前收束。
+/// 制卡等待 loopback 暂定冻结到点的耐心上限（BUG-2127）：与引擎 PCM 的无条件收敛窗
+/// `utteranceSettleWindow`（6s）对齐；冻结窗口剩余超过它就不等、按旧路径提前收束。
+/// 引擎 PCM 收敛本身的等待以 `utteranceSettleMax` 兜底（长句 6s 后仍在变长）。
 const Duration kGalMiningAudioSettleMaxWait = Duration(seconds: 6);
 
 /// 滚动窗口录制启动口（制卡「视频片段」画面）。返回 false = 录制不可用。
@@ -725,20 +790,40 @@ class GalHookSessionController extends ChangeNotifier {
     // 因此台词到达后先延后这么久再冻结，让本句语音真的进环。默认 4s 覆盖绝大多数单句
     // 语音；文本仍立刻上屏，只有音频后补。
     Duration loopbackFreezeDelay = const Duration(milliseconds: 4000),
-    // BUG-1109：引擎 PCM 的整句拼接窗口在 native 是前向的（`[ts-200, ts+6000]`），
+    // 逐行 loopback 窗口的**右界上限**。4s 冻结只是「先给一份能用的」：之后窗口继续
+    // 张开，直到下一句到达（玩家推进 = 这句播完）才按真实时长定稿，迟迟没有下一句时
+    // 到这个上限定稿。旧实现到 4s 就永久定格，长句一律只剩 4s+1s 预卷 = 5s。
+    Duration loopbackLineMax = const Duration(milliseconds: kGalLineVoiceMaxMs),
+    // BUG-1109：引擎 PCM 的整句拼接窗口在 native 是前向的（`[下界, ts+30000]`），
     // 但台词一到就读，窗口的前向部分还是空的——只能拼到这句语音**已提交给混音器**的
     // 开头。因此按这个间隔重取，把更长的结果写回缓存（见 [_settleLineUtterance]）。
     Duration utteranceSettleInterval = const Duration(milliseconds: 250),
-    // 收敛上限：与 native 拼接窗口的前向长度（ts+6000）对齐，超过就不可能再拼到新段。
-    // 也是收敛的**唯一**时长判据：缓存单调变长，「连续 N 轮没变长」只会被句中的长停顿
-    // 骗成早收敛，删掉它比调参更正确（收敛提前收手只靠下一句到达 / 会话与用户裁决）。
-    Duration utteranceSettleMax = const Duration(milliseconds: 6000),
+    // 收敛硬上限：与 native 拼接窗口的前向上限（kUtteranceMaxForwardMs）对齐，超过就
+    // 不可能再拼到新段。旧值 6s 与 native 旧窗口 ts+6000 一起把长句截在 6 秒处。
+    Duration utteranceSettleMax = const Duration(
+      milliseconds: kGalLineVoiceMaxMs,
+    ),
+    // 无条件收敛窗：这段时间内**不看**有没有变长，一直收（句中换气 / 演出停顿会让
+    // 「连续 N 轮没变长」误判成播完，BUG-1109 删掉那条判据的理由）。绝大多数台词在
+    // 这个窗内说完——与旧的 6s 上限逐字等价。
+    Duration utteranceSettleWindow = const Duration(milliseconds: 6000),
+    // 越过无条件窗后（长句），只在**仍在变长**时继续：最后一次变长之后静了这么久就
+    // 收手。不设它就得对每一句都轮询满 30s——每次 grab 都持锁扫一遍共享内存环
+    // （BUG-1769），停留在一句上查词的常态会变成持续的宿主开销。2s 远长于句中停顿。
+    Duration utteranceSettleQuietStop = const Duration(milliseconds: 2000),
     List<Duration> engineRetryBackoff = kGalEngineRetryBackoff,
     Listenable? endpointListenable,
     List<TexthookerEndpointStatus> Function()? endpointStatusLoader,
     Duration activityFlushDebounce = kGalActivityFlushDebounce,
     GalgamePlayTrackerFactory? playTrackerFactory,
+    // BUG-4002：游戏进程退出监视。null = 用默认 Windows probe（非 Windows 不监视）。
+    GalgameProcessProbe? gameProcessProbe,
+    Duration gameExitPollInterval = const Duration(seconds: 1),
+    int gameExitConfirmSamples = 3,
   }) : _textService = textService ?? TexthookerService.instance,
+       _gameProcessProbeOverride = gameProcessProbe,
+       _gameExitPollInterval = gameExitPollInterval,
+       _gameExitConfirmSamples = gameExitConfirmSamples,
        _activityFlushDebounce = activityFlushDebounce,
        _playTrackerFactory = playTrackerFactory ?? _defaultPlayTrackerFactory,
        _engineSourceFactory = engineSourceFactory ?? _defaultEngineFactory,
@@ -766,6 +851,9 @@ class GalHookSessionController extends ChangeNotifier {
        _loopbackFreezeDelay = loopbackFreezeDelay,
        _utteranceSettleInterval = utteranceSettleInterval,
        _utteranceSettleMax = utteranceSettleMax,
+       _utteranceSettleWindow = utteranceSettleWindow,
+       _utteranceSettleQuietStop = utteranceSettleQuietStop,
+       _loopbackLineMax = loopbackLineMax,
        _engineRetryBackoff = engineRetryBackoff,
        _endpointListenable =
            endpointListenable ?? TexthookerWsClientManager.instance,
@@ -815,10 +903,16 @@ class GalHookSessionController extends ChangeNotifier {
   final Duration _resourceAudioPollInterval;
   final int _windowPollAttempts;
   final Duration _windowRebindInterval;
+  final GalgameProcessProbe? _gameProcessProbeOverride;
+  final Duration _gameExitPollInterval;
+  final int _gameExitConfirmSamples;
   final Duration _trackRefreshInterval;
   final Duration _loopbackFreezeDelay;
   final Duration _utteranceSettleInterval;
   final Duration _utteranceSettleMax;
+  final Duration _utteranceSettleWindow;
+  final Duration _utteranceSettleQuietStop;
+  final Duration _loopbackLineMax;
   final List<Duration> _engineRetryBackoff;
   final Listenable _endpointListenable;
   final List<TexthookerEndpointStatus> Function() _endpointStatusLoader;
@@ -920,6 +1014,19 @@ class GalHookSessionController extends ChangeNotifier {
   /// 见 [_sessionScopedLines] 的说明（BUG-1734）。
   List<TexthookerLineEntry> get selectedSessionLines => _sessionScopedLines;
 
+  /// 当前字幕（[selectedSessionLines] 最后一行）是由哪一份 hook 原文经文本处理管线
+  /// 得来的；还没有这样的行（或该行不是经管线入库的引擎行）时为 null。
+  ///
+  /// 规则过滤页「使用最近抓到的一行」必须取这一份，而不是选定线程的 native 预览槽：
+  /// 消费期还会放行同 hook 面的兄弟线程（BUG-1159），渐进折叠还会让更长的旧快照留在
+  /// 字幕上——预览槽只看得见选定线程自己最近一次 Output，于是预览「正常」、字幕却是
+  /// 另一份输入的结果（BUG-4029）。取这一份，预览与字幕就是同一输入过同一管线。
+  String? get selectedLineProcessInput {
+    final List<TexthookerLineEntry> lines = selectedSessionLines;
+    if (lines.isEmpty) return null;
+    return _lineProcessInputCache[lines.last.id];
+  }
+
   TexthookerLineEntry? entryById(String lineId) =>
       _textService.entryById(lineId);
 
@@ -947,6 +1054,16 @@ class GalHookSessionController extends ChangeNotifier {
   Timer? _trackRefreshTimer;
   // BUG-1049：launch 后游戏窗口尚未出现时的重绑监视（见 [_startWindowRebindWatch]）。
   Timer? _windowRebindTimer;
+
+  /// 游戏进程退出监视的定时器（见 [_startGameExitWatch]）。
+  Timer? _gameExitTimer;
+
+  final ValueNotifier<int> _gameExitedCount = ValueNotifier<int>(0);
+
+  /// 每当会话因**游戏进程退出**而自动结束就 +1（BUG-4002）。游戏页据此把停在
+  /// 捕获工作台上的用户送回游戏首页；手动停止不计（用户自己点的停，留在原页）。
+  ValueListenable<int> get gameExitedCount => _gameExitedCount;
+
   bool _windowRebindInFlight = false;
   // A rebind completion must only release the request it started; operation
   // generation alone does not distinguish two watches in the same session.
@@ -1032,7 +1149,7 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 本会话生效的文本处理管线。真值随捕获记忆按游戏落盘，这里是热路径读的那一份
   /// 内存态——[_pollHookedText] 每条行都要问它，不能每次回偏好表取。
-  GalTextProcessPipeline _textProcessPipeline = const GalTextProcessPipeline();
+  GalTextProcessPipeline _textProcessPipeline = kGalDefaultTextProcessPipeline;
 
   /// 音轨记忆（排除集 + 语音轨）已对本会话首个非空快照应用过。
   bool _trackMemoryApplied = false;
@@ -1046,6 +1163,9 @@ class GalHookSessionController extends ChangeNotifier {
   static const int _textThreadRestoreMinLines = 3;
   final Map<String, int> _lineTimestampCache = <String, int>{};
   final Map<String, int> _lineTextEventIdCache = <String, int>{};
+
+  /// 行 id → 产出它**当前文本**的那份管线输入原文（见 [selectedLineProcessInput]）。
+  final Map<String, String> _lineProcessInputCache = <String, String>{};
   final Map<String, ({int timestampMs, int textEventId, bool eventOwnedOnly})>
   _pendingResourceMatches =
       <String, ({int timestampMs, int textEventId, bool eventOwnedOnly})>{};
@@ -1210,6 +1330,10 @@ class GalHookSessionController extends ChangeNotifier {
   /// 清空），所以不会在会话停掉后继续把查词记进游戏域。
   String? get activityGameKey => _activityGameKey;
 
+  /// [_activityGameTitle] 的只读投影（与 [activityGameKey] 同生命周期）：制卡历史行
+  /// 记下「哪个游戏」用的显示名快照。
+  String? get activityGameTitle => _activityGameTitle;
+
   /// Stable executable path resolved from the PID of an attached game.
   /// This is separate from launchExe because Fushi did not launch that game.
   String? _attachedCaptureExecutable;
@@ -1220,14 +1344,17 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 当前游玩计时器；null = 没有从游戏库启动的在跑会话。
   ///
-  /// 生命周期**刻意与 hook 捕获会话解耦**（stop 侧）：`stopCapture` 只停监听不停
-  /// 计时——用户关掉捕获浮窗继续玩是常态，计时靠 tracker 自己的进程判活结束
-  /// （游戏退出→结算落库→定时器自停）。会真正停它的只有三处：再次 [launchGame]
-  /// （换游戏/重开）、[close]（app 正常退出）、[ExitFlushRegistry]（点 X 快杀）。
+  /// 计时器自己不判活：游戏退出由会话的进程存活监视（[_startGameExitWatch]）确认，
+  /// 走 [stopCapture] 结算；接手进程时只换计时主 PID（[GalgamePlayTracker.followMainProcess]）。
+  /// 会停它的入口：[stopCapture]（含游戏退出）、再次 [launchGame] / 附着（换游戏 /
+  /// 重开）、[close]（app 正常退出）、[ExitFlushRegistry]（点 X 快杀）。
   GalgamePlayTracker? _playTracker;
 
   /// 登记进 [ExitFlushRegistry] 的游玩计时落库回调；首个 tracker 启动时登记。
   ExitFlushCallback? _playTrackerExitFlush;
+
+  /// 本会话的游戏窗口此刻是否正被串流到已连上的接收端（见 [setRemotePlayPresence]）。
+  bool _remotePlayPresent = false;
 
   static GalgamePlayTracker _defaultPlayTrackerFactory({
     required String gameId,
@@ -1302,6 +1429,53 @@ class GalHookSessionController extends ChangeNotifier {
           .processImagePath(pid);
     } on Object {
       return null;
+    }
+  }
+
+  /// 附着到 knife 时判断它的台词服务是否开着：knife.ini 没开 → 记下 ini 路径让 UI 提示。
+  /// 用户若是用 `-t` 自己开的，第一句 knife 台词到达时提示随即撤掉（见
+  /// [_onTextBufferChanged]）；进程命令行 host 读不到，这是唯一可靠的「已开」证据。
+  void _noteKnifeTextServiceForAttach(String? executablePath) {
+    if (executablePath == null || executablePath.isEmpty) return;
+    final KnifeInstall? install = detectKnifeInstall(executablePath);
+    if (install == null || install.iniTextWebSocket != null) return;
+    _setState(_state.copyWith(knifeTextServiceIniPath: install.iniPath));
+    _record(
+      GalHookEventSeverity.warning,
+      'text',
+      'knife.text_service_off',
+      'knife text WebSocket server is off; the game must be restarted with it '
+          'enabled',
+      details: <String, Object?>{'ini': install.iniPath},
+    );
+  }
+
+  /// 经用户确认后把 knife 台词服务开关写进 knife.ini（重启游戏后生效）。
+  /// 返回 false = 当前会话没有待开启的 knife，或写入失败。
+  bool enableKnifeTextServiceInIni() {
+    final String? iniPath = _state.knifeTextServiceIniPath;
+    if (iniPath == null || _state.knifeTextServiceIniWritten) return false;
+    try {
+      final String address = enableKnifeTextWebSocketInIni(iniPath);
+      _setState(_state.copyWith(knifeTextServiceIniWritten: true));
+      _record(
+        GalHookEventSeverity.success,
+        'text',
+        'knife.text_service_ini_written',
+        'Enabled the knife text WebSocket server in knife.ini',
+        details: <String, Object?>{'ini': iniPath, 'address': address},
+      );
+      return true;
+    } on FileSystemException catch (error) {
+      _setState(_state.copyWith(knifeTextServiceIniWriteFailed: true));
+      _record(
+        GalHookEventSeverity.error,
+        'text',
+        'knife.text_service_ini_failed',
+        'Could not write knife.ini',
+        details: <String, Object?>{'ini': iniPath, 'error': error.message},
+      );
+      return false;
     }
   }
 
@@ -1414,6 +1588,7 @@ class GalHookSessionController extends ChangeNotifier {
         clearLastError: true,
         clearFallbackReason: true,
         textSignalReceived: false,
+        clearKnifeTextServiceIniPath: true,
       ),
     );
     // BUG-1892 — attach 不是「没有稳定身份」，只是此前没去查：PID 查得到 exe 全路径，
@@ -1426,6 +1601,7 @@ class GalHookSessionController extends ChangeNotifier {
     if (generation != _operationGeneration) return;
     _beginActivitySession(title: identity.title, mediaKey: identity.gameId);
     _attachedCaptureExecutable = identity.executablePath;
+    _noteKnifeTextServiceForAttach(identity.executablePath);
     // 计时与 hook 彻底解耦：附着时游戏**已经在跑**，注入成功与否、走哪条降级，都不
     // 改变「用户此刻正在玩」这个事实。所以计时起点就在这里，不挂在任何一条成功分支上。
     _startPlayTracker(
@@ -1433,25 +1609,38 @@ class GalHookSessionController extends ChangeNotifier {
       identity: identity,
       mainPid: window.pid,
     );
+    // 同理，游戏退出就该结束会话，与 hook 走哪条分支无关（BUG-4002）。
+    _startGameExitWatch(
+      generation: generation,
+      pid: window.pid,
+      identity: identity,
+    );
+    await _attachHooksToProcess(generation, pid: window.pid);
+  }
+
+  /// 按 PID 把 hook 挂到一个**已经在跑**的游戏进程上（附着与「接手进程」共用）：
+  /// 探位数 → 找 helper → 引擎注入，失败按既有降级表退到 Loopback 并排引擎重试。
+  /// 调用方负责换代、会话身份、计时与进程存活监视。
+  Future<void> _attachHooksToProcess(int generation, {required int pid}) async {
     _record(
       GalHookEventSeverity.info,
       'resolve',
       'session.attach_resolving',
       'Resolving target process architecture',
-      details: <String, Object?>{'pid': window.pid},
+      details: <String, Object?>{'pid': pid},
     );
-    final bool? is32Bit = await _targetWow64Probe(window.pid);
+    final bool? is32Bit = await _targetWow64Probe(pid);
     if (generation != _operationGeneration) return;
     final String? injector = await _injectorResolver(is32Bit: is32Bit ?? false);
-    if (injector != null && window.pid > 0) {
+    if (injector != null && pid > 0) {
       _setState(_state.copyWith(phase: GalHookSessionPhase.injecting));
       final EngineHookGalAudioSource engine = _trackStartingEngine(
         _engineSourceFactory(
-          targetPid: window.pid,
+          targetPid: pid,
           launchExe: null,
           injectorPath: injector,
           // BUG-1267 — 从 PID 反查 exe 后走与 launch 相同的判据，别再写死 false。
-          lunaPcHooks: _lunaPcHooksForPid(window.pid),
+          lunaPcHooks: _lunaPcHooksForPid(pid),
         ),
       );
       await _attachPersistedHookProfiles(engine);
@@ -1462,22 +1651,14 @@ class GalHookSessionController extends ChangeNotifier {
       }
       if (format != null) {
         if (engine.rawVoiceReady) {
-          await _activateResourceWithLoopback(
-            generation,
-            engine,
-            gamePid: window.pid,
-          );
+          await _activateResourceWithLoopback(generation, engine, gamePid: pid);
         } else {
-          _activateEngine(engine, format, gamePid: window.pid);
+          _activateEngine(engine, format, gamePid: pid);
         }
         return;
       }
       if (engine.textHookReady) {
-        await _activateTextWithLoopback(
-          generation,
-          engine,
-          gamePid: window.pid,
-        );
+        await _activateTextWithLoopback(generation, engine, gamePid: pid);
         return;
       }
       // 诊断必须在 stop() 之前取：stop 只负责杀进程，失败原因由本次 start 定格。
@@ -1496,11 +1677,7 @@ class GalHookSessionController extends ChangeNotifier {
         failure: diagnostics.failure,
         detail: galHookDiagnosticsDetail(diagnostics),
       );
-      _scheduleEngineRecovery(
-        generation,
-        pid: window.pid,
-        diagnostics: diagnostics,
-      );
+      _scheduleEngineRecovery(generation, pid: pid, diagnostics: diagnostics);
       return;
     }
     // 走到这里只有两种可能，原因不同、处置也不同：helper 没装（要装组件），或者这个
@@ -1515,7 +1692,7 @@ class GalHookSessionController extends ChangeNotifier {
           : 'The bound window exposes no process id; using loopback',
       details: <String, Object?>{
         'arch': is32Bit == true ? 'x86' : 'x64',
-        'pid': window.pid,
+        'pid': pid,
       },
     );
     await _activateLoopback(
@@ -1582,6 +1759,7 @@ class GalHookSessionController extends ChangeNotifier {
         clearLastError: true,
         clearFallbackReason: true,
         textSignalReceived: false,
+        clearKnifeTextServiceIniPath: true,
       ),
     );
     // 身份解析与 attach 共用同一条：上层给了 galgames.id 就采信，没给就按 exe 路径
@@ -1619,6 +1797,24 @@ class GalHookSessionController extends ChangeNotifier {
       );
     }
     final bool lunaPcHooks = shouldUseLunaPcHooksForExecutable(executablePath);
+    // knife 的台词服务默认关闭：没开就在本次启动参数里打开（只加给这一次启动，不改
+    // 用户保存的参数；转区回退递归 launchGame 时仍传用户原参数，不会叠两份）。
+    final List<String> gameArguments = <String>[
+      ...launchArguments,
+      if (knifeNeedsTextWebSocketLaunchArg(
+        executablePath,
+        userArgs: launchArguments,
+        workingDirectory: workdir.isEmpty ? null : workdir,
+      )) ...<String>[
+        '--text-websocket',
+        '127.0.0.1:${await pickFreeLoopbackPort()}',
+      ],
+    ];
+    if (generation != _operationGeneration) {
+      return const GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.superseded,
+      );
+    }
     _setState(_state.copyWith(phase: GalHookSessionPhase.launching));
     _record(
       GalHookEventSeverity.info,
@@ -1630,6 +1826,7 @@ class GalHookSessionController extends ChangeNotifier {
         'arch': is32Bit == true ? 'x86' : 'x64',
         'lunaPcHooks': lunaPcHooks,
         'gameArgCount': launchArguments.length,
+        'knifeTextServiceAuto': gameArguments.length != launchArguments.length,
         'hasWorkdir': workdir.isNotEmpty,
       },
     );
@@ -1637,7 +1834,7 @@ class GalHookSessionController extends ChangeNotifier {
       _engineSourceFactory(
         targetPid: 0,
         launchExe: executablePath,
-        launchArguments: launchArguments,
+        launchArguments: gameArguments,
         launchWorkdir: workdir,
         injectorPath: injector,
         lunaPcHooks: lunaPcHooks,
@@ -1796,6 +1993,11 @@ class GalHookSessionController extends ChangeNotifier {
           identity: identity,
           mainPid: runningPid,
         );
+        _startGameExitWatch(
+          generation: generation,
+          pid: runningPid,
+          identity: identity,
+        );
         return const GalHookLaunchResult.launched();
       }
       _fail(
@@ -1895,7 +2097,170 @@ class GalHookSessionController extends ChangeNotifier {
       identity: identity,
       mainPid: gamePid,
     );
+    // gamePid 为空时监视按游戏目录认领进程（计时主 PID 的唯一来源）。
+    _startGameExitWatch(
+      generation: generation,
+      pid: gamePid,
+      identity: identity,
+    );
     return const GalHookLaunchResult.launched();
+  }
+
+  /// 游戏进程存活监视（BUG-4002）：整条捕获会话「游戏还在不在」的**唯一**来源。
+  ///
+  /// 旧实现里「游戏退出」只有游玩计时器看得到，它结算完就自停，会话本身没人收：
+  /// 游戏关了、工作台还停在「正在监听」，只能手动点停止。现在判活只此一路
+  /// （判据见 [GalGameExitWatch]，归属见 [GalgameProcessGroup]），结论同时驱动
+  /// 会话与计时，二者不会再各下各的结论：
+  /// - 确认退出 → [stopCapture]（结算计时 / 超分 / 状态复位与手动停止同一条路）；
+  /// - 接手进程（自重启、启动器换代）→ [_followGameProcessHandoff] 把整条会话
+  ///   （hook、窗口绑定、计时主 PID）重新绑到新进程；
+  /// - 开局不知道 PID（launch 没拿到目标）→ 认领游戏目录下的进程作为计时主进程。
+  ///
+  /// 不受 `canTrackPlaytime` 限制：库外附着的游戏同样要在退出时结束会话。
+  /// 会话被换代（stop、重启、attach、接手）即自停；源停止时（[_stopSourcesInternal]）
+  /// 一并取消。
+  void _startGameExitWatch({
+    required int generation,
+    required int? pid,
+    required GalHookSessionIdentity identity,
+  }) {
+    _gameExitTimer?.cancel();
+    _gameExitTimer = null;
+    if (generation != _operationGeneration) return;
+    final GalgameProcessProbe? probe = _resolveGameProcessProbe();
+    if (probe == null) return;
+    final GalGameExitWatch watch = GalGameExitWatch(
+      pid: pid ?? 0,
+      group: GalgameProcessGroup.forExecutable(
+        identity.executablePath,
+        probe: probe,
+      ),
+      confirmSamples: _gameExitConfirmSamples,
+    );
+    // PID 未知又没有游戏目录可认领：没有任何判据，不起空转的定时器。
+    if (watch.pid <= 0 && watch.group.gameDirectory == null) return;
+    _runGameExitWatch(generation, watch, identity);
+  }
+
+  void _runGameExitWatch(
+    int generation,
+    GalGameExitWatch watch,
+    GalHookSessionIdentity identity,
+  ) {
+    _gameExitTimer?.cancel();
+    _gameExitTimer = Timer.periodic(_gameExitPollInterval, (Timer timer) {
+      if (generation != _operationGeneration) {
+        timer.cancel();
+        if (identical(_gameExitTimer, timer)) _gameExitTimer = null;
+        return;
+      }
+      final int watchedPid = watch.pid;
+      switch (watch.sample()) {
+        case GalGameExitStatus.alive:
+        case GalGameExitStatus.unconfirmed:
+          return;
+        case GalGameExitStatus.adopted:
+          _record(
+            GalHookEventSeverity.info,
+            'session',
+            'session.game_process_adopted',
+            'Found the running game process in the game folder',
+            details: <String, Object?>{'pid': watch.pid},
+          );
+          _playTracker?.followMainProcess(watch.pid);
+          return;
+        case GalGameExitStatus.handedOff:
+          timer.cancel();
+          if (identical(_gameExitTimer, timer)) _gameExitTimer = null;
+          _record(
+            GalHookEventSeverity.info,
+            'session',
+            'session.game_process_handoff',
+            'The game process exited, but another process from the game '
+                'folder is still running; moving the capture session to it',
+            details: <String, Object?>{'from': watchedPid, 'to': watch.pid},
+          );
+          unawaited(
+            _followGameProcessHandoff(
+              fromGeneration: generation,
+              watch: watch,
+              identity: identity,
+            ),
+          );
+          return;
+        case GalGameExitStatus.exited:
+          timer.cancel();
+          if (identical(_gameExitTimer, timer)) _gameExitTimer = null;
+          _record(
+            GalHookEventSeverity.info,
+            'session',
+            'session.game_exited',
+            'The game exited; stopping capture',
+            details: <String, Object?>{'pid': watchedPid},
+          );
+          unawaited(_stopCaptureAfterGameExit(generation));
+      }
+    });
+  }
+
+  /// 游戏换了进程（改设置后自重启、启动器拉起本体后退出）：把整条捕获会话搬到
+  /// 接手进程上。只换监视器盯的 PID 是不够的——hook / helper 还挂在死进程上、
+  /// `gamePid` 与窗口绑定也指着死进程，工作台会一直显示「正在监听」却收不到台词。
+  ///
+  /// 走与附着同一条注入链路（[_attachHooksToProcess]，游戏已经在跑，只能按 PID
+  /// 附着），并换代以作废旧进程上的引擎重试 / 窗口监视。刻意**不**重启的两样：
+  /// 活动会话与游玩计时——用户这一局没有中断，计时只换主 PID，不切成两段。
+  Future<void> _followGameProcessHandoff({
+    required int fromGeneration,
+    required GalGameExitWatch watch,
+    required GalHookSessionIdentity identity,
+  }) async {
+    if (fromGeneration != _operationGeneration) return;
+    final int generation = ++_operationGeneration;
+    final int successor = watch.pid;
+    await _stopSources();
+    if (generation != _operationGeneration) return;
+    _selectedTextThreadKey = null;
+    _selectedNativeTextThreadId = null;
+    _selectedTextThreadFaceId = 0;
+    _selectedThreadClaimedKeys.clear();
+    _setState(
+      _state.copyWith(
+        phase: GalHookSessionPhase.resolving,
+        gamePid: successor,
+        clearBoundWindow: true,
+        clearLastError: true,
+        clearFallbackReason: true,
+        textSignalReceived: false,
+      ),
+    );
+    _playTracker?.followMainProcess(successor);
+    _runGameExitWatch(generation, watch, identity);
+    // 新进程的窗口通常还没建好：交给会话级窗口监视按新 PID 找到即绑。
+    _startWindowRebindWatch(generation, successor);
+    await _attachHooksToProcess(generation, pid: successor);
+  }
+
+  Future<void> _stopCaptureAfterGameExit(int generation) async {
+    if (generation != _operationGeneration) return;
+    await stopCapture(keepBinding: false);
+    // stopCapture 自身换代一次；期间没有**别的**操作插进来（新 attach / launch）、
+    // 会话此刻是 idle，才通知页面回首页。
+    if (_operationGeneration != generation + 1) return;
+    if (_state.phase != GalHookSessionPhase.idle) return;
+    _gameExitedCount.value++;
+  }
+
+  GalgameProcessProbe? _resolveGameProcessProbe() {
+    final GalgameProcessProbe? injected = _gameProcessProbeOverride;
+    if (injected != null) return injected;
+    if (!_isWindows || !Platform.isWindows) return null;
+    try {
+      return _sharedProcessProbe ??= GalgameWindowsProcessProbe();
+    } on Object {
+      return null;
+    }
   }
 
   /// launch 会话的窗口绑定监视，跟随整条会话的生命周期：
@@ -2006,6 +2371,8 @@ class GalHookSessionController extends ChangeNotifier {
     if (generation != _operationGeneration) return;
     // Preserve the author's awaited activity flush before releasing ownership.
     await _stopActivityClock();
+    // 停止捕获 = 这一局的终点：攒着的台词落进语料库（不等它，失败只记日志）。
+    unawaited(LibraryCorpusService.instance.flushGameLines());
     if (generation != _operationGeneration) return;
     _activityPendingChars = 0;
     _activityGameTitle = null;
@@ -2137,7 +2504,7 @@ class GalHookSessionController extends ChangeNotifier {
   }
 
   /// 试听指定音轨（BUG-1027）：按最近一条 hook 台词时间戳，经既有 `grabUtterance`
-  /// IPC 抓取该 [sourcePtr] 在 `[ts-200, ts+6000]` 窗口内的整句 PCM（native
+  /// IPC 抓取该 [sourcePtr] 在 `[下界, ts+30000]` 窗口内的整句 PCM（native
   /// `GrabUtterance`，voice_hook_reader.cpp:408——`target_source` 非 0 时直接按轨过滤；
   /// exclude 传空集，试听已标记 BGM 的轨同样允许），拼成 WAV 写入系统临时目录，播放
   /// 器可直接播（无需 ffmpeg 转码）。无 engine / 尚无台词时间戳 / 该轨窗口内无 PCM /
@@ -2666,6 +3033,7 @@ class GalHookSessionController extends ChangeNotifier {
       audioStatus: TexthookerLineAudioStatus.unavailable,
     );
     if (entry == null) return false;
+    _recordLineProcessInput(entry.id, line.text);
     _redirectFoldedLines(_textService.lastFoldedLineIds, entry.id);
     _lineTimestampCache[entry.id] = line.timestampMs;
     _lineTextEventIdCache[entry.id] = line.seq;
@@ -3001,7 +3369,12 @@ class GalHookSessionController extends ChangeNotifier {
   /// - 伪影主导的线程不参与（BUG-2112）；
   /// - 记忆里有典型行长时，按行长比值最接近者优先，出行数只作平手判据；最接近者
   ///   仍相差两倍以上时**宁可暂不恢复**——此时往往只有名字牌线程先够了行数，
-  ///   正文线程还没出够，提前恢复就会把名字牌钉成本会话的文本线程。
+  ///   正文线程还没出够，提前恢复就会把名字牌钉成本会话的文本线程；
+  /// - native 声明 hook code 只对应一条 lane 的线程
+  ///   （[TexthookerTextThread.hookCodeLaneUnique]，如 SoftPal 把精灵尺寸编进了
+  ///   hook code）不比行长：它没有同指纹的兄弟可混淆。`ENGINE:` 前缀**不**等于
+  ///   唯一——FVP / Luca / BGI / YU-RIS / Kogado Hy 一个 hook code 下有正文与名字牌
+  ///   等多条 lane，它们照常按行长消歧。
   @visibleForTesting
   static TexthookerTextThread? pickRememberedTextThread(
     Iterable<TexthookerTextThread> threads, {
@@ -3018,6 +3391,9 @@ class GalHookSessionController extends ChangeNotifier {
     ];
     if (candidates.isEmpty) return null;
     double distance(TexthookerTextThread thread) {
+      // native 声明 lane 唯一的线程没有要靠行长区分的兄弟；短句扎堆时行长对不上
+      // 就不恢复，会让它一整局都选不上。
+      if (thread.hookCodeLaneUnique) return 0;
       final int? length = textThreadTypicalLength(thread);
       if (typicalLength == null || typicalLength <= 0) return 0;
       if (length == null || length <= 0) return double.infinity;
@@ -3034,13 +3410,16 @@ class GalHookSessionController extends ChangeNotifier {
     return best;
   }
 
+  /// 记忆按游戏 exe 全路径锚定。launch 用启动路径；attach 用 PID 反查出的 exe 全路径
+  /// （[_attachedCaptureExecutable]，BUG-1892 起就有）。此前这里只认 launchExe，附着的
+  /// 会话一律没有记忆：每次附着同一款游戏都要重新手选文本线程、重新排除 BGM 轨。
   String? _captureMemoryKeyForGame() {
-    final String? exe = _state.launchExe;
+    final String? exe = currentCaptureExecutable?.trim();
     if (exe == null || exe.isEmpty) return null;
     return exe.toLowerCase();
   }
 
-  /// 惰性加载当前游戏的记忆（每会话一次）。没有游戏身份（窗口附着、非启动路径）
+  /// 惰性加载当前游戏的记忆（每会话一次）。没有游戏身份（附着时 PID 查不到 exe 路径）
   /// 就没有记忆——宁可少记，不猜身份。
   bool _ensureCaptureMemoryLoaded() {
     if (_captureMemoryLoaded) return _captureMemoryGameKey != null;
@@ -3271,13 +3650,14 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 本会话当前生效的文本处理管线（来自每游戏记忆恢复或用户设置）。
   ///
-  /// 默认是空管线 = 恒等变换：不装配时 [_pollHookedText] 走 [GalTextProcessPipeline.
-  /// isEmpty] 短路，文本一个字符不动。
+  /// 没存过管线的游戏（以及附着时查不到 exe 路径、没有游戏身份的会话）是
+  /// [kGalDefaultTextProcessPipeline]；用户把步骤全关 / 删光后 [_pollHookedText] 走
+  /// [GalTextProcessPipeline.isEmpty] 短路，文本一个字符不动。
   GalTextProcessPipeline get textProcessPipeline => _textProcessPipeline;
 
   /// 设置文本处理管线，并按游戏记住（与选轨 / 选线程同规格）。
   ///
-  /// 没有游戏身份（窗口附着路径，没有 launchExe）时只活在会话内——与
+  /// 没有游戏身份（附着时 PID 查不到 exe 路径）时只活在会话内——与
   /// [_persistTextThread] 同口径的「宁可少记，不猜身份」。
   ///
   /// 顺序刻意是「先加载记忆再写内存态」：[_ensureCaptureMemoryLoaded] 自己会把磁盘上
@@ -3298,16 +3678,39 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 对**所选线程的一行**套用用户编排的文本处理管线。
   ///
-  /// 返回 null = 管线把整行处理空了（例如「只保留「」内文本」遇到旁白），调用方按
+  /// 返回 null = 管线把整行处理空了（例如正则把整行替换掉），调用方按
   /// 系统 UI 行同样处置：推进 cursor、整行丢弃。
   ///
-  /// 空管线（默认）在第一行就短路返回原串：这是每条 hook 行都要过的热路径，
+  /// 空管线（步骤全关 / 删光）在第一行就短路返回原串：这是每条 hook 行都要过的热路径，
   /// 不装配时不允许产生任何额外拷贝或扫描。
   String? _processSelectedThreadText(String text) {
     final GalTextProcessPipeline pipeline = _textProcessPipeline;
     if (pipeline.isEmpty) return text;
     final String processed = pipeline.apply(text);
     return processed.trim().isEmpty ? null : processed;
+  }
+
+  /// 记下 [appendLine] 刚返回的行 [lineId] 的文本出自哪份管线输入。
+  ///
+  /// 必须在 [TexthookerService.appendLine] 返回后立刻调用（读的是它的
+  /// `lastAppendTextDonorId` / `lastFoldedLineIds`）：折叠时若胜出的是更长的旧快照，
+  /// 字幕显示的就是那条旧行的文本，它的输入也随之沿用，而不是本次的 [rawText]。
+  void _recordLineProcessInput(String lineId, String rawText) {
+    final String? donorId = _textService.lastAppendTextDonorId;
+    final String? input = donorId == null
+        ? rawText
+        : _lineProcessInputCache[donorId];
+    for (final String folded in _textService.lastFoldedLineIds) {
+      _lineProcessInputCache.remove(folded);
+    }
+    if (input == null) {
+      _lineProcessInputCache.remove(lineId);
+    } else {
+      // 重新插入，让它排到最新，_trimCache 从最旧的开始淘汰。
+      _lineProcessInputCache.remove(lineId);
+      _lineProcessInputCache[lineId] = input;
+    }
+    _trimCache(_lineProcessInputCache);
   }
 
   /// 会话结束时复位记忆的会话内状态（持久化真值不动）。
@@ -3317,7 +3720,7 @@ class GalHookSessionController extends ChangeNotifier {
     _captureMemoryLoaded = false;
     _captureMemoryGameKey = null;
     _captureMemory = const GalCaptureMemory();
-    _textProcessPipeline = const GalTextProcessPipeline();
+    _textProcessPipeline = kGalDefaultTextProcessPipeline;
     _attachedCaptureExecutable = null;
   }
 
@@ -3456,12 +3859,13 @@ class GalHookSessionController extends ChangeNotifier {
     if (_resourceIdForLine(lineId) != null) return null;
     final bool settling = _utteranceSettleInFlight.containsKey(lineId);
     bool freezing = false;
-    if (_loopbackFreezeTimers.containsKey(lineId)) {
-      final DateTime? startedAt = _loopbackFreezeStartedAt[lineId];
-      final int elapsedMs = startedAt == null
-          ? 0
-          : _now().difference(startedAt).inMilliseconds;
-      final int remainingMs = _loopbackFreezeDelay.inMilliseconds - elapsedMs;
+    final _LoopbackFreeze? pendingFreeze = _loopbackFreezeTimers[lineId];
+    // 续张不等：它的右界是下一句 / 上限，制卡时刻按真实已等待时长收束即可
+    // （[_flushLoopbackFreeze]），干等只会白白拖慢制卡。
+    if (pendingFreeze != null && !pendingFreeze.extension) {
+      final int remainingMs = pendingFreeze.deadline
+          .difference(_now())
+          .inMilliseconds;
       // 只在窗口「快到点」时才等：默认冻结窗 4s 落在耐心上限之内；被测试或配置拉到
       // 几十秒的窗口不能让制卡跟着干等，仍走原来的提前收束（BUG-1101）。
       freezing = remainingMs <= kGalMiningAudioSettleMaxWait.inMilliseconds;
@@ -3473,19 +3877,20 @@ class GalHookSessionController extends ChangeNotifier {
   Future<void> _awaitLineAudioSettled(String lineId) async {
     final Future<void>? settle = _utteranceSettleInFlight[lineId];
     if (settle != null) {
+      // 收敛自己会收口（下一句 / 长句静默 / 上限），这里的超时只是兜底：用收敛
+      // 上限而不是 6s——长句在 6s 后仍在变长，此刻放行就是把半句写进卡。
       await settle
           .timeout(
-            kGalMiningAudioSettleMaxWait + _utteranceSettleInterval * 6,
+            _utteranceSettleMax + _utteranceSettleInterval * 6,
             onTimeout: () {},
           )
           .catchError((Object _) {});
     }
-    if (!_loopbackFreezeTimers.containsKey(lineId)) return;
-    final DateTime? startedAt = _loopbackFreezeStartedAt[lineId];
-    final int elapsedMs = startedAt == null
-        ? 0
-        : _now().difference(startedAt).inMilliseconds;
-    final int remainingMs = (_loopbackFreezeDelay.inMilliseconds - elapsedMs)
+    final _LoopbackFreeze? pending = _loopbackFreezeTimers[lineId];
+    if (pending == null || pending.extension) return;
+    final int remainingMs = pending.deadline
+        .difference(_now())
+        .inMilliseconds
         .clamp(0, 1 << 30);
     if (remainingMs > kGalMiningAudioSettleMaxWait.inMilliseconds) return;
     // **一次 await，不是 100ms 轮询**。轮询是仓库明令禁止的「加延时掩盖时序」形状：
@@ -3574,7 +3979,8 @@ class GalHookSessionController extends ChangeNotifier {
         _textService.updateLineAudio(
           lineId,
           status: TexthookerLineAudioStatus.missing,
-          backend: 'game_resource',
+          // BUG-4206 审查：没配上原件就没有 game_resource 来源，backend 只在真拿到
+          // 资源时才写（操作目录 / UI 都按它描述「来自游戏资源直提」）。
           fallbackReason: 'paired_voice_not_found_fallback_disabled',
         );
         _record(
@@ -3622,13 +4028,26 @@ class GalHookSessionController extends ChangeNotifier {
     // 会话已经选用 Loopback 时，engine 仍需保活来提供文本/资源事件，但它的 PCM
     // 明确没有通过 readiness 门。此时绝不能因为共享内存里残留着可读 clip 就重新
     // 借用 engine PCM；否则会把错误格式/碎片缓存伪装成 system_loopback。
-    if ((slice == null || slice.isEmpty) &&
-        engine != null &&
-        identical(source, engine) &&
-        timestamp > 0) {
-      slice =
-          await engine.grabUtterance(timestamp) ??
-          await engine.grabClipNear(timestamp);
+    if (engine != null && identical(source, engine) && timestamp > 0) {
+      if (slice == null || slice.isEmpty) {
+        slice =
+            await engine.grabUtterance(timestamp) ??
+            await engine.grabClipNear(timestamp);
+      } else {
+        // 制卡时刻的封口 grab：收敛在长句静默 [_utteranceSettleQuietStop] 后收手，若这句
+        // 在那之后又接着说（长停顿后的后半句），段已经在环里、缓存里却没有。右界照旧
+        // 收在下一句（BUG-1109 的不变量），没有下一句时取到 native 前向上限。
+        final int? seq = _lineTextEventIdCache[lineId];
+        final int? nextTs = seq == null ? null : _nextLineTimestampAfter(seq);
+        final GalAudioSlice? latest = await engine.grabUtterance(
+          timestamp,
+          endTsMs: nextTs,
+        );
+        if (latest != null && latest.pcm.length > slice.pcm.length) {
+          _cacheLineVoiceIfLonger(lineId, latest);
+          slice = latest;
+        }
+      }
     }
     if (slice == null || slice.isEmpty) {
       // 制卡时刻仍两手空空：能给证据就给证据——引擎 PCM 会话下按「该句时刻
@@ -4004,6 +4423,17 @@ class GalHookSessionController extends ChangeNotifier {
     dispose();
   }
 
+  /// 释放会话自持的监听源。放在 [dispose] 而不是 [shutdown] 里：任何直接
+  /// dispose 控制器的路径（测试、未来的重建）都不会漏掉退出监视定时器和
+  /// [gameExitedCount] 通知器（BUG-4002 移植时补）。
+  @override
+  void dispose() {
+    _gameExitTimer?.cancel();
+    _gameExitTimer = null;
+    _gameExitedCount.dispose();
+    super.dispose();
+  }
+
   /// 注入统计落库用的 DB 惰性解析器（桌面启动流程
   /// [GalHookTextOverlayController.start] 调用一次；首行有归属台词到达时才解析，
   /// App 尚未初始化完则返回 null、字数先攒着）。是首页「游戏」活动的唯一数据来源。
@@ -4030,6 +4460,24 @@ class GalHookSessionController extends ChangeNotifier {
   /// 当前游玩计时器（单测断言接线/生命周期用）。
   @visibleForTesting
   GalgamePlayTracker? get playTracker => _playTracker;
+
+  /// 串流宿主报告「本会话的游戏窗口正被串流到已连上的接收端」。
+  ///
+  /// 游玩计时默认只认主机前台是游戏；串流时玩家在接收端（iPad / 手机），主机上的
+  /// 游戏窗口按设计留在后台，不转告这一位整场串流就累计 0 秒、被门槛丢弃，统计里
+  /// 只剩字数没有时长（BUG-3616）。在场期间计时器与前台同等计时（取或，不双计）。
+  ///
+  /// 唯一写入方是 `FushiSyncServerController`（串流连上 / 断开 / 停止时同步）；
+  /// 值跨计时器保留，之后（重新）启动的计时器起步即带上。
+  void setRemotePlayPresence(bool present) {
+    if (_remotePlayPresent == present) return;
+    _remotePlayPresent = present;
+    _playTracker?.remotePresent = present;
+  }
+
+  /// [setRemotePlayPresence] 的当前值（单测断言接线用）。
+  @visibleForTesting
+  bool get remotePlayPresent => _remotePlayPresent;
 
   /// 解析一次捕获会话的库内身份。**launch 与 attach 的唯一身份来源**（BUG-1892）。
   ///
@@ -4121,6 +4569,7 @@ class GalHookSessionController extends ChangeNotifier {
     );
     _playTracker = tracker;
     _activitySkippedMs = 0;
+    tracker.remotePresent = _remotePlayPresent;
     tracker.start(mainPid: mainPid ?? 0);
     // 桌面点 X 走 `exit(0)` 快杀，[close] 不会被调用；与超分同款，登记退出 flush
     // 把结算写穿再放进程死（登记点就在启动处，换人再启动也不会漏）。
@@ -4319,6 +4768,18 @@ class GalHookSessionController extends ChangeNotifier {
     required int atMs,
   }) {
     if (_activityGameTitle == null) return;
+    // 「我库里的例句」：有库内身份的游戏台词落进 galgame_text_lines（文本钩子历史只在
+    // 会话内存里，这张表是台词唯一的持久副本，随备份走），例句索引由它派生。同一行逐段
+    // 重绘按行 id 覆盖，外部通道按前缀续写覆盖。
+    final String? corpusGameId = _activityGameKey;
+    if (corpusGameId != null) {
+      LibraryCorpusService.instance.feedGameLine(
+        gameId: corpusGameId,
+        lineKey: lineId,
+        text: lineText,
+        atMs: atMs,
+      );
+    }
     if (fromEngineHook) {
       _engineTextCounted = true;
     } else if (_engineTextCounted) {
@@ -4738,6 +5199,7 @@ class GalHookSessionController extends ChangeNotifier {
     _lineVoiceSourcePtr.clear();
     _lineTimestampCache.clear();
     _lineTextEventIdCache.clear();
+    _lineProcessInputCache.clear();
     _loopbackCacheInFlight.clear();
     _cancelLoopbackFreezes();
     _pendingResourceMatches.clear();
@@ -5043,6 +5505,8 @@ class GalHookSessionController extends ChangeNotifier {
     _windowRebindTimer?.cancel();
     _windowRebindTimer = null;
     _windowRebindGeneration++;
+    _gameExitTimer?.cancel();
+    _gameExitTimer = null;
     _engineRetryTimer?.cancel();
     _engineRetryTimer = null;
     _engineRetryAttempt = 0;
@@ -5062,6 +5526,7 @@ class GalHookSessionController extends ChangeNotifier {
     _lineVoiceSourcePtr.clear();
     _lineTimestampCache.clear();
     _lineTextEventIdCache.clear();
+    _lineProcessInputCache.clear();
     _loopbackCacheInFlight.clear();
     _cancelLoopbackFreezes();
     _pendingResourceMatches.clear();
@@ -5168,185 +5633,202 @@ class GalHookSessionController extends ChangeNotifier {
     int cursor = _lastTextSeq;
     int recoveredCount = 0;
     bool receivedTextLine = false;
-    for (final GalHookedLine line in ordered) {
-      if (!_isCurrentPoll(engine, pollGeneration)) return;
-      if (line.seq <= recoveryCeiling) {
-        if (_recoverHistoryLine(line, appended)) recoveredCount++;
-        continue;
-      }
-      if (line.seq <= cursor) {
-        _setState(
-          _state.copyWith(textDuplicateCount: _state.textDuplicateCount + 1),
-        );
-        continue;
-      }
-      if (line.seq > cursor + 1) {
-        _setState(
-          _state.copyWith(
-            textGapCount: _state.textGapCount + line.seq - cursor - 1,
-          ),
-        );
-        _record(
-          GalHookEventSeverity.warning,
-          'text',
-          'text.sequence_gap',
-          'Text sequence gap detected',
-          details: <String, Object?>{'from': cursor, 'to': line.seq},
-        );
-      }
-      // 重连到一个仍在运行、仍已注入的游戏时，旧的 threadDiscovered 事件不会重放。
-      // 如果这里直接执行下面的“未选中就丢”过滤，自定义 hook（SGRE 的 UserHook1
-      // 即为实测现场）虽然持续把正文写进文本环，却永远不会重新进入线程目录，跨会话
-      // 记忆也就永远达不到恢复门槛。先用正文元数据补目录/观测计数；正文是否发布仍由
-      // _acceptsLineFromSelectedThread 独占裁决，不会把噪声线程灌进工作台。
-      if (line.eventKind == GalTextEventKind.line) {
-        final String? threadKey = line.textThreadKey;
-        final String? threadLabel = line.textThreadLabel;
-        if (threadKey != null && threadLabel != null) {
-          _textService.observeTextThreadLine(
-            key: threadKey,
-            label: threadLabel,
-            text: line.text,
-            hookCode: line.hookCode.isEmpty ? null : line.hookCode,
-            nativeThreadId: line.threadId == 0 ? null : line.threadId,
-          );
-          _maybeRestoreTextThread();
+    // 线程目录观测整批只通知一次（见 [TexthookerService.observeTextThreadLine]）：
+    // 一批最多几百行、绝大多数来自未选中的线程，逐行通知是 O(行数 × 监听者) 的同步
+    // 重算，Unity 每帧 set_text 的游戏会因此冻住 UI（反馈 bfaVEbHL_s）。
+    bool threadDirectoryObserved = false;
+    try {
+      for (final GalHookedLine line in ordered) {
+        if (!_isCurrentPoll(engine, pollGeneration)) return;
+        if (line.seq <= recoveryCeiling) {
+          if (_recoverHistoryLine(line, appended)) recoveredCount++;
+          continue;
         }
-      }
-      // v13 消费期线程过滤。native 现在把**每条线程**的行都写进各自的道（这正是"多抓
-      // 文本"要的：换线程后旧行仍在、选错线程不再等于那段语音永久孤儿），所以喂进
-      // texthooker / 配对 / 制卡之前必须在这里挑出选定线程的行——否则工作台会被所有
-      // hook 线程的文本灌满。判据与旧 native 门控等价，见 [_selectedTextThreadFaceId]。
-      if (line.eventKind == GalTextEventKind.line &&
-          !_acceptsLineFromSelectedThread(line)) {
-        cursor = line.seq;
-        continue;
-      }
-      if (line.eventKind == GalTextEventKind.threadDiscovered) {
-        final String? threadKey = line.textThreadKey;
-        final String? threadLabel = line.textThreadLabel;
-        if (threadKey != null && threadLabel != null) {
-          _textService.registerTextThread(
-            key: threadKey,
-            label: threadLabel,
-            hookCode: line.hookCode.isEmpty ? null : line.hookCode,
-            nativeThreadId: line.threadId,
+        if (line.seq <= cursor) {
+          _setState(
+            _state.copyWith(textDuplicateCount: _state.textDuplicateCount + 1),
+          );
+          continue;
+        }
+        if (line.seq > cursor + 1) {
+          _setState(
+            _state.copyWith(
+              textGapCount: _state.textGapCount + line.seq - cursor - 1,
+            ),
+          );
+          _record(
+            GalHookEventSeverity.warning,
+            'text',
+            'text.sequence_gap',
+            'Text sequence gap detected',
+            details: <String, Object?>{'from': cursor, 'to': line.seq},
           );
         }
-        cursor = line.seq;
-        continue;
-      }
-      // 系统 UI 文字（读/存档菜单确认句、存档槽号/时间戳）在 native hook 侧无法与台词区分，
-      // 会被 injector 的 hook 赢家选择放行——在喂进文本服务/查词面板前用实证启发式剔除。
-      // 推进 cursor 消费掉该 seq，但不置 receivedTextLine（菜单文字不算收到台词信号）。
-      if (isGalgameSystemUiLine(line.text)) {
-        cursor = line.seq;
-        continue;
-      }
-      // 用户编排的文本处理管线（LunaTranslator 同款：逐字重绘去重 / 去整块重复 /
-      // 花括号注音 / 正则替换……）。位置有两条硬约束，不能挪：
-      //   ① 必须在 [_acceptsLineFromSelectedThread] **之后** —— 管线是给「所选线程的
-      //      正文」配的，线程目录/预览仍然要看引擎原样吐出来的串，否则用户在选择器里
-      //      看到的和他为之写规则的东西对不上；
-      //   ② 必须在 appendLine **之前** —— 注音剥离（parseRubyMarkup）与渐进折叠都在
-      //      appendLine 内部按入参文本建坐标系，管线放到后面跑就等于让 rubySpans 的
-      //      下标指向一份已经不存在的文本，振假名会整片错位。
-      final String? processedText = _processSelectedThreadText(line.text);
-      if (processedText == null) {
-        cursor = line.seq;
-        continue;
-      }
-      final TexthookerLineEntry? entry = _textService.appendLine(
-        processedText,
-        source: TexthookerLineSource.engineHook,
-        sourceLabel: 'engine_hook',
-        sourceSequence: line.seq,
-        hookTimestampMs: line.timestampMs,
-        eventOwnedVoice: line.eventOwnedVoice,
-        textThreadKey: line.textThreadKey,
-        textThreadLabel: line.textThreadLabel,
-        textHookCode: line.hookCode.isEmpty ? null : line.hookCode,
-        nativeTextThreadId: line.threadId == 0 ? null : line.threadId,
-        audioStatus: TexthookerLineAudioStatus.pending,
-      );
-      if (entry == null) {
-        cursor = line.seq;
-        continue;
-      }
-      receivedTextLine = true;
-      // 折叠吞掉的那几条行的 id 在下面这一整批 map/timer 里还是活键，必须**先**
-      // 迁走再写本次事件（本次的时间戳 / seq 会覆盖掉搬来的旧值，那正是想要的）。
-      _redirectFoldedLines(_textService.lastFoldedLineIds, entry.id);
-      // A folded row has a new event owner, even when its next resource is
-      // already available. Retire the preceding event's pending request.
-      _pendingResourceMatches.remove(entry.id);
-      // 字数按 appendLine 报出来的**新增量**计，不按 entry.text 计：同一句台词被
-      // 引擎分多次重绘时会折成一条，按整条计会让这句话每重绘一次就再算一遍
-      // （增量为空 = 这次重绘没带来新字，不算新活动）。
-      _recordEngineDelta(
-        _textService.lastAppendedDelta,
-        entry: entry,
-        // hook 事件自带的 GetTickCount64：到达间隔按游戏推出台词的真实节奏算，
-        // 不受文本轮询把几行攒成一批的影响。
-        atMs: line.timestampMs,
-      );
-      _lineTimestampCache[entry.id] = line.timestampMs;
-      _trimCache(_lineTimestampCache);
-      _lineTextEventIdCache[entry.id] = line.seq;
-      _trimCache(_lineTextEventIdCache);
-      final bool resourceReady = engine.rawVoiceReady;
-      final String? resourceId = resourceReady
-          ? line.eventOwnedVoice
-                ? engine.findEventOwnedVoiceResourceId(
-                    line.timestampMs,
-                    textEventId: line.seq,
-                  )
-                : engine.findPairedVoiceResourceId(
-                    line.timestampMs,
-                    textEventId: line.seq,
-                  )
-          : null;
-      final bool resourceMatched = resourceId != null;
-      if (resourceMatched) {
-        _textService.updateLineAudio(
-          entry.id,
-          status: TexthookerLineAudioStatus.matched,
-          backend: 'game_resource',
-          resourceId: resourceId,
+        // 重连到一个仍在运行、仍已注入的游戏时，旧的 threadDiscovered 事件不会重放。
+        // 如果这里直接执行下面的“未选中就丢”过滤，自定义 hook（SGRE 的 UserHook1
+        // 即为实测现场）虽然持续把正文写进文本环，却永远不会重新进入线程目录，跨会话
+        // 记忆也就永远达不到恢复门槛。先用正文元数据补目录/观测计数；正文是否发布仍由
+        // _acceptsLineFromSelectedThread 独占裁决，不会把噪声线程灌进工作台。
+        if (line.eventKind == GalTextEventKind.line) {
+          final String? threadKey = line.textThreadKey;
+          final String? threadLabel = line.textThreadLabel;
+          if (threadKey != null && threadLabel != null) {
+            _textService.observeTextThreadLine(
+              key: threadKey,
+              label: threadLabel,
+              text: line.text,
+              hookCode: line.hookCode.isEmpty ? null : line.hookCode,
+              hookCodeLaneUnique: line.hookCodeIsLaneUnique,
+              nativeThreadId: line.threadId == 0 ? null : line.threadId,
+              notify: false,
+            );
+            threadDirectoryObserved = true;
+            _maybeRestoreTextThread();
+          }
+        }
+        // v13 消费期线程过滤。native 现在把**每条线程**的行都写进各自的道（这正是"多抓
+        // 文本"要的：换线程后旧行仍在、选错线程不再等于那段语音永久孤儿），所以喂进
+        // texthooker / 配对 / 制卡之前必须在这里挑出选定线程的行——否则工作台会被所有
+        // hook 线程的文本灌满。判据与旧 native 门控等价，见 [_selectedTextThreadFaceId]。
+        if (line.eventKind == GalTextEventKind.line &&
+            !_acceptsLineFromSelectedThread(line)) {
+          cursor = line.seq;
+          continue;
+        }
+        if (line.eventKind == GalTextEventKind.threadDiscovered) {
+          final String? threadKey = line.textThreadKey;
+          final String? threadLabel = line.textThreadLabel;
+          if (threadKey != null && threadLabel != null) {
+            _textService.registerTextThread(
+              key: threadKey,
+              label: threadLabel,
+              hookCode: line.hookCode.isEmpty ? null : line.hookCode,
+              hookCodeLaneUnique: line.hookCodeIsLaneUnique,
+              nativeThreadId: line.threadId,
+            );
+          }
+          cursor = line.seq;
+          continue;
+        }
+        // 系统 UI 文字（读/存档菜单确认句、存档槽号/时间戳）在 native hook 侧无法与台词区分，
+        // 会被 injector 的 hook 赢家选择放行——在喂进文本服务/查词面板前用实证启发式剔除。
+        // 推进 cursor 消费掉该 seq，但不置 receivedTextLine（菜单文字不算收到台词信号）。
+        if (isGalgameSystemUiLine(line.text)) {
+          cursor = line.seq;
+          continue;
+        }
+        // 用户编排的文本处理管线（LunaTranslator 同款：逐字重绘去重 / 去整块重复 /
+        // 花括号注音 / 正则替换……）。位置有两条硬约束，不能挪：
+        //   ① 必须在 [_acceptsLineFromSelectedThread] **之后** —— 管线是给「所选线程的
+        //      正文」配的，线程目录/预览仍然要看引擎原样吐出来的串，否则用户在选择器里
+        //      看到的和他为之写规则的东西对不上；
+        //   ② 必须在 appendLine **之前** —— 注音剥离（parseRubyMarkup）与渐进折叠都在
+        //      appendLine 内部按入参文本建坐标系，管线放到后面跑就等于让 rubySpans 的
+        //      下标指向一份已经不存在的文本，振假名会整片错位。
+        final String? processedText = _processSelectedThreadText(line.text);
+        if (processedText == null) {
+          cursor = line.seq;
+          continue;
+        }
+        final TexthookerLineEntry? entry = _textService.appendLine(
+          processedText,
+          source: TexthookerLineSource.engineHook,
+          sourceLabel: 'engine_hook',
+          sourceSequence: line.seq,
+          hookTimestampMs: line.timestampMs,
+          eventOwnedVoice: line.eventOwnedVoice,
+          textThreadKey: line.textThreadKey,
+          textThreadLabel: line.textThreadLabel,
+          textHookCode: line.hookCode.isEmpty ? null : line.hookCode,
+          nativeTextThreadId: line.threadId == 0 ? null : line.threadId,
+          audioStatus: TexthookerLineAudioStatus.pending,
         );
-        _record(
-          GalHookEventSeverity.success,
-          'match',
-          'audio.game_resource_matched',
-          'Original game resource audio matched to captured line',
-          details: <String, Object?>{'lineId': entry.id, 'seq': line.seq},
-        );
-      } else if (resourceReady) {
-        _pendingResourceMatches[entry.id] = (
-          timestampMs: line.timestampMs,
-          textEventId: line.seq,
-          eventOwnedOnly: line.eventOwnedVoice,
-        );
-        _trimCache(_pendingResourceMatches);
-        _textService.updateLineAudio(
-          entry.id,
-          status: TexthookerLineAudioStatus.pending,
-          backend: 'game_resource',
-        );
-      }
-      // BUG-1063：台词已进缓冲、UI 已被通知；余下的语音抓取（PCM 拷贝、loopback
-      // 环冻结）一律离开文本主路径，改由串行音频队列执行。此前它们 await 在本循环
-      // 里：同一批的后续台词要排在前一句语音抓取之后，且 _pollInFlight 会让下一个
-      // tick 整轮跳过——台词显示被自己的语音配对拖慢。
-      if (!resourceMatched) {
-        _scheduleLineAudioAttach(
-          engine: engine,
+        if (entry == null) {
+          cursor = line.seq;
+          continue;
+        }
+        receivedTextLine = true;
+        _recordLineProcessInput(entry.id, line.text);
+        // 折叠吞掉的那几条行的 id 在下面这一整批 map/timer 里还是活键，必须**先**
+        // 迁走再写本次事件（本次的时间戳 / seq 会覆盖掉搬来的旧值，那正是想要的）。
+        _redirectFoldedLines(_textService.lastFoldedLineIds, entry.id);
+        // A folded row has a new event owner, even when its next resource is
+        // already available. Retire the preceding event's pending request.
+        _pendingResourceMatches.remove(entry.id);
+        // 字数按 appendLine 报出来的**新增量**计，不按 entry.text 计：同一句台词被
+        // 引擎分多次重绘时会折成一条，按整条计会让这句话每重绘一次就再算一遍
+        // （增量为空 = 这次重绘没带来新字，不算新活动）。
+        _recordEngineDelta(
+          _textService.lastAppendedDelta,
           entry: entry,
-          line: line,
-          resourceReady: resourceReady,
+          // hook 事件自带的 GetTickCount64：到达间隔按游戏推出台词的真实节奏算，
+          // 不受文本轮询把几行攒成一批的影响。
+          atMs: line.timestampMs,
         );
+        _lineTimestampCache[entry.id] = line.timestampMs;
+        _trimCache(_lineTimestampCache);
+        _lineTextEventIdCache[entry.id] = line.seq;
+        _trimCache(_lineTextEventIdCache);
+        final bool resourceReady = engine.rawVoiceReady;
+        final String? resourceId = resourceReady
+            ? line.eventOwnedVoice
+                  ? engine.findEventOwnedVoiceResourceId(
+                      line.timestampMs,
+                      textEventId: line.seq,
+                    )
+                  : engine.findPairedVoiceResourceId(
+                      line.timestampMs,
+                      textEventId: line.seq,
+                    )
+            : null;
+        final bool resourceMatched = resourceId != null;
+        if (resourceMatched) {
+          _textService.updateLineAudio(
+            entry.id,
+            status: TexthookerLineAudioStatus.matched,
+            backend: 'game_resource',
+            resourceId: resourceId,
+          );
+          _record(
+            GalHookEventSeverity.success,
+            'match',
+            'audio.game_resource_matched',
+            'Original game resource audio matched to captured line',
+            details: <String, Object?>{'lineId': entry.id, 'seq': line.seq},
+          );
+        } else if (resourceReady) {
+          _pendingResourceMatches[entry.id] = (
+            timestampMs: line.timestampMs,
+            textEventId: line.seq,
+            eventOwnedOnly: line.eventOwnedVoice,
+          );
+          _trimCache(_pendingResourceMatches);
+          // BUG-4206：还没配上的行不是 game_resource——backend 只在真的拿到资源
+          // （有 resourceId）时才写。以前这里先写了 backend，UI 就凭它弹出带播放键的
+          // 资源弹窗、面板显示 game_resource，点了却没有声音。折叠进来的行若还带着
+          // 上一条事件的 resourceId，也一并清掉：那个资源属于旧事件。
+          _textService.updateLineAudio(
+            entry.id,
+            status: TexthookerLineAudioStatus.pending,
+            clearResourceId: true,
+          );
+        }
+        // BUG-1063：台词已进缓冲、UI 已被通知；余下的语音抓取（PCM 拷贝、loopback
+        // 环冻结）一律离开文本主路径，改由串行音频队列执行。此前它们 await 在本循环
+        // 里：同一批的后续台词要排在前一句语音抓取之后，且 _pollInFlight 会让下一个
+        // tick 整轮跳过——台词显示被自己的语音配对拖慢。
+        if (!resourceMatched) {
+          _scheduleLineAudioAttach(
+            engine: engine,
+            entry: entry,
+            line: line,
+            resourceReady: resourceReady,
+          );
+        }
+        cursor = line.seq;
       }
-      cursor = line.seq;
+    } finally {
+      if (threadDirectoryObserved) _textService.notifyTextThreadsObserved();
     }
     if (!_isCurrentPoll(engine, pollGeneration)) return;
     if (recoveryCeiling > 0) {
@@ -5544,9 +6026,9 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 引擎 PCM 逐句语音的**增长收敛**（BUG-1109）。
   ///
-  /// native `VoiceHookReader::GrabUtterance` 的拼接窗口是 `[ts-200, ts+6000]`
-  /// （`windows/runner/voice_hook_reader.cpp`）——**前向 6 秒**是有意设计，等的就是这句
-  /// 语音后续的段。但文本轮询 80ms 一跳，台词一到就读时窗口的前向部分还是空的，只能拼到
+  /// native `VoiceHookReader::GrabUtterance` 的拼接窗口是 `[下界, ts+30000]`
+  /// （`windows/runner/voice_hook_reader.cpp`，上限 `kUtteranceMaxForwardMs`）——前向
+  /// 窗口是有意设计，等的就是这句语音后续的段。但文本轮询 80ms 一跳，台词一到就读时窗口的前向部分还是空的，只能拼到
   /// 游戏**当时已经提交给混音器**的那一小段。整段一次性提交的引擎看不出问题；分块流式提交
   /// 的引擎必然缺尾巴。而 [_lineVoiceCache] 先到先得、制卡只读缓存，于是这句语音**永远**
   /// 停在被截断的版本，隔多久制卡都一样。
@@ -5555,10 +6037,13 @@ class GalHookSessionController extends ChangeNotifier {
   /// [_utteranceSettleInterval] 重取，每轮把**更长**的结果写回缓存——制卡随时都能取到
   /// 当前最完整的一段，不需要额外的收束通道。收敛只终止于两者之一：
   /// - [_canSettleLine] 不再成立（下一句到达 / 会话或音源换走 / 用户裁决 / 资源升格）；
+  /// - 越过 [_utteranceSettleWindow] 之后，最后一次变长已过去 [_utteranceSettleQuietStop]
+  ///   （长句已说完）；
   /// - 到 [_utteranceSettleMax]（越过 native 窗口，不可能再有新段）。
   ///
-  /// 刻意**没有**「连续 N 轮没变长就算播完」：缓存单调变长，句中一个 >2 轮的停顿
-  /// （换气、演出停顿）就会把收敛骗停在半句上，而多跑到上限的代价只是几次 grab。
+  /// 无条件窗内刻意**没有**「连续 N 轮没变长就算播完」：句中一个 >2 轮的停顿（换气、
+  /// 演出停顿）就会把收敛骗停在半句上。旧实现到 6s 无条件收手，长句因此永远只剩前
+  /// 6 秒；现在 6s 后只要还在变长就继续（每 2s 静默才收），兼顾长句与轮询开销。
   Future<void> _settleLineUtterance({
     required EngineHookGalAudioSource engine,
     required TexthookerLineEntry entry,
@@ -5572,7 +6057,11 @@ class GalHookSessionController extends ChangeNotifier {
     }
     int bestBytes = _lineVoiceCache[entry.id]?.pcm.length ?? 0;
     final Stopwatch elapsed = Stopwatch()..start();
-    while (elapsed.elapsed < _utteranceSettleMax) {
+    Duration lastGrowth = Duration.zero;
+    bool quietAfterWindow() =>
+        elapsed.elapsed >= _utteranceSettleWindow &&
+        elapsed.elapsed - lastGrowth >= _utteranceSettleQuietStop;
+    while (elapsed.elapsed < _utteranceSettleMax && !quietAfterWindow()) {
       if (!_canSettleLine(engine: engine, entry: entry, line: line)) {
         await _closingUtteranceGrab(
           engine: engine,
@@ -5612,6 +6101,7 @@ class GalHookSessionController extends ChangeNotifier {
         return;
       }
       bestBytes = next.pcm.length;
+      lastGrowth = elapsed.elapsed;
       if (!_cacheLineVoiceIfLonger(entry.id, next)) return;
       _textService.updateLineAudio(
         _liveLineId(entry.id),
@@ -5717,7 +6207,7 @@ class GalHookSessionController extends ChangeNotifier {
       identical(_audioSource, engine) &&
       isLineInCurrentSession(entry) &&
       // 下一句台词已经到了 = 这句语音要么播完、要么被玩家跳过。再等下去，下一句的段
-      // 会落进同一个 `[ts-200, ts+6000]` 窗口被拼进上一句。
+      // 会落进同一个 `[下界, ts+30000]` 窗口被拼进上一句。
       _lastTextSeq <= line.seq &&
       // 补录窗口开着 = 用户正在为某行重录，此刻这行的状态由用户裁决拥有。窗口期内
       // `_manualRecaptureLines` 还没写（只有 [finishLineRecapture] 才 add），所以
@@ -5976,6 +6466,11 @@ class GalHookSessionController extends ChangeNotifier {
 
   void _refreshPendingResourceMatches(EngineHookGalAudioSource engine) {
     if (!engine.rawVoiceReady || _pendingResourceMatches.isEmpty) return;
+    // 本会话见过的最新一句的 hook 时刻（与资源 tick 同一 GetTickCount64 时钟）。
+    final int newestLineTs = _lineTimestampCache.values.fold<int>(
+      0,
+      (int newest, int ts) => ts > newest ? ts : newest,
+    );
     final List<String> matched = <String>[];
     for (final MapEntry<
           String,
@@ -6004,7 +6499,23 @@ class GalHookSessionController extends ChangeNotifier {
               pending.value.timestampMs,
               textEventId: pending.value.textEventId,
             );
-      if (resourceId == null) continue;
+      if (resourceId == null) {
+        // BUG-4206：「匹配中」必须有终态。后面已经有一句开始的时刻超出本句的配对
+        // 容差（带标资源 ±[kGalVoicePairingWindowMs]，无标记窗更窄），说明播放已经
+        // 走过了这句的配对范围，再等也只是一直显示「匹配中」（无配音的旁白句在资源
+        // 模式下尤其如此）。只把行状态收束成 missing，不撤出待匹配集合：资源晚落盘
+        // 时下一轮仍会把它升格成 matched，制卡路径也照旧按时间戳去找原件。
+        if (row?.audioStatus == TexthookerLineAudioStatus.pending &&
+            newestLineTs - pending.value.timestampMs >
+                kGalVoicePairingWindowMs) {
+          _textService.updateLineAudio(
+            pending.key,
+            status: TexthookerLineAudioStatus.missing,
+            fallbackReason: kGalResourceNotPairedReason,
+          );
+        }
+        continue;
+      }
       _textService.updateLineAudio(
         pending.key,
         status: TexthookerLineAudioStatus.matched,
@@ -6028,6 +6539,11 @@ class GalHookSessionController extends ChangeNotifier {
     final String? latestId = entries.isEmpty ? null : entries.last.id;
     if (latestId != null && latestId != _lastObservedLineId) {
       final TexthookerLineEntry latest = entries.last;
+      if (_state.knifeTextServiceIniPath != null &&
+          (latest.textThreadKey?.startsWith('knife:') ?? false)) {
+        // 台词服务其实开着（例如用户自己带了 -t）：提示作废。
+        _state = _state.copyWith(clearKnifeTextServiceIniPath: true);
+      }
       if (latest.source != TexthookerLineSource.engineHook) {
         _record(
           GalHookEventSeverity.success,
@@ -6058,19 +6574,28 @@ class GalHookSessionController extends ChangeNotifier {
 
   void _onEndpointStatusChanged() => notifyListeners();
 
-  /// 为 [entry] 排一次「延迟冻结」（BUG-1101）。
+  /// 为 [entry] 排一次「延迟冻结」（BUG-1101），并把**之前各行**的 loopback 窗口在此刻
+  /// 收口（[_closeEarlierLoopbackWindows]）。
   ///
   /// `grabRecent(backMs)` 的语义是**当前时刻往前** backMs，纯后向、零前向等待
   /// （契约见 [GalAudioSource.grabRecent]）。galgame 的时序恒为「文本先绘制 → 语音随后
   /// 播放」，所以在台词到达那一刻抓，窗口里装的全是**上一句** + BGM，一个本句采样都没有
   /// ——错位一句是旧实现的设计必然，不是抖动。引擎 PCM 路径的 native 窗口本就是前向的
-  /// （`grabUtterance`，`[ts-200, ts+6000]`；但**调用时刻**同样太早，见 BUG-1109 的
-  /// [_settleLineUtterance]），Loopback 必须对称：记下 t0，等到
-  /// t0+[_loopbackFreezeDelay] 再回取 `delay + preRoll`，等价于取 `[t0-preRoll, t0+delay]`。
+  /// （`grabUtterance`，前向上限 `kUtteranceMaxForwardMs`；但**调用时刻**同样太早，见
+  /// BUG-1109 的 [_settleLineUtterance]），Loopback 必须对称：记下 t0，等到
+  /// t0+[_loopbackFreezeDelay] 先冻一份 `[t0-preRoll, t0+delay]`。
+  ///
+  /// 这份 4s 冻结只是**暂定稿**：一句话的真实右界是下一句到达，不是「语音一般不超过
+  /// 4 秒」。旧实现在这里永久定格，长句因此一律只剩 4s+1s 预卷 = 5s（用户报：句子长
+  /// 的卡音频被截、短的完整）。冻结之后窗口继续张开（[_scheduleLoopbackExtension]），
+  /// 下一句到达时按真实时长定稿，迟迟没有下一句时到 [_loopbackLineMax] 定稿。
   ///
   /// 等待刻意放在串行音频队列**之外**：在队列里 sleep 会把后续台词的抓取和制卡一起堵住。
   /// 文本上屏完全不受影响，只有音频后补。
   void _scheduleLoopbackFreeze(TexthookerLineEntry entry) {
+    // 新的一句到了 = 之前各句的右界。放在下面的守卫之前：这一句本身被裁决 / 已在冻结，
+    // 都不改变「前面那句到此为止」这个事实。
+    _closeEarlierLoopbackWindows(entry.id);
     // 策略守卫放在这里而不是只放调用点：[_settleLineUtterance] 的收敛路径也会排
     // 冻结，漏一个调用点就等于「禁止降级」在某条路径上静默失效。
     if (!_state.audioFallbackPolicy.allowsLoopback ||
@@ -6081,7 +6606,8 @@ class GalHookSessionController extends ChangeNotifier {
         _loopbackCacheInFlight.contains(entry.id)) {
       return;
     }
-    _loopbackFreezeStartedAt[entry.id] = _now();
+    final DateTime startedAt = _now();
+    _loopbackFreezeStartedAt[entry.id] = startedAt;
     _trimCache(_loopbackFreezeStartedAt);
     final int backMs = _loopbackFreezeDelay.inMilliseconds + _loopbackPreRollMs;
     late final _LoopbackFreeze freeze;
@@ -6092,6 +6618,9 @@ class GalHookSessionController extends ChangeNotifier {
           _loopbackFreezeTimers.remove(entry.id);
         }
         freeze.resolve();
+        // 起点取表里的值：行合并（[_foldLine]）会把起点挪成被吞行里最早的那个。
+        final DateTime windowStart =
+            _loopbackFreezeStartedAt[entry.id] ?? freeze.startedAt;
         unawaited(
           _audioQueue.enqueue<bool>(
             () async {
@@ -6108,21 +6637,78 @@ class GalHookSessionController extends ChangeNotifier {
             ),
           ),
         );
+        // **同步**接上续张：若等冻结作业跑完再排，下一句恰好在两者之间到达时就没有
+        // 可收口的窗口，续张会一路开到上限，把后面几句的混音收进这一句。
+        _scheduleLoopbackExtension(entry, startedAt: windowStart);
       }),
+      startedAt: startedAt,
+      deadline: startedAt.add(_loopbackFreezeDelay),
     );
     _loopbackFreezeTimers[entry.id] = freeze;
   }
 
-  /// 提前收束 [lineId] 的延迟冻结：按**真实已等待时长**回取，而不是白等满窗口。
+  /// 新的一句 [newLineId] 到达：除它之外所有还开着的 loopback 窗口（暂定冻结或续张）
+  /// 一律以**此刻**为右界定稿。
+  ///
+  /// 右界必须是到达时刻本身：`grabRecent` 只能取「现在往前」，回取作业排在串行队列里，
+  /// 真正执行时环里已经录进了下一句的开头。所以记下 [boundary]，取完再把 boundary
+  /// 之后的那一截切掉（[_cacheLoopbackForLine] 的 `windowEnd`）。
+  void _closeEarlierLoopbackWindows(String newLineId) {
+    if (_audioSource is! LoopbackGalAudioSource) return;
+    final DateTime boundary = _now();
+    for (final MapEntry<String, _LoopbackFreeze> open
+        in _loopbackFreezeTimers.entries.toList()) {
+      if (open.key == newLineId) continue;
+      _loopbackFreezeTimers.remove(open.key);
+      open.value.resolve();
+      final TexthookerLineEntry? line = _textService.entryById(open.key);
+      final DateTime windowStart =
+          _loopbackFreezeStartedAt[open.key] ?? open.value.startedAt;
+      if (line == null) {
+        _loopbackFreezeStartedAt.remove(open.key);
+        continue;
+      }
+      // 暂定冻结还没到点就被下一句截断：这是它的**首份**音频，取空要如实标 missing；
+      // 续张只是在已冻结的那份上加长，取空 / 取短都保持原样。
+      final bool onlyIfLonger = open.value.extension;
+      unawaited(
+        _audioQueue.enqueue<bool>(
+          () async {
+            final int elapsedMs = _now().difference(windowStart).inMilliseconds;
+            final int backMs = (elapsedMs + _loopbackPreRollMs)
+                .clamp(_loopbackMinBackMs, _loopbackRingCapacityMs)
+                .toInt();
+            await _cacheLoopbackForLine(
+              line,
+              backMs: backMs,
+              onlyIfLonger: onlyIfLonger,
+              windowEnd: boundary,
+            );
+            return true;
+          },
+          buildFailure: (Object error, StackTrace stack) => false,
+          onError: (Object error, StackTrace stack) => _record(
+            GalHookEventSeverity.error,
+            'match',
+            'audio.loopback_close_exception',
+            'Loopback line window close failed',
+            details: <String, Object?>{'lineId': open.key, 'error': '$error'},
+          ),
+        ),
+      );
+    }
+  }
+
+  /// 提前收束 [lineId] 的延迟冻结 / 续张：按**真实已等待时长**回取，而不是白等满窗口。
   /// 制卡（用户现在就要这段声音）与引擎 PCM 升格（音源即将换走）都用它。
-  /// 已经冻过 / 没排过的行是 no-op。
+  /// 已经定稿 / 没排过的行是 no-op。
   ///
   /// BUG-1287 — 「现在就要」不等于「就此定格」。用户在台词播到中后段才查词/制卡时，
   /// elapsedMs 可能只有一秒多，回取到的自然只有这句语音的前半段。旧实现在这里
-  /// `timer.cancel()` 之后就再也不碰这一行，那半句话被永久钉死。因此收束之后按**原
-  /// 到期时刻**补排一次补全（[_scheduleLoopbackSettle]）：立刻给出能用的，窗口真正
-  /// 到点后若拿到更长的再覆盖。这与引擎 PCM 路径的 [_settleLineUtterance] 是同一条
-  /// 纪律，Loopback 此前缺了对称的这一半。
+  /// `timer.cancel()` 之后就再也不碰这一行，那半句话被永久钉死。因此收束之后重新接上
+  /// 续张（[_scheduleLoopbackExtension]）：立刻给出能用的，窗口真正收口（下一句 /
+  /// 上限）时若拿到更长的再覆盖。这与引擎 PCM 路径的 [_settleLineUtterance] 是同一条
+  /// 纪律。
   Future<void> _flushLoopbackFreeze(String lineId, {bool settle = true}) async {
     final _LoopbackFreeze? freeze = _loopbackFreezeTimers.remove(lineId);
     if (freeze == null) return;
@@ -6132,55 +6718,63 @@ class GalHookSessionController extends ChangeNotifier {
       _loopbackFreezeStartedAt.remove(lineId);
       return;
     }
-    final DateTime? startedAt = _loopbackFreezeStartedAt[lineId];
-    final int elapsedMs = startedAt == null
-        ? 0
-        : _now().difference(startedAt).inMilliseconds;
+    final DateTime windowStart =
+        _loopbackFreezeStartedAt[lineId] ?? freeze.startedAt;
+    final int elapsedMs = _now().difference(windowStart).inMilliseconds;
     final int backMs = (elapsedMs + _loopbackPreRollMs)
         .clamp(_loopbackMinBackMs, _loopbackRingCapacityMs)
         .toInt();
-    await _cacheLoopbackForLine(entry, backMs: backMs);
+    await _cacheLoopbackForLine(
+      entry,
+      backMs: backMs,
+      onlyIfLonger: freeze.extension,
+    );
     if (settle) {
-      _scheduleLoopbackSettle(entry, elapsedMs: elapsedMs);
+      _scheduleLoopbackExtension(entry, startedAt: windowStart);
     }
   }
 
-  /// BUG-1287 — 为提前收束过的 [entry] 补排「窗口到点再取一次完整长度」。
+  /// 为已冻结过暂定稿的 [entry] 接上「窗口续张」：到 `startedAt + [_loopbackLineMax]`
+  /// 再按完整长度取一次（只在更长时覆盖）。下一句先到时由
+  /// [_closeEarlierLoopbackWindows] 提前以到达时刻定稿——那才是这句话真正的右界。
   ///
   /// 复用 [_loopbackFreezeTimers] 装这只定时器，因此会话结束 / 禁止降级
   /// （[_cancelLoopbackFreezes]）、用户补录与选轨（各自 remove 该 lineId）都能像取消
   /// 普通冻结一样把它取消掉，不需要第二套生命周期。
-  void _scheduleLoopbackSettle(
+  void _scheduleLoopbackExtension(
     TexthookerLineEntry entry, {
-    required int elapsedMs,
+    required DateTime startedAt,
   }) {
-    // 已经等满窗口才收束的，补全取不到任何新东西。
-    final int remainingMs = _loopbackFreezeDelay.inMilliseconds - elapsedMs;
+    final DateTime deadline = startedAt.add(_loopbackLineMax);
+    final int remainingMs = deadline.difference(_now()).inMilliseconds;
+    // 已经张满上限才收束的，续张取不到任何新东西。
     if (remainingMs <= 0) return;
     if (!_state.audioFallbackPolicy.allowsLoopback ||
         _audioSource is! LoopbackGalAudioSource ||
         !isLineInCurrentSession(entry) ||
         _isUserAdjudicated(_liveLineId(entry.id)) ||
+        _resourceIdForLine(_liveLineId(entry.id)) != null ||
         _loopbackFreezeTimers.containsKey(entry.id)) {
       return;
     }
-    // 完整窗口 = 原本延迟冻结会用的 backMs，等价于取 `[t0-preRoll, t0+delay]`。
-    final int fullBackMs =
-        _loopbackFreezeDelay.inMilliseconds + _loopbackPreRollMs;
-    late final _LoopbackFreeze settle;
-    settle = _LoopbackFreeze(
+    late final _LoopbackFreeze extension;
+    extension = _LoopbackFreeze(
       Timer(Duration(milliseconds: remainingMs), () {
-        if (identical(_loopbackFreezeTimers[entry.id], settle)) {
+        if (identical(_loopbackFreezeTimers[entry.id], extension)) {
           _loopbackFreezeTimers.remove(entry.id);
         }
-        settle.resolve();
+        extension.resolve();
         unawaited(
           _audioQueue.enqueue<bool>(
             () async {
+              final int elapsedMs = _now().difference(startedAt).inMilliseconds;
               await _cacheLoopbackForLine(
                 entry,
-                backMs: fullBackMs,
+                backMs: (elapsedMs + _loopbackPreRollMs)
+                    .clamp(_loopbackMinBackMs, _loopbackRingCapacityMs)
+                    .toInt(),
                 onlyIfLonger: true,
+                windowEnd: deadline,
               );
               return true;
             },
@@ -6195,8 +6789,11 @@ class GalHookSessionController extends ChangeNotifier {
           ),
         );
       }),
+      startedAt: startedAt,
+      deadline: deadline,
+      extension: true,
     );
-    _loopbackFreezeTimers[entry.id] = settle;
+    _loopbackFreezeTimers[entry.id] = extension;
   }
 
   /// 收束所有待冻结行（音源即将被换走时调用；此刻还持有旧 Loopback）。
@@ -6224,9 +6821,12 @@ class GalHookSessionController extends ChangeNotifier {
   Future<void> _cacheLoopbackForLine(
     TexthookerLineEntry entry, {
     required int backMs,
-    // BUG-1287 — 补全模式（[_scheduleLoopbackSettle]）：这一取是**锦上添花**，只有
+    // BUG-1287 — 补全模式（[_scheduleLoopbackExtension]）：这一取是**锦上添花**，只有
     // 拿到更长的切片才覆盖，取空或取短都保持已冻结的结果不动。普通冻结走 false。
     bool onlyIfLonger = false,
+    // 窗口右界（下一句到达 / 续张上限）。回取作业在队列里排队期间录进环的声音属于
+    // 下一句，取完按「现在 - windowEnd」切掉尾巴。null = 右界就是现在（制卡收束）。
+    DateTime? windowEnd,
   }) async {
     final GalAudioSource? source = _audioSource;
     if (source is! LoopbackGalAudioSource ||
@@ -6239,7 +6839,19 @@ class GalHookSessionController extends ChangeNotifier {
       return;
     }
     try {
-      final GalAudioSlice? slice = await source.grabRecent(backMs);
+      final GalAudioSlice? grabbed = await source.grabRecent(backMs);
+      // 右界之后的那截切掉，再裁语音结束后的底噪尾巴：窗口右界不再是「4 秒」而是
+      // 「下一句 / 制卡时刻」，停在一句上越久，尾巴上就越长一段 BGM / 静音。
+      final GalAudioSlice? slice = grabbed == null
+          ? null
+          : trimLoopbackTrailingFloor(
+              windowEnd == null
+                  ? grabbed
+                  : dropPcmTailMs(
+                      grabbed,
+                      _now().difference(windowEnd).inMilliseconds,
+                    ),
+            );
       if (slice == null || slice.isEmpty || _audioSource != source) {
         // BUG-1287 — 补全取空只说明「这次没拿到更好的」，提前收束时冻下来的那段短
         // 语音仍然有效。把它标 missing 等于用一次失败的加取，毁掉一份已经能用的音频。
@@ -6531,9 +7143,25 @@ class GalHookSessionController extends ChangeNotifier {
 /// 等待方这件事被摊派给了六个各自独立的移除点，漏一个就是永久空转到预算耗尽。
 /// 把 completer 焊在 timer 旁边之后，「从表里移除」与「叫醒等待方」成了同一个动作。
 class _LoopbackFreeze {
-  _LoopbackFreeze(this.timer);
+  _LoopbackFreeze(
+    this.timer, {
+    required this.startedAt,
+    required this.deadline,
+    this.extension = false,
+  });
 
   final Timer timer;
+
+  /// 这一行 loopback 窗口的起点（台词到达时刻）。随定时器一起走：暂定冻结作业结束后
+  /// `_loopbackFreezeStartedAt` 里的那一项会被清掉，续张 / 收口仍要知道从哪算起。
+  final DateTime startedAt;
+
+  /// 本定时器到点的时刻。
+  final DateTime deadline;
+
+  /// true = 暂定冻结之后的「窗口续张」（只在更长时覆盖、制卡不必等它）；false = 首份
+  /// 暂定冻结。
+  final bool extension;
   final Completer<void> done = Completer<void>();
 
   /// 冻结结束（提前收束 / 到点 / 被裁决取代 / 行被吞并 / 升格成引擎 PCM 都算）。

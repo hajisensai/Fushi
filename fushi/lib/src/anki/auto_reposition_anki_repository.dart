@@ -37,8 +37,9 @@ class AutoRepositionAnkiRepository extends DelegatingAnkiRepository {
   /// * 结果必须是成功——失败/重复/未配置都没有新卡产生。
   /// * [MineOutcome.deckName] 必须非空——它才是真正落卡的牌组（BUG-1549）；
   ///   拿设置里的 `selectedDeckName` 猜会在旧存档上猜空。
-  /// * [inner] 必须支持卡片级读写——AnkiDroid / AnkiMobile / 「制卡到已配对
-  ///   设备」都没有，喂进去只会让调度器空跑一轮。
+  /// * [inner] 必须要制卡后重排（[BaseAnkiRepository.supportsAutoReposition]）——AnkiDroid /
+  ///   AnkiMobile / 「制卡到已配对设备」没有卡片级读写，Fushi 复习出卡直接按词频名次排、
+  ///   不需要；喂进去只会让调度器空跑一轮或白写一批位置。
   @override
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
@@ -52,7 +53,7 @@ class AutoRepositionAnkiRepository extends DelegatingAnkiRepository {
     if (outcome.result == MineResult.success &&
         deck != null &&
         deck.isNotEmpty &&
-        inner.supportsDeckReposition) {
+        inner.supportsAutoReposition) {
       _scheduler.notifyMined(deck);
     }
     return outcome;

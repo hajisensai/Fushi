@@ -3,9 +3,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/pages/implementations/game_stream_page.dart';
 import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
+import 'package:fushi/src/sync/game_stream_virtual_button.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 
 Future<(List<GameStreamInputEvent>, Rect)> _pumpMousePage(
@@ -76,13 +78,20 @@ void main() {
     expect(gameStreamHostKeyName(LogicalKeyboardKey.arrowLeft), 'Left');
     expect(gameStreamHostKeyName(LogicalKeyboardKey.numpadEnter), 'Enter');
     expect(gameStreamHostKeyName(LogicalKeyboardKey.capsLock), isNull);
+    const GameStreamButtonProfile profile = GameStreamButtonProfile();
     expect(
-      gameStreamPadButtonFor(LogicalKeyboardKey.gameButtonA),
-      GameStreamVirtualButton.confirm,
+      profile.actionFor(
+        GameStreamPhysicalButton.gameButtonFor(LogicalKeyboardKey.gameButtonA)!,
+      ),
+      const GameStreamPadAction(GameStreamVirtualButton.confirm),
     );
     expect(
-      gameStreamPadButtonFor(LogicalKeyboardKey.gameButtonRight1),
-      GameStreamVirtualButton.shoulderRight,
+      profile.actionFor(
+        GameStreamPhysicalButton.gameButtonFor(
+          LogicalKeyboardKey.gameButtonRight1,
+        )!,
+      ),
+      const GameStreamPadAction(GameStreamVirtualButton.shoulderRight),
     );
   });
 

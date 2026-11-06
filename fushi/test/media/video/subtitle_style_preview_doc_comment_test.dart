@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 紧贴在 [declaration] 之上的连续 `///` 注释块（没有则为空串）。
 String _docAbove(String source, String declaration) {

@@ -14,8 +14,9 @@ class MacOSDataRootAccess {
   const MacOSDataRootAccess._();
 
   static const String dataRootBookmarkPrefKey = 'data_root_bookmark';
-  static const MethodChannel _channel =
-      MethodChannel('app.fushi/data_root_access');
+  static const MethodChannel _channel = MethodChannel(
+    'app.fushi/data_root_access',
+  );
 
   static Future<String?> createBookmarkForPath(String path) async {
     if (!Platform.isMacOS) return null;
@@ -36,11 +37,11 @@ class MacOSDataRootAccess {
     final String? bookmark = prefs.getString(dataRootBookmarkPrefKey);
     if (bookmark == null || bookmark.isEmpty) return null;
     try {
-      final Map<Object?, Object?>? result =
-          await _channel.invokeMapMethod<Object?, Object?>(
-        'startAccessingBookmark',
-        <String, Object?>{'bookmark': bookmark},
-      );
+      final Map<Object?, Object?>? result = await _channel
+          .invokeMapMethod<Object?, Object?>(
+            'startAccessingBookmark',
+            <String, Object?>{'bookmark': bookmark},
+          );
       final Object? path = result?['path'];
       return path is String && path.isNotEmpty ? path : null;
     } on PlatformException catch (e) {

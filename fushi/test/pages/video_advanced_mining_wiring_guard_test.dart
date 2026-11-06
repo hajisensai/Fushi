@@ -57,10 +57,17 @@ void main() {
       src,
       'Future<Map<String, Object?>> _mineRemoteVideoCue(',
     );
+    // 请求解析（含覆盖项）收进三处遥控绑定共用的同步函数 parseVideoRemoteMineRequest
+    // （BUG-3878）：它返回值不是 Future、内部直接 MiningRequestOverrides.readFrom，见
+    // video_remote_binding_support_test 的行为测试。这里咬住调用点仍在首个 await 之前。
     _expectBeforeFirstAwait(
       body,
-      'MiningRequestOverrides.readFrom(',
+      'parseVideoRemoteMineRequest(',
       '遥控制卡：覆盖项必须在 await _mineVideoCard 之前读取',
+    );
+    expect(
+      compactCode(maskComments(body)),
+      contains('finalMiningRequestOverrides?overrides=parsed.overrides;'),
     );
   });
 
@@ -129,10 +136,11 @@ void main() {
       reason: '描述区间必须与写卡调同一对函数',
     );
     final String preview = maskComments(
-      methodBody(src, 'Future<bool> _previewVideoMiningAudio('),
+      methodBody(src, 'Future<RangePlayback?> _previewVideoMiningAudio('),
     );
     expect(preview, contains('_videoMiningAudioWindow('));
-    expect(preview, contains('controller.playRangeMs('));
+    // 交回区间播放的句柄：对话框的试听按钮在播完 / 被打断时据此复位（FDN66-xurt）。
+    expect(preview, contains('return controller.playRangeMs('));
     // 旧「调整上下文」试听也改走同一个最终区间（BUG-3350：曾按 cue 边界放、缺首尾留白）。
     expect(
       maskComments(

@@ -12,10 +12,7 @@ void main() {
     final String source = File(
       'lib/src/media/manga/reader/manga_fushi_page.dart',
     ).readAsStringSync();
-    final String body = methodBody(
-      source,
-      'Future<void> _openShelfChapter({',
-    );
+    final String body = methodBody(source, 'Future<void> _openShelfChapter({');
     final String code = maskComments(body);
 
     // 关键判据：声明必须是**非空** `int`。写成 `int? initialPage;` 时，未读章
@@ -42,8 +39,7 @@ void main() {
     );
   });
 
-  test('在线漫画的主流失败路径必须记日志（OnlineMangaUnavailable 不是兜底分支）',
-      () {
+  test('在线漫画的主流失败路径必须记日志（OnlineMangaUnavailable 不是兜底分支）', () {
     final String source = File(
       'lib/src/media/manga/library/manga_series_page.dart',
     ).readAsStringSync();
@@ -69,8 +65,7 @@ void main() {
 
     // 负向：不得退回「只有兜底 on Object 记日志」的形状。
     expect(
-      RegExp(r'\} on OnlineMangaUnavailable catch \(error\) \{')
-          .hasMatch(code),
+      RegExp(r'\} on OnlineMangaUnavailable catch \(error\) \{').hasMatch(code),
       isFalse,
       reason: '只捕 error 不捕 stack 说明这一支没在记日志',
     );

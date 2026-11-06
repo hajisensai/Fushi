@@ -44,10 +44,14 @@ void main() {
     });
 
     test('emits a dedicated svg.block-img rule', () {
-      expect(css, contains('svg.block-img {'),
-          reason: 'promoted SVG covers need a block-image sizing rule, '
-              'otherwise the generic svg{width/height:100%} cannot resolve in '
-              'an indefinite reflow column and the cover sticks to the edge');
+      expect(
+        css,
+        contains('svg.block-img {'),
+        reason:
+            'promoted SVG covers need a block-image sizing rule, '
+            'otherwise the generic svg{width/height:100%} cannot resolve in '
+            'an indefinite reflow column and the cover sticks to the edge',
+      );
     });
 
     test('svg.block-img gets a definite page-sized box and pointer cursor', () {
@@ -74,8 +78,7 @@ void main() {
     });
   });
 
-  test('BUG-025 tap handler resolves <svg><image> covers to a zoomable URL',
-      () {
+  test('BUG-025 tap handler resolves <svg><image> covers to a zoomable URL', () {
     // TODO-589 batch8: _fushiBlockImageUrl/onImageTap 在 setup 脚本/handler，
     // 已搬到 reader_fushi/webview.part.dart，改读「主壳 + 全部 part」合并语料。
     final String source = readReaderPageSource();
@@ -83,7 +86,8 @@ void main() {
     expect(
       source,
       contains('function _fushiBlockImageUrl(target)'),
-      reason: 'tap resolution must be centralised so svg covers are handled '
+      reason:
+          'tap resolution must be centralised so svg covers are handled '
           'alongside <img>',
     );
 
@@ -121,11 +125,17 @@ void main() {
 void _expectSvgPromotion(String js) {
   // The SVG branch must classify large covers as block-img and wrap them in the
   // same centring wrapper used for <img>, gated to skip small gaiji glyphs.
-  expect(js, contains("svg.classList.add('block-img')"),
-      reason: 'large <svg><image> covers must become block illustrations');
+  expect(
+    js,
+    contains("svg.classList.add('block-img')"),
+    reason: 'large <svg><image> covers must become block illustrations',
+  );
   expect(js, contains("className = 'block-img-wrapper'"));
   // Size gate reuses the >256px threshold (image attrs or viewBox dims).
   expect(js, contains("getAttribute('viewBox')"));
-  expect(js, contains('gaiji'),
-      reason: 'gaiji svgs must be excluded like gaiji <img>');
+  expect(
+    js,
+    contains('gaiji'),
+    reason: 'gaiji svgs must be excluded like gaiji <img>',
+  );
 }

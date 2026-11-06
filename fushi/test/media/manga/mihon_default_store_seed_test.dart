@@ -37,29 +37,27 @@ void main() {
   MihonManager build(
     MihonExtensionStoreClient client, {
     MihonMediaKind kind = MihonMediaKind.manga,
-  }) =>
-      MihonManager(
-        database: database,
-        rootDirectory: root,
-        runtime: _SeedRuntime(),
-        storeClient: client,
-        kind: kind,
-      );
+  }) => MihonManager(
+    database: database,
+    rootDirectory: root,
+    runtime: _SeedRuntime(),
+    storeClient: client,
+    kind: kind,
+  );
 
   Future<void> insertLegacySeededRow(
     String url, {
     String mediaKind = 'manga',
     String name = 'Keiyoushi',
-  }) =>
-      database.upsertMangaExtensionStore(
-        MangaExtensionStoresCompanion.insert(
-          indexUrl: url,
-          mediaKind: Value(mediaKind),
-          name: name,
-          format: MihonStoreFormat.currentProtobuf.name,
-          sortOrder: const Value(0),
-        ),
-      );
+  }) => database.upsertMangaExtensionStore(
+    MangaExtensionStoresCompanion.insert(
+      indexUrl: url,
+      mediaKind: Value(mediaKind),
+      name: name,
+      format: MihonStoreFormat.currentProtobuf.name,
+      sortOrder: const Value(0),
+    ),
+  );
 
   for (final MihonMediaKind kind in MihonMediaKind.values) {
     test('全新安装（${kind.name}）：仓库列表为空，不请求任何索引', () async {
@@ -117,8 +115,10 @@ void main() {
       false,
     );
     final MihonManager manga = build(_FakeStoreClient());
-    final MihonManager anime =
-        build(_FakeStoreClient(), kind: MihonMediaKind.anime);
+    final MihonManager anime = build(
+      _FakeStoreClient(),
+      kind: MihonMediaKind.anime,
+    );
     addTearDown(manga.dispose);
     addTearDown(anime.dispose);
 
@@ -134,12 +134,12 @@ void main() {
   // 于是两行指向同一仓库，之后每次刷新各拉一遍——扩展页每个扩展出现两次（512 = 2×256）。
   group('BUG-2641 入口被解析到另一地址时仓库行收敛为一行', () {
     MihonManager buildAnime(MihonExtensionStoreClient client) => MihonManager(
-          database: database,
-          rootDirectory: root,
-          runtime: _SeedRuntime(),
-          storeClient: client,
-          kind: MihonMediaKind.anime,
-        );
+      database: database,
+      rootDirectory: root,
+      runtime: _SeedRuntime(),
+      storeClient: client,
+      kind: MihonMediaKind.anime,
+    );
 
     test('入口行 + 再刷新：只剩解析后的一行，扩展不重复', () async {
       // 旧版本首启落下的入口行（legacy `index.min.json`）。
@@ -240,9 +240,9 @@ void main() {
 
   test('源码守卫：Mihon 管理器不再写死默认仓库地址，也没有首启装配开关', () {
     final String managerSource = maskComments(
-      File(p.join(
-              'lib', 'src', 'media', 'manga', 'mihon', 'mihon_manager.dart'))
-          .readAsStringSync(),
+      File(
+        p.join('lib', 'src', 'media', 'manga', 'mihon', 'mihon_manager.dart'),
+      ).readAsStringSync(),
     );
     final String appModelSource = maskComments(
       File(p.join('lib', 'src', 'models', 'app_model.dart')).readAsStringSync(),
@@ -256,29 +256,29 @@ void main() {
 }
 
 MihonStore _store(String indexUrl) => MihonStore(
-      indexUrl: indexUrl,
-      name: 'Keiyoushi',
-      badgeLabel: '',
-      signingKey: 'aabb',
-      contact: const <String, String?>{},
-      format: MihonStoreFormat.currentJson,
-      extensionListUrl: null,
-      embeddedExtensions: <MihonAvailableExtension>[
-        MihonAvailableExtension(
-          storeUrl: indexUrl,
-          name: 'RawKuma',
-          packageName: 'org.example.rawkuma',
-          apkUrl: '$indexUrl/rawkuma.apk',
-          iconUrl: '',
-          libVersion: '1.6',
-          extensionVersionCode: 1,
-          versionName: '1.6.1',
-          language: 'ja',
-          contentWarning: 0,
-          sources: const <MihonAvailableSource>[],
-        ),
-      ],
-    );
+  indexUrl: indexUrl,
+  name: 'Keiyoushi',
+  badgeLabel: '',
+  signingKey: 'aabb',
+  contact: const <String, String?>{},
+  format: MihonStoreFormat.currentJson,
+  extensionListUrl: null,
+  embeddedExtensions: <MihonAvailableExtension>[
+    MihonAvailableExtension(
+      storeUrl: indexUrl,
+      name: 'RawKuma',
+      packageName: 'org.example.rawkuma',
+      apkUrl: '$indexUrl/rawkuma.apk',
+      iconUrl: '',
+      libVersion: '1.6',
+      extensionVersionCode: 1,
+      versionName: '1.6.1',
+      language: 'ja',
+      contentWarning: 0,
+      sources: const <MihonAvailableSource>[],
+    ),
+  ],
+);
 
 class _FakeStoreClient extends Fake implements MihonExtensionStoreClient {
   final List<String> fetchedStoreUrls = <String>[];
@@ -302,8 +302,7 @@ class _FakeStoreClient extends Fake implements MihonExtensionStoreClient {
   Future<List<MihonAvailableExtension>> fetchExtensions(
     MihonStore store, {
     bool allowInsecure = false,
-  }) async =>
-      store.embeddedExtensions;
+  }) async => store.embeddedExtensions;
 
   @override
   void close() {}
@@ -326,42 +325,40 @@ class _HoppingStoreClient extends Fake implements MihonExtensionStoreClient {
     String? etag,
     String? lastModified,
     bool allowInsecure = false,
-  }) async =>
-      MihonStoreFetchResult(
-        store: MihonStore(
-          indexUrl: _kResolvedAnimeRepo,
-          name: 'Yūzōnō',
-          badgeLabel: '',
-          signingKey: 'aabb',
-          contact: const <String, String?>{},
-          format: MihonStoreFormat.legacy,
-          extensionListUrl: null,
-          embeddedExtensions: const <MihonAvailableExtension>[],
-        ),
-        etag: null,
-        lastModified: null,
-      );
+  }) async => MihonStoreFetchResult(
+    store: MihonStore(
+      indexUrl: _kResolvedAnimeRepo,
+      name: 'Yūzōnō',
+      badgeLabel: '',
+      signingKey: 'aabb',
+      contact: const <String, String?>{},
+      format: MihonStoreFormat.legacy,
+      extensionListUrl: null,
+      embeddedExtensions: const <MihonAvailableExtension>[],
+    ),
+    etag: null,
+    lastModified: null,
+  );
 
   @override
   Future<List<MihonAvailableExtension>> fetchExtensions(
     MihonStore store, {
     bool allowInsecure = false,
-  }) async =>
-      <MihonAvailableExtension>[
-        MihonAvailableExtension(
-          storeUrl: store.indexUrl,
-          name: 'AniDB',
-          packageName: 'org.example.anidb',
-          apkUrl: '${store.indexUrl}/anidb.apk',
-          iconUrl: '',
-          libVersion: '14',
-          extensionVersionCode: 1,
-          versionName: '14.5',
-          language: 'en',
-          contentWarning: 1,
-          sources: const <MihonAvailableSource>[],
-        ),
-      ];
+  }) async => <MihonAvailableExtension>[
+    MihonAvailableExtension(
+      storeUrl: store.indexUrl,
+      name: 'AniDB',
+      packageName: 'org.example.anidb',
+      apkUrl: '${store.indexUrl}/anidb.apk',
+      iconUrl: '',
+      libVersion: '14',
+      extensionVersionCode: 1,
+      versionName: '14.5',
+      language: 'en',
+      contentWarning: 1,
+      sources: const <MihonAvailableSource>[],
+    ),
+  ];
 
   @override
   void close() {}

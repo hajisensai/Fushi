@@ -164,8 +164,9 @@ class JsonAlignmentParser {
     for (int i = 0; i < cues.length; i++) {
       final AudioCue cue = cues[i];
       if (cue.startMs > positionMs) break;
-      final bool withinEnd =
-          endInclusive ? positionMs <= cue.endMs : positionMs < cue.endMs;
+      final bool withinEnd = endInclusive
+          ? positionMs <= cue.endMs
+          : positionMs < cue.endMs;
       if (withinEnd) active.add(i);
     }
     return active;

@@ -5,8 +5,11 @@
 ///   已经在下一本几百 MB 的有声书，模型是同一次自动化的必要部分。
 /// - [routeTranscribeAudiobookPlan]：导入执行器的 `transcribeAudiobook` 端口。
 ///   先查有声书素材库（有现成字幕就直接入库，不白跑几个小时转录），配不到
-///   再排进转录队列；开关关掉或本机没有 ASR 时与改前一样以
-///   `audiobookMissingSubtitle` 挡下。
+///   再排进转录队列。两条用户开关：总开关「下载后自动转录」（默认开）关掉 =
+///   一律不自动转录（不下模型、不跑推理）；总开关开时有正文（包里自带或素材库
+///   身份键命中）就转录后对齐，没有正文只能生成独立字幕书、质量差，还要子开关
+///   「没有正文也转录」（默认关）打开才排。本机没有 ASR、总开关关、或没有正文
+///   且子开关关时以 `audiobookMissingSubtitle` 挡下。
 library;
 
 import 'dart:async';
@@ -21,6 +24,8 @@ import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
     show audiobookTitleForAudioPaths, discoveryImportFileName;
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
+import 'package:fushi/src/asr_host/shared_model_downloads.dart'
+    show asrDownloadKeyFor, sharedModelDownloads;
 import 'package:fushi/src/media/audiobook/audiobook_material_library.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 
@@ -92,13 +97,16 @@ class AppAudiobookTranscriber implements AudiobookTranscriber {
     }
     if (cancel.isCancelled) throw const AudiobookTranscribeCancelled();
 
-    onProgress(AudiobookTranscribeJobPhase.transcribing, 0);
+    // 装模型（建推理会话）单独成一步：大模型在 CPU 上要十几秒，此前算在
+    // 「转录中 0%」里看着像卡住。
+    onProgress(AudiobookTranscribeJobPhase.loadingModel, null);
     final AsrRunningTranscription running = await service.start(
       audioPaths: job.audioPaths,
       language: language,
       variant: plan.variant,
       preference: _preference,
     );
+    onProgress(AudiobookTranscribeJobPhase.transcribing, 0);
     cancel.onCancel(running.requestPause);
     AsrTranscribeResult? result;
     try {
@@ -151,8 +159,16 @@ class AppAudiobookTranscriber implements AudiobookTranscriber {
     );
     final Completer<void> done = Completer<void>();
     late final StreamSubscription<ModelDownloadEvent> sub;
-    sub = service
-        .downloadModel(language: plan.language, variant: plan.variant)
+    // 单飞（kZZmXQBv7E）：与设置页 / 转录弹层下同一个包时挂上去，不另起写者；
+    // 取消本任务只摘监听，已在下的模型照常下完（下次直接可用）。
+    sub = sharedModelDownloads
+        .join(
+          asrDownloadKeyFor(plan.language, service.audioProfile),
+          () => service.downloadModel(
+            language: plan.language,
+            variant: plan.variant,
+          ),
+        )
         .listen(
           (ModelDownloadEvent e) {
             // 逐文件事件：把「之前文件」的字节累计起来算总进度（同转录弹层）。
@@ -188,7 +204,12 @@ class AppAudiobookTranscriber implements AudiobookTranscriber {
 
 /// 导入执行器 `transcribeAudiobook` 端口的实现（依赖经参数注入，可单测）。
 ///
-/// - [autoTranscribeEnabled]：开关开 **且** 本机支持 ASR。
+/// - [asrSupported]：本机支持设备端 ASR。不支持时一律不排转录。
+/// - [autoTranscribe]：总开关 `audiobook_auto_transcribe`（默认开）。关 = 用户
+///   拒绝一切自动转录（模型下载、长时间推理），带不带正文都不排。
+/// - [transcribeWithoutContent]：子开关 `audiobook_auto_transcribe_without_text`
+///   （默认关），只在总开关开时生效，只管「没有正文」这一支——没有 EPUB / 文本
+///   时转录只能落成独立字幕书，质量差；带正文的下载转完对齐不受它影响。
 /// - [contentAlreadyInLibrary]：正文会不会撞上库里的同名书。撞上就以
 ///   `audiobookBookAlreadyInLibrary` 挡下（同齐料包的既有口径，UI 告诉用户去
 ///   那本书里手动导入有声书），而不是先跑几个小时转录再在入库那一步失败。
@@ -197,7 +218,9 @@ class AppAudiobookTranscriber implements AudiobookTranscriber {
 /// - [enqueue]：排进转录后入库队列。
 Future<DiscoveryImportOutcome> routeTranscribeAudiobookPlan(
   TranscribeAudiobookPlan plan, {
-  required bool autoTranscribeEnabled,
+  required bool asrSupported,
+  required bool autoTranscribe,
+  required bool transcribeWithoutContent,
   required Future<bool> Function(String contentPath) contentAlreadyInLibrary,
   required Future<AudiobookMaterialMatch> Function(
     List<String> audioPaths,
@@ -248,7 +271,11 @@ Future<DiscoveryImportOutcome> routeTranscribeAudiobookPlan(
       summary: key,
     );
   }
-  if (!autoTranscribeEnabled) {
+  // 总开关关 → 一律不转；有正文 → 转完对齐（正常流程）；没有正文 → 只有用户
+  // 明确要独立字幕书才转。素材库配齐字幕的立刻入库不跑转录，不受开关影响。
+  if (!asrSupported ||
+      !autoTranscribe ||
+      (content == null && !transcribeWithoutContent)) {
     throw const DiscoveryImportBlockedException(
       DiscoveryImportBlocker.audiobookMissingSubtitle,
     );

@@ -59,18 +59,19 @@ class _ProbeBackend implements SyncBackend {
 }
 
 /// 造一对通道：云通道（会抛）+ 互联通道（应当仍被跑到）。
-({_ProbeBackend cloud, _ProbeBackend interconnect}) _probePair() => (
-      cloud: _ProbeBackend(throwOnRestore: true),
-      interconnect: _ProbeBackend(),
-    );
+({_ProbeBackend cloud, _ProbeBackend interconnect}) _probePair() =>
+    (cloud: _ProbeBackend(throwOnRestore: true), interconnect: _ProbeBackend());
 
 List<SyncChannel> _channels(
-        ({_ProbeBackend cloud, _ProbeBackend interconnect}) p) =>
-    <SyncChannel>[
-      SyncChannel(p.cloud, type: SyncBackendType.webDav, isInterconnect: false),
-      SyncChannel(p.interconnect,
-          type: SyncBackendType.fushiServer, isInterconnect: true),
-    ];
+  ({_ProbeBackend cloud, _ProbeBackend interconnect}) p,
+) => <SyncChannel>[
+  SyncChannel(p.cloud, type: SyncBackendType.webDav, isInterconnect: false),
+  SyncChannel(
+    p.interconnect,
+    type: SyncBackendType.fushiServer,
+    isInterconnect: true,
+  ),
+];
 
 void main() {
   tearDown(() => debugSyncChannelsOverride = null);
@@ -107,11 +108,12 @@ void main() {
       );
     });
 
-    test('自动同步关闭时一条通道都不跑（不误伤既有短路）', () async {
+    test('两条通道的自动同步都关时一条通道都不跑（不误伤既有短路）', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
       await repo.setAutoSyncEnabled(false);
+      await repo.setInterconnectAutoSyncEnabled(false);
 
       final ({_ProbeBackend cloud, _ProbeBackend interconnect}) p =
           _probePair();
@@ -124,6 +126,81 @@ void main() {
     });
   });
 
+  // 反馈 5nWEirdCs2：两条通道各读各的自动同步开关——云通道读 sync_auto_enabled
+  // （默认关），互联通道读 interconnect_sync_auto（默认开）。断言落在 restoreAuth
+  // 上：被开关挡掉的通道连认证都不该碰。云通道这里不抛，免得它的异常掩盖判定。
+  group('5nWEirdCs2 自动同步按通道读各自的开关', () {
+    List<SyncChannel> quietPair(
+      _ProbeBackend cloud,
+      _ProbeBackend ic,
+    ) => <SyncChannel>[
+      SyncChannel(cloud, type: SyncBackendType.webDav, isInterconnect: false),
+      SyncChannel(ic, type: SyncBackendType.fushiServer, isInterconnect: true),
+    ];
+
+    Future<({bool cloud, bool interconnect})> runWith(
+      Future<void> Function(SyncRepository repo) arrange,
+    ) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      await arrange(SyncRepository(db));
+      final _ProbeBackend cloud = _ProbeBackend();
+      final _ProbeBackend ic = _ProbeBackend();
+      debugSyncChannelsOverride = (SyncRepository _) async =>
+          quietPair(cloud, ic);
+      await runCollectionsSyncNow(db: db);
+      return (
+        cloud: cloud.restoreAuthCalled,
+        interconnect: ic.restoreAuthCalled,
+      );
+    }
+
+    test('全新安装（两个开关都没动过）：只跑互联通道', () async {
+      final ({bool cloud, bool interconnect}) ran = await runWith(
+        (SyncRepository _) async {},
+      );
+      expect(ran.cloud, isFalse, reason: '云通道自动同步默认关');
+      expect(ran.interconnect, isTrue, reason: '互联通道自动同步默认开');
+    });
+
+    test('只关云同步：互联照跑', () async {
+      final ({bool cloud, bool interconnect}) ran = await runWith((
+        SyncRepository repo,
+      ) async {
+        await repo.setAutoSyncEnabled(false);
+      });
+      expect(ran.cloud, isFalse);
+      expect(ran.interconnect, isTrue, reason: '关云同步不得连带关掉互联（两开关独立）');
+    });
+
+    test('只关互联：云同步照跑', () async {
+      final ({bool cloud, bool interconnect}) ran = await runWith((
+        SyncRepository repo,
+      ) async {
+        await repo.setAutoSyncEnabled(true);
+        await repo.setInterconnectAutoSyncEnabled(false);
+      });
+      expect(ran.cloud, isTrue);
+      expect(ran.interconnect, isFalse);
+    });
+
+    test('isChannelAutoSyncEnabled 按通道身份分流', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+      await repo.setAutoSyncEnabled(true);
+      await repo.setInterconnectAutoSyncEnabled(false);
+      final List<SyncChannel> pair = quietPair(
+        _ProbeBackend(),
+        _ProbeBackend(),
+      );
+      expect(await isChannelAutoSyncEnabled(repo, pair[0]), isTrue);
+      expect(await isChannelAutoSyncEnabled(repo, pair[1]), isFalse);
+      debugSyncChannelsOverride = (SyncRepository _) async => pair;
+      expect(await autoSyncChannels(repo), <SyncChannel>[pair[0]]);
+    });
+  });
+
   group('BUG-1604 退出书同步：云通道抛异常不得掐断互联通道', () {
     test('第一条通道 restoreAuth 抛 SocketException，第二条仍被跑到', () async {
       final FushiDatabase db = _memDb();
@@ -132,15 +209,17 @@ void main() {
       await repo.setAutoSyncEnabled(true);
       // per-book 路径要先取到书，取不到会在进入通道循环前就以 nothingToSync 收尾。
       const String bookKey = 'bug1604book';
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: bookKey,
-        title: 'BUG-1604 fixture',
-        epubPath: '/tmp/$bookKey/original.epub',
-        extractDir: '/tmp/$bookKey',
-        chapterCount: 1,
-        chaptersJson: '["c"]',
-        importedAt: 0,
-      ));
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: bookKey,
+          title: 'BUG-1604 fixture',
+          epubPath: '/tmp/$bookKey/original.epub',
+          extractDir: '/tmp/$bookKey',
+          chapterCount: 1,
+          chaptersJson: '["c"]',
+          importedAt: 0,
+        ),
+      );
 
       final ({_ProbeBackend cloud, _ProbeBackend interconnect}) p =
           _probePair();
@@ -199,10 +278,9 @@ void main() {
           _probePair();
       debugSyncChannelsOverride = (SyncRepository _) async => _channels(p);
 
-      final ManualSyncResult result = await run(
-        db,
-        <SyncAssetChannelScope>{SyncAssetChannelScope.interconnect},
-      );
+      final ManualSyncResult result = await run(db, <SyncAssetChannelScope>{
+        SyncAssetChannelScope.interconnect,
+      });
       expect(result.outcome, ManualSyncOutcome.notConfigured);
       expect(p.cloud.restoreAuthCalled, isFalse);
       expect(p.interconnect.restoreAuthCalled, isTrue);

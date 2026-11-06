@@ -1,0 +1,6 @@
+## BUG-3977 · YouTube 批量制卡：付费视频的卡永远留队、每次生成都重跑
+- **报告**：2026-11-02（用户反馈 EMI05fe8RJ）
+- **真实性**：✅ 真 bug（根因 `tools/browser-extension/mine-outcome.js:41-60` 只有 done / retry 两类，`background.js` fushiRunYoutubeQueue 只出队 done；服务端 `app_model.dart` remoteMineError 不带分型、`RemoteMineResult` 无法表达「不可重试」）
+- **[x] ① 已修复** — 服务端：`RemoteMineResult.errorKind`（`RemoteMineErrorKind.permanent/transient`）经 `/api/mine`、`/api/mine/forward` 回传；`YoutubeManifestException.isPermanentlyUnavailable`（全部 client 都是 VideoRequiresPurchase / VideoUnavailable）→ permanent，零长度时间窗 → permanent。扩展：fushiMineOutcome 新增 `failed` 类（errorKind permanent / HTTP 400·422）与 itemFault；队列项记 attempts / lastError，服务端答复的可重试失败累计 3 次也降级；环境类失败（连不上 / 401 / 5xx）不计数。失败项不参与生成（YouTube 队列、Netflix 录制、图标点击判据、popup 生成按钮），popup 单列「失败」分组显示原因、可重试或删除。新增 3 条扩展文案 ×17 语言（分支 claude/review-merge-bug-fixes-b183d4，未提交）
+- **[x] ② 已加自动化测试** — `tools/browser-extension/mine-outcome.test.js`、`youtube-queue-background.test.js`（permanent 第一轮移入失败组、第二轮不再 POST；transient 达上限降级、5xx 不计数）、`action-popup.test.js`；`fushi/test/sync/remote_mine_response_diagnostics_test.dart`（errorKind 序列化 + 解析失败分型）
+- **备注**：改到了分组外的 `fushi/lib/src/models/app_model.dart`（remoteMineError）与 `packages/fushi_engine`（RemoteMineResult / API handler / youtube_source_resolver）。

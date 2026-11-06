@@ -10,21 +10,29 @@ void main() {
     test('非 Windows 返回 null（WGC 仅 Windows）', () {
       expect(
         WgcCaptureLog.resolveLogFile(
-            isWindows: false, localAppData: r'C:\Users\x\AppData\Local'),
+          isWindows: false,
+          localAppData: r'C:\Users\x\AppData\Local',
+        ),
         isNull,
       );
     });
 
     test('LOCALAPPDATA 缺失返回 null', () {
-      expect(WgcCaptureLog.resolveLogFile(isWindows: true, localAppData: null),
-          isNull);
-      expect(WgcCaptureLog.resolveLogFile(isWindows: true, localAppData: ''),
-          isNull);
+      expect(
+        WgcCaptureLog.resolveLogFile(isWindows: true, localAppData: null),
+        isNull,
+      );
+      expect(
+        WgcCaptureLog.resolveLogFile(isWindows: true, localAppData: ''),
+        isNull,
+      );
     });
 
     test('Windows 下拼出 Fushi/wgc_capture.log（与 native 同一确定路径）', () {
       final File? f = WgcCaptureLog.resolveLogFile(
-          isWindows: true, localAppData: r'C:\Users\x\AppData\Local');
+        isWindows: true,
+        localAppData: r'C:\Users\x\AppData\Local',
+      );
       expect(f, isNotNull);
       expect(f!.path, r'C:\Users\x\AppData\Local\Fushi\wgc_capture.log');
     });

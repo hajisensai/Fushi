@@ -11,9 +11,9 @@ import 'package:fushi_engine/sync/sync_channel_scope.dart';
 const String kCollectionsSyncBaselineMsKey = 'sync_collections_baseline_ms';
 
 Future<String?> _readPref(FushiDatabase db, String key) async {
-  final PreferenceRow? row = await (db.select(db.preferences)
-        ..where(($PreferencesTable t) => t.key.equals(key)))
-      .getSingleOrNull();
+  final PreferenceRow? row = await (db.select(
+    db.preferences,
+  )..where(($PreferencesTable t) => t.key.equals(key))).getSingleOrNull();
   return row?.value;
 }
 
@@ -22,7 +22,8 @@ Future<int> readCollectionsSyncBaselineMs(
   FushiDatabase db,
   SyncChannelScope scope,
 ) async {
-  final String? s = await _readPref(db, scope.key(kCollectionsSyncBaselineMsKey)) ??
+  final String? s =
+      await _readPref(db, scope.key(kCollectionsSyncBaselineMsKey)) ??
       await _readPref(db, kCollectionsSyncBaselineMsKey);
   return s == null ? 0 : int.tryParse(s) ?? 0;
 }
@@ -31,8 +32,9 @@ Future<void> writeCollectionsSyncBaselineMs(
   FushiDatabase db,
   SyncChannelScope scope,
   int ms,
-) =>
-    db.into(db.preferences).insertOnConflictUpdate(
+) => db
+    .into(db.preferences)
+    .insertOnConflictUpdate(
       PreferencesCompanion.insert(
         key: scope.key(kCollectionsSyncBaselineMsKey),
         value: ms.toString(),

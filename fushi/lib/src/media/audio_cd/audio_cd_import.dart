@@ -3,7 +3,13 @@ import 'dart:io';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/storage/app_paths.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/audio_cd/audio_cd_disc.dart';
 import 'package:fushi_engine/media/audio_cd/audio_cd_ripper.dart';
@@ -21,9 +27,10 @@ import 'package:path/path.dart' as p;
 /// - 不是音频 CD：返回 false，调用方照原流程走，行为逐字不变。
 /// - 能抓（Windows 光驱 / 桌面上的 macOS 挂载点）：弹进度框抓成 FLAC 到
 ///   `<documents>/audio_cd/`（同一张盘重插复用，已抓的轨不重抓），再按「仅此一次」
-///   导入视频库（[importLocalFolderOnceAt]）；取消 / 失败只提示。均返回 true，调用方
-///   刷新后结束。抓好的目录在数据根内，不能登记成常驻来源（`MediaSources.rootPath`
-///   只收数据根之外的外部目录）。
+///   导入**音乐库**（[importLocalFolderOnceAt]，`mediaKind = music`；纯音频不进视频库，
+///   反馈 QAondMh4M5）；取消 / 失败只提示。均返回 true，调用方刷新后结束。抓好的目录
+///   在数据根内，不能登记成常驻来源（`MediaSources.rootPath` 只收数据根之外的外部
+///   目录）；换数据根时曲目路径由 `DataRootMigrator._rebaseMusicTracks` 改写。
 /// - 抓不了（`.cda` 不在 Windows 光驱上，例如从光盘拷出来的文件夹）：提示原因后返回
 ///   false，照常扫描——子目录里可能还有真正的媒体文件。
 ///
@@ -57,31 +64,37 @@ Future<bool> importAudioCdIfPresent(
     ),
   );
   if (ripped == null) return true;
+  // 一张盘就是一张专辑：抓轨目录只有这一层，不递归。
   final SourceScanSummary? summary = await importLocalFolderOnceAt(
     db: db,
-    mediaKind: SourceLibraryKind.video.dbValue,
+    mediaKind: SourceLibraryKind.music.dbValue,
     path: ripped,
-    // 一张盘就是一张专辑：按文件夹成组，不按番剧系列去刮削。
-    videoGroupingMode: 'folder',
+    recursive: false,
     onScanning: onScanning,
   );
   final String? error = summary?.error;
   FushiToast.show(
     msg:
         error ??
-        t.media_source_count_video(n: summary?.importedMediaCount ?? 0),
+        t.media_source_count_music(n: summary?.importedMediaCount ?? 0),
     severity: error == null ? ToastSeverity.success : ToastSeverity.error,
   );
   return true;
 }
 
 /// Windows 光驱要按扇区读，只有本机光驱能抓；macOS 挂载点每轨已是普通 AIFF 文件，
-/// 任何带随包 ffmpeg-min（含 aiff / flac）的桌面都能转。移动端没有光驱，不接管。
+/// 任何带随包统一 FFmpeg（含 aiff / flac）的桌面都能转。移动端没有光驱，不接管。
 bool _canRip(AudioCdLayout layout, String dir) => switch (layout) {
   AudioCdLayout.windowsCda => Platform.isWindows && isWindowsCdromPath(dir),
   AudioCdLayout.macCddafs =>
     Platform.isMacOS || Platform.isWindows || Platform.isLinux,
 };
+
+/// 音频 CD 判定里的「旁边有真媒体」（[audioCdLayoutOf] 的 `isImportableMedia`）：视频或
+/// 纯音频都算，与最终由哪个库收它无关（纯音频归音乐库，反馈 QAondMh4M5）。
+bool isAudioCdNeighbourMedia(String name) =>
+    kVideoExtensions.contains(p.extension(name).toLowerCase()) ||
+    isAudioOnlyMediaPath(name);
 
 /// [dir] 的直接子文件构成哪种音频 CD（见 [audioCdLayoutOf]）。不是 / 读不了返回 null。
 AudioCdLayout? audioCdLayoutOfDirectory(String dir) {
@@ -96,11 +109,7 @@ AudioCdLayout? audioCdLayoutOfDirectory(String dir) {
   } on FileSystemException {
     return null;
   }
-  return audioCdLayoutOf(
-    names,
-    isImportableMedia: (String name) =>
-        kVideoLibraryMediaExtensions.contains(p.extension(name).toLowerCase()),
-  );
+  return audioCdLayoutOf(names, isImportableMedia: isAudioCdNeighbourMedia);
 }
 
 /// 抓轨进度对话框：打开即开始抓，完成后以抓好的目录出栈，取消 / 失败以 null 出栈。

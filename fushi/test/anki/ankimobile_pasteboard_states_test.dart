@@ -16,7 +16,6 @@ import 'package:fushi_anki/fushi_anki.dart';
 // 原生侧的时序门由 ankimobile_ios_callback_static_test.dart 守；这里守 Dart 侧的
 // 三态契约与文案本地化。
 
-
 /// 只回「已跳转 AnkiMobile，去那边点同意」的假后端：真实 AnkiMobile 的
 /// `fetchConfiguration` 就是这个形状——它不可能同步拿到结果。
 class _AnkiMobileOpenedRepo extends BaseAnkiRepository {
@@ -45,8 +44,7 @@ class _AnkiMobileOpenedRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      MineOutcome.failure('test stub');
+  }) async => MineOutcome.failure('test stub');
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
@@ -87,12 +85,16 @@ void main() {
     });
 
     test('两种失败不能再共用同一个码', () async {
-      final denied = await repoReading(
-        const AnkiMobilePasteboardRead.denied(),
-      ).consumeInfoForAddingPasteboard() as AnkiFetchError;
-      final empty = await repoReading(
-        const AnkiMobilePasteboardRead.empty(),
-      ).consumeInfoForAddingPasteboard() as AnkiFetchError;
+      final denied =
+          await repoReading(
+                const AnkiMobilePasteboardRead.denied(),
+              ).consumeInfoForAddingPasteboard()
+              as AnkiFetchError;
+      final empty =
+          await repoReading(
+                const AnkiMobilePasteboardRead.empty(),
+              ).consumeInfoForAddingPasteboard()
+              as AnkiFetchError;
 
       expect(denied.code, isNot(empty.code));
       expect(denied.message, isNot(empty.message));

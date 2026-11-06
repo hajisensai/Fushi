@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show coverMediaRef, inlineVideoWordAudioHtml;
 
 void main() {
   group('srsParseInline', () {
@@ -89,6 +91,21 @@ void main() {
       expect(srsFieldFilled(' '), isFalse);
       expect(srsFieldFilled(null), isFalse);
       expect(srsFieldFilled('x'), isTrue);
+    });
+  });
+
+  group('内嵌媒体', () {
+    test('音频字段：[sound:] 与 <audio src> 都认，按出现顺序去重', () {
+      final String field =
+          '[sound:a.mp3]${inlineVideoWordAudioHtml('b.mp3')}[sound:a.mp3]';
+      expect(srsAudioSources(field), <String>['a.mp3', 'b.mp3']);
+    });
+
+    test('Picture：WebM 片段与 MP4 [sound:] 算视频，图片不算', () {
+      expect(srsVideoSources(coverMediaRef('c.webm')), <String>['c.webm']);
+      expect(srsVideoSources(coverMediaRef('c.mp4')), <String>['c.mp4']);
+      expect(srsVideoSources(coverMediaRef('c.avif')), isEmpty);
+      expect(srsImageSources(coverMediaRef('c.avif')), <String>['c.avif']);
     });
   });
 }

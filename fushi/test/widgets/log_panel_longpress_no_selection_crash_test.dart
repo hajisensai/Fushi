@@ -84,8 +84,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('候选④：长按超视口长行的右端（ClipRect 外，BUG-925 同族坐标）',
-      (WidgetTester tester) async {
+  testWidgets('候选④：长按超视口长行的右端（ClipRect 外，BUG-925 同族坐标）', (
+    WidgetTester tester,
+  ) async {
     final String log = '${'x' * 4000}\nshort\n';
     await tester.pumpWidget(buildSubject(log));
     await tester.pumpAndSettle();
@@ -128,7 +129,8 @@ void main() {
     expect(
       tester.takeException(),
       isNull,
-      reason: '既有选区的端点行被回收后再长按，触发了框架的选区端点空断言'
+      reason:
+          '既有选区的端点行被回收后再长按，触发了框架的选区端点空断言'
           '（BUG-1582 / flutter#119355）',
     );
   });
@@ -139,8 +141,9 @@ void main() {
 
     final Rect listRect = tester.getRect(find.byType(ListView));
     // ① 全选（上游 issue 用的是右键菜单「全选」，等价于对 region 发 selectAll）。
-    final SelectableRegionState region =
-        tester.state<SelectableRegionState>(find.byType(SelectableRegion));
+    final SelectableRegionState region = tester.state<SelectableRegionState>(
+      find.byType(SelectableRegion),
+    );
     region.selectAll();
     await tester.pumpAndSettle();
 
@@ -179,8 +182,10 @@ void main() {
 
     // 真机触屏长按：touch 指针按住超过 kLongPressTimeout 再抬起。
     Future<void> touchLongPress(WidgetTester tester, Offset at) async {
-      final TestGesture gesture =
-          await tester.startGesture(at, kind: PointerDeviceKind.touch);
+      final TestGesture gesture = await tester.startGesture(
+        at,
+        kind: PointerDeviceKind.touch,
+      );
       await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
       await gesture.up();
       await tester.pump();
@@ -189,8 +194,10 @@ void main() {
     // 面板内是否有非折叠选区（逐个 RenderParagraph 看它自己的选区）。
     bool hasSelectedText(WidgetTester tester) => tester
         .renderObjectList<RenderParagraph>(find.byType(RichText))
-        .any((RenderParagraph p) =>
-            p.selections.any((TextSelection s) => !s.isCollapsed));
+        .any(
+          (RenderParagraph p) =>
+              p.selections.any((TextSelection s) => !s.isCollapsed),
+        );
 
     Future<void> longPressBlankCorner(WidgetTester tester) async {
       final Rect list = tester.getRect(find.byType(ListView));
@@ -200,14 +207,20 @@ void main() {
 
     test('BUG-2715 logUpdateReplacesRows：只有换掉既有文字行才算', () {
       // 纯尾部追加（TODO-1380 要求菜单保持打开的场景）不换行。
-      expect(logUpdateReplacesRows(<String>['a', 'b'], <String>['a', 'b', 'c']),
-          isFalse);
+      expect(
+        logUpdateReplacesRows(<String>['a', 'b'], <String>['a', 'b', 'c']),
+        isFalse,
+      );
       // 末尾空行被填上文字：空行本就没有选区片段。
-      expect(logUpdateReplacesRows(<String>['a', ''], <String>['a', 'x', '']),
-          isFalse);
+      expect(
+        logUpdateReplacesRows(<String>['a', ''], <String>['a', 'x', '']),
+        isFalse,
+      );
       // 新条目插在最前（错误 / 调试日志页真实顺序）。
-      expect(logUpdateReplacesRows(<String>['a', 'b'], <String>['n', 'a', 'b']),
-          isTrue);
+      expect(
+        logUpdateReplacesRows(<String>['a', 'b'], <String>['n', 'a', 'b']),
+        isTrue,
+      );
       // 截断 / 清空。
       expect(logUpdateReplacesRows(<String>['a', 'b'], <String>['a']), isTrue);
       expect(logUpdateReplacesRows(<String>['a'], <String>['']), isTrue);

@@ -21,8 +21,10 @@ void main() {
     final Directory curDir = await tempDir('mg_ctag_cur_');
     addTearDown(() => cleanupTempDir(curDir));
     final FushiDatabase cur = FushiDatabase(curDir.path);
-    final int targetCid =
-        await cur.createMediaCollection('C', collectionType: 'collection');
+    final int targetCid = await cur.createMediaCollection(
+      'C',
+      collectionType: 'collection',
+    );
     await cur.close();
 
     // ── src（备份）：合集 C + 标签 '日语' + 映射；另有全新合集 D 带标签 N1 ───────
@@ -31,20 +33,27 @@ void main() {
     final Directory srcDir = await tempDir('mg_ctag_src_');
     addTearDown(() => cleanupTempDir(srcDir));
     final FushiDatabase src = FushiDatabase(srcDir.path);
-    final int sC =
-        await src.createMediaCollection('C', collectionType: 'collection');
+    final int sC = await src.createMediaCollection(
+      'C',
+      collectionType: 'collection',
+    );
     final int sTag = await src.createTag('日语', 0xFF0000FF);
     await src.addTagToCollection(sC, sTag);
-    final int sD =
-        await src.createMediaCollection('D', collectionType: 'collection');
+    final int sD = await src.createMediaCollection(
+      'D',
+      collectionType: 'collection',
+    );
     final int sTagD = await src.createTag('N1', 0xFF00FF00);
     await src.addTagToCollection(sD, sTagD);
 
     final Directory zipDir = await tempDir('mg_ctag_zip_');
     addTearDown(() => cleanupTempDir(zipDir));
     final String zip = p.join(zipDir.path, 'b.zip');
-    await BackupService(db: src, dbDirectory: srcDir.path, appVersion: '2.0.0')
-        .createBackup(zip);
+    await BackupService(
+      db: src,
+      dbDirectory: srcDir.path,
+      appVersion: '2.0.0',
+    ).createBackup(zip);
     await src.close();
 
     // ── 合并导入 ──────────────────────────────────────────────────────────────
@@ -58,15 +67,23 @@ void main() {
     addTearDown(after.close);
 
     final List<BookTagRow> tags = await after.getTagsForCollection(targetCid);
-    expect(tags.map((BookTagRow t) => t.name), contains('日语'),
-        reason: 'src 合集 C 的标签「日语」应按自然键 remap 后挂到 target 的 C');
+    expect(
+      tags.map((BookTagRow t) => t.name),
+      contains('日语'),
+      reason: 'src 合集 C 的标签「日语」应按自然键 remap 后挂到 target 的 C',
+    );
 
     // D：全新合集连同标签 N1 一并合入（新建合集的标签也透传）。
-    final MediaCollectionRow? d =
-        await after.getMediaCollectionByNaturalKey('D', 'collection');
+    final MediaCollectionRow? d = await after.getMediaCollectionByNaturalKey(
+      'D',
+      'collection',
+    );
     expect(d, isNotNull, reason: '全新合集 D 应被 _mergeMediaCollections 建入 target');
     final List<BookTagRow> dTags = await after.getTagsForCollection(d!.id);
-    expect(dTags.map((BookTagRow t) => t.name), contains('N1'),
-        reason: '新建合集 D 的标签 N1 也应随 _mergeCollectionTags 并入');
+    expect(
+      dTags.map((BookTagRow t) => t.name),
+      contains('N1'),
+      reason: '新建合集 D 的标签 N1 也应随 _mergeCollectionTags 并入',
+    );
   });
 }

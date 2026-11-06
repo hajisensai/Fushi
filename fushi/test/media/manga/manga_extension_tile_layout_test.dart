@@ -1,7 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/extension_management_tile.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// 扩展行以前的副标题是「语言 · 版本」+ 硬 `\n` + **完整 URL** 两行，配上
 /// standard 密度（上下各 12、下限 56）和 17px 标题，单行高度冲到 ~89px：手机一屏
@@ -47,8 +48,9 @@ void main() {
     return tester.getSize(find.byType(FushiListItem)).height;
   }
 
-  testWidgets('一行元信息的扩展行高不超过 MD3 两行行下限（旧的三行版是 ~89）',
-      (WidgetTester tester) async {
+  testWidgets('一行元信息的扩展行高不超过 MD3 两行行下限（旧的三行版是 ~89）', (
+    WidgetTester tester,
+  ) async {
     final double height = await pumpTile(
       tester,
       subtitle: Text(
@@ -120,8 +122,9 @@ void main() {
 
   // 2026-10 体验优化：trailing 的 Wrap 在 FushiListItem 的 Row 里拿到无界宽度、
   // 永远不换行；窄屏上「预览 + 安装」+ 开关把标题挤没。
-  testWidgets('窄屏（<480）文字按钮下移到副标题下方，开关留在 trailing',
-      (WidgetTester tester) async {
+  testWidgets('窄屏（<480）文字按钮下移到副标题下方，开关留在 trailing', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData.light(useMaterial3: true),
@@ -233,8 +236,9 @@ void main() {
       ),
     );
     await tester.pump();
-    final Finder badge =
-        find.byKey(const ValueKey<String>('extension_tile_nsfw_badge'));
+    final Finder badge = find.byKey(
+      const ValueKey<String>('extension_tile_nsfw_badge'),
+    );
     expect(badge, findsOneWidget);
     expect(
       find.descendant(of: badge, matching: find.text(t.extension_nsfw_badge)),

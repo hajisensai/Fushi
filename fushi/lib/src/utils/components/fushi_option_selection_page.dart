@@ -71,17 +71,15 @@ class FushiOptionSelectionPage<T> extends StatelessWidget {
         trailing: !isSelected
             ? null
             : apple
-                ? const FushiAppleCheckmark()
-                : FushiIcon(Icons.check, color: scheme.primary),
+            ? const FushiAppleCheckmark()
+            : FushiIcon(Icons.check, color: scheme.primary),
         onTap: isSelected ? null : () => Navigator.pop(context, o.value),
       );
     }).toList();
 
     return AdaptiveSettingsScaffold(
       title: Text(title),
-      children: <Widget>[
-        AdaptiveSettingsSection(children: rows),
-      ],
+      children: <Widget>[AdaptiveSettingsSection(children: rows)],
     );
   }
 }

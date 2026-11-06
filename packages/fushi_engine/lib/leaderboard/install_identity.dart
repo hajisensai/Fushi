@@ -30,7 +30,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
-import 'package:pointycastle/export.dart' show ECCurve_secp256r1;
+import 'package:fushi_compute/fushi_compute.dart';
 
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_signing.dart';
@@ -54,7 +54,7 @@ const String kInstallTimeHeader = 'X-Fushi-Install-Time';
 const String kInstallSigHeader = 'X-Fushi-Install-Sig';
 const String kInstallPowHeader = 'X-Fushi-Install-Pow';
 
-final BigInt _n = ECCurve_secp256r1().n;
+final BigInt _n = kP256Order;
 
 Uint8List _hmacSha256(List<int> key, List<int> message) =>
     Uint8List.fromList(crypto.Hmac(crypto.sha256, key).convert(message).bytes);
@@ -126,46 +126,26 @@ String installIdFromSpki(List<int> spki) {
       '${hexStr.substring(20)}';
 }
 
-/// 前导 0 位数是否 ≥ [bits]。
-bool _leadingZeroBits(List<int> digest, int bits) {
-  int remaining = bits;
-  for (final int b in digest) {
-    if (remaining <= 0) return true;
-    if (remaining >= 8) {
-      if (b != 0) return false;
-      remaining -= 8;
-    } else {
-      return (b >> (8 - remaining)) == 0;
-    }
-  }
-  return remaining <= 0;
-}
-
-/// **纯函数**：[nonce] 是否满足 [installId] 的工作量证明。
+/// **纯函数**：[nonce] 是否满足 [installId] 的工作量证明（SHA-256 前导零位数 ≥ [bits]，
+/// 在 native/fushi_compute 里算）。
 bool installPowValid(
   String installId,
   String nonce, {
   int bits = kInstallPowBits,
 }) {
   if (!RegExp(r'^[0-9]{1,15}$').hasMatch(nonce)) return false;
-  final List<int> digest = crypto.sha256
-      .convert(utf8.encode('$kInstallPowPrefix$installId|$nonce'))
-      .bytes;
-  return _leadingZeroBits(digest, bits);
+  return ffcPowCheck(
+    utf8.encode('$kInstallPowPrefix$installId|'),
+    ascii.encode(nonce),
+    bits,
+  );
 }
 
-/// **纯函数**：从 0 起逐个找满足工作量证明的最小 nonce（十进制串）。同步、CPU 密集：
-/// app 里经 [solveInstallPowInBackground] 放后台 isolate 跑，别在 UI isolate 直接调。
-String solveInstallPow(String installId, {int bits = kInstallPowBits}) {
-  final List<int> prefix = utf8.encode('$kInstallPowPrefix$installId|');
-  for (int nonce = 0; ; nonce++) {
-    final List<int> digest = crypto.sha256.convert(<int>[
-      ...prefix,
-      ...ascii.encode('$nonce'),
-    ]).bytes;
-    if (_leadingZeroBits(digest, bits)) return '$nonce';
-  }
-}
+/// **纯函数**：从 0 起找满足工作量证明的最小 nonce（十进制串），一次 FFI 调用在
+/// native/fushi_compute 里解完。同步、CPU 密集：app 里经 [solveInstallPowInBackground]
+/// 放后台 isolate 跑，别在 UI isolate 直接调。
+String solveInstallPow(String installId, {int bits = kInstallPowBits}) =>
+    '${ffcPowSolve(utf8.encode('$kInstallPowPrefix$installId|'), bits)}';
 
 /// [solveInstallPow] 的后台 isolate 版本（不卡 UI）。
 Future<String> solveInstallPowInBackground(

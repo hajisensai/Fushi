@@ -68,7 +68,7 @@ void main() {
               ),
               onClose: () {},
               onDismiss: () {},
-              onTextSelected: (text, rect) {},
+              onTextSelected: (text, rect, _, __) {},
               onLinkClick: (query, rect) {},
               onMineEntry: (fields) async => const MinePopupResult(),
               onDuplicateCheck: (expression, reading) async => false,

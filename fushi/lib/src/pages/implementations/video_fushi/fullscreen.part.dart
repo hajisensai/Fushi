@@ -43,6 +43,12 @@ extension _VideoFullscreen on _VideoFushiPageState {
   /// 移动端**直接短路 false**：BUG-221 已把移动端全屏路由统一 no-op 掉，横屏沉浸态是唯一
   /// 形态。短路同时避开「兄弟层在同帧早于 Builder 回调执行、只能读到上一帧 context」的时序
   /// 依赖——移动端恰恰是本 bug 的唯一暴露面，不能让它的正确性挂在帧序上。
+  /// [_VideoControlsContextCapture] 被移出树时交还引用：只清它自己存进去的那个（新节点
+  /// 可能已经先一步存了自己的）。重新插回树时 StatefulElement.activate 会重建、再存一次。
+  void _releaseVideoControlsContext(BuildContext context) {
+    if (identical(_videoControlsContext, context)) _videoControlsContext = null;
+  }
+
   bool get _isVideoFullscreenRoute {
     if (isMobilePlatform) return false;
     final BuildContext? ctx = _videoControlsContext;
@@ -52,9 +58,9 @@ extension _VideoFullscreen on _VideoFushiPageState {
   /// 控制条兄弟层与 media_kit 控制条**同源**的外层 padding（BUG-1783）。
   /// 几何收敛进纯函数 [videoControlsChromeInsets]，页面与测试同源调用。
   EdgeInsets _videoControlsChromeInsets() => videoControlsChromeInsets(
-        isFullscreenRoute: _isVideoFullscreenRoute,
-        systemPadding: MediaQuery.of(context).padding,
-      );
+    isFullscreenRoute: _isVideoFullscreenRoute,
+    systemPadding: MediaQuery.of(context).padding,
+  );
 
   Future<void> _toggleVideoFullscreen(BuildContext context) async {
     // BUG-221: 移动端永不进 media_kit 全屏路由（横屏沉浸态即唯一形态）。统一在此单一收口
@@ -70,6 +76,9 @@ extension _VideoFullscreen on _VideoFushiPageState {
       await _exitVideoMiniWindow();
       if (!mounted || !context.mounted) return;
     }
+    // 网页档：站点画面是 WebView2 子窗口，不会跟进新推的全屏路由——只做窗口全屏，
+    // 页面本身铺满（见 web_source.part.dart）。
+    if (_webMode) return _toggleWebWindowFullscreen();
     return isFullscreen(context)
         ? _exitVideoFullscreen(context)
         : _pushNeutralizedVideoFullscreen(context);
@@ -88,7 +97,10 @@ extension _VideoFullscreen on _VideoFushiPageState {
   /// （快路径直接翻真 / 慢路径 [_promoteVideoReady]）都调它，一次性闸门去重。
   void _scheduleInitialFullscreenIfNeeded() {
     if (_didInitialFullscreen) return;
-    if (!widget.initialFullscreen || isMobilePlatform) {
+    // 原盘会话（桌面、「播放原盘时自动全屏」开）同样在就绪后进全屏路由；退出会话时
+    // 路由 pop → runner 按进入前保存的 WINDOWPLACEMENT 还原最大化 / 尺寸 / 位置。
+    if (!(widget.initialFullscreen || _wantsDiscAutoFullscreen) ||
+        isMobilePlatform) {
       _didInitialFullscreen = true;
       return;
     }
@@ -176,8 +188,8 @@ extension _VideoFullscreen on _VideoFushiPageState {
       // 路由本身也登记为宿主（[WindowFullscreenHostPageRoute]，BUG-3223）：子树里的
       // [WindowFullscreenHost] 要等首次 build 才登记，晚于 push 一帧；换集接管时
       // 旧集页的离场判定恰好落在这一帧里，只靠 widget 登记仍会误退全屏。
-      final PageRouteBuilder<void> fullscreenRoute =
-          WindowFullscreenHostPageRoute<void>(
+      final PageRouteBuilder<void>
+      fullscreenRoute = WindowFullscreenHostPageRoute<void>(
         // BUG-697（TODO-1378）：全屏路由内容必须包进与窗口模式同一个
         // [_wrapVideoGamepadControls]（Actions<GamepadButtonIntent> + 旁观 Focus）。
         // 全屏是推到根 navigator 的独立路由，窗口侧 build() 外层的手柄输入层不是
@@ -210,118 +222,128 @@ extension _VideoFullscreen on _VideoFushiPageState {
         // 全屏、剧集轨 / 字幕列表 / 侧栏原样留着。接管层是下面的
         // [VideoFullscreenBackScope]（PopScope 在路由里的位置不影响拦截）。
         pageBuilder: (_, __, ___) => WindowFullscreenHost(
-            child: _wrapVideoGamepadControls(
-          _buildVideoFloatingBallScene(
-          playerController,
-          child: VideoFullscreenBackScope(
-          dismissTopLayer: _dismissTopForegroundLayer,
-          exitFullscreen: _exitVideoFullscreenOnBack,
-          child: ValueListenableBuilder<bool>(
-            valueListenable:
-                playerController?.hdrHostActive ?? _kHdrHostInactive,
-            builder: (BuildContext _, bool hdrHost, Widget? child) =>
-                Material(
-              color: hdrHost ? Colors.transparent : null,
-              child: child,
-            ),
-            child: FushiAppUiScaleNeutralizer(
-            child: MaterialVideoControlsTheme(
-              normal:
-                  mobileTheme?.normal ?? kDefaultMaterialVideoControlsThemeData,
-              fullscreen: mobileTheme?.fullscreen ??
-                  kDefaultMaterialVideoControlsThemeDataFullscreen,
-              child: MaterialDesktopVideoControlsTheme(
-                normal: desktopTheme?.normal ??
-                    kDefaultMaterialDesktopVideoControlsThemeData,
-                fullscreen: desktopTheme?.fullscreen ??
-                    kDefaultMaterialDesktopVideoControlsThemeDataFullscreen,
-                child: VideoStateInheritedWidget(
-                  state: stateValue,
-                  contextNotifier: contextNotifierValue,
-                  videoViewParametersNotifier: videoViewParametersNotifierValue,
-                  disposeNotifiers: false,
-                  child: FullscreenInheritedWidget(
-                    parent: stateValue,
-                    child: VideoStateInheritedWidget(
-                      state: stateValue,
-                      contextNotifier: contextNotifierValue,
-                      videoViewParametersNotifier:
-                          videoViewParametersNotifierValue,
-                      disposeNotifiers: false,
-                      child: ValueListenableBuilder<VideoViewParameters>(
-                        valueListenable: videoViewParametersNotifierValue,
-                        builder:
-                            (BuildContext _, VideoViewParameters params, __) {
-                          final Widget fullscreenVideo = Video(
-                            controller: controllerValue,
-                            width: null,
-                            height: null,
-                            // 全屏 fit 跟随窗口同一 [_videoFitMode] 偏好（TODO-152 子B），
-                            // 不再用 notifier 默认 `params.fit`（contain）——保证用户选的
-                            // 画面比例在窗口与全屏一致。其余 params 字段（fill/alignment
-                            // /aspectRatio 等）照旧走 notifier。
-                            fit: videoFitModeToBoxFit(_videoFitMode),
-                            fill: params.fill,
-                            alignment: params.alignment,
-                            aspectRatio: params.aspectRatio,
-                            filterQuality: params.filterQuality,
-                            controls: params.controls,
-                            wakelock: false,
-                            // BUG-2544：与窗口侧同一策略——生命周期暂停/续播由本页
-                            // 接管，media_kit 自带的那套整个关掉（理由与「为什么不是
-                            // 只把 resume 打开」见 [_buildVideoBody] 里同名参数处的
-                            // 长注释）。这里**必须显式写**：本路由是自建的、逐字段从
-                            // `params` 转发，而 [VideoViewParameters] 压根不带这两个
-                            // 字段（media_kit 自己的全屏走
-                            // `controls/methods/fullscreen.dart` 从 widget 上直取），
-                            // 不写就会退回「后台暂停、回来不续」的构造器默认值，
-                            // 全屏态下重新长出同一个 bug。
-                            pauseUponEnteringBackgroundMode: false,
-                            // 全屏路由也显式禁用内置 SubtitleView（TODO-080/092，
-                            // BUG-190）。虽然与窗口侧共享同一
-                            // videoViewParametersNotifier（窗口侧已设 visible:false 会
-                            // 传播过来），但这里不依赖隐式传播，直接覆盖成 visible:false
-                            // 消除「全屏路由快照时窗口侧 didUpdate 尚未把配置写进
-                            // notifier」的时机竞态——字幕在全屏也只由可点 overlay 承载。
-                            subtitleViewConfiguration:
-                                const SubtitleViewConfiguration(visible: false),
-                            focusNode: params.focusNode,
-                            onEnterFullscreen: enterNativeFullscreen,
-                            onExitFullscreen: exitNativeFullscreen,
-                          );
-                          // 字幕跳转列表「真 push-aside」（TODO-121）：全屏路由自建的
-                          // Video 同样包进 Row[Expanded(Video), 面板列]，面板可见时全屏
-                          // 画面真挤窄、不被遮（与窗口侧 [_buildVideoBody] 同一 helper）。
-                          //
-                          // 音量/亮度 HUD 与 mpv 式 OSD 不在这里重挂：全屏 Video 设
-                          // `controls: params.controls`（共享窗口侧同一 controls builder
-                          // [_buildVideoControls]），其内 [_buildVideoControlsInner] 已
-                          // 无门控挂载 [_buildLevelHudOverlay] / [_buildOsdOverlay]，且
-                          // [VideoControlsFocusGate] 只在窗口侧（`!inFullscreenRoute`）
-                          // 卸载 controls、全屏侧返回 child 照常渲染。故全屏 HUD 由共享
-                          // controls 提供，勿在此重复挂一层（TODO-563 复核：重挂会双叠）。
-                          if (playerController == null) return fullscreenVideo;
-                          return _videoWithSubtitlePanel(
-                            playerController,
-                            // macOS Retina：全屏是「片源被放得最大」的场景，按物理
-                            // 像素渲染的收益也最大（与窗口侧 [_buildVideoBody] 同一
-                            // 组件、同一 fit 偏好）。非 macOS 恒透传。
-                            VideoBackingRenderSize(
-                              controller: controllerValue,
-                              videoSize: videoNativeSizeOf(
-                                playerController.videoWidth,
-                                playerController.videoHeight,
-                              ),
-                              fit: videoFitModeToBoxFit(_videoFitMode),
-                              // HDR 直通：全屏路由的 Video 同样上报矩形（与窗口侧
-                              // [_buildVideoBody] 一致，宿主窗跟着全屏画面走）。
-                              child: HdrHostRectReporter(
-                                onRect: playerController.reportHdrHostRect,
-                                child: fullscreenVideo,
+          child: _wrapVideoGamepadControls(
+            _buildVideoFloatingBallScene(
+              playerController,
+              // BUG-3685：全屏期间查词浮层跟随的是本路由（[lookupOwnerRoute]），探针
+              // 订阅它的栈顶状态，反馈 / 设置等页面压上来时刷新根 Overlay 浮层。
+              child: LookupOwnerRouteProbe(
+                onChanged: _onLookupOwnerRouteChanged,
+                child: VideoFullscreenBackScope(
+                  dismissTopLayer: () =>
+                      _dismissTopForegroundLayer() ||
+                      _discSessionShowBarOnBack(),
+                  exitFullscreen: _exitVideoFullscreenOnBack,
+                  child: Material(
+                    child: FushiAppUiScaleNeutralizer(
+                      child: MaterialVideoControlsTheme(
+                        normal:
+                            mobileTheme?.normal ??
+                            kDefaultMaterialVideoControlsThemeData,
+                        fullscreen:
+                            mobileTheme?.fullscreen ??
+                            kDefaultMaterialVideoControlsThemeDataFullscreen,
+                        child: MaterialDesktopVideoControlsTheme(
+                          normal:
+                              desktopTheme?.normal ??
+                              kDefaultMaterialDesktopVideoControlsThemeData,
+                          fullscreen:
+                              desktopTheme?.fullscreen ??
+                              kDefaultMaterialDesktopVideoControlsThemeDataFullscreen,
+                          child: VideoStateInheritedWidget(
+                            state: stateValue,
+                            contextNotifier: contextNotifierValue,
+                            videoViewParametersNotifier:
+                                videoViewParametersNotifierValue,
+                            disposeNotifiers: false,
+                            child: FullscreenInheritedWidget(
+                              parent: stateValue,
+                              child: VideoStateInheritedWidget(
+                                state: stateValue,
+                                contextNotifier: contextNotifierValue,
+                                videoViewParametersNotifier:
+                                    videoViewParametersNotifierValue,
+                                disposeNotifiers: false,
+                                child: ValueListenableBuilder<VideoViewParameters>(
+                                  valueListenable:
+                                      videoViewParametersNotifierValue,
+                                  builder: (BuildContext _, VideoViewParameters params, __) {
+                                    final Widget fullscreenVideo = Video(
+                                      controller: controllerValue,
+                                      width: null,
+                                      height: null,
+                                      // 全屏 fit 跟随窗口同一 [_videoFitMode] 偏好（TODO-152 子B），
+                                      // 不再用 notifier 默认 `params.fit`（contain）——保证用户选的
+                                      // 画面比例在窗口与全屏一致。其余 params 字段（fill/alignment
+                                      // /aspectRatio 等）照旧走 notifier。
+                                      fit: videoFitModeToBoxFit(_videoFitMode),
+                                      fill: params.fill,
+                                      alignment: params.alignment,
+                                      aspectRatio: params.aspectRatio,
+                                      filterQuality: params.filterQuality,
+                                      controls: params.controls,
+                                      wakelock: false,
+                                      // BUG-2544：与窗口侧同一策略——生命周期暂停/续播由本页
+                                      // 接管，media_kit 自带的那套整个关掉（理由与「为什么不是
+                                      // 只把 resume 打开」见 [_buildVideoBody] 里同名参数处的
+                                      // 长注释）。这里**必须显式写**：本路由是自建的、逐字段从
+                                      // `params` 转发，而 [VideoViewParameters] 压根不带这两个
+                                      // 字段（media_kit 自己的全屏走
+                                      // `controls/methods/fullscreen.dart` 从 widget 上直取），
+                                      // 不写就会退回「后台暂停、回来不续」的构造器默认值，
+                                      // 全屏态下重新长出同一个 bug。
+                                      pauseUponEnteringBackgroundMode: false,
+                                      // 全屏路由也显式禁用内置 SubtitleView（TODO-080/092，
+                                      // BUG-190）。虽然与窗口侧共享同一
+                                      // videoViewParametersNotifier（窗口侧已设 visible:false 会
+                                      // 传播过来），但这里不依赖隐式传播，直接覆盖成 visible:false
+                                      // 消除「全屏路由快照时窗口侧 didUpdate 尚未把配置写进
+                                      // notifier」的时机竞态——字幕在全屏也只由可点 overlay 承载。
+                                      subtitleViewConfiguration:
+                                          const SubtitleViewConfiguration(
+                                            visible: false,
+                                          ),
+                                      focusNode: params.focusNode,
+                                      onEnterFullscreen: enterNativeFullscreen,
+                                      onExitFullscreen: exitNativeFullscreen,
+                                    );
+                                    // 字幕跳转列表「真 push-aside」（TODO-121）：全屏路由自建的
+                                    // Video 同样包进 Row[Expanded(Video), 面板列]，面板可见时全屏
+                                    // 画面真挤窄、不被遮（与窗口侧 [_buildVideoBody] 同一 helper）。
+                                    //
+                                    // 音量/亮度 HUD 与 mpv 式 OSD 不在这里重挂：全屏 Video 设
+                                    // `controls: params.controls`（共享窗口侧同一 controls builder
+                                    // [_buildVideoControls]），其内 [_buildVideoControlsInner] 已
+                                    // 无门控挂载 [_buildLevelHudOverlay] / [_buildOsdOverlay]，且
+                                    // [VideoControlsFocusGate] 只在窗口侧（`!inFullscreenRoute`）
+                                    // 卸载 controls、全屏侧返回 child 照常渲染。故全屏 HUD 由共享
+                                    // controls 提供，勿在此重复挂一层（TODO-563 复核：重挂会双叠）。
+                                    if (playerController == null) {
+                                      return fullscreenVideo;
+                                    }
+                                    return _videoWithSubtitlePanel(
+                                      playerController,
+                                      // macOS Retina：全屏是「片源被放得最大」的场景，按物理
+                                      // 像素渲染的收益也最大（与窗口侧 [_buildVideoBody] 同一
+                                      // 组件、同一 fit 偏好）。非 macOS 恒透传。
+                                      VideoBackingRenderSize(
+                                        controller: controllerValue,
+                                        videoSize: videoNativeSizeOf(
+                                          playerController.videoWidth,
+                                          playerController.videoHeight,
+                                        ),
+                                        fit: videoFitModeToBoxFit(
+                                          _videoFitMode,
+                                        ),
+                                        child: fullscreenVideo,
+                                      ),
+                                    );
+                                  },
+                                ),
                               ),
                             ),
-                          );
-                        },
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -329,7 +351,6 @@ extension _VideoFullscreen on _VideoFushiPageState {
               ),
             ),
           ),
-        )))),
         ),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
@@ -405,6 +426,12 @@ extension _VideoFullscreen on _VideoFushiPageState {
   /// 执行体）；全屏 controls 尚未挂上 / 已卸载拿不到 context 时，直接 pop 本路由——
   /// 真 pop 会照常触发 media_kit 的退原生全屏与 [_onVideoFullscreenRouteClosed]。
   void _exitVideoFullscreenOnBack() {
+    // 原盘会话的全屏是会话自己进的：控制栏开着再按返回 = 退出整个原盘会话（退全屏
+    // 并回详情页），不是只退全屏留在菜单页。
+    if (_discSessionSurfaceActive) {
+      unawaited(_exitDiscSession());
+      return;
+    }
     final BuildContext? controlsContext = _videoControlsContext;
     if (controlsContext != null &&
         controlsContext.mounted &&
@@ -425,7 +452,7 @@ extension _VideoFullscreen on _VideoFushiPageState {
     return Builder(
       builder: (BuildContext buttonContext) {
         return _chromeIconButton(
-          icon: isFullscreen(buttonContext)
+          icon: isFullscreen(buttonContext) || _webWindowFullscreen
               ? Icons.fullscreen_exit
               : Icons.fullscreen,
           desktop: desktop,
@@ -453,10 +480,7 @@ extension _VideoFullscreen on _VideoFushiPageState {
       if (Platform.isWindows) {
         // Hide the app frame before the native transition so no title-bar
         // frame remains above the fullscreen surface.
-        FushiDesktopTitleBar.setContentFullscreen(
-          owner: this,
-          enabled: true,
-        );
+        FushiDesktopTitleBar.setContentFullscreen(owner: this, enabled: true);
         // BUG-1933：Windows 不再走 media_kit 的 `Utils.EnterNativeFullscreen`
         // ——它与 window_manager 同技法（剥 WS_CAPTION|WS_THICKFRAME），DWM
         // 重建窗口 visual 时 Flutter 子窗图层缺席一帧，露出表面色（浅色主题
@@ -465,6 +489,18 @@ extension _VideoFullscreen on _VideoFushiPageState {
         // 默认回调不变。
         await WindowCaptionChannel.setFullscreen(true);
         return;
+      }
+      // 原盘会话在 macOS 上用应用自有的无边框全屏：系统原生全屏会把 Esc 归系统，
+      // 会话的「Esc 呼出控制栏 / 再按退出」就失效了。
+      if (Platform.isMacOS && widget.openBlurayMenu) {
+        if (await WindowCaptionChannel.setBorderlessFullscreen(true)) {
+          _macBorderlessFullscreen = true;
+          return;
+        }
+        ErrorLogService.instance.logDiagnostic(
+          'VideoDiscSession.macFullscreen',
+          'borderless fullscreen refused by the runner; using native fullscreen',
+        );
       }
       await defaultEnterNativeFullscreen();
       return;
@@ -496,10 +532,14 @@ extension _VideoFullscreen on _VideoFushiPageState {
         // 时 runner 已同步还原窗口矩形，再亮出 app frame——早亮会在退出过程上
         // 闪一下标题栏。
         await WindowCaptionChannel.setFullscreen(false);
-        FushiDesktopTitleBar.setContentFullscreen(
-          owner: this,
-          enabled: false,
-        );
+        FushiDesktopTitleBar.setContentFullscreen(owner: this, enabled: false);
+        return;
+      }
+      if (_macBorderlessFullscreen) {
+        // 与进入对称：还原无边框全屏之前的 styleMask / frame（含「缩放」后的尺寸）。
+        _macBorderlessFullscreen = false;
+        await WindowCaptionChannel.setBorderlessFullscreen(false);
+        FushiDesktopTitleBar.reassertMacTrafficLights();
         return;
       }
       await defaultExitNativeFullscreen();

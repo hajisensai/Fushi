@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 远端封面必须走 `AppCachedHttpImage`（`extends CachedNetworkImageProvider`，
 /// 磁盘缓存语义不变，另外把请求接进全应用代理装配 —— 裸
@@ -42,7 +42,8 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: '远端封面只能用 AppCachedHttpImage，'
+      reason:
+          '远端封面只能用 AppCachedHttpImage，'
           '以下位置退回了仅有内存缓存的写法：\n${offenders.join('\n')}',
     );
   });
@@ -52,7 +53,8 @@ void main() {
       expect(
         File(path).readAsStringSync(),
         contains('AppCachedHttpImage('),
-        reason: '$path 不再出现磁盘缓存封面用法：'
+        reason:
+            '$path 不再出现磁盘缓存封面用法：'
             '要么封面被删（请同步收缩本守卫清单），要么被换成了别的远端图片写法',
       );
     }

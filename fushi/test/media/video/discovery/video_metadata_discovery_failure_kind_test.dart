@@ -4,7 +4,7 @@
 // TimeoutException / ClientException / FormatException，于是限流、5xx、鉴权失败
 // 被一律压成 unknown 并丢掉状态码——UI 只能把「被限流，等一会儿再搜」统一显示成
 // 「来源暂不可用」。MAL 走 Jikan 公共接口、1 秒一发且不重试，429 是常态。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_metadata_discovery_provider.dart';
@@ -26,8 +26,7 @@ class _ThrowingMetadataProvider implements VideoMetadataProvider {
   @override
   Future<List<VideoMetadataWork>> search(
     VideoMetadataSearchRequest request,
-  ) async =>
-      throw error;
+  ) async => throw error;
 
   @override
   Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async =>
@@ -36,15 +35,13 @@ class _ThrowingMetadataProvider implements VideoMetadataProvider {
   @override
   Future<List<VideoMetadataSeason>> fetchSeasons(
     VideoMetadataLookup lookup,
-  ) async =>
-      const <VideoMetadataSeason>[];
+  ) async => const <VideoMetadataSeason>[];
 
   @override
   Future<List<VideoMetadataEpisode>> fetchEpisodes(
     VideoMetadataLookup lookup, {
     required int seasonNumber,
-  }) async =>
-      const <VideoMetadataEpisode>[];
+  }) async => const <VideoMetadataEpisode>[];
 
   @override
   void close() {}
@@ -86,22 +83,19 @@ void main() {
     expect(
       (await _searchFailure(
         const VideoMetadataNetworkException('nope', statusCode: 401),
-      ))
-          .kind,
+      )).kind,
       ExternalProviderFailureKind.unauthorized,
     );
     expect(
       (await _searchFailure(
         const VideoMetadataNetworkException('boom', statusCode: 503),
-      ))
-          .kind,
+      )).kind,
       ExternalProviderFailureKind.network,
     );
     expect(
       (await _searchFailure(
         const VideoMetadataNetworkException('gone', statusCode: 404),
-      ))
-          .kind,
+      )).kind,
       ExternalProviderFailureKind.notFound,
     );
   });

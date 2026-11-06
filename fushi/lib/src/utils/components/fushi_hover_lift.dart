@@ -1,3 +1,7 @@
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -76,17 +80,58 @@ class FushiHoverLift extends StatefulWidget {
           .dependOnInheritedWidgetOfExactType<_FushiHoverLiftScope>()
           ?.lifted ??
       false;
+
+  /// 最近一层 [FushiHoverLift] 的指针位置（**全局坐标**）；不在倾斜态时为 null。
+  /// notifier 本身恒定，取它不建立依赖、不触发重建。
+  ///
+  /// 发全局坐标而不是「卡片内 -1..1」：倾斜 / 高光画在封面上，封面只是卡里的
+  /// 一块（取色并列卡、继续主卡的封面只占起始侧一小段）。按整卡归一化时，指针
+  /// 停在封面右缘仍落在整卡左半边，封面就朝左偏——方向与指针相反。归一化交给
+  /// 消费者按**自己的**盒子做（[fushiTiltPointerIn]）。
+  static ValueListenable<Offset?>? tiltOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<_FushiHoverLiftScope>()?.tilt;
 }
 
 /// [FushiHoverLift.liftedOf] 的载体。
 class _FushiHoverLiftScope extends InheritedWidget {
-  const _FushiHoverLiftScope({required this.lifted, required super.child});
+  const _FushiHoverLiftScope({
+    required this.lifted,
+    required this.tilt,
+    required super.child,
+  });
 
   final bool lifted;
+  final ValueListenable<Offset?> tilt;
 
   @override
   bool updateShouldNotify(_FushiHoverLiftScope oldWidget) =>
       oldWidget.lifted != lifted;
+}
+
+/// 由外层代收悬停：子树里的 [FushiHoverLift] 把 [hovering] 当作自己的指针悬停。
+///
+/// 给「卡片整张包在 `IgnorePointer` 里、手势由外层格子统一接管」的场景用（合集
+/// 详情页拖排网格）：`IgnorePointer` 同时挡掉了命中测试，卡片自己的
+/// [MouseRegion] 永远收不到 enter，悬停抬升 / 封面扫光 / 接触阴影收窄就全没了。
+/// 外层格子自己测悬停再经本组件往下传，卡片照常走同一套悬停动效。
+class FushiHoverLiftHost extends InheritedWidget {
+  const FushiHoverLiftHost({
+    required this.hovering,
+    required super.child,
+    super.key,
+  });
+
+  final bool hovering;
+
+  static bool hoveringOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<FushiHoverLiftHost>()
+          ?.hovering ??
+      false;
+
+  @override
+  bool updateShouldNotify(FushiHoverLiftHost oldWidget) =>
+      oldWidget.hovering != hovering;
 }
 
 /// 悬停缩放倍数：与 `docs/design/galgame-library-reina-visual-parity.md` 里定的
@@ -97,6 +142,10 @@ const double kFushiHoverLiftScale = 1.05;
 /// 「跳」）。只替换默认值；调用方显式传了别的 scale 时照用。
 const double kFushiAppleHoverLiftScale = 1.03;
 
+/// 默认倍数放大后每侧多出的比例（尺寸 × 它 = 单侧溢出）。行 / 视口给悬停放大
+/// 留余量时一律按**卡片实际尺寸**乘它，取两套设计系统里较大的倍数。
+const double kFushiHoverLiftOverflow = (kFushiHoverLiftScale - 1) / 2;
+
 /// 悬停动画时长（游戏库既有实现的落地值）。
 const Duration kFushiHoverLiftDuration = Duration(milliseconds: 120);
 
@@ -104,6 +153,11 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     with SingleTickerProviderStateMixin {
   /// 指针是否真的在这张卡上（[MouseRegion] 的真值，滚动**不得**改它）。
   bool _hovering = false;
+
+  /// 外层 [FushiHoverLiftHost] 代收的悬停（同样是指针真值，与 [_hovering] 取或）。
+  bool _hostHovering = false;
+
+  bool get _pointerOver => _hovering || _hostHovering;
 
   /// 本帧发生过滚动位移。**这是唯一的压制位**——覆盖三条路径：Flutter 默认滚轮
   /// （同一次事件处理里把 Start/Update/End 全发完）、拖拽滚动、以及
@@ -132,17 +186,17 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   late final AnimationController _lift;
   late final CurvedAnimation _curved;
 
+  /// 3D 倾斜视差的指针位置（全局坐标）。鼠标：悬停抬升期间跟随指针；触屏：按住
+  /// 期间跟随手指（触屏没有 hover）。滚动、退出、抬起都落回 null。
+  final ValueNotifier<Offset?> _tilt = ValueNotifier<Offset?>(null);
+  Offset? _pointer;
+  bool _touching = false;
+
   @override
   void initState() {
     super.initState();
-    _lift = AnimationController(
-      vsync: this,
-      duration: kFushiHoverLiftDuration,
-    );
-    _curved = CurvedAnimation(
-      parent: _lift,
-      curve: FushiSpringCurve.effects,
-    );
+    _lift = AnimationController(vsync: this, duration: kFushiHoverLiftDuration);
+    _curved = CurvedAnimation(parent: _lift, curve: FushiSpringCurve.effects);
   }
 
   /// 抬升的唯一判据：指针在这张卡上，且**这一帧刚滚过**（BUG-2124）。
@@ -155,7 +209,7 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   /// 才是真的滚起来了；`SmoothWheelScrollScope` 的 140ms 补间走 `DrivenScrollActivity`，
   /// 每帧都发 ScrollUpdate，同样被这一位盖住。
   bool get _lifted =>
-      widget.enabled && (widget.forceLifted || (_hovering && !_moved));
+      widget.enabled && (widget.forceLifted || (_pointerOver && !_moved));
 
   /// [immediate] 为真时同帧落位，不走缓动。
   void _syncLift({bool immediate = false}) {
@@ -165,9 +219,44 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
       _lift.value = target;
       return;
     }
+    _syncTilt();
     if (_lift.value == target && !_lift.isAnimating) return;
     // 曲线由 [_curved] 施加，这里给 controller 线性推进即可。
     _lift.animateTo(target);
+  }
+
+  void _syncTilt() {
+    final bool on =
+        widget.enabled &&
+        _animate &&
+        !_moved &&
+        (_touching || (_pointerOver && _lifted));
+    _tilt.value = on ? _pointer : null;
+  }
+
+  void _trackPointer(Offset global) {
+    _pointer = global;
+    _syncTilt();
+  }
+
+  void _onPointerDown(PointerDownEvent e) {
+    if (e.kind == PointerDeviceKind.mouse) return;
+    _touching = true;
+    _trackPointer(e.position);
+  }
+
+  void _onPointerMove(PointerMoveEvent e) {
+    if (e.kind == PointerDeviceKind.mouse) {
+      _trackPointer(e.position);
+      return;
+    }
+    if (_touching) _trackPointer(e.position);
+  }
+
+  void _onPointerEnd(PointerEvent e) {
+    if (e.kind == PointerDeviceKind.mouse || !_touching) return;
+    _touching = false;
+    _syncTilt();
   }
 
   void _setHover(bool value) {
@@ -182,9 +271,14 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     //
     // 只认 ScrollUpdate：它是「真的滚了」的唯一可靠信号，且不依赖任何配对通知。
     if (notification is! ScrollUpdateNotification) return;
+    // 触屏按住后拖动 = 在滚列表，不是在掰卡片。
+    if (_touching) {
+      _touching = false;
+      _syncTilt();
+    }
     // 本帧位只在正悬停时才置：没悬停的卡抬升本来就是 0，这一位对它毫无意义，
     // 而置了却不重建就会一直挂着。
-    if (!_hovering || _moved) return;
+    if (!_pointerOver || _moved) return;
     _moved = true;
     // 落下这一位的 post-frame **在这里挂**，不在 build 里挂：build 有 `!enabled`
     // 的提前 return 分支（长按进多选正好会在指针停在卡上时把 enabled 翻假），
@@ -205,6 +299,11 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     super.didChangeDependencies();
     final bool reduceMotion =
         MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final bool hostHovering = FushiHoverLiftHost.hoveringOf(context);
+    if (hostHovering != _hostHovering) {
+      _hostHovering = hostHovering;
+      _syncLift();
+    }
     final bool animate = !reduceMotion && !isEinkTheme(context);
     if (animate != _animate) {
       _animate = animate;
@@ -233,6 +332,7 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   void dispose() {
     _scrollObserver?.removeListener(_onScrollNotification);
     _scrollObserver = null;
+    _tilt.dispose();
     _curved.dispose();
     _lift.dispose();
     super.dispose();
@@ -249,6 +349,7 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
       }
       return _FushiHoverLiftScope(
         lifted: false,
+        tilt: _tilt,
         child: widget.builder(context, false),
       );
     }
@@ -258,14 +359,15 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     final Widget content = FushiPressScale(
       child: _FushiHoverLiftScope(
         lifted: _lifted,
+        tilt: _tilt,
         child: widget.builder(context, _lifted),
       ),
     );
     // 设计系统只换倍数，不改子树结构（切换设计系统时 builder 的 State 不重建）。
     final double scale =
         widget.scale == kFushiHoverLiftScale && isGlassDesign(context)
-            ? kFushiAppleHoverLiftScale
-            : widget.scale;
+        ? kFushiAppleHoverLiftScale
+        : widget.scale;
     if (!_animate) return _wrapHover(content);
     return _wrapHover(
       AnimatedBuilder(
@@ -280,8 +382,162 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   }
 
   Widget _wrapHover(Widget child) => MouseRegion(
-        onEnter: (_) => _setHover(true),
-        onExit: (_) => _setHover(false),
-        child: child,
-      );
+    onEnter: (PointerEnterEvent e) {
+      _trackPointer(e.position);
+      _setHover(true);
+    },
+    onHover: (PointerHoverEvent e) => _trackPointer(e.position),
+    onExit: (_) {
+      _pointer = null;
+      _setHover(false);
+      _syncTilt();
+    },
+    child: Listener(
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: _onPointerEnd,
+      onPointerCancel: _onPointerEnd,
+      child: child,
+    ),
+  );
+}
+
+/// 把 [FushiHoverLift.tiltOf] 发出的全局指针位置归一化到 [context] 自己的盒子里
+/// （-1..1，中心为 0，盒外夹到边上）；还没布局或指针为 null 时返回 null。
+///
+/// [context] 的渲染对象坐标系不含它自己施加给子树的变换（[FushiTilt] 的旋转），
+/// 但含祖先的全部变换（[FushiHoverLift] 的放大、外层的倾斜），所以放大中的卡、
+/// 嵌套的倾斜层都能换算对。
+Offset? fushiTiltPointerIn(BuildContext context, Offset? global) {
+  if (global == null) return null;
+  final RenderObject? box = context.findRenderObject();
+  if (box is! RenderBox || !box.attached || !box.hasSize) return null;
+  final Size size = box.size;
+  if (size.isEmpty) return null;
+  final Offset local = box.globalToLocal(global);
+  return Offset(
+    (local.dx / size.width * 2 - 1).clamp(-1.0, 1.0),
+    (local.dy / size.height * 2 - 1).clamp(-1.0, 1.0),
+  );
+}
+
+/// 3D 倾斜视差的最大偏转角（度）。
+const double kFushiTiltMaxDegrees = 9;
+
+/// 倾斜跟随指针的缓动时长。
+const Duration kFushiTiltFollowDuration = Duration(milliseconds: 160);
+
+/// 3D 倾斜视差（2026-10-29 用户：「全部媒体选中都要网上那种 3D 斜视差，PC 跟
+/// 鼠标位置」）：读最近一层 [FushiHoverLift] 的指针位置，把 [child] 朝指针一侧
+/// 按下去（指针下那一边远离观察者），平滑跟随，离开时缓回平面。
+///
+/// 树结构恒定：没有 [FushiHoverLift] 祖先时原样返回 [child]；有祖先时不在倾斜态
+/// 也照样包着（单位变换）。墨水屏 / 减弱动态效果下 [FushiHoverLift] 不发指针
+/// 位置，这里自然不动。
+class FushiTilt extends StatelessWidget {
+  const FushiTilt({required this.child, this.enabled = true, super.key});
+
+  final Widget child;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final ValueListenable<Offset?>? tilt = enabled
+        ? FushiHoverLift.tiltOf(context)
+        : null;
+    if (tilt == null) return child;
+    return ValueListenableBuilder<Offset?>(
+      valueListenable: tilt,
+      child: child,
+      // 按 [FushiTilt] 自己的盒子归一化（builder 的 context 首个渲染对象就是下面
+      // 那层 Transform，它的坐标系不含自身旋转）。
+      builder: (BuildContext context, Offset? global, Widget? child) =>
+          TweenAnimationBuilder<Offset>(
+            tween: Tween<Offset>(
+              end: fushiTiltPointerIn(context, global) ?? Offset.zero,
+            ),
+            duration: kFushiTiltFollowDuration,
+            curve: FushiSpringCurve.effects,
+            child: child,
+            builder: (BuildContext context, Offset v, Widget? child) {
+              const double a = kFushiTiltMaxDegrees * math.pi / 180;
+              // 静止（绝大多数卡、滚动中的全部卡）给**纯单位矩阵**：带透视项的
+              // 矩阵哪怕旋转角为 0 也不是仿射变换，RenderTransform 识别不出「无
+              // 变换」，整摞封面（投影 / 圆角裁切 / 图片）都在透视矩阵下栅格化，
+              // Impeller 的模糊投影等快速路径因此失效，且每帧每卡都要付。单位矩阵
+              // 则直接按平移绘制。树结构不变（仍是同一个 Transform）。
+              return Transform(
+                alignment: Alignment.center,
+                transform: v == Offset.zero
+                    ? Matrix4.identity()
+                    : (Matrix4.identity()
+                        ..setEntry(3, 2, 0.0012)
+                        ..rotateX(v.dy * a)
+                        ..rotateY(-v.dx * a)),
+                child: child,
+              );
+            },
+          ),
+    );
+  }
+}
+
+/// 倾斜时跟着指针走的镜面高光：一团径向柔光落在指针位置，越靠边越亮一点，
+/// 读作「光面封面在灯下转动」。画在封面裁切区内、点击穿透。
+class FushiTiltGlare extends StatelessWidget {
+  const FushiTiltGlare({super.key, this.clipRadius});
+
+  /// 非空 = 高光自己按这个圆角裁切，且**只在可见时**裁切。
+  ///
+  /// 调用方若在外面包 `ClipRRect`，静止的卡（opacity 0、什么都不画）也要每帧
+  /// 压一次圆角裁切；网格里每张卡一份，Impeller 没有 raster cache，滚动时就是
+  /// 按卡数线性的白开销。裁切放在 [AnimatedOpacity] 里面，透明度为 0 时整段不画。
+  final BorderRadius? clipRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    final ValueListenable<Offset?>? tilt = FushiHoverLift.tiltOf(context);
+    if (tilt == null) return const SizedBox.shrink();
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final BorderRadius? radius = clipRadius;
+    return IgnorePointer(
+      child: ValueListenableBuilder<Offset?>(
+        valueListenable: tilt,
+        builder: (BuildContext context, Offset? global, Widget? _) {
+          // 高光按自己（封面裁切区）的盒子定位，不按整张卡。
+          final Offset? p = fushiTiltPointerIn(context, global);
+          return TweenAnimationBuilder<Offset>(
+            tween: Tween<Offset>(end: p ?? Offset.zero),
+            duration: kFushiTiltFollowDuration,
+            curve: FushiSpringCurve.effects,
+            builder: (BuildContext context, Offset v, Widget? _) {
+              final Widget glow = DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment(v.dx, v.dy),
+                    radius: 1.1,
+                    colors: <Color>[
+                      Colors.white.withValues(
+                        alpha:
+                            (dark ? 0.16 : 0.22) +
+                            0.06 * v.distance.clamp(0.0, 1.0),
+                      ),
+                      Colors.white.withValues(alpha: 0),
+                    ],
+                  ),
+                ),
+              );
+              return AnimatedOpacity(
+                opacity: p == null ? 0 : 1,
+                duration: kFushiTiltFollowDuration,
+                child: radius == null
+                    ? glow
+                    : ClipRRect(borderRadius: radius, child: glow),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
 }

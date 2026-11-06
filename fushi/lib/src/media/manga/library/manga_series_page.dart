@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'package:fushi/src/media/kavita/kavita_manga_sync.dart';
+import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
+import 'package:fushi/src/media/kavita/kavita_server_config.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
@@ -7,11 +10,13 @@ import 'dart:io';
 import 'package:drift/drift.dart'
     show ResultSetImplementation, TableUpdate, TableUpdateQuery;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
+import 'package:fushi/src/media/manga/download/online_manga_download_gate.dart';
 import 'package:fushi/src/media/manga/library/manga_book_ocr.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
@@ -42,13 +47,36 @@ import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:fushi/src/media/links/media_link_entries.dart'
+    show MediaLinkEntry;
+import 'package:fushi/src/media/links/media_link_inference_host.dart'
+    show mediaLinkInferCallback;
+import 'package:fushi/src/media/links/media_link_opener.dart'
+    show mediaLinkSearchAction, openMediaLinkEntry;
+import 'package:fushi/src/media/links/media_links_section.dart'
+    show MediaLinksSection;
 
 /// 作品页要显示**哪一部**作品。
 ///
@@ -256,6 +284,12 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// 在库时的 bookKey；未入库的源条目为 null。
   String? get _bookKey => _row?.bookKey;
 
+  /// 本条目的章节能不能下载（按运行时的合规门：Kavita 在 iOS 只直读不下载）。
+  bool get _downloadsAllowed {
+    final OnlineMangaLibraryEntry? entry = _entry;
+    return entry == null || onlineMangaChapterDownloadsAvailable(entry.runtime);
+  }
+
   String? get _bookUid {
     final String? uid = _row?.uid;
     return uid == null || uid.isEmpty ? null : uid;
@@ -377,8 +411,13 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         : _isLocal
         ? _displayTitle
         : '';
+    // 远程引擎先上传再识别，两段各自从 0 数起：上传段用上传文案（BUG-3605）。
+    final bool uploading = event?.uploading ?? false;
     final List<String> lines = <String>[
-      if (job != null)
+      if (job != null && uploading) ...<String>[
+        if (runningLabel.isNotEmpty) runningLabel,
+        t.manga_remote_ocr_uploading(done: done, total: total),
+      ] else if (job != null)
         t.manga_series_ocr_running(
           chapter: runningLabel,
           done: '$done',
@@ -702,10 +741,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     } on OnlineMangaUnavailable catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.sibling', error, stack);
       if (mounted) {
-        FushiToast.show(
-          msg: error.userMessage,
-          severity: ToastSeverity.error,
-        );
+        FushiToast.show(msg: error.userMessage, severity: ToastSeverity.error);
       }
       return;
     } finally {
@@ -1083,10 +1119,24 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         entry: entry,
       );
       final EpubBookRow? row = await service.database.getEpubBook(bookKey);
+      // Kavita：服务器的逐章已读状态并进本地章进度（别的设备读过的章在这里才看得到）。
+      Map<String, MangaChapterStateRow>? reconciled;
+      if (row != null &&
+          updated.runtime == OnlineMangaRuntimeKind.kavita &&
+          await reconcileKavitaChapterStates(
+                db: service.database,
+                bookUid: row.uid,
+                chapters: updated.chapters,
+                stamps: _kavitaStamps(),
+              ) >
+              0) {
+        reconciled = await _readChapterStates(row);
+      }
       if (!mounted) return;
       setState(() {
         _entry = updated;
         if (row != null) _row = row;
+        if (reconciled != null) _states = reconciled;
         _refreshSucceeded = true;
       });
     } on OnlineMangaUnavailable catch (error, stack) {
@@ -1303,10 +1353,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       if (mounted) {
         _challengeRetry = () => _openChapterAt(index);
         setState(() => _refreshError = error);
-        FushiToast.show(
-          msg: error.userMessage,
-          severity: ToastSeverity.error,
-        );
+        FushiToast.show(msg: error.userMessage, severity: ToastSeverity.error);
       }
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.openChapter', error, stack);
@@ -1368,8 +1415,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       ref: ref,
       mediaSource: MangaFushiSource.instance,
       item: launchItem,
-      launchPageBuilder: () => MangaFushiSource.instance
-          .buildChapterLaunchPage(item: launchItem, chapterIndex: chapterIndex),
+      launchPageBuilder: () => MangaFushiSource.instance.buildChapterLaunchPage(
+        item: launchItem,
+        chapterIndex: chapterIndex,
+      ),
     );
   }
 
@@ -1394,11 +1443,121 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     unawaited(_refreshDownloadState());
   }
 
+  PrefKavitaMangaSyncStampStore _kavitaStamps() =>
+      PrefKavitaMangaSyncStampStore(
+        read: () =>
+            _appModel.prefsRepo.getPref(
+                  kKavitaMangaSyncStatePref,
+                  defaultValue: '',
+                )
+                as String,
+        write: (String value) =>
+            _appModel.prefsRepo.setPref(kKavitaMangaSyncStatePref, value),
+      );
+
+  /// Kavita 条目：标一批章已读 / 未读。**本机先生效**，再尽力写回服务器。
+  ///
+  /// 服务器写回失败（离线 / 出错）不阻断本机标记：本机照样改，同步基线留在服务器
+  /// 上次已知的页（见 [alignKavitaMangaChapterMark] 的 `serverConfirmed`），开章时
+  /// 由既有的逐章同步推上去；提示用户「已在本机标记、Kavita 还没更新」。
+  ///
+  /// 返回 true = 已按 Kavita 规则处理完本地状态（调用方只需重载）；false = 不是
+  /// Kavita 条目（或没有可同步的章），调用方走普通的本地标记。
+  Future<bool> _markKavitaChapters(
+    List<OnlineMangaChapter> chapters, {
+    required bool read,
+  }) async {
+    final OnlineMangaLibraryEntry? entry = _entry;
+    final String? bookUid = _bookUid;
+    if (entry == null ||
+        bookUid == null ||
+        !KavitaMangaSyncSession.appliesTo(entry)) {
+      return false;
+    }
+    final int? seriesId = int.tryParse(entry.series.key);
+    KavitaServerConfig? server;
+    for (final KavitaServerConfig s in _appModel.prefsRepo.kavitaServers) {
+      if (s.id == entry.sourceId) server = s;
+    }
+    final List<OnlineMangaChapter> targets = <OnlineMangaChapter>[
+      for (final OnlineMangaChapter c in chapters)
+        if (int.tryParse(c.key) != null) c,
+    ];
+    if (targets.isEmpty) return false;
+    Object? failure;
+    if (seriesId == null || server == null || !server.isUsable) {
+      failure = StateError('Kavita server unavailable');
+    } else {
+      final List<int> ids = <int>[for (final c in targets) int.parse(c.key)];
+      try {
+        final api = KavitaApiRegistry.instance.apiFor(server);
+        if (read) {
+          await api.markChaptersRead(seriesId: seriesId, chapterIds: ids);
+        } else {
+          await api.markChaptersUnread(seriesId: seriesId, chapterIds: ids);
+        }
+      } on Object catch (error, stack) {
+        ErrorLogService.instance.log(
+          'MangaSeriesPage.kavitaMark',
+          error,
+          stack,
+        );
+        failure = error;
+      }
+    }
+    final PrefKavitaMangaSyncStampStore stamps = _kavitaStamps();
+    for (final OnlineMangaChapter c in targets) {
+      await alignKavitaMangaChapterMark(
+        db: _appModel.database,
+        stamps: stamps,
+        bookUid: bookUid,
+        chapterKey: c.key,
+        read: read,
+        totalPages: _asPages(c.raw['pages']),
+        serverConfirmed: failure == null,
+        knownServerPage: _knownServerPage(c),
+      );
+    }
+    if (failure != null && mounted) {
+      FushiToast.show(
+        msg: t.kavita_manga_mark_saved_locally,
+        severity: ToastSeverity.warning,
+      );
+    }
+    return true;
+  }
+
+  /// 作品页最近一次从服务器取到的这一章进度页（`raw` 里刷新时存的 `pages` /
+  /// `pagesRead`）；不知道时 null。读完 = 最后一页，与 [reconcileKavitaChapterStates]
+  /// 同口径。
+  static int? _knownServerPage(OnlineMangaChapter chapter) {
+    final int pages = _asPages(chapter.raw['pages']);
+    final Object? rawRead = chapter.raw['pagesRead'];
+    if (rawRead == null) return null;
+    final int pagesRead = _asPages(rawRead);
+    if (pages > 0 && pagesRead >= pages) return pages - 1;
+    return pagesRead;
+  }
+
+  static int _asPages(Object? v) => switch (v) {
+    final num n => n.toInt(),
+    final String s => int.tryParse(s) ?? 0,
+    _ => 0,
+  };
+
   Future<void> _toggleChapterRead(OnlineMangaChapter chapter) async {
     final String? bookUid = _bookUid;
     if (bookUid == null) return;
     final MangaChapterStateRow? state = _states[chapter.key];
-    if (state?.readAt != null) {
+    final bool markRead = state?.readAt == null;
+    if (await _markKavitaChapters(<OnlineMangaChapter>[
+      chapter,
+    ], read: markRead)) {
+      // Kavita：本地状态已由 alignKavitaMangaChapterMark 写好（含页与基线）。
+      await _reloadChapterStates();
+      return;
+    }
+    if (!markRead) {
       await _appModel.database.clearMangaChapterRead(
         bookUid: bookUid,
         chapterKey: chapter.key,
@@ -1421,12 +1580,14 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     if (bookUid == null || entry == null) return;
     final int index = entry.indexOfChapterKey(chapter.key);
     if (index < 0) return;
+    final List<OnlineMangaChapter> targets = entry.chapters.sublist(index);
+    if (await _markKavitaChapters(targets, read: true)) {
+      await _reloadChapterStates();
+      return;
+    }
     await _appModel.database.markMangaChaptersRead(
       bookUid: bookUid,
-      chapterKeys: <String>[
-        for (int i = index; i < entry.chapters.length; i++)
-          entry.chapters[i].key,
-      ],
+      chapterKeys: <String>[for (final c in targets) c.key],
     );
     await _reloadChapterStates();
   }
@@ -1501,6 +1662,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         notificationPredicate: _isBodyScroll,
         child: MediaDetailLayout(
           controller: _scroll,
+          fab: _buildResumeFab(),
           backdrop: _coverImageProvider(),
           header: _buildHeader(context),
           slivers: <Widget>[
@@ -1525,6 +1687,25 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                 ),
               ),
             ),
+            // 跨模块「同一作品」（作品图谱 media_links）：只对已入库的漫画（有 bookKey）。
+            if (_bookKey case final String bookKey)
+              SliverToBoxAdapter(
+                child: MediaLinksSection(
+                  database: _appModel.database,
+                  self: (kind: MediaLinkKind.book, key: bookKey),
+                  onOpen: (MediaLinkEntry e) =>
+                      openMediaLinkEntry(context: context, ref: ref, entry: e),
+                  searchActionFor: (MediaLinkKind k) => mediaLinkSearchAction(
+                    context: context,
+                    ref: ref,
+                    kind: k,
+                  ),
+                  onInfer: mediaLinkInferCallback(
+                    ref: ref,
+                    self: (kind: MediaLinkKind.book, key: bookKey),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -1557,8 +1738,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                   _currentChapterAnchor,
                   duration: fushiMotionDuration(context, FushiMotion.medium),
                 ),
-          onUnreadOnlyToggled: () =>
-              setState(() => _unreadOnly = !_unreadOnly),
+          onUnreadOnlyToggled: () => setState(() => _unreadOnly = !_unreadOnly),
           onChapterTap: (OnlineMangaChapter chapter) {
             final int index = _entry?.indexOfChapterKey(chapter.key) ?? -1;
             if (index >= 0) unawaited(_openChapterAt(index));
@@ -1579,12 +1759,13 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               : (
                   done: _ocrEvent?.pagesDone ?? 0,
                   total: _ocrEvent?.pagesTotal ?? 0,
+                  uploading: _ocrEvent?.uploading ?? false,
                 ),
           ocrQueuedChapterKeys: _ocrQueuedChapterKeys,
           languageScope: _languageScope,
           onSiblingSourceTap: (OnlineMangaSiblingSource sibling) =>
               unawaited(_openSiblingSource(sibling)),
-          onDownload: _bookKey == null
+          onDownload: _bookKey == null || !_downloadsAllowed
               ? null
               : (OnlineMangaChapter chapter) =>
                     unawaited(_enqueueChapter(chapter)),
@@ -1602,8 +1783,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                     unawaited(_revealChapterDownload(chapter)),
           onOcr: _bookKey == null
               ? null
-              : (OnlineMangaChapter chapter) =>
-                    unawaited(_ocrChapter(chapter)),
+              : (OnlineMangaChapter chapter) => unawaited(_ocrChapter(chapter)),
         ),
       ],
     );
@@ -1801,6 +1981,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final OnlineMangaUnavailable? refreshError = _refreshError;
     return OnlineWorkHeader(
       cover: _buildCover(context),
+      coverMaterial: ShelfCoverMaterial.glossyBook,
       backdrop: _coverImageProvider(),
       overline: _subtitle(),
       title: _displayTitle,
@@ -1821,7 +2002,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         // 扩展源的作品来自第三方站点（10-09 所有者「外部来源」提示）；互联对端
         // 是用户自己的设备，本地卷没有在线来源，都不标。
         if (_entry case final OnlineMangaLibraryEntry entry
-            when entry.runtime != OnlineMangaRuntimeKind.interconnect)
+            when entry.runtime != OnlineMangaRuntimeKind.interconnect &&
+                entry.runtime != OnlineMangaRuntimeKind.kavita)
           ...extensionSourceDetailChips(),
       ],
       genres: series?.genreLabels ?? const <String>[],
@@ -1852,7 +2034,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// ImageProvider，就只画色晕（不为背景另开一条取图路径）。
   ImageProvider? _coverImageProvider() {
     final String? path = _localCoverPath();
-    return path == null ? null : FileImage(File(path));
+    // 走本地封面统一入口：漫画封面常是第一页页图，可能是 AVIF（裸 FileImage 解不开）。
+    return path == null ? null : resizedFileImage(File(path));
   }
 
   /// 封面。
@@ -1863,8 +2046,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Widget _buildCover(BuildContext context) {
     final String? resolved = _localCoverPath();
     if (resolved != null) {
-      return Image.file(
-        File(resolved),
+      return Image(
+        image: resizedFileImage(File(resolved)),
         fit: BoxFit.cover,
         // BUG-2496：坏封面文件解码失败退回占位块，不当致命 FlutterError。
         errorBuilder: (_, Object error, __) {
@@ -1927,7 +2110,11 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       return MediaDetailPrimaryButton(
         buttonKey: const ValueKey<String>('manga_series_open_local'),
         icon: FushiIcons.play,
-        label: t.book_continue_reading,
+        label: MediaDetailResumeFab.labelFor(
+          watching: false,
+          started: _localPosition != null,
+          itemLabel: _localProgressLabel,
+        ),
         onPressed: _busy ? null : () => unawaited(_openLocalBook()),
       );
     }
@@ -1940,13 +2127,62 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     return MediaDetailPrimaryButton(
       buttonKey: const ValueKey<String>('manga_series_continue'),
       icon: FushiIcons.play,
-      label: resumeChapter == null
-          ? t.book_continue_reading
-          : '${t.book_continue_reading} · ${resumeChapter.name}',
+      label: MediaDetailResumeFab.labelFor(
+        watching: false,
+        started: _mangaStarted,
+        itemLabel: resumeChapter?.name,
+      ),
       progress: _downloadProgress,
       onPressed: resumeChapter == null || _busy
           ? null
           : () => unawaited(_openChapterAt(resumeIndex)),
+    );
+  }
+
+  /// 本地卷读到哪一页（「读到第 12 / 180 页」）；没打开过（无位置行）为 null。
+  String? get _localProgressLabel {
+    final ReaderPosition? position = _localPosition;
+    final EpubBookRow? row = _row;
+    if (position == null || row == null) return null;
+    final String page = '${position.sectionIndex + 1}';
+    return row.chapterCount > 0
+        ? t.manga_series_read_progress(page: page, total: '${row.chapterCount}')
+        : t.manga_series_read_progress_partial(page: page);
+  }
+
+  /// 读过没有：有当前章、或任一章读完 / 真翻过页（与章节列表「读了一半」同一判据）。
+  bool get _mangaStarted =>
+      _entry?.currentChapter != null ||
+      _states.values.any(
+        (MangaChapterStateRow state) =>
+            state.readAt != null || state.lastPage > 0,
+      );
+
+  /// 右下角「继续 / 开始阅读」悬浮按钮：与 hero 主按钮同一个目标章。没有可读的章
+  /// 时不出现。
+  Widget? _buildResumeFab() {
+    if (_isLocal) {
+      return MediaDetailResumeFab(
+        buttonKey: const ValueKey<String>('manga_series_resume_fab'),
+        watching: false,
+        started: _localPosition != null,
+        itemLabel: _localProgressLabel,
+        onPressed: _busy ? null : () => unawaited(_openLocalBook()),
+      );
+    }
+    final OnlineMangaLibraryEntry? entry = _entry;
+    final int resumeIndex = _resumeIndex;
+    if (entry == null ||
+        resumeIndex < 0 ||
+        resumeIndex >= entry.chapters.length) {
+      return null;
+    }
+    return MediaDetailResumeFab(
+      buttonKey: const ValueKey<String>('manga_series_resume_fab'),
+      watching: false,
+      started: _mangaStarted,
+      itemLabel: entry.chapters[resumeIndex].name,
+      onPressed: _busy ? null : () => unawaited(_openChapterAt(resumeIndex)),
     );
   }
 
@@ -1994,7 +2230,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           onPressed: _busy ? null : () => unawaited(_addToLibrary()),
         ),
       // 下载动作只对在库条目有意义：任务表按 bookKey 记，没有行就没地方挂任务。
-      if (inLibrary)
+      if (inLibrary && _downloadsAllowed)
         MediaDetailSecondaryButton(
           buttonKey: const ValueKey<String>('manga_series_download_all'),
           icon: FushiIcons.download,
@@ -2067,7 +2303,11 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           enabled: !_refreshing,
           onSelected: () => unawaited(_refreshFromSource()),
         ),
-      if (entry != null && inLibrary && _service != null && entry.subscribed)
+      if (entry != null &&
+          inLibrary &&
+          _service != null &&
+          entry.subscribed &&
+          _downloadsAllowed)
         MediaDetailMenuItem(
           key: const ValueKey<String>('manga_series_auto_download'),
           icon: entry.autoDownload
@@ -2080,7 +2320,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       if (inLibrary) ...<MediaDetailMenuItem>[
         MediaDetailMenuItem(
           key: const ValueKey<String>('manga_series_auto_ocr_chip'),
-          icon: autoOcr ? FushiIcons.filled(FushiIcons.success) : FushiIcons.ocr,
+          icon: autoOcr
+              ? FushiIcons.filled(FushiIcons.success)
+              : FushiIcons.ocr,
           label: t.manga_series_auto_ocr,
           onSelected: () => unawaited(_setAutoOcr(!autoOcr)),
         ),

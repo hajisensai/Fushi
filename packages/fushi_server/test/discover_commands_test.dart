@@ -16,19 +16,20 @@ import 'package:fushi_server/src/server_runtime.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-VideoDiscoveryItem _item(String id, String title, {int? year}) => VideoDiscoveryItem(
-  reference: VideoMediaReference(
-    providerId: 'mal',
-    mediaId: id,
-    mediaKind: VideoMetadataMediaKind.tv,
-    discoveryCategory: VideoDiscoveryCategory.anime,
-    title: title,
-    year: year,
-    externalIds: <String, String>{'mal': id},
-  ),
-  score: 8.5,
-  overview: 'ov',
-);
+VideoDiscoveryItem _item(String id, String title, {int? year}) =>
+    VideoDiscoveryItem(
+      reference: VideoMediaReference(
+        providerId: 'mal',
+        mediaId: id,
+        mediaKind: VideoMetadataMediaKind.tv,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+        title: title,
+        year: year,
+        externalIds: <String, String>{'mal': id},
+      ),
+      score: 8.5,
+      overview: 'ov',
+    );
 
 void main() {
   late Directory tmp;
@@ -42,13 +43,19 @@ void main() {
   setUp(() async {
     tmp = await Directory.systemTemp.createTemp('fushi_discover_cli_');
     configFile = File(p.join(tmp.path, 'fushi_server.yaml'));
-    await ServerConfig.defaults(dataDir: p.join(tmp.path, 'data')).save(configFile);
+    await ServerConfig.defaults(
+      dataDir: p.join(tmp.path, 'data'),
+    ).save(configFile);
     out = StringBuffer();
     err = StringBuffer();
     requests = <VideoDiscoveryRequest>[];
     released = false;
     next = ProviderBatchResult<VideoDiscoveryPage>.success(<VideoDiscoveryPage>[
-      VideoDiscoveryPage(items: <VideoDiscoveryItem>[_item('1', 'ぼっち・ざ・ろっく！', year: 2022)], page: 1, hasMore: true),
+      VideoDiscoveryPage(
+        items: <VideoDiscoveryItem>[_item('1', 'ぼっち・ざ・ろっく！', year: 2022)],
+        page: 1,
+        hasMore: true,
+      ),
     ]);
   });
 
@@ -106,10 +113,12 @@ void main() {
     expect(r.pageSize, 5);
     expect(r.isSearch, isTrue);
     expect(released, isTrue);
-    final Map<String, Object?> report = jsonDecode(out.toString()) as Map<String, Object?>;
+    final Map<String, Object?> report =
+        jsonDecode(out.toString()) as Map<String, Object?>;
     expect(report['domain'], 'video');
     expect(report['hasMore'], true);
-    final Map<String, Object?> item = (report['items']! as List<Object?>).single! as Map<String, Object?>;
+    final Map<String, Object?> item =
+        (report['items']! as List<Object?>).single! as Map<String, Object?>;
     expect(item['provider'], 'mal');
     expect(item['id'], '1');
     expect(item['year'], 2022);
@@ -120,7 +129,11 @@ void main() {
   test('部分来源失败：照常 0，失败写 stderr', () async {
     next = ProviderBatchResult<VideoDiscoveryPage>(
       items: <VideoDiscoveryPage>[
-        VideoDiscoveryPage(items: <VideoDiscoveryItem>[_item('2', 'x')], page: 1, hasMore: false),
+        VideoDiscoveryPage(
+          items: <VideoDiscoveryItem>[_item('2', 'x')],
+          page: 1,
+          hasMore: false,
+        ),
       ],
       failures: const <ExternalProviderFailure>[
         ExternalProviderFailure(

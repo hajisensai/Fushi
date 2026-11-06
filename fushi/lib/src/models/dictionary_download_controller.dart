@@ -1,8 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/platform/mobile/android_download_keep_alive.dart';
+import 'package:fushi/src/platform/mobile/download_keep_alive_hub.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 一次词典下载/更新任务当前所处的阶段。
@@ -91,6 +96,26 @@ class DictionaryDownloadJob {
       _controller._setPhase(DictionaryDownloadPhase.importing);
 }
 
+/// 接手上一进程的下载后「下完怎么导入」（见
+/// [DictionaryDownloadController.resumeAdoptedDownloads]）。
+@immutable
+class ResumableDictionaryImport {
+  const ResumableDictionaryImport({
+    required this.name,
+    required this.importFile,
+  });
+
+  /// 进度 / 结果文案里的词典名。
+  final String name;
+
+  /// 导入下好的 [File]，返回结果提示。失败原样抛出。
+  final Future<DictionaryDownloadOutcome?> Function(
+    DictionaryDownloadJob job,
+    File file,
+  )
+  importFile;
+}
+
 /// 词典下载/更新任务的**所有权持有者**。
 ///
 /// BUG-1499 根因：任务原本活在 `_runWithDownloadProgressDialog` 的 `await body(...)`
@@ -111,10 +136,21 @@ class DictionaryDownloadJob {
 /// `<资源目录>/import_temp` 暂存目录，并且都会「删旧目录 + 删 meta 再 publish」。
 /// 并发跑同一本词典时后者的 `deleteSync(recursive: true)` 会把前者正在写的暂存整个
 /// 删掉，轻则导入失败重则旧词典已删、新词典没落地。改成两条流程共用 [run] 一把锁。
+///
+/// 后台保活：任务在跑（下载 + 导入两段）期间持有 [downloadKeepAliveHub] 的
+/// `dictionary` 租约。此前词典链路是唯一没领租约的下载来源，Android 上用户一切走
+/// 就没有前台服务托底，几 GB 的推荐词典 / 启动自动更新随进程被冻结或杀掉而中断。
+/// 三条流程（推荐词典、手动更新、启动自动更新）都经 [run]，在这里挂一次全覆盖。
 class DictionaryDownloadController {
   DictionaryDownloadController({
     void Function(DictionaryDownloadOutcome outcome)? showOutcome,
-  }) : _showOutcome = showOutcome ?? _defaultShowOutcome;
+    DownloadKeepAlive? keepAlive,
+  }) : _showOutcome = showOutcome ?? _defaultShowOutcome,
+       _keepAlive = keepAlive ?? downloadKeepAliveHub.lease('dictionary') {
+    phase.addListener(_reportKeepAlive);
+    message.addListener(_reportKeepAlive);
+    progress.addListener(_reportKeepAlive);
+  }
 
   static void _defaultShowOutcome(DictionaryDownloadOutcome outcome) {
     FushiToast.show(
@@ -125,6 +161,9 @@ class DictionaryDownloadController {
   }
 
   final void Function(DictionaryDownloadOutcome outcome) _showOutcome;
+
+  /// 任务期间的下载保活租约（Android 前台服务，其余平台 no-op）。
+  final DownloadKeepAlive _keepAlive;
 
   /// 当前阶段。对话框订阅它自动关闭（回到 [DictionaryDownloadPhase.idle] 时），
   /// 词典页订阅它决定是否显示「正在下载…（查看进度）」状态行。
@@ -184,7 +223,8 @@ class DictionaryDownloadController {
     required String initialMessage,
     required Future<DictionaryDownloadOutcome?> Function(
       DictionaryDownloadJob job,
-    ) body,
+    )
+    body,
   }) async {
     if (isBusy) return false;
 
@@ -203,15 +243,123 @@ class DictionaryDownloadController {
       progress.value = 0;
       message.value = '';
       detail.value = '';
+      // 导入也要保活到底：native 导入跑在本进程里，被杀会停在「删旧之后」。
+      await _keepAlive.stop();
     }
     if (outcome != null) _showOutcome(outcome);
     return true;
+  }
+
+  /// 接手上一个进程留下的在途词典下载（BUG-3887 续，iOS 系统后台会话）。
+  ///
+  /// iOS 进程被系统回收后，后台会话的传输照常在守护进程里跑，下完的文件也照样落盘；
+  /// 等它的那个 [run] 却已经跟着进程没了。这里在新进程里把它们接回来：[resolve]
+  /// 按持久化的导入配方给出「下完怎么导入」，null = 真没人要了（配方坏了 / 要替换
+  /// 的词典已被删掉）→ 取消任务、删已交付文件。其余的在 [run] 的互斥里逐本
+  /// 「接上下载（在途的接进度，已交付的直接拿文件，失败的按候选回退续下一个镜像）→
+  /// 走原导入流程」，取消 / 失败归因 / 镜像回退与 [run] 下的新下载同一套语义。
+  ///
+  /// 已有任务在跑（[run] 返回 false）时什么都不放弃：原生记录原样留着，下次启动再接。
+  Future<void> resumeAdoptedDownloads({
+    required List<AdoptedDictionaryDownload> adopted,
+    required ResumableDictionaryImport? Function(
+      DictionaryDownloadHandoff handoff,
+    )
+    resolve,
+  }) async {
+    final List<(AdoptedDictionaryDownload, ResumableDictionaryImport)> wanted =
+        <(AdoptedDictionaryDownload, ResumableDictionaryImport)>[];
+    for (final AdoptedDictionaryDownload download in adopted) {
+      final ResumableDictionaryImport? importer = resolve(download.handoff);
+      if (importer == null) {
+        await download.discard();
+      } else {
+        wanted.add((download, importer));
+      }
+    }
+    if (wanted.isEmpty) return;
+
+    await run(
+      initialMessage: t.dict_download_resuming(name: wanted.first.$2.name),
+      body: (DictionaryDownloadJob job) async {
+        DictionaryDownloadOutcome? outcome;
+        for (final (
+              AdoptedDictionaryDownload download,
+              ResumableDictionaryImport importer,
+            )
+            in wanted) {
+          // 用户已取消：剩下的同样没人要了。
+          if (job.isCancelled) {
+            await download.discard();
+            continue;
+          }
+          job.markDownloadPhase();
+          job.progress.value = 0;
+          job.message.value = t.dict_download_resuming(name: importer.name);
+          final File partial = File(download.handoff.destPath);
+          try {
+            final File file = await DictionaryDownloader.resume(
+              adopted: download,
+              progressNotifier: job.progress,
+              cancelToken: job.cancelToken,
+            );
+            job.markImportPhase();
+            job.progress.value = 0;
+            outcome = await importer.importFile(job, file);
+          } catch (e, stack) {
+            if (isCancellation(e)) {
+              outcome = DictionaryDownloadOutcome(
+                message: t.dict_download_cancelled,
+              );
+              continue;
+            }
+            debugPrint(
+              '[DictionaryDownload] resume ${importer.name} failed: $e',
+            );
+            debugPrintStack(stackTrace: stack);
+            outcome = DictionaryDownloadOutcome(
+              message: t.dict_download_failed(error: importer.name),
+              severity: ToastSeverity.error,
+              toastLength: Toast.LENGTH_LONG,
+              details: '$e',
+            );
+          } finally {
+            // 与原流程「finally 删暂存」对齐；只删这一个文件，不按持久化路径删目录。
+            try {
+              if (partial.existsSync()) partial.deleteSync();
+            } on FileSystemException catch (e) {
+              debugPrint('[DictionaryDownload] cleanup ${partial.path}: $e');
+            }
+          }
+        }
+        return outcome;
+      },
+    );
   }
 
   /// [CancelToken] 取消导致的失败**不是错误**，调用方据此把它与真失败分开计数、
   /// 分开提示。（dio 5.1 的类型名还是 `DioError`；仓库其余下载路径同样用它。）
   static bool isCancellation(Object error) =>
       error is DioError && error.type == DioErrorType.cancel;
+
+  /// 把当前进度同步到保活通知。只在任务进行中上报（收尾时的复位不算）；
+  /// 节流 / 去重在 [DownloadKeepAlive] 实现里做。导入阶段没有可信进度
+  /// （[progress] 停在下载结束时的值），一律报不确定。
+  void _reportKeepAlive() {
+    if (!isBusy) return;
+    final double ratio = progress.value;
+    final int? percent =
+        phase.value == DictionaryDownloadPhase.downloading && ratio > 0
+        ? (ratio.clamp(0.0, 1.0) * 100).floor()
+        : null;
+    unawaited(
+      _keepAlive.update(
+        title: t.dict_keep_alive_title,
+        text: message.value,
+        percent: percent,
+      ),
+    );
+  }
 
   void _setPhase(DictionaryDownloadPhase next) {
     cancellable.value =
@@ -221,6 +369,9 @@ class DictionaryDownloadController {
   }
 
   void dispose() {
+    phase.removeListener(_reportKeepAlive);
+    message.removeListener(_reportKeepAlive);
+    progress.removeListener(_reportKeepAlive);
     phase.dispose();
     message.dispose();
     detail.dispose();

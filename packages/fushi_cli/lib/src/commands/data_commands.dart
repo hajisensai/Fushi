@@ -2,10 +2,9 @@ import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
 
 import '../ctl_commands.dart';
-import 'settings_ops_commands.dart'
-    show plexLoginCommands, syncCompareCommands;
+import 'settings_ops_commands.dart' show plexLoginCommands, syncCompareCommands;
 
-/// data 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_data_routes.dart`）：
+/// data 域命令（app 侧路由见 `fushi/lib/src/ops/ctl_data_routes.dart`）：
 /// 备份、云同步、下载中心、媒体服务器、互联对端、存储。
 const List<CtlCommandGroup> dataCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
@@ -155,6 +154,67 @@ const List<CtlCommandGroup> dataCommandGroups = <CtlCommandGroup>[
         usage: '<jobId>',
         configure: _configureDlRm,
         build: _dlRm,
+        render: _renderMessage,
+      ),
+    ],
+  ),
+  CtlCommandGroup(
+    name: 'sub',
+    summary: '视频下载订阅（同浏览 › 下载 › 订阅；新建用 aidl 或发现页）',
+    commands: <CtlCommandSpec>[
+      CtlCommandSpec(
+        name: 'ls',
+        summary: '列出订阅：启停、规则、上次检查与逐集计数',
+        build: _subLs,
+        render: _renderSubLs,
+      ),
+      CtlCommandSpec(
+        name: 'get',
+        summary: '查看一条订阅（含版本规则与目标库）',
+        usage: '<subscriptionId>',
+        build: _subGet,
+      ),
+      CtlCommandSpec(
+        name: 'items',
+        summary: '一条订阅的逐集历史（发现 / 排队 / 已处理 / 跳过 / 失败）',
+        usage: '<subscriptionId>',
+        build: _subItems,
+        render: _renderSubItems,
+      ),
+      CtlCommandSpec(
+        name: 'check',
+        summary: '立即检查：给 id 只查这一条，不给 = 全部检查（所有启用的订阅）',
+        usage: '[<subscriptionId>]',
+        build: _subCheck,
+      ),
+      CtlCommandSpec(
+        name: 'enable',
+        summary: '启用订阅（立即排一轮检查）',
+        usage: '<subscriptionId>',
+        build: _subEnable,
+        render: _renderSubOne,
+      ),
+      CtlCommandSpec(
+        name: 'disable',
+        summary: '停用订阅（不再检查新集；已派出的任务不动）',
+        usage: '<subscriptionId>',
+        build: _subDisable,
+        render: _renderSubOne,
+      ),
+      CtlCommandSpec(
+        name: 'edit',
+        summary: '编辑订阅（同订阅卡「编辑」：只改给出的项，逐集历史保留）',
+        usage: '<subscriptionId>',
+        configure: _configureSubEdit,
+        build: _subEdit,
+        render: _renderSubOne,
+      ),
+      CtlCommandSpec(
+        name: 'rm',
+        summary: '删除订阅（只删订阅与逐集历史，已下载的任务与文件不动）',
+        usage: '<subscriptionId>',
+        configure: _configureYes,
+        build: _subRm,
         render: _renderMessage,
       ),
     ],
@@ -484,16 +544,36 @@ String _renderSyncLs(Object? data) {
     '',
     '可同步通道（sync run <通道>）：'
         '${channels.isEmpty ? '（无）' : channels.join('、')}',
-    '自动同步：${data['autoSync'] == true ? '开' : '关'}'
+    // 云备份通道总开关；旧 app 不带此字段：不显示。
+    '${data.containsKey('cloudEnabled') ? '云备份：${data['cloudEnabled'] == true ? '开' : '关'}  ' : ''}'
+        '云同步自动同步：${data['autoSync'] == true ? '开' : '关'}'
         '  互联同步：${data['interconnectEnabled'] == true ? '开' : '关'}'
+        // 旧 app 不带此字段：不显示，免得把「不知道」说成「关」。
+        '${data.containsKey('interconnectAutoSync') ? '  互联自动同步：${data['interconnectAutoSync'] == true ? '开' : '关'}' : ''}'
         '  正在同步：${data['running'] == true ? '是' : '否'}',
     if (last is Map) '上次全量同步：${last['reason']}（${last['channelsRun']} 条通道）',
   ].join('\n');
 }
 
 void _configureSyncRun(ArgParser parser) {
-  parser.addFlag('wait', negatable: false, help: '等同步跑完再返回结果');
+  parser
+    ..addFlag('wait', negatable: false, help: '等同步跑完再返回结果')
+    ..addOption(
+      'conflicts',
+      allowed: kSyncConflictPolicies,
+      help:
+          '同步中途的冲突不弹窗、按策略裁决：keep-local（保留本机）| keep-remote（采用对端）| '
+          'newest（较新的一侧）| ask（不裁决，返回冲突清单，隐含 --wait）；缺省在 app 里弹窗',
+    );
 }
+
+/// `sync run --conflicts` 的取值（app 侧 `SyncConflictPolicy.wire`）。
+const List<String> kSyncConflictPolicies = <String>[
+  'keep-local',
+  'keep-remote',
+  'newest',
+  'ask',
+];
 
 /// 同步通道名（app 侧 `SyncAssetChannelScope` 的取值；`sync ls` 列出本机已启用的）。
 const List<String> _syncChannelNames = <String>['cloud', 'interconnect'];
@@ -517,14 +597,37 @@ CtlRequestSpec _syncRun(CtlCommandContext c) {
     body: <String, Object?>{
       if (channels.isNotEmpty) 'channels': channels.toSet().toList(),
       if (c.flag('wait')) 'wait': true,
+      if (c.option('conflicts') != null) 'conflicts': c.option('conflicts'),
     },
   );
 }
 
 String _renderSyncRun(Object? data) {
   if (data is! Map) return renderCtlJson(data);
-  if (data['started'] == true) return '已开始同步（进度与结果在 app 里显示；sync ls 查看状态）';
-  return '同步结束：${data['outcome']}';
+  if (data['started'] == true) {
+    return data['conflictPolicy'] == null
+        ? '已开始同步（进度与结果在 app 里显示；sync ls 查看状态）'
+        : '已开始同步，冲突按 ${data['conflictPolicy']} 裁决（sync ls 查看状态）';
+  }
+  final Object? conflicts = data['conflicts'];
+  if (conflicts is! Map) return '同步结束：${data['outcome']}';
+  String rows(Object? list) => renderCtlTable(list, const <(String, String)>[
+    ('类型', 'type'),
+    ('标题', 'title'),
+    ('保留', 'kept'),
+    ('本机更新', 'localUpdatedAt'),
+    ('对端更新', 'remoteUpdatedAt'),
+    ('原因', 'error'),
+  ], empty: '（无）');
+  final Object? unresolved = conflicts['unresolved'];
+  final bool pending = unresolved is List && unresolved.isNotEmpty;
+  return <String>[
+    '同步结束：${data['outcome']}（冲突策略 ${conflicts['policy']}）',
+    '已裁决的冲突：\n${rows(conflicts['resolved'])}',
+    if (pending)
+      '未解决的冲突（下一轮同步仍会报；可 sync run --conflicts keep-local|keep-remote|newest 重跑）：\n'
+          '${rows(unresolved)}',
+  ].join('\n');
 }
 
 // ── dl ───────────────────────────────────────────────────────────────
@@ -810,6 +913,163 @@ CtlRequestSpec _dlRm(CtlCommandContext c) {
       if (c.flag('delete-files')) 'deleteFiles': 'true',
       ..._deviceQuery(c),
     },
+  );
+}
+
+// ── sub ──────────────────────────────────────────────────────────────
+
+CtlRequestSpec _subLs(CtlCommandContext c) =>
+    const CtlRequestSpec.get('/api/admin/subscriptions');
+
+/// 订阅 id 路径段。路径一律在调用处写全字面量（不拼后缀），覆盖守卫才认得出每条请求。
+String _subId(CtlCommandContext c) => _seg(c.positional(0, 'subscriptionId'));
+
+String _renderSubLs(Object? data) {
+  final Object? rows = data is Map ? data['subscriptions'] : null;
+  final String table = renderCtlTable(
+    <String, Object?>{
+      'subscriptions': <Object?>[
+        if (rows is List)
+          for (final Object? row in rows)
+            if (row is Map)
+              <String, Object?>{
+                ...row.cast<String, Object?>(),
+                'state': _subState(row),
+              },
+      ],
+    },
+    _subColumns,
+    listKey: 'subscriptions',
+    empty: '（没有订阅）',
+  );
+  if (data is Map && data['supported'] == false) {
+    return '本机下载后端未就绪（订阅不会被检查）\n$table';
+  }
+  return table;
+}
+
+const List<(String, String)> _subColumns = <(String, String)>[
+  ('订阅', 'subscriptionId'),
+  ('标题', 'title'),
+  ('模式', 'mode'),
+  ('状态', 'state'),
+  ('起始集之后', 'startAfterEpisode'),
+];
+
+/// 启停 + 完成 / 最近错误，一列看清这条订阅现在在不在干活。
+String _subState(Map<Object?, Object?> row) {
+  if (row['fulfilledAt'] != null) return '已完成';
+  if (row['enabled'] != true) return '已停用';
+  final Object? error = row['lastError'];
+  return error is String && error.isNotEmpty ? '出错：$error' : '启用';
+}
+
+String _renderSubOne(Object? data) {
+  if (data is Map && data['subscriptionId'] != null) {
+    return '${data['subscriptionId']}（${data['title']}）：${_subState(data)}';
+  }
+  return _renderMessage(data);
+}
+
+CtlRequestSpec _subGet(CtlCommandContext c) =>
+    CtlRequestSpec.get('/api/admin/subscriptions/${_subId(c)}');
+
+CtlRequestSpec _subItems(CtlCommandContext c) =>
+    CtlRequestSpec.get('/api/admin/subscriptions/${_subId(c)}/items');
+
+String _renderSubItems(Object? data) => renderCtlTable(
+  data,
+  const <(String, String)>[
+    ('季', 'season'),
+    ('集', 'episode'),
+    ('状态', 'status'),
+    ('任务', 'jobId'),
+    ('标题', 'title'),
+  ],
+  listKey: 'items',
+  empty: '（还没有发现过任何一集）',
+);
+
+CtlRequestSpec _subCheck(CtlCommandContext c) {
+  final String? id = c.optionalPositional(0);
+  return CtlRequestSpec.post(
+    id == null
+        ? '/api/admin/subscriptions/check'
+        : '/api/admin/subscriptions/${_seg(id)}/check',
+  );
+}
+
+CtlRequestSpec _subEnable(CtlCommandContext c) => CtlRequestSpec.post(
+  '/api/admin/subscriptions/${_subId(c)}/enable',
+  body: const <String, Object?>{'enabled': true},
+);
+
+CtlRequestSpec _subDisable(CtlCommandContext c) => CtlRequestSpec.post(
+  '/api/admin/subscriptions/${_subId(c)}/enable',
+  body: const <String, Object?>{'enabled': false},
+);
+
+void _configureSubEdit(ArgParser parser) {
+  parser
+    ..addOption('query', help: '搜索词')
+    ..addOption('start-after', help: '只下这一集之后的（整数）；none = 清掉，从头下')
+    ..addOption(
+      'subtitles',
+      allowed: <String>['none', 'bestEffort', 'required'],
+      help: '字幕策略',
+    )
+    ..addOption('source', help: '目标库（受管视频来源 id，dl targets 查看）')
+    ..addMultiOption('group', help: '字幕组（可重复 / 逗号分隔；给空串 = 去掉这条规则）')
+    ..addMultiOption('resolution', help: '分辨率，如 1080p（同上）')
+    ..addMultiOption('include', help: '标题必须包含（同上）')
+    ..addMultiOption('exclude', help: '标题不得包含（同上）');
+}
+
+CtlRequestSpec _subEdit(CtlCommandContext c) {
+  final Map<String, Object?> body = <String, Object?>{};
+  if (c.option('query') != null) body['searchQuery'] = c.option('query');
+  final String? startAfter = c.option('start-after');
+  if (startAfter != null) {
+    body['startAfterEpisode'] = startAfter.trim().toLowerCase() == 'none'
+        ? null
+        : int.tryParse(startAfter.trim()) ??
+              (throw CtlUsageError('--start-after 只认整数或 none：$startAfter'));
+  }
+  if (c.option('subtitles') != null) {
+    body['subtitlePolicy'] = c.option('subtitles');
+  }
+  if (c.intOption('source') != null) body['source'] = c.intOption('source');
+  for (final (String flag, String key) in const <(String, String)>[
+    ('group', 'releaseGroups'),
+    ('resolution', 'resolutions'),
+    ('include', 'titleIncludes'),
+    ('exclude', 'titleExcludes'),
+  ]) {
+    if (c.args.wasParsed(flag)) {
+      body[key] = <String>[
+        for (final String v in c.multiOption(flag))
+          if (v.trim().isNotEmpty) v.trim(),
+      ];
+    }
+  }
+  if (body.isEmpty) {
+    throw const CtlUsageError(
+      '没有要改的项（--query / --start-after / --subtitles / --source / '
+      '--group / --resolution / --include / --exclude）',
+    );
+  }
+  return CtlRequestSpec.put(
+    '/api/admin/subscriptions/${_subId(c)}',
+    body: body,
+  );
+}
+
+CtlRequestSpec _subRm(CtlCommandContext c) {
+  final String path = '/api/admin/subscriptions/${_subId(c)}';
+  _requireYes(c, '删除订阅');
+  return CtlRequestSpec.delete(
+    path,
+    query: const <String, String>{'confirm': 'true'},
   );
 }
 

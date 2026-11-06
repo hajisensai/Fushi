@@ -110,31 +110,6 @@ PODS:
   - sqflite (0.0.3):
     - Flutter
     - FlutterMacOS
-  - sqlite3 (3.52.0):
-    - sqlite3/common (= 3.52.0)
-  - sqlite3/common (3.52.0)
-  - sqlite3/dbstatvtab (3.52.0):
-    - sqlite3/common
-  - sqlite3/fts5 (3.52.0):
-    - sqlite3/common
-  - sqlite3/math (3.52.0):
-    - sqlite3/common
-  - sqlite3/perf-threadsafe (3.52.0):
-    - sqlite3/common
-  - sqlite3/rtree (3.52.0):
-    - sqlite3/common
-  - sqlite3/session (3.52.0):
-    - sqlite3/common
-  - sqlite3_flutter_libs (0.0.1):
-    - Flutter
-    - FlutterMacOS
-    - sqlite3 (~> 3.52.0)
-    - sqlite3/dbstatvtab
-    - sqlite3/fts5
-    - sqlite3/math
-    - sqlite3/perf-threadsafe
-    - sqlite3/rtree
-    - sqlite3/session
   - url_launcher_macos (0.0.1):
     - FlutterMacOS
   - wakelock_plus (0.0.1):
@@ -173,7 +148,6 @@ DEPENDENCIES:
   - share_plus (from `Flutter/ephemeral/.symlinks/plugins/share_plus/macos`)
   - shared_preferences_foundation (from `Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin`)
   - sqflite (from `Flutter/ephemeral/.symlinks/plugins/sqflite/darwin`)
-  - sqlite3_flutter_libs (from `Flutter/ephemeral/.symlinks/plugins/sqlite3_flutter_libs/darwin`)
   - url_launcher_macos (from `Flutter/ephemeral/.symlinks/plugins/url_launcher_macos/macos`)
   - wakelock_plus (from `Flutter/ephemeral/.symlinks/plugins/wakelock_plus/macos`)
   - window_manager (from `Flutter/ephemeral/.symlinks/plugins/window_manager/macos`)
@@ -191,7 +165,6 @@ SPEC REPOS:
     - onnxruntime-objc
     - OrderedSet
     - PromisesObjC
-    - sqlite3
     - ZIPFoundation
 
 EXTERNAL SOURCES:
@@ -253,8 +226,6 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin
   sqflite:
     :path: Flutter/ephemeral/.symlinks/plugins/sqflite/darwin
-  sqlite3_flutter_libs:
-    :path: Flutter/ephemeral/.symlinks/plugins/sqlite3_flutter_libs/darwin
   url_launcher_macos:
     :path: Flutter/ephemeral/.symlinks/plugins/url_launcher_macos/macos
   wakelock_plus:
@@ -303,8 +274,6 @@ SPEC CHECKSUMS:
   share_plus: 3c787998077d6b31e839225a282e9e27edf99274
   shared_preferences_foundation: 9e1978ff2562383bd5676f64ec4e9aa8fa06a6f7
   sqflite: c35dad70033b8862124f8337cc994a809fcd9fa3
-  sqlite3: a51c07cf16e023d6c48abd5e5791a61a47354921
-  sqlite3_flutter_libs: b3e120efe9a82017e5552a620f696589ed4f62ab
   url_launcher_macos: be8b6bbc62bb3bd5befb226f3345dd434a91802f
   wakelock_plus: 21ddc249ac4b8d018838dbdabd65c5976c308497
   window_manager: b729e31d38fb04905235df9ea896128991cad99e

@@ -43,18 +43,29 @@ void main() {
   test('存量库：旧键 sync_stats_enabled=false + 新键缺失 → 互联侧必须解析成 false', () async {
     // 存量用户当年在设置页把「同步统计」关掉了；互联那两个新键那时还不存在。
     await repo.setSyncStatsEnabled(false);
-    expect(await db.getPref('interconnect_sync_stats'), isNull,
-        reason: '前提：新键真的没有行，走的就是升级后的第一次读');
+    expect(
+      await db.getPref('interconnect_sync_stats'),
+      isNull,
+      reason: '前提：新键真的没有行，走的就是升级后的第一次读',
+    );
     expect(await db.getPref('interconnect_sync_favorites'), isNull);
 
-    expect(await repo.isInterconnectSyncStatsEnabled(), isFalse,
-        reason: '关过「同步统计」的存量用户升级后不得被默认值复位成「又在同步」');
-    expect(await repo.isInterconnectSyncFavoritesEnabled(), isFalse,
-        reason: '收藏词/收藏句拆开关前也归 sync_stats_enabled 管，同样继承');
+    expect(
+      await repo.isInterconnectSyncStatsEnabled(),
+      isFalse,
+      reason: '关过「同步统计」的存量用户升级后不得被默认值复位成「又在同步」',
+    );
+    expect(
+      await repo.isInterconnectSyncFavoritesEnabled(),
+      isFalse,
+      reason: '收藏词/收藏句拆开关前也归 sync_stats_enabled 管，同样继承',
+    );
 
     // 真正的消费方（互联通道的分资产门控）也必须看到 false，否则 sweep 照传不误。
-    final ChannelSyncFlags ic =
-        await resolveChannelSyncFlags(repo, isInterconnect: true);
+    final ChannelSyncFlags ic = await resolveChannelSyncFlags(
+      repo,
+      isInterconnect: true,
+    );
     expect(ic.syncStats, isFalse);
     expect(ic.syncFavorites, isFalse);
   });
@@ -69,10 +80,16 @@ void main() {
     await repo.setSyncStatsEnabled(false);
     await repo.setInterconnectSyncStatsEnabled(true);
 
-    expect(await repo.isInterconnectSyncStatsEnabled(), isTrue,
-        reason: '用户真的动过新开关，继承逻辑必须让位');
-    expect(await repo.isInterconnectSyncFavoritesEnabled(), isFalse,
-        reason: '另一族没被动过，仍继承旧键');
+    expect(
+      await repo.isInterconnectSyncStatsEnabled(),
+      isTrue,
+      reason: '用户真的动过新开关，继承逻辑必须让位',
+    );
+    expect(
+      await repo.isInterconnectSyncFavoritesEnabled(),
+      isFalse,
+      reason: '另一族没被动过，仍继承旧键',
+    );
     expect(await repo.isSyncStatsEnabled(), isFalse, reason: '互联侧的选择不得回写云备份开关');
   });
 
@@ -81,10 +98,14 @@ void main() {
     await repo.setInterconnectSyncStatsEnabled(false);
     await repo.setInterconnectSyncFavoritesEnabled(false);
 
-    final ChannelSyncFlags ic =
-        await resolveChannelSyncFlags(repo, isInterconnect: true);
-    final ChannelSyncFlags cloud =
-        await resolveChannelSyncFlags(repo, isInterconnect: false);
+    final ChannelSyncFlags ic = await resolveChannelSyncFlags(
+      repo,
+      isInterconnect: true,
+    );
+    final ChannelSyncFlags cloud = await resolveChannelSyncFlags(
+      repo,
+      isInterconnect: false,
+    );
     expect(ic.syncStats, isFalse);
     expect(ic.syncFavorites, isFalse);
     expect(cloud.syncStats, isTrue, reason: '云通道读自己的键，不受互联开关影响');

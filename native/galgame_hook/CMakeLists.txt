@@ -46,6 +46,7 @@ add_library(fushi_voice_hook SHARED
   "hook/tracked_handle_table.h"
   "hook/geometry_provider_registry.h"
   "hook/lookup_v19_runtime.h"
+  "hook/lookup_hover_highlight_state.h"
   "hook/generic_input_shield.inc"
   "hook/overlay_cursor_guard.h"
   "hook/overlay_cursor_guard.inc"
@@ -114,6 +115,14 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/kogado_hy_lookup.inc"
   "hook/adapters/kogado_hy_profile.h"
   "hook/adapters/kogado_hy_text.inc"
+  "hook/adapters/knife_adapter.inc"
+  "hook/adapters/knife_core.h"
+  "hook/adapters/knife_profile.h"
+  "hook/adapters/softpal_adapter.inc"
+  "hook/adapters/softpal_core.h"
+  "hook/adapters/softpal_lookup.inc"
+  "hook/adapters/softpal_profile.h"
+  "hook/adapters/softpal_text.inc"
   "hook/adapters/fvp_adapter.inc"
   "hook/adapters/fvp_profile.h"
   "hook/adapters/fvp_lookup.inc"
@@ -149,6 +158,7 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/sgre_profile.h"
   "include/sgre_family.h"
   "hook/adapters/sgre_voice_archive.h"
+  "hook/adapters/sgre_voice_binding.h"
   "hook/adapters/leaf_aquaplus_profile.h"
   "hook/adapters/leaf_aquaplus_lookup.h"
   "hook/adapters/leaf_aquaplus_voice_archive.h"
@@ -325,6 +335,18 @@ if(MSVC)
   target_compile_options(fushi_siglus_legacy_owner_test PRIVATE /W4 /WX)
 endif()
 add_test(NAME fushi_siglus_legacy_owner_test COMMAND fushi_siglus_legacy_owner_test)
+add_executable(fushi_siglus_ninearg_family_test "tests/siglus_ninearg_family_test.cpp")
+target_include_directories(fushi_siglus_ninearg_family_test PRIVATE "hook/adapters")
+if(MSVC)
+  target_compile_options(fushi_siglus_ninearg_family_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_ninearg_family_test COMMAND fushi_siglus_ninearg_family_test)
+add_executable(fushi_siglus_ninearg_runtime_test "tests/siglus_ninearg_runtime_test.cpp")
+target_include_directories(fushi_siglus_ninearg_runtime_test PRIVATE "hook/adapters")
+if(MSVC)
+  target_compile_options(fushi_siglus_ninearg_runtime_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_ninearg_runtime_test COMMAND fushi_siglus_ninearg_runtime_test)
 if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 4)
   add_executable(fushi_siglus_glyph_abi_test "tests/siglus_glyph_abi_test.cpp")
   target_compile_options(fushi_siglus_glyph_abi_test PRIVATE /O2 /W4 /WX)
@@ -811,6 +833,13 @@ target_compile_definitions(fushi_unity_text_mesh_reassembler_test
 add_test(NAME fushi_unity_text_mesh_reassembler_test
   COMMAND fushi_unity_text_mesh_reassembler_test)
 
+add_executable(fushi_immediate_text_repeat_filter_test
+  tests/immediate_text_repeat_filter_test.cpp)
+target_include_directories(fushi_immediate_text_repeat_filter_test
+  PRIVATE include)
+add_test(NAME fushi_immediate_text_repeat_filter_test
+  COMMAND fushi_immediate_text_repeat_filter_test)
+
 add_executable(fushi_adapter_contract_test tests/adapter_contract_test.cpp)
 # v19 起 adapter.h 依赖 IPC 头（LookupAdmissionReport 是 adapter 契约的一部分：
 # adapter 要回答"本引擎的查词准入结论"，而那个结论的类型定义在跨进程契约里）。
@@ -1225,3 +1254,15 @@ add_executable(fushi_luca_x64_lookup_test "tests/luca_x64_lookup_test.cpp")
 target_include_directories(fushi_luca_x64_lookup_test PRIVATE "hook" "hook/adapters")
 target_compile_definitions(fushi_luca_x64_lookup_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_luca_x64_lookup_test COMMAND fushi_luca_x64_lookup_test)
+add_executable(fushi_knife_adapter_test "tests/knife_adapter_test.cpp")
+target_include_directories(fushi_knife_adapter_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_knife_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_knife_adapter_test COMMAND fushi_knife_adapter_test)
+add_executable(fushi_softpal_adapter_test "tests/softpal_adapter_test.cpp")
+target_include_directories(fushi_softpal_adapter_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_softpal_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_softpal_adapter_test COMMAND fushi_softpal_adapter_test)
+add_executable(fushi_lookup_hover_highlight_state_test "tests/lookup_hover_highlight_state_test.cpp")
+target_include_directories(fushi_lookup_hover_highlight_state_test PRIVATE "hook")
+target_compile_definitions(fushi_lookup_hover_highlight_state_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_lookup_hover_highlight_state_test COMMAND fushi_lookup_hover_highlight_state_test)

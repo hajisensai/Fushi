@@ -11,7 +11,6 @@
 library;
 
 import 'package:fushi_anki/fushi_anki.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 /// 把除构造外的一切转给 [inner] 的 Anki 仓库。子类覆盖 [mineEntry] 等需要
 /// 附加行为的方法。
@@ -31,8 +30,11 @@ abstract class DelegatingAnkiRepository extends BaseAnkiRepository {
   }) => inner.mineEntry(rawPayloadJson: rawPayloadJson, context: context);
 
   @override
-  Future<String?> readSettingsJson(SharedPreferences prefs) =>
-      inner.readSettingsJson(prefs);
+  AnkiSettingsStore get settingsStore => inner.settingsStore;
+
+  @override
+  Future<String?> readSettingsJson(AnkiSettingsStore store) =>
+      inner.readSettingsJson(store);
 
   @override
   Future<AnkiSettings> loadSettings() => inner.loadSettings();
@@ -76,6 +78,12 @@ abstract class DelegatingAnkiRepository extends BaseAnkiRepository {
 
   @override
   Future<bool> openNoteInAnki(int noteId) => inner.openNoteInAnki(noteId);
+
+  @override
+  MinedNoteHome get minedNoteHome => inner.minedNoteHome;
+
+  @override
+  bool get canOpenMinedNote => inner.canOpenMinedNote;
 
   @override
   Future<Map<String, String>> prepareSourceNoteFields({
@@ -130,6 +138,12 @@ abstract class DelegatingAnkiRepository extends BaseAnkiRepository {
 
   @override
   bool get switchesAppPerNote => inner.switchesAppPerNote;
+
+  @override
+  bool get canDeleteMinedNotes => inner.canDeleteMinedNotes;
+
+  @override
+  Future<bool> deleteMinedNote(int noteId) => inner.deleteMinedNote(noteId);
 
   @override
   Future<bool> forgetMinedCard(String expression) =>
@@ -189,8 +203,22 @@ abstract class DelegatingAnkiRepository extends BaseAnkiRepository {
   bool get supportsDeckReposition => inner.supportsDeckReposition;
 
   @override
+  Future<bool> probeDeckReposition() => inner.probeDeckReposition();
+
+  @override
+  bool get supportsAutoReposition => inner.supportsAutoReposition;
+
+  @override
   Future<List<AnkiCardInfo>> listNewCards(String deckName) =>
       inner.listNewCards(deckName);
+
+  @override
+  Future<Set<int>> newCardIdsIn(String deckName) =>
+      inner.newCardIdsIn(deckName);
+
+  @override
+  List<int> assignNewCardPositions(List<AnkiCardInfo> ordered) =>
+      inner.assignNewCardPositions(ordered);
 
   @override
   Future<AnkiCardDueWriteResult> setNewCardPositions(

@@ -145,11 +145,11 @@ class VideoMetadataHttpClient {
     this.defaultCacheTtl = const Duration(minutes: 30),
     VideoMetadataRetrySleep? sleep,
     VideoMetadataNow? now,
-  })  : assert(maxAttempts > 0),
-        _client = client ?? createAppHttpIoClient(),
-        _ownsClient = client == null,
-        _sleep = sleep ?? Future<void>.delayed,
-        _now = now ?? DateTime.now;
+  }) : assert(maxAttempts > 0),
+       _client = client ?? createAppHttpIoClient(),
+       _ownsClient = client == null,
+       _sleep = sleep ?? Future<void>.delayed,
+       _now = now ?? DateTime.now;
 
   final http.Client _client;
   final bool _ownsClient;
@@ -229,10 +229,12 @@ class VideoMetadataHttpClient {
         final bool retryableStatus =
             response.statusCode == 429 || response.statusCode >= 500;
         if (retryableStatus && attempt < maxAttempts) {
-          await _sleep(_boundedRetryDelay(
-            retryAfter ?? baseBackoff * attempt,
-            maxRetryDelay,
-          ));
+          await _sleep(
+            _boundedRetryDelay(
+              retryAfter ?? baseBackoff * attempt,
+              maxRetryDelay,
+            ),
+          );
           continue;
         }
         if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -263,32 +265,29 @@ class VideoMetadataHttpClient {
                 error.statusCode! < 500)) {
           Error.throwWithStackTrace(error, stack);
         }
-        await _sleep(_boundedRetryDelay(
-          error.retryAfter ?? baseBackoff * attempt,
-          maxRetryDelay,
-        ));
+        await _sleep(
+          _boundedRetryDelay(
+            error.retryAfter ?? baseBackoff * attempt,
+            maxRetryDelay,
+          ),
+        );
       } on TimeoutException catch (error, stack) {
         lastError = VideoMetadataNetworkException('$operation timed out');
         lastStack = stack;
         if (attempt >= maxAttempts) break;
-        await _sleep(_boundedRetryDelay(
-          baseBackoff * attempt,
-          maxRetryDelay,
-        ));
+        await _sleep(_boundedRetryDelay(baseBackoff * attempt, maxRetryDelay));
       } catch (error, stack) {
         lastError = VideoMetadataNetworkException(
           '$operation request failed: ${error.runtimeType}',
         );
         lastStack = stack;
         if (attempt >= maxAttempts) break;
-        await _sleep(_boundedRetryDelay(
-          baseBackoff * attempt,
-          maxRetryDelay,
-        ));
+        await _sleep(_boundedRetryDelay(baseBackoff * attempt, maxRetryDelay));
       }
     }
 
-    final Object error = lastError ??
+    final Object error =
+        lastError ??
         VideoMetadataNetworkException('$operation failed without a response');
     Error.throwWithStackTrace(error, lastStack ?? StackTrace.current);
   }

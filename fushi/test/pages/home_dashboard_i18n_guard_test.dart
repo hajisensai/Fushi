@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2966 守卫：首页（dashboard + 展示件 + 更新横幅）用到的每个 i18n key，
 /// 在每种非英文语言里都必须有真译文，不能是英文原值占位。
@@ -24,6 +24,12 @@ const Map<String, Set<String>> _allowSameAsEnglish = <String, Set<String>>{
   'pt-BR': <String>{'leaderboard_title'},
   // 法语「$n sessions」「Collections」与英文同形（收藏夹入口 2026-10-14 移到首页）。
   'fr': <String>{'home_session_count', 'collections'},
+};
+
+/// 所有语言都与英文同形的 key（专名 / 缩写），不逐语言列。
+const Set<String> _allowSameAsEnglishEverywhere = <String>{
+  // 模块专名 SRS，所有语言统一用缩写（PR #2386）。
+  'nav_srs',
 };
 
 const List<String> _sources = <String>[
@@ -72,6 +78,7 @@ void main() {
         if (enValue is! String || !RegExp('[A-Za-z]{3}').hasMatch(enValue)) {
           continue;
         }
+        if (_allowSameAsEnglishEverywhere.contains(key)) continue;
         if (_allowSameAsEnglish[locale]?.contains(key) ?? false) continue;
         if (values[key] == enValue) untranslated.add('$locale:$key');
       }

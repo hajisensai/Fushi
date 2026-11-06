@@ -17,12 +17,15 @@ void main() {
   final String swift = maskComments(
     File('apple/FushiSpeechTranscriber.swift').readAsStringSync(),
   );
-  final String dart =
-      File('lib/src/asr_host/apple_speech_channel.dart').readAsStringSync();
-  final String iosDelegate =
-      File('ios/Runner/AppDelegate.swift').readAsStringSync();
-  final String macosDelegate =
-      File('macos/Runner/AppDelegate.swift').readAsStringSync();
+  final String dart = File(
+    'lib/src/asr_host/apple_speech_channel.dart',
+  ).readAsStringSync();
+  final String iosDelegate = File(
+    'ios/Runner/AppDelegate.swift',
+  ).readAsStringSync();
+  final String macosDelegate = File(
+    'macos/Runner/AppDelegate.swift',
+  ).readAsStringSync();
 
   test('channel 名与 Dart 侧常量逐字一致', () {
     // 按 token 匹配而不是逐字：dart format（tall 风格）会把实参折行并补尾逗号。
@@ -40,10 +43,7 @@ void main() {
       iosDelegate,
       contains('FushiSpeechTranscriber.register(binaryMessenger:'),
     );
-    expect(
-      macosDelegate,
-      contains('FushiSpeechTranscriber.register('),
-    );
+    expect(macosDelegate, contains('FushiSpeechTranscriber.register('));
   });
 
   test('两个 Xcode 工程都登记了这份 Swift（四处齐全）', () {
@@ -100,11 +100,7 @@ void main() {
       'prepare',
       'transcribe',
     ]) {
-      expect(
-        fallback,
-        contains(fn),
-        reason: '老 Xcode 分支缺 $fn，那边会编不过',
-      );
+      expect(fallback, contains(fn), reason: '老 Xcode 分支缺 $fn，那边会编不过');
     }
     // 老分支必须回「不支持」，不能假装能跑。
     expect(fallback, contains('unsupported('));
@@ -139,7 +135,9 @@ void main() {
 
   test('整份文件一次喂进去（finishAfterFile），不是麦克风流', () {
     expect(
-        swift, contains('start(inputAudioFile: file, finishAfterFile: true)'));
+      swift,
+      contains('start(inputAudioFile: file, finishAfterFile: true)'),
+    );
     expect(swift, contains('finalizeAndFinishThroughEndOfInput()'));
     expect(swift, contains('AVAudioFile(forReading:'));
   });

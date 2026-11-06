@@ -15,11 +15,10 @@ import app.fushi.reader.constants.PreferenceKeys;
  * 是把该语言排到前面，也可能忽略。这是应用侧的上限，不是实现没做到位。
  *
  * <p>Flutter 的 {@code TextField} 有 {@code hintLocales} 参数，所以 Flutter 查词页面
- * 直接传就行；但悬浮词典（{@link FloatingDictService}）和弹窗词典
- * （{@code PopupDictActivity}）的搜索框是**原生 EditText**，吃不到那个参数，只能从
- * 这里读用户选的语言。
+ * 直接传就行；但悬浮词典（{@link FloatingDictService}）的搜索框是**原生 EditText**，
+ * 吃不到那个参数，只能从这里读用户选的语言。
  *
- * <p>之所以经 SharedPreferences 而不是 Intent extra：这两个 surface 都可能在任何
+ * <p>之所以经 SharedPreferences 而不是 Intent extra：悬浮词典可能在任何
  * Flutter 查词页面打开之前就被拉起（通知栏磁贴、系统 PROCESS_TEXT、剪贴板监听），
  * 那时没有活着的 Dart 侧可问。
  */

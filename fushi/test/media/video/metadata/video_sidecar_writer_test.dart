@@ -73,10 +73,9 @@ void main() {
 
   test('missingOnly 新文件经同目录临时文件写入并记录 SHA-256', () async {
     final String target = p.join(source.path, 'movie.nfo');
-    final SidecarWriteResult result = await writer.write(SidecarWriteRequest(
-      targetPath: target,
-      bytes: bytes('<movie/>'),
-    ));
+    final SidecarWriteResult result = await writer.write(
+      SidecarWriteRequest(targetPath: target, bytes: bytes('<movie/>')),
+    );
 
     expect(result.status, SidecarWriteStatus.written);
     expect(await File(target).readAsString(), '<movie/>');
@@ -86,8 +85,10 @@ void main() {
     expect(
       await source
           .list()
-          .where((FileSystemEntity entity) =>
-              p.basename(entity.path).contains('.fushi-'))
+          .where(
+            (FileSystemEntity entity) =>
+                p.basename(entity.path).contains('.fushi-'),
+          )
           .toList(),
       isEmpty,
     );
@@ -95,23 +96,25 @@ void main() {
 
   test('skip 永不写入，missingOnly 保留现有第三方文件', () async {
     final String skipped = p.join(source.path, 'skip.nfo');
-    final SidecarWriteResult skipResult =
-        await writer.write(SidecarWriteRequest(
-      targetPath: skipped,
-      bytes: bytes('new'),
-      policy: SidecarWritePolicy.skip,
-    ));
+    final SidecarWriteResult skipResult = await writer.write(
+      SidecarWriteRequest(
+        targetPath: skipped,
+        bytes: bytes('new'),
+        policy: SidecarWritePolicy.skip,
+      ),
+    );
     expect(skipResult.status, SidecarWriteStatus.skippedByPolicy);
     expect(await File(skipped).exists(), isFalse);
 
     final String existing = p.join(source.path, 'existing.nfo');
     await File(existing).writeAsString('third-party');
-    final SidecarWriteResult missingOnly =
-        await writer.write(SidecarWriteRequest(
-      targetPath: existing,
-      bytes: bytes('new'),
-      policy: SidecarWritePolicy.missingOnly,
-    ));
+    final SidecarWriteResult missingOnly = await writer.write(
+      SidecarWriteRequest(
+        targetPath: existing,
+        bytes: bytes('new'),
+        policy: SidecarWritePolicy.missingOnly,
+      ),
+    );
     expect(missingOnly.status, SidecarWriteStatus.skippedExisting);
     expect(await File(existing).readAsString(), 'third-party');
     expect(store.records, isEmpty);
@@ -121,20 +124,24 @@ void main() {
     final String target = p.join(source.path, 'movie.nfo');
     await File(target).writeAsString('third-party');
 
-    final SidecarWriteResult protected = await writer.write(SidecarWriteRequest(
-      targetPath: target,
-      bytes: bytes('generated'),
-      policy: SidecarWritePolicy.overwrite,
-    ));
+    final SidecarWriteResult protected = await writer.write(
+      SidecarWriteRequest(
+        targetPath: target,
+        bytes: bytes('generated'),
+        policy: SidecarWritePolicy.overwrite,
+      ),
+    );
     expect(protected.status, SidecarWriteStatus.protectedExisting);
     expect(await File(target).readAsString(), 'third-party');
 
-    final SidecarWriteResult forced = await writer.write(SidecarWriteRequest(
-      targetPath: target,
-      bytes: bytes('generated'),
-      policy: SidecarWritePolicy.overwrite,
-      allowProtectedOverwrite: true,
-    ));
+    final SidecarWriteResult forced = await writer.write(
+      SidecarWriteRequest(
+        targetPath: target,
+        bytes: bytes('generated'),
+        policy: SidecarWritePolicy.overwrite,
+        allowProtectedOverwrite: true,
+      ),
+    );
     expect(forced.status, SidecarWriteStatus.written);
     expect(await File(target).readAsString(), 'generated');
     expect(store.records[target]?.sha256, hash('generated'));
@@ -150,11 +157,13 @@ void main() {
       writtenAt: DateTime.utc(2025),
     );
 
-    final SidecarWriteResult result = await writer.write(SidecarWriteRequest(
-      targetPath: target,
-      bytes: bytes('new'),
-      policy: SidecarWritePolicy.overwrite,
-    ));
+    final SidecarWriteResult result = await writer.write(
+      SidecarWriteRequest(
+        targetPath: target,
+        bytes: bytes('new'),
+        policy: SidecarWritePolicy.overwrite,
+      ),
+    );
     expect(result.status, SidecarWriteStatus.written);
     expect(await File(target).readAsString(), 'new');
     expect(store.records[target]?.sha256, hash('new'));
@@ -171,11 +180,13 @@ void main() {
       writtenAt: DateTime.utc(2025),
     );
 
-    final SidecarWriteResult result = await writer.write(SidecarWriteRequest(
-      targetPath: target,
-      bytes: bytes('new'),
-      policy: SidecarWritePolicy.overwrite,
-    ));
+    final SidecarWriteResult result = await writer.write(
+      SidecarWriteRequest(
+        targetPath: target,
+        bytes: bytes('new'),
+        policy: SidecarWritePolicy.overwrite,
+      ),
+    );
     expect(result.status, SidecarWriteStatus.protectedModified);
     expect(await File(target).readAsString(), 'user-edited');
   });
@@ -184,11 +195,13 @@ void main() {
     final String target = p.join(source.path, 'movie.nfo');
     await File(target).writeAsString('same');
 
-    final SidecarWriteResult result = await writer.write(SidecarWriteRequest(
-      targetPath: target,
-      bytes: bytes('same'),
-      policy: SidecarWritePolicy.overwrite,
-    ));
+    final SidecarWriteResult result = await writer.write(
+      SidecarWriteRequest(
+        targetPath: target,
+        bytes: bytes('same'),
+        policy: SidecarWritePolicy.overwrite,
+      ),
+    );
     expect(result.status, SidecarWriteStatus.unchanged);
     expect(store.records, isEmpty);
   });
@@ -199,31 +212,33 @@ void main() {
       '${p.basename(source.path)}-other',
       'movie.nfo',
     );
-    final SidecarWriteResult outside = await writer.write(SidecarWriteRequest(
-      targetPath: outsidePrefix,
-      bytes: bytes('x'),
-    ));
+    final SidecarWriteResult outside = await writer.write(
+      SidecarWriteRequest(targetPath: outsidePrefix, bytes: bytes('x')),
+    );
     expect(outside.status, SidecarWriteStatus.rejectedOutsideRoot);
 
-    final SidecarWriteResult skippedOutside =
-        await writer.write(SidecarWriteRequest(
-      targetPath: outsidePrefix,
-      bytes: bytes('x'),
-      policy: SidecarWritePolicy.skip,
-    ));
+    final SidecarWriteResult skippedOutside = await writer.write(
+      SidecarWriteRequest(
+        targetPath: outsidePrefix,
+        bytes: bytes('x'),
+        policy: SidecarWritePolicy.skip,
+      ),
+    );
     expect(skippedOutside.status, SidecarWriteStatus.skippedByPolicy);
 
-    final SidecarWriteResult missingParent =
-        await writer.write(SidecarWriteRequest(
-      targetPath: p.join(source.path, 'missing', 'movie.nfo'),
-      bytes: bytes('x'),
-    ));
+    final SidecarWriteResult missingParent = await writer.write(
+      SidecarWriteRequest(
+        targetPath: p.join(source.path, 'missing', 'movie.nfo'),
+        bytes: bytes('x'),
+      ),
+    );
     expect(missingParent.status, SidecarWriteStatus.rejectedInvalidTarget);
   });
 
   test('符号链接父目录若解析到来源外则拒绝写入', () async {
-    final Directory outside =
-        await Directory(p.join(temporary.path, 'outside')).create();
+    final Directory outside = await Directory(
+      p.join(temporary.path, 'outside'),
+    ).create();
     final Link link = Link(p.join(source.path, 'linked'));
     try {
       await link.create(outside.path);
@@ -234,10 +249,12 @@ void main() {
       return;
     }
 
-    final SidecarWriteResult result = await writer.write(SidecarWriteRequest(
-      targetPath: p.join(link.path, 'movie.nfo'),
-      bytes: bytes('x'),
-    ));
+    final SidecarWriteResult result = await writer.write(
+      SidecarWriteRequest(
+        targetPath: p.join(link.path, 'movie.nfo'),
+        bytes: bytes('x'),
+      ),
+    );
     expect(result.status, SidecarWriteStatus.rejectedSymbolicLink);
     expect(await File(p.join(outside.path, 'movie.nfo')).exists(), isFalse);
   });
@@ -253,12 +270,14 @@ void main() {
       return;
     }
 
-    final SidecarWriteResult result = await writer.write(SidecarWriteRequest(
-      targetPath: link.path,
-      bytes: bytes('x'),
-      policy: SidecarWritePolicy.overwrite,
-      allowProtectedOverwrite: true,
-    ));
+    final SidecarWriteResult result = await writer.write(
+      SidecarWriteRequest(
+        targetPath: link.path,
+        bytes: bytes('x'),
+        policy: SidecarWritePolicy.overwrite,
+        allowProtectedOverwrite: true,
+      ),
+    );
     expect(result.status, SidecarWriteStatus.rejectedSymbolicLink);
     expect(await outside.readAsString(), 'outside');
   });
@@ -266,15 +285,14 @@ void main() {
   test('artifact store 失败不回滚已成功文件，摘要单独计数', () async {
     store.failUpsert = true;
     final String target = p.join(source.path, 'movie.nfo');
-    final SidecarWriteSummary summary = await writer.writeAll(
-      <SidecarWriteRequest>[
-        SidecarWriteRequest(targetPath: target, bytes: bytes('x')),
-        SidecarWriteRequest(
-          targetPath: p.join(temporary.path, 'outside.nfo'),
-          bytes: bytes('y'),
-        ),
-      ],
-    );
+    final SidecarWriteSummary summary = await writer
+        .writeAll(<SidecarWriteRequest>[
+          SidecarWriteRequest(targetPath: target, bytes: bytes('x')),
+          SidecarWriteRequest(
+            targetPath: p.join(temporary.path, 'outside.nfo'),
+            bytes: bytes('y'),
+          ),
+        ]);
 
     expect(await File(target).readAsString(), 'x');
     expect(summary.results, hasLength(2));
@@ -289,11 +307,13 @@ void main() {
     await File(target).writeAsString('old');
     store.failFind = true;
 
-    final SidecarWriteResult result = await writer.write(SidecarWriteRequest(
-      targetPath: target,
-      bytes: bytes('new'),
-      policy: SidecarWritePolicy.overwrite,
-    ));
+    final SidecarWriteResult result = await writer.write(
+      SidecarWriteRequest(
+        targetPath: target,
+        bytes: bytes('new'),
+        policy: SidecarWritePolicy.overwrite,
+      ),
+    );
     expect(result.status, SidecarWriteStatus.protectedExisting);
     expect(result.error, isA<StateError>());
     expect(await File(target).readAsString(), 'old');
@@ -308,32 +328,36 @@ void main() {
       expect(created.status, SidecarWriteStatus.written);
       expect(evicted, isEmpty, reason: '新建文件没有旧解码可清');
 
-      final SidecarWriteResult same = await writer.write(SidecarWriteRequest(
-        targetPath: poster,
-        bytes: bytes('old identity'),
-        policy: SidecarWritePolicy.overwrite,
-      ));
+      final SidecarWriteResult same = await writer.write(
+        SidecarWriteRequest(
+          targetPath: poster,
+          bytes: bytes('old identity'),
+          policy: SidecarWritePolicy.overwrite,
+        ),
+      );
       expect(same.status, SidecarWriteStatus.unchanged);
       expect(evicted, isEmpty, reason: '字节没变，缓存里的就是对的图');
 
       // 换身份重刮：图名只按图种派生，封面恒是同一个 poster 路径。
-      final SidecarWriteResult replaced =
-          await writer.write(SidecarWriteRequest(
-        targetPath: poster,
-        bytes: bytes('new identity'),
-        policy: SidecarWritePolicy.overwrite,
-      ));
+      final SidecarWriteResult replaced = await writer.write(
+        SidecarWriteRequest(
+          targetPath: poster,
+          bytes: bytes('new identity'),
+          policy: SidecarWritePolicy.overwrite,
+        ),
+      );
       expect(replaced.status, SidecarWriteStatus.written);
       expect(evicted, <String>[poster]);
 
       final String thirdParty = p.join(source.path, 'banner.jpg');
       await File(thirdParty).writeAsString('third-party');
-      final SidecarWriteResult protectedResult =
-          await writer.write(SidecarWriteRequest(
-        targetPath: thirdParty,
-        bytes: bytes('generated'),
-        policy: SidecarWritePolicy.overwrite,
-      ));
+      final SidecarWriteResult protectedResult = await writer.write(
+        SidecarWriteRequest(
+          targetPath: thirdParty,
+          bytes: bytes('generated'),
+          policy: SidecarWritePolicy.overwrite,
+        ),
+      );
       expect(protectedResult.status, SidecarWriteStatus.protectedExisting);
       expect(evicted, <String>[poster], reason: '没写的文件不驱逐');
     });
@@ -350,12 +374,13 @@ void main() {
       );
       await populateBothCoverKeys(poster);
 
-      final SidecarWriteResult replaced =
-          await writer.write(SidecarWriteRequest(
-        targetPath: poster,
-        bytes: await _solidPng(),
-        policy: SidecarWritePolicy.overwrite,
-      ));
+      final SidecarWriteResult replaced = await writer.write(
+        SidecarWriteRequest(
+          targetPath: poster,
+          bytes: await _solidPng(),
+          policy: SidecarWritePolicy.overwrite,
+        ),
+      );
 
       expect(replaced.status, SidecarWriteStatus.written);
       await expectBothCoverKeysEvicted(poster);

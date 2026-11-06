@@ -119,10 +119,36 @@ public class IconSwitchHelper {
         return ShortcutManagerCompat.isRequestPinShortcutSupported(context);
     }
 
+    /// 快捷方式图标的边长（像素）。
+    static final int SHORTCUT_ICON_PX = 512;
+
+    /// 解码采样率：在短边仍不小于 [targetPx] 的前提下取最大的 2 的幂。
+    ///
+    /// 只拿 512px 的图标，没必要把用户挑的整张原图按全分辨率解码进内存
+    /// （BUG-3601）；纯函数，便于脱离 Android 框架单测。
+    static int iconDecodeSampleSize(int width, int height, int targetPx) {
+        int shortEdge = Math.min(width, height);
+        int sample = 1;
+        if (targetPx <= 0) return sample;
+        while (shortEdge / (sample * 2) >= targetPx) {
+            sample *= 2;
+        }
+        return sample;
+    }
+
     public static boolean createCustomShortcut(Context context, byte[] imageBytes) {
         if (!isCustomShortcutSupported(context)) return false;
+        if (imageBytes == null || imageBytes.length == 0) return false;
 
-        Bitmap original = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
+        // 先只读尺寸，再按目标边长降采样解码（BUG-3601）：此前直接全分辨率
+        // decodeByteArray，大图在低内存机型上整段管线峰值过高。
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length, bounds);
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return false;
+        BitmapFactory.Options decode = new BitmapFactory.Options();
+        decode.inSampleSize = iconDecodeSampleSize(bounds.outWidth, bounds.outHeight, SHORTCUT_ICON_PX);
+        Bitmap original = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length, decode);
         if (original == null) return false;
 
         int size = Math.min(original.getWidth(), original.getHeight());
@@ -130,9 +156,12 @@ public class IconSwitchHelper {
         int y = (original.getHeight() - size) / 2;
         Bitmap cropped = Bitmap.createBitmap(original, x, y, size, size);
 
-        Bitmap scaled = Bitmap.createScaledBitmap(cropped, 512, 512, true);
-        if (cropped != original) cropped.recycle();
-        original.recycle();
+        Bitmap scaled = Bitmap.createScaledBitmap(cropped, SHORTCUT_ICON_PX, SHORTCUT_ICON_PX, true);
+        // createBitmap / createScaledBitmap 在无需变换时（已是正方形 / 已是 512px）
+        // 直接返回入参本身。只能回收与 scaled 不是同一对象的中间图，否则会把要交给
+        // 启动器的那张图一起回收掉（BUG-3601）。
+        if (cropped != original && cropped != scaled) cropped.recycle();
+        if (original != scaled) original.recycle();
 
         IconCompat icon = IconCompat.createWithAdaptiveBitmap(scaled);
 

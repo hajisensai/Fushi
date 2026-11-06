@@ -55,6 +55,11 @@ void main() {
         method: DownloadTransferMethod.direct,
         external: false,
       ));
+      // Kavita 是用户自配的服务器：HTTP 直链，不算外部来源。
+      expect(mangaDownloadSourceOf('kavita'), (
+        method: DownloadTransferMethod.direct,
+        external: false,
+      ));
     });
 
     test('the notice preference is a known, per-install key', () {
@@ -153,6 +158,45 @@ void main() {
       await tester.pumpAndSettle();
       return result;
     }
+
+    testWidgets('P2P notice shows the legal-risk warning above the body', (
+      WidgetTester tester,
+    ) async {
+      await open(tester, () async {
+        final Finder warning = find.byKey(
+          const ValueKey<String>('download-notice-legal-warning'),
+        );
+        expect(warning, findsOneWidget);
+        expect(
+          find.descendant(
+            of: warning,
+            matching: find.text(t.download_p2p_notice_legal_warning),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          tester.getTopLeft(warning).dy,
+          lessThan(tester.getTopLeft(find.text(t.download_p2p_notice_body)).dy),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey<String>('download-notice-cancel')),
+        );
+      });
+    });
+
+    testWidgets('game-resource notice has no P2P legal warning', (
+      WidgetTester tester,
+    ) async {
+      await open(tester, () async {
+        expect(
+          find.byKey(const ValueKey<String>('download-notice-legal-warning')),
+          findsNothing,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey<String>('download-notice-cancel')),
+        );
+      }, kind: DownloadNoticeKind.gameResource);
+    });
 
     testWidgets('"don\'t show again" starts unchecked', (
       WidgetTester tester,

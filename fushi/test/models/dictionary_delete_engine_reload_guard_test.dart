@@ -35,8 +35,11 @@ void main() {
 
   setUpAll(() {
     final File f = File('lib/src/models/app_model.dart');
-    expect(f.existsSync(), isTrue,
-        reason: 'app_model.dart not found at ${f.absolute.path}');
+    expect(
+      f.existsSync(),
+      isTrue,
+      reason: 'app_model.dart not found at ${f.absolute.path}',
+    );
     src = f.readAsStringSync();
   });
 
@@ -63,8 +66,7 @@ void main() {
     fail('unbalanced braces scanning $name');
   }
 
-  test(
-      'A: _rebuildDictPathsCache rebuilds the engine even when all path '
+  test('A: _rebuildDictPathsCache rebuilds the engine even when all path '
       'buckets are empty (deleting the last dictionary must reload)', () {
     final String body = bodyOf('void _rebuildDictPathsCache(');
     // 引擎装载现在是「排期 + 用前结算」：这个回调挂在每一次词典元数据写入上，
@@ -81,10 +83,12 @@ void main() {
     // the rebuild for an empty path set — that is exactly the hole that left a
     // stale engine after deleting the last dictionary (BUG-171 hole A).
     expect(
-      RegExp(r'isNotEmpty\s*\)\s*\{?\s*FushiDicts\.(scheduleTyped|initializeTyped)')
-          .hasMatch(body.replaceAll(RegExp(r'\s+'), ' ')),
+      RegExp(
+        r'isNotEmpty\s*\)\s*\{?\s*FushiDicts\.(scheduleTyped|initializeTyped)',
+      ).hasMatch(body.replaceAll(RegExp(r'\s+'), ' ')),
       isFalse,
-      reason: 'the engine must be driven for an empty path set too; an empty '
+      reason:
+          'the engine must be driven for an empty path set too; an empty '
           'rebuild yields an empty-but-fresh engine so deleting the last '
           'dictionary stops queries from hitting it (BUG-171).',
     );
@@ -99,37 +103,54 @@ void main() {
     );
     // 启动路径必须**真的把它装完**，而不是只排期就走人：排期没结算时引擎里还是
     // 空的/旧的，第一次查词才补装——那笔成本会掉在用户脸上。
-    expect(body.contains('FushiDicts.loadPendingAsync()'), isTrue,
-        reason: 'the startup path must settle the pending load itself');
     expect(
-      RegExp(r'isNotEmpty\s*\)\s*\{?\s*FushiDicts\.(scheduleTyped|initializeTyped)')
-          .hasMatch(body.replaceAll(RegExp(r'\s+'), ' ')),
+      body.contains('FushiDicts.loadPendingAsync()'),
+      isTrue,
+      reason: 'the startup path must settle the pending load itself',
+    );
+    expect(
+      RegExp(
+        r'isNotEmpty\s*\)\s*\{?\s*FushiDicts\.(scheduleTyped|initializeTyped)',
+      ).hasMatch(body.replaceAll(RegExp(r'\s+'), ' ')),
       isFalse,
-      reason: 'async rebuild must not skip the engine on empty path set '
+      reason:
+          'async rebuild must not skip the engine on empty path set '
           '(BUG-171).',
     );
   });
 
   test('B: deleteDictionaries (delete-all) reloads the FFI engine', () {
     final String body = bodyOf('Future<void> deleteDictionaries(');
-    expect(body.contains('await dictRepo.clearDictionaryMetadata()'), isTrue,
-        reason: 'deleting ALL dictionaries must rebuild the engine so no stale '
-            'index survives until restart (BUG-171 hole B).');
+    expect(
+      body.contains('await dictRepo.clearDictionaryMetadata()'),
+      isTrue,
+      reason:
+          'deleting ALL dictionaries must rebuild the engine so no stale '
+          'index survives until restart (BUG-171 hole B).',
+    );
   });
 
   test('C: deleteDictionary (single) still reloads the FFI engine', () {
     final String body = bodyOf('Future<void> deleteDictionary(');
     // 引擎重载现在收口在 DictionaryRepository.deleteDictionaryMeta 里
     // （移除 cache + _onCacheRebuild 重载引擎 + 清查词缓存 + 删 DB 行，BUG-1492）。
-    expect(body.contains('dictRepo.deleteDictionaryMeta('), isTrue,
-        reason: 'deleting a single dictionary must go through the repo so the '
-            'engine reloads (and its mmap views are released).');
+    expect(
+      body.contains('dictRepo.deleteDictionaryMeta('),
+      isTrue,
+      reason:
+          'deleting a single dictionary must go through the repo so the '
+          'engine reloads (and its mmap views are released).',
+    );
     // BUG-1756：绕开 repo 直打 DB 的老写法会把 DB 行删掉却不卸载引擎 —— 目录删
     // 不掉、toast 报「删除失败」，但重启后词典已经没了。这条入口必须不存在。
-    expect(body.contains('_database.deleteDictionaryMeta('), isFalse,
-        reason: 'must NOT bypass the repo: a raw DB delete leaves the engine '
-            'holding the dictionary mmap, so the directory delete then fails '
-            'while the metadata is already gone (BUG-1756).');
+    expect(
+      body.contains('_database.deleteDictionaryMeta('),
+      isFalse,
+      reason:
+          'must NOT bypass the repo: a raw DB delete leaves the engine '
+          'holding the dictionary mmap, so the directory delete then fails '
+          'while the metadata is already gone (BUG-1756).',
+    );
   });
 
   // ── BUG-1756：撤 meta（= 引擎释放 mmap）必须早于删磁盘目录 ──────────────
@@ -142,12 +163,21 @@ void main() {
     final int meta = body.indexOf('dictRepo.deleteDictionaryMeta(');
     final int dir = body.indexOf('deleteDictionaryDirectory(');
     expect(meta, greaterThanOrEqualTo(0));
-    expect(dir, greaterThanOrEqualTo(0),
-        reason: '删目录必须走 deleteDictionaryDirectory 原语（它负责先释放映射）');
-    expect(meta, lessThan(dir),
-        reason: '顺序不可交换：引擎还攥着 mmap view 时目录删不掉（BUG-1756）');
-    expect(body.contains('deleteSync('), isFalse,
-        reason: '裸 deleteSync 绕过了释放映射那一步（BUG-1756）');
+    expect(
+      dir,
+      greaterThanOrEqualTo(0),
+      reason: '删目录必须走 deleteDictionaryDirectory 原语（它负责先释放映射）',
+    );
+    expect(
+      meta,
+      lessThan(dir),
+      reason: '顺序不可交换：引擎还攥着 mmap view 时目录删不掉（BUG-1756）',
+    );
+    expect(
+      body.contains('deleteSync('),
+      isFalse,
+      reason: '裸 deleteSync 绕过了释放映射那一步（BUG-1756）',
+    );
   });
 
   test('E: deleteDictionaries（清空全部）先重载引擎再删目录', () {
@@ -157,10 +187,16 @@ void main() {
     );
     final int dir = body.indexOf('deleteDictionaryDirectory(');
     expect(rebuild, greaterThanOrEqualTo(0));
-    expect(dir, greaterThanOrEqualTo(0),
-        reason: '删目录必须走 deleteDictionaryDirectory 原语');
-    expect(rebuild, lessThan(dir),
-        reason: '空集重载先释放全部 mmap view，之后资源根才删得掉（BUG-1756）');
+    expect(
+      dir,
+      greaterThanOrEqualTo(0),
+      reason: '删目录必须走 deleteDictionaryDirectory 原语',
+    );
+    expect(
+      rebuild,
+      lessThan(dir),
+      reason: '空集重载先释放全部 mmap view，之后资源根才删得掉（BUG-1756）',
+    );
   });
 
   // BUG-355 / TODO-641 (merged from dictionary_reorder_search_again_guard_test.dart):
@@ -172,8 +208,7 @@ void main() {
   // Same app_model.dart source-scan paradigm (live Drift DB + FFI engine can't be
   // constructed cheaply in flutter_test); a real device pass (reorder, then look the
   // word up WITHOUT restarting) is still required.
-  test(
-      'updateDictionaryOrder forwards to the repo AND nudges open lookups to '
+  test('updateDictionaryOrder forwards to the repo AND nudges open lookups to '
       're-query (BUG-355)', () {
     final String body = bodyOf('Future<void> updateDictionaryOrder(');
     expect(

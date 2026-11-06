@@ -42,8 +42,7 @@ class EngineValueListenableAdapter<T> implements ValueListenable<T> {
   void addListener(VoidCallback listener) => source.addListener(listener);
 
   @override
-  void removeListener(VoidCallback listener) =>
-      source.removeListener(listener);
+  void removeListener(VoidCallback listener) => source.removeListener(listener);
 
   @override
   bool operator ==(Object other) =>

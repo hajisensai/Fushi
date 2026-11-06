@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
-import 'package:fushi/src/models/app_font_sync_local.dart';
+import 'package:fushi/src/sync/app_font_sync_local.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart'
     show formatStorageBytes;
@@ -9,13 +9,14 @@ import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_compare_dialog.dart';
+import 'package:fushi/src/sync/sync_conflict_decider.dart';
 import 'package:fushi/src/sync/sync_conflict_prompter.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_message_dialog.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 手动同步完成后的 SnackBar 摘要（消费 [SyncRunReport]）。纯函数，便于单测边界：
 /// 全 0 → "无新增"；多类型 → ` · ` 拼接；有失败 → 追加失败计数后缀。
@@ -71,21 +72,21 @@ String summarizeSyncReport(SyncRunReport r) {
 /// （`browserTimeout` 加进来时就正是如此）。switch 表达式对枚举强制穷尽 —— 新增值
 /// 不显式给出登出决定就编译不过。
 bool shouldSignOutOnAuthError(SyncAuthError error) => switch (error.kind) {
-      SyncAuthFailureKind.credentials => true,
-      SyncAuthFailureKind.forbidden => false,
-      SyncAuthFailureKind.browserTimeout => false,
-      SyncAuthFailureKind.cancelled => false,
-      // BUG-2377：互联的「登出」会清空 `sync_hibiki_client_urls`——全部对端地址、
-      // TOFU 指纹和 per-peer token 一起没。用一台对端的 401 去清整份配对配置，
-      // 正是 BUG-1550 / BUG-1578 要消灭的株连。凭据失效由配对流程处理，不在这
-      // 里代劳。（`shouldSignOutChannelOnAuthError` 已按通道拦了一层，这里是同
-      // 一决定的第二道：裸 SyncAuthError 走不到那层。）
-      SyncAuthFailureKind.pairingRejected => false,
-      // 压根没有凭据可丢，登出无事可做。
-      SyncAuthFailureKind.pairingNotConfigured => false,
-      // BUG-2631：服务端回的是网页，凭据根本没被评估过；要改的是地址，不是会话。
-      SyncAuthFailureKind.htmlPage => false,
-    };
+  SyncAuthFailureKind.credentials => true,
+  SyncAuthFailureKind.forbidden => false,
+  SyncAuthFailureKind.browserTimeout => false,
+  SyncAuthFailureKind.cancelled => false,
+  // BUG-2377：互联的「登出」会清空 `sync_hibiki_client_urls`——全部对端地址、
+  // TOFU 指纹和 per-peer token 一起没。用一台对端的 401 去清整份配对配置，
+  // 正是 BUG-1550 / BUG-1578 要消灭的株连。凭据失效由配对流程处理，不在这
+  // 里代劳。（`shouldSignOutChannelOnAuthError` 已按通道拦了一层，这里是同
+  // 一决定的第二道：裸 SyncAuthError 走不到那层。）
+  SyncAuthFailureKind.pairingRejected => false,
+  // 压根没有凭据可丢，登出无事可做。
+  SyncAuthFailureKind.pairingNotConfigured => false,
+  // BUG-2631：服务端回的是网页，凭据根本没被评估过；要改的是地址，不是会话。
+  SyncAuthFailureKind.htmlPage => false,
+};
 
 /// 一条**具名通道**的鉴权失败之后，该不该对这条通道执行登出（BUG-1578）。
 ///
@@ -109,6 +110,8 @@ bool shouldSignOutChannelOnAuthError(SyncChannelAuthError e) {
 /// 本地化的同步阶段名（进度行用）。
 String syncPhaseLabel(SyncPhase phase) {
   switch (phase) {
+    case SyncPhase.remoteListing:
+      return t.sync_progress_remote_listing;
     case SyncPhase.books:
       return t.sync_progress_books;
     case SyncPhase.readingData:
@@ -123,6 +126,18 @@ String syncPhaseLabel(SyncPhase phase) {
       return t.sync_progress_videos;
     case SyncPhase.fonts:
       return t.sync_progress_fonts;
+    case SyncPhase.statistics:
+      return t.sync_progress_statistics;
+    case SyncPhase.collections:
+      return t.sync_progress_collections;
+    case SyncPhase.settings:
+      return t.sync_progress_settings;
+    case SyncPhase.deletions:
+      return t.sync_progress_deletions;
+    case SyncPhase.pendingMines:
+      return t.sync_progress_pending_mines;
+    case SyncPhase.finishing:
+      return t.sync_progress_finishing;
   }
 }
 
@@ -197,6 +212,9 @@ String syncOutcomeLine(SyncRunOutcome o) {
 /// 全程不抛：错误都转成用户可读的 SnackBar。
 ///
 /// [onlyChannels] 透传给 [runManualFullSync]：缺省 null = 全部已启用通道。
+///
+/// [conflictDecider]：非交互裁决器（CLI / AI，见 `sync_conflict_decider.dart`）。给了就
+/// 不弹冲突窗，逐通道交给它按策略落地；null = 照旧弹窗让用户选。
 Future<ManualSyncOutcome> runManualSyncWithFeedback({
   required BuildContext context,
   required AppModel appModel,
@@ -204,25 +222,25 @@ Future<ManualSyncOutcome> runManualSyncWithFeedback({
   bool announceBusy = true,
   bool announceCompleted = true,
   Set<SyncAssetChannelScope>? onlyChannels,
-}) =>
-    _runWithSyncFeedback(
-      context: context,
-      appModel: appModel,
-      announceNotConfigured: announceNotConfigured,
-      announceBusy: announceBusy,
-      announceCompleted: announceCompleted,
-      run: () => runManualFullSync(
-        onlyChannels: onlyChannels,
-        db: appModel.database,
-        dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
-        audioDatabaseRoot:
-            Directory('${appModel.appDirectory.path}/audiobooks'),
-        tempDir: appModel.temporaryDirectory,
-        localAudioEntries: appModel.localAudioDbs,
-        onLocalAudioImported: appModel.importSyncedLocalAudioDb,
-        onPostRun: appModel.refreshAfterSyncRun,
-      ),
-    );
+  SyncConflictDecider? conflictDecider,
+}) => _runWithSyncFeedback(
+  context: context,
+  appModel: appModel,
+  announceNotConfigured: announceNotConfigured,
+  announceBusy: announceBusy,
+  announceCompleted: announceCompleted,
+  conflictDecider: conflictDecider,
+  run: () => runManualFullSync(
+    onlyChannels: onlyChannels,
+    db: appModel.database,
+    dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
+    audioDatabaseRoot: Directory('${appModel.appDirectory.path}/audiobooks'),
+    tempDir: appModel.temporaryDirectory,
+    localAudioEntries: appModel.localAudioDbsOnThisDevice,
+    onLocalAudioImported: appModel.importSyncedLocalAudioDb,
+    onPostRun: appModel.refreshAfterSyncRun,
+  ),
+);
 
 /// 设置页「词典 / 本地音频数据库」两行的显式上传 / 下载动作在 UI 层的入口。
 ///
@@ -235,28 +253,52 @@ Future<ManualSyncOutcome> runAssetTransferWithFeedback({
   required SyncAssetKind kind,
   required SyncAssetDirection direction,
   SyncAssetChannelScope scope = SyncAssetChannelScope.cloud,
-}) =>
-    _runWithSyncFeedback(
-      context: context,
-      appModel: appModel,
-      announceNotConfigured: true,
-      announceBusy: true,
-      announceCompleted: true,
-      run: () => runManualAssetTransfer(
-        db: appModel.database,
-        kind: kind,
-        direction: direction,
-        scope: scope,
-        dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
-        audioDatabaseRoot:
-            Directory('${appModel.appDirectory.path}/audiobooks'),
-        tempDir: appModel.temporaryDirectory,
-        localAudioEntries: appModel.localAudioDbs,
-        onLocalAudioImported: appModel.importSyncedLocalAudioDb,
-        fontSync: AppFontSyncLocal(appModel),
-        onPostRun: appModel.refreshAfterSyncRun,
-      ),
+}) => _runWithSyncFeedback(
+  context: context,
+  appModel: appModel,
+  announceNotConfigured: true,
+  announceBusy: true,
+  announceCompleted: true,
+  run: () => runManualAssetTransfer(
+    db: appModel.database,
+    kind: kind,
+    direction: direction,
+    scope: scope,
+    dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
+    audioDatabaseRoot: Directory('${appModel.appDirectory.path}/audiobooks'),
+    tempDir: appModel.temporaryDirectory,
+    localAudioEntries: appModel.localAudioDbsOnThisDevice,
+    onLocalAudioImported: appModel.importSyncedLocalAudioDb,
+    fontSync: AppFontSyncLocal(appModel),
+    onPostRun: appModel.refreshAfterSyncRun,
+  ),
+);
+
+/// 逐通道呈现冲突：用**各自通道的后端**（合并报告的冲突可能来自互联通道，用云后端
+/// 去 apply 会写错端），两条通道共用一本裁决簿。[decider] 非 null 时不弹窗、交给它落地。
+/// [mounted] 返回 false（页面已关）时停止弹窗；非交互裁决不看它。
+Future<void> _presentChannelConflicts(
+  AppModel appModel,
+  ManualSyncResult result,
+  SyncConflictDecider? decider, {
+  bool Function()? mounted,
+}) async {
+  final Map<String, SyncChoice> decisions = <String, SyncChoice>{};
+  for (final ManualSyncChannelReport channel in result.channelReports) {
+    if (channel.report.conflicts.isEmpty) continue;
+    if (decider == null && !(mounted?.call() ?? true)) return;
+    await appModel.syncConflictPrompter.present(
+      navigatorKey: appModel.navigatorKey,
+      db: appModel.database,
+      backend: channel.backend,
+      conflicts: channel.report.conflicts,
+      source: ConflictSource.manual,
+      inBook: appModel.isMediaOpen,
+      decisions: decisions,
+      decider: decider,
     );
+  }
+}
 
 /// 「跑一轮同步 + 统一反馈」的共享外壳。[run] 决定这一轮**跑的是什么**（全量 sweep
 /// 还是一次资产传输），其余全部相同。
@@ -271,6 +313,7 @@ Future<ManualSyncOutcome> _runWithSyncFeedback({
   required bool announceNotConfigured,
   required bool announceBusy,
   required bool announceCompleted,
+  SyncConflictDecider? conflictDecider,
 }) async {
   // 重入 / 已在飞 guard：设置页整行是焦点目标（Activate 也会触发），且后台/开机
   // 自动同步可能已经持有 sweep 锁。两种情况下第二次触发都是 no-op —— 全局
@@ -281,7 +324,13 @@ Future<ManualSyncOutcome> _runWithSyncFeedback({
   }
   try {
     final ManualSyncResult result = await run();
-    if (!context.mounted) return result.outcome;
+    // 非交互裁决不依赖界面：页面已经关了也照样按策略落地，只是不再弹提示。
+    if (!context.mounted) {
+      if (conflictDecider != null) {
+        await _presentChannelConflicts(appModel, result, conflictDecider);
+      }
+      return result.outcome;
+    }
     switch (result.outcome) {
       case ManualSyncOutcome.notConfigured:
         if (announceNotConfigured) {
@@ -300,20 +349,12 @@ Future<ManualSyncOutcome> _runWithSyncFeedback({
         // 写错端。两条通道共用一本裁决簿：同一本书在两条通道上都分叉时用户只
         // 裁决一次，第二条通道直接按同一裁决应用、不再弹（用户报告 2026-09-22
         // 「点了立即同步还会继续弹」）。
-        final Map<String, SyncChoice> decisions = <String, SyncChoice>{};
-        for (final ManualSyncChannelReport channel in result.channelReports) {
-          if (channel.report.conflicts.isEmpty) continue;
-          if (!context.mounted) return result.outcome;
-          await appModel.syncConflictPrompter.present(
-            navigatorKey: appModel.navigatorKey,
-            db: appModel.database,
-            backend: channel.backend,
-            conflicts: channel.report.conflicts,
-            source: ConflictSource.manual,
-            inBook: appModel.isMediaOpen,
-            decisions: decisions,
-          );
-        }
+        await _presentChannelConflicts(
+          appModel,
+          result,
+          conflictDecider,
+          mounted: () => context.mounted,
+        );
     }
     return result.outcome;
   } on SyncChannelAuthError catch (e) {
@@ -347,7 +388,9 @@ Future<ManualSyncOutcome> _runWithSyncFeedback({
   } catch (e) {
     if (context.mounted) {
       showSyncMessage(
-          context, t.sync_error(message: friendlySyncErrorDetail(e)));
+        context,
+        t.sync_error(message: friendlySyncErrorDetail(e)),
+      );
     }
     return ManualSyncOutcome.notConfigured;
   }

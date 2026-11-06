@@ -14,6 +14,8 @@
 
 [![下载最新版本](https://img.shields.io/badge/%E2%AC%87%20%E4%B8%8B%E8%BD%BD%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![加入 Discord 社区](https://img.shields.io/badge/%E5%8A%A0%E5%85%A5%20Discord%20%E7%A4%BE%E5%8C%BA-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
+[![赞助 Fushi](https://img.shields.io/badge/%E8%B5%9E%E5%8A%A9%20Fushi-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/hajisensai)
+[![在 Ko-fi 赞助](https://img.shields.io/badge/%E5%9C%A8%20Ko-fi%20%E8%B5%9E%E5%8A%A9-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/hajisensai)
 
 </div>
 
@@ -134,9 +136,9 @@ Fushi 将导入的书籍、词典、字体、有声书数据、视频、阅读�
 
 - **同步**：Google Drive / OneDrive / Dropbox 走 OAuth 登录；WebDAV / FTP / SFTP / Fushi Server 使用你提供的服务器地址与凭据。Fushi Interconnect 在已配对设备间直连（局域网、IPv6、组网或公网地址），直连全部失败时退到端到端的 iroh P2P 隧道；配对链接一律先弹确认。
 - **Anki**：制卡只与 AnkiDroid 或你配置的 AnkiConnect 地址通信。
-- **使用统计**：桌面端与 Android 每天最多一次，向 fushi.moe 发送随机安装 ID、App 版本、平台与更新通道，用于统计活跃用户；不含账户、书库或阅读数据，服务端不存 IP。可在更新设置里关闭「发送使用统计」。iOS 不发送。
+- **使用统计**：桌面端与 Android 每天最多一次，向 fushi.moe 发送安装 ID（由系统机器标识单向哈希得出，重装不变；机器标识原值不上传）、App 版本、平台与更新通道，用于统计活跃用户；不含账户、书库或阅读数据，服务端不存 IP。可在更新设置里关闭「发送使用统计」。iOS 不发送。
 - **仅在你主动操作时**：日志上传（首次需确认同意）、应用内反馈、排行榜（默认关闭；开启并同意后才上传书架标题与进度）。
-- **漫画 OCR**：默认引擎是 Google Lens，会把页面图片发给 Google；想让图片留在本机，请在设置里改用端上模型或系统 OCR。
+- **漫画 OCR**：默认引擎是端上 CTC 模型，页面图片留在本机（首次需在设置里下载模型）；Google Lens 需手动选用，会把页面图片发给 Google。
 - **AI 功能**：只向你配置并指派给该功能的 LLM 提供商发请求；未指派时不发送任何请求。
 - **第三方服务**：元数据、字幕与在线源功能只在使用时访问[内容源与集成](#内容源与集成)中列出的服务。
 
@@ -245,7 +247,7 @@ Fushi 基于以下项目与生态：
 
 ## 维护者
 
-Fushi 由 [hajisensai](https://github.com/hajisensai) 维护。官网：[fushi.moe](https://fushi.moe)。联系：[contact@fushi.moe](mailto:contact@fushi.moe)。
+Fushi 由 [hajisensai](https://github.com/hajisensai) 维护。官网：[fushi.moe](https://fushi.moe)。联系：[contact@fushi.moe](mailto:contact@fushi.moe)。如果 Fushi 对你有帮助，欢迎通过 [GitHub Sponsors](https://github.com/sponsors/hajisensai) 或 [Ko-fi](https://ko-fi.com/hajisensai) 赞助，帮助承担开发、分发与维护成本。
 
 <div align="center">
 

@@ -50,7 +50,7 @@ mixin _LocalLibraryHostSyncState
 
   @override
   Future<InterconnectServiceConfigSnapshot>
-      getInterconnectServiceConfig() async {
+  getInterconnectServiceConfig() async {
     return InterconnectServiceConfigSnapshot.fromPreferences(
       await _db.getAllPrefs(),
     );
@@ -58,12 +58,15 @@ mixin _LocalLibraryHostSyncState
 
   /// host 最近 [limit] 条活动事件（新首页 Activity 面板互联数据源）。
   @override
-  Future<List<RemoteActivityEvent>> listActivityEvents(
-      {int limit = 100}) async {
+  Future<List<RemoteActivityEvent>> listActivityEvents({
+    int limit = 100,
+  }) async {
     // v92：活动流唯一数据源是统一事实面（legacy 活动行 ∪ 段 ∪ 游玩会话合成行），
     // 与本机首页同一份；否则 client 看不到 host 在 v92 之后的任何阅读 / 观看。
-    final List<ActivityEventRow> rows =
-        (await loadStatFacts(_db, activityLimit: limit)).activityRows;
+    final List<ActivityEventRow> rows = (await loadStatFacts(
+      _db,
+      activityLimit: limit,
+    )).activityRows;
     return <RemoteActivityEvent>[
       for (final ActivityEventRow r in rows)
         RemoteActivityEvent(
@@ -84,9 +87,20 @@ mixin _LocalLibraryHostSyncState
   /// 读 host 端当前聚合快照。直接复用云后端 phase B 的
   /// [AggregateSyncService.materializeLocalSnapshot]（同一 DB 读取逻辑），保证互联
   /// 与云通道 materialize 结果字节等价、无第二套实现。
+  ///
+  /// 浏览历史族按 **host 本机**的「同步浏览历史」裁（默认关）：host 用户没打开就不把
+  /// 自己的浏览轨迹发给任何已配对设备，哪怕对端开着。统计 / 收藏仍由 client 侧许可
+  /// 裁（既有行为）。
   @override
   Future<AggregateSnapshot> getAggregateSnapshot() async {
-    return AggregateSyncService(_db).materializeLocalSnapshot();
+    final AggregateSnapshot snapshot = await AggregateSyncService(
+      _db,
+    ).materializeLocalSnapshot();
+    return snapshot.select(
+      stats: true,
+      favorites: true,
+      webHistory: await readWebHistorySyncEnabled(_db),
+    );
   }
 
   /// 把 client 上报的聚合快照折叠进 host DB。用
@@ -96,10 +110,18 @@ mixin _LocalLibraryHostSyncState
   /// 幂等（重复 apply 同一快照不变）；删除不跨端传播。经 [_runSyncStateExclusive]
   /// 与本机出站同步的聚合落库串行，避免读-改-写交错丢更新；**不**排在 host 自己的
   /// 整轮同步后面（BUG-2717：否则对端 PUT 15s 拿不到响应头即超时）。
+  ///
+  /// host 没打开「同步浏览历史」时，对端上报的历史族（含墓碑）整族丢弃不落库——与
+  /// GET 同一判据，host 不参与历史同步就两个方向都不参与。
   @override
   Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async {
+    final AggregateSnapshot incoming = snapshot.select(
+      stats: true,
+      favorites: true,
+      webHistory: await readWebHistorySyncEnabled(_db),
+    );
     await _runSyncStateExclusive(
-      () => AggregateSyncService(_db).foldIntoLocal(snapshot),
+      () => AggregateSyncService(_db).foldIntoLocal(incoming),
     );
   }
 
@@ -137,16 +159,27 @@ mixin _LocalLibraryHostSyncState
       // 本机作为 client 跑的云/互联通道是三条独立的因果轴：共用一个键时，client
       // 通道刚推进的基线会把对端 POST 来的移出墓碑判成旧闻 → 引擎按「活胜」撤销
       // → 再回传给对端，用户的移出被自己另一条通道悄悄撤销。
-      final int baseline =
-          await readCollectionsSyncBaselineMs(_db, SyncChannelScope.host);
+      final int baseline = await readCollectionsSyncBaselineMs(
+        _db,
+        SyncChannelScope.host,
+      );
       final CollectionSyncOutcome outcome = CollectionSyncEngine.merge(
         local: local,
         remote: incoming,
         lastSyncedAtMs: baseline,
+        // BUG-3657：书系列合集按卷号定序，与书架归组自愈同一判据；返回给
+        // client 的合并清单因此也是卷序。
+        ruleOrder: await loadBookSeriesRuleOrder(_db),
       );
       await applyCollectionLocalChanges(_db, outcome.changes);
+      final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
       await writeCollectionsSyncBaselineMs(
-          _db, SyncChannelScope.host, DateTime.now().millisecondsSinceEpoch);
+        _db,
+        SyncChannelScope.host,
+        nextBaseline,
+      );
+      // v124：基线推进之后再收敛整理器合集（见 convergeCollectionsAfterSync）。
+      await convergeCollectionsAfterSync(_db, baselineMs: nextBaseline);
       merged = outcome.merged;
     });
     return merged;
@@ -170,14 +203,66 @@ mixin _LocalLibraryHostSyncState
     return merged;
   }
 
+  // ── 作品图谱清单（互联作品图谱同步，media_link_sync.dart）──────────────────
+
+  @override
+  Future<MediaLinkManifest> getMediaLinkManifest() =>
+      loadLocalMediaLinkManifest(_db);
+
+  /// 把 client 上报的作品图谱清单按整行 LWW 并入 host DB，返回并入后的 host
+  /// 清单。与标签清单同一把窄锁（[_runSyncStateExclusive]）。
+  @override
+  Future<MediaLinkManifest> mergeMediaLinkManifest(
+    MediaLinkManifest incoming,
+  ) async {
+    late MediaLinkManifest merged;
+    await _runSyncStateExclusive(() async {
+      await applyMediaLinkManifest(_db, incoming);
+      merged = await loadLocalMediaLinkManifest(_db);
+    });
+    return merged;
+  }
+
   @override
   Future<List<({String mediaType, String itemKey, int deletedAt})>>
-      listDeletionTombstones() async {
-    final List<SyncDeletionTombstoneRow> rows =
-        await _db.getSyncDeletionTombstones();
+  listDeletionTombstones() async {
+    final List<SyncDeletionTombstoneRow> rows = await _db
+        .getSyncDeletionTombstones();
     return <({String mediaType, String itemKey, int deletedAt})>[
       for (final SyncDeletionTombstoneRow r in rows)
-        (mediaType: r.mediaType, itemKey: r.itemKey, deletedAt: r.deletedAt),
+        // v125：只随聚合快照走的种类（浏览器历史 / 书签）不进删除确认清单。
+        if (!(SyncTombstoneKind.tryParse(
+              r.mediaType,
+            )?.propagatesViaAggregateSnapshotOnly ??
+            false))
+          (mediaType: r.mediaType, itemKey: r.itemKey, deletedAt: r.deletedAt),
     ];
+  }
+
+  /// 对端推送导入的删除墓碑闸门（反馈 Et3pmRzo0k，见 [PeerPushDeletionGate]）。
+  ///
+  /// 只读 host 自己的 `sync_deletion_tombstones`——host 本机「从所有设备删除」与对端经
+  /// DELETE 端点推来的删除（`deleteBook` / `deleteAudiobook` / `deleteVideo` 写的墓碑）
+  /// 都落在这张表里，正是 `/api/tombstones` 下发给各端的那一份。
+  @override
+  Future<bool> vetoesPeerPush({
+    required List<SyncTombstoneKind> kinds,
+    required String itemKey,
+    required int? presentSinceAt,
+  }) async {
+    final DeletionTombstoneEntries own = <String, Map<String, int>>{};
+    for (final SyncTombstoneKind kind in kinds) {
+      own[kind.dbValue] = <String, int>{
+        for (final SyncDeletionTombstoneRow r
+            in await _db.getSyncDeletionTombstonesOfType(kind.dbValue))
+          r.itemKey: r.deletedAt,
+      };
+    }
+    return peerTombstoneVetoesPush(
+      peerTombstones: own,
+      mediaTypes: <String>[for (final SyncTombstoneKind k in kinds) k.dbValue],
+      itemKeys: <String>[itemKey],
+      presentSinceAt: presentSinceAt,
+    );
   }
 }

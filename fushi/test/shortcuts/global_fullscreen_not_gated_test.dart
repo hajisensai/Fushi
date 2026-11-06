@@ -28,23 +28,24 @@ void main() {
     required bool focusNavigationEnabled,
   }) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    await tester.pumpWidget(MaterialApp(
-      navigatorKey: navKey,
-      home: const Scaffold(body: Text('home')),
-      builder: (BuildContext context, Widget? child) =>
-          wrapWithGlobalNavigation(
+    await tester.pumpWidget(
+      MaterialApp(
         navigatorKey: navKey,
-        registry: registry,
-        focusNavigationEnabled: focusNavigationEnabled,
-        child: child!,
+        home: const Scaffold(body: Text('home')),
+        builder: (BuildContext context, Widget? child) =>
+            wrapWithGlobalNavigation(
+              navigatorKey: navKey,
+              registry: registry,
+              focusNavigationEnabled: focusNavigationEnabled,
+              child: child!,
+            ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
   }
 
   group('BUG-1886：F11 不再挂在实验性焦点导航开关上', () {
-    testWidgets('焦点导航关闭（默认安装）时 F11 仍被全局层认领',
-        (WidgetTester tester) async {
+    testWidgets('焦点导航关闭（默认安装）时 F11 仍被全局层认领', (WidgetTester tester) async {
       await pumpApp(
         tester,
         registry: desktopRegistry(),
@@ -56,7 +57,8 @@ void main() {
       expect(
         handled,
         isTrue,
-        reason: '默认安装（实验性焦点导航关闭）下按 F11 必须解析到 '
+        reason:
+            '默认安装（实验性焦点导航关闭）下按 F11 必须解析到 '
             'globalToggleFullscreen 并被消费；被门控吞掉时这里会是 false',
       );
     });
@@ -71,8 +73,9 @@ void main() {
       expect(await tester.sendKeyEvent(LogicalKeyboardKey.f11), isTrue);
     });
 
-    testWidgets('改键后：全屏改绑 F10，焦点导航关闭时 F10 生效、F11 不再认领',
-        (WidgetTester tester) async {
+    testWidgets('改键后：全屏改绑 F10，焦点导航关闭时 F10 生效、F11 不再认领', (
+      WidgetTester tester,
+    ) async {
       final FushiShortcutRegistry registry = desktopRegistry()
         ..updateBinding(
           ShortcutAction.globalToggleFullscreen,
@@ -82,11 +85,7 @@ void main() {
             ],
           ),
         );
-      await pumpApp(
-        tester,
-        registry: registry,
-        focusNavigationEnabled: false,
-      );
+      await pumpApp(tester, registry: registry, focusNavigationEnabled: false);
 
       expect(
         await tester.sendKeyEvent(LogicalKeyboardKey.f10),

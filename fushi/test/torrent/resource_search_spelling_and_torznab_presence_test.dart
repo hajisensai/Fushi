@@ -8,7 +8,7 @@
 //    「无法搜索这个查询词」。现在没有启用的索引器就不注册。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -124,7 +124,12 @@ void main() {
     test('端到端：风格化罗马字 0 条时英文名那一查交出结果', () async {
       final List<String> queries = <String>[];
       final NyaaVideoResourceProvider provider = NyaaVideoResourceProvider(
+        siteId: 'nyaa-test',
+        categoryByDomain: const <VideoDiscoveryCategory, String>{
+          VideoDiscoveryCategory.anime: '1_0',
+        },
         client: NyaaClient(
+          baseUrl: 'https://nyaa.si',
           minRequestInterval: Duration.zero,
           client: _nyaaServer(queries),
         ),

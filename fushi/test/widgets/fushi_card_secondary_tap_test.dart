@@ -14,19 +14,21 @@ void main() {
       int taps = 0;
       int secondaryTaps = 0;
       int longPresses = 0;
-      await tester.pumpWidget(MaterialApp(
-        home: FushiFocusRoot(
-          child: Center(
-            child: FushiCard(
-              focusId: const FushiFocusId('book-card'),
-              onTap: () => taps += 1,
-              onLongPress: () => longPresses += 1,
-              onSecondaryTap: () => secondaryTaps += 1,
-              child: const SizedBox(width: 120, height: 160),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: FushiFocusRoot(
+            child: Center(
+              child: FushiCard(
+                focusId: const FushiFocusId('book-card'),
+                onTap: () => taps += 1,
+                onLongPress: () => longPresses += 1,
+                onSecondaryTap: () => secondaryTaps += 1,
+                child: const SizedBox(width: 120, height: 160),
+              ),
             ),
           ),
         ),
-      ));
+      );
       await tester.pump();
 
       // 鼠标右键 = secondary button tap。
@@ -38,20 +40,23 @@ void main() {
       expect(longPresses, 0);
     });
 
-    testWidgets('未提供 onSecondaryTap 时右键无副作用（向后兼容）',
-        (WidgetTester tester) async {
+    testWidgets('未提供 onSecondaryTap 时右键无副作用（向后兼容）', (
+      WidgetTester tester,
+    ) async {
       int taps = 0;
-      await tester.pumpWidget(MaterialApp(
-        home: FushiFocusRoot(
-          child: Center(
-            child: FushiCard(
-              focusId: const FushiFocusId('plain-card'),
-              onTap: () => taps += 1,
-              child: const SizedBox(width: 120, height: 160),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: FushiFocusRoot(
+            child: Center(
+              child: FushiCard(
+                focusId: const FushiFocusId('plain-card'),
+                onTap: () => taps += 1,
+                child: const SizedBox(width: 120, height: 160),
+              ),
             ),
           ),
         ),
-      ));
+      );
       await tester.pump();
 
       await tester.tap(find.byType(FushiCard), buttons: kSecondaryButton);

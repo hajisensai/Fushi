@@ -163,44 +163,58 @@ abstract interface class AnkiDesktopForegroundBackend {
 
 final class _WindowsAnkiForeground implements AnkiDesktopForegroundBackend {
   _WindowsAnkiForeground._()
-      : _getTopWindow =
-            _user32.lookupFunction<_GetTopWindowNative, _GetTopWindowDart>(
-                'GetTopWindow'),
-        _getWindow = _user32
-            .lookupFunction<_GetWindowNative, _GetWindowDart>('GetWindow'),
-        _isWindowVisible = _user32.lookupFunction<_IsWindowVisibleNative,
-            _IsWindowVisibleDart>('IsWindowVisible'),
-        _getWindowTextLength = _user32.lookupFunction<
-            _GetWindowTextLengthNative,
-            _GetWindowTextLengthDart>('GetWindowTextLengthW'),
-        _getWindowThreadProcessId = _user32.lookupFunction<
+    : _getTopWindow = _user32
+          .lookupFunction<_GetTopWindowNative, _GetTopWindowDart>(
+            'GetTopWindow',
+          ),
+      _getWindow = _user32.lookupFunction<_GetWindowNative, _GetWindowDart>(
+        'GetWindow',
+      ),
+      _isWindowVisible = _user32
+          .lookupFunction<_IsWindowVisibleNative, _IsWindowVisibleDart>(
+            'IsWindowVisible',
+          ),
+      _getWindowTextLength = _user32
+          .lookupFunction<_GetWindowTextLengthNative, _GetWindowTextLengthDart>(
+            'GetWindowTextLengthW',
+          ),
+      _getWindowThreadProcessId = _user32
+          .lookupFunction<
             _GetWindowThreadProcessIdNative,
-            _GetWindowThreadProcessIdDart>('GetWindowThreadProcessId'),
-        _getForegroundWindow = _user32.lookupFunction<
-            _GetForegroundWindowNative,
-            _GetForegroundWindowDart>('GetForegroundWindow'),
-        _setForegroundWindow = _user32.lookupFunction<
-            _SetForegroundWindowNative,
-            _SetForegroundWindowDart>('SetForegroundWindow'),
-        _allowSetForegroundWindow = _user32.lookupFunction<
+            _GetWindowThreadProcessIdDart
+          >('GetWindowThreadProcessId'),
+      _getForegroundWindow = _user32
+          .lookupFunction<_GetForegroundWindowNative, _GetForegroundWindowDart>(
+            'GetForegroundWindow',
+          ),
+      _setForegroundWindow = _user32
+          .lookupFunction<_SetForegroundWindowNative, _SetForegroundWindowDart>(
+            'SetForegroundWindow',
+          ),
+      _allowSetForegroundWindow = _user32
+          .lookupFunction<
             _AllowSetForegroundWindowNative,
-            _AllowSetForegroundWindowDart>('AllowSetForegroundWindow'),
-        _isIconic =
-            _user32.lookupFunction<_IsIconicNative, _IsIconicDart>('IsIconic'),
-        _showWindow = _user32
-            .lookupFunction<_ShowWindowNative, _ShowWindowDart>('ShowWindow'),
-        _openProcess =
-            _kernel32.lookupFunction<_OpenProcessNative, _OpenProcessDart>(
-                'OpenProcess'),
-        _queryFullProcessImageName = _kernel32.lookupFunction<
+            _AllowSetForegroundWindowDart
+          >('AllowSetForegroundWindow'),
+      _isIconic = _user32.lookupFunction<_IsIconicNative, _IsIconicDart>(
+        'IsIconic',
+      ),
+      _showWindow = _user32.lookupFunction<_ShowWindowNative, _ShowWindowDart>(
+        'ShowWindow',
+      ),
+      _openProcess = _kernel32
+          .lookupFunction<_OpenProcessNative, _OpenProcessDart>('OpenProcess'),
+      _queryFullProcessImageName = _kernel32
+          .lookupFunction<
             _QueryFullProcessImageNameNative,
-            _QueryFullProcessImageNameDart>('QueryFullProcessImageNameW'),
-        _closeHandle =
-            _kernel32.lookupFunction<_CloseHandleNative, _CloseHandleDart>(
-                'CloseHandle'),
-        _getExtendedTcpTable = _iphlpapi.lookupFunction<
-            _GetExtendedTcpTableNative,
-            _GetExtendedTcpTableDart>('GetExtendedTcpTable');
+            _QueryFullProcessImageNameDart
+          >('QueryFullProcessImageNameW'),
+      _closeHandle = _kernel32
+          .lookupFunction<_CloseHandleNative, _CloseHandleDart>('CloseHandle'),
+      _getExtendedTcpTable = _iphlpapi
+          .lookupFunction<_GetExtendedTcpTableNative, _GetExtendedTcpTableDart>(
+            'GetExtendedTcpTable',
+          );
 
   static final DynamicLibrary _user32 = DynamicLibrary.open('user32.dll');
   static final DynamicLibrary _kernel32 = DynamicLibrary.open('kernel32.dll');
@@ -262,20 +276,33 @@ final class _WindowsAnkiForeground implements AnkiDesktopForegroundBackend {
 
   int? _pidListeningOnPort(int port, int family) {
     final int rowWords = family == _afInet6 ? _tcp6RowWords : _tcpRowWords;
-    final int portWord =
-        family == _afInet6 ? _tcp6RowPortWord : _tcpRowPortWord;
+    final int portWord = family == _afInet6
+        ? _tcp6RowPortWord
+        : _tcpRowPortWord;
     final int pidWord = family == _afInet6 ? _tcp6RowPidWord : _tcpRowPidWord;
     final Pointer<Uint32> size = calloc<Uint32>();
     Pointer<Uint8> table = nullptr;
     try {
       // 第一趟只问尺寸：监听表大小随系统连接数变化，不能拍脑袋定长。
       final int probe = _getExtendedTcpTable(
-          nullptr, size, 0, family, _tcpTableOwnerPidListener, 0);
+        nullptr,
+        size,
+        0,
+        family,
+        _tcpTableOwnerPidListener,
+        0,
+      );
       if (probe != _errorInsufficientBuffer && probe != _noError) return null;
       if (size.value == 0) return null;
       table = calloc<Uint8>(size.value);
       final int rc = _getExtendedTcpTable(
-          table.cast(), size, 0, family, _tcpTableOwnerPidListener, 0);
+        table.cast(),
+        size,
+        0,
+        family,
+        _tcpTableOwnerPidListener,
+        0,
+      );
       if (rc != _noError) return null;
       final Pointer<Uint32> words = table.cast<Uint32>();
       final int rows = words[0];
@@ -391,8 +418,9 @@ final class _WindowsAnkiForeground implements AnkiDesktopForegroundBackend {
   static String _basenameLower(String path) {
     final String normalized = path.replaceAll('\\', '/');
     final int slash = normalized.lastIndexOf('/');
-    final String basename =
-        slash >= 0 ? normalized.substring(slash + 1) : normalized;
+    final String basename = slash >= 0
+        ? normalized.substring(slash + 1)
+        : normalized;
     return basename.toLowerCase();
   }
 }
@@ -409,14 +437,10 @@ typedef _IsWindowVisibleDart = int Function(int hWnd);
 typedef _GetWindowTextLengthNative = Int32 Function(IntPtr hWnd);
 typedef _GetWindowTextLengthDart = int Function(int hWnd);
 
-typedef _GetWindowThreadProcessIdNative = Uint32 Function(
-  IntPtr hWnd,
-  Pointer<Uint32> processId,
-);
-typedef _GetWindowThreadProcessIdDart = int Function(
-  int hWnd,
-  Pointer<Uint32> processId,
-);
+typedef _GetWindowThreadProcessIdNative =
+    Uint32 Function(IntPtr hWnd, Pointer<Uint32> processId);
+typedef _GetWindowThreadProcessIdDart =
+    int Function(int hWnd, Pointer<Uint32> processId);
 
 typedef _GetForegroundWindowNative = IntPtr Function();
 typedef _GetForegroundWindowDart = int Function();
@@ -433,46 +457,48 @@ typedef _IsIconicDart = int Function(int hWnd);
 typedef _ShowWindowNative = Int32 Function(IntPtr hWnd, Int32 cmdShow);
 typedef _ShowWindowDart = int Function(int hWnd, int cmdShow);
 
-typedef _OpenProcessNative = IntPtr Function(
-  Uint32 desiredAccess,
-  Int32 inheritHandle,
-  Uint32 processId,
-);
-typedef _OpenProcessDart = int Function(
-  int desiredAccess,
-  int inheritHandle,
-  int processId,
-);
+typedef _OpenProcessNative =
+    IntPtr Function(
+      Uint32 desiredAccess,
+      Int32 inheritHandle,
+      Uint32 processId,
+    );
+typedef _OpenProcessDart =
+    int Function(int desiredAccess, int inheritHandle, int processId);
 
-typedef _QueryFullProcessImageNameNative = Int32 Function(
-  IntPtr process,
-  Uint32 flags,
-  Pointer<Utf16> exeName,
-  Pointer<Uint32> size,
-);
-typedef _QueryFullProcessImageNameDart = int Function(
-  int process,
-  int flags,
-  Pointer<Utf16> exeName,
-  Pointer<Uint32> size,
-);
+typedef _QueryFullProcessImageNameNative =
+    Int32 Function(
+      IntPtr process,
+      Uint32 flags,
+      Pointer<Utf16> exeName,
+      Pointer<Uint32> size,
+    );
+typedef _QueryFullProcessImageNameDart =
+    int Function(
+      int process,
+      int flags,
+      Pointer<Utf16> exeName,
+      Pointer<Uint32> size,
+    );
 
 typedef _CloseHandleNative = Int32 Function(IntPtr handle);
 typedef _CloseHandleDart = int Function(int handle);
 
-typedef _GetExtendedTcpTableNative = Uint32 Function(
-  Pointer<Void> tcpTable,
-  Pointer<Uint32> size,
-  Int32 order,
-  Uint32 family,
-  Uint32 tableClass,
-  Uint32 reserved,
-);
-typedef _GetExtendedTcpTableDart = int Function(
-  Pointer<Void> tcpTable,
-  Pointer<Uint32> size,
-  int order,
-  int family,
-  int tableClass,
-  int reserved,
-);
+typedef _GetExtendedTcpTableNative =
+    Uint32 Function(
+      Pointer<Void> tcpTable,
+      Pointer<Uint32> size,
+      Int32 order,
+      Uint32 family,
+      Uint32 tableClass,
+      Uint32 reserved,
+    );
+typedef _GetExtendedTcpTableDart =
+    int Function(
+      Pointer<Void> tcpTable,
+      Pointer<Uint32> size,
+      int order,
+      int family,
+      int tableClass,
+      int reserved,
+    );

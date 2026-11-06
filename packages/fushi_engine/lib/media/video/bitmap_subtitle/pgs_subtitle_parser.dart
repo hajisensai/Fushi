@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:image/image.dart' as img;
 
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart';
@@ -112,10 +113,11 @@ class PgsCue implements BitmapSubtitleCue {
   /// 与 [renderPng] 同一张图的原始 RGBA 像素（不编码 PNG）：整轨识别直接把像素交给
   /// 识别会话，省掉「编码 PNG → 落盘 → 后台再解码」的往返。
   @override
-  BitmapSubtitleImage renderRgba({int padding = 16}) =>
-      bitmapSubtitleImageOf(_renderCanvas(padding));
+  BitmapSubtitleImage renderRgba({int padding = 16}) => _render(padding);
 
-  img.Image _renderCanvas(int padding) => composeBitmapSubtitleImage(
+  img.Image _renderCanvas(int padding) => _render(padding).toImage();
+
+  BitmapSubtitleImage _render(int padding) => composeBitmapSubtitleRgba(
     bounds: bounds,
     padding: padding,
     layers: <BitmapSubtitleLayer>[
@@ -183,34 +185,7 @@ class PgsPlacement {
 /// 尺寸非法（含超过 [kBitmapSubtitleMaxDimension]）返回 null。
 Uint8List? decodePgsRle(Uint8List rle, int width, int height) {
   if (!isDecodableBitmapSubtitleSize(width, height)) return null;
-  final Uint8List out = Uint8List(width * height);
-  int i = 0, x = 0, y = 0;
-  while (i < rle.length && y < height) {
-    int color = rle[i++];
-    int run = 1;
-    if (color == 0) {
-      if (i >= rle.length) break;
-      final int flag = rle[i++];
-      if (flag == 0) {
-        x = 0;
-        y++;
-        continue;
-      }
-      run = flag & 0x3F;
-      if (flag & 0x40 != 0) {
-        if (i >= rle.length) break;
-        run = (run << 8) | rle[i++];
-      }
-      if (flag & 0x80 != 0) {
-        if (i >= rle.length) break;
-        color = rle[i++];
-      }
-    }
-    final int end = x + run > width ? width : x + run;
-    if (color != 0) out.fillRange(y * width + x, y * width + end, color);
-    x = end;
-  }
-  return out;
+  return FushiComputeBitmapSubtitle.instance.decodePgsRle(rle, width, height);
 }
 
 /// BT.709 YCbCr（studio range）→ ARGB。

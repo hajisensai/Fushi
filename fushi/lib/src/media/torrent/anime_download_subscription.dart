@@ -13,6 +13,11 @@ import 'package:fushi_engine/media/torrent/anime_release_descriptor.dart';
 import 'package:fushi_engine/media/torrent/download_timeouts.dart'
     show kDownloadDiscoveryTimeout;
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
+import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart'
+    show
+        VideoDownloadSubscriptionBtSiteMissing,
+        isVideoSubscriptionBtSiteMissingError;
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/video/jimaku_batch.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart';
@@ -141,8 +146,9 @@ class AnimeDownloadSubscription {
       enabled: enabled ?? this.enabled,
       lastCheckedAtMs: lastCheckedAtMs ?? this.lastCheckedAtMs,
       lastMatchedAtMs: lastMatchedAtMs ?? this.lastMatchedAtMs,
-      lastError:
-          identical(lastError, _notSet) ? this.lastError : lastError as String?,
+      lastError: identical(lastError, _notSet)
+          ? this.lastError
+          : lastError as String?,
     );
   }
 }
@@ -206,16 +212,19 @@ AnimeDownloadSubscription? decodeAnimeDownloadSubscription(
       seriesTitle: title,
       coverUrl: raw['coverUrl'] is String ? raw['coverUrl'] as String : null,
       nyaaQuery: query,
-      category: raw['category'] is String &&
+      category:
+          raw['category'] is String &&
               (raw['category'] as String).trim().isNotEmpty
           ? raw['category'] as String
           : '1_0',
       trustedOnly: raw['trustedOnly'] == true,
       releaseGroup: group.trim(),
-      resolution:
-          raw['resolution'] is String ? raw['resolution'] as String : null,
-      jimakuEntryId:
-          raw['jimakuEntryId'] is int ? raw['jimakuEntryId'] as int : null,
+      resolution: raw['resolution'] is String
+          ? raw['resolution'] as String
+          : null,
+      jimakuEntryId: raw['jimakuEntryId'] is int
+          ? raw['jimakuEntryId'] as int
+          : null,
       jimakuEntryName: raw['jimakuEntryName'] is String
           ? raw['jimakuEntryName'] as String
           : null,
@@ -225,10 +234,12 @@ AnimeDownloadSubscription? decodeAnimeDownloadSubscription(
       startAfterEpisode: anchor,
       processedEpisodes: processed,
       enabled: raw['enabled'] != false,
-      lastCheckedAtMs:
-          raw['lastCheckedAtMs'] is int ? raw['lastCheckedAtMs'] as int : null,
-      lastMatchedAtMs:
-          raw['lastMatchedAtMs'] is int ? raw['lastMatchedAtMs'] as int : null,
+      lastCheckedAtMs: raw['lastCheckedAtMs'] is int
+          ? raw['lastCheckedAtMs'] as int
+          : null,
+      lastMatchedAtMs: raw['lastMatchedAtMs'] is int
+          ? raw['lastMatchedAtMs'] as int
+          : null,
       lastError: raw['lastError'] is String ? raw['lastError'] as String : null,
     );
   } catch (_) {
@@ -262,8 +273,10 @@ class AnimeDownloadSubscriptionStore {
         } catch (_) {}
       }
     } catch (_) {}
-    subscriptions
-        .sort((AnimeDownloadSubscription a, AnimeDownloadSubscription b) {
+    subscriptions.sort((
+      AnimeDownloadSubscription a,
+      AnimeDownloadSubscription b,
+    ) {
       final int byCreated = b.createdAtMs.compareTo(a.createdAtMs);
       return byCreated != 0 ? byCreated : a.id.compareTo(b.id);
     });
@@ -331,12 +344,13 @@ List<NyaaTorrent> selectSubscriptionReleases(
       bestByEpisode[episode] = torrent;
     }
   }
-  final List<MapEntry<int, NyaaTorrent>> entries = bestByEpisode.entries
-      .toList()
-    ..sort((MapEntry<int, NyaaTorrent> a, MapEntry<int, NyaaTorrent> b) =>
-        a.key.compareTo(b.key));
+  final List<MapEntry<int, NyaaTorrent>> entries =
+      bestByEpisode.entries.toList()..sort(
+        (MapEntry<int, NyaaTorrent> a, MapEntry<int, NyaaTorrent> b) =>
+            a.key.compareTo(b.key),
+      );
   return <NyaaTorrent>[
-    for (final MapEntry<int, NyaaTorrent> e in entries) e.value
+    for (final MapEntry<int, NyaaTorrent> e in entries) e.value,
   ];
 }
 
@@ -355,15 +369,15 @@ bool _isBetterRelease(NyaaTorrent candidate, NyaaTorrent previous) {
   return candidate.infoHash.compareTo(previous.infoHash) < 0;
 }
 
-typedef AnimeSubscriptionSearch = Future<List<NyaaTorrent>> Function(
-  AnimeDownloadSubscription subscription,
-);
+typedef AnimeSubscriptionSearch =
+    Future<List<NyaaTorrent>> Function(AnimeDownloadSubscription subscription);
 
-typedef AnimeSubscriptionSubtitleFetcher = Future<List<PlanSubtitle>> Function(
-  AnimeDownloadSubscription subscription,
-  NyaaTorrent torrent,
-  Directory destination,
-);
+typedef AnimeSubscriptionSubtitleFetcher =
+    Future<List<PlanSubtitle>> Function(
+      AnimeDownloadSubscription subscription,
+      NyaaTorrent torrent,
+      Directory destination,
+    );
 
 class AnimeDownloadSubscriptionService {
   AnimeDownloadSubscriptionService({
@@ -375,14 +389,16 @@ class AnimeDownloadSubscriptionService {
     String Function()? jimakuApiKeyProvider,
     AnimeSubscriptionSubtitleFetcher? subtitleFetcher,
     Future<http.Client> Function()? httpClientFactory,
+    BtSiteConfig? Function()? animeSiteProvider,
     this.interval = const Duration(minutes: 15),
-  })  : _configProvider = configProvider,
-        _backendFactory = backendFactory,
-        _search = search,
-        _jimakuApiKeyProvider = jimakuApiKeyProvider ?? (() => ''),
-        _subtitleFetcher = subtitleFetcher,
-        _httpClientFactory =
-            httpClientFactory ?? (() async => createAppHttpIoClient());
+  }) : _configProvider = configProvider,
+       _animeSiteProvider = animeSiteProvider ?? (() => null),
+       _backendFactory = backendFactory,
+       _search = search,
+       _jimakuApiKeyProvider = jimakuApiKeyProvider ?? (() => ''),
+       _subtitleFetcher = subtitleFetcher,
+       _httpClientFactory =
+           httpClientFactory ?? (() async => createAppHttpIoClient());
 
   final AnimeDownloadSubscriptionStore store;
   final AnimeDownloadPlanStore planStore;
@@ -392,6 +408,10 @@ class AnimeDownloadSubscriptionService {
   final String Function() _jimakuApiKeyProvider;
   final AnimeSubscriptionSubtitleFetcher? _subtitleFetcher;
   final Future<http.Client> Function() _httpClientFactory;
+
+  /// 用户的第一个启用、覆盖动画域的 Nyaa 式 BT 站（没有内置站点）。null =
+  /// 没有可用站点：这条旧订阅本轮不发请求，lastError 记「没有可用的 BT 站」。
+  final BtSiteConfig? Function() _animeSiteProvider;
   final Duration interval;
   final ValueNotifier<bool> checking = ValueNotifier<bool>(false);
 
@@ -401,13 +421,27 @@ class AnimeDownloadSubscriptionService {
   Future<List<NyaaTorrent>> _searchNyaa(
     AnimeDownloadSubscription subscription,
   ) async {
+    final BtSiteConfig? site = _animeSiteProvider();
+    final String? siteCategory = site?.nyaaCategories[BtSiteDomain.anime];
+    if (site == null || siteCategory == null) {
+      throw const VideoDownloadSubscriptionBtSiteMissing();
+    }
+    // 旧订阅存的分类号是按当年那个站点的分类体系记的；只有与用户站点动画分类
+    // 同一个大类（`1_2` 之于 `1_0`）时才沿用它的子类细分，否则用站点自己的动画分类。
+    final String category =
+        subscription.category.split('_').first == siteCategory.split('_').first
+        ? subscription.category
+        : siteCategory;
     final http.Client rawClient = await _httpClientFactory();
-    final NyaaClient client = NyaaClient(client: rawClient);
+    final NyaaClient client = NyaaClient(
+      baseUrl: site.baseUrl.toString(),
+      client: rawClient,
+    );
     try {
       return await client
           .search(
             subscription.nyaaQuery,
-            category: subscription.category,
+            category: category,
             filter: subscription.trustedOnly ? '2' : '0',
             // 订阅追的是「最新集」：一页只有 75 条，长篇（One Piece 级）按做种
             // 排会把刚出的新集挤出首页。按发布时间倒序保住旧 RSS 语义。
@@ -506,14 +540,50 @@ class AnimeDownloadSubscriptionService {
     _checking = true;
     checking.value = true;
     try {
-      final List<AnimeDownloadSubscription> subscriptions =
-          await store.loadAll();
+      final List<AnimeDownloadSubscription> subscriptions = await store
+          .loadAll();
       for (final AnimeDownloadSubscription subscription in subscriptions) {
         if (subscription.enabled) await _check(subscription);
       }
     } finally {
-      _checking = false;
-      checking.value = false;
+      _finishChecking();
+    }
+  }
+
+  /// 有一轮检查在跑时收到的唤醒请求：那一轮可能已经按旧站点配置查过某些订阅，
+  /// 跑完后必须按新配置再唤醒一次，否则这次唤醒就丢了。
+  bool _wakePending = false;
+
+  void _finishChecking() {
+    _checking = false;
+    checking.value = false;
+    if (_wakePending) {
+      _wakePending = false;
+      unawaited(wakeBtSiteMissingSubscriptions());
+    }
+  }
+
+  /// 用户 BT 站配置变了（新增 / 启用 / 重新检测）后调：立即重查因「没有可用的
+  /// BT 站」（[VideoDownloadSubscriptionBtSiteMissing]）而停住的启用订阅，不等
+  /// [interval] 的下一次定时检查。与视频订阅的
+  /// `VideoDownloadSubscriptionService.wakeBtSiteMissingSubscriptions` 同一判据。
+  Future<void> wakeBtSiteMissingSubscriptions() async {
+    if (_checking) {
+      _wakePending = true;
+      return;
+    }
+    _checking = true;
+    checking.value = true;
+    try {
+      for (final AnimeDownloadSubscription subscription
+          in await store.loadAll()) {
+        if (subscription.enabled &&
+            isVideoSubscriptionBtSiteMissingError(subscription.lastError)) {
+          await _check(subscription);
+        }
+      }
+    } finally {
+      _finishChecking();
     }
   }
 
@@ -522,8 +592,8 @@ class AnimeDownloadSubscriptionService {
     _checking = true;
     checking.value = true;
     try {
-      final List<AnimeDownloadSubscription> subscriptions =
-          await store.loadAll();
+      final List<AnimeDownloadSubscription> subscriptions = await store
+          .loadAll();
       for (final AnimeDownloadSubscription subscription in subscriptions) {
         if (subscription.id == id) {
           await _check(subscription);
@@ -531,8 +601,7 @@ class AnimeDownloadSubscriptionService {
         }
       }
     } finally {
-      _checking = false;
-      checking.value = false;
+      _finishChecking();
     }
   }
 
@@ -542,10 +611,12 @@ class AnimeDownloadSubscriptionService {
     try {
       final QbConnectionConfig config = _configProvider();
       if (!config.isConfigured) {
-        await store.save(current.copyWith(
-          lastCheckedAtMs: checkedAt,
-          lastError: 'download backend not configured',
-        ));
+        await store.save(
+          current.copyWith(
+            lastCheckedAtMs: checkedAt,
+            lastError: 'download backend not configured',
+          ),
+        );
         return;
       }
       final AnimeSubscriptionSearch? injectedSearch = _search;
@@ -554,10 +625,9 @@ class AnimeDownloadSubscriptionService {
         await (injectedSearch?.call(current) ?? _searchNyaa(current)),
       );
       if (releases.isEmpty) {
-        await store.save(current.copyWith(
-          lastCheckedAtMs: checkedAt,
-          lastError: null,
-        ));
+        await store.save(
+          current.copyWith(lastCheckedAtMs: checkedAt, lastError: null),
+        );
         return;
       }
       final Set<String> existingPlanIds = <String>{
@@ -590,7 +660,8 @@ class AnimeDownloadSubscriptionService {
               // AnimeDownloadService 按**包内真实文件名**反查（BUG-1206 的强
               // 判据，比这里按标题猜集号更准），之后还有 backoff 重试兜底。
               // pendingError 仍然写，任务行照旧告诉用户「这集字幕还没到」。
-              pendingError = 'subtitle not yet available for episode $episode '
+              pendingError =
+                  'subtitle not yet available for episode $episode '
                   'from ${current.jimakuEntryName ?? current.jimakuEntryId}; '
                   'will retry after download';
             }
@@ -616,8 +687,8 @@ class AnimeDownloadSubscriptionService {
               subtitleStatus: subtitles.isNotEmpty
                   ? AnimeDownloadPlan.subtitleResolved
                   : (current.jimakuEntryId != null
-                      ? AnimeDownloadPlan.subtitlePending
-                      : AnimeDownloadPlan.subtitleNone),
+                        ? AnimeDownloadPlan.subtitlePending
+                        : AnimeDownloadPlan.subtitleNone),
               // 发现期下好的字幕还没见过视频：交给下载完成那一轮按内嵌轨对齐
               // （与完成时反查配上的字幕同一条路）。
               subtitleAlignPending: subtitles.isNotEmpty,
@@ -641,10 +712,7 @@ class AnimeDownloadSubscriptionService {
           }
           if (!queued) continue;
           current = current.copyWith(
-            processedEpisodes: <int>{
-              ...current.processedEpisodes,
-              episode,
-            },
+            processedEpisodes: <int>{...current.processedEpisodes, episode},
             lastCheckedAtMs: checkedAt,
             lastMatchedAtMs: DateTime.now().millisecondsSinceEpoch,
             lastError: null,
@@ -656,18 +724,22 @@ class AnimeDownloadSubscriptionService {
         backend.close();
       }
       if (current.lastCheckedAtMs != checkedAt) {
-        await store.save(current.copyWith(
-          lastCheckedAtMs: checkedAt,
-          lastError: pendingError ?? 'matching release could not be queued',
-        ));
+        await store.save(
+          current.copyWith(
+            lastCheckedAtMs: checkedAt,
+            lastError: pendingError ?? 'matching release could not be queued',
+          ),
+        );
       } else if (pendingError != null) {
         await store.save(current.copyWith(lastError: pendingError));
       }
     } catch (error) {
-      await store.save(current.copyWith(
-        lastCheckedAtMs: checkedAt,
-        lastError: error.toString(),
-      ));
+      await store.save(
+        current.copyWith(
+          lastCheckedAtMs: checkedAt,
+          lastError: error.toString(),
+        ),
+      );
     }
   }
 }

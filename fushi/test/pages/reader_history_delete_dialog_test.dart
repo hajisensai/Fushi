@@ -11,9 +11,7 @@ void main() {
   });
 
   Widget buildApp(Widget home) {
-    return TranslationProvider(
-      child: MaterialApp(home: home),
-    );
+    return TranslationProvider(child: MaterialApp(home: home));
   }
 
   testWidgets('reader history delete dialog fits a compact desktop window', (
@@ -45,11 +43,15 @@ void main() {
       WidgetTester tester,
     ) async {
       DeleteDecision? got;
-      await tester.pumpWidget(buildApp(ReaderHistoryDeleteDialog(
-        title: t.epub_delete_title,
-        message: 'm',
-        onConfirm: (DeleteDecision d) => got = d,
-      )));
+      await tester.pumpWidget(
+        buildApp(
+          ReaderHistoryDeleteDialog(
+            title: t.epub_delete_title,
+            message: 'm',
+            onConfirm: (DeleteDecision d) => got = d,
+          ),
+        ),
+      );
       expect(find.text(t.delete_statistics), findsNothing);
       await tester.tap(find.text(t.dialog_delete));
       await tester.pumpAndSettle();
@@ -63,16 +65,20 @@ void main() {
       tester.view.physicalSize = const Size(800, 1400);
       addTearDown(tester.view.reset);
       DeleteDecision? got;
-      await tester.pumpWidget(buildApp(ReaderHistoryDeleteDialog(
-        title: t.epub_delete_title,
-        message: 'm',
-        showSyncScope: false,
-        statisticsSubtitle: t.delete_statistics_book_desc,
-        disclosure: buildDeletionDisclosure(
-          target: DeletionDisclosureTarget.shelfBook,
+      await tester.pumpWidget(
+        buildApp(
+          ReaderHistoryDeleteDialog(
+            title: t.epub_delete_title,
+            message: 'm',
+            showSyncScope: false,
+            statisticsSubtitle: t.delete_statistics_book_desc,
+            disclosure: buildDeletionDisclosure(
+              target: DeletionDisclosureTarget.shelfBook,
+            ),
+            onConfirm: (DeleteDecision d) => got = d,
+          ),
         ),
-        onConfirm: (DeleteDecision d) => got = d,
-      )));
+      );
       expect(find.text(t.delete_statistics), findsOneWidget);
       expect(find.text(t.delete_statistics_book_desc), findsOneWidget);
       DeletionDisclosure shown() => tester
@@ -80,7 +86,9 @@ void main() {
           .disclosure;
       expect(shown().willKeep, contains(t.delete_disclosure_stats_kept));
       expect(
-          shown().willDelete, isNot(contains(t.delete_disclosure_stats_kept)));
+        shown().willDelete,
+        isNot(contains(t.delete_disclosure_stats_kept)),
+      );
 
       await tester.tap(find.text(t.delete_statistics));
       await tester.pumpAndSettle();

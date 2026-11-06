@@ -51,7 +51,10 @@ void main() {
 
     test('fromJson rejects missing id/provider and drops bad base64', () {
       expect(TtsVoicePreset.fromJson('nope'), isNull);
-      expect(TtsVoicePreset.fromJson(<String, Object?>{'provider': 'x'}), isNull);
+      expect(
+        TtsVoicePreset.fromJson(<String, Object?>{'provider': 'x'}),
+        isNull,
+      );
       expect(
         TtsVoicePreset.fromJson(<String, Object?>{'id': '', 'provider': 'x'}),
         isNull,

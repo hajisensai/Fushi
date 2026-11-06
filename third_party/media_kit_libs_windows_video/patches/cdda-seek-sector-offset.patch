@@ -1,0 +1,43 @@
+--- a/stream/stream_cdda.c
++++ b/stream/stream_cdda.c
+@@ -138,7 +138,10 @@
+         if ((p->sector < p->start_sector) || (p->sector > p->end_sector))
+             return 0;
+ 
+-        p->data_pos = 0;
++        // After a seek, data is NULL and data_pos is the byte offset of the
++        // seek target inside this sector; otherwise start at its beginning.
++        if (p->data)
++            p->data_pos = 0;
+         p->data = (uint8_t *)paranoia_read(p->cdp, cdparanoia_callback);
+         if (!p->data)
+             return 0;
+@@ -162,11 +165,19 @@
+ 
+     newpos += (int64_t)p->start_sector * CDIO_CD_FRAMESIZE_RAW;
+ 
++    // Drop what is left of the sector read before the seek.
++    p->data = NULL;
++    p->data_pos = 0;
++
+     sec = newpos / CDIO_CD_FRAMESIZE_RAW;
+     if (newpos < 0 || sec > p->end_sector) {
+         p->sector = p->end_sector + 1;
+         return 0;
+     }
++    // The raw demuxer seeks to sample frames, not sectors: keep the offset
++    // into the sector, or every sample after the seek would be delivered up
++    // to 587 frames early while its timestamp says otherwise.
++    p->data_pos = newpos % CDIO_CD_FRAMESIZE_RAW;
+ 
+     for (i = 0; i < p->cd->tracks; i++) {
+         if (p->sector >= p->cd->disc_toc[i].dwStartSector
+@@ -183,6 +194,8 @@
+         print_track_info(s, seeked_track + 1);
+ 
+     p->sector = sec;
++    MP_DBG(s, "Seek to sector %d, byte %d within the sector.\n",
++           sec, (int)p->data_pos);
+ 
+     paranoia_seek(p->cdp, sec, SEEK_SET);
+     return 1;

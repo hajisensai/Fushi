@@ -1,10 +1,12 @@
 import 'dart:convert';
-import 'dart:typed_data';
+import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
+import 'package:fushi/src/reader/image_actions_sheet.dart';
 
 /// 歌词模式插图的交互（2026-10-07）：横屏封面位换图 / 点掉回封面 / 左右切换 /
 /// 点中间看大图；竖屏小封面入口；大图浏览翻页与关闭回封面。
@@ -208,5 +210,69 @@ void main() {
     await tester.pumpAndSettle();
     await done;
     expect(c.shown, isNull, reason: '竖屏入口看完就回封面');
+  });
+
+  testWidgets('长按插图卡 / 大图：弹全局图片动作面板（有磁盘文件才挂）', (WidgetTester tester) async {
+    final LyricsIllustrationController c = LyricsIllustrationController()
+      ..load(
+        <LyricsIllustration>[
+          LyricsIllustration(
+            key: 'a',
+            position: const LyricsBookPosition(1, 0),
+            image: MemoryImage(_png),
+            file: File('/books/OEBPS/a.png'),
+          ),
+        ],
+        position: const LyricsBookPosition(0, 0),
+        audioPosition: Duration.zero,
+      );
+    c.observe(
+      const LyricsBookPosition(2, 10),
+      audioPosition: const Duration(seconds: 5),
+    );
+    await tester.pumpWidget(_slotApp(c));
+    await tester.pumpAndSettle();
+    await tester.longPress(find.byKey(_cardKey));
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageActionsSheet), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('image_action_save')),
+      findsOneWidget,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageActionsSheet), findsNothing);
+
+    // 测试里的内存图源（file == null）不挂长按。
+    final LyricsIllustrationController noFile = _controller();
+    _playPastTwo(noFile);
+    await tester.pumpWidget(_slotApp(noFile));
+    await tester.pumpAndSettle();
+    await tester.longPress(find.byKey(_cardKey));
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageActionsSheet), findsNothing);
+    // 两张卡都没进停留：到展示时长自动收起（BUG-4065），计时不留到测试结束。
+    await tester.pump(lyricsIllustrationCardDisplayDuration(0));
+    expect(c.cardVisible, isFalse);
+    expect(noFile.cardVisible, isFalse);
+  });
+  testWidgets('插图卡没进停留时按「图片暂停」秒数自动收起', (WidgetTester tester) async {
+    final ValueNotifier<int> pause = ValueNotifier<int>(9);
+    addTearDown(pause.dispose);
+    final LyricsIllustrationController c = _controller()..imagePauseSec = pause;
+    _playPastTwo(c);
+    await tester.pumpWidget(_slotApp(c));
+    await tester.pumpAndSettle();
+    expect(find.byKey(_cardKey), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 8));
+    await tester.pumpAndSettle();
+    expect(c.cardVisible, isTrue, reason: '9 秒停留设置下 8 秒时卡还在（旧实现固定 5 秒就收）');
+    expect(find.byKey(_cardKey), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(c.cardVisible, isFalse);
+    expect(c.shown, 0, reason: '只收卡，插图位仍是这张插图');
   });
 }

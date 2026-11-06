@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
@@ -95,7 +93,7 @@ void main() {
 
     test('extension guide needs both desktop capability and selection', () {
       final Set<OnboardingFeature> selected = <OnboardingFeature>{
-        OnboardingFeature.browserExtension,
+        OnboardingFeature.web,
       };
       expect(
         _steps(selected, browserExtensionAvailable: true),
@@ -433,79 +431,9 @@ void main() {
       },
     );
 
-    // 所有者 2026-10-22：正式版新手引导不引导去 Fushi 复习。
-    test('formal builds (no SRS) never guide to Fushi review', () {
-      for (final OnboardingReviewMethod m in OnboardingReviewMethod.values) {
-        final List<OnboardingStepId> formal = onboardingStepSequence(
-          selected: all,
-          browserExtensionAvailable: true,
-          globalLookupAvailable: true,
-          ankiReady: true,
-          reviewMethod: m,
-          srsEnabled: true,
-          srsAvailable: false,
-        );
-        expect(formal, <OnboardingStepId>[
-          OnboardingStepId.welcome,
-          OnboardingStepId.features,
-          OnboardingStepId.recommendedPack,
-          OnboardingStepId.manualResources,
-          OnboardingStepId.anki,
-          OnboardingStepId.onlineServices,
-          OnboardingStepId.backup,
-          OnboardingStepId.interconnect,
-          OnboardingStepId.browserExtension,
-          OnboardingStepId.fonts,
-          OnboardingStepId.clickLookup,
-          OnboardingStepId.globalLookup,
-          OnboardingStepId.firstAnkiCard,
-          OnboardingStepId.finish,
-        ]);
-      }
-      final Set<OnboardingFeature> noCards = OnboardingFeature.values.toSet()
-        ..remove(OnboardingFeature.cardCreation);
-      expect(
-        onboardingStepSequence(
-          selected: noCards,
-          browserExtensionAvailable: false,
-          globalLookupAvailable: false,
-          ankiReady: false,
-          srsEnabled: true,
-          srsAvailable: false,
-        ),
-        isNot(contains(OnboardingStepId.srs)),
-      );
-    });
-
-    test('the wizard gates the review steps on SRS availability', () {
-      final String src = File(
-        'lib/src/pages/implementations/onboarding_wizard_page.dart',
-      ).readAsStringSync();
-      expect(src, contains('srsAvailable: _moduleAvailable(ModuleId.srs),'));
-    });
-
-    test('initial choice mirrors the live state', () {
-      expect(
-        onboardingReviewMethodOf(
-          srsModuleEnabled: true,
-          miningTarget: SrsMiningTarget.srs,
-        ),
-        OnboardingReviewMethod.fushi,
-      );
-      for (final (bool module, SrsMiningTarget target)
-          in <(bool, SrsMiningTarget)>[
-            (false, SrsMiningTarget.srs),
-            (true, SrsMiningTarget.anki),
-            (false, SrsMiningTarget.anki),
-          ]) {
-        expect(
-          onboardingReviewMethodOf(
-            srsModuleEnabled: module,
-            miningTarget: target,
-          ),
-          OnboardingReviewMethod.anki,
-        );
-      }
+    test('initial choice is Fushi SRS regardless of the live state', () {
+      // 所有者 2026-10-20：新手教程默认 Fushi 复习（此前老用户重开向导默认 Anki）。
+      expect(kOnboardingDefaultReviewMethod, OnboardingReviewMethod.fushi);
     });
 
     test('choosing writes module + mining target', () async {
@@ -514,21 +442,28 @@ void main() {
       Future<void> setModule(ModuleId m, bool v) async => modules[m] = v;
       Future<void> setTarget(SrsMiningTarget t) async => targets.add(t);
 
+      int adopted = 0;
+      Future<void> adopt() async => adopted++;
+
       await applyOnboardingReviewMethod(
         OnboardingReviewMethod.fushi,
         setModuleEnabled: setModule,
         setMiningTarget: setTarget,
+        adoptFushiCard: adopt,
       );
       expect(modules, <ModuleId, bool>{ModuleId.srs: true});
       expect(targets.last, SrsMiningTarget.srs);
+      expect(adopted, 1, reason: '选 Fushi 复习要把制卡笔记类型落到 Fushi 卡片');
 
       await applyOnboardingReviewMethod(
         OnboardingReviewMethod.anki,
         setModuleEnabled: setModule,
         setMiningTarget: setTarget,
+        adoptFushiCard: adopt,
       );
       expect(modules, <ModuleId, bool>{ModuleId.srs: false});
       expect(targets.last, SrsMiningTarget.anki);
+      expect(adopted, 1, reason: '选 Anki 不碰 Fushi 复习的笔记类型');
     });
 
     test('the wizard offers no SRS checkbox (the choice step writes it)', () {
@@ -536,6 +471,123 @@ void main() {
       expect(
         OnboardingFeature.values.map(moduleOfOnboardingFeature),
         isNot(contains(ModuleId.srs)),
+      );
+    });
+  });
+
+  group('usage purpose', () {
+    const Set<OnboardingFeature> freshInstall = <OnboardingFeature>{
+      ...kOnboardingDefaultCapabilities,
+      OnboardingFeature.books,
+      OnboardingFeature.video,
+      OnboardingFeature.lookup,
+      OnboardingFeature.cardCreation,
+      OnboardingFeature.sync,
+    };
+
+    test('media only drops every language-learning step', () {
+      final Set<OnboardingFeature> media = onboardingSelectionForPurpose(
+        OnboardingUsagePurpose.mediaOnly,
+        <OnboardingFeature>{...freshInstall, OnboardingFeature.manualResources},
+      );
+      expect(media.intersection(kOnboardingLanguageLearningFeatures), isEmpty);
+      // 与学外语无关的选择原样保留。
+      expect(
+        media,
+        containsAll(<OnboardingFeature>[
+          OnboardingFeature.books,
+          OnboardingFeature.video,
+          OnboardingFeature.sync,
+          OnboardingFeature.fonts,
+        ]),
+      );
+      final List<OnboardingStepId> steps = _steps(
+        media,
+        globalLookupAvailable: true,
+        ankiReady: true,
+        reviewMethod: OnboardingReviewMethod.fushi,
+        srsEnabled:
+            onboardingSrsModuleOverride(
+              purpose: OnboardingUsagePurpose.mediaOnly,
+              selected: media,
+            ) ??
+            true,
+      );
+      expect(
+        steps,
+        isNot(
+          anyOf(<Matcher>[
+            contains(OnboardingStepId.recommendedPack),
+            contains(OnboardingStepId.manualResources),
+            contains(OnboardingStepId.reviewMethod),
+            contains(OnboardingStepId.anki),
+            contains(OnboardingStepId.clickLookup),
+            contains(OnboardingStepId.globalLookup),
+            contains(OnboardingStepId.firstAnkiCard),
+            contains(OnboardingStepId.srs),
+          ]),
+        ),
+      );
+      expect(steps, contains(OnboardingStepId.fonts));
+    });
+
+    test('switching back to learning restores the factory presets', () {
+      final Set<OnboardingFeature> roundTrip = onboardingSelectionForPurpose(
+        OnboardingUsagePurpose.languageLearning,
+        onboardingSelectionForPurpose(
+          OnboardingUsagePurpose.mediaOnly,
+          freshInstall,
+        ),
+      );
+      expect(roundTrip, freshInstall);
+    });
+
+    test('initial purpose follows lookup and card creation modules', () {
+      expect(
+        onboardingUsagePurposeOf(
+          lookupModuleEnabled: true,
+          cardCreationModuleEnabled: true,
+        ),
+        OnboardingUsagePurpose.languageLearning,
+      );
+      expect(
+        onboardingUsagePurposeOf(
+          lookupModuleEnabled: false,
+          cardCreationModuleEnabled: true,
+        ),
+        OnboardingUsagePurpose.languageLearning,
+      );
+      expect(
+        onboardingUsagePurposeOf(
+          lookupModuleEnabled: false,
+          cardCreationModuleEnabled: false,
+        ),
+        OnboardingUsagePurpose.mediaOnly,
+      );
+    });
+
+    test('srs is only switched off for media only without card creation', () {
+      expect(
+        onboardingSrsModuleOverride(
+          purpose: OnboardingUsagePurpose.mediaOnly,
+          selected: <OnboardingFeature>{},
+        ),
+        isFalse,
+      );
+      // 用户在方格里手动勾回制卡：交给「复习方式」一步决定。
+      expect(
+        onboardingSrsModuleOverride(
+          purpose: OnboardingUsagePurpose.mediaOnly,
+          selected: <OnboardingFeature>{OnboardingFeature.cardCreation},
+        ),
+        isNull,
+      );
+      expect(
+        onboardingSrsModuleOverride(
+          purpose: OnboardingUsagePurpose.languageLearning,
+          selected: <OnboardingFeature>{},
+        ),
+        isNull,
       );
     });
   });

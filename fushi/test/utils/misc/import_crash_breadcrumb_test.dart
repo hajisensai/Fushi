@@ -58,9 +58,9 @@ void main() {
   });
 
   test('历史错误日志含坏 UTF-8 字节时 init 仍能恢复可读尾部', () async {
-    File('${tmp.path}/error_log.txt').writeAsBytesSync(
-      <int>[0xFF, 0xFE, ...'valid tail'.codeUnits],
-    );
+    File(
+      '${tmp.path}/error_log.txt',
+    ).writeAsBytesSync(<int>[0xFF, 0xFE, ...'valid tail'.codeUnits]);
 
     await ErrorLogService.instance.init(directoryOverride: tmp);
 
@@ -122,7 +122,9 @@ void main() {
     await ErrorLogService.instance.init(directoryOverride: tmp);
 
     expect(
-        ErrorLogService.instance.getFullLog(), contains('previous-run-error'));
+      ErrorLogService.instance.getFullLog(),
+      contains('previous-run-error'),
+    );
     ErrorLogService.instance.logFatal('Runtime.clearSmoke', 'fresh-error');
     expect(ErrorLogService.instance.entries, isNotEmpty);
     expect(logFile.readAsStringSync(), contains('fresh-error'));
@@ -130,10 +132,14 @@ void main() {
     await ErrorLogService.instance.clear();
 
     expect(ErrorLogService.instance.entries, isEmpty);
-    expect(ErrorLogService.instance.getFullLog(),
-        isNot(contains('previous-run-error')));
     expect(
-        ErrorLogService.instance.getFullLog(), isNot(contains('fresh-error')));
+      ErrorLogService.instance.getFullLog(),
+      isNot(contains('previous-run-error')),
+    );
+    expect(
+      ErrorLogService.instance.getFullLog(),
+      isNot(contains('fresh-error')),
+    );
     expect(logFile.readAsStringSync(), isEmpty);
   });
 
@@ -144,30 +150,39 @@ void main() {
     });
 
     test('导入面包屑 + native 步进文件都残留：crashRecovered 同时含文件名与最后步骤', () async {
-      File('${tmp.path}/import_crash_breadcrumb.txt')
-          .writeAsStringSync('native 词典导入未返回：C:/dicts/big.zip');
+      File(
+        '${tmp.path}/import_crash_breadcrumb.txt',
+      ).writeAsStringSync('native 词典导入未返回：C:/dicts/big.zip');
       // 文件名必须与 native import_breadcrumb::kStepFileName 一致。
-      File('${tmp.path}/import_step_breadcrumb.txt')
-          .writeAsStringSync('yomitan: term_bank #3 / term_bank_3.json');
+      File(
+        '${tmp.path}/import_step_breadcrumb.txt',
+      ).writeAsStringSync('yomitan: term_bank #3 / term_bank_3.json');
 
       await ErrorLogService.instance.init(directoryOverride: tmp);
 
       final log = ErrorLogService.instance.getFullLog();
       expect(log, contains('DictImport.crashRecovered'));
       expect(log, contains('big.zip'));
-      expect(log,
-          contains('native 最后步骤=yomitan: term_bank #3 / term_bank_3.json'));
+      expect(
+        log,
+        contains('native 最后步骤=yomitan: term_bank #3 / term_bank_3.json'),
+      );
 
       // 读完即删：两个面包屑都清掉，下次启动不重复报警。
-      expect(File('${tmp.path}/import_crash_breadcrumb.txt').existsSync(),
-          isFalse);
       expect(
-          File('${tmp.path}/import_step_breadcrumb.txt').existsSync(), isFalse);
+        File('${tmp.path}/import_crash_breadcrumb.txt').existsSync(),
+        isFalse,
+      );
+      expect(
+        File('${tmp.path}/import_step_breadcrumb.txt').existsSync(),
+        isFalse,
+      );
     });
 
     test('只有 native 步进文件残留（导入面包屑已清）：仍报告最后步骤', () async {
-      File('${tmp.path}/import_step_breadcrumb.txt')
-          .writeAsStringSync('yomitan: media #1 / cover.png');
+      File(
+        '${tmp.path}/import_step_breadcrumb.txt',
+      ).writeAsStringSync('yomitan: media #1 / cover.png');
 
       await ErrorLogService.instance.init(directoryOverride: tmp);
 
@@ -175,7 +190,9 @@ void main() {
       expect(log, contains('DictImport.crashRecovered'));
       expect(log, contains('native 最后步骤=yomitan: media #1 / cover.png'));
       expect(
-          File('${tmp.path}/import_step_breadcrumb.txt').existsSync(), isFalse);
+        File('${tmp.path}/import_step_breadcrumb.txt').existsSync(),
+        isFalse,
+      );
     });
 
     test('两个面包屑都不存在（正常路径）：不产生 crashRecovered', () async {

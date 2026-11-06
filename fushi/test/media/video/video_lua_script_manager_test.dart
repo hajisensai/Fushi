@@ -61,9 +61,10 @@ void main() {
 
   group('buildLoadScriptCommands', () {
     test('每个路径一条 load-script 命令，保持输入顺序', () {
-      final List<List<String>> cmds = buildLoadScriptCommands(
-        <String>[r'C:\a\x.lua', r'C:\a\y.lua'],
-      );
+      final List<List<String>> cmds = buildLoadScriptCommands(<String>[
+        r'C:\a\x.lua',
+        r'C:\a\y.lua',
+      ]);
       expect(cmds, <List<String>>[
         <String>['load-script', r'C:\a\x.lua'],
         <String>['load-script', r'C:\a\y.lua'],
@@ -178,7 +179,8 @@ void main() {
     test('只认镜像标题，用户的真实轨不受影响', () {
       expect(
         isLuaSubtitleMirrorTrack(
-            const SubtitleTrack('5', kLuaSubtitleMirrorTrackTitle, null)),
+          const SubtitleTrack('5', kLuaSubtitleMirrorTrackTitle, null),
+        ),
         isTrue,
       );
       expect(
@@ -287,14 +289,13 @@ void main() {
       bool graphic = false,
       bool decoded = false,
       bool bluray = false,
-    }) =>
-        shouldMirrorSubtitlesForLua(
-          hasLoadedScripts: scripts,
-          hasTextCues: cues,
-          graphicSubtitleActive: graphic,
-          playerDecodedSubtitleActive: decoded,
-          blurayNavigationSession: bluray,
-        );
+    }) => shouldMirrorSubtitlesForLua(
+      hasLoadedScripts: scripts,
+      hasTextCues: cues,
+      graphicSubtitleActive: graphic,
+      playerDecodedSubtitleActive: decoded,
+      blurayNavigationSession: bluray,
+    );
 
     test('装了脚本 + Dart 侧文本 cue 才挂镜像', () {
       expect(decide(), isTrue);

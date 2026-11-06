@@ -103,6 +103,19 @@
     if (overlayOn && !s.hidden && s.hasTrack && !s.externalTrack && !s.replaceNative && !s.allTracks) {
       items.push({ id: 'hint', kind: 'hint', label: tr('pc_hint_site_track'), action: 'replaceNative', icon: 'info' });
     }
+    // 收藏进 Fushi 收藏夹（反馈 KGC1ifR1a3，执行端 video-favorite.js）：当前句（文本 + 时间点）与
+    // 视频本身。与 App 收藏夹是同一份数据；已收藏的显示实心星 / 开关开态，再点即取消收藏。
+    // 没有当前句（无 Fushi 字幕 / 字幕间隙之前）时「收藏当前句」置灰。
+    var line = typeof s.lineText === 'string' ? s.lineText : '';
+    items.push({
+      id: 'favLine',
+      kind: 'action',
+      label: tr(s.lineFavorited ? 'pc_fav_line_remove' : 'pc_fav_line_add'),
+      detail: line.length > 40 ? line.slice(0, 40) + '…' : line,
+      icon: s.lineFavorited ? 'star_fill' : 'star',
+      disabled: !line,
+    });
+    items.push({ id: 'favVideo', kind: 'switch', on: !!s.videoFavorited, label: tr('pc_fav_video'), icon: 'star' });
     // 选字幕轨（就地切换，不必开侧边栏）：子页列出这个视频的全部 Fushi 字幕轨。
     items.push({
       id: 'track',
@@ -234,8 +247,18 @@
     return d >= MIN_VIDEO_SEC;
   }
 
+  // 视口坐标 (x, y) 是否落在视频画面矩形内（通用悬浮按钮的显隐判据，见 onPointer）。
+  function pointInVideo(v, x, y) {
+    if (!v || typeof v.getBoundingClientRect !== 'function') return false;
+    if (typeof x !== 'number' || typeof y !== 'number' || !isFinite(x) || !isFinite(y)) return false;
+    var r = v.getBoundingClientRect();
+    if (!r || !(r.right > r.left) || !(r.bottom > r.top)) return false;
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  }
+
   var api = {
     SETTING_KEY: SETTING_KEY,
+    pointInVideo: pointInVideo,
     BTN_ID: BTN_ID,
     MENU_ID: MENU_ID,
     siteOf: siteOf,
@@ -524,7 +547,7 @@
   function renderMain() {
     if (!mainPageEl) return;
     mainPageEl.textContent = '';
-    var items = menuModel({
+    var items = menuModel(Object.assign({
       overlayOn: overlayEffective(),
       replaceNative: !!st.prefs.subtitleReplaceNative,
       allTracks: !!st.prefs.subtitleOverlayAllTracks,
@@ -535,7 +558,7 @@
       study: st.prefs.studyTrackVideo !== false,
       trackLabel: activeTrackLabel(),
       offsetMs: trackInfo().offsetMs,
-    });
+    }, favoriteState()));
     for (var i = 0; i < items.length; i++) mainPageEl.appendChild(renderItem(items[i]));
   }
 
@@ -606,7 +629,9 @@
     a.setAttribute('role', 'button');
     a.setAttribute('tabindex', '0');
     function go() {
-      if (item.id === 'style') showPage('style');
+      if (item.disabled) return;
+      if (item.id === 'favLine') toggleFavoriteLine();
+      else if (item.id === 'style') showPage('style');
       else if (item.id === 'track') showPage('tracks');
       else if (item.id === 'list') runShortcut('toggle-panel');
       else if (item.id === 'settings') openOptions();
@@ -901,6 +926,10 @@
     applyMenuTheme();
     st.open = true;
     st.page = 'main';
+    var vf = videoFavorite();
+    if (vf && typeof vf.refresh === 'function') {
+      try { Promise.resolve(vf.refresh(false)).then(rerenderIfOpen, function () {}); } catch (_) { /* no-op */ }
+    }
     renderMain();
     if (mainPageEl) mainPageEl.hidden = false;
     if (stylePageEl) stylePageEl.hidden = true;
@@ -984,6 +1013,37 @@
     if (id === 'allTracks') return writePrefs({ subtitleOverlayAllTracks: !st.prefs.subtitleOverlayAllTracks });
     if (id === 'background') return writePrefs({ subtitleOverlayBackground: st.prefs.subtitleOverlayBackground === false });
     if (id === 'study') return writePrefs({ studyTrackVideo: st.prefs.studyTrackVideo === false });
+    if (id === 'favVideo') {
+      var vf = videoFavorite();
+      if (vf) Promise.resolve(vf.toggleVideo()).then(rerenderIfOpen, rerenderIfOpen);
+    }
+  }
+
+  // ── 收藏（反馈 KGC1ifR1a3）：状态与执行端都在 video-favorite.js，这里只读与转发 ──
+  function videoFavorite() {
+    var vf = window.fushiVideoFavorite;
+    return vf && typeof vf.toggleVideo === 'function' ? vf : null;
+  }
+  function favoriteState() {
+    var vf = videoFavorite();
+    if (!vf) return { lineText: '', lineFavorited: false, videoFavorited: false };
+    var cue = null;
+    try { cue = vf.currentCue(); } catch (_) { cue = null; }
+    return {
+      lineText: cue && cue.text ? String(cue.text) : '',
+      lineFavorited: !!(cue && vf.isCueFavorited(cue)),
+      videoFavorited: !!vf.isVideoFavorited(),
+    };
+  }
+  function rerenderIfOpen() {
+    if (st.open && st.page === 'main') renderMain();
+  }
+  function toggleFavoriteLine() {
+    var vf = videoFavorite();
+    if (!vf) return;
+    var cue = vf.currentCue();
+    if (!cue) return;
+    Promise.resolve(vf.toggleCue(cue)).then(rerenderIfOpen, rerenderIfOpen);
   }
 
   function runShortcut(action) {
@@ -1122,17 +1182,24 @@
   window.addEventListener('resize', scheduleReplace);
   window.addEventListener('scroll', scheduleReplace, { capture: true, passive: true });
 
-  // 通用悬浮按钮的显隐跟鼠标：在视频画面上才出现，与站点控件一个作息。
-  document.addEventListener('pointerover', function (e) {
+  // 通用悬浮按钮的显隐跟指针：落在视频画面上才出现，与站点控件一个作息。
+  // 判据是**几何**（指针坐标在正片矩形内），不是 DOM 包含：几乎所有播放器都在 <video> 上
+  // 盖一层控件 / 手势层，它们是 <video> 父容器的兄弟而不是后代（m.youtube.com 的 plasma
+  // 播放器：video 独占 .html5-video-container，触控层全在它外面），按 DOM 包含判，指针
+  // 永远「不在视频上」，按钮永远 opacity 0（反馈 Mb6qKIhwEm：安卓上看不到换字幕的按钮）。
+  // 触屏没有悬停：pointerover 在手指按下时带坐标触发，点一下画面即出现，点画面外即淡出。
+  function onPointer(e) {
     if (!btnEl || !btnEl.classList.contains('is-floating')) return;
-    var v = videoEl();
     var t = e.target;
-    var inside = !!(v && t && (t === v || (btnEl.contains && btnEl.contains(t)) ||
-      (v.parentNode && v.parentNode.contains && v.parentNode.contains(t))));
+    var inside = !!((t && btnEl.contains && btnEl.contains(t)) ||
+      pointInVideo(videoEl(), e.clientX, e.clientY));
     if (inside === st.hoverVideo) return;
     st.hoverVideo = inside;
     placeFloatingButton();
-  }, true);
+  }
+  document.addEventListener('pointerover', onPointer, true);
+  // 同一层覆盖元素里移动不会再触发 pointerover（控件层常比画面大），移动也要判一次。
+  document.addEventListener('pointermove', onPointer, { capture: true, passive: true });
 
   // 站点 SPA 导航 / 控件重建后补挂。轮询是这里最省心的形态：YouTube 的
   // yt-navigate-finish 只在 YouTube 有，Netflix 的控件行是 React 随时重建的，
@@ -1148,6 +1215,10 @@
 
   if (window.fushiTheme && typeof window.fushiTheme.onChange === 'function') {
     try { window.fushiTheme.onChange(applyMenuTheme); } catch (_) { /* no-op */ }
+  }
+  // 收藏状态由 App 回包更新（别的入口收藏了 / 换视频）：菜单开着就跟着重画。
+  if (window.fushiVideoFavorite && typeof window.fushiVideoFavorite.onChange === 'function') {
+    try { window.fushiVideoFavorite.onChange(rerenderIfOpen); } catch (_) { /* no-op */ }
   }
   if (window.fushiI18n && typeof window.fushiI18n.onChange === 'function') {
     try {

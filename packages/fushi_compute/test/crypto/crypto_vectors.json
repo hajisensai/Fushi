@@ -1,0 +1,151 @@
+{
+  "generator": "pointycastle 3.9.1 AacsContentDecoder.decryptUnit / decryptHlsSegment (pre-native)",
+  "aacs_mixed": {
+    "units": [
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "FormatException: AACS content decryption failed: disc key mismatch or unsupported protection",
+      "ok",
+      "ok",
+      "FormatException: Invalid unencrypted Blu-ray transport unit",
+      "ok",
+      "FormatException: AACS content decryption failed: disc key mismatch or unsupported protection",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "FormatException: AACS content decryption failed: disc key mismatch or unsupported protection",
+      "FormatException: AACS content decryption failed: disc key mismatch or unsupported protection",
+      "ok",
+      "ok",
+      "ok",
+      "FormatException: AACS content decryption failed: disc key mismatch or unsupported protection",
+      "ok",
+      "ok",
+      "FormatException: Invalid unencrypted Blu-ray transport unit",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "FormatException: AACS content decryption failed: disc key mismatch or unsupported protection",
+      "ok",
+      "ok",
+      "ok",
+      "ok"
+    ],
+    "ciphertext_sha256": "fe8e030a3c541c3d032a7ae186bb70756c8b2bee1a237067befb8463481ae372",
+    "sha256": "cc4f5f56d9e00a78dd2dbf77146f95d5ae931f86d33551acb3b2fee941faae2d"
+  },
+  "aes128_ecb": {
+    "sha256": "e22b11de682fa34fb166777bc2c6026b937e20ae69e58cc230514fca133f2e24"
+  },
+  "hls": {
+    "pkcs7_len_1": {
+      "input_sha256": "f34ce22bc5c322cacdc3ce0ca02ca2234cdeee53fa4f77c0bd0cb6a2f4f3f2f5",
+      "length": 1,
+      "sha256": "98722e2ebed8ed3d3652e11e4181f0dccc1ce7d192d8f1db370af8ec4a4e174a"
+    },
+    "pkcs7_len_15": {
+      "input_sha256": "1f0c6d6b192a6d5920046ddb849e088fce7f220ec1aef2d1dffb3b88b7c542f0",
+      "length": 15,
+      "sha256": "5470ac6f87be5f81a546cb220f45d3463014b303b5d798f6eaa38151aa17475d"
+    },
+    "pkcs7_len_16": {
+      "input_sha256": "1be8834c62004c8e9d08f90dce745bc94b1fb585ceb8397aafcd2aacc1090382",
+      "length": 16,
+      "sha256": "fded0c2d0bfe141e7bc4230713ab451366448dd4267be216dcaf92b0fa73b564"
+    },
+    "pkcs7_len_17": {
+      "input_sha256": "e5157265740eeb9a0aa2147603cecef77f4f330038d0fd508d7d137f0ed8d649",
+      "length": 17,
+      "sha256": "ed88594fc710fd7991e675f1fed076149df24cc2d4317b2baa376c220d953505"
+    },
+    "pkcs7_len_31": {
+      "input_sha256": "ec50958dc3043baeaefe9a65ba52a895b772b8dd0e4b5cb3e36932078052d410",
+      "length": 31,
+      "sha256": "be75b675fe1d34f92ea26a23d0219b2aff98a89703a34ef8420b3363de78944a"
+    },
+    "pkcs7_len_32": {
+      "input_sha256": "5d5ce51851fb230a2ec20a846b338a87417b32ae7c6fcdaec8e1de480e74796e",
+      "length": 32,
+      "sha256": "fd709b2c57dc4354851e693d15098b1f85c95809468071ea02860374bc9c9193"
+    },
+    "pkcs7_len_1000": {
+      "input_sha256": "63d8d835f43a1b618e3329681fa63bd4b3f027f4cfd6a69fc7af6f2f61c02e66",
+      "length": 1000,
+      "sha256": "93fd0b8306471c2e750a4d6312ab1a5d2e716a08489ab05b30936fbfcb08073e"
+    },
+    "pkcs7_len_4096": {
+      "input_sha256": "929793c4bef911142d5c0f361a1d531d0f519b9f3fbacbf242dcfb86cd40af24",
+      "length": 4096,
+      "sha256": "e9fa1b19114ba511b148a3cc93a446494b9649fcd4e479a108ef944608b2a1bb"
+    },
+    "pkcs7_len_65543": {
+      "input_sha256": "1c660a40812b2191a57d37bd926f46a52d169750438bd5a2b75ece5d0a384c89",
+      "length": 65543,
+      "sha256": "205b333ebdcf14a47c40e99ebe6853084548718ed970dbee87a64e67379fedfb"
+    },
+    "pkcs7_len_2097152": {
+      "input_sha256": "f24b3a91cfe24dd898ee3105f0c298d776a1514d3a8eafd8eabbd02c58142759",
+      "length": 2097152,
+      "sha256": "b323ca47a8c6dc5310d77e508865bbbd0b3c74d4ff9706bf1cb8ff8f8d2c2d7b"
+    },
+    "aes192": {
+      "input_sha256": "75f550c06007ab9eff83efd547b03c694cce2e4af7fc1fe9371b2c7bd75d5097",
+      "length": 5000,
+      "sha256": "88af48d25f4f0687d3543c85b2f695d40e6515068863c32503206a8147fec55f"
+    },
+    "aes256": {
+      "input_sha256": "831c4646d2f7879996c2b0c97056ce67e284984a6d83dba27179379ee6cbfa6e",
+      "length": 5000,
+      "sha256": "9485a58f110482da2bc2fdf04cde063eeb8773b60bec9c45b4a743f4d7a714c4"
+    },
+    "bad_pad_zero": {
+      "input_sha256": "3fc654b5df614635118867ee2392fea2763ef6289e5965d34bfb55bc6b442367",
+      "error": "ArgumentError: Invalid or corrupted pad block"
+    },
+    "bad_pad_17": {
+      "input_sha256": "309c16f30e1a4f410d1a6bcf2cc79210875771b5d7026771060396ec727b5b40",
+      "error": "ArgumentError: Invalid or corrupted pad block"
+    },
+    "bad_pad_mixed": {
+      "input_sha256": "1eed5059c2e5286a60677049d487389b11467263ec31c6fece977ca111e9c675",
+      "error": "ArgumentError: Invalid or corrupted pad block"
+    },
+    "pad_full_block": {
+      "input_sha256": "499ab0bcee77dcc08f9b3772c4a81e5f343bc02e88004d3469622770aebcc4d2",
+      "length": 48,
+      "sha256": "ee4c958a535ed946ba8dc985231b2c3b8489f05f1027534d645cb8856e701c4a"
+    },
+    "wrong_key": {
+      "input_sha256": "9afce16b759e4f4fa19363306368e683926aefabae561c2401726ac6faec41b4",
+      "error": "ArgumentError: Invalid or corrupted pad block"
+    },
+    "unaligned_33": {
+      "input_sha256": "03d5caad43aeb96ab84fe8409c09e4bdbfddff3e56a9d6ec3f5b26503d024374",
+      "error": "ArgumentError: Input data length must be a multiple of cipher's block size"
+    },
+    "empty_input": {
+      "input_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "error": "RangeError: Value not in range"
+    },
+    "key_15": {
+      "input_sha256": "1a62c27093106975a644921062559b77b908f1f9b0c7d96b801cd512c5954556",
+      "error": "ArgumentError: Key length not 128/192/256 bits."
+    },
+    "iv_15": {
+      "input_sha256": "7d532955c5b8cab9e682b7f3a245da8440e651e06ec199d73529c7a795894148",
+      "error": "ArgumentError: Initialization vector must be the same length as block size"
+    }
+  }
+}

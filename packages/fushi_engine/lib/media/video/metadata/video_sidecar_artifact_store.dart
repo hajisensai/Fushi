@@ -24,8 +24,8 @@ class DatabaseSidecarGeneratedArtifactChecker
   Future<bool> isUnmodifiedGeneratedArtifact(String absolutePath) async {
     final String path = p.normalize(p.absolute(absolutePath));
     try {
-      final VideoSidecarArtifactRow? artifact =
-          await database.getVideoSidecarArtifactByPath(path);
+      final VideoSidecarArtifactRow? artifact = await database
+          .getVideoSidecarArtifactByPath(path);
       if (artifact == null) {
         return false;
       }
@@ -33,8 +33,8 @@ class DatabaseSidecarGeneratedArtifactChecker
       if (!await file.exists()) {
         return false;
       }
-      final String currentHash =
-          (await sha256.bind(file.openRead()).first).toString();
+      final String currentHash = (await sha256.bind(file.openRead()).first)
+          .toString();
       return artifact.sha256.toLowerCase() == currentHash.toLowerCase();
     } on Object {
       return false;
@@ -83,15 +83,17 @@ class DatabaseSidecarArtifactStore implements SidecarArtifactHashStore {
 
   @override
   Future<SidecarArtifactRecord?> findByPath(String absolutePath) async {
-    final VideoSidecarArtifactRow? row =
-        await database.getVideoSidecarArtifactByPath(_normalized(absolutePath));
+    final VideoSidecarArtifactRow? row = await database
+        .getVideoSidecarArtifactByPath(_normalized(absolutePath));
     if (row == null || row.sourceId != sourceId) return null;
     return SidecarArtifactRecord(
       path: row.path,
       sha256: row.sha256,
       generatorVersion: row.generatorVersion,
-      writtenAt:
-          DateTime.fromMillisecondsSinceEpoch(row.updatedAt, isUtc: true),
+      writtenAt: DateTime.fromMillisecondsSinceEpoch(
+        row.updatedAt,
+        isUtc: true,
+      ),
     );
   }
 
@@ -102,8 +104,8 @@ class DatabaseSidecarArtifactStore implements SidecarArtifactHashStore {
     if (context == null) {
       throw StateError('sidecar artifact context was not registered: $path');
     }
-    final VideoSidecarArtifactRow? existing =
-        await database.getVideoSidecarArtifactByPath(path);
+    final VideoSidecarArtifactRow? existing = await database
+        .getVideoSidecarArtifactByPath(path);
     final int updatedAt = record.writtenAt.millisecondsSinceEpoch;
     await database.upsertVideoSidecarArtifact(
       VideoSidecarArtifactsCompanion.insert(

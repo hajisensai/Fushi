@@ -61,12 +61,13 @@ enum FushiPingFailure {
 /// [probeFushiPing] 的结果：要么拿到可信的 [result]，要么给出 [failure] 原因。
 class FushiPingOutcome {
   const FushiPingOutcome.ok(FushiPingResult this.result)
-      : failure = null,
-        statusCode = null;
+    : failure = null,
+      statusCode = null;
 
-  const FushiPingOutcome.failed(FushiPingFailure this.failure,
-      {this.statusCode})
-      : result = null;
+  const FushiPingOutcome.failed(
+    FushiPingFailure this.failure, {
+    this.statusCode,
+  }) : result = null;
 
   /// 探测成功时的应答（`isFushi` 恒为 true）；失败时为 null。
   final FushiPingResult? result;
@@ -97,14 +98,17 @@ Future<FushiPingOutcome> probeFushiPing(
 }) async {
   final bool isHttps = baseUrl.toLowerCase().startsWith('https://');
   final bool ownsClient = httpClient == null;
-  final http.Client client = httpClient ??
+  final http.Client client =
+      httpClient ??
       (isHttps && pinnedFingerprint != null && pinnedFingerprint.isNotEmpty
           ? createPinnedHttpPackageClient(
-              expectedFingerprint: pinnedFingerprint)
+              expectedFingerprint: pinnedFingerprint,
+            )
           : http.Client());
   try {
-    final http.Response resp =
-        await client.get(Uri.parse('$baseUrl/api/ping')).timeout(timeout);
+    final http.Response resp = await client
+        .get(Uri.parse('$baseUrl/api/ping'))
+        .timeout(timeout);
     if (resp.statusCode != 200) {
       return FushiPingOutcome.failed(
         FushiPingFailure.notFushi,
@@ -124,8 +128,9 @@ Future<FushiPingOutcome> probeFushiPing(
     final bool supportsPairV2 = pairing is Map && pairing['v2'] == true;
     final dynamic tls = json['tls'];
     final bool tlsEnabled = tls is Map && tls['enabled'] == true;
-    final String? fingerprint =
-        tls is Map ? tls['fingerprint'] as String? : null;
+    final String? fingerprint = tls is Map
+        ? tls['fingerprint'] as String?
+        : null;
     return FushiPingOutcome.ok(
       FushiPingResult(
         isFushi: true,

@@ -17,9 +17,10 @@ class _FakeRepo implements BaseAnkiRepository {
   AnkiMiningContext? minedContext;
 
   @override
-  Future<MineOutcome> mineEntry(
-      {required String rawPayloadJson,
-      required AnkiMiningContext context}) async {
+  Future<MineOutcome> mineEntry({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async {
     minedContext = context;
     return const MineOutcome.success(noteId: 1);
   }
@@ -106,25 +107,32 @@ void main() {
     }
 
     final _FakeRepo repo = _FakeRepo();
-    final Future<ImmersionMiningResult> mining = ImmersionMiningEngine(
-      gifExtractor: slowGif,
-      audioExtractor: slowAudio,
-    ).mine(
-      request,
-      compression: MiningMediaCompression.compressed,
-      tempDir: tmp.path,
-      repo: repo,
-    );
+    final Future<ImmersionMiningResult> mining =
+        ImmersionMiningEngine(
+          gifExtractor: slowGif,
+          audioExtractor: slowAudio,
+        ).mine(
+          request,
+          compression: MiningMediaCompression.compressed,
+          tempDir: tmp.path,
+          repo: repo,
+        );
 
     // 关键断言：两条**同时**卡在各自的 ffmpeg 里——这才是「并行」。任一方向的串行都
     // 只会有一条开工，另一条的 Started 永远不亮 → 这里超时红。
-    await Future.wait<void>(
-            <Future<void>>[audioStarted.future, gifStarted.future])
-        .timeout(const Duration(seconds: 10), onTimeout: () {
-      fail('封面与音频没有并行：只有 '
+    await Future.wait<void>(<Future<void>>[
+      audioStarted.future,
+      gifStarted.future,
+    ]).timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        fail(
+          '封面与音频没有并行：只有 '
           '${gifStarted.isCompleted ? '封面' : '音频'} 开工了，'
-          '另一条被前一条 await 挡住（引擎退回串行）');
-    });
+          '另一条被前一条 await 挡住（引擎退回串行）',
+        );
+      },
+    );
     gifRelease.complete();
     audioRelease.complete();
 
@@ -186,19 +194,20 @@ void main() {
     final List<String> audio = <String>[];
     final List<String> merged = <String>[];
 
-    final ImmersionMiningResult res = await ImmersionMiningEngine(
-      gifExtractor: failingGif,
-      audioExtractor: failingAudio,
-      frameExtractor: failingFrame,
-    ).mine(
-      request,
-      compression: MiningMediaCompression.compressed,
-      tempDir: tmp.path,
-      repo: _FakeRepo(),
-      onFailure: merged.add,
-      onCoverFailure: cover.add,
-      onAudioFailure: audio.add,
-    );
+    final ImmersionMiningResult res =
+        await ImmersionMiningEngine(
+          gifExtractor: failingGif,
+          audioExtractor: failingAudio,
+          frameExtractor: failingFrame,
+        ).mine(
+          request,
+          compression: MiningMediaCompression.compressed,
+          tempDir: tmp.path,
+          repo: _FakeRepo(),
+          onFailure: merged.add,
+          onCoverFailure: cover.add,
+          onAudioFailure: audio.add,
+        );
 
     // 封面通道只见封面来源（GIF + 起点帧降级），绝不含音频摘要。
     expect(cover, contains('gif boom'));

@@ -28,11 +28,11 @@ AudioCue _cue(String text, {required int start, required int end}) => AudioCue()
 
 /// 填充层（foreground==null）的精确 finder（ASS 尊重路径每字双层：stroke+fill）。
 Finder _fillText(String ch) => find.byWidgetPredicate(
-    (Widget w) => w is Text && w.data == ch && w.style?.foreground == null);
+  (Widget w) => w is Text && w.data == ch && w.style?.foreground == null,
+);
 
 void main() {
-  testWidgets(
-      'overlapping cues entering a bottom group do not steal on-screen '
+  testWidgets('overlapping cues entering a bottom group do not steal on-screen '
       'cue elements (identity-keyed slots)', (WidgetTester tester) async {
     final VideoPlayerController c = VideoPlayerController();
     addTearDown(c.dispose);
@@ -44,11 +44,13 @@ void main() {
       _cue('え', start: 6000, end: 12000), // CH2
     ]);
     c.debugUpdateCueForPosition(100); // 只有 JP1/CH1 活跃
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+        ),
       ),
-    ));
+    );
     await tester.pump();
     expect(_fillText('あ'), findsOneWidget);
     expect(_fillText('い'), findsOneWidget);
@@ -63,25 +65,33 @@ void main() {
 
     // 在屏 JP1/CH1 的 element 必须原样保留（身份 key 让 Flutter 按 cue 匹配而非按
     // Column 位置复用）；否则它们的 widget 被喂成 JP2/CH2 的文本/透明度 → 视觉闪烁。
-    expect(identical(tester.element(_fillText('あ')), jp1Before), isTrue,
-        reason: 'JP1 element must survive group growth');
-    expect(identical(tester.element(_fillText('い')), ch1Before), isTrue,
-        reason: 'CH1 element must survive group growth');
+    expect(
+      identical(tester.element(_fillText('あ')), jp1Before),
+      isTrue,
+      reason: 'JP1 element must survive group growth',
+    );
+    expect(
+      identical(tester.element(_fillText('い')), ch1Before),
+      isTrue,
+      reason: 'CH1 element must survive group growth',
+    );
   });
 
-  testWidgets(
-      'cue box content sits inside an overlay-owned RepaintBoundary '
-      '(fade/transform ticks must not re-rasterize per-char blur layers)',
-      (WidgetTester tester) async {
+  testWidgets('cue box content sits inside an overlay-owned RepaintBoundary '
+      '(fade/transform ticks must not re-rasterize per-char blur layers)', (
+    WidgetTester tester,
+  ) async {
     final VideoPlayerController c = VideoPlayerController();
     addTearDown(c.dispose);
     c.setCues(<AudioCue>[_cue('あ', start: 0, end: 8000)]);
     c.debugUpdateCueForPosition(100);
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+        ),
       ),
-    ));
+    );
     await tester.pump();
 
     // 盒内容（字符 Text）必须被 overlay 自己的 RepaintBoundary 包住——\fad/\t/\move

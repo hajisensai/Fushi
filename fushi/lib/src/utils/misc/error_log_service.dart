@@ -2,11 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/startup/test_environment.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/frame_safe_notifier.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_anki/fushi_anki.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 
 class ErrorLogEntry {
@@ -150,8 +149,9 @@ class ErrorLogService extends ChangeNotifier
     final String separator = '─' * 60;
     final firstSep = content.indexOf(separator);
     if (firstSep != -1) {
-      final String afterSeparator =
-          content.substring(firstSep + separator.length).trimLeft();
+      final String afterSeparator = content
+          .substring(firstSep + separator.length)
+          .trimLeft();
       if (afterSeparator.isNotEmpty) {
         content = afterSeparator;
       }
@@ -166,7 +166,8 @@ class ErrorLogService extends ChangeNotifier
     }
 
     final String separator = '─' * 60;
-    final String header = '[${entry.timestamp}] ${entry.source}\n'
+    final String header =
+        '[${entry.timestamp}] ${entry.source}\n'
         '[truncated: single log entry exceeded $_maxFileBytes bytes]\n';
     final StringBuffer body = StringBuffer(entry.error);
     final String? stackTrace = entry.stackTrace;
@@ -212,11 +213,11 @@ class ErrorLogService extends ChangeNotifier
   }
 
   /// [directoryOverride] 仅供测试注入临时目录（端到端验面包屑恢复，不碰
-  /// path_provider）；生产不传，走 [fushiTestDirectory] / 应用文档目录。
+  /// path_provider）；生产不传，走 [AppPaths.diagnosticsDirectory]（4w_veZGiQ7：
+  /// 不再直落平台 Documents 根；旧位置的残留在那里先搬过来，再读面包屑做崩溃恢复）。
   Future<void> init({Directory? directoryOverride}) async {
-    final dir = directoryOverride ??
-        fushiTestDirectory('app-documents') ??
-        await getApplicationDocumentsDirectory();
+    final Directory dir =
+        directoryOverride ?? await AppPaths.diagnosticsDirectory();
     _appDir = dir;
     _logFile = File('${dir.path}/error_log.txt');
     _breadcrumbFile = File('${dir.path}/import_crash_breadcrumb.txt');
@@ -249,11 +250,14 @@ class ErrorLogService extends ChangeNotifier
       // 不在（正常清掉），步进文件若残留也单独读出，定位到「哪一步」而不仅「哪本词典」。
       final String? nativeStep = readAndClearBreadcrumb(_importStepFile!);
       if (culprit != null || nativeStep != null) {
-        final String stepSuffix =
-            nativeStep != null ? '，native 最后步骤=$nativeStep' : '';
+        final String stepSuffix = nativeStep != null
+            ? '，native 最后步骤=$nativeStep'
+            : '';
         final String head = culprit ?? '（无导入面包屑残留）';
-        log('DictImport.crashRecovered',
-            '上次词典导入疑似让 app 崩溃（native 进程级，Dart 无法捕获）：$head$stepSuffix');
+        log(
+          'DictImport.crashRecovered',
+          '上次词典导入疑似让 app 崩溃（native 进程级，Dart 无法捕获）：$head$stepSuffix',
+        );
       }
     } catch (e) {
       debugPrint('[ErrorLogService] breadcrumb recovery failed: $e');
@@ -264,14 +268,16 @@ class ErrorLogService extends ChangeNotifier
     // `Lookup.crashRecovered`（日志 label，非 i18n key），记下当时栈深度。卡死那条
     // 由 Windows 看门狗另折 `MainThread.hangRecovered`（带 hang dump 路径）。
     try {
-      final String? lookupCulprit =
-          readAndClearBreadcrumb(_lookupBreadcrumbFile!);
+      final String? lookupCulprit = readAndClearBreadcrumb(
+        _lookupBreadcrumbFile!,
+      );
       if (lookupCulprit != null) {
         log(
-            'Lookup.crashRecovered',
-            '上次查词期间进程没有正常退出（native 崩溃，或卡死后被强杀——若同时有 '
-                'MainThread.hangRecovered 即为卡死，dump 见诊断区「崩溃转储」）：'
-                '$lookupCulprit');
+          'Lookup.crashRecovered',
+          '上次查词期间进程没有正常退出（native 崩溃，或卡死后被强杀——若同时有 '
+              'MainThread.hangRecovered 即为卡死，dump 见诊断区「崩溃转储」）：'
+              '$lookupCulprit',
+        );
       }
     } catch (e) {
       debugPrint('[ErrorLogService] lookup breadcrumb recovery failed: $e');
@@ -283,12 +289,20 @@ class ErrorLogService extends ChangeNotifier
       final String? initStep = readAndClearBreadcrumb(_initStepFile!);
       if (initStep != null) {
         log(
-            'AppInit.hangRecovered',
-            '上次启动疑似卡在某步没返回（无限加载 / 首帧不出，多半是自定义数据根所在磁盘'
-                '掉线致早期 IO 永不返回）：$initStep');
+          'AppInit.hangRecovered',
+          '上次启动疑似卡在某步没返回（无限加载 / 首帧不出，多半是自定义数据根所在磁盘'
+              '掉线致早期 IO 永不返回）：$initStep',
+        );
       }
     } catch (e) {
       debugPrint('[ErrorLogService] init-step breadcrumb recovery failed: $e');
+    }
+    // 4w_veZGiQ7：旧位置（平台 Documents 根）的诊断文件搬迁跑在本服务就绪之前，失败条目
+    // 留到这里写进错误日志——搬不走的残留要能被看见，不能静默留在用户文档根。
+    if (directoryOverride == null) {
+      for (final String failure in AppPaths.diagnosticsMigrationFailures) {
+        log('ErrorLog.diagnosticsMigrationFailed', failure);
+      }
     }
   }
 
@@ -298,14 +312,19 @@ class ErrorLogService extends ChangeNotifier
   /// 写入内容带时间戳：用户「正常强杀」恰好命中某本 FFI 执行中时，下次启动会
   /// 把残留误报为崩溃（与真硬崩在文件层不可区分）；带上时间戳让人工读日志时
   /// 能判断这条残留有多旧，区分「刚导一半被杀」和「很久以前的残留」。
-  /// TODO-892：native 词典导入步进面包屑要写入的固定目录（应用文档目录）。导入管理器
+  /// TODO-892：native 词典导入步进面包屑要写入的固定目录（[AppPaths.diagnosticsDirectory]）。导入管理器
   /// 把它经 FFI 透传给 native；[init] 未跑完（极早期）时返回 `''`，native 视为禁用。
   String get importStepBreadcrumbDir => _appDir?.path ?? '';
 
+  /// 面包屑 / 会话标记所在的诊断目录（[AppPaths.diagnosticsDirectory]）；[init] 跑完前为 null。
+  Directory? get appDirectory => _appDir;
+
   void markImportStart(String detail) {
     try {
-      _breadcrumbFile?.writeAsStringSync('[${DateTime.now()}] $detail',
-          flush: true);
+      _breadcrumbFile?.writeAsStringSync(
+        '[${DateTime.now()}] $detail',
+        flush: true,
+      );
     } catch (e) {
       debugPrint('[ErrorLogService] markImportStart failed: $e');
     }
@@ -385,8 +404,10 @@ class ErrorLogService extends ChangeNotifier
   /// 同步落盘（`flush: true`），否则 hang→强杀期间异步缓冲来不及写盘。
   void markInitStep(String step) {
     try {
-      _initStepFile?.writeAsStringSync('[${DateTime.now()}] $step',
-          flush: true);
+      _initStepFile?.writeAsStringSync(
+        '[${DateTime.now()}] $step',
+        flush: true,
+      );
     } catch (e) {
       debugPrint('[ErrorLogService] markInitStep failed: $e');
     }
@@ -466,8 +487,11 @@ class ErrorLogService extends ChangeNotifier
     }
     notifyListenersFrameSafe();
     try {
-      _logFile?.writeAsStringSync(_formatEntryForFile(entry),
-          mode: FileMode.append, flush: true);
+      _logFile?.writeAsStringSync(
+        _formatEntryForFile(entry),
+        mode: FileMode.append,
+        flush: true,
+      );
       _trimLogFileToMaxBytesSync();
     } catch (e) {
       debugPrint('[ErrorLogService] logFatal sync append failed: $e');
@@ -549,20 +573,49 @@ void recordLookupStackDepth(int depth, String? topTerm) {
 /// floating_dict_page / video_fushi_page / app_model）都走这里，避免「记日志 +
 /// 文案」逻辑被复制 5 份后各自漂移。[outcome] 应满足 `result == MineResult.error`。
 String logMineFailure(MineOutcome outcome) {
-  ErrorLogService.instance.log(
-    'Anki.mineEntry',
-    outcome.error ?? outcome.errorDetail ?? 'unknown card export error',
-    outcome.stackTrace,
-  );
-  // TODO-752a：失败已分类（errorCode 非空）时，用与 locale 无关的稳定码映射本地化
-  // toast——绝不把后端带回的 errorDetail（可能含 socket/http 的英文/latin1 乱码原文）
-  // 直接喂给用户。errorDetail/error 仍写进上面的诊断日志。未分类失败维持旧行为。
+  logMineOutcomeDiagnostics(outcome);
+  return mineFailureMessage(outcome);
+}
+
+/// 一次制卡失败给用户看的文案（不记日志）：[logMineFailure] 与待发队列页共用。
+///
+/// TODO-752a：失败已分类（errorCode 非空）时，用与 locale 无关的稳定码映射本地化
+/// toast——绝不把后端带回的 errorDetail（可能含 socket/http 的英文/latin1 乱码原文）
+/// 直接喂给用户。errorDetail/error 仍写进诊断日志。未分类失败维持旧行为。
+///
+/// 反馈 E52FUMdbR6：[AnkiErrorCode.pairedDeviceMineFailed] 的 errorDetail 是已配对
+/// 主机回传的（主机已本地化的）原因，必须带上「服务端上的 Anki」前缀，用户才知道
+/// 失败的不是本机的 Anki。
+String mineFailureMessage(MineOutcome outcome) {
+  final String? detail = outcome.errorDetail;
+  if (outcome.errorCode == AnkiErrorCode.pairedDeviceMineFailed) {
+    return t.anki_error_paired_device_mine_failed(reason: detail ?? '');
+  }
   final String? localized = localizeAnkiMineError(outcome.errorCode);
   if (localized != null) return localized;
-  final String? detail = outcome.errorDetail;
   return detail != null && detail.isNotEmpty
       ? t.card_export_failed_detail(reason: detail)
       : t.card_export_failed;
+}
+
+/// BUG-089 / BUG-4003：把一次没制成的 [MineOutcome] 的**完整诊断**写进
+/// [ErrorLogService]——原始异常 [MineOutcome.error] 优先，其次后端的简短原因
+/// [MineOutcome.errorDetail]，都没有时记结果枚举本身。[logMineFailure] 与游戏串流
+/// 主机侧（`GameStream.mine`，结果回给对端、不出 toast）共用这一处，[source] 区分来源。
+/// 不能只记 errorDetail：AnkiConnect 非网络异常时它固定是通用英文文案，真因只在 error 里。
+void logMineOutcomeDiagnostics(
+  MineOutcome outcome, {
+  String source = 'Anki.mineEntry',
+}) {
+  ErrorLogService.instance.log(
+    source,
+    outcome.error ??
+        outcome.errorDetail ??
+        (outcome.result == MineResult.error
+            ? 'unknown card export error'
+            : 'card export ${outcome.result.name}'),
+    outcome.stackTrace,
+  );
 }
 
 /// TODO-752a：把 [MineOutcome.errorCode] 映射成本地化的制卡失败 toast 文案；
@@ -601,6 +654,8 @@ String? localizeAnkiMineError(String? code) {
       return t.anki_error_field_mapping_mismatch;
     case AnkiErrorCode.firstFieldEmpty:
       return t.anki_error_first_field_empty;
+    case AnkiErrorCode.allFieldsEmpty:
+      return t.anki_error_all_fields_empty;
     case AnkiErrorCode.syncClientSignedOut:
       return t.anki_error_sync_signed_out;
     case AnkiErrorCode.syncClientUnavailable:
@@ -627,10 +682,7 @@ String? localizeAnkiMineError(String? code) {
 ///   mixin 的 update 方法各自复制一份与 mine 几乎相同的 switch（只差 card_overwritten
 ///   + 不记账），一并收口于此。
 ({String message, bool success, bool record, MineToastStatus status})
-    describeMineOutcome(
-  MineOutcome outcome, {
-  bool overwrite = false,
-}) {
+describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
   switch (outcome.result) {
     case MineResult.success:
       // TODO-779：卡片已建好，但单词远程音频下载失败（非 200 / 网络异常）时，把
@@ -641,7 +693,9 @@ String? localizeAnkiMineError(String? code) {
       final String baseMessage = overwrite
           ? t.card_overwritten(deck: deckName)
           : t.card_exported(deck: deckName);
-      final String message = audioWarning != null && audioWarning.isNotEmpty
+      final bool hasAudioWarning =
+          audioWarning != null && audioWarning.isNotEmpty;
+      final String message = hasAudioWarning
           ? '$baseMessage ${t.card_exported_audio_failed(reason: audioWarning)}'
           : baseMessage;
       return (
@@ -649,8 +703,13 @@ String? localizeAnkiMineError(String? code) {
         success: true,
         // 覆盖已有卡片不是新制一张，不计入制卡统计（与新制路径区分）。
         record: !overwrite,
-        // TODO-1325 #6：新制与覆写成功都是绿色 added（覆写用 card_overwritten 文案区分）。
-        status: MineToastStatus.added,
+        // 新制是绿色 added，覆盖已有卡是紫色 overwritten（此前两者同绿，用户分不出）。
+        // 带音频缺失提示的成功是 addedWithWarning：关掉「制卡成功提示」也照样弹。
+        status: hasAudioWarning
+            ? MineToastStatus.addedWithWarning
+            : overwrite
+            ? MineToastStatus.overwritten
+            : MineToastStatus.added,
       );
     case MineResult.duplicate:
       return (
@@ -670,8 +729,15 @@ String? localizeAnkiMineError(String? code) {
       // 卡已经冻结进待发队列（媒体都拷走了），对用户而言「收下了」：清草稿、画 ✓、
       // 计入制卡统计与句子历史，与成功同待遇；toast 用蓝色说明它还没进 Anki。
       // 代价：补发时若被 Anki 判重复，统计会多算这一张——可接受。
+      // deckName 非空 = 进的是 Fushi 复习的后台写入队列（不是等着发往 Anki 的待发卡片），
+      // 稍后就写进这个牌组（见 MineOutcome.queued）。
+      final String? queuedDeck = outcome.deckName;
       return (
-        message: t.anki_pending_mine_queued,
+        message: queuedDeck == null
+            ? t.anki_pending_mine_queued
+            : t.srs_mining_background_queued(
+                deck: queuedDeck.isEmpty ? t.srs_mining_target_srs : queuedDeck,
+              ),
         success: true,
         record: !overwrite,
         status: MineToastStatus.queued,

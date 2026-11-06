@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 
 Uint8List _encodeArchive(List<ArchiveFile> files) {
@@ -90,11 +90,13 @@ void main() {
 
       expect(
         () => EpubParser.parseSync(bytes, extractDir.path),
-        throwsA(isA<FormatException>().having(
-          (e) => e.message,
-          'message',
-          contains('no readable chapters'),
-        )),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('no readable chapters'),
+          ),
+        ),
       );
     });
 
@@ -156,10 +158,7 @@ void main() {
               '<spine><itemref idref="ch1"/></spine>'
               '</package>',
         ),
-        _textFile(
-          'ch1.xhtml',
-          '<html><body><p>Hello World</p></body></html>',
-        ),
+        _textFile('ch1.xhtml', '<html><body><p>Hello World</p></body></html>'),
       ]);
 
       final book = EpubParser.parseSync(bytes, extractDir.path);

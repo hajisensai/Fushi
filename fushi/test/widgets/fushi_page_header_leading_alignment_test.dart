@@ -118,7 +118,8 @@ void main() {
     // （ListTile / 两行 AppBar 的既有做法），而不是被顶到标题上方。
     // 用「块中心」而不是「在两行之间」当判据：后者在回归态（顶对齐，箭头中心
     // 恰好也落在两行之间）同样成立，等于空转。
-    final double blockCenter = (tester.getRect(find.text('词典管理')).top +
+    final double blockCenter =
+        (tester.getRect(find.text('词典管理')).top +
             tester.getRect(find.text('导入与排序')).bottom) /
         2;
     expect(

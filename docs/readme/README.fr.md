@@ -14,6 +14,8 @@
 
 [![Télécharger la dernière version](https://img.shields.io/badge/%E2%AC%87%20T%C3%A9l%C3%A9charger%20la%20derni%C3%A8re%20version-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Rejoindre le Discord](https://img.shields.io/badge/Rejoindre%20le%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor%20on%20GitHub-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/hajisensai)
+[![Support on Ko-fi](https://img.shields.io/badge/Support%20on%20Ko-fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/hajisensai)
 
 </div>
 
@@ -136,9 +138,9 @@ Fushi stocke les livres importés, les dictionnaires, les polices, les données 
 
 - **Synchronisation** — Google Drive / OneDrive / Dropbox utilisent une connexion OAuth ; WebDAV / FTP / SFTP / Fushi Server utilisent l'adresse du serveur et les identifiants que vous fournissez. Fushi Interconnect connecte directement les appareils appairés (LAN, IPv6, réseaux superposés ou adresses publiques) et, lorsqu'aucune route directe ne fonctionne, bascule sur un tunnel P2P iroh de bout en bout ; les liens d'appairage demandent toujours une confirmation.
 - **Anki** — la création de cartes communique avec AnkiDroid ou avec l'adresse AnkiConnect que vous configurez.
-- **Statistiques d'utilisation** — une fois par jour, les builds de bureau et Android envoient à fushi.moe un identifiant d'installation aléatoire, la version de l'application, la plateforme et le canal de mise à jour afin de compter les utilisateurs actifs ; aucun compte, bibliothèque ni donnée de lecture n'est inclus et les adresses IP ne sont pas conservées. Désactivez-les avec *Partager les statistiques d’utilisation* dans les paramètres de mise à jour. Les builds iOS ne les envoient pas.
+- **Statistiques d'utilisation** — une fois par jour, les builds de bureau et Android envoient à fushi.moe un identifiant d'installation dérivé de l'appareil (inchangé après réinstallation), la version de l'application, la plateforme et le canal de mise à jour afin de compter les utilisateurs actifs ; aucun compte, bibliothèque ni donnée de lecture n'est inclus et les adresses IP ne sont pas conservées. Désactivez-les avec *Partager les statistiques d’utilisation* dans les paramètres de mise à jour. Les builds iOS ne les envoient pas.
 - **Uniquement à votre demande** — l'envoi des journaux (après une demande de consentement unique), les retours dans l'application et le classement (désactivé par défaut ; il n'envoie les titres de votre bibliothèque et votre progression qu'après votre accord).
-- **OCR de manga** — le moteur par défaut est Google Lens, qui envoie l'image de la page à Google ; passez au modèle embarqué ou à l'OCR du système dans les paramètres pour garder les images en local.
+- **OCR de manga** — le moteur par défaut est le modèle CTC embarqué : les images de page restent en local (téléchargez-le une fois dans les paramètres) ; Google Lens est facultatif et envoie l'image de la page à Google.
 - **Fonctions d'IA** — les requêtes ne vont qu'au fournisseur de LLM que vous configurez et affectez à une fonction ; sans fournisseur affecté, rien n'est envoyé.
 - **Services tiers** — les fonctions de métadonnées, de sous-titres et de sources en ligne ne contactent les services listés sous [Sources de contenu et intégrations](#sources-de-contenu-et-intégrations) que lorsque vous les utilisez.
 

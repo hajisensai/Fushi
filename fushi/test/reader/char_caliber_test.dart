@@ -31,10 +31,7 @@ void main() {
     });
 
     test('旧书无 charCaliber 标记 → false（触发后台重算并回写）', () {
-      final String s = jsonFor(<Map<String, Object?>>[
-        chapter(),
-        chapter(),
-      ]);
+      final String s = jsonFor(<Map<String, Object?>>[chapter(), chapter()]);
       expect(chaptersJsonCharCaliberIsCurrent(s, 2), isFalse);
     });
 

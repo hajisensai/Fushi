@@ -41,9 +41,11 @@
 #include <cstring>
 #include <intrin.h>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "il2cpp_thread_scope.h"
+#include "immediate_text_repeat_filter.h"
 #include "adapters/unity_mono_text.h"
 #include "adapters/unity_mono_lookup_core.h"
 #include "adapters/unity_mono_audio.h"
@@ -54,6 +56,7 @@
 #include "adapters/cmvs_dialogue_text_resolver.h"
 #include "adapters/cmvs_sprite_geometry_reader.h"
 #include "lookup_overlay_geometry.h"
+#include "lookup_hover_highlight_state.h"
 #include "game_main_window.h"
 #include "overlay_cursor_guard.h"
 // KiriKiri 第三条 exporter 路径的判据（BUG-2145）。必须在**顶层**引入：adapters/*.inc 是被
@@ -106,6 +109,8 @@
 #include "adapters/siglus_eightarg_owner.h"
 #include "adapters/siglus_eightarg_message_capture.h"
 #include "adapters/siglus_eightarg_glyph_batch.h"
+#include "adapters/siglus_ninearg_family.h"
+#include "adapters/siglus_ninearg_runtime.h"
 #include "adapters/siglus_native_autoprofile.h"
 #include "adapters/siglus_native_viewport.h"
 #include "adapters/siglus_message_profile.h"

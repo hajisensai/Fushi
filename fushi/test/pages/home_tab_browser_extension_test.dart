@@ -26,26 +26,26 @@ ModuleVisibility _visibility({
   if (games) ModuleId.games,
   if (downloads) ModuleId.browse,
   if (lookup) ModuleId.lookup,
-  if (browserExtension) ModuleId.browserExtension,
+  if (browserExtension) ModuleId.web,
 });
 
 /// 守卫「浏览器扩展」tab 在首页顶层导航中的可见性与位置。用户要求「单独弄一个底栏、电脑
-/// 才有」，生产里由 [ModuleId.browserExtension] 门控：平台判据在 [ModuleId.availableOn]
+/// 才有」，生产里由 [ModuleId.web] 门控：平台判据在 [ModuleId.availableOn]
 /// （仅桌面——手机浏览器不支持加载未解压扩展），用户意愿在 `module_browser_extension_enabled`
 /// 偏好，两者由 [ModuleVisibility.resolve] 合成。位置固定在设置之前。
 void main() {
   test('HomeTab 枚举包含 browserExtension', () {
-    expect(HomeTab.values, contains(HomeTab.browserExtension));
+    expect(HomeTab.values, contains(HomeTab.web));
   });
 
   test('browserExtension 关闭（本文件默认）时不出现', () {
     expect(
       homeActiveTabs(_visibility(video: true)),
-      isNot(contains(HomeTab.browserExtension)),
+      isNot(contains(HomeTab.web)),
     );
     expect(
       homeActiveTabs(_visibility(video: true, games: true)),
-      isNot(contains(HomeTab.browserExtension)),
+      isNot(contains(HomeTab.web)),
     );
   });
 
@@ -53,7 +53,7 @@ void main() {
     final List<HomeTab> tabs = homeActiveTabs(
       _visibility(video: true, browserExtension: true),
     );
-    final int ext = tabs.indexOf(HomeTab.browserExtension);
+    final int ext = tabs.indexOf(HomeTab.web);
     final int settings = tabs.indexOf(HomeTab.settings);
     expect(ext, greaterThanOrEqualTo(0));
     expect(settings, equals(ext + 1));
@@ -67,7 +67,7 @@ void main() {
     final int games = tabs.indexOf(HomeTab.games);
     final int downloads = tabs.indexOf(HomeTab.browse);
     final int dict = tabs.indexOf(HomeTab.dictionaries);
-    final int ext = tabs.indexOf(HomeTab.browserExtension);
+    final int ext = tabs.indexOf(HomeTab.web);
     final int settings = tabs.indexOf(HomeTab.settings);
     expect(games, equals(video + 1));
     expect(downloads, equals(games + 1));

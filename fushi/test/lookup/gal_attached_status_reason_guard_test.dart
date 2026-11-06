@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-2143 守卫：attached 状态机里凡是「非终态、需要排障」的状态，`_setStatus`
 /// 都必须带 reason。
@@ -21,11 +21,7 @@ void main() {
 
   setUpAll(() {
     final File file = File('lib/src/lookup/gal_attached_text_controller.dart');
-    expect(
-      file.existsSync(),
-      isTrue,
-      reason: 'attached 控制器源文件不在预期路径，守卫失效',
-    );
+    expect(file.existsSync(), isTrue, reason: 'attached 控制器源文件不在预期路径，守卫失效');
     source = file.readAsStringSync();
   });
 

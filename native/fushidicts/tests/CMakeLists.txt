@@ -78,6 +78,19 @@ add_fushi_test(zip64_central_dir_test zip64_central_dir_test.cpp
 add_fushi_test(kanji_import_query_test kanji_import_query_test.cpp)
 add_fushi_test(dict_name_uaf_e2e_test dict_name_uaf_e2e_test.cpp)
 add_fushi_test(media_import_query_test media_import_query_test.cpp)
+# BUG-4013: 词典映射按文件身份进程内共享（重载期 shadow 引擎不再把整套词典的虚拟
+# 地址翻倍），media.bin 不映射、按请求定位读。
+add_fushi_test(shared_mapping_test shared_mapping_test.cpp "${FUSHI_SRC}")
+# BUG-4013: 32 位进程的 blobs.bin 窗口映射与整份映射逐字节同结果（含跨窗口、超窗口
+# 堆读、LRU 压到 1 个窗口时的持续淘汰）。
+add_fushi_test(blob_window_test blob_window_test.cpp "${FUSHI_SRC}")
+# BUG-4013: 偏移表 count 超出文件剩余字节时判坏表、不读（32 位窗口模式下按 count
+# 申请堆缓冲会 bad_alloc 穿过 FFI 直接 abort）。
+add_fushi_test(offset_list_bounds_test offset_list_bounds_test.cpp "${FUSHI_SRC}")
+# BUG-4013: 窗口模式下超过一个窗口步长的视图读进堆，堆读长度来自磁盘（glossary /
+# meanings 的 u32 大小、偏移表 count），封顶 blob_file::kMaxHeapViewBytes，坏长度不再
+# 申请「文件剩余全部」。
+add_fushi_test(blob_heap_view_cap_test blob_heap_view_cap_test.cpp "${FUSHI_SRC}")
 # Re-zipping an extracted dictionary wraps every entry in one directory; the
 # importer must address entries by their dictionary-relative name so such an
 # archive imports identically (media keys included), while an archive spanning
@@ -115,6 +128,14 @@ add_fushi_test(simple_dict_deinflection_test simple_dict_deinflection_test.cpp)
 # 都点不着火（查 부드러운 只降级到 부）。拆字预处理 + 合字后处理互为逆变换，端到端
 # 钉住 부드러운 -> 부드럽다 且 matched 回报原始预合成串（字幕高亮长度吃它）。
 add_fushi_test(korean_hangul_lookup_test korean_hangul_lookup_test.cpp
+    "${FUSHI_SRC}/text_processor"
+    "${FUSHI_ROOT}/fushidicts_external/utfcpp/source")
+# 原文振假名参与排序：同匹配长度内 ruby 读音吻合者居首、截断前生效。
+add_fushi_test(ruby_reading_lookup_test ruby_reading_lookup_test.cpp
+    "${FUSHI_SRC}/scan"
+    "${FUSHI_ROOT}/fushidicts_external/utfcpp/source")
+# 中文查词简体 → 繁體回落：开关门控、原形保留、端到端命中繁體词条。
+add_fushi_test(chinese_simp_trad_lookup_test chinese_simp_trad_lookup_test.cpp
     "${FUSHI_SRC}/text_processor"
     "${FUSHI_ROOT}/fushidicts_external/utfcpp/source")
 # BUG-1665: an MDX @@@LINK= redirect entry (definition bytes copied from its
@@ -161,6 +182,67 @@ endif()
 add_test(NAME ja_kansai_ta_boundary_test
          COMMAND ja_kansai_ta_boundary_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
+
+# 批量分词：与旧 Dart 逐位置最长匹配循环（原样转写为参考实现）逐位一致（真 ja.json）。
+add_executable(tokenize_batch_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/tokenize_batch_test.cpp")
+target_link_libraries(tokenize_batch_test PRIVATE fushidicts)
+target_include_directories(tokenize_batch_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(tokenize_batch_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME tokenize_batch_test
+         COMMAND tokenize_batch_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
+
+# HBK-AUDIT-007：C ABI 入口 fushidicts_tokenize 按显式字节长度处理整段，正文里的
+# U+0000 不截断。内核测试（上一条）抓不到 FFI 边界，所以把 fushidicts_ffi.cpp 直接
+# 编进本测试、经真实导出符号调用；它直接调 zstd 流式 API，需同链 libzstd_static。
+add_executable(tokenize_ffi_nul_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/tokenize_ffi_nul_test.cpp"
+    "${FUSHI_ROOT}/fushidicts_ffi.cpp")
+target_link_libraries(tokenize_ffi_nul_test PRIVATE fushidicts libzstd_static)
+target_include_directories(tokenize_ffi_nul_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(tokenize_ffi_nul_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME tokenize_ffi_nul_test
+         COMMAND tokenize_ffi_nul_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
+
+# 「我库里的例句」倒排键：C ABI 入口 fushidicts_corpus_terms 给出词典形（日语 / 英语同一条
+# 代码，真 ja.json / en.json / en_irregular.json）、UTF-16 位置、未命中拉丁词整串跳过。
+add_executable(corpus_terms_ffi_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/corpus_terms_ffi_test.cpp"
+    "${FUSHI_ROOT}/fushidicts_ffi.cpp")
+target_link_libraries(corpus_terms_ffi_test PRIVATE fushidicts libzstd_static)
+target_include_directories(corpus_terms_ffi_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(corpus_terms_ffi_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME corpus_terms_ffi_test
+         COMMAND corpus_terms_ffi_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json"
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json"
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en_irregular.json")
+
+# HBK-AUDIT-009：句柄引用计数（retain / release / 退役式 destroy）与读写锁，用真线程
+# 验证：借用期间退役不销毁、最后一次 release 才销毁且只销毁一次、重载与 add_*_dict
+# 和在飞分词并发时结果都正确。同样经真实导出符号，所以编进 fushidicts_ffi.cpp。
+find_package(Threads REQUIRED)
+add_executable(handle_lifecycle_concurrency_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/handle_lifecycle_concurrency_test.cpp"
+    "${FUSHI_ROOT}/fushidicts_ffi.cpp")
+target_link_libraries(handle_lifecycle_concurrency_test PRIVATE fushidicts libzstd_static Threads::Threads)
+target_include_directories(handle_lifecycle_concurrency_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(handle_lifecycle_concurrency_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME handle_lifecycle_concurrency_test
+         COMMAND handle_lifecycle_concurrency_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
+# 并发回归（锁丢了、退役语义退回直接 delete）常表现为崩溃或死等，给一个有界超时。
+set_tests_properties(handle_lifecycle_concurrency_test PROPERTIES TIMEOUT 120)
 
 # BUG-3261：汉字 + 假名混写（棚にあげる → 棚に上げる）经读音通路命中。
 add_executable(ja_mixed_orthography_lookup_test
@@ -215,6 +297,10 @@ add_fushi_test(simple_dict_css_test simple_dict_css_test.cpp
 # .mdx stem ("NLT（話し言葉）.mdx" + "NLT.css"); the stem-named sibling is only
 # the fallback, and a ../ href must not escape the dictionary directory.
 add_fushi_test(mdx_linked_css_name_test mdx_linked_css_name_test.cpp
+    "${FUSHI_ROOT}/fushidicts_external/libdeflate")
+# MdxBuilder's "Title (No HTML code allowed)" placeholder means "no title":
+# untitled .mdx files import under their file stems instead of colliding.
+add_fushi_test(mdx_placeholder_title_test mdx_placeholder_title_test.cpp
     "${FUSHI_ROOT}/fushidicts_external/libdeflate")
 # Scripts referenced by a bare <script src> sit next to the .mdx, not in the
 # .mdd; they must join the media store so assets have ONE fetch-by-name channel.

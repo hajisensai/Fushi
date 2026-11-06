@@ -108,8 +108,11 @@ void main() {
 
       final Map<String, ArchiveFile> entries = _entries(repacked);
       expect(entries.keys, containsAll(<String>['__init__.py', 'config.json']));
-      expect(entries['manifest.json'], isNotNull,
-          reason: 'AnkiWeb 裸包没有 manifest，不补 Anki 会直接 InstallError("manifest")');
+      expect(
+        entries['manifest.json'],
+        isNotNull,
+        reason: 'AnkiWeb 裸包没有 manifest，不补 Anki 会直接 InstallError("manifest")',
+      );
 
       // 原文件内容必须原样带过去，不能被重新打包弄坏。
       expect(
@@ -117,9 +120,11 @@ void main() {
         'from . import web\n',
       );
 
-      final Map<String, Object?> manifest = jsonDecode(
-        utf8.decode(entries['manifest.json']!.content as List<int>),
-      ) as Map<String, Object?>;
+      final Map<String, Object?> manifest =
+          jsonDecode(
+                utf8.decode(entries['manifest.json']!.content as List<int>),
+              )
+              as Map<String, Object?>;
       // package 同时是安装目录名，错了 AnkiConnect 就找不到自己的配置。
       expect(manifest['package'], '2055492159');
       expect(manifest['name'], 'AnkiConnect');
@@ -143,9 +148,13 @@ void main() {
         ),
       );
 
-      final Map<String, Object?> manifest = jsonDecode(
-        utf8.decode(_entries(repacked)['manifest.json']!.content as List<int>),
-      ) as Map<String, Object?>;
+      final Map<String, Object?> manifest =
+          jsonDecode(
+                utf8.decode(
+                  _entries(repacked)['manifest.json']!.content as List<int>,
+                ),
+              )
+              as Map<String, Object?>;
       expect(manifest['package'], 'upstream');
       expect(manifest['name'], 'Upstream');
     });
@@ -175,7 +184,8 @@ void main() {
             '',
             303,
             headers: <String, String>{
-              'location': '/svc/shared/download-addon/2055492159'
+              'location':
+                  '/svc/shared/download-addon/2055492159'
                   '?t=1762717231&minpt=45&maxpt=45&bidx=1',
             },
             isRedirect: true,
@@ -200,15 +210,17 @@ void main() {
       expect(visited.length, 2);
 
       // 解析出来的分支元信息要能直接喂给 manifest。
-      final AnkiWebAddonBranch branch =
-          AnkiWebAddonBranch.fromDownloadUri(download.resolvedUri);
+      final AnkiWebAddonBranch branch = AnkiWebAddonBranch.fromDownloadUri(
+        download.resolvedUri,
+      );
       expect(branch.modTime, 1762717231);
       expect(branch.branchIndex, 1);
     });
 
     test('非 200 直接失败，不把错误页当插件包', () async {
-      final MockClient client =
-          MockClient((http.Request req) async => http.Response('nope', 404));
+      final MockClient client = MockClient(
+        (http.Request req) async => http.Response('nope', 404),
+      );
 
       expect(
         () => downloadFollowingRedirects(
@@ -364,12 +376,13 @@ class _FakeHost implements AnkiConnectInstallerHost {
     Uri? resolvedUri,
     this.downloadError,
     this.launchError,
-  })  : payload = payload ?? _bareAddonZip(),
-        resolvedUri = resolvedUri ??
-            Uri.parse(
-              'https://ankiweb.net/svc/shared/download-addon/2055492159'
-              '?t=1762717231&minpt=45&maxpt=45&bidx=1',
-            );
+  }) : payload = payload ?? _bareAddonZip(),
+       resolvedUri =
+           resolvedUri ??
+           Uri.parse(
+             'https://ankiweb.net/svc/shared/download-addon/2055492159'
+             '?t=1762717231&minpt=45&maxpt=45&bidx=1',
+           );
 
   final String? ankiExecutable;
   final Uint8List payload;
@@ -387,8 +400,10 @@ class _FakeHost implements AnkiConnectInstallerHost {
   String? findRunningAnkiExecutable() => ankiExecutable;
 
   @override
-  Future<AnkiWebAddonDownload> download(Uri uri,
-      {required int maxBytes}) async {
+  Future<AnkiWebAddonDownload> download(
+    Uri uri, {
+    required int maxBytes,
+  }) async {
     events.add('download');
     if (downloadError != null) throw downloadError!;
     return AnkiWebAddonDownload(bytes: payload, resolvedUri: resolvedUri);

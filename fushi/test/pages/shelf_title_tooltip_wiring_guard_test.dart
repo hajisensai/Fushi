@@ -23,21 +23,58 @@ void main() {
   }
 
   test('视频首页：墙卡（本地/远端/合集）+ 横滚行卡都接标题溢出 Tooltip', () {
-    // 4 处：合集封面卡 / 远端占位卡 / 本地散卡 / 横滚行通用卡。原先第 5 处是
-    // hero 轮播标题——轮播已无调用方、整段删除（a73811871a），不是接线丢了。
+    // 2026-10-25 材质库页：卡片文字块统一成 [ShelfCardMeta]（标题一行，内部
+    // 经 ShelfTitleLine 接 ShelfTitleOverflowTooltip），视频页经 `_videoCardMeta`
+    // 一处装配。登记的是 4 个调用点：合集封面卡 / 远端占位卡 / 本地散卡 / 横滚行
+    // 通用卡；组件内部的接线由下一条守卫钉住。
+    final String src = maskComments(
+      File(
+        'lib/src/pages/implementations/home_video_page.dart',
+      ).readAsStringSync(),
+    );
     expect(
-      countIn('lib/src/pages/implementations/home_video_page.dart'),
+      '_videoCardMeta('.allMatches(src).length - 1,
       greaterThanOrEqualTo(4),
-      reason: '视频首页标题溢出 Tooltip 接线（TODO-2490/2486）不得少于 4 处：'
+      reason:
+          '视频首页标题溢出 Tooltip 接线（TODO-2490/2486）不得少于 4 处：'
           '合集卡、远端卡、本地卡、横滚行卡',
+    );
+    expect(src.contains('ShelfCardMeta('), isTrue);
+  });
+
+  test('ShelfCardMeta 的标题行接标题溢出 Tooltip', () {
+    expect(
+      countIn('lib/src/utils/components/shelf_cover_material.dart'),
+      greaterThanOrEqualTo(1),
+      reason: '材质库页文字块的单行标题必须接 ShelfTitleOverflowTooltip',
     );
   });
 
   test('书架：继续阅读 hero 标题接标题溢出 Tooltip（TODO-2497）', () {
+    // 2026-11-01 起书架继续区是库页共用的封面取色并列卡 FushiContinueCardRow
+    // （PR #2811 用户选定设计稿），Tooltip 接在组件里。
+    final String shelf = maskComments(
+      File(
+        'lib/src/pages/implementations/reader_fushi_history_page.dart',
+      ).readAsStringSync(),
+    );
     expect(
-      countIn('lib/src/pages/implementations/reader_fushi_history_page.dart'),
+      shelf.contains('FushiContinueCardRow.grid('),
+      isTrue,
+      reason: '书架继续阅读区必须走库页共用的 FushiContinueCardRow',
+    );
+    expect(
+      countIn('lib/src/utils/components/fushi_continue_card_row.dart'),
       greaterThanOrEqualTo(1),
-      reason: '书架继续阅读 hero 标题必须接 ShelfTitleOverflowTooltip',
+      reason: 'FushiContinueCardRow 卡片标题必须接 ShelfTitleOverflowTooltip',
+    );
+  });
+
+  test('FushiContinueHero（首页 / 视频 / 游戏 / 音乐共用）标题接标题溢出 Tooltip', () {
+    expect(
+      countIn('lib/src/utils/components/fushi_continue_hero.dart'),
+      greaterThanOrEqualTo(1),
+      reason: 'FushiContinueHero 标题必须接 ShelfTitleOverflowTooltip',
     );
   });
 
@@ -45,7 +82,8 @@ void main() {
     expect(
       countIn('lib/src/pages/implementations/galgame_home_page.dart'),
       greaterThanOrEqualTo(3),
-      reason: '游戏首页 hero、随机游戏卡、活动时间轴三处标题必须接 '
+      reason:
+          '游戏首页 hero、随机游戏卡、活动时间轴三处标题必须接 '
           'ShelfTitleOverflowTooltip',
     );
   });

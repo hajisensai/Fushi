@@ -30,11 +30,11 @@ class ExtensionFontEntry {
   final String path;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'id': id,
-        'name': name,
-        'family': family,
-        'ext': ext,
-      };
+    'id': id,
+    'name': name,
+    'family': family,
+    'ext': ext,
+  };
 
   /// `@font-face` 跨源加载要的 MIME：按扩展名映射，未知扩展名回 octet-stream。
   static String contentTypeForExt(String ext) {
@@ -72,12 +72,12 @@ class ExtensionRecommendedFont {
   final bool installed;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'name': name,
-        'nameJa': nameJa,
-        'description': description,
-        'license': license,
-        'installed': installed,
-      };
+    'name': name,
+    'nameJa': nameJa,
+    'description': description,
+    'license': license,
+    'installed': installed,
+  };
 }
 
 enum ExtensionFontDownloadStatus {
@@ -93,17 +93,17 @@ enum ExtensionFontDownloadStatus {
 
 class ExtensionFontDownloadOutcome {
   const ExtensionFontDownloadOutcome.ok(this.fonts)
-      : status = ExtensionFontDownloadStatus.ok,
-        detail = null;
+    : status = ExtensionFontDownloadStatus.ok,
+      detail = null;
 
   const ExtensionFontDownloadOutcome.unknownFont()
-      : status = ExtensionFontDownloadStatus.unknownFont,
-        fonts = const <ExtensionFontEntry>[],
-        detail = null;
+    : status = ExtensionFontDownloadStatus.unknownFont,
+      fonts = const <ExtensionFontEntry>[],
+      detail = null;
 
   const ExtensionFontDownloadOutcome.failed(this.detail)
-      : status = ExtensionFontDownloadStatus.downloadFailed,
-        fonts = const <ExtensionFontEntry>[];
+    : status = ExtensionFontDownloadStatus.downloadFailed,
+      fonts = const <ExtensionFontEntry>[];
 
   final ExtensionFontDownloadStatus status;
   final List<ExtensionFontEntry> fonts;

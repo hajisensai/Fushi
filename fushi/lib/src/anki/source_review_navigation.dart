@@ -31,6 +31,11 @@ class ExternalMediaNavigation {
   /// 不等它；先按返回再 closeActive 会让同一页的退出流程跑两遍）。
   bool ownsRoute(Route<dynamic> route) => _ownsRoute?.call(route) ?? false;
 
+  /// [owner] 是不是当前登记的媒体页。[closeActive] 收的是「当前登记的那页」；
+  /// 只想关某一页（如手机遥控「关闭视频」只关被遥控的视频页）的调用方先问这里，
+  /// 别把压在它上面的另一个媒体页关掉。
+  bool isActive(Object owner) => identical(_owner, owner);
+
   void register(
     Object owner,
     Future<bool> Function() close, {

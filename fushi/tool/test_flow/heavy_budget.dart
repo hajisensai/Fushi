@@ -8,11 +8,18 @@
 // processes every 30 s (all waiters saw "2 busy" and started together), ran
 // anyway after 30 min, and only pre_push_check used it.
 //
-// There is no memory admission (removed 2026-10-03, owner's call): waiting
-// for "available RAM above a reserve" kept agents queued for many minutes on
-// a busy desktop while a slot sat free, and every other agent queued behind
-// them. Concurrency is bounded by the slot count alone; a runaway run is
-// still stopped by its tree's memory ceiling ([HeavyNeed.capMb]).
+// There is no live-memory admission (removed 2026-10-03, owner's call):
+// waiting for "available RAM above a reserve" kept agents queued for many
+// minutes on a busy desktop while a slot sat free, and every other agent
+// queued behind them.
+//
+// Instead (2026-10-19, owner's call) runs are booked against a fixed budget:
+// the memory ceilings ([HeavyNeed.capMb]) of the runs holding slots plus the
+// next one's may not exceed [defaultHeavyBudgetMb] (half the RAM). Three
+// slots with 12-16 GB ceilings used to promise up to 48 GB on a 64 GB
+// desktop already running a dozen agent sessions, and the commit limit ran
+// out under everyone. The booking reads only the holders' declared ceilings,
+// never the live free memory, so a busy desktop cannot stall it.
 
 /// What kind of work a wrapped command is; decides its cost.
 enum HeavyKind { test, analyze, build, other }
@@ -23,6 +30,8 @@ class HeavyNeed {
     required this.kind,
     required this.capMb,
     required this.worktreeExclusive,
+    this.bookMb,
+    this.light = false,
   });
 
   final HeavyKind kind;
@@ -34,17 +43,101 @@ class HeavyNeed {
   /// Runs that write the checkout's build/ (native assets, sqlite3.dll,
   /// result files) must not overlap inside one worktree.
   final bool worktreeExclusive;
+
+  /// What the run counts against the budget when that is below [capMb]
+  /// (see [bookedMb]); null books the ceiling itself.
+  final int? bookMb;
+
+  /// A light run (analyze) takes no regular slot and no queue ticket: it holds
+  /// one of [kLightSlotCount] separate slots and only has to fit the memory
+  /// budget, so it never makes a test or build wait for a slot and never
+  /// waits behind one.
+  final bool light;
+
+  /// What this run books against the budget.
+  int get bookedMb => bookMb ?? capMb;
 }
+
+/// Light runs hold `slot-<kLightSlotBase + i>.lock`; every holder enumerates
+/// all slot files, so they book the budget for every checkout's tool.
+const int kLightSlotBase = 100;
+
+/// At most this many light runs at once (two analyzes book 9 GB; they still
+/// have to fit the budget next to the tests and builds).
+const int kLightSlotCount = 2;
 
 const HeavyNeed _test = HeavyNeed(
   kind: HeavyKind.test,
   capMb: 12288,
   worktreeExclusive: true,
 );
+
+// Test booking (2026-11-05, measured Job peaks of `flutter test` with
+// --concurrency=4 on this desktop, cold build/test_cache):
+//   closure  1039 files (only flutter_test)  1 file   3331 MB
+//   closure  2276 files (widget + material)  1 file   4832 MB
+//   closure  8683 files (whole app)          1 file   4759 MB
+//   whole app                                4 files  5593 MB
+// About 3.3 GB is flutter_tools + the platform kernel whatever the test
+// compiles, so booking the 12 GB ceiling for every run promised 2-3x what
+// tests use and let only one test run at a time in a 16 GB budget. A run is
+// booked from its import closure (heavy_test_closure.dart) and its tester
+// count; the ceiling stays as the hard limit for a runaway.
+
+/// A test whose import closure stays at about flutter_test's own size.
+const int kSmallTestClosureFiles = 1500;
+
+/// What a pure-Dart `dart test` run books. It runs every suite in isolates
+/// of one VM, without flutter_tools or a frontend_server: a fushi_engine
+/// suite peaked at 765 MB (2026-11-05), so whole-package runs fit too.
+const int kDartTestBookMb = 2048;
+
+/// What a `flutter test` / `dart test` run books: [closureFiles] is its
+/// import closure (null when it runs whole directories or the closure could
+/// not be read: book the ceiling), [testers] the test processes it starts
+/// (min of its concurrency and its file count), [flutter] false for
+/// `dart test`.
+int testBookMb({
+  required int? closureFiles,
+  required int testers,
+  bool flutter = true,
+}) {
+  if (!flutter) return kDartTestBookMb;
+  if (closureFiles == null) return _test.capMb;
+  final int base = closureFiles <= kSmallTestClosureFiles ? 4096 : 6144;
+  final int extraTesters = (testers - 1).clamp(0, 64);
+  final int booked = base + 512 * extraTesters;
+  return booked < _test.capMb ? booked : _test.capMb;
+}
+
+/// The `--concurrency` / `-j` a test argv sets, or null.
+int? testConcurrencyOf(List<String> argv) {
+  for (int i = 0; i < argv.length; i++) {
+    final String a = argv[i];
+    if (a.startsWith('--concurrency=')) {
+      return int.tryParse(a.substring('--concurrency='.length));
+    }
+    if ((a == '--concurrency' || a == '-j') && i + 1 < argv.length) {
+      return int.tryParse(argv[i + 1]);
+    }
+    if (a.startsWith('-j') && a.length > 2) {
+      return int.tryParse(a.substring(2));
+    }
+  }
+  return null;
+}
+
+// Analyze (2026-10-25, measured): 1004 local runs peaked at p50 3.4 GB /
+// p90 4.0 GB / max 7.8 GB, never hit the 8 GB ceiling, and the analysis
+// server averages under one core. Holding a regular slot and booking the
+// full ceiling made tests queue behind it (11 h of queueing on analyze across
+// those runs) for a job that is mostly memory, so it books ~p90 and is light.
 const HeavyNeed _analyze = HeavyNeed(
   kind: HeavyKind.analyze,
   capMb: 8192,
+  bookMb: 4608,
   worktreeExclusive: false,
+  light: true,
 );
 const HeavyNeed _build = HeavyNeed(
   kind: HeavyKind.build,
@@ -59,11 +152,11 @@ const HeavyNeed _other = HeavyNeed(
 
 /// The [HeavyNeed] for a kind (pre_push_check leases per step by kind).
 HeavyNeed heavyNeedFor(HeavyKind kind) => switch (kind) {
-      HeavyKind.test => _test,
-      HeavyKind.analyze => _analyze,
-      HeavyKind.build => _build,
-      HeavyKind.other => _other,
-    };
+  HeavyKind.test => _test,
+  HeavyKind.analyze => _analyze,
+  HeavyKind.build => _build,
+  HeavyKind.other => _other,
+};
 
 String _base(String path) {
   final String name = path.replaceAll(r'\', '/').split('/').last.toLowerCase();
@@ -77,11 +170,17 @@ HeavyNeed classifyHeavyCommand(List<String> argv) {
   if (argv.isEmpty) return _other;
   final String exe = _base(argv.first);
   final List<String> rest = argv.skip(1).toList();
-  final String? verb =
-      rest.where((String a) => !a.startsWith('-')).firstOrNull?.toLowerCase();
+  final String? verb = rest
+      .where((String a) => !a.startsWith('-'))
+      .firstOrNull
+      ?.toLowerCase();
   if (exe == 'flutter' || exe == 'dart' || exe == 'fvm') {
     // `fvm flutter test` / `fvm dart analyze`: classify the inner tool.
     if (exe == 'fvm' && rest.isNotEmpty) return classifyHeavyCommand(rest);
+    if (exe == 'dart') {
+      final HeavyNeed? leased = _leasedDartTool(rest);
+      if (leased != null) return leased;
+    }
     switch (verb) {
       case 'test':
         return _test;
@@ -101,6 +200,44 @@ HeavyNeed classifyHeavyCommand(List<String> argv) {
   return _other;
 }
 
+/// The memory ceiling pre_push_check gives its own tree: one test batch, plus
+/// an analyze when `--parallel` runs it alongside.
+int prePushCheckCapMb({required bool parallel}) =>
+    _test.capMb + (parallel ? _analyze.capMb : 0);
+
+/// The need of a repo tool that takes the heavy lease itself
+/// (`dart [run] tool/pre_push_check.dart ...`,
+/// `dart [run] tool/flutter_test_failures.dart ...`), or null for any other
+/// dart command.
+///
+/// Wrapped in tool/heavy.dart such a tool sees the wrapper's lease and takes
+/// none of its own, and its own Job Object nests inside the wrapper's, whose
+/// ceiling then binds the whole tree. So the wrapper must book and cap
+/// exactly what the tool would have: classifying it as "other" (16 GB)
+/// over-booked flutter_test_failures (12 GB) and under-capped
+/// `pre_push_check --parallel` (20 GB).
+HeavyNeed? _leasedDartTool(List<String> rest) {
+  final List<String> positional = rest
+      .where((String a) => !a.startsWith('-'))
+      .toList();
+  if (positional.isEmpty) return null;
+  final String script =
+      positional.first.toLowerCase() == 'run' && positional.length > 1
+      ? positional[1]
+      : positional.first;
+  switch (_base(script)) {
+    case 'pre_push_check':
+      return HeavyNeed(
+        kind: HeavyKind.test,
+        capMb: prePushCheckCapMb(parallel: rest.contains('--parallel')),
+        worktreeExclusive: true,
+      );
+    case 'flutter_test_failures':
+      return _test;
+  }
+  return null;
+}
+
 /// Test-runner processes a `flutter test` gets when the caller did not pick
 /// a number: the default (cores - 2) starts a dozen flutter_testers that each
 /// load the whole app kernel, which is where a run's memory peak comes from.
@@ -113,10 +250,7 @@ List<String> withDefaultTestConcurrency(List<String> argv) {
   if (argv.isEmpty) return argv;
   final String exe = _base(argv.first);
   if (exe == 'fvm') {
-    return <String>[
-      argv.first,
-      ...withDefaultTestConcurrency(argv.sublist(1)),
-    ];
+    return <String>[argv.first, ...withDefaultTestConcurrency(argv.sublist(1))];
   }
   if (exe != 'flutter') return argv;
   final int verb = argv.indexWhere((String a) => !a.startsWith('-'), 1);
@@ -141,6 +275,30 @@ List<String> withDefaultTestConcurrency(List<String> argv) {
 int defaultHeavySlots(int totalPhysMb) =>
     (totalPhysMb ~/ (20 * 1024)).clamp(1, 4);
 
+/// The memory the heavy runs' ceilings may book together: half the RAM in
+/// whole GB (64 GB -> 32 GB: two test runs and an analyze, or a build and a
+/// test; never three test runs).
+int defaultHeavyBudgetMb(int totalPhysMb) =>
+    ((totalPhysMb / 1024).round() ~/ 2) * 1024;
+
+/// What a holder that recorded no ceiling (an older checkout's tool) is
+/// booked at: the largest ceiling of any kind.
+const int kUnknownHolderCapMb = 16384;
+
+/// Why a run with a [needMb] ceiling may not start next to holders booked at
+/// [heldCapsMb] within [budgetMb], or null when it fits. A run on an idle
+/// machine always starts, even one whose ceiling alone exceeds the budget.
+String? heavyBudgetBlocker({
+  required int needMb,
+  required List<int> heldCapsMb,
+  required int budgetMb,
+}) {
+  if (heldCapsMb.isEmpty) return null;
+  final int booked = heldCapsMb.fold(0, (int a, int b) => a + b);
+  if (booked + needMb <= budgetMb) return null;
+  return 'memory budget: $booked MB booked + $needMb MB > $budgetMb MB';
+}
+
 /// A reading of the machine's memory, in MB. [availCommitMb] is commit
 /// limit minus commit charge (Windows); null where the OS has no such notion.
 class MemorySnapshot {
@@ -163,6 +321,7 @@ class HeavyHolder {
     required this.startedAtMs,
     required this.label,
     required this.cwd,
+    this.capMb,
   });
 
   final int slot;
@@ -171,12 +330,20 @@ class HeavyHolder {
   final String label;
   final String cwd;
 
+  /// The memory the holder booked (its need's [HeavyNeed.bookedMb], which is
+  /// its ceiling except for analyze); null when it recorded none.
+  final int? capMb;
+
+  /// What this holder counts against the budget.
+  int get bookedMb => capMb ?? kUnknownHolderCapMb;
+
   Map<String, Object> toJson() => <String, Object>{
-        'pid': pid,
-        'startedAt': startedAtMs,
-        'label': label,
-        'cwd': cwd,
-      };
+    'pid': pid,
+    'startedAt': startedAtMs,
+    'label': label,
+    'cwd': cwd,
+    if (capMb != null) 'capMb': capMb!,
+  };
 
   static HeavyHolder? fromJson(int slot, Object? json) {
     if (json is! Map) return null;
@@ -189,6 +356,7 @@ class HeavyHolder {
       startedAtMs: at,
       label: '${json['label'] ?? ''}',
       cwd: '${json['cwd'] ?? ''}',
+      capMb: json['capMb'] is int ? json['capMb'] as int : null,
     );
   }
 }
@@ -213,4 +381,80 @@ String? heavyLeaseSkipReason(Map<String, String> env) {
   final String parent = env[kHeavyLeaseEnv] ?? '';
   if (parent.isNotEmpty) return 'held by parent pid $parent';
   return null;
+}
+
+/// `flutter test` flags `dart test` takes as is (with their separate value
+/// where they have one); `--no-pub` is flutter_tools' own and is dropped.
+const Set<String> _dartTestFlagsWithValue = <String>{
+  '--concurrency',
+  '-j',
+  '--plain-name',
+  '--name',
+  '-n',
+  '--reporter',
+  '-r',
+  '--file-reporter',
+  '--tags',
+  '-t',
+  '--exclude-tags',
+  '-x',
+  '--timeout',
+  '--test-randomize-ordering-seed',
+  '--total-shards',
+  '--shard-index',
+};
+const Set<String> _dartTestBareFlags = <String>{
+  '--chain-stack-traces',
+  '--no-chain-stack-traces',
+  '--run-skipped',
+  '--fail-fast',
+};
+
+/// The `dart test` argv that runs the same files as [argv] (a
+/// `flutter test` whose every target was found not to reach `dart:ui`), or
+/// null when [argv] uses a flag `dart test` does not share (`--dart-define`,
+/// `--update-goldens`, `--coverage`, a device, ...): then it stays a
+/// flutter test. The dart executable sits next to flutter in the SDK's bin.
+List<String>? dartTestCommandFor(List<String> argv) {
+  if (argv.isEmpty) return null;
+  final String first = argv.first.replaceAll(r'\', '/');
+  final int slash = first.lastIndexOf('/');
+  final String name = first.substring(slash + 1).toLowerCase();
+  final String? dartName = switch (name) {
+    'flutter' => 'dart',
+    'flutter.bat' => 'dart.bat',
+    'flutter.exe' => 'dart.exe',
+    _ => null,
+  };
+  if (dartName == null) return null;
+  final int verb = argv.indexWhere((String a) => !a.startsWith('-'), 1);
+  if (verb < 0 || argv[verb].toLowerCase() != 'test') return null;
+  final List<String> out = <String>[
+    '${argv.first.substring(0, slash + 1)}$dartName',
+    'test',
+  ];
+  for (int i = verb + 1; i < argv.length; i++) {
+    final String a = argv[i];
+    if (!a.startsWith('-')) {
+      out.add(a);
+      continue;
+    }
+    if (a == '--no-pub') continue;
+    final int eq = a.indexOf('=');
+    final String flag = eq < 0 ? a : a.substring(0, eq);
+    if (_dartTestBareFlags.contains(flag) && eq < 0) {
+      out.add(a);
+    } else if (_dartTestFlagsWithValue.contains(flag)) {
+      out.add(a);
+      if (eq < 0) {
+        if (i + 1 >= argv.length) return null;
+        out.add(argv[++i]);
+      }
+    } else if (a.startsWith('-j') && int.tryParse(a.substring(2)) != null) {
+      out.add(a);
+    } else {
+      return null;
+    }
+  }
+  return out;
 }

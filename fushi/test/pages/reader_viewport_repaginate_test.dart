@@ -15,53 +15,61 @@ import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 /// 修复 = 宽、高共用 1px 容差（[readerViewportNeedsRepaginate]）。本测试覆盖该纯
 /// 函数：sub-pixel 宽抖动不再触发重排，真正的旋转/resize 大变仍触发。
 void main() {
-  group('readerViewportNeedsRepaginate width tolerance (BUG-210 regression)',
-      () {
-    test('sub-pixel width jitter does NOT trigger widthChanged', () {
-      // 这是核心回归断言：撤回修复（改回 `w != lastWidth` 零容差）会让此用例变红。
-      final r = readerViewportNeedsRepaginate(
-        width: 1280.4,
-        height: 800.0,
-        lastWidth: 1280.0,
-        lastHeight: 800.0,
-      );
-      expect(r.width, isFalse, reason: '0.4px 宽抖动不得触发整章重载（否则翻页被弹回更靠前的页/章节开头）');
-      expect(r.height, isFalse);
-    });
+  group(
+    'readerViewportNeedsRepaginate width tolerance (BUG-210 regression)',
+    () {
+      test('sub-pixel width jitter does NOT trigger widthChanged', () {
+        // 这是核心回归断言：撤回修复（改回 `w != lastWidth` 零容差）会让此用例变红。
+        final r = readerViewportNeedsRepaginate(
+          width: 1280.4,
+          height: 800.0,
+          lastWidth: 1280.0,
+          lastHeight: 800.0,
+        );
+        expect(
+          r.width,
+          isFalse,
+          reason: '0.4px 宽抖动不得触发整章重载（否则翻页被弹回更靠前的页/章节开头）',
+        );
+        expect(r.height, isFalse);
+      });
 
-    test('a >= 1px width change (real resize/rotation) triggers widthChanged',
+      test(
+        'a >= 1px width change (real resize/rotation) triggers widthChanged',
         () {
-      final r = readerViewportNeedsRepaginate(
-        width: 1281.0,
-        height: 800.0,
-        lastWidth: 1280.0,
-        lastHeight: 800.0,
+          final r = readerViewportNeedsRepaginate(
+            width: 1281.0,
+            height: 800.0,
+            lastWidth: 1280.0,
+            lastHeight: 800.0,
+          );
+          expect(r.width, isTrue, reason: '真实窗口 resize / 旋转（>=1px 宽变）仍要重排');
+        },
       );
-      expect(r.width, isTrue, reason: '真实窗口 resize / 旋转（>=1px 宽变）仍要重排');
-    });
 
-    test('large rotation-scale width change still triggers widthChanged', () {
-      final r = readerViewportNeedsRepaginate(
-        width: 800.0,
-        height: 1280.0,
-        lastWidth: 1280.0,
-        lastHeight: 800.0,
-      );
-      expect(r.width, isTrue);
-      expect(r.height, isTrue);
-    });
+      test('large rotation-scale width change still triggers widthChanged', () {
+        final r = readerViewportNeedsRepaginate(
+          width: 800.0,
+          height: 1280.0,
+          lastWidth: 1280.0,
+          lastHeight: 800.0,
+        );
+        expect(r.width, isTrue);
+        expect(r.height, isTrue);
+      });
 
-    test('first sync (lastWidth==0) never reports widthChanged', () {
-      // _lastSyncedWidth>0 的门控保留：首帧基线尚未建立时不应判为宽变。
-      final r = readerViewportNeedsRepaginate(
-        width: 1280.0,
-        height: 800.0,
-        lastWidth: 0.0,
-        lastHeight: 0.0,
-      );
-      expect(r.width, isFalse);
-    });
-  });
+      test('first sync (lastWidth==0) never reports widthChanged', () {
+        // _lastSyncedWidth>0 的门控保留：首帧基线尚未建立时不应判为宽变。
+        final r = readerViewportNeedsRepaginate(
+          width: 1280.0,
+          height: 800.0,
+          lastWidth: 0.0,
+          lastHeight: 0.0,
+        );
+        expect(r.width, isFalse);
+      });
+    },
+  );
 
   group('readerViewportNeedsRepaginate height tolerance unchanged', () {
     test('sub-pixel height jitter does NOT trigger heightChanged', () {
@@ -75,17 +83,18 @@ void main() {
     });
 
     test(
-        '>= 1px height change (chrome toggle / keyboard) triggers heightChanged',
-        () {
-      final r = readerViewportNeedsRepaginate(
-        width: 1280.0,
-        height: 760.0,
-        lastWidth: 1280.0,
-        lastHeight: 800.0,
-      );
-      expect(r.height, isTrue);
-      expect(r.width, isFalse);
-    });
+      '>= 1px height change (chrome toggle / keyboard) triggers heightChanged',
+      () {
+        final r = readerViewportNeedsRepaginate(
+          width: 1280.0,
+          height: 760.0,
+          lastWidth: 1280.0,
+          lastHeight: 800.0,
+        );
+        expect(r.height, isTrue);
+        expect(r.width, isFalse);
+      },
+    );
   });
 
   /// TODO-690 / BUG-399：桌面拖窗口边框 resize 后阅读器不重排、文字错乱（翻页才恢复）。

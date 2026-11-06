@@ -43,12 +43,10 @@ void main() {
   const String subtitleTailTerm = 'アケコンなどという謎に重いだけの箱';
 
   DictionarySearchResult staleResult() => DictionarySearchResult(
-        searchTerm: subtitleTailTerm,
-        entries: <DictionaryEntry>[
-          DictionaryEntry(word: 'アケ', meaning: 'あけ'),
-        ],
-        bestLength: 2,
-      );
+    searchTerm: subtitleTailTerm,
+    entries: <DictionaryEntry>[DictionaryEntry(word: 'アケ', meaning: 'あけ')],
+    bestLength: 2,
+  );
 
   late FushiDatabase db;
   late int rebuildCount;
@@ -66,16 +64,25 @@ void main() {
 
   test('persistDictionary 重载引擎并清空查词缓存（导入收尾）', () async {
     repo.cacheSearchResult(subtitleTailTerm, staleResult());
-    expect(repo.getCachedSearch(subtitleTailTerm), isNotNull,
-        reason: '前置条件：缓存里确实有一条陈旧结果');
+    expect(
+      repo.getCachedSearch(subtitleTailTerm),
+      isNotNull,
+      reason: '前置条件：缓存里确实有一条陈旧结果',
+    );
     final int before = rebuildCount;
 
     await repo.persistDictionary(dict());
 
-    expect(rebuildCount, greaterThan(before),
-        reason: '新词典进库必须重载 native 引擎，否则查询打不到它');
-    expect(repo.getCachedSearch(subtitleTailTerm), isNull,
-        reason: '词典集合变了，旧查询结果必须失效——否则重导完仍重放「查不到」的旧结果');
+    expect(
+      rebuildCount,
+      greaterThan(before),
+      reason: '新词典进库必须重载 native 引擎，否则查询打不到它',
+    );
+    expect(
+      repo.getCachedSearch(subtitleTailTerm),
+      isNull,
+      reason: '词典集合变了，旧查询结果必须失效——否则重导完仍重放「查不到」的旧结果',
+    );
   });
 
   test('deleteDictionaryMeta 重载引擎并清空查词缓存（替换的删旧半程）', () async {
@@ -85,8 +92,11 @@ void main() {
 
     await repo.deleteDictionaryMeta('Pixiv Light [2026-02-01]');
 
-    expect(rebuildCount, greaterThan(before),
-        reason: '旧词典目录已被删，引擎必须立刻重载，不能继续指着不存在的目录');
+    expect(
+      rebuildCount,
+      greaterThan(before),
+      reason: '旧词典目录已被删，引擎必须立刻重载，不能继续指着不存在的目录',
+    );
     expect(repo.getCachedSearch(subtitleTailTerm), isNull);
     expect(repo.dictionaries, isEmpty);
   });
@@ -106,12 +116,20 @@ void main() {
     // ……收尾 persist 新 meta 也必须把它清掉。
     await repo.persistDictionary(dict());
 
-    expect(repo.getCachedSearch(subtitleTailTerm), isNull,
-        reason: '这是 BUG-1492 的核心：更新窗口内被污染的缓存不能活过导入收尾');
-    expect(rebuildCount, greaterThan(rebuildsBeforeUpdate + 1),
-        reason: '删旧与装新各要一次引擎重载');
-    expect(repo.dictionaries.map((Dictionary d) => d.name),
-        contains('Pixiv Light [2026-02-01]'));
+    expect(
+      repo.getCachedSearch(subtitleTailTerm),
+      isNull,
+      reason: '这是 BUG-1492 的核心：更新窗口内被污染的缓存不能活过导入收尾',
+    );
+    expect(
+      rebuildCount,
+      greaterThan(rebuildsBeforeUpdate + 1),
+      reason: '删旧与装新各要一次引擎重载',
+    );
+    expect(
+      repo.dictionaries.map((Dictionary d) => d.name),
+      contains('Pixiv Light [2026-02-01]'),
+    );
   });
 
   test('换名更新（日期后缀变了）后新名在库、缓存已清', () async {
@@ -123,7 +141,8 @@ void main() {
     await repo.persistDictionary(dict(name: 'Pixiv Light [2026-08-01]'));
 
     expect(repo.getCachedSearch(subtitleTailTerm), isNull);
-    expect(repo.dictionaries.map((Dictionary d) => d.name),
-        <String>['Pixiv Light [2026-08-01]']);
+    expect(repo.dictionaries.map((Dictionary d) => d.name), <String>[
+      'Pixiv Light [2026-08-01]',
+    ]);
   });
 }

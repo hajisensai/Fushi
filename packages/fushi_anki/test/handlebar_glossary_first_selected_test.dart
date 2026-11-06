@@ -20,12 +20,12 @@ void main() {
   const AnkiMiningContext context = AnkiMiningContext(sentence: 'ポリが来た！');
 
   AnkiMiningPayload payloadWith(String selected) => AnkiMiningPayload(
-        expression: 'ポリ',
-        singleGlossaries: singleGlossaries,
-        // popup.js 恒把「第一本」放进 glossaryFirst，与选中无关。
-        glossaryFirst: singleGlossaries.values.first,
-        selectedDictionary: selected,
-      );
+    expression: 'ポリ',
+    singleGlossaries: singleGlossaries,
+    // popup.js 恒把「第一本」放进 glossaryFirst，与选中无关。
+    glossaryFirst: singleGlossaries.values.first,
+    selectedDictionary: selected,
+  );
 
   String renderFirst(AnkiMiningPayload payload) =>
       AnkiHandlebarRenderer.render('{glossary-first}', payload, context);
@@ -34,8 +34,11 @@ void main() {
     test('长按选中第二本 → 主释义取那本，而不是第一本', () {
       final String value = renderFirst(payloadWith('大辞泉 第二版'));
       expect(value, '「ポリス」「ポリスマン」の略。');
-      expect(value, isNot(singleGlossaries.values.first),
-          reason: '选中了却仍渲染第一本 = 长按是死交互，正是 BUG-1035 的症状');
+      expect(
+        value,
+        isNot(singleGlossaries.values.first),
+        reason: '选中了却仍渲染第一本 = 长按是死交互，正是 BUG-1035 的症状',
+      );
     });
 
     test('长按选中第三本 → 主释义取那本', () {
@@ -48,7 +51,9 @@ void main() {
 
     test('选中的词典名在 singleGlossaries 里查不到 → 退回第一本，不产出空字段', () {
       expect(
-          renderFirst(payloadWith('存在しない辞典')), singleGlossaries.values.first);
+        renderFirst(payloadWith('存在しない辞典')),
+        singleGlossaries.values.first,
+      );
     });
 
     test('词典名带 [n] 后缀时按归一化命中（与 {selected-glossary} 同一匹配规则）', () {
@@ -66,7 +71,10 @@ void main() {
     test('{selected-glossary} 语义不变：没选中时仍是空串（不被本次 fallback 污染）', () {
       expect(
         AnkiHandlebarRenderer.render(
-            '{selected-glossary}', payloadWith(''), context),
+          '{selected-glossary}',
+          payloadWith(''),
+          context,
+        ),
         '',
       );
     });
@@ -78,15 +86,19 @@ void main() {
         singleGlossaries: singleGlossaries,
         selectedDictionary: '大辞泉 第二版',
       );
-      expect(AnkiHandlebarRenderer.render('{glossary}', payload, context),
-          '全部辞書の釈義');
+      expect(
+        AnkiHandlebarRenderer.render('{glossary}', payload, context),
+        '全部辞書の釈義',
+      );
     });
   });
 
   group('Lapis 默认映射前提（BUG-1035 的放大器）', () {
     test('MainDefinition 仍映射 {glossary-first}——故本修复必须落在该键上', () {
-      expect(LapisNoteType.defaultFieldMappings['MainDefinition'],
-          '{glossary-first}');
+      expect(
+        LapisNoteType.defaultFieldMappings['MainDefinition'],
+        '{glossary-first}',
+      );
     });
   });
 }

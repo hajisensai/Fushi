@@ -13,6 +13,8 @@ import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/engine_storage_sandbox.dart';
+
 /// 互联「重新拉取有声书 / 字幕」端到端：真 host（[LocalLibraryHostService] +
 /// [FushiSyncServer]）↔ 真 client（[InterconnectSyncBackend]），两端各一份内存库。
 ///
@@ -317,20 +319,22 @@ void main() {
   test('host 没有 tokens sidecar 了 → 更新字幕 / 重新下载都删掉本机旧 sidecar', () async {
     final SrtBookRow first = (await clientDb.getSrtBookByBookKey(_bookKey))!;
     final File sidecar = File(p.setExtension(first.srtPath, '.tokens.jsonl'));
-    expect(sidecar.existsSync(), isTrue,
-        reason: '整包下载也带 sidecar（与字幕包同口径）');
+    expect(sidecar.existsSync(), isTrue, reason: '整包下载也带 sidecar（与字幕包同口径）');
 
     // host 换了一份行数相同、但不是转录产物的字幕：没有 sidecar。
     File(p.join(hostAudio.path, 'transcript.tokens.jsonl')).deleteSync();
-    File(p.join(hostAudio.path, 'transcript.srt'))
-        .writeAsStringSync(_srt(<String>['吾輩は猫である！', '名前はまだ無い！']));
+    File(
+      p.join(hostAudio.path, 'transcript.srt'),
+    ).writeAsStringSync(_srt(<String>['吾輩は猫である！', '名前はまだ無い！']));
     await hostDb.replaceCuesForBook(
       _bookKey,
       _cues(_bookKey, <String>['吾輩は猫である！', '名前はまだ無い！']),
     );
 
     await clientRefreshSubtitles();
-    final SrtBookRow refreshed = (await clientDb.getSrtBookByBookKey(_bookKey))!;
+    final SrtBookRow refreshed = (await clientDb.getSrtBookByBookKey(
+      _bookKey,
+    ))!;
     expect(File(refreshed.srtPath).readAsStringSync(), contains('！'));
     expect(
       File(p.setExtension(refreshed.srtPath, '.tokens.jsonl')).existsSync(),
@@ -341,8 +345,9 @@ void main() {
     // 整本重下同一条原位解压路径：先放回一份旧 sidecar，重下后同样要清掉。
     sidecar.writeAsStringSync('{"t":["吾輩"],"o":[0]}\n{"t":["名前"],"o":[0]}\n');
     await clientDownloadAudiobook(fresh: true);
-    final SrtBookRow redownloaded =
-        (await clientDb.getSrtBookByBookKey(_bookKey))!;
+    final SrtBookRow redownloaded = (await clientDb.getSrtBookByBookKey(
+      _bookKey,
+    ))!;
     expect(
       File(p.setExtension(redownloaded.srtPath, '.tokens.jsonl')).existsSync(),
       isFalse,
@@ -448,6 +453,8 @@ void main() {
   });
 
   group('纯字幕（standalone）有声书：详情里的「从对端更新字幕 / 重新下载」', () {
+    useEngineStorageSandbox();
+
     Future<void> clientDownloadStandalone({bool fresh = false}) async {
       final File pkg = File(p.join(temp.path, 'dl', 'solo.fushiaudio'));
       if (pkg.existsSync()) pkg.deleteSync();
@@ -499,7 +506,14 @@ void main() {
 
       expect(await soloCueTexts(), <String>['一行目。', '二行目。', '三行目。']);
       final SrtBookRow after = (await clientDb.getSrtBookByUid(_soloUid))!;
-      expect(after.bookKey, isEmpty, reason: '纯字幕书不能被导入成配对书');
+      // BUG-4197：bookKey 指向按 cue 生成的正文（沿用同一本），仍无 Audiobooks 行。
+      expect(after.bookKey, isNotEmpty);
+      expect(after.bookKey, before.bookKey, reason: '只更新字幕沿用同一本正文');
+      expect(
+        (await clientDb.getAllAudiobooks()).map((AudiobookRow r) => r.bookKey),
+        isNot(contains(after.bookKey)),
+        reason: '纯字幕书不能被导入成配对书',
+      );
       expect(File(after.srtPath).readAsStringSync(), contains('三行目'));
       expect(after.audioPathsJson, before.audioPathsJson);
       expect(File(audioBefore.single).readAsBytesSync(), audioBytes);
@@ -543,7 +557,9 @@ void main() {
         contains('_remoteSrtRefetchFor(book.uid) != null'),
         reason: '纯字幕书详情（_srtExtraActions）没按对端候选给入口',
       );
-      expect(books, contains('bookKey.isEmpty &&'));
+      // BUG-4197：收下来的独立字幕书 bookKey 指向收端再生成的正文、不再为空；
+      // 入口只按「对端按 uid 列着这本」（上一条断言）给，不能再按 bookKey 为空藏掉。
+      expect(books, isNot(contains('if (bookKey.isEmpty &&')));
       expect(
         books,
         contains('_refetchRemoteSrtAudiobook(remote, subtitlesOnly: true)'),
@@ -556,7 +572,7 @@ void main() {
       // 只更新字幕走 /subtitles + importAudioSubtitlePackage；重新下载走整包 fresh，
       // 与首次下载共用同一个任务本体。
       expect(remote, contains('client.getRemoteAudiobookSubtitles('));
-      expect(remote, contains('onProgress: onProgress, fresh: true'));
+      expect(remote, matches(RegExp(r'onProgress: onProgress,\s*fresh: true')));
       expect(
         RegExp(r'_runRemoteSrtAudiobookDownload\(').allMatches(remote).length,
         greaterThanOrEqualTo(3),

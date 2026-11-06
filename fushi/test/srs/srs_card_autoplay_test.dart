@@ -2,13 +2,33 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show
+        inlineVideoCoverHtml,
+        inlineVideoSentenceAudioHtml,
+        inlineVideoWordAudioHtml;
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 
 /// 假播放出口：每段音频挂一个 completer，测试决定它「播完」还是「被打断」。
 class _FakeOutput implements SrsCardAudioOutput {
+  _FakeOutput({this.holdResolve = false});
+
+  /// true = 解析（找媒体库 / 查文件）挂起，由测试 [finishResolve] 放行。
+  final bool holdResolve;
   final List<String> started = <String>[];
   final List<Completer<bool>> pending = <Completer<bool>>[];
+  final List<Completer<String?>> resolving = <Completer<String?>>[];
   int stops = 0;
+
+  @override
+  Future<String?> resolve(String name) {
+    if (!holdResolve) return Future<String?>.value(name);
+    final Completer<String?> c = Completer<String?>();
+    resolving.add(c);
+    return c.future.then((String? _) => name);
+  }
+
+  void finishResolve() => resolving.last.complete('ok');
 
   @override
   Future<bool> playToEnd(String name) {
@@ -141,6 +161,36 @@ void main() {
       expect(out.started, <String>['a']);
     });
 
+    test('BUG-3546：解析途中被 cancel，解析完也不再开播（stop 先到的那段不能随后出声）', () async {
+      final _FakeOutput out = _FakeOutput(holdResolve: true);
+      final SrsCardAudioSequencer seq = SrsCardAudioSequencer(out);
+      final Future<void> done = seq.play(<String>['a', 'b']);
+      await Future<void>.delayed(Duration.zero);
+      expect(out.resolving, hasLength(1), reason: '正在解析第一段');
+      // 换卡 / 翻面 / 关了自动播放 / 离开复习页。
+      await seq.cancel();
+      out.finishResolve();
+      await done;
+      expect(out.started, isEmpty, reason: '被取代的序列不得在 cancel 之后开播');
+      expect(seq.isPlaying, isFalse);
+    });
+
+    test('BUG-3546：解析途中换成新序列，只有新序列开播', () async {
+      final _FakeOutput out = _FakeOutput(holdResolve: true);
+      final SrsCardAudioSequencer seq = SrsCardAudioSequencer(out);
+      final Future<void> first = seq.play(<String>['old']);
+      await Future<void>.delayed(Duration.zero);
+      final Future<void> second = seq.play(<String>['new']);
+      await Future<void>.delayed(Duration.zero);
+      expect(out.resolving, hasLength(2));
+      out.resolving.first.complete('ok');
+      out.resolving.last.complete('ok');
+      await Future<void>.delayed(Duration.zero);
+      out.finishLast();
+      await Future.wait(<Future<void>>[first, second]);
+      expect(out.started, <String>['new']);
+    });
+
     test('新序列取代旧序列：旧序列不再继续', () async {
       final _FakeOutput out = _FakeOutput();
       final SrsCardAudioSequencer seq = SrsCardAudioSequencer(out);
@@ -153,6 +203,56 @@ void main() {
       out.finishLast();
       await Future.wait(<Future<void>>[first, second]);
       expect(out.started, <String>['a', 'c']);
+    });
+  });
+
+  group('原生卡面的内嵌媒体（与模板页内脚本同一顺序）', () {
+    // 制卡链路真实写出的字段：WebM 片段 + 内嵌单词 / 句子音频。
+    final String word = inlineVideoWordAudioHtml('word.mp3');
+    final String sentence = inlineVideoSentenceAudioHtml('sentence.mp3');
+    final String clip = inlineVideoCoverHtml('clip.webm');
+
+    test('有片段：先单词音频、再片段，句子音频不播（片段自带）', () {
+      // 背面 Picture 渲染多份，同名只播一次。
+      final String back = '$clip<div>$word</div>$sentence$clip';
+      expect(srsCardMediaNames(back), <String>['word.mp3', 'clip.webm']);
+    });
+
+    test('无片段：单词、句子音频与 [sound:] 按出现顺序', () {
+      expect(srsCardMediaNames('$word [sound:x.mp3] $sentence'), <String>[
+        'word.mp3',
+        'x.mp3',
+        'sentence.mp3',
+      ]);
+    });
+
+    test('只有原生卡面才认内嵌标签；整面 WebView 仍只认 [sound:]', () {
+      final String back = '$word$clip';
+      expect(
+        srsAutoplaySounds(
+          questionHtml: '',
+          answerHtml: back,
+          answerSide: true,
+          inlineMedia: true,
+        ),
+        <String>['word.mp3', 'clip.webm'],
+      );
+      expect(
+        srsAutoplaySounds(questionHtml: '', answerHtml: back, answerSide: true),
+        isEmpty,
+      );
+    });
+
+    test('答案面扣掉问题面带过来的媒体', () {
+      expect(
+        srsAutoplaySounds(
+          questionHtml: word,
+          answerHtml: '$word$clip',
+          answerSide: true,
+          inlineMedia: true,
+        ),
+        <String>['clip.webm'],
+      );
     });
   });
 }

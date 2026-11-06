@@ -47,19 +47,25 @@ void main() {
     TargetPlatform.windows,
   ]) {
     for (final String writingMode in <String>['vertical-rl', 'horizontal-tb']) {
-      test(
-          'BUG-2638 VN stage is absolute, not fixed '
+      test('BUG-2638 VN stage is absolute, not fixed '
           '(${platform.name}, $writingMode)', () async {
         debugDefaultTargetPlatformOverride = platform;
         final ReaderSettings settings = await _vnSettings(writingMode);
         final String css = ReaderContentStyles.css(settings: settings);
         // 掩掉注释再查，免得解释性注释里的 "fixed" 字样误伤。
         final String stage = maskCssComments(_ruleBody(css, '.fushi-vn-stage'));
-        expect(stage, contains('position: absolute !important'),
-            reason: 'the VN stage must be absolutely positioned (BUG-2638)');
-        expect(stage.contains('position: fixed'), isFalse,
-            reason: 'a fixed VN stage leaves vertical-rl screen swaps '
-                'half-painted on macOS WebKit (BUG-2638)');
+        expect(
+          stage,
+          contains('position: absolute !important'),
+          reason: 'the VN stage must be absolutely positioned (BUG-2638)',
+        );
+        expect(
+          stage.contains('position: fixed'),
+          isFalse,
+          reason:
+              'a fixed VN stage leaves vertical-rl screen swaps '
+              'half-painted on macOS WebKit (BUG-2638)',
+        );
         expect(stage, contains('inset: 0 !important'));
 
         // absolute == fixed 的前提：文档本身不可滚动、占满视口。

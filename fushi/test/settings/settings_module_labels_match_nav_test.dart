@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart' show IconData;
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -11,7 +11,8 @@ import 'package:fushi/src/settings/settings_schema_reading.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/settings/settings_schema_system.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 
 /// BUG-1921：设置里的「功能模块」开关名字与底栏/侧栏对不上（设置叫「小说」/
 /// 「Galgame」，底栏叫「书架」/「游戏」；英文侧 Novels/Browser extension 对
@@ -34,11 +35,12 @@ void main() {
     ModuleId.books: 'system.module_books',
     ModuleId.manga: 'system.module_manga',
     ModuleId.video: 'system.module_video',
+    ModuleId.music: 'system.module_music',
     ModuleId.games: 'system.module_games',
     ModuleId.browse: 'system.module_downloads',
     ModuleId.lookup: 'system.module_lookup',
     ModuleId.srs: 'system.module_srs',
-    ModuleId.browserExtension: 'system.module_browser_extension',
+    ModuleId.web: 'system.module_browser_extension',
     ModuleId.listening: 'system.module_listening',
     ModuleId.cardCreation: 'system.module_card_creation',
     ModuleId.services: 'system.module_services',

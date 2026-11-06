@@ -52,8 +52,9 @@ void main() {
     );
     final int caret = body.indexOf('caretPositionFromPoint');
     final int textNode = body.indexOf('nodeType === Node.TEXT_NODE');
-    final int fallback =
-        body.indexOf('var element = document.elementFromPoint');
+    final int fallback = body.indexOf(
+      'var element = document.elementFromPoint',
+    );
     expect(caret, greaterThanOrEqualTo(0));
     expect(textNode, greaterThan(caret));
     expect(fallback, greaterThan(textNode));

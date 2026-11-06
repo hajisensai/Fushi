@@ -59,21 +59,21 @@ void main() {
   CollectionShelfRow buildRow({
     void Function(BookTagRow tag)? onTagDropped,
     List<BookTagRow>? tags,
-  }) =>
-      CollectionShelfRow(
-        title: 'コレクション',
-        countLabel: '3',
-        itemCount: 1,
-        itemWidth: 200,
-        rowHeight: 160,
-        onOpenDetail: () {},
-        onTagDropped: onTagDropped,
-        tags: tags,
-        itemBuilder: (BuildContext _, int __) => const Text('EP0'),
-      );
+  }) => CollectionShelfRow(
+    title: 'コレクション',
+    countLabel: '3',
+    itemCount: 1,
+    itemWidth: 200,
+    rowHeight: 160,
+    onOpenDetail: () {},
+    onTagDropped: onTagDropped,
+    tags: tags,
+    itemBuilder: (BuildContext _, int __) => const Text('EP0'),
+  );
 
-  testWidgets('把标签拖到合集行头触发 onTagDropped（合集级打标签入口）',
-      (WidgetTester tester) async {
+  testWidgets('把标签拖到合集行头触发 onTagDropped（合集级打标签入口）', (
+    WidgetTester tester,
+  ) async {
     BookTagRow? dropped;
     await pump(tester, buildRow(onTagDropped: (BookTagRow t) => dropped = t));
 
@@ -99,20 +99,23 @@ void main() {
     expect(dropped!.id, tag.id, reason: '回调必须收到被拖的那个 BookTagRow');
   });
 
-  testWidgets('onTagDropped 非 null 时行头是 DragTarget<BookTagRow>',
-      (WidgetTester tester) async {
+  testWidgets('onTagDropped 非 null 时行头是 DragTarget<BookTagRow>', (
+    WidgetTester tester,
+  ) async {
     await pump(tester, buildRow(onTagDropped: (_) {}));
     expect(find.byType(DragTarget<BookTagRow>), findsOneWidget);
   });
 
-  testWidgets('onTagDropped 为 null 时行头不建 DragTarget（守卫调用点漏接线又退回静默）',
-      (WidgetTester tester) async {
+  testWidgets('onTagDropped 为 null 时行头不建 DragTarget（守卫调用点漏接线又退回静默）', (
+    WidgetTester tester,
+  ) async {
     await pump(tester, buildRow(onTagDropped: null));
     expect(find.byType(DragTarget<BookTagRow>), findsNothing);
   });
 
-  testWidgets('tags 非空时行头下方展示标签 chip（用户实报：打了标签但列表上看不见）',
-      (WidgetTester tester) async {
+  testWidgets('tags 非空时行头下方展示标签 chip（用户实报：打了标签但列表上看不见）', (
+    WidgetTester tester,
+  ) async {
     await pump(tester, buildRow(tags: const <BookTagRow>[tag]));
     // chip 以标签名渲染（合集详情页同款 FushiTagChip）。
     expect(find.text('お気に入り'), findsOneWidget);

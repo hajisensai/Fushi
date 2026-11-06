@@ -51,8 +51,9 @@ Future<void> migrateLegacySyncRootDirectory({
 }) async {
   final String sep = Platform.pathSeparator;
   final Directory newDir = Directory('$syncDataDir$sep$kSyncRootFolderName');
-  final Directory legacyDir =
-      Directory('$syncDataDir$sep$kLegacySyncRootFolderName');
+  final Directory legacyDir = Directory(
+    '$syncDataDir$sep$kLegacySyncRootFolderName',
+  );
   try {
     if (await newDir.exists()) return;
     if (!await legacyDir.exists()) return;

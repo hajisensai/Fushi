@@ -26,8 +26,9 @@ void main() {
     final ChangeNotifierProvider<_Source> source =
         ChangeNotifierProvider<_Source>((Ref ref) => _Source());
     // 反面教材：把 owner 持有的实例从 ChangeNotifierProvider 里交出去。
-    final ChangeNotifierProvider<_Owned> bad =
-        ChangeNotifierProvider<_Owned>((Ref ref) {
+    final ChangeNotifierProvider<_Owned> bad = ChangeNotifierProvider<_Owned>((
+      Ref ref,
+    ) {
       ref.watch(source);
       return owner.owned;
     });
@@ -52,7 +53,8 @@ void main() {
     expect(
       owner.owned.disposed,
       isTrue,
-      reason: 'provider 重算把 owner 还在用的实例 dispose 了——'
+      reason:
+          'provider 重算把 owner 还在用的实例 dispose 了——'
           '这正是 videoSpecsProvider 不能用 ChangeNotifierProvider 的原因',
     );
   });
@@ -103,9 +105,12 @@ void _providerDeclarationGuards() {
     test('必须是普通 Provider，不能是 ChangeNotifierProvider', () {
       expect(
         containsCodeLine(
-            src, 'final videoSpecsProvider = Provider<VideoSpecsService>('),
+          src,
+          'final videoSpecsProvider = Provider<VideoSpecsService>(',
+        ),
         isTrue,
-        reason: 'videoSpecsProvider 必须用普通 Provider 交出 AppModel 持有的实例；'
+        reason:
+            'videoSpecsProvider 必须用普通 Provider 交出 AppModel 持有的实例；'
             '换成 ChangeNotifierProvider 会在每次 AppModel.notifyListeners() 时把'
             '那个实例就地 dispose（机制见本文件上面两条）',
       );
@@ -121,10 +126,13 @@ void _providerDeclarationGuards() {
         File('lib/src/models/app_model.dart').readAsStringSync(),
       );
       expect(
-        containsCodeLine(appModel,
-            'if (_videoSpecsService == null || !identical(_videoSpecsServiceDb, db)) {'),
+        containsCodeLine(
+          appModel,
+          'if (_videoSpecsService == null || !identical(_videoSpecsServiceDb, db)) {',
+        ),
         isTrue,
-        reason: 'videoSpecsService getter 必须比对建立时那个 FushiDatabase 的身份；'
+        reason:
+            'videoSpecsService getter 必须比对建立时那个 FushiDatabase 的身份；'
             '否则 close/reopen 之后（retryInitialise / 数据根迁移 / 切 Profile / '
             '恢复备份）服务会继续绑着已关闭的连接，读写被 try 吞成 debugPrint，'
             '静默退化成「每次滚动都重探、永不落库」',

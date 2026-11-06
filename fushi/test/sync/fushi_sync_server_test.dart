@@ -22,13 +22,14 @@ void main() {
       await rootDir.create();
       final bookDir = Directory('${rootDir.path}/TestBook');
       await bookDir.create();
-      await File('${bookDir.path}/progress_1234_0.5.json')
-          .writeAsString(jsonEncode({
-        'dataId': 0,
-        'exploredCharCount': 500,
-        'progress': 0.5,
-        'lastBookmarkModified': 1234,
-      }));
+      await File('${bookDir.path}/progress_1234_0.5.json').writeAsString(
+        jsonEncode({
+          'dataId': 0,
+          'exploredCharCount': 500,
+          'progress': 0.5,
+          'lastBookmarkModified': 1234,
+        }),
+      );
 
       token = FushiSyncServer.generateToken();
       server = FushiSyncServer(
@@ -49,6 +50,41 @@ void main() {
       expect(t.length, greaterThanOrEqualTo(40));
       final decoded = base64Url.decode(base64Url.normalize(t));
       expect(decoded.length, 32); // 256 bits
+    });
+
+    test('onClientWrite：鉴权通过的 PUT / DELETE 成功后回调相对路径；未鉴权或失败不回调', () async {
+      final List<String> writes = <String>[];
+      server.onClientWrite = writes.add;
+      await server.start();
+      final HttpClient client = HttpClient();
+      Future<int> send(String method, String path, {bool auth = true}) async {
+        final HttpClientRequest request = await client.openUrl(
+          method,
+          Uri.parse('http://localhost:${server.port}/$path'),
+        );
+        if (auth) {
+          request.headers.set(
+            'Authorization',
+            'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+          );
+        }
+        if (method == 'PUT') request.add(utf8.encode('x'));
+        final HttpClientResponse response = await request.close();
+        await response.drain<void>();
+        return response.statusCode;
+      }
+
+      const String file = '$kSyncRootFolderName/TestBook/written.bin';
+      expect(await send('PUT', file, auth: false), 401);
+      expect(writes, isEmpty);
+      expect(await send('PUT', file), 201);
+      expect(await send('GET', file), 200);
+      expect(await send('DELETE', file), anyOf(200, 204));
+      expect(writes, <String>[file, file]);
+      // 鉴权通过、但写失败（删不存在的文件 → 404）：不回调。
+      expect(await send('DELETE', file), 404);
+      expect(writes, <String>[file, file]);
+      client.close();
     });
 
     test('starts and stops without error', () async {
@@ -80,8 +116,10 @@ void main() {
         'PROPFIND',
         Uri.parse('http://localhost:${server.port}/$kSyncRootFolderName/'),
       );
-      request.headers.set('Authorization',
-          'Basic ${base64Encode(utf8.encode('hibiki:wrongtoken'))}');
+      request.headers.set(
+        'Authorization',
+        'Basic ${base64Encode(utf8.encode('hibiki:wrongtoken'))}',
+      );
       request.headers.set('Depth', '0');
       final response = await request.close();
       await response.drain<void>();
@@ -96,8 +134,10 @@ void main() {
         'PROPFIND',
         Uri.parse('http://localhost:${server.port}/$kSyncRootFolderName/'),
       );
-      request.headers.set('Authorization',
-          'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+      request.headers.set(
+        'Authorization',
+        'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+      );
       request.headers.set('Depth', '1');
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
@@ -109,11 +149,15 @@ void main() {
     test('GET returns file contents', () async {
       await server.start();
       final client = HttpClient();
-      final request = await client.getUrl(Uri.parse(
-        'http://localhost:${server.port}/$kSyncRootFolderName/TestBook/progress_1234_0.5.json',
-      ));
-      request.headers.set('Authorization',
-          'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+      final request = await client.getUrl(
+        Uri.parse(
+          'http://localhost:${server.port}/$kSyncRootFolderName/TestBook/progress_1234_0.5.json',
+        ),
+      );
+      request.headers.set(
+        'Authorization',
+        'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+      );
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
       expect(response.statusCode, 200);
@@ -128,10 +172,13 @@ void main() {
       final request = await client.openUrl(
         'PUT',
         Uri.parse(
-            'http://localhost:${server.port}/$kSyncRootFolderName/TestBook/test.json'),
+          'http://localhost:${server.port}/$kSyncRootFolderName/TestBook/test.json',
+        ),
       );
-      request.headers.set('Authorization',
-          'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+      request.headers.set(
+        'Authorization',
+        'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+      );
       request.headers.set('Content-Type', 'application/json');
       request.add(utf8.encode('{"hello":"world"}'));
       final response = await request.close();
@@ -139,16 +186,75 @@ void main() {
       expect(response.statusCode, 201);
 
       final file = File(
-          '${tempDir.path}/sync-data/$kSyncRootFolderName/TestBook/test.json');
+        '${tempDir.path}/sync-data/$kSyncRootFolderName/TestBook/test.json',
+      );
       expect(file.existsSync(), isTrue);
       expect(jsonDecode(file.readAsStringSync()), {'hello': 'world'});
+      client.close();
+    });
+
+    test('PUT 写到一半：目标仍是旧内容、PROPFIND 不列临时文件；写完原子替换', () async {
+      // SRS 迁移按「新根上已有同名」判断新副本已在、随后删原件：host 的 PUT 不能让半截文件被看见。
+      await server.start();
+      final Directory book = Directory(
+        '${tempDir.path}/sync-data/$kSyncRootFolderName/TestBook',
+      );
+      final File target = File('${book.path}/seg.bin')
+        ..writeAsStringSync('old');
+      final String auth = 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}';
+      final HttpClient client = HttpClient();
+      final HttpClientRequest put = await client.openUrl(
+        'PUT',
+        Uri.parse(
+          'http://localhost:${server.port}/$kSyncRootFolderName/TestBook/seg.bin',
+        ),
+      );
+      put.headers.set('Authorization', auth);
+      put.contentLength = 6;
+      put.add(utf8.encode('new'));
+      await put.flush();
+      bool tempSeen = false;
+      for (int i = 0; i < 250 && !tempSeen; i++) {
+        tempSeen = book.listSync().any(
+          (FileSystemEntity e) => e.path.contains('.fushi-put-'),
+        );
+        if (!tempSeen) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+      }
+      expect(tempSeen, isTrue, reason: '请求体在写同目录的临时文件');
+      expect(target.readAsStringSync(), 'old');
+      final HttpClientRequest find = await client.openUrl(
+        'PROPFIND',
+        Uri.parse(
+          'http://localhost:${server.port}/$kSyncRootFolderName/TestBook/',
+        ),
+      );
+      find.headers.set('Authorization', auth);
+      find.headers.set('Depth', '1');
+      final HttpClientResponse listed = await find.close();
+      final String xml = await listed.transform(utf8.decoder).join();
+      expect(xml, contains('seg.bin'));
+      expect(xml, isNot(contains('.fushi-put-')));
+      put.add(utf8.encode('!!!'));
+      final HttpClientResponse done = await put.close();
+      await done.drain<void>();
+      expect(done.statusCode, 204);
+      expect(target.readAsStringSync(), 'new!!!');
+      expect(
+        book.listSync().where(
+          (FileSystemEntity e) => e.path.contains('.fushi-put-'),
+        ),
+        isEmpty,
+      );
       client.close();
     });
 
     test('DELETE removes file', () async {
       await server.start();
       final testFile = File(
-          '${tempDir.path}/sync-data/$kSyncRootFolderName/TestBook/to_delete.json');
+        '${tempDir.path}/sync-data/$kSyncRootFolderName/TestBook/to_delete.json',
+      );
       await testFile.writeAsString('{}');
       expect(testFile.existsSync(), isTrue);
 
@@ -156,10 +262,13 @@ void main() {
       final request = await client.openUrl(
         'DELETE',
         Uri.parse(
-            'http://localhost:${server.port}/$kSyncRootFolderName/TestBook/to_delete.json'),
+          'http://localhost:${server.port}/$kSyncRootFolderName/TestBook/to_delete.json',
+        ),
       );
-      request.headers.set('Authorization',
-          'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+      request.headers.set(
+        'Authorization',
+        'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+      );
       final response = await request.close();
       await response.drain<void>();
       expect(response.statusCode, 204);
@@ -173,16 +282,20 @@ void main() {
       final request = await client.openUrl(
         'MKCOL',
         Uri.parse(
-            'http://localhost:${server.port}/$kSyncRootFolderName/NewBook/'),
+          'http://localhost:${server.port}/$kSyncRootFolderName/NewBook/',
+        ),
       );
-      request.headers.set('Authorization',
-          'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+      request.headers.set(
+        'Authorization',
+        'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+      );
       final response = await request.close();
       await response.drain<void>();
       expect(response.statusCode, 201);
       expect(
-        Directory('${tempDir.path}/sync-data/$kSyncRootFolderName/NewBook')
-            .existsSync(),
+        Directory(
+          '${tempDir.path}/sync-data/$kSyncRootFolderName/NewBook',
+        ).existsSync(),
         isTrue,
       );
       client.close();
@@ -199,12 +312,17 @@ void main() {
         final request = await client.getUrl(
           Uri.parse('http://localhost:${server.port}$path'),
         );
-        request.headers.set('Authorization',
-            'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+        request.headers.set(
+          'Authorization',
+          'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+        );
         final response = await request.close();
         await response.drain<void>();
-        expect(response.statusCode, anyOf(403, 404),
-            reason: 'Path $path should be rejected');
+        expect(
+          response.statusCode,
+          anyOf(403, 404),
+          reason: 'Path $path should be rejected',
+        );
       }
       client.close();
     });
@@ -215,10 +333,13 @@ void main() {
       final request = await client.openUrl(
         'HEAD',
         Uri.parse(
-            'http://localhost:${server.port}/$kSyncRootFolderName/TestBook/progress_1234_0.5.json'),
+          'http://localhost:${server.port}/$kSyncRootFolderName/TestBook/progress_1234_0.5.json',
+        ),
       );
-      request.headers.set('Authorization',
-          'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+      request.headers.set(
+        'Authorization',
+        'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+      );
       final response = await request.close();
       await response.drain<void>();
       expect(response.statusCode, 200);
@@ -226,123 +347,146 @@ void main() {
       client.close();
     });
 
-    test('remote dictionary lookup requires auth and returns popup payload',
-        () async {
-      final FushiSyncServer lookupServer = FushiSyncServer(
-        syncDataDir: tempDir.path,
-        port: 0,
-        token: token,
-        allowLan: true,
-        remoteLookupService: _FakeRemoteLookupService(),
-      );
-      await server.stop();
-      server = lookupServer;
-      await server.start();
+    test(
+      'remote dictionary lookup requires auth and returns popup payload',
+      () async {
+        final FushiSyncServer lookupServer = FushiSyncServer(
+          syncDataDir: tempDir.path,
+          port: 0,
+          token: token,
+          allowLan: true,
+          remoteLookupService: _FakeRemoteLookupService(),
+        );
+        await server.stop();
+        server = lookupServer;
+        await server.start();
 
-      final client = HttpClient();
-      final unauthenticated = await client.postUrl(Uri.parse(
-        'http://localhost:${server.port}/api/lookup/dictionary',
-      ));
-      unauthenticated.headers.contentType = ContentType.json;
-      unauthenticated.add(utf8.encode(jsonEncode(<String, dynamic>{
-        'term': '猫',
-        'wildcards': false,
-        'maximumTerms': 3,
-      })));
-      final rejected = await unauthenticated.close();
-      await rejected.drain<void>();
-      expect(rejected.statusCode, 401);
+        final client = HttpClient();
+        final unauthenticated = await client.postUrl(
+          Uri.parse('http://localhost:${server.port}/api/lookup/dictionary'),
+        );
+        unauthenticated.headers.contentType = ContentType.json;
+        unauthenticated.add(
+          utf8.encode(
+            jsonEncode(<String, dynamic>{
+              'term': '猫',
+              'wildcards': false,
+              'maximumTerms': 3,
+            }),
+          ),
+        );
+        final rejected = await unauthenticated.close();
+        await rejected.drain<void>();
+        expect(rejected.statusCode, 401);
 
-      final request = await client.postUrl(Uri.parse(
-        'http://localhost:${server.port}/api/lookup/dictionary',
-      ));
-      request.headers
-        ..set('Authorization',
-            'Basic ${base64Encode(utf8.encode('hibiki:$token'))}')
-        ..contentType = ContentType.json;
-      request.add(utf8.encode(jsonEncode(<String, dynamic>{
-        'term': '猫',
-        'wildcards': true,
-        'maximumTerms': 3,
-      })));
-      final response = await request.close();
-      final body = await response.transform(utf8.decoder).join();
-      final json = jsonDecode(body) as Map<String, dynamic>;
+        final request = await client.postUrl(
+          Uri.parse('http://localhost:${server.port}/api/lookup/dictionary'),
+        );
+        request.headers
+          ..set(
+            'Authorization',
+            'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+          )
+          ..contentType = ContentType.json;
+        request.add(
+          utf8.encode(
+            jsonEncode(<String, dynamic>{
+              'term': '猫',
+              'wildcards': true,
+              'maximumTerms': 3,
+            }),
+          ),
+        );
+        final response = await request.close();
+        final body = await response.transform(utf8.decoder).join();
+        final json = jsonDecode(body) as Map<String, dynamic>;
 
-      expect(response.statusCode, 200);
-      expect(json['type'], 'dictionaryResult');
-      expect(json['result'], isA<Map<String, dynamic>>());
-      expect(json['popupJson'], contains('remote-popup'));
-      client.close();
-    });
+        expect(response.statusCode, 200);
+        expect(json['type'], 'dictionaryResult');
+        expect(json['result'], isA<Map<String, dynamic>>());
+        expect(json['popupJson'], contains('remote-popup'));
+        client.close();
+      },
+    );
 
-    test('remote audio lookup returns a naked-player URL guarded by opaque id',
-        () async {
-      final FushiSyncServer lookupServer = FushiSyncServer(
-        syncDataDir: tempDir.path,
-        port: 0,
-        token: token,
-        allowLan: true,
-        remoteLookupService: _FakeRemoteLookupService(),
-      );
-      await server.stop();
-      server = lookupServer;
-      await server.start();
+    test(
+      'remote audio lookup returns a naked-player URL guarded by opaque id',
+      () async {
+        final FushiSyncServer lookupServer = FushiSyncServer(
+          syncDataDir: tempDir.path,
+          port: 0,
+          token: token,
+          allowLan: true,
+          remoteLookupService: _FakeRemoteLookupService(),
+        );
+        await server.stop();
+        server = lookupServer;
+        await server.start();
 
-      final client = HttpClient();
-      final unauthenticated = await client.postUrl(Uri.parse(
-        'http://localhost:${server.port}/api/lookup/audio',
-      ));
-      unauthenticated.headers.contentType = ContentType.json;
-      unauthenticated.add(utf8.encode(jsonEncode(<String, dynamic>{
-        'expression': '猫',
-        'reading': 'ねこ',
-      })));
-      final rejected = await unauthenticated.close();
-      await rejected.drain<void>();
-      expect(rejected.statusCode, 401);
+        final client = HttpClient();
+        final unauthenticated = await client.postUrl(
+          Uri.parse('http://localhost:${server.port}/api/lookup/audio'),
+        );
+        unauthenticated.headers.contentType = ContentType.json;
+        unauthenticated.add(
+          utf8.encode(
+            jsonEncode(<String, dynamic>{'expression': '猫', 'reading': 'ねこ'}),
+          ),
+        );
+        final rejected = await unauthenticated.close();
+        await rejected.drain<void>();
+        expect(rejected.statusCode, 401);
 
-      final request = await client.postUrl(Uri.parse(
-        'http://localhost:${server.port}/api/lookup/audio',
-      ));
-      request.headers
-        ..set('Authorization',
-            'Basic ${base64Encode(utf8.encode('hibiki:$token'))}')
-        ..contentType = ContentType.json;
-      request.add(utf8.encode(jsonEncode(<String, dynamic>{
-        'expression': '猫',
-        'reading': 'ねこ',
-        'path': '../../secret.mp3',
-      })));
-      final response = await request.close();
-      final body = await response.transform(utf8.decoder).join();
-      final json = jsonDecode(body) as Map<String, dynamic>;
+        final request = await client.postUrl(
+          Uri.parse('http://localhost:${server.port}/api/lookup/audio'),
+        );
+        request.headers
+          ..set(
+            'Authorization',
+            'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+          )
+          ..contentType = ContentType.json;
+        request.add(
+          utf8.encode(
+            jsonEncode(<String, dynamic>{
+              'expression': '猫',
+              'reading': 'ねこ',
+              'path': '../../secret.mp3',
+            }),
+          ),
+        );
+        final response = await request.close();
+        final body = await response.transform(utf8.decoder).join();
+        final json = jsonDecode(body) as Map<String, dynamic>;
 
-      expect(response.statusCode, 200);
-      expect(json['type'], 'audioResult');
-      expect(json['contentType'], 'audio/mpeg');
-      final String url = json['url'] as String;
-      expect(url, contains('/api/lookup/audio/file?id='));
-      expect(url, isNot(contains('secret.mp3')));
+        expect(response.statusCode, 200);
+        expect(json['type'], 'audioResult');
+        expect(json['contentType'], 'audio/mpeg');
+        final String url = json['url'] as String;
+        expect(url, contains('/api/lookup/audio/file?id='));
+        expect(url, isNot(contains('secret.mp3')));
 
-      final invalidRequest = await client.getUrl(Uri.parse(
-        'http://localhost:${server.port}/api/lookup/audio/file?id=missing',
-      ));
-      final invalidResponse = await invalidRequest.close();
-      await invalidResponse.drain<void>();
-      expect(invalidResponse.statusCode, 404);
+        final invalidRequest = await client.getUrl(
+          Uri.parse(
+            'http://localhost:${server.port}/api/lookup/audio/file?id=missing',
+          ),
+        );
+        final invalidResponse = await invalidRequest.close();
+        await invalidResponse.drain<void>();
+        expect(invalidResponse.statusCode, 404);
 
-      final fileRequest = await client.getUrl(Uri.parse(url));
-      final fileResponse = await fileRequest.close();
-      final bytes = await fileResponse.fold<List<int>>(
-        <int>[],
-        (List<int> previous, List<int> element) => previous..addAll(element),
-      );
-      expect(fileResponse.statusCode, 200);
-      expect(fileResponse.headers.value('content-type'), 'audio/mpeg');
-      expect(bytes, <int>[1, 2, 3, 4]);
-      client.close();
-    });
+        final fileRequest = await client.getUrl(Uri.parse(url));
+        final fileResponse = await fileRequest.close();
+        final bytes = await fileResponse.fold<List<int>>(
+          <int>[],
+          (List<int> previous, List<int> element) => previous..addAll(element),
+        );
+        expect(fileResponse.statusCode, 200);
+        expect(fileResponse.headers.value('content-type'), 'audio/mpeg');
+        expect(bytes, <int>[1, 2, 3, 4]);
+        client.close();
+      },
+    );
 
     test('remote audio file id expires before naked playback', () async {
       DateTime now = DateTime(2026, 1, 1, 12);
@@ -359,17 +503,20 @@ void main() {
       await server.start();
 
       final client = HttpClient();
-      final request = await client.postUrl(Uri.parse(
-        'http://localhost:${server.port}/api/lookup/audio',
-      ));
+      final request = await client.postUrl(
+        Uri.parse('http://localhost:${server.port}/api/lookup/audio'),
+      );
       request.headers
-        ..set('Authorization',
-            'Basic ${base64Encode(utf8.encode('hibiki:$token'))}')
+        ..set(
+          'Authorization',
+          'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+        )
         ..contentType = ContentType.json;
-      request.add(utf8.encode(jsonEncode(<String, dynamic>{
-        'expression': '猫',
-        'reading': 'ねこ',
-      })));
+      request.add(
+        utf8.encode(
+          jsonEncode(<String, dynamic>{'expression': '猫', 'reading': 'ねこ'}),
+        ),
+      );
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
       final json = jsonDecode(body) as Map<String, dynamic>;

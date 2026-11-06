@@ -279,6 +279,10 @@ class _Parser {
           throw unsupported('$key:$val', 'tag:re: / tag:nc: is not supported');
         }
         return SrsSearchTag(_unescape(val));
+      case 'is' when val == 'emptyfield':
+        return const SrsSearchEmptyField();
+      case 'is' when val == 'dupe':
+        return const SrsSearchDuplicate();
       case 'is':
         return SrsSearchState(switch (val) {
           'new' => SrsSearchCardState.isNew,
@@ -319,11 +323,22 @@ class _Parser {
         return SrsSearchCardTemplate.named(_unescape(val));
       case 'prop':
         return _prop(key, val);
+      case 'rated':
+        return _rated(key, val);
+      case 'has':
+        return SrsSearchHasMedia(switch (val) {
+          'audio' => SrsSearchMedia.audio,
+          'image' => SrsSearchMedia.image,
+          _ => throw fail('$key:$val', 'has: expects audio or image'),
+        });
+      case 'src':
+        final String source = _literal(_unescape(val));
+        if (source.isEmpty) throw fail('$key:$val', 'src: expects a value');
+        return SrsSearchSource(source);
       case 're':
         return SrsSearchRegex(val, _regex('$key:$val', val));
       case 'resched' ||
           'introduced' ||
-          'rated' ||
           'did' ||
           'mid' ||
           'nc' ||
@@ -348,6 +363,26 @@ class _Parser {
     return SrsSearchField(_unescape(key), _unescape(val));
   }
 
+  /// `rated:N` / `rated:N:E`（rslib `parse_rated`：N 至少 1，E 为 1..4）。
+  SrsSearchRated _rated(String key, String val) {
+    final RegExpMatch? m = RegExp(r'^(\d+)(?::(\d+))?$').firstMatch(val);
+    if (m == null) {
+      throw fail('$key:$val', 'rated: expects days or days:rating');
+    }
+    final int days = _dayCount(key, m.group(1)!);
+    final String? e = m.group(2);
+    if (e == null) return SrsSearchRated(days);
+    final int? rating = int.tryParse(e);
+    if (rating == null || rating < 1 || rating > 4) {
+      throw fail('$key:$val', 'rated: rating must be 1 to 4');
+    }
+    return SrsSearchRated(days, rating);
+  }
+
+  /// 解掉通配转义（`\\` `\*` `\_`）：整值相等比较的字面量（[_unescape] 之后用）。
+  String _literal(String txt) =>
+      txt.replaceAllMapped(RegExp(r'\\([\\*_])'), (Match m) => m.group(1)!);
+
   /// `edited:` / `added:` 的天数（至少 1）。
   int _dayCount(String key, String val) {
     if (!RegExp(r'^\d+$').hasMatch(val)) {
@@ -360,23 +395,19 @@ class _Parser {
     return days < 1 ? 1 : days;
   }
 
-  /// `re:` 的正则（rslib：只解掉 `\"`，其余反斜杠原样交给正则引擎；默认不区分大小写，
-  /// 开头写 `(?-i)` 改为区分大小写）。正则本身不合法 = 语法错误。
-  RegExp _regex(String at, String raw) {
-    String source = raw.replaceAll(r'\"', '"');
-    bool caseSensitive = false;
-    if (source.startsWith('(?-i)')) {
-      source = source.substring(5);
-      caseSensitive = true;
-    } else if (source.startsWith('(?i)')) {
-      source = source.substring(4);
+  /// `re:` 的正则（rslib：只解掉 `\"`，其余反斜杠原样交给正则引擎；求值时前面加 `(?i)`，
+  /// 所以默认不区分大小写，开头写 `(?-i)` 改为区分大小写）。正则本身是否合法由求值的
+  /// Rust `regex` 编译判定（不合法 = [SrsSearchErrorKind.syntax]），这里只拦空正则。
+  String _regex(String at, String raw) {
+    final String source = raw.replaceAll(r'\"', '"');
+    String body = source;
+    if (body.startsWith('(?-i)')) {
+      body = body.substring(5);
+    } else if (body.startsWith('(?i)')) {
+      body = body.substring(4);
     }
-    if (source.isEmpty) throw fail(at, 'empty regular expression');
-    try {
-      return RegExp(source, caseSensitive: caseSensitive, unicode: true);
-    } on FormatException catch (e) {
-      throw fail(at, 'invalid regular expression: ${e.message}');
-    }
+    if (body.isEmpty) throw fail(at, 'empty regular expression');
+    return source;
   }
 
   /// `prop:属性 比较符 数值`（rslib `parse_prop`）。
@@ -394,6 +425,7 @@ class _Parser {
       'lapses' => SrsSearchProperty.lapses,
       's' => SrsSearchProperty.stability,
       'd' => SrsSearchProperty.difficulty,
+      'r' => SrsSearchProperty.retrievability,
       _ => null,
     };
     if (property == null) {
@@ -410,13 +442,15 @@ class _Parser {
     final String text = m.group(3)!;
     final bool fractional =
         property == SrsSearchProperty.stability ||
-        property == SrsSearchProperty.difficulty;
+        property == SrsSearchProperty.difficulty ||
+        property == SrsSearchProperty.retrievability;
     final num? value = fractional
         ? (RegExp(r'^-?\d+(\.\d+)?$').hasMatch(text)
               ? double.tryParse(text)
               : null)
         : (RegExp(r'^-?\d+$').hasMatch(text) ? int.tryParse(text) : null);
-    if (value == null) {
+    // 位数多到溢出成无穷大的小数：没法交给求值内核（JSON 不能表示），按格式不对处理。
+    if (value == null || (value is double && !value.isFinite)) {
       throw fail(
         '$key:$val',
         fractional

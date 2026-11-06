@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:fushi/src/sync/onedrive_upload_session.dart';
 import 'package:fushi/src/sync/pkce_oauth.dart';
 import 'package:fushi/src/sync/pkce_oauth_backend_mixin.dart';
 import 'package:fushi/src/sync/sync_asset_range_reader.dart';
@@ -23,13 +24,13 @@ import 'package:fushi_engine/sync/ttu_models.dart';
 /// 修改时间取**顶层** `lastModifiedDateTime`（服务端写入时刻，UTC `Z`），不取
 /// `fileSystemInfo.lastModifiedDateTime`——后者是客户端可自报的文件系统时间，不是服务器时间。
 AssetEntry oneDriveItemToAssetEntry(Map<String, dynamic> item) => AssetEntry(
-      id: item['id'] as String,
-      name: item['name'] as String,
-      isFolder: item.containsKey('folder'),
-      sizeBytes: (item['size'] as num?)?.toInt(),
-      modifiedAt: syncIsoTimestampMs(item['lastModifiedDateTime']),
-      revision: OneDriveSyncBackend._contentRevisionOf(item),
-    );
+  id: item['id'] as String,
+  name: item['name'] as String,
+  isFolder: item.containsKey('folder'),
+  sizeBytes: (item['size'] as num?)?.toInt(),
+  modifiedAt: syncIsoTimestampMs(item['lastModifiedDateTime']),
+  revision: OneDriveSyncBackend._contentRevisionOf(item),
+);
 
 /// OneDrive sync backend via Microsoft Graph API.
 ///
@@ -81,14 +82,16 @@ class OneDriveSyncBackend extends SyncBackend
 
   @override
   Uri buildAuthUrl(String challenge, String redirectUri) =>
-      Uri.parse(_authorizeEndpoint).replace(queryParameters: {
-        'client_id': _clientId,
-        'response_type': 'code',
-        'redirect_uri': redirectUri,
-        'scope': _scopes,
-        'code_challenge': challenge,
-        'code_challenge_method': 'S256',
-      });
+      Uri.parse(_authorizeEndpoint).replace(
+        queryParameters: {
+          'client_id': _clientId,
+          'response_type': 'code',
+          'redirect_uri': redirectUri,
+          'scope': _scopes,
+          'code_challenge': challenge,
+          'code_challenge_method': 'S256',
+        },
+      );
 
   @override
   Future<String?> readStoredToken(SyncRepository repo) =>
@@ -121,7 +124,9 @@ class OneDriveSyncBackend extends SyncBackend
   }
 
   Future<http.Response> _graphPost(
-      String path, Map<String, dynamic> body) async {
+    String path,
+    Map<String, dynamic> body,
+  ) async {
     final resp = await (await obtainSyncHttpClient()).post(
       Uri.parse('$_apiBase$path'),
       headers: bearerJsonHeaders,
@@ -132,7 +137,9 @@ class OneDriveSyncBackend extends SyncBackend
   }
 
   Future<http.Response> _graphPatch(
-      String path, Map<String, dynamic> body) async {
+    String path,
+    Map<String, dynamic> body,
+  ) async {
     final resp = await (await obtainSyncHttpClient()).patch(
       Uri.parse('$_apiBase$path'),
       headers: bearerJsonHeaders,
@@ -142,8 +149,11 @@ class OneDriveSyncBackend extends SyncBackend
     return resp;
   }
 
-  Future<http.Response> _graphPut(String path, List<int> bytes,
-      {String contentType = 'application/octet-stream'}) async {
+  Future<http.Response> _graphPut(
+    String path,
+    List<int> bytes, {
+    String contentType = 'application/octet-stream',
+  }) async {
     final resp = await (await obtainSyncHttpClient()).put(
       Uri.parse('$_apiBase$path'),
       headers: {
@@ -177,7 +187,8 @@ class OneDriveSyncBackend extends SyncBackend
     }
     if (resp.statusCode >= 400) {
       throw SyncBackendError(
-          '$context failed: HTTP ${resp.statusCode} ${resp.body}');
+        '$context failed: HTTP ${resp.statusCode} ${resp.body}',
+      );
     }
   }
 
@@ -203,12 +214,16 @@ class OneDriveSyncBackend extends SyncBackend
         }
       },
       renameLegacy: (String legacyId) async {
-        await _graphPatch(
-            '/me/drive/items/$legacyId', {'name': _rootFolderName});
+        await _graphPatch('/me/drive/items/$legacyId', {
+          'name': _rootFolderName,
+        });
         return legacyId;
       },
-      onRenameError: (Object e, StackTrace st) => ErrorLogService.instance
-          .log('OneDriveSyncBackend.migrateLegacyRoot', e, st),
+      onRenameError: (Object e, StackTrace st) => ErrorLogService.instance.log(
+        'OneDriveSyncBackend.migrateLegacyRoot',
+        e,
+        st,
+      ),
     );
     if (existing != null) {
       rootFolderIdCache = existing;
@@ -233,10 +248,12 @@ class OneDriveSyncBackend extends SyncBackend
     final items = await _listChildren('/me/drive/items/$rootFolderId/children');
     return items
         .where((item) => item.containsKey('folder'))
-        .map((item) => SyncFileRef(
-              id: item['id'] as String,
-              name: item['name'] as String,
-            ))
+        .map(
+          (item) => SyncFileRef(
+            id: item['id'] as String,
+            name: item['name'] as String,
+          ),
+        )
         .toList();
   }
 
@@ -258,7 +275,8 @@ class OneDriveSyncBackend extends SyncBackend
     String? folderId;
     try {
       final resp = await _graphGet(
-          '/me/drive/items/$rootFolderId:/${Uri.encodeComponent(sanitized)}');
+        '/me/drive/items/$rootFolderId:/${Uri.encodeComponent(sanitized)}',
+      );
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
       folderId = json['id'] as String;
     } on SyncBackendError catch (e) {
@@ -289,7 +307,9 @@ class OneDriveSyncBackend extends SyncBackend
             contentType: format.mimeType,
           );
         }
-      } catch (_) {/* best-effort: failure is non-critical here */}
+      } catch (_) {
+        /* best-effort: failure is non-critical here */
+      }
     }
 
     return folderId;
@@ -302,17 +322,15 @@ class OneDriveSyncBackend extends SyncBackend
     final items = await _listChildren('/me/drive/items/$folderId/children');
     final files = items
         .where((item) => !item.containsKey('folder'))
-        .map((item) => SyncFileRef(
-              id: item['id'] as String,
-              name: item['name'] as String,
-            ))
+        .map(
+          (item) => SyncFileRef(
+            id: item['id'] as String,
+            name: item['name'] as String,
+          ),
+        )
         .toList();
 
-    return SyncFileTrio(
-      progress: findSyncFileByPrefix(files, 'progress_'),
-      statistics: findSyncFileByPrefix(files, 'statistics_'),
-      audioBook: findSyncFileByPrefix(files, 'audioBook_'),
-    );
+    return syncFileTrioFromFiles(files);
   }
 
   // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
@@ -326,8 +344,10 @@ class OneDriveSyncBackend extends SyncBackend
     required String? fileId,
     required TtuProgress progress,
   }) async {
-    final fileName =
-        progressFileName(progress.lastBookmarkModified, progress.progress);
+    final fileName = progressFileName(
+      progress.lastBookmarkModified,
+      progress.progress,
+    );
     await _uploadJson(folderId, fileName, progress.toJson());
     // Upload-then-delete: keep the old file until the new one is uploaded so a
     // failed upload never destroys the only copy (HBK-AUDIT-048).
@@ -342,7 +362,10 @@ class OneDriveSyncBackend extends SyncBackend
   }) async {
     final fileName = statisticsFileName(stats);
     await _uploadJson(
-        folderId, fileName, stats.map((s) => s.toJson()).toList());
+      folderId,
+      fileName,
+      stats.map((s) => s.toJson()).toList(),
+    );
     // Upload-then-delete (HBK-AUDIT-048).
     if (fileId != null) await _deleteItem(fileId);
   }
@@ -354,7 +377,9 @@ class OneDriveSyncBackend extends SyncBackend
     required TtuAudioBook audioBook,
   }) async {
     final fileName = audioBookFileName(
-        audioBook.lastAudioBookModified, audioBook.playbackPositionSec);
+      audioBook.lastAudioBookModified,
+      audioBook.playbackPositionSec,
+    );
     await _uploadJson(folderId, fileName, audioBook.toJson());
     // Upload-then-delete (HBK-AUDIT-048).
     if (fileId != null) await _deleteItem(fileId);
@@ -370,10 +395,23 @@ class OneDriveSyncBackend extends SyncBackend
     SyncTransferProgress? onProgress,
   }) async {
     final fileLength = await file.length();
+    if (fileLength > kOneDriveSimpleUploadMaxBytes) {
+      // 大文件（有声书包 / 视频 / 词典包）走可续传上传会话：单次长 PUT 一断就整份
+      // 作废、下轮同步从头重传（BUG-3690）。
+      final String uploadUrl = await _createUploadSession(folderId, fileName);
+      await uploadFileToOneDriveSession(
+        client: await obtainSyncHttpClient(),
+        uploadUrl: Uri.parse(uploadUrl),
+        file: file,
+        onProgress: onProgress,
+      );
+      return;
+    }
     final request = http.StreamedRequest(
       'PUT',
       Uri.parse(
-          '$_apiBase/me/drive/items/$folderId:/${Uri.encodeComponent(fileName)}:/content'),
+        '$_apiBase/me/drive/items/$folderId:/${Uri.encodeComponent(fileName)}:/content',
+      ),
     );
     request.headers['Authorization'] = 'Bearer $accessToken';
     request.headers['Content-Type'] = _guessContentType(fileName);
@@ -401,7 +439,8 @@ class OneDriveSyncBackend extends SyncBackend
     final streamedResp = await (await obtainSyncHttpClient()).send(request);
     if (streamedResp.statusCode >= 400) {
       throw SyncBackendError(
-          'Download failed: HTTP ${streamedResp.statusCode}');
+        'Download failed: HTTP ${streamedResp.statusCode}',
+      );
     }
 
     await writeSyncStreamToFile(
@@ -418,7 +457,9 @@ class OneDriveSyncBackend extends SyncBackend
     for (final item in items) {
       if (item['name'] == fileName) {
         return SyncFileRef(
-            id: item['id'] as String, name: item['name'] as String);
+          id: item['id'] as String,
+          name: item['name'] as String,
+        );
       }
     }
     return null;
@@ -482,8 +523,9 @@ class OneDriveSyncBackend extends SyncBackend
 
   /// Graph 的 `@microsoft.graph.downloadUrl` 是免鉴权的预签名直链，官方只说「短时
   /// 有效」（通常约 1 小时）。本地只信 15 分钟，过期或被拒即现取；绝不落库。
-  final PresignedLinkCache _downloadLinks =
-      PresignedLinkCache(ttl: const Duration(minutes: 15));
+  final PresignedLinkCache _downloadLinks = PresignedLinkCache(
+    ttl: const Duration(minutes: 15),
+  );
 
   /// 退出登录 / 换账号走这里（`signOut` 与设置页都会调）：直链属于签发它的账号，
   /// 与文件夹缓存一起作废。
@@ -498,15 +540,14 @@ class OneDriveSyncBackend extends SyncBackend
     String assetId, {
     required int start,
     int? end,
-  }) async =>
-      openPresignedAssetRange(
-        client: await obtainSyncHttpClient(),
-        cache: _downloadLinks,
-        assetId: assetId,
-        fetchLink: () => _fetchDownloadLink(assetId),
-        start: start,
-        end: end,
-      );
+  }) async => openPresignedAssetRange(
+    client: await obtainSyncHttpClient(),
+    cache: _downloadLinks,
+    assetId: assetId,
+    fetchLink: () => _fetchDownloadLink(assetId),
+    start: start,
+    end: end,
+  );
 
   Future<Uri> _fetchDownloadLink(String itemId) =>
       retryAfterAuthRefresh(refreshAuth, () async {
@@ -534,7 +575,8 @@ class OneDriveSyncBackend extends SyncBackend
   Future<String> _ensureChildFolder(String parentId, String name) async {
     try {
       final resp = await _graphGet(
-          '/me/drive/items/$parentId:/${Uri.encodeComponent(name)}');
+        '/me/drive/items/$parentId:/${Uri.encodeComponent(name)}',
+      );
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
       return json['id'] as String;
     } on SyncBackendError catch (e) {
@@ -555,8 +597,10 @@ class OneDriveSyncBackend extends SyncBackend
     String? url = '$_apiBase$firstPath';
 
     while (url != null) {
-      final resp = await (await obtainSyncHttpClient())
-          .get(Uri.parse(url), headers: bearerJsonHeaders);
+      final resp = await (await obtainSyncHttpClient()).get(
+        Uri.parse(url),
+        headers: bearerJsonHeaders,
+      );
       _checkResponse(resp, 'GET $firstPath');
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
       items.addAll((json['value'] as List).cast<Map<String, dynamic>>());
@@ -574,8 +618,9 @@ class OneDriveSyncBackend extends SyncBackend
       throw SyncBackendError('No download URL for item $fileId');
     }
 
-    final resp =
-        await (await obtainSyncHttpClient()).get(Uri.parse(downloadUrl));
+    final resp = await (await obtainSyncHttpClient()).get(
+      Uri.parse(downloadUrl),
+    );
     if (resp.statusCode >= 400) {
       throw SyncBackendError('Download failed: HTTP ${resp.statusCode}');
     }
@@ -583,13 +628,34 @@ class OneDriveSyncBackend extends SyncBackend
   }
 
   Future<void> _uploadJson(
-      String folderId, String fileName, dynamic data) async {
+    String folderId,
+    String fileName,
+    dynamic data,
+  ) async {
     final bytes = utf8.encode(jsonEncode(data));
     await _graphPut(
       '/me/drive/items/$folderId:/${Uri.encodeComponent(fileName)}:/content',
       bytes,
       contentType: 'application/json',
     );
+  }
+
+  /// `createUploadSession`：覆盖同名文件（与简单上传 `PUT :/content` 同语义）。
+  Future<String> _createUploadSession(String folderId, String fileName) async {
+    final resp = await _graphPost(
+      '/me/drive/items/$folderId:/${Uri.encodeComponent(fileName)}:/createUploadSession',
+      <String, dynamic>{
+        'item': <String, dynamic>{
+          '@microsoft.graph.conflictBehavior': 'replace',
+        },
+      },
+    );
+    final json = jsonDecode(resp.body) as Map<String, dynamic>;
+    final String? uploadUrl = json['uploadUrl'] as String?;
+    if (uploadUrl == null || uploadUrl.isEmpty) {
+      throw SyncBackendError('createUploadSession returned no uploadUrl');
+    }
+    return uploadUrl;
   }
 
   Future<void> _deleteItem(String fileId) async {

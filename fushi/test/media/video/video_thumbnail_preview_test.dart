@@ -295,8 +295,11 @@ void main() {
       for (int i = 0; i <= 4000; i++) {
         targets.add(thumbnailBucketTargetMs(i / 4000, 600000)!);
       }
-      expect(targets.length, kThumbnailBuckets,
-          reason: '4000 个采样点只应压缩成 600 格，这就是缓存命中率的来源');
+      expect(
+        targets.length,
+        kThumbnailBuckets,
+        reason: '4000 个采样点只应压缩成 600 格，这就是缓存命中率的来源',
+      );
     });
   });
 
@@ -341,8 +344,11 @@ void main() {
       expect(c.state.phase, ThumbnailPreviewPhase.ready);
 
       c.request(0.8, desktop: true);
-      expect(c.state.phase, ThumbnailPreviewPhase.loading,
-          reason: '手上这张不是当前位置的画面，态必须诚实');
+      expect(
+        c.state.phase,
+        ThumbnailPreviewPhase.loading,
+        reason: '手上这张不是当前位置的画面，态必须诚实',
+      );
       expect(c.state.image, isNotNull, reason: '沿用上一帧避免闪白');
       pending.complete(null);
       c.dispose();
@@ -391,14 +397,19 @@ void main() {
         // 永久停更（后续 hover 全被并进 pending 再也发不出去）。
         async.elapse(const Duration(seconds: 2));
         async.flushMicrotasks();
-        expect(grabbed, <int>[10000, 50000],
-            reason: 'grabTimeout 必须放掉 _inFlight 并补发 pending，否则预览永久停更');
+        expect(grabbed, <int>[
+          10000,
+          50000,
+        ], reason: 'grabTimeout 必须放掉 _inFlight 并补发 pending，否则预览永久停更');
 
         // 补发的那个也挂死 → 再超时一次，这回 generation 没变，诚实降级。
         async.elapse(const Duration(seconds: 3));
         async.flushMicrotasks();
-        expect(c.state.phase, ThumbnailPreviewPhase.timestampOnly,
-            reason: '取不到帧就降级只显时间戳，而不是永远卡在 loading');
+        expect(
+          c.state.phase,
+          ThumbnailPreviewPhase.timestampOnly,
+          reason: '取不到帧就降级只显时间戳，而不是永远卡在 loading',
+        );
       });
       c.dispose();
     });
@@ -434,9 +445,13 @@ void main() {
         current!.complete(img);
         async.flushMicrotasks();
 
-        expect(c.state.phase, ThumbnailPreviewPhase.ready,
-            reason: '把「期间又 hover 过」当成过期丢掉，匀速划过进度条时预览'
-                '一张图都换不出来（用户报的「鼠标动了还不会重新加载」）');
+        expect(
+          c.state.phase,
+          ThumbnailPreviewPhase.ready,
+          reason:
+              '把「期间又 hover 过」当成过期丢掉，匀速划过进度条时预览'
+              '一张图都换不出来（用户报的「鼠标动了还不会重新加载」）',
+        );
         expect(c.state.image, isNotNull);
         expect(grabs, 2, reason: '收尾后立刻去追当前指针所在那一格');
       });
@@ -473,8 +488,9 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('timestampOnly → 只渲染时间戳，无 RawImage',
-        (WidgetTester tester) async {
+    testWidgets('timestampOnly → 只渲染时间戳，无 RawImage', (
+      WidgetTester tester,
+    ) async {
       final VideoThumbnailPreviewController c = VideoThumbnailPreviewController(
         grabber: (int _) async => null,
         durationMsProvider: () => 0, // 无时长 → timestampOnly
@@ -501,8 +517,9 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('loading 且已有上一帧 → 安静换图，不叠 spinner',
-        (WidgetTester tester) async {
+    testWidgets('loading 且已有上一帧 → 安静换图，不叠 spinner', (
+      WidgetTester tester,
+    ) async {
       final ui.Image img = await _makeImage();
       final Completer<ui.Image?> pending = Completer<ui.Image?>();
       bool first = true;
@@ -524,14 +541,16 @@ void main() {
       await tester.pump();
       expect(c.state.phase, ThumbnailPreviewPhase.loading);
       expect(find.byType(RawImage), findsOneWidget, reason: '上一帧继续显示');
-      expect(find.byType(FushiCircularProgressIndicator), findsNothing,
-          reason: '已有图时不叠 spinner，否则匀速划过进度条会变频闪');
+      expect(
+        find.byType(FushiCircularProgressIndicator),
+        findsNothing,
+        reason: '已有图时不叠 spinner，否则匀速划过进度条会变频闪',
+      );
       pending.complete(null);
       c.dispose();
     });
 
-    testWidgets('loading 且一张图都还没有 → 显 spinner',
-        (WidgetTester tester) async {
+    testWidgets('loading 且一张图都还没有 → 显 spinner', (WidgetTester tester) async {
       final Completer<ui.Image?> pending = Completer<ui.Image?>();
       final VideoThumbnailPreviewController c = VideoThumbnailPreviewController(
         grabber: (int _) => pending.future,
@@ -561,10 +580,7 @@ void main() {
   });
 }
 
-Widget _wrap(
-  VideoThumbnailPreviewController c, {
-  bool controlsVisible = true,
-}) {
+Widget _wrap(VideoThumbnailPreviewController c, {bool controlsVisible = true}) {
   return MaterialApp(
     home: Scaffold(
       body: Stack(

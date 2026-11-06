@@ -18,7 +18,16 @@ import 'package:fushi/src/media/discovery/discovery_labels.dart';
 import 'package:fushi/src/media/discovery/discovery_server_probes.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 const Duration _kSaveDebounce = Duration(milliseconds: 600);
 
@@ -75,6 +84,18 @@ class _AListSiteSettingsSectionState
             title: t.discovery_alist_settings_title,
             hint: t.discovery_alist_settings_hint,
             icon: FushiIcons.cloud,
+          ),
+          // 「显示在」只有书 / 有声书 / 游戏 / 漫画：这里配的站点是发现页的下载源，
+          // 视频不走下载，而是视频库的 AList 来源原地流播（media_sources_view
+          // 的 'alist' transport）。用户在这里找不到视频就以为不支持
+          // （3-enoE7FpS），所以把入口写在这里。
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: FushiInlineNotice(
+              key: const ValueKey<String>('alist-site-video-hint'),
+              icon: FushiIcons.video,
+              message: t.discovery_alist_video_hint,
+            ),
           ),
           for (int index = 0; index < _drafts.length; index++) _card(index),
           Align(
@@ -311,26 +332,26 @@ class _AListDraft {
   });
 
   factory _AListDraft.empty(String id) => _AListDraft(
-        id: id,
-        name: '',
-        url: '',
-        kinds: kDefaultAListSiteKinds,
-        username: '',
-        password: '',
-        enabled: true,
-        allowInsecureHttp: false,
-      );
+    id: id,
+    name: '',
+    url: '',
+    kinds: kDefaultAListSiteKinds,
+    username: '',
+    password: '',
+    enabled: true,
+    allowInsecureHttp: false,
+  );
 
   factory _AListDraft.fromConfig(AListSiteConfig config) => _AListDraft(
-        id: config.id,
-        name: config.name,
-        url: config.baseUrl.toString(),
-        kinds: config.kinds,
-        username: config.username,
-        password: config.password,
-        enabled: config.enabled,
-        allowInsecureHttp: config.allowInsecureHttp,
-      );
+    id: config.id,
+    name: config.name,
+    url: config.baseUrl.toString(),
+    kinds: config.kinds,
+    username: config.username,
+    password: config.password,
+    enabled: config.enabled,
+    allowInsecureHttp: config.allowInsecureHttp,
+  );
 
   final String id;
   final String name;
@@ -349,17 +370,16 @@ class _AListDraft {
     String? password,
     bool? enabled,
     bool? allowInsecureHttp,
-  }) =>
-      _AListDraft(
-        id: id,
-        name: name ?? this.name,
-        url: url ?? this.url,
-        kinds: kinds ?? this.kinds,
-        username: username ?? this.username,
-        password: password ?? this.password,
-        enabled: enabled ?? this.enabled,
-        allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
-      );
+  }) => _AListDraft(
+    id: id,
+    name: name ?? this.name,
+    url: url ?? this.url,
+    kinds: kinds ?? this.kinds,
+    username: username ?? this.username,
+    password: password ?? this.password,
+    enabled: enabled ?? this.enabled,
+    allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
+  );
 
   /// 有效即返回配置，否则 null；校验全交给 [AListSiteConfig] 构造器。
   AListSiteConfig? toConfig() {
@@ -387,7 +407,8 @@ class _AListDraft {
     if (url.trim().isEmpty) return null;
     final Uri? parsed = Uri.tryParse(url.trim());
     if (parsed != null && _urlOnlyValid(parsed)) return null;
-    final bool plainHttpBlocked = parsed != null &&
+    final bool plainHttpBlocked =
+        parsed != null &&
         parsed.scheme == 'http' &&
         !allowInsecureHttp &&
         parsed.host.isNotEmpty;
@@ -413,13 +434,10 @@ class _AListDraft {
 }
 
 class _ProbeState {
-  const _ProbeState.running()
-      : running = true,
-        ok = false,
-        message = '';
+  const _ProbeState.running() : running = true, ok = false, message = '';
 
   const _ProbeState.done({required this.ok, required this.message})
-      : running = false;
+    : running = false;
 
   final bool running;
   final bool ok;

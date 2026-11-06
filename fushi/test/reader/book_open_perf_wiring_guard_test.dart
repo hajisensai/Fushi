@@ -184,21 +184,16 @@ void main() {
       reason: '设置面板删除收藏后，当前 reader 缓存必须失效',
     );
     // 每次操作按实际选区解析精确收藏 ID，不能采用另一句的查词缓存。
-    expect(
-      toggleBody,
-      contains('await repo.matchedFavoriteId('),
-    );
-    expect(
-      toggleBody,
-      contains('await repo.removeById(matchedId);'),
-    );
+    expect(toggleBody, contains('await repo.matchedFavoriteId('));
+    expect(toggleBody, contains('await repo.removeById(matchedId);'));
     expect(
       containsCodeLine(toggleBody, '_invalidateFavoriteSentenceCache();'),
       isTrue,
     );
     // 精确删除后必失效缓存。
-    final int removeIdx =
-        toggleBody.indexOf('await repo.removeById(matchedId);');
+    final int removeIdx = toggleBody.indexOf(
+      'await repo.removeById(matchedId);',
+    );
     final int removeInvalidateIdx = toggleBody.indexOf(
       '_invalidateFavoriteSentenceCache();',
       removeIdx,

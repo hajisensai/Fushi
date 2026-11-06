@@ -11,7 +11,19 @@ import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 
 /// 一台服务器的首页（2026-10 重做）：页头（连接状态点 + 服务器名 + 切换服务器
 /// 菜单）→「继续观看」横滚行（16:9 卡 + 进度，Resume ∪ NextUp 去重）→「媒体库」
@@ -226,6 +238,7 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
                       MediaServerSession(
                         browser: browser,
                         play: widget.session.play,
+                        library: widget.session.library,
                       ),
                   ]),
             ),
@@ -523,19 +536,31 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
       rowHeight: mediaServerContinueCardHeight(context),
       itemBuilder: (BuildContext context, int index) {
         final MediaServerItem item = items[index];
-        return MediaServerContinueCard(
-          key: ValueKey<String>('$storageKey-card-${item.id}'),
-          browser: _browser,
-          item: item,
-          focusId: FushiFocusId('$storageKey-card-${item.id}'),
-          onTap: () => resumeMediaServerItem(
-            context,
-            widget.session,
-            item,
-            siblings: items,
+        // 菜单要锚在这张卡上：行的 itemBuilder 拿到的是列表 sliver 的 context
+        // （render object 是 sliver，不是卡），所以在卡外包一层 Builder 取卡自己的。
+        return Builder(
+          builder: (BuildContext context) => MediaServerContinueCard(
+            key: ValueKey<String>('$storageKey-card-${item.id}'),
+            browser: _browser,
+            item: item,
+            focusId: FushiFocusId('$storageKey-card-${item.id}'),
+            onTap: () => resumeMediaServerItem(
+              context,
+              widget.session,
+              item,
+              siblings: items,
+            ),
+            // 长按 / 右键：菜单给「继续播放 / 打开详情」（a-XEzglLaq：想从这里
+            // 去看同一部的其它集）。点按仍直接续播。
+            onLongPress: () => unawaited(
+              showMediaServerContinueMenu(
+                context,
+                widget.session,
+                item,
+                siblings: items,
+              ),
+            ),
           ),
-          onLongPress: () =>
-              openMediaServerItemDetail(context, widget.session, item),
         );
       },
     );

@@ -14,7 +14,8 @@ import 'package:fushi_audio/fushi_audio.dart';
 /// 语义（libass）：水平排版盒 = `[MarginL, PlayResX-MarginR]`，居中对齐在盒内居中（不对称
 /// 边距 → 中心偏移 (L-R)/2）、左对齐贴盒左缘；`\N` 处硬断行。plainText 断点处保持空格
 /// （查词 / 制卡 / DB 逐字节不变），仅渲染层按 lineBreakGraphemes 分行。
-String _ass({required String eventsBody}) => '''
+String _ass({required String eventsBody}) =>
+    '''
 [Script Info]
 PlayResX: 1920
 PlayResY: 1080
@@ -33,25 +34,28 @@ Future<void> _mount(WidgetTester tester, VideoPlayerController c) async {
   tester.view.physicalSize = const Size(1920, 1080);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      body: SizedBox(
-        width: 1920,
-        height: 1080,
-        child: VideoSubtitleOverlay(
-          controller: c,
-          respectAssStyle: true,
-          onCharTap: (_, __, ___, ____) {},
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: 1920,
+          height: 1080,
+          child: VideoSubtitleOverlay(
+            controller: c,
+            respectAssStyle: true,
+            onCharTap: (_, __, ___, ____) {},
+          ),
         ),
       ),
     ),
-  ));
+  );
   await tester.pump();
 }
 
 Rect _fillRect(WidgetTester tester, String ch) {
   final Finder fill = find.byWidgetPredicate(
-      (Widget w) => w is Text && w.data == ch && w.style?.foreground == null);
+    (Widget w) => w is Text && w.data == ch && w.style?.foreground == null,
+  );
   return tester.getRect(fill.first);
 }
 
@@ -60,9 +64,11 @@ void main() {
     final List<AudioCue> cues = AssParser.parseString(
       bookKey: 'b',
       content: _ass(
-          eventsBody: 'Dialogue: 0,0:00:00.00,0:00:02.00,Mid,,0,0,0,,普通\n'
-              'Dialogue: 0,0:00:03.00,0:00:05.00,Mid,,900,0,0,,横移\n'
-              'Dialogue: 0,0:00:06.00,0:00:08.00,Sign,,0,0,0,,招牌'),
+        eventsBody:
+            'Dialogue: 0,0:00:00.00,0:00:02.00,Mid,,0,0,0,,普通\n'
+            'Dialogue: 0,0:00:03.00,0:00:05.00,Mid,,900,0,0,,横移\n'
+            'Dialogue: 0,0:00:06.00,0:00:08.00,Sign,,0,0,0,,招牌',
+      ),
     );
     expect(cues.length, 3);
     final SubtitleCueStyle plain = cues[0].markup!.cueStyle!;
@@ -81,12 +87,14 @@ void main() {
     expect(cues[0].markup!.playResX, 1920);
   });
 
-  testWidgets('渲染：行级 MarginL=900 把居中对白横移到 (L-R)/2',
-      (WidgetTester tester) async {
+  testWidgets('渲染：行级 MarginL=900 把居中对白横移到 (L-R)/2', (
+    WidgetTester tester,
+  ) async {
     final List<AudioCue> cues = AssParser.parseString(
       bookKey: 'b',
-      content:
-          _ass(eventsBody: 'Dialogue: 0,0:00:00.00,0:00:05.00,Mid,,900,0,0,,右'),
+      content: _ass(
+        eventsBody: 'Dialogue: 0,0:00:00.00,0:00:05.00,Mid,,900,0,0,,右',
+      ),
     );
     final VideoPlayerController c = VideoPlayerController();
     addTearDown(c.dispose);
@@ -98,16 +106,21 @@ void main() {
     // 排版盒 [900, 1910]（MarginR 沿用样式 10），文本在盒内居中 → 中心 = (900+1910)/2
     // = 1405（容器 1920 = PlayResX，缩放 1.0）。
     final Rect r = _fillRect(tester, '右');
-    expect(r.center.dx, closeTo(1405, 4),
-        reason: '行级 MarginL=900 的对白应横移到说话人一侧，而非屏幕居中');
+    expect(
+      r.center.dx,
+      closeTo(1405, 4),
+      reason: '行级 MarginL=900 的对白应横移到说话人一侧，而非屏幕居中',
+    );
   });
 
-  testWidgets('渲染：an7 招牌样式 MarginL=40 → 左缘偏移，不贴屏幕边',
-      (WidgetTester tester) async {
+  testWidgets('渲染：an7 招牌样式 MarginL=40 → 左缘偏移，不贴屏幕边', (
+    WidgetTester tester,
+  ) async {
     final List<AudioCue> cues = AssParser.parseString(
       bookKey: 'b',
-      content:
-          _ass(eventsBody: 'Dialogue: 0,0:00:00.00,0:00:05.00,Sign,,0,0,0,,牌'),
+      content: _ass(
+        eventsBody: 'Dialogue: 0,0:00:00.00,0:00:05.00,Sign,,0,0,0,,牌',
+      ),
     );
     final VideoPlayerController c = VideoPlayerController();
     addTearDown(c.dispose);
@@ -121,12 +134,14 @@ void main() {
     expect(r.left, closeTo(52, 4), reason: 'an7 + 样式 MarginL=40 的招牌不得贴屏幕左缘');
   });
 
-  testWidgets(r'渲染：\N 硬换行分两行；plainText 保持空格（查词零变化）',
-      (WidgetTester tester) async {
+  testWidgets(r'渲染：\N 硬换行分两行；plainText 保持空格（查词零变化）', (
+    WidgetTester tester,
+  ) async {
     final List<AudioCue> cues = AssParser.parseString(
       bookKey: 'b',
       content: _ass(
-          eventsBody: r'Dialogue: 0,0:00:00.00,0:00:05.00,Mid,,0,0,0,,上行\N下行'),
+        eventsBody: r'Dialogue: 0,0:00:00.00,0:00:05.00,Mid,,0,0,0,,上行\N下行',
+      ),
     );
     expect(cues.single.text, '上行 下行', reason: 'plainText 断点处保持空格');
     expect(cues.single.markup!.lineBreakGraphemes, <int>[2]);
@@ -140,9 +155,15 @@ void main() {
 
     final Rect up = _fillRect(tester, '上');
     final Rect down = _fillRect(tester, '下');
-    expect(down.top, greaterThanOrEqualTo(up.bottom - 1),
-        reason: r'\N 后的文字应换到下一行（libass 硬换行），不再一长行');
-    expect((up.left - down.left).abs(), lessThan(1),
-        reason: '两行各自居中（等宽 → 左缘对齐）');
+    expect(
+      down.top,
+      greaterThanOrEqualTo(up.bottom - 1),
+      reason: r'\N 后的文字应换到下一行（libass 硬换行），不再一长行',
+    );
+    expect(
+      (up.left - down.left).abs(),
+      lessThan(1),
+      reason: '两行各自居中（等宽 → 左缘对齐）',
+    );
   });
 }

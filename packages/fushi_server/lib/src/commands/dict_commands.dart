@@ -23,7 +23,13 @@ import 'package:fushi_server/src/server_runtime.dart';
 import 'package:path/path.dart' as p;
 
 /// 一次导入的结果（`dict add --json` 的输出形状）。
-typedef DictImportOutcome = ({String name, String type, int termCount, int kanjiCount, bool replaced});
+typedef DictImportOutcome = ({
+  String name,
+  String type,
+  int termCount,
+  int kanjiCount,
+  bool replaced,
+});
 
 /// 词典导入失败（导入器报错 / 包里没有标题）。
 class DictImportException implements Exception {
@@ -36,7 +42,8 @@ class DictImportException implements Exception {
 }
 
 /// 原生导入器的签名（测试可注入）。
-typedef DictArchiveImporter = Future<FushiImportResult> Function(String archivePath, String outputDir);
+typedef DictArchiveImporter =
+    Future<FushiImportResult> Function(String archivePath, String outputDir);
 
 /// 把 [archive]（Yomitan zip 等原生导入器认的格式）导入服务端词典库。
 ///
@@ -48,11 +55,19 @@ Future<DictImportOutcome> importDictionaryArchive({
   required File archive,
   DictArchiveImporter? importer,
 }) async {
-  final Directory staging = await Directory.systemTemp.createTemp('fushi_dict_import_');
+  final Directory staging = await Directory.systemTemp.createTemp(
+    'fushi_dict_import_',
+  );
   try {
-    final FushiImportResult result = await (importer ?? FushiDicts.importDictionary)(archive.path, staging.path);
+    final FushiImportResult result =
+        await (importer ?? FushiDicts.importDictionary)(
+          archive.path,
+          staging.path,
+        );
     if (!result.success) {
-      throw DictImportException(result.error.isNotEmpty ? result.error : '导入失败');
+      throw DictImportException(
+        result.error.isNotEmpty ? result.error : '导入失败',
+      );
     }
     final String name = sanitizeDictionaryTitle(result.title);
     final List<DictionaryMetaRow> rows = await db.getAllDictionaryMetadata();
@@ -68,7 +83,12 @@ Future<DictImportOutcome> importDictionaryArchive({
     await _moveDirectory(source, target);
     final int order =
         previous?.order ??
-        (rows.isEmpty ? 0 : rows.map((DictionaryMetaRow r) => r.order).reduce((int a, int b) => a > b ? a : b) + 1);
+        (rows.isEmpty
+            ? 0
+            : rows
+                      .map((DictionaryMetaRow r) => r.order)
+                      .reduce((int a, int b) => a > b ? a : b) +
+                  1);
     final String type = switch (result.detectedType) {
       'frequency' || 'pitch' || 'kanji' => result.detectedType,
       _ => 'term',
@@ -86,9 +106,15 @@ Future<DictImportOutcome> importDictionaryArchive({
             'typeProbe': '1',
           }),
         ),
-        hiddenLanguagesJson: Value<String>(previous?.hiddenLanguagesJson ?? '[]'),
-        collapsedLanguagesJson: Value<String>(previous?.collapsedLanguagesJson ?? '[]'),
-        expandedLanguagesJson: Value<String>(previous?.expandedLanguagesJson ?? '[]'),
+        hiddenLanguagesJson: Value<String>(
+          previous?.hiddenLanguagesJson ?? '[]',
+        ),
+        collapsedLanguagesJson: Value<String>(
+          previous?.collapsedLanguagesJson ?? '[]',
+        ),
+        expandedLanguagesJson: Value<String>(
+          previous?.expandedLanguagesJson ?? '[]',
+        ),
         languageOverride: Value<String?>(previous?.languageOverride),
         displayName: Value<String?>(previous?.displayName),
       ),
@@ -107,7 +133,9 @@ Future<DictImportOutcome> importDictionaryArchive({
 
 /// 词典标题 → 目录名 / 主键（与 app `_sanitizeTitle` 同规则）。
 String sanitizeDictionaryTitle(String raw) {
-  final String cleaned = p.basename(raw.trim()).replaceAll(RegExp(r'[/\\]'), '_');
+  final String cleaned = p
+      .basename(raw.trim())
+      .replaceAll(RegExp(r'[/\\]'), '_');
   if (cleaned.isEmpty || cleaned == '.' || cleaned == '..') {
     throw const DictImportException('词典包里没有标题（index.json 的 title 为空）');
   }
@@ -132,7 +160,10 @@ Future<void> _moveDirectory(Directory from, Directory to) async {
 }
 
 /// 一条词典的列表行（`dict ls --json` 的形状）。
-Map<String, Object?> dictionaryRowJson(DictionaryMetaRow r, Directory resourceRoot) => <String, Object?>{
+Map<String, Object?> dictionaryRowJson(
+  DictionaryMetaRow r,
+  Directory resourceRoot,
+) => <String, Object?>{
   'name': r.name,
   'type': r.type,
   'order': r.order,
@@ -174,10 +205,14 @@ class DictCliModule extends CliModule {
           stderr.writeln('找不到词典包 ${archive.path}');
           return 66;
         }
-        return ctx.withRuntime((ServerRuntime rt) => _add(rt, archive, json: json));
+        return ctx.withRuntime(
+          (ServerRuntime rt) => _add(rt, archive, json: json),
+        );
       case 'rm':
         if (rest.length != 2) return _usageError();
-        return ctx.withRuntime((ServerRuntime rt) => _remove(rt, rest[1], json: json));
+        return ctx.withRuntime(
+          (ServerRuntime rt) => _remove(rt, rest[1], json: json),
+        );
       default:
         return _usageError();
     }
@@ -190,11 +225,15 @@ class DictCliModule extends CliModule {
 
   Future<int> _list(ServerRuntime rt, {required bool json}) async {
     final List<DictionaryMetaRow> rows = await rt.db.getAllDictionaryMetadata()
-      ..sort((DictionaryMetaRow a, DictionaryMetaRow b) => a.order.compareTo(b.order));
+      ..sort(
+        (DictionaryMetaRow a, DictionaryMetaRow b) =>
+            a.order.compareTo(b.order),
+      );
     if (json) {
       stdout.writeln(
         jsonEncode(<Map<String, Object?>>[
-          for (final DictionaryMetaRow r in rows) dictionaryRowJson(r, rt.paths.dictionaryResources),
+          for (final DictionaryMetaRow r in rows)
+            dictionaryRowJson(r, rt.paths.dictionaryResources),
         ]),
       );
       return 0;
@@ -204,7 +243,10 @@ class DictCliModule extends CliModule {
       return 0;
     }
     for (final DictionaryMetaRow r in rows) {
-      final Map<String, Object?> row = dictionaryRowJson(r, rt.paths.dictionaryResources);
+      final Map<String, Object?> row = dictionaryRowJson(
+        r,
+        rt.paths.dictionaryResources,
+      );
       stdout.writeln(
         '${r.order.toString().padLeft(3)}  ${r.type.padRight(9)} ${r.name}'
         '${row['hidden'] == true ? '  [hidden]' : ''}${row['present'] == true ? '' : '  [missing files]'}',
@@ -229,7 +271,11 @@ class DictCliModule extends CliModule {
     stderr.writeln('导入 ${archive.path} …');
     final DictImportOutcome r;
     try {
-      r = await importDictionaryArchive(db: rt.db, resourceRoot: rt.paths.dictionaryResources, archive: archive);
+      r = await importDictionaryArchive(
+        db: rt.db,
+        resourceRoot: rt.paths.dictionaryResources,
+        archive: archive,
+      );
     } on DictImportException catch (e) {
       stderr.writeln('导入失败：${e.message}');
       return 1;
@@ -253,7 +299,11 @@ class DictCliModule extends CliModule {
     return 0;
   }
 
-  Future<int> _remove(ServerRuntime rt, String name, {required bool json}) async {
+  Future<int> _remove(
+    ServerRuntime rt,
+    String name, {
+    required bool json,
+  }) async {
     final List<DictionaryMetaRow> rows = await rt.db.getAllDictionaryMetadata();
     if (!rows.any((DictionaryMetaRow r) => r.name == name)) {
       stderr.writeln('没有名为「$name」的词典');
@@ -270,7 +320,9 @@ class DictCliModule extends CliModule {
       reloadEngine: () {},
     );
     if (json) {
-      stdout.writeln(jsonEncode(<String, Object?>{'name': name, 'files': outcome.name}));
+      stdout.writeln(
+        jsonEncode(<String, Object?>{'name': name, 'files': outcome.name}),
+      );
     } else {
       stdout.writeln('已删除「$name」；重启 serve 后生效');
     }

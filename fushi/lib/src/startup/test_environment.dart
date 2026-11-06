@@ -3,8 +3,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 const String _dartDefineTestRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
-const String _dartDefineTestRunId =
-    String.fromEnvironment('FUSHI_TEST_RUN_ID');
+const String _dartDefineTestRunId = String.fromEnvironment('FUSHI_TEST_RUN_ID');
 
 String? fushiTestRootPath({
   Map<String, String>? environment,

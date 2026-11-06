@@ -93,15 +93,11 @@ void main() {
     );
   });
 
-  testWidgets('Apple 主题材质档为 off 时窗口材质仍请求开启', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('Apple 主题材质档为 off 时窗口材质仍请求开启', (WidgetTester tester) async {
     expect(await _requestedUnder(tester, glassDesign: true), isTrue);
   });
 
-  testWidgets('MD3 / 墨水屏 / 增强对比度 / 降低透明度下不请求', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('MD3 / 墨水屏 / 增强对比度 / 降低透明度下不请求', (WidgetTester tester) async {
     expect(await _requestedUnder(tester, glassDesign: false), isFalse);
     expect(
       await _requestedUnder(tester, glassDesign: true, eink: true),

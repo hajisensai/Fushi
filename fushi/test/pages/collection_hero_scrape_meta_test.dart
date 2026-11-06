@@ -1,7 +1,11 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
@@ -24,20 +28,51 @@ import 'package:fushi_core/fushi_core.dart';
 ///     重模糊垫底；2:3 封面恒在独立封面卡里清晰显示（[PortraitCoverImage] 按朝向
 ///     分流），不再把海报硬塞进宽幅槽（BUG-1298）。
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  final TestWidgetsFlutterBinding binding =
+      TestWidgetsFlutterBinding.ensureInitialized();
+
+  // BUG-3756：封面存在性改为 async 探测后，测试要用 runAsync 让真实 IO 回话；同一
+  // 窗口里远程封面（CachedNetworkImage）的磁盘缓存管理器也会真的起来，要
+  // path_provider 应答。
+  late Directory pathProviderDir;
+  setUpAll(() {
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'collection_hero_pp_',
+    );
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      (MethodCall call) async => pathProviderDir.path,
+    );
+  });
+  tearDownAll(() {
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      null,
+    );
+  });
 
   late FushiDatabase db;
   late int collectionId;
+  late Directory coverDir;
+
+  /// 合集自有封面必须是磁盘上真实存在的文件——详情页与库页同样只认存在的本地
+  /// 封面，悬空路径按「没设过」处理（BUG-3638）。
+  late String existingCoverPath;
 
   setUp(() async {
+    coverDir = Directory.systemTemp.createTempSync('collection_hero_cover_');
+    existingCoverPath = '${coverDir.path}${Platform.pathSeparator}1.jpg';
+    File(existingCoverPath).writeAsBytesSync(<int>[0xFF, 0xD8, 0xFF]);
     LocaleSettings.setLocale(AppLocale.zhCn);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/e1'),
-      title: const Value('S01E01'),
-      videoPath: const Value('/abs/e1.mp4'),
-      importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/e1'),
+        title: const Value('S01E01'),
+        videoPath: const Value('/abs/e1.mp4'),
+        importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
+      ),
+    );
     collectionId = await db.createMediaCollection(
       'Tensei Oujo v2 播放列表',
       collectionType: 'playlist',
@@ -45,23 +80,31 @@ void main() {
     await db.addToCollection(collectionId, MediaKind.video, 'video/e1');
   });
 
-  tearDown(() => db.close());
+  tearDown(() async {
+    await db.close();
+    coverDir.deleteSync(recursive: true);
+  });
 
   Future<List<VideoBookRow>> loadMembers() async => <VideoBookRow>[
-        for (final MediaCollectionItemRow it
-            in await db.getCollectionItems(collectionId))
-          (await db.allVideoBooks())
-              .firstWhere((VideoBookRow r) => r.bookUid == it.entryKey),
-      ];
+    for (final MediaCollectionItemRow it in await db.getCollectionItems(
+      collectionId,
+    ))
+      (await db.allVideoBooks()).firstWhere(
+        (VideoBookRow r) => r.bookUid == it.entryKey,
+      ),
+  ];
 
   Future<void> saveMeta({
     String? backdropPath,
-    String coverPath = '/covers/collections/1.jpg',
+    String? coverPath,
     // 改名只在用户于确认弹窗点了确认时发生（BUG-1310 复议）；hero 资料本身与改名
     // 无关，故默认不改名，只有专测标题回写的用例才传。
     String? confirmedTitle,
   }) async {
-    await db.updateMediaCollectionCoverPath(collectionId, coverPath);
+    await db.updateMediaCollectionCoverPath(
+      collectionId,
+      coverPath ?? existingCoverPath,
+    );
     await db.upsertCollectionScrapeMeta(
       CollectionScrapeMetaCompanion.insert(
         collectionId: Value<int>(collectionId),
@@ -80,44 +123,58 @@ void main() {
         scrapedAt: DateTime(2026, 1, 1),
       ),
     );
-    await db.replaceMediaImagesForCollection(
-      collectionId,
-      <MediaImagesCompanion>[
-        if (backdropPath != null)
-          MediaImagesCompanion.insert(
-            collectionId: Value<int?>(collectionId),
-            kind: MediaImageKind.backdrop.dbValue,
-            path: backdropPath,
-          ),
-      ],
-    );
+    await db
+        .replaceMediaImagesForCollection(collectionId, <MediaImagesCompanion>[
+          if (backdropPath != null)
+            MediaImagesCompanion.insert(
+              collectionId: Value<int?>(collectionId),
+              kind: MediaImageKind.backdrop.dbValue,
+              path: backdropPath,
+            ),
+        ]);
     if (confirmedTitle != null) {
       await db.renameMediaCollection(collectionId, confirmedTitle);
     }
   }
 
   Widget buildApp() => TranslationProvider(
-        child: MaterialApp(
-          home: MediaCollectionDetailPage(
-            database: db,
-            collection: MediaCollectionRow(
-              id: collectionId,
-              name: 'Tensei Oujo v2 播放列表',
-              collectionType: 'playlist',
-              coverSource: null,
-              sortOrder: 0,
-              createdAt: 0,
-              orderUpdatedAt: 0,
-            ),
-            loadEpisodes: () async => <CollectionEpisodeSlot>[
-              for (final VideoBookRow row in await (loadMembers)())
-                CollectionEpisodeSlot.local(row),
-            ],
-            onOpenEpisode: (VideoBookRow _) {},
-            onChanged: () {},
-          ),
+    child: MaterialApp(
+      home: MediaCollectionDetailPage(
+        database: db,
+        collection: MediaCollectionRow(
+          origin: 'user',
+          organizeAliases: '',
+          id: collectionId,
+          name: 'Tensei Oujo v2 播放列表',
+          collectionType: 'playlist',
+          coverSource: null,
+          sortOrder: 0,
+          createdAt: 0,
+          orderUpdatedAt: 0,
         ),
+        loadEpisodes: () async => <CollectionEpisodeSlot>[
+          for (final VideoBookRow row in await (loadMembers)())
+            CollectionEpisodeSlot.local(row),
+        ],
+        onOpenEpisode: (VideoBookRow _) {},
+        onChanged: () {},
+      ),
+    ),
+  );
+
+  /// BUG-3756：hero 封面链的存在性改为 async 探测（build 里不再同步 stat），真实
+  /// IO 在 fakeAsync 下不会完成。链上每级一次探测 + 一次重建，按链深各给一轮。
+  Future<void> settleCoverProbes(WidgetTester tester, {int rounds = 4}) async {
+    // 封面链每级一次探测 + 一次重建；之后封面图源的真实文件读取（打开 → 读 → 关）
+    // 每一步的续体都排在 fakeAsync 里，要 runAsync 让 IO 回话、再 pump 跑续体，多给
+    // 几轮让句柄关掉，否则 tearDown 删临时目录会撞「文件被占用」（Windows）。
+    for (int i = 0; i < rounds + 6; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 40)),
       );
+      await tester.pump();
+    }
+  }
 
   /// 宽屏（≥ 1080）走两栏：hero 在左栏（独立滚动 = sticky），右栏选集。
   Future<void> pumpWide(WidgetTester tester) async {
@@ -127,6 +184,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
+    await settleCoverProbes(tester);
   }
 
   /// 单列（< 1080）但 hero 够宽（≥ 640）：封面卡在左、信息在右，hero 自己画大背景。
@@ -137,6 +195,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
+    await settleCoverProbes(tester);
   }
 
   testWidgets('宽屏两栏：hero 在左栏，大背景由布局画在整页后面', (WidgetTester tester) async {
@@ -162,8 +221,9 @@ void main() {
     );
   });
 
-  testWidgets('有刮削资料 → hero 渲染放送日期/话数/评分/标签/简介/原名',
-      (WidgetTester tester) async {
+  testWidgets('有刮削资料 → hero 渲染放送日期/话数/评分/标签/简介/原名', (
+    WidgetTester tester,
+  ) async {
     await saveMeta();
     await pumpWide(tester);
 
@@ -175,8 +235,11 @@ void main() {
     expect(find.text('1234 人评分'), findsOneWidget);
     expect(find.text('已看完 0/1'), findsOneWidget, reason: '观看进度不依赖刮削，恒在');
 
-    expect(find.textContaining('公主与令嬢携手掀起魔法革命'), findsOneWidget,
-        reason: '简介必须出现在 hero');
+    expect(
+      find.textContaining('公主与令嬢携手掀起魔法革命'),
+      findsOneWidget,
+      reason: '简介必须出现在 hero',
+    );
     // 作品标签是 chips（每个标签一个 Text），不是拼起来的一行文字。
     expect(find.text('奇幻'), findsOneWidget, reason: '作品标签按热度降序成 chip');
     expect(find.text('百合'), findsOneWidget);
@@ -238,8 +301,9 @@ void main() {
     );
   });
 
-  testWidgets('有横版 backdrop → 背景用 backdrop + 左侧独立海报卡',
-      (WidgetTester tester) async {
+  testWidgets('有横版 backdrop → 背景用 backdrop + 左侧独立海报卡', (
+    WidgetTester tester,
+  ) async {
     await saveMeta(backdropPath: '/covers/collections/1_backdrop.jpg');
     await pumpSingleColumn(tester);
 
@@ -260,9 +324,7 @@ void main() {
     expect(hero.right, 1000, reason: '大背景必须平铺到内容区右边缘');
     expect(
       tester
-          .getSize(
-            find.byKey(const ValueKey<String>('collection-hero-poster')),
-          )
+          .getSize(find.byKey(const ValueKey<String>('collection-hero-poster')))
           .height,
       greaterThanOrEqualTo(300),
       reason: '宽 hero 使用大竖版封面卡，不再缩成角落的小卡',
@@ -309,9 +371,7 @@ void main() {
     );
     final PortraitCoverImage poster = tester.widget<PortraitCoverImage>(
       find.descendant(
-        of: find.byKey(
-          const ValueKey<String>('collection-hero-poster'),
-        ),
+        of: find.byKey(const ValueKey<String>('collection-hero-poster')),
         matching: find.byType(PortraitCoverImage),
       ),
     );
@@ -332,10 +392,63 @@ void main() {
       'https://image.example/poster.jpg',
       reason: '安全目录判定阻止作品根图落盘时，详情页不能退回分集截图',
     );
+    // settleCoverProbes 给真实 IO 的 runAsync 窗口里远程封面的磁盘缓存也真的起来了，
+    // 它排了一个 10 秒的清理定时器；走完它，免得测试结束时还有定时器挂着。
+    await tester.pump(const Duration(seconds: 11));
   });
 
-  testWidgets('无横版 backdrop → 封面模糊垫底 + 封面卡清晰显示',
-      (WidgetTester tester) async {
+  // BUG：剧集目录从 `D:\smb\<剧名>` 挪进 `D:\smb\动漫\<剧名>` 后，合集
+  // `cover_path` 还指着旧位置的 poster.jpg。库页合集卡判了文件存在、会落到刮削
+  // 封面；详情页只判非空，返回一张必坏的 FileImage，把刮削封面回退整个挡掉。
+  testWidgets('合集封面路径悬空 → 详情页 hero 回落到刮削的规范封面', (WidgetTester tester) async {
+    await db.updateMediaCollectionCoverPath(
+      collectionId,
+      '/moved-away/series/poster.jpg',
+    );
+    final int workId = await db.upsertVideoMetadataWork(
+      VideoMetadataWorksCompanion.insert(
+        collectionId: Value<int?>(collectionId),
+        mediaType: 'tv',
+        title: 'Moved series',
+        updatedAt: 1,
+      ),
+    );
+    await db.replaceVideoMetadataImages(
+      workId: workId,
+      images: <VideoMetadataImagesCompanion>[
+        VideoMetadataImagesCompanion.insert(
+          provider: 'tmdb',
+          kind: 'cover',
+          remoteUrl: 'https://image.example/moved-poster.jpg',
+          localPath: const Value<String?>('/moved-away/cache/poster.jpg'),
+          updatedAt: 1,
+        ),
+      ],
+    );
+
+    await pumpSingleColumn(tester);
+
+    final PortraitCoverImage poster = tester.widget<PortraitCoverImage>(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('collection-hero-poster')),
+        matching: find.byType(PortraitCoverImage),
+      ),
+    );
+    expect(poster.image, isA<ResizeImage>());
+    final ImageProvider<Object> remote =
+        (poster.image as ResizeImage).imageProvider;
+    expect(
+      remote,
+      isA<CachedNetworkImageProvider>(),
+      reason: '合集封面与刮削本地图都已不存在时，必须落到刮削的远程封面，而不是悬空的 FileImage',
+    );
+    expect(
+      (remote as CachedNetworkImageProvider).url,
+      'https://image.example/moved-poster.jpg',
+    );
+  });
+
+  testWidgets('无横版 backdrop → 封面模糊垫底 + 封面卡清晰显示', (WidgetTester tester) async {
     await saveMeta();
     await pumpSingleColumn(tester);
 
@@ -359,4 +472,88 @@ void main() {
       reason: '不再把 2:3 海报铺进宽幅槽（BUG-1298）',
     );
   });
+
+  testWidgets('BUG-3756：合集海报在网络盘上 → hero build 零同步文件调用', (
+    WidgetTester tester,
+  ) async {
+    // 合集海报 / 刮削本地图落在「网络盘」（rclone / SMB 挂载）上：旧实现 hero getter
+    // 逐级 existsSync，冷目录一次 stat 数秒，整页与同 isolate 的互联 host 一起冻结。
+    // 网络盘上的同步文件 API 一律记账；两张图都已不在，探测落定后落到远程封面。
+    final String netPoster = '${coverDir.path}/__fushi_net_mount__/poster.jpg';
+    final String netCache = '${coverDir.path}/__fushi_net_mount__/cache.jpg';
+    await db.updateMediaCollectionCoverPath(collectionId, netPoster);
+    final int workId = await db.upsertVideoMetadataWork(
+      VideoMetadataWorksCompanion.insert(
+        collectionId: Value<int?>(collectionId),
+        mediaType: 'tv',
+        title: 'Net series',
+        updatedAt: 1,
+      ),
+    );
+    await db.replaceVideoMetadataImages(
+      workId: workId,
+      images: <VideoMetadataImagesCompanion>[
+        VideoMetadataImagesCompanion.insert(
+          provider: 'tmdb',
+          kind: 'cover',
+          remoteUrl: 'https://image.example/net-poster.jpg',
+          localPath: Value<String?>(netCache),
+          updatedAt: 1,
+        ),
+      ],
+    );
+
+    final List<String> syncCalls = <String>[];
+    final List<String> asyncProbes = <String>[];
+    final Zone outer = Zone.current;
+    await IOOverrides.runZoned<Future<void>>(
+      () async {
+        await pumpSingleColumn(tester);
+        await tester.pump(const Duration(milliseconds: 300));
+      },
+      createFile: (String path) => path.contains('__fushi_net_mount__')
+          ? _NetMountFile(path, syncCalls, asyncProbes)
+          : outer.run(() => File(path)),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(syncCalls, isEmpty, reason: 'hero build 不得对网络盘封面做同步文件调用');
+    expect(asyncProbes.toSet(), <String>{netPoster, netCache});
+    expect(asyncProbes, hasLength(2), reason: '每张候选只 async 探一次，结果进缓存');
+    final PortraitCoverImage poster = tester.widget<PortraitCoverImage>(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('collection-hero-poster')),
+        matching: find.byType(PortraitCoverImage),
+      ),
+    );
+    final ImageProvider<Object> remote =
+        (poster.image as ResizeImage).imageProvider;
+    expect(remote, isA<CachedNetworkImageProvider>());
+    expect(
+      (remote as CachedNetworkImageProvider).url,
+      'https://image.example/net-poster.jpg',
+    );
+  });
+}
+
+/// BUG-3756 用的「网络盘」假文件：同步 API 记账并抛错，`exists()` 记账后回 false。
+class _NetMountFile implements File {
+  _NetMountFile(this.path, this.syncCalls, this.asyncProbes);
+
+  @override
+  final String path;
+  final List<String> syncCalls;
+  final List<String> asyncProbes;
+
+  @override
+  Future<bool> exists() async {
+    asyncProbes.add(path);
+    return false;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    syncCalls.add('${invocation.memberName} $path');
+    throw StateError('unexpected File.${invocation.memberName} on $path');
+  }
 }

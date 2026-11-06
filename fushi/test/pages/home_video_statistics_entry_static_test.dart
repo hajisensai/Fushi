@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 守卫：统计入口的唯一落点是首页 dashboard（用户定案 2026-09-01：各媒体页头
 /// 的「xx统计」全部撤掉，统一从首页热力图卡进统计中心总览）。
@@ -15,14 +15,21 @@ void main() {
     ).readAsStringSync();
     expect(
       dashboard.contains(
-          "import 'package:fushi/src/pages/implementations/statistics_center_page.dart';"),
+        "import 'package:fushi/src/pages/implementations/statistics_center_page.dart';",
+      ),
       isTrue,
       reason: '首页应导入 StatisticsCenterPage',
     );
-    expect(dashboard.contains('_openStatisticsCenter'), isTrue,
-        reason: '首页应有统计中心入口处理器');
-    expect(dashboard.contains('StatisticsCenterPage()'), isTrue,
-        reason: '入口应 push 统计中心（总览 tab）');
+    expect(
+      dashboard.contains('_openStatisticsCenter'),
+      isTrue,
+      reason: '首页应有统计中心入口处理器',
+    );
+    expect(
+      dashboard.contains('StatisticsCenterPage()'),
+      isTrue,
+      reason: '入口应 push 统计中心（总览 tab）',
+    );
   });
 
   test('媒体页头不再各挂统计入口', () {
@@ -33,10 +40,16 @@ void main() {
       'lib/src/pages/implementations/galgame_home_page.dart',
     ]) {
       final String source = File(path).readAsStringSync();
-      expect(source.contains('StatisticsCenterPage('), isFalse,
-          reason: '$path：统计入口已收敛到首页，不应再 push 统计中心');
-      expect(source.contains('_openStatistics'), isFalse,
-          reason: '$path：媒体页头的统计入口处理器应随入口一起删除');
+      expect(
+        source.contains('StatisticsCenterPage('),
+        isFalse,
+        reason: '$path：统计入口已收敛到首页，不应再 push 统计中心',
+      );
+      expect(
+        source.contains('_openStatistics'),
+        isFalse,
+        reason: '$path：媒体页头的统计入口处理器应随入口一起删除',
+      );
     }
   });
 }

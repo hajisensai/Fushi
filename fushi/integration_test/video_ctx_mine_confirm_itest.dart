@@ -74,17 +74,21 @@ Future<String> _seedVideoWithSrt(VideoBookRepository repo) async {
     outPath: videoPath,
     duration: const Duration(seconds: 6),
   );
-  const String srt = '1\n00:00:00,500 --> 00:00:02,500\n$_kSentence\n\n'
+  const String srt =
+      '1\n00:00:00,500 --> 00:00:02,500\n$_kSentence\n\n'
       '2\n00:00:02,600 --> 00:00:04,800\n猫が寝ている\n\n'
       '3\n00:00:04,900 --> 00:00:05,900\n猫が鳴く\n';
-  await File('${dir.path}${Platform.pathSeparator}$title.srt')
-      .writeAsString(srt);
+  await File(
+    '${dir.path}${Platform.pathSeparator}$title.srt',
+  ).writeAsString(srt);
   final String bookUid = singleVideoBookUid(videoFile.path);
-  await repo.saveVideoBook(VideoBooksCompanion(
-    bookUid: Value(bookUid),
-    title: const Value(title),
-    videoPath: Value(videoFile.absolute.path),
-  ));
+  await repo.saveVideoBook(
+    VideoBooksCompanion(
+      bookUid: Value(bookUid),
+      title: const Value(title),
+      videoPath: Value(videoFile.absolute.path),
+    ),
+  );
   return bookUid;
 }
 
@@ -144,11 +148,16 @@ void main() {
       final String uid = await _seedVideoWithSrt(repo);
       debugPrint('[ctx-mine] seeded uid=$uid');
 
-      final NavigatorState navigator =
-          tester.state<NavigatorState>(find.byType(Navigator).first);
-      unawaited(navigator.push<void>(MaterialPageRoute<void>(
-        builder: (_) => VideoFushiPage(bookUid: uid, repo: repo),
-      )));
+      final NavigatorState navigator = tester.state<NavigatorState>(
+        find.byType(Navigator).first,
+      );
+      unawaited(
+        navigator.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => VideoFushiPage(bookUid: uid, repo: repo),
+          ),
+        ),
+      );
 
       VideoFushiTestHooks hooks() =>
           tester.state<State<VideoFushiPage>>(find.byType(VideoFushiPage))
@@ -166,8 +175,10 @@ void main() {
       for (int i = 0; i < 40 && hooks().debugCueCount == 0; i++) {
         await tester.pump(const Duration(milliseconds: 250));
       }
-      debugPrint('[ctx-mine] cueCount=${hooks().debugCueCount} '
-          'subtitle=${hooks().debugCurrentSubtitleSource}');
+      debugPrint(
+        '[ctx-mine] cueCount=${hooks().debugCueCount} '
+        'subtitle=${hooks().debugCurrentSubtitleSource}',
+      );
       await hooks().debugPause();
       await hooks().debugSeekMs(1200);
       await tester.pump(const Duration(seconds: 1));
@@ -179,8 +190,10 @@ void main() {
       Object? probe;
       for (int i = 0; i < 80; i++) {
         await tester.pump(const Duration(milliseconds: 250));
-        final Finder f =
-            find.byType(DictionaryPopupWebView, skipOffstage: false);
+        final Finder f = find.byType(
+          DictionaryPopupWebView,
+          skipOffstage: false,
+        );
         if (f.evaluate().isEmpty) continue;
         for (final Element e in f.evaluate()) {
           final DictionaryPopupWebViewState s =
@@ -206,16 +219,22 @@ void main() {
       final DictionaryPopupWebViewState popup = webView!;
       // ignore: use_build_context_synchronously
       final RenderBox popupBox = popup.context.findRenderObject()! as RenderBox;
-      final Offset popupCenter =
-          popupBox.localToGlobal(popupBox.size.center(Offset.zero));
-      final RenderBox pageBox =
-          tester.renderObject<RenderBox>(find.byType(VideoFushiPage).first);
+      final Offset popupCenter = popupBox.localToGlobal(
+        popupBox.size.center(Offset.zero),
+      );
+      final RenderBox pageBox = tester.renderObject<RenderBox>(
+        find.byType(VideoFushiPage).first,
+      );
       final Offset pageTopLeft = pageBox.localToGlobal(Offset.zero);
       final Size pageSize = pageBox.size;
-      debugPrint('[ctx-mine] popupRect=${popupBox.localToGlobal(Offset.zero)}'
-          '+${popupBox.size} page=$pageTopLeft+$pageSize');
-      final TestPointer wheelPointer =
-          TestPointer(7, ui.PointerDeviceKind.mouse);
+      debugPrint(
+        '[ctx-mine] popupRect=${popupBox.localToGlobal(Offset.zero)}'
+        '+${popupBox.size} page=$pageTopLeft+$pageSize',
+      );
+      final TestPointer wheelPointer = TestPointer(
+        7,
+        ui.PointerDeviceKind.mouse,
+      );
       Future<void> sendWheel(Offset at, double dy) async {
         await tester.sendEventToBinding(wheelPointer.hover(at));
         await tester.sendEventToBinding(wheelPointer.scroll(Offset(0, dy)));
@@ -226,12 +245,17 @@ void main() {
       double? hudVolume() {
         final Finder hud = find.byKey(videoVolumeHudProgressKey);
         if (hud.evaluate().isEmpty) return null;
-        final double? v = tester.widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(hud)).value;
+        final double? v = tester
+            .widget<LinearProgressIndicator>(
+              glassUnwrap<LinearProgressIndicator>(hud),
+            )
+            .value;
         return v == null ? null : v * 100.0;
       }
 
       Future<Object?> popupScrollTop() => popup.debugEval(
-          '(document.scrollingElement||document.documentElement).scrollTop');
+        '(document.scrollingElement||document.documentElement).scrollTop',
+      );
       final double? volBefore = hooks().debugVolume;
       final Object? scrollBefore = await popupScrollTop();
       for (int i = 0; i < 4; i++) {
@@ -239,40 +263,52 @@ void main() {
       }
       final double? volAfterPopupWheel = hooks().debugVolume;
       final Object? scrollAfter = await popupScrollTop();
-      debugPrint('[ctx-mine] WHEEL@popup vol $volBefore -> $volAfterPopupWheel '
-          'hud=${hudVolume()} popupScrollTop $scrollBefore -> $scrollAfter');
+      debugPrint(
+        '[ctx-mine] WHEEL@popup vol $volBefore -> $volAfterPopupWheel '
+        'hud=${hudVolume()} popupScrollTop $scrollBefore -> $scrollAfter',
+      );
       await captureFlutterFrame(tester, '02b-after-popup-wheel');
       // BUG-2633：弹窗上的滚轮只滚词典，不改音量（修前：词典滚了 14.5px 的同时
       // 音量 100 → 80 并出 HUD——查词 overlay entry 被 opaque:false 的悬停探针翻成
       // 命中透明，页面级 _handleVideoWheelSignal 在命中路径上）。
       expect(volAfterPopupWheel, volBefore, reason: '弹窗上滚轮不得穿透到视频页改音量');
       expect(hudVolume(), isNull, reason: '弹窗上滚轮不该刷出音量 HUD');
-      expect(double.tryParse('$scrollAfter') ?? 0,
-          greaterThan(double.tryParse('$scrollBefore') ?? 0),
-          reason: '弹窗内容应随滚轮滚动（WebView 仍收得到滚轮）');
+      expect(
+        double.tryParse('$scrollAfter') ?? 0,
+        greaterThan(double.tryParse('$scrollBefore') ?? 0),
+        reason: '弹窗内容应随滚轮滚动（WebView 仍收得到滚轮）',
+      );
       // 弹窗外（barrier 区）滚轮：落在画面区左上角，弹窗在位时 barrier 必须吞掉。
       final Offset barrierPoint = pageTopLeft + const Offset(40, 120);
       for (int i = 0; i < 4; i++) {
         await sendWheel(barrierPoint, 80);
       }
-      debugPrint('[ctx-mine] WHEEL@barrier vol $volAfterPopupWheel -> '
-          '${hooks().debugVolume} hud=${hudVolume()}');
-      expect(hooks().debugVolume, volBefore,
-          reason: 'barrier 上的滚轮也不得穿透到视频页改音量');
+      debugPrint(
+        '[ctx-mine] WHEEL@barrier vol $volAfterPopupWheel -> '
+        '${hooks().debugVolume} hud=${hudVolume()}',
+      );
+      expect(
+        hooks().debugVolume,
+        volBefore,
+        reason: 'barrier 上的滚轮也不得穿透到视频页改音量',
+      );
 
       // ── 点「高级制卡」（真走 openAdvancedMining 桥）────────────────────
       final int logBefore = ErrorLogService.instance.entries.length;
       await popup.debugEval(
-          "(function(){var b=document.querySelector('.ctx-adjust-button');"
-          "if(!b)return 'no-button';b.click();return 'clicked';})()");
+        "(function(){var b=document.querySelector('.ctx-adjust-button');"
+        "if(!b)return 'no-button';b.click();return 'clicked';})()",
+      );
       for (int i = 0; i < 40 && !_dialogMounted(); i++) {
         await tester.pump(const Duration(milliseconds: 250));
       }
       expect(_dialogMounted(), isTrue, reason: '「高级制卡」对话框应打开');
       await tester.pump(const Duration(seconds: 1));
       await captureFlutterFrame(tester, '03-ctx-dialog');
-      debugPrint('[ctx-mine] probe while dialog open: '
-          '${await popup.debugEval(_kPopupProbe)}');
+      debugPrint(
+        '[ctx-mine] probe while dialog open: '
+        '${await popup.debugEval(_kPopupProbe)}',
+      );
 
       // ── 确认制卡：确认键 autofocus，Enter 即确认（焦点驱动）────────────
       debugPrint('[ctx-mine] primaryFocus=${primaryFocus?.debugLabel}');
@@ -282,48 +318,67 @@ void main() {
         await tester.pump(const Duration(milliseconds: 250));
       }
       sw.stop();
-      final bool failedToast =
-          find.text(t.popup_ctx_confirm_failed).evaluate().isNotEmpty;
-      debugPrint('[ctx-mine] dialogClosed=${!_dialogMounted()} '
-          'afterMs=${sw.elapsedMilliseconds} failedToast=$failedToast');
+      final bool failedToast = find
+          .text(t.popup_ctx_confirm_failed)
+          .evaluate()
+          .isNotEmpty;
+      debugPrint(
+        '[ctx-mine] dialogClosed=${!_dialogMounted()} '
+        'afterMs=${sw.elapsedMilliseconds} failedToast=$failedToast',
+      );
       await captureFlutterFrame(tester, '04-after-confirm');
-      final List<ErrorLogEntry> newLogs =
-          ErrorLogService.instance.entries.skip(logBefore).toList();
+      final List<ErrorLogEntry> newLogs = ErrorLogService.instance.entries
+          .skip(logBefore)
+          .toList();
       for (final ErrorLogEntry e in newLogs) {
         debugPrint('[ctx-mine] LOG ${e.source}: ${e.error}');
       }
-      debugPrint('[ctx-mine] fakeAnki notes=${anki.notes.length} '
-          'addNote=${anki.requestsFor('addNote').length} '
-          'canAdd=${anki.requestsFor('canAddNotesWithErrorDetail').length}');
-      debugPrint('[ctx-mine] probe after confirm: '
-          '${await popup.debugEval(_kPopupProbe)}');
-      expect(failedToast, isFalse,
-          reason: '回点链路不该报「查词弹窗已经关掉了」：${newLogs.map((e) => e.error)}');
+      debugPrint(
+        '[ctx-mine] fakeAnki notes=${anki.notes.length} '
+        'addNote=${anki.requestsFor('addNote').length} '
+        'canAdd=${anki.requestsFor('canAddNotesWithErrorDetail').length}',
+      );
+      debugPrint(
+        '[ctx-mine] probe after confirm: '
+        '${await popup.debugEval(_kPopupProbe)}',
+      );
+      expect(
+        failedToast,
+        isFalse,
+        reason: '回点链路不该报「查词弹窗已经关掉了」：${newLogs.map((e) => e.error)}',
+      );
 
       // BUG-2634 的核心承诺有三条，都得由机器看着，不能只留在 debugPrint 里：
       //   ① 对话框真的关了（不是锁死到超时）；
-      expect(_dialogMounted(), isFalse,
-          reason: '确认后对话框必须关窗（实测 ${sw.elapsedMilliseconds} ms）');
+      expect(
+        _dialogMounted(),
+        isFalse,
+        reason: '确认后对话框必须关窗（实测 ${sw.elapsedMilliseconds} ms）',
+      );
       //   ② 提前关窗之后制卡**照样跑完并落地**；
       for (int i = 0; i < 120 && anki.requestsFor('addNote').isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 250));
       }
-      expect(anki.notes, isNotEmpty,
-          reason: '提前关窗不等于放弃制卡：假 AnkiConnect 应真的收到 addNote');
+      expect(
+        anki.notes,
+        isNotEmpty,
+        reason: '提前关窗不等于放弃制卡：假 AnkiConnect 应真的收到 addNote',
+      );
       //   ③ 落地的那张卡真的带着句子上下文，不是空草稿。
       //      （空草稿丢失正是 BUG-2627 第二轮的症状：卡制出来了、toast 报成功、
       //      用户刚调的上下文全丢，比原 bug 更隐蔽，只有这条断言看得见。）
       final List<String> landedValues = <String>[
         for (final Map<String, Object?> note in anki.notes)
-          ...?(note['fields'] as Map<String, Object?>?)
-              ?.values
-              .map((Object? v) => '$v'),
+          ...?(note['fields'] as Map<String, Object?>?)?.values.map(
+            (Object? v) => '$v',
+          ),
       ];
       debugPrint('[ctx-mine] landed field values=$landedValues');
       expect(
         landedValues.any((String v) => v.contains(_kSentence)),
         isTrue,
-        reason: '落地的卡必须带上句子上下文；一条都不含 = 关窗后草稿被清掉了。'
+        reason:
+            '落地的卡必须带上句子上下文；一条都不含 = 关窗后草稿被清掉了。'
             '实测字段值=$landedValues',
       );
 

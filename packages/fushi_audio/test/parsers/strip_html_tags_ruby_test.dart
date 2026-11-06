@@ -28,10 +28,7 @@ void main() {
     });
 
     test('<rtc> 读音容器（内嵌 <rt>）整体不进正文', () {
-      expect(
-        stripHtmlTags('<ruby>漢字<rtc><rt>かんじ</rt></rtc></ruby>'),
-        '漢字',
-      );
+      expect(stripHtmlTags('<ruby>漢字<rtc><rt>かんじ</rt></rtc></ruby>'), '漢字');
     });
 
     test('<rb> 是基准外壳：删标签但保留内容', () {
@@ -52,9 +49,7 @@ void main() {
 
     test('一行多个 ruby 元素', () {
       expect(
-        stripHtmlTags(
-          '<ruby>春<rt>はる</rt></ruby>と<ruby>夏<rt>なつ</rt></ruby>',
-        ),
+        stripHtmlTags('<ruby>春<rt>はる</rt></ruby>と<ruby>夏<rt>なつ</rt></ruby>'),
         '春と夏',
       );
     });
@@ -64,10 +59,7 @@ void main() {
     });
 
     test('ruby 与样式标签混排', () {
-      expect(
-        stripHtmlTags('<i><ruby>震<rt>ふる</rt></ruby>える</i>'),
-        '震える',
-      );
+      expect(stripHtmlTags('<i><ruby>震<rt>ふる</rt></ruby>える</i>'), '震える');
     });
   });
 

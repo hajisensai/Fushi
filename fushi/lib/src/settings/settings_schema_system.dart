@@ -3,7 +3,15 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/pages.dart';
+import 'package:fushi/src/pages/implementations/changelog_page.dart';
+import 'package:fushi/src/pages/implementations/crash_dump_page.dart';
+import 'package:fushi/src/pages/implementations/debug_log_page.dart';
+import 'package:fushi/src/pages/implementations/error_log_page.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
+import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart';
+import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
+import 'package:fushi/src/feedback/crash_report.dart';
 import 'package:fushi/src/feedback/feedback_reply_alerts.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -22,6 +30,8 @@ import 'package:fushi/src/onboarding/recommended_pack_import.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_destination_id.dart';
+import 'package:fushi/src/settings/settings_schema_web_browser.dart';
 import 'package:fushi/src/diagnostics/video_diag_export.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/stats/study_diag_export.dart';
@@ -36,7 +46,14 @@ import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
 import 'package:fushi/src/utils/misc/log_exporter.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/debug_log_service.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/official_links.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -413,11 +430,29 @@ SettingsDestination buildSystemDestination() {
           SettingsActionItem(
             id: 'system.github_sponsors',
             title: t.options_github_sponsors,
+            // App Store 3.1.1：iOS 不放外部打赏入口（判据见 store_compliance.dart）。
+            visible: (_) =>
+                StoreRestrictedCapability.externalDonation.isAvailable,
             icon: FushiIcons.favorite,
             cli: const SettingsCliAction.tap(),
             onTap: (_) async {
               await launchUrl(
                 Uri.parse(kGitHubSponsorsUrl),
+                mode: LaunchMode.externalApplication,
+              );
+            },
+          ),
+          SettingsActionItem(
+            id: 'system.ko_fi',
+            title: t.options_ko_fi,
+            // App Store 3.1.1：iOS 不放外部打赏入口（判据见 store_compliance.dart）。
+            visible: (_) =>
+                StoreRestrictedCapability.externalDonation.isAvailable,
+            icon: FushiIcons.favorite,
+            cli: const SettingsCliAction.tap(),
+            onTap: (_) async {
+              await launchUrl(
+                Uri.parse(kKoFiUrl),
                 mode: LaunchMode.externalApplication,
               );
             },
@@ -589,6 +624,9 @@ SettingsDestination buildSystemDestination() {
           ),
         ],
       ),
+      // app 内浏览器：一行入口，进统一的「浏览器设置」（浏览器本身 + 网页广告拦截 +
+      // 浏览器扩展各组；宽屏双栏、窄屏下钻），紧跟网络分组。
+      buildWebBrowserEntrySection(),
       // v101 统一更新提醒。四个域各一个开关 + 系统通知总开关。
       //
       // 四个域开关**不经 `AppModel.updateFeedService`**，直接读写 pref 键：
@@ -658,6 +696,22 @@ SettingsDestination buildSystemDestination() {
                 settingsContext.refresh();
               },
             ),
+          // 媒体库在线作品自动补新集（默认开）：与上面的「番剧新集提醒」分开——
+          // 关提醒不停补集，关这里不影响订阅下载的提醒。
+          SettingsSwitchItem(
+            id: 'system.updates.video_library_auto_update',
+            title: t.updates_video_library_auto_update,
+            subtitle: t.updates_video_library_auto_update_hint,
+            icon: FushiIcons.libraryAdd,
+            defaultValue: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.prefsRepo.videoLibraryAutoUpdate,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.prefsRepo
+                  .setVideoLibraryAutoUpdate(value);
+              settingsContext.refresh();
+            },
+          ),
           // 扩展后台自动更新（默认关）：启动时把签名未变的漫画 / 视频扩展装成
           // 仓库新版；碰过在线源的进程里推迟到下次启动。只在有 Mihon 宿主且
           // 合规允许在线源的平台出现。
@@ -723,6 +777,21 @@ SettingsDestination buildSystemDestination() {
                   await alerts.syncPush();
                 }
               }
+              settingsContext.refresh();
+            },
+          ),
+          // 闪退报告（feedback/crash_report.dart）：默认关；打开 = 以后闪退后下次启动
+          // 不再询问、直接把日志发给开发者。开关存在错误日志目录的状态文件里（启动即
+          // 闪退时数据库还没开也要读得到），不进 Profile、不进备份。
+          SettingsSwitchItem(
+            id: 'system.updates.crash_report_auto_send',
+            title: t.feedback_crash_auto_send_setting,
+            subtitle: t.feedback_crash_auto_send_setting_hint,
+            icon: FushiIcons.error,
+            value: (SettingsContext settingsContext) =>
+                CrashReporter.instance.autoSend,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              CrashReporter.instance.setAutoSend(value);
               settingsContext.refresh();
             },
           ),

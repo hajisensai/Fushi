@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/downloads/download_source_method.dart';
@@ -12,6 +13,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_url.dart';
 import 'package:fushi/src/media/online/online_work_detail.dart';
 import 'package:fushi/src/media/video/online/anime_source_library.dart';
@@ -22,7 +24,16 @@ import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// 视频源扩展的作品页：详情 + 剧集列表 → 内置播放器（起播默认选线路）。
@@ -393,6 +404,27 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
     _reloadResumeIndex();
   }
 
+  /// 本源能不能在 app 里登录（运行时接受浏览器登录态、baseUrl 解析得出 host）。
+  bool get _loginAvailable =>
+      mihonLoginTarget(
+        runtime: widget.manager.runtime,
+        baseUrl: widget.sourceContext.source.baseUrl,
+      ) !=
+      null;
+
+  /// 菜单「登录」：与漫画作品页同一个登录页；登完立刻从源重取剧集。
+  Future<void> _login() async {
+    final bool saved = await openMihonWebLogin(
+      context,
+      runtime: widget.manager.runtime,
+      sourceName: widget.sourceContext.source.name,
+      baseUrl: widget.sourceContext.source.baseUrl,
+    );
+    if (!mounted || !saved) return;
+    FushiToast.show(msg: t.mihon_source_login_saved);
+    await _load();
+  }
+
   /// 「在网站打开」：源站网页地址（扩展的 `getAnimeUrl`，兜底 baseUrl + url）交给
   /// 系统浏览器。打不开浏览器不算本页错误，只提示。
   Future<void> _openWebsite() async {
@@ -526,7 +558,19 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
   Widget _buildBody(BuildContext context) {
     final double page = FushiDesignTokens.of(context).spacing.page;
     final bool selecting = _selection != null;
+    final int resume = _resumeIndex;
+    final bool started = resume >= 0 && resume < _episodes.length;
     return MediaDetailLayout(
+      // 「继续 / 开始观看」悬浮按钮：与 hero 主按钮同一集；没有分集 / 多选时不出。
+      fab: _loading || _episodes.isEmpty || selecting
+          ? null
+          : MediaDetailResumeFab(
+              buttonKey: const ValueKey<String>('anime_source_resume_fab'),
+              watching: true,
+              started: started,
+              itemLabel: _episodeTitle(_episodes[started ? resume : 0]),
+              onPressed: () => unawaited(_play(started ? resume : 0)),
+            ),
       header: _buildHeader(),
       slivers: <Widget>[
         SliverPadding(
@@ -578,6 +622,7 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
             ),
           );
     return OnlineWorkHeader(
+      coverMaterial: ShelfCoverMaterial.glossyPoster,
       cover: MihonSourceImage(
         runtime: widget.manager.runtime,
         cache: widget.manager.coverCache,
@@ -608,10 +653,17 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
       primaryAction: MediaDetailPrimaryButton(
         buttonKey: const ValueKey<String>('anime_source_play'),
         icon: FushiIcons.play,
-        label: resume >= 0 && resume < _episodes.length
-            ? '${t.video_continue_watching} · '
-                  '${_episodeTitle(_episodes[resume])}'
-            : t.play,
+        label: _episodes.isEmpty
+            ? t.play
+            : MediaDetailResumeFab.labelFor(
+                watching: true,
+                started: resume >= 0 && resume < _episodes.length,
+                itemLabel: _episodeTitle(
+                  _episodes[resume >= 0 && resume < _episodes.length
+                      ? resume
+                      : 0],
+                ),
+              ),
         progress: downloads != null && downloads.isRunning
             ? downloads.percent / 100
             : null,
@@ -654,6 +706,15 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
           label: t.mihon_source_website_open,
           onSelected: () => unawaited(_openWebsite()),
         ),
+        // 源站要登录才给剧集 / 片源时的常驻入口（与漫画作品页同一口径）。
+        if (_loginAvailable)
+          MediaDetailMenuItem(
+            key: const ValueKey<String>('anime_source_login'),
+            icon: FushiIcons.login,
+            label: t.mihon_source_login,
+            enabled: !_loading,
+            onSelected: () => unawaited(_login()),
+          ),
         MediaDetailMenuItem(
           key: const ValueKey<String>('anime_source_refresh'),
           icon: FushiIcons.refresh,
@@ -675,10 +736,29 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
                     severity: FushiNoticeSeverity.error,
                     message: '$error',
                   ),
-                MihonCloudflareAction(
-                  runtime: widget.manager.runtime,
-                  error: error,
-                  onVerified: _load,
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  // 只放真要显示的按钮：零尺寸子项照样占 spacing。
+                  children: <Widget>[
+                    if (MihonCloudflareAction.shows(
+                      runtime: widget.manager.runtime,
+                      error: error,
+                    ))
+                      MihonCloudflareAction(
+                        runtime: widget.manager.runtime,
+                        error: error,
+                        onVerified: _load,
+                      ),
+                    // 加载失败时在错误旁给登录入口（判不出是不是因为没登录，不猜）。
+                    if (_loginAvailable)
+                      MihonLoginAction(
+                        runtime: widget.manager.runtime,
+                        sourceName: widget.sourceContext.source.name,
+                        baseUrl: widget.sourceContext.source.baseUrl,
+                        onLoggedIn: _load,
+                      ),
+                  ],
                 ),
               ],
             ),

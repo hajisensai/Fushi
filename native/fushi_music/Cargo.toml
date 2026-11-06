@@ -1,0 +1,78 @@
+[package]
+name = "fushi_music"
+version = "0.1.0"
+edition = "2021"
+publish = false
+# 依赖一律选可链进 GPL-3.0 app 本体的许可（MIT / Apache-2.0 / BSD）。
+license = "GPL-3.0-only"
+
+[lib]
+# rlib：将来给 native/fushi_ios_umbrella（iOS 伞形 staticlib，共用一份 Rust std）当依赖用。
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+# 标签 + 音频属性（FLAC / MP3 / MP4(ALAC/AAC) / APE / WavPack / Ogg / Opus / WAV / AIFF / MPC）。
+# MIT OR Apache-2.0，纯 Rust。
+lofty = "0.22"
+# 内容派生 uid 的摘要。MIT OR Apache-2.0。
+sha1 = "0.10"
+# .cue 的传统多字节编码（Shift_JIS / GBK / Big5）。(Apache-2.0 OR MIT) AND BSD-3-Clause。
+encoding_rs = "0.8"
+# 声纹（chromaprint 纯 Rust 移植，OP/ED 识别与 MV 偏移）。MIT；依赖 rubato（MIT）、rustfft（MIT OR Apache-2.0）。
+rusty-chromaprint = "0.3"
+# 歌词（P1）：TTML 解析（MIT）、KRC 的 zlib（MIT OR Apache-2.0，lofty 已间接依赖）、
+# KRC `[language:]` 的 base64（MIT，lofty 已间接依赖）。
+quick-xml = "0.42"
+flate2 = "1"
+data-encoding = "2"
+
+# 在线音源插件运行时（plugin 特性，默认开；iOS 伞形库关掉——App Store 不收「下载可执行代码」的
+# 宿主，见 docs/specs/2026-10-28-music-plugins.md）。QuickJS（MIT）经 rquickjs（MIT）嵌入；
+# 0.9 在 CPU 预算中断后释放运行时会触发 QuickJS 引用计数断言（实测），至少 0.14。
+# 其余为 MIT OR Apache-2.0：serde / serde_json、zip（只开 deflate）、RustCrypto 系
+# （sha2 / md-5 / hmac / aes / cbc / ecb）、num-bigint（RSA 裸模幂）、ed25519-dalek（插件签名）、
+# getrandom（randomBytes）、url（授权核对的 URL 解析）。
+rquickjs = { version = "0.14", default-features = false, features = ["parallel"], optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+zip = { version = "2", default-features = false, features = ["deflate"], optional = true }
+sha2 = { version = "0.10", optional = true }
+md-5 = { version = "0.10", optional = true }
+hmac = { version = "0.12", optional = true }
+aes = { version = "0.8", optional = true }
+cbc = { version = "0.1", features = ["alloc"], optional = true }
+ecb = { version = "0.1", features = ["alloc"], optional = true }
+num-bigint = { version = "0.4", optional = true }
+ed25519-dalek = { version = "2", default-features = false, features = ["std"], optional = true }
+getrandom = { version = "0.2", optional = true }
+url = { version = "2", optional = true }
+# fushi.credentials 加密（MIT OR Apache-2.0）。
+aes-gcm = { version = "0.10", optional = true }
+
+# Windows：DPAPI 保护凭据保险库的数据密钥（MIT OR Apache-2.0）。
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"], optional = true }
+
+# Android：rquickjs-sys 0.14 只随包附带桌面 / Apple 目标的 QuickJS 绑定，没有
+# aarch64 / x86_64 / armv7-linux-android*（实测缺绑定即 include! 失败）。Android 上用 bindgen
+# 现场生成：cargo-ndk 会给 bindgen 设好 NDK sysroot（BINDGEN_EXTRA_CLANG_ARGS_<triple>），
+# libclang 取 runner 自带的 / NDK 自带的（Windows 本机需 LIBCLANG_PATH 指向 NDK 的 llvm bin）。
+# 同名 optional 依赖在目标表里补特性，plugin 特性的 dep:rquickjs 同时激活两处声明。
+[target.'cfg(target_os = "android")'.dependencies]
+rquickjs = { version = "0.14", default-features = false, features = ["parallel", "bindgen"], optional = true }
+
+[features]
+default = ["plugin"]
+plugin = ["dep:rquickjs", "dep:serde", "dep:serde_json", "dep:zip", "dep:sha2", "dep:md-5", "dep:hmac",
+  "dep:aes", "dep:cbc", "dep:ecb", "dep:num-bigint", "dep:ed25519-dalek", "dep:getrandom", "dep:url", "dep:aes-gcm", "dep:windows-sys"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "unwind"
+
+# 构建脚本 / 过程宏不 strip（与 fushi_compute 同理：hajisensai/Fushi#2329）。
+[profile.release.build-override]
+strip = false

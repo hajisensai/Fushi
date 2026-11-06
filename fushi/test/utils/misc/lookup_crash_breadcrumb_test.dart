@@ -35,18 +35,27 @@ void main() {
 
   test('查词面包屑文件名与导入面包屑独立（不复用同一文件）', () {
     svc.markLookupStackDepth(2, topTerm: '言葉');
-    expect(lookupBreadcrumb().existsSync(), isTrue,
-        reason: '查词面包屑必须写进 lookup_crash_breadcrumb.txt');
-    expect(importBreadcrumb().existsSync(), isFalse,
-        reason: '绝不能复用导入的 import_crash_breadcrumb.txt');
+    expect(
+      lookupBreadcrumb().existsSync(),
+      isTrue,
+      reason: '查词面包屑必须写进 lookup_crash_breadcrumb.txt',
+    );
+    expect(
+      importBreadcrumb().existsSync(),
+      isFalse,
+      reason: '绝不能复用导入的 import_crash_breadcrumb.txt',
+    );
   });
 
   test('栈深度<=0 清掉查词面包屑（栈空后崩溃与查词无关）', () {
     svc.markLookupStackDepth(2, topTerm: 'x');
     expect(lookupBreadcrumb().existsSync(), isTrue);
     svc.markLookupStackDepth(0);
-    expect(lookupBreadcrumb().existsSync(), isFalse,
-        reason: '深度归 0 = 所有弹窗关闭，应清面包屑');
+    expect(
+      lookupBreadcrumb().existsSync(),
+      isFalse,
+      reason: '深度归 0 = 所有弹窗关闭，应清面包屑',
+    );
   });
 
   test('面包屑内容含栈深度（嵌套层数）与栈顶词', () {
@@ -64,8 +73,9 @@ void main() {
     // 模拟下次启动：重新 init（同一注入目录），应读出残留并折成日志条目。
     await svc.init(directoryOverride: tmp);
 
-    final bool recovered = svc.entries
-        .any((ErrorLogEntry e) => e.source == 'Lookup.crashRecovered');
+    final bool recovered = svc.entries.any(
+      (ErrorLogEntry e) => e.source == 'Lookup.crashRecovered',
+    );
     expect(recovered, isTrue, reason: '上次查词残留面包屑应折成 Lookup.crashRecovered');
     // 恢复后面包屑被清，下次启动不重复报。
     expect(lookupBreadcrumb().existsSync(), isFalse);
@@ -74,8 +84,9 @@ void main() {
   test('无残留面包屑时启动不报 Lookup.crashRecovered（正常路径）', () async {
     expect(lookupBreadcrumb().existsSync(), isFalse);
     await svc.init(directoryOverride: tmp);
-    final bool recovered = svc.entries
-        .any((ErrorLogEntry e) => e.source == 'Lookup.crashRecovered');
+    final bool recovered = svc.entries.any(
+      (ErrorLogEntry e) => e.source == 'Lookup.crashRecovered',
+    );
     expect(recovered, isFalse);
   });
 
@@ -84,8 +95,9 @@ void main() {
     svc.markLookupStackDepth(1, topTerm: '词');
     await svc.init(directoryOverride: tmp);
     expect(
-      svc.entries
-          .any((ErrorLogEntry e) => e.source == 'DictImport.crashRecovered'),
+      svc.entries.any(
+        (ErrorLogEntry e) => e.source == 'DictImport.crashRecovered',
+      ),
       isTrue,
     );
     expect(

@@ -14,16 +14,20 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/media.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
+import 'package:fushi/src/utils/components/fushi_continue_card_row.dart'
+    show coverColorSchemeCache;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
-import 'package:fushi/utils.dart' show FushiPageHeader;
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:transparent_image/transparent_image.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -70,6 +74,12 @@ void main() {
   late AppModel appModel;
 
   setUp(() async {
+    // 2026-11 书架「继续阅读」改成封面取色并列卡（PR #2811）：在读的书按封面取色。
+    // 测试书没有封面，取色源是无封面占位（透明 MemoryImage）——生产路径解码后
+    // 无可用像素、记 null（中性卡面）。widget 测试跑在 FakeAsync 里，真实图片解码
+    // 不会完成，取色会一直挂着 10 s 加载超时计时器到用例结束。这里直接写入生产
+    // 路径对它的结果（null），不跑解码。
+    coverColorSchemeCache.debugStoreSeed(MemoryImage(kTransparentImage), null);
     LocaleSettings.setLocale(AppLocale.en);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     prefs = PreferencesRepository(db);

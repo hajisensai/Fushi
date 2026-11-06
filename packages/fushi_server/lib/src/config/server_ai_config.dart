@@ -1,10 +1,10 @@
 /// 服务端的 AI 提供商配置（配置文件 `ai:` 段 + WebUI / admin API）。
 ///
 /// app 的 AI 配置是**设备本地**的（提供商清单 + 功能指派存进不出设备的偏好键）；
-/// 服务端是另一台设备，所以它有自己的一份，而且**只有一家**：无头服务端上用 AI 的
-/// 只有「AI 下视频」助手会话（手机把下载执行设备设成服务端时，整场对话在这里跑），
-/// 配一家就等于把它指派给这个功能。放在 yaml 而不是 `preferences` 表：API key 与
-/// qBittorrent 密码、TMDB key 同一处、同一套「不回显」纪律，也不会被同步带出去。
+/// 服务端是另一台设备，所以它有自己的一份，而且**只有一家**：配一家就等于把它指派给
+/// 服务端装配了的 AI 功能（见 [ServerAiSettings.aiFeatureAssignments]）。放在 yaml 而
+/// 不是 `preferences` 表：API key 与 qBittorrent 密码、TMDB key 同一处、同一套
+/// 「不回显」纪律，也不会被同步带出去。
 ///
 /// ```yaml
 /// ai:
@@ -16,15 +16,25 @@
 ///   reasoning_effort: "none"  # none / low / medium / high
 ///   allow_insecure_http: false
 ///   web_knowledge: true       # 联网资料（内置维基站）辅助识别作品 / 列系列
+///   web_search:               # 通用联网搜索（可选；不写 = 不联网搜索）。管理员亲手写进
+///                             # 配置即同意抓前 3 页网页正文交给 AI（app 侧是首次确认弹框）
+///     kind: "searxng"         # searxng / brave
+///     endpoint: "https://searx.example.org"  # searxng 实例根地址（实例需开 json 格式）
+///     api_key: ""             # brave 的 X-Subscription-Token
+///   library_organize: false   # 扫描入库后自动 AI 整理库（把该在一起的归进合集）
+///   agent_for_peers: false    # 允许已配对设备经 AI 助手调用本服务端的 admin 操作
 /// ```
 ///
 /// 没有 `ai:` 段 = 没指派提供商：能力位报 `no_provider`，**一个 AI 请求都不发**。
 library;
 
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/ai/web_search.dart';
+import 'package:fushi_engine/media/collections/library_organize/library_organize_service.dart';
 
 /// 服务端那一家 AI 在引擎提供商清单里的 id（只在进程内用，不落盘）。
 const String kServerAiProviderId = 'server';
@@ -39,6 +49,9 @@ class ServerAiConfig {
     this.reasoningEffort = AiReasoningEffort.none,
     this.allowInsecureHttp = false,
     this.webKnowledge = true,
+    this.libraryOrganize = false,
+    this.agentForPeers = false,
+    this.webSearch,
   });
 
   /// 预设 id（[kAiProviderPresets]）或 [kAiCustomPresetId]。
@@ -53,6 +66,20 @@ class ServerAiConfig {
   final bool allowInsecureHttp;
   final bool webKnowledge;
 
+  /// 扫描入库后对规则归不了组的新条目跑一次自动 AI 整理（spec
+  /// `docs/specs/2026-10-20-ai-library-organize-design.md` §10.2）。默认关：按量计费，
+  /// 绝不静默开启。服务端通常就是那台「负责自动整理」的设备。
+  final bool libraryOrganize;
+
+  /// 允许已配对设备把 AI 助手会话交给本服务端跑（spec 2026-10-26 §6.5）。默认关：
+  /// 打开后已配对设备能经 AI 调到一部分 admin 操作（增删库根、改部分设置、确认后扫描 /
+  /// 刮削），比配对本来给的权限多——服务端可能是几个人共用的，必须管理员显式打开。
+  /// 凭据、配对、监听类操作无论如何都不进目录。
+  final bool agentForPeers;
+
+  /// 通用联网搜索后端；null = 不联网搜索（缺省）。
+  final WebSearchConfig? webSearch;
+
   /// yaml `ai:` 段 → 配置；不是 map 或没有 `preset` → null（未配置）。解析保持宽松
   /// （手写的一条坏值不拒绝启动），地址等是否可用由 [problem] / [provider] 判。
   static ServerAiConfig? fromYaml(Object? raw) {
@@ -66,9 +93,31 @@ class ServerAiConfig {
       baseUrl: _text(raw['base_url']),
       model: _text(raw['model']),
       apiKey: _text(raw['api_key']),
-      reasoningEffort: AiReasoningEffort.fromStorageKey(_text(raw['reasoning_effort'])),
-      allowInsecureHttp: raw['allow_insecure_http'] == true || '${raw['allow_insecure_http']}' == 'true',
-      webKnowledge: raw['web_knowledge'] != false && '${raw['web_knowledge']}' != 'false',
+      reasoningEffort: AiReasoningEffort.fromStorageKey(
+        _text(raw['reasoning_effort']),
+      ),
+      allowInsecureHttp:
+          raw['allow_insecure_http'] == true ||
+          '${raw['allow_insecure_http']}' == 'true',
+      webKnowledge:
+          raw['web_knowledge'] != false && '${raw['web_knowledge']}' != 'false',
+      libraryOrganize:
+          raw['library_organize'] == true ||
+          '${raw['library_organize']}' == 'true',
+      agentForPeers:
+          raw['agent_for_peers'] == true ||
+          '${raw['agent_for_peers']}' == 'true',
+      webSearch: _webSearch(raw['web_search']),
+    );
+  }
+
+  /// `web_search:` 段 → 配置；不是 map / 未知 kind → null。
+  static WebSearchConfig? _webSearch(Object? raw) {
+    if (raw is! Map) return null;
+    return WebSearchConfig.fromFields(
+      kind: _text(raw['kind']),
+      endpoint: _text(raw['endpoint']),
+      apiKey: _text(raw['api_key']),
     );
   }
 
@@ -90,7 +139,8 @@ class ServerAiConfig {
   /// 生效的请求地址 / 模型 / 协议（显式配置 > 预设）。
   String get effectiveBaseUrl => baseUrl ?? _preset?.baseUrl ?? '';
   String get effectiveModel => model ?? _preset?.suggestedModel ?? '';
-  AiWireProtocol get effectiveProtocol => protocol ?? _preset?.protocol ?? AiWireProtocol.openAiCompatible;
+  AiWireProtocol get effectiveProtocol =>
+      protocol ?? _preset?.protocol ?? AiWireProtocol.openAiCompatible;
 
   /// 配置本身写错了（未知预设 / 地址非法 / 非 HTTPS 又没放行明文…）；写入口据此
   /// 拒绝整个请求。没错 → null。
@@ -111,22 +161,24 @@ class ServerAiConfig {
     final String? invalid = invalidReason();
     if (invalid != null) return invalid;
     if (effectiveModel.isEmpty) return '缺少 model';
-    if ((_preset?.requiresApiKey ?? true) && (apiKey ?? '').isEmpty) return '缺少 api_key';
+    if ((_preset?.requiresApiKey ?? true) && (apiKey ?? '').isEmpty) {
+      return '缺少 api_key';
+    }
     return null;
   }
 
   AiProviderConfig _build() => AiProviderConfig(
-        id: kServerAiProviderId,
-        presetId: _preset == null ? kAiCustomPresetId : preset,
-        name: _preset?.displayName ?? 'fushi_server',
-        baseUrl: Uri.tryParse(effectiveBaseUrl) ?? Uri(),
-        apiKey: apiKey ?? '',
-        model: effectiveModel,
-        protocol: effectiveProtocol,
-        reasoningEffort: reasoningEffort,
-        // 本地推理服务（Ollama / LM Studio）的预设地址是 loopback HTTP。
-        allowInsecureHttp: allowInsecureHttp || (_preset?.isLocal ?? false),
-      );
+    id: kServerAiProviderId,
+    presetId: _preset == null ? kAiCustomPresetId : preset,
+    name: _preset?.displayName ?? 'fushi_server',
+    baseUrl: Uri.tryParse(effectiveBaseUrl) ?? Uri(),
+    apiKey: apiKey ?? '',
+    model: effectiveModel,
+    protocol: effectiveProtocol,
+    reasoningEffort: reasoningEffort,
+    // 本地推理服务（Ollama / LM Studio）的预设地址是 loopback HTTP。
+    allowInsecureHttp: allowInsecureHttp || (_preset?.isLocal ?? false),
+  );
 
   /// 能真的发请求的提供商；配错 / 没配全 → null。
   AiProviderConfig? provider() {
@@ -147,17 +199,23 @@ class ServerAiConfig {
     AiReasoningEffort? reasoningEffort,
     bool? allowInsecureHttp,
     bool? webKnowledge,
-  }) =>
-      ServerAiConfig(
-        preset: preset ?? this.preset,
-        protocol: clearProtocol ? null : protocol ?? this.protocol,
-        baseUrl: clearBaseUrl ? null : baseUrl ?? this.baseUrl,
-        model: clearModel ? null : model ?? this.model,
-        apiKey: apiKey ?? this.apiKey,
-        reasoningEffort: reasoningEffort ?? this.reasoningEffort,
-        allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
-        webKnowledge: webKnowledge ?? this.webKnowledge,
-      );
+    bool? libraryOrganize,
+    bool? agentForPeers,
+    WebSearchConfig? webSearch,
+    bool clearWebSearch = false,
+  }) => ServerAiConfig(
+    preset: preset ?? this.preset,
+    protocol: clearProtocol ? null : protocol ?? this.protocol,
+    baseUrl: clearBaseUrl ? null : baseUrl ?? this.baseUrl,
+    model: clearModel ? null : model ?? this.model,
+    apiKey: apiKey ?? this.apiKey,
+    reasoningEffort: reasoningEffort ?? this.reasoningEffort,
+    allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
+    webKnowledge: webKnowledge ?? this.webKnowledge,
+    libraryOrganize: libraryOrganize ?? this.libraryOrganize,
+    agentForPeers: agentForPeers ?? this.agentForPeers,
+    webSearch: clearWebSearch ? null : webSearch ?? this.webSearch,
+  );
 
   /// 写进 `ai:` 段（[q] 是 ServerConfig 的 yaml 字符串转义）。
   void writeYaml(StringBuffer b, String Function(String) q) {
@@ -170,6 +228,17 @@ class ServerAiConfig {
     b.writeln('  reasoning_effort: ${q(reasoningEffort.storageKey)}');
     b.writeln('  allow_insecure_http: $allowInsecureHttp');
     b.writeln('  web_knowledge: $webKnowledge');
+    b.writeln('  library_organize: $libraryOrganize');
+    b.writeln('  agent_for_peers: $agentForPeers');
+    final WebSearchConfig? search = webSearch;
+    if (search != null) {
+      b.writeln('  web_search:');
+      b.writeln('    kind: ${q(search.kind.name)}');
+      if (search.endpoint != null) {
+        b.writeln('    endpoint: ${q(search.endpoint!)}');
+      }
+      if (search.apiKey != null) b.writeln('    api_key: ${q(search.apiKey!)}');
+    }
   }
 
   /// 给 admin API 的形状：API key 只报「设过没有」，不回显。
@@ -184,6 +253,15 @@ class ServerAiConfig {
       'reasoningEffort': reasoningEffort.storageKey,
       'allowInsecureHttp': allowInsecureHttp,
       'webKnowledge': webKnowledge,
+      'libraryOrganize': libraryOrganize,
+      'agentForPeers': agentForPeers,
+      if (webSearch != null)
+        'webSearch': <String, Object?>{
+          'kind': webSearch!.kind.name,
+          'endpoint': webSearch!.endpoint,
+          'apiKeySet': webSearch!.apiKey != null,
+          'usable': webSearch!.isUsable,
+        },
       'effectiveBaseUrl': effectiveBaseUrl,
       'effectiveModel': effectiveModel,
       'status': issue == null ? 'ready' : 'incomplete',
@@ -202,19 +280,56 @@ class ServerAiSettings implements AiSettingsSource {
   @override
   List<AiProviderConfig> get aiProviders {
     final AiProviderConfig? provider = _config()?.provider();
-    return provider == null ? const <AiProviderConfig>[] : <AiProviderConfig>[provider];
+    return provider == null
+        ? const <AiProviderConfig>[]
+        : <AiProviderConfig>[provider];
   }
 
-  /// 那一家只指派给「AI 下载」：服务端没有刮削 AI 识别 / 补字幕重排等其它 AI 功能的
+  /// 那一家只指派给「AI 下载」「视频字幕 AI 校对」「AI 助手」（远端会话，工具集是
+  /// 服务端自己描述的 admin 操作，见 `agent_host.dart`）、「视频搜索辅助」（补字幕前
+  /// 重排候选，`server_subtitle_backfill.dart`；app 里它跟随默认提供商），以及打开了
+  /// `library_organize` 时的「AI 整理库」：服务端没有刮削 AI 识别等其它 AI 功能的
   /// 装配，不设默认提供商，免得以后新接一个功能时被静默带上。
   @override
-  AiFeatureAssignments get aiFeatureAssignments => _config()?.provider() == null
-      ? const AiFeatureAssignments()
-      : const AiFeatureAssignments(
-          providerIdByFeature: <AiFeature, String>{AiFeature.acquire: kServerAiProviderId},
-        );
+  AiFeatureAssignments get aiFeatureAssignments {
+    final ServerAiConfig? config = _config();
+    if (config?.provider() == null) return const AiFeatureAssignments();
+    return AiFeatureAssignments(
+      providerIdByFeature: <AiFeature, String>{
+        AiFeature.acquire: kServerAiProviderId,
+        AiFeature.subtitleProofread: kServerAiProviderId,
+        AiFeature.agent: kServerAiProviderId,
+        AiFeature.videoSearch: kServerAiProviderId,
+        if (config!.libraryOrganize)
+          AiFeature.libraryOrganize: kServerAiProviderId,
+      },
+    );
+  }
 
   @override
   List<WebKnowledgeSite> get aiWebKnowledgeSites =>
-      _config()?.webKnowledge ?? false ? kBuiltinWebKnowledgeSites : const <WebKnowledgeSite>[];
+      _config()?.webKnowledge ?? false
+      ? kBuiltinWebKnowledgeSites
+      : const <WebKnowledgeSite>[];
+
+  @override
+  WebSearchConfig? get aiWebSearch => _config()?.webSearch;
+}
+
+/// 扫描后自动 AI 整理库的服务（`ai.library_organize` 打开且提供商能用）；否则 null。
+///
+/// 服务端没有 UI 语言：新合集名用作品原语言（`original`），系列标签前缀用英文。
+LibraryOrganizeService? serverLibraryOrganizer(
+  FushiDatabase db,
+  ServerAiConfig? config,
+) {
+  if (config == null || !config.libraryOrganize || config.provider() == null) {
+    return null;
+  }
+  return LibraryOrganizeService(
+    db: db,
+    settings: ServerAiSettings(() => config),
+    nameLanguage: 'original',
+    videoTagPrefix: 'Series: ',
+  );
 }

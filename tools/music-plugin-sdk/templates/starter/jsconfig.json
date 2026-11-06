@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "checkJs": true, "target": "ES2022", "module": "commonjs", "noEmit": true, "lib": ["ES2022"], "types": [] },
+  "include": ["**/*.js", "fushi-plugin.d.ts"]
+}

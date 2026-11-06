@@ -16,8 +16,9 @@ import 'temp_dir_cleanup.dart';
 void main() {
   test('MERGE restores audio-source prefs + re-homes their paths', () async {
     // ── source "device": one local-audio DB + its registry prefs ──────
-    final Directory srcRoot =
-        await Directory.systemTemp.createTemp('audsrc_src_');
+    final Directory srcRoot = await Directory.systemTemp.createTemp(
+      'audsrc_src_',
+    );
     addTearDown(() => cleanupTempDir(srcRoot));
     final String srcDbDir = p.join(srcRoot.path, 'support');
     Directory(srcDbDir).createSync(recursive: true);
@@ -26,23 +27,32 @@ void main() {
     final String srcLadbJson = srcLadb.replaceAll(r'\', r'\\');
 
     final FushiDatabase src = FushiDatabase(srcDbDir);
-    await src.setPref('local_audio_dbs',
-        's:[{"path":"$srcLadbJson","displayName":"x","enabled":true}]');
-    await src.setPref('audio_source_configs',
-        'j:[{"kind":"localAudio","enabled":true,"label":"x","path":"$srcLadbJson"}]');
-    final Directory zipDir =
-        await Directory.systemTemp.createTemp('audsrc_zip_');
+    await src.setPref(
+      'local_audio_dbs',
+      's:[{"path":"$srcLadbJson","displayName":"x","enabled":true}]',
+    );
+    await src.setPref(
+      'audio_source_configs',
+      'j:[{"kind":"localAudio","enabled":true,"label":"x","path":"$srcLadbJson"}]',
+    );
+    final Directory zipDir = await Directory.systemTemp.createTemp(
+      'audsrc_zip_',
+    );
     addTearDown(() => cleanupTempDir(zipDir));
     final String zip = p.join(zipDir.path, 'b.zip');
-    await BackupService(db: src, dbDirectory: srcDbDir, appVersion: '2.0.0')
-        .createBackup(zip);
+    await BackupService(
+      db: src,
+      dbDirectory: srcDbDir,
+      appVersion: '2.0.0',
+    ).createBackup(zip);
     await src.close();
 
     // ── fresh target "device": an empty-placeholder registry (like a
     //    freshly-started app) — the bare NOT-EXISTS-on-key guard would have
     //    left this untouched, so the empty-list case must be handled. ──
-    final Directory curRoot =
-        await Directory.systemTemp.createTemp('audsrc_cur_');
+    final Directory curRoot = await Directory.systemTemp.createTemp(
+      'audsrc_cur_',
+    );
     addTearDown(() => cleanupTempDir(curRoot));
     final String curDbDir = p.join(curRoot.path, 'support');
     Directory(curDbDir).createSync(recursive: true);
@@ -79,30 +89,40 @@ void main() {
 
   test('MERGE keeps the device\'s own non-empty audio-source list', () async {
     // Device already has its own audio source → merge must not clobber it.
-    final Directory srcRoot =
-        await Directory.systemTemp.createTemp('audkeep_src_');
+    final Directory srcRoot = await Directory.systemTemp.createTemp(
+      'audkeep_src_',
+    );
     addTearDown(() => cleanupTempDir(srcRoot));
     final String srcDbDir = p.join(srcRoot.path, 'support');
     Directory(srcDbDir).createSync(recursive: true);
     final FushiDatabase src = FushiDatabase(srcDbDir);
-    await src.setPref('audio_source_configs',
-        'j:[{"kind":"localAudio","label":"FROM_BACKUP"}]');
-    final Directory zipDir =
-        await Directory.systemTemp.createTemp('audkeep_zip_');
+    await src.setPref(
+      'audio_source_configs',
+      'j:[{"kind":"localAudio","label":"FROM_BACKUP"}]',
+    );
+    final Directory zipDir = await Directory.systemTemp.createTemp(
+      'audkeep_zip_',
+    );
     addTearDown(() => cleanupTempDir(zipDir));
     final String zip = p.join(zipDir.path, 'b.zip');
-    await BackupService(db: src, dbDirectory: srcDbDir, appVersion: '2.0.0')
-        .createBackup(zip);
+    await BackupService(
+      db: src,
+      dbDirectory: srcDbDir,
+      appVersion: '2.0.0',
+    ).createBackup(zip);
     await src.close();
 
-    final Directory curRoot =
-        await Directory.systemTemp.createTemp('audkeep_cur_');
+    final Directory curRoot = await Directory.systemTemp.createTemp(
+      'audkeep_cur_',
+    );
     addTearDown(() => cleanupTempDir(curRoot));
     final String curDbDir = p.join(curRoot.path, 'support');
     Directory(curDbDir).createSync(recursive: true);
     final FushiDatabase seed = FushiDatabase(curDbDir);
-    await seed.setPref('audio_source_configs',
-        'j:[{"kind":"localAudio","label":"DEVICE_OWN"}]');
+    await seed.setPref(
+      'audio_source_configs',
+      'j:[{"kind":"localAudio","label":"DEVICE_OWN"}]',
+    );
     await seed.close();
 
     await BackupRestoreService.mergeRestoreBackup(

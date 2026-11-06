@@ -30,20 +30,20 @@ void main() {
       ..createSync(recursive: true);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (MethodCall call) async {
-        if (call.method == 'getApplicationDocumentsDirectory') {
-          return docs.path;
-        }
-        if (call.method == 'getTemporaryDirectory') {
-          return p.join(tmp.path, 'systemp');
-        }
-        if (call.method == 'getApplicationSupportDirectory') {
-          return p.join(tmp.path, 'support');
-        }
-        return null;
-      },
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (MethodCall call) async {
+            if (call.method == 'getApplicationDocumentsDirectory') {
+              return docs.path;
+            }
+            if (call.method == 'getTemporaryDirectory') {
+              return p.join(tmp.path, 'systemp');
+            }
+            if (call.method == 'getApplicationSupportDirectory') {
+              return p.join(tmp.path, 'support');
+            }
+            return null;
+          },
+        );
     final Directory dbDir = Directory(p.join(tmp.path, 'db'))
       ..createSync(recursive: true);
     db = FushiDatabase(dbDir.path);
@@ -55,9 +55,9 @@ void main() {
     AppPaths.debugResetDocumentsLayoutCache();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      null,
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          null,
+        );
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 
@@ -71,15 +71,21 @@ void main() {
     File(realCover).writeAsBytesSync(<int>[1, 2, 3]);
 
     // DB 里存的是旧根的绝对路径（迁移漏改），文件在那里已不存在。
-    final String staleCover =
-        p.join(tmp.path, 'old_documents', 'video_covers', 'video_Bk.jpg');
+    final String staleCover = p.join(
+      tmp.path,
+      'old_documents',
+      'video_covers',
+      'video_Bk.jpg',
+    );
     expect(File(staleCover).existsSync(), isFalse);
-    await db.upsertVideoBook(VideoBooksCompanion.insert(
-      bookUid: 'video/Bk',
-      title: 'Bk',
-      videoPath: p.join('E:', 'anime', 'Bk.mkv'),
-      coverPath: Value(staleCover),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/Bk',
+        title: 'Bk',
+        videoPath: p.join('E:', 'anime', 'Bk.mkv'),
+        coverPath: Value(staleCover),
+      ),
+    );
 
     final VideoBookRepository repo = VideoBookRepository(db);
     final List<VideoBookRow> rows = await repo.listForShelf();
@@ -93,17 +99,24 @@ void main() {
 
   test('封面文件在当前根也不存在 → 不改写，保持原值（真删除的封面留占位）', () async {
     (await AppPaths.videoCoversDirectory()).createSync(recursive: true);
-    final String staleCover =
-        p.join(tmp.path, 'old_documents', 'video_covers', 'gone.jpg');
-    await db.upsertVideoBook(VideoBooksCompanion.insert(
-      bookUid: 'video/Gone',
-      title: 'Gone',
-      videoPath: p.join('E:', 'anime', 'Gone.mkv'),
-      coverPath: Value(staleCover),
-    ));
+    final String staleCover = p.join(
+      tmp.path,
+      'old_documents',
+      'video_covers',
+      'gone.jpg',
+    );
+    await db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/Gone',
+        title: 'Gone',
+        videoPath: p.join('E:', 'anime', 'Gone.mkv'),
+        coverPath: Value(staleCover),
+      ),
+    );
 
-    final List<VideoBookRow> rows =
-        await VideoBookRepository(db).listForShelf();
+    final List<VideoBookRow> rows = await VideoBookRepository(
+      db,
+    ).listForShelf();
     expect(rows.single.coverPath, equals(staleCover));
   });
 
@@ -112,27 +125,33 @@ void main() {
       ..createSync(recursive: true);
     final String good = p.join(coversDir.path, 'video_Ok.jpg');
     File(good).writeAsBytesSync(<int>[9]);
-    await db.upsertVideoBook(VideoBooksCompanion.insert(
-      bookUid: 'video/Ok',
-      title: 'Ok',
-      videoPath: p.join('E:', 'anime', 'Ok.mkv'),
-      coverPath: Value(good),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/Ok',
+        title: 'Ok',
+        videoPath: p.join('E:', 'anime', 'Ok.mkv'),
+        coverPath: Value(good),
+      ),
+    );
 
-    final List<VideoBookRow> rows =
-        await VideoBookRepository(db).listForShelf();
+    final List<VideoBookRow> rows = await VideoBookRepository(
+      db,
+    ).listForShelf();
     expect(rows.single.coverPath, equals(good));
   });
 
   test('cover_path 为 null → 原样返回不报错', () async {
-    await db.upsertVideoBook(VideoBooksCompanion.insert(
-      bookUid: 'video/NoCover',
-      title: 'NoCover',
-      videoPath: p.join('E:', 'anime', 'NoCover.mkv'),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/NoCover',
+        title: 'NoCover',
+        videoPath: p.join('E:', 'anime', 'NoCover.mkv'),
+      ),
+    );
 
-    final List<VideoBookRow> rows =
-        await VideoBookRepository(db).listForShelf();
+    final List<VideoBookRow> rows = await VideoBookRepository(
+      db,
+    ).listForShelf();
     expect(rows.single.coverPath, isNull);
   });
 }

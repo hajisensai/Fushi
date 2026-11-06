@@ -52,7 +52,7 @@ void main() {
                 onMore: (_) {},
                 onTapBackground: () {},
                 onReplayCue: () {},
-                onSleepTimer: (_) {},
+                onToggleStatsTimer: () {},
               ),
               size: size,
               padding: EdgeInsets.zero,
@@ -99,14 +99,14 @@ void main() {
     }
   });
 
-  testWidgets('按下相邻的睡眠定时键时倍速标签不折行', (WidgetTester tester) async {
+  testWidgets('按下相邻的计时键时倍速标签不折行', (WidgetTester tester) async {
     await pumpChrome(tester);
     final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
       find.text('1.5×'),
     );
     final TestGesture g = await tester.startGesture(
       tester.getCenter(
-        find.byKey(const ValueKey<String>('lyrics_sleep_timer_button')),
+        find.byKey(const ValueKey<String>('lyrics_study_timer_button')),
       ),
     );
     for (int i = 0; i < 20; i++) {

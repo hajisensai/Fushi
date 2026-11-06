@@ -33,10 +33,12 @@ void main() {
 
   group('popupKeyBindingsJson', () {
     test('默认下发 Ctrl+Enter 制卡；词条导航键盘默认为空（它走 Alt+滚轮）', () {
-      final Map<String, dynamic> cfg = decode(popupKeyBindingsJson(
-        registryFor(TargetPlatform.windows),
-        TargetPlatform.windows,
-      ));
+      final Map<String, dynamic> cfg = decode(
+        popupKeyBindingsJson(
+          registryFor(TargetPlatform.windows),
+          TargetPlatform.windows,
+        ),
+      );
       expect(cfg['mine'], <Map<String, Object>>[
         <String, Object>{
           'key': 'enter',
@@ -52,10 +54,12 @@ void main() {
       // **每个**动作渲染「添加键盘快捷键」入口。若注入表只认 mine，词条导航那两个入口就是
       // 「能配、按了没反应」——正是 shortcut_channel_wiring_guard_test 判定为「比压根没有
       // 这个选项更糟」的情形。
-      final Map<String, dynamic> cfg = decode(popupKeyBindingsJson(
-        registryFor(TargetPlatform.windows),
-        TargetPlatform.windows,
-      ));
+      final Map<String, dynamic> cfg = decode(
+        popupKeyBindingsJson(
+          registryFor(TargetPlatform.windows),
+          TargetPlatform.windows,
+        ),
+      );
       expect(cfg.keys.toSet(), <String>{'mine', 'next', 'prev', 'audio'});
       expect(
         ShortcutAction.actionsForScope(ShortcutScope.dictionaryPopup).length,
@@ -65,10 +69,12 @@ void main() {
     });
 
     test('macOS 把 Ctrl 换成 Meta（跟随平台默认表）', () {
-      final Map<String, dynamic> cfg = decode(popupKeyBindingsJson(
-        registryFor(TargetPlatform.macOS),
-        TargetPlatform.macOS,
-      ));
+      final Map<String, dynamic> cfg = decode(
+        popupKeyBindingsJson(
+          registryFor(TargetPlatform.macOS),
+          TargetPlatform.macOS,
+        ),
+      );
       expect((cfg['mine'] as List<dynamic>).single, <String, Object>{
         'key': 'enter',
         'mods': <String>['meta'],
@@ -76,8 +82,9 @@ void main() {
     });
 
     test('用户改键后下发的是改后的键', () {
-      final FushiShortcutRegistry registry =
-          registryFor(TargetPlatform.windows);
+      final FushiShortcutRegistry registry = registryFor(
+        TargetPlatform.windows,
+      );
       registry.updateBinding(
         ShortcutAction.popupMineEntry,
         const ShortcutBindingSet(
@@ -100,8 +107,9 @@ void main() {
     });
 
     test('用户清空绑定 → 下发空表（而不是回退默认，否则「清空」等于没清）', () {
-      final FushiShortcutRegistry registry =
-          registryFor(TargetPlatform.windows);
+      final FushiShortcutRegistry registry = registryFor(
+        TargetPlatform.windows,
+      );
       registry.updateBinding(
         ShortcutAction.popupMineEntry,
         const ShortcutBindingSet(),
@@ -114,10 +122,9 @@ void main() {
 
     test('注册表未装载 → 回落平台默认（弹窗进程的精简初始化早于 loadShortcutRegistry）', () {
       // 裸 registry（isLoaded=false）若照读空绑定，Ctrl+Enter 会在弹窗进程里静默失效。
-      final Map<String, dynamic> cfg = decode(popupKeyBindingsJson(
-        FushiShortcutRegistry(),
-        TargetPlatform.windows,
-      ));
+      final Map<String, dynamic> cfg = decode(
+        popupKeyBindingsJson(FushiShortcutRegistry(), TargetPlatform.windows),
+      );
       expect((cfg['mine'] as List<dynamic>).single, <String, Object>{
         'key': 'enter',
         'mods': <String>['ctrl'],
@@ -133,15 +140,20 @@ void main() {
         key: LogicalKeyboardKey.enter,
         modifiers: <ModifierKey>{ModifierKey.ctrl},
       );
-      expect(desktop[ShortcutAction.popupMineEntry]!.keyboardBindings,
-          contains(ctrlEnter));
+      expect(
+        desktop[ShortcutAction.popupMineEntry]!.keyboardBindings,
+        contains(ctrlEnter),
+      );
       // 同键但不冲突：两者在不同 co-active 组，永不同时解析。键位一致是有意的——
       // 用户不该为「在阅读器里制卡」和「在 app 外查词窗里制卡」记两个键。
       expect(
-          desktop[ShortcutAction.readerCreateCardFromPopup]!.keyboardBindings,
-          contains(ctrlEnter));
-      expect(ShortcutAction.popupMineEntry.scope.coactiveScopes,
-          isNot(contains(ShortcutScope.reader)));
+        desktop[ShortcutAction.readerCreateCardFromPopup]!.keyboardBindings,
+        contains(ctrlEnter),
+      );
+      expect(
+        ShortcutAction.popupMineEntry.scope.coactiveScopes,
+        isNot(contains(ShortcutScope.reader)),
+      );
     });
 
     test('移动端不给制卡键（两个移动端弹窗宿主都没有 Dart 侧接线，给了也按不动）', () {
@@ -157,15 +169,19 @@ void main() {
     test('README 区分可聚焦面板与 NOACTIVATE 瞬态窗', () {
       // README 不再镜像进 app assets（sync-mirrors.mjs 排除项：*.test.js、
       // scripts/、README.md——文档不进 bundle），只对 tools 真源做内容断言。
-      final String tools =
-          File('../tools/browser-extension/README.md').readAsStringSync();
+      final String tools = File(
+        '../tools/browser-extension/README.md',
+      ).readAsStringSync();
       expect(tools, contains('只有在用户点入并获得键盘焦点后'));
       expect(tools, contains('WS_EX_NOACTIVATE'));
       expect(tools, contains('没有制卡快捷键'));
       expect(tools, contains('不注册全局热键'));
       expect(tools, isNot(contains('三端同源')), reason: '共享渲染代码不等于三个表面都能收到键盘事件');
-      expect(tools, isNot(contains('app 内 / app 外全局查词窗共用同一个可改键动作')),
-          reason: '瞬态 no-activate 查词窗没有快捷键，不能宣称 app 外全局共用');
+      expect(
+        tools,
+        isNot(contains('app 内 / app 外全局查词窗共用同一个可改键动作')),
+        reason: '瞬态 no-activate 查词窗没有快捷键，不能宣称 app 外全局共用',
+      );
     });
 
     test('popup.js：读注入表、null 关掉自己，且只复用既有的加号点击入口', () {
@@ -197,8 +213,9 @@ void main() {
       // 前者额外把整行 `//` 也掩掉，正好是旧行式剥离与 Dart 词法掩码的并集——
       // 既补上了块注释 / 行尾注释两个洞，又不放松串内 JS 注释。
       final String dart = maskCommentsAndScriptLines(
-        File('lib/src/pages/implementations/popup_settings_injection.dart')
-            .readAsStringSync(),
+        File(
+          'lib/src/pages/implementations/popup_settings_injection.dart',
+        ).readAsStringSync(),
       );
       final String norm = dart.replaceAll(RegExp(r'\s+'), ' ');
       // 判据必须钉住**分流结构本身**，不能只查这几个符号各自出现过：`globalLookup` 在本
@@ -206,13 +223,20 @@ void main() {
       // 「符号存在」型断言全绿——而那正是最危险的回归：app 内宿主一旦也拿到真绑定，同一
       // 次按键会被 JS 和 Flutter 各处理一遍，直接制出两张卡。变异实测证实过这条假绿。
       expect(
-          norm,
-          matches(RegExp(
-              r"options\.globalLookup \? popupKeyBindingsJson\([^;]*?: 'null';")),
-          reason: 'app 外才下发真绑定、app 内必须显式收 null——'
-              '两边都开就会双触发制出两张卡');
-      expect(norm,
-          contains(r'window.__fushiPopupKeyBindings = $popupKeyBindings;'));
+        norm,
+        matches(
+          RegExp(
+            r"options\.globalLookup \? popupKeyBindingsJson\([^;]*?: 'null';",
+          ),
+        ),
+        reason:
+            'app 外才下发真绑定、app 内必须显式收 null——'
+            '两边都开就会双触发制出两张卡',
+      );
+      expect(
+        norm,
+        contains(r'window.__fushiPopupKeyBindings = $popupKeyBindings;'),
+      );
     });
 
     test('视频页：制卡键的判决必须早于「浮层可见先关浮层」', () {
@@ -225,13 +249,18 @@ void main() {
       // 达到同样效果）。判据必须**剥注释**：上面这段说明里就同时出现了两个 needle，
       // 裸 indexOf 会先命中注释、把顺序断言变成永远自洽的空转。
       final String code = maskComments(
-        File('lib/src/media/video/video_player_shortcuts.dart')
-            .readAsStringSync(),
+        File(
+          'lib/src/media/video/video_player_shortcuts.dart',
+        ).readAsStringSync(),
       );
-      final int fnAt =
-          code.indexOf('VideoKeyboardResolution resolveVideoKeyboardShortcut(');
-      expect(fnAt, greaterThanOrEqualTo(0),
-          reason: 'press-time 判决函数必须存在（视频键盘通道的唯一真相源）');
+      final int fnAt = code.indexOf(
+        'VideoKeyboardResolution resolveVideoKeyboardShortcut(',
+      );
+      expect(
+        fnAt,
+        greaterThanOrEqualTo(0),
+        reason: 'press-time 判决函数必须存在（视频键盘通道的唯一真相源）',
+      );
       // 搜索范围必须**框死在这个函数体内**：同文件后面的 `_resolveVideoKeyboardAction`
       // 也提到 popupMineEntry，不框范围的话「把本函数里的制卡分支整段删掉」仍会命中
       // 那一处、顺序断言靠位置侥幸自洽。变异实测过。
@@ -239,27 +268,37 @@ void main() {
       // 收口判据只能是「整行就是一个 `}`」：`indexOf('\n}')` 会先命中具名参数列表
       // 收尾的 `\n})` （本函数签名恰好是那个形状），切出来的「函数体」只剩签名——
       // 那样变异前后都红，红了什么也证明不了。这条坑同样是变异实测抓出来的。
-      final RegExpMatch? closer =
-          RegExp(r'^\}$', multiLine: true).firstMatch(code.substring(fnAt));
+      final RegExpMatch? closer = RegExp(
+        r'^\}$',
+        multiLine: true,
+      ).firstMatch(code.substring(fnAt));
       expect(closer, isNotNull, reason: '判决函数体应以顶格 } 收口');
       final String body = code.substring(fnAt, fnAt + closer!.start);
-      expect(body, contains('hasEditableFocus'),
-          reason: '切出来的必须是真的函数体（含它的具名参数消费），不是只剩签名');
+      expect(
+        body,
+        contains('hasEditableFocus'),
+        reason: '切出来的必须是真的函数体（含它的具名参数消费），不是只剩签名',
+      );
       final int mineAt = body.indexOf('ShortcutAction.popupMineEntry');
       final int dismissAt = body.indexOf(
         'if (hasVisiblePopup) return VideoKeyboardResolution.dismissPopup;',
       );
       expect(mineAt, greaterThanOrEqualTo(0), reason: '判决函数里缺制卡分支');
-      expect(dismissAt, greaterThanOrEqualTo(0),
-          reason: '判决函数里缺「浮层可见先关浮层」分支');
-      expect(mineAt, lessThan(dismissAt),
-          reason: '制卡分支必须先于「先关浮层」返回，否则按下去只会关掉浮层');
+      expect(dismissAt, greaterThanOrEqualTo(0), reason: '判决函数里缺「浮层可见先关浮层」分支');
+      expect(
+        mineAt,
+        lessThan(dismissAt),
+        reason: '制卡分支必须先于「先关浮层」返回，否则按下去只会关掉浮层',
+      );
 
-      final String page =
-          File('lib/src/pages/implementations/video_fushi_page.dart')
-              .readAsStringSync();
-      expect(page, contains('_mineFromTopPopup()'),
-          reason: '页面必须把制卡判决接到真正的执行体上');
+      final String page = File(
+        'lib/src/pages/implementations/video_fushi_page.dart',
+      ).readAsStringSync();
+      expect(
+        page,
+        contains('_mineFromTopPopup()'),
+        reason: '页面必须把制卡判决接到真正的执行体上',
+      );
       expect(page, contains('mineFirstVisibleEntry()'));
     });
   });

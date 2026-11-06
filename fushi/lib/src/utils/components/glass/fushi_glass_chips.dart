@@ -1248,6 +1248,7 @@ class FushiInputChip extends StatelessWidget {
     this.deleteIconBoxConstraints,
     this.chipAnimationStyle,
     this.mouseCursor,
+    this.dense = false,
   });
 
   final Widget? avatar;
@@ -1289,6 +1290,17 @@ class FushiInputChip extends StatelessWidget {
   final ChipAnimationStyle? chipAnimationStyle;
   final MouseCursor? mouseCursor;
 
+  /// 紧凑排版（与输入框同行等）：设计系统统一给紧凑密度并去掉 48dp 触控外框，
+  /// 页面不自己挑密度。显式传入的 [visualDensity] / [materialTapTargetSize] 优先。
+  final bool dense;
+
+  VisualDensity? get _density =>
+      visualDensity ?? (dense ? VisualDensity.compact : null);
+
+  MaterialTapTargetSize? get _tapTargetSize =>
+      materialTapTargetSize ??
+      (dense ? MaterialTapTargetSize.shrinkWrap : null);
+
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) {
@@ -1312,7 +1324,7 @@ class FushiInputChip extends StatelessWidget {
         labelStyle: labelStyle,
         padding: padding,
         labelPadding: labelPadding,
-        visualDensity: visualDensity,
+        visualDensity: _density,
         selected: selected,
         selectedColor: selectedColor,
         backgroundColor: backgroundColor,
@@ -1353,8 +1365,8 @@ class FushiInputChip extends StatelessWidget {
       color: color,
       backgroundColor: backgroundColor,
       padding: padding,
-      visualDensity: visualDensity,
-      materialTapTargetSize: materialTapTargetSize,
+      visualDensity: _density,
+      materialTapTargetSize: _tapTargetSize,
       elevation: elevation,
       shadowColor: shadowColor,
       surfaceTintColor: surfaceTintColor,

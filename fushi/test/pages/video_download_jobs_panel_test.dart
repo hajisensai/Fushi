@@ -31,47 +31,46 @@ VideoDownloadJobRow _job({
   String? error,
   int? completedAt,
   String organizationPolicy = 'library',
-}) =>
-    VideoDownloadJobRow(
-      jobId: id,
-      resourceProvider: 'nyaa:default',
-      selectedResourceId: 'resource-$id',
-      magnetUri: null,
-      resourceTitle: 'A-Rather-Long-Release-Group 1080p HEVC',
-      torrentHash: null,
-      metadataProvider: 'anilist',
-      externalId: 'media-$id',
-      mediaKind: 'tv',
-      discoveryCategory: 'anime',
-      title: title,
-      year: 2026,
-      season: 1,
-      coverUrl: null,
-      backendKind: 'embedded',
-      backendTaskId: null,
-      backendProfileId: 'default',
-      fingerprint: 'embedded-test',
-      category: 'fushi-video',
-      targetSourceId: null,
-      collectionId: null,
-      organizationPolicy: organizationPolicy,
-      subtitlePolicy: 'bestEffort',
-      observedSavePath: null,
-      targetRelativeRoot: null,
-      lifecycle: lifecycle,
-      stage: stage,
-      stageProgress: progress,
-      priority: 0,
-      attemptCount: 0,
-      maxAttempts: 3,
-      nextAttemptAt: null,
-      claimedBy: null,
-      claimExpiresAt: null,
-      lastError: error,
-      createdAt: 1,
-      updatedAt: 2,
-      completedAt: completedAt,
-    );
+}) => VideoDownloadJobRow(
+  jobId: id,
+  resourceProvider: 'nyaa:default',
+  selectedResourceId: 'resource-$id',
+  magnetUri: null,
+  resourceTitle: 'A-Rather-Long-Release-Group 1080p HEVC',
+  torrentHash: null,
+  metadataProvider: 'anilist',
+  externalId: 'media-$id',
+  mediaKind: 'tv',
+  discoveryCategory: 'anime',
+  title: title,
+  year: 2026,
+  season: 1,
+  coverUrl: null,
+  backendKind: 'embedded',
+  backendTaskId: null,
+  backendProfileId: 'default',
+  fingerprint: 'embedded-test',
+  category: 'fushi-video',
+  targetSourceId: null,
+  collectionId: null,
+  organizationPolicy: organizationPolicy,
+  subtitlePolicy: 'bestEffort',
+  observedSavePath: null,
+  targetRelativeRoot: null,
+  lifecycle: lifecycle,
+  stage: stage,
+  stageProgress: progress,
+  priority: 0,
+  attemptCount: 0,
+  maxAttempts: 3,
+  nextAttemptAt: null,
+  claimedBy: null,
+  claimExpiresAt: null,
+  lastError: error,
+  createdAt: 1,
+  updatedAt: 2,
+  completedAt: completedAt,
+);
 
 Future<void> _pumpPanel(
   WidgetTester tester, {
@@ -202,8 +201,7 @@ void main() {
     );
   });
 
-  testWidgets('孤立音频的有声书任务露出补对齐入口,普通任务不露',
-      (WidgetTester tester) async {
+  testWidgets('孤立音频的有声书任务露出补对齐入口,普通任务不露', (WidgetTester tester) async {
     final _MemoryJobsStore store = _MemoryJobsStore();
     addTearDown(store.close);
     final List<String> paired = <String>[];
@@ -237,9 +235,7 @@ void main() {
     expect(pairButton, findsOneWidget);
     expect(
       find.byKey(
-        const ValueKey<String>(
-          'video-download-job-pair-audiobook-plain-video',
-        ),
+        const ValueKey<String>('video-download-job-pair-audiobook-plain-video'),
       ),
       findsNothing,
     );
@@ -254,20 +250,14 @@ void main() {
     expect(paired, <String>['lonely-audio']);
   });
 
-  testWidgets('watches lifecycle, stage, progress and safe error text',
-      (WidgetTester tester) async {
+  testWidgets('watches lifecycle, stage, progress and safe error text', (
+    WidgetTester tester,
+  ) async {
     final _MemoryJobsStore store = _MemoryJobsStore();
     addTearDown(store.close);
-    await _pumpPanel(
-      tester,
-      panel: VideoDownloadJobsPanel(store: store),
-    );
+    await _pumpPanel(tester, panel: VideoDownloadJobsPanel(store: store));
     store.emit(<VideoDownloadJobRow>[
-      _job(
-        id: 'active',
-        title: 'Downloading show',
-        progress: 0.37,
-      ),
+      _job(id: 'active', title: 'Downloading show', progress: 0.37),
       _job(
         id: 'attention',
         title: 'Needs attention show',
@@ -308,8 +298,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('retry, resume and cancel actions match their lifecycles',
-      (WidgetTester tester) async {
+  testWidgets('retry, resume and cancel actions match their lifecycles', (
+    WidgetTester tester,
+  ) async {
     final _MemoryJobsStore store = _MemoryJobsStore();
     addTearDown(store.close);
     final List<String> retried = <String>[];
@@ -357,9 +348,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.byKey(
-        const ValueKey<String>('video-download-job-retry-attention'),
-      ),
+      find.byKey(const ValueKey<String>('video-download-job-retry-attention')),
       findsOneWidget,
     );
     expect(
@@ -383,9 +372,7 @@ void main() {
       find.byKey(const ValueKey<String>('video-download-job-cancel-active')),
     );
     await tester.tap(
-      find.byKey(
-        const ValueKey<String>('video-download-job-retry-attention'),
-      ),
+      find.byKey(const ValueKey<String>('video-download-job-retry-attention')),
     );
     await tester.tap(
       find.byKey(const ValueKey<String>('video-download-job-resume-paused')),
@@ -396,8 +383,9 @@ void main() {
     expect(resumed, <String>['paused']);
   });
 
-  testWidgets('long task content has no overflow at 360 logical pixels',
-      (WidgetTester tester) async {
+  testWidgets('long task content has no overflow at 360 logical pixels', (
+    WidgetTester tester,
+  ) async {
     final _MemoryJobsStore store = _MemoryJobsStore();
     addTearDown(store.close);
     await _pumpPanel(
@@ -427,83 +415,84 @@ void main() {
   });
 
   testWidgets(
-      'error area shows one localized summary line and opens a copyable '
-      'detail dialog with the raw error (BUG-1540)',
-      (WidgetTester tester) async {
-    const String rawError =
-        'needsAttention: backend torrent was not confirmed by hash, title, '
-        'and category; legacy subtitle selection was unavailable';
+    'error area shows one localized summary line and opens a copyable '
+    'detail dialog with the raw error (BUG-1540)',
+    (WidgetTester tester) async {
+      const String rawError =
+          'needsAttention: backend torrent was not confirmed by hash, title, '
+          'and category; legacy subtitle selection was unavailable';
+      final _MemoryJobsStore store = _MemoryJobsStore();
+      addTearDown(store.close);
+      await _pumpPanel(
+        tester,
+        size: const Size(360, 640),
+        panel: VideoDownloadJobsPanel(store: store),
+      );
+      store.emit(<VideoDownloadJobRow>[
+        _job(
+          id: 'attention',
+          title: 'Hibike! Euphonium',
+          lifecycle: VideoDownloadJobLifecycle.needsAttention,
+          stage: VideoDownloadJobStage.download,
+          error: rawError,
+        ),
+      ]);
+      await tester.pumpAndSettle();
+
+      // 卡片上只有摘要（单行省略），没有整句原文，也没有布局溢出。
+      expect(find.text(rawError), findsNothing);
+      expect(
+        find.text(t.download_task_error_summary_backend_unconfirmed),
+        findsOneWidget,
+      );
+      final Text summary = tester.widget<Text>(
+        find.text(t.download_task_error_summary_backend_unconfirmed),
+      );
+      expect(summary.maxLines, 1);
+      expect(summary.overflow, TextOverflow.ellipsis);
+      expect(tester.takeException(), isNull);
+
+      // 点击错误行弹出详情对话框，原始错误完整可见且可复制。
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('video-download-job-error-attention'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(
+          const ValueKey<String>('video-download-job-error-detail-dialog'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text(t.download_task_error_detail_title), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(SelectableText),
+          matching: find.text(rawError),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text(t.copy), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text(t.dialog_close));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(
+          const ValueKey<String>('video-download-job-error-detail-dialog'),
+        ),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('unknown errors fall back to the generic localized summary', (
+    WidgetTester tester,
+  ) async {
     final _MemoryJobsStore store = _MemoryJobsStore();
     addTearDown(store.close);
-    await _pumpPanel(
-      tester,
-      size: const Size(360, 640),
-      panel: VideoDownloadJobsPanel(store: store),
-    );
-    store.emit(<VideoDownloadJobRow>[
-      _job(
-        id: 'attention',
-        title: 'Hibike! Euphonium',
-        lifecycle: VideoDownloadJobLifecycle.needsAttention,
-        stage: VideoDownloadJobStage.download,
-        error: rawError,
-      ),
-    ]);
-    await tester.pumpAndSettle();
-
-    // 卡片上只有摘要（单行省略），没有整句原文，也没有布局溢出。
-    expect(find.text(rawError), findsNothing);
-    expect(
-      find.text(t.download_task_error_summary_backend_unconfirmed),
-      findsOneWidget,
-    );
-    final Text summary = tester.widget<Text>(
-      find.text(t.download_task_error_summary_backend_unconfirmed),
-    );
-    expect(summary.maxLines, 1);
-    expect(summary.overflow, TextOverflow.ellipsis);
-    expect(tester.takeException(), isNull);
-
-    // 点击错误行弹出详情对话框，原始错误完整可见且可复制。
-    await tester.tap(
-      find.byKey(const ValueKey<String>('video-download-job-error-attention')),
-    );
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(
-        const ValueKey<String>('video-download-job-error-detail-dialog'),
-      ),
-      findsOneWidget,
-    );
-    expect(find.text(t.download_task_error_detail_title), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byType(SelectableText),
-        matching: find.text(rawError),
-      ),
-      findsOneWidget,
-    );
-    expect(find.text(t.copy), findsOneWidget);
-    expect(tester.takeException(), isNull);
-
-    await tester.tap(find.text(t.dialog_close));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(
-        const ValueKey<String>('video-download-job-error-detail-dialog'),
-      ),
-      findsNothing,
-    );
-  });
-
-  testWidgets('unknown errors fall back to the generic localized summary',
-      (WidgetTester tester) async {
-    final _MemoryJobsStore store = _MemoryJobsStore();
-    addTearDown(store.close);
-    await _pumpPanel(
-      tester,
-      panel: VideoDownloadJobsPanel(store: store),
-    );
+    await _pumpPanel(tester, panel: VideoDownloadJobsPanel(store: store));
     store.emit(<VideoDownloadJobRow>[
       _job(
         id: 'weird',
@@ -515,16 +504,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('ENOSPC: no space left on device, write'), findsNothing);
-    expect(
-      find.text(t.download_task_error_summary_generic),
-      findsOneWidget,
-    );
+    expect(find.text(t.download_task_error_summary_generic), findsOneWidget);
     expect(find.text(t.download_task_lifecycle_failed), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('wide download task cards fill the available page width',
-      (WidgetTester tester) async {
+  testWidgets('wide download task cards fill the available page width', (
+    WidgetTester tester,
+  ) async {
     final _MemoryJobsStore store = _MemoryJobsStore();
     addTearDown(store.close);
     await _pumpPanel(
@@ -544,8 +531,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('shows real torrent size, status, peers, rates, ETA and ratio',
-      (WidgetTester tester) async {
+  testWidgets('shows real torrent size, status, peers, rates, ETA and ratio', (
+    WidgetTester tester,
+  ) async {
     final _MemoryJobsStore store = _MemoryJobsStore();
     addTearDown(store.close);
     await _pumpPanel(
@@ -555,25 +543,25 @@ void main() {
         store: store,
         metricsLoader: (Iterable<VideoDownloadJobRow> jobs) async =>
             <String, TorrentSnapshot>{
-          'metrics': const TorrentSnapshot(
-            hash: 'hash',
-            name: 'Metrics release',
-            progress: 0.5,
-            state: 'downloading',
-            savePath: r'D:\Downloads',
-            contentPath: r'D:\Downloads\Metrics release',
-            amountLeft: 10485760,
-            totalSizeBytes: 2147483648,
-            downRateBps: 1048576,
-            upRateBps: 524288,
-            downloadedBytes: 1073741824,
-            uploadedBytes: 536870912,
-            numSeeds: 3,
-            swarmSeeds: 20,
-            numLeechs: 7,
-            swarmLeechs: 42,
-          ),
-        },
+              'metrics': const TorrentSnapshot(
+                hash: 'hash',
+                name: 'Metrics release',
+                progress: 0.5,
+                state: 'downloading',
+                savePath: r'D:\Downloads',
+                contentPath: r'D:\Downloads\Metrics release',
+                amountLeft: 10485760,
+                totalSizeBytes: 2147483648,
+                downRateBps: 1048576,
+                upRateBps: 524288,
+                downloadedBytes: 1073741824,
+                uploadedBytes: 536870912,
+                numSeeds: 3,
+                swarmSeeds: 20,
+                numLeechs: 7,
+                swarmLeechs: 42,
+              ),
+            },
       ),
     );
     store.emit(<VideoDownloadJobRow>[
@@ -594,8 +582,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('falls back to durable selected file size without live backend',
-      (WidgetTester tester) async {
+  testWidgets('falls back to durable selected file size without live backend', (
+    WidgetTester tester,
+  ) async {
     final _MemoryJobsStore store = _MemoryJobsStore();
     addTearDown(store.close);
     await _pumpPanel(
@@ -624,8 +613,9 @@ void main() {
   // 删除确认里的「同时删除文件」行由框架 CheckboxListTile 换成了共享 MD3
   // `FushiListItem` + 裸 `Checkbox`（MD3 守卫禁用本地 chrome）。换件必须等价：
   // 勾选框本身可点、整行也可点、默认不删文件、勾选后的取值真的穿到 onDelete。
-  testWidgets('delete confirm passes the delete-files choice through',
-      (WidgetTester tester) async {
+  testWidgets('delete confirm passes the delete-files choice through', (
+    WidgetTester tester,
+  ) async {
     final _MemoryJobsStore store = _MemoryJobsStore();
     addTearDown(store.close);
     final List<bool> deleteCalls = <bool>[];
@@ -656,10 +646,14 @@ void main() {
     }
 
     Finder checkboxRow() => find.byKey(
-          const ValueKey<String>('video-download-job-delete-files-gone'),
-        );
+      const ValueKey<String>('video-download-job-delete-files-gone'),
+    );
     bool checked() => tester
-        .widget<Checkbox>(glassUnwrap<Checkbox>(find.descendant(of: checkboxRow(), matching: find.byType(Checkbox))),)
+        .widget<Checkbox>(
+          glassUnwrap<Checkbox>(
+            find.descendant(of: checkboxRow(), matching: find.byType(Checkbox)),
+          ),
+        )
         .value!;
 
     // ① 不碰勾选框直接确认 ⇒ 默认保留文件。
@@ -731,9 +725,13 @@ void main() {
     await tester.tap(find.text(t.download_task_priority_high).last);
     await tester.pumpAndSettle();
 
-    expect(calls, <(String, int)>[('active', 1)],
-        reason: '菜单选「高」必须原样传 1。用加减实现的话反复点会漂，'
-            '同一档点两次得到不同结果。');
+    expect(
+      calls,
+      <(String, int)>[('active', 1)],
+      reason:
+          '菜单选「高」必须原样传 1。用加减实现的话反复点会漂，'
+          '同一档点两次得到不同结果。',
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -769,8 +767,11 @@ void main() {
   group('sort & search', () {
     test('sortedVideoDownloadJobs 四个维度各按预期排序', () {
       final List<VideoDownloadJobRow> jobs = <VideoDownloadJobRow>[
-        _job(id: 'a', title: 'Beta', progress: 0.2)
-            .copyWith(createdAt: 100, priority: 0),
+        _job(
+          id: 'a',
+          title: 'Beta',
+          progress: 0.2,
+        ).copyWith(createdAt: 100, priority: 0),
         _job(
           id: 'b',
           title: 'Alpha',
@@ -784,19 +785,31 @@ void main() {
           progress: 0.7,
         ).copyWith(createdAt: 75),
       ];
-      List<String> ids(VideoDownloadJobSort sort) =>
-          sortedVideoDownloadJobs(jobs, sort)
-              .map((VideoDownloadJobRow row) => row.jobId)
-              .toList();
+      List<String> ids(VideoDownloadJobSort sort) => sortedVideoDownloadJobs(
+        jobs,
+        sort,
+      ).map((VideoDownloadJobRow row) => row.jobId).toList();
 
-      expect(ids(VideoDownloadJobSort.createdDesc), <String>['a', 'c', 'b'],
-          reason: '默认最新添加在前');
-      expect(ids(VideoDownloadJobSort.titleAsc), <String>['b', 'a', 'c'],
-          reason: '名称字典序');
-      expect(ids(VideoDownloadJobSort.progressDesc), <String>['b', 'c', 'a'],
-          reason: '完成恒 1 排最前，其余按阶段进度');
-      expect(ids(VideoDownloadJobSort.statusGroup), <String>['c', 'a', 'b'],
-          reason: 'needsAttention 最需要用户看、排最前，完成最后');
+      expect(ids(VideoDownloadJobSort.createdDesc), <String>[
+        'a',
+        'c',
+        'b',
+      ], reason: '默认最新添加在前');
+      expect(ids(VideoDownloadJobSort.titleAsc), <String>[
+        'b',
+        'a',
+        'c',
+      ], reason: '名称字典序');
+      expect(ids(VideoDownloadJobSort.progressDesc), <String>[
+        'b',
+        'c',
+        'a',
+      ], reason: '完成恒 1 排最前，其余按阶段进度');
+      expect(ids(VideoDownloadJobSort.statusGroup), <String>[
+        'c',
+        'a',
+        'b',
+      ], reason: 'needsAttention 最需要用户看、排最前，完成最后');
     });
 
     test('filterVideoDownloadJobs 与库页同一套归一化（全角/大小写不挡命中）', () {
@@ -805,8 +818,10 @@ void main() {
         _job(id: 'b', title: 'Other Show'),
       ];
       expect(filterVideoDownloadJobs(jobs, ''), hasLength(2), reason: '空查询不过滤');
-      final List<VideoDownloadJobRow> hit =
-          filterVideoDownloadJobs(jobs, 'fate stay');
+      final List<VideoDownloadJobRow> hit = filterVideoDownloadJobs(
+        jobs,
+        'fate stay',
+      );
       expect(hit, hasLength(1));
       expect(hit.single.jobId, 'a');
       // resourceTitle 也可搜（用户记得住的常是发布名）。
@@ -819,47 +834,52 @@ void main() {
     testWidgets('搜索框过滤任务卡片，无命中给空态', (WidgetTester tester) async {
       final _MemoryJobsStore store = _MemoryJobsStore();
       addTearDown(store.close);
-      await _pumpPanel(
-        tester,
-        panel: VideoDownloadJobsPanel(store: store),
-      );
+      await _pumpPanel(tester, panel: VideoDownloadJobsPanel(store: store));
       store.emit(<VideoDownloadJobRow>[
         _job(id: 'a', title: 'Alpha Show'),
         _job(id: 'b', title: 'Beta Show'),
       ]);
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey<String>('video-download-job-a')),
-          findsOneWidget);
-      expect(find.byKey(const ValueKey<String>('video-download-job-b')),
-          findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('video-download-job-a')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('video-download-job-b')),
+        findsOneWidget,
+      );
 
       await tester.enterText(
         find.byKey(const ValueKey<String>('video-download-job-search')),
         'alpha',
       );
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey<String>('video-download-job-a')),
-          findsOneWidget);
-      expect(find.byKey(const ValueKey<String>('video-download-job-b')),
-          findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('video-download-job-a')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('video-download-job-b')),
+        findsNothing,
+      );
 
       await tester.enterText(
         find.byKey(const ValueKey<String>('video-download-job-search')),
         'zzz-no-match',
       );
       await tester.pumpAndSettle();
-      expect(find.text(t.download_task_no_match), findsOneWidget,
-          reason: '无命中要说清是搜索没命中，不能复用「没有任务」空态');
+      expect(
+        find.text(t.download_task_no_match),
+        findsOneWidget,
+        reason: '无命中要说清是搜索没命中，不能复用「没有任务」空态',
+      );
       expect(tester.takeException(), isNull);
     });
 
     testWidgets('排序菜单切到名称序后卡片顺序变化', (WidgetTester tester) async {
       final _MemoryJobsStore store = _MemoryJobsStore();
       addTearDown(store.close);
-      await _pumpPanel(
-        tester,
-        panel: VideoDownloadJobsPanel(store: store),
-      );
+      await _pumpPanel(tester, panel: VideoDownloadJobsPanel(store: store));
       store.emit(<VideoDownloadJobRow>[
         _job(id: 'new', title: 'Zeta Newest').copyWith(createdAt: 200),
         _job(id: 'old', title: 'Alpha Oldest').copyWith(createdAt: 10),
@@ -877,8 +897,11 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.sort_title).last);
       await tester.pumpAndSettle();
-      expect(topOf('old') < topOf('new'), isTrue,
-          reason: '名称序 Alpha 在 Zeta 之上');
+      expect(
+        topOf('old') < topOf('new'),
+        isTrue,
+        reason: '名称序 Alpha 在 Zeta 之上',
+      );
       expect(tester.takeException(), isNull);
     });
   });
@@ -895,14 +918,17 @@ void main() {
         _job(id: 'manga', title: 'Manga').copyWith(mediaKind: 'manga'),
       ];
       List<String> ids(VideoDownloadJobKindFilter filter) =>
-          filterVideoDownloadJobsByKind(jobs, filter)
-              .map((VideoDownloadJobRow row) => row.jobId)
-              .toList();
+          filterVideoDownloadJobsByKind(
+            jobs,
+            filter,
+          ).map((VideoDownloadJobRow row) => row.jobId).toList();
 
       expect(ids(VideoDownloadJobKindFilter.all), hasLength(7));
-      expect(ids(VideoDownloadJobKindFilter.video),
-          <String>['tv', 'movie', 'legacy'],
-          reason: 'movie/tv 与历史未知值都不是发现域 → 视频；不写白名单免得漏成幽灵');
+      expect(ids(VideoDownloadJobKindFilter.video), <String>[
+        'tv',
+        'movie',
+        'legacy',
+      ], reason: 'movie/tv 与历史未知值都不是发现域 → 视频；不写白名单免得漏成幽灵');
       expect(ids(VideoDownloadJobKindFilter.game), <String>['game']);
       expect(ids(VideoDownloadJobKindFilter.novel), <String>['novel']);
       expect(ids(VideoDownloadJobKindFilter.audiobook), <String>['audiobook']);
@@ -919,19 +945,20 @@ void main() {
     testWidgets('类型菜单选「游戏」只剩游戏任务，切回全部恢复', (WidgetTester tester) async {
       final _MemoryJobsStore store = _MemoryJobsStore();
       addTearDown(store.close);
-      await _pumpPanel(
-        tester,
-        panel: VideoDownloadJobsPanel(store: store),
-      );
+      await _pumpPanel(tester, panel: VideoDownloadJobsPanel(store: store));
       store.emit(<VideoDownloadJobRow>[
         _job(id: 'tv', title: 'Some Show').copyWith(mediaKind: 'tv'),
         _job(id: 'game', title: 'Some Game').copyWith(mediaKind: 'game'),
       ]);
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey<String>('video-download-job-tv')),
-          findsOneWidget);
-      expect(find.byKey(const ValueKey<String>('video-download-job-game')),
-          findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('video-download-job-tv')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('video-download-job-game')),
+        findsOneWidget,
+      );
 
       await tester.tap(
         find.byKey(const ValueKey<String>('video-download-job-kind')),
@@ -939,16 +966,20 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(
         find
-            .text(videoDownloadJobKindFilterLabel(
-              VideoDownloadJobKindFilter.game,
-            ))
+            .text(
+              videoDownloadJobKindFilterLabel(VideoDownloadJobKindFilter.game),
+            )
             .last,
       );
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey<String>('video-download-job-tv')),
-          findsNothing);
-      expect(find.byKey(const ValueKey<String>('video-download-job-game')),
-          findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('video-download-job-tv')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('video-download-job-game')),
+        findsOneWidget,
+      );
 
       // 筛到空：给「没有匹配」空态而不是「没有任务」，工具条仍在可切回。
       await tester.tap(
@@ -957,9 +988,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(
         find
-            .text(videoDownloadJobKindFilterLabel(
-              VideoDownloadJobKindFilter.novel,
-            ))
+            .text(
+              videoDownloadJobKindFilterLabel(VideoDownloadJobKindFilter.novel),
+            )
             .last,
       );
       await tester.pumpAndSettle();
@@ -971,10 +1002,14 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.download_task_kind_all).last);
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey<String>('video-download-job-tv')),
-          findsOneWidget);
-      expect(find.byKey(const ValueKey<String>('video-download-job-game')),
-          findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('video-download-job-tv')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('video-download-job-game')),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     });
 
@@ -988,8 +1023,10 @@ void main() {
       );
       store.emit(<VideoDownloadJobRow>[_job(id: 'a', title: 'A')]);
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey<String>('video-download-job-kind')),
-          findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('video-download-job-kind')),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     });
   });

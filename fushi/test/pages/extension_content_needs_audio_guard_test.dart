@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1005 场景A 守卫：浏览器扩展 `content.js` 注入词典查词结果时，必须在每处
 /// `window.audioSources = ...` 之后同时注入 `window.needsAudio = true;`——否则
@@ -29,11 +29,18 @@ void main() {
 
       final int audioCount = audioInject.allMatches(src).length;
       final int needsCount = needsInject.allMatches(src).length;
-      expect(audioCount, greaterThan(0),
-          reason: 'content.js 应注入 window.audioSources');
-      expect(needsCount, greaterThanOrEqualTo(audioCount),
-          reason: '每处 audioSources 注入都必须伴随 window.needsAudio=true '
-              '（否则扩展制卡永远拿不到重新解析的单词音频，BUG-1005）');
+      expect(
+        audioCount,
+        greaterThan(0),
+        reason: 'content.js 应注入 window.audioSources',
+      );
+      expect(
+        needsCount,
+        greaterThanOrEqualTo(audioCount),
+        reason:
+            '每处 audioSources 注入都必须伴随 window.needsAudio=true '
+            '（否则扩展制卡永远拿不到重新解析的单词音频，BUG-1005）',
+      );
     });
   }
 }

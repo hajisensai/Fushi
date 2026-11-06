@@ -4,6 +4,7 @@ import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/galgame_text_process.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
@@ -25,13 +26,13 @@ void main() {
     required TexthookerService service,
     required Listenable endpoints,
     required EngineHookGalAudioSource engine,
-  }) =>
-      GalHookSessionController(
-        textService: service,
-        isWindows: true,
-        targetWow64Probe: (_) async => false,
-        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
-        engineSourceFactory: ({
+  }) => GalHookSessionController(
+    textService: service,
+    isWindows: true,
+    targetWow64Probe: (_) async => false,
+    injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+    engineSourceFactory:
+        ({
           required int targetPid,
           required String? launchExe,
           required String injectorPath,
@@ -42,12 +43,11 @@ void main() {
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
           String? contentLanguage,
-        }) =>
-            engine,
-        textPollInterval: const Duration(milliseconds: 5),
-        endpointListenable: endpoints,
-        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
-      );
+        }) => engine,
+    textPollInterval: const Duration(milliseconds: 5),
+    endpointListenable: endpoints,
+    endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+  );
 
   Future<List<String>> run({
     required List<GalHookedLine> lines,
@@ -56,8 +56,11 @@ void main() {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     final _LaneEngine engine = _LaneEngine(lines: lines);
-    final GalHookSessionController controller =
-        build(service: service, endpoints: endpoints, engine: engine);
+    final GalHookSessionController controller = build(
+      service: service,
+      endpoints: endpoints,
+      engine: engine,
+    );
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 21, pid: 555, title: 'lane game'),
     );
@@ -68,8 +71,9 @@ void main() {
     for (int i = 0; i < 60; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
-    final List<String> texts =
-        service.entries.map((TexthookerLineEntry e) => e.text).toList();
+    final List<String> texts = service.entries
+        .map((TexthookerLineEntry e) => e.text)
+        .toList();
     await controller.close();
     endpoints.dispose();
     return texts;
@@ -155,16 +159,23 @@ void main() {
   ];
 
   test('TYPEMOON 只消费精确线程，不把同 face 的顶部控制栏并入剧情', () async {
-    final List<String> texts =
-        await run(lines: kTypeMoonLines, selectThreadId: 5);
+    final List<String> texts = await run(
+      lines: kTypeMoonLines,
+      selectThreadId: 5,
+    );
     expect(texts, contains('劇情の台詞'));
-    expect(texts, isNot(contains('前のシーン、選択肢までジャンプします')),
-        reason: 'LunaHook 把完整 ThreadParam 上下文分开，Fushi 必须保持相同边界');
+    expect(
+      texts,
+      isNot(contains('前のシーン、選択肢までジャンプします')),
+      reason: 'LunaHook 把完整 ThreadParam 上下文分开，Fushi 必须保持相同边界',
+    );
   });
 
   test('TYPEMOON 顶部控制栏线程仍可被用户精确选择', () async {
-    final List<String> texts =
-        await run(lines: kTypeMoonLines, selectThreadId: 77);
+    final List<String> texts = await run(
+      lines: kTypeMoonLines,
+      selectThreadId: 77,
+    );
     expect(texts, contains('前のシーン、選択肢までジャンプします'));
     expect(texts, isNot(contains('劇情の台詞')));
   });
@@ -173,8 +184,11 @@ void main() {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     final _LaneEngine engine = _LaneEngine(lines: kLines);
-    final GalHookSessionController controller =
-        build(service: service, endpoints: endpoints, engine: engine);
+    final GalHookSessionController controller = build(
+      service: service,
+      endpoints: endpoints,
+      engine: engine,
+    );
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 22, pid: 556, title: 'lane game'),
     );
@@ -186,12 +200,16 @@ void main() {
 
     // 用户这时才挑中那条线程——漏掉的台词必须回得来，而不是要求他重打一遍剧情。
     await controller.selectTextThread(5);
-    final List<String> texts =
-        service.entries.map((TexthookerLineEntry e) => e.text).toList();
+    final List<String> texts = service.entries
+        .map((TexthookerLineEntry e) => e.text)
+        .toList();
     expect(texts, contains('選定スレッドの台詞'));
     expect(texts, contains('同じフックの別呼び出し点'));
-    expect(texts, isNot(contains('メニュー用スレッドの文字')),
-        reason: '回捞只捞选定线程那条道，不是把所有道倒进来');
+    expect(
+      texts,
+      isNot(contains('メニュー用スレッドの文字')),
+      reason: '回捞只捞选定线程那条道，不是把所有道倒进来',
+    );
     await controller.close();
     endpoints.dispose();
   });
@@ -200,8 +218,11 @@ void main() {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     final _LaneEngine engine = _LaneEngine(lines: kTypeMoonLines);
-    final GalHookSessionController controller =
-        build(service: service, endpoints: endpoints, engine: engine);
+    final GalHookSessionController controller = build(
+      service: service,
+      endpoints: endpoints,
+      engine: engine,
+    );
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 24, pid: 558, title: 'typemoon game'),
     );
@@ -211,11 +232,15 @@ void main() {
     expect(service.entries, isEmpty);
 
     await controller.selectTextThread(5);
-    final List<String> texts =
-        service.entries.map((TexthookerLineEntry e) => e.text).toList();
+    final List<String> texts = service.entries
+        .map((TexthookerLineEntry e) => e.text)
+        .toList();
     expect(texts, contains('劇情の台詞'));
-    expect(texts, isNot(contains('前のシーン、選択肢までジャンプします')),
-        reason: '历史恢复必须沿用实时消费的 exact-context 判据');
+    expect(
+      texts,
+      isNot(contains('前のシーン、選択肢までジャンプします')),
+      reason: '历史恢复必须沿用实时消费的 exact-context 判据',
+    );
     await controller.close();
     endpoints.dispose();
   });
@@ -274,8 +299,11 @@ void main() {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     final _LaneEngine engine = _LaneEngine(lines: lines);
-    final GalHookSessionController controller =
-        build(service: service, endpoints: endpoints, engine: engine);
+    final GalHookSessionController controller = build(
+      service: service,
+      endpoints: endpoints,
+      engine: engine,
+    );
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 23, pid: 557, title: 'lane game'),
     );
@@ -321,7 +349,8 @@ void main() {
     expect(
       result.workbench,
       contains('同じフックの別呼び出し点'),
-      reason: '发布期只做 key 全等的话，这一句连同它之后整段台词都会被丢在发布期——'
+      reason:
+          '发布期只做 key 全等的话，这一句连同它之后整段台词都会被丢在发布期——'
           '采集期放行了、正文却空白，正是「预览有字选进去没文字」的现场',
     );
     expect(
@@ -340,12 +369,126 @@ void main() {
     expect(result.workbench, isNot(contains('メニュー用スレッドの文字')));
     expect(result.overlay, isNot(contains('メニュー用スレッドの文字')));
   });
+
+  // ── 规则过滤页预览样本 = 字幕的真实输入（BUG-4029）──────────────────────────
+  //
+  // 预览旧样本是选定线程 native 预览槽里的最近一次 Output。字幕吃的却是消费期放行的
+  // 全部行（含同 hook 面的兄弟线程）再经渐进折叠——两条路径同一管线、不同输入，于是
+  // 「规则页结果正常、字幕丢句首「 / 先重复上一句再出新句」。这里钉死：样本过管线后
+  // 必须逐字等于字幕当前行。
+  Future<
+    ({
+      String subtitle,
+      String? processInput,
+      String? selectedPreview,
+      GalTextProcessPipeline pipeline,
+    })
+  >
+  runSample(List<GalHookedLine> lines) async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _LaneEngine engine = _LaneEngine(lines: lines);
+    final GalHookSessionController controller = build(
+      service: service,
+      endpoints: endpoints,
+      engine: engine,
+    );
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 25, pid: 559, title: 'quote game'),
+    );
+    for (int i = 0; i < 20; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    await controller.selectTextThread(5, threadKey: lines.first.textThreadKey);
+    for (int i = 0; i < 60; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    final String subtitle = controller.selectedSessionLines.last.text;
+    final String? processInput = controller.selectedLineProcessInput;
+    String? selectedPreview;
+    for (final TexthookerTextThread thread in controller.textThreads) {
+      if (thread.nativeThreadId == 5) selectedPreview = thread.previewText;
+    }
+    final GalTextProcessPipeline pipeline = controller.textProcessPipeline;
+    await controller.close();
+    endpoints.dispose();
+    return (
+      subtitle: subtitle,
+      processInput: processInput,
+      selectedPreview: selectedPreview,
+      pipeline: pipeline,
+    );
+  }
+
+  const String kQuoted = '「それこそ純朴そうな小娘の面倒を見てやったりもしたのに」';
+  const String kNext = '「アンタだってその１人なんだよ。わかってんのかい？」';
+
+  test('同 hook 面兄弟线程送来缺句首「的一行：预览样本取字幕的那份输入', () async {
+    final result = await runSample(const <GalHookedLine>[
+      GalHookedLine(
+        seq: 1,
+        timestampMs: 1000,
+        text: kQuoted,
+        threadId: 5,
+        faceId: kFace,
+        hookName: 'EmbedKrkrZ',
+      ),
+      GalHookedLine(
+        seq: 2,
+        timestampMs: 1010,
+        text: 'それこそ純朴そうな小娘の面倒を見てやったりもしたのに」',
+        threadId: 6,
+        faceId: kFace,
+        hookName: 'EmbedKrkrZ',
+      ),
+    ]);
+    // 症状一：字幕丢了句首「，而选定线程的预览槽仍是带「的那句。
+    expect(result.subtitle, isNot(startsWith('「')));
+    expect(result.selectedPreview, kQuoted);
+    expect(
+      result.pipeline.apply(result.selectedPreview!),
+      isNot(result.subtitle),
+      reason: '旧样本（预览槽）与字幕不是同一输入——这正是「规则页正常、字幕不对」',
+    );
+    expect(result.processInput, isNotNull);
+    expect(result.pipeline.apply(result.processInput!), result.subtitle);
+  });
+
+  test('累积快照被渐进折叠留在字幕上：预览样本取那份更长的旧快照', () async {
+    const String accumulated =
+        'れこそ純朴そうな小娘の面倒を見てやったりもしたのに」'
+        '$kQuoted$kQuoted$kNext';
+    final result = await runSample(const <GalHookedLine>[
+      GalHookedLine(
+        seq: 1,
+        timestampMs: 1000,
+        text: accumulated,
+        threadId: 5,
+        faceId: kFace,
+        hookName: 'EmbedKrkrZ',
+      ),
+      GalHookedLine(
+        seq: 2,
+        timestampMs: 1010,
+        text: kNext,
+        threadId: 5,
+        faceId: kFace,
+        hookName: 'EmbedKrkrZ',
+      ),
+    ]);
+    // 症状二：新句是旧快照的后缀，被折叠进去，字幕先重复上一句再出新句。
+    expect(result.subtitle, accumulated);
+    expect(result.selectedPreview, kNext);
+    expect(result.pipeline.apply(result.selectedPreview!), isNot(accumulated));
+    expect(result.processInput, accumulated);
+    expect(result.pipeline.apply(result.processInput!), result.subtitle);
+  });
 }
 
 /// 只回一批固定文本行的桩引擎：本测试只关心「哪些行会被消费」。
 class _LaneEngine extends EngineHookGalAudioSource {
   _LaneEngine({required this.lines})
-      : super(targetPid: 0, launchExe: null, injectorPath: 'fake.exe');
+    : super(targetPid: 0, launchExe: null, injectorPath: 'fake.exe');
 
   final List<GalHookedLine> lines;
   int _pollCalls = 0;
@@ -355,11 +498,11 @@ class _LaneEngine extends EngineHookGalAudioSource {
 
   @override
   Future<PcmFormat?> start() async => const PcmFormat(
-        sampleRate: 44100,
-        channels: 1,
-        bitsPerSample: 16,
-        isFloat: false,
-      );
+    sampleRate: 44100,
+    channels: 1,
+    bitsPerSample: 16,
+    isFloat: false,
+  );
 
   @override
   Future<void> stop() async {}

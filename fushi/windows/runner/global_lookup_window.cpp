@@ -1,5 +1,6 @@
 #include "global_lookup_window.h"
 
+#include <bcrypt.h>  // Fushi bridge lock: BCryptGenRandom token
 #include <dwmapi.h>
 #include <shlwapi.h>
 #include <wincodec.h>  // WIC：CapturePreview 压缩流 → BGRA8 直通 alpha 位图
@@ -347,7 +348,23 @@ bool ScriptResultIsTrue(HRESULT error_code, LPCWSTR result_json) {
 //     defaulting to application/octet-stream.
 // The page only references dictmedia:// for the dictionary's own <link>
 // stylesheets, so text/css is the faithful type; image:// covers gaiji/<img>.
+// 大结果词条的取回地址（Dart `GlobalLookupEntriesStore.urlPrefix`，两处字面量由
+// fushi/test/lookup/global_lookup_entries_fetch_test.dart 钉成一致）。卡片 iframe 的
+// 文档在 https://hibiki.popup，这是跨源 fetch：响应必须带
+// Access-Control-Allow-Origin，且一次性字节不进 HTTP 缓存。
+constexpr char kGlobalLookupEntriesUrlPrefix[] =
+    "https://fushi.local/popup-entries/glookup/";
+
+bool IsGlobalLookupEntriesUrl(const std::string& url) {
+  return url.rfind(kGlobalLookupEntriesUrlPrefix, 0) == 0;
+}
+
 std::wstring MediaContentTypeHeader(const std::string& url) {
+  if (IsGlobalLookupEntriesUrl(url)) {
+    return L"Content-Type: application/json; charset=utf-8\r\n"
+           L"Access-Control-Allow-Origin: *\r\n"
+           L"Cache-Control: no-store";
+  }
   const bool is_dictmedia = url.rfind("dictmedia://", 0) == 0;
   if (is_dictmedia) {
     return L"Content-Type: text/css";
@@ -1729,6 +1746,11 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
   if (!BeginGeometryRequest(geometry_epoch)) {
     return;
   }
+  // 游戏内嵌查词耗时诊断：Dart 的 revealStack 何时真正到达平台线程、对应脚本何时在
+  // 页面里执行完，两个 QPC 微秒读数与 gal-latency 行同一时钟。
+  const uint64_t resize_enter_qpc_us = fushi_voice_hook::QpcMicrosNow();
+  NativeGlog("gal resize enter epoch=" + std::to_string(geometry_epoch) +
+             " qpc=" + std::to_string(resize_enter_qpc_us));
   // BUG-2921 — 根卡实测高度随每次 revealStack 到达（0 = 旧 Dart 未上报），贴字形时用它
   // 而不是 union 高度。
   if (root_height > 0) {
@@ -1906,7 +1928,17 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
   // animation frames (with a bounded fallback when an off-screen WebView2
   // suspends rAF); WebMessageReceived commits the matching HRGN/shadow
   // immediately before forwarding that paint-ready ack to Dart.
-  const HRESULT shift_hr = webview_->ExecuteScript(shift_script.c_str(), nullptr);
+  const HRESULT shift_hr = webview_->ExecuteScript(
+      shift_script.c_str(),
+      Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+          [geometry_epoch, resize_enter_qpc_us](HRESULT, LPCWSTR) -> HRESULT {
+            const uint64_t done = fushi_voice_hook::QpcMicrosNow();
+            NativeGlog("gal resize script done epoch=" +
+                       std::to_string(geometry_epoch) + " after_us=" +
+                       std::to_string(done - resize_enter_qpc_us));
+            return S_OK;
+          })
+          .Get());
   if (FAILED(shift_hr)) {
     ReportOverlayError("gal layer-shift ExecuteScript call failed", shift_hr);
   }
@@ -3143,6 +3175,24 @@ void GlobalLookupWindow::ConfigureWebView() {
           .Get(),
       nullptr);
 
+  // Fushi bridge lock — a (re)configured surface starts unlocked, and every new
+  // TOP-LEVEL document commit (Navigate, BUG-693 Reload, ...) unlocks again.
+  // ContentLoading is top-level only and skips same-document navigations; the
+  // token is deliberately NOT cleared on NavigationStarting, because a started
+  // navigation can still be cancelled while the locked document lives on.
+  bridge_lock_token_.clear();
+  bridge_lock_source_.clear();
+  webview_->add_ContentLoading(
+      Callback<ICoreWebView2ContentLoadingEventHandler>(
+          [this](ICoreWebView2*,
+                 ICoreWebView2ContentLoadingEventArgs*) -> HRESULT {
+            bridge_lock_token_.clear();
+            bridge_lock_source_.clear();
+            return S_OK;
+          })
+          .Get(),
+      nullptr);
+
   // Inject the bridge adapter at document start so popup.js's
   // window.flutter_inappwebview.callHandler maps to chrome.webview.postMessage.
   std::wstring adapter = LoadAdapterScript();
@@ -3249,9 +3299,33 @@ void GlobalLookupWindow::ConfigureWebView() {
       Callback<ICoreWebView2WebMessageReceivedEventHandler>(
           [this](ICoreWebView2*,
                  ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
+            // Fushi bridge lock — this event only carries the TOP-LEVEL
+            // document's chrome.webview.postMessage (an iframe's postMessage
+            // raises ICoreWebView2Frame::WebMessageReceived, which this window
+            // never subscribes). popup.html iframes reach native only through
+            // global_lookup_host.js re-posting on the top document, so Source
+            // is always the host document; get_Source is still checked as the
+            // second gate next to the token (spec item 7).
+            std::wstring message_source;
+            {
+              wil::unique_cotaskmem_string source_raw;
+              if (SUCCEEDED(args->get_Source(&source_raw)) && source_raw) {
+                message_source = source_raw.get();
+              }
+            }
             wil::unique_cotaskmem_string json;
             if (SUCCEEDED(args->get_WebMessageAsJson(&json))) {
               std::string body = WideToUtf8(json.get());
+              std::string bridge_handler;
+              if (ReadTopLevelJsonString(body, "handler", &bridge_handler) &&
+                  bridge_handler == "_fushiLockBridge") {
+                // Handled natively, never forwarded to Dart.
+                HandleBridgeLockRequest(message_source);
+                return S_OK;
+              }
+              if (!AuthorizeLockedBridgeMessage(message_source, &body)) {
+                return S_OK;
+              }
               // Phase C — host-chrome window resize. The client area is fully
               // covered by the WebView2 child HWND, so WM_NCHITTEST never
               // reaches this window; the root card grip posts
@@ -3400,7 +3474,13 @@ void GlobalLookupWindow::ConfigureWebView() {
                   // Dart engine answers from the SRS store (or null / false
                   // while the review module is off).
                   body.find("\"srsTermStatus\"") != std::string::npos ||
-                  body.find("\"srsOpenCard\"") != std::string::npos;
+                  body.find("\"srsOpenCard\"") != std::string::npos ||
+                  body.find("\"srsTermStatusBatch\"") != std::string::npos ||
+                  // "Sentences from your library" (cross-media links L4): the
+                  // main Dart engine queries the local corpus (null while the
+                  // feature is off) and opens the origin in the main window.
+                  body.find("\"librarySentences\"") != std::string::npos ||
+                  body.find("\"librarySentenceOpen\"") != std::string::npos;
               const std::string key = "\"__bridgeId\":";
               size_t pos = body.find(key);
               if (!deferred && pos != std::string::npos) {
@@ -3443,7 +3523,9 @@ void GlobalLookupWindow::ConfigureWebView() {
             // the virtual host.
             const bool is_image = url.rfind("image://", 0) == 0;
             const bool is_dictmedia = url.rfind("dictmedia://", 0) == 0;
-            if (!is_image && !is_dictmedia) {
+            // 大结果词条的取回（in-app P1-B 的应用外版本）走同一个 Dart 解析器。
+            const bool is_entries = IsGlobalLookupEntriesUrl(url);
+            if (!is_image && !is_dictmedia && !is_entries) {
               return S_OK;  // Let the virtual host serve popup assets.
             }
             if (!media_resolver_) {
@@ -3588,6 +3670,119 @@ void GlobalLookupWindow::RecoverDeadWebView(const std::string& replay_script) {
   if (hwnd_ != nullptr) {
     EnsureWebView();
   }
+}
+
+namespace {
+
+// The only document allowed to lock (and then talk to) this bridge: the
+// virtual-host page ConfigureWebView navigates to.
+constexpr wchar_t kGlobalLookupHostDocumentUrl[] =
+    L"https://hibiki.popup/global_lookup_host.html";
+constexpr char kBridgeTokenField[] = "__fushiBridgeToken";
+
+bool IsExpectedBridgeLockSource(const std::wstring& source) {
+  const std::wstring expected(kGlobalLookupHostDocumentUrl);
+  if (source.size() < expected.size() ||
+      source.compare(0, expected.size(), expected) != 0) {
+    return false;
+  }
+  // Exact document, optionally followed by a query / fragment only.
+  return source.size() == expected.size() ||
+         source[expected.size()] == L'?' || source[expected.size()] == L'#';
+}
+
+// >=128 bit random token: 32 bytes from the system-preferred RNG, lower hex.
+bool GenerateBridgeLockToken(std::string* out) {
+  unsigned char bytes[32] = {};
+  if (!BCRYPT_SUCCESS(BCryptGenRandom(nullptr, bytes,
+                                      static_cast<ULONG>(sizeof(bytes)),
+                                      BCRYPT_USE_SYSTEM_PREFERRED_RNG))) {
+    return false;
+  }
+  static const char kHex[] = "0123456789abcdef";
+  std::string token;
+  token.reserve(sizeof(bytes) * 2);
+  for (unsigned char b : bytes) {
+    token.push_back(kHex[b >> 4]);
+    token.push_back(kHex[b & 0x0F]);
+  }
+  SecureZeroMemory(bytes, sizeof(bytes));
+  *out = std::move(token);
+  return true;
+}
+
+bool BridgeTokensEqual(const std::string& a, const std::string& b) {
+  if (a.size() != b.size()) {
+    return false;
+  }
+  unsigned char diff = 0;
+  for (size_t i = 0; i < a.size(); ++i) {
+    diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
+  }
+  return diff == 0;
+}
+
+}  // namespace
+
+// Fushi bridge lock — global_lookup_host.js forwards a popup document's
+// callHandler('_fushiLockBridge') as { handler: '_fushiLockBridge' } from the
+// top-level host document. Grant once per top-level document; the token goes
+// back ONLY to the host closure via window.__fushiBridgeLockResult (the host
+// then stamps it on every outbound message and answers the popup realm).
+void GlobalLookupWindow::HandleBridgeLockRequest(const std::wstring& source) {
+  if (!webview_) {
+    return;
+  }
+  std::string token;
+  bool granted = false;
+  if (!bridge_lock_token_.empty()) {
+    NativeGlog("[bridge-lock][warn] refused _fushiLockBridge: already locked");
+  } else if (!IsExpectedBridgeLockSource(source)) {
+    NativeGlog("[bridge-lock][warn] refused _fushiLockBridge from source=" +
+               WideToUtf8(source));
+  } else if (!GenerateBridgeLockToken(&token)) {
+    NativeGlog("[bridge-lock][warn] refused _fushiLockBridge: "
+               "BCryptGenRandom failed");
+  } else {
+    bridge_lock_token_ = token;
+    bridge_lock_source_ = source;
+    granted = true;
+  }
+  // The token is lower-case hex, safe to splice as a JS string literal.
+  std::wstring script =
+      L"window.__fushiBridgeLockResult && window.__fushiBridgeLockResult(" +
+      (granted ? L"'" + Utf8ToWide(token) + L"'" : std::wstring(L"false")) +
+      L");";
+  webview_->ExecuteScript(script.c_str(), nullptr);
+}
+
+bool GlobalLookupWindow::AuthorizeLockedBridgeMessage(const std::wstring& source,
+                                                      std::string* body) {
+  if (bridge_lock_token_.empty()) {
+    return true;  // Unlocked: legacy behaviour, byte-for-byte.
+  }
+  std::string token;
+  if (source != bridge_lock_source_ ||
+      !ReadTopLevelJsonString(*body, kBridgeTokenField, &token) ||
+      !BridgeTokensEqual(token, bridge_lock_token_)) {
+    NativeGlog("[bridge-lock][warn] dropped message on locked bridge "
+               "(missing/invalid token or unexpected source=" +
+               WideToUtf8(source) + ")");
+    return false;
+  }
+  // The host puts the token FIRST; strip it so Dart (and its message log)
+  // never sees it. Any other layout is still authorized, just not stripped.
+  const std::string prefix =
+      std::string("{\"") + kBridgeTokenField + "\":\"" + token + "\"";
+  if (body->compare(0, prefix.size(), prefix) == 0) {
+    const size_t next = prefix.size();
+    if (next < body->size() && (*body)[next] == ',') {
+      *body = "{" + body->substr(next + 1);
+    } else if (next < body->size() && (*body)[next] == '}') {
+      *body = "{" + body->substr(next);
+    }
+  }
+  return true;
 }
 
 void GlobalLookupWindow::ResolveBridge(int64_t id,
@@ -4082,6 +4277,14 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
         return 0;
       }
       return DefWindowProc(hwnd_, message, wparam, lparam);
+    case fushi::kLowLevelKeyboardCopyMessage:
+      // 反馈 4c0IeCpSjb — 游戏内查词卡在屏时键盘护盾吞掉了 Ctrl+C（游戏看不到 Ctrl，
+      // 不再触发快进），热键因此收不到；改由钩子线程投这条消息，走同一个复制出口。
+      // 没有选区时与热键未注册时一致：什么都不做。
+      if (selection_present_ && IsShowing()) {
+        CopyOverlaySelectionToClipboard();
+      }
+      return 0;
     case kShowContextMenuMessage:
       ShowPendingContextMenu();
       return 0;

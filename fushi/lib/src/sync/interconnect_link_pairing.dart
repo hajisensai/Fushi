@@ -37,8 +37,9 @@ final class InterconnectLinkPairingFailed
 /// 链接能否并入已有的同 hostId 组：组不存在 → 能；存在 → 双方都有证书指纹且
 /// 相等才能（指纹 = 那台 host 的私钥，冒名者给不出同一个）。
 bool _linkMayJoinHostGroup(List<FushiClientUrl> urls, FushiPairLink link) {
-  final Iterable<FushiClientUrl> group =
-      urls.where((FushiClientUrl u) => u.hostId == link.hostId);
+  final Iterable<FushiClientUrl> group = urls.where(
+    (FushiClientUrl u) => u.hostId == link.hostId,
+  );
   if (group.isEmpty) return true;
   final String? linkFp = link.fingerprint;
   if (linkFp == null || linkFp.isEmpty) return false;
@@ -119,7 +120,13 @@ Future<InterconnectLinkPairingResult> pairWithInterconnectLink({
         fingerprint: fingerprint,
         deviceName: link.deviceName,
       );
-      await repo.setFushiClientTokenForUrl(chosen.url, token);
+      // 53NT7G_tSO：新 token 同步到这台 host 的全部地址（重新配对作废了旧 token）。
+      // 归组判据同下方 merge：指纹对不上就只改这一行。
+      await repo.setFushiClientTokenForUrl(
+        chosen.url,
+        token,
+        hostId: link.hostId,
+      );
       await repo.updateFushiClientUrls((List<FushiClientUrl> urls) {
         // hostId 是公开值：链接可以随便声称自己是某台已配对 host。只有证书指纹
         // 对得上（同一把私钥）才并入那一组；否则只按普通配对留下这一条地址——

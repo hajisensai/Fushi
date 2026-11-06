@@ -82,8 +82,7 @@ class _RecordingService extends AnkiConnectService {
     required String firstFieldName,
     required String firstFieldValue,
     AnkiDuplicateScope scope = AnkiDuplicateScope.deck,
-  }) async =>
-      false;
+  }) async => false;
 
   @override
   Future<void> updateNoteFields(int noteId, Map<String, String> fields) async {
@@ -92,10 +91,8 @@ class _RecordingService extends AnkiConnectService {
 }
 
 class _ConfiguredRepo extends AnkiConnectRepository {
-  _ConfiguredRepo({
-    required AnkiConnectService service,
-    required this.settings,
-  }) : super(service: service);
+  _ConfiguredRepo({required AnkiConnectService service, required this.settings})
+    : super(service: service);
 
   final AnkiSettings settings;
 
@@ -104,19 +101,22 @@ class _ConfiguredRepo extends AnkiConnectRepository {
 }
 
 AnkiSettings _settings() => const AnkiSettings(
-      selectedDeckId: 1,
-      selectedNoteTypeId: 2,
-      availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
-      availableNoteTypes: <AnkiNoteType>[
-        AnkiNoteType(
-            id: 2, name: 'Fushi', fields: <String>['Expression', 'Reading']),
-      ],
-      fieldMappings: <String, String>{
-        'Expression': '{expression}',
-        'Reading': '{reading}',
-      },
-      allowDupes: true,
-    );
+  selectedDeckId: 1,
+  selectedNoteTypeId: 2,
+  availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
+  availableNoteTypes: <AnkiNoteType>[
+    AnkiNoteType(
+      id: 2,
+      name: 'Fushi',
+      fields: <String>['Expression', 'Reading'],
+    ),
+  ],
+  fieldMappings: <String, String>{
+    'Expression': '{expression}',
+    'Reading': '{reading}',
+  },
+  allowDupes: true,
+);
 
 const String _payload = '{"expression":"勉強","reading":"べんきょう"}';
 
@@ -130,8 +130,10 @@ void main() {
     Object? result,
     Object? error,
   }) {
-    final String responseBody =
-        jsonEncode(<String, Object?>{'result': result, 'error': error});
+    final String responseBody = jsonEncode(<String, Object?>{
+      'result': result,
+      'error': error,
+    });
     final client = MockClient((http.Request request) async {
       sink.add(request);
       return http.Response(
@@ -141,7 +143,8 @@ void main() {
       );
     });
     return body(
-        AnkiConnectService(host: '127.0.0.1', port: 8765, client: client));
+      AnkiConnectService(host: '127.0.0.1', port: 8765, client: client),
+    );
   }
 
   Map<String, dynamic> bodyOf(http.Request request) =>
@@ -167,10 +170,10 @@ void main() {
     test('posts the updateNoteFields action with {note:{id,fields}}', () async {
       final issued = <http.Request>[];
       await withMock(
-        (s) => s.updateNoteFields(
-          555,
-          const <String, String>{'Expression': '勉強', 'Reading': 'べんきょう'},
-        ),
+        (s) => s.updateNoteFields(555, const <String, String>{
+          'Expression': '勉強',
+          'Reading': 'べんきょう',
+        }),
         sink: issued,
         result: null, // updateNoteFields returns null on success
       );
@@ -179,8 +182,10 @@ void main() {
       expect(body['version'], 6);
       final note = (body['params'] as Map)['note'] as Map;
       expect(note['id'], 555);
-      expect(note['fields'],
-          <String, dynamic>{'Expression': '勉強', 'Reading': 'べんきょう'});
+      expect(note['fields'], <String, dynamic>{
+        'Expression': '勉強',
+        'Reading': 'べんきょう',
+      });
     });
 
     test('propagates an AnkiConnect error', () async {
@@ -258,117 +263,132 @@ void main() {
       expect(outcome.noteId, 12345);
     });
 
-    test('a null backend id surfaces as noteId == null (still success)',
-        () async {
-      final service = _RecordingService(addNoteId: null);
-      final repo = _ConfiguredRepo(service: service, settings: _settings());
+    test(
+      'a null backend id surfaces as noteId == null (still success)',
+      () async {
+        final service = _RecordingService(addNoteId: null);
+        final repo = _ConfiguredRepo(service: service, settings: _settings());
 
-      final MineOutcome outcome = await repo.mineEntry(
-        rawPayloadJson: _payload,
-        context: const AnkiMiningContext(sentence: ''),
-      );
+        final MineOutcome outcome = await repo.mineEntry(
+          rawPayloadJson: _payload,
+          context: const AnkiMiningContext(sentence: ''),
+        );
 
-      expect(outcome.result, MineResult.success);
-      expect(outcome.noteId, isNull);
-    });
+        expect(outcome.result, MineResult.success);
+        expect(outcome.noteId, isNull);
+      },
+    );
   });
 
-  group('updateMinedNote reuses the field render (task C1, repository layer)',
-      () {
-    test('source-less overwrite preserves the old MiscInfo return link',
+  group(
+    'updateMinedNote reuses the field render (task C1, repository layer)',
+    () {
+      test(
+        'source-less overwrite preserves the old MiscInfo return link',
         () async {
-      final CardSourceLink link = CardSourceLink(
-        kind: CardSourceKind.book,
-        uid: 'book-uid',
-        sourceId: '12345678-1234-4234-8234-123456789abc',
-        chapterIndex: 3,
-        charOffset: 456,
-        charLength: 8,
+          final CardSourceLink link = CardSourceLink(
+            kind: CardSourceKind.book,
+            uid: 'book-uid',
+            sourceId: '12345678-1234-4234-8234-123456789abc',
+            chapterIndex: 3,
+            charOffset: 456,
+            charLength: 8,
+          );
+          final _RecordingService service = _RecordingService()
+            ..existingFields = <String, String>{
+              'Expression': 'old',
+              'MiscInfo': 'Old title ${link.toHtml()}',
+            };
+          final _ConfiguredRepo repo = _ConfiguredRepo(
+            service: service,
+            settings: _settings().copyWith(
+              fieldMappings: <String, String>{
+                'Expression': '{expression}',
+                'MiscInfo': LapisNoteType.defaultFieldMappings['MiscInfo']!,
+              },
+            ),
+          );
+          final MineOutcome outcome = await repo.updateMinedNote(
+            noteId: 888,
+            rawPayloadJson: _payload,
+            context: const AnkiMiningContext(
+              sentence: '',
+              documentTitle: 'Updated title',
+            ),
+          );
+          expect(outcome.result, MineResult.success);
+          final String info = service.updateCalls.single.fields['MiscInfo']!;
+          expect(CardSourceLink.fromHtml(info).single.toUri(), link.toUri());
+          expect(info, link.toHtml(label: 'Updated title'));
+          expect(service.addNoteCalls, isEmpty);
+        },
       );
-      final _RecordingService service = _RecordingService()
-        ..existingFields = <String, String>{
-          'Expression': 'old',
-          'MiscInfo': 'Old title ${link.toHtml()}',
-        };
-      final _ConfiguredRepo repo = _ConfiguredRepo(
-        service: service,
-        settings: _settings().copyWith(
-          fieldMappings: <String, String>{
-            'Expression': '{expression}',
-            'MiscInfo': LapisNoteType.defaultFieldMappings['MiscInfo']!,
-          },
-        ),
-      );
-      final MineOutcome outcome = await repo.updateMinedNote(
-        noteId: 888,
-        rawPayloadJson: _payload,
-        context: const AnkiMiningContext(
-          sentence: '',
-          documentTitle: 'Updated title',
-        ),
-      );
-      expect(outcome.result, MineResult.success);
-      final String info = service.updateCalls.single.fields['MiscInfo']!;
-      expect(CardSourceLink.fromHtml(info).single.toUri(), link.toUri());
-      expect(info, link.toHtml(label: 'Updated title'));
-      expect(service.addNoteCalls, isEmpty);
-    });
 
-    test('renders fields like mineEntry and calls updateNoteFields by id',
+      test(
+        'renders fields like mineEntry and calls updateNoteFields by id',
         () async {
-      final service = _RecordingService();
-      final repo = _ConfiguredRepo(service: service, settings: _settings());
+          final service = _RecordingService();
+          final repo = _ConfiguredRepo(service: service, settings: _settings());
 
-      final MineOutcome outcome = await repo.updateMinedNote(
-        noteId: 888,
-        rawPayloadJson: _payload,
-        context: const AnkiMiningContext(sentence: ''),
+          final MineOutcome outcome = await repo.updateMinedNote(
+            noteId: 888,
+            rawPayloadJson: _payload,
+            context: const AnkiMiningContext(sentence: ''),
+          );
+
+          expect(outcome.result, MineResult.success);
+          expect(outcome.noteId, 888);
+          expect(service.updateCalls, hasLength(1));
+          final call = service.updateCalls.single;
+          expect(call.noteId, 888);
+          // Same field rendering pipeline as mineEntry (handlebar mappings applied).
+          expect(call.fields, <String, String>{
+            'Expression': '勉強',
+            'Reading': 'べんきょう',
+          });
+        },
       );
 
-      expect(outcome.result, MineResult.success);
-      expect(outcome.noteId, 888);
-      expect(service.updateCalls, hasLength(1));
-      final call = service.updateCalls.single;
-      expect(call.noteId, 888);
-      // Same field rendering pipeline as mineEntry (handlebar mappings applied).
-      expect(call.fields,
-          <String, String>{'Expression': '勉強', 'Reading': 'べんきょう'});
-    });
+      test('refuses to clear an existing card when nothing renders', () async {
+        final service = _RecordingService();
+        // No field mappings -> buildMinedFields renders nothing.
+        final repo = _ConfiguredRepo(
+          service: service,
+          settings: _settings().copyWith(
+            fieldMappings: const <String, String>{},
+          ),
+        );
 
-    test('refuses to clear an existing card when nothing renders', () async {
-      final service = _RecordingService();
-      // No field mappings -> buildMinedFields renders nothing.
-      final repo = _ConfiguredRepo(
-        service: service,
-        settings: _settings().copyWith(fieldMappings: const <String, String>{}),
-      );
+        final MineOutcome outcome = await repo.updateMinedNote(
+          noteId: 1,
+          rawPayloadJson: _payload,
+          context: const AnkiMiningContext(sentence: ''),
+        );
 
-      final MineOutcome outcome = await repo.updateMinedNote(
-        noteId: 1,
-        rawPayloadJson: _payload,
-        context: const AnkiMiningContext(sentence: ''),
-      );
+        expect(outcome.result, MineResult.error);
+        expect(outcome.errorDetail, contains('empty'));
+        expect(
+          service.updateCalls,
+          isEmpty,
+          reason: 'must not update with an empty field set',
+        );
+      });
 
-      expect(outcome.result, MineResult.error);
-      expect(outcome.errorDetail, contains('empty'));
-      expect(service.updateCalls, isEmpty,
-          reason: 'must not update with an empty field set');
-    });
+      test('maps an invalid payload to error without throwing', () async {
+        final service = _RecordingService();
+        final repo = _ConfiguredRepo(service: service, settings: _settings());
 
-    test('maps an invalid payload to error without throwing', () async {
-      final service = _RecordingService();
-      final repo = _ConfiguredRepo(service: service, settings: _settings());
+        final MineOutcome outcome = await repo.updateMinedNote(
+          noteId: 1,
+          rawPayloadJson: 'not json',
+          context: const AnkiMiningContext(sentence: ''),
+        );
 
-      final MineOutcome outcome = await repo.updateMinedNote(
-        noteId: 1,
-        rawPayloadJson: 'not json',
-        context: const AnkiMiningContext(sentence: ''),
-      );
-
-      expect(outcome.result, MineResult.error);
-      expect(service.updateCalls, isEmpty);
-    });
-  });
+        expect(outcome.result, MineResult.error);
+        expect(service.updateCalls, isEmpty);
+      });
+    },
+  );
 
   // BUG-858: overwrite must integral-replace every mapped field, including a
   // {sentence} field that renders empty (stale-selection at overwrite time).
@@ -377,50 +397,60 @@ void main() {
   // the stale sentence), while NEW cards (mineEntry) still drop empties.
   group('BUG-858: overwrite integral-replaces mapped fields', () {
     AnkiSettings settingsWithSentence() => const AnkiSettings(
-          selectedDeckId: 1,
-          selectedNoteTypeId: 2,
-          availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
-          availableNoteTypes: <AnkiNoteType>[
-            AnkiNoteType(
-                id: 2,
-                name: 'Fushi',
-                fields: <String>['Expression', 'Sentence']),
-          ],
-          fieldMappings: <String, String>{
-            'Expression': '{expression}',
-            'Sentence': '{sentence}',
-          },
-          allowDupes: true,
+      selectedDeckId: 1,
+      selectedNoteTypeId: 2,
+      availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
+      availableNoteTypes: <AnkiNoteType>[
+        AnkiNoteType(
+          id: 2,
+          name: 'Fushi',
+          fields: <String>['Expression', 'Sentence'],
+        ),
+      ],
+      fieldMappings: <String, String>{
+        'Expression': '{expression}',
+        'Sentence': '{sentence}',
+      },
+      allowDupes: true,
+    );
+
+    test(
+      'overwrite writes an empty Sentence field to clear a stale sentence',
+      () async {
+        final service = _RecordingService();
+        final repo = _ConfiguredRepo(
+          service: service,
+          settings: settingsWithSentence(),
         );
 
-    test('overwrite writes an empty Sentence field to clear a stale sentence',
-        () async {
-      final service = _RecordingService();
-      final repo =
-          _ConfiguredRepo(service: service, settings: settingsWithSentence());
+        // Overwrite when the live selection sentence is gone (context.sentence '').
+        final MineOutcome outcome = await repo.updateMinedNote(
+          noteId: 5,
+          rawPayloadJson: _payload,
+          context: const AnkiMiningContext(sentence: ''),
+        );
 
-      // Overwrite when the live selection sentence is gone (context.sentence '').
-      final MineOutcome outcome = await repo.updateMinedNote(
-        noteId: 5,
-        rawPayloadJson: _payload,
-        context: const AnkiMiningContext(sentence: ''),
-      );
-
-      expect(outcome.result, MineResult.success);
-      expect(service.updateCalls, hasLength(1));
-      final Map<String, String> fields = service.updateCalls.single.fields;
-      // Expression still overwrites; Sentence is PRESENT-but-empty (cleared),
-      // not silently dropped/preserved.
-      expect(fields['Expression'], '勉強');
-      expect(fields.containsKey('Sentence'), isTrue,
-          reason: 'overwrite must send the Sentence field so it is replaced');
-      expect(fields['Sentence'], '');
-    });
+        expect(outcome.result, MineResult.success);
+        expect(service.updateCalls, hasLength(1));
+        final Map<String, String> fields = service.updateCalls.single.fields;
+        // Expression still overwrites; Sentence is PRESENT-but-empty (cleared),
+        // not silently dropped/preserved.
+        expect(fields['Expression'], '勉強');
+        expect(
+          fields.containsKey('Sentence'),
+          isTrue,
+          reason: 'overwrite must send the Sentence field so it is replaced',
+        );
+        expect(fields['Sentence'], '');
+      },
+    );
 
     test('overwrite writes the new non-empty sentence', () async {
       final service = _RecordingService();
-      final repo =
-          _ConfiguredRepo(service: service, settings: settingsWithSentence());
+      final repo = _ConfiguredRepo(
+        service: service,
+        settings: settingsWithSentence(),
+      );
 
       final MineOutcome outcome = await repo.updateMinedNote(
         noteId: 5,
@@ -432,47 +462,56 @@ void main() {
       expect(service.updateCalls.single.fields['Sentence'], '新しい例文');
     });
 
-    test('new-card mineEntry still DROPS an empty Sentence field (unchanged)',
-        () async {
-      final service = _RecordingService();
-      final repo =
-          _ConfiguredRepo(service: service, settings: settingsWithSentence());
+    test(
+      'new-card mineEntry still DROPS an empty Sentence field (unchanged)',
+      () async {
+        final service = _RecordingService();
+        final repo = _ConfiguredRepo(
+          service: service,
+          settings: settingsWithSentence(),
+        );
 
-      final MineOutcome outcome = await repo.mineEntry(
-        rawPayloadJson: _payload,
-        context: const AnkiMiningContext(sentence: ''),
-      );
+        final MineOutcome outcome = await repo.mineEntry(
+          rawPayloadJson: _payload,
+          context: const AnkiMiningContext(sentence: ''),
+        );
 
-      expect(outcome.result, MineResult.success);
-      expect(service.addNoteCalls, hasLength(1));
-      final Map<String, String> fields = service.addNoteCalls.single;
-      expect(fields['Expression'], '勉強');
-      expect(fields.containsKey('Sentence'), isFalse,
-          reason: 'new cards drop empty fields — keepEmpty=false unchanged');
-    });
+        expect(outcome.result, MineResult.success);
+        expect(service.addNoteCalls, hasLength(1));
+        final Map<String, String> fields = service.addNoteCalls.single;
+        expect(fields['Expression'], '勉強');
+        expect(
+          fields.containsKey('Sentence'),
+          isFalse,
+          reason: 'new cards drop empty fields — keepEmpty=false unchanged',
+        );
+      },
+    );
 
-    test('overwrite still refused when ALL mapped fields render empty',
-        () async {
-      final service = _RecordingService();
-      // Only a Sentence mapping; empty sentence → the whole render is blank →
-      // refuse (would wipe the entire card), same guard as before.
-      final repo = _ConfiguredRepo(
-        service: service,
-        settings: settingsWithSentence().copyWith(
-          fieldMappings: const <String, String>{'Sentence': '{sentence}'},
-        ),
-      );
+    test(
+      'overwrite still refused when ALL mapped fields render empty',
+      () async {
+        final service = _RecordingService();
+        // Only a Sentence mapping; empty sentence → the whole render is blank →
+        // refuse (would wipe the entire card), same guard as before.
+        final repo = _ConfiguredRepo(
+          service: service,
+          settings: settingsWithSentence().copyWith(
+            fieldMappings: const <String, String>{'Sentence': '{sentence}'},
+          ),
+        );
 
-      final MineOutcome outcome = await repo.updateMinedNote(
-        noteId: 5,
-        rawPayloadJson: '{"expression":"","reading":""}',
-        context: const AnkiMiningContext(sentence: ''),
-      );
+        final MineOutcome outcome = await repo.updateMinedNote(
+          noteId: 5,
+          rawPayloadJson: '{"expression":"","reading":""}',
+          context: const AnkiMiningContext(sentence: ''),
+        );
 
-      expect(outcome.result, MineResult.error);
-      expect(outcome.errorDetail, contains('empty'));
-      expect(service.updateCalls, isEmpty);
-    });
+        expect(outcome.result, MineResult.error);
+        expect(outcome.errorDetail, contains('empty'));
+        expect(service.updateCalls, isEmpty);
+      },
+    );
   });
 
   group('MineOutcome.noteId backward compatibility (task A)', () {

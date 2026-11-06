@@ -43,8 +43,11 @@ void main() {
     final RenderParagraph valuePara = paragraphOf(tester, value);
 
     expect(valuePara.didExceedMaxLines, isFalse, reason: '复合数值应换行显示完整，不被省略号裁掉');
-    expect(valuePara.size.height, greaterThan(singleLineHeight),
-        reason: '窄屏该值已换行（高于单行基线），单行必被裁——证明 2 行是修复关键');
+    expect(
+      valuePara.size.height,
+      greaterThan(singleLineHeight),
+      reason: '窄屏该值已换行（高于单行基线），单行必被裁——证明 2 行是修复关键',
+    );
 
     expect(paragraphOf(tester, label).didExceedMaxLines, isFalse);
   });
@@ -63,7 +66,10 @@ void main() {
     final RenderParagraph labelPara = paragraphOf(tester, label);
 
     expect(labelPara.didExceedMaxLines, isFalse, reason: '中文标签应换行显示完整，不被省略号裁掉');
-    expect(labelPara.size.height, greaterThan(singleLineHeight),
-        reason: '窄格该标签已换行，单行必被裁');
+    expect(
+      labelPara.size.height,
+      greaterThan(singleLineHeight),
+      reason: '窄格该标签已换行，单行必被裁',
+    );
   });
 }

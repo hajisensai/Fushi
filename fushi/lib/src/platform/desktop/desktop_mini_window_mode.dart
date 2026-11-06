@@ -142,6 +142,19 @@ class DesktopMiniWindowMode {
 
   static bool get _isDesktop => debugDesktopOverride ?? isDesktopPlatform;
 
+  /// 测试缝：覆盖「进入小窗前先退出窗口全屏」这一步。null = 用真实
+  /// [exitWindowFullscreenIfActive]。
+  ///
+  /// 那条原语按**真实宿主** `Platform` 分派全屏后端（Windows 问 runner 通道、Linux 问
+  /// window_manager、macOS 问 macos_window_utils 的 `WindowManipulator`），不受
+  /// [debugDesktopOverride] 管。macOS 上 `WindowManipulator` 的每个方法都先等
+  /// `WindowManipulator.initialize()`（生产在 `main()` 里调）完成的 completer——单测宿主
+  /// 没人调它，`isWindowFullscreened()` 永不返回，整条 enter 链挂到测试超时；
+  /// Windows / Linux 宿主则恰好因通道缺失 / 被 mock 而快速返回。给缝让单测与宿主
+  /// 平台无关，生产行为不变。
+  @visibleForTesting
+  static Future<bool> Function()? debugExitFullscreenOverride;
+
   /// 当前是否处于小窗态。页面/标题栏/几何持久化都读它。
   static ValueListenable<bool> get activeListenable => _active;
 
@@ -206,7 +219,7 @@ class DesktopMiniWindowMode {
     // 巨窗语义的半吊子窗口。这里走 global_navigation 的单一原语，顺带把自绘顶栏的
     // 全屏归属同步回去。
     await _step('exitFullscreen', () async {
-      await exitWindowFullscreenIfActive();
+      await (debugExitFullscreenOverride ?? exitWindowFullscreenIfActive)();
     });
 
     final bool maximized = await _readMaximized();
@@ -406,6 +419,7 @@ class DesktopMiniWindowMode {
     _aspectRatio = 16 / 9;
     _transition = Future<void>.value();
     debugDesktopOverride = null;
+    debugExitFullscreenOverride = null;
     FushiDesktopTitleBar.setContentFullscreen(
       owner: _titleBarOwner,
       enabled: false,

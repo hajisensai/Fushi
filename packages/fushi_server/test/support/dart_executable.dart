@@ -13,7 +13,16 @@ String dartExecutable() {
   if (base == 'dart') return current;
   final String? root = Platform.environment['FLUTTER_ROOT'];
   if (root != null && root.isNotEmpty) {
-    final File sdkDart = File(p.join(root, 'bin', 'cache', 'dart-sdk', 'bin', Platform.isWindows ? 'dart.exe' : 'dart'));
+    final File sdkDart = File(
+      p.join(
+        root,
+        'bin',
+        'cache',
+        'dart-sdk',
+        'bin',
+        Platform.isWindows ? 'dart.exe' : 'dart',
+      ),
+    );
     if (sdkDart.existsSync()) return sdkDart.path;
   }
   return 'dart';

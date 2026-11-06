@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
-import 'package:fushi_anki/fushi_anki.dart' show AnkiMiningSource;
+import 'package:fushi_anki/fushi_anki.dart'
+    show AnkiMiningSource, CardSourceLink;
 
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 
@@ -48,6 +49,8 @@ ImmersionMiningRequest buildExternalWindowRequest({
   // 引擎把它认作音画同步片段：句子音频字段改为重播该片段，不再另挂一份 [audioBytes]——
   // 否则卡片上同一句语音会播两遍（WebM 内嵌时更是两路同时响）。
   bool synchronizedClip = false,
+  // 卡片出处（galgame 场景卡 = 游戏身份，复习时「回到出处」打开该游戏）。
+  CardSourceLink? sourceLink,
 }) {
   final bool hasAudio = audioBytes != null && audioBytes.isNotEmpty;
   return ImmersionMiningRequest(
@@ -75,5 +78,6 @@ ImmersionMiningRequest buildExternalWindowRequest({
     imageMode: synchronizedClip
         ? VideoMiningImageMode.videoClip
         : VideoMiningImageMode.gif,
+    sourceLink: sourceLink,
   );
 }

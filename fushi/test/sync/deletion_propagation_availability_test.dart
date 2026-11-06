@@ -43,21 +43,26 @@ void main() {
     test('选了 WebDAV 但地址空 → 仍无通道（选中 ≠ 配置好）', () async {
       await repo.setBackendType(SyncBackendType.webDav);
 
-      expect(await hasDeletionPropagationChannel(repo), isFalse,
-          reason: 'getBackendType 缺省就返回一个值，光看它会把所有新装都误判成有通道');
+      expect(
+        await hasDeletionPropagationChannel(repo),
+        isFalse,
+        reason: 'getBackendType 缺省就返回一个值，光看它会把所有新装都误判成有通道',
+      );
     });
 
     test('互联启用 + 填了对端地址 → 有通道', () async {
       await repo.setInterconnectEnabled(true);
-      await repo.setFushiClientUrls(
-          <FushiClientUrl>[FushiClientUrl(url: 'https://192.168.1.7:8443')]);
+      await repo.setFushiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: 'https://192.168.1.7:8443'),
+      ]);
 
       expect(await hasDeletionPropagationChannel(repo), isTrue);
     });
 
     test('填了对端地址但互联没启用 → 无通道（通道枚举本就不含它）', () async {
-      await repo.setFushiClientUrls(
-          <FushiClientUrl>[FushiClientUrl(url: 'https://192.168.1.7:8443')]);
+      await repo.setFushiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: 'https://192.168.1.7:8443'),
+      ]);
 
       expect(await hasDeletionPropagationChannel(repo), isFalse);
     });
@@ -65,14 +70,19 @@ void main() {
     test('本机做 host + 有已配对对端 → 有通道（对端会来读走本机墓碑）', () async {
       await repo.setInterconnectEnabled(true);
       await repo.setServerEnabled(true);
-      await db.upsertPairedPeer(FushiPairedPeersCompanion.insert(
-        peerId: 'peer-1',
-        token: 't',
-        pairedAtMs: 0,
-      ));
+      await db.upsertPairedPeer(
+        FushiPairedPeersCompanion.insert(
+          peerId: 'peer-1',
+          token: 't',
+          pairedAtMs: 0,
+        ),
+      );
 
-      expect(await hasDeletionPropagationChannel(repo), isTrue,
-          reason: '互联是双向的：host 侧删除经 /api/tombstones 被 client 消费');
+      expect(
+        await hasDeletionPropagationChannel(repo),
+        isTrue,
+        reason: '互联是双向的：host 侧删除经 /api/tombstones 被 client 消费',
+      );
     });
 
     test('开了 host 但一个对端都没配对 → 无通道', () async {
@@ -85,8 +95,9 @@ void main() {
     test('Google Drive 同步跑过一次（有 rootFolderId）→ 有通道', () async {
       await repo.setBackendType(SyncBackendType.googleDrive);
       await repo.setRootFolderId(
-          SyncChannelScope.forBackendType(SyncBackendType.googleDrive),
-          'folder-abc/');
+        SyncChannelScope.forBackendType(SyncBackendType.googleDrive),
+        'folder-abc/',
+      );
 
       expect(await hasDeletionPropagationChannel(repo), isTrue);
     });
@@ -95,8 +106,11 @@ void main() {
   group('hasStoredBackendConfig 逐后端', () {
     test('七个后端在零配置下一律 false（新增后端漏表态会在此暴露）', () async {
       for (final SyncBackendType type in SyncBackendType.values) {
-        expect(await repo.hasStoredBackendConfig(type), isFalse,
-            reason: '$type 在零配置下不该自称已配置');
+        expect(
+          await repo.hasStoredBackendConfig(type),
+          isFalse,
+          reason: '$type 在零配置下不该自称已配置',
+        );
       }
     });
 
@@ -109,11 +123,15 @@ void main() {
 
       await repo.setDropboxToken('tok');
       expect(
-          await repo.hasStoredBackendConfig(SyncBackendType.dropbox), isTrue);
+        await repo.hasStoredBackendConfig(SyncBackendType.dropbox),
+        isTrue,
+      );
 
       await repo.setOneDriveToken('tok');
       expect(
-          await repo.hasStoredBackendConfig(SyncBackendType.oneDrive), isTrue);
+        await repo.hasStoredBackendConfig(SyncBackendType.oneDrive),
+        isTrue,
+      );
     });
   });
 }

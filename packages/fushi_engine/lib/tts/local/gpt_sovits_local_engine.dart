@@ -199,20 +199,15 @@ class GptSovitsLocalEngine extends EngineChangeNotifier {
   /// 停服务并忘掉整合包；[deleteFiles] 且是 app 装的才真删——只删 app 专属子目录
   /// （名字不是 [kGptSovitsInstallSubdir] 的一律不删，防记录被改坏时误删用户目录）。
   Future<void> remove({required bool deleteFiles}) async {
-    installer.cancel();
+    await installer.cancelAndWait();
     await server.stop();
     _autoStartBlocked = false;
     final GptSovitsLocalSettings current = settings;
-    final bool deletable = canDeleteFiles;
-    await _save(current.copyWith(clearDir: true, owned: false));
     final String? dir = current.dir;
-    if (deleteFiles && deletable && dir != null) {
-      try {
-        await Directory(dir).delete(recursive: true);
-      } on FileSystemException {
-        // 文件被占用（杀软扫描中之类）：已经忘掉了，剩下的让用户自己删。
-      }
+    if (deleteFiles && canDeleteFiles && dir != null) {
+      await deleteLocalInstallDir(dir);
     }
+    await _save(current.copyWith(clearDir: true, owned: false));
   }
 
   /// 用户手动启动（同时解除自动拉起的失败暂停）。

@@ -15,8 +15,9 @@ void main() {
   });
 
   test('validateFfmpeg：路径不存在报第一条，存在返回 null，未配置不校验', () async {
-    final Directory tmp =
-        await Directory.systemTemp.createTemp('fushi_ffmpeg_');
+    final Directory tmp = await Directory.systemTemp.createTemp(
+      'fushi_ffmpeg_',
+    );
     addTearDown(() => tmp.delete(recursive: true));
     final File fake = File(p.join(tmp.path, 'ffmpeg'))..writeAsStringSync('');
     final ServerConfig base = ServerConfig.defaults(dataDir: tmp.path);
@@ -28,10 +29,12 @@ void main() {
       startsWith('ffmpeg 路径不存在'),
     );
     expect(
-      await validateFfmpeg(base.copyWith(
-        ffmpegPath: fake.path,
-        ffprobePath: p.join(tmp.path, 'nope2'),
-      )),
+      await validateFfmpeg(
+        base.copyWith(
+          ffmpegPath: fake.path,
+          ffprobePath: p.join(tmp.path, 'nope2'),
+        ),
+      ),
       startsWith('ffprobe 路径不存在'),
     );
   });

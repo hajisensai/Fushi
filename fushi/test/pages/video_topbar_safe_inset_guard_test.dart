@@ -22,29 +22,49 @@ void main() {
     src = readVideoFushiSource();
   });
 
-  test('移动控制主题把 topButtonBarMargin 接到 _videoTopBarMargin()（不回退默认无顶部 inset）',
-      () {
-    // 撤回成 media_kit 默认（不设 topButtonBarMargin，或写死无 top）→ 本条红、bug 复发。
-    expect(src, contains('topButtonBarMargin: _videoTopBarMargin()'),
-        reason: '移动 theme 必须把顶栏 margin 接到系统安全区折算的 _videoTopBarMargin()');
-  });
+  test(
+    '移动控制主题把 topButtonBarMargin 接到 _videoTopBarMargin()（不回退默认无顶部 inset）',
+    () {
+      // 撤回成 media_kit 默认（不设 topButtonBarMargin，或写死无 top）→ 本条红、bug 复发。
+      expect(
+        src,
+        contains('topButtonBarMargin: _videoTopBarMargin()'),
+        reason: '移动 theme 必须把顶栏 margin 接到系统安全区折算的 _videoTopBarMargin()',
+      );
+    },
+  );
 
   test('_videoTopBarMargin 读 padding/viewPadding，并用系统栏可见性门控顶部 inset', () {
     final int fn = src.indexOf('EdgeInsets _videoTopBarMargin()');
-    expect(fn, greaterThanOrEqualTo(0),
-        reason: '应有 _videoTopBarMargin 计算顶栏 margin');
+    expect(
+      fn,
+      greaterThanOrEqualTo(0),
+      reason: '应有 _videoTopBarMargin 计算顶栏 margin',
+    );
     final int fnEnd = src.indexOf(';', fn);
     final String body = src.substring(fn, fnEnd);
     // BUG-556：top 不可再直接等于 padding.top。iOS 横竖屏切换 / 系统栏临时显隐时，
     // padding.top 可能带着过渡态安全区值；顶部避让要像底栏一样由系统栏真实可见性门控。
-    expect(body, contains('MediaQuery.of(context).padding'),
-        reason: '顶栏折算仍需读取 padding，避免键盘/系统 inset 概念混淆');
-    expect(body, contains('MediaQuery.of(context).viewPadding'),
-        reason: '横屏 cutout 左右避让应读取 viewPadding，避免状态栏显隐影响左右安全区');
-    expect(body, contains('_systemBarsVisible'),
-        reason: '顶部 inset 必须由系统栏真实可见性门控，隐栏时不吃过渡态 padding.top');
-    expect(body, contains('videoTopBarMargin('),
-        reason: 'margin 折算应经纯函数 videoTopBarMargin（页面/测试同源）');
+    expect(
+      body,
+      contains('MediaQuery.of(context).padding'),
+      reason: '顶栏折算仍需读取 padding，避免键盘/系统 inset 概念混淆',
+    );
+    expect(
+      body,
+      contains('MediaQuery.of(context).viewPadding'),
+      reason: '横屏 cutout 左右避让应读取 viewPadding，避免状态栏显隐影响左右安全区',
+    );
+    expect(
+      body,
+      contains('_systemBarsVisible'),
+      reason: '顶部 inset 必须由系统栏真实可见性门控，隐栏时不吃过渡态 padding.top',
+    );
+    expect(
+      body,
+      contains('videoTopBarMargin('),
+      reason: 'margin 折算应经纯函数 videoTopBarMargin（页面/测试同源）',
+    );
   });
 
   test('反退回：移动 theme topButtonBarMargin 不写死成无系统 inset 的常量', () {
@@ -53,7 +73,8 @@ void main() {
     expect(
       src,
       isNot(
-          contains('topButtonBarMargin: EdgeInsets.symmetric(horizontal: 16)')),
+        contains('topButtonBarMargin: EdgeInsets.symmetric(horizontal: 16)'),
+      ),
       reason: '顶栏 margin 不应写死成 media_kit 默认无顶部 inset 的常量（顶栏会被状态栏遮挡）',
     );
   });

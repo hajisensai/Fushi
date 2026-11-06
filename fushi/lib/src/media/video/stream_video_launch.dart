@@ -13,6 +13,7 @@ import 'package:http/http.dart' as http;
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/bounded_read.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
+import 'package:fushi_engine/media/video/media_server_video_path.dart';
 
 /// 流媒体书判据（TODO-1157）：`videoPath` 是网络流地址，或 `.strm` 流指针。
 ///
@@ -26,13 +27,16 @@ import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 ///   真正的流地址起播时经 [resolveStrmStreamTarget] 现读。
 /// - 在线视频源（Aniyomi）入库集（[isAnimeSourceVideoPath]）：没有本地文件，
 ///   起播时向扩展重新取流（见 `anime_source_library.dart`）。
+/// - 媒体服务器入库条目（[isMediaServerVideoPath]）：起播时按设置里的服务器配置
+///   现建客户端取流（见 `media_server_library.dart`）。
 /// - 来源库 SFTP 条目（[isSourceLibrarySftpVideoPath]，`sftp://`）：起播时经来源
 ///   的播放期解析器登记进回环中继（`sftp_stream_source.dart`）。
 bool isStreamVideoBook(VideoBookRow book) =>
     isNetworkStreamUrl(book.videoPath) ||
     isSourceLibrarySftpVideoPath(book.videoPath) ||
     isStrmPath(book.videoPath) ||
-    isAnimeSourceVideoPath(book.videoPath);
+    isAnimeSourceVideoPath(book.videoPath) ||
+    isMediaServerVideoPath(book.videoPath);
 
 /// `.strm` 读不出可播地址的原因（起播失败文案据此分派）。
 enum StrmResolveFailure {
@@ -92,10 +96,16 @@ Future<String> resolveStrmStreamTarget(
       return target;
     case StrmTargetKind.localPath:
       throw StrmResolveException(
-          StrmResolveFailure.localTarget, strmPath, target);
+        StrmResolveFailure.localTarget,
+        strmPath,
+        target,
+      );
     case StrmTargetKind.unsupported:
       throw StrmResolveException(
-          StrmResolveFailure.unsupportedTarget, strmPath, target);
+        StrmResolveFailure.unsupportedTarget,
+        strmPath,
+        target,
+      );
   }
 }
 
@@ -111,26 +121,34 @@ Future<String> _readStrmContent(
     final File file = File(strmPath);
     if (!await file.exists()) {
       throw StrmResolveException(
-          StrmResolveFailure.unreadable, strmPath, 'not found');
+        StrmResolveFailure.unreadable,
+        strmPath,
+        'not found',
+      );
     }
     return utf8.decode(
       await _readStrmBounded(file.openRead(), strmPath),
       allowMalformed: true,
     );
   }
-  final String url =
-      urlResolver == null ? strmPath : await urlResolver.resolve(strmPath);
+  final String url = urlResolver == null
+      ? strmPath
+      : await urlResolver.resolve(strmPath);
   final http.Client client = httpClient ?? createAppHttpIoClient();
   const Duration timeout = Duration(seconds: 15);
   try {
     final http.Request request = http.Request('GET', Uri.parse(url));
     request.headers.addAll(headers);
-    final http.StreamedResponse res =
-        await client.send(request).timeout(timeout);
+    final http.StreamedResponse res = await client
+        .send(request)
+        .timeout(timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       unawaited(res.stream.listen(null).cancel());
       throw StrmResolveException(
-          StrmResolveFailure.unreadable, strmPath, 'HTTP ${res.statusCode}');
+        StrmResolveFailure.unreadable,
+        strmPath,
+        'HTTP ${res.statusCode}',
+      );
     }
     return utf8.decode(
       await _readStrmBounded(res.stream, strmPath).timeout(timeout),
@@ -149,7 +167,10 @@ Future<List<int>> _readStrmBounded(
     return await readBoundedBytes(stream, kStrmMaxBytes);
   } on BodyTooLargeException {
     throw StrmResolveException(
-        StrmResolveFailure.unreadable, strmPath, 'too large');
+      StrmResolveFailure.unreadable,
+      strmPath,
+      'too large',
+    );
   }
 }
 
@@ -175,15 +196,17 @@ void ensureStreamProtocolSupported(String url, {bool? isApplePlatform}) {
 
 /// TODO-1314：缓存命中后确认流 URL 未失效的 liveness 探测签名。生产走 1 字节 Range GET，
 /// 测试注入假件。返回 true=存活（用缓存）/ false=失效（invalidate + 重解析）。
-typedef StreamLivenessCheck = Future<bool> Function(
-    String streamUrl, Map<String, String> headers);
+typedef StreamLivenessCheck =
+    Future<bool> Function(String streamUrl, Map<String, String> headers);
 
 /// 默认 liveness：对缓存的 googlevideo 流 URL 发 1 字节 Range GET。2xx/206=存活；非 2xx
 /// （403 IP 锁不匹配 / 410 过期 / 404）或异常/超时=失效。比全量 resolveYoutubeSource（多次
 /// innertube 往返 + 跨 client 403 探测）便宜得多，仍挡住脏 URL 黑屏。异常/超时保守判失效
 /// （宁可重解析拿新 URL，也不把可能已死的 URL 交给播放器）。
 Future<bool> _defaultStreamLiveness(
-    String streamUrl, Map<String, String> headers) async {
+  String streamUrl,
+  Map<String, String> headers,
+) async {
   final http.Client client = createAppHttpIoClient();
   try {
     final Map<String, String> h = <String, String>{
@@ -251,7 +274,7 @@ String? _sftpOriginOf(String url) {
 /// [RemoteVideoInfo.id] 用 [VideoBookRow.bookUid]（断点 prefs 按它 key，重开续看可对齐）。
 /// YouTube 解析失败抛异常（调用方按打开失败处理，与 dialog 即播失败一致）。
 Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
-    buildStreamVideoLaunch(
+buildStreamVideoLaunch(
   VideoBookRow book, {
   // TODO-1314：可注入的 YouTube 流缓存 / 解析器 / liveness 探测 / 时钟（默认走生产真身，
   // 测试注入假件以离线覆盖缓存命中/失效/未命中路径）。生产端全 null → 单例缓存 + 快解析 gate。
@@ -278,8 +301,9 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
   final String url = book.videoPath;
   // 直链分支会把地址原样交给播放内核；Apple 上不放行 native 自握手的加密协议。
   ensureStreamProtocolSupported(url, isApplePlatform: isApplePlatform);
-  final StreamVideoSpec spec =
-      StreamVideoSpec.fromStorageJson(book.streamSpecJson);
+  final StreamVideoSpec spec = StreamVideoSpec.fromStorageJson(
+    book.streamSpecJson,
+  );
   final UrlStreamVideoClient client;
   if (isYoutubeUrl(url)) {
     // TODO-1314：先查持久缓存（避免每次开书全量 resolve）。命中且 liveness 存活 → 直接用
@@ -290,9 +314,11 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
         streamCache ?? await YoutubeStreamCache.instance();
     final Future<YoutubeResolvedSource> Function(String) resolve =
         youtubeResolver ??
-            ((String u) => resolveYoutubeSource(u,
-                withCaptions: false,
-                playbackTargetHeight: youtubeTargetHeight));
+        ((String u) => resolveYoutubeSource(
+          u,
+          withCaptions: false,
+          playbackTargetHeight: youtubeTargetHeight,
+        ));
     final StreamLivenessCheck liveness =
         livenessCheck ?? _defaultStreamLiveness;
     final DateTime Function() clock = now ?? DateTime.now;
@@ -334,14 +360,11 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
       miningVideoHasAudio = resolved.miningVideoHasAudio;
       httpHeaders = resolved.httpHeaders;
       if (videoId != null) {
-        final int? expiresAtMs = computeStreamCacheExpiryMs(
-          <String?>[
-            resolved.streamUrl,
-            resolved.audioStreamUrl,
-            resolved.miningVideoUrl,
-          ],
-          clock(),
-        );
+        final int? expiresAtMs = computeStreamCacheExpiryMs(<String?>[
+          resolved.streamUrl,
+          resolved.audioStreamUrl,
+          resolved.miningVideoUrl,
+        ], clock());
         // 可判定有效期才缓存；无 expire / 快过期 → 不缓存（下次仍重解析，不劣于旧）。
         if (expiresAtMs != null) {
           await cache.put(
@@ -373,7 +396,8 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
     final String? subtitleUrl = spec.subtitleUrl;
     client = UrlStreamVideoClient(
       streamUrl: url,
-      subtitleUrl: (subtitleUrl != null &&
+      subtitleUrl:
+          (subtitleUrl != null &&
               (isPlayableStreamUrl(subtitleUrl) ||
                   isResolvableSourceSubtitleUrl(
                     subtitleUrl: subtitleUrl,
@@ -392,8 +416,10 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
       urlResolver: sourceUrlResolver,
     );
   }
-  final RemoteVideoInfo info =
-      RemoteVideoInfo(id: book.bookUid, title: book.title);
+  final RemoteVideoInfo info = RemoteVideoInfo(
+    id: book.bookUid,
+    title: book.title,
+  );
   return (client: client, info: info);
 }
 
@@ -402,7 +428,7 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
 /// require a VideoBook row, so trailers stay attached to their canonical work
 /// and never leak into the raw video library.
 Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
-    buildOnlineVideoExtraLaunch({
+buildOnlineVideoExtraLaunch({
   required String id,
   required String title,
   required String url,
@@ -410,8 +436,11 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
 }) async {
   final UrlStreamVideoClient client;
   if (isYoutubeUrl(url)) {
-    final YoutubeResolvedSource resolved = await resolveYoutubeSource(url,
-        withCaptions: false, playbackTargetHeight: youtubeTargetHeight);
+    final YoutubeResolvedSource resolved = await resolveYoutubeSource(
+      url,
+      withCaptions: false,
+      playbackTargetHeight: youtubeTargetHeight,
+    );
     client = UrlStreamVideoClient(
       streamUrl: resolved.streamUrl,
       audioStreamUrl: resolved.audioStreamUrl,
@@ -421,10 +450,7 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
       httpHeaderFields: resolved.httpHeaders,
     );
   } else {
-    client = UrlStreamVideoClient(
-      streamUrl: url,
-      miningVideoHasAudio: true,
-    );
+    client = UrlStreamVideoClient(streamUrl: url, miningVideoHasAudio: true);
   }
   return (
     client: client,

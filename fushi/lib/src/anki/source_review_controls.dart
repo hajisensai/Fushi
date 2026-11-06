@@ -11,27 +11,26 @@ class SourceReviewControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Shortcuts(
-        shortcuts: const <ShortcutActivator, Intent>{
-          SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
-          SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
-          SingleActivator(LogicalKeyboardKey.gameButtonA): ActivateIntent(),
-          SingleActivator(LogicalKeyboardKey.tab): NextFocusIntent(),
-          SingleActivator(LogicalKeyboardKey.tab, shift: true):
-              PreviousFocusIntent(),
-          SingleActivator(LogicalKeyboardKey.arrowLeft): DirectionalFocusIntent(
-            TraversalDirection.left,
-          ),
-          SingleActivator(LogicalKeyboardKey.arrowRight):
-              DirectionalFocusIntent(
-            TraversalDirection.right,
-          ),
-          SingleActivator(LogicalKeyboardKey.arrowUp): DirectionalFocusIntent(
-            TraversalDirection.up,
-          ),
-          SingleActivator(LogicalKeyboardKey.arrowDown): DirectionalFocusIntent(
-            TraversalDirection.down,
-          ),
-        },
-        child: child,
-      );
+    shortcuts: const <ShortcutActivator, Intent>{
+      SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+      SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
+      SingleActivator(LogicalKeyboardKey.gameButtonA): ActivateIntent(),
+      SingleActivator(LogicalKeyboardKey.tab): NextFocusIntent(),
+      SingleActivator(LogicalKeyboardKey.tab, shift: true):
+          PreviousFocusIntent(),
+      SingleActivator(LogicalKeyboardKey.arrowLeft): DirectionalFocusIntent(
+        TraversalDirection.left,
+      ),
+      SingleActivator(LogicalKeyboardKey.arrowRight): DirectionalFocusIntent(
+        TraversalDirection.right,
+      ),
+      SingleActivator(LogicalKeyboardKey.arrowUp): DirectionalFocusIntent(
+        TraversalDirection.up,
+      ),
+      SingleActivator(LogicalKeyboardKey.arrowDown): DirectionalFocusIntent(
+        TraversalDirection.down,
+      ),
+    },
+    child: child,
+  );
 }

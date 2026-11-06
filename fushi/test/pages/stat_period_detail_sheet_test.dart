@@ -96,6 +96,46 @@ void main() {
     expect(watchY, lessThan(gameY));
   });
 
+  testWidgets('BUG-3771：总览并进来的复习时长单独成「复习」节，排在游戏之后；不可删、不可点开', (
+    WidgetTester tester,
+  ) async {
+    int deletes = 0;
+    int taps = 0;
+    await _open(
+      tester,
+      facts: <StatFact>[
+        _fact('game', '2026-09-01', key: 'g1', title: 'Clannad', ms: 120000),
+        _fact(
+          kStatMediaReview,
+          '2026-09-01',
+          key: kStatReviewMediaKey,
+          title: 'REVIEW',
+          ms: 600000,
+        ),
+      ],
+      contains: (String d) => d == '2026-09-01',
+      onEntryTap: (String kind, String key) async => taps++,
+      onEntryDelete: (StatPeriodEntryTarget t) async {
+        deletes++;
+        return true;
+      },
+    );
+    expect(find.text(t.nav_srs), findsOneWidget);
+    expect(find.text('REVIEW'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text(t.home_filter_game)).dy,
+      lessThan(tester.getTopLeft(find.text(t.nav_srs)).dy),
+    );
+    // 只有游戏那一行有删除按钮。
+    expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+    await tester.tap(find.text('REVIEW'));
+    await tester.longPress(find.text('REVIEW'));
+    await tester.pumpAndSettle();
+    expect(taps, 0);
+    expect(deletes, 0);
+    expect(find.text('REVIEW'), findsOneWidget);
+  });
+
   testWidgets('BUG-2216：legacy 无身份行 unique-title 吸收进唯一身份组；同名双身份不合并', (
     WidgetTester tester,
   ) async {
@@ -372,54 +412,50 @@ void main() {
     expect(find.text('Book39'), findsOneWidget);
   });
 
-  testWidgets(
-    '桌面端弹居中对话框而不是底部抽屉；关闭钮 / 条目点击都收起',
-    (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(1600, 1000);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-      String? tapped;
-      await _open(
-        tester,
-        facts: <StatFact>[
-          _fact('book', '2026-09-01', key: 'b1', title: 'Only', ms: 60000),
-        ],
-        contains: (String _) => true,
-        onEntryTap: (String kind, String key) async => tapped = key,
-      );
-      expect(find.byType(BottomSheet), findsNothing);
-      expect(find.byType(Dialog), findsOneWidget);
-      expect(
-        tester
-            .getSize(
-              find
-                  .descendant(
-                    of: find.byType(Dialog),
-                    matching: find.byType(Material),
-                  )
-                  .first,
-            )
-            .width,
-        lessThanOrEqualTo(kStatDetailDialogMaxWidth + 1),
-      );
-      await tester.tap(find.text('Only'));
-      await tester.pumpAndSettle();
-      expect(find.byType(Dialog), findsNothing);
-      expect(tapped, 'b1');
+  testWidgets('桌面端弹居中对话框而不是底部抽屉；关闭钮 / 条目点击都收起', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    String? tapped;
+    await _open(
+      tester,
+      facts: <StatFact>[
+        _fact('book', '2026-09-01', key: 'b1', title: 'Only', ms: 60000),
+      ],
+      contains: (String _) => true,
+      onEntryTap: (String kind, String key) async => tapped = key,
+    );
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byType(Dialog), findsOneWidget);
+    expect(
+      tester
+          .getSize(
+            find
+                .descendant(
+                  of: find.byType(Dialog),
+                  matching: find.byType(Material),
+                )
+                .first,
+          )
+          .width,
+      lessThanOrEqualTo(kStatDetailDialogMaxWidth + 1),
+    );
+    await tester.tap(find.text('Only'));
+    await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsNothing);
+    expect(tapped, 'b1');
 
-      await _open(
-        tester,
-        facts: <StatFact>[
-          _fact('book', '2026-09-01', key: 'b1', title: 'Only', ms: 60000),
-        ],
-        contains: (String _) => true,
-      );
-      await tester.tap(find.byIcon(Icons.close));
-      await tester.pumpAndSettle();
-      expect(find.byType(Dialog), findsNothing);
-    },
-    variant: TargetPlatformVariant.only(TargetPlatform.windows),
-  );
+    await _open(
+      tester,
+      facts: <StatFact>[
+        _fact('book', '2026-09-01', key: 'b1', title: 'Only', ms: 60000),
+      ],
+      contains: (String _) => true,
+    );
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsNothing);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('BUG-2741：条目少时 sheet 仍按内容收缩，不被撑到上限', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(393, 852);

@@ -26,8 +26,11 @@ void main() {
   /// 跳过参数列表，再从其后第一个 '{' 起配平大括号截出函数体。
   String fnBody(String src, String signature) {
     final int start = src.indexOf(signature);
-    expect(start, greaterThanOrEqualTo(0),
-        reason: '函数 $signature 必须存在（结构守卫锚点）。');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: '函数 $signature 必须存在（结构守卫锚点）。',
+    );
     int i = start + signature.length - 1; // 指向起始 '('
     expect(src[i], '(', reason: 'signature 必须以 "(" 结尾。');
     int paren = 0;
@@ -40,8 +43,11 @@ void main() {
       }
     }
     final int bodyStart = src.indexOf('{', i);
-    expect(bodyStart, greaterThanOrEqualTo(0),
-        reason: '函数 $signature 参数列表后必须有函数体 "{"。');
+    expect(
+      bodyStart,
+      greaterThanOrEqualTo(0),
+      reason: '函数 $signature 参数列表后必须有函数体 "{"。',
+    );
     int depth = 0;
     for (i = bodyStart; i < src.length; i++) {
       final String ch = src[i];
@@ -63,69 +69,86 @@ void main() {
   });
 
   group('M1: dynamic/static audioFileIndex divergence guard', () {
-    test('BUG-1243 dynamic plan defines the classified audio range up front',
-        () {
-      final String body = fnBody(audiobookPart, 'void _exportAudiobookClip(');
-      final int planAt = body.indexOf('_buildAudiobookClipPlan(');
-      final int rangeAt = body.indexOf(
-        'AudioPlaybackRange? sentenceRange',
-        planAt,
-      );
-      final int classifyAt = body.indexOf(
-        'classifyAudiobookClipSelection(',
-        rangeAt,
-      );
-      expect(planAt, greaterThanOrEqualTo(0));
-      expect(rangeAt, greaterThan(planAt));
-      expect(classifyAt, greaterThan(rangeAt));
-      // BUG-1320 之后整段窗口由 _buildAudiobookClipPlan 随记录字段 range 直接回传，
-      // 不再从 dynamicPlan.global* 反推——超上限时 plan 为空但窗口仍有效，反推会连
-      // 窗口一起丢，长选区退回单句锚（BUG-1243 的老症状）。
-      expect(
-        body.substring(rangeAt, classifyAt),
-        contains('clipPlan.range'),
-        reason: '多句计划算出的完整窗口必须原样进入最终裁剪范围，不能仍裁第一句',
-      );
-    });
+    test(
+      'BUG-1243 dynamic plan defines the classified audio range up front',
+      () {
+        final String body = fnBody(audiobookPart, 'void _exportAudiobookClip(');
+        final int planAt = body.indexOf('_buildAudiobookClipPlan(');
+        final int rangeAt = body.indexOf(
+          'AudioPlaybackRange? sentenceRange',
+          planAt,
+        );
+        final int classifyAt = body.indexOf(
+          'classifyAudiobookClipSelection(',
+          rangeAt,
+        );
+        expect(planAt, greaterThanOrEqualTo(0));
+        expect(rangeAt, greaterThan(planAt));
+        expect(classifyAt, greaterThan(rangeAt));
+        // BUG-1320 之后整段窗口由 _buildAudiobookClipPlan 随记录字段 range 直接回传，
+        // 不再从 dynamicPlan.global* 反推——超上限时 plan 为空但窗口仍有效，反推会连
+        // 窗口一起丢，长选区退回单句锚（BUG-1243 的老症状）。
+        expect(
+          body.substring(rangeAt, classifyAt),
+          contains('clipPlan.range'),
+          reason: '多句计划算出的完整窗口必须原样进入最终裁剪范围，不能仍裁第一句',
+        );
+      },
+    );
 
     test(
-        'dispatcher compares dynamicPlan.audioFileIndex to range.audioFileIndex',
-        () {
-      final String body = fnBody(audiobookPart, 'void _exportAudiobookClip(');
-      // 必须存在「dynamicPlan.audioFileIndex != range.audioFileIndex」判据。
-      // 容忍 dart format 换行/空白。
-      final RegExp cmp = RegExp(
-        r'dynamicPlan\.audioFileIndex\s*!=\s*range\.audioFileIndex',
-      );
-      expect(cmp.hasMatch(body), isTrue,
-          reason: 'M1：分歧护栏必须比较 dynamicPlan.audioFileIndex != '
-              'range.audioFileIndex（否则会拿 A 文件 ms 去裁 B 文件）。');
-    });
+      'dispatcher compares dynamicPlan.audioFileIndex to range.audioFileIndex',
+      () {
+        final String body = fnBody(audiobookPart, 'void _exportAudiobookClip(');
+        // 必须存在「dynamicPlan.audioFileIndex != range.audioFileIndex」判据。
+        // 容忍 dart format 换行/空白。
+        final RegExp cmp = RegExp(
+          r'dynamicPlan\.audioFileIndex\s*!=\s*range\.audioFileIndex',
+        );
+        expect(
+          cmp.hasMatch(body),
+          isTrue,
+          reason:
+              'M1：分歧护栏必须比较 dynamicPlan.audioFileIndex != '
+              'range.audioFileIndex（否则会拿 A 文件 ms 去裁 B 文件）。',
+        );
+      },
+    );
 
     test('divergence path drops the dynamic plan (dynamicPlan = null)', () {
       final String body = fnBody(audiobookPart, 'void _exportAudiobookClip(');
       // 分歧时把 dynamicPlan 置 null → 回退单句静态。要求 dynamicPlan 是可变局部
       // （非 final）且有一处赋 null。
-      expect(body.contains('dynamicPlan = null;'), isTrue,
-          reason: 'M1：分歧时必须令 dynamicPlan = null 回退单句静态。');
-      expect(body.contains('final _AudiobookClipDynamicPlan? dynamicPlan ='),
-          isFalse,
-          reason: 'M1：dynamicPlan 必须是可变局部（否则无法在分歧时置 null）。');
+      expect(
+        body.contains('dynamicPlan = null;'),
+        isTrue,
+        reason: 'M1：分歧时必须令 dynamicPlan = null 回退单句静态。',
+      );
+      expect(
+        body.contains('final _AudiobookClipDynamicPlan? dynamicPlan ='),
+        isFalse,
+        reason: 'M1：dynamicPlan 必须是可变局部（否则无法在分歧时置 null）。',
+      );
     });
 
     test('divergence path logs the fallback reason (no assert)', () {
       final String body = fnBody(audiobookPart, 'void _exportAudiobookClip(');
-      expect(body, contains('ReaderFushi.exportClip.audioFileIndexDivergence'),
-          reason: 'M1：分歧回退必须记 ErrorLogService（release 会剥 assert）。');
+      expect(
+        body,
+        contains('ReaderFushi.exportClip.audioFileIndexDivergence'),
+        reason: 'M1：分歧回退必须记 ErrorLogService（release 会剥 assert）。',
+      );
       // 明确不用 assert 作为护栏（release 会被剥）。
-      expect(body.contains('assert(dynamicPlan'), isFalse,
-          reason: 'M1：不得用 assert 做分歧护栏（release 剥除）。');
+      expect(
+        body.contains('assert(dynamicPlan'),
+        isFalse,
+        reason: 'M1：不得用 assert 做分歧护栏（release 剥除）。',
+      );
     });
   });
 
   group('M2: dynamic classify text shares single source with static path', () {
-    test(
-        'BUG-1243 production plan keeps a three-cue native selection and '
+    test('BUG-1243 production plan keeps a three-cue native selection and '
         'highlights every sentence', () {
       AudioCue cue({
         required String text,
@@ -155,13 +178,13 @@ void main() {
       ];
       final AudiobookClipSelectionSpan selection =
           resolveAudiobookClipSelectionSpan(
-        selectedText: 'first second third',
-        selectedOffset: 0,
-        selectedLength: 30,
-        fallbackText: 'second',
-        fallbackOffset: 10,
-        fallbackLength: 10,
-      );
+            selectedText: 'first second third',
+            selectedOffset: 0,
+            selectedLength: 30,
+            fallbackText: 'second',
+            fallbackOffset: 10,
+            fallbackLength: 10,
+          );
       final List<AudioCue> span = miningSentenceCueSpan(
         cues: cues,
         cue: cues[1],
@@ -170,9 +193,11 @@ void main() {
         sentenceNormCharOffset: selection.offset,
         sentenceNormCharLength: selection.length,
       );
-      expect(span, hasLength(3),
-          reason:
-              'native selection must override the narrower cached sentence');
+      expect(
+        span,
+        hasLength(3),
+        reason: 'native selection must override the narrower cached sentence',
+      );
 
       final AudioPlaybackRange range = clipExportGlobalRange(
         span: span,
@@ -182,11 +207,11 @@ void main() {
       )!;
       final AudiobookClipMultiCueResult classified =
           classifyAudiobookClipMultiCue(
-        selectedText: selection.text,
-        audioFileCount: 1,
-        globalRange: range,
-        cueSpans: clipCueSpansWithDelay(span: span, delayMs: 0),
-      );
+            selectedText: selection.text,
+            audioFileCount: 1,
+            globalRange: range,
+            cueSpans: clipCueSpansWithDelay(span: span, delayMs: 0),
+          );
       expect(classified.isExportable, isTrue);
       expect(
         audiobookClipCueTextMatchesSelection(
@@ -201,8 +226,11 @@ void main() {
         globalEndMs: classified.globalEndMs,
         fps: 2,
       ).map((ClipFrameSpec frame) => frame.highlightCueIndex).toList();
-      expect(highlights, <int>[0, 1, 2],
-          reason: 'the production frame plan must highlight each selected cue');
+      expect(highlights, <int>[
+        0,
+        1,
+        2,
+      ], reason: 'the production frame plan must highlight each selected cue');
     });
   });
 }

@@ -54,12 +54,21 @@ void main() {
           dragDy: -180,
         );
         debugPrint('[mouse-drag][horizontal] $horizontal');
-        expect(horizontal['characterHit'], isTrue,
-            reason: 'probe must start over real reader body text');
-        expect((horizontal['deltaY'] as num).abs(), greaterThan(20),
-            reason: 'horizontal continuous drag over text must scroll Y');
-        expect(horizontal['selectionText'], '',
-            reason: 'claimed reader drag must not leave native selection');
+        expect(
+          horizontal['characterHit'],
+          isTrue,
+          reason: 'probe must start over real reader body text',
+        );
+        expect(
+          (horizontal['deltaY'] as num).abs(),
+          greaterThan(20),
+          reason: 'horizontal continuous drag over text must scroll Y',
+        );
+        expect(
+          horizontal['selectionText'],
+          '',
+          reason: 'claimed reader drag must not leave native selection',
+        );
 
         final Map<String, dynamic> vertical = await _runCase(
           tester: tester,
@@ -69,12 +78,21 @@ void main() {
           dragDy: 0,
         );
         debugPrint('[mouse-drag][vertical] $vertical');
-        expect(vertical['characterHit'], isTrue,
-            reason: 'probe must start over real reader body text');
-        expect((vertical['deltaX'] as num).abs(), greaterThan(20),
-            reason: 'vertical continuous drag over text must scroll X');
-        expect(vertical['selectionText'], '',
-            reason: 'claimed reader drag must not leave native selection');
+        expect(
+          vertical['characterHit'],
+          isTrue,
+          reason: 'probe must start over real reader body text',
+        );
+        expect(
+          (vertical['deltaX'] as num).abs(),
+          greaterThan(20),
+          reason: 'vertical continuous drag over text must scroll X',
+        );
+        expect(
+          vertical['selectionText'],
+          '',
+          reason: 'claimed reader drag must not leave native selection',
+        );
 
         await takeScreenshot(binding, 'reader_mouse_drag_scroll_verified');
         assertStrictErrors(errors);
@@ -114,19 +132,27 @@ Future<Map<String, dynamic>> _runCase({
     canEdit: true,
   );
 
-  final NavigatorState navigator =
-      tester.state<NavigatorState>(find.byType(Navigator).first);
-  unawaited(navigator.push<void>(MaterialPageRoute<void>(
-    builder: (_) => source.buildLaunchPage(item: item),
-  )));
+  final NavigatorState navigator = tester.state<NavigatorState>(
+    find.byType(Navigator).first,
+  );
+  unawaited(
+    navigator.push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => source.buildLaunchPage(item: item),
+      ),
+    ),
+  );
   await tester.pump(const Duration(seconds: 3));
 
   const Key webViewKey = ValueKey<String>('fushi_webview');
   for (int i = 0; i < 80 && find.byKey(webViewKey).evaluate().isEmpty; i++) {
     await tester.pump(const Duration(milliseconds: 500));
   }
-  expect(find.byKey(webViewKey), findsOneWidget,
-      reason: '$writingMode reader WebView must mount');
+  expect(
+    find.byKey(webViewKey),
+    findsOneWidget,
+    reason: '$writingMode reader WebView must mount',
+  );
 
   const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
   bool contentReady = false;
@@ -137,8 +163,11 @@ Future<Map<String, dynamic>> _runCase({
       break;
     }
   }
-  expect(contentReady, isTrue,
-      reason: '$writingMode reader content must become ready');
+  expect(
+    contentReady,
+    isTrue,
+    reason: '$writingMode reader content must become ready',
+  );
   await tester.pump(const Duration(seconds: 3));
 
   final Future<dynamic> Function(String source)? eval =
@@ -151,16 +180,19 @@ Future<Map<String, dynamic>> _runCase({
 
   navigator.pop();
   await tester.pump(const Duration(seconds: 2));
-  for (int i = 0;
-      i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
-      i++) {
+  for (
+    int i = 0;
+    i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
+    i++
+  ) {
     await tester.pump(const Duration(milliseconds: 250));
   }
 
   return result;
 }
 
-String _dragProbeJs({required int dragDx, required int dragDy}) => '''
+String _dragProbeJs({required int dragDx, required int dragDy}) =>
+    '''
 (function() {
   function visibleTextPoint() {
     var accept = NodeFilter.FILTER_ACCEPT;

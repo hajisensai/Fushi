@@ -1,7 +1,7 @@
 /// 合集子篇判据（BUG-1393）：谁是子篇、它的作品海报该落到哪个合集。
 library;
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/scraper/collection_member_policy.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -48,14 +48,13 @@ void main() {
     });
 
     test('同条目跨多个多成员合集：取最小 collectionId（与折叠归属同口径）', () {
-      final Map<String, int> uids = multiMemberCollectionIdByVideoUid(
-        <MediaCollectionItemRow>[
-          _item(9, 'video', 'video/both'),
-          _item(9, 'video', 'video/nine'),
-          _item(5, 'video', 'video/both'),
-          _item(5, 'video', 'video/five'),
-        ],
-      );
+      final Map<String, int> uids =
+          multiMemberCollectionIdByVideoUid(<MediaCollectionItemRow>[
+            _item(9, 'video', 'video/both'),
+            _item(9, 'video', 'video/nine'),
+            _item(5, 'video', 'video/both'),
+            _item(5, 'video', 'video/five'),
+          ]);
       expect(uids['video/both'], 5, reason: '海报该落到库网格里折叠进的那张卡');
     });
 

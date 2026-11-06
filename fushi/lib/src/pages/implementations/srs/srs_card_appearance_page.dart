@@ -13,6 +13,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
+import 'package:fushi_engine/srs/srs_builtin_template_restore.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -20,17 +21,32 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_builtin_template_restore_action.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
+import 'package:fushi/src/srs/srs_fushi_card_items.dart'
+    show srsFushiCardRenderedNative;
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_sample.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 自定义强调色的候选（色相环上均匀取，外加 Fushi 默认绿）。
 const List<int> kSrsCardAccentSwatches = <int>[
@@ -45,6 +61,12 @@ const List<int> kSrsCardAccentSwatches = <int>[
   0xFF00696F,
   0xFF5D5F5F,
 ];
+
+/// 「释义显示的词典」的选项（0 = 全部；对齐 Lapis 的 `{glossary-first-2}` / `-3}`）。
+const List<int> kSrsCardGlossaryDictChoices = <int>[0, 2, 3];
+
+/// 首行缩进的选项（字数，0 = 不缩进）。
+const List<int> kSrsCardIndentChoices = <int>[0, 1, 2];
 
 /// 预览里用哪张卡。
 enum SrsCardPreviewSource { sample, mine }
@@ -112,12 +134,7 @@ SrsCardPreviewFrame srsCardPreviewFrame(
 
 /// 打开卡面外观页（复习页 ⋯、笔记类型管理页 Fushi 卡片那一行共用）。
 Future<void> openSrsCardAppearancePage(BuildContext context) =>
-    Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => const SrsCardAppearancePage(),
-      ),
-    );
+    srsPushPage<void>(context, (_) => const SrsCardAppearancePage());
 
 class SrsCardAppearancePage extends ConsumerStatefulWidget {
   const SrsCardAppearancePage({super.key});
@@ -139,6 +156,10 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
 
   /// 用户的 Fushi 卡片模板未改过：预览与复习页一样走原生 + 释义 WebView。
   bool _sampleNative = true;
+
+  /// 读到的库与 Fushi 卡片笔记类型（「恢复内置模板」入口用）。
+  SrsDbStore? _store;
+  SrsNoteTypeView? _fushiType;
   final String _sampleDefinitions =
       _renderSample(
         FushiCardNoteType.template.front,
@@ -190,6 +211,8 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
         );
         if (mounted && sample != null) {
           setState(() {
+            _store = store;
+            _fushiType = type;
             _sample = sample;
             _css = type.css;
             _sampleNative =
@@ -240,11 +263,9 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
   }
 
   /// 卡面字体走统一字体库：已有字体、推荐下载、URL / 文件导入、系统字体、用途徽章都在那里。
-  Future<void> _openFontLibrary() => Navigator.of(context).push<void>(
-    adaptivePageRoute<void>(
-      context: context,
-      builder: (_) => const CustomFontsPage(target: FontTarget.srsCard),
-    ),
+  Future<void> _openFontLibrary() => srsPushPage<void>(
+    context,
+    (_) => const CustomFontsPage(target: FontTarget.srsCard),
   );
 
   // ---------------------------------------------------------------- 页面
@@ -471,20 +492,25 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
     );
   }
 
-  /// 预览卡面：模板未改的 Fushi 卡片与复习页同样走原生混合渲染，否则整面 WebView。
+  /// 预览卡面：区块布局认得出的 Fushi 卡片与复习页同样走原生混合渲染，否则整面 WebView。
   Widget _faceView(
     BuildContext context,
     SrsCardFace face,
     SrsCardFaceBuilder faceBuilder, {
     required bool mine,
   }) {
+    // 我的卡：与复习页同一判据（区块布局认得出、自定义区块原生画得全）。
     final String? defs = mine
-        ? _mine!.fushiCardDefinitions
+        ? (srsFushiCardRenderedNative(_mine!, languageCode: face.languageCode)
+              ? _mine!.fushiCardDefinitions
+              : null)
         : (_sampleNative ? _sampleDefinitions : null);
     if (defs == null) return faceBuilder(context, face);
     return SrsFushiCardView(
       key: const ValueKey<String>('srs-card-preview-native'),
       face: face,
+      front: mine ? _mine!.fushiCardFront : null,
+      back: mine ? _mine!.fushiCardBack : null,
       fields: mine ? _mine!.fields : srsSampleCardFields(),
       definitionsHtml: defs,
     );
@@ -591,11 +617,86 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
 
   // ---------------------------------------------------------------- 控件
 
+  /// Fushi 卡片的模板 / 样式与内置版本不一致：复习卡退回整面网页渲染，下面的原生外观选项不生效。明说出来，
+  /// 能恢复时给出「恢复内置模板」（以前只悄悄切了预览，用户调开关看不到任何变化）。
+  Widget _nativeOffNotice(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final SrsDbStore? store = _store;
+    final SrsNoteTypeView? type = _fushiType;
+    final bool restorable =
+        store != null && type != null && store.builtinTemplatesModified(type);
+    return AdaptiveSettingsSection(
+      key: const ValueKey<String>('srs-card-native-off'),
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.all(tokens.spacing.card),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  FushiIcon(
+                    FushiIcons.warning,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  SizedBox(width: tokens.spacing.gap),
+                  Expanded(
+                    child: Text(
+                      t.srs_card_appearance_native_off_hint,
+                      style: context.fushiType.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+              if (restorable) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
+                FushiFilledButton.tonalIcon(
+                  key: const ValueKey<String>('srs-card-restore-builtin'),
+                  onPressed: () => srsRunLogged(
+                    'SrsCardAppearance.restoreBuiltin',
+                    () => confirmAndRestoreBuiltinTemplates(
+                      context,
+                      store: store,
+                      noteTypeId: type.id,
+                      onChanged: () {
+                        if (mounted) unawaited(_loadCards());
+                      },
+                    ),
+                  ),
+                  icon: const FushiIcon(FushiIcons.refresh),
+                  label: Text(t.srs_note_types_builtin_restore),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _controls(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsCardAppearance a = _appearance;
     String pct(double v) => '${(v * 100).round()}%';
     final List<Widget> sections = <Widget>[
+      if (!_sampleNative) _nativeOffNotice(context),
+      // 其它卡片类型（Anki 导入牌组、Lapis、自建）的设计系统样式覆盖：下面各节只管 Fushi 卡片，
+      // 这一项管其余全部卡片，放最前面。
+      AdaptiveSettingsSection(
+        title: t.srs_card_appearance_section_other,
+        children: <Widget>[
+          AdaptiveSettingsSwitchRow(
+            key: const ValueKey<String>('srs-card-design-skin'),
+            title: t.srs_card_appearance_design_skin,
+            subtitle: t.srs_card_appearance_design_skin_hint,
+            value: a.designSkin,
+            onChanged: (bool v) => _set(a.copyWith(designSkin: v)),
+          ),
+        ],
+      ),
       AdaptiveSettingsSection(
         title: t.srs_card_appearance_section_fonts,
         children: <Widget>[
@@ -643,6 +744,67 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
             max: SrsCardAppearance.maxLineSpacing,
             divisions: 9,
             onChanged: (double v) => _set(a.copyWith(lineSpacing: v)),
+          ),
+          // 正反面字号分开：关 = 上面两项正反面共用（旧行为）。
+          AdaptiveSettingsSwitchRow(
+            key: const ValueKey<String>('srs-card-separate-front-size'),
+            title: t.srs_card_appearance_separate_front_size,
+            subtitle: t.srs_card_appearance_separate_front_size_hint,
+            value: a.separateFrontSize,
+            onChanged: (bool v) => _set(
+              a.copyWith(
+                separateFrontSize: v,
+                // 打开时从当前共用值起步，预览不跳变。
+                frontTextScale: v ? a.textScale : null,
+                frontTermScale: v ? a.termScale : null,
+              ),
+            ),
+          ),
+          if (a.separateFrontSize) ...<Widget>[
+            AdaptiveSettingsSliderRow(
+              key: const ValueKey<String>('srs-card-front-text-scale'),
+              title: t.srs_card_appearance_front_text_size,
+              readout: pct(a.frontTextScale),
+              value: a.frontTextScale,
+              min: SrsCardAppearance.minTextScale,
+              max: SrsCardAppearance.maxTextScale,
+              divisions: 11,
+              onChanged: (double v) => _set(a.copyWith(frontTextScale: v)),
+            ),
+            AdaptiveSettingsSliderRow(
+              key: const ValueKey<String>('srs-card-front-term-scale'),
+              title: t.srs_card_appearance_front_term_size,
+              readout: pct(a.frontTermScale),
+              value: a.frontTermScale,
+              min: SrsCardAppearance.minTermScale,
+              max: SrsCardAppearance.maxTermScale,
+              divisions: 12,
+              onChanged: (double v) => _set(a.copyWith(frontTermScale: v)),
+            ),
+          ],
+          _alignRow(
+            'sentence-align',
+            t.srs_card_appearance_sentence_align,
+            a.sentenceAlign,
+            (SrsCardTextAlign v) => a.copyWith(sentenceAlign: v),
+          ),
+          _indentRow(
+            'sentence-indent',
+            t.srs_card_appearance_sentence_indent,
+            a.sentenceIndent,
+            (int v) => a.copyWith(sentenceIndent: v),
+          ),
+          _alignRow(
+            'glossary-align',
+            t.srs_card_appearance_glossary_align,
+            a.glossaryAlign,
+            (SrsCardTextAlign v) => a.copyWith(glossaryAlign: v),
+          ),
+          _indentRow(
+            'glossary-indent',
+            t.srs_card_appearance_glossary_indent,
+            a.glossaryIndent,
+            (int v) => a.copyWith(glossaryIndent: v),
           ),
         ],
       ),
@@ -732,6 +894,15 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
             a.showTranslation,
             (bool v) => a.copyWith(showTranslation: v),
           ),
+          if (a.showTranslation)
+            _switch(
+              'blur-translation',
+              t.srs_card_appearance_blur_translation,
+              a.blurTranslation,
+              (bool v) => a.copyWith(blurTranslation: v),
+              // 模板卡面只认 Fushi 卡片模板的 `.fc-translation`（srs_card_translation_blur.dart）。
+              subtitle: t.srs_card_appearance_blur_translation_desc,
+            ),
           _switch(
             'show-frequency',
             t.srs_card_appearance_show_frequency,
@@ -743,6 +914,27 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
             t.srs_card_appearance_show_source,
             a.showSource,
             (bool v) => a.copyWith(showSource: v),
+          ),
+          // 释义只显示前 N 本词典（对齐 Lapis {glossary-first-N}）：只改显示，旧卡同样生效。
+          AdaptiveSettingsSegmentedRow<int>(
+            key: const ValueKey<String>('srs-card-glossary-dicts'),
+            title: t.srs_card_appearance_glossary_dicts,
+            subtitle: t.srs_card_appearance_glossary_dicts_hint,
+            selected: kSrsCardGlossaryDictChoices.contains(a.glossaryDictLimit)
+                ? a.glossaryDictLimit
+                : 0,
+            segments: <ButtonSegment<int>>[
+              for (final int n in kSrsCardGlossaryDictChoices)
+                ButtonSegment<int>(
+                  value: n,
+                  label: Text(
+                    n == 0
+                        ? t.srs_card_appearance_glossary_dicts_all
+                        : t.srs_card_appearance_glossary_dicts_first(count: n),
+                  ),
+                ),
+            ],
+            onChanged: (int v) => _set(a.copyWith(glossaryDictLimit: v)),
           ),
           _switch(
             'glossary-expanded',
@@ -767,12 +959,6 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
             t.srs_card_appearance_front_frequency,
             a.frontFrequency,
             (bool v) => a.copyWith(frontFrequency: v),
-          ),
-          _switch(
-            'sentence-furigana',
-            t.srs_card_appearance_sentence_furigana,
-            a.sentenceFurigana,
-            (bool v) => a.copyWith(sentenceFurigana: v),
           ),
         ],
       ),
@@ -799,14 +985,67 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
     );
   }
 
+  /// 文字区块对齐：默认（模板原样）/ 左对齐 / 居中。
+  Widget _alignRow(
+    String key,
+    String title,
+    SrsCardTextAlign value,
+    SrsCardAppearance Function(SrsCardTextAlign v) change,
+  ) => AdaptiveSettingsSegmentedRow<SrsCardTextAlign>(
+    key: ValueKey<String>('srs-card-$key'),
+    title: title,
+    selected: value,
+    segments: <ButtonSegment<SrsCardTextAlign>>[
+      ButtonSegment<SrsCardTextAlign>(
+        value: SrsCardTextAlign.auto,
+        label: Text(t.srs_card_appearance_align_auto),
+      ),
+      ButtonSegment<SrsCardTextAlign>(
+        value: SrsCardTextAlign.start,
+        label: Text(t.srs_card_appearance_align_start),
+      ),
+      ButtonSegment<SrsCardTextAlign>(
+        value: SrsCardTextAlign.center,
+        label: Text(t.srs_card_appearance_align_center),
+      ),
+    ],
+    onChanged: (SrsCardTextAlign v) => _set(change(v)),
+  );
+
+  /// 首行缩进：无 / 1 字 / 2 字。
+  Widget _indentRow(
+    String key,
+    String title,
+    int value,
+    SrsCardAppearance Function(int v) change,
+  ) => AdaptiveSettingsSegmentedRow<int>(
+    key: ValueKey<String>('srs-card-$key'),
+    title: title,
+    selected: kSrsCardIndentChoices.contains(value) ? value : 0,
+    segments: <ButtonSegment<int>>[
+      for (final int n in kSrsCardIndentChoices)
+        ButtonSegment<int>(
+          value: n,
+          label: Text(
+            n == 0
+                ? t.srs_card_appearance_indent_none
+                : t.srs_card_appearance_indent_chars(count: n),
+          ),
+        ),
+    ],
+    onChanged: (int v) => _set(change(v)),
+  );
+
   Widget _switch(
     String key,
     String title,
     bool value,
-    SrsCardAppearance Function(bool v) change,
-  ) => AdaptiveSettingsSwitchRow(
+    SrsCardAppearance Function(bool v) change, {
+    String? subtitle,
+  }) => AdaptiveSettingsSwitchRow(
     key: ValueKey<String>('srs-card-$key'),
     title: title,
+    subtitle: subtitle,
     value: value,
     onChanged: (bool v) => _set(change(v)),
   );

@@ -4,8 +4,6 @@
 
 #include <algorithm>
 
-namespace {
-
 // 空格分词类字母：用空格分词的脚本的字母（拉丁/西里尔/希腊/阿拉伯/希伯来/亚美尼亚/格鲁吉亚）。
 // 刻意不含 CJK 汉字/假名/谚文，也不含数字/标点/组合记号/无空格脚本(泰/老挝/高棉/缅甸)。
 // 范围外一律 false → 在那些位置退回逐码点旧行为（不引入回归，可按需扩展脚本）。
@@ -40,6 +38,8 @@ bool is_space_delimited_letter(char32_t c) {
   if ((c >= 0x10A0 && c <= 0x10C5) || (c >= 0x10D0 && c <= 0x10FA)) return true;
   return false;
 }
+
+namespace {
 
 bool is_scan_whitespace(char32_t c) {
   return c == 0x20 || (c >= 0x09 && c <= 0x0D) || c == 0xA0 || c == 0x1680 ||

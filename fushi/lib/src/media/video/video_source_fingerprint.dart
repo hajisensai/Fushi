@@ -2,12 +2,12 @@ import 'dart:collection';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:crypto/crypto.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 
 /// Full-file identity for card sources. The library UID alone is name-derived.
 class VideoSourceFingerprint {
   VideoSourceFingerprint({this.maxCachedFiles = 128})
-      : assert(maxCachedFiles > 0);
+    : assert(maxCachedFiles > 0);
 
   static final VideoSourceFingerprint instance = VideoSourceFingerprint();
   final int maxCachedFiles;
@@ -37,7 +37,9 @@ class VideoSourceFingerprint {
     }
     final String digest = await Isolate.run<String>(() async {
       final File file = File(absolutePath);
-      final String hash = (await sha256.bind(file.openRead()).first).toString();
+      // SHA-256 runs in native/fushi_compute (ffc_hash_sha256_*), same lowercase
+      // hex as before; sync reads are fine on this worker isolate.
+      final String hash = ffcSha256FileSync(absolutePath);
       if (!_sameFileState(stat, await file.stat())) {
         throw FileSystemException(
           'Video changed while calculating identity',

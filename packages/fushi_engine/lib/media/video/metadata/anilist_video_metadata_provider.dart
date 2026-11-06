@@ -12,9 +12,9 @@ class AniListVideoMetadataProvider
     http.Client? client,
     VideoMetadataHttpClient? transport,
     this.endpoint = 'https://graphql.anilist.co',
-  })  : assert(client == null || transport == null),
-        _transport = transport ?? VideoMetadataHttpClient(client: client),
-        _ownsTransport = transport == null;
+  }) : assert(client == null || transport == null),
+       _transport = transport ?? VideoMetadataHttpClient(client: client),
+       _ownsTransport = transport == null;
 
   final VideoMetadataHttpClient _transport;
   final bool _ownsTransport;
@@ -133,8 +133,9 @@ query ($id: Int!) {
       operation: 'AniList details',
       cacheKey: 'anilist:work:$id',
     );
-    final Map<String, Object?>? item =
-        metadataObject(metadataObject(payload['data'])?['Media']);
+    final Map<String, Object?>? item = metadataObject(
+      metadataObject(payload['data'])?['Media'],
+    );
     return item == null ? null : _mapWork(item, detailed: true);
   }
 
@@ -173,8 +174,7 @@ query ($id: Int!) {
   @override
   Future<List<VideoMetadataExtra>> fetchExtras(
     VideoMetadataLookup lookup,
-  ) async =>
-      const <VideoMetadataExtra>[];
+  ) async => const <VideoMetadataExtra>[];
 
   VideoMetadataWork? _mapWork(
     Map<String, Object?> item, {
@@ -190,8 +190,8 @@ query ($id: Int!) {
     if (id == null || title == null) return null;
     final VideoMetadataMediaKind kind =
         metadataString(item['format']) == 'MOVIE'
-            ? VideoMetadataMediaKind.movie
-            : VideoMetadataMediaKind.tv;
+        ? VideoMetadataMediaKind.movie
+        : VideoMetadataMediaKind.tv;
     final String? premiered = _date(item['startDate']);
     final Map<String, Object?> cover =
         metadataObject(item['coverImage']) ?? const <String, Object?>{};
@@ -305,7 +305,8 @@ query ($id: Int!) {
         originalName: metadataString(
           metadataObject(characterNode['name'])?['native'],
         ),
-        imageUrl: metadataString(characterImage['large']) ??
+        imageUrl:
+            metadataString(characterImage['large']) ??
             metadataString(characterImage['medium']),
         ids: <VideoMetadataId>[
           if (characterId != null)
@@ -316,14 +317,16 @@ query ($id: Int!) {
         final Map<String, Object?>? actor = metadataObject(actorNode);
         final String? actorName = _name(actor?['name']);
         if (actor == null || actorName == null) continue;
-        credits.add(VideoMetadataCredit(
-          kind: VideoMetadataCreditKind.voiceActor,
-          person: _person(actor, actorName),
-          character: character,
-          language: 'ja',
-          roleName: characterName,
-          order: credits.length,
-        ));
+        credits.add(
+          VideoMetadataCredit(
+            kind: VideoMetadataCreditKind.voiceActor,
+            person: _person(actor, actorName),
+            character: character,
+            language: 'ja',
+            roleName: characterName,
+            order: credits.length,
+          ),
+        );
       }
     }
 
@@ -338,18 +341,20 @@ query ($id: Int!) {
       final VideoMetadataCreditKind? kind = role.contains('director')
           ? VideoMetadataCreditKind.director
           : (role.contains('script') ||
-                  role.contains('screenplay') ||
-                  role.contains('series composition') ||
-                  role.contains('writer'))
-              ? VideoMetadataCreditKind.writer
-              : null;
+                role.contains('screenplay') ||
+                role.contains('series composition') ||
+                role.contains('writer'))
+          ? VideoMetadataCreditKind.writer
+          : null;
       if (kind == null) continue;
-      credits.add(VideoMetadataCredit(
-        kind: kind,
-        person: _person(personNode, name),
-        job: metadataString(edge['role']),
-        order: credits.length,
-      ));
+      credits.add(
+        VideoMetadataCredit(
+          kind: kind,
+          person: _person(personNode, name),
+          job: metadataString(edge['role']),
+          order: credits.length,
+        ),
+      );
     }
     return credits;
   }
@@ -418,13 +423,14 @@ query ($id: Int!) {
       operation: operation,
       cacheKey: cacheKey,
     );
-    final Map<String, Object?> payload =
-        response.decodeJsonObject(operation: operation);
+    final Map<String, Object?> payload = response.decodeJsonObject(
+      operation: operation,
+    );
     final List<Object?> errors = metadataList(payload['errors']);
     if (errors.isNotEmpty) {
       final String message =
           metadataString(metadataObject(errors.first)?['message']) ??
-              '${errors.first}';
+          '${errors.first}';
       throw VideoMetadataNetworkException('$operation GraphQL error: $message');
     }
     return payload;

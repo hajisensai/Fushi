@@ -34,53 +34,66 @@ void main() {
 
       // Idempotent: a second cancel must not re-fire (abort consumed on first).
       cancellation.cancel();
-      expect(abortCalls, 1,
-          reason: 'abort fires once; cancel stays idempotent');
+      expect(
+        abortCalls,
+        1,
+        reason: 'abort fires once; cancel stays idempotent',
+      );
       expect(cancellation.isCancelled, isTrue);
     });
 
-    test('registerAbort after an early cancel fires immediately (race cover)',
-        () {
-      final UpdateDownloadCancellation cancellation =
-          UpdateDownloadCancellation()
-            ..cancel(); // user cancelled before client was built
-      var abortCalls = 0;
-      cancellation.registerAbort(() => abortCalls += 1);
-      expect(abortCalls, 1,
-          reason: 'registering an abort while already cancelled must fire it');
-    });
+    test(
+      'registerAbort after an early cancel fires immediately (race cover)',
+      () {
+        final UpdateDownloadCancellation cancellation =
+            UpdateDownloadCancellation()
+              ..cancel(); // user cancelled before client was built
+        var abortCalls = 0;
+        cancellation.registerAbort(() => abortCalls += 1);
+        expect(
+          abortCalls,
+          1,
+          reason: 'registering an abort while already cancelled must fire it',
+        );
+      },
+    );
 
-    test('clearAbort() unregisters: later cancel does not touch the old client',
-        () {
-      final UpdateDownloadCancellation cancellation =
-          UpdateDownloadCancellation();
-      var abortCalls = 0;
-      cancellation.registerAbort(() => abortCalls += 1);
-      cancellation.clearAbort();
-      cancellation.cancel();
-      expect(abortCalls, 0,
-          reason: 'cleared abort must not fire (avoids closing reused client)');
-    });
+    test(
+      'clearAbort() unregisters: later cancel does not touch the old client',
+      () {
+        final UpdateDownloadCancellation cancellation =
+            UpdateDownloadCancellation();
+        var abortCalls = 0;
+        cancellation.registerAbort(() => abortCalls += 1);
+        cancellation.clearAbort();
+        cancellation.cancel();
+        expect(
+          abortCalls,
+          0,
+          reason: 'cleared abort must not fire (avoids closing reused client)',
+        );
+      },
+    );
 
     test('abort callback throwing does not escape cancel()', () {
       final UpdateDownloadCancellation cancellation =
           UpdateDownloadCancellation();
-      cancellation
-          .registerAbort(() => throw StateError('client already closed'));
+      cancellation.registerAbort(
+        () => throw StateError('client already closed'),
+      );
       // Must not throw: force-close is best-effort on the cancel path.
       expect(cancellation.cancel, returnsNormally);
       expect(cancellation.isCancelled, isTrue);
     });
   });
 
-  group(
-      'downloadUpdateAsset cancel surfaces cleanly even mid-stream (TODO-808)',
-      () {
+  group('downloadUpdateAsset cancel surfaces cleanly even mid-stream (TODO-808)', () {
     late Directory updatesDir;
 
     setUp(() async {
-      updatesDir =
-          await Directory.systemTemp.createTemp('fushi-update-cancel808');
+      updatesDir = await Directory.systemTemp.createTemp(
+        'fushi-update-cancel808',
+      );
     });
 
     tearDown(() async {
@@ -139,9 +152,13 @@ void main() {
         } catch (e) {
           thrown = e;
         }
-        expect(thrown, isA<UpdateDownloadCancelledException>(),
-            reason: 'mid-stream abort on the last candidate must surface as '
-                'cancelled, not as a network failure');
+        expect(
+          thrown,
+          isA<UpdateDownloadCancelledException>(),
+          reason:
+              'mid-stream abort on the last candidate must surface as '
+              'cancelled, not as a network failure',
+        );
       },
       timeout: const Timeout(Duration(seconds: 30)),
     );
@@ -153,12 +170,12 @@ void main() {
 const int _minSeg = 2;
 
 UpdateAsset _asset(List<int> payload) => UpdateAsset(
-      name: 'hibiki-1.0.0-windows-setup.exe',
-      url:
-          'https://github.com/hajisensai/hibiki/releases/download/v1.0.0/hibiki-1.0.0-windows-setup.exe',
-      sizeBytes: payload.length,
-      sha256Digest: _sha256Hex(payload),
-    );
+  name: 'hibiki-1.0.0-windows-setup.exe',
+  url:
+      'https://github.com/hajisensai/hibiki/releases/download/v1.0.0/hibiki-1.0.0-windows-setup.exe',
+  sizeBytes: payload.length,
+  sha256Digest: _sha256Hex(payload),
+);
 
 List<int> _payload() =>
     List<int>.generate(16, (int i) => (i * 11 + 3) & 0xFF, growable: false);

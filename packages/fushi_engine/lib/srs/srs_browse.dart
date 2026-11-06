@@ -1,24 +1,18 @@
-/// 卡片浏览（对齐 Anki 浏览器）：一次性快照 + Anki 搜索语法筛选 + 排序 + 卡片 / 笔记两种模式。
+/// 卡片浏览（对齐 Anki 浏览器）：Anki 搜索语法筛选 + 排序 + 卡片 / 笔记两种模式。
 ///
-/// 求值对象 [SrsCardSearchSubject] 同时给 AnkiConnect 兼容层用（findNotes / findCards），
-/// 两边的搜索语义只有这一份。
+/// 浏览页的数据常驻原生会话（[SrsBrowseSession] → native/fushi_fsrs/src/store/browse.rs）：搜索语料与
+/// 列数据在 Rust 里、随写入增量更新，筛选与排序在 Rust 里做，Dart 只取命中行的分页。AnkiConnect 兼容层的
+/// findNotes / findCards / 查重用同一个会话（[srsBrowseContext]）。
 library;
 
-import 'package:fushi_anki/fushi_anki_core.dart' show ankiStripHtml;
-import 'package:fushi_core/fushi_core.dart';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:fushi_anki/fushi_anki_core.dart' show FushiCardFields;
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
-
-/// 笔记最后一次改动的时刻（全部字段键当前生效记录里 HLC 物理时刻最大的一条；没有记录 = 创建时刻）。
-int srsNoteModifiedAt(SrsNoteView note) {
-  int out = note.createdAt;
-  for (final SrsRegister r in note.edits.registers) {
-    final SrsFieldEdit? w = r.winner;
-    if (w != null && w.hlc.physical > out) out = w.hlc.physical;
-  }
-  return out;
-}
 
 /// Anki 搜索里的字面量：通配符（`*` `_` `\`）与语法字符（`"` `:`）全部转义。
 String _searchLiteral(String text) =>
@@ -32,153 +26,21 @@ String srsFieldContainsQuery(String field, String text) {
   return '"${_searchLiteral(field)}:*${_searchLiteral(trimmed)}*"';
 }
 
-/// 一张卡（连同笔记、笔记类型）作为 Anki 搜索的求值对象。
-class SrsCardSearchSubject implements SrsSearchSubject {
-  SrsCardSearchSubject({
-    required this.note,
-    required this.noteType,
-    required this.card,
-    required this.deckName,
-    required this.day,
-    required this.nowMs,
-    required this.todayDayIndex,
-    int Function(String uuid)? numericId,
-  }) : _numericId = numericId ?? SrsIds.ankiNumericId;
+/// 「浏览此牌组的卡片」的查询：`deck:"全名"`（Anki 语义，含子牌组）。牌组名里的通配符
+/// （`*` `_`）、反斜杠与引号转义成字面量；层级分隔符 `::` 在引号内照原样保留。
+String srsDeckQuery(String deckFullName) =>
+    'deck:"${deckFullName.replaceAllMapped(RegExp(r'[\\*_"]'), (Match m) => '\\${m.group(0)}')}"';
 
-  final SrsNoteView note;
-  final SrsNoteTypeView noteType;
-  final SrsCardCacheRow card;
-  final SrsDayContext day;
-  final int nowMs;
-  final int Function(String uuid) _numericId;
-
-  @override
-  final String deckName;
-
-  @override
-  final int todayDayIndex;
-
-  SrsQueue get queue => SrsQueue.parse(card.queue);
-
-  /// 这张卡的模板（模板被删了返回 null）。
-  late final SrsTemplateDef? template = noteType.templates
-      .where((SrsTemplateDef t) => t.id == card.templateId)
-      .firstOrNull;
-
-  /// 笔记最后一次改动的时刻。
-  late final int modifiedAt = srsNoteModifiedAt(note);
-
-  /// 排序字段（笔记类型的第一个字段，与 Anki 默认 sortf = 0 一致）去 HTML 后的文本。
-  late final String sortText = noteType.fields.isEmpty
-      ? ''
-      : ankiStripHtml(note.field(noteType.fields.first.id)).trim();
-
-  @override
-  String get noteTypeName => noteType.name;
-
-  @override
-  late final Map<String, String> fields = <String, String>{
-    for (final SrsFieldDef f in noteType.fields) f.name: note.field(f.id),
-  };
-
-  @override
-  List<String> get tags => note.tags;
-
-  @override
-  bool get isNew => queue == SrsQueue.newCard;
-
-  @override
-  bool get isLearn =>
-      queue == SrsQueue.learning || queue == SrsQueue.relearning;
-
-  @override
-  bool get isReview => queue == SrsQueue.review || queue == SrsQueue.relearning;
-
-  @override
-  bool get isDue => switch (queue) {
-    SrsQueue.newCard => false,
-    SrsQueue.review => (card.dueDay ?? 0) <= todayDayIndex,
-    SrsQueue.learning ||
-    SrsQueue.relearning => (card.dueAt ?? 0) <= nowMs + 20 * 60000,
-  };
-
-  @override
-  bool get isSuspended => card.suspended;
-
-  @override
-  bool get isBuried =>
-      card.buriedUntilDay != null && card.buriedUntilDay! > todayDayIndex;
-
-  @override
-  int get noteId => _numericId(note.id);
-
-  @override
-  int get cardId => _numericId(card.id);
-
-  @override
-  int get addedDayIndex => day.dayIndexOf(note.createdAt);
-
-  @override
-  int get flag => card.flag;
-
-  @override
-  int get cardOrdinal =>
-      noteType.isCloze ? card.clozeOrd : (template?.ord ?? 0) + 1;
-
-  @override
-  String get templateName => template?.name ?? '';
-
-  @override
-  int get intervalDays => switch (queue) {
-    SrsQueue.newCard || SrsQueue.learning => 0,
-    SrsQueue.review || SrsQueue.relearning => card.scheduledDays,
-  };
-
-  @override
-  int? get dueInDays {
-    switch (queue) {
-      case SrsQueue.newCard:
-        return null;
-      case SrsQueue.review:
-        final int? d = card.dueDay;
-        return d == null ? null : d - todayDayIndex;
-      case SrsQueue.learning || SrsQueue.relearning:
-        final int? at = card.dueAt;
-        if (at == null) return null;
-        // rslib：(due - 明天日界) / 86400，整数除法向零截断。
-        return (at - day.dayStartMs(todayDayIndex + 1)) ~/ 86400000;
-    }
-  }
-
-  @override
-  int get reps => card.reps;
-
-  @override
-  int get lapses => card.lapses;
-
-  @override
-  double? get stability => card.stability;
-
-  @override
-  double? get difficulty => card.difficulty;
-
-  @override
-  int get editedDayIndex => day.dayIndexOf(modifiedAt);
-
-  /// 到期排序键：复习卡按到期日、学习中按到期时刻折成日序号（同一天里排在复习卡前面），
-  /// 新卡没有到期日，排在最后（按加入顺序）。
-  double get dueSortKey => switch (queue) {
-    SrsQueue.newCard => double.infinity,
-    SrsQueue.review => (card.dueDay ?? todayDayIndex).toDouble(),
-    SrsQueue.learning ||
-    SrsQueue.relearning => day.dayIndexOf(card.dueAt ?? nowMs) - 0.5,
-  };
-}
+/// 「只看这个出处」的查询：[sourceKey] 为 null（没有出处的那一组）是 `src:none`，否则 `src:"键"`（引号、反斜杠、
+/// 通配符转义成字面量；内核按键整值相等比较）。键见 [SrsBrowseRow.sourceKey]。
+String srsSourceQuery(String? sourceKey) => sourceKey == null
+    ? 'src:none'
+    : 'src:"${sourceKey.replaceAllMapped(RegExp(r'[\\*_"]'), (Match m) => '\\${m.group(0)}')}"';
 
 /// 列表模式：一行一张卡 / 一行一条笔记。
 enum SrsBrowseMode { cards, notes }
 
-/// 排序列。
+/// 排序列（`name` 是浏览会话命令里的列名，native/fushi_fsrs/src/store/browse.rs `Column`）。
 enum SrsBrowseSortColumn {
   /// 排序字段（笔记类型的第一个字段）。
   sortField,
@@ -201,6 +63,9 @@ enum SrsBrowseSortColumn {
   /// FSRS 难度。
   difficulty,
 
+  /// 保持率（此刻的 FSRS 可提取度，[SrsBrowseRow.retention]；没有的排最后）。笔记模式取该笔记各卡的平均。
+  retention,
+
   /// 复习次数。
   reps,
 
@@ -212,6 +77,9 @@ enum SrsBrowseSortColumn {
 
   /// 笔记类型名。
   noteType,
+
+  /// 出处键（[SrsBrowseRow.sourceKey]；没有出处的排最后）：表格按出处分组用。
+  source,
 }
 
 /// 排序设置。
@@ -249,203 +117,677 @@ class SrsBrowseSort {
   int get hashCode => Object.hash(column, ascending, fieldName);
 }
 
-/// 列表的一行。卡片模式 [cards] 只有这一张；笔记模式是该笔记的全部可见卡片（批量操作对整条笔记生效），
-/// [primary] 是命中搜索的第一张（预览它）。
-class SrsBrowseItem {
-  const SrsBrowseItem({required this.primary, required this.cards});
-
-  final SrsCardSearchSubject primary;
-  final List<SrsCardSearchSubject> cards;
-
-  String get noteId => primary.note.id;
-  String get cardId => primary.card.id;
+/// 全部笔记类型的字段名（去重不区分大小写，按笔记类型、字段顺序）——「按字段搜索 / 排序」的下拉选项。
+List<String> srsBrowseFieldNames(List<SrsNoteTypeView> noteTypes) {
+  final Set<String> seen = <String>{};
+  final List<String> out = <String>[];
+  for (final SrsNoteTypeView t in noteTypes) {
+    for (final SrsFieldDef f in t.fields) {
+      if (seen.add(f.name.toLowerCase())) out.add(f.name);
+    }
+  }
+  return out;
 }
 
-/// 浏览页的一次性数据快照（每次写操作后重新加载）。
-class SrsBrowseSnapshot {
-  SrsBrowseSnapshot._(this.cards, this.noteTypes);
+/// 浏览列表的一行（列表 / 预览要显示的列）。卡片模式是一张卡；笔记模式是一条笔记，主卡 [cardId] 是命中
+/// 搜索的第一张，[cardCount] 是该笔记的全部可见卡数。
+class SrsBrowseRow {
+  const SrsBrowseRow({
+    required this.cardId,
+    required this.noteId,
+    required this.sortText,
+    required this.deckName,
+    required this.deckId,
+    required this.noteTypeName,
+    required this.templateName,
+    required this.queue,
+    required this.dueInDays,
+    required this.flag,
+    required this.isSuspended,
+    required this.isBuried,
+    required this.hasPendingDecision,
+    required this.cardCount,
+    required this.tags,
+    required this.reps,
+    required this.lapses,
+    required this.intervalDays,
+    required this.difficulty,
+    required this.retention,
+    required this.addedAt,
+    required this.modifiedAt,
+    required this.lastReviewAt,
+    required this.fieldPreview,
+    required this.fieldPreviewNames,
+    required this.imageRef,
+    required this.audioRef,
+    required this.sourceKey,
+    required this.sourceKind,
+    required this.sourceData,
+  });
 
-  /// 未删除笔记的全部可见卡片（按笔记创建时刻、卡片序号）。
-  final List<SrsCardSearchSubject> cards;
-  final List<SrsNoteTypeView> noteTypes;
+  final String cardId;
+  final String noteId;
 
-  static Future<SrsBrowseSnapshot> load(SrsDbStore store) async {
-    final List<SrsNoteTypeView> types = await store.noteTypes();
-    final Map<String, SrsNoteTypeView> typeById = <String, SrsNoteTypeView>{
-      for (final SrsNoteTypeView t in types) t.id: t,
-    };
-    final Map<String, SrsNoteView> notes = <String, SrsNoteView>{
-      for (final SrsNoteView n in await store.allNoteViews())
-        if (n.deletedAt == null) n.id: n,
-    };
-    final SrsDeckTree tree = await store.deckTree();
-    final SrsDayContext day = await store.dayContext();
-    final (int nowMs, _) = store.now();
-    final int today = day.dayIndexOf(nowMs);
-    final Map<String, String> deckNames = <String, String>{};
-    final List<SrsCardSearchSubject> out = <SrsCardSearchSubject>[];
-    for (final SrsCardCacheRow c in await store.allCardRows()) {
-      if (c.hidden) continue;
-      final SrsNoteView? n = notes[c.noteId];
-      final SrsNoteTypeView? t = n == null ? null : typeById[n.noteTypeId];
-      if (n == null || t == null || t.deletedAt != null) continue;
-      out.add(
-        SrsCardSearchSubject(
-          note: n,
-          noteType: t,
-          card: c,
-          deckName: deckNames[c.deckId] ??= tree[c.deckId] == null
-              ? ''
-              : tree.fullName(c.deckId),
-          day: day,
-          nowMs: nowMs,
-          todayDayIndex: today,
-        ),
-      );
-    }
-    out.sort(_naturalOrder);
-    return SrsBrowseSnapshot._(out, types);
+  /// 排序字段去 HTML、trim 后的文本。
+  final String sortText;
+  final String deckName;
+  final String deckId;
+  final String noteTypeName;
+
+  /// 主卡的模板名（模板被删了为空串）。
+  final String templateName;
+
+  /// 主卡的队列；null = 这一行的卡在取行之前已被删掉（列表下次刷新时消失）。
+  final SrsQueue? queue;
+
+  /// 到期天数（Anki 浏览器的「到期」列口径）；null = 没有到期日（新卡 / 按此刻回忆率排队的复习卡）。
+  final int? dueInDays;
+  final int flag;
+  final bool isSuspended;
+  final bool isBuried;
+
+  /// 笔记有内容类待裁决。
+  final bool hasPendingDecision;
+  final int cardCount;
+  final List<String> tags;
+
+  /// 主卡的复习 / 遗忘次数。
+  final int reps;
+  final int lapses;
+
+  /// 主卡当前间隔（天）；新卡 null（学习中的卡为 0）。
+  final int? intervalDays;
+
+  /// 主卡的 FSRS 难度（内核口径 1..10；显示成百分比用 `(d - 1) / 9`）；没有记忆状态 null。
+  final double? difficulty;
+
+  /// 主卡此刻的可提取度（0..1）：FSRS 遗忘曲线（卡所在牌组排程配置的记忆算法与参数）× 距上次复习的天数。
+  /// 新卡、没有稳定度或没有上次复习时刻 null。按 RWKV 回忆率排队的复习卡也给 FSRS 的值。
+  final double? retention;
+
+  /// 笔记添加时刻（毫秒）。
+  final int addedAt;
+
+  /// 笔记内容最后改动时刻（毫秒；各寄存器生效记录的最大物理时刻，不早于 [addedAt]，不含作答）。
+  final int modifiedAt;
+
+  /// 主卡上次复习时刻（毫秒）；没复习过 null。
+  final int? lastReviewAt;
+
+  /// 排序字段（第一个字段）之外、按字段顺序的前两个非空字段的纯文本（去 HTML 与 `[sound:…]`、trim，各截到
+  /// 120 个字符）；不足两个就少给。
+  final List<String> fieldPreview;
+
+  /// [fieldPreview] 每一项来自的字段名（同长度、同顺序）：表格原地改这两列时按名字写回。
+  final List<String> fieldPreviewNames;
+
+  /// 笔记字段里（按字段顺序）第一个 `<img src>` / `[sound:…]` 的媒体文件名；没有 null。
+  final String? imageRef;
+  final String? audioRef;
+
+  /// 出处分组键：`<kind>:<作品身份>`（不含章节 / 位置），身份取不到时退回 `<kind>`（规则见
+  /// docs/specs/2026-11-04-srs-browser-redesign.md §2.1）；没有出处 null。「只看这一作」用 [srsSourceQuery]。
+  final String? sourceKey;
+
+  /// 出处种类（`SrsSourceKind` 的值）；没有出处 null。
+  final String? sourceKind;
+
+  /// 出处原始 JSON（`SrsSourceRef.toJson()` 的形状：`{kind, ...data}`）；没有出处 null。用 [source] 解析。
+  final String? sourceData;
+
+  /// [sourceData] 解析成的出处（解析不了 null）。
+  SrsSourceRef? get source => _decodeSource(sourceData);
+
+  bool get isNew => queue == SrsQueue.newCard;
+  bool get gone => queue == null;
+}
+
+/// 批量操作的目标（[SrsBrowseResult.targets]）。
+class SrsBrowseTargets {
+  const SrsBrowseTargets({
+    required this.cardIds,
+    required this.noteIds,
+    required this.allSuspended,
+    required this.allBuried,
+    required this.flags,
+    required this.deckIds,
+  });
+
+  /// 目标行的全部卡（笔记模式展开成该笔记的全部可见卡），按列表顺序。
+  final List<String> cardIds;
+  final List<String> noteIds;
+  final bool allSuspended;
+  final bool allBuried;
+  final Set<int> flags;
+  final Set<String> deckIds;
+
+  bool get isEmpty => cardIds.isEmpty && noteIds.isEmpty;
+}
+
+SrsSourceRef? _decodeSource(String? raw) {
+  if (raw == null) return null;
+  try {
+    return SrsSourceRef.fromJson(jsonDecode(raw));
+  } on FormatException {
+    return null;
+  }
+}
+
+/// 出处视图的一组（[SrsBrowseResult.sources]）：结果里出处键相同的行。
+class SrsBrowseSourceGroup {
+  const SrsBrowseSourceGroup({
+    required this.key,
+    required this.kind,
+    required this.data,
+    required this.count,
+    required this.due,
+    required this.preview,
+    required this.latestAddedAt,
+    required this.deckIds,
+  });
+
+  /// 出处键（[SrsBrowseRow.sourceKey]）；null = 没有出处的那一组（总在最后）。
+  final String? key;
+
+  /// 出处种类；没有出处的组 null。
+  final String? kind;
+
+  /// 组里最近添加的那条笔记的出处原始 JSON（取标题 / 封面用；同一作品各卡的章节 / 位置不同，这里只是代表）。
+  final String? data;
+
+  /// 组里的行数（卡片模式 = 卡数，笔记模式 = 笔记数）。
+  final int count;
+
+  /// 组里今天到期的行数（该行有一张卡到期就算，口径同 `is:due`）。
+  final int due;
+
+  /// 组里前几行（≤ 8）在结果里的行号（升序，可直接 [SrsBrowseResult.rows] / [SrsBrowseResult.rowAt]）。
+  final List<int> preview;
+
+  /// 组里笔记添加时刻的最大值（毫秒）；组按它降序排。
+  final int latestAddedAt;
+
+  /// 组里各行的卡所在的牌组 id（去重，首次出现的顺序）：「只复习这一作」据此定复习的牌组范围。
+  final List<String> deckIds;
+
+  /// [data] 解析成的出处（解析不了 / 没有 null）。
+  SrsSourceRef? get source => _decodeSource(data);
+}
+
+/// 浏览结果一次取的行数。
+const int kSrsBrowsePage = 200;
+
+/// 一次查询的结果：行留在原生会话里（native/fushi_fsrs/src/store/browse.rs），这里按页取、取过的缓存。
+/// 会话在这次查询之后又被别的查询换掉时取行会失败（[SrsBrowseResultGone]），调用方重新查询。
+class SrsBrowseResult {
+  SrsBrowseResult._(this._session, this.gen, this.length, this.mode);
+
+  final SrsBrowseSession _session;
+
+  /// 原生侧的结果代号。
+  final int gen;
+  final int length;
+  final SrsBrowseMode mode;
+  final Map<int, SrsBrowseRow> _rows = <int, SrsBrowseRow>{};
+  final Map<int, Future<void>> _loading = <int, Future<void>>{};
+
+  /// 已取到的第 [index] 行；还没取时 null（用 [ensure] 取）。
+  SrsBrowseRow? rowAt(int index) => _rows[index];
+
+  /// 行 id：卡片模式是主卡 id，笔记模式是笔记 id。
+  String idOf(SrsBrowseRow row) =>
+      mode == SrsBrowseMode.cards ? row.cardId : row.noteId;
+
+  /// 取好 [from]..[to] 覆盖的那几页。
+  Future<void> ensure(int from, int to) async {
+    final int a = (from < 0 ? 0 : from) ~/ kSrsBrowsePage;
+    final int last = to > length ? length : to;
+    if (last <= 0) return;
+    final int b = (last - 1) ~/ kSrsBrowsePage;
+    await Future.wait(<Future<void>>[for (int p = a; p <= b; p++) _page(p)]);
   }
 
-  /// 全部笔记类型的字段名（去重，按笔记类型、字段顺序）——「按字段搜索 / 排序」的下拉选项。
-  List<String> get fieldNames {
-    final Set<String> seen = <String>{};
-    final List<String> out = <String>[];
-    for (final SrsNoteTypeView t in noteTypes) {
-      for (final SrsFieldDef f in t.fields) {
-        if (seen.add(f.name.toLowerCase())) out.add(f.name);
+  Future<void> _page(int p) {
+    if (_rows.containsKey(p * kSrsBrowsePage)) return Future<void>.value();
+    return _loading[p] ??= () async {
+      try {
+        final int from = p * kSrsBrowsePage;
+        final int to = from + kSrsBrowsePage > length
+            ? length
+            : from + kSrsBrowsePage;
+        final List<SrsBrowseRow> rows = await _session._rows(gen, from, to);
+        for (int i = 0; i < rows.length; i++) {
+          _rows[from + i] = rows[i];
+        }
+      } finally {
+        _loading.remove(p);
       }
-    }
-    return out;
+    }();
   }
 
-  /// 按 Anki 搜索语法筛选、排序。查询不合法 / 不支持时抛 [SrsSearchUnsupported]。
-  List<SrsBrowseItem> query({
+  /// 第 [from]..[to] 行（取不到的先取）。
+  Future<List<SrsBrowseRow>> rows(int from, int to) async {
+    final int end = to > length ? length : to;
+    await ensure(from, end);
+    return <SrsBrowseRow>[for (int i = from; i < end; i++) _rows[i]!];
+  }
+
+  /// 全部行（测试 / 控制通道这类要整份结果的地方用；浏览页按页取）。
+  Future<List<SrsBrowseRow>> all() => rows(0, length);
+
+  /// 丢掉取过的行（写入之后重新取可见的那几行）。
+  void invalidateRows() => _rows.clear();
+
+  /// 第 [from]..[to] 行的行 id（[to] 省略 = 到末尾）。
+  Future<List<String>> ids([int from = 0, int? to]) =>
+      _session._ids(gen, from, to ?? length);
+
+  /// [ids] 各在第几行（不在结果里 = -1）。
+  Future<List<int>> indicesOf(List<String> ids) => ids.isEmpty
+      ? Future<List<int>>.value(const <int>[])
+      : _session._find(gen, ids);
+
+  /// [rowIds] 那几行的批量操作目标（按列表顺序展开）。
+  Future<SrsBrowseTargets> targets(Iterable<String> rowIds) =>
+      _session._targets(gen, rowIds.toList());
+
+  /// 按出处分组（出处视图）：一条命令算完整份结果。组按 [SrsBrowseSourceGroup.latestAddedAt] 降序，没有出处的
+  /// 一组（`key == null`）放最后；空结果是空表。
+  Future<List<SrsBrowseSourceGroup>> sources() => _session._sources(gen);
+}
+
+/// 结果已被原生会话换掉（又查询过一次、或会话重建了）：重新查询。
+class SrsBrowseResultGone implements Exception {
+  const SrsBrowseResultGone(this.reason);
+
+  final String reason;
+
+  @override
+  String toString() => 'SrsBrowseResultGone: $reason';
+}
+
+/// 浏览会话查询的上下文：笔记类型（字段、别名、模板）、牌组有效全名与是否按 RWKV 回忆率排队、此刻与日界、
+/// RWKV 此刻会出的卡（[rwkvInstant] 为假时不带：`is:due` 照存下的到期日，AnkiConnect 的口径）。只与笔记类型 /
+/// 牌组数有关（RWKV 那份与它的到期卡数有关）。影响原生语料结构的部分（笔记类型、牌组名与排队方式）两种口径
+/// 相同，浏览页与 AnkiConnect 交替查询不会让语料重建。
+Future<Map<String, Object?>> srsBrowseContext(
+  SrsDbStore store, {
+  bool rwkvInstant = true,
+}) async {
+  final List<SrsNoteTypeView> types = await store.noteTypes();
+  final SrsDeckTree tree = await store.deckTree();
+  final SrsDayContext day = await store.dayContext();
+  final (int nowMs, _) = store.now();
+  final Set<String>? instant = rwkvInstant
+      ? await store.instantDueCardIds()
+      : null;
+  bool recall(String deckId) =>
+      (!rwkvInstant || instant != null) && store.instantActiveFor(tree, deckId);
+  // 牌组已不存在的卡归默认牌组（与排程配置同一判据）：显示为默认牌组、`deck:Default` 能筛到（BUG-3617）。
+  const String missing = '\u0000';
+  return <String, Object?>{
+    'now': nowMs,
+    'utcOff': day.utcOffsetMin,
+    'rollover': day.rolloverHour,
+    'types': <Object?>[
+      for (final SrsNoteTypeView t in types)
+        <String, Object?>{
+          'id': t.id,
+          'name': t.name,
+          'cloze': t.isCloze,
+          'deleted': t.deletedAt != null,
+          'fields': <Object?>[
+            for (final SrsFieldDef f in t.fields)
+              <Object?>[
+                f.id,
+                f.name,
+                if (t.builtinKey == kSrsBuiltinFushiCardKey)
+                  FushiCardFields.aliasOf(f.name),
+              ],
+          ],
+          'tpls': <Object?>[
+            for (final SrsTemplateDef p in t.templates)
+              <Object?>[p.id, p.name, p.ord],
+          ],
+        },
+    ],
+    'decks': <String, Object?>{
+      for (final SrsDeckView d in tree.decks)
+        d.id: <Object?>[
+          tree.effectiveDeckNameOf(d.id, fallback: store.defaultDeckId),
+          recall(d.id),
+        ],
+    },
+    'fallback': <Object?>[
+      tree.effectiveDeckNameOf(missing, fallback: store.defaultDeckId),
+      recall(missing),
+    ],
+    ...srsBrowseModels(tree, store.defaultDeckId),
+    if (instant != null) 'instant': instant.toList(),
+  };
+}
+
+/// 保持率（`retention` 列 / `prop:r`）用的 FSRS 模型：`models` = `[[记忆算法, 参数]…]`（去重；参数空 = 内核用该
+/// 算法的默认参数），`deckModels` = 牌组 id → 下标，不在里面的牌组用 `fallbackModel`（归默认牌组，同排程配置）。
+/// 不进语料结构：参数变了不重建语料。
+Map<String, Object?> srsBrowseModels(SrsDeckTree tree, String defaultDeckId) {
+  final List<Object?> models = <Object?>[];
+  final Map<String, int> index = <String, int>{};
+  int modelOf(String deckId) {
+    final String id = tree.effectiveDeckOf(deckId, fallback: defaultDeckId);
+    final SrsSchedulingConfig config = tree[id] == null
+        ? const SrsSchedulingConfig()
+        : tree.schedulingConfig(id);
+    final SrsAlgorithm alg = config.algorithm.memoryAlgorithm;
+    final List<double> params = config.params.length == alg.paramCount
+        ? config.params
+        : const <double>[];
+    return index.putIfAbsent('${alg.wire}|${params.join(',')}', () {
+      models.add(<Object?>[alg.wire, params]);
+      return models.length - 1;
+    });
+  }
+
+  return <String, Object?>{
+    'deckModels': <String, Object?>{
+      for (final SrsDeckView d in tree.decks) d.id: modelOf(d.id),
+    },
+    'fallbackModel': modelOf('\u0000'),
+    'models': models,
+  };
+}
+
+/// 浏览会话查询（`browse_query` / `anki_find`）的回答：求值出错（查询不合法 / 内核不可用）时抛
+/// [SrsSearchUnsupported]，否则原样交回。
+Map<String, Object?> srsBrowseCheckResult(
+  Map<String, Object?> r,
+  String query,
+) {
+  if (r['error'] case final Object error) {
+    final String at = (r['at'] as String?) ?? '';
+    throw SrsSearchUnsupported(
+      at.isEmpty ? query : at,
+      '$error',
+      r['kind'] == 'syntax'
+          ? SrsSearchErrorKind.syntax
+          : SrsSearchErrorKind.unavailable,
+    );
+  }
+  return r;
+}
+
+/// 一个浏览页的会话：搜索语料与列数据常驻原生侧（按 profile，随写入增量更新），这里只发查询、取行。
+///
+/// 一次查询 = 一条命令（筛选 + 排序在 Rust 里做完，只回行数）；取一页行 = 一条命令（列式）。字段原文、
+/// 笔记最后改动时刻只在查询 / 按字段排序真用到时由原生侧从修改记录读一次，之后常驻。页面关掉时 [close]
+/// 释放原生侧内存。
+class SrsBrowseSession {
+  SrsBrowseSession(this.store) : _owner = 'page:${_owners++}';
+
+  final SrsDbStore store;
+
+  static int _owners = 0;
+
+  /// 本页面实例在原生会话上的持有者名：会话与 AnkiConnect 共用，[close] 只注销自己，最后一个持有者注销才释放。
+  final String _owner;
+
+  /// 最近一次查询的结果（[query] 的 `since`：没有写入、条件没变时原生侧直接回同一份）。
+  SrsBrowseResult? _last;
+
+  /// 按 Anki 搜索语法筛选、排序。查询不合法 / 不支持 / 内核不可用时抛 [SrsSearchUnsupported]。
+  /// [reuse]：条件与上次相同且之后没有写入时直接给回上次的结果（[SrsBrowseResult] 同一个对象，行缓存保留）。
+  Future<SrsBrowseResult> query({
     String query = '',
     SrsBrowseSort sort = const SrsBrowseSort(),
     SrsBrowseMode mode = SrsBrowseMode.cards,
-  }) {
+    bool reuse = false,
+  }) async {
     final SrsSearchNode node = parseAnkiSearch(query);
-    final List<SrsCardSearchSubject> hits = <SrsCardSearchSubject>[
-      for (final SrsCardSearchSubject c in cards)
-        if (matchesAnkiSearch(node, c)) c,
-    ];
-    final List<SrsBrowseItem> items;
-    if (mode == SrsBrowseMode.cards) {
-      items = <SrsBrowseItem>[
-        for (final SrsCardSearchSubject c in hits)
-          SrsBrowseItem(primary: c, cards: <SrsCardSearchSubject>[c]),
-      ];
-    } else {
-      final Map<String, List<SrsCardSearchSubject>> byNote =
-          <String, List<SrsCardSearchSubject>>{};
-      for (final SrsCardSearchSubject c in cards) {
-        (byNote[c.note.id] ??= <SrsCardSearchSubject>[]).add(c);
-      }
-      final Set<String> seen = <String>{};
-      items = <SrsBrowseItem>[
-        for (final SrsCardSearchSubject c in hits)
-          if (seen.add(c.note.id))
-            SrsBrowseItem(primary: c, cards: byNote[c.note.id]!),
-      ];
-    }
-    final int Function(SrsBrowseItem, SrsBrowseItem) cmp = srsBrowseComparator(
-      sort,
+    final SrsBrowseResult? last = _last;
+    final Map<String, Object?> r = srsBrowseCheckResult(
+      (await store.browseCommand(<String, Object?>{
+        'op': 'browse_query',
+        'owner': _owner,
+        ...await srsBrowseContext(store),
+        if (node is! SrsSearchAll) 'node': srsSearchNodeJson(node),
+        'sort': <String, Object?>{
+          'col': sort.column.name,
+          'asc': sort.ascending,
+          'field': ?sort.fieldName,
+        },
+        'mode': mode.name,
+        if (reuse && last != null && last.mode == mode) 'since': last.gen,
+      })).map,
+      query,
     );
-    items.sort(cmp);
-    return items;
-  }
-}
-
-int _naturalOrder(SrsCardSearchSubject a, SrsCardSearchSubject b) {
-  int c = a.note.createdAt.compareTo(b.note.createdAt);
-  if (c != 0) return c;
-  c = a.note.id.compareTo(b.note.id);
-  if (c != 0) return c;
-  c = a.cardOrdinal.compareTo(b.cardOrdinal);
-  return c != 0 ? c : a.card.id.compareTo(b.card.id);
-}
-
-/// 一行在某一列上的排序值：`String` / `num`；null = 没有这个值（不论升降序都排最后）。
-Comparable<Object>? srsBrowseSortValue(SrsBrowseItem item, SrsBrowseSort sort) {
-  final SrsCardSearchSubject p = item.primary;
-  final List<SrsCardSearchSubject> cs = item.cards;
-  final bool notes = cs.length > 1;
-  double? avg(double? Function(SrsCardSearchSubject) f) {
-    final List<double> v = <double>[
-      for (final SrsCardSearchSubject c in cs)
-        if (f(c) != null) f(c)!,
-    ];
-    return v.isEmpty ? null : v.reduce((a, b) => a + b) / v.length;
-  }
-
-  int sum(int Function(SrsCardSearchSubject) f) =>
-      cs.fold<int>(0, (int s, SrsCardSearchSubject c) => s + f(c));
-
-  switch (sort.column) {
-    case SrsBrowseSortColumn.sortField:
-      return p.sortText.toLowerCase();
-    case SrsBrowseSortColumn.field:
-      final String? name = sort.fieldName?.toLowerCase();
-      if (name == null) return null;
-      for (final SrsFieldDef f in p.noteType.fields) {
-        if (f.name.toLowerCase() == name) {
-          return ankiStripHtml(p.note.field(f.id)).trim().toLowerCase();
-        }
-      }
-      return null;
-    case SrsBrowseSortColumn.due:
-      // 笔记模式取最早到期的一张；新卡（infinity）排在有到期日的卡后面。
-      final double due = cs
-          .map((SrsCardSearchSubject c) => c.dueSortKey)
-          .reduce((double a, double b) => a < b ? a : b);
-      return due;
-    case SrsBrowseSortColumn.created:
-      return p.note.createdAt;
-    case SrsBrowseSortColumn.modified:
-      int m = p.modifiedAt;
-      for (final SrsCardSearchSubject c in cs) {
-        final int? r = c.card.lastReviewedAt;
-        if (r != null && r > m) m = r;
-      }
-      return m;
-    case SrsBrowseSortColumn.interval:
-      return notes
-          ? avg((SrsCardSearchSubject c) => c.intervalDays.toDouble())
-          : p.intervalDays;
-    case SrsBrowseSortColumn.difficulty:
-      return notes
-          ? avg((SrsCardSearchSubject c) => c.difficulty)
-          : p.difficulty;
-    case SrsBrowseSortColumn.reps:
-      return sum((SrsCardSearchSubject c) => c.reps);
-    case SrsBrowseSortColumn.lapses:
-      return sum((SrsCardSearchSubject c) => c.lapses);
-    case SrsBrowseSortColumn.deck:
-      return p.deckName.toLowerCase();
-    case SrsBrowseSortColumn.noteType:
-      return p.noteType.name.toLowerCase();
-  }
-}
-
-/// [sort] 对应的比较器：值相同按自然顺序（笔记创建时刻、卡片序号）稳定排列；没有值的行恒在最后。
-int Function(SrsBrowseItem, SrsBrowseItem) srsBrowseComparator(
-  SrsBrowseSort sort,
-) {
-  final Map<SrsBrowseItem, Comparable<Object>?> memo =
-      <SrsBrowseItem, Comparable<Object>?>{};
-  Comparable<Object>? v(SrsBrowseItem i) =>
-      memo.putIfAbsent(i, () => srsBrowseSortValue(i, sort));
-  return (SrsBrowseItem a, SrsBrowseItem b) {
-    final Comparable<Object>? va = v(a);
-    final Comparable<Object>? vb = v(b);
-    int c;
-    if (va == null || vb == null) {
-      c = va == null && vb == null ? 0 : (va == null ? 1 : -1);
-    } else {
-      c = va.compareTo(vb);
-      if (!sort.ascending) c = -c;
+    if (r['same'] == true && last != null && last.gen == r['gen']) {
+      return last;
     }
-    return c != 0 ? c : _naturalOrder(a.primary, b.primary);
-  };
+    return _last = SrsBrowseResult._(
+      this,
+      r['gen']! as int,
+      r['count']! as int,
+      mode,
+    );
+  }
+
+  /// 一次算几条查询各自的命中数（快捷视图 / 积木面板的「将筛出 N 张」）：与 [query] 同口径（同一会话、同一
+  /// 上下文），[mode] 为笔记模式时数笔记。解析不了 / 不支持的查询、求值报语法错误的那一条给 -1，不影响其它；
+  /// 内核不可用照样抛。不留查询结果（不挤掉 [query] 的结果）。
+  Future<List<int>> counts(
+    List<String> queries, {
+    SrsBrowseMode mode = SrsBrowseMode.cards,
+  }) async {
+    if (queries.isEmpty) return const <int>[];
+    final List<Object?> nodes = <Object?>[];
+    for (final String q in queries) {
+      try {
+        final SrsSearchNode node = parseAnkiSearch(q);
+        nodes.add(node is SrsSearchAll ? null : srsSearchNodeJson(node));
+      } on SrsSearchUnsupported catch (e) {
+        if (e.kind == SrsSearchErrorKind.unavailable) rethrow;
+        nodes.add(false);
+      }
+    }
+    final Map<String, Object?> r = (await _command(<String, Object?>{
+      'op': 'browse_counts',
+      ...await srsBrowseContext(store),
+      'nodes': nodes,
+      'mode': mode.name,
+    })).map;
+    return <int>[
+      for (final Object? c in r['counts']! as List<Object?>) c! as int,
+    ];
+  }
+
+  /// 注销本页面对原生会话的持有；没有别的持有者（AnkiConnect、别的页面）时会话随之释放（字段文本可达几百 MB），
+  /// 之后再 [query] 会重新建。库已经关了（页面 dispose 时发出的
+  /// 关闭排在关库之后）就什么都不用做：会话住在内核里，随内核一起释放了。
+  Future<void> close() async {
+    _last = null;
+    if (store.isClosed) return;
+    try {
+      await store.browseCommand(<String, Object?>{
+        'op': 'browse_close',
+        'owner': _owner,
+      });
+    } on SrsCoreException catch (e) {
+      if (!e.message.contains('store is closed')) rethrow;
+    }
+  }
+
+  Future<SrsSync2Result> _command(Map<String, Object?> request) async {
+    try {
+      return await store.browseCommand(<String, Object?>{
+        ...request,
+        'owner': _owner,
+      });
+    } on Object catch (e) {
+      if ('$e'.contains('browse: result') ||
+          '$e'.contains('browse: no session')) {
+        throw SrsBrowseResultGone('$e');
+      }
+      rethrow;
+    }
+  }
+
+  Future<List<SrsBrowseRow>> _rows(int gen, int from, int to) async {
+    final SrsSync2Result r = await _command(<String, Object?>{
+      'op': 'browse_rows',
+      'gen': gen,
+      'from': from,
+      'to': to,
+    });
+    final List<Object?> s = r.map['s']! as List<Object?>;
+    Uint8List file(String name) =>
+        r.files.firstWhere(((String, Uint8List) f) => f.$1 == name).$2;
+    final ByteData ints = ByteData.sublistView(file('rows.i64'));
+    final ByteData floats = ByteData.sublistView(file('rows.f64'));
+    const int width = 11;
+    const int fwidth = 2;
+    const int none = -0x8000000000000000;
+    return <SrsBrowseRow>[
+      for (int i = 0; i < s.length; i++)
+        () {
+          final List<Object?> t = s[i]! as List<Object?>;
+          int at(int k) => ints.getInt64((i * width + k) * 8, Endian.little);
+          int? opt(int k) {
+            final int v = at(k);
+            return v == none ? null : v;
+          }
+
+          double? real(int k) {
+            final double v = floats.getFloat64(
+              (i * fwidth + k) * 8,
+              Endian.little,
+            );
+            return v.isNaN ? null : v;
+          }
+
+          final int q = at(0);
+          final int due = at(1);
+          final int bits = at(3);
+          return SrsBrowseRow(
+            cardId: t[0]! as String,
+            noteId: t[1]! as String,
+            sortText: t[2]! as String,
+            deckName: t[3]! as String,
+            noteTypeName: t[4]! as String,
+            deckId: t[5]! as String,
+            templateName: t[6]! as String,
+            queue: q < 0 ? null : SrsQueue.values[q],
+            dueInDays: due == none ? null : due,
+            flag: at(2),
+            isSuspended: bits & 1 != 0,
+            isBuried: bits & 2 != 0,
+            hasPendingDecision: bits & 4 != 0,
+            cardCount: at(4),
+            tags: <String>[
+              for (final Object? tag in t[7]! as List<Object?>) tag! as String,
+            ],
+            reps: at(5),
+            lapses: at(6),
+            intervalDays: opt(7),
+            addedAt: at(8),
+            modifiedAt: at(9),
+            lastReviewAt: opt(10),
+            difficulty: real(0),
+            retention: real(1),
+            fieldPreview: <String>[
+              for (final Object? f in t[8]! as List<Object?>) f! as String,
+            ],
+            fieldPreviewNames: <String>[
+              for (final Object? f in t[14]! as List<Object?>) f! as String,
+            ],
+            imageRef: t[9] as String?,
+            audioRef: t[10] as String?,
+            sourceKey: t[11] as String?,
+            sourceKind: t[12] as String?,
+            sourceData: t[13] as String?,
+          );
+        }(),
+    ];
+  }
+
+  Future<List<SrsBrowseSourceGroup>> _sources(int gen) async {
+    final Map<String, Object?> r = (await _command(<String, Object?>{
+      'op': 'browse_sources',
+      'gen': gen,
+    })).map;
+    return <SrsBrowseSourceGroup>[
+      for (final Object? g in r['groups']! as List<Object?>)
+        () {
+          final Map<String, Object?> m = (g! as Map).cast<String, Object?>();
+          return SrsBrowseSourceGroup(
+            key: m['key'] as String?,
+            kind: m['kind'] as String?,
+            data: m['data'] as String?,
+            count: m['count']! as int,
+            due: m['due']! as int,
+            preview: <int>[
+              for (final Object? i in m['preview']! as List<Object?>) i! as int,
+            ],
+            latestAddedAt: m['latestAddedAt']! as int,
+            deckIds: <String>[
+              for (final Object? d in m['decks']! as List<Object?>)
+                d! as String,
+            ],
+          );
+        }(),
+    ];
+  }
+
+  Future<List<String>> _ids(int gen, int from, int to) async {
+    final SrsSync2Result r = await _command(<String, Object?>{
+      'op': 'browse_ids',
+      'gen': gen,
+      'from': from,
+      'to': to,
+    });
+    return <String>[
+      for (final Object? id in r.map['ids']! as List<Object?>) id! as String,
+    ];
+  }
+
+  Future<List<int>> _find(int gen, List<String> ids) async {
+    final SrsSync2Result r = await _command(<String, Object?>{
+      'op': 'browse_ids',
+      'gen': gen,
+      'find': ids,
+    });
+    return <int>[
+      for (final Object? i in r.map['at']! as List<Object?>) i! as int,
+    ];
+  }
+
+  Future<SrsBrowseTargets> _targets(int gen, List<String> ids) async {
+    if (ids.isEmpty) {
+      return const SrsBrowseTargets(
+        cardIds: <String>[],
+        noteIds: <String>[],
+        allSuspended: true,
+        allBuried: true,
+        flags: <int>{},
+        deckIds: <String>{},
+      );
+    }
+    final Map<String, Object?> r = (await _command(<String, Object?>{
+      'op': 'browse_targets',
+      'gen': gen,
+      'ids': ids,
+    })).map;
+    List<String> strings(String k) => <String>[
+      for (final Object? v in r[k]! as List<Object?>) v! as String,
+    ];
+    return SrsBrowseTargets(
+      cardIds: strings('cards'),
+      noteIds: strings('notes'),
+      allSuspended: r['allSuspended']! as bool,
+      allBuried: r['allBuried']! as bool,
+      flags: <int>{
+        for (final Object? f in r['flags']! as List<Object?>) f! as int,
+      },
+      deckIds: strings('decks').toSet(),
+    );
+  }
 }

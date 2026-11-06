@@ -30,10 +30,6 @@ public final class ChannelNames {
     // 一端（CF_DIB），补齐 Android 时顺手对齐 Dart 侧 channel_constants.dart 的
     // 「两边必须同步」约定——在此之前 clipboard_image 一直不在本表里。
     public static final String CLIPBOARD_IMAGE = PREFIX + "/clipboard_image";
-    // TODO-1232 A3: render-backend toggle (persist the "disable Impeller / use
-    // Skia" experiment flag; applied at next launch via MainActivity's
-    // getFlutterShellArgs override).
-    public static final String RENDER = PREFIX + "/render";
     // 系统画中画（PiP）：视频页把 Activity 缩成系统小窗。只有 Android 有原生侧，
     // 其余平台上 Dart 门面恒答「不支持」。实现见 PictureInPictureChannelHandler。
     public static final String PICTURE_IN_PICTURE = PREFIX + "/picture_in_picture";
@@ -46,4 +42,16 @@ public final class ChannelNames {
     // 全局悬浮球：Android 系统常驻球（FloatingBallService）+ 截屏 OCR（ScreenOcrService）。
     // 契约见 docs/specs/2026-09-28-floating-ball.md，实现见 FloatingBallChannel。
     public static final String FLOATING_BALL = PREFIX + "/floating_ball";
+    // Home-screen widgets (Glance): Dart pushes snapshot JSON; see widgets/WidgetChannel.kt.
+    public static final String WIDGETS = PREFIX + "/widgets";
+    // 系统代理（Wi-Fi 手动 / PAC / 全局 HTTP 代理）：Dart 出站代理自动模式读它，
+    // 实现见 SystemProxyChannel，Dart 门面 android_system_proxy.dart。
+    public static final String SYSTEM_PROXY = PREFIX + "/system_proxy";
+    // 上次进程退出原因 + onTrimMemory 记录：实现见 ProcessExitChannel，Dart 门面
+    // previous_exit_log.dart。
+    public static final String PROCESS_EXIT = PREFIX + "/process_exit";
+    // 串流第二块屏上的查词面板：主进程 GameStreamCompanionDisplay 与面板进程
+    // GameStreamCompanionActivity 各自在自己的引擎上注册同名通道，中间由
+    // GameStreamCompanionRelayService 转发。
+    public static final String GAME_STREAM_COMPANION = PREFIX + "/game_stream_companion";
 }

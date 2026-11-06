@@ -74,8 +74,9 @@ void main() {
             backendFileIndex: const Value<int?>(0),
             originalRelativePath: 'Show/episode.mkv',
             currentRelativePath: 'Show/episode.mkv',
-            targetRelativePath:
-                const Value<String?>('Show/Season 01/Show - S01E01.mkv'),
+            targetRelativePath: const Value<String?>(
+              'Show/Season 01/Show - S01E01.mkv',
+            ),
             kind: const Value<String>('video'),
             season: const Value<int?>(1),
             episode: const Value<int?>(1),
@@ -157,8 +158,9 @@ void main() {
     ).createBackup(zipPath);
     await source.close();
 
-    final Directory restoredDirectory =
-        Directory(p.join(root.path, 'fresh-restored'));
+    final Directory restoredDirectory = Directory(
+      p.join(root.path, 'fresh-restored'),
+    );
     await BackupRestoreService.restoreBackup(
       dbDirectory: restoredDirectory.path,
       zipPath: zipPath,
@@ -177,207 +179,217 @@ void main() {
     }
   });
 
-  test(
-    'overwrite restore preserves local graph parent-first and makes missing '
-    'source/collection actionable',
-    () async {
-      final Directory backupDirectory =
-          Directory(p.join(root.path, 'other-device'));
-      await backupDirectory.create(recursive: true);
-      final FushiDatabase backupDatabase =
-          FushiDatabase(backupDirectory.path);
-      await backupDatabase.setPref('reader_font_size', '19');
-      final String zipPath = p.join(root.path, 'other.hibiki.zip');
-      await BackupService(
-        db: backupDatabase,
-        dbDirectory: backupDirectory.path,
-        appVersion: '1.0.0',
-      ).createBackup(zipPath);
-      await backupDatabase.close();
+  test('overwrite restore preserves local graph parent-first and makes missing '
+      'source/collection actionable', () async {
+    final Directory backupDirectory = Directory(
+      p.join(root.path, 'other-device'),
+    );
+    await backupDirectory.create(recursive: true);
+    final FushiDatabase backupDatabase = FushiDatabase(backupDirectory.path);
+    await backupDatabase.setPref('reader_font_size', '19');
+    final String zipPath = p.join(root.path, 'other.hibiki.zip');
+    await BackupService(
+      db: backupDatabase,
+      dbDirectory: backupDirectory.path,
+      appVersion: '1.0.0',
+    ).createBackup(zipPath);
+    await backupDatabase.close();
 
-      final Directory currentDirectory =
-          Directory(p.join(root.path, 'current-device'));
-      await currentDirectory.create(recursive: true);
-      final FushiDatabase before = FushiDatabase(currentDirectory.path);
-      await seedDownloadGraph(before, withLocalReferences: true);
-      await before.close();
+    final Directory currentDirectory = Directory(
+      p.join(root.path, 'current-device'),
+    );
+    await currentDirectory.create(recursive: true);
+    final FushiDatabase before = FushiDatabase(currentDirectory.path);
+    await seedDownloadGraph(before, withLocalReferences: true);
+    await before.close();
 
-      await BackupRestoreService.restoreBackup(
-        dbDirectory: currentDirectory.path,
-        zipPath: zipPath,
-      );
-      final FushiDatabase after = FushiDatabase(currentDirectory.path);
-      addTearDown(after.close);
+    await BackupRestoreService.restoreBackup(
+      dbDirectory: currentDirectory.path,
+      zipPath: zipPath,
+    );
+    final FushiDatabase after = FushiDatabase(currentDirectory.path);
+    addTearDown(after.close);
 
-      final VideoDownloadJobRow job =
-          (await after.getVideoDownloadJobs()).single;
-      expect(job.targetSourceId, isNull);
-      expect(job.collectionId, isNull);
-      expect(job.lifecycle, VideoDownloadJobLifecycle.needsAttention);
-      expect(job.claimedBy, isNull);
-      expect(job.claimExpiresAt, isNull);
-      expect(job.nextAttemptAt, isNull);
-      expect(job.lastError, startsWith('needsAttention:'));
-      expect(await after.getVideoDownloadJobFiles(job.jobId), hasLength(1));
-      expect(await after.getVideoDownloadJobSubtitles(job.jobId), hasLength(1));
+    final VideoDownloadJobRow job = (await after.getVideoDownloadJobs()).single;
+    expect(job.targetSourceId, isNull);
+    expect(job.collectionId, isNull);
+    expect(job.lifecycle, VideoDownloadJobLifecycle.needsAttention);
+    expect(job.claimedBy, isNull);
+    expect(job.claimExpiresAt, isNull);
+    expect(job.nextAttemptAt, isNull);
+    expect(job.lastError, startsWith('needsAttention:'));
+    expect(await after.getVideoDownloadJobFiles(job.jobId), hasLength(1));
+    expect(await after.getVideoDownloadJobSubtitles(job.jobId), hasLength(1));
 
-      final VideoDownloadSubscriptionRow subscription =
-          (await after.getVideoDownloadSubscriptions()).single;
-      expect(subscription.targetSourceId, isNull);
-      expect(subscription.collectionId, isNull);
-      expect(subscription.enabled, isFalse);
-      expect(subscription.claimedBy, isNull);
-      expect(subscription.claimExpiresAt, isNull);
-      expect(subscription.nextCheckAt, isNull);
-      expect(subscription.lastError, startsWith('needsAttention:'));
-      expect(
-        await after.getVideoDownloadSubscriptionItems(
-          subscription.subscriptionId,
-        ),
-        hasLength(1),
-      );
+    final VideoDownloadSubscriptionRow subscription =
+        (await after.getVideoDownloadSubscriptions()).single;
+    expect(subscription.targetSourceId, isNull);
+    expect(subscription.collectionId, isNull);
+    expect(subscription.enabled, isFalse);
+    expect(subscription.claimedBy, isNull);
+    expect(subscription.claimExpiresAt, isNull);
+    expect(subscription.nextCheckAt, isNull);
+    expect(subscription.lastError, startsWith('needsAttention:'));
+    expect(
+      await after.getVideoDownloadSubscriptionItems(
+        subscription.subscriptionId,
+      ),
+      hasLength(1),
+    );
 
-      final List<dynamic> foreignKeyErrors =
-          await after.customSelect('PRAGMA foreign_key_check').get();
-      expect(foreignKeyErrors, isEmpty);
-    },
-  );
-
-  test(
-    'recoverPendingRestore replays all five local tables after an overwrite '
-    'crash and is idempotent',
-    () async {
-      final Directory currentDirectory =
-          Directory(p.join(root.path, 'crashed-current'));
-      await currentDirectory.create(recursive: true);
-      final FushiDatabase before = FushiDatabase(currentDirectory.path);
-      await seedDownloadGraph(before, withLocalReferences: true);
-      await before.close();
-
-      final String dbPath = p.join(currentDirectory.path, 'fushi.db');
-      final String bakPath = '$dbPath.pre-restore.bak';
-      final String repairBakPath = '$bakPath.repair';
-      final String sidecarPath =
-          p.join(currentDirectory.path, 'fushi.db.sync-preserve.json');
-      await File(dbPath).copy(bakPath);
-      await File(dbPath).copy(repairBakPath);
-
-      // Simulate the destructive database swap completing before the inline
-      // device-local replay. This replacement has no download rows and no
-      // matching source/collection, exactly like a sanitized shared backup.
-      final Directory replacementDirectory =
-          Directory(p.join(root.path, 'crashed-replacement'));
-      await replacementDirectory.create(recursive: true);
-      final FushiDatabase replacement =
-          FushiDatabase(replacementDirectory.path);
-      await replacement.setPref('reader_font_size', '21');
-      await replacement.close();
-      for (final String suffix in <String>['-wal', '-shm']) {
-        final File sideFile = File('$dbPath$suffix');
-        if (sideFile.existsSync()) await sideFile.delete();
-      }
-      await File(dbPath).delete();
-      await File(p.join(replacementDirectory.path, 'fushi.db')).copy(dbPath);
-
-      // The common full-restore path can have zero preserved sync prefs. Its
-      // marker still has to exist solely for the v78 device-local graph.
-      await File(sidecarPath).writeAsString(
-        jsonEncode(<String, dynamic>{
-          'mode': 'prefs',
-          'prefs': <String, String>{},
-          'preserveDeviceLocalTables': true,
-        }),
-      );
-
-      // A retryable replay failure must keep BOTH recovery artifacts. Preserve
-      // the SQLite signature but truncate the snapshot so ATTACH/replay fails.
-      final List<int> sqliteHeader =
-          (await File(bakPath).readAsBytes()).take(16).toList(growable: false);
-      await File(bakPath).writeAsBytes(sqliteHeader, flush: true);
-      await BackupRestoreService.recoverPendingRestore(currentDirectory.path);
-      expect(File(sidecarPath).existsSync(), isTrue);
-      expect(File(bakPath).existsSync(), isTrue);
-
-      final FushiDatabase overwritten = FushiDatabase(currentDirectory.path);
-      for (final String table in <String>[
-        'video_download_jobs',
-        'video_download_job_files',
-        'video_download_job_subtitles',
-        'video_download_subscriptions',
-        'video_download_subscription_items',
-      ]) {
-        expect(await count(overwritten, table), 0,
-            reason: '$table was cleared by the overwrite');
-      }
-      await overwritten.close();
-
-      await File(bakPath).delete();
-      await File(repairBakPath).copy(bakPath);
-      await BackupRestoreService.recoverPendingRestore(currentDirectory.path);
-      expect(File(sidecarPath).existsSync(), isFalse);
-      expect(File(bakPath).existsSync(), isFalse);
-
-      // A second startup must be a no-op rather than duplicating graph rows.
-      await BackupRestoreService.recoverPendingRestore(currentDirectory.path);
-
-      final FushiDatabase recovered = FushiDatabase(currentDirectory.path);
-      addTearDown(recovered.close);
-      for (final String table in <String>[
-        'video_download_jobs',
-        'video_download_job_files',
-        'video_download_job_subtitles',
-        'video_download_subscriptions',
-        'video_download_subscription_items',
-      ]) {
-        expect(await count(recovered, table), 1,
-            reason: '$table must be restored exactly once');
-      }
-
-      final VideoDownloadJobRow job =
-          (await recovered.getVideoDownloadJobs()).single;
-      expect(job.targetSourceId, isNull);
-      expect(job.collectionId, isNull);
-      expect(job.lifecycle, VideoDownloadJobLifecycle.needsAttention);
-      expect(job.claimedBy, isNull);
-      expect(job.claimExpiresAt, isNull);
-
-      final VideoDownloadSubscriptionRow subscription =
-          (await recovered.getVideoDownloadSubscriptions()).single;
-      expect(subscription.targetSourceId, isNull);
-      expect(subscription.collectionId, isNull);
-      expect(subscription.enabled, isFalse);
-      expect(subscription.claimedBy, isNull);
-      expect(subscription.claimExpiresAt, isNull);
-
-      final List<dynamic> foreignKeyErrors =
-          await recovered.customSelect('PRAGMA foreign_key_check').get();
-      expect(foreignKeyErrors, isEmpty);
-    },
-  );
-
-  test('merge import never adopts attached device-local download rows',
-      () async {
-    final Directory attachedDirectory =
-        Directory(p.join(root.path, 'attached'));
-    await attachedDirectory.create(recursive: true);
-    final FushiDatabase attached = FushiDatabase(attachedDirectory.path);
-    await seedDownloadGraph(attached);
-    await attached.close();
-
-    final FushiDatabase target =
-        FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(target.close);
-    final String safePath = p
-        .join(attachedDirectory.path, 'fushi.db')
-        .replaceAll(r'\', '/')
-        .replaceAll("'", "''");
-    await target.customStatement("ATTACH DATABASE '$safePath' AS mergesrc");
-    await BackupMergeEngine(target).merge();
-
-    for (final String table in mergeSkippedDeviceLocalTableNames()) {
-      if (!table.startsWith('video_download_')) continue;
-      expect(await count(target, table), 0, reason: '$table must not merge');
-    }
-    await target.customStatement('DETACH DATABASE mergesrc');
+    final List<dynamic> foreignKeyErrors = await after
+        .customSelect('PRAGMA foreign_key_check')
+        .get();
+    expect(foreignKeyErrors, isEmpty);
   });
+
+  test('recoverPendingRestore replays all five local tables after an overwrite '
+      'crash and is idempotent', () async {
+    final Directory currentDirectory = Directory(
+      p.join(root.path, 'crashed-current'),
+    );
+    await currentDirectory.create(recursive: true);
+    final FushiDatabase before = FushiDatabase(currentDirectory.path);
+    await seedDownloadGraph(before, withLocalReferences: true);
+    await before.close();
+
+    final String dbPath = p.join(currentDirectory.path, 'fushi.db');
+    final String bakPath = '$dbPath.pre-restore.bak';
+    final String repairBakPath = '$bakPath.repair';
+    final String sidecarPath = p.join(
+      currentDirectory.path,
+      'fushi.db.sync-preserve.json',
+    );
+    await File(dbPath).copy(bakPath);
+    await File(dbPath).copy(repairBakPath);
+
+    // Simulate the destructive database swap completing before the inline
+    // device-local replay. This replacement has no download rows and no
+    // matching source/collection, exactly like a sanitized shared backup.
+    final Directory replacementDirectory = Directory(
+      p.join(root.path, 'crashed-replacement'),
+    );
+    await replacementDirectory.create(recursive: true);
+    final FushiDatabase replacement = FushiDatabase(replacementDirectory.path);
+    await replacement.setPref('reader_font_size', '21');
+    await replacement.close();
+    for (final String suffix in <String>['-wal', '-shm']) {
+      final File sideFile = File('$dbPath$suffix');
+      if (sideFile.existsSync()) await sideFile.delete();
+    }
+    await File(dbPath).delete();
+    await File(p.join(replacementDirectory.path, 'fushi.db')).copy(dbPath);
+
+    // The common full-restore path can have zero preserved sync prefs. Its
+    // marker still has to exist solely for the v78 device-local graph.
+    await File(sidecarPath).writeAsString(
+      jsonEncode(<String, dynamic>{
+        'mode': 'prefs',
+        'prefs': <String, String>{},
+        'preserveDeviceLocalTables': true,
+      }),
+    );
+
+    // A retryable replay failure must keep BOTH recovery artifacts. Preserve
+    // the SQLite signature but truncate the snapshot so ATTACH/replay fails.
+    final List<int> sqliteHeader = (await File(
+      bakPath,
+    ).readAsBytes()).take(16).toList(growable: false);
+    await File(bakPath).writeAsBytes(sqliteHeader, flush: true);
+    await BackupRestoreService.recoverPendingRestore(currentDirectory.path);
+    expect(File(sidecarPath).existsSync(), isTrue);
+    expect(File(bakPath).existsSync(), isTrue);
+
+    final FushiDatabase overwritten = FushiDatabase(currentDirectory.path);
+    for (final String table in <String>[
+      'video_download_jobs',
+      'video_download_job_files',
+      'video_download_job_subtitles',
+      'video_download_subscriptions',
+      'video_download_subscription_items',
+    ]) {
+      expect(
+        await count(overwritten, table),
+        0,
+        reason: '$table was cleared by the overwrite',
+      );
+    }
+    await overwritten.close();
+
+    await File(bakPath).delete();
+    await File(repairBakPath).copy(bakPath);
+    await BackupRestoreService.recoverPendingRestore(currentDirectory.path);
+    expect(File(sidecarPath).existsSync(), isFalse);
+    expect(File(bakPath).existsSync(), isFalse);
+
+    // A second startup must be a no-op rather than duplicating graph rows.
+    await BackupRestoreService.recoverPendingRestore(currentDirectory.path);
+
+    final FushiDatabase recovered = FushiDatabase(currentDirectory.path);
+    addTearDown(recovered.close);
+    for (final String table in <String>[
+      'video_download_jobs',
+      'video_download_job_files',
+      'video_download_job_subtitles',
+      'video_download_subscriptions',
+      'video_download_subscription_items',
+    ]) {
+      expect(
+        await count(recovered, table),
+        1,
+        reason: '$table must be restored exactly once',
+      );
+    }
+
+    final VideoDownloadJobRow job =
+        (await recovered.getVideoDownloadJobs()).single;
+    expect(job.targetSourceId, isNull);
+    expect(job.collectionId, isNull);
+    expect(job.lifecycle, VideoDownloadJobLifecycle.needsAttention);
+    expect(job.claimedBy, isNull);
+    expect(job.claimExpiresAt, isNull);
+
+    final VideoDownloadSubscriptionRow subscription =
+        (await recovered.getVideoDownloadSubscriptions()).single;
+    expect(subscription.targetSourceId, isNull);
+    expect(subscription.collectionId, isNull);
+    expect(subscription.enabled, isFalse);
+    expect(subscription.claimedBy, isNull);
+    expect(subscription.claimExpiresAt, isNull);
+
+    final List<dynamic> foreignKeyErrors = await recovered
+        .customSelect('PRAGMA foreign_key_check')
+        .get();
+    expect(foreignKeyErrors, isEmpty);
+  });
+
+  test(
+    'merge import never adopts attached device-local download rows',
+    () async {
+      final Directory attachedDirectory = Directory(
+        p.join(root.path, 'attached'),
+      );
+      await attachedDirectory.create(recursive: true);
+      final FushiDatabase attached = FushiDatabase(attachedDirectory.path);
+      await seedDownloadGraph(attached);
+      await attached.close();
+
+      final FushiDatabase target = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(target.close);
+      final String safePath = p
+          .join(attachedDirectory.path, 'fushi.db')
+          .replaceAll(r'\', '/')
+          .replaceAll("'", "''");
+      await target.customStatement("ATTACH DATABASE '$safePath' AS mergesrc");
+      await BackupMergeEngine(target).merge();
+
+      for (final String table in mergeSkippedDeviceLocalTableNames()) {
+        if (!table.startsWith('video_download_')) continue;
+        expect(await count(target, table), 0, reason: '$table must not merge');
+      }
+      await target.customStatement('DETACH DATABASE mergesrc');
+    },
+  );
 }

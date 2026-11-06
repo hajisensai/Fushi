@@ -47,16 +47,18 @@ class SerialJobQueue {
       }
     }
 
-    _tail = _tail.then((_) async {
-      try {
-        completer.complete(await job());
-      } catch (error, stack) {
-        settle(error, stack);
-      }
-    }).catchError((Object error, StackTrace stack) {
-      // 兜底：串行链绝不能停在 rejected 状态，否则后续 enqueue 的 .then(onValue) 永不触发。
-      settle(error, stack);
-    });
+    _tail = _tail
+        .then((_) async {
+          try {
+            completer.complete(await job());
+          } catch (error, stack) {
+            settle(error, stack);
+          }
+        })
+        .catchError((Object error, StackTrace stack) {
+          // 兜底：串行链绝不能停在 rejected 状态，否则后续 enqueue 的 .then(onValue) 永不触发。
+          settle(error, stack);
+        });
 
     return completer.future;
   }

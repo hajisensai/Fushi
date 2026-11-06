@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
@@ -72,6 +73,20 @@ loadAacsConfiguration(String discRoot) async {
     }
     unitBytes = await unitFile.readAsBytes();
   } on io.FileSystemException {
+    throw const AacsConfigurationException(
+      AacsConfigurationError.unsupportedDisc,
+    );
+  }
+  return loadAacsConfigurationForUnitKeyFile(unitBytes);
+}
+
+/// [loadAacsConfiguration] 的密钥查找本体，输入是盘上 `AACS/Unit_Key_RO.inf` 的字节：
+/// 盘身份 = 它的 SHA-1。远端原盘（第二期）在 client 侧用它——那张盘不在本机文件
+/// 系统上，`Unit_Key_RO.inf` 是从 host 的盘目录共享取来的，KEYDB 仍是**本机**的
+/// （与本地加密盘同一套查找顺序：显式指定 → 标准位置 → 应用缓存 → 下载）。
+Future<({Uint8List unitKeyFile, Uint8List volumeUniqueKey})>
+loadAacsConfigurationForUnitKeyFile(Uint8List unitBytes) async {
+  if (unitBytes.length < 16 || unitBytes.length > 1024 * 1024) {
     throw const AacsConfigurationException(
       AacsConfigurationError.unsupportedDisc,
     );
@@ -316,6 +331,8 @@ Future<Uint8List> _boundedBytes(Stream<List<int>> source, int limit) async {
 }
 
 Future<Uint8List> _extractDatabase(Uint8List bytes) async {
+  // 在 try 外取库：原生库缺失是部署错误，不能被下面的 catch 改写成「配置无效」。
+  final FushiCompute compute = FushiCompute.require();
   try {
     // Bound entry counts before archive parses/allocates central-directory
     // objects. This provider publishes a single ordinary (non-ZIP64) file.
@@ -368,7 +385,7 @@ Future<Uint8List> _extractDatabase(Uint8List bytes) async {
       _maxConfigurationBytes,
     );
     if (decoded.length != header.uncompressedSize ||
-        getCrc32(decoded) != header.crc32) {
+        ffcCrc32(decoded, 0, compute) != header.crc32) {
       throw const FormatException();
     }
     // Reject HTML error pages and unrelated payloads even inside a valid ZIP.

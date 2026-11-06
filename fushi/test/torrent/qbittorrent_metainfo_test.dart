@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -22,7 +22,9 @@ void main() {
         addCalls++;
         expect(request.headers['cookie'], 'SID=session');
         expect(
-            request.headers['content-type'], contains('multipart/form-data'));
+          request.headers['content-type'],
+          contains('multipart/form-data'),
+        );
         final String body = latin1.decode(request.bodyBytes);
         expect(body, contains('name="torrents"'));
         expect(body, contains('filename="safe_name.torrent"'));

@@ -37,15 +37,16 @@ void main() {
   });
 
   group('BUG-890 源码守卫：接线不能被回退', () {
-    final String source =
-        File('lib/src/media/audiobook/audiobook_controller.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/media/audiobook/audiobook_controller.dart',
+    ).readAsStringSync();
 
     test('图片等待窗口内手动翻页会置标志', () {
       expect(
         source,
         contains(
-            'if (isImagePaused) {\n      _readerMovedDuringImagePause = true;'),
+          'if (isImagePaused) {\n      _readerMovedDuringImagePause = true;',
+        ),
         reason: 'noteManualReaderNavigation 必须在图片等待在途时记录用户已手动离开。',
       );
     });
@@ -54,7 +55,8 @@ void main() {
       expect(
         source,
         contains('if (shouldSnapAfterImagePauseResume('),
-        reason: 'triggerImagePause 定时器恢复播放后必须用该谓词门控 snapReaderToAudio，'
+        reason:
+            'triggerImagePause 定时器恢复播放后必须用该谓词门控 snapReaderToAudio，'
             '不能无条件 snap。',
       );
     });
@@ -64,7 +66,8 @@ void main() {
       expect(
         source,
         contains(
-            '_readerMovedDuringImagePause = false;\n    unawaited(_player.pause());'),
+          '_readerMovedDuringImagePause = false;\n    unawaited(_player.pause());',
+        ),
         reason: 'triggerImagePause arm 时必须复位标志。',
       );
       // arm / load / pause 至少三处复位标志（String 实现 Pattern，allMatches 为原生）

@@ -35,9 +35,7 @@ extension _VideoFlickerNotice on _VideoFushiPageState {
   /// 「不再提示」：落偏好（[PreferencesRepository.videoBlackFlickerNoticeSuppressed]）并关闭。
   void _suppressBlackFlickerNotice() {
     _dismissBlackFlickerNotice();
-    unawaited(
-      appModel.prefsRepo.setVideoBlackFlickerNoticeSuppressed(true),
-    );
+    unawaited(appModel.prefsRepo.setVideoBlackFlickerNoticeSuppressed(true));
   }
 
   /// 顶部醒目提示条：中性浮层面（surfaceContainer）+ 轻阴影，警告语义只上在单色
@@ -137,9 +135,7 @@ extension _VideoFlickerNotice on _VideoFushiPageState {
                                 style: FilledButton.styleFrom(
                                   visualDensity: VisualDensity.compact,
                                 ),
-                                child: Text(
-                                  t.video_black_flash_notice_action,
-                                ),
+                                child: Text(t.video_black_flash_notice_action),
                               ),
                             ],
                           ),

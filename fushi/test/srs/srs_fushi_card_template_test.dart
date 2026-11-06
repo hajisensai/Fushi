@@ -39,7 +39,7 @@ void main() {
   test('an empty Lapis-shaped note (only Expression) still renders', () {
     final AnkiRenderedCard card = _render(<String, String>{
       for (final String f in FushiCardNoteType.fields) f: '',
-      'Expression': '箔',
+      'Term': '箔',
     });
     expect(card.isEmpty, isFalse);
     expect(card.question, contains('箔'));
@@ -86,12 +86,30 @@ void main() {
     }
   });
 
+  test('Fushi card no longer shows SentenceFurigana (owner 2026-10-28)', () {
+    // 字段仍留在笔记类型里（与 Lapis 同名同序），卡面与外观不再读它。
+    for (final String part in <String>[
+      FushiCardNoteType.template.front,
+      FushiCardNoteType.template.back,
+      FushiCardNoteType.template.css,
+    ]) {
+      expect(part, isNot(contains('SentenceFurigana')));
+      expect(part, isNot(contains('fushi-srs-sentence-furigana')));
+    }
+    for (final FushiCardBlock b in FushiCardBlock.values) {
+      expect(b.fields, isNot(contains('SentenceFurigana')));
+    }
+    expect(
+      const SrsCardAppearance().toJson().containsKey('sentenceFurigana'),
+      isFalse,
+    );
+  });
+
   test('every host class the appearance can emit is styled by the template', () {
     final String classes = srsCardAppearanceClasses(
       const SrsCardAppearance(
         frontReading: true,
         frontFrequency: true,
-        sentenceFurigana: true,
         glossaryExpanded: true,
         showPicture: false,
         showTranslation: false,
@@ -208,7 +226,7 @@ void main() {
           ...((raw[i]! as Map)['fields'] as Map).cast<String, String>(),
         };
         // 真实样本的图片 / 音频是媒体库里的文件名，预览页没有媒体库：换成样例图。
-        f['Picture'] = srsSampleCardFields()['Picture']!;
+        f['Media'] = srsSampleCardFields()['Media']!;
         samples.add(('real$i', f));
       }
     }

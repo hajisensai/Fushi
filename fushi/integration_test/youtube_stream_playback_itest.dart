@@ -60,9 +60,11 @@ void main() {
           debugPrint('[yt-itest] resolve FAILED (network?): $e — skipping');
           return; // 网络不可达时不误判失败
         }
-        debugPrint('[yt-itest] resolved title="${resolved.title}" '
-            'cues=${resolved.cues.length} muxedFallback=${resolved.isMuxedFallback} '
-            'miningVideoNull=${resolved.miningVideoUrl == null}');
+        debugPrint(
+          '[yt-itest] resolved title="${resolved.title}" '
+          'cues=${resolved.cues.length} muxedFallback=${resolved.isMuxedFallback} '
+          'miningVideoNull=${resolved.miningVideoUrl == null}',
+        );
         expect(resolved.streamUrl, isNotEmpty);
         expect(resolved.cues, isNotEmpty, reason: '应解析出字幕 cue（查词/制卡句子来源）');
 
@@ -79,23 +81,32 @@ void main() {
           preresolvedCues: resolved.cues,
           httpHeaderFields: resolved.httpHeaders,
         );
-        final RemoteVideoInfo info =
-            RemoteVideoInfo(id: 'video/stream/yt-itest', title: resolved.title);
+        final RemoteVideoInfo info = RemoteVideoInfo(
+          id: 'video/stream/yt-itest',
+          title: resolved.title,
+        );
 
-        final NavigatorState navigator =
-            tester.state<NavigatorState>(find.byType(Navigator).first);
-        unawaited(navigator.push<void>(MaterialPageRoute<void>(
-          builder: (_) => VideoFushiPage.neutralizedRemote(
-            info: info,
-            repo: repo,
-            client: client,
+        final NavigatorState navigator = tester.state<NavigatorState>(
+          find.byType(Navigator).first,
+        );
+        unawaited(
+          navigator.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => VideoFushiPage.neutralizedRemote(
+                info: info,
+                repo: repo,
+                client: client,
+              ),
+            ),
           ),
-        )));
+        );
 
         VideoFushiTestHooks? readHooks() {
           if (find.byType(VideoFushiPage).evaluate().isEmpty) return null;
           return tester.state<State<VideoFushiPage>>(
-              find.byType(VideoFushiPage)) as VideoFushiTestHooks;
+                find.byType(VideoFushiPage),
+              )
+              as VideoFushiTestHooks;
         }
 
         // 等控制器就绪（load 完成 → debugPositionMs 非 null），流媒体首帧慢，给足 60s。
@@ -119,15 +130,22 @@ void main() {
           await tester.pump(const Duration(milliseconds: 250));
           played = hooks.debugPositionMs ?? 0;
           if (i % 10 == 0) {
-            debugPrint('[yt-itest] t=${i * 250}ms posMs=$played '
-                'durMs=${hooks.debugDurationMs}');
+            debugPrint(
+              '[yt-itest] t=${i * 250}ms posMs=$played '
+              'durMs=${hooks.debugDurationMs}',
+            );
           }
           if (played > 1500) break;
         }
-        debugPrint('[yt-itest] FINAL playedMs=$played '
-            'durMs=${hooks.debugDurationMs}');
-        expect(played, greaterThan(1500),
-            reason: 'libmpv 应真实播放前进 >1.5s（实测=$played）——黑屏则永远 0');
+        debugPrint(
+          '[yt-itest] FINAL playedMs=$played '
+          'durMs=${hooks.debugDurationMs}',
+        );
+        expect(
+          played,
+          greaterThan(1500),
+          reason: 'libmpv 应真实播放前进 >1.5s（实测=$played）——黑屏则永远 0',
+        );
 
         // ── 制卡源接线：GIF/帧走低分辨率流（miningVideoUrl），音频走 audio-only ──
         final String? miningVideo = hooks.debugMiningSource;

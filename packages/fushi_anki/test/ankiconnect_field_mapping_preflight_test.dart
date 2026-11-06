@@ -38,14 +38,18 @@ class _RecordingClient extends http.BaseClient {
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
-    final String body =
-        await (request as http.Request).finalize().bytesToString();
-    final Map<String, dynamic> decoded =
-        Map<String, dynamic>.from(jsonDecode(body) as Map);
+    final String body = await (request as http.Request)
+        .finalize()
+        .bytesToString();
+    final Map<String, dynamic> decoded = Map<String, dynamic>.from(
+      jsonDecode(body) as Map,
+    );
     requests.add(decoded);
     final Object? result = results[decoded['action'] as String];
-    final String payload =
-        jsonEncode(<String, Object?>{'result': result, 'error': null});
+    final String payload = jsonEncode(<String, Object?>{
+      'result': result,
+      'error': null,
+    });
     return http.StreamedResponse(
       Stream<List<int>>.value(utf8.encode(payload)),
       200,
@@ -56,7 +60,7 @@ class _RecordingClient extends http.BaseClient {
 
 class _Repo extends AnkiConnectRepository {
   _Repo({required AnkiConnectService service, required this.settings})
-      : super(service: service);
+    : super(service: service);
 
   final AnkiSettings settings;
 
@@ -67,29 +71,24 @@ class _Repo extends AnkiConnectRepository {
 AnkiSettings _settings({
   required List<String> noteTypeFields,
   required Map<String, String> fieldMappings,
-}) =>
-    AnkiSettings(
-      selectedDeckId: 1,
-      selectedNoteTypeId: 2,
-      availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
-      availableNoteTypes: <AnkiNoteType>[
-        AnkiNoteType(id: 2, name: 'Lapis', fields: noteTypeFields),
-      ],
-      fieldMappings: fieldMappings,
-      // 关掉查重，免得先打一发 findNotes 干扰「一个请求都不该发」的断言。
-      allowDupes: true,
-    );
+}) => AnkiSettings(
+  selectedDeckId: 1,
+  selectedNoteTypeId: 2,
+  availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
+  availableNoteTypes: <AnkiNoteType>[
+    AnkiNoteType(id: 2, name: 'Lapis', fields: noteTypeFields),
+  ],
+  fieldMappings: fieldMappings,
+  // 关掉查重，免得先打一发 findNotes 干扰「一个请求都不该发」的断言。
+  allowDupes: true,
+);
 
 const String _payload = '{"expression":"勉強","reading":"べんきょう"}';
 
 _Repo _repoWith(_RecordingClient client, AnkiSettings settings) => _Repo(
-      service: AnkiConnectService(
-        host: '127.0.0.1',
-        port: 8765,
-        client: client,
-      ),
-      settings: settings,
-    );
+  service: AnkiConnectService(host: '127.0.0.1', port: 8765, client: client),
+  settings: settings,
+);
 
 void main() {
   test('配置的字段名一个都不属于当前笔记类型 → 本地拦下、不发任何请求、给可分类错误码', () async {
@@ -113,11 +112,18 @@ void main() {
     );
 
     expect(outcome.result, MineResult.error);
-    expect(outcome.errorCode, AnkiErrorCode.fieldMappingMismatch,
-        reason: '必须是可分类失败，主 app 才能给本地化、可操作的文案');
-    expect(client.actions, isNot(contains('addNote')),
-        reason: '明知必失败的卡不该送出去 —— 送出去换回的就是那句不可操作的 '
-            '"cannot create note because it is empty"');
+    expect(
+      outcome.errorCode,
+      AnkiErrorCode.fieldMappingMismatch,
+      reason: '必须是可分类失败，主 app 才能给本地化、可操作的文案',
+    );
+    expect(
+      client.actions,
+      isNot(contains('addNote')),
+      reason:
+          '明知必失败的卡不该送出去 —— 送出去换回的就是那句不可操作的 '
+          '"cannot create note because it is empty"',
+    );
     // 诊断串要写清「配了什么 / 有什么可用」，用户照着就能改。
     expect(outcome.errorDetail, contains('Word'));
     expect(outcome.errorDetail, contains('Expression'));
@@ -147,8 +153,9 @@ void main() {
   });
 
   test('正常情形：只把属于该笔记类型的字段送出，陌生键被剥掉', () async {
-    final _RecordingClient client =
-        _RecordingClient(results: <String, Object?>{'addNote': 1234});
+    final _RecordingClient client = _RecordingClient(
+      results: <String, Object?>{'addNote': 1234},
+    );
     final _Repo repo = _repoWith(
       client,
       _settings(
@@ -170,12 +177,17 @@ void main() {
     expect(outcome.result, MineResult.success);
     final Map<String, dynamic>? add = client.lastAddNote;
     expect(add, isNotNull, reason: '这次应该真的建卡');
-    final Map<String, dynamic> note =
-        Map<String, dynamic>.from((add!['params'] as Map)['note'] as Map);
-    final Map<String, dynamic> sent =
-        Map<String, dynamic>.from(note['fields'] as Map);
+    final Map<String, dynamic> note = Map<String, dynamic>.from(
+      (add!['params'] as Map)['note'] as Map,
+    );
+    final Map<String, dynamic> sent = Map<String, dynamic>.from(
+      note['fields'] as Map,
+    );
     expect(sent.keys, containsAll(<String>['Expression', 'Sentence']));
-    expect(sent.keys, isNot(contains('LegacyWord')),
-        reason: '不属于当前笔记类型的键必须被剥掉，而不是丢给服务端静默忽略');
+    expect(
+      sent.keys,
+      isNot(contains('LegacyWord')),
+      reason: '不属于当前笔记类型的键必须被剥掉，而不是丢给服务端静默忽略',
+    );
   });
 }

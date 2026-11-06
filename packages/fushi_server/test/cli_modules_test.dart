@@ -8,7 +8,15 @@ import 'package:fushi_server/src/cli.dart';
 import 'package:test/test.dart';
 
 const Set<String> _builtins = <String>{
-  'init', 'serve', 'scan', 'status', 'pair', 'admin', 'models', 'transcribe', 'ctl', //
+  'init',
+  'serve',
+  'scan',
+  'status',
+  'pair',
+  'admin',
+  'models',
+  'transcribe',
+  'ctl', //
 };
 
 void main() {
@@ -16,7 +24,11 @@ void main() {
     final Set<String> seen = <String>{..._builtins};
     for (final CliModule module in kCliModules) {
       for (final String name in module.commands) {
-        expect(seen.add(name), isTrue, reason: '命令名 "$name" 重复（${module.runtimeType}）');
+        expect(
+          seen.add(name),
+          isTrue,
+          reason: '命令名 "$name" 重复（${module.runtimeType}）',
+        );
       }
     }
   });

@@ -50,15 +50,11 @@ extension _ReaderHistoryVideo on _ReaderFushiHistoryPageState {
 
   /// 书架拖入网络流 URL（浏览器地址栏/链接）→ 打开 [VideoImportDialog] 预填 URL，对话框
   /// 可播时自动导入（进视频库，TODO-1306）。
-  Future<void> _openStreamImportPrefilled({
-    required String streamUrl,
-  }) async {
+  Future<void> _openStreamImportPrefilled({required String streamUrl}) async {
     await showAppDialog<String>(
       context: context,
-      builder: (_) => VideoImportDialog(
-        repo: _videoRepo,
-        initialStreamUrl: streamUrl,
-      ),
+      builder: (_) =>
+          VideoImportDialog(repo: _videoRepo, initialStreamUrl: streamUrl),
     );
   }
 }

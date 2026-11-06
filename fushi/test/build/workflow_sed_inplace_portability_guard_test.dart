@@ -83,8 +83,11 @@ void main() {
   final RegExp bareInPlace = RegExp(r'\bsed\b[^\n|;&]*?\s-i(?=\s|$)');
 
   test('workflows 目录存在', () {
-    expect(workflowsDir.existsSync(), isTrue,
-        reason: 'expected ${workflowsDir.absolute.path}');
+    expect(
+      workflowsDir.existsSync(),
+      isTrue,
+      reason: 'expected ${workflowsDir.absolute.path}',
+    );
   });
 
   /// 扫描面 = `.github/workflows/*.yml` **+** `.github/actions/**/action.yml`。
@@ -97,10 +100,15 @@ void main() {
   final List<File> workflows = <File>[
     if (workflowsDir.existsSync())
       ...workflowsDir.listSync().whereType<File>().where(
-          (File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml')),
+        (File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml'),
+      ),
     if (actionsDir.existsSync())
-      ...actionsDir.listSync(recursive: true).whereType<File>().where(
-          (File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml')),
+      ...actionsDir
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where(
+            (File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml'),
+          ),
   ]..sort((File a, File b) => a.path.compareTo(b.path));
 
   for (final File workflow in workflows) {
@@ -122,10 +130,14 @@ void main() {
         }
       }
 
-      expect(offenders, isEmpty,
-          reason: '这些 macOS 作业里的裸 `sed -i` 在 BSD sed 下必然失败，'
-              '改成后缀紧贴的 `sed -i.bak ...` 并随后 `rm -f <file>.bak`：\n'
-              '${offenders.join('\n')}');
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            '这些 macOS 作业里的裸 `sed -i` 在 BSD sed 下必然失败，'
+            '改成后缀紧贴的 `sed -i.bak ...` 并随后 `rm -f <file>.bak`：\n'
+            '${offenders.join('\n')}',
+      );
     });
   }
 
@@ -146,10 +158,17 @@ void main() {
       }
     }
 
-    expect(injectionSites, greaterThan(0),
-        reason: 'TMDB key 注入步骤消失了？若注入方式改版请同步更新本守卫');
-    expect(offenders, isEmpty,
-        reason: 'TMDB key 注入必须用 GNU/BSD 通用的 `sed -i.bak`：\n'
-            '${offenders.join('\n')}');
+    expect(
+      injectionSites,
+      greaterThan(0),
+      reason: 'TMDB key 注入步骤消失了？若注入方式改版请同步更新本守卫',
+    );
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'TMDB key 注入必须用 GNU/BSD 通用的 `sed -i.bak`：\n'
+          '${offenders.join('\n')}',
+    );
   });
 }

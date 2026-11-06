@@ -4,8 +4,10 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/media_item.dart';
@@ -27,6 +29,14 @@ class _MangaTestAppModel extends AppModel {
 
   @override
   FushiDatabase get database => _db;
+
+  /// 跳转记录顶栏图标订阅的是 [PreferencesRepository] 本身
+  /// （`JumpHistoryPrefsListenable.fromRepository`），不经可覆写的 AppModel getter：
+  /// 给一份建在同一内存库上的真实偏好仓库（未加载 = 全部出厂默认）。
+  late final PreferencesRepository _prefs = PreferencesRepository(_db);
+
+  @override
+  PreferencesRepository get prefsRepo => _prefs;
 
   @override
   bool get lowMemoryMode => false;
@@ -80,6 +90,11 @@ class _MangaTestAppModel extends AppModel {
   // 固定顶栏：测试默认要看得见栏里的按钮（悬浮态默认收起）。
   @override
   bool get mangaChromeFloating => false;
+
+  // 工具栏布局走 prefsRepo（测试里为 null）：给出厂布局。
+  @override
+  MangaControlLayout mangaControlLayoutFor({required bool compact}) =>
+      MangaControlLayout.defaults;
 
   @override
   bool get mangaVolumeKeyPaging => false;
@@ -152,16 +167,18 @@ Future<void> _pumpBook(
   int savedPage = 0,
 }) async {
   await tester.runAsync(() async {
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: bookKey,
-      title: bookKey,
-      epubPath: 'manga.json',
-      extractDir: bookDir.path,
-      chapterCount: 4,
-      chaptersJson: '[]',
-      importedAt: DateTime.now().millisecondsSinceEpoch,
-      format: const Value<String>('manga'),
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: bookKey,
+        epubPath: 'manga.json',
+        extractDir: bookDir.path,
+        chapterCount: 4,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+        format: const Value<String>('manga'),
+      ),
+    );
     if (savedPage > 0) {
       // v82：进度键 = epub_books.uid（insertEpubBook 自动生成，取回换算）。
       await ReaderPositionRepository(db).save(
@@ -187,8 +204,9 @@ Future<void> _pumpBook(
 }
 
 Directory _bookDir() {
-  final Directory dir =
-      Directory.systemTemp.createTempSync('manga_double_widget_');
+  final Directory dir = Directory.systemTemp.createTempSync(
+    'manga_double_widget_',
+  );
   File(p.join(dir.path, 'manga.json')).writeAsStringSync(_mangaJson());
   Directory(p.join(dir.path, 'images')).createSync();
   for (int i = 1; i <= 4; i++) {
@@ -203,24 +221,30 @@ Directory _bookDir() {
 /// 「隐藏界面」（平铺按钮或 ⋮ 菜单项，与快捷键同一执行体）收起 chrome，再读角标。
 Future<String?> _hiddenPageBadgeText(WidgetTester tester) async {
   // 右上角动作默认平铺；只有宽度不够时才收进「⋯」。两种形态都走同一执行体。
-  final Finder overflow =
-      find.byKey(const ValueKey<String>('manga_chrome_overflow'));
+  final Finder overflow = find.byKey(
+    const ValueKey<String>('manga_chrome_overflow'),
+  );
   if (overflow.evaluate().isNotEmpty) {
     await tester.tap(overflow);
     await tester.pumpAndSettle();
-    await tester.tap(find
-        .byKey(const ValueKey<String>('manga_chrome_hide_button_menu_item')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('manga_chrome_hide_button_menu_item')),
+    );
   } else {
-    await tester
-        .tap(find.byKey(const ValueKey<String>('manga_chrome_hide_button')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('manga_chrome_hide_button')),
+    );
   }
   await tester.pumpAndSettle();
-  expect(find.byKey(const ValueKey<String>('manga_chrome_show_button')),
-      findsOneWidget,
-      reason: '界面已隐藏');
+  expect(
+    find.byKey(const ValueKey<String>('manga_chrome_show_button')),
+    findsOneWidget,
+    reason: '界面已隐藏',
+  );
   return tester
       .widget<Text>(
-          find.byKey(const ValueKey<String>('manga_hidden_page_badge')))
+        find.byKey(const ValueKey<String>('manga_hidden_page_badge')),
+      )
       .data;
 }
 
@@ -246,15 +270,20 @@ void main() {
     // 配对 [0],[1,2],[3] → 跨页 1。
     await _pumpBook(tester, db, appModel, '横屏漫画', bookDir, savedPage: 2);
 
-    expect(find.byKey(const ValueKey<String>('manga_content_ready')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('manga_content_ready')),
+      findsOneWidget,
+    );
     // 布局偏好（自动/单页/双页循环）按钮在 spread 模式下可见。
     expect(
       find.byKey(const ValueKey<String>('manga_spread_preference_button')),
       findsOneWidget,
     );
-    expect(await _hiddenPageBadgeText(tester), '2-3 / 4',
-        reason: '横屏 auto 双页 + 封面独占：恢复到含第 3 页的跨页，指示区间 2-3');
+    expect(
+      await _hiddenPageBadgeText(tester),
+      '2-3 / 4',
+      reason: '横屏 auto 双页 + 封面独占：恢复到含第 3 页的跨页，指示区间 2-3',
+    );
   });
 
   testWidgets('竖屏视口自动单页：页码保持单页显示', (WidgetTester tester) async {
@@ -272,7 +301,10 @@ void main() {
 
     await _pumpBook(tester, db, appModel, '竖屏漫画', bookDir, savedPage: 2);
 
-    expect(await _hiddenPageBadgeText(tester), '3 / 4',
-        reason: '竖屏 auto 单页：第 3 页单页显示');
+    expect(
+      await _hiddenPageBadgeText(tester),
+      '3 / 4',
+      reason: '竖屏 auto 单页：第 3 页单页显示',
+    );
   });
 }

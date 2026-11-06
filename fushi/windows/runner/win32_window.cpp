@@ -1,5 +1,6 @@
 #include "win32_window.h"
 
+#include "test_window_origin_pin.h"
 #include "window_activation_policy.h"
 
 #include <dwmapi.h>
@@ -64,6 +65,41 @@ bool IsTestHiddenMode() {
 // capture exist without hijacking what the user is doing.
 bool IsTestOnscreenMode() {
   return GetEnvironmentVariableW(L"FUSHI_TEST_ONSCREEN", nullptr, 0) > 0;
+}
+
+// A test-mode "x,y,w,h" environment variable parsed into a physical-pixel
+// rect; nullopt outside test-hidden mode, when unset, or when malformed.
+std::optional<RECT> ReadTestRectSpec(const wchar_t* name) {
+  if (!IsTestHiddenMode()) {
+    return std::nullopt;
+  }
+  wchar_t spec[64] = {0};
+  if (GetEnvironmentVariableW(name, spec, 64) == 0) {
+    return std::nullopt;
+  }
+  int x = 0, y = 0, w = 0, h = 0;
+  if (swscanf_s(spec, L"%d,%d,%d,%d", &x, &y, &w, &h) != 4 || w <= 0 ||
+      h <= 0) {
+    return std::nullopt;
+  }
+  return RECT{x, y, x + w, y + h};
+}
+
+// FUSHI_TEST_TOPMOST: see Win32Window::ApplyTestTopmostPlacement.
+std::optional<RECT> ReadTestTopmostSpec() {
+  return ReadTestRectSpec(L"FUSHI_TEST_TOPMOST");
+}
+
+// FUSHI_TEST_WINDOW_RECT="x,y,w,h" (BUG-3888 frame-time probe): the window's
+// outer rect in physical pixels, pinned for the whole run (origin and size)
+// without TOPMOST and without borrowing the foreground thread's input state:
+// the window stays WS_EX_NOACTIVATE and the user's windows may cover it.
+// Ignored when FUSHI_TEST_TOPMOST is also set (that one wins).
+std::optional<RECT> ReadTestWindowRectSpec() {
+  if (ReadTestTopmostSpec()) {
+    return std::nullopt;
+  }
+  return ReadTestRectSpec(L"FUSHI_TEST_WINDOW_RECT");
 }
 
 // The main window stays hidden through Flutter startup. This backdrop is only
@@ -205,6 +241,23 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
 
   ApplyTestTopmostPlacement(window);
 
+  // BUG-3768: armed only now, after the runner's own placement above; from
+  // here on every move (Dart startup placement, window_manager, DPI change)
+  // keeps this origin. See test_window_origin_pin.h.
+  const std::optional<RECT> topmost = ReadTestTopmostSpec();
+  const std::optional<RECT> fixed_rect = ReadTestWindowRectSpec();
+  const std::optional<RECT> evidence = topmost ? topmost : fixed_rect;
+  test_origin_pin_ = ResolveTestWindowOriginPin(
+      hidden, onscreen,
+      evidence ? std::optional<POINT>(POINT{evidence->left, evidence->top})
+               : std::nullopt,
+      POINT{kOffscreenOrigin, kOffscreenOrigin});
+  test_size_pin_ = ResolveTestWindowSizePin(
+      hidden, fixed_rect ? std::optional<SIZE>(
+                               SIZE{fixed_rect->right - fixed_rect->left,
+                                    fixed_rect->bottom - fixed_rect->top})
+                         : std::nullopt);
+
   return OnCreate();
 }
 
@@ -216,18 +269,21 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
 // thread's input state for the single SetWindowPos; no focus / foreground
 // change is made, the window stays WS_EX_NOACTIVATE.
 void Win32Window::ApplyTestTopmostPlacement(HWND window) {
-  if (!IsTestHiddenMode()) {
+  const std::optional<RECT> spec = ReadTestTopmostSpec();
+  if (!spec) {
+    // FUSHI_TEST_WINDOW_RECT: plain placement. No z-order change, no input
+    // state borrowing, no activation.
+    if (const std::optional<RECT> fixed = ReadTestWindowRectSpec()) {
+      SetWindowPos(window, nullptr, fixed->left, fixed->top,
+                   fixed->right - fixed->left, fixed->bottom - fixed->top,
+                   SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE);
+    }
     return;
   }
-  wchar_t spec[64] = {0};
-  if (GetEnvironmentVariableW(L"FUSHI_TEST_TOPMOST", spec, 64) == 0) {
-    return;
-  }
-  int x = 0, y = 0, w = 0, h = 0;
-  if (swscanf_s(spec, L"%d,%d,%d,%d", &x, &y, &w, &h) != 4 || w <= 0 ||
-      h <= 0) {
-    return;
-  }
+  const int x = spec->left;
+  const int y = spec->top;
+  const int w = spec->right - spec->left;
+  const int h = spec->bottom - spec->top;
   const HWND foreground = GetForegroundWindow();
   const DWORD fg_thread =
       foreground ? GetWindowThreadProcessId(foreground, nullptr) : 0;
@@ -255,6 +311,15 @@ LRESULT CALLBACK Win32Window::WndProc(HWND const window,
     EnableFullDpiSupportIfAvailable(window);
     that->window_handle_ = window;
   } else if (Win32Window* that = GetThisFromHandle(window)) {
+    // BUG-3768: rewrite before any handler sees the request — plugins answer
+    // top-level messages first in FlutterWindow::MessageHandler and could
+    // otherwise consume it. Not consumed here; dispatch continues as usual.
+    if (message == WM_WINDOWPOSCHANGING) {
+      PinWindowPosOrigin(reinterpret_cast<WINDOWPOS*>(lparam),
+                         that->test_origin_pin_, IsIconic(window) != 0);
+      PinWindowPosSize(reinterpret_cast<WINDOWPOS*>(lparam),
+                       that->test_size_pin_, IsIconic(window) != 0);
+    }
     return that->MessageHandler(window, message, wparam, lparam);
   }
 
@@ -566,7 +631,7 @@ void Win32Window::FillSurfaceBackdrop() {
   // content instead of a colour flash. Everything else (interactive resize,
   // theme pushes) has no snapshot and keeps the cheap brush fill.
   // BUG-2964: never on a see-through surface — GDI writes alpha 0, so the
-  // snapshot would be added onto the Mica / HDR picture as a ghost frame.
+  // snapshot would be added onto the Mica material as a ghost frame.
   bool painted = false;
   if (transition_snapshot_ != nullptr &&
       !fushi::MainSurfaceSeeThrough(main_surface_state())) {
@@ -605,14 +670,6 @@ void Win32Window::SetSystemBackdrop(bool enabled) {
     return;
   }
   system_backdrop_ = enabled;
-  FillSurfaceBackdrop();
-}
-
-void Win32Window::SetVideoPassthrough(bool enabled) {
-  if (video_passthrough_ == enabled) {
-    return;
-  }
-  video_passthrough_ = enabled;
   FillSurfaceBackdrop();
 }
 

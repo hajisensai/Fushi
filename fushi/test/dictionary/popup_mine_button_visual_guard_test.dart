@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 静息制卡 '+' 的「可见大小」与「可见位置」守卫。
 ///

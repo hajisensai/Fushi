@@ -105,8 +105,9 @@ void main() {
     // AppModel 构造时 DefaultCacheManager 经 path_provider 平台通道，单测 mock 掉。
     late Directory pathProviderDir;
     setUpAll(() {
-      pathProviderDir =
-          Directory.systemTemp.createTempSync('fushi_path_provider');
+      pathProviderDir = Directory.systemTemp.createTempSync(
+        'fushi_path_provider',
+      );
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         const MethodChannel('plugins.flutter.io/path_provider'),
         (MethodCall call) async => pathProviderDir.path,
@@ -162,8 +163,8 @@ void main() {
 
     testWidgets('向右下拖动放大 → 偏好宽/高都增大', (WidgetTester tester) async {
       await pumpLayer(tester);
-      expect(appModel.popupMaxWidth, appModel.defaultPopupMaxWidth); // 400
-      expect(appModel.popupMaxHeight, appModel.defaultPopupMaxHeight); // 360
+      expect(appModel.popupMaxWidth, appModel.defaultPopupMaxWidth);
+      expect(appModel.popupMaxHeight, appModel.defaultPopupMaxHeight);
 
       await tester.drag(
         find.byKey(DictionaryPopupLayer.resizeGripKey),
@@ -171,8 +172,14 @@ void main() {
       );
       await tester.pump();
 
-      expect(appModel.popupMaxWidth, greaterThan(400));
-      expect(appModel.popupMaxHeight, greaterThan(360));
+      expect(
+        appModel.popupMaxWidth,
+        greaterThan(appModel.defaultPopupMaxWidth),
+      );
+      expect(
+        appModel.popupMaxHeight,
+        greaterThan(appModel.defaultPopupMaxHeight),
+      );
       // 不超上界。
       expect(appModel.popupMaxWidth, lessThanOrEqualTo(kLookupPopupMaxWidth));
       expect(appModel.popupMaxHeight, lessThanOrEqualTo(kLookupPopupMaxHeight));
@@ -260,7 +267,8 @@ class _ResizeTestHostState extends State<_ResizeTestHost> {
           result: null,
           webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
           onDismiss: () {},
-          onTextSelected: (String text, Rect localRect) {},
+          onTextSelected:
+              (String text, Rect localRect, List<Object?> _, String __) {},
           onLinkClick: (String query, Rect localRect) {},
           onMineEntry: (Map<String, String> fields) async =>
               const MinePopupResult(),

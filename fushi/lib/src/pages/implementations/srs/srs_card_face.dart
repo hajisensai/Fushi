@@ -10,32 +10,64 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha1;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart' show PointerHoverEvent;
+import 'package:flutter/gestures.dart'
+    show
+        HorizontalDragGestureRecognizer,
+        LongPressGestureRecognizer,
+        OneSequenceGestureRecognizer,
+        PointerHoverEvent,
+        VerticalDragGestureRecognizer;
 import 'package:flutter/services.dart' show HardwareKeyboard;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki_core.dart'
-    show CardSourceLink, wrapAnkiCardHtmlWithLang;
+    show
+        CardSourceLink,
+        ankiFillTypeAnswer,
+        ankiHasTypeAnswerSlot,
+        kAnkiTypeAnswerInputId,
+        wrapAnkiCardHtmlWithLang;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
-    show isValidFontData;
+    show isValidFontData, kReaderWebViewCreationFailedSentinel;
+import 'package:fushi/src/pages/implementations/popup_body_static_layer.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show ReaderCustomFontCss;
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_card_autoplay.dart'
+    show
+        kSrsCardAutoplayGateScript,
+        kSrsCardVisibleSoundsScript,
+        kSrsVisibleSoundsHandler,
+        srsCardFaceMediaToken,
+        srsCardSetAutoplayScript,
+        srsCardSetFaceTokenScript,
+        srsCardSoundNames;
+import 'package:fushi/src/srs/srs_card_design_skin.dart';
 import 'package:fushi/src/srs/srs_card_dict_style.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
 import 'package:fushi/src/srs/srs_card_tokens.dart';
+import 'package:fushi/src/srs/srs_card_translation_blur.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
+import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
+import 'package:fushi/src/srs/srs_review_edit.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 一面卡（问题面或答案面）。
 @immutable
@@ -55,10 +87,23 @@ class SrsCardFace {
     this.onWheel,
     this.onZoomWheel,
     this.hostCss = '',
+    this.hostScript = '',
     this.onSourceLink,
+    this.autoplayMedia = false,
+    this.onPlayAudio,
+    this.onCardGesture,
+    this.gestureArming = SrsCardGestureArming.none,
+    this.onImageTap,
+    this.onEditSelection,
+    this.onVisibleSounds,
+    this.pageWindow,
   });
 
   final String cardId;
+
+  /// 非 null 时宿主可把页面切成「窗口」态（[SrsPageWindowLink.apply]）：平台视图只有一段
+  /// 窗口高、页内纵向滚动位置由宿主钉死，滚动物理只归外层 Flutter（BUG-4038）。
+  final SrsPageWindowLink? pageWindow;
   final bool showingAnswer;
 
   /// 渲染器给出的正文 HTML（问题面 = question，答案面 = answer）。
@@ -71,8 +116,9 @@ class SrsCardFace {
   /// WebView 持有键盘焦点时，页内截获的按键 token（见 [bridgeKeys]）。
   final void Function(String token) onBridgeKey;
 
-  /// WebView 持焦时要交回 Dart 的键：复习页用 [kSrsReviewBridgeKeys]，浏览页的预览用
-  /// [kSrsBrowseBridgeKeys]。
+  /// WebView 持焦时要交回 Dart 的键：复习页按快捷键注册表当前绑定导出
+  /// （`srsReviewBridgeTokens`，可改键），浏览页的预览用 [kSrsBrowseBridgeKeys]；
+  /// 不传时是复习页出厂默认键的固定表 [kSrsReviewBridgeKeys]。
   final List<String> bridgeKeys;
 
   /// 卡面版式：默认按卡面宽度自动（模板的断点）；外观页预览强制成手机 / 桌面版式。
@@ -102,36 +148,176 @@ class SrsCardFace {
   /// 「长释义收起高度」按外层视口给成像素值：释义 WebView 高度跟内容走，页内 `vh` 不再是屏高。
   final String hostCss;
 
+  /// 宿主追加的外壳脚本（随主题下发一次）。可定义 `window.__fushiSrsHostLayout`：外壳在
+  /// 卡片脚本跑完、换主题后都会调它（混合渲染的释义页据此重排词典分组）。脚本内容应当
+  /// 固定不变，随设置变化的参数走 [hostCss] 里的 CSS 变量（主题键只比脚本长度）。
+  final String hostScript;
+
   /// 卡面里点了 Fushi 制卡写进 MiscInfo 的来源链接（`fushi://source?...`）：宿主据此
   /// 跳回书 / 漫画 / 视频的对应位置（`openCardSource`）。null = 来源链接不响应。其它
   /// 链接一律不导航（卡面外壳不能被链接带走）。
   final void Function(CardSourceLink link)? onSourceLink;
 
+  /// 卡面页面自己发起的媒体播放（同步片段的 `oncanplay`、`autoplay` 属性）是否放行。
+  /// false = 只放行用户在卡面上点按 / 按键直接引起的播放（牌组关了自动播放，
+  /// 见 srs_card_autoplay.dart 的 [kSrsCardAutoplayGateScript]，BUG-3546）。
+  ///
+  /// 缺省 false（#3）：只有复习页按牌组的「自动播放」显式打开。浏览预览、笔记编辑页（查词
+  /// 弹窗「跳转到卡片」打开的就是它）、模板 / 外观 / 字段说明预览都是打开或编辑卡片的场景，
+  /// 以前吃到缺省 true，一打开视频片段就自己出声。
+  final bool autoplayMedia;
+
+  /// 卡面上的发音键（`[sound:]` 播放按钮、原生卡面的单词 / 例句发音键）交给宿主的那条
+  /// 播放序列播。复习页给出它：卡面按钮、底栏重播、R 键与自动播放共用同一个序列，新的
+  /// 一段打断上一段，同一时刻只出一路声音（#10）。null = 卡面自己直接播（预览页）。
+  final void Function(List<String> names)? onPlayAudio;
+
+  /// 卡面手势（点空白 / 双击 / 长按空白 / 滑动，见 [SrsCardGestureEvent]）：WebView 卡面经
+  /// 页内指针脚本（[kSrsCardLookupScript]）、原生卡面经 [SrsCardGestureRegion] 回报，判据同一套
+  /// （点在字、链接、按钮、可点元素上不算点空白）。复习页按手势映射执行（默认点空白切换
+  /// 悬浮顶栏，与小说、漫画阅读器同一口径）。null = 不识别。
+  final void Function(SrsCardGestureEvent event)? onCardGesture;
+
+  /// 这一面开着的识别器（没绑动作的手势不识别：不为双击推迟单击、不接管拖动 / 长按）。
+  final SrsCardGestureArming gestureArming;
+
+  /// 卡面正文里点了图片（`src` 是页内地址：媒体库虚拟域 / 自定义 scheme / `data:`）：
+  /// 宿主据此全屏查看（[srsMediaNameFromUrl] 换回媒体名）。null = 图片点击不拦。
+  final void Function(String src)? onImageTap;
+
+  /// 复习时编辑（复习页「允许复习时直接编辑」开着时给出）：卡面上选中了文字（原生区经 SelectionArea，
+  /// WebView 经页内 `selectionchange` 脚本 [kSrsCardEditSelectionScript]）。null = 不上报。
+  final void Function(SrsCardSelection selection)? onEditSelection;
+
+  /// 这一面卡**渲染后看得见**的 `[sound:]` 发音键（按文档顺序、保留重复），由页面判定后上报
+  /// （[kSrsCardVisibleSoundsScript]）。复习页的自动播放、底栏重播与 R 重播只播这份清单，不再
+  /// 用正则扫整张 HTML 猜（HrB0STYm3E：CSS 隐藏的容器、收起的释义里的音频也被播了）。
+  /// 回调带上报来自哪一面（[cardId] / [showingAnswer]），宿主据此丢掉已换走那一面的迟到上报。
+  final void Function(String cardId, bool showingAnswer, List<String> names)?
+  onVisibleSounds;
+
   /// 同一面卡，换版式 / 页面 zoom。
   SrsCardFace withLayout(SrsCardLayout layout, {double? pageZoom}) =>
-      SrsCardFace(
-        cardId: cardId,
-        showingAnswer: showingAnswer,
-        bodyHtml: bodyHtml,
-        css: css,
-        languageCode: languageCode,
-        onBridgeKey: onBridgeKey,
-        bridgeKeys: bridgeKeys,
-        layout: layout,
-        pageZoom: pageZoom,
-        fushiCard: fushiCard,
-        onContentHeight: onContentHeight,
-        onWheel: onWheel,
-        onZoomWheel: onZoomWheel,
-        hostCss: hostCss,
-        onSourceLink: onSourceLink,
-      );
+      _rebuilt(layout: layout, pageZoom: pageZoom, bodyHtml: bodyHtml);
+
+  /// 同一面卡，换正文（打字答案的比对结果填进答案面占位，见 [ankiFillTypeAnswer]）。
+  SrsCardFace withBody(String body) =>
+      _rebuilt(layout: layout, pageZoom: pageZoom, bodyHtml: body);
+
+  SrsCardFace _rebuilt({
+    required SrsCardLayout layout,
+    required double? pageZoom,
+    required String bodyHtml,
+  }) => SrsCardFace(
+    cardId: cardId,
+    showingAnswer: showingAnswer,
+    bodyHtml: bodyHtml,
+    css: css,
+    languageCode: languageCode,
+    onBridgeKey: onBridgeKey,
+    bridgeKeys: bridgeKeys,
+    layout: layout,
+    pageZoom: pageZoom,
+    fushiCard: fushiCard,
+    onContentHeight: onContentHeight,
+    onWheel: onWheel,
+    onZoomWheel: onZoomWheel,
+    hostCss: hostCss,
+    hostScript: hostScript,
+    onSourceLink: onSourceLink,
+    autoplayMedia: autoplayMedia,
+    onPlayAudio: onPlayAudio,
+    onCardGesture: onCardGesture,
+    gestureArming: gestureArming,
+    onImageTap: onImageTap,
+    onEditSelection: onEditSelection,
+    onVisibleSounds: onVisibleSounds,
+    pageWindow: pageWindow,
+  );
 }
+
+/// 宿主 → 卡面页面的「窗口」通道（BUG-4038）。
+///
+/// 混合渲染窄版式的释义 WebView 跟内容等高、由外层 Flutter 滚动；内容超过平台视图纹理
+/// 上限（`kSrsDefsMaxInlineHeight`）时平台视图只能是一段窗口。窗口态下：
+/// - 页面根节点 `overflow-y:hidden`：触屏 / 滚轮都滚不动页面本身，滚动物理只有外层一个所有者；
+/// - 页内滚动位置 = 宿主给的 [top]（窗口在内容里的起点），页面自己发起的滚动（换卡重放、
+///   聚焦、锚点）与内容高度变化后都被拉回这个值；
+/// - 宿主把平台视图摆在内容坐标 [top] 处，于是窗口里显示的正好是那一段内容。
+///
+/// [apply] 在页面执行完之后才返回：宿主据此**先**换页内位置、**再**挪平台视图，换窗口时
+/// 不会把旧位置的内容画在新位置上。null = 退出窗口态（页面跟内容等高，不可滚）。
+class SrsPageWindowLink {
+  double? _top;
+  Future<void> Function(double? top)? _apply;
+
+  /// 最近一次要求的窗口起点（null = 不在窗口态）。页面重载后卡面据此重放。
+  double? get top => _top;
+
+  /// 切换 / 移动窗口；卡面还没有页面时只记下，页面就绪后重放。
+  Future<void> apply(double? top) async {
+    _top = top;
+    final Future<void> Function(double? top)? apply = _apply;
+    if (apply != null) await apply(top);
+  }
+}
+
+/// [SrsPageWindowLink] 下发到页面的脚本（幂等；守卫监听只装一次）。
+@visibleForTesting
+String srsPageWindowScript(double? top) {
+  final String t = top == null ? 'null' : top.round().toString();
+  return '''
+(function(t){
+  var r = document.documentElement;
+  window.__fushiSrsWindowTop = t;
+  if (!window.__fushiSrsWindowGuard) {
+    window.__fushiSrsWindowGuard = true;
+    var pin = function(){
+      var w = window.__fushiSrsWindowTop;
+      if (typeof w === 'number' && Math.abs(window.scrollY - w) >= 1) window.scrollTo(0, w);
+    };
+    window.addEventListener('scroll', pin, {passive: true});
+    if (window.ResizeObserver) new window.ResizeObserver(pin).observe(document.body);
+  }
+  if (t === null) {
+    r.style.overflowY = '';
+    window.scrollTo(0, 0);
+    return;
+  }
+  r.style.overflowY = 'hidden';
+  window.scrollTo(0, t);
+})($t);
+''';
+}
+
+/// 卡面 WebView 平台视图自己认领的手势（eo2pH56Ont / Z9APuG_imH）：谁渲染谁吃手势，与查词弹窗
+/// （dictionary_popup_webview.dart）同一做法。
+///
+/// 不声明时 Android 上退化成空集合：平台视图不主动认领，长按被祖先上的 Flutter 识别器赢走、
+/// 拖动要等祖先识别器越过触摸阈值放弃后才补发给 WebView（滚动一顿一跳）。
+/// - 长按、横向拖：页内选区 / 页内手势脚本自己处理。
+/// - 纵向拖只在页面**自己滚动**时认领（[scrollsInPage]：整面卡、宽版式释义栏）；窄版式释义
+///   跟内容等高、由外层 Flutter 滚动时不认领，否则外层滚不动。
+Set<Factory<OneSequenceGestureRecognizer>> srsCardFaceGestureRecognizers({
+  required bool scrollsInPage,
+}) => <Factory<OneSequenceGestureRecognizer>>{
+  Factory<LongPressGestureRecognizer>(() => LongPressGestureRecognizer()),
+  Factory<HorizontalDragGestureRecognizer>(
+    () => HorizontalDragGestureRecognizer(),
+  ),
+  if (scrollsInPage)
+    Factory<VerticalDragGestureRecognizer>(
+      () => VerticalDragGestureRecognizer(),
+    ),
+};
 
 /// 页面 → 宿主的内容高度 / 滚轮转交（见 [SrsCardFace.onContentHeight] / [SrsCardFace.onWheel]）。
 const String kSrsContentHeightHandler = 'onSrsContentHeight';
 const String kSrsWheelHandler = 'onSrsWheel';
 const String kSrsZoomWheelHandler = 'onSrsZoomWheel';
+
+/// 页面 → 宿主：跟内容等高的页面出现了自己的滚动偏移（取证用，见 [srsCardMetricsScript]）。
+const String kSrsPageOffsetHandler = 'onSrsPageOffset';
 
 /// 上报内容高度（ResizeObserver 盯 body；换卡 / 展开收起 / 图片加载都会触发）与
 /// 不可滚动时转交滚轮。幂等：外壳重放时不重复挂。
@@ -160,12 +346,41 @@ String srsCardMetricsScript({
     window.addEventListener('load', report);
     document.addEventListener('fushi-srs-theme', report);
     report();
+    // 取证（ARhuDLRX-_ / mCu20adBXg）：跟内容等高、由外层滚动的页面不该有自己的滚动偏移
+    // （窗口态由宿主钉位置，除外）。一旦出现就把现场交给宿主记诊断，每页只报一次。
+    var probed = false;
+    var probe = function(e){
+      if (probed) return;
+      var r = document.documentElement;
+      if (getComputedStyle(r).overflowY === 'hidden') return;
+      var el = document.scrollingElement || r;
+      var t = e && e.target && e.target.nodeType === 1 && e.target !== el &&
+        e.target !== r && e.target !== document.body ? e.target : null;
+      var vv = window.visualViewport;
+      var inner = t ? t.scrollTop : 0;
+      var vvTop = vv ? vv.offsetTop : 0;
+      if (window.scrollY < 1 && inner < 1 && Math.abs(vvTop) < 1) return;
+      probed = true;
+      call('$kSrsPageOffsetHandler', JSON.stringify({
+        scrollY: window.scrollY,
+        scrollHeight: el.scrollHeight,
+        innerHeight: window.innerHeight,
+        body: Math.ceil(document.body.getBoundingClientRect().height),
+        reported: last,
+        inner: t ? String(t.className || t.tagName) + '@' + Math.round(inner) : null,
+        vv: vv ? [vv.offsetTop, vv.pageTop, vv.height, vv.scale] : null
+      }));
+    };
+    document.addEventListener('scroll', probe, {capture: true, passive: true});
+    if (window.visualViewport) window.visualViewport.addEventListener('scroll', probe);
   }
   if ($wheel) {
     window.addEventListener('wheel', function(e){
       if (e.ctrlKey || e.metaKey) return;
       var el = document.scrollingElement || document.documentElement;
-      if (el.scrollHeight > window.innerHeight + 1) return;
+      // 窗口态（SrsPageWindowLink）页面本身不滚：滚轮同样交给外层。
+      if (el.scrollHeight > window.innerHeight + 1 &&
+          getComputedStyle(document.documentElement).overflowY !== 'hidden') return;
       call('$kSrsWheelHandler', e.deltaY);
     }, {passive: true});
   }
@@ -223,6 +438,8 @@ const List<String> kSrsReviewBridgeKeys = <String>[
   'Numpad2',
   'Numpad3',
   'Numpad4',
+  // 重播音频（对齐 Anki 的 R）。
+  'KeyR',
   'Ctrl+KeyZ',
   'Meta+KeyZ',
   // 卡面缩放（Ctrl / ⌘ + 加号 / 减号 / 0）。
@@ -258,24 +475,187 @@ const String _kSrsBridgeHandler = 'onSrsReviewKey';
 /// 页内链接点击 → 宿主（见 [kSrsCardLinkScript]）。
 const String kSrsSourceLinkHandler = 'onSrsSourceLink';
 
+/// 页内词典链接 / 外链点击 → 宿主（见 [kSrsCardLinkScript]，#16）。参数是一个对象：
+/// `{kind: 'external', href}` 或 `{kind: 'lookup', query, x, y, width, height}`（链接在
+/// 页面里的矩形，CSS 像素）。
+const String kSrsCardLinkHandler = 'onSrsCardLink';
+
 /// 卡面链接：捕获阶段拦下所有 `<a href>` 的默认导航（卡面外壳不能被链接带走；页内
-/// `#锚点` 与 `javascript:` 不算导航，放行），其中 Fushi 来源链接（`fushi://source`）
-/// 交给宿主跳回原媒体。不 stopPropagation：卡片模板自己挂在链接上的点击脚本照常执行。
+/// `#锚点` 与 `javascript:` 不算导航，放行），然后按链接种类交给宿主，与查词弹窗
+/// （popup.js 的 `handleGlossaryAnchorClick` / 结构化内容链接）同一套判据（#16）：
+///
+/// - `fushi://source`：Fushi 来源链接，跳回书 / 漫画 / 视频（[kSrsSourceLinkHandler]）。
+/// - `http(s)://`：外链，宿主用系统浏览器打开。
+/// - `sound:`：词典发音媒体节点，不是查词目标，忽略。
+/// - 其余（Yomitan 结构化内容的 `?query=词`、MDX 的 `entry://词`、`bword://` 等词典内部
+///   交叉引用，如明鏡「➡ よほど」）：查词。查询词优先取 `?query=`，否则取链接的**基字**
+///   文本（剥掉 `rt` / `rp` / `.ruby-rt` / `.ruby-reserve` 振假名，见 popup.js
+///   `linkVisibleBaseText`，BUG-2456）。
+///
+/// 不 stopPropagation：卡片模板自己挂在链接上的点击脚本照常执行。
 const String kSrsCardLinkScript = r'''
 (function(){
   if (window.__fushiSrsLinks) return;
   window.__fushiSrsLinks = true;
+  function call(name, arg){
+    try { window.flutter_inappwebview.callHandler(name, arg); } catch (err) {}
+  }
+  function baseText(root){
+    var out = '';
+    (function walk(node){
+      if (node.nodeType === 3) { out += node.textContent || ''; return; }
+      if (node.nodeType !== 1) return;
+      var tag = node.tagName;
+      if (tag === 'RT' || tag === 'RP') return;
+      var cls = node.classList;
+      if (cls && (cls.contains('ruby-rt') || cls.contains('ruby-reserve'))) return;
+      for (var i = 0; i < node.childNodes.length; i++) walk(node.childNodes[i]);
+    })(root);
+    return out.replace(/\s+/g, ' ').trim();
+  }
+  function queryOf(href, a){
+    var q = href.indexOf('?');
+    if (q >= 0) {
+      try {
+        var v = new URLSearchParams(href.substring(q)).get('query');
+        if (v) return v;
+      } catch (err) {}
+    }
+    return baseText(a);
+  }
   document.addEventListener('click', function(e){
     var t = e.target;
     var a = t && t.closest ? t.closest('a[href]') : null;
     if (!a) return;
-    var href = a.getAttribute('href') || '';
+    var href = (a.getAttribute('href') || '').trim();
     if (href.charAt(0) === '#' || /^javascript:/i.test(href)) return;
     e.preventDefault();
     if (/^fushi:\/\/source/i.test(href)) {
-      try { window.flutter_inappwebview.callHandler('onSrsSourceLink', href); } catch (err) {}
+      call('onSrsSourceLink', href);
+      return;
     }
+    if (/^https?:\/\//i.test(href)) {
+      call('onSrsCardLink', {kind: 'external', href: href});
+      return;
+    }
+    if (/^sound:/i.test(href)) return;
+    var query = queryOf(href, a);
+    if (!query) return;
+    var r = a.getBoundingClientRect();
+    call('onSrsCardLink', {kind: 'lookup', query: query, x: r.left, y: r.top,
+      width: r.width, height: r.height});
   }, true);
+})();
+''';
+
+/// 页内链接点击的一次解析结果（[kSrsCardLinkHandler] 的参数）。
+@immutable
+sealed class SrsCardLinkAction {
+  const SrsCardLinkAction();
+
+  /// 解析桥参数；不认识的形状返回 null。
+  static SrsCardLinkAction? parse(Object? raw) {
+    if (raw is! Map) return null;
+    final Object? kind = raw['kind'];
+    if (kind == 'external') {
+      final Object? href = raw['href'];
+      return href is String && href.isNotEmpty
+          ? SrsCardExternalLink(href)
+          : null;
+    }
+    if (kind == 'lookup') {
+      final Object? query = raw['query'];
+      if (query is! String || query.trim().isEmpty) return null;
+      double n(String key) {
+        final Object? v = raw[key];
+        return v is num ? v.toDouble() : 0;
+      }
+
+      return SrsCardLookupLink(
+        query.trim(),
+        Rect.fromLTWH(n('x'), n('y'), n('width'), n('height')),
+      );
+    }
+    return null;
+  }
+}
+
+/// 外链：系统浏览器打开（只放行 http / https，见 [openDictionaryExternalLink]）。
+final class SrsCardExternalLink extends SrsCardLinkAction {
+  const SrsCardExternalLink(this.href);
+
+  final String href;
+}
+
+/// 词典内部交叉引用：查 [query]；[rect] 是链接在页面里的矩形（弹窗锚点）。
+final class SrsCardLookupLink extends SrsCardLinkAction {
+  const SrsCardLookupLink(this.query, this.rect);
+
+  final String query;
+  final Rect rect;
+}
+
+/// 页内选区 → 宿主（复习时编辑，见 [kSrsCardEditSelectionScript]）。
+const String kSrsEditSelectionHandler = 'onSrsEditSelection';
+
+/// 复习时编辑：页内选区变了（防抖 200 ms）且选中了文字时，把选中的文字与它是文档里第几处同样的文字
+/// （都去掉注音 `<rt>` / `<rp>` 与空白，与 Dart 侧 srsFieldMatchText 同口径）交给宿主。选区清空不报：
+/// 查词弹窗关掉时会清页内选区，宿主留着最后一次选中的文字。幂等：外壳重放时不重复挂。
+const String kSrsCardEditSelectionScript = r'''
+(function () {
+  if (window.__fushiSrsEditSel) return;
+  window.__fushiSrsEditSel = true;
+  var timer = null;
+  function plain(range) {
+    var f = range.cloneContents();
+    var hidden = f.querySelectorAll('rt,rp,script,style');
+    for (var i = 0; i < hidden.length; i++) hidden[i].remove();
+    return (f.textContent || '').replace(/\s+/g, '');
+  }
+  function report() {
+    timer = null;
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+    var r = sel.getRangeAt(0);
+    var text = plain(r);
+    if (!text) return;
+    var before = document.createRange();
+    before.setStart(document.body, 0);
+    before.setEnd(r.startContainer, r.startOffset);
+    var prefix = plain(before);
+    var occ = 0;
+    for (var at = prefix.indexOf(text); at >= 0; at = prefix.indexOf(text, at + 1)) occ++;
+    try {
+      window.flutter_inappwebview.callHandler('onSrsEditSelection',
+        JSON.stringify({ text: text, occ: occ }));
+    } catch (e) {}
+  }
+  document.addEventListener('selectionchange', function () {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(report, 200);
+  });
+})();
+''';
+
+/// 页内图片点击 → 宿主（见 [kSrsCardImageTapScript]）。
+const String kSrsImageTapHandler = 'onSrsImageTap';
+
+/// 卡面图片点按放大：冒泡阶段收 `.card` 里 `<img>` 的点击，把 `currentSrc` 交给宿主。
+/// 卡片模板自己处理了的点击（链接里的图、带 `onclick` 的图或祖先、已
+/// `preventDefault`）不抢，模板的点图翻转 / 显示提示照常。
+const String kSrsCardImageTapScript = r'''
+(function(){
+  if (window.__fushiSrsImageTap) return;
+  window.__fushiSrsImageTap = true;
+  document.addEventListener('click', function(e){
+    if (e.defaultPrevented || e.button !== 0) return;
+    var t = e.target;
+    if (!t || t.tagName !== 'IMG' || !t.closest('.card')) return;
+    if (t.closest('a[href],button,[onclick]')) return;
+    var src = t.currentSrc || t.src || '';
+    if (!src) return;
+    try { window.flutter_inappwebview.callHandler('onSrsImageTap', src); } catch (err) {}
+  });
 })();
 ''';
 
@@ -304,17 +684,67 @@ NavigationActionPolicy srsCardNavigationPolicy(
 }
 
 /// [keys] 的卡面键盘桥脚本（每次换内容后注入；生成器自带幂等守卫）。
+///
+/// 挂在 `window` 捕获阶段，并由外壳 `<head>` 先于卡片内容装好（[srsCardShellHtml]）：
+/// 卡片模板（导入的 Lapis 等）自己的 keydown 监听在它之后，截不走翻面 / 评分键
+/// （OO3O-3ljda：macOS 上点过卡面后 WKWebView 持有 first responder，按键只剩这条桥）。
 String srsCardFaceBridgeScript(List<String> keys) => webViewKeyBridgeScript(
   handlerName: _kSrsBridgeHandler,
   keys: keys,
   forwardRepeats: false,
   stopPropagation: true,
+  listenOnWindow: true,
 );
+
+/// 卡面按键诊断回调（[kSrsCardKeyDiagScript]）。
+const String kSrsKeyDiagHandler = 'onSrsKeyDiag';
+
+/// 卡面按键取证（OO3O-3ljda）：翻面键（空格 / Enter）在页面里按下、却没被键盘桥接走时，
+/// 在松开那一刻报一次原因——`editable`（焦点在输入框 / contenteditable，桥按设计放行）、
+/// `composing`（IME 组字中）、`missed`（桥没接走：键表里没有 / 弹窗模态让位等）。被桥正常
+/// 接走（`defaultPrevented`）不报。页面里根本收不到 keydown（first responder 不在
+/// WebView 上）时这里什么都不报，宿主侧的焦点日志补那一半。
+const String kSrsCardKeyDiagScript = r'''
+(function(){
+  if (window.__fushiSrsKeyDiag) return;
+  window.__fushiSrsKeyDiag = true;
+  var last = null;
+  function watched(e){ return e && (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter'); }
+  window.addEventListener('keydown', function(e){
+    if (!watched(e) || e.repeat) return;
+    var t = e.target;
+    var tag = t && t.tagName ? t.tagName.toUpperCase() : '';
+    last = { code: e.code, ev: e, bubbled: false,
+      editable: tag === 'INPUT' || tag === 'TEXTAREA' || !!(t && t.isContentEditable),
+      composing: !!e.isComposing, target: tag };
+  }, true);
+  window.addEventListener('keydown', function(e){
+    if (last && last.ev === e) last.bubbled = true;
+  }, false);
+  window.addEventListener('keyup', function(e){
+    var k = last;
+    last = null;
+    if (!k || !watched(e) || e.code !== k.code) return;
+    if (k.ev.defaultPrevented) return;
+    var reason = k.composing ? 'composing' : k.editable ? 'editable' : 'missed';
+    try {
+      window.flutter_inappwebview.callHandler('onSrsKeyDiag',
+        JSON.stringify({ code: k.code, reason: reason, target: k.target, bubbled: k.bubbled }));
+    } catch (err) {}
+  }, true);
+})();
+''';
 
 /// 复习页的卡面键盘桥脚本。
 final String srsReviewKeyBridgeScript = srsCardFaceBridgeScript(
   kSrsReviewBridgeKeys,
 );
+
+/// [keys] 对应的卡面键盘桥脚本（复习页那份只生成一次）。
+String srsCardFaceBridgeScriptFor(List<String> keys) =>
+    identical(keys, kSrsReviewBridgeKeys)
+    ? srsReviewKeyBridgeScript
+    : srsCardFaceBridgeScript(keys);
 
 String _cssColor(Color c) =>
     '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
@@ -403,10 +833,13 @@ bool get srsCardUsesThemedScrollbar => !(isIOSPlatform || isMacOSPlatform);
 /// 播放按钮配色变量，以及 [themedScrollbar] 时的细滚动条。[appearanceCss] 是外观设置
 /// 注入的 `--fushi-srs-*` 变量与 @font-face（见 srs_card_appearance.dart），排在最后，
 /// 同名变量以它为准。
+///
+/// [background] 为 null 时 html/body 透明：WebView 本身也是透明的，透出复习页背景，
+/// 卡片 CSS 自己不铺底色（或写 `transparent`）时就不会再叠一层宿主底色。
 @visibleForTesting
 String srsCardThemeCss({
   required bool dark,
-  required Color background,
+  required Color? background,
   required Color foreground,
   required Color accent,
   required Color onAccent,
@@ -416,7 +849,7 @@ String srsCardThemeCss({
     ':root{color-scheme:${dark ? 'dark' : 'light'};'
     '--fushi-srs-accent:${_cssColor(accent)};'
     '--fushi-srs-on-accent:${_cssColor(onAccent)};}'
-    'html,body{background:${_cssColor(background)};'
+    'html,body{background:${background == null ? 'transparent' : _cssColor(background)};'
     'color:${_cssColor(foreground)};}'
     '${themedScrollbar ? srsCardScrollbarCss(foreground) : ''}'
     '$appearanceCss';
@@ -450,9 +883,17 @@ const String kSrsCardShellScript = r'''
 (function(){
   if (window.__fushiSrsSetCard) return;
   var seq = 0;
+  // 当前卡面内容属于哪一面（换卡时从 __fushiSrsFaceToken 取定）：上报可见发音时带回这份，
+  // 不读上报那一刻的全局值——慢卡（外部脚本）上报前宿主已下发下一面的标记，读全局会把这一面
+  // 的清单标成下一面。
+  var faceToken = '';
   window.onUpdateHook = [];
   window.onShownHook = [];
   function root(){ return document.getElementById('fushi-card-root'); }
+  // 卡片内容的直接父节点：Anki / AnkiDroid reviewer 的 `#qa`。导入的模板按这份 DOM 契约写
+  // 脚本（eggrolls 的 `#qa > .VocabAudio` 把单词音频挪进标题行），内容必须是它的直接子节点，
+  // `lang` 也挂在它上面而不是再包一层（反馈 uCPhpeCM35）。
+  function qa(){ return document.getElementById('qa') || root(); }
   function setClasses(classes){
     var c = classes ? 'card ' + classes : 'card';
     document.body.className = c;
@@ -519,20 +960,66 @@ const String kSrsCardShellScript = r'''
       if (window.console) console.error(e);
     }
   }
+  // 设计系统样式覆盖（srs_card_design_skin.dart）：只在覆盖开着时随主题下发定义；卡片脚本
+  // 与钩子都跑完、DOM 定型后再判定。
+  function designSkin(){
+    try {
+      if (window.__fushiSrsDesignSkin) window.__fushiSrsDesignSkin();
+    } catch (e) {
+      if (window.console) console.error(e);
+    }
+  }
+  // 例句翻译模糊（srs_card_translation_blur.dart）：只在开关开着时随主题下发定义；按 body 的
+  // 宿主类名给翻译行加 / 撤可聚焦属性。换卡后（新节点）与换主题后（开关变了）各跑一次。
+  function translationBlur(){
+    try {
+      if (window.__fushiSrsTranslationBlur) window.__fushiSrsTranslationBlur();
+    } catch (e) {
+      if (window.console) console.error(e);
+    }
+  }
+  // 宿主排版钩子（SrsCardFace.hostScript 定义）：卡片脚本与钩子都跑完后再排。
+  function hostLayout(){
+    try {
+      if (window.__fushiSrsHostLayout) window.__fushiSrsHostLayout();
+    } catch (e) {
+      if (window.console) console.error(e);
+    }
+  }
+  // 这一面渲染后看得见的发音键上报宿主（srs_card_autoplay.dart 的
+  // kSrsCardVisibleSoundsScript / kSrsVisibleSoundsHandler）：宿主的自动播放与重播只播它们。
+  function reportSounds(){
+    try {
+      if (!window.__fushiSrsVisibleSounds || !window.flutter_inappwebview) return;
+      window.flutter_inappwebview.callHandler('onSrsVisibleSounds',
+        faceToken, window.__fushiSrsVisibleSounds(root()));
+    } catch (e) {
+      if (window.console) console.error(e);
+    }
+  }
   function finish(my, ok){
     if (ok !== true || my !== seq) return;
     dictStyle();
     runHooks(window.onUpdateHook);
     runHooks(window.onShownHook);
+    designSkin();
+    translationBlur();
+    hostLayout();
+    reportSounds();
   }
   window.__fushiSrsSetTheme = function(themeCss, classes){
     document.getElementById('fushi-theme-css').textContent = themeCss;
     setClasses(classes);
     dictStyle();
+    designSkin();
+    translationBlur();
     // 卡片脚本可据此跟随外观变化（例如「全部释义默认展开」），不必重跑。
     try {
       document.dispatchEvent(new CustomEvent('fushi-srs-theme', { detail: classes }));
     } catch (e) {}
+    hostLayout();
+    // 主题 / 外观类名可能改变哪些发音键看得见：重报一次（宿主只更新重播清单，不重新自动播）。
+    reportSounds();
   };
   // 样式注册表：每段样式（笔记类型 CSS / 卡片正文里抽出的 <style>）按内容哈希只建一次
   // <style data-fushi-css>，之后换卡只传哈希引用；当前卡没引用的全部 disabled（词典样式
@@ -556,17 +1043,22 @@ const String kSrsCardShellScript = r'''
       if (styles[h].disabled !== off) styles[h].disabled = off;
     }
   }
-  window.__fushiSrsSetCard = function(refs, html, classes){
+  window.__fushiSrsSetCard = function(refs, html, classes, lang){
     var my = ++seq;
+    faceToken = window.__fushiSrsFaceToken || '';
     var r = root();
+    var q = qa();
     window.onUpdateHook = [];
     window.onShownHook = [];
     stopMedia(r);
+    // 卡面根之外还在响的（脱离文档的 new Audio()、shadow root 里的）：自动播放闸门记着。
+    if (window.__fushiSrsStopAllMedia) window.__fushiSrsStopAllMedia();
     useStyles(refs);
     setClasses(classes);
-    r.innerHTML = html;
+    if (lang) q.setAttribute('lang', lang); else q.removeAttribute('lang');
+    q.innerHTML = html;
     window.scrollTo(0, 0);
-    var scripts = Array.prototype.slice.call(r.getElementsByTagName('script'));
+    var scripts = Array.prototype.slice.call(q.getElementsByTagName('script'));
     var result = replayFrom(scripts, 0, my);
     if (result && typeof result.then === 'function') {
       result.then(function(ok){ finish(my, ok); });
@@ -577,25 +1069,93 @@ const String kSrsCardShellScript = r'''
 })();
 ''';
 
+/// 打字答案（`{{type:Field}}`，DAgSPc8ixN）的页内 JS 回调名：参数 `[已打的字, 是否按了回车]`。
+const String kSrsTypeAnswerHandler = 'onSrsTypeAnswer';
+
+/// 打字答案的输入框（[kAnkiTypeAnswerInputId]）：每次输入把当前文字交给宿主（宿主据此在答案面
+/// 填比对结果）；回车（非组字中）= 交卷，宿主按「显示答案」键处理（与 Anki 复习器一致）。
+/// 委托在 document 捕获阶段监听：输入框随换卡原地换掉，不必逐张绑定。
+const String kSrsTypeAnswerScript =
+    '''
+(function(){
+  if (window.__fushiTypeAnswer) return;
+  window.__fushiTypeAnswer = true;
+  function post(t, submit){
+    try {
+      if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+        window.flutter_inappwebview.callHandler('$kSrsTypeAnswerHandler', t.value || '', submit);
+      }
+    } catch (_) {}
+  }
+  function isInput(t){ return !!(t && t.id === '$kAnkiTypeAnswerInputId' && t.tagName === 'INPUT'); }
+  document.addEventListener('input', function(e){
+    if (isInput(e.target)) post(e.target, false);
+  }, true);
+  document.addEventListener('keydown', function(e){
+    if (!isInput(e.target) || e.isComposing || e.keyCode === 229) return;
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    post(e.target, true);
+  }, true);
+})();
+''';
+
+/// 答案面的打字答案占位填上比对结果：[typed] 只有属于这张卡（[SrsCardFace.cardId]）才用，
+/// 否则按没打字处理（只显示期望答案，与 Anki 一致）。问题面 / 没有占位的卡原样返回。
+SrsCardFace srsFaceWithTypedAnswer(
+  SrsCardFace face,
+  ({String cardId, String text})? typed,
+) {
+  if (!face.showingAnswer || !ankiHasTypeAnswerSlot(face.bodyHtml)) {
+    return face;
+  }
+  final String text = typed != null && typed.cardId == face.cardId
+      ? typed.text
+      : '';
+  return face.withBody(ankiFillTypeAnswer(face.bodyHtml, text));
+}
+
+/// 打字答案的出厂样式（与 Anki 相同的类名与配色；卡片 CSS 在后面，可以覆盖）。
+const String kSrsTypeAnswerCss =
+    '#$kAnkiTypeAnswerInputId.fushi-typeans-input{width:100%;box-sizing:border-box;'
+    'font:inherit;padding:6px 8px;}'
+    'code#$kAnkiTypeAnswerInputId{font-family:inherit;white-space:pre-wrap;}'
+    '.typeGood{background:#afa;color:black;}'
+    '.typeBad{background:#faa;color:black;}'
+    '.typeMissed{background:#ccc;color:black;}';
+
 /// 卡面外壳页：只在 WebView 创建（以及 renderer 死亡重建）时加载一次，内容随后由
 /// [srsCardSetCardScript] / [srsCardSetThemeScript] 原地换。
 @visibleForTesting
-String srsCardShellHtml({required String themeCss, required String classes}) {
+///
+/// [bridgeScript]：卡面的键盘桥（[srsCardFaceBridgeScript]），排在一切卡片内容之前装好，
+/// 连同按键取证脚本（[kSrsCardKeyDiagScript]）。
+String srsCardShellHtml({
+  required String themeCss,
+  required String classes,
+  String bridgeScript = '',
+}) {
   final String cls = classes.isEmpty ? 'card' : 'card $classes';
   return '<!doctype html><html><head><meta charset="utf-8">'
       '<meta name="viewport" content="width=device-width, initial-scale=1">'
+      '${bridgeScript.isEmpty ? '' : '<script>$bridgeScript</script><script>$kSrsCardKeyDiagScript</script>'}'
       '<style>html,body{margin:0;padding:0;}'
       'body{padding:16px;box-sizing:border-box;}</style>'
       '<style id="fushi-theme-css">$themeCss</style>'
       '<style>$kSrsCardMediaCss</style>'
       '<script>$kSrsCardMediaScript</script>'
+      '<script>$kSrsCardVisibleSoundsScript</script>'
+      // 自动播放闸门要在卡片内容与卡片脚本之前装好（BUG-3546）。
+      '<script>$kSrsCardAutoplayGateScript</script>'
+      '<style>$kSrsTypeAnswerCss</style>'
+      '<script>$kSrsTypeAnswerScript</script>'
       // 样式注册表的两个锚点：模板 / 笔记类型 CSS 在前，卡片正文里抽出的样式在后
       // （与它们原本在文档里的先后一致）。
       '<style id="fushi-css-tpl"></style><style id="fushi-css-body"></style>'
       '<script>$kSrsCardDictStyleScript</script>'
       '<script>$kSrsCardShellScript</script>'
       '</head><body class="$cls"><div id="fushi-card-root" class="$cls">'
-      '</div></body></html>';
+      '<div id="qa"></div></div></body></html>';
 }
 
 /// 把 Dart 字符串变成 JS 字符串字面量（JSON 子集；U+2028 / U+2029 也转义，
@@ -610,9 +1170,28 @@ String srsCardSetCardScript({
   required List<String> styleRefs,
   required String bodyHtml,
   required String classes,
+  String lang = '',
 }) =>
     'window.__fushiSrsSetCard(${jsonEncode(styleRefs)},${_jsString(bodyHtml)},'
-    '${_jsString(classes)});';
+    '${_jsString(classes)},${_jsString(lang)});';
+
+/// 一次下发的整段调用：外壳不在返回 `false`；各步依次执行、各自兜住异常（换主题出错
+/// 不能把换卡也拦下，否则卡面停在外壳底色、什么都不报，BUG-3579），全部成功返回 `true`，
+/// 有步骤抛错返回错误文本（宿主据此留痕）。
+@visibleForTesting
+String srsCardFaceCallsScript(List<String> steps) {
+  final StringBuffer out = StringBuffer(
+    '(function(){if(typeof window.__fushiSrsSetCard!=="function")'
+    'return false;var errs=[];',
+  );
+  for (final String step in steps) {
+    out.write(
+      'try{$step}catch(e){errs.push(String(e&&e.stack||e).slice(0,500));}',
+    );
+  }
+  out.write('return errs.length?errs.join("\\n"):true;})()');
+  return out.toString();
+}
 
 /// 往外壳的样式注册表里登记一段样式（同一哈希只登记一次）。
 @visibleForTesting
@@ -758,14 +1337,18 @@ class SrsCardFaceDocument {
     required this.showingAnswer,
     required this.cardCss,
     required this.bodyHtml,
+    this.lang = '',
     this.bodyStyles = const <String>[],
+    this.autoplayMedia = true,
+    this.hostScript = '',
+    this.bridgeScript = '',
   });
 
-  /// 由一面卡与主题算出（媒体引用改写、`lang` 包裹都在这里做）。
+  /// 由一面卡与主题算出（媒体引用改写在这里做；`lang` 挂到外壳的 `#qa` 上，不包裹正文）。
   factory SrsCardFaceDocument.of(
     SrsCardFace face, {
     required bool dark,
-    required Color background,
+    required Color? background,
     required Color foreground,
     required Color accent,
     required Color onAccent,
@@ -773,40 +1356,48 @@ class SrsCardFaceDocument {
     required bool themedScrollbar,
     String appearanceCss = '',
     String appearanceClasses = '',
-  }) => SrsCardFaceDocument(
-    themeCss: srsCardThemeCss(
-      dark: dark,
-      background: background,
-      foreground: foreground,
-      accent: accent,
-      onAccent: onAccent,
-      themedScrollbar: themedScrollbar,
-      appearanceCss:
-          (face.pageZoom == null
-              ? appearanceCss
-              : '${appearanceCss}html{zoom:${face.pageZoom!.toStringAsFixed(4)};}') +
-          face.hostCss,
-    ),
-    classes: srsCardHostClasses(
-      dark: dark,
-      appearanceClasses: <String>[
-        appearanceClasses,
-        face.layout.hostClass,
-      ].where((String c) => c.isNotEmpty).join(' '),
-    ),
-    cardId: face.cardId,
-    showingAnswer: face.showingAnswer,
-    cardCss: _memo(
-      _localizedCssMemo,
-      '$mediaUrlPrefix\u0000${face.css}',
-      () => srsLocalizeCardCss(face.css, urlPrefix: mediaUrlPrefix),
-    ),
-    bodyHtml: wrapAnkiCardHtmlWithLang(
-      srsPrepareCardBody(face.bodyHtml, mediaUrlPrefix).body,
-      face.languageCode,
-    ),
-    bodyStyles: srsPrepareCardBody(face.bodyHtml, mediaUrlPrefix).styles,
-  );
+    String hostScript = '',
+  }) {
+    final ({String body, List<String> styles}) prepared = srsPrepareCardBody(
+      face.bodyHtml,
+      mediaUrlPrefix,
+    );
+    return SrsCardFaceDocument(
+      hostScript: hostScript,
+      bridgeScript: srsCardFaceBridgeScriptFor(face.bridgeKeys),
+      themeCss: srsCardThemeCss(
+        dark: dark,
+        background: background,
+        foreground: foreground,
+        accent: accent,
+        onAccent: onAccent,
+        themedScrollbar: themedScrollbar,
+        appearanceCss:
+            (face.pageZoom == null
+                ? appearanceCss
+                : '${appearanceCss}html{zoom:${face.pageZoom!.toStringAsFixed(4)};}') +
+            face.hostCss,
+      ),
+      classes: srsCardHostClasses(
+        dark: dark,
+        appearanceClasses: <String>[
+          appearanceClasses,
+          face.layout.hostClass,
+        ].where((String c) => c.isNotEmpty).join(' '),
+      ),
+      cardId: face.cardId,
+      showingAnswer: face.showingAnswer,
+      cardCss: _memo(
+        _localizedCssMemo,
+        '$mediaUrlPrefix\u0000${face.css}',
+        () => srsLocalizeCardCss(face.css, urlPrefix: mediaUrlPrefix),
+      ),
+      bodyHtml: prepared.body,
+      lang: face.languageCode?.trim() ?? '',
+      bodyStyles: prepared.styles,
+      autoplayMedia: face.autoplayMedia,
+    );
+  }
 
   final String themeCss;
   final String classes;
@@ -816,11 +1407,29 @@ class SrsCardFaceDocument {
   /// 笔记类型 CSS（媒体引用已改写）。
   final String cardCss;
 
-  /// 正文 HTML（`<style>` 已抽走，见 [srsExtractCardStyles]）。
+  /// 正文 HTML（`<style>` 已抽走，见 [srsExtractCardStyles]）。原样作为外壳 `#qa` 的直接
+  /// 子节点（Anki reviewer 的 DOM 契约），不再包 `<div lang>`。
   final String bodyHtml;
+
+  /// 卡面 `lang`（挂在外壳的 `#qa` 上；空 = 不标）。
+  final String lang;
 
   /// 正文里抽出的样式块（文档顺序）。
   final List<String> bodyStyles;
+
+  /// 见 [SrsCardFace.autoplayMedia]。
+  final bool autoplayMedia;
+
+  /// 这一面的标记（[srsCardFaceMediaToken]），页面上报可见发音时带回。
+  String get mediaToken =>
+      srsCardFaceMediaToken(cardId: cardId, showingAnswer: showingAnswer);
+
+  /// 随主题下发、先于 `__fushiSrsSetTheme` 执行的宿主脚本（幂等定义；空 = 不下发）：设计系统
+  /// 样式覆盖的判定脚本、Fushi 卡片的例句翻译模糊脚本。开关关着时外壳里连脚本都没有（零注入）。
+  final String hostScript;
+
+  /// 卡面的键盘桥脚本（写进外壳 `<head>`，见 [srsCardShellHtml]）。
+  final String bridgeScript;
 
   /// 这张卡用到的全部样式（注册表项）：笔记类型 CSS 在前，正文样式在后。
   List<SrsCardStyle> get styles => <SrsCardStyle>[
@@ -834,25 +1443,34 @@ class SrsCardFaceDocument {
     final List<SrsCardStyle> all = styles;
     return <String>[
       for (final SrsCardStyle st in all) srsCardDefineCssScript(st),
+      srsCardSetAutoplayScript(autoplay: autoplayMedia),
+      srsCardSetFaceTokenScript(mediaToken),
       srsCardSetCardScript(
         styleRefs: <String>[for (final SrsCardStyle st in all) st.hash],
         bodyHtml: bodyHtml,
         classes: classes,
+        lang: lang,
       ),
     ].join();
   }
 
-  String get _themeKey => '$themeCss\u0000$classes';
+  String get _themeKey => '$themeCss\u0000$classes\u0000${hostScript.length}';
 
   /// 换了卡（哪怕正文一字不差）也要重放：滚回顶部、重跑卡片脚本。夜间类名与外观
   /// （变量、类名、字体）都不在里面：只换主题 / 外观时走 `__fushiSrsSetTheme`，不重跑
   /// 卡片脚本。
+  /// 自动播放开关也在里面：复习中改了牌组设置，当前这一面按新开关重放（刚打开 →
+  /// 片段按新设置自己播一次；刚关掉 → 重放时停掉正在播的媒体），与宿主侧
+  /// `[sound:]` 的处理一致。
   String get _cardKey =>
-      '$cardId\u0000$showingAnswer\u0000'
+      '$cardId\u0000$showingAnswer\u0000$autoplayMedia\u0000$lang\u0000'
       '${styles.map((SrsCardStyle s) => s.hash).join(',')}\u0000$bodyHtml';
 
-  String get shellHtml =>
-      srsCardShellHtml(themeCss: themeCss, classes: classes);
+  String get shellHtml => srsCardShellHtml(
+    themeCss: themeCss,
+    classes: classes,
+    bridgeScript: bridgeScript,
+  );
 }
 
 /// 外壳与「该显示什么」之间的同步：外壳就绪（首次 onLoadStop）前只记下最后一次
@@ -909,58 +1527,85 @@ class SrsCardFaceSync {
   void _flush() {
     final SrsCardFaceDocument? doc = _wanted;
     if (!_ready || doc == null) return;
-    final StringBuffer calls = StringBuffer();
-    if (doc._themeKey != _appliedTheme) {
-      calls.write(
-        srsCardSetThemeScript(themeCss: doc.themeCss, classes: doc.classes),
+    final List<String> steps = <String>[];
+    final Set<String> defining = <String>{};
+    final String themeKey = doc._themeKey;
+    final String cardKey = doc._cardKey;
+    if (themeKey != _appliedTheme) {
+      steps.add(
+        doc.hostScript +
+            srsCardSetThemeScript(themeCss: doc.themeCss, classes: doc.classes),
       );
     }
-    final Set<String> defining = <String>{};
-    if (doc._cardKey != _appliedCard) {
+    if (cardKey != _appliedCard) {
       final List<SrsCardStyle> styles = doc.styles;
+      final StringBuffer card = StringBuffer();
       for (final SrsCardStyle st in styles) {
         if (_definedStyles.contains(st.hash) || !defining.add(st.hash)) {
           continue;
         }
-        calls.write(srsCardDefineCssScript(st));
+        card.write(srsCardDefineCssScript(st));
       }
-      calls.write(
+      // 开关先于换卡下发：新内容插入、卡片脚本重放时闸门已是这张卡的设置。
+      card.write(srsCardSetAutoplayScript(autoplay: doc.autoplayMedia));
+      // 「这是哪一面」先于换卡下发：页面上报可见发音时带回（见 [SrsCardFace.onVisibleSounds]）。
+      card.write(srsCardSetFaceTokenScript(doc.mediaToken));
+      steps.add(card.toString());
+      steps.add(
         srsCardSetCardScript(
           styleRefs: <String>[for (final SrsCardStyle st in styles) st.hash],
           bodyHtml: doc.bodyHtml,
           classes: doc.classes,
+          lang: doc.lang,
         ),
       );
     }
-    if (calls.isEmpty) return;
-    _appliedTheme = doc._themeKey;
-    _appliedCard = doc._cardKey;
+    if (steps.isEmpty) return;
+    _appliedTheme = themeKey;
+    _appliedCard = cardKey;
     _definedStyles.addAll(defining);
     final int generation = ++_generation;
-    final String source =
-        '(function(){if(typeof window.__fushiSrsSetCard!=="function")'
-        'return false;$calls return true;})()';
+    void invalidate() {
+      // 同一代之后没有新下发时才作废：下次 update / 外壳就绪整份重发。
+      if (generation != _generation) return;
+      _appliedTheme = null;
+      _appliedCard = null;
+      _definedStyles.removeAll(defining);
+    }
+
     unawaited(
-      evaluate(source).then(
+      evaluate(srsCardFaceCallsScript(steps)).then(
         (Object? result) {
           if (generation != _generation) return;
-          if (result == false) {
+          if (result == true) {
+            _reloadedShell = false;
+          } else if (result == false) {
             // 页面已不是外壳（被卡片链接导航走了）：重载外壳一次，onLoadStop 后重放。
             if (_reloadedShell) return;
             _reloadedShell = true;
             detach();
             reloadShell();
-          } else if (result == true) {
-            _reloadedShell = false;
+          } else if (result is String) {
+            // 某一步在页内抛错（其余步骤照常执行，见 [srsCardFaceCallsScript]）：留痕。
+            ErrorLogService.instance.log(
+              'SrsWebCardFace.setCard',
+              StateError(result),
+              StackTrace.current,
+            );
+          } else {
+            // 调用整体没执行（平台视图没了 / 脚本没能运行，Windows 上页内顶层异常也是
+            // null）：这一份没有上屏，不能当作已下发。
+            ErrorLogService.instance.log(
+              'SrsWebCardFace.setCard',
+              StateError('card face calls returned $result'),
+              StackTrace.current,
+            );
+            invalidate();
           }
         },
         onError: (Object e, StackTrace stack) {
           ErrorLogService.instance.log('SrsWebCardFace.setCard', e, stack);
-          // 下发失败：下次 update 整份重发（同一代之后没有新下发时才作废）。
-          if (generation != _generation) return;
-          _appliedTheme = null;
-          _appliedCard = null;
-          _definedStyles.removeAll(defining);
+          invalidate();
         },
       ),
     );
@@ -970,11 +1615,15 @@ class SrsCardFaceSync {
 /// 卡面 `[sound:]` 的播放实现（测试覆写）。参数是本地文件路径；返回是否开始播放。
 typedef SrsSoundPlayer = Future<bool> Function(String path);
 
-/// 生产实现：app 共用的 just_audio 播放器（串行化激活，见 [DesktopAudioPlayback]）。
+/// 生产实现：app 共用的 just_audio 播放器（串行化激活，见 [DesktopAudioPlayback]），
+/// 音量取开播那一刻的 [srsReviewVolumeProvider]。
 final Provider<SrsSoundPlayer> srsSoundPlayerProvider =
     Provider<SrsSoundPlayer>(
       (Ref ref) =>
-          (String path) => DesktopAudioPlayback.playFile(path),
+          (String path) => DesktopAudioPlayback.playFile(
+            path,
+            volume: ref.read(srsReviewVolumeProvider),
+          ),
     );
 
 /// 卡面媒体请求的响应：[store] 里按名字取字节；不是卡面媒体 URL 时返回 null。
@@ -1056,6 +1705,95 @@ Future<WebResourceResponse?> srsCardFontResponse(
   );
 }
 
+/// 本平台卡面媒体的 URL 前缀（自定义 scheme 平台与拦截 https 的平台不同）。
+final String srsCardMediaUrlPrefix = srsMediaUrlPrefix(
+  customScheme: webViewUsesCustomSchemeTransport,
+);
+
+/// [srsCardFaceDocumentFor] 的输入（卡面 State 据此判断文档要不要重算）。字符串字段按值比
+/// （同一张卡的正文是同一个对象，`==` 先比引用）；主题 / 外观按各自的 `==`；字体链按引用
+/// （provider 换链才换列表）。
+@immutable
+class SrsCardFaceDocumentInputs {
+  const SrsCardFaceDocumentInputs({
+    required this.face,
+    required this.theme,
+    required this.appearance,
+    required this.labels,
+    required this.fonts,
+    required this.fontRoot,
+  });
+
+  final SrsCardFace face;
+  final ThemeData theme;
+  final SrsCardAppearance appearance;
+  final SrsCardLabels labels;
+  final List<Map<String, dynamic>> fonts;
+  final String? fontRoot;
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! SrsCardFaceDocumentInputs) return false;
+    final SrsCardFace a = face, b = other.face;
+    return a.cardId == b.cardId &&
+        a.showingAnswer == b.showingAnswer &&
+        a.fushiCard == b.fushiCard &&
+        a.layout == b.layout &&
+        a.pageZoom == b.pageZoom &&
+        a.languageCode == b.languageCode &&
+        a.bodyHtml == b.bodyHtml &&
+        a.css == b.css &&
+        a.hostCss == b.hostCss &&
+        a.hostScript == b.hostScript &&
+        // 复习中改牌组「自动播放」要立即重下发（BUG-3547）：不比它会命中旧文档。
+        a.autoplayMedia == b.autoplayMedia &&
+        identical(fonts, other.fonts) &&
+        fontRoot == other.fontRoot &&
+        appearance == other.appearance &&
+        labels.allDefinitions == other.labels.allDefinitions &&
+        labels.frequency == other.labels.frequency &&
+        labels.source == other.labels.source &&
+        labels.showMore == other.labels.showMore &&
+        theme == other.theme;
+  }
+
+  @override
+  int get hashCode => Object.hash(face.cardId, face.showingAnswer, theme);
+}
+
+/// 卡面 State 的文档缓存：输入 + 文档 + 外壳 HTML（外壳只在平台视图创建时用，懒算）。
+class SrsCardFaceDocumentCache {
+  SrsCardFaceDocumentCache(this.inputs, this.document);
+
+  final SrsCardFaceDocumentInputs inputs;
+  final SrsCardFaceDocument document;
+  late final String shellHtml = document.shellHtml;
+}
+
+/// 预取到的下一张卡：提前把它的笔记类型样式与两面正文的预处理（媒体引用改写、抽 `<style>`、
+/// 样式哈希）算进记忆表。真正显示时 [SrsCardFaceDocument.of] 全部命中，主 isolate 上只剩
+/// 拼主题样式与下发。
+void srsWarmCardFace({required String css, required List<String> bodies}) {
+  final String prefix = srsCardMediaUrlPrefix;
+  final String localizedCss = _memo(
+    _localizedCssMemo,
+    '$prefix\u0000$css',
+    () => srsLocalizeCardCss(css, urlPrefix: prefix),
+  );
+  if (localizedCss.isNotEmpty) srsCardStyleHash(localizedCss);
+  for (final String body in bodies) {
+    for (final String style in srsPrepareCardBody(body, prefix).styles) {
+      srsCardStyleHash(style);
+    }
+  }
+}
+
+/// 卡面是否自己铺底色：只有 Fushi 卡片用了自定义配色（[SrsCardColorSource.custom]）
+/// 时铺它的 surface；跟随 app 主题时与页面背景同色，铺了只会盖住路由层的形状背景。
+/// 原生卡面（`SrsFushiCardView`）与 WebView 外壳共用这一条判据。
+bool srsCardPaintsOwnSurface(SrsCardFace face, SrsCardAppearance appearance) =>
+    face.fushiCard && appearance.colorSource == SrsCardColorSource.custom;
+
 /// 一面卡在给定主题 / 外观下的外壳文档。外观设置只属于 Fushi 卡片
 /// （[SrsCardFace.fushiCard]）：别的类型拿不到它的变量、类名、字体与自定义配色，按自身
 /// HTML/CSS 原样渲染（与 Anki 一致）。
@@ -1072,13 +1810,20 @@ SrsCardFaceDocument srsCardFaceDocumentFor(
 }) {
   final bool dark = theme.brightness == Brightness.dark;
   final bool fushi = face.fushiCard;
+  // 其它卡片类型的设计系统样式覆盖（关 = 零注入：不加样式、类名与脚本）。
+  final bool skin = !fushi && appearance.designSkin;
   final ColorScheme scheme = fushi
       ? srsCardColorScheme(appearance, theme.colorScheme)
       : theme.colorScheme;
   return SrsCardFaceDocument.of(
     face,
     dark: dark,
-    background: scheme.surface,
+    // 宿主默认不铺底：卡面透出复习页背景（路由层的形状背景）。只有 Fushi 卡用了自定义
+    // 配色时才铺它的 surface（与页面背景不同色，是用户选的卡面底色）；其它卡片类型
+    // 对齐 Anki，底色归卡片 CSS。
+    background: srsCardPaintsOwnSurface(face, appearance)
+        ? scheme.surface
+        : null,
     foreground: scheme.onSurface,
     accent: scheme.primary,
     onAccent: scheme.onPrimary,
@@ -1095,8 +1840,28 @@ SrsCardFaceDocument srsCardFaceDocumentFor(
             fonts: fonts,
             fontRoot: fontRoot,
           )
+        : skin
+        ? srsCardDesignSkinCss(
+            scheme: scheme,
+            tokens: SrsCardTokens.fromTheme(theme),
+          )
         : '',
-    appearanceClasses: fushi ? srsCardAppearanceClasses(appearance) : '',
+    appearanceClasses: fushi
+        ? <String>[
+            srsCardAppearanceClasses(appearance),
+            // 墨水屏：卡面注入的过渡瞬间到位（系统「减弱动态效果」走页内 prefers-reduced-motion）。
+            if (theme.extension<FushiEinkTheme>()?.einkMode ?? false)
+              kSrsCardNoMotionClass,
+          ].where((String c) => c.isNotEmpty).join(' ')
+        : skin
+        ? kSrsDesignSkinClass
+        : '',
+    hostScript:
+        (skin ? kSrsCardDesignSkinScript : '') +
+        (fushi && appearance.showTranslation && appearance.blurTranslation
+            ? kSrsCardTranslationBlurScript
+            : '') +
+        face.hostScript,
   );
 }
 
@@ -1120,20 +1885,45 @@ class SrsWebCardFace extends ConsumerStatefulWidget {
   @visibleForTesting
   static InAppWebViewController? debugController;
 
+  /// 集成测试探针：卡面每个经拦截器供出的媒体 / 字体请求（URL、字节数、耗时毫秒）。
+  @visibleForTesting
+  static void Function(Uri url, int bytes, int ms)? debugMediaServed;
+
   @override
   ConsumerState<SrsWebCardFace> createState() => _SrsWebCardFaceState();
 }
 
 class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
-    implements SrsCardLookupSurface {
+    implements SrsCardLookupSurface, PopupBodyWebViewProvider {
   InAppWebViewController? _controller;
+
+  @override
+  Object? get popupBodyWebViewId => _controller?.getViewId();
 
   /// 卡面查词（[SrsCardLookupScope] 给出；null = 这面卡不取词，如外观页预览、正面预热的
   /// 释义 WebView）。
   SrsCardLookupController? _lookup;
 
-  /// 当前外壳里已装好取词脚本（外壳重载 / renderer 重建后重装）。
+  /// 当前外壳里已装好指针脚本（取词 + 卡面手势；外壳重载 / renderer 重建后重装）。
   bool _lookupInstalled = false;
+
+  /// 上一次下发给页面的卡面手势门控（null = 没下发过 / 外壳重载后作废）。
+  String? _pushedGestureGate;
+
+  /// 要不要装指针脚本：有查词作用域（取词）或宿主要卡面手势。
+  bool get _wantsPointerScript =>
+      _lookup != null || widget.face.onCardGesture != null;
+
+  String _gestureGateScript() => srsCardGestureGateScript(
+    widget.face.onCardGesture == null ? null : widget.face.gestureArming,
+  );
+
+  /// 平台视图创建失败后重建过一次（只重来一次，再失败只留痕）。
+  bool _recreatedAfterFailure = false;
+  int _creationAttempt = 0;
+
+  /// 外壳主文档加载失败后重载过一次。
+  bool _reloadedAfterLoadError = false;
 
   /// macOS 宿主侧悬停腿（页面收不到 mousemove，BUG-2508）。
   final ReaderHostHoverLookupGate _hostHover = ReaderHostHoverLookupGate();
@@ -1141,11 +1931,6 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   /// 取词脚本整段（选区脚本 + 卡面监听）只拼一次。
   static final String _lookupInstallScript = srsCardLookupInstallScript(
     ReaderSelectionScripts.source(),
-  );
-
-  /// 本平台卡面媒体的 URL 前缀（自定义 scheme 平台与拦截 https 的平台不同）。
-  static final String _mediaPrefix = srsMediaUrlPrefix(
-    customScheme: webViewUsesCustomSchemeTransport,
   );
 
   late final SrsCardFaceSync _sync = SrsCardFaceSync(
@@ -1169,20 +1954,85 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     afterRebuild: () {
       if (mounted) setState(() {});
     },
+    // 死亡 / 重建进随反馈上传的诊断日志（缺省只 debugPrint，release 里看不到）。
+    reporter: (String surface, String message) => ErrorLogService.instance
+        .logDiagnostic('SrsWebCardFace.death', '$surface: $message'),
   );
 
-  SrsCardFaceDocument _document(BuildContext context) => srsCardFaceDocumentFor(
-    widget.face,
-    theme: Theme.of(context),
-    appearance: ref.read(srsCardAppearanceProvider),
-    labels: srsCardLabels(),
-    mediaUrlPrefix: _mediaPrefix,
-    themedScrollbar: srsCardUsesThemedScrollbar,
-    fontUrl: (String path) =>
-        srsCardFontUrl(path, customScheme: webViewUsesCustomSchemeTransport),
-    fonts: ref.read(srsCardFontsProvider),
-    fontRoot: ref.read(srsCardFontRootProvider),
-  );
+  /// 这面卡报过几次「翻面键没被桥接走」（[kSrsCardKeyDiagScript]）；封顶免得刷满诊断日志。
+  int _keyDiagReports = 0;
+  static const int _kMaxKeyDiagReports = 5;
+
+  /// 这面卡建过几次平台视图（正常一生只建一次；死亡重建 / 结构变动会再建）。
+  int _viewsCreated = 0;
+
+  /// 进程里此刻活着的卡面 WebView State 数（诊断用）。
+  static int _liveFaces = 0;
+
+  /// 平台视图建了第二次及以后时留一条诊断（含卡面身份与存活数）：卡面应当整段复习
+  /// 复用同一个平台视图，反复重建就是卡顿与 `installLookup` 打进死通道的来源（O1yqRPUyut）。
+  void _noteViewCreated() {
+    _viewsCreated++;
+    if (_viewsCreated == 1) return;
+    ErrorLogService.instance.logDiagnostic(
+      'SrsWebCardFace.lifecycle',
+      'platform view created #$_viewsCreated for ${widget.face.cardId} '
+          '(lookup=${_lookup != null}, liveFaces=$_liveFaces, '
+          'epoch=${_deathGuard.epoch})',
+    );
+  }
+
+  /// 上一次算文档用的输入与结果：复习页换一张卡要重建这面卡 4~5 次（忙碌态开 / 新卡 /
+  /// 忙碌态关 / 补算预览），每次 didUpdateWidget 与 build 都要文档；输入没变就原样复用，
+  /// 不再每次重拼主题样式、外壳 HTML 与几十 KB 的卡片键。
+  SrsCardFaceDocumentCache? _docCache;
+
+  /// 用户在这张卡问题面的打字框里打的字（[kSrsTypeAnswerScript] 上报）。只属于 [cardId]
+  /// 那张卡：换卡、或同一张卡回到问题面时清掉。
+  ({String cardId, String text})? _typed;
+
+  /// 实际渲染的这一面：答案面有打字答案占位时，填进本卡打的字与期望答案的比对结果。
+  SrsCardFace _effectiveFace() => srsFaceWithTypedAnswer(widget.face, _typed);
+
+  void _onTypeAnswer(List<dynamic> arguments) {
+    if (!mounted) return;
+    final Object? text = arguments.isEmpty ? null : arguments.first;
+    if (text is! String) return;
+    final SrsCardFace face = widget.face;
+    _typed = (cardId: face.cardId, text: text);
+    final bool submit = arguments.length > 1 && arguments[1] == true;
+    // 回车交卷 = 按「显示答案」键；只在这面卡的桥接键里有回车时（复习页）才转。
+    if (submit && !face.showingAnswer && face.bridgeKeys.contains('Enter')) {
+      face.onBridgeKey('Enter');
+    }
+  }
+
+  SrsCardFaceDocument _document(BuildContext context) {
+    final SrsCardFaceDocumentInputs inputs = SrsCardFaceDocumentInputs(
+      face: _effectiveFace(),
+      theme: Theme.of(context),
+      appearance: ref.read(srsCardAppearanceProvider),
+      labels: srsCardLabels(),
+      fonts: ref.read(srsCardFontsProvider),
+      fontRoot: ref.read(srsCardFontRootProvider),
+    );
+    final SrsCardFaceDocumentCache? hit = _docCache;
+    if (hit != null && hit.inputs == inputs) return hit.document;
+    final SrsCardFaceDocument document = srsCardFaceDocumentFor(
+      inputs.face,
+      theme: inputs.theme,
+      appearance: inputs.appearance,
+      labels: inputs.labels,
+      mediaUrlPrefix: srsCardMediaUrlPrefix,
+      themedScrollbar: srsCardUsesThemedScrollbar,
+      fontUrl: (String path) =>
+          srsCardFontUrl(path, customScheme: webViewUsesCustomSchemeTransport),
+      fonts: inputs.fonts,
+      fontRoot: inputs.fontRoot,
+    );
+    _docCache = SrsCardFaceDocumentCache(inputs, document);
+    return document;
+  }
 
   Future<SrsMediaStore?> _mediaStore() async {
     try {
@@ -1194,6 +2044,15 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   }
 
   Future<WebResourceResponse?> _intercept(Uri url) async {
+    final void Function(Uri, int, int)? probe = SrsWebCardFace.debugMediaServed;
+    if (probe == null) return _serve(url);
+    final Stopwatch sw = Stopwatch()..start();
+    final WebResourceResponse? r = await _serve(url);
+    if (r != null) probe(url, r.data?.length ?? 0, sw.elapsedMilliseconds);
+    return r;
+  }
+
+  Future<WebResourceResponse?> _serve(Uri url) async {
     if (srsFontPathFromUrl(url) != null) {
       return srsCardFontResponse(
         url,
@@ -1237,6 +2096,8 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   @override
   void initState() {
     super.initState();
+    _attachPageWindow(widget.face.pageWindow);
+    _liveFaces++;
     // 外观改动（定制页里拖滑块 / 切开关）即时下发：只换主题部分，卡片脚本不重跑。
     ref.listenManual<SrsCardAppearance>(srsCardAppearanceProvider, (_, _) {
       if (mounted) _sync.update(_document(context));
@@ -1263,8 +2124,32 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     }
   }
 
+  // ---------------------------------------------------------------- 窗口态（BUG-4038）
+
+  void _attachPageWindow(SrsPageWindowLink? link) {
+    link?._apply = _applyPageWindow;
+  }
+
+  void _detachPageWindow(SrsPageWindowLink? link) {
+    if (link != null && link._apply == _applyPageWindow) link._apply = null;
+  }
+
+  Future<void> _applyPageWindow(double? top) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null || !_sync.shellReady) return;
+    try {
+      await controller.evaluateJavascript(source: srsPageWindowScript(top));
+    } catch (e, stack) {
+      // 平台视图半销毁：新视图 onLoadStop 后 [_injectBridge] 按 link.top 重放。
+      if (!mounted || !identical(_controller, controller)) return;
+      ErrorLogService.instance.log('SrsWebCardFace.pageWindow', e, stack);
+    }
+  }
+
   @override
   void dispose() {
+    _detachPageWindow(widget.face.pageWindow);
+    _liveFaces--;
     _lookup?.unregister(this);
     if (identical(SrsWebCardFace.debugController, _controller)) {
       SrsWebCardFace.debugController = null;
@@ -1304,26 +2189,84 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     );
   }
 
-  /// 装取词脚本（幂等）并下发门控。没有查词作用域时只下发「全关」的门控。
+  /// 装指针脚本（取词 + 卡面手势，幂等）并下发两份门控。既没有查词作用域、宿主也不要
+  /// 手势时只给已装的脚本下发「全关」。
   Future<void> _installLookup(InAppWebViewController controller) async {
-    if (_lookup == null) {
-      if (_lookupInstalled) await _evaluateQuiet(_lookupGateScript());
+    if (!_wantsPointerScript) {
+      if (_lookupInstalled) {
+        await _evaluateQuiet(_lookupGateScript() + _gestureGateScript());
+      }
       return;
     }
     try {
       if (!_lookupInstalled) {
         await controller.evaluateJavascript(source: _lookupInstallScript);
+        // 注入期间平台视图换了（死亡重建 / 卡面卸载）：这只 controller 的通道已经没了，
+        // 新视图自己的 onLoadStop 会重装。
+        if (!mounted || !identical(_controller, controller)) return;
         _lookupInstalled = true;
       }
-      await controller.evaluateJavascript(source: _lookupGateScript());
+      final String gestureGate = _gestureGateScript();
+      await controller.evaluateJavascript(
+        source: _lookupGateScript() + gestureGate,
+      );
+      _pushedGestureGate = gestureGate;
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsWebCardFace.installLookup', e, stack);
     }
   }
 
+  /// 换面 / 改了手势映射：开着的识别器变了就重发手势门控（不重装脚本、不重放卡面）。
+  void _syncGestureGate() {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null || !_sync.shellReady) return;
+    if (!_lookupInstalled) {
+      if (_wantsPointerScript) unawaited(_installLookup(controller));
+      return;
+    }
+    final String gate = _gestureGateScript();
+    if (gate == _pushedGestureGate) return;
+    _pushedGestureGate = gate;
+    unawaited(_evaluateQuiet(gate));
+  }
+
+  /// 页内脚本回报的卡面手势（[kSrsGestureHandler]）：页面 CSS 像素换成全局逻辑像素。
+  void _onPageGesture(Object? raw) {
+    final void Function(SrsCardGestureEvent)? onGesture =
+        widget.face.onCardGesture;
+    final RenderBox? box = _box;
+    if (onGesture == null || box == null) return;
+    final Matrix4 toGlobal = box.getTransformTo(null);
+    final SrsCardGestureEvent? event = srsCardGestureFromPage(
+      raw,
+      viewWidth: box.size.width,
+      viewHeight: box.size.height,
+      toGlobal: (Offset local) => MatrixUtils.transformPoint(toGlobal, local),
+    );
+    if (event != null) onGesture(event);
+  }
+
   RenderBox? get _box {
     final RenderObject? r = context.findRenderObject();
     return r is RenderBox && r.attached && r.hasSize ? r : null;
+  }
+
+  /// 页内选区（[kSrsCardEditSelectionScript]）→ 复习时编辑。`occ` 是在这一面文档里的序号：只有释义页
+  /// （整页就是释义字段）里它对得上字段内的序号，整面模板卡面里不用它。
+  void _onEditSelection(String raw) {
+    final void Function(SrsCardSelection)? report = widget.face.onEditSelection;
+    if (report == null) return;
+    final Object? json;
+    try {
+      json = jsonDecode(raw);
+    } on FormatException {
+      return;
+    }
+    if (json is! Map) return;
+    final Object? text = json['text'];
+    if (text is! String || text.trim().isEmpty) return;
+    final Object? occ = json['occ'];
+    report(SrsCardSelection(text, occurrence: occ is int ? occ : null));
   }
 
   void _onTextSelected(Object? raw) {
@@ -1352,7 +2295,12 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
             r['width'] ?? 0,
             r['height'] ?? 0,
           );
-    final Rect anchor = box.localToGlobal(local.topLeft) & local.size;
+    // 整个矩形经同一变换：复习页不在 FushiAppUiScaleNeutralizer 之下，「全局左上角 & 局部
+    // 尺寸」会把高宽留在 1/界面缩放，弹窗按偏高的下沿摆、盖住被查的那一行。
+    final Rect anchor = MatrixUtils.transformRect(
+      box.getTransformTo(null),
+      local,
+    );
     lookup.lookup(
       SrsCardLookupRequest(
         term: data.text,
@@ -1360,11 +2308,34 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
         sentence: data.sentence.isEmpty ? data.text : data.sentence,
         fromHover: data.fromHover,
         origin: this,
+        rubySpans: data.rubySpans,
         onMatched: (int count) => unawaited(
           _evaluateQuiet(ReaderSelectionScripts.highlightInvocation(count)),
         ),
       ),
     );
+  }
+
+  /// 卡面里点了词典链接 / 外链（#16）：外链交系统浏览器；词典内部交叉引用在链接处查词
+  /// （与查词弹窗里点链接同一行为）。没有查词作用域（预览页）时内部链接不响应。
+  void _onCardLink(SrsCardLinkAction action) {
+    switch (action) {
+      case SrsCardExternalLink(:final String href):
+        unawaited(openDictionaryExternalLink(href));
+      case SrsCardLookupLink(:final String query, :final Rect rect):
+        final SrsCardLookupController? lookup = _lookup;
+        final RenderBox? box = _box;
+        if (lookup == null || box == null) return;
+        lookup.lookup(
+          SrsCardLookupRequest(
+            term: query,
+            anchor: MatrixUtils.transformRect(box.getTransformTo(null), rect),
+            sentence: query,
+            fromHover: false,
+            origin: this,
+          ),
+        );
+    }
   }
 
   @override
@@ -1377,12 +2348,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     if (!readerHostHoverPointInside(local, box.size)) return false;
     unawaited(
       _evaluateQuiet(
-        ReaderSelectionScripts.selectInvocation(
-          local.dx,
-          local.dy,
-          400,
-          fromHover: fromHover,
-        ),
+        srsCardSelectInvocation(local.dx, local.dy, 400, fromHover: fromHover),
       ),
     );
     return true;
@@ -1422,7 +2388,18 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   @override
   void didUpdateWidget(SrsWebCardFace oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.face.pageWindow, widget.face.pageWindow)) {
+      _detachPageWindow(oldWidget.face.pageWindow);
+      _attachPageWindow(widget.face.pageWindow);
+    }
+    final ({String cardId, String text})? typed = _typed;
+    if (typed != null &&
+        (typed.cardId != widget.face.cardId ||
+            (oldWidget.face.showingAnswer && !widget.face.showingAnswer))) {
+      _typed = null;
+    }
     _sync.update(_document(context));
+    _syncGestureGate();
   }
 
   /// 页面被卡片里的链接导航走了：把外壳装回来（onLoadStop 后重放当前内容）。
@@ -1442,14 +2419,42 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     );
   }
 
+  void _onVisibleSounds(List<dynamic> arguments) {
+    final SrsCardFace face = widget.face;
+    final void Function(String, bool, List<String>)? report =
+        face.onVisibleSounds;
+    if (report == null || arguments.length < 2) return;
+    final Object? token = arguments[0];
+    final Object? names = arguments[1];
+    if (token !=
+            srsCardFaceMediaToken(
+              cardId: face.cardId,
+              showingAnswer: face.showingAnswer,
+            ) ||
+        names is! List) {
+      return;
+    }
+    report(face.cardId, face.showingAnswer, <String>[
+      for (final Object? n in names)
+        if (n is String && n.trim().isNotEmpty) n.trim(),
+    ]);
+  }
+
   Future<void> _injectBridge(InAppWebViewController controller) async {
     try {
+      // 外壳 `<head>` 已装好桥；这里重放只刷新键表（脚本幂等，listener 只装一次）。
       await controller.evaluateJavascript(
-        source: identical(widget.face.bridgeKeys, kSrsReviewBridgeKeys)
-            ? srsReviewKeyBridgeScript
-            : srsCardFaceBridgeScript(widget.face.bridgeKeys),
+        source: srsCardFaceBridgeScriptFor(widget.face.bridgeKeys),
       );
       await controller.evaluateJavascript(source: kSrsCardLinkScript);
+      if (widget.face.onImageTap != null) {
+        await controller.evaluateJavascript(source: kSrsCardImageTapScript);
+      }
+      if (widget.face.onEditSelection != null) {
+        await controller.evaluateJavascript(
+          source: kSrsCardEditSelectionScript,
+        );
+      }
       final bool height = widget.face.onContentHeight != null;
       final bool wheel = widget.face.onWheel != null;
       final bool zoom = widget.face.onZoomWheel != null;
@@ -1462,6 +2467,13 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
           ),
         );
       }
+      // 新页面（换外壳 / 平台视图重建）没有窗口态：按宿主最近一次的要求重放。
+      final double? windowTop = widget.face.pageWindow?.top;
+      if (windowTop != null) {
+        await controller.evaluateJavascript(
+          source: srsPageWindowScript(windowTop),
+        );
+      }
     } catch (_) {
       // 平台视图正在重建：下一次 onLoadStop 会再注入（脚本自带幂等守卫）。
     }
@@ -1470,11 +2482,16 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   @override
   Widget build(BuildContext context) {
     final Widget webView = KeyedSubtree(
-      key: _deathGuard.rebuildKey,
+      key: ValueKey<(Key, int)>((_deathGuard.rebuildKey, _creationAttempt)),
       child: InAppWebView(
+        // 平台视图自己认领长按 / 拖动（见 [srsCardFaceGestureRecognizers]）；页面跟内容等高、
+        // 由外层 Flutter 滚动（[SrsCardFace.onContentHeight]）时不认领纵向拖。
+        gestureRecognizers: srsCardFaceGestureRecognizers(
+          scrollsInPage: widget.face.onContentHeight == null,
+        ),
         // 只在平台视图创建时读一次：外壳页，内容由 _sync 在 onLoadStop 后下发。
         initialData: InAppWebViewInitialData(
-          data: _document(context).shellHtml,
+          data: _docCache?.shellHtml ?? _document(context).shellHtml,
           mimeType: 'text/html',
           encoding: 'utf-8',
         ),
@@ -1482,7 +2499,9 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
           javaScriptEnabled: true,
           supportZoom: false,
           disableContextMenu: true,
-          transparentBackground: false,
+          // 透明：卡片底色只来自主题 CSS（[srsCardThemeCss]）与卡片 CSS，模板写透明时
+          // 透出复习页背景，而不是平台视图自己的白底。
+          transparentBackground: true,
           // 卡面媒体经拦截器 / 自定义 scheme 从 SrsMediaStore 供字节（见 srs_card_media.dart）。
           useShouldInterceptRequest: true,
           resourceCustomSchemes: const <String>[kSrsMediaScheme],
@@ -1491,6 +2510,12 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
           // 堆着上一张卡 / 正面，侧滑会把画面退回旧卡面而复习状态没动。卡面切换完全由
           // 宿主拥有，关掉。只作用于 iOS / macOS。
           allowsBackForwardNavigationGestures: false,
+          // 页面自己发起的播放由外壳里的自动播放闸门按牌组开关决定（BUG-3546），
+          // 不再交给各平台默认策略：Android / iOS 默认「要手势」会让开着自动播放的
+          // 同步片段也不出声，Windows 默认放行又让关掉的照样出声。iOS 内嵌播放
+          // （片段带 playsinline）不全屏接管。
+          mediaPlaybackRequiresUserGesture: false,
+          allowsInlineMediaPlayback: true,
           // 链接不许把外壳导航走；来源链接交给宿主（[srsCardNavigationPolicy]）。
           // Windows 的实现是给每个文档请求开 DevTools Fetch 拦截（整页加载都要绕
           // 一圈宿主），卡面上不值：那边只靠页内链接脚本（[kSrsCardLinkScript]）拦，
@@ -1514,7 +2539,9 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
                 _interceptCustomScheme(request),
         onWebViewCreated: (InAppWebViewController controller) {
           _controller = controller;
+          _lookup?.bodyWebViewChanged(this);
           _sync.detach();
+          _noteViewCreated();
           assert(() {
             SrsWebCardFace.debugController = controller;
             return true;
@@ -1528,11 +2555,47 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
             },
           );
           controller.addJavaScriptHandler(
+            handlerName: kSrsTypeAnswerHandler,
+            callback: (List<dynamic> arguments) {
+              _onTypeAnswer(arguments);
+              return null;
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: kSrsKeyDiagHandler,
+            callback: (List<dynamic> arguments) {
+              final Object? info = arguments.isEmpty ? null : arguments.first;
+              if (info is String && _keyDiagReports < _kMaxKeyDiagReports) {
+                _keyDiagReports++;
+                ErrorLogService.instance.logDiagnostic(
+                  'SrsWebCardFace.keyNotBridged',
+                  '${widget.face.cardId}: $info',
+                );
+              }
+              return null;
+            },
+          );
+          controller.addJavaScriptHandler(
             handlerName: kSrsContentHeightHandler,
             callback: (List<dynamic> arguments) {
               final Object? h = arguments.isEmpty ? null : arguments.first;
               if (h is num && mounted) {
                 widget.face.onContentHeight?.call(h.toDouble());
+              }
+              return null;
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: kSrsPageOffsetHandler,
+            callback: (List<dynamic> arguments) {
+              final Object? info = arguments.isEmpty ? null : arguments.first;
+              if (info is String && mounted) {
+                final Size? size = context.size;
+                ErrorLogService.instance.logDiagnostic(
+                  'SrsWebCardFace.pageOffset',
+                  '${widget.face.cardId}: $info '
+                      'view=${size?.width.round()}x${size?.height.round()}',
+                );
               }
               return null;
             },
@@ -1568,6 +2631,24 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
               return null;
             },
           );
+          controller.addJavaScriptHandler(
+            handlerName: kSrsEditSelectionHandler,
+            callback: (List<dynamic> arguments) {
+              final Object? raw = arguments.isEmpty ? null : arguments.first;
+              if (raw is String && mounted) _onEditSelection(raw);
+              return null;
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: kSrsImageTapHandler,
+            callback: (List<dynamic> arguments) {
+              final Object? src = arguments.isEmpty ? null : arguments.first;
+              if (src is String && src.isNotEmpty && mounted) {
+                widget.face.onImageTap?.call(src);
+              }
+              return null;
+            },
+          );
           // 卡面取词（阅读器同一份选区脚本回调 onTextSelected，见 [_installLookup]）。
           controller.addJavaScriptHandler(
             handlerName: 'onTextSelected',
@@ -1578,31 +2659,103 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
               return null;
             },
           );
+          // 卡面手势（点空白 / 双击 / 长按 / 滑动），见 [kSrsCardLookupScript]。
           controller.addJavaScriptHandler(
-            handlerName: 'onTapEmpty',
-            callback: (List<dynamic> _) => null,
+            handlerName: kSrsGestureHandler,
+            callback: (List<dynamic> arguments) {
+              if (mounted && arguments.isNotEmpty) {
+                _onPageGesture(arguments.first);
+              }
+              return null;
+            },
           );
           controller.addJavaScriptHandler(
             handlerName: kSrsPlaySoundHandler,
             callback: (List<dynamic> arguments) {
               final Object? name = arguments.isEmpty ? null : arguments.first;
               if (name is String && name.isNotEmpty && mounted) {
-                srsRunLogged(
-                  'SrsWebCardFace.playSound',
-                  () => _playSound(name),
-                );
+                // 复习页：交给它的播放序列（与底栏重播 / 自动播放同一路，新的打断旧的）。
+                final void Function(List<String>)? host =
+                    widget.face.onPlayAudio;
+                if (host != null) {
+                  host(<String>[name]);
+                } else {
+                  srsRunLogged(
+                    'SrsWebCardFace.playSound',
+                    () => _playSound(name),
+                  );
+                }
               }
               return null;
             },
           );
+          // 这一面看得见的发音键（[SrsCardFace.onVisibleSounds]）：只认当前这一面的上报。
+          controller.addJavaScriptHandler(
+            handlerName: kSrsVisibleSoundsHandler,
+            callback: (List<dynamic> arguments) {
+              if (mounted) _onVisibleSounds(arguments);
+              return null;
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: kSrsCardLinkHandler,
+            callback: (List<dynamic> arguments) {
+              final SrsCardLinkAction? action = SrsCardLinkAction.parse(
+                arguments.isEmpty ? null : arguments.first,
+              );
+              if (action != null && mounted) _onCardLink(action);
+              return null;
+            },
+          );
         },
+        // 外壳没能加载 / 平台视图没建起来时不会有 onLoadStop，卡面会一直停在空白：
+        // 留痕并各重来一次（BUG-3579；以前没接这个回调，失败完全无声）。
+        onReceivedError:
+            (
+              InAppWebViewController controller,
+              WebResourceRequest request,
+              WebResourceError error,
+            ) {
+              if (error.description.contains(
+                kReaderWebViewCreationFailedSentinel,
+              )) {
+                ErrorLogService.instance.log(
+                  'SrsWebCardFace.creationFailed',
+                  error.description,
+                  null,
+                );
+                if (_recreatedAfterFailure || !mounted) return;
+                _recreatedAfterFailure = true;
+                _controller = null;
+                _sync.detach();
+                setState(() => _creationAttempt++);
+                return;
+              }
+              if (request.isForMainFrame != true) return;
+              ErrorLogService.instance.log(
+                'SrsWebCardFace.shellLoadFailed',
+                '${error.type} ${error.description} ${request.url}',
+                null,
+              );
+              if (_reloadedAfterLoadError) return;
+              _reloadedAfterLoadError = true;
+              _sync.detach();
+              _reloadShell();
+            },
         onLoadStop: (InAppWebViewController controller, _) {
           // 死亡处置已丢弃 controller：等重建后的新平台视图自己的 onLoadStop。
-          if (_controller == null) return;
+          final InAppWebViewController? current = _controller;
+          if (current == null) return;
+          // 插件每次回调都给同一平台视图新包一只 [InAppWebViewController]，这里的参数与
+          // onWebViewCreated 存下的 [_controller] 永远不 identical：一律用存下的那只，
+          // [_installLookup] 的「注入期间视图换了」判断才认得出是同一视图（以前直接传参数，
+          // 判断恒假、取词门控从不下发，整面 WebView 卡面点词 / 点空白全失灵）。
+          if (!identical(current.platform, controller.platform)) return;
           _sync.shellLoaded();
           _lookupInstalled = false;
+          _pushedGestureGate = null;
           unawaited(
-            _injectBridge(controller).then((_) => _installLookup(controller)),
+            _injectBridge(current).then((_) => _installLookup(current)),
           );
         },
         // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
@@ -1618,19 +2771,66 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
                 ),
       ),
     );
-    if (_lookup == null || !hostOwnsWebViewHoverLookup) return webView;
-    return Listener(onPointerHover: _onHostHover, child: webView);
+    // 平台视图上方的结构恒定：宿主悬停腿的 Listener 始终在，只按平台决定接不接回调，
+    // **不随查词作用域变**。以前「没作用域就不包 Listener」：作用域在 null ↔ 非 null 间切换
+    // （原生 Fushi 卡面的释义 WebView 正面在 Offstage 预热、无作用域，翻面后有）时根 widget
+    // 类型一变，element 整棵重建、平台视图被销毁重建——macOS 上每张卡两次（翻面一次、换卡
+    // 一次），重建前刚发出的取词注入打进已销毁的通道（O1yqRPUyut：`installLookup`
+    // MissingPluginException，channel 号每张卡 +2，复习卡顿）。没有作用域时 [_onHostHover]
+    // 自己 no-op。
+    return Listener(
+      onPointerHover: hostOwnsWebViewHoverLookup ? _onHostHover : null,
+      child: webView,
+    );
   }
 }
 
 /// 纯文本卡面（测试 / 无 WebView 环境用）：把 HTML 去标签后直接显示。
-class SrsPlainCardFace extends StatelessWidget {
+///
+/// 正文整段都画出来了，所以 `[sound:]` 一律算「看得见」：与 WebView 卡面一样在这一面上屏后
+/// 经 [SrsCardFace.onVisibleSounds] 上报（帧尾，模拟页面在卡片脚本跑完后上报）。
+class SrsPlainCardFace extends StatefulWidget {
   const SrsPlainCardFace({super.key, required this.face});
 
   final SrsCardFace face;
 
   @override
+  State<SrsPlainCardFace> createState() => _SrsPlainCardFaceState();
+}
+
+class _SrsPlainCardFaceState extends State<SrsPlainCardFace> {
+  @override
+  void initState() {
+    super.initState();
+    _scheduleReport();
+  }
+
+  @override
+  void didUpdateWidget(SrsPlainCardFace old) {
+    super.didUpdateWidget(old);
+    if (old.face.cardId != widget.face.cardId ||
+        old.face.showingAnswer != widget.face.showingAnswer ||
+        old.face.bodyHtml != widget.face.bodyHtml) {
+      _scheduleReport();
+    }
+  }
+
+  void _scheduleReport() {
+    final SrsCardFace face = widget.face;
+    if (face.onVisibleSounds == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      if (!mounted) return;
+      face.onVisibleSounds?.call(
+        face.cardId,
+        face.showingAnswer,
+        srsCardSoundNames(face.bodyHtml),
+      );
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final SrsCardFace face = widget.face;
     final String text = face.bodyHtml
         .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
         .replaceAll(RegExp(r'<[^>]+>'), '')

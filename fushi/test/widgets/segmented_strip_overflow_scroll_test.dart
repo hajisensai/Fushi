@@ -28,32 +28,38 @@ void main() {
   }
 
   ScrollController controllerOf(WidgetTester tester) {
-    final SingleChildScrollView scrollView = tester.widget<SingleChildScrollView>(
-      find.descendant(
-        of: find.byType(FadingEdgeScrollView),
-        matching: find.byType(SingleChildScrollView),
-      ),
-    );
+    final SingleChildScrollView scrollView = tester
+        .widget<SingleChildScrollView>(
+          find.descendant(
+            of: find.byType(FadingEdgeScrollView),
+            matching: find.byType(SingleChildScrollView),
+          ),
+        );
     return scrollView.controller!;
   }
 
   testWidgets('装不下时滚动兜底带渐隐边缘', (WidgetTester tester) async {
     await tester.pumpWidget(host(selected: 0));
     await tester.pump();
-    expect(find.byType(FadingEdgeScrollView), findsOneWidget,
-        reason: '截断的分段条必须有「还有更多」的渐隐提示');
+    expect(
+      find.byType(FadingEdgeScrollView),
+      findsOneWidget,
+      reason: '截断的分段条必须有「还有更多」的渐隐提示',
+    );
   });
 
   testWidgets('打开时选中段自动滚入可视区；切回首段滚回起点', (WidgetTester tester) async {
     await tester.pumpWidget(host(selected: 7));
     // 首帧 post-frame jumpTo 定位。
     await tester.pump();
-    expect(controllerOf(tester).offset, greaterThan(0),
-        reason: '选中尾段时不应停在起点（选中段在可视区外）');
+    expect(
+      controllerOf(tester).offset,
+      greaterThan(0),
+      reason: '选中尾段时不应停在起点（选中段在可视区外）',
+    );
 
     await tester.pumpWidget(host(selected: 0));
     await tester.pumpAndSettle();
-    expect(controllerOf(tester).offset, 0,
-        reason: '切回首段应动画滚回起点让它可见');
+    expect(controllerOf(tester).offset, 0, reason: '切回首段应动画滚回起点让它可见');
   });
 }

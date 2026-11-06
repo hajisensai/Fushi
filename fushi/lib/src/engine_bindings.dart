@@ -99,7 +99,7 @@ void installEngineHostBindings() {
   evictImageCacheForFile = _evictImageCacheForFile;
   releaseImageCacheBeforeDelete = _releaseImageCacheBeforeDelete;
   // 词典导入/删除前释放 FFI 引擎的文件映射（BUG-1756）。
-  releaseDictionaryMappings = FushiDicts.releaseAllMappings;
+  withDictionaryMappingsReleased = FushiDicts.withMappingsReleased;
   ffmpegPlatformBackendProvider = _platformFfmpegBackend;
   // 制卡 ffmpeg 的远端输入经本机中继（在线视频源伪装分片，BUG-2642 残留）：
   // 视频页登记，引擎按输入地址来查。

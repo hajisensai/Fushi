@@ -5,9 +5,8 @@ import 'comprehensive_test_matrix.dart';
 import 'comprehensive_test_reporter.dart';
 import 'flutter_sdk_executables.dart';
 
-typedef ComprehensiveCommandRunner = Future<CommandResult> Function(
-  CommandRequest request,
-);
+typedef ComprehensiveCommandRunner =
+    Future<CommandResult> Function(CommandRequest request);
 
 class CommandInvocation {
   const CommandInvocation({
@@ -66,8 +65,9 @@ CommandInvocation buildCommandInvocation(
     throw const FormatException('Command must not be empty');
   }
 
-  final String executable =
-      FlutterSdkExecutables.current().resolveCommand(tokens.first);
+  final String executable = FlutterSdkExecutables.current().resolveCommand(
+    tokens.first,
+  );
   final List<String> args = <String>[...tokens.skip(1)];
   if (_isFlutterDrive(tokens)) {
     if (!_hasDriverArg(args)) {
@@ -106,15 +106,17 @@ Future<ComprehensiveReport> buildExecutionReport({
     for (final TestScenario scenario in plan.scenarios) {
       if (!selectedScenarios.contains(scenario.id)) continue;
       if (hostMissing) {
-        entries.add(ScenarioReport(
-          platform: plan.platform,
-          scenario: scenario.id,
-          status: ScenarioStatus.blocked,
-          commands: scenario.commands,
-          assertions: scenario.assertions,
-          evidence: scenario.evidence,
-          blockedReason: plan.blockedReasonForHost(hostPlatform),
-        ));
+        entries.add(
+          ScenarioReport(
+            platform: plan.platform,
+            scenario: scenario.id,
+            status: ScenarioStatus.blocked,
+            commands: scenario.commands,
+            assertions: scenario.assertions,
+            evidence: scenario.evidence,
+            blockedReason: plan.blockedReasonForHost(hostPlatform),
+          ),
+        );
         continue;
       }
 
@@ -128,15 +130,17 @@ Future<ComprehensiveReport> buildExecutionReport({
           command,
           platform: plan.platform,
         );
-        final CommandResult result = await commandRunner(CommandRequest(
-          platform: plan.platform,
-          scenario: scenario.id,
-          command: command,
-          invocation: invocation,
-          workingDirectory: workingDirectory,
-          outputDir: dir.path,
-          streamOutput: streamOutput,
-        ));
+        final CommandResult result = await commandRunner(
+          CommandRequest(
+            platform: plan.platform,
+            scenario: scenario.id,
+            command: command,
+            invocation: invocation,
+            workingDirectory: workingDirectory,
+            outputDir: dir.path,
+            streamOutput: streamOutput,
+          ),
+        );
         durationMs += result.duration.inMilliseconds;
 
         final String suffix = scenario.commands.length == 1 ? '' : '_$i';
@@ -154,7 +158,8 @@ Future<ComprehensiveReport> buildExecutionReport({
 
         if (!result.succeeded) {
           exitCode = result.exitCode;
-          failureReason = 'Command exited with $exitCode: '
+          failureReason =
+              'Command exited with $exitCode: '
               '${requestDisplay(plan.platform, scenario.id, command)}';
           break;
         }
@@ -170,17 +175,19 @@ Future<ComprehensiveReport> buildExecutionReport({
         }
       }
 
-      entries.add(ScenarioReport(
-        platform: plan.platform,
-        scenario: scenario.id,
-        status: exitCode == 0 ? ScenarioStatus.passed : ScenarioStatus.failed,
-        commands: scenario.commands,
-        assertions: scenario.assertions,
-        evidence: evidence,
-        failureReason: failureReason,
-        exitCode: exitCode,
-        durationMs: durationMs,
-      ));
+      entries.add(
+        ScenarioReport(
+          platform: plan.platform,
+          scenario: scenario.id,
+          status: exitCode == 0 ? ScenarioStatus.passed : ScenarioStatus.failed,
+          commands: scenario.commands,
+          assertions: scenario.assertions,
+          evidence: evidence,
+          failureReason: failureReason,
+          exitCode: exitCode,
+          durationMs: durationMs,
+        ),
+      );
     }
   }
 
@@ -247,15 +254,17 @@ Future<CommandResult> runProcessCommand(CommandRequest request) async {
   const Utf8Decoder decoder = Utf8Decoder(allowMalformed: true);
   final String tag = '[${request.platform.name}/${request.scenario.name}] ';
 
-  final Future<void> stdoutDone =
-      process.stdout.transform(decoder).forEach((String chunk) {
+  final Future<void> stdoutDone = process.stdout.transform(decoder).forEach((
+    String chunk,
+  ) {
     outBuffer.write(chunk);
     if (request.streamOutput) {
       stdout.write(chunk);
     }
   });
-  final Future<void> stderrDone =
-      process.stderr.transform(decoder).forEach((String chunk) {
+  final Future<void> stderrDone = process.stderr.transform(decoder).forEach((
+    String chunk,
+  ) {
     errBuffer.write(chunk);
     if (request.streamOutput) {
       stderr.write(chunk);
@@ -267,8 +276,10 @@ Future<CommandResult> runProcessCommand(CommandRequest request) async {
   stopwatch.stop();
 
   if (exitCode != 0) {
-    stderr.writeln('${tag}exited with $exitCode '
-        '(${request.invocation.displayCommand})');
+    stderr.writeln(
+      '${tag}exited with $exitCode '
+      '(${request.invocation.displayCommand})',
+    );
   }
 
   return CommandResult(
@@ -303,10 +314,10 @@ bool _hasDriverArg(List<String> args) {
 }
 
 String _desktopDeviceId(TestPlatformId platform) => switch (platform) {
-      TestPlatformId.windows => 'windows',
-      TestPlatformId.macos => 'macos',
-      TestPlatformId.android => 'android',
-    };
+  TestPlatformId.windows => 'windows',
+  TestPlatformId.macos => 'macos',
+  TestPlatformId.android => 'android',
+};
 
 List<String> _splitCommandLine(String command) {
   final List<String> tokens = <String>[];

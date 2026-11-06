@@ -5,22 +5,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/enhancement.dart';
+import 'package:fushi/src/creator/fields/image_field.dart';
+import 'package:fushi/src/creator/image_enhancement.dart';
+import 'package:fushi/src/creator/image_export_field.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
 import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
 
 /// An enhancement that can be used to select a picture with the
 class PickImageEnhancement extends ImageEnhancement {
   /// Initialise this enhancement with the hardset parameters.
   PickImageEnhancement()
-      : super(
-          uniqueKey: key,
-          label: 'Pick Image',
-          description: 'Pick a new image to use with an external picker.',
-          icon: Icons.upload_file_outlined,
-          field: ImageField.instance,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Pick Image',
+        description: 'Pick a new image to use with an external picker.',
+        icon: Icons.upload_file_outlined,
+        field: ImageField.instance,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].

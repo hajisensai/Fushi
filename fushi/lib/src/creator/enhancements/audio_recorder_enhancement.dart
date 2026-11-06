@@ -4,22 +4,26 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:fushi/creator.dart';
-import 'package:fushi/models.dart';
-import 'package:fushi/pages.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/creator/audio_enhancement.dart';
+import 'package:fushi/src/creator/audio_export_field.dart';
+import 'package:fushi/src/creator/enhancement.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/creator/creator_model.dart';
+import 'package:fushi/src/pages/implementations/audio_recorder_page.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// An enhancement that can be used to record audio.
 class AudioRecorderEnhancement extends AudioEnhancement {
   /// Initialise this enhancement with the hardset parameters.
   AudioRecorderEnhancement({required super.field})
-      : super(
-          uniqueKey: key,
-          label: 'Audio Recorder',
-          description:
-              'Record and use audio captured from the device microphone.',
-          icon: Icons.mic_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Audio Recorder',
+        description:
+            'Record and use audio captured from the device microphone.',
+        icon: Icons.mic_outlined,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].
@@ -53,8 +57,9 @@ class AudioRecorderEnhancement extends AudioEnhancement {
 
     String tempTimestamp = DateFormat('yyyyMMddTkkmmss').format(DateTime.now());
 
-    Directory tempTimestampDirectory =
-        Directory('$tempAudioPath/$tempTimestamp');
+    Directory tempTimestampDirectory = Directory(
+      '$tempAudioPath/$tempTimestamp',
+    );
     tempTimestampDirectory.createSync(recursive: true);
     String tempFilePath = '${tempTimestampDirectory.path}/audio.m4a';
     if (context.mounted) {
@@ -71,10 +76,12 @@ class AudioRecorderEnhancement extends AudioEnhancement {
             }
             audioRecorderDirectory.createSync(recursive: true);
 
-            String finalTimestamp =
-                DateFormat('yyyyMMddTkkmmss').format(DateTime.now());
-            Directory finalTimestampDirectory =
-                Directory('$audioRecorderPath/$finalTimestamp');
+            String finalTimestamp = DateFormat(
+              'yyyyMMddTkkmmss',
+            ).format(DateTime.now());
+            Directory finalTimestampDirectory = Directory(
+              '$audioRecorderPath/$finalTimestamp',
+            );
             String finalFilePath = '${finalTimestampDirectory.path}/audio.m4a';
 
             finalTimestampDirectory.createSync(recursive: true);

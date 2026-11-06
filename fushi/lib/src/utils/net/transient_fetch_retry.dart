@@ -49,7 +49,7 @@ Future<T> retryTransient<T>(
   bool Function()? stillWanted,
   RetryWait wait = retryWaitReal,
 }) async {
-  for (int attemptIndex = 0;; attemptIndex++) {
+  for (int attemptIndex = 0; ; attemptIndex++) {
     try {
       return await attempt();
     } on Object catch (error) {

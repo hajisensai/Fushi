@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -184,16 +184,28 @@ void main() {
       );
 
       final String region = e.value.substring(popScope, dropTarget);
+      final String intercepting =
+          RegExp(r'intercepting:([^,]*),').firstMatch(region)?.group(1) ?? '';
+      final String onIntercept =
+          RegExp(r'onIntercept:([^,]*),').firstMatch(region)?.group(1) ?? '';
       expect(
-        region,
-        contains('intercepting: _selectionMode'),
+        intercepting,
+        contains('_selectionMode'),
         reason: '${e.key} 多选态拦返回，普通态不变',
       );
       expect(
-        region,
-        contains('onIntercept: _exitSelectionMode'),
+        onIntercept,
+        contains('_exitSelectionMode'),
         reason: '${e.key} 返回被拦时应退出多选态',
       );
+      // 长按菜单「排序」进的拖拽排序态（9650ff43b48）同样拦返回：返回 = 结束排序。
+      if (intercepting.contains('_reordering')) {
+        expect(
+          onIntercept,
+          contains('_reordering ? _endReorder'),
+          reason: '${e.key} 排序态返回被拦时应结束排序',
+        );
+      }
     }
   });
 }

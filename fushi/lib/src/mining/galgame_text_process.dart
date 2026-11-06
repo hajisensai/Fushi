@@ -28,10 +28,12 @@ enum GalTextProcessKind {
   /// 过滤英文（半角）标点。
   filterAsciiPunctuation,
 
-  /// 只保留「」内的内容——用于丢掉旁白只留台词。
+  /// 去掉「」以外的文字（人名等），只留「…」本身；没有「」的行（旁白）原样保留。
+  /// 语义对齐 LunaTranslator 的「过滤「」以外的字符」。
   keepJapaneseQuotes,
 
-  /// 去除花括号注音标记：`{漢字/かんじ}` → `漢字`，不含 `/` 的 `{…}` 整体删除。
+  /// 花括号注音转振假名：`{漢字/かんじ}` / `{漢字:かんじ}` → `｜漢字《かんじ》`
+  /// （交给注音解析画在文字上方），`{tag}…{/tag}` 留中间文字，其余 `{…}` 整体删除。
   stripCurlyBraces,
 
   /// 全角/半角正规化：全角 ASCII → 半角、半角片假名 → 全角（含浊点合成）。
@@ -414,6 +416,122 @@ class GalTextProcessPipeline {
   int get hashCode => Object.hashAll(steps);
 }
 
+/// 没存过管线的游戏用的默认处理链：LunaTranslator 文本预处理页的步骤全集与顺序
+/// （「自定义 python 处理」不实现；「字符串替换」要先写规则，留给「添加步骤」），
+/// 默认只开两步：花括号注音转振假名、过滤换行符。
+///
+/// 只开这两步，是因为它们对任何游戏都不会吃掉正文：真台词里几乎不出现 `{}`，花括号
+/// 里的读音转成振假名画在文字上方而不是丢掉；日文跨行拼起来不需要空格。去重复类的自动分析会误压叠字台词（「ねえねえ」），还会打断
+/// 渐进重绘折叠，留给用户按游戏自己开。各步骤的参数（截取行数默认取末尾等）也以这里
+/// 为准——编辑页「添加步骤」从这里取初值。
+const GalTextProcessPipeline kGalDefaultTextProcessPipeline =
+    GalTextProcessPipeline(
+      steps: <GalTextProcessStep>[
+        GalTextProcessStep(
+          id: 'filterNonJapanese',
+          kind: GalTextProcessKind.filterNonJapanese,
+          enabled: false,
+        ),
+        GalTextProcessStep(
+          id: 'filterControlChars',
+          kind: GalTextProcessKind.filterControlChars,
+          enabled: false,
+        ),
+        GalTextProcessStep(
+          id: 'filterAsciiPunctuation',
+          kind: GalTextProcessKind.filterAsciiPunctuation,
+          enabled: false,
+        ),
+        GalTextProcessStep(
+          id: 'keepJapaneseQuotes',
+          kind: GalTextProcessKind.keepJapaneseQuotes,
+          enabled: false,
+        ),
+        GalTextProcessStep(
+          id: 'stripCurlyBraces',
+          kind: GalTextProcessKind.stripCurlyBraces,
+        ),
+        GalTextProcessStep(
+          id: 'normalizeWidth',
+          kind: GalTextProcessKind.normalizeWidth,
+          enabled: false,
+        ),
+        GalTextProcessStep(
+          id: 'takeLines',
+          kind: GalTextProcessKind.takeLines,
+          enabled: false,
+          fromEnd: true,
+        ),
+        GalTextProcessStep(
+          id: 'dedupeChars',
+          kind: GalTextProcessKind.dedupeChars,
+          enabled: false,
+        ),
+        GalTextProcessStep(
+          id: 'dedupeBlockFixed',
+          kind: GalTextProcessKind.dedupeBlockFixed,
+          enabled: false,
+        ),
+        GalTextProcessStep(
+          id: 'dedupeLinesAuto',
+          kind: GalTextProcessKind.dedupeLinesAuto,
+          enabled: false,
+        ),
+        GalTextProcessStep(
+          id: 'stripAngleBrackets',
+          kind: GalTextProcessKind.stripAngleBrackets,
+          enabled: false,
+        ),
+        GalTextProcessStep(
+          id: 'filterLineBreaks',
+          kind: GalTextProcessKind.filterLineBreaks,
+        ),
+        GalTextProcessStep(
+          id: 'filterDigits',
+          kind: GalTextProcessKind.filterDigits,
+          enabled: false,
+        ),
+        GalTextProcessStep(
+          id: 'filterLatinLetters',
+          kind: GalTextProcessKind.filterLatinLetters,
+          enabled: false,
+        ),
+        GalTextProcessStep(
+          id: 'dedupeDescending',
+          kind: GalTextProcessKind.dedupeDescending,
+          enabled: false,
+        ),
+        GalTextProcessStep(
+          id: 'dedupeAscending',
+          kind: GalTextProcessKind.dedupeAscending,
+          enabled: false,
+        ),
+      ],
+    );
+
+/// [kind] 新加一步时的初值（id 由调用方按管线分配）：默认管线里有这一种就沿用它的
+/// 参数，否则用构造器默认值。新加的步骤一律启用——用户点「添加」就是要它生效。
+GalTextProcessStep defaultGalTextProcessStep(
+  String id,
+  GalTextProcessKind kind,
+) {
+  for (final GalTextProcessStep step in kGalDefaultTextProcessPipeline.steps) {
+    if (step.kind == kind) {
+      return GalTextProcessStep(
+        id: id,
+        kind: kind,
+        repeatCount: step.repeatCount,
+        lineCount: step.lineCount,
+        fromEnd: step.fromEnd,
+        pattern: step.pattern,
+        replacement: step.replacement,
+        isRegex: step.isRegex,
+      );
+    }
+  }
+  return GalTextProcessStep(id: id, kind: kind);
+}
+
 /// 执行单步。所有处理项的唯一实现入口——热路径、预览、单测都只走这里。
 String applyGalTextProcessStep(String text, GalTextProcessStep step) {
   return switch (step.kind) {
@@ -443,8 +561,8 @@ String applyGalTextProcessStep(String text, GalTextProcessStep step) {
       RegExp(r'<[^<>]*>'),
       '',
     ),
-    GalTextProcessKind.filterLineBreaks => text.replaceAll(
-      RegExp(r'\r\n|\r|\n'),
+    GalTextProcessKind.filterLineBreaks => _filterLineBreaks(
+      text,
       step.replacement,
     ),
     GalTextProcessKind.filterDigits => text.replaceAll(RegExp(r'[0-9０-９]'), ''),
@@ -554,28 +672,48 @@ String _filterAsciiPunctuation(String text) {
   return out.toString();
 }
 
-/// 只留「」内的内容。
+/// `こなみ「ひとめぼれってやつだよね……」` → `「ひとめぼれってやつだよね……」`。
 ///
-/// 未出现成对「」时返回**空串**——这正是该步骤的用途（丢掉旁白只留台词），
-/// 调用方据此整行丢弃。可视化会把「这一步清空了整行」显著标出，用户能看见代价。
+/// 与 LunaTranslator `_remove_not_in_ja_bracket` 同语义：只削掉「」外的文字（人名牌、
+/// 拼在台词前后的残片），**没有「」的行原样返回**。早先这里返回空串，旁白被整行
+/// 丢弃——用户要的是「台词去掉人名」，不是「只看台词」。
 String _keepJapaneseQuotes(String text) {
-  final Iterable<RegExpMatch> matches = RegExp(r'「([^「」]*)」').allMatches(text);
+  final Iterable<RegExpMatch> matches = RegExp(r'「[^」]*」').allMatches(text);
   if (matches.isEmpty) {
-    return '';
+    return text;
   }
-  return matches.map((RegExpMatch m) => m.group(1) ?? '').join();
+  return matches.map((RegExpMatch m) => m.group(0)!).join();
 }
 
-/// `{漢字/かんじ}` → `漢字`；不含 `/` 的 `{…}` 整体删除（引擎控制标记）。
-String _stripCurlyBraces(String text) =>
-    text.replaceAllMapped(RegExp(r'\{([^{}]*)\}'), (Match m) {
-      final String body = m.group(1) ?? '';
-      final int slash = body.indexOf('/');
-      if (slash < 0) {
-        return '';
+/// 三段与 LunaTranslator `remove_braces` 同序：
+/// ① `{tag…}文字{/tag}` → `文字`；② `{漢字/かんじ}` / `{漢字:かんじ}` →
+/// `｜漢字《かんじ》`；③ 剩下的 `{…}`（引擎控制标记）整体删除。
+///
+/// 第②段与 Luna **刻意不同**：Luna 拿文本去翻译，读音只能扔；本 app 在文字上方画
+/// 振假名，而注音解析（`parseRubyMarkup`，跑在管线之后的 `appendLine` 里）不认花括号。
+/// 转成它认的青空文庫显式形（`｜` 定界、无歧义），读音就落到正文上方，正文里不留
+/// 任何标记。读音为空时只留基字。
+String _stripCurlyBraces(String text) => text
+    .replaceAllMapped(
+      RegExp(r'\{(\w+)([^{}]*)\}(.*?)\{/\1\}'),
+      (Match m) => m.group(3) ?? '',
+    )
+    .replaceAllMapped(RegExp(r'\{([^{}]*?)[:/]([^{}]*)\}'), (Match m) {
+      final String base = m.group(1) ?? '';
+      final String reading = (m.group(2) ?? '').trim();
+      if (base.isEmpty || reading.isEmpty) {
+        return base;
       }
-      return body.substring(0, slash);
-    });
+      return '｜$base《$reading》';
+    })
+    .replaceAll(RegExp(r'\{[^{}]*\}'), '');
+
+/// 空行先丢再拼（同 LunaTranslator `remove_line_breaks`）：`あ\n\nい` 用空格拼成
+/// `あ い` 而不是 `あ  い`。
+String _filterLineBreaks(String text, String replacement) => text
+    .split(RegExp(r'\r\n|\r|\n'))
+    .where((String line) => line.isNotEmpty)
+    .join(replacement);
 
 String _takeLines(String text, int count, bool fromEnd) {
   if (count <= 0) {
@@ -702,22 +840,35 @@ String normalizeGalTextWidth(String text) {
 // 去重复类
 // ---------------------------------------------------------------------------
 
-int _gcd(int a, int b) {
-  int x = a;
-  int y = b;
-  while (y != 0) {
-    final int t = x % y;
-    x = y;
-    y = t;
+/// 出现次数最多的游程长度；并列时取最小的那个，但 1 与别的长度并列时让给别的。
+int _dominantRunLength(List<int> runLengths) {
+  final Map<int, int> frequency = <int, int>{};
+  for (final int len in runLengths) {
+    frequency[len] = (frequency[len] ?? 0) + 1;
   }
-  return x;
+  final int top = frequency.values.fold<int>(
+    0,
+    (int a, int b) => a > b ? a : b,
+  );
+  final List<int> candidates =
+      frequency.entries
+          .where((MapEntry<int, int> e) => e.value == top)
+          .map((MapEntry<int, int> e) => e.key)
+          .toList()
+        ..sort();
+  if (candidates.length > 1 && candidates.first == 1) {
+    return candidates[1];
+  }
+  return candidates.first;
 }
 
 /// `AAAABBBBCCCC` → `ABC`。
 ///
-/// [repeatCount] 为 null 时自动分析：取所有游程长度的最大公约数 g 作为重复倍数，
-/// 每段长度除以 g。**g == 1 时原样返回**——说明各段长度不成统一倍数，不是「每字重复
-/// n 次绘制」的伪影，强压会把本来就叠字的台词（「ああ」「うふふ」）写坏。
+/// [repeatCount] 为 null 时自动分析（同 LunaTranslator `_2_f`）：取**出现最多的游程
+/// 长度**作为重复倍数 g（并列时取最小值，1 与别的并列时让给别的）。**g == 1 时原样
+/// 返回**——多数字只出现一次，不是「每字重复 n 次绘制」的伪影，强压会把本来就叠字的
+/// 台词（「ああ」「うふふ」）写坏。早先用全部游程的最大公约数，只要有一个字（常见是
+/// 句末标点）只画了一遍，gcd 就退成 1、整步失效。
 String dedupeGalTextChars(String text, int? repeatCount) {
   if (text.isEmpty) {
     return text;
@@ -742,7 +893,7 @@ String dedupeGalTextChars(String text, int? repeatCount) {
     }
     factor = repeatCount;
   } else {
-    factor = runLengths.fold<int>(0, (int acc, int len) => _gcd(acc, len));
+    factor = _dominantRunLength(runLengths);
     if (factor <= 1) {
       return text;
     }

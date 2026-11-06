@@ -34,8 +34,8 @@ class AiVideoIdentityCandidate {
     this.year,
     this.episodeCount,
     String? synopsis,
-  })  : titles = _normalizeTitles(titles),
-        synopsis = _clipSynopsis(synopsis);
+  }) : titles = _normalizeTitles(titles),
+       synopsis = _clipSynopsis(synopsis);
 
   /// 候选的稳定键：`<provider>:<externalId>`，与 resolver 合并候选时的去重键同形。
   final String key;
@@ -70,13 +70,13 @@ class AiVideoIdentityCandidate {
   }
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'key': key,
-        'titles': titles,
-        'mediaKind': mediaKind.name,
-        if (year != null) 'year': year,
-        if (episodeCount != null) 'episodeCount': episodeCount,
-        if (synopsis != null) 'synopsis': synopsis,
-      };
+    'key': key,
+    'titles': titles,
+    'mediaKind': mediaKind.name,
+    if (year != null) 'year': year,
+    if (episodeCount != null) 'episodeCount': episodeCount,
+    if (synopsis != null) 'synopsis': synopsis,
+  };
 }
 
 /// 一次身份消解提问：本地目录长什么样 + 有哪些候选。
@@ -89,11 +89,11 @@ class AiVideoIdentityQuery {
     this.year,
     List<String> sampleFileNames = const <String>[],
     this.locale = 'en',
-  })  : localTitles = List<String>.unmodifiable(localTitles),
-        candidates = List<AiVideoIdentityCandidate>.unmodifiable(candidates),
-        sampleFileNames = List<String>.unmodifiable(
-          sampleFileNames.take(kAiVideoIdentitySampleFileNameLimit),
-        );
+  }) : localTitles = List<String>.unmodifiable(localTitles),
+       candidates = List<AiVideoIdentityCandidate>.unmodifiable(candidates),
+       sampleFileNames = List<String>.unmodifiable(
+         sampleFileNames.take(kAiVideoIdentitySampleFileNameLimit),
+       );
 
   /// 文件名解析出的标题 + 父/祖父目录名（已过识别词清洗）。
   final List<String> localTitles;
@@ -116,9 +116,8 @@ class AiVideoIdentityQuery {
 
   /// 所有候选 key 的集合，解析回复时做白名单。
   Set<String> get candidateKeys => <String>{
-        for (final AiVideoIdentityCandidate candidate in candidates)
-          candidate.key,
-      };
+    for (final AiVideoIdentityCandidate candidate in candidates) candidate.key,
+  };
 
   /// 缓存键里的分隔符：控制字符不会出现在标题 / 候选 key 里，拼接不会撞。
   static final String _fieldSeparator = String.fromCharCode(1);
@@ -126,24 +125,24 @@ class AiVideoIdentityQuery {
 
   /// 「同一目录、同一批候选」的缓存键：协调器按它保证一批只问一次。
   String get cacheKey => <String>[
-        localTitles.join(_fieldSeparator),
-        '$season',
-        '$episodeCount',
-        '$year',
-        candidateKeys.join(_fieldSeparator),
-      ].join(_recordSeparator);
+    localTitles.join(_fieldSeparator),
+    '$season',
+    '$episodeCount',
+    '$year',
+    candidateKeys.join(_fieldSeparator),
+  ].join(_recordSeparator);
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'localTitles': localTitles,
-        if (season != null) 'season': season,
-        if (episodeCount != null) 'localEpisodeCount': episodeCount,
-        if (year != null) 'year': year,
-        if (sampleFileNames.isNotEmpty) 'sampleFileNames': sampleFileNames,
-        'candidates': <Map<String, Object?>>[
-          for (final AiVideoIdentityCandidate candidate in candidates)
-            candidate.toJson(),
-        ],
-      };
+    'localTitles': localTitles,
+    if (season != null) 'season': season,
+    if (episodeCount != null) 'localEpisodeCount': episodeCount,
+    if (year != null) 'year': year,
+    if (sampleFileNames.isNotEmpty) 'sampleFileNames': sampleFileNames,
+    'candidates': <Map<String, Object?>>[
+      for (final AiVideoIdentityCandidate candidate in candidates)
+        candidate.toJson(),
+    ],
+  };
 }
 
 /// AI 的判定。[key] 为 null 表示「没有唯一命中」。
@@ -170,9 +169,8 @@ class AiVideoIdentityDecision {
 
 /// 单次判定函数：给一个提问，回一个判定；null = 本次不问（未指派提供商等）。
 /// AI 下视频（`video_acquisition_service.dart`）按这个形状注入。
-typedef AiVideoIdentityDecider = Future<AiVideoIdentityDecision?> Function(
-  AiVideoIdentityQuery query,
-);
+typedef AiVideoIdentityDecider =
+    Future<AiVideoIdentityDecision?> Function(AiVideoIdentityQuery query);
 
 /// 刮削协调器的 AI 注入点。
 ///
@@ -257,8 +255,11 @@ String _encodeNote(
 
 /// 把被采用的 AI 判定编码成运行记录里的一条 message。
 String encodeVideoScrapeAiIdentityNote(AiVideoIdentityDecision decision) =>
-    _encodeNote(VideoScrapeAiNoteKind.matched,
-        confidence: decision.confidence, reason: decision.reason);
+    _encodeNote(
+      VideoScrapeAiNoteKind.matched,
+      confidence: decision.confidence,
+      reason: decision.reason,
+    );
 
 /// AI 给了判定但不采用（没有唯一命中或置信度不够）。
 String encodeVideoScrapeAiDeclinedNote(AiVideoIdentityDecision decision) =>
@@ -282,12 +283,15 @@ VideoScrapeAiIdentityNote? parseVideoScrapeAiIdentityNote(String message) {
   if (match == null) {
     return null;
   }
-  final VideoScrapeAiNoteKind kind =
-      VideoScrapeAiNoteKind.values.byName(match.group(1)!);
+  final VideoScrapeAiNoteKind kind = VideoScrapeAiNoteKind.values.byName(
+    match.group(1)!,
+  );
   final String? rawConfidence = match.group(2);
-  final double? confidence =
-      rawConfidence == null ? null : double.tryParse(rawConfidence);
-  final bool scored = kind == VideoScrapeAiNoteKind.matched ||
+  final double? confidence = rawConfidence == null
+      ? null
+      : double.tryParse(rawConfidence);
+  final bool scored =
+      kind == VideoScrapeAiNoteKind.matched ||
       kind == VideoScrapeAiNoteKind.declined;
   if (scored && confidence == null) {
     return null;

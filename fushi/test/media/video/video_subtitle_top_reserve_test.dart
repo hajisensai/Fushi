@@ -44,8 +44,7 @@ void main() {
     );
   });
 
-  testWidgets('② 副字幕（置顶）在控制条可见时顶部 padding 避让顶栏、隐藏时落回基线',
-      (tester) async {
+  testWidgets('② 副字幕（置顶）在控制条可见时顶部 padding 避让顶栏、隐藏时落回基线', (tester) async {
     final VideoPlayerController c = VideoPlayerController();
     addTearDown(c.dispose);
     c.setSecondaryCues(<AudioCue>[_cue('translation', 0, 6000)]);
@@ -56,22 +55,25 @@ void main() {
     const double kBase = 12; // 用户基线（bottomPadding）
     const double kTopReserve = 300; // 顶栏避让高（远大于基线，便于断言）
 
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: VideoSubtitleOverlay(
-          controller: c,
-          controlsVisible: controlsVisible,
-          controlsTopReserve: kTopReserve,
-          bottomPadding: kBase,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoSubtitleOverlay(
+            controller: c,
+            controlsVisible: controlsVisible,
+            controlsTopReserve: kTopReserve,
+            bottomPadding: kBase,
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     double topPaddingOfSubtitle() {
       // 副字幕层只有一个 _anchoredPadded → 一个 AnimatedPadding（controlsVisible 非 null）。
-      final Iterable<AnimatedPadding> pads =
-          tester.widgetList<AnimatedPadding>(find.byType(AnimatedPadding));
+      final Iterable<AnimatedPadding> pads = tester.widgetList<AnimatedPadding>(
+        find.byType(AnimatedPadding),
+      );
       // 取最大 top（顶部锚点该层的目标 padding）。
       return pads
           .map((AnimatedPadding p) => p.padding.resolve(TextDirection.ltr).top)
@@ -79,13 +81,15 @@ void main() {
     }
 
     // 控制条隐藏：顶部 padding = 用户基线。
-    expect(topPaddingOfSubtitle(), kBase,
-        reason: '控制条隐藏时顶部字幕落回用户基线（历史外观）');
+    expect(topPaddingOfSubtitle(), kBase, reason: '控制条隐藏时顶部字幕落回用户基线（历史外观）');
 
     // 控制条可见：顶部 padding 抬到 controlsTopReserve（副字幕下移到顶栏下方）。
     controlsVisible.value = true;
     await tester.pump();
-    expect(topPaddingOfSubtitle(), kTopReserve,
-        reason: 'BUG-1069：控制条可见时顶部字幕避让顶栏、不再盖住标题栏/菜单');
+    expect(
+      topPaddingOfSubtitle(),
+      kTopReserve,
+      reason: 'BUG-1069：控制条可见时顶部字幕避让顶栏、不再盖住标题栏/菜单',
+    );
   });
 }

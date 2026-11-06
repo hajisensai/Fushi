@@ -4,16 +4,15 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_anki_package.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_export.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
-import 'package:fushi_engine/srs/srs_asset_store_directory.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
@@ -21,6 +20,9 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
 
 import 'ankiconnect/ankiconnect_harness.dart';
+import 'support/srs_sync2_peers.dart';
+import 'support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000d5';
 
@@ -49,11 +51,12 @@ void main() {
   String fid(String key) => srsFushiCardFieldId(kProfile, key);
 
   Future<SrsDbStore> open(
-    FushiDatabase db,
+    SrsStorage storage,
     String device, {
     String? styleDir,
   }) => SrsDbStore.open(
-    db: db,
+    db: storage.db,
+    core: storage.core,
     profileUid: kProfile,
     deviceId: device,
     styles: styleDir == null
@@ -61,7 +64,7 @@ void main() {
         : SrsStyleStore(Directory(p.join(tmp.path, styleDir))),
   );
 
-  FushiDatabase memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
+  Future<SrsStorage> memDb() => openTestSrsStorage();
 
   Map<String, String> noteFields(String word, List<String> dicts) =>
       <String, String>{
@@ -84,16 +87,16 @@ void main() {
     return (r.question, r.answer);
   }
 
-  Future<int> editBytes(FushiDatabase db) async =>
-      (await db
+  Future<int> editBytes(SrsStorage db) async =>
+      (await db.db
               .customSelect(
                 'SELECT COALESCE(SUM(LENGTH(json)), 0) AS n FROM srs_field_edits',
               )
               .getSingle())
           .read<int>('n');
 
-  Future<int> rawStyleRows(FushiDatabase db) async =>
-      (await db
+  Future<int> rawStyleRows(SrsStorage db) async =>
+      (await db.db
               .customSelect(
                 "SELECT COUNT(*) AS n FROM srs_field_edits WHERE instr(json, '<style>') > 0",
               )
@@ -103,8 +106,8 @@ void main() {
   const List<String> dicts = <String>['JMdict', '大辞林', '明鏡'];
 
   test('落库去重：字段存引用行、样式落共享文件；对外读展开逐字节还原；渲染与去重前一致', () async {
-    final FushiDatabase plainDb = memDb();
-    final FushiDatabase dedupDb = memDb();
+    final SrsStorage plainDb = await memDb();
+    final SrsStorage dedupDb = await memDb();
     final SrsDbStore plain = await open(plainDb, 'plain');
     final SrsDbStore s = await open(dedupDb, 'dev', styleDir: 'media');
     final Map<String, String> original = noteFields('雪', dicts);
@@ -139,38 +142,40 @@ void main() {
   });
 
   test('同步：对端收到引用行 + 媒体同步拿到样式文件后完整还原；两端同值不冲突', () async {
-    final LocalDirectoryAssetStore backend = LocalDirectoryAssetStore(
-      Directory(p.join(tmp.path, 'remote'))..createSync(),
+    final SrsLocationStore loc = SrsAssetLocationStore(
+      store: LocalDirectoryAssetStore(
+        Directory(p.join(tmp.path, 'remote'))..createSync(),
+      ),
+      profileUid: kProfile,
     );
-    final FushiDatabase dbA = memDb();
-    final FushiDatabase dbB = memDb();
-    final FushiDatabase dbC = memDb();
+    final SrsStorage dbA = await memDb();
+    final SrsStorage dbB = await memDb();
+    final SrsStorage dbC = await memDb();
     final SrsDbStore a = await open(dbA, 'a', styleDir: 'a');
     final SrsDbStore b = await open(dbB, 'b', styleDir: 'b');
     // C 没装样式库（例如旧版本）：原样写内联样式。
     final SrsDbStore c = await open(dbC, 'c');
     final Map<String, String> original = noteFields('雨', dicts);
     final String id = await addNote(a, '雨', dicts);
-    Future<void> sync(SrsDbStore s) => SrsSyncEngine(
-      directory: SrsAssetStoreDirectory(store: backend, profileUid: kProfile),
-      replica: s,
-    ).syncOnce();
+    Future<void> sync(SrsDbStore s) => srsSyncOnce(s, loc);
     await sync(a);
     expect(
       (await srsSyncMedia(
-        backend: backend,
+        location: loc,
         store: a,
         mediaRoot: Directory(p.join(tmp.path, 'a')),
       )).uploaded,
       3,
     );
+    // 名字 → 内容的绑定是操作：A 再同步一次，B 才知道这些样式文件是哪份内容。
+    await sync(a);
     await sync(b);
     // 媒体还没到：渲染时去掉引用行（不请求相对地址），回读保留引用行。
     final (String q0, String a0) = await render(b, id);
     expect(a0, isNot(contains('_fushi_style_')));
     expect(
       (await srsSyncMedia(
-        backend: backend,
+        location: loc,
         store: b,
         mediaRoot: Directory(p.join(tmp.path, 'b')),
       )).downloaded,
@@ -206,15 +211,21 @@ void main() {
         isFalse,
       );
     }
-    // B 装了样式库：C 发来的内联原文落库时也换成了引用行。
+    // 同步 v2：操作不可变，C 发来的内联原文按原样落进 B 的投影（本机写的才在落库前换成引用行）；
+    // B 的存量去重随后就地把它换成引用表示，不追加操作。
+    expect(await rawStyleRows(dbB), 1);
+    final Object? opsB = (await b.sync2Status())['ops'];
+    expect(await b.compactStoredStyles(), 1);
     expect(await rawStyleRows(dbB), 0);
+    expect((await b.sync2Status())['ops'], opsB);
+    expect(await render(b, id), await render(a, id));
     await dbA.close();
     await dbB.close();
     await dbC.close();
   });
 
   test('导出 .apkg 自包含（内联样式、不带共享样式文件）；Fushi 回导重新去重', () async {
-    final FushiDatabase db = memDb();
+    final SrsStorage db = await memDb();
     final SrsDbStore s = await open(db, 'dev', styleDir: 'media');
     final Map<String, String> original = noteFields('風', dicts);
     final String id = await addNote(s, '風', dicts);
@@ -239,9 +250,12 @@ void main() {
     expect(flds, isNot(contains('_fushi_style_')));
     expect(flds, contains(original[fid('Glossary')]));
     expect(flds, contains(original[fid('MainDefinition')]));
-    expect(parsed.mediaBytes(srsStyleMediaName(_dictCss('JMdict'))), isNull);
+    expect(
+      await parsed.mediaBytes(srsStyleMediaName(_dictCss('JMdict'))),
+      isNull,
+    );
 
-    final FushiDatabase db2 = memDb();
+    final SrsStorage db2 = await memDb();
     final SrsDbStore other = await open(db2, 'other', styleDir: 'other');
     await importAnkiPackage(
       store: other,
@@ -260,7 +274,7 @@ void main() {
   });
 
   test('导入带引用行 + 共享样式文件的包：按包内文件展开后重新去重', () async {
-    final FushiDatabase db = memDb();
+    final SrsStorage db = await memDb();
     final SrsDbStore s = await open(db, 'dev', styleDir: 'media');
     final Map<String, String> original = noteFields('霧', dicts);
     final String id = await addNote(s, '霧', dicts);
@@ -296,7 +310,7 @@ void main() {
     out.addFile(ArchiveFile('media', m.length, m));
     final Uint8List legacy = Uint8List.fromList(ZipEncoder().encode(out)!);
 
-    final FushiDatabase db2 = memDb();
+    final SrsStorage db2 = await memDb();
     final SrsDbStore other = await open(db2, 'other', styleDir: 'other');
     await importAnkiPackage(
       store: other,
@@ -314,7 +328,7 @@ void main() {
   });
 
   test('存量迁移：就地改表示、不产生事件；分批可中断可续、幂等；渲染不变', () async {
-    final FushiDatabase db = memDb();
+    final SrsStorage db = await memDb();
     final SrsDbStore legacy = await open(db, 'dev');
     final List<String> ids = <String>[
       for (int i = 0; i < 7; i++) await addNote(legacy, '語$i', dicts),
@@ -326,9 +340,7 @@ void main() {
         <String, Map<String, String>>{
           for (final String id in ids) id: (await legacy.note(id))!.fields,
         };
-    final List<String> outbox = <String>[
-      for (final SrsEvent e in await legacy.unpublishedEvents()) e.id,
-    ];
+    final Object? ops = (await legacy.sync2Status())['ops'];
     final int bytesBefore = await editBytes(db);
     expect(await rawStyleRows(db), 14);
 
@@ -346,9 +358,7 @@ void main() {
     expect(await rawStyleRows(db), 0);
     expect(await resumed.compactStoredStyles(), 0);
 
-    expect(<String>[
-      for (final SrsEvent e in await resumed.unpublishedEvents()) e.id,
-    ], outbox);
+    expect((await resumed.sync2Status())['ops'], ops, reason: '就地改表示，不追加操作');
     expect(await editBytes(db), lessThan(bytesBefore ~/ 3));
     for (final String id in ids) {
       expect(await render(resumed, id), rendered[id]);

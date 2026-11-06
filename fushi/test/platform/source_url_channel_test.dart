@@ -40,10 +40,11 @@ void main() {
       });
       final List<String> first = <String>[];
       final List<String> second = <String>[];
-      final StreamSubscription<String> firstSubscription =
-          SourceUrlChannel.urls.listen(first.add);
-      final StreamSubscription<String> secondSubscription =
-          SourceUrlChannel.urls.listen(second.add);
+      final StreamSubscription<String> firstSubscription = SourceUrlChannel.urls
+          .listen(first.add);
+      final StreamSubscription<String> secondSubscription = SourceUrlChannel
+          .urls
+          .listen(second.add);
       await listened.future;
       for (final Object event in <Object>[
         'fushi://source?v=1&uid=cold',

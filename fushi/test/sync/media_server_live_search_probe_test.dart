@@ -53,7 +53,9 @@ void main() {
         all.addAll(page.items);
       }
       // ignore: avoid_print
-      print('[ms-search] "$_query": server rows=$serverRows → hits=${all.length}');
+      print(
+        '[ms-search] "$_query": server rows=$serverRows → hits=${all.length}',
+      );
       for (final MediaServerItem it in all) {
         // ignore: avoid_print
         print('   ${it.type.name}\t${it.name}\t(${it.originalTitle})');

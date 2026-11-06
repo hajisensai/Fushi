@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:html/dom.dart' as html_dom;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
@@ -74,17 +73,17 @@ window.__fushiImageBetween = function(prev, el) {
 // 只取第一张图作暂停锚点，本函数遍历区间全部图一次全揭，一次推进跨多图也全揭。
 //
 // TODO-1367 根因（用户报「遮罩没去掉」）：旧实现只 querySelectorAll('img.blurred') +
-// classList.remove，两处漏洞：① 区间内的插图常是 loading=lazy 的离屏懒图，cue 推进跨
-// 过它时它还没 load、还没被 _fushiClassifyBlockImg 加上 blurred 类 → 'img.blurred'
+// classList.remove，两处漏洞：① 区间内的插图可能还没 load，cue 推进跨
+// 过它时、还没被 _fushiClassifyBlockImg 加上 blurred 类 → 'img.blurred'
 // 选择器抓不到 → 随后图片暂停把视口滚到它、它才 load，此刻 _fushiBlurImage 见 key 不在
 // 已揭活集 → 补加 blurred → 用户看到「暂停在一张仍然模糊的图上」。② 就算当场揭掉也不
 // 持久：章节 (重)载 / 布局切换重跑 _sharedInitImages 会无条件重加 blurred（TODO-1289
-// 同款重遮罩）。修法与点击 / 手柄揭开对齐：对区间内每张（含未 load 懒图）登记稳定 reveal
+// 同款重遮罩）。修法与点击 / 手柄揭开对齐：对区间内每张（含未 load 的图）登记稳定 reveal
 // key 进「本会话已揭开」活集（__fushiMarkImageRevealed，令日后 load 时 _fushiBlurImage
 // 跳过遮罩）+ 有 blurred 类当场删除 + 回传 onImageRevealed 让 Dart 会话集持久（重载不再
 // 遮罩）。只揭音频已跨过（读到）的图；未读到的保持模糊。仅图片防剧透模糊开启时有效
 // （__fushiImageRevealKey 只有 blurImages 才注入）；关闭时无 blurred 类 / 无 key 机制，
-// 前置守卫直接 no-op，绝不动懒加载 / DOM（向后兼容零副作用）。返回处理的图片数量。
+// 前置守卫直接 no-op，绝不动 DOM（向后兼容零副作用）。返回处理的图片数量。
 window.__fushiRevealBlurredBetween = function(prev, el) {
   if (!prev || !el || prev === el || !document.contains(prev)) return 0;
   if (typeof window.__fushiImageRevealKey !== 'function') return 0;
@@ -200,16 +199,6 @@ window.__fushiImagePauseAdvance = function(el, reveal, pauseEnabled, fromChapter
     window.flutter_inappwebview.callHandler('onImageDetected');
   }
   if (reveal && pauseEnabled) {
-    // TODO-1367：命中的插图若是 loading=lazy 的离屏懒图，此刻尺寸为 0，scrollToRange
-    // 滚过去只落到空白流位置、图片暂停时用户看不到图。强制 eager + 触发解码，让 reveal
-    // 落到真实图盒、暂停真展示插图。svg 无 loading 语义、不动。
-    if (crossed.tagName === 'IMG' &&
-        crossed.getAttribute('loading') === 'lazy') {
-      crossed.setAttribute('loading', 'eager');
-      if (typeof crossed.decode === 'function') {
-        try { crossed.decode(); } catch (e) {}
-      }
-    }
     window.__fushiRevealTarget(crossed);
     return true;
   }
@@ -678,16 +667,29 @@ window.__fushiAnnotate = function(chapterHref) {
   ) async {
     if (query.isEmpty) return const <BookSearchResult>[];
 
-    final List<String> chapterHtmls = List<String>.generate(
-      book.chapters.length,
-      (i) => book.chapters[i].html,
-    );
-
+    // 每章搜索文本只算一次（后台 isolate、原生扫描），之后的查询直接复用。章节
+    // 正文可能被换掉（在线小说占位页 → 正文，`discardCachedHtml`），所以缓存按
+    // 每章 html 字符串的对象同一性校验，变了就整本重算。
+    final List<String> htmls = <String>[
+      for (final EpubChapter c in book.chapters) c.html,
+    ];
+    final _SearchTextCache? cached = _searchTextCache[book];
+    final List<String> texts;
+    if (cached != null && cached.matches(htmls)) {
+      texts = cached.texts;
+    } else {
+      texts = await compute(_buildSearchTexts, htmls);
+      _searchTextCache[book] = _SearchTextCache(htmls, texts);
+    }
     return compute(
       _searchIsolate,
-      _SearchParams(chapterHtmls: chapterHtmls, query: query),
+      _SearchParams(chapterTexts: texts, query: query),
     );
   }
+
+  /// [searchBook] 的每章搜索文本缓存（按书实例；书被回收即随之回收）。
+  static final Expando<_SearchTextCache> _searchTextCache =
+      Expando<_SearchTextCache>('audiobook-search-text');
 
   /// 通过 fushiReader.calculateProgress() 获取当前位置。
   static Future<ReaderViewportPos?> getViewportNormOffset(
@@ -753,10 +755,44 @@ window.__fushiAnnotate = function(chapterHref) {
 
 // ── 搜索 isolate ─────────────────────────────────────────────────────────────
 
+class _SearchTextCache {
+  _SearchTextCache(this.htmls, this.texts);
+
+  final List<String> htmls;
+  final List<String> texts;
+
+  bool matches(List<String> current) {
+    if (current.length != htmls.length) return false;
+    for (int i = 0; i < current.length; i++) {
+      if (!identical(current[i], htmls[i])) return false;
+    }
+    return true;
+  }
+}
+
 class _SearchParams {
-  const _SearchParams({required this.chapterHtmls, required this.query});
-  final List<String> chapterHtmls;
+  const _SearchParams({required this.chapterTexts, required this.query});
+  final List<String> chapterTexts;
   final String query;
+}
+
+/// 后台 isolate：每章的搜索坐标系文本（[EpubBook.chapterSearchText]）。
+List<String> _buildSearchTexts(List<String> chapterHtmls) {
+  final EpubBook book = EpubBook(
+    title: '',
+    chapters: <EpubChapter>[
+      for (int i = 0; i < chapterHtmls.length; i++)
+        EpubChapter(
+          id: '$i',
+          href: '$i',
+          mediaType: 'application/xhtml+xml',
+          html: chapterHtmls[i],
+        ),
+    ],
+  );
+  return <String>[
+    for (int i = 0; i < chapterHtmls.length; i++) book.chapterSearchText(i),
+  ];
 }
 
 List<BookSearchResult> _searchIsolate(_SearchParams params) {
@@ -768,8 +804,8 @@ List<BookSearchResult> _searchIsolate(_SearchParams params) {
 
   final List<BookSearchResult> results = <BookSearchResult>[];
 
-  for (int i = 0; i < params.chapterHtmls.length; i++) {
-    final String domText = _chapterDomText(params.chapterHtmls[i]);
+  for (int i = 0; i < params.chapterTexts.length; i++) {
+    final String domText = params.chapterTexts[i];
     final String haystack = domText.toLowerCase();
     int start = 0;
     while (true) {
@@ -806,35 +842,6 @@ List<BookSearchResult> _searchIsolate(_SearchParams params) {
   }
 
   return results;
-}
-
-/// Extract text matching JS TreeWalker output: concatenate text nodes,
-/// skip rt/rp content, NO whitespace folding. This produces the same
-/// coordinate space as JS scrollToSearchMatch().
-///
-/// BUG-2017：全书搜索必须与 [EpubBook.chapterPlainText] 共用同一个 DOM 解析入口
-/// [EpubBook.parseChapterHtml]。裸 HTML5 解析在 kobo 化 XHTML（head 里一行自闭合
-/// `<script src="…"/>`、全文无 `</script>`）上会把整个 `<body>` 吞成 script 文本
-/// → `doc.body` 为空 → 这类书全书搜索恒零结果。
-String _chapterDomText(String html) {
-  final html_dom.Document doc = EpubBook.parseChapterHtml(html);
-  final html_dom.Element? body = doc.body;
-  if (body == null) return '';
-  final StringBuffer buf = StringBuffer();
-  _collectTextNodes(body, buf);
-  return buf.toString();
-}
-
-void _collectTextNodes(html_dom.Node node, StringBuffer buf) {
-  if (node is html_dom.Element) {
-    final String tag = node.localName ?? '';
-    if (tag == 'rt' || tag == 'rp') return;
-    for (final html_dom.Node child in node.nodes) {
-      _collectTextNodes(child, buf);
-    }
-  } else if (node is html_dom.Text) {
-    buf.write(node.text);
-  }
 }
 
 // ── 数据类 ───────────────────────────────────────────────────────────────────

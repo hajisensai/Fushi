@@ -78,8 +78,9 @@ DictionaryPopupInputSpec dictionaryPopupInputSpecFor({
 
   final Set<String> reservedKeys = <String>{};
   final Set<int> reservedButtons = <int>{};
-  for (final ShortcutAction action
-      in ShortcutAction.actionsForScope(ShortcutScope.dictionaryPopup)) {
+  for (final ShortcutAction action in ShortcutAction.actionsForScope(
+    ShortcutScope.dictionaryPopup,
+  )) {
     final ShortcutBindingSet bindings = registry.bindingsFor(action);
     reservedKeys.addAll(bindings.keyboardBindings.map((b) => b.serialize()));
     reservedButtons.addAll(bindings.mouseBindings.map((b) => b.button));

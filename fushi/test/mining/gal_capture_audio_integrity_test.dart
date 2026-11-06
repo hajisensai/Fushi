@@ -5,6 +5,7 @@ import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 
@@ -28,15 +29,14 @@ void main() {
     required int orderIndex,
     double avgEnergy = 100,
     int clipCount = 3,
-  }) =>
-      GalAudioTrack(
-        sourcePtr: sourcePtr,
-        format: kPcm,
-        avgBytes: 4096,
-        avgEnergy: avgEnergy,
-        orderIndex: orderIndex,
-        clipCount: clipCount,
-      );
+  }) => GalAudioTrack(
+    sourcePtr: sourcePtr,
+    format: kPcm,
+    avgBytes: 4096,
+    avgEnergy: avgEnergy,
+    orderIndex: orderIndex,
+    clipCount: clipCount,
+  );
 
   Future<void> waitUntil(bool Function() done, {int ticks = 400}) async {
     for (int i = 0; i < ticks && !done(); i++) {
@@ -78,8 +78,9 @@ void main() {
       final Map<Object?, Object?> args =
           calls.single.arguments as Map<Object?, Object?>;
       expect(args['sourcePtr'], 0x11, reason: '兜底必须与 grabUtterance 用同一条选轨');
-      expect(args['exclude'], <int>[0x22],
-          reason: '兜底必须携带排除集，否则排除的 BGM 从这里绕回制卡');
+      expect(args['exclude'], <int>[
+        0x22,
+      ], reason: '兜底必须携带排除集，否则排除的 BGM 从这里绕回制卡');
     });
 
     test('显式 sourcePtr/exclude 覆盖缺省（逐行选轨语义）', () async {
@@ -161,13 +162,15 @@ void main() {
       required TexthookerService service,
       required Listenable endpoints,
       required _FakeEngine engine,
-    }) =>
-        GalHookSessionController(
-          textService: service,
-          isWindows: true,
-          targetWow64Probe: (_) async => false,
-          injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
-          engineSourceFactory: ({
+      GalTargetImagePathProbe? targetImagePathProbe,
+    }) => GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetImagePathProbe: targetImagePathProbe,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory:
+          ({
             required int targetPid,
             required String? launchExe,
             required String injectorPath,
@@ -178,14 +181,13 @@ void main() {
             GalJapaneseLocaleMode japaneseLocaleMode =
                 kGalDefaultJapaneseLocaleMode,
             String? contentLanguage,
-          }) =>
-              engine,
-          loopbackSourceFactory: () => _NullLoopback(),
-          textPollInterval: const Duration(milliseconds: 5),
-          trackRefreshInterval: const Duration(milliseconds: 20),
-          endpointListenable: endpoints,
-          endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
-        );
+          }) => engine,
+      loopbackSourceFactory: () => _NullLoopback(),
+      textPollInterval: const Duration(milliseconds: 5),
+      trackRefreshInterval: const Duration(milliseconds: 20),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
 
     test('跨会话排除记忆：按指纹恢复排除；用户恢复后记忆同步删除', () async {
       final TexthookerService service = TexthookerService.test();
@@ -219,30 +221,22 @@ void main() {
       await waitUntil(
         () => controller.state.excludedAudioSourcePtrs.isNotEmpty,
       );
-      expect(
-        controller.state.excludedAudioSourcePtrs,
-        <int>{0x200},
-        reason: '上次会话排除的轨按指纹（orderIndex+格式）套回新 source_ptr',
-      );
+      expect(controller.state.excludedAudioSourcePtrs, <int>{
+        0x200,
+      }, reason: '上次会话排除的轨按指纹（orderIndex+格式）套回新 source_ptr');
 
       // 用户说这条轨不是 BGM：恢复后记忆必须删掉，下次会话不得再自动排除。
       controller.setTrackExcluded(0x200, false);
       expect(controller.state.excludedAudioSourcePtrs, isEmpty);
-      expect(
-        store[r'd:\games\fake.exe']!.excludedTrackFingerprints,
-        isEmpty,
-      );
+      expect(store[r'd:\games\fake.exe']!.excludedTrackFingerprints, isEmpty);
 
       // 重新排除另一条轨：指纹写回。
       controller.setTrackExcluded(0x100, true);
-      expect(
-        store[r'd:\games\fake.exe']!.excludedTrackFingerprints,
-        <String>[
-          GalHookSessionController.trackFingerprint(
-            track(sourcePtr: 0x100, orderIndex: 0),
-          ),
-        ],
-      );
+      expect(store[r'd:\games\fake.exe']!.excludedTrackFingerprints, <String>[
+        GalHookSessionController.trackFingerprint(
+          track(sourcePtr: 0x100, orderIndex: 0),
+        ),
+      ]);
 
       // 会话语音轨也按同一份记忆持久化（用户明确要求「每个游戏默认持久化音轨」）。
       controller.selectVoiceTrack(0x100);
@@ -394,6 +388,123 @@ void main() {
       endpoints.dispose();
     });
 
+    // 反馈 BxbznkOEfM：附着（不是从库里启动）同一款游戏时，记忆此前按 launchExe 锚定，
+    // 附着会话 launchExe 为空 → 每次都要重新手选台词线程。附着按 PID 反查出的 exe
+    // 全路径就是同一个游戏身份，记忆必须同样生效（恢复 + 用户手选写回）。
+    test('文本线程记忆：附着会话按 PID 反查的 exe 恢复与写回', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final _FakeEngine engine = _FakeEngine(readyFormat: kPcm);
+      final GalHookSessionController controller = build(
+        service: service,
+        endpoints: endpoints,
+        engine: engine,
+        targetImagePathProbe: (int pid) =>
+            pid == 4242 ? r'D:\Games\Fake.exe' : null,
+      );
+      final Map<String, GalCaptureMemory> store = <String, GalCaptureMemory>{
+        r'd:\games\fake.exe': const GalCaptureMemory(
+          textThreadFingerprint: 'code:HB4@459F50',
+        ),
+      };
+      controller.attachCaptureMemory(
+        load: (String gameKey) => store[gameKey] ?? const GalCaptureMemory(),
+        save: (String gameKey, GalCaptureMemory memory) =>
+            store[gameKey] = memory,
+      );
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 21, pid: 4242, title: 'Fake game'),
+      );
+      expect(controller.currentLaunchExecutable, isNull);
+      for (int i = 1; i <= 3; i++) {
+        engine.enqueue(
+          GalHookedLine(
+            seq: i,
+            timestampMs: 1000 * i,
+            text: 'せりふ$i',
+            threadId: 7,
+            sourceKind: 2,
+            hookName: 'CodeX',
+            hookCode: 'HB4@459F50',
+          ),
+        );
+      }
+      await waitUntil(() => controller.selectedTextThreadKey != null);
+      expect(
+        controller.selectedNativeTextThreadId,
+        7,
+        reason: '附着会话也必须按记忆自动选回上次的台词线程',
+      );
+
+      // 用户手动取消选择：写回同一个游戏 key（证明附着会话的写入也落在 exe 身份上）。
+      await controller.selectTextThread(null, remember: true);
+      expect(store[r'd:\games\fake.exe']!.textThreadFingerprint, isNull);
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
+    // 反馈 bfaVEbHL_s：Unity 游戏各组件每帧重写 set_text，一次轮询带回几百条未选中
+    // 线程的行。线程目录观测曾逐行 notifyListeners，每行都让工作台 / 浮窗 / 控制器
+    // 同步重算一遍，UI isolate 被压满、整个 Fushi 点不动。整批只能通知常数次。
+    test('线程目录观测：一批几百条未选中线程的行只通知常数次', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final _FakeEngine engine = _FakeEngine(readyFormat: kPcm);
+      final GalHookSessionController controller = build(
+        service: service,
+        endpoints: endpoints,
+        engine: engine,
+      );
+      await controller.launchGame(r'D:\Games\flood.exe');
+      const int threads = 16;
+      const int perThread = 24;
+      int seq = 0;
+      for (int i = 0; i < perThread; i++) {
+        for (int t = 1; t <= threads; t++) {
+          seq++;
+          engine.enqueue(
+            GalHookedLine(
+              seq: seq,
+              timestampMs: seq,
+              text: 'UI テキスト $t',
+              threadId: t,
+              sourceKind: 2,
+              hookName: 'Unity UI.Text',
+              hookCode: 'UnityEngine.UI.Text.set_text',
+            ),
+          );
+        }
+      }
+      int notifications = 0;
+      void count() => notifications++;
+      service.addListener(count);
+      await waitUntil(
+        () =>
+            service.textThreads.fold<int>(
+              0,
+              (int sum, TexthookerTextThread t) => sum + t.observedLineCount,
+            ) ==
+            threads * perThread,
+      );
+      service.removeListener(count);
+      expect(
+        service.textThreads.fold<int>(
+          0,
+          (int sum, TexthookerTextThread t) => sum + t.observedLineCount,
+        ),
+        threads * perThread,
+      );
+      expect(
+        notifications,
+        lessThan(8),
+        reason: '${threads * perThread} 条观测行逐行通知会把 UI isolate 压满（bfaVEbHL_s）',
+      );
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
     // BUG-2706：同一 Fushi 进程里第二次启动同一款游戏。上一次会话的线程（thread id 含
     // 进程身份，已是死线程）还留在全量目录里、累计行数更多；恢复必须只在本会话目录里
     // 挑，否则选中死线程，本会话一行台词都来不了。
@@ -411,19 +522,19 @@ void main() {
         isWindows: true,
         targetWow64Probe: (_) async => false,
         injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
-        engineSourceFactory: ({
-          required int targetPid,
-          required String? launchExe,
-          required String injectorPath,
-          required bool lunaPcHooks,
-          int? lunaCodepage,
-          List<String> launchArguments = const <String>[],
-          String launchWorkdir = '',
-          GalJapaneseLocaleMode japaneseLocaleMode =
-              kGalDefaultJapaneseLocaleMode,
-          String? contentLanguage,
-        }) =>
-            engine,
+        engineSourceFactory:
+            ({
+              required int targetPid,
+              required String? launchExe,
+              required String injectorPath,
+              required bool lunaPcHooks,
+              int? lunaCodepage,
+              List<String> launchArguments = const <String>[],
+              String launchWorkdir = '',
+              GalJapaneseLocaleMode japaneseLocaleMode =
+                  kGalDefaultJapaneseLocaleMode,
+              String? contentLanguage,
+            }) => engine,
         loopbackSourceFactory: () => _NullLoopback(),
         textPollInterval: const Duration(milliseconds: 5),
         trackRefreshInterval: const Duration(milliseconds: 20),
@@ -441,17 +552,17 @@ void main() {
             store[gameKey] = memory,
       );
       GalHookedLine line(int seq, int threadId, String text) => GalHookedLine(
-            seq: seq,
-            timestampMs: 1000 * seq,
-            text: text,
-            threadId: threadId,
-            sourceKind: 2,
-            eventKind: text.isEmpty
-                ? GalTextEventKind.threadDiscovered
-                : GalTextEventKind.line,
-            hookName: 'EmbedKrkrZ',
-            hookCode: 'ENHVXN-8@2198',
-          );
+        seq: seq,
+        timestampMs: 1000 * seq,
+        text: text,
+        threadId: threadId,
+        sourceKind: 2,
+        eventKind: text.isEmpty
+            ? GalTextEventKind.threadDiscovered
+            : GalTextEventKind.line,
+        hookName: 'EmbedKrkrZ',
+        hookCode: 'ENHVXN-8@2198',
+      );
 
       // 第一次启动：线程 7 出了很多行，被按记忆恢复。
       await controller.launchGame(r'D:\Games\fake.exe');
@@ -470,13 +581,16 @@ void main() {
       for (int i = 11; i <= 13; i++) {
         engine.enqueue(line(i, 8, '二回目$i'));
       }
-      await waitUntil(() =>
-          controller.selectedNativeTextThreadId != null &&
-          controller.selectedNativeTextThreadId != 7);
+      await waitUntil(
+        () =>
+            controller.selectedNativeTextThreadId != null &&
+            controller.selectedNativeTextThreadId != 7,
+      );
       expect(controller.selectedNativeTextThreadId, 8);
       expect(
-        controller.textThreads
-            .map((TexthookerTextThread t) => t.nativeThreadId),
+        controller.textThreads.map(
+          (TexthookerTextThread t) => t.nativeThreadId,
+        ),
         isNot(contains(7)),
         reason: '会话级目录不得混入上一次启动的死线程',
       );
@@ -503,36 +617,44 @@ void main() {
       engine.tracks = <GalAudioTrack>[
         track(sourcePtr: 0x100, orderIndex: 0, avgEnergy: 88),
       ];
-      engine.enqueue(const GalHookedLine(
-        seq: 1,
-        timestampMs: 1000,
-        text: '一句目',
-        threadId: 5,
-        hookName: 'fake',
-      ));
+      engine.enqueue(
+        const GalHookedLine(
+          seq: 1,
+          timestampMs: 1000,
+          text: '一句目',
+          threadId: 5,
+          hookName: 'fake',
+        ),
+      );
       await waitUntil(() => service.entries.isNotEmpty);
       await waitUntil(
         () => service.entries.first.fallbackReason == 'utterance_not_found',
       );
       expect(
-          service.entries.first.audioStatus, TexthookerLineAudioStatus.missing);
+        service.entries.first.audioStatus,
+        TexthookerLineAudioStatus.missing,
+      );
       expect(service.entries.first.fallbackReason, 'utterance_not_found');
 
       // (b) 声音只在被排除的 BGM 轨上 -> 判无配音（灰标不吓人）。
       controller.setTrackExcluded(0x100, true);
-      engine.enqueue(const GalHookedLine(
-        seq: 2,
-        timestampMs: 2000,
-        text: '二句目',
-        threadId: 5,
-        hookName: 'fake',
-      ));
+      engine.enqueue(
+        const GalHookedLine(
+          seq: 2,
+          timestampMs: 2000,
+          text: '二句目',
+          threadId: 5,
+          hookName: 'fake',
+        ),
+      );
       await waitUntil(() => service.entries.length >= 2);
       await waitUntil(
         () => service.entries.last.fallbackReason == kGalLineNoVoiceReason,
       );
       expect(
-          service.entries.last.audioStatus, TexthookerLineAudioStatus.missing);
+        service.entries.last.audioStatus,
+        TexthookerLineAudioStatus.missing,
+      );
       expect(service.entries.last.fallbackReason, kGalLineNoVoiceReason);
 
       await controller.close();
@@ -544,10 +666,8 @@ void main() {
 /// 引擎 helper 替身：文本可排队、PCM 立即就绪、音轨快照可配置、整句抓取恒失败
 /// （逼出 miss 分类与兜底链）。
 class _FakeEngine extends EngineHookGalAudioSource {
-  _FakeEngine({
-    this.readyFormat,
-    this.enforceTextSelection = false,
-  }) : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
+  _FakeEngine({this.readyFormat, this.enforceTextSelection = false})
+    : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
 
   final PcmFormat? readyFormat;
   final bool enforceTextSelection;
@@ -624,8 +744,7 @@ class _FakeEngine extends EngineHookGalAudioSource {
     int? sourcePtr,
     List<int>? exclude,
     int? endTsMs,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<GalAudioSlice?> grabClipNear(
@@ -634,8 +753,7 @@ class _FakeEngine extends EngineHookGalAudioSource {
     int? sourcePtr,
     List<int>? exclude,
     int? endTsMs,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<List<GalAudioTrack>> listAudioTracks(int tsMs) async => tracks;
@@ -645,8 +763,7 @@ class _FakeEngine extends EngineHookGalAudioSource {
     int textTsMs, {
     int? textEventId,
     bool allowLatestSessionFallback = true,
-  }) =>
-      null;
+  }) => null;
 
   @override
   Future<Uint8List?> grabPairedVoiceBytes(
@@ -655,8 +772,7 @@ class _FakeEngine extends EngineHookGalAudioSource {
     int? textEventId,
     String? resourceId,
     bool allowLatestSessionFallback = true,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<void> stop() async {}

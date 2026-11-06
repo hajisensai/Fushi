@@ -10,15 +10,27 @@ import 'package:fushi/src/lookup/browser_default_detector.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/browser_extension_setup.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/settings/settings_kit.dart';
-import 'package:fushi/src/sync/fushi_api_server.dart'
-    show kFushiApiDefaultPort;
+import 'package:fushi/src/settings/settings_kit_core.dart';
+import 'package:fushi/src/sync/fushi_api_server.dart' show kFushiApiDefaultPort;
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeInset;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// 探测默认浏览器的注入点（测试里换成同步返回，避免真起 `reg` / `defaults`）。
@@ -41,10 +53,17 @@ class BrowserExtensionPage extends ConsumerStatefulWidget {
   const BrowserExtensionPage({
     super.key,
     this.detectBrowser = detectDefaultBrowserKind,
+    this.hostedByHub = false,
   });
 
   /// 默认浏览器探测（只用来预选第 1 步的浏览器 chip）。
   final BrowserKindDetector detectBrowser;
+
+  /// 作「浏览器」模块的子页时（[WebHubPage]）为 true：「标题胶囊 + 子页页签」
+  /// 那一行由宿主统一画、叠在本页上，本页不画页头，正文让出宿主工具栏的高度
+  /// （[FushiFloatingChromeInset]）。false = 独立页（从「设置 › 查词」/ 引导
+  /// push 进来），页头画本页标题与返回键。
+  final bool hostedByHub;
 
   @override
   ConsumerState<BrowserExtensionPage> createState() =>
@@ -81,10 +100,12 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     _statusTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (mounted) setState(() {});
     });
-    unawaited(widget.detectBrowser().then((BrowserKind? kind) {
-      if (!mounted || kind == null) return;
-      setState(() => _detectedBrowser = kind);
-    }));
+    unawaited(
+      widget.detectBrowser().then((BrowserKind? kind) {
+        if (!mounted || kind == null) return;
+        setState(() => _detectedBrowser = kind);
+      }),
+    );
   }
 
   @override
@@ -95,8 +116,9 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(FushiSnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   /// 时间窗见 [kBrowserExtensionSeenWindow]（与控制通道同一判据）。
@@ -164,16 +186,17 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
           // 判据是**本页自己所在的 PageRoute 是不是首个**，不是 `Navigator.canPop()`：
           // 本页的下拉框会临时 push 一个 PopupRoute，canPop() 会因此变成 true，
           // 于是每开一次下拉都闪出一个返回箭头。
-          FushiPageHeader(
-            title: t.nav_browser_extension,
-            leading: ModalRoute.of(context)?.isFirst == false
-                ? FushiIconButton(
-                    icon: Icons.arrow_back,
-                    tooltip: t.back,
-                    onTap: () => Navigator.of(context).maybePop(),
-                  )
-                : null,
-          ),
+          if (!widget.hostedByHub)
+            FushiPageHeader(
+              title: t.nav_browser_extension,
+              leading: ModalRoute.of(context)?.isFirst == false
+                  ? FushiIconButton(
+                      icon: Icons.arrow_back,
+                      tooltip: t.back,
+                      onTap: () => Navigator.of(context).maybePop(),
+                    )
+                  : null,
+            ),
           Expanded(child: _buildBody(theme, appModel)),
         ],
       ),
@@ -186,6 +209,8 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     final String? build = appModel.browserExtensionBuild;
     final bool guideExpanded = _guideExpanded ?? !connected;
     final double page = FushiDesignTokens.of(context).spacing.page;
+    // 宿主 hub 的工具栏行叠在本页上：正文顶部让出它（独立页时为 0）。
+    final double top = FushiFloatingChromeInset.of(context) + 8;
 
     final Widget hero = ValueListenableBuilder<String?>(
       valueListenable: appModel.browserExtensionReportedBuild,
@@ -221,7 +246,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
           final bool wide = constraints.maxWidth >= 920;
           if (!wide) {
             return ListView(
-              padding: EdgeInsets.fromLTRB(page, 8, page, 32),
+              padding: EdgeInsets.fromLTRB(page, top, page, 32),
               children: <Widget>[
                 entrance(0, hero),
                 const SizedBox(height: gap),
@@ -234,7 +259,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
             );
           }
           return SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(page, 8, page, 32),
+            padding: EdgeInsets.fromLTRB(page, top, page, 32),
             child: Align(
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
@@ -342,8 +367,9 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
                 const SizedBox(height: 2),
                 Text(
                   t.browser_extension_guide_reinstall_hint,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -387,7 +413,9 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
               child: DecoratedBox(
                 decoration: ShapeDecoration(
                   color: scheme.secondary,
-                  shape: const FushiCookieBorder(lobes: 9),
+                  shape: MaterialShapeBorder(
+                    shape: MaterialShapes.cookie9Sided,
+                  ),
                 ),
                 child: Center(
                   child: FushiIcon(
@@ -618,8 +646,9 @@ class _StatusHero extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           hint,
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: fg.withValues(alpha: 0.85)),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: fg.withValues(alpha: 0.85),
+          ),
         ),
         const SizedBox(height: 12),
         Wrap(
@@ -630,21 +659,23 @@ class _StatusHero extends StatelessWidget {
               icon: serverOn ? FushiIcons.cloud : FushiIcons.cloudOff,
               label: serverOn
                   ? '${t.browser_extension_server_on} · '
-                      '${t.browser_extension_port_label(port: port)}'
+                        '${t.browser_extension_port_label(port: port)}'
                   : t.browser_extension_server_off,
               color: fg,
             ),
             if (reportedBuild != null)
               _HeroPill(
                 icon: FushiIcons.browserExtension,
-                label: '${t.browser_extension_version_browser} · '
+                label:
+                    '${t.browser_extension_version_browser} · '
                     '$reportedBuild',
                 color: fg,
               ),
             if (detectedBrowser != null)
               _HeroPill(
                 icon: FushiIcons.globe,
-                label: '${t.browser_extension_browser_default} · '
+                label:
+                    '${t.browser_extension_browser_default} · '
                     '${browserDisplayName(detectedBrowser!)}',
                 color: fg,
               ),
@@ -781,8 +812,8 @@ class _HeroStatusIcon extends StatelessWidget {
         connected
             ? FushiStatusTone.success
             : tone == FushiCardTone.error
-                ? FushiStatusTone.error
-                : FushiStatusTone.warning,
+            ? FushiStatusTone.error
+            : FushiStatusTone.warning,
       );
       // Apple：SF Symbols 式的符号替换（交叉淡入），没有 M3E 弹簧过冲脉冲，
       // 也不画 cookie 形状底。
@@ -825,16 +856,16 @@ class _HeroStatusIcon extends StatelessWidget {
                 curve: FushiMotion.standard,
                 decoration: ShapeDecoration(
                   color: fill,
-                  shape: FushiCookieBorder(lobes: connected ? 9 : 4),
+                  shape: MaterialShapeBorder(
+                    shape: connected
+                        ? MaterialShapes.cookie9Sided
+                        : MaterialShapes.cookie4Sided,
+                  ),
                 ),
                 child: Center(
                   child: Transform.rotate(
                     angle: -angle,
-                    child: FushiIcon(
-                      icon,
-                      size: size * 0.5,
-                      color: onFill,
-                    ),
+                    child: FushiIcon(icon, size: size * 0.5, color: onFill),
                   ),
                 ),
               ),
@@ -876,10 +907,9 @@ class _HeroPill extends StatelessWidget {
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context)
-                  .textTheme
-                  .labelLarge
-                  ?.copyWith(color: color),
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge?.copyWith(color: color),
             ),
           ),
         ],
@@ -989,8 +1019,9 @@ class _BrowserExtensionInstallStepsState
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(FushiSnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   Future<void> _copy(String value) async {
@@ -1017,21 +1048,21 @@ class _BrowserExtensionInstallStepsState
     final bool autoReady = widget.serverEnabled && widget.hasToken;
     final List<(String, Widget Function(BuildContext))> steps =
         <(String, Widget Function(BuildContext))>[
-      (
-        t.browser_extension_step_open_page.replaceFirst(
-          RegExp(r'[:：]\s*$'),
-          '',
-        ),
-        _browserStep,
-      ),
-      (t.browser_extension_step_dev_mode, (BuildContext _) => _nextOnly(1)),
-      (
-        t.browser_extension_step_load_unpacked,
-        (BuildContext _) => _nextOnly(2)
-      ),
-      (t.browser_extension_step_pick_folder, _folderStep),
-      (t.browser_extension_step_verify, _verifyStep),
-    ];
+          (
+            t.browser_extension_step_open_page.replaceFirst(
+              RegExp(r'[:：]\s*$'),
+              '',
+            ),
+            _browserStep,
+          ),
+          (t.browser_extension_step_dev_mode, (BuildContext _) => _nextOnly(1)),
+          (
+            t.browser_extension_step_load_unpacked,
+            (BuildContext _) => _nextOnly(2),
+          ),
+          (t.browser_extension_step_pick_folder, _folderStep),
+          (t.browser_extension_step_verify, _verifyStep),
+        ];
 
     return FushiCard(
       padding: const EdgeInsets.fromLTRB(20, 18, 16, 12),
@@ -1053,8 +1084,9 @@ class _BrowserExtensionInstallStepsState
                   children: <Widget>[
                     Text(
                       t.browser_extension_guide_title,
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     Text(
                       t.browser_extension_guide_progress(
@@ -1100,12 +1132,7 @@ class _BrowserExtensionInstallStepsState
             const SizedBox(height: 8),
           ],
           for (int i = 0; i < steps.length; i++)
-            _stepTile(
-              context,
-              i,
-              title: steps[i].$1,
-              body: steps[i].$2,
-            ),
+            _stepTile(context, i, title: steps[i].$1, body: steps[i].$2),
         ],
       ),
     );
@@ -1131,8 +1158,8 @@ class _BrowserExtensionInstallStepsState
         color: last
             ? Colors.transparent
             : done
-                ? scheme.primary
-                : scheme.outlineVariant,
+            ? scheme.primary
+            : scheme.outlineVariant,
         width: 2,
       ),
     );
@@ -1144,8 +1171,9 @@ class _BrowserExtensionInstallStepsState
           child: FushiPressScale(
             child: InkWell(
               key: ValueKey<String>('browser-extension-step-$index'),
-              borderRadius:
-                  BorderRadius.circular(SettingsKitRadii.small(style)),
+              borderRadius: BorderRadius.circular(
+                SettingsKitRadii.small(style),
+              ),
               onTap: () => _toggle(index),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
@@ -1160,13 +1188,15 @@ class _BrowserExtensionInstallStepsState
                     Expanded(
                       child: Text(
                         title,
-                        style: (active
-                                ? theme.textTheme.titleSmall
-                                    ?.copyWith(fontWeight: FontWeight.w700)
-                                : theme.textTheme.bodyLarge)
-                            ?.copyWith(
-                          color: done ? scheme.onSurfaceVariant : null,
-                        ),
+                        style:
+                            (active
+                                    ? theme.textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                      )
+                                    : theme.textTheme.bodyLarge)
+                                ?.copyWith(
+                                  color: done ? scheme.onSurfaceVariant : null,
+                                ),
                       ),
                     ),
                     AnimatedRotation(
@@ -1282,8 +1312,9 @@ class _BrowserExtensionInstallStepsState
           child: SelectableText(
             url,
             maxLines: 1,
-            style:
-                theme.textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontFamily: 'monospace',
+            ),
           ),
         ),
         FushiIconButton(
@@ -1304,7 +1335,12 @@ class _BrowserExtensionInstallStepsState
             borderRadius: BorderRadius.circular(SettingsKitRadii.small(style)),
           ),
           child: inline
-              ? Row(children: <Widget>[Expanded(child: field), open])
+              ? Row(
+                  children: <Widget>[
+                    Expanded(child: field),
+                    open,
+                  ],
+                )
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[field, open],
@@ -1332,8 +1368,9 @@ class _BrowserExtensionInstallStepsState
         children: <Widget>[
           Text(
             t.browser_extension_folder_not_ready,
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 12),
           FushiFilledButton.icon(
@@ -1344,8 +1381,9 @@ class _BrowserExtensionInstallStepsState
           const SizedBox(height: 8),
           Text(
             t.browser_extension_prepare_hint,
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       );
@@ -1371,8 +1409,9 @@ class _BrowserExtensionInstallStepsState
               Expanded(
                 child: SelectableText(
                   path,
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(fontFamily: 'monospace'),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontFamily: 'monospace',
+                  ),
                 ),
               ),
               FushiIconButton(
@@ -1417,8 +1456,9 @@ class _BrowserExtensionInstallStepsState
       children: <Widget>[
         Text(
           t.browser_extension_step_done_auto,
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 12),
         FushiFilledButton.tonalIcon(
@@ -1435,9 +1475,11 @@ class _BrowserExtensionInstallStepsState
                   child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
               : const FushiIcon(FushiIcons.wifi, size: 18),
-          label: Text(widget.verifying
-              ? t.browser_extension_verify_checking
-              : t.browser_extension_verify_button),
+          label: Text(
+            widget.verifying
+                ? t.browser_extension_verify_checking
+                : t.browser_extension_verify_button,
+          ),
         ),
       ],
     );
@@ -1469,16 +1511,19 @@ class _StepIndicator extends StatelessWidget {
       builder: (BuildContext context, double t, Widget? _) {
         final double c = t.clamp(0.0, 1.0);
         final double scale = 1 + math.max(0.0, t - 1) * 0.8;
-        final double radius =
-            active && expressive ? lerpDouble(extent / 2, 10, c)! : extent / 2;
-        final Color fill =
-            Color.lerp(
-              FushiDesignTokens.of(context).surfaces.overlay,
-              scheme.primary,
-              c,
-            )!;
-        final Color fg =
-            Color.lerp(scheme.onSurfaceVariant, scheme.onPrimary, c)!;
+        final double radius = active && expressive
+            ? lerpDouble(extent / 2, 10, c)!
+            : extent / 2;
+        final Color fill = Color.lerp(
+          FushiDesignTokens.of(context).surfaces.overlay,
+          scheme.primary,
+          c,
+        )!;
+        final Color fg = Color.lerp(
+          scheme.onSurfaceVariant,
+          scheme.onPrimary,
+          c,
+        )!;
         return Transform.scale(
           scale: scale,
           child: SizedBox.square(

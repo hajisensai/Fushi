@@ -119,7 +119,7 @@ List<String> synchronizedClipCodecArgs(MiningClipFormat format) => <String>[
 /// 各格式的视频编码参数。
 ///
 /// VP9 用 `-deadline realtime -cpu-used 8 -row-mt 1`：制卡是用户在等的前台操作，速度
-/// 优先。捆绑 ffmpeg-min 实测（1080p30 实拍源、3.6 秒窗 → 960 宽 24fps，含两路解码）：
+/// 优先。（旧）捆绑 ffmpeg-min 实测（1080p30 实拍源、3.6 秒窗 → 960 宽 24fps，含两路解码）：
 ///
 /// | 参数 | 耗时 | 体积 |
 /// |---|---|---|

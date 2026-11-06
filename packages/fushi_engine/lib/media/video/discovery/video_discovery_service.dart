@@ -34,23 +34,22 @@ class VideoDiscoveryService {
     Set<String>? searchProviderIds,
     String? metadataLocale,
     AnimeTmdbCrossReference? crossReference,
-  })  : _metadataLocale = metadataLocale,
-        _crossReference = crossReference,
-        _providers = List<VideoDiscoveryProvider>.unmodifiable(
-          providers.toList()
-            ..sort(
-              (VideoDiscoveryProvider a, VideoDiscoveryProvider b) =>
-                  a.priority.compareTo(b.priority),
-            ),
-        ),
-        _metadataProviders = <VideoMetadataProviderKind, VideoMetadataProvider>{
-          for (final VideoMetadataProvider provider in metadataProviders)
-            provider.providerKind: provider,
-        },
-        _closesProviders = closesProviders,
-        _searchProviderIds = searchProviderIds == null
-            ? null
-            : Set<String>.unmodifiable(searchProviderIds);
+  }) : _metadataLocale = metadataLocale,
+       _crossReference = crossReference,
+       _providers = List<VideoDiscoveryProvider>.unmodifiable(
+         providers.toList()..sort(
+           (VideoDiscoveryProvider a, VideoDiscoveryProvider b) =>
+               a.priority.compareTo(b.priority),
+         ),
+       ),
+       _metadataProviders = <VideoMetadataProviderKind, VideoMetadataProvider>{
+         for (final VideoMetadataProvider provider in metadataProviders)
+           provider.providerKind: provider,
+       },
+       _closesProviders = closesProviders,
+       _searchProviderIds = searchProviderIds == null
+           ? null
+           : Set<String>.unmodifiable(searchProviderIds);
 
   /// [discoveryAvailable] 是宿主的商店合规门（app 传
   /// `StoreRestrictedCapability.externalDiscovery.isAvailable`，无头服务端恒 true）：
@@ -59,8 +58,13 @@ class VideoDiscoveryService {
     VideoSourceScrapeGlobalConfig config, {
     required bool discoveryAvailable,
   }) {
+    // 发现页**不**跟随作品原语言（BUG-4056 只改刮削）：显式给 locale = 资料语言
+    // 兜底（app 里就是界面语言），TMDB 详情 / MAL 搜索标题都按它取，和详情合并用
+    // 的 [metadataLocale] 同源。留空 locale 会让 registry 跟随
+    // `config.followsWorkOriginalLanguage`——中文界面看日本动画拿到日文简介、
+    // 英文界面的 MAL 结果标题变成日文原名。
     final VideoMetadataProviderRegistry catalog =
-        VideoMetadataProviderRegistry.production(config);
+        VideoMetadataProviderRegistry.production(config, locale: config.locale);
     final AniListVideoMetadataProvider anilist = AniListVideoMetadataProvider();
     // iOS 上不登记任何**发现** provider（app 的 `StoreRestrictedCapability.externalDiscovery`）；
     // metadata provider 照常保留——那条链路服务的是本地媒体库的刮削（MAL / TMDB /
@@ -94,10 +98,7 @@ class VideoDiscoveryService {
               ),
         if (discoveryAvailable) AniListVideoDiscoveryProvider(),
       ],
-      metadataProviders: <VideoMetadataProvider>[
-        ...catalog.providers,
-        anilist,
-      ],
+      metadataProviders: <VideoMetadataProvider>[...catalog.providers, anilist],
       // AniList 也是搜索源：它只属于发现域（不进刮削 registry），但单靠 MAL 撑
       // 番剧搜索时，Jikan 一挂（它常年间歇性 504）且 TMDB 没配 key，搜索就一条
       // 都出不来；AniList 的 `SEARCH_MATCH` 还认中文/日文别名，结果带 MAL id，
@@ -127,7 +128,7 @@ class VideoDiscoveryService {
 
   final List<VideoDiscoveryProvider> _providers;
   final Map<VideoMetadataProviderKind, VideoMetadataProvider>
-      _metadataProviders;
+  _metadataProviders;
   final bool _closesProviders;
   final Set<String>? _searchProviderIds;
 
@@ -155,6 +156,13 @@ class VideoDiscoveryService {
       .map((VideoDiscoveryProvider provider) => provider.id)
       .toList(growable: false);
 
+  /// 详情 / 身份解析用的 metadata provider（与搜索源共用同一实例）；守卫钉住
+  /// 发现页不跟随作品原语言（BUG-4056 只改刮削）。
+  @visibleForTesting
+  VideoMetadataProvider? metadataProviderForTesting(
+    VideoMetadataProviderKind kind,
+  ) => _metadataProviders[kind];
+
   /// provider id -> 用户可见来源名。找不到时退回 id（服务自身产生的 failure，例如
   /// `discovery` 这个合成 id，本来就没有对应的来源）。
   String displayNameFor(String providerId) {
@@ -166,13 +174,13 @@ class VideoDiscoveryService {
 
   @visibleForTesting
   Set<String> get searchProviderIdsForTesting => <String>{
-        for (final VideoDiscoveryProvider provider in _providers)
-          if (_supportsRequest(
-            provider,
-            const VideoDiscoveryRequest(query: 'catalog'),
-          ))
-            provider.id,
-      };
+    for (final VideoDiscoveryProvider provider in _providers)
+      if (_supportsRequest(
+        provider,
+        const VideoDiscoveryRequest(query: 'catalog'),
+      ))
+        provider.id,
+  };
 
   /// 聚合所有支持该请求的来源。[onProgress]：每有一个来源返回（且还有来源没
   /// 返回）就以「已返回来源」的合并结果回调一次，页面据此先显示快的来源，不必等
@@ -253,9 +261,9 @@ class VideoDiscoveryService {
 
     final List<VideoDiscoveryItem> interleaved =
         _roundRobin(<List<VideoDiscoveryItem>>[
-      for (final _ProviderResponse response in responses)
-        _prepareProviderItems(response, request),
-    ]);
+          for (final _ProviderResponse response in responses)
+            _prepareProviderItems(response, request),
+        ]);
     final List<VideoDiscoveryItem> mergedWindow = mergeVideoDiscoveryItems(
       interleaved,
       request: request,
@@ -305,9 +313,9 @@ class VideoDiscoveryService {
     final List<VideoMetadataWork> works = <VideoMetadataWork>[
       for (final VideoMetadataWork? work
           in await Future.wait(<Future<VideoMetadataWork?>>[
-        for (final VideoMetadataLookup lookup in await _detailLookups(item))
-          _fetchDetails(lookup),
-      ]))
+            for (final VideoMetadataLookup lookup in await _detailLookups(item))
+              _fetchDetails(lookup),
+          ]))
         if (work != null) work,
     ];
     if (works.isEmpty) return item.metadataWork;
@@ -380,8 +388,10 @@ class VideoDiscoveryService {
         truncated: tmdb.truncated,
       );
     }
-    final VideoFranchise? merged =
-        mergeVideoFranchises(<VideoFranchise?>[tmdb, mal]);
+    final VideoFranchise? merged = mergeVideoFranchises(<VideoFranchise?>[
+      tmdb,
+      mal,
+    ]);
     if (merged == null || !failed) return merged;
     return VideoFranchise(
       name: merged.name,
@@ -467,10 +477,7 @@ class VideoDiscoveryService {
     try {
       entries = await crossReference.entriesForMal(malId);
     } on Object catch (error) {
-      engineLog.logDiagnostic(
-        'VideoDiscoveryService.identityMap',
-        '$error',
-      );
+      engineLog.logDiagnostic('VideoDiscoveryService.identityMap', '$error');
       return null;
     }
     // 缺索引就后台拉、有索引就按周检查；两种都不等。
@@ -541,8 +548,9 @@ class VideoDiscoveryService {
     VideoDiscoveryProvider provider,
     VideoDiscoveryRequest request,
   ) async {
-    final int lastProviderPage =
-        provider.capabilities.supportsPaging ? request.page : 1;
+    final int lastProviderPage = provider.capabilities.supportsPaging
+        ? request.page
+        : 1;
     final List<VideoDiscoveryPage> pages = <VideoDiscoveryPage>[];
     final List<ExternalProviderFailure> failures = <ExternalProviderFailure>[];
     bool succeeded = false;
@@ -636,7 +644,7 @@ List<VideoDiscoveryItem> mergeVideoDiscoveryItems(
 
 class _MergedDiscoveryItem {
   _MergedDiscoveryItem(VideoDiscoveryItem item)
-      : _items = <VideoDiscoveryItem>[item];
+    : _items = <VideoDiscoveryItem>[item];
 
   final List<VideoDiscoveryItem> _items;
 
@@ -759,7 +767,8 @@ class _MergedDiscoveryItem {
           ? VideoDiscoveryCategory.anime
           : primary.reference.discoveryCategory,
       title: primary.reference.title,
-      originalTitle: primary.reference.originalTitle ??
+      originalTitle:
+          primary.reference.originalTitle ??
           _firstNonEmpty(
             ranked.map(
               (VideoDiscoveryItem item) => item.reference.originalTitle,
@@ -768,7 +777,8 @@ class _MergedDiscoveryItem {
       aliases: aliases
           .where((String value) => value != primary.reference.title)
           .toList(growable: false),
-      year: primary.reference.year ??
+      year:
+          primary.reference.year ??
           _firstValue(
             ranked.map((VideoDiscoveryItem item) => item.reference.year),
           ),
@@ -787,17 +797,21 @@ class _MergedDiscoveryItem {
     return VideoDiscoveryItem(
       reference: reference,
       overview: _pickOverview(ranked, preferredLanguage),
-      posterUrl: primary.posterUrl ??
+      posterUrl:
+          primary.posterUrl ??
           _firstNonEmpty(
             ranked.map((VideoDiscoveryItem item) => item.posterUrl),
           ),
-      backdropUrl: primary.backdropUrl ??
+      backdropUrl:
+          primary.backdropUrl ??
           _firstNonEmpty(
             ranked.map((VideoDiscoveryItem item) => item.backdropUrl),
           ),
-      score: primary.score ??
+      score:
+          primary.score ??
           _firstValue(ranked.map((VideoDiscoveryItem item) => item.score)),
-      releaseDate: primary.releaseDate ??
+      releaseDate:
+          primary.releaseDate ??
           _firstNonEmpty(
             ranked.map((VideoDiscoveryItem item) => item.releaseDate),
           ),
@@ -886,11 +900,12 @@ bool _hasNamespaceConflict(
   return false;
 }
 
-Set<String> _normalizedTitles(VideoDiscoveryItem item) => <String>{
-      item.reference.title,
-      if (item.reference.originalTitle case final String original) original,
-      ...?item.metadataWork?.aliases,
-    }
+Set<String> _normalizedTitles(VideoDiscoveryItem item) =>
+    <String>{
+          item.reference.title,
+          if (item.reference.originalTitle case final String original) original,
+          ...?item.metadataWork?.aliases,
+        }
         .map(TitleNormalizer.normalize)
         .where((String value) => value.isNotEmpty)
         .toSet();
@@ -967,7 +982,8 @@ bool _matchesSearchFilters(
 }
 
 String _canonicalDiscoveryGenre(String? genre) {
-  final String normalized = genre
+  final String normalized =
+      genre
           ?.trim()
           .toLowerCase()
           .replaceAll(RegExp(r'[_-]+'), ' ')
@@ -989,8 +1005,7 @@ String _canonicalRegion(String? region) {
     'united states of america' ||
     'usa' ||
     '美国' ||
-    '美國' =>
-      'US',
+    '美國' => 'US',
     'united kingdom' || 'great britain' || '英国' || '英國' => 'GB',
     'france' || '法国' || '法國' => 'FR',
     _ => normalized.toUpperCase(),

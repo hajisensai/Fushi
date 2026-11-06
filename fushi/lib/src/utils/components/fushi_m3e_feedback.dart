@@ -155,7 +155,12 @@ class _FushiSkeletonShimmerState extends State<FushiSkeletonShimmer>
     return _FushiSkeletonShimmerScope(
       child: AnimatedBuilder(
         animation: _controller,
-        child: widget.child,
+        // 骨架里的滚动视图永远不是页面的主滚动视图：骨架与真内容常在
+        // [AnimatedSwitcher] 里交叉淡入，两边都去认分区下发的
+        // [PrimaryScrollController] 时，过渡那几帧同一个 controller 挂着两个
+        // 位置，桌面滚动条报「attached to more than one ScrollPosition」
+        // （游戏串流页实测，2026-10-30）。这里断开继承，骨架只拿自己的位置。
+        child: PrimaryScrollController.none(child: widget.child),
         builder: (BuildContext context, Widget? child) {
           final double t = _controller.value;
           // 停下（或从未开始）时不挂 ShaderMask，静止骨架零额外合成成本。

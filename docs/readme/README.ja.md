@@ -14,6 +14,8 @@
 
 [![最新版をダウンロード](https://img.shields.io/badge/%E2%AC%87%20%E6%9C%80%E6%96%B0%E7%89%88%E3%82%92%E3%83%80%E3%82%A6%E3%83%B3%E3%83%AD%E3%83%BC%E3%83%89-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Discord に参加](https://img.shields.io/badge/Discord%20%E3%81%AB%E5%8F%82%E5%8A%A0-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor%20on%20GitHub-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/hajisensai)
+[![Support on Ko-fi](https://img.shields.io/badge/Support%20on%20Ko-fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/hajisensai)
 
 </div>
 
@@ -136,9 +138,9 @@ Fushi は、インポートした書籍、辞書、フォント、オーディ�
 
 - **同期**：Google Drive / OneDrive / Dropbox は OAuth サインインを使用します。WebDAV / FTP / SFTP / Fushi Server は、ユーザーが指定したサーバーアドレスと認証情報を使用します。Fushi Interconnect はペアリング済みのデバイス同士を直接接続し（LAN、IPv6、オーバーレイネットワーク、公開アドレス）、直接経路がない場合はエンドツーエンドの iroh P2P トンネルにフォールバックします。ペアリングリンクは常に確認を求めます。
 - **Anki**：カード作成は AnkiDroid、または設定した AnkiConnect アドレスとのみ通信します。
-- **利用統計**：デスクトップ版と Android 版は 1 日 1 回、ランダムなインストール ID、アプリのバージョン、プラットフォーム、更新チャンネルを fushi.moe に送信し、アクティブユーザー数を集計します。アカウント、ライブラリ、読書データは含まれず、IP アドレスも保存されません。更新設定の「利用統計を送信」でオフにできます。iOS 版は送信しません。
+- **利用統計**：デスクトップ版と Android 版は 1 日 1 回、端末から導出したインストール ID（再インストールしても不変）、アプリのバージョン、プラットフォーム、更新チャンネルを fushi.moe に送信し、アクティブユーザー数を集計します。アカウント、ライブラリ、読書データは含まれず、IP アドレスも保存されません。更新設定の「利用統計を送信」でオフにできます。iOS 版は送信しません。
 - **ユーザーが操作したときのみ**：ログのアップロード（初回の同意確認あり）、アプリ内フィードバック、リーダーボード（既定はオフ。オプトイン後にのみライブラリのタイトルと進捗をアップロード）。
-- **マンガ OCR**：既定のエンジンは Google Lens で、ページ画像を Google に送信します。画像を端末内に留めたい場合は、設定で端末内モデルまたはシステム OCR に切り替えてください。
+- **マンガ OCR**：既定のエンジンは端末内の CTC モデルで、ページ画像は端末内に留まります（初回は設定でモデルをダウンロード）。Google Lens は手動で選んだ場合のみ使われ、ページ画像を Google に送信します。
 - **AI 機能**：設定して機能に割り当てた LLM プロバイダーにのみリクエストを送ります。プロバイダーが割り当てられていなければ何も送信しません。
 - **サードパーティサービス**：メタデータ、字幕、オンラインソースの機能は、使用したときにのみ、[コンテンツソースと連携](#コンテンツソースと連携)に挙げたサービスへ接続します。
 

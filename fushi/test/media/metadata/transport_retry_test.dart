@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/metadata/bangumi_api_client.dart';
 import 'package:fushi/src/media/metadata/transport_retry.dart';
 import 'package:http/http.dart' as http;
@@ -15,14 +15,11 @@ void main() {
   group('runWithTransportRetry', () {
     test('首次失败、第二次成功 → 返回成功值，共发 2 次', () async {
       int calls = 0;
-      final String result = await runWithTransportRetry<String>(
-        () async {
-          calls++;
-          if (calls == 1) throw const SocketExceptionStub();
-          return 'ok';
-        },
-        sleep: noSleep,
-      );
+      final String result = await runWithTransportRetry<String>(() async {
+        calls++;
+        if (calls == 1) throw const SocketExceptionStub();
+        return 'ok';
+      }, sleep: noSleep);
 
       expect(result, 'ok');
       expect(calls, 2);
@@ -53,13 +50,10 @@ void main() {
 
     test('首次即成功 → 不重试，只发 1 次', () async {
       int calls = 0;
-      await runWithTransportRetry<String>(
-        () async {
-          calls++;
-          return 'ok';
-        },
-        sleep: noSleep,
-      );
+      await runWithTransportRetry<String>(() async {
+        calls++;
+        return 'ok';
+      }, sleep: noSleep);
       expect(calls, 1);
     });
 
@@ -254,11 +248,7 @@ void main() {
       ).fetchSubject('8');
 
       expect(calls, 3);
-      expect(
-        gateCalls,
-        3,
-        reason: '重试若绕过限流器，链路抖动会变成对公益 API 的连打',
-      );
+      expect(gateCalls, 3, reason: '重试若绕过限流器，链路抖动会变成对公益 API 的连打');
     });
   });
 }

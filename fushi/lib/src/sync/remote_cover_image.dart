@@ -78,8 +78,9 @@ class RemoteCoverImage extends ImageProvider<RemoteCoverImage> {
     if (ck != null) {
       await RemoteCoverCache.write(ck, bytes);
     }
-    final ui.ImmutableBuffer buffer =
-        await ui.ImmutableBuffer.fromUint8List(bytes);
+    final ui.ImmutableBuffer buffer = await ui.ImmutableBuffer.fromUint8List(
+      bytes,
+    );
     return decode(buffer);
   }
 

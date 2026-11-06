@@ -10,9 +10,29 @@ import 'package:fushi/src/pages/implementations/stat_day_reset_hour_dialog.dart'
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 
@@ -24,7 +44,8 @@ import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 /// [cover]：媒体封面（书架 / 视频库 / 游戏库同一条封面解析链
 /// `resolveMediaCoverImage`）。三个域的「按媒体」列表都给每行一个固定 2:3
 /// 封面槽（Niratan「Book Ranking」同款）：有封面画封面，没有 / 加载失败画
-/// [icon] 占位，整列左缘对齐。
+/// [icon] 占位，整列左缘对齐。[source] 决定封面槽的材质（[statCoverMaterialOf]），
+/// 三个域页面都显式传。
 Widget buildStatMediaRow(
   BuildContext context, {
   required IconData icon,
@@ -32,6 +53,7 @@ Widget buildStatMediaRow(
   required String meta,
   required String trailing,
   String? collectionName,
+  StatSourceKind source = StatSourceKind.book,
   String? meta2,
   ImageProvider? cover,
   VoidCallback? onTap,
@@ -47,7 +69,7 @@ Widget buildStatMediaRow(
     onLongPress: onDelete,
     child: Row(
       children: <Widget>[
-        buildStatCoverSlot(context, icon: icon, cover: cover),
+        buildStatCoverSlot(context, icon: icon, source: source, cover: cover),
         SizedBox(width: tokens.spacing.gap),
         Expanded(
           child: Column(
@@ -130,16 +152,29 @@ const double kStatMediaCoverWidth = 40;
 /// 会话行封面槽宽（会话行是 compact 列表项，槽比「按媒体」行窄一号）。
 const double kStatSessionCoverWidth = 32;
 
+/// 统计来源对应的库页条目材质：书 / 漫画光面书皮、视频光面海报、游戏透明
+/// 卡盒、音乐方形唱片（与各库页同一套，用户 2026-10-26）。
+ShelfCoverMaterial statCoverMaterialOf(StatSourceKind source) =>
+    switch (source) {
+      StatSourceKind.book => ShelfCoverMaterial.glossyBook,
+      StatSourceKind.video => ShelfCoverMaterial.glossyPoster,
+      StatSourceKind.game => ShelfCoverMaterial.gameCase,
+      StatSourceKind.music => ShelfCoverMaterial.glossyAlbum,
+    };
+
 /// 统计行的定宽 2:3 封面槽：有封面画封面，没有 / 加载失败画 [icon] 占位，
 /// 所以同一列里有封面、没封面的行左缘对齐。「按媒体」行与会话行共用这一个，
 /// 别在两处各搭一遍（占位 / 失败回退 / 圆角三处口径要一致）。
+///
+/// 封面框走 [source] 域材质的简化档（[ShelfCoverDensity.compact]：圆角 +
+/// 内描边 + 轻光泽，无投影 / 扫光）；墨水屏退回描边框。
 Widget buildStatCoverSlot(
   BuildContext context, {
   required IconData icon,
+  required StatSourceKind source,
   ImageProvider? cover,
   double width = kStatMediaCoverWidth,
 }) {
-  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   // 无封面占位：中性填充 + 次级前景色的单色图标（与排行榜封面占位同口径），
   // 不用主色图标——一列里一半行亮着强调色会抢掉右侧主值的视线。
   final Widget placeholder = Center(
@@ -149,20 +184,23 @@ Widget buildStatCoverSlot(
       color: fushiNeutralSecondaryForeground(context),
     ),
   );
-  return ClipRRect(
-    borderRadius: tokens.radii.chipRadius,
-    child: Container(
-      width: width,
-      height: width * 1.4,
-      color: fushiNeutralBlockColor(context),
-      child: cover == null
-          ? placeholder
-          : Image(
-              image: cover,
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-              errorBuilder: (_, __, ___) => placeholder,
-            ),
+  return SizedBox(
+    width: width,
+    height: width * 1.4,
+    child: ShelfCoverMaterialScope(
+      material: statCoverMaterialOf(source),
+      child: ShelfCoverFrame(
+        density: ShelfCoverDensity.compact,
+        backgroundColor: fushiNeutralBlockColor(context),
+        child: cover == null
+            ? placeholder
+            : Image(
+                image: cover,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+                errorBuilder: (_, __, ___) => placeholder,
+              ),
+      ),
     ),
   );
 }
@@ -322,7 +360,8 @@ class StatSectionCard extends StatelessWidget {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final String? sub = subtitle;
     return Padding(
-      padding: margin ??
+      padding:
+          margin ??
           EdgeInsets.fromLTRB(
             tokens.spacing.card,
             tokens.spacing.card,
@@ -644,8 +683,10 @@ List<StatIdentityGroup<T>> groupStatRowsByIdentity<T>(
       continue;
     }
     byIdentity
-        .putIfAbsent(identity,
-            () => StatIdentityGroup<T>(identity: identity, title: titleOf(row)))
+        .putIfAbsent(
+          identity,
+          () => StatIdentityGroup<T>(identity: identity, title: titleOf(row)),
+        )
         .rows
         .add(row);
   }
@@ -681,15 +722,14 @@ List<StatIdentityGroup<T>> groupStatRowsByIdentity<T>(
     } else {
       orphanGroups
           .putIfAbsent(
-              title, () => StatIdentityGroup<T>(identity: null, title: title))
+            title,
+            () => StatIdentityGroup<T>(identity: null, title: title),
+          )
           .rows
           .add(row);
     }
   }
-  return <StatIdentityGroup<T>>[
-    ...byIdentity.values,
-    ...orphanGroups.values,
-  ];
+  return <StatIdentityGroup<T>>[...byIdentity.values, ...orphanGroups.values];
 }
 
 /// 统一事实面行的按身份分组（BUG-2216）：阅读统计页「按书」与时段明细 sheet 都走
@@ -715,7 +755,8 @@ List<StatIdentityGroup<StatFact>> groupStatFactsByIdentity(
 /// 聚合。视频域标题可重复，必须走 [groupStatRowsByIdentity]，且观看/计数/收藏三个
 /// 行宇宙必须**同一次**分组（见 video_stat_aggregates 的 computeVideoStats）。
 Map<String, ({int lookups, int mines})> aggregateStatCountersByTitle(
-    List<LookupMiningCounterRow> rows) {
+  List<LookupMiningCounterRow> rows,
+) {
   final Map<String, ({int lookups, int mines})> out =
       <String, ({int lookups, int mines})>{};
   for (final LookupMiningCounterRow r in rows) {
@@ -757,8 +798,11 @@ String? statCollectionName(
   required Map<int, String> collectionNamesById,
 }) {
   return (
-    collectionName:
-        statCollectionName(entryKey, primaryByEntry, collectionNamesById),
+    collectionName: statCollectionName(
+      entryKey,
+      primaryByEntry,
+      collectionNamesById,
+    ),
     title: rawTitle,
   );
 }
@@ -772,18 +816,18 @@ String collectionQualifiedTitle({
   required Map<String, int> primaryByEntry,
   required Map<int, String> collectionNamesById,
 }) {
-  final String? name =
-      statCollectionName(entryKey, primaryByEntry, collectionNamesById);
+  final String? name = statCollectionName(
+    entryKey,
+    primaryByEntry,
+    collectionNamesById,
+  );
   if (name == null || name.isEmpty) return rawTitle;
   return '$name - $rawTitle';
 }
 
 /// 统计页 per-book / per-video tile 的「所属合集」小标签（文件夹图标 + 合集名），
 /// 阅读统计与视频统计共用（同一视觉）。合集名为 null 时调用方不渲染本 widget。
-Widget buildStatCollectionLabel(
-  BuildContext context,
-  String collectionName,
-) {
+Widget buildStatCollectionLabel(BuildContext context, String collectionName) {
   final ColorScheme colorScheme = Theme.of(context).colorScheme;
   return Row(
     mainAxisSize: MainAxisSize.min,
@@ -799,9 +843,9 @@ Widget buildStatCollectionLabel(
           collectionName,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
         ),
       ),
     ],
@@ -918,8 +962,7 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
     text: _initialText(widget.initialDailyChars),
   );
 
-  static String _initialText(int chars) =>
-      chars <= 0 ? '' : chars.toString();
+  static String _initialText(int chars) => chars <= 0 ? '' : chars.toString();
 
   static int _parse(TextEditingController c) {
     final int value = int.tryParse(c.text.trim()) ?? 0;
@@ -973,18 +1016,18 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
       theme.colorScheme.surface,
     );
     InputDecoration filled({required String label}) => InputDecoration(
-          labelText: label,
-          suffixText: t.stat_goal_unit_chars,
-          suffixStyle: theme.textTheme.titleMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          filled: true,
-          fillColor: fill,
-          border: OutlineInputBorder(
-            borderRadius: tokens.radii.cardRadius,
-            borderSide: BorderSide.none,
-          ),
-        );
+      labelText: label,
+      suffixText: t.stat_goal_unit_chars,
+      suffixStyle: theme.textTheme.titleMedium?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      filled: true,
+      fillColor: fill,
+      border: OutlineInputBorder(
+        borderRadius: tokens.radii.cardRadius,
+        borderSide: BorderSide.none,
+      ),
+    );
     return FushiAlertDialog(
       icon: const FushiDialogHeroIcon(
         icon: FushiIcons.flag,
@@ -994,59 +1037,56 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
       // 内容可能变高：横屏/小窗下用滚动兜底，不再顶到溢出。
       content: SizedBox(
         width: 400,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              FushiTextFieldControl(
-                key: const ValueKey<String>('stat-goal-daily-field'),
-                controller: _daily,
-                keyboardType: TextInputType.number,
-                style: (theme.textTheme.headlineSmall ??
-                        tokens.type.listTitle)
-                    .copyWith(fontWeight: FontWeight.w700),
-                decoration: filled(label: t.stat_goal_daily),
-              ),
-              if (average > 0) ...<Widget>[
-                SizedBox(height: tokens.spacing.gap),
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: FushiActionChipControl(
-                    key: const ValueKey<String>('stat-goal-average-chip'),
-                    avatar: const FushiIcon(FushiIcons.trendingUp, size: 18),
-                    label: Text(t.stat_goal_recent_average(n: average)),
-                    onPressed: () => _applyPreset(average),
-                  ),
-                ),
-              ],
-              SizedBox(height: tokens.spacing.card),
-              Text(
-                t.stat_goal_presets,
-                style: context.fushiType.titleSmallEmphasized,
-              ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            FushiTextFieldControl(
+              key: const ValueKey<String>('stat-goal-daily-field'),
+              controller: _daily,
+              keyboardType: TextInputType.number,
+              style: (theme.textTheme.headlineSmall ?? tokens.type.listTitle)
+                  .copyWith(fontWeight: FontWeight.w700),
+              decoration: filled(label: t.stat_goal_daily),
+            ),
+            if (average > 0) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
-              FushiConnectedButtonGroup<int>(
-                key: const ValueKey<String>('stat-goal-presets'),
-                showSelectedIcon: false,
-                emptySelectionAllowed: true,
-                expandedInsets: EdgeInsets.zero,
-                segments: <ButtonSegment<int>>[
-                  for (final int preset in StatGoalEditDialog.presets)
-                    ButtonSegment<int>(
-                      value: preset,
-                      label: Text(formatStatCharsAxis(preset)),
-                    ),
-                ],
-                selected: StatGoalEditDialog.presets.contains(daily)
-                    ? <int>{daily}
-                    : const <int>{},
-                onSelectionChanged: (Set<int> picked) {
-                  if (picked.isNotEmpty) _applyPreset(picked.first);
-                },
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: FushiActionChipControl(
+                  key: const ValueKey<String>('stat-goal-average-chip'),
+                  avatar: const FushiIcon(FushiIcons.trendingUp, size: 18),
+                  label: Text(t.stat_goal_recent_average(n: average)),
+                  onPressed: () => _applyPreset(average),
+                ),
               ),
             ],
-          ),
+            SizedBox(height: tokens.spacing.card),
+            Text(
+              t.stat_goal_presets,
+              style: context.fushiType.titleSmallEmphasized,
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            FushiConnectedButtonGroup<int>(
+              key: const ValueKey<String>('stat-goal-presets'),
+              showSelectedIcon: false,
+              emptySelectionAllowed: true,
+              expandedInsets: EdgeInsets.zero,
+              segments: <ButtonSegment<int>>[
+                for (final int preset in StatGoalEditDialog.presets)
+                  ButtonSegment<int>(
+                    value: preset,
+                    label: Text(formatStatCharsAxis(preset)),
+                  ),
+              ],
+              selected: StatGoalEditDialog.presets.contains(daily)
+                  ? <int>{daily}
+                  : const <int>{},
+              onSelectionChanged: (Set<int> picked) {
+                if (picked.isNotEmpty) _applyPreset(picked.first);
+              },
+            ),
+          ],
         ),
       ),
       actions: <Widget>[
@@ -1056,9 +1096,9 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
         ),
         FushiFilledButton(
           key: const ValueKey<String>('stat-goal-save'),
-          onPressed: () => Navigator.of(context).pop<StatGoalEditResult>(
-            (daily: _parse(_daily)),
-          ),
+          onPressed: () => Navigator.of(
+            context,
+          ).pop<StatGoalEditResult>((daily: _parse(_daily))),
           child: Text(t.dialog_save),
         ),
       ],
@@ -1078,8 +1118,7 @@ String formatStatChars(int chars) =>
 /// 阅读速度外显：四舍五入到整数字/小时，套 i18n 单位文案（`N 字/时`）。时段卡、
 /// 会话行、按书行都经这一处（用户 2026-09-12：统计中心顶部方框与每个会话都要
 /// 显示「每小时多少字」）。
-String formatStatCph(double cph) =>
-    t.stat_speed_cph(n: cph.round().toString());
+String formatStatCph(double cph) => t.stat_speed_cph(n: cph.round().toString());
 
 /// 一组事实行 / 一次会话的阅读速度外显：经 [computeCph]（最小样本 1 分钟，
 /// BUG-1107）算不出有效速度时返回 null，调用方不显示该行而不是显示 0。
@@ -1277,11 +1316,11 @@ Color statHourlyBandColor(StatHourlyFormatBand band, StatChartColors colors) =>
 
 /// 分带图例文案。
 String statHourlyBandLabel(StatHourlyFormatBand band) => switch (band) {
-      StatHourlyFormatBand.epub => t.stat_hourly_band_epub,
-      StatHourlyFormatBand.pdf => t.stat_hourly_band_pdf,
-      StatHourlyFormatBand.manga => t.stat_hourly_band_manga,
-      StatHourlyFormatBand.unattributed => t.stat_hourly_band_unattributed,
-    };
+  StatHourlyFormatBand.epub => t.stat_hourly_band_epub,
+  StatHourlyFormatBand.pdf => t.stat_hourly_band_pdf,
+  StatHourlyFormatBand.manga => t.stat_hourly_band_manga,
+  StatHourlyFormatBand.unattributed => t.stat_hourly_band_unattributed,
+};
 
 /// 该画哪些图例项。
 ///
@@ -1289,7 +1328,8 @@ String statHourlyBandLabel(StatHourlyFormatBand band) => switch (band) {
 /// 只是噪音。但只要含未区分历史就必须画，哪怕它是唯一一带：没有图例的中性柱子会被
 /// 当成某一类的读书时长，那正是这次要消除的误读。
 List<StatHourlyFormatBand> statHourlyLegendBands(
-    List<StatHourlyFormatBand> activeBands) {
+  List<StatHourlyFormatBand> activeBands,
+) {
   if (activeBands.length <= 1 &&
       !activeBands.contains(StatHourlyFormatBand.unattributed)) {
     return const <StatHourlyFormatBand>[];

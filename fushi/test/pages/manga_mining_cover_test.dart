@@ -24,12 +24,20 @@ void main() {
       if (imagesDir.existsSync()) imagesDir.deleteSync(recursive: true);
     });
 
-    MokuroPayload payload() => const MokuroPayload(images: <MokuroImage>[
-          MokuroImage(
-              url: 'p001.jpg', size: MokuroSize(1000, 1500), blocks: <MokuroBlock>[]),
-          MokuroImage(
-              url: 'p002.jpg', size: MokuroSize(1000, 1500), blocks: <MokuroBlock>[]),
-        ]);
+    MokuroPayload payload() => const MokuroPayload(
+      images: <MokuroImage>[
+        MokuroImage(
+          url: 'p001.jpg',
+          size: MokuroSize(1000, 1500),
+          blocks: <MokuroBlock>[],
+        ),
+        MokuroImage(
+          url: 'p002.jpg',
+          size: MokuroSize(1000, 1500),
+          blocks: <MokuroBlock>[],
+        ),
+      ],
+    );
 
     String? coverFor(int currentSpread) {
       final List<MangaSpreadEntry> spreads = buildMangaSpreads(
@@ -37,10 +45,11 @@ void main() {
         layout: MangaPageLayout.single,
         spreadOffset: 0,
       );
-      final int page =
-          MangaFushiPage.firstPageOfSpread(spreads, currentSpread);
+      final int page = MangaFushiPage.firstPageOfSpread(spreads, currentSpread);
       return MangaFushiPage.resolveMangaResource(
-          imagesDir.path, payload().images[page].url);
+        imagesDir.path,
+        payload().images[page].url,
+      );
     }
 
     test('当前 spread 解析到真实卡图路径（非 null）', () {
@@ -83,9 +92,13 @@ void main() {
       final String bare = p.join(dir.path, 'cropped');
       File(bare).writeAsBytesSync(<int>[9]);
       final String result = await ensureMangaCoverPng(bare);
-      expect(p.extension(result), '.png',
-          reason: 'Anki 后端用 split(".").last 推导媒体扩展名，'
-              '无扩展名路径会把整条路径当扩展名');
+      expect(
+        p.extension(result),
+        '.png',
+        reason:
+            'Anki 后端用 split(".").last 推导媒体扩展名，'
+            '无扩展名路径会把整条路径当扩展名',
+      );
       expect(File(result).existsSync(), isTrue);
     });
   });

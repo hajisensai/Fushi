@@ -24,6 +24,7 @@ constexpr DWORD kAppRelaunchWaitMs = 20000;
 struct ParsedArgs {
   std::wstring marker_path = L"fixture.json";
   std::wstring app_exe_path = L"fixture-fushi.exe";
+  bool elevate_installer = false;
 };
 struct InstallerRun {
   HANDLE process = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(1));
@@ -35,6 +36,8 @@ bool app_alive = false;
 int starts = 0;
 int waits = 0;
 int closes = 0;
+int alive_waits = 0;
+int alive_peeks = 0;
 std::map<std::string, std::string> marker;
 }  // namespace
 
@@ -51,6 +54,12 @@ bool GetExitCodeProcess(HANDLE, DWORD* code) {
 bool CloseHandle(HANDLE) { ++closes; return true; }
 bool WaitForAppAlive(DWORD timeout) {
   if (timeout != kAppRelaunchWaitMs) std::abort();
+  ++alive_waits;
+  return app_alive;
+}
+// 提权安装（BUG-3567）：.iss 不再自启 app，只看一眼互斥体，不进 20 s 观察窗口。
+bool SingleInstanceMutexHeld() {
+  ++alive_peeks;
   return app_alive;
 }
 std::wstring AppExecutablePath(const std::wstring& path) { return path; }
@@ -75,23 +84,29 @@ int main() {
     bool has_handle;
     int expected_starts;
     bool expected_exit_marker;
+    bool elevated;
   };
   const Case cases[] = {
-      {"signaled-failed-install-no-app", WAIT_OBJECT_0, false, true, true, 1, true},
-      {"timeout-installer-still-active", WAIT_TIMEOUT, false, true, true, 0, false},
-      {"failed-wait-exit-unproven", WAIT_FAILED, false, true, true, 0, false},
-      {"signaled-exit-app-already-alive", WAIT_OBJECT_0, true, true, true, 0, true},
-      {"installer-never-launched", WAIT_OBJECT_0, false, false, false, 1, false},
-      {"missing-handle-exit-unproven", WAIT_FAILED, false, true, false, 0, false},
-      {"timeout-app-already-alive", WAIT_TIMEOUT, true, true, true, 0, false},
+      {"signaled-failed-install-no-app", WAIT_OBJECT_0, false, true, true, 1, true, false},
+      {"timeout-installer-still-active", WAIT_TIMEOUT, false, true, true, 0, false, false},
+      {"failed-wait-exit-unproven", WAIT_FAILED, false, true, true, 0, false, false},
+      {"signaled-exit-app-already-alive", WAIT_OBJECT_0, true, true, true, 0, true, false},
+      {"installer-never-launched", WAIT_OBJECT_0, false, false, false, 1, false, false},
+      {"missing-handle-exit-unproven", WAIT_FAILED, false, true, false, 0, false, false},
+      {"timeout-app-already-alive", WAIT_TIMEOUT, true, true, true, 0, false, false},
+      {"elevated-signaled-relaunch-unelevated", WAIT_OBJECT_0, false, true, true, 1, true, true},
+      {"elevated-uac-declined-relaunch", WAIT_OBJECT_0, false, false, false, 1, false, true},
+      {"elevated-app-already-alive", WAIT_OBJECT_0, true, true, true, 0, true, true},
+      {"elevated-timeout-installer-still-active", WAIT_TIMEOUT, false, true, true, 0, false, true},
   };
   int failures = 0;
   for (const Case& c : cases) {
     next_wait = c.wait;
     app_alive = c.alive;
-    starts = waits = closes = 0;
+    starts = waits = closes = alive_waits = alive_peeks = 0;
     marker.clear();
-    const ParsedArgs args;
+    ParsedArgs args;
+    args.elevate_installer = c.elevated;
     int code = 0;
     if (c.launched) {
       InstallerRun run;
@@ -105,6 +120,10 @@ int main() {
     bool passed = starts == c.expected_starts &&
         exit_marker == c.expected_exit_marker &&
         waits == (c.launched && c.has_handle ? 1 : 0) && closes == waits;
+    // 走到 EnsureAppBack 时：提权只看一眼互斥体、绝不进观察窗口；非提权正相反。
+    const bool reached_recovery = !c.launched || c.expected_exit_marker;
+    passed &= alive_waits == (reached_recovery && !c.elevated ? 1 : 0);
+    passed &= alive_peeks == (reached_recovery && c.elevated ? 1 : 0);
     if (c.launched) {
       passed &= code == (c.expected_exit_marker ? 0 : 5);
       passed &= marker["installerExitObserved"] == (c.expected_exit_marker ? "true" : "false");
@@ -121,6 +140,6 @@ int main() {
               << " return=" << code << " verdict=" << (passed ? "PASS" : "FAIL") << '\n';
     if (!passed) ++failures;
   }
-  std::cout << "cases=7 failures=" << failures << " processSideEffects=0\n";
+  std::cout << "cases=" << (sizeof(cases) / sizeof(cases[0])) << " failures=" << failures << " processSideEffects=0\n";
   return failures == 0 ? 0 : 1;
 }

@@ -1,20 +1,20 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/creator.dart';
+import 'package:fushi/src/creator/field.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/models.dart';
+import 'package:fushi/src/models/app_model.dart';
 
 /// Used to track the current sentence context from the current playing media
 /// in the application.
 class SentenceField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   SentenceField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Sentence',
-          description:
-              'Subtitles, book excerpts and other contextual information.',
-          icon: Icons.format_align_center_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Sentence',
+        description:
+            'Subtitles, book excerpts and other contextual information.',
+        icon: Icons.format_align_center_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static SentenceField get instance => _instance;

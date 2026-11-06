@@ -26,17 +26,20 @@ void main() {
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.zhCn);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
-    collectionId =
-        await db.createMediaCollection('本篇', collectionType: 'playlist');
-    otherCollectionId =
-        await db.createMediaCollection('续篇合集', collectionType: 'playlist');
+    collectionId = await db.createMediaCollection(
+      '本篇',
+      collectionType: 'playlist',
+    );
+    otherCollectionId = await db.createMediaCollection(
+      '续篇合集',
+      collectionType: 'playlist',
+    );
   });
 
   tearDown(() => db.close());
 
-  Future<void> seedRelations({int? boundTarget}) =>
-      db.replaceCollectionRelations(
-          collectionId, <CollectionRelationsCompanion>[
+  Future<void> seedRelations({int? boundTarget}) => db
+      .replaceCollectionRelations(collectionId, <CollectionRelationsCompanion>[
         CollectionRelationsCompanion.insert(
           collectionId: collectionId,
           relationType: 'sequel',
@@ -60,21 +63,20 @@ void main() {
   Widget buildApp({
     void Function(int targetCollectionId)? onOpenCollection,
     void Function(CollectionRelationRow relation)? onDownload,
-  }) =>
-      TranslationProvider(
-        child: MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: CollectionRelationsSection(
-                database: db,
-                collectionId: collectionId,
-                onOpenCollection: onOpenCollection ?? (int _) {},
-                onDownload: onDownload ?? (CollectionRelationRow _) {},
-              ),
-            ),
+  }) => TranslationProvider(
+    child: MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: CollectionRelationsSection(
+            database: db,
+            collectionId: collectionId,
+            onOpenCollection: onOpenCollection ?? (int _) {},
+            onDownload: onDownload ?? (CollectionRelationRow _) {},
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   testWidgets('无关系边 → 整块不渲染', (WidgetTester tester) async {
     await tester.pumpWidget(buildApp());
@@ -105,8 +107,9 @@ void main() {
   testWidgets('已绑定边点击 → onOpenCollection(target)', (WidgetTester tester) async {
     await seedRelations(boundTarget: otherCollectionId);
     int? opened;
-    await tester
-        .pumpWidget(buildApp(onOpenCollection: (int id) => opened = id));
+    await tester.pumpWidget(
+      buildApp(onOpenCollection: (int id) => opened = id),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('某作品 第二季'));
@@ -115,8 +118,9 @@ void main() {
     expect(opened, otherCollectionId);
   });
 
-  testWidgets('未绑定边点击 → 菜单「绑定到已有合集」真写穿 targetCollectionId',
-      (WidgetTester tester) async {
+  testWidgets('未绑定边点击 → 菜单「绑定到已有合集」真写穿 targetCollectionId', (
+    WidgetTester tester,
+  ) async {
     await seedRelations();
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
@@ -131,12 +135,17 @@ void main() {
     await tester.tap(find.text('续篇合集'));
     await tester.pumpAndSettle();
 
-    final List<CollectionRelationRow> rows =
-        await db.getCollectionRelations(collectionId);
-    final CollectionRelationRow movie =
-        rows.firstWhere((CollectionRelationRow r) => r.relationType == 'movie');
-    expect(movie.targetCollectionId, otherCollectionId,
-        reason: '绑定必须真写穿 collection_relations.target_collection_id');
+    final List<CollectionRelationRow> rows = await db.getCollectionRelations(
+      collectionId,
+    );
+    final CollectionRelationRow movie = rows.firstWhere(
+      (CollectionRelationRow r) => r.relationType == 'movie',
+    );
+    expect(
+      movie.targetCollectionId,
+      otherCollectionId,
+      reason: '绑定必须真写穿 collection_relations.target_collection_id',
+    );
   });
 
   testWidgets('未绑定边菜单「去下载」→ onDownload(relation)', (WidgetTester tester) async {
@@ -182,29 +191,31 @@ void main() {
   /// 把本区放进一个**真的能纵向滚动**的页面（合集详情页同构）：只有外层有滚动
   /// 余量，「滚轮被谁吃掉」才是可观测的。
   Widget buildScrollHarness() => TranslationProvider(
-        child: MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: Column(
-                children: <Widget>[
-                  CollectionRelationsSection(
-                    database: db,
-                    collectionId: collectionId,
-                    onOpenCollection: (int _) {},
-                    onDownload: (CollectionRelationRow _) {},
-                  ),
-                  const SizedBox(height: 1200),
-                ],
+    child: MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: Column(
+            children: <Widget>[
+              CollectionRelationsSection(
+                database: db,
+                collectionId: collectionId,
+                onOpenCollection: (int _) {},
+                onDownload: (CollectionRelationRow _) {},
               ),
-            ),
+              const SizedBox(height: 1200),
+            ],
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   ScrollableState scrollableTowards(WidgetTester tester, AxisDirection dir) =>
-      tester.state<ScrollableState>(find.byWidgetPredicate(
-        (Widget w) => w is Scrollable && w.axisDirection == dir,
-      ));
+      tester.state<ScrollableState>(
+        find.byWidgetPredicate(
+          (Widget w) => w is Scrollable && w.axisDirection == dir,
+        ),
+      );
 
   testWidgets('BUG-1536：裸滚轮停在横滚行上 → 整页纵滚，横向纹丝不动', (WidgetTester tester) async {
     await seedManyRelations();
@@ -215,8 +226,11 @@ void main() {
     final ScrollableState page = scrollableTowards(tester, AxisDirection.down);
     // 前置条件：两个方向都必须有滚动余量，否则本用例是假绿。
     expect(row.position.maxScrollExtent, greaterThan(0), reason: '横向内容必须超出视口');
-    expect(page.position.maxScrollExtent, greaterThan(0),
-        reason: '页面必须有纵向滚动余量');
+    expect(
+      page.position.maxScrollExtent,
+      greaterThan(0),
+      reason: '页面必须有纵向滚动余量',
+    );
 
     final TestPointer mouse = TestPointer(1, PointerDeviceKind.mouse);
     final Offset onRow = tester.getCenter(find.text('相关作品 0'));
@@ -224,8 +238,11 @@ void main() {
     await tester.sendEventToBinding(mouse.scroll(const Offset(0, 120)));
     await tester.pump();
 
-    expect(row.position.pixels, 0,
-        reason: '裸滚轮不得横滚（回归判据：包回 WheelToHorizontalScroll 这里就 >0）');
+    expect(
+      row.position.pixels,
+      0,
+      reason: '裸滚轮不得横滚（回归判据：包回 WheelToHorizontalScroll 这里就 >0）',
+    );
     expect(page.position.pixels, greaterThan(0), reason: '滚轮必须冒泡给外层纵向滚动');
   });
 
@@ -245,8 +262,11 @@ void main() {
     await tester.pump();
     await simulateKeyUpEvent(LogicalKeyboardKey.shiftLeft);
 
-    expect(row.position.pixels, greaterThan(0),
-        reason: 'Shift + 滚轮必须横滚（Flutter 内建 pointerAxisModifiers 翻轴）');
+    expect(
+      row.position.pixels,
+      greaterThan(0),
+      reason: 'Shift + 滚轮必须横滚（Flutter 内建 pointerAxisModifiers 翻轴）',
+    );
     expect(page.position.pixels, 0, reason: '横滚时整页不得跟着动');
   });
 }

@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 
 /// TODO-840 Part B：字幕遮蔽模式三态的 preferences 层 lazy 投影守卫。
@@ -60,9 +60,9 @@ void main() {
           in VideoSubtitleObscureMode.values) {
         final VideoSubtitleObscureMode restored =
             VideoSubtitleObscureMode.fromFlags(
-          blurFlag: mode.blurFlag,
-          hideFlag: mode.hideFlag,
-        );
+              blurFlag: mode.blurFlag,
+              hideFlag: mode.hideFlag,
+            );
         expect(restored, mode, reason: '$mode 投影/还原不自洽');
       }
     });

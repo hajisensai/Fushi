@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/anki/anki_deck_reposition.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
+import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -21,53 +22,55 @@ AnkiCardInfo _card(
   int type = 0,
   String model = 'Lapis',
   Map<String, String> fields = const <String, String>{},
-}) =>
-    AnkiCardInfo(
-      cardId: id,
-      noteId: note ?? id * 10,
-      ord: ord,
-      due: due,
-      type: type,
-      queue: 0,
-      modelName: model,
-      deckName: 'Mining',
-      fields: fields,
-    );
+}) => AnkiCardInfo(
+  cardId: id,
+  noteId: note ?? id * 10,
+  ord: ord,
+  due: due,
+  type: type,
+  queue: 0,
+  modelName: model,
+  deckName: 'Mining',
+  fields: fields,
+);
 
 FushiTermResult _term(
   String expression,
   String reading,
   Map<String, List<int>> freqs,
-) =>
-    FushiTermResult(
-      expression: expression,
-      reading: reading,
-      rules: '',
-      glossaries: const <FushiGlossaryEntry>[],
-      pitches: const <FushiPitchEntry>[],
-      frequencies: <FushiFrequencyEntry>[
-        for (final MapEntry<String, List<int>> e in freqs.entries)
-          FushiFrequencyEntry(
-            dictName: e.key,
-            frequencies: <FushiFrequency>[
-              for (final int v in e.value)
-                FushiFrequency(value: v, displayValue: ''),
-            ],
-          ),
-      ],
-    );
+) => FushiTermResult(
+  expression: expression,
+  reading: reading,
+  rules: '',
+  glossaries: const <FushiGlossaryEntry>[],
+  pitches: const <FushiPitchEntry>[],
+  frequencies: <FushiFrequencyEntry>[
+    for (final MapEntry<String, List<int>> e in freqs.entries)
+      FushiFrequencyEntry(
+        dictName: e.key,
+        frequencies: <FushiFrequency>[
+          for (final int v in e.value)
+            FushiFrequency(value: v, displayValue: ''),
+        ],
+      ),
+  ],
+);
 
 /// 假引擎：表达式 → 词条表。
 AnkiFrequencyLookup _lookup(Map<String, List<FushiTermResult>> table) =>
     (String e) => table[e] ?? const <FushiTermResult>[];
 
-AnkiRepositionCard _rc(int id, int? rank,
-        {int? note, int ord = 0, int due = 0}) =>
-    AnkiRepositionCard(
-      card: _card(id, note: note, ord: ord, due: due),
-      expression: 'w$id',
-      rank: rank,
-    );
+AnkiRepositionCard _rc(
+  int id,
+  int? rank, {
+  int? note,
+  int ord = 0,
+  int due = 0,
+}) => AnkiRepositionCard(
+  card: _card(id, note: note, ord: ord, due: due),
+  expression: 'w$id',
+  rank: rank,
+);
 
 void main() {
   group('resolveNoteFieldRoles', () {
@@ -116,12 +119,13 @@ void main() {
       );
       expect(b.expression, 'Alpha');
       expect(
-          resolveNoteFieldRoles(
-            modelName: 'Empty',
-            fieldNames: const <String>[],
-            settings: const AnkiSettings(),
-          ).expression,
-          isNull);
+        resolveNoteFieldRoles(
+          modelName: 'Empty',
+          fieldNames: const <String>[],
+          settings: const AnkiSettings(),
+        ).expression,
+        isNull,
+      );
     });
   });
 
@@ -146,15 +150,15 @@ void main() {
       '雨': <FushiTermResult>[
         _term('雨', 'あめ', <String, List<int>>{
           'JPDB': <int>[300, 250],
-          'BCCWJ': <int>[600]
+          'BCCWJ': <int>[600],
         }),
         _term('雨', 'う', <String, List<int>>{
-          'JPDB': <int>[9000]
+          'JPDB': <int>[9000],
         }),
       ],
       '孤': <FushiTermResult>[
         _term('孤', 'こ', <String, List<int>>{
-          'Kanji': <int>[5]
+          'Kanji': <int>[5],
         }),
       ],
     });
@@ -164,8 +168,9 @@ void main() {
         dictionaryRankFor(
           expression: '雨',
           reading: 'あめ',
-          options:
-              const AnkiRepositionRankOptions(dictionaries: <String>{'JPDB'}),
+          options: const AnkiRepositionRankOptions(
+            dictionaries: <String>{'JPDB'},
+          ),
           lookup: lookup,
         ),
         250,
@@ -174,8 +179,9 @@ void main() {
         dictionaryRankFor(
           expression: '雨',
           reading: 'あめ',
-          options:
-              const AnkiRepositionRankOptions(dictionaries: <String>{'BCCWJ'}),
+          options: const AnkiRepositionRankOptions(
+            dictionaries: <String>{'BCCWJ'},
+          ),
           lookup: lookup,
         ),
         600,
@@ -211,8 +217,9 @@ void main() {
         dictionaryRankFor(
           expression: '雨',
           reading: 'う',
-          options:
-              const AnkiRepositionRankOptions(dictionaries: <String>{'JPDB'}),
+          options: const AnkiRepositionRankOptions(
+            dictionaries: <String>{'JPDB'},
+          ),
           lookup: lookup,
         ),
         9000,
@@ -221,8 +228,9 @@ void main() {
         dictionaryRankFor(
           expression: '雨',
           reading: 'ウ',
-          options:
-              const AnkiRepositionRankOptions(dictionaries: <String>{'JPDB'}),
+          options: const AnkiRepositionRankOptions(
+            dictionaries: <String>{'JPDB'},
+          ),
           lookup: lookup,
         ),
         9000,
@@ -231,8 +239,9 @@ void main() {
         dictionaryRankFor(
           expression: '雨',
           reading: 'xx',
-          options:
-              const AnkiRepositionRankOptions(dictionaries: <String>{'JPDB'}),
+          options: const AnkiRepositionRankOptions(
+            dictionaries: <String>{'JPDB'},
+          ),
           lookup: lookup,
         ),
         250,
@@ -254,8 +263,9 @@ void main() {
         dictionaryRankFor(
           expression: '孤',
           reading: '',
-          options:
-              const AnkiRepositionRankOptions(dictionaries: <String>{'JPDB'}),
+          options: const AnkiRepositionRankOptions(
+            dictionaries: <String>{'JPDB'},
+          ),
           lookup: lookup,
         ),
         isNull,
@@ -280,12 +290,22 @@ void main() {
         _rc(3, null, due: 3),
         _rc(4, 20, due: 4),
       ]);
-      expect(p.ordered.map((AnkiRepositionCard c) => c.card.cardId).toList(),
-          <int>[4, 2, 1, 3]);
-      expect(p.updates.map((AnkiCardDueUpdate u) => u.due).toList(),
-          <int>[1, 2, 3, 4]);
-      expect(p.previous.map((AnkiCardDueUpdate u) => u.due).toList(),
-          <int>[4, 2, 1, 3]);
+      expect(
+        p.ordered.map((AnkiRepositionCard c) => c.card.cardId).toList(),
+        <int>[4, 2, 1, 3],
+      );
+      expect(p.updates.map((AnkiCardDueUpdate u) => u.due).toList(), <int>[
+        1,
+        2,
+        3,
+        4,
+      ]);
+      expect(p.previous.map((AnkiCardDueUpdate u) => u.due).toList(), <int>[
+        4,
+        2,
+        1,
+        3,
+      ]);
       expect(p.ranked, 2);
       expect(p.unranked, 2);
       expect(p.changed, 3, reason: '卡 2 位置 2→2 没变；4/1/3 三张变了');
@@ -298,18 +318,22 @@ void main() {
         _rc(3, 100, note: 7, ord: 0),
         _rc(4, 50, note: 9),
       ]);
-      expect(p.ordered.map((AnkiRepositionCard c) => c.card.cardId).toList(),
-          <int>[4, 3, 1, 2]);
+      expect(
+        p.ordered.map((AnkiRepositionCard c) => c.card.cardId).toList(),
+        <int>[4, 3, 1, 2],
+      );
     });
 
     test('罕见词优先反转有 rank 的部分，无 rank 仍在末尾', () {
-      final AnkiRepositionPlan p = planCardPositions(
-        'D',
-        <AnkiRepositionCard>[_rc(1, 10), _rc(2, null), _rc(3, 30)],
-        rareFirst: true,
+      final AnkiRepositionPlan p = planCardPositions('D', <AnkiRepositionCard>[
+        _rc(1, 10),
+        _rc(2, null),
+        _rc(3, 30),
+      ], rareFirst: true);
+      expect(
+        p.ordered.map((AnkiRepositionCard c) => c.card.cardId).toList(),
+        <int>[3, 1, 2],
       );
-      expect(p.ordered.map((AnkiRepositionCard c) => c.card.cardId).toList(),
-          <int>[3, 1, 2]);
     });
 
     test('已经有序时 changed == 0', () {
@@ -321,27 +345,152 @@ void main() {
     });
   });
 
+  // 用户拍板⑱：设置页入口的门控。探测明确说没有原生重排 → 置灰并给版本提示；
+  // 连不上 → 保持未知，入口照常可点（真跑时 runner 当场再探）。
+  group('AnkiViewModel 重排能力探测', () {
+    Future<AnkiViewModel> vmFor(_FakeRepo repo) async {
+      final AnkiViewModel vm = AnkiViewModel(repo);
+      await Future<void>.delayed(Duration.zero);
+      return vm;
+    }
+
+    test('有原生接口：入口可用', () async {
+      final AnkiViewModel vm = await vmFor(_FakeRepo());
+      await vm.probeDeckReposition();
+      expect(vm.canRepositionDeck, isTrue);
+      expect(vm.canAutoReposition, isTrue);
+      expect(vm.deckRepositionBlockedByBackend, isFalse);
+    });
+
+    test('没有原生接口：重排与自动重排都置灰，原因是后端版本', () async {
+      final AnkiViewModel vm = await vmFor(
+        _FakeRepo()..nativeReposition = false,
+      );
+      expect(vm.canRepositionDeck, isTrue, reason: '探测前未知，不先把入口藏掉');
+      await vm.probeDeckReposition();
+      expect(vm.canRepositionDeck, isFalse);
+      expect(vm.canAutoReposition, isFalse);
+      expect(vm.deckRepositionBlockedByBackend, isTrue);
+    });
+
+    test('探测连不上：保持未知，不记成不支持', () async {
+      final _FakeRepo repo = _FakeRepo()
+        ..probeError = const SocketException('refused');
+      final AnkiViewModel vm = await vmFor(repo);
+      await vm.probeDeckReposition();
+      expect(vm.canRepositionDeck, isTrue);
+      expect(vm.deckRepositionBlockedByBackend, isFalse);
+    });
+
+    test('后端类型不支持：不发探测，原因不是版本', () async {
+      final _FakeRepo repo = _FakeRepo(supported: false);
+      final AnkiViewModel vm = await vmFor(repo);
+      await vm.probeDeckReposition();
+      expect(repo.probeCalls, 0);
+      expect(vm.canRepositionDeck, isFalse);
+      expect(vm.deckRepositionBlockedByBackend, isFalse);
+    });
+
+    test('并发要结论只探一次', () async {
+      final _FakeRepo repo = _FakeRepo();
+      final AnkiViewModel vm = await vmFor(repo);
+      await Future.wait(<Future<void>>[
+        vm.probeDeckReposition(),
+        vm.probeDeckReposition(),
+      ]);
+      expect(repo.probeCalls, 1);
+    });
+  });
+
   group('AnkiDeckRepositionRunner', () {
     late Directory tmp;
     setUp(() => tmp = Directory.systemTemp.createTempSync('anki_repo_'));
     tearDown(() => tmp.deleteSync(recursive: true));
 
-    AnkiDeckRepositionRunner runner(_FakeRepo repo,
-            {AnkiFrequencyLookup? lookup}) =>
-        AnkiDeckRepositionRunner(
-          repo,
-          lookup: lookup ?? _lookup(<String, List<FushiTermResult>>{}),
-          snapshotDirectory: () async => tmp,
-        );
+    AnkiDeckRepositionRunner runner(
+      _FakeRepo repo, {
+      AnkiFrequencyLookup? lookup,
+    }) => AnkiDeckRepositionRunner(
+      repo,
+      lookup: lookup ?? _lookup(<String, List<FushiTermResult>>{}),
+      snapshotDirectory: () async => tmp,
+    );
 
     test('不支持的后端 plan 返回 null', () async {
-      final AnkiRepositionPlan? p =
-          await runner(_FakeRepo(supported: false)).plan(
+      final AnkiRepositionPlan? p = await runner(_FakeRepo(supported: false))
+          .plan(
+            deckName: 'D',
+            settings: const AnkiSettings(),
+            options: const AnkiRepositionRankOptions(),
+          );
+      expect(p, isNull);
+    });
+
+    // 用户拍板⑱：AnkiConnect 26.10.11.0 起禁写 due，原生重排只在更新的版本才有。
+    test('探测不到原生重排能力：plan 抛 Unsupported，读卡前就挡下、一张不写', () async {
+      final _FakeRepo repo = _FakeRepo()..nativeReposition = false;
+      await expectLater(
+        runner(repo).plan(
+          deckName: 'D',
+          settings: const AnkiSettings(),
+          options: const AnkiRepositionRankOptions(),
+        ),
+        throwsA(isA<AnkiRepositionUnsupportedException>()),
+      );
+      expect(repo.listCalls, 0);
+      expect(repo.writes, isEmpty);
+    });
+
+    // 反馈：电脑上制卡后自动重排就卡死白屏——每次都在 UI isolate 上把整组新卡重查一遍词典。
+    test('词典来源：同一组词典与选项下 rank 跨次缓存，换词典即作废', () async {
+      final List<String> queried = <String>[];
+      List<FushiTermResult> lookup(String e) {
+        queried.add(e);
+        return <FushiTermResult>[
+          _term(e, '', <String, List<int>>{
+            'JPDB': <int>[e.codeUnitAt(0)],
+          }),
+        ];
+      }
+
+      String signature = 'dicts-v1';
+      final _FakeRepo repo = _FakeRepo(
+        cards: <AnkiCardInfo>[
+          _card(
+            1,
+            note: 1,
+            due: 1,
+            fields: <String, String>{'Expression': '犬'},
+          ),
+          _card(
+            2,
+            note: 2,
+            due: 2,
+            fields: <String, String>{'Expression': '猫'},
+          ),
+        ],
+      );
+      final AnkiDeckRepositionRunner r = AnkiDeckRepositionRunner(
+        repo,
+        lookup: lookup,
+        frequencySignature: () => signature,
+        snapshotDirectory: () async => tmp,
+      );
+      Future<void> plan() => r.plan(
         deckName: 'D',
         settings: const AnkiSettings(),
         options: const AnkiRepositionRankOptions(),
       );
-      expect(p, isNull);
+      await plan();
+      expect(queried, <String>['犬', '猫']);
+      repo.cards.add(
+        _card(3, note: 3, due: 3, fields: <String, String>{'Expression': '鳥'}),
+      );
+      await plan();
+      expect(queried, <String>['犬', '猫', '鳥'], reason: '只查新卡');
+      signature = 'dicts-v2';
+      await plan();
+      expect(queried.length, 6, reason: '换了词典：整组重查');
     });
 
     test('词典来源：按旧位置排队、同 note 只查一次、进度回调到位', () async {
@@ -350,24 +499,35 @@ void main() {
         lookups++;
         return <FushiTermResult>[
           _term(e, '', <String, List<int>>{
-            'JPDB': <int>[e == '猫' ? 10 : 900]
+            'JPDB': <int>[e == '猫' ? 10 : 900],
           }),
         ];
       }
 
-      final _FakeRepo repo = _FakeRepo(cards: <AnkiCardInfo>[
-        _card(1,
+      final _FakeRepo repo = _FakeRepo(
+        cards: <AnkiCardInfo>[
+          _card(
+            1,
             note: 5,
             ord: 1,
             due: 30,
-            fields: <String, String>{'Expression': '犬'}),
-        _card(2, note: 6, due: 20, fields: <String, String>{'Expression': '猫'}),
-        _card(3,
+            fields: <String, String>{'Expression': '犬'},
+          ),
+          _card(
+            2,
+            note: 6,
+            due: 20,
+            fields: <String, String>{'Expression': '猫'},
+          ),
+          _card(
+            3,
             note: 5,
             ord: 0,
             due: 10,
-            fields: <String, String>{'Expression': '犬'}),
-      ]);
+            fields: <String, String>{'Expression': '犬'},
+          ),
+        ],
+      );
       final List<AnkiRepositionProgress> seen = <AnkiRepositionProgress>[];
       final AnkiRepositionPlan? p = await runner(repo, lookup: lookup).plan(
         deckName: 'D',
@@ -376,8 +536,10 @@ void main() {
         onProgress: seen.add,
       );
       expect(lookups, 2, reason: '两张卡同一 note，只查一次');
-      expect(p!.ordered.map((AnkiRepositionCard c) => c.card.cardId).toList(),
-          <int>[2, 3, 1]);
+      expect(
+        p!.ordered.map((AnkiRepositionCard c) => c.card.cardId).toList(),
+        <int>[2, 3, 1],
+      );
       expect(p.ordered.first.expression, '猫');
       expect(seen.first.stage, AnkiRepositionStage.fetch);
       expect(seen.last.stage, AnkiRepositionStage.rank);
@@ -385,30 +547,43 @@ void main() {
     });
 
     test('字段来源：读 FreqSort，不碰引擎', () async {
-      final _FakeRepo repo = _FakeRepo(cards: <AnkiCardInfo>[
-        _card(1,
-            fields: <String, String>{'Expression': 'a', 'FreqSort': '700'}),
-        _card(2, fields: <String, String>{'Expression': 'b', 'FreqSort': '5'}),
-        _card(3, fields: <String, String>{'Expression': 'c', 'FreqSort': ''}),
-      ]);
-      final AnkiRepositionPlan? p = await runner(
-        repo,
-        lookup: (String _) => throw StateError('must not query'),
-      ).plan(
-        deckName: 'D',
-        settings: const AnkiSettings(),
-        options:
-            const AnkiRepositionRankOptions(source: AnkiRepositionSource.field),
+      final _FakeRepo repo = _FakeRepo(
+        cards: <AnkiCardInfo>[
+          _card(
+            1,
+            fields: <String, String>{'Expression': 'a', 'FreqSort': '700'},
+          ),
+          _card(
+            2,
+            fields: <String, String>{'Expression': 'b', 'FreqSort': '5'},
+          ),
+          _card(3, fields: <String, String>{'Expression': 'c', 'FreqSort': ''}),
+        ],
       );
-      expect(p!.ordered.map((AnkiRepositionCard c) => c.card.cardId).toList(),
-          <int>[2, 1, 3]);
+      final AnkiRepositionPlan? p =
+          await runner(
+            repo,
+            lookup: (String _) => throw StateError('must not query'),
+          ).plan(
+            deckName: 'D',
+            settings: const AnkiSettings(),
+            options: const AnkiRepositionRankOptions(
+              source: AnkiRepositionSource.field,
+            ),
+          );
+      expect(
+        p!.ordered.map((AnkiRepositionCard c) => c.card.cardId).toList(),
+        <int>[2, 1, 3],
+      );
     });
 
     test('取消在让出点生效并抛 AnkiRepositionCancelled', () async {
-      final _FakeRepo repo = _FakeRepo(cards: <AnkiCardInfo>[
-        for (int i = 1; i <= AnkiDeckRepositionRunner.kYieldEvery + 1; i++)
-          _card(i, fields: <String, String>{'Expression': 'x'}),
-      ]);
+      final _FakeRepo repo = _FakeRepo(
+        cards: <AnkiCardInfo>[
+          for (int i = 1; i <= AnkiDeckRepositionRunner.kYieldEvery + 1; i++)
+            _card(i, fields: <String, String>{'Expression': 'x'}),
+        ],
+      );
       bool cancel = false;
       await expectLater(
         runner(repo).plan(
@@ -427,28 +602,35 @@ void main() {
     });
 
     test('apply 先落快照再写回；undo 只恢复仍是新卡的并删快照', () async {
-      final _FakeRepo repo = _FakeRepo(cards: <AnkiCardInfo>[
-        _card(1,
+      final _FakeRepo repo = _FakeRepo(
+        cards: <AnkiCardInfo>[
+          _card(
+            1,
             due: 1,
-            fields: <String, String>{'Expression': 'a', 'FreqSort': '900'}),
-        _card(2,
+            fields: <String, String>{'Expression': 'a', 'FreqSort': '900'},
+          ),
+          _card(
+            2,
             due: 2,
-            fields: <String, String>{'Expression': 'b', 'FreqSort': '1'}),
-      ]);
+            fields: <String, String>{'Expression': 'b', 'FreqSort': '1'},
+          ),
+        ],
+      );
       final AnkiDeckRepositionRunner r = runner(repo);
       final AnkiRepositionPlan plan = (await r.plan(
         deckName: 'D',
         settings: const AnkiSettings(),
-        options:
-            const AnkiRepositionRankOptions(source: AnkiRepositionSource.field),
+        options: const AnkiRepositionRankOptions(
+          source: AnkiRepositionSource.field,
+        ),
       ))!;
       final AnkiRepositionOutcome out = await r.apply(plan);
       expect(out.written, 2);
       expect(out.failures, isEmpty);
       expect(
-          repo.writes.single
-              .map((AnkiCardDueUpdate u) => '${u.cardId}:${u.due}'),
-          <String>['2:1', '1:2']);
+        repo.writes.single.map((AnkiCardDueUpdate u) => '${u.cardId}:${u.due}'),
+        <String>['2:1', '1:2'],
+      );
       final File snap = out.snapshot!;
       expect(snap.existsSync(), isTrue);
       final Map<String, dynamic> json =
@@ -469,23 +651,102 @@ void main() {
       expect(undo.restored, 1);
       expect(undo.skipped, 1);
       expect(
-          repo.writes.last.map((AnkiCardDueUpdate u) => '${u.cardId}:${u.due}'),
-          <String>['2:2']);
+        repo.writes.last.map((AnkiCardDueUpdate u) => '${u.cardId}:${u.due}'),
+        <String>['2:2'],
+      );
       expect(snap.existsSync(), isFalse, reason: '撤销成功后快照删除，不会二次撤销');
     });
 
-    test('写回前重校验：预览期间被学掉的卡不写位置，也不进快照', () async {
-      // 计划算好时两张都是新卡。
-      final _FakeRepo repo = _FakeRepo(cards: <AnkiCardInfo>[
-        _card(1, due: 1, fields: <String, String>{'FreqSort': '900'}),
-        _card(2, due: 2, fields: <String, String>{'FreqSort': '10'}),
-      ]);
+    test('AnkiConnect 连续编号：只发位置变了的卡，不重发没动的', () async {
+      final _FakeRepo repo = _FakeRepo(
+        cards: <AnkiCardInfo>[
+          _card(1, due: 1, fields: <String, String>{'FreqSort': '10'}),
+          _card(2, due: 2, fields: <String, String>{'FreqSort': '30'}),
+          _card(3, due: 3, fields: <String, String>{'FreqSort': '20'}),
+        ],
+      );
       final AnkiDeckRepositionRunner r = runner(repo);
       final AnkiRepositionPlan plan = (await r.plan(
         deckName: 'D',
         settings: const AnkiSettings(),
-        options:
-            const AnkiRepositionRankOptions(source: AnkiRepositionSource.field),
+        options: const AnkiRepositionRankOptions(
+          source: AnkiRepositionSource.field,
+        ),
+      ))!;
+      expect(
+        plan.updates.map((AnkiCardDueUpdate u) => '${u.cardId}:${u.due}'),
+        <String>['1:1', '3:2', '2:3'],
+        reason: 'Anki 后端仍是 1..N 连续编号',
+      );
+      expect(plan.changed, 2);
+      final AnkiRepositionOutcome out = await r.apply(plan);
+      expect(out.written, 2);
+      expect(
+        repo.writes.single.map((AnkiCardDueUpdate u) => '${u.cardId}:${u.due}'),
+        <String>['3:2', '2:3'],
+      );
+      final Map<String, dynamic> json =
+          jsonDecode(out.snapshot!.readAsStringSync()) as Map<String, dynamic>;
+      expect(
+        (json['positions'] as List<dynamic>).map(
+          (dynamic e) => (e as Map<String, dynamic>)['cardId'],
+        ),
+        <int>[3, 2],
+      );
+    });
+
+    test('后端自定位置分配（稀疏）；旧位置没落库的卡即使数值相同也要写', () async {
+      final _FakeRepo repo = _FakeRepo(
+        cards: <AnkiCardInfo>[
+          _card(1, due: 100, fields: <String, String>{'FreqSort': '10'}),
+          AnkiCardInfo(
+            cardId: 2,
+            noteId: 20,
+            ord: 0,
+            due: 200,
+            type: 0,
+            queue: 0,
+            modelName: 'Lapis',
+            deckName: 'D',
+            fields: const <String, String>{'FreqSort': '20'},
+            hasStoredPosition: false,
+          ),
+        ],
+        assign: (List<AnkiCardInfo> ordered) => <int>[
+          for (final AnkiCardInfo c in ordered) c.due,
+        ],
+      );
+      final AnkiDeckRepositionRunner r = runner(repo);
+      final AnkiRepositionPlan plan = (await r.plan(
+        deckName: 'D',
+        settings: const AnkiSettings(),
+        options: const AnkiRepositionRankOptions(
+          source: AnkiRepositionSource.field,
+        ),
+      ))!;
+      expect(plan.updates.map((AnkiCardDueUpdate u) => u.due), <int>[100, 200]);
+      expect(plan.changed, 1, reason: '卡 2 的 200 只是临时编号，必须落库');
+      await r.apply(plan);
+      expect(repo.writes.single.map((AnkiCardDueUpdate u) => u.cardId), <int>[
+        2,
+      ]);
+    });
+
+    test('写回前重校验：预览期间被学掉的卡不写位置，也不进快照', () async {
+      // 计划算好时两张都是新卡。
+      final _FakeRepo repo = _FakeRepo(
+        cards: <AnkiCardInfo>[
+          _card(1, due: 1, fields: <String, String>{'FreqSort': '900'}),
+          _card(2, due: 2, fields: <String, String>{'FreqSort': '10'}),
+        ],
+      );
+      final AnkiDeckRepositionRunner r = runner(repo);
+      final AnkiRepositionPlan plan = (await r.plan(
+        deckName: 'D',
+        settings: const AnkiSettings(),
+        options: const AnkiRepositionRankOptions(
+          source: AnkiRepositionSource.field,
+        ),
       ))!;
 
       // 用户盯着预览弹窗时切去 Anki 学了卡 1：它的 due 已经是「到期日」，
@@ -496,32 +757,34 @@ void main() {
       final AnkiRepositionOutcome out = await r.apply(plan);
 
       expect(out.skipped, 1, reason: '卡 1 已不是新卡，必须被跳过');
-      expect(
-        repo.writes.last.map((AnkiCardDueUpdate u) => u.cardId),
-        <int>[2],
-        reason: '一条针对卡 1 的写都不许发出去',
-      );
+      expect(repo.writes.last.map((AnkiCardDueUpdate u) => u.cardId), <int>[
+        2,
+      ], reason: '一条针对卡 1 的写都不许发出去');
       final Map<String, dynamic> json =
           jsonDecode(out.snapshot!.readAsStringSync()) as Map<String, dynamic>;
       expect(
-        (json['positions'] as List<dynamic>)
-            .map((dynamic e) => (e as Map<String, dynamic>)['cardId']),
+        (json['positions'] as List<dynamic>).map(
+          (dynamic e) => (e as Map<String, dynamic>)['cardId'],
+        ),
         <int>[2],
         reason: '快照只该记我们真的动过的卡',
       );
     });
 
     test('撤销一张都没恢复时不删快照（唯一的后悔药）', () async {
-      final _FakeRepo repo = _FakeRepo(cards: <AnkiCardInfo>[
-        _card(1, due: 1, fields: <String, String>{'FreqSort': '900'}),
-        _card(2, due: 2, fields: <String, String>{'FreqSort': '10'}),
-      ]);
+      final _FakeRepo repo = _FakeRepo(
+        cards: <AnkiCardInfo>[
+          _card(1, due: 1, fields: <String, String>{'FreqSort': '900'}),
+          _card(2, due: 2, fields: <String, String>{'FreqSort': '10'}),
+        ],
+      );
       final AnkiDeckRepositionRunner r = runner(repo);
       final AnkiRepositionPlan plan = (await r.plan(
         deckName: 'D',
         settings: const AnkiSettings(),
-        options:
-            const AnkiRepositionRankOptions(source: AnkiRepositionSource.field),
+        options: const AnkiRepositionRankOptions(
+          source: AnkiRepositionSource.field,
+        ),
       ))!;
       final AnkiRepositionOutcome out = await r.apply(plan);
       final AnkiRepositionSnapshot latest = (await r.latestSnapshot('D'))!;
@@ -547,9 +810,36 @@ void main() {
 }
 
 class _FakeRepo extends BaseAnkiRepository {
-  _FakeRepo({this.supported = true, this.cards = const <AnkiCardInfo>[]});
+  _FakeRepo({
+    this.supported = true,
+    this.cards = const <AnkiCardInfo>[],
+    this.assign,
+  });
 
   final bool supported;
+  final List<int> Function(List<AnkiCardInfo> ordered)? assign;
+
+  /// 能力探测结论：false = 连着的 AnkiConnect 没有原生重排接口。
+  bool nativeReposition = true;
+  int listCalls = 0;
+
+  /// 非 null 时探测直接抛它（模拟 Anki 没开 / 连不上）。
+  Exception? probeError;
+  int probeCalls = 0;
+
+  @override
+  Future<bool> probeDeckReposition() async {
+    probeCalls++;
+    if (probeError != null) throw probeError!;
+    return supported && nativeReposition;
+  }
+
+  @override
+  Future<AnkiSettings> loadSettings() async => const AnkiSettings();
+
+  @override
+  List<int> assignNewCardPositions(List<AnkiCardInfo> ordered) =>
+      assign?.call(ordered) ?? super.assignNewCardPositions(ordered);
   List<AnkiCardInfo> cards;
   final List<List<AnkiCardDueUpdate>> writes = <List<AnkiCardDueUpdate>>[];
 
@@ -557,8 +847,10 @@ class _FakeRepo extends BaseAnkiRepository {
   bool get supportsDeckReposition => supported;
 
   @override
-  Future<List<AnkiCardInfo>> listNewCards(String deckName) async =>
-      List<AnkiCardInfo>.of(cards);
+  Future<List<AnkiCardInfo>> listNewCards(String deckName) async {
+    listCalls++;
+    return List<AnkiCardInfo>.of(cards);
+  }
 
   @override
   Future<AnkiCardDueWriteResult> setNewCardPositions(
@@ -579,8 +871,7 @@ class _FakeRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      MineOutcome.failure('unused');
+  }) async => MineOutcome.failure('unused');
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;

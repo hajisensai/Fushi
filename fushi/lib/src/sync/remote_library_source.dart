@@ -46,4 +46,7 @@ const String kInterconnectRemoteLibrarySourceId = 'interconnect';
 /// 与本 bug 修掉的「跨源无限期串味」不是一个量级；真要治需要后端侧给出账号级身份
 /// 信号，属独立议题，不在此就地推断（推断会错，见 BUG-1180 的教训）。
 String cloudRemoteLibrarySourceId(String backendTypeName) =>
-    'cloud:$backendTypeName';
+    '$kCloudRemoteLibrarySourceIdPrefix$backendTypeName';
+
+/// [cloudRemoteLibrarySourceId] 的共同前缀：判断「这个来源是不是云盘书库」。
+const String kCloudRemoteLibrarySourceIdPrefix = 'cloud:';

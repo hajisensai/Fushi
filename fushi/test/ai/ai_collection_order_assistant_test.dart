@@ -3,7 +3,7 @@
 // 请求函数没有歧义时一个请求都不发。
 import 'dart:convert';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -13,6 +13,7 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/ai/web_search.dart';
 
 AiProviderConfig _provider() => AiProviderConfig(
   id: 'p1',
@@ -34,6 +35,9 @@ class _Settings implements AiSettingsSource {
 
   @override
   List<WebKnowledgeSite> get aiWebKnowledgeSites => const <WebKnowledgeSite>[];
+
+  @override
+  WebSearchConfig? get aiWebSearch => null;
 }
 
 /// 按顺序回 [replies]（用完重复最后一条），把每次请求的 user 文本记进 [prompts]。

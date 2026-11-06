@@ -1,5 +1,7 @@
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:fushi/src/utils/adaptive/fushi_fold_posture.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 /// 桌面姿态（[FushiFoldPosture.tabletop]）下按横向折痕把区域切成上下两块：
@@ -12,8 +14,8 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 /// surface、WebView 等重量级子树不会因为合上 / 打开折叠屏被销毁重建）。
 ///
 /// 折痕矩形在 MediaQuery 坐标空间，本组件不一定铺满窗口（上方可能有标题栏 / 横幅），
-/// 也可能处在界面缩放层下，所以帧后经 [fushiFoldRectToLocal] 换算成本地坐标（偏移与
-/// 缩放一并处理）；本地折痕变化时才重建。
+/// 也可能处在界面缩放层下，所以每次绘制时按 [fushiFoldRectToLocal] 同一换算落到本地
+/// 坐标（偏移与缩放一并处理）；本地折痕变化时才在帧后重建。
 class FushiTabletopSplit extends StatefulWidget {
   const FushiTabletopSplit({
     required this.top,
@@ -82,23 +84,31 @@ FushiTabletopSplitGeometry? resolveFushiTabletopSplit({
 class _FushiTabletopSplitState extends State<FushiTabletopSplit> {
   final GlobalKey _topKey = GlobalKey(debugLabel: 'fushi-tabletop-top');
 
-  /// 折痕在本组件本地坐标里的矩形；帧后由 [_scheduleHingeProbe] 换算。
+  /// 折痕在本组件本地坐标里的矩形；绘制期由 [_HingeProbe] 换算。
   Rect? _localHinge;
 
-  void _scheduleHingeProbe(FushiFoldState fold) {
+  /// 已排了一次帧后 setState、尚未执行（同一帧多次绘制只排一次）。
+  bool _hingeUpdateScheduled = false;
+
+  /// [_HingeProbe] 每次绘制时回调：本地折痕变了才在帧后重建。
+  ///
+  /// 放在绘制期而不是只在 build 后探一次：本组件的位置可能在它自己不重建的情况下
+  /// 变化（上方横幅出现 / 消失只让祖先重新布局），布局变化必然触发所在重绘边界
+  /// 重绘、带动这里重新核对，本地折痕不会停在旧值。
+  void _onProbePaint(RenderBox box, Rect hinge, double toWindow) {
+    if (!box.hasSize || !box.attached) return;
+    final Rect local = fushiFoldRectToLocal(
+      box: box,
+      rect: hinge,
+      mediaQueryToWindow: toWindow,
+    );
+    if (local == _localHinge || _hingeUpdateScheduled) return;
+    _hingeUpdateScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final Rect? hinge = fold.hinge;
-      final RenderObject? box = context.findRenderObject();
-      if (hinge == null || box is! RenderBox || !box.hasSize || !box.attached) {
-        return;
+      _hingeUpdateScheduled = false;
+      if (mounted && local != _localHinge) {
+        setState(() => _localHinge = local);
       }
-      final Rect local = fushiFoldRectToLocal(
-        context: context,
-        box: box,
-        rect: hinge,
-      );
-      if (local != _localHinge) setState(() => _localHinge = local);
     });
   }
 
@@ -107,35 +117,71 @@ class _FushiTabletopSplitState extends State<FushiTabletopSplit> {
     final Widget top = KeyedSubtree(key: _topKey, child: widget.top);
     if (!widget.enabled) return top;
     final FushiFoldState fold = FushiFoldState.of(context);
-    if (!fold.isTabletop) {
+    final Rect? hinge = fold.hinge;
+    if (!fold.isTabletop || hinge == null) {
       _localHinge = null;
       return top;
     }
-    _scheduleHingeProbe(fold);
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final FushiTabletopSplitGeometry? split = resolveFushiTabletopSplit(
-          fold: fold,
-          localHinge: _localHinge,
-          size: constraints.biggest,
-          minTopHeight: widget.minTopHeight,
-          minBottomHeight: widget.minBottomHeight,
-        );
-        if (split == null) return top;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            SizedBox(height: split.topHeight, child: top),
-            SizedBox(height: split.hingeHeight),
-            Expanded(
-              child: _TabletopBottomEntrance(
-                child: Builder(builder: widget.bottomBuilder),
+    // 与 [fushiFoldRectToLocal] 同一换算：MediaQuery 坐标 → 窗口逻辑坐标 → 本地。
+    final double toWindow = FushiAppUiScale.mediaQueryToWindowFactorOf(context);
+    return _HingeProbe(
+      onPaint: (RenderBox box) => _onProbePaint(box, hinge, toWindow),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final FushiTabletopSplitGeometry? split = resolveFushiTabletopSplit(
+            fold: fold,
+            localHinge: _localHinge,
+            size: constraints.biggest,
+            minTopHeight: widget.minTopHeight,
+            minBottomHeight: widget.minBottomHeight,
+          );
+          if (split == null) return top;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              SizedBox(height: split.topHeight, child: top),
+              SizedBox(height: split.hingeHeight),
+              Expanded(
+                child: _TabletopBottomEntrance(
+                  child: Builder(builder: widget.bottomBuilder),
+                ),
               ),
-            ),
-          ],
-        );
-      },
+            ],
+          );
+        },
+      ),
     );
+  }
+}
+
+/// 透明代理：每次绘制把自己的 RenderBox 交给 [onPaint]（不画任何东西）。
+class _HingeProbe extends SingleChildRenderObjectWidget {
+  const _HingeProbe({required this.onPaint, required super.child});
+
+  final void Function(RenderBox box) onPaint;
+
+  @override
+  _RenderHingeProbe createRenderObject(BuildContext context) =>
+      _RenderHingeProbe(onPaint);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderHingeProbe renderObject,
+  ) {
+    renderObject.onPaint = onPaint;
+  }
+}
+
+class _RenderHingeProbe extends RenderProxyBox {
+  _RenderHingeProbe(this.onPaint);
+
+  void Function(RenderBox box) onPaint;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    super.paint(context, offset);
+    onPaint(this);
   }
 }
 

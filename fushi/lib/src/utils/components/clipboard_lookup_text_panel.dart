@@ -110,8 +110,7 @@ bool isSourceStripRedundant({
   if (highlight == null) return false;
   final String trimmed = text.trim();
   if (trimmed.isEmpty) return false;
-  return highlight.start == 0 &&
-      highlight.length >= trimmed.characters.length;
+  return highlight.start == 0 && highlight.length >= trimmed.characters.length;
 }
 
 /// 一次「扫描查词」的发起点：交给引擎的那段串，以及它在源文本条上的起始字素簇。
@@ -192,8 +191,11 @@ int sourceGraphemeIndexOfUnit(String text, int unitIndex) {
   int graphemeIndex,
 ) {
   // BUG-442：与渲染同一上限——后缀从截断后的字符序列取，与可点字符一一对应。
-  final List<String> capped =
-      text.trim().characters.take(kMaxLookupInputChars).toList();
+  final List<String> capped = text
+      .trim()
+      .characters
+      .take(kMaxLookupInputChars)
+      .toList();
   if (graphemeIndex < 0 || graphemeIndex >= capped.length) return null;
   int start = graphemeIndex;
   if (isLatinWordGrapheme(capped[start])) {
@@ -275,10 +277,9 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
         ? allChars.sublist(0, kMaxLookupInputChars)
         : allChars;
     // 每个字符是独立可点 span，逐字保持原有点击/Shift 悬停查词行为。
-    final TextStyle charStyle = _dictionaryHeadwordTextStyle(context).copyWith(
-      color: theme.colorScheme.onSurface,
-      height: 1.5,
-    );
+    final TextStyle charStyle = _dictionaryHeadwordTextStyle(
+      context,
+    ).copyWith(color: theme.colorScheme.onSurface, height: 1.5);
     // 命中高亮底色与弹窗 WebView 内的命中同一口径：M3E 下是 popup.css
     // `html.fushi-m3e` 段的 primaryContainer，否则是 `--fushi-primary-highlight`
     // （`popup_theme_css.dart` 的 `cssRgba035(scheme.primary)`）。源文本条与弹窗
@@ -297,8 +298,9 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
     // 合缝，视觉上仍是一个连续的框。
     final SourceLookupHighlight? highlight = widget.highlight;
     final int highlightStart = highlight?.start ?? -1;
-    final int highlightEnd =
-        highlight == null ? -1 : highlight.start + highlight.length;
+    final int highlightEnd = highlight == null
+        ? -1
+        : highlight.start + highlight.length;
     // 左对齐并占满可用宽度：剪贴板文本条挂在 home_dictionary_page 的 Column 下，
     // Column 默认 crossAxisAlignment.center 会把收缩到内容宽度的本条居中。
     // Align(topLeft) 在父级宽度有界时撑满该宽度并把内容钉左上角，宽度无界时
@@ -317,15 +319,13 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
               Builder(
                 builder: (BuildContext charContext) {
                   final bool lit = i >= highlightStart && i < highlightEnd;
-                  final Widget glyph =
-                      Text(chars[i], style: lit ? litStyle : charStyle);
+                  final Widget glyph = Text(
+                    chars[i],
+                    style: lit ? litStyle : charStyle,
+                  );
                   return MouseRegion(
                     cursor: SystemMouseCursors.click,
-                    onHover: (_) => _handleShiftHover(
-                      i,
-                      context,
-                      charContext,
-                    ),
+                    onHover: (_) => _handleShiftHover(i, context, charContext),
                     onExit: (_) {
                       if (_lastShiftHoverIndex == i) {
                         _lastShiftHoverIndex = null;
@@ -368,8 +368,9 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
   TextStyle _dictionaryHeadwordTextStyle(BuildContext context) {
     final TextStyle base = FushiDesignTokens.of(context).type.pageTitle;
     final double requestedScale = widget.dictionaryHeadwordScale;
-    final double safeScale =
-        requestedScale.isFinite && requestedScale > 0 ? requestedScale : 1.0;
+    final double safeScale = requestedScale.isFinite && requestedScale > 0
+        ? requestedScale
+        : 1.0;
     return base.copyWith(fontSize: kPopupHeadwordFontSize * safeScale);
   }
 
@@ -393,8 +394,10 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
     BuildContext charContext,
   ) {
     // 英文等拉丁文：点单词里任一字母都从词首起查，高亮锚点随之落在词首。
-    final ({String suffix, int start})? scan =
-        sourceLookupSuffixAt(widget.text, index);
+    final ({String suffix, int start})? scan = sourceLookupSuffixAt(
+      widget.text,
+      index,
+    );
     if (scan == null) return;
     widget.onLookup(
       scan.suffix,
@@ -418,8 +421,8 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
     }
     final RenderObject? panel =
         widget.coordinateSpaceKey?.currentContext?.findRenderObject() ??
-            charContext.findAncestorRenderObjectOfType<RenderStack>() ??
-            panelContext.findRenderObject();
+        charContext.findAncestorRenderObjectOfType<RenderStack>() ??
+        panelContext.findRenderObject();
     if (panel is! RenderBox) return Rect.zero;
     final Offset global = child.localToGlobal(Offset.zero);
     return panel.globalToLocal(global) & child.size;

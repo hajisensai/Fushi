@@ -16,52 +16,56 @@ void main() {
   // recomputation must be deferred to the post-frame repair, never run
   // synchronously inside register().
   testWidgets(
-      'recycling a focused list row while new rows register does not throw '
-      'during layout', (WidgetTester tester) async {
-    final ScrollController controller = ScrollController();
-    addTearDown(controller.dispose);
+    'recycling a focused list row while new rows register does not throw '
+    'during layout',
+    (WidgetTester tester) async {
+      final ScrollController controller = ScrollController();
+      addTearDown(controller.dispose);
 
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: FushiFocusRoot(
-          child: ListView.builder(
-            controller: controller,
-            itemExtent: 80,
-            itemCount: 600,
-            itemBuilder: (BuildContext context, int index) {
-              return FushiFocusTarget(
-                id: FushiFocusId('row-$index'),
-                child: TextButton(
-                  onPressed: () {},
-                  child: Text('Row $index'),
-                ),
-              );
-            },
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FushiFocusRoot(
+              child: ListView.builder(
+                controller: controller,
+                itemExtent: 80,
+                itemCount: 600,
+                itemBuilder: (BuildContext context, int index) {
+                  return FushiFocusTarget(
+                    id: FushiFocusId('row-$index'),
+                    child: TextButton(
+                      onPressed: () {},
+                      child: Text('Row $index'),
+                    ),
+                  );
+                },
+              ),
+            ),
           ),
         ),
-      ),
-    ));
+      );
 
-    final FushiFocusController focus = FushiFocusRoot.controllerOf(
-      tester.element(find.byType(ListView)),
-    );
-    // Focus a row that is currently on-screen so its node becomes primary.
-    focus.requestById(const FushiFocusId('row-0'));
-    await tester.pump();
-    expect(tester.takeException(), isNull);
+      final FushiFocusController focus = FushiFocusRoot.controllerOf(
+        tester.element(find.byType(ListView)),
+      );
+      // Focus a row that is currently on-screen so its node becomes primary.
+      focus.requestById(const FushiFocusId('row-0'));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
 
-    // Jump far past row-0 so it is recycled (deactivated) in the very layout
-    // pass that lazily builds and registers the new on-screen rows.
-    controller.jumpTo(12000);
-    await tester.pump();
-    expect(tester.takeException(), isNull);
+      // Jump far past row-0 so it is recycled (deactivated) in the very layout
+      // pass that lazily builds and registers the new on-screen rows.
+      controller.jumpTo(12000);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
 
-    // Jump back up, recycling the now-focused rows the other direction.
-    controller.jumpTo(0);
-    await tester.pump();
-    expect(tester.takeException(), isNull);
+      // Jump back up, recycling the now-focused rows the other direction.
+      controller.jumpTo(0);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
 
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-  });
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

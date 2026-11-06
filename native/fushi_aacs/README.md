@@ -8,8 +8,18 @@ encrypted disc menu cannot open at all (BUG-3074).
 This is Fushi's own implementation of the subset libbluray 1.5 resolves, not
 VideoLAN libaacs. It has no key policy of its own: the app resolves the exact
 disc-ID volume unique key from KEYDB (`aacs_configuration.dart`) and registers
-it with `fushi_aacs_set_disc_key()` before opening the disc. Decryption matches
-`AacsContentDecoder`. Not supported (same as title playback): bus encryption,
+it with `fushi_aacs_set_disc_key()` before opening the disc. Encrypted units are
+decrypted the same way as `AacsContentDecoder` (unit key derivation, CBC, TS sync
+check, CPI clearing, multi-key retry), but error handling differs: unencrypted
+units pass through without a 0x47 sync check here (libbluray's own
+`_validate_unit()` then skips a bad unit), while `AacsContentDecoder` rejects such
+a unit and stops the stream; `aacs_decrypt_unit()` also only reports
+success/failure. Both libbluray open contracts are exported: `aacs_open2()`
+(reads `AACS/` by path) and libaacs 0.11's `aacs_init()` + `aacs_set_fopen()` +
+`aacs_open_device()` (reads the same files through libbluray's file layer).
+libbluray prefers the latter; it is what makes a remote disc work, because a
+disc opened with `bd_open_files()` over HTTP has no local path. Not supported
+(same as title playback): bus encryption,
 AACS 2, BD+, media key block processing, drive access.
 
 | Platform | File | How libbluray finds it |

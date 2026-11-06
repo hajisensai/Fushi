@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-1067 接线守卫：从收藏夹的视频句子跳转进播放器时，必须解析并透传该视频所属
 /// 的主 playlist 合集 id（`playlistCollectionId`）。否则视频初始化时系列级音轨/字幕
@@ -13,8 +13,9 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 这是源码扫描守卫（跳转经 Navigator + 平台视频页，widget 层难真触发），盯死接线不回归。
 void main() {
-  final String src = File('lib/src/pages/implementations/collections_page.dart')
-      .readAsStringSync();
+  final String src = File(
+    'lib/src/pages/implementations/collections_page.dart',
+  ).readAsStringSync();
 
   test('_openVideoSentence 解析主合集 id 用统一 key 口径 video|<bookUid>', () {
     expect(
@@ -25,7 +26,8 @@ void main() {
     expect(
       src,
       contains('primaryByEntry[MediaKind.video.compositeKey(bookUid)]'),
-      reason: 'key 必须是 video|<bookUid>（P5 经 MediaKind.video.compositeKey 生成，'
+      reason:
+          'key 必须是 video|<bookUid>（P5 经 MediaKind.video.compositeKey 生成，'
           '串与 getPrimaryCollectionIdByEntry 的建 key 口径逐字节一致）',
     );
   });
@@ -34,8 +36,9 @@ void main() {
     // 定位到 _openVideoSentence 里的 neutralized 构造调用段。
     final int openIdx = src.indexOf('Future<void> _openVideoSentence(');
     expect(openIdx, greaterThanOrEqualTo(0), reason: '_openVideoSentence 必须存在');
-    final int nextMethodIdx =
-        src.indexOf('Future<int?> _resolveVideoFavoriteStartMs(');
+    final int nextMethodIdx = src.indexOf(
+      'Future<int?> _resolveVideoFavoriteStartMs(',
+    );
     expect(nextMethodIdx, greaterThan(openIdx));
     final String openBody = src.substring(openIdx, nextMethodIdx);
     expect(

@@ -131,25 +131,25 @@ void main() {
       );
       final List<String> videos =
           resolveVideoAbsolutePaths(info, const <TorrentFileEntry>[
-        TorrentFileEntry(
-          name: 'Show/Show - 01.mkv',
-          size: 1,
-          progress: 1,
-          index: 0,
-        ),
-        TorrentFileEntry(
-          name: 'Show/Show - 02.MP4',
-          size: 1,
-          progress: 1,
-          index: 1,
-        ),
-        TorrentFileEntry(
-          name: 'Show/readme.txt',
-          size: 1,
-          progress: 1,
-          index: 2,
-        ),
-      ]);
+            TorrentFileEntry(
+              name: 'Show/Show - 01.mkv',
+              size: 1,
+              progress: 1,
+              index: 0,
+            ),
+            TorrentFileEntry(
+              name: 'Show/Show - 02.MP4',
+              size: 1,
+              progress: 1,
+              index: 1,
+            ),
+            TorrentFileEntry(
+              name: 'Show/readme.txt',
+              size: 1,
+              progress: 1,
+              index: 2,
+            ),
+          ]);
       expect(videos, <String>[
         p.join('/dl', 'Show/Show - 01.mkv'),
         p.join('/dl', 'Show/Show - 02.MP4'),
@@ -313,12 +313,13 @@ void main() {
     Future<AnimeDownloadImportOutcome?> Function(
       AnimeDownloadPlan,
       List<String>,
-    )? importerOverride;
+    )?
+    importerOverride;
     Future<int?> Function(AnimeDownloadPlan, List<String>)?
-        bookImporterOverride;
+    bookImporterOverride;
     late List<(AnimeDownloadPlan, List<String>)> subtitleResolverCalls;
     Future<ResolvedPlanSubtitles> Function(AnimeDownloadPlan, List<String>)?
-        subtitleResolverOverride;
+    subtitleResolverOverride;
 
     AnimeDownloadService buildService({
       QbConnectionConfig? Function()? config,
@@ -336,7 +337,8 @@ void main() {
                 final Future<ResolvedPlanSubtitles> Function(
                   AnimeDownloadPlan,
                   List<String>,
-                )? override = subtitleResolverOverride;
+                )?
+                override = subtitleResolverOverride;
                 if (override != null) return override(plan, videos);
                 return const ResolvedPlanSubtitles.failed('not stubbed');
               },
@@ -435,7 +437,8 @@ void main() {
         <Map<String, dynamic>>[
           for (int ep = 1; ep <= 12; ep++)
             <String, dynamic>{
-              'name': 'Show/[Grp] Show - ${ep.toString().padLeft(2, '0')} '
+              'name':
+                  'Show/[Grp] Show - ${ep.toString().padLeft(2, '0')} '
                   '[1080p].mkv',
               'size': 10,
               'progress': 1.0,
@@ -462,17 +465,17 @@ void main() {
         ..createSync(recursive: true);
       subtitleResolverOverride =
           (AnimeDownloadPlan plan, List<String> videos) async {
-        final String staged = p.join(subsDir.path, 'Show - 03.ja.srt');
-        File(staged).writeAsStringSync('cue');
-        return ResolvedPlanSubtitles.ok(<PlanSubtitle>[
-          PlanSubtitle(
-            episode: 3,
-            fileName: 'Show - 03.ja.srt',
-            stagedPath: staged,
-            language: 'ja',
-          ),
-        ]);
-      };
+            final String staged = p.join(subsDir.path, 'Show - 03.ja.srt');
+            File(staged).writeAsStringSync('cue');
+            return ResolvedPlanSubtitles.ok(<PlanSubtitle>[
+              PlanSubtitle(
+                episode: 3,
+                fileName: 'Show - 03.ja.srt',
+                stagedPath: staged,
+                language: 'ja',
+              ),
+            ]);
+          };
 
       await buildService().tick();
 
@@ -524,18 +527,18 @@ void main() {
         ..createSync(recursive: true);
       subtitleResolverOverride =
           (AnimeDownloadPlan plan, List<String> videos) async {
-        // 这一次字幕已经上传了。
-        final String staged = p.join(subsDir.path, 'Show - 03.ja.srt');
-        File(staged).writeAsStringSync('cue');
-        return ResolvedPlanSubtitles.ok(<PlanSubtitle>[
-          PlanSubtitle(
-            episode: 3,
-            fileName: 'Show - 03.ja.srt',
-            stagedPath: staged,
-            language: 'ja',
-          ),
-        ]);
-      };
+            // 这一次字幕已经上传了。
+            final String staged = p.join(subsDir.path, 'Show - 03.ja.srt');
+            File(staged).writeAsStringSync('cue');
+            return ResolvedPlanSubtitles.ok(<PlanSubtitle>[
+              PlanSubtitle(
+                episode: 3,
+                fileName: 'Show - 03.ja.srt',
+                stagedPath: staged,
+                language: 'ja',
+              ),
+            ]);
+          };
 
       await buildService().tick();
 
@@ -545,16 +548,20 @@ void main() {
         reason: 'unavailable 不是终态——它的主流成因是「字幕还没上传」',
       );
       expect(
-        File(p.join(savePath, 'Show', '[Grp] Show - 03 [1080p].ja.srt'))
-            .existsSync(),
+        File(
+          p.join(savePath, 'Show', '[Grp] Show - 03 [1080p].ja.srt'),
+        ).existsSync(),
         isTrue,
         reason: '重试成功后 sidecar 要真的补上去，播放页按目录动态发现',
       );
       final AnimeDownloadPlan saved = (await store.loadAll()).single;
       expect(saved.subtitleStatus, AnimeDownloadPlan.subtitleResolved);
       expect(saved.subtitles.single.episode, 3);
-      expect(saved.status, AnimeDownloadPlan.statusImported,
-          reason: '重试不得改动下载/入库状态');
+      expect(
+        saved.status,
+        AnimeDownloadPlan.statusImported,
+        reason: '重试不得改动下载/入库状态',
+      );
       expect(saved.subtitleAttempts, 1);
       expect(saved.subtitleLastAttemptAtMs, isNotNull);
     });
@@ -627,10 +634,10 @@ void main() {
         _torrentJson(savePath: savePath, contentPath: p.join(savePath, 'Show')),
       ];
       qb.files = files;
-      subtitleResolverOverride =
-          (_, __) async => const ResolvedPlanSubtitles.failed(
-                'no jimaku file matches the pack episodes',
-              );
+      subtitleResolverOverride = (_, __) async =>
+          const ResolvedPlanSubtitles.failed(
+            'no jimaku file matches the pack episodes',
+          );
 
       await buildService().tick();
 
@@ -901,12 +908,9 @@ void main() {
           .whereType<File>()
           .map((File f) => p.basename(f.path))
           .toList();
-      expect(
-          listSidecarSubtitles('Show - 01', dirFiles),
-          <String>[
-            'Show - 01.srt',
-          ],
-          reason: '同一集有且只有一份 sidecar');
+      expect(listSidecarSubtitles('Show - 01', dirFiles), <String>[
+        'Show - 01.srt',
+      ], reason: '同一集有且只有一份 sidecar');
       expect(
         pickSidecar('Show - 01', dirFiles, langCode: 'ja'),
         'Show - 01.srt',
@@ -982,8 +986,8 @@ void main() {
     });
 
     test('importer 返回 null → 计划标 failed', () async {
-      importerOverride =
-          (AnimeDownloadPlan plan, List<String> videos) async => null;
+      importerOverride = (AnimeDownloadPlan plan, List<String> videos) async =>
+          null;
       await store.save(_plan());
       qb.torrents = <Map<String, dynamic>>[
         _torrentJson(contentPath: '/dl/movie.mkv', savePath: '/dl'),
@@ -1022,8 +1026,8 @@ void main() {
     test('防重入：上一 tick 未完成时再 tick 直接跳过，完成后可再 tick', () async {
       final Completer<AnimeDownloadImportOutcome?> gate =
           Completer<AnimeDownloadImportOutcome?>();
-      importerOverride =
-          (AnimeDownloadPlan plan, List<String> videos) => gate.future;
+      importerOverride = (AnimeDownloadPlan plan, List<String> videos) =>
+          gate.future;
 
       final int nowMs = DateTime.now().millisecondsSinceEpoch;
       await store.save(_plan()); // 会走到 importer 并卡在 gate 上。
@@ -1159,16 +1163,16 @@ void main() {
           staged = p.join(subsDir.path, 'Show 01.ja.srt');
           subtitleResolverOverride =
               (AnimeDownloadPlan plan, List<String> videos) async {
-            File(staged).writeAsStringSync('raw');
-            return ResolvedPlanSubtitles.ok(<PlanSubtitle>[
-              PlanSubtitle(
-                episode: 1,
-                fileName: 'Show 01.ja.srt',
-                stagedPath: staged,
-                language: 'ja',
-              ),
-            ]);
-          };
+                File(staged).writeAsStringSync('raw');
+                return ResolvedPlanSubtitles.ok(<PlanSubtitle>[
+                  PlanSubtitle(
+                    episode: 1,
+                    fileName: 'Show 01.ja.srt',
+                    stagedPath: staged,
+                    language: 'ja',
+                  ),
+                ]);
+              };
         }
 
         void setTorrent({required bool complete}) {
@@ -1204,37 +1208,39 @@ void main() {
           stubPendingSubtitle();
         });
 
-        test('边下边播：不调对齐器、原样放 sidecar 并记 pending；下完那一轮补对齐并替换原稿 sidecar',
-            () async {
-          final String sidecar = p.join(savePath, 'Show 01.ja.srt');
-          setTorrent(complete: false);
-          final AnimeDownloadService service = buildService(
-            subtitleAligner: fakeAligner,
-          );
-          expect(await service.importNow(_kHash), isTrue);
-          // 视频还残缺：绝不抽轨。
-          expect(alignerCalls, isEmpty);
-          expect(File(sidecar).readAsStringSync(), 'raw');
-          AnimeDownloadPlan saved = (await store.loadAll()).single;
-          expect(saved.subtitleStatus, AnimeDownloadPlan.subtitleResolved);
-          expect(saved.subtitleAlignPending, isTrue);
+        test(
+          '边下边播：不调对齐器、原样放 sidecar 并记 pending；下完那一轮补对齐并替换原稿 sidecar',
+          () async {
+            final String sidecar = p.join(savePath, 'Show 01.ja.srt');
+            setTorrent(complete: false);
+            final AnimeDownloadService service = buildService(
+              subtitleAligner: fakeAligner,
+            );
+            expect(await service.importNow(_kHash), isTrue);
+            // 视频还残缺：绝不抽轨。
+            expect(alignerCalls, isEmpty);
+            expect(File(sidecar).readAsStringSync(), 'raw');
+            AnimeDownloadPlan saved = (await store.loadAll()).single;
+            expect(saved.subtitleStatus, AnimeDownloadPlan.subtitleResolved);
+            expect(saved.subtitleAlignPending, isTrue);
 
-          // 仍在下载的 tick：还是不对。
-          await service.tick();
-          expect(alignerCalls, isEmpty);
+            // 仍在下载的 tick：还是不对。
+            await service.tick();
+            expect(alignerCalls, isEmpty);
 
-          // 真正完成：对暂存字幕补一次对齐，原稿 sidecar 一并换成对齐结果。
-          setTorrent(complete: true);
-          await service.tick();
-          expect(alignerCalls, <String>[p.join(savePath, 'Show 01.mkv')]);
-          expect(File(staged).readAsStringSync(), 'aligned:raw');
-          expect(File(sidecar).readAsStringSync(), 'aligned:raw');
-          saved = (await store.loadAll()).single;
-          expect(saved.status, AnimeDownloadPlan.statusImported);
-          expect(saved.subtitleAlignPending, isFalse);
-          // 重试路径不会再把 resolved 的计划对一遍。
-          expect(subtitleResolverCalls, hasLength(1));
-        });
+            // 真正完成：对暂存字幕补一次对齐，原稿 sidecar 一并换成对齐结果。
+            setTorrent(complete: true);
+            await service.tick();
+            expect(alignerCalls, <String>[p.join(savePath, 'Show 01.mkv')]);
+            expect(File(staged).readAsStringSync(), 'aligned:raw');
+            expect(File(sidecar).readAsStringSync(), 'aligned:raw');
+            saved = (await store.loadAll()).single;
+            expect(saved.status, AnimeDownloadPlan.statusImported);
+            expect(saved.subtitleAlignPending, isFalse);
+            // 重试路径不会再把 resolved 的计划对一遍。
+            expect(subtitleResolverCalls, hasLength(1));
+          },
+        );
 
         test('完成前用户换过 sidecar 内容：补对齐只改暂存，不覆盖用户的档', () async {
           final String sidecar = p.join(savePath, 'Show 01.ja.srt');
@@ -1265,8 +1271,7 @@ void main() {
           expect(saved.subtitleAlignPending, isFalse);
         });
 
-        test('订阅发现期就暂存好的字幕（计划一建出来就是 resolved）同样在下完那一轮对齐',
-            () async {
+        test('订阅发现期就暂存好的字幕（计划一建出来就是 resolved）同样在下完那一轮对齐', () async {
           // 订阅形态：字幕在发现期下好，计划建出来就是 resolved + pending，
           // resolver 这一轮原样返回同一个计划。旧判据靠「resolver 这一轮换了对象」
           // 推断没对齐，这条路因此永远不对齐。
@@ -1348,7 +1353,9 @@ void main() {
           final Map<String, dynamic> legacy = encodeAnimeDownloadPlan(_plan())
             ..remove('subtitleAlignPending');
           expect(
-              decodeAnimeDownloadPlan(legacy)?.subtitleAlignPending, isFalse);
+            decodeAnimeDownloadPlan(legacy)?.subtitleAlignPending,
+            isFalse,
+          );
         });
       });
 
@@ -1398,8 +1405,11 @@ void main() {
         // 同一个 operation，拿回的必须是**同一个** Future，而不是另起一轮。这条比数
         // importCalls 更贴契约——per-plan 串行锁单独也能把并发 importer 压成 1 次，
         // 光看「进场次数」区分不出「去重了」和「只是排队了」。
-        expect(identical(first, second), isTrue,
-            reason: '并发 importNow 必须返回同一个在途 Future，而不是排队跑第二轮');
+        expect(
+          identical(first, second),
+          isTrue,
+          reason: '并发 importNow 必须返回同一个在途 Future，而不是排队跑第二轮',
+        );
         await entered.future;
         expect(importCalls, hasLength(1));
         release.complete();

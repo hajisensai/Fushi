@@ -13,7 +13,8 @@ import 'package:fushi/src/storage/books_directory.dart'
     show kLegacyBooksDirectoryName;
 import 'package:fushi/src/storage/export_directory.dart'
     show kLegacyExportDirectoryName;
-import 'package:fushi/src/sync/backup_service.dart' show isBackupArchiveName;
+import 'package:fushi/src/sync/backup_archive_name.dart'
+    show isBackupArchiveName;
 
 /// 存储占用扫描服务（设置 → 存储）。
 ///
@@ -92,7 +93,7 @@ enum StorageCategoryId {
   /// 只扫两块必然少报（用户 2026-08-28：app 内 6.9 GB vs 系统 13.68 GB）。
   ///
   /// **具体扫哪些根按平台门控**——桌面的临时目录是全系统共享的，算进来会严重高报。
-  /// 判据与理由见 [StorageUsageService._defaultCacheRoots]。
+  /// 判据与理由见 [resolveStorageCacheRoots]。
   cache,
 
   /// BUG-1905：其他未归类 —— documents 根下**不在**白名单里的顶层项。
@@ -463,12 +464,14 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
         // 下载页「手动添加任务」的 .torrent 元数据（随任务持久化）。体量很小，但必须
         // 归进某个类目——否则存储页总量对不上白名单（守卫逼着新目录选类目）。
         'manual_torrents',
-        // 音频 CD 抓轨产物（BUG-3312）：按「无画面的视频」导入视频库的本地媒体。
+        // 音频 CD 抓轨产物（BUG-3312）：抓好的 FLAC，「仅此一次」导入音乐库
+        // （BUG-4175 前按「无画面的视频」进视频库）；类目沿用，不挪。
         'audio_cd',
       ],
       StorageCategoryId.covers: <String>[
         'video_covers',
         'game_covers',
+        'music_covers',
         'thumbnails',
       ],
       StorageCategoryId.subtitles: <String>['video_subtitles'],
@@ -485,10 +488,10 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
       ],
       StorageCategoryId.database: <String>[
         'onboarding_tutorial',
-        // 复习（Fushi SRS）自动备份：`<profileUid>/*.fushisrs` 与它们共享的内容寻址媒体池
-        // `media/`。归「数据库 / 本地状态」而不是可裸删的 exports：单删 `media/` 会让池里
-        // 每一份备份都恢复不全，清理只能走备份页的保留策略 / 逐份删除（会回收无引用媒体）。
+        // 旧版复习自动备份（升级到同步 v2 后留 30 天自动清理，见 srs_legacy_backup_cleanup.dart）。
         'srs_backups',
+        // 删 Profile 前自动做的复习数据备份（撤销途径，BUG-3818）。
+        'srs_profile_backups',
       ],
       StorageCategoryId.ocrModels: <String>[],
     };
@@ -604,7 +607,7 @@ class StorageUsageService {
   final Future<Directory> Function() _documentsRoot;
   final Future<Directory> Function() _supportRoot;
 
-  /// BUG-1905：此前完全没被扫过的第三类根（缓存/临时）。见 [_defaultCacheRoots]。
+  /// BUG-1905：此前完全没被扫过的第三类根（缓存/临时）。见 [resolveStorageCacheRoots]。
   final Future<List<Directory>> Function() _cacheRoots;
 
   /// BUG-1905：见 [AppPaths.documentsRootIsFushiOwned]——决定「其他未归类」敢不敢算。
@@ -1006,31 +1009,18 @@ class StorageUsageService {
     );
   }
 
-  /// BUG-1905：要统计的缓存/临时根。
-  ///
-  /// **只在这些目录确实属于本 app 时才统计** —— 这是本类目唯一的正确性红线：
-  /// * **iOS / Android**：两个目录都在 app 沙盒内，且**互不相同**——
-  ///   `path_provider` 的 `getTemporaryDirectory()` 在 Apple 平台返回
-  ///   `Library/Caches`（见 `PathProviderPlugin.swift` 的
-  ///   `case .temp: return .cachesDirectory`），而 Dart 的 `Directory.systemTemp`
-  ///   读 `TMPDIR` 指向 `<沙盒>/tmp`。两个都要算，去重后扫。
-  /// * **macOS**：`getTemporaryDirectory()` 给的是 app 私有的 `Library/Caches`，
-  ///   算；但 `systemTemp`（`/var/folders/…/T`）是跨 app 共享的，不算。
-  /// * **Windows / Linux**：临时目录是**全系统共享**的（`%TEMP%` / `/tmp`），
-  ///   里面装着别的程序的文件。把它算进 app 占用会严重高报——宁可这一类为 0，
-  ///   也绝不报一个假的大数。要在桌面统计 Fushi 自己的临时文件，只能再引入一份
-  ///   「哪些子目录是我们的」白名单，而白名单漂移正是本 bug 的成因，不再重蹈。
-  static Future<List<Directory>> _defaultCacheRoots() async {
-    final bool sandboxed = Platform.isIOS || Platform.isAndroid;
-    if (!sandboxed && !Platform.isMacOS) return const <Directory>[];
-    final Directory temp = await AppPaths.tempRootDirectory();
-    if (!sandboxed) return <Directory>[temp];
-    final Directory system = Directory.systemTemp;
-    return <Directory>[
-      temp,
-      if (p.canonicalize(system.path) != p.canonicalize(temp.path)) system,
-    ];
-  }
+  /// BUG-1905：要统计的缓存/临时根。判据与理由见 [resolveStorageCacheRoots]。
+  static Future<List<Directory>> _defaultCacheRoots() =>
+      resolveStorageCacheRoots(
+        platform: Platform.isIOS || Platform.isAndroid
+            ? StorageCacheRootPlatform.sandboxedMobile
+            : Platform.isMacOS
+            ? StorageCacheRootPlatform.macOS
+            : StorageCacheRootPlatform.sharedTempDesktop,
+        tempRoot: AppPaths.tempRootDirectory,
+        systemTemp: () => Directory.systemTemp,
+        appCacheRoot: AppPaths.appCacheRootDirectory,
+      );
 
   /// 缓存/临时根下的直接子项，**只列举一次**：cache 与 backups 两个类目按谓词分流。
   Future<List<Map<String, Object>>> _cacheRootEntries() async {
@@ -1043,7 +1033,7 @@ class StorageUsageService {
   }
 
   /// BUG-1905：缓存与临时文件（[raw] 来自 [_cacheRootEntries]）。根的选取与理由见
-  /// [_defaultCacheRoots]；备份包由 [_scanBackups] 单列，这里排除掉不重复计数。
+  /// [resolveStorageCacheRoots]；备份包由 [_scanBackups] 单列，这里排除掉不重复计数。
   StorageCategoryUsage _scanCache(final List<Map<String, Object>> raw) {
     final List<StorageEntryUsage> entries =
         _childEntries(
@@ -1242,4 +1232,62 @@ String formatStorageBytes(final int bytes) {
     u++;
   }
   return '${v >= 100 ? v.toStringAsFixed(0) : v.toStringAsFixed(1)} ${units[u]}';
+}
+
+/// [resolveStorageCacheRoots] 按平台分的三种情况。
+enum StorageCacheRootPlatform {
+  /// iOS / Android：临时与缓存目录都在 app 沙盒内。
+  sandboxedMobile,
+
+  /// macOS（未沙盒）。
+  macOS,
+
+  /// Windows / Linux：临时目录全系统共享。
+  sharedTempDesktop,
+}
+
+/// BUG-1905：存储页「缓存与临时文件」要扫的根。
+///
+/// **只在这些目录确实属于本 app 时才统计** —— 这是本类目唯一的正确性红线：根下的
+/// 每个直接子项都会被列成可删除的派生文件（[StorageEntryKind.derivedFile]），根选
+/// 错了不只是数字偏高，用户点「删除」删的是别的程序的数据。
+/// * **iOS / Android**：两个目录都在 app 沙盒内，且**互不相同**——
+///   `path_provider` 的 `getTemporaryDirectory()` 在 Apple 平台返回
+///   `Library/Caches`（见 `PathProviderPlugin.swift` 的
+///   `case .temp: return .cachesDirectory`），而 Dart 的 `Directory.systemTemp`
+///   读 `TMPDIR` 指向 `<沙盒>/tmp`。两个都要算，去重后扫。
+/// * **macOS**：发布版已去沙盒（`Release.entitlements`），`getTemporaryDirectory()`
+///   （path_provider_foundation 2.5.1）给的是**全用户共享**的 `~/Library/Caches`
+///   ——不带 bundle id，里面是 Spotify、Chrome 等所有程序的缓存（反馈 UjgERnk4jd：
+///   别的 app 的缓存被算进 Fushi 且可删）。`systemTemp`（`/var/folders/…/T`）同样
+///   共享。只扫 [appCacheRoot]：`getApplicationCacheDirectory()` 在 macOS 上
+///   追加 bundle id（`~/Library/Caches/app.fushi.reader`），沙盒与否都只属于本 app。
+///   代价是直接写在共享临时根下的 Fushi 临时文件 / 遗留备份包不进统计——与
+///   Windows / Linux 同一取舍：少报，绝不把别人的东西算成（并删成）自己的。
+/// * **Windows / Linux**：临时目录是**全系统共享**的（`%TEMP%` / `/tmp`），
+///   里面装着别的程序的文件。把它算进 app 占用会严重高报——宁可这一类为 0，
+///   也绝不报一个假的大数。要在桌面统计 Fushi 自己的临时文件，只能再引入一份
+///   「哪些子目录是我们的」白名单，而白名单漂移正是本 bug 的成因，不再重蹈。
+///
+/// 三个目录都是回调：只解析当前平台要用的那个（`getApplicationCacheDirectory()`
+/// 会顺手建目录，不该在用不到它的平台上被调用）。
+Future<List<Directory>> resolveStorageCacheRoots({
+  required StorageCacheRootPlatform platform,
+  required Future<Directory> Function() tempRoot,
+  required Directory Function() systemTemp,
+  required Future<Directory> Function() appCacheRoot,
+}) async {
+  switch (platform) {
+    case StorageCacheRootPlatform.sharedTempDesktop:
+      return const <Directory>[];
+    case StorageCacheRootPlatform.macOS:
+      return <Directory>[await appCacheRoot()];
+    case StorageCacheRootPlatform.sandboxedMobile:
+      final Directory temp = await tempRoot();
+      final Directory system = systemTemp();
+      return <Directory>[
+        temp,
+        if (p.canonicalize(system.path) != p.canonicalize(temp.path)) system,
+      ];
+  }
 }

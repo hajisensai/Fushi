@@ -12,18 +12,17 @@ TtuStatistics _stat({
   int lastReadingSpeed = 350,
   int maxReadingSpeed = 400,
   int lastStatisticModified = 1000,
-}) =>
-    TtuStatistics(
-      title: 'Book',
-      dateKey: dateKey,
-      charactersRead: charactersRead,
-      readingTimeSec: readingTimeSec,
-      minReadingSpeed: minReadingSpeed,
-      altMinReadingSpeed: altMinReadingSpeed,
-      lastReadingSpeed: lastReadingSpeed,
-      maxReadingSpeed: maxReadingSpeed,
-      lastStatisticModified: lastStatisticModified,
-    );
+}) => TtuStatistics(
+  title: 'Book',
+  dateKey: dateKey,
+  charactersRead: charactersRead,
+  readingTimeSec: readingTimeSec,
+  minReadingSpeed: minReadingSpeed,
+  altMinReadingSpeed: altMinReadingSpeed,
+  lastReadingSpeed: lastReadingSpeed,
+  maxReadingSpeed: maxReadingSpeed,
+  lastStatisticModified: lastStatisticModified,
+);
 
 void main() {
   group('high-water merge', () {
@@ -35,12 +34,8 @@ void main() {
     });
 
     test('same date takes max of charactersRead and readingTime', () {
-      final local = [
-        _stat(charactersRead: 1000, readingTimeSec: 3600),
-      ];
-      final remote = [
-        _stat(charactersRead: 1500, readingTimeSec: 2000),
-      ];
+      final local = [_stat(charactersRead: 1000, readingTimeSec: 3600)];
+      final remote = [_stat(charactersRead: 1500, readingTimeSec: 2000)];
       final merged = mergeStatistics(local, remote, StatisticsSyncMode.merge);
       expect(merged.length, 1);
       expect(merged.first.charactersRead, 1500);
@@ -90,8 +85,11 @@ void main() {
       final deviceB = [
         _stat(charactersRead: 3000, readingTimeSec: 2400, maxReadingSpeed: 500),
       ];
-      final merged =
-          mergeStatistics(deviceA, deviceB, StatisticsSyncMode.merge);
+      final merged = mergeStatistics(
+        deviceA,
+        deviceB,
+        StatisticsSyncMode.merge,
+      );
       expect(merged.first.charactersRead, 3000);
       expect(merged.first.readingTimeSec, 2400);
       expect(merged.first.maxReadingSpeed, 500);

@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/ocr_glyph_boxes.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';

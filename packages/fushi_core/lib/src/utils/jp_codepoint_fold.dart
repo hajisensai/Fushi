@@ -7,6 +7,11 @@
 /// **底层原语**；策略层（保留白名单 / 丢弃集 / 繁简映射 / 装饰符处理）是各
 /// normalizer 的真实语义差异，仍留在各自实现里，不在此统一。
 ///
+/// 有声书/阅读器匹配 `AudioTextNormalizer` 的运行时实现已搬进 Rust
+/// （`native/fushi_compute/src/parse/fold.rs`，其中有同口径的半角片假名表副本），
+/// 不再调用这里；仍用这批原语的是媒体库搜索、`TitleNormalizer`、Anki 重排与
+/// `ReaderPaginationScripts` 的 JS Dart 影子。
+///
 /// ⚠️ 这些变换参与搜索归一化与 sasayaki 匹配坐标系：任何输出变化都会改变既有
 /// 匹配/高亮行为。改动必须保持逐码点输出不变（各 normalizer 既有测试 +
 /// `fushi/test/utils/jp_codepoint_fold_test.dart` 的 JS parity 测试锁定）。

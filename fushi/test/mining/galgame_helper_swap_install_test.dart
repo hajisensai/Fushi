@@ -99,8 +99,11 @@ void main() {
           .whereType<File>()
           .map((File f) => p.basename(f.path))
           .toList();
-      expect(names.where(kGalgameHelperStalePattern.hasMatch), isEmpty,
-          reason: '回滚后 .stale 必须已改回原名');
+      expect(
+        names.where(kGalgameHelperStalePattern.hasMatch),
+        isEmpty,
+        reason: '回滚后 .stale 必须已改回原名',
+      );
     });
 
     test('旧 dst 让位后新 src 落位失败也回滚当前项', () async {
@@ -154,7 +157,8 @@ void main() {
     test('目录不存在时安静返回', () {
       expect(
         () => galgameHelperSweepStaleFiles(
-            Directory(p.join(root.path, 'nonexistent'))),
+          Directory(p.join(root.path, 'nonexistent')),
+        ),
         returnsNormally,
       );
     });

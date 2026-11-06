@@ -1,0 +1,15 @@
+[Script Info]
+ScriptType: v4.00+
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize
+Style: Kanji,Arial,40
+Style: Romaji,Arial,30
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Comment: 0,0:00:00.00,0:00:00.00,Kanji,,0,0,0,template syl,{\pos($x,$y)\t(0,$dur,\1c&H0000FF&)}
+Comment: 0,0:00:01.00,0:00:04.00,Kanji,,0,0,0,karaoke,{\k40}沈|しず{\kf40}む{\ko80}様|よう{\k140}に
+Comment: 0,0:00:01.00,0:00:04.00,Romaji,,0,0,0,karaoke,{\k40}shi{\k40}zu{\k40}mu{\k80}you{\k140}ni
+Dialogue: 0,0:00:01.00,0:00:04.00,Kanji,,0,0,0,fx,{\pos(100,50)\t(0,400,\1c&H0000FF&)}沈
+Comment: 0,0:00:05.00,0:00:07.00,Kanji,,0,0,0,karaoke,{\k100}夜|よる{\k50}に{\k50}#

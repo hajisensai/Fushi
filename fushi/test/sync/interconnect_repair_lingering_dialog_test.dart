@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// TODO-1330 / BUG-708：公网 PIN 配对被取消 / 从未 confirm 后，host 那个「已允许、常驻
 /// 显示 PIN 等对方输入」的弹窗不该继续占住审批槽，把随后的「重新配对」静默挡成拒绝。
@@ -30,12 +30,14 @@ void main() {
     final FushiSyncServerController controller = buildController(navKey);
     addTearDown(controller.dispose);
 
-    await tester.pumpWidget(TranslationProvider(
-      child: MaterialApp(
-        navigatorKey: navKey,
-        home: const Scaffold(body: SizedBox.shrink()),
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          navigatorKey: navKey,
+          home: const Scaffold(body: SizedBox.shrink()),
+        ),
       ),
-    ));
+    );
 
     const FushiPairRequest wanReq = FushiPairRequest(
       deviceName: 'Phone A',
@@ -44,8 +46,10 @@ void main() {
     );
 
     // 第一次配对：host 弹审批 + 显示 PIN 482913 → 允许 → 弹窗常驻等对方输入。
-    final Future<bool> first =
-        controller.debugPromptPairApproval(wanReq, seedPin: '482913');
+    final Future<bool> first = controller.debugPromptPairApproval(
+      wanReq,
+      seedPin: '482913',
+    );
     await tester.pump();
     expect(find.text('482913'), findsOneWidget, reason: '第一次审批弹窗应显示 PIN');
     expect(find.text(t.sync_pair_allow_interconnect_only), findsOneWidget);
@@ -58,12 +62,17 @@ void main() {
     expect(find.text(t.sync_pair_pin_waiting), findsOneWidget);
 
     // 第二次配对（重新配对）：客户端取消上一次、从未 confirm，host 常驻弹窗仍在。
-    final Future<bool> second =
-        controller.debugPromptPairApproval(wanReq, seedPin: '771122');
+    final Future<bool> second = controller.debugPromptPairApproval(
+      wanReq,
+      seedPin: '771122',
+    );
     await tester.pumpAndSettle();
 
-    expect(find.text('771122'), findsOneWidget,
-        reason: '重新配对必须弹出新审批弹窗并显示新 PIN（修复前会被静默拒绝）');
+    expect(
+      find.text('771122'),
+      findsOneWidget,
+      reason: '重新配对必须弹出新审批弹窗并显示新 PIN（修复前会被静默拒绝）',
+    );
     expect(find.text('482913'), findsNothing, reason: '旧常驻弹窗应已收起');
 
     await tester.tap(find.text(t.sync_pair_allow_interconnect_only));
